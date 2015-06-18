@@ -22,23 +22,26 @@
 
 #include "core/svg/SVGLength.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
+#include "platform/heap/Handle.h"
 #include "platform/transforms/AffineTransform.h"
 
 namespace blink {
 
 class SVGPatternElement;
 
-struct PatternAttributes {
+class PatternAttributes final {
+    DISALLOW_ALLOCATION();
+public:
     PatternAttributes()
-        : m_x(SVGLength::create(LengthModeWidth))
-        , m_y(SVGLength::create(LengthModeHeight))
-        , m_width(SVGLength::create(LengthModeWidth))
-        , m_height(SVGLength::create(LengthModeHeight))
+        : m_x(SVGLength::create(SVGLengthMode::Width))
+        , m_y(SVGLength::create(SVGLengthMode::Height))
+        , m_width(SVGLength::create(SVGLengthMode::Width))
+        , m_height(SVGLength::create(SVGLengthMode::Height))
         , m_viewBox()
         , m_preserveAspectRatio(SVGPreserveAspectRatio::create())
         , m_patternUnits(SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX)
         , m_patternContentUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
-        , m_patternContentElement(0)
+        , m_patternContentElement(nullptr)
         , m_xSet(false)
         , m_ySet(false)
         , m_widthSet(false)
@@ -63,25 +66,25 @@ struct PatternAttributes {
     AffineTransform patternTransform() const { return m_patternTransform; }
     const SVGPatternElement* patternContentElement() const { return m_patternContentElement; }
 
-    void setX(PassRefPtr<SVGLength> value)
+    void setX(PassRefPtrWillBeRawPtr<SVGLength> value)
     {
         m_x = value;
         m_xSet = true;
     }
 
-    void setY(PassRefPtr<SVGLength> value)
+    void setY(PassRefPtrWillBeRawPtr<SVGLength> value)
     {
         m_y = value;
         m_ySet = true;
     }
 
-    void setWidth(PassRefPtr<SVGLength> value)
+    void setWidth(PassRefPtrWillBeRawPtr<SVGLength> value)
     {
         m_width = value;
         m_widthSet = true;
     }
 
-    void setHeight(PassRefPtr<SVGLength> value)
+    void setHeight(PassRefPtrWillBeRawPtr<SVGLength> value)
     {
         m_height = value;
         m_heightSet = true;
@@ -93,7 +96,7 @@ struct PatternAttributes {
         m_viewBoxSet = true;
     }
 
-    void setPreserveAspectRatio(PassRefPtr<SVGPreserveAspectRatio> value)
+    void setPreserveAspectRatio(PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio> value)
     {
         m_preserveAspectRatio = value;
         m_preserveAspectRatioSet = true;
@@ -134,18 +137,28 @@ struct PatternAttributes {
     bool hasPatternTransform() const { return m_patternTransformSet; }
     bool hasPatternContentElement() const { return m_patternContentElementSet; }
 
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_x);
+        visitor->trace(m_y);
+        visitor->trace(m_width);
+        visitor->trace(m_height);
+        visitor->trace(m_preserveAspectRatio);
+        visitor->trace(m_patternContentElement);
+    }
+
 private:
     // Properties
-    RefPtr<SVGLength> m_x;
-    RefPtr<SVGLength> m_y;
-    RefPtr<SVGLength> m_width;
-    RefPtr<SVGLength> m_height;
+    RefPtrWillBeMember<SVGLength> m_x;
+    RefPtrWillBeMember<SVGLength> m_y;
+    RefPtrWillBeMember<SVGLength> m_width;
+    RefPtrWillBeMember<SVGLength> m_height;
     FloatRect m_viewBox;
-    RefPtr<SVGPreserveAspectRatio> m_preserveAspectRatio;
+    RefPtrWillBeMember<SVGPreserveAspectRatio> m_preserveAspectRatio;
     SVGUnitTypes::SVGUnitType m_patternUnits;
     SVGUnitTypes::SVGUnitType m_patternContentUnits;
     AffineTransform m_patternTransform;
-    const SVGPatternElement* m_patternContentElement;
+    RawPtrWillBeMember<const SVGPatternElement> m_patternContentElement;
 
     // Property states
     bool m_xSet : 1;
@@ -160,6 +173,28 @@ private:
     bool m_patternContentElementSet : 1;
 };
 
+#if ENABLE(OILPAN)
+// Wrapper object for the PatternAttributes part object.
+class PatternAttributesWrapper : public GarbageCollectedFinalized<PatternAttributesWrapper> {
+public:
+    static PatternAttributesWrapper* create()
+    {
+        return new PatternAttributesWrapper;
+    }
+
+    PatternAttributes& attributes() { return m_attributes; }
+    void set(const PatternAttributes& attributes) { m_attributes = attributes; }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_attributes); }
+
+private:
+    PatternAttributesWrapper()
+    {
+    }
+
+    PatternAttributes m_attributes;
+};
+#endif
+
 } // namespace blink
 
-#endif
+#endif // PatternAttributes_h

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_DEVTOOLS_FORWARDING_AGENT_HOST_H
-#define CONTENT_BROWSER_DEVTOOLS_FORWARDING_AGENT_HOST_H
+#ifndef CONTENT_BROWSER_DEVTOOLS_FORWARDING_AGENT_HOST_H_
+#define CONTENT_BROWSER_DEVTOOLS_FORWARDING_AGENT_HOST_H_
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -29,7 +29,7 @@ class ForwardingAgentHost
   // DevToolsAgentHostImpl implementation.
   void Attach() override;
   void Detach() override;
-  void DispatchProtocolMessage(const std::string& message) override;
+  bool DispatchProtocolMessage(const std::string& message) override;
 
   // DevToolsAgentHost implementation
   Type GetType() override;
@@ -43,4 +43,4 @@ class ForwardingAgentHost
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_DEVTOOLS_FORWARDING_AGENT_HOST_H
+#endif  // CONTENT_BROWSER_DEVTOOLS_FORWARDING_AGENT_HOST_H_

@@ -24,13 +24,14 @@
 #ifndef MouseRelatedEvent_h
 #define MouseRelatedEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/UIEventWithKeyState.h"
 #include "platform/geometry/LayoutPoint.h"
 
 namespace blink {
 
     // Internal only: Helper class for what's common between mouse and wheel events.
-    class MouseRelatedEvent : public UIEventWithKeyState {
+    class CORE_EXPORT MouseRelatedEvent : public UIEventWithKeyState {
     public:
         // Note that these values are adjusted to counter the effects of zoom, so that values
         // exposed via DOM APIs are invariant under zooming.
@@ -56,17 +57,17 @@ namespace blink {
         int y() const;
 
         // Page point in "absolute" coordinates (i.e. post-zoomed, page-relative coords,
-        // usable with RenderObject::absoluteToLocal).
+        // usable with LayoutObject::absoluteToLocal).
         const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
         void setAbsoluteLocation(const LayoutPoint& p) { m_absoluteLocation = p; }
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     protected:
         MouseRelatedEvent();
         MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable,
             PassRefPtrWillBeRawPtr<AbstractView>, int detail, const IntPoint& screenLocation,
-            const IntPoint& windowLocation, const IntPoint& movementDelta, bool ctrlKey, bool altKey,
+            const IntPoint& rootFrameLocation, const IntPoint& movementDelta, bool ctrlKey, bool altKey,
             bool shiftKey, bool metaKey, bool isSimulated = false);
 
         void initCoordinates();

@@ -31,6 +31,7 @@
 #include "config.h"
 #include "modules/mediasource/SourceBufferList.h"
 
+#include "core/dom/ExecutionContext.h"
 #include "core/events/GenericEventQueue.h"
 #include "modules/EventModules.h"
 #include "modules/mediasource/SourceBuffer.h"
@@ -97,10 +98,12 @@ ExecutionContext* SourceBufferList::executionContext() const
     return m_executionContext;
 }
 
-void SourceBufferList::trace(Visitor* visitor)
+DEFINE_TRACE(SourceBufferList)
 {
+    visitor->trace(m_executionContext);
+    visitor->trace(m_asyncEventQueue);
     visitor->trace(m_list);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<SourceBufferList>::trace(visitor);
 }
 
 } // namespace blink

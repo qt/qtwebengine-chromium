@@ -14,11 +14,14 @@
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/common/content_export.h"
+#include "content/common/frame_replication_state.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace content {
 
 class FrameTree;
+class NavigationRequest;
 class Navigator;
 class RenderFrameHostImpl;
 
@@ -28,6 +31,9 @@ class RenderFrameHostImpl;
 // are frame-specific (as opposed to page-specific).
 class CONTENT_EXPORT FrameTreeNode {
  public:
+  // Returns the FrameTreeNode with the given global |frame_tree_node_id|,
+  // regardless of which FrameTree it is in.
+  static FrameTreeNode* GloballyFindByID(int frame_tree_node_id);
 
   FrameTreeNode(FrameTree* frame_tree,
                 Navigator* navigator,
@@ -35,7 +41,8 @@ class CONTENT_EXPORT FrameTreeNode {
                 RenderViewHostDelegate* render_view_delegate,
                 RenderWidgetHostDelegate* render_widget_delegate,
                 RenderFrameHostManager::Delegate* manager_delegate,
-                const std::string& name);
+                const std::string& name,
+                SandboxFlags sandbox_flags);
 
   ~FrameTreeNode();
 
@@ -61,12 +68,12 @@ class CONTENT_EXPORT FrameTreeNode {
     return &render_manager_;
   }
 
-  int64 frame_tree_node_id() const {
+  int frame_tree_node_id() const {
     return frame_tree_node_id_;
   }
 
   const std::string& frame_name() const {
-    return frame_name_;
+    return replication_state_.name;
   }
 
   size_t child_count() const {
@@ -87,15 +94,85 @@ class CONTENT_EXPORT FrameTreeNode {
     current_url_ = url;
   }
 
+  // Set the current origin and notify proxies about the update.
+  void SetCurrentOrigin(const url::Origin& origin);
+
+  // Set the current name and notify proxies about the update.
+  void SetFrameName(const std::string& name);
+
+  SandboxFlags effective_sandbox_flags() { return effective_sandbox_flags_; }
+
+  void set_sandbox_flags(SandboxFlags sandbox_flags) {
+    replication_state_.sandbox_flags = sandbox_flags;
+  }
+
+  // Transfer any pending sandbox flags into |effective_sandbox_flags_|, and
+  // return true if the sandbox flags were changed.
+  bool CommitPendingSandboxFlags();
+
+  bool HasSameOrigin(const FrameTreeNode& node) const {
+    return replication_state_.origin.IsSameAs(node.replication_state_.origin);
+  }
+
+  const FrameReplicationState& current_replication_state() const {
+    return replication_state_;
+  }
+
   RenderFrameHostImpl* current_frame_host() const {
     return render_manager_.current_frame_host();
   }
+
+  bool IsDescendantOf(FrameTreeNode* other) const;
+
+  // Return the node immediately preceding this node in its parent's
+  // |children_|, or nullptr if there is no such node.
+  FrameTreeNode* PreviousSibling() const;
+
+  // Returns true if this node is in a loading state.
+  bool IsLoading() const;
+
+  // Returns this node's loading progress.
+  double loading_progress() const { return loading_progress_; }
+
+  NavigationRequest* navigation_request() { return navigation_request_.get(); }
+
+  // PlzNavigate
+  // Takes ownership of |navigation_request| and makes it the current
+  // NavigationRequest of this frame. This corresponds to the start of a new
+  // navigation. If there was an ongoing navigation request before calling this
+  // function, it is canceled. |navigation_request| should not be null.
+  void SetNavigationRequest(scoped_ptr<NavigationRequest> navigation_request);
+
+  // PlzNavigate
+  // Resets the current navigation request. |is_commit| is true if the reset is
+  // due to the commit of the navigation.
+  void ResetNavigationRequest(bool is_commit);
+
+  // Returns true if this node is in a state where the loading progress is being
+  // tracked.
+  bool has_started_loading() const;
+
+  // Resets this node's loading progress.
+  void reset_loading_progress();
+
+  // A RenderFrameHost in this node started loading.
+  // |to_different_document| will be true unless the load is a fragment
+  // navigation, or triggered by history.pushState/replaceState.
+  void DidStartLoading(bool to_different_document);
+
+  // A RenderFrameHost in this node stopped loading.
+  void DidStopLoading();
+
+  // The load progress for a RenderFrameHost in this node was updated to
+  // |load_progress|. This will notify the FrameTree which will in turn notify
+  // the WebContents.
+  void DidChangeLoadProgress(double load_progress);
 
  private:
   void set_parent(FrameTreeNode* parent) { parent_ = parent; }
 
   // The next available browser-global FrameTreeNode ID.
-  static int64 next_frame_tree_node_id_;
+  static int next_frame_tree_node_id_;
 
   // The FrameTree that owns us.
   FrameTree* frame_tree_;  // not owned.
@@ -106,17 +183,13 @@ class CONTENT_EXPORT FrameTreeNode {
 
   // Manages creation and swapping of RenderFrameHosts for this frame.  This
   // must be declared before |children_| so that it gets deleted after them.
-  //  That's currently necessary so that RenderFrameHostImpl's destructor can
+  // That's currently necessary so that RenderFrameHostImpl's destructor can
   // call GetProcess.
   RenderFrameHostManager render_manager_;
 
   // A browser-global identifier for the frame in the page, which stays stable
   // even if the frame does a cross-process navigation.
-  const int64 frame_tree_node_id_;
-
-  // The assigned name of the frame. This name can be empty, unlike the unique
-  // name generated internally in the DOM tree.
-  std::string frame_name_;
+  const int frame_tree_node_id_;
 
   // The parent node of this frame. NULL if this node is the root or if it has
   // not yet been attached to the frame tree.
@@ -130,6 +203,28 @@ class CONTENT_EXPORT FrameTreeNode {
   // TODO(creis): Remove this when we can store subframe URLs in the
   // NavigationController.
   GURL current_url_;
+
+  // Track information that needs to be replicated to processes that have
+  // proxies for this frame.
+  FrameReplicationState replication_state_;
+
+  // Track the effective sandbox flags for this frame.  When a parent frame
+  // dynamically updates sandbox flags for a child frame, the child's updated
+  // sandbox flags are stored in replication_state_.sandbox_flags. However, the
+  // update only takes effect on the next frame navigation, so the effective
+  // sandbox flags are tracked separately here.  When enforcing sandbox flags
+  // directives in the browser process, |effective_sandbox_flags_| should be
+  // used.  |effective_sandbox_flags_| is updated with any pending sandbox
+  // flags when a navigation for this frame commits.
+  SandboxFlags effective_sandbox_flags_;
+
+  // Used to track this node's loading progress (from 0 to 1).
+  double loading_progress_;
+
+  // PlzNavigate
+  // Owns an ongoing NavigationRequest until it is ready to commit. It will then
+  // be reset and a RenderFrameHost will be responsible for the navigation.
+  scoped_ptr<NavigationRequest> navigation_request_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameTreeNode);
 };

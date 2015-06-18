@@ -22,23 +22,21 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGRadialGradientElement.h"
 
-#include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
+#include "core/layout/svg/LayoutSVGResourceRadialGradient.h"
 #include "core/svg/RadialGradientAttributes.h"
-#include "core/svg/SVGTransformList.h"
 
 namespace blink {
 
 inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     : SVGGradientElement(SVGNames::radialGradientTag, document)
-    , m_cx(SVGAnimatedLength::create(this, SVGNames::cxAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
-    , m_fx(SVGAnimatedLength::create(this, SVGNames::fxAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_fy(SVGAnimatedLength::create(this, SVGNames::fyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_fr(SVGAnimatedLength::create(this, SVGNames::frAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
+    , m_cx(SVGAnimatedLength::create(this, SVGNames::cxAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(SVGLengthMode::Other), ForbidNegativeLengths))
+    , m_fx(SVGAnimatedLength::create(this, SVGNames::fxAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_fy(SVGAnimatedLength::create(this, SVGNames::fyAttr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_fr(SVGAnimatedLength::create(this, SVGNames::frAttr, SVGLength::create(SVGLengthMode::Other), ForbidNegativeLengths))
 {
     // Spec: If the cx/cy/r attribute is not specified, the effect is as if a value of "50%" were specified.
     m_cx->setDefaultValueAsString("50%");
@@ -56,46 +54,41 @@ inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     addToPropertyMap(m_fr);
 }
 
+DEFINE_TRACE(SVGRadialGradientElement)
+{
+    visitor->trace(m_cx);
+    visitor->trace(m_cy);
+    visitor->trace(m_r);
+    visitor->trace(m_fx);
+    visitor->trace(m_fy);
+    visitor->trace(m_fr);
+    SVGGradientElement::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGRadialGradientElement)
-
-bool SVGRadialGradientElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::cxAttr);
-        supportedAttributes.add(SVGNames::cyAttr);
-        supportedAttributes.add(SVGNames::fxAttr);
-        supportedAttributes.add(SVGNames::fyAttr);
-        supportedAttributes.add(SVGNames::rAttr);
-        supportedAttributes.add(SVGNames::frAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGRadialGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
 
 void SVGRadialGradientElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGGradientElement::svgAttributeChanged(attrName);
+    if (attrName == SVGNames::cxAttr || attrName == SVGNames::cyAttr
+        || attrName == SVGNames::fxAttr || attrName == SVGNames::fyAttr
+        || attrName == SVGNames::rAttr || attrName == SVGNames::frAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
+        updateRelativeLengthsInformation();
+
+        LayoutSVGResourceContainer* layoutObject = toLayoutSVGResourceContainer(this->layoutObject());
+        if (layoutObject)
+            layoutObject->invalidateCacheAndMarkForLayout();
+
         return;
     }
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    updateRelativeLengthsInformation();
-
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
-    if (renderer)
-        renderer->invalidateCacheAndMarkForLayout();
+    SVGGradientElement::svgAttributeChanged(attrName);
 }
 
-RenderObject* SVGRadialGradientElement::createRenderer(RenderStyle*)
+LayoutObject* SVGRadialGradientElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGResourceRadialGradient(this);
+    return new LayoutSVGResourceRadialGradient(this);
 }
 
 static void setGradientAttributes(SVGGradientElement* element, RadialGradientAttributes& attributes, bool isRadial = true)
@@ -143,10 +136,10 @@ static void setGradientAttributes(SVGGradientElement* element, RadialGradientAtt
 
 bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttributes& attributes)
 {
-    if (!renderer())
+    if (!layoutObject())
         return false;
 
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement> > processedGradients;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement>> processedGradients;
     SVGGradientElement* current = this;
 
     setGradientAttributes(current, attributes);
@@ -162,7 +155,7 @@ bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttribute
             if (processedGradients.contains(current))
                 break;
 
-            if (!current->renderer())
+            if (!current->layoutObject())
                 return false;
 
             setGradientAttributes(current, attributes, isSVGRadialGradientElement(*current));

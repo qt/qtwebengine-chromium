@@ -20,15 +20,6 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
   return NULL;
 }
 
-BitmapPlatformDevice* BitmapPlatformDevice::CreateAndClear(int width,
-                                                           int height,
-                                                           bool is_opaque) {
-  BitmapPlatformDevice* device = Create(width, height, is_opaque);
-  if (!is_opaque)
-    device->clear(0);
-  return device;
-}
-
 BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
                                                    bool is_opaque,
                                                    uint8_t* data) {
@@ -51,23 +42,17 @@ BitmapPlatformDevice::BitmapPlatformDevice(const SkBitmap& bitmap)
 BitmapPlatformDevice::~BitmapPlatformDevice() {
 }
 
-SkBaseDevice* BitmapPlatformDevice::onCreateDevice(const SkImageInfo& info,
-                                                   Usage /*usage*/) {
-  SkASSERT(info.colorType() == kN32_SkColorType);
-  return BitmapPlatformDevice::Create(info.width(), info.height(),
-                                      info.isOpaque());
+SkBaseDevice* BitmapPlatformDevice::onCreateDevice(const CreateInfo& info,
+                                                   const SkPaint*) {
+  SkASSERT(info.fInfo.colorType() == kN32_SkColorType);
+  return BitmapPlatformDevice::Create(info.fInfo.width(), info.fInfo.height(),
+                                      info.fInfo.isOpaque());
 }
 
 PlatformSurface BitmapPlatformDevice::BeginPlatformPaint() {
   // TODO(zhenghao): What should we return? The ptr to the address of the
   // pixels? Maybe this won't be called at all.
   return accessBitmap(true).getPixels();
-}
-
-void BitmapPlatformDevice::DrawToNativeContext(
-    PlatformSurface surface, int x, int y, const PlatformRect* src_rect) {
-  // Should never be called on Android.
-  SkASSERT(false);
 }
 
 // PlatformCanvas impl

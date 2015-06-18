@@ -24,45 +24,41 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioParamTimeline.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "platform/audio/AudioUtilities.h"
 #include "platform/FloatConversion.h"
+#include "platform/audio/AudioUtilities.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
 namespace blink {
 
-static bool isValidAudioParamValue(float value, ExceptionState& exceptionState)
-{
-    if (std::isfinite(value))
-        return true;
-
-    exceptionState.throwDOMException(
-        InvalidAccessError,
-        "Target value must be a finite number: " + String::number(value));
-    return false;
-}
-
 static bool isPositiveAudioParamValue(float value, ExceptionState& exceptionState)
 {
-    if (std::isfinite(value) && (value > 0))
+    if (value > 0)
         return true;
 
+    // Use denorm_min() in error message to make it clear what the mininum positive value is. The
+    // Javascript API uses doubles, which gets converted to floats, sometimes causing an underflow.
+    // This is confusing if the user specified a small non-zero (double) value that underflowed to
+    // 0.
     exceptionState.throwDOMException(
         InvalidAccessError,
-        "Target value must be a finite positive number: " + String::number(value));
+        ExceptionMessages::indexOutsideRange("float target value",
+            value,
+            std::numeric_limits<float>::denorm_min(),
+            ExceptionMessages::InclusiveBound,
+            std::numeric_limits<float>::infinity(),
+            ExceptionMessages::ExclusiveBound));
     return false;
 }
 
-static bool isValidAudioParamTime(double time, ExceptionState& exceptionState, String message)
+static bool isNonNegativeAudioParamTime(double time, ExceptionState& exceptionState, String message = "Time")
 {
-    if (std::isfinite(time) && (time >= 0))
+    if (time >= 0)
         return true;
 
     exceptionState.throwDOMException(
@@ -73,7 +69,7 @@ static bool isValidAudioParamTime(double time, ExceptionState& exceptionState, S
 
 static bool isPositiveAudioParamTime(double time, ExceptionState& exceptionState, String message)
 {
-    if (std::isfinite(time) && (time > 0))
+    if (time > 0)
         return true;
 
     exceptionState.throwDOMException(
@@ -82,17 +78,11 @@ static bool isPositiveAudioParamTime(double time, ExceptionState& exceptionState
     return false;
 }
 
-static bool isValidAudioParamTime(double time, ExceptionState& exceptionState)
-{
-    return isValidAudioParamTime(time, exceptionState, "Time");
-}
-
 void AudioParamTimeline::setValueAtTime(float value, double time, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
-    if (!isValidAudioParamValue(value, exceptionState)
-        || !isValidAudioParamTime(time, exceptionState))
+    if (!isNonNegativeAudioParamTime(time, exceptionState))
         return;
 
     insertEvent(ParamEvent(ParamEvent::SetValue, value, time, 0, 0, nullptr));
@@ -102,8 +92,7 @@ void AudioParamTimeline::linearRampToValueAtTime(float value, double time, Excep
 {
     ASSERT(isMainThread());
 
-    if (!isValidAudioParamValue(value, exceptionState)
-        || !isValidAudioParamTime(time, exceptionState))
+    if (!isNonNegativeAudioParamTime(time, exceptionState))
         return;
 
     insertEvent(ParamEvent(ParamEvent::LinearRampToValue, value, time, 0, 0, nullptr));
@@ -114,7 +103,7 @@ void AudioParamTimeline::exponentialRampToValueAtTime(float value, double time, 
     ASSERT(isMainThread());
 
     if (!isPositiveAudioParamValue(value, exceptionState)
-        || !isValidAudioParamTime(time, exceptionState))
+        || !isNonNegativeAudioParamTime(time, exceptionState))
         return;
 
     insertEvent(ParamEvent(ParamEvent::ExponentialRampToValue, value, time, 0, 0, nullptr));
@@ -124,19 +113,18 @@ void AudioParamTimeline::setTargetAtTime(float target, double time, double timeC
 {
     ASSERT(isMainThread());
 
-    if (!isValidAudioParamValue(target, exceptionState)
-        || !isValidAudioParamTime(time, exceptionState)
-        || !isValidAudioParamTime(timeConstant, exceptionState, "Time constant"))
+    if (!isNonNegativeAudioParamTime(time, exceptionState)
+        || !isNonNegativeAudioParamTime(timeConstant, exceptionState, "Time constant"))
         return;
 
     insertEvent(ParamEvent(ParamEvent::SetTarget, target, time, timeConstant, 0, nullptr));
 }
 
-void AudioParamTimeline::setValueCurveAtTime(Float32Array* curve, double time, double duration, ExceptionState& exceptionState)
+void AudioParamTimeline::setValueCurveAtTime(DOMFloat32Array* curve, double time, double duration, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
-    if (!isValidAudioParamTime(time, exceptionState)
+    if (!isNonNegativeAudioParamTime(time, exceptionState)
         || !isPositiveAudioParamTime(duration, exceptionState, "Duration"))
         return;
 
@@ -180,12 +168,6 @@ void AudioParamTimeline::cancelScheduledValues(double startTime, ExceptionState&
 {
     ASSERT(isMainThread());
 
-    if (!std::isfinite(startTime)) {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "Time must be a finite number: " + String::number(startTime));
-    }
-
     MutexLocker locker(m_eventsLock);
 
     // Remove all events starting at startTime.
@@ -214,7 +196,7 @@ float AudioParamTimeline::valueForContextTime(AudioContext* context, float defau
     double sampleRate = context->sampleRate();
     double startTime = context->currentTime();
     double endTime = startTime + 1.1 / sampleRate; // time just beyond one sample-frame
-    double controlRate = sampleRate / AudioNode::ProcessingSizeInFrames; // one parameter change per render quantum
+    double controlRate = sampleRate / AudioHandler::ProcessingSizeInFrames; // one parameter change per render quantum
     value = valuesForTimeRange(startTime, endTime, defaultValue, &value, 1, sampleRate, controlRate);
 
     hasValue = true;
@@ -240,9 +222,7 @@ float AudioParamTimeline::valuesForTimeRange(
         return defaultValue;
     }
 
-    float value = valuesForTimeRangeImpl(startTime, endTime, defaultValue, values, numberOfValues, sampleRate, controlRate);
-
-    return value;
+    return valuesForTimeRangeImpl(startTime, endTime, defaultValue, values, numberOfValues, sampleRate, controlRate);
 }
 
 float AudioParamTimeline::valuesForTimeRangeImpl(
@@ -335,7 +315,7 @@ float AudioParamTimeline::valuesForTimeRangeImpl(
                 // AudioUtilities::timeToSampleFrame(currentTime - time1, sampleRate), but is more
                 // accurate, especially if multiplier is close to 1.
                 value = value1 * powf(value2 / value1,
-                                      AudioUtilities::timeToSampleFrame(currentTime - time1, sampleRate) / numSampleFrames);
+                    AudioUtilities::timeToSampleFrame(currentTime - time1, sampleRate) / numSampleFrames);
 
                 for (; writeIndex < fillToFrame; ++writeIndex) {
                     values[writeIndex] = value;
@@ -379,7 +359,7 @@ float AudioParamTimeline::valuesForTimeRangeImpl(
 
             case ParamEvent::SetValueCurve:
                 {
-                    Float32Array* curve = event.curve();
+                    DOMFloat32Array* curve = event.curve();
                     float* curveData = curve ? curve->data() : 0;
                     unsigned numberOfCurvePoints = curve ? curve->length() : 0;
 

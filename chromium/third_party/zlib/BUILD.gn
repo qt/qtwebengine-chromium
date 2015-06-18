@@ -7,12 +7,25 @@ config("zlib_config") {
 }
 
 static_library("zlib_x86_simd") {
-  if (cpu_arch == "x86" || cpu_arch == "x64") {
-    sources = [ "crc_folding.c", "fill_window_sse.c" ]
-    cflags = [ "-msse2", "-msse4.2", "-mpclmul" ]
+  if (!is_ios && (current_cpu == "x86" || current_cpu == "x64")) {
+    sources = [
+      "crc_folding.c",
+      "fill_window_sse.c",
+    ]
+    if (!is_win || is_clang) {
+      cflags = [
+        "-msse4.2",
+        "-mpclmul",
+      ]
+    }
   } else {
-    sources = [ "simd_stub.c"]
+    sources = [
+      "simd_stub.c",
+    ]
   }
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
 }
 
 static_library("zlib") {
@@ -52,7 +65,7 @@ static_library("zlib") {
     "zutil.h",
   ]
 
-  if (cpu_arch == "x86" || cpu_arch == "x64") {
+  if (!is_ios && (current_cpu == "x86" || current_cpu == "x64")) {
     sources += [ "x86.c" ]
   }
 
@@ -60,7 +73,9 @@ static_library("zlib") {
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
   public_configs = [ ":zlib_config" ]
-  deps = [ ":zlib_x86_simd" ]
+  deps = [
+    ":zlib_x86_simd",
+  ]
 }
 
 static_library("minizip") {
@@ -92,7 +107,9 @@ static_library("minizip") {
     cflags = [ "-Wno-parentheses-equality" ]
   }
 
-  deps = [ ":zlib" ]
+  deps = [
+    ":zlib",
+  ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]

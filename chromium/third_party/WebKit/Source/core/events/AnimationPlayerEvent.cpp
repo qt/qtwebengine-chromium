@@ -7,12 +7,6 @@
 
 namespace blink {
 
-AnimationPlayerEventInit::AnimationPlayerEventInit()
-    : currentTime(0.0)
-    , timelineTime(0.0)
-{
-}
-
 AnimationPlayerEvent::AnimationPlayerEvent()
     : m_currentTime(0.0)
     , m_timelineTime(0.0)
@@ -28,9 +22,13 @@ AnimationPlayerEvent::AnimationPlayerEvent(const AtomicString& type, double curr
 
 AnimationPlayerEvent::AnimationPlayerEvent(const AtomicString& type, const AnimationPlayerEventInit& initializer)
     : Event(type, initializer)
-    , m_currentTime(initializer.currentTime)
-    , m_timelineTime(initializer.timelineTime)
+    , m_currentTime(0.0)
+    , m_timelineTime(0.0)
 {
+    if (initializer.hasCurrentTime())
+        m_currentTime = initializer.currentTime();
+    if (initializer.hasTimelineTime())
+        m_timelineTime = initializer.timelineTime();
 }
 
 AnimationPlayerEvent::~AnimationPlayerEvent()
@@ -52,7 +50,7 @@ const AtomicString& AnimationPlayerEvent::interfaceName() const
     return EventNames::AnimationPlayerEvent;
 }
 
-void AnimationPlayerEvent::trace(Visitor* visitor)
+DEFINE_TRACE(AnimationPlayerEvent)
 {
     Event::trace(visitor);
 }

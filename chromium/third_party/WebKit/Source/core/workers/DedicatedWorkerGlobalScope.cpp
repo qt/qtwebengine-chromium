@@ -41,8 +41,10 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::create(DedicatedWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData, double timeOrigin)
+PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::create(DedicatedWorkerThread* thread, PassOwnPtr<WorkerThreadStartupData> startupData, double timeOrigin)
 {
+    // Note: startupData is finalized on return. After the relevant parts has been
+    // passed along to the created 'context'.
     RefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> context = adoptRefWillBeNoop(new DedicatedWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, timeOrigin, startupData->m_starterOrigin, startupData->m_workerClients.release()));
     context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
     return context.release();
@@ -117,7 +119,7 @@ void DedicatedWorkerGlobalScope::countDeprecation(UseCounter::Feature feature) c
     thread()->workerObjectProxy().postTaskToMainExecutionContext(UseCounterTask::createDeprecation(feature));
 }
 
-void DedicatedWorkerGlobalScope::trace(Visitor* visitor)
+DEFINE_TRACE(DedicatedWorkerGlobalScope)
 {
     WorkerGlobalScope::trace(visitor);
 }

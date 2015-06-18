@@ -7,9 +7,10 @@
 #include <map>
 
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/trace_event/trace_event.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -206,8 +207,18 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
   if (msg->is_sync()) {
     // Synchronous messages might be re-entrant, so we need to drop the lock.
     ProxyAutoUnlock unlock;
+    SCOPED_UMA_HISTOGRAM_TIMER("Plugin.PpapiSyncIPCTime");
     return SendMessage(msg);
   }
+  return SendMessage(msg);
+}
+
+bool PluginDispatcher::SendAndStayLocked(IPC::Message* msg) {
+  TRACE_EVENT2("ppapi proxy", "PluginDispatcher::SendAndStayLocked",
+               "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg->type()));
+  if (!msg->is_reply())
+    msg->set_unblock(true);
   return SendMessage(msg);
 }
 

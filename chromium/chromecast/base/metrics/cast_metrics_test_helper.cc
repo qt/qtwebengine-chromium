@@ -16,21 +16,23 @@ namespace {
 class CastMetricsHelperStub : public CastMetricsHelper {
  public:
   CastMetricsHelperStub();
-  virtual ~CastMetricsHelperStub();
+  ~CastMetricsHelperStub() override;
 
-  virtual void TagAppStart(const std::string& arg_app_name) override;
-  virtual void LogMediaPlay() override;
-  virtual void LogMediaPause() override;
-  virtual void LogTimeToDisplayVideo() override;
-  virtual void LogTimeToBufferAv(BufferingType buffering_type,
-                                 base::TimeDelta time) override;
-  virtual void ResetVideoFrameSampling() override;
-  virtual void LogFramesPer5Seconds(
+  void UpdateCurrentAppInfo(const std::string& app_id,
+                            const std::string& session_id) override;
+  void UpdateSDKInfo(const std::string& sdk_version) override;
+  void LogMediaPlay() override;
+  void LogMediaPause() override;
+  void LogTimeToDisplayVideo() override;
+  void LogTimeToBufferAv(BufferingType buffering_type,
+                         base::TimeDelta time) override;
+  void ResetVideoFrameSampling() override;
+  void LogFramesPer5Seconds(
       int displayed_frames, int dropped_frames,
       int delayed_frames, int error_frames) override;
-  virtual std::string GetMetricsNameWithAppName(
+  std::string GetMetricsNameWithAppName(
       const std::string& prefix, const std::string& suffix) const override;
-  virtual void SetMetricsSink(MetricsSink* delegate) override;
+  void SetMetricsSink(MetricsSink* delegate) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CastMetricsHelperStub);
@@ -49,7 +51,12 @@ CastMetricsHelperStub::~CastMetricsHelperStub() {
   stub_instance_exists = false;
 }
 
-void CastMetricsHelperStub::TagAppStart(const std::string& arg_app_name) {
+void CastMetricsHelperStub::UpdateCurrentAppInfo(
+    const std::string& app_id,
+    const std::string& session_id) {
+}
+
+void CastMetricsHelperStub::UpdateSDKInfo(const std::string& sdk_version) {
 }
 
 void CastMetricsHelperStub::LogMediaPlay() {

@@ -13,7 +13,6 @@
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_connection_stats.h"
 
-using std::make_pair;
 using std::max;
 using std::min;
 using std::numeric_limits;
@@ -81,13 +80,13 @@ void QuicReceivedPacketManager::EntropyTracker::RecordPacketEntropyHash(
   if (sequence_number > largest_observed_) {
     for (QuicPacketSequenceNumber i = 0;
          i < (sequence_number - largest_observed_ - 1); ++i) {
-      packets_entropy_.push_back(make_pair(0, false));
+      packets_entropy_.push_back(std::make_pair(0, false));
     }
-    packets_entropy_.push_back(make_pair(entropy_hash, true));
+    packets_entropy_.push_back(std::make_pair(entropy_hash, true));
     largest_observed_ = sequence_number;
   } else {
     packets_entropy_[sequence_number - first_gap_] =
-        make_pair(entropy_hash, true);
+        std::make_pair(entropy_hash, true);
     AdvanceFirstGapAndGarbageCollectEntropyMap();
   }
 
@@ -132,11 +131,9 @@ AdvanceFirstGapAndGarbageCollectEntropyMap() {
   }
 }
 
-QuicReceivedPacketManager::QuicReceivedPacketManager(
-    QuicConnectionStats* stats)
+QuicReceivedPacketManager::QuicReceivedPacketManager(QuicConnectionStats* stats)
     : peer_least_packet_awaiting_ack_(0),
       time_largest_observed_(QuicTime::Zero()),
-      receive_algorithm_(ReceiveAlgorithmInterface::Create(kTCP)),
       stats_(stats) {
   ack_frame_.largest_observed = 0;
   ack_frame_.entropy_hash = 0;
@@ -164,9 +161,9 @@ void QuicReceivedPacketManager::RecordPacketReceived(
 
     // Record how out of order stats.
     ++stats_->packets_reordered;
-    uint32 sequence_gap = ack_frame_.largest_observed - sequence_number;
     stats_->max_sequence_reordering =
-        max(stats_->max_sequence_reordering, sequence_gap);
+        max(stats_->max_sequence_reordering,
+            ack_frame_.largest_observed - sequence_number);
     int64 reordering_time_us =
         receipt_time.Subtract(time_largest_observed_).ToMicroseconds();
     stats_->max_time_reordering_us = max(stats_->max_time_reordering_us,
@@ -178,9 +175,6 @@ void QuicReceivedPacketManager::RecordPacketReceived(
   }
   entropy_tracker_.RecordPacketEntropyHash(sequence_number,
                                            header.entropy_hash);
-
-  receive_algorithm_->RecordIncomingPacket(
-      bytes, sequence_number, receipt_time);
 
   received_packet_times_.push_back(
       std::make_pair(sequence_number, receipt_time));
@@ -238,13 +232,8 @@ void QuicReceivedPacketManager::UpdateReceivedPacketInfo(
   // Remove all packets that are too far from largest_observed to express.
   received_packet_times_.remove_if(isTooLarge(ack_frame_.largest_observed));
 
-  ack_frame->received_packet_times = received_packet_times_;
-  received_packet_times_.clear();
-}
-
-bool QuicReceivedPacketManager::GenerateCongestionFeedback(
-    QuicCongestionFeedbackFrame* feedback) {
-  return receive_algorithm_->GenerateCongestionFeedback(feedback);
+  ack_frame->received_packet_times.clear();
+  ack_frame->received_packet_times.swap(received_packet_times_);
 }
 
 QuicPacketEntropyHash QuicReceivedPacketManager::EntropyHash(

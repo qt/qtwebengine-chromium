@@ -34,9 +34,6 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     virtual SkString onShortName() {
         return SkString("convexpaths");
@@ -265,7 +262,7 @@ protected:
 
     SkPaint paint;
     paint.setAntiAlias(true);
-    SkLCGRandom rand;
+    SkRandom rand;
     canvas->translate(20 * SK_Scalar1, 20 * SK_Scalar1);
 
     // As we've added more paths this has gotten pretty big. Scale the whole thing down.

@@ -35,6 +35,8 @@
 #include "bindings/core/v8/ScriptPromiseProperty.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
+#include "core/events/EventTarget.h"
+#include "modules/ModulesExport.h"
 #include "modules/serviceworkers/RegistrationOptions.h"
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
@@ -51,19 +53,20 @@ class WebServiceWorker;
 class WebServiceWorkerProvider;
 class WebServiceWorkerRegistration;
 
-class ServiceWorkerContainer final
-    : public GarbageCollectedFinalized<ServiceWorkerContainer>
-    , public ScriptWrappable
+class MODULES_EXPORT ServiceWorkerContainer final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<ServiceWorkerContainer>
     , public ContextLifecycleObserver
     , public WebServiceWorkerProviderClient {
     DEFINE_WRAPPERTYPEINFO();
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<ServiceWorkerContainer>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerContainer);
 public:
     static ServiceWorkerContainer* create(ExecutionContext*);
     ~ServiceWorkerContainer();
 
     void willBeDetachedFromFrame();
 
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     PassRefPtrWillBeRawPtr<ServiceWorker> controller() { return m_controller.get(); }
     ScriptPromise ready(ScriptState*);
@@ -73,19 +76,24 @@ public:
     ScriptPromise getRegistration(ScriptState*, const String& documentURL);
 
     // WebServiceWorkerProviderClient overrides.
-    virtual void setController(WebServiceWorker*) override;
-    virtual void setReadyRegistration(WebServiceWorkerRegistration*) override;
+    virtual void setController(WebServiceWorker*, bool shouldNotifyControllerChange) override;
     virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) override;
+
+    // EventTarget overrides.
+    virtual ExecutionContext* executionContext() const override { return ContextLifecycleObserver::executionContext(); }
+    virtual const AtomicString& interfaceName() const override;
+
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(controllerchange);
 
 private:
     explicit ServiceWorkerContainer(ExecutionContext*);
 
-    typedef ScriptPromiseProperty<Member<ServiceWorkerContainer>, Member<ServiceWorkerRegistration>, Member<ServiceWorkerRegistration> > ReadyProperty;
+    class GetRegistrationForReadyCallback;
+    typedef ScriptPromiseProperty<Member<ServiceWorkerContainer>, Member<ServiceWorkerRegistration>, Member<ServiceWorkerRegistration>> ReadyProperty;
     ReadyProperty* createReadyProperty();
 
     WebServiceWorkerProvider* m_provider;
     RefPtrWillBeMember<ServiceWorker> m_controller;
-    Member<ServiceWorkerRegistration> m_readyRegistration;
     Member<ReadyProperty> m_ready;
 };
 

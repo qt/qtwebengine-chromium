@@ -8,7 +8,6 @@
 #include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/callback_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -21,12 +20,14 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "content/public/browser/browser_thread.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/video_capture_types.h"
 #include "media/base/video_frame.h"
+#include "media/base/video_frame_metadata.h"
 #include "media/base/video_util.h"
-#include "media/video/capture/video_capture_types.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace content {
 
@@ -34,7 +35,7 @@ namespace {
 
 void DeleteCaptureMachineOnUIThread(
     scoped_ptr<VideoCaptureMachine> capture_machine) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   capture_machine.reset();
 }
@@ -43,24 +44,14 @@ void DeleteCaptureMachineOnUIThread(
 
 ThreadSafeCaptureOracle::ThreadSafeCaptureOracle(
     scoped_ptr<media::VideoCaptureDevice::Client> client,
-    scoped_ptr<VideoCaptureOracle> oracle,
     const media::VideoCaptureParams& params)
     : client_(client.Pass()),
-      oracle_(oracle.Pass()),
+      oracle_(base::TimeDelta::FromMicroseconds(
+          static_cast<int64>(1000000.0 / params.requested_format.frame_rate +
+                             0.5 /* to round to nearest int */))),
       params_(params),
-      capture_size_updated_(false) {
-  switch (params_.requested_format.pixel_format) {
-    case media::PIXEL_FORMAT_I420:
-      video_frame_format_ = media::VideoFrame::I420;
-      break;
-    case media::PIXEL_FORMAT_TEXTURE:
-      video_frame_format_ = media::VideoFrame::NATIVE_TEXTURE;
-      break;
-    default:
-      LOG(FATAL) << "Unexpected pixel_format "
-                 << params_.requested_format.pixel_format;
-  }
-}
+      resolution_chooser_(params.requested_format.frame_size,
+                          params.resolution_change_policy) {}
 
 ThreadSafeCaptureOracle::~ThreadSafeCaptureOracle() {}
 
@@ -70,24 +61,25 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
     base::TimeTicks event_time,
     scoped_refptr<media::VideoFrame>* storage,
     CaptureFrameCallback* callback) {
+  // Grab the current time before waiting to acquire the |lock_|.
+  const base::TimeTicks capture_begin_time = base::TimeTicks::Now();
+
   base::AutoLock guard(lock_);
 
   if (!client_)
     return false;  // Capture is stopped.
 
+  const gfx::Size visible_size = resolution_chooser_.capture_size();
   // Always round up the coded size to multiple of 16 pixels.
   // See http://crbug.com/402151.
-  const gfx::Size visible_size = params_.requested_format.frame_size;
   const gfx::Size coded_size((visible_size.width() + 15) & ~15,
                              (visible_size.height() + 15) & ~15);
 
-  scoped_refptr<media::VideoCaptureDevice::Client::Buffer> output_buffer =
-      client_->ReserveOutputBuffer(video_frame_format_, coded_size);
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> output_buffer(
+      client_->ReserveOutputBuffer(params_.requested_format.pixel_format,
+                                   coded_size));
   const bool should_capture =
-      oracle_->ObserveEventAndDecideCapture(event, damage_rect, event_time);
-  const bool content_is_dirty =
-      (event == VideoCaptureOracle::kCompositorUpdate ||
-       event == VideoCaptureOracle::kSoftwarePaint);
+      oracle_.ObserveEventAndDecideCapture(event, damage_rect, event_time);
   const char* event_name =
       (event == VideoCaptureOracle::kTimerPoll ? "poll" :
        (event == VideoCaptureOracle::kCompositorUpdate ? "gpu" :
@@ -95,18 +87,18 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
 
   // Consider the various reasons not to initiate a capture.
   if (should_capture && !output_buffer.get()) {
-    TRACE_EVENT_INSTANT1("mirroring",
+    TRACE_EVENT_INSTANT1("gpu.capture",
                          "PipelineLimited",
                          TRACE_EVENT_SCOPE_THREAD,
                          "trigger",
                          event_name);
     return false;
   } else if (!should_capture && output_buffer.get()) {
-    if (content_is_dirty) {
+    if (event == VideoCaptureOracle::kCompositorUpdate) {
       // This is a normal and acceptable way to drop a frame. We've hit our
       // capture rate limit: for example, the content is animating at 60fps but
       // we're capturing at 30fps.
-      TRACE_EVENT_INSTANT1("mirroring", "FpsRateLimited",
+      TRACE_EVENT_INSTANT1("gpu.capture", "FpsRateLimited",
                            TRACE_EVENT_SCOPE_THREAD,
                            "trigger", event_name);
     }
@@ -114,63 +106,50 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
   } else if (!should_capture && !output_buffer.get()) {
     // We decided not to capture, but we wouldn't have been able to if we wanted
     // to because no output buffer was available.
-    TRACE_EVENT_INSTANT1("mirroring", "NearlyPipelineLimited",
+    TRACE_EVENT_INSTANT1("gpu.capture", "NearlyPipelineLimited",
                          TRACE_EVENT_SCOPE_THREAD,
                          "trigger", event_name);
     return false;
   }
-  int frame_number = oracle_->RecordCapture();
-  TRACE_EVENT_ASYNC_BEGIN2("mirroring", "Capture", output_buffer.get(),
+  int frame_number = oracle_.RecordCapture();
+  TRACE_EVENT_ASYNC_BEGIN2("gpu.capture", "Capture", output_buffer.get(),
                            "frame_number", frame_number,
                            "trigger", event_name);
   // NATIVE_TEXTURE frames wrap a texture mailbox, which we don't have at the
   // moment.  We do not construct those frames.
-  if (video_frame_format_ != media::VideoFrame::NATIVE_TEXTURE) {
+  if (params_.requested_format.pixel_format != media::PIXEL_FORMAT_TEXTURE) {
     *storage = media::VideoFrame::WrapExternalPackedMemory(
-        video_frame_format_,
+        media::VideoFrame::I420,
         coded_size,
         gfx::Rect(visible_size),
         visible_size,
         static_cast<uint8*>(output_buffer->data()),
         output_buffer->size(),
         base::SharedMemory::NULLHandle(),
+        0,
         base::TimeDelta(),
         base::Closure());
+    DCHECK(*storage);
   }
   *callback = base::Bind(&ThreadSafeCaptureOracle::DidCaptureFrame,
                          this,
                          frame_number,
-                         output_buffer);
+                         base::Passed(&output_buffer),
+                         capture_begin_time);
   return true;
 }
 
 gfx::Size ThreadSafeCaptureOracle::GetCaptureSize() const {
   base::AutoLock guard(lock_);
-  return params_.requested_format.frame_size;
+  return resolution_chooser_.capture_size();
 }
 
 void ThreadSafeCaptureOracle::UpdateCaptureSize(const gfx::Size& source_size) {
   base::AutoLock guard(lock_);
-
-  // If this is the first call to UpdateCaptureSize(), or the receiver supports
-  // variable resolution, then determine the capture size by treating the
-  // requested width and height as maxima.
-  if (!capture_size_updated_ || params_.resolution_change_policy ==
-      media::RESOLUTION_POLICY_DYNAMIC_WITHIN_LIMIT) {
-    // The capture resolution should not exceed the source frame size.
-    // In other words it should downscale the image but not upscale it.
-    if (source_size.width() > params_.requested_format.frame_size.width() ||
-        source_size.height() > params_.requested_format.frame_size.height()) {
-      gfx::Rect capture_rect = media::ComputeLetterboxRegion(
-          gfx::Rect(params_.requested_format.frame_size), source_size);
-      params_.requested_format.frame_size.SetSize(
-          MakeEven(capture_rect.width()), MakeEven(capture_rect.height()));
-    } else {
-      params_.requested_format.frame_size.SetSize(
-          MakeEven(source_size.width()), MakeEven(source_size.height()));
-    }
-    capture_size_updated_ = true;
-  }
+  resolution_chooser_.SetSourceSize(source_size);
+  VLOG(1) << "Source size changed to " << source_size.ToString()
+          << " --> Capture size is now "
+          << resolution_chooser_.capture_size().ToString();
 }
 
 void ThreadSafeCaptureOracle::Stop() {
@@ -186,12 +165,13 @@ void ThreadSafeCaptureOracle::ReportError(const std::string& reason) {
 
 void ThreadSafeCaptureOracle::DidCaptureFrame(
     int frame_number,
-    const scoped_refptr<media::VideoCaptureDevice::Client::Buffer>& buffer,
+    scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer,
+    base::TimeTicks capture_begin_time,
     const scoped_refptr<media::VideoFrame>& frame,
     base::TimeTicks timestamp,
     bool success) {
   base::AutoLock guard(lock_);
-  TRACE_EVENT_ASYNC_END2("mirroring", "Capture", buffer.get(),
+  TRACE_EVENT_ASYNC_END2("gpu.capture", "Capture", buffer.get(),
                          "success", success,
                          "timestamp", timestamp.ToInternalValue());
 
@@ -199,10 +179,15 @@ void ThreadSafeCaptureOracle::DidCaptureFrame(
     return;  // Capture is stopped.
 
   if (success) {
-    if (oracle_->CompleteCapture(frame_number, &timestamp)) {
-      media::VideoCaptureFormat format = params_.requested_format;
-      format.frame_size = frame->coded_size();
-      client_->OnIncomingCapturedVideoFrame(buffer, format, frame, timestamp);
+    if (oracle_.CompleteCapture(frame_number, &timestamp)) {
+      // TODO(miu): Use the locked-in frame rate from AnimatedContentSampler.
+      frame->metadata()->SetDouble(media::VideoFrameMetadata::FRAME_RATE,
+                                   params_.requested_format.frame_rate);
+      frame->metadata()->SetTimeTicks(
+          media::VideoFrameMetadata::CAPTURE_BEGIN_TIME, capture_begin_time);
+      frame->metadata()->SetTimeTicks(
+          media::VideoFrameMetadata::CAPTURE_END_TIME, base::TimeTicks::Now());
+      client_->OnIncomingCapturedVideoFrame(buffer.Pass(), frame, timestamp);
     }
   }
 }
@@ -234,30 +219,15 @@ void ContentVideoCaptureDeviceCore::AllocateAndStart(
     return;
   }
 
-   if (params.requested_format.frame_size.width() < kMinFrameWidth ||
-       params.requested_format.frame_size.height() < kMinFrameHeight) {
-     std::string error_msg =
-         "invalid frame size: " + params.requested_format.frame_size.ToString();
-     DVLOG(1) << error_msg;
-     client->OnError(error_msg);
-     return;
-   }
+  if (params.requested_format.frame_size.IsEmpty()) {
+    std::string error_msg =
+        "invalid frame size: " + params.requested_format.frame_size.ToString();
+    DVLOG(1) << error_msg;
+    client->OnError(error_msg);
+    return;
+  }
 
-  media::VideoCaptureParams new_params = params;
-  // Frame dimensions must each be an even integer since the client wants (or
-  // will convert to) YUV420.
-  new_params.requested_format.frame_size.SetSize(
-      MakeEven(params.requested_format.frame_size.width()),
-      MakeEven(params.requested_format.frame_size.height()));
-
-  base::TimeDelta capture_period = base::TimeDelta::FromMicroseconds(
-      1000000.0 / params.requested_format.frame_rate + 0.5);
-
-  scoped_ptr<VideoCaptureOracle> oracle(
-      new VideoCaptureOracle(capture_period,
-                             kAcceleratedSubscriberIsSupported));
-  oracle_proxy_ =
-      new ThreadSafeCaptureOracle(client.Pass(), oracle.Pass(), new_params);
+  oracle_proxy_ = new ThreadSafeCaptureOracle(client.Pass(), params);
 
   // Starts the capture machine asynchronously.
   BrowserThread::PostTaskAndReplyWithResult(
@@ -266,7 +236,7 @@ void ContentVideoCaptureDeviceCore::AllocateAndStart(
       base::Bind(&VideoCaptureMachine::Start,
                  base::Unretained(capture_machine_.get()),
                  oracle_proxy_,
-                 new_params),
+                 params),
       base::Bind(&ContentVideoCaptureDeviceCore::CaptureStarted, AsWeakPtr()));
 
   TransitionStateTo(kCapturing);

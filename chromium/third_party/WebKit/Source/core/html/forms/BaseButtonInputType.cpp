@@ -36,7 +36,7 @@
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/rendering/RenderButton.h"
+#include "core/layout/LayoutButton.h"
 
 namespace blink {
 
@@ -64,9 +64,9 @@ bool BaseButtonInputType::appendFormData(FormDataList&, bool) const
     return false;
 }
 
-RenderObject* BaseButtonInputType::createRenderer(RenderStyle*) const
+LayoutObject* BaseButtonInputType::createLayoutObject(const ComputedStyle&) const
 {
-    return new RenderButton(&element());
+    return new LayoutButton(&element());
 }
 
 bool BaseButtonInputType::storesValueSeparateFromAttribute()

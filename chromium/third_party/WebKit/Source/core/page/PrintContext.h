@@ -21,6 +21,7 @@
 #ifndef PrintContext_h
 #define PrintContext_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURLHash.h"
 #include "wtf/Forward.h"
@@ -38,7 +39,7 @@ class GraphicsContext;
 class IntRect;
 class Node;
 
-class PrintContext : public NoBaseWillBeGarbageCollectedFinalized<PrintContext> {
+class CORE_EXPORT PrintContext : public NoBaseWillBeGarbageCollectedFinalized<PrintContext> {
 public:
     explicit PrintContext(LocalFrame*);
     virtual ~PrintContext();
@@ -53,7 +54,7 @@ public:
 
     // Deprecated. Page size computation is already in this class, clients shouldn't be copying it.
     // FIXME: Everyone passes |false| for the second paramer. We should remove the second parameter.
-    virtual void computePageRectsWithPageSize(const FloatSize& pageSizeInPixels, bool allowHorizontalTiling);
+    virtual void computePageRectsWithPageSize(const FloatSize& pageSizeInPixels);
 
     // These are only valid after page rects are computed.
     size_t pageCount() const { return m_pageRects.size(); }
@@ -74,16 +75,16 @@ public:
     static String pageSizeAndMarginsInPixels(LocalFrame* frame, int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft);
     static int numberOfPages(LocalFrame*, const FloatSize& pageSizeInPixels);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
-    void outputLinkAndLinkedDestinations(GraphicsContext&, Node*, const IntRect& pageRect);
+    void outputLinkAndLinkedDestinations(GraphicsContext&, const IntRect& pageRect);
 
     RawPtrWillBeMember<LocalFrame> m_frame;
     Vector<IntRect> m_pageRects;
 
 private:
-    void computePageRectsWithPageSizeInternal(const FloatSize& pageSizeInPixels, bool allowHorizontalTiling);
+    void computePageRectsWithPageSizeInternal(const FloatSize& pageSizeInPixels);
     void collectLinkAndLinkedDestinations(Node*);
 
     // Used to prevent misuses of begin() and end() (e.g., call end without begin).

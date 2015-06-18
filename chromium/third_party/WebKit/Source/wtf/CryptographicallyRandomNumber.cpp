@@ -55,7 +55,7 @@ public:
 };
 
 class ARC4RandomNumberGenerator {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ARC4RandomNumberGenerator);
 public:
     ARC4RandomNumberGenerator();
 
@@ -165,8 +165,8 @@ void ARC4RandomNumberGenerator::randomValues(void* buffer, size_t length)
 
 ARC4RandomNumberGenerator& sharedRandomNumberGenerator()
 {
-    AtomicallyInitializedStatic(ARC4RandomNumberGenerator*, randomNumberGenerator = new ARC4RandomNumberGenerator);
-    return *randomNumberGenerator;
+    AtomicallyInitializedStaticReference(ARC4RandomNumberGenerator, randomNumberGenerator, new ARC4RandomNumberGenerator);
+    return randomNumberGenerator;
 }
 
 }

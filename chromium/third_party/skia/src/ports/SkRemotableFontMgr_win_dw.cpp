@@ -21,27 +21,6 @@
 
 #include <dwrite.h>
 
-struct DWriteStyle {
-    explicit DWriteStyle(const SkFontStyle& pattern) {
-        switch (pattern.slant()) {
-        case SkFontStyle::kUpright_Slant:
-            fSlant = DWRITE_FONT_STYLE_NORMAL;
-            break;
-        case SkFontStyle::kItalic_Slant:
-            fSlant = DWRITE_FONT_STYLE_ITALIC;
-            break;
-        default:
-            SkASSERT(false);
-        }
-
-        fWeight = (DWRITE_FONT_WEIGHT)pattern.weight();
-        fWidth = (DWRITE_FONT_STRETCH)pattern.width();
-    }
-    DWRITE_FONT_STYLE fSlant;
-    DWRITE_FONT_WEIGHT fWeight;
-    DWRITE_FONT_STRETCH fWidth;
-};
-
 class SK_API SkRemotableFontMgr_DirectWrite : public SkRemotableFontMgr {
 private:
     struct DataId {
@@ -112,7 +91,7 @@ public:
         memcpy(fLocaleName.get(), localeName, localeNameLength * sizeof(WCHAR));
     }
 
-    virtual SkDataTable* getFamilyNames() const SK_OVERRIDE {
+    SkDataTable* getFamilyNames() const override {
         int count = fFontCollection->GetFontFamilyCount();
 
         SkDataTableBuilder names(1024);
@@ -179,7 +158,7 @@ public:
         return S_OK;
     }
 
-    virtual SkRemotableFontIdentitySet* getIndex(int familyIndex) const SK_OVERRIDE {
+    SkRemotableFontIdentitySet* getIndex(int familyIndex) const override {
         SkTScopedComPtr<IDWriteFontFamily> fontFamily;
         HRNM(fFontCollection->GetFontFamily(familyIndex, &fontFamily),
              "Could not get requested family.");
@@ -198,7 +177,7 @@ public:
     }
 
     virtual SkFontIdentity matchIndexStyle(int familyIndex,
-                                           const SkFontStyle& pattern) const SK_OVERRIDE
+                                           const SkFontStyle& pattern) const override
     {
         SkFontIdentity identity = { SkFontIdentity::kInvalidDataId };
 
@@ -237,7 +216,7 @@ public:
         return S_OK;
     }
 
-    virtual SkRemotableFontIdentitySet* matchName(const char familyName[]) const SK_OVERRIDE {
+    SkRemotableFontIdentitySet* matchName(const char familyName[]) const override {
         SkSMallocWCHAR dwFamilyName;
         if (NULL == familyName) {
             HR_GENERAL(getDefaultFontFamilyName(&dwFamilyName),
@@ -260,7 +239,7 @@ public:
     }
 
     virtual SkFontIdentity matchNameStyle(const char familyName[],
-                                          const SkFontStyle& style) const SK_OVERRIDE
+                                          const SkFontStyle& style) const override
     {
         SkFontIdentity identity = { SkFontIdentity::kInvalidDataId };
 
@@ -300,7 +279,7 @@ public:
             DWRITE_MEASURING_MODE measuringMode,
             DWRITE_GLYPH_RUN const* glyphRun,
             DWRITE_GLYPH_RUN_DESCRIPTION const* glyphRunDescription,
-            IUnknown* clientDrawingEffect) SK_OVERRIDE
+            IUnknown* clientDrawingEffect) override
         {
             SkTScopedComPtr<IDWriteFont> font;
             HRM(fOuter->fFontCollection->GetFontFromFontFace(glyphRun->fontFace, &font),
@@ -324,7 +303,7 @@ public:
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
             DWRITE_UNDERLINE const* underline,
-            IUnknown* clientDrawingEffect) SK_OVERRIDE
+            IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE DrawStrikethrough(
@@ -332,7 +311,7 @@ public:
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
             DWRITE_STRIKETHROUGH const* strikethrough,
-            IUnknown* clientDrawingEffect) SK_OVERRIDE
+            IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE DrawInlineObject(
@@ -342,13 +321,13 @@ public:
             IDWriteInlineObject* inlineObject,
             BOOL isSideways,
             BOOL isRightToLeft,
-            IUnknown* clientDrawingEffect) SK_OVERRIDE
+            IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
         // IDWritePixelSnapping methods
         virtual HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(
             void* clientDrawingContext,
-            BOOL* isDisabled) SK_OVERRIDE
+            BOOL* isDisabled) override
         {
             *isDisabled = FALSE;
             return S_OK;
@@ -356,7 +335,7 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE GetCurrentTransform(
             void* clientDrawingContext,
-            DWRITE_MATRIX* transform) SK_OVERRIDE
+            DWRITE_MATRIX* transform) override
         {
             const DWRITE_MATRIX ident = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
             *transform = ident;
@@ -365,18 +344,18 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE GetPixelsPerDip(
             void* clientDrawingContext,
-            FLOAT* pixelsPerDip) SK_OVERRIDE
+            FLOAT* pixelsPerDip) override
         {
             *pixelsPerDip = 1.0f;
             return S_OK;
         }
 
         // IUnknown methods
-        virtual ULONG STDMETHODCALLTYPE AddRef() SK_OVERRIDE {
+        ULONG STDMETHODCALLTYPE AddRef() override {
             return InterlockedIncrement(&fRefCount);
         }
 
-        virtual ULONG STDMETHODCALLTYPE Release() SK_OVERRIDE {
+        ULONG STDMETHODCALLTYPE Release() override {
             ULONG newCount = InterlockedDecrement(&fRefCount);
             if (0 == newCount) {
                 delete this;
@@ -385,7 +364,7 @@ public:
         }
 
         virtual HRESULT STDMETHODCALLTYPE QueryInterface(
-            IID const& riid, void** ppvObject) SK_OVERRIDE
+            IID const& riid, void** ppvObject) override
         {
             if (__uuidof(IUnknown) == riid ||
                 __uuidof(IDWritePixelSnapping) == riid ||
@@ -408,21 +387,11 @@ public:
         SkFontIdentity fIdentity;
     };
 
-#ifdef SK_FM_NEW_MATCH_FAMILY_STYLE_CHARACTER
     virtual SkFontIdentity matchNameStyleCharacter(const char familyName[],
                                                    const SkFontStyle& pattern,
                                                    const char* bcp47[], int bcp47Count,
-                                                   SkUnichar character) const SK_OVERRIDE
+                                                   SkUnichar character) const override
     {
-#else
-    virtual SkFontIdentity matchNameStyleCharacter(const char familyName[],
-                                                   const SkFontStyle& pattern,
-                                                   const char bcp47_val[],
-                                                   SkUnichar character) const SK_OVERRIDE
-    {
-        const char** bcp47 = &bcp47_val;
-        int bcp47Count = bcp47_val ? 1 : 0;
-#endif
         SkFontIdentity identity = { SkFontIdentity::kInvalidDataId };
 
         IDWriteFactory* dwFactory = sk_get_dwrite_factory();
@@ -483,7 +452,7 @@ public:
         return fontFallbackRenderer->FallbackIdentity();
     }
 
-    virtual SkStreamAsset* getData(int dataId) const SK_OVERRIDE {
+    SkStreamAsset* getData(int dataId) const override {
         SkAutoMutexAcquire ama(fDataIdCacheMutex);
         if (dataId >= fDataIdCache.count()) {
             return NULL;

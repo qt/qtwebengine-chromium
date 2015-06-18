@@ -132,13 +132,6 @@ void XSLStyleSheet::clearDocuments()
     }
 }
 
-ResourceFetcher* XSLStyleSheet::fetcher()
-{
-    if (Document* document = ownerDocument())
-        return document->fetcher();
-    return 0;
-}
-
 bool XSLStyleSheet::parseString(const String& source)
 {
     // Parse in a single chunk into an xmlDocPtr
@@ -150,7 +143,7 @@ bool XSLStyleSheet::parseString(const String& source)
     if (LocalFrame* frame = ownerDocument()->frame())
         console = &frame->console();
 
-    XMLDocumentParserScope scope(fetcher(), XSLTProcessor::genericErrorFunc, XSLTProcessor::parseErrorFunc, console);
+    XMLDocumentParserScope scope(ownerDocument(), XSLTProcessor::genericErrorFunc, XSLTProcessor::parseErrorFunc, console);
     XMLParserInput input(source);
 
     xmlParserCtxtPtr ctxt = xmlCreateMemoryParserCtxt(input.data(), input.size());
@@ -235,10 +228,9 @@ void XSLStyleSheet::loadChildSheets()
 
 void XSLStyleSheet::loadChildSheet(const String& href)
 {
-    OwnPtrWillBeRawPtr<XSLImportRule> childRule = XSLImportRule::create(this, href);
-    XSLImportRule* c = childRule.get();
-    m_children.append(childRule.release());
-    c->loadSheet();
+    XSLImportRule* childRule = XSLImportRule::create(this, href);
+    m_children.append(childRule);
+    childRule->loadSheet();
 }
 
 xsltStylesheetPtr XSLStyleSheet::compileStyleSheet()
@@ -324,7 +316,7 @@ void XSLStyleSheet::markAsProcessed()
     m_stylesheetDocTaken = true;
 }
 
-void XSLStyleSheet::trace(Visitor* visitor)
+DEFINE_TRACE(XSLStyleSheet)
 {
     visitor->trace(m_ownerNode);
     visitor->trace(m_children);

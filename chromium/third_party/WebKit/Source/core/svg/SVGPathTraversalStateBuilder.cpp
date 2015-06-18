@@ -21,76 +21,59 @@
  */
 
 #include "config.h"
-#include "platform/graphics/PathTraversalState.h"
-
 #include "core/svg/SVGPathTraversalStateBuilder.h"
+
+#include "core/svg/SVGPathSeg.h"
+#include "platform/graphics/PathTraversalState.h"
 
 namespace blink {
 
-SVGPathTraversalStateBuilder::SVGPathTraversalStateBuilder()
-    : m_traversalState(0)
+SVGPathTraversalStateBuilder::SVGPathTraversalStateBuilder(PathTraversalState::PathTraversalAction traversalAction, float desiredLength)
+    : m_traversalState(traversalAction)
+    , m_segmentIndex(0)
 {
+    m_traversalState.m_desiredLength = desiredLength;
 }
 
-void SVGPathTraversalStateBuilder::moveTo(const FloatPoint& targetPoint, bool, PathCoordinateMode)
+void SVGPathTraversalStateBuilder::emitSegment(const PathSegmentData& segment)
 {
-    ASSERT(m_traversalState);
-    m_traversalState->m_totalLength += m_traversalState->moveTo(targetPoint);
-}
-
-void SVGPathTraversalStateBuilder::lineTo(const FloatPoint& targetPoint, PathCoordinateMode)
-{
-    ASSERT(m_traversalState);
-    m_traversalState->m_totalLength += m_traversalState->lineTo(targetPoint);
-}
-
-void SVGPathTraversalStateBuilder::curveToCubic(const FloatPoint& point1, const FloatPoint& point2, const FloatPoint& targetPoint, PathCoordinateMode)
-{
-    ASSERT(m_traversalState);
-    m_traversalState->m_totalLength += m_traversalState->cubicBezierTo(point1, point2, targetPoint);
-}
-
-void SVGPathTraversalStateBuilder::closePath()
-{
-    ASSERT(m_traversalState);
-    m_traversalState->m_totalLength += m_traversalState->closeSubpath();
-}
-
-void SVGPathTraversalStateBuilder::setDesiredLength(float desiredLength)
-{
-    ASSERT(m_traversalState);
-    m_traversalState->m_desiredLength = desiredLength;
+    switch (segment.command) {
+    case PathSegMoveToAbs:
+        m_traversalState.m_totalLength += m_traversalState.moveTo(segment.targetPoint);
+        break;
+    case PathSegLineToAbs:
+        m_traversalState.m_totalLength += m_traversalState.lineTo(segment.targetPoint);
+        break;
+    case PathSegClosePath:
+        m_traversalState.m_totalLength += m_traversalState.closeSubpath();
+        break;
+    case PathSegCurveToCubicAbs:
+        m_traversalState.m_totalLength += m_traversalState.cubicBezierTo(segment.point1, segment.point2, segment.targetPoint);
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
 }
 
 bool SVGPathTraversalStateBuilder::continueConsuming()
 {
-    ASSERT(m_traversalState);
-    m_traversalState->processSegment();
-    return !m_traversalState->m_success;
+    m_traversalState.processSegment();
+    return !m_traversalState.m_success;
 }
 
 void SVGPathTraversalStateBuilder::incrementPathSegmentCount()
 {
-    ASSERT(m_traversalState);
-    ++m_traversalState->m_segmentIndex;
-}
-
-unsigned SVGPathTraversalStateBuilder::pathSegmentIndex()
-{
-    ASSERT(m_traversalState);
-    return m_traversalState->m_segmentIndex;
+    ++m_segmentIndex;
 }
 
 float SVGPathTraversalStateBuilder::totalLength()
 {
-    ASSERT(m_traversalState);
-    return m_traversalState->m_totalLength;
+    return m_traversalState.m_totalLength;
 }
 
 FloatPoint SVGPathTraversalStateBuilder::currentPoint()
 {
-    ASSERT(m_traversalState);
-    return m_traversalState->m_current;
+    return m_traversalState.m_current;
 }
 
 }

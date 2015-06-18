@@ -22,12 +22,12 @@ WebContents* RenderViewHostDelegate::GetAsWebContents() {
   return NULL;
 }
 
-WebPreferences RenderViewHostDelegate::ComputeWebkitPrefs() {
-  return WebPreferences();
-}
-
 bool RenderViewHostDelegate::IsFullscreenForCurrentTab() const {
   return false;
+}
+
+blink::WebDisplayMode RenderViewHostDelegate::GetDisplayMode() const {
+  return blink::WebDisplayModeBrowser;
 }
 
 SessionStorageNamespace* RenderViewHostDelegate::GetSessionStorageNamespace(
@@ -45,6 +45,10 @@ FrameTree* RenderViewHostDelegate::GetFrameTree() {
 }
 
 bool RenderViewHostDelegate::IsNeverVisible() {
+  return false;
+}
+
+bool RenderViewHostDelegate::IsVirtualKeyboardRequested() {
   return false;
 }
 

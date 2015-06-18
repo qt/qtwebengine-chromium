@@ -34,7 +34,7 @@ const char* GetStrategyName(VelocityTracker::Strategy strategy) {
     case VelocityTracker::WLSQ2_RECENT: return "WLSQ2_RECENT";
     case VelocityTracker::INT1: return "INT1";
     case VelocityTracker::INT2: return "INT2";
-  };
+  }
   NOTREACHED() << "Invalid strategy";
   return "";
 }
@@ -48,21 +48,21 @@ class VelocityTrackerTest : public testing::Test {
 
  protected:
   static MockMotionEvent Sample(MotionEvent::Action action,
-                                gfx::PointF p0,
+                                const gfx::PointF& p0,
                                 TimeTicks t0,
-                                gfx::Vector2dF v,
+                                const gfx::Vector2dF& v,
                                 TimeDelta dt) {
     const gfx::PointF p = p0 + ScaleVector2d(v, dt.InSecondsF());
     return MockMotionEvent(action, t0 + dt, p.x(), p.y());
   }
 
   static void ApplyMovementSequence(VelocityTrackerState* state,
-                                    gfx::PointF p0,
-                                    gfx::Vector2dF v,
+                                    const gfx::PointF& p0,
+                                    const gfx::Vector2dF& v,
                                     TimeTicks t0,
                                     TimeDelta t,
                                     size_t samples) {
-    EXPECT_TRUE(!!samples);
+    EXPECT_TRUE(samples);
     if (!samples)
       return;
     const base::TimeDelta dt = t / samples;
@@ -72,12 +72,12 @@ class VelocityTrackerTest : public testing::Test {
   }
 
   static void ApplyMovement(VelocityTrackerState* state,
-                            gfx::PointF p0,
-                            gfx::Vector2dF v,
+                            const gfx::PointF& p0,
+                            const gfx::Vector2dF& v,
                             TimeTicks t0,
                             TimeDelta t,
                             size_t samples) {
-    EXPECT_TRUE(!!samples);
+    EXPECT_TRUE(samples);
     if (!samples)
       return;
     const base::TimeDelta dt = t / samples;

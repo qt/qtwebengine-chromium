@@ -39,9 +39,7 @@ class FileSurface : public SurfaceOzoneCanvas {
     surface_ = skia::AdoptRef(SkSurface::NewRaster(SkImageInfo::MakeN32Premul(
         viewport_size.width(), viewport_size.height())));
   }
-  skia::RefPtr<SkCanvas> GetCanvas() override {
-    return skia::SharePtr(surface_->getCanvas());
-  }
+  skia::RefPtr<SkSurface> GetSurface() override { return surface_; }
   void PresentCanvas(const gfx::Rect& damage) override {
     if (location_.empty())
       return;
@@ -56,7 +54,7 @@ class FileSurface : public SurfaceOzoneCanvas {
     }
   }
   scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() override {
-    return scoped_ptr<gfx::VSyncProvider>();
+    return nullptr;
   }
 
  private:
@@ -71,6 +69,7 @@ TestWindowManager::TestWindowManager(const base::FilePath& dump_location)
 }
 
 TestWindowManager::~TestWindowManager() {
+  DCHECK(thread_checker_.CalledOnValidThread());
 }
 
 void TestWindowManager::Initialize() {
@@ -98,6 +97,7 @@ base::FilePath TestWindowManager::base_path() const {
 
 scoped_ptr<SurfaceOzoneCanvas> TestWindowManager::CreateCanvasForWidget(
     gfx::AcceleratedWidget widget) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   TestWindow* window = windows_.Lookup(widget);
   DCHECK(window);
   return make_scoped_ptr<SurfaceOzoneCanvas>(new FileSurface(window->path()));
@@ -106,6 +106,7 @@ scoped_ptr<SurfaceOzoneCanvas> TestWindowManager::CreateCanvasForWidget(
 bool TestWindowManager::LoadEGLGLES2Bindings(
     AddGLLibraryCallback add_gl_library,
     SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   return false;
 }
 

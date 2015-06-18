@@ -4,28 +4,74 @@
 
 #include "content/child/child_shared_bitmap_manager.h"
 
-#include "content/child/child_thread.h"
+#include "base/debug/alias.h"
+#include "base/process/memory.h"
+#include "base/process/process_metrics.h"
+#include "content/child/child_thread_impl.h"
 #include "content/common/child_process_messages.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 
 namespace {
 
-void FreeSharedMemory(scoped_refptr<ThreadSafeSender> sender,
-                      cc::SharedBitmap* bitmap) {
-  TRACE_EVENT0("renderer", "ChildSharedBitmapManager::FreeSharedMemory");
-  sender->Send(new ChildProcessHostMsg_DeletedSharedBitmap(bitmap->id()));
-  delete bitmap->memory();
-}
+class ChildSharedBitmap : public SharedMemoryBitmap {
+ public:
+  ChildSharedBitmap(scoped_refptr<ThreadSafeSender> sender,
+                    base::SharedMemory* shared_memory,
+                    const cc::SharedBitmapId& id)
+      : SharedMemoryBitmap(static_cast<uint8*>(shared_memory->memory()),
+                           id,
+                           shared_memory),
+        sender_(sender) {}
 
-void ReleaseSharedBitmap(scoped_refptr<ThreadSafeSender> sender,
-                         cc::SharedBitmap* handle) {
-  TRACE_EVENT0("renderer", "ChildSharedBitmapManager::ReleaseSharedBitmap");
-  sender->Send(new ChildProcessHostMsg_DeletedSharedBitmap(handle->id()));
+  ChildSharedBitmap(scoped_refptr<ThreadSafeSender> sender,
+                    scoped_ptr<base::SharedMemory> shared_memory_holder,
+                    const cc::SharedBitmapId& id)
+      : ChildSharedBitmap(sender, shared_memory_holder.get(), id) {
+    shared_memory_holder_ = shared_memory_holder.Pass();
+  }
+
+  ~ChildSharedBitmap() override {
+    sender_->Send(new ChildProcessHostMsg_DeletedSharedBitmap(id()));
+  }
+
+ private:
+  scoped_refptr<ThreadSafeSender> sender_;
+  scoped_ptr<base::SharedMemory> shared_memory_holder_;
+};
+
+// Collect extra information for debugging bitmap creation failures.
+void CollectMemoryUsageAndDie(const gfx::Size& size, size_t alloc_size) {
+#if defined(OS_WIN)
+  int width = size.width();
+  int height = size.height();
+  DWORD last_error = GetLastError();
+
+  scoped_ptr<base::ProcessMetrics> metrics(
+      base::ProcessMetrics::CreateProcessMetrics(
+          base::GetCurrentProcessHandle()));
+
+  size_t private_bytes = 0;
+  size_t shared_bytes = 0;
+  metrics->GetMemoryBytes(&private_bytes, &shared_bytes);
+
+  base::debug::Alias(&width);
+  base::debug::Alias(&height);
+  base::debug::Alias(&last_error);
+  base::debug::Alias(&private_bytes);
+  base::debug::Alias(&shared_bytes);
+#endif
+  base::TerminateBecauseOutOfMemory(alloc_size);
 }
 
 }  // namespace
+
+SharedMemoryBitmap::SharedMemoryBitmap(uint8* pixels,
+                                       const cc::SharedBitmapId& id,
+                                       base::SharedMemory* shared_memory)
+    : SharedBitmap(pixels, id), shared_memory_(shared_memory) {
+}
 
 ChildSharedBitmapManager::ChildSharedBitmapManager(
     scoped_refptr<ThreadSafeSender> sender)
@@ -36,15 +82,23 @@ ChildSharedBitmapManager::~ChildSharedBitmapManager() {}
 
 scoped_ptr<cc::SharedBitmap> ChildSharedBitmapManager::AllocateSharedBitmap(
     const gfx::Size& size) {
+  scoped_ptr<SharedMemoryBitmap> bitmap = AllocateSharedMemoryBitmap(size);
+#if defined(OS_POSIX)
+  // Close file descriptor to avoid running out.
+  if (bitmap)
+    bitmap->shared_memory()->Close();
+#endif
+  return bitmap.Pass();
+}
+
+scoped_ptr<SharedMemoryBitmap>
+ChildSharedBitmapManager::AllocateSharedMemoryBitmap(const gfx::Size& size) {
   TRACE_EVENT2("renderer",
-               "ChildSharedBitmapManager::AllocateSharedMemory",
-               "width",
-               size.width(),
-               "height",
-               size.height());
+               "ChildSharedBitmapManager::AllocateSharedMemoryBitmap", "width",
+               size.width(), "height", size.height());
   size_t memory_size;
   if (!cc::SharedBitmap::SizeInBytes(size, &memory_size))
-    return scoped_ptr<cc::SharedBitmap>();
+    return scoped_ptr<SharedMemoryBitmap>();
   cc::SharedBitmapId id = cc::SharedBitmap::GenerateId();
   scoped_ptr<base::SharedMemory> memory;
 #if defined(OS_POSIX)
@@ -52,16 +106,21 @@ scoped_ptr<cc::SharedBitmap> ChildSharedBitmapManager::AllocateSharedBitmap(
   sender_->Send(new ChildProcessHostMsg_SyncAllocateSharedBitmap(
       memory_size, id, &handle));
   memory = make_scoped_ptr(new base::SharedMemory(handle, false));
-  CHECK(memory->Map(memory_size));
+  if (!memory->Map(memory_size))
+    CollectMemoryUsageAndDie(size, memory_size);
 #else
-  memory.reset(ChildThread::AllocateSharedMemory(memory_size, sender_));
-  CHECK(memory);
+  memory = ChildThreadImpl::AllocateSharedMemory(memory_size, sender_.get());
+  if (!memory)
+    CollectMemoryUsageAndDie(size, memory_size);
+
+  if (!memory->Map(memory_size))
+    CollectMemoryUsageAndDie(size, memory_size);
+
   base::SharedMemoryHandle handle_to_send = memory->handle();
   sender_->Send(new ChildProcessHostMsg_AllocatedSharedBitmap(
       memory_size, handle_to_send, id));
 #endif
-  return scoped_ptr<cc::SharedBitmap>(new cc::SharedBitmap(
-      memory.release(), id, base::Bind(&FreeSharedMemory, sender_)));
+  return make_scoped_ptr(new ChildSharedBitmap(sender_, memory.Pass(), id));
 }
 
 scoped_ptr<cc::SharedBitmap> ChildSharedBitmapManager::GetSharedBitmapFromId(
@@ -81,10 +140,8 @@ scoped_ptr<cc::SharedBitmap> ChildSharedBitmapManager::GetBitmapForSharedMemory(
 #endif
   sender_->Send(new ChildProcessHostMsg_AllocatedSharedBitmap(
       mem->mapped_size(), handle_to_send, id));
-  // The compositor owning the SharedBitmap will be closed before the
-  // ChildThread containng this, making the use of base::Unretained safe.
-  return scoped_ptr<cc::SharedBitmap>(
-      new cc::SharedBitmap(mem, id, base::Bind(&ReleaseSharedBitmap, sender_)));
+
+  return make_scoped_ptr(new ChildSharedBitmap(sender_, mem, id));
 }
 
 }  // namespace content

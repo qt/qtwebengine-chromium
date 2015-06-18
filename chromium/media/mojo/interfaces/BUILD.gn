@@ -2,17 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//mojo/public/tools/bindings/mojom.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
-# GYP version: media/media.gyp:mojo_media_bindings
 mojom("interfaces") {
   sources = [
-    "media_types.mojom",
-    "media_renderer.mojom",
+    "content_decryption_module.mojom",
+    "decryptor.mojom",
     "demuxer_stream.mojom",
+    "media_renderer.mojom",
+    "media_types.mojom",
   ]
 
+  if (is_chromeos) {
+    sources += [ "platform_verification.mojom" ]
+  }
+
   deps = [
-    "//mojo/services/public/interfaces/geometry",
+    "//ui/mojo/geometry:interfaces",
   ]
 }

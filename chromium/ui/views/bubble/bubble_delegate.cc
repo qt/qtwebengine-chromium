@@ -7,7 +7,7 @@
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/focus/view_storage.h"
@@ -44,6 +44,9 @@ Widget* CreateBubbleWidget(BubbleDelegateView* bubble) {
 }
 
 }  // namespace
+
+// static
+const char BubbleDelegateView::kViewClassName[] = "BubbleDelegateView";
 
 BubbleDelegateView::BubbleDelegateView()
     : close_on_esc_(true),
@@ -139,6 +142,10 @@ NonClientFrameView* BubbleDelegateView::CreateNonClientFrameView(
 
 void BubbleDelegateView::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_DIALOG;
+}
+
+const char* BubbleDelegateView::GetClassName() const {
+  return kViewClassName;
 }
 
 void BubbleDelegateView::OnWidgetDestroying(Widget* widget) {
@@ -297,6 +304,17 @@ void BubbleDelegateView::HandleVisibilityChanged(Widget* widget, bool visible) {
       anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
     else
       anchor_widget()->GetTopLevelWidget()->EnableInactiveRendering();
+  }
+
+  // Fire AX_EVENT_ALERT for bubbles marked as AX_ROLE_ALERT_DIALOG; this
+  // instructs accessibility tools to read the bubble in its entirety rather
+  // than just its title and initially focused view.  See
+  // http://crbug.com/474622 for details.
+  if (widget == GetWidget() && visible) {
+    ui::AXViewState state;
+    GetAccessibleState(&state);
+    if (state.role == ui::AX_ROLE_ALERT_DIALOG)
+      NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
   }
 }
 

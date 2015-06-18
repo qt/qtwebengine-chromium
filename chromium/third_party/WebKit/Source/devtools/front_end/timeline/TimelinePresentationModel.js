@@ -33,12 +33,10 @@
  * @constructor
  * @extends {WebInspector.Object}
  * @param {!WebInspector.TimelineModel} model
- * @param {!WebInspector.TimelineUIUtils} uiUtils
  */
-WebInspector.TimelinePresentationModel = function(model, uiUtils)
+WebInspector.TimelinePresentationModel = function(model)
 {
     this._model = model;
-    this._uiUtils = uiUtils;
     this._filters = [];
     /**
      * @type {!Map.<!WebInspector.TimelineModel.Record, !WebInspector.TimelinePresentationModel.Record>}
@@ -88,7 +86,7 @@ WebInspector.TimelinePresentationModel.prototype = {
      */
     addRecord: function(record)
     {
-        if (this._uiUtils.isProgram(record)) {
+        if (record.type() === WebInspector.TimelineModel.RecordType.Program) {
             var records = record.children();
             for (var i = 0; i < records.length; ++i)
                 this._innerAddRecord(this._rootRecord, records[i]);
@@ -145,7 +143,7 @@ WebInspector.TimelinePresentationModel.prototype = {
             return null;
         if (lastRecord.record().type() !== record.type())
             return null;
-        if (!this._uiUtils.isCoalescable(record.type()))
+        if (!WebInspector.TimelineUIUtils.isCoalescable(record.type()))
             return null;
         if (lastRecord.record().endTime() + coalescingThresholdMillis < startTime)
             return null;
@@ -217,6 +215,8 @@ WebInspector.TimelinePresentationModel.prototype = {
      */
     filteredRecords: function()
     {
+        if (!this._rootRecord.presentationChildren().length)
+            this.refreshRecords();
         if (this._filteredRecords)
             return this._filteredRecords;
 
@@ -454,6 +454,7 @@ WebInspector.TimelinePresentationModel.ActualRecord = function(record, parentRec
 
 WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
     /**
+     * @override
      * @return {number}
      */
     startTime: function()
@@ -462,6 +463,7 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     endTime: function()
@@ -470,6 +472,7 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     selfTime: function()
@@ -478,6 +481,7 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.TimelineModel.Record}
      */
     record: function()
@@ -486,6 +490,7 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     hasWarnings: function()
@@ -510,6 +515,7 @@ WebInspector.TimelinePresentationModel.CoalescedRecord = function(record)
 
 WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     /**
+     * @override
      * @return {number}
      */
     startTime: function()
@@ -518,6 +524,7 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     endTime: function()
@@ -526,6 +533,7 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     selfTime: function()
@@ -534,6 +542,7 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.TimelineModel.Record}
      */
     record: function()
@@ -542,6 +551,7 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     coalesced: function()
@@ -550,6 +560,7 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     hasWarnings: function()
@@ -571,6 +582,7 @@ WebInspector.TimelinePresentationModel.RootRecord = function()
 
 WebInspector.TimelinePresentationModel.RootRecord.prototype = {
     /**
+     * @override
      * @return {boolean}
      */
     hasWarnings: function()

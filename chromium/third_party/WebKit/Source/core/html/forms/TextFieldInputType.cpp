@@ -34,10 +34,10 @@
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/TextIterator.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/TextEvent.h"
@@ -47,12 +47,13 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "core/layout/LayoutDetailsMarker.h"
+#include "core/layout/LayoutTextControlSingleLine.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/rendering/RenderDetailsMarker.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderTextControlSingleLine.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/paint/DeprecatedPaintLayer.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -64,9 +65,9 @@ private:
     inline DataListIndicatorElement(Document& document) : HTMLDivElement(document) { }
     inline HTMLInputElement* hostInput() const { return toHTMLInputElement(shadowHost()); }
 
-    virtual RenderObject* createRenderer(RenderStyle*) override
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override
     {
-        return new RenderDetailsMarker(this);
+        return new LayoutDetailsMarker(this);
     }
 
     virtual void* preDispatchEventHandler(Event* event) override
@@ -77,7 +78,7 @@ private:
         // FIXME: We should dispatch mousedown events even in such case.
         if (event->type() == EventTypeNames::mousedown)
             event->stopPropagation();
-        return 0;
+        return nullptr;
     }
 
     virtual void defaultEventHandler(Event* event) override
@@ -161,7 +162,7 @@ void TextFieldInputType::setValue(const String& sanitizedValue, bool valueChange
 
     unsigned max = visibleValue().length();
     if (input->focused())
-        input->setSelectionRange(max, max);
+        input->setSelectionRange(max, max, SelectionHasNoDirection, NotDispatchSelectEvent);
     else
         input->cacheSelectionInResponseToSetValue(max);
 
@@ -189,7 +190,7 @@ void TextFieldInputType::setValue(const String& sanitizedValue, bool valueChange
     }
 
     if (!input->focused())
-        input->setTextAsOfLastFormControlChangeEvent(sanitizedValue);
+        input->setTextAsOfLastFormControlChangeEvent(sanitizedValue.isNull() ? input->defaultValue() : sanitizedValue);
 }
 
 void TextFieldInputType::handleKeydownEvent(KeyboardEvent* event)
@@ -226,29 +227,29 @@ void TextFieldInputType::forwardEvent(Event* event)
             return;
     }
 
-    if (element().renderer() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(EventNames::WheelEvent) || event->type() == EventTypeNames::blur || event->type() == EventTypeNames::focus)) {
-        RenderTextControlSingleLine* renderTextControl = toRenderTextControlSingleLine(element().renderer());
+    if (element().layoutObject() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(EventNames::WheelEvent) || event->type() == EventTypeNames::blur || event->type() == EventTypeNames::focus)) {
+        LayoutTextControlSingleLine* layoutTextControl = toLayoutTextControlSingleLine(element().layoutObject());
         if (event->type() == EventTypeNames::blur) {
-            if (RenderBox* innerEditorRenderer = element().innerEditorElement()->renderBox()) {
-                // FIXME: This class has no need to know about RenderLayer!
-                if (RenderLayer* innerLayer = innerEditorRenderer->layer()) {
-                    if (RenderLayerScrollableArea* innerScrollableArea = innerLayer->scrollableArea()) {
-                        IntSize scrollOffset(!renderTextControl->style()->isLeftToRightDirection() ? innerScrollableArea->scrollWidth().toInt() : 0, 0);
+            if (LayoutBox* innerEditorLayoutObject = element().innerEditorElement()->layoutBox()) {
+                // FIXME: This class has no need to know about DeprecatedPaintLayer!
+                if (DeprecatedPaintLayer* innerLayer = innerEditorLayoutObject->layer()) {
+                    if (DeprecatedPaintLayerScrollableArea* innerScrollableArea = innerLayer->scrollableArea()) {
+                        IntSize scrollOffset(!layoutTextControl->style()->isLeftToRightDirection() ? innerScrollableArea->scrollWidth().toInt() : 0, 0);
                         innerScrollableArea->scrollToOffset(scrollOffset, ScrollOffsetClamped);
                     }
                 }
             }
 
-            renderTextControl->capsLockStateMayHaveChanged();
+            layoutTextControl->capsLockStateMayHaveChanged();
         } else if (event->type() == EventTypeNames::focus) {
-            renderTextControl->capsLockStateMayHaveChanged();
+            layoutTextControl->capsLockStateMayHaveChanged();
         }
 
         element().forwardEvent(event);
     }
 }
 
-void TextFieldInputType::handleFocusEvent(Element* oldFocusedNode, FocusType focusType)
+void TextFieldInputType::handleFocusEvent(Element* oldFocusedNode, WebFocusType focusType)
 {
     InputType::handleFocusEvent(oldFocusedNode, focusType);
     element().beginEditing();
@@ -267,14 +268,14 @@ bool TextFieldInputType::shouldSubmitImplicitly(Event* event)
     return (event->type() == EventTypeNames::textInput && event->hasInterface(EventNames::TextEvent) && toTextEvent(event)->data() == "\n") || InputType::shouldSubmitImplicitly(event);
 }
 
-RenderObject* TextFieldInputType::createRenderer(RenderStyle*) const
+LayoutObject* TextFieldInputType::createLayoutObject(const ComputedStyle&) const
 {
-    return new RenderTextControlSingleLine(&element());
+    return new LayoutTextControlSingleLine(&element());
 }
 
 bool TextFieldInputType::shouldHaveSpinButton() const
 {
-    return RenderTheme::theme().shouldHaveSpinButton(&element());
+    return LayoutTheme::theme().shouldHaveSpinButton(&element());
 }
 
 void TextFieldInputType::createShadowSubtree()
@@ -305,7 +306,7 @@ void TextFieldInputType::createShadowSubtree()
     if (shouldHaveDataListIndicator)
         container->appendChild(DataListIndicatorElement::create(document));
     // FIXME: Because of a special handling for a spin button in
-    // RenderTextControlSingleLine, we need to put it to the last position. It's
+    // LayoutTextControlSingleLine, we need to put it to the last position. It's
     // inconsistent with multiple-fields date/time types.
     if (shouldHaveSpinButton)
         container->appendChild(SpinButtonElement::create(document, *this));
@@ -327,11 +328,14 @@ void TextFieldInputType::destroyShadowSubtree()
 
 void TextFieldInputType::listAttributeTargetChanged()
 {
+    if (Chrome* chrome = this->chrome())
+        chrome->client().textFieldDataListChanged(element());
     Element* picker = element().userAgentShadowRoot()->getElementById(ShadowElementNames::pickerIndicator());
     bool didHavePickerIndicator = picker;
     bool willHavePickerIndicator = element().hasValidDataListOptions();
     if (didHavePickerIndicator == willHavePickerIndicator)
         return;
+    EventDispatchForbiddenScope::AllowUserAgentEvents allowEvents;
     if (willHavePickerIndicator) {
         Document& document = element().document();
         if (Element* container = containerElement()) {
@@ -480,7 +484,7 @@ String TextFieldInputType::convertFromVisibleValue(const String& visibleValue) c
 
 void TextFieldInputType::subtreeHasChanged()
 {
-    ASSERT(element().renderer());
+    ASSERT(element().layoutObject());
 
     bool wasChanged = element().wasChangedSinceLastFormControlChangeEvent();
     element().setChangedSinceLastFormControlChangeEvent(true);
@@ -507,12 +511,12 @@ void TextFieldInputType::didSetValueByUserEdit(ValueChangeState state)
 
 void TextFieldInputType::spinButtonStepDown()
 {
-    stepUpFromRenderer(-1);
+    stepUpFromLayoutObject(-1);
 }
 
 void TextFieldInputType::spinButtonStepUp()
 {
-    stepUpFromRenderer(1);
+    stepUpFromLayoutObject(1);
 }
 
 void TextFieldInputType::updateView()
@@ -536,7 +540,7 @@ void TextFieldInputType::focusAndSelectSpinButtonOwner()
 {
     RefPtrWillBeRawPtr<HTMLInputElement> input(element());
     input->focus();
-    input->select();
+    input->select(NotDispatchSelectEvent);
 }
 
 bool TextFieldInputType::shouldSpinButtonRespondToMouseEvents()

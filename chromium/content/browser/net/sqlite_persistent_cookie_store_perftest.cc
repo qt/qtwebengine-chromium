@@ -13,9 +13,9 @@
 #include "base/test/perf_time_logger.h"
 #include "base/test/sequenced_worker_pool_owner.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "content/public/browser/cookie_crypto_delegate.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
+#include "net/extras/sqlite/cookie_crypto_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -78,11 +78,9 @@ class SQLitePersistentCookieStorePerfTest : public testing::Test {
       GURL gurl("www" + domain_name);
       for (int cookie_num = 0; cookie_num < 50; ++cookie_num) {
         t += base::TimeDelta::FromInternalValue(10);
-        store_->AddCookie(
-            net::CanonicalCookie(gurl,
-                base::StringPrintf("Cookie_%d", cookie_num), "1",
-                domain_name, "/", t, t, t, false, false,
-                net::COOKIE_PRIORITY_DEFAULT));
+        store_->AddCookie(net::CanonicalCookie(
+            gurl, base::StringPrintf("Cookie_%d", cookie_num), "1", domain_name,
+            "/", t, t, t, false, false, false, net::COOKIE_PRIORITY_DEFAULT));
       }
     }
     // Replace the store effectively destroying the current one and forcing it

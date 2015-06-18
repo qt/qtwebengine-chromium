@@ -23,8 +23,12 @@
   'cflags!': [
     '-mfpu=vfpv3-d16',
   ],
-  'cflags': [
-    '-mfpu=neon',
-    '-flax-vector-conversions',
+  'conditions': [
+    # "-mfpu=neon" is not requried for arm64 in GCC.
+    ['target_arch!="arm64"', {
+      'cflags': [
+        '-mfpu=neon',
+       ],
+    }],
   ],
 }

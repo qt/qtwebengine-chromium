@@ -12,9 +12,7 @@
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/values.h"
-#include "net/base/capturing_net_log.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/ct_log_verifier.h"
 #include "net/cert/ct_serialization.h"
@@ -23,6 +21,9 @@
 #include "net/cert/sct_status_flags.h"
 #include "net/cert/signed_certificate_timestamp.h"
 #include "net/cert/x509_certificate.h"
+#include "net/log/net_log.h"
+#include "net/log/test_net_log.h"
+#include "net/log/test_net_log_entry.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/ct_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -38,8 +39,8 @@ const char kSCTCountHistogram[] =
 class MultiLogCTVerifierTest : public ::testing::Test {
  public:
   void SetUp() override {
-    scoped_ptr<CTLogVerifier> log(
-        CTLogVerifier::Create(ct::GetTestPublicKey(), kLogDescription));
+    scoped_ptr<CTLogVerifier> log(CTLogVerifier::Create(
+        ct::GetTestPublicKey(), kLogDescription, "https://ct.example.com"));
     ASSERT_TRUE(log);
 
     verifier_.reset(new MultiLogCTVerifier());
@@ -71,20 +72,20 @@ class MultiLogCTVerifierTest : public ::testing::Test {
         (result.verified_scts[0]->origin == origin);
   }
 
-  bool CheckForEmbeddedSCTInNetLog(CapturingNetLog& net_log) {
-    CapturingNetLog::CapturedEntryList entries;
+  bool CheckForEmbeddedSCTInNetLog(TestNetLog& net_log) {
+    TestNetLogEntry::List entries;
     net_log.GetEntries(&entries);
     if (entries.size() != 2)
       return false;
 
-    const CapturingNetLog::CapturedEntry& received = entries[0];
+    const TestNetLogEntry& received = entries[0];
     std::string embedded_scts;
     if (!received.GetStringValue("embedded_scts", &embedded_scts))
       return false;
     if (embedded_scts.empty())
       return false;
 
-    const CapturingNetLog::CapturedEntry& parsed = entries[1];
+    const TestNetLogEntry& parsed = entries[1];
     base::ListValue* verified_scts;
     if (!parsed.GetListValue("verified_scts", &verified_scts) ||
         verified_scts->GetSize() != 1) {
@@ -139,7 +140,7 @@ class MultiLogCTVerifierTest : public ::testing::Test {
 
   bool VerifySinglePrecertificateChain(scoped_refptr<X509Certificate> chain) {
     ct::CTVerifyResult result;
-    CapturingNetLog net_log;
+    TestNetLog net_log;
     BoundNetLog bound_net_log =
         BoundNetLog::Make(&net_log, NetLog::SOURCE_CONNECT_JOB);
 
@@ -152,7 +153,7 @@ class MultiLogCTVerifierTest : public ::testing::Test {
 
   bool CheckPrecertificateVerification(scoped_refptr<X509Certificate> chain) {
     ct::CTVerifyResult result;
-    CapturingNetLog net_log;
+    TestNetLog net_log;
     BoundNetLog bound_net_log =
       BoundNetLog::Make(&net_log, NetLog::SOURCE_CONNECT_JOB);
     return (VerifySinglePrecertificateChain(chain, bound_net_log, &result) &&

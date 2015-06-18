@@ -434,6 +434,12 @@ MINIDUMP_MEMORY_LIST = Descriptor([
   ("ranges", lambda m: MINIDUMP_MEMORY_DESCRIPTOR.ctype * m.range_count)
 ])
 
+MINIDUMP_MEMORY_LIST_Mac = Descriptor([
+  ("range_count", ctypes.c_uint32),
+  ("junk", ctypes.c_uint32),
+  ("ranges", lambda m: MINIDUMP_MEMORY_DESCRIPTOR.ctype * m.range_count)
+])
+
 MINIDUMP_MEMORY_LIST64 = Descriptor([
   ("range_count", ctypes.c_uint64),
   ("base_rva", ctypes.c_uint64),
@@ -452,6 +458,12 @@ MINIDUMP_THREAD = Descriptor([
 
 MINIDUMP_THREAD_LIST = Descriptor([
   ("thread_count", ctypes.c_uint32),
+  ("threads", lambda t: MINIDUMP_THREAD.ctype * t.thread_count)
+])
+
+MINIDUMP_THREAD_LIST_Mac = Descriptor([
+  ("thread_count", ctypes.c_uint32),
+  ("junk", ctypes.c_uint32),
   ("threads", lambda t: MINIDUMP_THREAD.ctype * t.thread_count)
 ])
 
@@ -486,6 +498,12 @@ MINIDUMP_RAW_MODULE = Descriptor([
 
 MINIDUMP_MODULE_LIST = Descriptor([
   ("number_of_modules", ctypes.c_uint32),
+  ("modules", lambda t: MINIDUMP_RAW_MODULE.ctype * t.number_of_modules)
+])
+
+MINIDUMP_MODULE_LIST_Mac = Descriptor([
+  ("number_of_modules", ctypes.c_uint32),
+  ("junk", ctypes.c_uint32),
   ("modules", lambda t: MINIDUMP_RAW_MODULE.ctype * t.number_of_modules)
 ])
 
@@ -570,6 +588,9 @@ class MinidumpReader(object):
         DebugPrint(self.exception_context)
       elif d.stream_type == MD_THREAD_LIST_STREAM:
         thread_list = MINIDUMP_THREAD_LIST.Read(self.minidump, d.location.rva)
+        if ctypes.sizeof(thread_list) + 4 == d.location.data_size:
+          thread_list = MINIDUMP_THREAD_LIST_Mac.Read(
+              self.minidump, d.location.rva)
         assert ctypes.sizeof(thread_list) == d.location.data_size
         DebugPrint(thread_list)
         for thread in thread_list.threads:
@@ -579,12 +600,19 @@ class MinidumpReader(object):
         assert self.module_list is None
         self.module_list = MINIDUMP_MODULE_LIST.Read(
           self.minidump, d.location.rva)
+        if ctypes.sizeof(self.module_list) + 4 == d.location.data_size:
+          self.module_list = MINIDUMP_MODULE_LIST_Mac.Read(
+              self.minidump, d.location.rva)
         assert ctypes.sizeof(self.module_list) == d.location.data_size
+        DebugPrint(self.module_list)
       elif d.stream_type == MD_MEMORY_LIST_STREAM:
         print >>sys.stderr, "Warning: This is not a full minidump!"
         assert self.memory_list is None
         self.memory_list = MINIDUMP_MEMORY_LIST.Read(
           self.minidump, d.location.rva)
+        if ctypes.sizeof(self.memory_list) + 4 == d.location.data_size:
+          self.memory_list = MINIDUMP_MEMORY_LIST_Mac.Read(
+              self.minidump, d.location.rva)
         assert ctypes.sizeof(self.memory_list) == d.location.data_size
         DebugPrint(self.memory_list)
       elif d.stream_type == MD_MEMORY_64_LIST_STREAM:
@@ -942,8 +970,11 @@ class HeapObject(object):
     p.Print(str(self))
 
   def __str__(self):
+    instance_type = "???"
+    if self.map is not None:
+      instance_type = INSTANCE_TYPES[self.map.instance_type]
     return "HeapObject(%s, %s)" % (self.heap.reader.FormatIntPtr(self.address),
-                                   INSTANCE_TYPES[self.map.instance_type])
+                                   instance_type)
 
   def ObjectField(self, offset):
     field_value = self.heap.reader.ReadUIntPtr(self.address + offset)
@@ -1358,9 +1389,9 @@ class JSFunction(HeapObject):
 
   def __str__(self):
     inferred_name = ""
-    if self.shared.Is(SharedFunctionInfo):
+    if self.shared is not None and self.shared.Is(SharedFunctionInfo):
       inferred_name = self.shared.inferred_name
-    return "JSFunction(%s, %s)" % \
+    return "JSFunction(%s, %s) " % \
           (self.heap.reader.FormatIntPtr(self.address), inferred_name)
 
   def _GetSource(self):
@@ -1590,7 +1621,7 @@ class KnownMap(HeapObject):
 
 COMMENT_RE = re.compile(r"^C (0x[0-9a-fA-F]+) (.*)$")
 PAGEADDRESS_RE = re.compile(
-    r"^P (mappage|pointerpage|datapage) (0x[0-9a-fA-F]+)$")
+    r"^P (mappage|oldpage) (0x[0-9a-fA-F]+)$")
 
 
 class InspectionInfo(object):
@@ -1667,8 +1698,7 @@ class InspectionPadawan(object):
     self.reader = reader
     self.heap = heap
     self.known_first_map_page = 0
-    self.known_first_data_page = 0
-    self.known_first_pointer_page = 0
+    self.known_first_old_page = 0
 
   def __getattr__(self, name):
     """An InspectionPadawan can be used instead of V8Heap, even though
@@ -1684,13 +1714,11 @@ class InspectionPadawan(object):
 
   def IsInKnownOldSpace(self, tagged_address):
     page_address = tagged_address & ~self.heap.PageAlignmentMask()
-    return page_address in [self.known_first_data_page,
-                            self.known_first_pointer_page]
+    return page_address == self.known_first_old_page
 
   def ContainingKnownOldSpaceName(self, tagged_address):
     page_address = tagged_address & ~self.heap.PageAlignmentMask()
-    if page_address == self.known_first_data_page: return "OLD_DATA_SPACE"
-    if page_address == self.known_first_pointer_page: return "OLD_POINTER_SPACE"
+    if page_address == self.known_first_old_page: return "OLD_SPACE"
     return None
 
   def SenseObject(self, tagged_address):
@@ -1747,11 +1775,9 @@ class InspectionPadawan(object):
 
   def PrintKnowledge(self):
     print "  known_first_map_page = %s\n"\
-          "  known_first_data_page = %s\n"\
-          "  known_first_pointer_page = %s" % (
+          "  known_first_old_page = %s" % (
           self.reader.FormatIntPtr(self.known_first_map_page),
-          self.reader.FormatIntPtr(self.known_first_data_page),
-          self.reader.FormatIntPtr(self.known_first_pointer_page))
+          self.reader.FormatIntPtr(self.known_first_old_page))
 
 WEB_HEADER = """
 <!DOCTYPE html>
@@ -2066,7 +2092,7 @@ class InspectionWebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       self.send_error(404, 'Web parameter error: %s' % e.message)
 
 
-HTML_REG_FORMAT = "<span class=\"register\"><b>%s</b>:&nbsp;%s</span>\n"
+HTML_REG_FORMAT = "<span class=\"register\"><b>%s</b>:&nbsp;%s</span><br/>\n"
 
 
 class InspectionWebFormatter(object):
@@ -2093,12 +2119,10 @@ class InspectionWebFormatter(object):
 
     self.padawan = InspectionPadawan(self.reader, self.heap)
     self.comments = InspectionInfo(minidump_name, self.reader)
-    self.padawan.known_first_data_page = (
-        self.comments.get_page_address("datapage"))
+    self.padawan.known_first_old_page = (
+        self.comments.get_page_address("oldpage"))
     self.padawan.known_first_map_page = (
         self.comments.get_page_address("mappage"))
-    self.padawan.known_first_pointer_page = (
-        self.comments.get_page_address("pointerpage"))
 
   def set_comment(self, straddress, comment):
     try:
@@ -2110,12 +2134,10 @@ class InspectionWebFormatter(object):
   def set_page_address(self, kind, straddress):
     try:
       address = int(straddress, 0)
-      if kind == "datapage":
-        self.padawan.known_first_data_page = address
+      if kind == "oldpage":
+        self.padawan.known_first_old_page = address
       elif kind == "mappage":
         self.padawan.known_first_map_page = address
-      elif kind == "pointerpage":
-        self.padawan.known_first_pointer_page = address
       self.comments.save_page_address(kind, address)
     except ValueError:
       print "Invalid address"
@@ -2235,7 +2257,7 @@ class InspectionWebFormatter(object):
     f.write("<h3>Exception context</h3>")
     f.write('<div class="code">\n')
     f.write("Thread id: %d" % exception_thread.id)
-    f.write("&nbsp;&nbsp; Exception code: %08X\n" %
+    f.write("&nbsp;&nbsp; Exception code: %08X<br/>\n" %
             self.reader.exception.exception.code)
     if details == InspectionWebFormatter.CONTEXT_FULL:
       if self.reader.exception.exception.parameter_count > 0:
@@ -2353,7 +2375,7 @@ class InspectionWebFormatter(object):
       f.write(address_fmt % self.format_address(slot))
       f.write("  ")
       self.td_from_address(f, maybe_address)
-      f.write(":&nbsp; %s &nbsp;</td>\n" % straddress)
+      f.write(":&nbsp;%s&nbsp;</td>\n" % straddress)
       f.write("  <td>")
       if maybe_address != None:
         self.output_comment_box(
@@ -2586,12 +2608,9 @@ class InspectionWebFormatter(object):
       page_address = address & ~self.heap.PageAlignmentMask()
 
       f.write("Page info: \n")
-      self.output_page_info(f, "data", self.padawan.known_first_data_page, \
+      self.output_page_info(f, "old", self.padawan.known_first_old_page, \
                             page_address)
       self.output_page_info(f, "map", self.padawan.known_first_map_page, \
-                            page_address)
-      self.output_page_info(f, "pointer", \
-                            self.padawan.known_first_pointer_page, \
                             page_address)
 
       if not self.reader.IsValidAddress(address):
@@ -2807,16 +2826,20 @@ class InspectionShell(cmd.Cmd):
     else:
       print "%s\n" % string
 
-  def do_dd(self, address):
+  def do_dd(self, args):
     """
-     Interpret memory at the given address (if available) as a sequence
-     of words. Automatic alignment is not performed.
+     Interpret memory in the given region [address, address + num * word_size)
+     (if available) as a sequence of words. Automatic alignment is not performed.
+     If the num is not specified, a default value of 16 words is used.
+     Synopsis: dd 0x<address> 0x<num>
     """
-    start = int(address, 16)
+    args = args.split(' ')
+    start = int(args[0], 16)
+    num = int(args[1], 16) if len(args) > 1 else 0x10
     if (start & self.heap.ObjectAlignmentMask()) != 0:
       print "Warning: Dumping un-aligned memory, is this what you had in mind?"
     for slot in xrange(start,
-                       start + self.reader.PointerSize() * 10,
+                       start + self.reader.PointerSize() * num,
                        self.reader.PointerSize()):
       if not self.reader.IsValidAddress(slot):
         print "Address is not contained within the minidump!"
@@ -2890,14 +2913,14 @@ class InspectionShell(cmd.Cmd):
     """
     self.padawan.PrintKnowledge()
 
-  def do_kd(self, address):
+  def do_ko(self, address):
     """
      Teach V8 heap layout information to the inspector. Set the first
-     data-space page by passing any pointer into that page.
+     old space page by passing any pointer into that page.
     """
     address = int(address, 16)
     page_address = address & ~self.heap.PageAlignmentMask()
-    self.padawan.known_first_data_page = page_address
+    self.padawan.known_first_old_page = page_address
 
   def do_km(self, address):
     """
@@ -2907,15 +2930,6 @@ class InspectionShell(cmd.Cmd):
     address = int(address, 16)
     page_address = address & ~self.heap.PageAlignmentMask()
     self.padawan.known_first_map_page = page_address
-
-  def do_kp(self, address):
-    """
-     Teach V8 heap layout information to the inspector. Set the first
-     pointer-space page by passing any pointer into that page.
-    """
-    address = int(address, 16)
-    page_address = address & ~self.heap.PageAlignmentMask()
-    self.padawan.known_first_pointer_page = page_address
 
   def do_list(self, smth):
     """

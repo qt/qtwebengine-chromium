@@ -86,10 +86,10 @@ extern "C" {
  * STACK_OF(foo), the macros would be sk_foo_new, sk_foo_pop etc. */
 
 
-/* stack_cmp_func is a comparision function that returns a value < 0, 0 or > 0
+/* stack_cmp_func is a comparison function that returns a value < 0, 0 or > 0
  * if |*a| is less than, equal to or greater than |*b|, respectively.  Note the
  * extra indirection - the function is given a pointer to a pointer to the
- * element. This differs from the usual qsort/bsearch comparision function. */
+ * element. This differs from the usual qsort/bsearch comparison function. */
 typedef int (*stack_cmp_func)(const void **a, const void **b);
 
 /* stack_st contains an array of pointers. It is not designed to be used
@@ -104,7 +104,7 @@ typedef struct stack_st {
   /* num_alloc contains the number of pointers allocated in the buffer pointed
    * to by |data|, which may be larger than |num|. */
   size_t num_alloc;
-  /* comp is an optional comparision function. */
+  /* comp is an optional comparison function. */
   stack_cmp_func comp;
 } _STACK;
 
@@ -114,7 +114,7 @@ typedef struct stack_st {
 #define DEFINE_STACK_OF(type) \
 STACK_OF(type) {\
   _STACK stack; \
-};
+}
 
 #define DECLARE_STACK_OF(type) STACK_OF(type);
 
@@ -145,7 +145,6 @@ STACK_OF(type) {\
  * STACK_OF:POLICYINFO
  * STACK_OF:POLICYQUALINFO
  * STACK_OF:POLICY_MAPPING
- * STACK_OF:SRTP_PROTECTION_PROFILE
  * STACK_OF:SSL_COMP
  * STACK_OF:STACK_OF_X509_NAME_ENTRY
  * STACK_OF:SXNETID
@@ -168,9 +167,10 @@ STACK_OF(type) {\
  * STACK_OF:X509_VERIFY_PARAM
  * STACK_OF:void
  *
- * We declare STACK_OF(SSL_CIPHER) differently; every SSL_CIPHER is const,
- * so the stack should return const pointers to retain type-checking.
+ * Some stacks contain only const structures, so the stack should return const
+ * pointers to retain type-checking.
  *
+ * CONST_STACK_OF:SRTP_PROTECTION_PROFILE
  * CONST_STACK_OF:SSL_CIPHER */
 
 
@@ -203,7 +203,7 @@ DEFINE_SPECIAL_STACK_OF(OPENSSL_BLOCK, uint8_t)
 /* These are the raw stack functions, you shouldn't be using them. Rather you
  * should be using the type stack macros implemented above. */
 
-/* sk_new creates a new, empty stack with the given comparision function, which
+/* sk_new creates a new, empty stack with the given comparison function, which
  * may be zero. It returns the new stack or NULL on allocation failure. */
 OPENSSL_EXPORT _STACK *sk_new(stack_cmp_func comp);
 
@@ -249,7 +249,7 @@ OPENSSL_EXPORT void *sk_delete(_STACK *sk, size_t where);
  * otherwise it returns NULL. */
 OPENSSL_EXPORT void *sk_delete_ptr(_STACK *sk, void *p);
 
-/* sk_find returns the first value in the stack equal to |p|. If a comparision
+/* sk_find returns the first value in the stack equal to |p|. If a comparison
  * function has been set on the stack, then equality is defined by it and the
  * stack will be sorted if need be so that a binary search can be used.
  * Otherwise pointer equality is used. If a matching element is found, its
@@ -285,6 +285,13 @@ OPENSSL_EXPORT int sk_is_sorted(const _STACK *sk);
 /* sk_set_cmp_func sets the comparison function to be used by |sk| and returns
  * the previous one. */
 OPENSSL_EXPORT stack_cmp_func sk_set_cmp_func(_STACK *sk, stack_cmp_func comp);
+
+/* sk_deep_copy performs a copy of |sk| and of each of the non-NULL elements in
+ * |sk| by using |copy_func|. If an error occurs, |free_func| is used to free
+ * any copies already made and NULL is returned. */
+OPENSSL_EXPORT _STACK *sk_deep_copy(const _STACK *sk,
+                                    void *(*copy_func)(void *),
+                                    void (*free_func)(void *));
 
 
 #if defined(__cplusplus)

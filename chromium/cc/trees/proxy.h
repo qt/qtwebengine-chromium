@@ -17,7 +17,7 @@
 #include "cc/base/cc_export.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 class SingleThreadTaskRunner;
@@ -46,7 +46,7 @@ class CC_EXPORT Proxy {
   bool IsMainThread() const;
   bool IsImplThread() const;
   bool IsMainThreadBlocked() const;
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   void SetMainThreadBlocked(bool is_main_thread_blocked);
   void SetCurrentThreadIsImplThread(bool is_impl_thread);
 #endif
@@ -56,6 +56,7 @@ class CC_EXPORT Proxy {
   virtual void FinishAllRendering() = 0;
 
   virtual bool IsStarted() const = 0;
+  virtual bool CommitToActiveTree() const = 0;
 
   // Will call LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted
   // with the result of this function.
@@ -67,6 +68,8 @@ class CC_EXPORT Proxy {
 
   virtual void SetVisible(bool visible) = 0;
 
+  virtual void SetThrottleFrameProduction(bool throttle) = 0;
+
   virtual const RendererCapabilities& GetRendererCapabilities() const = 0;
 
   virtual void SetNeedsAnimate() = 0;
@@ -77,9 +80,8 @@ class CC_EXPORT Proxy {
 
   virtual void NotifyInputThrottledUntilCommit() = 0;
 
-  // Defers commits until it is reset. It is only supported when in threaded
-  // mode. It's an error to make a sync call like CompositeAndReadback while
-  // commits are deferred.
+  // Defers commits until it is reset. It is only supported when using a
+  // scheduler.
   virtual void SetDeferCommits(bool defer_commits) = 0;
 
   virtual void MainThreadHasStoppedFlinging() = 0;
@@ -100,9 +102,12 @@ class CC_EXPORT Proxy {
 
   virtual bool SupportsImplScrolling() const = 0;
 
-  virtual void AsValueInto(base::debug::TracedValue* value) const = 0;
-
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) = 0;
+
+  virtual void SetChildrenNeedBeginFrames(bool children_need_begin_frames) = 0;
+
+  virtual void SetAuthoritativeVSyncInterval(
+      const base::TimeDelta& interval) = 0;
 
   // Testing hooks
   virtual bool MainFrameWillHappenForTesting() = 0;
@@ -123,7 +128,7 @@ class CC_EXPORT Proxy {
   scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner_;
   scoped_ptr<BlockingTaskRunner> blocking_main_thread_task_runner_;
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   const base::PlatformThreadId main_thread_id_;
   bool impl_thread_is_overridden_;
   bool is_main_thread_blocked_;
@@ -132,7 +137,7 @@ class CC_EXPORT Proxy {
   DISALLOW_COPY_AND_ASSIGN(Proxy);
 };
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
 class DebugScopedSetMainThreadBlocked {
  public:
   explicit DebugScopedSetMainThreadBlocked(Proxy* proxy) : proxy_(proxy) {

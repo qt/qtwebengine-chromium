@@ -39,14 +39,14 @@ bool GetEDIDProperty(XID output, std::vector<uint8_t>* edid) {
 
   bool has_edid_property = false;
   int num_properties = 0;
-  Atom* properties = XRRListOutputProperties(display, output, &num_properties);
+  gfx::XScopedPtr<Atom[]> properties(
+      XRRListOutputProperties(display, output, &num_properties));
   for (int i = 0; i < num_properties; ++i) {
     if (properties[i] == edid_property) {
       has_edid_property = true;
       break;
     }
   }
-  XFree(properties);
   if (!has_edid_property)
     return false;
 
@@ -54,7 +54,7 @@ bool GetEDIDProperty(XID output, std::vector<uint8_t>* edid) {
   int actual_format;
   unsigned long bytes_after;
   unsigned long nitems = 0;
-  unsigned char* prop = NULL;
+  unsigned char* prop = nullptr;
   XRRGetOutputProperty(display,
                        output,
                        edid_property,
@@ -78,7 +78,7 @@ bool GetEDIDProperty(XID output, std::vector<uint8_t>* edid) {
 // Gets some useful data from the specified output device, such like
 // manufacturer's ID, product code, and human readable name. Returns false if it
 // fails to get those data and doesn't touch manufacturer ID/product code/name.
-// NULL can be passed for unwanted output parameters.
+// nullptr can be passed for unwanted output parameters.
 bool GetOutputDeviceData(XID output,
                          uint16_t* manufacturer_id,
                          std::string* human_readable_name) {
@@ -86,9 +86,8 @@ bool GetOutputDeviceData(XID output,
   if (!GetEDIDProperty(output, &edid))
     return false;
 
-  bool result = ParseOutputDeviceData(
-      edid, manufacturer_id, human_readable_name);
-  return result;
+  return ParseOutputDeviceData(edid, manufacturer_id, human_readable_name,
+                               nullptr, nullptr);
 }
 
 }  // namespace
@@ -100,13 +99,14 @@ bool GetDisplayId(XID output_id,
   if (!GetEDIDProperty(output_id, &edid))
     return false;
 
-  bool result = GetDisplayIdFromEDID(edid, output_index, display_id_out);
+  bool result =
+      GetDisplayIdFromEDID(edid, output_index, display_id_out, nullptr);
   return result;
 }
 
 std::string GetDisplayName(RROutput output) {
   std::string display_name;
-  GetOutputDeviceData(output, NULL, &display_name);
+  GetOutputDeviceData(output, nullptr, &display_name);
   return display_name;
 }
 

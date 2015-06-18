@@ -41,6 +41,10 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
     // events.
     bool disable_click_delay;
 
+    // Whether double-tap detection is supported by the platform. If disabled,
+    // there will be no delay before tap events. Defaults to true.
+    bool double_tap_support_for_platform_enabled;
+
     // If |gesture_begin_end_types_enabled| is true, fire an ET_GESTURE_BEGIN
     // event for every added touch point, and an ET_GESTURE_END event for every
     // removed touch point. This requires one ACTION_CANCEL event to be sent per
@@ -63,6 +67,11 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
   // Handle the incoming MotionEvent, returning false if the event could not
   // be handled.
   bool OnTouchEvent(const MotionEvent& event);
+
+  // Reset any active gesture detection, including detection of timeout-based
+  // events (e.g., double-tap or delayed tap) for which the pointer has already
+  // been released.
+  void ResetDetection();
 
   // Update whether multi-touch pinch zoom is supported by the platform.
   void SetMultiTouchZoomSupportEnabled(bool enabled);

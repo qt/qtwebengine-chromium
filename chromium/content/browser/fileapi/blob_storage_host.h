@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_FILEAPI_STORAGE_HOST_H_
-#define CONTENT_BROWSER_FILEAPI_STORAGE_HOST_H_
+#ifndef CONTENT_BROWSER_FILEAPI_BLOB_STORAGE_HOST_H_
+#define CONTENT_BROWSER_FILEAPI_BLOB_STORAGE_HOST_H_
 
 #include <map>
 #include <set>
@@ -12,7 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
-#include "storage/common/blob/blob_data.h"
+#include "storage/common/data_element.h"
 
 class GURL;
 
@@ -21,9 +21,6 @@ class BlobDataHandle;
 class BlobStorageHost;
 class BlobStorageContext;
 }
-
-using storage::BlobStorageContext;
-using storage::BlobData;
 
 namespace content {
 
@@ -34,7 +31,7 @@ namespace content {
 // only be used on the IO thread.
 class CONTENT_EXPORT BlobStorageHost {
  public:
-  explicit BlobStorageHost(BlobStorageContext* context);
+  explicit BlobStorageHost(storage::BlobStorageContext* context);
   ~BlobStorageHost();
 
   // Methods to support the IPC message protocol.
@@ -42,7 +39,8 @@ class CONTENT_EXPORT BlobStorageHost {
   // like a non-existent or pre-existent uuid or url.
   bool StartBuildingBlob(const std::string& uuid) WARN_UNUSED_RESULT;
   bool AppendBlobDataItem(const std::string& uuid,
-                          const BlobData::Item& data_item) WARN_UNUSED_RESULT;
+                          const storage::DataElement& data_item)
+      WARN_UNUSED_RESULT;
   bool CancelBuildingBlob(const std::string& uuid) WARN_UNUSED_RESULT;
   bool FinishBuildingBlob(const std::string& uuid,
                           const std::string& type) WARN_UNUSED_RESULT;
@@ -66,11 +64,11 @@ class CONTENT_EXPORT BlobStorageHost {
   // The set of public blob urls coined by this consumer.
   std::set<GURL> public_blob_urls_;
 
-  base::WeakPtr<BlobStorageContext> context_;
+  base::WeakPtr<storage::BlobStorageContext> context_;
 
   DISALLOW_COPY_AND_ASSIGN(BlobStorageHost);
 };
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_FILEAPI_STORAGE_HOST_H_
+#endif  // CONTENT_BROWSER_FILEAPI_BLOB_STORAGE_HOST_H_

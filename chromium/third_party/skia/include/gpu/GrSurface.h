@@ -134,14 +134,13 @@ protected:
     bool hasPendingRead() const;
     bool hasPendingWrite() const;
     bool hasPendingIO() const;
-    bool isSameAs(const GrSurface* other) const;
 
     // Provides access to methods that should be public within Skia code.
     friend class GrSurfacePriv;
 
-    GrSurface(GrGpu* gpu, bool isWrapped, const GrSurfaceDesc& desc)
-    : INHERITED(gpu, isWrapped)
-    , fDesc(desc) {
+    GrSurface(GrGpu* gpu, LifeCycle lifeCycle, const GrSurfaceDesc& desc)
+        : INHERITED(gpu, lifeCycle)
+        , fDesc(desc) {
     }
 
     GrSurfaceDesc fDesc;

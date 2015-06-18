@@ -1,0 +1,75 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/mojo/src/mojo/public/mojo_application.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
+
+group("browser") {
+  deps = [
+    "//mandoline/ui/browser:window_manager",
+  ]
+}
+
+mojo_native_application("window_manager") {
+  sources = [
+    "main.cc",
+  ]
+
+  deps = [
+    ":kiosk_wm_lib",
+    "//mandoline/services/navigation/public/interfaces",
+    "//mojo/application",
+    "//mojo/application/public/interfaces",
+    "//mojo/common:common",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/public/cpp/utility",
+  ]
+}
+
+source_set("kiosk_wm_lib") {
+  sources = [
+    "browser.cc",
+    "browser.h",
+    "merged_service_provider.cc",
+    "merged_service_provider.h",
+    "navigator_host_impl.cc",
+    "navigator_host_impl.h",
+  ]
+
+  if (is_android) {
+    sources += [
+      "android/android_ui.cc",
+      "android/android_ui.h",
+    ]
+  } else {
+    sources += [
+      "desktop/desktop_ui.cc",
+      "desktop/desktop_ui.h",
+    ]
+  }
+
+  deps = [
+    ":interfaces",
+    "//base",
+    "//components/view_manager/public/cpp",
+    "//mandoline/services/navigation/public/interfaces",
+    "//mojo/application/public/interfaces",
+    "//mojo/converters/geometry",
+    "//skia",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/public/cpp/utility",
+    "//ui/gfx/geometry",
+    "//ui/mojo/events:interfaces",
+  ]
+
+  if (!is_android) {
+    deps += [ "//mandoline/ui/aura" ]
+  }
+}
+
+mojom("interfaces") {
+  sources = [
+    "omnibox.mojom",
+  ]
+}

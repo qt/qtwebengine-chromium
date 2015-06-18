@@ -34,7 +34,7 @@ class MediaList;
 class Node;
 class StyleSheet;
 
-class StyleSheet : public RefCountedWillBeGarbageCollectedFinalized<StyleSheet>, public ScriptWrappable {
+class CORE_EXPORT StyleSheet : public RefCountedWillBeGarbageCollectedFinalized<StyleSheet>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     StyleSheet() { }
@@ -55,7 +55,7 @@ public:
     virtual bool isLoading() const = 0;
     virtual bool isCSSStyleSheet() const { return false; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
 } // namespace blink

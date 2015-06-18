@@ -4,6 +4,7 @@
 
 #include "cc/trees/layer_tree_settings.h"
 
+#include <GLES2/gl2.h>
 #include <limits>
 
 #include "base/command_line.h"
@@ -14,64 +15,84 @@ namespace cc {
 
 LayerTreeSettings::LayerTreeSettings()
     : impl_side_painting(false),
-      allow_antialiasing(true),
-      force_antialiasing(false),
+      raster_enabled(true),
       throttle_frame_production(true),
       single_thread_proxy_scheduler(true),
-      begin_frame_scheduling_enabled(false),
+      use_external_begin_frame_source(false),
       main_frame_before_activation_enabled(false),
       using_synchronous_renderer_compositor(false),
-      disable_hi_res_timer_tasks_on_battery(false),
       report_overscroll_only_for_scrollable_axes(false),
       per_tile_painting_enabled(false),
-      partial_swap_enabled(false),
       accelerated_animation_enabled(true),
       can_use_lcd_text(true),
       use_distance_field_text(false),
-      should_clear_root_render_pass(true),
       gpu_rasterization_enabled(false),
       gpu_rasterization_forced(false),
+      gpu_rasterization_msaa_sample_count(0),
+      gpu_rasterization_skewport_target_time_in_seconds(0.2f),
       create_low_res_tiling(false),
-      scrollbar_animator(NoAnimator),
+      scrollbar_animator(NO_ANIMATOR),
       scrollbar_fade_delay_ms(0),
       scrollbar_fade_resize_delay_ms(0),
       scrollbar_fade_duration_ms(0),
+      scrollbar_show_scale_threshold(1.0f),
       solid_color_scrollbar_color(SK_ColorWHITE),
-      calculate_top_controls_position(false),
       timeout_and_draw_when_animation_checkerboards(true),
       maximum_number_of_failed_draws_before_draw_is_forced_(3),
       layer_transforms_should_scale_layer_contents(false),
+      layers_always_allowed_lcd_text(false),
       minimum_contents_scale(0.0625f),
       low_res_contents_scale_factor(0.25f),
-      top_controls_height(0.f),
       top_controls_show_threshold(0.5f),
       top_controls_hide_threshold(0.5f),
-      refresh_rate(60.0),
+      background_animation_rate(1.0),
       max_partial_texture_updates(std::numeric_limits<size_t>::max()),
       default_tile_size(gfx::Size(256, 256)),
       max_untiled_layer_size(gfx::Size(512, 512)),
       default_tile_grid_size(gfx::Size(256, 256)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
-      use_pinch_zoom_scrollbars(false),
       use_pinch_virtual_viewport(false),
-      // At 256x256 tiles, 128 tiles cover an area of 2048x4096 pixels.
-      max_tiles_for_interest_area(128),
-      skewport_target_time_multiplier(1.0f),
+      tiling_interest_area_viewport_multiplier(9.0f),
+      skewport_target_time_in_seconds(1.0f),
       skewport_extrapolation_limit_in_content_pixels(2000),
       max_unused_resource_memory_percentage(100),
       max_memory_for_prepaint_percentage(100),
-      highp_threshold_min(0),
       strict_layer_property_change_checking(false),
       use_one_copy(false),
       use_zero_copy(false),
+      enable_elastic_overscroll(false),
+      use_image_texture_target(GL_TEXTURE_2D),
       ignore_root_layer_flings(false),
-      use_rgba_4444_textures(false),
-      texture_id_allocation_chunk_size(64),
       scheduled_raster_task_limit(32),
       use_occlusion_for_tile_prioritization(false),
-      record_full_layer(false) {
+      record_full_layer(false),
+      use_display_lists(false),
+      use_cached_picture_in_display_list(true),
+      verify_property_trees(false),
+      gather_pixel_refs(false),
+      use_compositor_animation_timelines(false) {
 }
 
 LayerTreeSettings::~LayerTreeSettings() {}
+
+SchedulerSettings LayerTreeSettings::ToSchedulerSettings() const {
+  SchedulerSettings scheduler_settings;
+  scheduler_settings.use_external_begin_frame_source =
+      use_external_begin_frame_source;
+  scheduler_settings.main_frame_before_activation_enabled =
+      main_frame_before_activation_enabled;
+  scheduler_settings.impl_side_painting = impl_side_painting;
+  scheduler_settings.timeout_and_draw_when_animation_checkerboards =
+      timeout_and_draw_when_animation_checkerboards;
+  scheduler_settings.maximum_number_of_failed_draws_before_draw_is_forced_ =
+      maximum_number_of_failed_draws_before_draw_is_forced_;
+  scheduler_settings.using_synchronous_renderer_compositor =
+      using_synchronous_renderer_compositor;
+  scheduler_settings.throttle_frame_production = throttle_frame_production;
+  scheduler_settings.main_thread_should_always_be_low_latency = false;
+  scheduler_settings.background_frame_interval =
+      base::TimeDelta::FromSecondsD(1.0 / background_animation_rate);
+  return scheduler_settings;
+}
 
 }  // namespace cc

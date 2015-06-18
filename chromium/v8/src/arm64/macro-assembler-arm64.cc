@@ -12,7 +12,6 @@
 #include "src/codegen.h"
 #include "src/cpu-profiler.h"
 #include "src/debug.h"
-#include "src/isolate-inl.h"
 #include "src/runtime/runtime.h"
 
 namespace v8 {
@@ -1308,7 +1307,7 @@ void MacroAssembler::AssertStackConsistency() {
   // Avoid emitting code when !use_real_abort() since non-real aborts cause too
   // much code to be generated.
   if (emit_debug_code() && use_real_aborts()) {
-    if (csp.Is(StackPointer()) || CpuFeatures::IsSupported(ALWAYS_ALIGN_CSP)) {
+    if (csp.Is(StackPointer())) {
       // Always check the alignment of csp if ALWAYS_ALIGN_CSP is true.  We
       // can't check the alignment of csp without using a scratch register (or
       // clobbering the flags), but the processor (or simulator) will abort if
@@ -1403,6 +1402,7 @@ void MacroAssembler::LoadRoot(CPURegister destination,
 
 void MacroAssembler::StoreRoot(Register source,
                                Heap::RootListIndex index) {
+  DCHECK(Heap::RootCanBeWrittenAfterInitialization(index));
   Str(source, MemOperand(root, index << kPointerSizeLog2));
 }
 
@@ -1450,6 +1450,19 @@ void MacroAssembler::EnumLengthUntagged(Register dst, Register map) {
 void MacroAssembler::EnumLengthSmi(Register dst, Register map) {
   EnumLengthUntagged(dst, map);
   SmiTag(dst, dst);
+}
+
+
+void MacroAssembler::LoadAccessor(Register dst, Register holder,
+                                  int accessor_index,
+                                  AccessorComponent accessor) {
+  Ldr(dst, FieldMemOperand(holder, HeapObject::kMapOffset));
+  LoadInstanceDescriptors(dst, dst);
+  Ldr(dst,
+      FieldMemOperand(dst, DescriptorArray::GetValueOffset(accessor_index)));
+  int offset = accessor == ACCESSOR_GETTER ? AccessorPair::kGetterOffset
+                                           : AccessorPair::kSetterOffset;
+  Ldr(dst, FieldMemOperand(dst, offset));
 }
 
 
@@ -1536,27 +1549,6 @@ void MacroAssembler::TestJSArrayForAllocationMemento(Register receiver,
 }
 
 
-void MacroAssembler::JumpToHandlerEntry(Register exception,
-                                        Register object,
-                                        Register state,
-                                        Register scratch1,
-                                        Register scratch2) {
-  // Handler expects argument in x0.
-  DCHECK(exception.Is(x0));
-
-  // Compute the handler entry address and jump to it. The handler table is
-  // a fixed array of (smi-tagged) code offsets.
-  Ldr(scratch1, FieldMemOperand(object, Code::kHandlerTableOffset));
-  Add(scratch1, scratch1, FixedArray::kHeaderSize - kHeapObjectTag);
-  STATIC_ASSERT(StackHandler::kKindWidth < kPointerSizeLog2);
-  Lsr(scratch2, state, StackHandler::kKindWidth);
-  Ldr(scratch2, MemOperand(scratch1, scratch2, LSL, kPointerSizeLog2));
-  Add(scratch1, object, Code::kHeaderSize - kHeapObjectTag);
-  Add(scratch1, scratch1, Operand::UntagSmi(scratch2));
-  Br(scratch1);
-}
-
-
 void MacroAssembler::InNewSpace(Register object,
                                 Condition cond,
                                 Label* branch) {
@@ -1566,95 +1558,6 @@ void MacroAssembler::InNewSpace(Register object,
   And(temp, object, ExternalReference::new_space_mask(isolate()));
   Cmp(temp, ExternalReference::new_space_start(isolate()));
   B(cond, branch);
-}
-
-
-void MacroAssembler::Throw(Register value,
-                           Register scratch1,
-                           Register scratch2,
-                           Register scratch3,
-                           Register scratch4) {
-  // Adjust this code if not the case.
-  STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
-  STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
-
-  // The handler expects the exception in x0.
-  DCHECK(value.Is(x0));
-
-  // Drop the stack pointer to the top of the top handler.
-  DCHECK(jssp.Is(StackPointer()));
-  Mov(scratch1, Operand(ExternalReference(Isolate::kHandlerAddress,
-                                          isolate())));
-  Ldr(jssp, MemOperand(scratch1));
-  // Restore the next handler.
-  Pop(scratch2);
-  Str(scratch2, MemOperand(scratch1));
-
-  // Get the code object and state.  Restore the context and frame pointer.
-  Register object = scratch1;
-  Register state = scratch2;
-  Pop(object, state, cp, fp);
-
-  // If the handler is a JS frame, restore the context to the frame.
-  // (kind == ENTRY) == (fp == 0) == (cp == 0), so we could test either fp
-  // or cp.
-  Label not_js_frame;
-  Cbz(cp, &not_js_frame);
-  Str(cp, MemOperand(fp, StandardFrameConstants::kContextOffset));
-  Bind(&not_js_frame);
-
-  JumpToHandlerEntry(value, object, state, scratch3, scratch4);
-}
-
-
-void MacroAssembler::ThrowUncatchable(Register value,
-                                      Register scratch1,
-                                      Register scratch2,
-                                      Register scratch3,
-                                      Register scratch4) {
-  // Adjust this code if not the case.
-  STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
-
-  // The handler expects the exception in x0.
-  DCHECK(value.Is(x0));
-
-  // Drop the stack pointer to the top of the top stack handler.
-  DCHECK(jssp.Is(StackPointer()));
-  Mov(scratch1, Operand(ExternalReference(Isolate::kHandlerAddress,
-                                          isolate())));
-  Ldr(jssp, MemOperand(scratch1));
-
-  // Unwind the handlers until the ENTRY handler is found.
-  Label fetch_next, check_kind;
-  B(&check_kind);
-  Bind(&fetch_next);
-  Peek(jssp, StackHandlerConstants::kNextOffset);
-
-  Bind(&check_kind);
-  STATIC_ASSERT(StackHandler::JS_ENTRY == 0);
-  Peek(scratch2, StackHandlerConstants::kStateOffset);
-  TestAndBranchIfAnySet(scratch2, StackHandler::KindField::kMask, &fetch_next);
-
-  // Set the top handler address to next handler past the top ENTRY handler.
-  Pop(scratch2);
-  Str(scratch2, MemOperand(scratch1));
-
-  // Get the code object and state.  Clear the context and frame pointer (0 was
-  // saved in the handler).
-  Register object = scratch1;
-  Register state = scratch2;
-  Pop(object, state, cp, fp);
-
-  JumpToHandlerEntry(value, object, state, scratch3, scratch4);
 }
 
 
@@ -1745,156 +1648,6 @@ void MacroAssembler::CallRuntime(const Runtime::Function* f,
 
   CEntryStub stub(isolate(), 1, save_doubles);
   CallStub(&stub);
-}
-
-
-static int AddressOffset(ExternalReference ref0, ExternalReference ref1) {
-  return ref0.address() - ref1.address();
-}
-
-
-void MacroAssembler::CallApiFunctionAndReturn(
-    Register function_address,
-    ExternalReference thunk_ref,
-    int stack_space,
-    int spill_offset,
-    MemOperand return_value_operand,
-    MemOperand* context_restore_operand) {
-  ASM_LOCATION("CallApiFunctionAndReturn");
-  ExternalReference next_address =
-      ExternalReference::handle_scope_next_address(isolate());
-  const int kNextOffset = 0;
-  const int kLimitOffset = AddressOffset(
-      ExternalReference::handle_scope_limit_address(isolate()),
-      next_address);
-  const int kLevelOffset = AddressOffset(
-      ExternalReference::handle_scope_level_address(isolate()),
-      next_address);
-
-  DCHECK(function_address.is(x1) || function_address.is(x2));
-
-  Label profiler_disabled;
-  Label end_profiler_check;
-  Mov(x10, ExternalReference::is_profiling_address(isolate()));
-  Ldrb(w10, MemOperand(x10));
-  Cbz(w10, &profiler_disabled);
-  Mov(x3, thunk_ref);
-  B(&end_profiler_check);
-
-  Bind(&profiler_disabled);
-  Mov(x3, function_address);
-  Bind(&end_profiler_check);
-
-  // Save the callee-save registers we are going to use.
-  // TODO(all): Is this necessary? ARM doesn't do it.
-  STATIC_ASSERT(kCallApiFunctionSpillSpace == 4);
-  Poke(x19, (spill_offset + 0) * kXRegSize);
-  Poke(x20, (spill_offset + 1) * kXRegSize);
-  Poke(x21, (spill_offset + 2) * kXRegSize);
-  Poke(x22, (spill_offset + 3) * kXRegSize);
-
-  // Allocate HandleScope in callee-save registers.
-  // We will need to restore the HandleScope after the call to the API function,
-  // by allocating it in callee-save registers they will be preserved by C code.
-  Register handle_scope_base = x22;
-  Register next_address_reg = x19;
-  Register limit_reg = x20;
-  Register level_reg = w21;
-
-  Mov(handle_scope_base, next_address);
-  Ldr(next_address_reg, MemOperand(handle_scope_base, kNextOffset));
-  Ldr(limit_reg, MemOperand(handle_scope_base, kLimitOffset));
-  Ldr(level_reg, MemOperand(handle_scope_base, kLevelOffset));
-  Add(level_reg, level_reg, 1);
-  Str(level_reg, MemOperand(handle_scope_base, kLevelOffset));
-
-  if (FLAG_log_timer_events) {
-    FrameScope frame(this, StackFrame::MANUAL);
-    PushSafepointRegisters();
-    Mov(x0, ExternalReference::isolate_address(isolate()));
-    CallCFunction(ExternalReference::log_enter_external_function(isolate()), 1);
-    PopSafepointRegisters();
-  }
-
-  // Native call returns to the DirectCEntry stub which redirects to the
-  // return address pushed on stack (could have moved after GC).
-  // DirectCEntry stub itself is generated early and never moves.
-  DirectCEntryStub stub(isolate());
-  stub.GenerateCall(this, x3);
-
-  if (FLAG_log_timer_events) {
-    FrameScope frame(this, StackFrame::MANUAL);
-    PushSafepointRegisters();
-    Mov(x0, ExternalReference::isolate_address(isolate()));
-    CallCFunction(ExternalReference::log_leave_external_function(isolate()), 1);
-    PopSafepointRegisters();
-  }
-
-  Label promote_scheduled_exception;
-  Label exception_handled;
-  Label delete_allocated_handles;
-  Label leave_exit_frame;
-  Label return_value_loaded;
-
-  // Load value from ReturnValue.
-  Ldr(x0, return_value_operand);
-  Bind(&return_value_loaded);
-  // No more valid handles (the result handle was the last one). Restore
-  // previous handle scope.
-  Str(next_address_reg, MemOperand(handle_scope_base, kNextOffset));
-  if (emit_debug_code()) {
-    Ldr(w1, MemOperand(handle_scope_base, kLevelOffset));
-    Cmp(w1, level_reg);
-    Check(eq, kUnexpectedLevelAfterReturnFromApiCall);
-  }
-  Sub(level_reg, level_reg, 1);
-  Str(level_reg, MemOperand(handle_scope_base, kLevelOffset));
-  Ldr(x1, MemOperand(handle_scope_base, kLimitOffset));
-  Cmp(limit_reg, x1);
-  B(ne, &delete_allocated_handles);
-
-  Bind(&leave_exit_frame);
-  // Restore callee-saved registers.
-  Peek(x19, (spill_offset + 0) * kXRegSize);
-  Peek(x20, (spill_offset + 1) * kXRegSize);
-  Peek(x21, (spill_offset + 2) * kXRegSize);
-  Peek(x22, (spill_offset + 3) * kXRegSize);
-
-  // Check if the function scheduled an exception.
-  Mov(x5, ExternalReference::scheduled_exception_address(isolate()));
-  Ldr(x5, MemOperand(x5));
-  JumpIfNotRoot(x5, Heap::kTheHoleValueRootIndex, &promote_scheduled_exception);
-  Bind(&exception_handled);
-
-  bool restore_context = context_restore_operand != NULL;
-  if (restore_context) {
-    Ldr(cp, *context_restore_operand);
-  }
-
-  LeaveExitFrame(false, x1, !restore_context);
-  Drop(stack_space);
-  Ret();
-
-  Bind(&promote_scheduled_exception);
-  {
-    FrameScope frame(this, StackFrame::INTERNAL);
-    CallExternalReference(
-        ExternalReference(
-            Runtime::kPromoteScheduledException, isolate()), 0);
-  }
-  B(&exception_handled);
-
-  // HandleScope limit has changed. Delete allocated extensions.
-  Bind(&delete_allocated_handles);
-  Str(limit_reg, MemOperand(handle_scope_base, kLimitOffset));
-  // Save the return value in a callee-save register.
-  Register saved_result = x19;
-  Mov(saved_result, x0);
-  Mov(x0, ExternalReference::isolate_address(isolate()));
-  CallCFunction(
-      ExternalReference::delete_handle_scope_extensions(isolate()), 1);
-  Mov(x0, saved_result);
-  B(&leave_exit_frame);
 }
 
 
@@ -3284,46 +3037,26 @@ void MacroAssembler::DebugBreak() {
 }
 
 
-void MacroAssembler::PushTryHandler(StackHandler::Kind kind,
-                                    int handler_index) {
+void MacroAssembler::PushStackHandler() {
   DCHECK(jssp.Is(StackPointer()));
   // Adjust this code if the asserts don't hold.
-  STATIC_ASSERT(StackHandlerConstants::kSize == 5 * kPointerSize);
+  STATIC_ASSERT(StackHandlerConstants::kSize == 1 * kPointerSize);
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kCodeOffset == 1 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kStateOffset == 2 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kContextOffset == 3 * kPointerSize);
-  STATIC_ASSERT(StackHandlerConstants::kFPOffset == 4 * kPointerSize);
 
   // For the JSEntry handler, we must preserve the live registers x0-x4.
   // (See JSEntryStub::GenerateBody().)
-
-  unsigned state =
-      StackHandler::IndexField::encode(handler_index) |
-      StackHandler::KindField::encode(kind);
-
-  // Set up the code object and the state for pushing.
-  Mov(x10, Operand(CodeObject()));
-  Mov(x11, state);
-
-  // Push the frame pointer, context, state, and code object.
-  if (kind == StackHandler::JS_ENTRY) {
-    DCHECK(Smi::FromInt(0) == 0);
-    Push(xzr, xzr, x11, x10);
-  } else {
-    Push(fp, cp, x11, x10);
-  }
 
   // Link the current handler as the next handler.
   Mov(x11, ExternalReference(Isolate::kHandlerAddress, isolate()));
   Ldr(x10, MemOperand(x11));
   Push(x10);
+
   // Set this new handler as the current one.
   Str(jssp, MemOperand(x11));
 }
 
 
-void MacroAssembler::PopTryHandler() {
+void MacroAssembler::PopStackHandler() {
   STATIC_ASSERT(StackHandlerConstants::kNextOffset == 0);
   Pop(x10);
   Mov(x11, ExternalReference(Isolate::kHandlerAddress, isolate()));
@@ -3788,20 +3521,40 @@ void MacroAssembler::CheckMap(Register obj_map,
 }
 
 
-void MacroAssembler::DispatchMap(Register obj,
-                                 Register scratch,
-                                 Handle<Map> map,
-                                 Handle<Code> success,
-                                 SmiCheckType smi_check_type) {
+void MacroAssembler::DispatchWeakMap(Register obj, Register scratch1,
+                                     Register scratch2, Handle<WeakCell> cell,
+                                     Handle<Code> success,
+                                     SmiCheckType smi_check_type) {
   Label fail;
   if (smi_check_type == DO_SMI_CHECK) {
     JumpIfSmi(obj, &fail);
   }
-  Ldr(scratch, FieldMemOperand(obj, HeapObject::kMapOffset));
-  Cmp(scratch, Operand(map));
+  Ldr(scratch1, FieldMemOperand(obj, HeapObject::kMapOffset));
+  CmpWeakValue(scratch1, cell, scratch2);
   B(ne, &fail);
   Jump(success, RelocInfo::CODE_TARGET);
   Bind(&fail);
+}
+
+
+void MacroAssembler::CmpWeakValue(Register value, Handle<WeakCell> cell,
+                                  Register scratch) {
+  Mov(scratch, Operand(cell));
+  Ldr(scratch, FieldMemOperand(scratch, WeakCell::kValueOffset));
+  Cmp(value, scratch);
+}
+
+
+void MacroAssembler::GetWeakValue(Register value, Handle<WeakCell> cell) {
+  Mov(value, Operand(cell));
+  Ldr(value, FieldMemOperand(value, WeakCell::kValueOffset));
+}
+
+
+void MacroAssembler::LoadWeakValue(Register value, Handle<WeakCell> cell,
+                                   Label* miss) {
+  GetWeakValue(value, cell);
+  JumpIfSmi(value, miss);
 }
 
 
@@ -3819,6 +3572,20 @@ void MacroAssembler::LoadElementsKindFromMap(Register result, Register map) {
   __ Ldrb(result, FieldMemOperand(map, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
   DecodeField<Map::ElementsKindBits>(result);
+}
+
+
+void MacroAssembler::GetMapConstructor(Register result, Register map,
+                                       Register temp, Register temp2) {
+  Label done, loop;
+  Ldr(result, FieldMemOperand(map, Map::kConstructorOrBackPointerOffset));
+  Bind(&loop);
+  JumpIfSmi(result, &done);
+  CompareObjectType(result, temp, temp2, MAP_TYPE);
+  B(ne, &done);
+  Ldr(result, FieldMemOperand(result, Map::kConstructorOrBackPointerOffset));
+  B(&loop);
+  Bind(&done);
 }
 
 
@@ -3873,7 +3640,7 @@ void MacroAssembler::TryGetFunctionPrototype(Register function,
     // Non-instance prototype: fetch prototype from constructor field in initial
     // map.
     Bind(&non_instance);
-    Ldr(result, FieldMemOperand(result, Map::kConstructorOffset));
+    GetMapConstructor(result, result, scratch, scratch);
   }
 
   // All done.
@@ -4058,7 +3825,7 @@ void MacroAssembler::EmitSeqStringSetCharCheck(
   Cmp(index, index_type == kIndexIsSmi ? scratch : Operand::UntagSmi(scratch));
   Check(lt, kIndexIsTooLarge);
 
-  DCHECK_EQ(0, Smi::FromInt(0));
+  DCHECK_EQ(static_cast<Smi*>(0), Smi::FromInt(0));
   Cmp(index, 0);
   Check(ge, kIndexIsNegative);
 }
@@ -4087,7 +3854,7 @@ void MacroAssembler::CheckAccessGlobalProxy(Register holder_reg,
 
   // Check the context is a native context.
   if (emit_debug_code()) {
-    // Read the first word and compare to the global_context_map.
+    // Read the first word and compare to the native_context_map.
     Ldr(scratch2, FieldMemOperand(scratch1, HeapObject::kMapOffset));
     CompareRoot(scratch2, Heap::kNativeContextMapRootIndex);
     Check(eq, kExpectedNativeContext);
@@ -4213,10 +3980,11 @@ void MacroAssembler::LoadFromNumberDictionary(Label* miss,
   }
 
   Bind(&done);
-  // Check that the value is a normal property.
+  // Check that the value is a field property.
   const int kDetailsOffset =
       SeededNumberDictionary::kElementsStartOffset + 2 * kPointerSize;
   Ldrsw(scratch1, UntagSmiFieldMemOperand(scratch2, kDetailsOffset));
+  DCHECK_EQ(DATA, 0);
   TestAndBranchIfAnySet(scratch1, PropertyDetails::TypeField::kMask, miss);
 
   // Get the value at the masked, scaled index and return.
@@ -4630,17 +4398,6 @@ void MacroAssembler::HasColor(Register object,
   }
 
   // Fall through if it does not have the right color.
-}
-
-
-void MacroAssembler::CheckMapDeprecated(Handle<Map> map,
-                                        Register scratch,
-                                        Label* if_deprecated) {
-  if (map->CanBeDeprecated()) {
-    Mov(scratch, Operand(map));
-    Ldrsw(scratch, FieldMemOperand(scratch, Map::kBitField3Offset));
-    TestAndBranchIfAnySet(scratch, Map::Deprecated::kMask, if_deprecated);
-  }
 }
 
 

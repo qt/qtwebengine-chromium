@@ -31,8 +31,8 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/ImageAnimationPolicy.h"
 #include "platform/graphics/ImageOrientation.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
@@ -41,6 +41,7 @@
 #include "wtf/RetainPtr.h"
 #include "wtf/text/WTFString.h"
 
+class SkBitmap;
 class SkImage;
 
 namespace blink {
@@ -115,19 +116,24 @@ public:
     // True if this image can potentially animate.
     virtual bool maybeAnimated() { return false; }
 
+    // Set animationPolicy
+    virtual void setAnimationPolicy(ImageAnimationPolicy) { }
+    virtual ImageAnimationPolicy animationPolicy() { return ImageAnimationPolicyAllowed; }
+    virtual void advanceTime(double deltaTimeInSeconds) { }
+
     // Typically the ImageResource that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }
     void setImageObserver(ImageObserver* observer) { m_imageObserver = observer; }
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return nullptr; }
+    virtual bool bitmapForCurrentFrame(SkBitmap*) WARN_UNUSED_RETURN;
 
     virtual PassRefPtr<Image> imageForDefaultFrame();
 
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
-        const FloatSize&, const FloatPoint& phase, CompositeOperator,
-        const FloatRect&, WebBlendMode = WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
+        const FloatSize&, const FloatPoint& phase, SkXfermode::Mode,
+        const FloatRect&, const IntSize& repeatSpacing = IntSize());
 
 #if ENABLE(ASSERT)
     virtual bool notSolidColor() { return true; }
@@ -136,14 +142,13 @@ public:
 protected:
     Image(ImageObserver* = 0);
 
-    static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, CompositeOperator);
+    static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, SkXfermode::Mode);
     static FloatRect adjustForNegativeSize(const FloatRect&); // A helper method for translating negative width and height values.
 
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode) = 0;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode, RespectImageOrientationEnum);
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, SkXfermode::Mode, RespectImageOrientationEnum) = 0;
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
-        CompositeOperator, WebBlendMode, const IntSize& repeatSpacing);
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator);
+        SkXfermode::Mode, const IntSize& repeatSpacing);
+    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode);
 
     // Supporting tiled drawing
     virtual bool mayFillWithSolidColor() { return false; }

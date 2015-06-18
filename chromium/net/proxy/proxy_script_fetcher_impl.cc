@@ -132,7 +132,7 @@ int ProxyScriptFetcherImpl::Fetch(
   }
 
   cur_request_ =
-      url_request_context_->CreateRequest(url, DEFAULT_PRIORITY, this, NULL);
+      url_request_context_->CreateRequest(url, DEFAULT_PRIORITY, this);
   cur_request_->set_method("GET");
 
   // Make sure that the PAC script is downloaded using a direct connection,
@@ -155,6 +155,7 @@ int ProxyScriptFetcherImpl::Fetch(
 
   // Post a task to timeout this request if it takes too long.
   cur_request_id_ = ++next_id_;
+
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ProxyScriptFetcherImpl::OnTimeout,

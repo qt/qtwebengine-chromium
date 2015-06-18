@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/cancelable_callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/cancellation_flag.h"
@@ -16,11 +17,18 @@
 #include "ui/gl/gl_state_restorer.h"
 #include "ui/gl/gpu_preference.h"
 
+namespace gpu {
+class GLContextVirtual;
+}  // namespace gpu
+
 namespace gfx {
 
 class GLSurface;
+class GPUTiming;
+class GPUTimingClient;
 class VirtualGLApi;
 struct GLVersionInfo;
+
 
 // Encapsulates an OpenGL context, hiding platform specific management.
 class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
@@ -33,25 +41,6 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // should be specific for all platforms though.
   virtual bool Initialize(
       GLSurface* compatible_surface, GpuPreference gpu_preference) = 0;
-
-  class FlushEvent : public base::RefCountedThreadSafe<FlushEvent> {
-    public:
-      bool IsSignaled();
-
-    private:
-      friend class base::RefCountedThreadSafe<FlushEvent>;
-      friend class GLContext;
-      FlushEvent();
-      virtual ~FlushEvent();
-      void Signal();
-
-      base::CancellationFlag flag_;
-  };
-
-  // Needs to be called with this context current. It will return a FlushEvent
-  // that is initially unsignaled, but will transition to signaled after the
-  // next glFlush() or glFinish() occurs in this context.
-  scoped_refptr<FlushEvent> SignalFlush();
 
   // Destroys the GL context.
   virtual void Destroy() = 0;
@@ -69,6 +58,9 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // Get the underlying platform specific GL context "handle".
   virtual void* GetHandle() = 0;
 
+  // Creates a GPUTimingClient class which abstracts various GPU Timing exts.
+  virtual scoped_refptr<gfx::GPUTimingClient> CreateGPUTimingClient() = 0;
+
   // Gets the GLStateRestorer for the context.
   GLStateRestorer* GetGLStateRestorer();
 
@@ -76,7 +68,11 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   void SetGLStateRestorer(GLStateRestorer* state_restorer);
 
   // Set swap interval. This context must be current.
-  virtual void SetSwapInterval(int interval) = 0;
+  void SetSwapInterval(int interval);
+
+  // Forces the swap interval to zero (no vsync) regardless of any future values
+  // passed to SetSwapInterval.
+  void ForceSwapIntervalZero(bool force);
 
   // Returns space separated list of extensions. The context must be current.
   virtual std::string GetExtensions();
@@ -139,8 +135,13 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // Returns the GL renderer string. The context must be current.
   virtual std::string GetGLRenderer();
 
-  // Called when glFlush()/glFinish() is called with this context current.
-  void OnFlush();
+  // Return a callback that, when called, indicates that the state the
+  // underlying context has been changed by code outside of the command buffer,
+  // and will need to be restored.
+  virtual base::Closure GetStateWasDirtiedExternallyCallback();
+
+  // Restore the context's state if it was dirtied by an external caller.
+  virtual void RestoreStateIfDirtiedExternally();
 
  protected:
   virtual ~GLContext();
@@ -169,18 +170,28 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // Returns the last real (non-virtual) GLContext made current.
   static GLContext* GetRealCurrent();
 
+  virtual void OnSetSwapInterval(int interval) = 0;
+
+  bool GetStateWasDirtiedExternally() const;
+  void SetStateWasDirtiedExternally(bool dirtied_externally);
+
  private:
   friend class base::RefCounted<GLContext>;
 
   // For GetRealCurrent.
   friend class VirtualGLApi;
+  friend class gpu::GLContextVirtual;
 
   scoped_refptr<GLShareGroup> share_group_;
   scoped_ptr<VirtualGLApi> virtual_gl_api_;
+  bool state_dirtied_externally_;
   scoped_ptr<GLStateRestorer> state_restorer_;
   scoped_ptr<GLVersionInfo> version_info_;
 
-  std::vector<scoped_refptr<FlushEvent> > flush_events_;
+  int swap_interval_;
+  bool force_swap_interval_zero_;
+
+  base::CancelableCallback<void()> state_dirtied_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContext);
 };
@@ -188,6 +199,7 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
 class GL_EXPORT GLContextReal : public GLContext {
  public:
   explicit GLContextReal(GLShareGroup* share_group);
+  scoped_refptr<gfx::GPUTimingClient> CreateGPUTimingClient() override;
 
  protected:
   ~GLContextReal() override;
@@ -195,6 +207,7 @@ class GL_EXPORT GLContextReal : public GLContext {
   void SetCurrent(GLSurface* surface) override;
 
  private:
+  scoped_ptr<gfx::GPUTiming> gpu_timing_;
   DISALLOW_COPY_AND_ASSIGN(GLContextReal);
 };
 

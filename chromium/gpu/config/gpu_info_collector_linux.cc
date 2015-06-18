@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -16,6 +15,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/config/gpu_info_collector.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
@@ -31,6 +31,7 @@ namespace gpu {
 
 namespace {
 
+#if defined(USE_LIBPCI)
 // This checks if a system supports PCI bus.
 // We check the existence of /sys/bus/pci or /sys/bug/pci_express.
 bool IsPciSupported() {
@@ -39,6 +40,7 @@ bool IsPciSupported() {
   return (base::PathExists(pci_path) ||
           base::PathExists(pcie_path));
 }
+#endif  // defined(USE_LIBPCI)
 
 // Scan /etc/ati/amdpcsdb.default for "ReleaseVersion".
 // Return empty string on failing.
@@ -161,7 +163,7 @@ CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
 
   TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kGpuNoContextLost)) {
     gpu_info->can_lose_context = false;
   } else {

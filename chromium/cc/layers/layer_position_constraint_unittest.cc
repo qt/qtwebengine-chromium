@@ -11,6 +11,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -63,7 +64,8 @@ void ExecuteCalculateDrawProperties(LayerImpl* root_layer) {
 
 class LayerPositionConstraintTest : public testing::Test {
  public:
-  LayerPositionConstraintTest() : host_impl_(&proxy_, &shared_bitmap_manager_) {
+  LayerPositionConstraintTest()
+      : host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_) {
     root_ = CreateTreeForTest();
     scroll_ = root_->children()[0];
     fixed_to_top_left_.set_is_fixed_position(true);
@@ -84,6 +86,7 @@ class LayerPositionConstraintTest : public testing::Test {
     scoped_ptr<LayerImpl> great_grand_child =
         LayerImpl::Create(host_impl_.active_tree(), 4);
 
+    root->SetHasRenderSurface(true);
     gfx::Transform IdentityMatrix;
     gfx::Point3F transform_origin;
     gfx::PointF position;
@@ -126,6 +129,7 @@ class LayerPositionConstraintTest : public testing::Test {
  protected:
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
   scoped_ptr<LayerImpl> root_;
   LayerImpl* scroll_;
@@ -599,7 +603,7 @@ TEST_F(LayerPositionConstraintTest,
 
   child->SetIsContainerForFixedPositionLayers(true);
   grand_child->SetPosition(gfx::PointF(8.f, 6.f));
-  grand_child->SetForceRenderSurface(true);
+  grand_child->SetHasRenderSurface(true);
   great_grand_child->SetPositionConstraint(fixed_to_top_left_);
   great_grand_child->SetDrawsContent(true);
 
@@ -739,9 +743,9 @@ TEST_F(LayerPositionConstraintTest,
   // Actually set up the scenario here.
   child->SetIsContainerForFixedPositionLayers(true);
   grand_child->SetPosition(gfx::PointF(8.f, 6.f));
-  grand_child->SetForceRenderSurface(true);
+  grand_child->SetHasRenderSurface(true);
   great_grand_child->SetPosition(gfx::PointF(40.f, 60.f));
-  great_grand_child->SetForceRenderSurface(true);
+  great_grand_child->SetHasRenderSurface(true);
   fixed_position_child->SetPositionConstraint(fixed_to_top_left_);
   fixed_position_child->SetDrawsContent(true);
 
@@ -907,7 +911,7 @@ TEST_F(LayerPositionConstraintTest,
   LayerImpl* grand_child = child->children()[0];
 
   child->SetIsContainerForFixedPositionLayers(true);
-  child->SetForceRenderSurface(true);
+  child->SetHasRenderSurface(true);
   grand_child->SetPositionConstraint(fixed_to_top_left_);
   grand_child->SetDrawsContent(true);
 

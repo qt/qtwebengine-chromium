@@ -20,7 +20,7 @@ class WebScrollOffsetAnimationCurve;
 // CSSOM View scroll APIs.
 class ProgrammaticScrollAnimator {
     WTF_MAKE_NONCOPYABLE(ProgrammaticScrollAnimator);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ProgrammaticScrollAnimator);
 public:
     static PassOwnPtr<ProgrammaticScrollAnimator> create(ScrollableArea*);
 
@@ -29,9 +29,33 @@ public:
     void animateToOffset(FloatPoint);
     void cancelAnimation();
     void tickAnimation(double monotonicTime);
+    bool hasAnimationThatRequiresService() const;
+    void updateCompositorAnimations();
+    void layerForCompositedScrollingDidChange();
+    void notifyCompositorAnimationFinished(int groupId);
 
 private:
     explicit ProgrammaticScrollAnimator(ScrollableArea*);
+
+    enum class RunState {
+        // No animation.
+        Idle,
+
+        // Waiting to send an animation to the compositor. There might also
+        // already be another animation running on the compositor that will need
+        // to be canceled first.
+        WaitingToSendToCompositor,
+
+        // Running an animation on the compositor.
+        RunningOnCompositor,
+
+        // Running an animation on the main thread.
+        RunningOnMainThread,
+
+        // Waiting to cancel the animation currently running on the compositor.
+        // There is no pending animation to replace the canceled animation.
+        WaitingToCancelOnCompositor
+    };
 
     void resetAnimationState();
 
@@ -39,6 +63,9 @@ private:
     OwnPtr<WebScrollOffsetAnimationCurve> m_animationCurve;
     FloatPoint m_targetOffset;
     double m_startTime;
+    RunState m_runState;
+    int m_compositorAnimationId;
+    int m_compositorAnimationGroupId;
 };
 
 } // namespace blink

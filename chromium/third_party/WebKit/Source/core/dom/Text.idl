@@ -16,18 +16,17 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
+
+// https://dom.spec.whatwg.org/#interface-text
+
 [
     Constructor(optional DOMString data = ""),
     ConstructorCallWith=Document,
 ] interface Text : CharacterData {
+    [NewObject, RaisesException] Text splitText(unsigned long offset);
+    [MeasureAs=TextWholeText] readonly attribute DOMString wholeText;
 
-    // DOM Level 1
-    [RaisesException] Text splitText(unsigned long offset);
-
-    // Introduced in DOM Level 3:
-    readonly attribute DOMString       wholeText;
-    [MeasureAs=TextReplaceWholeText] Text replaceWholeText(DOMString content); // Removed from DOM4.
-
-    // Shadow DOM API
+    // Shadow DOM
+    // http://w3c.github.io/webcomponents/spec/shadow/#extensions-to-text-interface
     NodeList getDestinationInsertionPoints();
 };

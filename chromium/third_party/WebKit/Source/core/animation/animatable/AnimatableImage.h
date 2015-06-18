@@ -33,7 +33,7 @@
 
 #include "core/animation/animatable/AnimatableValue.h"
 #include "core/css/CSSCrossfadeValue.h"
-#include "core/rendering/style/StyleImage.h"
+#include "core/style/StyleImage.h"
 
 namespace blink {
 
@@ -46,7 +46,7 @@ public:
     }
     CSSValue* toCSSValue() const { return m_value.get(); }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_value);
         AnimatableValue::trace(visitor);

@@ -5,11 +5,13 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_PROTOCOL_NETWORK_HANDLER_H_
 #define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_NETWORK_HANDLER_H_
 
-#include "content/browser/devtools/protocol/devtools_protocol_handler_impl.h"
+#include "base/memory/weak_ptr.h"
+#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "net/cookies/canonical_cookie.h"
 
 namespace content {
 
-class RenderViewHost;
+class RenderFrameHostImpl;
 
 namespace devtools {
 namespace network {
@@ -21,19 +23,31 @@ class NetworkHandler {
   NetworkHandler();
   virtual ~NetworkHandler();
 
-  void SetRenderViewHost(RenderViewHost* host);
+  void SetRenderFrameHost(RenderFrameHostImpl* host);
+  void SetClient(scoped_ptr<Client> client);
 
   Response ClearBrowserCache();
   Response ClearBrowserCookies();
-  Response CanEmulateNetworkConditions(bool* result);
+  Response GetCookies(DevToolsCommandId command_id);
+  Response DeleteCookie(DevToolsCommandId command_id,
+                        const std::string& cookie_name,
+                        const std::string& url);
 
+  Response CanEmulateNetworkConditions(bool* result);
   Response EmulateNetworkConditions(bool offline,
                                     double latency,
                                     double download_throughput,
                                     double upload_throughput);
 
  private:
-  RenderViewHost* host_;
+  void SendGetCookiesResponse(
+      DevToolsCommandId command_id,
+      const net::CookieList& cookie_list);
+  void SendDeleteCookieResponse(DevToolsCommandId command_id);
+
+  RenderFrameHostImpl* host_;
+  scoped_ptr<Client> client_;
+  base::WeakPtrFactory<NetworkHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkHandler);
 };

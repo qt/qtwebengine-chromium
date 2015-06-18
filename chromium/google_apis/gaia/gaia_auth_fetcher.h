@@ -139,6 +139,17 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // called on the consumer on the original thread.
   void StartAuthCodeForOAuth2TokenExchange(const std::string& auth_code);
 
+  // Start a request to exchange the authorization code for an OAuthLogin-scoped
+  // oauth2 token.
+  // Resulting refresh token is annotated on the server with |device_id|. Format
+  // of device_id on the server is at most 64 unicode characters.
+  //
+  // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
+  // called on the consumer on the original thread.
+  void StartAuthCodeForOAuth2TokenExchangeWithDeviceId(
+      const std::string& auth_code,
+      const std::string& device_id);
+
   // Start a request to get user info for the account identified by |lsid|.
   //
   // Either OnGetUserInfoSuccess or OnGetUserInfoFailure will be
@@ -191,6 +202,18 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // /MergeSession requests.
   void StartGetCheckConnectionInfo();
 
+  // Starts listing any sessions that exist for the IDP. If all requested scopes
+  // have been approved by the session user, then a login hint is included in
+  // the response.
+  void StartListIDPSessions(const std::string& scopes,
+                            const std::string& domain);
+
+  // Generates an access token for the session, specifying the scopes and
+  // |login_hint|.
+  void StartGetTokenResponse(const std::string& scopes,
+                             const std::string& domain,
+                             const std::string& login_hint);
+
   // Implementation of net::URLFetcherDelegate
   void OnURLFetchComplete(const net::URLFetcher* source) override;
 
@@ -226,6 +249,8 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static const char kClientLoginToOAuth2WithDeviceTypeBodyFormat[];
   // The format of the POST body to get OAuth2 token pair from auth code.
   static const char kOAuth2CodeToTokenPairBodyFormat[];
+  // Additional param for the POST body to get OAuth2 token pair from auth code.
+  static const char kOAuth2CodeToTokenPairDeviceIdParam[];
   // The format of the POST body to revoke an OAuth2 token.
   static const char kOAuth2RevokeTokenBodyFormat[];
   // The format of the POST body for GetUserInfo.
@@ -314,6 +339,14 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                                        const net::URLRequestStatus& status,
                                        int response_code);
 
+  void OnListIdpSessionsFetched(const std::string& data,
+                                const net::URLRequestStatus& status,
+                                int response_code);
+
+  void OnGetTokenResponseFetched(const std::string& data,
+                                 const net::URLRequestStatus& status,
+                                 int response_code);
+
   // Tokenize the results of a ClientLogin fetch.
   static void ParseClientLoginResponse(const std::string& data,
                                        std::string* sid,
@@ -333,6 +366,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
 
   static bool ParseClientLoginToOAuth2Cookie(const std::string& cookie,
                                              std::string* auth_code);
+
+  static bool ParseListIdpSessionsResponse(const std::string& data,
+                                           std::string* login_hint);
 
   // Is this a special case Gaia error for TwoFactor auth?
   static bool IsSecondFactorSuccess(const std::string& alleged_error);
@@ -356,8 +392,10 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                                             const char* const service);
   // Create body to get OAuth2 auth code.
   static std::string MakeGetAuthCodeBody(bool include_device_type);
-  // Given auth code, create body to get OAuth2 token pair.
-  static std::string MakeGetTokenPairBody(const std::string& auth_code);
+  // Given auth code and device ID (optional), create body to get OAuth2 token
+  // pair.
+  static std::string MakeGetTokenPairBody(const std::string& auth_code,
+                                          const std::string& device_id);
   // Given an OAuth2 token, create body to revoke the token.
   std::string MakeRevokeTokenBody(const std::string& auth_token);
   // Supply the lsid returned from ClientLogin in order to fetch
@@ -375,13 +413,20 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static std::string MakeOAuthLoginBody(const std::string& service,
                                         const std::string& source);
 
+  static std::string MakeListIDPSessionsBody(const std::string& scopes,
+                                             const std::string& domain);
+
+  static std::string MakeGetTokenResponseBody(const std::string& scopes,
+                                              const std::string& domain,
+                                              const std::string& login_hint);
+
   // Create a fetcher usable for making any Gaia request.  |body| is used
   // as the body of the POST request sent to GAIA.  Any strings listed in
   // |headers| are added as extra HTTP headers in the request.
   //
   // |load_flags| are passed to directly to net::URLFetcher::Create() when
   // creating the URL fetcher.
-  static net::URLFetcher* CreateGaiaFetcher(
+  static scoped_ptr<net::URLFetcher> CreateGaiaFetcher(
       net::URLRequestContextGetter* getter,
       const std::string& body,
       const std::string& headers,
@@ -410,12 +455,13 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   const GURL oauth_login_gurl_;
   const GURL list_accounts_gurl_;
   const GURL get_check_connection_info_url_;
+  const GURL oauth2_iframe_url_;
 
   // While a fetch is going on:
   scoped_ptr<net::URLFetcher> fetcher_;
   GURL client_login_to_oauth2_gurl_;
   std::string request_body_;
-  std::string requested_service_; // Currently tracked for IssueAuthToken only.
+  std::string requested_service_;
   bool fetch_pending_;
 
   friend class GaiaAuthFetcherTest;

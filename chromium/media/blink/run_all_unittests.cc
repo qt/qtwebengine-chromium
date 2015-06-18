@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
+#include "base/message_loop/message_loop.h"
 #include "base/test/launcher/unit_test_launcher.h"
 #include "base/test/test_suite.h"
 #include "build/build_config.h"
@@ -13,6 +14,10 @@
 #include "base/android/jni_android.h"
 #include "media/base/android/media_jni_registrar.h"
 #include "ui/gl/android/gl_jni_registrar.h"
+#endif
+
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+#include "gin/v8_initializer.h"
 #endif
 
 class TestBlinkPlatformSupport : NON_EXPORTED_BASE(public blink::Platform) {
@@ -41,10 +46,10 @@ const unsigned char* TestBlinkPlatformSupport::getTraceCategoryEnabledFlag(
 class BlinkMediaTestSuite : public base::TestSuite {
  public:
   BlinkMediaTestSuite(int argc, char** argv);
-  virtual ~BlinkMediaTestSuite();
+  ~BlinkMediaTestSuite() override;
 
  protected:
-  virtual void Initialize() override;
+  void Initialize() override;
 
  private:
   scoped_ptr<TestBlinkPlatformSupport> blink_platform_support_;
@@ -73,6 +78,16 @@ void BlinkMediaTestSuite::Initialize() {
   // present.
   media::InitializeMediaLibraryForTesting();
 
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+  gin::V8Initializer::LoadV8Snapshot();
+#endif
+
+  // Dummy task runner is initialized here because the blink::initialize creates
+  // IsolateHolder which needs the current task runner handle. There should be
+  // no task posted to this task runner.
+  scoped_ptr<base::MessageLoop> message_loop;
+  if (!base::MessageLoop::current())
+    message_loop.reset(new base::MessageLoop());
   blink::initialize(blink_platform_support_.get());
 }
 

@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # GYP file to build experimental directory.
 {
   'targets': [
@@ -20,60 +24,35 @@
       },
     },
     {
-      'target_name': 'SkiaExamples',
+      'target_name': 'multipage_pdf_profiler',
       'type': 'executable',
-      'mac_bundle' : 1,
       'sources': [
-        '../experimental/SkiaExamples/SkExample.h',
-        '../experimental/SkiaExamples/SkExample.cpp',
-        '../experimental/SkiaExamples/HelloSkiaExample.cpp',
+        '../experimental/tools/multipage_pdf_profiler.cpp',
+        '../experimental/tools/PageCachingDocument.cpp',
       ],
       'dependencies': [
-        'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
-        'views.gyp:views',
-        'xml.gyp:xml',
+        'pdf.gyp:pdf',
+        'tools.gyp:proc_stats',
+        'tools.gyp:sk_tool_utils',
       ],
-      'conditions' : [
-        [ 'skia_gpu == 1', {
-          'include_dirs' : [
-            '../src/gpu',
-          ],
-        }],
-        [ 'skia_os == "win"', {
-          'sources' : [
-            '../src/views/win/SkOSWindow_Win.cpp',
-            '../src/views/win/skia_win.cpp',
-          ],
-        }],
-        [ 'skia_os == "mac"', {
-          'sources': [
-            '../experimental/SkiaExamples/SkiaExamples-Info.plist',
-            '../experimental/SkiaExamples/SkExampleNSView.h',
-            '../experimental/SkiaExamples/SkExampleNSView.mm',
-            '../src/views/mac/SampleAppDelegate.h',
-            '../src/views/mac/SampleAppDelegate.mm',
-            '../src/views/mac/SkEventNotifier.mm',
-            '../src/views/mac/skia_mac.mm',
-            '../src/views/mac/SkNSView.h',
-            '../src/views/mac/SkNSView.mm',
-            '../src/views/mac/SkOptionsTableView.h',
-            '../src/views/mac/SkOptionsTableView.mm',
-            '../src/views/mac/SkOSWindow_Mac.mm',
-            '../src/views/mac/SkTextFieldCell.h',
-            '../src/views/mac/SkTextFieldCell.m',
-          ],
-          'include_dirs' : [
-            '../src/views/mac/'
-          ],
-          'xcode_settings' : {
-            'INFOPLIST_FILE' : '../experimental/SkiaExamples/SkiaExamples-Info.plist',
-          },
-          'mac_bundle_resources' : [
-            '../experimental/SkiaExamples/SkiaExamples.xib'
-          ],
-        }],
+    },
+    {
+      'target_name': 'skp_to_pdf_md5',
+      'type': 'executable',
+      'sources': [
+        '../experimental/tools/skp_to_pdf_md5.cpp',
+        '../experimental/tools/SkDmuxWStream.cpp',
       ],
-    }
+      'include_dirs': [
+        '../src/core',
+        '../tools/flags',
+      ],
+      'dependencies': [
+        'pdf.gyp:pdf',
+        'skia_lib.gyp:skia_lib',
+        'tools.gyp:sk_tool_utils',
+      ],
+    },
   ],
 }

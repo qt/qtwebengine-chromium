@@ -59,11 +59,14 @@
 
 #include <openssl/dsa.h>
 
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/digest.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
+#include <openssl/thread.h>
 
 #include "internal.h"
 
@@ -120,14 +123,16 @@ static int sign_setup(const DSA *dsa, BN_CTX *ctx_in, BIGNUM **kinvp,
 
   BN_set_flags(&k, BN_FLG_CONSTTIME);
 
-  if (!BN_MONT_CTX_set_locked((BN_MONT_CTX **)&dsa->method_mont_p,
-                              CRYPTO_LOCK_DSA, dsa->p, ctx)) {
+  if (BN_MONT_CTX_set_locked((BN_MONT_CTX **)&dsa->method_mont_p,
+                             (CRYPTO_MUTEX *)&dsa->method_mont_p_lock, dsa->p,
+                             ctx) == NULL) {
     goto err;
   }
 
   /* Compute r = (g^k mod p) mod q */
-  if (!BN_copy(&kq, &k))
+  if (!BN_copy(&kq, &k)) {
     goto err;
+  }
 
   /* We do not want timing information to leak the length of k,
    * so we compute g^k using an equivalent exponent of fixed length.
@@ -135,11 +140,11 @@ static int sign_setup(const DSA *dsa, BN_CTX *ctx_in, BIGNUM **kinvp,
    * (This is a kludge that we need because the BN_mod_exp_mont()
    * does not let us specify the desired timing behaviour.) */
 
-  if (!BN_add(&kq, &kq, dsa->q))
+  if (!BN_add(&kq, &kq, dsa->q)) {
     goto err;
-  if (BN_num_bits(&kq) <= BN_num_bits(dsa->q)) {
-    if (!BN_add(&kq, &kq, dsa->q))
-      goto err;
+  }
+  if (BN_num_bits(&kq) <= BN_num_bits(dsa->q) && !BN_add(&kq, &kq, dsa->q)) {
+    goto err;
   }
 
   K = &kq;
@@ -157,14 +162,10 @@ static int sign_setup(const DSA *dsa, BN_CTX *ctx_in, BIGNUM **kinvp,
     goto err;
   }
 
-  if (*kinvp != NULL) {
-    BN_clear_free(*kinvp);
-  }
+  BN_clear_free(*kinvp);
   *kinvp = kinv;
   kinv = NULL;
-  if (*rp != NULL) {
-    BN_clear_free(*rp);
-  }
+  BN_clear_free(*rp);
   *rp = r;
   ret = 1;
 
@@ -272,15 +273,10 @@ err:
     BN_free(r);
     BN_free(s);
   }
-  if (ctx != NULL) {
-    BN_CTX_free(ctx);
-  }
+  BN_CTX_free(ctx);
   BN_clear_free(&m);
   BN_clear_free(&xr);
-  if (kinv != NULL) {
-    /* dsa->kinv is NULL now if we used it */
-    BN_clear_free(kinv);
-  }
+  BN_clear_free(kinv);
 
   return ret;
 }
@@ -361,12 +357,14 @@ static int verify(int *out_valid, const uint8_t *dgst, size_t digest_len,
   }
 
   mont = BN_MONT_CTX_set_locked((BN_MONT_CTX **)&dsa->method_mont_p,
-                                CRYPTO_LOCK_DSA, dsa->p, ctx);
+                                (CRYPTO_MUTEX *)&dsa->method_mont_p_lock,
+                                dsa->p, ctx);
   if (!mont) {
     goto err;
   }
 
-  if (!BN_mod_exp2_mont(&t1, dsa->g, &u1, dsa->pub_key, &u2, dsa->p, ctx, mont)) {
+  if (!BN_mod_exp2_mont(&t1, dsa->g, &u1, dsa->pub_key, &u2, dsa->p, ctx,
+                        mont)) {
     goto err;
   }
 
@@ -385,9 +383,7 @@ err:
   if (ret != 1) {
     OPENSSL_PUT_ERROR(DSA, verify, ERR_R_BN_LIB);
   }
-  if (ctx != NULL) {
-    BN_CTX_free(ctx);
-  }
+  BN_CTX_free(ctx);
   BN_free(&u1);
   BN_free(&u2);
   BN_free(&t1);
@@ -440,15 +436,13 @@ static int keygen(DSA *dsa) {
   ok = 1;
 
 err:
-  if (pub_key != NULL && dsa->pub_key == NULL) {
+  if (dsa->pub_key == NULL) {
     BN_free(pub_key);
   }
-  if (priv_key != NULL && dsa->priv_key == NULL) {
+  if (dsa->priv_key == NULL) {
     BN_free(priv_key);
   }
-  if (ctx != NULL) {
-    BN_CTX_free(ctx);
-  }
+  BN_CTX_free(ctx);
 
   return ok;
 }
@@ -482,30 +476,35 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
   qsize = qbits / 8;
 
   if (qsize != SHA_DIGEST_LENGTH && qsize != SHA224_DIGEST_LENGTH &&
-      qsize != SHA256_DIGEST_LENGTH)
+      qsize != SHA256_DIGEST_LENGTH) {
     /* invalid q size */
     return 0;
+  }
 
-  if (bits < 512)
+  if (bits < 512) {
     bits = 512;
+  }
 
   bits = (bits + 63) / 64 * 64;
 
   /* NB: seed_len == 0 is special case: copy generated seed to
    * seed_in if it is not NULL. */
-  if (seed_len && (seed_len < (size_t)qsize))
+  if (seed_len && (seed_len < (size_t)qsize)) {
     seed_in = NULL; /* seed buffer too small -- ignore */
-  if (seed_len > (size_t)qsize)
+  }
+  if (seed_len > (size_t)qsize) {
     seed_len = qsize; /* App. 2.2 of FIPS PUB 186 allows larger SEED,
                        * but our internal buffers are restricted to 160 bits*/
-  if (seed_in != NULL)
+  }
+  if (seed_in != NULL) {
     memcpy(seed, seed_in, seed_len);
+  }
 
-  if ((ctx = BN_CTX_new()) == NULL)
+  ctx = BN_CTX_new();
+  mont = BN_MONT_CTX_new();
+  if (ctx == NULL || mont == NULL) {
     goto err;
-
-  if ((mont = BN_MONT_CTX_new()) == NULL)
-    goto err;
+  }
 
   BN_CTX_start(ctx);
   r0 = BN_CTX_get(ctx);
@@ -517,20 +516,24 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
   p = BN_CTX_get(ctx);
   test = BN_CTX_get(ctx);
 
-  if (!BN_lshift(test, BN_value_one(), bits - 1))
+  if (!BN_lshift(test, BN_value_one(), bits - 1)) {
     goto err;
+  }
 
   for (;;) {
-    for (;;) /* find q */
-    {
+    /* Find q. */
+    for (;;) {
       int seed_is_random;
 
       /* step 1 */
-      if (!BN_GENCB_call(cb, 0, m++))
+      if (!BN_GENCB_call(cb, 0, m++)) {
         goto err;
+      }
 
       if (!seed_len) {
-        RAND_pseudo_bytes(seed, qsize);
+        if (!RAND_bytes(seed, qsize)) {
+          goto err;
+        }
         seed_is_random = 1;
       } else {
         seed_is_random = 0;
@@ -541,39 +544,43 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
       /* precompute "SEED + 1" for step 7: */
       for (i = qsize - 1; i < qsize; i--) {
         buf[i]++;
-        if (buf[i] != 0)
+        if (buf[i] != 0) {
           break;
+        }
       }
 
       /* step 2 */
-      if (!EVP_Digest(seed, qsize, md, NULL, evpmd, NULL))
+      if (!EVP_Digest(seed, qsize, md, NULL, evpmd, NULL) ||
+          !EVP_Digest(buf, qsize, buf2, NULL, evpmd, NULL)) {
         goto err;
-      if (!EVP_Digest(buf, qsize, buf2, NULL, evpmd, NULL))
-        goto err;
-      for (i = 0; i < qsize; i++)
+      }
+      for (i = 0; i < qsize; i++) {
         md[i] ^= buf2[i];
+      }
 
       /* step 3 */
       md[0] |= 0x80;
       md[qsize - 1] |= 0x01;
-      if (!BN_bin2bn(md, qsize, q))
+      if (!BN_bin2bn(md, qsize, q)) {
         goto err;
+      }
 
       /* step 4 */
       r = BN_is_prime_fasttest_ex(q, DSS_prime_checks, ctx, seed_is_random, cb);
-      if (r > 0)
+      if (r > 0) {
         break;
-      if (r != 0)
+      }
+      if (r != 0) {
         goto err;
+      }
 
       /* do a callback call */
       /* step 5 */
     }
 
-    if (!BN_GENCB_call(cb, 2, 0))
+    if (!BN_GENCB_call(cb, 2, 0) || !BN_GENCB_call(cb, 3, 0)) {
       goto err;
-    if (!BN_GENCB_call(cb, 3, 0))
-      goto err;
+    }
 
     /* step 6 */
     counter = 0;
@@ -582,8 +589,9 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
     n = (bits - 1) / 160;
 
     for (;;) {
-      if ((counter != 0) && !BN_GENCB_call(cb, 0, counter))
+      if ((counter != 0) && !BN_GENCB_call(cb, 0, counter)) {
         goto err;
+      }
 
       /* step 7 */
       BN_zero(W);
@@ -592,48 +600,48 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
         /* obtain "SEED + offset + k" by incrementing: */
         for (i = qsize - 1; i < qsize; i--) {
           buf[i]++;
-          if (buf[i] != 0)
+          if (buf[i] != 0) {
             break;
+          }
         }
 
-        if (!EVP_Digest(buf, qsize, md, NULL, evpmd, NULL))
+        if (!EVP_Digest(buf, qsize, md, NULL, evpmd, NULL)) {
           goto err;
+        }
 
         /* step 8 */
-        if (!BN_bin2bn(md, qsize, r0))
+        if (!BN_bin2bn(md, qsize, r0) ||
+            !BN_lshift(r0, r0, (qsize << 3) * k) ||
+            !BN_add(W, W, r0)) {
           goto err;
-        if (!BN_lshift(r0, r0, (qsize << 3) * k))
-          goto err;
-        if (!BN_add(W, W, r0))
-          goto err;
+        }
       }
 
       /* more of step 8 */
-      if (!BN_mask_bits(W, bits - 1))
+      if (!BN_mask_bits(W, bits - 1) ||
+          !BN_copy(X, W) ||
+          !BN_add(X, X, test)) {
         goto err;
-      if (!BN_copy(X, W))
-        goto err;
-      if (!BN_add(X, X, test))
-        goto err;
+      }
 
       /* step 9 */
-      if (!BN_lshift1(r0, q))
+      if (!BN_lshift1(r0, q) ||
+          !BN_mod(c, X, r0, ctx) ||
+          !BN_sub(r0, c, BN_value_one()) ||
+          !BN_sub(p, X, r0)) {
         goto err;
-      if (!BN_mod(c, X, r0, ctx))
-        goto err;
-      if (!BN_sub(r0, c, BN_value_one()))
-        goto err;
-      if (!BN_sub(p, X, r0))
-        goto err;
+      }
 
       /* step 10 */
       if (BN_cmp(p, test) >= 0) {
         /* step 11 */
         r = BN_is_prime_fasttest_ex(p, DSS_prime_checks, ctx, 1, cb);
-        if (r > 0)
+        if (r > 0) {
           goto end; /* found it */
-        if (r != 0)
+        }
+        if (r != 0) {
           goto err;
+        }
       }
 
       /* step 13 */
@@ -641,50 +649,53 @@ static int paramgen(DSA *ret, unsigned bits, const uint8_t *seed_in,
       /* "offset = offset + n + 1" */
 
       /* step 14 */
-      if (counter >= 4096)
+      if (counter >= 4096) {
         break;
+      }
     }
   }
 end:
-  if (!BN_GENCB_call(cb, 2, 1))
+  if (!BN_GENCB_call(cb, 2, 1)) {
     goto err;
+  }
 
   /* We now need to generate g */
   /* Set r0=(p-1)/q */
-  if (!BN_sub(test, p, BN_value_one()))
+  if (!BN_sub(test, p, BN_value_one()) ||
+      !BN_div(r0, NULL, test, q, ctx)) {
     goto err;
-  if (!BN_div(r0, NULL, test, q, ctx))
-    goto err;
+  }
 
-  if (!BN_set_word(test, h))
+  if (!BN_set_word(test, h) ||
+      !BN_MONT_CTX_set(mont, p, ctx)) {
     goto err;
-  if (!BN_MONT_CTX_set(mont, p, ctx))
-    goto err;
+  }
 
   for (;;) {
     /* g=test^r0%p */
-    if (!BN_mod_exp_mont(g, test, r0, p, ctx, mont))
+    if (!BN_mod_exp_mont(g, test, r0, p, ctx, mont)) {
       goto err;
-    if (!BN_is_one(g))
+    }
+    if (!BN_is_one(g)) {
       break;
-    if (!BN_add(test, test, BN_value_one()))
+    }
+    if (!BN_add(test, test, BN_value_one())) {
       goto err;
+    }
     h++;
   }
 
-  if (!BN_GENCB_call(cb, 3, 1))
+  if (!BN_GENCB_call(cb, 3, 1)) {
     goto err;
+  }
 
   ok = 1;
 
 err:
   if (ok) {
-    if (ret->p)
-      BN_free(ret->p);
-    if (ret->q)
-      BN_free(ret->q);
-    if (ret->g)
-      BN_free(ret->g);
+    BN_free(ret->p);
+    BN_free(ret->q);
+    BN_free(ret->g);
     ret->p = BN_dup(p);
     ret->q = BN_dup(q);
     ret->g = BN_dup(g);
@@ -692,10 +703,12 @@ err:
       ok = 0;
       goto err;
     }
-    if (counter_ret != NULL)
+    if (counter_ret != NULL) {
       *counter_ret = counter;
-    if (h_ret != NULL)
+    }
+    if (h_ret != NULL) {
       *h_ret = h;
+    }
   }
 
   if (ctx) {
@@ -703,8 +716,7 @@ err:
     BN_CTX_free(ctx);
   }
 
-  if (mont != NULL)
-    BN_MONT_CTX_free(mont);
+  BN_MONT_CTX_free(mont);
 
   return ok;
 }

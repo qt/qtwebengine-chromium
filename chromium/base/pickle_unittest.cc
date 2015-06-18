@@ -30,75 +30,82 @@ const double testdouble = 2.71828182845904523;
 const std::string teststring("Hello world");  // note non-aligned string length
 const std::wstring testwstring(L"Hello, world");
 const base::string16 teststring16(base::ASCIIToUTF16("Hello, world"));
+const char testrawstring[] = "Hello new world"; // Test raw string writing
+// Test raw char16 writing, assumes UTF16 encoding is ANSI for alpha chars.
+const base::char16 testrawstring16[] = {'A', 'l', 'o', 'h', 'a', 0};
 const char testdata[] = "AAA\0BBB\0";
 const int testdatalen = arraysize(testdata) - 1;
 
-// checks that the result
+// checks that the results can be read correctly from the Pickle
 void VerifyResult(const Pickle& pickle) {
   PickleIterator iter(pickle);
 
   bool outbool;
-  EXPECT_TRUE(pickle.ReadBool(&iter, &outbool));
+  EXPECT_TRUE(iter.ReadBool(&outbool));
   EXPECT_FALSE(outbool);
-  EXPECT_TRUE(pickle.ReadBool(&iter, &outbool));
+  EXPECT_TRUE(iter.ReadBool(&outbool));
   EXPECT_TRUE(outbool);
 
   int outint;
-  EXPECT_TRUE(pickle.ReadInt(&iter, &outint));
+  EXPECT_TRUE(iter.ReadInt(&outint));
   EXPECT_EQ(testint, outint);
 
   long outlong;
-  EXPECT_TRUE(pickle.ReadLong(&iter, &outlong));
+  EXPECT_TRUE(iter.ReadLong(&outlong));
   EXPECT_EQ(testlong, outlong);
 
   uint16 outuint16;
-  EXPECT_TRUE(pickle.ReadUInt16(&iter, &outuint16));
+  EXPECT_TRUE(iter.ReadUInt16(&outuint16));
   EXPECT_EQ(testuint16, outuint16);
 
   uint32 outuint32;
-  EXPECT_TRUE(pickle.ReadUInt32(&iter, &outuint32));
+  EXPECT_TRUE(iter.ReadUInt32(&outuint32));
   EXPECT_EQ(testuint32, outuint32);
 
   int64 outint64;
-  EXPECT_TRUE(pickle.ReadInt64(&iter, &outint64));
+  EXPECT_TRUE(iter.ReadInt64(&outint64));
   EXPECT_EQ(testint64, outint64);
 
   uint64 outuint64;
-  EXPECT_TRUE(pickle.ReadUInt64(&iter, &outuint64));
+  EXPECT_TRUE(iter.ReadUInt64(&outuint64));
   EXPECT_EQ(testuint64, outuint64);
 
   size_t outsizet;
-  EXPECT_TRUE(pickle.ReadSizeT(&iter, &outsizet));
+  EXPECT_TRUE(iter.ReadSizeT(&outsizet));
   EXPECT_EQ(testsizet, outsizet);
 
   float outfloat;
-  EXPECT_TRUE(pickle.ReadFloat(&iter, &outfloat));
+  EXPECT_TRUE(iter.ReadFloat(&outfloat));
   EXPECT_EQ(testfloat, outfloat);
 
   double outdouble;
-  EXPECT_TRUE(pickle.ReadDouble(&iter, &outdouble));
+  EXPECT_TRUE(iter.ReadDouble(&outdouble));
   EXPECT_EQ(testdouble, outdouble);
 
   std::string outstring;
-  EXPECT_TRUE(pickle.ReadString(&iter, &outstring));
+  EXPECT_TRUE(iter.ReadString(&outstring));
   EXPECT_EQ(teststring, outstring);
 
-  std::wstring outwstring;
-  EXPECT_TRUE(pickle.ReadWString(&iter, &outwstring));
-  EXPECT_EQ(testwstring, outwstring);
-
   base::string16 outstring16;
-  EXPECT_TRUE(pickle.ReadString16(&iter, &outstring16));
+  EXPECT_TRUE(iter.ReadString16(&outstring16));
   EXPECT_EQ(teststring16, outstring16);
+
+  base::StringPiece outstringpiece;
+  EXPECT_TRUE(iter.ReadStringPiece(&outstringpiece));
+  EXPECT_EQ(testrawstring, outstringpiece);
+
+  base::StringPiece16 outstringpiece16;
+  EXPECT_TRUE(iter.ReadStringPiece16(&outstringpiece16));
+  EXPECT_EQ(testrawstring16, outstringpiece16);
 
   const char* outdata;
   int outdatalen;
-  EXPECT_TRUE(pickle.ReadData(&iter, &outdata, &outdatalen));
+  EXPECT_TRUE(iter.ReadData(&outdata, &outdatalen));
   EXPECT_EQ(testdatalen, outdatalen);
   EXPECT_EQ(memcmp(testdata, outdata, outdatalen), 0);
 
   // reads past the end should fail
-  EXPECT_FALSE(pickle.ReadInt(&iter, &outint));
+  EXPECT_FALSE(iter.ReadInt(&outint));
 }
 
 }  // namespace
@@ -119,8 +126,9 @@ TEST(PickleTest, EncodeDecode) {
   EXPECT_TRUE(pickle.WriteFloat(testfloat));
   EXPECT_TRUE(pickle.WriteDouble(testdouble));
   EXPECT_TRUE(pickle.WriteString(teststring));
-  EXPECT_TRUE(pickle.WriteWString(testwstring));
   EXPECT_TRUE(pickle.WriteString16(teststring16));
+  EXPECT_TRUE(pickle.WriteString(testrawstring));
+  EXPECT_TRUE(pickle.WriteString16(testrawstring16));
   EXPECT_TRUE(pickle.WriteData(testdata, testdatalen));
   VerifyResult(pickle);
 
@@ -148,9 +156,9 @@ TEST(PickleTest, SizeTFrom64Bit) {
   if (sizeof(size_t) < sizeof(uint64)) {
     // ReadSizeT() should return false when the original written value can't be
     // represented as a size_t.
-    EXPECT_FALSE(pickle.ReadSizeT(&iter, &outsizet));
+    EXPECT_FALSE(iter.ReadSizeT(&outsizet));
   } else {
-    EXPECT_TRUE(pickle.ReadSizeT(&iter, &outsizet));
+    EXPECT_TRUE(iter.ReadSizeT(&outsizet));
     EXPECT_EQ(testuint64, outsizet);
   }
 }
@@ -164,7 +172,7 @@ TEST(PickleTest, SmallBuffer) {
 
   PickleIterator iter(pickle);
   int data;
-  EXPECT_FALSE(pickle.ReadInt(&iter, &data));
+  EXPECT_FALSE(iter.ReadInt(&data));
 }
 
 // Tests that we can handle improper headers.
@@ -175,7 +183,7 @@ TEST(PickleTest, BigSize) {
 
   PickleIterator iter(pickle);
   int data;
-  EXPECT_FALSE(pickle.ReadInt(&iter, &data));
+  EXPECT_FALSE(iter.ReadInt(&data));
 }
 
 TEST(PickleTest, UnalignedSize) {
@@ -185,7 +193,7 @@ TEST(PickleTest, UnalignedSize) {
 
   PickleIterator iter(pickle);
   int data;
-  EXPECT_FALSE(pickle.ReadInt(&iter, &data));
+  EXPECT_FALSE(iter.ReadInt(&data));
 }
 
 TEST(PickleTest, ZeroLenStr) {
@@ -194,17 +202,17 @@ TEST(PickleTest, ZeroLenStr) {
 
   PickleIterator iter(pickle);
   std::string outstr;
-  EXPECT_TRUE(pickle.ReadString(&iter, &outstr));
+  EXPECT_TRUE(iter.ReadString(&outstr));
   EXPECT_EQ("", outstr);
 }
 
-TEST(PickleTest, ZeroLenWStr) {
+TEST(PickleTest, ZeroLenStr16) {
   Pickle pickle;
-  EXPECT_TRUE(pickle.WriteWString(std::wstring()));
+  EXPECT_TRUE(pickle.WriteString16(base::string16()));
 
   PickleIterator iter(pickle);
   std::string outstr;
-  EXPECT_TRUE(pickle.ReadString(&iter, &outstr));
+  EXPECT_TRUE(iter.ReadString(&outstr));
   EXPECT_EQ("", outstr);
 }
 
@@ -214,16 +222,16 @@ TEST(PickleTest, BadLenStr) {
 
   PickleIterator iter(pickle);
   std::string outstr;
-  EXPECT_FALSE(pickle.ReadString(&iter, &outstr));
+  EXPECT_FALSE(iter.ReadString(&outstr));
 }
 
-TEST(PickleTest, BadLenWStr) {
+TEST(PickleTest, BadLenStr16) {
   Pickle pickle;
   EXPECT_TRUE(pickle.WriteInt(-1));
 
   PickleIterator iter(pickle);
-  std::wstring woutstr;
-  EXPECT_FALSE(pickle.ReadWString(&iter, &woutstr));
+  base::string16 outstr;
+  EXPECT_FALSE(iter.ReadString16(&outstr));
 }
 
 TEST(PickleTest, FindNext) {
@@ -351,7 +359,7 @@ TEST(PickleTest, HeaderPadding) {
 
   PickleIterator iter(pickle);
   int result;
-  ASSERT_TRUE(pickle.ReadInt(&iter, &result));
+  ASSERT_TRUE(iter.ReadInt(&result));
 
   EXPECT_EQ(static_cast<uint32>(result), kMagic);
 }
@@ -375,14 +383,14 @@ TEST(PickleTest, EvilLengths) {
   // to out-of-bounds reading.
   PickleIterator iter(source);
   string16 str16;
-  EXPECT_FALSE(source.ReadString16(&iter, &str16));
+  EXPECT_FALSE(iter.ReadString16(&str16));
 
   // And check we didn't break ReadString16.
   str16 = (wchar_t) 'A';
   Pickle str16_pickle;
   EXPECT_TRUE(str16_pickle.WriteString16(str16));
   iter = PickleIterator(str16_pickle);
-  EXPECT_TRUE(str16_pickle.ReadString16(&iter, &str16));
+  EXPECT_TRUE(iter.ReadString16(&str16));
   EXPECT_EQ(1U, str16.length());
 
   // Check we don't fail in a length check with invalid String16 size.
@@ -390,14 +398,7 @@ TEST(PickleTest, EvilLengths) {
   Pickle bad_len;
   EXPECT_TRUE(bad_len.WriteInt(1 << 31));
   iter = PickleIterator(bad_len);
-  EXPECT_FALSE(bad_len.ReadString16(&iter, &str16));
-
-  // Check we don't fail in a length check with large WStrings.
-  Pickle big_len;
-  EXPECT_TRUE(big_len.WriteInt(1 << 30));
-  iter = PickleIterator(big_len);
-  std::wstring wstr;
-  EXPECT_FALSE(big_len.ReadWString(&iter, &wstr));
+  EXPECT_FALSE(iter.ReadString16(&str16));
 }
 
 // Check we can write zero bytes of data and 'data' can be NULL.
@@ -408,7 +409,7 @@ TEST(PickleTest, ZeroLength) {
   PickleIterator iter(pickle);
   const char* outdata;
   int outdatalen;
-  EXPECT_TRUE(pickle.ReadData(&iter, &outdata, &outdatalen));
+  EXPECT_TRUE(iter.ReadData(&outdata, &outdatalen));
   EXPECT_EQ(0, outdatalen);
   // We can't assert that outdata is NULL.
 }
@@ -421,7 +422,7 @@ TEST(PickleTest, ReadBytes) {
 
   PickleIterator iter(pickle);
   const char* outdata_char = NULL;
-  EXPECT_TRUE(pickle.ReadBytes(&iter, &outdata_char, sizeof(data)));
+  EXPECT_TRUE(iter.ReadBytes(&outdata_char, sizeof(data)));
 
   int outdata;
   memcpy(&outdata, outdata_char, sizeof(outdata));

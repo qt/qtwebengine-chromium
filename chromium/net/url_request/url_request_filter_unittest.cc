@@ -56,12 +56,12 @@ TEST(URLRequestFilter, BasicMatching) {
   URLRequestFilter* filter = URLRequestFilter::GetInstance();
 
   const GURL kUrl1("http://foo.com/");
-  scoped_ptr<URLRequest> request1(request_context.CreateRequest(
-      kUrl1, DEFAULT_PRIORITY, &delegate, NULL));
+  scoped_ptr<URLRequest> request1(
+      request_context.CreateRequest(kUrl1, DEFAULT_PRIORITY, &delegate));
 
   const GURL kUrl2("http://bar.com/");
-  scoped_ptr<URLRequest> request2(request_context.CreateRequest(
-      kUrl2, DEFAULT_PRIORITY, &delegate, NULL));
+  scoped_ptr<URLRequest> request2(
+      request_context.CreateRequest(kUrl2, DEFAULT_PRIORITY, &delegate));
 
   // Check AddUrlHandler checks for invalid URLs.
   EXPECT_FALSE(filter->AddUrlHandler(GURL(), &FactoryA));
@@ -114,7 +114,7 @@ TEST(URLRequestFilter, BasicMatching) {
   EXPECT_EQ(0, filter->hit_count());
   filter->AddHostnameInterceptor(
       kUrl1.scheme(), kUrl1.host(),
-      scoped_ptr<net::URLRequestInterceptor>(new TestURLRequestInterceptor()));
+      scoped_ptr<URLRequestInterceptor>(new TestURLRequestInterceptor()));
   {
     scoped_refptr<URLRequestJob> found =
         filter->MaybeInterceptRequest(request1.get(), NULL);
@@ -127,9 +127,8 @@ TEST(URLRequestFilter, BasicMatching) {
   // Check URLRequestInterceptor URL matching.
   filter->ClearHandlers();
   EXPECT_EQ(0, filter->hit_count());
-  filter->AddUrlInterceptor(
-      kUrl2,
-      scoped_ptr<net::URLRequestInterceptor>(new TestURLRequestInterceptor()));
+  filter->AddUrlInterceptor(kUrl2, scoped_ptr<URLRequestInterceptor>(
+                                       new TestURLRequestInterceptor()));
   {
     scoped_refptr<URLRequestJob> found =
         filter->MaybeInterceptRequest(request2.get(), NULL);

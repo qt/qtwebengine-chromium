@@ -11,7 +11,6 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
 #include "ui/events/event.h"
 #include "ui/wm/public/activation_client.h"
@@ -130,7 +129,7 @@ void CompoundEventFilter::UpdateCursor(aura::Window* target,
 
 void CompoundEventFilter::FilterKeyEvent(ui::KeyEvent* event) {
   if (handlers_.might_have_observers()) {
-    ObserverListBase<ui::EventHandler>::Iterator it(handlers_);
+    ObserverListBase<ui::EventHandler>::Iterator it(&handlers_);
     ui::EventHandler* handler;
     while (!event->stopped_propagation() && (handler = it.GetNext()) != NULL)
       handler->OnKeyEvent(event);
@@ -139,7 +138,7 @@ void CompoundEventFilter::FilterKeyEvent(ui::KeyEvent* event) {
 
 void CompoundEventFilter::FilterMouseEvent(ui::MouseEvent* event) {
   if (handlers_.might_have_observers()) {
-    ObserverListBase<ui::EventHandler>::Iterator it(handlers_);
+    ObserverListBase<ui::EventHandler>::Iterator it(&handlers_);
     ui::EventHandler* handler;
     while (!event->stopped_propagation() && (handler = it.GetNext()) != NULL)
       handler->OnMouseEvent(event);
@@ -148,7 +147,7 @@ void CompoundEventFilter::FilterMouseEvent(ui::MouseEvent* event) {
 
 void CompoundEventFilter::FilterTouchEvent(ui::TouchEvent* event) {
   if (handlers_.might_have_observers()) {
-    ObserverListBase<ui::EventHandler>::Iterator it(handlers_);
+    ObserverListBase<ui::EventHandler>::Iterator it(&handlers_);
     ui::EventHandler* handler;
     while (!event->stopped_propagation() && (handler = it.GetNext()) != NULL)
       handler->OnTouchEvent(event);
@@ -203,8 +202,6 @@ void CompoundEventFilter::OnKeyEvent(ui::KeyEvent* event) {
 
 void CompoundEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   aura::Window* window = static_cast<aura::Window*>(event->target());
-  aura::WindowTracker window_tracker;
-  window_tracker.Add(window);
 
   // We must always update the cursor, otherwise the cursor can get stuck if an
   // event filter registered with us consumes the event.
@@ -242,7 +239,7 @@ void CompoundEventFilter::OnTouchEvent(ui::TouchEvent* event) {
 
 void CompoundEventFilter::OnGestureEvent(ui::GestureEvent* event) {
   if (handlers_.might_have_observers()) {
-    ObserverListBase<ui::EventHandler>::Iterator it(handlers_);
+    ObserverListBase<ui::EventHandler>::Iterator it(&handlers_);
     ui::EventHandler* handler;
     while (!event->stopped_propagation() && (handler = it.GetNext()) != NULL)
       handler->OnGestureEvent(event);

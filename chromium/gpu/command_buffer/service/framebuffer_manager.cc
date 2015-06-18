@@ -135,7 +135,7 @@ class TextureAttachment
     GLsizei temp_width = 0;
     GLsizei temp_height = 0;
     texture_ref_->texture()->GetLevelSize(
-        target_, level_, &temp_width, &temp_height);
+        target_, level_, &temp_width, &temp_height, nullptr);
     return temp_width;
   }
 
@@ -143,7 +143,7 @@ class TextureAttachment
     GLsizei temp_width = 0;
     GLsizei temp_height = 0;
     texture_ref_->texture()->GetLevelSize(
-        target_, level_, &temp_width, &temp_height);
+        target_, level_, &temp_width, &temp_height, nullptr);
     return temp_height;
   }
 
@@ -628,6 +628,14 @@ void FramebufferManager::RemoveFramebuffer(GLuint client_id) {
   if (it != framebuffers_.end()) {
     it->second->MarkAsDeleted();
     framebuffers_.erase(it);
+  }
+}
+
+void Framebuffer::DoUnbindGLAttachmentsForWorkaround(GLenum target) {
+  // Replace all attachments with the default Renderbuffer.
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    glFramebufferRenderbufferEXT(target, it->first, GL_RENDERBUFFER, 0);
   }
 }
 

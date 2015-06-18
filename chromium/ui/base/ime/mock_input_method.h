@@ -12,7 +12,7 @@
 #include "base/observer_list.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/input_method_observer.h"
-#include "ui/base/ui_base_export.h"
+#include "ui/base/ime/ui_base_ime_export.h"
 
 namespace ui {
 
@@ -23,14 +23,14 @@ class TextInputClient;
 // of this class as the global input method with calling
 // SetUpInputMethodFactoryForTesting() which is declared in
 // ui/base/ime/input_method_factory.h
-class UI_BASE_EXPORT MockInputMethod : NON_EXPORTED_BASE(public InputMethod) {
+class UI_BASE_IME_EXPORT MockInputMethod
+    : NON_EXPORTED_BASE(public InputMethod) {
  public:
   explicit MockInputMethod(internal::InputMethodDelegate* delegate);
   ~MockInputMethod() override;
 
   // Overriden from InputMethod.
   void SetDelegate(internal::InputMethodDelegate* delegate) override;
-  void Init(bool focused) override;
   void OnFocus() override;
   void OnBlur() override;
   bool OnUntranslatedIMEMessage(const base::NativeEvent& event,

@@ -48,8 +48,9 @@ DOMWindowFileSystem::~DOMWindowFileSystem()
 {
 }
 
-void DOMWindowFileSystem::webkitRequestFileSystem(LocalDOMWindow& window, int type, long long size, FileSystemCallback* successCallback, ErrorCallback* errorCallback)
+void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow& windowArg, int type, long long size, FileSystemCallback* successCallback, ErrorCallback* errorCallback)
 {
+    LocalDOMWindow& window = toLocalDOMWindow(windowArg);
     if (!window.isCurrentlyDisplayedInFrame())
         return;
 
@@ -71,8 +72,9 @@ void DOMWindowFileSystem::webkitRequestFileSystem(LocalDOMWindow& window, int ty
     LocalFileSystem::from(*document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType));
 }
 
-void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(LocalDOMWindow& window, const String& url, EntryCallback* successCallback, ErrorCallback* errorCallback)
+void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow& windowArg, const String& url, EntryCallback* successCallback, ErrorCallback* errorCallback)
 {
+    LocalDOMWindow& window = toLocalDOMWindow(windowArg);
     if (!window.isCurrentlyDisplayedInFrame())
         return;
 
@@ -95,7 +97,7 @@ void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(LocalDOMWindow& window
     LocalFileSystem::from(*document)->resolveURL(document, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, document));
 }
 
-COMPILE_ASSERT(static_cast<int>(DOMWindowFileSystem::TEMPORARY) == static_cast<int>(FileSystemTypeTemporary), enum_mismatch);
-COMPILE_ASSERT(static_cast<int>(DOMWindowFileSystem::PERSISTENT) == static_cast<int>(FileSystemTypePersistent), enum_mismatch);
+static_assert(static_cast<int>(DOMWindowFileSystem::TEMPORARY) == static_cast<int>(FileSystemTypeTemporary), "DOMWindowFileSystem::TEMPORARY should match FileSystemTypeTemporary");
+static_assert(static_cast<int>(DOMWindowFileSystem::PERSISTENT) == static_cast<int>(FileSystemTypePersistent), "DOMWindowFileSystem::PERSISTENT should match FileSystemTypePersistent");
 
 } // namespace blink

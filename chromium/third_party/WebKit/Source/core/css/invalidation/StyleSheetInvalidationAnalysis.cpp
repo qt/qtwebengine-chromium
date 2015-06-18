@@ -37,7 +37,7 @@
 
 namespace blink {
 
-StyleSheetInvalidationAnalysis::StyleSheetInvalidationAnalysis(const WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >& sheets)
+StyleSheetInvalidationAnalysis::StyleSheetInvalidationAnalysis(const WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents>>& sheets)
     : m_dirtiesAllStyle(false)
 {
     for (unsigned i = 0; i < sheets.size() && !m_dirtiesAllStyle; ++i)
@@ -76,7 +76,7 @@ static bool determineSelectorScopes(const CSSSelectorList& selectorList, HashSet
 
 static bool hasDistributedRule(StyleSheetContents* styleSheetContents)
 {
-    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules = styleSheetContents->childRules();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules = styleSheetContents->childRules();
     for (unsigned i = 0; i < rules.size(); i++) {
         const StyleRuleBase* rule = rules[i].get();
         if (!rule->isStyleRule())
@@ -113,7 +113,6 @@ static bool ruleAdditionMightRequireDocumentStyleRecalc(StyleRuleBase* rule)
     // the added @rule can't require style recalcs.
     switch (rule->type()) {
     case StyleRule::Import: // Whatever we import should do its own analysis, we don't need to invalidate the document here!
-    case StyleRule::Keyframes: // Keyframes never cause style invalidations and are handled during sheet insertion.
     case StyleRule::Page: // Page rules apply only during printing, we force a full-recalc before printing.
         return false;
 
@@ -121,15 +120,15 @@ static bool ruleAdditionMightRequireDocumentStyleRecalc(StyleRuleBase* rule)
     case StyleRule::FontFace: // If the fonts aren't in use, we could avoid recalc.
     case StyleRule::Supports: // If we evaluated the supports-clause we could avoid recalc.
     case StyleRule::Viewport: // If the viewport doesn't match, we could avoid recalcing.
-    // FIXME: Unclear if any of the rest need to cause style recalc:
-    case StyleRule::Filter:
+    case StyleRule::Keyframes: // If the animation doesn't match an element, we could avoid recalc.
         return true;
 
     // These should all be impossible to reach:
-    case StyleRule::Unknown:
     case StyleRule::Charset:
     case StyleRule::Keyframe:
+    case StyleRule::Namespace:
     case StyleRule::Style:
+    case StyleRule::Unknown:
         break;
     }
     ASSERT_NOT_REACHED();
@@ -138,11 +137,15 @@ static bool ruleAdditionMightRequireDocumentStyleRecalc(StyleRuleBase* rule)
 
 void StyleSheetInvalidationAnalysis::analyzeStyleSheet(StyleSheetContents* styleSheetContents)
 {
-    ASSERT(!styleSheetContents->isLoading());
+    // Updating the style on the shadow DOM for image fallback content can bring us here when imports
+    // are still getting loaded in the main document. Just need to exit early as we will return here
+    // when the imports finish loading.
+    if (styleSheetContents->isLoading())
+        return;
 
     // See if all rules on the sheet are scoped to some specific ids or classes.
     // Then test if we actually have any of those in the tree at the moment.
-    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport> >& importRules = styleSheetContents->importRules();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport>>& importRules = styleSheetContents->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         if (!importRules[i]->styleSheet())
             continue;
@@ -158,7 +161,7 @@ void StyleSheetInvalidationAnalysis::analyzeStyleSheet(StyleSheetContents* style
         }
     }
 
-    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules = styleSheetContents->childRules();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules = styleSheetContents->childRules();
     for (unsigned i = 0; i < rules.size(); i++) {
         StyleRuleBase* rule = rules[i].get();
         if (!rule->isStyleRule()) {

@@ -25,10 +25,28 @@ using blink::WebLocalFrame;
 using blink::WebNode;
 using blink::WebPoint;
 using blink::WebRect;
+using blink::WebScopedAXContext;
 using blink::WebSettings;
 using blink::WebView;
 
 namespace content {
+
+// static
+void RendererAccessibility::SnapshotAccessibilityTree(
+    RenderFrameImpl* render_frame,
+    ui::AXTreeUpdate* response) {
+  DCHECK(render_frame);
+  DCHECK(response);
+  if (!render_frame->GetWebFrame())
+    return;
+
+  WebDocument document = render_frame->GetWebFrame()->document();
+  WebScopedAXContext context(document);
+  BlinkAXTreeSource tree_source(render_frame);
+  tree_source.SetRoot(context.root());
+  ui::AXTreeSerializer<blink::WebAXObject> serializer(&tree_source);
+  serializer.SerializeChanges(context.root(), response);
+}
 
 RendererAccessibility::RendererAccessibility(RenderFrameImpl* render_frame)
     : RenderFrameObserver(render_frame),
@@ -108,7 +126,8 @@ void RendererAccessibility::HandleAccessibilityFindInPageResult(
   Send(new AccessibilityHostMsg_FindInPageResult(routing_id(), params));
 }
 
-void RendererAccessibility::FocusedNodeChanged(const WebNode& node) {
+void RendererAccessibility::AccessibilityFocusedNodeChanged(
+    const WebNode& node) {
   const WebDocument& document = GetMainDocument();
   if (document.isNull())
     return;
@@ -234,13 +253,6 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
     if (!tree_source_.IsInTree(obj))
       continue;
 
-    // When we get a "selected children changed" event, Blink
-    // doesn't also send us events for each child that changed
-    // selection state, so make sure we re-send that whole subtree.
-    if (event.event_type == ui::AX_EVENT_SELECTED_CHILDREN_CHANGED) {
-      serializer_.DeleteClientSubtree(obj);
-    }
-
     AccessibilityHostMsg_EventParams event_msg;
     tree_source_.CollectChildFrameIdMapping(
         &event_msg.node_to_frame_routing_id_map,
@@ -257,9 +269,9 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
           event_msg.update.nodes[i].location;
     }
 
-    VLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
-            << " on node id " << event_msg.id
-            << "\n" << event_msg.update.ToString();
+    DVLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
+             << " on node id " << event_msg.id
+             << "\n" << event_msg.update.ToString();
   }
 
   Send(new AccessibilityHostMsg_Events(routing_id(), event_msgs, reset_token_));

@@ -37,6 +37,7 @@
 #include "core/loader/LinkLoaderClient.h"
 #include "platform/PrerenderClient.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -47,7 +48,7 @@ class PrerenderHandle;
 
 // The LinkLoader can load link rel types icon, dns-prefetch, subresource, prefetch and prerender.
 class LinkLoader final : public ResourceOwner<Resource, ResourceClient>, public PrerenderClient {
-
+    DISALLOW_ALLOCATION();
 public:
     explicit LinkLoader(LinkLoaderClient*);
     virtual ~LinkLoader();
@@ -62,18 +63,22 @@ public:
     virtual void didSendDOMContentLoadedForPrerender() override;
 
     void released();
-    bool loadLink(const LinkRelAttribute&, const AtomicString& crossOriginMode, const String& type, const KURL&, Document&);
+    bool loadLink(const LinkRelAttribute&, const AtomicString& crossOriginMode, const String& type, const String& as, const KURL&, Document&);
+    static bool loadLinkFromHeader(const String& headerValue, Document*);
+
+    DECLARE_TRACE();
 
 private:
     void linkLoadTimerFired(Timer<LinkLoader>*);
     void linkLoadingErrorTimerFired(Timer<LinkLoader>*);
+    void preloadIfNeeded(const LinkRelAttribute&, const KURL& href, Document&, const String& as);
 
     LinkLoaderClient* m_client;
 
     Timer<LinkLoader> m_linkLoadTimer;
     Timer<LinkLoader> m_linkLoadingErrorTimer;
 
-    OwnPtr<PrerenderHandle> m_prerender;
+    OwnPtrWillBeMember<PrerenderHandle> m_prerender;
 };
 
 }

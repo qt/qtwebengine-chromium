@@ -25,6 +25,7 @@
 #include "net/dns/dns_client.h"
 #include "net/dns/dns_test_util.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/test_net_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -181,7 +182,7 @@ class MockHostResolverProc : public HostResolverProc {
 };
 
 bool AddressListContains(const AddressList& list, const std::string& address,
-                         int port) {
+                         uint16 port) {
   IPAddressNumber ip;
   bool rv = ParseIPLiteralToNumber(address, &ip);
   DCHECK(rv);
@@ -249,7 +250,7 @@ class Request {
   bool completed() const { return result_ != ERR_IO_PENDING; }
   bool pending() const { return handle_ != NULL; }
 
-  bool HasAddress(const std::string& address, int port) const {
+  bool HasAddress(const std::string& address, uint16 port) const {
     return AddressListContains(list_, address, port);
   }
 
@@ -258,7 +259,7 @@ class Request {
     return list_.size();
   }
 
-  bool HasOneAddress(const std::string& address, int port) const {
+  bool HasOneAddress(const std::string& address, uint16 port) const {
     return HasAddress(address, port) && (NumberOfAddresses() == 1u);
   }
 
@@ -530,6 +531,10 @@ class HostResolverImplTest : public testing::Test {
     return HostResolverImpl::kMaximumDnsFailures;
   }
 
+  bool IsIPv6Reachable(const BoundNetLog& net_log) {
+    return resolver_->IsIPv6Reachable(net_log);
+  }
+
   scoped_refptr<MockHostResolverProc> proc_;
   scoped_ptr<HostResolverImpl> resolver_;
   ScopedVector<Request> requests_;
@@ -548,6 +553,17 @@ TEST_F(HostResolverImplTest, AsynchronousLookup) {
   EXPECT_TRUE(req->HasOneAddress("192.168.1.42", 80));
 
   EXPECT_EQ("just.testing", proc_->GetCaptureList()[0].hostname);
+}
+
+TEST_F(HostResolverImplTest, LocalhostLookup) {
+  proc_->SignalMultiple(1u);
+  Request* req = CreateRequest("foo.localhost", 80);
+  EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
+  EXPECT_EQ(OK, req->WaitForResult());
+
+  EXPECT_TRUE(req->HasOneAddress("127.0.0.1", 80));
+
+  EXPECT_EQ("localhost.", proc_->GetCaptureList()[0].hostname);
 }
 
 TEST_F(HostResolverImplTest, EmptyListMeansNameNotResolved) {
@@ -888,7 +904,8 @@ TEST_F(HostResolverImplTest, BypassCache) {
   EXPECT_EQ(2u, proc_->GetCaptureList().size());
 }
 
-// Test that IP address changes flush the cache.
+// Test that IP address changes flush the cache but initial DNS config reads do
+// not.
 TEST_F(HostResolverImplTest, FlushCacheOnIPAddressChange) {
   proc_->SignalMultiple(2u);  // One before the flush, one after.
 
@@ -896,6 +913,11 @@ TEST_F(HostResolverImplTest, FlushCacheOnIPAddressChange) {
   EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
   EXPECT_EQ(OK, req->WaitForResult());
 
+  req = CreateRequest("host1", 75);
+  EXPECT_EQ(OK, req->Resolve());  // Should complete synchronously.
+
+  // Verify initial DNS config read does not flush cache.
+  NetworkChangeNotifier::NotifyObserversOfInitialDNSConfigReadForTests();
   req = CreateRequest("host1", 75);
   EXPECT_EQ(OK, req->Resolve());  // Should complete synchronously.
 
@@ -923,6 +945,20 @@ TEST_F(HostResolverImplTest, AbortOnIPAddressChanged) {
 
   EXPECT_EQ(ERR_NETWORK_CHANGED, req->WaitForResult());
   EXPECT_EQ(0u, resolver_->GetHostCache()->size());
+}
+
+// Test that initial DNS config read signals do not abort pending requests.
+TEST_F(HostResolverImplTest, DontAbortOnInitialDNSConfigRead) {
+  Request* req = CreateRequest("host1", 70);
+  EXPECT_EQ(ERR_IO_PENDING, req->Resolve());
+
+  EXPECT_TRUE(proc_->WaitFor(1u));
+  // Triggering initial DNS config read signal.
+  NetworkChangeNotifier::NotifyObserversOfInitialDNSConfigReadForTests();
+  base::MessageLoop::current()->RunUntilIdle();  // Notification happens async.
+  proc_->SignalAll();
+
+  EXPECT_EQ(OK, req->WaitForResult());
 }
 
 // Obey pool constraints after IP address has changed.
@@ -1317,6 +1353,80 @@ TEST_F(HostResolverImplTest, MultipleAttempts) {
 
   EXPECT_EQ(resolver_proc->total_attempts_resolved(), kTotalAttempts);
   EXPECT_EQ(resolver_proc->resolved_attempt_number(), kAttemptNumberToResolve);
+}
+
+// If a host resolves to a list that includes 127.0.53.53, this is treated as
+// an error. 127.0.53.53 is a localhost address, however it has been given a
+// special significance by ICANN to help surfance name collision resulting from
+// the new gTLDs.
+TEST_F(HostResolverImplTest, NameCollision127_0_53_53) {
+  proc_->AddRuleForAllFamilies("single", "127.0.53.53");
+  proc_->AddRuleForAllFamilies("multiple", "127.0.0.1,127.0.53.53");
+  proc_->AddRuleForAllFamilies("ipv6", "::127.0.53.53");
+  proc_->AddRuleForAllFamilies("not_reserved1", "53.53.0.127");
+  proc_->AddRuleForAllFamilies("not_reserved2", "127.0.53.54");
+  proc_->AddRuleForAllFamilies("not_reserved3", "10.0.53.53");
+  proc_->SignalMultiple(6u);
+
+  Request* request;
+
+  request = CreateRequest("single");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(ERR_ICANN_NAME_COLLISION, request->WaitForResult());
+
+  request = CreateRequest("multiple");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(ERR_ICANN_NAME_COLLISION, request->WaitForResult());
+
+  // Resolving an IP literal of 127.0.53.53 however is allowed.
+  EXPECT_EQ(OK, CreateRequest("127.0.53.53")->Resolve());
+
+  // Moreover the address should not be recognized when embedded in an IPv6
+  // address.
+  request = CreateRequest("ipv6");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+
+  // Try some other IPs which are similar, but NOT an exact match on
+  // 127.0.53.53.
+  request = CreateRequest("not_reserved1");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+
+  request = CreateRequest("not_reserved2");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+
+  request = CreateRequest("not_reserved3");
+  EXPECT_EQ(ERR_IO_PENDING, request->Resolve());
+  EXPECT_EQ(OK, request->WaitForResult());
+}
+
+TEST_F(HostResolverImplTest, IsIPv6Reachable) {
+  // Verify that two consecutive calls return the same value.
+  TestNetLog net_log;
+  BoundNetLog bound_net_log = BoundNetLog::Make(&net_log, NetLog::SOURCE_NONE);
+  bool result1 = IsIPv6Reachable(bound_net_log);
+  bool result2 = IsIPv6Reachable(bound_net_log);
+  EXPECT_EQ(result1, result2);
+
+  // Filter reachability check events and verify that there are two of them.
+  TestNetLogEntry::List event_list;
+  net_log.GetEntries(&event_list);
+  TestNetLogEntry::List probe_event_list;
+  for (const auto& event : event_list) {
+    if (event.type == NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_REACHABILITY_CHECK) {
+      probe_event_list.push_back(event);
+    }
+  }
+  ASSERT_EQ(2U, probe_event_list.size());
+
+  // Verify that the first request was not cached and the second one was.
+  bool cached;
+  EXPECT_TRUE(probe_event_list[0].GetBooleanValue("cached", &cached));
+  EXPECT_FALSE(cached);
+  EXPECT_TRUE(probe_event_list[1].GetBooleanValue("cached", &cached));
+  EXPECT_TRUE(cached);
 }
 
 DnsConfig CreateValidDnsConfig() {

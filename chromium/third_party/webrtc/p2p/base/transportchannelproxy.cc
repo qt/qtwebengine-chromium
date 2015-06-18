@@ -22,10 +22,8 @@ enum {
 };
 
 TransportChannelProxy::TransportChannelProxy(const std::string& content_name,
-                                             const std::string& name,
                                              int component)
     : TransportChannel(content_name, component),
-      name_(name),
       impl_(NULL) {
   worker_thread_ = rtc::Thread::Current();
 }
@@ -33,8 +31,9 @@ TransportChannelProxy::TransportChannelProxy(const std::string& content_name,
 TransportChannelProxy::~TransportChannelProxy() {
   // Clearing any pending signal.
   worker_thread_->Clear(this);
-  if (impl_)
+  if (impl_) {
     impl_->GetTransport()->DestroyChannel(impl_->component());
+  }
 }
 
 void TransportChannelProxy::SetImplementation(TransportChannelImpl* impl) {
@@ -66,17 +65,14 @@ void TransportChannelProxy::SetImplementation(TransportChannelImpl* impl) {
         this, &TransportChannelProxy::OnReadyToSend);
     impl_->SignalRouteChange.connect(
         this, &TransportChannelProxy::OnRouteChange);
-    for (OptionList::iterator it = pending_options_.begin();
-         it != pending_options_.end();
-         ++it) {
-      impl_->SetOption(it->first, it->second);
+    for (const auto& pair : options_) {
+      impl_->SetOption(pair.first, pair.second);
     }
 
     // Push down the SRTP ciphers, if any were set.
     if (!pending_srtp_ciphers_.empty()) {
       impl_->SetSrtpCiphers(pending_srtp_ciphers_);
     }
-    pending_options_.clear();
   }
 
   // Post ourselves a message to see if we need to fire state callbacks.
@@ -96,11 +92,26 @@ int TransportChannelProxy::SendPacket(const char* data, size_t len,
 
 int TransportChannelProxy::SetOption(rtc::Socket::Option opt, int value) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
+  options_.push_back(OptionPair(opt, value));
   if (!impl_) {
-    pending_options_.push_back(OptionPair(opt, value));
     return 0;
   }
   return impl_->SetOption(opt, value);
+}
+
+bool TransportChannelProxy::GetOption(rtc::Socket::Option opt, int* value) {
+  ASSERT(rtc::Thread::Current() == worker_thread_);
+  if (impl_) {
+    return impl_->GetOption(opt, value);
+  }
+
+  for (const auto& pair : options_) {
+    if (pair.first == opt) {
+      *value = pair.second;
+      return true;
+    }
+  }
+  return false;
 }
 
 int TransportChannelProxy::GetError() {
@@ -109,6 +120,14 @@ int TransportChannelProxy::GetError() {
     return 0;
   }
   return impl_->GetError();
+}
+
+TransportChannelState TransportChannelProxy::GetState() const {
+  ASSERT(rtc::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return TransportChannelState::STATE_CONNECTING;
+  }
+  return impl_->GetState();
 }
 
 bool TransportChannelProxy::GetStats(ConnectionInfos* infos) {
@@ -160,6 +179,14 @@ bool TransportChannelProxy::GetSrtpCipher(std::string* cipher) {
     return false;
   }
   return impl_->GetSrtpCipher(cipher);
+}
+
+bool TransportChannelProxy::GetSslCipher(std::string* cipher) {
+  ASSERT(rtc::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return false;
+  }
+  return impl_->GetSslCipher(cipher);
 }
 
 bool TransportChannelProxy::GetLocalIdentity(

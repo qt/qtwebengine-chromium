@@ -160,7 +160,7 @@ class LCodeGen: public LCodeGenBase {
 #undef DECLARE_DO
 
  private:
-  StrictMode strict_mode() const { return info()->strict_mode(); }
+  LanguageMode language_mode() const { return info()->language_mode(); }
 
   Scope* scope() const { return scope_; }
 
@@ -177,8 +177,8 @@ class LCodeGen: public LCodeGenBase {
 
   // Code generation passes.  Returns true if code generation should
   // continue.
-  void GenerateBodyInstructionPre(LInstruction* instr) OVERRIDE;
-  void GenerateBodyInstructionPost(LInstruction* instr) OVERRIDE;
+  void GenerateBodyInstructionPre(LInstruction* instr) override;
+  void GenerateBodyInstructionPost(LInstruction* instr) override;
   bool GeneratePrologue();
   bool GenerateDeferredCode();
   bool GenerateJumpTable();
@@ -218,27 +218,22 @@ class LCodeGen: public LCodeGenBase {
 
   void LoadContextFromDeferred(LOperand* context);
 
-  enum EDIState {
-    EDI_UNINITIALIZED,
-    EDI_CONTAINS_TARGET
-  };
-
   // Generate a direct call to a known function.  Expects the function
   // to be in edi.
   void CallKnownFunction(Handle<JSFunction> function,
-                         int formal_parameter_count,
-                         int arity,
-                         LInstruction* instr,
-                         EDIState edi_state);
+                         int formal_parameter_count, int arity,
+                         LInstruction* instr);
 
   void RecordSafepointWithLazyDeopt(LInstruction* instr,
                                     SafepointMode safepoint_mode);
 
   void RegisterEnvironmentForDeoptimization(LEnvironment* environment,
                                             Safepoint::DeoptMode mode);
-  void DeoptimizeIf(Condition cc, LInstruction* instr, const char* detail,
+  void DeoptimizeIf(Condition cc, LInstruction* instr,
+                    Deoptimizer::DeoptReason deopt_reason,
                     Deoptimizer::BailoutType bailout_type);
-  void DeoptimizeIf(Condition cc, LInstruction* instr, const char* detail);
+  void DeoptimizeIf(Condition cc, LInstruction* instr,
+                    Deoptimizer::DeoptReason deopt_reason);
 
   bool DeoptEveryNTimes() {
     return FLAG_deopt_every_n_times != 0 && !info()->IsStub();
@@ -285,7 +280,7 @@ class LCodeGen: public LCodeGenBase {
                                     int arguments,
                                     Safepoint::DeoptMode mode);
 
-  void RecordAndWritePosition(int position) OVERRIDE;
+  void RecordAndWritePosition(int position) override;
 
   static Condition TokenToCondition(Token::Value op, bool is_unsigned);
   void EmitGoto(int block);
@@ -332,7 +327,7 @@ class LCodeGen: public LCodeGenBase {
                     int* offset,
                     AllocationSiteMode mode);
 
-  void EnsureSpaceForLazyDeopt(int space_needed) OVERRIDE;
+  void EnsureSpaceForLazyDeopt(int space_needed) override;
   void DoLoadKeyedExternalArray(LLoadKeyed* instr);
   void DoLoadKeyedFixedDoubleArray(LLoadKeyed* instr);
   void DoLoadKeyedFixedArray(LLoadKeyed* instr);
@@ -413,6 +408,7 @@ class LCodeGen: public LCodeGenBase {
     int st(X87Register reg) { return st2idx(ArrayIndex(reg)); }
     void pop() {
       DCHECK(is_mutable_);
+      USE(is_mutable_);
       stack_depth_--;
     }
     void push(X87Register reg) {
@@ -448,7 +444,7 @@ class LCodeGen: public LCodeGenBase {
 
   Safepoint::Kind expected_safepoint_kind_;
 
-  class PushSafepointRegistersScope FINAL  BASE_EMBEDDED {
+  class PushSafepointRegistersScope final BASE_EMBEDDED {
    public:
     explicit PushSafepointRegistersScope(LCodeGen* codegen)
         : codegen_(codegen) {

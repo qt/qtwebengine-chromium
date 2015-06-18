@@ -12,8 +12,14 @@
 #include "net/quic/test_tools/mock_clock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using std::vector;
+
 namespace net {
 namespace test {
+namespace {
+
+// Default packet length.
+const uint32 kDefaultLength = 1000;
 
 class TimeLossAlgorithmTest : public ::testing::Test {
  protected:
@@ -24,9 +30,15 @@ class TimeLossAlgorithmTest : public ::testing::Test {
                          clock_.Now());
   }
 
+  ~TimeLossAlgorithmTest() override {
+    STLDeleteElements(&packets_);
+  }
+
   void SendDataPacket(QuicPacketSequenceNumber sequence_number) {
+    packets_.push_back(new QuicEncryptedPacket(nullptr, kDefaultLength));
     SerializedPacket packet(sequence_number, PACKET_1BYTE_SEQUENCE_NUMBER,
-                            nullptr, 0, new RetransmittableFrames());
+                            packets_.back(), 0,
+                            new RetransmittableFrames(ENCRYPTION_NONE));
     unacked_packets_.AddSentPacket(packet, 0, NOT_RETRANSMISSION, clock_.Now(),
                                    1000, true);
   }
@@ -43,6 +55,7 @@ class TimeLossAlgorithmTest : public ::testing::Test {
     }
   }
 
+  vector<QuicEncryptedPacket*> packets_;
   QuicUnackedPacketMap unacked_packets_;
   TimeLossAlgorithm loss_algorithm_;
   RttStats rtt_stats_;
@@ -134,5 +147,6 @@ TEST_F(TimeLossAlgorithmTest, MultipleLossesAtOnce) {
   EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
 }
 
+}  // namespace
 }  // namespace test
 }  // namespace net

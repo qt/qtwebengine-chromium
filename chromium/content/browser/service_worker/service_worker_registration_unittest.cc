@@ -28,7 +28,6 @@ class ServiceWorkerRegistrationTest : public testing::Test {
             base::ThreadTaskRunnerHandle::Get()));
     context_.reset(
         new ServiceWorkerContextCore(base::FilePath(),
-                                     base::ThreadTaskRunnerHandle::Get(),
                                      database_task_manager.Pass(),
                                      base::ThreadTaskRunnerHandle::Get(),
                                      NULL,
@@ -61,11 +60,6 @@ class ServiceWorkerRegistrationTest : public testing::Test {
     }
 
     void OnRegistrationFailed(
-        ServiceWorkerRegistration* registration) override {
-      NOTREACHED();
-    }
-
-    void OnRegistrationFinishedUninstalling(
         ServiceWorkerRegistration* registration) override {
       NOTREACHED();
     }
@@ -111,7 +105,7 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
 
   RegistrationListener listener;
   registration->AddListener(&listener);
-  registration->SetActiveVersion(version_1.get());
+  registration->SetActiveVersion(version_1);
 
   EXPECT_EQ(version_1.get(), registration->active_version());
   EXPECT_EQ(registration, listener.observed_registration_);
@@ -124,11 +118,9 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
             kInvalidServiceWorkerVersionId);
   EXPECT_EQ(listener.observed_info_.waiting_version.version_id,
             kInvalidServiceWorkerVersionId);
-  EXPECT_EQ(listener.observed_info_.controlling_version.version_id,
-            kInvalidServiceWorkerVersionId);
   listener.Reset();
 
-  registration->SetInstallingVersion(version_2.get());
+  registration->SetInstallingVersion(version_2);
 
   EXPECT_EQ(version_2.get(), registration->installing_version());
   EXPECT_EQ(ChangedVersionAttributesMask::INSTALLING_VERSION,
@@ -138,11 +130,9 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
             listener.observed_info_.installing_version.version_id);
   EXPECT_EQ(listener.observed_info_.waiting_version.version_id,
             kInvalidServiceWorkerVersionId);
-  EXPECT_EQ(listener.observed_info_.controlling_version.version_id,
-            kInvalidServiceWorkerVersionId);
   listener.Reset();
 
-  registration->SetWaitingVersion(version_2.get());
+  registration->SetWaitingVersion(version_2);
 
   EXPECT_EQ(version_2.get(), registration->waiting_version());
   EXPECT_FALSE(registration->installing_version());
@@ -151,8 +141,6 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
   EXPECT_EQ(version_1_id, listener.observed_info_.active_version.version_id);
   EXPECT_EQ(version_2_id, listener.observed_info_.waiting_version.version_id);
   EXPECT_EQ(listener.observed_info_.installing_version.version_id,
-            kInvalidServiceWorkerVersionId);
-  EXPECT_EQ(listener.observed_info_.controlling_version.version_id,
             kInvalidServiceWorkerVersionId);
   listener.Reset();
 
@@ -166,24 +154,21 @@ TEST_F(ServiceWorkerRegistrationTest, SetAndUnsetVersions) {
             kInvalidServiceWorkerVersionId);
   EXPECT_EQ(listener.observed_info_.installing_version.version_id,
             kInvalidServiceWorkerVersionId);
-  EXPECT_EQ(listener.observed_info_.controlling_version.version_id,
-            kInvalidServiceWorkerVersionId);
 }
 
 TEST_F(ServiceWorkerRegistrationTest, FailedRegistrationNoCrash) {
   const GURL kScope("http://www.example.not/");
   int64 kRegistrationId = 1L;
-  int kProviderId = 1;
   scoped_refptr<ServiceWorkerRegistration> registration =
       new ServiceWorkerRegistration(
           kScope,
           kRegistrationId,
           context_ptr_);
   scoped_ptr<ServiceWorkerRegistrationHandle> handle(
-      new ServiceWorkerRegistrationHandle(context_ptr_,
-                                          NULL,
-                                          kProviderId,
-                                          registration.get()));
+      new ServiceWorkerRegistrationHandle(
+          context_ptr_,
+          base::WeakPtr<ServiceWorkerProviderHost>(),
+          registration.get()));
   registration->NotifyRegistrationFailed();
   // Don't crash when handle gets destructed.
 }

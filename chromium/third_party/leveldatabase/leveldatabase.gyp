@@ -3,17 +3,7 @@
 # found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 {
-  'variables': {
-    'use_snappy%': 1,
-  },
   'conditions': [
-    ['OS == "android" and android_webview_build == 1', {
-      'variables': {
-        # Snappy not used in Android WebView
-        # crbug.com/236780
-        'use_snappy': 0,
-      },
-    }],
     ['OS=="android"', {
       'targets': [{
         'target_name': 'env_chromium_unittests_apk',
@@ -38,34 +28,18 @@
       'src/',
       'src/include/',
     ],
-    'conditions': [
-      ['OS!="win"', {
-        'sources/': [ ['exclude', '_win.(h|cc)$'], ],
-      }],
-      ['use_snappy', {
-        'defines': [
-          'USE_SNAPPY=1',
-        ],
-      }],
-    ],
   },
   'targets': [
     {
       'target_name': 'leveldatabase',
       'type': 'static_library',
       'dependencies': [
-        '../../third_party/re2/re2.gyp:re2',
         '../../base/base.gyp:base',
         # base::LazyInstance is a template that pulls in dynamic_annotations so
         # we need to explictly link in the code for dynamic_annotations.
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-      ],
-      'conditions': [
-        ['use_snappy', {
-          'dependencies': [
-            '../../third_party/snappy/snappy.gyp:snappy',
-          ],
-        }],
+        '../../third_party/re2/re2.gyp:re2',
+        '../../third_party/snappy/snappy.gyp:snappy',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -90,10 +64,6 @@
         'chromium_logger.h',
         'env_chromium.cc',
         'env_chromium.h',
-        'env_chromium_stdio.cc',
-        'env_chromium_stdio.h',
-        'env_chromium_win.cc',
-        'env_chromium_win.h',
         'env_idb.h',
         'port/port_chromium.cc',
         'port/port_chromium.h',
@@ -103,10 +73,11 @@
         'src/db/db_impl.h',
         'src/db/db_iter.cc',
         'src/db/db_iter.h',
-        'src/db/filename.cc',
-        'src/db/filename.h',
         'src/db/dbformat.cc',
         'src/db/dbformat.h',
+        'src/db/dumpfile.cc',
+        'src/db/filename.cc',
+        'src/db/filename.h',
         'src/db/log_format.h',
         'src/db/log_reader.cc',
         'src/db/log_reader.h',
@@ -130,6 +101,7 @@
         'src/include/leveldb/cache.h',
         'src/include/leveldb/comparator.h',
         'src/include/leveldb/db.h',
+        'src/include/leveldb/dumpfile.h',
         'src/include/leveldb/env.h',
         'src/include/leveldb/filter_policy.h',
         'src/include/leveldb/iterator.h',
@@ -140,9 +112,6 @@
         'src/include/leveldb/table_builder.h',
         'src/include/leveldb/write_batch.h',
         'src/port/port.h',
-        'src/port/port_example.h',
-        'src/port/port_posix.cc',
-        'src/port/port_posix.h',
         'src/table/block.cc',
         'src/table/block.h',
         'src/table/block_builder.cc',
@@ -178,9 +147,6 @@
         'src/util/options.cc',
         'src/util/random.h',
         'src/util/status.cc',
-      ],
-      'sources/': [
-        ['exclude', '_(example|posix)\\.(h|cc)$'],
       ],
     },
     {
@@ -273,6 +239,26 @@
       ],
       'sources': [
         'src/db/corruption_test.cc',
+      ],
+    },
+    {
+      'target_name': 'leveldb_fault_injection_test',
+      'type': 'executable',
+      'dependencies': [
+        'leveldb_testutil',
+      ],
+      'sources': [
+        'src/db/fault_injection_test.cc',
+      ],
+    },
+    {
+      'target_name': 'leveldb_recovery_test',
+      'type': 'executable',
+      'dependencies': [
+        'leveldb_testutil',
+      ],
+      'sources': [
+        'src/db/recovery_test.cc',
       ],
     },
     {
@@ -407,9 +393,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

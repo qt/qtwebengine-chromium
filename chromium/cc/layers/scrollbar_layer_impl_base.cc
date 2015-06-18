@@ -33,8 +33,10 @@ ScrollbarLayerImplBase::~ScrollbarLayerImplBase() {}
 
 void ScrollbarLayerImplBase::PushPropertiesTo(LayerImpl* layer) {
   float active_opacity = layer->opacity();
+  bool active_hidden = layer->hide_layer_and_subtree();
   LayerImpl::PushPropertiesTo(layer);
   layer->SetOpacity(active_opacity);
+  layer->SetHideLayerAndSubtree(active_hidden);
   DCHECK(layer->ToScrollbarLayer());
   layer->ToScrollbarLayer()->set_is_overlay_scrollbar(is_overlay_scrollbar_);
   PushScrollClipPropertiesTo(layer);
@@ -69,11 +71,7 @@ void RegisterScrollbarWithLayers(ScrollbarLayerImplBase* scrollbar,
   for (LayerImpl* current_layer = scroll_layer;
        current_layer && current_layer != container_layer->parent();
        current_layer = current_layer->parent()) {
-    // TODO(wjmaclean) We shouldn't need to exempt the scroll_layer from the
-    // scrollable() test below. https://crbug.com/367858.
-    if (current_layer->scrollable() || current_layer == container_layer ||
-        current_layer == scroll_layer)
-      (current_layer->*operation)(scrollbar);
+    (current_layer->*operation)(scrollbar);
   }
 }
 }  // namespace

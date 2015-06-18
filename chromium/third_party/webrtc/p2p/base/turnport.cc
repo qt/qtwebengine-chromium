@@ -78,9 +78,11 @@ class TurnRefreshRequest : public StunRequest {
   virtual void OnResponse(StunMessage* response);
   virtual void OnErrorResponse(StunMessage* response);
   virtual void OnTimeout();
+  void set_lifetime(int lifetime) { lifetime_ = lifetime; }
 
  private:
   TurnPort* port_;
+  int lifetime_;
 };
 
 class TurnCreatePermissionRequest : public StunRequest,
@@ -164,7 +166,8 @@ TurnPort::TurnPort(rtc::Thread* thread,
                    const std::string& password,
                    const ProtocolAddress& server_address,
                    const RelayCredentials& credentials,
-                   int server_priority)
+                   int server_priority,
+                   const std::string& origin)
     : Port(thread, factory, network, socket->GetLocalAddress().ipaddr(),
            username, password),
       server_address_(server_address),
@@ -178,6 +181,7 @@ TurnPort::TurnPort(rtc::Thread* thread,
       server_priority_(server_priority),
       allocate_mismatch_retries_(0) {
   request_manager_.SignalSendPacket.connect(this, &TurnPort::OnSendStunPacket);
+  request_manager_.set_origin(origin);
 }
 
 TurnPort::TurnPort(rtc::Thread* thread,
@@ -190,7 +194,8 @@ TurnPort::TurnPort(rtc::Thread* thread,
                    const std::string& password,
                    const ProtocolAddress& server_address,
                    const RelayCredentials& credentials,
-                   int server_priority)
+                   int server_priority,
+                   const std::string& origin)
     : Port(thread, RELAY_PORT_TYPE, factory, network, ip, min_port, max_port,
            username, password),
       server_address_(server_address),
@@ -204,10 +209,20 @@ TurnPort::TurnPort(rtc::Thread* thread,
       server_priority_(server_priority),
       allocate_mismatch_retries_(0) {
   request_manager_.SignalSendPacket.connect(this, &TurnPort::OnSendStunPacket);
+  request_manager_.set_origin(origin);
 }
 
 TurnPort::~TurnPort() {
   // TODO(juberti): Should this even be necessary?
+
+  // release the allocation by sending a refresh with
+  // lifetime 0.
+  if (connected_) {
+    TurnRefreshRequest bye(this);
+    bye.set_lifetime(0);
+    SendRequest(&bye, 0);
+  }
+
   while (!entries_.empty()) {
     DestroyEntry(entries_.front()->address());
   }
@@ -217,6 +232,10 @@ TurnPort::~TurnPort() {
   if (!SharedSocket()) {
     delete socket_;
   }
+}
+
+rtc::SocketAddress TurnPort::GetLocalAddress() const {
+  return socket_ ? socket_->GetLocalAddress() : rtc::SocketAddress();
 }
 
 void TurnPort::PrepareAddress() {
@@ -309,11 +328,24 @@ void TurnPort::OnSocketConnect(rtc::AsyncPacketSocket* socket) {
   // the one we asked for. This is seen in Chrome, where TCP sockets cannot be
   // given a binding address, and the platform is expected to pick the
   // correct local address.
+
+  // Further, to workaround issue 3927 in which a proxy is forcing TCP bound to
+  // localhost only, we're allowing Loopback IP even if it's not the same as the
+  // local Turn port.
   if (socket->GetLocalAddress().ipaddr() != ip()) {
-    LOG(LS_WARNING) << "Socket is bound to a different address then the "
-                    << "local port. Discarding TURN port.";
-    OnAllocateError();
-    return;
+    if (socket->GetLocalAddress().IsLoopbackIP()) {
+      LOG(LS_WARNING) << "Socket is bound to a different address:"
+                      << socket->GetLocalAddress().ipaddr().ToString()
+                      << ", rather then the local port:" << ip().ToString()
+                      << ". Still allowing it since it's localhost.";
+    } else {
+      LOG(LS_WARNING) << "Socket is bound to a different address:"
+                      << socket->GetLocalAddress().ipaddr().ToString()
+                      << ", rather then the local port:" << ip().ToString()
+                      << ". Discarding TURN port.";
+      OnAllocateError();
+      return;
+    }
   }
 
   if (server_address_.address.IsUnresolved()) {
@@ -327,9 +359,11 @@ void TurnPort::OnSocketConnect(rtc::AsyncPacketSocket* socket) {
 
 void TurnPort::OnSocketClose(rtc::AsyncPacketSocket* socket, int error) {
   LOG_J(LS_WARNING, this) << "Connection with server failed, error=" << error;
+  ASSERT(socket == socket_);
   if (!connected_) {
     OnAllocateError();
   }
+  connected_ = false;
 }
 
 void TurnPort::OnAllocateMismatch() {
@@ -442,7 +476,17 @@ void TurnPort::OnReadPacket(
     const rtc::SocketAddress& remote_addr,
     const rtc::PacketTime& packet_time) {
   ASSERT(socket == socket_);
-  ASSERT(remote_addr == server_address_.address);
+
+  // This is to guard against a STUN response from previous server after
+  // alternative server redirection. TODO(guoweis): add a unit test for this
+  // race condition.
+  if (remote_addr != server_address_.address) {
+    LOG_J(LS_WARNING, this) << "Discarding TURN message from unknown address:"
+                            << remote_addr.ToString()
+                            << ", server_address_:"
+                            << server_address_.address.ToString();
+    return;
+  }
 
   // The message must be at least the size of a channel header.
   if (size < TURN_CHANNEL_HEADER_SIZE) {
@@ -459,6 +503,14 @@ void TurnPort::OnReadPacket(
   } else if (msg_type == TURN_DATA_INDICATION) {
     HandleDataIndication(data, size, packet_time);
   } else {
+    if (SharedSocket() &&
+        (msg_type == STUN_BINDING_RESPONSE ||
+         msg_type == STUN_BINDING_ERROR_RESPONSE)) {
+      LOG_J(LS_VERBOSE, this) <<
+          "Ignoring STUN binding response message on shared socket.";
+      return;
+    }
+
     // This must be a response for one of our requests.
     // Check success responses, but not errors, for MESSAGE-INTEGRITY.
     if (IsStunSuccessResponseType(msg_type) &&
@@ -606,6 +658,22 @@ void TurnPort::OnMessage(rtc::Message* message) {
   } else if (message->message_id == MSG_ALLOCATE_MISMATCH) {
     OnAllocateMismatch();
     return;
+  } else if (message->message_id == MSG_TRY_ALTERNATE_SERVER) {
+    if (server_address().proto == PROTO_UDP) {
+      // Send another allocate request to alternate server, with the received
+      // realm and nonce values.
+      SendRequest(new TurnAllocateRequest(this), 0);
+    } else {
+      // Since it's TCP, we have to delete the connected socket and reconnect
+      // with the alternate server. PrepareAddress will send stun binding once
+      // the new socket is connected.
+      ASSERT(server_address().proto == PROTO_TCP);
+      ASSERT(!SharedSocket());
+      delete socket_;
+      socket_ = NULL;
+      PrepareAddress();
+    }
+    return;
   }
 
   Port::OnMessage(message);
@@ -710,7 +778,9 @@ bool TurnPort::ScheduleRefresh(int lifetime) {
     return false;
   }
 
-  SendRequest(new TurnRefreshRequest(this), (lifetime - 60) * 1000);
+  int delay = (lifetime - 60) * 1000;
+  SendRequest(new TurnRefreshRequest(this), delay);
+  LOG_J(LS_INFO, this) << "Scheduled refresh in " << delay << "ms.";
   return true;
 }
 
@@ -920,15 +990,6 @@ void TurnAllocateRequest::OnAuthChallenge(StunMessage* response, int code) {
 }
 
 void TurnAllocateRequest::OnTryAlternate(StunMessage* response, int code) {
-  // TODO(guoweis): Currently, we only support UDP redirect
-  if (port_->server_address().proto != PROTO_UDP) {
-    LOG_J(LS_WARNING, port_) << "Receiving 300 Alternate Server on non-UDP "
-                         << "allocating request from ["
-                         << port_->server_address().address.ToSensitiveString()
-                         << "], failed as currently not supported";
-    port_->OnAllocateError();
-    return;
-  }
 
   // According to RFC 5389 section 11, there are use cases where
   // authentication of response is not possible, we're not validating
@@ -965,24 +1026,33 @@ void TurnAllocateRequest::OnTryAlternate(StunMessage* response, int code) {
     port_->set_nonce(nonce_attr->GetString());
   }
 
-  // Send another allocate request to alternate server,
-  // with the received realm and nonce values.
-  port_->SendRequest(new TurnAllocateRequest(port_), 0);
+  // For TCP, we can't close the original Tcp socket during handling a 300 as
+  // we're still inside that socket's event handler. Doing so will cause
+  // deadlock.
+  port_->thread()->Post(port_, TurnPort::MSG_TRY_ALTERNATE_SERVER);
 }
 
 TurnRefreshRequest::TurnRefreshRequest(TurnPort* port)
     : StunRequest(new TurnMessage()),
-      port_(port) {
+      port_(port),
+      lifetime_(-1) {
 }
 
 void TurnRefreshRequest::Prepare(StunMessage* request) {
   // Create the request as indicated in RFC 5766, Section 7.1.
   // No attributes need to be included.
   request->SetType(TURN_REFRESH_REQUEST);
+  if (lifetime_ > -1) {
+    VERIFY(request->AddAttribute(new StunUInt32Attribute(
+        STUN_ATTR_LIFETIME, lifetime_)));
+  }
+
   port_->AddRequestAuthInfo(request);
 }
 
 void TurnRefreshRequest::OnResponse(StunMessage* response) {
+  LOG_J(LS_INFO, port_) << "Refresh requested successfully.";
+
   // Check mandatory attributes as indicated in RFC5766, Section 7.3.
   const StunUInt32Attribute* lifetime_attr =
       response->GetUInt32(STUN_ATTR_TURN_LIFETIME);
@@ -1010,6 +1080,7 @@ void TurnRefreshRequest::OnErrorResponse(StunMessage* response) {
 }
 
 void TurnRefreshRequest::OnTimeout() {
+  LOG_J(LS_WARNING, port_) << "Refresh request timeout";
 }
 
 TurnCreatePermissionRequest::TurnCreatePermissionRequest(
@@ -1038,8 +1109,10 @@ void TurnCreatePermissionRequest::OnResponse(StunMessage* response) {
 }
 
 void TurnCreatePermissionRequest::OnErrorResponse(StunMessage* response) {
+  const StunErrorCodeAttribute* error_code = response->GetErrorCode();
+  LOG_J(LS_WARNING, port_) << "Allocate response error, code="
+                           << error_code->code();
   if (entry_) {
-    const StunErrorCodeAttribute* error_code = response->GetErrorCode();
     entry_->OnCreatePermissionError(response, error_code->code());
   }
 }
@@ -1082,7 +1155,9 @@ void TurnChannelBindRequest::OnResponse(StunMessage* response) {
     // threshold. The channel binding has a longer lifetime, but
     // this is the easiest way to keep both the channel and the
     // permission from expiring.
-    entry_->SendChannelBindRequest(TURN_PERMISSION_TIMEOUT - 60 * 1000);
+    int delay = TURN_PERMISSION_TIMEOUT - 60000;
+    entry_->SendChannelBindRequest(delay);
+    LOG_J(LS_INFO, port_) << "Scheduled channel bind in " << delay << "ms.";
   }
 }
 

@@ -28,11 +28,11 @@
 #include "config.h"
 #include "core/dom/ExecutionContext.h"
 
-#include "core/dom/AddConsoleMessageTask.h"
-#include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ExecutionContextTask.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/EventTarget.h"
+#include "core/fetch/MemoryCache.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/PublicURLManager.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -54,7 +54,7 @@ public:
         , m_callStack(callStack)
     {
     }
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_callStack);
     }
@@ -67,11 +67,14 @@ public:
 };
 
 ExecutionContext::ExecutionContext()
-    : m_sandboxFlags(SandboxNone)
-    , m_circularSequentialID(0)
+    : m_circularSequentialID(0)
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
     , m_activeDOMObjectsAreStopped(false)
+    , m_strictMixedContentCheckingEnforced(false)
+    , m_windowInteractionTokens(0)
+    , m_isRunSuspendableTasksScheduled(false)
+    , m_referrerPolicy(ReferrerPolicyDefault)
 {
 }
 
@@ -79,32 +82,40 @@ ExecutionContext::~ExecutionContext()
 {
 }
 
-bool ExecutionContext::hasPendingActivity()
-{
-    return lifecycleNotifier().hasPendingActivity();
-}
-
 void ExecutionContext::suspendActiveDOMObjects()
 {
-    lifecycleNotifier().notifySuspendingActiveDOMObjects();
+    ASSERT(!m_activeDOMObjectsAreSuspended);
+    notifySuspendingActiveDOMObjects();
     m_activeDOMObjectsAreSuspended = true;
 }
 
 void ExecutionContext::resumeActiveDOMObjects()
 {
+    ASSERT(m_activeDOMObjectsAreSuspended);
     m_activeDOMObjectsAreSuspended = false;
-    lifecycleNotifier().notifyResumingActiveDOMObjects();
+    notifyResumingActiveDOMObjects();
 }
 
 void ExecutionContext::stopActiveDOMObjects()
 {
     m_activeDOMObjectsAreStopped = true;
-    lifecycleNotifier().notifyStoppingActiveDOMObjects();
+    notifyStoppingActiveDOMObjects();
 }
 
-unsigned ExecutionContext::activeDOMObjectCount()
+void ExecutionContext::postSuspendableTask(PassOwnPtr<SuspendableTask> task)
 {
-    return lifecycleNotifier().activeDOMObjects().size();
+    m_suspendedTasks.append(task);
+    if (!m_activeDOMObjectsAreSuspended)
+        postTask(FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
+}
+
+void ExecutionContext::notifyContextDestroyed()
+{
+    Deque<OwnPtr<SuspendableTask>> suspendedTasks;
+    suspendedTasks.swap(m_suspendedTasks);
+    for (Deque<OwnPtr<SuspendableTask>>::iterator it = suspendedTasks.begin(); it != suspendedTasks.end(); ++it)
+        (*it)->contextDestroyed();
+    ContextLifecycleNotifier::notifyContextDestroyed();
 }
 
 void ExecutionContext::suspendScheduledTasks()
@@ -117,11 +128,16 @@ void ExecutionContext::resumeScheduledTasks()
 {
     resumeActiveDOMObjects();
     tasksWereResumed();
+    // We need finish stack unwiding before running next task because it can suspend this context.
+    if (m_isRunSuspendableTasksScheduled)
+        return;
+    m_isRunSuspendableTasksScheduled = true;
+    postTask(FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
 }
 
 void ExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* object)
 {
-    ASSERT(lifecycleNotifier().contains(object));
+    ASSERT(contains(object));
     // Ensure all ActiveDOMObjects are suspended also newly created ones.
     if (m_activeDOMObjectsAreSuspended)
         object->suspend();
@@ -137,7 +153,7 @@ void ExecutionContext::reportException(PassRefPtrWillBeRawPtr<ErrorEvent> event,
     RefPtrWillBeRawPtr<ErrorEvent> errorEvent = event;
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
-            m_pendingExceptions = adoptPtrWillBeNoop(new WillBeHeapVector<OwnPtrWillBeMember<PendingException> >());
+            m_pendingExceptions = adoptPtrWillBeNoop(new WillBeHeapVector<OwnPtrWillBeMember<PendingException>>());
         m_pendingExceptions->append(adoptPtrWillBeNoop(new PendingException(errorEvent->messageForConsole(), errorEvent->lineno(), errorEvent->colno(), scriptId, errorEvent->filename(), callStack)));
         return;
     }
@@ -173,6 +189,15 @@ bool ExecutionContext::dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent> eve
     return errorEvent->defaultPrevented();
 }
 
+void ExecutionContext::runSuspendableTasks()
+{
+    m_isRunSuspendableTasksScheduled = false;
+    while (!m_activeDOMObjectsAreSuspended && m_suspendedTasks.size()) {
+        OwnPtr<SuspendableTask> task = m_suspendedTasks.takeFirst();
+        task->run();
+    }
+}
+
 int ExecutionContext::circularSequentialID()
 {
     ++m_circularSequentialID;
@@ -181,41 +206,11 @@ int ExecutionContext::circularSequentialID()
     return m_circularSequentialID;
 }
 
-int ExecutionContext::installNewTimeout(PassOwnPtr<ScheduledAction> action, int timeout, bool singleShot)
-{
-    int timeoutID;
-    while (true) {
-        timeoutID = circularSequentialID();
-        if (!m_timeouts.contains(timeoutID))
-            break;
-    }
-    TimeoutMap::AddResult result = m_timeouts.add(timeoutID, DOMTimer::create(this, action, timeout, singleShot, timeoutID));
-    ASSERT(result.isNewEntry);
-    DOMTimer* timer = result.storedValue->value.get();
-
-    timer->suspendIfNeeded();
-
-    return timer->timeoutID();
-}
-
-void ExecutionContext::removeTimeoutByID(int timeoutID)
-{
-    if (timeoutID <= 0)
-        return;
-    m_timeouts.remove(timeoutID);
-}
-
 PublicURLManager& ExecutionContext::publicURLManager()
 {
     if (!m_publicURLManager)
         m_publicURLManager = PublicURLManager::create(this);
     return *m_publicURLManager;
-}
-
-void ExecutionContext::didChangeTimerAlignmentInterval()
-{
-    for (TimeoutMap::iterator iter = m_timeouts.begin(); iter != m_timeouts.end(); ++iter)
-        iter->value->didChangeAlignmentInterval();
 }
 
 SecurityOrigin* ExecutionContext::securityOrigin()
@@ -238,39 +233,46 @@ KURL ExecutionContext::completeURL(const String& url) const
     return virtualCompleteURL(url);
 }
 
-PassOwnPtr<LifecycleNotifier<ExecutionContext> > ExecutionContext::createLifecycleNotifier()
+void ExecutionContext::allowWindowInteraction()
 {
-    return ContextLifecycleNotifier::create(this);
+    ++m_windowInteractionTokens;
 }
 
-ContextLifecycleNotifier& ExecutionContext::lifecycleNotifier()
+void ExecutionContext::consumeWindowInteraction()
 {
-    return static_cast<ContextLifecycleNotifier&>(LifecycleContext<ExecutionContext>::lifecycleNotifier());
+    if (m_windowInteractionTokens == 0)
+        return;
+    --m_windowInteractionTokens;
 }
 
-bool ExecutionContext::isIteratingOverObservers() const
+bool ExecutionContext::isWindowInteractionAllowed() const
 {
-    return m_lifecycleNotifier && m_lifecycleNotifier->isIteratingOverObservers();
+    return m_windowInteractionTokens > 0;
 }
 
-void ExecutionContext::enforceSandboxFlags(SandboxFlags mask)
+void ExecutionContext::setReferrerPolicy(ReferrerPolicy referrerPolicy)
 {
-    m_sandboxFlags |= mask;
+    // FIXME: Can we adopt the CSP referrer policy merge algorithm? Or does the web rely on being able to modify the referrer policy in-flight?
+    UseCounter::count(this, UseCounter::SetReferrerPolicy);
+    if (m_referrerPolicy != ReferrerPolicyDefault)
+        UseCounter::count(this, UseCounter::ResetReferrerPolicy);
 
-    // The SandboxOrigin is stored redundantly in the security origin.
-    if (isSandboxed(SandboxOrigin) && securityContext().securityOrigin() && !securityContext().securityOrigin()->isUnique()) {
-        securityContext().setSecurityOrigin(SecurityOrigin::createUnique());
-        didUpdateSecurityOrigin();
-    }
+    m_referrerPolicy = referrerPolicy;
 }
 
-void ExecutionContext::trace(Visitor* visitor)
+void ExecutionContext::removeURLFromMemoryCache(const KURL& url)
+{
+    memoryCache()->removeURLFromCache(url);
+}
+
+DEFINE_TRACE(ExecutionContext)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingExceptions);
+    visitor->trace(m_publicURLManager);
     HeapSupplementable<ExecutionContext>::trace(visitor);
 #endif
-    LifecycleContext<ExecutionContext>::trace(visitor);
+    ContextLifecycleNotifier::trace(visitor);
 }
 
 } // namespace blink

@@ -6,6 +6,7 @@
 #include "base/test/test_simple_task_runner.h"
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_read_observer.h"
+#include "content/browser/streams/stream_register_observer.h"
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/streams/stream_write_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -102,6 +103,45 @@ class TestStreamWriter : public StreamWriteObserver {
 
   void OnClose(Stream* stream) override {}
 };
+
+class TestStreamObserver : public StreamRegisterObserver {
+ public:
+  TestStreamObserver(const GURL& url, StreamRegistry* registry)
+      : url_(url), registry_(registry), registered_(false), stream_(nullptr) {
+    registry->SetRegisterObserver(url, this);
+  }
+  ~TestStreamObserver() override { registry_->RemoveRegisterObserver(url_); }
+  void OnStreamRegistered(Stream* stream) override {
+    registered_ = true;
+    stream_ = stream;
+  }
+  bool registered() const { return registered_; }
+  Stream* stream() const { return stream_; }
+
+ private:
+  const GURL url_;
+  StreamRegistry* registry_;
+  bool registered_;
+  Stream* stream_;
+};
+
+TEST_F(StreamTest, SetAndRemoveRegisterObserver) {
+  TestStreamWriter writer1;
+  TestStreamWriter writer2;
+  GURL url1("blob://stream1");
+  GURL url2("blob://stream2");
+  scoped_ptr<TestStreamObserver> observer1(
+      new TestStreamObserver(url1, registry_.get()));
+  scoped_ptr<TestStreamObserver> observer2(
+      new TestStreamObserver(url2, registry_.get()));
+  scoped_refptr<Stream> stream1(new Stream(registry_.get(), &writer1, url1));
+  EXPECT_TRUE(observer1->registered());
+  EXPECT_EQ(observer1->stream(), stream1.get());
+  EXPECT_FALSE(observer2->registered());
+
+  observer2.reset();
+  scoped_refptr<Stream> stream2(new Stream(registry_.get(), &writer2, url2));
+}
 
 TEST_F(StreamTest, SetReadObserver) {
   TestStreamReader reader;
@@ -272,12 +312,12 @@ TEST_F(StreamTest, MemoryExceedMemoryUsageLimit) {
 
   // Written data (1000000 * 2) exceeded limit (1500000). |stream2| should be
   // unregistered with |registry_|.
-  EXPECT_EQ(NULL, registry_->GetStream(url2).get());
+  EXPECT_EQ(nullptr, registry_->GetStream(url2).get());
 
   writer1.Write(stream1.get(), buffer, kMaxMemoryUsage - kBufferSize);
   // Should be accepted since stream2 is unregistered and the new data is not
   // so big to exceed the limit.
-  EXPECT_FALSE(registry_->GetStream(url1).get() == NULL);
+  EXPECT_FALSE(registry_->GetStream(url1).get() == nullptr);
 }
 
 TEST_F(StreamTest, UnderMemoryUsageLimit) {
@@ -300,6 +340,43 @@ TEST_F(StreamTest, UnderMemoryUsageLimit) {
   writer.Write(stream.get(), buffer, kBufferSize);
 
   EXPECT_EQ(stream.get(), registry_->GetStream(url).get());
+}
+
+TEST_F(StreamTest, Flush) {
+  TestStreamWriter writer;
+  TestStreamReader reader;
+
+  GURL url("blob://stream");
+  scoped_refptr<Stream> stream(new Stream(registry_.get(), &writer, url));
+  EXPECT_TRUE(stream->SetReadObserver(&reader));
+
+  // If the written data size is smaller than ByteStreamWriter's (total size /
+  // kFractionBufferBeforeSending), StreamReadObserver::OnDataAvailable is not
+  // called.
+  const int kBufferSize = 1;
+  scoped_refptr<net::IOBuffer> buffer(NewIOBuffer(kBufferSize));
+  writer.Write(stream.get(), buffer, kBufferSize);
+
+  // Run loop to make |reader| consume the data.
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0, reader.buffer()->capacity());
+
+  stream->Flush();
+
+  // Run loop to make |reader| consume the data.
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(kBufferSize, reader.buffer()->capacity());
+
+  EXPECT_EQ(stream.get(), registry_->GetStream(url).get());
+}
+
+TEST_F(StreamTest, AbortPendingStream) {
+  TestStreamWriter writer;
+
+  GURL url("blob://stream");
+  registry_->AbortPendingStream(url);
+  scoped_refptr<Stream> stream1(new Stream(registry_.get(), &writer, url));
+  ASSERT_EQ(nullptr, registry_->GetStream(url).get());
 }
 
 }  // namespace content

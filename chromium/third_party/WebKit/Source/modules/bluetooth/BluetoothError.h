@@ -5,11 +5,12 @@
 #ifndef BluetoothError_h
 #define BluetoothError_h
 
-#include "core/dom/DOMException.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/modules/bluetooth/WebBluetoothError.h"
 
 namespace blink {
 
+class DOMException;
 class ScriptPromiseResolver;
 struct WebBluetoothError;
 
@@ -20,11 +21,11 @@ class BluetoothError {
 public:
     // Interface required by CallbackPromiseAdapter:
     typedef WebBluetoothError WebType;
-    static PassRefPtrWillBeRawPtr<DOMException> take(ScriptPromiseResolver*, WebBluetoothError*);
-    static void dispose(blink::WebBluetoothError*);
+    static DOMException* take(ScriptPromiseResolver*, WebBluetoothError*);
+    static void dispose(WebBluetoothError*);
 
 private:
-    BluetoothError() WTF_DELETED_FUNCTION;
+    BluetoothError() = delete;
 };
 
 } // namespace blink

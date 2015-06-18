@@ -84,6 +84,13 @@ STRING_TYPES = frozenset([
     'USVString',
 ])
 
+STANDARD_CALLBACK_FUNCTIONS = frozenset([
+    # http://heycam.github.io/webidl/#common-Function
+    'Function',
+    # http://heycam.github.io/webidl/#common-VoidFunction
+    'VoidFunction',
+])
+
 
 ################################################################################
 # Inheritance
@@ -117,6 +124,11 @@ class IdlTypeBase(object):
         raise NotImplementedError(
             'resolve_typedefs should be defined in subclasses')
 
+    def idl_types(self):
+        """A generator which yields IdlTypes which are referenced from |self|,
+        including itself."""
+        yield self
+
 
 ################################################################################
 # IdlType
@@ -126,7 +138,7 @@ class IdlType(IdlTypeBase):
     # FIXME: incorporate Nullable, etc.
     # to support types like short?[] vs. short[]?, instead of treating these
     # as orthogonal properties (via flags).
-    callback_functions = set()
+    callback_functions = set(STANDARD_CALLBACK_FUNCTIONS)
     callback_interfaces = set()
     dictionaries = set()
     enums = {}  # name -> values
@@ -173,7 +185,11 @@ class IdlType(IdlTypeBase):
 
     @property
     def enum_values(self):
-        return IdlType.enums[self.name]
+        return IdlType.enums.get(self.name)
+
+    @property
+    def enum_type(self):
+        return self.name if self.is_enum else None
 
     @property
     def is_integer_type(self):
@@ -204,10 +220,6 @@ class IdlType(IdlTypeBase):
     @property
     def is_string_type(self):
         return self.name in STRING_TYPES
-
-    @property
-    def is_union_type(self):
-        return isinstance(self, IdlUnionType)
 
     @property
     def name(self):
@@ -253,7 +265,7 @@ class IdlUnionType(IdlTypeBase):
         self.member_types = member_types
 
     def __str__(self):
-        return self.name
+        return '(' + ' or '.join(str(member_type) for member_type in self.member_types) + ')'
 
     def __hash__(self):
         return hash(self.name)
@@ -273,6 +285,33 @@ class IdlUnionType(IdlTypeBase):
     def is_union_type(self):
         return True
 
+    def single_matching_member_type(self, predicate):
+        matching_types = filter(predicate, self.member_types)
+        if len(matching_types) > 1:
+            raise "%s is ambigious." % self.name
+        return matching_types[0] if matching_types else None
+
+    @property
+    def string_member_type(self):
+        return self.single_matching_member_type(
+            lambda member_type: (member_type.is_string_type or
+                                 member_type.is_enum))
+
+    @property
+    def numeric_member_type(self):
+        return self.single_matching_member_type(
+            lambda member_type: member_type.is_numeric_type)
+
+    @property
+    def boolean_member_type(self):
+        return self.single_matching_member_type(
+            lambda member_type: member_type.base_type == 'boolean')
+
+    @property
+    def as_union_type(self):
+        # Note: Use this to "look through" a possible IdlNullableType wrapper.
+        return self
+
     @property
     def name(self):
         """Return type name (or inner type name if nullable)
@@ -286,6 +325,12 @@ class IdlUnionType(IdlTypeBase):
             typedefs.get(member_type, member_type)
             for member_type in self.member_types]
         return self
+
+    def idl_types(self):
+        yield self
+        for member_type in self.member_types:
+            for idl_type in member_type.idl_types():
+                yield idl_type
 
 
 ################################################################################
@@ -310,6 +355,23 @@ class IdlArrayOrSequenceType(IdlTypeBase):
     def resolve_typedefs(self, typedefs):
         self.element_type = self.element_type.resolve_typedefs(typedefs)
         return self
+
+    @property
+    def is_array_or_sequence_type(self):
+        return True
+
+    @property
+    def enum_values(self):
+        return self.element_type.enum_values
+
+    @property
+    def enum_type(self):
+        return self.element_type.enum_type
+
+    def idl_types(self):
+        yield self
+        for idl_type in self.element_type.idl_types():
+            yield idl_type
 
 
 class IdlArrayType(IdlArrayOrSequenceType):
@@ -375,3 +437,8 @@ class IdlNullableType(IdlTypeBase):
     def resolve_typedefs(self, typedefs):
         self.inner_type = self.inner_type.resolve_typedefs(typedefs)
         return self
+
+    def idl_types(self):
+        yield self
+        for idl_type in self.inner_type.idl_types():
+            yield idl_type

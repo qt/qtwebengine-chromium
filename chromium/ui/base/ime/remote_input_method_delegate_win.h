@@ -8,15 +8,15 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "ui/base/ui_base_export.h"
-#include "ui/gfx/rect.h"
+#include "ui/base/ime/ui_base_ime_export.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace ui {
 namespace internal {
 
 // An interface implemented by the object to forward events that should be
 // handled by the IME which is running in the remote metro_driver process.
-class UI_BASE_EXPORT RemoteInputMethodDelegateWin {
+class UI_BASE_IME_EXPORT RemoteInputMethodDelegateWin {
  public:
   virtual ~RemoteInputMethodDelegateWin() {}
 

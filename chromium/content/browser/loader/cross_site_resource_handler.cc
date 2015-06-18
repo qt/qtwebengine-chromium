@@ -68,6 +68,13 @@ void OnCrossSiteResponseHelper(const CrossSiteResponseParams& params) {
       RenderFrameHostImpl::FromID(params.global_request_id.child_id,
                                   params.render_frame_id);
   if (rfh) {
+    if (rfh->GetParent()) {
+      // We should only swap processes for subframes in --site-per-process mode.
+      // CrossSiteResourceHandler is not installed on subframe requests in
+      // default Chrome.
+      CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess));
+    }
     rfh->OnCrossSiteResponse(
         params.global_request_id, cross_site_transferring_request.Pass(),
         params.transfer_url_chain, params.referrer,
@@ -91,7 +98,8 @@ void OnDeferredAfterResponseStartedHelper(
 
 // Returns whether a transfer is needed by doing a check on the UI thread.
 bool CheckNavigationPolicyOnUI(GURL url, int process_id, int render_frame_id) {
-  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess));
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kSitePerProcess));
   RenderFrameHostImpl* rfh =
       RenderFrameHostImpl::FromID(process_id, render_frame_id);
   if (!rfh)
@@ -367,9 +375,6 @@ void CrossSiteResourceHandler::StartCrossSiteTransition(
   int render_frame_id = info->GetRenderFrameID();
   transfer_url_chain = request()->url_chain();
   referrer = Referrer(GURL(request()->referrer()), info->GetReferrerPolicy());
-
-  AppCacheInterceptor::PrepareForCrossSiteTransfer(
-      request(), global_id.child_id);
   ResourceDispatcherHostImpl::Get()->MarkAsTransferredNavigation(global_id);
 
   BrowserThread::PostTask(

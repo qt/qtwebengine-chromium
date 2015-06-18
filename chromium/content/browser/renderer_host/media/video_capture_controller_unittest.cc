@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/browser/renderer_host/media/video_capture_controller.h"
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
@@ -20,19 +21,19 @@
 #include "content/common/media/media_stream_options.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
+#include "media/base/video_capture_types.h"
 #include "media/base/video_util.h"
-#include "media/video/capture/video_capture_types.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_ANDROID)
-#include "content/browser/renderer_host/test/no_transport_image_transport_factory_android.h"
-#else
+#if !defined(OS_ANDROID)
 #include "content/browser/compositor/test/no_transport_image_transport_factory.h"
 #endif
 
+using ::testing::_;
 using ::testing::InSequence;
 using ::testing::Mock;
+using ::testing::SaveArg;
 
 namespace content {
 
@@ -42,35 +43,36 @@ class MockVideoCaptureControllerEventHandler
   explicit MockVideoCaptureControllerEventHandler(
       VideoCaptureController* controller)
       : controller_(controller) {}
-  virtual ~MockVideoCaptureControllerEventHandler() {}
+  ~MockVideoCaptureControllerEventHandler() override {}
 
   // These mock methods are delegated to by our fake implementation of
   // VideoCaptureControllerEventHandler, to be used in EXPECT_CALL().
-  MOCK_METHOD1(DoBufferCreated, void(const VideoCaptureControllerID&));
-  MOCK_METHOD1(DoBufferDestroyed, void(const VideoCaptureControllerID&));
-  MOCK_METHOD1(DoBufferReady, void(const VideoCaptureControllerID&));
-  MOCK_METHOD1(DoMailboxBufferReady, void(const VideoCaptureControllerID&));
-  MOCK_METHOD1(DoEnded, void(const VideoCaptureControllerID&));
-  MOCK_METHOD1(DoError, void(const VideoCaptureControllerID&));
+  MOCK_METHOD1(DoBufferCreated, void(VideoCaptureControllerID));
+  MOCK_METHOD1(DoBufferDestroyed, void(VideoCaptureControllerID));
+  MOCK_METHOD2(DoBufferReady, void(VideoCaptureControllerID, const gfx::Size&));
+  MOCK_METHOD1(DoMailboxBufferReady, void(VideoCaptureControllerID));
+  MOCK_METHOD1(DoEnded, void(VideoCaptureControllerID));
+  MOCK_METHOD1(DoError, void(VideoCaptureControllerID));
 
-  virtual void OnError(const VideoCaptureControllerID& id) override {
+  void OnError(VideoCaptureControllerID id) override {
     DoError(id);
   }
-  virtual void OnBufferCreated(const VideoCaptureControllerID& id,
-                               base::SharedMemoryHandle handle,
-                               int length, int buffer_id) override {
+  void OnBufferCreated(VideoCaptureControllerID id,
+                       base::SharedMemoryHandle handle,
+                       int length, int buffer_id) override {
     DoBufferCreated(id);
   }
-  virtual void OnBufferDestroyed(const VideoCaptureControllerID& id,
-                                 int buffer_id) override {
+  void OnBufferDestroyed(VideoCaptureControllerID id, int buffer_id) override {
     DoBufferDestroyed(id);
   }
-  virtual void OnBufferReady(const VideoCaptureControllerID& id,
-                             int buffer_id,
-                             const media::VideoCaptureFormat& format,
-                             const gfx::Rect& visible_rect,
-                             base::TimeTicks timestamp) override {
-    DoBufferReady(id);
+  void OnBufferReady(
+      VideoCaptureControllerID id,
+      int buffer_id,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const base::TimeTicks& timestamp,
+      scoped_ptr<base::DictionaryValue> metadata) override {
+    DoBufferReady(id, coded_size);
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&VideoCaptureController::ReturnBuffer,
@@ -80,11 +82,13 @@ class MockVideoCaptureControllerEventHandler
                    buffer_id,
                    0));
   }
-  virtual void OnMailboxBufferReady(const VideoCaptureControllerID& id,
-                                    int buffer_id,
-                                    const gpu::MailboxHolder& mailbox_holder,
-                                    const media::VideoCaptureFormat& format,
-                                    base::TimeTicks timestamp) override {
+  void OnMailboxBufferReady(
+      VideoCaptureControllerID id,
+      int buffer_id,
+      const gpu::MailboxHolder& mailbox_holder,
+      const gfx::Size& packed_frame_size,
+      const base::TimeTicks& timestamp,
+      scoped_ptr<base::DictionaryValue> metadata) override {
     DoMailboxBufferReady(id);
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
@@ -95,7 +99,7 @@ class MockVideoCaptureControllerEventHandler
                    buffer_id,
                    mailbox_holder.sync_point));
   }
-  virtual void OnEnded(const VideoCaptureControllerID& id) override {
+  void OnEnded(VideoCaptureControllerID id) override {
     DoEnded(id);
     // OnEnded() must respond by (eventually) unregistering the client.
     base::MessageLoop::current()->PostTask(FROM_HERE,
@@ -117,7 +121,8 @@ class VideoCaptureControllerTest : public testing::Test {
 
   void SetUp() override {
     controller_.reset(new VideoCaptureController(kPoolSize));
-    device_ = controller_->NewDeviceClient().Pass();
+    device_ = controller_->NewDeviceClient(
+        base::ThreadTaskRunnerHandle::Get());
     client_a_.reset(new MockVideoCaptureControllerEventHandler(
         controller_.get()));
     client_b_.reset(new MockVideoCaptureControllerEventHandler(
@@ -126,34 +131,28 @@ class VideoCaptureControllerTest : public testing::Test {
 
   void TearDown() override { base::RunLoop().RunUntilIdle(); }
 
-  scoped_refptr<media::VideoFrame> WrapI420Buffer(
-      const scoped_refptr<media::VideoCaptureDevice::Client::Buffer>& buffer,
-      gfx::Size dimensions) {
+  scoped_refptr<media::VideoFrame> WrapI420Buffer(gfx::Size dimensions,
+                                                  uint8* data) {
     return media::VideoFrame::WrapExternalPackedMemory(
         media::VideoFrame::I420,
         dimensions,
         gfx::Rect(dimensions),
         dimensions,
-        reinterpret_cast<uint8*>(buffer->data()),
+        data,
         media::VideoFrame::AllocationSize(media::VideoFrame::I420, dimensions),
         base::SharedMemory::NULLHandle(),
+        0,
         base::TimeDelta(),
         base::Closure());
   }
 
   scoped_refptr<media::VideoFrame> WrapMailboxBuffer(
-      const scoped_refptr<media::VideoCaptureDevice::Client::Buffer>& buffer,
-      scoped_ptr<gpu::MailboxHolder> holder,
+      const gpu::MailboxHolder& holder,
       const media::VideoFrame::ReleaseMailboxCB& release_cb,
       gfx::Size dimensions) {
     return media::VideoFrame::WrapNativeTexture(
-        holder.Pass(),
-        release_cb,
-        dimensions,
-        gfx::Rect(dimensions),
-        dimensions,
-        base::TimeDelta(),
-        media::VideoFrame::ReadPixelsCB());
+        holder, release_cb, dimensions, gfx::Rect(dimensions), dimensions,
+        base::TimeDelta(), false /* allow_overlay */, true /* has_alpha */);
   }
 
   TestBrowserThreadBundle bundle_;
@@ -276,11 +275,7 @@ static void CacheSyncPoint(uint32* called_release_sync_point,
 // thread and is intended to behave deterministically.
 TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
 // VideoCaptureController::ReturnBuffer() uses ImageTransportFactory.
-#if defined(OS_ANDROID)
-  ImageTransportFactoryAndroid::InitializeForUnitTests(
-      scoped_ptr<ImageTransportFactoryAndroid>(
-          new NoTransportImageTransportFactoryAndroid));
-#else
+#if !defined(OS_ANDROID)
   ImageTransportFactory::InitializeForUnitTests(
       scoped_ptr<ImageTransportFactory>(new NoTransportImageTransportFactory));
 #endif
@@ -295,7 +290,7 @@ TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
 
   media::VideoCaptureParams session_1 = session_100;
 
-  gfx::Size capture_resolution(444, 200);
+  const gfx::Size capture_resolution(444, 200);
 
   // The device format needn't match the VideoCaptureParams (the camera can do
   // what it wants). Pick something random.
@@ -328,34 +323,30 @@ TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
   // Now, simulate an incoming captured buffer from the capture device. As a
   // side effect this will cause the first buffer to be shared with clients.
   uint8 buffer_no = 1;
-  scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer;
-  buffer =
-      device_->ReserveOutputBuffer(media::VideoFrame::I420, capture_resolution);
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer(
+      device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                   capture_resolution));
   ASSERT_TRUE(buffer.get());
   memset(buffer->data(), buffer_no++, buffer->size());
   {
     InSequence s;
     EXPECT_CALL(*client_a_, DoBufferCreated(client_a_route_1)).Times(1);
-    EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_1)).Times(1);
+    EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_1,_)).Times(1);
   }
   {
     InSequence s;
     EXPECT_CALL(*client_b_, DoBufferCreated(client_b_route_1)).Times(1);
-    EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_1)).Times(1);
+    EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_1,_)).Times(1);
   }
   {
     InSequence s;
     EXPECT_CALL(*client_a_, DoBufferCreated(client_a_route_2)).Times(1);
-    EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_2)).Times(1);
+    EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_2,_)).Times(1);
   }
-  device_->OnIncomingCapturedVideoFrame(
-      buffer,
-      media::VideoCaptureFormat(capture_resolution,
-                                device_format.frame_rate,
-                                media::PIXEL_FORMAT_I420),
-      WrapI420Buffer(buffer, capture_resolution),
-      base::TimeTicks());
-  buffer = NULL;
+  scoped_refptr<media::VideoFrame> video_frame =
+      WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer->data()));
+  device_->OnIncomingCapturedVideoFrame(buffer.Pass(), video_frame,
+                                        base::TimeTicks());
 
   base::RunLoop().RunUntilIdle();
   Mock::VerifyAndClearExpectations(client_a_.get());
@@ -364,23 +355,20 @@ TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
   // Second buffer which ought to use the same shared memory buffer. In this
   // case pretend that the Buffer pointer is held by the device for a long
   // delay. This shouldn't affect anything.
-  buffer =
-      device_->ReserveOutputBuffer(media::VideoFrame::I420, capture_resolution);
-  ASSERT_TRUE(buffer.get());
-  memset(buffer->data(), buffer_no++, buffer->size());
-  device_->OnIncomingCapturedVideoFrame(
-      buffer,
-      media::VideoCaptureFormat(capture_resolution,
-                                device_format.frame_rate,
-                                media::PIXEL_FORMAT_I420),
-      WrapI420Buffer(buffer, capture_resolution),
-      base::TimeTicks());
-  buffer = NULL;
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer2 =
+      device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                   capture_resolution);
+  ASSERT_TRUE(buffer2.get());
+  memset(buffer2->data(), buffer_no++, buffer2->size());
+  video_frame =
+      WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer2->data()));
+  device_->OnIncomingCapturedVideoFrame(buffer2.Pass(), video_frame,
+                                        base::TimeTicks());
 
   // The buffer should be delivered to the clients in any order.
-  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_1)).Times(1);
-  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_1)).Times(1);
-  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_2)).Times(1);
+  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_1,_)).Times(1);
+  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_1,_)).Times(1);
+  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_2,_)).Times(1);
   base::RunLoop().RunUntilIdle();
   Mock::VerifyAndClearExpectations(client_a_.get());
   Mock::VerifyAndClearExpectations(client_b_.get());
@@ -395,35 +383,32 @@ TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
 
   // Third, fourth, and fifth buffers. Pretend they all arrive at the same time.
   for (int i = 0; i < kPoolSize; i++) {
-    buffer = device_->ReserveOutputBuffer(media::VideoFrame::I420,
-                                          capture_resolution);
+    scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer =
+        device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                     capture_resolution);
     ASSERT_TRUE(buffer.get());
     memset(buffer->data(), buffer_no++, buffer->size());
-    device_->OnIncomingCapturedVideoFrame(
-        buffer,
-        media::VideoCaptureFormat(capture_resolution,
-                                  device_format.frame_rate,
-                                  media::PIXEL_FORMAT_I420),
-        WrapI420Buffer(buffer, capture_resolution),
-        base::TimeTicks());
-    buffer = NULL;
+    video_frame =
+        WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer->data()));
+    device_->OnIncomingCapturedVideoFrame(buffer.Pass(), video_frame,
+                                          base::TimeTicks());
   }
   // ReserveOutputBuffer ought to fail now, because the pool is depleted.
-  ASSERT_FALSE(device_->ReserveOutputBuffer(media::VideoFrame::I420,
+  ASSERT_FALSE(device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
                                             capture_resolution).get());
 
   // The new client needs to be told of 3 buffers; the old clients only 2.
   EXPECT_CALL(*client_b_, DoBufferCreated(client_b_route_2)).Times(kPoolSize);
-  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_2)).Times(kPoolSize);
+  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_2,_)).Times(kPoolSize);
   EXPECT_CALL(*client_a_, DoBufferCreated(client_a_route_1))
       .Times(kPoolSize - 1);
-  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_1)).Times(kPoolSize);
+  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_1,_)).Times(kPoolSize);
   EXPECT_CALL(*client_a_, DoBufferCreated(client_a_route_2))
       .Times(kPoolSize - 1);
-  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_2)).Times(kPoolSize);
+  EXPECT_CALL(*client_a_, DoBufferReady(client_a_route_2,_)).Times(kPoolSize);
   EXPECT_CALL(*client_b_, DoBufferCreated(client_b_route_1))
       .Times(kPoolSize - 1);
-  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_1)).Times(kPoolSize);
+  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_1,_)).Times(kPoolSize);
   base::RunLoop().RunUntilIdle();
   Mock::VerifyAndClearExpectations(client_a_.get());
   Mock::VerifyAndClearExpectations(client_b_.get());
@@ -435,98 +420,87 @@ TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
   EXPECT_CALL(*client_b_, DoEnded(client_b_route_1)).Times(1);
   controller_->StopSession(300);
   // Queue up another buffer.
-  buffer =
-      device_->ReserveOutputBuffer(media::VideoFrame::I420, capture_resolution);
-  ASSERT_TRUE(buffer.get());
-  memset(buffer->data(), buffer_no++, buffer->size());
-  device_->OnIncomingCapturedVideoFrame(
-      buffer,
-      media::VideoCaptureFormat(capture_resolution,
-                                device_format.frame_rate,
-                                media::PIXEL_FORMAT_I420),
-      WrapI420Buffer(buffer, capture_resolution),
-      base::TimeTicks());
-  buffer = NULL;
-  buffer =
-      device_->ReserveOutputBuffer(media::VideoFrame::I420, capture_resolution);
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer3 =
+      device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                   capture_resolution);
+  ASSERT_TRUE(buffer3.get());
+  memset(buffer3->data(), buffer_no++, buffer3->size());
+  video_frame =
+      WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer3->data()));
+  device_->OnIncomingCapturedVideoFrame(buffer3.Pass(), video_frame,
+                                        base::TimeTicks());
+
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer4 =
+      device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                   capture_resolution);
   {
     // Kill A2 via session close (posts a task to disconnect, but A2 must not
     // be sent either of these two buffers).
     EXPECT_CALL(*client_a_, DoEnded(client_a_route_2)).Times(1);
     controller_->StopSession(200);
   }
-  ASSERT_TRUE(buffer.get());
-  memset(buffer->data(), buffer_no++, buffer->size());
-  device_->OnIncomingCapturedVideoFrame(
-      buffer,
-      media::VideoCaptureFormat(capture_resolution,
-                                device_format.frame_rate,
-                                media::PIXEL_FORMAT_I420),
-      WrapI420Buffer(buffer, capture_resolution),
-      base::TimeTicks());
-  buffer = NULL;
+  ASSERT_TRUE(buffer4.get());
+  memset(buffer4->data(), buffer_no++, buffer4->size());
+  video_frame =
+      WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer4->data()));
+  device_->OnIncomingCapturedVideoFrame(buffer4.Pass(), video_frame,
+                                        base::TimeTicks());
   // B2 is the only client left, and is the only one that should
   // get the buffer.
-  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_2)).Times(2);
+  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_2,_)).Times(2);
   base::RunLoop().RunUntilIdle();
   Mock::VerifyAndClearExpectations(client_a_.get());
   Mock::VerifyAndClearExpectations(client_b_.get());
 
   // Allocate all buffers from the buffer pool, half as SHM buffer and half as
   // mailbox buffers.  Make sure of different counts though.
-  int shm_buffers = kPoolSize / 2;
-  int mailbox_buffers = kPoolSize - shm_buffers;
+#if defined(OS_ANDROID)
+  int mailbox_buffers = 0;
+#else
+  int mailbox_buffers = kPoolSize / 2;
+  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+#endif
+  int shm_buffers = kPoolSize - mailbox_buffers;
   if (shm_buffers == mailbox_buffers) {
     shm_buffers--;
     mailbox_buffers++;
   }
 
   for (int i = 0; i < shm_buffers; ++i) {
-    buffer = device_->ReserveOutputBuffer(media::VideoFrame::I420,
-                                          capture_resolution);
+    scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer =
+        device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                     capture_resolution);
     ASSERT_TRUE(buffer.get());
-    device_->OnIncomingCapturedVideoFrame(
-        buffer,
-        media::VideoCaptureFormat(capture_resolution,
-                                  device_format.frame_rate,
-                                  media::PIXEL_FORMAT_I420),
-        WrapI420Buffer(buffer, capture_resolution),
-        base::TimeTicks());
-    buffer = NULL;
+    video_frame =
+        WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer->data()));
+    device_->OnIncomingCapturedVideoFrame(buffer.Pass(), video_frame,
+                                          base::TimeTicks());
   }
   std::vector<uint32> mailbox_syncpoints(mailbox_buffers);
   std::vector<uint32> release_syncpoints(mailbox_buffers);
-#if defined(OS_ANDROID)
-  GLHelper* gl_helper =
-      ImageTransportFactoryAndroid::GetInstance()->GetGLHelper();
-#else
-  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
-#endif
   for (int i = 0; i < mailbox_buffers; ++i) {
-    buffer = device_->ReserveOutputBuffer(media::VideoFrame::NATIVE_TEXTURE,
-                                          gfx::Size(0, 0));
+    scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer =
+        device_->ReserveOutputBuffer(media::PIXEL_FORMAT_TEXTURE,
+                                     capture_resolution);
     ASSERT_TRUE(buffer.get());
+#if !defined(OS_ANDROID)
     mailbox_syncpoints[i] = gl_helper->InsertSyncPoint();
+#endif
     device_->OnIncomingCapturedVideoFrame(
-        buffer,
-        media::VideoCaptureFormat(capture_resolution,
-                                  device_format.frame_rate,
-                                  media::PIXEL_FORMAT_TEXTURE),
-        WrapMailboxBuffer(buffer,
-                          make_scoped_ptr(new gpu::MailboxHolder(
-                              gpu::Mailbox(), 0, mailbox_syncpoints[i])),
-                          base::Bind(&CacheSyncPoint, &release_syncpoints[i]),
-                          capture_resolution),
+        buffer.Pass(),
+        WrapMailboxBuffer(
+            gpu::MailboxHolder(gpu::Mailbox(), 0, mailbox_syncpoints[i]),
+            base::Bind(&CacheSyncPoint, &release_syncpoints[i]),
+            capture_resolution),
         base::TimeTicks());
-    buffer = NULL;
   }
   // ReserveOutputBuffers ought to fail now regardless of buffer format, because
   // the pool is depleted.
-  ASSERT_FALSE(device_->ReserveOutputBuffer(media::VideoFrame::I420,
+  ASSERT_FALSE(device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
                                             capture_resolution).get());
-  ASSERT_FALSE(device_->ReserveOutputBuffer(media::VideoFrame::NATIVE_TEXTURE,
-                                            gfx::Size(0, 0)).get());
-  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_2)).Times(shm_buffers);
+  ASSERT_FALSE(device_->ReserveOutputBuffer(media::PIXEL_FORMAT_TEXTURE,
+                                            capture_resolution).get());
+  EXPECT_CALL(*client_b_, DoBufferReady(client_b_route_2,_)).Times(shm_buffers);
   EXPECT_CALL(*client_b_, DoMailboxBufferReady(client_b_route_2))
       .Times(mailbox_buffers);
   base::RunLoop().RunUntilIdle();
@@ -539,9 +513,7 @@ TEST_F(VideoCaptureControllerTest, NormalCaptureMultipleClients) {
   }
   Mock::VerifyAndClearExpectations(client_b_.get());
 
-#if defined(OS_ANDROID)
-  ImageTransportFactoryAndroid::TerminateForUnitTests();
-#else
+#if !defined(OS_ANDROID)
   ImageTransportFactory::Terminate();
 #endif
 }
@@ -575,17 +547,14 @@ TEST_F(VideoCaptureControllerTest, ErrorBeforeDeviceCreation) {
   base::RunLoop().RunUntilIdle();
   Mock::VerifyAndClearExpectations(client_b_.get());
 
-  scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer =
-      device_->ReserveOutputBuffer(media::VideoFrame::I420, capture_resolution);
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer(
+      device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420,
+                                   capture_resolution));
   ASSERT_TRUE(buffer.get());
-
-  device_->OnIncomingCapturedVideoFrame(
-      buffer,
-      media::VideoCaptureFormat(
-          capture_resolution, 30, media::PIXEL_FORMAT_I420),
-      WrapI420Buffer(buffer, capture_resolution),
-      base::TimeTicks());
-  buffer = NULL;
+  scoped_refptr<media::VideoFrame> video_frame =
+      WrapI420Buffer(capture_resolution, static_cast<uint8*>(buffer->data()));
+  device_->OnIncomingCapturedVideoFrame(buffer.Pass(), video_frame,
+                                        base::TimeTicks());
 
   base::RunLoop().RunUntilIdle();
 }
@@ -614,18 +583,15 @@ TEST_F(VideoCaptureControllerTest, ErrorAfterDeviceCreation) {
   Mock::VerifyAndClearExpectations(client_a_.get());
 
   const gfx::Size dims(320, 240);
-  scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer =
-      device_->ReserveOutputBuffer(media::VideoFrame::I420, dims);
+  scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer(
+      device_->ReserveOutputBuffer(media::PIXEL_FORMAT_I420, dims));
   ASSERT_TRUE(buffer.get());
 
-  device_->OnError("Test error");
-  device_->OnIncomingCapturedVideoFrame(
-      buffer,
-      media::VideoCaptureFormat(
-          dims, device_format.frame_rate, media::PIXEL_FORMAT_I420),
-      WrapI420Buffer(buffer, dims),
-      base::TimeTicks());
-  buffer = NULL;
+  scoped_refptr<media::VideoFrame> video_frame =
+      WrapI420Buffer(dims, static_cast<uint8*>(buffer->data()));
+  device_->OnError("Test Error");
+  device_->OnIncomingCapturedVideoFrame(buffer.Pass(), video_frame,
+                                        base::TimeTicks());
 
   EXPECT_CALL(*client_a_, DoError(route_id)).Times(1);
   base::RunLoop().RunUntilIdle();
@@ -637,6 +603,108 @@ TEST_F(VideoCaptureControllerTest, ErrorAfterDeviceCreation) {
   controller_->AddClient(
       route_id, client_b_.get(), base::kNullProcessHandle, 200, session_200);
   Mock::VerifyAndClearExpectations(client_b_.get());
+}
+
+// Tests that buffer-based capture API accepts all memory-backed pixel formats.
+TEST_F(VideoCaptureControllerTest, DataCaptureInEachVideoFormatInSequence) {
+  // The usual ReserveOutputBuffer() -> OnIncomingCapturedVideoFrame() cannot
+  // be used since it does not accept all pixel formats. The memory backed
+  // buffer OnIncomingCapturedData() is used instead, with a dummy scratchpad
+  // buffer.
+  const size_t kScratchpadSizeInBytes = 400;
+  unsigned char data[kScratchpadSizeInBytes];
+  // Initialize memory to satisfy DrMemory tests.
+  memset(data, 0, kScratchpadSizeInBytes);
+  const gfx::Size capture_resolution(10, 10);
+  ASSERT_GE(kScratchpadSizeInBytes, capture_resolution.GetArea() * 4u)
+      << "Scratchpad is too small to hold the largest pixel format (ARGB).";
+
+  const int kSessionId = 100;
+  // This Test skips PIXEL_FORMAT_TEXTURE and PIXEL_FORMAT_UNKNOWN.
+  for (int format = 0; format < media::PIXEL_FORMAT_TEXTURE; ++format) {
+    media::VideoCaptureParams params;
+    params.requested_format = media::VideoCaptureFormat(
+        capture_resolution, 30, media::VideoPixelFormat(format));
+
+    // Start with one client.
+    const VideoCaptureControllerID route_id(0x99);
+    controller_->AddClient(route_id,
+                           client_a_.get(),
+                           base::kNullProcessHandle,
+                           kSessionId,
+                           params);
+    ASSERT_EQ(1, controller_->GetClientCount());
+    device_->OnIncomingCapturedData(
+        data,
+        params.requested_format.ImageAllocationSize(),
+        params.requested_format,
+        0 /* clockwise_rotation */,
+        base::TimeTicks());
+    EXPECT_EQ(kSessionId, controller_->RemoveClient(route_id, client_a_.get()));
+    Mock::VerifyAndClearExpectations(client_a_.get());
+  }
+}
+
+// Test that we receive the expected resolution for a given captured frame
+// resolution and rotation. Odd resolutions are also cropped.
+TEST_F(VideoCaptureControllerTest, CheckRotationsAndCrops) {
+  const int kSessionId = 100;
+  const struct SizeAndRotation {
+    gfx::Size input_resolution;
+    int rotation;
+    gfx::Size output_resolution;
+  } kSizeAndRotations[] = {{{6, 4}, 0, {6, 4}},
+                           {{6, 4}, 90, {4, 6}},
+                           {{6, 4}, 180, {6, 4}},
+                           {{6, 4}, 270, {4, 6}},
+                           {{7, 4}, 0, {6, 4}},
+                           {{7, 4}, 90, {4, 6}},
+                           {{7, 4}, 180, {6, 4}},
+                           {{7, 4}, 270, {4, 6}}};
+  // The usual ReserveOutputBuffer() -> OnIncomingCapturedVideoFrame() cannot
+  // be used since it does not resolve rotations or crops. The memory backed
+  // buffer OnIncomingCapturedData() is used instead, with a dummy scratchpad
+  // buffer.
+  const size_t kScratchpadSizeInBytes = 400;
+  unsigned char data[kScratchpadSizeInBytes] = {};
+
+  media::VideoCaptureParams params;
+  for (const auto& size_and_rotation : kSizeAndRotations) {
+    ASSERT_GE(kScratchpadSizeInBytes,
+              size_and_rotation.input_resolution.GetArea() * 4u)
+        << "Scratchpad is too small to hold the largest pixel format (ARGB).";
+
+    params.requested_format = media::VideoCaptureFormat(
+        size_and_rotation.input_resolution, 30, media::PIXEL_FORMAT_ARGB);
+
+    const VideoCaptureControllerID route_id(0x99);
+    controller_->AddClient(route_id, client_a_.get(), base::kNullProcessHandle,
+                           kSessionId, params);
+    ASSERT_EQ(1, controller_->GetClientCount());
+
+    device_->OnIncomingCapturedData(
+        data,
+        params.requested_format.ImageAllocationSize(),
+        params.requested_format,
+        size_and_rotation.rotation,
+        base::TimeTicks());
+    gfx::Size coded_size;
+    {
+      InSequence s;
+      EXPECT_CALL(*client_a_, DoBufferCreated(route_id)).Times(1);
+      EXPECT_CALL(*client_a_, DoBufferReady(route_id, _))
+          .Times(1)
+          .WillOnce(SaveArg<1>(&coded_size));
+    }
+    base::RunLoop().RunUntilIdle();
+
+    EXPECT_EQ(coded_size.width(), size_and_rotation.output_resolution.width());
+    EXPECT_EQ(coded_size.height(),
+              size_and_rotation.output_resolution.height());
+
+    EXPECT_EQ(kSessionId, controller_->RemoveClient(route_id, client_a_.get()));
+    Mock::VerifyAndClearExpectations(client_a_.get());
+  }
 }
 
 }  // namespace content

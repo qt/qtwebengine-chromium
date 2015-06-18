@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,9 +24,7 @@ int64 AmountOfMemory(DWORDLONG MEMORYSTATUSEX::* memory_field) {
   }
 
   int64 rv = static_cast<int64>(memory_info.*memory_field);
-  if (rv < 0)
-    rv = kint64max;
-  return rv;
+  return rv < 0 ? kint64max : rv;
 }
 
 }  // namespace
@@ -55,19 +53,16 @@ int64 SysInfo::AmountOfVirtualMemory() {
 
 // static
 int64 SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   ULARGE_INTEGER available, total, free;
-  if (!GetDiskFreeSpaceExW(path.value().c_str(), &available, &total, &free)) {
+  if (!GetDiskFreeSpaceExW(path.value().c_str(), &available, &total, &free))
     return -1;
-  }
+
   int64 rv = static_cast<int64>(available.QuadPart);
-  if (rv < 0)
-    rv = kint64max;
-  return rv;
+  return rv < 0 ? kint64max : rv;
 }
 
-// static
 std::string SysInfo::OperatingSystemName() {
   return "Windows NT";
 }

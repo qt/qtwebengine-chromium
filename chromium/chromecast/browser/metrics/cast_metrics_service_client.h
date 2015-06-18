@@ -20,6 +20,7 @@ class TaskRunner;
 }
 
 namespace metrics {
+struct ClientInfo;
 class MetricsService;
 class MetricsStateManager;
 }  // namespace metrics
@@ -29,37 +30,47 @@ class URLRequestContextGetter;
 }  // namespace net
 
 namespace chromecast {
+
+class CastService;
+
 namespace metrics {
+
 class ExternalMetrics;
 
 class CastMetricsServiceClient : public ::metrics::MetricsServiceClient {
  public:
-  virtual ~CastMetricsServiceClient();
+  ~CastMetricsServiceClient() override;
 
-  static CastMetricsServiceClient* Create(
+  static scoped_ptr<CastMetricsServiceClient> Create(
       base::TaskRunner* io_task_runner,
       PrefService* pref_service,
       net::URLRequestContextGetter* request_context);
 
+  void Initialize(CastService* cast_service);
+  void Finalize();
+
   // metrics::MetricsServiceClient implementation:
-  virtual void SetMetricsClientId(const std::string& client_id) override;
-  virtual bool IsOffTheRecordSessionActive() override;
-  virtual int32_t GetProduct() override;
-  virtual std::string GetApplicationLocale() override;
-  virtual bool GetBrand(std::string* brand_code) override;
-  virtual ::metrics::SystemProfileProto::Channel GetChannel() override;
-  virtual std::string GetVersionString() override;
-  virtual void OnLogUploadComplete() override;
-  virtual void StartGatheringMetrics(
-      const base::Closure& done_callback) override;
-  virtual void CollectFinalMetrics(const base::Closure& done_callback) override;
-  virtual scoped_ptr< ::metrics::MetricsLogUploader> CreateUploader(
-      const std::string& server_url,
-      const std::string& mime_type,
+  void SetMetricsClientId(const std::string& client_id) override;
+  void OnRecordingDisabled() override;
+  bool IsOffTheRecordSessionActive() override;
+  int32_t GetProduct() override;
+  std::string GetApplicationLocale() override;
+  bool GetBrand(std::string* brand_code) override;
+  ::metrics::SystemProfileProto::Channel GetChannel() override;
+  std::string GetVersionString() override;
+  void OnLogUploadComplete() override;
+  void StartGatheringMetrics(const base::Closure& done_callback) override;
+  void CollectFinalMetrics(const base::Closure& done_callback) override;
+  scoped_ptr< ::metrics::MetricsLogUploader> CreateUploader(
       const base::Callback<void(int)>& on_upload_complete) override;
+  base::TimeDelta GetStandardUploadInterval() override;
 
   // Starts/stops the metrics service.
   void EnableMetricsService(bool enabled);
+
+  std::string client_id() const {
+    return client_id_;
+  }
 
  private:
   CastMetricsServiceClient(
@@ -70,13 +81,21 @@ class CastMetricsServiceClient : public ::metrics::MetricsServiceClient {
   // Returns whether or not metrics reporting is enabled.
   bool IsReportingEnabled();
 
+  scoped_ptr< ::metrics::ClientInfo> LoadClientInfo();
+  void StoreClientInfo(const ::metrics::ClientInfo& client_info);
+
+  base::TaskRunner* const io_task_runner_;
+  PrefService* const pref_service_;
+  CastService* cast_service_;
+  std::string client_id_;
+
 #if defined(OS_LINUX)
-  scoped_ptr<ExternalMetrics> external_metrics_;
+  ExternalMetrics* external_metrics_;
 #endif  // defined(OS_LINUX)
+  const scoped_refptr<base::MessageLoopProxy> metrics_service_loop_;
   scoped_ptr< ::metrics::MetricsStateManager> metrics_state_manager_;
   scoped_ptr< ::metrics::MetricsService> metrics_service_;
-  scoped_refptr<base::MessageLoopProxy> metrics_service_loop_;
-  net::URLRequestContextGetter* request_context_;
+  net::URLRequestContextGetter* const request_context_;
 
   DISALLOW_COPY_AND_ASSIGN(CastMetricsServiceClient);
 };

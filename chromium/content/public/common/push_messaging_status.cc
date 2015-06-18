@@ -10,8 +10,8 @@ namespace content {
 
 const char* PushRegistrationStatusToString(PushRegistrationStatus status) {
   switch (status) {
-    case PUSH_REGISTRATION_STATUS_SUCCESS:
-      return "Registration successful";
+    case PUSH_REGISTRATION_STATUS_SUCCESS_FROM_PUSH_SERVICE:
+      return "Registration successful - from push service";
 
     case PUSH_REGISTRATION_STATUS_NO_SERVICE_WORKER:
       return "Registration failed - no Service Worker";
@@ -30,6 +30,52 @@ const char* PushRegistrationStatusToString(PushRegistrationStatus status) {
 
     case PUSH_REGISTRATION_STATUS_NO_SENDER_ID:
       return "Registration failed - no sender id provided";
+
+    case PUSH_REGISTRATION_STATUS_STORAGE_ERROR:
+      return "Registration failed - storage error";
+
+    case PUSH_REGISTRATION_STATUS_SUCCESS_FROM_CACHE:
+      return "Registration successful - from cache";
+
+    case PUSH_REGISTRATION_STATUS_NETWORK_ERROR:
+      return "Registration failed - could not connect to push server";
+
+    case PUSH_REGISTRATION_STATUS_INCOGNITO_PERMISSION_DENIED:
+      // We split this out for UMA, but it must be indistinguishable to JS.
+      return PushRegistrationStatusToString(
+          PUSH_REGISTRATION_STATUS_PERMISSION_DENIED);
+  }
+  NOTREACHED();
+  return "";
+}
+
+const char* PushUnregistrationStatusToString(PushUnregistrationStatus status) {
+  switch (status) {
+    case PUSH_UNREGISTRATION_STATUS_SUCCESS_UNREGISTERED:
+      return "Unregistration successful - from push service";
+
+    case PUSH_UNREGISTRATION_STATUS_SUCCESS_WAS_NOT_REGISTERED:
+      return "Unregistration successful - was not registered";
+
+    case PUSH_UNREGISTRATION_STATUS_PENDING_NETWORK_ERROR:
+      return "Unregistration pending - a network error occurred, but it will "
+             "be retried until it succeeds";
+
+    case PUSH_UNREGISTRATION_STATUS_NO_SERVICE_WORKER:
+      return "Unregistration failed - no Service Worker";
+
+    case PUSH_UNREGISTRATION_STATUS_SERVICE_NOT_AVAILABLE:
+      return "Unregistration failed - push service not available";
+
+    case PUSH_UNREGISTRATION_STATUS_PENDING_SERVICE_ERROR:
+      return "Unregistration pending - a push service error occurred, but it "
+             "will be retried until it succeeds";
+
+    case PUSH_UNREGISTRATION_STATUS_STORAGE_ERROR:
+      return "Unregistration failed - storage error";
+
+    case PUSH_UNREGISTRATION_STATUS_NETWORK_ERROR:
+      return "Unregistration failed - could not connect to push server";
   }
   NOTREACHED();
   return "";

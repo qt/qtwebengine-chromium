@@ -23,7 +23,7 @@ typedef winfoundtn::Collections::IVector<HSTRING> StringVectorItf;
 // TODO(siggi): Complete this implementation and move it to a common place.
 class StringVectorImpl : public mswr::RuntimeClass<StringVectorItf> {
  public:
-  ~StringVectorImpl() {
+  ~StringVectorImpl() override {
     std::for_each(strings_.begin(), strings_.end(), ::WindowsDeleteString);
   }
 
@@ -35,50 +35,50 @@ class StringVectorImpl : public mswr::RuntimeClass<StringVectorItf> {
   }
 
   // IVector<HSTRING> implementation.
-  STDMETHOD(GetAt)(unsigned index, HSTRING* item) {
+  STDMETHOD(GetAt)(unsigned index, HSTRING* item) override {
     if (index >= strings_.size())
       return E_INVALIDARG;
 
     return ::WindowsDuplicateString(strings_[index], item);
   }
-  STDMETHOD(get_Size)(unsigned *size) {
+  STDMETHOD(get_Size)(unsigned* size) override {
     if (strings_.size() > UINT_MAX)
       return E_UNEXPECTED;
     *size = static_cast<unsigned>(strings_.size());
     return S_OK;
   }
-  STDMETHOD(GetView)(winfoundtn::Collections::IVectorView<HSTRING> **view) {
+  STDMETHOD(GetView)(
+      winfoundtn::Collections::IVectorView<HSTRING>** view) override {
     return E_NOTIMPL;
   }
-  STDMETHOD(IndexOf)(HSTRING value, unsigned *index, boolean *found) {
+  STDMETHOD(IndexOf)(HSTRING value, unsigned* index, boolean* found) override {
     return E_NOTIMPL;
   }
 
   // write methods
-  STDMETHOD(SetAt)(unsigned index, HSTRING item) {
+  STDMETHOD(SetAt)(unsigned index, HSTRING item) override { return E_NOTIMPL; }
+  STDMETHOD(InsertAt)(unsigned index, HSTRING item) override {
     return E_NOTIMPL;
   }
-  STDMETHOD(InsertAt)(unsigned index, HSTRING item) {
-    return E_NOTIMPL;
-  }
-  STDMETHOD(RemoveAt)(unsigned index) {
-    return E_NOTIMPL;
-  }
-  STDMETHOD(Append)(HSTRING item) {
-    return E_NOTIMPL;
-  }
-  STDMETHOD(RemoveAtEnd)() {
-    return E_NOTIMPL;
-  }
-  STDMETHOD(Clear)() {
-    return E_NOTIMPL;
-  }
+  STDMETHOD(RemoveAt)(unsigned index) override { return E_NOTIMPL; }
+  STDMETHOD(Append)(HSTRING item) override { return E_NOTIMPL; }
+  STDMETHOD(RemoveAtEnd)() override { return E_NOTIMPL; }
+  STDMETHOD(Clear)() override { return E_NOTIMPL; }
 
  private:
   std::vector<HSTRING> strings_;
 };
 
 }  // namespace
+
+FilePickerSessionBase::~FilePickerSessionBase() {
+}
+
+bool FilePickerSessionBase::Run() {
+  if (!DoFilePicker())
+    return false;
+  return success_;
+}
 
 FilePickerSessionBase::FilePickerSessionBase(ChromeAppViewAsh* app_view,
                                              const base::string16& title,
@@ -89,12 +89,6 @@ FilePickerSessionBase::FilePickerSessionBase(ChromeAppViewAsh* app_view,
       filter_(filter),
       default_path_(default_path),
       success_(false) {
-}
-
-bool FilePickerSessionBase::Run() {
-  if (!DoFilePicker())
-    return false;
-  return success_;
 }
 
 bool FilePickerSessionBase::DoFilePicker() {
@@ -122,6 +116,9 @@ OpenFilePickerSession::OpenFilePickerSession(
     bool allow_multi_select)
     : FilePickerSessionBase(app_view, title, filter, default_path),
       allow_multi_select_(allow_multi_select) {
+}
+
+OpenFilePickerSession::~OpenFilePickerSession() {
 }
 
 HRESULT OpenFilePickerSession::SinglePickerDone(SingleFileAsyncOp* async,
@@ -551,7 +548,8 @@ HRESULT SaveFilePickerSession::FilePickerDone(SaveFileAsyncOp* async,
 
 FolderPickerSession::FolderPickerSession(ChromeAppViewAsh* app_view,
                                          const base::string16& title)
-    : FilePickerSessionBase(app_view, title, L"", base::FilePath()) {}
+    : FilePickerSessionBase(app_view, title, L"", base::FilePath()) {
+}
 
 HRESULT FolderPickerSession::StartFilePicker() {
   mswrw::HStringReference class_name(

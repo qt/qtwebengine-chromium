@@ -12,9 +12,11 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/system_monitor/system_monitor.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
+namespace midi {
 
 namespace {
 
@@ -62,6 +64,8 @@ class FakeMidiManagerClient : public MidiManagerClient {
   // MidiManagerClient implementation.
   void AddInputPort(const MidiPortInfo& info) override {}
   void AddOutputPort(const MidiPortInfo& info) override {}
+  void SetInputPortState(uint32 port_index, MidiPortState state) override {}
+  void SetOutputPortState(uint32 port_index, MidiPortState state) override {}
 
   void CompleteStartSession(MidiResult result) override {
     EXPECT_TRUE(wait_for_result_);
@@ -243,6 +247,9 @@ TEST_F(MidiManagerTest, AbortSession) {
 }
 
 TEST_F(MidiManagerTest, CreateMidiManager) {
+  // SystemMonitor is needed on Windows.
+  base::SystemMonitor system_monitor;
+
   scoped_ptr<FakeMidiManagerClient> client;
   client.reset(new FakeMidiManagerClient);
 
@@ -252,8 +259,8 @@ TEST_F(MidiManagerTest, CreateMidiManager) {
   MidiResult result = client->WaitForResult();
   // This #ifdef needs to be identical to the one in media/midi/midi_manager.cc.
   // Do not change the condition for disabling this test.
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(USE_ALSA) && \
-    !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && \
+    !(defined(USE_ALSA) && defined(USE_UDEV)) && !defined(OS_ANDROID)
   EXPECT_EQ(MIDI_NOT_SUPPORTED, result);
 #elif defined(USE_ALSA)
   // Temporary until http://crbug.com/371230 is resolved.
@@ -265,4 +272,5 @@ TEST_F(MidiManagerTest, CreateMidiManager) {
 
 }  // namespace
 
+}  // namespace midi
 }  // namespace media

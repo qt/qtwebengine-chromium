@@ -48,7 +48,7 @@ int ParseAddressList(const std::string& host_list,
       LOG(WARNING) << "Not a supported IP literal: " << addresses[index];
       return ERR_UNEXPECTED;
     }
-    addrlist->push_back(IPEndPoint(ip_number, -1));
+    addrlist->push_back(IPEndPoint(ip_number, 0));
   }
   return OK;
 }
@@ -379,7 +379,7 @@ int RuleBasedHostResolverProc::Resolve(const std::string& host,
           return ERR_NAME_NOT_RESOLVED;
         case Rule::kResolverTypeSystem:
 #if defined(OS_WIN)
-          net::EnsureWinsockInit();
+          EnsureWinsockInit();
 #endif
           return SystemHostResolverCall(effective_host,
                                         address_family,

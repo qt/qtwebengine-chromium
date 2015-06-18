@@ -20,7 +20,7 @@
 #include "content/browser/indexed_db/indexed_db_pending_connection.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "content/browser/indexed_db/list_set.h"
-#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -122,6 +122,11 @@ class CONTENT_EXPORT IndexedDBDatabase
            scoped_ptr<IndexedDBKeyRange> key_range,
            bool key_only,
            scoped_refptr<IndexedDBCallbacks> callbacks);
+  void GetAll(int64 transaction_id,
+              int64 object_store_id,
+              scoped_ptr<IndexedDBKeyRange> key_range,
+              int64 max_count,
+              scoped_refptr<IndexedDBCallbacks> callbacks);
   void Put(int64 transaction_id,
            int64 object_store_id,
            IndexedDBValue* value,
@@ -200,6 +205,11 @@ class CONTENT_EXPORT IndexedDBDatabase
                     indexed_db::CursorType cursor_type,
                     scoped_refptr<IndexedDBCallbacks> callbacks,
                     IndexedDBTransaction* transaction);
+  void GetAllOperation(int64 object_store_id,
+                       scoped_ptr<IndexedDBKeyRange> key_range,
+                       int64 max_count,
+                       scoped_refptr<IndexedDBCallbacks> callbacks,
+                       IndexedDBTransaction* transaction);
   struct PutOperationParams;
   void PutOperation(scoped_ptr<PutOperationParams> params,
                     IndexedDBTransaction* transaction);

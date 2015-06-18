@@ -46,6 +46,7 @@ namespace blink {
 
 namespace TraceEvent {
 typedef uint64_t TraceEventHandle;
+typedef intptr_t TraceEventAPIAtomicWord;
 
 class PLATFORM_EXPORT ConvertableToTraceFormat : public RefCounted<ConvertableToTraceFormat> {
 public:
@@ -56,7 +57,7 @@ public:
 }
 
 // FIXME: Make these global variables thread-safe. Make a value update atomic.
-PLATFORM_EXPORT extern long* traceSamplingState[3];
+PLATFORM_EXPORT extern TraceEvent::TraceEventAPIAtomicWord* traceSamplingState[3];
 
 class PLATFORM_EXPORT EventTracer {
 public:
@@ -66,16 +67,19 @@ public:
         const unsigned char* categoryEnabledFlag,
         const char* name,
         unsigned long long id,
+        double timestamp,
         int numArgs,
         const char* argNames[],
         const unsigned char argTypes[],
         const unsigned long long argValues[],
-        TraceEvent::ConvertableToTraceFormat*[],
+        PassRefPtr<TraceEvent::ConvertableToTraceFormat>,
+        PassRefPtr<TraceEvent::ConvertableToTraceFormat>,
         unsigned char flags);
     static TraceEvent::TraceEventHandle addTraceEvent(char phase,
         const unsigned char* categoryEnabledFlag,
         const char* name,
         unsigned long long id,
+        double timestamp,
         int numArgs,
         const char* argNames[],
         const unsigned char argTypes[],

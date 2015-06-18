@@ -15,14 +15,28 @@
 
 #include <algorithm>  // min, max
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_coding/neteq/audio_multi_vector.h"
 #include "webrtc/modules/audio_coding/neteq/dsp_helper.h"
 #include "webrtc/modules/audio_coding/neteq/expand.h"
 #include "webrtc/modules/audio_coding/neteq/sync_buffer.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
+
+Merge::Merge(int fs_hz,
+             size_t num_channels,
+             Expand* expand,
+             SyncBuffer* sync_buffer)
+    : fs_hz_(fs_hz),
+      num_channels_(num_channels),
+      fs_mult_(fs_hz_ / 8000),
+      timestamps_per_call_(fs_hz_ / 100),
+      expand_(expand),
+      sync_buffer_(sync_buffer),
+      expanded_(num_channels_) {
+  assert(num_channels_ > 0);
+}
 
 int Merge::Process(int16_t* input, size_t input_length,
                    int16_t* external_mute_factor_array,
@@ -310,7 +324,8 @@ int16_t Merge::CorrelateAndPeakSearch(int16_t expanded_max, int16_t input_max,
   // Normalize correlation to 14 bits and copy to a 16-bit array.
   const int pad_length = static_cast<int>(expand_->overlap_length() - 1);
   const int correlation_buffer_size = 2 * pad_length + kMaxCorrelationLength;
-  scoped_ptr<int16_t[]> correlation16(new int16_t[correlation_buffer_size]);
+  rtc::scoped_ptr<int16_t[]> correlation16(
+      new int16_t[correlation_buffer_size]);
   memset(correlation16.get(), 0, correlation_buffer_size * sizeof(int16_t));
   int16_t* correlation_ptr = &correlation16[pad_length];
   int32_t max_correlation = WebRtcSpl_MaxAbsValueW32(correlation,

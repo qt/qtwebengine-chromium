@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "third_party/skia/include/core/SkFontHost.h"
 #include "ui/gfx/gfx_export.h"
 
 namespace gfx {
@@ -23,6 +24,8 @@ struct GFX_EXPORT FontRenderParams {
     HINTING_SLIGHT,
     HINTING_MEDIUM,
     HINTING_FULL,
+
+    HINTING_MAX = HINTING_FULL,
   };
 
   // Different subpixel orders to be used for subpixel rendering.
@@ -32,6 +35,8 @@ struct GFX_EXPORT FontRenderParams {
     SUBPIXEL_RENDERING_BGR,
     SUBPIXEL_RENDERING_VRGB,
     SUBPIXEL_RENDERING_VBGR,
+
+    SUBPIXEL_RENDERING_MAX = SUBPIXEL_RENDERING_VBGR,
   };
 
   // Antialiasing (grayscale if |subpixel_rendering| is SUBPIXEL_RENDERING_NONE
@@ -57,21 +62,21 @@ struct GFX_EXPORT FontRenderParams {
   // Whether subpixel rendering should be used or not, and if so, the display's
   // subpixel order.
   SubpixelRendering subpixel_rendering;
+
+  static SkFontHost::LCDOrder SubpixelRenderingToSkiaLCDOrder(
+      SubpixelRendering subpixel_rendering);
+  static SkFontHost::LCDOrientation SubpixelRenderingToSkiaLCDOrientation(
+      SubpixelRendering subpixel_rendering);
 };
 
 // A query used to determine the appropriate FontRenderParams.
 struct GFX_EXPORT FontRenderParamsQuery {
-  explicit FontRenderParamsQuery(bool for_web_contents);
+  FontRenderParamsQuery();
   ~FontRenderParamsQuery();
 
   bool is_empty() const {
     return families.empty() && pixel_size <= 0 && point_size <= 0 && style < 0;
   }
-
-  // True if rendering text for the web.
-  // TODO(derat): Remove this once FontRenderParams::subpixel_positioning is
-  // gone: http://crbug.com/396659
-  bool for_web_contents;
 
   // Requested font families, or empty if unset.
   std::vector<std::string> families;
@@ -82,6 +87,9 @@ struct GFX_EXPORT FontRenderParamsQuery {
 
   // gfx::Font::FontStyle bit field, or -1 if unset.
   int style;
+
+  // The device scale factor of the display, or 0 if unset.
+  float device_scale_factor;
 };
 
 // Returns the appropriate parameters for rendering the font described by
@@ -99,6 +107,9 @@ GFX_EXPORT FontRenderParams GetFontRenderParams(
 GFX_EXPORT void ClearFontRenderParamsCacheForTest();
 
 #if defined(OS_CHROMEOS)
+// Gets the device scale factor to query the FontRenderParams.
+float GetFontRenderParamsDeviceScaleFactor();
+
 // Sets the device scale factor for FontRenderParams to decide
 // if it should enable subpixel positioning.
 GFX_EXPORT void SetFontRenderParamsDeviceScaleFactor(

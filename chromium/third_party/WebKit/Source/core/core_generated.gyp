@@ -84,17 +84,11 @@
           'inputs': [
             '<@(scripts_for_in_files)',
             '../build/scripts/make_settings.py',
-            '../build/scripts/templates/InternalSettingsGenerated.idl.tmpl',
-            '../build/scripts/templates/InternalSettingsGenerated.cpp.tmpl',
-            '../build/scripts/templates/InternalSettingsGenerated.h.tmpl',
             '../build/scripts/templates/SettingsMacros.h.tmpl',
             'frame/Settings.in',
           ],
           'outputs': [
             '<(blink_core_output_dir)/SettingsMacros.h',
-            '<(blink_core_output_dir)/InternalSettingsGenerated.idl',
-            '<(blink_core_output_dir)/InternalSettingsGenerated.cpp',
-            '<(blink_core_output_dir)/InternalSettingsGenerated.h',
           ],
           'action': [
             'python',
@@ -102,6 +96,29 @@
             'frame/Settings.in',
             '--output_dir',
             '<(blink_core_output_dir)',
+          ],
+        },
+        {
+          'action_name': 'InternalSettings',
+          'inputs': [
+            '<@(scripts_for_in_files)',
+            '../build/scripts/make_internal_settings.py',
+            '../build/scripts/templates/InternalSettingsGenerated.idl.tmpl',
+            '../build/scripts/templates/InternalSettingsGenerated.cpp.tmpl',
+            '../build/scripts/templates/InternalSettingsGenerated.h.tmpl',
+            'frame/Settings.in',
+          ],
+          'outputs': [
+            '<(blink_core_output_dir)/testing/InternalSettingsGenerated.idl',
+            '<(blink_core_output_dir)/testing/InternalSettingsGenerated.cpp',
+            '<(blink_core_output_dir)/testing/InternalSettingsGenerated.h',
+          ],
+          'action': [
+            'python',
+            '../build/scripts/make_internal_settings.py',
+            'frame/Settings.in',
+            '--output_dir',
+            '<(blink_core_output_dir)/testing',
           ],
         },
         {
@@ -114,15 +131,15 @@
             '../build/scripts/templates/InternalRuntimeFlags.idl.tmpl',
           ],
           'outputs': [
-            '<(blink_core_output_dir)/InternalRuntimeFlags.idl',
-            '<(blink_core_output_dir)/InternalRuntimeFlags.h',
+            '<(blink_core_output_dir)/testing/InternalRuntimeFlags.idl',
+            '<(blink_core_output_dir)/testing/InternalRuntimeFlags.h',
           ],
           'action': [
             'python',
             '../build/scripts/make_internal_runtime_flags.py',
             '../platform/RuntimeEnabledFeatures.in',
             '--output_dir',
-            '<(blink_core_output_dir)',
+            '<(blink_core_output_dir)/testing',
           ],
         },
       ]
@@ -552,67 +569,21 @@
           ],
         },
         {
-          'action_name': 'UserAgentStyleSheets',
-          'variables': {
-            'scripts': [
-              '../build/scripts/make-file-arrays.py',
-            ],
-            'stylesheets': [
-              'css/html.css',
-              'css/quirks.css',
-              'css/view-source.css',
-              'css/themeChromium.css',
-              'css/themeChromiumAndroid.css',
-              'css/themeChromiumLinux.css',
-              'css/themeChromiumSkia.css',
-              'css/themeInputMultipleFields.css',
-              'css/themeMac.css',
-              'css/themeWin.css',
-              'css/themeWinQuirks.css',
-              'css/svg.css',
-              'css/navigationTransitions.css',
-              'css/mathml.css',
-              'css/mediaControls.css',
-              'css/mediaControlsAndroid.css',
-              'css/fullscreen.css',
-              'css/xhtmlmp.css',
-              'css/viewportAndroid.css',
-            ],
-          },
-          'inputs': [
-            '<@(scripts)',
-            '<@(stylesheets)'
-          ],
-          'outputs': [
-            '<(blink_core_output_dir)/UserAgentStyleSheets.h',
-            '<(blink_core_output_dir)/UserAgentStyleSheetsData.cpp',
-          ],
-          'action': [
-            'python',
-            '<@(scripts)',
-            '--namespace',
-            'blink',
-            '--out-h=<(blink_core_output_dir)/UserAgentStyleSheets.h',
-            '--out-cpp=<(blink_core_output_dir)/UserAgentStyleSheetsData.cpp',
-            '<@(stylesheets)',
-          ],
-        },
-        {
           'action_name': 'FetchInitiatorTypeNames',
           'inputs': [
             '<@(make_names_files)',
             'fetch/FetchInitiatorTypeNames.in',
           ],
           'outputs': [
-            '<(blink_core_output_dir)/FetchInitiatorTypeNames.cpp',
-            '<(blink_core_output_dir)/FetchInitiatorTypeNames.h',
+            '<(blink_core_output_dir)/fetch/FetchInitiatorTypeNames.cpp',
+            '<(blink_core_output_dir)/fetch/FetchInitiatorTypeNames.h',
           ],
           'action': [
             'python',
             '../build/scripts/make_names.py',
             'fetch/FetchInitiatorTypeNames.in',
             '--output_dir',
-            '<(blink_core_output_dir)',
+            '<(blink_core_output_dir)/fetch',
           ],
         },
         {

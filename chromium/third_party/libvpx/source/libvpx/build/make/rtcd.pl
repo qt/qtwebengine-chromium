@@ -376,17 +376,18 @@ if ($opts{arch} eq 'x86') {
       @ALL_ARCHS = filter("$opts{arch}", qw/dspr2/);
       last;
     }
+    if (/HAVE_MSA=yes/) {
+      @ALL_ARCHS = filter("$opts{arch}", qw/msa/);
+      last;
+    }
   }
   close CONFIG_FILE;
   mips;
-} elsif ($opts{arch} eq 'armv5te') {
-  @ALL_ARCHS = filter(qw/edsp/);
-  arm;
 } elsif ($opts{arch} eq 'armv6') {
-  @ALL_ARCHS = filter(qw/edsp media/);
+  @ALL_ARCHS = filter(qw/media/);
   arm;
-} elsif ($opts{arch} eq 'armv7') {
-  @ALL_ARCHS = filter(qw/edsp media neon_asm neon/);
+} elsif ($opts{arch} =~ /armv7\w?/) {
+  @ALL_ARCHS = filter(qw/media neon_asm neon/);
   @REQUIRES = filter(keys %required ? keys %required : qw/media/);
   &require(@REQUIRES);
   arm;

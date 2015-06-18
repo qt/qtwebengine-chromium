@@ -7,13 +7,13 @@
 #include "base/basictypes.h"
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/format_macros.h"
 #include "base/strings/string_util.h"
 #include "base/sys_byteorder.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_handle.h"
 
 namespace net {
@@ -25,8 +25,8 @@ const uint8 SOCKS5ClientSocket::kSOCKS5Version = 0x05;
 const uint8 SOCKS5ClientSocket::kTunnelCommand = 0x01;
 const uint8 SOCKS5ClientSocket::kNullByte = 0x00;
 
-COMPILE_ASSERT(sizeof(struct in_addr) == 4, incorrect_system_size_of_IPv4);
-COMPILE_ASSERT(sizeof(struct in6_addr) == 16, incorrect_system_size_of_IPv6);
+static_assert(sizeof(struct in_addr) == 4, "incorrect system size of IPv4");
+static_assert(sizeof(struct in6_addr) == 16, "incorrect system size of IPv6");
 
 SOCKS5ClientSocket::SOCKS5ClientSocket(
     scoped_ptr<ClientSocketHandle> transport_socket,
@@ -144,7 +144,10 @@ bool SOCKS5ClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
   }
   NOTREACHED();
   return false;
+}
 
+void SOCKS5ClientSocket::GetConnectionAttempts(ConnectionAttempts* out) const {
+  out->clear();
 }
 
 // Read is called by the transport layer above to read. This can only be done

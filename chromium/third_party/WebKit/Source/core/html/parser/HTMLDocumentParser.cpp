@@ -29,8 +29,10 @@
 #include "core/HTMLNames.h"
 #include "core/css/MediaValuesCached.h"
 #include "core/dom/DocumentFragment.h"
+#include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/Element.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
@@ -42,9 +44,15 @@
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "platform/SharedBuffer.h"
+#include "platform/ThreadSafeFunctional.h"
+#include "platform/ThreadedDataReceiver.h"
 #include "platform/TraceEvent.h"
-#include "public/platform/WebThreadedDataReceiver.h"
-#include "wtf/Functional.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebScheduler.h"
+#include "public/platform/WebThread.h"
+#include "wtf/RefCounted.h"
+#include "wtf/TemporaryChange.h"
 
 namespace blink {
 
@@ -75,22 +83,28 @@ static HTMLTokenizer::State tokenizerStateForContextElement(Element* contextElem
     return HTMLTokenizer::DataState;
 }
 
-class ParserDataReceiver : public blink::WebThreadedDataReceiver {
+class ParserDataReceiver final : public RefCountedWillBeGarbageCollectedFinalized<ParserDataReceiver>, public ThreadedDataReceiver, public DocumentLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ParserDataReceiver);
 public:
-    explicit ParserDataReceiver(WeakPtr<BackgroundHTMLParser> backgroundParser)
-        : m_backgroundParser(backgroundParser)
+    static PassRefPtrWillBeRawPtr<ParserDataReceiver> create(WeakPtr<BackgroundHTMLParser> backgroundParser, Document* document)
     {
+        return adoptRefWillBeNoop(new ParserDataReceiver(backgroundParser, document));
     }
 
-    // WebThreadedDataReceiver
-    virtual void acceptData(const char* data, int dataLength) override final
+#if !ENABLE(OILPAN)
+    virtual void ref() override { RefCounted<ParserDataReceiver>::ref(); }
+    virtual void deref() override { RefCounted<ParserDataReceiver>::deref(); }
+#endif
+
+    // ThreadedDataReceiver
+    void acceptData(const char* data, int dataLength) override
     {
         ASSERT(backgroundThread() && backgroundThread()->isCurrentThread());
         if (m_backgroundParser.get())
             m_backgroundParser.get()->appendRawBytesFromParserThread(data, dataLength);
     }
 
-    virtual blink::WebThread* backgroundThread() override final
+    WebThread* backgroundThread() override
     {
         if (HTMLParserThread::shared())
             return &HTMLParserThread::shared()->platformThread();
@@ -98,25 +112,47 @@ public:
         return nullptr;
     }
 
+    bool needsMainthreadDataCopy() override { return InspectorInstrumentation::hasFrontends(); }
+    void acceptMainthreadDataNotification(const char* data, int dataLength, int encodedDataLength) override
+    {
+        ASSERT(!data || needsMainthreadDataCopy());
+        if (lifecycleContext())
+            lifecycleContext()->loader()->acceptDataFromThreadedReceiver(data, dataLength, encodedDataLength);
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        DocumentLifecycleObserver::trace(visitor);
+    }
+
 private:
+    ParserDataReceiver(WeakPtr<BackgroundHTMLParser> backgroundParser, Document* document)
+        : DocumentLifecycleObserver(document)
+        , m_backgroundParser(backgroundParser)
+    {
+    }
+
     WeakPtr<BackgroundHTMLParser> m_backgroundParser;
 };
 
-HTMLDocumentParser::HTMLDocumentParser(HTMLDocument& document, bool reportErrors)
+HTMLDocumentParser::HTMLDocumentParser(HTMLDocument& document, bool reportErrors, ParserSynchronizationPolicy syncPolicy)
     : ScriptableDocumentParser(document)
     , m_options(&document)
-    , m_token(nullptr)
-    , m_tokenizer(nullptr)
+    , m_token(syncPolicy == ForceSynchronousParsing ? adoptPtr(new HTMLToken) : nullptr)
+    , m_tokenizer(syncPolicy == ForceSynchronousParsing ? HTMLTokenizer::create(m_options) : nullptr)
     , m_scriptRunner(HTMLScriptRunner::create(&document, this))
     , m_treeBuilder(HTMLTreeBuilder::create(this, &document, parserContentPolicy(), reportErrors, m_options))
     , m_parserScheduler(HTMLParserScheduler::create(this))
     , m_xssAuditorDelegate(&document)
     , m_weakFactory(this)
     , m_preloader(HTMLResourcePreloader::create(document))
-    , m_isPinnedToMainThread(false)
+    , m_shouldUseThreading(syncPolicy == AllowAsynchronousParsing)
     , m_endWasDelayed(false)
     , m_haveBackgroundParser(false)
+    , m_tasksWereSuspended(false)
     , m_pumpSessionNestingLevel(0)
+    , m_pumpSpeculationsSessionNestingLevel(0)
+    , m_isParsingAtLineNumber(false)
 {
     ASSERT(shouldUseThreading() || (m_token && m_tokenizer));
 }
@@ -131,12 +167,13 @@ HTMLDocumentParser::HTMLDocumentParser(DocumentFragment* fragment, Element* cont
     , m_treeBuilder(HTMLTreeBuilder::create(this, fragment, contextElement, this->parserContentPolicy(), m_options))
     , m_xssAuditorDelegate(&fragment->document())
     , m_weakFactory(this)
-    , m_isPinnedToMainThread(true)
+    , m_shouldUseThreading(false)
     , m_endWasDelayed(false)
     , m_haveBackgroundParser(false)
+    , m_tasksWereSuspended(false)
     , m_pumpSessionNestingLevel(0)
+    , m_pumpSpeculationsSessionNestingLevel(0)
 {
-    ASSERT(!shouldUseThreading());
     bool reportErrors = false; // For now document fragment parsing never reports errors.
     m_tokenizer->setState(tokenizerStateForContextElement(contextElement, reportErrors, m_options));
     m_xssAuditor.initForFragment();
@@ -161,7 +198,7 @@ HTMLDocumentParser::~HTMLDocumentParser()
 #endif
 }
 
-void HTMLDocumentParser::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLDocumentParser)
 {
     visitor->trace(m_treeBuilder);
     visitor->trace(m_xssAuditorDelegate);
@@ -169,18 +206,6 @@ void HTMLDocumentParser::trace(Visitor* visitor)
     visitor->trace(m_preloader);
     ScriptableDocumentParser::trace(visitor);
     HTMLScriptRunnerHost::trace(visitor);
-}
-
-void HTMLDocumentParser::pinToMainThread()
-{
-    ASSERT(!m_haveBackgroundParser);
-    ASSERT(!m_isPinnedToMainThread);
-    m_isPinnedToMainThread = true;
-    if (!m_tokenizer) {
-        ASSERT(!m_token);
-        m_token = adoptPtr(new HTMLToken);
-        m_tokenizer = HTMLTokenizer::create(m_options);
-    }
 }
 
 void HTMLDocumentParser::detach()
@@ -259,15 +284,8 @@ bool HTMLDocumentParser::processingData() const
 
 void HTMLDocumentParser::pumpTokenizerIfPossible()
 {
-    if (isStopped())
+    if (isStopped() || isWaitingForScripts())
         return;
-    if (isWaitingForScripts())
-        return;
-
-    // Once a resume is scheduled, HTMLParserScheduler controls when we next pump.
-    if (isScheduledForResume()) {
-        return;
-    }
 
     pumpTokenizer();
 }
@@ -280,7 +298,7 @@ bool HTMLDocumentParser::isScheduledForResume() const
 // Used by HTMLParserScheduler
 void HTMLDocumentParser::resumeParsingAfterYield()
 {
-    ASSERT(!m_isPinnedToMainThread);
+    ASSERT(shouldUseThreading());
     ASSERT(m_haveBackgroundParser);
 
     // pumpPendingSpeculations can cause this parser to be detached from the Document,
@@ -331,23 +349,31 @@ void HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<Pa
 {
     TRACE_EVENT0("blink", "HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser");
 
-    // alert(), runModalDialog, and the JavaScript Debugger all run nested event loops
-    // which can cause this method to be re-entered. We detect re-entry using
-    // hasActiveParser(), save the chunk as a speculation, and return.
-    if (isWaitingForScripts() || !m_speculations.isEmpty() || document()->activeParserCount() > 0) {
-        m_preloader->takeAndPreload(chunk->preloads);
-        m_speculations.append(chunk);
+    if (!isParsing())
         return;
+
+    // ApplicationCache needs to be initialized before issuing preloads.
+    // We suspend preload until HTMLHTMLElement is inserted and
+    // ApplicationCache is initialized.
+    if (!document()->documentElement()) {
+        for (auto& request : chunk->preloads)
+            m_queuedPreloads.append(request.release());
+    } else {
+        // We can safely assume that there are no queued preloads request after
+        // the document element is available, as we empty the queue immediately
+        // after the document element is created in pumpPendingSpeculations().
+        ASSERT(m_queuedPreloads.isEmpty());
+        m_preloader->takeAndPreload(chunk->preloads);
     }
 
-    // processParsedChunkFromBackgroundParser can cause this parser to be detached from the Document,
-    // but we need to ensure it isn't deleted yet.
-    RefPtrWillBeRawPtr<HTMLDocumentParser> protect(this);
-
-    ASSERT(m_speculations.isEmpty());
-    chunk->preloads.clear(); // We don't need to preload because we're going to parse immediately.
     m_speculations.append(chunk);
-    pumpPendingSpeculations();
+
+    if (!isWaitingForScripts() && !isScheduledForResume()) {
+        if (m_tasksWereSuspended)
+            m_parserScheduler->forceResumeAfterYield();
+        else
+            m_parserScheduler->scheduleForResume();
+    }
 }
 
 void HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser(const DocumentEncodingData& data)
@@ -410,12 +436,13 @@ void HTMLDocumentParser::discardSpeculationsAndResumeFrom(PassOwnPtr<ParsedChunk
     m_input.current().clear(); // FIXME: This should be passed in instead of cleared.
 
     ASSERT(checkpoint->unparsedInput.isSafeToSendToAnotherThread());
-    HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::resumeFrom, m_backgroundParser, checkpoint.release()));
+    HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::resumeFrom, AllowCrossThreadAccess(m_backgroundParser), checkpoint.release()));
 }
 
-void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk> popChunk)
+size_t HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk> popChunk)
 {
     TRACE_EVENT0("blink", "HTMLDocumentParser::processParsedChunkFromBackgroundParser");
+    TemporaryChange<bool> hasLineNumber(m_isParsingAtLineNumber, true);
 
     ASSERT_WITH_SECURITY_IMPLICATION(document()->activeParserCount() == 1);
     ASSERT(!isParsingFragment());
@@ -432,8 +459,9 @@ void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<Parse
 
     OwnPtr<ParsedChunk> chunk(popChunk);
     OwnPtr<CompactHTMLTokenStream> tokens = chunk->tokens.release();
+    size_t elementTokenCount = 0;
 
-    HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::startedChunkWithCheckpoint, m_backgroundParser, chunk->inputCheckpoint));
+    HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::startedChunkWithCheckpoint, AllowCrossThreadAccess(m_backgroundParser), chunk->inputCheckpoint));
 
     for (const auto& xssInfo : chunk->xssInfos) {
         m_textPosition = xssInfo->m_textPosition;
@@ -444,6 +472,9 @@ void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<Parse
 
     for (Vector<CompactHTMLToken>::const_iterator it = tokens->begin(); it != tokens->end(); ++it) {
         ASSERT(!isWaitingForScripts());
+
+        if (!chunk->startingScript && (it->type() == HTMLToken::StartTag || it->type() == HTMLToken::EndTag))
+            elementTokenCount++;
 
         if (document()->frame() && document()->frame()->navigationScheduler().locationChangePending()) {
 
@@ -462,6 +493,9 @@ void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<Parse
 
         if (isStopped())
             break;
+
+        if (!m_queuedPreloads.isEmpty() && document()->documentElement())
+            m_preloader->takeAndPreload(m_queuedPreloads);
 
         if (isWaitingForScripts()) {
             ASSERT(it + 1 == tokens->end()); // The </script> is assumed to be the last token of this bunch.
@@ -485,6 +519,10 @@ void HTMLDocumentParser::processParsedChunkFromBackgroundParser(PassOwnPtr<Parse
     // This leaves "script", "style" and "svg" nodes text nodes intact.
     if (!isStopped())
         m_treeBuilder->flush(FlushIfAtTextLimit);
+
+    m_isParsingAtLineNumber = false;
+
+    return elementTokenCount;
 }
 
 void HTMLDocumentParser::pumpPendingSpeculations()
@@ -500,29 +538,44 @@ void HTMLDocumentParser::pumpPendingSpeculations()
     ASSERT(!m_lastChunkBeforeScript);
     ASSERT(!isWaitingForScripts());
     ASSERT(!isStopped());
+    ASSERT(!isScheduledForResume());
+    ASSERT(!inPumpSession());
+
+    // FIXME: Here should never be reached when there is a blocking script,
+    // but it happens in unknown scenarios. See https://crbug.com/440901
+    if (isWaitingForScripts()) {
+        m_parserScheduler->scheduleForResume();
+        return;
+    }
+
+    // Do not allow pumping speculations in nested event loops.
+    if (m_pumpSpeculationsSessionNestingLevel) {
+        m_parserScheduler->scheduleForResume();
+        return;
+    }
 
     // FIXME: Pass in current input length.
     TRACE_EVENT_BEGIN1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "beginData", InspectorParseHtmlEvent::beginData(document(), lineNumber().zeroBasedInt()));
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willWriteHTML(document(), lineNumber().zeroBasedInt());
 
-    SpeculationsPumpSession session(contextForParsingSession());
+    SpeculationsPumpSession session(m_pumpSpeculationsSessionNestingLevel, contextForParsingSession());
     while (!m_speculations.isEmpty()) {
-        processParsedChunkFromBackgroundParser(m_speculations.takeFirst());
+        ASSERT(!isScheduledForResume());
+        size_t elementTokenCount = processParsedChunkFromBackgroundParser(m_speculations.takeFirst());
+        session.addedElementTokens(elementTokenCount);
 
-        // Always check isStopped first as m_document may be null.
-        if (isStopped() || isWaitingForScripts())
+        // Always check isParsing first as m_document may be null.
+        // Surprisingly, isScheduledForResume() may be set here as a result of
+        // processParsedChunkFromBackgroundParser running arbitrary javascript
+        // which invokes nested event loops. (e.g. inspector breakpoints)
+        if (!isParsing() || isWaitingForScripts() || isScheduledForResume())
             break;
 
-        if (m_speculations.isEmpty() || m_parserScheduler->yieldIfNeeded(session))
+        if (m_speculations.isEmpty() || m_parserScheduler->yieldIfNeeded(session, m_speculations.first()->startingScript))
             break;
     }
 
-    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "endLine", lineNumber().zeroBasedInt());
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentation::didWriteHTML(cookie, lineNumber().zeroBasedInt());
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
+    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "endData", InspectorParseHtmlEvent::endData(lineNumber().zeroBasedInt() - 1));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 }
 
 void HTMLDocumentParser::forcePlaintextForTextDocument()
@@ -533,7 +586,7 @@ void HTMLDocumentParser::forcePlaintextForTextDocument()
         if (!m_haveBackgroundParser)
             startBackgroundParser();
 
-        HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::forcePlaintextForTextDocument, m_backgroundParser));
+        HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::forcePlaintextForTextDocument, AllowCrossThreadAccess(m_backgroundParser)));
     } else
         m_tokenizer->setState(HTMLTokenizer::PLAINTEXTState);
 }
@@ -547,18 +600,9 @@ Document* HTMLDocumentParser::contextForParsingSession()
     return document();
 }
 
-static PassRefPtr<MediaValues> createMediaValues(Document* document)
-{
-    ASSERT(document);
-    RefPtr<MediaValues> mediaValues = MediaValuesCached::create(*document);
-    ASSERT(mediaValues->isSafeToSendToAnotherThread());
-    return mediaValues;
-}
-
 void HTMLDocumentParser::pumpTokenizer()
 {
     ASSERT(!isStopped());
-    ASSERT(!isScheduledForResume());
 #if !ENABLE(OILPAN)
     // ASSERT that this object is both attached to the Document and protected.
     ASSERT(refCount() >= 2);
@@ -574,9 +618,6 @@ void HTMLDocumentParser::pumpTokenizer()
     // end up parsing the whole buffer in this pump.  We should pass how
     // much we parsed as part of didWriteHTML instead of willWriteHTML.
     TRACE_EVENT_BEGIN1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "beginData", InspectorParseHtmlEvent::beginData(document(), m_input.current().currentLine().zeroBasedInt()));
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willWriteHTML(document(), m_input.current().currentLine().zeroBasedInt());
 
     m_xssAuditor.init(document(), &m_xssAuditorDelegate);
 
@@ -616,16 +657,22 @@ void HTMLDocumentParser::pumpTokenizer()
 
     if (isWaitingForScripts()) {
         ASSERT(m_tokenizer->state() == HTMLTokenizer::DataState);
-        if (!m_preloadScanner) {
-            m_preloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url(), createMediaValues(document())));
-            m_preloadScanner->appendToEnd(m_input.current());
+
+        ASSERT(m_preloader);
+        // TODO(kouhei): m_preloader should be always available for synchronous parsing case,
+        // adding paranoia if for speculative crash fix for crbug.com/465478
+        if (m_preloader) {
+            if (!m_preloadScanner) {
+                m_preloadScanner = adoptPtr(new HTMLPreloadScanner(m_options,
+                    document()->url(),
+                    CachedDocumentParameters::create(document())));
+                m_preloadScanner->appendToEnd(m_input.current());
+            }
+            m_preloadScanner->scan(m_preloader.get(), document()->baseElementURL());
         }
-        m_preloadScanner->scan(m_preloader.get(), document()->baseElementURL());
     }
 
-    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "endLine", m_input.current().currentLine().zeroBasedInt());
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentation::didWriteHTML(cookie, m_input.current().currentLine().zeroBasedInt());
+    TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "endData", InspectorParseHtmlEvent::endData(m_input.current().currentLine().zeroBasedInt() - 1));
 }
 
 void HTMLDocumentParser::constructTreeFromHTMLToken()
@@ -699,8 +746,11 @@ void HTMLDocumentParser::insert(const SegmentedString& source)
     if (isWaitingForScripts()) {
         // Check the document.write() output with a separate preload scanner as
         // the main scanner can't deal with insertions.
-        if (!m_insertionPreloadScanner)
-            m_insertionPreloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url(), createMediaValues(document())));
+        if (!m_insertionPreloadScanner) {
+            m_insertionPreloadScanner = adoptPtr(new HTMLPreloadScanner(m_options,
+                document()->url(),
+                CachedDocumentParameters::create(document())));
+        }
 
         m_insertionPreloadScanner->appendToEnd(source);
         m_insertionPreloadScanner->scan(m_preloader.get(), document()->baseElementURL());
@@ -714,15 +764,16 @@ void HTMLDocumentParser::startBackgroundParser()
     ASSERT(!isStopped());
     ASSERT(shouldUseThreading());
     ASSERT(!m_haveBackgroundParser);
+    ASSERT(document());
     m_haveBackgroundParser = true;
 
     RefPtr<WeakReference<BackgroundHTMLParser>> reference = WeakReference<BackgroundHTMLParser>::createUnbound();
     m_backgroundParser = WeakPtr<BackgroundHTMLParser>(reference);
 
-    // TODO(oysteine): Disabled due to crbug.com/398076 until a full fix can be implemented.
+    // FIXME(oysteine): Disabled due to crbug.com/398076 until a full fix can be implemented.
     if (RuntimeEnabledFeatures::threadedParserDataReceiverEnabled()) {
         if (DocumentLoader* loader = document()->loader())
-            loader->attachThreadedDataReceiver(adoptPtr(new ParserDataReceiver(m_backgroundParser)));
+            loader->attachThreadedDataReceiver(ParserDataReceiver::create(m_backgroundParser, document()->contextDocument().get()));
     }
 
     OwnPtr<BackgroundHTMLParser::Configuration> config = adoptPtr(new BackgroundHTMLParser::Configuration);
@@ -730,12 +781,13 @@ void HTMLDocumentParser::startBackgroundParser()
     config->parser = m_weakFactory.createWeakPtr();
     config->xssAuditor = adoptPtr(new XSSAuditor);
     config->xssAuditor->init(document(), &m_xssAuditorDelegate);
-    config->preloadScanner = adoptPtr(new TokenPreloadScanner(document()->url().copy(), createMediaValues(document())));
+    config->preloadScanner = adoptPtr(new TokenPreloadScanner(document()->url().copy(), CachedDocumentParameters::create(document())));
     config->decoder = takeDecoder();
 
     ASSERT(config->xssAuditor->isSafeToSendToAnotherThread());
     ASSERT(config->preloadScanner->isSafeToSendToAnotherThread());
-    HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::start, reference.release(), config.release()));
+    HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::start, reference.release(), config.release(),
+        AllowCrossThreadAccess(Platform::current()->currentThread()->scheduler())));
 }
 
 void HTMLDocumentParser::stopBackgroundParser()
@@ -744,11 +796,11 @@ void HTMLDocumentParser::stopBackgroundParser()
     ASSERT(m_haveBackgroundParser);
     m_haveBackgroundParser = false;
 
-    HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::stop, m_backgroundParser));
+    HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::stop, AllowCrossThreadAccess(m_backgroundParser)));
     m_weakFactory.revokeAll();
 }
 
-void HTMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
+void HTMLDocumentParser::append(const String& inputSource)
 {
     if (isStopped())
         return;
@@ -760,8 +812,8 @@ void HTMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.
     RefPtrWillBeRawPtr<HTMLDocumentParser> protect(this);
-    TRACE_EVENT1("net", "HTMLDocumentParser::append", "size", inputSource->length());
-    String source(inputSource);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("blink.debug"), "HTMLDocumentParser::append", "size", inputSource.length());
+    const SegmentedString source(inputSource);
 
     if (m_preloadScanner) {
         if (m_input.current().isEmpty() && !isWaitingForScripts()) {
@@ -784,12 +836,6 @@ void HTMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
         return;
     }
 
-    // A couple pinToMainThread() callers require synchronous parsing, but can't
-    // easily use the insert() method, so we hack append() for them to be synchronous.
-    // javascript: url handling is one such caller.
-    // FIXME: This is gross, and we should separate the concept of synchronous parsing
-    // from insert() so that only document.write() uses insert.
-    ASSERT(m_isPinnedToMainThread);
     pumpTokenizerIfPossible();
 
     endIfDelayed();
@@ -863,7 +909,7 @@ void HTMLDocumentParser::finish()
     if (m_haveBackgroundParser) {
         if (!m_input.haveSeenEndOfFile())
             m_input.closeWithoutMarkingEndOfFile();
-        HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::finish, m_backgroundParser));
+        HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::finish, AllowCrossThreadAccess(m_backgroundParser)));
         return;
     }
 
@@ -890,6 +936,11 @@ bool HTMLDocumentParser::isExecutingScript() const
     if (!m_scriptRunner)
         return false;
     return m_scriptRunner->isExecutingScript();
+}
+
+bool HTMLDocumentParser::isParsingAtLineNumber() const
+{
+    return m_isParsingAtLineNumber && ScriptableDocumentParser::isParsingAtLineNumber();
 }
 
 OrdinalNumber HTMLDocumentParser::lineNumber() const
@@ -963,6 +1014,11 @@ void HTMLDocumentParser::notifyScriptLoaded(Resource* cachedResource)
 
     ASSERT(m_scriptRunner);
     ASSERT(!isExecutingScript());
+
+    if (isStopped()) {
+        return;
+    }
+
     if (isStopping()) {
         attemptToRunDeferredScriptsAndEnd();
         return;
@@ -995,7 +1051,7 @@ void HTMLDocumentParser::executeScriptsWaitingForResources()
 void HTMLDocumentParser::parseDocumentFragment(const String& source, DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy)
 {
     RefPtrWillBeRawPtr<HTMLDocumentParser> parser = HTMLDocumentParser::create(fragment, contextElement, parserContentPolicy);
-    parser->insert(source); // Use insert() so that the parser will not yield.
+    parser->append(source);
     parser->finish();
     ASSERT(!parser->processingData()); // Make sure we're done. <rdar://problem/3963151>
     parser->detach(); // Allows ~DocumentParser to assert it was detached before destruction.
@@ -1003,12 +1059,16 @@ void HTMLDocumentParser::parseDocumentFragment(const String& source, DocumentFra
 
 void HTMLDocumentParser::suspendScheduledTasks()
 {
+    ASSERT(!m_tasksWereSuspended);
+    m_tasksWereSuspended = true;
     if (m_parserScheduler)
         m_parserScheduler->suspend();
 }
 
 void HTMLDocumentParser::resumeScheduledTasks()
 {
+    ASSERT(m_tasksWereSuspended);
+    m_tasksWereSuspended = false;
     if (m_parserScheduler)
         m_parserScheduler->resume();
 }
@@ -1024,9 +1084,9 @@ void HTMLDocumentParser::appendBytes(const char* data, size_t length)
 
         OwnPtr<Vector<char>> buffer = adoptPtr(new Vector<char>(length));
         memcpy(buffer->data(), data, length);
-        TRACE_EVENT1("net", "HTMLDocumentParser::appendBytes", "size", (unsigned)length);
+        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("blink.debug"), "HTMLDocumentParser::appendBytes", "size", (unsigned)length);
 
-        HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::appendRawBytesFromMainThread, m_backgroundParser, buffer.release()));
+        HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::appendRawBytesFromMainThread, AllowCrossThreadAccess(m_backgroundParser), buffer.release()));
         return;
     }
 
@@ -1040,7 +1100,7 @@ void HTMLDocumentParser::flush()
         return;
 
     if (m_haveBackgroundParser)
-        HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::flush, m_backgroundParser));
+        HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::flush, AllowCrossThreadAccess(m_backgroundParser)));
     else
         DecodedDataDocumentParser::flush();
 }
@@ -1051,7 +1111,7 @@ void HTMLDocumentParser::setDecoder(PassOwnPtr<TextResourceDecoder> decoder)
     DecodedDataDocumentParser::setDecoder(decoder);
 
     if (m_haveBackgroundParser)
-        HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::setDecoder, m_backgroundParser, takeDecoder()));
+        HTMLParserThread::shared()->postTask(threadSafeBind(&BackgroundHTMLParser::setDecoder, AllowCrossThreadAccess(m_backgroundParser), takeDecoder()));
 }
 
 }

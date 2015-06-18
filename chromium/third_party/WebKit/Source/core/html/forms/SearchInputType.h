@@ -44,16 +44,16 @@ public:
 
 private:
     SearchInputType(HTMLInputElement&);
-    virtual void countUsage() override;
-    virtual RenderObject* createRenderer(RenderStyle*) const override;
-    virtual const AtomicString& formControlType() const override;
-    virtual bool shouldRespectSpeechAttribute() override;
-    virtual bool needsContainer() const override;
-    virtual void createShadowSubtree() override;
-    virtual void handleKeydownEvent(KeyboardEvent*) override;
-    virtual void didSetValueByUserEdit(ValueChangeState) override;
-    virtual bool supportsInputModeAttribute() const override;
-    virtual void updateView() override;
+    void countUsage() override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    const AtomicString& formControlType() const override;
+    bool needsContainer() const override;
+    void createShadowSubtree() override;
+    void handleKeydownEvent(KeyboardEvent*) override;
+    void didSetValueByUserEdit(ValueChangeState) override;
+    bool supportsInputModeAttribute() const override;
+    void updateView() override;
+    const AtomicString& defaultAutocapitalize() const override;
 
     void searchEventTimerFired(Timer<SearchInputType>*);
     bool searchEventsShouldBeDispatched() const;

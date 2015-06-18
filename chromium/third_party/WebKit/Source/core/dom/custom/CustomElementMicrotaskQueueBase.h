@@ -24,7 +24,7 @@ public:
     bool isEmpty() const { return m_queue.isEmpty(); }
     void dispatch();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 #if !defined(NDEBUG)
     void show(unsigned indent);
@@ -34,7 +34,7 @@ protected:
     CustomElementMicrotaskQueueBase() : m_inDispatch(false) { }
     virtual void doDispatch() = 0;
 
-    WillBeHeapVector<OwnPtrWillBeMember<CustomElementMicrotaskStep> > m_queue;
+    WillBeHeapVector<OwnPtrWillBeMember<CustomElementMicrotaskStep>> m_queue;
     bool m_inDispatch;
 };
 

@@ -9,10 +9,11 @@
 
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "mojo/public/cpp/bindings/interface_impl.h"
-#include "mojo/services/public/interfaces/network/udp_socket.mojom.h"
+#include "mojo/services/network/public/interfaces/udp_socket.mojom.h"
 #include "net/base/ip_endpoint.h"
-#include "net/udp/udp_server_socket.h"
+#include "net/udp/udp_socket.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/strong_binding.h"
 
 namespace net {
 class IOBuffer;
@@ -21,18 +22,28 @@ class IOBufferWithSize;
 
 namespace mojo {
 
-class UDPSocketImpl : public InterfaceImpl<UDPSocket> {
+class UDPSocketImpl : public UDPSocket {
  public:
-  UDPSocketImpl();
+  // The lifetime of a new UDPSocketImpl is bound to the connection associated
+  // with |request|.
+  explicit UDPSocketImpl(InterfaceRequest<UDPSocket> request);
   ~UDPSocketImpl() override;
 
   // UDPSocket implementation.
   void AllowAddressReuse(
       const Callback<void(NetworkErrorPtr)>& callback) override;
 
-  void Bind(
-      NetAddressPtr addr,
-      const Callback<void(NetworkErrorPtr, NetAddressPtr)>& callback) override;
+  void Bind(NetAddressPtr addr,
+            const Callback<void(NetworkErrorPtr,
+                                NetAddressPtr,
+                                InterfaceRequest<UDPSocketReceiver>)>& callback)
+      override;
+
+  void Connect(NetAddressPtr remote_addr,
+               const Callback<void(NetworkErrorPtr,
+                                   NetAddressPtr,
+                                   InterfaceRequest<UDPSocketReceiver>)>&
+                   callback) override;
 
   void SetSendBufferSize(
       uint32_t size,
@@ -53,6 +64,12 @@ class UDPSocketImpl : public InterfaceImpl<UDPSocket> {
               const Callback<void(NetworkErrorPtr)>& callback) override;
 
  private:
+  enum State {
+    NOT_BOUND_OR_CONNECTED,
+    BOUND,
+    CONNECTED
+  };
+
   struct PendingSendRequest {
     PendingSendRequest();
     ~PendingSendRequest();
@@ -71,16 +88,28 @@ class UDPSocketImpl : public InterfaceImpl<UDPSocket> {
   void OnSendToCompleted(const Callback<void(NetworkErrorPtr)>& callback,
                          int net_result);
 
-  net::UDPServerSocket socket_;
+  bool IsBoundOrConnected() const {
+    return state_ == BOUND || state_ == CONNECTED;
+  }
 
-  bool bound_;
+  StrongBinding<UDPSocket> binding_;
 
-  // Non-NULL when there is a pending RecvFrom operation on |socket_|.
+  net::UDPSocket socket_;
+
+  State state_;
+
+  bool allow_address_reuse_;
+
+  // Non-null when there is a pending RecvFrom operation on |socket_|.
   scoped_refptr<net::IOBuffer> recvfrom_buffer_;
-  // Non-NULL when there is a pending SendTo operation on |socket_|.
+  // Non-null when there is a pending SendTo operation on |socket_|.
   scoped_refptr<net::IOBufferWithSize> sendto_buffer_;
 
+  // The address of the pending RecvFrom operation, if any.
   net::IPEndPoint recvfrom_address_;
+
+  // The interface which gets data from fulfilled receive requests.
+  UDPSocketReceiverPtr receiver_;
 
   // How many more packets the client side expects to receive.
   size_t remaining_recv_slots_;

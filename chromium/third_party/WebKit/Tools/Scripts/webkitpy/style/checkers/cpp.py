@@ -1370,6 +1370,14 @@ def check_for_non_standard_constructs(clean_lines, line_number,
         error(line_number, 'build/deprecated', 3,
               '>? and <? (max and min) operators are non-standard and deprecated.')
 
+    if search(r'\w+<.*<.*>\s+>', line):
+        error(line_number, 'readability/templatebrackets', 3,
+              'Use >> for ending template instead of > >.')
+
+    if search(r'\w+<\s+::\w+>', line):
+        error(line_number, 'readability/templatebrackets', 3,
+              'Use <:: for template start instead of < ::.')
+
     # Track class entry and exit, and attempt to find cases within the
     # class declaration that don't meet the C++ style
     # guidelines. Tracking is very dependent on the code matching Google
@@ -2399,11 +2407,12 @@ def check_braces(clean_lines, line_number, error):
         # the lifetime of stack-allocated variables.  We don't detect this
         # perfectly: we just don't complain if the last non-whitespace
         # character on the previous non-blank line is ';', ':', '{', '}',
-        # ')', or ') const' and doesn't begin with 'if|for|while|switch|else'.
+        # ')' or is like a function declaration, and doesn't begin with
+        # 'if|for|while|switch|else' without a beginning '{'.
         # We also allow '#' for #endif and '=' for array initialization.
         previous_line = get_previous_non_blank_line(clean_lines, line_number)[0]
         if ((not search(r'[;:}{)=]\s*$|\)\s*((const|override|final)\s*)*\s*$', previous_line)
-             or search(r'\b(if|for|foreach|while|switch|else)\b', previous_line))
+             or search(r'^\s*\b(if|for|foreach|while|switch|else)\b.*[^{]\s*$', previous_line))
             and previous_line.find('#') < 0):
             error(line_number, 'whitespace/braces', 4,
                   'This { should be at the end of the previous line')
@@ -3359,7 +3368,7 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
             break
 
     # Declarations of local variables can be in condition expressions
-    # of control flow statements (e.g., "if (RenderObject* p = o->parent())").
+    # of control flow statements (e.g., "if (LayoutObject* p = o->parent())").
     # We remove the keywords and the first parenthesis.
     #
     # Declarations in "while", "if", and "switch" are different from
@@ -3999,6 +4008,7 @@ class CppChecker(object):
         'readability/null',
         'readability/pass_ptr',
         'readability/streams',
+        'readability/templatebrackets',
         'readability/todo',
         'readability/utf8',
         'readability/webkit_export',

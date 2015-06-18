@@ -10,8 +10,8 @@
 // It clashes with out RootWindow.
 #undef RootWindow
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
@@ -20,9 +20,12 @@
 #include "ui/display/util/x11/edid_parser_x11.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/x/x11_types.h"
+#include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #include "ui/views/widget/desktop_aura/x11_topmost_window_finder.h"
@@ -33,16 +36,20 @@ namespace {
 // in |Dispatch()|.
 const int64 kConfigureDelayMs = 500;
 
-// TODO(oshima): Consider using gtk-xft-dpi instead.
-float GetDeviceScaleFactor(int screen_pixels, int screen_mm) {
-  const int kCSSDefaultDPI = 96;
-  const float kInchInMm = 25.4f;
+double GetDeviceScaleFactor() {
+  float device_scale_factor = 1.0f;
+  if (views::LinuxUI::instance())
+    device_scale_factor =
+      views::LinuxUI::instance()->GetDeviceScaleFactor();
+  return device_scale_factor;
+}
 
-  float screen_inches = screen_mm / kInchInMm;
-  float screen_dpi = screen_pixels / screen_inches;
-  float scale = screen_dpi / kCSSDefaultDPI;
+gfx::Point PixelToDIPPoint(const gfx::Point& pixel_point) {
+  return ToFlooredPoint(ScalePoint(pixel_point, 1.0f / GetDeviceScaleFactor()));
+}
 
-  return ui::GetScaleForScaleFactor(ui::GetSupportedScaleFactor(scale));
+gfx::Point DIPToPixelPoint(const gfx::Point& dip_point) {
+  return ToFlooredPoint(gfx::ScalePoint(dip_point, GetDeviceScaleFactor()));
 }
 
 std::vector<gfx::Display> GetFallbackDisplayList() {
@@ -56,8 +63,7 @@ std::vector<gfx::Display> GetFallbackDisplayList() {
   gfx::Display gfx_display(0, bounds_in_pixels);
   if (!gfx::Display::HasForceDeviceScaleFactor() &&
       !ui::IsDisplaySizeBlackListed(physical_size)) {
-    float device_scale_factor = GetDeviceScaleFactor(
-        width, physical_size.width());
+    const float device_scale_factor = GetDeviceScaleFactor();
     DCHECK_LE(1.0f, device_scale_factor);
     gfx_display.SetScaleAndBounds(device_scale_factor, bounds_in_pixels);
   }
@@ -130,7 +136,7 @@ gfx::Point DesktopScreenX11::GetCursorScreenPoint() {
                 &win_y,
                 &mask);
 
-  return gfx::Point(root_x, root_y);
+  return PixelToDIPPoint(gfx::Point(root_x, root_y));
 }
 
 gfx::NativeWindow DesktopScreenX11::GetWindowUnderCursor() {
@@ -140,7 +146,8 @@ gfx::NativeWindow DesktopScreenX11::GetWindowUnderCursor() {
 gfx::NativeWindow DesktopScreenX11::GetWindowAtScreenPoint(
     const gfx::Point& point) {
   X11TopmostWindowFinder finder;
-  return finder.FindLocalProcessWindowAt(point, std::set<aura::Window*>());
+  return finder.FindLocalProcessWindowAt(
+      DIPToPixelPoint(point), std::set<aura::Window*>());
 }
 
 int DesktopScreenX11::GetNumDisplays() const {
@@ -177,10 +184,11 @@ gfx::Display DesktopScreenX11::GetDisplayNearestWindow(
 }
 
 gfx::Display DesktopScreenX11::GetDisplayNearestPoint(
-    const gfx::Point& point) const {
+    const gfx::Point& requested_point) const {
+  const gfx::Point point_in_pixel = DIPToPixelPoint(requested_point);
   for (std::vector<gfx::Display>::const_iterator it = displays_.begin();
        it != displays_.end(); ++it) {
-    if (it->bounds().Contains(point))
+    if (it->bounds().Contains(point_in_pixel))
       return *it;
   }
 
@@ -259,38 +267,41 @@ DesktopScreenX11::DesktopScreenX11(
 
 std::vector<gfx::Display> DesktopScreenX11::BuildDisplaysFromXRandRInfo() {
   std::vector<gfx::Display> displays;
-  XRRScreenResources* resources =
-      XRRGetScreenResourcesCurrent(xdisplay_, x_root_window_);
+  gfx::XScopedPtr<
+      XRRScreenResources,
+      gfx::XObjectDeleter<XRRScreenResources, void, XRRFreeScreenResources>>
+      resources(XRRGetScreenResourcesCurrent(xdisplay_, x_root_window_));
   if (!resources) {
     LOG(ERROR) << "XRandR returned no displays. Falling back to Root Window.";
     return GetFallbackDisplayList();
   }
 
   bool has_work_area = false;
-  gfx::Rect work_area;
+  gfx::Rect work_area_in_pixels;
   std::vector<int> value;
   if (ui::GetIntArrayProperty(x_root_window_, "_NET_WORKAREA", &value) &&
       value.size() >= 4) {
-    work_area = gfx::Rect(value[0], value[1], value[2], value[3]);
+    work_area_in_pixels = gfx::Rect(value[0], value[1], value[2], value[3]);
     has_work_area = true;
   }
 
-  float device_scale_factor = 1.0f;
+  // As per-display scale factor is not supported right now,
+  // the X11 root window's scale factor is always used.
+  const float device_scale_factor = GetDeviceScaleFactor();
   for (int i = 0; i < resources->noutput; ++i) {
     RROutput output_id = resources->outputs[i];
-    XRROutputInfo* output_info =
-        XRRGetOutputInfo(xdisplay_, resources, output_id);
+    gfx::XScopedPtr<XRROutputInfo,
+                    gfx::XObjectDeleter<XRROutputInfo, void, XRRFreeOutputInfo>>
+        output_info(XRRGetOutputInfo(xdisplay_, resources.get(), output_id));
 
     bool is_connected = (output_info->connection == RR_Connected);
-    if (!is_connected) {
-      XRRFreeOutputInfo(output_info);
+    if (!is_connected)
       continue;
-    }
 
     if (output_info->crtc) {
-      XRRCrtcInfo *crtc = XRRGetCrtcInfo(xdisplay_,
-                                         resources,
-                                         output_info->crtc);
+      gfx::XScopedPtr<XRRCrtcInfo,
+                      gfx::XObjectDeleter<XRRCrtcInfo, void, XRRFreeCrtcInfo>>
+          crtc(XRRGetCrtcInfo(xdisplay_, resources.get(), output_info->crtc));
 
       int64 display_id = -1;
       if (!ui::GetDisplayId(output_id, static_cast<uint8>(i), &display_id)) {
@@ -303,21 +314,21 @@ std::vector<gfx::Display> DesktopScreenX11::BuildDisplaysFromXRandRInfo() {
       gfx::Display display(display_id, crtc_bounds);
 
       if (!gfx::Display::HasForceDeviceScaleFactor()) {
-        if (i == 0 && !ui::IsDisplaySizeBlackListed(
-            gfx::Size(output_info->mm_width, output_info->mm_height))) {
-          // As per display scale factor is not supported right now,
-          // the primary display's scale factor is always used.
-          device_scale_factor = GetDeviceScaleFactor(crtc->width,
-                                                     output_info->mm_width);
-          DCHECK_LE(1.0f, device_scale_factor);
-        }
         display.SetScaleAndBounds(device_scale_factor, crtc_bounds);
       }
 
       if (has_work_area) {
-        gfx::Rect intersection = crtc_bounds;
-        intersection.Intersect(work_area);
-        display.set_work_area(intersection);
+        gfx::Rect intersection_in_pixels = crtc_bounds;
+        intersection_in_pixels.Intersect(work_area_in_pixels);
+        // SetScaleAndBounds() above does the conversion from pixels to DIP for
+        // us, but set_work_area does not, so we need to do it here.
+        display.set_work_area(gfx::Rect(
+            gfx::ToFlooredPoint(
+                gfx::ScalePoint(intersection_in_pixels.origin(),
+                                1.0f / display.device_scale_factor())),
+            gfx::ToFlooredSize(
+                gfx::ScaleSize(intersection_in_pixels.size(),
+                               1.0f / display.device_scale_factor()))));
       }
 
       switch (crtc->rotation) {
@@ -336,14 +347,8 @@ std::vector<gfx::Display> DesktopScreenX11::BuildDisplaysFromXRandRInfo() {
       }
 
       displays.push_back(display);
-
-      XRRFreeCrtcInfo(crtc);
     }
-
-    XRRFreeOutputInfo(output_info);
   }
-
-  XRRFreeScreenResources(resources);
 
   if (displays.empty())
     return GetFallbackDisplayList();

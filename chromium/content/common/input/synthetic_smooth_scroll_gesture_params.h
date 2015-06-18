@@ -9,8 +9,8 @@
 
 #include "content/common/content_export.h"
 #include "content/common/input/synthetic_gesture_params.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 namespace content {
 
@@ -24,10 +24,10 @@ struct CONTENT_EXPORT SyntheticSmoothScrollGestureParams
 
   GestureType GetGestureType() const override;
 
-  gfx::Point anchor;
-  std::vector<gfx::Vector2d> distances;  // Positive X/Y to scroll left/up.
+  gfx::PointF anchor;
+  std::vector<gfx::Vector2dF> distances;  // Positive X/Y to scroll left/up.
   bool prevent_fling;  // Defaults to true.
-  int speed_in_pixels_s;
+  float speed_in_pixels_s;
 
   static const SyntheticSmoothScrollGestureParams* Cast(
       const SyntheticGestureParams* gesture_params);

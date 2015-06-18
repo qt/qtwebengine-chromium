@@ -139,5 +139,9 @@ FileWriterSync::~FileWriterSync()
 {
 }
 
+DEFINE_TRACE(FileWriterSync)
+{
+    FileWriterBase::trace(visitor);
+}
 
 } // namespace blink

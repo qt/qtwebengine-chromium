@@ -5,15 +5,28 @@
 #ifndef SANDBOX_MAC_XPC_MESSAGE_SERVER_H_
 #define SANDBOX_MAC_XPC_MESSAGE_SERVER_H_
 
+#include <AvailabilityMacros.h>
+
+#include "base/mac/dispatch_source_mach.h"
 #include "base/mac/scoped_mach_port.h"
 #include "base/memory/scoped_ptr.h"
 #include "sandbox/mac/message_server.h"
 #include "sandbox/mac/xpc.h"
 #include "sandbox/sandbox_export.h"
 
-namespace sandbox {
+#if defined(MAC_OS_X_VERSION_10_7) && \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_7
+// Redeclare methods that only exist on 10.7+ to suppress
+// -Wpartial-availability warnings.
+extern "C" {
+XPC_EXPORT XPC_NONNULL1 XPC_NONNULL2 void
+xpc_dictionary_set_int64(xpc_object_t xdict, const char* key, int64_t value);
 
-class DispatchSourceMach;
+XPC_EXPORT XPC_NONNULL1 void xpc_release(xpc_object_t object);
+}  // extern "C"
+#endif
+
+namespace sandbox {
 
 // An implementation of MessageServer that uses XPC pipes to read and write XPC
 // messages from a Mach port.
@@ -48,7 +61,7 @@ class SANDBOX_EXPORT XPCMessageServer : public MessageServer {
   base::mac::ScopedMachReceiveRight server_port_;
 
   // MACH_RECV dispatch source that handles the |server_port_|.
-  scoped_ptr<DispatchSourceMach> dispatch_source_;
+  scoped_ptr<base::DispatchSourceMach> dispatch_source_;
 
   // The reply message, if one has been created.
   xpc_object_t reply_message_;

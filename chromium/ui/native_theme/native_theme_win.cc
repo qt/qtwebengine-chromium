@@ -20,12 +20,13 @@
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/skia_utils_win.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/gdi_util.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/native_theme/common_theme.h"
 
@@ -35,27 +36,6 @@
 #endif
 
 namespace {
-
-// TODO: Obtain the correct colors using GetSysColor.
-// Theme colors returned by GetSystemColor().
-const SkColor kInvalidColorIdColor = SkColorSetRGB(255, 0, 128);
-// Dialogs:
-const SkColor kDialogBackgroundColor = SkColorSetRGB(251, 251, 251);
-// FocusableBorder:
-const SkColor kFocusedBorderColor = SkColorSetRGB(0x4d, 0x90, 0xfe);
-const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
-// Button:
-const SkColor kButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
-const SkColor kButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
-const SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
-const SkColor kButtonHoverBackgroundColor = SkColorSetRGB(0xEA, 0xEA, 0xEA);
-// MenuItem:
-const SkColor kEnabledMenuItemForegroundColor = SkColorSetRGB(6, 45, 117);
-const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
-const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(246, 249, 253);
-const SkColor kMenuSeparatorColor = SkColorSetARGB(50, 0, 0, 0);
-// Table:
-const SkColor kTreeSelectionBackgroundUnfocused = SkColorSetRGB(240, 240, 240);
 
 // Windows system color IDs cached and updated by the native theme.
 const int kSystemColors[] = {
@@ -473,6 +453,28 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
   if (CommonThemeGetSystemColor(color_id, &color))
     return color;
 
+  // TODO: Obtain the correct colors using GetSysColor.
+  const SkColor kInvalidColorIdColor = SkColorSetRGB(255, 0, 128);
+  const SkColor kUrlTextColor = SkColorSetRGB(0x0b, 0x80, 0x43);
+  // Dialogs:
+  const SkColor kDialogBackgroundColor = SkColorSetRGB(251, 251, 251);
+  // FocusableBorder:
+  const SkColor kFocusedBorderColor = SkColorSetRGB(0x4d, 0x90, 0xfe);
+  const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
+  // Button:
+  const SkColor kButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
+  const SkColor kButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
+  const SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
+  const SkColor kButtonHoverBackgroundColor = SkColorSetRGB(0xEA, 0xEA, 0xEA);
+  // MenuItem:
+  const SkColor kEnabledMenuItemForegroundColor = SkColorSetRGB(6, 45, 117);
+  const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
+  const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(246, 249, 253);
+  const SkColor kMenuSeparatorColor = SkColorSetARGB(50, 0, 0, 0);
+  // Table:
+  const SkColor kPositiveTextColor = SkColorSetRGB(0x0b, 0x80, 0x43);
+  const SkColor kNegativeTextColor = SkColorSetRGB(0xc5, 0x39, 0x29);
+
   switch (color_id) {
     // Windows
     case kColorId_WindowBackground:
@@ -607,8 +609,11 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_ResultsTableSelectedBackground:
       return system_colors_[COLOR_HIGHLIGHT];
     case kColorId_ResultsTableNormalText:
-    case kColorId_ResultsTableHoveredText:
       return system_colors_[COLOR_WINDOWTEXT];
+    case kColorId_ResultsTableHoveredText:
+      return color_utils::GetReadableColor(
+          system_colors_[COLOR_WINDOWTEXT],
+          GetSystemColor(kColorId_ResultsTableHoveredBackground));
     case kColorId_ResultsTableSelectedText:
       return system_colors_[COLOR_HIGHLIGHTTEXT];
     case kColorId_ResultsTableNormalDimmedText:
@@ -622,14 +627,14 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHTTEXT],
                                      system_colors_[COLOR_HIGHLIGHT], 0x80);
     case kColorId_ResultsTableNormalUrl:
-      return color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+      return color_utils::GetReadableColor(kUrlTextColor,
                                            system_colors_[COLOR_WINDOW]);
     case kColorId_ResultsTableHoveredUrl:
       return color_utils::GetReadableColor(
-          SkColorSetRGB(0, 128, 0),
+          kUrlTextColor,
           GetSystemColor(kColorId_ResultsTableHoveredBackground));
     case kColorId_ResultsTableSelectedUrl:
-      return color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+      return color_utils::GetReadableColor(kUrlTextColor,
                                            system_colors_[COLOR_HIGHLIGHT]);
     case kColorId_ResultsTableNormalDivider:
       return color_utils::AlphaBlend(system_colors_[COLOR_WINDOWTEXT],
@@ -641,6 +646,26 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_ResultsTableSelectedDivider:
       return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHTTEXT],
                                      system_colors_[COLOR_HIGHLIGHT], 0x34);
+    case kColorId_ResultsTablePositiveText:
+      return color_utils::GetReadableColor(kPositiveTextColor,
+                                           system_colors_[COLOR_WINDOW]);
+    case kColorId_ResultsTablePositiveHoveredText:
+      return color_utils::GetReadableColor(
+          kPositiveTextColor,
+          GetSystemColor(kColorId_ResultsTableHoveredBackground));
+    case kColorId_ResultsTablePositiveSelectedText:
+      return color_utils::GetReadableColor(kPositiveTextColor,
+                                           system_colors_[COLOR_HIGHLIGHT]);
+    case kColorId_ResultsTableNegativeText:
+      return color_utils::GetReadableColor(kNegativeTextColor,
+                                           system_colors_[COLOR_WINDOW]);
+    case kColorId_ResultsTableNegativeHoveredText:
+      return color_utils::GetReadableColor(
+          kNegativeTextColor,
+          GetSystemColor(kColorId_ResultsTableHoveredBackground));
+    case kColorId_ResultsTableNegativeSelectedText:
+      return color_utils::GetReadableColor(kNegativeTextColor,
+                                           system_colors_[COLOR_HIGHLIGHT]);
   }
   NOTREACHED();
   return kInvalidColorIdColor;
@@ -1487,7 +1512,7 @@ HRESULT NativeThemeWin::PaintProgressBar(
   const DTBGOPTS value_draw_options = {
     sizeof(DTBGOPTS),
     (bar_rect.right == value_rect.right && bar_rect.left != value_rect.left) ?
-        DTBG_MIRRORDC : 0,
+        DTBG_MIRRORDC : 0u,
     bar_rect
   };
   if (pre_vista) {

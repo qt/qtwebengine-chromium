@@ -35,7 +35,7 @@ PassOwnPtrWillBeRawPtr<IdTargetObserverRegistry> IdTargetObserverRegistry::creat
     return adoptPtrWillBeNoop(new IdTargetObserverRegistry());
 }
 
-void IdTargetObserverRegistry::trace(Visitor* visitor)
+DEFINE_TRACE(IdTargetObserverRegistry)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_registry);
@@ -77,11 +77,11 @@ void IdTargetObserverRegistry::notifyObserversInternal(const AtomicString& id)
     if (!m_notifyingObserversInSet)
         return;
 
-    WillBeHeapVector<RawPtrWillBeMember<IdTargetObserver> > copy;
+    WillBeHeapVector<RawPtrWillBeMember<IdTargetObserver>> copy;
     copyToVector(*m_notifyingObserversInSet, copy);
-    for (WillBeHeapVector<RawPtrWillBeMember<IdTargetObserver> >::const_iterator it = copy.begin(); it != copy.end(); ++it) {
-        if (m_notifyingObserversInSet->contains(*it))
-            (*it)->idTargetChanged();
+    for (const auto& observer : copy) {
+        if (m_notifyingObserversInSet->contains(observer))
+            observer->idTargetChanged();
     }
 
     if (m_notifyingObserversInSet->isEmpty())

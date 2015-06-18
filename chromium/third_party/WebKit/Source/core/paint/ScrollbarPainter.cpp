@@ -5,32 +5,32 @@
 #include "config.h"
 #include "core/paint/ScrollbarPainter.h"
 
+#include "core/layout/LayoutScrollbar.h"
+#include "core/layout/LayoutScrollbarPart.h"
 #include "core/paint/BlockPainter.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderScrollbar.h"
-#include "core/rendering/RenderScrollbarPart.h"
+#include "core/paint/PaintInfo.h"
 #include "platform/graphics/GraphicsContext.h"
 namespace blink {
 
 void ScrollbarPainter::paintPart(GraphicsContext* graphicsContext, ScrollbarPart partType, const IntRect& rect)
 {
-    RenderScrollbarPart* partRenderer = m_renderScrollbar.getPart(partType);
-    if (!partRenderer)
+    LayoutScrollbarPart* partLayoutObject = m_layoutScrollbar.getPart(partType);
+    if (!partLayoutObject)
         return;
-    paintIntoRect(partRenderer, graphicsContext, m_renderScrollbar.location(), rect);
+    paintIntoRect(partLayoutObject, graphicsContext, m_layoutScrollbar.location(), LayoutRect(rect));
 }
 
-void ScrollbarPainter::paintIntoRect(RenderScrollbarPart* renderScrollbarPart, GraphicsContext* graphicsContext, const LayoutPoint& paintOffset, const LayoutRect& rect)
+void ScrollbarPainter::paintIntoRect(LayoutScrollbarPart* layoutScrollbarPart, GraphicsContext* graphicsContext, const LayoutPoint& paintOffset, const LayoutRect& rect)
 {
     // Make sure our dimensions match the rect.
     // FIXME: Setting these is a bad layering violation!
-    renderScrollbarPart->setLocation(rect.location() - toSize(paintOffset));
-    renderScrollbarPart->setWidth(rect.width());
-    renderScrollbarPart->setHeight(rect.height());
+    layoutScrollbarPart->setLocation(rect.location() - toSize(paintOffset));
+    layoutScrollbarPart->setWidth(rect.width());
+    layoutScrollbarPart->setHeight(rect.height());
 
     // Now do the paint.
     PaintInfo paintInfo(graphicsContext, pixelSnappedIntRect(rect), PaintPhaseBlockBackground, PaintBehaviorNormal);
-    BlockPainter blockPainter(*renderScrollbarPart);
+    BlockPainter blockPainter(*layoutScrollbarPart);
     blockPainter.paint(paintInfo, paintOffset);
     paintInfo.phase = PaintPhaseChildBlockBackgrounds;
     blockPainter.paint(paintInfo, paintOffset);

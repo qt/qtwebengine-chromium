@@ -34,7 +34,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/IdTargetObserverRegistry.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/TreeScopeAdopter.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -46,10 +46,10 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLLabelElement.h"
 #include "core/html/HTMLMapElement.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutView.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderView.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -168,9 +168,9 @@ Element* TreeScope::getElementById(const AtomicString& elementId) const
     return m_elementsById->getElementById(elementId, this);
 }
 
-const WillBeHeapVector<RawPtrWillBeMember<Element> >& TreeScope::getAllElementsById(const AtomicString& elementId) const
+const WillBeHeapVector<RawPtrWillBeMember<Element>>& TreeScope::getAllElementsById(const AtomicString& elementId) const
 {
-    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapVector<RawPtrWillBeMember<Element> > >, emptyVector, (adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element> >())));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapVector<RawPtrWillBeMember<Element>>>, emptyVector, (adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element>>())));
     if (elementId.isEmpty())
         return *emptyVector;
     if (!m_elementsById)
@@ -241,25 +241,36 @@ HTMLMapElement* TreeScope::getImageMap(const String& url) const
     return toHTMLMapElement(m_imageMapsByName->getElementByMapName(AtomicString(name), this));
 }
 
-HitTestResult hitTestInDocument(const Document* document, int x, int y)
+static bool pointWithScrollAndZoomIfPossible(const Document& document, IntPoint& point)
 {
-    LocalFrame* frame = document->frame();
-
+    LocalFrame* frame = document.frame();
     if (!frame)
-        return HitTestResult();
+        return false;
     FrameView* frameView = frame->view();
     if (!frameView)
-        return HitTestResult();
+        return false;
 
-    float scaleFactor = frame->pageZoomFactor();
-    IntPoint point = roundedIntPoint(FloatPoint(x * scaleFactor  + frameView->scrollX(), y * scaleFactor + frameView->scrollY()));
+    FloatPoint pointInDocument(point);
+    pointInDocument.scale(frame->pageZoomFactor(), frame->pageZoomFactor());
+    pointInDocument.moveBy(frameView->scrollPosition());
+    IntPoint roundedPointInDocument = roundedIntPoint(pointInDocument);
 
-    if (!frameView->visibleContentRect().contains(point))
+    if (!frameView->visibleContentRect().contains(roundedPointInDocument))
+        return false;
+
+    point = roundedPointInDocument;
+    return true;
+}
+
+HitTestResult hitTestInDocument(const Document* document, int x, int y)
+{
+    IntPoint hitPoint(x, y);
+    if (!pointWithScrollAndZoomIfPossible(*document, hitPoint))
         return HitTestResult();
 
     HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
-    HitTestResult result(point);
-    document->renderView()->hitTest(request, result);
+    HitTestResult result(request, hitPoint);
+    document->layoutView()->hitTest(result);
     return result;
 }
 
@@ -276,6 +287,50 @@ Element* TreeScope::elementFromPoint(int x, int y) const
     if (!node || !node->isElementNode())
         return 0;
     return toElement(node);
+}
+
+Vector<Element*> TreeScope::elementsFromPoint(int x, int y) const
+{
+    Vector<Element*> elements;
+
+    Document& document = rootNode().document();
+    IntPoint hitPoint(x, y);
+    if (!pointWithScrollAndZoomIfPossible(document, hitPoint))
+        return elements;
+
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ListBased | HitTestRequest::PenetratingList);
+    HitTestResult result(request, hitPoint);
+    document.layoutView()->hitTest(result);
+
+    Node* lastNode = nullptr;
+    for (const auto rectBasedNode : result.listBasedTestResult()) {
+        Node* node = rectBasedNode.get();
+        if (!node || !node->isElementNode() || node->isDocumentNode())
+            continue;
+
+        if (node->isPseudoElement() || node->isTextNode())
+            node = node->parentOrShadowHostNode();
+        node = ancestorInThisScope(node);
+
+        // Prune duplicate entries. A pseduo ::before content above its parent
+        // node should only result in a single entry.
+        if (node == lastNode)
+            continue;
+
+        if (node && node->isElementNode()) {
+            elements.append(toElement(node));
+            lastNode = node;
+        }
+    }
+
+    if (rootNode().isDocumentNode()) {
+        if (Element* rootElement = toDocument(rootNode()).documentElement()) {
+            if (elements.isEmpty() || elements.last() != rootElement)
+                elements.append(rootElement);
+        }
+    }
+
+    return elements;
 }
 
 void TreeScope::addLabel(const AtomicString& forAttributeValue, HTMLLabelElement* element)
@@ -375,15 +430,15 @@ Element* TreeScope::adjustedFocusedElement() const
     if (!element)
         return 0;
 
-    EventPath eventPath(element);
-    for (size_t i = 0; i < eventPath.size(); ++i) {
-        if (eventPath[i].node() == rootNode()) {
-            // eventPath.at(i).target() is one of the followings:
+    OwnPtrWillBeRawPtr<EventPath> eventPath = adoptPtrWillBeNoop(new EventPath(*element));
+    for (size_t i = 0; i < eventPath->size(); ++i) {
+        if (eventPath->at(i).node() == rootNode()) {
+            // eventPath->at(i).target() is one of the followings:
             // - InsertionPoint
             // - shadow host
             // - Document::focusedElement()
             // So, it's safe to do toElement().
-            return toElement(eventPath[i].target()->toNode());
+            return toElement(eventPath->at(i).target()->toNode());
         }
     }
     return 0;
@@ -457,39 +512,6 @@ TreeScope* TreeScope::commonAncestorTreeScope(TreeScope& other)
     return const_cast<TreeScope*>(static_cast<const TreeScope&>(*this).commonAncestorTreeScope(other));
 }
 
-static void listTreeScopes(Node* node, Vector<TreeScope*, 5>& treeScopes)
-{
-    while (true) {
-        treeScopes.append(&node->treeScope());
-        Element* ancestor = node->shadowHost();
-        if (!ancestor)
-            break;
-        node = ancestor;
-    }
-}
-
-TreeScope* commonTreeScope(Node* nodeA, Node* nodeB)
-{
-    if (!nodeA || !nodeB)
-        return 0;
-
-    if (nodeA->treeScope() == nodeB->treeScope())
-        return &nodeA->treeScope();
-
-    Vector<TreeScope*, 5> treeScopesA;
-    listTreeScopes(nodeA, treeScopesA);
-
-    Vector<TreeScope*, 5> treeScopesB;
-    listTreeScopes(nodeB, treeScopesB);
-
-    size_t indexA = treeScopesA.size();
-    size_t indexB = treeScopesB.size();
-
-    for (; indexA > 0 && indexB > 0 && treeScopesA[indexA - 1] == treeScopesB[indexB - 1]; --indexA, --indexB) { }
-
-    return treeScopesA[indexA] == treeScopesB[indexB] ? treeScopesA[indexA] : 0;
-}
-
 #if ENABLE(SECURITY_ASSERT) && !ENABLE(OILPAN)
 bool TreeScope::deletionHasBegun()
 {
@@ -540,13 +562,13 @@ void TreeScope::setNeedsStyleRecalcForViewportUnits()
     for (Element* element = ElementTraversal::firstWithin(rootNode()); element; element = ElementTraversal::nextIncludingPseudo(*element)) {
         for (ShadowRoot* root = element->youngestShadowRoot(); root; root = root->olderShadowRoot())
             root->setNeedsStyleRecalcForViewportUnits();
-        RenderStyle* style = element->renderStyle();
+        const ComputedStyle* style = element->computedStyle();
         if (style && style->hasViewportUnits())
             element->setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ViewportUnits));
     }
 }
 
-void TreeScope::trace(Visitor* visitor)
+DEFINE_TRACE(TreeScope)
 {
     visitor->trace(m_rootNode);
     visitor->trace(m_document);

@@ -6,20 +6,18 @@
 #define CONTENT_BROWSER_ANDROID_IN_PROCESS_SYNCHRONOUS_COMPOSITOR_FACTORY_IMPL_H_
 
 #include "base/synchronization/lock.h"
+#include "cc/blink/context_provider_web_context.h"
 #include "content/browser/android/in_process/synchronous_input_event_filter.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #include "content/renderer/media/android/stream_texture_factory_synchronous_impl.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
-#include "webkit/common/gpu/context_provider_web_context.h"
 
 namespace gpu {
 class GLInProcessContext;
 }
 
-namespace webkit {
-namespace gpu {
+namespace gpu_blink {
 class WebGraphicsContext3DInProcessCommandBufferImpl;
-}
 }
 
 namespace content {
@@ -27,26 +25,27 @@ namespace content {
 class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
  public:
   SynchronousCompositorFactoryImpl();
-  virtual ~SynchronousCompositorFactoryImpl();
+  ~SynchronousCompositorFactoryImpl() override;
 
   // SynchronousCompositorFactory
-  virtual scoped_refptr<base::MessageLoopProxy> GetCompositorMessageLoop()
-      override;
-  virtual bool RecordFullLayer() override;
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
+  scoped_refptr<base::MessageLoopProxy> GetCompositorMessageLoop() override;
+  bool RecordFullLayer() override;
+  scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       int routing_id,
       scoped_refptr<content::FrameSwapMessageQueue> frame_swap_message_queue)
       override;
-  virtual InputHandlerManagerClient* GetInputHandlerManagerClient() override;
-  virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      CreateOffscreenContextProvider(
-          const blink::WebGraphicsContext3D::Attributes& attributes,
-          const std::string& debug_name) override;
-  virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
+  InputHandlerManagerClient* GetInputHandlerManagerClient() override;
+  scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
+      int routing_id) override;
+  scoped_refptr<cc_blink::ContextProviderWebContext>
+  CreateOffscreenContextProvider(
+      const blink::WebGraphicsContext3D::Attributes& attributes,
+      const std::string& debug_name) override;
+  scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
       int view_id) override;
-  virtual webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl*
-      CreateOffscreenGraphicsContext3D(
-          const blink::WebGraphicsContext3D::Attributes& attributes) override;
+  gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl*
+  CreateOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes) override;
 
   SynchronousInputEventFilter* synchronous_input_event_filter() {
     return &synchronous_input_event_filter_;
@@ -58,8 +57,7 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
   void CompositorInitializedHardwareDraw();
   void CompositorReleasedHardwareDraw();
 
-  scoped_refptr<cc::ContextProvider>
-      CreateOnscreenContextProviderForCompositorThread();
+  scoped_refptr<cc::ContextProvider> CreateContextProviderForCompositor();
 
  private:
   bool CanCreateMainThreadContext();

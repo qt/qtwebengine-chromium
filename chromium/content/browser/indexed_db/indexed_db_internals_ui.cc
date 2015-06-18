@@ -27,6 +27,19 @@
 
 namespace content {
 
+namespace {
+
+bool AllowWhitelistedPaths(const std::vector<base::FilePath>& allowed_paths,
+                           const base::FilePath& candidate_path) {
+  for (const base::FilePath& allowed_path : allowed_paths) {
+    if (allowed_path.IsParent(candidate_path))
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 IndexedDBInternalsUI::IndexedDBInternalsUI(WebUI* web_ui)
     : WebUIController(web_ui) {
   web_ui->RegisterMessageCallback(
@@ -70,7 +83,7 @@ void IndexedDBInternalsUI::AddContextFromStoragePartition(
 }
 
 void IndexedDBInternalsUI::GetAllOrigins(const base::ListValue* args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   BrowserContext* browser_context =
       web_ui()->GetWebContents()->GetBrowserContext();
@@ -103,7 +116,7 @@ void IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread(
 
 void IndexedDBInternalsUI::OnOriginsReady(scoped_ptr<base::ListValue> origins,
                                           const base::FilePath& path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   web_ui()->CallJavascriptFunction(
       "indexeddb.onOriginsReady", *origins, base::StringValue(path.value()));
 }
@@ -158,7 +171,7 @@ bool IndexedDBInternalsUI::GetOriginContext(
 }
 
 void IndexedDBInternalsUI::DownloadOriginData(const base::ListValue* args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::FilePath partition_path;
   GURL origin_url;
@@ -177,7 +190,7 @@ void IndexedDBInternalsUI::DownloadOriginData(const base::ListValue* args) {
 }
 
 void IndexedDBInternalsUI::ForceCloseOrigin(const base::ListValue* args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::FilePath partition_path;
   GURL origin_url;
@@ -223,7 +236,9 @@ void IndexedDBInternalsUI::DownloadOriginDataOnIndexedDBThread(
   // This happens on the "webkit" thread (which is really just the IndexedDB
   // thread) as a simple way to avoid another script reopening the origin
   // while we are zipping.
-  zip::Zip(context->GetFilePath(origin_url), zip_path, true);
+  std::vector<base::FilePath> paths = context->GetStoragePaths(origin_url);
+  zip::ZipWithFilterCallback(context->data_path(), zip_path,
+                             base::Bind(AllowWhitelistedPaths, paths));
 
   BrowserThread::PostTask(BrowserThread::UI,
                           FROM_HERE,
@@ -275,7 +290,7 @@ void IndexedDBInternalsUI::OnDownloadDataReady(
     const base::FilePath temp_path,
     const base::FilePath zip_path,
     size_t connection_count) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   const GURL url = GURL(FILE_PATH_LITERAL("file://") + zip_path.value());
   BrowserContext* browser_context =
       web_ui()->GetWebContents()->GetBrowserContext();
@@ -284,8 +299,8 @@ void IndexedDBInternalsUI::OnDownloadDataReady(
   DownloadManager* dlm = BrowserContext::GetDownloadManager(browser_context);
 
   const GURL referrer(web_ui()->GetWebContents()->GetLastCommittedURL());
-  dl_params->set_referrer(
-      content::Referrer(referrer, blink::WebReferrerPolicyDefault));
+  dl_params->set_referrer(content::Referrer::SanitizeForRequest(
+      url, content::Referrer(referrer, blink::WebReferrerPolicyDefault)));
 
   // This is how to watch for the download to finish: first wait for it
   // to start, then attach a DownloadItem::Observer to observe the

@@ -57,7 +57,7 @@ public:
 
     static PassRefPtrWillBeRawPtr<PickerIndicatorElement> create(Document&, PickerIndicatorOwner&);
     virtual ~PickerIndicatorElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void openPopup();
     void closePopup();
@@ -73,7 +73,7 @@ public:
 
 private:
     PickerIndicatorElement(Document&, PickerIndicatorOwner&);
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual void defaultEventHandler(Event*) override;
     virtual void detach(const AttachContext& = AttachContext()) override;
     virtual bool isPickerIndicatorElement() const override;

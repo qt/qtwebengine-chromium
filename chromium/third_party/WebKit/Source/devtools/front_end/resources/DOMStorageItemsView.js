@@ -34,14 +34,13 @@ WebInspector.DOMStorageItemsView = function(domStorage)
 
     this.domStorage = domStorage;
 
-    this.element.classList.add("storage-view");
-    this.element.classList.add("table");
+    this.element.classList.add("storage-view", "table");
 
-    this.deleteButton = new WebInspector.StatusBarButton(WebInspector.UIString("Delete"), "delete-storage-status-bar-item");
-    this.deleteButton.visible = false;
+    this.deleteButton = new WebInspector.ToolbarButton(WebInspector.UIString("Delete"), "delete-toolbar-item");
+    this.deleteButton.setVisible(false);
     this.deleteButton.addEventListener("click", this._deleteButtonClicked, this);
 
-    this.refreshButton = new WebInspector.StatusBarButton(WebInspector.UIString("Refresh"), "refresh-storage-status-bar-item");
+    this.refreshButton = new WebInspector.ToolbarButton(WebInspector.UIString("Refresh"), "refresh-toolbar-item");
     this.refreshButton.addEventListener("click", this._refreshButtonClicked, this);
 
     this.domStorage.addEventListener(WebInspector.DOMStorage.Events.DOMStorageItemsCleared, this._domStorageItemsCleared, this);
@@ -51,9 +50,12 @@ WebInspector.DOMStorageItemsView = function(domStorage)
 }
 
 WebInspector.DOMStorageItemsView.prototype = {
-    get statusBarItems()
+    /**
+     * @return {!Array.<!WebInspector.ToolbarItem>}
+     */
+    toolbarItems: function()
     {
-        return [this.refreshButton.element, this.deleteButton.element];
+        return [this.refreshButton, this.deleteButton];
     },
 
     wasShown: function()
@@ -63,7 +65,7 @@ WebInspector.DOMStorageItemsView.prototype = {
 
     willHide: function()
     {
-        this.deleteButton.visible = false;
+        this.deleteButton.setVisible(false);
     },
 
     /**
@@ -76,7 +78,7 @@ WebInspector.DOMStorageItemsView.prototype = {
 
         this._dataGrid.rootNode().removeChildren();
         this._dataGrid.addCreationNode(false);
-        this.deleteButton.visible = false;
+        this.deleteButton.setVisible(false);
         event.consume(true);
     },
 
@@ -98,7 +100,7 @@ WebInspector.DOMStorageItemsView.prototype = {
             var childNode = children[i];
             if (childNode.data.key === storageData.key) {
                 rootNode.removeChild(childNode);
-                this.deleteButton.visible = (children.length > 1);
+                this.deleteButton.setVisible(children.length > 1);
                 return;
             }
         }
@@ -117,7 +119,7 @@ WebInspector.DOMStorageItemsView.prototype = {
         var children = rootNode.children;
 
         event.consume(true);
-        this.deleteButton.visible = true;
+        this.deleteButton.setVisible(true);
 
         for (var i = 0; i < children.length; ++i)
             if (children[i].data.key === storageData.key)
@@ -156,14 +158,14 @@ WebInspector.DOMStorageItemsView.prototype = {
                     childNode.select();
                     childNode.reveal();
                 }
-                this.deleteButton.visible = true;
+                this.deleteButton.setVisible(true);
             }
         }
     },
 
     _update: function()
     {
-        this.detachChildViews();
+        this.detachChildWidgets();
         this.domStorage.getItems(this._showDOMStorageItems.bind(this));
     },
 
@@ -174,7 +176,7 @@ WebInspector.DOMStorageItemsView.prototype = {
 
         this._dataGrid = this._dataGridForDOMStorageItems(items);
         this._dataGrid.show(this.element);
-        this.deleteButton.visible = (this._dataGrid.rootNode().children.length > 1);
+        this.deleteButton.setVisible(this._dataGrid.rootNode().children.length > 1);
     },
 
     _dataGridForDOMStorageItems: function(items)

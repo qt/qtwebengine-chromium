@@ -9,6 +9,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
+#include "sql/test/test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
 
@@ -27,7 +28,7 @@ class SQLiteFeaturesTest : public testing::Test {
  public:
   SQLiteFeaturesTest() : error_(SQLITE_OK) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(db_.Open(temp_dir_.path().AppendASCII("SQLStatementTest.db")));
 
@@ -37,14 +38,15 @@ class SQLiteFeaturesTest : public testing::Test {
                                       &error_, &sql_text_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // If any error happened the original sql statement can be found in
     // |sql_text_|.
-    EXPECT_EQ(SQLITE_OK, error_);
+    EXPECT_EQ(SQLITE_OK, error_) << sql_text_;
     db_.Close();
   }
 
   sql::Connection& db() { return db_; }
+  int error() { return error_; }
 
  private:
   base::ScopedTempDir temp_dir_;
@@ -63,19 +65,85 @@ TEST_F(SQLiteFeaturesTest, NoFTS1) {
       "CREATE VIRTUAL TABLE foo USING fts1(x)"));
 }
 
-#if defined(SQLITE_ENABLE_FTS2)
-// fts2 is used for older history files, so we're signed on for keeping our
-// version up-to-date.
-// TODO(shess): Think up a crazy way to get out from having to support
-// this forever.
-TEST_F(SQLiteFeaturesTest, FTS2) {
-  ASSERT_TRUE(db().Execute("CREATE VIRTUAL TABLE foo USING fts2(x)"));
+// Do not include fts2 support, it is not useful, and nobody is
+// looking at it.
+TEST_F(SQLiteFeaturesTest, NoFTS2) {
+  ASSERT_EQ(SQLITE_ERROR, db().ExecuteAndReturnErrorCode(
+      "CREATE VIRTUAL TABLE foo USING fts2(x)"));
+}
+
+// fts3 used to be used for history files, and may also be used by WebDatabase
+// clients.
+TEST_F(SQLiteFeaturesTest, FTS3) {
+  ASSERT_TRUE(db().Execute("CREATE VIRTUAL TABLE foo USING fts3(x)"));
+}
+
+#if !defined(USE_SYSTEM_SQLITE)
+// Originally history used fts2, which Chromium patched to treat "foo*" as a
+// prefix search, though the icu tokenizer would return it as two tokens {"foo",
+// "*"}.  Test that fts3 works correctly.
+TEST_F(SQLiteFeaturesTest, FTS3_Prefix) {
+  const char kCreateSql[] =
+      "CREATE VIRTUAL TABLE foo USING fts3(x, tokenize icu)";
+  ASSERT_TRUE(db().Execute(kCreateSql));
+
+  ASSERT_TRUE(db().Execute("INSERT INTO foo (x) VALUES ('test')"));
+
+  sql::Statement s(db().GetUniqueStatement(
+      "SELECT x FROM foo WHERE x MATCH 'te*'"));
+  ASSERT_TRUE(s.Step());
+  EXPECT_EQ("test", s.ColumnString(0));
 }
 #endif
 
-// fts3 is used for current history files, and also for WebDatabase.
-TEST_F(SQLiteFeaturesTest, FTS3) {
-  ASSERT_TRUE(db().Execute("CREATE VIRTUAL TABLE foo USING fts3(x)"));
+#if !defined(USE_SYSTEM_SQLITE)
+// Verify that Chromium's SQLite is compiled with HAVE_USLEEP defined.  With
+// HAVE_USLEEP, SQLite uses usleep() with millisecond granularity.  Otherwise it
+// uses sleep() with second granularity.
+TEST_F(SQLiteFeaturesTest, UsesUsleep) {
+  base::TimeTicks before = base::TimeTicks::Now();
+  sqlite3_sleep(1);
+  base::TimeDelta delta = base::TimeTicks::Now() - before;
+
+  // It is not impossible for this to be over 1000 if things are compiled the
+  // right way.  But it is very unlikely, most platforms seem to be around
+  // <TBD>.
+  LOG(ERROR) << "Milliseconds: " << delta.InMilliseconds();
+  EXPECT_LT(delta.InMilliseconds(), 1000);
+}
+#endif
+
+// Ensure that our SQLite version has working foreign key support with cascade
+// delete support.
+TEST_F(SQLiteFeaturesTest, ForeignKeySupport) {
+  ASSERT_TRUE(db().Execute("PRAGMA foreign_keys=1"));
+  ASSERT_TRUE(db().Execute("CREATE TABLE parents (id INTEGER PRIMARY KEY)"));
+  ASSERT_TRUE(db().Execute(
+      "CREATE TABLE children ("
+      "    id INTEGER PRIMARY KEY,"
+      "    pid INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE)"));
+
+  // Inserting without a matching parent should fail with constraint violation.
+  // Mask off any extended error codes for USE_SYSTEM_SQLITE.
+  int insertErr = db().ExecuteAndReturnErrorCode(
+      "INSERT INTO children VALUES (10, 1)");
+  EXPECT_EQ(SQLITE_CONSTRAINT, (insertErr&0xff));
+
+  size_t rows;
+  EXPECT_TRUE(sql::test::CountTableRows(&db(), "children", &rows));
+  EXPECT_EQ(0u, rows);
+
+  // Inserting with a matching parent should work.
+  ASSERT_TRUE(db().Execute("INSERT INTO parents VALUES (1)"));
+  EXPECT_TRUE(db().Execute("INSERT INTO children VALUES (11, 1)"));
+  EXPECT_TRUE(db().Execute("INSERT INTO children VALUES (12, 1)"));
+  EXPECT_TRUE(sql::test::CountTableRows(&db(), "children", &rows));
+  EXPECT_EQ(2u, rows);
+
+  // Deleting the parent should cascade, i.e., delete the children as well.
+  ASSERT_TRUE(db().Execute("DELETE FROM parents"));
+  EXPECT_TRUE(sql::test::CountTableRows(&db(), "children", &rows));
+  EXPECT_EQ(0u, rows);
 }
 
 }  // namespace

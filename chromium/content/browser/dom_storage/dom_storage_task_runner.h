@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
-#define CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
+#ifndef CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_H_
+#define CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_H_
 
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
@@ -36,10 +36,9 @@ class CONTENT_EXPORT DOMStorageTaskRunner
 
   // The PostTask() and PostDelayedTask() methods defined by TaskRunner
   // post shutdown-blocking tasks on the primary sequence.
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) = 0;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override = 0;
 
   // Posts a shutdown blocking task to |sequence_id|.
   virtual bool PostShutdownBlockingTask(
@@ -128,4 +127,4 @@ class CONTENT_EXPORT MockDOMStorageTaskRunner :
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_
+#endif  // CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_TASK_RUNNER_H_

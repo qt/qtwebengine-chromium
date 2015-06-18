@@ -54,7 +54,7 @@ bool SkROLockPixelsPixelRef::onLockPixelsAreWritable() const {
 ///////////////////////////////////////////////////////////////////////////////
 
 static SkGrPixelRef* copy_to_new_texture_pixelref(GrTexture* texture, SkColorType dstCT,
-                                                  const SkIRect* subset) {
+                                                  SkColorProfileType dstPT, const SkIRect* subset) {
     if (NULL == texture || kUnknown_SkColorType == dstCT) {
         return NULL;
     }
@@ -77,10 +77,10 @@ static SkGrPixelRef* copy_to_new_texture_pixelref(GrTexture* texture, SkColorTyp
         desc.fHeight = subset->height();
         srcRect = *subset;
     }
-    desc.fFlags = kRenderTarget_GrSurfaceFlag | kNoStencil_GrSurfaceFlag;
-    desc.fConfig = SkImageInfo2GrPixelConfig(dstCT, kPremul_SkAlphaType);
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
+    desc.fConfig = SkImageInfo2GrPixelConfig(dstCT, kPremul_SkAlphaType, dstPT);
 
-    GrTexture* dst = context->createUncachedTexture(desc, NULL, 0);
+    GrTexture* dst = context->textureProvider()->createTexture(desc, false, NULL, 0);
     if (NULL == dst) {
         return NULL;
     }
@@ -91,7 +91,8 @@ static SkGrPixelRef* copy_to_new_texture_pixelref(GrTexture* texture, SkColorTyp
     context->copySurface(dst->asRenderTarget(), texture, srcRect, SkIPoint::Make(0,0),
                          GrContext::kFlushWrites_PixelOp);
   
-    SkImageInfo info = SkImageInfo::Make(desc.fWidth, desc.fHeight, dstCT, kPremul_SkAlphaType);
+    SkImageInfo info = SkImageInfo::Make(desc.fWidth, desc.fHeight, dstCT, kPremul_SkAlphaType,
+                                         dstPT);
     SkGrPixelRef* pixelRef = SkNEW_ARGS(SkGrPixelRef, (info, dst));
     SkSafeUnref(dst);
     return pixelRef;
@@ -125,7 +126,8 @@ GrTexture* SkGrPixelRef::getTexture() {
     return NULL;
 }
 
-SkPixelRef* SkGrPixelRef::deepCopy(SkColorType dstCT, const SkIRect* subset) {
+SkPixelRef* SkGrPixelRef::deepCopy(SkColorType dstCT, SkColorProfileType dstPT,
+                                   const SkIRect* subset) {
     if (NULL == fSurface) {
         return NULL;
     }
@@ -136,7 +138,7 @@ SkPixelRef* SkGrPixelRef::deepCopy(SkColorType dstCT, const SkIRect* subset) {
     // a GrTexture owned elsewhere (e.g., SkGpuDevice), and cannot live
     // independently of that texture.  Texture-backed pixel refs, on the other
     // hand, own their GrTextures, and are thus self-contained.
-    return copy_to_new_texture_pixelref(fSurface->asTexture(), dstCT, subset);
+    return copy_to_new_texture_pixelref(fSurface->asTexture(), dstCT, dstPT, subset);
 }
 
 static bool tryAllocBitmapPixels(SkBitmap* bitmap) {
@@ -187,7 +189,7 @@ bool SkGrPixelRef::onReadPixels(SkBitmap* dst, const SkIRect* subset) {
         // If we are here, pixels were read correctly from the surface.
         cachedBitmap.setImmutable();
         //Add to the cache
-        SkBitmapCache::Add(this->getGenerationID(), bounds, cachedBitmap);
+        SkBitmapCache::Add(this, bounds, cachedBitmap);
 
         dst->swap(cachedBitmap);
     }

@@ -14,6 +14,7 @@
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/common/content_export.h"
 #include "net/base/load_states.h"
+#include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -21,7 +22,6 @@ class GURL;
 class SkBitmap;
 struct ViewHostMsg_CreateWindow_Params;
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
-struct ViewMsg_PostMessage_Params;
 
 namespace base {
 class ListValue;
@@ -110,7 +110,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                            const PageState& state) {}
 
   // The destination URL has changed should be updated.
-  virtual void UpdateTargetURL(const GURL& url) {}
+  virtual void UpdateTargetURL(RenderViewHost* render_view_host,
+                               const GURL& url) {}
 
   // The page is trying to close the RenderView's representation in the client.
   virtual void Close(RenderViewHost* render_view_host) {}
@@ -128,19 +129,10 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}
 
-  // The page wants to post a message to the active view in this tab.
-  virtual void RouteMessageEvent(
-      RenderViewHost* rvh,
-      const ViewMsg_PostMessage_Params& params) {}
-
   // Return a dummy RendererPreferences object that will be used by the renderer
   // associated with the owning RenderViewHost.
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const = 0;
-
-  // Computes a WebPreferences object that will be used by the renderer
-  // associated with the owning render view host.
-  virtual WebPreferences ComputeWebkitPrefs();
 
   // Notification the user has made a gesture while focus was on the
   // page. This is used to avoid uninitiated user downloads (aka carpet
@@ -176,24 +168,16 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // Notification that the view has lost capture.
   virtual void LostCapture() {}
 
-  // Notifications about mouse events in this view.  This is useful for
-  // implementing global 'on hover' features external to the view.
-  virtual void HandleMouseMove() {}
-  virtual void HandleMouseDown() {}
-  virtual void HandleMouseLeave() {}
-  virtual void HandleMouseUp() {}
-  virtual void HandlePointerActivate() {}
-  virtual void HandleGestureBegin() {}
-  virtual void HandleGestureEnd() {}
-
   // Called when a file selection is to be done.
   virtual void RunFileChooser(
       RenderViewHost* render_view_host,
       const FileChooserParams& params) {}
 
-  // Notification that the page wants to go into or out of fullscreen mode.
-  virtual void ToggleFullscreenMode(bool enter_fullscreen) {}
+  // Returns whether the associated tab is in fullscreen mode.
   virtual bool IsFullscreenForCurrentTab() const;
+
+  // Returns the display mode for the view.
+  virtual blink::WebDisplayMode GetDisplayMode() const;
 
   // The contents' preferred size changed.
   virtual void UpdatePreferredSize(const gfx::Size& pref_size) {}
@@ -250,13 +234,13 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // the Windows function which is actually a #define.
   virtual void ShowCreatedWindow(int route_id,
                                  WindowOpenDisposition disposition,
-                                 const gfx::Rect& initial_pos,
+                                 const gfx::Rect& initial_rect,
                                  bool user_gesture) {}
 
   // Show the newly created widget with the specified bounds.
   // The widget is identified by the route_id passed to CreateNewWidget.
   virtual void ShowCreatedWidget(int route_id,
-                                 const gfx::Rect& initial_pos) {}
+                                 const gfx::Rect& initial_rect) {}
 
   // Show the newly created full screen widget. Similar to above.
   virtual void ShowCreatedFullscreenWidget(int route_id) {}
@@ -279,6 +263,13 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // TODO(ajwong): Remove once the main frame RenderFrameHost is no longer
   // created by the RenderViewHost.
   virtual FrameTree* GetFrameTree();
+
+  // Optional state storage for if the Virtual Keyboard has been requested by
+  // this page or not. If it has, this can be used to suppress things like the
+  // link disambiguation dialog, which doesn't interact well with the virtual
+  // keyboard.
+  virtual void SetIsVirtualKeyboardRequested(bool requested) {}
+  virtual bool IsVirtualKeyboardRequested();
 
  protected:
   virtual ~RenderViewHostDelegate() {}

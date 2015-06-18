@@ -35,7 +35,6 @@ enum IPCMessageStart {
   AutofillMsgStart,
   SafeBrowsingMsgStart,
   P2PMsgStart,
-  SocketStreamMsgStart,
   ResourceMsgStart,
   FileSystemMsgStart,
   ChildProcessMsgStart,
@@ -45,8 +44,6 @@ enum IPCMessageStart {
   DeviceLightMsgStart,
   DeviceMotionMsgStart,
   DeviceOrientationMsgStart,
-  DesktopNotificationMsgStart,
-  GeolocationMsgStart,
   AudioMsgStart,
   MidiMsgStart,
   ChromeMsgStart,
@@ -86,6 +83,7 @@ enum IPCMessageStart {
   LocalDiscoveryMsgStart,
   PowerMonitorMsgStart,
   EncryptedMediaMsgStart,
+  CacheStorageMsgStart,
   ServiceWorkerMsgStart,
   MessagePortMsgStart,
   EmbeddedWorkerMsgStart,
@@ -100,7 +98,6 @@ enum IPCMessageStart {
   CldDataProviderMsgStart,
   PushMessagingMsgStart,
   GinJavaBridgeMsgStart,
-  BatteryStatusMsgStart,
   ChromeUtilityPrintingMsgStart,
   AecDumpMsgStart,
   OzoneGpuMsgStart,
@@ -113,6 +110,20 @@ enum IPCMessageStart {
   ExtensionUtilityMsgStart,
   GeofencingMsgStart,
   LayoutTestMsgStart,
+  NetworkHintsMsgStart,
+  BluetoothMsgStart,
+  NavigatorConnectMsgStart,
+  CastMediaMsgStart,
+  AwMessagePortMsgStart,
+  ExtensionsGuestViewMsgStart,
+  GuestViewMsgStart,
+  // Note: CastCryptoMsgStart and CastChannelMsgStart reserved for Chromecast
+  // internal code. Contact gunsch@ before changing/removing.
+  CastCryptoMsgStart,
+  CastChannelMsgStart,
+  DataReductionProxyStart,
+  ContentSettingsMsgStart,
+  ChromeAppBannerMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

@@ -24,10 +24,10 @@
 
 #include "core/SVGNames.h"
 #include "core/dom/Element.h"
-#include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
@@ -38,15 +38,17 @@ class CSSCursorImageValue;
 class Document;
 class SVGAnimatedPropertyBase;
 class SubtreeLayoutScope;
+class SVGAnimatedString;
 class SVGCursorElement;
 class SVGDocumentExtensions;
 class SVGElement;
 class SVGElementRareData;
 class SVGFitToViewBox;
+class SVGLength;
 class SVGSVGElement;
 class SVGUseElement;
 
-typedef WillBeHeapHashSet<RawPtrWillBeMember<SVGElement> > SVGElementSet;
+typedef WillBeHeapHashSet<RawPtrWillBeMember<SVGElement>> SVGElementSet;
 
 class SVGElement : public Element {
     DEFINE_WRAPPERTYPEINFO();
@@ -65,6 +67,7 @@ public:
     virtual String title() const override;
     bool hasRelativeLengths() const { return !m_elementsWithRelativeLengths.isEmpty(); }
     static bool isAnimatableCSSProperty(const QualifiedName&);
+
     enum CTMScope {
         NearestViewportScope, // Used by SVGGraphicsElement::getCTM()
         ScreenScope, // Used by SVGGraphicsElement::getScreenCTM()
@@ -92,7 +95,7 @@ public:
 
     virtual void svgAttributeChanged(const QualifiedName&);
 
-    PassRefPtr<SVGAnimatedPropertyBase> propertyFromAttribute(const QualifiedName& attributeName);
+    PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase> propertyFromAttribute(const QualifiedName& attributeName);
     static AnimatedPropertyType animatedPropertyTypeForCSSAttribute(const QualifiedName& attributeName);
 
     void sendSVGLoadEventToSelfAndAncestorChainIfPossible();
@@ -101,12 +104,13 @@ public:
     void svgLoadEventTimerFired(Timer<SVGElement>*);
     virtual Timer<SVGElement>* svgLoadEventTimer();
 
-    virtual AffineTransform* animateMotionTransform() { return 0; }
+    virtual AffineTransform* animateMotionTransform() { return nullptr; }
 
     void invalidateSVGAttributes() { ensureUniqueElementData().m_animatedSVGAttributesAreDirty = true; }
     void invalidateSVGPresentationAttributeStyle() { ensureUniqueElementData().m_presentationAttributeStyleIsDirty = true; }
+    void addSVGLengthPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, SVGLength&);
 
-    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instancesForElement() const;
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& instancesForElement() const;
     void mapInstanceToElement(SVGElement*);
     void removeInstanceMapping(SVGElement*);
 
@@ -126,7 +130,7 @@ public:
 
     void synchronizeAnimatedSVGAttribute(const QualifiedName&) const;
 
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override final;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override final;
 
     virtual void synchronizeRequiredFeatures() { }
     virtual void synchronizeRequiredExtensions() { }
@@ -147,7 +151,7 @@ public:
 
     void invalidateRelativeLengthClients(SubtreeLayoutScope* = 0);
 
-    void addToPropertyMap(PassRefPtr<SVGAnimatedPropertyBase>);
+    void addToPropertyMap(PassRefPtrWillBeRawPtr<SVGAnimatedPropertyBase>);
 
     SVGAnimatedString* className() { return m_className.get(); }
 
@@ -183,23 +187,20 @@ public:
 
     void invalidateInstances();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     static const AtomicString& eventParameterName();
+
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const { return false; }
 
 protected:
     SVGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
-    // FIXME: |parseAttributeNew| is a new implementation of parseAttribute
-    // which maps attribute using |m_attributeToPropertyMap|.
-    // This is to replace |parseAttribute()| after all derived class switch to call this.
-    void parseAttributeNew(const QualifiedName&, const AtomicString&);
-
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly) override;
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
@@ -209,7 +210,7 @@ protected:
     static CSSPropertyID cssPropertyIdForSVGAttributeName(const QualifiedName&);
     void updateRelativeLengthsInformation() { updateRelativeLengthsInformation(selfHasRelativeLengths(), this); }
     void updateRelativeLengthsInformation(bool hasRelativeLengths, SVGElement*);
-    static void markForLayoutAndParentResourceInvalidation(RenderObject*);
+    static void markForLayoutAndParentResourceInvalidation(LayoutObject*);
 
     virtual bool selfHasRelativeLengths() const { return false; }
 
@@ -227,18 +228,18 @@ protected:
     bool hasFocusEventListeners() const;
 
 private:
-    bool isSVGElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isStyledElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isSVGElement() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isStyledElement() const = delete; // This will catch anyone doing an unnecessary check.
 
-    RenderStyle* computedStyle(PseudoId = NOPSEUDO);
-    virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) override final { return computedStyle(pseudoElementSpecifier); }
+    const ComputedStyle* ensureComputedStyle(PseudoId = NOPSEUDO);
+    virtual const ComputedStyle* virtualEnsureComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) override final { return ensureComputedStyle(pseudoElementSpecifier); }
     virtual void willRecalcStyle(StyleRecalcChange) override;
 
     void buildPendingResourcesIfNeeded();
 
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> > m_elementsWithRelativeLengths;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>> m_elementsWithRelativeLengths;
 
-    typedef HashMap<QualifiedName, RefPtr<SVGAnimatedPropertyBase> > AttributeToPropertyMap;
+    typedef WillBeHeapHashMap<QualifiedName, RefPtrWillBeMember<SVGAnimatedPropertyBase>> AttributeToPropertyMap;
     AttributeToPropertyMap m_attributeToPropertyMap;
 
 #if ENABLE(ASSERT)
@@ -246,7 +247,7 @@ private:
 #endif
 
     OwnPtrWillBeMember<SVGElementRareData> m_SVGRareData;
-    RefPtr<SVGAnimatedString> m_className;
+    RefPtrWillBeMember<SVGAnimatedString> m_className;
 };
 
 struct SVGAttributeHashTranslator {
@@ -278,8 +279,8 @@ inline bool Node::hasTagName(const SVGQualifiedName& name) const
     inline bool is##thisType(const SVGElement* element) { return element && is##thisType(*element); } \
     inline bool is##thisType(const Node& node) { return node.isSVGElement() ? is##thisType(toSVGElement(node)) : false; } \
     inline bool is##thisType(const Node* node) { return node && is##thisType(*node); } \
-    template<typename T> inline bool is##thisType(const PassRefPtr<T>& node) { return is##thisType(node.get()); } \
-    template<typename T> inline bool is##thisType(const RefPtr<T>& node) { return is##thisType(node.get()); } \
+    template<typename T> inline bool is##thisType(const PassRefPtrWillBeRawPtr<T>& node) { return is##thisType(node.get()); } \
+    template<typename T> inline bool is##thisType(const RefPtrWillBeMember<T>& node) { return is##thisType(node.get()); } \
     template <> inline bool isElementOfType<const thisType>(const SVGElement& element) { return is##thisType(element); } \
     DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType)
 

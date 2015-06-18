@@ -7,6 +7,7 @@
 
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -120,6 +121,11 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
       RegistrationData* registration,
       std::vector<ResourceRecord>* resources);
 
+  // Looks up the origin for the registration with |registration_id|. Returns OK
+  // if a registration was found and read successfully. Otherwise, returns an
+  // error.
+  Status ReadRegistrationOrigin(int64 registration_id, GURL* origin);
+
   // Writes |registration| and |resources| into the database and does following
   // things:
   //   - If an old version of the registration exists, deletes it and sets
@@ -157,6 +163,31 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
                             const GURL& origin,
                             RegistrationData* deleted_version,
                             std::vector<int64>* newly_purgeable_resources);
+
+  // Reads user data for |registration_id| and |user_data_name| from the
+  // database.
+  Status ReadUserData(int64 registration_id,
+                      const std::string& user_data_name,
+                      std::string* user_data);
+
+  // Writes |user_data| into the database. Returns NOT_FOUND if the registration
+  // specified by |registration_id| does not exist in the database.
+  Status WriteUserData(int64 registration_id,
+                       const GURL& origin,
+                       const std::string& user_data_name,
+                       const std::string& user_data);
+
+  // Deletes user data for |registration_id| and |user_data_name| from the
+  // database. Returns OK if it's successfully deleted or not found in the
+  // database.
+  Status DeleteUserData(int64 registration_id,
+                        const std::string& user_data_name);
+
+  // Reads user data for all registrations that have data with |user_data_name|
+  // from the database. Returns OK if they are successfully read or not found.
+  Status ReadUserDataForAllRegistrations(
+      const std::string& user_data_name,
+      std::vector<std::pair<int64, std::string>>* user_data);
 
   // As new resources are put into the diskcache, they go into an uncommitted
   // list. When a registration is saved that refers to those ids, they're
@@ -216,6 +247,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // the database is new or nonexistent, that is, it has never been used.
   bool IsNewOrNonexistentDatabase(Status status);
 
+  // Upgrades the database schema from version 1 to version 2. Called by
+  // LazyOpen() when the stored schema is older than version 2.
+  Status UpgradeDatabaseSchemaFromV1ToV2();
+
   // Reads the next available id for |id_key|. Returns OK if it's successfully
   // read. Fills |next_avail_id| with an initial value and returns OK if it's
   // not found in the database. Otherwise, returns an error.
@@ -271,6 +306,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   Status DeleteResourceIdsInBatch(
       const char* id_key_prefix,
       const std::set<int64>& ids,
+      leveldb::WriteBatch* batch);
+
+  // Deletes all user data for |registration_id| from the database. Returns OK
+  // if they are successfully deleted or not found in the database.
+  Status DeleteUserDataForRegistration(
+      int64 registration_id,
       leveldb::WriteBatch* batch);
 
   // Reads the current schema version from the database. If the database hasn't
@@ -330,7 +371,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, OpenDatabase_InMemory);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DatabaseVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, GetNextAvailableIds);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
+                           Registration_UninitializedDatabase);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
+                           UserData_UninitializedDatabase);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DestroyDatabase);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, UpgradeSchemaToVersion2);
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDatabase);
 };

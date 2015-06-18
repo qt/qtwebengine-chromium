@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_indata.c 269448 2014-08-02 21:36:40Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_indata.c 280440 2015-03-24 15:05:36Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -1509,13 +1509,7 @@ sctp_process_a_data_chunk(struct sctp_tcb *stcb, struct sctp_association *asoc,
 				     the_len, M_NOWAIT);
 #ifdef SCTP_MBUF_LOGGING
 		if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-			struct mbuf *mat;
-
-			for (mat = dmbuf; mat; mat = SCTP_BUF_NEXT(mat)) {
-				if (SCTP_BUF_IS_EXTENDED(mat)) {
-					sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-				}
-			}
+			sctp_log_mbc(dmbuf, SCTP_MBUF_ICOPY);
 		}
 #endif
 	} else {
@@ -2310,7 +2304,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
                   struct sctphdr *sh, struct sctp_inpcb *inp,
                   struct sctp_tcb *stcb, struct sctp_nets *net, uint32_t *high_tsn,
 #if defined(__FreeBSD__)
-                  uint8_t use_mflowid, uint32_t mflowid,
+                  uint8_t mflowtype, uint32_t mflowid,
 #endif
 		  uint32_t vrf_id, uint16_t port)
 {
@@ -2408,7 +2402,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
 				sctp_abort_association(inp, stcb, m, iphlen,
 				                       src, dst, sh, op_err,
 #if defined(__FreeBSD__)
-				                       use_mflowid, mflowid,
+				                       mflowtype, mflowid,
 #endif
 				                       vrf_id, port);
 				return (2);
@@ -2425,7 +2419,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
 				sctp_abort_association(inp, stcb, m, iphlen,
 				                       src, dst, sh, op_err,
 #if defined(__FreeBSD__)
-				                       use_mflowid, mflowid,
+				                       mflowtype, mflowid,
 #endif
 				                       vrf_id, port);
 				return (2);
@@ -2496,7 +2490,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
 					                       src, dst,
 					                       sh, op_err,
 #if defined(__FreeBSD__)
-					                       use_mflowid, mflowid,
+					                       mflowtype, mflowid,
 #endif
 					                       vrf_id, port);
 					return (2);
@@ -2625,12 +2619,14 @@ sctp_process_segment_range(struct sctp_tcb *stcb, struct sctp_tmit_chunk **p_tp1
 			 * cumack trackers for first transmissions,
 			 * and retransmissions.
 			 */
-			if ((tp1->whoTo->find_pseudo_cumack == 1) && (tp1->sent < SCTP_DATAGRAM_RESEND) &&
+			if ((tp1->sent < SCTP_DATAGRAM_RESEND) &&
+			    (tp1->whoTo->find_pseudo_cumack == 1) &&
 			    (tp1->snd_count == 1)) {
 				tp1->whoTo->pseudo_cumack = tp1->rec.data.TSN_seq;
 				tp1->whoTo->find_pseudo_cumack = 0;
 			}
-			if ((tp1->whoTo->find_rtx_pseudo_cumack == 1) && (tp1->sent < SCTP_DATAGRAM_RESEND) &&
+			if ((tp1->sent < SCTP_DATAGRAM_RESEND) &&
+			    (tp1->whoTo->find_rtx_pseudo_cumack == 1) &&
 			    (tp1->snd_count > 1)) {
 				tp1->whoTo->rtx_pseudo_cumack = tp1->rec.data.TSN_seq;
 				tp1->whoTo->find_rtx_pseudo_cumack = 0;
@@ -3526,7 +3522,7 @@ sctp_window_probe_recovery(struct sctp_tcb *stcb,
 	if ((tp1->sent >= SCTP_DATAGRAM_ACKED) || (tp1->data == NULL)) {
 		/* TSN's skipped we do NOT move back. */
 		sctp_misc_ints(SCTP_FLIGHT_LOG_DWN_WP_FWD,
-			       tp1->whoTo->flight_size,
+			       tp1->whoTo ? tp1->whoTo->flight_size : 0,
 			       tp1->book_size,
 			       (uintptr_t)tp1->whoTo,
 			       tp1->rec.data.TSN_seq);

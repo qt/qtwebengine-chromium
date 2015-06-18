@@ -35,7 +35,7 @@ namespace blink {
 
 class NodeListsNodeData final : public NoBaseWillBeGarbageCollectedFinalized<NodeListsNodeData> {
     WTF_MAKE_NONCOPYABLE(NodeListsNodeData);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(NodeListsNodeData);
 public:
     ChildNodeList* childNodeList(ContainerNode& node)
     {
@@ -93,7 +93,7 @@ public:
     // on object destruction is replaced by the garbage collector
     // clearing out their weak reference.
     typedef WillBeHeapHashMap<std::pair<unsigned char, StringImpl*>, RawPtrWillBeWeakMember<LiveNodeListBase>, NodeListAtomicCacheMapEntryHash> NodeListAtomicNameCacheMap;
-    typedef WillBeHeapHashMap<QualifiedName, RawPtrWillBeWeakMember<TagCollection> > TagCollectionCacheNS;
+    typedef WillBeHeapHashMap<QualifiedName, RawPtrWillBeWeakMember<TagCollection>> TagCollectionCacheNS;
 
     template<typename T>
     PassRefPtrWillBeRawPtr<T> addCache(ContainerNode& node, CollectionType collectionType, const AtomicString& name)
@@ -201,7 +201,7 @@ public:
         }
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     NodeListsNodeData()

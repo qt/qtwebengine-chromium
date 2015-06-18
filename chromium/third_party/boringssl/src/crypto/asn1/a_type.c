@@ -111,7 +111,7 @@ int ASN1_TYPE_set1(ASN1_TYPE *a, int type, const void *value)
 	}
 
 /* Returns 0 if they are equal, != 0 otherwise. */
-int ASN1_TYPE_cmp(ASN1_TYPE *a, ASN1_TYPE *b)
+int ASN1_TYPE_cmp(const ASN1_TYPE *a, const ASN1_TYPE *b)
 	{
 	int result = -1;
 
@@ -124,6 +124,9 @@ int ASN1_TYPE_cmp(ASN1_TYPE *a, ASN1_TYPE *b)
 		break;
 	case V_ASN1_NULL:
 		result = 0;	/* They do not have content. */
+		break;
+	case V_ASN1_BOOLEAN:
+		result = a->value.boolean - b->value.boolean;
 		break;
 	case V_ASN1_INTEGER:
 	case V_ASN1_NEG_INTEGER:

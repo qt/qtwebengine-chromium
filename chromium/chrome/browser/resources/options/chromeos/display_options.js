@@ -6,13 +6,13 @@ cr.exportPath('options');
 
 /**
  * @typedef {{
- *   availableColorProfiles: Array.<{profileId: number, name: string}>,
+ *   availableColorProfiles: Array<{profileId: number, name: string}>,
  *   colorProfile: number,
  *   height: number,
  *   id: string,
  *   isInternal: boolean,
  *   isPrimary: boolean,
- *   resolutions: Array.<{width: number, height: number, originalWidth: number,
+ *   resolutions: Array<{width: number, height: number, originalWidth: number,
  *       originalHeight: number, deviceScaleFactor: number, scale: number,
  *       refreshRate: number, isBest: boolean, selected: boolean}>,
  *   name: string,
@@ -34,6 +34,17 @@ options.SecondaryDisplayLayout = {
   RIGHT: 1,
   BOTTOM: 2,
   LEFT: 3
+};
+
+/**
+ * Enumeration of multi display mode.  The value has to be same as the
+ * values in ash/display/display_manager..
+ * @enum {number}
+ */
+options.MultiDisplayMode = {
+  EXTENDED: 0,
+  MIRRORING: 1,
+  UNIFIED: 2,
 };
 
 cr.define('options', function() {
@@ -116,6 +127,18 @@ cr.define('options', function() {
      */
     mirroring_: false,
 
+    /*
+     * Whether the unified desktop is enable or not.
+     * @private
+     */
+    unifiedDesktopEnabled_: false,
+
+    /*
+     * Whether the unified desktop option should be present.
+     * @private
+     */
+    showUnifiedDesktopOption_: false,
+
     /**
      * The current secondary display layout.
      * @private
@@ -125,7 +148,7 @@ cr.define('options', function() {
     /**
      * The array of current output displays.  It also contains the display
      * rectangles currently rendered on screen.
-     * @type {Array.<options.DisplayInfo>}
+     * @type {Array<options.DisplayInfo>}
      * @private
      */
     displays_: [],
@@ -170,6 +193,12 @@ cr.define('options', function() {
      */
     lastTouchLocation_: null,
 
+    /**
+     * Whether the display settings can be shown.
+     * @private
+     */
+    enabled_: true,
+
     /** @override */
     initializePage: function() {
       Page.prototype.initializePage.call(this);
@@ -210,6 +239,16 @@ cr.define('options', function() {
         chrome.send('coreOptionsUserMetricsAction',
                     ['Options_DisplaySetOverscan']);
       }).bind(this);
+
+      $('display-options-done').onclick = function() {
+        PageManager.closeOverlay();
+      };
+
+      $('display-options-toggle-unified-desktop').onclick = (function() {
+        this.unifiedDesktopEnabled_ = !this.unifiedDesktopEnabled_;
+        chrome.send('setUnifiedDesktopEnabled',
+                    [this.unifiedDesktopEnabled_]);
+      }).bind(this);
     },
 
     /** @override */
@@ -222,6 +261,29 @@ cr.define('options', function() {
       for (var i = 0; i < optionTitles.length; i++)
         optionTitles[i].style.width = maxSize + 'px';
       chrome.send('getDisplayInfo');
+    },
+
+    /** @override */
+    canShowPage: function() {
+      return this.enabled_;
+    },
+
+    /**
+     * Enables or disables the page. When disabled, the page will not be able to
+     * open, and will close if currently opened.
+     * @param {boolean} enabled Whether the page should be enabled.
+     * @param {boolean} showUnifiedDesktop Whether the unified desktop option
+     *     should be present.
+     */
+    setEnabled: function(enabled, showUnifiedDesktop) {
+      if (this.enabled_ == enabled &&
+          this.showUnifiedDesktopOption_ == showUnifiedDesktop) {
+        return;
+      }
+      this.enabled_ = enabled;
+      this.showUnifiedDesktopOption_ = showUnifiedDesktop;
+      if (!enabled && this.visible)
+        PageManager.closeOverlay();
     },
 
     /**
@@ -743,8 +805,6 @@ cr.define('options', function() {
       var totalHeight = height + numDisplays * MIRRORING_OFFSET_PIXELS;
 
       this.displaysView_.style.height = totalHeight + 'px';
-      this.displaysView_.classList.add(
-          'display-options-displays-view-mirroring');
 
       // The displays should be centered.
       var offsetX =
@@ -766,6 +826,37 @@ cr.define('options', function() {
     },
 
     /**
+     * Creates a div element representing the specified display.
+     * @param {Object} display The display object.
+     * @param {boolean} focused True if it's focused.
+     * @private
+     */
+    createDisplayRectangle_: function(display, focused) {
+      var div = document.createElement('div');
+      display.div = div;
+      div.className = 'displays-display';
+      if (focused)
+        div.classList.add('displays-focused');
+
+      // div needs to be added to the DOM tree first, otherwise offsetHeight for
+      // nameContainer below cannot be computed.
+      this.displaysView_.appendChild(div);
+
+      var nameContainer = document.createElement('div');
+      nameContainer.textContent = display.name;
+      div.appendChild(nameContainer);
+      div.style.width = Math.floor(display.width * this.visualScale_) + 'px';
+      var newHeight = Math.floor(display.height * this.visualScale_);
+      div.style.height = newHeight + 'px';
+      nameContainer.style.marginTop =
+          (newHeight - nameContainer.offsetHeight) / 2 + 'px';
+
+      div.onmousedown = this.onMouseDown_.bind(this);
+      div.ontouchstart = this.onTouchStart_.bind(this);
+      return div;
+    },
+
+    /**
      * Layouts the display rectangles according to the current layout_.
      * @private
      */
@@ -773,8 +864,18 @@ cr.define('options', function() {
       var maxWidth = 0;
       var maxHeight = 0;
       var boundingBox = {left: 0, right: 0, top: 0, bottom: 0};
+      this.primaryDisplay_ = null;
+      this.secondaryDisplay_ = null;
+      var focusedDisplay = null;
       for (var i = 0; i < this.displays_.length; i++) {
         var display = this.displays_[i];
+        if (display.isPrimary)
+          this.primaryDisplay_ = display;
+        else
+          this.secondaryDisplay_ = display;
+        if (i == this.focusedIndex_)
+          focusedDisplay = display;
+
         boundingBox.left = Math.min(boundingBox.left, display.x);
         boundingBox.right = Math.max(
             boundingBox.right, display.x + display.width);
@@ -784,6 +885,8 @@ cr.define('options', function() {
         maxWidth = Math.max(maxWidth, display.width);
         maxHeight = Math.max(maxHeight, display.height);
       }
+      if (!this.primaryDisplay_)
+        return;
 
       // Make the margin around the bounding box.
       var areaWidth = boundingBox.right - boundingBox.left + maxWidth;
@@ -798,13 +901,6 @@ cr.define('options', function() {
       this.displaysView_.style.height =
           Math.ceil(areaHeight * this.visualScale_) + 'px';
 
-      var boundingCenter = {
-        x: Math.floor((boundingBox.right + boundingBox.left) *
-            this.visualScale_ / 2),
-        y: Math.floor((boundingBox.bottom + boundingBox.top) *
-            this.visualScale_ / 2)
-      };
-
       // Centering the bounding box of the display rectangles.
       var offset = {
         x: Math.floor(this.displaysView_.offsetWidth / 2 -
@@ -813,59 +909,70 @@ cr.define('options', function() {
             (boundingBox.bottom + boundingBox.top) * this.visualScale_ / 2)
       };
 
-      for (var i = 0; i < this.displays_.length; i++) {
-        var display = this.displays_[i];
-        var div = document.createElement('div');
-        display.div = div;
+      // Layouting the display rectangles. First layout the primaryDisplay and
+      // then layout the secondary which is attaching to the primary.
+      var primaryDiv = this.createDisplayRectangle_(
+          this.primaryDisplay_, this.primaryDisplay_ == focusedDisplay);
+      primaryDiv.style.left =
+          Math.floor(this.primaryDisplay_.x * this.visualScale_) +
+              offset.x + 'px';
+      primaryDiv.style.top =
+          Math.floor(this.primaryDisplay_.y * this.visualScale_) +
+              offset.y + 'px';
+      this.primaryDisplay_.originalPosition = {
+        x: primaryDiv.offsetLeft, y: primaryDiv.offsetTop};
 
-        div.className = 'displays-display';
-        if (i == this.focusedIndex_)
-          div.classList.add('displays-focused');
-
-        if (display.isPrimary) {
-          this.primaryDisplay_ = display;
-        } else {
-          this.secondaryDisplay_ = display;
+      if (this.secondaryDisplay_) {
+        var secondaryDiv = this.createDisplayRectangle_(
+            this.secondaryDisplay_, this.secondaryDisplay_ == focusedDisplay);
+        // Don't trust the secondary display's x or y, because it may cause a
+        // 1px gap due to rounding, which will create a fake update on end
+        // dragging. See crbug.com/386401
+        switch (this.layout_) {
+        case options.SecondaryDisplayLayout.TOP:
+          secondaryDiv.style.left =
+              Math.floor(this.secondaryDisplay_.x * this.visualScale_) +
+              offset.x + 'px';
+          secondaryDiv.style.top =
+              primaryDiv.offsetTop - secondaryDiv.offsetHeight + 'px';
+          break;
+        case options.SecondaryDisplayLayout.RIGHT:
+          secondaryDiv.style.left =
+              primaryDiv.offsetLeft + primaryDiv.offsetWidth + 'px';
+          secondaryDiv.style.top =
+              Math.floor(this.secondaryDisplay_.y * this.visualScale_) +
+              offset.y + 'px';
+          break;
+        case options.SecondaryDisplayLayout.BOTTOM:
+          secondaryDiv.style.left =
+              Math.floor(this.secondaryDisplay_.x * this.visualScale_) +
+              offset.x + 'px';
+          secondaryDiv.style.top =
+              primaryDiv.offsetTop + primaryDiv.offsetHeight + 'px';
+          break;
+        case options.SecondaryDisplayLayout.LEFT:
+          secondaryDiv.style.left =
+              primaryDiv.offsetLeft - secondaryDiv.offsetWidth + 'px';
+          secondaryDiv.style.top =
+              Math.floor(this.secondaryDisplay_.y * this.visualScale_) +
+              offset.y + 'px';
+          break;
         }
-        var displayNameContainer = document.createElement('div');
-        displayNameContainer.textContent = display.name;
-        div.appendChild(displayNameContainer);
-        display.nameContainer = displayNameContainer;
-        display.div.style.width =
-            Math.floor(display.width * this.visualScale_) + 'px';
-        var newHeight = Math.floor(display.height * this.visualScale_);
-        display.div.style.height = newHeight + 'px';
-        div.style.left =
-            Math.floor(display.x * this.visualScale_) + offset.x + 'px';
-        div.style.top =
-            Math.floor(display.y * this.visualScale_) + offset.y + 'px';
-        display.nameContainer.style.marginTop =
-            (newHeight - display.nameContainer.offsetHeight) / 2 + 'px';
-
-        div.onmousedown = this.onMouseDown_.bind(this);
-        div.ontouchstart = this.onTouchStart_.bind(this);
-
-        this.displaysView_.appendChild(div);
-
-        // Set the margin top to place the display name at the middle of the
-        // rectangle.  Note that this has to be done after it's added into the
-        // |displaysView_|.  Otherwise its offsetHeight is yet 0.
-        displayNameContainer.style.marginTop =
-            (div.offsetHeight - displayNameContainer.offsetHeight) / 2 + 'px';
-        display.originalPosition = {x: div.offsetLeft, y: div.offsetTop};
+        this.secondaryDisplay_.originalPosition = {
+          x: secondaryDiv.offsetLeft, y: secondaryDiv.offsetTop};
       }
     },
 
     /**
      * Called when the display arrangement has changed.
-     * @param {boolean} mirroring Whether current mode is mirroring or not.
-     * @param {Array.<options.DisplayInfo>} displays The list of the display
+     * @param {options.MultiDisplayMode} multi display mode.
+     * @param {Array<options.DisplayInfo>} displays The list of the display
      *     information.
      * @param {options.SecondaryDisplayLayout} layout The layout strategy.
      * @param {number} offset The offset of the secondary display.
      * @private
      */
-    onDisplayChanged_: function(mirroring, displays, layout, offset) {
+    onDisplayChanged_: function(mode, displays, layout, offset) {
       if (!this.visible)
         return;
 
@@ -879,20 +986,25 @@ cr.define('options', function() {
 
       this.layout_ = layout;
 
+      var mirroring = mode == options.MultiDisplayMode.MIRRORING;
+      var unifiedDesktopEnabled = mode == options.MultiDisplayMode.UNIFIED;
+
       $('display-options-toggle-mirroring').textContent =
           loadTimeData.getString(
               mirroring ? 'stopMirroring' : 'startMirroring');
 
       // Focus to the first display next to the primary one when |displays| list
       // is updated.
-      if (mirroring) {
+      if (mirroring || unifiedDesktopEnabled) {
         this.focusedIndex_ = null;
       } else if (this.mirroring_ != mirroring ||
+                 this.unifiedDesktopEnabled_ != unifiedDesktopEnabled ||
                  this.displays_.length != displays.length) {
         this.focusedIndex_ = 0;
       }
 
       this.mirroring_ = mirroring;
+      this.unifiedDesktopEnabled_ = unifiedDesktopEnabled;
       this.displays_ = displays;
 
       this.resetDisplaysView_();
@@ -901,14 +1013,28 @@ cr.define('options', function() {
       else
         this.layoutDisplays_();
 
+      $('display-options-unified-desktop').hidden =
+          !this.showUnifiedDesktopOption_;
+
+      $('display-options-toggle-unified-desktop').checked =
+          this.unifiedDesktopEnabled_;
+
+      var disableUnifiedDesktopOption =
+           (this.mirroring_ ||
+            (!this.unifiedDesktopEnabled_ &&
+              this.displays_.length == 1));
+
+      $('display-options-toggle-unified-desktop').disabled =
+          disableUnifiedDesktopOption;
+
       this.updateSelectedDisplayDescription_();
     }
   };
 
   DisplayOptions.setDisplayInfo = function(
-      mirroring, displays, layout, offset) {
+      mode, displays, layout, offset) {
     DisplayOptions.getInstance().onDisplayChanged_(
-        mirroring, displays, layout, offset);
+        mode, displays, layout, offset);
   };
 
   // Export

@@ -78,9 +78,11 @@ int DiskCacheBasedQuicServerInfo::WaitForDataReady(
     const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
   DCHECK_NE(GET_BACKEND, state_);
+  wait_for_data_start_time_ = base::TimeTicks::Now();
 
   RecordQuicServerInfoStatus(QUIC_SERVER_INFO_WAIT_FOR_DATA_READY);
   if (ready_) {
+    wait_for_data_end_time_ = base::TimeTicks::Now();
     RecordLastFailure();
     return OK;
   }
@@ -96,6 +98,11 @@ int DiskCacheBasedQuicServerInfo::WaitForDataReady(
   }
 
   return ERR_IO_PENDING;
+}
+
+void DiskCacheBasedQuicServerInfo::ResetWaitForDataReadyCallback() {
+  DCHECK(CalledOnValidThread());
+  wait_for_ready_callback_.Reset();
 }
 
 void DiskCacheBasedQuicServerInfo::CancelWaitForDataReadyCallback() {
@@ -187,11 +194,18 @@ void DiskCacheBasedQuicServerInfo::OnIOComplete(CacheOperationDataShim* unused,
   rv = DoLoop(rv);
   if (rv == ERR_IO_PENDING)
     return;
+
+  base::WeakPtr<DiskCacheBasedQuicServerInfo> weak_this =
+      weak_factory_.GetWeakPtr();
+
   if (!wait_for_ready_callback_.is_null()) {
+    wait_for_data_end_time_ = base::TimeTicks::Now();
     RecordLastFailure();
     base::ResetAndReturn(&wait_for_ready_callback_).Run(rv);
   }
-  if (ready_ && !pending_write_data_.empty()) {
+  // |wait_for_ready_callback_| could delete the object if there is an error.
+  // Check if |weak_this| still exists before accessing it.
+  if (weak_this.get() && ready_ && !pending_write_data_.empty()) {
     DCHECK_EQ(NONE, state_);
     PersistInternal();
   }
@@ -386,7 +400,7 @@ void DiskCacheBasedQuicServerInfo::RecordQuicServerInfoStatus(
   if (!backend_) {
     UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.APICall.NoBackend", call,
                               QUIC_SERVER_INFO_NUM_OF_API_CALLS);
-  } else if (backend_->GetCacheType() == net::MEMORY_CACHE) {
+  } else if (backend_->GetCacheType() == MEMORY_CACHE) {
     UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.APICall.MemoryCache", call,
                               QUIC_SERVER_INFO_NUM_OF_API_CALLS);
   } else {
@@ -411,7 +425,7 @@ void DiskCacheBasedQuicServerInfo::RecordQuicServerInfoFailure(
   if (!backend_) {
     UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.FailureReason.NoBackend",
                               failure, NUM_OF_FAILURES);
-  } else if (backend_->GetCacheType() == net::MEMORY_CACHE) {
+  } else if (backend_->GetCacheType() == MEMORY_CACHE) {
     UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.FailureReason.MemoryCache",
                               failure, NUM_OF_FAILURES);
   } else {

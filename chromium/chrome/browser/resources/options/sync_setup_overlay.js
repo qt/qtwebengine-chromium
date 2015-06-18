@@ -29,7 +29,6 @@ cr.exportPath('options');
  *             preferencesRegistered: boolean,
  *             preferencesSynced: boolean,
  *             showPassphrase: boolean,
- *             showSyncEverythingPage: boolean,
  *             syncAllDataTypes: boolean,
  *             syncNothing: boolean,
  *             tabsEnforced: boolean,
@@ -157,12 +156,17 @@ cr.define('options', function() {
         chrome.send('SyncSetupStopSyncing', [deleteProfile]);
         self.closeOverlay_();
       };
+      $('use-default-link').onclick = function() {
+        self.showSyncEverythingPage_();
+      };
     },
 
+    /** @private */
     showOverlay_: function() {
       PageManager.showPageByName('syncSetup');
     },
 
+    /** @private */
     closeOverlay_: function() {
       this.syncConfigureArgs_ = null;
       this.dataTypeBoxesChecked_ = {};
@@ -183,8 +187,10 @@ cr.define('options', function() {
       chrome.send('SyncSetupDidClosePage');
     },
 
+    /** @private */
     onEncryptionRadioChanged_: function() {
       var visible = $('full-encryption-option').checked;
+      // TODO(dbeam): should sync-custom-passphrase-container be hidden instead?
       $('sync-custom-passphrase').hidden = !visible;
       chrome.send('coreOptionsUserMetricsAction',
                   ['Options_SyncSetEncryption']);
@@ -255,13 +261,13 @@ cr.define('options', function() {
       }
     },
 
+    /** @private */
     checkPassphraseMatch_: function() {
       var emptyError = $('empty-error');
       var mismatchError = $('mismatch-error');
       emptyError.hidden = true;
       mismatchError.hidden = true;
 
-      var f = $('choose-data-types-form');
       if (!$('full-encryption-option').checked ||
            $('basic-encryption-option').disabled) {
         return true;
@@ -282,6 +288,7 @@ cr.define('options', function() {
       return true;
     },
 
+    /** @private */
     sendConfiguration_: function() {
       var encryptAllData = $('full-encryption-option').checked;
 
@@ -316,8 +323,6 @@ cr.define('options', function() {
       // configuration to the backend.
       this.setInputElementsDisabledState_(true);
       $('use-default-link').hidden = true;
-      $('use-default-link').disabled = true;
-      $('use-default-link').onclick = null;
 
       // These values need to be kept in sync with where they are read in
       // sync_setup_handler.cc:GetConfiguration().
@@ -390,26 +395,22 @@ cr.define('options', function() {
       this.dataTypeBoxesChecked_['bookmarks-checkbox'] = args.bookmarksSynced;
       this.dataTypeBoxesDisabled_['bookmarks-checkbox'] =
           args.bookmarksEnforced;
-      $('bookmarks-checkbox').onclick = this.handleDataTypeClick_;
 
       $('preferences-checkbox').checked = args.preferencesSynced;
       this.dataTypeBoxesChecked_['preferences-checkbox'] =
           args.preferencesSynced;
       this.dataTypeBoxesDisabled_['preferences-checkbox'] =
           args.preferencesEnforced;
-      $('preferences-checkbox').onclick = this.handleDataTypeClick_;
 
       $('themes-checkbox').checked = args.themesSynced;
       this.dataTypeBoxesChecked_['themes-checkbox'] = args.themesSynced;
       this.dataTypeBoxesDisabled_['themes-checkbox'] = args.themesEnforced;
-      $('themes-checkbox').onclick = this.handleDataTypeClick_;
 
       if (args.passwordsRegistered) {
         $('passwords-checkbox').checked = args.passwordsSynced;
         this.dataTypeBoxesChecked_['passwords-checkbox'] = args.passwordsSynced;
         this.dataTypeBoxesDisabled_['passwords-checkbox'] =
             args.passwordsEnforced;
-        $('passwords-checkbox').onclick = this.handleDataTypeClick_;
         $('passwords-item').hidden = false;
       } else {
         $('passwords-item').hidden = true;
@@ -419,7 +420,6 @@ cr.define('options', function() {
         this.dataTypeBoxesChecked_['autofill-checkbox'] = args.autofillSynced;
         this.dataTypeBoxesDisabled_['autofill-checkbox'] =
             args.autofillEnforced;
-        $('autofill-checkbox').onclick = this.handleDataTypeClick_;
         $('autofill-item').hidden = false;
       } else {
         $('autofill-item').hidden = true;
@@ -430,7 +430,6 @@ cr.define('options', function() {
             args.extensionsSynced;
         this.dataTypeBoxesDisabled_['extensions-checkbox'] =
             args.extensionsEnforced;
-        $('extensions-checkbox').onclick = this.handleDataTypeClick_;
         $('extensions-item').hidden = false;
       } else {
         $('extensions-item').hidden = true;
@@ -441,7 +440,6 @@ cr.define('options', function() {
             args.typedUrlsSynced;
         this.dataTypeBoxesDisabled_['typed-urls-checkbox'] =
             args.typedUrlsEnforced;
-        $('typed-urls-checkbox').onclick = this.handleDataTypeClick_;
         $('omnibox-item').hidden = false;
       } else {
         $('omnibox-item').hidden = true;
@@ -450,7 +448,6 @@ cr.define('options', function() {
         $('apps-checkbox').checked = args.appsSynced;
         this.dataTypeBoxesChecked_['apps-checkbox'] = args.appsSynced;
         this.dataTypeBoxesDisabled_['apps-checkbox'] = args.appsEnforced;
-        $('apps-checkbox').onclick = this.handleDataTypeClick_;
         $('apps-item').hidden = false;
       } else {
         $('apps-item').hidden = true;
@@ -459,7 +456,6 @@ cr.define('options', function() {
         $('tabs-checkbox').checked = args.tabsSynced;
         this.dataTypeBoxesChecked_['tabs-checkbox'] = args.tabsSynced;
         this.dataTypeBoxesDisabled_['tabs-checkbox'] = args.tabsEnforced;
-        $('tabs-checkbox').onclick = this.handleDataTypeClick_;
         $('tabs-item').hidden = false;
       } else {
         $('tabs-item').hidden = true;
@@ -470,11 +466,13 @@ cr.define('options', function() {
             args.wifiCredentialsSynced;
         this.dataTypeBoxesDisabled_['wifi-credentials-checkbox'] =
             args.wifiCredentialsEnforced;
-        $('wifi-credentials-checkbox').onclick = this.handleDataTypeClick_;
         $('wifi-credentials-item').hidden = false;
       } else {
         $('wifi-credentials-item').hidden = true;
       }
+
+      $('choose-data-types-body').onchange =
+          this.handleDataTypeChange_.bind(this);
 
       this.setDataTypeCheckboxes_(datatypeSelect.selectedIndex);
     },
@@ -483,16 +481,20 @@ cr.define('options', function() {
      * Updates the cached values of the sync data type checkboxes stored in
      * |this.dataTypeBoxesChecked_|. Used as an onclick handler for each data
      * type checkbox.
+     * @param {Event} e The change event.
      * @private
      */
-    handleDataTypeClick_: function() {
-      this.dataTypeBoxesChecked_[this.id] = this.checked;
+    handleDataTypeChange_: function(e) {
+      var input = assertInstanceof(e.target, HTMLInputElement);
+      assert(input.type == 'checkbox');
+      this.dataTypeBoxesChecked_[input.id] = input.checked;
       chrome.send('coreOptionsUserMetricsAction',
                   ['Options_SyncToggleDataType']);
     },
 
     /**
      * @param {SyncConfig} args
+     * @private
      */
     setEncryptionRadios_: function(args) {
       if (!args.encryptAllData && !args.usePassphrase) {
@@ -506,6 +508,7 @@ cr.define('options', function() {
 
     /**
      * @param {SyncConfig} args
+     * @private
      */
     setCheckboxesAndErrors_: function(args) {
       this.setChooseDataTypesCheckboxes_(args);
@@ -514,6 +517,7 @@ cr.define('options', function() {
 
     /**
      * @param {SyncConfig} args
+     * @private
      */
     showConfigure_: function(args) {
       var datatypeSelect = $('sync-select-datatypes');
@@ -564,28 +568,26 @@ cr.define('options', function() {
         // dialog or the advanced sync settings dialog, and assign focus to the
         // OK button, or to the passphrase field if a passphrase is required.
         this.usePassphrase_ = args.usePassphrase;
-        if (args.showSyncEverythingPage == false || this.usePassphrase_ ||
-            args.syncAllDataTypes == false || args.showPassphrase) {
-          var index = args.syncAllDataTypes ?
-                          options.DataTypeSelection.SYNC_EVERYTHING :
-                          options.DataTypeSelection.CHOOSE_WHAT_TO_SYNC;
-          this.showCustomizePage_(args, index);
-        } else {
-          this.showSyncEverythingPage_();
-        }
+        var index = args.syncAllDataTypes ?
+                        options.DataTypeSelection.SYNC_EVERYTHING :
+                        options.DataTypeSelection.CHOOSE_WHAT_TO_SYNC;
+        this.showCustomizePage_(args, index);
       }
     },
 
+    /** @private */
     showSpinner_: function() {
       this.resetPage_('sync-setup-spinner');
       $('sync-setup-spinner').hidden = false;
     },
 
+    /** @private */
     showTimeoutPage_: function() {
       this.resetPage_('sync-setup-timeout');
       $('sync-setup-timeout').hidden = false;
     },
 
+    /** @private */
     showSyncEverythingPage_: function() {
       chrome.send('coreOptionsUserMetricsAction',
                   ['Options_SyncSetDefault']);
@@ -599,6 +601,7 @@ cr.define('options', function() {
       // The default state is to sync everything.
       this.setDataTypeCheckboxes_(options.DataTypeSelection.SYNC_EVERYTHING);
 
+      // TODO(dbeam): should hide sync-custom-passphrase-container instead?
       if (!this.usePassphrase_)
         $('sync-custom-passphrase').hidden = true;
 
@@ -628,8 +631,6 @@ cr.define('options', function() {
 
       // Hide the "use default settings" link.
       $('use-default-link').hidden = true;
-      $('use-default-link').disabled = true;
-      $('use-default-link').onclick = null;
     },
 
     /**
@@ -644,8 +645,6 @@ cr.define('options', function() {
       // Once we require a passphrase, we prevent the user from returning to
       // the Sync Everything pane.
       $('use-default-link').hidden = true;
-      $('use-default-link').disabled = true;
-      $('use-default-link').onclick = null;
       $('sync-custom-passphrase-container').hidden = true;
       $('sync-existing-passphrase-container').hidden = false;
 
@@ -695,15 +694,12 @@ cr.define('options', function() {
 
       if (args.showPassphrase) {
         this.showPassphraseContainer_(args);
+        // TODO(dbeam): add an #updatePassphrase and only focus with that hash?
+        $('passphrase').focus();
       } else {
         // We only show the 'Use Default' link if we're not prompting for an
         // existing passphrase.
         $('use-default-link').hidden = false;
-        $('use-default-link').disabled = false;
-        $('use-default-link').onclick = function() {
-          SyncSetupOverlay.showSyncEverythingPage();
-          return false;
-        };
       }
     },
 
@@ -867,10 +863,6 @@ cr.define('options', function() {
 
   SyncSetupOverlay.showCustomizePage = function(args, index) {
     SyncSetupOverlay.getInstance().showCustomizePage_(args, index);
-  };
-
-  SyncSetupOverlay.showSyncEverythingPage = function() {
-    SyncSetupOverlay.getInstance().showSyncEverythingPage_();
   };
 
   SyncSetupOverlay.showStopSyncingUI = function() {

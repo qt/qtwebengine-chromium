@@ -5,7 +5,6 @@
 #include "content/common/indexed_db/indexed_db_key.h"
 
 #include <string>
-#include "base/logging.h"
 
 namespace content {
 
@@ -56,18 +55,15 @@ static IndexedDBKey::KeyArray CopyKeyArray(const T& array) {
 
 IndexedDBKey::IndexedDBKey()
     : type_(WebIDBKeyTypeNull),
-      date_(0),
-      number_(0),
       size_estimate_(kOverheadSize) {}
 
 IndexedDBKey::IndexedDBKey(WebIDBKeyType type)
-    : type_(type), date_(0), number_(0), size_estimate_(kOverheadSize) {
+    : type_(type), size_estimate_(kOverheadSize) {
   DCHECK(type == WebIDBKeyTypeNull || type == WebIDBKeyTypeInvalid);
 }
 
 IndexedDBKey::IndexedDBKey(double number, WebIDBKeyType type)
     : type_(type),
-      date_(number),
       number_(number),
       size_estimate_(kOverheadSize + sizeof(number)) {
   DCHECK(type == WebIDBKeyTypeNumber || type == WebIDBKeyTypeDate);
@@ -76,8 +72,6 @@ IndexedDBKey::IndexedDBKey(double number, WebIDBKeyType type)
 IndexedDBKey::IndexedDBKey(const KeyArray& array)
     : type_(WebIDBKeyTypeArray),
       array_(CopyKeyArray(array)),
-      date_(0),
-      number_(0),
       size_estimate_(kOverheadSize + CalculateArraySize(array)) {}
 
 IndexedDBKey::IndexedDBKey(const std::string& binary)
@@ -92,7 +86,9 @@ IndexedDBKey::IndexedDBKey(const base::string16& string)
       size_estimate_(kOverheadSize +
                      (string.length() * sizeof(base::string16::value_type))) {}
 
-IndexedDBKey::~IndexedDBKey() {}
+IndexedDBKey::IndexedDBKey(const IndexedDBKey& other) = default;
+IndexedDBKey::~IndexedDBKey() = default;
+IndexedDBKey& IndexedDBKey::operator=(const IndexedDBKey& other) = default;
 
 bool IndexedDBKey::IsValid() const {
   if (type_ == WebIDBKeyTypeInvalid || type_ == WebIDBKeyTypeNull)
@@ -135,7 +131,6 @@ int IndexedDBKey::CompareTo(const IndexedDBKey& other) const {
     case WebIDBKeyTypeString:
       return string_.compare(other.string_);
     case WebIDBKeyTypeDate:
-      return Compare(date_, other.date_);
     case WebIDBKeyTypeNumber:
       return Compare(number_, other.number_);
     case WebIDBKeyTypeInvalid:

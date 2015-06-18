@@ -23,30 +23,45 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/WaveShaperNode.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/webaudio/AudioBasicProcessorHandler.h"
+#include "modules/webaudio/AudioContext.h"
 #include "wtf/MainThread.h"
 
 namespace blink {
 
-WaveShaperNode::WaveShaperNode(AudioContext* context)
-    : AudioBasicProcessorNode(context, context->sampleRate())
+WaveShaperNode::WaveShaperNode(AudioContext& context)
+    : AudioNode(context)
 {
-    m_processor = new WaveShaperProcessor(context->sampleRate(), 1);
-    setNodeType(NodeTypeWaveShaper);
+    setHandler(AudioBasicProcessorHandler::create(AudioHandler::NodeTypeWaveShaper, *this, context.sampleRate(), adoptPtr(new WaveShaperProcessor(context.sampleRate(), 1))));
 
-    initialize();
+    handler().initialize();
 }
 
-void WaveShaperNode::setCurve(DOMFloat32Array* curve)
+WaveShaperProcessor* WaveShaperNode::waveShaperProcessor() const
+{
+    return static_cast<WaveShaperProcessor*>(static_cast<AudioBasicProcessorHandler&>(handler()).processor());
+}
+
+void WaveShaperNode::setCurve(DOMFloat32Array* curve, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+
+    if (curve && curve->length() < 2) {
+        exceptionState.throwDOMException(
+            InvalidAccessError,
+            ExceptionMessages::indexExceedsMinimumBound<unsigned>(
+                "curve length",
+                curve->length(),
+                2));
+        return;
+    }
+
     waveShaperProcessor()->setCurve(curve);
 }
 
@@ -55,7 +70,7 @@ DOMFloat32Array* WaveShaperNode::curve()
     return waveShaperProcessor()->curve();
 }
 
-void WaveShaperNode::setOversample(const String& type, ExceptionState& exceptionState)
+void WaveShaperNode::setOversample(const String& type)
 {
     ASSERT(isMainThread());
 

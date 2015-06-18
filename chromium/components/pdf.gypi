@@ -38,6 +38,7 @@
     'type': 'static_library',
     'dependencies': [
       '<(DEPTH)/content/content.gyp:content_renderer',
+      '<(DEPTH)/gin/gin.gyp:gin',
       '<(DEPTH)/ppapi/ppapi_internal.gyp:ppapi_shared',
       '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
       '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
@@ -48,12 +49,10 @@
       'pdf_common',
     ],
     'sources': [
-      'pdf/renderer/pepper_pdf_host.cc',
-      'pdf/renderer/pepper_pdf_host.h',
       'pdf/renderer/pdf_resource_util.cc',
       'pdf/renderer/pdf_resource_util.h',
-      'pdf/renderer/ppb_pdf_impl.cc',
-      'pdf/renderer/ppb_pdf_impl.h',
+      'pdf/renderer/pepper_pdf_host.cc',
+      'pdf/renderer/pepper_pdf_host.h',
     ],
     'conditions': [
       ['OS=="win"', {

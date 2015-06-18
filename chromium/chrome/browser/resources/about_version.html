@@ -1,13 +1,14 @@
-<!DOCTYPE HTML>
+<!doctype html>
 
 <!--
 about:version template page
 -->
 
-<html id="t" i18n-values="dir:textdirection;">
+<html id="t" i18n-values="dir:textdirection;lang:language">
   <head>
     <meta charset="utf-8">
     <title i18n-content="title"></title>
+    <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
 <if expr="is_android">
     <meta name="viewport" content="width=device-width">
 </if>
@@ -41,6 +42,7 @@ about:version template page
             <span i18n-content="version"></span>
             (<span i18n-content="official"></span>)
             <span i18n-content="version_modifier"></span>
+            <span i18n-content="version_bitsize"></span>
           </td>
         </tr>
         <tr>
@@ -101,6 +103,6 @@ about:version template page
 </if>
       </table>
     </div>
-    <script src="chrome://resources/js/i18n_template2.js"></script>
+    <script src="chrome://resources/js/i18n_template.js"></script>
   </body>
 </html>

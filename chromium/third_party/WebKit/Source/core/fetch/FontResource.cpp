@@ -27,9 +27,7 @@
 #include "config.h"
 #include "core/fetch/FontResource.h"
 
-#include "core/dom/TagCollection.h"
 #include "core/fetch/ResourceClientWalker.h"
-#include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
 #include "platform/fonts/FontCustomPlatformData.h"
 #include "platform/fonts/FontPlatformData.h"
@@ -64,7 +62,7 @@ static FontPackageFormat packageFormatOf(SharedBuffer* buffer)
 
 static void recordPackageFormatHistogram(FontPackageFormat format)
 {
-    blink::Platform::current()->histogramEnumeration("WebFont.PackageFormat", format, PackageFormatEnumMax);
+    Platform::current()->histogramEnumeration("WebFont.PackageFormat", format, PackageFormatEnumMax);
 }
 
 FontResource::FontResource(const ResourceRequest& resourceRequest)
@@ -136,10 +134,10 @@ bool FontResource::ensureCustomFontData()
     return m_fontData;
 }
 
-FontPlatformData FontResource::platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation orientation, FontWidthVariant widthVariant)
+FontPlatformData FontResource::platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation orientation)
 {
     ASSERT(m_fontData);
-    return m_fontData->fontPlatformData(size, bold, italic, orientation, widthVariant);
+    return m_fontData->fontPlatformData(size, bold, italic, orientation);
 }
 
 bool FontResource::isSafeToUnlock() const

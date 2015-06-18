@@ -58,7 +58,7 @@ gin::WrapperInfo PluginObject::kWrapperInfo = {gin::kEmbedderNativeGin};
 
 // static
 PluginObject* PluginObject::FromV8Object(v8::Isolate* isolate,
-                                         v8::Handle<v8::Object> v8_object) {
+                                         v8::Local<v8::Object> v8_object) {
   PluginObject* plugin_object;
   if (!v8_object.IsEmpty() &&
       gin::ConvertFromV8(isolate, v8_object, &plugin_object)) {
@@ -169,6 +169,7 @@ PluginObject::PluginObject(PepperPluginInstanceImpl* instance,
       instance_(instance),
       ppp_class_(ppp_class),
       ppp_class_data_(ppp_class_data),
+      template_cache_(instance->GetIsolate()),
       weak_factory_(this) {
   instance_->AddPluginObject(this);
 }
@@ -200,7 +201,7 @@ v8::Local<v8::Value> PluginObject::GetPropertyOrMethod(v8::Isolate* isolate,
     if (try_catch.ThrowException())
       return v8::Local<v8::Value>();
 
-    v8::Handle<v8::Value> result = try_catch.ToV8(result_var.get());
+    v8::Local<v8::Value> result = try_catch.ToV8(result_var.get());
     if (try_catch.ThrowException())
       return v8::Local<v8::Value>();
 
@@ -216,10 +217,7 @@ v8::Local<v8::Value> PluginObject::GetPropertyOrMethod(v8::Isolate* isolate,
   if (has_method) {
     const std::string& identifier =
         StringVar::FromPPVar(identifier_var)->value();
-    return gin::CreateFunctionTemplate(isolate,
-                                       base::Bind(&PluginObject::Call,
-                                                  weak_factory_.GetWeakPtr(),
-                                                  identifier))->GetFunction();
+    return GetFunctionTemplate(isolate, identifier)->GetFunction();
   }
 
   return v8::Local<v8::Value>();
@@ -238,7 +236,7 @@ void PluginObject::Call(const std::string& identifier,
   ScopedPPVarArray argument_vars(args->Length());
 
   for (uint32_t i = 0; i < argument_vars.size(); ++i) {
-    v8::Handle<v8::Value> arg;
+    v8::Local<v8::Value> arg;
     if (!args->GetNext(&arg)) {
       NOTREACHED();
     }
@@ -261,11 +259,25 @@ void PluginObject::Call(const std::string& identifier,
   if (try_catch.ThrowException())
     return;
 
-  v8::Handle<v8::Value> result = try_catch.ToV8(result_var.get());
+  v8::Local<v8::Value> result = try_catch.ToV8(result_var.get());
   if (try_catch.ThrowException())
     return;
 
   args->Return(result);
+}
+
+v8::Local<v8::FunctionTemplate> PluginObject::GetFunctionTemplate(
+    v8::Isolate* isolate,
+    const std::string& name) {
+  v8::Local<v8::FunctionTemplate> function_template = template_cache_.Get(name);
+  if (!function_template.IsEmpty())
+    return function_template;
+  function_template =
+      gin::CreateFunctionTemplate(
+          isolate, base::Bind(&PluginObject::Call, weak_factory_.GetWeakPtr(),
+                              name));
+  template_cache_.Set(name, function_template);
+  return function_template;
 }
 
 }  // namespace content

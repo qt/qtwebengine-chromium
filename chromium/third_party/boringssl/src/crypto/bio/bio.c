@@ -57,8 +57,8 @@
 #include <openssl/bio.h>
 
 #include <errno.h>
-#include <stddef.h>
 #include <limits.h>
+#include <string.h>
 
 #include <openssl/err.h>
 #include <openssl/mem.h>
@@ -77,15 +77,8 @@ static int bio_set(BIO *bio, const BIO_METHOD *method) {
   bio->shutdown = 1;
   bio->references = 1;
 
-  if (!CRYPTO_new_ex_data(CRYPTO_EX_INDEX_BIO, bio, &bio->ex_data)) {
+  if (method->create != NULL && !method->create(bio)) {
     return 0;
-  }
-
-  if (method->create != NULL) {
-    if (!method->create(bio)) {
-      CRYPTO_free_ex_data(CRYPTO_EX_INDEX_BIO, bio, &bio->ex_data);
-      return 0;
-    }
   }
 
   return 1;
@@ -124,8 +117,6 @@ int BIO_free(BIO *bio) {
 
     next_bio = BIO_pop(bio);
 
-    CRYPTO_free_ex_data(CRYPTO_EX_INDEX_BIO, bio, &bio->ex_data);
-
     if (bio->method != NULL && bio->method->destroy != NULL) {
       bio->method->destroy(bio);
     }
@@ -133,6 +124,11 @@ int BIO_free(BIO *bio) {
     OPENSSL_free(bio);
   }
   return 1;
+}
+
+BIO *BIO_up_ref(BIO *bio) {
+  CRYPTO_add(&bio->references, 1, CRYPTO_LOCK_BIO);
+  return bio;
 }
 
 void BIO_vfree(BIO *bio) {
@@ -396,10 +392,6 @@ BIO *BIO_push(BIO *bio, BIO *appended_bio) {
   }
 
   last_bio->next_bio = appended_bio;
-  /* TODO(fork): this seems very suspect. If we got rid of BIO SSL, we could
-   * get rid of this. */
-  BIO_ctrl(bio, BIO_CTRL_PUSH, 0, bio);
-
   return bio;
 }
 
@@ -410,7 +402,6 @@ BIO *BIO_pop(BIO *bio) {
     return NULL;
   }
   ret = bio->next_bio;
-  BIO_ctrl(bio, BIO_CTRL_POP, 0, bio);
   bio->next_bio = NULL;
   return ret;
 }
@@ -459,12 +450,6 @@ int BIO_indent(BIO *bio, unsigned indent, unsigned max_indent) {
     }
   }
   return 1;
-}
-
-void BIO_print_errors_fp(FILE *out) {
-  BIO *bio = BIO_new_fp(out, BIO_NOCLOSE);
-  BIO_print_errors(bio);
-  BIO_free(bio);
 }
 
 static int print_bio(const char *str, size_t len, void *bio) {

@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/bluetooth_gatt_characteristic.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 
@@ -18,8 +19,16 @@ namespace device {
 // descriptor. A GATT characteristic descriptor provides further information
 // about a characteristic's value. They can be used to describe the
 // characteristic's features or to control certain behaviors.
-class BluetoothGattDescriptor {
+class DEVICE_BLUETOOTH_EXPORT BluetoothGattDescriptor {
  public:
+  // The ErrorCallback is used by methods to asynchronously report errors.
+  typedef base::Callback<void(BluetoothGattService::GattErrorCode)>
+      ErrorCallback;
+
+  // The ValueCallback is used to return the value of a remote characteristic
+  // descriptor upon a read request.
+  typedef base::Callback<void(const std::vector<uint8>&)> ValueCallback;
+
   // The Bluetooth Specification declares several predefined descriptors that
   // profiles can use. The following are definitions for the list of UUIDs
   // and descriptions of the characteristic descriptors that they represent.
@@ -104,14 +113,6 @@ class BluetoothGattDescriptor {
   // an instance of BluetoothGattDescriptor for this descriptor as this will be
   // handled by the subsystem.
   static const BluetoothUUID& CharacteristicAggregateFormatUuid();
-
-  // The ErrorCallback is used by methods to asynchronously report errors.
-  typedef base::Callback<void(BluetoothGattService::GattErrorCode)>
-      ErrorCallback;
-
-  // The ValueCallback is used to return the value of a remote characteristic
-  // descriptor upon a read request.
-  typedef base::Callback<void(const std::vector<uint8>&)> ValueCallback;
 
   // Constructs a BluetoothGattDescriptor that can be associated with a local
   // GATT characteristic when the adapter is in the peripheral role. To

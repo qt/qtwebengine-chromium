@@ -40,7 +40,7 @@
 
 namespace blink {
 
-V8NodeFilterCondition::V8NodeFilterCondition(v8::Handle<v8::Value> filter, v8::Handle<v8::Object> owner, ScriptState* scriptState)
+V8NodeFilterCondition::V8NodeFilterCondition(v8::Local<v8::Value> filter, v8::Local<v8::Object> owner, ScriptState* scriptState)
     : m_scriptState(scriptState)
 {
     // ..acceptNode(..) will only dispatch m_filter if m_filter->IsObject().
@@ -62,7 +62,7 @@ short V8NodeFilterCondition::acceptNode(Node* node, ExceptionState& exceptionSta
     v8::Isolate* isolate = m_scriptState->isolate();
     ASSERT(!m_scriptState->context().IsEmpty());
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> filter = m_filter.newLocal(isolate);
+    v8::Local<v8::Value> filter = m_filter.newLocal(isolate);
 
     ASSERT(filter.IsEmpty() || filter->IsObject());
     if (filter.IsEmpty())
@@ -70,35 +70,51 @@ short V8NodeFilterCondition::acceptNode(Node* node, ExceptionState& exceptionSta
 
     v8::TryCatch exceptionCatcher;
 
-    v8::Handle<v8::Function> callback;
+    v8::Local<v8::Function> callback;
+    v8::Local<v8::Value> receiver;
     if (filter->IsFunction()) {
-        callback = v8::Handle<v8::Function>::Cast(filter);
+        callback = v8::Local<v8::Function>::Cast(filter);
+        receiver = v8::Undefined(isolate);
     } else {
-        v8::Local<v8::Value> value = filter->ToObject()->Get(v8AtomicString(isolate, "acceptNode"));
-        if (value.IsEmpty() || !value->IsFunction()) {
+        v8::Local<v8::Object> filterObject;
+        if (!filter->ToObject(m_scriptState->context()).ToLocal(&filterObject)) {
+            exceptionState.throwTypeError("NodeFilter is not an object");
+            return NodeFilter::FILTER_REJECT;
+        }
+        v8::Local<v8::Value> value;
+        if (!filterObject->Get(m_scriptState->context(), v8AtomicString(isolate, "acceptNode")).ToLocal(&value) || !value->IsFunction()) {
             exceptionState.throwTypeError("NodeFilter object does not have an acceptNode function");
             return NodeFilter::FILTER_REJECT;
         }
-        callback = v8::Handle<v8::Function>::Cast(value);
+        callback = v8::Local<v8::Function>::Cast(value);
+        receiver = filter;
     }
 
-    OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[1]);
-    v8::Handle<v8::Object> context = m_scriptState->context()->Global();
-    info[0] = toV8(node, context, isolate);
+    OwnPtr<v8::Local<v8::Value>[]> info = adoptArrayPtr(new v8::Local<v8::Value>[1]);
+    info[0] = toV8(node, m_scriptState->context()->Global(), isolate);
+    if (info[0].IsEmpty()) {
+        if (exceptionCatcher.HasCaught())
+            exceptionState.rethrowV8Exception(exceptionCatcher.Exception());
+        return NodeFilter::FILTER_REJECT;
+    }
 
-    v8::Handle<v8::Value> result = ScriptController::callFunction(m_scriptState->executionContext(), callback, context, 1, info.get(), isolate);
-
-    if (exceptionCatcher.HasCaught()) {
+    v8::Local<v8::Value> result;
+    if (!ScriptController::callFunction(m_scriptState->executionContext(), callback, receiver, 1, info.get(), isolate).ToLocal(&result)) {
         exceptionState.rethrowV8Exception(exceptionCatcher.Exception());
         return NodeFilter::FILTER_REJECT;
     }
 
     ASSERT(!result.IsEmpty());
 
-    return result->Int32Value();
+    int32_t int32Value;
+    if (!v8Call(result->Int32Value(m_scriptState->context()), int32Value, exceptionCatcher)) {
+        exceptionState.rethrowV8Exception(exceptionCatcher.Exception());
+        return NodeFilter::FILTER_REJECT;
+    }
+    return int32Value;
 }
 
-void V8NodeFilterCondition::setWeakCallback(const v8::WeakCallbackData<v8::Value, V8NodeFilterCondition>& data)
+void V8NodeFilterCondition::setWeakCallback(const v8::WeakCallbackInfo<V8NodeFilterCondition>& data)
 {
     data.GetParameter()->m_filter.clear();
 }

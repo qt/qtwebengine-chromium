@@ -11,6 +11,7 @@
     '../ui/base/ui_base.gyp:ui_base',
     '../url/url.gyp:url_lib',
     'bookmarks_browser',
+    'bookmarks_managed',
     'components_strings.gyp:components_strings',
     'keyed_service_core',
     'pref_registry',
@@ -34,7 +35,8 @@
     # GN version: //components/policy/core/browser
     ['configuration_policy==1', {
       'dependencies': [
-        'autofill_core_browser',
+        '../third_party/icu/icu.gyp:icui18n',
+        '../third_party/icu/icu.gyp:icuuc',
         'autofill_core_common',
         'cloud_policy_proto',
         'policy',
@@ -54,8 +56,6 @@
         'core/browser/configuration_policy_handler_list.h',
         'core/browser/configuration_policy_pref_store.cc',
         'core/browser/configuration_policy_pref_store.h',
-        'core/browser/managed_bookmarks_tracker.cc',
-        'core/browser/managed_bookmarks_tracker.h',
         'core/browser/policy_error_map.cc',
         'core/browser/policy_error_map.h',
         'core/browser/url_blacklist_policy_handler.cc',

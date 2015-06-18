@@ -17,12 +17,12 @@
 #include "public/platform/WebScreenOrientationType.h"
 
 // This code assumes that WebScreenOrientationType values are included in WebScreenOrientationLockType.
-#define COMPILE_ASSERT_MATCHING_ENUM(enum1, enum2) \
-    COMPILE_ASSERT(static_cast<unsigned>(blink::enum1) == static_cast<unsigned>(blink::enum2), mismatching_types)
-COMPILE_ASSERT_MATCHING_ENUM(WebScreenOrientationPortraitPrimary, WebScreenOrientationLockPortraitPrimary);
-COMPILE_ASSERT_MATCHING_ENUM(WebScreenOrientationPortraitSecondary, WebScreenOrientationLockPortraitSecondary);
-COMPILE_ASSERT_MATCHING_ENUM(WebScreenOrientationLandscapePrimary, WebScreenOrientationLockLandscapePrimary);
-COMPILE_ASSERT_MATCHING_ENUM(WebScreenOrientationLandscapeSecondary, WebScreenOrientationLockLandscapeSecondary);
+#define STATIC_ASSERT_MATCHING_ENUM(enum1, enum2) \
+    static_assert(static_cast<unsigned>(blink::enum1) == static_cast<unsigned>(blink::enum2), "mismatching enum values")
+STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationPortraitPrimary, WebScreenOrientationLockPortraitPrimary);
+STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationPortraitSecondary, WebScreenOrientationLockPortraitSecondary);
+STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationLandscapePrimary, WebScreenOrientationLockLandscapePrimary);
+STATIC_ASSERT_MATCHING_ENUM(WebScreenOrientationLandscapeSecondary, WebScreenOrientationLockLandscapeSecondary);
 
 namespace blink {
 
@@ -88,6 +88,12 @@ ScreenOrientation* ScreenOrientation::create(LocalFrame* frame)
 {
     ASSERT(frame);
 
+    // Check if the ScreenOrientationController is supported for the
+    // frame. It will not be for all LocalFrames, or the frame may
+    // have been detached.
+    if (!ScreenOrientationController::from(*frame))
+        return nullptr;
+
     ScreenOrientation* orientation = new ScreenOrientation(frame);
     ASSERT(orientation->controller());
     // FIXME: ideally, we would like to provide the ScreenOrientationController
@@ -146,19 +152,19 @@ void ScreenOrientation::setAngle(unsigned short angle)
 
 ScriptPromise ScreenOrientation::lock(ScriptState* state, const AtomicString& lockString)
 {
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
 
     Document* document = m_frame ? m_frame->document() : 0;
 
     if (!document || !controller()) {
-        RefPtrWillBeRawPtr<DOMException> exception = DOMException::create(InvalidStateError, "The object is no longer associated to a document.");
+        DOMException* exception = DOMException::create(InvalidStateError, "The object is no longer associated to a document.");
         resolver->reject(exception);
         return promise;
     }
 
     if (document->isSandboxed(SandboxOrientationLock)) {
-        RefPtrWillBeRawPtr<DOMException> exception = DOMException::create(SecurityError, "The document is sandboxed and lacks the 'allow-orientation-lock' flag.");
+        DOMException* exception = DOMException::create(SecurityError, "The document is sandboxed and lacks the 'allow-orientation-lock' flag.");
         resolver->reject(exception);
         return promise;
     }
@@ -183,9 +189,9 @@ ScreenOrientationController* ScreenOrientation::controller()
     return ScreenOrientationController::from(*m_frame);
 }
 
-void ScreenOrientation::trace(Visitor* visitor)
+DEFINE_TRACE(ScreenOrientation)
 {
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<ScreenOrientation>::trace(visitor);
     DOMWindowProperty::trace(visitor);
 }
 

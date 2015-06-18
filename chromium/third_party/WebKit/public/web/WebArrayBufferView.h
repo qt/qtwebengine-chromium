@@ -34,12 +34,12 @@
 
 namespace v8 {
 class Value;
-template <class T> class Handle;
+template <class T> class Local;
 }
 
-namespace WTF { class ArrayBufferView; }
-
 namespace blink {
+
+class DOMArrayBufferView;
 
 // Provides access to an ArrayBufferView.
 class WebArrayBufferView {
@@ -55,18 +55,18 @@ public:
     BLINK_EXPORT void assign(const WebArrayBufferView&);
     BLINK_EXPORT void reset();
 
-    BLINK_EXPORT static WebArrayBufferView* createFromV8Value(v8::Handle<v8::Value>);
+    BLINK_EXPORT static WebArrayBufferView* createFromV8Value(v8::Local<v8::Value>);
 
 #if BLINK_IMPLEMENTATION
-    WebArrayBufferView(const WTF::PassRefPtr<WTF::ArrayBufferView>&);
-    WebArrayBufferView& operator=(const WTF::PassRefPtr<WTF::ArrayBufferView>&);
-    operator WTF::PassRefPtr<WTF::ArrayBufferView>() const;
+    WebArrayBufferView(const WTF::PassRefPtr<DOMArrayBufferView>&);
+    WebArrayBufferView& operator=(const WTF::PassRefPtr<DOMArrayBufferView>&);
+    operator WTF::PassRefPtr<DOMArrayBufferView>() const;
 #endif
 
 private:
-    WebPrivatePtr<WTF::ArrayBufferView> m_private;
+    WebPrivatePtr<DOMArrayBufferView> m_private;
 };
 
 } // namespace blink
 
-#endif
+#endif // WebArrayBufferView_h

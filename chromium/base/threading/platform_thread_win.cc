@@ -126,18 +126,17 @@ bool CreateThreadInternal(size_t stack_size,
 
 // static
 PlatformThreadId PlatformThread::CurrentId() {
-  return GetCurrentThreadId();
+  return ::GetCurrentThreadId();
 }
 
 // static
 PlatformThreadRef PlatformThread::CurrentRef() {
-  return PlatformThreadRef(GetCurrentThreadId());
+  return PlatformThreadRef(::GetCurrentThreadId());
 }
 
 // static
 PlatformThreadHandle PlatformThread::CurrentHandle() {
-  NOTIMPLEMENTED(); // See OpenThread()
-  return PlatformThreadHandle();
+  return PlatformThreadHandle(::GetCurrentThread());
 }
 
 // static
@@ -155,7 +154,7 @@ void PlatformThread::Sleep(TimeDelta duration) {
 }
 
 // static
-void PlatformThread::SetName(const char* name) {
+void PlatformThread::SetName(const std::string& name) {
   ThreadIdNameManager::GetInstance()->SetName(CurrentId(), name);
 
   // On Windows only, we don't need to tell the profiler about the "BrokerEvent"
@@ -164,7 +163,7 @@ void PlatformThread::SetName(const char* name) {
   // which would also (as a side effect) initialize the profiler in this unused
   // context, including setting up thread local storage, etc.  The performance
   // impact is not terrible, but there is no reason to do initialize it.
-  if (0 != strcmp(name, "BrokerEvent"))
+  if (name != "BrokerEvent")
     tracked_objects::ThreadData::InitializeThreadContext(name);
 
   // The debugger needs to be around to catch the name in the exception.  If
@@ -174,7 +173,7 @@ void PlatformThread::SetName(const char* name) {
   if (!::IsDebuggerPresent() && !base::debug::IsBinaryInstrumented())
     return;
 
-  SetNameInternal(CurrentId(), name);
+  SetNameInternal(CurrentId(), name.c_str());
 }
 
 // static
@@ -234,16 +233,55 @@ void PlatformThread::Join(PlatformThreadHandle thread_handle) {
 // static
 void PlatformThread::SetThreadPriority(PlatformThreadHandle handle,
                                        ThreadPriority priority) {
+  DCHECK(!handle.is_null());
+
+  int desired_priority = THREAD_PRIORITY_ERROR_RETURN;
   switch (priority) {
-    case kThreadPriority_Normal:
-      ::SetThreadPriority(handle.handle_, THREAD_PRIORITY_NORMAL);
+    case ThreadPriority::BACKGROUND:
+      desired_priority = THREAD_PRIORITY_LOWEST;
       break;
-    case kThreadPriority_RealtimeAudio:
-      ::SetThreadPriority(handle.handle_, THREAD_PRIORITY_TIME_CRITICAL);
+    case ThreadPriority::NORMAL:
+      desired_priority = THREAD_PRIORITY_NORMAL;
+      break;
+    case ThreadPriority::DISPLAY:
+      desired_priority = THREAD_PRIORITY_ABOVE_NORMAL;
+      break;
+    case ThreadPriority::REALTIME_AUDIO:
+      desired_priority = THREAD_PRIORITY_TIME_CRITICAL;
       break;
     default:
       NOTREACHED() << "Unknown priority.";
       break;
+  }
+  DCHECK_NE(desired_priority, THREAD_PRIORITY_ERROR_RETURN);
+
+#ifndef NDEBUG
+  const BOOL success =
+#endif
+      ::SetThreadPriority(handle.handle_, desired_priority);
+  DPLOG_IF(ERROR, !success) << "Failed to set thread priority to "
+                            << desired_priority;
+}
+
+// static
+ThreadPriority PlatformThread::GetThreadPriority(PlatformThreadHandle handle) {
+  DCHECK(!handle.is_null());
+
+  int priority = ::GetThreadPriority(handle.handle_);
+  switch (priority) {
+    case THREAD_PRIORITY_LOWEST:
+      return ThreadPriority::BACKGROUND;
+    case THREAD_PRIORITY_NORMAL:
+      return ThreadPriority::NORMAL;
+    case THREAD_PRIORITY_ABOVE_NORMAL:
+      return ThreadPriority::DISPLAY;
+    case THREAD_PRIORITY_TIME_CRITICAL:
+      return ThreadPriority::REALTIME_AUDIO;
+    case THREAD_PRIORITY_ERROR_RETURN:
+      DPCHECK(false) << "GetThreadPriority error";  // Falls through.
+    default:
+      NOTREACHED() << "Unexpected priority: " << priority;
+      return ThreadPriority::NORMAL;
   }
 }
 

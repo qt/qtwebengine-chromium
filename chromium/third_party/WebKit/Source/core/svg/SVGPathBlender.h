@@ -20,52 +20,32 @@
 #ifndef SVGPathBlender_h
 #define SVGPathBlender_h
 
-#include "core/svg/SVGPathConsumer.h"
+#include "platform/heap/Handle.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
-enum FloatBlendMode {
-    BlendHorizontal,
-    BlendVertical
-};
-
+struct PathSegmentData;
+class SVGPathConsumer;
 class SVGPathSource;
 
-class SVGPathBlender {
-    WTF_MAKE_NONCOPYABLE(SVGPathBlender); WTF_MAKE_FAST_ALLOCATED;
+class SVGPathBlender : public NoBaseWillBeGarbageCollectedFinalized<SVGPathBlender> {
+    WTF_MAKE_NONCOPYABLE(SVGPathBlender); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SVGPathBlender);
 public:
-    SVGPathBlender();
+    SVGPathBlender(SVGPathSource* fromSource, SVGPathSource* toSource, SVGPathConsumer*);
 
-    bool addAnimatedPath(SVGPathSource*, SVGPathSource*, SVGPathConsumer*, unsigned repeatCount);
-    bool blendAnimatedPath(float, SVGPathSource*, SVGPathSource*, SVGPathConsumer*);
-    void cleanup();
+    bool addAnimatedPath(unsigned repeatCount);
+    bool blendAnimatedPath(float);
+
+    DECLARE_TRACE();
 
 private:
-    bool blendMoveToSegment();
-    bool blendLineToSegment();
-    bool blendLineToHorizontalSegment();
-    bool blendLineToVerticalSegment();
-    bool blendCurveToCubicSegment();
-    bool blendCurveToCubicSmoothSegment();
-    bool blendCurveToQuadraticSegment();
-    bool blendCurveToQuadraticSmoothSegment();
-    bool blendArcToSegment();
+    class BlendState;
+    bool blendAnimatedPath(BlendState&);
 
-    float blendAnimatedDimensonalFloat(float, float, FloatBlendMode);
-    FloatPoint blendAnimatedFloatPoint(const FloatPoint& from, const FloatPoint& to);
-
-    SVGPathSource* m_fromSource;
-    SVGPathSource* m_toSource;
-    SVGPathConsumer* m_consumer;
-
-    FloatPoint m_fromCurrentPoint;
-    FloatPoint m_toCurrentPoint;
-
-    PathCoordinateMode m_fromMode;
-    PathCoordinateMode m_toMode;
-    float m_progress;
-    unsigned m_addTypesCount;
-    bool m_isInFirstHalfOfAnimation;
+    RawPtrWillBeMember<SVGPathSource> m_fromSource;
+    RawPtrWillBeMember<SVGPathSource> m_toSource;
+    RawPtrWillBeMember<SVGPathConsumer> m_consumer;
 };
 
 } // namespace blink

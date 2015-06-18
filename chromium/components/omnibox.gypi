@@ -10,12 +10,14 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../net/net.gyp:net',
         '../ui/base/ui_base.gyp:ui_base',
         '../url/url.gyp:url_lib',
         'component_metrics_proto',
         'components_resources.gyp:components_resources',
         'components_strings.gyp:components_strings',
+        'history_core_browser',
         'search',
         'search_engines',
         'url_fixer',
@@ -29,8 +31,8 @@
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
-        'omnibox/answers_cache.h',
         'omnibox/answers_cache.cc',
+        'omnibox/answers_cache.h',
         'omnibox/autocomplete_input.cc',
         'omnibox/autocomplete_input.h',
         'omnibox/autocomplete_match.cc',

@@ -12,6 +12,7 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -42,11 +43,25 @@ const char kProperJSONWithCommas[] =
     "\t\"compound\": { \"a\": 1, \"b\": 2, },\n"
     "}\n";
 
+// kProperJSON with a few misc characters at the begin and end.
+const char kProperJSONPadded[] =
+    ")]}'\n"
+    "{\n"
+    "   \"compound\": {\n"
+    "      \"a\": 1,\n"
+    "      \"b\": 2\n"
+    "   },\n"
+    "   \"some_String\": \"1337\",\n"
+    "   \"some_int\": 42,\n"
+    "   \"the_list\": [ \"val1\", \"val2\" ]\n"
+    "}\n"
+    "?!ab\n";
+
 const char kWinLineEnds[] = "\r\n";
 const char kLinuxLineEnds[] = "\n";
 
 // Verifies the generated JSON against the expected output.
-void CheckJSONIsStillTheSame(Value& value) {
+void CheckJSONIsStillTheSame(const Value& value) {
   // Serialize back the output.
   std::string serialized_json;
   JSONStringValueSerializer str_serializer(&serialized_json);
@@ -71,11 +86,29 @@ void ValidateJsonList(const std::string& json) {
   ASSERT_EQ(1, value);
 }
 
-// Test proper JSON [de]serialization from string is working.
-TEST(JSONValueSerializerTest, ReadProperJSONFromString) {
+// Test proper JSON deserialization from string is working.
+TEST(JSONValueDeserializerTest, ReadProperJSONFromString) {
   // Try to deserialize it through the serializer.
-  std::string proper_json(kProperJSON);
-  JSONStringValueSerializer str_deserializer(proper_json);
+  JSONStringValueDeserializer str_deserializer(kProperJSON);
+
+  int error_code = 0;
+  std::string error_message;
+  scoped_ptr<Value> value(
+      str_deserializer.Deserialize(&error_code, &error_message));
+  ASSERT_TRUE(value.get());
+  ASSERT_EQ(0, error_code);
+  ASSERT_TRUE(error_message.empty());
+  // Verify if the same JSON is still there.
+  CheckJSONIsStillTheSame(*value);
+}
+
+// Test proper JSON deserialization from a StringPiece substring.
+TEST(JSONValueDeserializerTest, ReadProperJSONFromStringPiece) {
+  // Create a StringPiece for the substring of kProperJSONPadded that matches
+  // kProperJSON.
+  base::StringPiece proper_json(kProperJSONPadded);
+  proper_json = proper_json.substr(5, proper_json.length() - 10);
+  JSONStringValueDeserializer str_deserializer(proper_json);
 
   int error_code = 0;
   std::string error_message;
@@ -90,10 +123,9 @@ TEST(JSONValueSerializerTest, ReadProperJSONFromString) {
 
 // Test that trialing commas are only properly deserialized from string when
 // the proper flag for that is set.
-TEST(JSONValueSerializerTest, ReadJSONWithTrailingCommasFromString) {
+TEST(JSONValueDeserializerTest, ReadJSONWithTrailingCommasFromString) {
   // Try to deserialize it through the serializer.
-  std::string proper_json(kProperJSONWithCommas);
-  JSONStringValueSerializer str_deserializer(proper_json);
+  JSONStringValueDeserializer str_deserializer(kProperJSONWithCommas);
 
   int error_code = 0;
   std::string error_message;
@@ -111,8 +143,8 @@ TEST(JSONValueSerializerTest, ReadJSONWithTrailingCommasFromString) {
   CheckJSONIsStillTheSame(*value);
 }
 
-// Test proper JSON [de]serialization from file is working.
-TEST(JSONValueSerializerTest, ReadProperJSONFromFile) {
+// Test proper JSON deserialization from file is working.
+TEST(JSONValueDeserializerTest, ReadProperJSONFromFile) {
   ScopedTempDir tempdir;
   ASSERT_TRUE(tempdir.CreateUniqueTempDir());
   // Write it down in the file.
@@ -121,7 +153,7 @@ TEST(JSONValueSerializerTest, ReadProperJSONFromFile) {
             WriteFile(temp_file, kProperJSON, strlen(kProperJSON)));
 
   // Try to deserialize it through the serializer.
-  JSONFileValueSerializer file_deserializer(temp_file);
+  JSONFileValueDeserializer file_deserializer(temp_file);
 
   int error_code = 0;
   std::string error_message;
@@ -136,7 +168,7 @@ TEST(JSONValueSerializerTest, ReadProperJSONFromFile) {
 
 // Test that trialing commas are only properly deserialized from file when
 // the proper flag for that is set.
-TEST(JSONValueSerializerTest, ReadJSONWithCommasFromFile) {
+TEST(JSONValueDeserializerTest, ReadJSONWithCommasFromFile) {
   ScopedTempDir tempdir;
   ASSERT_TRUE(tempdir.CreateUniqueTempDir());
   // Write it down in the file.
@@ -146,7 +178,7 @@ TEST(JSONValueSerializerTest, ReadJSONWithCommasFromFile) {
                       strlen(kProperJSONWithCommas)));
 
   // Try to deserialize it through the serializer.
-  JSONFileValueSerializer file_deserializer(temp_file);
+  JSONFileValueDeserializer file_deserializer(temp_file);
   // This must fail without the proper flag.
   int error_code = 0;
   std::string error_message;
@@ -164,11 +196,27 @@ TEST(JSONValueSerializerTest, ReadJSONWithCommasFromFile) {
   CheckJSONIsStillTheSame(*value);
 }
 
+TEST(JSONValueDeserializerTest, AllowTrailingComma) {
+  scoped_ptr<Value> root;
+  scoped_ptr<Value> root_expected;
+  static const char kTestWithCommas[] = "{\"key\": [true,],}";
+  static const char kTestNoCommas[] = "{\"key\": [true]}";
+
+  JSONStringValueDeserializer deserializer(kTestWithCommas);
+  deserializer.set_allow_trailing_comma(true);
+  JSONStringValueDeserializer deserializer_expected(kTestNoCommas);
+  root.reset(deserializer.Deserialize(NULL, NULL));
+  ASSERT_TRUE(root.get());
+  root_expected.reset(deserializer_expected.Deserialize(NULL, NULL));
+  ASSERT_TRUE(root_expected.get());
+  ASSERT_TRUE(root->Equals(root_expected.get()));
+}
+
 TEST(JSONValueSerializerTest, Roundtrip) {
-  const std::string original_serialization =
+  static const char kOriginalSerialization[] =
     "{\"bool\":true,\"double\":3.14,\"int\":42,\"list\":[1,2],\"null\":null}";
-  JSONStringValueSerializer serializer(original_serialization);
-  scoped_ptr<Value> root(serializer.Deserialize(NULL, NULL));
+  JSONStringValueDeserializer deserializer(kOriginalSerialization);
+  scoped_ptr<Value> root(deserializer.Deserialize(NULL, NULL));
   ASSERT_TRUE(root.get());
   ASSERT_TRUE(root->IsType(Value::TYPE_DICTIONARY));
 
@@ -191,14 +239,10 @@ TEST(JSONValueSerializerTest, Roundtrip) {
   ASSERT_TRUE(root_dict->GetDouble("double", &double_value));
   ASSERT_DOUBLE_EQ(3.14, double_value);
 
-  // We shouldn't be able to write using this serializer, since it was
-  // initialized with a const string.
-  ASSERT_FALSE(serializer.Serialize(*root_dict));
-
   std::string test_serialization;
   JSONStringValueSerializer mutable_serializer(&test_serialization);
   ASSERT_TRUE(mutable_serializer.Serialize(*root_dict));
-  ASSERT_EQ(original_serialization, test_serialization);
+  ASSERT_EQ(kOriginalSerialization, test_serialization);
 
   mutable_serializer.set_pretty_print(true);
   ASSERT_TRUE(mutable_serializer.Serialize(*root_dict));
@@ -273,15 +317,15 @@ TEST(JSONValueSerializerTest, UnicodeStrings) {
   string16 test(WideToUTF16(L"\x7F51\x9875"));
   root.SetString("web", test);
 
-  std::string expected = "{\"web\":\"\xE7\xBD\x91\xE9\xA1\xB5\"}";
+  static const char kExpected[] = "{\"web\":\"\xE7\xBD\x91\xE9\xA1\xB5\"}";
 
   std::string actual;
   JSONStringValueSerializer serializer(&actual);
   ASSERT_TRUE(serializer.Serialize(root));
-  ASSERT_EQ(expected, actual);
+  ASSERT_EQ(kExpected, actual);
 
   // escaped ascii text -> json
-  JSONStringValueSerializer deserializer(expected);
+  JSONStringValueDeserializer deserializer(kExpected);
   scoped_ptr<Value> deserial_root(deserializer.Deserialize(NULL, NULL));
   ASSERT_TRUE(deserial_root.get());
   DictionaryValue* dict_root =
@@ -297,15 +341,15 @@ TEST(JSONValueSerializerTest, HexStrings) {
   string16 test(WideToUTF16(L"\x01\x02"));
   root.SetString("test", test);
 
-  std::string expected = "{\"test\":\"\\u0001\\u0002\"}";
+  static const char kExpected[] = "{\"test\":\"\\u0001\\u0002\"}";
 
   std::string actual;
   JSONStringValueSerializer serializer(&actual);
   ASSERT_TRUE(serializer.Serialize(root));
-  ASSERT_EQ(expected, actual);
+  ASSERT_EQ(kExpected, actual);
 
   // escaped ascii text -> json
-  JSONStringValueSerializer deserializer(expected);
+  JSONStringValueDeserializer deserializer(kExpected);
   scoped_ptr<Value> deserial_root(deserializer.Deserialize(NULL, NULL));
   ASSERT_TRUE(deserial_root.get());
   DictionaryValue* dict_root =
@@ -315,29 +359,13 @@ TEST(JSONValueSerializerTest, HexStrings) {
   ASSERT_EQ(test, test_value);
 
   // Test converting escaped regular chars
-  std::string escaped_chars = "{\"test\":\"\\u0067\\u006f\"}";
-  JSONStringValueSerializer deserializer2(escaped_chars);
+  static const char kEscapedChars[] = "{\"test\":\"\\u0067\\u006f\"}";
+  JSONStringValueDeserializer deserializer2(kEscapedChars);
   deserial_root.reset(deserializer2.Deserialize(NULL, NULL));
   ASSERT_TRUE(deserial_root.get());
   dict_root = static_cast<DictionaryValue*>(deserial_root.get());
   ASSERT_TRUE(dict_root->GetString("test", &test_value));
   ASSERT_EQ(ASCIIToUTF16("go"), test_value);
-}
-
-TEST(JSONValueSerializerTest, AllowTrailingComma) {
-  scoped_ptr<Value> root;
-  scoped_ptr<Value> root_expected;
-  std::string test_with_commas("{\"key\": [true,],}");
-  std::string test_no_commas("{\"key\": [true]}");
-
-  JSONStringValueSerializer serializer(test_with_commas);
-  serializer.set_allow_trailing_comma(true);
-  JSONStringValueSerializer serializer_expected(test_no_commas);
-  root.reset(serializer.Deserialize(NULL, NULL));
-  ASSERT_TRUE(root.get());
-  root_expected.reset(serializer_expected.Deserialize(NULL, NULL));
-  ASSERT_TRUE(root_expected.get());
-  ASSERT_TRUE(root->Equals(root_expected.get()));
 }
 
 TEST(JSONValueSerializerTest, JSONReaderComments) {
@@ -372,9 +400,7 @@ TEST(JSONValueSerializerTest, JSONReaderComments) {
 
 class JSONFileValueSerializerTest : public testing::Test {
  protected:
-  virtual void SetUp() override {
-    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-  }
+  void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
 
   base::ScopedTempDir temp_dir_;
 };
@@ -387,7 +413,7 @@ TEST_F(JSONFileValueSerializerTest, Roundtrip) {
 
   ASSERT_TRUE(PathExists(original_file_path));
 
-  JSONFileValueSerializer deserializer(original_file_path);
+  JSONFileValueDeserializer deserializer(original_file_path);
   scoped_ptr<Value> root;
   root.reset(deserializer.Deserialize(NULL, NULL));
 
@@ -435,7 +461,7 @@ TEST_F(JSONFileValueSerializerTest, RoundtripNested) {
 
   ASSERT_TRUE(PathExists(original_file_path));
 
-  JSONFileValueSerializer deserializer(original_file_path);
+  JSONFileValueDeserializer deserializer(original_file_path);
   scoped_ptr<Value> root;
   root.reset(deserializer.Deserialize(NULL, NULL));
   ASSERT_TRUE(root.get());
@@ -460,9 +486,9 @@ TEST_F(JSONFileValueSerializerTest, NoWhitespace) {
   source_file_path = source_file_path.Append(
       FILE_PATH_LITERAL("serializer_test_nowhitespace.json"));
   ASSERT_TRUE(PathExists(source_file_path));
-  JSONFileValueSerializer serializer(source_file_path);
+  JSONFileValueDeserializer deserializer(source_file_path);
   scoped_ptr<Value> root;
-  root.reset(serializer.Deserialize(NULL, NULL));
+  root.reset(deserializer.Deserialize(NULL, NULL));
   ASSERT_TRUE(root.get());
 }
 

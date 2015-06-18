@@ -9,10 +9,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
 
 namespace blink {
 class WebIDBKey;
@@ -31,7 +32,9 @@ class CONTENT_EXPORT IndexedDBKey {
   explicit IndexedDBKey(const base::string16& string);
   IndexedDBKey(double number,
                blink::WebIDBKeyType type);  // must be date or number
+  IndexedDBKey(const IndexedDBKey& other);
   ~IndexedDBKey();
+  IndexedDBKey& operator=(const IndexedDBKey& other);
 
   bool IsValid() const;
 
@@ -39,11 +42,26 @@ class CONTENT_EXPORT IndexedDBKey {
   bool Equals(const IndexedDBKey& other) const;
 
   blink::WebIDBKeyType type() const { return type_; }
-  const std::vector<IndexedDBKey>& array() const { return array_; }
-  const std::string& binary() const { return binary_; }
-  const base::string16& string() const { return string_; }
-  double date() const { return date_; }
-  double number() const { return number_; }
+  const std::vector<IndexedDBKey>& array() const {
+    DCHECK_EQ(type_, blink::WebIDBKeyTypeArray);
+    return array_;
+  }
+  const std::string& binary() const {
+    DCHECK_EQ(type_, blink::WebIDBKeyTypeBinary);
+    return binary_;
+  }
+  const base::string16& string() const {
+    DCHECK_EQ(type_, blink::WebIDBKeyTypeString);
+    return string_;
+  }
+  double date() const {
+    DCHECK_EQ(type_, blink::WebIDBKeyTypeDate);
+    return number_;
+  }
+  double number() const {
+    DCHECK_EQ(type_, blink::WebIDBKeyTypeNumber);
+    return number_;
+  }
 
   size_t size_estimate() const { return size_estimate_; }
 
@@ -54,8 +72,7 @@ class CONTENT_EXPORT IndexedDBKey {
   std::vector<IndexedDBKey> array_;
   std::string binary_;
   base::string16 string_;
-  double date_;
-  double number_;
+  double number_ = 0;
 
   size_t size_estimate_;
 };

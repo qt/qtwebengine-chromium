@@ -36,9 +36,9 @@
 #include "core/events/KeyboardEvent.h"
 #include "core/frame/Settings.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/layout/LayoutDetailsMarker.h"
 #include "core/page/Chrome.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderDetailsMarker.h"
 #include "platform/LayoutTestSupport.h"
 #include "wtf/TemporaryChange.h"
 
@@ -69,14 +69,14 @@ PickerIndicatorElement::~PickerIndicatorElement()
     ASSERT(!m_chooser);
 }
 
-RenderObject* PickerIndicatorElement::createRenderer(RenderStyle*)
+LayoutObject* PickerIndicatorElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderDetailsMarker(this);
+    return new LayoutDetailsMarker(this);
 }
 
 void PickerIndicatorElement::defaultEventHandler(Event* event)
 {
-    if (!renderer())
+    if (!layoutObject())
         return;
     if (!m_pickerIndicatorOwner || m_pickerIndicatorOwner->isPickerIndicatorOwnerDisabledOrReadOnly())
         return;
@@ -98,7 +98,7 @@ void PickerIndicatorElement::defaultEventHandler(Event* event)
 
 bool PickerIndicatorElement::willRespondToMouseClickEvents()
 {
-    if (renderer() && m_pickerIndicatorOwner && !m_pickerIndicatorOwner->isPickerIndicatorOwnerDisabledOrReadOnly())
+    if (layoutObject() && m_pickerIndicatorOwner && !m_pickerIndicatorOwner->isPickerIndicatorOwnerDisabledOrReadOnly())
         return true;
 
     return HTMLDivElement::willRespondToMouseClickEvents();
@@ -191,7 +191,7 @@ void PickerIndicatorElement::didNotifySubtreeInsertionsToDocument()
     setAttribute(roleAttr, "button");
 }
 
-void PickerIndicatorElement::trace(Visitor* visitor)
+DEFINE_TRACE(PickerIndicatorElement)
 {
     visitor->trace(m_pickerIndicatorOwner);
     HTMLDivElement::trace(visitor);

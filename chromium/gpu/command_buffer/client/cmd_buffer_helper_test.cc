@@ -9,17 +9,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/linked_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_nsautorelease_pool.h"
-#endif
 
 namespace gpu {
 
@@ -256,10 +251,6 @@ class CommandBufferHelperTest : public testing::Test {
 
   CommandBufferOffset get_helper_put() { return helper_->put_; }
 
-#if defined(OS_MACOSX)
-  base::mac::ScopedNSAutoreleasePool autorelease_pool_;
-#endif
-  base::MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
   scoped_ptr<CommandBufferServiceLocked> command_buffer_;
@@ -471,8 +462,8 @@ TEST_F(CommandBufferHelperTest, TestCommandProcessing) {
 TEST_F(CommandBufferHelperTest, TestCommandWrapping) {
   // Add num_commands * commands of size 3 through the helper to make sure we
   // do wrap.  kTotalNumCommandEntries must not be a multiple of 3.
-  COMPILE_ASSERT(kTotalNumCommandEntries % 3 != 0,
-                 Is_multiple_of_num_command_entries);
+  static_assert(kTotalNumCommandEntries % 3 != 0,
+                "kTotalNumCommandEntries must not be a multiple of 3");
   const int kNumCommands = (kTotalNumCommandEntries / 3) * 2;
   CommandBufferEntry args1[2];
   args1[0].value_uint32 = 5;
@@ -495,8 +486,8 @@ TEST_F(CommandBufferHelperTest, TestCommandWrapping) {
 TEST_F(CommandBufferHelperTest, TestCommandWrappingExactMultiple) {
   const int32 kCommandSize = kTotalNumCommandEntries / 2;
   const size_t kNumArgs = kCommandSize - 1;
-  COMPILE_ASSERT(kTotalNumCommandEntries % kCommandSize == 0,
-                 Not_multiple_of_num_command_entries);
+  static_assert(kTotalNumCommandEntries % kCommandSize == 0,
+                "kTotalNumCommandEntries should be a multiple of kCommandSize");
   CommandBufferEntry args1[kNumArgs];
   for (size_t ii = 0; ii < kNumArgs; ++ii) {
     args1[ii].value_uint32 = ii + 1;
@@ -707,6 +698,66 @@ TEST_F(CommandBufferHelperTest, TestFlushGeneration) {
 
   // Check the error status.
   EXPECT_EQ(error::kNoError, GetError());
+}
+
+TEST_F(CommandBufferHelperTest, TestOrderingBarrierFlushGeneration) {
+  // Explicit flushing only.
+  helper_->SetAutomaticFlushes(false);
+
+  // Generation should change after OrderingBarrier() but not before.
+  uint32 gen1, gen2, gen3;
+
+  gen1 = GetHelperFlushGeneration();
+  AddUniqueCommandWithExpect(error::kNoError, 2);
+  gen2 = GetHelperFlushGeneration();
+  helper_->OrderingBarrier();
+  gen3 = GetHelperFlushGeneration();
+  EXPECT_EQ(gen2, gen1);
+  EXPECT_NE(gen3, gen2);
+
+  helper_->Finish();
+
+  // Check that the commands did happen.
+  Mock::VerifyAndClearExpectations(api_mock_.get());
+
+  // Check the error status.
+  EXPECT_EQ(error::kNoError, GetError());
+}
+
+// Expect Flush() to always call CommandBuffer::Flush().
+TEST_F(CommandBufferHelperTest, TestFlushToCommandBuffer) {
+  // Explicit flushing only.
+  helper_->SetAutomaticFlushes(false);
+
+  int flush_count1, flush_count2, flush_count3;
+
+  flush_count1 = command_buffer_->FlushCount();
+  AddUniqueCommandWithExpect(error::kNoError, 2);
+  helper_->Flush();
+  flush_count2 = command_buffer_->FlushCount();
+  helper_->Flush();
+  flush_count3 = command_buffer_->FlushCount();
+
+  EXPECT_EQ(flush_count2, flush_count1 + 1);
+  EXPECT_EQ(flush_count3, flush_count2 + 1);
+}
+
+// Expect OrderingBarrier() to always call CommandBuffer::OrderingBarrier().
+TEST_F(CommandBufferHelperTest, TestOrderingBarrierToCommandBuffer) {
+  // Explicit flushing only.
+  helper_->SetAutomaticFlushes(false);
+
+  int flush_count1, flush_count2, flush_count3;
+
+  flush_count1 = command_buffer_->FlushCount();
+  AddUniqueCommandWithExpect(error::kNoError, 2);
+  helper_->OrderingBarrier();
+  flush_count2 = command_buffer_->FlushCount();
+  helper_->OrderingBarrier();
+  flush_count3 = command_buffer_->FlushCount();
+
+  EXPECT_EQ(flush_count2, flush_count1 + 1);
+  EXPECT_EQ(flush_count3, flush_count2 + 1);
 }
 
 }  // namespace gpu

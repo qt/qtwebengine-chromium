@@ -1,10 +1,9 @@
-<!DOCTYPE html>
-<html i18n-values="
-    dir:textdirection;
-    hasattribution:hasattribution;
-    themegravity:themegravity;
-    bookmarkbarattached:bookmarkbarattached;"
-  class="starting-up">
+<!doctype html>
+<html class="starting-up" i18n-values="dir:textdirection;
+                                       hasattribution:hasattribution;
+                                       themegravity:themegravity;
+                                       bookmarkbarattached:bookmarkbarattached;
+                                       lang:language">
 <head>
 <meta charset="utf-8">
 <title i18n-content="title"></title>
@@ -20,6 +19,7 @@
 <!-- It's important that this be the first script loaded. -->
 <script src="logging.js"></script>
 
+<link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/bubble.css">
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/expandable_bubble.css">
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/menu.css">
@@ -27,7 +27,6 @@
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/trash.css">
 <link rel="stylesheet" href="../../../../ui/webui/resources/css/widgets.css">
 <link rel="stylesheet" href="apps_page.css">
-<link rel="stylesheet" href="chrome://newtab/suggestions_page.css">
 <link rel="stylesheet" href="most_visited_page.css">
 <link rel="stylesheet" href="nav_dot.css">
 <link rel="stylesheet" href="new_tab.css">
@@ -66,11 +65,10 @@
 
 <script src="nav_dot.js"></script>
 <script src="new_tab.js"></script>
-<script src="recently_closed.js"></script>
 <script src="other_sessions.js"></script>
 </head>
 
-<body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
+<body>
   <div id="notification-container" class="inactive" hidden>
     <div id="notification">
       <span></span>
@@ -123,11 +121,6 @@
           <span i18n-content="otherSessions"></span>
           <div class="disclosure-triangle"></div>
         </button>
-        <button id="recently-closed-menu-button"
-            class="footer-menu-button custom-appearance" hidden>
-          <span i18n-content="recentlyclosed"></span>
-          <div class="disclosure-triangle"></div>
-        </button>
         <a id="chrome-web-store-link">
           <span id="chrome-web-store-title" i18n-content="webStoreTitleShort">
           </span>
@@ -143,12 +136,12 @@
     </div>
   </div>
 
-  <button id="login-container" class="custom-appearance" hidden>
+  <div id="login-container" hidden>
     <div id="login-status-header-container" class="login-status-row">
       <div id="login-status-header"></div>
     </div>
     <div id="login-status-sub-header"></div>
-  </button>
+  </div>
 </body>
 
 <!-- A div to hold all the templates, and in the darkness bind them. -->

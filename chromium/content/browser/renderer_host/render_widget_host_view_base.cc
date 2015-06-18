@@ -5,6 +5,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
@@ -13,9 +14,9 @@
 #include "content/common/content_switches_internal.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size_conversions.h"
-#include "ui/gfx/size_f.h"
 
 #if defined(OS_WIN)
 #include "base/command_line.h"
@@ -83,6 +84,10 @@ void NotifyPluginProcessHostHelper(HWND window, HWND parent, int tries) {
 // parent which is typically the RVH window which turns on user gesture.
 LRESULT CALLBACK PluginWrapperWindowProc(HWND window, unsigned int message,
                                          WPARAM wparam, LPARAM lparam) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 PluginWrapperWindowProc"));
+
   if (message == WM_PARENTNOTIFY) {
     switch (LOWORD(wparam)) {
       case WM_LBUTTONDOWN:
@@ -186,8 +191,8 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
   if (moves.empty())
     return;
 
-  bool oop_plugins =
-    !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+  bool oop_plugins = !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kSingleProcess);
 
   HDWP defer_window_pos_info =
       ::BeginDeferWindowPos(static_cast<int>(moves.size()));
@@ -406,7 +411,11 @@ gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
                                           display.device_scale_factor()));
 }
 
-float RenderWidgetHostViewBase::GetTopControlsLayoutHeight() const {
+bool RenderWidgetHostViewBase::DoTopControlsShrinkBlinkSize() const {
+  return false;
+}
+
+float RenderWidgetHostViewBase::GetTopControlsHeight() const {
   return 0.f;
 }
 
@@ -453,10 +462,6 @@ InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
-}
-
-void RenderWidgetHostViewBase::OnDidFlushInput() {
-  // The notification can safely be ignored by most implementations.
 }
 
 void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
@@ -605,10 +610,6 @@ void RenderWidgetHostViewBase::FlushInput() {
   impl->FlushInput();
 }
 
-SkColorType RenderWidgetHostViewBase::PreferredReadbackFormat() {
-  return kN32_SkColorType;
-}
-
 void RenderWidgetHostViewBase::OnTextSurroundingSelectionResponse(
     const base::string16& content,
     size_t start_offset,
@@ -689,6 +690,13 @@ RenderWidgetHostViewBase::GetOrientationTypeForDesktop(
   return primary_landscape_angle == angle
       ? blink::WebScreenOrientationLandscapePrimary
       : blink::WebScreenOrientationLandscapeSecondary;
+}
+
+void RenderWidgetHostViewBase::OnDidNavigateMainFrameToNewPage() {
+}
+
+uint32_t RenderWidgetHostViewBase::GetSurfaceIdNamespace() {
+  return 0;
 }
 
 }  // namespace content

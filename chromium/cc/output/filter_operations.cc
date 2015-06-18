@@ -6,7 +6,7 @@
 
 #include <cmath>
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/output/filter_operation.h"
 
@@ -197,7 +197,8 @@ FilterOperations FilterOperations::Blend(const FilterOperations& from,
   return blended_filters;
 }
 
-void FilterOperations::AsValueInto(base::debug::TracedValue* value) const {
+void FilterOperations::AsValueInto(
+    base::trace_event::TracedValue* value) const {
   for (size_t i = 0; i < operations_.size(); ++i) {
     value->BeginDictionary();
     operations_[i].AsValueInto(value);

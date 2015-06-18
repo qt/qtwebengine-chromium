@@ -66,7 +66,7 @@ cvox.TtsBackground = function(opt_enableMath) {
       parseInt(localStorage[cvox.AbstractTts.PUNCTUATION_ECHO] || 1, 10);
 
   /**
-   * @type {!Array.<{name:(string),
+   * @type {!Array<{name:(string),
    * msg:(string),
    * regexp:(RegExp),
    * clear:(boolean)}>}
@@ -108,7 +108,7 @@ cvox.TtsBackground = function(opt_enableMath) {
    * A list of punctuation characters that should always be spliced into output
    * even with literal word substitutions.
    * This is important for tts prosity.
-   * @type {!Array.<string>}
+   * @type {!Array<string>}
    * @private
   */
   this.retainPunctuation_ =
@@ -128,11 +128,11 @@ cvox.TtsBackground = function(opt_enableMath) {
 
   try {
     /**
-     * @type {Object.<string, string>}
+     * @type {Object<string, string>}
      * @private
      * @const
      */
-    this.PHONETIC_MAP_ = /** @type {Object.<string, string>} */(
+    this.PHONETIC_MAP_ = /** @type {Object<string, string>} */(
         JSON.parse(cvox.ChromeVox.msgs.getMsg('phonetic_map')));
   } catch (e) {
     console.log('Error; unable to parse phonetic map msg.');
@@ -140,7 +140,7 @@ cvox.TtsBackground = function(opt_enableMath) {
 
   /**
    * Capturing tts event listeners.
-   * @type {Array.<cvox.TtsCapturingEventListener>}
+   * @type {Array<cvox.TtsCapturingEventListener>}
    * @private
    */
   this.capturingTtsEventListeners_ = [];
@@ -154,7 +154,7 @@ cvox.TtsBackground = function(opt_enableMath) {
 
   /**
    * The utterance queue.
-   * @type {Array.<cvox.Utterance>}
+   * @type {Array<cvox.Utterance>}
    * @private
    */
   this.utteranceQueue_ = [];
@@ -192,7 +192,7 @@ cvox.TtsBackground.PHONETIC_DELAY_MS_ = 1000;
 /**
  * The list of properties allowed to be passed to the chrome.tts.speak API.
  * Anything outside this list will be stripped.
- * @type {Array.<string>}
+ * @type {Array<string>}
  * @private
  * @const
  */
@@ -229,6 +229,7 @@ cvox.TtsBackground.prototype.speak = function(
   if (splitTextString.length > 2) {
     var startCallback = properties['startCallback'];
     var endCallback = properties['endCallback'];
+    var onEvent = properties['onEvent'];
     for (var i = 0; i < splitTextString.length; i++) {
       var propertiesCopy = {};
       for (var p in properties) {
@@ -237,6 +238,8 @@ cvox.TtsBackground.prototype.speak = function(
       propertiesCopy['startCallback'] = i == 0 ? startCallback : null;
       propertiesCopy['endCallback'] =
           i == (splitTextString.length - 1) ? endCallback : null;
+      propertiesCopy['onEvent'] =
+          i == (splitTextString.length - 1) ? onEvent : null;
       this.speak(splitTextString[i], queueMode, propertiesCopy);
       queueMode = cvox.QueueMode.QUEUE;
     }
@@ -346,8 +349,9 @@ cvox.TtsBackground.prototype.startSpeakingNextItemInQueue_ = function() {
   var utteranceId = this.currentUtterance_.id;
 
   this.currentUtterance_.properties['onEvent'] = goog.bind(function(event) {
-    this.onTtsEvent_(event, utteranceId);
-  }, this);
+            this.onTtsEvent_(event, utteranceId);
+          },
+  this);
 
   var validatedProperties = {};
   for (var i = 0; i < cvox.TtsBackground.ALLOWED_PROPERTIES_.length; i++) {
@@ -394,14 +398,26 @@ cvox.TtsBackground.prototype.onTtsEvent_ = function(event, utteranceId) {
       }
       break;
     case 'end':
+      // End callbacks could cause additional speech to queue up.
+      this.currentUtterance_ = null;
       this.capturingTtsEventListeners_.forEach(function(listener) {
         listener.onTtsEnd();
       });
-    // Intentionally falls through.
+      if (utterance.properties['endCallback']) {
+        try {
+          utterance.properties['endCallback']();
+        } catch (e) {
+        }
+      }
+      this.startSpeakingNextItemInQueue_();
+      break;
     case 'interrupted':
       this.cancelUtterance_(utterance);
       this.currentUtterance_ = null;
-      this.startSpeakingNextItemInQueue_();
+      for (var i = 0; i < this.utteranceQueue_.length; i++) {
+        this.cancelUtterance_(this.utteranceQueue_[i]);
+      }
+      this.utteranceQueue_.length = 0;
       break;
     case 'error':
       this.onError_(event['errorMessage']);
@@ -451,7 +467,7 @@ cvox.TtsBackground.prototype.shouldCancel_ =
 cvox.TtsBackground.prototype.cancelUtterance_ = function(utterance) {
   if (utterance && utterance.properties['endCallback']) {
     try {
-      utterance.properties['endCallback']();
+      utterance.properties['endCallback'](true);
     } catch (e) {
     }
   }
@@ -480,6 +496,7 @@ cvox.TtsBackground.prototype.stop = function() {
   for (var i = 0; i < this.utteranceQueue_.length; i++) {
     this.cancelUtterance_(this.utteranceQueue_[i]);
   }
+
   this.utteranceQueue_.length = 0;
 
   chrome.tts.stop();

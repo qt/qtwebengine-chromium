@@ -29,6 +29,7 @@
 #include "core/svg/SVGLengthTearOff.h"
 #include "core/svg/SVGPointTearOff.h"
 #include "core/svg/SVGZoomAndPan.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -44,6 +45,7 @@ class SVGSVGElement final : public SVGGraphicsElement,
                             public SVGFitToViewBox,
                             public SVGZoomAndPan {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGSVGElement);
 public:
     DECLARE_NODE_FACTORY(SVGSVGElement);
 
@@ -53,7 +55,7 @@ public:
 #endif
 
     // 'SVGSVGElement' functions
-    PassRefPtr<SVGRectTearOff> viewport() const;
+    PassRefPtrWillBeRawPtr<SVGRectTearOff> viewport() const;
 
     float pixelUnitToMillimeterX() const;
     float pixelUnitToMillimeterY() const;
@@ -73,7 +75,7 @@ public:
 
     FloatPoint currentTranslate() { return m_translation->value(); }
     void setCurrentTranslate(const FloatPoint&);
-    PassRefPtr<SVGPointTearOff> currentTranslateFromJavascript();
+    PassRefPtrWillBeRawPtr<SVGPointTearOff> currentTranslateFromJavascript();
 
     SMILTimeContainer* timeContainer() const { return m_timeContainer.get(); }
 
@@ -90,24 +92,25 @@ public:
     void unsuspendRedrawAll() { }
     void forceRedraw() { }
 
-    PassRefPtrWillBeRawPtr<StaticNodeList> getIntersectionList(PassRefPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
-    PassRefPtrWillBeRawPtr<StaticNodeList> getEnclosureList(PassRefPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
-    bool checkIntersection(SVGElement*, PassRefPtr<SVGRectTearOff>) const;
-    bool checkEnclosure(SVGElement*, PassRefPtr<SVGRectTearOff>) const;
+    PassRefPtrWillBeRawPtr<StaticNodeList> getIntersectionList(PassRefPtrWillBeRawPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
+    PassRefPtrWillBeRawPtr<StaticNodeList> getEnclosureList(PassRefPtrWillBeRawPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
+    bool checkIntersection(SVGElement*, PassRefPtrWillBeRawPtr<SVGRectTearOff>) const;
+    bool checkEnclosure(SVGElement*, PassRefPtrWillBeRawPtr<SVGRectTearOff>) const;
     void deselectAll();
 
-    static PassRefPtr<SVGNumberTearOff> createSVGNumber();
-    static PassRefPtr<SVGLengthTearOff> createSVGLength();
-    static PassRefPtr<SVGAngleTearOff> createSVGAngle();
-    static PassRefPtr<SVGPointTearOff> createSVGPoint();
-    static PassRefPtr<SVGMatrixTearOff> createSVGMatrix();
-    static PassRefPtr<SVGRectTearOff> createSVGRect();
-    static PassRefPtr<SVGTransformTearOff> createSVGTransform();
-    static PassRefPtr<SVGTransformTearOff> createSVGTransformFromMatrix(PassRefPtr<SVGMatrixTearOff>);
+    static PassRefPtrWillBeRawPtr<SVGNumberTearOff> createSVGNumber();
+    static PassRefPtrWillBeRawPtr<SVGLengthTearOff> createSVGLength();
+    static PassRefPtrWillBeRawPtr<SVGAngleTearOff> createSVGAngle();
+    static PassRefPtrWillBeRawPtr<SVGPointTearOff> createSVGPoint();
+    static PassRefPtrWillBeRawPtr<SVGMatrixTearOff> createSVGMatrix();
+    static PassRefPtrWillBeRawPtr<SVGRectTearOff> createSVGRect();
+    static PassRefPtrWillBeRawPtr<SVGTransformTearOff> createSVGTransform();
+    static PassRefPtrWillBeRawPtr<SVGTransformTearOff> createSVGTransformFromMatrix(PassRefPtrWillBeRawPtr<SVGMatrixTearOff>);
 
     AffineTransform viewBoxToViewTransform(float viewWidth, float viewHeight) const;
 
     void setupInitialView(const String& fragmentIdentifier, Element* anchorNode);
+    bool zoomAndPanEnabled() const;
 
     bool hasIntrinsicWidth() const;
     bool hasIntrinsicHeight() const;
@@ -117,7 +120,7 @@ public:
     SVGAnimatedLength* width() const { return m_width.get(); }
     SVGAnimatedLength* height() const { return m_height.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGSVGElement(Document&);
@@ -125,10 +128,11 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
@@ -151,16 +155,16 @@ private:
     bool checkIntersectionOrEnclosure(const SVGElement&, const FloatRect&, CheckIntersectionOrEnclosure) const;
     PassRefPtrWillBeRawPtr<StaticNodeList> collectIntersectionOrEnclosureList(const FloatRect&, SVGElement*, CheckIntersectionOrEnclosure) const;
 
-    RefPtr<SVGAnimatedLength> m_x;
-    RefPtr<SVGAnimatedLength> m_y;
-    RefPtr<SVGAnimatedLength> m_width;
-    RefPtr<SVGAnimatedLength> m_height;
+    RefPtrWillBeMember<SVGAnimatedLength> m_x;
+    RefPtrWillBeMember<SVGAnimatedLength> m_y;
+    RefPtrWillBeMember<SVGAnimatedLength> m_width;
+    RefPtrWillBeMember<SVGAnimatedLength> m_height;
 
     virtual AffineTransform localCoordinateSpaceTransform(SVGElement::CTMScope) const override;
 
     bool m_useCurrentView;
     RefPtrWillBeMember<SMILTimeContainer> m_timeContainer;
-    RefPtr<SVGPoint> m_translation;
+    RefPtrWillBeMember<SVGPoint> m_translation;
     RefPtrWillBeMember<SVGViewSpec> m_viewSpec;
 
     friend class SVGCurrentTranslateTearOff;

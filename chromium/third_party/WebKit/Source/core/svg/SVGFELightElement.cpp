@@ -24,7 +24,7 @@
 
 #include "core/SVGNames.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 #include "core/svg/SVGFESpecularLightingElement.h"
 
@@ -55,6 +55,21 @@ SVGFELightElement::SVGFELightElement(const QualifiedName& tagName, Document& doc
     addToPropertyMap(m_limitingConeAngle);
 }
 
+DEFINE_TRACE(SVGFELightElement)
+{
+    visitor->trace(m_azimuth);
+    visitor->trace(m_elevation);
+    visitor->trace(m_x);
+    visitor->trace(m_y);
+    visitor->trace(m_z);
+    visitor->trace(m_pointsAtX);
+    visitor->trace(m_pointsAtY);
+    visitor->trace(m_pointsAtZ);
+    visitor->trace(m_specularExponent);
+    visitor->trace(m_limitingConeAngle);
+    SVGElement::trace(visitor);
+}
+
 SVGFELightElement* SVGFELightElement::findLightElement(const SVGElement& svgElement)
 {
     return Traversal<SVGFELightElement>::firstChild(svgElement);
@@ -70,38 +85,8 @@ FloatPoint3D SVGFELightElement::pointsAt() const
     return FloatPoint3D(pointsAtX()->currentValue()->value(), pointsAtY()->currentValue()->value(), pointsAtZ()->currentValue()->value());
 }
 
-bool SVGFELightElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::azimuthAttr);
-        supportedAttributes.add(SVGNames::elevationAttr);
-        supportedAttributes.add(SVGNames::xAttr);
-        supportedAttributes.add(SVGNames::yAttr);
-        supportedAttributes.add(SVGNames::zAttr);
-        supportedAttributes.add(SVGNames::pointsAtXAttr);
-        supportedAttributes.add(SVGNames::pointsAtYAttr);
-        supportedAttributes.add(SVGNames::pointsAtZAttr);
-        supportedAttributes.add(SVGNames::specularExponentAttr);
-        supportedAttributes.add(SVGNames::limitingConeAngleAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGFELightElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGFELightElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (attrName == SVGNames::azimuthAttr
         || attrName == SVGNames::elevationAttr
         || attrName == SVGNames::xAttr
@@ -116,10 +101,11 @@ void SVGFELightElement::svgAttributeChanged(const QualifiedName& attrName)
         if (!parent)
             return;
 
-        RenderObject* renderer = parent->renderer();
-        if (!renderer || !renderer->isSVGResourceFilterPrimitive())
+        LayoutObject* layoutObject = parent->layoutObject();
+        if (!layoutObject || !layoutObject->isSVGResourceFilterPrimitive())
             return;
 
+        SVGElement::InvalidationGuard invalidationGuard(this);
         if (isSVGFEDiffuseLightingElement(*parent)) {
             toSVGFEDiffuseLightingElement(*parent).lightElementAttributeChanged(this, attrName);
             return;
@@ -128,9 +114,11 @@ void SVGFELightElement::svgAttributeChanged(const QualifiedName& attrName)
             toSVGFESpecularLightingElement(*parent).lightElementAttributeChanged(this, attrName);
             return;
         }
+
+        ASSERT_NOT_REACHED();
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 void SVGFELightElement::childrenChanged(const ChildrenChange& change)
@@ -139,9 +127,9 @@ void SVGFELightElement::childrenChanged(const ChildrenChange& change)
 
     if (!change.byParser) {
         if (ContainerNode* parent = parentNode()) {
-            RenderObject* renderer = parent->renderer();
-            if (renderer && renderer->isSVGResourceFilterPrimitive())
-                markForLayoutAndParentResourceInvalidation(renderer);
+            LayoutObject* layoutObject = parent->layoutObject();
+            if (layoutObject && layoutObject->isSVGResourceFilterPrimitive())
+                markForLayoutAndParentResourceInvalidation(layoutObject);
         }
     }
 }

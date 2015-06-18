@@ -20,7 +20,7 @@ void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
   AppendQuadsData data;
   bool will_draw = layer->WillDraw(draw_mode, resource_provider);
   if (will_draw)
-    layer->AppendQuads(render_pass.get(), Occlusion(), &data);
+    layer->AppendQuads(render_pass.get(), &data);
   layer->UpdateHudTexture(draw_mode, resource_provider);
   if (will_draw)
     layer->DidDraw(resource_provider);
@@ -32,12 +32,13 @@ void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
 TEST(HeadsUpDisplayLayerImplTest, ResourcelessSoftwareDrawAfterResourceLoss) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
   host_impl.CreatePendingTree();
   host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
   scoped_ptr<HeadsUpDisplayLayerImpl> layer =
     HeadsUpDisplayLayerImpl::Create(host_impl.pending_tree(), 1);
-  layer->SetContentBounds(gfx::Size(100, 100));
+  layer->SetBounds(gfx::Size(100, 100));
+  layer->draw_properties().ideal_contents_scale = 1.f;
 
   // Check regular hardware draw is ok.
   CheckDrawLayer(

@@ -34,7 +34,6 @@
 #include "core/html/forms/DateTimeChooser.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/plugins/PluginPlaceholder.h"
-#include "core/storage/StorageNamespace.h"
 #include "platform/FileChooser.h"
 #include "platform/Widget.h"
 #include "public/platform/WebApplicationCacheHost.h"
@@ -57,14 +56,8 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
     static EditorClient* dummyEditorClient = adoptPtr(new EmptyEditorClient).leakPtr();
     pageClients.editorClient = dummyEditorClient;
 
-    static InspectorClient* dummyInspectorClient = adoptPtr(new EmptyInspectorClient).leakPtr();
-    pageClients.inspectorClient = dummyInspectorClient;
-
     static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
     pageClients.spellCheckerClient = dummySpellCheckerClient;
-
-    static StorageClient* dummyStorageClient = adoptPtr(new EmptyStorageClient).leakPtr();
-    pageClients.storageClient = dummyStorageClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -75,7 +68,7 @@ public:
     virtual void disconnectClient() override { }
 };
 
-PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*) const
+PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*)
 {
     return adoptRefWillBeNoop(new EmptyPopupMenu());
 }
@@ -121,7 +114,7 @@ PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(LocalFra
     return DocumentLoader::create(frame, request, substituteData);
 }
 
-PassRefPtrWillBeRawPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, HTMLFrameOwnerElement*)
+PassRefPtrWillBeRawPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const FrameLoadRequest&, const AtomicString&, HTMLFrameOwnerElement*)
 {
     return nullptr;
 }
@@ -149,19 +142,14 @@ void EmptyFrameLoaderClient::didRequestAutocomplete(HTMLFormElement*)
 {
 }
 
-PassOwnPtr<blink::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider()
+PassOwnPtr<WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider()
 {
     return nullptr;
 }
 
-PassOwnPtr<blink::WebApplicationCacheHost> EmptyFrameLoaderClient::createApplicationCacheHost(blink::WebApplicationCacheHostClient*)
+PassOwnPtr<WebApplicationCacheHost> EmptyFrameLoaderClient::createApplicationCacheHost(WebApplicationCacheHostClient*)
 {
     return nullptr;
 }
 
-PassOwnPtr<StorageNamespace> EmptyStorageClient::createSessionStorageNamespace()
-{
-    return nullptr;
-}
-
-}
+} // namespace blink

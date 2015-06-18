@@ -59,57 +59,82 @@ bool Expression::IsUndefinedLiteral(Isolate* isolate) const {
 }
 
 
-VariableProxy::VariableProxy(Zone* zone, Variable* var, int position)
-    : Expression(zone, position),
-      is_this_(var->is_this()),
-      is_assigned_(false),
-      is_resolved_(false),
+VariableProxy::VariableProxy(Zone* zone, Variable* var, int start_position,
+                             int end_position)
+    : Expression(zone, start_position),
+      bit_field_(IsThisField::encode(var->is_this()) |
+                 IsAssignedField::encode(false) |
+                 IsResolvedField::encode(false)),
       variable_feedback_slot_(FeedbackVectorICSlot::Invalid()),
       raw_name_(var->raw_name()),
-      interface_(var->interface()) {
+      end_position_(end_position) {
   BindTo(var);
 }
 
 
-VariableProxy::VariableProxy(Zone* zone, const AstRawString* name, bool is_this,
-                             Interface* interface, int position)
-    : Expression(zone, position),
-      is_this_(is_this),
-      is_assigned_(false),
-      is_resolved_(false),
+VariableProxy::VariableProxy(Zone* zone, const AstRawString* name,
+                             Variable::Kind variable_kind, int start_position,
+                             int end_position)
+    : Expression(zone, start_position),
+      bit_field_(IsThisField::encode(variable_kind == Variable::THIS) |
+                 IsAssignedField::encode(false) |
+                 IsResolvedField::encode(false)),
       variable_feedback_slot_(FeedbackVectorICSlot::Invalid()),
       raw_name_(name),
-      interface_(interface) {}
+      end_position_(end_position) {}
 
 
 void VariableProxy::BindTo(Variable* var) {
-  DCHECK(!FLAG_harmony_modules || interface_->IsUnified(var->interface()));
   DCHECK((is_this() && var->is_this()) || raw_name() == var->raw_name());
-  // Ideally CONST-ness should match. However, this is very hard to achieve
-  // because we don't know the exact semantics of conflicting (const and
-  // non-const) multiple variable declarations, const vars introduced via
-  // eval() etc.  Const-ness and variable declarations are a complete mess
-  // in JS. Sigh...
   set_var(var);
   set_is_resolved();
   var->set_is_used();
 }
 
 
+void VariableProxy::SetFirstFeedbackICSlot(FeedbackVectorICSlot slot,
+                                           ICSlotCache* cache) {
+  variable_feedback_slot_ = slot;
+  if (var()->IsUnallocated()) {
+    cache->Add(VariableICSlotPair(var(), slot));
+  }
+}
+
+
+FeedbackVectorRequirements VariableProxy::ComputeFeedbackRequirements(
+    Isolate* isolate, const ICSlotCache* cache) {
+  if (UsesVariableFeedbackSlot()) {
+    // VariableProxies that point to the same Variable within a function can
+    // make their loads from the same IC slot.
+    if (var()->IsUnallocated()) {
+      for (int i = 0; i < cache->length(); i++) {
+        VariableICSlotPair& pair = cache->at(i);
+        if (pair.variable() == var()) {
+          variable_feedback_slot_ = pair.slot();
+          return FeedbackVectorRequirements(0, 0);
+        }
+      }
+    }
+    return FeedbackVectorRequirements(0, 1);
+  }
+  return FeedbackVectorRequirements(0, 0);
+}
+
+
 Assignment::Assignment(Zone* zone, Token::Value op, Expression* target,
                        Expression* value, int pos)
     : Expression(zone, pos),
-      is_uninitialized_(false),
-      key_type_(ELEMENT),
-      store_mode_(STANDARD_STORE),
-      op_(op),
+      bit_field_(IsUninitializedField::encode(false) |
+                 KeyTypeField::encode(ELEMENT) |
+                 StoreModeField::encode(STANDARD_STORE) |
+                 TokenField::encode(op)),
       target_(target),
       value_(value),
       binary_operation_(NULL) {}
 
 
 Token::Value Assignment::binary_op() const {
-  switch (op_) {
+  switch (op()) {
     case Token::ASSIGN_BIT_OR: return Token::BIT_OR;
     case Token::ASSIGN_BIT_XOR: return Token::BIT_XOR;
     case Token::ASSIGN_BIT_AND: return Token::BIT_AND;
@@ -147,11 +172,19 @@ int FunctionLiteral::end_position() const {
 }
 
 
-StrictMode FunctionLiteral::strict_mode() const {
-  return scope()->strict_mode();
+LanguageMode FunctionLiteral::language_mode() const {
+  return scope()->language_mode();
 }
 
 
+bool FunctionLiteral::uses_super_property() const {
+  DCHECK_NOT_NULL(scope());
+  return scope()->uses_super_property() || scope()->inner_uses_super_property();
+}
+
+
+// Helper to find an existing shared function info in the baseline code for the
+// given function literal. Used to canonicalize SharedFunctionInfo objects.
 void FunctionLiteral::InitializeSharedInfo(
     Handle<Code> unoptimized_code) {
   for (RelocIterator it(*unoptimized_code); !it.done(); it.next()) {
@@ -169,15 +202,29 @@ void FunctionLiteral::InitializeSharedInfo(
 }
 
 
-ObjectLiteralProperty::ObjectLiteralProperty(Zone* zone,
-                                             AstValueFactory* ast_value_factory,
-                                             Literal* key, Expression* value,
-                                             bool is_static) {
-  emit_store_ = true;
-  key_ = key;
-  value_ = value;
-  is_static_ = is_static;
-  if (key->raw_value()->EqualsString(ast_value_factory->proto_string())) {
+ObjectLiteralProperty::ObjectLiteralProperty(Expression* key, Expression* value,
+                                             Kind kind, bool is_static,
+                                             bool is_computed_name)
+    : key_(key),
+      value_(value),
+      kind_(kind),
+      emit_store_(true),
+      is_static_(is_static),
+      is_computed_name_(is_computed_name) {}
+
+
+ObjectLiteralProperty::ObjectLiteralProperty(AstValueFactory* ast_value_factory,
+                                             Expression* key, Expression* value,
+                                             bool is_static,
+                                             bool is_computed_name)
+    : key_(key),
+      value_(value),
+      emit_store_(true),
+      is_static_(is_static),
+      is_computed_name_(is_computed_name) {
+  if (!is_computed_name &&
+      key->AsLiteral()->raw_value()->EqualsString(
+          ast_value_factory->proto_string())) {
     kind_ = PROTOTYPE;
   } else if (value_->AsMaterializedLiteral() != NULL) {
     kind_ = MATERIALIZED_LITERAL;
@@ -186,16 +233,6 @@ ObjectLiteralProperty::ObjectLiteralProperty(Zone* zone,
   } else {
     kind_ = COMPUTED;
   }
-}
-
-
-ObjectLiteralProperty::ObjectLiteralProperty(Zone* zone, bool is_getter,
-                                             FunctionLiteral* value,
-                                             bool is_static) {
-  emit_store_ = true;
-  value_ = value;
-  kind_ = is_getter ? GETTER : SETTER;
-  is_static_ = is_static;
 }
 
 
@@ -217,25 +254,33 @@ bool ObjectLiteral::Property::emit_store() {
 
 
 void ObjectLiteral::CalculateEmitStore(Zone* zone) {
+  const auto GETTER = ObjectLiteral::Property::GETTER;
+  const auto SETTER = ObjectLiteral::Property::SETTER;
+
   ZoneAllocationPolicy allocator(zone);
 
   ZoneHashMap table(Literal::Match, ZoneHashMap::kDefaultHashMapCapacity,
                     allocator);
   for (int i = properties()->length() - 1; i >= 0; i--) {
     ObjectLiteral::Property* property = properties()->at(i);
-    Literal* literal = property->key();
-    if (literal->value()->IsNull()) continue;
+    if (property->is_computed_name()) continue;
+    if (property->kind() == ObjectLiteral::Property::PROTOTYPE) continue;
+    Literal* literal = property->key()->AsLiteral();
+    DCHECK(!literal->value()->IsNull());
+
+    // If there is an existing entry do not emit a store unless the previous
+    // entry was also an accessor.
     uint32_t hash = literal->Hash();
-    // If the key of a computed property is in the table, do not emit
-    // a store for the property later.
-    if ((property->kind() == ObjectLiteral::Property::MATERIALIZED_LITERAL ||
-         property->kind() == ObjectLiteral::Property::COMPUTED) &&
-        table.Lookup(literal, hash, false, allocator) != NULL) {
-      property->set_emit_store(false);
-    } else {
-      // Add key to the table.
-      table.Lookup(literal, hash, true, allocator);
+    ZoneHashMap::Entry* entry = table.LookupOrInsert(literal, hash, allocator);
+    if (entry->value != NULL) {
+      auto previous_kind =
+          static_cast<ObjectLiteral::Property*>(entry->value)->kind();
+      if (!((property->kind() == GETTER && previous_kind == SETTER) ||
+            (property->kind() == SETTER && previous_kind == GETTER))) {
+        property->set_emit_store(false);
+      }
     }
+    entry->value = property;
   }
 }
 
@@ -265,6 +310,13 @@ void ObjectLiteral::BuildConstantProperties(Isolate* isolate) {
       is_simple = false;
       continue;
     }
+
+    if (position == boilerplate_properties_ * 2) {
+      DCHECK(property->is_computed_name());
+      break;
+    }
+    DCHECK(!property->is_computed_name());
+
     MaterializedLiteral* m_literal = property->value()->AsMaterializedLiteral();
     if (m_literal != NULL) {
       m_literal->BuildConstants(isolate);
@@ -274,7 +326,7 @@ void ObjectLiteral::BuildConstantProperties(Isolate* isolate) {
     // Add CONSTANT and COMPUTED properties to boilerplate. Use undefined
     // value for COMPUTED properties, the real value is filled in at
     // runtime. The enumeration order is maintained.
-    Handle<Object> key = property->key()->value();
+    Handle<Object> key = property->key()->AsLiteral()->value();
     Handle<Object> value = GetBoilerplateValue(property->value(), isolate);
 
     // Ensure objects that may, at any point in time, contain fields with double
@@ -316,6 +368,7 @@ void ObjectLiteral::BuildConstantProperties(Isolate* isolate) {
   constant_properties_ = constant_properties;
   fast_elements_ =
       (max_element_index <= 32) || ((2 * elements) >= max_element_index);
+  has_elements_ = elements > 0;
   set_is_simple(is_simple);
   set_depth(depth_acc);
 }
@@ -403,16 +456,6 @@ void MaterializedLiteral::BuildConstants(Isolate* isolate) {
 }
 
 
-void TargetCollector::AddTarget(Label* target, Zone* zone) {
-  // Add the label to the collector, but discard duplicates.
-  int length = targets_.length();
-  for (int i = 0; i < length; i++) {
-    if (targets_[i] == target) return;
-  }
-  targets_.Add(target, zone);
-}
-
-
 void UnaryOperation::RecordToBooleanTypeFeedback(TypeFeedbackOracle* oracle) {
   // TODO(olivf) If this Operation is used in a test context, then the
   // expression has a ToBoolean stub and we want to collect the type
@@ -430,31 +473,6 @@ void BinaryOperation::RecordToBooleanTypeFeedback(TypeFeedbackOracle* oracle) {
   // to the TestContext, therefore we have to store it here and not on the
   // right hand operand.
   set_to_boolean_types(oracle->ToBooleanTypes(right()->test_id()));
-}
-
-
-bool BinaryOperation::ResultOverwriteAllowed() const {
-  switch (op()) {
-    case Token::COMMA:
-    case Token::OR:
-    case Token::AND:
-      return false;
-    case Token::BIT_OR:
-    case Token::BIT_XOR:
-    case Token::BIT_AND:
-    case Token::SHL:
-    case Token::SAR:
-    case Token::SHR:
-    case Token::ADD:
-    case Token::SUB:
-    case Token::MUL:
-    case Token::DIV:
-    case Token::MOD:
-      return true;
-    default:
-      UNREACHABLE();
-  }
-  return false;
 }
 
 
@@ -562,9 +580,29 @@ void Expression::RecordToBooleanTypeFeedback(TypeFeedbackOracle* oracle) {
 }
 
 
-bool Call::IsUsingCallFeedbackSlot(Isolate* isolate) const {
+bool Call::IsUsingCallFeedbackICSlot(Isolate* isolate) const {
   CallType call_type = GetCallType(isolate);
-  return (call_type != POSSIBLY_EVAL_CALL);
+  if (IsUsingCallFeedbackSlot(isolate) || call_type == POSSIBLY_EVAL_CALL) {
+    return false;
+  }
+  return true;
+}
+
+
+bool Call::IsUsingCallFeedbackSlot(Isolate* isolate) const {
+  // SuperConstructorCall uses a CallConstructStub, which wants
+  // a Slot, not an IC slot.
+  return GetCallType(isolate) == SUPER_CALL;
+}
+
+
+FeedbackVectorRequirements Call::ComputeFeedbackRequirements(
+    Isolate* isolate, const ICSlotCache* cache) {
+  int ic_slots = IsUsingCallFeedbackICSlot(isolate) ? 1 : 0;
+  int slots = IsUsingCallFeedbackSlot(isolate) ? 1 : 0;
+  // A Call uses either a slot or an IC slot.
+  DCHECK((ic_slots & slots) == 0);
+  return FeedbackVectorRequirements(slots, ic_slots);
 }
 
 
@@ -584,47 +622,6 @@ Call::CallType Call::GetCallType(Isolate* isolate) const {
 
   Property* property = expression()->AsProperty();
   return property != NULL ? PROPERTY_CALL : OTHER_CALL;
-}
-
-
-bool Call::ComputeGlobalTarget(Handle<GlobalObject> global,
-                               LookupIterator* it) {
-  target_ = Handle<JSFunction>::null();
-  cell_ = Handle<Cell>::null();
-  DCHECK(it->IsFound() && it->GetHolder<JSObject>().is_identical_to(global));
-  cell_ = it->GetPropertyCell();
-  if (cell_->value()->IsJSFunction()) {
-    Handle<JSFunction> candidate(JSFunction::cast(cell_->value()));
-    // If the function is in new space we assume it's more likely to
-    // change and thus prefer the general IC code.
-    if (!it->isolate()->heap()->InNewSpace(*candidate)) {
-      target_ = candidate;
-      return true;
-    }
-  }
-  return false;
-}
-
-
-void CallNew::RecordTypeFeedback(TypeFeedbackOracle* oracle) {
-  FeedbackVectorSlot allocation_site_feedback_slot =
-      FLAG_pretenuring_call_new ? AllocationSiteFeedbackSlot()
-                                : CallNewFeedbackSlot();
-  allocation_site_ =
-      oracle->GetCallNewAllocationSite(allocation_site_feedback_slot);
-  is_monomorphic_ = oracle->CallNewIsMonomorphic(CallNewFeedbackSlot());
-  if (is_monomorphic_) {
-    target_ = oracle->GetCallNewTarget(CallNewFeedbackSlot());
-  }
-}
-
-
-void ObjectLiteral::Property::RecordTypeFeedback(TypeFeedbackOracle* oracle) {
-  TypeFeedbackId id = key()->LiteralFeedbackId();
-  SmallMapList maps;
-  oracle->CollectReceiverTypes(id, &maps);
-  receiver_type_ = maps.length() == 1 ? maps.at(0)
-                                      : Handle<Map>::null();
 }
 
 
@@ -792,12 +789,12 @@ bool RegExpCapture::IsAnchoredAtEnd() {
 // in as many cases as possible, to make it more difficult for incorrect
 // parses to look as correct ones which is likely if the input and
 // output formats are alike.
-class RegExpUnparser FINAL : public RegExpVisitor {
+class RegExpUnparser final : public RegExpVisitor {
  public:
   RegExpUnparser(std::ostream& os, Zone* zone) : os_(os), zone_(zone) {}
   void VisitCharacterRange(CharacterRange that);
-#define MAKE_CASE(Name) virtual void* Visit##Name(RegExp##Name*,          \
-                                                  void* data) OVERRIDE;
+#define MAKE_CASE(Name) \
+  virtual void* Visit##Name(RegExp##Name*, void* data) override;
   FOR_EACH_REG_EXP_TREE_TYPE(MAKE_CASE)
 #undef MAKE_CASE
  private:
@@ -996,134 +993,6 @@ CaseClause::CaseClause(Zone* zone, Expression* label,
       compare_type_(Type::None(zone)) {}
 
 
-#define REGULAR_NODE(NodeType)                                   \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-  }
-#define REGULAR_NODE_WITH_FEEDBACK_SLOTS(NodeType)               \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    add_slot_node(node);                                         \
-  }
-#define DONT_OPTIMIZE_NODE(NodeType)                             \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    set_dont_crankshaft_reason(k##NodeType);                     \
-    add_flag(kDontSelfOptimize);                                 \
-  }
-#define DONT_OPTIMIZE_NODE_WITH_FEEDBACK_SLOTS(NodeType)         \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    add_slot_node(node);                                         \
-    set_dont_crankshaft_reason(k##NodeType);                     \
-    add_flag(kDontSelfOptimize);                                 \
-  }
-#define DONT_TURBOFAN_NODE(NodeType)                             \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    set_dont_crankshaft_reason(k##NodeType);                     \
-    set_dont_turbofan_reason(k##NodeType);                       \
-    add_flag(kDontSelfOptimize);                                 \
-  }
-#define DONT_TURBOFAN_NODE_WITH_FEEDBACK_SLOTS(NodeType)         \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    add_slot_node(node);                                         \
-    set_dont_crankshaft_reason(k##NodeType);                     \
-    set_dont_turbofan_reason(k##NodeType);                       \
-    add_flag(kDontSelfOptimize);                                 \
-  }
-#define DONT_SELFOPTIMIZE_NODE(NodeType)                         \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    add_flag(kDontSelfOptimize);                                 \
-  }
-#define DONT_SELFOPTIMIZE_NODE_WITH_FEEDBACK_SLOTS(NodeType)     \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    add_slot_node(node);                                         \
-    add_flag(kDontSelfOptimize);                                 \
-  }
-#define DONT_CACHE_NODE(NodeType)                                \
-  void AstConstructionVisitor::Visit##NodeType(NodeType* node) { \
-    set_dont_crankshaft_reason(k##NodeType);                     \
-    add_flag(kDontSelfOptimize);                                 \
-    add_flag(kDontCache);                                        \
-  }
-
-REGULAR_NODE(VariableDeclaration)
-REGULAR_NODE(FunctionDeclaration)
-REGULAR_NODE(Block)
-REGULAR_NODE(ExpressionStatement)
-REGULAR_NODE(EmptyStatement)
-REGULAR_NODE(IfStatement)
-REGULAR_NODE(ContinueStatement)
-REGULAR_NODE(BreakStatement)
-REGULAR_NODE(ReturnStatement)
-REGULAR_NODE(SwitchStatement)
-REGULAR_NODE(CaseClause)
-REGULAR_NODE(Conditional)
-REGULAR_NODE(Literal)
-REGULAR_NODE(ArrayLiteral)
-REGULAR_NODE(ObjectLiteral)
-REGULAR_NODE(RegExpLiteral)
-REGULAR_NODE(FunctionLiteral)
-REGULAR_NODE(Assignment)
-REGULAR_NODE(Throw)
-REGULAR_NODE(UnaryOperation)
-REGULAR_NODE(CountOperation)
-REGULAR_NODE(BinaryOperation)
-REGULAR_NODE(CompareOperation)
-REGULAR_NODE(ThisFunction)
-
-REGULAR_NODE_WITH_FEEDBACK_SLOTS(Call)
-REGULAR_NODE_WITH_FEEDBACK_SLOTS(CallNew)
-REGULAR_NODE_WITH_FEEDBACK_SLOTS(Property)
-// In theory, for VariableProxy we'd have to add:
-// if (node->var()->IsLookupSlot())
-//   set_dont_optimize_reason(kReferenceToAVariableWhichRequiresDynamicLookup);
-// But node->var() is usually not bound yet at VariableProxy creation time, and
-// LOOKUP variables only result from constructs that cannot be inlined anyway.
-REGULAR_NODE_WITH_FEEDBACK_SLOTS(VariableProxy)
-
-// We currently do not optimize any modules.
-DONT_OPTIMIZE_NODE(ModuleDeclaration)
-DONT_OPTIMIZE_NODE(ImportDeclaration)
-DONT_OPTIMIZE_NODE(ExportDeclaration)
-DONT_OPTIMIZE_NODE(ModuleVariable)
-DONT_OPTIMIZE_NODE(ModulePath)
-DONT_OPTIMIZE_NODE(ModuleUrl)
-DONT_OPTIMIZE_NODE(ModuleStatement)
-DONT_OPTIMIZE_NODE(WithStatement)
-DONT_OPTIMIZE_NODE(DebuggerStatement)
-DONT_OPTIMIZE_NODE(NativeFunctionLiteral)
-
-DONT_OPTIMIZE_NODE_WITH_FEEDBACK_SLOTS(Yield)
-
-// TODO(turbofan): Remove the dont_turbofan_reason once this list is empty.
-// This list must be kept in sync with Pipeline::GenerateCode.
-DONT_TURBOFAN_NODE(ForOfStatement)
-DONT_TURBOFAN_NODE(TryCatchStatement)
-DONT_TURBOFAN_NODE(TryFinallyStatement)
-DONT_TURBOFAN_NODE(ClassLiteral)
-
-DONT_TURBOFAN_NODE_WITH_FEEDBACK_SLOTS(SuperReference)
-
-DONT_SELFOPTIMIZE_NODE(DoWhileStatement)
-DONT_SELFOPTIMIZE_NODE(WhileStatement)
-DONT_SELFOPTIMIZE_NODE(ForStatement)
-
-DONT_SELFOPTIMIZE_NODE_WITH_FEEDBACK_SLOTS(ForInStatement)
-
-DONT_CACHE_NODE(ModuleLiteral)
-
-
-void AstConstructionVisitor::VisitCallRuntime(CallRuntime* node) {
-  add_slot_node(node);
-  if (node->is_jsruntime()) {
-    // Don't try to optimize JS runtime calls because we bailout on them.
-    set_dont_crankshaft_reason(kCallToAJavaScriptRuntimeFunction);
-  }
-}
-
-#undef REGULAR_NODE
-#undef DONT_OPTIMIZE_NODE
-#undef DONT_SELFOPTIMIZE_NODE
-#undef DONT_CACHE_NODE
-
-
 uint32_t Literal::Hash() {
   return raw_value()->IsString()
              ? raw_value()->AsString()->hash()
@@ -1135,7 +1004,7 @@ uint32_t Literal::Hash() {
 bool Literal::Match(void* literal1, void* literal2) {
   const AstValue* x = static_cast<Literal*>(literal1)->raw_value();
   const AstValue* y = static_cast<Literal*>(literal2)->raw_value();
-  return (x->IsString() && y->IsString() && *x->AsString() == *y->AsString()) ||
+  return (x->IsString() && y->IsString() && x->AsString() == y->AsString()) ||
          (x->IsNumber() && y->IsNumber() && x->AsNumber() == y->AsNumber());
 }
 

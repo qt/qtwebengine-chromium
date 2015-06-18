@@ -45,7 +45,7 @@ public:
     HTMLProgressElement* progressElement() const;
 
 protected:
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 };
 
 class ProgressInnerElement final : public ProgressShadowElement {
@@ -55,8 +55,8 @@ public:
 private:
     explicit ProgressInnerElement(Document&);
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 };
 
 class ProgressBarElement final : public ProgressShadowElement {

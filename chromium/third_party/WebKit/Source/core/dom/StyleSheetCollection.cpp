@@ -35,9 +35,7 @@ StyleSheetCollection::StyleSheetCollection()
 {
 }
 
-StyleSheetCollection::~StyleSheetCollection()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(StyleSheetCollection);
 
 void StyleSheetCollection::swap(StyleSheetCollection& other)
 {
@@ -45,14 +43,14 @@ void StyleSheetCollection::swap(StyleSheetCollection& other)
     m_activeAuthorStyleSheets.swap(other.m_activeAuthorStyleSheets);
 }
 
-void StyleSheetCollection::swapSheetsForSheetList(WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& sheets)
+void StyleSheetCollection::swapSheetsForSheetList(WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& sheets)
 {
     // Only called for collection of HTML Imports that never has active sheets.
     ASSERT(m_activeAuthorStyleSheets.isEmpty());
     m_styleSheetsForStyleSheetList.swap(sheets);
 }
 
-void StyleSheetCollection::appendActiveStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& sheets)
+void StyleSheetCollection::appendActiveStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& sheets)
 {
     m_activeAuthorStyleSheets.appendVector(sheets);
 }
@@ -67,7 +65,7 @@ void StyleSheetCollection::appendSheetForList(StyleSheet* sheet)
     m_styleSheetsForStyleSheetList.append(sheet);
 }
 
-void StyleSheetCollection::trace(Visitor* visitor)
+DEFINE_TRACE(StyleSheetCollection)
 {
     visitor->trace(m_activeAuthorStyleSheets);
     visitor->trace(m_styleSheetsForStyleSheetList);

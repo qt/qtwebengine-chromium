@@ -80,28 +80,6 @@ void ReadContinuation(
 void WriteContinuation() {
 }
 
-class TestBackoffEntry : public net::BackoffEntry {
- public:
-  explicit TestBackoffEntry(base::SimpleTestTickClock* tick_clock);
-  ~TestBackoffEntry() override;
-
-  base::TimeTicks ImplGetTimeNow() const override;
-
- private:
-  base::SimpleTestTickClock* tick_clock_;
-};
-
-TestBackoffEntry::TestBackoffEntry(base::SimpleTestTickClock* tick_clock)
-    : BackoffEntry(&kTestBackoffPolicy),
-      tick_clock_(tick_clock) {
-}
-
-TestBackoffEntry::~TestBackoffEntry() {}
-
-base::TimeTicks TestBackoffEntry::ImplGetTimeNow() const {
-  return tick_clock_->NowTicks();
-}
-
 // A connection factory that stubs out network requests and overrides the
 // backoff policy.
 class TestConnectionFactoryImpl : public ConnectionFactoryImpl {
@@ -132,6 +110,9 @@ class TestConnectionFactoryImpl : public ConnectionFactoryImpl {
   // Force a login handshake to be delayed.
   void SetDelayLogin(bool delay_login);
 
+  // Simulate a socket error.
+  void SetSocketError();
+
   base::SimpleTestTickClock* tick_clock() { return &tick_clock_; }
 
  private:
@@ -148,8 +129,12 @@ class TestConnectionFactoryImpl : public ConnectionFactoryImpl {
   bool delay_login_;
   // Callback to invoke when all connection attempts have been made.
   base::Closure finished_callback_;
+  // A temporary scoped pointer to make sure we don't leak the handler in the
+  // cases it's never consumed by the ConnectionFactory.
+  scoped_ptr<FakeConnectionHandler> scoped_handler_;
   // The current fake connection handler..
   FakeConnectionHandler* fake_handler_;
+  // Dummy GCM Stats recorder.
   FakeGCMStatsRecorder dummy_recorder_;
 };
 
@@ -166,7 +151,10 @@ TestConnectionFactoryImpl::TestConnectionFactoryImpl(
       connections_fulfilled_(true),
       delay_login_(false),
       finished_callback_(finished_callback),
-      fake_handler_(NULL) {
+      scoped_handler_(
+          new FakeConnectionHandler(base::Bind(&ReadContinuation),
+                                    base::Bind(&WriteContinuation))),
+      fake_handler_(scoped_handler_.get()) {
   // Set a non-null time.
   tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1));
 }
@@ -177,6 +165,7 @@ TestConnectionFactoryImpl::~TestConnectionFactoryImpl() {
 
 void TestConnectionFactoryImpl::ConnectImpl() {
   ASSERT_GT(num_expected_attempts_, 0);
+  ASSERT_FALSE(GetConnectionHandler()->CanSendMessage());
   scoped_ptr<mcs_proto::LoginRequest> request(BuildLoginRequest(0, 0, ""));
   GetConnectionHandler()->Init(*request, NULL);
   OnConnectDone(connect_result_);
@@ -202,7 +191,8 @@ void TestConnectionFactoryImpl::InitHandler() {
 
 scoped_ptr<net::BackoffEntry> TestConnectionFactoryImpl::CreateBackoffEntry(
     const net::BackoffEntry::Policy* const policy) {
-  return scoped_ptr<net::BackoffEntry>(new TestBackoffEntry(&tick_clock_));
+  return make_scoped_ptr(new net::BackoffEntry(&kTestBackoffPolicy,
+                                               &tick_clock_));
 }
 
 scoped_ptr<ConnectionHandler>
@@ -211,10 +201,7 @@ TestConnectionFactoryImpl::CreateConnectionHandler(
     const ConnectionHandler::ProtoReceivedCallback& read_callback,
     const ConnectionHandler::ProtoSentCallback& write_callback,
     const ConnectionHandler::ConnectionChangedCallback& connection_callback) {
-  fake_handler_ = new FakeConnectionHandler(
-      base::Bind(&ReadContinuation),
-      base::Bind(&WriteContinuation));
-  return make_scoped_ptr<ConnectionHandler>(fake_handler_);
+  return scoped_handler_.Pass();
 }
 
 base::TimeTicks TestConnectionFactoryImpl::NowTicks() {
@@ -251,6 +238,10 @@ void TestConnectionFactoryImpl::SetDelayLogin(bool delay_login) {
   fake_handler_->set_fail_login(delay_login_);
 }
 
+void TestConnectionFactoryImpl::SetSocketError() {
+  fake_handler_->set_had_error(true);
+}
+
 }  // namespace
 
 class ConnectionFactoryImplTest
@@ -258,7 +249,7 @@ class ConnectionFactoryImplTest
       public ConnectionFactory::ConnectionListener {
  public:
   ConnectionFactoryImplTest();
-  virtual ~ConnectionFactoryImplTest();
+  ~ConnectionFactoryImplTest() override;
 
   TestConnectionFactoryImpl* factory() { return &factory_; }
   GURL& connected_server() { return connected_server_; }
@@ -315,8 +306,7 @@ void ConnectionFactoryImplTest::OnDisconnected() {
 
 // Verify building a connection handler works.
 TEST_F(ConnectionFactoryImplTest, Initialize) {
-  ConnectionHandler* handler = factory()->GetConnectionHandler();
-  ASSERT_TRUE(handler);
+  ASSERT_FALSE(factory()->GetConnectionHandler());
   EXPECT_FALSE(factory()->IsEndpointReachable());
   EXPECT_FALSE(connected_server().is_valid());
 }
@@ -325,6 +315,7 @@ TEST_F(ConnectionFactoryImplTest, Initialize) {
 TEST_F(ConnectionFactoryImplTest, ConnectSuccess) {
   factory()->SetConnectResult(net::OK);
   factory()->Connect();
+  ASSERT_TRUE(factory()->GetConnectionHandler());
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
   EXPECT_EQ(factory()->GetCurrentEndpoint(), BuildEndpoints()[0]);
   EXPECT_TRUE(factory()->IsEndpointReachable());
@@ -545,6 +536,38 @@ TEST_F(ConnectionFactoryImplTest, DISABLED_SuppressConnectWhenNoNetwork) {
 
   EXPECT_TRUE(factory()->IsEndpointReachable());
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
+}
+
+// Receiving a network change event before the initial connection should have
+// no effect.
+TEST_F(ConnectionFactoryImplTest, NetworkChangeBeforeFirstConnection) {
+  factory()->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_4G);
+  factory()->SetConnectResult(net::OK);
+  factory()->Connect();
+  EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
+  EXPECT_TRUE(factory()->IsEndpointReachable());
+}
+
+// Test that if the client attempts to reconnect while a connection is already
+// open, we don't crash.
+TEST_F(ConnectionFactoryImplTest, ConnectionResetRace) {
+  // Initial successful connection.
+  factory()->SetConnectResult(net::OK);
+  factory()->Connect();
+  WaitForConnections();
+  EXPECT_TRUE(factory()->IsEndpointReachable());
+
+  // Trigger a connection error under the hood.
+  factory()->SetSocketError();
+  EXPECT_FALSE(factory()->IsEndpointReachable());
+
+  // Now trigger force a re-connection.
+  factory()->SetConnectResult(net::OK);
+  factory()->Connect();
+  WaitForConnections();
+
+  // Re-connection should succeed.
+  EXPECT_TRUE(factory()->IsEndpointReachable());
 }
 
 }  // namespace gcm

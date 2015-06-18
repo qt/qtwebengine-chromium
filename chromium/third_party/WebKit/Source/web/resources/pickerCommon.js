@@ -129,7 +129,6 @@ function _adjustWindowRectVertically(windowRect, availRect, anchorRect, minHeigh
 
     var availableSpaceBelow = availRect.maxY - anchorRect.maxY;
     availableSpaceBelow = Math.max(0, Math.min(availRect.height, availableSpaceBelow));
-
     if (windowRect.height > availableSpaceBelow && availableSpaceBelow < availableSpaceAbove) {
         windowRect.height = Math.min(windowRect.height, availableSpaceAbove);
         windowRect.height = Math.max(windowRect.height, minHeight);
@@ -139,18 +138,17 @@ function _adjustWindowRectVertically(windowRect, availRect, anchorRect, minHeigh
         windowRect.height = Math.max(windowRect.height, minHeight);
         windowRect.y = anchorRect.maxY;
     }
-    windowRect.y = Math.min(windowRect.y, availRect.maxY - windowRect.height);
-    windowRect.y = Math.max(windowRect.y, availRect.y);
 }
 
 function _adjustWindowRectHorizontally(windowRect, availRect, anchorRect, minWidth) {
     windowRect.width = Math.min(windowRect.width, availRect.width);
     windowRect.width = Math.max(windowRect.width, minWidth);
     windowRect.x = anchorRect.x;
-    if (global.params.isRTL)
-        windowRect.x += anchorRect.width - windowRect.width;
-    windowRect.x = Math.min(windowRect.x, availRect.maxX - windowRect.width);
-    windowRect.x = Math.max(windowRect.x, availRect.x);
+    // If we are getting clipped, we want to switch alignment to the right side
+    // of the anchor rect as long as doing so will make the popup not clipped.
+    var rightAlignedX = windowRect.x + anchorRect.width - windowRect.width;
+    if (rightAlignedX >= availRect.x && (windowRect.maxX > availRect.maxX || global.params.isRTL))
+        windowRect.x = rightAlignedX;
 }
 
 /**
@@ -161,13 +159,7 @@ function setWindowRect(rect) {
         window.frameElement.style.width = rect.width + "px";
         window.frameElement.style.height = rect.height + "px";
     } else {
-        if (isWindowHidden()) {
-            window.moveTo(rect.x, rect.y);
-            window.resizeTo(rect.width, rect.height);
-        } else {
-            window.resizeTo(rect.width, rect.height);
-            window.moveTo(rect.x, rect.y);
-        }
+        window.pagePopupController.setWindowRect(rect.x, rect.y, rect.width, rect.height);
     }
 }
 
@@ -221,6 +213,66 @@ function enclosingNodeOrSelfWithClass(selfNode, className)
 
 /**
  * @constructor
+ */
+function EventEmitter() {
+};
+
+/**
+ * @param {!string} type
+ * @param {!function({...*})} callback
+ */
+EventEmitter.prototype.on = function(type, callback) {
+    console.assert(callback instanceof Function);
+    if (!this._callbacks)
+        this._callbacks = {};
+    if (!this._callbacks[type])
+        this._callbacks[type] = [];
+    this._callbacks[type].push(callback);
+};
+
+EventEmitter.prototype.hasListener = function(type) {
+    if (!this._callbacks)
+        return false;
+    var callbacksForType = this._callbacks[type];
+    if (!callbacksForType)
+        return false;
+    return callbacksForType.length > 0;
+};
+
+/**
+ * @param {!string} type
+ * @param {!function(Object)} callback
+ */
+EventEmitter.prototype.removeListener = function(type, callback) {
+    if (!this._callbacks)
+        return;
+    var callbacksForType = this._callbacks[type];
+    if (!callbacksForType)
+        return;
+    callbacksForType.splice(callbacksForType.indexOf(callback), 1);
+    if (callbacksForType.length === 0)
+        delete this._callbacks[type];
+};
+
+/**
+ * @param {!string} type
+ * @param {...*} var_args
+ */
+EventEmitter.prototype.dispatchEvent = function(type) {
+    if (!this._callbacks)
+        return;
+    var callbacksForType = this._callbacks[type];
+    if (!callbacksForType)
+        return;
+    callbacksForType = callbacksForType.slice(0);
+    for (var i = 0; i < callbacksForType.length; ++i) {
+        callbacksForType[i].apply(this, Array.prototype.slice.call(arguments, 1));
+    }
+};
+
+/**
+ * @constructor
+ * @extends EventEmitter
  * @param {!Element} element
  * @param {!Object} config
  */
@@ -228,6 +280,8 @@ function Picker(element, config) {
     this._element = element;
     this._config = config;
 }
+
+Picker.prototype = Object.create(EventEmitter.prototype);
 
 /**
  * @enum {number}
@@ -255,3 +309,10 @@ Picker.prototype.chooseOtherColor = function() {
 };
 
 Picker.prototype.cleanup = function() {};
+
+window.addEventListener("keyup", function(event) {
+    // JAWS dispatches extra Alt events and unless we handle them they move the
+    // focus and close the popup.
+    if (event.keyIdentifier === "Alt")
+        event.preventDefault();
+}, true);

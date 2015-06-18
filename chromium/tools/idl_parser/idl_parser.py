@@ -229,6 +229,11 @@ class IDLParser(object):
     """Interface : INTERFACE identifier Inheritance '{' InterfaceMembers '}' ';'"""
     p[0] = self.BuildNamed('Interface', p, 2, ListFromConcat(p[3], p[5]))
 
+  # [5.1] Error recovery for interface.
+  def p_InterfaceError(self, p):
+    """Interface : INTERFACE identifier Inheritance '{' error"""
+    p[0] = self.BuildError(p, 'Interface')
+
   # [6]
   def p_Partial(self, p):
     """Partial : PARTIAL PartialDefinition"""
@@ -259,18 +264,23 @@ class IDLParser(object):
       p[2].AddChildren(p[1])
       p[0] = ListFromConcat(p[2], p[3])
 
-  # [10]
+  # [9.1] Error recovery for InterfaceMembers
+  def p_InterfaceMembersError(self, p):
+    """InterfaceMembers : error"""
+    p[0] = self.BuildError(p, 'InterfaceMembers')
+
+  # [10] Removed unsupported: Serializer
   def p_InterfaceMember(self, p):
     """InterfaceMember : Const
-                       | AttributeOrOperationOrIterator"""
-    p[0] = p[1]
-
-  # [10.1] Removed unsupported: Serializer
-  def p_AttributeOrOperationOrIterator(self, p):
-    """AttributeOrOperationOrIterator : Stringifier
-                                      | StaticMember
-                                      | ReadWriteAttribute
-                                      | OperationOrIterator"""
+                       | Operation
+                       | Serializer
+                       | Stringifier
+                       | StaticMember
+                       | Iterable
+                       | ReadonlyMember
+                       | ReadWriteAttribute
+                       | ReadWriteMaplike
+                       | ReadWriteSetlike"""
     p[0] = p[1]
 
   # [11]
@@ -283,6 +293,12 @@ class IDLParser(object):
     """Dictionary : DICTIONARY error ';'"""
     p[0] = self.BuildError(p, 'Dictionary')
 
+  # [11.2] Error recovery for regular Dictionary
+  # (for errors inside dictionary definition)
+  def p_DictionaryError2(self, p):
+    """Dictionary : DICTIONARY identifier Inheritance '{' error"""
+    p[0] = self.BuildError(p, 'Dictionary')
+
   # [12]
   def p_DictionaryMembers(self, p):
     """DictionaryMembers : ExtendedAttributeList DictionaryMember DictionaryMembers
@@ -293,10 +309,15 @@ class IDLParser(object):
 
   # [13]
   def p_DictionaryMember(self, p):
-    """DictionaryMember : Type identifier Default ';'"""
-    p[0] = self.BuildNamed('Key', p, 2, ListFromConcat(p[1], p[3]))
+    """DictionaryMember : Required Type identifier Default ';'"""
+    p[0] = self.BuildNamed('Key', p, 3, ListFromConcat(p[1], p[2], p[4]))
 
-  # [14] NOT IMPLEMENTED (Required)
+  # [14]
+  def p_Required(self, p):
+    """Required : REQUIRED
+                |"""
+    if len(p) > 1:
+      p[0] = self.BuildTrue('REQUIRED')
 
   # [15]
   def p_PartialDictionary(self, p):
@@ -319,8 +340,12 @@ class IDLParser(object):
   # [17]
   def p_DefaultValue(self, p):
     """DefaultValue : ConstValue
-                    | string"""
-    if type(p[1]) == str:
+                    | string
+                    | '[' ']'"""
+    if len(p) == 3:
+      p[0] = ListFromConcat(self.BuildAttribute('TYPE', 'sequence'),
+                            self.BuildAttribute('VALUE', '[]'))
+    elif type(p[1]) == str:
       p[0] = ListFromConcat(self.BuildAttribute('TYPE', 'DOMString'),
                             self.BuildAttribute('NAME', p[1]))
     else:
@@ -448,7 +473,74 @@ class IDLParser(object):
     p[0] = ListFromConcat(self.BuildAttribute('TYPE', 'float'),
                           self.BuildAttribute('VALUE', val))
 
-  # [30-34] NOT IMPLEMENTED (Serializer)
+  # [30]
+  def p_Serializer(self, p):
+    """Serializer : SERIALIZER SerializerRest"""
+    p[0] = self.BuildProduction('Serializer', p, 1, p[2])
+
+  # [31]
+  # TODO(jl): This adds ReturnType and ';', missing from the spec's grammar.
+  # https://www.w3.org/Bugs/Public/show_bug.cgi?id=20361
+  def p_SerializerRest(self, p):
+    """SerializerRest : ReturnType OperationRest
+                      | '=' SerializationPattern ';'
+                      | ';'"""
+    if len(p) == 3:
+      p[2].AddChildren(p[1])
+      p[0] = p[2]
+    elif len(p) == 4:
+      p[0] = p[2]
+
+  # [32]
+  def p_SerializationPattern(self, p):
+    """SerializationPattern : '{' SerializationPatternMap '}'
+                            | '[' SerializationPatternList ']'
+                            | identifier"""
+    if len(p) > 2:
+      p[0] = p[2]
+    else:
+      p[0] = self.BuildAttribute('ATTRIBUTE', p[1])
+
+  # [33]
+  # TODO(jl): This adds the "ATTRIBUTE" and "INHERIT ',' ATTRIBUTE" variants,
+  # missing from the spec's grammar.
+  # https://www.w3.org/Bugs/Public/show_bug.cgi?id=20361
+  def p_SerializationPatternMap(self, p):
+    """SerializationPatternMap : GETTER
+                               | ATTRIBUTE
+                               | INHERIT ',' ATTRIBUTE
+                               | INHERIT Identifiers
+                               | identifier Identifiers
+                               |"""
+    p[0] = self.BuildProduction('Map', p, 0)
+    if len(p) == 4:
+      p[0].AddChildren(self.BuildTrue('INHERIT'))
+      p[0].AddChildren(self.BuildTrue('ATTRIBUTE'))
+    elif len(p) > 1:
+      if p[1] == 'getter':
+        p[0].AddChildren(self.BuildTrue('GETTER'))
+      elif p[1] == 'attribute':
+        p[0].AddChildren(self.BuildTrue('ATTRIBUTE'))
+      else:
+        if p[1] == 'inherit':
+          p[0].AddChildren(self.BuildTrue('INHERIT'))
+          attributes = p[2]
+        else:
+          attributes = ListFromConcat(p[1], p[2])
+        p[0].AddChildren(self.BuildAttribute('ATTRIBUTES', attributes))
+
+  # [34]
+  def p_SerializationPatternList(self, p):
+    """SerializationPatternList : GETTER
+                                | identifier Identifiers
+                                |"""
+    p[0] = self.BuildProduction('List', p, 0)
+    if len(p) > 1:
+      if p[1] == 'getter':
+        p[0].AddChildren(self.BuildTrue('GETTER'))
+      else:
+        attributes = ListFromConcat(p[1], p[2])
+        p[0].AddChildren(self.BuildAttribute('ATTRIBUTES', attributes))
 
   # [35]
   def p_Stringifier(self, p):
@@ -474,7 +566,7 @@ class IDLParser(object):
 
   # [38]
   def p_StaticMemberRest(self, p):
-    """StaticMemberRest : AttributeRest
+    """StaticMemberRest : ReadOnly AttributeRest
                         | ReturnType OperationRest"""
     if len(p) == 2:
       p[0] = p[1]
@@ -482,35 +574,47 @@ class IDLParser(object):
       p[2].AddChildren(p[1])
       p[0] = p[2]
 
-  # [39] NOT IMPLEMENTED (ReadOnlyMember)
-  # [40] NOT IMPLEMENTED (ReadOnlyMemberReset)
+  # [39]
+  def p_ReadonlyMember(self, p):
+    """ReadonlyMember : READONLY ReadonlyMemberRest"""
+    p[2].AddChildren(self.BuildTrue('READONLY'))
+    p[0] = p[2]
+
+  # [40]
+  def p_ReadonlyMemberRest(self, p):
+    """ReadonlyMemberRest : AttributeRest
+                          | MaplikeRest
+                          | SetlikeRest"""
+    p[0] = p[1]
 
   # [41]
   def p_ReadWriteAttribute(self, p):
-    """ReadWriteAttribute : Inherit AttributeRest"""
-    p[2].AddChildren(ListFromConcat(p[1]))
-    p[0] = p[2]
-
-  # [41] Deprecated - Remove this entry after blink stops using it.
-  def p_Attribute(self, p):
-    """Attribute : ReadWriteAttribute"""
-    p[0] = p[1]
+    """ReadWriteAttribute : INHERIT ReadOnly AttributeRest
+                          | AttributeRest"""
+    if len(p) > 2:
+      inherit = self.BuildTrue('INHERIT')
+      p[3].AddChildren(ListFromConcat(inherit, p[2]))
+      p[0] = p[3]
+    else:
+      p[0] = p[1]
 
   # [42]
   def p_AttributeRest(self, p):
-    """AttributeRest : ReadOnly ATTRIBUTE Type identifier ';'"""
-    p[0] = self.BuildNamed('Attribute', p, 4,
-                           ListFromConcat(p[1], p[3]))
+    """AttributeRest : ATTRIBUTE Type AttributeName ';'"""
+    p[0] = self.BuildNamed('Attribute', p, 3, p[2])
 
-  # [43] NOT IMPLEMENTED (AttributeName)
-  # [44] NOT IMPLEMENTED (AttributeNameKeyword)
+  # [43]
+  def p_AttributeName(self, p):
+    """AttributeName : AttributeNameKeyword
+                     | identifier"""
+    p[0] = p[1]
 
-  # [45]
-  def p_Inherit(self, p):
-    """Inherit : INHERIT
-               |"""
-    if len(p) > 1:
-      p[0] = self.BuildTrue('INHERIT')
+  # [44]
+  def p_AttributeNameKeyword(self, p):
+    """AttributeNameKeyword : REQUIRED"""
+    p[0] = p[1]
+
+  # [45] Unreferenced in the specification
 
   # [46]
   def p_ReadOnly(self, p):
@@ -520,9 +624,9 @@ class IDLParser(object):
       p[0] = self.BuildTrue('READONLY')
 
   # [47]
-  def p_OperationOrIterator(self, p):
-    """OperationOrIterator : ReturnType OperationOrIteratorRest
-                           | SpecialOperation"""
+  def p_Operation(self, p):
+    """Operation : ReturnType OperationRest
+                 | SpecialOperation"""
     if len(p) == 3:
       p[2].AddChildren(p[1])
       p[0] = p[2]
@@ -550,11 +654,6 @@ class IDLParser(object):
                | DELETER
                | LEGACYCALLER"""
     p[0] = self.BuildTrue(p[1].upper())
-
-  # [51]
-  def p_OperationOrIteratorRest(self, p):
-    """OperationOrIteratorRest : OperationRest"""
-    p[0] = p[1]
 
   # [51]
   def p_OperationRest(self, p):
@@ -589,6 +688,11 @@ class IDLParser(object):
                  |"""
     if len(p) > 1:
       p[0] = ListFromConcat(p[2], p[3])
+
+  # [54.1] Arguments error recovery
+  def p_ArgumentsError(self, p):
+    """Arguments : ',' error"""
+    p[0] = self.BuildError(p, 'Arguments')
 
   # [55]
   def p_Argument(self, p):
@@ -637,12 +741,43 @@ class IDLParser(object):
     """ExceptionField : error"""
     p[0] = self.BuildError(p, 'ExceptionField')
 
-  # [59] NOT IMPLEMENTED (Iterable)
-  # [60] NOT IMPLEMENTED (OptionalType)
-  # [61] NOT IMPLEMENTED (ReadWriteMaplike)
-  # [62] NOT IMPLEMENTED (ReadWriteSetlike)
-  # [63] NOT IMPLEMENTED (MaplikeRest)
-  # [64] NOT IMPLEMENTED (SetlikeRest)
+  # [59]
+  def p_Iterable(self, p):
+    """Iterable : ITERABLE '<' Type OptionalType '>' ';'
+                | LEGACYITERABLE '<' Type '>' ';'"""
+    if len(p) > 6:
+      childlist = ListFromConcat(p[3], p[4])
+      p[0] = self.BuildProduction('Iterable', p, 2, childlist)
+    else:
+      p[0] = self.BuildProduction('LegacyIterable', p, 2, p[3])
+
+  # [60]
+  def p_OptionalType(self, p):
+    """OptionalType : ',' Type
+                    |"""
+    if len(p) > 1:
+      p[0] = p[2]
+
+  # [61]
+  def p_ReadWriteMaplike(self, p):
+    """ReadWriteMaplike : MaplikeRest"""
+    p[0] = p[1]
+
+  # [62]
+  def p_ReadWriteSetlike(self, p):
+    """ReadWriteSetlike : SetlikeRest"""
+    p[0] = p[1]
+
+  # [63]
+  def p_MaplikeRest(self, p):
+    """MaplikeRest : MAPLIKE '<' Type ',' Type '>' ';'"""
+    childlist = ListFromConcat(p[3], p[5])
+    p[0] = self.BuildProduction('Maplike', p, 2, childlist)
+
+  # [64]
+  def p_SetlikeRest(self, p):
+    """SetlikeRest : SETLIKE '<' Type '>' ';'"""
+    p[0] = self.BuildProduction('Setlike', p, 2, p[3])
 
   # [65] No comment version for mid statement attributes.
   def p_ExtendedAttributeListNoComments(self, p):

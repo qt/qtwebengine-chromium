@@ -44,6 +44,7 @@ struct SkPoint;
 
 namespace blink {
 
+class DoublePoint;
 class IntPoint;
 class IntSize;
 class LayoutPoint;
@@ -54,8 +55,11 @@ public:
     FloatPoint() : m_x(0), m_y(0) { }
     FloatPoint(float x, float y) : m_x(x), m_y(y) { }
     FloatPoint(const IntPoint&);
-    FloatPoint(const LayoutPoint&);
+    explicit FloatPoint(const DoublePoint&);
+    explicit FloatPoint(const LayoutPoint&);
     explicit FloatPoint(const FloatSize& size) : m_x(size.width()), m_y(size.height()) { }
+    explicit FloatPoint(const LayoutSize&);
+    explicit FloatPoint(const IntSize& size) : m_x(size.width()), m_y(size.height()) { }
 
     static FloatPoint zero() { return FloatPoint(); }
 
@@ -103,8 +107,6 @@ public:
         m_x *= sx;
         m_y *= sy;
     }
-
-    void normalize();
 
     float dot(const FloatPoint& a) const
     {
@@ -177,12 +179,32 @@ inline FloatPoint operator+(const FloatPoint& a, const FloatSize& b)
     return FloatPoint(a.x() + b.width(), a.y() + b.height());
 }
 
+inline FloatPoint operator+(const FloatPoint& a, const IntSize& b)
+{
+    return FloatPoint(a.x() + b.width(), a.y() + b.height());
+}
+
+inline FloatPoint operator+(const IntPoint& a, const FloatSize& b)
+{
+    return FloatPoint(a.x() + b.width(), a.y() + b.height());
+}
+
 inline FloatPoint operator+(const FloatPoint& a, const FloatPoint& b)
 {
     return FloatPoint(a.x() + b.x(), a.y() + b.y());
 }
 
+inline FloatPoint operator+(const FloatPoint& a, const IntPoint& b)
+{
+    return FloatPoint(a.x() + b.x(), a.y() + b.y());
+}
+
 inline FloatSize operator-(const FloatPoint& a, const FloatPoint& b)
+{
+    return FloatSize(a.x() - b.x(), a.y() - b.y());
+}
+
+inline FloatSize operator-(const FloatPoint& a, const IntPoint& b)
 {
     return FloatSize(a.x() - b.x(), a.y() - b.y());
 }
@@ -218,6 +240,11 @@ inline IntPoint roundedIntPoint(const FloatPoint& p)
     return IntPoint(clampTo<int>(roundf(p.x())), clampTo<int>(roundf(p.y())));
 }
 
+inline IntSize roundedIntSize(const FloatPoint& p)
+{
+    return IntSize(clampTo<int>(roundf(p.x())), clampTo<int>(roundf(p.y())));
+}
+
 inline IntPoint flooredIntPoint(const FloatPoint& p)
 {
     return IntPoint(clampTo<int>(floorf(p.x())), clampTo<int>(floorf(p.y())));
@@ -237,8 +264,6 @@ inline FloatSize toFloatSize(const FloatPoint& a)
 {
     return FloatSize(a.x(), a.y());
 }
-
-PLATFORM_EXPORT float findSlope(const FloatPoint& p1, const FloatPoint& p2, float& c);
 
 // Find point where lines through the two pairs of points intersect. Returns false if the lines don't intersect.
 PLATFORM_EXPORT bool findIntersection(const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& d1, const FloatPoint& d2, FloatPoint& intersection);

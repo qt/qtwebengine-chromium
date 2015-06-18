@@ -18,26 +18,25 @@
  * Boston, MA 02110-1301, USA.
  */
 
+// https://dom.spec.whatwg.org/#interface-attr
+
+// FIXME: Attr should not inherit from Node. crbug.com/305105
 interface Attr : Node {
-
-    // DOM Level 1
-
-    readonly attribute DOMString? name;
-
-    [MeasureAs=AttributeSpecified] readonly attribute boolean specified;
-
-    [ImplementedAs=valueForBindings, CustomElementCallbacks] attribute DOMString? value;
-    [DeprecateAs=AttrNodeValue, ImplementedAs=valueForBindings] attribute DOMString? nodeValue;
-    [DeprecateAs=AttrTextContent, ImplementedAs=valueForBindings] attribute DOMString? textContent;
-
-    // DOM Level 2
-
-    [DeprecateAs=AttributeOwnerElement] readonly attribute Element ownerElement;
-
-    // DOM 4
-
-    readonly attribute DOMString? prefix;
     readonly attribute DOMString? namespaceURI;
+    readonly attribute DOMString? prefix;
+    // FIXME: localName/name/value/nodeValue/textContent should not be nullable.
     readonly attribute DOMString? localName;
-};
+    readonly attribute DOMString? name;
+    [ImplementedAs=valueForBindings, CustomElementCallbacks] attribute DOMString? value;
+    [ImplementedAs=valueForBindings, MeasureAs=AttrNodeValue] attribute DOMString? nodeValue; // legacy alias of .value
+    [ImplementedAs=valueForBindings, MeasureAs=AttrTextContent] attribute DOMString? textContent; // legacy alias of .value
 
+    [MeasureAs=AttributeOwnerElement] readonly attribute Element? ownerElement;
+
+    [MeasureAs=AttributeSpecified] readonly attribute boolean specified; // useless; always returns true
+
+    // FIXME: Attr should not have any child nodes. crbug.com/305105
+    [DeprecateAs=AttrChildAccess] readonly attribute NodeList childNodes;
+    [DeprecateAs=AttrChildAccess] readonly attribute Node firstChild;
+    [DeprecateAs=AttrChildAccess] readonly attribute Node lastChild;
+};

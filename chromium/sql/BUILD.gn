@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//testing/test.gni")
+
 component("sql") {
   sources = [
     "connection.cc",
@@ -19,11 +21,10 @@ component("sql") {
     "transaction.h",
   ]
 
-  defines = [ "SQL_IMPLEMENTATION" ]
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
-  if (is_win) {
-    cflags = [ "/wd4267" ]  # size_t to int.
-  }
+  defines = [ "SQL_IMPLEMENTATION" ]
 
   deps = [
     "//base",
@@ -47,6 +48,7 @@ source_set("test_support") {
     ":sql",
     "//base",
     "//testing/gtest",
+    "//third_party/sqlite",
   ]
 }
 
@@ -65,9 +67,8 @@ test("sql_unittests") {
     "transaction_unittest.cc",
   ]
 
-  if (is_win) {
-    cflags = [ "/wd4267" ]  # size_t -> int
-  }
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   deps = [
     ":sql",

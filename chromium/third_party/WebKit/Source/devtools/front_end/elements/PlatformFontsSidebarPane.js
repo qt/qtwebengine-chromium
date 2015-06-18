@@ -45,41 +45,50 @@ WebInspector.PlatformFontsSidebarPane = function()
 
 WebInspector.PlatformFontsSidebarPane.prototype = {
     /**
+     * @override
      * @param {?WebInspector.DOMNode} node
      */
     setNode: function(node)
     {
         WebInspector.ElementsSidebarPane.prototype.setNode.call(this, node);
-        this._updateTarget(node.target());
+        this._updateTarget(node ? node.target() : null);
     },
 
     /**
-     * @param {!WebInspector.Target} target
+     * @param {?WebInspector.Target} target
      */
     _updateTarget: function(target)
     {
         if (this._target === target)
             return;
+
         if (this._target) {
-            this._target.cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this.update, this);
-            this._target.cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this.update, this);
-            this._target.cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this.update, this);
-            this._target.cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this.update, this);
-            this._target.domModel.removeEventListener(WebInspector.DOMModel.Events.AttrModified, this.update, this);
-            this._target.domModel.removeEventListener(WebInspector.DOMModel.Events.AttrRemoved, this.update, this);
-            this._target.domModel.removeEventListener(WebInspector.DOMModel.Events.CharacterDataModified, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this.update, this);
+            this._cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.PseudoStateForced, this.update, this);
+            this._domModel.removeEventListener(WebInspector.DOMModel.Events.AttrModified, this.update, this);
+            this._domModel.removeEventListener(WebInspector.DOMModel.Events.AttrRemoved, this.update, this);
+            this._domModel.removeEventListener(WebInspector.DOMModel.Events.CharacterDataModified, this.update, this);
         }
         this._target = target;
-        this._target.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this.update, this);
-        this._target.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this.update, this);
-        this._target.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this.update, this);
-        this._target.cssModel.addEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this.update, this);
-        this._target.domModel.addEventListener(WebInspector.DOMModel.Events.AttrModified, this.update, this);
-        this._target.domModel.addEventListener(WebInspector.DOMModel.Events.AttrRemoved, this.update, this);
-        this._target.domModel.addEventListener(WebInspector.DOMModel.Events.CharacterDataModified, this.update, this);
+        if (target) {
+            this._domModel = WebInspector.DOMModel.fromTarget(target);
+            this._cssModel = WebInspector.CSSStyleModel.fromTarget(target);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.MediaQueryResultChanged, this.update, this);
+            this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.PseudoStateForced, this.update, this);
+            this._domModel.addEventListener(WebInspector.DOMModel.Events.AttrModified, this.update, this);
+            this._domModel.addEventListener(WebInspector.DOMModel.Events.AttrRemoved, this.update, this);
+            this._domModel.addEventListener(WebInspector.DOMModel.Events.CharacterDataModified, this.update, this);
+        }
     },
 
     /**
+     * @override
      * @param {!WebInspector.Throttler.FinishCallback} finishedCallback
      * @protected
      */
@@ -87,7 +96,7 @@ WebInspector.PlatformFontsSidebarPane.prototype = {
     {
         if (!this.node())
             return;
-        this._target.cssModel.getPlatformFontsForNode(this.node().id, this._refreshUI.bind(this, /** @type {!WebInspector.DOMNode} */ (this.node()), finishedCallback));
+        this._cssModel.getPlatformFontsForNode(this.node().id, this._refreshUI.bind(this, /** @type {!WebInspector.DOMNode} */ (this.node()), finishedCallback));
     },
 
     /**

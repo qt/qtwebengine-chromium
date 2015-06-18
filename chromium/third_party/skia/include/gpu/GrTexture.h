@@ -13,19 +13,13 @@
 #include "SkPoint.h"
 #include "SkRefCnt.h"
 
-class GrResourceKey;
 class GrTextureParams;
 class GrTexturePriv;
 
 class GrTexture : virtual public GrSurface {
 public:
-    /**
-     *  Approximate number of bytes used by the texture
-     */
-    virtual size_t gpuMemorySize() const SK_OVERRIDE;
-
-    virtual GrTexture* asTexture() SK_OVERRIDE { return this; }
-    virtual const GrTexture* asTexture() const SK_OVERRIDE { return this; }
+    GrTexture* asTexture() override { return this; }
+    const GrTexture* asTexture() const override { return this; }
 
     /**
      *  Return the native ID or handle to the texture, depending on the
@@ -51,11 +45,12 @@ public:
     inline const GrTexturePriv texturePriv() const;
 
 protected:
-    GrTexture(GrGpu* gpu, bool isWrapped, const GrSurfaceDesc& desc);
+    GrTexture(GrGpu*, LifeCycle, const GrSurfaceDesc&);
 
     void validateDesc() const;
 
 private:
+    size_t onGpuMemorySize() const override;
     void dirtyMipMaps(bool mipMapsDirty);
 
     enum MipMapsStatus {

@@ -16,7 +16,7 @@
 #include "net/base/address_family.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 
 namespace net {
 
@@ -28,7 +28,7 @@ class NET_EXPORT TCPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe),
                                 public base::win::ObjectWatcher::Delegate  {
  public:
   TCPSocketWin(NetLog* net_log, const NetLog::Source& source);
-  virtual ~TCPSocketWin();
+  ~TCPSocketWin() override;
 
   int Open(AddressFamily family);
 
@@ -101,7 +101,7 @@ class NET_EXPORT TCPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe),
   class Core;
 
   // base::ObjectWatcher::Delegate implementation.
-  virtual void OnObjectSignaled(HANDLE object) override;
+  void OnObjectSignaled(HANDLE object) override;
 
   int AcceptInternal(scoped_ptr<TCPSocketWin>* socket,
                      IPEndPoint* address);

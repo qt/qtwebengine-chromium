@@ -26,17 +26,16 @@
 #ifndef WebGLBuffer_h
 #define WebGLBuffer_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
-#include "core/html/canvas/WebGLSharedObject.h"
+#include "core/html/canvas/WebGLSharedPlatform3DObject.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class WebGLBuffer final : public WebGLSharedObject, public ScriptWrappable {
+class WebGLBuffer final : public WebGLSharedPlatform3DObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~WebGLBuffer();
+    ~WebGLBuffer() override;
 
     static PassRefPtrWillBeRawPtr<WebGLBuffer> create(WebGLRenderingContextBase*);
 
@@ -48,10 +47,10 @@ public:
 protected:
     explicit WebGLBuffer(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
+    void deleteObjectImpl(WebGraphicsContext3D*) override;
 
 private:
-    virtual bool isBuffer() const override { return true; }
+    bool isBuffer() const override { return true; }
 
     GLenum m_target;
 };

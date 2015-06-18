@@ -26,6 +26,7 @@
 #include "core/svg/SVGAnimatedNumberList.h"
 #include "core/svg/SVGElement.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -44,23 +45,23 @@ public:
     SVGAnimatedNumber* offset() { return m_offset.get(); }
     SVGAnimatedEnumeration<ComponentTransferType>* type() { return m_type.get(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 protected:
     SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
     virtual void svgAttributeChanged(const QualifiedName&) override final;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override final { return false; }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override final { return false; }
 
 private:
-    RefPtr<SVGAnimatedNumberList> m_tableValues;
-    RefPtr<SVGAnimatedNumber> m_slope;
-    RefPtr<SVGAnimatedNumber> m_intercept;
-    RefPtr<SVGAnimatedNumber> m_amplitude;
-    RefPtr<SVGAnimatedNumber> m_exponent;
-    RefPtr<SVGAnimatedNumber> m_offset;
-    RefPtr<SVGAnimatedEnumeration<ComponentTransferType> > m_type;
+    RefPtrWillBeMember<SVGAnimatedNumberList> m_tableValues;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_slope;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_intercept;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_amplitude;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_exponent;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_offset;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<ComponentTransferType>> m_type;
 };
 
 } // namespace blink

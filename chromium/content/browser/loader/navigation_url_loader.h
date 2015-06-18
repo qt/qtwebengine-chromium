@@ -15,7 +15,6 @@ namespace content {
 class BrowserContext;
 class NavigationURLLoaderDelegate;
 class NavigationURLLoaderFactory;
-class ResourceRequestBody;
 struct CommonNavigationParams;
 struct NavigationRequestInfo;
 
@@ -35,10 +34,8 @@ class CONTENT_EXPORT NavigationURLLoader {
   // should_replace_current_entry shouldn't be needed at this layer.
   static scoped_ptr<NavigationURLLoader> Create(
       BrowserContext* browser_context,
-      int64 frame_tree_node_id,
-      const CommonNavigationParams& common_params,
+      int frame_tree_node_id,
       scoped_ptr<NavigationRequestInfo> request_info,
-      ResourceRequestBody* request_body,
       NavigationURLLoaderDelegate* delegate);
 
   // For testing purposes; sets the factory for use in testing.

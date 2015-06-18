@@ -30,6 +30,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
@@ -37,10 +38,11 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/layout/LayoutFullScreen.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderFullScreen.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace blink {
@@ -77,7 +79,7 @@ static bool fullscreenElementReady(const Element& element, Fullscreen::RequestTy
     // |element|'s node document's fullscreen enabled flag is set.
     if (!fullscreenIsAllowedForAllOwners(element.document())) {
         if (requestType == Fullscreen::PrefixedVideoRequest)
-            UseCounter::count(element.document(), UseCounter::VideoFullscreenAllowedExemption);
+            UseCounter::countDeprecation(element.document(), UseCounter::VideoFullscreenAllowedExemption);
         else
             return false;
     }
@@ -129,7 +131,7 @@ Fullscreen& Fullscreen::from(Document& document)
     Fullscreen* fullscreen = fromIfExists(document);
     if (!fullscreen) {
         fullscreen = new Fullscreen(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(fullscreen));
+        WillBeHeapSupplement<Document>::provideTo(document, supplementName(), adoptPtrWillBeNoop(fullscreen));
     }
 
     return *fullscreen;
@@ -137,7 +139,7 @@ Fullscreen& Fullscreen::from(Document& document)
 
 Fullscreen* Fullscreen::fromIfExistsSlow(Document& document)
 {
-    return static_cast<Fullscreen*>(DocumentSupplement::from(document, supplementName()));
+    return static_cast<Fullscreen*>(WillBeHeapSupplement<Document>::from(document, supplementName()));
 }
 
 Element* Fullscreen::fullscreenElementFrom(Document& document)
@@ -161,8 +163,7 @@ bool Fullscreen::isFullScreen(Document& document)
 
 Fullscreen::Fullscreen(Document& document)
     : DocumentLifecycleObserver(&document)
-    , m_areKeysEnabledInFullScreen(false)
-    , m_fullScreenRenderer(nullptr)
+    , m_fullScreenLayoutObject(nullptr)
     , m_eventQueueTimer(this, &Fullscreen::eventQueueTimerFired)
 {
     document.setHasFullscreenSupplement();
@@ -181,8 +182,8 @@ void Fullscreen::documentWasDetached()
 {
     m_eventQueue.clear();
 
-    if (m_fullScreenRenderer)
-        m_fullScreenRenderer->destroy();
+    if (m_fullScreenLayoutObject)
+        m_fullScreenLayoutObject->destroy();
 
 #if ENABLE(OILPAN)
     m_fullScreenElement = nullptr;
@@ -203,6 +204,15 @@ void Fullscreen::documentWasDisposed()
 
 void Fullscreen::requestFullscreen(Element& element, RequestType requestType)
 {
+    // It is required by isPrivilegedContext() but isn't
+    // actually used. This could be used later if a warning is shown in the
+    // developer console.
+    String errorMessage;
+    if (document()->isPrivilegedContext(errorMessage))
+        UseCounter::count(document(), UseCounter::FullscreenSecureOrigin);
+    else
+        UseCounter::countDeprecation(document(), UseCounter::FullscreenInsecureOrigin);
+
     // Ignore this request if the document is not in a live frame.
     if (!document()->isActive())
         return;
@@ -284,7 +294,6 @@ void Fullscreen::requestFullscreen(Element& element, RequestType requestType)
 
         // 5. Return, and run the remaining steps asynchronously.
         // 6. Optionally, perform some animation.
-        m_areKeysEnabledInFullScreen = requestType != PrefixedMozillaRequest && requestType != PrefixedVideoRequest;
         document()->frameHost()->chrome().client().enterFullScreenForElement(&element);
 
         // 7. Optionally, display a message indicating how the user can exit displaying the context object fullscreen.
@@ -330,7 +339,7 @@ void Fullscreen::exitFullscreen()
     // 3. Let descendants be all the doc's descendant browsing context's documents with a non-empty fullscreen
     // element stack (if any), ordered so that the child of the doc is last and the document furthest
     // away from the doc is first.
-    WillBeHeapDeque<RefPtrWillBeMember<Document> > descendants;
+    WillBeHeapDeque<RefPtrWillBeMember<Document>> descendants;
     for (Frame* descendant = document()->frame() ? document()->frame()->tree().traverseNext() : 0; descendant; descendant = descendant->tree().traverseNext()) {
         if (!descendant->isLocalFrame())
             continue;
@@ -341,11 +350,11 @@ void Fullscreen::exitFullscreen()
 
     // 4. For each descendant in descendants, empty descendant's fullscreen element stack, and queue a
     // task to fire an event named fullscreenchange with its bubbles attribute set to true on descendant.
-    for (WillBeHeapDeque<RefPtrWillBeMember<Document> >::iterator i = descendants.begin(); i != descendants.end(); ++i) {
-        ASSERT(*i);
-        RequestType requestType = from(**i).m_fullScreenElementStack.last().second;
-        from(**i).clearFullscreenElementStack();
-        enqueueChangeEvent(**i, requestType);
+    for (auto& descendant : descendants) {
+        ASSERT(descendant);
+        RequestType requestType = from(*descendant).m_fullScreenElementStack.last().second;
+        from(*descendant).clearFullscreenElementStack();
+        enqueueChangeEvent(*descendant, requestType);
     }
 
     // 5. While doc is not null, run these substeps:
@@ -391,7 +400,14 @@ void Fullscreen::exitFullscreen()
     // Only exit out of full screen window mode if there are no remaining elements in the
     // full screen stack.
     if (!newTop) {
-        host->chrome().client().exitFullScreenForElement(m_fullScreenElement.get());
+        // FIXME: if the frame exiting fullscreen is not the frame that entered
+        // fullscreen (but a parent frame for example), m_fullScreenElement
+        // might be null. We want to pass an element that is part of the
+        // document so we will pass the documentElement in that case.
+        // This should be fix by exiting fullscreen for a frame instead of an
+        // element, see https://crbug.com/441259
+        host->chrome().client().exitFullScreenForElement(
+            m_fullScreenElement ? m_fullScreenElement.get() : document()->documentElement());
         return;
     }
 
@@ -414,30 +430,30 @@ void Fullscreen::didEnterFullScreenForElement(Element* element)
     if (!document()->isActive())
         return;
 
-    if (m_fullScreenRenderer)
-        m_fullScreenRenderer->unwrapRenderer();
+    if (m_fullScreenLayoutObject)
+        m_fullScreenLayoutObject->unwrapLayoutObject();
 
     m_fullScreenElement = element;
 
     // Create a placeholder block for a the full-screen element, to keep the page from reflowing
-    // when the element is removed from the normal flow. Only do this for a RenderBox, as only
-    // a box will have a frameRect. The placeholder will be created in setFullScreenRenderer()
+    // when the element is removed from the normal flow. Only do this for a LayoutBox, as only
+    // a box will have a frameRect. The placeholder will be created in setFullScreenLayoutObject()
     // during layout.
-    RenderObject* renderer = m_fullScreenElement->renderer();
-    bool shouldCreatePlaceholder = renderer && renderer->isBox();
+    LayoutObject* layoutObject = m_fullScreenElement->layoutObject();
+    bool shouldCreatePlaceholder = layoutObject && layoutObject->isBox();
     if (shouldCreatePlaceholder) {
-        m_savedPlaceholderFrameRect = toRenderBox(renderer)->frameRect();
-        m_savedPlaceholderRenderStyle = RenderStyle::clone(renderer->style());
+        m_savedPlaceholderFrameRect = toLayoutBox(layoutObject)->frameRect();
+        m_savedPlaceholderComputedStyle = ComputedStyle::clone(layoutObject->styleRef());
     }
 
     if (m_fullScreenElement != document()->documentElement())
-        RenderFullScreen::wrapRenderer(renderer, renderer ? renderer->parent() : 0, document());
+        LayoutFullScreen::wrapLayoutObject(layoutObject, layoutObject ? layoutObject->parent() : 0, document());
 
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
 
     // FIXME: This should not call updateStyleIfNeeded.
     document()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::FullScreen));
-    document()->updateRenderTreeIfNeeded();
+    document()->updateLayoutTreeIfNeeded();
 
     m_fullScreenElement->didBecomeFullscreenElement();
 
@@ -459,10 +475,8 @@ void Fullscreen::didExitFullScreenForElement(Element*)
 
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(false);
 
-    m_areKeysEnabledInFullScreen = false;
-
-    if (m_fullScreenRenderer)
-        m_fullScreenRenderer->unwrapRenderer();
+    if (m_fullScreenLayoutObject)
+        m_fullScreenLayoutObject->unwrapLayoutObject();
 
     m_fullScreenElement = nullptr;
     document()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::FullScreen));
@@ -480,28 +494,28 @@ void Fullscreen::didExitFullScreenForElement(Element*)
     from(*exitingDocument).m_eventQueueTimer.startOneShot(0, FROM_HERE);
 }
 
-void Fullscreen::setFullScreenRenderer(RenderFullScreen* renderer)
+void Fullscreen::setFullScreenLayoutObject(LayoutFullScreen* layoutObject)
 {
-    if (renderer == m_fullScreenRenderer)
+    if (layoutObject == m_fullScreenLayoutObject)
         return;
 
-    if (renderer && m_savedPlaceholderRenderStyle) {
-        renderer->createPlaceholder(m_savedPlaceholderRenderStyle.release(), m_savedPlaceholderFrameRect);
-    } else if (renderer && m_fullScreenRenderer && m_fullScreenRenderer->placeholder()) {
-        RenderBlock* placeholder = m_fullScreenRenderer->placeholder();
-        renderer->createPlaceholder(RenderStyle::clone(placeholder->style()), placeholder->frameRect());
+    if (layoutObject && m_savedPlaceholderComputedStyle) {
+        layoutObject->createPlaceholder(m_savedPlaceholderComputedStyle.release(), m_savedPlaceholderFrameRect);
+    } else if (layoutObject && m_fullScreenLayoutObject && m_fullScreenLayoutObject->placeholder()) {
+        LayoutBlock* placeholder = m_fullScreenLayoutObject->placeholder();
+        layoutObject->createPlaceholder(ComputedStyle::clone(placeholder->styleRef()), placeholder->frameRect());
     }
 
-    if (m_fullScreenRenderer)
-        m_fullScreenRenderer->unwrapRenderer();
-    ASSERT(!m_fullScreenRenderer);
+    if (m_fullScreenLayoutObject)
+        m_fullScreenLayoutObject->unwrapLayoutObject();
+    ASSERT(!m_fullScreenLayoutObject);
 
-    m_fullScreenRenderer = renderer;
+    m_fullScreenLayoutObject = layoutObject;
 }
 
-void Fullscreen::fullScreenRendererDestroyed()
+void Fullscreen::fullScreenLayoutObjectDestroyed()
 {
-    m_fullScreenRenderer = nullptr;
+    m_fullScreenLayoutObject = nullptr;
 }
 
 void Fullscreen::enqueueChangeEvent(Document& document, RequestType requestType)
@@ -540,7 +554,7 @@ void Fullscreen::eventQueueTimerFired(Timer<Fullscreen>*)
     // document will be detached and GC'd. We protect it here to make sure we
     // can finish the function successfully.
     RefPtrWillBeRawPtr<Document> protectDocument(document());
-    WillBeHeapDeque<RefPtrWillBeMember<Event> > eventQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Event>> eventQueue;
     m_eventQueue.swap(eventQueue);
 
     while (!eventQueue.isEmpty()) {
@@ -598,13 +612,15 @@ void Fullscreen::pushFullscreenElementStack(Element& element, RequestType reques
     m_fullScreenElementStack.append(std::make_pair(&element, requestType));
 }
 
-void Fullscreen::trace(Visitor* visitor)
+DEFINE_TRACE(Fullscreen)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_fullScreenElement);
     visitor->trace(m_fullScreenElementStack);
-    visitor->trace(m_fullScreenRenderer);
     visitor->trace(m_eventQueue);
-    DocumentSupplement::trace(visitor);
+#endif
+    WillBeHeapSupplement<Document>::trace(visitor);
+    DocumentLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

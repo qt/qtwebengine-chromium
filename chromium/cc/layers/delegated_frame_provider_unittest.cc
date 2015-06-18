@@ -59,15 +59,16 @@ class DelegatedFrameProviderTest
                  gfx::PointF(1.f, 1.f),
                  SK_ColorTRANSPARENT,
                  vertex_opacity,
+                 false,
                  false);
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     resource_collection_ = new DelegatedFrameResourceCollection;
     resource_collection_->SetClient(this);
   }
 
-  virtual void TearDown() override { resource_collection_->SetClient(nullptr); }
+  void TearDown() override { resource_collection_->SetClient(nullptr); }
 
   void UnusedResourcesAreAvailable() override {
     resources_available_ = true;

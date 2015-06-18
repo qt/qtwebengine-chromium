@@ -7,7 +7,7 @@
 #include <limits>
 
 #include "base/logging.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
@@ -77,6 +77,10 @@ void CommandBufferService::Flush(int32 put_offset) {
 
   if (!put_offset_change_callback_.is_null())
     put_offset_change_callback_.Run();
+}
+
+void CommandBufferService::OrderingBarrier(int32 put_offset) {
+  Flush(put_offset);
 }
 
 void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {

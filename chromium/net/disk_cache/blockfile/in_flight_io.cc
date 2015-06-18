@@ -21,6 +21,9 @@ BackgroundIO::BackgroundIO(InFlightIO* controller)
 
 // Runs on the primary thread.
 void BackgroundIO::OnIOSignalled() {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("477117 BackgroundIO::OnIOSignalled"));
   if (controller_)
     controller_->InvokeCallback(this, false);
 }
@@ -88,10 +91,6 @@ void InFlightIO::OnIOComplete(BackgroundIO* operation) {
 // Runs on the primary thread.
 void InFlightIO::InvokeCallback(BackgroundIO* operation, bool cancel_task) {
   {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("422516 InFlightIO::InvokeCallback"));
-
     // http://crbug.com/74623
     base::ThreadRestrictions::ScopedAllowWait allow_wait;
     operation->io_completed()->Wait();

@@ -88,6 +88,18 @@ WebCryptoKeyAlgorithm WebCryptoKeyAlgorithm::createRsaHashed(WebCryptoAlgorithmI
     return WebCryptoKeyAlgorithm(id, adoptPtr(new WebCryptoRsaHashedKeyAlgorithmParams(modulusLengthBits, publicExponent, publicExponentSize, createHash(hash))));
 }
 
+WebCryptoKeyAlgorithm WebCryptoKeyAlgorithm::createEc(WebCryptoAlgorithmId id, WebCryptoNamedCurve namedCurve)
+{
+    return WebCryptoKeyAlgorithm(id, adoptPtr(new WebCryptoEcKeyAlgorithmParams(namedCurve)));
+}
+
+WebCryptoKeyAlgorithm WebCryptoKeyAlgorithm::createWithoutParams(WebCryptoAlgorithmId id)
+{
+    if (!WebCryptoAlgorithm::isKdf(id))
+        return WebCryptoKeyAlgorithm();
+    return WebCryptoKeyAlgorithm(id, nullptr);
+}
+
 bool WebCryptoKeyAlgorithm::isNull() const
 {
     return m_private.isNull();
@@ -131,11 +143,20 @@ WebCryptoRsaHashedKeyAlgorithmParams* WebCryptoKeyAlgorithm::rsaHashedParams() c
     return 0;
 }
 
+WebCryptoEcKeyAlgorithmParams* WebCryptoKeyAlgorithm::ecParams() const
+{
+    ASSERT(!isNull());
+    if (paramsType() == WebCryptoKeyAlgorithmParamsTypeEc)
+        return static_cast<WebCryptoEcKeyAlgorithmParams*>(m_private->params.get());
+    return 0;
+}
+
 void WebCryptoKeyAlgorithm::writeToDictionary(WebCryptoKeyAlgorithmDictionary* dict) const
 {
     ASSERT(!isNull());
     dict->setString("name", WebCryptoAlgorithm::lookupAlgorithmInfo(id())->name);
-    m_private->params.get()->writeToDictionary(dict);
+    if (m_private->params.get())
+        m_private->params.get()->writeToDictionary(dict);
 }
 
 void WebCryptoKeyAlgorithm::assign(const WebCryptoKeyAlgorithm& other)

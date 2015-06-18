@@ -22,7 +22,7 @@ public:
     CMYKJpegGM() {}
 
 protected:
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         // parameters to the "decode" call
         bool dither = false;
 
@@ -42,15 +42,15 @@ protected:
         }
     }
 
-    virtual SkString onShortName() {
+    virtual SkString onShortName() override {
         return SkString("cmykjpeg");
     }
 
-    virtual SkISize onISize() {
+    virtual SkISize onISize() override {
         return SkISize::Make(640, 480);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    virtual void onDraw(SkCanvas* canvas) override {
 
         canvas->translate(20*SK_Scalar1, 20*SK_Scalar1);
         canvas->drawBitmap(fBitmap, 0, 0);

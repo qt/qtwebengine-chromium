@@ -23,9 +23,6 @@
 #include "core/svg/SVGPathSeg.h"
 #include "core/svg/SVGPathSegList.h"
 #include "core/svg/SVGPathSource.h"
-#include "platform/geometry/FloatPoint.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/RefPtr.h"
 
 namespace blink {
 
@@ -35,21 +32,9 @@ public:
 
 private:
     virtual bool hasMoreData() const override;
-    virtual bool moveToNextToken() override { return true; }
-    virtual bool parseSVGSegmentType(SVGPathSegType&) override;
-    virtual SVGPathSegType nextCommand(SVGPathSegType) override;
+    virtual SVGPathSegType peekSegmentType() override;
+    virtual PathSegmentData parseSegment() override;
 
-    virtual bool parseMoveToSegment(FloatPoint&) override;
-    virtual bool parseLineToSegment(FloatPoint&) override;
-    virtual bool parseLineToHorizontalSegment(float&) override;
-    virtual bool parseLineToVerticalSegment(float&) override;
-    virtual bool parseCurveToCubicSegment(FloatPoint&, FloatPoint&, FloatPoint&) override;
-    virtual bool parseCurveToCubicSmoothSegment(FloatPoint&, FloatPoint&) override;
-    virtual bool parseCurveToQuadraticSegment(FloatPoint&, FloatPoint&) override;
-    virtual bool parseCurveToQuadraticSmoothSegment(FloatPoint&) override;
-    virtual bool parseArcToSegment(float&, float&, float&, bool&, bool&, FloatPoint&) override;
-
-    RefPtr<SVGPathSeg> m_segment;
     SVGPathSegList::ConstIterator m_itCurrent;
     SVGPathSegList::ConstIterator m_itEnd;
 };

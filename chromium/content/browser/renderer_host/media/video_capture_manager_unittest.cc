@@ -44,24 +44,27 @@ class MockMediaStreamProviderListener : public MediaStreamProviderListener {
 // Needed as an input argument to StartCaptureForClient().
 class MockFrameObserver : public VideoCaptureControllerEventHandler {
  public:
-  MOCK_METHOD1(OnError, void(const VideoCaptureControllerID& id));
+  MOCK_METHOD1(OnError, void(VideoCaptureControllerID id));
 
-  virtual void OnBufferCreated(const VideoCaptureControllerID& id,
-                               base::SharedMemoryHandle handle,
-                               int length, int buffer_id) override {}
-  virtual void OnBufferDestroyed(const VideoCaptureControllerID& id,
-                               int buffer_id) override {}
-  virtual void OnBufferReady(const VideoCaptureControllerID& id,
-                             int buffer_id,
-                             const media::VideoCaptureFormat& format,
-                             const gfx::Rect& visible_rect,
-                             base::TimeTicks timestamp) override {}
-  virtual void OnMailboxBufferReady(const VideoCaptureControllerID& id,
-                                    int buffer_id,
-                                    const gpu::MailboxHolder& mailbox_holder,
-                                    const media::VideoCaptureFormat& format,
-                                    base::TimeTicks timestamp) override {}
-  virtual void OnEnded(const VideoCaptureControllerID& id) override {}
+  void OnBufferCreated(VideoCaptureControllerID id,
+                       base::SharedMemoryHandle handle,
+                       int length, int buffer_id) override {}
+  void OnBufferDestroyed(VideoCaptureControllerID id, int buffer_id) override {}
+  void OnBufferReady(
+      VideoCaptureControllerID id,
+      int buffer_id,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const base::TimeTicks& timestamp,
+      scoped_ptr<base::DictionaryValue> metadata) override {}
+  void OnMailboxBufferReady(
+      VideoCaptureControllerID id,
+      int buffer_id,
+      const gpu::MailboxHolder& mailbox_holder,
+      const gfx::Size& packed_frame_size,
+      const base::TimeTicks& timestamp,
+      scoped_ptr<base::DictionaryValue> metadata) override {}
+  void OnEnded(VideoCaptureControllerID id) override {}
 
   void OnGotControllerCallback(VideoCaptureControllerID) {}
 };
@@ -170,6 +173,33 @@ TEST_F(VideoCaptureManagerTest, CreateAndClose) {
 
   StopClient(client_id);
   vcm_->Close(video_session_id);
+
+  // Wait to check callbacks before removing the listener.
+  message_loop_->RunUntilIdle();
+  vcm_->Unregister();
+}
+
+TEST_F(VideoCaptureManagerTest, CreateAndCloseMultipleTimes) {
+  StreamDeviceInfoArray devices;
+
+  InSequence s;
+  EXPECT_CALL(*listener_, DevicesEnumerated(MEDIA_DEVICE_VIDEO_CAPTURE, _))
+      .WillOnce(SaveArg<1>(&devices));
+
+  vcm_->EnumerateDevices(MEDIA_DEVICE_VIDEO_CAPTURE);
+
+  // Wait to get device callback.
+  message_loop_->RunUntilIdle();
+
+  for (int i = 1 ; i < 3 ; ++i) {
+    EXPECT_CALL(*listener_, Opened(MEDIA_DEVICE_VIDEO_CAPTURE, i));
+    EXPECT_CALL(*listener_, Closed(MEDIA_DEVICE_VIDEO_CAPTURE, i));
+    int video_session_id = vcm_->Open(devices.front());
+    VideoCaptureControllerID client_id = StartClient(video_session_id, true);
+
+    StopClient(client_id);
+    vcm_->Close(video_session_id);
+  }
 
   // Wait to check callbacks before removing the listener.
   message_loop_->RunUntilIdle();

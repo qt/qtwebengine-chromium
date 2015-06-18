@@ -9,12 +9,20 @@
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptState.h"
 #include "core/dom/DOMException.h"
+#include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/frame/LocalFrame.h"
 #include "modules/EventTargetModules.h"
+#include "modules/presentation/AvailableChangeEvent.h"
+#include "modules/presentation/DefaultSessionStartEvent.h"
+#include "modules/presentation/PresentationController.h"
+#include "modules/presentation/PresentationSessionClientCallbacks.h"
+#include "public/platform/modules/presentation/WebPresentationSessionClient.h"
 
 namespace blink {
 
-Presentation::Presentation(ExecutionContext* executionContext)
-    : ContextLifecycleObserver(executionContext)
+Presentation::Presentation(LocalFrame* frame)
+    : DOMWindowProperty(frame)
 {
 }
 
@@ -23,9 +31,13 @@ Presentation::~Presentation()
 }
 
 // static
-Presentation* Presentation::create(ExecutionContext* executionContext)
+Presentation* Presentation::create(LocalFrame* frame)
 {
-    return new Presentation(executionContext);
+    Presentation* presentation = new Presentation(frame);
+    PresentationController* controller = presentation->presentationController();
+    if (controller)
+        controller->setPresentation(presentation);
+    return presentation;
 }
 
 const AtomicString& Presentation::interfaceName() const
@@ -35,13 +47,17 @@ const AtomicString& Presentation::interfaceName() const
 
 ExecutionContext* Presentation::executionContext() const
 {
-    return ContextLifecycleObserver::executionContext();
+    if (!frame())
+        return nullptr;
+    return frame()->document();
 }
 
-void Presentation::trace(Visitor* visitor)
+DEFINE_TRACE(Presentation)
 {
     visitor->trace(m_session);
-    EventTargetWithInlineData::trace(visitor);
+    visitor->trace(m_openSessions);
+    RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
 PresentationSession* Presentation::session() const
@@ -49,20 +65,130 @@ PresentationSession* Presentation::session() const
     return m_session.get();
 }
 
-ScriptPromise Presentation::startSession(ScriptState* state, const String& senderId, const String& presentationId)
+ScriptPromise Presentation::startSession(ScriptState* state, const String& presentationUrl, const String& presentationId)
 {
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
-    resolver->reject(DOMException::create(NotSupportedError, "The method is not supported yet."));
+
+    PresentationController* controller = presentationController();
+    if (!controller) {
+        resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
+        return promise;
+    }
+    controller->startSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
+
     return promise;
 }
 
-ScriptPromise Presentation::joinSession(ScriptState* state, const String& senderId, const String& presentationId)
+ScriptPromise Presentation::joinSession(ScriptState* state, const String& presentationUrl, const String& presentationId)
 {
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
-    resolver->reject(DOMException::create(NotSupportedError, "The method is not supported yet."));
+
+    PresentationController* controller = presentationController();
+    if (!controller) {
+        resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
+        return promise;
+    }
+    controller->joinSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
+
     return promise;
+}
+
+bool Presentation::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+{
+    bool hadEventListeners = hasEventListeners(EventTypeNames::availablechange);
+    if (!RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::addEventListener(eventType, listener, useCapture))
+        return false;
+
+    if (hasEventListeners(EventTypeNames::availablechange) && !hadEventListeners) {
+        PresentationController* controller = presentationController();
+        if (controller)
+            controller->updateAvailableChangeWatched(true);
+    }
+
+    return true;
+}
+
+bool Presentation::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+{
+    bool hadEventListeners = hasEventListeners(EventTypeNames::availablechange);
+    if (!RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::removeEventListener(eventType, listener, useCapture))
+        return false;
+
+    if (hadEventListeners && !hasEventListeners(EventTypeNames::availablechange)) {
+        PresentationController* controller = presentationController();
+        if (controller)
+            controller->updateAvailableChangeWatched(false);
+    }
+
+    return true;
+}
+
+void Presentation::removeAllEventListeners()
+{
+    bool hadEventListeners = hasEventListeners(EventTypeNames::availablechange);
+    RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::removeAllEventListeners();
+
+    if (hadEventListeners) {
+        PresentationController* controller = presentationController();
+        if (controller)
+            controller->updateAvailableChangeWatched(false);
+    }
+}
+
+void Presentation::didChangeAvailability(bool available)
+{
+    dispatchEvent(AvailableChangeEvent::create(EventTypeNames::availablechange, available));
+}
+
+bool Presentation::isAvailableChangeWatched() const
+{
+    return hasEventListeners(EventTypeNames::availablechange);
+}
+
+void Presentation::didStartDefaultSession(PresentationSession* session)
+{
+    dispatchEvent(DefaultSessionStartEvent::create(EventTypeNames::defaultsessionstart, session));
+}
+
+void Presentation::didChangeSessionState(WebPresentationSessionClient* sessionClient, WebPresentationSessionState sessionState)
+{
+    PresentationSession* session = findSession(sessionClient);
+    if (session)
+        session->didChangeState(sessionState);
+
+    PresentationSession::dispose(sessionClient);
+}
+
+void Presentation::didReceiveSessionTextMessage(WebPresentationSessionClient* sessionClient, const String& message)
+{
+    PresentationSession* session = findSession(sessionClient);
+    if (session)
+        session->didReceiveTextMessage(message);
+
+    PresentationSession::dispose(sessionClient);
+}
+
+void Presentation::registerSession(PresentationSession* session)
+{
+    m_openSessions.add(session);
+}
+
+PresentationController* Presentation::presentationController()
+{
+    if (!frame())
+        return nullptr;
+    return PresentationController::from(*frame());
+}
+
+PresentationSession* Presentation::findSession(WebPresentationSessionClient* sessionClient)
+{
+    for (const auto& session : m_openSessions) {
+        if (session->matches(sessionClient))
+            return session.get();
+    }
+    return nullptr;
 }
 
 } // namespace blink

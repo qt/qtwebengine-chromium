@@ -8,7 +8,8 @@
 #include "bindings/core/v8/ScopedPersistent.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/ToV8.h"
+#include "core/CoreExport.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ExecutionContext.h"
 #include "platform/Timer.h"
@@ -25,42 +26,43 @@ namespace blink {
 //    ExecutionContext state. When the ExecutionContext is suspended,
 //    resolve or reject will be delayed. When it is stopped, resolve or reject
 //    will be ignored.
-class ScriptPromiseResolver : public ActiveDOMObject, public RefCounted<ScriptPromiseResolver> {
+class CORE_EXPORT ScriptPromiseResolver : public RefCountedWillBeRefCountedGarbageCollected<ScriptPromiseResolver>, public ActiveDOMObject {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScriptPromiseResolver);
+#if ENABLE(ASSERT)
+    WILL_BE_USING_PRE_FINALIZER(ScriptPromiseResolver, assertNotPending);
+#endif
     WTF_MAKE_NONCOPYABLE(ScriptPromiseResolver);
-
 public:
-    static PassRefPtr<ScriptPromiseResolver> create(ScriptState* scriptState)
+    static PassRefPtrWillBeRawPtr<ScriptPromiseResolver> create(ScriptState* scriptState)
     {
-        RefPtr<ScriptPromiseResolver> resolver = adoptRef(new ScriptPromiseResolver(scriptState));
+        RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = adoptRefWillBeNoop(new ScriptPromiseResolver(scriptState));
         resolver->suspendIfNeeded();
         return resolver.release();
     }
 
-    virtual ~ScriptPromiseResolver()
+#if !ENABLE(OILPAN) && ENABLE(ASSERT)
+    ~ScriptPromiseResolver() override
     {
-        // This assertion fails if:
-        //  - promise() is called at least once and
-        //  - this resolver is destructed before it is resolved, rejected or
-        //    the associated ExecutionContext is stopped.
-        ASSERT(m_state == ResolvedOrRejected || !m_isPromiseCalled);
+        assertNotPending();
     }
+#endif
 
-    // Anything that can be passed to toV8Value can be passed to this function.
-    template <typename T>
+    // Anything that can be passed to toV8 can be passed to this function.
+    template<typename T>
     void resolve(T value)
     {
         resolveOrReject(value, Resolving);
     }
 
-    // Anything that can be passed to toV8Value can be passed to this function.
-    template <typename T>
+    // Anything that can be passed to toV8 can be passed to this function.
+    template<typename T>
     void reject(T value)
     {
         resolveOrReject(value, Rejecting);
     }
 
-    void resolve() { resolve(V8UndefinedType()); }
-    void reject() { reject(V8UndefinedType()); }
+    void resolve() { resolve(ToV8UndefinedGenerator()); }
+    void reject() { reject(ToV8UndefinedGenerator()); }
 
     ScriptState* scriptState() { return m_scriptState.get(); }
 
@@ -85,6 +87,8 @@ public:
     // promise is pending and the associated ExecutionContext isn't stopped.
     void keepAliveWhilePending();
 
+    DECLARE_VIRTUAL_TRACE();
+
 protected:
     // You need to call suspendIfNeeded after the construction because
     // this is an ActiveDOMObject.
@@ -103,13 +107,20 @@ private:
         KeepAliveWhilePending,
     };
 
-    template<typename T>
-    v8::Handle<v8::Value> toV8Value(const T& value)
+#if ENABLE(ASSERT)
+    void assertNotPending()
     {
-        return V8ValueTraits<T>::toV8Value(value, m_scriptState->context()->Global(), m_scriptState->isolate());
+        // This assertion fails if:
+        //  - promise() is called at least once and
+        //  - this resolver is destructed before it is resolved, rejected or
+        //    the associated ExecutionContext is stopped.
+        // This function cannot be run in the destructor if
+        // ScriptPromiseResolver is on-heap.
+        ASSERT(m_state == ResolvedOrRejected || !m_isPromiseCalled || !executionContext() || executionContext()->activeDOMObjectsAreStopped());
     }
+#endif
 
-    template <typename T>
+    template<typename T>
     void resolveOrReject(T value, ResolutionState newState)
     {
         if (m_state != Pending || !executionContext() || executionContext()->activeDOMObjectsAreStopped())
@@ -121,7 +132,9 @@ private:
         ref();
 
         ScriptState::Scope scope(m_scriptState.get());
-        m_value.set(m_scriptState->isolate(), toV8Value(value));
+        m_value.set(
+            m_scriptState->isolate(),
+            toV8(value, m_scriptState->context()->Global(), m_scriptState->isolate()));
         if (!executionContext()->activeDOMObjectsAreSuspended())
             resolveOrRejectImmediately();
     }
@@ -144,4 +157,4 @@ private:
 
 } // namespace blink
 
-#endif // #ifndef ScriptPromiseResolver_h
+#endif // ScriptPromiseResolver_h

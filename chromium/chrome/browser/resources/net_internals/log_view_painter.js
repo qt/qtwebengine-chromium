@@ -87,7 +87,7 @@ createLogEntryTablePrinter = function(logEntries, privacyStripping,
   }
 
   return tablePrinter;
-}
+};
 
 /**
  * Adds a new row to the given TablePrinter, and adds five cells containing
@@ -273,6 +273,7 @@ function getParamaterWriterForEventType(eventType) {
   switch (eventType) {
     case EventType.HTTP_TRANSACTION_SEND_REQUEST_HEADERS:
     case EventType.HTTP_TRANSACTION_SEND_TUNNEL_HEADERS:
+    case EventType.TYPE_HTTP_CACHE_CALLER_REQUEST_HEADERS:
       return writeParamsForRequestHeaders;
 
     case EventType.PROXY_CONFIG_CHANGED:
@@ -281,6 +282,8 @@ function getParamaterWriterForEventType(eventType) {
     case EventType.CERT_VERIFIER_JOB:
     case EventType.SSL_CERTIFICATES_RECEIVED:
       return writeParamsForCertificates;
+    case EventType.EV_CERT_CT_COMPLIANCE_CHECKED:
+      return writeParamsForCheckedEVCertificates;
 
     case EventType.SSL_VERSION_FALLBACK:
       return writeParamsForSSLVersionFallback;
@@ -346,6 +349,12 @@ function defaultWriteParameter(key, value, out) {
 
   if (key == 'load_state' && typeof value == 'number') {
     var valueStr = value + ' (' + getKeyWithValue(LoadState, value) + ')';
+    out.writeArrowKeyValue(key, valueStr);
+    return;
+  }
+
+  if (key == 'sdch_problem_code' && typeof value == 'number') {
+    var valueStr = value + ' (' + sdchProblemCodeToString(value) + ')';
     out.writeArrowKeyValue(key, valueStr);
     return;
   }
@@ -558,7 +567,7 @@ stripCookiesAndLoginInfo = function(entry) {
 
   entry.params.headers = entry.params.headers.map(stripCookieOrLoginInfo);
   return entry;
-}
+};
 
 /**
  * Outputs the request header parameters of |entry| to |out|.
@@ -579,30 +588,28 @@ function writeParamsForRequestHeaders(entry, out, consumedParams) {
   consumedParams.headers = true;
 }
 
+function writeCertificateParam(
+    certs_container, out, consumedParams, paramName) {
+  if (certs_container.certificates instanceof Array) {
+    var certs = certs_container.certificates.reduce(
+        function(previous, current) {
+          return previous.concat(current.split('\n'));
+        }, new Array());
+    out.writeArrowKey(paramName);
+    out.writeSpaceIndentedLines(8, certs);
+    consumedParams[paramName] = true;
+  }
+}
+
 /**
  * Outputs the certificate parameters of |entry| to |out|.
  */
 function writeParamsForCertificates(entry, out, consumedParams) {
-  if (entry.params.certificates instanceof Array) {
-    var certs = entry.params.certificates.reduce(function(previous, current) {
-      return previous.concat(current.split('\n'));
-    }, new Array());
-    out.writeArrowKey('certificates');
-    out.writeSpaceIndentedLines(8, certs);
-    consumedParams.certificates = true;
-  }
+  writeCertificateParam(entry.params, out, consumedParams, 'certificates');
 
-  if (typeof(entry.params.verified_cert) == 'object') {
-    if (entry.params.verified_cert.certificates instanceof Array) {
-      var certs = entry.params.verified_cert.certificates.reduce(
-          function(previous, current) {
-        return previous.concat(current.split('\n'));
-      }, new Array());
-      out.writeArrowKey('verified_cert');
-      out.writeSpaceIndentedLines(8, certs);
-      consumedParams.verified_cert = true;
-    }
-  }
+  if (typeof(entry.params.verified_cert) == 'object')
+    writeCertificateParam(
+        entry.params.verified_cert, out, consumedParams, 'verified_cert');
 
   if (typeof(entry.params.cert_status) == 'number') {
     var valueStr = entry.params.cert_status + ' (' +
@@ -611,6 +618,12 @@ function writeParamsForCertificates(entry, out, consumedParams) {
     consumedParams.cert_status = true;
   }
 
+}
+
+function writeParamsForCheckedEVCertificates(entry, out, consumedParams) {
+  if (typeof(entry.params.certificate) == 'object')
+    writeCertificateParam(
+        entry.params.certificate, out, consumedParams, 'certificate');
 }
 
 /**

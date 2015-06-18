@@ -10,6 +10,8 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/browser/frame_host/navigation_controller_android.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
@@ -30,7 +32,7 @@ class CONTENT_EXPORT WebContentsAndroid
   static bool Register(JNIEnv* env);
 
   explicit WebContentsAndroid(WebContents* web_contents);
-  virtual ~WebContentsAndroid();
+  ~WebContentsAndroid() override;
 
   WebContents* web_contents() const { return web_contents_; }
 
@@ -48,13 +50,24 @@ class CONTENT_EXPORT WebContentsAndroid
   void Stop(JNIEnv* env, jobject obj);
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
   base::android::ScopedJavaLocalRef<jstring> GetURL(JNIEnv* env, jobject) const;
+  base::android::ScopedJavaLocalRef<jstring> GetLastCommittedURL(JNIEnv* env,
+                                                                 jobject) const;
   jboolean IsIncognito(JNIEnv* env, jobject obj);
 
   void ResumeResponseDeferredAtStart(JNIEnv* env, jobject obj);
+  void ResumeLoadingCreatedWebContents(JNIEnv* env, jobject obj);
   void SetHasPendingNavigationTransitionForTesting(JNIEnv* env, jobject obj);
   void SetupTransitionView(JNIEnv* env, jobject jobj, jstring markup);
-  void BeginExitTransition(JNIEnv* env, jobject jobj, jstring css_selector);
+  void BeginExitTransition(JNIEnv* env, jobject jobj, jstring css_selector,
+                           jboolean exit_to_native_app);
+  void RevertExitTransition(JNIEnv* env, jobject jobj);
+  void HideTransitionElements(JNIEnv* env, jobject jobj, jstring css_selector);
+  void ShowTransitionElements(JNIEnv* env, jobject jobj, jstring css_selector);
   void ClearNavigationTransitionData(JNIEnv* env, jobject jobj);
+  void FetchTransitionElements(JNIEnv* env, jobject jobj, jstring jurl);
+  void OnTransitionElementsFetched(
+      scoped_ptr<const TransitionLayerData> transition_data,
+      bool has_transition_data);
 
   // This method is invoked when the request is deferred immediately after
   // receiving response headers.
@@ -93,14 +106,27 @@ class CONTENT_EXPORT WebContentsAndroid
                           jobject obj,
                           jstring script,
                           jobject callback);
-  void PostMessageToFrame(JNIEnv* env, jobject obj, jstring frame_id,
-      jstring message, jstring source_origin, jstring target_origin);
+
+  void AddMessageToDevToolsConsole(JNIEnv* env,
+                                   jobject jobj,
+                                   jint level,
+                                   jstring message);
+
+  jboolean HasAccessedInitialDocument(JNIEnv* env, jobject jobj);
+
+  jint GetThemeColor(JNIEnv* env, jobject obj);
+
+  void RequestAccessibilitySnapshot(JNIEnv* env,
+                                    jobject obj,
+                                    jobject callback);
  private:
   RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid();
 
   WebContents* web_contents_;
   NavigationControllerAndroid navigation_controller_;
   base::android::ScopedJavaGlobalRef<jobject> obj_;
+
+  base::WeakPtrFactory<WebContentsAndroid> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsAndroid);
 };

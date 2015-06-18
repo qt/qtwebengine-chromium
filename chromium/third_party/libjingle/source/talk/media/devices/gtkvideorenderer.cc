@@ -1,28 +1,30 @@
-// libjingle
-// Copyright 2004 Google Inc.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. The name of the author may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
-// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+/*
+ * libjingle
+ * Copyright 2004 Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 // Implementation of GtkVideoRenderer
 
 #include "talk/media/devices/gtkvideorenderer.h"
@@ -51,9 +53,15 @@ GtkVideoRenderer::GtkVideoRenderer(int x, int y)
     : window_(NULL),
       draw_area_(NULL),
       initial_x_(x),
-      initial_y_(y) {
+      initial_y_(y),
+      width_(0),
+      height_(0) {
   g_type_init();
+  // g_thread_init API is deprecated since glib 2.31.0, see release note:
+  // http://mail.gnome.org/archives/gnome-announce-list/2011-October/msg00041.html
+#if !GLIB_CHECK_VERSION(2, 31, 0)
   g_thread_init(NULL);
+#endif
   gdk_threads_init();
 }
 
@@ -71,6 +79,11 @@ GtkVideoRenderer::~GtkVideoRenderer() {
 bool GtkVideoRenderer::SetSize(int width, int height, int reserved) {
   ScopedGdkLock lock;
 
+  // If the dimension is the same, no-op.
+  if (width_ == width && height_ == height) {
+    return true;
+  }
+
   // For the first frame, initialize the GTK window
   if ((!window_ && !Initialize(width, height)) || IsClosed()) {
     return false;
@@ -78,11 +91,21 @@ bool GtkVideoRenderer::SetSize(int width, int height, int reserved) {
 
   image_.reset(new uint8[width * height * 4]);
   gtk_widget_set_size_request(draw_area_, width, height);
+
+  width_ = width;
+  height_ = height;
   return true;
 }
 
-bool GtkVideoRenderer::RenderFrame(const VideoFrame* frame) {
-  if (!frame) {
+bool GtkVideoRenderer::RenderFrame(const VideoFrame* video_frame) {
+  if (!video_frame) {
+    return false;
+  }
+
+  const VideoFrame* frame = video_frame->GetCopyWithRotationApplied();
+
+  // Need to set size as the frame might be rotated.
+  if (!SetSize(frame->GetWidth(), frame->GetHeight(), 0)) {
     return false;
   }
 

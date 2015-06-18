@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/OfflineAudioDestinationNode.h"
 
 #include "core/dom/CrossThreadTask.h"
@@ -40,34 +38,39 @@ namespace blink {
 
 const size_t renderQuantumSize = 128;
 
-OfflineAudioDestinationNode::OfflineAudioDestinationNode(AudioContext* context, AudioBuffer* renderTarget)
-    : AudioDestinationNode(context, renderTarget->sampleRate())
+OfflineAudioDestinationHandler::OfflineAudioDestinationHandler(AudioNode& node, AudioBuffer* renderTarget)
+    : AudioDestinationHandler(node, renderTarget->sampleRate())
     , m_renderTarget(renderTarget)
     , m_startedRendering(false)
 {
     m_renderBus = AudioBus::create(renderTarget->numberOfChannels(), renderQuantumSize);
 }
 
-OfflineAudioDestinationNode::~OfflineAudioDestinationNode()
+PassRefPtr<OfflineAudioDestinationHandler> OfflineAudioDestinationHandler::create(AudioNode& node, AudioBuffer* renderTarget)
+{
+    return adoptRef(new OfflineAudioDestinationHandler(node, renderTarget));
+}
+
+OfflineAudioDestinationHandler::~OfflineAudioDestinationHandler()
 {
     ASSERT(!isInitialized());
 }
 
-void OfflineAudioDestinationNode::dispose()
+void OfflineAudioDestinationHandler::dispose()
 {
     uninitialize();
-    AudioDestinationNode::dispose();
+    AudioDestinationHandler::dispose();
 }
 
-void OfflineAudioDestinationNode::initialize()
+void OfflineAudioDestinationHandler::initialize()
 {
     if (isInitialized())
         return;
 
-    AudioNode::initialize();
+    AudioHandler::initialize();
 }
 
-void OfflineAudioDestinationNode::uninitialize()
+void OfflineAudioDestinationHandler::uninitialize()
 {
     if (!isInitialized())
         return;
@@ -75,28 +78,39 @@ void OfflineAudioDestinationNode::uninitialize()
     if (m_renderThread)
         m_renderThread.clear();
 
-    AudioNode::uninitialize();
+    AudioHandler::uninitialize();
 }
 
-void OfflineAudioDestinationNode::startRendering()
+void OfflineAudioDestinationHandler::startRendering()
 {
     ASSERT(isMainThread());
-    ASSERT(m_renderTarget.get());
-    if (!m_renderTarget.get())
+    ASSERT(m_renderTarget);
+    if (!m_renderTarget)
         return;
 
     if (!m_startedRendering) {
         m_startedRendering = true;
-        m_renderThread = adoptPtr(blink::Platform::current()->createThread("Offline Audio Renderer"));
-        m_renderThread->postTask(new Task(bind(&OfflineAudioDestinationNode::offlineRender, this)));
+        m_renderThread = adoptPtr(Platform::current()->createThread("Offline Audio Renderer"));
+        m_renderThread->postTask(FROM_HERE, new Task(threadSafeBind(&OfflineAudioDestinationHandler::offlineRender, PassRefPtr<OfflineAudioDestinationHandler>(this))));
     }
 }
 
-void OfflineAudioDestinationNode::offlineRender()
+void OfflineAudioDestinationHandler::stopRendering()
+{
+    ASSERT_NOT_REACHED();
+}
+
+void OfflineAudioDestinationHandler::offlineRender()
+{
+    offlineRenderInternal();
+    context()->handlePostRenderTasks();
+}
+
+void OfflineAudioDestinationHandler::offlineRenderInternal()
 {
     ASSERT(!isMainThread());
-    ASSERT(m_renderBus.get());
-    if (!m_renderBus.get())
+    ASSERT(m_renderBus);
+    if (!m_renderBus)
         return;
 
     bool isAudioContextInitialized = context()->isInitialized();
@@ -138,18 +152,27 @@ void OfflineAudioDestinationNode::offlineRender()
 
     // Our work is done. Let the AudioContext know.
     if (context()->executionContext())
-        context()->executionContext()->postTask(createCrossThreadTask(&OfflineAudioDestinationNode::notifyComplete, this));
+        context()->executionContext()->postTask(FROM_HERE, createCrossThreadTask(&OfflineAudioDestinationHandler::notifyComplete, PassRefPtr<OfflineAudioDestinationHandler>(this)));
 }
 
-void OfflineAudioDestinationNode::notifyComplete()
+void OfflineAudioDestinationHandler::notifyComplete()
 {
-    context()->fireCompletionEvent();
+    // The AudioContext might be gone.
+    if (context())
+        context()->fireCompletionEvent();
 }
 
-void OfflineAudioDestinationNode::trace(Visitor* visitor)
+// ----------------------------------------------------------------
+
+OfflineAudioDestinationNode::OfflineAudioDestinationNode(AudioContext& context, AudioBuffer* renderTarget)
+    : AudioDestinationNode(context)
 {
-    visitor->trace(m_renderTarget);
-    AudioDestinationNode::trace(visitor);
+    setHandler(OfflineAudioDestinationHandler::create(*this, renderTarget));
+}
+
+OfflineAudioDestinationNode* OfflineAudioDestinationNode::create(AudioContext* context, AudioBuffer* renderTarget)
+{
+    return new OfflineAudioDestinationNode(*context, renderTarget);
 }
 
 } // namespace blink

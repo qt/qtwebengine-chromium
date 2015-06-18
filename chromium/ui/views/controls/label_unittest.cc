@@ -9,8 +9,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/border.h"
+#include "ui/views/test/focus_manager_test.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 
@@ -19,6 +21,24 @@ using base::ASCIIToUTF16;
 namespace views {
 
 typedef ViewsTestBase LabelTest;
+
+class LabelFocusTest : public FocusManagerTest {
+ public:
+  LabelFocusTest() {}
+  ~LabelFocusTest() override {}
+
+ protected:
+  views::Label* label() { return label_; }
+
+ private:
+  // FocusManagerTest:
+  void InitContentView() override {
+    label_ = new views::Label();
+    GetContentsView()->AddChildView(label_);
+  }
+
+  views::Label* label_;
+};
 
 // All text sizing measurements (width and height) should be greater than this.
 const int kMinTextDimension = 4;
@@ -77,23 +97,39 @@ TEST_F(LabelTest, AlignmentProperty) {
     // The alignment should be flipped in RTL UI.
     label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
     EXPECT_EQ(reverse_alignment ? gfx::ALIGN_LEFT : gfx::ALIGN_RIGHT,
-              label.GetHorizontalAlignment());
+              label.horizontal_alignment());
     label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
     EXPECT_EQ(reverse_alignment ? gfx::ALIGN_RIGHT : gfx::ALIGN_LEFT,
-              label.GetHorizontalAlignment());
+              label.horizontal_alignment());
     label.SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    EXPECT_EQ(gfx::ALIGN_CENTER, label.GetHorizontalAlignment());
+    EXPECT_EQ(gfx::ALIGN_CENTER, label.horizontal_alignment());
 
     for (size_t j = 0; j < 2; ++j) {
       label.SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
       const bool rtl = j == 0;
       label.SetText(rtl ? base::WideToUTF16(L"\x5d0") : ASCIIToUTF16("A"));
-      EXPECT_EQ(rtl ? gfx::ALIGN_RIGHT : gfx::ALIGN_LEFT,
-                label.GetHorizontalAlignment());
+      EXPECT_EQ(gfx::ALIGN_TO_HEAD, label.horizontal_alignment());
     }
   }
 
   EXPECT_EQ(was_rtl, base::i18n::IsRTL());
+}
+
+TEST_F(LabelTest, ElideBehavior) {
+  Label label;
+  base::string16 text(ASCIIToUTF16("This is example text."));
+  label.SetText(text);
+  EXPECT_EQ(gfx::ELIDE_TAIL, label.elide_behavior());
+  gfx::Size size = label.GetPreferredSize();
+  label.SetBoundsRect(gfx::Rect(size));
+  EXPECT_EQ(text, label.GetDisplayTextForTesting());
+
+  size.set_width(size.width() / 2);
+  label.SetBoundsRect(gfx::Rect(size));
+  EXPECT_GT(text.size(), label.GetDisplayTextForTesting().size());
+
+  label.SetElideBehavior(gfx::NO_ELIDE);
+  EXPECT_EQ(text, label.GetDisplayTextForTesting());
 }
 
 TEST_F(LabelTest, MultiLineProperty) {
@@ -109,25 +145,29 @@ TEST_F(LabelTest, ObscuredProperty) {
   Label label;
   base::string16 test_text(ASCIIToUTF16("Password!"));
   label.SetText(test_text);
+  label.SizeToPreferredSize();
 
   // The text should be unobscured by default.
   EXPECT_FALSE(label.obscured());
-  EXPECT_EQ(test_text, label.GetLayoutTextForTesting());
+  EXPECT_EQ(test_text, label.GetDisplayTextForTesting());
   EXPECT_EQ(test_text, label.text());
 
   label.SetObscured(true);
+  label.SizeToPreferredSize();
   EXPECT_TRUE(label.obscured());
-  EXPECT_EQ(ASCIIToUTF16("*********"), label.GetLayoutTextForTesting());
+  EXPECT_EQ(ASCIIToUTF16("*********"), label.GetDisplayTextForTesting());
   EXPECT_EQ(test_text, label.text());
 
   label.SetText(test_text + test_text);
+  label.SizeToPreferredSize();
   EXPECT_EQ(ASCIIToUTF16("******************"),
-            label.GetLayoutTextForTesting());
+            label.GetDisplayTextForTesting());
   EXPECT_EQ(test_text + test_text, label.text());
 
   label.SetObscured(false);
+  label.SizeToPreferredSize();
   EXPECT_FALSE(label.obscured());
-  EXPECT_EQ(test_text + test_text, label.GetLayoutTextForTesting());
+  EXPECT_EQ(test_text + test_text, label.GetDisplayTextForTesting());
   EXPECT_EQ(test_text + test_text, label.text());
 }
 
@@ -137,10 +177,34 @@ TEST_F(LabelTest, ObscuredSurrogatePair) {
   Label label;
   base::string16 test_text = base::UTF8ToUTF16("\xF0\x9D\x84\x9E");
   label.SetText(test_text);
-
   label.SetObscured(true);
-  EXPECT_EQ(ASCIIToUTF16("*"), label.GetLayoutTextForTesting());
+  label.SizeToPreferredSize();
+  EXPECT_EQ(ASCIIToUTF16("*"), label.GetDisplayTextForTesting());
   EXPECT_EQ(test_text, label.text());
+}
+
+// This test case verifies the label preferred size will change based on the
+// current layout, which may seem wrong. However many of our code base assumes
+// this behavior, therefore this behavior will have to be kept until the code
+// with this assumption is fixed. See http://crbug.com/468494 and
+// http://crbug.com/467526.
+// TODO(mukai): fix the code assuming this behavior and then fix Label
+// implementation, and remove this test case.
+TEST_F(LabelTest, MultilinePreferredSizeTest) {
+  Label label;
+  label.SetText(ASCIIToUTF16("This is an example."));
+
+  gfx::Size single_line_size = label.GetPreferredSize();
+
+  label.SetMultiLine(true);
+  gfx::Size multi_line_size = label.GetPreferredSize();
+  EXPECT_EQ(single_line_size, multi_line_size);
+
+  int new_width = multi_line_size.width() / 2;
+  label.SetBounds(0, 0, new_width, label.GetHeightForWidth(new_width));
+  gfx::Size new_size = label.GetPreferredSize();
+  EXPECT_GT(multi_line_size.width(), new_size.width());
+  EXPECT_LT(multi_line_size.height(), new_size.height());
 }
 
 TEST_F(LabelTest, TooltipProperty) {
@@ -235,6 +299,24 @@ TEST_F(LabelTest, Accessibility) {
   EXPECT_TRUE(state.HasStateFlag(ui::AX_STATE_READ_ONLY));
 }
 
+TEST_F(LabelTest, TextChangeWithoutLayout) {
+  Label label;
+  label.SetText(ASCIIToUTF16("Example"));
+  label.SetBounds(0, 0, 200, 200);
+
+  gfx::Canvas canvas(gfx::Size(200, 200), 1.0f, true);
+  label.Paint(ui::PaintContext(&canvas));
+  EXPECT_EQ(1u, label.lines_.size());
+  EXPECT_EQ(ASCIIToUTF16("Example"), label.lines_[0]->GetDisplayText());
+
+  label.SetText(ASCIIToUTF16("Altered"));
+  // The altered text should be painted even though Layout() or SetBounds() are
+  // not called.
+  label.Paint(ui::PaintContext(&canvas));
+  EXPECT_EQ(1u, label.lines_.size());
+  EXPECT_EQ(ASCIIToUTF16("Altered"), label.lines_[0]->GetDisplayText());
+}
+
 TEST_F(LabelTest, EmptyLabelSizing) {
   Label label;
   const gfx::Size expected_size(0, gfx::FontList().GetHeight());
@@ -260,6 +342,8 @@ TEST_F(LabelTest, SingleLineSizing) {
   const gfx::Size size_with_border = label.GetPreferredSize();
   EXPECT_EQ(size_with_border.height(), size.height() + border.height());
   EXPECT_EQ(size_with_border.width(), size.width() + border.width());
+  EXPECT_EQ(size.height() + border.height(),
+            label.GetHeightForWidth(size_with_border.width()));
 }
 
 TEST_F(LabelTest, MultilineSmallAvailableWidthSizing) {
@@ -274,6 +358,17 @@ TEST_F(LabelTest, MultilineSmallAvailableWidthSizing) {
   gfx::Size required_size = label.GetPreferredSize();
   for (int i = 1; i < required_size.width(); ++i)
     EXPECT_GT(label.GetHeightForWidth(i), 0);
+}
+
+// Verifies if SetAllowCharacterBreak(true) doesn't change the preferred size.
+// See crbug.com/469559
+TEST_F(LabelTest, PreferredSizeForAllowCharacterBreak) {
+  Label label(base::ASCIIToUTF16("Example"));
+  gfx::Size preferred_size = label.GetPreferredSize();
+
+  label.SetMultiLine(true);
+  label.SetAllowCharacterBreak(true);
+  EXPECT_EQ(preferred_size, label.GetPreferredSize());
 }
 
 TEST_F(LabelTest, MultiLineSizing) {
@@ -357,545 +452,38 @@ TEST_F(LabelTest, MultiLineSizing) {
             required_size.width() + border.width());
 }
 
-TEST_F(LabelTest, DirectionalityFromText) {
-  Label label;
-  label.SetBounds(0, 0, 1000, 1000);
-  base::string16 paint_text;
-  gfx::Rect text_bounds;
-  int flags = -1;
-
-  // Test text starts with RTL character.
-  label.SetText(base::WideToUTF16(L"  \x5d0\x5d1\x5d2 abc"));
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(gfx::Canvas::FORCE_RTL_DIRECTIONALITY,
-            flags & (gfx::Canvas::FORCE_RTL_DIRECTIONALITY |
-                     gfx::Canvas::FORCE_LTR_DIRECTIONALITY));
-
-  // Test text starts with LTR character.
-  label.SetText(base::WideToUTF16(L"ltr \x5d0\x5d1\x5d2 abc"));
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(gfx::Canvas::FORCE_LTR_DIRECTIONALITY,
-            flags & (gfx::Canvas::FORCE_RTL_DIRECTIONALITY |
-                     gfx::Canvas::FORCE_LTR_DIRECTIONALITY));
-}
-
-TEST_F(LabelTest, DrawSingleLineString) {
+// Verifies if the combination of text eliding and multiline doesn't cause
+// any side effects of size / layout calculation.
+TEST_F(LabelTest, MultiLineSizingWithElide) {
+  const base::string16 text =
+      ASCIIToUTF16("A random string\nwith multiple lines\nand returns!");
   Label label;
   label.SetFocusable(false);
-
-  label.SetText(ASCIIToUTF16("Here's a string with no returns."));
-  gfx::Size required_size(label.GetPreferredSize());
-  gfx::Size extra(22, 8);
-  label.SetBounds(0, 0, required_size.width() + extra.width(),
-                  required_size.height() + extra.height());
-
-  // Do some basic verifications for all three alignments.
-  base::string16 paint_text;
-  gfx::Rect text_bounds;
-  int flags = -1;
-
-  // Centered text.
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be centered horizontally and vertically.
-  EXPECT_EQ(extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(0, text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_CENTER,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // Left aligned text.
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be left aligned horizontally and centered vertically.
-  EXPECT_EQ(0, text_bounds.x());
-  EXPECT_EQ(0, text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_LEFT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // Right aligned text.
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be right aligned horizontally and centered vertically.
-  EXPECT_EQ(extra.width(), text_bounds.x());
-  EXPECT_EQ(0, text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_RIGHT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // Test single line drawing with a border.
-  gfx::Insets border(39, 34, 8, 96);
-  label.SetBorder(Border::CreateEmptyBorder(
-      border.top(), border.left(), border.bottom(), border.right()));
-
-  gfx::Size required_size_with_border(label.GetPreferredSize());
-  EXPECT_EQ(required_size.width() + border.width(),
-            required_size_with_border.width());
-  EXPECT_EQ(required_size.height() + border.height(),
-            required_size_with_border.height());
-  label.SetBounds(0, 0, required_size_with_border.width() + extra.width(),
-                  required_size_with_border.height() + extra.height());
-
-  // Centered text with border.
-  label.SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be centered horizontally and vertically within the border.
-  EXPECT_EQ(border.left() + extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(border.top(), text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.GetContentsBounds().height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_CENTER,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // Left aligned text with border.
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be left aligned horizontally and centered vertically.
-  EXPECT_EQ(border.left(), text_bounds.x());
-  EXPECT_EQ(border.top(), text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.GetContentsBounds().height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_LEFT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // Right aligned text.
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be right aligned horizontally and centered vertically.
-  EXPECT_EQ(border.left() + extra.width(), text_bounds.x());
-  EXPECT_EQ(border.top(), text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.GetContentsBounds().height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_RIGHT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-}
-
-// Pango needs a max height to elide multiline text; that is not supported here.
-TEST_F(LabelTest, DrawMultiLineString) {
-  Label label;
-  label.SetFocusable(false);
-  // Set a background color to prevent gfx::Canvas::NO_SUBPIXEL_RENDERING flags.
-  label.SetBackgroundColor(SK_ColorWHITE);
-
-  label.SetText(ASCIIToUTF16("Another string\nwith returns\n\n!"));
+  label.SetText(text);
   label.SetMultiLine(true);
-  label.SizeToFit(0);
-  gfx::Size extra(50, 10);
-  label.SetBounds(label.x(), label.y(),
-                  label.width() + extra.width(),
-                  label.height() + extra.height());
 
-  // Do some basic verifications for all three alignments.
-  base::string16 paint_text;
-  gfx::Rect text_bounds;
-  int flags = -1;
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(extra.height() / 2, text_bounds.y());
-  EXPECT_GT(text_bounds.width(), kMinTextDimension);
-  EXPECT_GT(text_bounds.height(), kMinTextDimension);
-  int expected_flags = gfx::Canvas::MULTI_LINE |
-                       gfx::Canvas::TEXT_ALIGN_CENTER |
-                       gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-#if !defined(OS_WIN)
-  expected_flags |= gfx::Canvas::NO_ELLIPSIS;
-#endif
-  EXPECT_EQ(expected_flags, expected_flags);
-  gfx::Rect center_bounds(text_bounds);
+  gfx::Size required_size = label.GetPreferredSize();
+  EXPECT_GT(required_size.height(), kMinTextDimension);
+  EXPECT_GT(required_size.width(), kMinTextDimension);
+  label.SetBoundsRect(gfx::Rect(required_size));
 
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(0, text_bounds.x());
-  EXPECT_EQ(extra.height() / 2, text_bounds.y());
-  EXPECT_GT(text_bounds.width(), kMinTextDimension);
-  EXPECT_GT(text_bounds.height(), kMinTextDimension);
-  expected_flags = gfx::Canvas::MULTI_LINE |
-                   gfx::Canvas::TEXT_ALIGN_LEFT |
-                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-#if !defined(OS_WIN)
-  expected_flags |= gfx::Canvas::NO_ELLIPSIS;
-#endif
-  EXPECT_EQ(expected_flags, expected_flags);
+  label.SetElideBehavior(gfx::ELIDE_TAIL);
+  EXPECT_EQ(required_size.ToString(), label.GetPreferredSize().ToString());
+  EXPECT_EQ(text, label.GetDisplayTextForTesting());
 
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(extra.width(), text_bounds.x());
-  EXPECT_EQ(extra.height() / 2, text_bounds.y());
-  EXPECT_GT(text_bounds.width(), kMinTextDimension);
-  EXPECT_GT(text_bounds.height(), kMinTextDimension);
-  expected_flags = gfx::Canvas::MULTI_LINE |
-                   gfx::Canvas::TEXT_ALIGN_RIGHT |
-                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-#if !defined(OS_WIN)
-  expected_flags |= gfx::Canvas::NO_ELLIPSIS;
-#endif
-  EXPECT_EQ(expected_flags, expected_flags);
+  label.SizeToFit(required_size.width() - 1);
+  gfx::Size narrow_size = label.GetPreferredSize();
+  EXPECT_GT(required_size.width(), narrow_size.width());
+  EXPECT_LT(required_size.height(), narrow_size.height());
 
-  // Test multiline drawing with a border.
-  gfx::Insets border(19, 92, 23, 2);
-  label.SetBorder(Border::CreateEmptyBorder(
-      border.top(), border.left(), border.bottom(), border.right()));
-  label.SizeToFit(0);
-  label.SetBounds(label.x(), label.y(),
-                  label.width() + extra.width(),
-                  label.height() + extra.height());
+  // SetBounds() doesn't change the preferred size.
+  label.SetBounds(0, 0, narrow_size.width() - 1, narrow_size.height());
+  EXPECT_EQ(narrow_size.ToString(), label.GetPreferredSize().ToString());
 
-  label.SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(border.left() + extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(border.top() + extra.height() / 2, text_bounds.y());
-  EXPECT_EQ(center_bounds.width(), text_bounds.width());
-  EXPECT_EQ(center_bounds.height(), text_bounds.height());
-  expected_flags = gfx::Canvas::MULTI_LINE |
-                   gfx::Canvas::TEXT_ALIGN_CENTER |
-                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-#if !defined(OS_WIN)
-  expected_flags |= gfx::Canvas::NO_ELLIPSIS;
-#endif
-  EXPECT_EQ(expected_flags, expected_flags);
-
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(border.left(), text_bounds.x());
-  EXPECT_EQ(border.top() + extra.height() / 2, text_bounds.y());
-  EXPECT_EQ(center_bounds.width(), text_bounds.width());
-  EXPECT_EQ(center_bounds.height(), text_bounds.height());
-  expected_flags = gfx::Canvas::MULTI_LINE |
-                   gfx::Canvas::TEXT_ALIGN_LEFT |
-                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-#if !defined(OS_WIN)
-  expected_flags |= gfx::Canvas::NO_ELLIPSIS;
-#endif
-  EXPECT_EQ(expected_flags, expected_flags);
-
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(extra.width() + border.left(), text_bounds.x());
-  EXPECT_EQ(border.top() + extra.height() / 2, text_bounds.y());
-  EXPECT_EQ(center_bounds.width(), text_bounds.width());
-  EXPECT_EQ(center_bounds.height(), text_bounds.height());
-  expected_flags = gfx::Canvas::MULTI_LINE |
-                   gfx::Canvas::TEXT_ALIGN_RIGHT |
-                   gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-#if !defined(OS_WIN)
-  expected_flags |= gfx::Canvas::NO_ELLIPSIS;
-#endif
-  EXPECT_EQ(expected_flags, expected_flags);
-}
-
-TEST_F(LabelTest, DrawSingleLineStringInRTL) {
-  Label label;
-  label.SetFocusable(false);
-
-  std::string locale = l10n_util::GetApplicationLocale("");
-  base::i18n::SetICUDefaultLocale("he");
-
-  label.SetText(ASCIIToUTF16("Here's a string with no returns."));
-  gfx::Size required_size(label.GetPreferredSize());
-  gfx::Size extra(22, 8);
-  label.SetBounds(0, 0, required_size.width() + extra.width(),
-                  required_size.height() + extra.height());
-
-  // Do some basic verifications for all three alignments.
-  base::string16 paint_text;
-  gfx::Rect text_bounds;
-  int flags = -1;
-
-  // Centered text.
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be centered horizontally and vertically.
-  EXPECT_EQ(extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(0, text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_CENTER,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // ALIGN_LEFT label.
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be right aligned horizontally and centered vertically.
-  EXPECT_EQ(extra.width(), text_bounds.x());
-  EXPECT_EQ(0, text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_RIGHT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // ALIGN_RIGHT label.
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be left aligned horizontally and centered vertically.
-  EXPECT_EQ(0, text_bounds.x());
-  EXPECT_EQ(0, text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_LEFT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-
-  // Test single line drawing with a border.
-  gfx::Insets border(39, 34, 8, 96);
-  label.SetBorder(Border::CreateEmptyBorder(
-      border.top(), border.left(), border.bottom(), border.right()));
-
-  gfx::Size required_size_with_border(label.GetPreferredSize());
-  EXPECT_EQ(required_size.width() + border.width(),
-            required_size_with_border.width());
-  EXPECT_EQ(required_size.height() + border.height(),
-            required_size_with_border.height());
-  label.SetBounds(0, 0, required_size_with_border.width() + extra.width(),
-                  required_size_with_border.height() + extra.height());
-
-  // Centered text with border.
-  label.SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be centered horizontally and vertically within the border.
-  EXPECT_EQ(border.left() + extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(border.top(), text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.GetContentsBounds().height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_CENTER,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // ALIGN_LEFT text with border.
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be right aligned horizontally and centered vertically.
-  EXPECT_EQ(border.left() + extra.width(), text_bounds.x());
-  EXPECT_EQ(border.top(), text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.GetContentsBounds().height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_RIGHT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // ALIGN_RIGHT text.
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  // The text should be left aligned horizontally and centered vertically.
-  EXPECT_EQ(border.left(), text_bounds.x());
-  EXPECT_EQ(border.top(), text_bounds.y());
-  EXPECT_EQ(required_size.width(), text_bounds.width());
-  EXPECT_EQ(label.GetContentsBounds().height(), text_bounds.height());
-  EXPECT_EQ(gfx::Canvas::TEXT_ALIGN_LEFT,
-            flags & (gfx::Canvas::TEXT_ALIGN_LEFT |
-                     gfx::Canvas::TEXT_ALIGN_CENTER |
-                     gfx::Canvas::TEXT_ALIGN_RIGHT));
-
-  // Reset locale.
-  base::i18n::SetICUDefaultLocale(locale);
-}
-
-// On Linux the underlying pango routines require a max height in order to
-// ellide multiline text. So until that can be resolved, we set all
-// multiline lables to not ellide in Linux only.
-TEST_F(LabelTest, DrawMultiLineStringInRTL) {
-  Label label;
-  label.SetFocusable(false);
-
-  // Test for RTL.
-  std::string locale = l10n_util::GetApplicationLocale("");
-  base::i18n::SetICUDefaultLocale("he");
-
-  label.SetText(ASCIIToUTF16("Another string\nwith returns\n\n!"));
-  label.SetMultiLine(true);
-  label.SizeToFit(0);
-  gfx::Size extra(50, 10);
-  label.SetBounds(label.x(), label.y(),
-                  label.width() + extra.width(),
-                  label.height() + extra.height());
-
-  // Do some basic verifications for all three alignments.
-  base::string16 paint_text;
-  gfx::Rect text_bounds;
-  int flags = -1;
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(extra.height() / 2, text_bounds.y());
-  EXPECT_GT(text_bounds.width(), kMinTextDimension);
-  EXPECT_GT(text_bounds.height(), kMinTextDimension);
-  EXPECT_TRUE(gfx::Canvas::MULTI_LINE & flags);
-  EXPECT_TRUE(gfx::Canvas::TEXT_ALIGN_CENTER & flags);
-#if !defined(OS_WIN)
-  EXPECT_TRUE(gfx::Canvas::NO_ELLIPSIS & flags);
-#endif
-  gfx::Rect center_bounds(text_bounds);
-
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(extra.width(), text_bounds.x());
-  EXPECT_EQ(extra.height() / 2, text_bounds.y());
-  EXPECT_GT(text_bounds.width(), kMinTextDimension);
-  EXPECT_GT(text_bounds.height(), kMinTextDimension);
-  EXPECT_TRUE(gfx::Canvas::MULTI_LINE & flags);
-  EXPECT_TRUE(gfx::Canvas::TEXT_ALIGN_RIGHT & flags);
-#if !defined(OS_WIN)
-  EXPECT_TRUE(gfx::Canvas::NO_ELLIPSIS & flags);
-#endif
-
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(0, text_bounds.x());
-  EXPECT_EQ(extra.height() / 2, text_bounds.y());
-  EXPECT_GT(text_bounds.width(), kMinTextDimension);
-  EXPECT_GT(text_bounds.height(), kMinTextDimension);
-  EXPECT_TRUE(gfx::Canvas::MULTI_LINE & flags);
-  EXPECT_TRUE(gfx::Canvas::TEXT_ALIGN_LEFT & flags);
-#if !defined(OS_WIN)
-  EXPECT_TRUE(gfx::Canvas::NO_ELLIPSIS & flags);
-#endif
-
-  // Test multiline drawing with a border.
-  gfx::Insets border(19, 92, 23, 2);
-  label.SetBorder(Border::CreateEmptyBorder(
-      border.top(), border.left(), border.bottom(), border.right()));
-  label.SizeToFit(0);
-  label.SetBounds(label.x(), label.y(),
-                  label.width() + extra.width(),
-                  label.height() + extra.height());
-
-  label.SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(border.left() + extra.width() / 2, text_bounds.x());
-  EXPECT_EQ(border.top() + extra.height() / 2, text_bounds.y());
-  EXPECT_EQ(center_bounds.width(), text_bounds.width());
-  EXPECT_EQ(center_bounds.height(), text_bounds.height());
-  EXPECT_TRUE(gfx::Canvas::MULTI_LINE & flags);
-  EXPECT_TRUE(gfx::Canvas::TEXT_ALIGN_CENTER & flags);
-#if !defined(OS_WIN)
-  EXPECT_TRUE(gfx::Canvas::NO_ELLIPSIS & flags);
-#endif
-
-  label.SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(border.left() + extra.width(), text_bounds.x());
-  EXPECT_EQ(border.top() + extra.height() / 2, text_bounds.y());
-  EXPECT_EQ(center_bounds.width(), text_bounds.width());
-  EXPECT_EQ(center_bounds.height(), text_bounds.height());
-  EXPECT_TRUE(gfx::Canvas::MULTI_LINE & flags);
-  EXPECT_TRUE(gfx::Canvas::TEXT_ALIGN_RIGHT & flags);
-#if !defined(OS_WIN)
-  EXPECT_TRUE(gfx::Canvas::NO_ELLIPSIS & flags);
-#endif
-
-  label.SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-  paint_text.clear();
-  text_bounds.SetRect(0, 0, 0, 0);
-  label.CalculateDrawStringParams(&paint_text, &text_bounds, &flags);
-  EXPECT_EQ(label.text(), paint_text);
-  EXPECT_EQ(border.left(), text_bounds.x());
-  EXPECT_EQ(border.top() + extra.height() / 2, text_bounds.y());
-  EXPECT_EQ(center_bounds.width(), text_bounds.width());
-  EXPECT_EQ(center_bounds.height(), text_bounds.height());
-  EXPECT_TRUE(gfx::Canvas::MULTI_LINE & flags);
-  EXPECT_TRUE(gfx::Canvas::TEXT_ALIGN_LEFT & flags);
-#if !defined(OS_WIN)
-  EXPECT_TRUE(gfx::Canvas::NO_ELLIPSIS & flags);
-#endif
-
-  // Reset Locale
-  base::i18n::SetICUDefaultLocale(locale);
-}
-
-// Ensure the subpixel rendering flag and background color alpha are respected.
-TEST_F(LabelTest, DisableSubpixelRendering) {
-  Label label;
-  label.SetBackgroundColor(SK_ColorWHITE);
-  const int flag = gfx::Canvas::NO_SUBPIXEL_RENDERING;
-  EXPECT_EQ(0, label.ComputeDrawStringFlags() & flag);
-  label.SetSubpixelRenderingEnabled(false);
-  EXPECT_EQ(flag, label.ComputeDrawStringFlags() & flag);
-  label.SetSubpixelRenderingEnabled(true);
-  EXPECT_EQ(0, label.ComputeDrawStringFlags() & flag);
-  // Text cannot be drawn with subpixel rendering on transparent backgrounds.
-  label.SetBackgroundColor(SkColorSetARGB(64, 255, 255, 255));
-  EXPECT_EQ(flag, label.ComputeDrawStringFlags() & flag);
+  // Paint() doesn't change the preferred size.
+  gfx::Canvas canvas;
+  label.Paint(ui::PaintContext(&canvas));
+  EXPECT_EQ(narrow_size.ToString(), label.GetPreferredSize().ToString());
 }
 
 // Check that labels support GetTooltipHandlerForPoint.
@@ -954,6 +542,116 @@ TEST_F(LabelTest, GetTooltipHandlerForPoint) {
   label.SetBounds(2, 2, 10, 10);
   EXPECT_EQ(&label, label.GetTooltipHandlerForPoint(gfx::Point(1, 5)));
   EXPECT_FALSE(label.GetTooltipHandlerForPoint(gfx::Point(3, 11)));
+}
+
+// Check that label releases its internal layout data when it's unnecessary.
+TEST_F(LabelTest, ResetRenderTextData) {
+  Label label;
+  label.SetText(ASCIIToUTF16("Example"));
+  label.SizeToPreferredSize();
+  gfx::Size preferred_size = label.GetPreferredSize();
+
+  EXPECT_NE(gfx::Size().ToString(), preferred_size.ToString());
+  EXPECT_EQ(0u, label.lines_.size());
+
+  gfx::Canvas canvas(preferred_size, 1.0f, true);
+  label.Paint(ui::PaintContext(&canvas));
+  EXPECT_EQ(1u, label.lines_.size());
+
+  // Label should recreate its RenderText object when it's invisible, to release
+  // the layout structures and data.
+  label.SetVisible(false);
+  EXPECT_EQ(0u, label.lines_.size());
+
+  // Querying fields or size information should not recompute the layout
+  // unnecessarily.
+  EXPECT_EQ(ASCIIToUTF16("Example"), label.text());
+  EXPECT_EQ(0u, label.lines_.size());
+
+  EXPECT_EQ(preferred_size.ToString(), label.GetPreferredSize().ToString());
+  EXPECT_EQ(0u, label.lines_.size());
+
+  // RenderText data should be back when it's necessary.
+  label.SetVisible(true);
+  EXPECT_EQ(0u, label.lines_.size());
+
+  label.Paint(ui::PaintContext(&canvas));
+  EXPECT_EQ(1u, label.lines_.size());
+
+  // Changing layout just resets |lines_|. It'll recover next time it's drawn.
+  label.SetBounds(0, 0, 10, 10);
+  EXPECT_EQ(0u, label.lines_.size());
+
+  label.Paint(ui::PaintContext(&canvas));
+  EXPECT_EQ(1u, label.lines_.size());
+}
+
+#if !defined(OS_MACOSX)
+TEST_F(LabelTest, MultilineSupportedRenderText) {
+  scoped_ptr<gfx::RenderText> render_text(gfx::RenderText::CreateInstance());
+  ASSERT_TRUE(render_text->MultilineSupported());
+
+  Label label;
+  label.SetText(ASCIIToUTF16("Example of\nmultilined label"));
+  label.SetMultiLine(true);
+  label.SizeToPreferredSize();
+
+  gfx::Canvas canvas(label.GetPreferredSize(), 1.0f, true);
+  label.Paint(ui::PaintContext(&canvas));
+
+  // There's only one 'line', RenderText itself supports multiple lines.
+  EXPECT_EQ(1u, label.lines_.size());
+}
+#endif
+
+TEST_F(LabelFocusTest, FocusBounds) {
+  label()->SetText(ASCIIToUTF16("Example"));
+  gfx::Size normal_size = label()->GetPreferredSize();
+
+  label()->SetFocusable(true);
+  label()->RequestFocus();
+  gfx::Size focusable_size = label()->GetPreferredSize();
+  // Focusable label requires larger size to paint the focus rectangle.
+  EXPECT_GT(focusable_size.width(), normal_size.width());
+  EXPECT_GT(focusable_size.height(), normal_size.height());
+
+  label()->SizeToPreferredSize();
+  gfx::Rect focus_bounds = label()->GetFocusBounds();
+  EXPECT_EQ(label()->GetLocalBounds().ToString(), focus_bounds.ToString());
+
+  label()->SetBounds(
+      0, 0, focusable_size.width() * 2, focusable_size.height() * 2);
+  label()->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  focus_bounds = label()->GetFocusBounds();
+  EXPECT_EQ(0, focus_bounds.x());
+  EXPECT_LT(0, focus_bounds.y());
+  EXPECT_GT(label()->bounds().bottom(), focus_bounds.bottom());
+  EXPECT_EQ(focusable_size.ToString(), focus_bounds.size().ToString());
+
+  label()->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
+  focus_bounds = label()->GetFocusBounds();
+  EXPECT_LT(0, focus_bounds.x());
+  EXPECT_EQ(label()->bounds().right(), focus_bounds.right());
+  EXPECT_LT(0, focus_bounds.y());
+  EXPECT_GT(label()->bounds().bottom(), focus_bounds.bottom());
+  EXPECT_EQ(focusable_size.ToString(), focus_bounds.size().ToString());
+
+  label()->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  label()->SetElideBehavior(gfx::FADE_TAIL);
+  label()->SetBounds(0, 0, focusable_size.width() / 2, focusable_size.height());
+  focus_bounds = label()->GetFocusBounds();
+  EXPECT_EQ(0, focus_bounds.x());
+  EXPECT_EQ(focusable_size.width() / 2, focus_bounds.width());
+}
+
+TEST_F(LabelFocusTest, EmptyLabel) {
+  label()->SetFocusable(true);
+  label()->RequestFocus();
+  label()->SizeToPreferredSize();
+
+  gfx::Rect focus_bounds = label()->GetFocusBounds();
+  EXPECT_FALSE(focus_bounds.IsEmpty());
+  EXPECT_LT(label()->font_list().GetHeight(), focus_bounds.height());
 }
 
 }  // namespace views

@@ -42,6 +42,7 @@ class RTCPeerConnection;
 class VoidCallback;
 
 class RTCVoidRequestImpl final : public RTCVoidRequest, public ActiveDOMObject {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCVoidRequestImpl);
 public:
     static RTCVoidRequestImpl* create(ExecutionContext*, RTCPeerConnection*, VoidCallback*, RTCErrorCallback*);
     virtual ~RTCVoidRequestImpl();
@@ -53,7 +54,7 @@ public:
     // ActiveDOMObject
     virtual void stop() override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     RTCVoidRequestImpl(ExecutionContext*, RTCPeerConnection*, VoidCallback*, RTCErrorCallback*);

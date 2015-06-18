@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -31,6 +31,7 @@
 #define ViewportStyleResolver_h
 
 #include "core/CSSPropertyNames.h"
+#include "core/CoreExport.h"
 #include "core/css/RuleSet.h"
 #include "platform/Length.h"
 #include "wtf/RefCounted.h"
@@ -42,7 +43,7 @@ class Document;
 class MutableStylePropertySet;
 class StyleRuleViewport;
 
-class ViewportStyleResolver : public NoBaseWillBeGarbageCollected<ViewportStyleResolver> {
+class CORE_EXPORT ViewportStyleResolver : public NoBaseWillBeGarbageCollected<ViewportStyleResolver> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ViewportStyleResolver);
 public:
     static PassOwnPtrWillBeRawPtr<ViewportStyleResolver> create(Document* document)
@@ -52,11 +53,11 @@ public:
 
     enum Origin { UserAgentOrigin, AuthorOrigin };
 
+    void collectViewportRules();
     void collectViewportRules(RuleSet*, Origin);
-
     void resolve();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit ViewportStyleResolver(Document*);

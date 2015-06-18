@@ -10,111 +10,165 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/encryptedmedia/ContentDecryptionModuleResultPromise.h"
+#include "modules/encryptedmedia/EncryptedMediaUtils.h"
+#include "modules/encryptedmedia/MediaKeySession.h"
 #include "modules/encryptedmedia/MediaKeys.h"
 #include "modules/encryptedmedia/MediaKeysController.h"
 #include "platform/Logging.h"
 #include "platform/Timer.h"
 #include "public/platform/WebContentDecryptionModule.h"
+#include "public/platform/WebEncryptedMediaTypes.h"
+#include "public/platform/WebMediaKeySystemConfiguration.h"
+
+namespace blink {
 
 namespace {
 
-// This class allows a MediaKeys object to be created asynchronously.
-class MediaKeysInitializer final : public blink::ScriptPromiseResolver {
-    WTF_MAKE_NONCOPYABLE(MediaKeysInitializer);
+// This class wraps the promise resolver used when creating MediaKeys
+// and is passed to Chromium to fullfill the promise. This implementation of
+// completeWithCdm() will resolve the promise with a new MediaKeys object,
+// while completeWithError() will reject the promise with an exception.
+// All other complete methods are not expected to be called, and will
+// reject the promise.
+class NewCdmResultPromise : public ContentDecryptionModuleResultPromise {
+    WTF_MAKE_NONCOPYABLE(NewCdmResultPromise);
 
 public:
-    static blink::ScriptPromise create(blink::ScriptState*, const String& keySystem);
-    virtual ~MediaKeysInitializer();
-
-private:
-    MediaKeysInitializer(blink::ScriptState*, const String& keySystem);
-    void timerFired(blink::Timer<MediaKeysInitializer>*);
-
-    const String m_keySystem;
-    blink::Timer<MediaKeysInitializer> m_timer;
-};
-
-blink::ScriptPromise MediaKeysInitializer::create(blink::ScriptState* scriptState, const String& keySystem)
-{
-    RefPtr<MediaKeysInitializer> initializer = adoptRef(new MediaKeysInitializer(scriptState, keySystem));
-    initializer->suspendIfNeeded();
-    initializer->keepAliveWhilePending();
-    return initializer->promise();
-}
-
-MediaKeysInitializer::MediaKeysInitializer(blink::ScriptState* scriptState, const String& keySystem)
-    : blink::ScriptPromiseResolver(scriptState)
-    , m_keySystem(keySystem)
-    , m_timer(this, &MediaKeysInitializer::timerFired)
-{
-    // Start the timer so that MediaKeys can be created asynchronously.
-    // FIXME: When createContentDecryptionModule() is made asynchronous, wait
-    // for the event rather than using a timer.
-    m_timer.startOneShot(0, FROM_HERE);
-}
-
-MediaKeysInitializer::~MediaKeysInitializer()
-{
-}
-
-void MediaKeysInitializer::timerFired(blink::Timer<MediaKeysInitializer>*)
-{
-    // NOTE: Continued from step 2. of MediaKeySystemAccess::createMediaKeys().
-    // 2.1 Let cdm be the CDM corresponding to this object.
-    // 2.2 Load and initialize the cdm if necessary.
-    blink::Document* document = toDocument(executionContext());
-    blink::MediaKeysController* controller = blink::MediaKeysController::from(document->page());
-    // FIXME: Should this return an error code so there can be a better error
-    // message than UnknownError? Should it be asynchronous (maybe use
-    // webContentDecryptionModuleResult)?
-    OwnPtr<blink::WebContentDecryptionModule> cdm = controller->createContentDecryptionModule(executionContext(), m_keySystem);
-
-    // 2.3 If cdm fails to load or initialize, reject promise with a new
-    //     DOMException whose name is the appropriate error name.
-    if (!cdm) {
-        String message("A CDM instance could not be created for the '" + m_keySystem + "' key system.");
-        reject(blink::DOMException::create(blink::UnknownError, message));
-        return;
+    NewCdmResultPromise(ScriptState* scriptState, const WebVector<WebEncryptedMediaSessionType>& supportedSessionTypes)
+        : ContentDecryptionModuleResultPromise(scriptState)
+        , m_supportedSessionTypes(supportedSessionTypes)
+    {
     }
 
-    // 2.4 Let media keys be a new MediaKeys object.
-    blink::MediaKeys* mediaKeys = new blink::MediaKeys(executionContext(), m_keySystem, cdm.release());
+    virtual ~NewCdmResultPromise()
+    {
+    }
 
-    // 2.5 Resolve promise with media keys.
-    resolve(mediaKeys);
+    // ContentDecryptionModuleResult implementation.
+    virtual void completeWithContentDecryptionModule(WebContentDecryptionModule* cdm) override
+    {
+        // NOTE: Continued from step 2.8 of createMediaKeys().
+        // 2.9. Let media keys be a new MediaKeys object.
+        MediaKeys* mediaKeys = MediaKeys::create(executionContext(), m_supportedSessionTypes, adoptPtr(cdm));
 
-    // Note: As soon as the promise is resolved (or rejected), the
-    // ScriptPromiseResolver object (|this|) is freed. So access to
-    // any members will crash once the promise is fulfilled.
+        // 2.10. Resolve promise with media keys.
+        resolve(mediaKeys);
+    }
+
+private:
+    WebVector<WebEncryptedMediaSessionType> m_supportedSessionTypes;
+};
+
+// These methods are the inverses of those with the same names in
+// NavigatorRequestMediaKeySystemAccess.
+static Vector<String> convertInitDataTypes(const WebVector<WebEncryptedMediaInitDataType>& initDataTypes)
+{
+    Vector<String> result;
+    result.reserveCapacity(initDataTypes.size());
+    for (size_t i = 0; i < initDataTypes.size(); i++)
+        result.append(EncryptedMediaUtils::convertFromInitDataType(initDataTypes[i]));
+    return result;
+}
+
+static HeapVector<MediaKeySystemMediaCapability> convertCapabilities(const WebVector<WebMediaKeySystemMediaCapability>& capabilities)
+{
+    HeapVector<MediaKeySystemMediaCapability> result;
+    result.reserveCapacity(capabilities.size());
+    for (size_t i = 0; i < capabilities.size(); i++) {
+        MediaKeySystemMediaCapability capability;
+        capability.setContentType(capabilities[i].contentType);
+        capability.setRobustness(capabilities[i].robustness);
+        result.append(capability);
+    }
+    return result;
+}
+
+static String convertMediaKeysRequirement(WebMediaKeySystemConfiguration::Requirement requirement)
+{
+    switch (requirement) {
+    case WebMediaKeySystemConfiguration::Requirement::Required:
+        return "required";
+    case WebMediaKeySystemConfiguration::Requirement::Optional:
+        return "optional";
+    case WebMediaKeySystemConfiguration::Requirement::NotAllowed:
+        return "not-allowed";
+    }
+
+    ASSERT_NOT_REACHED();
+    return "not-allowed";
+}
+
+static Vector<String> convertSessionTypes(const WebVector<WebEncryptedMediaSessionType>& sessionTypes)
+{
+    Vector<String> result;
+    result.reserveCapacity(sessionTypes.size());
+    for (size_t i = 0; i < sessionTypes.size(); i++)
+        result.append(EncryptedMediaUtils::convertFromSessionType(sessionTypes[i]));
+    return result;
 }
 
 } // namespace
 
-namespace blink {
-
-MediaKeySystemAccess::MediaKeySystemAccess(const String& keySystem)
+MediaKeySystemAccess::MediaKeySystemAccess(const String& keySystem, PassOwnPtr<WebContentDecryptionModuleAccess> access)
     : m_keySystem(keySystem)
+    , m_access(access)
 {
-    // FIXME: There should be a Chromium-side equivalent object that contains
-    // any information, including the key system, from the results of the
-    // request call. It would also give us a place to put the createCDM() call.
 }
 
 MediaKeySystemAccess::~MediaKeySystemAccess()
 {
 }
 
-ScriptPromise MediaKeySystemAccess::createMediaKeys(ScriptState* scriptState)
+void MediaKeySystemAccess::getConfiguration(MediaKeySystemConfiguration& result)
 {
-    // From https://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#widl-MediaKeySystemAccess-createMediaKeys-Promise-MediaKeys
-    // When this method is invoked, the user agent must run the following steps:
-    // 1. Let promise be a new promise.
-    // 2. Asynchronously create and initialize the MediaKeys object.
-    // 3. Return promise.
-    return MediaKeysInitializer::create(scriptState, m_keySystem);
+    WebMediaKeySystemConfiguration configuration = m_access->getConfiguration();
+
+    // |initDataTypes|, |audioCapabilities|, and |videoCapabilities| can only be
+    // empty if they were not present in the requested configuration.
+    if (!configuration.initDataTypes.isEmpty())
+        result.setInitDataTypes(convertInitDataTypes(configuration.initDataTypes));
+    if (!configuration.audioCapabilities.isEmpty())
+        result.setAudioCapabilities(convertCapabilities(configuration.audioCapabilities));
+    if (!configuration.videoCapabilities.isEmpty())
+        result.setVideoCapabilities(convertCapabilities(configuration.videoCapabilities));
+
+    // |distinctiveIdentifier|, |persistentState|, and |sessionTypes| are always
+    // set by requestMediaKeySystemAccess().
+    result.setDistinctiveIdentifier(convertMediaKeysRequirement(configuration.distinctiveIdentifier));
+    result.setPersistentState(convertMediaKeysRequirement(configuration.persistentState));
+    result.setSessionTypes(convertSessionTypes(configuration.sessionTypes));
+
+    // |label| will (and should) be a null string if it was not set.
+    result.setLabel(configuration.label);
 }
 
-void MediaKeySystemAccess::trace(Visitor*)
+ScriptPromise MediaKeySystemAccess::createMediaKeys(ScriptState* scriptState)
+{
+    // From http://w3c.github.io/encrypted-media/#createMediaKeys
+    // (Reordered to be able to pass values into the promise constructor.)
+    // 2.4 Let configuration be the value of this object's configuration value.
+    // 2.5-2.8. [Set use distinctive identifier and persistent state allowed
+    //          based on configuration.]
+    WebMediaKeySystemConfiguration configuration = m_access->getConfiguration();
+
+    // 1. Let promise be a new promise.
+    NewCdmResultPromise* helper = new NewCdmResultPromise(scriptState, configuration.sessionTypes);
+    ScriptPromise promise = helper->promise();
+
+    // 2. Asynchronously create and initialize the MediaKeys object.
+    // 2.1 Let cdm be the CDM corresponding to this object.
+    // 2.2 Load and initialize the cdm if necessary.
+    // 2.3 If cdm fails to load or initialize, reject promise with a new
+    //     DOMException whose name is the appropriate error name.
+    //     (Done if completeWithException() called).
+    m_access->createContentDecryptionModule(helper->result());
+
+    // 3. Return promise.
+    return promise;
+}
+
+DEFINE_TRACE(MediaKeySystemAccess)
 {
 }
 

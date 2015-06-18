@@ -4,7 +4,7 @@
 
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_idle.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_stub.h"
 #include "ui/gl/gl_implementation.h"
@@ -18,7 +18,7 @@ AsyncPixelTransferManager* AsyncPixelTransferManager::Create(
     case gfx::kGLImplementationOSMesaGL:
     case gfx::kGLImplementationDesktopGL:
     case gfx::kGLImplementationEGLGLES2:
-      return new AsyncPixelTransferManagerIdle;
+      return new AsyncPixelTransferManagerIdle(true);
     case gfx::kGLImplementationMockGL:
       return new AsyncPixelTransferManagerStub;
     default:

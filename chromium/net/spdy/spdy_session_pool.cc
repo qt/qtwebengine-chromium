@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/values.h"
 #include "net/base/address_list.h"
 #include "net/http/http_network_session.h"
@@ -32,13 +33,12 @@ SpdySessionPool::SpdySessionPool(
     SSLConfigService* ssl_config_service,
     const base::WeakPtr<HttpServerProperties>& http_server_properties,
     TransportSecurityState* transport_security_state,
-    bool force_single_domain,
     bool enable_compression,
     bool enable_ping_based_connection_checking,
     NextProto default_protocol,
-    size_t stream_initial_recv_window_size,
+    size_t session_max_recv_window_size,
+    size_t stream_max_recv_window_size,
     size_t initial_max_concurrent_streams,
-    size_t max_concurrent_streams_limit,
     SpdySessionPool::TimeFunc time_func,
     const std::string& trusted_spdy_proxy)
     : http_server_properties_(http_server_properties),
@@ -47,21 +47,18 @@ SpdySessionPool::SpdySessionPool(
       resolver_(resolver),
       verify_domain_authentication_(true),
       enable_sending_initial_data_(true),
-      force_single_domain_(force_single_domain),
       enable_compression_(enable_compression),
       enable_ping_based_connection_checking_(
           enable_ping_based_connection_checking),
       // TODO(akalin): Force callers to have a valid value of
       // |default_protocol_|.
-      default_protocol_(
-          (default_protocol == kProtoUnknown) ?
-          kProtoSPDY31 : default_protocol),
-      stream_initial_recv_window_size_(stream_initial_recv_window_size),
+      default_protocol_((default_protocol == kProtoUnknown) ? kProtoSPDY31
+                                                            : default_protocol),
+      session_max_recv_window_size_(session_max_recv_window_size),
+      stream_max_recv_window_size_(stream_max_recv_window_size),
       initial_max_concurrent_streams_(initial_max_concurrent_streams),
-      max_concurrent_streams_limit_(max_concurrent_streams_limit),
       time_func_(time_func),
-      trusted_spdy_proxy_(
-          HostPortPair::FromString(trusted_spdy_proxy)) {
+      trusted_spdy_proxy_(HostPortPair::FromString(trusted_spdy_proxy)) {
   DCHECK(default_protocol_ >= kProtoSPDYMinimumVersion &&
          default_protocol_ <= kProtoSPDYMaximumVersion);
   NetworkChangeNotifier::AddIPAddressObserver(this);
@@ -97,21 +94,13 @@ base::WeakPtr<SpdySession> SpdySessionPool::CreateAvailableSessionFromSocket(
   UMA_HISTOGRAM_ENUMERATION(
       "Net.SpdySessionGet", IMPORTED_FROM_SOCKET, SPDY_SESSION_GET_MAX);
 
-  scoped_ptr<SpdySession> new_session(
-      new SpdySession(key,
-                      http_server_properties_,
-                      transport_security_state_,
-                      verify_domain_authentication_,
-                      enable_sending_initial_data_,
-                      enable_compression_,
-                      enable_ping_based_connection_checking_,
-                      default_protocol_,
-                      stream_initial_recv_window_size_,
-                      initial_max_concurrent_streams_,
-                      max_concurrent_streams_limit_,
-                      time_func_,
-                      trusted_spdy_proxy_,
-                      net_log.net_log()));
+  scoped_ptr<SpdySession> new_session(new SpdySession(
+      key, http_server_properties_, transport_security_state_,
+      verify_domain_authentication_, enable_sending_initial_data_,
+      enable_compression_, enable_ping_based_connection_checking_,
+      default_protocol_, session_max_recv_window_size_,
+      stream_max_recv_window_size_, initial_max_concurrent_streams_, time_func_,
+      trusted_spdy_proxy_, net_log.net_log()));
 
   new_session->InitializeWithSocket(
       connection.Pass(), this, is_secure, certificate_error_code);
@@ -121,7 +110,7 @@ base::WeakPtr<SpdySession> SpdySessionPool::CreateAvailableSessionFromSocket(
   MapKeyToAvailableSession(key, available_session);
 
   net_log.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_POOL_IMPORTED_SESSION_FROM_SOCKET,
+      NetLog::TYPE_HTTP2_SESSION_POOL_IMPORTED_SESSION_FROM_SOCKET,
       available_session->net_log().source().ToEventParametersCallback());
 
   // Look up the IP address for this session so that we can match
@@ -146,13 +135,13 @@ base::WeakPtr<SpdySession> SpdySessionPool::FindAvailableSession(
     UMA_HISTOGRAM_ENUMERATION(
         "Net.SpdySessionGet", FOUND_EXISTING, SPDY_SESSION_GET_MAX);
     net_log.AddEvent(
-        NetLog::TYPE_SPDY_SESSION_POOL_FOUND_EXISTING_SESSION,
+        NetLog::TYPE_HTTP2_SESSION_POOL_FOUND_EXISTING_SESSION,
         it->second->net_log().source().ToEventParametersCallback());
     return it->second;
   }
 
   // Look up the key's from the resolver's cache.
-  net::HostResolver::RequestInfo resolve_info(key.host_port_pair());
+  HostResolver::RequestInfo resolve_info(key.host_port_pair());
   AddressList addresses;
   int rv = resolver_->ResolveFromCache(resolve_info, &addresses, net_log);
   DCHECK_NE(rv, ERR_IO_PENDING);
@@ -199,7 +188,7 @@ base::WeakPtr<SpdySession> SpdySessionPool::FindAvailableSession(
                               FOUND_EXISTING_FROM_IP_POOL,
                               SPDY_SESSION_GET_MAX);
     net_log.AddEvent(
-        NetLog::TYPE_SPDY_SESSION_POOL_FOUND_EXISTING_SESSION_FROM_IP_POOL,
+        NetLog::TYPE_HTTP2_SESSION_POOL_FOUND_EXISTING_SESSION_FROM_IP_POOL,
         available_session->net_log().source().ToEventParametersCallback());
     // Add this session to the map so that we can find it next time.
     MapKeyToAvailableSession(key, available_session);
@@ -228,7 +217,7 @@ void SpdySessionPool::RemoveUnavailableSession(
   DCHECK(!IsSessionAvailable(unavailable_session));
 
   unavailable_session->net_log().AddEvent(
-      NetLog::TYPE_SPDY_SESSION_POOL_REMOVE_SESSION,
+      NetLog::TYPE_HTTP2_SESSION_POOL_REMOVE_SESSION,
       unavailable_session->net_log().source().ToEventParametersCallback());
 
   SessionSet::iterator it = sessions_.find(unavailable_session.get());
@@ -242,7 +231,7 @@ void SpdySessionPool::RemoveUnavailableSession(
 // handlers, it doesn't suffice to simply increment the iterator
 // before closing.
 
-void SpdySessionPool::CloseCurrentSessions(net::Error error) {
+void SpdySessionPool::CloseCurrentSessions(Error error) {
   CloseCurrentSessionsHelper(error, "Closing current sessions.",
                              false /* idle_only */);
 }
@@ -325,36 +314,19 @@ bool SpdySessionPool::IsSessionAvailable(
   return false;
 }
 
-const SpdySessionKey& SpdySessionPool::NormalizeListKey(
-    const SpdySessionKey& key) const {
-  if (!force_single_domain_)
-    return key;
-
-  static SpdySessionKey* single_domain_key = NULL;
-  if (!single_domain_key) {
-    HostPortPair single_domain = HostPortPair("singledomain.com", 80);
-    single_domain_key = new SpdySessionKey(single_domain,
-                                           ProxyServer::Direct(),
-                                           PRIVACY_MODE_DISABLED);
-  }
-  return *single_domain_key;
-}
-
 void SpdySessionPool::MapKeyToAvailableSession(
     const SpdySessionKey& key,
     const base::WeakPtr<SpdySession>& session) {
   DCHECK(ContainsKey(sessions_, session.get()));
-  const SpdySessionKey& normalized_key = NormalizeListKey(key);
   std::pair<AvailableSessionMap::iterator, bool> result =
-      available_sessions_.insert(std::make_pair(normalized_key, session));
+      available_sessions_.insert(std::make_pair(key, session));
   CHECK(result.second);
 }
 
 SpdySessionPool::AvailableSessionMap::iterator
 SpdySessionPool::LookupAvailableSessionByKey(
     const SpdySessionKey& key) {
-  const SpdySessionKey& normalized_key = NormalizeListKey(key);
-  return available_sessions_.find(normalized_key);
+  return available_sessions_.find(key);
 }
 
 void SpdySessionPool::UnmapKey(const SpdySessionKey& key) {

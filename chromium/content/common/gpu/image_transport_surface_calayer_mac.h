@@ -8,7 +8,6 @@
 #include "base/mac/scoped_nsobject.h"
 #include "content/common/gpu/image_transport_surface_fbo_mac.h"
 #include "ui/base/cocoa/remote_layer_api.h"
-#include "ui/gl/gl_bindings.h"
 #include "ui/gl/gpu_switching_observer.h"
 #include "ui/gl/scoped_cgl.h"
 
@@ -26,18 +25,20 @@ class CALayerStorageProvider
 
   // ImageTransportSurfaceFBO::StorageProvider implementation:
   gfx::Size GetRoundedSize(gfx::Size size) override;
-  bool AllocateColorBufferStorage(CGLContextObj context,
-                                  GLuint texture,
-                                  gfx::Size pixel_size,
-                                  float scale_factor) override;
+  bool AllocateColorBufferStorage(
+      CGLContextObj context, const base::Closure& context_dirtied_callback,
+      GLuint texture, gfx::Size pixel_size, float scale_factor) override;
   void FreeColorBufferStorage() override;
-  void SwapBuffers(const gfx::Size& size, float scale_factor) override;
+  void FrameSizeChanged(
+      const gfx::Size& pixel_size, float scale_factor) override;
+  void SwapBuffers() override;
   void WillWriteToBackbuffer() override;
   void DiscardBackbuffer() override;
   void SwapBuffersAckedByBrowser(bool disable_throttling) override;
 
   // Interface to ImageTransportLayer:
   CGLContextObj LayerShareGroupContext();
+  base::Closure LayerShareGroupContextDirtiedCallback();
   bool LayerCanDraw();
   void LayerDoDraw();
   void LayerResetStorageProvider();
@@ -55,7 +56,15 @@ class CALayerStorageProvider
   ImageTransportSurfaceFBO* transport_surface_;
 
   // Used to determine if we should use setNeedsDisplay or setAsynchronous to
-  // animate.
+  // animate. If the last swap time happened very recently, then
+  // setAsynchronous is used (which allows smooth animation, but comes with the
+  // penalty of the canDrawInCGLContext function waking up the process every
+  // vsync).
+  base::TimeTicks last_synchronous_swap_time_;
+
+  // Used to determine if we should use setNeedsDisplay or setAsynchronous to
+  // animate. If vsync is disabled, an immediate setNeedsDisplay and
+  // displayIfNeeded are called.
   const bool gpu_vsync_disabled_;
 
   // Used also to determine if we should wait for CoreAnimation to call our
@@ -73,9 +82,19 @@ class CALayerStorageProvider
   // The texture with the pixels to draw, and the share group it is allocated
   // in.
   base::ScopedTypeRef<CGLContextObj> share_group_context_;
+  base::Closure share_group_context_dirtied_callback_;
   GLuint fbo_texture_;
   gfx::Size fbo_pixel_size_;
   float fbo_scale_factor_;
+
+  // State for the Core Profile code path.
+  GLuint program_;
+  GLuint vertex_shader_;
+  GLuint fragment_shader_;
+  GLuint position_location_;
+  GLuint tex_location_;
+  GLuint vertex_buffer_;
+  GLuint vertex_array_;
 
   // The CALayer that the current frame is being drawn into.
   base::scoped_nsobject<CAContext> context_;
@@ -99,4 +118,4 @@ class CALayerStorageProvider
 
 }  // namespace content
 
-#endif  //  CONTENT_COMMON_GPU_IMAGE_TRANSPORT_CALAYER_MAC_H_
+#endif  // CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_CALAYER_MAC_H_

@@ -20,15 +20,12 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGGradientElement.h"
 
 #include "core/XLinkNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/rendering/svg/RenderSVGPath.h"
-#include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
-#include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
+#include "core/layout/svg/LayoutSVGResourceContainer.h"
 #include "core/svg/SVGStopElement.h"
 #include "core/svg/SVGTransformList.h"
 
@@ -57,35 +54,32 @@ SVGGradientElement::SVGGradientElement(const QualifiedName& tagName, Document& d
     addToPropertyMap(m_gradientUnits);
 }
 
-bool SVGGradientElement::isSupportedAttribute(const QualifiedName& attrName)
+DEFINE_TRACE(SVGGradientElement)
 {
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::gradientUnitsAttr);
-        supportedAttributes.add(SVGNames::gradientTransformAttr);
-        supportedAttributes.add(SVGNames::spreadMethodAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
+    visitor->trace(m_gradientTransform);
+    visitor->trace(m_spreadMethod);
+    visitor->trace(m_gradientUnits);
+    SVGElement::trace(visitor);
+    SVGURIReference::trace(visitor);
 }
 
 void SVGGradientElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
+    if (attrName == SVGNames::gradientUnitsAttr
+        || attrName == SVGNames::gradientTransformAttr
+        || attrName == SVGNames::spreadMethodAttr
+        || SVGURIReference::isKnownAttribute(attrName))
+    {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
+        LayoutSVGResourceContainer* layoutObject = toLayoutSVGResourceContainer(this->layoutObject());
+        if (layoutObject)
+            layoutObject->invalidateCacheAndMarkForLayout();
+
         return;
     }
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
-    if (renderer)
-        renderer->invalidateCacheAndMarkForLayout();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 void SVGGradientElement::childrenChanged(const ChildrenChange& change)
@@ -95,8 +89,8 @@ void SVGGradientElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayoutAndFullPaintInvalidation();
+    if (LayoutObject* object = layoutObject())
+        object->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::ChildChanged);
 }
 
 Vector<Gradient::ColorStop> SVGGradientElement::buildStops()

@@ -26,6 +26,7 @@
 #define AudioNode_h
 
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "platform/audio/AudioBus.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
@@ -38,6 +39,7 @@
 namespace blink {
 
 class AudioContext;
+class AudioNode;
 class AudioNodeInput;
 class AudioNodeOutput;
 class AudioParam;
@@ -49,22 +51,22 @@ class ExceptionState;
 // An AudioDestinationNode has one input and no outputs and represents the final destination to the audio hardware.
 // Most processing nodes such as filters will have one input and one output, although multiple inputs and outputs are possible.
 
-class AudioNode : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<AudioNode>, public EventTargetWithInlineData {
-    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<AudioNode>);
-    DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AudioNode);
+// Each of AudioNode objects owns its dedicated AudioHandler object. AudioNode
+// is responsible to provide IDL-accessible interface and its lifetime is
+// managed by Oilpan GC. AudioHandler is responsible for anything else. We must
+// not touch AudioNode objects in an audio rendering thread.
+
+// AudioHandler is created and owned by an AudioNode almost all the time. When
+// the AudioNode is about to die, the ownership of its AudioHandler is
+// transferred to DeferredTaskHandler, and it does deref the AudioHandler on the
+// main thread.
+//
+// Be careful to avoid reference cycles. If an AudioHandler has a reference
+// cycle including the owner AudioNode, objects in the cycle are never
+// collected.
+class MODULES_EXPORT AudioHandler : public ThreadSafeRefCounted<AudioHandler> {
 public:
     enum { ProcessingSizeInFrames = 128 };
-
-    AudioNode(AudioContext*, float sampleRate);
-    virtual ~AudioNode();
-    // dispose() is called just before the destructor. This must be called in
-    // the main thread, and while the graph lock is held.
-    virtual void dispose();
-    static unsigned instanceCount() { return s_instanceCount; }
-
-    AudioContext* context() { return m_context.get(); }
-    const AudioContext* context() const { return m_context.get(); }
 
     enum NodeType {
         NodeTypeUnknown,
@@ -77,6 +79,7 @@ public:
         NodeTypeJavaScript,
         NodeTypeBiquadFilter,
         NodeTypePanner,
+        NodeTypeStereoPanner,
         NodeTypeConvolver,
         NodeTypeDelay,
         NodeTypeGain,
@@ -88,6 +91,26 @@ public:
         NodeTypeEnd
     };
 
+    AudioHandler(NodeType, AudioNode&, float sampleRate);
+    virtual ~AudioHandler();
+    // dispose() is called when the owner AudioNode is about to be
+    // destructed. This must be called in the main thread, and while the graph
+    // lock is held.
+    // Do not release resources used by an audio rendering thread in dispose().
+    virtual void dispose();
+    static unsigned instanceCount() { return s_instanceCount; }
+
+    // node() returns a valid object until dispose() is called.  This returns
+    // nullptr after dispose().  We must not call node() in an audio rendering
+    // thread.
+    AudioNode* node() const;
+    // context() returns a valid object until the AudioContext dies, and returns
+    // nullptr otherwise.  This always returns a valid object in an audio
+    // rendering thread, and inside dispose().  We must not call context() in
+    // the destructor.
+    AudioContext* context() const;
+    void clearContext() { m_context = nullptr; }
+
     enum ChannelCountMode {
         Max,
         ClampedMax,
@@ -96,7 +119,6 @@ public:
 
     NodeType nodeType() const { return m_nodeType; }
     String nodeTypeName() const;
-    void setNodeType(NodeType);
 
     // This object has been connected to another object. This might have
     // existing connections from others.
@@ -133,13 +155,13 @@ public:
     unsigned numberOfInputs() const { return m_inputs.size(); }
     unsigned numberOfOutputs() const { return m_outputs.size(); }
 
-    AudioNodeInput* input(unsigned);
-    AudioNodeOutput* output(unsigned);
+    // Number of output channels.  This only matters for ScriptProcessorNodes.
+    virtual unsigned numberOfOutputChannels() const;
 
-    // Called from main thread by corresponding JavaScript methods.
-    virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&);
-    void connect(AudioParam*, unsigned outputIndex, ExceptionState&);
-    virtual void disconnect(unsigned outputIndex, ExceptionState&);
+    // The argument must be less than numberOfInputs().
+    AudioNodeInput& input(unsigned);
+    // The argument must be less than numberOfOutputs().
+    AudioNodeOutput& output(unsigned);
 
     virtual float sampleRate() const { return m_sampleRate; }
 
@@ -158,12 +180,17 @@ public:
     static void printNodeCounts();
 #endif
 
-    // tailTime() is the length of time (not counting latency time) where non-zero output may occur after continuous silent input.
-    virtual double tailTime() const = 0;
-    // latencyTime() is the length of time it takes for non-zero output to appear after non-zero input is provided. This only applies to
-    // processing delay which is an artifact of the processing algorithm chosen and is *not* part of the intrinsic desired effect. For
-    // example, a "delay" effect is expected to delay the signal, and thus would not be considered latency.
-    virtual double latencyTime() const = 0;
+    // tailTime() is the length of time (not counting latency time) where
+    // non-zero output may occur after continuous silent input.
+    virtual double tailTime() const;
+
+    // latencyTime() is the length of time it takes for non-zero output to
+    // appear after non-zero input is provided. This only applies to processing
+    // delay which is an artifact of the processing algorithm chosen and is
+    // *not* part of the intrinsic desired effect. For example, a "delay" effect
+    // is expected to delay the signal, and thus would not be considered
+    // latency.
+    virtual double latencyTime() const;
 
     // propagatesSilence() should return true if the node will generate silent output when given silent input. By default, AudioNode
     // will take tailTime() and latencyTime() into account when determining whether the node will propagate silence.
@@ -187,18 +214,13 @@ public:
     ChannelCountMode internalChannelCountMode() const { return m_channelCountMode; }
     AudioBus::ChannelInterpretation internalChannelInterpretation() const { return m_channelInterpretation; }
 
-    // EventTarget
-    virtual const AtomicString& interfaceName() const override final;
-    virtual ExecutionContext* executionContext() const override final;
-
     void updateChannelCountMode();
 
-    virtual void trace(Visitor*) override;
-
 protected:
-    // Inputs and outputs must be created before the AudioNode is initialized.
+    // Inputs and outputs must be created before the AudioHandler is
+    // initialized.
     void addInput();
-    void addOutput(AudioNodeOutput*);
+    void addOutput(unsigned numberOfChannels);
 
     // Called by processIfNecessary() to cause all parts of the rendering graph connected to us to process.
     // Each rendering quantum, the audio data for each of the AudioNode's inputs will be available after this method is called.
@@ -209,12 +231,26 @@ protected:
     void updateChannelsForInputs();
 
 private:
+    void setNodeType(NodeType);
+
     volatile bool m_isInitialized;
     NodeType m_nodeType;
-    Member<AudioContext> m_context;
+
+    // The owner AudioNode.  This raw pointer is safe because dispose() is
+    // called before the AudioNode death, and it clears m_node.  Do not access
+    // m_node directly, use node() instead.
+    GC_PLUGIN_IGNORE("http://crbug.com/404527")
+    AudioNode* m_node;
+
+    // This raw pointer is safe because this is cleared for all of live
+    // AudioHandlers when the AudioContext dies.  Do not access m_context
+    // directly, use context() instead.
+    GC_PLUGIN_IGNORE("http://crbug.com/404527")
+    AudioContext* m_context;
+
     float m_sampleRate;
-    HeapVector<Member<AudioNodeInput> > m_inputs;
-    HeapVector<Member<AudioNodeOutput> > m_outputs;
+    Vector<OwnPtr<AudioNodeInput>> m_inputs;
+    Vector<OwnPtr<AudioNodeOutput>> m_outputs;
 
     double m_lastProcessingTime;
     double m_lastNonSilentTime;
@@ -236,6 +272,68 @@ protected:
     // The new channel count mode that will be used to set the actual mode in the pre or post
     // rendering phase.
     ChannelCountMode m_newChannelCountMode;
+};
+
+class MODULES_EXPORT AudioNode : public RefCountedGarbageCollectedEventTargetWithInlineData<AudioNode> {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<AudioNode>);
+    DEFINE_WRAPPERTYPEINFO();
+    USING_PRE_FINALIZER(AudioNode, dispose);
+public:
+    DECLARE_VIRTUAL_TRACE();
+    AudioHandler& handler() const;
+
+    virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&);
+    void connect(AudioParam*, unsigned outputIndex, ExceptionState&);
+    void disconnect();
+    virtual void disconnect(unsigned outputIndex, ExceptionState&);
+    void disconnect(AudioNode*, ExceptionState&);
+    void disconnect(AudioNode*, unsigned outputIndex, ExceptionState&);
+    void disconnect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&);
+    void disconnect(AudioParam*, ExceptionState&);
+    void disconnect(AudioParam*, unsigned outputIndex, ExceptionState&);
+    AudioContext* context() const;
+    unsigned numberOfInputs() const;
+    unsigned numberOfOutputs() const;
+    unsigned long channelCount() const;
+    void setChannelCount(unsigned long, ExceptionState&);
+    String channelCountMode() const;
+    void setChannelCountMode(const String&, ExceptionState&);
+    String channelInterpretation() const;
+    void setChannelInterpretation(const String&, ExceptionState&);
+
+    // EventTarget
+    virtual const AtomicString& interfaceName() const override final;
+    virtual ExecutionContext* executionContext() const override final;
+
+    // Called inside AudioHandler constructors.
+    void didAddOutput(unsigned numberOfOutputs);
+    // Like disconnect, but no exception is thrown if the outputIndex is invalid.  Just do nothing
+    // in that case.
+    void disconnectWithoutException(unsigned outputIndex);
+
+protected:
+    explicit AudioNode(AudioContext&);
+    // This should be called in a constructor.
+    void setHandler(PassRefPtr<AudioHandler>);
+
+private:
+    void dispose();
+    void disconnectAllFromOutput(unsigned outputIndex);
+    // Returns true if the specified AudioNodeInput was connected.
+    bool disconnectFromOutputIfConnected(unsigned outputIndex, AudioNode& destination, unsigned inputIndexOfDestination);
+    // Returns true if the specified AudioParam was connected.
+    bool disconnectFromOutputIfConnected(unsigned outputIndex, AudioParam&);
+
+    Member<AudioContext> m_context;
+    RefPtr<AudioHandler> m_handler;
+    // Represents audio node graph with Oilpan references. N-th HeapHashSet
+    // represents a set of AudioNode objects connected to this AudioNode's N-th
+    // output.
+    HeapVector<Member<HeapHashSet<Member<AudioNode>>>> m_connectedNodes;
+    // Represents audio node graph with Oilpan references. N-th HeapHashSet
+    // represents a set of AudioParam objects connected to this AudioNode's N-th
+    // output.
+    HeapVector<Member<HeapHashSet<Member<AudioParam>>>> m_connectedParams;
 };
 
 } // namespace blink

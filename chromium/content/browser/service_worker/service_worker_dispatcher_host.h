@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/browser/service_worker/service_worker_registration_status.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_message_filter.h"
 
 class GURL;
@@ -26,8 +27,11 @@ class ServiceWorkerHandle;
 class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationHandle;
+class ServiceWorkerVersion;
+struct ServiceWorkerObjectInfo;
 struct ServiceWorkerRegistrationObjectInfo;
 struct ServiceWorkerVersionAttributes;
+struct TransferredMessagePort;
 
 class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
  public:
@@ -52,15 +56,18 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   // be destroyed.
   bool Send(IPC::Message* message) override;
 
-  // Returns the existing registration handle whose reference count is
-  // incremented or newly created one if it doesn't exist.
-  ServiceWorkerRegistrationHandle* GetOrCreateRegistrationHandle(
-      int provider_id,
-      ServiceWorkerRegistration* registration);
-
   void RegisterServiceWorkerHandle(scoped_ptr<ServiceWorkerHandle> handle);
   void RegisterServiceWorkerRegistrationHandle(
       scoped_ptr<ServiceWorkerRegistrationHandle> handle);
+
+  ServiceWorkerHandle* FindServiceWorkerHandle(int provider_id,
+                                               int64 version_id);
+
+  // Returns the existing registration handle whose reference count is
+  // incremented or newly created one if it doesn't exist.
+  ServiceWorkerRegistrationHandle* GetOrCreateRegistrationHandle(
+      base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+      ServiceWorkerRegistration* registration);
 
   MessagePortMessageFilter* message_port_message_filter() {
     return message_port_message_filter_;
@@ -88,11 +95,18 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                          int request_id,
                          int provider_id,
                          const GURL& document_url);
-  void OnProviderCreated(int provider_id);
+  void OnGetRegistrationForReady(int thread_id,
+                                 int request_id,
+                                 int provider_id);
+  void OnProviderCreated(int provider_id,
+                         int render_frame_id,
+                         ServiceWorkerProviderType provider_type);
   void OnProviderDestroyed(int provider_id);
   void OnSetHostedVersionId(int provider_id, int64 version_id);
   void OnWorkerReadyForInspection(int embedded_worker_id);
-  void OnWorkerScriptLoaded(int embedded_worker_id, int thread_id);
+  void OnWorkerScriptLoaded(int embedded_worker_id,
+                            int thread_id,
+                            int provider_id);
   void OnWorkerScriptLoadFailed(int embedded_worker_id);
   void OnWorkerScriptEvaluated(int embedded_worker_id, bool success);
   void OnWorkerStarted(int embedded_worker_id);
@@ -106,24 +120,23 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnReportConsoleMessage(
       int embedded_worker_id,
       const EmbeddedWorkerHostMsg_ReportConsoleMessage_Params& params);
-  void OnPostMessage(int handle_id,
-                     const base::string16& message,
-                     const std::vector<int>& sent_message_port_ids);
   void OnIncrementServiceWorkerRefCount(int handle_id);
   void OnDecrementServiceWorkerRefCount(int handle_id);
   void OnIncrementRegistrationRefCount(int registration_handle_id);
   void OnDecrementRegistrationRefCount(int registration_handle_id);
-  void OnPostMessageToWorker(int handle_id,
-                             const base::string16& message,
-                             const std::vector<int>& sent_message_port_ids);
+  void OnPostMessageToWorker(
+      int handle_id,
+      const base::string16& message,
+      const std::vector<TransferredMessagePort>& sent_message_ports);
   void OnServiceWorkerObjectDestroyed(int handle_id);
+  void OnTerminateWorker(int handle_id);
 
   ServiceWorkerRegistrationHandle* FindRegistrationHandle(
       int provider_id,
       int64 registration_id);
 
   void GetRegistrationObjectInfoAndVersionAttributes(
-      int provider_id,
+      base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       ServiceWorkerRegistration* registration,
       ServiceWorkerRegistrationObjectInfo* info,
       ServiceWorkerVersionAttributes* attrs);
@@ -133,6 +146,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                             int provider_id,
                             int request_id,
                             ServiceWorkerStatusCode status,
+                            const std::string& status_message,
                             int64 registration_id);
 
   void UnregistrationComplete(int thread_id,
@@ -146,9 +160,16 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
 
+  void GetRegistrationForReadyComplete(
+      int thread_id,
+      int request_id,
+      base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+      ServiceWorkerRegistration* registration);
+
   void SendRegistrationError(int thread_id,
                              int request_id,
-                             ServiceWorkerStatusCode status);
+                             ServiceWorkerStatusCode status,
+                             const std::string& status_message);
 
   void SendUnregistrationError(int thread_id,
                                int request_id,

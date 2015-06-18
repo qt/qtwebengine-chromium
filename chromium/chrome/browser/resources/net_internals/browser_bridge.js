@@ -52,6 +52,7 @@ var BrowserBridge = (function() {
     this.addNetInfoPollableDataHelper('spdyAlternateProtocolMappings',
                                       'onSpdyAlternateProtocolMappingsChanged');
     this.addNetInfoPollableDataHelper('quicInfo', 'onQuicInfoChanged');
+    this.addNetInfoPollableDataHelper('sdchInfo', 'onSdchInfoChanged');
     this.addNetInfoPollableDataHelper('httpCacheInfo',
                                       'onHttpCacheInfoChanged');
 
@@ -73,11 +74,9 @@ var BrowserBridge = (function() {
     this.pollableDataHelpers_.extensionInfo =
         new PollableDataHelper('onExtensionInfoChanged',
                                this.sendGetExtensionInfo.bind(this));
-    if (cr.isChromeOS) {
-      this.pollableDataHelpers_.systemLog =
-          new PollableDataHelper('onSystemLogChanged',
-                               this.getSystemLog.bind(this, 'syslog'));
-    }
+    this.pollableDataHelpers_.dataReductionProxyInfo =
+        new PollableDataHelper('onDataReductionProxyInfoChanged',
+                               this.sendGetDataReductionProxyInfo.bind(this));
 
     // Setting this to true will cause messages from the browser to be ignored,
     // and no messages will be sent to the browser, either.  Intended for use
@@ -208,20 +207,16 @@ var BrowserBridge = (function() {
       this.send('getExtensionInfo');
     },
 
+    sendGetDataReductionProxyInfo: function() {
+      this.send('getDataReductionProxyInfo');
+    },
+
     enableIPv6: function() {
       this.send('enableIPv6');
     },
 
-    setLogLevel: function(logLevel) {
-      this.send('setLogLevel', ['' + logLevel]);
-    },
-
-    refreshSystemLogs: function() {
-      this.send('refreshSystemLogs');
-    },
-
-    getSystemLog: function(log_key, cellId) {
-      this.send('getSystemLog', [log_key, cellId]);
+    setCaptureMode: function(captureMode) {
+      this.send('setCaptureMode', ['' + captureMode]);
     },
 
     importONCFile: function(fileContent, passcode) {
@@ -353,8 +348,9 @@ var BrowserBridge = (function() {
       this.pollableDataHelpers_.extensionInfo.update(extensionInfo);
     },
 
-    getSystemLogCallback: function(systemLog) {
-      this.pollableDataHelpers_.systemLog.update(systemLog);
+    receivedDataReductionProxyInfo: function(dataReductionProxyInfo) {
+      this.pollableDataHelpers_.dataReductionProxyInfo.update(
+          dataReductionProxyInfo);
     },
 
     //--------------------------------------------------------------------------
@@ -618,16 +614,25 @@ var BrowserBridge = (function() {
     },
 
     /**
-     * Adds a listener of system log information. |observer| will be called
+     * Adds a listener of the data reduction proxy info. |observer| will be
+     * called back when data is received, through:
+     *
+     *   observer.onDataReductionProxyInfoChanged(dataReductionProxyInfo)
+     */
+    addDataReductionProxyInfoObserver: function(observer, ignoreWhenUnchanged) {
+      this.pollableDataHelpers_.dataReductionProxyInfo.addObserver(
+          observer, ignoreWhenUnchanged);
+    },
+
+    /**
+     * Adds a listener of SDCH information. |observer| will be called
      * back when data is received, through:
      *
-     *   observer.onSystemLogChanged(systemLogInfo)
+     *   observer.onSdchInfoChanged(sdchInfo)
      */
-    addSystemLogObserver: function(observer, ignoreWhenUnchanged) {
-      if (this.pollableDataHelpers_.systemLog) {
-        this.pollableDataHelpers_.systemLog.addObserver(
-            observer, ignoreWhenUnchanged);
-      }
+    addSdchInfoObserver: function(observer, ignoreWhenUnchanged) {
+      this.pollableDataHelpers_.sdchInfo.addObserver(
+          observer, ignoreWhenUnchanged);
     },
 
     /**

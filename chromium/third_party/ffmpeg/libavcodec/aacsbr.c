@@ -326,7 +326,7 @@ static int check_n_master(AVCodecContext *avctx, int n_master, int bs_xover_band
 static int sbr_make_f_master(AACContext *ac, SpectralBandReplication *sbr,
                              SpectrumParameters *spectrum)
 {
-    unsigned int temp, max_qmf_subbands;
+    unsigned int temp, max_qmf_subbands = 0;
     unsigned int start_min, stop_min;
     int k;
     const int8_t *sbr_offset_ptr;
@@ -556,7 +556,8 @@ static int sbr_hf_calc_npatches(AACContext *ac, SpectralBandReplication *sbr)
             k = sbr->n_master;
     } while (sb != sbr->kx[1] + sbr->m[1]);
 
-    if (sbr->num_patches > 1 && sbr->patch_num_subbands[sbr->num_patches-1] < 3)
+    if (sbr->num_patches > 1 &&
+        sbr->patch_num_subbands[sbr->num_patches - 1] < 3)
         sbr->num_patches--;
 
     return 0;
@@ -634,7 +635,7 @@ static int read_sbr_grid(AACContext *ac, SpectralBandReplication *sbr,
                          GetBitContext *gb, SBRData *ch_data)
 {
     int i;
-    unsigned bs_pointer = 0;
+    int bs_pointer = 0;
     // frameLengthFlag ? 15 : 16; 960 sample length frames unsupported; this value is numTimeSlots
     int abs_bord_trail = 16;
     int num_rel_lead, num_rel_trail;
@@ -727,6 +728,7 @@ static int read_sbr_grid(AACContext *ac, SpectralBandReplication *sbr,
         break;
     }
 
+    av_assert0(bs_pointer >= 0);
     if (bs_pointer > ch_data->bs_num_env + 1) {
         av_log(ac->avctx, AV_LOG_ERROR,
                "Invalid bitstream, bs_pointer points to a middle noise border outside the time borders table: %d\n",
@@ -746,11 +748,11 @@ static int read_sbr_grid(AACContext *ac, SpectralBandReplication *sbr,
     ch_data->t_q[0]                     = ch_data->t_env[0];
     ch_data->t_q[ch_data->bs_num_noise] = ch_data->t_env[ch_data->bs_num_env];
     if (ch_data->bs_num_noise > 1) {
-        unsigned int idx;
+        int idx;
         if (ch_data->bs_frame_class == FIXFIX) {
             idx = ch_data->bs_num_env >> 1;
         } else if (ch_data->bs_frame_class & 1) { // FIXVAR or VARVAR
-            idx = ch_data->bs_num_env - FFMAX((int)bs_pointer - 1, 1);
+            idx = ch_data->bs_num_env - FFMAX(bs_pointer - 1, 1);
         } else { // VARFIX
             if (!bs_pointer)
                 idx = 1;
@@ -1611,8 +1613,14 @@ static void sbr_hf_assemble(float Y1[38][64][2],
             memcpy(q_temp[i + 2*ch_data->t_env[0]], sbr->q_m[0],  m_max * sizeof(sbr->q_m[0][0]));
         }
     } else if (h_SL) {
-        memcpy(g_temp[2*ch_data->t_env[0]], g_temp[2*ch_data->t_env_num_env_old], 4*sizeof(g_temp[0]));
-        memcpy(q_temp[2*ch_data->t_env[0]], q_temp[2*ch_data->t_env_num_env_old], 4*sizeof(q_temp[0]));
+        for (i = 0; i < 4; i++) {
+            memcpy(g_temp[i + 2 * ch_data->t_env[0]],
+                   g_temp[i + 2 * ch_data->t_env_num_env_old],
+                   sizeof(g_temp[0]));
+            memcpy(q_temp[i + 2 * ch_data->t_env[0]],
+                   q_temp[i + 2 * ch_data->t_env_num_env_old],
+                   sizeof(q_temp[0]));
+        }
     }
 
     for (e = 0; e < ch_data->bs_num_env; e++) {
@@ -1693,7 +1701,7 @@ void ff_sbr_apply(AACContext *ac, SpectralBandReplication *sbr, int id_aac,
     }
     for (ch = 0; ch < nch; ch++) {
         /* decode channel */
-        sbr_qmf_analysis(&ac->fdsp, &sbr->mdct_ana, &sbr->dsp, ch ? R : L, sbr->data[ch].analysis_filterbank_samples,
+        sbr_qmf_analysis(ac->fdsp, &sbr->mdct_ana, &sbr->dsp, ch ? R : L, sbr->data[ch].analysis_filterbank_samples,
                          (float*)sbr->qmf_filter_scratch,
                          sbr->data[ch].W, sbr->data[ch].Ypos);
         sbr->c.sbr_lf_gen(ac, sbr, sbr->X_low,
@@ -1739,13 +1747,13 @@ void ff_sbr_apply(AACContext *ac, SpectralBandReplication *sbr, int id_aac,
         nch = 2;
     }
 
-    sbr_qmf_synthesis(&sbr->mdct, &sbr->dsp, &ac->fdsp,
+    sbr_qmf_synthesis(&sbr->mdct, &sbr->dsp, ac->fdsp,
                       L, sbr->X[0], sbr->qmf_filter_scratch,
                       sbr->data[0].synthesis_filterbank_samples,
                       &sbr->data[0].synthesis_filterbank_samples_offset,
                       downsampled);
     if (nch == 2)
-        sbr_qmf_synthesis(&sbr->mdct, &sbr->dsp, &ac->fdsp,
+        sbr_qmf_synthesis(&sbr->mdct, &sbr->dsp, ac->fdsp,
                           R, sbr->X[1], sbr->qmf_filter_scratch,
                           sbr->data[1].synthesis_filterbank_samples,
                           &sbr->data[1].synthesis_filterbank_samples_offset,

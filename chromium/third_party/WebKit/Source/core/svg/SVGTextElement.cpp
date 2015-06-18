@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/svg/SVGTextElement.h"
 
-#include "core/rendering/svg/RenderSVGText.h"
+#include "core/layout/svg/LayoutSVGText.h"
 
 namespace blink {
 
@@ -32,9 +32,9 @@ inline SVGTextElement::SVGTextElement(Document& doc)
 
 DEFINE_NODE_FACTORY(SVGTextElement)
 
-RenderObject* SVGTextElement::createRenderer(RenderStyle*)
+LayoutObject* SVGTextElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGText(this);
+    return new LayoutSVGText(this);
 }
 
 }

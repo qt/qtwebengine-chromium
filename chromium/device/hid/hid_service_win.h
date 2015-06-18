@@ -5,13 +5,6 @@
 #ifndef DEVICE_HID_HID_SERVICE_WIN_H_
 #define DEVICE_HID_HID_SERVICE_WIN_H_
 
-#include <map>
-
-#include "device/hid/hid_device_info.h"
-#include "device/hid/hid_service.h"
-
-#if defined(OS_WIN)
-
 #include <windows.h>
 #include <hidclass.h>
 
@@ -20,25 +13,35 @@ extern "C" {
 #include <hidpi.h>
 }
 
-#endif  // defined(OS_WIN)
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/scoped_observer.h"
+#include "base/win/scoped_handle.h"
+#include "device/core/device_monitor_win.h"
+#include "device/hid/hid_device_info.h"
+#include "device/hid/hid_service.h"
+
+namespace base {
+namespace win {
+class MessageWindow;
+}
+}
 
 namespace device {
 
-class HidConnection;
-
-class HidServiceWin : public HidService {
+class HidServiceWin : public HidService, public DeviceMonitorWin::Observer {
  public:
-  HidServiceWin();
+  HidServiceWin(scoped_refptr<base::SingleThreadTaskRunner> file_task_runner);
 
-  virtual void GetDevices(std::vector<HidDeviceInfo>* devices) override;
-
-  virtual void Connect(const HidDeviceId& device_id,
-                       const ConnectCallback& callback) override;
+  void Connect(const HidDeviceId& device_id,
+               const ConnectCallback& callback) override;
 
  private:
-  virtual ~HidServiceWin();
+  ~HidServiceWin() override;
 
-  void Enumerate();
+  static void EnumerateOnFileThread(
+      base::WeakPtr<HidServiceWin> service,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   static void CollectInfoFromButtonCaps(PHIDP_PREPARSED_DATA preparsed_data,
                                         HIDP_REPORT_TYPE report_type,
                                         USHORT button_caps_length,
@@ -47,10 +50,24 @@ class HidServiceWin : public HidService {
                                        HIDP_REPORT_TYPE report_type,
                                        USHORT value_caps_length,
                                        HidCollectionInfo* collection_info);
-  void PlatformAddDevice(const std::string& device_path);
-  void PlatformRemoveDevice(const std::string& device_path);
+  static void AddDeviceOnFileThread(
+      base::WeakPtr<HidServiceWin> service,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+      const std::string& device_path);
+
+  // DeviceMonitorWin::Observer implementation:
+  void OnDeviceAdded(const GUID& class_guid,
+                     const std::string& device_path) override;
+  void OnDeviceRemoved(const GUID& class_guid,
+                       const std::string& device_path) override;
+
+  // Tries to open the device read-write and falls back to read-only.
+  static base::win::ScopedHandle OpenDevice(const std::string& device_path);
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
+  ScopedObserver<DeviceMonitorWin, DeviceMonitorWin::Observer> device_observer_;
+  base::WeakPtrFactory<HidServiceWin> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HidServiceWin);
 };

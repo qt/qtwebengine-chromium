@@ -82,16 +82,15 @@ class CallbacksJobFactory : public URLRequestJobFactory {
     return job;
   }
 
-  net::URLRequestJob* MaybeInterceptRedirect(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate,
-      const GURL& location) const override {
+  URLRequestJob* MaybeInterceptRedirect(URLRequest* request,
+                                        NetworkDelegate* network_delegate,
+                                        const GURL& location) const override {
     return nullptr;
   }
 
-  net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const override {
+  URLRequestJob* MaybeInterceptResponse(
+      URLRequest* request,
+      NetworkDelegate* network_delegate) const override {
     return nullptr;
   }
 
@@ -189,7 +188,7 @@ void URLRequestFileJobEventsTest::RunRequest(const std::string& content,
   context_.set_job_factory(&factory);
 
   scoped_ptr<URLRequest> request(context_.CreateRequest(
-      FilePathToFileURL(path), DEFAULT_PRIORITY, &delegate_, NULL));
+      FilePathToFileURL(path), DEFAULT_PRIORITY, &delegate_));
   if (range) {
     ASSERT_GE(range->start, 0);
     ASSERT_GE(range->end, 0);

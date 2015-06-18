@@ -152,21 +152,50 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
             scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            scriptLoader->executeScript(sourceCode, &compilationFinishTime);
-            element->dispatchEvent(createScriptLoadEvent());
+            if (!scriptLoader->executeScript(sourceCode, &compilationFinishTime)) {
+                scriptLoader->dispatchErrorEvent();
+            } else {
+                element->dispatchEvent(createScriptLoadEvent());
+            }
         }
     }
     // The exact value doesn't matter; valid time stamps are much bigger than this value.
     const double epsilon = 1;
     if (pendingScriptType == PendingScript::ParsingBlocking && !m_parserBlockingScriptAlreadyLoaded && compilationFinishTime > epsilon && loadFinishTime > epsilon) {
-        blink::Platform::current()->histogramCustomCounts("WebCore.Scripts.ParsingBlocking.TimeBetweenLoadedAndCompiled", (compilationFinishTime - loadFinishTime) * 1000, 0, 10000, 50);
+        Platform::current()->histogramCustomCounts("WebCore.Scripts.ParsingBlocking.TimeBetweenLoadedAndCompiled", (compilationFinishTime - loadFinishTime) * 1000, 0, 10000, 50);
     }
 
     ASSERT(!isExecutingScript());
 }
 
+void HTMLScriptRunner::stopWatchingResourceForLoad(Resource* resource)
+{
+    if (m_parserBlockingScript.resource() == resource) {
+        m_parserBlockingScript.stopWatchingForLoad(this);
+        m_parserBlockingScript.releaseElementAndClear();
+        return;
+    }
+    for (PendingScript& script : m_scriptsToExecuteAfterParsing) {
+        if (script.resource() == resource) {
+            script.stopWatchingForLoad(this);
+            script.releaseElementAndClear();
+            return;
+        }
+    }
+}
+
 void HTMLScriptRunner::notifyFinished(Resource* cachedResource)
 {
+    // Handle cancellations of parser-blocking script loads without
+    // notifying the host (i.e., parser) if these were initiated by nested
+    // document.write()s. The cancellation may have been triggered by
+    // script execution to signal an abrupt stop (e.g., window.close().)
+    //
+    // The parser is unprepared to be told, and doesn't need to be.
+    if (isExecutingScript() && cachedResource->wasCanceled()) {
+        stopWatchingResourceForLoad(cachedResource);
+        return;
+    }
     m_host->notifyScriptLoaded(cachedResource);
 }
 
@@ -250,19 +279,13 @@ void HTMLScriptRunner::requestParsingBlockingScript(Element* element)
 
     ASSERT(m_parserBlockingScript.resource());
 
-    // Exclude already loaded resources (from memory cache) and reloads from the
-    // computation of
-    // WebCore.Scripts.ParsingBlocking.TimeBetweenLoadedAndCompiled (done after
-    // the script is compiled).
-    m_parserBlockingScriptAlreadyLoaded = m_parserBlockingScript.resource()->isLoaded() || m_parserBlockingScript.resource()->resourceToRevalidate();
-    blink::Platform::current()->histogramEnumeration("WebCore.Scripts.ParsingBlocking.AlreadyLoaded", m_parserBlockingScriptAlreadyLoaded ? 1 : 0, 2);
-
     // We only care about a load callback if resource is not already
     // in the cache. Callers will attempt to run the m_parserBlockingScript
     // if possible before returning control to the parser.
     if (!m_parserBlockingScript.isReady()) {
         if (m_document->frame())
-            ScriptStreamer::startStreaming(m_parserBlockingScript, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()), PendingScript::ParsingBlocking);
+            ScriptStreamer::startStreaming(m_parserBlockingScript, PendingScript::ParsingBlocking, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()));
+
         m_parserBlockingScript.watchForLoad(this);
     }
 }
@@ -273,10 +296,10 @@ void HTMLScriptRunner::requestDeferredScript(Element* element)
     if (!requestPendingScript(pendingScript, element))
         return;
 
-    ASSERT(pendingScript.resource());
     if (m_document->frame() && !pendingScript.isReady())
-        ScriptStreamer::startStreaming(pendingScript, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()), PendingScript::Deferred);
+        ScriptStreamer::startStreaming(pendingScript, PendingScript::Deferred, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()));
 
+    ASSERT(pendingScript.resource());
     m_scriptsToExecuteAfterParsing.append(pendingScript);
 }
 
@@ -340,12 +363,14 @@ void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStar
     }
 }
 
-void HTMLScriptRunner::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLScriptRunner)
 {
     visitor->trace(m_document);
     visitor->trace(m_host);
     visitor->trace(m_parserBlockingScript);
+#if ENABLE(OILPAN)
     visitor->trace(m_scriptsToExecuteAfterParsing);
+#endif
 }
 
-}
+} // namespace blink

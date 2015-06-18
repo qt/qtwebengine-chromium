@@ -13,6 +13,7 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace cc {
+class SharedBitmap;
 
 // TODO(skaslev, danakj) Rename this class more apropriately since now it
 // can hold a shared memory resource as well as a texture mailbox.
@@ -21,13 +22,13 @@ class CC_EXPORT TextureMailbox {
   TextureMailbox();
   explicit TextureMailbox(const gpu::MailboxHolder& mailbox_holder);
   TextureMailbox(const gpu::Mailbox& mailbox, uint32 target, uint32 sync_point);
-  TextureMailbox(base::SharedMemory* shared_memory, const gfx::Size& size);
+  TextureMailbox(SharedBitmap* shared_bitmap, const gfx::Size& size);
 
   ~TextureMailbox();
 
   bool IsValid() const { return IsTexture() || IsSharedMemory(); }
   bool IsTexture() const { return !mailbox_holder_.mailbox.IsZero(); }
-  bool IsSharedMemory() const { return shared_memory_ != NULL; }
+  bool IsSharedMemory() const { return shared_bitmap_ != NULL; }
 
   bool Equals(const TextureMailbox&) const;
 
@@ -41,16 +42,21 @@ class CC_EXPORT TextureMailbox {
 
   bool allow_overlay() const { return allow_overlay_; }
   void set_allow_overlay(bool allow_overlay) { allow_overlay_ = allow_overlay; }
+  bool nearest_neighbor() const { return nearest_neighbor_; }
+  void set_nearest_neighbor(bool nearest_neighbor) {
+    nearest_neighbor_ = nearest_neighbor;
+  }
 
-  base::SharedMemory* shared_memory() const { return shared_memory_; }
+  SharedBitmap* shared_bitmap() const { return shared_bitmap_; }
   gfx::Size shared_memory_size() const { return shared_memory_size_; }
   size_t SharedMemorySizeInBytes() const;
 
  private:
   gpu::MailboxHolder mailbox_holder_;
-  base::SharedMemory* shared_memory_;
+  SharedBitmap* shared_bitmap_;
   gfx::Size shared_memory_size_;
   bool allow_overlay_;
+  bool nearest_neighbor_;
 };
 
 }  // namespace cc

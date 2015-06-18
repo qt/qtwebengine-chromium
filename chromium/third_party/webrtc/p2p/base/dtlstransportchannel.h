@@ -109,9 +109,6 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   virtual IceRole GetIceRole() const {
     return channel_->GetIceRole();
   }
-  virtual size_t GetConnectionCount() const {
-    return channel_->GetConnectionCount();
-  }
   virtual bool SetLocalIdentity(rtc::SSLIdentity *identity);
   virtual bool GetLocalIdentity(rtc::SSLIdentity** identity) const;
 
@@ -128,6 +125,9 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   // TransportChannel calls that we forward to the wrapped transport.
   virtual int SetOption(rtc::Socket::Option opt, int value) {
     return channel_->SetOption(opt, value);
+  }
+  virtual bool GetOption(rtc::Socket::Option opt, int* value) {
+    return channel_->GetOption(opt, value);
   }
   virtual int GetError() {
     return channel_->GetError();
@@ -149,6 +149,9 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
 
   virtual bool GetSslRole(rtc::SSLRole* role) const;
   virtual bool SetSslRole(rtc::SSLRole role);
+
+  // Find out which DTLS cipher was negotiated
+  virtual bool GetSslCipher(std::string* cipher);
 
   // Once DTLS has been established, this method retrieves the certificate in
   // use by the remote peer, for use in external identity verification.
@@ -175,6 +178,10 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   virtual Transport* GetTransport() {
     return transport_;
   }
+
+  virtual TransportChannelState GetState() const {
+    return channel_->GetState();
+  }
   virtual void SetIceTiebreaker(uint64 tiebreaker) {
     channel_->SetIceTiebreaker(tiebreaker);
   }
@@ -197,7 +204,6 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   }
 
   virtual void Connect();
-  virtual void Reset();
 
   virtual void OnSignalingReady() {
     channel_->OnSignalingReady();

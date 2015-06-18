@@ -40,7 +40,7 @@ static inline bool comparePageRules(const StyleRulePage* r1, const StyleRulePage
     return r1->selector()->specificity() < r2->selector()->specificity();
 }
 
-bool PageRuleCollector::isLeftPage(const RenderStyle* rootElementStyle, int pageIndex) const
+bool PageRuleCollector::isLeftPage(const ComputedStyle* rootElementStyle, int pageIndex) const
 {
     bool isFirstPageLeft = false;
     ASSERT(rootElementStyle);
@@ -62,7 +62,7 @@ String PageRuleCollector::pageName(int /* pageIndex */) const
     return "";
 }
 
-PageRuleCollector::PageRuleCollector(const RenderStyle* rootElementStyle, int pageIndex)
+PageRuleCollector::PageRuleCollector(const ComputedStyle* rootElementStyle, int pageIndex)
     : m_isLeftPage(isLeftPage(rootElementStyle, pageIndex))
     , m_isFirstPage(isFirstPage(pageIndex))
     , m_pageName(pageName(pageIndex)) { }
@@ -73,7 +73,7 @@ void PageRuleCollector::matchPageRules(RuleSet* rules)
         return;
 
     rules->compactRulesIfNeeded();
-    WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> > matchedPageRules;
+    WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>> matchedPageRules;
     matchPageRulesForList(matchedPageRules, rules->pageRules(), m_isLeftPage, m_isFirstPage, m_pageName);
     if (matchedPageRules.isEmpty())
         return;
@@ -104,7 +104,7 @@ static bool checkPageSelectorComponents(const CSSSelector* selector, bool isLeft
     return true;
 }
 
-void PageRuleCollector::matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >& rules, bool isLeftPage, bool isFirstPage, const String& pageName)
+void PageRuleCollector::matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>& rules, bool isLeftPage, bool isFirstPage, const String& pageName)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRulePage* rule = rules[i];

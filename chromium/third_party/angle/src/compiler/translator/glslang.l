@@ -28,10 +28,13 @@ WHICH GENERATES THE GLSL ES LEXER (glslang_lex.cpp).
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wswitch-enum"
 #elif defined(_MSC_VER)
+#pragma warning(disable: 4005)
 #pragma warning(disable: 4065)
 #pragma warning(disable: 4189)
+#pragma warning(disable: 4244)
 #pragma warning(disable: 4505)
 #pragma warning(disable: 4701)
+#pragma warning(disable: 4702)
 #endif
 }
 
@@ -46,6 +49,13 @@ WHICH GENERATES THE GLSL ES LEXER (glslang_lex.cpp).
 /* windows only pragma */
 #ifdef _MSC_VER
 #pragma warning(disable : 4102)
+#endif
+
+// Workaround for flex using the register keyword, deprecated in C++11.
+#ifdef __cplusplus
+#if __cplusplus > 199711L
+#define register
+#endif
 #endif
 
 #define YY_USER_ACTION                                 \
@@ -70,6 +80,7 @@ static int floatsuffix_check(TParseContext* context);
 %option noyywrap nounput never-interactive
 %option yylineno reentrant bison-bridge bison-locations
 %option extra-type="TParseContext*"
+%x FIELDS
 
 D           [0-9]
 L           [a-zA-Z_]
@@ -358,7 +369,7 @@ O           [0-7]
 ")"             { return RIGHT_PAREN; }
 ("["|"<:")      { return LEFT_BRACKET; }
 ("]"|":>")      { return RIGHT_BRACKET; }
-"."             { return DOT; }
+"."             { BEGIN(FIELDS); return DOT; }
 "!"             { return BANG; }
 "-"             { return DASH; }
 "~"             { return TILDE; }
@@ -373,9 +384,16 @@ O           [0-7]
 "&"             { return AMPERSAND; }
 "?"             { return QUESTION; }
 
+<FIELDS>{L}({L}|{D})* {
+    BEGIN(INITIAL);
+    yylval->lex.string = NewPoolTString(yytext);
+    return FIELD_SELECTION;
+}
+<FIELDS>[ \t\v\f\r] {}
+
 [ \t\v\n\f\r] { }
-<<EOF>>       { yyterminate(); }
-.             { assert(false); return 0; }
+<*><<EOF>>    { yyterminate(); }
+<*>.          { assert(false); return 0; }
 
 %%
 
@@ -492,8 +510,8 @@ int floatsuffix_check(TParseContext* context)
     return(FLOATCONSTANT);
 }
 
-void yyerror(YYLTYPE* lloc, TParseContext* context, const char* reason) {
-    context->error(*lloc, reason, yyget_text(context->scanner));
+void yyerror(YYLTYPE* lloc, TParseContext* context, void *scanner, const char* reason) {
+    context->error(*lloc, reason, yyget_text(scanner));
     context->recover();
 }
 

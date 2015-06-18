@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,20 +24,22 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #include "talk/app/webrtc/videotrackrenderers.h"
+#include "talk/media/base/videoframe.h"
 
 namespace webrtc {
 
-VideoTrackRenderers::VideoTrackRenderers()
-    : width_(0),
-      height_(0),
-      enabled_(true) {
+VideoTrackRenderers::VideoTrackRenderers() : enabled_(true) {
 }
 
 VideoTrackRenderers::~VideoTrackRenderers() {
 }
 
 void VideoTrackRenderers::AddRenderer(VideoRendererInterface* renderer) {
+  if (!renderer) {
+    return;
+  }
   rtc::CritScope cs(&critical_section_);
   std::vector<RenderObserver>::iterator it =  renderers_.begin();
   for (; it != renderers_.end(); ++it) {
@@ -64,14 +66,6 @@ void VideoTrackRenderers::SetEnabled(bool enable) {
 }
 
 bool VideoTrackRenderers::SetSize(int width, int height, int reserved) {
-  rtc::CritScope cs(&critical_section_);
-  width_ = width;
-  height_ = height;
-  std::vector<RenderObserver>::iterator it = renderers_.begin();
-  for (; it != renderers_.end(); ++it) {
-    it->renderer_->SetSize(width, height);
-    it->size_set_ = true;
-  }
   return true;
 }
 
@@ -80,13 +74,14 @@ bool VideoTrackRenderers::RenderFrame(const cricket::VideoFrame* frame) {
   if (!enabled_) {
     return true;
   }
+
   std::vector<RenderObserver>::iterator it = renderers_.begin();
   for (; it != renderers_.end(); ++it) {
-    if (!it->size_set_) {
-      it->renderer_->SetSize(width_, height_);
-      it->size_set_ = true;
+    if (it->can_apply_rotation_) {
+      it->renderer_->RenderFrame(frame);
+    } else {
+      it->renderer_->RenderFrame(frame->GetCopyWithRotationApplied());
     }
-    it->renderer_->RenderFrame(frame);
   }
   return true;
 }

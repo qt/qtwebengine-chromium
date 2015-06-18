@@ -14,6 +14,7 @@
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
+#include "content/public/common/message_port_types.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
 
@@ -21,23 +22,35 @@
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START MessagePortMsgStart
 
-// Singly-included section, not converted.
+// Singly-included section for typedefs.
 #ifndef CONTENT_COMMON_MESSAGE_PORT_MESSAGES_H_
 #define CONTENT_COMMON_MESSAGE_PORT_MESSAGES_H_
 
-typedef std::pair<base::string16, std::vector<int> > QueuedMessage;
+typedef std::pair<content::MessagePortMessage,
+                  std::vector<content::TransferredMessagePort>> QueuedMessage;
 
 #endif  // CONTENT_COMMON_MESSAGE_PORT_MESSAGES_H_
+
+IPC_STRUCT_TRAITS_BEGIN(content::MessagePortMessage)
+  IPC_STRUCT_TRAITS_MEMBER(message_as_string)
+  IPC_STRUCT_TRAITS_MEMBER(message_as_value)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::TransferredMessagePort)
+  IPC_STRUCT_TRAITS_MEMBER(id)
+  IPC_STRUCT_TRAITS_MEMBER(send_messages_as_values)
+IPC_STRUCT_TRAITS_END()
 
 //-----------------------------------------------------------------------------
 // MessagePort messages
 // These are messages sent from the browser to child processes.
 
 // Sends a message to a message port.
-IPC_MESSAGE_ROUTED3(MessagePortMsg_Message,
-                    base::string16 /* message */,
-                    std::vector<int> /* sent_message_port_ids */,
-                    std::vector<int> /* new_routing_ids */)
+IPC_MESSAGE_ROUTED3(
+    MessagePortMsg_Message,
+    content::MessagePortMessage /* message */,
+    std::vector<content::TransferredMessagePort> /* sent_message_ports */,
+    std::vector<int> /* new_routing_ids */)
 
 // Tells the Message Port Channel object that there are no more in-flight
 // messages arriving.
@@ -60,10 +73,11 @@ IPC_MESSAGE_CONTROL1(MessagePortHostMsg_DestroyMessagePort,
 
 // Sends a message to a message port.  Optionally sends a message port as
 // as well if sent_message_port_id != MSG_ROUTING_NONE.
-IPC_MESSAGE_CONTROL3(MessagePortHostMsg_PostMessage,
-                     int /* sender_message_port_id */,
-                     base::string16 /* message */,
-                     std::vector<int> /* sent_message_port_ids */)
+IPC_MESSAGE_CONTROL3(
+    MessagePortHostMsg_PostMessage,
+    int /* sender_message_port_id */,
+    content::MessagePortMessage /* message */,
+    std::vector<content::TransferredMessagePort> /* sent_message_ports */)
 
 // Causes messages sent to the remote port to be delivered to this local port.
 IPC_MESSAGE_CONTROL2(MessagePortHostMsg_Entangle,
@@ -83,3 +97,9 @@ IPC_MESSAGE_CONTROL1(MessagePortHostMsg_QueueMessages,
 IPC_MESSAGE_CONTROL2(MessagePortHostMsg_SendQueuedMessages,
                      int /* message_port_id */,
                      std::vector<QueuedMessage> /* queued_messages */)
+
+// Tells the browser this message port is ready to receive messages. If the
+// browser was holding messages to this port because no destination for the
+// port was available yet this will cause the browser to release those messages.
+IPC_MESSAGE_CONTROL1(MessagePortHostMsg_ReleaseMessages,
+                     int /* message_port_id */)

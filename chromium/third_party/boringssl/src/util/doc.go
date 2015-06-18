@@ -111,7 +111,9 @@ func extractComment(lines []string, lineNo int) (comment []string, rest []string
 			err = fmt.Errorf("comment doesn't start with block prefix on line %d: %s", restLineNo, line)
 			return
 		}
-		line = line[2:]
+		if len(line) == 2 || line[2] != '/' {
+			line = line[2:]
+		}
 		if strings.HasPrefix(line, "   ") {
 			/* Identing the lines of a paragraph marks them as
 			* preformatted. */
@@ -193,12 +195,23 @@ func extractDecl(lines []string, lineNo int) (decl string, rest []string, restLi
 func skipPast(s, skip string) string {
 	i := strings.Index(s, skip)
 	if i > 0 {
-		return s[len(skip):]
+		return s[i:]
 	}
 	return s
 }
 
+func skipLine(s string) string {
+	i := strings.Index(s, "\n")
+	if i > 0 {
+		return s[i:]
+	}
+	return ""
+}
+
 func getNameFromDecl(decl string) (string, bool) {
+	for strings.HasPrefix(decl, "#if") {
+		decl = skipLine(decl)
+	}
 	if strings.HasPrefix(decl, "struct ") {
 		return "", false
 	}
@@ -420,9 +433,17 @@ func markupPipeWords(s string) template.HTML {
 }
 
 func markupFirstWord(s template.HTML) template.HTML {
-	i := strings.Index(string(s), " ")
-	if i > 0 {
-		return "<span class=\"first-word\">" + s[:i] + "</span>" + s[i:]
+	start := 0
+again:
+	end := strings.Index(string(s[start:]), " ")
+	if end > 0 {
+		end += start
+		w := strings.ToLower(string(s[start:end]))
+		if w == "a" || w == "an" || w == "deprecated:" {
+			start = end + 1
+			goto again
+		}
+		return s[:start] + "<span class=\"first-word\">" + s[start:end] + "</span>" + s[end:]
 	}
 	return s
 }
@@ -445,7 +466,7 @@ func generate(outPath string, config *Config) (map[string]string, error) {
 		"markupFirstWord": markupFirstWord,
 		"newlinesToBR":    newlinesToBR,
 	})
-	headerTmpl, err := headerTmpl.Parse(`<!DOCTYPE html5>
+	headerTmpl, err := headerTmpl.Parse(`<!DOCTYPE html>
 <html>
   <head>
     <title>BoringSSL - {{.Name}}</title>
@@ -462,7 +483,7 @@ func generate(outPath string, config *Config) (map[string]string, error) {
     <ol>
       {{range .Sections}}
         {{if not .IsPrivate}}
-          {{if .Preamble}}<li class="header"><a href="#section-{{.Num}}">{{.Preamble | firstSentence}}</a></li>{{end}}
+          {{if .Preamble}}<li class="header"><a href="#section-{{.Num}}">{{.Preamble | firstSentence | html | markupPipeWords}}</a></li>{{end}}
           {{range .Decls}}
             {{if .Name}}<li><a href="#decl-{{.Num}}"><tt>{{.Name}}</tt></a></li>{{end}}
           {{end}}
@@ -574,8 +595,8 @@ func generateIndex(outPath string, config *Config, headerDescriptions map[string
 
 func main() {
 	var (
-		configFlag *string = flag.String("config", "", "Location of config file")
-		outputDir  *string = flag.String("out", "", "Path to the directory where the output will be written")
+		configFlag *string = flag.String("config", "doc.config", "Location of config file")
+		outputDir  *string = flag.String("out", ".", "Path to the directory where the output will be written")
 		config     Config
 	)
 

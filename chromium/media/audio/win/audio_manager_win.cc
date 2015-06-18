@@ -16,6 +16,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
@@ -111,8 +112,9 @@ static base::string16 GetDeviceAndDriverInfo(HDEVINFO device_info,
 static int NumberOfWaveOutBuffers() {
   // Use the user provided buffer count if provided.
   int buffers = 0;
-  std::string buffers_str(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-      switches::kWaveOutBuffers));
+  std::string buffers_str(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kWaveOutBuffers));
   if (base::StringToInt(buffers_str, &buffers) && buffers > 0) {
     return buffers;
   }
@@ -257,9 +259,9 @@ void AudioManagerWin::ShowAudioInputSettings() {
   base::FilePath path;
   PathService::Get(base::DIR_SYSTEM, &path);
   path = path.Append(program);
-  CommandLine command_line(path);
+  base::CommandLine command_line(path);
   command_line.AppendArg(argument);
-  base::LaunchProcess(command_line, base::LaunchOptions(), NULL);
+  base::LaunchProcess(command_line, base::LaunchOptions());
 }
 
 void AudioManagerWin::GetAudioDeviceNamesImpl(
@@ -393,6 +395,7 @@ AudioInputStream* AudioManagerWin::MakeLowLatencyInputStream(
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LOW_LATENCY, params.format());
   DVLOG(1) << "MakeLowLatencyInputStream: " << device_id;
   AudioInputStream* stream = NULL;
+  UMA_HISTOGRAM_BOOLEAN("Media.WindowsCoreAudioInput", core_audio_supported());
   if (!core_audio_supported()) {
     // Fall back to Windows Wave implementation on Windows XP or lower.
     DVLOG(1) << "Using WaveIn since WASAPI requires at least Vista.";
@@ -416,7 +419,7 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
   DLOG_IF(ERROR, !core_audio_supported() && !output_device_id.empty())
       << "CoreAudio is required to open non-default devices.";
 
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
   int sample_rate = 48000;
   int buffer_size = kFallbackBufferSize;
@@ -480,8 +483,8 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
           // Open up using the same channel layout as the source if it is
           // supported by the hardware.
           channel_layout = input_params.channel_layout();
-          VLOG(1) << "Hardware channel layout is not used; using same layout"
-                  << " as the source instead (" << channel_layout << ")";
+          DVLOG(1) << "Hardware channel layout is not used; using same layout"
+                   << " as the source instead (" << channel_layout << ")";
         }
       }
     }

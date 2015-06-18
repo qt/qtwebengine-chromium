@@ -36,7 +36,7 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<ImageData> ImageData::create(const IntSize& size)
+ImageData* ImageData::create(const IntSize& size)
 {
     Checked<int, RecordOverflow> dataSize = 4;
     dataSize *= size.width();
@@ -44,10 +44,10 @@ PassRefPtrWillBeRawPtr<ImageData> ImageData::create(const IntSize& size)
     if (dataSize.hasOverflowed())
         return nullptr;
 
-    return adoptRefWillBeNoop(new ImageData(size));
+    return new ImageData(size);
 }
 
-PassRefPtrWillBeRawPtr<ImageData> ImageData::create(const IntSize& size, PassRefPtr<Uint8ClampedArray> byteArray)
+ImageData* ImageData::create(const IntSize& size, PassRefPtr<DOMUint8ClampedArray> byteArray)
 {
     Checked<int, RecordOverflow> dataSize = 4;
     dataSize *= size.width();
@@ -59,15 +59,11 @@ PassRefPtrWillBeRawPtr<ImageData> ImageData::create(const IntSize& size, PassRef
         || static_cast<unsigned>(dataSize.unsafeGet()) > byteArray->length())
         return nullptr;
 
-    return adoptRefWillBeNoop(new ImageData(size, DOMUint8ClampedArray::create(byteArray)));
+    return new ImageData(size, byteArray);
 }
 
-PassRefPtrWillBeRawPtr<ImageData> ImageData::create(unsigned width, unsigned height, ExceptionState& exceptionState)
+ImageData* ImageData::create(unsigned width, unsigned height, ExceptionState& exceptionState)
 {
-    if (!RuntimeEnabledFeatures::imageDataConstructorEnabled()) {
-        exceptionState.throwTypeError("Illegal constructor");
-        return nullptr;
-    }
     if (!width || !height) {
         exceptionState.throwDOMException(IndexSizeError, String::format("The source %s is zero or not a number.", width ? "height" : "width"));
         return nullptr;
@@ -81,62 +77,72 @@ PassRefPtrWillBeRawPtr<ImageData> ImageData::create(unsigned width, unsigned hei
         return nullptr;
     }
 
-    RefPtrWillBeRawPtr<ImageData> imageData = adoptRefWillBeNoop(new ImageData(IntSize(width, height)));
-    imageData->data()->zeroFill();
-    return imageData.release();
+    return new ImageData(IntSize(width, height));
 }
 
-PassRefPtrWillBeRawPtr<ImageData> ImageData::create(DOMUint8ClampedArray* data, unsigned width, unsigned height, ExceptionState& exceptionState)
+bool ImageData::validateConstructorArguments(DOMUint8ClampedArray* data, unsigned width, unsigned& lengthInPixels, ExceptionState& exceptionState)
 {
-    if (!RuntimeEnabledFeatures::imageDataConstructorEnabled()) {
-        exceptionState.throwTypeError("Illegal constructor");
-        return nullptr;
-    }
-    if (!data) {
-        exceptionState.throwTypeError("Expected a Uint8ClampedArray as first argument.");
-        return nullptr;
-    }
     if (!width) {
         exceptionState.throwDOMException(IndexSizeError, "The source width is zero or not a number.");
-        return nullptr;
+        return false;
     }
-
+    ASSERT(data);
     unsigned length = data->length();
     if (!length) {
         exceptionState.throwDOMException(IndexSizeError, "The input data has a zero byte length.");
-        return nullptr;
+        return false;
     }
     if (length % 4) {
         exceptionState.throwDOMException(IndexSizeError, "The input data byte length is not a multiple of 4.");
-        return nullptr;
+        return false;
     }
     length /= 4;
     if (length % width) {
         exceptionState.throwDOMException(IndexSizeError, "The input data byte length is not a multiple of (4 * width).");
+        return false;
+    }
+    lengthInPixels = length;
+    return true;
+}
+
+ImageData* ImageData::create(DOMUint8ClampedArray* data, unsigned width, ExceptionState& exceptionState)
+{
+    unsigned lengthInPixels = 0;
+    if (!validateConstructorArguments(data, width, lengthInPixels, exceptionState)) {
+        ASSERT(exceptionState.hadException());
         return nullptr;
     }
-    if (!height) {
-        height = length / width;
-    } else if (height != length / width) {
+    ASSERT(lengthInPixels && width);
+    unsigned height = lengthInPixels / width;
+    return new ImageData(IntSize(width, height), data);
+}
+
+ImageData* ImageData::create(DOMUint8ClampedArray* data, unsigned width, unsigned height, ExceptionState& exceptionState)
+{
+    unsigned lengthInPixels = 0;
+    if (!validateConstructorArguments(data, width, lengthInPixels, exceptionState)) {
+        ASSERT(exceptionState.hadException());
+        return nullptr;
+    }
+    ASSERT(lengthInPixels && width);
+    if (height != lengthInPixels / width) {
         exceptionState.throwDOMException(IndexSizeError, "The input data byte length is not equal to (4 * width * height).");
         return nullptr;
     }
-
-    return adoptRefWillBeNoop(new ImageData(IntSize(width, height), data));
+    return new ImageData(IntSize(width, height), data);
 }
 
-v8::Handle<v8::Object> ImageData::associateWithWrapper(const WrapperTypeInfo* wrapperType, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
+v8::Local<v8::Object> ImageData::associateWithWrapper(v8::Isolate* isolate, const WrapperTypeInfo* wrapperType, v8::Local<v8::Object> wrapper)
 {
-    ScriptWrappable::associateWithWrapper(wrapperType, wrapper, isolate);
+    ScriptWrappable::associateWithWrapper(isolate, wrapperType, wrapper);
 
-    if (!wrapper.IsEmpty()) {
-        // Create a V8 Uint8ClampedArray object.
-        v8::Handle<v8::Value> pixelArray = toV8(m_data.get(), wrapper, isolate);
-        // Set the "data" property of the ImageData object to
-        // the created v8 object, eliminating the C++ callback
-        // when accessing the "data" property.
-        if (!pixelArray.IsEmpty())
-            wrapper->ForceSet(v8AtomicString(isolate, "data"), pixelArray, v8::ReadOnly);
+    if (!wrapper.IsEmpty() && m_data.get()) {
+        // Create a V8 Uint8ClampedArray object and set the "data" property
+        // of the ImageData object to the created v8 object, eliminating the
+        // C++ callback when accessing the "data" property.
+        v8::Local<v8::Value> pixelArray = toV8(m_data.get(), wrapper, isolate);
+        if (pixelArray.IsEmpty() || !v8CallBoolean(wrapper->ForceSet(isolate->GetCurrentContext(), v8AtomicString(isolate, "data"), pixelArray, v8::ReadOnly)))
+            return v8::Local<v8::Object>();
     }
     return wrapper;
 }
@@ -152,6 +158,11 @@ ImageData::ImageData(const IntSize& size, PassRefPtr<DOMUint8ClampedArray> byteA
     , m_data(byteArray)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(static_cast<unsigned>(size.width() * size.height() * 4) <= m_data->length());
+}
+
+void ImageData::dispose()
+{
+    m_data.clear();
 }
 
 } // namespace blink

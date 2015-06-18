@@ -329,7 +329,7 @@ def WriteOnDiff(filename):
     the target if it differs (on close).
   """
 
-  class Writer:
+  class Writer(object):
     """Wrapper around file which only covers the target if it differs."""
     def __init__(self):
       # Pick temporary file.
@@ -548,7 +548,7 @@ class CycleError(Exception):
 
 
 def TopologicallySorted(graph, get_edges):
-  """Topologically sort based on a user provided edge definition.
+  r"""Topologically sort based on a user provided edge definition.
 
   Args:
     graph: A list of node names.
@@ -586,3 +586,14 @@ def TopologicallySorted(graph, get_edges):
   for node in sorted(graph):
     Visit(node)
   return ordered_nodes
+
+def CrossCompileRequested():
+  # TODO: figure out how to not build extra host objects in the
+  # non-cross-compile case when this is enabled, and enable unconditionally.
+  return (os.environ.get('GYP_CROSSCOMPILE') or
+          os.environ.get('AR_host') or
+          os.environ.get('CC_host') or
+          os.environ.get('CXX_host') or
+          os.environ.get('AR_target') or
+          os.environ.get('CC_target') or
+          os.environ.get('CXX_target'))

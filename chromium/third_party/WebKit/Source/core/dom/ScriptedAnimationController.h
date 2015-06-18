@@ -26,6 +26,7 @@
 #ifndef ScriptedAnimationController_h
 #define ScriptedAnimationController_h
 
+#include "core/dom/FrameRequestCallbackCollection.h"
 #include "platform/heap/Handle.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefCounted.h"
@@ -39,28 +40,29 @@ namespace blink {
 class Document;
 class Event;
 class EventTarget;
+class FrameRequestCallback;
 class MediaQueryListListener;
-class RequestAnimationFrameCallback;
 
-class ScriptedAnimationController : public RefCountedWillBeGarbageCollectedFinalized<ScriptedAnimationController> {
+class ScriptedAnimationController : public RefCountedWillBeGarbageCollected<ScriptedAnimationController> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptedAnimationController);
 public:
     static PassRefPtrWillBeRawPtr<ScriptedAnimationController> create(Document* document)
     {
         return adoptRefWillBeNoop(new ScriptedAnimationController(document));
     }
-    ~ScriptedAnimationController();
-    void trace(Visitor*);
+
+    DECLARE_TRACE();
     void clearDocumentPointer() { m_document = nullptr; }
 
     typedef int CallbackId;
 
-    int registerCallback(RequestAnimationFrameCallback*);
+    int registerCallback(FrameRequestCallback*);
     void cancelCallback(CallbackId);
     void serviceScriptedAnimations(double monotonicTimeNow);
 
     void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
     void enqueuePerFrameEvent(PassRefPtrWillBeRawPtr<Event>);
-    void enqueueMediaQueryChangeListeners(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >&);
+    void enqueueMediaQueryChangeListeners(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener>>&);
 
     void suspend();
     void resume();
@@ -75,19 +77,17 @@ private:
     void executeCallbacks(double monotonicTimeNow);
     void callMediaQueryListListeners();
 
-    typedef PersistentHeapVectorWillBeHeapVector<Member<RequestAnimationFrameCallback> > CallbackList;
-    CallbackList m_callbacks;
-    CallbackList m_callbacksToInvoke; // only non-empty while inside executeCallbacks
+    bool hasScheduledItems() const;
 
     RawPtrWillBeMember<Document> m_document;
-    CallbackId m_nextCallbackId;
+    FrameRequestCallbackCollection m_callbackCollection;
     int m_suspendCount;
-    WillBeHeapVector<RefPtrWillBeMember<Event> > m_eventQueue;
-    WillBeHeapListHashSet<std::pair<RawPtrWillBeMember<const EventTarget>, const StringImpl*> > m_perFrameEvents;
-    typedef WillBeHeapListHashSet<RefPtrWillBeMember<MediaQueryListListener> > MediaQueryListListeners;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> m_eventQueue;
+    WillBeHeapListHashSet<std::pair<RawPtrWillBeMember<const EventTarget>, const StringImpl*>> m_perFrameEvents;
+    using MediaQueryListListeners = WillBeHeapListHashSet<RefPtrWillBeMember<MediaQueryListListener>>;
     MediaQueryListListeners m_mediaQueryListListeners;
 };
 
-}
+} // namespace blink
 
 #endif // ScriptedAnimationController_h

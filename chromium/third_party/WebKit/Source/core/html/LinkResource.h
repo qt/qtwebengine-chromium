@@ -39,9 +39,10 @@
 namespace blink {
 
 class HTMLLinkElement;
+class LocalFrame;
 
 class LinkResource : public NoBaseWillBeGarbageCollectedFinalized<LinkResource>  {
-    WTF_MAKE_NONCOPYABLE(LinkResource); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(LinkResource); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(LinkResource);
 public:
     enum Type {
         Style,
@@ -61,7 +62,7 @@ public:
     virtual void ownerInserted() { }
     virtual bool hasLoaded() const = 0;
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     RawPtrWillBeMember<HTMLLinkElement> m_owner;

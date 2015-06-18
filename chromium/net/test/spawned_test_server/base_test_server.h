@@ -61,6 +61,10 @@ class BaseTestServer {
       // TestRootStore) is expected to have a self-signed version of the
       // intermediate.
       CERT_CHAIN_WRONG_ROOT,
+
+      // Causes the testserver to use a hostname that is a domain
+      // instead of an IP.
+      CERT_COMMON_NAME_IS_DOMAIN,
     };
 
     // OCSPStatus enumerates the types of OCSP response that the testserver
@@ -79,10 +83,11 @@ class BaseTestServer {
       // Special value used to indicate that any algorithm the server supports
       // is acceptable. Preferred over explicitly OR-ing all key exchange
       // algorithms.
-      KEY_EXCHANGE_ANY     = 0,
+      KEY_EXCHANGE_ANY = 0,
 
-      KEY_EXCHANGE_RSA     = (1 << 0),
+      KEY_EXCHANGE_RSA = (1 << 0),
       KEY_EXCHANGE_DHE_RSA = (1 << 1),
+      KEY_EXCHANGE_ECDHE_RSA = (1 << 2),
     };
 
     // Bitmask of bulk encryption algorithms that the test server supports
@@ -90,16 +95,18 @@ class BaseTestServer {
     enum BulkCipher {
       // Special value used to indicate that any algorithm the server supports
       // is acceptable. Preferred over explicitly OR-ing all ciphers.
-      BULK_CIPHER_ANY    = 0,
+      BULK_CIPHER_ANY = 0,
 
-      BULK_CIPHER_RC4    = (1 << 0),
+      BULK_CIPHER_RC4 = (1 << 0),
       BULK_CIPHER_AES128 = (1 << 1),
       BULK_CIPHER_AES256 = (1 << 2),
 
       // NOTE: 3DES support in the Python test server has external
       // dependencies and not be available on all machines. Clients may not
       // be able to connect if only 3DES is specified.
-      BULK_CIPHER_3DES   = (1 << 3),
+      BULK_CIPHER_3DES = (1 << 3),
+
+      BULK_CIPHER_AES128GCM = (1 << 4),
     };
 
     // NOTE: the values of these enumerators are passed to the the Python test
@@ -201,13 +208,15 @@ class BaseTestServer {
     // Whether to staple the OCSP response.
     bool staple_ocsp_response;
 
+    // Whether to make the OCSP server unavailable. This does not affect the
+    // stapled OCSP response.
+    bool ocsp_server_unavailable;
+
     // Whether to enable NPN support.
     bool enable_npn;
 
-    // Whether to disable TLS session caching. When session caching is
-    // disabled, the server will use an empty session ID in the
-    // ServerHello.
-    bool disable_session_cache;
+    // Whether to send a fatal alert immediately after completing the handshake.
+    bool alert_after_handshake;
   };
 
   // Pass as the 'host' parameter during construction to server on 127.0.0.1
@@ -253,6 +262,15 @@ class BaseTestServer {
     ws_basic_auth_ = ws_basic_auth;
   }
 
+  // Disable creation of anonymous FTP user.
+  void set_no_anonymous_ftp_user(bool no_anonymous_ftp_user) {
+    no_anonymous_ftp_user_ = no_anonymous_ftp_user;
+  }
+
+  // Marks the root certificate of an HTTPS test server as trusted for
+  // the duration of tests.
+  bool LoadTestRootCert() const WARN_UNUSED_RESULT;
+
  protected:
   virtual ~BaseTestServer();
   Type type() const { return type_; }
@@ -291,10 +309,6 @@ class BaseTestServer {
  private:
   void Init(const std::string& host);
 
-  // Marks the root certificate of an HTTPS test server as trusted for
-  // the duration of tests.
-  bool LoadTestRootCert() const WARN_UNUSED_RESULT;
-
   // Document root of the test server.
   base::FilePath document_root_;
 
@@ -321,6 +335,9 @@ class BaseTestServer {
 
   // Is WebSocket basic HTTP authentication enabled?
   bool ws_basic_auth_;
+
+  // Disable creation of anonymous FTP user?
+  bool no_anonymous_ftp_user_;
 
   scoped_ptr<ScopedPortException> allowed_port_;
 

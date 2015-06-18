@@ -25,7 +25,7 @@ TEST(DriveAPIParserTest, AboutResourceParser) {
 
   EXPECT_EQ("0AIv7G8yEYAWHUk9123", resource->root_folder_id());
   EXPECT_EQ(5368709120LL, resource->quota_bytes_total());
-  EXPECT_EQ(1073741824LL, resource->quota_bytes_used());
+  EXPECT_EQ(1073741824LL, resource->quota_bytes_used_aggregate());
   EXPECT_EQ(8177LL, resource->largest_change_id());
 }
 
@@ -191,6 +191,10 @@ TEST(DriveAPIParserTest, FileListParser) {
   ASSERT_EQ(0U, file2.parents().size());
 
   EXPECT_EQ(0U, file2.open_with_links().size());
+  EXPECT_EQ(GURL("https://drive.google.com/share"
+                 "?id=1Pc8jzfU1ErbN_eucMMqdqzY3eBm0v8sxXm_1CtLxABC"
+                 "&embedOrigin=chrome-extension://test&hl=ja"),
+            file2.share_link());
 
   // Check file 3 (a folder)
   const FileResource& file3 = *filelist->items()[2];

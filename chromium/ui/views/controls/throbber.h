@@ -21,20 +21,15 @@ namespace views {
 
 class VIEWS_EXPORT Throbber : public View {
  public:
-  // |frame_time_ms| is the amount of time that should elapse between frames
-  //                 (in milliseconds)
-  // If |paint_while_stopped| is false, this view will be invisible when not
-  // running.
-  Throbber(int frame_time_ms, bool paint_while_stopped);
-  Throbber(int frame_time_ms, bool paint_while_stopped, gfx::ImageSkia* frames);
+  Throbber();
   ~Throbber() override;
 
-  // Start and stop the throbber animation
+  // Start and stop the throbber animation.
   virtual void Start();
   virtual void Stop();
 
-  // Set custom throbber frames. Otherwise IDR_THROBBER is loaded.
-  void SetFrames(const gfx::ImageSkia* frames);
+  // Stop spinning and, if checked is true, display a checkmark.
+  void SetChecked(bool checked);
 
   // Overridden from View:
   gfx::Size GetPreferredSize() const override;
@@ -42,17 +37,17 @@ class VIEWS_EXPORT Throbber : public View {
 
  protected:
   // Specifies whether the throbber is currently animating or not
-  bool running_;
+  bool IsRunning() const;
 
  private:
-  void Run();
-
-  bool paint_while_stopped_;
-  int frame_count_;  // How many frames we have.
-  base::Time start_time_;  // Time when Start was called.
-  const gfx::ImageSkia* frames_;  // Frames images.
-  base::TimeDelta frame_time_;  // How long one frame is displayed.
+  base::TimeTicks start_time_;  // Time when Start was called.
   base::RepeatingTimer<Throbber> timer_;  // Used to schedule Run calls.
+
+  // Whether or not we should display a checkmark.
+  bool checked_;
+
+  // The checkmark image. Will be null until it's used (if ever).
+  const gfx::ImageSkia* checkmark_;
 
   DISALLOW_COPY_AND_ASSIGN(Throbber);
 };
@@ -63,8 +58,7 @@ class VIEWS_EXPORT Throbber : public View {
 // a small amount of work time has passed.
 class VIEWS_EXPORT SmoothedThrobber : public Throbber {
  public:
-  explicit SmoothedThrobber(int frame_delay_ms);
-  SmoothedThrobber(int frame_delay_ms, gfx::ImageSkia* frames);
+  SmoothedThrobber();
   ~SmoothedThrobber() override;
 
   void Start() override;
@@ -92,34 +86,6 @@ class VIEWS_EXPORT SmoothedThrobber : public Throbber {
   base::OneShotTimer<SmoothedThrobber> stop_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(SmoothedThrobber);
-};
-
-// A CheckmarkThrobber is a special variant of throbber that has three states:
-//   1. not yet completed (which paints nothing)
-//   2. working (which paints the throbber animation)
-//   3. completed (which paints a checkmark)
-//
-class VIEWS_EXPORT CheckmarkThrobber : public Throbber {
- public:
-  CheckmarkThrobber();
-
-  // If checked is true, the throbber stops spinning and displays a checkmark.
-  // If checked is false, the throbber stops spinning and displays nothing.
-  void SetChecked(bool checked);
-
-  // Overridden from Throbber:
-  void OnPaint(gfx::Canvas* canvas) override;
-
- private:
-  static const int kFrameTimeMs = 30;
-
-  // Whether or not we should display a checkmark.
-  bool checked_;
-
-  // The checkmark image.
-  const gfx::ImageSkia* checkmark_;
-
-  DISALLOW_COPY_AND_ASSIGN(CheckmarkThrobber);
 };
 
 }  // namespace views

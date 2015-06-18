@@ -26,11 +26,13 @@
 #ifndef markup_h
 #define markup_h
 
+#include "core/CSSPropertyNames.h"
+#include "core/CoreExport.h"
 #include "core/dom/ParserContentPolicy.h"
+#include "core/dom/Position.h"
 #include "core/editing/HTMLInterchange.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/Vector.h"
 
 namespace blink {
 
@@ -41,8 +43,8 @@ class Element;
 class ExceptionState;
 class KURL;
 class Node;
-class QualifiedName;
 class Range;
+class StylePropertySet;
 
 enum EChildrenOnly { IncludeNode, ChildrenOnly };
 enum EAbsoluteURLs { DoNotResolveURLs, ResolveAllURLs, ResolveNonLocalURLs };
@@ -61,13 +63,25 @@ bool isPlainTextMarkup(Node*);
 void replaceChildrenWithFragment(ContainerNode*, PassRefPtrWillBeRawPtr<DocumentFragment>, ExceptionState&);
 void replaceChildrenWithText(ContainerNode*, const String&, ExceptionState&);
 
-String createMarkup(const Range*, WillBeHeapVector<RawPtrWillBeMember<Node>>* = nullptr, EAnnotateForInterchange = DoNotAnnotateForInterchange, bool convertBlocksToInlines = false, EAbsoluteURLs = DoNotResolveURLs, Node* constrainingAncestor = nullptr);
-String createMarkup(const Node*, EChildrenOnly = IncludeNode, WillBeHeapVector<RawPtrWillBeMember<Node>>* = nullptr, EAbsoluteURLs = DoNotResolveURLs, Vector<QualifiedName>* tagNamesToSkip = nullptr);
+template <typename Strategy>
+class CreateMarkupAlgorithm {
+public:
+    using PositionType = typename Strategy::PositionType;
+
+    static String createMarkup(const PositionType& startPosition, const PositionType& endPosition, EAnnotateForInterchange shouldAnnotate = DoNotAnnotateForInterchange, bool convertBlocksToInlines = false, EAbsoluteURLs shouldResolveURLs = DoNotResolveURLs, Node* constrainingAncestor = nullptr);
+};
+
+extern template class CORE_TEMPLATE_EXPORT CreateMarkupAlgorithm<EditingStrategy>;
+
+CORE_EXPORT String createMarkup(const Range*, EAnnotateForInterchange = DoNotAnnotateForInterchange, bool convertBlocksToInlines = false, EAbsoluteURLs = DoNotResolveURLs, Node* constrainingAncestor = nullptr);
+CORE_EXPORT String createMarkup(const Node*, EChildrenOnly = IncludeNode, EAbsoluteURLs = DoNotResolveURLs);
 
 String createStyledMarkupForNavigationTransition(Node*);
 
 String urlToMarkup(const KURL&, const String& title);
 void mergeWithNextTextNode(Text*, ExceptionState&);
+
+bool propertyMissingOrEqualToNone(StylePropertySet*, CSSPropertyID);
 
 }
 

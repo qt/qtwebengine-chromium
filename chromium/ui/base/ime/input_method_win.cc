@@ -5,6 +5,7 @@
 #include "ui/base/ime/input_method_win.h"
 
 #include "base/basictypes.h"
+#include "base/profiler/scoped_tracker.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
 #include "ui/events/event.h"
@@ -31,33 +32,25 @@ InputMethodWin::InputMethodWin(internal::InputMethodDelegate* delegate,
       active_(false),
       enabled_(false),
       is_candidate_popup_open_(false),
-      composing_window_handle_(NULL) {
+      composing_window_handle_(NULL),
+      default_input_language_initialized_(false) {
   SetDelegate(delegate);
-  // In non-Aura environment, appropriate callbacks to OnFocus() and OnBlur()
-  // are not implemented yet. To work around this limitation, here we use
-  // "always focused" model.
-  // TODO(ime): Fix the caller of OnFocus() and OnBlur() so that appropriate
-  // focus event will be passed.
-  InputMethodBase::OnFocus();
-}
-
-void InputMethodWin::Init(bool focused) {
-  // Gets the initial input locale.
-  OnInputLocaleChanged();
-
-  InputMethodBase::Init(focused);
 }
 
 void InputMethodWin::OnFocus() {
-  // Ignore OnFocus event for "always focused" model. See the comment in the
-  // constructor.
-  // TODO(ime): Implement OnFocus once the callers are fixed.
+  InputMethodBase::OnFocus();
+  if (GetTextInputClient())
+    UpdateIMEState();
 }
 
 void InputMethodWin::OnBlur() {
-  // Ignore OnBlur event for "always focused" model. See the comment in the
-  // constructor.
-  // TODO(ime): Implement OnFocus once the callers are fixed.
+  ConfirmCompositionText();
+  // Gets the focused text input client before calling parent's OnBlur() because
+  // it will cause GetTextInputClient() returns NULL.
+  ui::TextInputClient* client = GetTextInputClient();
+  InputMethodBase::OnBlur();
+  if (client)
+    UpdateIMEState();
 }
 
 bool InputMethodWin::OnUntranslatedIMEMessage(
@@ -65,6 +58,12 @@ bool InputMethodWin::OnUntranslatedIMEMessage(
     InputMethod::NativeEventResult* result) {
   LRESULT original_result = 0;
   BOOL handled = FALSE;
+
+  if (!default_input_language_initialized_) {
+    // Gets the initial input locale.
+    OnInputLocaleChanged();
+  }
+
   switch (event.message) {
     case WM_IME_SETCONTEXT:
       original_result = OnImeSetContext(
@@ -144,7 +143,7 @@ bool InputMethodWin::DispatchKeyEvent(const ui::KeyEvent& event) {
 void InputMethodWin::OnTextInputTypeChanged(const TextInputClient* client) {
   if (!IsTextInputClientFocused(client) || !IsWindowFocused(client))
     return;
-  imm32_manager_.CancelIME(GetAttachedWindowHandle(client));
+  imm32_manager_.CancelIME(toplevel_window_handle_);
   UpdateIMEState();
 }
 
@@ -160,7 +159,7 @@ void InputMethodWin::OnCaretBoundsChanged(const TextInputClient* client) {
   const gfx::Rect dip_screen_bounds(GetTextInputClient()->GetCaretBounds());
   const gfx::Rect screen_bounds = gfx::win::DIPToScreenRect(dip_screen_bounds);
 
-  HWND attached_window = GetAttachedWindowHandle(client);
+  HWND attached_window = toplevel_window_handle_;
   // TODO(ime): see comment in TextInputClient::GetCaretBounds(), this
   // conversion shouldn't be necessary.
   RECT r = {};
@@ -174,10 +173,11 @@ void InputMethodWin::OnCaretBoundsChanged(const TextInputClient* client) {
 
 void InputMethodWin::CancelComposition(const TextInputClient* client) {
   if (enabled_ && IsTextInputClientFocused(client))
-    imm32_manager_.CancelIME(GetAttachedWindowHandle(client));
+    imm32_manager_.CancelIME(toplevel_window_handle_);
 }
 
 void InputMethodWin::OnInputLocaleChanged() {
+  default_input_language_initialized_ = true;
   active_ = imm32_manager_.SetInputLanguage();
   locale_ = imm32_manager_.GetInputLanguageName();
   OnInputMethodChanged();
@@ -210,8 +210,6 @@ void InputMethodWin::OnDidChangeFocusedClient(
     // focus and after it acquires focus again are the same.
     OnTextInputTypeChanged(focused);
 
-    UpdateIMEState();
-
     // Force to update caret bounds, in case the client thinks that the caret
     // bounds has not changed.
     OnCaretBoundsChanged(focused);
@@ -225,6 +223,10 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
                                WPARAM wparam,
                                LPARAM lparam,
                                BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 InputMethodWin::OnChar"));
+
   *handled = TRUE;
 
   // We need to send character events to the focused text input client event if
@@ -258,6 +260,11 @@ LRESULT InputMethodWin::OnImeSetContext(HWND window_handle,
                                         WPARAM wparam,
                                         LPARAM lparam,
                                         BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 InputMethodWin::OnImeSetContext"));
+
   if (!!wparam)
     imm32_manager_.CreateImeWindow(window_handle);
 
@@ -271,6 +278,11 @@ LRESULT InputMethodWin::OnImeStartComposition(HWND window_handle,
                                               WPARAM wparam,
                                               LPARAM lparam,
                                               BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 InputMethodWin::OnImeStartComposition"));
+
   // We have to prevent WTL from calling ::DefWindowProc() because the function
   // calls ::ImmSetCompositionWindow() and ::ImmSetCandidateWindow() to
   // over-write the position of IME windows.
@@ -288,6 +300,11 @@ LRESULT InputMethodWin::OnImeComposition(HWND window_handle,
                                          WPARAM wparam,
                                          LPARAM lparam,
                                          BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 InputMethodWin::OnImeComposition"));
+
   // We have to prevent WTL from calling ::DefWindowProc() because we do not
   // want for the IMM (Input Method Manager) to send WM_IME_CHAR messages.
   *handled = TRUE;
@@ -321,6 +338,11 @@ LRESULT InputMethodWin::OnImeEndComposition(HWND window_handle,
                                             WPARAM wparam,
                                             LPARAM lparam,
                                             BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 InputMethodWin::OnImeEndComposition"));
+
   // Let WTL call ::DefWindowProc() and release its resources.
   *handled = FALSE;
 
@@ -338,6 +360,10 @@ LRESULT InputMethodWin::OnImeNotify(UINT message,
                                     WPARAM wparam,
                                     LPARAM lparam,
                                     BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 InputMethodWin::OnImeNotify"));
+
   *handled = FALSE;
 
   bool previous_state = is_candidate_popup_open_;
@@ -369,6 +395,10 @@ LRESULT InputMethodWin::OnImeRequest(UINT message,
                                      WPARAM wparam,
                                      LPARAM lparam,
                                      BOOL* handled) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 InputMethodWin::OnImeRequest"));
+
   *handled = FALSE;
 
   // Should not receive WM_IME_REQUEST message, if IME is disabled.
@@ -545,25 +575,16 @@ LRESULT InputMethodWin::OnQueryCharPosition(IMECHARPOSITION* char_positon) {
   return 1;  // returns non-zero value when succeeded.
 }
 
-HWND InputMethodWin::GetAttachedWindowHandle(
-  const TextInputClient* text_input_client) const {
-  // On Aura environment, we can assume that |toplevel_window_handle_| always
-  // represents the valid top-level window handle because each top-level window
-  // is responsible for lifecycle management of corresponding InputMethod
-  // instance.
-  return toplevel_window_handle_;
-}
-
 bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
   if (!client)
     return false;
-  HWND attached_window_handle = GetAttachedWindowHandle(client);
   // When Aura is enabled, |attached_window_handle| should always be a top-level
   // window. So we can safely assume that |attached_window_handle| is ready for
   // receiving keyboard input as long as it is an active window. This works well
   // even when the |attached_window_handle| becomes active but has not received
   // WM_FOCUS yet.
-  return attached_window_handle && GetActiveWindow() == attached_window_handle;
+  return toplevel_window_handle_ &&
+      GetActiveWindow() == toplevel_window_handle_;
 }
 
 bool InputMethodWin::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
@@ -594,7 +615,7 @@ void InputMethodWin::ConfirmCompositionText() {
 void InputMethodWin::UpdateIMEState() {
   // Use switch here in case we are going to add more text input types.
   // We disable input method in password field.
-  const HWND window_handle = GetAttachedWindowHandle(GetTextInputClient());
+  const HWND window_handle = toplevel_window_handle_;
   const TextInputType text_input_type = GetTextInputType();
   const TextInputMode text_input_mode = GetTextInputMode();
   switch (text_input_type) {

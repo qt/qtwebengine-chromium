@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_sysctl.c 271221 2014-09-07 09:06:26Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_sysctl.c 277424 2015-01-20 19:08:55Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -706,8 +706,12 @@ sctp_sysctl_handle_udp_tunneling(SYSCTL_HANDLER_ARGS)
 		sctp_over_udp_restart();
 		SCTP_INP_INFO_WUNLOCK();
 #else
+#if (SCTPCTL_UDP_TUNNELING_PORT_MIN == 0)
+		if (new > SCTPCTL_UDP_TUNNELING_PORT_MAX) {
+#else
 		if ((new < SCTPCTL_UDP_TUNNELING_PORT_MIN) ||
 		    (new > SCTPCTL_UDP_TUNNELING_PORT_MAX)) {
+#endif
 			error = EINVAL;
 		} else {
 			SCTP_INP_INFO_WLOCK();
@@ -787,9 +791,14 @@ sctp_sysctl_handle_auth(SYSCTL_HANDLER_ARGS)
 #else
 	    (req->newptr != NULL)) {
 #endif
+#if (SCTPCTL_AUTH_ENABLE_MIN == 0)
+		if ((new > SCTPCTL_AUTH_ENABLE_MAX) ||
+		    ((new == 0) && (SCTP_BASE_SYSCTL(sctp_asconf_enable) == 1))) {
+#else
 		if ((new < SCTPCTL_AUTH_ENABLE_MIN) ||
 		    (new > SCTPCTL_AUTH_ENABLE_MAX) ||
 		    ((new == 0) && (SCTP_BASE_SYSCTL(sctp_asconf_enable) == 1))) {
+#endif
 			error = EINVAL;
 		} else {
 			SCTP_BASE_SYSCTL(sctp_auth_enable) = new;
@@ -827,9 +836,14 @@ sctp_sysctl_handle_asconf(SYSCTL_HANDLER_ARGS)
 #else
 	    (req->newptr != NULL)) {
 #endif
+#if (SCTPCTL_ASCONF_ENABLE_MIN == 0)
+		if ((new > SCTPCTL_ASCONF_ENABLE_MAX) ||
+		    ((new == 1) && (SCTP_BASE_SYSCTL(sctp_auth_enable) == 0))) {
+#else
 		if ((new < SCTPCTL_ASCONF_ENABLE_MIN) ||
 		    (new > SCTPCTL_ASCONF_ENABLE_MAX) ||
 		    ((new == 1) && (SCTP_BASE_SYSCTL(sctp_auth_enable) == 0))) {
+#endif
 			error = EINVAL;
 		} else {
 			SCTP_BASE_SYSCTL(sctp_asconf_enable) = new;
@@ -851,9 +865,11 @@ sctp_sysctl_handle_stats(SYSCTL_HANDLER_ARGS)
 	int error;
 #if defined(__FreeBSD__)
 #if defined(SMP) && defined(SCTP_USE_PERCPU_STAT)
+	struct sctpstat *sarry;
+	struct sctpstat sb;
 	int cpu;
-	struct sctpstat sb, *sarry;
 #endif
+	struct sctpstat sb_temp;
 #endif
 
 #if defined (__APPLE__)
@@ -865,8 +881,16 @@ sctp_sysctl_handle_stats(SYSCTL_HANDLER_ARGS)
 		return (EINVAL);
 	}
 #if defined(__FreeBSD__)
+	memset(&sb_temp, 0, sizeof(struct sctpstat));
+
+	if (req->newptr != NULL) {
+		error = SYSCTL_IN(req, &sb_temp, sizeof(struct sctpstat));
+		if (error != 0) {
+			return (error);
+		}
+	}
 #if defined(SMP) && defined(SCTP_USE_PERCPU_STAT)
-	memset(&sb, 0, sizeof(struct sctpstat));
+	memset(&sb, 0, sizeof(sb));
 	for (cpu = 0; cpu < mp_maxid; cpu++) {
 		sarry = &SCTP_BASE_STATS[cpu];
 		if (sarry->sctps_discontinuitytime.tv_sec > sb.sctps_discontinuitytime.tv_sec) {
@@ -995,12 +1019,18 @@ sctp_sysctl_handle_stats(SYSCTL_HANDLER_ARGS)
 		sb.sctps_send_cwnd_avoid += sarry->sctps_send_cwnd_avoid;
 		sb.sctps_fwdtsn_map_over += sarry->sctps_fwdtsn_map_over;
 		if (req->newptr != NULL) {
-			memcpy(sarry, req->newptr, sizeof(struct sctpstat));
+			memcpy(sarry, &sb_temp, sizeof(struct sctpstat));
 		}
 	}
 	error = SYSCTL_OUT(req, &sb, sizeof(struct sctpstat));
 #else
 	error = SYSCTL_OUT(req, &SCTP_BASE_STATS, sizeof(struct sctpstat));
+	if (error != 0) {
+		return (error);
+	}
+	if (req->newptr != NULL) {
+		memcpy(&SCTP_BASE_STATS, &sb_temp, sizeof(struct sctpstat));
+	}
 #endif
 #else
 	error = SYSCTL_OUT(req, &SCTP_BASE_STATS, sizeof(struct sctpstat));

@@ -54,6 +54,7 @@
  * copied and put under another distribution licence
  * [including the GNU Public Licence.] */
 
+#include <string.h>
 #include <time.h>
 
 #include <openssl/asn1.h>
@@ -63,10 +64,15 @@
 #include <openssl/lhash.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
+#include <openssl/thread.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 #include "vpm_int.h"
+#include "../internal.h"
+
+
+static CRYPTO_EX_DATA_CLASS g_ex_data_class = CRYPTO_EX_DATA_CLASS_INIT;
 
 /* CRL score values */
 
@@ -409,9 +415,6 @@ int X509_verify_cert(X509_STORE_CTX *ctx)
 
 	if (!ok) goto end;
 
-	/* We may as well copy down any DSA parameters that are required */
-	X509_get_pubkey_parameters(NULL,ctx->chain);
-
 	/* Check revocation status: we do this after copying parameters
 	 * because they may be needed for CRL signature verification.
 	 */
@@ -440,12 +443,8 @@ int X509_verify_cert(X509_STORE_CTX *ctx)
 	/* If we get this far evaluate policies */
 	if (!bad_chain && (ctx->param->flags & X509_V_FLAG_POLICY_CHECK))
 		ok = ctx->check_policy(ctx);
-	if(!ok) goto end;
-	if (0)
-		{
+
 end:
-		X509_get_pubkey_parameters(NULL,ctx->chain);
-		}
 	if (sktmp != NULL) sk_X509_free(sktmp);
 	if (chain_ss != NULL) X509_free(chain_ss);
 	return ok;
@@ -484,7 +483,6 @@ static int check_issued(X509_STORE_CTX *ctx, X509 *x, X509 *issuer)
 	ctx->current_cert = x;
 	ctx->current_issuer = issuer;
 	return ctx->verify_cb(0, ctx);
-	return 0;
 }
 
 /* Alternative lookup method: look from a STACK stored in other_ctx */
@@ -704,23 +702,38 @@ static int check_id_error(X509_STORE_CTX *ctx, int errcode)
 	return ctx->verify_cb(0, ctx);
 	}
 
+static int check_hosts(X509 *x, X509_VERIFY_PARAM_ID *id)
+	{
+	size_t i;
+	size_t n = sk_OPENSSL_STRING_num(id->hosts);
+	char *name;
+
+	for (i = 0; i < n; ++i)
+		{
+		name = sk_OPENSSL_STRING_value(id->hosts, i);
+		if (X509_check_host(x, name, strlen(name), id->hostflags,
+				    &id->peername) > 0)
+			return 1;
+		}
+	return n == 0;
+	}
+
 static int check_id(X509_STORE_CTX *ctx)
 	{
 	X509_VERIFY_PARAM *vpm = ctx->param;
 	X509_VERIFY_PARAM_ID *id = vpm->id;
 	X509 *x = ctx->cert;
-	if (id->host && !X509_check_host(x, id->host, id->hostlen,
-					 id->hostflags))
+	if (id->hosts && check_hosts(x, id) <= 0)
 		{
 		if (!check_id_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH))
 			return 0;
 		}
-	if (id->email && !X509_check_email(x, id->email, id->emaillen, 0))
+	if (id->email && X509_check_email(x, id->email, id->emaillen, 0) <= 0)
 		{
 		if (!check_id_error(ctx, X509_V_ERR_EMAIL_MISMATCH))
 			return 0;
 		}
-	if (id->ip && !X509_check_ip(x, id->ip, id->iplen, 0))
+	if (id->ip && X509_check_ip(x, id->ip, id->iplen, 0) <= 0)
 		{
 		if (!check_id_error(ctx, X509_V_ERR_IP_ADDRESS_MISMATCH))
 			return 0;
@@ -805,6 +818,7 @@ static int check_revocation(X509_STORE_CTX *ctx)
 	}
 
 static int check_cert(X509_STORE_CTX *ctx)
+                      OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS
 	{
 	X509_CRL *crl = NULL, *dcrl = NULL;
 	X509 *x;
@@ -1901,7 +1915,7 @@ ASN1_TIME *X509_time_adj(ASN1_TIME *s, long offset_sec, time_t *in_tm)
 ASN1_TIME *X509_time_adj_ex(ASN1_TIME *s,
 				int offset_day, long offset_sec, time_t *in_tm)
 	{
-	time_t t;
+	time_t t = 0;
 
 	if (in_tm) t = *in_tm;
 	else time(&t);
@@ -1915,48 +1929,6 @@ ASN1_TIME *X509_time_adj_ex(ASN1_TIME *s,
 								offset_sec);
 		}
 	return ASN1_TIME_adj(s, t, offset_day, offset_sec);
-	}
-
-int X509_get_pubkey_parameters(EVP_PKEY *pkey, STACK_OF(X509) *chain)
-	{
-	EVP_PKEY *ktmp=NULL,*ktmp2;
-	size_t i,j;
-
-	if ((pkey != NULL) && !EVP_PKEY_missing_parameters(pkey)) return 1;
-
-	for (i=0; i<sk_X509_num(chain); i++)
-		{
-		ktmp=X509_get_pubkey(sk_X509_value(chain,i));
-		if (ktmp == NULL)
-			{
-			OPENSSL_PUT_ERROR(X509, X509_get_pubkey_parameters, X509_R_UNABLE_TO_GET_CERTS_PUBLIC_KEY);
-			return 0;
-			}
-		if (!EVP_PKEY_missing_parameters(ktmp))
-			break;
-		else
-			{
-			EVP_PKEY_free(ktmp);
-			ktmp=NULL;
-			}
-		}
-	if (ktmp == NULL)
-		{
-		OPENSSL_PUT_ERROR(X509, X509_get_pubkey_parameters, X509_R_UNABLE_TO_FIND_PARAMETERS_IN_CHAIN);
-		return 0;
-		}
-
-	/* first, populate the other certs */
-	for (j=i-1; j < i; j--)
-		{
-		ktmp2=X509_get_pubkey(sk_X509_value(chain,j));
-		EVP_PKEY_copy_parameters(ktmp2,ktmp);
-		EVP_PKEY_free(ktmp2);
-		}
-	
-	if (pkey != NULL) EVP_PKEY_copy_parameters(pkey,ktmp);
-	EVP_PKEY_free(ktmp);
-	return 1;
 	}
 
 /* Make a delta CRL as the diff between two full CRLs */
@@ -2084,8 +2056,13 @@ int X509_STORE_CTX_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_fu
 	{
 	/* This function is (usually) called only once, by
 	 * SSL_get_ex_data_X509_STORE_CTX_idx (ssl/ssl_cert.c). */
-	return CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_X509_STORE_CTX, argl, argp,
-			new_func, dup_func, free_func);
+	int index;
+	if (!CRYPTO_get_ex_new_index(&g_ex_data_class, &index, argl, argp,
+			new_func, dup_func, free_func))
+		{
+		return -1;
+		}
+	return index;
 	}
 
 int X509_STORE_CTX_set_ex_data(X509_STORE_CTX *ctx, int idx, void *data)
@@ -2248,38 +2225,26 @@ int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, X509 *x509,
 	     STACK_OF(X509) *chain)
 	{
 	int ret = 1;
+	int ex_data_allocated = 0;
+
+	memset(ctx, 0, sizeof(X509_STORE_CTX));
 	ctx->ctx=store;
-	ctx->current_method=0;
 	ctx->cert=x509;
 	ctx->untrusted=chain;
-	ctx->crls = NULL;
-	ctx->last_untrusted=0;
-	ctx->other_ctx=NULL;
-	ctx->valid=0;
-	ctx->chain=NULL;
-	ctx->error=0;
-	ctx->explicit_policy=0;
-	ctx->error_depth=0;
-	ctx->current_cert=NULL;
-	ctx->current_issuer=NULL;
-	ctx->current_crl=NULL;
-	ctx->current_crl_score=0;
-	ctx->current_reasons=0;
-	ctx->tree = NULL;
-	ctx->parent = NULL;
+
+	if(!CRYPTO_new_ex_data(&g_ex_data_class, ctx,
+			       &ctx->ex_data))
+		{
+		goto err;
+		}
+	ex_data_allocated = 1;
 
 	ctx->param = X509_VERIFY_PARAM_new();
-
 	if (!ctx->param)
-		{
-		OPENSSL_PUT_ERROR(X509, X509_STORE_CTX_init, ERR_R_MALLOC_FAILURE);
-		return 0;
-		}
+		goto err;
 
 	/* Inherit callbacks and flags from X509_STORE if not set
-	 * use defaults.
-	 */
-
+	 * use defaults. */
 
 	if (store)
 		ret = X509_VERIFY_PARAM_inherit(ctx->param, store->param);
@@ -2299,10 +2264,7 @@ int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, X509 *x509,
 					X509_VERIFY_PARAM_lookup("default"));
 
 	if (ret == 0)
-		{
-		OPENSSL_PUT_ERROR(X509, X509_STORE_CTX_init, ERR_R_MALLOC_FAILURE);
-		return 0;
-		}
+		goto err;
 
 	if (store && store->check_issued)
 		ctx->check_issued = store->check_issued;
@@ -2356,19 +2318,21 @@ int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, X509 *x509,
 
 	ctx->check_policy = check_policy;
 
-
-	/* This memset() can't make any sense anyway, so it's removed. As
-	 * X509_STORE_CTX_cleanup does a proper "free" on the ex_data, we put a
-	 * corresponding "new" here and remove this bogus initialisation. */
-	/* memset(&(ctx->ex_data),0,sizeof(CRYPTO_EX_DATA)); */
-	if(!CRYPTO_new_ex_data(CRYPTO_EX_INDEX_X509_STORE_CTX, ctx,
-				&(ctx->ex_data)))
-		{
-		OPENSSL_free(ctx);
-		OPENSSL_PUT_ERROR(X509, X509_STORE_CTX_init, ERR_R_MALLOC_FAILURE);
-		return 0;
-		}
 	return 1;
+
+err:
+	if (ex_data_allocated)
+		{
+		CRYPTO_free_ex_data(&g_ex_data_class, ctx, &ctx->ex_data);
+		}
+	if (ctx->param != NULL)
+		{
+		X509_VERIFY_PARAM_free(ctx->param);
+		}
+
+	memset(ctx, 0, sizeof(X509_STORE_CTX));
+	OPENSSL_PUT_ERROR(X509, X509_STORE_CTX_init, ERR_R_MALLOC_FAILURE);
+	return 0;
 	}
 
 /* Set alternative lookup method: just a STACK of trusted certificates.
@@ -2400,7 +2364,7 @@ void X509_STORE_CTX_cleanup(X509_STORE_CTX *ctx)
 		sk_X509_pop_free(ctx->chain,X509_free);
 		ctx->chain=NULL;
 		}
-	CRYPTO_free_ex_data(CRYPTO_EX_INDEX_X509_STORE_CTX, ctx, &(ctx->ex_data));
+	CRYPTO_free_ex_data(&g_ex_data_class, ctx, &(ctx->ex_data));
 	memset(&ctx->ex_data,0,sizeof(CRYPTO_EX_DATA));
 	}
 

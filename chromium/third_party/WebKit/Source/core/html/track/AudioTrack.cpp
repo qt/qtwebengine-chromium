@@ -20,6 +20,11 @@ AudioTrack::~AudioTrack()
 {
 }
 
+DEFINE_TRACE(AudioTrack)
+{
+    TrackBase::trace(visitor);
+}
+
 void AudioTrack::setEnabled(bool enabled)
 {
     if (enabled == m_enabled)
@@ -67,14 +72,15 @@ const AtomicString& AudioTrack::commentaryKeyword()
     return keyword;
 }
 
-bool AudioTrack::isValidKind(const AtomicString& kind) const
+bool AudioTrack::isValidKindKeyword(const String& kind)
 {
     return (kind == alternativeKeyword())
         || (kind == descriptionsKeyword())
         || (kind == mainKeyword())
         || (kind == mainDescriptionsKeyword())
         || (kind == translationKeyword())
-        || (kind == commentaryKeyword());
+        || (kind == commentaryKeyword())
+        || (kind == emptyAtom);
 }
 
 AtomicString AudioTrack::defaultKind() const

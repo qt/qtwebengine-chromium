@@ -27,31 +27,26 @@
 #define PositionIterator_h
 
 #include "core/dom/Node.h"
-#include "core/dom/NodeTraversal.h"
-#include "core/dom/Position.h"
+#include "core/editing/EditingStrategy.h"
+#include "core/editing/htmlediting.h"
+#include "core/html/HTMLHtmlElement.h"
+#include "core/layout/LayoutBlock.h"
 
 namespace blink {
 
 // A Position iterator with constant-time
 // increment, decrement, and several predicates on the Position it is at.
 // Conversion to/from Position is O(n) in the offset.
-class PositionIterator {
+template <typename Strategy>
+class PositionIteratorAlgorithm {
     STACK_ALLOCATED();
 public:
-    PositionIterator()
-        : m_anchorNode(nullptr)
-        , m_nodeAfterPositionInAnchor(nullptr)
-        , m_offsetInAnchor(0)
-    {
-    }
+    using PositionType = typename Strategy::PositionType;
 
-    PositionIterator(const Position& pos)
-        : m_anchorNode(pos.anchorNode())
-        , m_nodeAfterPositionInAnchor(NodeTraversal::childAt(*m_anchorNode, pos.deprecatedEditingOffset()))
-        , m_offsetInAnchor(m_nodeAfterPositionInAnchor ? 0 : pos.deprecatedEditingOffset())
-    {
-    }
-    operator Position() const;
+    explicit PositionIteratorAlgorithm(const PositionType&);
+    PositionIteratorAlgorithm();
+
+    operator PositionType() const;
 
     void increment();
     void decrement();
@@ -66,10 +61,18 @@ public:
     bool isCandidate() const;
 
 private:
+    PositionIteratorAlgorithm(Node* anchorNode, int offsetInAnchorNode);
+
     RawPtrWillBeMember<Node> m_anchorNode;
-    RawPtrWillBeMember<Node> m_nodeAfterPositionInAnchor; // If this is non-null, m_nodeAfterPositionInAnchor->parentNode() == m_anchorNode;
+    RawPtrWillBeMember<Node> m_nodeAfterPositionInAnchor; // If this is non-null, Strategy::parent(*m_nodeAfterPositionInAnchor) == m_anchorNode;
     int m_offsetInAnchor;
 };
+
+extern template class PositionIteratorAlgorithm<EditingStrategy>;
+extern template class PositionIteratorAlgorithm<EditingInComposedTreeStrategy>;
+
+using PositionIterator = PositionIteratorAlgorithm<EditingStrategy>;
+using PositionIteratorInComposedTree = PositionIteratorAlgorithm<EditingInComposedTreeStrategy>;
 
 } // namespace blink
 

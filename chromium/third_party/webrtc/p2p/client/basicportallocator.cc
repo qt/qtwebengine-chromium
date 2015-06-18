@@ -385,7 +385,16 @@ void BasicPortAllocatorSession::OnAllocate() {
 void BasicPortAllocatorSession::DoAllocate() {
   bool done_signal_needed = false;
   std::vector<rtc::Network*> networks;
-  allocator_->network_manager()->GetNetworks(&networks);
+
+  // If the adapter enumeration is disabled, we'll just bind to any address
+  // instead of specific NIC. This is to ensure the same routing for http
+  // traffic by OS is also used here to avoid any local or public IP leakage
+  // during stun process.
+  if (flags() & PORTALLOCATOR_DISABLE_ADAPTER_ENUMERATION) {
+    allocator_->network_manager()->GetAnyAddressNetworks(&networks);
+  } else {
+    allocator_->network_manager()->GetNetworks(&networks);
+  }
   if (networks.empty()) {
     LOG(LS_WARNING) << "Machine has no networks; no ports will be allocated";
     done_signal_needed = true;
@@ -403,22 +412,13 @@ void BasicPortAllocatorSession::DoAllocate() {
         break;
       }
 
-      // Disables phases that are not specified in this config.
-      if (!config || config->StunServers().empty()) {
-        // No STUN ports specified in this config.
-        sequence_flags |= PORTALLOCATOR_DISABLE_STUN;
-      }
       if (!config || config->relays.empty()) {
         // No relay ports specified in this config.
         sequence_flags |= PORTALLOCATOR_DISABLE_RELAY;
       }
 
       if (!(sequence_flags & PORTALLOCATOR_ENABLE_IPV6) &&
-#ifdef USE_WEBRTC_DEV_BRANCH
           networks[i]->GetBestIP().family() == AF_INET6) {
-#else  // USE_WEBRTC_DEV_BRANCH
-          networks[i]->ip().family() == AF_INET6) {
-#endif  // USE_WEBRTC_DEV_BRANCH
         // Skip IPv6 networks unless the flag's been set.
         continue;
       }
@@ -481,7 +481,14 @@ void BasicPortAllocatorSession::AddAllocatedPort(Port* port,
       PORTALLOCATOR_ENABLE_STUN_RETRANSMIT_ATTRIBUTE) != 0);
 
   // Push down the candidate_filter to individual port.
-  port->set_candidate_filter(allocator_->candidate_filter());
+  uint32 candidate_filter = allocator_->candidate_filter();
+
+  // When adapter enumeration is disabled, disable CF_HOST at port level so
+  // local address is not leaked by stunport in the candidate's related address.
+  if (flags() & PORTALLOCATOR_DISABLE_ADAPTER_ENUMERATION) {
+    candidate_filter &= ~CF_HOST;
+  }
+  port->set_candidate_filter(candidate_filter);
 
   PortData data(port, seq);
   ports_.push_back(data);
@@ -599,27 +606,44 @@ void BasicPortAllocatorSession::OnProtocolEnabled(AllocationSequence* seq,
 
 bool BasicPortAllocatorSession::CheckCandidateFilter(const Candidate& c) {
   uint32 filter = allocator_->candidate_filter();
-  bool allowed = false;
-  if (filter & CF_RELAY) {
-    allowed |= (c.type() == RELAY_PORT_TYPE);
+
+  // When binding to any address, before sending packets out, the getsockname
+  // returns all 0s, but after sending packets, it'll be the NIC used to
+  // send. All 0s is not a valid ICE candidate address and should be filtered
+  // out.
+  if (c.address().IsAnyIP()) {
+    return false;
   }
 
-  if (filter & CF_REFLEXIVE) {
-    // We allow host candidates if the filter allows server-reflexive candidates
-    // and the candidate is a public IP. Because we don't generate
-    // server-reflexive candidates if they have the same IP as the host
-    // candidate (i.e. when the host candidate is a public IP), filtering to
-    // only server-reflexive candidates won't work right when the host
-    // candidates have public IPs.
-    allowed |= (c.type() == STUN_PORT_TYPE) ||
-               (c.type() == LOCAL_PORT_TYPE && !c.address().IsPrivateIP());
-  }
+  if (c.type() == RELAY_PORT_TYPE) {
+    return ((filter & CF_RELAY) != 0);
+  } else if (c.type() == STUN_PORT_TYPE) {
+    return ((filter & CF_REFLEXIVE) != 0);
+  } else if (c.type() == LOCAL_PORT_TYPE) {
+    if ((filter & CF_REFLEXIVE) && !c.address().IsPrivateIP()) {
+      // We allow host candidates if the filter allows server-reflexive
+      // candidates and the candidate is a public IP. Because we don't generate
+      // server-reflexive candidates if they have the same IP as the host
+      // candidate (i.e. when the host candidate is a public IP), filtering to
+      // only server-reflexive candidates won't work right when the host
+      // candidates have public IPs.
+      return true;
+    }
 
-  if (filter & CF_HOST) {
-    allowed |= (c.type() == LOCAL_PORT_TYPE);
-  }
+    // This is just to prevent the case when binding to any address (all 0s), if
+    // somehow the host candidate address is not all 0s. Either because local
+    // installed proxy changes the address or a packet has been sent for any
+    // reason before getsockname is called.
+    if (flags() & PORTALLOCATOR_DISABLE_ADAPTER_ENUMERATION) {
+      LOG(LS_WARNING) << "Received non-0 host address: "
+                      << c.address().ToString()
+                      << " when adapter enumeration is disabled";
+      return false;
+    }
 
-  return allowed;
+    return ((filter & CF_HOST) != 0);
+  }
+  return false;
 }
 
 void BasicPortAllocatorSession::OnPortAllocationComplete(
@@ -718,12 +742,7 @@ AllocationSequence::AllocationSequence(BasicPortAllocatorSession* session,
                                        uint32 flags)
     : session_(session),
       network_(network),
-
-#ifdef USE_WEBRTC_DEV_BRANCH
       ip_(network->GetBestIP()),
-#else  // USE_WEBRTC_DEV_BRANCH
-      ip_(network->ip()),
-#endif  // USE_WEBRTC_DEV_BRANCH
       config_(config),
       state_(kInit),
       flags_(flags),
@@ -766,11 +785,7 @@ AllocationSequence::~AllocationSequence() {
 
 void AllocationSequence::DisableEquivalentPhases(rtc::Network* network,
     PortConfiguration* config, uint32* flags) {
-#ifdef USE_WEBRTC_DEV_BRANCH
   if (!((network == network_) && (ip_ == network->GetBestIP()))) {
-#else  // USE_WEBRTC_DEV_BRANCH
-  if (!((network == network_) && (ip_ == network->ip()))) {
-#endif  // USE_WEBRTC_DEV_BRANCH
     // Different network setup; nothing is equivalent.
     return;
   }
@@ -889,14 +904,16 @@ void AllocationSequence::CreateUDPPorts() {
     port = UDPPort::Create(session_->network_thread(),
                            session_->socket_factory(), network_,
                            udp_socket_.get(),
-                           session_->username(), session_->password());
+                           session_->username(), session_->password(),
+                           session_->allocator()->origin());
   } else {
     port = UDPPort::Create(session_->network_thread(),
                            session_->socket_factory(),
                            network_, ip_,
                            session_->allocator()->min_port(),
                            session_->allocator()->max_port(),
-                           session_->username(), session_->password());
+                           session_->username(), session_->password(),
+                           session_->allocator()->origin());
   }
 
   if (port) {
@@ -904,6 +921,7 @@ void AllocationSequence::CreateUDPPorts() {
     // UDPPort.
     if (IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET)) {
       udp_port_ = port;
+      port->SignalDestroyed.connect(this, &AllocationSequence::OnPortDestroyed);
 
       // If STUN is not disabled, setting stun server address to port.
       if (!IsFlagSet(PORTALLOCATOR_DISABLE_STUN)) {
@@ -924,7 +942,6 @@ void AllocationSequence::CreateUDPPorts() {
     }
 
     session_->AddAllocatedPort(port, this, true);
-    port->SignalDestroyed.connect(this, &AllocationSequence::OnPortDestroyed);
   }
 }
 
@@ -958,9 +975,6 @@ void AllocationSequence::CreateStunPorts() {
     return;
   }
 
-  // If BasicPortAllocatorSession::OnAllocate left STUN ports enabled then we
-  // ought to have an address for them here.
-  ASSERT(config_ && !config_->StunServers().empty());
   if (!(config_ && !config_->StunServers().empty())) {
     LOG(LS_WARNING)
         << "AllocationSequence: No STUN server configured, skipping.";
@@ -973,7 +987,8 @@ void AllocationSequence::CreateStunPorts() {
                                 session_->allocator()->min_port(),
                                 session_->allocator()->max_port(),
                                 session_->username(), session_->password(),
-                                config_->StunServers());
+                                config_->StunServers(),
+                                session_->allocator()->origin());
   if (port) {
     session_->AddAllocatedPort(port, this, true);
     // Since StunPort is not created using shared socket, |port| will not be
@@ -1055,8 +1070,8 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
                               session_->socket_factory(),
                               network_, udp_socket_.get(),
                               session_->username(), session_->password(),
-                              *relay_port, config.credentials, config.priority);
-
+                              *relay_port, config.credentials, config.priority,
+                              session_->allocator()->origin());
       turn_ports_.push_back(port);
       // Listen to the port destroyed signal, to allow AllocationSequence to
       // remove entrt from it's map.
@@ -1069,7 +1084,8 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config) {
                               session_->allocator()->max_port(),
                               session_->username(),
                               session_->password(),
-                              *relay_port, config.credentials, config.priority);
+                              *relay_port, config.credentials, config.priority,
+                              session_->allocator()->origin());
     }
     ASSERT(port != NULL);
     session_->AddAllocatedPort(port, this, true);
@@ -1119,7 +1135,13 @@ void AllocationSequence::OnPortDestroyed(PortInterface* port) {
     return;
   }
 
-  turn_ports_.erase(std::find(turn_ports_.begin(), turn_ports_.end(), port));
+  auto it = std::find(turn_ports_.begin(), turn_ports_.end(), port);
+  if (it != turn_ports_.end()) {
+    turn_ports_.erase(it);
+  } else {
+    LOG(LS_ERROR) << "Unexpected OnPortDestroyed for nonexistent port.";
+    ASSERT(false);
+  }
 }
 
 // PortConfiguration

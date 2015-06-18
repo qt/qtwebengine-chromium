@@ -8,91 +8,82 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/media_export.h"
-#include "media/blink/encrypted_media_player_support.h"
+#include "media/filters/context_3d.h"
 
 namespace base {
 class SingleThreadTaskRunner;
 }
 
 namespace blink {
+class WebContentDecryptionModule;
 class WebMediaPlayerClient;
 }
 
 namespace media {
-class AudioHardwareConfig;
+
 class AudioRendererSink;
-class GpuVideoAcceleratorFactories;
 class MediaLog;
+class MediaPermission;
 
 // Holds parameters for constructing WebMediaPlayerImpl without having
 // to plumb arguments through various abstraction layers.
 class MEDIA_EXPORT WebMediaPlayerParams {
  public:
-  // Callback used to create EncryptedMediaPlayerSupport instances. This
-  // callback must always return a valid EncryptedMediaPlayerSupport object.
-  typedef base::Callback<scoped_ptr<EncryptedMediaPlayerSupport>(
-      blink::WebMediaPlayerClient*)> EncryptedMediaPlayerSupportCreateCB;
   typedef base::Callback<void(const base::Closure&)> DeferLoadCB;
+  typedef base::Callback<Context3D()> Context3DCB;
 
-  // |defer_load_cb|, |audio_renderer_sink|, and |compositor_task_runner| may be
-  // null.
+  // |defer_load_cb|, |audio_renderer_sink|, |compositor_task_runner|, and
+  // |context_3d_cb| may be null.
   WebMediaPlayerParams(
       const DeferLoadCB& defer_load_cb,
       const scoped_refptr<AudioRendererSink>& audio_renderer_sink,
-      const AudioHardwareConfig& audio_hardware_config,
       const scoped_refptr<MediaLog>& media_log,
-      const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
       const scoped_refptr<base::SingleThreadTaskRunner>& media_task_runner,
       const scoped_refptr<base::SingleThreadTaskRunner>& compositor_task_runner,
-      const EncryptedMediaPlayerSupportCreateCB&
-          encrypted_media_player_support_cb,
+      const Context3DCB& context_3d,
+      MediaPermission* media_permission,
       blink::WebContentDecryptionModule* initial_cdm);
 
   ~WebMediaPlayerParams();
 
-  base::Callback<void(const base::Closure&)> defer_load_cb() const {
-    return defer_load_cb_;
-  }
+  DeferLoadCB defer_load_cb() const { return defer_load_cb_; }
 
   const scoped_refptr<AudioRendererSink>& audio_renderer_sink() const {
     return audio_renderer_sink_;
-  }
-
-  const AudioHardwareConfig& audio_hardware_config() const {
-    return audio_hardware_config_;
   }
 
   const scoped_refptr<MediaLog>& media_log() const {
     return media_log_;
   }
 
-  const scoped_refptr<GpuVideoAcceleratorFactories>&
-  gpu_factories() const {
-    return gpu_factories_;
-  }
-
-  const scoped_refptr<base::SingleThreadTaskRunner>&
-  media_task_runner() const {
+  const scoped_refptr<base::SingleThreadTaskRunner>& media_task_runner() const {
     return media_task_runner_;
   }
 
-  const scoped_refptr<base::SingleThreadTaskRunner>&
-  compositor_task_runner() const {
+  const scoped_refptr<base::SingleThreadTaskRunner>& compositor_task_runner()
+      const {
     return compositor_task_runner_;
   }
 
-  scoped_ptr<EncryptedMediaPlayerSupport>
-  CreateEncryptedMediaPlayerSupport(blink::WebMediaPlayerClient* client) const;
+  Context3DCB context_3d_cb() const { return context_3d_cb_; }
+
+  MediaPermission* media_permission() const { return media_permission_; }
+
+  blink::WebContentDecryptionModule* initial_cdm() const {
+    return initial_cdm_;
+  }
+
 
  private:
-  base::Callback<void(const base::Closure&)> defer_load_cb_;
+  DeferLoadCB defer_load_cb_;
   scoped_refptr<AudioRendererSink> audio_renderer_sink_;
-  const AudioHardwareConfig& audio_hardware_config_;
   scoped_refptr<MediaLog> media_log_;
-  scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories_;
   scoped_refptr<base::SingleThreadTaskRunner> media_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
-  EncryptedMediaPlayerSupportCreateCB encrypted_media_player_support_cb_;
+  Context3DCB context_3d_cb_;
+
+  // TODO(xhwang): Remove after prefixed EME API support is removed.
+  MediaPermission* media_permission_;
   blink::WebContentDecryptionModule* initial_cdm_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebMediaPlayerParams);

@@ -10,15 +10,19 @@
 
 #include <stddef.h>
 
+#include "base/atomic_ref_count.h"
 #include "base/base_export.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/template_util.h"
 
 template <typename T>
 class ScopedVector;
 
 namespace base {
 namespace internal {
+class CallbackBase;
 
 // BindStateBase is used to provide an opaque handle that the Callback
 // class can use to represent a function object with bound arguments.  It
@@ -26,16 +30,39 @@ namespace internal {
 // DoInvoke function to perform the function execution.  This allows
 // us to shield the Callback class from the types of the bound argument via
 // "type erasure."
-class BindStateBase : public RefCountedThreadSafe<BindStateBase> {
+// At the base level, the only task is to add reference counting data. Don't use
+// RefCountedThreadSafe since it requires the destructor to be a virtual method.
+// Creating a vtable for every BindState template instantiation results in a lot
+// of bloat. Its only task is to call the destructor which can be done with a
+// function pointer.
+class BindStateBase {
  protected:
-  friend class RefCountedThreadSafe<BindStateBase>;
-  virtual ~BindStateBase() {}
+  explicit BindStateBase(void (*destructor)(BindStateBase*))
+      : ref_count_(0), destructor_(destructor) {}
+  ~BindStateBase() = default;
+
+ private:
+  friend class scoped_refptr<BindStateBase>;
+  friend class CallbackBase;
+
+  void AddRef();
+  void Release();
+
+  AtomicRefCount ref_count_;
+
+  // Pointer to a function that will properly destroy |this|.
+  void (*destructor_)(BindStateBase*);
+
+  DISALLOW_COPY_AND_ASSIGN(BindStateBase);
 };
 
 // Holds the Callback methods that don't require specialization to reduce
 // template bloat.
 class BASE_EXPORT CallbackBase {
  public:
+  CallbackBase(const CallbackBase& c);
+  CallbackBase& operator=(const CallbackBase& c);
+
   // Returns true if Callback is null (doesn't refer to anything).
   bool is_null() const { return bind_state_.get() == NULL; }
 
@@ -81,6 +108,28 @@ template <typename T> struct IsMoveOnlyType {
                             !is_const<T>::value;
 };
 
+// Returns |Then| as SelectType::Type if |condition| is true. Otherwise returns
+// |Else|.
+template <bool condition, typename Then, typename Else>
+struct SelectType {
+  typedef Then Type;
+};
+
+template <typename Then, typename Else>
+struct SelectType<false, Then, Else> {
+  typedef Else Type;
+};
+
+template <typename>
+struct CallbackParamTraitsForMoveOnlyType;
+
+template <typename>
+struct CallbackParamTraitsForNonMoveOnlyType;
+
+// TODO(tzik): Use a default parameter once MSVS supports variadic templates
+// with default values.
+// http://connect.microsoft.com/VisualStudio/feedbackdetail/view/957801/compilation-error-with-variadic-templates
+//
 // This is a typetraits object that's used to take an argument type, and
 // extract a suitable type for storing and forwarding arguments.
 //
@@ -92,8 +141,15 @@ template <typename T> struct IsMoveOnlyType {
 // parameters by const reference. In this case, we end up passing an actual
 // array type in the initializer list which C++ does not allow.  This will
 // break passing of C-string literals.
-template <typename T, bool is_move_only = IsMoveOnlyType<T>::value>
-struct CallbackParamTraits {
+template <typename T>
+struct CallbackParamTraits
+    : SelectType<IsMoveOnlyType<T>::value,
+         CallbackParamTraitsForMoveOnlyType<T>,
+         CallbackParamTraitsForNonMoveOnlyType<T> >::Type {
+};
+
+template <typename T>
+struct CallbackParamTraitsForNonMoveOnlyType {
   typedef const T& ForwardType;
   typedef T StorageType;
 };
@@ -104,7 +160,7 @@ struct CallbackParamTraits {
 //
 // The ForwardType should only be used for unbound arguments.
 template <typename T>
-struct CallbackParamTraits<T&, false> {
+struct CallbackParamTraitsForNonMoveOnlyType<T&> {
   typedef T& ForwardType;
   typedef T StorageType;
 };
@@ -115,14 +171,14 @@ struct CallbackParamTraits<T&, false> {
 // T[n]" does not seem to match correctly, so we are stuck with this
 // restriction.
 template <typename T, size_t n>
-struct CallbackParamTraits<T[n], false> {
+struct CallbackParamTraitsForNonMoveOnlyType<T[n]> {
   typedef const T* ForwardType;
   typedef const T* StorageType;
 };
 
 // See comment for CallbackParamTraits<T[n]>.
 template <typename T>
-struct CallbackParamTraits<T[], false> {
+struct CallbackParamTraitsForNonMoveOnlyType<T[]> {
   typedef const T* ForwardType;
   typedef const T* StorageType;
 };
@@ -141,7 +197,7 @@ struct CallbackParamTraits<T[], false> {
 // reference cannot be used with temporaries which means the result of a
 // function or a cast would not be usable with Callback<> or Bind().
 template <typename T>
-struct CallbackParamTraits<T, true> {
+struct CallbackParamTraitsForMoveOnlyType {
   typedef T ForwardType;
   typedef T StorageType;
 };

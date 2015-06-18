@@ -95,6 +95,25 @@ class GCM_EXPORT GCMStoreImpl : public GCMStore {
   void SetLastTokenFetchTime(const base::Time& time,
                              const UpdateCallback& callback) override;
 
+  // Sets the custom client heartbeat interval for the scope.
+  void AddHeartbeatInterval(const std::string& scope,
+                            int interval_ms,
+                            const UpdateCallback& callback) override;
+  void RemoveHeartbeatInterval(const std::string& scope,
+                               const UpdateCallback& callback) override;
+
+  // Instance ID data.
+  void AddInstanceIDData(const std::string& app_id,
+                         const std::string& instance_id_data,
+                         const UpdateCallback& callback) override;
+  void RemoveInstanceIDData(const std::string& app_id,
+                            const UpdateCallback& callback) override;
+
+  // Injects a value to database. Only to be used for testing.
+  void SetValueForTesting(const std::string& key,
+                          const std::string& value,
+                          const UpdateCallback& callback);
+
  private:
   typedef std::map<std::string, int> AppIdToMessageCountMap;
 

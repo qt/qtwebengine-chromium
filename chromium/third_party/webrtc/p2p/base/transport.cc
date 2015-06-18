@@ -12,12 +12,8 @@
 
 #include "webrtc/p2p/base/candidate.h"
 #include "webrtc/p2p/base/constants.h"
-#include "webrtc/p2p/base/parsing.h"
 #include "webrtc/p2p/base/port.h"
-#include "webrtc/p2p/base/sessionmanager.h"
 #include "webrtc/p2p/base/transportchannelimpl.h"
-#include "webrtc/libjingle/xmllite/xmlelement.h"
-#include "webrtc/libjingle/xmpp/constants.h"
 #include "webrtc/base/bind.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
@@ -201,21 +197,29 @@ TransportChannelImpl* Transport::CreateChannel(int component) {
 
 TransportChannelImpl* Transport::CreateChannel_w(int component) {
   ASSERT(worker_thread()->IsCurrent());
-  TransportChannelImpl *impl;
+  TransportChannelImpl* impl;
+  // TODO(tommi): We don't really need to grab the lock until the actual call
+  // to insert() below and presumably hold it throughout initialization of
+  // |impl| after the impl_exists check.  Maybe we can factor that out to
+  // a separate function and not grab the lock in this function.
+  // Actually, we probably don't need to hold the lock while initializing
+  // |impl| since we can just do the insert when that's done.
   rtc::CritScope cs(&crit_);
 
   // Create the entry if it does not exist.
   bool impl_exists = false;
-  if (channels_.find(component) == channels_.end()) {
+  auto iterator = channels_.find(component);
+  if (iterator == channels_.end()) {
     impl = CreateTransportChannel(component);
-    channels_[component] = ChannelMapEntry(impl);
+    iterator = channels_.insert(std::pair<int, ChannelMapEntry>(
+        component, ChannelMapEntry(impl))).first;
   } else {
-    impl = channels_[component].get();
+    impl = iterator->second.get();
     impl_exists = true;
   }
 
   // Increase the ref count.
-  channels_[component].AddRef();
+  iterator->second.AddRef();
   destroyed_ = false;
 
   if (impl_exists) {
@@ -260,6 +264,11 @@ TransportChannelImpl* Transport::CreateChannel_w(int component) {
 }
 
 TransportChannelImpl* Transport::GetChannel(int component) {
+  // TODO(tommi,pthatcher): Since we're returning a pointer from the channels_
+  // map, shouldn't we assume that we're on the worker thread? (The pointer
+  // will be used outside of the lock).
+  // And if we're on the worker thread, which is the only thread that modifies
+  // channels_, can we skip grabbing the lock?
   rtc::CritScope cs(&crit_);
   ChannelMap::iterator iter = channels_.find(component);
   return (iter != channels_.end()) ? iter->second.get() : NULL;
@@ -278,18 +287,17 @@ void Transport::DestroyChannel(int component) {
 void Transport::DestroyChannel_w(int component) {
   ASSERT(worker_thread()->IsCurrent());
 
-  TransportChannelImpl* impl = NULL;
-  {
-    rtc::CritScope cs(&crit_);
-    ChannelMap::iterator iter = channels_.find(component);
-    if (iter == channels_.end())
-      return;
+  ChannelMap::iterator iter = channels_.find(component);
+  if (iter == channels_.end())
+    return;
 
-    iter->second.DecRef();
-    if (!iter->second.ref()) {
-      impl = iter->second.get();
-      channels_.erase(iter);
-    }
+  TransportChannelImpl* impl = NULL;
+
+  iter->second.DecRef();
+  if (!iter->second.ref()) {
+    impl = iter->second.get();
+    rtc::CritScope cs(&crit_);
+    channels_.erase(iter);
   }
 
   if (connect_requested_ && channels_.empty()) {
@@ -313,9 +321,9 @@ void Transport::ConnectChannels_w() {
   ASSERT(worker_thread()->IsCurrent());
   if (connect_requested_ || channels_.empty())
     return;
+
   connect_requested_ = true;
-  signaling_thread()->Post(
-      this, MSG_CANDIDATEREADY, NULL);
+  signaling_thread()->Post(this, MSG_CANDIDATEREADY, NULL);
 
   if (!local_description_) {
     // TOOD(mallinath) : TransportDescription(TD) shouldn't be generated here.
@@ -347,8 +355,7 @@ void Transport::OnConnecting_s() {
 
 void Transport::DestroyAllChannels() {
   ASSERT(signaling_thread()->IsCurrent());
-  worker_thread_->Invoke<void>(
-      Bind(&Transport::DestroyAllChannels_w, this));
+  worker_thread_->Invoke<void>(Bind(&Transport::DestroyAllChannels_w, this));
   worker_thread()->Clear(this);
   signaling_thread()->Clear(this);
   destroyed_ = true;
@@ -356,41 +363,21 @@ void Transport::DestroyAllChannels() {
 
 void Transport::DestroyAllChannels_w() {
   ASSERT(worker_thread()->IsCurrent());
+
   std::vector<TransportChannelImpl*> impls;
+  for (auto& iter : channels_) {
+    iter.second.DecRef();
+    if (!iter.second.ref())
+      impls.push_back(iter.second.get());
+  }
+
   {
     rtc::CritScope cs(&crit_);
-    for (ChannelMap::iterator iter = channels_.begin();
-         iter != channels_.end();
-         ++iter) {
-      iter->second.DecRef();
-      if (!iter->second.ref())
-        impls.push_back(iter->second.get());
-      }
-    }
-  channels_.clear();
-
+    channels_.clear();
+  }
 
   for (size_t i = 0; i < impls.size(); ++i)
     DestroyTransportChannel(impls[i]);
-}
-
-void Transport::ResetChannels() {
-  ASSERT(signaling_thread()->IsCurrent());
-  worker_thread_->Invoke<void>(Bind(&Transport::ResetChannels_w, this));
-}
-
-void Transport::ResetChannels_w() {
-  ASSERT(worker_thread()->IsCurrent());
-
-  // We are no longer attempting to connect
-  connect_requested_ = false;
-
-  // Clear out the old messages, they aren't relevant
-  rtc::CritScope cs(&crit_);
-  ready_candidates_.clear();
-
-  // Reset all of the channels
-  CallChannels_w(&TransportChannelImpl::Reset);
 }
 
 void Transport::OnSignalingReady() {
@@ -405,11 +392,8 @@ void Transport::OnSignalingReady() {
 
 void Transport::CallChannels_w(TransportChannelFunc func) {
   ASSERT(worker_thread()->IsCurrent());
-  rtc::CritScope cs(&crit_);
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end();
-       ++iter) {
-    ((iter->second.get())->*func)();
+  for (const auto& iter : channels_) {
+    ((iter.second.get())->*func)();
   }
 }
 
@@ -455,12 +439,13 @@ bool Transport::GetStats_w(TransportStats* stats) {
   ASSERT(worker_thread()->IsCurrent());
   stats->content_name = content_name();
   stats->channel_stats.clear();
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end();
-       ++iter) {
+  for (auto iter : channels_) {
+    ChannelMapEntry& entry = iter.second;
     TransportChannelStats substats;
-    substats.component = iter->second->component();
-    if (!iter->second->GetStats(&substats.connection_infos)) {
+    substats.component = entry->component();
+    entry->GetSrtpCipher(&substats.srtp_cipher);
+    entry->GetSslCipher(&substats.ssl_cipher);
+    if (!entry->GetStats(&substats.connection_infos)) {
       return false;
     }
     stats->channel_stats.push_back(substats);
@@ -537,47 +522,49 @@ void Transport::OnChannelWritableState_s() {
 
 TransportState Transport::GetTransportState_s(bool read) {
   ASSERT(signaling_thread()->IsCurrent());
+
   rtc::CritScope cs(&crit_);
   bool any = false;
   bool all = !channels_.empty();
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end();
-       ++iter) {
-    bool b = (read ? iter->second->readable() :
-      iter->second->writable());
-    any = any || b;
-    all = all && b;
+  for (const auto iter : channels_) {
+    bool b = (read ? iter.second->readable() :
+                     iter.second->writable());
+    any |= b;
+    all &=  b;
   }
+
   if (all) {
     return TRANSPORT_STATE_ALL;
   } else if (any) {
     return TRANSPORT_STATE_SOME;
-  } else {
-    return TRANSPORT_STATE_NONE;
   }
+
+  return TRANSPORT_STATE_NONE;
 }
 
 void Transport::OnChannelRequestSignaling(TransportChannelImpl* channel) {
   ASSERT(worker_thread()->IsCurrent());
-  ChannelParams* params = new ChannelParams(channel->component());
-  signaling_thread()->Post(this, MSG_REQUESTSIGNALING, params);
+  // Resetting ICE state for the channel.
+  ChannelMap::iterator iter = channels_.find(channel->component());
+  if (iter != channels_.end())
+    iter->second.set_candidates_allocated(false);
+  signaling_thread()->Post(this, MSG_REQUESTSIGNALING, nullptr);
 }
 
-void Transport::OnChannelRequestSignaling_s(int component) {
+void Transport::OnChannelRequestSignaling_s() {
   ASSERT(signaling_thread()->IsCurrent());
   LOG(LS_INFO) << "Transport: " << content_name_ << ", allocating candidates";
-  // Resetting ICE state for the channel.
-  {
-    rtc::CritScope cs(&crit_);
-    ChannelMap::iterator iter = channels_.find(component);
-    if (iter != channels_.end())
-      iter->second.set_candidates_allocated(false);
-  }
   SignalRequestSignaling(this);
 }
 
 void Transport::OnChannelCandidateReady(TransportChannelImpl* channel,
                                         const Candidate& candidate) {
+  // We should never signal peer-reflexive candidates.
+  if (candidate.type() == PRFLX_PORT_TYPE) {
+    ASSERT(false);
+    return;
+  }
+
   ASSERT(worker_thread()->IsCurrent());
   rtc::CritScope cs(&crit_);
   ready_candidates_.push_back(candidate);
@@ -623,18 +610,18 @@ void Transport::OnChannelRouteChange_s(const TransportChannel* channel,
 void Transport::OnChannelCandidatesAllocationDone(
     TransportChannelImpl* channel) {
   ASSERT(worker_thread()->IsCurrent());
-  rtc::CritScope cs(&crit_);
   ChannelMap::iterator iter = channels_.find(channel->component());
   ASSERT(iter != channels_.end());
   LOG(LS_INFO) << "Transport: " << content_name_ << ", component "
                << channel->component() << " allocation complete";
+
   iter->second.set_candidates_allocated(true);
 
   // If all channels belonging to this Transport got signal, then
   // forward this signal to upper layer.
   // Can this signal arrive before all transport channels are created?
-  for (iter = channels_.begin(); iter != channels_.end(); ++iter) {
-    if (!iter->second.candidates_allocated())
+  for (auto& iter : channels_) {
+    if (!iter.second.candidates_allocated())
       return;
   }
   signaling_thread_->Post(this, MSG_CANDIDATEALLOCATIONCOMPLETE);
@@ -669,8 +656,7 @@ void Transport::OnChannelConnectionRemoved(TransportChannelImpl* channel) {
     return;
   }
 
-  size_t connections = channel->GetConnectionCount();
-  if (connections == 0) {
+  if (channel->GetState() == TransportChannelState::STATE_FAILED) {
     // A Transport has failed if any of its channels have no remaining
     // connections.
     signaling_thread_->Post(this, MSG_FAILED);
@@ -680,16 +666,21 @@ void Transport::OnChannelConnectionRemoved(TransportChannelImpl* channel) {
 void Transport::MaybeCompleted_w() {
   ASSERT(worker_thread()->IsCurrent());
 
+  // When there is no channel created yet, calling this function could fire an
+  // IceConnectionCompleted event prematurely.
+  if (channels_.empty()) {
+    return;
+  }
+
   // A Transport's ICE process is completed if all of its channels are writable,
   // have finished allocating candidates, and have pruned all but one of their
   // connections.
-  ChannelMap::const_iterator iter;
-  for (iter = channels_.begin(); iter != channels_.end(); ++iter) {
-    const TransportChannelImpl* channel = iter->second.get();
+  for (const auto& iter : channels_) {
+    const TransportChannelImpl* channel = iter.second.get();
     if (!(channel->writable() &&
-          channel->GetConnectionCount() == 1 &&
+          channel->GetState() == TransportChannelState::STATE_COMPLETED &&
           channel->GetIceRole() == ICEROLE_CONTROLLING &&
-          iter->second.candidates_allocated())) {
+          iter.second.candidates_allocated())) {
       return;
     }
   }
@@ -698,21 +689,20 @@ void Transport::MaybeCompleted_w() {
 }
 
 void Transport::SetIceRole_w(IceRole role) {
+  ASSERT(worker_thread()->IsCurrent());
   rtc::CritScope cs(&crit_);
   ice_role_ = role;
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end(); ++iter) {
-    iter->second->SetIceRole(ice_role_);
+  for (auto& iter : channels_) {
+    iter.second->SetIceRole(ice_role_);
   }
 }
 
 void Transport::SetRemoteIceMode_w(IceMode mode) {
-  rtc::CritScope cs(&crit_);
+  ASSERT(worker_thread()->IsCurrent());
   remote_ice_mode_ = mode;
   // Shouldn't channels be created after this method executed?
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end(); ++iter) {
-    iter->second->SetRemoteIceMode(remote_ice_mode_);
+  for (auto& iter : channels_) {
+    iter.second->SetRemoteIceMode(remote_ice_mode_);
   }
 }
 
@@ -720,14 +710,23 @@ bool Transport::SetLocalTransportDescription_w(
     const TransportDescription& desc,
     ContentAction action,
     std::string* error_desc) {
+  ASSERT(worker_thread()->IsCurrent());
   bool ret = true;
-  rtc::CritScope cs(&crit_);
 
   if (!VerifyIceParams(desc)) {
     return BadTransportDescription("Invalid ice-ufrag or ice-pwd length",
                                    error_desc);
   }
 
+  // TODO(tommi,pthatcher): I'm not sure why we need to grab this lock at this
+  // point. |local_description_| seems to always be modified on the worker
+  // thread, so we should be able to use it here without grabbing the lock.
+  // However, we _might_ need it before the call to reset() below?
+  // Raw access to |local_description_| is granted to derived transports outside
+  // of locking (see local_description() in the header file).
+  // The contract is that the derived implementations must be aware of when the
+  // description might change and do appropriate synchronization.
+  rtc::CritScope cs(&crit_);
   if (local_description_ && IceCredentialsChanged(*local_description_, desc)) {
     IceRole new_ice_role = (action == CA_OFFER) ? ICEROLE_CONTROLLING
                                                 : ICEROLE_CONTROLLED;
@@ -739,9 +738,8 @@ bool Transport::SetLocalTransportDescription_w(
 
   local_description_.reset(new TransportDescription(desc));
 
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end(); ++iter) {
-    ret &= ApplyLocalTransportDescription_w(iter->second.get(), error_desc);
+  for (auto& iter : channels_) {
+    ret &= ApplyLocalTransportDescription_w(iter.second.get(), error_desc);
   }
   if (!ret)
     return false;
@@ -758,17 +756,17 @@ bool Transport::SetRemoteTransportDescription_w(
     ContentAction action,
     std::string* error_desc) {
   bool ret = true;
-  rtc::CritScope cs(&crit_);
 
   if (!VerifyIceParams(desc)) {
     return BadTransportDescription("Invalid ice-ufrag or ice-pwd length",
                                    error_desc);
   }
 
+  // TODO(tommi,pthatcher): See todo for local_description_ above.
+  rtc::CritScope cs(&crit_);
   remote_description_.reset(new TransportDescription(desc));
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end(); ++iter) {
-    ret &= ApplyRemoteTransportDescription_w(iter->second.get(), error_desc);
+  for (auto& iter : channels_) {
+    ret &= ApplyRemoteTransportDescription_w(iter.second.get(), error_desc);
   }
 
   // If PRANSWER/ANSWER is set, we should decide transport protocol type.
@@ -780,6 +778,7 @@ bool Transport::SetRemoteTransportDescription_w(
 
 bool Transport::ApplyLocalTransportDescription_w(TransportChannelImpl* ch,
                                                  std::string* error_desc) {
+  ASSERT(worker_thread()->IsCurrent());
   // If existing protocol_type is HYBRID, we may have not chosen the final
   // protocol type, so update the channel protocol type from the
   // local description. Otherwise, skip updating the protocol type.
@@ -809,6 +808,7 @@ bool Transport::ApplyRemoteTransportDescription_w(TransportChannelImpl* ch,
 
 bool Transport::ApplyNegotiatedTransportDescription_w(
     TransportChannelImpl* channel, std::string* error_desc) {
+  ASSERT(worker_thread()->IsCurrent());
   channel->SetIceProtocolType(protocol_);
   channel->SetRemoteIceMode(remote_ice_mode_);
   return true;
@@ -816,6 +816,7 @@ bool Transport::ApplyNegotiatedTransportDescription_w(
 
 bool Transport::NegotiateTransportDescription_w(ContentAction local_role,
                                                 std::string* error_desc) {
+  ASSERT(worker_thread()->IsCurrent());
   // TODO(ekr@rtfm.com): This is ICE-specific stuff. Refactor into
   // P2PTransport.
   const TransportDescription* offer;
@@ -867,10 +868,8 @@ bool Transport::NegotiateTransportDescription_w(ContentAction local_role,
   // between future SetRemote/SetLocal invocations and new channel
   // creation, we have the negotiation state saved until a new
   // negotiation happens.
-  for (ChannelMap::iterator iter = channels_.begin();
-       iter != channels_.end();
-       ++iter) {
-    if (!ApplyNegotiatedTransportDescription_w(iter->second.get(), error_desc))
+  for (auto& iter : channels_) {
+    if (!ApplyNegotiatedTransportDescription_w(iter.second.get(), error_desc))
       return false;
   }
   return true;
@@ -896,11 +895,8 @@ void Transport::OnMessage(rtc::Message* msg) {
     case MSG_WRITESTATE:
       OnChannelWritableState_s();
       break;
-    case MSG_REQUESTSIGNALING: {
-        ChannelParams* params = static_cast<ChannelParams*>(msg->pdata);
-        OnChannelRequestSignaling_s(params->component);
-        delete params;
-      }
+    case MSG_REQUESTSIGNALING:
+      OnChannelRequestSignaling_s();
       break;
     case MSG_CANDIDATEREADY:
       OnChannelCandidateReady_s();
@@ -924,25 +920,6 @@ void Transport::OnMessage(rtc::Message* msg) {
       SignalFailed(this);
       break;
   }
-}
-
-bool TransportParser::ParseAddress(const buzz::XmlElement* elem,
-                                   const buzz::QName& address_name,
-                                   const buzz::QName& port_name,
-                                   rtc::SocketAddress* address,
-                                   ParseError* error) {
-  if (!elem->HasAttr(address_name))
-    return BadParse("address does not have " + address_name.LocalPart(), error);
-  if (!elem->HasAttr(port_name))
-    return BadParse("address does not have " + port_name.LocalPart(), error);
-
-  address->SetIP(elem->Attr(address_name));
-  std::istringstream ist(elem->Attr(port_name));
-  int port = 0;
-  ist >> port;
-  address->SetPort(port);
-
-  return true;
 }
 
 // We're GICE if the namespace is NS_GOOGLE_P2P, or if NS_JINGLE_ICE_UDP is

@@ -8,18 +8,16 @@
 
 #include "GrTest.h"
 
+#include "GrGpuResourceCacheAccess.h"
 #include "GrInOrderDrawBuffer.h"
 #include "GrResourceCache.h"
+#include "SkString.h"
 
 void GrTestTarget::init(GrContext* ctx, GrDrawTarget* target) {
     SkASSERT(!fContext);
 
     fContext.reset(SkRef(ctx));
     fDrawTarget.reset(SkRef(target));
-
-    SkNEW_IN_TLAZY(&fASR, GrDrawTarget::AutoStateRestore, (target, GrDrawTarget::kReset_ASRInit));
-    SkNEW_IN_TLAZY(&fACR, GrDrawTarget::AutoClipRestore, (target));
-    SkNEW_IN_TLAZY(&fAGP, GrDrawTarget::AutoGeometryPush, (target));
 }
 
 void GrContext::getTestTarget(GrTestTarget* tar) {
@@ -41,112 +39,211 @@ void GrContext::purgeAllUnlockedResources() {
     fResourceCache->purgeAllUnlocked();
 }
 
+void GrContext::dumpCacheStats(SkString* out) const {
+#if GR_CACHE_STATS
+    fResourceCache->dumpStats(out);
+#endif
+}
+
+void GrContext::printCacheStats() const {
+    SkString out;
+    this->dumpCacheStats(&out);
+    SkDebugf("%s", out.c_str());
+}
+
+void GrContext::dumpGpuStats(SkString* out) const {
+#if GR_GPU_STATS
+    return fGpu->stats()->dump(out);
+#endif
+}
+
+void GrContext::printGpuStats() const {
+    SkString out;
+    this->dumpGpuStats(&out);
+    SkDebugf("%s", out.c_str());
+}
+
+#if GR_GPU_STATS
+void GrGpu::Stats::dump(SkString* out) {
+    out->appendf("Render Target Binds: %d\n", fRenderTargetBinds);
+    out->appendf("Shader Compilations: %d\n", fShaderCompilations);
+    out->appendf("Textures Created: %d\n", fTextureCreates);
+    out->appendf("Texture Uploads: %d\n", fTextureUploads);
+    out->appendf("Stencil Buffer Creates: %d\n", fStencilAttachmentCreates);
+}
+#endif
+
+#if GR_CACHE_STATS
+void GrResourceCache::dumpStats(SkString* out) const {
+    this->validate();
+
+    int locked = fNonpurgeableResources.count();
+
+    struct Stats {
+        int fScratch;
+        int fWrapped;
+        size_t fUnbudgetedSize;
+
+        Stats() : fScratch(0), fWrapped(0), fUnbudgetedSize(0) {}
+
+        void update(GrGpuResource* resource) {
+            if (resource->cacheAccess().isScratch()) {
+                ++fScratch;
+            }
+            if (resource->cacheAccess().isWrapped()) {
+                ++fWrapped;
+            }
+            if (!resource->resourcePriv().isBudgeted()) {
+                fUnbudgetedSize += resource->gpuMemorySize();
+            }
+        }
+    };
+
+    Stats stats;
+
+    for (int i = 0; i < fNonpurgeableResources.count(); ++i) {
+        stats.update(fNonpurgeableResources[i]);
+    }
+    for (int i = 0; i < fPurgeableQueue.count(); ++i) {
+        stats.update(fPurgeableQueue.at(i));
+    }
+
+    float countUtilization = (100.f * fBudgetedCount) / fMaxCount;
+    float byteUtilization = (100.f * fBudgetedBytes) / fMaxBytes;
+
+    out->appendf("Budget: %d items %d bytes\n", fMaxCount, (int)fMaxBytes);
+    out->appendf("\t\tEntry Count: current %d"
+                 " (%d budgeted, %d wrapped, %d locked, %d scratch %.2g%% full), high %d\n",
+                 this->getResourceCount(), fBudgetedCount, stats.fWrapped, locked, stats.fScratch,
+                 countUtilization, fHighWaterCount);
+    out->appendf("\t\tEntry Bytes: current %d (budgeted %d, %.2g%% full, %d unbudgeted) high %d\n",
+                 SkToInt(fBytes), SkToInt(fBudgetedBytes), byteUtilization,
+                 SkToInt(stats.fUnbudgetedSize), SkToInt(fHighWaterBytes));
+}
+
+#endif
+
+///////////////////////////////////////////////////////////////////////////////
+
+void GrResourceCache::changeTimestamp(uint32_t newTimestamp) { fTimestamp = newTimestamp; }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Code for the mock context. It's built on a mock GrGpu class that does nothing.
 ////
 
-#include "GrBufferAllocPool.h"
 #include "GrInOrderDrawBuffer.h"
 #include "GrGpu.h"
+
+class GrPipeline;
 
 class MockGpu : public GrGpu {
 public:
     MockGpu(GrContext* context) : INHERITED(context) { fCaps.reset(SkNEW(GrDrawTargetCaps)); }
-    virtual ~MockGpu() { }
-    virtual bool canWriteTexturePixels(const GrTexture*,
-                                       GrPixelConfig srcConfig) const SK_OVERRIDE {
+    ~MockGpu() override {}
+    bool canWriteTexturePixels(const GrTexture*, GrPixelConfig srcConfig) const override {
         return true;
     }
 
-    virtual bool readPixelsWillPayForYFlip(GrRenderTarget* renderTarget,
-                                           int left, int top,
-                                           int width, int height,
-                                           GrPixelConfig config,
-                                           size_t rowBytes) const SK_OVERRIDE { return false; }
-    virtual void buildProgramDesc(const GrOptDrawState&,
-                                  const GrProgramDesc::DescInfo&,
-                                  GrGpu::DrawType,
-                                  const GrDeviceCoordTexture* dstCopy,
-                                  GrProgramDesc* desc) SK_OVERRIDE { }
+    bool readPixelsWillPayForYFlip(GrRenderTarget* renderTarget,
+                                   int left, int top,
+                                   int width, int height,
+                                   GrPixelConfig config,
+                                   size_t rowBytes) const override { return false; }
+    void buildProgramDesc(GrProgramDesc*,const GrPrimitiveProcessor&,
+                          const GrPipeline&,
+                          const GrBatchTracker&) const override {}
 
-    virtual void discard(GrRenderTarget*) SK_OVERRIDE { }
+    void discard(GrRenderTarget*) override {}
+
+    bool canCopySurface(const GrSurface* dst,
+                        const GrSurface* src,
+                        const SkIRect& srcRect,
+                        const SkIPoint& dstPoint) override { return false; };
+
+    bool copySurface(GrSurface* dst,
+                     GrSurface* src,
+                     const SkIRect& srcRect,
+                     const SkIPoint& dstPoint) override { return false; };
+
+    bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) override {
+        return false;
+    }
+
+    void xferBarrier(GrRenderTarget*, GrXferBarrierType) override {}
 
 private:
-    virtual void onResetContext(uint32_t resetBits) { };
-    virtual GrTexture* onCreateTexture(const GrSurfaceDesc& desc,
-                                       const void* srcData,
-                                       size_t rowBytes)  SK_OVERRIDE {
+    void onResetContext(uint32_t resetBits) override {}
+
+    GrTexture* onCreateTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle lifeCycle,
+                               const void* srcData, size_t rowBytes) override {
         return NULL;
     }
 
-    virtual GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc,
-                                                 const void* srcData)  SK_OVERRIDE {
+    GrTexture* onCreateCompressedTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle,
+                                         const void* srcData) override {
         return NULL;
     }
 
-    virtual GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&)  SK_OVERRIDE {
+    GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&) override { return NULL; }
+
+    GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&) override {
         return NULL;
     }
 
-    virtual GrRenderTarget* onWrapBackendRenderTarget(
-                                    const GrBackendRenderTargetDesc&) SK_OVERRIDE {
-        return NULL;
+    GrVertexBuffer* onCreateVertexBuffer(size_t size, bool dynamic) override { return NULL; }
+
+    GrIndexBuffer* onCreateIndexBuffer(size_t size, bool dynamic) override { return NULL; }
+
+    void onClear(GrRenderTarget*, const SkIRect* rect, GrColor color,
+                         bool canIgnoreRect) override {}
+
+    void onClearStencilClip(GrRenderTarget*, const SkIRect& rect, bool insideClip) override {}
+
+    void onDraw(const DrawArgs&, const GrNonInstancedVertices&) override {}
+
+    void onStencilPath(const GrPath* path, const StencilPathState& state) override {}
+
+    void onDrawPath(const DrawArgs&, const GrPath*, const GrStencilSettings&) override {}
+
+    void onDrawPaths(const DrawArgs&,
+                     const GrPathRange*,
+                     const void* indices,
+                     GrDrawTarget::PathIndexType,
+                     const float transformValues[],
+                     GrDrawTarget::PathTransformType,
+                     int count,
+                     const GrStencilSettings&) override {}
+
+    bool onReadPixels(GrRenderTarget* target,
+                      int left, int top, int width, int height,
+                      GrPixelConfig,
+                      void* buffer,
+                      size_t rowBytes) override {
+        return false;
     }
 
-    virtual GrVertexBuffer* onCreateVertexBuffer(size_t size, bool dynamic)  SK_OVERRIDE {
-        return NULL;
-    }
-
-    virtual GrIndexBuffer* onCreateIndexBuffer(size_t size, bool dynamic)  SK_OVERRIDE {
-        return NULL;
-    }
-
-    virtual void onGpuClear(GrRenderTarget*, const SkIRect* rect, GrColor color,
-                            bool canIgnoreRect)  SK_OVERRIDE { }
-
-    virtual void onClearStencilClip(GrRenderTarget*,
-                                    const SkIRect& rect,
-                                    bool insideClip)  SK_OVERRIDE { }
-
-                                    virtual void onGpuDraw(const DrawInfo&)  SK_OVERRIDE { }
-    virtual bool onReadPixels(GrRenderTarget* target,
+    bool onWriteTexturePixels(GrTexture* texture,
                               int left, int top, int width, int height,
-                              GrPixelConfig,
-                              void* buffer,
-                              size_t rowBytes)  SK_OVERRIDE {
+                              GrPixelConfig config, const void* buffer,
+                              size_t rowBytes) override {
         return false;
     }
 
-    virtual bool onWriteTexturePixels(GrTexture* texture,
-                                      int left, int top, int width, int height,
-                                      GrPixelConfig config, const void* buffer,
-                                      size_t rowBytes)  SK_OVERRIDE {
+    void onResolveRenderTarget(GrRenderTarget* target) override { return; }
+
+    bool createStencilAttachmentForRenderTarget(GrRenderTarget*, int width, int height) override {
         return false;
     }
 
-    virtual void onResolveRenderTarget(GrRenderTarget* target)  SK_OVERRIDE {
-        return;
-    }
-
-    virtual bool createStencilBufferForRenderTarget(GrRenderTarget*, int width,
-                                                    int height) SK_OVERRIDE {
+    bool attachStencilAttachmentToRenderTarget(GrStencilAttachment*, GrRenderTarget*) override {
         return false;
     }
 
-    virtual bool attachStencilBufferToRenderTarget(GrStencilBuffer*, GrRenderTarget*)  SK_OVERRIDE {
-        return false;
-    }
+    void clearStencil(GrRenderTarget* target) override  {}
 
-    virtual bool flushGraphicsState(DrawType,
-                                    const GrClipMaskManager::ScissorState&,
-                                    const GrDeviceCoordTexture* dstCopy)  SK_OVERRIDE {
-        return false;
-    }
+    void didAddGpuTraceMarker() override {}
 
-    virtual void clearStencil(GrRenderTarget* target)  SK_OVERRIDE  { }
-
-    virtual void didAddGpuTraceMarker() SK_OVERRIDE { }
-    virtual void didRemoveGpuTraceMarker() SK_OVERRIDE { }
+    void didRemoveGpuTraceMarker() override {}
 
     typedef GrGpu INHERITED;
 };
@@ -168,10 +265,6 @@ void GrContext::initMockContext() {
     // these objects are required for any of tests that use this context. TODO: make stop allocating
     // resources in the buffer pools.
     SkDELETE(fDrawBuffer);
-    SkDELETE(fDrawBufferVBAllocPool);
-    SkDELETE(fDrawBufferIBAllocPool);
-
     fDrawBuffer = NULL;
-    fDrawBufferVBAllocPool = NULL;
-    fDrawBufferIBAllocPool = NULL;
+
 }

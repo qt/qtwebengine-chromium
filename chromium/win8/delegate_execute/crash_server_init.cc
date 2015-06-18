@@ -47,7 +47,7 @@ bool IsRunningSystemInstall() {
 
 google_breakpad::CustomClientInfo* GetCustomInfo() {
   scoped_ptr<FileVersionInfo> version_info(
-      FileVersionInfo::CreateFileVersionInfoForCurrentModule());
+      FileVersionInfo::CreateFileVersionInfoForModule(NULL));
 
   static google_breakpad::CustomInfoEntry ver_entry(
       L"ver", version_info->file_version().c_str());
@@ -68,7 +68,7 @@ namespace delegate_execute {
 
 scoped_ptr<google_breakpad::ExceptionHandler> InitializeCrashReporting() {
   wchar_t temp_path[MAX_PATH + 1] = {0};
-  DWORD path_len = ::GetTempPath(MAX_PATH, temp_path);
+  ::GetTempPath(MAX_PATH, temp_path);
 
   base::string16 pipe_name;
   pipe_name = kGoogleUpdatePipeName;

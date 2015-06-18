@@ -5,12 +5,12 @@
 #include "net/base/directory_lister.h"
 
 #include <algorithm>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
+#include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/worker_pool.h"
@@ -45,60 +45,33 @@ bool CompareAlphaDirsFirst(const DirectoryLister::DirectoryListerData& a,
                                                  b.info.GetName());
 }
 
-bool CompareDate(const DirectoryLister::DirectoryListerData& a,
-                 const DirectoryLister::DirectoryListerData& b) {
-  // Parent directory before all else.
-  if (IsDotDot(a.info.GetName()))
-    return true;
-  if (IsDotDot(b.info.GetName()))
-    return false;
-
-  // Directories before regular files.
-  bool a_is_directory = a.info.IsDirectory();
-  bool b_is_directory = b.info.IsDirectory();
-  if (a_is_directory != b_is_directory)
-    return a_is_directory;
-  return a.info.GetLastModifiedTime() > b.info.GetLastModifiedTime();
-}
-
-// Comparator for sorting find result by paths. This uses the locale-aware
-// comparison function on the filenames for sorting in the user's locale.
-// Static.
-bool CompareFullPath(const DirectoryLister::DirectoryListerData& a,
-                     const DirectoryLister::DirectoryListerData& b) {
-  return base::i18n::LocaleAwareCompareFilenames(a.path, b.path);
-}
-
 void SortData(std::vector<DirectoryLister::DirectoryListerData>* data,
-              DirectoryLister::SortType sort_type) {
+              DirectoryLister::ListingType listing_type) {
   // Sort the results. See the TODO below (this sort should be removed and we
   // should do it from JS).
-  if (sort_type == DirectoryLister::DATE)
-    std::sort(data->begin(), data->end(), CompareDate);
-  else if (sort_type == DirectoryLister::FULL_PATH)
-    std::sort(data->begin(), data->end(), CompareFullPath);
-  else if (sort_type == DirectoryLister::ALPHA_DIRS_FIRST)
+  if (listing_type == DirectoryLister::ALPHA_DIRS_FIRST) {
     std::sort(data->begin(), data->end(), CompareAlphaDirsFirst);
-  else
-    DCHECK_EQ(DirectoryLister::NO_SORT, sort_type);
+  } else if (listing_type != DirectoryLister::NO_SORT &&
+             listing_type != DirectoryLister::NO_SORT_RECURSIVE) {
+    NOTREACHED();
+  }
 }
 
 }  // namespace
 
 DirectoryLister::DirectoryLister(const base::FilePath& dir,
                                  DirectoryListerDelegate* delegate)
-    : core_(new Core(dir, false, ALPHA_DIRS_FIRST, this)),
-      delegate_(delegate) {
+    : delegate_(delegate) {
+  core_ = new Core(dir, ALPHA_DIRS_FIRST, this);
   DCHECK(delegate_);
   DCHECK(!dir.value().empty());
 }
 
 DirectoryLister::DirectoryLister(const base::FilePath& dir,
-                                 bool recursive,
-                                 SortType sort,
+                                 ListingType type,
                                  DirectoryListerDelegate* delegate)
-    : core_(new Core(dir, recursive, sort, this)),
-      delegate_(delegate) {
+    : delegate_(delegate) {
+  core_ = new Core(dir, type, this);
   DCHECK(delegate_);
   DCHECK(!dir.value().empty());
 }
@@ -108,59 +81,71 @@ DirectoryLister::~DirectoryLister() {
 }
 
 bool DirectoryLister::Start() {
-  return core_->Start();
+  return base::WorkerPool::PostTask(
+      FROM_HERE,
+      base::Bind(&Core::Start, core_),
+      true);
 }
 
 void DirectoryLister::Cancel() {
-  return core_->Cancel();
+  core_->CancelOnOriginThread();
 }
 
 DirectoryLister::Core::Core(const base::FilePath& dir,
-                            bool recursive,
-                            SortType sort,
+                            ListingType type,
                             DirectoryLister* lister)
     : dir_(dir),
-      recursive_(recursive),
-      sort_(sort),
-      lister_(lister) {
+      type_(type),
+      origin_loop_(base::MessageLoopProxy::current()),
+      lister_(lister),
+      cancelled_(0) {
   DCHECK(lister_);
 }
 
 DirectoryLister::Core::~Core() {}
 
-bool DirectoryLister::Core::Start() {
-  origin_loop_ = base::MessageLoopProxy::current();
+void DirectoryLister::Core::CancelOnOriginThread() {
+  DCHECK(origin_loop_->BelongsToCurrentThread());
 
-  return base::WorkerPool::PostTask(
-      FROM_HERE, base::Bind(&Core::StartInternal, this), true);
+  base::subtle::NoBarrier_Store(&cancelled_, 1);
+  // Core must not call into |lister_| after cancellation, as the |lister_| may
+  // have been destroyed. Setting |lister_| to NULL ensures any such access will
+  // cause a crash.
+  lister_ = nullptr;
 }
 
-void DirectoryLister::Core::Cancel() {
-  lister_ = NULL;
-}
-
-void DirectoryLister::Core::StartInternal() {
+void DirectoryLister::Core::Start() {
+  scoped_ptr<DirectoryList> directory_list(new DirectoryList());
 
   if (!base::DirectoryExists(dir_)) {
     origin_loop_->PostTask(
         FROM_HERE,
-        base::Bind(&DirectoryLister::Core::OnDone, this, ERR_FILE_NOT_FOUND));
+        base::Bind(&Core::DoneOnOriginThread, this,
+                   base::Passed(directory_list.Pass()), ERR_FILE_NOT_FOUND));
     return;
   }
 
   int types = base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES;
-  if (!recursive_)
+  bool recursive;
+  if (NO_SORT_RECURSIVE != type_) {
     types |= base::FileEnumerator::INCLUDE_DOT_DOT;
-
-  base::FileEnumerator file_enum(dir_, recursive_, types);
+    recursive = false;
+  } else {
+    recursive = true;
+  }
+  base::FileEnumerator file_enum(dir_, recursive, types);
 
   base::FilePath path;
-  std::vector<DirectoryListerData> file_data;
-  while (lister_ && !(path = file_enum.Next()).empty()) {
+  while (!(path = file_enum.Next()).empty()) {
+    // Abort on cancellation. This is purely for performance reasons.
+    // Correctness guarantees are made by checks in DoneOnOriginThread.
+    if (IsCancelled())
+      return;
+
     DirectoryListerData data;
     data.info = file_enum.GetInfo();
     data.path = path;
-    file_data.push_back(data);
+    directory_list->push_back(data);
 
     /* TODO(brettw) bug 24107: It would be nice to send incremental updates.
        We gather them all so they can be sorted, but eventually the sorting
@@ -178,36 +163,40 @@ void DirectoryLister::Core::StartInternal() {
     */
   }
 
-  SortData(&file_data, sort_);
-  origin_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&DirectoryLister::Core::SendData, this, file_data));
+  SortData(directory_list.get(), type_);
 
   origin_loop_->PostTask(
       FROM_HERE,
-      base::Bind(&DirectoryLister::Core::OnDone, this, OK));
+      base::Bind(&Core::DoneOnOriginThread, this,
+                 base::Passed(directory_list.Pass()), OK));
 }
 
-void DirectoryLister::Core::SendData(
-    const std::vector<DirectoryLister::DirectoryListerData>& data) {
+bool DirectoryLister::Core::IsCancelled() const {
+  return !!base::subtle::NoBarrier_Load(&cancelled_);
+}
+
+void DirectoryLister::Core::DoneOnOriginThread(
+    scoped_ptr<DirectoryList> directory_list, int error) const {
   DCHECK(origin_loop_->BelongsToCurrentThread());
-  // We need to check for cancellation (indicated by NULL'ing of |lister_|)
-  // which can happen during each callback.
-  for (size_t i = 0; lister_ && i < data.size(); ++i)
-    lister_->OnReceivedData(data[i]);
+
+  // Need to check if the operation was before first callback.
+  if (IsCancelled())
+    return;
+
+  for (const auto& lister_data : *directory_list) {
+    lister_->OnListFile(lister_data);
+    // Need to check if the operation was cancelled during the callback.
+    if (IsCancelled())
+      return;
+  }
+  lister_->OnListDone(error);
 }
 
-void DirectoryLister::Core::OnDone(int error) {
-  DCHECK(origin_loop_->BelongsToCurrentThread());
-  if (lister_)
-    lister_->OnDone(error);
-}
-
-void DirectoryLister::OnReceivedData(const DirectoryListerData& data) {
+void DirectoryLister::OnListFile(const DirectoryListerData& data) {
   delegate_->OnListFile(data);
 }
 
-void DirectoryLister::OnDone(int error) {
+void DirectoryLister::OnListDone(int error) {
   delegate_->OnListDone(error);
 }
 

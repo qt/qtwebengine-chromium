@@ -44,10 +44,10 @@ enum StrokeStyle {
 };
 
 enum InterpolationQuality {
-    InterpolationNone = SkPaint::kNone_FilterLevel,
-    InterpolationLow = SkPaint::kLow_FilterLevel,
-    InterpolationMedium = SkPaint::kMedium_FilterLevel,
-    InterpolationHigh = SkPaint::kHigh_FilterLevel,
+    InterpolationNone = kNone_SkFilterQuality,
+    InterpolationLow = kLow_SkFilterQuality,
+    InterpolationMedium = kMedium_SkFilterQuality,
+    InterpolationHigh = kHigh_SkFilterQuality,
 #if USE(LOW_QUALITY_IMAGE_INTERPOLATION)
     InterpolationDefault = InterpolationLow,
 #else
@@ -67,14 +67,25 @@ enum CompositeOperator {
     CompositeDestinationOut,
     CompositeDestinationAtop,
     CompositeXOR,
-    CompositePlusDarker,
-    CompositePlusLighter,
-    CompositeDifference
+    CompositePlusLighter
 };
 
+enum OpacityMode {
+    NonOpaque,
+    Opaque,
+};
+
+// TODO(junov): crbug.com/453113 relocate ShadowMode to CanvasRenderingContext2DState.h once
+// GraphicsContext no longer uses it.
 enum ShadowMode {
     DrawShadowAndForeground,
     DrawShadowOnly,
+    DrawForegroundOnly
+};
+
+enum AntiAliasingMode {
+    NotAntiAliased,
+    AntiAliased
 };
 
 enum GradientSpreadMethod {

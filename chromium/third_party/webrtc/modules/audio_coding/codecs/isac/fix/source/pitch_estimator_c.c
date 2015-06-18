@@ -22,11 +22,9 @@ extern int32_t WebRtcIsacfix_Log2Q8(uint32_t x);
 void WebRtcIsacfix_PCorr2Q32(const int16_t* in, int32_t* logcorQ8) {
   int16_t scaling,n,k;
   int32_t ysum32,csum32, lys, lcs;
-  int32_t oneQ8;
+  const int32_t oneQ8 = 1 << 8;  // 1.00 in Q8
   const int16_t* x;
   const int16_t* inptr;
-
-  oneQ8 = WEBRTC_SPL_LSHIFT_W32((int32_t)1, 8);  // 1.00 in Q8
 
   x = in + PITCH_MAX_LAG / 2 + 2;
   scaling = WebRtcSpl_GetScalingSquare((int16_t*)in,
@@ -36,12 +34,8 @@ void WebRtcIsacfix_PCorr2Q32(const int16_t* in, int32_t* logcorQ8) {
   csum32 = 0;
   x = in + PITCH_MAX_LAG / 2 + 2;
   for (n = 0; n < PITCH_CORR_LEN2; n++) {
-    ysum32 += WEBRTC_SPL_MUL_16_16_RSFT((int16_t)in[n],
-                                        (int16_t)in[n],
-                                        scaling);  // Q0
-    csum32 += WEBRTC_SPL_MUL_16_16_RSFT((int16_t)x[n],
-                                        (int16_t)in[n],
-                                        scaling);  // Q0
+    ysum32 += in[n] * in[n] >> scaling;  // Q0
+    csum32 += x[n] * in[n] >> scaling;  // Q0
   }
   logcorQ8 += PITCH_LAG_SPAN2 - 1;
   lys = WebRtcIsacfix_Log2Q8((uint32_t)ysum32) >> 1; // Q8, sqrt(ysum)
@@ -59,12 +53,9 @@ void WebRtcIsacfix_PCorr2Q32(const int16_t* in, int32_t* logcorQ8) {
 
   for (k = 1; k < PITCH_LAG_SPAN2; k++) {
     inptr = &in[k];
-    ysum32 -= WEBRTC_SPL_MUL_16_16_RSFT((int16_t)in[k - 1],
-                                        (int16_t)in[k - 1],
-                                        scaling);
-    ysum32 += WEBRTC_SPL_MUL_16_16_RSFT((int16_t)in[PITCH_CORR_LEN2 + k - 1],
-                                        (int16_t)in[PITCH_CORR_LEN2 + k - 1],
-                                        scaling);
+    ysum32 -= in[k - 1] * in[k - 1] >> scaling;
+    ysum32 += in[PITCH_CORR_LEN2 + k - 1] * in[PITCH_CORR_LEN2 + k - 1] >>
+        scaling;
 #ifdef WEBRTC_ARCH_ARM_NEON
     {
       int32_t vbuff[4];

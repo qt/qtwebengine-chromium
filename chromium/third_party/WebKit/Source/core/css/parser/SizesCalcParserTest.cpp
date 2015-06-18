@@ -113,12 +113,11 @@ TEST(SizesCalcParserTest, Basic)
     data.threeDEnabled = true;
     data.mediaType = MediaTypeNames::screen;
     data.strictMode = true;
+    data.displayMode = WebDisplayModeBrowser;
     RefPtr<MediaValues> mediaValues = MediaValuesCached::create(data);
 
     for (unsigned i = 0; testCases[i].input; ++i) {
-        Vector<CSSParserToken> tokens;
-        CSSTokenizer::tokenize(testCases[i].input, tokens);
-        SizesCalcParser calcParser(tokens.begin(), tokens.end(), mediaValues);
+        SizesCalcParser calcParser(CSSTokenizer::Scope(testCases[i].input).tokenRange(), mediaValues);
         ASSERT_EQ(testCases[i].valid, calcParser.isValid());
         if (calcParser.isValid())
             ASSERT_EQ(testCases[i].output, calcParser.result());

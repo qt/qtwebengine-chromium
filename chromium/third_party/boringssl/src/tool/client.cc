@@ -14,245 +14,106 @@
 
 #include <openssl/base.h>
 
-// TODO(davidben): bssl client does not work on Windows.
-#if !defined(OPENSSL_WINDOWS)
-
-#include <string>
-#include <vector>
-
-#include <errno.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-
-#if !defined(OPENSSL_WINDOWS)
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <sys/select.h>
-#include <unistd.h>
-#else
-#include <WinSock2.h>
-#include <WS2tcpip.h>
-typedef int socklen_t;
-#endif
-
 #include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 
+#include "../crypto/test/scoped_types.h"
+#include "../ssl/test/scoped_types.h"
 #include "internal.h"
+#include "transport_common.h"
 
 
 static const struct argument kArguments[] = {
     {
-     "-connect", true,
+     "-connect", kRequiredArgument,
      "The hostname and port of the server to connect to, e.g. foo.com:443",
     },
     {
-     "-cipher", false,
+     "-cipher", kOptionalArgument,
      "An OpenSSL-style cipher suite string that configures the offered ciphers",
     },
     {
-     "", false, "",
+     "-max-version", kOptionalArgument,
+     "The maximum acceptable protocol version",
+    },
+    {
+     "-min-version", kOptionalArgument,
+     "The minimum acceptable protocol version",
+    },
+    {
+     "-server-name", kOptionalArgument,
+     "The server name to advertise",
+    },
+    {
+     "-select-next-proto", kOptionalArgument,
+     "An NPN protocol to select if the server supports NPN",
+    },
+    {
+     "-alpn-protos", kOptionalArgument,
+     "A comma-separated list of ALPN protocols to advertise",
+    },
+    {
+     "-fallback-scsv", kBooleanArgument,
+     "Enable FALLBACK_SCSV",
+    },
+    {
+     "-ocsp-stapling", kBooleanArgument,
+     "Advertise support for OCSP stabling",
+    },
+    {
+     "-signed-certificate-timestamps", kBooleanArgument,
+     "Advertise support for signed certificate timestamps",
+    },
+    {
+     "-channel-id-key", kOptionalArgument,
+     "The key to use for signing a channel ID",
+    },
+    {
+     "", kOptionalArgument, "",
     },
 };
 
-// Connect sets |*out_sock| to be a socket connected to the destination given
-// in |hostname_and_port|, which should be of the form "www.example.com:123".
-// It returns true on success and false otherwise.
-static bool Connect(int *out_sock, const std::string &hostname_and_port) {
-  const size_t colon_offset = hostname_and_port.find_last_of(':');
-  std::string hostname, port;
-
-  if (colon_offset == std::string::npos) {
-    hostname = hostname_and_port;
-    port = "443";
-  } else {
-    hostname = hostname_and_port.substr(0, colon_offset);
-    port = hostname_and_port.substr(colon_offset + 1);
+static ScopedEVP_PKEY LoadPrivateKey(const std::string &file) {
+  ScopedBIO bio(BIO_new(BIO_s_file()));
+  if (!bio || !BIO_read_filename(bio.get(), file.c_str())) {
+    return nullptr;
   }
-
-  struct addrinfo hint, *result;
-  memset(&hint, 0, sizeof(hint));
-  hint.ai_family = AF_UNSPEC;
-  hint.ai_socktype = SOCK_STREAM;
-
-  int ret = getaddrinfo(hostname.c_str(), port.c_str(), &hint, &result);
-  if (ret != 0) {
-    fprintf(stderr, "getaddrinfo returned: %s\n", gai_strerror(ret));
-    return false;
-  }
-
-  bool ok = false;
-  char buf[256];
-
-  *out_sock =
-      socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-  if (*out_sock < 0) {
-    perror("socket");
-    goto out;
-  }
-
-  switch (result->ai_family) {
-    case AF_INET: {
-      struct sockaddr_in *sin =
-          reinterpret_cast<struct sockaddr_in *>(result->ai_addr);
-      fprintf(stderr, "Connecting to %s:%d\n",
-              inet_ntop(result->ai_family, &sin->sin_addr, buf, sizeof(buf)),
-              ntohs(sin->sin_port));
-      break;
-    }
-    case AF_INET6: {
-      struct sockaddr_in6 *sin6 =
-          reinterpret_cast<struct sockaddr_in6 *>(result->ai_addr);
-      fprintf(stderr, "Connecting to [%s]:%d\n",
-              inet_ntop(result->ai_family, &sin6->sin6_addr, buf, sizeof(buf)),
-              ntohs(sin6->sin6_port));
-      break;
-    }
-  }
-
-  if (connect(*out_sock, result->ai_addr, result->ai_addrlen) != 0) {
-    perror("connect");
-    goto out;
-  }
-  ok = true;
-
-out:
-  freeaddrinfo(result);
-  return ok;
+  ScopedEVP_PKEY pkey(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr,
+                                              nullptr));
+  return pkey;
 }
 
-static void PrintConnectionInfo(const SSL *ssl) {
-  const SSL_CIPHER *cipher = SSL_get_current_cipher(ssl);
-
-  fprintf(stderr, "  Version: %s\n", SSL_get_version(ssl));
-  fprintf(stderr, "  Cipher: %s\n", SSL_CIPHER_get_name(cipher));
-  fprintf(stderr, "  Secure renegotiation: %s\n",
-          SSL_get_secure_renegotiation_support(ssl) ? "yes" : "no");
+static bool VersionFromString(uint16_t *out_version,
+                              const std::string& version) {
+  if (version == "ssl3") {
+    *out_version = SSL3_VERSION;
+    return true;
+  } else if (version == "tls1" || version == "tls1.0") {
+    *out_version = TLS1_VERSION;
+    return true;
+  } else if (version == "tls1.1") {
+    *out_version = TLS1_1_VERSION;
+    return true;
+  } else if (version == "tls1.2") {
+    *out_version = TLS1_2_VERSION;
+    return true;
+  }
+  return false;
 }
 
-static bool SocketSetNonBlocking(int sock, bool is_non_blocking) {
-  bool ok;
-
-#if defined(OPENSSL_WINDOWS)
-  u_long arg = is_non_blocking;
-  ok = 0 == ioctlsocket(sock, FIOBIO, &arg);
-#else
-  int flags = fcntl(sock, F_GETFL, 0);
-  if (flags < 0) {
-    return false;
-  }
-  if (is_non_blocking) {
-    flags |= O_NONBLOCK;
-  } else {
-    flags &= ~O_NONBLOCK;
-  }
-  ok = 0 == fcntl(sock, F_SETFL, flags);
-#endif
-  if (!ok) {
-    fprintf(stderr, "Failed to set socket non-blocking.\n");
-  }
-  return ok;
-}
-
-// PrintErrorCallback is a callback function from OpenSSL's
-// |ERR_print_errors_cb| that writes errors to a given |FILE*|.
-static int PrintErrorCallback(const char *str, size_t len, void *ctx) {
-  fwrite(str, len, 1, reinterpret_cast<FILE*>(ctx));
-  return 1;
-}
-
-bool TransferData(SSL *ssl, int sock) {
-  bool stdin_open = true;
-
-  fd_set read_fds;
-  FD_ZERO(&read_fds);
-
-  if (!SocketSetNonBlocking(sock, true)) {
-    return false;
-  }
-
-  for (;;) {
-    if (stdin_open) {
-      FD_SET(0, &read_fds);
-    }
-    FD_SET(sock, &read_fds);
-
-    int ret = select(sock + 1, &read_fds, NULL, NULL, NULL);
-    if (ret <= 0) {
-      perror("select");
-      return false;
-    }
-
-    if (FD_ISSET(0, &read_fds)) {
-      uint8_t buffer[512];
-      ssize_t n;
-
-      do {
-        n = read(0, buffer, sizeof(buffer));
-      } while (n == -1 && errno == EINTR);
-
-      if (n == 0) {
-        FD_CLR(0, &read_fds);
-        stdin_open = false;
-        shutdown(sock, SHUT_WR);
-        continue;
-      } else if (n < 0) {
-        perror("read from stdin");
-        return false;
-      }
-
-      if (!SocketSetNonBlocking(sock, false)) {
-        return false;
-      }
-      int ssl_ret = SSL_write(ssl, buffer, n);
-      if (!SocketSetNonBlocking(sock, true)) {
-        return false;
-      }
-
-      if (ssl_ret <= 0) {
-        int ssl_err = SSL_get_error(ssl, ssl_ret);
-        fprintf(stderr, "Error while writing: %d\n", ssl_err);
-        ERR_print_errors_cb(PrintErrorCallback, stderr);
-        return false;
-      } else if (ssl_ret != n) {
-        fprintf(stderr, "Short write from SSL_write.\n");
-        return false;
-      }
-    }
-
-    if (FD_ISSET(sock, &read_fds)) {
-      uint8_t buffer[512];
-      int ssl_ret = SSL_read(ssl, buffer, sizeof(buffer));
-
-      if (ssl_ret < 0) {
-        int ssl_err = SSL_get_error(ssl, ssl_ret);
-        if (ssl_err == SSL_ERROR_WANT_READ) {
-          continue;
-        }
-        fprintf(stderr, "Error while reading: %d\n", ssl_err);
-        ERR_print_errors_cb(PrintErrorCallback, stderr);
-        return false;
-      } else if (ssl_ret == 0) {
-        return true;
-      }
-
-      ssize_t n;
-      do {
-        n = write(1, buffer, ssl_ret);
-      } while (n == -1 && errno == EINTR);
-
-      if (n != ssl_ret) {
-        fprintf(stderr, "Short write to stderr.\n");
-        return false;
-      }
-    }
-  }
+static int NextProtoSelectCallback(SSL* ssl, uint8_t** out, uint8_t* outlen,
+                                   const uint8_t* in, unsigned inlen, void* arg) {
+  *out = reinterpret_cast<uint8_t *>(arg);
+  *outlen = strlen(reinterpret_cast<const char *>(arg));
+  return SSL_TLSEXT_ERR_OK;
 }
 
 bool Client(const std::vector<std::string> &args) {
+  if (!InitSocketLibrary()) {
+    return false;
+  }
+
   std::map<std::string, std::string> args_map;
 
   if (!ParseKeyValueArguments(&args_map, args, kArguments)) {
@@ -260,7 +121,7 @@ bool Client(const std::vector<std::string> &args) {
     return false;
   }
 
-  SSL_CTX *ctx = SSL_CTX_new(SSLv23_client_method());
+  ScopedSSL_CTX ctx(SSL_CTX_new(SSLv23_client_method()));
 
   const char *keylog_file = getenv("SSLKEYLOGFILE");
   if (keylog_file) {
@@ -269,11 +130,88 @@ bool Client(const std::vector<std::string> &args) {
       ERR_print_errors_cb(PrintErrorCallback, stderr);
       return false;
     }
-    SSL_CTX_set_keylog_bio(ctx, keylog_bio);
+    SSL_CTX_set_keylog_bio(ctx.get(), keylog_bio);
   }
 
-  if (args_map.count("-cipher") != 0) {
-    SSL_CTX_set_cipher_list(ctx, args_map["-cipher"].c_str());
+  if (args_map.count("-cipher") != 0 &&
+      !SSL_CTX_set_cipher_list(ctx.get(), args_map["-cipher"].c_str())) {
+    fprintf(stderr, "Failed setting cipher list\n");
+    return false;
+  }
+
+  if (args_map.count("-max-version") != 0) {
+    uint16_t version;
+    if (!VersionFromString(&version, args_map["-max-version"])) {
+      fprintf(stderr, "Unknown protocol version: '%s'\n",
+              args_map["-max-version"].c_str());
+      return false;
+    }
+    SSL_CTX_set_max_version(ctx.get(), version);
+  }
+
+  if (args_map.count("-min-version") != 0) {
+    uint16_t version;
+    if (!VersionFromString(&version, args_map["-min-version"])) {
+      fprintf(stderr, "Unknown protocol version: '%s'\n",
+              args_map["-min-version"].c_str());
+      return false;
+    }
+    SSL_CTX_set_min_version(ctx.get(), version);
+  }
+
+  if (args_map.count("-select-next-proto") != 0) {
+    const std::string &proto = args_map["-select-next-proto"];
+    if (proto.size() > 255) {
+      fprintf(stderr, "Bad NPN protocol: '%s'\n", proto.c_str());
+      return false;
+    }
+    // |SSL_CTX_set_next_proto_select_cb| is not const-correct.
+    SSL_CTX_set_next_proto_select_cb(ctx.get(), NextProtoSelectCallback,
+                                     const_cast<char *>(proto.c_str()));
+  }
+
+  if (args_map.count("-alpn-protos") != 0) {
+    const std::string &alpn_protos = args_map["-alpn-protos"];
+    std::vector<uint8_t> wire;
+    size_t i = 0;
+    while (i <= alpn_protos.size()) {
+      size_t j = alpn_protos.find(',', i);
+      if (j == std::string::npos) {
+        j = alpn_protos.size();
+      }
+      size_t len = j - i;
+      if (len > 255) {
+        fprintf(stderr, "Invalid ALPN protocols: '%s'\n", alpn_protos.c_str());
+        return false;
+      }
+      wire.push_back(static_cast<uint8_t>(len));
+      wire.resize(wire.size() + len);
+      memcpy(wire.data() + wire.size() - len, alpn_protos.data() + i, len);
+      i = j + 1;
+    }
+    if (SSL_CTX_set_alpn_protos(ctx.get(), wire.data(), wire.size()) != 0) {
+      return false;
+    }
+  }
+
+  if (args_map.count("-fallback-scsv") != 0) {
+    SSL_CTX_set_mode(ctx.get(), SSL_MODE_SEND_FALLBACK_SCSV);
+  }
+
+  if (args_map.count("-ocsp-stapling") != 0) {
+    SSL_CTX_enable_ocsp_stapling(ctx.get());
+  }
+
+  if (args_map.count("-signed-certificate-timestamps") != 0) {
+    SSL_CTX_enable_signed_cert_timestamps(ctx.get());
+  }
+
+  if (args_map.count("-channel-id-key") != 0) {
+    ScopedEVP_PKEY pkey = LoadPrivateKey(args_map["-channel-id-key"]);
+    if (!pkey || !SSL_CTX_set1_tls_channel_id(ctx.get(), pkey.get())) {
+      return false;
+    }
+    ctx->tlsext_channel_id_enabled_new = 1;
   }
 
   int sock = -1;
@@ -281,26 +219,28 @@ bool Client(const std::vector<std::string> &args) {
     return false;
   }
 
-  BIO *bio = BIO_new_socket(sock, BIO_CLOSE);
-  SSL *ssl = SSL_new(ctx);
-  SSL_set_bio(ssl, bio, bio);
+  ScopedBIO bio(BIO_new_socket(sock, BIO_CLOSE));
+  ScopedSSL ssl(SSL_new(ctx.get()));
 
-  int ret = SSL_connect(ssl);
+  if (args_map.count("-server-name") != 0) {
+    SSL_set_tlsext_host_name(ssl.get(), args_map["-server-name"].c_str());
+  }
+
+  SSL_set_bio(ssl.get(), bio.get(), bio.get());
+  bio.release();
+
+  int ret = SSL_connect(ssl.get());
   if (ret != 1) {
-    int ssl_err = SSL_get_error(ssl, ret);
+    int ssl_err = SSL_get_error(ssl.get(), ret);
     fprintf(stderr, "Error while connecting: %d\n", ssl_err);
     ERR_print_errors_cb(PrintErrorCallback, stderr);
     return false;
   }
 
   fprintf(stderr, "Connected.\n");
-  PrintConnectionInfo(ssl);
+  PrintConnectionInfo(ssl.get());
 
-  bool ok = TransferData(ssl, sock);
+  bool ok = TransferData(ssl.get(), sock);
 
-  SSL_free(ssl);
-  SSL_CTX_free(ctx);
   return ok;
 }
-
-#endif  // !OPENSSL_WINDOWS

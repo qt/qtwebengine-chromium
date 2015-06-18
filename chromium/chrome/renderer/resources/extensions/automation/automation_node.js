@@ -39,20 +39,23 @@ AutomationNodeImpl.prototype = {
     return this.rootImpl.wrapper;
   },
 
-  parent: function() {
+  get parent() {
     return this.hostTree || this.rootImpl.get(this.parentID);
   },
 
-  firstChild: function() {
+  get firstChild() {
     return this.childTree || this.rootImpl.get(this.childIds[0]);
   },
 
-  lastChild: function() {
+  get lastChild() {
     var childIds = this.childIds;
     return this.childTree || this.rootImpl.get(childIds[childIds.length - 1]);
   },
 
-  children: function() {
+  get children() {
+    if (this.childTree)
+      return [this.childTree];
+
     var children = [];
     for (var i = 0, childID; childID = this.childIds[i]; i++) {
       logging.CHECK(this.rootImpl.get(childID));
@@ -61,17 +64,17 @@ AutomationNodeImpl.prototype = {
     return children;
   },
 
-  previousSibling: function() {
-    var parent = this.parent();
+  get previousSibling() {
+    var parent = this.parent;
     if (parent && this.indexInParent > 0)
-      return parent.children()[this.indexInParent - 1];
+      return parent.children[this.indexInParent - 1];
     return undefined;
   },
 
-  nextSibling: function() {
-    var parent = this.parent();
-    if (parent && this.indexInParent < parent.children().length)
-      return parent.children()[this.indexInParent + 1];
+  get nextSibling() {
+    var parent = this.parent;
+    if (parent && this.indexInParent < parent.children.length)
+      return parent.children[this.indexInParent + 1];
     return undefined;
   },
 
@@ -93,12 +96,24 @@ AutomationNodeImpl.prototype = {
                           endIndex: endIndex });
   },
 
-  querySelector: function(selector, callback) {
+  domQuerySelector: function(selector, callback) {
     automationInternal.querySelector(
       { treeID: this.rootImpl.treeID,
         automationNodeID: this.id,
         selector: selector },
-      this.querySelectorCallback_.bind(this, callback));
+      this.domQuerySelectorCallback_.bind(this, callback));
+  },
+
+  find: function(params) {
+    return this.findInternal_(params);
+  },
+
+  findAll: function(params) {
+    return this.findInternal_(params, []);
+  },
+
+  matches: function(params) {
+    return this.matchInternal_(params);
   },
 
   addEventListener: function(eventType, callback, capture) {
@@ -128,10 +143,10 @@ AutomationNodeImpl.prototype = {
 
   dispatchEvent: function(eventType) {
     var path = [];
-    var parent = this.parent();
+    var parent = this.parent;
     while (parent) {
       path.push(parent);
-      parent = parent.parent();
+      parent = parent.parent;
     }
     var event = new AutomationEvent(eventType, this.wrapper);
 
@@ -226,7 +241,7 @@ AutomationNodeImpl.prototype = {
                                      opt_args || {});
   },
 
-  querySelectorCallback_: function(userCallback, resultAutomationNodeID) {
+  domQuerySelectorCallback_: function(userCallback, resultAutomationNodeID) {
     // resultAutomationNodeID could be zero or undefined or (unlikely) null;
     // they all amount to the same thing here, which is that no node was
     // returned.
@@ -241,6 +256,77 @@ AutomationNodeImpl.prototype = {
       userCallback(null);
     }
     userCallback(resultNode);
+  },
+
+  findInternal_: function(params, opt_results) {
+    var result = null;
+    this.forAllDescendants_(function(node) {
+      if (privates(node).impl.matchInternal_(params)) {
+        if (opt_results)
+          opt_results.push(node);
+        else
+          result = node;
+        return !opt_results;
+      }
+    });
+    if (opt_results)
+      return opt_results;
+    return result;
+  },
+
+  /**
+   * Executes a closure for all of this node's descendants, in pre-order.
+   * Early-outs if the closure returns true.
+   * @param {Function(AutomationNode):boolean} closure Closure to be executed
+   *     for each node. Return true to early-out the traversal.
+   */
+  forAllDescendants_: function(closure) {
+    var stack = this.wrapper.children.reverse();
+    while (stack.length > 0) {
+      var node = stack.pop();
+      if (closure(node))
+        return;
+
+      var children = node.children;
+      for (var i = children.length - 1; i >= 0; i--)
+        stack.push(children[i]);
+    }
+  },
+
+  matchInternal_: function(params) {
+    if (Object.keys(params).length == 0)
+      return false;
+
+    if ('role' in params && this.role != params.role)
+        return false;
+
+    if ('state' in params) {
+      for (var state in params.state) {
+        if (params.state[state] != (state in this.state))
+          return false;
+      }
+    }
+    if ('attributes' in params) {
+      for (var attribute in params.attributes) {
+        if (!(attribute in this.attributesInternal))
+          return false;
+
+        var attrValue = params.attributes[attribute];
+        if (typeof attrValue != 'object') {
+          if (this.attributesInternal[attribute] !== attrValue)
+            return false;
+        } else if (attrValue instanceof RegExp) {
+          if (typeof this.attributesInternal[attribute] != 'string')
+            return false;
+          if (!attrValue.test(this.attributesInternal[attribute]))
+            return false;
+        } else {
+          // TODO(aboxhall): handle intlist case.
+          return false;
+        }
+      }
+    }
+    return true;
   }
 };
 
@@ -263,14 +349,13 @@ var AutomationAttributeTypes = [
   'stringAttributes'
 ];
 
-
 /**
  * Maps an attribute name to another attribute who's value is an id or an array
  * of ids referencing an AutomationNode.
- * @param {!Object.<string, string>}
+ * @param {!Object<string, string>}
  * @const
  */
-var ATTRIBUTE_NAME_TO_ATTRIBUTE_ID = {
+var ATTRIBUTE_NAME_TO_ID_ATTRIBUTE = {
   'aria-activedescendant': 'activedescendantId',
   'aria-controls': 'controlsIds',
   'aria-describedby': 'describedbyIds',
@@ -281,7 +366,7 @@ var ATTRIBUTE_NAME_TO_ATTRIBUTE_ID = {
 
 /**
  * A set of attributes ignored in the automation API.
- * @param {!Object.<string, boolean>}
+ * @param {!Object<string, boolean>}
  * @const
  */
 var ATTRIBUTE_BLACKLIST = {'activedescendantId': true,
@@ -293,6 +378,119 @@ var ATTRIBUTE_BLACKLIST = {'activedescendantId': true,
                            'ownsIds': true
 };
 
+function defaultStringAttribute(opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : '';
+  return { default: defaultVal, reflectFrom: 'stringAttributes' };
+}
+
+function defaultIntAttribute(opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : 0;
+  return { default: defaultVal, reflectFrom: 'intAttributes' };
+}
+
+function defaultFloatAttribute(opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : 0;
+  return { default: defaultVal, reflectFrom: 'floatAttributes' };
+}
+
+function defaultBoolAttribute(opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : false;
+  return { default: defaultVal, reflectFrom: 'boolAttributes' };
+}
+
+function defaultHtmlAttribute(opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : '';
+  return { default: defaultVal, reflectFrom: 'htmlAttributes' };
+}
+
+function defaultIntListAttribute(opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : [];
+  return { default: defaultVal, reflectFrom: 'intlistAttributes' };
+}
+
+function defaultNodeRefAttribute(idAttribute, opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : null;
+  return { default: defaultVal,
+           idFrom: 'intAttributes',
+           idAttribute: idAttribute,
+           isRef: true };
+}
+
+function defaultNodeRefListAttribute(idAttribute, opt_defaultVal) {
+  var defaultVal = (opt_defaultVal !== undefined) ? opt_defaultVal : [];
+  return { default: [],
+           idFrom: 'intlistAttributes',
+           idAttribute: idAttribute,
+           isRef: true };
+}
+
+// Maps an attribute to its default value in an invalidated node.
+// These attributes are taken directly from the Automation idl.
+var DefaultMixinAttributes = {
+  description: defaultStringAttribute(),
+  help: defaultStringAttribute(),
+  name: defaultStringAttribute(),
+  value: defaultStringAttribute(),
+  controls: defaultNodeRefListAttribute('controlsIds'),
+  describedby: defaultNodeRefListAttribute('describedbyIds'),
+  flowto: defaultNodeRefListAttribute('flowtoIds'),
+  labelledby: defaultNodeRefListAttribute('labelledbyIds'),
+  owns: defaultNodeRefListAttribute('ownsIds')
+};
+
+var ActiveDescendantMixinAttribute = {
+  activedescendant: defaultNodeRefAttribute('activedescendantId')
+};
+
+var LinkMixinAttributes = {
+  url: defaultStringAttribute()
+};
+
+var DocumentMixinAttributes = {
+  docUrl: defaultStringAttribute(),
+  docTitle: defaultStringAttribute(),
+  docLoaded: defaultStringAttribute(),
+  docLoadingProgress: defaultFloatAttribute()
+};
+
+var ScrollableMixinAttributes = {
+  scrollX: defaultIntAttribute(),
+  scrollXMin: defaultIntAttribute(),
+  scrollXMax: defaultIntAttribute(),
+  scrollY: defaultIntAttribute(),
+  scrollYMin: defaultIntAttribute(),
+  scrollYMax: defaultIntAttribute()
+};
+
+var EditableTextMixinAttributes = {
+  textSelStart: defaultIntAttribute(-1),
+  textSelEnd: defaultIntAttribute(-1)
+};
+
+var RangeMixinAttributes = {
+  valueForRange: defaultFloatAttribute(),
+  minValueForRange: defaultFloatAttribute(),
+  maxValueForRange: defaultFloatAttribute()
+};
+
+var TableMixinAttributes = {
+  tableRowCount: defaultIntAttribute(),
+  tableColumnCount: defaultIntAttribute()
+};
+
+var TableCellMixinAttributes = {
+  tableCellColumnIndex: defaultIntAttribute(),
+  tableCellColumnSpan: defaultIntAttribute(1),
+  tableCellRowIndex: defaultIntAttribute(),
+  tableCellRowSpan: defaultIntAttribute(1)
+};
+
+var LiveRegionMixinAttributes = {
+  containerLiveAtomic: defaultBoolAttribute(),
+  containerLiveBusy: defaultBoolAttribute(),
+  containerLiveRelevant: defaultStringAttribute(),
+  containerLiveStatus: defaultStringAttribute(),
+};
 
 /**
  * AutomationRootNode.
@@ -321,6 +519,7 @@ AutomationRootNodeImpl.prototype = {
   __proto__: AutomationNodeImpl.prototype,
 
   isRootNode: true,
+  treeID: -1,
 
   get: function(id) {
     if (id == undefined)
@@ -354,7 +553,7 @@ AutomationRootNodeImpl.prototype = {
       if (nodeToClear === this.wrapper) {
         this.invalidate_(nodeToClear);
       } else {
-        var children = nodeToClear.children();
+        var children = nodeToClear.children;
         for (var i = 0; i < children.length; i++)
           this.invalidate_(children[i]);
         var nodeToClearImpl = privates(nodeToClear).impl;
@@ -377,6 +576,28 @@ AutomationRootNodeImpl.prototype = {
                     chrome);
       return false;
     }
+
+    // Notify tree change observers of new nodes.
+    // TODO(dmazzoni): Notify tree change observers of changed nodes,
+    // and handle subtreeCreated and nodeCreated properly.
+    var observers = automationUtil.treeChangeObservers;
+    if (observers.length > 0) {
+      for (var nodeId in updateState.newNodes) {
+        var node = updateState.newNodes[nodeId];
+        var treeChange =
+            {target: node, type: schema.TreeChangeType.nodeCreated};
+        for (var i = 0; i < observers.length; i++) {
+          try {
+            observers[i](treeChange);
+          } catch (e) {
+            console.error('Error in tree change observer for ' +
+                treeChange.type + ': ' + e.message +
+                '\nStack trace: ' + e.stack);
+          }
+        }
+      }
+    }
+
     return true;
   },
 
@@ -416,8 +637,8 @@ AutomationRootNodeImpl.prototype = {
           AutomationNodeImpl.prototype.toString.call(node) +
           '\n';
       indent += 2;
-      for (var i = 0; i < node.children().length; i++)
-        output += toStringInternal(node.children()[i], indent);
+      for (var i = 0; i < node.children.length; i++)
+        output += toStringInternal(node.children[i], indent);
       return output;
     }
     return toStringInternal(this, 0);
@@ -426,10 +647,30 @@ AutomationRootNodeImpl.prototype = {
   invalidate_: function(node) {
     if (!node)
       return;
-    var children = node.children();
 
-    for (var i = 0, child; child = children[i]; i++)
+    // Notify tree change observers of the removed node.
+    var observers = automationUtil.treeChangeObservers;
+    if (observers.length > 0) {
+      var treeChange = {target: node, type: schema.TreeChangeType.nodeRemoved};
+      for (var i = 0; i < observers.length; i++) {
+        try {
+          observers[i](treeChange);
+        } catch (e) {
+          console.error('Error in tree change observer for ' + treeChange.type +
+              ': ' + e.message + '\nStack trace: ' + e.stack);
+        }
+      }
+    }
+
+    var children = node.children;
+
+    for (var i = 0, child; child = children[i]; i++) {
+      // Do not invalidate into subrooted nodes.
+      // TODO(dtseng): Revisit logic once out of proc iframes land.
+      if (child.root != node.root)
+        continue;
       this.invalidate_(child);
+    }
 
     // Retrieve the internal AutomationNodeImpl instance for this node.
     // This object is not accessible outside of bindings code, but we can access
@@ -438,6 +679,13 @@ AutomationRootNodeImpl.prototype = {
     var id = nodeImpl.id;
     for (var key in AutomationAttributeDefaults) {
       nodeImpl[key] = AutomationAttributeDefaults[key];
+    }
+
+    nodeImpl.attributesInternal = {};
+    for (var key in DefaultMixinAttributes) {
+      var mixinAttribute = DefaultMixinAttributes[key];
+      if (!mixinAttribute.isRef)
+        nodeImpl.attributesInternal[key] = mixinAttribute.default;
     }
     nodeImpl.childIds = [];
     nodeImpl.id = id;
@@ -487,10 +735,10 @@ AutomationRootNodeImpl.prototype = {
       var childId = newChildIds[i];
       var childNode = this.axNodeDataCache_[childId];
       if (childNode) {
-        if (childNode.parent() != node) {
+        if (childNode.parent != node) {
           var parentId = -1;
-          if (childNode.parent()) {
-            var parentImpl = privates(childNode.parent()).impl;
+          if (childNode.parent) {
+            var parentImpl = privates(childNode.parent).impl;
             parentId = parentImpl.id;
           }
           // This is a serious error - nodes should never be reparented.
@@ -524,18 +772,20 @@ AutomationRootNodeImpl.prototype = {
 
     // TODO(dtseng): Make into set listing all hosting node roles.
     if (nodeData.role == schema.RoleType.webView) {
-      if (nodeImpl.pendingChildFrame === undefined)
+      if (nodeImpl.childTreeID !== nodeData.intAttributes.childTreeId)
         nodeImpl.pendingChildFrame = true;
 
       if (nodeImpl.pendingChildFrame) {
         nodeImpl.childTreeID = nodeData.intAttributes.childTreeId;
-        automationInternal.enableFrame(nodeImpl.childTreeID);
         automationUtil.storeTreeCallback(nodeImpl.childTreeID, function(root) {
           nodeImpl.pendingChildFrame = false;
           nodeImpl.childTree = root;
           privates(root).impl.hostTree = node;
+          if (root.attributes.docLoadingProgress == 1)
+            privates(root).impl.dispatchEvent(schema.EventType.loadComplete);
           nodeImpl.dispatchEvent(schema.EventType.childrenChanged);
         });
+        automationInternal.enableFrame(nodeImpl.childTreeID);
       }
     }
     for (var key in AutomationAttributeDefaults) {
@@ -544,6 +794,66 @@ AutomationRootNodeImpl.prototype = {
       else
         nodeImpl[key] = AutomationAttributeDefaults[key];
     }
+
+    // Set all basic attributes.
+    this.mixinAttributes_(nodeImpl, DefaultMixinAttributes, nodeData);
+
+    // If this is a rootWebArea or webArea, set document attributes.
+    if (nodeData.role == schema.RoleType.rootWebArea ||
+        nodeData.role == schema.RoleType.webArea) {
+      this.mixinAttributes_(nodeImpl, DocumentMixinAttributes, nodeData);
+    }
+
+    // If this is a scrollable area, set scrollable attributes.
+    for (var scrollAttr in ScrollableMixinAttributes) {
+      var spec = ScrollableMixinAttributes[scrollAttr];
+      if (this.findAttribute_(scrollAttr, spec, nodeData) !== undefined) {
+        this.mixinAttributes_(nodeImpl, ScrollableMixinAttributes, nodeData);
+        break;
+      }
+    }
+
+    // If this is inside a live region, set live region mixins.
+    var attr = 'containerLiveStatus';
+    var spec = LiveRegionMixinAttributes[attr];
+    if (this.findAttribute_(attr, spec, nodeData) !== undefined) {
+      this.mixinAttributes_(nodeImpl, LiveRegionMixinAttributes, nodeData);
+    }
+
+    // If this is a link, set link attributes
+    if (nodeData.role == 'link') {
+      this.mixinAttributes_(nodeImpl, LinkMixinAttributes, nodeData);
+    }
+
+    // If this is an editable text area, set editable text attributes.
+    if (nodeData.role == schema.RoleType.textField) {
+      this.mixinAttributes_(nodeImpl, EditableTextMixinAttributes, nodeData);
+    }
+
+    // If this is a range type, set range attributes.
+    if (nodeData.role == schema.RoleType.progressIndicator ||
+        nodeData.role == schema.RoleType.scrollBar ||
+        nodeData.role == schema.RoleType.slider ||
+        nodeData.role == schema.RoleType.spinButton) {
+      this.mixinAttributes_(nodeImpl, RangeMixinAttributes, nodeData);
+    }
+
+    // If this is a table, set table attributes.
+    if (nodeData.role == schema.RoleType.table) {
+      this.mixinAttributes_(nodeImpl, TableMixinAttributes, nodeData);
+    }
+
+    // If this is a table cell, set table cell attributes.
+    if (nodeData.role == schema.RoleType.cell) {
+      this.mixinAttributes_(nodeImpl, TableCellMixinAttributes, nodeData);
+    }
+
+    // If this has an active descendant, expose it.
+    if ('intAttributes' in nodeData &&
+        'activedescendantId' in nodeData.intAttributes) {
+      this.mixinAttributes_(nodeImpl, ActiveDescendantMixinAttribute, nodeData);
+    }
+
     for (var i = 0; i < AutomationAttributeTypes.length; i++) {
       var attributeType = AutomationAttributeTypes[i];
       for (var attributeName in nodeData[attributeType]) {
@@ -553,35 +863,105 @@ AutomationRootNodeImpl.prototype = {
             nodeImpl.attributes.hasOwnProperty(attributeName)) {
           continue;
         } else if (
-            ATTRIBUTE_NAME_TO_ATTRIBUTE_ID.hasOwnProperty(attributeName)) {
+          ATTRIBUTE_NAME_TO_ID_ATTRIBUTE.hasOwnProperty(attributeName)) {
           this.defineReadonlyAttribute_(nodeImpl,
-              attributeName,
-              true);
+                                        nodeImpl.attributes,
+                                        attributeName,
+                                        true);
         } else {
           this.defineReadonlyAttribute_(nodeImpl,
+                                        nodeImpl.attributes,
                                         attributeName);
         }
       }
     }
   },
 
-  defineReadonlyAttribute_: function(node, attributeName, opt_isIDRef) {
-    $Object.defineProperty(node.attributes, attributeName, {
-      enumerable: true,
-      get: function() {
-        if (opt_isIDRef) {
-          var attributeId = node.attributesInternal[
-              ATTRIBUTE_NAME_TO_ATTRIBUTE_ID[attributeName]];
-          if (Array.isArray(attributeId)) {
-            return attributeId.map(function(current) {
+  mixinAttributes_: function(nodeImpl, attributes, nodeData) {
+    for (var attribute in attributes) {
+      var spec = attributes[attribute];
+      if (spec.isRef)
+        this.mixinRelationshipAttribute_(nodeImpl, attribute, spec, nodeData);
+      else
+        this.mixinAttribute_(nodeImpl, attribute, spec, nodeData);
+    }
+  },
+
+  mixinAttribute_: function(nodeImpl, attribute, spec, nodeData) {
+    var value = this.findAttribute_(attribute, spec, nodeData);
+    if (value === undefined)
+      value = spec.default;
+    nodeImpl.attributesInternal[attribute] = value;
+    this.defineReadonlyAttribute_(nodeImpl, nodeImpl, attribute);
+  },
+
+  mixinRelationshipAttribute_: function(nodeImpl, attribute, spec, nodeData) {
+    var idAttribute = spec.idAttribute;
+    var idValue = spec.default;
+    if (spec.idFrom in nodeData) {
+      idValue = idAttribute in nodeData[spec.idFrom]
+          ? nodeData[spec.idFrom][idAttribute] : idValue;
+    }
+
+    // Ok to define a list attribute with an empty list, but not a
+    // single ref with a null ID.
+    if (idValue === null)
+      return;
+
+    nodeImpl.attributesInternal[idAttribute] = idValue;
+    this.defineReadonlyAttribute_(
+      nodeImpl, nodeImpl, attribute, true, idAttribute);
+  },
+
+  findAttribute_: function(attribute, spec, nodeData) {
+    if (!('reflectFrom' in spec))
+      return;
+    var attributeGroup = spec.reflectFrom;
+    if (!(attributeGroup in nodeData))
+      return;
+
+    return nodeData[attributeGroup][attribute];
+  },
+
+  defineReadonlyAttribute_: function(
+      node, object, attributeName, opt_isIDRef, opt_idAttribute) {
+    if (attributeName in object)
+      return;
+
+    if (opt_isIDRef) {
+      $Object.defineProperty(object, attributeName, {
+        enumerable: true,
+        get: function() {
+          var idAttribute = opt_idAttribute ||
+                            ATTRIBUTE_NAME_TO_ID_ATTRIBUTE[attributeName];
+          var idValue = node.attributesInternal[idAttribute];
+          if (Array.isArray(idValue)) {
+            return idValue.map(function(current) {
               return node.rootImpl.get(current);
             }, this);
           }
-          return node.rootImpl.get(attributeId);
-        }
-        return node.attributesInternal[attributeName];
-      }.bind(this),
-    });
+          return node.rootImpl.get(idValue);
+        }.bind(this),
+      });
+    } else {
+      $Object.defineProperty(object, attributeName, {
+        enumerable: true,
+        get: function() {
+          return node.attributesInternal[attributeName];
+        }.bind(this),
+      });
+    }
+
+    if (object instanceof AutomationNodeImpl) {
+      // Also expose attribute publicly on the wrapper.
+      $Object.defineProperty(object.wrapper, attributeName, {
+        enumerable: true,
+        get: function() {
+          return object[attributeName];
+        },
+      });
+
+    }
   },
 
   updateNode_: function(nodeData, updateState) {
@@ -631,21 +1011,24 @@ AutomationRootNodeImpl.prototype = {
 
 var AutomationNode = utils.expose('AutomationNode',
                                   AutomationNodeImpl,
-                                  { functions: ['parent',
-                                                'firstChild',
-                                                'lastChild',
-                                                'children',
-                                                'previousSibling',
-                                                'nextSibling',
-                                                'doDefault',
+                                  { functions: ['doDefault',
+                                                'find',
+                                                'findAll',
                                                 'focus',
                                                 'makeVisible',
+                                                'matches',
                                                 'setSelection',
                                                 'addEventListener',
                                                 'removeEventListener',
-                                                'querySelector',
-                                                'toJSON'],
-                                    readonly: ['isRootNode',
+                                                'domQuerySelector',
+                                                'toString' ],
+                                    readonly: ['parent',
+                                               'firstChild',
+                                               'lastChild',
+                                               'children',
+                                               'previousSibling',
+                                               'nextSibling',
+                                               'isRootNode',
                                                'role',
                                                'state',
                                                'location',

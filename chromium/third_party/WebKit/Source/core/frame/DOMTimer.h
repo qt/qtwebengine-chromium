@@ -28,44 +28,47 @@
 #define DOMTimer_h
 
 #include "bindings/core/v8/ScheduledAction.h"
+#include "core/CoreExport.h"
 #include "core/frame/SuspendableTimer.h"
 #include "platform/UserGestureIndicator.h"
-#include "wtf/Compiler.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace blink {
 
 class ExecutionContext;
 
-class DOMTimer final : public SuspendableTimer {
+class CORE_EXPORT DOMTimer final : public RefCountedWillBeGarbageCollectedFinalized<DOMTimer>, public SuspendableTimer {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMTimer);
 public:
     // Creates a new timer owned by the ExecutionContext, starts it and returns its ID.
-    static int install(ExecutionContext*, PassOwnPtr<ScheduledAction>, int timeout, bool singleShot);
+    static int install(ExecutionContext*, PassOwnPtrWillBeRawPtr<ScheduledAction>, int timeout, bool singleShot);
     static void removeByID(ExecutionContext*, int timeoutID);
 
     virtual ~DOMTimer();
 
-    int timeoutID() const;
-
     // ActiveDOMObject
-    virtual void contextDestroyed() override;
     virtual void stop() override;
 
     // The following are essentially constants. All intervals are in seconds.
     static double hiddenPageAlignmentInterval();
     static double visiblePageAlignmentInterval();
 
-private:
-    friend class ExecutionContext; // For create().
+    DECLARE_VIRTUAL_TRACE();
 
-    // Should only be used by ExecutionContext.
-    static PassOwnPtr<DOMTimer> create(ExecutionContext* context, PassOwnPtr<ScheduledAction> action, int timeout, bool singleShot, int timeoutID)
+    void dispose();
+
+private:
+    friend class DOMTimerCoordinator; // For create().
+
+    static PassRefPtrWillBeRawPtr<DOMTimer> create(ExecutionContext* context, PassOwnPtrWillBeRawPtr<ScheduledAction> action, int timeout, bool singleShot, int timeoutID)
     {
-        return adoptPtr(new DOMTimer(context, action, timeout, singleShot, timeoutID));
+        return adoptRefWillBeNoop(new DOMTimer(context, action, timeout, singleShot, timeoutID));
     }
 
-    DOMTimer(ExecutionContext*, PassOwnPtr<ScheduledAction>, int interval, bool singleShot, int timeoutID);
+    DOMTimer(ExecutionContext*, PassOwnPtrWillBeRawPtr<ScheduledAction>, int interval, bool singleShot, int timeoutID);
     virtual void fired() override;
 
     // Retuns timer fire time rounded to the next multiple of timer alignment interval.
@@ -73,7 +76,7 @@ private:
 
     int m_timeoutID;
     int m_nestingLevel;
-    OwnPtr<ScheduledAction> m_action;
+    OwnPtrWillBeMember<ScheduledAction> m_action;
     RefPtr<UserGestureToken> m_userGestureToken;
 };
 

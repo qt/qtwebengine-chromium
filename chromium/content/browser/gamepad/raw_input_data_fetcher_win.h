@@ -31,9 +31,13 @@ struct RawGamepadAxis {
   HIDP_VALUE_CAPS caps;
   float value;
   bool active;
+  unsigned long bitmask;
 };
 
 struct RawGamepadInfo {
+  RawGamepadInfo();
+  ~RawGamepadInfo();
+
   HANDLE handle;
   scoped_ptr<uint8[]> ppd_buffer;
   PHIDP_PREPARSED_DATA preparsed_data;
@@ -56,10 +60,10 @@ class RawInputDataFetcher
       public base::MessageLoop::DestructionObserver {
  public:
   explicit RawInputDataFetcher();
-  ~RawInputDataFetcher();
+  ~RawInputDataFetcher() override;
 
   // DestructionObserver overrides.
-  virtual void WillDestroyCurrentMessageLoop() override;
+  void WillDestroyCurrentMessageLoop() override;
 
   bool Available() { return rawinput_available_; }
   void StartMonitor();

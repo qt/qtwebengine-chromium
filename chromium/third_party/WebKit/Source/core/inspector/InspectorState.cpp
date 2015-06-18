@@ -121,7 +121,7 @@ PassRefPtr<JSONObject> InspectorState::getObject(const String& propertyName)
     return it->value->asObject();
 }
 
-void InspectorState::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorState)
 {
     visitor->trace(m_listener);
 }
@@ -146,14 +146,13 @@ void InspectorCompositeState::loadFromCookie(const String& inspectorCompositeSta
     if (!m_stateObject)
         m_stateObject = JSONObject::create();
 
-    InspectorStateMap::iterator end = m_inspectorStateMap.end();
-    for (InspectorStateMap::iterator it = m_inspectorStateMap.begin(); it != end; ++it) {
-        RefPtr<JSONObject> agentStateObject = m_stateObject->getObject(it->key);
+    for (auto& state : m_inspectorStateMap) {
+        RefPtr<JSONObject> agentStateObject = m_stateObject->getObject(state.key);
         if (!agentStateObject) {
             agentStateObject = JSONObject::create();
-            m_stateObject->setObject(it->key, agentStateObject);
+            m_stateObject->setObject(state.key, agentStateObject);
         }
-        it->value->setFromCookie(agentStateObject);
+        state.value->setFromCookie(agentStateObject);
     }
 }
 
@@ -173,7 +172,7 @@ void InspectorCompositeState::inspectorStateUpdated()
         m_client->updateInspectorStateCookie(m_stateObject->toJSONString());
 }
 
-void InspectorCompositeState::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorCompositeState)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_inspectorStateMap);

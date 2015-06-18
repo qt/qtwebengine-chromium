@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From dev/pp_print_settings_dev.idl modified Wed Jun 13 09:14:31 2012. */
+/* From dev/pp_print_settings_dev.idl modified Fri Jan 16 13:30:14 2015. */
 
 #ifndef PPAPI_C_DEV_PP_PRINT_SETTINGS_DEV_H_
 #define PPAPI_C_DEV_PP_PRINT_SETTINGS_DEV_H_

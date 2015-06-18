@@ -31,8 +31,8 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/http/http_response_headers.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
@@ -103,7 +103,7 @@ class PrintingLogObserver : public net::NetLog::ThreadSafeObserver {
 
   ~PrintingLogObserver() override {
     // This is guaranteed to be safe as this program is single threaded.
-    net_log()->RemoveThreadSafeObserver(this);
+    net_log()->DeprecatedRemoveObserver(this);
   }
 
   // NetLog::ThreadSafeObserver implementation:
@@ -226,11 +226,12 @@ int main(int argc, char* argv[]) {
   // printing_log_observer.
   net::NetLog net_log;
   PrintingLogObserver printing_log_observer;
-  net_log.AddThreadSafeObserver(&printing_log_observer, net::NetLog::LOG_ALL);
+  net_log.DeprecatedAddObserver(&printing_log_observer,
+                                net::NetLogCaptureMode::IncludeSocketBytes());
 
   QuitDelegate delegate;
-  scoped_ptr<net::URLFetcher> fetcher(
-      net::URLFetcher::Create(url, net::URLFetcher::HEAD, &delegate));
+  scoped_ptr<net::URLFetcher> fetcher =
+      net::URLFetcher::Create(url, net::URLFetcher::HEAD, &delegate);
   scoped_ptr<net::URLRequestContext> url_request_context(
       BuildURLRequestContext(&net_log));
   fetcher->SetRequestContext(

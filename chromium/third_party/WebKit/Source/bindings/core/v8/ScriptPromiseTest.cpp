@@ -34,6 +34,7 @@
 #include "bindings/core/v8/ScriptFunction.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 
@@ -48,7 +49,7 @@ void callback(const v8::FunctionCallbackInfo<v8::Value>& info) { }
 
 class Function : public ScriptFunction {
 public:
-    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, String* value)
+    static v8::Local<v8::Function> createFunction(ScriptState* scriptState, String* value)
     {
         Function* self = new Function(scriptState, value);
         return self->bindToV8Function();
@@ -64,7 +65,7 @@ private:
     virtual ScriptValue call(ScriptValue value) override
     {
         ASSERT(!value.isEmpty());
-        *m_value = toCoreString(value.v8Value()->ToString());
+        *m_value = toCoreString(value.v8Value()->ToString(scriptState()->context()).ToLocalChecked());
         return value;
     }
 

@@ -8,13 +8,15 @@
 
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/ScriptStreamerThread.h"
-#include "bindings/core/v8/ScriptStreamingMode.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/V8ScriptRunner.h"
+#include "core/dom/Element.h"
 #include "core/dom/PendingScript.h"
 #include "core/frame/Settings.h"
 #include "platform/Task.h"
 #include "platform/heap/Handle.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 
 #include <gtest/gtest.h>
@@ -41,7 +43,7 @@ public:
 
     PendingScript& get() { return m_pendingScript; }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_pendingScript);
     }
@@ -59,20 +61,15 @@ private:
     PendingScript m_pendingScript;
 };
 
-// The bool param for ScriptStreamingTest controls whether to make the main
-// thread block and wait for parsing.
-class ScriptStreamingTest : public testing::TestWithParam<bool> {
+class ScriptStreamingTest : public ::testing::Test {
 public:
     ScriptStreamingTest()
         : m_scope(v8::Isolate::GetCurrent())
         , m_settings(Settings::create())
         , m_resourceRequest("http://www.streaming-test.com/")
-        , m_resource(new ScriptResource(m_resourceRequest, "text/utf-8"))
+        , m_resource(ScriptResource::create(m_resourceRequest, "UTF-8").leakPtr())
         , m_pendingScript(PendingScriptWrapper::create(0, m_resource)) // Takes ownership of m_resource.
     {
-        m_settings->setV8ScriptStreamingEnabled(true);
-        if (GetParam())
-            m_settings->setV8ScriptStreamingMode(ScriptStreamingModeAllPlusBlockParsingBlocking);
         m_resource->setLoading(true);
         ScriptStreamer::setSmallScriptThresholdForTesting(0);
     }
@@ -86,11 +83,11 @@ protected:
     void appendData(const char* data)
     {
         m_resource->appendData(data, strlen(data));
-        // Yield control to the background thread, so that V8 gets a change to
+        // Yield control to the background thread, so that V8 gets a chance to
         // process the data before the main thread adds more. Note that we
         // cannot fully control in what kind of chunks the data is passed to V8
-        // (if the V8 is not requesting more data between two appendData calls,
-        // V8 will get both chunks together).
+        // (if V8 is not requesting more data between two appendData calls, it
+        // will get both chunks together).
         Platform::current()->yieldCurrentThread();
     }
 
@@ -111,15 +108,12 @@ protected:
 
     void processTasksUntilStreamingComplete()
     {
-        WebThread* currentThread = blink::Platform::current()->currentThread();
         while (ScriptStreamerThread::shared()->isRunningTask()) {
-            currentThread->postTask(new Task(WTF::bind(&WebThread::exitRunLoop, currentThread)));
-            currentThread->enterRunLoop();
+            testing::runPendingTasks();
         }
         // Once more, because the "streaming complete" notification might only
         // now be in the task queue.
-        currentThread->postTask(new Task(WTF::bind(&WebThread::exitRunLoop, currentThread)));
-        currentThread->enterRunLoop();
+        testing::runPendingTasks();
     }
 
     V8TestingScope m_scope;
@@ -145,10 +139,10 @@ private:
     bool m_finished;
 };
 
-TEST_P(ScriptStreamingTest, CompilingStreamedScript)
+TEST_F(ScriptStreamingTest, CompilingStreamedScript)
 {
     // Test that we can successfully compile a streamed script.
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
 
@@ -169,17 +163,17 @@ TEST_P(ScriptStreamingTest, CompilingStreamedScript)
     EXPECT_FALSE(errorOccurred);
     EXPECT_TRUE(sourceCode.streamer());
     v8::TryCatch tryCatch;
-    v8::Handle<v8::Script> script = V8ScriptRunner::compileScript(sourceCode, isolate());
-    EXPECT_FALSE(script.IsEmpty());
+    v8::Local<v8::Script> script;
+    EXPECT_TRUE(V8ScriptRunner::compileScript(sourceCode, isolate()).ToLocal(&script));
     EXPECT_FALSE(tryCatch.HasCaught());
 }
 
-TEST_P(ScriptStreamingTest, CompilingStreamedScriptWithParseError)
+TEST_F(ScriptStreamingTest, CompilingStreamedScriptWithParseError)
 {
     // Test that scripts with parse errors are handled properly. In those cases,
     // the V8 side typically finished before loading finishes: make sure we
     // handle it gracefully.
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
     appendData("function foo() {");
@@ -202,16 +196,16 @@ TEST_P(ScriptStreamingTest, CompilingStreamedScriptWithParseError)
     EXPECT_FALSE(errorOccurred);
     EXPECT_TRUE(sourceCode.streamer());
     v8::TryCatch tryCatch;
-    v8::Handle<v8::Script> script = V8ScriptRunner::compileScript(sourceCode, isolate());
-    EXPECT_TRUE(script.IsEmpty());
+    v8::Local<v8::Script> script;
+    EXPECT_FALSE(V8ScriptRunner::compileScript(sourceCode, isolate()).ToLocal(&script));
     EXPECT_TRUE(tryCatch.HasCaught());
 }
 
-TEST_P(ScriptStreamingTest, CancellingStreaming)
+TEST_F(ScriptStreamingTest, CancellingStreaming)
 {
     // Test that the upper layers (PendingScript and up) can be ramped down
     // while streaming is ongoing, and ScriptStreamer handles it gracefully.
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
     appendData("function foo() {");
@@ -234,19 +228,21 @@ TEST_P(ScriptStreamingTest, CancellingStreaming)
     EXPECT_FALSE(client.finished());
 }
 
-TEST_P(ScriptStreamingTest, SuppressingStreaming)
+TEST_F(ScriptStreamingTest, SuppressingStreaming)
 {
     // If we notice during streaming that there is a code cache, streaming
     // is suppressed (V8 doesn't parse while the script is loading), and the
     // upper layer (ScriptResourceClient) should get a notification when the
     // script is loaded.
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
     appendData("function foo() {");
     appendPadding();
 
-    m_resource->setCachedMetadata(V8ScriptRunner::tagForCodeCache(), "X", 1, Resource::CacheLocally);
+    CachedMetadataHandler* cacheHandler = m_resource->cacheHandler();
+    EXPECT_TRUE(cacheHandler);
+    cacheHandler->setCachedMetadata(V8ScriptRunner::tagForCodeCache(cacheHandler), "X", 1, CachedMetadataHandler::CacheLocally);
 
     appendPadding();
     finish();
@@ -262,12 +258,12 @@ TEST_P(ScriptStreamingTest, SuppressingStreaming)
     EXPECT_FALSE(sourceCode.streamer());
 }
 
-TEST_P(ScriptStreamingTest, EmptyScripts)
+TEST_F(ScriptStreamingTest, EmptyScripts)
 {
     // Empty scripts should also be streamed properly, that is, the upper layer
     // (ScriptResourceClient) should be notified when an empty script has been
     // loaded.
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
 
@@ -283,12 +279,12 @@ TEST_P(ScriptStreamingTest, EmptyScripts)
     EXPECT_FALSE(sourceCode.streamer());
 }
 
-TEST_P(ScriptStreamingTest, SmallScripts)
+TEST_F(ScriptStreamingTest, SmallScripts)
 {
     // Small scripts shouldn't be streamed.
     ScriptStreamer::setSmallScriptThresholdForTesting(100);
 
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
 
@@ -306,13 +302,13 @@ TEST_P(ScriptStreamingTest, SmallScripts)
     EXPECT_FALSE(sourceCode.streamer());
 }
 
-TEST_P(ScriptStreamingTest, ScriptsWithSmallFirstChunk)
+TEST_F(ScriptStreamingTest, ScriptsWithSmallFirstChunk)
 {
     // If a script is long enough, if should be streamed, even if the first data
     // chunk is small.
     ScriptStreamer::setSmallScriptThresholdForTesting(100);
 
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
 
@@ -331,18 +327,18 @@ TEST_P(ScriptStreamingTest, ScriptsWithSmallFirstChunk)
     EXPECT_FALSE(errorOccurred);
     EXPECT_TRUE(sourceCode.streamer());
     v8::TryCatch tryCatch;
-    v8::Handle<v8::Script> script = V8ScriptRunner::compileScript(sourceCode, isolate());
-    EXPECT_FALSE(script.IsEmpty());
+    v8::Local<v8::Script> script;
+    EXPECT_TRUE(V8ScriptRunner::compileScript(sourceCode, isolate()).ToLocal(&script));
     EXPECT_FALSE(tryCatch.HasCaught());
 }
 
-TEST_P(ScriptStreamingTest, EncodingChanges)
+TEST_F(ScriptStreamingTest, EncodingChanges)
 {
     // It's possible that the encoding of the Resource changes after we start
     // loading it.
     m_resource->setEncoding("windows-1252");
 
-    ScriptStreamer::startStreaming(pendingScript(), m_settings.get(), m_scope.scriptState(), PendingScript::ParsingBlocking);
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
     TestScriptResourceClient client;
     pendingScript().watchForLoad(&client);
 
@@ -359,12 +355,38 @@ TEST_P(ScriptStreamingTest, EncodingChanges)
     EXPECT_FALSE(errorOccurred);
     EXPECT_TRUE(sourceCode.streamer());
     v8::TryCatch tryCatch;
-    v8::Handle<v8::Script> script = V8ScriptRunner::compileScript(sourceCode, isolate());
-    EXPECT_FALSE(script.IsEmpty());
+    v8::Local<v8::Script> script;
+    EXPECT_TRUE(V8ScriptRunner::compileScript(sourceCode, isolate()).ToLocal(&script));
     EXPECT_FALSE(tryCatch.HasCaught());
 }
 
-INSTANTIATE_TEST_CASE_P(ScriptStreamingInstantiation, ScriptStreamingTest, ::testing::Values(false, true));
+
+TEST_F(ScriptStreamingTest, EncodingFromBOM)
+{
+    // Byte order marks should be removed before giving the data to V8. They
+    // will also affect encoding detection.
+    m_resource->setEncoding("windows-1252"); // This encoding is wrong on purpose.
+
+    ScriptStreamer::startStreaming(pendingScript(), PendingScript::ParsingBlocking, m_settings.get(), m_scope.scriptState());
+    TestScriptResourceClient client;
+    pendingScript().watchForLoad(&client);
+
+    // \xef\xbb\xbf is the UTF-8 byte order mark. \xec\x92\x81 are the raw bytes
+    // for \uc481.
+    appendData("\xef\xbb\xbf function foo() { var foob\xec\x92\x81r = 13; return foob\xec\x92\x81r; } foo();");
+
+    finish();
+    processTasksUntilStreamingComplete();
+    EXPECT_TRUE(client.finished());
+    bool errorOccurred = false;
+    ScriptSourceCode sourceCode = pendingScript().getSource(KURL(), errorOccurred);
+    EXPECT_FALSE(errorOccurred);
+    EXPECT_TRUE(sourceCode.streamer());
+    v8::TryCatch tryCatch;
+    v8::Local<v8::Script> script;
+    EXPECT_TRUE(V8ScriptRunner::compileScript(sourceCode, isolate()).ToLocal(&script));
+    EXPECT_FALSE(tryCatch.HasCaught());
+}
 
 } // namespace
 

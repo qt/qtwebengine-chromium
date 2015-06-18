@@ -33,8 +33,10 @@ struct SkOTUtils {
       *  UnicodeBMPUCS2, and English_UnitedStates settings.
       *
       *  fontName and fontNameLen must be specified in terms of ASCII chars.
+      *
+      *  Does not affect fontData's ownership.
       */
-    static SkData* RenameFont(SkStream* fontData, const char* fontName, int fontNameLen);
+    static SkData* RenameFont(SkStreamAsset* fontData, const char* fontName, int fontNameLen);
 
     /** An implementation of LocalizedStrings which obtains it's data from a 'name' table. */
     class LocalizedStrings_NameTable : public SkTypeface::LocalizedStrings {
@@ -52,7 +54,7 @@ struct SkOTUtils {
          */
         static LocalizedStrings_NameTable* CreateForFamilyNames(const SkTypeface& typeface);
 
-        virtual bool next(SkTypeface::LocalizedString* localizedString) SK_OVERRIDE;
+        bool next(SkTypeface::LocalizedString* localizedString) override;
     private:
         static SkOTTableName::Record::NameID::Predefined::Value familyNameTypes[3];
 
@@ -70,7 +72,7 @@ struct SkOTUtils {
             : fName(name), fLanguage(language), fHasNext(true)
         { }
 
-        virtual bool next(SkTypeface::LocalizedString* localizedString) SK_OVERRIDE {
+        bool next(SkTypeface::LocalizedString* localizedString) override {
             localizedString->fString = fName;
             localizedString->fLanguage = fLanguage;
 

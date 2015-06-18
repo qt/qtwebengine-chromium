@@ -40,43 +40,36 @@ namespace blink {
 
 using namespace XPath;
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(XPathExpression);
-
 XPathExpression::XPathExpression()
 {
 }
 
-PassRefPtrWillBeRawPtr<XPathExpression> XPathExpression::createExpression(const String& expression, PassRefPtrWillBeRawPtr<XPathNSResolver> resolver, ExceptionState& exceptionState)
+XPathExpression* XPathExpression::createExpression(const String& expression, XPathNSResolver* resolver, ExceptionState& exceptionState)
 {
-    RefPtrWillBeRawPtr<XPathExpression> expr = XPathExpression::create();
+    XPathExpression* expr = XPathExpression::create();
     Parser parser;
 
     expr->m_topExpression = parser.parseStatement(expression, resolver, exceptionState);
     if (!expr->m_topExpression)
         return nullptr;
 
-    return expr.release();
+    return expr;
 }
 
-void XPathExpression::trace(Visitor* visitor)
+DEFINE_TRACE(XPathExpression)
 {
     visitor->trace(m_topExpression);
 }
 
-PassRefPtrWillBeRawPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned short type, XPathResult*, ExceptionState& exceptionState)
+XPathResult* XPathExpression::evaluate(Node* contextNode, unsigned short type, const ScriptValue&, ExceptionState& exceptionState)
 {
-    if (!contextNode) {
-        exceptionState.throwDOMException(NotSupportedError, "The context node provided is null.");
-        return nullptr;
-    }
-
     if (!isValidContextNode(contextNode)) {
         exceptionState.throwDOMException(NotSupportedError, "The node provided is '" + contextNode->nodeName() + "', which is not a valid context node type.");
         return nullptr;
     }
 
     EvaluationContext evaluationContext(*contextNode);
-    RefPtrWillBeRawPtr<XPathResult> result = XPathResult::create(evaluationContext, m_topExpression->evaluate(evaluationContext));
+    XPathResult* result = XPathResult::create(evaluationContext, m_topExpression->evaluate(evaluationContext));
 
     if (evaluationContext.hadTypeConversionError) {
         // It is not specified what to do if type conversion fails while evaluating an expression.
@@ -93,4 +86,4 @@ PassRefPtrWillBeRawPtr<XPathResult> XPathExpression::evaluate(Node* contextNode,
     return result;
 }
 
-}
+} // namespace blink

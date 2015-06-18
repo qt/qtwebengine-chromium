@@ -33,8 +33,10 @@
 
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
+#include "core/dom/Document.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "platform/DateComponents.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/CurrentTime.h"
@@ -100,7 +102,13 @@ bool TimeInputType::setMillisecondToDateComponents(double value, DateComponents*
     return date->setMillisecondsSinceMidnight(value);
 }
 
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+void TimeInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (value != element().sanitizeValue(value)) {
+        element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
+            String::format("The specified value '%s' does not conform to the required format.  The format is 'HH:mm', 'HH:mm:ss' or 'HH:mm:ss.SSS' where HH is 00-23, mm is 00-59, ss is 00-59, and SSS is 000-999.", value.utf8().data())));
+    }
+}
 
 String TimeInputType::localizeValue(const String& proposedValue) const
 {
@@ -113,6 +121,8 @@ String TimeInputType::localizeValue(const String& proposedValue) const
     String localized = element().locale().formatDateTime(date, formatType);
     return localized.isEmpty() ? proposedValue : localized;
 }
+
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 
 String TimeInputType::formatDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState) const
 {

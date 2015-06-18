@@ -32,6 +32,7 @@
 #define DOMWrapperWorld_h
 
 #include "bindings/core/v8/ScriptState.h"
+#include "core/CoreExport.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 #include "wtf/PassRefPtr.h"
@@ -47,7 +48,6 @@ enum WorldIdConstants {
     MainWorldId = 0,
     // Embedder isolated worlds can use IDs in [1, 1<<29).
     EmbedderWorldIdLimit = (1 << 29),
-    ScriptPreprocessorIsolatedWorldId,
     PrivateScriptIsolatedWorldId,
     IsolatedWorldIdLimit,
     WorkerWorldId,
@@ -55,20 +55,20 @@ enum WorldIdConstants {
 };
 
 // This class represent a collection of DOM wrappers for a specific world.
-class DOMWrapperWorld : public RefCounted<DOMWrapperWorld> {
+class CORE_EXPORT DOMWrapperWorld : public RefCounted<DOMWrapperWorld> {
 public:
-    static PassRefPtr<DOMWrapperWorld> create(int worldId = -1, int extensionGroup = -1);
+    static PassRefPtr<DOMWrapperWorld> create(v8::Isolate*, int worldId = -1, int extensionGroup = -1);
 
     static const int mainWorldExtensionGroup = 0;
     static const int privateScriptIsolatedWorldExtensionGroup = 1;
-    static PassRefPtr<DOMWrapperWorld> ensureIsolatedWorld(int worldId, int extensionGroup);
+    static PassRefPtr<DOMWrapperWorld> ensureIsolatedWorld(v8::Isolate*, int worldId, int extensionGroup);
     ~DOMWrapperWorld();
     void dispose();
 
     static bool isolatedWorldsExist() { return isolatedWorldCount; }
-    static void allWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld> >& worlds);
+    static void allWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld>>& worlds);
 
-    static DOMWrapperWorld& world(v8::Handle<v8::Context> context)
+    static DOMWrapperWorld& world(v8::Local<v8::Context> context)
     {
         return ScriptState::from(context)->world();
     }
@@ -122,13 +122,11 @@ public:
         ASSERT(isMainThread());
         worldOfInitializingWindow = world;
     }
-    // FIXME: Remove this method once we fix crbug.com/345014.
-    static bool windowIsBeingInitialized() { return !!worldOfInitializingWindow; }
 
 private:
     class DOMObjectHolderBase {
     public:
-        DOMObjectHolderBase(v8::Isolate* isolate, v8::Handle<v8::Value> wrapper)
+        DOMObjectHolderBase(v8::Isolate* isolate, v8::Local<v8::Value> wrapper)
             : m_wrapper(isolate, wrapper)
             , m_world(0)
         {
@@ -137,7 +135,7 @@ private:
 
         DOMWrapperWorld* world() const { return m_world; }
         void setWorld(DOMWrapperWorld* world) { m_world = world; }
-        void setWeak(void (*callback)(const v8::WeakCallbackData<v8::Value, DOMObjectHolderBase>&))
+        void setWeak(void (*callback)(const v8::WeakCallbackInfo<DOMObjectHolderBase>&))
         {
             m_wrapper.setWeak(this, callback);
         }
@@ -150,13 +148,13 @@ private:
     template<typename T>
     class DOMObjectHolder : public DOMObjectHolderBase {
     public:
-        static PassOwnPtr<DOMObjectHolder<T> > create(v8::Isolate* isolate, T* object, v8::Handle<v8::Value> wrapper)
+        static PassOwnPtr<DOMObjectHolder<T>> create(v8::Isolate* isolate, T* object, v8::Local<v8::Value> wrapper)
         {
             return adoptPtr(new DOMObjectHolder(isolate, object, wrapper));
         }
 
     private:
-        DOMObjectHolder(v8::Isolate* isolate, T* object, v8::Handle<v8::Value> wrapper)
+        DOMObjectHolder(v8::Isolate* isolate, T* object, v8::Local<v8::Value> wrapper)
             : DOMObjectHolderBase(isolate, wrapper)
             , m_object(object)
         {
@@ -167,15 +165,15 @@ private:
 
 public:
     template<typename T>
-    void registerDOMObjectHolder(v8::Isolate* isolate, T* object, v8::Handle<v8::Value> wrapper)
+    void registerDOMObjectHolder(v8::Isolate* isolate, T* object, v8::Local<v8::Value> wrapper)
     {
         registerDOMObjectHolderInternal(DOMObjectHolder<T>::create(isolate, object, wrapper));
     }
 
 private:
-    DOMWrapperWorld(int worldId, int extensionGroup);
+    DOMWrapperWorld(v8::Isolate*, int worldId, int extensionGroup);
 
-    static void weakCallbackForDOMObjectHolder(const v8::WeakCallbackData<v8::Value, DOMObjectHolderBase>&);
+    static void weakCallbackForDOMObjectHolder(const v8::WeakCallbackInfo<DOMObjectHolderBase>&);
     void registerDOMObjectHolderInternal(PassOwnPtr<DOMObjectHolderBase>);
     void unregisterDOMObjectHolder(DOMObjectHolderBase*);
 
@@ -185,7 +183,7 @@ private:
     const int m_worldId;
     const int m_extensionGroup;
     OwnPtr<DOMDataStore> m_domDataStore;
-    HashSet<OwnPtr<DOMObjectHolderBase> > m_domObjectHolders;
+    HashSet<OwnPtr<DOMObjectHolderBase>> m_domObjectHolders;
 };
 
 } // namespace blink

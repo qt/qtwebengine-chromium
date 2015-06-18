@@ -4,8 +4,10 @@
 
 #include "net/cert/x509_util_openssl.h"
 
-#include <algorithm>
 #include <openssl/asn1.h>
+#include <openssl/mem.h>
+
+#include <algorithm>
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -17,22 +19,21 @@
 #include "crypto/scoped_openssl_types.h"
 #include "net/cert/x509_cert_types.h"
 #include "net/cert/x509_util.h"
+#include "net/ssl/scoped_openssl_types.h"
 
 namespace net {
 
 namespace {
 
-typedef crypto::ScopedOpenSSL<ASN1_INTEGER, ASN1_INTEGER_free>::Type
-    ScopedASN1_INTEGER;
-typedef crypto::ScopedOpenSSL<ASN1_OCTET_STRING, ASN1_OCTET_STRING_free>::Type
-    ScopedASN1_OCTET_STRING;
-typedef crypto::ScopedOpenSSL<ASN1_STRING, ASN1_STRING_free>::Type
-    ScopedASN1_STRING;
-typedef crypto::ScopedOpenSSL<ASN1_TIME, ASN1_TIME_free>::Type ScopedASN1_TIME;
-typedef crypto::ScopedOpenSSL<X509, X509_free>::Type ScopedX509;
-typedef crypto::ScopedOpenSSL<X509_EXTENSION, X509_EXTENSION_free>::Type
-    ScopedX509_EXTENSION;
-typedef crypto::ScopedOpenSSL<X509_NAME, X509_NAME_free>::Type ScopedX509_NAME;
+using ScopedASN1_INTEGER =
+    crypto::ScopedOpenSSL<ASN1_INTEGER, ASN1_INTEGER_free>;
+using ScopedASN1_OCTET_STRING =
+    crypto::ScopedOpenSSL<ASN1_OCTET_STRING, ASN1_OCTET_STRING_free>;
+using ScopedASN1_STRING = crypto::ScopedOpenSSL<ASN1_STRING, ASN1_STRING_free>;
+using ScopedASN1_TIME = crypto::ScopedOpenSSL<ASN1_TIME, ASN1_TIME_free>;
+using ScopedX509_EXTENSION =
+    crypto::ScopedOpenSSL<X509_EXTENSION, X509_EXTENSION_free>;
+using ScopedX509_NAME = crypto::ScopedOpenSSL<X509_NAME, X509_NAME_free>;
 
 const EVP_MD* ToEVP(x509_util::DigestAlgorithm alg) {
   switch (alg) {

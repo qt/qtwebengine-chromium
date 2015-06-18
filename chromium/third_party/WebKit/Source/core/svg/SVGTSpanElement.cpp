@@ -23,7 +23,7 @@
 #include "core/svg/SVGTSpanElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGTSpan.h"
+#include "core/layout/svg/LayoutSVGTSpan.h"
 
 namespace blink {
 
@@ -34,19 +34,19 @@ inline SVGTSpanElement::SVGTSpanElement(Document& document)
 
 DEFINE_NODE_FACTORY(SVGTSpanElement)
 
-RenderObject* SVGTSpanElement::createRenderer(RenderStyle*)
+LayoutObject* SVGTSpanElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGTSpan(this);
+    return new LayoutSVGTSpan(this);
 }
 
-bool SVGTSpanElement::rendererIsNeeded(const RenderStyle& style)
+bool SVGTSpanElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     if (parentNode()
         && (isSVGAElement(*parentNode())
             || isSVGTextElement(*parentNode())
             || isSVGTextPathElement(*parentNode())
             || isSVGTSpanElement(*parentNode())))
-        return Element::rendererIsNeeded(style);
+        return Element::layoutObjectIsNeeded(style);
 
     return false;
 }

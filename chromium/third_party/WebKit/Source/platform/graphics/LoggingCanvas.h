@@ -36,26 +36,25 @@
 
 namespace blink {
 
-class LoggingCanvas : public InterceptingCanvas {
+class LoggingCanvas : public InterceptingCanvasBase {
 public:
     LoggingCanvas(int width, int height);
     PassRefPtr<JSONArray> log();
 
-    virtual void clear(SkColor) override;
-    virtual void drawPaint(const SkPaint&) override;
-    virtual void drawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override;
-    virtual void drawRect(const SkRect&, const SkPaint&) override;
-    virtual void drawOval(const SkRect&, const SkPaint&) override;
-    virtual void drawRRect(const SkRRect&, const SkPaint&) override;
-    virtual void drawPath(const SkPath&, const SkPaint&) override;
-    virtual void drawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint* = 0) override;
-    virtual void drawBitmapRectToRect(const SkBitmap&, const SkRect* src, const SkRect& dst, const SkPaint*, DrawBitmapRectFlags) override;
-    virtual void drawBitmapMatrix(const SkBitmap&, const SkMatrix&, const SkPaint* = 0) override;
-    virtual void drawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst, const SkPaint*) override;
-    virtual void drawSprite(const SkBitmap&, int left, int top, const SkPaint* = 0) override;
-    virtual void drawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[],
+    virtual void onDrawPaint(const SkPaint&) override;
+    virtual void onDrawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override;
+    virtual void onDrawRect(const SkRect&, const SkPaint&) override;
+    virtual void onDrawOval(const SkRect&, const SkPaint&) override;
+    virtual void onDrawRRect(const SkRRect&, const SkPaint&) override;
+    virtual void onDrawPath(const SkPath&, const SkPaint&) override;
+    virtual void onDrawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint*) override;
+    virtual void onDrawBitmapRect(const SkBitmap&, const SkRect* src, const SkRect& dst, const SkPaint*, DrawBitmapRectFlags) override;
+    virtual void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst, const SkPaint*) override;
+    virtual void onDrawImage(const SkImage*, SkScalar, SkScalar, const SkPaint*) override;
+    virtual void onDrawImageRect(const SkImage*, const SkRect* src, const SkRect& dst, const SkPaint*) override;
+    virtual void onDrawSprite(const SkBitmap&, int left, int top, const SkPaint*) override;
+    virtual void onDrawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[],
         const SkColor colors[], SkXfermode* xmode, const uint16_t indices[], int indexCount, const SkPaint&) override;
-    virtual void drawData(const void* data, size_t length) override;
     virtual void beginCommentGroup(const char* description) override;
     virtual void addComment(const char* keyword, const char* value) override;
     virtual void endCommentGroup() override;
@@ -66,8 +65,6 @@ public:
     virtual void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[], SkScalar constY, const SkPaint&) override;
     virtual void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath&, const SkMatrix*, const SkPaint&) override;
     virtual void onDrawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y, const SkPaint&) override;
-    virtual void onPushCull(const SkRect& cullRect) override;
-    virtual void onPopCull() override;
     virtual void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) override;
     virtual void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) override;
     virtual void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) override;
@@ -80,60 +77,15 @@ public:
     virtual void willRestore() override;
 
 private:
-    RefPtr<JSONArray> m_log;
     friend class AutoLogger;
 
-    struct VerbParams {
-        String name;
-        unsigned pointCount;
-        unsigned pointOffset;
-
-        VerbParams(const String& name, unsigned pointCount, unsigned pointOffset)
-            : name(name)
-            , pointCount(pointCount)
-            , pointOffset(pointOffset) { }
-    };
-
-    PassRefPtr<JSONObject> addItem(const String& name);
-    PassRefPtr<JSONObject> addItemWithParams(const String& name);
-    PassRefPtr<JSONObject> objectForSkRect(const SkRect&);
-    PassRefPtr<JSONObject> objectForSkIRect(const SkIRect&);
-    String pointModeName(PointMode);
-    PassRefPtr<JSONObject> objectForSkPoint(const SkPoint&);
-    PassRefPtr<JSONArray> arrayForSkPoints(size_t count, const SkPoint points[]);
-    PassRefPtr<JSONObject> objectForSkPicture(const SkPicture&);
-    PassRefPtr<JSONObject> objectForRadius(const SkRRect& rrect, SkRRect::Corner);
-    String rrectTypeName(SkRRect::Type);
-    String radiusName(SkRRect::Corner);
-    PassRefPtr<JSONObject> objectForSkRRect(const SkRRect&);
-    String fillTypeName(SkPath::FillType);
-    String convexityName(SkPath::Convexity);
-    String verbName(SkPath::Verb);
-    VerbParams segmentParams(SkPath::Verb);
-    PassRefPtr<JSONObject> objectForSkPath(const SkPath&);
-    String colorTypeName(SkColorType);
-    PassRefPtr<JSONObject> objectForBitmapData(const SkBitmap&);
-    PassRefPtr<JSONObject> objectForSkBitmap(const SkBitmap&);
-    PassRefPtr<JSONObject> objectForSkShader(const SkShader&);
-    String stringForSkColor(const SkColor&);
-    void appendFlagToString(String* flagsString, bool isSet, const String& name);
-    String stringForSkPaintFlags(const SkPaint&);
-    String filterLevelName(SkPaint::FilterLevel);
-    String textAlignName(SkPaint::Align);
-    String strokeCapName(SkPaint::Cap);
-    String strokeJoinName(SkPaint::Join);
-    String styleName(SkPaint::Style);
-    String textEncodingName(SkPaint::TextEncoding);
-    String hintingName(SkPaint::Hinting);
-    PassRefPtr<JSONObject> objectForSkPaint(const SkPaint&);
-    PassRefPtr<JSONArray> arrayForSkMatrix(const SkMatrix&);
-    PassRefPtr<JSONArray> arrayForSkScalars(size_t n, const SkScalar scalars[]);
-    String regionOpName(SkRegion::Op);
-    String saveFlagsToString(SkCanvas::SaveFlags);
-    String textEncodingCanonicalName(SkPaint::TextEncoding);
-    String stringForUTFText(const void* text, size_t length, SkPaint::TextEncoding);
-    String stringForText(const void* text, size_t byteLength, const SkPaint&);
+    RefPtr<JSONArray> m_log;
 };
+
+#ifndef NDEBUG
+String pictureAsDebugString(const SkPicture*);
+void showSkPicture(const SkPicture*);
+#endif
 
 } // namespace blink
 

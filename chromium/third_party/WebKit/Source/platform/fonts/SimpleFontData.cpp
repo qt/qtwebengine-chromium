@@ -40,6 +40,7 @@
 #include "platform/fonts/VDMXParser.h"
 #include "platform/geometry/FloatRect.h"
 #include "wtf/MathExtras.h"
+#include "wtf/unicode/CharacterNames.h"
 #include "wtf/unicode/Unicode.h"
 #include <unicode/normlzr.h>
 
@@ -57,33 +58,25 @@ SimpleFontData::SimpleFontData(const FontPlatformData& platformData, PassRefPtr<
     : m_maxCharWidth(-1)
     , m_avgCharWidth(-1)
     , m_platformData(platformData)
-    , m_treatAsFixedPitch(false)
     , m_isTextOrientationFallback(isTextOrientationFallback)
     , m_isBrokenIdeographFallback(false)
-#if ENABLE(OPENTYPE_VERTICAL)
     , m_verticalData(nullptr)
-#endif
     , m_hasVerticalGlyphs(false)
     , m_customFontData(customData)
 {
     platformInit();
     platformGlyphInit();
-#if ENABLE(OPENTYPE_VERTICAL)
-    if (platformData.orientation() == Vertical && !isTextOrientationFallback) {
+    if (platformData.isVerticalAnyUpright() && !isTextOrientationFallback) {
         m_verticalData = platformData.verticalData();
         m_hasVerticalGlyphs = m_verticalData.get() && m_verticalData->hasVerticalMetrics();
     }
-#endif
 }
 
 SimpleFontData::SimpleFontData(PassRefPtr<CustomFontData> customData, float fontSize, bool syntheticBold, bool syntheticItalic)
     : m_platformData(FontPlatformData(fontSize, syntheticBold, syntheticItalic))
-    , m_treatAsFixedPitch(false)
     , m_isTextOrientationFallback(false)
     , m_isBrokenIdeographFallback(false)
-#if ENABLE(OPENTYPE_VERTICAL)
     , m_verticalData(nullptr)
-#endif
     , m_hasVerticalGlyphs(false)
     , m_customFontData(customData)
 {
@@ -157,12 +150,45 @@ void SimpleFontData::platformInit()
 #endif
     }
 
+#if OS(MACOSX)
+    // We are preserving this ascent hack to match Safari's ascent adjustment
+    // in their SimpleFontDataMac.mm, for details see crbug.com/445830.
+    // We need to adjust Times, Helvetica, and Courier to closely match the
+    // vertical metrics of their Microsoft counterparts that are the de facto
+    // web standard. The AppKit adjustment of 20% is too big and is
+    // incorrectly added to line spacing, so we use a 15% adjustment instead
+    // and add it to the ascent.
+    DEFINE_STATIC_LOCAL(AtomicString, timesName, ("Times", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, helveticaName, ("Helvetica", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, courierName, ("Courier", AtomicString::ConstructFromLiteral));
+    String familyName = m_platformData.fontFamilyName();
+    if (familyName == timesName || familyName == helveticaName || familyName == courierName)
+        ascent += floorf(((ascent + descent) * 0.15f) + 0.5f);
+#endif
+
     m_fontMetrics.setAscent(ascent);
     m_fontMetrics.setDescent(descent);
 
     float xHeight;
     if (metrics.fXHeight) {
         xHeight = metrics.fXHeight;
+#if OS(MACOSX)
+        // Mac OS CTFontGetXHeight reports the bounding box height of x,
+        // including parts extending below the baseline and apparently no x-height
+        // value from the OS/2 table. However, the CSS ex unit
+        // expects only parts above the baseline, hence measuring the glyph:
+        // http://www.w3.org/TR/css3-values/#ex-unit
+        GlyphPage* glyphPageZero = GlyphPageTreeNode::getRootChild(this, 0)->page();
+        if (glyphPageZero) {
+            static const UChar32 xChar = 'x';
+            const Glyph xGlyph = glyphPageZero->glyphForCharacter(xChar);
+            if (xGlyph) {
+                FloatRect glyphBounds(boundsForGlyph(xGlyph));
+                // SkGlyph bounds, y down, based on rendering at (0,0).
+                xHeight = - glyphBounds.y();
+            }
+        }
+#endif
         m_fontMetrics.setXHeight(xHeight);
     } else {
         xHeight = ascent * 0.56; // Best guess from Windows font metrics.
@@ -174,7 +200,7 @@ void SimpleFontData::platformInit()
     m_fontMetrics.setLineGap(lineGap);
     m_fontMetrics.setLineSpacing(lroundf(ascent) + lroundf(descent) + lroundf(lineGap));
 
-    if (platformData().orientation() == Vertical && !isTextOrientationFallback()) {
+    if (platformData().isVerticalAnyUpright() && !isTextOrientationFallback()) {
         static const uint32_t vheaTag = SkSetFourByteTag('v', 'h', 'e', 'a');
         static const uint32_t vorgTag = SkSetFourByteTag('V', 'O', 'R', 'G');
         size_t vheaSize = face->getTableSize(vheaTag);
@@ -201,10 +227,10 @@ void SimpleFontData::platformInit()
     // https://crbug.com/420901
     m_maxCharWidth = std::max(m_avgCharWidth, m_fontMetrics.floatAscent());
 #else
-    // FIXME: This seems incorrect and should probably use fMaxCharWidth as
-    // the code path above.
-    SkScalar xRange = metrics.fXMax - metrics.fXMin;
-    m_maxCharWidth = SkScalarRoundToInt(xRange * SkScalarRoundToInt(m_platformData.size()));
+    // Better would be to rely on either fMaxCharWidth or fAveCharWidth.
+    // skbug.com/3087
+    m_maxCharWidth = SkScalarRoundToInt(metrics.fXMax - metrics.fXMin);
+
 #endif
 
 #if !OS(MACOSX)
@@ -244,30 +270,28 @@ void SimpleFontData::platformGlyphInit()
         m_spaceGlyph = 0;
         m_spaceWidth = 0;
         m_zeroGlyph = 0;
-        determinePitch();
         m_zeroWidthSpaceGlyph = 0;
         m_missingGlyphData.fontData = this;
         m_missingGlyphData.glyph = 0;
         return;
     }
 
+    // Ask for the glyph for 0 to avoid paging in ZERO WIDTH SPACE. Control characters, including 0,
+    // are mapped to the ZERO WIDTH SPACE glyph.
     m_zeroWidthSpaceGlyph = glyphPageZero->glyphForCharacter(0);
 
     // Nasty hack to determine if we should round or ceil space widths.
     // If the font is monospace or fake monospace we ceil to ensure that
     // every character and the space are the same width.  Otherwise we round.
-    m_spaceGlyph = glyphPageZero->glyphForCharacter(' ');
+    m_spaceGlyph = glyphPageZero->glyphForCharacter(spaceCharacter);
     float width = widthForGlyph(m_spaceGlyph);
     m_spaceWidth = width;
     m_zeroGlyph = glyphPageZero->glyphForCharacter('0');
     m_fontMetrics.setZeroWidth(widthForGlyph(m_zeroGlyph));
-    determinePitch();
 
     // Force the glyph for ZERO WIDTH SPACE to have zero width, unless it is shared with SPACE.
     // Helvetica is an example of a non-zero width ZERO WIDTH SPACE glyph.
     // See <http://bugs.webkit.org/show_bug.cgi?id=13178>
-    // Ask for the glyph for 0 to avoid paging in ZERO WIDTH SPACE. Control characters, including 0,
-    // are mapped to the ZERO WIDTH SPACE glyph.
     if (m_zeroWidthSpaceGlyph == m_spaceGlyph) {
         m_zeroWidthSpaceGlyph = 0;
         WTF_LOG_ERROR("Font maps SPACE and ZERO WIDTH SPACE to the same glyph. Glyph width will not be overridden.");
@@ -293,7 +317,7 @@ const SimpleFontData* SimpleFontData::fontDataForCharacter(UChar32) const
 Glyph SimpleFontData::glyphForCharacter(UChar32 character) const
 {
     // As GlyphPage::size is power of 2 so shifting is valid
-    GlyphPageTreeNode* node = GlyphPageTreeNode::getRootChild(this, character >> GlyphPage::sizeBits);
+    GlyphPageTreeNode* node = GlyphPageTreeNode::getNormalRootChild(this, character >> GlyphPage::sizeBits);
     return node->page() ? node->page()->glyphAt(character & 0xFF) : 0;
 }
 
@@ -308,7 +332,7 @@ PassRefPtr<SimpleFontData> SimpleFontData::verticalRightOrientationFontData() co
         m_derivedFontData = DerivedFontData::create(isCustomFont());
     if (!m_derivedFontData->verticalRightOrientation) {
         FontPlatformData verticalRightPlatformData(m_platformData);
-        verticalRightPlatformData.setOrientation(Horizontal);
+        verticalRightPlatformData.setOrientation(FontOrientation::Horizontal);
         m_derivedFontData->verticalRightOrientation = create(verticalRightPlatformData, isCustomFont() ? CustomFontData::create(): nullptr, true);
     }
     return m_derivedFontData->verticalRightOrientation;
@@ -387,11 +411,6 @@ PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const Fo
     return SimpleFontData::create(FontPlatformData(m_platformData, scaledSize), isCustomFont() ? CustomFontData::create() : nullptr);
 }
 
-void SimpleFontData::determinePitch()
-{
-    m_treatAsFixedPitch = platformData().isFixedPitch();
-}
-
 static inline void getSkiaBoundsForGlyph(SkPaint& paint, Glyph glyph, SkRect& bounds)
 {
     paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
@@ -451,19 +470,20 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
 
     UErrorCode error = U_ZERO_ERROR;
     Vector<UChar, 4> normalizedCharacters(length);
-    int32_t normalizedLength = unorm_normalize(characters, length, UNORM_NFC, UNORM_UNICODE_3_2, &normalizedCharacters[0], length, &error);
+    size_t normalizedLength = unorm_normalize(characters, length, UNORM_NFC, UNORM_UNICODE_3_2, &normalizedCharacters[0], length, &error);
     // Can't render if we have an error or no composition occurred.
-    if (U_FAILURE(error) || (static_cast<size_t>(normalizedLength) == length))
+    if (U_FAILURE(error) || normalizedLength == length)
         return false;
 
-    SkPaint paint;
-    m_platformData.setupPaint(&paint);
-    paint.setTextEncoding(SkPaint::kUTF16_TextEncoding);
-    if (paint.textToGlyphs(&normalizedCharacters[0], normalizedLength * 2, 0)) {
-        addResult.storedValue->value = true;
-        return true;
+    for (size_t offset = 0; offset < normalizedLength;) {
+        UChar32 character;
+        U16_NEXT(normalizedCharacters, offset, normalizedLength, character);
+        if (!glyphForCharacter(character))
+            return false;
     }
-    return false;
+
+    addResult.storedValue->value = true;
+    return true;
 }
 
 bool SimpleFontData::fillGlyphPage(GlyphPage* pageToFill, unsigned offset, unsigned length, UChar* buffer, unsigned bufferLength) const
@@ -473,10 +493,14 @@ bool SimpleFontData::fillGlyphPage(GlyphPage* pageToFill, unsigned offset, unsig
         return false;
     }
 
-    SkAutoSTMalloc<GlyphPage::size, uint16_t> glyphStorage(length);
-
-    uint16_t* glyphs = glyphStorage.get();
     SkTypeface* typeface = platformData().typeface();
+    if (!typeface) {
+        WTF_LOG_ERROR("fillGlyphPage called on an empty Skia typeface.");
+        return false;
+    }
+
+    SkAutoSTMalloc<GlyphPage::size, uint16_t> glyphStorage(length);
+    uint16_t* glyphs = glyphStorage.get();
     typeface->charsToGlyphs(buffer, SkTypeface::kUTF16_Encoding, glyphs, length);
 
     bool haveGlyphs = false;

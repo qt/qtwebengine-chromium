@@ -5,7 +5,7 @@
 #ifndef V8_HEAP_SNAPSHOT_GENERATOR_H_
 #define V8_HEAP_SNAPSHOT_GENERATOR_H_
 
-#include "src/profile-generator-inl.h"
+#include "src/strings-storage.h"
 
 namespace v8 {
 namespace internal {
@@ -28,22 +28,18 @@ class HeapGraphEdge BASE_EMBEDDED {
     kWeak = v8::HeapGraphEdge::kWeak
   };
 
-  HeapGraphEdge() { }
   HeapGraphEdge(Type type, const char* name, int from, int to);
   HeapGraphEdge(Type type, int index, int from, int to);
   void ReplaceToIndexWithEntry(HeapSnapshot* snapshot);
 
-  Type type() const { return static_cast<Type>(type_); }
+  Type type() const { return TypeField::decode(bit_field_); }
   int index() const {
-    DCHECK(type_ == kElement || type_ == kHidden);
+    DCHECK(type() == kElement || type() == kHidden);
     return index_;
   }
   const char* name() const {
-    DCHECK(type_ == kContextVariable
-        || type_ == kProperty
-        || type_ == kInternal
-        || type_ == kShortcut
-        || type_ == kWeak);
+    DCHECK(type() == kContextVariable || type() == kProperty ||
+           type() == kInternal || type() == kShortcut || type() == kWeak);
     return name_;
   }
   INLINE(HeapEntry* from() const);
@@ -51,9 +47,11 @@ class HeapGraphEdge BASE_EMBEDDED {
 
  private:
   INLINE(HeapSnapshot* snapshot() const);
+  int from_index() const { return FromIndexField::decode(bit_field_); }
 
-  unsigned type_ : 3;
-  int from_index_ : 29;
+  class TypeField : public BitField<Type, 0, 3> {};
+  class FromIndexField : public BitField<int, 3, 29> {};
+  uint32_t bit_field_;
   union {
     // During entries population |to_index_| is used for storing the index,
     // afterwards it is replaced with a pointer to the entry.
@@ -143,14 +141,10 @@ class HeapEntry BASE_EMBEDDED {
 // HeapSnapshotGenerator fills in a HeapSnapshot.
 class HeapSnapshot {
  public:
-  HeapSnapshot(HeapProfiler* profiler,
-               const char* title,
-               unsigned uid);
+  explicit HeapSnapshot(HeapProfiler* profiler);
   void Delete();
 
   HeapProfiler* profiler() { return profiler_; }
-  const char* title() { return title_; }
-  unsigned uid() { return uid_; }
   size_t RawSnapshotSize() const;
   HeapEntry* root() { return &entries_[root_index_]; }
   HeapEntry* gc_roots() { return &entries_[gc_roots_index_]; }
@@ -183,8 +177,6 @@ class HeapSnapshot {
   HeapEntry* AddGcSubrootEntry(int tag, SnapshotObjectId id);
 
   HeapProfiler* profiler_;
-  const char* title_;
-  unsigned uid_;
   int root_index_;
   int gc_roots_index_;
   int gc_subroot_indexes_[VisitorSynchronization::kNumberOfSyncTags];
@@ -202,6 +194,16 @@ class HeapSnapshot {
 
 class HeapObjectsMap {
  public:
+  struct TimeInterval {
+    explicit TimeInterval(SnapshotObjectId id)
+        : id(id), size(0), count(0), timestamp(base::TimeTicks::Now()) {}
+    SnapshotObjectId last_assigned_id() const { return id - kObjectIdStep; }
+    SnapshotObjectId id;
+    uint32_t size;
+    uint32_t count;
+    base::TimeTicks timestamp;
+  };
+
   explicit HeapObjectsMap(Heap* heap);
 
   Heap* heap() const { return heap_; }
@@ -217,7 +219,9 @@ class HeapObjectsMap {
   }
 
   void StopHeapObjectsTracking();
-  SnapshotObjectId PushHeapObjectsStats(OutputStream* stream);
+  SnapshotObjectId PushHeapObjectsStats(OutputStream* stream,
+                                        int64_t* timestamp_us);
+  const List<TimeInterval>& samples() const { return time_intervals_; }
   size_t GetUsedMemorySize() const;
 
   SnapshotObjectId GenerateId(v8::RetainedObjectInfo* info);
@@ -243,12 +247,6 @@ class HeapObjectsMap {
     Address addr;
     unsigned int size;
     bool accessed;
-  };
-  struct TimeInterval {
-    explicit TimeInterval(SnapshotObjectId id) : id(id), size(0), count(0) { }
-    SnapshotObjectId id;
-    uint32_t size;
-    uint32_t count;
   };
 
   SnapshotObjectId next_id_;
@@ -383,8 +381,8 @@ class V8HeapExplorer : public HeapEntriesAllocator {
   void ExtractFixedArrayReferences(int entry, FixedArray* array);
   void ExtractClosureReferences(JSObject* js_obj, int entry);
   void ExtractPropertyReferences(JSObject* js_obj, int entry);
-  bool ExtractAccessorPairProperty(JSObject* js_obj, int entry,
-                                   Object* key, Object* callback_obj);
+  void ExtractAccessorPairProperty(JSObject* js_obj, int entry, Name* key,
+                                   Object* callback_obj, int field_offset = -1);
   void ExtractElementReferences(JSObject* js_obj, int entry);
   void ExtractInternalReferences(JSObject* js_obj, int entry);
 
@@ -432,6 +430,12 @@ class V8HeapExplorer : public HeapEntriesAllocator {
                             Object* child,
                             const char* name_format_string = NULL,
                             int field_offset = -1);
+  void SetDataOrAccessorPropertyReference(PropertyKind kind,
+                                          JSObject* parent_obj, int parent,
+                                          Name* reference_name, Object* child,
+                                          const char* name_format_string = NULL,
+                                          int field_offset = -1);
+
   void SetUserGlobalReference(Object* user_global);
   void SetRootGcRootsReference();
   void SetGcRootsReference(VisitorSynchronization::SyncTag tag);
@@ -586,6 +590,7 @@ class HeapSnapshotJSONSerializer {
   void SerializeTraceTree();
   void SerializeTraceNode(AllocationTraceNode* node);
   void SerializeTraceNodeInfos();
+  void SerializeSamples();
   void SerializeString(const unsigned char* s);
   void SerializeStrings();
 

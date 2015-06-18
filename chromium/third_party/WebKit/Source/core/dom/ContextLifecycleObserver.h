@@ -27,21 +27,34 @@
 #ifndef ContextLifecycleObserver_h
 #define ContextLifecycleObserver_h
 
-#include "platform/LifecycleContext.h"
+#include "core/CoreExport.h"
+#include "core/dom/ExecutionContext.h"
+#include "platform/LifecycleObserver.h"
 
 namespace blink {
 
-class ExecutionContext;
+class ContextLifecycleNotifier;
 
-template<> void observerContext(ExecutionContext*, LifecycleObserver<ExecutionContext>*);
-template<> void unobserverContext(ExecutionContext*, LifecycleObserver<ExecutionContext>*);
-
-class ContextLifecycleObserver : public LifecycleObserver<ExecutionContext> {
+class CORE_EXPORT ContextLifecycleObserver : public LifecycleObserver<ExecutionContext, ContextLifecycleObserver, ContextLifecycleNotifier> {
 public:
-    explicit ContextLifecycleObserver(ExecutionContext*, Type = GenericType);
     ExecutionContext* executionContext() const { return lifecycleContext(); }
+
+    enum Type {
+        GenericType,
+        ActiveDOMObjectType,
+    };
+
+    Type observerType() const { return m_observerType; }
+
 protected:
-    virtual ~ContextLifecycleObserver();
+    explicit ContextLifecycleObserver(ExecutionContext* executionContext, Type type = GenericType)
+        : LifecycleObserver(executionContext)
+        , m_observerType(type)
+    {
+    }
+
+private:
+    Type m_observerType;
 };
 
 } // namespace blink

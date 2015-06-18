@@ -24,7 +24,6 @@
 #define FEDisplacementMap_h
 
 #include "platform/graphics/filters/FilterEffect.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
@@ -38,7 +37,7 @@ enum ChannelSelectorType {
 
 class PLATFORM_EXPORT FEDisplacementMap : public FilterEffect {
 public:
-    static PassRefPtr<FEDisplacementMap> create(Filter*, ChannelSelectorType xChannelSelector, ChannelSelectorType yChannelSelector, float);
+    static PassRefPtrWillBeRawPtr<FEDisplacementMap> create(Filter*, ChannelSelectorType xChannelSelector, ChannelSelectorType yChannelSelector, float);
 
     ChannelSelectorType xChannelSelector() const;
     bool setXChannelSelector(const ChannelSelectorType);
@@ -48,8 +47,6 @@ public:
 
     float scale() const;
     bool setScale(float);
-
-    virtual void setResultColorSpace(ColorSpace) override;
 
     virtual FloatRect mapPaintRect(const FloatRect&, bool forward = true) override final;
 

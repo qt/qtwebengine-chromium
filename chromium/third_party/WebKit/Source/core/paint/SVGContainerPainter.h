@@ -8,16 +8,16 @@
 namespace blink {
 
 struct PaintInfo;
-class RenderSVGContainer;
+class LayoutSVGContainer;
 
 class SVGContainerPainter {
 public:
-    SVGContainerPainter(RenderSVGContainer& renderSVGContainer) : m_renderSVGContainer(renderSVGContainer) { }
+    SVGContainerPainter(LayoutSVGContainer& layoutSVGContainer) : m_layoutSVGContainer(layoutSVGContainer) { }
 
-    void paint(PaintInfo&);
+    void paint(const PaintInfo&);
 
 private:
-    RenderSVGContainer& m_renderSVGContainer;
+    LayoutSVGContainer& m_layoutSVGContainer;
 };
 
 } // namespace blink

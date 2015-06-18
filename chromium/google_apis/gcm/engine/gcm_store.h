@@ -56,6 +56,8 @@ class GCM_EXPORT GCMStore {
     std::set<std::string> last_checkin_accounts;
     AccountMappings account_mappings;
     base::Time last_token_fetch_time;
+    std::map<std::string, int> heartbeat_intervals;
+    std::map<std::string, std::string> instance_id_data;
   };
 
   typedef std::vector<std::string> PersistentIdList;
@@ -132,6 +134,20 @@ class GCM_EXPORT GCMStore {
   // Sets last token fetch time.
   virtual void SetLastTokenFetchTime(const base::Time& time,
                                      const UpdateCallback& callback) = 0;
+
+  // Sets the custom client heartbeat interval for a specified scope.
+  virtual void AddHeartbeatInterval(const std::string& scope,
+                                    int interval_ms,
+                                    const UpdateCallback& callback) = 0;
+  virtual void RemoveHeartbeatInterval(const std::string& scope,
+                                       const UpdateCallback& callback) = 0;
+
+  // Instance ID data.
+  virtual void AddInstanceIDData(const std::string& app_id,
+                                 const std::string& instance_id_data,
+                                 const UpdateCallback& callback) = 0;
+  virtual void RemoveInstanceIDData(const std::string& app_id,
+                                    const UpdateCallback& callback) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GCMStore);

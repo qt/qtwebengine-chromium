@@ -32,11 +32,14 @@
 #define WebContentDecryptionModuleSession_h
 
 #include "WebCommon.h"
+#include "WebVector.h"
 #include "public/platform/WebContentDecryptionModuleException.h"
 #include "public/platform/WebContentDecryptionModuleResult.h"
+#include "public/platform/WebEncryptedMediaTypes.h"
 
 namespace blink {
 
+class WebEncryptedMediaKeyInformation;
 class WebString;
 class WebURL;
 
@@ -44,22 +47,26 @@ class BLINK_PLATFORM_EXPORT WebContentDecryptionModuleSession {
 public:
     class BLINK_PLATFORM_EXPORT Client {
     public:
-        enum MediaKeyErrorCode {
-            MediaKeyErrorCodeUnknown = 1,
-            MediaKeyErrorCodeClient,
+        enum class MessageType {
+            LicenseRequest,
+            LicenseRenewal,
+            LicenseRelease
         };
 
-        virtual void message(const unsigned char* message, size_t messageLength, const WebURL& destinationURL) = 0;
-        virtual void ready() = 0;
+        virtual void message(MessageType, const unsigned char* message, size_t messageLength) = 0;
         virtual void close() = 0;
-        // FIXME: Remove this method once Chromium updated to use the new parameters.
-        virtual void error(MediaKeyErrorCode, unsigned long systemCode) = 0;
-        virtual void error(WebContentDecryptionModuleException, unsigned long systemCode, const WebString& message) = 0;
 
         // Called when the expiration time for the session changes.
         // |updatedExpiryTimeInMS| is specified as the number of milliseconds
         // since 01 January, 1970 UTC.
         virtual void expirationChanged(double updatedExpiryTimeInMS) = 0;
+
+        // Called when the set of keys for this session changes or existing keys
+        // change state. |hasAdditionalUsableKey| is set if a key is newly
+        // usable (e.g. new key available, previously expired key has been
+        // renewed, etc.) and the browser should attempt to resume playback
+        // if necessary.
+        virtual void keysStatusesChange(const WebVector<WebEncryptedMediaKeyInformation>&, bool hasAdditionalUsableKey) = 0;
 
     protected:
         virtual ~Client();
@@ -70,19 +77,11 @@ public:
     virtual void setClientInterface(Client*) = 0;
     virtual WebString sessionId() const = 0;
 
-    // FIXME: Remove these methods once the new methods are implemented in Chromium.
-    virtual void initializeNewSession(const WebString& mimeType, const unsigned char* initData, size_t initDataLength) = 0;
-    virtual void update(const unsigned char* response, size_t responseLength) = 0;
-    virtual void release() = 0;
-
-    virtual void initializeNewSession(const WebString& initDataType, const unsigned char* initData, size_t initDataLength, const WebString& sessionType, WebContentDecryptionModuleResult);
-    virtual void load(const WebString& sessionId, WebContentDecryptionModuleResult);
-    virtual void update(const unsigned char* response, size_t responseLength, WebContentDecryptionModuleResult);
-    virtual void close(WebContentDecryptionModuleResult);
-    virtual void remove(WebContentDecryptionModuleResult);
-
-    // FIXME: Remove this method once the new methods are implemented in Chromium.
-    virtual void release(WebContentDecryptionModuleResult);
+    virtual void initializeNewSession(WebEncryptedMediaInitDataType, const unsigned char* initData, size_t initDataLength, WebEncryptedMediaSessionType, WebContentDecryptionModuleResult) = 0;
+    virtual void load(const WebString& sessionId, WebContentDecryptionModuleResult) = 0;
+    virtual void update(const unsigned char* response, size_t responseLength, WebContentDecryptionModuleResult) = 0;
+    virtual void close(WebContentDecryptionModuleResult) = 0;
+    virtual void remove(WebContentDecryptionModuleResult) = 0;
 };
 
 } // namespace blink

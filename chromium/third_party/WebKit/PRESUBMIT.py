@@ -349,7 +349,7 @@ def GetPreferredTryMasters(project, change):
             'android_blink_compile_dbg': set(['defaulttests']),
             'android_blink_compile_rel': set(['defaulttests']),
             'android_chromium_gn_compile_rel': set(['defaulttests']),
-            'linux_blink_dbg': set(['defaulttests']),
+            'linux_blink_compile_dbg': set(['defaulttests']),
             'linux_blink_rel': set(['defaulttests']),
             'linux_chromium_gn_rel': set(['defaulttests']),
             'mac_blink_compile_dbg': set(['defaulttests']),
@@ -357,9 +357,4 @@ def GetPreferredTryMasters(project, change):
             'win_blink_compile_dbg': set(['defaulttests']),
             'win_blink_rel': set(['defaulttests']),
         },
-        'tryserver.chromium.gpu': {
-            'linux_gpu': set(['defaulttests']),
-            'mac_gpu': set(['defaulttests']),
-            'win_gpu': set(['defaulttests']),
-        }
     }

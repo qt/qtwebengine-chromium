@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -81,7 +80,7 @@ int PartialData::Core::GetAvailableRange(disk_cache::Entry* entry, int64 offset,
   int rv = entry->GetAvailableRange(
       offset, len, &start_, base::Bind(&PartialData::Core::OnIOComplete,
                                        base::Unretained(this)));
-  if (rv != net::ERR_IO_PENDING) {
+  if (rv != ERR_IO_PENDING) {
     // The callback will not be invoked. Lets cleanup.
     *start = start_;
     delete this;
@@ -90,11 +89,6 @@ int PartialData::Core::GetAvailableRange(disk_cache::Entry* entry, int64 offset,
 }
 
 void PartialData::Core::OnIOComplete(int result) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422516 PartialData::Core::OnIOComplete"));
-
   if (owner_)
     owner_->GetAvailableRangeCompleted(result, start_);
   delete this;
@@ -103,7 +97,12 @@ void PartialData::Core::OnIOComplete(int result) {
 // -----------------------------------------------------------------------------
 
 PartialData::PartialData()
-    : range_present_(false),
+    : current_range_start_(0),
+      current_range_end_(0),
+      cached_start_(0),
+      resource_size_(0),
+      cached_min_len_(0),
+      range_present_(false),
       final_range_(false),
       sparse_entry_(true),
       truncated_(false),
@@ -130,7 +129,6 @@ bool PartialData::Init(const HttpRequestHeaders& headers) {
   if (!byte_range_.IsValid())
     return false;
 
-  resource_size_ = 0;
   current_range_start_ = byte_range_.first_byte_position();
 
   DVLOG(1) << "Range start: " << current_range_start_ << " end: " <<
@@ -222,19 +220,20 @@ void PartialData::PrepareCacheValidation(disk_cache::Entry* entry,
   if (current_range_start_ == cached_start_) {
     // The data lives in the cache.
     range_present_ = true;
+    current_range_end_ = cached_start_ + cached_min_len_ - 1;
     if (len == cached_min_len_)
       final_range_ = true;
     headers->SetHeader(
         HttpRequestHeaders::kRange,
-        net::HttpByteRange::Bounded(
-            current_range_start_,
-            cached_start_ + cached_min_len_ - 1).GetHeaderValue());
+        HttpByteRange::Bounded(current_range_start_, current_range_end_)
+            .GetHeaderValue());
   } else {
     // This range is not in the cache.
+    current_range_end_ = cached_start_ - 1;
     headers->SetHeader(
         HttpRequestHeaders::kRange,
-        net::HttpByteRange::Bounded(
-            current_range_start_, cached_start_ - 1).GetHeaderValue());
+        HttpByteRange::Bounded(current_range_start_, current_range_end_)
+            .GetHeaderValue());
   }
 }
 
@@ -285,6 +284,9 @@ bool PartialData::UpdateFromStoredHeaders(const HttpResponseHeaders* headers,
     DVLOG(2) << "UpdateFromStoredHeaders size: " << resource_size_;
     return true;
   }
+
+  if (!headers->HasStrongValidators())
+    return false;
 
   int64 length_value = headers->GetContentLength();
   if (length_value <= 0)
@@ -371,7 +373,21 @@ bool PartialData::ResponseHeadersOK(const HttpResponseHeaders* headers) {
   if (start != current_range_start_)
     return false;
 
-  if (byte_range_.IsValid() && end > byte_range_.last_byte_position())
+  if (!current_range_end_) {
+    // There is nothing in the cache.
+    DCHECK(byte_range_.HasLastBytePosition());
+    current_range_end_ = byte_range_.last_byte_position();
+    if (current_range_end_ >= resource_size_) {
+      // We didn't know the real file size, and the server is saying that the
+      // requested range goes beyond the size. Fix it.
+      current_range_end_ = end;
+      byte_range_.set_last_byte_position(end);
+    }
+  }
+
+  // If we received a range, but it's not exactly the range we asked for, avoid
+  // trouble and signal an error.
+  if (end != current_range_end_)
     return false;
 
   return true;
@@ -413,9 +429,10 @@ void PartialData::FixContentLength(HttpResponseHeaders* headers) {
                                         resource_size_));
 }
 
-int PartialData::CacheRead(
-    disk_cache::Entry* entry, IOBuffer* data, int data_len,
-    const net::CompletionCallback& callback) {
+int PartialData::CacheRead(disk_cache::Entry* entry,
+                           IOBuffer* data,
+                           int data_len,
+                           const CompletionCallback& callback) {
   int read_len = std::min(data_len, cached_min_len_);
   if (!read_len)
     return 0;
@@ -434,9 +451,10 @@ int PartialData::CacheRead(
   return rv;
 }
 
-int PartialData::CacheWrite(
-    disk_cache::Entry* entry, IOBuffer* data, int data_len,
-    const net::CompletionCallback& callback) {
+int PartialData::CacheWrite(disk_cache::Entry* entry,
+                            IOBuffer* data,
+                            int data_len,
+                            const CompletionCallback& callback) {
   DVLOG(3) << "To write: " << data_len;
   if (sparse_entry_) {
     return entry->WriteSparseData(

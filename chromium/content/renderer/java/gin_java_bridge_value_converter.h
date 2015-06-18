@@ -7,33 +7,33 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "content/public/renderer/v8_value_converter.h"
+#include "content/public/child/v8_value_converter.h"
 
 namespace content {
 
 class GinJavaBridgeValueConverter : public content::V8ValueConverter::Strategy {
  public:
   CONTENT_EXPORT GinJavaBridgeValueConverter();
-  CONTENT_EXPORT virtual ~GinJavaBridgeValueConverter();
+  CONTENT_EXPORT ~GinJavaBridgeValueConverter() override;
 
-  CONTENT_EXPORT v8::Handle<v8::Value> ToV8Value(
+  CONTENT_EXPORT v8::Local<v8::Value> ToV8Value(
       const base::Value* value,
-      v8::Handle<v8::Context> context) const;
+      v8::Local<v8::Context> context) const;
   CONTENT_EXPORT scoped_ptr<base::Value> FromV8Value(
-      v8::Handle<v8::Value> value,
-      v8::Handle<v8::Context> context) const;
+      v8::Local<v8::Value> value,
+      v8::Local<v8::Context> context) const;
 
   // content::V8ValueConverter::Strategy
-  virtual bool FromV8Object(v8::Handle<v8::Object> value,
-                            base::Value** out,
-                            v8::Isolate* isolate,
-                            const FromV8ValueCallback& callback) const override;
-  virtual bool FromV8ArrayBuffer(v8::Handle<v8::Object> value,
-                                 base::Value** out,
-                                 v8::Isolate* isolate) const override;
-  virtual bool FromV8Number(v8::Handle<v8::Number> value,
-                            base::Value** out) const override;
-  virtual bool FromV8Undefined(base::Value** out) const override;
+  bool FromV8Object(v8::Local<v8::Object> value,
+                    base::Value** out,
+                    v8::Isolate* isolate,
+                    const FromV8ValueCallback& callback) const override;
+  bool FromV8ArrayBuffer(v8::Local<v8::Object> value,
+                         base::Value** out,
+                         v8::Isolate* isolate) const override;
+  bool FromV8Number(v8::Local<v8::Number> value,
+                    base::Value** out) const override;
+  bool FromV8Undefined(base::Value** out) const override;
 
  private:
   scoped_ptr<V8ValueConverter> converter_;

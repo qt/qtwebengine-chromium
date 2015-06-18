@@ -26,8 +26,7 @@
 #ifndef PendingScript_h
 #define PendingScript_h
 
-#include "core/dom/Element.h"
-#include "core/fetch/ResourceClient.h"
+#include "core/CoreExport.h"
 #include "core/fetch/ResourceOwner.h"
 #include "core/fetch/ScriptResource.h"
 #include "platform/heap/Handle.h"
@@ -37,6 +36,7 @@
 
 namespace blink {
 
+class Element;
 class ScriptSourceCode;
 class ScriptStreamer;
 
@@ -45,7 +45,7 @@ class ScriptStreamer;
 // A ResourcePtr alone does not prevent the underlying Resource
 // from purging its data buffer. This class holds a dummy client open for its
 // lifetime in order to guarantee that the data buffer will not be purged.
-class PendingScript final : public ResourceOwner<ScriptResource> {
+class CORE_EXPORT PendingScript final : public ResourceOwner<ScriptResource> {
     ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     enum Type {
@@ -68,7 +68,7 @@ public:
     void stopWatchingForLoad(ScriptResourceClient*);
 
     Element* element() const { return m_element.get(); }
-    void setElement(Element* element) { m_element = element; }
+    void setElement(Element*);
     PassRefPtrWillBeRawPtr<Element> releaseElementAndClear();
 
     void setScriptResource(ScriptResource*);
@@ -76,11 +76,11 @@ public:
     virtual void notifyFinished(Resource*);
     virtual void notifyAppendData(ScriptResource*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     ScriptSourceCode getSource(const KURL& documentURL, bool& errorOccurred) const;
 
-    void setStreamer(PassRefPtr<ScriptStreamer>);
+    void setStreamer(PassRefPtrWillBeRawPtr<ScriptStreamer>);
 
     bool isReady() const;
 
@@ -89,7 +89,7 @@ private:
     RefPtrWillBeMember<Element> m_element;
     TextPosition m_startingPosition; // Only used for inline script tags.
 
-    RefPtr<ScriptStreamer> m_streamer;
+    RefPtrWillBeMember<ScriptStreamer> m_streamer;
 };
 
 } // namespace blink

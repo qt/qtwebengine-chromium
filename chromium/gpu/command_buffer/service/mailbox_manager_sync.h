@@ -40,13 +40,13 @@ class GPU_EXPORT MailboxManagerSync : public MailboxManager {
  private:
   friend class base::RefCounted<MailboxManager>;
 
+  static bool SkipTextureWorkarounds(const Texture* texture);
+
   ~MailboxManagerSync() override;
 
   class TextureGroup : public base::RefCounted<TextureGroup> {
    public:
-    static TextureGroup* CreateFromTexture(const Mailbox& name,
-                                           MailboxManagerSync* manager,
-                                           Texture* texture);
+    explicit TextureGroup(const TextureDefinition& definition);
     static TextureGroup* FromName(const Mailbox& name);
 
     void AddName(const Mailbox& name);
@@ -64,7 +64,6 @@ class GPU_EXPORT MailboxManagerSync : public MailboxManager {
 
    private:
     friend class base::RefCounted<TextureGroup>;
-    TextureGroup();
     ~TextureGroup();
 
     typedef std::vector<std::pair<MailboxManagerSync*, Texture*>> TextureList;

@@ -28,6 +28,7 @@
 
 #include "core/frame/LocalFrame.h"
 #include "core/page/PageLifecycleObserver.h"
+#include "modules/ModulesExport.h"
 #include "modules/geolocation/Geolocation.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
@@ -39,7 +40,7 @@ class GeolocationClient;
 class GeolocationError;
 class GeolocationPosition;
 
-class GeolocationController final : public NoBaseWillBeGarbageCollectedFinalized<GeolocationController>, public WillBeHeapSupplement<LocalFrame>, public PageLifecycleObserver {
+class MODULES_EXPORT GeolocationController final : public NoBaseWillBeGarbageCollectedFinalized<GeolocationController>, public WillBeHeapSupplement<LocalFrame>, public PageLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(GeolocationController);
     WTF_MAKE_NONCOPYABLE(GeolocationController);
 public:
@@ -69,7 +70,7 @@ public:
     static GeolocationController* from(LocalFrame* frame) { return static_cast<GeolocationController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
 
     // Inherited from Supplement.
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     GeolocationController(LocalFrame&, GeolocationClient*);
@@ -81,7 +82,7 @@ private:
     bool m_hasClientForTest;
 
     PersistentWillBeMember<GeolocationPosition> m_lastPosition;
-    typedef PersistentHeapHashSetWillBeHeapHashSet<Member<Geolocation> > ObserversSet;
+    typedef PersistentHeapHashSetWillBeHeapHashSet<Member<Geolocation>> ObserversSet;
     // All observers; both those requesting high accuracy and those not.
     ObserversSet m_observers;
     ObserversSet m_highAccuracyObservers;

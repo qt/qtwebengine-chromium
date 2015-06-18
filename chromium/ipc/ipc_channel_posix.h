@@ -17,8 +17,8 @@
 #include "base/files/scoped_file.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/process.h"
-#include "ipc/file_descriptor_set_posix.h"
 #include "ipc/ipc_channel_reader.h"
+#include "ipc/ipc_message_attachment_set.h"
 
 #if !defined(OS_MACOSX)
 // On Linux, the seccomp sandbox makes it very expensive to call
@@ -178,7 +178,7 @@ class IPC_EXPORT ChannelPosix : public Channel,
   // message has no payload and a full complement of descriptors.
   static const size_t kMaxReadFDs =
       (Channel::kReadBufferSize / sizeof(IPC::Message::Header)) *
-      FileDescriptorSet::kMaxDescriptorsPerMessage;
+      MessageAttachmentSet::kMaxDescriptorsPerMessage;
 
   // Buffer size for file descriptors used for recvmsg. On Mac the CMSG macros
   // don't seem to be constant so we have to pick a "large enough" value.
@@ -201,6 +201,10 @@ class IPC_EXPORT ChannelPosix : public Channel,
   // don't change to something like std::deque<> without changing the
   // implementation!
   std::vector<int> input_fds_;
+
+
+  void ResetSafely(base::ScopedFD* fd);
+  bool in_dtor_;
 
 #if defined(OS_MACOSX)
   // On OSX, sent FDs must not be closed until we get an ack.

@@ -24,7 +24,7 @@ public:
 
     bool elementQueueIsEmpty() { return m_elements.isEmpty(); }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     CustomElementMicrotaskDispatcher();
@@ -42,7 +42,7 @@ private:
         DispatchingCallbacks
     } m_phase;
 
-    WillBeHeapVector<RawPtrWillBeMember<CustomElementCallbackQueue> > m_elements;
+    WillBeHeapVector<RawPtrWillBeMember<CustomElementCallbackQueue>> m_elements;
 };
 
 } // namespace blink

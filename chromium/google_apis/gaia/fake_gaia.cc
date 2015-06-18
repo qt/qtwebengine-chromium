@@ -56,6 +56,9 @@ const char kDefaultGaiaId[]  ="12345";
 const base::FilePath::CharType kServiceLogin[] =
     FILE_PATH_LITERAL("google_apis/test/service_login.html");
 
+const base::FilePath::CharType kEmbeddedSetupChromeos[] =
+    FILE_PATH_LITERAL("google_apis/test/embedded_setup_chromeos.html");
+
 // OAuth2 Authentication header value prefix.
 const char kAuthHeaderBearer[] = "Bearer ";
 const char kAuthHeaderOAuth[] = "OAuth ";
@@ -133,12 +136,15 @@ FakeGaia::MergeSessionParams::MergeSessionParams() {
 FakeGaia::MergeSessionParams::~MergeSessionParams() {
 }
 
-FakeGaia::FakeGaia() {
+FakeGaia::FakeGaia() : issue_oauth_code_cookie_(false) {
   base::FilePath source_root_dir;
   PathService::Get(base::DIR_SOURCE_ROOT, &source_root_dir);
   CHECK(base::ReadFileToString(
       source_root_dir.Append(base::FilePath(kServiceLogin)),
       &service_login_response_));
+  CHECK(base::ReadFileToString(
+      source_root_dir.Append(base::FilePath(kEmbeddedSetupChromeos)),
+      &embedded_setup_chromeos_response_));
 }
 
 FakeGaia::~FakeGaia() {}
@@ -189,6 +195,15 @@ void FakeGaia::AddGoogleAccountsSigninHeader(
           email.c_str(), GetGaiaIdOfEmail(email).c_str()));
 }
 
+void FakeGaia::SetOAuthCodeCookie(
+    net::test_server::BasicHttpResponse* http_response) const {
+  http_response->AddCustomHeader(
+      "Set-Cookie",
+      base::StringPrintf(
+          "oauth_code=%s; Path=/o/GetOAuth2Token; Secure; HttpOnly;",
+          merge_session_params_.auth_code.c_str()));
+}
+
 void FakeGaia::Initialize() {
   GaiaUrls* gaia_urls = GaiaUrls::GetInstance();
   // Handles /MergeSession GAIA call.
@@ -203,6 +218,10 @@ void FakeGaia::Initialize() {
   REGISTER_RESPONSE_HANDLER(
       gaia_urls->service_login_url(), HandleServiceLogin);
 
+  // Handles /embedded/setup/chromeos GAIA call.
+  REGISTER_RESPONSE_HANDLER(gaia_urls->embedded_setup_chromeos_url(),
+                            HandleEmbeddedSetupChromeos);
+
   // Handles /OAuthLogin GAIA call.
   REGISTER_RESPONSE_HANDLER(
       gaia_urls->oauth1_login_url(), HandleOAuthLogin);
@@ -210,6 +229,16 @@ void FakeGaia::Initialize() {
   // Handles /ServiceLoginAuth GAIA call.
   REGISTER_RESPONSE_HANDLER(
       gaia_urls->service_login_auth_url(), HandleServiceLoginAuth);
+
+  // Handles /_/embedded/lookup/accountlookup for /embedded/setup/chromeos
+  // authentication request.
+  REGISTER_PATH_RESPONSE_HANDLER("/_/embedded/lookup/accountlookup",
+                                 HandleEmbeddedLookupAccountLookup);
+
+  // Handles /_/embedded/signin/challenge for /embedded/setup/chromeos
+  // authentication request.
+  REGISTER_PATH_RESPONSE_HANDLER("/_/embedded/signin/challenge",
+                                 HandleEmbeddedSigninChallenge);
 
   // Handles /SSO GAIA call (not GAIA, made up for SAML tests).
   REGISTER_PATH_RESPONSE_HANDLER("/SSO", HandleSSO);
@@ -233,6 +262,10 @@ void FakeGaia::Initialize() {
   // Handles /GetUserInfo GAIA call.
   REGISTER_RESPONSE_HANDLER(
       gaia_urls->get_user_info_url(), HandleGetUserInfo);
+
+  // Handles /oauth2/v1/userinfo call.
+  REGISTER_RESPONSE_HANDLER(
+      gaia_urls->oauth_user_info_url(), HandleOAuthUserInfo);
 }
 
 scoped_ptr<HttpResponse> FakeGaia::HandleRequest(const HttpRequest& request) {
@@ -386,10 +419,30 @@ const FakeGaia::AccessTokenInfo* FakeGaia::FindAccessTokenInfo(
   return NULL;
 }
 
+const FakeGaia::AccessTokenInfo* FakeGaia::GetAccessTokenInfo(
+    const std::string& access_token) const {
+  for (AccessTokenInfoMap::const_iterator entry(
+           access_token_info_map_.begin());
+       entry != access_token_info_map_.end();
+       ++entry) {
+    if (entry->second.token == access_token)
+      return &(entry->second);
+  }
+
+  return NULL;
+}
+
 void FakeGaia::HandleServiceLogin(const HttpRequest& request,
                                   BasicHttpResponse* http_response) {
   http_response->set_code(net::HTTP_OK);
   http_response->set_content(service_login_response_);
+  http_response->set_content_type("text/html");
+}
+
+void FakeGaia::HandleEmbeddedSetupChromeos(const HttpRequest& request,
+                                           BasicHttpResponse* http_response) {
+  http_response->set_code(net::HTTP_OK);
+  http_response->set_content(embedded_setup_chromeos_response_);
   http_response->set_content_type("text/html");
 }
 
@@ -466,6 +519,47 @@ void FakeGaia::HandleServiceLoginAuth(const HttpRequest& request,
     return;
 
   AddGoogleAccountsSigninHeader(http_response, email);
+  if (issue_oauth_code_cookie_)
+    SetOAuthCodeCookie(http_response);
+}
+
+void FakeGaia::HandleEmbeddedLookupAccountLookup(
+    const net::test_server::HttpRequest& request,
+    net::test_server::BasicHttpResponse* http_response) {
+  std::string email;
+  const bool is_saml =
+      GetQueryParameter(request.content, "identifier", &email) &&
+      saml_account_idp_map_.find(email) != saml_account_idp_map_.end();
+
+  if (!is_saml)
+    return;
+
+  GURL url(saml_account_idp_map_[email]);
+  url = net::AppendQueryParameter(url, "SAMLRequest", "fake_request");
+  url = net::AppendQueryParameter(
+      url, "RelayState",
+      "chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/success.html");
+  std::string redirect_url = url.spec();
+  http_response->AddCustomHeader("Google-Accounts-SAML", "Start");
+
+  http_response->AddCustomHeader("continue", redirect_url);
+}
+
+void FakeGaia::HandleEmbeddedSigninChallenge(const HttpRequest& request,
+                                             BasicHttpResponse* http_response) {
+  std::string email;
+  GetQueryParameter(request.content, "identifier", &email);
+
+  if (!merge_session_params_.auth_sid_cookie.empty() &&
+      !merge_session_params_.auth_lsid_cookie.empty()) {
+    SetCookies(http_response, merge_session_params_.auth_sid_cookie,
+               merge_session_params_.auth_lsid_cookie);
+  }
+
+  AddGoogleAccountsSigninHeader(http_response, email);
+
+  if (issue_oauth_code_cookie_)
+    SetOAuthCodeCookie(http_response);
 }
 
 void FakeGaia::HandleSSO(const HttpRequest& request,
@@ -485,13 +579,13 @@ void FakeGaia::HandleSSO(const HttpRequest& request,
 
   if (!merge_session_params_.email.empty())
     AddGoogleAccountsSigninHeader(http_response, merge_session_params_.email);
+
+  if (issue_oauth_code_cookie_)
+    SetOAuthCodeCookie(http_response);
 }
 
 void FakeGaia::HandleAuthToken(const HttpRequest& request,
                                BasicHttpResponse* http_response) {
-  std::string scope;
-  GetQueryParameter(request.content, "scope", &scope);
-
   std::string grant_type;
   if (!GetQueryParameter(request.content, "grant_type", &grant_type)) {
     http_response->set_code(net::HTTP_BAD_REQUEST);
@@ -508,12 +602,6 @@ void FakeGaia::HandleAuthToken(const HttpRequest& request,
       return;
     }
 
-    if (GaiaConstants::kOAuth1LoginScope != scope) {
-      http_response->set_code(net::HTTP_BAD_REQUEST);
-      LOG(ERROR) << "Invalid scope for /o/oauth2/token - " << scope;
-      return;
-    }
-
     base::DictionaryValue response_dict;
     response_dict.SetString("refresh_token",
                             merge_session_params_.refresh_token);
@@ -523,6 +611,9 @@ void FakeGaia::HandleAuthToken(const HttpRequest& request,
     FormatJSONResponse(response_dict, http_response);
     return;
   }
+
+  std::string scope;
+  GetQueryParameter(request.content, "scope", &scope);
 
   std::string refresh_token;
   std::string client_id;
@@ -550,17 +641,8 @@ void FakeGaia::HandleTokenInfo(const HttpRequest& request,
                                BasicHttpResponse* http_response) {
   const AccessTokenInfo* token_info = NULL;
   std::string access_token;
-  if (GetQueryParameter(request.content, "access_token", &access_token)) {
-    for (AccessTokenInfoMap::const_iterator entry(
-             access_token_info_map_.begin());
-         entry != access_token_info_map_.end();
-         ++entry) {
-      if (entry->second.token == access_token) {
-        token_info = &(entry->second);
-        break;
-      }
-    }
-  }
+  if (GetQueryParameter(request.content, "access_token", &access_token))
+    token_info = GetAccessTokenInfo(access_token);
 
   if (token_info) {
     base::DictionaryValue response_dict;
@@ -617,3 +699,23 @@ void FakeGaia::HandleGetUserInfo(const HttpRequest& request,
   http_response->set_code(net::HTTP_OK);
 }
 
+void FakeGaia::HandleOAuthUserInfo(
+    const net::test_server::HttpRequest& request,
+    net::test_server::BasicHttpResponse* http_response) {
+  const AccessTokenInfo* token_info = NULL;
+  std::string access_token;
+  if (GetAccessToken(request, kAuthHeaderBearer, &access_token) ||
+      GetAccessToken(request, kAuthHeaderOAuth, &access_token)) {
+    token_info = GetAccessTokenInfo(access_token);
+  }
+
+  if (token_info) {
+    base::DictionaryValue response_dict;
+    response_dict.SetString("id", GetGaiaIdOfEmail(token_info->email));
+    response_dict.SetString("email", token_info->email);
+    response_dict.SetString("verified_email", token_info->email);
+    FormatJSONResponse(response_dict, http_response);
+  } else {
+    http_response->set_code(net::HTTP_BAD_REQUEST);
+  }
+}

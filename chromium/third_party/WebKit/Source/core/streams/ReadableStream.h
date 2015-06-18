@@ -11,7 +11,7 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/V8Binding.h"
-#include "core/dom/ContextLifecycleObserver.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -21,69 +21,81 @@ namespace blink {
 
 class DOMException;
 class ExceptionState;
+class ExecutionContext;
+class ReadableStreamReader;
 class UnderlyingSource;
 
-class ReadableStream : public GarbageCollectedFinalized<ReadableStream>, public ScriptWrappable {
+class CORE_EXPORT ReadableStream : public GarbageCollectedFinalized<ReadableStream>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum State {
         Readable,
-        Waiting,
         Closed,
         Errored,
     };
 
-    // FIXME: Define Strategy here.
-    // FIXME: Add |strategy| constructor parameter.
     // After ReadableStream construction, |didSourceStart| must be called when
     // |source| initialization succeeds and |error| must be called when
     // |source| initialization fails.
-    ReadableStream(ExecutionContext*, UnderlyingSource* /* source */);
+    explicit ReadableStream(UnderlyingSource* /* source */);
     virtual ~ReadableStream();
 
     bool isStarted() const { return m_isStarted; }
     bool isDraining() const { return m_isDraining; }
     bool isPulling() const { return m_isPulling; }
-    State state() const { return m_state; }
-    String stateString() const;
+    State stateInternal() const { return m_state; }
+    DOMException* storedException() { return m_exception.get(); }
 
-    virtual ScriptValue read(ScriptState*, ExceptionState&) = 0;
-    ScriptPromise wait(ScriptState*);
+    virtual ScriptPromise read(ScriptState*) = 0;
+    ScriptPromise cancel(ScriptState*);
     ScriptPromise cancel(ScriptState*, ScriptValue reason);
-    ScriptPromise closed(ScriptState*);
+    ScriptPromise cancelInternal(ScriptState*, ScriptValue reason);
+
+    virtual bool hasPendingReads() const = 0;
+    virtual void resolveAllPendingReadsAsDone() = 0;
+    virtual void rejectAllPendingReads(DOMException*) = 0;
 
     void close();
-    void error(PassRefPtrWillBeRawPtr<DOMException>);
+    void error(DOMException*);
 
     void didSourceStart();
 
-    virtual void trace(Visitor*);
+    // This function is not a getter. It creates an ReadableStreamReader and
+    // returns it.
+    ReadableStreamReader* getReader(ExecutionContext*, ExceptionState&);
+    // Only ReadableStreamReader methods should call this function.
+    void setReader(ReadableStreamReader*);
+
+    bool isLocked() const { return m_reader; }
+    bool isLockedTo(const ReadableStreamReader* reader) const { return m_reader == reader; }
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
-    bool enqueuePreliminaryCheck(size_t chunkSize);
-    bool enqueuePostAction(size_t totalQueueSize);
-    void readPreliminaryCheck(ExceptionState&);
-    void readPostAction();
+    bool enqueuePreliminaryCheck();
+    bool enqueuePostAction();
+    void readInternalPostAction();
 
 private:
-    typedef ScriptPromiseProperty<Member<ReadableStream>, V8UndefinedType, RefPtrWillBeMember<DOMException> > WaitPromise;
-    typedef ScriptPromiseProperty<Member<ReadableStream>, V8UndefinedType, RefPtrWillBeMember<DOMException> > ClosedPromise;
+    using WaitPromise = ScriptPromiseProperty<Member<ReadableStream>, ToV8UndefinedGenerator, Member<DOMException>>;
+    using ClosedPromise = ScriptPromiseProperty<Member<ReadableStream>, ToV8UndefinedGenerator, Member<DOMException>>;
 
     virtual bool isQueueEmpty() const = 0;
     virtual void clearQueue() = 0;
+    // This function will call ReadableStream::error on error.
+    virtual bool shouldApplyBackpressure() = 0;
 
-    void callOrSchedulePull();
+    void callPullIfNeeded();
+    void closeInternal();
 
     Member<UnderlyingSource> m_source;
     bool m_isStarted;
     bool m_isDraining;
     bool m_isPulling;
-    bool m_isSchedulingPull;
     State m_state;
 
-    Member<WaitPromise> m_wait;
-    Member<ClosedPromise> m_closed;
-    RefPtrWillBeMember<DOMException> m_exception;
+    Member<DOMException> m_exception;
+    Member<ReadableStreamReader> m_reader;
 };
 
 } // namespace blink

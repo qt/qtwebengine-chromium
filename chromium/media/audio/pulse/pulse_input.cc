@@ -34,8 +34,7 @@ PulseAudioInputStream::PulseAudioInputStream(AudioManagerPulse* audio_manager,
             kNumberOfBlocksBufferInFifo),
       pa_mainloop_(mainloop),
       pa_context_(context),
-      handle_(NULL),
-      context_state_changed_(false) {
+      handle_(NULL) {
   DCHECK(mainloop);
   DCHECK(context);
   CHECK(params_.IsValid());
@@ -79,7 +78,8 @@ void PulseAudioInputStream::Start(AudioInputCallback* callback) {
   pa_stream_readable_size(handle_);
   stream_started_ = true;
 
-  pa_operation* operation = pa_stream_cork(handle_, 0, NULL, NULL);
+  pa_operation* operation =
+      pa_stream_cork(handle_, 0, &pulse::StreamSuccessCallback, pa_mainloop_);
   WaitForOperationCompletion(pa_mainloop_, operation);
 }
 

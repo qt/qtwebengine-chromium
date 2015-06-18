@@ -23,7 +23,7 @@
  */
 
 [
-    Conditional=WEB_AUDIO
+    Conditional=WEB_AUDIO,
 ] interface AnalyserNode : AudioNode {
     [RaisesException=Setter] attribute unsigned long fftSize;
     readonly attribute unsigned long frequencyBinCount;

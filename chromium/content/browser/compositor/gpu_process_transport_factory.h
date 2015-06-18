@@ -17,18 +17,20 @@
 #include "ui/compositor/compositor.h"
 
 namespace base {
+class SimpleThread;
 class Thread;
 }
 
 namespace cc {
+class SoftwareOutputDevice;
 class SurfaceManager;
 }
 
 namespace content {
 class BrowserCompositorOutputSurface;
-class BrowserCompositorOutputSurfaceProxy;
 class CompositorSwapClient;
 class ContextProviderCommandBuffer;
+class OutputDeviceBacking;
 class ReflectorImpl;
 class WebGraphicsContext3DCommandBufferImpl;
 
@@ -44,18 +46,20 @@ class GpuProcessTransportFactory
   CreateOffscreenCommandBufferContext();
 
   // ui::ContextFactory implementation.
-  void CreateOutputSurface(base::WeakPtr<ui::Compositor> compositor,
-                           bool software_fallback) override;
-  scoped_refptr<ui::Reflector> CreateReflector(ui::Compositor* source,
-                                               ui::Layer* target) override;
-  void RemoveReflector(scoped_refptr<ui::Reflector> reflector) override;
+  void CreateOutputSurface(base::WeakPtr<ui::Compositor> compositor) override;
+  scoped_ptr<ui::Reflector> CreateReflector(ui::Compositor* source,
+                                            ui::Layer* target) override;
+  void RemoveReflector(ui::Reflector* reflector) override;
   void RemoveCompositor(ui::Compositor* compositor) override;
   scoped_refptr<cc::ContextProvider> SharedMainThreadContextProvider() override;
   bool DoesCreateTestContexts() override;
+  uint32 GetImageTextureTarget() override;
   cc::SharedBitmapManager* GetSharedBitmapManager() override;
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
-  base::MessageLoopProxy* GetCompositorMessageLoop() override;
+  cc::TaskGraphRunner* GetTaskGraphRunner() override;
   scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator() override;
+  void ResizeDisplay(ui::Compositor* compositor,
+                     const gfx::Size& size) override;
 
   // ImageTransportFactory implementation.
   ui::ContextFactory* GetContextFactory() override;
@@ -66,14 +70,21 @@ class GpuProcessTransportFactory
   void RemoveObserver(ImageTransportFactoryObserver* observer) override;
 #if defined(OS_MACOSX)
   void OnSurfaceDisplayed(int surface_id) override;
+  void SetCompositorSuspendedForRecycle(ui::Compositor* compositor,
+                                        bool suspended) override;
+  bool SurfaceShouldNotShowFramesAfterSuspendForRecycle(
+      int surface_id) const override;
 #endif
 
  private:
   struct PerCompositorData;
 
   PerCompositorData* CreatePerCompositorData(ui::Compositor* compositor);
+  scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
+      ui::Compositor* compositor);
   void EstablishedGpuChannel(base::WeakPtr<ui::Compositor> compositor,
-                             bool create_software_renderer);
+                             bool create_gpu_output_surface,
+                             int num_attempts);
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateContextCommon(
       scoped_refptr<GpuChannelHost> gpu_channel_host,
       int surface_id);
@@ -82,19 +93,22 @@ class GpuProcessTransportFactory
   void OnLostMainThreadSharedContext();
 
   typedef std::map<ui::Compositor*, PerCompositorData*> PerCompositorDataMap;
-  scoped_ptr<base::Thread> compositor_thread_;
   PerCompositorDataMap per_compositor_data_;
   scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
   scoped_ptr<GLHelper> gl_helper_;
   ObserverList<ImageTransportFactoryObserver> observer_list_;
   scoped_ptr<cc::SurfaceManager> surface_manager_;
   uint32_t next_surface_id_namespace_;
+  scoped_ptr<cc::TaskGraphRunner> task_graph_runner_;
+  scoped_ptr<base::SimpleThread> raster_thread_;
+
+#if defined(OS_WIN)
+  scoped_ptr<OutputDeviceBacking> software_backing_;
+#endif
 
   // The contents of this map and its methods may only be used on the compositor
   // thread.
   IDMap<BrowserCompositorOutputSurface> output_surface_map_;
-
-  scoped_refptr<BrowserCompositorOutputSurfaceProxy> output_surface_proxy_;
 
   base::WeakPtrFactory<GpuProcessTransportFactory> callback_factory_;
 

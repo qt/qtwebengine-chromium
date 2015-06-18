@@ -52,7 +52,6 @@ public:
         GestureScrollBegin,
         GestureScrollEnd,
         GestureScrollUpdate,
-        GestureScrollUpdateWithoutPropagation,
         GestureTap,
         GestureTapUnconfirmed,
         GestureTapDown,
@@ -78,6 +77,16 @@ public:
         CtrlKey     = 1 << 1,
         MetaKey     = 1 << 2,
         ShiftKey    = 1 << 3,
+
+        LeftButtonDown   = 1 << 6,
+        MiddleButtonDown = 1 << 7,
+        RightButtonDown  = 1 << 8,
+    };
+
+    enum RailsMode {
+        RailsModeFree       = 0,
+        RailsModeHorizontal = 1,
+        RailsModeVertical   = 2,
     };
 
     Type type() const { return static_cast<Type>(m_type); }

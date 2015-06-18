@@ -34,6 +34,7 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
+#include "core/inspector/InjectedScriptNative.h"
 #include "core/inspector/JSONParser.h"
 #include "platform/JSONValues.h"
 #include "public/platform/Platform.h"
@@ -56,6 +57,7 @@ InjectedScriptManager::InjectedScriptManager(InspectedStateAccessCheck accessChe
     : m_nextInjectedScriptId(1)
     , m_injectedScriptHost(InjectedScriptHost::create())
     , m_inspectedStateAccessCheck(accessCheck)
+    , m_customObjectFormatterEnabled(false)
 {
 }
 
@@ -63,9 +65,12 @@ InjectedScriptManager::~InjectedScriptManager()
 {
 }
 
-void InjectedScriptManager::trace(Visitor* visitor)
+DEFINE_TRACE(InjectedScriptManager)
 {
     visitor->trace(m_injectedScriptHost);
+#if ENABLE(OILPAN)
+    visitor->trace(m_callbackDataSet);
+#endif
 }
 
 void InjectedScriptManager::disconnect()
@@ -84,9 +89,9 @@ InjectedScript InjectedScriptManager::injectedScriptForId(int id)
     IdToInjectedScriptMap::iterator it = m_idToInjectedScript.find(id);
     if (it != m_idToInjectedScript.end())
         return it->value;
-    for (ScriptStateToId::iterator it = m_scriptStateToId.begin(); it != m_scriptStateToId.end(); ++it) {
-        if (it->value == id)
-            return injectedScriptFor(it->key.get());
+    for (auto& state : m_scriptStateToId) {
+        if (state.value == id)
+            return injectedScriptFor(state.key.get());
     }
     return InjectedScript();
 }
@@ -119,30 +124,14 @@ void InjectedScriptManager::discardInjectedScripts()
     m_scriptStateToId.clear();
 }
 
-void InjectedScriptManager::discardInjectedScriptsFor(LocalDOMWindow* window)
+void InjectedScriptManager::discardInjectedScriptFor(ScriptState* scriptState)
 {
-    if (m_scriptStateToId.isEmpty())
+    ScriptStateToId::iterator it = m_scriptStateToId.find(scriptState);
+    if (it == m_scriptStateToId.end())
         return;
 
-    Vector<long> idsToRemove;
-    IdToInjectedScriptMap::iterator end = m_idToInjectedScript.end();
-    for (IdToInjectedScriptMap::iterator it = m_idToInjectedScript.begin(); it != end; ++it) {
-        ScriptState* scriptState = it->value.scriptState();
-        if (window != scriptState->domWindow())
-            continue;
-        m_scriptStateToId.remove(scriptState);
-        idsToRemove.append(it->key);
-    }
-    m_idToInjectedScript.removeAll(idsToRemove);
-
-    // Now remove script states that have id but no injected script.
-    Vector<ScriptState*> scriptStatesToRemove;
-    for (ScriptStateToId::iterator it = m_scriptStateToId.begin(); it != m_scriptStateToId.end(); ++it) {
-        ScriptState* scriptState = it->key.get();
-        if (window == scriptState->domWindow())
-            scriptStatesToRemove.append(scriptState);
-    }
-    m_scriptStateToId.removeAll(scriptStatesToRemove);
+    m_idToInjectedScript.remove(it->value);
+    m_scriptStateToId.remove(it);
 }
 
 bool InjectedScriptManager::canAccessInspectedWorkerGlobalScope(ScriptState*)
@@ -154,16 +143,26 @@ void InjectedScriptManager::releaseObjectGroup(const String& objectGroup)
 {
     Vector<int> keys;
     keys.appendRange(m_idToInjectedScript.keys().begin(), m_idToInjectedScript.keys().end());
-    for (Vector<int>::iterator k = keys.begin(); k != keys.end(); ++k) {
-        IdToInjectedScriptMap::iterator s = m_idToInjectedScript.find(*k);
+    for (auto& key : keys) {
+        IdToInjectedScriptMap::iterator s = m_idToInjectedScript.find(key);
         if (s != m_idToInjectedScript.end())
             s->value.releaseObjectGroup(objectGroup); // m_idToInjectedScript may change here.
     }
 }
 
+void InjectedScriptManager::setCustomObjectFormatterEnabled(bool enabled)
+{
+    m_customObjectFormatterEnabled = enabled;
+    IdToInjectedScriptMap::iterator end = m_idToInjectedScript.end();
+    for (IdToInjectedScriptMap::iterator it = m_idToInjectedScript.begin(); it != end; ++it) {
+        if (!it->value.isEmpty())
+            it->value.setCustomObjectFormatterEnabled(enabled);
+    }
+}
+
 String InjectedScriptManager::injectedScriptSource()
 {
-    const blink::WebData& injectedScriptSourceResource = blink::Platform::current()->loadResource("InjectedScriptSource.js");
+    const WebData& injectedScriptSourceResource = Platform::current()->loadResource("InjectedScriptSource.js");
     return String(injectedScriptSourceResource.data(), injectedScriptSourceResource.size());
 }
 
@@ -180,11 +179,35 @@ InjectedScript InjectedScriptManager::injectedScriptFor(ScriptState* inspectedSc
         return InjectedScript();
 
     int id = injectedScriptIdFor(inspectedScriptState);
-    ScriptValue injectedScriptValue = createInjectedScript(injectedScriptSource(), inspectedScriptState, id);
-    InjectedScript result(injectedScriptValue, m_inspectedStateAccessCheck);
+    RefPtr<InjectedScriptNative> injectedScriptNative = adoptRef(new InjectedScriptNative(inspectedScriptState->isolate()));
+    ScriptValue injectedScriptValue = createInjectedScript(injectedScriptSource(), inspectedScriptState, id, injectedScriptNative.get());
+    InjectedScript result(injectedScriptValue, m_inspectedStateAccessCheck, injectedScriptNative.release());
+    if (m_customObjectFormatterEnabled)
+        result.setCustomObjectFormatterEnabled(m_customObjectFormatterEnabled);
     m_idToInjectedScript.set(id, result);
     return result;
 }
 
-} // namespace blink
+PassOwnPtrWillBeRawPtr<InjectedScriptManager::CallbackData> InjectedScriptManager::CallbackData::create(InjectedScriptManager* manager)
+{
+    return adoptPtrWillBeNoop(new CallbackData(manager));
+}
 
+InjectedScriptManager::CallbackData::CallbackData(InjectedScriptManager* manager)
+    : injectedScriptManager(manager)
+{
+}
+
+void InjectedScriptManager::CallbackData::dispose()
+{
+    // Promptly release the ScopedPersistent<>.
+    handle.clear();
+}
+
+DEFINE_TRACE(InjectedScriptManager::CallbackData)
+{
+    visitor->trace(host);
+    visitor->trace(injectedScriptManager);
+}
+
+} // namespace blink

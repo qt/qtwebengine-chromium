@@ -28,21 +28,20 @@ class EVENTS_EXPORT GestureRecognizer {
   virtual ~GestureRecognizer() {}
 
   // Invoked before event dispatch. If the event is invalid given the current
-  // touch sequence, marks it as handled.
-  virtual bool ProcessTouchEventPreDispatch(const TouchEvent& event,
+  // touch sequence, returns false.
+  virtual bool ProcessTouchEventPreDispatch(TouchEvent* event,
                                             GestureConsumer* consumer) = 0;
+
   // Returns a list of zero or more GestureEvents. The caller is responsible for
-  // freeing the returned events. Called synchronously after event dispatch.
-  virtual Gestures* ProcessTouchEventPostDispatch(
-      const TouchEvent& event,
-      ui::EventResult result,
-      GestureConsumer* consumer) = 0;
+  // freeing the returned events. Acks the first gesture packet in the queue.
+  virtual Gestures* AckAsyncTouchEvent(ui::EventResult result,
+                                       GestureConsumer* consumer) = 0;
+
   // Returns a list of zero or more GestureEvents. The caller is responsible for
-  // freeing the returned events. Called when a touch event receives an
-  // asynchronous ack.
-  virtual Gestures* ProcessTouchEventOnAsyncAck(const TouchEvent& event,
-                                                ui::EventResult result,
-                                                GestureConsumer* consumer) = 0;
+  // freeing the returned events. Acks the last gesture packet in the queue.
+  virtual Gestures* AckSyncTouchEvent(const uint64 unique_event_id,
+                                      ui::EventResult result,
+                                      GestureConsumer* consumer) = 0;
 
   // This is called when the consumer is destroyed. So this should cleanup any
   // internal state maintained for |consumer|. Returns true iff there was
@@ -65,13 +64,15 @@ class EVENTS_EXPORT GestureRecognizer {
   virtual GestureConsumer* GetTargetForLocation(
       const gfx::PointF& location, int source_device_id) = 0;
 
+  // Cancels all touches except those targeted to |not_cancelled|. If
+  // |not_cancelled| == nullptr, cancels all touches.
+  virtual void CancelActiveTouchesExcept(GestureConsumer* not_cancelled) = 0;
+
   // Makes |new_consumer| the target for events previously targeting
-  // |current_consumer|. All other targets are canceled.
-  // The caller is responsible for updating the state of the consumers to
-  // be aware of this transfer of control (there are no ENTERED/EXITED events).
-  // If |new_consumer| is NULL, all events are canceled.
-  // If |old_consumer| is NULL, all events not already targeting |new_consumer|
-  // are canceled.
+  // |current_consumer|. Touches targeting all other targets are
+  // canceled. The caller is responsible for updating the state of the
+  // consumers to be aware of this transfer of control (there are no
+  // ENTERED/EXITED events).
   virtual void TransferEventsTo(GestureConsumer* current_consumer,
                                 GestureConsumer* new_consumer) = 0;
 

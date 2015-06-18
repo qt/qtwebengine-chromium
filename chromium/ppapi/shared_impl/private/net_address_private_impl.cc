@@ -92,14 +92,14 @@ struct NetAddress {
 // that the alignment is the same on both sides of the NaCl proxy, which is
 // important because we serialize and deserialize PP_NetAddress_Private by
 // simply copying the raw bytes.
-COMPILE_ASSERT(sizeof(NetAddress) == 28,
-               NetAddress_different_for_compiler);
+static_assert(sizeof(NetAddress) == 28,
+              "NetAddress different for compiler");
 
 // Make sure the storage in |PP_NetAddress_Private| is big enough. (Do it here
 // since the data is opaque elsewhere.)
-COMPILE_ASSERT(sizeof(reinterpret_cast<PP_NetAddress_Private*>(0)->data) >=
-               sizeof(NetAddress),
-               PP_NetAddress_Private_data_too_small);
+static_assert(sizeof(reinterpret_cast<PP_NetAddress_Private*>(0)->data) >=
+              sizeof(NetAddress),
+              "PP_NetAddress_Private data too small");
 
 size_t GetAddressSize(const NetAddress* net_addr) {
   return net_addr->is_ipv6 ? kIPv6AddressSize : kIPv4AddressSize;
@@ -451,7 +451,7 @@ bool NetAddressPrivateImpl::SockaddrToNetAddress(
 // static
 bool NetAddressPrivateImpl::IPEndPointToNetAddress(
     const std::vector<unsigned char>& address,
-    int port,
+    uint16 port,
     PP_NetAddress_Private* addr) {
   if (!addr)
     return false;
@@ -461,14 +461,14 @@ bool NetAddressPrivateImpl::IPEndPointToNetAddress(
     case kIPv4AddressSize: {
       net_addr->is_valid = true;
       net_addr->is_ipv6 = false;
-      net_addr->port = static_cast<uint16_t>(port);
+      net_addr->port = port;
       std::copy(address.begin(), address.end(), net_addr->address);
       break;
     }
     case kIPv6AddressSize: {
       net_addr->is_valid = true;
       net_addr->is_ipv6 = true;
-      net_addr->port = static_cast<uint16_t>(port);
+      net_addr->port = port;
       std::copy(address.begin(), address.end(), net_addr->address);
       break;
     }
@@ -484,7 +484,7 @@ bool NetAddressPrivateImpl::IPEndPointToNetAddress(
 bool NetAddressPrivateImpl::NetAddressToIPEndPoint(
     const PP_NetAddress_Private& addr,
     std::vector<unsigned char>* address,
-    int* port) {
+    uint16* port) {
   if (!address || !port)
     return false;
 
@@ -515,6 +515,12 @@ std::string NetAddressPrivateImpl::DescribeNetAddress(
   if (net_addr->is_ipv6)
     return ConvertIPv6AddressToString(net_addr, include_port);
   return ConvertIPv4AddressToString(net_addr, include_port);
+}
+
+// static
+void NetAddressPrivateImpl::GetAnyAddress(PP_Bool is_ipv6,
+    PP_NetAddress_Private* addr) {
+  ppapi::GetAnyAddress(is_ipv6, addr);
 }
 
 // static
@@ -556,8 +562,8 @@ bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv4Address(
 
   ipv4_addr->port = ConvertToNetEndian16(net_addr->port);
 
-  COMPILE_ASSERT(sizeof(ipv4_addr->addr) == kIPv4AddressSize,
-                 mismatched_IPv4_address_size);
+  static_assert(sizeof(ipv4_addr->addr) == kIPv4AddressSize,
+                "mismatched IPv4 address size");
   memcpy(ipv4_addr->addr, net_addr->address, kIPv4AddressSize);
 
   return true;
@@ -576,8 +582,8 @@ bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv6Address(
 
   ipv6_addr->port = ConvertToNetEndian16(net_addr->port);
 
-  COMPILE_ASSERT(sizeof(ipv6_addr->addr) == kIPv6AddressSize,
-                 mismatched_IPv6_address_size);
+  static_assert(sizeof(ipv6_addr->addr) == kIPv6AddressSize,
+                "mismatched IPv6 address size");
   memcpy(ipv6_addr->addr, net_addr->address, kIPv6AddressSize);
 
   return true;

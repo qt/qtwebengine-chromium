@@ -598,10 +598,9 @@ class TypeConverter(object):
         first_token = None
         default = []
 
-        def AddParameter():
+        def AddParameter(end):
             if default:
                 del default[0]  # Remove flag.
-            end = type_modifiers[-1].end
             parts = self.DeclarationToParts(type_modifiers, True)
             (name, type_name, templated_types, modifiers,
              unused_default, unused_other_tokens) = parts
@@ -625,7 +624,7 @@ class TypeConverter(object):
                 continue
 
             if s.name == ',':
-                AddParameter()
+                AddParameter(s.start)
                 name = type_name = ''
                 type_modifiers = []
                 pointer = reference = array = False
@@ -646,7 +645,7 @@ class TypeConverter(object):
                 default.append(s)
             else:
                 type_modifiers.append(s)
-        AddParameter()
+        AddParameter(tokens[-1].end)
         return result
 
     def CreateReturnType(self, return_type_seq):
@@ -1082,10 +1081,17 @@ class AstBuilder(object):
             body = None
             if token.name == '=':
                 token = self._GetNextToken()
-                assert token.token_type == tokenize.CONSTANT, token
-                assert token.name == '0', token
-                modifiers |= FUNCTION_PURE_VIRTUAL
-                token = self._GetNextToken()
+
+                if token.name == 'default' or token.name == 'delete':
+                    # Ignore explicitly defaulted and deleted special members
+                    # in C++11.
+                    token = self._GetNextToken()
+                else:
+                    # Handle pure-virtual declarations.
+                    assert token.token_type == tokenize.CONSTANT, token
+                    assert token.name == '0', token
+                    modifiers |= FUNCTION_PURE_VIRTUAL
+                    token = self._GetNextToken()
 
             if token.name == '[':
                 # TODO(nnorwitz): store tokens and improve parsing.

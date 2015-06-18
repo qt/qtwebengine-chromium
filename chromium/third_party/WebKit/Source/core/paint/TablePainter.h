@@ -8,20 +8,19 @@
 namespace blink {
 
 class LayoutPoint;
+class LayoutTable;
 struct PaintInfo;
-class RenderTable;
 
 class TablePainter {
 public:
-    TablePainter(RenderTable& renderTable) : m_renderTable(renderTable) { }
+    TablePainter(LayoutTable& layoutTable) : m_layoutTable(layoutTable) { }
 
-    void paint(PaintInfo&, const LayoutPoint&);
-    void paintObject(PaintInfo&, const LayoutPoint&);
-    void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&);
-    void paintMask(PaintInfo&, const LayoutPoint&);
+    void paintObject(const PaintInfo&, const LayoutPoint&);
+    void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&);
+    void paintMask(const PaintInfo&, const LayoutPoint&);
 
 private:
-    RenderTable& m_renderTable;
+    LayoutTable& m_layoutTable;
 };
 
 } // namespace blink

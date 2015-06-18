@@ -27,6 +27,7 @@
 #ifndef WorkerMessagingProxy_h
 #define WorkerMessagingProxy_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerLoaderProxy.h"
@@ -40,17 +41,17 @@
 namespace blink {
 
 class WorkerObjectProxy;
-class DedicatedWorkerThread;
+class WorkerThread;
 class ExecutionContext;
-class Worker;
+class InProcessWorkerBase;
 class WorkerClients;
 class WorkerInspectorProxy;
 
-class WorkerMessagingProxy final : public WorkerGlobalScopeProxy, public WorkerLoaderProxy {
-    WTF_MAKE_NONCOPYABLE(WorkerMessagingProxy); WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT WorkerMessagingProxy
+    : public WorkerGlobalScopeProxy
+    , private WorkerLoaderProxyProvider {
+    WTF_MAKE_NONCOPYABLE(WorkerMessagingProxy);
 public:
-    WorkerMessagingProxy(Worker*, PassOwnPtrWillBeRawPtr<WorkerClients>);
-
     // Implementations of WorkerGlobalScopeProxy.
     // (Only use these methods in the worker object thread.)
     virtual void startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode) override;
@@ -62,35 +63,42 @@ public:
     // These methods come from worker context thread via WorkerObjectProxy
     // and are called on the worker object thread (e.g. main thread).
     void postMessageToWorkerObject(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>);
-    void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL);
+    void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId);
     void reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL);
     void postMessageToPageInspector(const String&);
+    void postWorkerConsoleAgentEnabled();
     WorkerInspectorProxy* workerInspectorProxy();
     void confirmMessageFromWorkerObject(bool hasPendingActivity);
     void reportPendingActivity(bool hasPendingActivity);
     void workerGlobalScopeClosed();
     void workerThreadTerminated();
 
-    // Implementation of WorkerLoaderProxy.
+    void workerThreadCreated(PassRefPtr<WorkerThread>);
+
+protected:
+    WorkerMessagingProxy(InProcessWorkerBase*, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    virtual ~WorkerMessagingProxy();
+
+    virtual PassRefPtr<WorkerThread> createWorkerThread(double originTime) = 0;
+
+    PassRefPtr<WorkerLoaderProxy> loaderProxy() { return m_loaderProxy; }
+    WorkerObjectProxy& workerObjectProxy() { return *m_workerObjectProxy.get(); }
+
+private:
+    void workerObjectDestroyedInternal();
+    void terminateInternally();
+
+    // WorkerLoaderProxyProvider
     // These methods are called on different threads to schedule loading
     // requests and to send callbacks back to WorkerGlobalScope.
     virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask>) override;
     virtual bool postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>) override;
 
-    void workerThreadCreated(PassRefPtr<DedicatedWorkerThread>);
-
-protected:
-    virtual ~WorkerMessagingProxy();
-
-private:
-    static void workerObjectDestroyedInternal(ExecutionContext*, WorkerMessagingProxy*);
-    void terminateInternally();
-
     RefPtrWillBePersistent<ExecutionContext> m_executionContext;
     OwnPtr<WorkerObjectProxy> m_workerObjectProxy;
-    Worker* m_workerObject;
+    InProcessWorkerBase* m_workerObject;
     bool m_mayBeDestroyed;
-    RefPtr<DedicatedWorkerThread> m_workerThread;
+    RefPtr<WorkerThread> m_workerThread;
 
     unsigned m_unconfirmedMessageCount; // Unconfirmed messages from worker object to worker thread.
     bool m_workerThreadHadPendingActivity; // The latest confirmation from worker thread reported that it was still active.
@@ -101,6 +109,8 @@ private:
     OwnPtr<WorkerInspectorProxy> m_workerInspectorProxy;
 
     OwnPtrWillBePersistent<WorkerClients> m_workerClients;
+
+    RefPtr<WorkerLoaderProxy> m_loaderProxy;
 };
 
 } // namespace blink

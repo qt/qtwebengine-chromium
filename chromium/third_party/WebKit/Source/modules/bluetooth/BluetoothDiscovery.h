@@ -6,7 +6,7 @@
 #define BluetoothDiscovery_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
-#include "platform/heap/Visitor.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -20,7 +20,7 @@ class BluetoothDiscovery
 public:
     ScriptPromise requestDevice(ScriptState*);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 };
 
 } // namespace blink

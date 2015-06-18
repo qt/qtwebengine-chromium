@@ -58,7 +58,7 @@ IDBOpenDBRequest::~IDBOpenDBRequest()
 {
 }
 
-void IDBOpenDBRequest::trace(Visitor* visitor)
+DEFINE_TRACE(IDBOpenDBRequest)
 {
     visitor->trace(m_databaseCallbacks);
     IDBRequest::trace(visitor);
@@ -122,7 +122,7 @@ void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDa
     if (!shouldEnqueueEvent())
         return;
 
-    IDBDatabase* idbDatabase = 0;
+    IDBDatabase* idbDatabase = nullptr;
     if (resultAsAny()) {
         // Previous onUpgradeNeeded call delivered the backend.
         ASSERT(!backend.get());
@@ -168,7 +168,7 @@ bool IDBOpenDBRequest::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
     // an "error" event should be fired instead.
     if (event->type() == EventTypeNames::success && resultAsAny()->type() == IDBAny::IDBDatabaseType && resultAsAny()->idbDatabase()->isClosePending()) {
         dequeueEvent(event.get());
-        setResult(0);
+        setResult(nullptr);
         onError(DOMError::create(AbortError, "The connection was closed."));
         return false;
     }

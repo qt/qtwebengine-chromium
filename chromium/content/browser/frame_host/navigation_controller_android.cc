@@ -49,7 +49,8 @@ static base::android::ScopedJavaLocalRef<jobject> CreateJavaNavigationEntry(
       j_virtual_url.obj(),
       j_original_url.obj(),
       j_title.obj(),
-      j_bitmap.obj());
+      j_bitmap.obj(),
+      entry->GetTransitionType());
 }
 
 static void AddNavigationEntryToHistory(JNIEnv* env,
@@ -116,6 +117,11 @@ void NavigationControllerAndroid::GoToOffset(JNIEnv* env,
                                              jobject obj,
                                              jint offset) {
   navigation_controller_->GoToOffset(offset);
+}
+
+jboolean NavigationControllerAndroid::IsInitialNavigation(JNIEnv* env,
+                                                          jobject obj) {
+  return navigation_controller_->IsInitialNavigation();
 }
 
 void NavigationControllerAndroid::LoadIfNecessary(JNIEnv* env, jobject obj) {
@@ -301,6 +307,18 @@ void NavigationControllerAndroid::SetUseDesktopUserAgent(
 }
 
 base::android::ScopedJavaLocalRef<jobject>
+NavigationControllerAndroid::GetEntryAtIndex(JNIEnv* env,
+                                             jobject obj,
+                                             int index) {
+  if (index < 0 || index >= navigation_controller_->GetEntryCount())
+    return base::android::ScopedJavaLocalRef<jobject>();
+
+  content::NavigationEntry* entry =
+      navigation_controller_->GetEntryAtIndex(index);
+  return CreateJavaNavigationEntry(env, entry, index);
+}
+
+base::android::ScopedJavaLocalRef<jobject>
 NavigationControllerAndroid::GetPendingEntry(JNIEnv* env, jobject obj) {
   content::NavigationEntry* entry = navigation_controller_->GetPendingEntry();
 
@@ -320,6 +338,37 @@ jboolean NavigationControllerAndroid::RemoveEntryAtIndex(JNIEnv* env,
                                                          jobject obj,
                                                          jint index) {
   return navigation_controller_->RemoveEntryAtIndex(index);
+}
+
+jboolean NavigationControllerAndroid::CanCopyStateOver(JNIEnv* env,
+                                                       jobject obj) {
+  return navigation_controller_->GetEntryCount() == 0 &&
+      !navigation_controller_->GetPendingEntry();
+}
+
+jboolean NavigationControllerAndroid::CanPruneAllButLastCommitted(JNIEnv* env,
+                                                                  jobject obj) {
+  return navigation_controller_->CanPruneAllButLastCommitted();
+}
+
+void NavigationControllerAndroid::CopyStateFrom(
+    JNIEnv* env,
+    jobject obj,
+    jlong source_navigation_controller_android) {
+  navigation_controller_->CopyStateFrom(
+      *(reinterpret_cast<NavigationControllerAndroid*>(
+          source_navigation_controller_android)->navigation_controller_));
+}
+
+void NavigationControllerAndroid::CopyStateFromAndPrune(
+    JNIEnv* env,
+    jobject obj,
+    jlong source_navigation_controller_android,
+    jboolean replace_entry) {
+  navigation_controller_->CopyStateFromAndPrune(
+      reinterpret_cast<NavigationControllerAndroid*>(
+          source_navigation_controller_android)->navigation_controller_,
+      replace_entry);
 }
 
 }  // namespace content

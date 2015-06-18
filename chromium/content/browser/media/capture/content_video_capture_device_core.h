@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
+#include "content/browser/media/capture/capture_resolution_chooser.h"
 #include "content/browser/media/capture/video_capture_oracle.h"
 #include "content/common/content_export.h"
 #include "media/base/video_frame.h"
@@ -23,23 +24,6 @@ class VideoFrame;
 
 namespace content {
 
-const int kMinFrameWidth = 2;
-const int kMinFrameHeight = 2;
-
-// Returns the nearest even integer closer to zero.
-template<typename IntType>
-IntType MakeEven(IntType x) {
-  return x & static_cast<IntType>(-2);
-}
-
-// TODO(nick): Remove this once frame subscription is supported on Aura and
-// Linux.
-#if (defined(OS_WIN) || defined(OS_MACOSX)) || defined(USE_AURA)
-const bool kAcceleratedSubscriberIsSupported = true;
-#else
-const bool kAcceleratedSubscriberIsSupported = false;
-#endif
-
 class VideoCaptureMachine;
 
 // Thread-safe, refcounted proxy to the VideoCaptureOracle.  This proxy wraps
@@ -50,7 +34,6 @@ class ThreadSafeCaptureOracle
     : public base::RefCountedThreadSafe<ThreadSafeCaptureOracle> {
  public:
   ThreadSafeCaptureOracle(scoped_ptr<media::VideoCaptureDevice::Client> client,
-                          scoped_ptr<VideoCaptureOracle> oracle,
                           const media::VideoCaptureParams& params);
 
   // Called when a captured frame is available or an error has occurred.
@@ -68,7 +51,11 @@ class ThreadSafeCaptureOracle
                                     CaptureFrameCallback* callback);
 
   base::TimeDelta min_capture_period() const {
-    return oracle_->min_capture_period();
+    return oracle_.min_capture_period();
+  }
+
+  gfx::Size max_frame_size() const {
+    return params_.requested_format.frame_size;
   }
 
   // Returns the current capture resolution.
@@ -91,7 +78,8 @@ class ThreadSafeCaptureOracle
   // Callback invoked on completion of all captures.
   void DidCaptureFrame(
       int frame_number,
-      const scoped_refptr<media::VideoCaptureDevice::Client::Buffer>& buffer,
+      scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer,
+      base::TimeTicks capture_begin_time,
       const scoped_refptr<media::VideoFrame>& frame,
       base::TimeTicks timestamp,
       bool success);
@@ -103,16 +91,13 @@ class ThreadSafeCaptureOracle
   scoped_ptr<media::VideoCaptureDevice::Client> client_;
 
   // Makes the decision to capture a frame.
-  const scoped_ptr<VideoCaptureOracle> oracle_;
+  VideoCaptureOracle oracle_;
 
   // The video capture parameters used to construct the oracle proxy.
-  media::VideoCaptureParams params_;
+  const media::VideoCaptureParams params_;
 
-  // Indicates if capture size has been updated after construction.
-  bool capture_size_updated_;
-
-  // The current capturing format, as a media::VideoFrame::Format.
-  media::VideoFrame::Format video_frame_format_;
+  // Determines video capture frame sizes.
+  CaptureResolutionChooser resolution_chooser_;
 };
 
 // Keeps track of the video capture source frames and executes copying on the

@@ -21,13 +21,13 @@ import SocketServer
 import threading
 import time
 
-import third_party
-import dns.flags
-import dns.message
-import dns.rcode
-import dns.resolver
-import dns.rdatatype
-import ipaddr
+from third_party.dns import flags
+from third_party.dns import message
+from third_party.dns import rcode
+from third_party.dns import resolver
+from third_party.dns import rdatatype
+from third_party import ipaddr
+
 
 
 class DnsProxyException(Exception):
@@ -39,19 +39,20 @@ class RealDnsLookup(object):
     if '127.0.0.1' in name_servers:
       raise DnsProxyException(
           'Invalid nameserver: 127.0.0.1 (causes an infinte loop)')
-    self.resolver = dns.resolver.get_default_resolver()
+    self.resolver = resolver.get_default_resolver()
     self.resolver.nameservers = name_servers
     self.dns_cache_lock = threading.Lock()
     self.dns_cache = {}
 
-  def _IsIPAddress(self, hostname):
+  @staticmethod
+  def _IsIPAddress(hostname):
     try:
       socket.inet_aton(hostname)
       return True
     except socket.error:
       return False
 
-  def __call__(self, hostname, rdtype=dns.rdatatype.A):
+  def __call__(self, hostname, rdtype=rdatatype.A):
     """Return real IP for a host.
 
     Args:
@@ -69,13 +70,13 @@ class RealDnsLookup(object):
       return ip
     try:
       answers = self.resolver.query(hostname, rdtype)
-    except dns.resolver.NXDOMAIN:
+    except resolver.NXDOMAIN:
       return None
-    except dns.resolver.NoNameservers:
+    except resolver.NoNameservers:
       logging.debug('_real_dns_lookup(%s) -> No nameserver.',
                     hostname)
       return None
-    except (dns.resolver.NoAnswer, dns.resolver.Timeout) as ex:
+    except (resolver.NoAnswer, resolver.Timeout) as ex:
       logging.debug('_real_dns_lookup(%s) -> None (%s)',
                     hostname, ex.__class__.__name__)
       return None
@@ -240,10 +241,10 @@ class UdpDnsHandler(SocketServer.DatagramRequestHandler):
     return packet
 
   def get_dns_no_such_name_response(self):
-    query_message = dns.message.from_wire(self.data)
-    response_message = dns.message.make_response(query_message)
-    response_message.flags |= dns.flags.AA | dns.flags.RA
-    response_message.set_rcode(dns.rcode.NXDOMAIN)
+    query_message = message.from_wire(self.data)
+    response_message = message.make_response(query_message)
+    response_message.flags |= flags.AA | flags.RA
+    response_message.set_rcode(rcode.NXDOMAIN)
     return response_message.to_wire()
 
 
@@ -253,7 +254,12 @@ class DnsProxyServer(SocketServer.ThreadingUDPServer,
   # SocketServer.TCPServer (the parent of BaseHTTPServer.HTTPServer).
   # Since we're intercepting many domains through this single server,
   # it is quite possible to get more than 5 concurrent requests.
-  request_queue_size = 128
+  request_queue_size = 256
+
+  # Allow sockets to be reused. See
+  # http://svn.python.org/projects/python/trunk/Lib/SocketServer.py for more
+  # details.
+  allow_reuse_address = True
 
   # Don't prevent python from exiting when there is thread activity.
   daemon_threads = True
@@ -283,6 +289,7 @@ class DnsProxyServer(SocketServer.ThreadingUDPServer,
   def cleanup(self):
     try:
       self.shutdown()
+      self.server_close()
     except KeyboardInterrupt, e:
       pass
     logging.info('Stopped DNS server')

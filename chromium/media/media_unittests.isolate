@@ -6,6 +6,37 @@
     '../base/base.isolate',
   ],
   'conditions': [
+    ['use_x11==0', {
+      'variables': {
+        'command': [
+          '../testing/test_env.py',
+          '<(PRODUCT_DIR)/media_unittests<(EXECUTABLE_SUFFIX)',
+          '--brave-new-test-launcher',
+          '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--msan=<(msan)',
+          '--tsan=<(tsan)',
+        ],
+      },
+    }],
+    ['use_x11==1', {
+      'variables': {
+        'command': [
+          '../testing/xvfb.py',
+          '<(PRODUCT_DIR)',
+          '<(PRODUCT_DIR)/media_unittests',
+          '--brave-new-test-launcher',
+          '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--msan=<(msan)',
+          '--tsan=<(tsan)',
+        ],
+        'files': [
+          '../testing/xvfb.py',
+          '<(PRODUCT_DIR)/xdisplaycheck',
+        ],
+      },
+    }],
     ['OS=="android" or OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
         'files': [
@@ -15,19 +46,16 @@
     }],
     ['OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
-        'command': [
-          '<(PRODUCT_DIR)/media_unittests<(EXECUTABLE_SUFFIX)',
-        ],
         'files': [
+          '../testing/test_env.py',
           '<(PRODUCT_DIR)/media_unittests<(EXECUTABLE_SUFFIX)',
         ],
       },
     }],
-    # TODO(jmadill): should be automatic. http://crbug.com/418146
-    ['OS=="win"', {
+    ['OS=="linux"', {
       'variables': {
         'files': [
-          '<(PRODUCT_DIR)/ffmpegsumo.dll',
+          '<(PRODUCT_DIR)/libffmpegsumo.so',
         ],
       },
     }],
@@ -38,10 +66,25 @@
         ],
       },
     }],
-    ['OS=="linux"', {
+    ['OS=="win"', {
       'variables': {
         'files': [
-          '<(PRODUCT_DIR)/libffmpegsumo.so',
+          '<(PRODUCT_DIR)/ffmpegsumo.dll',
+        ],
+      },
+    }],
+    ['OS=="mac" and asan==1 and fastbuild==0', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/ffmpegsumo.so.dSYM/',
+          '<(PRODUCT_DIR)/media_unittests.dSYM/',
+        ],
+      },
+    }],
+    ['OS=="win" and (fastbuild==0 or fastbuild==1)', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/media_unittests.exe.pdb',
         ],
       },
     }],

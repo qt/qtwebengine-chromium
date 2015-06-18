@@ -6,66 +6,67 @@
 
 #include "base/callback.h"
 #include "base/lazy_instance.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-
-using blink::WebWorkerRunLoop;
+#include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 
 namespace content {
 
 namespace {
 
-class RunClosureTask : public WebWorkerRunLoop::Task {
+// A task-runner that refuses to run any tasks.
+class DoNothingTaskRunner : public base::TaskRunner {
  public:
-  RunClosureTask(const base::Closure& task) : task_(task) {}
-  virtual ~RunClosureTask() {}
-  virtual void Run() {
-    task_.Run();
-  }
+  DoNothingTaskRunner() {}
+
  private:
-  base::Closure task_;
+  ~DoNothingTaskRunner() override {}
+
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override {
+    return false;
+  }
+
+  bool RunsTasksOnCurrentThread() const override { return false; }
 };
 
-} // namespace
+}  // namespace
 
 struct WorkerTaskRunner::ThreadLocalState {
-  ThreadLocalState(int id, const WebWorkerRunLoop& loop)
-      : id_(id), run_loop_(loop) {
-  }
-  int id_;
-  WebWorkerRunLoop run_loop_;
+  ThreadLocalState() {}
   ObserverList<WorkerTaskRunner::Observer> stop_observers_;
 };
 
-WorkerTaskRunner::WorkerTaskRunner() {
-  // Start worker ids at 1, 0 is reserved for the main thread.
-  int id = id_sequence_.GetNext();
-  DCHECK(!id);
+WorkerTaskRunner::WorkerTaskRunner()
+    : task_runner_for_dead_worker_(new DoNothingTaskRunner()) {
 }
 
 bool WorkerTaskRunner::PostTask(
     int id, const base::Closure& closure) {
   DCHECK(id > 0);
-  base::AutoLock locker(loop_map_lock_);
-  IDToLoopMap::iterator found = loop_map_.find(id);
-  if (found == loop_map_.end())
+  base::AutoLock locker(task_runner_map_lock_);
+  IDToTaskRunnerMap::iterator found = task_runner_map_.find(id);
+  if (found == task_runner_map_.end())
     return false;
-  return found->second.postTask(new RunClosureTask(closure));
+  return found->second->PostTask(FROM_HERE, closure);
 }
 
 int WorkerTaskRunner::PostTaskToAllThreads(const base::Closure& closure) {
-  base::AutoLock locker(loop_map_lock_);
-  IDToLoopMap::iterator it;
-  for (it = loop_map_.begin(); it != loop_map_.end(); ++it)
-    it->second.postTask(new RunClosureTask(closure));
-  return static_cast<int>(loop_map_.size());
+  base::AutoLock locker(task_runner_map_lock_);
+  for (const auto& it : task_runner_map_)
+    it.second->PostTask(FROM_HERE, closure);
+  return static_cast<int>(task_runner_map_.size());
 }
 
 int WorkerTaskRunner::CurrentWorkerId() {
   if (!current_tls_.Get())
     return 0;
-  return current_tls_.Get()->id_;
+  return base::PlatformThread::CurrentId();
 }
 
 WorkerTaskRunner* WorkerTaskRunner::Instance() {
@@ -87,26 +88,33 @@ void WorkerTaskRunner::RemoveStopObserver(Observer* obs) {
 WorkerTaskRunner::~WorkerTaskRunner() {
 }
 
-void WorkerTaskRunner::OnWorkerRunLoopStarted(const WebWorkerRunLoop& loop) {
+void WorkerTaskRunner::OnWorkerRunLoopStarted() {
   DCHECK(!current_tls_.Get());
-  int id = id_sequence_.GetNext();
-  current_tls_.Set(new ThreadLocalState(id, loop));
+  DCHECK(!base::PlatformThread::CurrentRef().is_null());
+  current_tls_.Set(new ThreadLocalState());
 
-  base::AutoLock locker_(loop_map_lock_);
-  loop_map_[id] = loop;
+  int id = base::PlatformThread::CurrentId();
+  base::AutoLock locker_(task_runner_map_lock_);
+  task_runner_map_[id] = base::ThreadTaskRunnerHandle::Get().get();
+  CHECK(task_runner_map_[id]);
 }
 
-void WorkerTaskRunner::OnWorkerRunLoopStopped(const WebWorkerRunLoop& loop) {
+void WorkerTaskRunner::OnWorkerRunLoopStopped() {
   DCHECK(current_tls_.Get());
   FOR_EACH_OBSERVER(Observer, current_tls_.Get()->stop_observers_,
                     OnWorkerRunLoopStopped());
   {
-    base::AutoLock locker(loop_map_lock_);
-    DCHECK(loop_map_[CurrentWorkerId()] == loop);
-    loop_map_.erase(CurrentWorkerId());
+    base::AutoLock locker(task_runner_map_lock_);
+    task_runner_map_.erase(CurrentWorkerId());
   }
   delete current_tls_.Get();
   current_tls_.Set(NULL);
+}
+
+base::TaskRunner* WorkerTaskRunner::GetTaskRunnerFor(int worker_id) {
+  base::AutoLock locker(task_runner_map_lock_);
+  return ContainsKey(task_runner_map_, worker_id) ? task_runner_map_[worker_id]
+                                           : task_runner_for_dead_worker_.get();
 }
 
 }  // namespace content

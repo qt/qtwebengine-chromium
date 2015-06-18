@@ -34,14 +34,13 @@ class MockDemuxer : public Demuxer {
   // Demuxer implementation.
   MOCK_METHOD3(Initialize,
                void(DemuxerHost* host, const PipelineStatusCB& cb, bool));
-  MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
+  MOCK_METHOD1(SetPlaybackRate, void(double playback_rate));
   MOCK_METHOD2(Seek, void(base::TimeDelta time, const PipelineStatusCB& cb));
   MOCK_METHOD0(Stop, void());
   MOCK_METHOD0(OnAudioRendererDisabled, void());
   MOCK_METHOD1(GetStream, DemuxerStream*(DemuxerStream::Type));
   MOCK_CONST_METHOD0(GetStartTime, base::TimeDelta());
   MOCK_CONST_METHOD0(GetTimelineOffset, base::Time());
-  MOCK_CONST_METHOD0(GetLiveness, Liveness());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockDemuxer);
@@ -53,20 +52,23 @@ class MockDemuxerStream : public DemuxerStream {
   virtual ~MockDemuxerStream();
 
   // DemuxerStream implementation.
-  virtual Type type() override;
+  Type type() const override;
+  Liveness liveness() const override;
   MOCK_METHOD1(Read, void(const ReadCB& read_cb));
-  virtual AudioDecoderConfig audio_decoder_config() override;
-  virtual VideoDecoderConfig video_decoder_config() override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
   MOCK_METHOD0(EnableBitstreamConverter, void());
   MOCK_METHOD0(SupportsConfigChanges, bool());
 
   void set_audio_decoder_config(const AudioDecoderConfig& config);
   void set_video_decoder_config(const VideoDecoderConfig& config);
+  void set_liveness(Liveness liveness);
 
-  virtual VideoRotation video_rotation() override;
+  VideoRotation video_rotation() override;
 
  private:
-  DemuxerStream::Type type_;
+  Type type_;
+  Liveness liveness_;
   AudioDecoderConfig audio_decoder_config_;
   VideoDecoderConfig video_decoder_config_;
 
@@ -119,16 +121,19 @@ class MockVideoRenderer : public VideoRenderer {
   virtual ~MockVideoRenderer();
 
   // VideoRenderer implementation.
-  MOCK_METHOD8(Initialize, void(DemuxerStream* stream,
-                                bool low_delay,
-                                const PipelineStatusCB& init_cb,
-                                const StatisticsCB& statistics_cb,
-                                const BufferingStateCB& buffering_state_cb,
-                                const base::Closure& ended_cb,
-                                const PipelineStatusCB& error_cb,
-                                const TimeDeltaCB& get_time_cb));
+  MOCK_METHOD9(Initialize,
+               void(DemuxerStream* stream,
+                    const PipelineStatusCB& init_cb,
+                    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+                    const StatisticsCB& statistics_cb,
+                    const BufferingStateCB& buffering_state_cb,
+                    const base::Closure& ended_cb,
+                    const PipelineStatusCB& error_cb,
+                    const TimeSource::WallClockTimeCB& wall_clock_time_cb,
+                    const base::Closure& waiting_for_decryption_key_cb));
   MOCK_METHOD1(Flush, void(const base::Closure& callback));
   MOCK_METHOD1(StartPlayingFrom, void(base::TimeDelta));
+  MOCK_METHOD1(OnTimeStateChanged, void(bool));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockVideoRenderer);
@@ -140,12 +145,15 @@ class MockAudioRenderer : public AudioRenderer {
   virtual ~MockAudioRenderer();
 
   // AudioRenderer implementation.
-  MOCK_METHOD6(Initialize, void(DemuxerStream* stream,
-                                const PipelineStatusCB& init_cb,
-                                const StatisticsCB& statistics_cb,
-                                const BufferingStateCB& buffering_state_cb,
-                                const base::Closure& ended_cb,
-                                const PipelineStatusCB& error_cb));
+  MOCK_METHOD8(Initialize,
+               void(DemuxerStream* stream,
+                    const PipelineStatusCB& init_cb,
+                    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+                    const StatisticsCB& statistics_cb,
+                    const BufferingStateCB& buffering_state_cb,
+                    const base::Closure& ended_cb,
+                    const PipelineStatusCB& error_cb,
+                    const base::Closure& waiting_for_decryption_key_cb));
   MOCK_METHOD0(GetTimeSource, TimeSource*());
   MOCK_METHOD1(Flush, void(const base::Closure& callback));
   MOCK_METHOD0(StartPlaying, void());
@@ -161,20 +169,24 @@ class MockRenderer : public Renderer {
   virtual ~MockRenderer();
 
   // Renderer implementation.
-  MOCK_METHOD6(Initialize, void(DemuxerStreamProvider* demuxer_stream_provider,
-                                const base::Closure& init_cb,
-                                const StatisticsCB& statistics_cb,
-                                const base::Closure& ended_cb,
-                                const PipelineStatusCB& error_cb,
-                                const BufferingStateCB& buffering_state_cb));
+  MOCK_METHOD7(Initialize,
+               void(DemuxerStreamProvider* demuxer_stream_provider,
+                    const PipelineStatusCB& init_cb,
+                    const StatisticsCB& statistics_cb,
+                    const BufferingStateCB& buffering_state_cb,
+                    const base::Closure& ended_cb,
+                    const PipelineStatusCB& error_cb,
+                    const base::Closure& waiting_for_decryption_key_cb));
   MOCK_METHOD1(Flush, void(const base::Closure& flush_cb));
   MOCK_METHOD1(StartPlayingFrom, void(base::TimeDelta timestamp));
-  MOCK_METHOD1(SetPlaybackRate, void(float playback_rate));
+  MOCK_METHOD1(SetPlaybackRate, void(double playback_rate));
   MOCK_METHOD1(SetVolume, void(float volume));
   MOCK_METHOD0(GetMediaTime, base::TimeDelta());
   MOCK_METHOD0(HasAudio, bool());
   MOCK_METHOD0(HasVideo, bool());
-  MOCK_METHOD1(SetCdm, void(MediaKeys* cdm));
+  MOCK_METHOD2(SetCdm,
+               void(CdmContext* cdm_context,
+                    const CdmAttachedCB& cdm_attached_cb));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockRenderer);
@@ -188,10 +200,12 @@ class MockTimeSource : public TimeSource {
   // TimeSource implementation.
   MOCK_METHOD0(StartTicking, void());
   MOCK_METHOD0(StopTicking, void());
-  MOCK_METHOD1(SetPlaybackRate, void(float));
+  MOCK_METHOD1(SetPlaybackRate, void(double));
   MOCK_METHOD1(SetMediaTime, void(base::TimeDelta));
   MOCK_METHOD0(CurrentMediaTime, base::TimeDelta());
-  MOCK_METHOD0(CurrentMediaTimeForSyncingVideo, base::TimeDelta());
+  MOCK_METHOD2(GetWallClockTimes,
+               bool(const std::vector<base::TimeDelta>&,
+                    std::vector<base::TimeTicks>*));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockTimeSource);

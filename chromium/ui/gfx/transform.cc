@@ -11,12 +11,12 @@
 
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
-#include "ui/gfx/box_f.h"
+#include "ui/gfx/geometry/box_f.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/geometry/vector3d_f.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/safe_integer_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform_util.h"
 
@@ -38,6 +38,12 @@ inline bool ApproximatelyZero(SkMScalar x, SkMScalar tolerance) {
 
 inline bool ApproximatelyOne(SkMScalar x, SkMScalar tolerance) {
   return std::abs(x - SkDoubleToMScalar(1.0)) <= tolerance;
+}
+
+static float Round(float f) {
+  if (f == 0.f)
+    return f;
+  return (f > 0.f) ? std::floor(f + 0.5f) : std::ceil(f - 0.5f);
 }
 
 }  // namespace
@@ -388,6 +394,13 @@ void Transform::FlattenTo2d() {
   matrix_.set(2, 3, 0.0);
 }
 
+bool Transform::IsFlat() const {
+  return matrix_.get(2, 0) == 0.0 && matrix_.get(2, 1) == 0.0 &&
+         matrix_.get(0, 2) == 0.0 && matrix_.get(1, 2) == 0.0 &&
+         matrix_.get(2, 2) == 1.0 && matrix_.get(3, 2) == 0.0 &&
+         matrix_.get(2, 3) == 0.0;
+}
+
 Vector2dF Transform::To2dTranslation() const {
   return gfx::Vector2dF(SkMScalarToFloat(matrix_.get(0, 3)),
                         SkMScalarToFloat(matrix_.get(1, 3)));
@@ -491,6 +504,11 @@ bool Transform::Blend(const Transform& from, double progress) {
 
   matrix_ = ComposeTransform(to_decomp).matrix();
   return true;
+}
+
+void Transform::RoundTranslationComponents() {
+  matrix_.set(0, 3, Round(matrix_.get(0, 3)));
+  matrix_.set(1, 3, Round(matrix_.get(1, 3)));
 }
 
 void Transform::TransformPointInternal(const SkMatrix44& xform,

@@ -2,45 +2,66 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# GYP version: mojo/mojo_services.gypi:mojo_network_service
-shared_library("network") {
-  output_name = "network_service"
+import("//third_party/mojo/src/mojo/public/mojo_application.gni")
 
-  deps = [
-    ":lib",
-    "//base",
-    "//mojo/application",
-    "//mojo/public/c/system:for_shared_library",
-    "//mojo/public/cpp/bindings:bindings",
-    "//mojo/services/public/cpp/network",
-    "//mojo/services/public/interfaces/network",
-  ]
+if (is_android) {
+  import("//build/config/android/rules.gni")
 
-  sources = [ "main.cc" ]
+  java_library_path = "$target_out_dir/java_library.dex.jar"
+
+  mojo_android_application("network") {
+    output_name = "network_service"
+    input_so = "$root_out_dir/lib.stripped/libnetwork_service.so"
+    input_dex_jar = java_library_path
+  }
+
+  shared_library("native_library") {
+    output_name = "network_service"
+
+    sources = [
+      "android_hooks.cc",
+    ]
+
+    deps = [
+      ":sources",
+      "//base",
+      "//net",
+    ]
+  }
+
+  android_standalone_library("java_library") {
+    dex_path = java_library_path
+
+    deps = [
+      "//net/android:net_java",
+    ]
+  }
+} else {
+  mojo_native_application("network") {
+    output_name = "network_service"
+
+    deps = [
+      ":sources",
+    ]
+  }
 }
 
-# GYP version: mojo/mojo_services.gypi:mojo_network_service_lib
 source_set("lib") {
-  deps = [
-    "//base",
-    "//mojo/application",
-    "//mojo/common",
-    "//mojo/environment:chromium",
-    "//mojo/services/public/cpp/network",
-    "//mojo/services/public/interfaces/network",
-    "//net",
-    "//url",
-  ]
-
   sources = [
     "cookie_store_impl.cc",
     "cookie_store_impl.h",
+    "http_connection_impl.cc",
+    "http_connection_impl.h",
+    "http_server_impl.cc",
+    "http_server_impl.h",
     "net_adapters.cc",
     "net_adapters.h",
     "net_address_type_converters.cc",
     "net_address_type_converters.h",
     "network_context.cc",
     "network_context.h",
+    "network_service_delegate.cc",
+    "network_service_delegate.h",
     "network_service_impl.cc",
     "network_service_impl.h",
     "tcp_bound_socket_impl.cc",
@@ -55,5 +76,63 @@ source_set("lib") {
     "url_loader_impl.h",
     "web_socket_impl.cc",
     "web_socket_impl.h",
+  ]
+
+  deps = [
+    "//base",
+    "//mojo/application",
+    "//mojo/common",
+    "//mojo/environment:chromium",
+    "//mojo/services/network/public/cpp",
+    "//mojo/services/network/public/interfaces",
+    "//net",
+    "//net:http_server",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//url",
+  ]
+}
+
+source_set("sources") {
+  visibility = [ ":*" ]
+
+  sources = [
+    "main.cc",
+  ]
+
+  deps = [
+    ":lib",
+    "//base",
+    "//mojo/application",
+    "//mojo/services/network/public/cpp",
+    "//mojo/services/network/public/interfaces",
+    "//third_party/mojo/src/mojo/public/c/system:for_shared_library",
+    "//third_party/mojo/src/mojo/public/cpp/bindings:bindings",
+  ]
+}
+
+mojo_native_application("apptests") {
+  output_name = "network_service_apptests"
+  testonly = true
+
+  sources = [
+    "http_server_apptest.cc",
+    "udp_socket_apptest.cc",
+    "url_loader_impl_apptest.cc",
+  ]
+
+  deps = [
+    ":lib",
+    ":network",
+    "//base",
+    "//mojo/application",
+    "//mojo/application:test_support",
+    "//mojo/common",
+    "//mojo/services/network/public/cpp",
+    "//mojo/services/network/public/interfaces",
+    "//net",
+    "//net:test_support",
+    "//testing/gtest",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/public/cpp/bindings:callback",
   ]
 }

@@ -4,34 +4,36 @@
 
 #include "cc/debug/traced_value.h"
 
-#include "base/debug/trace_event_argument.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event_argument.h"
 
 namespace cc {
 
-void TracedValue::AppendIDRef(const void* id, base::debug::TracedValue* state) {
+void TracedValue::AppendIDRef(const void* id,
+                              base::trace_event::TracedValue* state) {
   state->BeginDictionary();
   state->SetString("id_ref", base::StringPrintf("%p", id));
   state->EndDictionary();
 }
 
 void TracedValue::SetIDRef(const void* id,
-                           base::debug::TracedValue* state,
+                           base::trace_event::TracedValue* state,
                            const char* name) {
   state->BeginDictionary(name);
   state->SetString("id_ref", base::StringPrintf("%p", id));
   state->EndDictionary();
 }
 
-void TracedValue::MakeDictIntoImplicitSnapshot(base::debug::TracedValue* dict,
-                                               const char* object_name,
-                                               const void* id) {
+void TracedValue::MakeDictIntoImplicitSnapshot(
+    base::trace_event::TracedValue* dict,
+    const char* object_name,
+    const void* id) {
   dict->SetString("id", base::StringPrintf("%s/%p", object_name, id));
 }
 
 void TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
     const char* category,
-    base::debug::TracedValue* dict,
+    base::trace_event::TracedValue* dict,
     const char* object_name,
     const void* id) {
   dict->SetString("cat", category);
@@ -40,7 +42,7 @@ void TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
 
 void TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
     const char* category,
-    base::debug::TracedValue* dict,
+    base::trace_event::TracedValue* dict,
     const char* object_base_type_name,
     const char* object_name,
     const void* id) {

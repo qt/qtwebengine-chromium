@@ -9,13 +9,19 @@
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/threading/thread_checker.h"
 #include "library_loaders/libeglplatform_shim.h"
 #include "third_party/khronos/EGL/egl.h"
+#include "ui/events/devices/device_data_manager.h"
+#include "ui/events/event.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
 #include "ui/events/ozone/events_ozone.h"
+#include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
+#include "ui/events/ozone/layout/stub/stub_keyboard_layout_engine.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/vsync_provider.h"
+#include "ui/ozone/common/egl_util.h"
 #include "ui/ozone/common/native_display_delegate_ozone.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/gpu_platform_support.h"
@@ -24,6 +30,7 @@
 #include "ui/ozone/public/ozone_switches.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 #include "ui/ozone/public/surface_ozone_egl.h"
+#include "ui/ozone/public/system_input_injector.h"
 #include "ui/platform_window/platform_window.h"
 #include "ui/platform_window/platform_window_delegate.h"
 
@@ -43,6 +50,27 @@ std::string GetShimLibraryName() {
   if (env->GetVar(kEglplatformShim, &library))
     return library;
   return kEglplatformShimDefault;
+}
+
+// Touch events are reported in device coordinates. This scales the event to the
+// window's coordinate space.
+void ScaleTouchEvent(TouchEvent* event, const gfx::SizeF& size) {
+  for (const auto& device :
+       DeviceDataManager::GetInstance()->touchscreen_devices()) {
+    if (device.id == event->source_device_id()) {
+      gfx::SizeF touchscreen_size = device.size;
+      gfx::PointF location = event->location_f();
+
+      location.Scale(size.width() / touchscreen_size.width(),
+                     size.height() / touchscreen_size.height());
+      double ratio = std::sqrt(size.GetArea() / touchscreen_size.GetArea());
+
+      event->set_location(location);
+      event->set_radius_x(event->radius_x() * ratio);
+      event->set_radius_y(event->radius_y() * ratio);
+      return;
+    }
+  }
 }
 
 class EgltestWindow : public PlatformWindow, public PlatformEventDispatcher {
@@ -67,6 +95,7 @@ class EgltestWindow : public PlatformWindow, public PlatformEventDispatcher {
   void Restore() override;
   void SetCursor(PlatformCursor cursor) override;
   void MoveCursorTo(const gfx::Point& location) override;
+  void ConfineCursorToBounds(const gfx::Rect& bounds) override;
 
   // PlatformEventDispatcher:
   bool CanDispatchEvent(const PlatformEvent& event) override;
@@ -145,11 +174,19 @@ void EgltestWindow::MoveCursorTo(const gfx::Point& location) {
   event_factory_->WarpCursorTo(window_id_, location);
 }
 
+void EgltestWindow::ConfineCursorToBounds(const gfx::Rect& bounds) {
+}
+
 bool EgltestWindow::CanDispatchEvent(const ui::PlatformEvent& ne) {
   return true;
 }
 
 uint32_t EgltestWindow::DispatchEvent(const ui::PlatformEvent& native_event) {
+  DCHECK(native_event);
+  Event* event = static_cast<Event*>(native_event);
+  if (event->IsTouchEvent())
+    ScaleTouchEvent(static_cast<TouchEvent*>(event), bounds_.size());
+
   DispatchEventFromNativeUiEvent(
       native_event, base::Bind(&PlatformWindowDelegate::DispatchEvent,
                                base::Unretained(delegate_)));
@@ -168,7 +205,7 @@ class SurfaceOzoneEgltest : public SurfaceOzoneEGL {
       : eglplatform_shim_(eglplatform_shim) {
     native_window_ = eglplatform_shim_->ShimGetNativeWindow(window_id);
   }
-  ~SurfaceOzoneEgltest() {
+  ~SurfaceOzoneEgltest() override {
     bool ret = eglplatform_shim_->ShimReleaseNativeWindow(native_window_);
     DCHECK(ret);
   }
@@ -177,12 +214,17 @@ class SurfaceOzoneEgltest : public SurfaceOzoneEGL {
 
   bool OnSwapBuffers() override { return true; }
 
+  bool OnSwapBuffersAsync(const SwapCompletionCallback& callback) override {
+    callback.Run();
+    return true;
+  }
+
   bool ResizeNativeWindow(const gfx::Size& viewport_size) override {
     return true;
   }
 
   scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() override {
-    return scoped_ptr<gfx::VSyncProvider>();
+    return nullptr;
   }
 
  private:
@@ -199,7 +241,9 @@ class SurfaceFactoryEgltest : public ui::SurfaceFactoryOzone {
  public:
   SurfaceFactoryEgltest(LibeglplatformShimLoader* eglplatform_shim)
       : eglplatform_shim_(eglplatform_shim) {}
-  ~SurfaceFactoryEgltest() override {}
+  ~SurfaceFactoryEgltest() override {
+    DCHECK(thread_checker_.CalledOnValidThread());
+  }
 
   // SurfaceFactoryOzone:
   intptr_t GetNativeDisplay() override;
@@ -212,14 +256,17 @@ class SurfaceFactoryEgltest : public ui::SurfaceFactoryOzone {
 
  private:
   LibeglplatformShimLoader* eglplatform_shim_;
+  base::ThreadChecker thread_checker_;
 };
 
 intptr_t SurfaceFactoryEgltest::GetNativeDisplay() {
+  DCHECK(thread_checker_.CalledOnValidThread());
   return eglplatform_shim_->ShimGetNativeDisplay();
 }
 
 scoped_ptr<SurfaceOzoneEGL> SurfaceFactoryEgltest::CreateEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   return make_scoped_ptr<SurfaceOzoneEGL>(
       new SurfaceOzoneEgltest(widget, eglplatform_shim_));
 }
@@ -227,6 +274,7 @@ scoped_ptr<SurfaceOzoneEGL> SurfaceFactoryEgltest::CreateEGLSurfaceForWidget(
 bool SurfaceFactoryEgltest::LoadEGLGLES2Bindings(
     AddGLLibraryCallback add_gl_library,
     SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   const char* egl_soname = eglplatform_shim_->ShimQueryString(SHIM_EGL_LIBRARY);
   const char* gles_soname =
       eglplatform_shim_->ShimQueryString(SHIM_GLES_LIBRARY);
@@ -235,44 +283,18 @@ bool SurfaceFactoryEgltest::LoadEGLGLES2Bindings(
   if (!gles_soname)
     gles_soname = kDefaultGlesSoname;
 
-  base::NativeLibraryLoadError error;
-  base::NativeLibrary egl_library =
-      base::LoadNativeLibrary(base::FilePath(egl_soname), &error);
-  if (!egl_library) {
-    LOG(WARNING) << "Failed to load EGL library: " << error.ToString();
-    return false;
-  }
-
-  base::NativeLibrary gles_library =
-      base::LoadNativeLibrary(base::FilePath(gles_soname), &error);
-  if (!gles_library) {
-    LOG(WARNING) << "Failed to load GLES library: " << error.ToString();
-    base::UnloadNativeLibrary(egl_library);
-    return false;
-  }
-
-  GLGetProcAddressProc get_proc_address =
-      reinterpret_cast<GLGetProcAddressProc>(
-          base::GetFunctionPointerFromNativeLibrary(egl_library,
-                                                    "eglGetProcAddress"));
-  if (!get_proc_address) {
-    LOG(ERROR) << "eglGetProcAddress not found.";
-    base::UnloadNativeLibrary(egl_library);
-    base::UnloadNativeLibrary(gles_library);
-    return false;
-  }
-
-  set_gl_get_proc_address.Run(get_proc_address);
-  add_gl_library.Run(egl_library);
-  add_gl_library.Run(gles_library);
-  return true;
+  return ::ui::LoadEGLGLES2Bindings(add_gl_library, set_gl_get_proc_address,
+                                    egl_soname, gles_soname);
 }
 
 const int32* SurfaceFactoryEgltest::GetEGLSurfaceProperties(
     const int32* desired_list) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   static const int32 broken_props[] = {
-      EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-      EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+      EGL_RENDERABLE_TYPE,
+      EGL_OPENGL_ES2_BIT,
+      EGL_SURFACE_TYPE,
+      EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
       EGL_NONE,
   };
   return broken_props;
@@ -287,7 +309,7 @@ const int32* SurfaceFactoryEgltest::GetEGLSurfaceProperties(
 class OzonePlatformEgltest : public OzonePlatform {
  public:
   OzonePlatformEgltest() : shim_initialized_(false) {}
-  virtual ~OzonePlatformEgltest() {
+  ~OzonePlatformEgltest() override {
     if (shim_initialized_)
       eglplatform_shim_.ShimTerminate();
   }
@@ -321,23 +343,26 @@ class OzonePlatformEgltest : public OzonePlatform {
   CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
   }
+  InputController* GetInputController() override {
+    return event_factory_ozone_->input_controller();
+  }
   GpuPlatformSupport* GetGpuPlatformSupport() override {
     return gpu_platform_support_.get();
   }
   GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
     return gpu_platform_support_host_.get();
   }
+  scoped_ptr<SystemInputInjector> CreateSystemInputInjector() override {
+    return nullptr;  // no input injection support.
+  }
   scoped_ptr<PlatformWindow> CreatePlatformWindow(
       PlatformWindowDelegate* delegate,
       const gfx::Rect& bounds) override {
-    return make_scoped_ptr<PlatformWindow>(
-        new EgltestWindow(delegate,
-                          &eglplatform_shim_,
-                          event_factory_ozone_.get(),
-                          bounds));
+    return make_scoped_ptr<PlatformWindow>(new EgltestWindow(
+        delegate, &eglplatform_shim_, event_factory_ozone_.get(), bounds));
   }
   scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
-    return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateOzone());
+    return make_scoped_ptr(new NativeDisplayDelegateOzone());
   }
 
   void InitializeUI() override {
@@ -345,8 +370,11 @@ class OzonePlatformEgltest : public OzonePlatform {
     if (!surface_factory_ozone_)
       surface_factory_ozone_.reset(
           new SurfaceFactoryEgltest(&eglplatform_shim_));
-    event_factory_ozone_.reset(
-        new EventFactoryEvdev(NULL, device_manager_.get()));
+    KeyboardLayoutEngineManager::SetKeyboardLayoutEngine(
+        make_scoped_ptr(new StubKeyboardLayoutEngine()));
+    event_factory_ozone_.reset(new EventFactoryEvdev(
+        NULL, device_manager_.get(),
+        KeyboardLayoutEngineManager::GetKeyboardLayoutEngine()));
     cursor_factory_ozone_.reset(new CursorFactoryOzone());
     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
   }

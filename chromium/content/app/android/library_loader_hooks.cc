@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/public/app/android_library_loader_hooks.h"
+#include "content/app/android/library_loader_hooks.h"
 
 #include "base/android/base_jni_registrar.h"
 #include "base/android/command_line_android.h"
@@ -11,10 +11,10 @@
 #include "base/android/jni_string.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
+#include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
 #include "content/app/android/app_jni_registrar.h"
 #include "content/browser/android/browser_jni_registrar.h"
@@ -22,9 +22,12 @@
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
-#include "device/battery/android/battery_jni_registrar.h"
+#include "device/bluetooth/android/bluetooth_jni_registrar.h"
+#include "device/vibration/android/vibration_jni_registrar.h"
 #include "media/base/android/media_jni_registrar.h"
+#include "media/midi/midi_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
+#include "ui/android/ui_android_jni_registrar.h"
 #include "ui/base/android/ui_base_jni_registrar.h"
 #include "ui/gfx/android/gfx_jni_registrar.h"
 #include "ui/gl/android/gl_jni_registrar.h"
@@ -63,10 +66,19 @@ bool EnsureJniRegistered(JNIEnv* env) {
     if (!content::android::RegisterAppJni(env))
       return false;
 
-    if (!device::android::RegisterBatteryJni(env))
+    if (!device::android::RegisterBluetoothJni(env))
+      return false;
+
+    if (!device::android::RegisterVibrationJni(env))
       return false;
 
     if (!media::RegisterJni(env))
+      return false;
+
+    if (!media::midi::RegisterJni(env))
+      return false;
+
+    if (!ui::RegisterUIAndroidJni(env))
       return false;
 
     g_jni_init_done = true;
@@ -79,19 +91,19 @@ bool LibraryLoaded(JNIEnv* env, jclass clazz) {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   if (command_line->HasSwitch(switches::kTraceStartup)) {
-    base::debug::CategoryFilter category_filter(
+    base::trace_event::CategoryFilter category_filter(
         command_line->GetSwitchValueASCII(switches::kTraceStartup));
-    base::debug::TraceLog::GetInstance()->SetEnabled(
+    base::trace_event::TraceLog::GetInstance()->SetEnabled(
         category_filter,
-        base::debug::TraceLog::RECORDING_MODE,
-        base::debug::TraceOptions());
+        base::trace_event::TraceLog::RECORDING_MODE,
+        base::trace_event::TraceOptions());
   }
 
   // Android's main browser loop is custom so we set the browser
   // name here as early as possible.
   TRACE_EVENT_BEGIN_ETW("BrowserMain", 0, "");
-  base::debug::TraceLog::GetInstance()->SetProcessName("Browser");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("Browser");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventBrowserProcessSortIndex);
 
   // Can only use event tracing after setting up the command line.
@@ -108,7 +120,7 @@ bool LibraryLoaded(JNIEnv* env, jclass clazz) {
   VLOG(0) << "Chromium logging enabled: level = " << logging::GetMinLogLevel()
           << ", default verbosity = " << logging::GetVlogVerbosity();
 
-  return EnsureJniRegistered(env);
+  return true;
 }
 
 }  // namespace content

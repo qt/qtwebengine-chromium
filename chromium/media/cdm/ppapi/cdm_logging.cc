@@ -6,7 +6,6 @@
 // protection that if the linker tries to link in strings/symbols appended to
 // "DLOG() <<" in release build (which it shouldn't), we'll get "undefined
 // reference" errors.
-#if !defined(NDEBUG)
 
 #include "media/cdm/ppapi/cdm_logging.h"
 
@@ -34,9 +33,11 @@
 #endif
 
 #include <iomanip>
-#include <string>
+#include <iostream>
 
 namespace media {
+
+#if !defined(NDEBUG)
 
 namespace {
 
@@ -100,7 +101,7 @@ CdmLogMessage::CdmLogMessage(const char* file, int line) {
   // Time and tick count.
   time_t t = time(NULL);
   struct tm local_time = {0};
-#if _MSC_VER >= 1400
+#ifdef _MSC_VER
   localtime_s(&local_time, &t);
 #else
   localtime_r(&t, &local_time);
@@ -132,6 +133,10 @@ CdmLogMessage::~CdmLogMessage() {
   std::cout << std::endl;
 }
 
-}  // namespace media
-
 #endif  // !defined(NDEBUG)
+
+std::ostream& CdmLogStream::stream() {
+  return std::cout;
+}
+
+}  // namespace media

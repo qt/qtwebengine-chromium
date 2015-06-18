@@ -1,16 +1,20 @@
-/*
- * Copyright (c) 2012 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+ * found in the LICENSE file. */
+
+* {
+  box-sizing: border-box;
+}
 
 body {
   color: rgb(48, 57, 66);
-  font-family: Arial, sans-serif;
   font-size: 13px;
   margin: 0;
   min-width: 47em;
-  padding: 20px 20px 65px 0;
+}
+
+.hidden {
+    display: none !important;
 }
 
 img {
@@ -19,7 +23,7 @@ img {
   padding-left: 2px;
   padding-right: 5px;
   vertical-align: top;
-  width: 16px;
+  width: 23px;
 }
 
 #container {
@@ -28,11 +32,16 @@ img {
 }
 
 #navigation {
+  max-height: 100vh;
+  overflow: auto;
+  padding-top: 20px;
   width: 150px;
 }
 
 #content {
   -webkit-flex: 1;
+  max-height: 100vh;
+  overflow: auto;
 }
 
 #caption {
@@ -69,14 +78,23 @@ img {
   color: #999;
 }
 
+#content > div {
+  padding: 54px 20px 65px 0;
+}
 #content > div:not(.selected) {
   display: none;
 }
 
 .content-header {
+  background: linear-gradient(white, white 40%, rgba(255, 255, 255, 0.92));
   border-bottom: 1px solid #eee;
   font-size: 150%;
-  padding-bottom: 10px;
+  left: 150px;
+  padding: 20px 0 10px 0;
+  position: fixed;
+  right: 20px;
+  top: 0;
+  z-index: 1;
 }
 
 #devices-help {
@@ -96,7 +114,7 @@ img {
 }
 
 .device-serial {
-  color: #888;
+  color: #999;
   font-size: 80%;
   margin-left: 6px;
 }
@@ -108,9 +126,9 @@ img {
 }
 
 .port-icon {
-  -webkit-border-radius: 6px;
   background-color: rgb(64, 192, 64);
   border: 0 solid transparent;
+  border-radius: 6px;
   height: 12px;
   margin: 2px;
   width: 12px;
@@ -118,11 +136,6 @@ img {
 
 .port-icon.error {
   background-color: rgb(224, 32, 32);
-}
-
-.port-icon.connected {
-  -webkit-transform: scale(1.2);
-  background-color: rgb(0, 255, 0);
 }
 
 .port-icon.transient {
@@ -139,7 +152,7 @@ img {
   align-items: center;
   display: flex;
   flex-flow: row wrap;
-  min-height: 23px;
+  min-height: 33px;
   padding-top: 10px;
 }
 
@@ -148,9 +161,14 @@ img {
   font-weight: bold;
 }
 
+.browser-header > .browser-user {
+  color: #999;
+  margin-left: 6px;
+}
+
 .used-for-port-forwarding {
-  background-image: -webkit-image-set(url('chrome://theme/IDR_INFO') 1x,
-                                      url('chrome://theme/IDR_INFO@2x') 2x);
+  background-image: -webkit-image-set(url(chrome://theme/IDR_INFO) 1x,
+                                      url(chrome://theme/IDR_INFO@2x) 2x);
   height: 15px;
   margin-left: 20px;
   width: 15px;
@@ -181,6 +199,7 @@ img {
 
 .webview-thumbnail {
   display: inline-block;
+  flex-shrink: 0;
   margin-right: 5px;
   overflow: hidden;
   position: relative;
@@ -212,7 +231,7 @@ img {
 }
 
 .url {
-  color: #A0A0A0;
+  color: #999;
 }
 
 .list {
@@ -271,21 +290,9 @@ img {
   margin-left: 15px;
 }
 
-#port-forwarding-overlay {
-  -webkit-box-align: center;
-  -webkit-box-pack: center;
-  background-color: rgba(255, 255, 255, 0.75);
-  bottom: 0;
-  display: -webkit-box;
-  left: 0;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
 .warning {
-  background-image: -webkit-image-set(url('chrome://theme/IDR_WARNING') 1x,
-                                      url('chrome://theme/IDR_WARNING@2x') 2x);
+  background-image: -webkit-image-set(url(chrome://theme/IDR_WARNING) 1x,
+                                      url(chrome://theme/IDR_WARNING@2x) 2x);
   background-position: 0 center;
   background-repeat: no-repeat;
   background-size: 24px 21px;
@@ -293,31 +300,36 @@ img {
   padding-left: 25px;
 }
 
-#port-forwarding-overlay:not(.open) {
-  display: none;
+#port-forwarding-config::backdrop {
+  background-color: rgba(255, 255, 255, 0.75);
 }
 
 #port-forwarding-config {
-  -webkit-border-radius: 3px;
   background: white;
+  border: 0;
+  border-radius: 3px;
   box-shadow: 0 4px 23px 5px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0,0,0,0.15);
   color: #333;
   padding: 17px 17px 12px;
   position: relative;
 }
 
+#port-forwarding-enable {
+  vertical-align: middle;
+}
+
 .close-button {
-  background-image: url('chrome://theme/IDR_CLOSE_DIALOG');
+  background-image: url(chrome://theme/IDR_CLOSE_DIALOG);
   height: 14px;
   width: 14px;
 }
 
 .close-button:active {
-  background-image: url('chrome://theme/IDR_CLOSE_DIALOG_P');
+  background-image: url(chrome://theme/IDR_CLOSE_DIALOG_P);
 }
 
 .close-button:hover {
-  background-image: url('chrome://theme/IDR_CLOSE_DIALOG_H');
+  background-image: url(chrome://theme/IDR_CLOSE_DIALOG_H);
 }
 
 #port-forwarding-config > .close-button {

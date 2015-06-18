@@ -8,12 +8,12 @@
 #include <limits>
 
 #include "base/containers/hash_tables.h"
-#include "base/debug/trace_event.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/util.h"
-#include "cc/output/gl_renderer.h"  // For the GLC() macro.
 #include "cc/resources/platform_color.h"
 #include "cc/resources/returned_resource.h"
 #include "cc/resources/shared_bitmap_manager.h"
@@ -26,6 +26,7 @@
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/GrContext.h"
+#include "third_party/skia/include/gpu/GrTextureProvider.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
@@ -75,6 +76,7 @@ GLenum TextureToStorageFormat(ResourceFormat format) {
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
+    case RED_8:
       NOTREACHED();
       break;
   }
@@ -93,6 +95,7 @@ bool IsFormatSupportedForStorage(ResourceFormat format, bool use_bgra) {
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
+    case RED_8:
       return false;
   }
   return false;
@@ -124,6 +127,7 @@ gfx::GpuMemoryBuffer::Format ToGpuMemoryBufferFormat(ResourceFormat format) {
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
+    case RED_8:
       break;
   }
   NOTREACHED();
@@ -137,13 +141,13 @@ class ScopedSetActiveTexture {
     DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(gl_));
 
     if (unit_ != GL_TEXTURE0)
-      GLC(gl_, gl_->ActiveTexture(unit_));
+      gl_->ActiveTexture(unit_);
   }
 
   ~ScopedSetActiveTexture() {
     // Active unit being GL_TEXTURE0 is effectively the ground state.
     if (unit_ != GL_TEXTURE0)
-      GLC(gl_, gl_->ActiveTexture(GL_TEXTURE0));
+      gl_->ActiveTexture(GL_TEXTURE0);
   }
 
  private:
@@ -198,11 +202,11 @@ class BufferIdAllocator : public IdAllocator {
   DISALLOW_COPY_AND_ASSIGN(BufferIdAllocator);
 };
 
-// Generic fence implementation for query objects. Fence has passed when query
-// result is available.
-class QueryFence : public ResourceProvider::Fence {
+// Query object based fence implementation used to detect completion of copy
+// texture operations. Fence has passed when query result is available.
+class CopyTextureFence : public ResourceProvider::Fence {
  public:
-  QueryFence(gpu::gles2::GLES2Interface* gl, unsigned query_id)
+  CopyTextureFence(gpu::gles2::GLES2Interface* gl, unsigned query_id)
       : gl_(gl), query_id_(query_id) {}
 
   // Overridden from ResourceProvider::Fence:
@@ -211,60 +215,34 @@ class QueryFence : public ResourceProvider::Fence {
     unsigned available = 1;
     gl_->GetQueryObjectuivEXT(
         query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
-    return !!available;
+    if (!available)
+      return false;
+
+    ProcessResult();
+    return true;
   }
   void Wait() override {
-    unsigned result = 0;
-    gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &result);
+    // ProcessResult() will wait for result to become available.
+    ProcessResult();
   }
 
  private:
-  ~QueryFence() override {}
+  ~CopyTextureFence() override {}
+
+  void ProcessResult() {
+    unsigned time_elapsed_us = 0;
+    gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &time_elapsed_us);
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.CopyTextureLatency", time_elapsed_us,
+                                0, 256000, 50);
+  }
 
   gpu::gles2::GLES2Interface* gl_;
   unsigned query_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(QueryFence);
+  DISALLOW_COPY_AND_ASSIGN(CopyTextureFence);
 };
 
 }  // namespace
-
-ResourceProvider::Resource::Resource()
-    : child_id(0),
-      gl_id(0),
-      gl_pixel_buffer_id(0),
-      gl_upload_query_id(0),
-      gl_read_lock_query_id(0),
-      pixels(NULL),
-      lock_for_read_count(0),
-      imported_count(0),
-      exported_count(0),
-      dirty_image(false),
-      locked_for_write(false),
-      lost(false),
-      marked_for_deletion(false),
-      pending_set_pixels(false),
-      set_pixels_completion_forced(false),
-      allocated(false),
-      read_lock_fences_enabled(false),
-      has_shared_bitmap_id(false),
-      allow_overlay(false),
-      read_lock_fence(NULL),
-      size(),
-      origin(Internal),
-      target(0),
-      original_filter(0),
-      filter(0),
-      image_id(0),
-      bound_image_id(0),
-      texture_pool(0),
-      wrap_mode(0),
-      hint(TextureHintImmutable),
-      type(InvalidType),
-      format(RGBA_8888),
-      shared_bitmap(NULL),
-      gpu_memory_buffer(NULL) {
-}
 
 ResourceProvider::Resource::~Resource() {}
 
@@ -307,12 +285,12 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       texture_pool(texture_pool),
       wrap_mode(wrap_mode),
       hint(hint),
-      type(GLTexture),
+      type(RESOURCE_TYPE_GL_TEXTURE),
       format(format),
       shared_bitmap(NULL),
       gpu_memory_buffer(NULL) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
-  DCHECK_EQ(origin == Internal, !!texture_pool);
+  DCHECK_EQ(origin == INTERNAL, !!texture_pool);
 }
 
 ResourceProvider::Resource::Resource(uint8_t* pixels,
@@ -350,13 +328,13 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       bound_image_id(0),
       texture_pool(0),
       wrap_mode(wrap_mode),
-      hint(TextureHintImmutable),
-      type(Bitmap),
+      hint(TEXTURE_HINT_IMMUTABLE),
+      type(RESOURCE_TYPE_BITMAP),
       format(RGBA_8888),
       shared_bitmap(bitmap),
       gpu_memory_buffer(NULL) {
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
-  DCHECK(origin == Delegated || pixels);
+  DCHECK(origin == DELEGATED || pixels);
   if (bitmap)
     shared_bitmap_id = bitmap->id();
 }
@@ -395,8 +373,8 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       bound_image_id(0),
       texture_pool(0),
       wrap_mode(wrap_mode),
-      hint(TextureHintImmutable),
-      type(Bitmap),
+      hint(TEXTURE_HINT_IMMUTABLE),
+      type(RESOURCE_TYPE_BITMAP),
       format(RGBA_8888),
       shared_bitmap_id(bitmap_id),
       shared_bitmap(NULL),
@@ -404,7 +382,9 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
   DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
 }
 
-ResourceProvider::Child::Child() : marked_for_deletion(false) {}
+ResourceProvider::Child::Child()
+    : marked_for_deletion(false), needs_sync_points(true) {
+}
 
 ResourceProvider::Child::~Child() {}
 
@@ -416,31 +396,53 @@ scoped_ptr<ResourceProvider> ResourceProvider::Create(
     int highp_threshold_min,
     bool use_rgba_4444_texture_format,
     size_t id_allocation_chunk_size) {
-  scoped_ptr<ResourceProvider> resource_provider(
-      new ResourceProvider(output_surface,
-                           shared_bitmap_manager,
-                           gpu_memory_buffer_manager,
-                           blocking_main_thread_task_runner,
-                           highp_threshold_min,
-                           use_rgba_4444_texture_format,
-                           id_allocation_chunk_size));
+  ContextProvider* context_provider = output_surface->context_provider();
+  GLES2Interface* gl =
+      context_provider ? context_provider->ContextGL() : nullptr;
+  ResourceType default_resource_type =
+      gl ? RESOURCE_TYPE_GL_TEXTURE : RESOURCE_TYPE_BITMAP;
 
-  if (resource_provider->ContextGL())
+  scoped_ptr<ResourceProvider> resource_provider(new ResourceProvider(
+      output_surface, shared_bitmap_manager, gpu_memory_buffer_manager,
+      blocking_main_thread_task_runner, highp_threshold_min,
+      default_resource_type, use_rgba_4444_texture_format,
+      id_allocation_chunk_size));
+
+  if (gl)
     resource_provider->InitializeGL();
   else
     resource_provider->InitializeSoftware();
 
-  DCHECK_NE(InvalidType, resource_provider->default_resource_type());
   return resource_provider.Pass();
 }
 
 ResourceProvider::~ResourceProvider() {
   while (!children_.empty())
-    DestroyChildInternal(children_.begin(), ForShutdown);
+    DestroyChildInternal(children_.begin(), FOR_SHUTDOWN);
   while (!resources_.empty())
-    DeleteResourceInternal(resources_.begin(), ForShutdown);
+    DeleteResourceInternal(resources_.begin(), FOR_SHUTDOWN);
 
-  CleanUpGLIfNeeded();
+  GLES2Interface* gl = ContextGL();
+  if (default_resource_type_ != RESOURCE_TYPE_GL_TEXTURE) {
+    // We are not in GL mode, but double check before returning.
+    DCHECK(!gl);
+    DCHECK(!texture_uploader_);
+    return;
+  }
+
+  DCHECK(gl);
+#if DCHECK_IS_ON()
+  // Check that all GL resources has been deleted.
+  for (ResourceMap::const_iterator itr = resources_.begin();
+       itr != resources_.end(); ++itr) {
+    DCHECK_NE(RESOURCE_TYPE_GL_TEXTURE, itr->second.type);
+  }
+#endif  // DCHECK_IS_ON()
+
+  texture_uploader_ = nullptr;
+  texture_id_allocator_ = nullptr;
+  buffer_id_allocator_ = nullptr;
+  gl->Finish();
 }
 
 bool ResourceProvider::InUseByConsumer(ResourceId id) {
@@ -466,18 +468,16 @@ ResourceProvider::ResourceId ResourceProvider::CreateResource(
     ResourceFormat format) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
-    case GLTexture:
+    case RESOURCE_TYPE_GL_TEXTURE:
       return CreateGLTexture(size,
                              GL_TEXTURE_2D,
                              GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
                              wrap_mode,
                              hint,
                              format);
-    case Bitmap:
+    case RESOURCE_TYPE_BITMAP:
       DCHECK_EQ(RGBA_8888, format);
       return CreateBitmap(size, wrap_mode);
-    case InvalidType:
-      break;
   }
 
   LOG(FATAL) << "Invalid default resource type.";
@@ -492,18 +492,16 @@ ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
     ResourceFormat format) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
-    case GLTexture:
+    case RESOURCE_TYPE_GL_TEXTURE:
       return CreateGLTexture(size,
                              target,
                              GL_TEXTURE_POOL_MANAGED_CHROMIUM,
                              wrap_mode,
                              hint,
                              format);
-    case Bitmap:
+    case RESOURCE_TYPE_BITMAP:
       DCHECK_EQ(RGBA_8888, format);
       return CreateBitmap(size, wrap_mode);
-    case InvalidType:
-      break;
   }
 
   LOG(FATAL) << "Invalid default resource type.";
@@ -522,17 +520,10 @@ ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   ResourceId id = next_id_++;
-  Resource resource(0,
-                    size,
-                    Resource::Internal,
-                    target,
-                    GL_LINEAR,
-                    texture_pool,
-                    wrap_mode,
-                    hint,
-                    format);
-  resource.allocated = false;
-  resources_[id] = resource;
+  Resource* resource = InsertResource(
+      id, Resource(0, size, Resource::INTERNAL, target, GL_LINEAR, texture_pool,
+                   wrap_mode, hint, format));
+  resource->allocated = false;
   return id;
 }
 
@@ -540,24 +531,16 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(
     const gfx::Size& size, GLint wrap_mode) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  scoped_ptr<SharedBitmap> bitmap;
-  if (shared_bitmap_manager_)
-    bitmap = shared_bitmap_manager_->AllocateSharedBitmap(size);
-
-  uint8_t* pixels;
-  if (bitmap) {
-    pixels = bitmap->pixels();
-  } else {
-    size_t bytes = SharedBitmap::CheckedSizeInBytes(size);
-    pixels = new uint8_t[bytes];
-  }
+  scoped_ptr<SharedBitmap> bitmap =
+      shared_bitmap_manager_->AllocateSharedBitmap(size);
+  uint8_t* pixels = bitmap->pixels();
   DCHECK(pixels);
 
   ResourceId id = next_id_++;
-  Resource resource(
-      pixels, bitmap.release(), size, Resource::Internal, GL_LINEAR, wrap_mode);
-  resource.allocated = true;
-  resources_[id] = resource;
+  Resource* resource =
+      InsertResource(id, Resource(pixels, bitmap.release(), size,
+                                  Resource::INTERNAL, GL_LINEAR, wrap_mode));
+  resource->allocated = true;
   return id;
 }
 
@@ -567,23 +550,17 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromIOSurface(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   ResourceId id = next_id_++;
-  Resource resource(0,
-                    gfx::Size(),
-                    Resource::Internal,
-                    GL_TEXTURE_RECTANGLE_ARB,
-                    GL_LINEAR,
-                    GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
-                    GL_CLAMP_TO_EDGE,
-                    TextureHintImmutable,
-                    RGBA_8888);
-  LazyCreate(&resource);
+  Resource* resource = InsertResource(
+      id, Resource(0, gfx::Size(), Resource::INTERNAL, GL_TEXTURE_RECTANGLE_ARB,
+                   GL_LINEAR, GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
+                   GL_CLAMP_TO_EDGE, TEXTURE_HINT_IMMUTABLE, RGBA_8888));
+  LazyCreate(resource);
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
-  gl->BindTexture(GL_TEXTURE_RECTANGLE_ARB, resource.gl_id);
+  gl->BindTexture(GL_TEXTURE_RECTANGLE_ARB, resource->gl_id);
   gl->TexImageIOSurface2DCHROMIUM(
       GL_TEXTURE_RECTANGLE_ARB, size.width(), size.height(), io_surface_id, 0);
-  resource.allocated = true;
-  resources_[id] = resource;
+  resource->allocated = true;
   return id;
 }
 
@@ -594,41 +571,27 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
   // Just store the information. Mailbox will be consumed in LockForRead().
   ResourceId id = next_id_++;
   DCHECK(mailbox.IsValid());
-  Resource& resource = resources_[id];
+  Resource* resource = nullptr;
   if (mailbox.IsTexture()) {
-    resource = Resource(0,
-                        gfx::Size(),
-                        Resource::External,
-                        mailbox.target(),
-                        GL_LINEAR,
-                        0,
-                        GL_CLAMP_TO_EDGE,
-                        TextureHintImmutable,
-                        RGBA_8888);
+    resource = InsertResource(
+        id, Resource(0, gfx::Size(), Resource::EXTERNAL, mailbox.target(),
+                     mailbox.nearest_neighbor() ? GL_NEAREST : GL_LINEAR, 0,
+                     GL_CLAMP_TO_EDGE, TEXTURE_HINT_IMMUTABLE, RGBA_8888));
   } else {
     DCHECK(mailbox.IsSharedMemory());
-    base::SharedMemory* shared_memory = mailbox.shared_memory();
-    DCHECK(shared_memory->memory());
-    uint8_t* pixels = reinterpret_cast<uint8_t*>(shared_memory->memory());
+    SharedBitmap* shared_bitmap = mailbox.shared_bitmap();
+    uint8_t* pixels = shared_bitmap->pixels();
     DCHECK(pixels);
-    scoped_ptr<SharedBitmap> shared_bitmap;
-    if (shared_bitmap_manager_) {
-      shared_bitmap =
-          shared_bitmap_manager_->GetBitmapForSharedMemory(shared_memory);
-    }
-    resource = Resource(pixels,
-                        shared_bitmap.release(),
-                        mailbox.shared_memory_size(),
-                        Resource::External,
-                        GL_LINEAR,
-                        GL_CLAMP_TO_EDGE);
+    resource = InsertResource(
+        id, Resource(pixels, shared_bitmap, mailbox.shared_memory_size(),
+                     Resource::EXTERNAL, GL_LINEAR, GL_CLAMP_TO_EDGE));
   }
-  resource.allocated = true;
-  resource.mailbox = mailbox;
-  resource.release_callback_impl =
+  resource->allocated = true;
+  resource->mailbox = mailbox;
+  resource->release_callback_impl =
       base::Bind(&SingleReleaseCallbackImpl::Run,
                  base::Owned(release_callback_impl.release()));
-  resource.allow_overlay = mailbox.allow_overlay();
+  resource->allow_overlay = mailbox.allow_overlay();
   return id;
 }
 
@@ -645,7 +608,7 @@ void ResourceProvider::DeleteResource(ResourceId id) {
     resource->marked_for_deletion = true;
     return;
   } else {
-    DeleteResourceInternal(it, Normal);
+    DeleteResourceInternal(it, NORMAL);
   }
 }
 
@@ -655,57 +618,52 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
   Resource* resource = &it->second;
   bool lost_resource = resource->lost;
 
-  DCHECK(resource->exported_count == 0 || style != Normal);
-  if (style == ForShutdown && resource->exported_count > 0)
+  DCHECK(resource->exported_count == 0 || style != NORMAL);
+  if (style == FOR_SHUTDOWN && resource->exported_count > 0)
     lost_resource = true;
 
   if (resource->image_id) {
-    DCHECK(resource->origin == Resource::Internal);
+    DCHECK(resource->origin == Resource::INTERNAL);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    GLC(gl, gl->DestroyImageCHROMIUM(resource->image_id));
+    gl->DestroyImageCHROMIUM(resource->image_id);
   }
   if (resource->gl_upload_query_id) {
-    DCHECK(resource->origin == Resource::Internal);
+    DCHECK(resource->origin == Resource::INTERNAL);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    GLC(gl, gl->DeleteQueriesEXT(1, &resource->gl_upload_query_id));
+    gl->DeleteQueriesEXT(1, &resource->gl_upload_query_id);
   }
   if (resource->gl_read_lock_query_id) {
-    DCHECK(resource->origin == Resource::Internal);
+    DCHECK(resource->origin == Resource::INTERNAL);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    GLC(gl, gl->DeleteQueriesEXT(1, &resource->gl_read_lock_query_id));
+    gl->DeleteQueriesEXT(1, &resource->gl_read_lock_query_id);
   }
   if (resource->gl_pixel_buffer_id) {
-    DCHECK(resource->origin == Resource::Internal);
+    DCHECK(resource->origin == Resource::INTERNAL);
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    GLC(gl, gl->DeleteBuffers(1, &resource->gl_pixel_buffer_id));
+    gl->DeleteBuffers(1, &resource->gl_pixel_buffer_id);
   }
-  if (resource->origin == Resource::External) {
+  if (resource->origin == Resource::EXTERNAL) {
     DCHECK(resource->mailbox.IsValid());
     GLuint sync_point = resource->mailbox.sync_point();
-    if (resource->type == GLTexture) {
+    if (resource->type == RESOURCE_TYPE_GL_TEXTURE) {
       DCHECK(resource->mailbox.IsTexture());
       lost_resource |= lost_output_surface_;
       GLES2Interface* gl = ContextGL();
       DCHECK(gl);
       if (resource->gl_id) {
-        GLC(gl, gl->DeleteTextures(1, &resource->gl_id));
+        gl->DeleteTextures(1, &resource->gl_id);
         resource->gl_id = 0;
         if (!lost_resource)
           sync_point = gl->InsertSyncPointCHROMIUM();
       }
     } else {
       DCHECK(resource->mailbox.IsSharedMemory());
-      base::SharedMemory* shared_memory = resource->mailbox.shared_memory();
-      if (resource->pixels && shared_memory) {
-        DCHECK(shared_memory->memory() == resource->pixels);
-        resource->pixels = NULL;
-        delete resource->shared_bitmap;
-        resource->shared_bitmap = NULL;
-      }
+      resource->shared_bitmap = nullptr;
+      resource->pixels = nullptr;
     }
     resource->release_callback_impl.Run(
         sync_point, lost_resource, blocking_main_thread_task_runner_);
@@ -713,22 +671,22 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
   if (resource->gl_id) {
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    GLC(gl, gl->DeleteTextures(1, &resource->gl_id));
+    gl->DeleteTextures(1, &resource->gl_id);
     resource->gl_id = 0;
   }
   if (resource->shared_bitmap) {
-    DCHECK(resource->origin != Resource::External);
-    DCHECK_EQ(Bitmap, resource->type);
+    DCHECK(resource->origin != Resource::EXTERNAL);
+    DCHECK_EQ(RESOURCE_TYPE_BITMAP, resource->type);
     delete resource->shared_bitmap;
     resource->pixels = NULL;
   }
   if (resource->pixels) {
-    DCHECK(resource->origin == Resource::Internal);
+    DCHECK(resource->origin == Resource::INTERNAL);
     delete[] resource->pixels;
     resource->pixels = NULL;
   }
   if (resource->gpu_memory_buffer) {
-    DCHECK(resource->origin == Resource::Internal);
+    DCHECK(resource->origin == Resource::INTERNAL);
     delete resource->gpu_memory_buffer;
     resource->gpu_memory_buffer = NULL;
   }
@@ -748,12 +706,12 @@ void ResourceProvider::SetPixels(ResourceId id,
   Resource* resource = GetResource(id);
   DCHECK(!resource->locked_for_write);
   DCHECK(!resource->lock_for_read_count);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(ReadLockFenceHasPassed(resource));
   LazyAllocate(resource);
 
-  if (resource->type == GLTexture) {
+  if (resource->type == RESOURCE_TYPE_GL_TEXTURE) {
     DCHECK(resource->gl_id);
     DCHECK(!resource->pending_set_pixels);
     DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
@@ -768,7 +726,7 @@ void ResourceProvider::SetPixels(ResourceId id,
                               resource->format,
                               resource->size);
   } else {
-    DCHECK_EQ(Bitmap, resource->type);
+    DCHECK_EQ(RESOURCE_TYPE_BITMAP, resource->type);
     DCHECK(resource->allocated);
     DCHECK_EQ(RGBA_8888, resource->format);
     DCHECK(source_rect.x() >= image_rect.x());
@@ -782,9 +740,57 @@ void ResourceProvider::SetPixels(ResourceId id,
     image += source_offset.y() * image_row_bytes + source_offset.x() * 4;
 
     ScopedWriteLockSoftware lock(this, id);
-    SkCanvas* dest = lock.sk_canvas();
-    dest->writePixels(
-        source_info, image, image_row_bytes, dest_offset.x(), dest_offset.y());
+    SkCanvas dest(lock.sk_bitmap());
+    dest.writePixels(source_info, image, image_row_bytes, dest_offset.x(),
+                     dest_offset.y());
+  }
+}
+
+void ResourceProvider::CopyToResource(ResourceId id,
+                                      const uint8_t* image,
+                                      const gfx::Size& image_size) {
+  Resource* resource = GetResource(id);
+  DCHECK(!resource->locked_for_write);
+  DCHECK(!resource->lock_for_read_count);
+  DCHECK(resource->origin == Resource::INTERNAL);
+  DCHECK_EQ(resource->exported_count, 0);
+  DCHECK(ReadLockFenceHasPassed(resource));
+  LazyAllocate(resource);
+
+  DCHECK_EQ(image_size.width(), resource->size.width());
+  DCHECK_EQ(image_size.height(), resource->size.height());
+
+  if (resource->type == RESOURCE_TYPE_BITMAP) {
+    DCHECK_EQ(RESOURCE_TYPE_BITMAP, resource->type);
+    DCHECK(resource->allocated);
+    DCHECK_EQ(RGBA_8888, resource->format);
+    SkImageInfo source_info =
+        SkImageInfo::MakeN32Premul(image_size.width(), image_size.height());
+    size_t image_stride = image_size.width() * 4;
+
+    ScopedWriteLockSoftware lock(this, id);
+    SkCanvas dest(lock.sk_bitmap());
+    dest.writePixels(source_info, image, image_stride, 0, 0);
+  } else {
+    DCHECK(resource->gl_id);
+    DCHECK(!resource->pending_set_pixels);
+    DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
+    GLES2Interface* gl = ContextGL();
+    DCHECK(gl);
+    DCHECK(texture_uploader_.get());
+    gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
+
+    if (resource->format == ETC1) {
+      size_t num_bytes = static_cast<size_t>(image_size.width()) *
+                         image_size.height() * BitsPerPixel(ETC1) / 8;
+      gl->CompressedTexImage2D(GL_TEXTURE_2D, 0, GLInternalFormat(ETC1),
+                               image_size.width(), image_size.height(), 0,
+                               num_bytes, image);
+    } else {
+      gl->TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image_size.width(),
+                        image_size.height(), GLDataFormat(resource->format),
+                        GLDataType(resource->format), image);
+    }
   }
 }
 
@@ -847,10 +853,20 @@ base::TimeTicks ResourceProvider::EstimatedUploadCompletionTime(
   return gfx::FrameTime::Now() + upload_one_texture_time * total_uploads;
 }
 
+ResourceProvider::Resource* ResourceProvider::InsertResource(
+    ResourceId id,
+    const Resource& resource) {
+  std::pair<ResourceMap::iterator, bool> result =
+      resources_.insert(ResourceMap::value_type(id, resource));
+  DCHECK(result.second);
+  return &result.first->second;
+}
+
 ResourceProvider::Resource* ResourceProvider::GetResource(ResourceId id) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(id);
   ResourceMap::iterator it = resources_.find(id);
-  CHECK(it != resources_.end());
+  DCHECK(it != resources_.end());
   return &it->second;
 }
 
@@ -866,8 +882,8 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
 
   LazyCreate(resource);
 
-  if (resource->type == GLTexture && !resource->gl_id) {
-    DCHECK(resource->origin != Resource::Internal);
+  if (resource->type == RESOURCE_TYPE_GL_TEXTURE && !resource->gl_id) {
+    DCHECK(resource->origin != Resource::INTERNAL);
     DCHECK(resource->mailbox.IsTexture());
 
     // Mailbox sync_points must be processed by a call to
@@ -876,11 +892,8 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
 
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    resource->gl_id = texture_id_allocator_->NextId();
-    GLC(gl, gl->BindTexture(resource->target, resource->gl_id));
-    GLC(gl,
-        gl->ConsumeTextureCHROMIUM(resource->mailbox.target(),
-                                   resource->mailbox.name()));
+    resource->gl_id = gl->CreateAndConsumeTextureCHROMIUM(
+        resource->mailbox.target(), resource->mailbox.name());
   }
 
   if (!resource->pixels && resource->has_shared_bitmap_id &&
@@ -916,12 +929,12 @@ void ResourceProvider::UnlockForRead(ResourceId id) {
   if (resource->marked_for_deletion && !resource->lock_for_read_count) {
     if (!resource->child_id) {
       // The resource belongs to this ResourceProvider, so it can be destroyed.
-      DeleteResourceInternal(it, Normal);
+      DeleteResourceInternal(it, NORMAL);
     } else {
       ChildMap::iterator child_it = children_.find(resource->child_id);
       ResourceIdArray unused;
       unused.push_back(id);
-      DeleteAndReturnUnusedResourcesToChild(child_it, Normal, unused);
+      DeleteAndReturnUnusedResourcesToChild(child_it, NORMAL, unused);
     }
   }
 }
@@ -937,14 +950,14 @@ ResourceProvider::Resource* ResourceProvider::LockForWrite(ResourceId id) {
 bool ResourceProvider::CanLockForWrite(ResourceId id) {
   Resource* resource = GetResource(id);
   return !resource->locked_for_write && !resource->lock_for_read_count &&
-         !resource->exported_count && resource->origin == Resource::Internal &&
+         !resource->exported_count && resource->origin == Resource::INTERNAL &&
          !resource->lost && ReadLockFenceHasPassed(resource);
 }
 
 void ResourceProvider::UnlockForWrite(ResourceProvider::Resource* resource) {
   DCHECK(resource->locked_for_write);
   DCHECK_EQ(resource->exported_count, 0);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   resource->locked_for_write = false;
 }
 
@@ -953,8 +966,8 @@ ResourceProvider::ScopedReadLockGL::ScopedReadLockGL(
     ResourceProvider::ResourceId resource_id)
     : resource_provider_(resource_provider),
       resource_id_(resource_id),
-      texture_id_(resource_provider->LockForRead(resource_id)->gl_id) {
-  DCHECK(texture_id_);
+      resource_(resource_provider->LockForRead(resource_id)) {
+  DCHECK(resource_);
 }
 
 ResourceProvider::ScopedReadLockGL::~ScopedReadLockGL() {
@@ -1026,7 +1039,6 @@ ResourceProvider::ScopedWriteLockSoftware::ScopedWriteLockSoftware(
       resource_(resource_provider->LockForWrite(resource_id)) {
   ResourceProvider::PopulateSkBitmapWithResource(&sk_bitmap_, resource_);
   DCHECK(valid());
-  sk_canvas_.reset(new SkCanvas(sk_bitmap_));
 }
 
 ResourceProvider::ScopedWriteLockSoftware::~ScopedWriteLockSoftware() {
@@ -1043,7 +1055,7 @@ ResourceProvider::ScopedWriteLockGpuMemoryBuffer::
       gpu_memory_buffer_(nullptr),
       size_(resource_->size),
       format_(resource_->format) {
-  DCHECK_EQ(GLTexture, resource_->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource_->type);
   std::swap(gpu_memory_buffer_, resource_->gpu_memory_buffer);
 }
 
@@ -1058,11 +1070,16 @@ ResourceProvider::ScopedWriteLockGpuMemoryBuffer::
     GLES2Interface* gl = resource_provider_->ContextGL();
     DCHECK(gl);
 
-    resource_->image_id =
-        gl->CreateImageCHROMIUM(gpu_memory_buffer_->AsClientBuffer(),
-                                size_.width(),
-                                size_.height(),
-                                GL_RGBA);
+#if defined(OS_CHROMEOS)
+    // TODO(reveman): GL_COMMANDS_ISSUED_CHROMIUM is used for synchronization
+    // on ChromeOS to avoid some performance issues. This only works with
+    // shared memory backed buffers. crbug.com/436314
+    DCHECK_EQ(gpu_memory_buffer_->GetHandle().type, gfx::SHARED_MEMORY_BUFFER);
+#endif
+
+    resource_->image_id = gl->CreateImageCHROMIUM(
+        gpu_memory_buffer_->AsClientBuffer(), size_.width(), size_.height(),
+        GLInternalFormat(resource_->format));
   }
 
   std::swap(resource_->gpu_memory_buffer, gpu_memory_buffer_);
@@ -1092,48 +1109,56 @@ ResourceProvider::ScopedWriteLockGr::ScopedWriteLockGr(
     ResourceProvider::ResourceId resource_id)
     : resource_provider_(resource_provider),
       resource_(resource_provider->LockForWrite(resource_id)) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  resource_provider_->LazyAllocate(resource_);
 }
 
 ResourceProvider::ScopedWriteLockGr::~ScopedWriteLockGr() {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(resource_->locked_for_write);
   resource_provider_->UnlockForWrite(resource_);
 }
 
-SkSurface* ResourceProvider::ScopedWriteLockGr::GetSkSurface(
-    bool use_distance_field_text) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+void ResourceProvider::ScopedWriteLockGr::InitSkSurface(
+    bool use_distance_field_text,
+    bool can_use_lcd_text,
+    int msaa_sample_count) {
   DCHECK(resource_->locked_for_write);
 
-  // If the surface doesn't exist, or doesn't have the correct dff setting,
-  // recreate the surface within the resource.
-  if (!resource_->sk_surface ||
-      use_distance_field_text !=
-          resource_->sk_surface->props().isUseDistanceFieldFonts()) {
-    class GrContext* gr_context = resource_provider_->GrContext();
-    // TODO(alokp): Implement TestContextProvider::GrContext().
-    if (!gr_context)
-      return nullptr;
+  GrBackendTextureDesc desc;
+  desc.fFlags = kRenderTarget_GrBackendTextureFlag;
+  desc.fWidth = resource_->size.width();
+  desc.fHeight = resource_->size.height();
+  desc.fConfig = ToGrPixelConfig(resource_->format);
+  desc.fOrigin = kTopLeft_GrSurfaceOrigin;
+  desc.fTextureHandle = resource_->gl_id;
+  desc.fSampleCnt = msaa_sample_count;
 
-    resource_provider_->LazyAllocate(resource_);
-
-    GrBackendTextureDesc desc;
-    desc.fFlags = kRenderTarget_GrBackendTextureFlag;
-    desc.fWidth = resource_->size.width();
-    desc.fHeight = resource_->size.height();
-    desc.fConfig = ToGrPixelConfig(resource_->format);
-    desc.fOrigin = kTopLeft_GrSurfaceOrigin;
-    desc.fTextureHandle = resource_->gl_id;
-    skia::RefPtr<GrTexture> gr_texture =
-        skia::AdoptRef(gr_context->wrapBackendTexture(desc));
-    if (!gr_texture)
-      return nullptr;
-    SkSurface::TextRenderMode text_render_mode =
-        use_distance_field_text ? SkSurface::kDistanceField_TextRenderMode
-                                : SkSurface::kStandard_TextRenderMode;
-    resource_->sk_surface = skia::AdoptRef(SkSurface::NewRenderTargetDirect(
-        gr_texture->asRenderTarget(), text_render_mode));
+  bool use_worker_context = true;
+  class GrContext* gr_context =
+      resource_provider_->GrContext(use_worker_context);
+  skia::RefPtr<GrTexture> gr_texture =
+      skia::AdoptRef(gr_context->textureProvider()->wrapBackendTexture(desc));
+  if (gr_texture) {
+    uint32_t flags = use_distance_field_text
+                         ? SkSurfaceProps::kUseDistanceFieldFonts_Flag
+                         : 0;
+    // Use unknown pixel geometry to disable LCD text.
+    SkSurfaceProps surface_props(flags, kUnknown_SkPixelGeometry);
+    if (can_use_lcd_text) {
+      // LegacyFontHost will get LCD text and skia figures out what type to use.
+      surface_props =
+          SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+    }
+    sk_surface_ = skia::AdoptRef(SkSurface::NewRenderTargetDirect(
+        gr_texture->asRenderTarget(), &surface_props));
+    return;
   }
-  return resource_->sk_surface.get();
+  sk_surface_.clear();
+}
+
+void ResourceProvider::ScopedWriteLockGr::ReleaseSkSurface() {
+  sk_surface_.clear();
 }
 
 ResourceProvider::SynchronousFence::SynchronousFence(
@@ -1171,6 +1196,7 @@ ResourceProvider::ResourceProvider(
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     BlockingTaskRunner* blocking_main_thread_task_runner,
     int highp_threshold_min,
+    ResourceType default_resource_type,
     bool use_rgba_4444_texture_format,
     size_t id_allocation_chunk_size)
     : output_surface_(output_surface),
@@ -1181,11 +1207,12 @@ ResourceProvider::ResourceProvider(
       highp_threshold_min_(highp_threshold_min),
       next_id_(1),
       next_child_(1),
-      default_resource_type_(InvalidType),
+      default_resource_type_(default_resource_type),
       use_texture_storage_ext_(false),
       use_texture_format_bgra_(false),
       use_texture_usage_hint_(false),
       use_compressed_texture_etc1_(false),
+      yuv_resource_format_(LUMINANCE_8),
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
@@ -1197,11 +1224,7 @@ ResourceProvider::ResourceProvider(
 
 void ResourceProvider::InitializeSoftware() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK_NE(Bitmap, default_resource_type_);
-
-  CleanUpGLIfNeeded();
-
-  default_resource_type_ = Bitmap;
+  DCHECK_EQ(default_resource_type_, RESOURCE_TYPE_BITMAP);
   // Pick an arbitrary limit here similar to what hardware might.
   max_texture_size_ = 16 * 1024;
   best_texture_format_ = RGBA_8888;
@@ -1209,12 +1232,10 @@ void ResourceProvider::InitializeSoftware() {
 
 void ResourceProvider::InitializeGL() {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(default_resource_type_, RESOURCE_TYPE_GL_TEXTURE);
   DCHECK(!texture_uploader_);
-  DCHECK_NE(GLTexture, default_resource_type_);
   DCHECK(!texture_id_allocator_);
   DCHECK(!buffer_id_allocator_);
-
-  default_resource_type_ = GLTexture;
 
   const ContextProvider::Capabilities& caps =
       output_surface_->context_provider()->ContextCapabilities();
@@ -1224,6 +1245,7 @@ void ResourceProvider::InitializeGL() {
   use_texture_format_bgra_ = caps.gpu.texture_format_bgra8888;
   use_texture_usage_hint_ = caps.gpu.texture_usage;
   use_compressed_texture_etc1_ = caps.gpu.texture_format_etc1;
+  yuv_resource_format_ = caps.gpu.texture_rg ? RED_8 : LUMINANCE_8;
   use_sync_query_ = caps.gpu.sync_query;
 
   GLES2Interface* gl = ContextGL();
@@ -1231,38 +1253,13 @@ void ResourceProvider::InitializeGL() {
 
   texture_uploader_ = TextureUploader::Create(gl);
   max_texture_size_ = 0;  // Context expects cleared value.
-  GLC(gl, gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size_));
+  gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size_);
   best_texture_format_ = PlatformColor::BestTextureFormat(use_bgra);
 
   texture_id_allocator_.reset(
       new TextureIdAllocator(gl, id_allocation_chunk_size_));
   buffer_id_allocator_.reset(
       new BufferIdAllocator(gl, id_allocation_chunk_size_));
-}
-
-void ResourceProvider::CleanUpGLIfNeeded() {
-  GLES2Interface* gl = ContextGL();
-  if (default_resource_type_ != GLTexture) {
-    // We are not in GL mode, but double check before returning.
-    DCHECK(!gl);
-    DCHECK(!texture_uploader_);
-    return;
-  }
-
-  DCHECK(gl);
-#if DCHECK_IS_ON
-  // Check that all GL resources has been deleted.
-  for (ResourceMap::const_iterator itr = resources_.begin();
-       itr != resources_.end();
-       ++itr) {
-    DCHECK_NE(GLTexture, itr->second.type);
-  }
-#endif  // DCHECK_IS_ON
-
-  texture_uploader_ = nullptr;
-  texture_id_allocator_ = nullptr;
-  buffer_id_allocator_ = nullptr;
-  gl->Finish();
 }
 
 int ResourceProvider::CreateChild(const ReturnCallback& return_callback) {
@@ -1276,10 +1273,16 @@ int ResourceProvider::CreateChild(const ReturnCallback& return_callback) {
   return child;
 }
 
+void ResourceProvider::SetChildNeedsSyncPoints(int child_id, bool needs) {
+  ChildMap::iterator it = children_.find(child_id);
+  DCHECK(it != children_.end());
+  it->second.needs_sync_points = needs;
+}
+
 void ResourceProvider::DestroyChild(int child_id) {
   ChildMap::iterator it = children_.find(child_id);
   DCHECK(it != children_.end());
-  DestroyChildInternal(it, Normal);
+  DestroyChildInternal(it, NORMAL);
 }
 
 void ResourceProvider::DestroyChildInternal(ChildMap::iterator it,
@@ -1287,7 +1290,7 @@ void ResourceProvider::DestroyChildInternal(ChildMap::iterator it,
   DCHECK(thread_checker_.CalledOnValidThread());
 
   Child& child = it->second;
-  DCHECK(style == ForShutdown || !child.marked_for_deletion);
+  DCHECK(style == FOR_SHUTDOWN || !child.marked_for_deletion);
 
   ResourceIdArray resources_for_child;
 
@@ -1298,8 +1301,6 @@ void ResourceProvider::DestroyChildInternal(ChildMap::iterator it,
     resources_for_child.push_back(id);
   }
 
-  // If the child is going away, don't consider any resources in use.
-  child.in_use_resources.clear();
   child.marked_for_deletion = true;
 
   DeleteAndReturnUnusedResourcesToChild(it, style, resources_for_child);
@@ -1329,7 +1330,8 @@ void ResourceProvider::PrepareSendToParent(const ResourceIdArray& resources,
     ++resources_.find(*it)->second.exported_count;
     list->push_back(resource);
   }
-  if (need_sync_point) {
+  if (need_sync_point &&
+      output_surface_->capabilities().delegated_sync_points_required) {
     GLuint sync_point = gl->InsertSyncPointCHROMIUM();
     for (TransferableResourceArray::iterator it = list->begin();
          it != list->end();
@@ -1352,9 +1354,9 @@ void ResourceProvider::ReceiveFromChild(
     ResourceIdMap::iterator resource_in_map_it =
         child_info.child_to_parent_map.find(it->id);
     if (resource_in_map_it != child_info.child_to_parent_map.end()) {
-      Resource& resource = resources_[resource_in_map_it->second];
-      resource.marked_for_deletion = false;
-      resource.imported_count++;
+      Resource* resource = GetResource(resource_in_map_it->second);
+      resource->marked_for_deletion = false;
+      resource->imported_count++;
       continue;
     }
 
@@ -1369,32 +1371,27 @@ void ResourceProvider::ReceiveFromChild(
     }
 
     ResourceId local_id = next_id_++;
-    Resource& resource = resources_[local_id];
+    Resource* resource = nullptr;
     if (it->is_software) {
-      resource = Resource(it->mailbox_holder.mailbox,
-                          it->size,
-                          Resource::Delegated,
-                          GL_LINEAR,
-                          it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+      resource = InsertResource(
+          local_id,
+          Resource(it->mailbox_holder.mailbox, it->size, Resource::DELEGATED,
+                   GL_LINEAR, it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE));
     } else {
-      resource = Resource(0,
-                          it->size,
-                          Resource::Delegated,
-                          it->mailbox_holder.texture_target,
-                          it->filter,
-                          0,
-                          it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE,
-                          TextureHintImmutable,
-                          it->format);
-      resource.mailbox = TextureMailbox(it->mailbox_holder.mailbox,
-                                        it->mailbox_holder.texture_target,
-                                        it->mailbox_holder.sync_point);
+      resource = InsertResource(
+          local_id, Resource(0, it->size, Resource::DELEGATED,
+                             it->mailbox_holder.texture_target, it->filter, 0,
+                             it->is_repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE,
+                             TEXTURE_HINT_IMMUTABLE, it->format));
+      resource->mailbox = TextureMailbox(it->mailbox_holder.mailbox,
+                                         it->mailbox_holder.texture_target,
+                                         it->mailbox_holder.sync_point);
     }
-    resource.child_id = child;
+    resource->child_id = child;
     // Don't allocate a texture for a child.
-    resource.allocated = true;
-    resource.imported_count = 1;
-    resource.allow_overlay = it->allow_overlay;
+    resource->allocated = true;
+    resource->imported_count = 1;
+    resource->allow_overlay = it->allow_overlay;
     child_info.parent_to_child_map[local_id] = it->id;
     child_info.child_to_parent_map[it->id] = local_id;
   }
@@ -1402,46 +1399,24 @@ void ResourceProvider::ReceiveFromChild(
 
 void ResourceProvider::DeclareUsedResourcesFromChild(
     int child,
-    const ResourceIdArray& resources_from_child) {
+    const ResourceIdSet& resources_from_child) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
   ChildMap::iterator child_it = children_.find(child);
   DCHECK(child_it != children_.end());
   Child& child_info = child_it->second;
   DCHECK(!child_info.marked_for_deletion);
-  child_info.in_use_resources.clear();
-
-  for (size_t i = 0; i < resources_from_child.size(); ++i) {
-    ResourceIdMap::iterator it =
-        child_info.child_to_parent_map.find(resources_from_child[i]);
-    DCHECK(it != child_info.child_to_parent_map.end());
-
-    ResourceId local_id = it->second;
-    DCHECK(!resources_[local_id].marked_for_deletion);
-    child_info.in_use_resources.insert(local_id);
-  }
 
   ResourceIdArray unused;
   for (ResourceIdMap::iterator it = child_info.child_to_parent_map.begin();
        it != child_info.child_to_parent_map.end();
        ++it) {
     ResourceId local_id = it->second;
-    bool resource_is_in_use = child_info.in_use_resources.count(local_id) > 0;
+    bool resource_is_in_use = resources_from_child.count(it->first) > 0;
     if (!resource_is_in_use)
       unused.push_back(local_id);
   }
-  DeleteAndReturnUnusedResourcesToChild(child_it, Normal, unused);
-}
-
-// static
-bool ResourceProvider::CompareResourceMapIteratorsByChildId(
-    const std::pair<ReturnedResource, ResourceMap::iterator>& a,
-    const std::pair<ReturnedResource, ResourceMap::iterator>& b) {
-  const ResourceMap::iterator& a_it = a.second;
-  const ResourceMap::iterator& b_it = b.second;
-  const Resource& a_resource = a_it->second;
-  const Resource& b_resource = b_it->second;
-  return a_resource.child_id < b_resource.child_id;
+  DeleteAndReturnUnusedResourcesToChild(child_it, NORMAL, unused);
 }
 
 void ResourceProvider::ReceiveReturnsFromParent(
@@ -1449,36 +1424,16 @@ void ResourceProvider::ReceiveReturnsFromParent(
   DCHECK(thread_checker_.CalledOnValidThread());
   GLES2Interface* gl = ContextGL();
 
-  int child_id = 0;
-  ResourceIdArray resources_for_child;
+  base::hash_map<int, ResourceIdArray> resources_for_child;
 
-  std::vector<std::pair<ReturnedResource, ResourceMap::iterator>>
-      sorted_resources;
-
-  for (ReturnedResourceArray::const_iterator it = resources.begin();
-       it != resources.end();
-       ++it) {
-    ResourceId local_id = it->id;
+  for (const ReturnedResource& returned : resources) {
+    ResourceId local_id = returned.id;
     ResourceMap::iterator map_iterator = resources_.find(local_id);
-
     // Resource was already lost (e.g. it belonged to a child that was
     // destroyed).
     if (map_iterator == resources_.end())
       continue;
 
-    sorted_resources.push_back(
-        std::pair<ReturnedResource, ResourceMap::iterator>(*it, map_iterator));
-  }
-
-  std::sort(sorted_resources.begin(),
-            sorted_resources.end(),
-            CompareResourceMapIteratorsByChildId);
-
-  ChildMap::iterator child_it = children_.end();
-  for (size_t i = 0; i < sorted_resources.size(); ++i) {
-    ReturnedResource& returned = sorted_resources[i].first;
-    ResourceMap::iterator& map_iterator = sorted_resources[i].second;
-    ResourceId local_id = map_iterator->first;
     Resource* resource = &map_iterator->second;
 
     CHECK_GE(resource->exported_count, returned.count);
@@ -1497,9 +1452,9 @@ void ResourceProvider::ReceiveReturnsFromParent(
 
     if (returned.sync_point) {
       DCHECK(!resource->has_shared_bitmap_id);
-      if (resource->origin == Resource::Internal) {
+      if (resource->origin == Resource::INTERNAL) {
         DCHECK(resource->gl_id);
-        GLC(gl, gl->WaitSyncPointCHROMIUM(returned.sync_point));
+        gl->WaitSyncPointCHROMIUM(returned.sync_point);
       } else {
         DCHECK(!resource->gl_id);
         resource->mailbox.set_sync_point(returned.sync_point);
@@ -1511,33 +1466,18 @@ void ResourceProvider::ReceiveReturnsFromParent(
 
     if (!resource->child_id) {
       // The resource belongs to this ResourceProvider, so it can be destroyed.
-      DeleteResourceInternal(map_iterator, Normal);
+      DeleteResourceInternal(map_iterator, NORMAL);
       continue;
     }
 
-    DCHECK(resource->origin == Resource::Delegated);
-    // Delete the resource and return it to the child it came from one.
-    if (resource->child_id != child_id) {
-      if (child_id) {
-        DCHECK_NE(resources_for_child.size(), 0u);
-        DCHECK(child_it != children_.end());
-        DeleteAndReturnUnusedResourcesToChild(
-            child_it, Normal, resources_for_child);
-        resources_for_child.clear();
-      }
-
-      child_it = children_.find(resource->child_id);
-      DCHECK(child_it != children_.end());
-      child_id = resource->child_id;
-    }
-    resources_for_child.push_back(local_id);
+    DCHECK(resource->origin == Resource::DELEGATED);
+    resources_for_child[resource->child_id].push_back(local_id);
   }
 
-  if (child_id) {
-    DCHECK_NE(resources_for_child.size(), 0u);
+  for (const auto& children : resources_for_child) {
+    ChildMap::iterator child_it = children_.find(children.first);
     DCHECK(child_it != children_.end());
-    DeleteAndReturnUnusedResourcesToChild(
-        child_it, Normal, resources_for_child);
+    DeleteAndReturnUnusedResourcesToChild(child_it, NORMAL, children.second);
   }
 }
 
@@ -1547,7 +1487,7 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
   Resource* source = GetResource(id);
   DCHECK(!source->locked_for_write);
   DCHECK(!source->lock_for_read_count);
-  DCHECK(source->origin != Resource::External || source->mailbox.IsValid());
+  DCHECK(source->origin != Resource::EXTERNAL || source->mailbox.IsValid());
   DCHECK(source->allocated);
   resource->id = id;
   resource->format = source->format;
@@ -1557,35 +1497,31 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
   resource->is_repeated = (source->wrap_mode == GL_REPEAT);
   resource->allow_overlay = source->allow_overlay;
 
-  if (source->type == Bitmap) {
+  if (source->type == RESOURCE_TYPE_BITMAP) {
     resource->mailbox_holder.mailbox = source->shared_bitmap_id;
     resource->is_software = true;
   } else if (!source->mailbox.IsValid()) {
     LazyCreate(source);
     DCHECK(source->gl_id);
-    DCHECK(source->origin == Resource::Internal);
-    GLC(gl,
-        gl->BindTexture(resource->mailbox_holder.texture_target,
-                        source->gl_id));
+    DCHECK(source->origin == Resource::INTERNAL);
     if (source->image_id) {
       DCHECK(source->dirty_image);
       BindImageForSampling(source);
     }
     // This is a resource allocated by the compositor, we need to produce it.
     // Don't set a sync point, the caller will do it.
-    GLC(gl, gl->GenMailboxCHROMIUM(resource->mailbox_holder.mailbox.name));
-    GLC(gl,
-        gl->ProduceTextureCHROMIUM(resource->mailbox_holder.texture_target,
-                                   resource->mailbox_holder.mailbox.name));
+    gl->GenMailboxCHROMIUM(resource->mailbox_holder.mailbox.name);
+    gl->ProduceTextureDirectCHROMIUM(source->gl_id,
+                                     resource->mailbox_holder.texture_target,
+                                     resource->mailbox_holder.mailbox.name);
+
     source->mailbox = TextureMailbox(resource->mailbox_holder);
   } else {
     DCHECK(source->mailbox.IsTexture());
     if (source->image_id && source->dirty_image) {
       DCHECK(source->gl_id);
-      DCHECK(source->origin == Resource::Internal);
-      GLC(gl,
-          gl->BindTexture(resource->mailbox_holder.texture_target,
-                          source->gl_id));
+      DCHECK(source->origin == Resource::INTERNAL);
+      gl->BindTexture(resource->mailbox_holder.texture_target, source->gl_id);
       BindImageForSampling(source);
     }
     // This is either an external resource, or a compositor resource that we
@@ -1620,16 +1556,16 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
     Resource& resource = it->second;
 
     DCHECK(!resource.locked_for_write);
-    DCHECK_EQ(0u, child_info->in_use_resources.count(local_id));
     DCHECK(child_info->parent_to_child_map.count(local_id));
 
     ResourceId child_id = child_info->parent_to_child_map[local_id];
     DCHECK(child_info->child_to_parent_map.count(child_id));
 
     bool is_lost =
-        resource.lost || (resource.type == GLTexture && lost_output_surface_);
+        resource.lost ||
+        (resource.type == RESOURCE_TYPE_GL_TEXTURE && lost_output_surface_);
     if (resource.exported_count > 0 || resource.lock_for_read_count > 0) {
-      if (style != ForShutdown) {
+      if (style != FOR_SHUTDOWN) {
         // Defer this until we receive the resource back from the parent or
         // the read lock is released.
         resource.marked_for_deletion = true;
@@ -1644,21 +1580,17 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
       DCHECK(resource.target);
       DCHECK(resource.gl_id);
 
-      GLC(gl, gl->BindTexture(resource.target, resource.gl_id));
-      GLC(gl,
-          gl->TexParameteri(resource.target,
-                            GL_TEXTURE_MIN_FILTER,
-                            resource.original_filter));
-      GLC(gl,
-          gl->TexParameteri(resource.target,
-                            GL_TEXTURE_MAG_FILTER,
-                            resource.original_filter));
+      gl->BindTexture(resource.target, resource.gl_id);
+      gl->TexParameteri(resource.target, GL_TEXTURE_MIN_FILTER,
+                        resource.original_filter);
+      gl->TexParameteri(resource.target, GL_TEXTURE_MAG_FILTER,
+                        resource.original_filter);
     }
 
     ReturnedResource returned;
     returned.id = child_id;
     returned.sync_point = resource.mailbox.sync_point();
-    if (!returned.sync_point && resource.type == GLTexture)
+    if (!returned.sync_point && resource.type == RESOURCE_TYPE_GL_TEXTURE)
       need_sync_point = true;
     returned.count = resource.imported_count;
     returned.lost = is_lost;
@@ -1669,7 +1601,7 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
     resource.imported_count = 0;
     DeleteResourceInternal(it, style);
   }
-  if (need_sync_point) {
+  if (need_sync_point && child_info->needs_sync_points) {
     DCHECK(gl);
     GLuint sync_point = gl->InsertSyncPointCHROMIUM();
     for (size_t i = 0; i < to_return.size(); ++i) {
@@ -1694,12 +1626,12 @@ void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
                "ResourceProvider::AcquirePixelBuffer");
 
   Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
   DCHECK_NE(ETC1, resource->format);
 
-  DCHECK_EQ(GLTexture, resource->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
   if (!resource->gl_pixel_buffer_id)
@@ -1720,7 +1652,7 @@ void ResourceProvider::ReleasePixelBuffer(ResourceId id) {
                "ResourceProvider::ReleasePixelBuffer");
 
   Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
 
@@ -1736,7 +1668,7 @@ void ResourceProvider::ReleasePixelBuffer(ResourceId id) {
     resource->locked_for_write = false;
   }
 
-  DCHECK_EQ(GLTexture, resource->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
   if (!resource->gl_pixel_buffer_id)
     return;
   GLES2Interface* gl = ContextGL();
@@ -1753,12 +1685,12 @@ uint8_t* ResourceProvider::MapPixelBuffer(ResourceId id, int* stride) {
                "ResourceProvider::MapPixelBuffer");
 
   Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
 
   *stride = 0;
-  DCHECK_EQ(GLTexture, resource->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
   DCHECK(resource->gl_pixel_buffer_id);
@@ -1777,11 +1709,11 @@ void ResourceProvider::UnmapPixelBuffer(ResourceId id) {
                "ResourceProvider::UnmapPixelBuffer");
 
   Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(!resource->image_id);
 
-  DCHECK_EQ(GLTexture, resource->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
   DCHECK(resource->gl_pixel_buffer_id);
@@ -1804,10 +1736,10 @@ GLenum ResourceProvider::BindForSampling(ResourceId resource_id,
 
   ScopedSetActiveTexture scoped_active_tex(gl, unit);
   GLenum target = resource->target;
-  GLC(gl, gl->BindTexture(target, resource->gl_id));
+  gl->BindTexture(target, resource->gl_id);
   if (filter != resource->filter) {
-    GLC(gl, gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, filter));
-    GLC(gl, gl->TexParameteri(target, GL_TEXTURE_MAG_FILTER, filter));
+    gl->TexParameteri(target, GL_TEXTURE_MIN_FILTER, filter);
+    gl->TexParameteri(target, GL_TEXTURE_MAG_FILTER, filter);
     resource->filter = filter;
   }
 
@@ -1825,7 +1757,7 @@ void ResourceProvider::BeginSetPixels(ResourceId id) {
   DCHECK(!resource->pending_set_pixels);
 
   LazyCreate(resource);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK(resource->gl_id || resource->allocated);
   DCHECK(ReadLockFenceHasPassed(resource));
   DCHECK(!resource->image_id);
@@ -1834,7 +1766,7 @@ void ResourceProvider::BeginSetPixels(ResourceId id) {
   resource->allocated = true;
   LockForWrite(id);
 
-  DCHECK_EQ(GLTexture, resource->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
   DCHECK(resource->gl_id);
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
@@ -1887,9 +1819,9 @@ void ResourceProvider::ForceSetPixelsToComplete(ResourceId id) {
 
   if (resource->gl_id) {
     GLES2Interface* gl = ContextGL();
-    GLC(gl, gl->BindTexture(GL_TEXTURE_2D, resource->gl_id));
-    GLC(gl, gl->WaitAsyncTexImage2DCHROMIUM(GL_TEXTURE_2D));
-    GLC(gl, gl->BindTexture(GL_TEXTURE_2D, 0));
+    gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
+    gl->WaitAsyncTexImage2DCHROMIUM(GL_TEXTURE_2D);
+    gl->BindTexture(GL_TEXTURE_2D, 0);
   }
 
   resource->set_pixels_completion_forced = true;
@@ -1936,14 +1868,15 @@ GLenum ResourceProvider::TargetForTesting(ResourceId id) {
 }
 
 void ResourceProvider::LazyCreate(Resource* resource) {
-  if (resource->type != GLTexture || resource->origin != Resource::Internal)
+  if (resource->type != RESOURCE_TYPE_GL_TEXTURE ||
+      resource->origin != Resource::INTERNAL)
     return;
 
   if (resource->gl_id)
     return;
 
   DCHECK(resource->texture_pool);
-  DCHECK(resource->origin == Resource::Internal);
+  DCHECK(resource->origin == Resource::INTERNAL);
   DCHECK(!resource->mailbox.IsValid());
   resource->gl_id = texture_id_allocator_->NextId();
 
@@ -1951,27 +1884,18 @@ void ResourceProvider::LazyCreate(Resource* resource) {
   DCHECK(gl);
 
   // Create and set texture properties. Allocation is delayed until needed.
-  GLC(gl, gl->BindTexture(resource->target, resource->gl_id));
-  GLC(gl,
-      gl->TexParameteri(
-          resource->target, GL_TEXTURE_MIN_FILTER, resource->original_filter));
-  GLC(gl,
-      gl->TexParameteri(
-          resource->target, GL_TEXTURE_MAG_FILTER, resource->original_filter));
-  GLC(gl,
-      gl->TexParameteri(
-          resource->target, GL_TEXTURE_WRAP_S, resource->wrap_mode));
-  GLC(gl,
-      gl->TexParameteri(
-          resource->target, GL_TEXTURE_WRAP_T, resource->wrap_mode));
-  GLC(gl,
-      gl->TexParameteri(
-          resource->target, GL_TEXTURE_POOL_CHROMIUM, resource->texture_pool));
-  if (use_texture_usage_hint_ && (resource->hint & TextureHintFramebuffer)) {
-    GLC(gl,
-        gl->TexParameteri(resource->target,
-                          GL_TEXTURE_USAGE_ANGLE,
-                          GL_FRAMEBUFFER_ATTACHMENT_ANGLE));
+  gl->BindTexture(resource->target, resource->gl_id);
+  gl->TexParameteri(resource->target, GL_TEXTURE_MIN_FILTER,
+                    resource->original_filter);
+  gl->TexParameteri(resource->target, GL_TEXTURE_MAG_FILTER,
+                    resource->original_filter);
+  gl->TexParameteri(resource->target, GL_TEXTURE_WRAP_S, resource->wrap_mode);
+  gl->TexParameteri(resource->target, GL_TEXTURE_WRAP_T, resource->wrap_mode);
+  gl->TexParameteri(resource->target, GL_TEXTURE_POOL_CHROMIUM,
+                    resource->texture_pool);
+  if (use_texture_usage_hint_ && (resource->hint & TEXTURE_HINT_FRAMEBUFFER)) {
+    gl->TexParameteri(resource->target, GL_TEXTURE_USAGE_ANGLE,
+                      GL_FRAMEBUFFER_ATTACHMENT_ANGLE);
   }
 }
 
@@ -1991,27 +1915,19 @@ void ResourceProvider::LazyAllocate(Resource* resource) {
   gfx::Size& size = resource->size;
   DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
   ResourceFormat format = resource->format;
-  GLC(gl, gl->BindTexture(GL_TEXTURE_2D, resource->gl_id));
+  gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
   if (use_texture_storage_ext_ &&
       IsFormatSupportedForStorage(format, use_texture_format_bgra_) &&
-      (resource->hint & TextureHintImmutable)) {
+      (resource->hint & TEXTURE_HINT_IMMUTABLE)) {
     GLenum storage_format = TextureToStorageFormat(format);
-    GLC(gl,
-        gl->TexStorage2DEXT(
-            GL_TEXTURE_2D, 1, storage_format, size.width(), size.height()));
+    gl->TexStorage2DEXT(GL_TEXTURE_2D, 1, storage_format, size.width(),
+                        size.height());
   } else {
     // ETC1 does not support preallocation.
     if (format != ETC1) {
-      GLC(gl,
-          gl->TexImage2D(GL_TEXTURE_2D,
-                         0,
-                         GLInternalFormat(format),
-                         size.width(),
-                         size.height(),
-                         0,
-                         GLDataFormat(format),
-                         GLDataType(format),
-                         NULL));
+      gl->TexImage2D(GL_TEXTURE_2D, 0, GLInternalFormat(format), size.width(),
+                     size.height(), 0, GLDataFormat(format), GLDataType(format),
+                     NULL);
     }
   }
 }
@@ -2034,19 +1950,19 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
 
   Resource* source_resource = GetResource(source_id);
   DCHECK(!source_resource->lock_for_read_count);
-  DCHECK(source_resource->origin == Resource::Internal);
+  DCHECK(source_resource->origin == Resource::INTERNAL);
   DCHECK_EQ(source_resource->exported_count, 0);
-  DCHECK_EQ(GLTexture, source_resource->type);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, source_resource->type);
   DCHECK(source_resource->allocated);
   LazyCreate(source_resource);
 
   Resource* dest_resource = GetResource(dest_id);
   DCHECK(!dest_resource->locked_for_write);
   DCHECK(!dest_resource->lock_for_read_count);
-  DCHECK(dest_resource->origin == Resource::Internal);
+  DCHECK(dest_resource->origin == Resource::INTERNAL);
   DCHECK_EQ(dest_resource->exported_count, 0);
-  DCHECK_EQ(GLTexture, dest_resource->type);
-  LazyCreate(dest_resource);
+  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, dest_resource->type);
+  LazyAllocate(dest_resource);
 
   DCHECK_EQ(source_resource->type, dest_resource->type);
   DCHECK_EQ(source_resource->format, dest_resource->format);
@@ -2061,23 +1977,31 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
   if (use_sync_query_) {
     if (!source_resource->gl_read_lock_query_id)
       gl->GenQueriesEXT(1, &source_resource->gl_read_lock_query_id);
+#if defined(OS_CHROMEOS)
+    // TODO(reveman): This avoids a performance problem on some ChromeOS
+    // devices. This needs to be removed to support native GpuMemoryBuffer
+    // implementations. crbug.com/436314
+    gl->BeginQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM,
+                      source_resource->gl_read_lock_query_id);
+#else
     gl->BeginQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM,
                       source_resource->gl_read_lock_query_id);
+#endif
   }
   DCHECK(!dest_resource->image_id);
   dest_resource->allocated = true;
-  gl->CopyTextureCHROMIUM(dest_resource->target,
-                          source_resource->gl_id,
-                          dest_resource->gl_id,
-                          0,
-                          GLInternalFormat(dest_resource->format),
-                          GLDataType(dest_resource->format));
+  gl->CopySubTextureCHROMIUM(dest_resource->target, source_resource->gl_id,
+                             dest_resource->gl_id, 0, 0);
   if (source_resource->gl_read_lock_query_id) {
     // End query and create a read lock fence that will prevent access to
-    // source resource until CopyTextureCHROMIUM command has completed.
+// source resource until CopySubTextureCHROMIUM command has completed.
+#if defined(OS_CHROMEOS)
+    gl->EndQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM);
+#else
     gl->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM);
+#endif
     source_resource->read_lock_fence = make_scoped_refptr(
-        new QueryFence(gl, source_resource->gl_read_lock_query_id));
+        new CopyTextureFence(gl, source_resource->gl_read_lock_query_id));
   } else {
     // Create a SynchronousFence when CHROMIUM_sync_query extension is missing.
     // Try to use one synchronous fence for as many CopyResource operations as
@@ -2094,14 +2018,14 @@ void ResourceProvider::WaitSyncPointIfNeeded(ResourceId id) {
   Resource* resource = GetResource(id);
   DCHECK_EQ(resource->exported_count, 0);
   DCHECK(resource->allocated);
-  if (resource->type != GLTexture || resource->gl_id)
+  if (resource->type != RESOURCE_TYPE_GL_TEXTURE || resource->gl_id)
     return;
   if (!resource->mailbox.sync_point())
     return;
   DCHECK(resource->mailbox.IsValid());
   GLES2Interface* gl = ContextGL();
   DCHECK(gl);
-  GLC(gl, gl->WaitSyncPointCHROMIUM(resource->mailbox.sync_point()));
+  gl->WaitSyncPointCHROMIUM(resource->mailbox.sync_point());
   resource->mailbox.set_sync_point(0);
 }
 
@@ -2120,13 +2044,21 @@ GLint ResourceProvider::GetActiveTextureUnit(GLES2Interface* gl) {
   return active_unit;
 }
 
+void ResourceProvider::ValidateResource(ResourceId id) const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(id);
+  DCHECK(resources_.find(id) != resources_.end());
+}
+
 GLES2Interface* ResourceProvider::ContextGL() const {
   ContextProvider* context_provider = output_surface_->context_provider();
   return context_provider ? context_provider->ContextGL() : NULL;
 }
 
-class GrContext* ResourceProvider::GrContext() const {
-  ContextProvider* context_provider = output_surface_->context_provider();
+class GrContext* ResourceProvider::GrContext(bool worker_context) const {
+  ContextProvider* context_provider =
+      worker_context ? output_surface_->worker_context_provider()
+                     : output_surface_->context_provider();
   return context_provider ? context_provider->GrContext() : NULL;
 }
 

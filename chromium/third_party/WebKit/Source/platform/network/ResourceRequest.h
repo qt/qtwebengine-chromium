@@ -34,6 +34,7 @@
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/OwnPtr.h"
 
@@ -47,10 +48,16 @@ enum ResourceRequestCachePolicy {
     ReloadBypassingCache, // end-to-end reload
 };
 
+enum InputToLoadPerfMetricReportPolicy {
+    NoReport, // Don't report metrics for this ResourceRequest.
+    ReportLink, // Report metrics for this request as initiated by a link click.
+    ReportIntent, // Report metrics for this request as initiated by an intent.
+};
+
 struct CrossThreadResourceRequestData;
 
 class PLATFORM_EXPORT ResourceRequest {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ResourceRequest);
 public:
     class ExtraData : public RefCounted<ExtraData> {
     public:
@@ -94,6 +101,9 @@ public:
     const KURL& firstPartyForCookies() const;
     void setFirstPartyForCookies(const KURL& firstPartyForCookies);
 
+    PassRefPtr<SecurityOrigin> requestorOrigin() const;
+    void setRequestorOrigin(PassRefPtr<SecurityOrigin>);
+
     const AtomicString& httpMethod() const;
     void setHTTPMethod(const AtomicString&);
 
@@ -111,6 +121,7 @@ public:
     const AtomicString& httpContentType() const { return httpHeaderField("Content-Type");  }
     void setHTTPContentType(const AtomicString& httpContentType) { setHTTPHeaderField("Content-Type", httpContentType); }
 
+    bool didSetHTTPReferrer() const { return m_didSetHTTPReferrer; }
     const AtomicString& httpReferrer() const { return httpHeaderField("Referer"); }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
     void setHTTPReferrer(const Referrer&);
@@ -165,15 +176,24 @@ public:
 
     // True if request was user initiated.
     bool hasUserGesture() const { return m_hasUserGesture; }
-    void setHasUserGesture(bool hasUserGesture) { m_hasUserGesture = hasUserGesture; }
+    void setHasUserGesture(bool);
 
     // True if request should be downloaded to file.
     bool downloadToFile() const { return m_downloadToFile; }
     void setDownloadToFile(bool downloadToFile) { m_downloadToFile = downloadToFile; }
 
+    // True if the requestor wants to receive a response body as
+    // WebDataConsumerHandle.
+    bool useStreamOnResponse() const { return m_useStreamOnResponse; }
+    void setUseStreamOnResponse(bool useStreamOnResponse) { m_useStreamOnResponse = useStreamOnResponse; }
+
     // True if the request should not be handled by the ServiceWorker.
     bool skipServiceWorker() const { return m_skipServiceWorker; }
     void setSkipServiceWorker(bool skipServiceWorker) { m_skipServiceWorker = skipServiceWorker; }
+
+    // True if corresponding AppCache group should be resetted.
+    bool shouldResetAppCache() { return m_shouldResetAppCache; }
+    void setShouldResetAppCache(bool shouldResetAppCache) { m_shouldResetAppCache = shouldResetAppCache; }
 
     // Extra data associated with this request.
     ExtraData* extraData() const { return m_extraData.get(); }
@@ -200,6 +220,21 @@ public:
 
     static bool compare(const ResourceRequest&, const ResourceRequest&);
 
+    bool checkForBrowserSideNavigation() const { return m_checkForBrowserSideNavigation; }
+    void setCheckForBrowserSideNavigation(bool check) { m_checkForBrowserSideNavigation = check; }
+
+    double uiStartTime() const { return m_uiStartTime; }
+    void setUIStartTime(double uiStartTime) { m_uiStartTime = uiStartTime; }
+
+    bool originatesFromReservedIPRange() const { return m_originatesFromReservedIPRange; }
+    void setOriginatesFromReservedIPRange(bool value) { m_originatesFromReservedIPRange = value; }
+
+    InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy() const { return m_inputPerfMetricReportPolicy; }
+    void setInputPerfMetricReportPolicy(InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy) { m_inputPerfMetricReportPolicy = inputPerfMetricReportPolicy; }
+
+    void setFollowedRedirect(bool followed) { m_followedRedirect = followed; };
+    bool followedRedirect() const { return m_followedRedirect; };
+
 private:
     void initialize(const KURL&);
 
@@ -209,6 +244,7 @@ private:
     ResourceRequestCachePolicy m_cachePolicy;
     double m_timeoutInterval; // 0 is a magic value for platform default on platforms that have one.
     KURL m_firstPartyForCookies;
+    RefPtr<SecurityOrigin> m_requestorOrigin;
     AtomicString m_httpMethod;
     HTTPHeaderMap m_httpHeaderFields;
     RefPtr<FormData> m_httpBody;
@@ -217,7 +253,9 @@ private:
     bool m_reportRawHeaders : 1;
     bool m_hasUserGesture : 1;
     bool m_downloadToFile : 1;
+    bool m_useStreamOnResponse : 1;
     bool m_skipServiceWorker : 1;
+    bool m_shouldResetAppCache : 1;
     ResourceLoadPriority m_priority;
     int m_intraPriorityValue;
     int m_requestorID;
@@ -229,10 +267,17 @@ private:
     WebURLRequest::FetchRequestMode m_fetchRequestMode;
     WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
     ReferrerPolicy m_referrerPolicy;
+    bool m_didSetHTTPReferrer;
+    bool m_checkForBrowserSideNavigation;
+    double m_uiStartTime;
+    bool m_originatesFromReservedIPRange;
+    InputToLoadPerfMetricReportPolicy m_inputPerfMetricReportPolicy;
 
     mutable CacheControlHeader m_cacheControlHeaderCache;
 
     static double s_defaultTimeoutInterval;
+
+    bool m_followedRedirect;
 };
 
 bool equalIgnoringHeaderFields(const ResourceRequest&, const ResourceRequest&);
@@ -241,7 +286,7 @@ inline bool operator==(const ResourceRequest& a, const ResourceRequest& b) { ret
 inline bool operator!=(ResourceRequest& a, const ResourceRequest& b) { return !(a == b); }
 
 struct CrossThreadResourceRequestData {
-    WTF_MAKE_NONCOPYABLE(CrossThreadResourceRequestData); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(CrossThreadResourceRequestData); WTF_MAKE_FAST_ALLOCATED(CrossThreadResourceRequestData);
 public:
     CrossThreadResourceRequestData() { }
     KURL m_url;
@@ -249,6 +294,7 @@ public:
     ResourceRequestCachePolicy m_cachePolicy;
     double m_timeoutInterval;
     KURL m_firstPartyForCookies;
+    RefPtr<SecurityOrigin> m_requestorOrigin;
 
     String m_httpMethod;
     OwnPtr<CrossThreadHTTPHeaderMapData> m_httpHeaders;
@@ -258,6 +304,8 @@ public:
     bool m_hasUserGesture;
     bool m_downloadToFile;
     bool m_skipServiceWorker;
+    bool m_useStreamOnResponse;
+    bool m_shouldResetAppCache;
     ResourceLoadPriority m_priority;
     int m_intraPriorityValue;
     int m_requestorID;
@@ -268,6 +316,12 @@ public:
     WebURLRequest::FetchRequestMode m_fetchRequestMode;
     WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
     ReferrerPolicy m_referrerPolicy;
+    bool m_didSetHTTPReferrer;
+    bool m_checkForBrowserSideNavigation;
+    double m_uiStartTime;
+    bool m_originatesFromReservedIPRange;
+    InputToLoadPerfMetricReportPolicy m_inputPerfMetricReportPolicy;
+    bool m_followedRedirect;
 };
 
 unsigned initializeMaximumHTTPConnectionCountPerHost();

@@ -34,6 +34,9 @@ namespace blink {
 
 SecurityContext::SecurityContext()
     : m_haveInitializedSecurityOrigin(false)
+    , m_sandboxFlags(SandboxNone)
+    , m_hostedInReservedIPRange(false)
+    , m_insecureRequestsPolicy(InsecureRequestsDoNotUpgrade)
 {
 }
 
@@ -62,6 +65,16 @@ bool SecurityContext::isSecureTransitionTo(const KURL& url) const
 
     RefPtr<SecurityOrigin> other = SecurityOrigin::create(url);
     return securityOrigin()->canAccess(other.get());
+}
+
+void SecurityContext::enforceSandboxFlags(SandboxFlags mask)
+{
+    m_sandboxFlags |= mask;
+
+    if (isSandboxed(SandboxOrigin) && securityOrigin() && !securityOrigin()->isUnique()) {
+        setSecurityOrigin(SecurityOrigin::createUnique());
+        didUpdateSecurityOrigin();
+    }
 }
 
 }

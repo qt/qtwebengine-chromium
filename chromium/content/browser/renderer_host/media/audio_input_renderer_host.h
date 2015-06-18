@@ -101,7 +101,8 @@ class CONTENT_EXPORT AudioInputRendererHost
 
   // Called from UI thread from the owner of this object.
   // |user_input_monitor| is used for typing detection and can be NULL.
-  AudioInputRendererHost(media::AudioManager* audio_manager,
+  AudioInputRendererHost(int render_process_id,
+                         media::AudioManager* audio_manager,
                          MediaStreamManager* media_stream_manager,
                          AudioMirroringManager* audio_mirroring_manager,
                          media::UserInputMonitor* user_input_monitor);
@@ -140,17 +141,17 @@ class CONTENT_EXPORT AudioInputRendererHost
   // registers to AudioInputDeviceManager. Then calls DoCreateStream.
   // For non-ChromeOS: Just calls DoCreateStream.
   void OnCreateStream(int stream_id,
-                      int render_view_id,
+                      int render_frame_id,
                       int session_id,
                       const AudioInputHostMsg_CreateStream_Config& config);
 
   // Creates an audio input stream with the specified format whose data is
-  // consumed by an entity in the render view referenced by |render_view_id|.
+  // consumed by an entity in the RenderFrame referenced by |render_frame_id|.
   // |session_id| is used to find out which device to be used for the stream.
   // Upon success/failure, the peer is notified via the
   // NotifyStreamCreated message.
   void DoCreateStream(int stream_id,
-                      int render_view_id,
+                      int render_frame_id,
                       int session_id,
                       const AudioInputHostMsg_CreateStream_Config& config);
 
@@ -208,6 +209,9 @@ class CONTENT_EXPORT AudioInputRendererHost
   // AudioInputDeviceManager.
   void MaybeUnregisterKeyboardMicStream(
       const AudioInputHostMsg_CreateStream_Config& config);
+
+  // ID of the RenderProcessHost that owns this instance.
+  const int render_process_id_;
 
   // Used to create an AudioInputController.
   media::AudioManager* audio_manager_;

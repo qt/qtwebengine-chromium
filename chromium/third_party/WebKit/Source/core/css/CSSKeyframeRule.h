@@ -27,73 +27,37 @@
 #define CSSKeyframeRule_h
 
 #include "core/css/CSSRule.h"
+#include "core/css/StyleRuleKeyframe.h"
 
 namespace blink {
 
 class CSSKeyframesRule;
-class CSSParserValueList;
 class CSSStyleDeclaration;
-class MutableStylePropertySet;
-class StylePropertySet;
-class StyleRuleCSSStyleDeclaration;
-
-class StyleKeyframe final : public RefCountedWillBeGarbageCollectedFinalized<StyleKeyframe> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
-public:
-    static PassRefPtrWillBeRawPtr<StyleKeyframe> create()
-    {
-        return adoptRefWillBeNoop(new StyleKeyframe());
-    }
-    ~StyleKeyframe();
-
-    // Exposed to JavaScript.
-    String keyText() const;
-    void setKeyText(const String&);
-
-    // Used by StyleResolver.
-    const Vector<double>& keys() const;
-    // Used by BisonCSSParser when constructing a new StyleKeyframe.
-    void setKeys(PassOwnPtr<Vector<double> >);
-
-    const StylePropertySet& properties() const { return *m_properties; }
-    MutableStylePropertySet& mutableProperties();
-    void setProperties(PassRefPtrWillBeRawPtr<StylePropertySet>);
-
-    String cssText() const;
-
-    void trace(Visitor*);
-
-    static PassOwnPtr<Vector<double> > createKeyList(CSSParserValueList*);
-
-private:
-    StyleKeyframe();
-
-    RefPtrWillBeMember<StylePropertySet> m_properties;
-    // These are both calculated lazily. Either one can be set, which invalidates the other.
-    mutable String m_keyText;
-    mutable OwnPtr<Vector<double> > m_keys;
-};
+class ExceptionState;
+class KeyframeStyleRuleCSSStyleDeclaration;
 
 class CSSKeyframeRule final : public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~CSSKeyframeRule();
 
-    virtual CSSRule::Type type() const override { return KEYFRAME_RULE; }
     virtual String cssText() const override { return m_keyframe->cssText(); }
     virtual void reattach(StyleRuleBase*) override;
 
     String keyText() const { return m_keyframe->keyText(); }
-    void setKeyText(const String& s) { m_keyframe->setKeyText(s); }
+    void setKeyText(const String&, ExceptionState&);
 
     CSSStyleDeclaration* style() const;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    CSSKeyframeRule(StyleKeyframe*, CSSKeyframesRule* parent);
+    CSSKeyframeRule(StyleRuleKeyframe*, CSSKeyframesRule* parent);
 
-    RefPtrWillBeMember<StyleKeyframe> m_keyframe;
-    mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
+    virtual CSSRule::Type type() const override { return KEYFRAME_RULE; }
+
+    RefPtrWillBeMember<StyleRuleKeyframe> m_keyframe;
+    mutable RefPtrWillBeMember<KeyframeStyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
 
     friend class CSSKeyframesRule;
 };

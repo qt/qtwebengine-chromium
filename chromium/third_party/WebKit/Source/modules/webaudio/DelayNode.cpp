@@ -23,38 +23,53 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/DelayNode.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/webaudio/AudioBasicProcessorHandler.h"
+#include "modules/webaudio/DelayProcessor.h"
 #include "wtf/MathExtras.h"
 
 namespace blink {
 
 const double maximumAllowedDelayTime = 180;
 
-DelayNode::DelayNode(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
-    : AudioBasicProcessorNode(context, sampleRate)
+DelayNode::DelayNode(AudioContext& context, float sampleRate, double maxDelayTime)
+    : AudioNode(context)
+    , m_delayTime(AudioParam::create(context, 0.0))
 {
-    if (maxDelayTime <= 0 || maxDelayTime >= maximumAllowedDelayTime || std::isnan(maxDelayTime)) {
+    setHandler(AudioBasicProcessorHandler::create(AudioHandler::NodeTypeDelay, *this, sampleRate, adoptPtr(new DelayProcessor(sampleRate, 1, m_delayTime->handler(), maxDelayTime))));
+}
+
+DelayNode* DelayNode::create(AudioContext& context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
+{
+    if (maxDelayTime <= 0 || maxDelayTime >= maximumAllowedDelayTime) {
         exceptionState.throwDOMException(
             NotSupportedError,
-            "max delay time (" + String::number(maxDelayTime)
-            + ") must be between 0 and " + String::number(maximumAllowedDelayTime)
-            + ", exclusive.");
-        return;
+            ExceptionMessages::indexOutsideRange(
+                "max delay time",
+                maxDelayTime,
+                0.0,
+                ExceptionMessages::ExclusiveBound,
+                maximumAllowedDelayTime,
+                ExceptionMessages::ExclusiveBound));
+        return nullptr;
     }
-    m_processor = new DelayProcessor(context, sampleRate, 1, maxDelayTime);
-    setNodeType(NodeTypeDelay);
+    return new DelayNode(context, sampleRate, maxDelayTime);
 }
 
 AudioParam* DelayNode::delayTime()
 {
-    return delayProcessor()->delayTime();
+    return m_delayTime;
+}
+
+DEFINE_TRACE(DelayNode)
+{
+    visitor->trace(m_delayTime);
+    AudioNode::trace(visitor);
 }
 
 } // namespace blink

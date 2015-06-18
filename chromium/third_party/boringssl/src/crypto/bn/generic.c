@@ -130,40 +130,8 @@
     BN_UMULT_LOHI(r0, r1, tmp, tmp); \
   }
 
-#elif defined(BN_UMULT_HIGH)
-#define mul_add(r, a, w, c)             \
-  {                                     \
-    BN_ULONG high, low, ret, tmp = (a); \
-    ret = (r);                          \
-    high = BN_UMULT_HIGH(w, tmp);       \
-    ret += (c);                         \
-    low = (w) * tmp;                    \
-    (c) = (ret < (c)) ? 1 : 0;          \
-    (c) += high;                        \
-    ret += low;                         \
-    (c) += (ret < low) ? 1 : 0;         \
-    (r) = ret;                          \
-  }
-
-#define mul(r, a, w, c)                \
-  {                                    \
-    BN_ULONG high, low, ret, ta = (a); \
-    low = (w) * ta;                    \
-    high = BN_UMULT_HIGH(w, ta);       \
-    ret = low + (c);                   \
-    (c) = high;                        \
-    (c) += (ret < low) ? 1 : 0;        \
-    (r) = ret;                         \
-  }
-
-#define sqr(r0, r1, a)              \
-  {                                 \
-    BN_ULONG tmp = (a);             \
-    (r0) = tmp * tmp;               \
-    (r1) = BN_UMULT_HIGH(tmp, tmp); \
-  }
-
 #else
+
 /*************************************************************
  * No long long type
  */
@@ -424,7 +392,7 @@ void bn_sqr_words(BN_ULONG *r, const BN_ULONG *a, int n) {
 
 #endif /* !(defined(BN_LLONG) || defined(BN_UMULT_HIGH)) */
 
-#if defined(BN_LLONG) && defined(BN_DIV2W)
+#if defined(BN_LLONG)
 
 BN_ULONG bn_div_words(BN_ULONG h, BN_ULONG l, BN_ULONG d) {
   return (BN_ULONG)(((((BN_ULLONG)h) << BN_BITS2) | l) / (BN_ULLONG)d);
@@ -502,7 +470,7 @@ BN_ULONG bn_div_words(BN_ULONG h, BN_ULONG l, BN_ULONG d) {
   return ret;
 }
 
-#endif /* !defined(BN_LLONG) && defined(BN_DIV2W) */
+#endif /* !defined(BN_LLONG) */
 
 #ifdef BN_LLONG
 BN_ULONG bn_add_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
@@ -617,23 +585,27 @@ BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
     t1 = a[0];
     t2 = b[0];
     r[0] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
+    }
     t1 = a[1];
     t2 = b[1];
     r[1] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
+    }
     t1 = a[2];
     t2 = b[2];
     r[2] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
+    }
     t1 = a[3];
     t2 = b[3];
     r[3] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
+    }
     a += 4;
     b += 4;
     r += 4;
@@ -643,8 +615,9 @@ BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
     t1 = a[0];
     t2 = b[0];
     r[0] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
+    }
     a++;
     b++;
     r++;
@@ -659,175 +632,151 @@ BN_ULONG bn_sub_words(BN_ULONG *r, const BN_ULONG *a, const BN_ULONG *b,
 /* sqr_add_c2(a,i,c0,c1,c2) -- c+=2*a[i]*a[j] for three word number c=(c2,c1,c0) */
 
 #ifdef BN_LLONG
-#define mul_add_c(a, b, c0, c1, c2) \
-  t = (BN_ULLONG)a * b;             \
-  t1 = (BN_ULONG)Lw(t);             \
-  t2 = (BN_ULONG)Hw(t);             \
-  c0 = (c0 + t1) & BN_MASK2;        \
-  if ((c0) < t1)                    \
-    t2++;                           \
-  c1 = (c1 + t2) & BN_MASK2;        \
-  if ((c1) < t2)                    \
-    c2++;
 
-#define mul_add_c2(a, b, c0, c1, c2)           \
-  t = (BN_ULLONG)a * b;                        \
-  tt = (t + t) & BN_MASK;                      \
-  if (tt < t)                                  \
-    c2++;                                      \
-  t1 = (BN_ULONG)Lw(tt);                       \
-  t2 = (BN_ULONG)Hw(tt);                       \
-  c0 = (c0 + t1) & BN_MASK2;                   \
-  if ((c0 < t1) && (((++t2) & BN_MASK2) == 0)) \
-    c2++;                                      \
-  c1 = (c1 + t2) & BN_MASK2;                   \
-  if ((c1) < t2)                               \
-    c2++;
+/* Keep in mind that additions to multiplication result can not overflow,
+ * because its high half cannot be all-ones. */
+#define mul_add_c(a, b, c0, c1, c2)     \
+  do {                                  \
+    BN_ULONG hi;                        \
+    BN_ULLONG t = (BN_ULLONG)(a) * (b); \
+    t += c0; /* no carry */             \
+    c0 = (BN_ULONG)Lw(t);               \
+    hi = (BN_ULONG)Hw(t);               \
+    c1 = (c1 + hi) & BN_MASK2;          \
+    if (c1 < hi)                        \
+      c2++;                             \
+  } while (0)
 
-#define sqr_add_c(a, i, c0, c1, c2) \
-  t = (BN_ULLONG)a[i] * a[i];       \
-  t1 = (BN_ULONG)Lw(t);             \
-  t2 = (BN_ULONG)Hw(t);             \
-  c0 = (c0 + t1) & BN_MASK2;        \
-  if ((c0) < t1)                    \
-    t2++;                           \
-  c1 = (c1 + t2) & BN_MASK2;        \
-  if ((c1) < t2)                    \
-    c2++;
+#define mul_add_c2(a, b, c0, c1, c2)      \
+  do {                                    \
+    BN_ULONG hi;                          \
+    BN_ULLONG t = (BN_ULLONG)(a) * (b);   \
+    BN_ULLONG tt = t + c0; /* no carry */ \
+    c0 = (BN_ULONG)Lw(tt);                \
+    hi = (BN_ULONG)Hw(tt);                \
+    c1 = (c1 + hi) & BN_MASK2;            \
+    if (c1 < hi)                          \
+      c2++;                               \
+    t += c0; /* no carry */               \
+    c0 = (BN_ULONG)Lw(t);                 \
+    hi = (BN_ULONG)Hw(t);                 \
+    c1 = (c1 + hi) & BN_MASK2;            \
+    if (c1 < hi)                          \
+      c2++;                               \
+  } while (0)
+
+#define sqr_add_c(a, i, c0, c1, c2)       \
+  do {                                    \
+    BN_ULONG hi;                          \
+    BN_ULLONG t = (BN_ULLONG)a[i] * a[i]; \
+    t += c0; /* no carry */               \
+    c0 = (BN_ULONG)Lw(t);                 \
+    hi = (BN_ULONG)Hw(t);                 \
+    c1 = (c1 + hi) & BN_MASK2;            \
+    if (c1 < hi)                          \
+      c2++;                               \
+  } while (0)
 
 #define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
 
 #elif defined(BN_UMULT_LOHI)
 
+/* Keep in mind that additions to hi can not overflow, because the high word of
+ * a multiplication result cannot be all-ones. */
 #define mul_add_c(a, b, c0, c1, c2) \
-  {                                 \
+  do {                              \
     BN_ULONG ta = (a), tb = (b);    \
-    BN_UMULT_LOHI(t1, t2, ta, tb);  \
-    c0 += t1;                       \
-    t2 += (c0 < t1) ? 1 : 0;        \
-    c1 += t2;                       \
-    c2 += (c1 < t2) ? 1 : 0;        \
-  }
+    BN_ULONG lo, hi;                \
+    BN_UMULT_LOHI(lo, hi, ta, tb);  \
+    c0 += lo;                       \
+    hi += (c0 < lo) ? 1 : 0;        \
+    c1 += hi;                       \
+    c2 += (c1 < hi) ? 1 : 0;        \
+  } while (0)
 
 #define mul_add_c2(a, b, c0, c1, c2) \
-  {                                  \
-    BN_ULONG ta = (a), tb = (b), t0; \
-    BN_UMULT_LOHI(t0, t1, ta, tb);   \
-    t2 = t1 + t1;                    \
-    c2 += (t2 < t1) ? 1 : 0;         \
-    t1 = t0 + t0;                    \
-    t2 += (t1 < t0) ? 1 : 0;         \
-    c0 += t1;                        \
-    t2 += (c0 < t1) ? 1 : 0;         \
-    c1 += t2;                        \
-    c2 += (c1 < t2) ? 1 : 0;         \
-  }
+  do {                               \
+    BN_ULONG ta = (a), tb = (b);     \
+    BN_ULONG lo, hi, tt;             \
+    BN_UMULT_LOHI(lo, hi, ta, tb);   \
+    c0 += lo;                        \
+    tt = hi + ((c0 < lo) ? 1 : 0);   \
+    c1 += tt;                        \
+    c2 += (c1 < tt) ? 1 : 0;         \
+    c0 += lo;                        \
+    hi += (c0 < lo) ? 1 : 0;         \
+    c1 += hi;                        \
+    c2 += (c1 < hi) ? 1 : 0;         \
+  } while (0)
 
 #define sqr_add_c(a, i, c0, c1, c2) \
-  {                                 \
+  do {                              \
     BN_ULONG ta = (a)[i];           \
-    BN_UMULT_LOHI(t1, t2, ta, ta);  \
-    c0 += t1;                       \
-    t2 += (c0 < t1) ? 1 : 0;        \
-    c1 += t2;                       \
-    c2 += (c1 < t2) ? 1 : 0;        \
-  }
-
-#define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
-
-#elif defined(BN_UMULT_HIGH)
-
-#define mul_add_c(a, b, c0, c1, c2) \
-  {                                 \
-    BN_ULONG ta = (a), tb = (b);    \
-    t1 = ta * tb;                   \
-    t2 = BN_UMULT_HIGH(ta, tb);     \
-    c0 += t1;                       \
-    t2 += (c0 < t1) ? 1 : 0;        \
-    c1 += t2;                       \
-    c2 += (c1 < t2) ? 1 : 0;        \
-  }
-
-#define mul_add_c2(a, b, c0, c1, c2) \
-  {                                  \
-    BN_ULONG ta = (a), tb = (b), t0; \
-    t1 = BN_UMULT_HIGH(ta, tb);      \
-    t0 = ta * tb;                    \
-    t2 = t1 + t1;                    \
-    c2 += (t2 < t1) ? 1 : 0;         \
-    t1 = t0 + t0;                    \
-    t2 += (t1 < t0) ? 1 : 0;         \
-    c0 += t1;                        \
-    t2 += (c0 < t1) ? 1 : 0;         \
-    c1 += t2;                        \
-    c2 += (c1 < t2) ? 1 : 0;         \
-  }
-
-#define sqr_add_c(a, i, c0, c1, c2) \
-  {                                 \
-    BN_ULONG ta = (a)[i];           \
-    t1 = ta * ta;                   \
-    t2 = BN_UMULT_HIGH(ta, ta);     \
-    c0 += t1;                       \
-    t2 += (c0 < t1) ? 1 : 0;        \
-    c1 += t2;                       \
-    c2 += (c1 < t2) ? 1 : 0;        \
-  }
+    BN_ULONG lo, hi;                \
+    BN_UMULT_LOHI(lo, hi, ta, ta);  \
+    c0 += lo;                       \
+    hi += (c0 < lo) ? 1 : 0;        \
+    c1 += hi;                       \
+    c2 += (c1 < hi) ? 1 : 0;        \
+  } while (0)
 
 #define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
 
 #else /* !BN_LLONG */
-#define mul_add_c(a, b, c0, c1, c2) \
-  t1 = LBITS(a);                    \
-  t2 = HBITS(a);                    \
-  bl = LBITS(b);                    \
-  bh = HBITS(b);                    \
-  mul64(t1, t2, bl, bh);            \
-  c0 = (c0 + t1) & BN_MASK2;        \
-  if ((c0) < t1)                    \
-    t2++;                           \
-  c1 = (c1 + t2) & BN_MASK2;        \
-  if ((c1) < t2)                    \
-    c2++;
 
-#define mul_add_c2(a, b, c0, c1, c2)           \
-  t1 = LBITS(a);                               \
-  t2 = HBITS(a);                               \
-  bl = LBITS(b);                               \
-  bh = HBITS(b);                               \
-  mul64(t1, t2, bl, bh);                       \
-  if (t2 & BN_TBIT)                            \
-    c2++;                                      \
-  t2 = (t2 + t2) & BN_MASK2;                   \
-  if (t1 & BN_TBIT)                            \
-    t2++;                                      \
-  t1 = (t1 + t1) & BN_MASK2;                   \
-  c0 = (c0 + t1) & BN_MASK2;                   \
-  if ((c0 < t1) && (((++t2) & BN_MASK2) == 0)) \
-    c2++;                                      \
-  c1 = (c1 + t2) & BN_MASK2;                   \
-  if ((c1) < t2)                               \
-    c2++;
+/* Keep in mind that additions to hi can not overflow, because
+ * the high word of a multiplication result cannot be all-ones. */
+
+#define mul_add_c(a, b, c0, c1, c2)        \
+  do {                                     \
+    BN_ULONG lo = LBITS(a), hi = HBITS(a); \
+    BN_ULONG bl = LBITS(b), bh = HBITS(b); \
+    mul64(lo, hi, bl, bh);                 \
+    c0 = (c0 + lo) & BN_MASK2;             \
+    if (c0 < lo)                           \
+      hi++;                                \
+    c1 = (c1 + hi) & BN_MASK2;             \
+    if (c1 < hi)                           \
+      c2++;                                \
+  } while (0)
+
+#define mul_add_c2(a, b, c0, c1, c2)       \
+  do {                                     \
+    BN_ULONG tt;                           \
+    BN_ULONG lo = LBITS(a), hi = HBITS(a); \
+    BN_ULONG bl = LBITS(b), bh = HBITS(b); \
+    mul64(lo, hi, bl, bh);                 \
+    tt = hi;                               \
+    c0 = (c0 + lo) & BN_MASK2;             \
+    if (c0 < lo)                           \
+      tt++;                                \
+    c1 = (c1 + tt) & BN_MASK2;             \
+    if (c1 < tt)                           \
+      c2++;                                \
+    c0 = (c0 + lo) & BN_MASK2;             \
+    if (c0 < lo)                           \
+      hi++;                                \
+    c1 = (c1 + hi) & BN_MASK2;             \
+    if (c1 < hi)                           \
+      c2++;                                \
+  } while (0)
 
 #define sqr_add_c(a, i, c0, c1, c2) \
-  sqr64(t1, t2, (a)[i]);            \
-  c0 = (c0 + t1) & BN_MASK2;        \
-  if ((c0) < t1)                    \
-    t2++;                           \
-  c1 = (c1 + t2) & BN_MASK2;        \
-  if ((c1) < t2)                    \
-    c2++;
+  do {                              \
+    BN_ULONG lo, hi;                \
+    sqr64(lo, hi, (a)[i]);          \
+    c0 = (c0 + lo) & BN_MASK2;      \
+    if (c0 < lo)                    \
+      hi++;                         \
+    c1 = (c1 + hi) & BN_MASK2;      \
+    if (c1 < hi)                    \
+      c2++;                         \
+  } while (0)
 
 #define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
 #endif /* !BN_LLONG */
 
 void bn_mul_comba8(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
-#if defined(BN_LLONG)
-  BN_ULLONG t;
-#elif !defined(BN_UMULT_LOHI) && !defined(BN_UMULT_HIGH)
-  BN_ULONG bl, bh;
-#endif
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -930,12 +879,6 @@ void bn_mul_comba8(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
 }
 
 void bn_mul_comba4(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
-#if defined(BN_LLONG)
-  BN_ULLONG t;
-#elif !defined(BN_UMULT_LOHI) && !defined(BN_UMULT_HIGH)
-  BN_ULONG bl, bh;
-#endif
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -974,12 +917,6 @@ void bn_mul_comba4(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
 }
 
 void bn_sqr_comba8(BN_ULONG *r, const BN_ULONG *a) {
-#if defined(BN_LLONG)
-  BN_ULLONG t, tt;
-#elif !defined(BN_UMULT_LOHI) && !defined(BN_UMULT_HIGH)
-  BN_ULONG bl, bh;
-#endif
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -1054,12 +991,6 @@ void bn_sqr_comba8(BN_ULONG *r, const BN_ULONG *a) {
 }
 
 void bn_sqr_comba4(BN_ULONG *r, const BN_ULONG *a) {
-#if defined(BN_LLONG)
-  BN_ULLONG t, tt;
-#elif !defined(BN_UMULT_LOHI) && !defined(BN_UMULT_HIGH)
-  BN_ULONG bl, bh;
-#endif
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -1124,11 +1055,13 @@ int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
 #ifdef mul64
   mh = HBITS(ml);
   ml = LBITS(ml);
-  for (j = 0; j < num; ++j)
+  for (j = 0; j < num; ++j) {
     mul(tp[j], ap[j], ml, mh, c0);
+  }
 #else
-  for (j = 0; j < num; ++j)
+  for (j = 0; j < num; ++j) {
     mul(tp[j], ap[j], ml, c0);
+  }
 #endif
 
   tp[num] = c0;
@@ -1141,11 +1074,13 @@ int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
 #ifdef mul64
     mh = HBITS(ml);
     ml = LBITS(ml);
-    for (j = 0; j < num; ++j)
+    for (j = 0; j < num; ++j) {
       mul_add(tp[j], ap[j], ml, mh, c0);
+    }
 #else
-    for (j = 0; j < num; ++j)
+    for (j = 0; j < num; ++j) {
       mul_add(tp[j], ap[j], ml, c0);
+    }
 #endif
     c1 = (tp[num] + c0) & BN_MASK2;
     tp[num] = c1;
@@ -1178,13 +1113,15 @@ int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
   if (tp[num] != 0 || tp[num - 1] >= np[num - 1]) {
     c0 = bn_sub_words(rp, tp, np, num);
     if (tp[num] != 0 || c0 == 0) {
-      for (i = 0; i < num + 2; i++)
+      for (i = 0; i < num + 2; i++) {
         vp[i] = 0;
+      }
       return 1;
     }
   }
-  for (i = 0; i < num; i++)
+  for (i = 0; i < num; i++) {
     rp[i] = tp[i], vp[i] = 0;
+  }
   vp[num] = 0;
   vp[num + 1] = 0;
   return 1;

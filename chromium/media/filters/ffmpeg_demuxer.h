@@ -86,13 +86,16 @@ class FFmpegDemuxerStream : public DemuxerStream {
   }
 
   // DemuxerStream implementation.
-  Type type() override;
+  Type type() const override;
+  Liveness liveness() const override;
   void Read(const ReadCB& read_cb) override;
   void EnableBitstreamConverter() override;
   bool SupportsConfigChanges() override;
   AudioDecoderConfig audio_decoder_config() override;
   VideoDecoderConfig video_decoder_config() override;
   VideoRotation video_rotation() override;
+
+  void SetLiveness(Liveness liveness);
 
   // Returns the range of buffered data in this stream.
   Ranges<base::TimeDelta> GetBufferedRanges() const;
@@ -136,6 +139,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   AudioDecoderConfig audio_config_;
   VideoDecoderConfig video_config_;
   Type type_;
+  Liveness liveness_;
   base::TimeDelta duration_;
   bool end_of_stream_;
   base::TimeDelta last_packet_timestamp_;
@@ -160,7 +164,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
  public:
   FFmpegDemuxer(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
                 DataSource* data_source,
-                const NeedKeyCB& need_key_cb,
+                const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
                 const scoped_refptr<MediaLog>& media_log);
   ~FFmpegDemuxer() override;
 
@@ -173,11 +177,11 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   base::Time GetTimelineOffset() const override;
   DemuxerStream* GetStream(DemuxerStream::Type type) override;
   base::TimeDelta GetStartTime() const override;
-  Liveness GetLiveness() const override;
 
-  // Calls |need_key_cb_| with the initialization data encountered in the file.
-  void FireNeedKey(const std::string& init_data_type,
-                   const std::string& encryption_key_id);
+  // Calls |encrypted_media_init_data_cb_| with the initialization data
+  // encountered in the file.
+  void OnEncryptedMediaInitData(EmeInitDataType init_data_type,
+                                const std::string& encryption_key_id);
 
   // Allow FFmpegDemuxerStream to notify us when there is updated information
   // about capacity and what buffered data is available.
@@ -224,6 +228,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Called after the streams have been collected from the media, to allow
   // the text renderer to bind each text stream to the cue rendering engine.
   void AddTextStreams();
+
+  void SetLiveness(DemuxerStream::Liveness liveness);
 
   DemuxerHost* host_;
 
@@ -283,9 +289,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // time if the file doesn't have an association to Time.
   base::Time timeline_offset_;
 
-  // Liveness of the stream.
-  Liveness liveness_;
-
   // Whether text streams have been enabled for this demuxer.
   bool text_enabled_;
 
@@ -297,7 +300,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   scoped_ptr<BlockingUrlProtocol> url_protocol_;
   scoped_ptr<FFmpegGlue> glue_;
 
-  const NeedKeyCB need_key_cb_;
+  const EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;

@@ -73,17 +73,6 @@ other_externs = """
 var inspectedWindow;
 /** @type {number} */
 var injectedScriptId;
-
-// FIXME: Remove once ES6 is supported natively by JS compiler.
-
-/** @typedef {string} */
-var symbol;
-
-/**
- * @param {string} description
- * @return {symbol}
- */
-function Symbol(description) {}
 """
 
 

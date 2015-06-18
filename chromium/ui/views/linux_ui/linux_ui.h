@@ -150,6 +150,13 @@ class VIEWS_EXPORT LinuxUI : public ui::LinuxInputMethodContextFactory,
   // automatically. In case Chromium does not open a new window on startup,
   // e.g. an existing browser window already exists, this should be called.
   virtual void NotifyWindowManagerStartupComplete() = 0;
+
+  // Updates the device scale factor so that the default font size can be
+  // recalculated.
+  virtual void UpdateDeviceScaleFactor(float device_scale_factor) = 0;
+
+  // Determines the device scale factor of the primary screen.
+  virtual float GetDeviceScaleFactor() const = 0;
 };
 
 }  // namespace views

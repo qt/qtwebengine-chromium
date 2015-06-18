@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/font_render_params.h"
@@ -53,7 +54,7 @@ struct CONTENT_EXPORT RendererPreferences {
   bool use_bitmaps;
 
   // The type of subpixel rendering to use for text.
-  // Currently only used by Linux.
+  // Currently only used by Linux and Windows.
   gfx::FontRenderParams::SubpixelRendering subpixel_rendering;
 
   // Whether subpixel positioning should be used, permitting fractional X
@@ -95,6 +96,9 @@ struct CONTENT_EXPORT RendererPreferences {
   // Set to true to indicate that the preference to set DNT to 1 is enabled.
   bool enable_do_not_track;
 
+  // Set to false to indicate that WebRTC should use the OS default routing.
+  bool enable_webrtc_multiple_routes;
+
   // Default page zoom level.
   double default_zoom_level;
 
@@ -126,6 +130,45 @@ struct CONTENT_EXPORT RendererPreferences {
   // Whether video-overlay (hole-punching) should be used for the embedded
   // encrypted video.  Currently only used by Android.
   bool use_video_overlay_for_embedded_encrypted_video;
+
+  // Use video-overlay (hole-punching) should be used for all video, not just
+  // encrypted video.  Currently only used by Android.
+  bool use_view_overlay_for_all_video;
+
+  // Country iso of the mobile network for content detection purpose.
+  std::string network_contry_iso;
+
+#if defined(OS_WIN)
+  // The default system font settings for caption, small caption, menu and
+  // status messages. Used only by Windows.
+  base::string16 caption_font_family_name;
+  int32 caption_font_height;
+
+  base::string16 small_caption_font_family_name;
+  int32 small_caption_font_height;
+
+  base::string16 menu_font_family_name;
+  int32 menu_font_height;
+
+  base::string16 status_font_family_name;
+  int32 status_font_height;
+
+  base::string16 message_font_family_name;
+  int32 message_font_height;
+
+  // The width of a vertical scroll bar in dips.
+  int32 vertical_scroll_bar_width_in_dips;
+
+  // The height of a horizontal scroll bar in dips.
+  int32 horizontal_scroll_bar_height_in_dips;
+
+  // The height of the arrow bitmap on a vertical scroll bar in dips.
+  int32 arrow_bitmap_height_vertical_scroll_bar_in_dips;
+
+  // The width of the arrow bitmap on a horizontal scroll bar in dips.
+  int32 arrow_bitmap_width_horizontal_scroll_bar_in_dips;
+#endif
+
 };
 
 }  // namespace content

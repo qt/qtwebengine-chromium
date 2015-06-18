@@ -18,7 +18,7 @@
  * You should have received a copy of the GNU Library General Public License
  * along with this library; see the file COPYING.LIother.m_  If not, write to
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USm_
+ * Boston, MA 02110-1301, USA.
  *
  */
 
@@ -26,7 +26,6 @@
 #define FontDescription_h
 
 #include "platform/FontFamilyNames.h"
-#include "platform/fonts/FixedPitchFontType.h"
 #include "platform/fonts/FontCacheKey.h"
 #include "platform/fonts/FontFamily.h"
 #include "platform/fonts/FontFeatureSettings.h"
@@ -36,7 +35,6 @@
 #include "platform/fonts/FontWidthVariant.h"
 #include "platform/fonts/TextRenderingMode.h"
 #include "platform/fonts/TypesettingFeatures.h"
-#include "platform/text/NonCJKGlyphOrientation.h"
 #include "wtf/MathExtras.h"
 
 #include "wtf/RefPtr.h"
@@ -44,6 +42,8 @@
 #include <unicode/uscript.h>
 
 namespace blink {
+
+const float FontSizeAdjustNone = -1;
 
 class PLATFORM_EXPORT FontDescription {
 public:
@@ -55,13 +55,13 @@ public:
     enum LigaturesState { NormalLigaturesState, DisabledLigaturesState, EnabledLigaturesState };
 
     FontDescription()
-        : m_locale("en")
-        , m_specifiedSize(0)
+        : m_specifiedSize(0)
         , m_computedSize(0)
+        , m_adjustedSize(0)
+        , m_sizeAdjust(FontSizeAdjustNone)
         , m_letterSpacing(0)
         , m_wordSpacing(0)
-        , m_orientation(Horizontal)
-        , m_nonCJKGlyphOrientation(NonCJKGlyphOrientationVerticalRight)
+        , m_orientation(static_cast<unsigned>(FontOrientation::Horizontal))
         , m_widthVariant(RegularWidth)
         , m_style(FontStyleNormal)
         , m_variant(FontVariantNormal)
@@ -89,11 +89,11 @@ public:
     bool operator!=(const FontDescription& other) const { return !(*this == other); }
 
     struct VariantLigatures {
-        VariantLigatures()
-            : common(NormalLigaturesState)
-            , discretionary(NormalLigaturesState)
-            , historical(NormalLigaturesState)
-            , contextual(NormalLigaturesState)
+        VariantLigatures(LigaturesState state = NormalLigaturesState)
+            : common(state)
+            , discretionary(state)
+            , historical(state)
+            , contextual(state)
         {
         }
 
@@ -132,6 +132,9 @@ public:
     Size size() const { return Size(m_keywordSize, m_specifiedSize, m_isAbsoluteSize); }
     float specifiedSize() const { return m_specifiedSize; }
     float computedSize() const { return m_computedSize; }
+    float adjustedSize() const { return m_adjustedSize; }
+    float sizeAdjust() const { return m_sizeAdjust; }
+    bool hasSizeAdjust() const { return m_sizeAdjust != FontSizeAdjustNone; }
     FontStyle style() const { return static_cast<FontStyle>(m_style); }
     int computedPixelSize() const { return int(m_computedSize + 0.5f); }
     FontVariant variant() const { return static_cast<FontVariant>(m_variant); }
@@ -145,11 +148,9 @@ public:
     GenericFamilyType genericFamily() const { return static_cast<GenericFamilyType>(m_genericFamily); }
 
     // only use fixed default size when there is only one font family, and that family is "monospace"
-    FixedPitchFontType fixedPitchFontType() const
+    bool isMonospace() const
     {
-        if (genericFamily() == MonospaceFamily && !family().next() && family().family() == FontFamilyNames::webkit_monospace)
-            return FixedPitchFont;
-        return NonFixedPitchFont;
+        return genericFamily() == MonospaceFamily && !family().next() && family().family() == FontFamilyNames::webkit_monospace;
     }
     Kerning kerning() const { return static_cast<Kerning>(m_kerning); }
     VariantLigatures variantLigatures() const;
@@ -161,7 +162,7 @@ public:
     FontSmoothingMode fontSmoothing() const { return static_cast<FontSmoothingMode>(m_fontSmoothing); }
     TextRenderingMode textRendering() const { return static_cast<TextRenderingMode>(m_textRendering); }
     UScriptCode script() const { return static_cast<UScriptCode>(m_script); }
-    const String& locale() const { return m_locale; }
+    const AtomicString& locale() const;
     bool isSyntheticBold() const { return m_syntheticBold; }
     bool isSyntheticItalic() const { return m_syntheticItalic; }
     bool useSubpixelPositioning() const { return m_subpixelTextPosition; }
@@ -170,7 +171,9 @@ public:
     float wordSpacing() const { return m_wordSpacing; }
     float letterSpacing() const { return m_letterSpacing; }
     FontOrientation orientation() const { return static_cast<FontOrientation>(m_orientation); }
-    NonCJKGlyphOrientation nonCJKGlyphOrientation() const { return static_cast<NonCJKGlyphOrientation>(m_nonCJKGlyphOrientation); }
+    bool isVerticalAnyUpright() const { return blink::isVerticalAnyUpright(orientation()); }
+    bool isVerticalNonCJKUpright() const { return blink::isVerticalNonCJKUpright(orientation()); }
+    bool isVerticalBaseline() const { return blink::isVerticalBaseline(orientation()); }
     FontWidthVariant widthVariant() const { return static_cast<FontWidthVariant>(m_widthVariant); }
     FontFeatureSettings* featureSettings() const { return m_featureSettings.get(); }
 
@@ -180,6 +183,8 @@ public:
     void setFamily(const FontFamily& family) { m_familyList = family; }
     void setComputedSize(float s) { m_computedSize = clampTo<float>(s); }
     void setSpecifiedSize(float s) { m_specifiedSize = clampTo<float>(s); }
+    void setAdjustedSize(float s) { m_adjustedSize = clampTo<float>(s); }
+    void setSizeAdjust(float aspect) { m_sizeAdjust = clampTo<float>(aspect); }
     void setStyle(FontStyle i) { m_style = i; }
     void setVariant(FontVariant c) { m_variant = c; }
     void setVariantLigatures(const VariantLigatures&);
@@ -191,17 +196,16 @@ public:
     void setKeywordSize(unsigned s) { m_keywordSize = s; }
     void setFontSmoothing(FontSmoothingMode smoothing) { m_fontSmoothing = smoothing; }
     void setTextRendering(TextRenderingMode rendering) { m_textRendering = rendering; updateTypesettingFeatures(); }
-    void setOrientation(FontOrientation orientation) { m_orientation = orientation; }
-    void setNonCJKGlyphOrientation(NonCJKGlyphOrientation orientation) { m_nonCJKGlyphOrientation = orientation; }
+    void setOrientation(FontOrientation orientation) { m_orientation = static_cast<unsigned>(orientation); }
     void setWidthVariant(FontWidthVariant widthVariant) { m_widthVariant = widthVariant; }
     void setScript(UScriptCode s) { m_script = s; }
-    void setLocale(const String& locale) { m_locale = locale; }
+    void setLocale(const AtomicString& locale) { m_locale = locale; }
     void setSyntheticBold(bool syntheticBold) { m_syntheticBold = syntheticBold; }
     void setSyntheticItalic(bool syntheticItalic) { m_syntheticItalic = syntheticItalic; }
     void setFeatureSettings(PassRefPtr<FontFeatureSettings> settings) { m_featureSettings = settings; }
     void setTraits(FontTraits);
     void setWordSpacing(float s) { m_wordSpacing = s; }
-    void setLetterSpacing(float s) { m_letterSpacing = s; }
+    void setLetterSpacing(float s) { m_letterSpacing = s; updateTypesettingFeatures(); }
 
     TypesettingFeatures typesettingFeatures() const { return static_cast<TypesettingFeatures>(m_typesettingFeatures); }
 
@@ -214,7 +218,7 @@ public:
 private:
     FontFamily m_familyList; // The list of font families to be used.
     RefPtr<FontFeatureSettings> m_featureSettings;
-    String m_locale;
+    AtomicString m_locale;
 
     void updateTypesettingFeatures() const;
 
@@ -222,11 +226,18 @@ private:
                              // rounding, minimum font sizes, and zooming.
     float m_computedSize;    // Computed size adjusted for the minimum font size and the zoom factor.
 
+    // (Given aspect value / aspect value of a font family) * specifiedSize.
+    // This value is adjusted for the minimum font size and the zoom factor
+    // as well as a computed size is.
+    float m_adjustedSize;
+
+    // Given aspect value, i.e. font-size-adjust.
+    float m_sizeAdjust;
+
     float m_letterSpacing;
     float m_wordSpacing;
 
-    unsigned m_orientation : 1; // FontOrientation - Whether the font is rendering on a horizontal line or a vertical line.
-    unsigned m_nonCJKGlyphOrientation : 1; // NonCJKGlyphOrientation - Only used by vertical text. Determines the default orientation for non-ideograph glyphs.
+    unsigned m_orientation : static_cast<unsigned>(FontOrientation::BitCount);
 
     unsigned m_widthVariant : 2; // FontWidthVariant
 
@@ -268,6 +279,8 @@ inline bool FontDescription::operator==(const FontDescription& other) const
     return m_familyList == other.m_familyList
         && m_specifiedSize == other.m_specifiedSize
         && m_computedSize == other.m_computedSize
+        && m_adjustedSize == other.m_adjustedSize
+        && m_sizeAdjust == other.m_sizeAdjust
         && m_letterSpacing == other.m_letterSpacing
         && m_wordSpacing == other.m_wordSpacing
         && m_style == other.m_style
@@ -285,7 +298,6 @@ inline bool FontDescription::operator==(const FontDescription& other) const
         && m_fontSmoothing == other.m_fontSmoothing
         && m_textRendering == other.m_textRendering
         && m_orientation == other.m_orientation
-        && m_nonCJKGlyphOrientation == other.m_nonCJKGlyphOrientation
         && m_widthVariant == other.m_widthVariant
         && m_script == other.m_script
         && m_syntheticBold == other.m_syntheticBold

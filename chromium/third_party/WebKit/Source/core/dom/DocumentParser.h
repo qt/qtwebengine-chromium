@@ -39,7 +39,7 @@ class TextResourceDecoder;
 class DocumentParser : public RefCountedWillBeGarbageCollectedFinalized<DocumentParser> {
 public:
     virtual ~DocumentParser();
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     virtual ScriptableDocumentParser* asScriptableDocumentParser() { return 0; }
 
@@ -56,13 +56,8 @@ public:
     virtual TextResourceDecoder* decoder();
     virtual void setHasAppendedData() { }
 
-    // pinToMainThread also makes append() not yield before completion of that chunk.
-    virtual void pinToMainThread() { }
-
-    // FIXME: append() should be private, but DocumentLoader::replaceDocumentWhileExecutingJavaScriptURL uses it for now.
-    // FIXME: This really should take a PassOwnPtr to signify that it expects to take
-    // ownership of the buffer. The parser expects the PassRefPtr to hold the only ref of the StringImpl.
-    virtual void append(PassRefPtr<StringImpl>) = 0;
+    // FIXME: append() should be private, but DocumentLoader and DOMPatchSupport uses it for now.
+    virtual void append(const String&) = 0;
 
     virtual void finish() = 0;
 
@@ -126,7 +121,7 @@ private:
     // m_document will be 0 after the parser is stopped.
     RawPtrWillBeMember<Document> m_document;
 
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<DocumentParserClient> > m_clients;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<DocumentParserClient>> m_clients;
 };
 
 } // namespace blink

@@ -9,8 +9,98 @@
 #define GrDrawTargetCaps_DEFINED
 
 #include "GrTypes.h"
+#include "GrTypesPriv.h"
+#include "GrShaderVar.h"
 #include "SkRefCnt.h"
 #include "SkString.h"
+
+class GrShaderCaps : public SkRefCnt {
+public:
+    SK_DECLARE_INST_COUNT(GrShaderCaps)
+
+    /** Info about shader variable precision within a given shader stage. That is, this info
+        is relevant to a float (or vecNf) variable declared with a GrSLPrecision
+        in a given GrShaderType. The info here is hoisted from the OpenGL spec. */
+    struct PrecisionInfo {
+        PrecisionInfo() {
+            fLogRangeLow = 0;
+            fLogRangeHigh = 0;
+            fBits = 0;
+        }
+
+        /** Is this precision level allowed in the shader stage? */
+        bool supported() const { return 0 != fBits; }
+
+        bool operator==(const PrecisionInfo& that) const {
+            return fLogRangeLow == that.fLogRangeLow && fLogRangeHigh == that.fLogRangeHigh &&
+                   fBits == that.fBits;
+        }
+        bool operator!=(const PrecisionInfo& that) const { return !(*this == that); }
+
+        /** floor(log2(|min_value|)) */
+        int fLogRangeLow;
+        /** floor(log2(|max_value|)) */
+        int fLogRangeHigh;
+        /** Number of bits of precision. As defined in OpenGL (with names modified to reflect this
+            struct) :
+            """
+            If the smallest representable value greater than 1 is 1 + e, then fBits will
+            contain floor(log2(e)), and every value in the range [2^fLogRangeLow,
+            2^fLogRangeHigh] can be represented to at least one part in 2^fBits.
+            """
+          */
+        int fBits;
+    };
+
+    GrShaderCaps() {
+        this->reset();
+    }
+    virtual ~GrShaderCaps() {}
+    GrShaderCaps(const GrShaderCaps& other) : INHERITED() {
+        *this = other;
+    }
+    GrShaderCaps& operator= (const GrShaderCaps&);
+
+    virtual void reset();
+    virtual SkString dump() const;
+
+    bool shaderDerivativeSupport() const { return fShaderDerivativeSupport; }
+    bool geometryShaderSupport() const { return fGeometryShaderSupport; }
+    bool pathRenderingSupport() const { return fPathRenderingSupport; }
+    bool dstReadInShaderSupport() const { return fDstReadInShaderSupport; }
+    bool dualSourceBlendingSupport() const { return fDualSourceBlendingSupport; }
+
+    /**
+    * Get the precision info for a variable of type kFloat_GrSLType, kVec2f_GrSLType, etc in a
+    * given shader type. If the shader type is not supported or the precision level is not
+    * supported in that shader type then the returned struct will report false when supported() is
+    * called.
+    */
+    const PrecisionInfo& getFloatShaderPrecisionInfo(GrShaderType shaderType,
+        GrSLPrecision precision) const {
+        return fFloatPrecisions[shaderType][precision];
+    };
+
+    /**
+    * Is there any difference between the float shader variable precision types? If this is true
+    * then unless the shader type is not supported, any call to getFloatShaderPrecisionInfo() would
+    * report the same info for all precisions in all shader types.
+    */
+    bool floatPrecisionVaries() const { return fShaderPrecisionVaries; }
+
+protected:
+    bool fShaderDerivativeSupport : 1;
+    bool fGeometryShaderSupport : 1;
+    bool fPathRenderingSupport : 1;
+    bool fDstReadInShaderSupport : 1;
+    bool fDualSourceBlendingSupport : 1;
+
+    bool fShaderPrecisionVaries;
+    PrecisionInfo fFloatPrecisions[kGrShaderTypeCount][kGrSLPrecisionCount];
+
+private:
+    typedef SkRefCnt INHERITED;
+};
 
 /**
  * Represents the draw target capabilities.
@@ -19,16 +109,20 @@ class GrDrawTargetCaps : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrDrawTargetCaps)
 
-    GrDrawTargetCaps() : fUniqueID(CreateUniqueID()) {
+    GrDrawTargetCaps() {
+        fShaderCaps.reset(NULL);
         this->reset();
     }
-    GrDrawTargetCaps(const GrDrawTargetCaps& other) : INHERITED(), fUniqueID(CreateUniqueID()) {
+    GrDrawTargetCaps(const GrDrawTargetCaps& other) : INHERITED() {
         *this = other;
     }
+    virtual ~GrDrawTargetCaps() {}
     GrDrawTargetCaps& operator= (const GrDrawTargetCaps&);
 
     virtual void reset();
     virtual SkString dump() const;
+
+    GrShaderCaps* shaderCaps() const { return fShaderCaps; }
 
     bool npotTextureTileSupport() const { return fNPOTTextureTileSupport; }
     /** To avoid as-yet-unnecessary complexity we don't allow any partial support of MIP Maps (e.g.
@@ -36,17 +130,41 @@ public:
     bool mipMapSupport() const { return fMipMapSupport; }
     bool twoSidedStencilSupport() const { return fTwoSidedStencilSupport; }
     bool stencilWrapOpsSupport() const { return  fStencilWrapOpsSupport; }
-    bool hwAALineSupport() const { return fHWAALineSupport; }
-    bool shaderDerivativeSupport() const { return fShaderDerivativeSupport; }
-    bool geometryShaderSupport() const { return fGeometryShaderSupport; }
-    bool dualSourceBlendingSupport() const { return fDualSourceBlendingSupport; }
-    bool pathRenderingSupport() const { return fPathRenderingSupport; }
-    bool dstReadInShaderSupport() const { return fDstReadInShaderSupport; }
     bool discardRenderTargetSupport() const { return fDiscardRenderTargetSupport; }
+#if GR_FORCE_GPU_TRACE_DEBUGGING
+    bool gpuTracingSupport() const { return true; }
+#else
     bool gpuTracingSupport() const { return fGpuTracingSupport; }
+#endif
     bool compressedTexSubImageSupport() const { return fCompressedTexSubImageSupport; }
+    bool oversizedStencilSupport() const { return fOversizedStencilSupport; }
+    bool textureBarrierSupport() const { return fTextureBarrierSupport; }
 
     bool useDrawInsteadOfClear() const { return fUseDrawInsteadOfClear; }
+
+    /**
+     * Indicates the capabilities of the fixed function blend unit.
+     */
+    enum BlendEquationSupport {
+        kBasic_BlendEquationSupport,             //<! Support to select the operator that
+                                                 //   combines src and dst terms.
+        kAdvanced_BlendEquationSupport,          //<! Additional fixed function support for specific
+                                                 //   SVG/PDF blend modes. Requires blend barriers.
+        kAdvancedCoherent_BlendEquationSupport,  //<! Advanced blend equation support that does not
+                                                 //   require blend barriers, and permits overlap.
+
+        kLast_BlendEquationSupport = kAdvancedCoherent_BlendEquationSupport
+    };
+
+    BlendEquationSupport blendEquationSupport() const { return fBlendEquationSupport; }
+
+    bool advancedBlendEquationSupport() const {
+        return fBlendEquationSupport >= kAdvanced_BlendEquationSupport;
+    }
+
+    bool advancedCoherentBlendEquationSupport() const {
+        return kAdvancedCoherent_BlendEquationSupport == fBlendEquationSupport;
+    }
 
     /**
      * Indicates whether GPU->CPU memory mapping for GPU resources such as vertex buffers and
@@ -83,32 +201,23 @@ public:
         return fConfigTextureSupport[config];
     }
 
-    /**
-     * Gets an id that is unique for this GrDrawTargetCaps object. It is static in that it does
-     * not change when the content of the GrDrawTargetCaps object changes. This will never return
-     * 0.
-     */
-    uint32_t getUniqueID() const { return fUniqueID; }
-
 protected:
-    bool fNPOTTextureTileSupport    : 1;
-    bool fMipMapSupport             : 1;
-    bool fTwoSidedStencilSupport    : 1;
-    bool fStencilWrapOpsSupport     : 1;
-    bool fHWAALineSupport           : 1;
-    bool fShaderDerivativeSupport   : 1;
-    bool fGeometryShaderSupport     : 1;
-    bool fDualSourceBlendingSupport : 1;
-    bool fPathRenderingSupport      : 1;
-    bool fDstReadInShaderSupport    : 1;
-    bool fDiscardRenderTargetSupport: 1;
-    bool fReuseScratchTextures      : 1;
-    bool fGpuTracingSupport         : 1;
-    bool fCompressedTexSubImageSupport : 1;
+    SkAutoTUnref<GrShaderCaps>    fShaderCaps;
 
+    bool fNPOTTextureTileSupport        : 1;
+    bool fMipMapSupport                 : 1;
+    bool fTwoSidedStencilSupport        : 1;
+    bool fStencilWrapOpsSupport         : 1;
+    bool fDiscardRenderTargetSupport    : 1;
+    bool fReuseScratchTextures          : 1;
+    bool fGpuTracingSupport             : 1;
+    bool fCompressedTexSubImageSupport  : 1;
+    bool fOversizedStencilSupport       : 1;
+    bool fTextureBarrierSupport         : 1;
     // Driver workaround
-    bool fUseDrawInsteadOfClear     : 1;
+    bool fUseDrawInsteadOfClear         : 1;
 
+    BlendEquationSupport fBlendEquationSupport;
     uint32_t fMapBufferFlags;
 
     int fMaxRenderTargetSize;
@@ -120,10 +229,6 @@ protected:
     bool fConfigTextureSupport[kGrPixelConfigCnt];
 
 private:
-    static uint32_t CreateUniqueID();
-
-    const uint32_t          fUniqueID;
-
     typedef SkRefCnt INHERITED;
 };
 

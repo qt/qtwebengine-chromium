@@ -26,6 +26,7 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
+#include "core/CoreExport.h"
 #include "core/css/FontFaceCache.h"
 #include "core/css/FontLoader.h"
 #include "platform/fonts/FontSelector.h"
@@ -41,7 +42,7 @@ class CSSFontSelectorClient;
 class Document;
 class FontDescription;
 
-class CSSFontSelector final : public FontSelector {
+class CORE_EXPORT CSSFontSelector : public FontSelector {
 public:
     static PassRefPtrWillBeRawPtr<CSSFontSelector> create(Document* document)
     {
@@ -76,20 +77,22 @@ public:
     const GenericFontFamilySettings& genericFontFamilySettings() const { return m_genericFontFamilySettings; }
     void updateGenericFontFamilySettings(Document&);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
+
+protected:
+    explicit CSSFontSelector(Document*);
 
 private:
-    explicit CSSFontSelector(Document*);
 
     void dispatchInvalidationCallbacks();
 
     // FIXME: Oilpan: Ideally this should just be a traced Member but that will
-    // currently leak because RenderStyle and its data are not on the heap.
+    // currently leak because ComputedStyle and its data are not on the heap.
     // See crbug.com/383860 for details.
     RawPtrWillBeWeakMember<Document> m_document;
     // FIXME: Move to Document or StyleEngine.
     FontFaceCache m_fontFaceCache;
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient> > m_clients;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient>> m_clients;
 
     RefPtrWillBeMember<FontLoader> m_fontLoader;
     GenericFontFamilySettings m_genericFontFamilySettings;

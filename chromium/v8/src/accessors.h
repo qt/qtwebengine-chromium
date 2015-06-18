@@ -35,6 +35,7 @@ namespace internal {
   V(ScriptType)                   \
   V(ScriptSourceUrl)              \
   V(ScriptSourceMappingUrl)       \
+  V(ScriptIsEmbedderDebugScript)  \
   V(StringLength)
 
 // Accessors contains all predefined proxy accessors.
@@ -76,10 +77,16 @@ class Accessors : public AllStatic {
 
   // Returns true for properties that are accessors to object fields.
   // If true, *object_offset contains offset of object field.
-  template <class T>
-  static bool IsJSObjectFieldAccessor(typename T::TypeHandle type,
-                                      Handle<Name> name,
+  static bool IsJSObjectFieldAccessor(Handle<Map> map, Handle<Name> name,
                                       int* object_offset);
+
+  // Returns true for properties that are accessors to ArrayBufferView and
+  // derived classes fields. If true, *object_offset contains offset of
+  // object field. The caller still has to check whether the underlying
+  // buffer was neutered.
+  static bool IsJSArrayBufferViewFieldAccessor(Handle<Map> map,
+                                               Handle<Name> name,
+                                               int* object_offset);
 
   static Handle<AccessorInfo> MakeAccessor(
       Isolate* isolate,

@@ -14,19 +14,29 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
-class SimplifiedLowering FINAL {
+// Forward declarations.
+class RepresentationChanger;
+class SourcePositionTable;
+
+class SimplifiedLowering final {
  public:
-  explicit SimplifiedLowering(JSGraph* jsgraph) : jsgraph_(jsgraph) {}
+  SimplifiedLowering(JSGraph* jsgraph, Zone* zone,
+                     SourcePositionTable* source_positions)
+      : jsgraph_(jsgraph), zone_(zone), source_positions_(source_positions) {}
   ~SimplifiedLowering() {}
 
   void LowerAllNodes();
 
   // TODO(titzer): These are exposed for direct testing. Use a friend class.
+  void DoAllocate(Node* node);
   void DoLoadField(Node* node);
   void DoStoreField(Node* node);
   // TODO(turbofan): The output_type can be removed once the result of the
   // representation analysis is stored in the node bounds.
-  void DoLoadElement(Node* node, MachineType output_type);
+  void DoLoadBuffer(Node* node, MachineType output_type,
+                    RepresentationChanger* changer);
+  void DoStoreBuffer(Node* node);
+  void DoLoadElement(Node* node);
   void DoStoreElement(Node* node);
   void DoStringAdd(Node* node);
   void DoStringEqual(Node* node);
@@ -34,7 +44,15 @@ class SimplifiedLowering FINAL {
   void DoStringLessThanOrEqual(Node* node);
 
  private:
-  JSGraph* jsgraph_;
+  JSGraph* const jsgraph_;
+  Zone* const zone_;
+
+  // TODO(danno): SimplifiedLowering shouldn't know anything about the source
+  // positions table, but must for now since there currently is no other way to
+  // pass down source position information to nodes created during
+  // lowering. Once this phase becomes a vanilla reducer, it should get source
+  // position information via the SourcePositionWrapper like all other reducers.
+  SourcePositionTable* source_positions_;
 
   Node* SmiTag(Node* node);
   Node* IsTagged(Node* node);

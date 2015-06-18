@@ -12,7 +12,7 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/animation/animation_container_element.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/wm/core/transient_window_manager.h"
 #include "ui/wm/core/transient_window_stacking_client.h"
 #include "ui/wm/core/window_util.h"
@@ -297,6 +297,23 @@ TEST_F(WindowAnimationsTest, RotateHideNoLeak) {
   AnimateOnChildWindowVisibilityChanged(window.get(), true);
   AnimateOnChildWindowVisibilityChanged(window.get(), false);
 
+  animating_layer->GetAnimator()->StopAnimating();
+}
+
+// The rotation animation for hiding a window should not crash when terminated
+// by LayerAnimator::StopAnimating().
+TEST_F(WindowAnimationsTest, RotateHideNoCrash) {
+  ui::ScopedAnimationDurationScaleMode scale_mode(
+      ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+
+  scoped_ptr<aura::Window> window(aura::test::CreateTestWindowWithId(0, NULL));
+  ui::Layer* animating_layer = window->layer();
+  wm::SetWindowVisibilityAnimationType(window.get(),
+                                       WINDOW_VISIBILITY_ANIMATION_TYPE_ROTATE);
+  AnimateOnChildWindowVisibilityChanged(window.get(), true);
+  window->layer()->GetAnimator()->Step(base::TimeTicks::Now() +
+                                       base::TimeDelta::FromSeconds(5));
+  AnimateOnChildWindowVisibilityChanged(window.get(), false);
   animating_layer->GetAnimator()->StopAnimating();
 }
 

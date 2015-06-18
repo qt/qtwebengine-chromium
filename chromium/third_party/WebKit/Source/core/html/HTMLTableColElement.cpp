@@ -28,7 +28,8 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/html/HTMLTableElement.h"
-#include "core/rendering/RenderTableCol.h"
+#include "core/html/parser/HTMLParserIdioms.h"
+#include "core/layout/LayoutTableCol.h"
 
 namespace blink {
 
@@ -60,19 +61,22 @@ void HTMLTableColElement::collectStyleForPresentationAttribute(const QualifiedNa
 void HTMLTableColElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == spanAttr) {
-        int newSpan = value.toInt();
-        // If the value of span is not a valid non-negative integer greater than zero,
-        // set it to 1.
-        m_span = newSpan ? newSpan : 1;
-        if (renderer() && renderer()->isRenderTableCol())
-            renderer()->updateFromElement();
+        int newSpan = 0;
+        if (value.isEmpty() || !parseHTMLInteger(value, newSpan) || newSpan < 1) {
+            // If the value of span is not a valid non-negative integer greater than zero,
+            // set it to 1.
+            newSpan = 1;
+        }
+        m_span = newSpan;
+        if (layoutObject() && layoutObject()->isLayoutTableCol())
+            layoutObject()->updateFromElement();
     } else if (name == widthAttr) {
         if (!value.isEmpty()) {
-            if (renderer() && renderer()->isRenderTableCol()) {
-                RenderTableCol* col = toRenderTableCol(renderer());
+            if (layoutObject() && layoutObject()->isLayoutTableCol()) {
+                LayoutTableCol* col = toLayoutTableCol(layoutObject());
                 int newWidth = width().toInt();
-                if (newWidth != col->width())
-                    col->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+                if (newWidth != col->size().width())
+                    col->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
             }
         }
     } else

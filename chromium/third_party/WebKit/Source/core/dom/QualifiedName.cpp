@@ -39,7 +39,7 @@ struct SameSizeAsQualifiedNameImpl : public RefCounted<SameSizeAsQualifiedNameIm
     void* pointers[4];
 };
 
-COMPILE_ASSERT(sizeof(QualifiedName::QualifiedNameImpl) == sizeof(SameSizeAsQualifiedNameImpl), qualified_name_impl_should_stay_small);
+static_assert(sizeof(QualifiedName::QualifiedNameImpl) == sizeof(SameSizeAsQualifiedNameImpl), "QualifiedNameImpl should stay small");
 
 static const int staticQualifiedNamesCount = HTMLNames::HTMLTagsCount + HTMLNames::HTMLAttrsCount
     + MathMLNames::MathMLTagsCount + MathMLNames::MathMLAttrsCount
@@ -113,16 +113,17 @@ String QualifiedName::toString() const
 
 // Global init routines
 DEFINE_GLOBAL(QualifiedName, anyName, nullAtom, starAtom, starAtom)
+DEFINE_GLOBAL(QualifiedName, nullName, nullAtom, nullAtom, nullAtom)
 
 void QualifiedName::init()
 {
     ASSERT(starAtom.impl());
     new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom, true );
+    new ((void*)&nullName) QualifiedName(nullAtom, nullAtom, nullAtom, true );
 }
 
 const QualifiedName& QualifiedName::null()
 {
-    DEFINE_STATIC_LOCAL(QualifiedName, nullName, (nullAtom, nullAtom, nullAtom, true));
     return nullName;
 }
 

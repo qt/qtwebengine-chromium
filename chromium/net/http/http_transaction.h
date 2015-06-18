@@ -10,6 +10,7 @@
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
+#include "net/socket/connection_attempts.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
 
 namespace net {
@@ -132,8 +133,8 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // entire response body is to be ignored (e.g., in a redirect).
   virtual void DoneReading() = 0;
 
-  // Returns the response info for this transaction or NULL if the response
-  // info is not available.
+  // Returns the response info for this transaction. Must not be called until
+  // |Start| completes.
   virtual const HttpResponseInfo* GetResponseInfo() const = 0;
 
   // Returns the load state for this transaction.
@@ -174,6 +175,8 @@ class NET_EXPORT_PRIVATE HttpTransaction {
 
   // Resumes the transaction after being deferred.
   virtual int ResumeNetworkStart() = 0;
+
+  virtual void GetConnectionAttempts(ConnectionAttempts* out) const = 0;
 };
 
 }  // namespace net

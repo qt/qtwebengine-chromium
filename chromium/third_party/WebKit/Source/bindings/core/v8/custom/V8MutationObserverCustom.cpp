@@ -58,20 +58,20 @@ void V8MutationObserver::constructorCustom(const v8::FunctionCallbackInfo<v8::Va
         return;
     }
 
-    v8::Handle<v8::Object> wrapper = info.Holder();
+    v8::Local<v8::Object> wrapper = info.Holder();
 
-    OwnPtr<MutationCallback> callback = V8MutationCallback::create(v8::Handle<v8::Function>::Cast(arg), wrapper, ScriptState::current(info.GetIsolate()));
+    OwnPtrWillBeRawPtr<MutationCallback> callback = V8MutationCallback::create(v8::Local<v8::Function>::Cast(arg), wrapper, ScriptState::current(info.GetIsolate()));
     RefPtrWillBeRawPtr<MutationObserver> observer = MutationObserver::create(callback.release());
 
     V8DOMWrapper::associateObjectWithWrapper(info.GetIsolate(), observer.get(), &wrapperTypeInfo, wrapper);
     info.GetReturnValue().Set(wrapper);
 }
 
-void V8MutationObserver::visitDOMWrapper(v8::Isolate* isolate, ScriptWrappableBase* scriptWrappableBase, const v8::Persistent<v8::Object>& wrapper)
+void V8MutationObserver::visitDOMWrapper(v8::Isolate* isolate, ScriptWrappable* scriptWrappable, const v8::Persistent<v8::Object>& wrapper)
 {
-    MutationObserver* observer = scriptWrappableBase->toImpl<MutationObserver>();
-    WillBeHeapHashSet<RawPtrWillBeMember<Node> > observedNodes = observer->getObservedNodes();
-    for (WillBeHeapHashSet<RawPtrWillBeMember<Node> >::iterator it = observedNodes.begin(); it != observedNodes.end(); ++it) {
+    MutationObserver* observer = scriptWrappable->toImpl<MutationObserver>();
+    WillBeHeapHashSet<RawPtrWillBeMember<Node>> observedNodes = observer->getObservedNodes();
+    for (WillBeHeapHashSet<RawPtrWillBeMember<Node>>::iterator it = observedNodes.begin(); it != observedNodes.end(); ++it) {
         v8::UniqueId id(reinterpret_cast<intptr_t>(V8GCController::opaqueRootForGC(isolate, *it)));
         isolate->SetReferenceFromGroup(id, wrapper);
     }

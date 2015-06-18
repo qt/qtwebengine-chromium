@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/barrier_closure.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
@@ -23,7 +24,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "media/base/video_frame.h"
-#include "media/filters/skcanvas_video_renderer.h"
+#include "media/blink/skcanvas_video_renderer.h"
 #include "net/base/filename_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -106,10 +107,10 @@ class RenderWidgetHostViewBrowserTest : public ContentBrowserTest {
 
   // Callback when using CopyFromBackingStore() API.
   void FinishCopyFromBackingStore(const base::Closure& quit_closure,
-                                  bool frame_captured,
-                                  const SkBitmap& bitmap) {
+                                  const SkBitmap& bitmap,
+                                  ReadbackResponse response) {
     ++callback_invoke_count_;
-    if (frame_captured) {
+    if (response == READBACK_SUCCESS) {
       ++frames_captured_;
       EXPECT_FALSE(bitmap.empty());
     }
@@ -301,17 +302,8 @@ IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTest,
 // Tests that the callback passed to CopyFromCompositingSurfaceToVideoFrame is
 // always called, even when the RenderWidgetHost is deleting in the middle of
 // an async copy.
-//
-// Test is flaky on Win. http://crbug.com/276783
-#if defined(OS_WIN) || (defined(OS_CHROMEOS) && !defined(NDEBUG))
-#define MAYBE_CopyFromCompositingSurface_CallbackDespiteDelete \
-  DISABLED_CopyFromCompositingSurface_CallbackDespiteDelete
-#else
-#define MAYBE_CopyFromCompositingSurface_CallbackDespiteDelete \
-  CopyFromCompositingSurface_CallbackDespiteDelete
-#endif
 IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTest,
-                       MAYBE_CopyFromCompositingSurface_CallbackDespiteDelete) {
+                       CopyFromCompositingSurface_CallbackDespiteDelete) {
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewBase* const view = GetRenderWidgetHostView();
   if (!view->CanCopyToVideoFrame()) {
@@ -360,7 +352,6 @@ IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTest,
   EXPECT_LE(1, frames_captured());
 }
 
-// Test that we can copy twice from an accelerated composited page.
 IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTest, CopyTwice) {
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewBase* const view = GetRenderWidgetHostView();
@@ -378,22 +369,17 @@ IN_PROC_BROWSER_TEST_P(CompositingRenderWidgetHostViewBrowserTest, CopyTwice) {
   scoped_refptr<media::VideoFrame> second_output =
       media::VideoFrame::CreateBlackFrame(frame_size());
   ASSERT_TRUE(second_output.get());
+  base::Closure closure = base::BarrierClosure(2, run_loop.QuitClosure());
   view->CopyFromCompositingSurfaceToVideoFrame(
-      gfx::Rect(view->GetViewBounds().size()),
-      first_output,
+      gfx::Rect(view->GetViewBounds().size()), first_output,
       base::Bind(&RenderWidgetHostViewBrowserTest::FrameDelivered,
-                 base::Unretained(this),
-                 base::MessageLoopProxy::current(),
-                 base::Closure(),
-                 base::TimeTicks::Now()));
+                 base::Unretained(this), base::MessageLoopProxy::current(),
+                 closure, base::TimeTicks::Now()));
   view->CopyFromCompositingSurfaceToVideoFrame(
-      gfx::Rect(view->GetViewBounds().size()),
-      second_output,
+      gfx::Rect(view->GetViewBounds().size()), second_output,
       base::Bind(&RenderWidgetHostViewBrowserTest::FrameDelivered,
-                 base::Unretained(this),
-                 base::MessageLoopProxy::current(),
-                 run_loop.QuitClosure(),
-                 base::TimeTicks::Now()));
+                 base::Unretained(this), base::MessageLoopProxy::current(),
+                 closure, base::TimeTicks::Now()));
   run_loop.Run();
 
   EXPECT_EQ(2, callback_invoke_count());
@@ -404,7 +390,7 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     : public CompositingRenderWidgetHostViewBrowserTest {
  public:
   CompositingRenderWidgetHostViewBrowserTestTabCapture()
-      : expected_copy_from_compositing_surface_result_(false),
+      : readback_response_(READBACK_NO_RESPONSE),
         allowable_error_(0),
         test_url_("data:text/html,<!doctype html>") {}
 
@@ -413,22 +399,56 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     CompositingRenderWidgetHostViewBrowserTest::SetUp();
   }
 
-  void CopyFromCompositingSurfaceCallback(base::Closure quit_callback,
-                                          bool result,
-                                          const SkBitmap& bitmap) {
-    EXPECT_EQ(expected_copy_from_compositing_surface_result_, result);
-    if (!result) {
+  void ReadbackRequestCallbackTest(base::Closure quit_callback,
+                                   const SkBitmap& bitmap,
+                                   ReadbackResponse response) {
+    readback_response_ = response;
+    if (response != READBACK_SUCCESS) {
       quit_callback.Run();
       return;
     }
 
+    SkAutoLockPixels bitmap_lock(bitmap);
+
+    // Check that the |bitmap| contains cyan and/or yellow pixels.  This is
+    // needed because the compositor will read back "blank" frames until the
+    // first frame from the renderer is composited.  See comments in
+    // PerformTestWithLeftRightRects() for more details about eliminating test
+    // flakiness.
+    bool contains_a_test_color = false;
+    for (int i = 0; i < bitmap.width(); ++i) {
+      for (int j = 0; j < bitmap.height(); ++j) {
+        if (!exclude_rect_.IsEmpty() && exclude_rect_.Contains(i, j))
+          continue;
+
+        const unsigned high_threshold = 0xff - allowable_error_;
+        const unsigned low_threshold = 0x00 + allowable_error_;
+        const SkColor color = bitmap.getColor(i, j);
+        const bool is_cyan = SkColorGetR(color) <= low_threshold &&
+                             SkColorGetG(color) >= high_threshold &&
+                             SkColorGetB(color) >= high_threshold;
+        const bool is_yellow = SkColorGetR(color) >= high_threshold &&
+                               SkColorGetG(color) >= high_threshold &&
+                               SkColorGetB(color) <= low_threshold;
+        if (is_cyan || is_yellow) {
+          contains_a_test_color = true;
+          break;
+        }
+      }
+    }
+    if (!contains_a_test_color) {
+      readback_response_ = READBACK_NO_TEST_COLORS;
+      quit_callback.Run();
+      return;
+    }
+
+    // Compare the readback |bitmap| to the |expected_bitmap|, pixel-by-pixel.
     const SkBitmap& expected_bitmap =
         expected_copy_from_compositing_surface_bitmap_;
     EXPECT_EQ(expected_bitmap.width(), bitmap.width());
     EXPECT_EQ(expected_bitmap.height(), bitmap.height());
     EXPECT_EQ(expected_bitmap.colorType(), bitmap.colorType());
     SkAutoLockPixels expected_bitmap_lock(expected_bitmap);
-    SkAutoLockPixels bitmap_lock(bitmap);
     int fails = 0;
     for (int i = 0; i < bitmap.width() && fails < 10; ++i) {
       for (int j = 0; j < bitmap.height() && fails < 10; ++j) {
@@ -472,12 +492,12 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     quit_callback.Run();
   }
 
-  void CopyFromCompositingSurfaceCallbackForVideo(
+  void ReadbackRequestCallbackForVideo(
       scoped_refptr<media::VideoFrame> video_frame,
       base::Closure quit_callback,
       bool result) {
-    EXPECT_EQ(expected_copy_from_compositing_surface_result_, result);
     if (!result) {
+      readback_response_ = READBACK_TO_VIDEO_FRAME_FAILED;
       quit_callback.Run();
       return;
     }
@@ -489,17 +509,9 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
                           video_frame->visible_rect().height());
     // Don't clear the canvas because drawing a video frame by Src mode.
     SkCanvas canvas(bitmap);
-    video_renderer.Copy(video_frame, &canvas);
+    video_renderer.Copy(video_frame, &canvas, media::Context3D());
 
-    CopyFromCompositingSurfaceCallback(quit_callback,
-                                       result,
-                                       bitmap);
-  }
-
-  void SetExpectedCopyFromCompositingSurfaceResult(bool result,
-                                                   const SkBitmap& bitmap) {
-    expected_copy_from_compositing_surface_result_ = result;
-    expected_copy_from_compositing_surface_bitmap_ = bitmap;
+    ReadbackRequestCallbackTest(quit_callback, bitmap, READBACK_SUCCESS);
   }
 
   void SetAllowableError(int amount) { allowable_error_ = amount; }
@@ -554,80 +566,103 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
     if (!ShouldContinueAfterTestURLLoad())
       return;
 
-    RenderWidgetHostViewBase* rwhvp = GetRenderWidgetHostView();
-    if (video_frame && !rwhvp->CanCopyToVideoFrame()) {
-      // This should only happen on Mac when using the software compositor.
-      // Otherwise, raise an error. This can be removed when Mac is moved to a
-      // browser compositor.
-      // http://crbug.com/314190
-#if defined(OS_MACOSX)
-      if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL)) {
-        LOG(WARNING) << ("Blindly passing this test because copying to "
-                         "video frames is not supported on this platform.");
-        return;
-      }
-#endif
-      NOTREACHED();
-    }
+    RenderWidgetHostViewBase* rwhv = GetRenderWidgetHostView();
+    ASSERT_TRUE(!video_frame || rwhv->CanCopyToVideoFrame());
 
-    // The page is loaded in the renderer, wait for a new frame to arrive.
-    uint32 frame = rwhvp->RendererFrameNumber();
-    while (!GetRenderWidgetHost()->ScheduleComposite())
-      GiveItSomeTime();
-    while (rwhvp->RendererFrameNumber() == frame)
-      GiveItSomeTime();
+    SetupLeftRightBitmap(output_size,
+                         &expected_copy_from_compositing_surface_bitmap_);
 
-    SkBitmap expected_bitmap;
-    SetupLeftRightBitmap(output_size, &expected_bitmap);
-    SetExpectedCopyFromCompositingSurfaceResult(true, expected_bitmap);
+    // The page is loaded in the renderer.  Request frames from the renderer
+    // until readback succeeds.  When readback succeeds, the resulting
+    // SkBitmap/VideoFrame is examined to ensure it matches the expected result.
+    // This loop is needed because:
+    //   1. Painting/Compositing is not synchronous with the Javascript engine,
+    //      and so the "DONE" signal above could be received before the renderer
+    //      provides a frame with the expected content.  http://crbug.com/405282
+    //   2. Avoiding test flakiness: On some platforms, the readback operation
+    //      is allowed to transiently fail.  The purpose of these tests is to
+    //      confirm correct cropping/scaling behavior; and not that every
+    //      readback must succeed.  http://crbug.com/444237
+    uint32 last_frame_number = 0;
+    do {
+      // Wait for renderer to provide the next frame.
+      while (!GetRenderWidgetHost()->ScheduleComposite())
+        GiveItSomeTime();
+      while (rwhv->RendererFrameNumber() == last_frame_number)
+        GiveItSomeTime();
+      last_frame_number = rwhv->RendererFrameNumber();
 
-    base::RunLoop run_loop;
-    if (video_frame) {
-      // Allow pixel differences as long as we have the right idea.
-      SetAllowableError(0x10);
-      // Exclude the middle two columns which are blended between the two sides.
-      SetExcludeRect(
-          gfx::Rect(output_size.width() / 2 - 1, 0, 2, output_size.height()));
+      // Request readback.  The callbacks will examine the pixels in the
+      // SkBitmap/VideoFrame result if readback was successful.
+      readback_response_ = READBACK_NO_RESPONSE;
+      base::RunLoop run_loop;
+      if (video_frame) {
+        // Allow pixel differences as long as we have the right idea.
+        SetAllowableError(0x10);
+        // Exclude the middle two columns which are blended between the two
+        // sides.
+        SetExcludeRect(
+            gfx::Rect(output_size.width() / 2 - 1, 0, 2, output_size.height()));
 
-      scoped_refptr<media::VideoFrame> video_frame =
-          media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
-                                         output_size,
-                                         gfx::Rect(output_size),
-                                         output_size,
-                                         base::TimeDelta());
+        scoped_refptr<media::VideoFrame> video_frame =
+            media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
+                                           output_size,
+                                           gfx::Rect(output_size),
+                                           output_size,
+                                           base::TimeDelta());
 
-      base::Callback<void(bool success)> callback =
-          base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
-                         CopyFromCompositingSurfaceCallbackForVideo,
-                     base::Unretained(this),
-                     video_frame,
-                     run_loop.QuitClosure());
-      rwhvp->CopyFromCompositingSurfaceToVideoFrame(copy_rect,
-                                                    video_frame,
-                                                    callback);
-    } else {
-      if (IsDelegatedRendererEnabled()) {
-        if (!content::GpuDataManager::GetInstance()
-                 ->CanUseGpuBrowserCompositor()) {
-          // Skia rendering can cause color differences, particularly in the
-          // middle two columns.
-          SetAllowableError(2);
-          SetExcludeRect(gfx::Rect(
-              output_size.width() / 2 - 1, 0, 2, output_size.height()));
+        base::Callback<void(bool success)> callback =
+            base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
+                           ReadbackRequestCallbackForVideo,
+                       base::Unretained(this),
+                       video_frame,
+                       run_loop.QuitClosure());
+        rwhv->CopyFromCompositingSurfaceToVideoFrame(
+            copy_rect, video_frame, callback);
+      } else {
+        if (IsDelegatedRendererEnabled()) {
+          if (!content::GpuDataManager::GetInstance()
+                   ->CanUseGpuBrowserCompositor()) {
+            // Skia rendering can cause color differences, particularly in the
+            // middle two columns.
+            SetAllowableError(2);
+            SetExcludeRect(gfx::Rect(
+                output_size.width() / 2 - 1, 0, 2, output_size.height()));
+          }
         }
-      }
 
-      base::Callback<void(bool, const SkBitmap&)> callback =
-          base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
-                       CopyFromCompositingSurfaceCallback,
-                   base::Unretained(this),
-                   run_loop.QuitClosure());
-      rwhvp->CopyFromCompositingSurface(copy_rect,
-                                        output_size,
-                                        callback,
-                                        kN32_SkColorType);
-    }
-    run_loop.Run();
+        ReadbackRequestCallback callback =
+            base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::
+                           ReadbackRequestCallbackTest,
+                       base::Unretained(this),
+                       run_loop.QuitClosure());
+        rwhv->CopyFromCompositingSurface(
+            copy_rect, output_size, callback, kN32_SkColorType);
+      }
+      run_loop.Run();
+
+      // If the readback operation did not provide a frame, log the reason
+      // to aid in future debugging.  This information will also help determine
+      // whether the implementation is broken, or a test bot is in a bad state.
+      #define CASE_LOG_READBACK_WARNING(enum_value) \
+        case enum_value: \
+          LOG(WARNING) << "Readback attempt failed (render frame #" \
+                       << last_frame_number << ").  Reason: " #enum_value; \
+          break
+      switch (readback_response_) {
+        case READBACK_SUCCESS:
+          break;
+        CASE_LOG_READBACK_WARNING(READBACK_FAILED);
+        CASE_LOG_READBACK_WARNING(READBACK_SURFACE_UNAVAILABLE);
+        CASE_LOG_READBACK_WARNING(READBACK_BITMAP_ALLOCATION_FAILURE);
+        CASE_LOG_READBACK_WARNING(READBACK_NO_TEST_COLORS);
+        CASE_LOG_READBACK_WARNING(READBACK_TO_VIDEO_FRAME_FAILED);
+        default:
+          LOG(ERROR)
+              << "Invalid readback response value: " << readback_response_;
+          NOTREACHED();
+      }
+    } while (readback_response_ != READBACK_SUCCESS);
   }
 
   // Sets up |bitmap| to have size |copy_size|. It floods the left half with
@@ -649,12 +684,22 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
   }
 
  protected:
+  // Additional ReadbackResponse enum values only used within this test module,
+  // to distinguish readback exception cases further.
+  enum ExtraReadbackResponsesForTest {
+    READBACK_NO_RESPONSE = -1337,
+    READBACK_NO_TEST_COLORS,
+    READBACK_TO_VIDEO_FRAME_FAILED,
+  };
+
   virtual bool ShouldContinueAfterTestURLLoad() {
     return true;
   }
 
  private:
-  bool expected_copy_from_compositing_surface_result_;
+  // |readback_response_| is always a content::ReadbackResponse or
+  // ExtraReadbackResponsesForTest enum value.
+  int readback_response_;
   SkBitmap expected_copy_from_compositing_surface_bitmap_;
   int allowable_error_;
   gfx::Rect exclude_rect_;
@@ -780,12 +825,9 @@ class CompositingRenderWidgetHostViewBrowserTestTabCaptureHighDPI
       CompositingRenderWidgetHostViewBrowserTestTabCaptureHighDPI);
 };
 
-// ImageSkia (related to ResourceBundle) implementation crashes the process on
-// Windows when this content_browsertest forces a device scale factor.
-// http://crbug.com/399349
-//
-// These tests are flaky on ChromeOS builders.  See http://crbug.com/406018.
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+// NineImagePainter implementation crashes the process on Windows when this
+// content_browsertest forces a device scale factor.  http://crbug.com/399349
+#if defined(OS_WIN)
 #define MAYBE_CopyToBitmap_EntireRegion DISABLED_CopyToBitmap_EntireRegion
 #define MAYBE_CopyToBitmap_CenterRegion DISABLED_CopyToBitmap_CenterRegion
 #define MAYBE_CopyToBitmap_ScaledResult DISABLED_CopyToBitmap_ScaledResult
@@ -898,16 +940,24 @@ IN_PROC_BROWSER_TEST_P(
                                 video_frame);
 }
 
+#if defined(OS_CHROMEOS)
+// On ChromeOS there is no software compositing.
+static const auto kTestCompositingModes = testing::Values(GL_COMPOSITING);
+#else
+static const auto kTestCompositingModes =
+    testing::Values(GL_COMPOSITING, SOFTWARE_COMPOSITING);
+#endif
+
 INSTANTIATE_TEST_CASE_P(GLAndSoftwareCompositing,
                         CompositingRenderWidgetHostViewBrowserTest,
-                        testing::Values(GL_COMPOSITING, SOFTWARE_COMPOSITING));
+                        kTestCompositingModes);
 INSTANTIATE_TEST_CASE_P(GLAndSoftwareCompositing,
                         CompositingRenderWidgetHostViewBrowserTestTabCapture,
-                        testing::Values(GL_COMPOSITING, SOFTWARE_COMPOSITING));
+                        kTestCompositingModes);
 INSTANTIATE_TEST_CASE_P(
     GLAndSoftwareCompositing,
     CompositingRenderWidgetHostViewBrowserTestTabCaptureHighDPI,
-    testing::Values(GL_COMPOSITING, SOFTWARE_COMPOSITING));
+    kTestCompositingModes);
 
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 

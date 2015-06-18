@@ -16,9 +16,9 @@ namespace {
 class IOSGLContext : public SkGLContext {
 public:
     IOSGLContext();
-    virtual ~IOSGLContext() SK_OVERRIDE;
-    virtual void makeCurrent() const SK_OVERRIDE;
-    virtual void swapBuffers() const SK_OVERRIDE;
+    ~IOSGLContext() override;
+    void makeCurrent() const override;
+    void swapBuffers() const override;
 
 private:
     void destroyGLContext();

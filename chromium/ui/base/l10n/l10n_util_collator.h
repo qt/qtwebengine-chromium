@@ -31,8 +31,9 @@ class StringMethodComparatorWithCollator
 
   // Returns true if lhs preceeds rhs.
   bool operator() (T* lhs_t, T* rhs_t) {
-    return base::i18n::CompareString16WithCollator(collator_,
-        (lhs_t->*method_)(), (rhs_t->*method_)()) == UCOL_LESS;
+    return base::i18n::CompareString16WithCollator(
+               *collator_, (lhs_t->*method_)(), (rhs_t->*method_)()) ==
+           UCOL_LESS;
   }
 
  private:
@@ -98,7 +99,7 @@ class StringComparator : public std::binary_function<const Element&,
     const base::string16& rhs_string_key = rhs.GetStringKey();
 
     return StringComparator<base::string16>(collator_)(lhs_string_key,
-                                                 rhs_string_key);
+                                                       rhs_string_key);
   }
 
  private:
@@ -114,23 +115,23 @@ UI_BASE_EXPORT inline bool StringComparator<base::string16>::operator()(
   // string compare.
   if (!collator_)
     return lhs < rhs;
-  return base::i18n::CompareString16WithCollator(collator_, lhs, rhs) ==
-      UCOL_LESS;
+  return base::i18n::CompareString16WithCollator(*collator_, lhs, rhs) ==
+         UCOL_LESS;
 }
 
 // In place sorting of |elements| of a vector according to the string key of
 // each element in the vector by using collation rules for |locale|.
 // |begin_index| points to the start position of elements in the vector which
 // want to be sorted. |end_index| points to the end position of elements in the
-// vector which want to be sorted
+// vector which want to be sorted.
 template <class Element>
 void SortVectorWithStringKey(const std::string& locale,
                              std::vector<Element>* elements,
-                             unsigned int begin_index,
-                             unsigned int end_index,
+                             size_t begin_index,
+                             size_t end_index,
                              bool needs_stable_sort) {
-  DCHECK(begin_index < end_index &&
-         end_index <= static_cast<unsigned int>(elements->size()));
+  DCHECK_LT(begin_index, end_index);
+  DCHECK_LE(end_index, elements->size());
   UErrorCode error = U_ZERO_ERROR;
   icu::Locale loc(locale.c_str());
   scoped_ptr<icu::Collator> collator(icu::Collator::createInstance(loc, error));

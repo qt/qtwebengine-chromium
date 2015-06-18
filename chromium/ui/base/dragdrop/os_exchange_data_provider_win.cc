@@ -70,16 +70,17 @@ class FormatEtcEnumerator final : public IEnumFORMATETC {
   ~FormatEtcEnumerator();
 
   // IEnumFORMATETC implementation:
-  HRESULT __stdcall Next(
-      ULONG count, FORMATETC* elements_array, ULONG* elements_fetched);
-  HRESULT __stdcall Skip(ULONG skip_count);
-  HRESULT __stdcall Reset();
-  HRESULT __stdcall Clone(IEnumFORMATETC** clone);
+  HRESULT __stdcall Next(ULONG count,
+                         FORMATETC* elements_array,
+                         ULONG* elements_fetched) override;
+  HRESULT __stdcall Skip(ULONG skip_count) override;
+  HRESULT __stdcall Reset() override;
+  HRESULT __stdcall Clone(IEnumFORMATETC** clone) override;
 
   // IUnknown implementation:
-  HRESULT __stdcall QueryInterface(const IID& iid, void** object);
-  ULONG __stdcall AddRef();
-  ULONG __stdcall Release();
+  HRESULT __stdcall QueryInterface(const IID& iid, void** object) override;
+  ULONG __stdcall AddRef() override;
+  ULONG __stdcall Release() override;
 
  private:
   // This can only be called from |CloneFromOther|, since it initializes the
@@ -401,7 +402,7 @@ void OSExchangeDataProviderWin::SetHtml(const base::string16& html,
 }
 
 bool OSExchangeDataProviderWin::GetString(base::string16* data) const {
-  return ClipboardUtil::GetPlainText(source_object_, data);
+  return ClipboardUtil::GetPlainText(source_object_.get(), data);
 }
 
 bool OSExchangeDataProviderWin::GetURLAndTitle(
@@ -410,14 +411,12 @@ bool OSExchangeDataProviderWin::GetURLAndTitle(
     base::string16* title) const {
   base::string16 url_str;
   bool success = ClipboardUtil::GetUrl(
-      source_object_,
-      url,
-      title,
+      source_object_.get(), url, title,
       policy == OSExchangeData::CONVERT_FILENAMES ? true : false);
   if (success) {
     DCHECK(url->is_valid());
     return true;
-  } else if (GetPlainTextURL(source_object_, url)) {
+  } else if (GetPlainTextURL(source_object_.get(), url)) {
     if (url->is_valid())
       *title = net::GetSuggestedFilename(*url, "", "", "", "", std::string());
     else
@@ -429,7 +428,7 @@ bool OSExchangeDataProviderWin::GetURLAndTitle(
 
 bool OSExchangeDataProviderWin::GetFilename(base::FilePath* path) const {
   std::vector<base::string16> filenames;
-  bool success = ClipboardUtil::GetFilenames(source_object_, &filenames);
+  bool success = ClipboardUtil::GetFilenames(source_object_.get(), &filenames);
   if (success)
     *path = base::FilePath(filenames[0]);
   return success;
@@ -438,7 +437,8 @@ bool OSExchangeDataProviderWin::GetFilename(base::FilePath* path) const {
 bool OSExchangeDataProviderWin::GetFilenames(
     std::vector<FileInfo>* filenames) const {
   std::vector<base::string16> filenames_local;
-  bool success = ClipboardUtil::GetFilenames(source_object_, &filenames_local);
+  bool success =
+      ClipboardUtil::GetFilenames(source_object_.get(), &filenames_local);
   if (success) {
     for (size_t i = 0; i < filenames_local.size(); ++i)
       filenames->push_back(
@@ -470,7 +470,7 @@ bool OSExchangeDataProviderWin::GetFileContents(
     base::FilePath* filename,
     std::string* file_contents) const {
   base::string16 filename_str;
-  if (!ClipboardUtil::GetFileContents(source_object_, &filename_str,
+  if (!ClipboardUtil::GetFileContents(source_object_.get(), &filename_str,
                                       file_contents)) {
     return false;
   }
@@ -481,34 +481,34 @@ bool OSExchangeDataProviderWin::GetFileContents(
 bool OSExchangeDataProviderWin::GetHtml(base::string16* html,
                                         GURL* base_url) const {
   std::string url;
-  bool success = ClipboardUtil::GetHtml(source_object_, html, &url);
+  bool success = ClipboardUtil::GetHtml(source_object_.get(), html, &url);
   if (success)
     *base_url = GURL(url);
   return success;
 }
 
 bool OSExchangeDataProviderWin::HasString() const {
-  return ClipboardUtil::HasPlainText(source_object_);
+  return ClipboardUtil::HasPlainText(source_object_.get());
 }
 
 bool OSExchangeDataProviderWin::HasURL(
     OSExchangeData::FilenameToURLPolicy policy) const {
   return (ClipboardUtil::HasUrl(
-              source_object_,
+              source_object_.get(),
               policy == OSExchangeData::CONVERT_FILENAMES ? true : false) ||
-          HasPlainTextURL(source_object_));
+          HasPlainTextURL(source_object_.get()));
 }
 
 bool OSExchangeDataProviderWin::HasFile() const {
-  return ClipboardUtil::HasFilenames(source_object_);
+  return ClipboardUtil::HasFilenames(source_object_.get());
 }
 
 bool OSExchangeDataProviderWin::HasFileContents() const {
-  return ClipboardUtil::HasFileContents(source_object_);
+  return ClipboardUtil::HasFileContents(source_object_.get());
 }
 
 bool OSExchangeDataProviderWin::HasHtml() const {
-  return ClipboardUtil::HasHtml(source_object_);
+  return ClipboardUtil::HasHtml(source_object_.get());
 }
 
 bool OSExchangeDataProviderWin::HasCustomFormat(
@@ -532,6 +532,9 @@ void OSExchangeDataProviderWin::SetDownloadFileInfo(
       Clipboard::GetCFHDropFormatType().ToFormatEtc(), storage);
   info->downloader = download.downloader;
   data_->contents_.push_back(info);
+
+  // Adding a download file always enables async mode.
+  data_->SetAsyncMode(VARIANT_TRUE);
 }
 
 void OSExchangeDataProviderWin::SetDragImage(
@@ -621,6 +624,20 @@ static void DuplicateMedium(CLIPFORMAT source_clipformat,
   destination->pUnkForRelease = source->pUnkForRelease;
   if (destination->pUnkForRelease)
     destination->pUnkForRelease->AddRef();
+}
+
+DataObjectImpl::StoredDataInfo::StoredDataInfo(const FORMATETC& format_etc,
+                                               STGMEDIUM* medium)
+    : format_etc(format_etc), medium(medium), owns_medium(true) {
+}
+
+DataObjectImpl::StoredDataInfo::~StoredDataInfo() {
+  if (owns_medium) {
+    ReleaseStgMedium(medium);
+    delete medium;
+  }
+  if (downloader.get())
+    downloader->Stop();
 }
 
 DataObjectImpl::DataObjectImpl()
@@ -821,17 +838,17 @@ HRESULT DataObjectImpl::EndOperation(
 }
 
 HRESULT DataObjectImpl::GetAsyncMode(BOOL* is_op_async) {
-  *is_op_async = in_async_mode_ ? TRUE : FALSE;
+  *is_op_async = in_async_mode_ ? VARIANT_TRUE : VARIANT_FALSE;
   return S_OK;
 }
 
 HRESULT DataObjectImpl::InOperation(BOOL* in_async_op) {
-  *in_async_op = async_operation_started_ ? TRUE : FALSE;
+  *in_async_op = async_operation_started_ ? VARIANT_TRUE : VARIANT_FALSE;
   return S_OK;
 }
 
 HRESULT DataObjectImpl::SetAsyncMode(BOOL do_op_async) {
-  in_async_mode_ = (do_op_async == TRUE);
+  in_async_mode_ = !!do_op_async;
   return S_OK;
 }
 

@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2009 Google Inc. All rights reserved.
  *
@@ -33,9 +34,12 @@
 
 #include "../platform/WebCanvas.h"
 #include "../platform/WebCommon.h"
+#include "../platform/WebFloatSize.h"
+#include "../platform/WebFrameTimingEvent.h"
 #include "../platform/WebPoint.h"
 #include "../platform/WebRect.h"
 #include "../platform/WebSize.h"
+#include "../platform/WebTopControlsState.h"
 #include "WebBeginFrameArgs.h"
 #include "WebCompositionUnderline.h"
 #include "WebTextDirection.h"
@@ -45,13 +49,10 @@ namespace blink {
 
 class WebCompositeAndReadbackAsyncCallback;
 class WebInputEvent;
-class WebLayerTreeView;
-class WebMouseEvent;
+class WebLayoutAndPaintAsyncCallback;
 class WebPagePopup;
 class WebString;
-class WebWidgetClient;
 struct WebPoint;
-struct WebRenderingStats;
 template <typename T> class WebVector;
 
 class WebWidget {
@@ -92,17 +93,11 @@ public:
 
     // Called to update imperative animation state. This should be called before
     // paint, although the client can rate-limit these calls.
-    // FIXME: Remove this function once Chrome side patch lands.
-    void animate(double monotonicFrameBeginTime)
-    {
-        beginFrame(WebBeginFrameArgs(monotonicFrameBeginTime));
-    }
     virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
 
-    // Called to notify that a previously begun frame was finished and
-    // committed to the compositor. This is used to schedule lower priority
-    // work after tasks such as input processing and painting.
-    virtual void didCommitFrameToCompositor() { }
+    // Called when the Widget contents has changed in such a way the layout must be
+    // redone, and any resulting paint invalidations issued.
+    virtual void setNeedsLayoutAndFullPaintInvalidation() { }
 
     // Called to layout the WebWidget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
@@ -118,6 +113,11 @@ public:
     virtual void paint(WebCanvas*, const WebRect& viewPort) { }
 
     virtual void paintCompositedDeprecated(WebCanvas*, const WebRect&) { }
+
+    // Run layout and paint of all pending document changes asynchronously.
+    // The caller is resposible for keeping the WebLayoutAndPaintAsyncCallback
+    // object alive until it is called.
+    virtual void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) { }
 
     // The caller is responsible for keeping the WebCompositeAndReadbackAsyncCallback
     // object alive until it is called. This should only be called when
@@ -151,15 +151,24 @@ public:
     virtual void applyViewportDeltas(
         const WebSize& scrollDelta,
         float scaleFactor,
-        float topControlsDelta) { }
+        float topControlsShownRatioDelta) { }
 
     // Applies viewport related properties during a commit from the compositor
     // thread.
     virtual void applyViewportDeltas(
-        const WebSize& pinchViewportDelta,
-        const WebSize& mainFrameDelta,
+        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& mainFrameDelta,
+        const WebFloatSize& elasticOverscrollDelta,
         float scaleFactor,
-        float topControlsDelta) { }
+        float topControlsShownRatioDelta) { }
+
+    // Records composite or render events for the Performance Timeline.
+    // See http://w3c.github.io/frame-timing/ for definition of terms.
+    enum FrameTimingEventType {
+        CompositeEvent,
+        RenderEvent,
+    };
+    virtual void recordFrameTimingEvent(FrameTimingEventType eventType, int64_t RectId, const WebVector<WebFrameTimingEvent>& events) { }
 
     // Called to inform the WebWidget that mouse capture was lost.
     virtual void mouseCaptureLost() { }
@@ -237,6 +246,8 @@ public:
     // to render its contents.
     virtual bool isAcceleratedCompositingActive() const { return false; }
 
+    // Returns true if the WebWidget created is of type WebView.
+    virtual bool isWebView() const { return false; }
     // Returns true if the WebWidget created is of type WebPagePopup.
     virtual bool isPagePopup() const { return false; }
     // Returns true if the WebWidget created is of type WebPopupMenu.
@@ -270,8 +281,13 @@ public:
     // but not the select popup.
     virtual WebPagePopup* pagePopup() const { return 0; }
 
-    // Sets the height subtracted from the Widget to accomodate the top controls.
-    virtual void setTopControlsLayoutHeight(float) { }
+    // Notification about the top controls height.  If the boolean is true, then
+    // the embedder shrunk the WebView size by the top controls height.
+    virtual void setTopControlsHeight(float height, bool topControlsShrinkLayoutSize) { }
+
+    // Updates top controls constraints and current state. Allows embedder to
+    // control what are valid states for top controls and if it should animate.
+    virtual void updateTopControlsState(WebTopControlsState constraints, WebTopControlsState current, bool animate) { }
 
 protected:
     ~WebWidget() { }

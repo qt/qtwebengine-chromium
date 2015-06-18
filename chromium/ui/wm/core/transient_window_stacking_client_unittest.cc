@@ -174,42 +174,19 @@ TEST_F(TransientWindowStackingClientTest, TransientChildrenGroupBelow) {
   EXPECT_EQ("2 22 21 213 211 212 1 11", ChildWindowIDsAsString(parent.get()));
 }
 
+// Tests that windows can be stacked above windows with a NULL layer delegate.
+// Windows have a NULL layer delegate when they are in the process of closing.
+// See crbug.com/443433
 TEST_F(TransientWindowStackingClientTest,
-       StackWindowsWhoseLayersHaveNoDelegate) {
-  scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
-  window1->layer()->set_name("1");
-  scoped_ptr<Window> window2(CreateTestWindowWithId(2, root_window()));
-  window2->layer()->set_name("2");
-  scoped_ptr<Window> window3(CreateTestWindowWithId(3, root_window()));
-  window3->layer()->set_name("3");
+       StackAboveWindowWithNULLLayerDelegate) {
+  scoped_ptr<Window> parent(CreateTestWindowWithId(0, root_window()));
+  scoped_ptr<Window> w1(CreateTestWindowWithId(1, parent.get()));
+  scoped_ptr<Window> w2(CreateTestWindowWithId(2, parent.get()));
+  w2->layer()->set_delegate(NULL);
+  EXPECT_EQ(w2.get(), parent->children().back());
 
-  // This brings |window1| (and its layer) to the front.
-  root_window()->StackChildAbove(window1.get(), window3.get());
-  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("2 3 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-
-  // Since |window1| does not have a delegate, |window2| should not move in
-  // front of it, nor should its layer.
-  window1->layer()->set_delegate(NULL);
-  root_window()->StackChildAbove(window2.get(), window1.get());
-  EXPECT_EQ("3 2 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("3 2 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-
-  // It should still be possible to stack |window3| immediately below |window1|.
-  root_window()->StackChildBelow(window3.get(), window1.get());
-  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("2 3 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-
-  // Since neither |window3| nor |window1| have a delegate, |window2| should
-  // not move in front of either.
-  window3->layer()->set_delegate(NULL);
-  root_window()->StackChildBelow(window2.get(), window1.get());
-  EXPECT_EQ("2 3 1", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("2 3 1",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
+  parent->StackChildAbove(w1.get(), w2.get());
+  EXPECT_EQ(w1.get(), parent->children().back());
 }
 
 }  // namespace wm

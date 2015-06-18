@@ -35,15 +35,16 @@
 #include "core/dom/NodeWithIndex.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/Text.h"
-#include "core/editing/TextIterator.h"
+#include "core/editing/EditingStrategy.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/RenderBoxModelObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutBoxModelObject.h"
+#include "core/layout/LayoutText.h"
 #include "core/svg/SVGSVGElement.h"
 #include "platform/geometry/FloatQuad.h"
 #include "wtf/RefCountedLeakCounter.h"
@@ -101,6 +102,26 @@ PassRefPtrWillBeRawPtr<Range> Range::create(Document& ownerDocument, const Posit
     return adoptRefWillBeNoop(new Range(ownerDocument, start.containerNode(), start.computeOffsetInContainerNode(), end.containerNode(), end.computeOffsetInContainerNode()));
 }
 
+PassRefPtrWillBeRawPtr<Range> Range::createAdjustedToTreeScope(const TreeScope& treeScope, const Position& position)
+{
+    RefPtrWillBeRawPtr<Range> range = create(treeScope.document(), position, position);
+
+    // Make sure the range is in this scope.
+    Node* firstNode = range->firstNode();
+    ASSERT(firstNode);
+    Node* shadowHostInThisScopeOrFirstNode = treeScope.ancestorInThisScope(firstNode);
+    ASSERT(shadowHostInThisScopeOrFirstNode);
+    if (shadowHostInThisScopeOrFirstNode == firstNode)
+        return range.release();
+
+    // If not, create a range for the shadow host in this scope.
+    ContainerNode* container = shadowHostInThisScopeOrFirstNode->parentNode();
+    ASSERT(container);
+    unsigned offset = shadowHostInThisScopeOrFirstNode->nodeIndex();
+    return Range::create(treeScope.document(), container, offset, container, offset);
+}
+
+#if !ENABLE(OILPAN) || !defined(NDEBUG)
 Range::~Range()
 {
 #if !ENABLE(OILPAN)
@@ -112,6 +133,7 @@ Range::~Range()
     rangeCounter.decrement();
 #endif
 }
+#endif
 
 void Range::setDocument(Document& document)
 {
@@ -129,15 +151,11 @@ Node* Range::commonAncestorContainer() const
     return commonAncestorContainer(m_start.container(), m_end.container());
 }
 
-Node* Range::commonAncestorContainer(Node* containerA, Node* containerB)
+Node* Range::commonAncestorContainer(const Node* containerA, const Node* containerB)
 {
-    for (Node* parentA = containerA; parentA; parentA = parentA->parentNode()) {
-        for (Node* parentB = containerB; parentB; parentB = parentB->parentNode()) {
-            if (parentA == parentB)
-                return parentA;
-        }
-    }
-    return 0;
+    if (!containerA || !containerB)
+        return nullptr;
+    return containerA->commonAncestor(*containerB, NodeTraversal::parent);
 }
 
 static inline bool checkForDifferentRootContainer(const RangeBoundaryPoint& start, const RangeBoundaryPoint& end)
@@ -155,7 +173,8 @@ static inline bool checkForDifferentRootContainer(const RangeBoundaryPoint& star
 void Range::setStart(PassRefPtrWillBeRawPtr<Node> refNode, int offset, ExceptionState& exceptionState)
 {
     if (!refNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -178,7 +197,8 @@ void Range::setStart(PassRefPtrWillBeRawPtr<Node> refNode, int offset, Exception
 void Range::setEnd(PassRefPtrWillBeRawPtr<Node> refNode, int offset, ExceptionState& exceptionState)
 {
     if (!refNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -221,7 +241,8 @@ void Range::collapse(bool toStart)
 bool Range::isPointInRange(Node* refNode, int offset, ExceptionState& exceptionState)
 {
     if (!refNode) {
-        exceptionState.throwDOMException(HierarchyRequestError, "The node provided was null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return false;
     }
 
@@ -279,7 +300,8 @@ Range::CompareResults Range::compareNode(Node* refNode, ExceptionState& exceptio
     // before and after(surrounds), or inside the range, respectively
 
     if (!refNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return NODE_BEFORE;
     }
 
@@ -356,95 +378,13 @@ short Range::compareBoundaryPoints(unsigned how, const Range* sourceRange, Excep
 
 short Range::compareBoundaryPoints(Node* containerA, int offsetA, Node* containerB, int offsetB, ExceptionState& exceptionState)
 {
-    ASSERT(containerA);
-    ASSERT(containerB);
-
-    if (!containerA)
-        return -1;
-    if (!containerB)
-        return 1;
-
-    // see DOM2 traversal & range section 2.5
-
-    // case 1: both points have the same container
-    if (containerA == containerB) {
-        if (offsetA == offsetB)
-            return 0;           // A is equal to B
-        if (offsetA < offsetB)
-            return -1;          // A is before B
-        else
-            return 1;           // A is after B
-    }
-
-    // case 2: node C (container B or an ancestor) is a child node of A
-    Node* c = containerB;
-    while (c && c->parentNode() != containerA)
-        c = c->parentNode();
-    if (c) {
-        int offsetC = 0;
-        Node* n = containerA->firstChild();
-        while (n != c && offsetC < offsetA) {
-            offsetC++;
-            n = n->nextSibling();
-        }
-
-        if (offsetA <= offsetC)
-            return -1;              // A is before B
-        else
-            return 1;               // A is after B
-    }
-
-    // case 3: node C (container A or an ancestor) is a child node of B
-    c = containerA;
-    while (c && c->parentNode() != containerB)
-        c = c->parentNode();
-    if (c) {
-        int offsetC = 0;
-        Node* n = containerB->firstChild();
-        while (n != c && offsetC < offsetB) {
-            offsetC++;
-            n = n->nextSibling();
-        }
-
-        if (offsetC < offsetB)
-            return -1;              // A is before B
-        else
-            return 1;               // A is after B
-    }
-
-    // case 4: containers A & B are siblings, or children of siblings
-    // ### we need to do a traversal here instead
-    Node* commonAncestor = commonAncestorContainer(containerA, containerB);
-    if (!commonAncestor) {
+    bool disconnected = false;
+    short result = EditingStrategy::comparePositions(containerA, offsetA, containerB, offsetB, &disconnected);
+    if (disconnected) {
         exceptionState.throwDOMException(WrongDocumentError, "The two ranges are in separate documents.");
         return 0;
     }
-    Node* childA = containerA;
-    while (childA && childA->parentNode() != commonAncestor)
-        childA = childA->parentNode();
-    if (!childA)
-        childA = commonAncestor;
-    Node* childB = containerB;
-    while (childB && childB->parentNode() != commonAncestor)
-        childB = childB->parentNode();
-    if (!childB)
-        childB = commonAncestor;
-
-    if (childA == childB)
-        return 0; // A is equal to B
-
-    Node* n = commonAncestor->firstChild();
-    while (n) {
-        if (n == childA)
-            return -1; // A is before B
-        if (n == childB)
-            return 1; // A is after B
-        n = n->nextSibling();
-    }
-
-    // Should never reach this point.
-    ASSERT_NOT_REACHED();
-    return 0;
+    return result;
 }
 
 short Range::compareBoundaryPoints(const RangeBoundaryPoint& boundaryA, const RangeBoundaryPoint& boundaryB, ExceptionState& exceptionState)
@@ -471,7 +411,8 @@ void Range::deleteContents(ExceptionState& exceptionState)
 static bool nodeValidForIntersects(Node* refNode, Document* expectedDocument, ExceptionState& exceptionState)
 {
     if (!refNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return false;
     }
 
@@ -858,7 +799,8 @@ void Range::insertNode(PassRefPtrWillBeRawPtr<Node> prpNewNode, ExceptionState& 
     RefPtrWillBeRawPtr<Node> newNode = prpNewNode;
 
     if (!newNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -987,11 +929,6 @@ String Range::toString() const
     return builder.toString();
 }
 
-String Range::toHTML() const
-{
-    return createMarkup(this);
-}
-
 String Range::text() const
 {
     return plainText(this, TextIteratorEmitsObjectReplacementCharacter);
@@ -1082,7 +1019,8 @@ Node* Range::checkNodeWOffset(Node* n, int offset, ExceptionState& exceptionStat
 void Range::checkNodeBA(Node* n, ExceptionState& exceptionState) const
 {
     if (!n) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -1165,7 +1103,8 @@ void Range::setEndAfter(Node* refNode, ExceptionState& exceptionState)
 void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
 {
     if (!refNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -1219,7 +1158,8 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
 void Range::selectNodeContents(Node* refNode, ExceptionState& exceptionState)
 {
     if (!refNode) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -1284,7 +1224,8 @@ void Range::surroundContents(PassRefPtrWillBeRawPtr<Node> passNewParent, Excepti
 {
     RefPtrWillBeRawPtr<Node> newParent = passNewParent;
     if (!newParent) {
-        exceptionState.throwDOMException(NotFoundError, "The node provided is null.");
+        // FIXME: Generated bindings code never calls with null, and neither should other callers!
+        exceptionState.throwTypeError("The node provided is null.");
         return;
     }
 
@@ -1336,7 +1277,7 @@ void Range::surroundContents(PassRefPtrWillBeRawPtr<Node> passNewParent, Excepti
         return;
     }
 
-    if (newParent->contains(m_start.container())) {
+    if (newParent->containsIncludingShadowDOM(m_start.container())) {
         exceptionState.throwDOMException(HierarchyRequestError, "The node provided contains the insertion point; it may not be inserted into itself.");
         return;
     }
@@ -1433,14 +1374,14 @@ void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight, RangeInFi
 
     Node* stopNode = pastLastNode();
     for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        RenderObject* r = node->renderer();
+        LayoutObject* r = node->layoutObject();
         if (!r || !r->isText())
             continue;
-        RenderText* renderText = toRenderText(r);
+        LayoutText* layoutText = toLayoutText(r);
         int startOffset = node == startContainer ? m_start.offset() : 0;
         int endOffset = node == endContainer ? m_end.offset() : std::numeric_limits<int>::max();
         bool isFixed = false;
-        renderText->absoluteRectsForRange(rects, startOffset, endOffset, useSelectionHeight, &isFixed);
+        layoutText->absoluteRectsForRange(rects, startOffset, endOffset, useSelectionHeight, &isFixed);
         allFixed &= isFixed;
         someFixed |= isFixed;
     }
@@ -1461,14 +1402,14 @@ void Range::textQuads(Vector<FloatQuad>& quads, bool useSelectionHeight, RangeIn
 
     Node* stopNode = pastLastNode();
     for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        RenderObject* r = node->renderer();
+        LayoutObject* r = node->layoutObject();
         if (!r || !r->isText())
             continue;
-        RenderText* renderText = toRenderText(r);
+        LayoutText* layoutText = toLayoutText(r);
         int startOffset = node == startContainer ? m_start.offset() : 0;
         int endOffset = node == endContainer ? m_end.offset() : std::numeric_limits<int>::max();
         bool isFixed = false;
-        renderText->absoluteQuadsForRange(quads, startOffset, endOffset, useSelectionHeight, &isFixed);
+        layoutText->absoluteQuadsForRange(quads, startOffset, endOffset, useSelectionHeight, &isFixed);
         allFixed &= isFixed;
         someFixed |= isFixed;
     }
@@ -1699,7 +1640,7 @@ void Range::expand(const String& unit, ExceptionState& exceptionState)
     setEnd(end.deepEquivalent().containerNode(), end.deepEquivalent().computeOffsetInContainerNode(), exceptionState);
 }
 
-PassRefPtrWillBeRawPtr<ClientRectList> Range::getClientRects() const
+ClientRectList* Range::getClientRects() const
 {
     m_ownerDocument->updateLayoutIgnorePendingStylesheets();
 
@@ -1709,7 +1650,7 @@ PassRefPtrWillBeRawPtr<ClientRectList> Range::getClientRects() const
     return ClientRectList::create(quads);
 }
 
-PassRefPtrWillBeRawPtr<ClientRect> Range::getBoundingClientRect() const
+ClientRect* Range::getBoundingClientRect() const
 {
     return ClientRect::create(boundingRect());
 }
@@ -1729,22 +1670,22 @@ void Range::getBorderAndTextQuads(Vector<FloatQuad>& quads) const
     for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
         if (node->isElementNode()) {
             if (!nodeSet.contains(node->parentNode())) {
-                if (RenderBoxModelObject* renderBoxModelObject = toElement(node)->renderBoxModelObject()) {
+                if (LayoutBoxModelObject* layoutBoxModelObject = toElement(node)->layoutBoxModelObject()) {
                     Vector<FloatQuad> elementQuads;
-                    renderBoxModelObject->absoluteQuads(elementQuads);
-                    m_ownerDocument->adjustFloatQuadsForScrollAndAbsoluteZoom(elementQuads, *renderBoxModelObject);
+                    layoutBoxModelObject->absoluteQuads(elementQuads);
+                    m_ownerDocument->adjustFloatQuadsForScrollAndAbsoluteZoom(elementQuads, *layoutBoxModelObject);
 
                     quads.appendVector(elementQuads);
                 }
             }
         } else if (node->isTextNode()) {
-            if (RenderText* renderText = toText(node)->renderer()) {
+            if (LayoutText* layoutText = toText(node)->layoutObject()) {
                 int startOffset = (node == startContainer) ? m_start.offset() : 0;
                 int endOffset = (node == endContainer) ? m_end.offset() : INT_MAX;
 
                 Vector<FloatQuad> textQuads;
-                renderText->absoluteQuadsForRange(textQuads, startOffset, endOffset);
-                m_ownerDocument->adjustFloatQuadsForScrollAndAbsoluteZoom(textQuads, *renderText);
+                layoutText->absoluteQuadsForRange(textQuads, startOffset, endOffset);
+                m_ownerDocument->adjustFloatQuadsForScrollAndAbsoluteZoom(textQuads, *layoutText);
 
                 quads.appendVector(textQuads);
             }
@@ -1766,7 +1707,7 @@ FloatRect Range::boundingRect() const
     return result;
 }
 
-void Range::trace(Visitor* visitor)
+DEFINE_TRACE(Range)
 {
     visitor->trace(m_ownerDocument);
     visitor->trace(m_start);
@@ -1782,6 +1723,8 @@ void showTree(const blink::Range* range)
     if (range && range->boundaryPointsValid()) {
         range->startContainer()->showTreeAndMark(range->startContainer(), "S", range->endContainer(), "E");
         fprintf(stderr, "start offset: %d, end offset: %d\n", range->startOffset(), range->endOffset());
+    } else {
+        fprintf(stderr, "Cannot show tree if range is null, or if boundary points are invalid.\n");
     }
 }
 

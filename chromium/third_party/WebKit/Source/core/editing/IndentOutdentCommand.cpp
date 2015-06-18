@@ -34,7 +34,7 @@
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
 
@@ -154,7 +154,7 @@ void IndentOutdentCommand::outdentParagraph()
     VisiblePosition positionInEnclosingBlock = VisiblePosition(firstPositionInNode(enclosingElement));
     // If the blockquote is inline, the start of the enclosing block coincides with
     // positionInEnclosingBlock.
-    VisiblePosition startOfEnclosingBlock = (enclosingElement->renderer() && enclosingElement->renderer()->isInline()) ? positionInEnclosingBlock : startOfBlock(positionInEnclosingBlock);
+    VisiblePosition startOfEnclosingBlock = (enclosingElement->layoutObject() && enclosingElement->layoutObject()->isInline()) ? positionInEnclosingBlock : startOfBlock(positionInEnclosingBlock);
     VisiblePosition lastPositionInEnclosingBlock = VisiblePosition(lastPositionInNode(enclosingElement));
     VisiblePosition endOfEnclosingBlock = endOfBlock(lastPositionInEnclosingBlock);
     if (visibleStartOfParagraph == startOfEnclosingBlock &&

@@ -10,8 +10,6 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "media/cast/net/cast_transport_defines.h"
-#include "media/cast/net/rtcp/rtcp_defines.h"
 #include "media/cast/net/rtcp/rtcp_utility.h"
 
 namespace media {
@@ -42,33 +40,6 @@ uint16 MergeEventTypeAndTimestampForWireFormat(
 bool EventTimestampLessThan(const RtcpReceiverEventLogMessage& lhs,
                             const RtcpReceiverEventLogMessage& rhs) {
   return lhs.event_timestamp < rhs.event_timestamp;
-}
-
-void AddReceiverLogEntries(
-    const RtcpReceiverLogMessage& redundancy_receiver_log_message,
-    RtcpReceiverLogMessage* receiver_log_message,
-    size_t* remaining_space,
-    size_t* number_of_frames,
-    size_t* total_number_of_messages_to_send) {
-  RtcpReceiverLogMessage::const_iterator it =
-      redundancy_receiver_log_message.begin();
-  while (it != redundancy_receiver_log_message.end() &&
-         *remaining_space >=
-             kRtcpReceiverFrameLogSize + kRtcpReceiverEventLogSize) {
-    receiver_log_message->push_front(*it);
-    size_t num_event_logs = (*remaining_space - kRtcpReceiverFrameLogSize) /
-                            kRtcpReceiverEventLogSize;
-    RtcpReceiverEventLogMessages& event_log_messages =
-        receiver_log_message->front().event_log_messages_;
-    if (num_event_logs < event_log_messages.size())
-      event_log_messages.resize(num_event_logs);
-
-    *remaining_space -= kRtcpReceiverFrameLogSize +
-                        event_log_messages.size() * kRtcpReceiverEventLogSize;
-    ++number_of_frames;
-    *total_number_of_messages_to_send += event_log_messages.size();
-    ++it;
-  }
 }
 
 // A class to build a string representing the NACK list in Cast message.
@@ -197,7 +168,7 @@ PacketRef RtcpBuilder::BuildRtcpFromReceiver(
     const RtcpReportBlock* report_block,
     const RtcpReceiverReferenceTimeReport* rrtr,
     const RtcpCastMessage* cast_message,
-    const ReceiverRtcpEventSubscriber::RtcpEventMultiMap* rtcp_events,
+    const ReceiverRtcpEventSubscriber::RtcpEvents* rtcp_events,
     base::TimeDelta target_delay) {
   Start();
 
@@ -366,7 +337,7 @@ void RtcpBuilder::AddDlrrRb(const RtcpDlrrReportBlock& dlrr) {
 }
 
 void RtcpBuilder::AddReceiverLog(
-    const ReceiverRtcpEventSubscriber::RtcpEventMultiMap& rtcp_events) {
+    const ReceiverRtcpEventSubscriber::RtcpEvents& rtcp_events) {
   size_t total_number_of_messages_to_send = 0;
   RtcpReceiverLogMessage receiver_log_message;
 
@@ -441,12 +412,11 @@ void RtcpBuilder::AddReceiverLog(
 }
 
 bool RtcpBuilder::GetRtcpReceiverLogMessage(
-    const ReceiverRtcpEventSubscriber::RtcpEventMultiMap& rtcp_events,
+    const ReceiverRtcpEventSubscriber::RtcpEvents& rtcp_events,
     RtcpReceiverLogMessage* receiver_log_message,
     size_t* total_number_of_messages_to_send) {
   size_t number_of_frames = 0;
-  size_t remaining_space =
-      std::min<size_t>(kMaxReceiverLogBytes, writer_.remaining());
+  size_t remaining_space = writer_.remaining();
   if (remaining_space < kRtcpCastLogHeaderSize + kRtcpReceiverFrameLogSize +
                             kRtcpReceiverEventLogSize) {
     return false;
@@ -459,7 +429,7 @@ bool RtcpBuilder::GetRtcpReceiverLogMessage(
   // Account for the RTCP header for an application-defined packet.
   remaining_space -= kRtcpCastLogHeaderSize;
 
-  ReceiverRtcpEventSubscriber::RtcpEventMultiMap::const_reverse_iterator rit =
+  ReceiverRtcpEventSubscriber::RtcpEvents::const_reverse_iterator rit =
       rtcp_events.rbegin();
 
   while (rit != rtcp_events.rend() &&
@@ -509,36 +479,6 @@ bool RtcpBuilder::GetRtcpReceiverLogMessage(
 
     receiver_log_message->push_front(frame_log);
   }
-
-  rtcp_events_history_.push_front(*receiver_log_message);
-
-  // We don't try to match RTP timestamps of redundancy frame logs with those
-  // from the newest set (which would save the space of an extra RTP timestamp
-  // over the wire). Unless the redundancy frame logs are very recent, it's
-  // unlikely there will be a match anyway.
-  if (rtcp_events_history_.size() > kFirstRedundancyOffset) {
-    // Add first redundnacy messages, if enough space remaining
-    AddReceiverLogEntries(rtcp_events_history_[kFirstRedundancyOffset],
-                          receiver_log_message,
-                          &remaining_space,
-                          &number_of_frames,
-                          total_number_of_messages_to_send);
-  }
-
-  if (rtcp_events_history_.size() > kSecondRedundancyOffset) {
-    // Add second redundancy messages, if enough space remaining
-    AddReceiverLogEntries(rtcp_events_history_[kSecondRedundancyOffset],
-                          receiver_log_message,
-                          &remaining_space,
-                          &number_of_frames,
-                          total_number_of_messages_to_send);
-  }
-
-  if (rtcp_events_history_.size() > kReceiveLogMessageHistorySize) {
-    rtcp_events_history_.pop_back();
-  }
-
-  DCHECK_LE(rtcp_events_history_.size(), kReceiveLogMessageHistorySize);
 
   VLOG(3) << "number of frames: " << number_of_frames;
   VLOG(3) << "total messages to send: " << *total_number_of_messages_to_send;

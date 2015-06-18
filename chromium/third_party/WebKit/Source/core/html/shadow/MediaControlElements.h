@@ -48,13 +48,13 @@ public:
 private:
     explicit MediaControlPanelElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
+    virtual bool keepEventInNode(Event*) override;
 
     void startTimer();
     void stopTimer();
     void transitionTimerFired(Timer<MediaControlPanelElement>*);
-    virtual bool keepEventInNode(Event*) override;
+    void didBecomeVisible();
 
     bool m_isDisplayed;
     bool m_opaque;
@@ -70,7 +70,6 @@ public:
 
 private:
     explicit MediaControlPanelEnclosureElement(MediaControls&);
-    virtual const AtomicString& shadowPseudoId() const override;
 };
 
 // ----------------------------
@@ -81,7 +80,6 @@ public:
 
 private:
     explicit MediaControlOverlayEnclosureElement(MediaControls&);
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void* preDispatchEventHandler(Event*) override;
 };
 
@@ -97,7 +95,6 @@ public:
 private:
     explicit MediaControlMuteButtonElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
 };
 
@@ -113,7 +110,6 @@ public:
 private:
     explicit MediaControlPlayButtonElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
 };
 
@@ -128,7 +124,6 @@ public:
 private:
     explicit MediaControlOverlayPlayButtonElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
     virtual bool keepEventInNode(Event*) override;
 };
@@ -146,7 +141,6 @@ public:
 private:
     explicit MediaControlToggleClosedCaptionsButtonElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
 };
 
@@ -166,7 +160,6 @@ public:
 private:
     explicit MediaControlTimelineElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
     virtual bool keepEventInNode(Event*) override;
 };
@@ -184,7 +177,6 @@ public:
 private:
     explicit MediaControlFullscreenButtonElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
 };
 
@@ -221,7 +213,6 @@ public:
 private:
     explicit MediaControlVolumeSliderElement(MediaControls&);
 
-    virtual const AtomicString& shadowPseudoId() const override;
     virtual void defaultEventHandler(Event*) override;
     virtual bool keepEventInNode(Event*) override;
 };
@@ -234,7 +225,6 @@ public:
 
 private:
     explicit MediaControlTimeRemainingDisplayElement(MediaControls&);
-    virtual const AtomicString& shadowPseudoId() const override;
 };
 
 // ----------------------------
@@ -245,29 +235,7 @@ public:
 
 private:
     explicit MediaControlCurrentTimeDisplayElement(MediaControls&);
-    virtual const AtomicString& shadowPseudoId() const override;
 };
-
-// ----------------------------
-
-class MediaControlTextTrackContainerElement final : public MediaControlDivElement {
-public:
-    static PassRefPtrWillBeRawPtr<MediaControlTextTrackContainerElement> create(MediaControls&);
-
-    void updateDisplay();
-    void updateSizes();
-    static const AtomicString& textTrackContainerElementShadowPseudoId();
-
-private:
-    explicit MediaControlTextTrackContainerElement(MediaControls&);
-    virtual const AtomicString& shadowPseudoId() const override;
-
-    virtual RenderObject* createRenderer(RenderStyle*) override;
-
-    IntRect m_videoDisplaySize;
-    float m_fontSize;
-};
-
 
 } // namespace blink
 

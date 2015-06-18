@@ -6,6 +6,7 @@
 #define CC_RESOURCES_SHARED_BITMAP_MANAGER_H_
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/resources/shared_bitmap.h"
 #include "ui/gfx/geometry/size.h"
@@ -21,8 +22,6 @@ class CC_EXPORT SharedBitmapManager {
   virtual scoped_ptr<SharedBitmap> GetSharedBitmapFromId(
       const gfx::Size&,
       const SharedBitmapId&) = 0;
-  virtual scoped_ptr<SharedBitmap> GetBitmapForSharedMemory(
-      base::SharedMemory*) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SharedBitmapManager);

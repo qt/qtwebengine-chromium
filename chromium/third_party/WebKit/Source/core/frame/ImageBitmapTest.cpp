@@ -32,6 +32,7 @@
 #include "core/frame/ImageBitmap.h"
 
 #include "SkPixelRef.h" // FIXME: qualify this skia header file.
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/MemoryCache.h"
@@ -39,9 +40,10 @@
 #include "core/fetch/ResourcePtr.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/html/canvas/CanvasRenderingContext2D.h"
+#include "core/html/canvas/WebGLRenderingContext.h"
 #include "platform/graphics/BitmapImage.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/OwnPtr.h"
@@ -68,7 +70,7 @@ protected:
         // Garbage collection is required prior to switching out the
         // test's memory cache; image resources are released, evicting
         // them from the cache.
-        Heap::collectGarbage(ThreadState::NoHeapPointersOnStack);
+        Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
 
         replaceMemoryCacheForTesting(m_globalMemoryCache.release());
     }
@@ -82,7 +84,7 @@ protected:
 TEST_F(ImageBitmapTest, ImageResourceConsistency)
 {
     RefPtrWillBeRawPtr<HTMLImageElement> imageElement = HTMLImageElement::create(*Document::create().get());
-    imageElement->setImageResource(new ImageResource(BitmapImage::create(NativeImageSkia::create(m_bitmap)).get()));
+    imageElement->setImageResource(new ImageResource(BitmapImage::create(m_bitmap).get()));
 
     RefPtrWillBeRawPtr<ImageBitmap> imageBitmapNoCrop = ImageBitmap::create(imageElement.get(), IntRect(0, 0, m_bitmap.width(), m_bitmap.height()));
     RefPtrWillBeRawPtr<ImageBitmap> imageBitmapInteriorCrop = ImageBitmap::create(imageElement.get(), IntRect(m_bitmap.width() / 2, m_bitmap.height() / 2, m_bitmap.width() / 2, m_bitmap.height() / 2));
@@ -102,19 +104,19 @@ TEST_F(ImageBitmapTest, ImageResourceConsistency)
 TEST_F(ImageBitmapTest, ImageBitmapLiveResourcePriority)
 {
     RefPtrWillBePersistent<HTMLImageElement> imageNoCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageNoCrop = new ImageResource(ResourceRequest("http://foo.com/1"), BitmapImage::create(NativeImageSkia::create(m_bitmap)).get());
+    ResourcePtr<ImageResource> cachedImageNoCrop = new ImageResource(ResourceRequest("http://foo.com/1"), BitmapImage::create(m_bitmap).get());
     imageNoCrop->setImageResource(cachedImageNoCrop.get());
 
     RefPtrWillBePersistent<HTMLImageElement> imageInteriorCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageInteriorCrop = new ImageResource(ResourceRequest("http://foo.com/2"), BitmapImage::create(NativeImageSkia::create(m_bitmap)).get());
+    ResourcePtr<ImageResource> cachedImageInteriorCrop = new ImageResource(ResourceRequest("http://foo.com/2"), BitmapImage::create(m_bitmap).get());
     imageInteriorCrop->setImageResource(cachedImageInteriorCrop.get());
 
     RefPtrWillBePersistent<HTMLImageElement> imageExteriorCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageExteriorCrop = new ImageResource(ResourceRequest("http://foo.com/3"), BitmapImage::create(NativeImageSkia::create(m_bitmap)).get());
+    ResourcePtr<ImageResource> cachedImageExteriorCrop = new ImageResource(ResourceRequest("http://foo.com/3"), BitmapImage::create(m_bitmap).get());
     imageExteriorCrop->setImageResource(cachedImageExteriorCrop.get());
 
     RefPtrWillBePersistent<HTMLImageElement> imageOutsideCrop = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> cachedImageOutsideCrop = new ImageResource(ResourceRequest("http://foo.com/4"), BitmapImage::create(NativeImageSkia::create(m_bitmap)).get());
+    ResourcePtr<ImageResource> cachedImageOutsideCrop = new ImageResource(ResourceRequest("http://foo.com/4"), BitmapImage::create(m_bitmap).get());
     imageOutsideCrop->setImageResource(cachedImageOutsideCrop.get());
 
     MockImageResourceClient mockClient1, mockClient2, mockClient3, mockClient4;
@@ -154,7 +156,7 @@ TEST_F(ImageBitmapTest, ImageBitmapLiveResourcePriority)
         ASSERT_EQ(memoryCache()->priority(imageOutsideCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
     }
     // Force a garbage collection to sweep out the local ImageBitmaps.
-    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack);
+    Heap::collectGarbage(ThreadState::NoHeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
 
     // CacheLiveResourcePriroity should return to CacheLiveResourcePriorityLow when no ImageBitmaps reference the image.
     ASSERT_EQ(memoryCache()->priority(imageNoCrop->cachedImage()), MemoryCacheLiveResourcePriorityLow);
@@ -175,23 +177,26 @@ TEST_F(ImageBitmapTest, ImageBitmapLiveResourcePriority)
 TEST_F(ImageBitmapTest, ImageBitmapSourceChanged)
 {
     RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*Document::create().get());
-    ResourcePtr<ImageResource> originalImageResource = new ImageResource(BitmapImage::create(NativeImageSkia::create(m_bitmap)).get());
+    ResourcePtr<ImageResource> originalImageResource = new ImageResource(BitmapImage::create(m_bitmap).get());
     image->setImageResource(originalImageResource.get());
 
     RefPtrWillBeRawPtr<ImageBitmap> imageBitmap = ImageBitmap::create(image.get(), IntRect(0, 0, m_bitmap.width(), m_bitmap.height()));
     ASSERT_EQ(imageBitmap->bitmapImage().get(), originalImageResource->image());
 
-    ResourcePtr<ImageResource> newImageResource = new ImageResource(BitmapImage::create(NativeImageSkia::create(m_bitmap2)).get());
+    ResourcePtr<ImageResource> newImageResource = new ImageResource(BitmapImage::create(m_bitmap2).get());
     image->setImageResource(newImageResource.get());
 
     // The ImageBitmap should contain the same data as the original cached image but should no longer hold a reference.
     ASSERT_NE(imageBitmap->bitmapImage().get(), originalImageResource->image());
-    ASSERT_EQ(imageBitmap->bitmapImage()->nativeImageForCurrentFrame()->bitmap().pixelRef()->pixels(),
-        originalImageResource->image()->nativeImageForCurrentFrame()->bitmap().pixelRef()->pixels());
+    SkBitmap bitmap1, bitmap2;
+    ASSERT_TRUE(imageBitmap->bitmapImage()->bitmapForCurrentFrame(&bitmap1));
+    ASSERT_TRUE(originalImageResource->image()->bitmapForCurrentFrame(&bitmap2));
+    ASSERT_EQ(bitmap1.pixelRef()->pixels(), bitmap2.pixelRef()->pixels());
 
     ASSERT_NE(imageBitmap->bitmapImage().get(), newImageResource->image());
-    ASSERT_NE(imageBitmap->bitmapImage()->nativeImageForCurrentFrame()->bitmap().pixelRef()->pixels(),
-        newImageResource->image()->nativeImageForCurrentFrame()->bitmap().pixelRef()->pixels());
+    ASSERT_TRUE(imageBitmap->bitmapImage()->bitmapForCurrentFrame(&bitmap1));
+    ASSERT_TRUE(newImageResource->image()->bitmapForCurrentFrame(&bitmap2));
+    ASSERT_NE(bitmap1.pixelRef()->pixels(), bitmap2.pixelRef()->pixels());
 }
 
 // Verifies that ImageBitmaps constructed from ImageBitmaps hold onto their own Image.
@@ -205,9 +210,13 @@ TEST_F(ImageBitmapTest, ImageResourceLifetime)
         RefPtrWillBeRawPtr<ImageBitmap> imageBitmapFromCanvas = ImageBitmap::create(canvasElement.get(), IntRect(0, 0, canvasElement->width(), canvasElement->height()));
         imageBitmapDerived = ImageBitmap::create(imageBitmapFromCanvas.get(), IntRect(0, 0, 20, 20));
     }
-    CanvasRenderingContext* context = canvasElement->getContext("2d");
+    CanvasContextCreationAttributes attributes;
+    CanvasRenderingContext2DOrWebGLRenderingContext context;
+    canvasElement->getContext("2d", attributes, context);
     TrackExceptionState exceptionState;
-    toCanvasRenderingContext2D(context)->drawImage(imageBitmapDerived.get(), 0, 0, exceptionState);
+    CanvasImageSourceUnion imageSource;
+    imageSource.setImageBitmap(imageBitmapDerived);
+    context.getAsCanvasRenderingContext2D()->drawImage(imageSource, 0, 0, exceptionState);
 }
 
 } // namespace

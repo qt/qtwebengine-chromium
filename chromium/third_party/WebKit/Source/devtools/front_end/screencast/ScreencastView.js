@@ -38,6 +38,7 @@ WebInspector.ScreencastView = function(target)
 {
     WebInspector.VBox.call(this);
     this._target = target;
+    this._domModel = WebInspector.DOMModel.fromTarget(target);
 
     this.setMinimumSize(150, 150);
     this.registerRequiredCSS("screencast/screencastView.css");
@@ -49,6 +50,8 @@ WebInspector.ScreencastView._navBarHeight = 29;
 
 WebInspector.ScreencastView._HttpRegex = /^https?:\/\/(.+)/;
 
+WebInspector.ScreencastView._SchemeRegex = /^(https?|about|chrome):/;
+
 WebInspector.ScreencastView.prototype = {
     initialize: function()
     {
@@ -58,7 +61,7 @@ WebInspector.ScreencastView.prototype = {
 
         this._viewportElement = this.element.createChild("div", "screencast-viewport hidden");
         this._canvasContainerElement = this._viewportElement.createChild("div", "screencast-canvas-container");
-        this._glassPaneElement = this._canvasContainerElement.createChild("div", "screencast-glasspane hidden");
+        this._glassPaneElement = this._canvasContainerElement.createChild("div", "screencast-glasspane fill hidden");
 
         this._canvasElement = this._canvasContainerElement.createChild("canvas");
         this._canvasElement.tabIndex = 1;
@@ -83,6 +86,8 @@ WebInspector.ScreencastView.prototype = {
         this._titleElement.createTextChild(" \u00D7 ");
         this._nodeHeightElement = this._titleElement.createChild("span");
         this._titleElement.createChild("span", "screencast-px").textContent = "px";
+        this._titleElement.style.top = "0";
+        this._titleElement.style.left = "0";
 
         this._imageElement = new Image();
         this._isCasting = false;
@@ -92,8 +97,8 @@ WebInspector.ScreencastView.prototype = {
         this._shortcuts = /** !Object.<number, function(Event=):boolean> */ ({});
         this._shortcuts[WebInspector.KeyboardShortcut.makeKey("l", WebInspector.KeyboardShortcut.Modifiers.Ctrl)] = this._focusNavigationBar.bind(this);
 
-        WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastFrame, this._screencastFrame, this);
-        WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, this._screencastVisibilityChanged, this);
+        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastFrame, this._screencastFrame, this);
+        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, this._screencastVisibilityChanged, this);
 
         WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged, this._onSuspendStateChange, this);
         this._updateGlasspane();
@@ -126,7 +131,7 @@ WebInspector.ScreencastView.prototype = {
         dimensions.width *= window.devicePixelRatio;
         dimensions.height *= window.devicePixelRatio;
         this._target.pageAgent().startScreencast("jpeg", 80, Math.min(maxImageDimension, dimensions.width), Math.min(maxImageDimension, dimensions.height));
-        this._target.domModel.setHighlighter(this);
+        this._domModel.setHighlighter(this);
     },
 
     _stopCasting: function()
@@ -135,7 +140,7 @@ WebInspector.ScreencastView.prototype = {
             return;
         this._isCasting = false;
         this._target.pageAgent().stopScreencast();
-        this._target.domModel.setHighlighter(null);
+        this._domModel.setHighlighter(null);
     },
 
     /**
@@ -148,10 +153,11 @@ WebInspector.ScreencastView.prototype = {
         this._imageElement.src = "data:image/jpg;base64," + base64Data;
         this._pageScaleFactor = metadata.pageScaleFactor;
         this._screenOffsetTop = metadata.offsetTop;
-        this._deviceWidth = metadata.deviceWidth;
-        this._deviceHeight = metadata.deviceHeight;
         this._scrollOffsetX = metadata.scrollOffsetX;
         this._scrollOffsetY = metadata.scrollOffsetY;
+
+        if (event.data.frameNumber)
+            this._target.pageAgent().screencastFrameAck(event.data.frameNumber);
 
         var deviceSizeRatio = metadata.deviceHeight / metadata.deviceWidth;
         var dimensionsCSS = this._viewportDimensions();
@@ -213,8 +219,8 @@ WebInspector.ScreencastView.prototype = {
     _handleMouseEvent: function(event)
     {
         if (this._isGlassPaneActive()) {
-          event.consume();
-          return;
+            event.consume();
+            return;
         }
 
         if (!this._pageScaleFactor)
@@ -229,7 +235,7 @@ WebInspector.ScreencastView.prototype = {
         }
 
         var position = this._convertIntoScreenSpace(event);
-        this._target.domModel.nodeForLocation(position.x / this._pageScaleFactor + this._scrollOffsetX, position.y / this._pageScaleFactor + this._scrollOffsetY, callback.bind(this));
+        this._domModel.nodeForLocation(position.x / this._pageScaleFactor + this._scrollOffsetX, position.y / this._pageScaleFactor + this._scrollOffsetY, callback.bind(this));
 
         /**
          * @param {?WebInspector.DOMNode} node
@@ -272,8 +278,8 @@ WebInspector.ScreencastView.prototype = {
         }
 
         var text = event.type === "keypress" ? String.fromCharCode(event.charCode) : undefined;
-        InputAgent.dispatchKeyEvent(type, this._modifiersForEvent(event), event.timeStamp / 1000, text, text ? text.toLowerCase() : undefined,
-                                    event.keyIdentifier, event.keyCode /* windowsVirtualKeyCode */, event.keyCode /* nativeVirtualKeyCode */, false, false, false);
+        this._target.inputAgent().dispatchKeyEvent(type, this._modifiersForEvent(event), event.timeStamp / 1000, text, text ? text.toLowerCase() : undefined,
+                                    event.keyIdentifier, event.code, event.keyCode /* windowsVirtualKeyCode */, event.keyCode /* nativeVirtualKeyCode */, false, false, false);
         event.consume();
         this._canvasElement.focus();
     },
@@ -314,7 +320,7 @@ WebInspector.ScreencastView.prototype = {
         }
         if (event.type === "mouseup")
             delete this._eventScreenOffsetTop;
-        InputAgent.invoke_emulateTouchFromMouseEvent(params);
+        WebInspector.targetManager.mainTarget().inputAgent().invoke_emulateTouchFromMouseEvent(params);
     },
 
     /**
@@ -326,7 +332,7 @@ WebInspector.ScreencastView.prototype = {
             var params = this._eventParams;
             delete this._eventParams;
             params.type = "mouseReleased";
-            InputAgent.invoke_emulateTouchFromMouseEvent(params);
+            WebInspector.targetManager.mainTarget().inputAgent().invoke_emulateTouchFromMouseEvent(params);
         }
     },
 
@@ -383,11 +389,13 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
+     * @override
      * @param {?WebInspector.DOMNode} node
      * @param {?DOMAgent.HighlightConfig} config
+     * @param {!DOMAgent.BackendNodeId=} backendNodeId
      * @param {!RuntimeAgent.RemoteObjectId=} objectId
      */
-    highlightDOMNode: function(node, config, objectId)
+    highlightDOMNode: function(node, config, backendNodeId, objectId)
     {
         this._highlightNode = node;
         this._highlightConfig = config;
@@ -432,8 +440,8 @@ WebInspector.ScreencastView.prototype = {
         function scaleQuad(quad)
         {
             for (var i = 0; i < quad.length; i += 2) {
-                quad[i] = quad[i] * this._pageScaleFactor * this._screenZoom;
-                quad[i + 1] = (quad[i + 1] * this._pageScaleFactor + this._screenOffsetTop) * this._screenZoom;
+                quad[i] = quad[i] * this._screenZoom;
+                quad[i + 1] = (quad[i + 1] + this._screenOffsetTop) * this._screenZoom;
             }
         }
 
@@ -467,26 +475,20 @@ WebInspector.ScreencastView.prototype = {
         if (model && config) {
             this._context.save();
             const transparentColor = "rgba(0, 0, 0, 0)";
-            var hasContent = model.content && config.contentColor !== transparentColor;
-            var hasPadding = model.padding && config.paddingColor !== transparentColor;
-            var hasBorder = model.border && config.borderColor !== transparentColor;
-            var hasMargin = model.margin && config.marginColor !== transparentColor;
+            var quads = [];
+            if (model.content && config.contentColor !== transparentColor)
+                quads.push({quad: model.content, color: config.contentColor});
+            if (model.padding && config.paddingColor !== transparentColor)
+                quads.push({quad: model.padding, color: config.paddingColor});
+            if (model.border && config.borderColor !== transparentColor)
+                quads.push({quad: model.border, color: config.borderColor});
+            if (model.margin && config.marginColor !== transparentColor)
+                quads.push({quad: model.margin, color: config.marginColor});
 
-            var clipQuad;
-            if (hasMargin && (!hasBorder || !this._quadsAreEqual(model.margin, model.border))) {
-                this._drawOutlinedQuadWithClip(model.margin, model.border, config.marginColor);
-                clipQuad = model.border;
-            }
-            if (hasBorder && (!hasPadding || !this._quadsAreEqual(model.border, model.padding))) {
-                this._drawOutlinedQuadWithClip(model.border, model.padding, config.borderColor);
-                clipQuad = model.padding;
-            }
-            if (hasPadding && (!hasContent || !this._quadsAreEqual(model.padding, model.content))) {
-                this._drawOutlinedQuadWithClip(model.padding, model.content, config.paddingColor);
-                clipQuad = model.content;
-            }
-            if (hasContent)
-                this._drawOutlinedQuad(model.content, config.contentColor);
+            for (var i = quads.length - 1; i > 0; --i)
+                this._drawOutlinedQuadWithClip(quads[i].quad, quads[i - 1].quad, quads[i].color);
+            if (quads.length > 0)
+                this._drawOutlinedQuad(quads[0].quad, quads[0].color);
             this._context.restore();
 
             this._drawElementTitle();
@@ -522,7 +524,7 @@ WebInspector.ScreencastView.prototype = {
     {
         if (!color)
             return "transparent";
-        return WebInspector.Color.fromRGBA([color.r, color.g, color.b, color.a]).toString(WebInspector.Color.Format.RGBA) || "";
+        return WebInspector.Color.fromRGBA([color.r, color.g, color.b, color.a]).asString(WebInspector.Color.Format.RGBA) || "";
     },
 
     /**
@@ -590,7 +592,7 @@ WebInspector.ScreencastView.prototype = {
         this._nodeWidthElement.textContent = this._model.width;
         this._nodeHeightElement.textContent = this._model.height;
 
-        var marginQuad = this._model.margin;
+        this._titleElement.classList.remove("hidden");
         var titleWidth = this._titleElement.offsetWidth + 6;
         var titleHeight = this._titleElement.offsetHeight + 4;
 
@@ -646,7 +648,6 @@ WebInspector.ScreencastView.prototype = {
 
         this._context.restore();
 
-        this._titleElement.classList.remove("hidden");
         this._titleElement.style.top = (boxY + 3) + "px";
         this._titleElement.style.left = (boxX + 3) + "px";
     },
@@ -664,6 +665,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
+     * @override
      * @param {boolean} enabled
      * @param {boolean} inspectUAShadowDOM
      * @param {!DOMAgent.HighlightConfig} config
@@ -674,6 +676,14 @@ WebInspector.ScreencastView.prototype = {
         this._inspectModeConfig = enabled ? config : null;
         if (callback)
             callback(null);
+    },
+
+    /**
+     * @override
+     * @param {!PageAgent.FrameId} frameId
+     */
+    highlightFrame: function(frameId)
+    {
     },
 
     /**
@@ -728,13 +738,13 @@ WebInspector.ScreencastView.prototype = {
         var newIndex = this._historyIndex + offset;
         if (newIndex < 0 || newIndex >= this._historyEntries.length)
           return;
-        PageAgent.navigateToHistoryEntry(this._historyEntries[newIndex].id);
+        this._target.pageAgent().navigateToHistoryEntry(this._historyEntries[newIndex].id);
         this._requestNavigationHistory();
     },
 
     _navigateReload: function()
     {
-        WebInspector.resourceTreeModel.reloadPage();
+        this._target.resourceTreeModel.reloadPage();
     },
 
     _navigationUrlKeyUp: function(event)
@@ -744,15 +754,15 @@ WebInspector.ScreencastView.prototype = {
         var url = this._navigationUrl.value;
         if (!url)
             return;
-        if (!url.match(WebInspector.ScreencastView._HttpRegex))
+        if (!url.match(WebInspector.ScreencastView._SchemeRegex))
             url = "http://" + url;
-        PageAgent.navigate(url);
+        this._target.pageAgent().navigate(url);
         this._canvasElement.focus();
     },
 
     _requestNavigationHistory: function()
     {
-        PageAgent.getNavigationHistory(this._onNavigationHistory.bind(this));
+        this._target.pageAgent().getNavigationHistory(this._onNavigationHistory.bind(this));
     },
 
     _onNavigationHistory: function(error, currentIndex, entries)

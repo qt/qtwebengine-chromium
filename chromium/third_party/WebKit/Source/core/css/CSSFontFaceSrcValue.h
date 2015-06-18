@@ -39,13 +39,13 @@ class Document;
 
 class CSSFontFaceSrcValue : public CSSValue {
 public:
-    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> create(const String& resource)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> create(const String& resource, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
     {
-        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, false));
+        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, false, shouldCheckContentSecurityPolicy));
     }
-    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> createLocal(const String& resource)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> createLocal(const String& resource, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
     {
-        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, true));
+        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, true, shouldCheckContentSecurityPolicy));
     }
 
     const String& resource() const { return m_resource; }
@@ -65,13 +65,14 @@ public:
 
     bool equals(const CSSFontFaceSrcValue&) const;
 
-    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValue::traceAfterDispatch(visitor); }
 
 private:
-    CSSFontFaceSrcValue(const String& resource, bool local)
+    CSSFontFaceSrcValue(const String& resource, bool local, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
         : CSSValue(FontFaceSrcClass)
         , m_resource(resource)
         , m_isLocal(local)
+        , m_shouldCheckContentSecurityPolicy(shouldCheckContentSecurityPolicy)
     {
     }
 
@@ -82,6 +83,7 @@ private:
     String m_format;
     Referrer m_referrer;
     bool m_isLocal;
+    ContentSecurityPolicyDisposition m_shouldCheckContentSecurityPolicy;
 
     ResourcePtr<FontResource> m_fetched;
 };

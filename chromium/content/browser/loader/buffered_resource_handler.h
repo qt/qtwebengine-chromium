@@ -10,6 +10,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "content/browser/loader/layered_resource_handler.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/resource_controller.h"
 
 namespace net {
@@ -17,16 +18,19 @@ class URLRequest;
 }
 
 namespace content {
+class PluginService;
 class ResourceDispatcherHostImpl;
 struct WebPluginInfo;
 
 // Used to buffer a request until enough data has been received.
-class BufferedResourceHandler
+class CONTENT_EXPORT BufferedResourceHandler
     : public LayeredResourceHandler,
       public ResourceController {
  public:
+  // If ENABLE_PLUGINS is defined, |plugin_service| must not be NULL.
   BufferedResourceHandler(scoped_ptr<ResourceHandler> next_handler,
                           ResourceDispatcherHostImpl* host,
+                          PluginService* plugin_service,
                           net::URLRequest* request);
   ~BufferedResourceHandler() override;
 
@@ -92,6 +96,7 @@ class BufferedResourceHandler
 
   scoped_refptr<ResourceResponse> response_;
   ResourceDispatcherHostImpl* host_;
+  PluginService* plugin_service_;
   scoped_refptr<net::IOBuffer> read_buffer_;
   int read_buffer_size_;
   int bytes_read_;

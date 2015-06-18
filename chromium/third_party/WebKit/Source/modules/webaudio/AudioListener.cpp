@@ -27,9 +27,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioListener.h"
 
 #include "modules/webaudio/PannerNode.h"
@@ -53,30 +51,21 @@ AudioListener::~AudioListener()
 {
 }
 
-void AudioListener::trace(Visitor* visitor)
+DEFINE_TRACE(AudioListener)
 {
-    visitor->trace(m_panners);
-    visitor->trace(m_hrtfDatabaseLoader);
 }
 
-void AudioListener::addPanner(PannerNode* panner)
+void AudioListener::addPanner(PannerHandler& panner)
 {
     ASSERT(isMainThread());
-    if (!panner)
-        return;
-
-    m_panners.append(panner);
+    m_panners.add(&panner);
 }
 
-void AudioListener::removePanner(PannerNode* panner)
+void AudioListener::removePanner(PannerHandler& panner)
 {
     ASSERT(isMainThread());
-    for (unsigned i = 0; i < m_panners.size(); ++i) {
-        if (panner == m_panners[i]) {
-            m_panners.remove(i);
-            break;
-        }
-    }
+    ASSERT(m_panners.contains(&panner));
+    m_panners.remove(&panner);
 }
 
 void AudioListener::createAndLoadHRTFDatabaseLoader(float sampleRate)
@@ -92,16 +81,17 @@ bool AudioListener::isHRTFDatabaseLoaded()
 
 void AudioListener::waitForHRTFDatabaseLoaderThreadCompletion()
 {
-    m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
+    if (m_hrtfDatabaseLoader)
+        m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
 }
 
 void AudioListener::markPannersAsDirty(unsigned type)
 {
-    for (unsigned i = 0; i < m_panners.size(); ++i)
-        m_panners[i]->markPannerAsDirty(type);
+    for (PannerHandler* panner : m_panners)
+        panner->markPannerAsDirty(type);
 }
 
-void AudioListener::setPosition(const FloatPoint3D &position)
+void AudioListener::setPosition(const FloatPoint3D& position)
 {
     if (m_position == position)
         return;
@@ -109,10 +99,10 @@ void AudioListener::setPosition(const FloatPoint3D &position)
     // This synchronizes with panner's process().
     MutexLocker listenerLocker(m_listenerLock);
     m_position = position;
-    markPannersAsDirty(PannerNode::AzimuthElevationDirty | PannerNode::DistanceConeGainDirty | PannerNode::DopplerRateDirty);
+    markPannersAsDirty(PannerHandler::AzimuthElevationDirty | PannerHandler::DistanceConeGainDirty | PannerHandler::DopplerRateDirty);
 }
 
-void AudioListener::setOrientation(const FloatPoint3D &orientation)
+void AudioListener::setOrientation(const FloatPoint3D& orientation)
 {
     if (m_orientation == orientation)
         return;
@@ -120,10 +110,10 @@ void AudioListener::setOrientation(const FloatPoint3D &orientation)
     // This synchronizes with panner's process().
     MutexLocker listenerLocker(m_listenerLock);
     m_orientation = orientation;
-    markPannersAsDirty(PannerNode::AzimuthElevationDirty);
+    markPannersAsDirty(PannerHandler::AzimuthElevationDirty);
 }
 
-void AudioListener::setUpVector(const FloatPoint3D &upVector)
+void AudioListener::setUpVector(const FloatPoint3D& upVector)
 {
     if (m_upVector == upVector)
         return;
@@ -131,10 +121,10 @@ void AudioListener::setUpVector(const FloatPoint3D &upVector)
     // This synchronizes with panner's process().
     MutexLocker listenerLocker(m_listenerLock);
     m_upVector = upVector;
-    markPannersAsDirty(PannerNode::AzimuthElevationDirty);
+    markPannersAsDirty(PannerHandler::AzimuthElevationDirty);
 }
 
-void AudioListener::setVelocity(const FloatPoint3D &velocity)
+void AudioListener::setVelocity(const FloatPoint3D& velocity)
 {
     if (m_velocity == velocity)
         return;
@@ -142,7 +132,7 @@ void AudioListener::setVelocity(const FloatPoint3D &velocity)
     // This synchronizes with panner's process().
     MutexLocker listenerLocker(m_listenerLock);
     m_velocity = velocity;
-    markPannersAsDirty(PannerNode::DopplerRateDirty);
+    markPannersAsDirty(PannerHandler::DopplerRateDirty);
 }
 
 void AudioListener::setDopplerFactor(double dopplerFactor)
@@ -153,7 +143,7 @@ void AudioListener::setDopplerFactor(double dopplerFactor)
     // This synchronizes with panner's process().
     MutexLocker listenerLocker(m_listenerLock);
     m_dopplerFactor = dopplerFactor;
-    markPannersAsDirty(PannerNode::DopplerRateDirty);
+    markPannersAsDirty(PannerHandler::DopplerRateDirty);
 }
 
 void AudioListener::setSpeedOfSound(double speedOfSound)
@@ -164,7 +154,7 @@ void AudioListener::setSpeedOfSound(double speedOfSound)
     // This synchronizes with panner's process().
     MutexLocker listenerLocker(m_listenerLock);
     m_speedOfSound = speedOfSound;
-    markPannersAsDirty(PannerNode::DopplerRateDirty);
+    markPannersAsDirty(PannerHandler::DopplerRateDirty);
 }
 
 } // namespace blink

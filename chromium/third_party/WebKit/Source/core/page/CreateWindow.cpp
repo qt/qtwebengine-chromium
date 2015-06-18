@@ -38,23 +38,34 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/WindowFeatures.h"
+#include "platform/UserGestureIndicator.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "public/platform/WebURLRequest.h"
 
 namespace blink {
 
 static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame, const FrameLoadRequest& request, const WindowFeatures& features, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer, bool& created)
 {
     ASSERT(!features.dialog || request.frameName().isEmpty());
+    ASSERT(request.resourceRequest().requestorOrigin() || openerFrame.document()->url().isEmpty());
+    ASSERT(request.resourceRequest().frameType() == WebURLRequest::FrameTypeAuxiliary);
 
     if (!request.frameName().isEmpty() && request.frameName() != "_blank" && policy == NavigationPolicyIgnore) {
-        if (LocalFrame* frame = lookupFrame.loader().findFrameForNavigation(request.frameName(), openerFrame.document())) {
-            if (request.frameName() != "_self")
-                frame->page()->focusController().setFocusedFrame(frame);
+        if (Frame* frame = lookupFrame.findFrameForNavigation(request.frameName(), openerFrame)) {
+            if (request.frameName() != "_self") {
+                if (FrameHost* host = frame->host()) {
+                    if (host == openerFrame.host())
+                        frame->page()->focusController().setFocusedFrame(frame);
+                    else
+                        host->chrome().focus();
+                }
+            }
             created = false;
-            return frame;
+            // FIXME: Make this work with RemoteFrames.
+            return frame->isLocalFrame() ? toLocalFrame(frame) : nullptr;
         }
     }
 
@@ -93,8 +104,8 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
     // specify the size of the viewport. We can only resize the window, so adjust
     // for the difference between the window size and the viewport size.
 
-    FloatRect windowRect = host->chrome().windowRect();
-    FloatSize viewportSize = host->chrome().pageRect().size();
+    IntRect windowRect = host->chrome().windowRect();
+    IntSize viewportSize = host->chrome().pageRect().size();
 
     if (features.xSet)
         windowRect.setX(features.x);
@@ -105,18 +116,18 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
     if (features.heightSet)
         windowRect.setHeight(features.height + (windowRect.height() - viewportSize.height()));
 
-    // Ensure non-NaN values, minimum size as well as being within valid screen area.
-    FloatRect newWindowRect = LocalDOMWindow::adjustWindowRect(frame, windowRect);
-
-    host->chrome().setWindowRect(newWindowRect);
+    host->chrome().setWindowRect(windowRect);
     host->chrome().show(policy);
+
+    if (openerFrame.document()->isSandboxed(SandboxPropagatesToAuxiliaryBrowsingContexts))
+        frame.loader().forceSandboxFlags(openerFrame.document()->sandboxFlags());
 
     created = true;
     return &frame;
 }
 
 LocalFrame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures& windowFeatures,
-    LocalDOMWindow& callingWindow, LocalFrame& firstFrame, LocalFrame& openerFrame, LocalDOMWindow::PrepareDialogFunction function, void* functionContext)
+    LocalDOMWindow& callingWindow, LocalFrame& firstFrame, LocalFrame& openerFrame)
 {
     LocalFrame* activeFrame = callingWindow.frame();
     ASSERT(activeFrame);
@@ -129,6 +140,8 @@ LocalFrame* createWindow(const String& urlString, const AtomicString& frameName,
     }
 
     FrameLoadRequest frameRequest(callingWindow.document(), completedURL, frameName);
+    frameRequest.resourceRequest().setFrameType(WebURLRequest::FrameTypeAuxiliary);
+    frameRequest.resourceRequest().setRequestorOrigin(SecurityOrigin::create(activeFrame->document()->url()));
 
     // Normally, FrameLoader would take care of setting the referrer for a navigation that is
     // triggered from javascript. However, creating a window goes through sufficient processing
@@ -137,6 +150,8 @@ LocalFrame* createWindow(const String& urlString, const AtomicString& frameName,
     // so we need to ensure the proper referrer is set now.
     frameRequest.resourceRequest().setHTTPReferrer(SecurityPolicy::generateReferrer(activeFrame->document()->referrerPolicy(), completedURL, activeFrame->document()->outgoingReferrer()));
 
+    bool hasUserGesture = UserGestureIndicator::processingUserGesture();
+
     // We pass the opener frame for the lookupFrame in case the active frame is different from
     // the opener frame, and the name references a frame relative to the opener frame.
     bool created;
@@ -144,26 +159,25 @@ LocalFrame* createWindow(const String& urlString, const AtomicString& frameName,
     if (!newFrame)
         return nullptr;
 
-    if (newFrame != &openerFrame && newFrame != openerFrame.tree().top())
-        newFrame->loader().forceSandboxFlags(openerFrame.document()->sandboxFlags());
-
     newFrame->loader().setOpener(&openerFrame);
 
-    if (newFrame->domWindow()->isInsecureScriptAccess(callingWindow, completedURL))
+    if (newFrame->localDOMWindow()->isInsecureScriptAccess(callingWindow, completedURL))
         return newFrame;
 
-    if (function)
-        function(newFrame->domWindow(), functionContext);
-
-    if (created)
-        newFrame->loader().load(FrameLoadRequest(callingWindow.document(), completedURL));
-    else if (!urlString.isEmpty())
-        newFrame->navigationScheduler().scheduleLocationChange(callingWindow.document(), completedURL.string(), false);
+    if (created) {
+        FrameLoadRequest request(callingWindow.document(), completedURL);
+        request.resourceRequest().setHasUserGesture(hasUserGesture);
+        newFrame->loader().load(request);
+    } else if (!urlString.isEmpty()) {
+        newFrame->navigate(*callingWindow.document(), completedURL, false);
+    }
     return newFrame;
 }
 
 void createWindowForRequest(const FrameLoadRequest& request, LocalFrame& openerFrame, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer)
 {
+    ASSERT(request.resourceRequest().requestorOrigin() || (openerFrame.document() && openerFrame.document()->url().isEmpty()));
+
     if (openerFrame.document()->pageDismissalEventBeingDispatched() != Document::NoDismissal)
         return;
 
@@ -186,7 +200,7 @@ void createWindowForRequest(const FrameLoadRequest& request, LocalFrame& openerF
         newFrame->document()->setReferrerPolicy(openerFrame.document()->referrerPolicy());
     }
     FrameLoadRequest newRequest(0, request.resourceRequest());
-    newRequest.setFormState(request.formState());
+    newRequest.setForm(request.form());
     newFrame->loader().load(newRequest);
 }
 

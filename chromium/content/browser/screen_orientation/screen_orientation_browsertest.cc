@@ -32,14 +32,6 @@ class ScreenOrientationBrowserTest : public ContentBrowserTest  {
   ScreenOrientationBrowserTest() {
   }
 
-  void SetUp() override {
-    // Painting has to happen otherwise the Resize messages will be added on top
-    // of each other without properly ack-painting which will fail and crash.
-    UseSoftwareCompositing();
-
-    ContentBrowserTest::SetUp();
-  }
-
  protected:
   void SendFakeScreenOrientation(unsigned angle, const std::string& strType) {
     RenderWidgetHost* rwh = shell()->web_contents()->GetRenderWidgetHostView()
@@ -65,9 +57,10 @@ class ScreenOrientationBrowserTest : public ContentBrowserTest  {
     params.screen_info = screen_info;
     params.new_size = gfx::Size(0, 0);
     params.physical_backing_size = gfx::Size(300, 300);
-    params.top_controls_layout_height = 0.f;
+    params.top_controls_height = 0.f;
+    params.top_controls_shrink_blink_size = false;
     params.resizer_rect = gfx::Rect();
-    params.is_fullscreen = false;
+    params.is_fullscreen_granted = false;
     rwh->Send(new ViewMsg_Resize(rwh->GetRoutingID(), params));
   }
 
@@ -114,7 +107,14 @@ class ScreenOrientationBrowserTest : public ContentBrowserTest  {
 // used Aura. It could be set as !defined(OS_MACOSX) but the rule below will
 // actually support MacOS X if and when it switches to Aura.
 #if defined(USE_AURA) || defined(OS_ANDROID)
-IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, ScreenOrientationChange) {
+// Flaky on Chrome OS: http://crbug.com/468259
+#if defined(OS_CHROMEOS)
+#define MAYBE_ScreenOrientationChange DISABLED_ScreenOrientationChange
+#else
+#define MAYBE_ScreenOrientationChange ScreenOrientationChange
+#endif
+IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest,
+                       MAYBE_ScreenOrientationChange) {
   std::string types[] = { "portrait-primary",
                           "portrait-secondary",
                           "landscape-primary",
@@ -125,9 +125,7 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, ScreenOrientationChange) {
   TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
   shell()->LoadURL(test_url);
   navigation_observer.Wait();
-#if USE_AURA
   WaitForResizeComplete(shell()->web_contents());
-#endif // USE_AURA
 
 #if defined(OS_WIN)
   // Screen Orientation is currently disabled on Windows 8.
@@ -152,16 +150,23 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, ScreenOrientationChange) {
 }
 #endif // defined(USE_AURA) || defined(OS_ANDROID)
 
-IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, WindowOrientationChange) {
+// Flaky on Chrome OS: http://crbug.com/468259
+#if defined(OS_CHROMEOS)
+#define MAYBE_WindowOrientationChange DISABLED_WindowOrientationChange
+#else
+#define MAYBE_WindowOrientationChange WindowOrientationChange
+#endif
+IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest,
+                       MAYBE_WindowOrientationChange) {
   GURL test_url = GetTestUrl("screen_orientation",
                              "screen_orientation_windoworientationchange.html");
 
   TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
   shell()->LoadURL(test_url);
   navigation_observer.Wait();
-#if USE_AURA
+#if USE_AURA || defined(OS_ANDROID)
   WaitForResizeComplete(shell()->web_contents());
-#endif // USE_AURA
+#endif  // USE_AURA || defined(OS_ANDROID)
 
   if (!WindowOrientationSupported())
     return;
@@ -178,8 +183,10 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, WindowOrientationChange) {
   }
 }
 
+// LockSmoke test seems to have become flaky on all non-ChromeOS platforms.
+// The cause is unfortunately unknown. See https://crbug.com/448876
 // Chromium Android does not support fullscreen
-IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, LockSmoke) {
+IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, DISABLED_LockSmoke) {
   GURL test_url = GetTestUrl("screen_orientation",
                              "screen_orientation_lock_smoke.html");
 
@@ -196,9 +203,9 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, LockSmoke) {
 #endif // defined(OS_WIN)
 
   navigation_observer.Wait();
-#if USE_AURA
+#if USE_AURA || defined(OS_ANDROID)
   WaitForResizeComplete(shell()->web_contents());
-#endif // USE_AURA
+#endif  // USE_AURA || defined(OS_ANDROID)
 
   std::string expected =
 #if defined(OS_ANDROID)
@@ -235,5 +242,31 @@ IN_PROC_BROWSER_TEST_F(ScreenOrientationBrowserTest, CrashTest_UseAfterDetach) {
   // This is a success if the renderer process did not crash, thus, we end up
   // here.
 }
+
+#if defined(OS_ANDROID)
+class ScreenOrientationLockDisabledBrowserTest : public ContentBrowserTest  {
+ public:
+  ScreenOrientationLockDisabledBrowserTest() {}
+  ~ScreenOrientationLockDisabledBrowserTest() override {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(switches::kDisableScreenOrientationLock);
+  }
+};
+
+// Check that when --disable-screen-orientation-lock is passed to the command
+// line, screen.orientation.lock() correctly reports to not be supported.
+IN_PROC_BROWSER_TEST_F(ScreenOrientationLockDisabledBrowserTest, NotSupported) {
+  GURL test_url = GetTestUrl("screen_orientation",
+                             "screen_orientation_lock_disabled.html");
+
+  TestNavigationObserver navigation_observer(shell()->web_contents(), 2);
+  shell()->LoadURL(test_url);
+  navigation_observer.Wait();
+
+  EXPECT_EQ("NotSupportedError",
+            shell()->web_contents()->GetLastCommittedURL().ref());
+}
+#endif // defined(OS_ANDROID)
 
 } // namespace content

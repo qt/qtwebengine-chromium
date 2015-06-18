@@ -62,6 +62,7 @@
 enum KeyType {
     KEY_NONE,
     KEY_AES_128,
+    KEY_SAMPLE_AES
 };
 
 struct segment {
@@ -193,9 +194,9 @@ static void free_segment_list(struct playlist *pls)
 {
     int i;
     for (i = 0; i < pls->n_segments; i++) {
-        av_free(pls->segments[i]->key);
-        av_free(pls->segments[i]->url);
-        av_free(pls->segments[i]);
+        av_freep(&pls->segments[i]->key);
+        av_freep(&pls->segments[i]->url);
+        av_freep(&pls->segments[i]);
     }
     av_freep(&pls->segments);
     pls->n_segments = 0;
@@ -212,7 +213,7 @@ static void free_playlist_list(HLSContext *c)
         av_dict_free(&pls->id3_initial);
         ff_id3v2_free_extra_meta(&pls->id3_deferred_extra);
         av_free_packet(&pls->pkt);
-        av_free(pls->pb.buffer);
+        av_freep(&pls->pb.buffer);
         if (pls->input)
             ffurl_close(pls->input);
         if (pls->ctx) {
@@ -243,7 +244,7 @@ static void free_rendition_list(HLSContext *c)
 {
     int i;
     for (i = 0; i < c->n_renditions; i++)
-        av_free(c->renditions[i]);
+        av_freep(&c->renditions[i]);
     av_freep(&c->renditions);
     c->n_renditions = 0;
 }
@@ -329,7 +330,7 @@ static void handle_variant_args(struct variant_info *info, const char *key,
 
 struct key_info {
      char uri[MAX_URL_SIZE];
-     char method[10];
+     char method[11];
      char iv[35];
 };
 
@@ -556,6 +557,8 @@ static int parse_playlist(HLSContext *c, const char *url,
             has_iv = 0;
             if (!strcmp(info.method, "AES-128"))
                 key_type = KEY_AES_128;
+            if (!strcmp(info.method, "SAMPLE-AES"))
+                key_type = KEY_SAMPLE_AES;
             if (!strncmp(info.iv, "0x", 2) || !strncmp(info.iv, "0X", 2)) {
                 ff_hex_to_data(iv, info.iv + 2);
                 has_iv = 1;
@@ -666,7 +669,7 @@ static int parse_playlist(HLSContext *c, const char *url,
         }
     }
     if (pls)
-        pls->last_load_time = av_gettime();
+        pls->last_load_time = av_gettime_relative();
 
 fail:
     av_free(new_url);
@@ -900,6 +903,14 @@ static void intercept_id3(struct playlist *pls, uint8_t *buf,
         pls->is_id3_timestamped = (pls->id3_mpegts_timestamp != AV_NOPTS_VALUE);
 }
 
+static void update_options(char **dest, const char *name, void *src)
+{
+    av_freep(dest);
+    av_opt_get(src, name, 0, (uint8_t**)dest);
+    if (*dest && !strlen(*dest))
+        av_freep(dest);
+}
+
 static int open_input(HLSContext *c, struct playlist *pls)
 {
     AVDictionary *opts = NULL;
@@ -941,6 +952,8 @@ static int open_input(HLSContext *c, struct playlist *pls)
                     av_log(NULL, AV_LOG_ERROR, "Unable to read key file %s\n",
                            seg->key);
                 }
+                update_options(&c->cookies, "cookies", uc->priv_data);
+                av_dict_set(&opts, "cookies", c->cookies, 0);
                 ffurl_close(uc);
             } else {
                 av_log(NULL, AV_LOG_ERROR, "Unable to open key file %s\n",
@@ -967,6 +980,10 @@ static int open_input(HLSContext *c, struct playlist *pls)
             goto cleanup;
         }
         ret = 0;
+    } else if (seg->key_type == KEY_SAMPLE_AES) {
+        av_log(pls->parent, AV_LOG_ERROR,
+               "SAMPLE-AES encryption is not supported yet\n");
+        ret = AVERROR_PATCHWELCOME;
     }
     else
       ret = AVERROR(ENOSYS);
@@ -1035,7 +1052,7 @@ restart:
 
 reload:
         if (!v->finished &&
-            av_gettime() - v->last_load_time >= reload_interval) {
+            av_gettime_relative() - v->last_load_time >= reload_interval) {
             if ((ret = parse_playlist(c, v->url, v, NULL)) < 0) {
                 av_log(v->parent, AV_LOG_WARNING, "Failed to reload playlist %d\n",
                        v->index);
@@ -1055,7 +1072,7 @@ reload:
         if (v->cur_seq_no >= v->start_seq_no + v->n_segments) {
             if (v->finished)
                 return AVERROR_EOF;
-            while (av_gettime() - v->last_load_time < reload_interval) {
+            while (av_gettime_relative() - v->last_load_time < reload_interval) {
                 if (ff_check_interrupt(c->interrupt_callback))
                     return AVERROR_EXIT;
                 av_usleep(100*1000);
@@ -1198,7 +1215,7 @@ static int select_cur_seq_no(HLSContext *c, struct playlist *pls)
     int seq_no;
 
     if (!pls->finished && !c->first_packet &&
-        av_gettime() - pls->last_load_time >= default_reload_interval(pls))
+        av_gettime_relative() - pls->last_load_time >= default_reload_interval(pls))
         /* reload the playlist since it was suspended */
         parse_playlist(c, pls->url, pls, NULL);
 
@@ -1245,22 +1262,13 @@ static int hls_read_header(AVFormatContext *s)
     // if the URL context is good, read important options we must broker later
     if (u && u->prot->priv_data_class) {
         // get the previous user agent & set back to null if string size is zero
-        av_freep(&c->user_agent);
-        av_opt_get(u->priv_data, "user-agent", 0, (uint8_t**)&(c->user_agent));
-        if (c->user_agent && !strlen(c->user_agent))
-            av_freep(&c->user_agent);
+        update_options(&c->user_agent, "user-agent", u->priv_data);
 
         // get the previous cookies & set back to null if string size is zero
-        av_freep(&c->cookies);
-        av_opt_get(u->priv_data, "cookies", 0, (uint8_t**)&(c->cookies));
-        if (c->cookies && !strlen(c->cookies))
-            av_freep(&c->cookies);
+        update_options(&c->cookies, "cookies", u->priv_data);
 
         // get the previous headers & set back to null if string size is zero
-        av_freep(&c->headers);
-        av_opt_get(u->priv_data, "headers", 0, (uint8_t**)&(c->headers));
-        if (c->headers && !strlen(c->headers))
-            av_freep(&c->headers);
+        update_options(&c->headers, "headers", u->priv_data);
     }
 
     if ((ret = parse_playlist(c, s->filename, NULL, s->pb)) < 0)
@@ -1313,13 +1321,13 @@ static int hls_read_header(AVFormatContext *s)
         struct playlist *pls = c->playlists[i];
         AVInputFormat *in_fmt = NULL;
 
-        if (pls->n_segments == 0)
-            continue;
-
         if (!(pls->ctx = avformat_alloc_context())) {
             ret = AVERROR(ENOMEM);
             goto fail;
         }
+
+        if (pls->n_segments == 0)
+            continue;
 
         pls->index  = i;
         pls->needed = 1;
@@ -1344,6 +1352,10 @@ static int hls_read_header(AVFormatContext *s)
         }
         pls->ctx->pb       = &pls->pb;
         pls->stream_offset = stream_offset;
+
+        if ((ret = ff_copy_whitelists(pls->ctx, s)) < 0)
+            goto fail;
+
         ret = avformat_open_input(&pls->ctx, pls->segments[0]->url, in_fmt, NULL);
         if (ret < 0)
             goto fail;

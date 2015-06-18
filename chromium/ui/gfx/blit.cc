@@ -7,9 +7,9 @@
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "skia/ext/platform_canvas.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 #if defined(USE_CAIRO)
 #if defined(OS_OPENBSD)
@@ -20,6 +20,12 @@
 #endif
 
 #if defined(OS_MACOSX)
+#if defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#else
+#include <ApplicationServices/ApplicationServices.h>
+#endif
+
 #include "base/mac/scoped_cftyperef.h"
 #endif
 

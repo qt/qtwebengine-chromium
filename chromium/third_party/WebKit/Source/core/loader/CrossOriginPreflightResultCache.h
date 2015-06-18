@@ -40,7 +40,7 @@ namespace blink {
     class ResourceResponse;
 
     class CrossOriginPreflightResultCacheItem {
-        WTF_MAKE_NONCOPYABLE(CrossOriginPreflightResultCacheItem); WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_NONCOPYABLE(CrossOriginPreflightResultCacheItem); WTF_MAKE_FAST_ALLOCATED(CrossOriginPreflightResultCacheItem);
     public:
         CrossOriginPreflightResultCacheItem(StoredCredentials credentials)
             : m_absoluteExpiryTime(0)
@@ -66,7 +66,7 @@ namespace blink {
     };
 
     class CrossOriginPreflightResultCache {
-        WTF_MAKE_NONCOPYABLE(CrossOriginPreflightResultCache); WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_NONCOPYABLE(CrossOriginPreflightResultCache); WTF_MAKE_FAST_ALLOCATED(CrossOriginPreflightResultCache);
     public:
         static CrossOriginPreflightResultCache& shared();
 
@@ -76,7 +76,7 @@ namespace blink {
     private:
         CrossOriginPreflightResultCache() { }
 
-        typedef HashMap<std::pair<String, KURL>, OwnPtr<CrossOriginPreflightResultCacheItem> > CrossOriginPreflightResultHashMap;
+        typedef HashMap<std::pair<String, KURL>, OwnPtr<CrossOriginPreflightResultCacheItem>> CrossOriginPreflightResultHashMap;
 
         CrossOriginPreflightResultHashMap m_preflightHashMap;
     };

@@ -28,6 +28,7 @@
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFitToViewBox.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -41,6 +42,7 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGMarkerUn
 class SVGMarkerElement final : public SVGElement,
                                public SVGFitToViewBox {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGMarkerElement);
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -60,7 +62,7 @@ public:
     AffineTransform viewBoxToViewTransform(float viewWidth, float viewHeight) const;
 
     void setOrientToAuto();
-    void setOrientToAngle(PassRefPtr<SVGAngleTearOff>);
+    void setOrientToAngle(PassRefPtrWillBeRawPtr<SVGAngleTearOff>);
 
     SVGAnimatedLength* refX() const { return m_refX.get(); }
     SVGAnimatedLength* refY() const { return m_refY.get(); }
@@ -70,27 +72,27 @@ public:
     SVGAnimatedAngle* orientAngle() { return m_orientAngle.get(); }
     SVGAnimatedEnumeration<SVGMarkerOrientType>* orientType() { return m_orientAngle->orientType(); }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGMarkerElement(Document&);
 
     virtual bool needsPendingResourceHandling() const override { return false; }
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override { return true; }
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return true; }
 
     virtual bool selfHasRelativeLengths() const override;
 
-    RefPtr<SVGAnimatedLength> m_refX;
-    RefPtr<SVGAnimatedLength> m_refY;
-    RefPtr<SVGAnimatedLength> m_markerWidth;
-    RefPtr<SVGAnimatedLength> m_markerHeight;
-    RefPtr<SVGAnimatedAngle> m_orientAngle;
-    RefPtr<SVGAnimatedEnumeration<SVGMarkerUnitsType> > m_markerUnits;
+    RefPtrWillBeMember<SVGAnimatedLength> m_refX;
+    RefPtrWillBeMember<SVGAnimatedLength> m_refY;
+    RefPtrWillBeMember<SVGAnimatedLength> m_markerWidth;
+    RefPtrWillBeMember<SVGAnimatedLength> m_markerHeight;
+    RefPtrWillBeMember<SVGAnimatedAngle> m_orientAngle;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGMarkerUnitsType>> m_markerUnits;
 };
 
 } // namespace blink

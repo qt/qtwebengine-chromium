@@ -129,19 +129,21 @@ class PortTestCase(unittest.TestCase):
                             test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
         finally:
             out, err, logs = oc.restore_output()
-            self.assertIn('pretty patches', logs)        # And, hereere we should get warnings about both.
+            self.assertIn('pretty patches', logs)        # And, here we should get warnings about both.
             self.assertIn('build requirements', logs)
+
+    def test_default_batch_size(self):
+        port = self.make_port()
+
+        # Test that we set a finite batch size for sanitizer builds.
+        port._options.enable_sanitizer = True
+        sanitized_batch_size = port.default_batch_size()
+        self.assertIsNotNone(sanitized_batch_size)
 
     def test_default_child_processes(self):
         port = self.make_port()
         num_workers = port.default_child_processes()
         self.assertGreaterEqual(num_workers, 1)
-
-        # Test that we reduce the number of workers for sanitizer builds.
-        port._options.enable_sanitizer = True
-        port.host.executive.cpu_count = lambda: 8
-        num_sanitized_workers = port.default_child_processes()
-        self.assertLess(num_sanitized_workers, 8)
 
     def test_default_max_locked_shards(self):
         port = self.make_port()
@@ -161,7 +163,7 @@ class PortTestCase(unittest.TestCase):
         port = self.make_port()
         self.assertTrue(len(port.driver_cmd_line()))
 
-        options = MockOptions(additional_drt_flag=['--foo=bar', '--foo=baz'])
+        options = MockOptions(additional_driver_flag=['--foo=bar', '--foo=baz'])
         port = self.make_port(options=options)
         cmd_line = port.driver_cmd_line()
         self.assertTrue('--foo=bar' in cmd_line)
@@ -433,11 +435,11 @@ class PortTestCase(unittest.TestCase):
         port = TestWebKitPort()
         self._assert_config_file_for_platform(port, 'cygwin', 'cygwin-httpd.conf')
 
-        self._assert_config_file_for_platform(port, 'linux2', 'apache2-httpd.conf')
-        self._assert_config_file_for_platform(port, 'linux3', 'apache2-httpd.conf')
+        port._apache_version = lambda: '2.2'
+        self._assert_config_file_for_platform(port, 'linux2', 'apache2-httpd-2.2.conf')
+        self._assert_config_file_for_platform(port, 'linux3', 'apache2-httpd-2.2.conf')
 
         port._is_redhat_based = lambda: True
-        port._apache_version = lambda: '2.2'
         self._assert_config_file_for_platform(port, 'linux2', 'fedora-httpd-2.2.conf')
 
         port = TestWebKitPort()
@@ -445,9 +447,9 @@ class PortTestCase(unittest.TestCase):
         port._apache_version = lambda: '2.2'
         self._assert_config_file_for_platform(port, 'linux2', 'debian-httpd-2.2.conf')
 
-        self._assert_config_file_for_platform(port, 'mac', 'apache2-httpd.conf')
-        self._assert_config_file_for_platform(port, 'win32', 'apache2-httpd.conf')  # win32 isn't a supported sys.platform.  AppleWin/WinCairo/WinCE ports all use cygwin.
-        self._assert_config_file_for_platform(port, 'barf', 'apache2-httpd.conf')
+        self._assert_config_file_for_platform(port, 'mac', 'apache2-httpd-2.2.conf')
+        self._assert_config_file_for_platform(port, 'win32', 'apache2-httpd-2.2.conf')  # win32 isn't a supported sys.platform.  AppleWin/WinCairo/WinCE ports all use cygwin.
+        self._assert_config_file_for_platform(port, 'barf', 'apache2-httpd-2.2.conf')
 
     def test_path_to_apache_config_file(self):
         port = TestWebKitPort()

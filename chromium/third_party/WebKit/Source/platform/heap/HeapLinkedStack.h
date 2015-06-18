@@ -37,7 +37,7 @@
 namespace blink {
 
 template <typename T>
-class HeapLinkedStack : public GarbageCollected<HeapLinkedStack<T> > {
+class HeapLinkedStack : public GarbageCollected<HeapLinkedStack<T>> {
 public:
     HeapLinkedStack() : m_size(0) { }
 
@@ -49,7 +49,7 @@ public:
 
     size_t size();
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         for (Node* current = m_head; current; current = current->m_next)
             visitor->trace(current);
@@ -60,7 +60,7 @@ private:
     public:
         Node(const T&, Node* next);
 
-        void trace(Visitor* visitor) { visitor->trace(m_data); }
+        DEFINE_INLINE_TRACE() { visitor->trace(m_data); }
 
         T m_data;
         Member<Node> m_next;
@@ -110,6 +110,12 @@ inline size_t HeapLinkedStack<T>::size()
     return m_size;
 }
 
-}
+template<typename T>
+class TraceEagerlyTrait<HeapLinkedStack<T>> {
+public:
+    static const bool value = TraceEagerlyTrait<T>::value;
+};
+
+} // namespace blink
 
 #endif // HeapLinkedStack_h

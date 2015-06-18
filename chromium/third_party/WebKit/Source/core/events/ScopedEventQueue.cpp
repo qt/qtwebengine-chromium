@@ -78,9 +78,9 @@ void ScopedEventQueue::dispatchAllEvents()
 
 void ScopedEventQueue::dispatchEvent(PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator) const
 {
-    ASSERT(mediator->event()->target());
-    Node* node = mediator->event()->target()->toNode();
-    EventDispatcher::dispatchEvent(node, mediator);
+    ASSERT(mediator->event().target());
+    Node* node = mediator->event().target()->toNode();
+    EventDispatcher::dispatchEvent(*node, mediator);
 }
 
 ScopedEventQueue* ScopedEventQueue::instance()

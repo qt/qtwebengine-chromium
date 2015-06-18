@@ -43,14 +43,53 @@
         'ax_tree_update.h',
         'ax_view_state.cc',
         'ax_view_state.h',
+        'platform/atk_util_auralinux.cc',
+        'platform/atk_util_auralinux.h',
         'platform/ax_platform_node.cc',
         'platform/ax_platform_node.h',
+        'platform/ax_platform_node_auralinux.cc',
+        'platform/ax_platform_node_auralinux.h',
         'platform/ax_platform_node_base.cc',
         'platform/ax_platform_node_base.h',
         'platform/ax_platform_node_delegate.h',
         'platform/ax_platform_node_mac.h',
         'platform/ax_platform_node_mac.mm',
-      ]
+        'platform/ax_platform_node_win.h',
+        'platform/ax_platform_node_win.cc',
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'dependencies': [
+            '../../third_party/iaccessible2/iaccessible2.gyp:iaccessible2'
+          ],
+        }],
+        ['OS=="linux" and chromeos==0 and use_x11==1', {
+          'dependencies': [
+            '../../build/linux/system.gyp:atk',
+            '../../build/linux/system.gyp:gconf',
+            '../../build/linux/system.gyp:glib',
+          ],
+          'variables': {
+            'clang_warning_flags': [
+              # glib uses the pre-c++11 typedef-as-static_assert hack.
+              '-Wno-unused-local-typedefs',
+            ],
+          },
+        }],
+        ['OS!="linux" or chromeos==1 or use_x11==0', {
+          'sources!': [
+            'platform/ax_platform_node_auralinux.cc',
+            'platform/ax_platform_node_auralinux.h',
+            'platform/atk_util_auralinux.cc',
+            'platform/atk_util_auralinux.h',
+          ],
+        }],
+        ['OS=="android"', {
+          'dependencies': [
+            'ui_accessibility_java'
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'accessibility_test_support',
@@ -60,8 +99,10 @@
         'accessibility'
       ],
       'sources': [
+        'platform/test_ax_node_wrapper.cc',
+        'platform/test_ax_node_wrapper.h',
         'tree_generator.cc',
-        'tree_generator.h'
+        'tree_generator.h',
       ]
     },
     {
@@ -79,9 +120,18 @@
       ],
       'sources': [
         'ax_generated_tree_unittest.cc',
+        'ax_text_utils_unittest.cc',
         'ax_tree_serializer_unittest.cc',
         'ax_tree_unittest.cc',
-      ]
+        'platform/ax_platform_node_win_unittest.cc'
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'dependencies': [
+            '../../third_party/iaccessible2/iaccessible2.gyp:iaccessible2'
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'ax_gen',
@@ -111,5 +161,55 @@
         'root_namespace': 'ui',
       },
     },
+  ],
+  'conditions': [
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'accessibility_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'accessibility_unittests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            'accessibility_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
+          ],
+        },
+      ],
+    }],
+    ['OS == "android"', {
+      'targets': [
+        {
+          'target_name': 'ui_accessibility_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': '<(DEPTH)/build/android/empty',
+            'has_java_resources': 0,
+          },
+          'dependencies': [
+            'ax_enumerations_java',
+          ],
+          'includes': [ '../../build/java.gypi' ],
+        },
+        {
+          'target_name': 'ax_enumerations_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'ax_enums.idl',
+          },
+          'includes': [ '../../build/android/java_cpp_enum.gypi' ],
+        },
+      ],
+    }],
   ],
 }

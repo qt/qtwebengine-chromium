@@ -2,6 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+declare_args() {
+  # Path to the directory containing the VC binaries for the right
+  # combination of host and target architectures. Currently only the
+  # 64-bit host toolchain is supported, with either 32-bit or 64-bit targets.
+  # If vc_bin_dir is not specified on the command line (and it normally
+  # isn't), we will dynamically determine the right value to use at runtime.
+  vc_bin_dir = ""
+}
+
 import("//build/config/win/visual_studio_version.gni")
 import("//build/toolchain/goma.gni")
 
@@ -13,18 +22,29 @@ assert(is_win)
 # Its arguments are the VS path and the compiler wrapper tool. It will write
 # "environment.x86" and "environment.x64" to the build directory and return a
 # list to us.
-gyp_win_tool_path = rebase_path("//tools/gyp/pylib/gyp/win_tool.py",
-                                root_build_dir)
-exec_script("setup_toolchain.py",
-            [ visual_studio_path, gyp_win_tool_path, windows_sdk_path ])
+gyp_win_tool_path =
+    rebase_path("//tools/gyp/pylib/gyp/win_tool.py", root_build_dir)
+
+toolchain_data = exec_script("setup_toolchain.py",
+                             [
+                               visual_studio_path,
+                               gyp_win_tool_path,
+                               windows_sdk_path,
+                               visual_studio_runtime_dirs,
+                               current_cpu,
+                             ],
+                             "scope")
+
+if (vc_bin_dir == "") {
+  vc_bin_dir = toolchain_data.vc_bin_dir
+}
 
 # This value will be inherited in the toolchain below.
 concurrent_links = exec_script("../get_concurrent_links.py", [], "value")
 
 # Parameters:
-#  cpu_arch: cpu_arch to pass as a build arg
+#  current_cpu: current_cpu to pass as a build arg
 #  environment: File name of environment file.
-#  force_win64 (optional): value for this build arg.
 template("msvc_toolchain") {
   if (defined(invoker.concurrent_links)) {
     concurrent_links = invoker.concurrent_links
@@ -32,15 +52,36 @@ template("msvc_toolchain") {
 
   env = invoker.environment
 
+  if (is_debug) {
+    configuration = "Debug"
+  } else {
+    configuration = "Release"
+  }
+  exec_script("../../vs_toolchain.py",
+              [
+                "copy_dlls",
+                rebase_path(root_build_dir),
+                configuration,
+                invoker.current_cpu,
+              ])
+
+  if (use_goma) {
+    goma_prefix = "$goma_dir/gomacc.exe "
+  } else {
+    goma_prefix = ""
+  }
+
+  cl = "${goma_prefix}\"${vc_bin_dir}/cl.exe\""
+
   toolchain(target_name) {
     # Make these apply to all tools below.
     lib_switch = ""
-    lib_dir_switch="/LIBPATH:"
+    lib_dir_switch = "/LIBPATH:"
 
     tool("cc") {
       rspfile = "{{output}}.rsp"
       pdbname = "{{target_out_dir}}/{{target_output_name}}_c.pdb"
-      command = "ninja -t msvc -e $env -- cl.exe /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd$pdbname"
+      command = "ninja -t msvc -e $env -- $cl /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd$pdbname"
       depsformat = "msvc"
       description = "CC {{output}}"
       outputs = [
@@ -51,15 +92,16 @@ template("msvc_toolchain") {
 
     tool("cxx") {
       rspfile = "{{output}}.rsp"
+
       # The PDB name needs to be different between C and C++ compiled files.
       pdbname = "{{target_out_dir}}/{{target_output_name}}_cc.pdb"
-      command = "ninja -t msvc -e $env -- cl.exe /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd$pdbname"
+      command = "ninja -t msvc -e $env -- $cl /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd$pdbname"
       depsformat = "msvc"
       description = "CXX {{output}}"
       outputs = [
         "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj",
       ]
-      rspfile_content = "{{defines}} {{include_dirs}} {{cflags}} {{cflags_c}}"
+      rspfile_content = "{{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}}"
     }
 
     tool("rc") {
@@ -90,6 +132,7 @@ template("msvc_toolchain") {
         "{{target_out_dir}}/{{target_output_name}}.lib",
       ]
       default_output_extension = ".lib"
+
       # The use of inputs_newline is to work around a fixed per-line buffer
       # size in the linker.
       rspfile_content = "{{inputs_newline}}"
@@ -97,7 +140,8 @@ template("msvc_toolchain") {
 
     tool("solink") {
       dllname = "{{root_out_dir}}/{{target_output_name}}{{output_extension}}"  # e.g. foo.dll
-      libname = "{{root_out_dir}}/{{target_output_name}}{{output_extension}}.lib"  # e.g. foo.dll.lib
+      libname =
+          "{{root_out_dir}}/{{target_output_name}}{{output_extension}}.lib"  # e.g. foo.dll.lib
       rspfile = "${dllname}.rsp"
 
       link_command = "$python_path gyp-win-tool link-wrapper $env False link.exe /nologo /IMPLIB:$libname /DLL /OUT:$dllname /PDB:${dllname}.pdb @$rspfile"
@@ -115,6 +159,7 @@ template("msvc_toolchain") {
       ]
       link_output = libname
       depend_output = libname
+
       # The use of inputs_newline is to work around a fixed per-line buffer
       # size in the linker.
       rspfile_content = "{{libs}} {{solibs}} {{inputs_newline}} {{ldflags}}"
@@ -135,6 +180,7 @@ template("msvc_toolchain") {
       outputs = [
         "{{root_out_dir}}/{{target_output_name}}{{output_extension}}",
       ]
+
       # The use of inputs_newline is to work around a fixed per-line buffer
       # size in the linker.
       rspfile_content = "{{inputs_newline}} {{libs}} {{solibs}} {{ldflags}}"
@@ -146,31 +192,35 @@ template("msvc_toolchain") {
     }
 
     tool("copy") {
-      command =  "$python_path gyp-win-tool recursive-mirror {{source}} {{output}}"
+      command =
+          "$python_path gyp-win-tool recursive-mirror {{source}} {{output}}"
       description = "COPY {{source}} {{output}}"
     }
 
     # When invoking this toolchain not as the default one, these args will be
     # passed to the build. They are ignored when this is the default toolchain.
     toolchain_args() {
-      cpu_arch = invoker.cpu_arch
-
-      # Normally the build config resets the CPU architecture to 32-bits. Setting
-      # this flag overrides that behavior.
-      if (defined(invoker.force_win64)) {
-        force_win64 = invoker.force_win64
-      }
+      current_cpu = invoker.current_cpu
     }
   }
 }
 
-msvc_toolchain("32") {
-  environment = "environment.x86"
-  cpu_arch = "x64"
+# TODO(dpranke): Declare both toolchains all of the time when we
+# get it sorted out how we want to support them both in a single build.
+# Right now only one of these can be enabled at a time because the
+# runtime libraries get copied to root_build_dir and would collide.
+if (current_cpu == "x86") {
+  msvc_toolchain("32") {
+    environment = "environment.x86"
+
+    current_cpu = "x86"
+  }
 }
 
-msvc_toolchain("64") {
-  environment = "environment.x64"
-  cpu_arch = "x64"
-  force_win64 = true
+if (current_cpu == "x64") {
+  msvc_toolchain("64") {
+    environment = "environment.x64"
+
+    current_cpu = "x64"
+  }
 }

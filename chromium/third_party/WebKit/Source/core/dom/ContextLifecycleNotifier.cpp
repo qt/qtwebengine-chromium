@@ -28,100 +28,107 @@
 #include "config.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 
-#include "core/dom/ExecutionContext.h"
+#include "core/dom/ActiveDOMObject.h"
 #include "wtf/TemporaryChange.h"
 
 namespace blink {
 
-ContextLifecycleNotifier::ContextLifecycleNotifier(ExecutionContext* context)
-    : LifecycleNotifier<ExecutionContext>(context)
-{
-}
-
-ContextLifecycleNotifier::~ContextLifecycleNotifier()
-{
-}
-
-void ContextLifecycleNotifier::addObserver(ContextLifecycleNotifier::Observer* observer)
-{
-    LifecycleNotifier<ExecutionContext>::addObserver(observer);
-
-    RELEASE_ASSERT(m_iterating != IteratingOverContextObservers);
-    if (observer->observerType() == Observer::ActiveDOMObjectType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverActiveDOMObjects);
-        m_activeDOMObjects.add(static_cast<ActiveDOMObject*>(observer));
-    }
-}
-
-void ContextLifecycleNotifier::removeObserver(ContextLifecycleNotifier::Observer* observer)
-{
-    LifecycleNotifier<ExecutionContext>::removeObserver(observer);
-
-    RELEASE_ASSERT(m_iterating != IteratingOverContextObservers);
-    if (observer->observerType() == Observer::ActiveDOMObjectType) {
-        m_activeDOMObjects.remove(static_cast<ActiveDOMObject*>(observer));
-    }
-}
-
 void ContextLifecycleNotifier::notifyResumingActiveDOMObjects()
 {
-    TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
-    Vector<ActiveDOMObject*> snapshotOfActiveDOMObjects;
-    copyToVector(m_activeDOMObjects, snapshotOfActiveDOMObjects);
-    for (ActiveDOMObject* obj : snapshotOfActiveDOMObjects) {
-        // FIXME: Oilpan: At the moment, it's possible that the ActiveDOMObject is destructed
-        // during the iteration. Once we move ActiveDOMObject to the heap and
-        // make m_activeDOMObjects a HeapHashSet<WeakMember<ActiveDOMObject>>,
-        // it's no longer possible that ActiveDOMObject is destructed during the iteration,
-        // so we can remove the hack (i.e., we can just iterate m_activeDOMObjects without
-        // taking a snapshot). For more details, see https://codereview.chromium.org/247253002/.
-        if (m_activeDOMObjects.contains(obj)) {
-            ASSERT(obj->executionContext() == context());
-            ASSERT(obj->suspendIfNeededCalled());
-            obj->resume();
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    Vector<ContextLifecycleObserver*> snapshotOfObservers;
+    copyToVector(m_observers, snapshotOfObservers);
+    for (ContextLifecycleObserver* observer : snapshotOfObservers) {
+        // FIXME: Oilpan: At the moment, it's possible that a ActiveDOMObject
+        // observer is destructed while iterating. Once we enable Oilpan by default
+        // for all LifecycleObserver<T>s, we can remove the hack by making m_observers
+        // a HeapHashSet<WeakMember<LifecycleObserver<T>>>.
+        // (i.e., we can just iterate m_observers without taking a snapshot).
+        // For more details, see https://codereview.chromium.org/247253002/.
+        if (m_observers.contains(observer)) {
+            if (observer->observerType() != ContextLifecycleObserver::ActiveDOMObjectType)
+                continue;
+            ActiveDOMObject* activeDOMObject = static_cast<ActiveDOMObject*>(observer);
+            ASSERT(activeDOMObject->executionContext() == context());
+            ASSERT(activeDOMObject->suspendIfNeededCalled());
+            activeDOMObject->resume();
         }
     }
 }
 
 void ContextLifecycleNotifier::notifySuspendingActiveDOMObjects()
 {
-    TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
-    Vector<ActiveDOMObject*> snapshotOfActiveDOMObjects;
-    copyToVector(m_activeDOMObjects, snapshotOfActiveDOMObjects);
-    for (ActiveDOMObject* obj : snapshotOfActiveDOMObjects) {
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    Vector<ContextLifecycleObserver*> snapshotOfObservers;
+    copyToVector(m_observers, snapshotOfObservers);
+    for (ContextLifecycleObserver* observer : snapshotOfObservers) {
         // It's possible that the ActiveDOMObject is already destructed.
         // See a FIXME above.
-        if (m_activeDOMObjects.contains(obj)) {
-            ASSERT(obj->executionContext() == context());
-            ASSERT(obj->suspendIfNeededCalled());
-            obj->suspend();
+        if (m_observers.contains(observer)) {
+            if (observer->observerType() != ContextLifecycleObserver::ActiveDOMObjectType)
+                continue;
+            ActiveDOMObject* activeDOMObject = static_cast<ActiveDOMObject*>(observer);
+            ASSERT(activeDOMObject->executionContext() == context());
+            ASSERT(activeDOMObject->suspendIfNeededCalled());
+            activeDOMObject->suspend();
         }
     }
 }
 
 void ContextLifecycleNotifier::notifyStoppingActiveDOMObjects()
 {
-    TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverActiveDOMObjects);
-    Vector<ActiveDOMObject*> snapshotOfActiveDOMObjects;
-    copyToVector(m_activeDOMObjects, snapshotOfActiveDOMObjects);
-    for (ActiveDOMObject* obj : snapshotOfActiveDOMObjects) {
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    Vector<ContextLifecycleObserver*> snapshotOfObservers;
+    copyToVector(m_observers, snapshotOfObservers);
+    for (ContextLifecycleObserver* observer : snapshotOfObservers) {
         // It's possible that the ActiveDOMObject is already destructed.
         // See a FIXME above.
-        if (m_activeDOMObjects.contains(obj)) {
-            ASSERT(obj->executionContext() == context());
-            ASSERT(obj->suspendIfNeededCalled());
-            obj->stop();
+        if (m_observers.contains(observer)) {
+            if (observer->observerType() != ContextLifecycleObserver::ActiveDOMObjectType)
+                continue;
+            ActiveDOMObject* activeDOMObject = static_cast<ActiveDOMObject*>(observer);
+            ASSERT(activeDOMObject->executionContext() == context());
+            ASSERT(activeDOMObject->suspendIfNeededCalled());
+            activeDOMObject->stop();
         }
     }
 }
 
+unsigned ContextLifecycleNotifier::activeDOMObjectCount() const
+{
+    unsigned activeDOMObjects = 0;
+    for (ContextLifecycleObserver* observer : m_observers) {
+        if (observer->observerType() != ContextLifecycleObserver::ActiveDOMObjectType)
+            continue;
+        activeDOMObjects++;
+    }
+    return activeDOMObjects;
+}
+
 bool ContextLifecycleNotifier::hasPendingActivity() const
 {
-    for (ActiveDOMObject* obj : m_activeDOMObjects) {
-        if (obj->hasPendingActivity())
+    for (ContextLifecycleObserver* observer : m_observers) {
+        if (observer->observerType() != ContextLifecycleObserver::ActiveDOMObjectType)
+            continue;
+        ActiveDOMObject* activeDOMObject = static_cast<ActiveDOMObject*>(observer);
+        if (activeDOMObject->hasPendingActivity())
             return true;
     }
     return false;
 }
+
+#if ENABLE(ASSERT)
+bool ContextLifecycleNotifier::contains(ActiveDOMObject* object) const
+{
+    for (ContextLifecycleObserver* observer : m_observers) {
+        if (observer->observerType() != ContextLifecycleObserver::ActiveDOMObjectType)
+            continue;
+        ActiveDOMObject* activeDOMObject = static_cast<ActiveDOMObject*>(observer);
+        if (activeDOMObject == object)
+            return true;
+    }
+    return false;
+}
+#endif
 
 } // namespace blink

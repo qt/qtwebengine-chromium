@@ -5,6 +5,7 @@
 #ifndef PlatformEventController_h
 #define PlatformEventController_h
 
+#include "core/CoreExport.h"
 #include "core/page/PageLifecycleObserver.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
@@ -15,15 +16,13 @@ namespace blink {
 // It watches page visibility and calls stopUpdating when page is not visible.
 // It provides a didUpdateData() callback method which is called when new data
 // it available.
-class PlatformEventController : public WillBeGarbageCollectedMixin, public PageLifecycleObserver {
+class CORE_EXPORT PlatformEventController : public PageLifecycleObserver {
 public:
     void startUpdating();
     void stopUpdating();
 
     // This is called when new data becomes available.
     virtual void didUpdateData() = 0;
-
-    virtual void trace(Visitor*) { }
 
 protected:
     explicit PlatformEventController(Page*);

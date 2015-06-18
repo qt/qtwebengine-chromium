@@ -26,12 +26,13 @@ BRANDINGS = [
   'ChromeOS',
   'Chromium',
   'ChromiumOS',
+  'Ensemble',
 ]
 
 
 USAGE = """Usage: %prog TARGET_OS TARGET_ARCH [options] -- [configure_args]
 
-Valid combinations are linux       [ia32|x64|mipsel|arm|arm-neon]
+Valid combinations are linux       [ia32|x64|mipsel|arm|arm-neon|arm64]
                        linux-noasm [x64]
                        mac         [ia32|x64]
                        win         [ia32|x64]
@@ -41,10 +42,13 @@ Platform specific build notes:
     Script can run on a normal Ubuntu box.
 
   linux mipsel:
-    Script can run on a normal Ubuntu box with MIPS cross-toolchain in $PATH.
+    Script must be run inside of ChromeOS chroot with BOARD=mipsel-o32-generic.
 
   linux arm/arm-neon:
     Script must be run inside of ChromeOS chroot with BOARD=arm-generic.
+
+  linux arm64:
+    Script can run on a normal Ubuntu with AArch64 cross-toolchain in $PATH.
 
   mac:
     Script must be run on OSX.  Additionally, ensure the Chromium (not Apple)
@@ -66,11 +70,14 @@ Platform specific build notes:
       - Add these packages at install time: diffutils, yasm, make, python.
       - Copy chromium/scripts/cygwin-wrapper to /usr/local/bin
 
+    Ensemble will only be built for ia32, x64, ARM & mipsel.
+
 Resulting binaries will be placed in:
   build.TARGET_ARCH.TARGET_OS/Chromium/out/
   build.TARGET_ARCH.TARGET_OS/Chrome/out/
   build.TARGET_ARCH.TARGET_OS/ChromiumOS/out/
-  build.TARGET_ARCH.TARGET_OS/ChromeOS/out/"""
+  build.TARGET_ARCH.TARGET_OS/ChromeOS/out/
+  build.TARGET_ARCH.TARGET_OS/Ensemble/out/"""
 
 
 def PrintAndCheckCall(argv, *args, **kwargs):
@@ -83,7 +90,7 @@ def DetermineHostOsAndArch():
     host_os = 'linux'
   elif platform.system() == 'Darwin':
     host_os = 'mac'
-  elif platform.system() == 'Windows' or platform.system() == 'CYGWIN_NT-6.1':
+  elif platform.system() == 'Windows' or 'CYGWIN_NT' in platform.system():
     host_os = 'win'
   else:
     return None
@@ -92,6 +99,8 @@ def DetermineHostOsAndArch():
     host_arch = 'ia32'
   elif platform.machine() == 'x86_64' or platform.machine() == 'AMD64':
     host_arch = 'x64'
+  elif platform.machine() == 'aarch64':
+    host_arch = 'arm64'
   elif platform.machine().startswith('arm'):
     host_arch = 'arm'
   else:
@@ -101,7 +110,7 @@ def DetermineHostOsAndArch():
 
 
 def GetDsoName(target_os, dso_name, dso_version):
-  if target_os == 'linux':
+  if target_os in ('linux', 'linux-noasm'):
     return 'lib%s.so.%s' % (dso_name, dso_version)
   elif target_os == 'mac':
     return 'lib%s.%s.dylib' % (dso_name, dso_version)
@@ -139,7 +148,7 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
                   'HAVE_EBP_AVAILABLE 1',
                   'HAVE_EBP_AVAILABLE 0')
 
-  if host_os == target_os and not config_only:
+  if target_os in (host_os, host_os + '-noasm') and not config_only:
     libraries = [
         os.path.join('libavcodec', GetDsoName(target_os, 'avcodec', 56)),
         os.path.join('libavformat', GetDsoName(target_os, 'avformat', 56)),
@@ -214,6 +223,10 @@ def main(argv):
       '--disable-everything',
       '--disable-all',
       '--disable-doc',
+      '--disable-htmlpages',
+      '--disable-manpages',
+      '--disable-podpages',
+      '--disable-txtpages',
       '--disable-static',
       '--enable-avcodec',
       '--enable-avformat',
@@ -228,6 +241,7 @@ def main(argv):
       '--disable-iconv',
       '--disable-lzo',
       '--disable-network',
+      '--disable-sdl',
       '--disable-symver',
       '--disable-xlib',
       '--disable-zlib',
@@ -320,10 +334,23 @@ def main(argv):
           # NOTE: softfp/hardfp selected at gyp time.
           '--extra-cflags=-mfloat-abi=hard',
       ])
+    elif target_arch == 'arm64':
+      if host_arch != 'arm64':
+        # This if-statement is for chroot arm64-generic.
+        configure_flags['Common'].extend([
+            '--enable-cross-compile',
+            '--cross-prefix=/usr/bin/aarch64-linux-gnu-',
+            '--target-os=linux',
+            '--arch=aarch64',
+        ])
+      configure_flags['Common'].extend([
+          '--enable-armv8',
+          '--extra-cflags=-march=armv8-a',
+      ])
     elif target_arch == 'mipsel':
       configure_flags['Common'].extend([
           '--enable-cross-compile',
-          '--cross-prefix=mips-linux-gnu-',
+          '--cross-prefix=/usr/bin/mipsel-cros-linux-gnu-',
           '--target-os=linux',
           '--arch=mips',
           '--extra-cflags=-mips32',
@@ -389,7 +416,7 @@ def main(argv):
         '--extra-cflags=-I' + os.path.join(FFMPEG_DIR, 'chromium/include/win'),
     ])
 
-    if platform.system() == 'CYGWIN_NT-6.1':
+    if 'CYGWIN_NT' in platform.system():
       configure_flags['Common'].extend([
           '--cc=cygwin-wrapper cl',
           '--ld=cygwin-wrapper link',
@@ -410,6 +437,13 @@ def main(argv):
   configure_flags['ChromiumOS'].extend([
       '--enable-demuxer=flac',
       '--enable-decoder=flac',
+      '--enable-parser=flac',
+  ])
+
+  # Ensemble specific configuration.
+  configure_flags['Ensemble'].extend([
+      '--enable-decoder=alac,flac',
+      '--enable-demuxer=flac',
       '--enable-parser=flac',
   ])
 
@@ -458,6 +492,13 @@ def main(argv):
                     configure_flags['Chromium'] +
                     configure_flags['ChromiumOS'] +
                     configure_args)
+    # Ensemble should be only build on a restricted set of platforms.
+    if target_arch in ['ia32','x64', 'arm', 'mipsel']:
+      do_build_ffmpeg('Ensemble',
+                      configure_flags['Common'] +
+                      configure_flags['Chrome'] +
+                      configure_flags['Ensemble'] +
+                      configure_args)
 
     # ChromeOS enables MPEG4 which requires error resilience :(
     chrome_os_flags = (configure_flags['Common'] +

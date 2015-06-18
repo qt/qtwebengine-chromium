@@ -5,7 +5,6 @@
 #ifndef CC_TREES_LAYER_TREE_IMPL_H_
 #define CC_TREES_LAYER_TREE_IMPL_H_
 
-#include <list>
 #include <set>
 #include <string>
 #include <vector>
@@ -13,13 +12,18 @@
 #include "base/containers/hash_tables.h"
 #include "base/values.h"
 #include "cc/base/scoped_ptr_vector.h"
-#include "cc/base/swap_promise.h"
+#include "cc/base/synced_property.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/renderer.h"
+#include "cc/output/swap_promise.h"
 #include "cc/resources/ui_resource_client.h"
+#include "cc/trees/layer_tree_host_impl.h"
+#include "cc/trees/property_tree.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 }
@@ -30,9 +34,9 @@ class ContextProvider;
 class DebugRectHistory;
 class FrameRateCounter;
 class HeadsUpDisplayLayerImpl;
-class LayerScrollOffsetDelegateProxy;
+class LayerExternalScrollOffsetListener;
+class LayerScrollOffsetDelegate;
 class LayerTreeDebugState;
-class LayerTreeHostImpl;
 class LayerTreeImpl;
 class LayerTreeSettings;
 class MemoryHistory;
@@ -44,25 +48,35 @@ class Proxy;
 class ResourceProvider;
 class TileManager;
 class UIResourceRequest;
+class VideoFrameControllerClient;
+struct PendingPageScaleAnimation;
 struct RendererCapabilities;
-struct SelectionHandle;
 
-typedef std::list<UIResourceRequest> UIResourceRequestQueue;
+typedef std::vector<UIResourceRequest> UIResourceRequestQueue;
+typedef SyncedProperty<AdditionGroup<float>> SyncedTopControls;
+typedef SyncedProperty<AdditionGroup<gfx::Vector2dF>> SyncedElasticOverscroll;
 
 class CC_EXPORT LayerTreeImpl {
  public:
   static scoped_ptr<LayerTreeImpl> create(
-      LayerTreeHostImpl* layer_tree_host_impl) {
-    return make_scoped_ptr(new LayerTreeImpl(layer_tree_host_impl));
+      LayerTreeHostImpl* layer_tree_host_impl,
+      scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor,
+      scoped_refptr<SyncedTopControls> top_controls_shown_ratio,
+      scoped_refptr<SyncedElasticOverscroll> elastic_overscroll) {
+    return make_scoped_ptr(
+        new LayerTreeImpl(layer_tree_host_impl, page_scale_factor,
+                          top_controls_shown_ratio, elastic_overscroll));
   }
   virtual ~LayerTreeImpl();
 
   void Shutdown();
   void ReleaseResources();
+  void RecreateResources();
 
   // Methods called by the layer tree that pass-through or access LTHI.
   // ---------------------------------------------------------------------------
   const LayerTreeSettings& settings() const;
+  const LayerTreeDebugState& debug_state() const;
   const RendererCapabilitiesImpl& GetRendererCapabilities() const;
   ContextProvider* context_provider() const;
   OutputSurface* output_surface() const;
@@ -72,9 +86,12 @@ class CC_EXPORT LayerTreeImpl {
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
   gfx::Size device_viewport_size() const;
+  float device_scale_factor() const;
+  DebugRectHistory* debug_rect_history() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
   bool IsRecycleTree() const;
+  bool IsSyncTree() const;
   LayerImpl* FindActiveTreeLayerById(int id);
   LayerImpl* FindPendingTreeLayerById(int id);
   bool PinchGestureActive() const;
@@ -89,28 +106,32 @@ class CC_EXPORT LayerTreeImpl {
   void DidAnimateScrollOffset();
   void InputScrollAnimationFinished();
   bool use_gpu_rasterization() const;
+  GpuRasterizationStatus GetGpuRasterizationStatus() const;
   bool create_low_res_tiling() const;
   BlockingTaskRunner* BlockingMainThreadTaskRunner() const;
   bool RequiresHighResToDraw() const;
   bool SmoothnessTakesPriority() const;
+  VideoFrameControllerClient* GetVideoFrameControllerClient() const;
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
   void SetNeedsRedraw();
 
-  // TODO(nduca): These are implemented in cc files temporarily, but will become
-  // trivial accessors in a followup patch.
-  const LayerTreeDebugState& debug_state() const;
-  float device_scale_factor() const;
-  DebugRectHistory* debug_rect_history() const;
-  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
-  void AsValueInto(base::debug::TracedValue* dict) const;
+  // Tracing methods.
+  // ---------------------------------------------------------------------------
+  void GetAllPrioritizedTilesForTracing(
+      std::vector<PrioritizedTile>* prioritized_tiles) const;
+  void AsValueInto(base::trace_event::TracedValue* dict) const;
 
   // Other public methods
   // ---------------------------------------------------------------------------
   LayerImpl* root_layer() const { return root_layer_.get(); }
   void SetRootLayer(scoped_ptr<LayerImpl>);
   scoped_ptr<LayerImpl> DetachLayerTree();
+
+  void SetPropertyTrees(const PropertyTrees& property_trees) {
+    property_trees_ = property_trees;
+  }
 
   void PushPropertiesTo(LayerTreeImpl* tree_impl);
 
@@ -129,7 +150,6 @@ class CC_EXPORT LayerTreeImpl {
   LayerImpl* OuterViewportScrollLayer() const;
   gfx::ScrollOffset TotalScrollOffset() const;
   gfx::ScrollOffset TotalMaxScrollOffset() const;
-  gfx::Vector2dF TotalScrollDelta() const;
 
   LayerImpl* InnerViewportContainerLayer() const;
   LayerImpl* OuterViewportContainerLayer() const;
@@ -137,13 +157,16 @@ class CC_EXPORT LayerTreeImpl {
   void SetCurrentlyScrollingLayer(LayerImpl* layer);
   void ClearCurrentlyScrollingLayer();
 
-  void SetViewportLayersFromIds(int page_scale_layer_id,
+  void SetViewportLayersFromIds(int overscroll_elasticity_layer,
+                                int page_scale_layer_id,
                                 int inner_viewport_scroll_layer_id,
                                 int outer_viewport_scroll_layer_id);
   void ClearViewportLayers();
+  LayerImpl* overscroll_elasticity_layer() {
+    return overscroll_elasticity_layer_;
+  }
   LayerImpl* page_scale_layer() { return page_scale_layer_; }
   void ApplySentScrollAndScaleDeltasFromAbortedCommit();
-  void ApplyScrollDeltasSinceBeginMainFrame();
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -155,27 +178,39 @@ class CC_EXPORT LayerTreeImpl {
     has_transparent_background_ = transparent;
   }
 
-  void SetPageScaleFactorAndLimits(float page_scale_factor,
-      float min_page_scale_factor, float max_page_scale_factor);
-  void SetPageScaleDelta(float delta);
-  void SetPageScaleValues(float page_scale_factor,
-      float min_page_scale_factor, float max_page_scale_factor,
-      float page_scale_delta);
-  float total_page_scale_factor() const {
-    return page_scale_factor_ * page_scale_delta_;
+  void SetPageScaleOnActiveTree(float active_page_scale);
+  void PushPageScaleFromMainThread(float page_scale_factor,
+                                   float min_page_scale_factor,
+                                   float max_page_scale_factor);
+  float current_page_scale_factor() const {
+    return page_scale_factor()->Current(IsActiveTree());
   }
-  float page_scale_factor() const { return page_scale_factor_; }
   float min_page_scale_factor() const { return min_page_scale_factor_; }
   float max_page_scale_factor() const { return max_page_scale_factor_; }
-  float page_scale_delta() const  { return page_scale_delta_; }
-  void set_sent_page_scale_delta(float delta) {
-    sent_page_scale_delta_ = delta;
+
+  float page_scale_delta() const { return page_scale_factor()->Delta(); }
+
+  SyncedProperty<ScaleGroup>* page_scale_factor();
+  const SyncedProperty<ScaleGroup>* page_scale_factor() const;
+
+  SyncedElasticOverscroll* elastic_overscroll() {
+    return elastic_overscroll_.get();
   }
-  float sent_page_scale_delta() const { return sent_page_scale_delta_; }
+  const SyncedElasticOverscroll* elastic_overscroll() const {
+    return elastic_overscroll_.get();
+  }
+
+  SyncedTopControls* top_controls_shown_ratio() {
+    return top_controls_shown_ratio_.get();
+  }
+  const SyncedTopControls* top_controls_shown_ratio() const {
+    return top_controls_shown_ratio_.get();
+  }
 
   // Updates draw properties and render surface layer list, as well as tile
-  // priorities. Returns false if it was unable to update.
-  bool UpdateDrawProperties();
+  // priorities. Returns false if it was unable to update.  Updating lcd
+  // text may cause invalidations, so should only be done after a commit.
+  bool UpdateDrawProperties(bool update_lcd_text);
 
   void set_needs_update_draw_properties() {
     needs_update_draw_properties_ = true;
@@ -197,6 +232,7 @@ class CC_EXPORT LayerTreeImpl {
   void set_ui_resource_request_queue(const UIResourceRequestQueue& queue);
 
   const LayerImplList& RenderSurfaceLayerList() const;
+  const Region& UnoccludedScreenSpaceRegion() const;
 
   // These return the size of the root scrollable area and the size of
   // the user-visible scrolling viewport, in CSS layout coordinates.
@@ -213,7 +249,7 @@ class CC_EXPORT LayerTreeImpl {
 
   size_t NumLayers();
 
-  AnimationRegistrar* animationRegistrar() const;
+  AnimationRegistrar* GetAnimationRegistrar() const;
 
   void PushPersistedState(LayerTreeImpl* pending_tree);
 
@@ -234,9 +270,10 @@ class CC_EXPORT LayerTreeImpl {
 
   void SetRootLayerScrollOffsetDelegate(
       LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate);
-  void OnRootLayerDelegatedScrollOffsetChanged();
-  void UpdateScrollOffsetDelegate();
-  gfx::ScrollOffset GetDelegatedScrollOffset(LayerImpl* layer);
+  void UpdateRootScrollOffsetDelegate();
+  // Distribute the rool scroll between outer and inner viewport scroll layer.
+  // The outer viewport scroll layer scrolls first.
+  void DistributeRootScrollOffset();
 
   // Call this function when you expect there to be a swap buffer.
   // See swap_promise.h for how to use SwapPromise.
@@ -254,6 +291,12 @@ class CC_EXPORT LayerTreeImpl {
 
   bool IsUIResourceOpaque(UIResourceId uid) const;
 
+  void RegisterPictureLayerImpl(PictureLayerImpl* layer);
+  void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
+  const std::vector<PictureLayerImpl*>& picture_layers() const {
+    return picture_layers_;
+  }
+
   void AddLayerWithCopyOutputRequest(LayerImpl* layer);
   void RemoveLayerWithCopyOutputRequest(LayerImpl* layer);
   const std::vector<LayerImpl*>& LayersWithCopyOutputRequest() const;
@@ -267,89 +310,81 @@ class CC_EXPORT LayerTreeImpl {
 
   LayerImpl* FindLayerThatIsHitByPoint(const gfx::PointF& screen_space_point);
 
+  LayerImpl* FindLayerWithWheelHandlerThatIsHitByPoint(
+      const gfx::PointF& screen_space_point);
+
   LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
       const gfx::PointF& screen_space_point);
 
-  void RegisterSelection(const LayerSelectionBound& start,
-                         const LayerSelectionBound& end);
+  void RegisterSelection(const LayerSelection& selection);
 
   // Compute the current selection handle location and visbility with respect to
   // the viewport.
-  void GetViewportSelection(ViewportSelectionBound* start,
-                            ViewportSelectionBound* end);
+  void GetViewportSelection(ViewportSelection* selection);
 
-  void RegisterPictureLayerImpl(PictureLayerImpl* layer);
-  void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
+  void set_top_controls_shrink_blink_size(bool shrink);
+  bool top_controls_shrink_blink_size() const {
+    return top_controls_shrink_blink_size_;
+  }
+  bool SetCurrentTopControlsShownRatio(float ratio);
+  float CurrentTopControlsShownRatio() const {
+    return top_controls_shown_ratio_->Current(IsActiveTree());
+  }
+  void set_top_controls_height(float top_controls_height);
+  float top_controls_height() const { return top_controls_height_; }
+  void PushTopControlsFromMainThread(float top_controls_shown_ratio);
 
-  void set_top_controls_layout_height(float height) {
-    top_controls_layout_height_ = height;
-  }
-  void set_top_controls_content_offset(float offset) {
-    top_controls_content_offset_ = offset;
-  }
-  void set_top_controls_delta(float delta) {
-    top_controls_delta_ = delta;
-  }
-  void set_sent_top_controls_delta(float sent_delta) {
-    sent_top_controls_delta_ = sent_delta;
-  }
+  void SetPendingPageScaleAnimation(
+      scoped_ptr<PendingPageScaleAnimation> pending_animation);
+  scoped_ptr<PendingPageScaleAnimation> TakePendingPageScaleAnimation();
 
-  float top_controls_layout_height() const {
-    return top_controls_layout_height_;
-  }
-  float top_controls_content_offset() const {
-    return top_controls_content_offset_;
-  }
-  float top_controls_delta() const {
-    return top_controls_delta_;
-  }
-  float sent_top_controls_delta() const {
-    return sent_top_controls_delta_;
-  }
-  float total_top_controls_content_offset() const {
-    return top_controls_content_offset_ + top_controls_delta_;
-  }
+  void GatherFrameTimingRequestIds(std::vector<int64_t>* request_ids);
 
-  void SetPageScaleAnimation(
-      const gfx::Vector2d& target_offset,
-      bool anchor_point,
-      float page_scale,
-      base::TimeDelta duration);
-  scoped_ptr<PageScaleAnimation> TakePageScaleAnimation();
+  bool IsExternalFlingActive() const;
+  void DidUpdateScrollOffset(int layer_id);
 
  protected:
-  explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
-  void ReleaseResourcesRecursive(LayerImpl* current);
-
+  explicit LayerTreeImpl(
+      LayerTreeHostImpl* layer_tree_host_impl,
+      scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor,
+      scoped_refptr<SyncedTopControls> top_controls_shown_ratio,
+      scoped_refptr<SyncedElasticOverscroll> elastic_overscroll);
+  float ClampPageScaleFactorToLimits(float page_scale_factor) const;
+  void PushPageScaleFactorAndLimits(const float* page_scale_factor,
+                                    float min_page_scale_factor,
+                                    float max_page_scale_factor);
+  bool SetPageScaleFactorLimits(float min_page_scale_factor,
+                                float max_page_scale_factor);
+  void DidUpdatePageScale();
+  void HideInnerViewportScrollbarsIfNearMinimumScale();
+  void PushTopControls(const float* top_controls_shown_ratio);
   LayerTreeHostImpl* layer_tree_host_impl_;
   int source_frame_number_;
   scoped_ptr<LayerImpl> root_layer_;
   HeadsUpDisplayLayerImpl* hud_layer_;
+  PropertyTrees property_trees_;
   LayerImpl* currently_scrolling_layer_;
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
-  scoped_ptr<LayerScrollOffsetDelegateProxy>
-      inner_viewport_scroll_delegate_proxy_;
-  scoped_ptr<LayerScrollOffsetDelegateProxy>
-      outer_viewport_scroll_delegate_proxy_;
   SkColor background_color_;
   bool has_transparent_background_;
 
+  LayerImpl* overscroll_elasticity_layer_;
   LayerImpl* page_scale_layer_;
   LayerImpl* inner_viewport_scroll_layer_;
   LayerImpl* outer_viewport_scroll_layer_;
 
-  LayerSelectionBound selection_start_;
-  LayerSelectionBound selection_end_;
+  LayerSelection selection_;
 
-  float page_scale_factor_;
-  float page_scale_delta_;
-  float sent_page_scale_delta_;
+  scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor_;
   float min_page_scale_factor_;
   float max_page_scale_factor_;
+
+  scoped_refptr<SyncedElasticOverscroll> elastic_overscroll_;
 
   typedef base::hash_map<int, LayerImpl*> LayerIdMap;
   LayerIdMap layer_id_map_;
 
+  std::vector<PictureLayerImpl*> picture_layers_;
   std::vector<LayerImpl*> layers_with_copy_output_request_;
 
   // Persisted state for non-impl-side-painting.
@@ -357,6 +392,9 @@ class CC_EXPORT LayerTreeImpl {
 
   // List of visible layers for the most recently prepared frame.
   LayerImplList render_surface_layer_list_;
+  // After drawing the |render_surface_layer_list_| the areas in this region
+  // would not be fully covered by opaque content.
+  Region unoccluded_screen_space_region_;
 
   bool contents_textures_purged_;
   bool viewport_size_invalid_;
@@ -376,18 +414,17 @@ class CC_EXPORT LayerTreeImpl {
 
   int render_surface_layer_list_id_;
 
-  // The top controls content offset at the time of the last layout (and thus,
-  // viewport resize) in Blink. i.e. How much the viewport was shrunk by the top
-  // controls.
-  float top_controls_layout_height_;
+  // Whether or not Blink's viewport size was shrunk by the height of the top
+  // controls at the time of the last layout.
+  bool top_controls_shrink_blink_size_;
 
-  // The up-to-date content offset of the top controls, i.e. the amount that the
-  // web contents have been shifted down from the top of the device viewport.
-  float top_controls_content_offset_;
-  float top_controls_delta_;
-  float sent_top_controls_delta_;
+  float top_controls_height_;
 
-  scoped_ptr<PageScaleAnimation> page_scale_animation_;
+  // The amount that the top controls are shown from 0 (hidden) to 1 (fully
+  // shown).
+  scoped_refptr<SyncedTopControls> top_controls_shown_ratio_;
+
+  scoped_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LayerTreeImpl);

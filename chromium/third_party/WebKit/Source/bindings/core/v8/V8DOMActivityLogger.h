@@ -31,6 +31,7 @@
 #ifndef V8DOMActivityLogger_h
 #define V8DOMActivityLogger_h
 
+#include "core/CoreExport.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
@@ -39,13 +40,13 @@ namespace blink {
 
 class KURL;
 
-class V8DOMActivityLogger {
+class CORE_EXPORT V8DOMActivityLogger {
 public:
     virtual ~V8DOMActivityLogger() { }
 
     virtual void logGetter(const String& apiName) { }
-    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue) { }
-    virtual void logMethod(const String& apiName, int argc, const v8::Handle<v8::Value>* argv) { }
+    virtual void logSetter(const String& apiName, const v8::Local<v8::Value>& newValue) { }
+    virtual void logMethod(const String& apiName, int argc, const v8::Local<v8::Value>* argv) { }
     virtual void logEvent(const String& eventName, int argc, const String* argv) { }
 
     // Associates a logger with the world identified by worldId (worlId may be 0

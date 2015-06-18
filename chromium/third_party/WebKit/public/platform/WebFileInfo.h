@@ -36,8 +36,8 @@
 namespace blink {
 
 struct WebFileInfo {
-    // The last modification time of the file, in seconds.
-    // The value 0.0 means that the time is not set.
+    // The last modification time of the file, in milliseconds since Epoch,
+    // with a quiet NaN value representing "not known."
     double modificationTime;
 
     // The length of the file in bytes.
@@ -54,9 +54,14 @@ struct WebFileInfo {
 
     WebString platformPath;
 
-    WebFileInfo() : modificationTime(0.0), length(-1), type(TypeUnknown) { }
+    WebFileInfo()
+        : modificationTime(0.0)
+        , length(-1)
+        , type(TypeUnknown)
+    {
+    }
 };
 
 } // namespace blink
 
-#endif
+#endif // WebFileInfo_h

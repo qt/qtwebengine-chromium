@@ -22,6 +22,7 @@ class ScopedAllowWaitForLegacyWebViewApi;
 
 namespace cc {
 class CompletionEvent;
+class TaskGraphRunner;
 }
 namespace chromeos {
 class BlockingMethodCaller;
@@ -41,8 +42,9 @@ class GpuChannelHost;
 class NestedMessagePumpAndroid;
 class RenderWidgetResizeHelper;
 class ScopedAllowWaitForAndroidLayoutTests;
+class ScopedAllowWaitForDebugURL;
 class TextInputClientMac;
-}
+}  // namespace content
 namespace dbus {
 class Bus;
 }
@@ -174,9 +176,11 @@ class BASE_EXPORT ThreadRestrictions {
   friend class content::NestedMessagePumpAndroid;
   friend class content::RenderWidgetResizeHelper;
   friend class content::ScopedAllowWaitForAndroidLayoutTests;
+  friend class content::ScopedAllowWaitForDebugURL;
   friend class ::HistogramSynchronizer;
   friend class ::ScopedAllowWaitForLegacyWebViewApi;
   friend class cc::CompletionEvent;
+  friend class cc::TaskGraphRunner;
   friend class mojo::common::WatcherThreadManager;
   friend class remoting::AutoThread;
   friend class MessagePumpDefault;

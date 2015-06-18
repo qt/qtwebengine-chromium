@@ -22,36 +22,47 @@ char (&ArraySizeHelper(T (&array)[N]))[N];
 
 namespace ots {
 
-#if defined(_MSC_VER) || !defined(OTS_DEBUG)
+#if !defined(OTS_DEBUG)
 #define OTS_FAILURE() false
 #else
-#define OTS_FAILURE() ots::Failure(__FILE__, __LINE__, __PRETTY_FUNCTION__)
-bool Failure(const char *f, int l, const char *fn);
+#define OTS_FAILURE() \
+  (\
+    std::fprintf(stderr, "ERROR at %s:%d (%s)\n", \
+                 __FILE__, __LINE__, __FUNCTION__) \
+    && false\
+  )
 #endif
 
-#if defined(_MSC_VER)
-// MSVC supports C99 style variadic macros.
-#define OTS_WARNING(format, ...)
+// All OTS_FAILURE_* macros ultimately evaluate to 'false', just like the original
+// message-less OTS_FAILURE(), so that the current parser will return 'false' as
+// its result (indicating a failure).
+
+#if !defined(OTS_DEBUG)
+#define OTS_MESSAGE_(level,otf_,...) \
+  (otf_)->context->Message(level,__VA_ARGS__)
 #else
-// GCC
-#if defined(OTS_DEBUG)
-#define OTS_WARNING(format, args...) \
-    ots::Warning(__FILE__, __LINE__, format, ##args)
-void Warning(const char *f, int l, const char *format, ...)
-     __attribute__((format(printf, 3, 4)));
-#else
-#define OTS_WARNING(format, args...)
-#endif
+#define OTS_MESSAGE_(level,otf_,...) \
+  OTS_FAILURE(), \
+  (otf_)->context->Message(level,__VA_ARGS__)
 #endif
 
-// Define OTS_NO_TRANSCODE_HINTS (i.e., g++ -DOTS_NO_TRANSCODE_HINTS) if you
-// want to omit TrueType hinting instructions and variables in glyf, fpgm, prep,
-// and cvt tables.
-#if defined(OTS_NO_TRANSCODE_HINTS)
-const bool g_transcode_hints = false;
-#else
-const bool g_transcode_hints = true;
-#endif
+// Generate a simple message
+#define OTS_FAILURE_MSG_(otf_,...) \
+  (OTS_MESSAGE_(0,otf_,__VA_ARGS__), false)
+
+#define OTS_WARNING_MSG_(otf_,...) \
+  OTS_MESSAGE_(1,otf_,__VA_ARGS__)
+
+// Generate a message with an associated table tag
+#define OTS_FAILURE_MSG_TAG_(otf_,msg_,tag_) \
+  (OTS_MESSAGE_(0,otf_,"%4.4s: %s", tag_, msg_), false)
+
+// Convenience macros for use in files that only handle a single table tag,
+// defined as TABLE_NAME at the top of the file; the 'file' variable is
+// expected to be the current OpenTypeFile pointer.
+#define OTS_FAILURE_MSG(...) OTS_FAILURE_MSG_(file, TABLE_NAME ": " __VA_ARGS__)
+
+#define OTS_WARNING(...) OTS_WARNING_MSG_(file, TABLE_NAME ": " __VA_ARGS__)
 
 // -----------------------------------------------------------------------------
 // Buffer helper class
@@ -62,8 +73,8 @@ const bool g_transcode_hints = true;
 // -----------------------------------------------------------------------------
 class Buffer {
  public:
-  Buffer(const uint8_t *buffer, size_t len)
-      : buffer_(buffer),
+  Buffer(const uint8_t *buf, size_t len)
+      : buffer_(buf),
         length_(len),
         offset_(0) { }
 
@@ -71,7 +82,7 @@ class Buffer {
     return Read(NULL, n_bytes);
   }
 
-  bool Read(uint8_t *buffer, size_t n_bytes) {
+  bool Read(uint8_t *buf, size_t n_bytes) {
     if (n_bytes > 1024 * 1024 * 1024) {
       return OTS_FAILURE();
     }
@@ -79,8 +90,8 @@ class Buffer {
         (offset_ > length_ - n_bytes)) {
       return OTS_FAILURE();
     }
-    if (buffer) {
-      std::memcpy(buffer, buffer_ + offset_, n_bytes);
+    if (buf) {
+      std::memcpy(buf, buffer_ + offset_, n_bytes);
     }
     offset_ += n_bytes;
     return true;
@@ -183,8 +194,6 @@ template<typename T> T Round2(T value) {
 bool IsValidVersionTag(uint32_t tag);
 
 #define FOR_EACH_TABLE_TYPE \
-  F(cbdt, CBDT) \
-  F(cblc, CBLC) \
   F(cff, CFF) \
   F(cmap, CMAP) \
   F(cvt, CVT) \
@@ -228,6 +237,8 @@ struct OpenTypeFile {
   uint16_t search_range;
   uint16_t entry_selector;
   uint16_t range_shift;
+
+  OTSContext *context;
 
 #define F(name, capname) OpenType##capname *name;
 FOR_EACH_TABLE_TYPE

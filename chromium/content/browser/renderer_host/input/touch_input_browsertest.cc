@@ -36,6 +36,11 @@ void GiveItSomeTime() {
 
 const char kTouchEventDataURL[] =
     "data:text/html;charset=utf-8,"
+#if defined(OS_ANDROID)
+    "<head>"
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+    "</head>"
+#endif
     "<body onload='setup();'>"
     "<div id='first'></div><div id='second'></div><div id='third'></div>"
     "<style>"
@@ -112,8 +117,8 @@ class InputEventMessageFilter : public BrowserMessageFilter {
     if (message.type() == InputHostMsg_HandleInputEvent_ACK::ID) {
       InputHostMsg_HandleInputEvent_ACK::Param params;
       InputHostMsg_HandleInputEvent_ACK::Read(&message, &params);
-      WebInputEvent::Type type = params.a.type;
-      InputEventAckState ack = params.a.state;
+      WebInputEvent::Type type = get<0>(params).type;
+      InputEventAckState ack = get<0>(params).state;
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
           base::Bind(&InputEventMessageFilter::ReceivedEventAck,
                      this, type, ack));
@@ -159,7 +164,7 @@ class TouchInputBrowserTest : public ContentBrowserTest {
     host->GetProcess()->AddFilter(filter_.get());
   }
 
-  void SetUpCommandLine(CommandLine* cmd) override {
+  void SetUpCommandLine(base::CommandLine* cmd) override {
     cmd->AppendSwitchASCII(switches::kTouchEvents,
                            switches::kTouchEventsEnabled);
   }

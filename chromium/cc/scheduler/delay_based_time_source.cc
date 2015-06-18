@@ -9,11 +9,11 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 
 namespace cc {
 
@@ -36,7 +36,7 @@ static const double kPhaseChangeThreshold = 0.25;
 }  // namespace
 
 // The following methods correspond to the DelayBasedTimeSource that uses
-// the base::TimeTicks::HighResNow as the timebase.
+// the base::TimeTicks::Now as the timebase.
 scoped_refptr<DelayBasedTimeSourceHighRes> DelayBasedTimeSourceHighRes::Create(
     base::TimeDelta interval,
     base::SingleThreadTaskRunner* task_runner) {
@@ -53,7 +53,7 @@ DelayBasedTimeSourceHighRes::DelayBasedTimeSourceHighRes(
 DelayBasedTimeSourceHighRes::~DelayBasedTimeSourceHighRes() {}
 
 base::TimeTicks DelayBasedTimeSourceHighRes::Now() const {
-  return base::TimeTicks::HighResNow();
+  return base::TimeTicks::Now();
 }
 
 // The following methods correspond to the DelayBasedTimeSource that uses
@@ -234,34 +234,20 @@ base::TimeTicks DelayBasedTimeSource::Now() const {
 //      now=37   tick_target=16.667  new_target=50.000  -->
 //          tick(), PostDelayedTask(floor(50.000-37)) --> PostDelayedTask(13)
 base::TimeTicks DelayBasedTimeSource::NextTickTarget(base::TimeTicks now) {
-  base::TimeDelta new_interval = next_parameters_.interval;
-
-  // |interval_offset| is the offset from |now| to the next multiple of
-  // |interval| after |tick_target|, possibly negative if in the past.
-  base::TimeDelta interval_offset = base::TimeDelta::FromInternalValue(
-      (next_parameters_.tick_target - now).ToInternalValue() %
-      new_interval.ToInternalValue());
-  // If |now| is exactly on the interval (i.e. offset==0), don't adjust.
-  // Otherwise, if |tick_target| was in the past, adjust forward to the next
-  // tick after |now|.
-  if (interval_offset.ToInternalValue() != 0 &&
-      next_parameters_.tick_target < now) {
-    interval_offset += new_interval;
-  }
-
-  base::TimeTicks new_tick_target = now + interval_offset;
+  base::TimeTicks new_tick_target = now.SnappedToNextTick(
+      next_parameters_.tick_target, next_parameters_.interval);
   DCHECK(now <= new_tick_target)
       << "now = " << now.ToInternalValue()
       << "; new_tick_target = " << new_tick_target.ToInternalValue()
-      << "; new_interval = " << new_interval.InMicroseconds()
-      << "; tick_target = " << next_parameters_.tick_target.ToInternalValue()
-      << "; interval_offset = " << interval_offset.ToInternalValue();
+      << "; new_interval = " << next_parameters_.interval.InMicroseconds()
+      << "; tick_target = " << next_parameters_.tick_target.ToInternalValue();
 
   // Avoid double ticks when:
   // 1) Turning off the timer and turning it right back on.
   // 2) Jittery data is passed to SetTimebaseAndInterval().
-  if (new_tick_target - last_tick_time_ <= new_interval / kDoubleTickDivisor)
-    new_tick_target += new_interval;
+  if (new_tick_target - last_tick_time_ <=
+      next_parameters_.interval / kDoubleTickDivisor)
+    new_tick_target += next_parameters_.interval;
 
   return new_tick_target;
 }
@@ -290,7 +276,8 @@ std::string DelayBasedTimeSourceHighRes::TypeString() const {
   return "DelayBasedTimeSourceHighRes";
 }
 
-void DelayBasedTimeSource::AsValueInto(base::debug::TracedValue* state) const {
+void DelayBasedTimeSource::AsValueInto(
+    base::trace_event::TracedValue* state) const {
   state->SetString("type", TypeString());
   state->SetDouble("last_tick_time_us", LastTickTime().ToInternalValue());
   state->SetDouble("next_tick_time_us", NextTickTime().ToInternalValue());

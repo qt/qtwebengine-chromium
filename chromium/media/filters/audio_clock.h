@@ -57,7 +57,7 @@ class MEDIA_EXPORT AudioClock {
   void WroteAudio(int frames_written,
                   int frames_requested,
                   int delay_frames,
-                  float playback_rate);
+                  double playback_rate);
 
   // Returns the bounds of media data currently buffered by the audio hardware,
   // taking silence and changes in playback rate into account. Buffered audio
@@ -76,13 +76,6 @@ class MEDIA_EXPORT AudioClock {
   //                                             1000 + 500 + 250 = 1750 ms.
   base::TimeDelta front_timestamp() const { return front_timestamp_; }
   base::TimeDelta back_timestamp() const { return back_timestamp_; }
-
-  // Clients can provide |time_since_writing| to simulate the passage of time
-  // since last writing audio to get a more accurate current media timestamp.
-  //
-  // The value will be bounded between front_timestamp() and back_timestamp().
-  base::TimeDelta TimestampSinceWriting(
-      base::TimeDelta time_since_writing) const;
 
   // Returns the amount of wall time until |timestamp| will be played by the
   // audio hardware.
@@ -109,14 +102,14 @@ class MEDIA_EXPORT AudioClock {
   //
   // 32 bits on the other hand would top out at measly 2 hours and 20 minutes.
   struct AudioData {
-    AudioData(int64_t frames, float playback_rate);
+    AudioData(int64_t frames, double playback_rate);
 
     int64_t frames;
-    float playback_rate;
+    double playback_rate;
   };
 
   // Helpers for operating on |buffered_|.
-  void PushBufferedAudioData(int64_t frames, float playback_rate);
+  void PushBufferedAudioData(int64_t frames, double playback_rate);
   void PopBufferedAudioData(int64_t frames);
   base::TimeDelta ComputeBufferedMediaTime(int64_t frames) const;
 

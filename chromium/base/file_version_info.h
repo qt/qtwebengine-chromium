@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_FILE_VERSION_INFO_H__
-#define BASE_FILE_VERSION_INFO_H__
+#ifndef BASE_FILE_VERSION_INFO_H_
+#define BASE_FILE_VERSION_INFO_H_
 
 #include "build/build_config.h"
 
@@ -32,22 +32,21 @@ class FilePath;
 // version returns values from the Info.plist as appropriate. TODO(avi): make
 // this a less-obvious Windows-ism.
 
-class FileVersionInfo {
+class BASE_EXPORT FileVersionInfo {
  public:
   virtual ~FileVersionInfo() {}
 #if defined(OS_WIN) || defined(OS_MACOSX)
   // Creates a FileVersionInfo for the specified path. Returns NULL if something
   // goes wrong (typically the file does not exit or cannot be opened). The
   // returned object should be deleted when you are done with it.
-  BASE_EXPORT static FileVersionInfo* CreateFileVersionInfo(
+  static FileVersionInfo* CreateFileVersionInfo(
       const base::FilePath& file_path);
 #endif  // OS_WIN || OS_MACOSX
 
 #if defined(OS_WIN)
   // Creates a FileVersionInfo for the specified module. Returns NULL in case
   // of error. The returned object should be deleted when you are done with it.
-  BASE_EXPORT static FileVersionInfo* CreateFileVersionInfoForModule(
-      HMODULE module);
+  static FileVersionInfo* CreateFileVersionInfoForModule(HMODULE module);
 
   // Creates a FileVersionInfo for the current module. Returns NULL in case
   // of error. The returned object should be deleted when you are done with it.
@@ -61,7 +60,7 @@ class FileVersionInfo {
 #else
   // Creates a FileVersionInfo for the current module. Returns NULL in case
   // of error. The returned object should be deleted when you are done with it.
-  BASE_EXPORT static FileVersionInfo* CreateFileVersionInfoForCurrentModule();
+  static FileVersionInfo* CreateFileVersionInfoForCurrentModule();
 #endif  // OS_WIN
 
   // Accessors to the different version properties.
@@ -84,4 +83,4 @@ class FileVersionInfo {
   virtual bool is_official_build() = 0;
 };
 
-#endif  // BASE_FILE_VERSION_INFO_H__
+#endif  // BASE_FILE_VERSION_INFO_H_

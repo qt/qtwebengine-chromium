@@ -9,9 +9,11 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into gcl.
 """
 
+import csv
 import fnmatch
 import os
 import re
+import subprocess
 import sys
 import traceback
 
@@ -19,6 +21,9 @@ import traceback
 REVERT_CL_SUBJECT_PREFIX = 'Revert '
 
 SKIA_TREE_STATUS_URL = 'http://skia-tree-status.appspot.com'
+
+CQ_KEYWORDS_THAT_NEED_APPENDING = ('CQ_INCLUDE_TRYBOTS', 'CQ_EXTRA_TRYBOTS',
+                                   'CQ_EXCLUDE_TRYBOTS', 'CQ_TRYBOTS')
 
 # Please add the complete email address here (and not just 'xyz@' or 'xyz').
 PUBLIC_API_OWNERS = (
@@ -31,6 +36,8 @@ PUBLIC_API_OWNERS = (
 )
 
 AUTHORS_FILE_NAME = 'AUTHORS'
+
+DOCS_PREVIEW_URL = 'https://skia.org/?cl='
 
 
 def _CheckChangeHasEol(input_api, output_api, source_file_filter=None):
@@ -74,6 +81,76 @@ def _PythonChecks(input_api, output_api):
       white_list=affected_python_files)
 
 
+def _IfDefChecks(input_api, output_api):
+  """Ensures if/ifdef are not before includes. See skbug/3362 for details."""
+  comment_block_start_pattern = re.compile('^\s*\/\*.*$')
+  comment_block_middle_pattern = re.compile('^\s+\*.*')
+  comment_block_end_pattern = re.compile('^\s+\*\/.*$')
+  single_line_comment_pattern = re.compile('^\s*//.*$')
+  def is_comment(line):
+    return (comment_block_start_pattern.match(line) or
+            comment_block_middle_pattern.match(line) or
+            comment_block_end_pattern.match(line) or
+            single_line_comment_pattern.match(line))
+
+  empty_line_pattern = re.compile('^\s*$')
+  def is_empty_line(line):
+    return empty_line_pattern.match(line)
+
+  failing_files = []
+  for affected_file in input_api.AffectedSourceFiles(None):
+    affected_file_path = affected_file.LocalPath()
+    if affected_file_path.endswith('.cpp') or affected_file_path.endswith('.h'):
+      f = open(affected_file_path)
+      for line in f.xreadlines():
+        if is_comment(line) or is_empty_line(line):
+          continue
+        # The below will be the first real line after comments and newlines.
+        if line.startswith('#if 0 '):
+          pass
+        elif line.startswith('#if ') or line.startswith('#ifdef '):
+          failing_files.append(affected_file_path)
+        break
+
+  results = []
+  if failing_files:
+    results.append(
+        output_api.PresubmitError(
+            'The following files have #if or #ifdef before includes:\n%s\n\n'
+            'See skbug.com/3362 for why this should be fixed.' %
+                '\n'.join(failing_files)))
+  return results
+
+
+def _CopyrightChecks(input_api, output_api, source_file_filter=None):
+  results = []
+  year_pattern = r'\d{4}'
+  year_range_pattern = r'%s(-%s)?' % (year_pattern, year_pattern)
+  years_pattern = r'%s(,%s)*,?' % (year_range_pattern, year_range_pattern)
+  copyright_pattern = (
+      r'Copyright (\([cC]\) )?%s \w+' % years_pattern)
+
+  for affected_file in input_api.AffectedSourceFiles(source_file_filter):
+    if 'third_party' in affected_file.LocalPath():
+      continue
+    contents = input_api.ReadFile(affected_file, 'rb')
+    if not re.search(copyright_pattern, contents):
+      results.append(output_api.PresubmitError(
+          '%s is missing a correct copyright header.' % affected_file))
+  return results
+
+
+def _ToolFlags(input_api, output_api):
+  """Make sure `{dm,nanobench}_flags.py test` passes if modified."""
+  results = []
+  sources = lambda x: ('dm_flags.py'        in x.LocalPath() or
+                       'nanobench_flags.py' in x.LocalPath())
+  for f in input_api.AffectedSourceFiles(sources):
+    if 0 != subprocess.call(['python', f.LocalPath(), 'test']):
+      results.append(output_api.PresubmitError('`python %s test` failed' % f))
+  return results
+
+
 def _CommonChecks(input_api, output_api):
   """Presubmit checks common to upload and commit."""
   results = []
@@ -82,11 +159,20 @@ def _CommonChecks(input_api, output_api):
                        x.LocalPath().endswith('.gyp') or
                        x.LocalPath().endswith('.py') or
                        x.LocalPath().endswith('.sh') or
+                       x.LocalPath().endswith('.m') or
+                       x.LocalPath().endswith('.mm') or
+                       x.LocalPath().endswith('.go') or
+                       x.LocalPath().endswith('.c') or
+                       x.LocalPath().endswith('.cc') or
                        x.LocalPath().endswith('.cpp'))
   results.extend(
       _CheckChangeHasEol(
           input_api, output_api, source_file_filter=sources))
   results.extend(_PythonChecks(input_api, output_api))
+  results.extend(_IfDefChecks(input_api, output_api))
+  results.extend(_CopyrightChecks(input_api, output_api,
+                                  source_file_filter=sources))
+  results.extend(_ToolFlags(input_api, output_api))
   return results
 
 
@@ -209,6 +295,14 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
       # It is a revert CL, ignore the public api owners check.
       return results
 
+    # TODO(rmistry): Stop checking for COMMIT=false once crbug/470609 is
+    # resolved.
+    if issue_properties['cq_dry_run'] or re.search(
+        r'^COMMIT=false$', issue_properties['description'], re.M):
+      # Ignore public api owners check for dry run CLs since they are not
+      # going to be committed.
+      return results
+
     match = re.search(r'^TBR=(.*)$', issue_properties['description'], re.M)
     if match:
       tbr_entries = match.group(1).strip().split(',')
@@ -237,6 +331,140 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
             'Since the CL is editing public API, you must have an LGTM from '
             'one of: %s' % str(PUBLIC_API_OWNERS)))
   return results
+
+
+def PostUploadHook(cl, change, output_api):
+  """git cl upload will call this hook after the issue is created/modified.
+
+  This hook does the following:
+  * Adds a link to preview docs changes if there are any docs changes in the CL.
+  * Adds 'NOTRY=true' if the CL contains only docs changes.
+  * Adds 'NOTREECHECKS=true' for non master branch changes since they do not
+    need to be gated on the master branch's tree.
+  * Adds 'NOTRY=true' for non master branch changes since trybots do not yet
+    work on them.
+  """
+
+  results = []
+  atleast_one_docs_change = False
+  all_docs_changes = True
+  for affected_file in change.AffectedFiles():
+    affected_file_path = affected_file.LocalPath()
+    file_path, _ = os.path.splitext(affected_file_path)
+    if 'site' == file_path.split(os.path.sep)[0]:
+      atleast_one_docs_change = True
+    else:
+      all_docs_changes = False
+    if atleast_one_docs_change and not all_docs_changes:
+      break
+
+  issue = cl.issue
+  rietveld_obj = cl.RpcServer()
+  if issue and rietveld_obj:
+    original_description = rietveld_obj.get_description(issue)
+    new_description = original_description
+
+    # If the change includes only doc changes then add NOTRY=true in the
+    # CL's description if it does not exist yet.
+    if all_docs_changes and not re.search(
+        r'^NOTRY=true$', new_description, re.M | re.I):
+      new_description += '\nNOTRY=true'
+      results.append(
+          output_api.PresubmitNotifyResult(
+              'This change has only doc changes. Automatically added '
+              '\'NOTRY=true\' to the CL\'s description'))
+
+    # If there is atleast one docs change then add preview link in the CL's
+    # description if it does not already exist there.
+    if atleast_one_docs_change and not re.search(
+        r'^DOCS_PREVIEW=.*', new_description, re.M | re.I):
+      # Automatically add a link to where the docs can be previewed.
+      new_description += '\nDOCS_PREVIEW= %s%s' % (DOCS_PREVIEW_URL, issue)
+      results.append(
+          output_api.PresubmitNotifyResult(
+              'Automatically added a link to preview the docs changes to the '
+              'CL\'s description'))
+
+    # If the target ref is not master then add NOTREECHECKS=true and NOTRY=true
+    # to the CL's description if it does not already exist there.
+    target_ref = rietveld_obj.get_issue_properties(issue, False).get(
+        'target_ref', '')
+    if target_ref != 'refs/heads/master':
+      if not re.search(
+          r'^NOTREECHECKS=true$', new_description, re.M | re.I):
+        new_description += "\nNOTREECHECKS=true"
+        results.append(
+            output_api.PresubmitNotifyResult(
+                'Branch changes do not need to rely on the master branch\'s '
+                'tree status. Automatically added \'NOTREECHECKS=true\' to the '
+                'CL\'s description'))
+      if not re.search(
+          r'^NOTRY=true$', new_description, re.M | re.I):
+        new_description += "\nNOTRY=true"
+        results.append(
+            output_api.PresubmitNotifyResult(
+                'Trybots do not yet work for non-master branches. '
+                'Automatically added \'NOTRY=true\' to the CL\'s description'))
+
+    # Read and process the HASHTAGS file.
+    hashtags_fullpath = os.path.join(change._local_root, 'HASHTAGS')
+    with open(hashtags_fullpath, 'rb') as hashtags_csv:
+      hashtags_reader = csv.reader(hashtags_csv, delimiter=',')
+      for row in hashtags_reader:
+        if not row or row[0].startswith('#'):
+          # Ignore empty lines and comments
+          continue
+        hashtag = row[0]
+        # Search for the hashtag in the description.
+        if re.search('#%s' % hashtag, new_description, re.M | re.I):
+          for mapped_text in row[1:]:
+            # Special case handling for CQ_KEYWORDS_THAT_NEED_APPENDING.
+            appended_description = _HandleAppendingCQKeywords(
+                hashtag, mapped_text, new_description, results, output_api)
+            if appended_description:
+              new_description = appended_description
+              continue
+
+            # Add the mapped text if it does not already exist in the
+            # CL's description.
+            if not re.search(
+                r'^%s$' % mapped_text, new_description, re.M | re.I):
+              new_description += '\n%s' % mapped_text
+              results.append(
+                  output_api.PresubmitNotifyResult(
+                      'Found \'#%s\', automatically added \'%s\' to the CL\'s '
+                      'description' % (hashtag, mapped_text)))
+
+    # If the description has changed update it.
+    if new_description != original_description:
+      rietveld_obj.update_description(issue, new_description)
+
+    return results
+
+
+def _HandleAppendingCQKeywords(hashtag, keyword_and_value, description,
+                               results, output_api):
+  """Handles the CQ keywords that need appending if specified in hashtags."""
+  keyword = keyword_and_value.split('=')[0]
+  if keyword in CQ_KEYWORDS_THAT_NEED_APPENDING:
+    # If the keyword is already in the description then append to it.
+    match = re.search(
+        r'^%s=(.*)$' % keyword, description, re.M | re.I)
+    if match:
+      old_values = match.group(1).split(';')
+      new_value = keyword_and_value.split('=')[1]
+      if new_value in old_values:
+        # Do not need to do anything here.
+        return description
+      # Update the description with the new values.
+      new_description = description.replace(
+          match.group(0), "%s;%s" % (match.group(0), new_value))
+      results.append(
+          output_api.PresubmitNotifyResult(
+          'Found \'#%s\', automatically appended \'%s\' to %s in '
+          'the CL\'s description' % (hashtag, new_value, keyword)))
+      return new_description
+  return None
 
 
 def CheckChangeOnCommit(input_api, output_api):

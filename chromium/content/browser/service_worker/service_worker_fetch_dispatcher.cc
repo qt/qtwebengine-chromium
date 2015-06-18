@@ -5,7 +5,7 @@
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/service_worker/service_worker_version.h"
 
 namespace content {
@@ -86,7 +86,7 @@ void ServiceWorkerFetchDispatcher::DidFinish(
       request_.get());
   DCHECK(!fetch_callback_.is_null());
   FetchCallback fetch_callback = fetch_callback_;
-  fetch_callback.Run(status, fetch_result, response);
+  fetch_callback.Run(status, fetch_result, response, version_);
 }
 
 }  // namespace content

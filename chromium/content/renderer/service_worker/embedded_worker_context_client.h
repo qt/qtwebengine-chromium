@@ -10,30 +10,27 @@
 #include "base/strings/string16.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "ipc/ipc_listener.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerClientsInfo.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
-#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebServiceWorkerContextClient.h"
 #include "url/gurl.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 class TaskRunner;
 }
 
 namespace blink {
 class WebDataSource;
+class WebServiceWorkerProvider;
 }
 
 namespace content {
 
+class ServiceWorkerProviderContext;
 class ServiceWorkerScriptContext;
 class ThreadSafeSender;
 
 // This class provides access to/from an embedded worker's WorkerGlobalScope.
-// All methods other than the constructor (it's created on the main thread)
-// and createServiceWorkerNetworkProvider (also called on the main thread)
-// are called on the worker thread.
+// Unless otherwise noted, all methods are called on the worker thread.
 //
 // TODO(kinuko): Currently EW/SW separation is made a little hazily.
 // This should implement WebEmbeddedWorkerContextClient
@@ -48,6 +45,7 @@ class EmbeddedWorkerContextClient
   // new instance.
   static EmbeddedWorkerContextClient* ThreadSpecificInstance();
 
+  // Called on the main thread.
   EmbeddedWorkerContextClient(int embedded_worker_id,
                               int64 service_worker_version_id,
                               const GURL& service_worker_scope,
@@ -63,11 +61,20 @@ class EmbeddedWorkerContextClient
   // WebServiceWorkerContextClient overrides, some of them are just dispatched
   // on to script_context_.
   virtual blink::WebURL scope() const;
-  virtual blink::WebServiceWorkerCacheStorage* cacheStorage();
   virtual void didPauseAfterDownload();
-  virtual void getClients(blink::WebServiceWorkerClientsCallbacks*);
+  virtual void getClients(const blink::WebServiceWorkerClientQueryOptions&,
+                          blink::WebServiceWorkerClientsCallbacks*);
+  virtual void openWindow(const blink::WebURL&,
+                          blink::WebServiceWorkerClientCallbacks*);
+  virtual void setCachedMetadata(const blink::WebURL&,
+                                 const char* data,
+                                 size_t size);
+  virtual void clearCachedMetadata(const blink::WebURL&);
   virtual void workerReadyForInspection();
+
+  // Called on the main thread.
   virtual void workerContextFailedToStart();
+
   virtual void workerContextStarted(blink::WebServiceWorkerContextProxy* proxy);
   virtual void didEvaluateWorkerScript(bool success);
   virtual void willDestroyWorkerContext();
@@ -81,8 +88,9 @@ class EmbeddedWorkerContextClient
                                     const blink::WebString& message,
                                     int line_number,
                                     const blink::WebString& source_url);
-  virtual void dispatchDevToolsMessage(const blink::WebString&);
-  virtual void saveDevToolsAgentState(const blink::WebString&);
+  virtual void sendDevToolsMessage(int call_id,
+                                   const blink::WebString& message,
+                                   const blink::WebString& state);
   virtual void didHandleActivateEvent(int request_id,
                                       blink::WebServiceWorkerEventResult);
   virtual void didHandleInstallEvent(int request_id,
@@ -91,19 +99,39 @@ class EmbeddedWorkerContextClient
   virtual void didHandleFetchEvent(
       int request_id,
       const blink::WebServiceWorkerResponse& response);
+  virtual void didHandleNotificationClickEvent(
+      int request_id,
+      blink::WebServiceWorkerEventResult result);
+  virtual void didHandlePushEvent(int request_id,
+                                  blink::WebServiceWorkerEventResult result);
   virtual void didHandleSyncEvent(int request_id);
+  virtual void didHandleCrossOriginConnectEvent(int request_id,
+                                                bool accept_connection);
+
+  // Called on the main thread.
   virtual blink::WebServiceWorkerNetworkProvider*
       createServiceWorkerNetworkProvider(blink::WebDataSource* data_source);
+  virtual blink::WebServiceWorkerProvider* createServiceWorkerProvider();
+
   virtual void postMessageToClient(
-      int client_id,
+      const blink::WebString& uuid,
       const blink::WebString& message,
       blink::WebMessagePortChannelArray* channels);
+  virtual void postMessageToCrossOriginClient(
+      const blink::WebCrossOriginServiceWorkerClient& client,
+      const blink::WebString& message,
+      blink::WebMessagePortChannelArray* channels);
+  virtual void focus(const blink::WebString& uuid,
+                     blink::WebServiceWorkerClientCallbacks*);
+  virtual void skipWaiting(
+      blink::WebServiceWorkerSkipWaitingCallbacks* callbacks);
+  virtual void claim(blink::WebServiceWorkerClientsClaimCallbacks* callbacks);
 
   // TODO: Implement DevTools related method overrides.
 
   int embedded_worker_id() const { return embedded_worker_id_; }
-  base::MessageLoopProxy* main_thread_proxy() const {
-    return main_thread_proxy_.get();
+  base::SingleThreadTaskRunner* main_thread_task_runner() const {
+    return main_thread_task_runner_.get();
   }
   ThreadSafeSender* thread_safe_sender() { return sender_.get(); }
 
@@ -112,6 +140,7 @@ class EmbeddedWorkerContextClient
                          int embedded_worker_id,
                          const IPC::Message& message);
   void SendWorkerStarted();
+  void SetRegistrationInServiceWorkerGlobalScope();
 
   const int embedded_worker_id_;
   const int64 service_worker_version_id_;
@@ -119,10 +148,11 @@ class EmbeddedWorkerContextClient
   const GURL script_url_;
   const int worker_devtools_agent_route_id_;
   scoped_refptr<ThreadSafeSender> sender_;
-  scoped_refptr<base::MessageLoopProxy> main_thread_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   scoped_refptr<base::TaskRunner> worker_task_runner_;
 
   scoped_ptr<ServiceWorkerScriptContext> script_context_;
+  scoped_refptr<ServiceWorkerProviderContext> provider_context_;
 
   base::WeakPtrFactory<EmbeddedWorkerContextClient> weak_factory_;
 

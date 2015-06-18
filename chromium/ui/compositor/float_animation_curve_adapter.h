@@ -21,9 +21,9 @@ class FloatAnimationCurveAdapter : public cc::FloatAnimationCurve {
   ~FloatAnimationCurveAdapter() override {}
 
   // FloatAnimationCurve implementation.
-  double Duration() const override;
+  base::TimeDelta Duration() const override;
   scoped_ptr<cc::AnimationCurve> Clone() const override;
-  float GetValue(double t) const override;
+  float GetValue(base::TimeDelta t) const override;
 
  private:
   gfx::Tween::Type tween_type_;

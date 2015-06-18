@@ -344,6 +344,15 @@ below:
       <message name="IDS_AX_ROLE_COMPLEMENTARY" desc="accessibility role description for complementary">
         complementary
       </message>
+      <message name="IDS_AX_ROLE_DESCRIPTION_DETAIL" desc="accessibility role description for a definition">
+        definition
+      </message>
+      <message name="IDS_AX_ROLE_DESCRIPTION_LIST" desc="accessibility role description for a definition list">
+        definition list
+      </message>
+      <message name="IDS_AX_ROLE_DESCRIPTION_TERM" desc="accessibility role description for description term(as in a description list)">
+        term
+      </message>
       <message name="IDS_AX_ROLE_WEB_AREA" desc="accessibility role description for web area">
         HTML content
       </message>
@@ -358,6 +367,9 @@ below:
       </message>
       <message name="IDS_AX_ROLE_HEADING" desc="accessibility role description for headings">
         heading
+      </message>
+      <message name="IDS_AX_ROLE_FIGURE" desc="accessibility role description for figure">
+        figure
       </message>
       <message name="IDS_AX_ROLE_REGION" desc="accessibility role description for region">
         region
@@ -381,6 +393,21 @@ below:
       </message>
       <message name="IDS_AX_ROLE_NAVIGATIONAL_LINK" desc="accessibility role description for group of navigational links.">
         navigation
+      </message>
+      <message name="IDS_AX_ROLE_FORM" desc="accessibility role description for form">
+        form
+      </message>
+      <message name="IDS_AX_ROLE_MATH" desc="accessibility role description for math">
+        math
+      </message>
+      <message name="IDS_AX_ROLE_STATUS" desc="accessibility role description for status">
+        status
+      </message>
+      <message name="IDS_AX_ROLE_SEARCH_BOX" desc="accessibility role description for search text field">
+        search text field
+      </message>
+      <message name="IDS_AX_ROLE_SWITCH" desc="accessibility role description for switch">
+        switch
       </message>
 
       <message name="IDS_AX_BUTTON_ACTION_VERB" desc="Verb stating the action that will occur when a button is pressed, as used by accessibility.">
@@ -514,7 +541,11 @@ below:
         pause playback
       </message>
 
-      <message name="IDS_AX_MEDIA_SLIDER_HELP" desc="accessibility help description for timeline slider">
+      <message name="IDS_AX_MEDIA_AUDIO_SLIDER_HELP" desc="accessibility help description for audio timeline slider">
+        audio time scrubber
+      </message>
+
+      <message name="IDS_AX_MEDIA_VIDEO_SLIDER_HELP" desc="accessibility help description for video timeline slider">
         movie time scrubber
       </message>
 
@@ -718,8 +749,8 @@ below:
         Please lengthen this text to <ph name="MIN_CHARACTERS">$2<ex>101</ex></ph> characters or more (you are currently using <ph name="CURRENT_LENGTH">$1<ex>100</ex></ph> characters).
       </message>
 
-      <message name="IDS_PLUGIN_INITIALIZATION_ERROR" desc="A message displayed when a plug-in failed to load">
-        Couldn't load plug-in.
+      <message name="IDS_PLUGIN_INITIALIZATION_ERROR" desc="A message displayed when a plugin failed to load">
+        Couldn't load plugin.
       </message>
 
     </messages>

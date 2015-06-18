@@ -5,10 +5,17 @@
 #include "vdmx.h"
 
 // VDMX - Vertical Device Metrics
-// http://www.microsoft.com/opentype/otspec/vdmx.htm
+// http://www.microsoft.com/typography/otspec/vdmx.htm
 
-#define DROP_THIS_TABLE \
-  do { delete file->vdmx; file->vdmx = 0; } while (0)
+#define TABLE_NAME "VDMX"
+
+#define DROP_THIS_TABLE(...) \
+  do { \
+    OTS_FAILURE_MSG_(file, TABLE_NAME ": " __VA_ARGS__); \
+    OTS_FAILURE_MSG("Table discarded"); \
+    delete file->vdmx; \
+    file->vdmx = 0; \
+  } while (0)
 
 namespace ots {
 
@@ -20,12 +27,11 @@ bool ots_vdmx_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
   if (!table.ReadU16(&vdmx->version) ||
       !table.ReadU16(&vdmx->num_recs) ||
       !table.ReadU16(&vdmx->num_ratios)) {
-    return OTS_FAILURE();
+    return OTS_FAILURE_MSG("Failed to read table header");
   }
 
   if (vdmx->version > 1) {
-    OTS_WARNING("bad version: %u", vdmx->version);
-    DROP_THIS_TABLE;
+    DROP_THIS_TABLE("bad version: %u", vdmx->version);
     return true;  // continue transcoding
   }
 
@@ -37,18 +43,16 @@ bool ots_vdmx_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
         !table.ReadU8(&rec.x_ratio) ||
         !table.ReadU8(&rec.y_start_ratio) ||
         !table.ReadU8(&rec.y_end_ratio)) {
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Failed to read ratio header %d", i);
     }
 
     if (rec.charset > 1) {
-      OTS_WARNING("bad charset: %u", rec.charset);
-      DROP_THIS_TABLE;
+      DROP_THIS_TABLE("bad charset: %u", rec.charset);
       return true;
     }
 
     if (rec.y_start_ratio > rec.y_end_ratio) {
-      OTS_WARNING("bad y ratio");
-      DROP_THIS_TABLE;
+      DROP_THIS_TABLE("bad y ratio");
       return true;
     }
 
@@ -59,8 +63,7 @@ bool ots_vdmx_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
         (rec.y_start_ratio == 0) &&
         (rec.y_end_ratio == 0)) {
       // workaround for fonts which have 2 or more {0, 0, 0} terminators.
-      OTS_WARNING("superfluous terminator found");
-      DROP_THIS_TABLE;
+      DROP_THIS_TABLE("superfluous terminator found");
       return true;
     }
 
@@ -73,10 +76,10 @@ bool ots_vdmx_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
   for (unsigned i = 0; i < vdmx->num_ratios; ++i) {
     uint16_t offset;
     if (!table.ReadU16(&offset)) {
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Failed to read ratio offset %d", i);
     }
     if (current_offset + offset >= length) {  // thus doesn't overflow.
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Bad ratio offset %d for ration %d", offset, i);
     }
 
     vdmx->offsets.push_back(offset);
@@ -88,7 +91,7 @@ bool ots_vdmx_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
     if (!table.ReadU16(&group.recs) ||
         !table.ReadU8(&group.startsz) ||
         !table.ReadU8(&group.endsz)) {
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Failed to read record header %d", i);
     }
     group.entries.reserve(group.recs);
     for (unsigned j = 0; j < group.recs; ++j) {
@@ -96,19 +99,17 @@ bool ots_vdmx_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
       if (!table.ReadU16(&vt.y_pel_height) ||
           !table.ReadS16(&vt.y_max) ||
           !table.ReadS16(&vt.y_min)) {
-        return OTS_FAILURE();
+        return OTS_FAILURE_MSG("Failed to read reacord %d group %d", i, j);
       }
       if (vt.y_max < vt.y_min) {
-        OTS_WARNING("bad y min/max");
-        DROP_THIS_TABLE;
+        DROP_THIS_TABLE("bad y min/max");
         return true;
       }
 
       // This table must appear in sorted order (sorted by yPelHeight),
       // but need not be continuous.
       if ((j != 0) && (group.entries[j - 1].y_pel_height >= vt.y_pel_height)) {
-        OTS_WARNING("the table is not sorted");
-        DROP_THIS_TABLE;
+        DROP_THIS_TABLE("the table is not sorted");
         return true;
       }
 
@@ -131,7 +132,7 @@ bool ots_vdmx_serialise(OTSStream *out, OpenTypeFile *file) {
   if (!out->WriteU16(vdmx->version) ||
       !out->WriteU16(vdmx->num_recs) ||
       !out->WriteU16(vdmx->num_ratios)) {
-    return OTS_FAILURE();
+    return OTS_FAILURE_MSG("Failed to write table header");
   }
 
   for (unsigned i = 0; i < vdmx->rat_ranges.size(); ++i) {
@@ -140,13 +141,13 @@ bool ots_vdmx_serialise(OTSStream *out, OpenTypeFile *file) {
         !out->Write(&rec.x_ratio, 1) ||
         !out->Write(&rec.y_start_ratio, 1) ||
         !out->Write(&rec.y_end_ratio, 1)) {
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Failed to write ratio %d", i);
     }
   }
 
   for (unsigned i = 0; i < vdmx->offsets.size(); ++i) {
     if (!out->WriteU16(vdmx->offsets[i])) {
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Failed to write ratio offset %d", i);
     }
   }
 
@@ -155,14 +156,14 @@ bool ots_vdmx_serialise(OTSStream *out, OpenTypeFile *file) {
     if (!out->WriteU16(group.recs) ||
         !out->Write(&group.startsz, 1) ||
         !out->Write(&group.endsz, 1)) {
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("Failed to write group %d", i);
     }
     for (unsigned j = 0; j < group.entries.size(); ++j) {
       const OpenTypeVDMXVTable& vt = group.entries[j];
       if (!out->WriteU16(vt.y_pel_height) ||
           !out->WriteS16(vt.y_max) ||
           !out->WriteS16(vt.y_min)) {
-        return OTS_FAILURE();
+        return OTS_FAILURE_MSG("Failed to write group %d entry %d", i, j);
       }
     }
   }
@@ -175,3 +176,6 @@ void ots_vdmx_free(OpenTypeFile *file) {
 }
 
 }  // namespace ots
+
+#undef TABLE_NAME
+#undef DROP_THIS_TABLE

@@ -10,7 +10,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 
 namespace media {
@@ -18,8 +17,8 @@ namespace media {
 // Why FF_INPUT_BUFFER_PADDING_SIZE? FFmpeg assumes all input buffers are
 // padded. Check here to ensure FFmpeg only receives data padded to its
 // specifications.
-COMPILE_ASSERT(DecoderBuffer::kPaddingSize >= FF_INPUT_BUFFER_PADDING_SIZE,
-               decoder_buffer_padding_size_does_not_fit_ffmpeg_requirement);
+static_assert(DecoderBuffer::kPaddingSize >= FF_INPUT_BUFFER_PADDING_SIZE,
+              "DecoderBuffer padding size does not fit ffmpeg requirement");
 
 // Alignment requirement by FFmpeg for input and output buffers. This need to
 // be updated to match FFmpeg when it changes.
@@ -30,22 +29,22 @@ static const int kFFmpegBufferAddressAlignment = 32;
 #endif
 
 // Check here to ensure FFmpeg only receives data aligned to its specifications.
-COMPILE_ASSERT(
+static_assert(
     DecoderBuffer::kAlignmentSize >= kFFmpegBufferAddressAlignment &&
     DecoderBuffer::kAlignmentSize % kFFmpegBufferAddressAlignment == 0,
-    decoder_buffer_alignment_size_does_not_fit_ffmpeg_requirement);
+    "DecoderBuffer alignment size does not fit ffmpeg requirement");
 
 // Allows faster SIMD YUV convert. Also, FFmpeg overreads/-writes occasionally.
 // See video_get_buffer() in libavcodec/utils.c.
 static const int kFFmpegOutputBufferPaddingSize = 16;
 
-COMPILE_ASSERT(VideoFrame::kFrameSizePadding >= kFFmpegOutputBufferPaddingSize,
-               video_frame_padding_size_does_not_fit_ffmpeg_requirement);
+static_assert(VideoFrame::kFrameSizePadding >= kFFmpegOutputBufferPaddingSize,
+              "VideoFrame padding size does not fit ffmpeg requirement");
 
-COMPILE_ASSERT(
+static_assert(
     VideoFrame::kFrameAddressAlignment >= kFFmpegBufferAddressAlignment &&
     VideoFrame::kFrameAddressAlignment % kFFmpegBufferAddressAlignment == 0,
-    video_frame_address_alignment_does_not_fit_ffmpeg_requirement);
+    "VideoFrame frame address alignment does not fit ffmpeg requirement");
 
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 
@@ -92,6 +91,8 @@ static AudioCodec CodecIDToAudioCodec(AVCodecID codec_id) {
       return kCodecPCM_MULAW;
     case AV_CODEC_ID_OPUS:
       return kCodecOpus;
+    case AV_CODEC_ID_ALAC:
+      return kCodecALAC;
     default:
       DVLOG(1) << "Unknown audio CodecID: " << codec_id;
   }
@@ -103,6 +104,8 @@ static AVCodecID AudioCodecToCodecID(AudioCodec audio_codec,
   switch (audio_codec) {
     case kCodecAAC:
       return AV_CODEC_ID_AAC;
+    case kCodecALAC:
+      return AV_CODEC_ID_ALAC;
     case kCodecMP3:
       return AV_CODEC_ID_MP3;
     case kCodecPCM:
@@ -242,6 +245,8 @@ SampleFormat AVSampleFormatToSampleFormat(AVSampleFormat sample_format) {
       return kSampleFormatF32;
     case AV_SAMPLE_FMT_S16P:
       return kSampleFormatPlanarS16;
+    case  AV_SAMPLE_FMT_S32P:
+      return kSampleFormatPlanarS32;
     case AV_SAMPLE_FMT_FLTP:
       return kSampleFormatPlanarF32;
     default:
@@ -407,6 +412,12 @@ void AVStreamToVideoDecoderConfig(
     coded_size = visible_rect.size();
   }
 
+  // YV12 frames may be in HD color space.
+  if (format == VideoFrame::YV12 &&
+      stream->codec->colorspace == AVCOL_SPC_BT709) {
+    format = VideoFrame::YV12HD;
+  }
+
   // Pad out |coded_size| for subsampled YUV formats.
   if (format != VideoFrame::YV24) {
     coded_size.set_width((coded_size.width() + 1) / 2 * 2);
@@ -546,6 +557,7 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
     case VideoFrame::YV16:
       return PIX_FMT_YUV422P;
     case VideoFrame::YV12:
+    case VideoFrame::YV12HD:
       return PIX_FMT_YUV420P;
     case VideoFrame::YV12J:
       return PIX_FMT_YUVJ420P;

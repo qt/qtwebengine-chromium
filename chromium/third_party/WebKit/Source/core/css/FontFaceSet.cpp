@@ -40,7 +40,7 @@
 #include "core/dom/StyleEngine.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/style/StyleInheritedData.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
@@ -61,7 +61,7 @@ public:
     virtual void notifyLoaded(FontFace*) override;
     virtual void notifyError(FontFace*) override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     LoadFontPromiseResolver(FontFaceArray faces, ScriptState* scriptState)
@@ -72,10 +72,10 @@ private:
         m_fontFaces.swap(faces);
     }
 
-    WillBeHeapVector<RefPtrWillBeMember<FontFace> > m_fontFaces;
+    WillBeHeapVector<RefPtrWillBeMember<FontFace>> m_fontFaces;
     int m_numLoading;
     bool m_errorOccured;
-    RefPtr<ScriptPromiseResolver> m_resolver;
+    RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
 };
 
 void LoadFontPromiseResolver::loadFonts(ExecutionContext* context)
@@ -107,17 +107,18 @@ void LoadFontPromiseResolver::notifyError(FontFace* fontFace)
     }
 }
 
-void LoadFontPromiseResolver::trace(Visitor* visitor)
+DEFINE_TRACE(LoadFontPromiseResolver)
 {
     visitor->trace(m_fontFaces);
+    visitor->trace(m_resolver);
     LoadFontCallback::trace(visitor);
 }
 
-class FontsReadyPromiseResolver {
+class FontsReadyPromiseResolver final : public NoBaseWillBeGarbageCollected<FontsReadyPromiseResolver> {
 public:
-    static PassOwnPtr<FontsReadyPromiseResolver> create(ScriptState* scriptState)
+    static PassOwnPtrWillBeRawPtr<FontsReadyPromiseResolver> create(ScriptState* scriptState)
     {
-        return adoptPtr(new FontsReadyPromiseResolver(scriptState));
+        return adoptPtrWillBeNoop(new FontsReadyPromiseResolver(scriptState));
     }
 
     void resolve(PassRefPtrWillBeRawPtr<FontFaceSet> fontFaceSet)
@@ -127,13 +128,18 @@ public:
 
     ScriptPromise promise() { return m_resolver->promise(); }
 
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_resolver);
+    }
+
 private:
     explicit FontsReadyPromiseResolver(ScriptState* scriptState)
         : m_resolver(ScriptPromiseResolver::create(scriptState))
     {
     }
 
-    RefPtr<ScriptPromiseResolver> m_resolver;
+    RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
 };
 
 FontFaceSet::FontFaceSet(Document& document)
@@ -266,7 +272,7 @@ ScriptPromise FontFaceSet::ready(ScriptState* scriptState)
 {
     if (!inActiveDocumentContext())
         return ScriptPromise();
-    OwnPtr<FontsReadyPromiseResolver> resolver = FontsReadyPromiseResolver::create(scriptState);
+    OwnPtrWillBeRawPtr<FontsReadyPromiseResolver> resolver = FontsReadyPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     m_readyResolvers.append(resolver.release());
     handlePendingEventsAndPromisesSoon();
@@ -287,7 +293,7 @@ void FontFaceSet::add(FontFace* fontFace, ExceptionState& exceptionState)
         exceptionState.throwDOMException(InvalidModificationError, "Cannot add a CSS-connected FontFace.");
         return;
     }
-    CSSFontSelector* fontSelector = document()->styleEngine()->fontSelector();
+    CSSFontSelector* fontSelector = document()->styleEngine().fontSelector();
     m_nonCSSConnectedFaces.add(fontFace);
     fontSelector->fontFaceCache()->addFontFace(fontSelector, fontFace, false);
     if (fontFace->loadStatus() == FontFace::Loading)
@@ -299,7 +305,7 @@ void FontFaceSet::clear()
 {
     if (!inActiveDocumentContext() || m_nonCSSConnectedFaces.isEmpty())
         return;
-    CSSFontSelector* fontSelector = document()->styleEngine()->fontSelector();
+    CSSFontSelector* fontSelector = document()->styleEngine().fontSelector();
     FontFaceCache* fontFaceCache = fontSelector->fontFaceCache();
     for (const auto& fontFace : m_nonCSSConnectedFaces) {
         fontFaceCache->removeFontFace(fontFace.get(), false);
@@ -318,10 +324,10 @@ bool FontFaceSet::remove(FontFace* fontFace, ExceptionState& exceptionState)
         exceptionState.throwTypeError("The argument is not a FontFace.");
         return false;
     }
-    WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> >::iterator it = m_nonCSSConnectedFaces.find(fontFace);
+    WillBeHeapListHashSet<RefPtrWillBeMember<FontFace>>::iterator it = m_nonCSSConnectedFaces.find(fontFace);
     if (it != m_nonCSSConnectedFaces.end()) {
         m_nonCSSConnectedFaces.remove(it);
-        CSSFontSelector* fontSelector = document()->styleEngine()->fontSelector();
+        CSSFontSelector* fontSelector = document()->styleEngine().fontSelector();
         fontSelector->fontFaceCache()->removeFontFace(fontFace, false);
         if (fontFace->loadStatus() == FontFace::Loading)
             removeFromLoadingFonts(fontFace);
@@ -344,11 +350,11 @@ bool FontFaceSet::has(FontFace* fontFace, ExceptionState& exceptionState) const
     return m_nonCSSConnectedFaces.contains(fontFace) || isCSSConnectedFontFace(fontFace);
 }
 
-const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> >& FontFaceSet::cssConnectedFontFaceList() const
+const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace>>& FontFaceSet::cssConnectedFontFaceList() const
 {
     Document* d = document();
     d->ensureStyleResolver(); // Flush pending style changes.
-    return d->styleEngine()->fontSelector()->fontFaceCache()->cssConnectedFontFaces();
+    return d->styleEngine().fontSelector()->fontFaceCache()->cssConnectedFontFaces();
 }
 
 bool FontFaceSet::isCSSConnectedFontFace(FontFace* fontFace) const
@@ -370,8 +376,8 @@ void FontFaceSet::forEachInternal(FontFaceSetForEachCallback* callback, const Sc
 {
     if (!inActiveDocumentContext())
         return;
-    const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> >& cssConnectedFaces = cssConnectedFontFaceList();
-    WillBeHeapVector<RefPtrWillBeMember<FontFace> > fontFaces;
+    const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace>>& cssConnectedFaces = cssConnectedFontFaceList();
+    WillBeHeapVector<RefPtrWillBeMember<FontFace>> fontFaces;
     fontFaces.reserveInitialCapacity(cssConnectedFaces.size() + m_nonCSSConnectedFaces.size());
     for (const auto& fontFace : cssConnectedFaces)
         fontFaces.append(fontFace);
@@ -423,7 +429,7 @@ void FontFaceSet::fireDoneEventIfPossible()
     }
 
     if (!m_readyResolvers.isEmpty()) {
-        Vector<OwnPtr<FontsReadyPromiseResolver> > resolvers;
+        WillBeHeapVector<OwnPtrWillBeMember<FontsReadyPromiseResolver>> resolvers;
         m_readyResolvers.swap(resolvers);
         for (size_t index = 0; index < resolvers.size(); ++index)
             resolvers[index]->resolve(this);
@@ -437,13 +443,13 @@ ScriptPromise FontFaceSet::load(ScriptState* scriptState, const String& fontStri
 
     Font font;
     if (!resolveFontStyle(fontString, font)) {
-        RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+        RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
         ScriptPromise promise = resolver->promise();
         resolver->reject(DOMException::create(SyntaxError, "Could not resolve '" + fontString + "' as a font."));
         return promise;
     }
 
-    FontFaceCache* fontFaceCache = document()->styleEngine()->fontSelector()->fontFaceCache();
+    FontFaceCache* fontFaceCache = document()->styleEngine().fontSelector()->fontFaceCache();
     FontFaceArray faces;
     for (const FontFamily* f = &font.fontDescription().family(); f; f = f->next()) {
         CSSSegmentedFontFace* segmentedFontFace = fontFaceCache->get(font.fontDescription(), f->family());
@@ -468,7 +474,7 @@ bool FontFaceSet::check(const String& fontString, const String& text, ExceptionS
         return false;
     }
 
-    CSSFontSelector* fontSelector = document()->styleEngine()->fontSelector();
+    CSSFontSelector* fontSelector = document()->styleEngine().fontSelector();
     FontFaceCache* fontFaceCache = fontSelector->fontFaceCache();
 
     bool hasLoadedFaces = false;
@@ -504,7 +510,7 @@ bool FontFaceSet::resolveFontStyle(const String& fontString, Font& font)
     if (fontValue == "inherit" || fontValue == "initial")
         return false;
 
-    RefPtr<RenderStyle> style = RenderStyle::create();
+    RefPtr<ComputedStyle> style = ComputedStyle::create();
 
     FontFamily fontFamily;
     fontFamily.setFamily(defaultFontFamily);
@@ -518,21 +524,11 @@ bool FontFaceSet::resolveFontStyle(const String& fontString, Font& font)
 
     style->font().update(style->font().fontSelector());
 
-    // Now map the font property longhands into the style.
-    CSSPropertyValue properties[] = {
-        CSSPropertyValue(CSSPropertyFontFamily, *parsedStyle),
-        CSSPropertyValue(CSSPropertyFontStretch, *parsedStyle),
-        CSSPropertyValue(CSSPropertyFontStyle, *parsedStyle),
-        CSSPropertyValue(CSSPropertyFontVariant, *parsedStyle),
-        CSSPropertyValue(CSSPropertyFontWeight, *parsedStyle),
-        CSSPropertyValue(CSSPropertyFontSize, *parsedStyle),
-        CSSPropertyValue(CSSPropertyLineHeight, *parsedStyle),
-    };
-    StyleResolver& styleResolver = document()->ensureStyleResolver();
-    styleResolver.applyPropertiesToStyle(properties, WTF_ARRAY_LENGTH(properties), style.get());
+    document()->updateLayoutTreeIfNeeded();
+    document()->ensureStyleResolver().computeFont(style.get(), *parsedStyle);
 
     font = style->font();
-    font.update(document()->styleEngine()->fontSelector());
+    font.update(document()->styleEngine().fontSelector());
     return true;
 }
 
@@ -550,10 +546,10 @@ void FontFaceSet::FontLoadHistogram::record()
 {
     if (!m_recorded) {
         m_recorded = true;
-        blink::Platform::current()->histogramCustomCounts("WebFont.WebFontsInPage", m_count, 1, 100, 50);
+        Platform::current()->histogramCustomCounts("WebFont.WebFontsInPage", m_count, 1, 100, 50);
     }
     if (m_status == HadBlankText || m_status == DidNotHaveBlankText) {
-        blink::Platform::current()->histogramEnumeration("WebFont.HadBlankText", m_status == HadBlankText ? 1 : 0, 2);
+        Platform::current()->histogramEnumeration("WebFont.HadBlankText", m_status == HadBlankText ? 1 : 0, 2);
         m_status = Reported;
     }
 }
@@ -580,16 +576,18 @@ void FontFaceSet::didLayout(Document& document)
         fonts->didLayout();
 }
 
-#if ENABLE(OILPAN)
-void FontFaceSet::trace(Visitor* visitor)
+DEFINE_TRACE(FontFaceSet)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_loadingFonts);
+    visitor->trace(m_readyResolvers);
     visitor->trace(m_loadedFonts);
     visitor->trace(m_failedFonts);
     visitor->trace(m_nonCSSConnectedFaces);
-    DocumentSupplement::trace(visitor);
-    EventTargetWithInlineData::trace(visitor);
-}
+    WillBeHeapSupplement<Document>::trace(visitor);
 #endif
+    EventTargetWithInlineData::trace(visitor);
+    ActiveDOMObject::trace(visitor);
+}
 
 } // namespace blink

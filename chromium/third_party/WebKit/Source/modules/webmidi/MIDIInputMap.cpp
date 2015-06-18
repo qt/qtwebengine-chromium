@@ -5,22 +5,13 @@
 #include "config.h"
 #include "modules/webmidi/MIDIInputMap.h"
 
-#include "bindings/core/v8/ScriptState.h"
 #include "bindings/modules/v8/V8MIDIInput.h"
 
 namespace blink {
 
-MIDIInputMap::MIDIInputMap(const HeapHashMap<String, Member<MIDIInput> >map)
-    : MIDIPortMap<MIDIInput>(map)
+MIDIInputMap::MIDIInputMap(const HeapVector<Member<MIDIInput>>& entries)
+    : MIDIPortMap<MIDIInput>(entries)
 {
-}
-
-ScriptValue MIDIInputMap::getForBinding(ScriptState* scriptState, const String& id)
-{
-    MIDIInput* result = get(id);
-    if (result)
-        return ScriptValue(scriptState, toV8(result, scriptState->context()->Global(), scriptState->isolate()));
-    return ScriptValue(scriptState, v8::Undefined(scriptState->isolate()));
 }
 
 } // namespace blink

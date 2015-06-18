@@ -6,6 +6,7 @@
  */
 
 #include "gm.h"
+#include "sk_tool_utils.h"
 #include "SkArithmeticMode.h"
 #include "SkOffsetImageFilter.h"
 #include "SkXfermodeImageFilter.h"
@@ -24,7 +25,7 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("xfermodeimagefilter");
     }
 
@@ -41,28 +42,7 @@ protected:
         canvas.drawText(str, strlen(str), SkIntToScalar(15), SkIntToScalar(65), paint);
     }
 
-    void make_checkerboard() {
-        fCheckerboard.allocN32Pixels(80, 80);
-        SkCanvas canvas(fCheckerboard);
-        canvas.clear(0x00000000);
-        SkPaint darkPaint;
-        darkPaint.setColor(0xFF404040);
-        SkPaint lightPaint;
-        lightPaint.setColor(0xFFA0A0A0);
-        for (int y = 0; y < 80; y += 16) {
-          for (int x = 0; x < 80; x += 16) {
-            canvas.save();
-            canvas.translate(SkIntToScalar(x), SkIntToScalar(y));
-            canvas.drawRect(SkRect::MakeXYWH(0, 0, 8, 8), darkPaint);
-            canvas.drawRect(SkRect::MakeXYWH(8, 0, 8, 8), lightPaint);
-            canvas.drawRect(SkRect::MakeXYWH(0, 8, 8, 8), lightPaint);
-            canvas.drawRect(SkRect::MakeXYWH(8, 8, 8, 8), darkPaint);
-            canvas.restore();
-          }
-        }
-    }
-
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(WIDTH, HEIGHT);
     }
 
@@ -85,13 +65,16 @@ protected:
         canvas->restore();
     }
 
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         make_bitmap();
-        make_checkerboard();
+
+        fCheckerboard.allocN32Pixels(80, 80);
+        SkCanvas checkerboardCanvas(fCheckerboard);
+        sk_tool_utils::draw_checkerboard(&checkerboardCanvas, 0xFFA0A0A0, 0xFF404040, 8);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
-        canvas->clear(0x00000000);
+    void onDraw(SkCanvas* canvas) override {
+        canvas->clear(SK_ColorBLACK);
         SkPaint paint;
 
         const struct {

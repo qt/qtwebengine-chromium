@@ -32,7 +32,7 @@
 #include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
-#include "core/rendering/RenderFieldset.h"
+#include "core/layout/LayoutFieldset.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
@@ -50,7 +50,7 @@ PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document
     return adoptRefWillBeNoop(new HTMLFieldSetElement(document, form));
 }
 
-void HTMLFieldSetElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLFieldSetElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_associatedElements);
@@ -74,15 +74,6 @@ bool HTMLFieldSetElement::isValidElement()
         }
     }
     return true;
-}
-
-void HTMLFieldSetElement::setNeedsValidityCheck()
-{
-    // For now unconditionally order style recalculation, which triggers
-    // validity recalculation. In the near future, consider implement validity
-    // cache and recalculate style only if it changed.
-    pseudoStateChanged(CSSSelector::PseudoValid);
-    pseudoStateChanged(CSSSelector::PseudoInvalid);
 }
 
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
@@ -116,9 +107,9 @@ const AtomicString& HTMLFieldSetElement::formControlType() const
     return fieldset;
 }
 
-RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLFieldSetElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderFieldset(this);
+    return new LayoutFieldset(this);
 }
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const

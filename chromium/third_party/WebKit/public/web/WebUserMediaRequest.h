@@ -31,9 +31,9 @@
 #ifndef WebUserMediaRequest_h
 #define WebUserMediaRequest_h
 
-#include "WebSecurityOrigin.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebPrivatePtr.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebString.h"
 
 namespace blink {
@@ -42,8 +42,6 @@ class UserMediaRequest;
 class WebDocument;
 class WebMediaConstraints;
 class WebMediaStream;
-class WebMediaStreamSource;
-template <typename T> class WebVector;
 
 class WebUserMediaRequest {
 public:

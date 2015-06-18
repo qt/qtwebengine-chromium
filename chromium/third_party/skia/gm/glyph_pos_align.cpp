@@ -21,17 +21,14 @@ namespace skiagm {
 
 class GlyphPosAlignGM : public GM {
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("glyph_pos_align");
     }
 
-    virtual SkISize onISize() { return SkISize::Make(kWidth, kHeight); }
+    SkISize onISize() override { return SkISize::Make(kWidth, kHeight); }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         canvas->clear(SK_ColorBLACK);
 
         SkPaint paint;
@@ -59,7 +56,7 @@ protected:
         SkScalar widths[kMaxStringLength];
         SkScalar posX[kMaxStringLength];
         SkPoint pos[kMaxStringLength];
-        int length = strlen(text);
+        int length = SkToInt(strlen(text));
         SkASSERT(length <= kMaxStringLength);
 
         paint.getTextWidths(text, length, widths);

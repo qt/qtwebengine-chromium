@@ -56,13 +56,6 @@ IPC_MESSAGE_CONTROL5(
    uint32 /* length */,
    uint32 /* segment count */)
 
-// Notification message sent from AudioRendererHost to renderer after an output
-// device change has occurred.
-IPC_MESSAGE_CONTROL3(AudioMsg_NotifyDeviceChanged,
-                     int /* stream_id */,
-                     int /* new_buffer_size */,
-                     int /* new_sample_rate */)
-
 // Notification message sent from AudioRendererHost to renderer for state
 // update after the renderer has requested a Create/Start/Close.
 IPC_MESSAGE_CONTROL2(AudioMsg_NotifyStreamStateChanged,
@@ -81,21 +74,20 @@ IPC_MESSAGE_CONTROL2(AudioInputMsg_NotifyStreamVolume,
 // Messages sent from the renderer to the browser.
 
 // Request that is sent to the browser for creating an audio output stream.
-// |render_view_id| is the routing ID for the render view producing the audio
+// |render_frame_id| is the routing ID for the RenderFrame producing the audio
 // data.
-IPC_MESSAGE_CONTROL5(AudioHostMsg_CreateStream,
+IPC_MESSAGE_CONTROL4(AudioHostMsg_CreateStream,
                      int /* stream_id */,
-                     int /* render_view_id */,
                      int /* render_frame_id */,
                      int /* session_id */,
                      media::AudioParameters /* params */)
 
 // Request that is sent to the browser for creating an audio input stream.
-// |render_view_id| is the routing ID for the render view consuming the audio
+// |render_frame_id| is the routing ID for the RenderFrame consuming the audio
 // data.
 IPC_MESSAGE_CONTROL4(AudioInputHostMsg_CreateStream,
                      int /* stream_id */,
-                     int /* render_view_id */,
+                     int /* render_frame_id */,
                      int /* session_id */,
                      AudioInputHostMsg_CreateStream_Config)
 

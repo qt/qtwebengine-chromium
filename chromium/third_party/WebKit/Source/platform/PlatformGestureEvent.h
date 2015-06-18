@@ -43,22 +43,40 @@ public:
         memset(&m_data, 0, sizeof(m_data));
     }
 
-    PlatformGestureEvent(Type type, const IntPoint& position, const IntPoint& globalPosition, const IntSize& area, double timestamp, bool shiftKey, bool ctrlKey, bool altKey, bool metaKey, float deltaX, float deltaY, float velocityX, float velocityY)
+    PlatformGestureEvent(Type type, const IntPoint& position,
+        const IntPoint& globalPosition, const IntSize& area, double timestamp,
+        bool shiftKey, bool ctrlKey, bool altKey, bool metaKey)
         : PlatformEvent(type, shiftKey, ctrlKey, altKey, metaKey, timestamp)
         , m_position(position)
         , m_globalPosition(globalPosition)
         , m_area(area)
     {
         memset(&m_data, 0, sizeof(m_data));
-        if (type == PlatformEvent::GestureScrollBegin
-            || type == PlatformEvent::GestureScrollEnd
-            || type == PlatformEvent::GestureScrollUpdate
-            || type == PlatformEvent::GestureScrollUpdateWithoutPropagation) {
-            m_data.m_scrollUpdate.m_deltaX = deltaX;
-            m_data.m_scrollUpdate.m_deltaY = deltaY;
-            m_data.m_scrollUpdate.m_velocityX = velocityX;
-            m_data.m_scrollUpdate.m_velocityY = velocityY;
+    }
+
+    void setScrollGestureData(float deltaX, float deltaY, float velocityX, float velocityY,
+        bool inertial, bool preventPropagation)
+    {
+        ASSERT(type() == PlatformEvent::GestureScrollBegin
+            || type() == PlatformEvent::GestureScrollUpdate
+            || type() == PlatformEvent::GestureScrollEnd);
+        if (type() != GestureScrollUpdate) {
+            ASSERT(deltaX == 0);
+            ASSERT(deltaY == 0);
+            ASSERT(velocityX == 0);
+            ASSERT(velocityY == 0);
+            ASSERT(!preventPropagation);
         }
+
+        if (type() == PlatformEvent::GestureScrollBegin)
+            ASSERT(!inertial);
+
+        m_data.m_scroll.m_deltaX = deltaX;
+        m_data.m_scroll.m_deltaY = deltaY;
+        m_data.m_scroll.m_velocityX = velocityX;
+        m_data.m_scroll.m_velocityY = velocityY;
+        m_data.m_scroll.m_inertial = inertial;
+        m_data.m_scroll.m_preventPropagation = preventPropagation;
     }
 
     const IntPoint& position() const { return m_position; } // PlatformWindow coordinates.
@@ -68,16 +86,14 @@ public:
 
     float deltaX() const
     {
-        ASSERT(m_type == PlatformEvent::GestureScrollUpdate
-            || m_type == PlatformEvent::GestureScrollUpdateWithoutPropagation);
-        return m_data.m_scrollUpdate.m_deltaX;
+        ASSERT(m_type == PlatformEvent::GestureScrollUpdate);
+        return m_data.m_scroll.m_deltaX;
     }
 
     float deltaY() const
     {
-        ASSERT(m_type == PlatformEvent::GestureScrollUpdate
-            || m_type == PlatformEvent::GestureScrollUpdateWithoutPropagation);
-        return m_data.m_scrollUpdate.m_deltaY;
+        ASSERT(m_type == PlatformEvent::GestureScrollUpdate);
+        return m_data.m_scroll.m_deltaY;
     }
 
     int tapCount() const
@@ -88,16 +104,26 @@ public:
 
     float velocityX() const
     {
-        ASSERT(m_type == PlatformEvent::GestureScrollUpdate
-            || m_type == PlatformEvent::GestureScrollUpdateWithoutPropagation);
-        return m_data.m_scrollUpdate.m_velocityX;
+        ASSERT(m_type == PlatformEvent::GestureScrollUpdate);
+        return m_data.m_scroll.m_velocityX;
     }
 
     float velocityY() const
     {
-        ASSERT(m_type == PlatformEvent::GestureScrollUpdate
-            || m_type == PlatformEvent::GestureScrollUpdateWithoutPropagation);
-        return m_data.m_scrollUpdate.m_velocityY;
+        ASSERT(m_type == PlatformEvent::GestureScrollUpdate);
+        return m_data.m_scroll.m_velocityY;
+    }
+
+    bool inertial() const
+    {
+        ASSERT(m_type == PlatformEvent::GestureScrollUpdate || m_type == PlatformEvent::GestureScrollEnd);
+        return m_data.m_scroll.m_inertial;
+    }
+
+    bool preventPropagation() const
+    {
+        ASSERT(m_type == PlatformEvent::GestureScrollUpdate);
+        return m_data.m_scroll.m_preventPropagation;
     }
 
     float scale() const
@@ -122,7 +148,6 @@ public:
         case GestureScrollBegin:
         case GestureScrollEnd:
         case GestureScrollUpdate:
-        case GestureScrollUpdateWithoutPropagation:
         case GestureFlingStart:
         case GesturePinchBegin:
         case GesturePinchEnd:
@@ -158,7 +183,9 @@ protected:
             float m_deltaY;
             float m_velocityX;
             float m_velocityY;
-        } m_scrollUpdate;
+            int m_preventPropagation;
+            bool m_inertial;
+        } m_scroll;
 
         struct {
             float m_scale;

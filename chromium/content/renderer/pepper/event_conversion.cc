@@ -13,13 +13,13 @@
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/common/input/web_touch_event_traits.h"
-#include "content/renderer/pepper/usb_key_code_conversion.h"
 #include "ppapi/c/pp_input_event.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/time_conversion.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 
 using ppapi::EventTimeToPPTimeTicks;
 using ppapi::InputEventData;
@@ -40,45 +40,45 @@ namespace {
 // Verify the modifier flags WebKit uses match the Pepper ones. If these start
 // not matching, we'll need to write conversion code to preserve the Pepper
 // values (since plugins will be depending on them).
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_SHIFTKEY) ==
-                   static_cast<int>(WebInputEvent::ShiftKey),
-               ShiftKeyMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_CONTROLKEY) ==
-                   static_cast<int>(WebInputEvent::ControlKey),
-               ControlKeyMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_ALTKEY) ==
-                   static_cast<int>(WebInputEvent::AltKey),
-               AltKeyMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_METAKEY) ==
-                   static_cast<int>(WebInputEvent::MetaKey),
-               MetaKeyMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISKEYPAD) ==
-                   static_cast<int>(WebInputEvent::IsKeyPad),
-               KeyPadMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISAUTOREPEAT) ==
-                   static_cast<int>(WebInputEvent::IsAutoRepeat),
-               AutoRepeatMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_LEFTBUTTONDOWN) ==
-                   static_cast<int>(WebInputEvent::LeftButtonDown),
-               LeftButtonMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_MIDDLEBUTTONDOWN) ==
-                   static_cast<int>(WebInputEvent::MiddleButtonDown),
-               MiddleButtonMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_RIGHTBUTTONDOWN) ==
-                   static_cast<int>(WebInputEvent::RightButtonDown),
-               RightButtonMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_CAPSLOCKKEY) ==
-                   static_cast<int>(WebInputEvent::CapsLockOn),
-               CapsLockMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_NUMLOCKKEY) ==
-                   static_cast<int>(WebInputEvent::NumLockOn),
-               NumLockMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISLEFT) ==
-                   static_cast<int>(WebInputEvent::IsLeft),
-               LeftMatches);
-COMPILE_ASSERT(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISRIGHT) ==
-                   static_cast<int>(WebInputEvent::IsRight),
-               RightMatches);
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_SHIFTKEY) ==
+                  static_cast<int>(WebInputEvent::ShiftKey),
+              "ShiftKey should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_CONTROLKEY) ==
+                  static_cast<int>(WebInputEvent::ControlKey),
+              "ControlKey should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_ALTKEY) ==
+                  static_cast<int>(WebInputEvent::AltKey),
+              "AltKey should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_METAKEY) ==
+                  static_cast<int>(WebInputEvent::MetaKey),
+              "MetaKey should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISKEYPAD) ==
+                  static_cast<int>(WebInputEvent::IsKeyPad),
+              "KeyPad should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISAUTOREPEAT) ==
+                  static_cast<int>(WebInputEvent::IsAutoRepeat),
+              "AutoRepeat should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_LEFTBUTTONDOWN) ==
+                  static_cast<int>(WebInputEvent::LeftButtonDown),
+              "LeftButton should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_MIDDLEBUTTONDOWN) ==
+                  static_cast<int>(WebInputEvent::MiddleButtonDown),
+              "MiddleButton should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_RIGHTBUTTONDOWN) ==
+                  static_cast<int>(WebInputEvent::RightButtonDown),
+              "RightButton should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_CAPSLOCKKEY) ==
+                  static_cast<int>(WebInputEvent::CapsLockOn),
+              "CapsLock should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_NUMLOCKKEY) ==
+                  static_cast<int>(WebInputEvent::NumLockOn),
+              "NumLock should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISLEFT) ==
+                  static_cast<int>(WebInputEvent::IsLeft),
+              "IsLeft should match");
+static_assert(static_cast<int>(PP_INPUTEVENT_MODIFIER_ISRIGHT) ==
+                  static_cast<int>(WebInputEvent::IsRight),
+              "IsRight should match");
 
 PP_InputEvent_Type ConvertEventTypes(WebInputEvent::Type wetype) {
   switch (wetype) {
@@ -135,7 +135,14 @@ void AppendKeyEvent(const WebInputEvent& event,
   InputEventData result = GetEventWithCommonFieldsAndType(event);
   result.event_modifiers = key_event.modifiers;
   result.key_code = key_event.windowsKeyCode;
-  result.code = CodeForKeyboardEvent(key_event);
+#if defined(OS_MACOSX)
+  // Workaround for |domCode| not being set on OS X. crbug.com/493833
+  result.code = ui::KeycodeConverter::DomCodeToCodeString(
+      ui::KeycodeConverter::NativeKeycodeToDomCode(key_event.nativeKeyCode));
+#else
+  result.code = ui::KeycodeConverter::DomCodeToCodeString(
+      static_cast<ui::DomCode>(key_event.domCode));
+#endif
   result_events->push_back(result);
 }
 
@@ -169,18 +176,18 @@ void AppendCharEvent(const WebInputEvent& event,
 
 void AppendMouseEvent(const WebInputEvent& event,
                       std::vector<InputEventData>* result_events) {
-  COMPILE_ASSERT(static_cast<int>(WebMouseEvent::ButtonNone) ==
-                     static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_NONE),
-                 MouseNone);
-  COMPILE_ASSERT(static_cast<int>(WebMouseEvent::ButtonLeft) ==
-                     static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_LEFT),
-                 MouseLeft);
-  COMPILE_ASSERT(static_cast<int>(WebMouseEvent::ButtonRight) ==
-                     static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_RIGHT),
-                 MouseRight);
-  COMPILE_ASSERT(static_cast<int>(WebMouseEvent::ButtonMiddle) ==
-                     static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_MIDDLE),
-                 MouseMiddle);
+  static_assert(static_cast<int>(WebMouseEvent::ButtonNone) ==
+                    static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_NONE),
+                "MouseNone should match");
+  static_assert(static_cast<int>(WebMouseEvent::ButtonLeft) ==
+                    static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_LEFT),
+                "MouseLeft should match");
+  static_assert(static_cast<int>(WebMouseEvent::ButtonRight) ==
+                    static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_RIGHT),
+                "MouseRight should match");
+  static_assert(static_cast<int>(WebMouseEvent::ButtonMiddle) ==
+                    static_cast<int>(PP_INPUTEVENT_MOUSEBUTTON_MIDDLE),
+                "MouseMiddle should match");
 
   const WebMouseEvent& mouse_event = static_cast<const WebMouseEvent&>(event);
   InputEventData result = GetEventWithCommonFieldsAndType(event);

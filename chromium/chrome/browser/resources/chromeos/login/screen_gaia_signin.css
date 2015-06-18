@@ -9,12 +9,35 @@
   width: 722px; /* Should be the same as #user-image.loading width. */
 }
 
-#gaia-signin:not(.saml).no-right-panel {
+#gaia-signin:not(.full-width).no-right-panel {
   width: 522px;
 }
 
-#gaia-signin.saml {
+.new-gaia-flow #gaia-signin {
+  height: 528px;
+  padding: 0 0 0;
+  width: 448px;
+}
+
+.new-gaia-flow .throbber {
+  display: none;
+}
+
+throbber-notice {
+  display: none;
+}
+
+.new-gaia-flow throbber-notice {
+  display: block;
+}
+
+#gaia-signin.full-width {
   padding: 75px 0 0;
+}
+
+.new-gaia-flow #gaia-signin.full-width {
+  padding-top: 47px;
+  width: 562px;
 }
 
 #signin-right {
@@ -37,8 +60,53 @@
   }
 }
 
-.no-right-panel #signin-right,
-.saml #signin-right {
+.new-gaia-flow #signin-right,
+.no-right-panel #signin-right {
+  display: none;
+}
+
+#close-button-item,
+#back-button-item {
+  color: white;
+  position: absolute;
+  top: 10px;
+  z-index: 1;
+}
+
+#close-button-item:disabled,
+#back-button-item:disabled {
+  color: rgb(127, 127, 127);
+}
+
+#close-button-item {
+  right: 10px;
+}
+
+#back-button-item {
+  left: 10px;
+}
+
+html[dir=rtl] #close-button-item {
+  left: 10px;
+  right: auto;
+}
+
+html[dir=rtl] #back-button-item {
+  -webkit-transform: scaleX(-1);
+  left: auto;
+  right: 10px;
+}
+
+.loading #close-button-item,
+.new-gaia-flow .full-width #close-button-item {
+  color: rgba(0, 0, 0, .54);
+}
+
+.new-gaia-flow .full-width #back-button-item {
+  display: none;
+}
+
+.loading.auth-completed #close-button-item {
   display: none;
 }
 
@@ -64,8 +132,12 @@
   height: 100%;
 }
 
-.saml #gaia-signin-form-container,
-.saml #signin-frame {
+.new-gaia-flow #gaia-signin-form-container {
+  width: 100%;
+}
+
+.full-width #signin-frame,
+.full-width #gaia-signin-form-container {
   width: 100%;
 }
 
@@ -79,8 +151,9 @@
   width: 1px;
 }
 
-.no-right-panel #gaia-signin-divider,
-.saml #gaia-signin-divider {
+.gaia-signin .new-gaia-flow #step-logo,
+.gaia-signin .new-gaia-flow #gaia-signin-divider,
+.no-right-panel #gaia-signin-divider {
   display: none;
 }
 
@@ -91,9 +164,23 @@
   width: 400px;
 }
 
+webview#signin-frame {
+  -webkit-transition: opacity 500ms ease-in;
+  display: block;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0;
+  width: 448px;
+}
+
+webview#signin-frame.show {
+  -webkit-transition: opacity 500ms ease-out;
+  opacity: 1;
+}
+
 /* Simpler alignment if no right panel. */
-.no-right-panel #signin-frame,
-.saml #signin-frame {
+.no-right-panel #signin-frame {
   margin-left: 0;
 }
 
@@ -114,6 +201,10 @@
   text-align: center;
 }
 
+.new-gaia-flow #enterprise-info-container {
+  display: none;
+}
+
 #enterprise-info-container #enterprise-info {
   display: inline-block;
 }
@@ -125,7 +216,7 @@
 }
 
 #createSupervisedUserSeparator {
-  background-color: rgba(128,128,128,0.3);
+  background-color: rgba(128, 128, 128, 0.3);
   height: 1px;
   width: 200px;
 }
@@ -156,6 +247,53 @@
   top: 50px;
 }
 
+.new-gaia-flow  #saml-notice-container {
+  -webkit-margin-start: 19px;
+  text-align: start;
+  top: 15px;
+}
+
 #saml-notice-message {
   margin: 0 auto;
+}
+
+.new-gaia-flow #saml-notice-message {
+  color: rgb(106, 106, 106);
+  font-size: 13px;
+}
+
+#gaia-whitelist-error {
+  bottom: 0;
+  display: none;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.new-gaia-flow #gaia-whitelist-error {
+  display: block;
+  visibility: hidden;
+}
+
+.new-gaia-flow .whitelist-error #gaia-whitelist-error {
+  visibility: visible;
+}
+
+.new-gaia-flow #gaia-signin.whitelist-error .step-contents {
+  visibility: hidden;
+}
+
+.new-gaia-flow #gaia-signin.whitelist-error .step-loading {
+  visibility: hidden;
+}
+
+html /deep/ #forgotPasswordDlg {
+  position: fixed;
+  top: 200px;
+  width: 350px;
+}
+
+html /deep/ #forgotPasswordDlg gaia-paper-button[autofocus] {
+  color: rgb(66, 133, 244);
 }

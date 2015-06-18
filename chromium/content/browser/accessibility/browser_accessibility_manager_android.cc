@@ -71,8 +71,8 @@ BrowserAccessibilityManagerAndroid::BrowserAccessibilityManagerAndroid(
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(delegate, factory) {
-  SetContentViewCore(content_view_core);
   Initialize(initial_tree);
+  SetContentViewCore(content_view_core);
 }
 
 BrowserAccessibilityManagerAndroid::~BrowserAccessibilityManagerAndroid() {
@@ -173,10 +173,9 @@ void BrowserAccessibilityManagerAndroid::NotifyAccessibilityEvent(
       Java_BrowserAccessibilityManager_handleTextSelectionChanged(
           env, obj.obj(), node->GetId());
       break;
-    case ui::AX_EVENT_CHILDREN_CHANGED:
     case ui::AX_EVENT_TEXT_CHANGED:
     case ui::AX_EVENT_VALUE_CHANGED:
-      if (node->IsEditableText()) {
+      if (node->IsEditableText() && GetFocus(GetRoot()) == node) {
         Java_BrowserAccessibilityManager_handleEditableTextChanged(
             env, obj.obj(), node->GetId());
       } else if (android_node->IsSlider()) {
@@ -254,12 +253,9 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
   Java_BrowserAccessibilityManager_setAccessibilityNodeInfoBooleanAttributes(
       env, obj, info,
       id,
-      node->CanScrollForward(),
-      node->CanScrollBackward(),
       node->IsCheckable(),
       node->IsChecked(),
       node->IsClickable(),
-      node->IsEditableText(),
       node->IsEnabled(),
       node->IsFocusable(),
       node->IsFocused(),
@@ -267,6 +263,16 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
       node->IsScrollable(),
       node->IsSelected(),
       node->IsVisibleToUser());
+  Java_BrowserAccessibilityManager_addAccessibilityNodeInfoActions(
+      env, obj, info,
+      id,
+      node->CanScrollForward(),
+      node->CanScrollBackward(),
+      node->IsClickable(),
+      node->IsEditableText(),
+      node->IsEnabled(),
+      node->IsFocusable(),
+      node->IsFocused());
   Java_BrowserAccessibilityManager_setAccessibilityNodeInfoClassName(
       env, obj, info,
       base::android::ConvertUTF8ToJavaString(env, node->GetClassName()).obj());
@@ -293,8 +299,7 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
       absolute_rect.width(), absolute_rect.height(),
       is_root);
 
-  // New KitKat APIs
-  Java_BrowserAccessibilityManager_setAccessibilityNodeInfoKitKatAttributes(
+  Java_BrowserAccessibilityManager_setAccessibilityNodeInfoLollipopAttributes(
       env, obj, info,
       node->CanOpenPopup(),
       node->IsContentInvalid(),
@@ -393,8 +398,7 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityEvent(
       break;
   }
 
-  // Backwards-compatible fallback for new KitKat APIs.
-  Java_BrowserAccessibilityManager_setAccessibilityEventKitKatAttributes(
+  Java_BrowserAccessibilityManager_setAccessibilityEventLollipopAttributes(
       env, obj, event,
       node->CanOpenPopup(),
       node->IsContentInvalid(),
@@ -724,13 +728,17 @@ void BrowserAccessibilityManagerAndroid::SetAccessibilityFocus(
     delegate_->AccessibilitySetAccessibilityFocus(id);
 }
 
-void BrowserAccessibilityManagerAndroid::OnRootChanged(ui::AXNode* new_root) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
+void BrowserAccessibilityManagerAndroid::OnAtomicUpdateFinished(
+    bool root_changed,
+    const std::vector<ui::AXTreeDelegate::Change>& changes) {
+  if (root_changed) {
+    JNIEnv* env = AttachCurrentThread();
+    ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+    if (obj.is_null())
+      return;
 
-  Java_BrowserAccessibilityManager_handleNavigate(env, obj.obj());
+    Java_BrowserAccessibilityManager_handleNavigate(env, obj.obj());
+  }
 }
 
 bool

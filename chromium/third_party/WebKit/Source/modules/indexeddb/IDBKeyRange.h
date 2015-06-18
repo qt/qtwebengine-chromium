@@ -27,6 +27,7 @@
 #define IDBKeyRange_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/ModulesExport.h"
 #include "modules/indexeddb/IDBKey.h"
 
 namespace blink {
@@ -36,7 +37,7 @@ class ExecutionContext;
 class ScriptState;
 class ScriptValue;
 
-class IDBKeyRange final : public GarbageCollected<IDBKeyRange>, public ScriptWrappable {
+class MODULES_EXPORT IDBKeyRange final : public GarbageCollected<IDBKeyRange>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum LowerBoundType {
@@ -55,7 +56,7 @@ public:
     // Null if the script value is null or undefined, the range if it is one, otherwise tries to convert to a key and throws if it fails.
     static IDBKeyRange* fromScriptValue(ExecutionContext*, const ScriptValue&, ExceptionState&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // Implement the IDBKeyRange IDL
     IDBKey* lower() const { return m_lower.get(); }

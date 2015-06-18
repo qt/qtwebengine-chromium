@@ -6,22 +6,42 @@
 #include "core/css/FontLoader.h"
 
 #include "core/css/CSSFontSelector.h"
+#include "core/dom/Document.h"
+#include "core/dom/IncrementLoadEventDelayCount.h"
 #include "core/fetch/FontResource.h"
-#include "core/fetch/ResourceFetcher.h"
+#include "core/inspector/ConsoleMessage.h"
 
 namespace blink {
 
-FontLoader::FontLoader(CSSFontSelector* fontSelector, ResourceFetcher* resourceFetcher)
+struct FontLoader::FontToLoad {
+public:
+    static PassOwnPtr<FontToLoad> create(FontResource* fontResource, Document& document)
+    {
+        return adoptPtr(new FontToLoad(fontResource, document));
+    }
+
+    ResourcePtr<FontResource> fontResource;
+    OwnPtr<IncrementLoadEventDelayCount> delay;
+
+private:
+    FontToLoad(FontResource* resource, Document& document)
+        : fontResource(resource)
+        , delay(IncrementLoadEventDelayCount::create(document))
+    {
+    }
+};
+
+FontLoader::FontLoader(CSSFontSelector* fontSelector, Document* document)
     : m_beginLoadingTimer(this, &FontLoader::beginLoadTimerFired)
     , m_fontSelector(fontSelector)
-    , m_resourceFetcher(resourceFetcher)
+    , m_document(document)
 {
 }
 
 FontLoader::~FontLoader()
 {
 #if ENABLE(OILPAN)
-    if (!m_resourceFetcher) {
+    if (!m_document) {
         ASSERT(m_fontsToBeginLoading.isEmpty());
         return;
     }
@@ -34,11 +54,10 @@ FontLoader::~FontLoader()
 
 void FontLoader::addFontToBeginLoading(FontResource* fontResource)
 {
-    if (!m_resourceFetcher || !fontResource->stillNeedsLoad() || fontResource->loadScheduled())
+    if (!m_document || !fontResource->stillNeedsLoad() || fontResource->loadScheduled())
         return;
 
-    m_fontsToBeginLoading.append(
-        std::make_pair(fontResource, ResourceLoader::RequestCountTracker(m_resourceFetcher, fontResource)));
+    m_fontsToBeginLoading.append(FontToLoad::create(fontResource, *m_document));
     fontResource->didScheduleLoad();
     if (!m_beginLoadingTimer.isActive())
         m_beginLoadingTimer.startOneShot(0, FROM_HERE);
@@ -51,13 +70,15 @@ void FontLoader::beginLoadTimerFired(Timer<blink::FontLoader>*)
 
 void FontLoader::loadPendingFonts()
 {
-    ASSERT(m_resourceFetcher);
+    ASSERT(m_document);
 
     FontsToLoadVector fontsToBeginLoading;
     fontsToBeginLoading.swap(m_fontsToBeginLoading);
-    for (const auto& item : fontsToBeginLoading) {
-        FontResource* fontResource = item.first.get();
-        fontResource->beginLoadIfNeeded(m_resourceFetcher);
+    for (const auto& fontToLoad : fontsToBeginLoading) {
+        if (m_document->frame())
+            fontToLoad->fontResource->beginLoadIfNeeded(m_document->fetcher());
+        else
+            fontToLoad->fontResource->error(Resource::LoadError);
     }
 
     // When the local fontsToBeginLoading vector goes out of scope it will
@@ -71,31 +92,39 @@ void FontLoader::fontFaceInvalidated()
         m_fontSelector->fontFaceInvalidated();
 }
 
-#if !ENABLE(OILPAN)
-void FontLoader::clearResourceFetcherAndFontSelector()
+void FontLoader::didFailToDecode(FontResource* fontResource)
 {
-    if (!m_resourceFetcher) {
+    // FIXME: Provide more useful message such as OTS rejection reason.
+    // See crbug.com/97467
+    if (m_fontSelector && m_fontSelector->document())
+        m_fontSelector->document()->addConsoleMessage(ConsoleMessage::create(OtherMessageSource, WarningMessageLevel, "Failed to decode downloaded font: " + fontResource->url().elidedString()));
+}
+
+#if !ENABLE(OILPAN)
+void FontLoader::clearDocumentAndFontSelector()
+{
+    if (!m_document) {
         ASSERT(m_fontsToBeginLoading.isEmpty());
         return;
     }
 
     m_beginLoadingTimer.stop();
     clearPendingFonts();
-    m_resourceFetcher = nullptr;
+    m_document = nullptr;
     m_fontSelector = nullptr;
 }
 #endif
 
 void FontLoader::clearPendingFonts()
 {
-    for (const auto& item : m_fontsToBeginLoading)
-        item.first->didUnscheduleLoad();
+    for (const auto& fontToLoad : m_fontsToBeginLoading)
+        fontToLoad->fontResource->didUnscheduleLoad();
     m_fontsToBeginLoading.clear();
 }
 
-void FontLoader::trace(Visitor* visitor)
+DEFINE_TRACE(FontLoader)
 {
-    visitor->trace(m_resourceFetcher);
+    visitor->trace(m_document);
     visitor->trace(m_fontSelector);
 }
 

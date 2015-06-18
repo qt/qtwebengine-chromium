@@ -5,23 +5,42 @@
  */
 
 /**
- * @constructor
- * @extends {WebInspector.Object}
- * @implements {WebInspector.TargetManager.Observer}
+ * @interface
  */
-WebInspector.TracingManager = function()
+WebInspector.TracingManagerClient = function()
 {
-    WebInspector.Object.call(this);
-    this._active = false;
-    WebInspector.targetManager.observeTargets(this);
 }
 
-WebInspector.TracingManager.Events = {
-    "BufferUsage": "BufferUsage",
-    "TracingStarted": "TracingStarted",
-    "EventsCollected": "EventsCollected",
-    "TracingStopped": "TracingStopped",
-    "TracingComplete": "TracingComplete"
+WebInspector.TracingManagerClient.prototype = {
+    tracingStarted: function() { },
+    /**
+     * @param {!Array.<!WebInspector.TracingManager.EventPayload>} events
+     */
+    traceEventsCollected: function(events) { },
+    tracingComplete: function() { },
+    /**
+     * @param {number} usage
+     */
+    tracingBufferUsage: function(usage) { },
+    /**
+     * @param {number} progress
+     */
+    eventsRetrievalProgress: function(progress) { }
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.Target} target
+ */
+WebInspector.TracingManager = function(target)
+{
+    this._target = target;
+    target.registerTracingDispatcher(new WebInspector.TracingDispatcher(this));
+
+    /** @type {?WebInspector.TracingManagerClient} */
+    this._activeClient = null;
+    this._eventBufferSize = 0;
+    this._eventsRetrieved = 0;
 }
 
 /** @typedef {!{
@@ -41,32 +60,22 @@ WebInspector.TracingManager.EventPayload;
 
 WebInspector.TracingManager.prototype = {
     /**
-     * @param {!WebInspector.Target} target
+     * @return {?WebInspector.Target}
      */
-    targetAdded: function(target)
+    target: function()
     {
-        if (this._target)
-            return;
-        this._target = target;
-        target.registerTracingDispatcher(new WebInspector.TracingDispatcher(this));
+        return this._target;
     },
 
     /**
-     * @param {!WebInspector.Target} target
+     * @param {number=} usage
+     * @param {number=} eventCount
+     * @param {number=} percentFull
      */
-    targetRemoved: function(target)
+    _bufferUsage: function(usage, eventCount, percentFull)
     {
-        if (this._target !== target)
-            return;
-        delete this._target;
-    },
-
-    /**
-     * @param {number} usage
-     */
-    _bufferUsage: function(usage)
-    {
-        this.dispatchEventToListeners(WebInspector.TracingManager.Events.BufferUsage, usage);
+        this._eventBufferSize = eventCount;
+        this._activeClient.tracingBufferUsage(usage || percentFull || 0);
     },
 
     /**
@@ -74,47 +83,45 @@ WebInspector.TracingManager.prototype = {
      */
     _eventsCollected: function(events)
     {
-        this.dispatchEventToListeners(WebInspector.TracingManager.Events.EventsCollected, events);
+        this._activeClient.traceEventsCollected(events);
+        this._eventsRetrieved += events.length;
+        if (!this._eventBufferSize)
+            return;
+        if (this._eventsRetrieved > this._eventBufferSize)
+            this._eventsRetrieved = this._eventBufferSize;
+        this._activeClient.eventsRetrievalProgress(this._eventsRetrieved / this._eventBufferSize);
     },
 
     _tracingComplete: function()
     {
-        this.dispatchEventToListeners(WebInspector.TracingManager.Events.TracingComplete);
+        this._eventBufferSize = 0;
+        this._eventsRetrieved = 0;
+        this._activeClient.tracingComplete();
+        this._activeClient = null;
+        WebInspector.targetManager.resumeAllTargets();
     },
 
     /**
+     * @param {!WebInspector.TracingManagerClient} client
      * @param {string} categoryFilter
      * @param {string} options
      * @param {function(?string)=} callback
      */
-    start: function(categoryFilter, options, callback)
+    start: function(client, categoryFilter, options, callback)
     {
-        if (this._active)
-            return;
+        if (this._activeClient)
+            throw new Error("Tracing is already started");
         WebInspector.targetManager.suspendAllTargets();
         var bufferUsageReportingIntervalMs = 500;
-        TracingAgent.start(categoryFilter, options, bufferUsageReportingIntervalMs, callback);
-        this._active = true;
-        this.dispatchEventToListeners(WebInspector.TracingManager.Events.TracingStarted);
+        this._activeClient = client;
+        this._target.tracingAgent().start(categoryFilter, options, bufferUsageReportingIntervalMs, callback);
+        this._activeClient.tracingStarted();
     },
 
     stop: function()
     {
-        if (!this._active)
-            return;
-        TracingAgent.end(this._onStop.bind(this));
-        WebInspector.targetManager.resumeAllTargets();
-    },
-
-    _onStop: function()
-    {
-        if (!this._active)
-            return;
-        this.dispatchEventToListeners(WebInspector.TracingManager.Events.TracingStopped);
-        this._active = false;
-    },
-
-    __proto__: WebInspector.Object.prototype
+        this._target.tracingAgent().end();
+    }
 }
 
 /**
@@ -129,14 +136,18 @@ WebInspector.TracingDispatcher = function(tracingManager)
 
 WebInspector.TracingDispatcher.prototype = {
     /**
-     * @param {number} usage
+     * @override
+     * @param {number=} usage
+     * @param {number=} eventCount
+     * @param {number=} percentFull
      */
-    bufferUsage: function(usage)
+    bufferUsage: function(usage, eventCount, percentFull)
     {
-        this._tracingManager._bufferUsage(usage);
+        this._tracingManager._bufferUsage(usage, eventCount, percentFull);
     },
 
     /**
+     * @override
      * @param {!Array.<!WebInspector.TracingManager.EventPayload>} data
      */
     dataCollected: function(data)
@@ -144,6 +155,9 @@ WebInspector.TracingDispatcher.prototype = {
         this._tracingManager._eventsCollected(data);
     },
 
+    /**
+     * @override
+     */
     tracingComplete: function()
     {
         this._tracingManager._tracingComplete();

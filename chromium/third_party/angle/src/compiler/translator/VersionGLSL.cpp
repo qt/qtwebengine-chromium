@@ -8,6 +8,9 @@
 
 static const int GLSL_VERSION_110 = 110;
 static const int GLSL_VERSION_120 = 120;
+static const int GLSL_VERSION_130 = 130;
+static const int GLSL_VERSION_410 = 410;
+static const int GLSL_VERSION_420 = 420;
 
 // We need to scan for the following:
 // 1. "invariant" keyword: This can occur in both - vertex and fragment shaders
@@ -26,12 +29,30 @@ static const int GLSL_VERSION_120 = 120;
 //    GLSL 1.2 relaxed the restriction on arrays, section 5.8: "Variables that
 //    are built-in types, entire structures or arrays... are all l-values."
 //
-TVersionGLSL::TVersionGLSL(sh::GLenum type, const TPragma &pragma)
+TVersionGLSL::TVersionGLSL(sh::GLenum type,
+                           const TPragma &pragma,
+                           ShShaderOutput output)
 {
-    if (pragma.stdgl.invariantAll)
-        mVersion = GLSL_VERSION_120;
+    if (output == SH_GLSL_130_OUTPUT)
+    {
+        mVersion = GLSL_VERSION_130;
+    }
+    else if (output == SH_GLSL_410_CORE_OUTPUT)
+    {
+        mVersion = GLSL_VERSION_410;
+    }
+    else if (output == SH_GLSL_420_CORE_OUTPUT)
+    {
+        mVersion = GLSL_VERSION_420;
+    }
     else
-        mVersion = GLSL_VERSION_110;
+    {
+      ASSERT(output == SH_GLSL_COMPATIBILITY_OUTPUT);
+      if (pragma.stdgl.invariantAll)
+          mVersion = GLSL_VERSION_120;
+      else
+          mVersion = GLSL_VERSION_110;
+    }
 }
 
 void TVersionGLSL::visitSymbol(TIntermSymbol *node)
@@ -53,9 +74,7 @@ bool TVersionGLSL::visitAggregate(Visit, TIntermAggregate *node)
       case EOpDeclaration:
         {
             const TIntermSequence &sequence = *(node->getSequence());
-            TQualifier qualifier = sequence.front()->getAsTyped()->getQualifier();
-            if ((qualifier == EvqInvariantVaryingIn) ||
-                (qualifier == EvqInvariantVaryingOut))
+            if (sequence.front()->getAsTyped()->getType().isInvariant())
             {
                 updateVersion(GLSL_VERSION_120);
             }

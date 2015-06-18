@@ -23,7 +23,6 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
@@ -199,7 +198,7 @@ void URLRequestFileJob::SetExtraRequestHeaders(
 void URLRequestFileJob::OnSeekComplete(int64 result) {
 }
 
-void URLRequestFileJob::OnReadComplete(net::IOBuffer* buf, int result) {
+void URLRequestFileJob::OnReadComplete(IOBuffer* buf, int result) {
 }
 
 URLRequestFileJob::~URLRequestFileJob() {
@@ -250,10 +249,6 @@ void URLRequestFileJob::DidFetchMetaInfo(const FileMetaInfo* meta_info) {
 }
 
 void URLRequestFileJob::DidOpen(int result) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("423948 URLRequestFileJob::DidOpen"));
-
   if (result != OK) {
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, result));
     return;
@@ -270,11 +265,6 @@ void URLRequestFileJob::DidOpen(int result) {
   DCHECK_GE(remaining_bytes_, 0);
 
   if (remaining_bytes_ > 0 && byte_range_.first_byte_position() != 0) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile1(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestFileJob::DidOpen 1"));
-
     int rv = stream_->Seek(base::File::FROM_BEGIN,
                            byte_range_.first_byte_position(),
                            base::Bind(&URLRequestFileJob::DidSeek,
@@ -304,7 +294,7 @@ void URLRequestFileJob::DidSeek(int64 result) {
   NotifyHeadersComplete();
 }
 
-void URLRequestFileJob::DidRead(scoped_refptr<net::IOBuffer> buf, int result) {
+void URLRequestFileJob::DidRead(scoped_refptr<IOBuffer> buf, int result) {
   if (result > 0) {
     SetStatus(URLRequestStatus());  // Clear the IO_PENDING status
     remaining_bytes_ -= result;

@@ -7,6 +7,7 @@
 
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "modules/ModulesExport.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
 #include "modules/webmidi/MIDIPort.h"
@@ -18,59 +19,63 @@ namespace blink {
 class MIDIOptions;
 class ScriptState;
 
-class MIDIAccessInitializer : public ScriptPromiseResolver, public MIDIAccessorClient {
+class MODULES_EXPORT MIDIAccessInitializer : public ScriptPromiseResolver, public MIDIAccessorClient {
+    WILL_BE_USING_PRE_FINALIZER(MIDIAccessInitializer, dispose);
 public:
     struct PortDescriptor {
         String id;
         String manufacturer;
         String name;
-        MIDIPort::MIDIPortTypeCode type;
+        MIDIPort::TypeCode type;
         String version;
-        bool isActive;
+        MIDIAccessor::MIDIPortState state;
 
-        PortDescriptor(const String& id, const String& manufacturer, const String& name, MIDIPort::MIDIPortTypeCode type, const String& version, bool isActive)
+        PortDescriptor(const String& id, const String& manufacturer, const String& name, MIDIPort::TypeCode type, const String& version, MIDIAccessor::MIDIPortState state)
             : id(id)
             , manufacturer(manufacturer)
             , name(name)
             , type(type)
             , version(version)
-            , isActive(isActive) { }
+            , state(state) { }
     };
 
     static ScriptPromise start(ScriptState* scriptState, const MIDIOptions& options)
     {
-        RefPtr<MIDIAccessInitializer> p = adoptRef(new MIDIAccessInitializer(scriptState, options));
-        p->keepAliveWhilePending();
-        p->suspendIfNeeded();
-        return p->start();
+        RefPtrWillBeRawPtr<MIDIAccessInitializer> resolver = adoptRefWillBeNoop(new MIDIAccessInitializer(scriptState, options));
+        resolver->keepAliveWhilePending();
+        resolver->suspendIfNeeded();
+        return resolver->start();
     }
 
-    virtual ~MIDIAccessInitializer();
+    ~MIDIAccessInitializer() override;
 
     // MIDIAccessorClient
-    virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive) override;
-    virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive) override;
-    virtual void didSetInputPortState(unsigned portIndex, bool isActive) override;
-    virtual void didSetOutputPortState(unsigned portIndex, bool isActive) override;
-    virtual void didStartSession(bool success, const String& error, const String& message) override;
-    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) override { }
+    void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, MIDIAccessor::MIDIPortState) override;
+    void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, MIDIAccessor::MIDIPortState) override;
+    void didSetInputPortState(unsigned portIndex, MIDIAccessor::MIDIPortState) override;
+    void didSetOutputPortState(unsigned portIndex, MIDIAccessor::MIDIPortState) override;
+    void didStartSession(bool success, const String& error, const String& message) override;
+    void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) override { }
 
     void resolveSysexPermission(bool allowed);
     SecurityOrigin* securityOrigin() const;
 
 private:
-    ScriptPromise start();
-
     MIDIAccessInitializer(ScriptState*, const MIDIOptions&);
 
     ExecutionContext* executionContext() const;
+    ScriptPromise start();
+    void dispose();
+
+    virtual void contextDestroyed() override;
 
     OwnPtr<MIDIAccessor> m_accessor;
-    bool m_requestSysex;
     Vector<PortDescriptor> m_portDescriptors;
+    bool m_requestSysex;
+    bool m_hasBeenDisposed;
+    bool m_sysexPermissionResolved;
 };
 
 } // namespace blink
-
 
 #endif // MIDIAccessInitializer_h

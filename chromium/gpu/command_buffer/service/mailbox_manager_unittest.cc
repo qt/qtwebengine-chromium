@@ -72,6 +72,13 @@ class MailboxManagerTest : public GpuServiceTest {
                           cleared);
   }
 
+  void SetLevelCleared(Texture* texture,
+                       GLenum target,
+                       GLint level,
+                       bool cleared) {
+    texture->SetLevelCleared(target, level, cleared);
+  }
+
   GLenum SetParameter(Texture* texture, GLenum pname, GLint param) {
     return texture->SetParameteri(feature_info_.get(), pname, param);
   }
@@ -247,10 +254,10 @@ class MailboxManagerSyncTest : public MailboxManagerTest {
     EXPECT_CALL(*gl_, TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, Flush())
+    EXPECT_CALL(*gl_, BindTexture(GL_TEXTURE_2D, kCurrentTexture))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, BindTexture(GL_TEXTURE_2D, kCurrentTexture))
+    EXPECT_CALL(*gl_, Flush())
         .Times(1)
         .RetiresOnSaturation();
   }
@@ -365,7 +372,7 @@ TEST_F(MailboxManagerSyncTest, ProduceConsumeResize) {
       kNewTextureId, GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT);
   manager2_->PullTextureUpdates(0);
   GLsizei width, height;
-  new_texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height);
+  new_texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr);
   EXPECT_EQ(16, width);
   EXPECT_EQ(32, height);
 
@@ -394,7 +401,7 @@ TEST_F(MailboxManagerSyncTest, ProduceConsumeResize) {
   // The last change to the texture should be visible without a sync point (i.e.
   // push).
   manager2_->PullTextureUpdates(0);
-  new_texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height);
+  new_texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr);
   EXPECT_EQ(64, width);
   EXPECT_EQ(64, height);
 
@@ -543,6 +550,111 @@ TEST_F(MailboxManagerSyncTest, ProduceAndClobber) {
   EXPECT_EQ(NULL, manager2_->ConsumeTexture(name));
 }
 
+TEST_F(MailboxManagerSyncTest, ClearedStateSynced) {
+  const GLuint kNewTextureId = 1234;
+
+  Texture* texture = DefineTexture();
+  EXPECT_TRUE(texture->SafeToRenderFrom());
+
+  Mailbox name = Mailbox::Generate();
+
+  manager_->ProduceTexture(name, texture);
+  EXPECT_EQ(texture, manager_->ConsumeTexture(name));
+
+  // Synchronize
+  manager_->PushTextureUpdates(0);
+  manager2_->PullTextureUpdates(0);
+
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kNewTextureId));
+  SetupUpdateTexParamExpectations(
+      kNewTextureId, GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT);
+  Texture* new_texture = manager2_->ConsumeTexture(name);
+  EXPECT_FALSE(new_texture == NULL);
+  EXPECT_NE(texture, new_texture);
+  EXPECT_EQ(kNewTextureId, new_texture->service_id());
+  EXPECT_TRUE(texture->SafeToRenderFrom());
+
+  // Change cleared to false.
+  SetLevelCleared(texture, texture->target(), 0, false);
+  EXPECT_FALSE(texture->SafeToRenderFrom());
+
+  // Synchronize
+  manager_->PushTextureUpdates(0);
+  SetupUpdateTexParamExpectations(
+      kNewTextureId, GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT);
+  manager2_->PullTextureUpdates(0);
+
+  // Cleared state should be synced.
+  EXPECT_FALSE(new_texture->SafeToRenderFrom());
+
+  DestroyTexture(texture);
+  DestroyTexture(new_texture);
+
+  EXPECT_EQ(NULL, manager_->ConsumeTexture(name));
+  EXPECT_EQ(NULL, manager2_->ConsumeTexture(name));
+}
+
+TEST_F(MailboxManagerSyncTest, SyncIncompleteTexture) {
+  const GLuint kNewTextureId = 1234;
+
+  // Create but not define texture.
+  Texture* texture = CreateTexture();
+  SetTarget(texture, GL_TEXTURE_2D, 1);
+  EXPECT_FALSE(texture->IsDefined());
+
+  Mailbox name = Mailbox::Generate();
+  manager_->ProduceTexture(name, texture);
+  EXPECT_EQ(texture, manager_->ConsumeTexture(name));
+
+  // Synchronize
+  manager_->PushTextureUpdates(0);
+  manager2_->PullTextureUpdates(0);
+
+  // Should sync to new texture which is not defined.
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kNewTextureId));
+  SetupUpdateTexParamExpectations(kNewTextureId, texture->min_filter(),
+                                  texture->mag_filter(), texture->wrap_s(),
+                                  texture->wrap_t());
+  Texture* new_texture = manager2_->ConsumeTexture(name);
+  ASSERT_TRUE(new_texture);
+  EXPECT_NE(texture, new_texture);
+  EXPECT_EQ(kNewTextureId, new_texture->service_id());
+  EXPECT_FALSE(new_texture->IsDefined());
+
+  // Change cleared to false.
+  SetLevelInfo(texture,
+               GL_TEXTURE_2D,
+               0,
+               GL_RGBA,
+               1,
+               1,
+               1,
+               0,
+               GL_RGBA,
+               GL_UNSIGNED_BYTE,
+               true);
+  SetParameter(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  SetParameter(texture, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  EXPECT_TRUE(texture->IsDefined());
+
+  // Synchronize
+  manager_->PushTextureUpdates(0);
+  SetupUpdateTexParamExpectations(
+      kNewTextureId, GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT);
+  manager2_->PullTextureUpdates(0);
+
+  // Cleared state should be synced.
+  EXPECT_TRUE(new_texture->IsDefined());
+
+  DestroyTexture(texture);
+  DestroyTexture(new_texture);
+
+  EXPECT_EQ(NULL, manager_->ConsumeTexture(name));
+  EXPECT_EQ(NULL, manager2_->ConsumeTexture(name));
+}
+
 // Putting the same texture into multiple mailboxes should result in sharing
 // only a single texture also within a synchronized manager instance.
 TEST_F(MailboxManagerSyncTest, SharedThroughMultipleMailboxes) {
@@ -618,8 +730,6 @@ TEST_F(MailboxManagerSyncTest, ProduceBothWays) {
   DestroyTexture(texture2);
   DestroyTexture(new_texture);
 }
-
-// TODO: Produce incomplete texture
 
 // TODO: Texture::level_infos_[][].size()
 

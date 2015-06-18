@@ -54,22 +54,14 @@ void initializeMainThread(void (*function)(MainThreadFunction, void*))
     AtomicString::init();
 }
 
+namespace internal {
+
 void callOnMainThread(MainThreadFunction* function, void* context)
 {
     (*callOnMainThreadFunction)(function, context);
 }
 
-static void callFunctionObject(void* context)
-{
-    Function<void()>* function = static_cast<Function<void()>*>(context);
-    (*function)();
-    delete function;
-}
-
-void callOnMainThread(const Function<void()>& function)
-{
-    callOnMainThread(callFunctionObject, new Function<void()>(function));
-}
+} // namespace internal
 
 bool isMainThread()
 {
@@ -77,4 +69,3 @@ bool isMainThread()
 }
 
 } // namespace WTF
-

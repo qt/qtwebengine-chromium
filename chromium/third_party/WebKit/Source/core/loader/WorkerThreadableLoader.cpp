@@ -39,10 +39,11 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerThread.h"
+#include "platform/heap/SafePoint.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
-#include "platform/weborigin/Referrer.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebWaitableEvent.h"
 #include "wtf/MainThread.h"
@@ -54,7 +55,7 @@ namespace blink {
 WorkerThreadableLoader::WorkerThreadableLoader(WorkerGlobalScope& workerGlobalScope, PassRefPtr<ThreadableLoaderClientWrapper> clientWrapper, PassOwnPtr<ThreadableLoaderClient> clientBridge, const ResourceRequest& request, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
     : m_workerGlobalScope(&workerGlobalScope)
     , m_workerClientWrapper(clientWrapper)
-    , m_bridge(*(new MainThreadBridge(m_workerClientWrapper, clientBridge, workerGlobalScope.thread()->workerLoaderProxy(), request, options, resourceLoaderOptions, workerGlobalScope.url().strippedForUseAsReferrer())))
+    , m_bridge(*(new MainThreadBridge(m_workerClientWrapper, clientBridge, workerGlobalScope.thread()->workerLoaderProxy(), request, options, resourceLoaderOptions, workerGlobalScope.referrerPolicy(), workerGlobalScope.url().strippedForUseAsReferrer())))
 {
 }
 
@@ -65,12 +66,12 @@ WorkerThreadableLoader::~WorkerThreadableLoader()
 
 void WorkerThreadableLoader::loadResourceSynchronously(WorkerGlobalScope& workerGlobalScope, const ResourceRequest& request, ThreadableLoaderClient& client, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
 {
-    blink::WebWaitableEvent* shutdownEvent =
+    WebWaitableEvent* shutdownEvent =
         workerGlobalScope.thread()->shutdownEvent();
-    OwnPtr<blink::WebWaitableEvent> loaderDone =
-        adoptPtr(blink::Platform::current()->createWaitableEvent());
+    OwnPtr<WebWaitableEvent> loaderDone =
+        adoptPtr(Platform::current()->createWaitableEvent());
 
-    Vector<blink::WebWaitableEvent*> events;
+    Vector<WebWaitableEvent*> events;
     events.append(shutdownEvent);
     events.append(loaderDone.get());
 
@@ -82,10 +83,10 @@ void WorkerThreadableLoader::loadResourceSynchronously(WorkerGlobalScope& worker
 
     RefPtr<WorkerThreadableLoader> loader = WorkerThreadableLoader::create(workerGlobalScope, clientWrapper, clientBridge.release(), request, options, resourceLoaderOptions);
 
-    blink::WebWaitableEvent* signalled;
+    WebWaitableEvent* signalled;
     {
-        ThreadState::SafePointScope scope(ThreadState::HeapPointersOnStack);
-        signalled = blink::Platform::current()->waitMultipleEvents(events);
+        SafePointScope scope(ThreadState::HeapPointersOnStack);
+        signalled = Platform::current()->waitMultipleEvents(events);
     }
     if (signalled == shutdownEvent) {
         loader->cancel();
@@ -108,10 +109,11 @@ void WorkerThreadableLoader::cancel()
 WorkerThreadableLoader::MainThreadBridge::MainThreadBridge(
     PassRefPtr<ThreadableLoaderClientWrapper> workerClientWrapper,
     PassOwnPtr<ThreadableLoaderClient> clientBridge,
-    WorkerLoaderProxy& loaderProxy,
+    PassRefPtr<WorkerLoaderProxy> loaderProxy,
     const ResourceRequest& request,
     const ThreadableLoaderOptions& options,
     const ResourceLoaderOptions& resourceLoaderOptions,
+    const ReferrerPolicy referrerPolicy,
     const String& outgoingReferrer)
     : m_clientBridge(clientBridge)
     , m_workerClientWrapper(workerClientWrapper)
@@ -119,34 +121,34 @@ WorkerThreadableLoader::MainThreadBridge::MainThreadBridge(
 {
     ASSERT(m_workerClientWrapper.get());
     ASSERT(m_clientBridge.get());
-    m_loaderProxy.postTaskToLoader(
-        createCrossThreadTask(&MainThreadBridge::mainThreadCreateLoader, AllowCrossThreadAccess(this), request, options, resourceLoaderOptions, outgoingReferrer));
+    m_loaderProxy->postTaskToLoader(
+        createCrossThreadTask(&MainThreadBridge::mainThreadCreateLoader, this, request, options, resourceLoaderOptions, referrerPolicy, outgoingReferrer));
 }
 
 WorkerThreadableLoader::MainThreadBridge::~MainThreadBridge()
 {
 }
 
-void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(ExecutionContext* context, MainThreadBridge* thisPtr, PassOwnPtr<CrossThreadResourceRequestData> requestData, ThreadableLoaderOptions options, ResourceLoaderOptions resourceLoaderOptions, const String& outgoingReferrer)
+void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(PassOwnPtr<CrossThreadResourceRequestData> requestData, ThreadableLoaderOptions options, ResourceLoaderOptions resourceLoaderOptions, const ReferrerPolicy referrerPolicy, const String& outgoingReferrer, ExecutionContext* context)
 {
     ASSERT(isMainThread());
     Document* document = toDocument(context);
 
     OwnPtr<ResourceRequest> request(ResourceRequest::adopt(requestData));
-    request->setHTTPReferrer(Referrer(outgoingReferrer, ReferrerPolicyDefault));
+    request->setHTTPReferrer(SecurityPolicy::generateReferrer(referrerPolicy, request->url(), outgoingReferrer));
     resourceLoaderOptions.requestInitiatorContext = WorkerContext;
-    thisPtr->m_mainThreadLoader = DocumentThreadableLoader::create(*document, thisPtr, *request, options, resourceLoaderOptions);
-    if (!thisPtr->m_mainThreadLoader) {
+    m_mainThreadLoader = DocumentThreadableLoader::create(*document, this, *request, options, resourceLoaderOptions);
+    if (!m_mainThreadLoader) {
         // DocumentThreadableLoader::create may return 0 when the document loader has been already changed.
-        thisPtr->didFail(ResourceError(errorDomainBlinkInternal, 0, request->url().string(), "Can't create DocumentThreadableLoader"));
+        didFail(ResourceError(errorDomainBlinkInternal, 0, request->url().string(), "Can't create DocumentThreadableLoader"));
     }
 }
 
-void WorkerThreadableLoader::MainThreadBridge::mainThreadDestroy(ExecutionContext* context, MainThreadBridge* thisPtr)
+void WorkerThreadableLoader::MainThreadBridge::mainThreadDestroy(ExecutionContext* context)
 {
     ASSERT(isMainThread());
     ASSERT_UNUSED(context, context->isDocument());
-    delete thisPtr;
+    delete this;
 }
 
 void WorkerThreadableLoader::MainThreadBridge::destroy()
@@ -155,42 +157,42 @@ void WorkerThreadableLoader::MainThreadBridge::destroy()
     clearClientWrapper();
 
     // "delete this" and m_mainThreadLoader::deref() on the worker object's thread.
-    m_loaderProxy.postTaskToLoader(
-        createCrossThreadTask(&MainThreadBridge::mainThreadDestroy, AllowCrossThreadAccess(this)));
+    m_loaderProxy->postTaskToLoader(
+        createCrossThreadTask(&MainThreadBridge::mainThreadDestroy, this));
 }
 
-void WorkerThreadableLoader::MainThreadBridge::mainThreadOverrideTimeout(ExecutionContext* context, MainThreadBridge* thisPtr, unsigned long timeoutMilliseconds)
+void WorkerThreadableLoader::MainThreadBridge::mainThreadOverrideTimeout(unsigned long timeoutMilliseconds, ExecutionContext* context)
 {
     ASSERT(isMainThread());
     ASSERT_UNUSED(context, context->isDocument());
 
-    if (!thisPtr->m_mainThreadLoader)
+    if (!m_mainThreadLoader)
         return;
-    thisPtr->m_mainThreadLoader->overrideTimeout(timeoutMilliseconds);
+    m_mainThreadLoader->overrideTimeout(timeoutMilliseconds);
 }
 
 void WorkerThreadableLoader::MainThreadBridge::overrideTimeout(unsigned long timeoutMilliseconds)
 {
-    m_loaderProxy.postTaskToLoader(
-        createCrossThreadTask(&MainThreadBridge::mainThreadOverrideTimeout, AllowCrossThreadAccess(this),
+    m_loaderProxy->postTaskToLoader(
+        createCrossThreadTask(&MainThreadBridge::mainThreadOverrideTimeout, this,
             timeoutMilliseconds));
 }
 
-void WorkerThreadableLoader::MainThreadBridge::mainThreadCancel(ExecutionContext* context, MainThreadBridge* thisPtr)
+void WorkerThreadableLoader::MainThreadBridge::mainThreadCancel(ExecutionContext* context)
 {
     ASSERT(isMainThread());
     ASSERT_UNUSED(context, context->isDocument());
 
-    if (!thisPtr->m_mainThreadLoader)
+    if (!m_mainThreadLoader)
         return;
-    thisPtr->m_mainThreadLoader->cancel();
-    thisPtr->m_mainThreadLoader = nullptr;
+    m_mainThreadLoader->cancel();
+    m_mainThreadLoader = nullptr;
 }
 
 void WorkerThreadableLoader::MainThreadBridge::cancel()
 {
-    m_loaderProxy.postTaskToLoader(
-        createCrossThreadTask(&MainThreadBridge::mainThreadCancel, AllowCrossThreadAccess(this)));
+    m_loaderProxy->postTaskToLoader(
+        createCrossThreadTask(&MainThreadBridge::mainThreadCancel, this));
     ThreadableLoaderClientWrapper* clientWrapper = m_workerClientWrapper.get();
     if (!clientWrapper->done()) {
         // If the client hasn't reached a termination state, then transition it by sending a cancellation error.

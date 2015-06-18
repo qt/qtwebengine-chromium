@@ -21,10 +21,10 @@
 
 namespace base {
 class Value;
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
-}
+}  // namespace base
 
 namespace gfx {
 class QuadF;
@@ -33,6 +33,7 @@ class RectF;
 class Transform;
 class Vector2dF;
 class Vector2d;
+class Vector3dF;
 }
 
 namespace cc {
@@ -199,35 +200,53 @@ class CC_EXPORT MathUtil {
   static bool FromValue(const base::Value*, gfx::Rect* out_rect);
   static scoped_ptr<base::Value> AsValue(const gfx::PointF& q);
 
-  static void AddToTracedValue(const gfx::Size& s,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::SizeF& s,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::Rect& r,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::PointF& q,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::Point3F&,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::Vector2d& v,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::Vector2dF& v,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::ScrollOffset& v,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::QuadF& q,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::RectF& rect,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::Transform& transform,
-                               base::debug::TracedValue* res);
-  static void AddToTracedValue(const gfx::BoxF& box,
-                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::Size& s,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::SizeF& s,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::Rect& r,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::PointF& q,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::Point3F&,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::Vector2d& v,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::Vector2dF& v,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::ScrollOffset& v,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::QuadF& q,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::RectF& rect,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::Transform& transform,
+                               base::trace_event::TracedValue* res);
+  static void AddToTracedValue(const char* name,
+                               const gfx::BoxF& box,
+                               base::trace_event::TracedValue* res);
 
   // Returns a base::Value representation of the floating point value.
   // If the value is inf, returns max double/float representation.
   static double AsDoubleSafely(double value);
   static float AsFloatSafely(float value);
+
+  // Returns vector that x axis (1,0,0) transforms to under given transform.
+  static gfx::Vector3dF GetXAxis(const gfx::Transform& transform);
+
+  // Returns vector that y axis (0,1,0) transforms to under given transform.
+  static gfx::Vector3dF GetYAxis(const gfx::Transform& transform);
 };
 
 }  // namespace cc

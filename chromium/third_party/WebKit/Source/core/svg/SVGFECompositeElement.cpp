@@ -38,8 +38,14 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<CompositeOp
         entries.append(std::make_pair(FECOMPOSITE_OPERATOR_ATOP, "atop"));
         entries.append(std::make_pair(FECOMPOSITE_OPERATOR_XOR, "xor"));
         entries.append(std::make_pair(FECOMPOSITE_OPERATOR_ARITHMETIC, "arithmetic"));
+        entries.append(std::make_pair(FECOMPOSITE_OPERATOR_LIGHTER, "lighter"));
     }
     return entries;
+}
+
+template<> unsigned short getMaxExposedEnumValue<CompositeOperationType>()
+{
+    return FECOMPOSITE_OPERATOR_ARITHMETIC;
 }
 
 inline SVGFECompositeElement::SVGFECompositeElement(Document& document)
@@ -61,27 +67,19 @@ inline SVGFECompositeElement::SVGFECompositeElement(Document& document)
     addToPropertyMap(m_svgOperator);
 }
 
+DEFINE_TRACE(SVGFECompositeElement)
+{
+    visitor->trace(m_k1);
+    visitor->trace(m_k2);
+    visitor->trace(m_k3);
+    visitor->trace(m_k4);
+    visitor->trace(m_in1);
+    visitor->trace(m_in2);
+    visitor->trace(m_svgOperator);
+    SVGFilterPrimitiveStandardAttributes::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGFECompositeElement)
-
-bool SVGFECompositeElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::inAttr);
-        supportedAttributes.add(SVGNames::in2Attr);
-        supportedAttributes.add(SVGNames::operatorAttr);
-        supportedAttributes.add(SVGNames::k1Attr);
-        supportedAttributes.add(SVGNames::k2Attr);
-        supportedAttributes.add(SVGNames::k3Attr);
-        supportedAttributes.add(SVGNames::k4Attr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGFECompositeElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
 
 bool SVGFECompositeElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
@@ -104,31 +102,26 @@ bool SVGFECompositeElement::setFilterEffectAttribute(FilterEffect* effect, const
 
 void SVGFECompositeElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (attrName == SVGNames::operatorAttr
         || attrName == SVGNames::k1Attr
         || attrName == SVGNames::k2Attr
         || attrName == SVGNames::k3Attr
         || attrName == SVGNames::k4Attr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         primitiveAttributeChanged(attrName);
         return;
     }
 
     if (attrName == SVGNames::inAttr || attrName == SVGNames::in2Attr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         invalidate();
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
-PassRefPtr<FilterEffect> SVGFECompositeElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
+PassRefPtrWillBeRawPtr<FilterEffect> SVGFECompositeElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
     FilterEffect* input2 = filterBuilder->getEffectById(AtomicString(m_in2->currentValue()->value()));
@@ -136,7 +129,7 @@ PassRefPtr<FilterEffect> SVGFECompositeElement::build(SVGFilterBuilder* filterBu
     if (!input1 || !input2)
         return nullptr;
 
-    RefPtr<FilterEffect> effect = FEComposite::create(filter, m_svgOperator->currentValue()->enumValue(), m_k1->currentValue()->value(), m_k2->currentValue()->value(), m_k3->currentValue()->value(), m_k4->currentValue()->value());
+    RefPtrWillBeRawPtr<FilterEffect> effect = FEComposite::create(filter, m_svgOperator->currentValue()->enumValue(), m_k1->currentValue()->value(), m_k2->currentValue()->value(), m_k3->currentValue()->value(), m_k4->currentValue()->value());
     FilterEffectVector& inputEffects = effect->inputEffects();
     inputEffects.reserveCapacity(2);
     inputEffects.append(input1);

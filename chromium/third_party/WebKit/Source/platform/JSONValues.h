@@ -35,9 +35,39 @@
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCounted.h"
+#include "wtf/TypeTraits.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
+
+namespace blink {
+
+class JSONValue;
+
+} // namespace blink
+
+namespace WTF {
+
+// FIXME: Avoid the need for this global upcasting to JSONValue (for PassRefPtr<T>.)
+// The current CodeGeneratorInspector.py generates code which order sorts its input
+// types and generates forward declarations where needed. But with inline uses
+// of setValue(PassRefPtr<JSONValue>) this is not quite sufficient for the
+// implicit conversion of PassRefPtr<T> to PassRefPtr<JSONValue> for a T that
+// has only been forward declared -- IsPointerConvertible<> doesn't have
+// complete types to work with.
+//
+// Work around that problem here by hackily declaring this global & unsafe
+// specialization.
+//
+// (InspectorTypeBuilder.h is the only piece of code that relies on this specialization.)
+template<typename From> class IsPointerConvertible<From, blink::JSONValue> {
+public:
+    enum {
+        Value = true
+    };
+};
+
+} // namespace WTF
 
 namespace blink {
 
@@ -161,7 +191,7 @@ private:
 
 class PLATFORM_EXPORT JSONObjectBase : public JSONValue {
 private:
-    typedef HashMap<String, RefPtr<JSONValue> > Dictionary;
+    typedef HashMap<String, RefPtr<JSONValue>> Dictionary;
 
 public:
     typedef Dictionary::iterator iterator;
@@ -171,6 +201,8 @@ public:
     JSONObject* openAccessors();
 
     virtual void writeJSON(StringBuilder* output) const override;
+
+    int size() const { return m_data.size(); }
 
 protected:
     virtual ~JSONObjectBase();
@@ -207,8 +239,6 @@ protected:
     iterator end() { return m_data.end(); }
     const_iterator begin() const { return m_data.begin(); }
     const_iterator end() const { return m_data.end(); }
-
-    int size() const { return m_data.size(); }
 
 protected:
     JSONObjectBase();
@@ -253,8 +283,8 @@ public:
 
 class PLATFORM_EXPORT JSONArrayBase : public JSONValue {
 public:
-    typedef Vector<RefPtr<JSONValue> >::iterator iterator;
-    typedef Vector<RefPtr<JSONValue> >::const_iterator const_iterator;
+    typedef Vector<RefPtr<JSONValue>>::iterator iterator;
+    typedef Vector<RefPtr<JSONValue>>::const_iterator const_iterator;
 
     virtual PassRefPtr<JSONArray> asArray() override;
 
@@ -288,7 +318,7 @@ protected:
     JSONArrayBase();
 
 private:
-    Vector<RefPtr<JSONValue> > m_data;
+    Vector<RefPtr<JSONValue>> m_data;
 };
 
 class PLATFORM_EXPORT JSONArray : public JSONArrayBase {
@@ -316,4 +346,4 @@ public:
 
 } // namespace blink
 
-#endif // !defined(JSONValues_h)
+#endif // JSONValues_h

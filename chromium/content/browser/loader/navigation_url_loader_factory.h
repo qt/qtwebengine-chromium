@@ -17,10 +17,8 @@ class NavigationURLLoaderFactory {
  public:
   virtual scoped_ptr<NavigationURLLoader> CreateLoader(
       BrowserContext* browser_context,
-      int64 frame_tree_node_id,
-      const CommonNavigationParams& common_params,
+      int frame_tree_node_id,
       scoped_ptr<NavigationRequestInfo> request_info,
-      ResourceRequestBody* request_body,
       NavigationURLLoaderDelegate* delegate) = 0;
 
  protected:

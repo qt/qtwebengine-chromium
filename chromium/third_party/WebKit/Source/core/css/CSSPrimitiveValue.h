@@ -24,11 +24,14 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
+#include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "platform/graphics/Color.h"
+#include "wtf/BitVector.h"
 #include "wtf/Forward.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/text/StringHash.h"
 
 namespace blink {
 
@@ -36,14 +39,13 @@ class CSSBasicShape;
 class CSSCalcValue;
 class CSSToLengthConversionData;
 class Counter;
-class ExceptionState;
 class Length;
 class LengthSize;
 class Pair;
 class Quad;
 class RGBColor;
 class Rect;
-class RenderStyle;
+class ComputedStyle;
 
 // Dimension calculations are imprecise, often resulting in values of e.g.
 // 44.99998. We need to go ahead and round if we're really close to the next
@@ -67,9 +69,8 @@ template<> inline float roundForImpreciseConversion(double value)
 
 // CSSPrimitiveValues are immutable. This class has manual ref-counting
 // of unioned types and does not have the code necessary
-// to handle any kind of mutations. All DOM-exposed "setters" just throw
-// exceptions.
-class CSSPrimitiveValue : public CSSValue {
+// to handle any kind of mutations.
+class CORE_EXPORT CSSPrimitiveValue : public CSSValue {
 public:
     enum UnitType {
         CSS_UNKNOWN = 0,
@@ -90,15 +91,13 @@ public:
         CSS_S = 15,
         CSS_HZ = 16,
         CSS_KHZ = 17,
-        CSS_DIMENSION = 18,
-        CSS_STRING = 19,
+        CSS_CUSTOM_IDENT = 19,
         CSS_URI = 20,
         CSS_IDENT = 21,
         CSS_ATTR = 22,
         CSS_COUNTER = 23,
         CSS_RECT = 24,
         CSS_RGBCOLOR = 25,
-        // From CSS Values and Units. Viewport-percentage Lengths (vw/vh/vmin/vmax).
         CSS_VW = 26,
         CSS_VH = 27,
         CSS_VMIN = 28,
@@ -107,30 +106,18 @@ public:
         CSS_DPI = 31,
         CSS_DPCM = 32,
         CSS_FR = 33,
-        CSS_PAIR = 100, // We envision this being exposed as a means of getting computed style values for pairs (border-spacing/radius, background-position, etc.)
+        CSS_PAIR = 100,
         CSS_UNICODE_RANGE = 102,
-
-        // FIXME: This is only used in CSSParserValue, so it's probably better as part of the enum there
-        CSS_PARSER_HEXCOLOR = 105,
-
-        // These are from CSS3 Values and Units, but that isn't a finished standard yet
         CSS_TURN = 107,
         CSS_REMS = 108,
         CSS_CHS = 109,
-
-        // This is used internally for counter names (as opposed to counter values)
         CSS_COUNTER_NAME = 110,
-
-        // This is used by the CSS Shapes draft
         CSS_SHAPE = 111,
-
-        // Used by border images.
         CSS_QUAD = 112,
-
         CSS_CALC = 113,
         CSS_CALC_PERCENTAGE_WITH_NUMBER = 114,
         CSS_CALC_PERCENTAGE_WITH_LENGTH = 115,
-
+        CSS_STRING = 116,
         CSS_PROPERTY_ID = 117,
         CSS_VALUE_ID = 118
     };
@@ -152,9 +139,11 @@ public:
     };
 
     typedef Vector<double, CSSPrimitiveValue::LengthUnitTypeCount> CSSLengthArray;
-    void accumulateLengthArray(CSSLengthArray&, double multiplier = 1) const;
+    typedef BitVector CSSLengthTypeArray;
 
-    // This enum follows the BisonCSSParser::Units enum augmented with UNIT_FREQUENCY for frequencies.
+    void accumulateLengthArray(CSSLengthArray&, double multiplier = 1) const;
+    void accumulateLengthArray(CSSLengthArray&, CSSLengthTypeArray&, double multiplier = 1) const;
+
     enum UnitCategory {
         UNumber,
         UPercent,
@@ -166,6 +155,9 @@ public:
         UOther
     };
     static UnitCategory unitCategory(UnitType);
+    static float clampToCSSLengthRange(double);
+
+    static void initUnitTable();
 
     static UnitType fromName(const String& unit);
 
@@ -178,7 +170,6 @@ public:
     }
     bool isAttr() const { return m_primitiveUnitType == CSS_ATTR; }
     bool isCounter() const { return m_primitiveUnitType == CSS_COUNTER; }
-    bool isFontIndependentLength() const { return m_primitiveUnitType >= CSS_PX && m_primitiveUnitType <= CSS_PC; }
     bool isFontRelativeLength() const
     {
         return m_primitiveUnitType == CSS_EMS
@@ -199,7 +190,7 @@ public:
     bool isRect() const { return m_primitiveUnitType == CSS_RECT; }
     bool isRGBColor() const { return m_primitiveUnitType == CSS_RGBCOLOR; }
     bool isShape() const { return m_primitiveUnitType == CSS_SHAPE; }
-    bool isString() const { return m_primitiveUnitType == CSS_STRING; }
+    bool isString() const { return m_primitiveUnitType == CSS_CUSTOM_IDENT || m_primitiveUnitType == CSS_STRING; }
     bool isTime() const { return m_primitiveUnitType == CSS_S || m_primitiveUnitType == CSS_MS; }
     bool isURI() const { return m_primitiveUnitType == CSS_URI; }
     bool isCalculated() const { return m_primitiveUnitType == CSS_CALC; }
@@ -221,9 +212,9 @@ public:
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(propertyID));
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createColor(unsigned rgbValue)
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createColor(RGBA32 rgbValue)
     {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(rgbValue, CSS_RGBCOLOR));
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(rgbValue));
     }
     static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(double value, UnitType type)
     {
@@ -237,7 +228,7 @@ public:
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value, zoom));
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const LengthSize& value, const RenderStyle& style)
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const LengthSize& value, const ComputedStyle& style)
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value, style));
     }
@@ -263,58 +254,30 @@ public:
 
     UnitType primitiveType() const;
 
-    double computeDegrees();
+    double computeDegrees() const;
     double computeSeconds();
 
-    /*
-     * Computes a length in pixels out of the given CSSValue
-     *
-     * The metrics have to be a bit different for screen and printer output.
-     * For screen output we assume 1 inch == 72 px, for printer we assume 300 dpi
-     *
-     * this is screen/printer dependent, so we probably need a config option for this,
-     * and some tool to calibrate.
-     */
+    // Computes a length in pixels, resolving relative lengths
     template<typename T> T computeLength(const CSSToLengthConversionData&);
 
-    // Converts to a Length, mapping various unit types appropriately.
-    template<int> Length convertToLength(const CSSToLengthConversionData&);
+    // Converts to a Length (Fixed, Percent or Calculated)
+    Length convertToLength(const CSSToLengthConversionData&);
 
-    double getDoubleValue(UnitType, ExceptionState&) const;
-    double getDoubleValue(UnitType) const;
     double getDoubleValue() const;
-
-    // setFloatValue(..., ExceptionState&) and setStringValue() must use unsigned short instead of UnitType to match IDL bindings.
-    void setFloatValue(unsigned short unitType, double floatValue, ExceptionState&);
-    float getFloatValue(unsigned short unitType, ExceptionState& exceptionState) const { return getValue<float>(static_cast<UnitType>(unitType), exceptionState); }
-    float getFloatValue(UnitType type) const { return getValue<float>(type); }
     float getFloatValue() const { return getValue<float>(); }
-
-    int getIntValue(UnitType type, ExceptionState& exceptionState) const { return getValue<int>(type, exceptionState); }
-    int getIntValue(UnitType type) const { return getValue<int>(type); }
     int getIntValue() const { return getValue<int>(); }
-
-    template<typename T> inline T getValue(UnitType type, ExceptionState& exceptionState) const { return clampTo<T>(getDoubleValue(type, exceptionState)); }
-    template<typename T> inline T getValue(UnitType type) const { return clampTo<T>(getDoubleValue(type)); }
     template<typename T> inline T getValue() const { return clampTo<T>(getDoubleValue()); }
 
-    void setStringValue(unsigned short stringType, const String& stringValue, ExceptionState&);
-    String getStringValue(ExceptionState&) const;
     String getStringValue() const;
 
-    Counter* getCounterValue(ExceptionState&) const;
     Counter* getCounterValue() const { return m_primitiveUnitType != CSS_COUNTER ? 0 : m_value.counter; }
 
-    Rect* getRectValue(ExceptionState&) const;
     Rect* getRectValue() const { return m_primitiveUnitType != CSS_RECT ? 0 : m_value.rect; }
 
-    Quad* getQuadValue(ExceptionState&) const;
     Quad* getQuadValue() const { return m_primitiveUnitType != CSS_QUAD ? 0 : m_value.quad; }
 
-    PassRefPtrWillBeRawPtr<RGBColor> getRGBColorValue(ExceptionState&) const;
     RGBA32 getRGBA32Value() const { return m_primitiveUnitType != CSS_RGBCOLOR ? 0 : m_value.rgbcolor; }
 
-    Pair* getPairValue(ExceptionState&) const;
     Pair* getPairValue() const { return m_primitiveUnitType != CSS_PAIR ? 0 : m_value.pair; }
 
     CSSBasicShape* getShapeValue() const { return m_primitiveUnitType != CSS_SHAPE ? 0 : m_value.shape; }
@@ -327,16 +290,13 @@ public:
     template<typename T> inline operator T() const; // Defined in CSSPrimitiveValueMappings.h
 
     static const char* unitTypeToString(UnitType);
-    String customCSSText(CSSTextFormattingFlags = QuoteCSSStringIfNeeded) const;
+    String customCSSText() const;
 
     bool isQuirkValue() { return m_isQuirkValue; }
 
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> cloneForCSSOM() const;
-    void setCSSOMSafe() { m_isCSSOMSafe = true; }
-
     bool equals(const CSSPrimitiveValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
     static UnitType canonicalUnitTypeForCategory(UnitCategory);
     static double conversionToCanonicalUnitsScaleFactor(UnitType);
@@ -348,11 +308,9 @@ public:
 private:
     CSSPrimitiveValue(CSSValueID);
     CSSPrimitiveValue(CSSPropertyID);
-    // int vs. unsigned is too subtle to distinguish types, so require a UnitType.
-    CSSPrimitiveValue(int parserOperator, UnitType);
-    CSSPrimitiveValue(unsigned color, UnitType); // RGB value
+    CSSPrimitiveValue(RGBA32 color);
     CSSPrimitiveValue(const Length&, float zoom);
-    CSSPrimitiveValue(const LengthSize&, const RenderStyle&);
+    CSSPrimitiveValue(const LengthSize&, const ComputedStyle&);
     CSSPrimitiveValue(const String&, UnitType);
     CSSPrimitiveValue(double, UnitType);
 
@@ -374,24 +332,22 @@ private:
     template<typename T> operator T*(); // compile-time guard
 
     void init(const Length&);
-    void init(const LengthSize&, const RenderStyle&);
+    void init(const LengthSize&, const ComputedStyle&);
     void init(PassRefPtrWillBeRawPtr<Counter>);
     void init(PassRefPtrWillBeRawPtr<Rect>);
     void init(PassRefPtrWillBeRawPtr<Pair>);
     void init(PassRefPtrWillBeRawPtr<Quad>);
     void init(PassRefPtrWillBeRawPtr<CSSBasicShape>);
     void init(PassRefPtrWillBeRawPtr<CSSCalcValue>);
-    bool getDoubleValueInternal(UnitType targetUnitType, double* result) const;
 
     double computeLengthDouble(const CSSToLengthConversionData&);
 
     union {
         CSSPropertyID propertyID;
         CSSValueID valueID;
-        int parserOperator;
         double num;
         StringImpl* string;
-        unsigned rgbcolor;
+        RGBA32 rgbcolor;
         // FIXME: oilpan: Should be members, but no support for members in unions. Just trace the raw ptr for now.
         CSSBasicShape* shape;
         CSSCalcValue* calc;
@@ -403,6 +359,7 @@ private:
 };
 
 typedef CSSPrimitiveValue::CSSLengthArray CSSLengthArray;
+typedef CSSPrimitiveValue::CSSLengthTypeArray CSSLengthTypeArray;
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSPrimitiveValue, isPrimitiveValue());
 

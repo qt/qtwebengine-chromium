@@ -106,13 +106,14 @@ class CONTENT_EXPORT PluginServiceImpl
   void UnregisterInternalPlugin(const base::FilePath& path) override;
   void GetInternalPlugins(std::vector<WebPluginInfo>* plugins) override;
   bool NPAPIPluginsSupported() override;
+  void EnableNpapiPlugins() override;
   void DisablePluginsDiscoveryForTesting() override;
 #if defined(OS_MACOSX)
   void AppActivated() override;
 #elif defined(OS_WIN)
-  virtual bool GetPluginInfoFromWindow(HWND window,
-                                       base::string16* plugin_name,
-                                       base::string16* plugin_version) override;
+  bool GetPluginInfoFromWindow(HWND window,
+                               base::string16* plugin_name,
+                               base::string16* plugin_version) override;
 
   // Returns true iff the given HWND is a plugin.
   bool IsPluginWindow(HWND window);
@@ -153,7 +154,7 @@ class CONTENT_EXPORT PluginServiceImpl
   // Cancels opening a channel to a NPAPI plugin.
   void CancelOpenChannelToNpapiPlugin(PluginProcessHost::Client* client);
 
-  // Used to monitor plug-in stability.
+  // Used to monitor plugin stability.
   void RegisterPluginCrash(const base::FilePath& plugin_path);
 
  private:
@@ -226,6 +227,8 @@ class CONTENT_EXPORT PluginServiceImpl
   base::win::RegKey hklm_key_;
 #endif
 
+  bool npapi_plugins_enabled_;
+
 #if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
   ScopedVector<base::FilePathWatcher> file_watchers_;
 #endif
@@ -237,14 +240,14 @@ class CONTENT_EXPORT PluginServiceImpl
 
   std::set<PluginProcessHost::Client*> pending_plugin_clients_;
 
-  // Used to sequentialize loading plug-ins from disk.
+  // Used to sequentialize loading plugins from disk.
   base::SequencedWorkerPool::SequenceToken plugin_list_token_;
 
 #if defined(OS_POSIX)
   scoped_refptr<PluginLoaderPosix> plugin_loader_;
 #endif
 
-  // Used to detect if a given plug-in is crashing over and over.
+  // Used to detect if a given plugin is crashing over and over.
   std::map<base::FilePath, std::vector<base::Time> > crash_times_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginServiceImpl);

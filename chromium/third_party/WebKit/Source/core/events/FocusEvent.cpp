@@ -31,11 +31,6 @@
 
 namespace blink {
 
-FocusEventInit::FocusEventInit()
-    : relatedTarget(nullptr)
-{
-}
-
 const AtomicString& FocusEvent::interfaceName() const
 {
     return EventNames::FocusEvent;
@@ -58,11 +53,12 @@ FocusEvent::FocusEvent(const AtomicString& type, bool canBubble, bool cancelable
 
 FocusEvent::FocusEvent(const AtomicString& type, const FocusEventInit& initializer)
     : UIEvent(type, initializer)
-    , m_relatedTarget(initializer.relatedTarget)
 {
+    if (initializer.hasRelatedTarget())
+        m_relatedTarget = initializer.relatedTarget();
 }
 
-void FocusEvent::trace(Visitor* visitor)
+DEFINE_TRACE(FocusEvent)
 {
     visitor->trace(m_relatedTarget);
     UIEvent::trace(visitor);
@@ -78,9 +74,9 @@ FocusEventDispatchMediator::FocusEventDispatchMediator(PassRefPtrWillBeRawPtr<Fo
 {
 }
 
-bool FocusEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool FocusEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
-    event()->eventPath().adjustForRelatedTarget(dispatcher->node(), event()->relatedTarget());
+    event().eventPath().adjustForRelatedTarget(dispatcher.node(), event().relatedTarget());
     return EventDispatchMediator::dispatchEvent(dispatcher);
 }
 
@@ -94,9 +90,9 @@ BlurEventDispatchMediator::BlurEventDispatchMediator(PassRefPtrWillBeRawPtr<Focu
 {
 }
 
-bool BlurEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool BlurEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
-    event()->eventPath().adjustForRelatedTarget(dispatcher->node(), event()->relatedTarget());
+    event().eventPath().adjustForRelatedTarget(dispatcher.node(), event().relatedTarget());
     return EventDispatchMediator::dispatchEvent(dispatcher);
 }
 
@@ -110,9 +106,9 @@ FocusInEventDispatchMediator::FocusInEventDispatchMediator(PassRefPtrWillBeRawPt
 {
 }
 
-bool FocusInEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool FocusInEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
-    event()->eventPath().adjustForRelatedTarget(dispatcher->node(), event()->relatedTarget());
+    event().eventPath().adjustForRelatedTarget(dispatcher.node(), event().relatedTarget());
     return EventDispatchMediator::dispatchEvent(dispatcher);
 }
 
@@ -126,9 +122,9 @@ FocusOutEventDispatchMediator::FocusOutEventDispatchMediator(PassRefPtrWillBeRaw
 {
 }
 
-bool FocusOutEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool FocusOutEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
-    event()->eventPath().adjustForRelatedTarget(dispatcher->node(), event()->relatedTarget());
+    event().eventPath().adjustForRelatedTarget(dispatcher.node(), event().relatedTarget());
     return EventDispatchMediator::dispatchEvent(dispatcher);
 }
 

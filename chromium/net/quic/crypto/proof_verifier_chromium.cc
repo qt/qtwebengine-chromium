@@ -10,19 +10,19 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "crypto/signature_verifier.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
-#include "net/cert/single_request_cert_verifier.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/ssl/ssl_config_service.h"
 
@@ -79,7 +79,8 @@ class ProofVerifierChromium::Job {
   ProofVerifierChromium* proof_verifier_;
 
   // The underlying verifier used for verifying certificates.
-  scoped_ptr<SingleRequestCertVerifier> verifier_;
+  CertVerifier* verifier_;
+  scoped_ptr<CertVerifier::Request> cert_verifier_request_;
 
   TransportSecurityState* transport_security_state_;
 
@@ -106,7 +107,7 @@ ProofVerifierChromium::Job::Job(
     TransportSecurityState* transport_security_state,
     const BoundNetLog& net_log)
     : proof_verifier_(proof_verifier),
-      verifier_(new SingleRequestCertVerifier(cert_verifier)),
+      verifier_(cert_verifier),
       transport_security_state_(transport_security_state),
       next_state_(STATE_NONE),
       net_log_(net_log) {
@@ -222,19 +223,16 @@ int ProofVerifierChromium::Job::DoVerifyCert(int result) {
   next_state_ = STATE_VERIFY_CERT_COMPLETE;
 
   int flags = 0;
-  return verifier_->Verify(
-      cert_.get(),
-      hostname_,
-      flags,
-      SSLConfigService::GetCRLSet().get(),
-      &verify_details_->cert_verify_result,
-      base::Bind(&ProofVerifierChromium::Job::OnIOComplete,
-                 base::Unretained(this)),
-      net_log_);
+  return verifier_->Verify(cert_.get(), hostname_, std::string(), flags,
+                           SSLConfigService::GetCRLSet().get(),
+                           &verify_details_->cert_verify_result,
+                           base::Bind(&ProofVerifierChromium::Job::OnIOComplete,
+                                      base::Unretained(this)),
+                           &cert_verifier_request_, net_log_);
 }
 
 int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
-  verifier_.reset();
+  cert_verifier_request_.reset();
 
   const CertVerifyResult& cert_verify_result =
       verify_details_->cert_verify_result;
@@ -278,6 +276,11 @@ int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
 bool ProofVerifierChromium::Job::VerifySignature(const string& signed_data,
                                                  const string& signature,
                                                  const string& cert) {
+  // TODO(rtenneti): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 ProofVerifierChromium::Job::VerifySignature"));
+
   StringPiece spki;
   if (!asn1::ExtractSPKIFromDERCert(cert, &spki)) {
     DLOG(WARNING) << "ExtractSPKIFromDERCert failed";

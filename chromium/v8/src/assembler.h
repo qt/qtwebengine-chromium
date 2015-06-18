@@ -243,7 +243,7 @@ class CpuFeatures : public AllStatic {
 // unknown pc location. Assembler::bind() is used to bind a label to the
 // current pc. A label can be bound only once.
 
-class Label BASE_EMBEDDED {
+class Label {
  public:
   enum Distance {
     kNear, kFar
@@ -365,7 +365,7 @@ class RelocInfo {
     CODE_TARGET,  // Code target which is not any of the above.
     CODE_TARGET_WITH_ID,
     CONSTRUCT_CALL,  // code target that is a call to a JavaScript constructor.
-    DEBUG_BREAK,  // Code target for the debugger statement.
+    DEBUG_BREAK,     // Code target for the debugger statement.
     EMBEDDED_OBJECT,
     CELL,
 
@@ -373,24 +373,30 @@ class RelocInfo {
     RUNTIME_ENTRY,
     JS_RETURN,  // Marks start of the ExitJSFrame code.
     COMMENT,
-    POSITION,  // See comment for kNoPosition above.
+    POSITION,            // See comment for kNoPosition above.
     STATEMENT_POSITION,  // See comment for kNoPosition above.
-    DEBUG_BREAK_SLOT,  // Additional code inserted for debug break slot.
+    DEBUG_BREAK_SLOT,    // Additional code inserted for debug break slot.
     EXTERNAL_REFERENCE,  // The address of an external C++ function.
     INTERNAL_REFERENCE,  // An address inside the same function.
+
+    // Encoded internal reference, used only on MIPS, MIPS64 and PPC.
+    INTERNAL_REFERENCE_ENCODED,
 
     // Marks constant and veneer pools. Only used on ARM and ARM64.
     // They use a custom noncompact encoding.
     CONST_POOL,
     VENEER_POOL,
 
+    DEOPT_REASON,  // Deoptimization reason index.
+
     // add more as needed
     // Pseudo-types
-    NUMBER_OF_MODES,  // There are at most 15 modes with noncompact encoding.
-    NONE32,  // never recorded 32-bit value
-    NONE64,  // never recorded 64-bit value
+    NUMBER_OF_MODES,    // There are at most 15 modes with noncompact encoding.
+    NONE32,             // never recorded 32-bit value
+    NONE64,             // never recorded 64-bit value
     CODE_AGE_SEQUENCE,  // Not stored in RelocInfo array, used explictly by
                         // code aging.
+
     FIRST_REAL_RELOC_MODE = CODE_TARGET,
     LAST_REAL_RELOC_MODE = VENEER_POOL,
     FIRST_PSEUDO_RELOC_MODE = CODE_AGE_SEQUENCE,
@@ -399,7 +405,7 @@ class RelocInfo {
     LAST_GCED_ENUM = CELL,
     // Modes <= LAST_COMPACT_ENUM are guaranteed to have compact encoding.
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
-    LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE
+    LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE_ENCODED
   };
 
   RelocInfo() {}
@@ -429,6 +435,7 @@ class RelocInfo {
   static inline bool IsEmbeddedObject(Mode mode) {
     return mode == EMBEDDED_OBJECT;
   }
+  static inline bool IsCell(Mode mode) { return mode == CELL; }
   static inline bool IsRuntimeEntry(Mode mode) {
     return mode == RUNTIME_ENTRY;
   }
@@ -448,6 +455,9 @@ class RelocInfo {
   static inline bool IsVeneerPool(Mode mode) {
     return mode == VENEER_POOL;
   }
+  static inline bool IsDeoptReason(Mode mode) {
+    return mode == DEOPT_REASON;
+  }
   static inline bool IsPosition(Mode mode) {
     return mode == POSITION || mode == STATEMENT_POSITION;
   }
@@ -460,8 +470,14 @@ class RelocInfo {
   static inline bool IsInternalReference(Mode mode) {
     return mode == INTERNAL_REFERENCE;
   }
+  static inline bool IsInternalReferenceEncoded(Mode mode) {
+    return mode == INTERNAL_REFERENCE_ENCODED;
+  }
   static inline bool IsDebugBreakSlot(Mode mode) {
     return mode == DEBUG_BREAK_SLOT;
+  }
+  static inline bool IsDebuggerStatement(Mode mode) {
+    return mode == DEBUG_BREAK;
   }
   static inline bool IsNone(Mode mode) {
     return mode == NONE32 || mode == NONE64;
@@ -562,9 +578,17 @@ class RelocInfo {
   // place, ready to be patched with the target.
   INLINE(int target_address_size());
 
-  // Read/modify the reference in the instruction this relocation
-  // applies to; can only be called if rmode_ is external_reference
-  INLINE(Address target_reference());
+  // Read the reference in the instruction this relocation
+  // applies to; can only be called if rmode_ is EXTERNAL_REFERENCE.
+  INLINE(Address target_external_reference());
+
+  // Read the reference in the instruction this relocation
+  // applies to; can only be called if rmode_ is INTERNAL_REFERENCE.
+  INLINE(Address target_internal_reference());
+
+  // Return the reference address this relocation applies to;
+  // can only be called if rmode_ is INTERNAL_REFERENCE.
+  INLINE(Address target_internal_reference_address());
 
   // Read/modify the address of a call instruction. This is used to relocate
   // the break points where straight-line code is patched with a call
@@ -581,9 +605,6 @@ class RelocInfo {
 
   template<typename StaticVisitor> inline void Visit(Heap* heap);
   inline void Visit(Isolate* isolate, ObjectVisitor* v);
-
-  // Patch the code with some other code.
-  void PatchCode(byte* instructions, int instruction_count);
 
   // Patch the code with a call.
   void PatchCodeWithCall(Address target, int guard_bytes);
@@ -642,14 +663,24 @@ class RelocInfo {
 // lower addresses.
 class RelocInfoWriter BASE_EMBEDDED {
  public:
-  RelocInfoWriter() : pos_(NULL),
-                      last_pc_(NULL),
-                      last_id_(0),
-                      last_position_(0) {}
-  RelocInfoWriter(byte* pos, byte* pc) : pos_(pos),
-                                         last_pc_(pc),
-                                         last_id_(0),
-                                         last_position_(0) {}
+  RelocInfoWriter()
+      : pos_(NULL),
+        last_pc_(NULL),
+        last_id_(0),
+        last_position_(0),
+        last_mode_(RelocInfo::NUMBER_OF_MODES),
+        next_position_candidate_pos_delta_(0),
+        next_position_candidate_pc_delta_(0),
+        next_position_candidate_flushed_(true) {}
+  RelocInfoWriter(byte* pos, byte* pc)
+      : pos_(pos),
+        last_pc_(pc),
+        last_id_(0),
+        last_position_(0),
+        last_mode_(RelocInfo::NUMBER_OF_MODES),
+        next_position_candidate_pos_delta_(0),
+        next_position_candidate_pc_delta_(0),
+        next_position_candidate_flushed_(true) {}
 
   byte* pos() const { return pos_; }
   byte* last_pc() const { return last_pc_; }
@@ -662,6 +693,8 @@ class RelocInfoWriter BASE_EMBEDDED {
     pos_ = pos;
     last_pc_ = pc;
   }
+
+  void Finish() { FlushPosition(); }
 
   // Max size (bytes) of a written RelocInfo. Longest encoding is
   // ExtraTag, VariableLengthPCJump, ExtraTag, pc_delta, ExtraTag, data_delta.
@@ -679,11 +712,19 @@ class RelocInfoWriter BASE_EMBEDDED {
   inline void WriteExtraTaggedData(intptr_t data_delta, int top_tag);
   inline void WriteTaggedData(intptr_t data_delta, int tag);
   inline void WriteExtraTag(int extra_tag, int top_tag);
+  inline void WritePosition(int pc_delta, int pos_delta, RelocInfo::Mode rmode);
+
+  void FlushPosition();
 
   byte* pos_;
   byte* last_pc_;
   int last_id_;
   int last_position_;
+  RelocInfo::Mode last_mode_;
+  int next_position_candidate_pos_delta_;
+  uint32_t next_position_candidate_pc_delta_;
+  bool next_position_candidate_flushed_;
+
   DISALLOW_COPY_AND_ASSIGN(RelocInfoWriter);
 };
 
@@ -733,6 +774,7 @@ class RelocIterator: public Malloced {
   int GetLocatableTypeTag();
   void ReadTaggedId();
   void ReadTaggedPosition();
+  void ReadTaggedData();
 
   // If the given mode is wanted, set it in rinfo_ and return true.
   // Else return false. Used for efficiently skipping unwanted modes.
@@ -898,14 +940,8 @@ class ExternalReference BASE_EMBEDDED {
   // Used for fast allocation in generated code.
   static ExternalReference new_space_allocation_top_address(Isolate* isolate);
   static ExternalReference new_space_allocation_limit_address(Isolate* isolate);
-  static ExternalReference old_pointer_space_allocation_top_address(
-      Isolate* isolate);
-  static ExternalReference old_pointer_space_allocation_limit_address(
-      Isolate* isolate);
-  static ExternalReference old_data_space_allocation_top_address(
-      Isolate* isolate);
-  static ExternalReference old_data_space_allocation_limit_address(
-      Isolate* isolate);
+  static ExternalReference old_space_allocation_top_address(Isolate* isolate);
+  static ExternalReference old_space_allocation_limit_address(Isolate* isolate);
 
   static ExternalReference mod_two_doubles_operation(Isolate* isolate);
   static ExternalReference power_double_double_function(Isolate* isolate);
@@ -917,15 +953,12 @@ class ExternalReference BASE_EMBEDDED {
 
   static ExternalReference scheduled_exception_address(Isolate* isolate);
   static ExternalReference address_of_pending_message_obj(Isolate* isolate);
-  static ExternalReference address_of_has_pending_message(Isolate* isolate);
-  static ExternalReference address_of_pending_message_script(Isolate* isolate);
 
   // Static variables containing common double constants.
   static ExternalReference address_of_min_int();
   static ExternalReference address_of_one_half();
   static ExternalReference address_of_minus_one_half();
   static ExternalReference address_of_negative_infinity();
-  static ExternalReference address_of_canonical_non_hole_nan();
   static ExternalReference address_of_the_hole_nan();
   static ExternalReference address_of_uint32_bias();
 

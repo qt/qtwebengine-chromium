@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/pickle.h"
 #include "base/process/process.h"
@@ -19,8 +19,9 @@
 namespace sandbox {
 
 namespace syscall_broker {
+
 class BrokerClient;
-}
+class BrokerFilePermission;
 
 // Create a new "broker" process to which we can send requests via an IPC
 // channel by forking the current process.
@@ -42,11 +43,13 @@ class SANDBOX_EXPORT BrokerProcess {
   // A file available read-write should be listed in both.
   // |fast_check_in_client| and |quiet_failures_for_tests| are reserved for
   // unit tests, don't use it.
-  BrokerProcess(int denied_errno,
-                const std::vector<std::string>& allowed_r_files,
-                const std::vector<std::string>& allowed_w_files,
-                bool fast_check_in_client = true,
-                bool quiet_failures_for_tests = false);
+
+  BrokerProcess(
+      int denied_errno,
+      const std::vector<syscall_broker::BrokerFilePermission>& permissions,
+      bool fast_check_in_client = true,
+      bool quiet_failures_for_tests = false);
+
   ~BrokerProcess();
   // Will initialize the broker process. There should be no threads at this
   // point, since we need to fork().
@@ -68,20 +71,23 @@ class SANDBOX_EXPORT BrokerProcess {
   int broker_pid() const { return broker_pid_; }
 
  private:
+  friend class BrokerProcessTestHelper;
+
+  // Close the IPC channel with the other party. This should only be used
+  // by tests an none of the class methods should be used afterwards.
+  void CloseChannel();
+
   bool initialized_;  // Whether we've been through Init() yet.
-  bool is_child_;     // Whether we're the child (broker process).
-  bool fast_check_in_client_;
-  bool quiet_failures_for_tests_;
+  const bool fast_check_in_client_;
+  const bool quiet_failures_for_tests_;
   pid_t broker_pid_;                     // The PID of the broker (child).
   syscall_broker::BrokerPolicy policy_;  // The sandboxing policy.
-  scoped_ptr<syscall_broker::BrokerClient>
-      broker_client_;  // Can only exist if is_child_ is true.
+  scoped_ptr<syscall_broker::BrokerClient> broker_client_;
 
-  int ipc_socketpair_;  // Our communication channel to parent or child.
   DISALLOW_COPY_AND_ASSIGN(BrokerProcess);
-
-  friend class BrokerProcessTestHelper;
 };
+
+}  // namespace syscall_broker
 
 }  // namespace sandbox
 

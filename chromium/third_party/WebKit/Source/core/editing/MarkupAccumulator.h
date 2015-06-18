@@ -26,6 +26,7 @@
 #ifndef MarkupAccumulator_h
 #define MarkupAccumulator_h
 
+#include "core/editing/EditingStrategy.h"
 #include "core/editing/markup.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
@@ -37,7 +38,6 @@ class Attribute;
 class DocumentType;
 class Element;
 class Node;
-class Range;
 
 typedef HashMap<AtomicString, AtomicString> Namespaces;
 
@@ -66,56 +66,58 @@ class MarkupAccumulator {
     WTF_MAKE_NONCOPYABLE(MarkupAccumulator);
     STACK_ALLOCATED();
 public:
-    MarkupAccumulator(WillBeHeapVector<RawPtrWillBeMember<Node>>*, EAbsoluteURLs, const Range* = nullptr, SerializationType = AsOwnerDocument);
+    static void appendComment(StringBuilder&, const String&);
+    static void appendCharactersReplacingEntities(StringBuilder&, const String&, unsigned, unsigned, EntityMask);
+    static size_t totalLength(const Vector<String>&);
+
+    MarkupAccumulator(EAbsoluteURLs, SerializationType = AsOwnerDocument);
     virtual ~MarkupAccumulator();
 
-    String serializeNodes(Node& targetNode, EChildrenOnly, Vector<QualifiedName>* tagNamesToSkip = nullptr);
-
-    static void appendComment(StringBuilder&, const String&);
-
-    static void appendCharactersReplacingEntities(StringBuilder&, const String&, unsigned, unsigned, EntityMask);
-
-protected:
     void appendString(const String&);
-    void appendStartTag(Node&, Namespaces* = nullptr);
+    virtual void appendStartTag(Node&, Namespaces* = nullptr);
     virtual void appendEndTag(const Element&);
-    static size_t totalLength(const Vector<String>&);
+    void appendStartMarkup(StringBuilder&, Node&, Namespaces*);
+    void appendEndMarkup(StringBuilder&, const Element&);
+
     size_t length() const { return m_markup.length(); }
-    void concatenateMarkup(StringBuilder&);
+    void concatenateMarkup(StringBuilder&) const;
+
+    bool serializeAsHTMLDocument(const Node&) const;
+    String toString() { return m_markup.toString(); }
+
     void appendAttributeValue(StringBuilder&, const String&, bool);
     virtual void appendCustomAttributes(StringBuilder&, const Element&, Namespaces*);
-    bool shouldAddNamespaceElement(const Element&, Namespaces&);
-    bool shouldAddNamespaceAttribute(const Attribute&, const Element&);
 
     void appendNamespace(StringBuilder&, const AtomicString& prefix, const AtomicString& namespaceURI, Namespaces&);
-    EntityMask entityMaskForText(const Text&) const;
     virtual void appendText(StringBuilder&, Text&);
     void appendXMLDeclaration(StringBuilder&, const Document&);
     void appendDocumentType(StringBuilder&, const DocumentType&);
     void appendProcessingInstruction(StringBuilder&, const String& target, const String& data);
+    virtual bool shouldIgnoreAttribute(const Attribute&);
     virtual void appendElement(StringBuilder&, Element&, Namespaces*);
     void appendOpenTag(StringBuilder&, const Element&, Namespaces*);
     void appendCloseTag(StringBuilder&, const Element&);
     void appendAttribute(StringBuilder&, const Element&, const Attribute&, Namespaces*);
     void appendCDATASection(StringBuilder&, const String&);
-    void appendStartMarkup(StringBuilder&, Node&, Namespaces*);
-    bool shouldSelfClose(const Element&);
-    bool elementCannotHaveEndTag(const Node&);
-    void appendEndMarkup(StringBuilder&, const Element&);
 
-    RawPtrWillBeMember<WillBeHeapVector<RawPtrWillBeMember<Node>>> const m_nodes;
-    RawPtrWillBeMember<const Range> const m_range;
+    bool shouldAddNamespaceElement(const Element&, Namespaces&) const;
+    bool shouldAddNamespaceAttribute(const Attribute&, const Element&) const;
+    EntityMask entityMaskForText(const Text&) const;
+    bool shouldSelfClose(const Element&) const;
 
 private:
     String resolveURLIfNeeded(const Element&, const String&) const;
     void appendQuotedURLAttributeValue(StringBuilder&, const Element&, const Attribute&);
-    void serializeNodesWithNamespaces(Node& targetNode, EChildrenOnly, const Namespaces*, Vector<QualifiedName>* tagNamesToSkip);
-    bool serializeAsHTMLDocument(const Node&) const;
 
     StringBuilder m_markup;
     const EAbsoluteURLs m_resolveURLsMethod;
     SerializationType m_serializationType;
 };
+
+template<typename Strategy>
+String serializeNodes(MarkupAccumulator&, Node&, EChildrenOnly);
+
+extern template String serializeNodes<EditingStrategy>(MarkupAccumulator&, Node&, EChildrenOnly);
 
 }
 

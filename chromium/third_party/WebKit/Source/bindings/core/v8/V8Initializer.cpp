@@ -27,6 +27,7 @@
 #include "bindings/core/v8/V8Initializer.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/RejectedPromises.h"
 #include "bindings/core/v8/ScriptCallStackFactory.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptProfiler.h"
@@ -40,33 +41,37 @@
 #include "bindings/core/v8/V8Location.h"
 #include "bindings/core/v8/V8PerContextData.h"
 #include "bindings/core/v8/V8Window.h"
+#include "bindings/core/v8/WorkerScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
-#include "platform/scheduler/Scheduler.h"
+#include "platform/heap/AddressSanitizer.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebScheduler.h"
+#include "public/platform/WebThread.h"
+#include "wtf/ArrayBufferContents.h"
 #include "wtf/RefPtr.h"
-#include "wtf/ThreadSpecific.h"
 #include "wtf/text/WTFString.h"
 #include <v8-debug.h>
 
 namespace blink {
 
-static LocalFrame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> data, v8::Isolate* isolate)
+static Frame* findFrame(v8::Isolate* isolate, v8::Local<v8::Object> host, v8::Local<v8::Value> data)
 {
     const WrapperTypeInfo* type = WrapperTypeInfo::unwrap(data);
 
     if (V8Window::wrapperTypeInfo.equals(type)) {
-        v8::Handle<v8::Object> windowWrapper = V8Window::findInstanceInPrototypeChain(host, isolate);
+        v8::Local<v8::Object> windowWrapper = V8Window::findInstanceInPrototypeChain(host, isolate);
         if (windowWrapper.IsEmpty())
             return 0;
         return V8Window::toImpl(windowWrapper)->frame();
@@ -85,59 +90,77 @@ static LocalFrame* findFrame(v8::Local<v8::Object> host, v8::Local<v8::Value> da
 
 static void reportFatalErrorInMainThread(const char* location, const char* message)
 {
-    int memoryUsageMB = blink::Platform::current()->actualMemoryUsageMB();
+    int memoryUsageMB = Platform::current()->actualMemoryUsageMB();
     printf("V8 error: %s (%s).  Current memory usage: %d MB\n", message, location, memoryUsageMB);
     CRASH();
 }
 
-static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
+static PassRefPtrWillBeRawPtr<ScriptCallStack> extractCallStack(v8::Isolate* isolate, v8::Local<v8::Message> message, int* const scriptId)
+{
+    v8::Local<v8::StackTrace> stackTrace = message->GetStackTrace();
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack = nullptr;
+    *scriptId = message->GetScriptOrigin().ScriptID()->Value();
+    // Currently stack trace is only collected when inspector is open.
+    if (!stackTrace.IsEmpty() && stackTrace->GetFrameCount() > 0) {
+        callStack = createScriptCallStack(isolate, stackTrace, ScriptCallStack::maxCallStackSizeToCapture);
+        bool success = false;
+        int topScriptId = callStack->at(0).scriptId().toInt(&success);
+        if (success && topScriptId == *scriptId)
+            *scriptId = 0;
+    } else {
+        Vector<ScriptCallFrame> callFrames;
+        callStack = ScriptCallStack::create(callFrames);
+    }
+    return callStack.release();
+}
+
+static String extractResourceName(v8::Local<v8::Message> message, const Document* document)
+{
+    v8::Local<v8::Value> resourceName = message->GetScriptOrigin().ResourceName();
+    bool shouldUseDocumentURL = document && (resourceName.IsEmpty() || !resourceName->IsString());
+    return shouldUseDocumentURL ? document->url() : toCoreString(resourceName.As<v8::String>());
+}
+
+static String extractMessageForConsole(v8::Isolate* isolate, v8::Local<v8::Value> data)
+{
+    if (V8DOMWrapper::isWrapper(isolate, data)) {
+        v8::Local<v8::Object> obj = v8::Local<v8::Object>::Cast(data);
+        const WrapperTypeInfo* type = toWrapperTypeInfo(obj);
+        if (V8DOMException::wrapperTypeInfo.isSubclass(type)) {
+            DOMException* exception = V8DOMException::toImpl(obj);
+            if (exception && !exception->messageForConsole().isEmpty())
+                return exception->toStringForConsole();
+        }
+    }
+    return emptyString();
+}
+
+static void messageHandlerInMainThread(v8::Local<v8::Message> message, v8::Local<v8::Value> data)
 {
     ASSERT(isMainThread());
-    // It's possible that messageHandlerInMainThread() is invoked while we're initializing a window.
-    // In that half-baked situation, we don't have a valid context nor a valid world,
-    // so just return immediately.
-    if (DOMWrapperWorld::windowIsBeingInitialized())
-        return;
-
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     // If called during context initialization, there will be no entered window.
     LocalDOMWindow* enteredWindow = enteredDOMWindow(isolate);
     if (!enteredWindow || !enteredWindow->isCurrentlyDisplayedInFrame())
         return;
 
-    String errorMessage = toCoreString(message->Get());
-
-    v8::Handle<v8::StackTrace> stackTrace = message->GetStackTrace();
-    RefPtrWillBeRawPtr<ScriptCallStack> callStack = nullptr;
-    int scriptId = message->GetScriptOrigin().ScriptID()->Value();
-    // Currently stack trace is only collected when inspector is open.
-    if (!stackTrace.IsEmpty() && stackTrace->GetFrameCount() > 0) {
-        callStack = createScriptCallStack(stackTrace, ScriptCallStack::maxCallStackSizeToCapture, isolate);
-        bool success = false;
-        int topScriptId = callStack->at(0).scriptId().toInt(&success);
-        if (success && topScriptId == scriptId)
-            scriptId = 0;
-    } else {
-        Vector<ScriptCallFrame> callFrames;
-        callStack = ScriptCallStack::create(callFrames);
-    }
-
-    v8::Handle<v8::Value> resourceName = message->GetScriptOrigin().ResourceName();
-    bool shouldUseDocumentURL = resourceName.IsEmpty() || !resourceName->IsString();
-    String resource = shouldUseDocumentURL ? enteredWindow->document()->url() : toCoreString(resourceName.As<v8::String>());
+    int scriptId = 0;
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack = extractCallStack(isolate, message, &scriptId);
+    String resourceName = extractResourceName(message, enteredWindow->document());
     AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
     ScriptState* scriptState = ScriptState::current(isolate);
-    RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resource, message->GetLineNumber(), message->GetStartColumn() + 1, &scriptState->world());
-    if (V8DOMWrapper::isDOMWrapper(data)) {
-        v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(data);
-        const WrapperTypeInfo* type = toWrapperTypeInfo(obj);
-        if (V8DOMException::wrapperTypeInfo.isSubclass(type)) {
-            DOMException* exception = V8DOMException::toImpl(obj);
-            if (exception && !exception->messageForConsole().isEmpty())
-                event->setUnsanitizedMessage("Uncaught " + exception->toStringForConsole());
-        }
-    }
+    String errorMessage = toCoreStringWithNullCheck(message->Get());
+    int lineNumber = 0;
+    int columnNumber = 0;
+    if (v8Call(message->GetLineNumber(scriptState->context()), lineNumber)
+        && v8Call(message->GetStartColumn(scriptState->context()), columnNumber))
+        ++columnNumber;
+    RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resourceName, lineNumber, columnNumber, &scriptState->world());
+
+    String messageForConsole = extractMessageForConsole(isolate, data);
+    if (!messageForConsole.isEmpty())
+        event->setUnsanitizedMessage("Uncaught " + messageForConsole);
 
     // This method might be called while we're creating a new context. In this case, we
     // avoid storing the exception object, as we can't create a wrapper during context creation.
@@ -163,145 +186,128 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
 
 namespace {
 
-class PromiseRejectMessage {
-    ALLOW_ONLY_INLINE_ALLOCATION();
-public:
-    PromiseRejectMessage(const ScriptValue& promise, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
-        : m_promise(promise)
-        , m_callStack(callStack)
-    {
-    }
-
-    void trace(Visitor* visitor)
-    {
-        visitor->trace(m_callStack);
-    }
-
-    const ScriptValue m_promise;
-    const RefPtrWillBeMember<ScriptCallStack> m_callStack;
-};
+static RejectedPromises& rejectedPromisesOnMainThread()
+{
+    ASSERT(isMainThread());
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<RejectedPromises>, rejectedPromises, (adoptPtrWillBeNoop(new RejectedPromises())));
+    return *rejectedPromises;
+}
 
 } // namespace
 
-typedef Deque<PromiseRejectMessage> PromiseRejectMessageQueue;
-
-static PromiseRejectMessageQueue& promiseRejectMessageQueue()
+void V8Initializer::reportRejectedPromisesOnMainThread()
 {
-    AtomicallyInitializedStatic(ThreadSpecific<PromiseRejectMessageQueue>*, queue = new ThreadSpecific<PromiseRejectMessageQueue>);
-    return **queue;
+    rejectedPromisesOnMainThread().processQueue();
 }
 
-void V8Initializer::reportRejectedPromises()
-{
-    PromiseRejectMessageQueue& queue = promiseRejectMessageQueue();
-    while (!queue.isEmpty()) {
-        PromiseRejectMessage message = queue.takeFirst();
-        ScriptState* scriptState = message.m_promise.scriptState();
-        if (!scriptState->contextIsValid())
-            continue;
-        // If execution termination has been triggered, quietly bail out.
-        if (v8::V8::IsExecutionTerminating(scriptState->isolate()))
-            continue;
-        ExecutionContext* executionContext = scriptState->executionContext();
-        if (!executionContext)
-            continue;
-
-        ScriptState::Scope scope(scriptState);
-
-        ASSERT(!message.m_promise.isEmpty());
-        v8::Handle<v8::Value> value = message.m_promise.v8Value();
-        ASSERT(!value.IsEmpty() && value->IsPromise());
-        if (v8::Handle<v8::Promise>::Cast(value)->HasHandler())
-            continue;
-
-        const String errorMessage = "Unhandled promise rejection";
-        Vector<ScriptValue> args;
-        args.append(ScriptValue(scriptState, v8String(scriptState->isolate(), errorMessage)));
-        args.append(message.m_promise);
-        RefPtrWillBeRawPtr<ScriptArguments> arguments = ScriptArguments::create(scriptState, args);
-
-        RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorMessage);
-        consoleMessage->setScriptArguments(arguments);
-        consoleMessage->setCallStack(message.m_callStack);
-        executionContext->addConsoleMessage(consoleMessage.release());
-    }
-}
-
-static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage message)
+static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
 {
     ASSERT(isMainThread());
-
-    if (message.GetEvent() != v8::kPromiseRejectWithNoHandler)
+    if (data.GetEvent() == v8::kPromiseHandlerAddedAfterReject) {
+        rejectedPromisesOnMainThread().handlerAdded(data);
         return;
-
-    // It's possible that promiseRejectHandlerInMainThread() is invoked while we're initializing a window.
-    // In that half-baked situation, we don't have a valid context nor a valid world,
-    // so just return immediately.
-    if (DOMWrapperWorld::windowIsBeingInitialized())
-        return;
-
-    v8::Handle<v8::Promise> promise = message.GetPromise();
-
-    // Bail out if called during context initialization.
-    v8::Isolate* isolate = promise->GetIsolate();
-    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
-    if (context.IsEmpty())
-        return;
-    v8::Handle<v8::Value> global = V8Window::findInstanceInPrototypeChain(context->Global(), context->GetIsolate());
-    if (global.IsEmpty())
-        return;
-    if (!toFrameIfNotDetached(context))
-        return;
-
-    RefPtrWillBeRawPtr<ScriptCallStack> callStack = nullptr;
-    v8::Handle<v8::StackTrace> stackTrace = message.GetStackTrace();
-    if (!stackTrace.IsEmpty() && stackTrace->GetFrameCount() > 0)
-        callStack = createScriptCallStack(stackTrace, ScriptCallStack::maxCallStackSizeToCapture, isolate);
-
-    if (!callStack && V8DOMWrapper::isDOMWrapper(message.GetValue())) {
-        // Try to get the stack from a wrapped exception object (e.g. DOMException).
-        v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(message.GetValue());
-        v8::Handle<v8::Value> error = V8HiddenValue::getHiddenValue(isolate, obj, V8HiddenValue::error(isolate));
-        if (!error.IsEmpty()) {
-            stackTrace = v8::Exception::GetStackTrace(error);
-            if (!stackTrace.IsEmpty() && stackTrace->GetFrameCount() > 0)
-                callStack = createScriptCallStack(stackTrace, ScriptCallStack::maxCallStackSizeToCapture, isolate);
-        }
     }
 
-    ScriptState* scriptState = ScriptState::from(context);
-    promiseRejectMessageQueue().append(PromiseRejectMessage(ScriptValue(scriptState, promise), callStack));
-}
+    ASSERT(data.GetEvent() == v8::kPromiseRejectWithNoHandler);
 
-static void promiseRejectHandlerInWorker(v8::PromiseRejectMessage message)
-{
-    if (message.GetEvent() != v8::kPromiseRejectWithNoHandler)
+    v8::Local<v8::Promise> promise = data.GetPromise();
+
+    v8::Isolate* isolate = promise->GetIsolate();
+    // There is no entered window during microtask callbacks from V8,
+    // thus we call toDOMWindow() instead of enteredDOMWindow().
+    LocalDOMWindow* window = currentDOMWindow(isolate);
+    if (!window || !window->isCurrentlyDisplayedInFrame())
         return;
 
-    v8::Handle<v8::Promise> promise = message.GetPromise();
+    v8::Local<v8::Value> exception = data.GetValue();
+    if (V8DOMWrapper::isWrapper(isolate, exception)) {
+        // Try to get the stack & location from a wrapped exception object (e.g. DOMException).
+        ASSERT(exception->IsObject());
+        v8::Local<v8::Object> obj = v8::Local<v8::Object>::Cast(exception);
+        v8::Local<v8::Value> error = V8HiddenValue::getHiddenValue(isolate, obj, V8HiddenValue::error(isolate));
+        if (!error.IsEmpty())
+            exception = error;
+    }
+
+    int scriptId = 0;
+    int lineNumber = 0;
+    int columnNumber = 0;
+    String resourceName;
+    String errorMessage;
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack = nullptr;
+
+    v8::Local<v8::Message> message = v8::Exception::CreateMessage(exception);
+    if (!message.IsEmpty()) {
+        if (v8Call(message->GetLineNumber(isolate->GetCurrentContext()), lineNumber)
+            && v8Call(message->GetStartColumn(isolate->GetCurrentContext()), columnNumber))
+            ++columnNumber;
+        resourceName = extractResourceName(message, window->document());
+        errorMessage = toCoreStringWithNullCheck(message->Get());
+        callStack = extractCallStack(isolate, message, &scriptId);
+    } else if (!exception.IsEmpty() && exception->IsInt32()) {
+        // For Smi's the message would be empty.
+        errorMessage = "Uncaught " + String::number(exception.As<v8::Integer>()->Value());
+    }
+
+    String messageForConsole = extractMessageForConsole(isolate, data.GetValue());
+    if (!messageForConsole.isEmpty())
+        errorMessage = "Uncaught " + messageForConsole;
+
+    ScriptState* scriptState = ScriptState::current(isolate);
+    rejectedPromisesOnMainThread().rejectedWithNoHandler(scriptState, data, errorMessage, resourceName, scriptId, lineNumber, columnNumber, callStack);
+}
+
+static void promiseRejectHandlerInWorker(v8::PromiseRejectMessage data)
+{
+    v8::Local<v8::Promise> promise = data.GetPromise();
 
     // Bail out if called during context initialization.
     v8::Isolate* isolate = promise->GetIsolate();
-    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
-    if (context.IsEmpty())
+    ScriptState* scriptState = ScriptState::current(isolate);
+    if (!scriptState->contextIsValid())
         return;
 
-    RefPtrWillBeRawPtr<ScriptCallStack> callStack = nullptr;
-    v8::Handle<v8::StackTrace> stackTrace = message.GetStackTrace();
-    if (!stackTrace.IsEmpty() && stackTrace->GetFrameCount() > 0)
-        callStack = createScriptCallStack(stackTrace, ScriptCallStack::maxCallStackSizeToCapture, isolate);
+    ExecutionContext* executionContext = scriptState->executionContext();
+    if (!executionContext)
+        return;
 
-    ScriptState* scriptState = ScriptState::from(context);
-    promiseRejectMessageQueue().append(PromiseRejectMessage(ScriptValue(scriptState, promise), callStack));
+    ASSERT(executionContext->isWorkerGlobalScope());
+    WorkerScriptController* scriptController = toWorkerGlobalScope(executionContext)->script();
+    ASSERT(scriptController);
+
+    if (data.GetEvent() == v8::kPromiseHandlerAddedAfterReject) {
+        scriptController->rejectedPromises()->handlerAdded(data);
+        return;
+    }
+
+    ASSERT(data.GetEvent() == v8::kPromiseRejectWithNoHandler);
+
+    int scriptId = 0;
+    int lineNumber = 0;
+    int columnNumber = 0;
+    String resourceName;
+    String errorMessage;
+
+    v8::Local<v8::Message> message = v8::Exception::CreateMessage(data.GetValue());
+    if (!message.IsEmpty()) {
+        TOSTRING_VOID(V8StringResource<>, resourceName, message->GetScriptOrigin().ResourceName());
+        scriptId = message->GetScriptOrigin().ScriptID()->Value();
+        if (v8Call(message->GetLineNumber(scriptState->context()), lineNumber)
+            && v8Call(message->GetStartColumn(scriptState->context()), columnNumber))
+            ++columnNumber;
+        // message->Get() can be empty here. https://crbug.com/450330
+        errorMessage = toCoreStringWithNullCheck(message->Get());
+    }
+    scriptController->rejectedPromises()->rejectedWithNoHandler(scriptState, data, errorMessage, resourceName, scriptId, lineNumber, columnNumber, nullptr);
 }
 
 static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8::AccessType type, v8::Local<v8::Value> data)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    LocalFrame* target = findFrame(host, data, isolate);
+    Frame* target = findFrame(isolate, host, data);
     if (!target)
         return;
-    LocalDOMWindow* targetWindow = target->domWindow();
+    DOMWindow* targetWindow = target->domWindow();
 
     // FIXME: We should modify V8 to pass in more contextual information (context, property, and object).
     ExceptionState exceptionState(ExceptionState::UnknownContext, 0, 0, isolate->GetCurrentContext()->Global(), isolate);
@@ -313,34 +319,26 @@ static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> conte
 {
     if (ExecutionContext* executionContext = toExecutionContext(context)) {
         if (ContentSecurityPolicy* policy = toDocument(executionContext)->contentSecurityPolicy())
-            return policy->allowEval(ScriptState::from(context));
+            return policy->allowEval(ScriptState::from(context), ContentSecurityPolicy::SendReport, ContentSecurityPolicy::WillThrowException);
     }
     return false;
-}
-
-static void idleGCTaskInMainThread(double deadlineSeconds);
-
-static void postIdleGCTaskMainThread()
-{
-    if (RuntimeEnabledFeatures::v8IdleTasksEnabled()) {
-        Scheduler* scheduler = Scheduler::shared();
-        if (scheduler)
-            scheduler->postIdleTask(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
-    }
 }
 
 static void idleGCTaskInMainThread(double deadlineSeconds)
 {
     ASSERT(isMainThread());
     ASSERT(RuntimeEnabledFeatures::v8IdleTasksEnabled());
+    bool gcFinished = false;
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    // FIXME: Change V8's API to take a deadline - http://crbug.com/417668
-    double idleTimeInSeconds = deadlineSeconds - Platform::current()->monotonicallyIncreasingTime();
-    int idleTimeInMillis = static_cast<int>(idleTimeInSeconds * 1000);
-    if (idleTimeInMillis > 0)
-        isolate->IdleNotification(idleTimeInMillis);
-    // FIXME: only repost if there is more work to do.
-    postIdleGCTaskMainThread();
+
+    Platform* platform = Platform::current();
+    if (deadlineSeconds > platform->monotonicallyIncreasingTime())
+        gcFinished = isolate->IdleNotificationDeadline(deadlineSeconds);
+
+    if (gcFinished)
+        platform->currentThread()->scheduler()->postIdleTaskAfterWakeup(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
+    else
+        platform->currentThread()->scheduler()->postIdleTask(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
 }
 
 static void timerTraceProfilerInMainThread(const char* name, int status)
@@ -362,6 +360,31 @@ static void initializeV8Common(v8::Isolate* isolate)
     isolate->SetAutorunMicrotasks(false);
 }
 
+namespace {
+
+class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
+    virtual void* Allocate(size_t size) override
+    {
+        void* data;
+        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::ZeroInitialize, data);
+        return data;
+    }
+
+    virtual void* AllocateUninitialized(size_t size) override
+    {
+        void* data;
+        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::DontInitialize, data);
+        return data;
+    }
+
+    virtual void Free(void* data, size_t size) override
+    {
+        WTF::ArrayBufferContents::freeMemory(data, size);
+    }
+};
+
+} // namespace
+
 void V8Initializer::initializeMainThreadIfNeeded()
 {
     ASSERT(isMainThread());
@@ -371,7 +394,8 @@ void V8Initializer::initializeMainThreadIfNeeded()
         return;
     initialized = true;
 
-    gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode, v8ArrayBufferAllocator());
+    DEFINE_STATIC_LOCAL(ArrayBufferAllocator, arrayBufferAllocator, ());
+    gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode, &arrayBufferAllocator);
 
     v8::Isolate* isolate = V8PerIsolateData::initialize();
 
@@ -382,7 +406,8 @@ void V8Initializer::initializeMainThreadIfNeeded()
     v8::V8::SetFailedAccessCheckCallbackFunction(failedAccessCheckCallbackInMainThread);
     v8::V8::SetAllowCodeGenerationFromStringsCallback(codeGenerationCheckCallbackInMainThread);
 
-    postIdleGCTaskMainThread();
+    if (RuntimeEnabledFeatures::v8IdleTasksEnabled())
+        Platform::current()->currentThread()->scheduler()->postIdleTask(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
 
     isolate->SetEventLogger(timerTraceProfilerInMainThread);
     isolate->SetPromiseRejectCallback(promiseRejectHandlerInMainThread);
@@ -396,7 +421,7 @@ static void reportFatalErrorInWorker(const char* location, const char* message)
     CRASH();
 }
 
-static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
+static void messageHandlerInWorker(v8::Local<v8::Message> message, v8::Local<v8::Value> data)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     V8PerIsolateData* perIsolateData = V8PerIsolateData::from(isolate);
@@ -409,18 +434,24 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
     ScriptState* scriptState = ScriptState::current(isolate);
     // During the frame teardown, there may not be a valid context.
     if (ExecutionContext* context = scriptState->executionContext()) {
-        String errorMessage = toCoreString(message->Get());
+        String errorMessage = toCoreStringWithNullCheck(message->Get());
         TOSTRING_VOID(V8StringResource<>, sourceURL, message->GetScriptOrigin().ResourceName());
-        int scriptId = message->GetScriptOrigin().ScriptID()->Value();
+        int scriptId = 0;
+        RefPtrWillBeRawPtr<ScriptCallStack> callStack = extractCallStack(isolate, message, &scriptId);
 
-        RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, message->GetLineNumber(), message->GetStartColumn() + 1, &DOMWrapperWorld::current(isolate));
+        int lineNumber = 0;
+        int columnNumber = 0;
+        if (v8Call(message->GetLineNumber(scriptState->context()), lineNumber)
+            && v8Call(message->GetStartColumn(scriptState->context()), columnNumber))
+            ++columnNumber;
+        RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, &DOMWrapperWorld::current(isolate));
         AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
         // If execution termination has been triggered as part of constructing
         // the error event from the v8::Message, quietly leave.
         if (!v8::V8::IsExecutionTerminating(isolate)) {
             V8ErrorHandler::storeExceptionOnErrorEventWrapper(isolate, event.get(), data, scriptState->context()->Global());
-            context->reportException(event.release(), scriptId, nullptr, corsStatus);
+            context->reportException(event.release(), scriptId, callStack, corsStatus);
         }
     }
 
@@ -429,6 +460,10 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
 
 static const int kWorkerMaxStackSize = 500 * 1024;
 
+// This function uses a local stack variable to determine the isolate's stack limit. AddressSanitizer may
+// relocate that local variable to a fake stack, which may lead to problems during JavaScript execution.
+// Therefore we disable AddressSanitizer for V8Initializer::initializeWorker().
+NO_SANITIZE_ADDRESS
 void V8Initializer::initializeWorker(v8::Isolate* isolate)
 {
     initializeV8Common(isolate);

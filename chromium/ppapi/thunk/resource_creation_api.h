@@ -124,6 +124,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) = 0;
+  virtual PP_Resource CreateCameraDevicePrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateCompositor(PP_Instance instance) = 0;
   virtual PP_Resource CreateFileChooser(PP_Instance instance,
                                         PP_FileChooserMode_Dev mode,
@@ -171,6 +172,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateVideoDecoder(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
+  virtual PP_Resource CreateVideoEncoder(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
   virtual PP_Resource CreateX509CertificatePrivate(PP_Instance instance) = 0;
@@ -193,7 +195,6 @@ class ResourceCreationAPI {
       PP_Instance instance) = 0;
   virtual PP_Resource CreateScrollbar(PP_Instance instance,
                                       PP_Bool vertical) = 0;
-  virtual PP_Resource CreateTalk(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoDecoderDev(
       PP_Instance instance,

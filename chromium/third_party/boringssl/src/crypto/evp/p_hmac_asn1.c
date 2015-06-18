@@ -75,26 +75,15 @@ static void hmac_key_free(EVP_PKEY *pkey) {
   }
 }
 
-static int hmac_pkey_ctrl(EVP_PKEY *pkey, int op, long arg1, void *arg2) {
-  switch (op) {
-    case ASN1_PKEY_CTRL_DEFAULT_MD_NID:
-      *(int *)arg2 = NID_sha1;
-      return 1;
-
-    default:
-      return -2;
-  }
-}
-
 const EVP_PKEY_ASN1_METHOD hmac_asn1_meth = {
     EVP_PKEY_HMAC,       EVP_PKEY_HMAC,         0 /* flags */,
     "HMAC",              "OpenSSL HMAC method", 0 /* pub_decode */,
     0 /* pub_encode */,  0 /* pub_cmp */,       0 /* pub_print */,
     0 /*priv_decode */,  0 /* priv_encode */,   0 /* priv_print */,
-    0 /* pkey_opaque */,
+    0 /* pkey_opaque */, 0 /* pkey_supports_digest */,
     hmac_size,           0 /* pkey_bits */,     0 /* param_decode */,
     0 /* param_encode*/, 0 /* param_missing*/,  0 /* param_copy*/,
     0 /* param_cmp*/,    0 /* param_print*/,    0 /* sig_print*/,
-    hmac_key_free,       hmac_pkey_ctrl,        0 /* old_priv_decode */,
+    hmac_key_free,       0 /* old_priv_decode */,
     0 /* old_priv_encode */
 };

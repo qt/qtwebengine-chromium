@@ -25,6 +25,7 @@
 #ifndef DynamicsCompressorNode_h
 #define DynamicsCompressorNode_h
 
+#include "modules/ModulesExport.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioParam.h"
 #include "wtf/OwnPtr.h"
@@ -33,48 +34,59 @@ namespace blink {
 
 class DynamicsCompressor;
 
-class DynamicsCompressorNode final : public AudioNode {
-    DEFINE_WRAPPERTYPEINFO();
+class MODULES_EXPORT DynamicsCompressorHandler final : public AudioHandler {
 public:
-    static DynamicsCompressorNode* create(AudioContext* context, float sampleRate)
-    {
-        return new DynamicsCompressorNode(context, sampleRate);
-    }
+    static PassRefPtr<DynamicsCompressorHandler> create(AudioNode&, float sampleRate, AudioParamHandler& threshold, AudioParamHandler& knee, AudioParamHandler& ratio, AudioParamHandler& reduction, AudioParamHandler& attack, AudioParamHandler& release);
+    ~DynamicsCompressorHandler();
 
-    virtual ~DynamicsCompressorNode();
-
-    // AudioNode
-    virtual void dispose() override;
+    // AudioHandler
     virtual void process(size_t framesToProcess) override;
     virtual void initialize() override;
-    virtual void uninitialize() override;
     virtual void clearInternalStateWhenDisabled() override;
 
-    // Static compression curve parameters.
-    AudioParam* threshold() { return m_threshold.get(); }
-    AudioParam* knee() { return m_knee.get(); }
-    AudioParam* ratio() { return m_ratio.get(); }
-    AudioParam* attack() { return m_attack.get(); }
-    AudioParam* release() { return m_release.get(); }
-
-    // Amount by which the compressor is currently compressing the signal in decibels.
-    AudioParam* reduction() { return m_reduction.get(); }
-
-    virtual void trace(Visitor*) override;
-
 private:
+    DynamicsCompressorHandler(AudioNode&, float sampleRate, AudioParamHandler& threshold, AudioParamHandler& knee, AudioParamHandler& ratio, AudioParamHandler& reduction, AudioParamHandler& attack, AudioParamHandler& release);
     virtual double tailTime() const override;
     virtual double latencyTime() const override;
 
-    DynamicsCompressorNode(AudioContext*, float sampleRate);
-
     OwnPtr<DynamicsCompressor> m_dynamicsCompressor;
+    RefPtr<AudioParamHandler> m_threshold;
+    RefPtr<AudioParamHandler> m_knee;
+    RefPtr<AudioParamHandler> m_ratio;
+    RefPtr<AudioParamHandler> m_reduction;
+    RefPtr<AudioParamHandler> m_attack;
+    RefPtr<AudioParamHandler> m_release;
+
+    // TODO(tkent): Use FRIEND_TEST macro provided by gtest_prod.h
+    friend class DynamicsCompressorNodeTest_ProcessorLifetime_Test;
+};
+
+class MODULES_EXPORT DynamicsCompressorNode final : public AudioNode {
+    DEFINE_WRAPPERTYPEINFO();
+public:
+    static DynamicsCompressorNode* create(AudioContext&, float sampleRate);
+    DECLARE_VIRTUAL_TRACE();
+
+    AudioParam* threshold() const;
+    AudioParam* knee() const;
+    AudioParam* ratio() const;
+    AudioParam* reduction() const;
+    AudioParam* attack() const;
+    AudioParam* release() const;
+
+private:
+    DynamicsCompressorNode(AudioContext&, float sampleRate);
+    DynamicsCompressorHandler& dynamicsCompressorHandler() const;
+
     Member<AudioParam> m_threshold;
     Member<AudioParam> m_knee;
     Member<AudioParam> m_ratio;
     Member<AudioParam> m_reduction;
     Member<AudioParam> m_attack;
     Member<AudioParam> m_release;
+
+    // TODO(tkent): Use FRIEND_TEST macro provided by gtest_prod.h
+    friend class DynamicsCompressorNodeTest_ProcessorLifetime_Test;
 };
 
 } // namespace blink

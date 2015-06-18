@@ -31,7 +31,7 @@ class GLContextEGL : public GLContextReal {
   void ReleaseCurrent(GLSurface* surface) override;
   bool IsCurrent(GLSurface* surface) override;
   void* GetHandle() override;
-  void SetSwapInterval(int interval) override;
+  void OnSetSwapInterval(int interval) override;
   std::string GetExtensions() override;
   bool WasAllocatedUsingRobustnessExtension() override;
   bool GetTotalGpuMemory(size_t* bytes) override;
@@ -45,6 +45,7 @@ class GLContextEGL : public GLContextReal {
   EGLDisplay display_;
   EGLConfig config_;
   bool unbind_fbo_on_makecurrent_;
+  int swap_interval_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextEGL);
 };

@@ -89,9 +89,6 @@
           'win/nacl_time.c',
           'win/nacl_timestamp.c',
           'win/port_win.c',
-          'win/time.cc',
-          'win/time.h',
-          'win/time_win.cc',
           'win/xlate_system_error.c',
         ],
       }],
@@ -181,10 +178,7 @@
           'nacl_sync_checked.c',
           'refcount_base.cc',
         ]
-        },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
+      },
     },
     # ----------------------------------------------------------------------
   ],

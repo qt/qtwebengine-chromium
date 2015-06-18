@@ -25,8 +25,6 @@
  * @author Paul B Mahol
  */
 
-#define UNCHECKED_BITSTREAM_READER 1
-
 #include "libavutil/intreadwrite.h"
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
@@ -39,7 +37,7 @@
 #define BIT_LINE     0x80
 #define BYTE_LINE    0xC0
 
-typedef struct {
+typedef struct CDXLVideoContext {
     AVCodecContext *avctx;
     int            bpp;
     int            format;
@@ -80,7 +78,8 @@ static void bitplanar2chunky(CDXLVideoContext *c, int linesize, uint8_t *out)
     GetBitContext gb;
     int x, y, plane;
 
-    init_get_bits(&gb, c->video, c->video_size * 8);
+    if (init_get_bits8(&gb, c->video, c->video_size) < 0)
+        return;
     for (plane = 0; plane < c->bpp; plane++) {
         for (y = 0; y < c->avctx->height; y++) {
             for (x = 0; x < c->avctx->width; x++)
@@ -95,7 +94,8 @@ static void bitline2chunky(CDXLVideoContext *c, int linesize, uint8_t *out)
     GetBitContext  gb;
     int x, y, plane;
 
-    init_get_bits(&gb, c->video, c->video_size * 8);
+    if (init_get_bits8(&gb, c->video, c->video_size) < 0)
+        return;
     for (y = 0; y < c->avctx->height; y++) {
         for (plane = 0; plane < c->bpp; plane++) {
             for (x = 0; x < c->avctx->width; x++)

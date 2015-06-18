@@ -29,8 +29,6 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#elif defined(OS_MACOSX) && !defined(OS_IOS)
-#include "base/mac/mac_util.h"
 #elif defined(OS_ANDROID)
 #include "base/android/build_info.h"
 #endif
@@ -59,6 +57,7 @@ class WellKnownCaCertVerifyProc : public CertVerifyProc {
 
   // CertVerifyProc implementation:
   bool SupportsAdditionalTrustAnchors() const override { return false; }
+  bool SupportsOCSPStapling() const override { return false; }
 
  protected:
   ~WellKnownCaCertVerifyProc() override {}
@@ -66,6 +65,7 @@ class WellKnownCaCertVerifyProc : public CertVerifyProc {
  private:
   int VerifyInternal(X509Certificate* cert,
                      const std::string& hostname,
+                     const std::string& ocsp_response,
                      int flags,
                      CRLSet* crl_set,
                      const CertificateList& additional_trust_anchors,
@@ -79,6 +79,7 @@ class WellKnownCaCertVerifyProc : public CertVerifyProc {
 int WellKnownCaCertVerifyProc::VerifyInternal(
     X509Certificate* cert,
     const std::string& hostname,
+    const std::string& ocsp_response,
     int flags,
     CRLSet* crl_set,
     const CertificateList& additional_trust_anchors,
@@ -127,7 +128,7 @@ class CertVerifyProcTest : public testing::Test {
              CRLSet* crl_set,
              const CertificateList& additional_trust_anchors,
              CertVerifyResult* verify_result) {
-    return verify_proc_->Verify(cert, hostname, flags, crl_set,
+    return verify_proc_->Verify(cert, hostname, std::string(), flags, crl_set,
                                 additional_trust_anchors, verify_result);
   }
 
@@ -214,7 +215,7 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
                      NULL,
                      empty_cert_list_,
                      &verify_result);
-#if defined(USE_NSS) || defined(OS_IOS) || defined(OS_ANDROID)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS) || defined(OS_ANDROID)
   EXPECT_EQ(ERR_CERT_COMMON_NAME_INVALID, error);
 #else
   // TOOD(bulach): investigate why macosx and win aren't returning
@@ -224,7 +225,7 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
   // Either the system crypto library should correctly report a certificate
   // name mismatch, or our certificate blacklist should cause us to report an
   // invalid certificate.
-#if defined(USE_NSS) || defined(OS_WIN) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_WIN) || defined(OS_IOS)
   EXPECT_TRUE(verify_result.cert_status &
               (CERT_STATUS_COMMON_NAME_INVALID | CERT_STATUS_INVALID));
 #endif
@@ -442,7 +443,7 @@ TEST_F(CertVerifyProcTest, MAYBE_ExtraneousMD5RootCert) {
   ASSERT_NE(static_cast<X509Certificate*>(NULL), extra_cert.get());
 
   scoped_refptr<X509Certificate> root_cert =
-      ImportCertFromFile(certs_dir, "cross-signed-root-sha1.pem");
+      ImportCertFromFile(certs_dir, "cross-signed-root-sha256.pem");
   ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
 
   ScopedTestRoot scoped_root(root_cert.get());
@@ -615,16 +616,46 @@ TEST_F(CertVerifyProcTest, NameConstraintsFailure) {
             verify_result.cert_status & CERT_STATUS_NAME_CONSTRAINT_VIOLATION);
 }
 
+TEST_F(CertVerifyProcTest, TestHasTooLongValidity) {
+  struct {
+    const char* const file;
+    bool is_valid_too_long;
+  } tests[] = {
+      {"twitter-chain.pem", false},
+      {"start_after_expiry.pem", true},
+      {"pre_br_validity_ok.pem", false},
+      {"pre_br_validity_bad_121.pem", true},
+      {"pre_br_validity_bad_2020.pem", true},
+      {"10_year_validity.pem", false},
+      {"11_year_validity.pem", true},
+      {"39_months_after_2015_04.pem", false},
+      {"40_months_after_2015_04.pem", true},
+      {"60_months_after_2012_07.pem", false},
+      {"61_months_after_2012_07.pem", true},
+  };
+
+  base::FilePath certs_dir = GetTestCertsDirectory();
+
+  for (size_t i = 0; i < arraysize(tests); ++i) {
+    scoped_refptr<X509Certificate> certificate =
+        ImportCertFromFile(certs_dir, tests[i].file);
+    SCOPED_TRACE(tests[i].file);
+    ASSERT_TRUE(certificate);
+    EXPECT_EQ(tests[i].is_valid_too_long,
+              CertVerifyProc::HasTooLongValidity(*certificate));
+  }
+}
+
 TEST_F(CertVerifyProcTest, TestKnownRoot) {
   if (!SupportsDetectingKnownRoots()) {
-    LOG(INFO) << "Skipping this test in this platform.";
+    LOG(INFO) << "Skipping this test on this platform.";
     return;
   }
 
   base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
-      certs_dir, "satveda.pem", X509Certificate::FORMAT_AUTO);
-  ASSERT_EQ(2U, certs.size());
+      certs_dir, "twitter-chain.pem", X509Certificate::FORMAT_AUTO);
+  ASSERT_EQ(3U, certs.size());
 
   X509Certificate::OSCertHandles intermediates;
   intermediates.push_back(certs[1]->os_cert_handle());
@@ -635,20 +666,14 @@ TEST_F(CertVerifyProcTest, TestKnownRoot) {
 
   int flags = 0;
   CertVerifyResult verify_result;
-  // This will blow up, May 24th, 2019. Sorry! Please disable and file a bug
+  // This will blow up, May 9th, 2016. Sorry! Please disable and file a bug
   // against agl. See also PublicKeyHashes.
-  int error = Verify(cert_chain.get(),
-                     "satveda.com",
-                     flags,
-                     NULL,
-                     empty_cert_list_,
-                     &verify_result);
+  int error = Verify(cert_chain.get(), "twitter.com", flags, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
   EXPECT_TRUE(verify_result.is_issued_by_known_root);
 }
 
-// The certse.pem certificate has been revoked. crbug.com/259723.
 TEST_F(CertVerifyProcTest, PublicKeyHashes) {
   if (!SupportsReturningVerifiedChain()) {
     LOG(INFO) << "Skipping this test in this platform.";
@@ -657,8 +682,8 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
 
   base::FilePath certs_dir = GetTestCertsDirectory();
   CertificateList certs = CreateCertificateListFromFile(
-      certs_dir, "satveda.pem", X509Certificate::FORMAT_AUTO);
-  ASSERT_EQ(2U, certs.size());
+      certs_dir, "twitter-chain.pem", X509Certificate::FORMAT_AUTO);
+  ASSERT_EQ(3U, certs.size());
 
   X509Certificate::OSCertHandles intermediates;
   intermediates.push_back(certs[1]->os_cert_handle());
@@ -669,17 +694,12 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
   int flags = 0;
   CertVerifyResult verify_result;
 
-  // This will blow up, May 24th, 2019. Sorry! Please disable and file a bug
+  // This will blow up, May 9th, 2016. Sorry! Please disable and file a bug
   // against agl. See also TestKnownRoot.
-  int error = Verify(cert_chain.get(),
-                     "satveda.com",
-                     flags,
-                     NULL,
-                     empty_cert_list_,
-                     &verify_result);
+  int error = Verify(cert_chain.get(), "twitter.com", flags, NULL,
+                     empty_cert_list_, &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
-  ASSERT_LE(2U, verify_result.public_key_hashes.size());
+  ASSERT_LE(3U, verify_result.public_key_hashes.size());
 
   HashValueVector sha1_hashes;
   for (size_t i = 0; i < verify_result.public_key_hashes.size(); ++i) {
@@ -687,10 +707,10 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
       continue;
     sha1_hashes.push_back(verify_result.public_key_hashes[i]);
   }
-  ASSERT_LE(2u, sha1_hashes.size());
+  ASSERT_LE(3u, sha1_hashes.size());
 
-  for (size_t i = 0; i < 2; ++i) {
-    EXPECT_EQ(HexEncode(kSatvedaSPKIs[i], base::kSHA1Length),
+  for (size_t i = 0; i < 3; ++i) {
+    EXPECT_EQ(HexEncode(kTwitterSPKIs[i], base::kSHA1Length),
               HexEncode(sha1_hashes[i].data(), base::kSHA1Length));
   }
 
@@ -700,10 +720,10 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
       continue;
     sha256_hashes.push_back(verify_result.public_key_hashes[i]);
   }
-  ASSERT_LE(2u, sha256_hashes.size());
+  ASSERT_LE(3u, sha256_hashes.size());
 
-  for (size_t i = 0; i < 2; ++i) {
-    EXPECT_EQ(HexEncode(kSatvedaSPKIsSHA256[i], crypto::kSHA256Length),
+  for (size_t i = 0; i < 3; ++i) {
+    EXPECT_EQ(HexEncode(kTwitterSPKIsSHA256[i], crypto::kSHA256Length),
               HexEncode(sha256_hashes[i].data(), crypto::kSHA256Length));
   }
 }
@@ -737,7 +757,7 @@ TEST_F(CertVerifyProcTest, InvalidKeyUsage) {
 #endif
   // TODO(wtc): fix http://crbug.com/75520 to get all the certificate errors
   // from NSS.
-#if !defined(USE_NSS) && !defined(OS_IOS) && !defined(OS_ANDROID)
+#if !defined(USE_NSS_CERTS) && !defined(OS_IOS) && !defined(OS_ANDROID)
   // The certificate is issued by an unknown CA.
   EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_AUTHORITY_INVALID);
 #endif
@@ -810,7 +830,7 @@ TEST_F(CertVerifyProcTest, IntranetHostsRejected) {
   }
 
   CertificateList cert_list = CreateCertificateListFromFile(
-      GetTestCertsDirectory(), "ok_cert.pem",
+      GetTestCertsDirectory(), "reject_intranet_hosts.pem",
       X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, cert_list.size());
   scoped_refptr<X509Certificate> cert(cert_list[0]);
@@ -1002,15 +1022,11 @@ TEST_F(CertVerifyProcTest, AdditionalTrustAnchors) {
 // detecting known roots.
 TEST_F(CertVerifyProcTest, IsIssuedByKnownRootIgnoresTestRoots) {
   // Load root_ca_cert.pem into the test root store.
-  TestRootCerts* root_certs = TestRootCerts::GetInstance();
-  root_certs->AddFromFile(
-      GetTestCertsDirectory().AppendASCII("root_ca_cert.pem"));
+  ScopedTestRoot test_root(
+      ImportCertFromFile(GetTestCertsDirectory(), "root_ca_cert.pem").get());
 
-  CertificateList cert_list = CreateCertificateListFromFile(
-      GetTestCertsDirectory(), "ok_cert.pem",
-      X509Certificate::FORMAT_AUTO);
-  ASSERT_EQ(1U, cert_list.size());
-  scoped_refptr<X509Certificate> cert(cert_list[0]);
+  scoped_refptr<X509Certificate> cert(
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem"));
 
   // Verification should pass.
   int flags = 0;
@@ -1021,9 +1037,6 @@ TEST_F(CertVerifyProcTest, IsIssuedByKnownRootIgnoresTestRoots) {
   EXPECT_EQ(0U, verify_result.cert_status);
   // But should not be marked as a known root.
   EXPECT_FALSE(verify_result.is_issued_by_known_root);
-
-  root_certs->Clear();
-  EXPECT_TRUE(root_certs->IsEmpty());
 }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -1149,7 +1162,8 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
 }
 #endif
 
-#if defined(USE_NSS) || defined(OS_IOS) || defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS) || defined(OS_WIN) || \
+    defined(OS_MACOSX)
 // Test that CRLSets are effective in making a certificate appear to be
 // revoked.
 TEST_F(CertVerifyProcTest, CRLSet) {
@@ -1403,7 +1417,7 @@ const WeakDigestTestData kVerifyIntermediateCATestData[] = {
     "weak_digest_sha1_ee.pem", EXPECT_MD2 | EXPECT_SHA1 },
 };
 // Disabled on NSS - MD4 is not supported, and MD2 and MD5 are disabled.
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
 #define MAYBE_VerifyIntermediate DISABLED_VerifyIntermediate
 #else
 #define MAYBE_VerifyIntermediate VerifyIntermediate
@@ -1428,7 +1442,7 @@ const WeakDigestTestData kVerifyEndEntityTestData[] = {
 // Disabled on NSS - NSS caches chains/signatures in such a way that cannot
 // be cleared until NSS is cleanly shutdown, which is not presently supported
 // in Chromium.
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
 #define MAYBE_VerifyEndEntity DISABLED_VerifyEndEntity
 #else
 #define MAYBE_VerifyEndEntity VerifyEndEntity
@@ -1451,7 +1465,7 @@ const WeakDigestTestData kVerifyIncompleteIntermediateTestData[] = {
 };
 // Disabled on NSS - libpkix does not return constructed chains on error,
 // preventing us from detecting/inspecting the verified chain.
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
 #define MAYBE_VerifyIncompleteIntermediate \
     DISABLED_VerifyIncompleteIntermediate
 #else
@@ -1476,7 +1490,7 @@ const WeakDigestTestData kVerifyIncompleteEETestData[] = {
 };
 // Disabled on NSS - libpkix does not return constructed chains on error,
 // preventing us from detecting/inspecting the verified chain.
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
 #define MAYBE_VerifyIncompleteEndEntity DISABLED_VerifyIncompleteEndEntity
 #else
 #define MAYBE_VerifyIncompleteEndEntity VerifyIncompleteEndEntity
@@ -1501,7 +1515,7 @@ const WeakDigestTestData kVerifyMixedTestData[] = {
 };
 // NSS does not support MD4 and does not enable MD2 by default, making all
 // permutations invalid.
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
 #define MAYBE_VerifyMixed DISABLED_VerifyMixed
 #else
 #define MAYBE_VerifyMixed VerifyMixed
@@ -1575,5 +1589,29 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
     VerifyName,
     CertVerifyProcNameTest,
     testing::ValuesIn(kVerifyNameData));
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+// Test that CertVerifyProcMac reacts appropriately when Apple's certificate
+// verifier rejects a certificate with a fatal error. This is a regression
+// test for https://crbug.com/472291.
+TEST_F(CertVerifyProcTest, LargeKey) {
+  // Load root_ca_cert.pem into the test root store.
+  ScopedTestRoot test_root(
+      ImportCertFromFile(GetTestCertsDirectory(), "root_ca_cert.pem").get());
+
+  scoped_refptr<X509Certificate> cert(
+      ImportCertFromFile(GetTestCertsDirectory(), "large_key.pem"));
+
+  // Apple's verifier rejects this certificate as invalid because the
+  // RSA key is too large. If a future version of OS X changes this,
+  // large_key.pem may need to be regenerated with a larger key.
+  int flags = 0;
+  CertVerifyResult verify_result;
+  int error = Verify(cert.get(), "127.0.0.1", flags, NULL, empty_cert_list_,
+                     &verify_result);
+  EXPECT_EQ(ERR_CERT_INVALID, error);
+  EXPECT_EQ(CERT_STATUS_INVALID, verify_result.cert_status);
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 }  // namespace net

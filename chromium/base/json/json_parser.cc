@@ -4,7 +4,8 @@
 
 #include "base/json/json_parser.h"
 
-#include "base/float_util.h"
+#include <cmath>
+
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -428,7 +429,7 @@ bool JSONParser::EatComment() {
   if (next_char == '/') {
     // Single line comment, read to newline.
     while (CanConsume(1)) {
-      char next_char = *NextChar();
+      next_char = *NextChar();
       if (next_char == '\n' || next_char == '\r')
         return true;
     }
@@ -872,7 +873,7 @@ Value* JSONParser::ConsumeNumber() {
 
   double num_double;
   if (base::StringToDouble(num_string.as_string(), &num_double) &&
-      IsFinite(num_double)) {
+      std::isfinite(num_double)) {
     return new FundamentalValue(num_double);
   }
 
@@ -931,7 +932,7 @@ Value* JSONParser::ConsumeLiteral() {
         return NULL;
       }
       NextNChars(kNullLen - 1);
-      return Value::CreateNullValue();
+      return Value::CreateNullValue().release();
     }
     default:
       ReportError(JSONReader::JSON_UNEXPECTED_TOKEN, 1);

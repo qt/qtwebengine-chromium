@@ -10,9 +10,10 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "cc/debug/micro_benchmark_controller.h"
-#include "cc/resources/picture.h"
+#include "cc/playback/picture.h"
 
 namespace base {
 class DictionaryValue;
@@ -34,10 +35,13 @@ class RasterizeAndRecordBenchmark : public MicroBenchmark {
   void RunOnLayer(PictureLayer* layer) override;
 
   scoped_ptr<MicroBenchmarkImpl> CreateBenchmarkImpl(
-      scoped_refptr<base::MessageLoopProxy> origin_loop) override;
+      scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner) override;
 
  private:
-  void Run(Layer* layer);
+  void RunOnDisplayListLayer(PictureLayer* layer,
+                             const gfx::Rect& visible_layer_rect);
+  void RunOnPictureLayer(PictureLayer* layer,
+                         const gfx::Rect& visible_layer_rect);
 
   void RecordRasterResults(scoped_ptr<base::Value> results);
 
@@ -46,7 +50,8 @@ class RasterizeAndRecordBenchmark : public MicroBenchmark {
     ~RecordResults();
 
     int pixels_recorded;
-    base::TimeDelta total_best_time[Picture::RECORDING_MODE_COUNT];
+    size_t bytes_used;
+    base::TimeDelta total_best_time[RecordingSource::RECORDING_MODE_COUNT];
   };
 
   RecordResults record_results_;

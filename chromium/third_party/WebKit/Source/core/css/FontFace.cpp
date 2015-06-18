@@ -59,14 +59,13 @@
 #include "core/frame/UseCounter.h"
 #include "platform/FontFamilyNames.h"
 #include "platform/SharedBuffer.h"
-#include "wtf/ArrayBufferView.h"
 
 namespace blink {
 
-static PassRefPtrWillBeRawPtr<CSSValue> parseCSSValue(const Document* document, const String& s, CSSPropertyID propertyID)
+static PassRefPtrWillBeRawPtr<CSSValue> parseCSSValue(const Document* document, const String& value, CSSPropertyID propertyID)
 {
     CSSParserContext context(*document, UseCounter::getFrom(document));
-    return CSSParser::parseSingleValue(propertyID, s, context);
+    return CSSParser::parseFontFaceDescriptor(propertyID, value, context);
 }
 
 PassRefPtrWillBeRawPtr<FontFace> FontFace::create(ExecutionContext* context, const AtomicString& family, StringOrArrayBufferOrArrayBufferView& source, const FontFaceDescriptors& descriptors)
@@ -341,7 +340,7 @@ void FontFace::setLoadStatus(LoadStatus status)
                 m_loadedProperty->reject(m_error.get());
         }
 
-        WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback> > callbacks;
+        WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback>> callbacks;
         m_callbacks.swap(callbacks);
         for (size_t i = 0; i < callbacks.size(); ++i) {
             if (m_status == Loaded)
@@ -352,7 +351,7 @@ void FontFace::setLoadStatus(LoadStatus status)
     }
 }
 
-void FontFace::setError(PassRefPtrWillBeRawPtr<DOMException> error)
+void FontFace::setError(DOMException* error)
 {
     if (!m_error)
         m_error = error ? error : DOMException::create(NetworkError);
@@ -394,7 +393,7 @@ void FontFace::loadInternal(ExecutionContext* context)
         return;
 
     m_cssFontFace->load();
-    toDocument(context)->styleEngine()->fontSelector()->fontLoader()->loadPendingFonts();
+    toDocument(context)->styleEngine().fontSelector()->fontLoader()->loadPendingFonts();
 }
 
 FontTraits FontFace::traits() const
@@ -533,7 +532,7 @@ void FontFace::initCSSFontFace(Document* document, PassRefPtrWillBeRawPtr<CSSVal
             if (allowDownloading && item->isSupportedFormat() && document) {
                 FontResource* fetched = item->fetch(document);
                 if (fetched) {
-                    FontLoader* fontLoader = document->styleEngine()->fontSelector()->fontLoader();
+                    FontLoader* fontLoader = document->styleEngine().fontSelector()->fontLoader();
                     source = adoptPtrWillBeNoop(new RemoteFontFaceSource(fetched, fontLoader));
                 }
             }
@@ -561,7 +560,7 @@ void FontFace::initCSSFontFace(const unsigned char* data, unsigned size)
     m_cssFontFace->addSource(source.release());
 }
 
-void FontFace::trace(Visitor* visitor)
+DEFINE_TRACE(FontFace)
 {
     visitor->trace(m_src);
     visitor->trace(m_style);
@@ -574,6 +573,7 @@ void FontFace::trace(Visitor* visitor)
     visitor->trace(m_loadedProperty);
     visitor->trace(m_cssFontFace);
     visitor->trace(m_callbacks);
+    ActiveDOMObject::trace(visitor);
 }
 
 bool FontFace::hadBlankText() const

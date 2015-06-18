@@ -21,9 +21,9 @@
 #include "core/svg/SVGFEDropShadowElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/SVGRenderStyle.h"
+#include "core/layout/LayoutObject.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/SVGComputedStyle.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -42,6 +42,15 @@ inline SVGFEDropShadowElement::SVGFEDropShadowElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
+DEFINE_TRACE(SVGFEDropShadowElement)
+{
+    visitor->trace(m_dx);
+    visitor->trace(m_dy);
+    visitor->trace(m_stdDeviation);
+    visitor->trace(m_in1);
+    SVGFilterPrimitiveStandardAttributes::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGFEDropShadowElement)
 
 void SVGFEDropShadowElement::setStdDeviation(float x, float y)
@@ -51,54 +60,31 @@ void SVGFEDropShadowElement::setStdDeviation(float x, float y)
     invalidate();
 }
 
-bool SVGFEDropShadowElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::inAttr);
-        supportedAttributes.add(SVGNames::dxAttr);
-        supportedAttributes.add(SVGNames::dyAttr);
-        supportedAttributes.add(SVGNames::stdDeviationAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGFEDropShadowElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGFEDropShadowElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (attrName == SVGNames::inAttr
         || attrName == SVGNames::stdDeviationAttr
         || attrName == SVGNames::dxAttr
         || attrName == SVGNames::dyAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         invalidate();
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
-PassRefPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
+PassRefPtrWillBeRawPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
-    RenderObject* renderer = this->renderer();
-    if (!renderer)
+    LayoutObject* layoutObject = this->layoutObject();
+    if (!layoutObject)
         return nullptr;
 
     if (stdDeviationX()->currentValue()->value() < 0 || stdDeviationY()->currentValue()->value() < 0)
         return nullptr;
 
-    ASSERT(renderer->style());
-    const SVGRenderStyle& svgStyle = renderer->style()->svgStyle();
+    ASSERT(layoutObject->style());
+    const SVGComputedStyle& svgStyle = layoutObject->style()->svgStyle();
 
     Color color = svgStyle.floodColor();
     float opacity = svgStyle.floodOpacity();
@@ -107,7 +93,7 @@ PassRefPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuilder* filterB
     if (!input1)
         return nullptr;
 
-    RefPtr<FilterEffect> effect = FEDropShadow::create(filter, stdDeviationX()->currentValue()->value(), stdDeviationY()->currentValue()->value(), m_dx->currentValue()->value(), m_dy->currentValue()->value(), color, opacity);
+    RefPtrWillBeRawPtr<FilterEffect> effect = FEDropShadow::create(filter, stdDeviationX()->currentValue()->value(), stdDeviationY()->currentValue()->value(), m_dx->currentValue()->value(), m_dy->currentValue()->value(), color, opacity);
     effect->inputEffects().append(input1);
     return effect.release();
 }

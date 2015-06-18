@@ -44,6 +44,11 @@ using namespace WTF;
 
 namespace blink {
 
+static bool isWhitespace(UChar chr)
+{
+    return (chr == ' ') || (chr == '\t');
+}
+
 // true if there is more to parse, after incrementing pos past whitespace.
 // Note: Might return pos == str.length()
 static inline bool skipWhiteSpace(const String& str, unsigned& pos, bool fromHttpEquivMeta)
@@ -54,7 +59,7 @@ static inline bool skipWhiteSpace(const String& str, unsigned& pos, bool fromHtt
         while (pos < len && str[pos] <= ' ')
             ++pos;
     } else {
-        while (pos < len && (str[pos] == '\t' || str[pos] == ' '))
+        while (pos < len && isWhitespace(str[pos]))
             ++pos;
     }
 
@@ -107,7 +112,7 @@ bool isValidHTTPHeaderValue(const String& name)
     // FIXME: This should really match name against
     // field-value in section 4.2 of RFC 2616.
 
-    return name.containsOnlyLatin1() && !name.contains('\r') && !name.contains('\n');
+    return name.containsOnlyLatin1() && !name.contains('\r') && !name.contains('\n') && !name.contains(static_cast<UChar>('\0'));
 }
 
 // See RFC 2616, Section 2.2.
@@ -131,7 +136,7 @@ static const size_t maxInputSampleSize = 128;
 static String trimInputSample(const char* p, size_t length)
 {
     if (length > maxInputSampleSize)
-        return String(p, maxInputSampleSize) + horizontalEllipsis;
+        return String(p, maxInputSampleSize) + horizontalEllipsisCharacter;
     return String(p, length);
 }
 
@@ -193,7 +198,7 @@ bool parseHTTPRefresh(const String& refresh, bool fromHttpEquivMeta, double& del
         ++pos;
         skipWhiteSpace(refresh, pos, fromHttpEquivMeta);
         unsigned urlStartPos = pos;
-        if (refresh.find("url", urlStartPos, false) == urlStartPos) {
+        if (refresh.find("url", urlStartPos, TextCaseInsensitive) == urlStartPos) {
             urlStartPos += 3;
             skipWhiteSpace(refresh, urlStartPos, fromHttpEquivMeta);
             if (refresh[urlStartPos] == '=') {
@@ -317,7 +322,7 @@ void findCharsetInMediaType(const String& mediaType, unsigned& charsetPos, unsig
     unsigned length = mediaType.length();
 
     while (pos < length) {
-        pos = mediaType.find("charset", pos, false);
+        pos = mediaType.find("charset", pos, TextCaseInsensitive);
         if (pos == kNotFound || !pos) {
             charsetLen = 0;
             return;
@@ -496,7 +501,7 @@ bool parseRange(const String& range, long long& rangeOffset, long long& rangeEnd
 
     // The "bytes" unit identifier should be present.
     static const char bytesStart[] = "bytes=";
-    if (!range.startsWith(bytesStart, false))
+    if (!range.startsWith(bytesStart, TextCaseInsensitive))
         return false;
     String byteRange = range.substring(sizeof(bytesStart) - 1);
 
@@ -748,7 +753,7 @@ static inline String trimToNextSeparator(const String& str)
     return str.substring(0, str.find(isCacheHeaderSeparator));
 }
 
-static void parseCacheHeader(const String& header, Vector<pair<String, String> >& result)
+static void parseCacheHeader(const String& header, Vector<pair<String, String>>& result)
 {
     const String safeHeader = header.removeCharacters(isControlCharacter);
     unsigned max = safeHeader.length();
@@ -809,14 +814,16 @@ CacheControlHeader parseCacheControlDirectives(const AtomicString& cacheControlV
     CacheControlHeader cacheControlHeader;
     cacheControlHeader.parsed = true;
     cacheControlHeader.maxAge = std::numeric_limits<double>::quiet_NaN();
+    cacheControlHeader.staleWhileRevalidate = std::numeric_limits<double>::quiet_NaN();
 
     DEFINE_STATIC_LOCAL(const AtomicString, noCacheDirective, ("no-cache", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, noStoreDirective, ("no-store", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, mustRevalidateDirective, ("must-revalidate", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, maxAgeDirective, ("max-age", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, staleWhileRevalidateDirective, ("stale-while-revalidate", AtomicString::ConstructFromLiteral));
 
     if (!cacheControlValue.isEmpty()) {
-        Vector<pair<String, String> > directives;
+        Vector<pair<String, String>> directives;
         parseCacheHeader(cacheControlValue, directives);
 
         size_t directivesSize = directives.size();
@@ -838,6 +845,15 @@ CacheControlHeader parseCacheControlDirectives(const AtomicString& cacheControlV
                 double maxAge = directives[i].second.toDouble(&ok);
                 if (ok)
                     cacheControlHeader.maxAge = maxAge;
+            } else if (equalIgnoringCase(directives[i].first, staleWhileRevalidateDirective)) {
+                if (!std::isnan(cacheControlHeader.staleWhileRevalidate)) {
+                    // First stale-while-revalidate directive wins if there are multiple ones.
+                    continue;
+                }
+                bool ok;
+                double staleWhileRevalidate = directives[i].second.toDouble(&ok);
+                if (ok)
+                    cacheControlHeader.staleWhileRevalidate = staleWhileRevalidate;
             }
         }
     }
@@ -849,6 +865,14 @@ CacheControlHeader parseCacheControlDirectives(const AtomicString& cacheControlV
         cacheControlHeader.containsNoCache = pragmaValue.lower().contains(noCacheDirective);
     }
     return cacheControlHeader;
+}
+
+void parseCommaDelimitedHeader(const String& headerValue, CommaDelimitedHeaderSet& headerSet)
+{
+    Vector<String> results;
+    headerValue.split(",", results);
+    for (auto& value : results)
+        headerSet.add(value.stripWhiteSpace(isWhitespace));
 }
 
 }

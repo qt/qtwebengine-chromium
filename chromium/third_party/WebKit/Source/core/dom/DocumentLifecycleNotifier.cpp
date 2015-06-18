@@ -27,33 +27,24 @@
 #include "config.h"
 #include "core/dom/DocumentLifecycleNotifier.h"
 
-#include "wtf/Assertions.h"
+#include "core/dom/DocumentLifecycleObserver.h"
 
 namespace blink {
 
-DocumentLifecycleNotifier::DocumentLifecycleNotifier(Document* document)
-    : LifecycleNotifier<Document>(document)
+void DocumentLifecycleNotifier::notifyDocumentWasDetached()
 {
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    for (DocumentLifecycleObserver* observer : m_observers)
+        observer->documentWasDetached();
 }
 
-void DocumentLifecycleNotifier::addObserver(DocumentLifecycleNotifier::Observer* observer)
+#if !ENABLE(OILPAN)
+void DocumentLifecycleNotifier::notifyDocumentWasDisposed()
 {
-    if (observer->observerType() == Observer::DocumentLifecycleObserverType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverDocumentObservers);
-        m_documentObservers.add(static_cast<DocumentLifecycleObserver*>(observer));
-    }
-
-    LifecycleNotifier<Document>::addObserver(observer);
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    for (DocumentLifecycleObserver* observer : m_observers)
+        observer->documentWasDisposed();
 }
-
-void DocumentLifecycleNotifier::removeObserver(DocumentLifecycleNotifier::Observer* observer)
-{
-    if (observer->observerType() == Observer::DocumentLifecycleObserverType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverDocumentObservers);
-        m_documentObservers.remove(static_cast<DocumentLifecycleObserver*>(observer));
-    }
-
-    LifecycleNotifier<Document>::removeObserver(observer);
-}
+#endif
 
 } // namespace blink

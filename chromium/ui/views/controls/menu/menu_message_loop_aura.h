@@ -29,7 +29,6 @@ class MenuMessageLoopAura : public MenuMessageLoop {
   void Run(MenuController* controller,
            Widget* owner,
            bool nested_menu) override;
-  bool ShouldQuitNow() const override;
   void QuitNow() override;
   void RepostEventToWindow(const ui::LocatedEvent& event,
                            gfx::NativeWindow window,
@@ -41,7 +40,6 @@ class MenuMessageLoopAura : public MenuMessageLoop {
   // WARNING: this may be NULL.
   Widget* owner_;
 
-  scoped_ptr<ui::ScopedEventDispatcher> nested_dispatcher_;
   base::Closure message_loop_quit_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuMessageLoopAura);

@@ -5,14 +5,12 @@
 #include "media/midi/usb_midi_input_stream.h"
 
 #include <string.h>
-#include <map>
-#include <vector>
 
 #include "base/logging.h"
 #include "media/midi/usb_midi_device.h"
-#include "media/midi/usb_midi_jack.h"
 
 namespace media {
+namespace midi {
 
 UsbMidiInputStream::JackUniqueKey::JackUniqueKey(UsbMidiDevice* device,
                                                  int endpoint_number,
@@ -37,19 +35,20 @@ bool UsbMidiInputStream::JackUniqueKey::operator<(
   return cable_number < that.cable_number;
 }
 
-UsbMidiInputStream::UsbMidiInputStream(const std::vector<UsbMidiJack>& jacks,
-                                       Delegate* delegate)
-    : delegate_(delegate) {
-  for (size_t i = 0; i < jacks.size(); ++i) {
-    jack_dictionary_.insert(
-        std::make_pair(JackUniqueKey(jacks[i].device,
-                                     jacks[i].endpoint_number(),
-                                     jacks[i].cable_number),
-                       i));
-  }
-}
+UsbMidiInputStream::UsbMidiInputStream(Delegate* delegate)
+    : delegate_(delegate) {}
 
 UsbMidiInputStream::~UsbMidiInputStream() {}
+
+void UsbMidiInputStream::Add(const UsbMidiJack& jack) {
+  JackUniqueKey key(jack.device,
+                    jack.endpoint_number(),
+                    jack.cable_number);
+
+  jacks_.push_back(jack);
+  DCHECK(jack_dictionary_.end() == jack_dictionary_.find(key));
+  jack_dictionary_.insert(std::make_pair(key, jack_dictionary_.size()));
+}
 
 void UsbMidiInputStream::OnReceivedData(UsbMidiDevice* device,
                                         int endpoint_number,
@@ -89,17 +88,5 @@ void UsbMidiInputStream::ProcessOnePacket(UsbMidiDevice* device,
     delegate_->OnReceivedData(it->second, &packet[1], packet_size, time);
 }
 
-std::vector<UsbMidiInputStream::JackUniqueKey>
-UsbMidiInputStream::RegisteredJackKeysForTesting() const {
-  std::vector<JackUniqueKey> result(jack_dictionary_.size(),
-                                    JackUniqueKey(0, 0, 0));
-  for (std::map<JackUniqueKey, size_t>::const_iterator it =
-           jack_dictionary_.begin();
-       it != jack_dictionary_.end(); ++it) {
-    DCHECK_LT(it->second, result.size());
-    result[it->second] = it->first;
-  }
-  return result;
-}
-
+}  // namespace midi
 }  // namespace media

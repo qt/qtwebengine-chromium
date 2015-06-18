@@ -5,9 +5,10 @@
 #include "content/browser/shared_worker/shared_worker_host.h"
 
 #include "base/metrics/histogram.h"
-#include "content/browser/devtools/embedded_worker_devtools_manager.h"
+#include "content/browser/devtools/shared_worker_devtools_manager.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/message_port_message_filter.h"
 #include "content/browser/message_port_service.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
@@ -41,7 +42,7 @@ void NotifyWorkerReadyForInspection(int worker_process_id,
                                        worker_route_id));
     return;
   }
-  EmbeddedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(
+  SharedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(
       worker_process_id, worker_route_id);
 }
 
@@ -53,7 +54,7 @@ void NotifyWorkerDestroyed(int worker_process_id, int worker_route_id) {
         base::Bind(NotifyWorkerDestroyed, worker_process_id, worker_route_id));
     return;
   }
-  EmbeddedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(
+  SharedWorkerDevToolsManager::GetInstance()->WorkerDestroyed(
       worker_process_id, worker_route_id);
 }
 
@@ -71,11 +72,11 @@ SharedWorkerHost::SharedWorkerHost(SharedWorkerInstance* instance,
       closed_(false),
       creation_time_(base::TimeTicks::Now()),
       weak_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
 SharedWorkerHost::~SharedWorkerHost() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   UMA_HISTOGRAM_LONG_TIMES("SharedWorker.TimeToDeleted",
                            base::TimeTicks::Now() - creation_time_);
   // If we crashed, tell the RenderViewHosts.
@@ -266,8 +267,8 @@ void SharedWorkerHost::RelayMessage(
     WorkerMsg_Connect::Param param;
     if (!WorkerMsg_Connect::Read(&message, &param))
       return;
-    int sent_message_port_id = param.a;
-    int new_routing_id = param.b;
+    int sent_message_port_id = get<0>(param);
+    int new_routing_id = get<1>(param);
 
     DCHECK(container_render_filter_);
     new_routing_id = container_render_filter_->GetNextRoutingID();

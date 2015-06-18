@@ -18,8 +18,7 @@ namespace internal {
 
 
 HeapGraphEdge::HeapGraphEdge(Type type, const char* name, int from, int to)
-    : type_(type),
-      from_index_(from),
+    : bit_field_(TypeField::encode(type) | FromIndexField::encode(from)),
       to_index_(to),
       name_(name) {
   DCHECK(type == kContextVariable
@@ -31,8 +30,7 @@ HeapGraphEdge::HeapGraphEdge(Type type, const char* name, int from, int to)
 
 
 HeapGraphEdge::HeapGraphEdge(Type type, int index, int from, int to)
-    : type_(type),
-      from_index_(from),
+    : bit_field_(TypeField::encode(type) | FromIndexField::encode(from)),
       to_index_(to),
       index_(index) {
   DCHECK(type == kElement || type == kHidden);
@@ -180,12 +178,8 @@ template <> struct SnapshotSizeConstants<8> {
 }  // namespace
 
 
-HeapSnapshot::HeapSnapshot(HeapProfiler* profiler,
-                           const char* title,
-                           unsigned uid)
+HeapSnapshot::HeapSnapshot(HeapProfiler* profiler)
     : profiler_(profiler),
-      title_(title),
-      uid_(uid),
       root_index_(HeapEntry::kNoEntry),
       gc_roots_index_(HeapEntry::kNoEntry),
       max_snapshot_js_object_id_(0) {
@@ -397,8 +391,8 @@ bool HeapObjectsMap::MoveObject(Address from, Address to, int object_size) {
       entries_.at(to_entry_info_index).addr = NULL;
     }
   } else {
-    HashMap::Entry* to_entry = entries_map_.Lookup(to, ComputePointerHash(to),
-                                                   true);
+    HashMap::Entry* to_entry =
+        entries_map_.LookupOrInsert(to, ComputePointerHash(to));
     if (to_entry->value != NULL) {
       // We found the existing entry with to address for an old object.
       // Without this operation we will have two EntryInfo's with the same
@@ -435,8 +429,7 @@ void HeapObjectsMap::UpdateObjectSize(Address addr, int size) {
 
 
 SnapshotObjectId HeapObjectsMap::FindEntry(Address addr) {
-  HashMap::Entry* entry = entries_map_.Lookup(addr, ComputePointerHash(addr),
-                                              false);
+  HashMap::Entry* entry = entries_map_.Lookup(addr, ComputePointerHash(addr));
   if (entry == NULL) return 0;
   int entry_index = static_cast<int>(reinterpret_cast<intptr_t>(entry->value));
   EntryInfo& entry_info = entries_.at(entry_index);
@@ -449,8 +442,8 @@ SnapshotObjectId HeapObjectsMap::FindOrAddEntry(Address addr,
                                                 unsigned int size,
                                                 bool accessed) {
   DCHECK(static_cast<uint32_t>(entries_.length()) > entries_map_.occupancy());
-  HashMap::Entry* entry = entries_map_.Lookup(addr, ComputePointerHash(addr),
-                                              true);
+  HashMap::Entry* entry =
+      entries_map_.LookupOrInsert(addr, ComputePointerHash(addr));
   if (entry->value != NULL) {
     int entry_index =
         static_cast<int>(reinterpret_cast<intptr_t>(entry->value));
@@ -560,8 +553,8 @@ int HeapObjectsMap::FindUntrackedObjects() {
   for (HeapObject* obj = iterator.next();
        obj != NULL;
        obj = iterator.next()) {
-    HashMap::Entry* entry = entries_map_.Lookup(
-      obj->address(), ComputePointerHash(obj->address()), false);
+    HashMap::Entry* entry =
+        entries_map_.Lookup(obj->address(), ComputePointerHash(obj->address()));
     if (entry == NULL) {
       ++untracked;
       if (FLAG_heap_profiler_trace_objects) {
@@ -617,7 +610,8 @@ int HeapObjectsMap::FindUntrackedObjects() {
 }
 
 
-SnapshotObjectId HeapObjectsMap::PushHeapObjectsStats(OutputStream* stream) {
+SnapshotObjectId HeapObjectsMap::PushHeapObjectsStats(OutputStream* stream,
+                                                      int64_t* timestamp_us) {
   UpdateHeapObjectsMap();
   time_intervals_.Add(TimeInterval(next_id_));
   int prefered_chunk_size = stream->GetChunkSize();
@@ -659,6 +653,10 @@ SnapshotObjectId HeapObjectsMap::PushHeapObjectsStats(OutputStream* stream) {
     if (result == OutputStream::kAbort) return last_assigned_id();
   }
   stream->EndOfStream();
+  if (timestamp_us) {
+    *timestamp_us = (time_intervals_.last().timestamp -
+                     time_intervals_[0].timestamp).InMicroseconds();
+  }
   return last_assigned_id();
 }
 
@@ -676,7 +674,7 @@ void HeapObjectsMap::RemoveDeadEntries() {
       }
       entries_.at(first_free_entry).accessed = false;
       HashMap::Entry* entry = entries_map_.Lookup(
-          entry_info.addr, ComputePointerHash(entry_info.addr), false);
+          entry_info.addr, ComputePointerHash(entry_info.addr));
       DCHECK(entry);
       entry->value = reinterpret_cast<void*>(first_free_entry);
       ++first_free_entry;
@@ -722,14 +720,14 @@ HeapEntriesMap::HeapEntriesMap()
 
 
 int HeapEntriesMap::Map(HeapThing thing) {
-  HashMap::Entry* cache_entry = entries_.Lookup(thing, Hash(thing), false);
+  HashMap::Entry* cache_entry = entries_.Lookup(thing, Hash(thing));
   if (cache_entry == NULL) return HeapEntry::kNoEntry;
   return static_cast<int>(reinterpret_cast<intptr_t>(cache_entry->value));
 }
 
 
 void HeapEntriesMap::Pair(HeapThing thing, int entry) {
-  HashMap::Entry* cache_entry = entries_.Lookup(thing, Hash(thing), true);
+  HashMap::Entry* cache_entry = entries_.LookupOrInsert(thing, Hash(thing));
   DCHECK(cache_entry->value == NULL);
   cache_entry->value = reinterpret_cast<void*>(static_cast<intptr_t>(entry));
 }
@@ -748,21 +746,21 @@ void HeapObjectsSet::Clear() {
 bool HeapObjectsSet::Contains(Object* obj) {
   if (!obj->IsHeapObject()) return false;
   HeapObject* object = HeapObject::cast(obj);
-  return entries_.Lookup(object, HeapEntriesMap::Hash(object), false) != NULL;
+  return entries_.Lookup(object, HeapEntriesMap::Hash(object)) != NULL;
 }
 
 
 void HeapObjectsSet::Insert(Object* obj) {
   if (!obj->IsHeapObject()) return;
   HeapObject* object = HeapObject::cast(obj);
-  entries_.Lookup(object, HeapEntriesMap::Hash(object), true);
+  entries_.LookupOrInsert(object, HeapEntriesMap::Hash(object));
 }
 
 
 const char* HeapObjectsSet::GetTag(Object* obj) {
   HeapObject* object = HeapObject::cast(obj);
   HashMap::Entry* cache_entry =
-      entries_.Lookup(object, HeapEntriesMap::Hash(object), false);
+      entries_.Lookup(object, HeapEntriesMap::Hash(object));
   return cache_entry != NULL
       ? reinterpret_cast<const char*>(cache_entry->value)
       : NULL;
@@ -773,7 +771,7 @@ void HeapObjectsSet::SetTag(Object* obj, const char* tag) {
   if (!obj->IsHeapObject()) return;
   HeapObject* object = HeapObject::cast(obj);
   HashMap::Entry* cache_entry =
-      entries_.Lookup(object, HeapEntriesMap::Hash(object), true);
+      entries_.LookupOrInsert(object, HeapEntriesMap::Hash(object));
   cache_entry->value = const_cast<char*>(tag);
 }
 
@@ -1169,19 +1167,14 @@ void V8HeapExplorer::ExtractJSObjectReferences(
                          "native_context", global_obj->native_context(),
                          GlobalObject::kNativeContextOffset);
     SetInternalReference(global_obj, entry,
-                         "global_context", global_obj->global_context(),
-                         GlobalObject::kGlobalContextOffset);
-    SetInternalReference(global_obj, entry,
                          "global_proxy", global_obj->global_proxy(),
                          GlobalObject::kGlobalProxyOffset);
     STATIC_ASSERT(GlobalObject::kHeaderSize - JSObject::kHeaderSize ==
-                 4 * kPointerSize);
+                 3 * kPointerSize);
   } else if (obj->IsJSArrayBufferView()) {
     JSArrayBufferView* view = JSArrayBufferView::cast(obj);
     SetInternalReference(view, entry, "buffer", view->buffer(),
                          JSArrayBufferView::kBufferOffset);
-    SetWeakReference(view, entry, "weak_next", view->weak_next(),
-                     JSArrayBufferView::kWeakNextOffset);
   }
   TagObject(js_obj->properties(), "(object properties)");
   SetInternalReference(obj, entry,
@@ -1284,46 +1277,47 @@ void V8HeapExplorer::ExtractContextReferences(int entry, Context* context) {
                   Context::FIRST_WEAK_SLOT);
     STATIC_ASSERT(Context::NEXT_CONTEXT_LINK + 1 ==
                   Context::NATIVE_CONTEXT_SLOTS);
-    STATIC_ASSERT(Context::FIRST_WEAK_SLOT + 5 ==
+    STATIC_ASSERT(Context::FIRST_WEAK_SLOT + 4 ==
                   Context::NATIVE_CONTEXT_SLOTS);
   }
 }
 
 
 void V8HeapExplorer::ExtractMapReferences(int entry, Map* map) {
-  if (map->HasTransitionArray()) {
-    TransitionArray* transitions = map->transitions();
+  Object* raw_transitions_or_prototype_info = map->raw_transitions();
+  if (TransitionArray::IsFullTransitionArray(
+          raw_transitions_or_prototype_info)) {
+    TransitionArray* transitions =
+        TransitionArray::cast(raw_transitions_or_prototype_info);
     int transitions_entry = GetEntry(transitions)->index();
-    Object* back_pointer = transitions->back_pointer_storage();
-    TagObject(back_pointer, "(back pointer)");
-    SetInternalReference(transitions, transitions_entry,
-                         "back_pointer", back_pointer);
 
     if (FLAG_collect_maps && map->CanTransition()) {
-      if (!transitions->IsSimpleTransition()) {
-        if (transitions->HasPrototypeTransitions()) {
-          FixedArray* prototype_transitions =
-              transitions->GetPrototypeTransitions();
-          MarkAsWeakContainer(prototype_transitions);
-          TagObject(prototype_transitions, "(prototype transitions");
-          SetInternalReference(transitions, transitions_entry,
-                               "prototype_transitions", prototype_transitions);
-        }
-        // TODO(alph): transitions keys are strong links.
-        MarkAsWeakContainer(transitions);
+      if (transitions->HasPrototypeTransitions()) {
+        FixedArray* prototype_transitions =
+            transitions->GetPrototypeTransitions();
+        MarkAsWeakContainer(prototype_transitions);
+        TagObject(prototype_transitions, "(prototype transitions");
+        SetInternalReference(transitions, transitions_entry,
+                             "prototype_transitions", prototype_transitions);
       }
+      // TODO(alph): transitions keys are strong links.
+      MarkAsWeakContainer(transitions);
     }
 
     TagObject(transitions, "(transition array)");
-    SetInternalReference(map, entry,
-                         "transitions", transitions,
-                         Map::kTransitionsOrBackPointerOffset);
-  } else {
-    Object* back_pointer = map->GetBackPointer();
-    TagObject(back_pointer, "(back pointer)");
-    SetInternalReference(map, entry,
-                         "back_pointer", back_pointer,
-                         Map::kTransitionsOrBackPointerOffset);
+    SetInternalReference(map, entry, "transitions", transitions,
+                         Map::kTransitionsOrPrototypeInfoOffset);
+  } else if (TransitionArray::IsSimpleTransition(
+                 raw_transitions_or_prototype_info)) {
+    TagObject(raw_transitions_or_prototype_info, "(transition)");
+    SetInternalReference(map, entry, "transition",
+                         raw_transitions_or_prototype_info,
+                         Map::kTransitionsOrPrototypeInfoOffset);
+  } else if (map->is_prototype_map()) {
+    TagObject(raw_transitions_or_prototype_info, "prototype_info");
+    SetInternalReference(map, entry, "prototype_info",
+                         raw_transitions_or_prototype_info,
+                         Map::kTransitionsOrPrototypeInfoOffset);
   }
   DescriptorArray* descriptors = map->instance_descriptors();
   TagObject(descriptors, "(map descriptors)");
@@ -1337,9 +1331,15 @@ void V8HeapExplorer::ExtractMapReferences(int entry, Map* map) {
                        Map::kCodeCacheOffset);
   SetInternalReference(map, entry,
                        "prototype", map->prototype(), Map::kPrototypeOffset);
-  SetInternalReference(map, entry,
-                       "constructor", map->constructor(),
-                       Map::kConstructorOffset);
+  Object* constructor_or_backpointer = map->constructor_or_backpointer();
+  if (constructor_or_backpointer->IsMap()) {
+    TagObject(constructor_or_backpointer, "(back pointer)");
+    SetInternalReference(map, entry, "back_pointer", constructor_or_backpointer,
+                         Map::kConstructorOrBackPointerOffset);
+  } else {
+    SetInternalReference(map, entry, "constructor", constructor_or_backpointer,
+                         Map::kConstructorOrBackPointerOffset);
+  }
   TagObject(map->dependent_code(), "(dependent code)");
   MarkAsWeakContainer(map->dependent_code());
   SetInternalReference(map, entry,
@@ -1427,13 +1427,7 @@ void V8HeapExplorer::ExtractAccessorInfoReferences(
   SetInternalReference(accessor_info, entry, "expected_receiver_type",
                        accessor_info->expected_receiver_type(),
                        AccessorInfo::kExpectedReceiverTypeOffset);
-  if (accessor_info->IsDeclaredAccessorInfo()) {
-    DeclaredAccessorInfo* declared_accessor_info =
-        DeclaredAccessorInfo::cast(accessor_info);
-    SetInternalReference(declared_accessor_info, entry, "descriptor",
-                         declared_accessor_info->descriptor(),
-                         DeclaredAccessorInfo::kDescriptorOffset);
-  } else if (accessor_info->IsExecutableAccessorInfo()) {
+  if (accessor_info->IsExecutableAccessorInfo()) {
     ExecutableAccessorInfo* executable_accessor_info =
         ExecutableAccessorInfo::cast(accessor_info);
     SetInternalReference(executable_accessor_info, entry, "getter",
@@ -1529,9 +1523,8 @@ void V8HeapExplorer::ExtractCellReferences(int entry, Cell* cell) {
 
 void V8HeapExplorer::ExtractPropertyCellReferences(int entry,
                                                    PropertyCell* cell) {
-  ExtractCellReferences(entry, cell);
-  SetInternalReference(cell, entry, "type", cell->type(),
-                       PropertyCell::kTypeOffset);
+  SetInternalReference(cell, entry, "value", cell->value(),
+                       PropertyCell::kValueOffset);
   MarkAsWeakContainer(cell->dependent_code());
   SetInternalReference(cell, entry, "dependent_code", cell->dependent_code(),
                        PropertyCell::kDependentCodeOffset);
@@ -1573,11 +1566,6 @@ class JSArrayBufferDataEntryAllocator : public HeapEntriesAllocator {
 
 void V8HeapExplorer::ExtractJSArrayBufferReferences(
     int entry, JSArrayBuffer* buffer) {
-  SetWeakReference(buffer, entry, "weak_next", buffer->weak_next(),
-                   JSArrayBuffer::kWeakNextOffset);
-  SetWeakReference(buffer, entry,
-                   "weak_first_view", buffer->weak_first_view(),
-                   JSArrayBuffer::kWeakFirstViewOffset);
   // Setup a reference to a native memory backing_store object.
   if (!buffer->backing_store())
     return;
@@ -1631,53 +1619,32 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
     DescriptorArray* descs = js_obj->map()->instance_descriptors();
     int real_size = js_obj->map()->NumberOfOwnDescriptors();
     for (int i = 0; i < real_size; i++) {
-      switch (descs->GetType(i)) {
-        case FIELD: {
-          Representation r = descs->GetDetails(i).representation();
+      PropertyDetails details = descs->GetDetails(i);
+      switch (details.location()) {
+        case kField: {
+          Representation r = details.representation();
           if (r.IsSmi() || r.IsDouble()) break;
-          int index = descs->GetFieldIndex(i);
 
           Name* k = descs->GetKey(i);
-          if (index < js_obj->map()->inobject_properties()) {
-            Object* value = js_obj->InObjectPropertyAt(index);
-            if (k != heap_->hidden_string()) {
-              SetPropertyReference(
-                  js_obj, entry,
-                  k, value,
-                  NULL,
-                  js_obj->GetInObjectPropertyOffset(index));
-            } else {
-              TagObject(value, "(hidden properties)");
-              SetInternalReference(
-                  js_obj, entry,
-                  "hidden_properties", value,
-                  js_obj->GetInObjectPropertyOffset(index));
-            }
+          FieldIndex field_index = FieldIndex::ForDescriptor(js_obj->map(), i);
+          Object* value = js_obj->RawFastPropertyAt(field_index);
+          int field_offset =
+              field_index.is_inobject() ? field_index.offset() : -1;
+
+          if (k != heap_->hidden_string()) {
+            SetDataOrAccessorPropertyReference(details.kind(), js_obj, entry, k,
+                                               value, NULL, field_offset);
           } else {
-            FieldIndex field_index =
-                FieldIndex::ForDescriptor(js_obj->map(), i);
-            Object* value = js_obj->RawFastPropertyAt(field_index);
-            if (k != heap_->hidden_string()) {
-              SetPropertyReference(js_obj, entry, k, value);
-            } else {
-              TagObject(value, "(hidden properties)");
-              SetInternalReference(js_obj, entry, "hidden_properties", value);
-            }
+            TagObject(value, "(hidden properties)");
+            SetInternalReference(js_obj, entry, "hidden_properties", value,
+                                 field_offset);
           }
           break;
         }
-        case CONSTANT:
-          SetPropertyReference(
-              js_obj, entry,
-              descs->GetKey(i), descs->GetConstant(i));
-          break;
-        case CALLBACKS:
-          ExtractAccessorPairProperty(
-              js_obj, entry,
-              descs->GetKey(i), descs->GetValue(i));
-          break;
-        case NORMAL:  // only in slow mode
-          UNREACHABLE();
+        case kDescriptor:
+          SetDataOrAccessorPropertyReference(details.kind(), js_obj, entry,
+                                             descs->GetKey(i),
+                                             descs->GetValue(i));
           break;
       }
     }
@@ -1697,27 +1664,30 @@ void V8HeapExplorer::ExtractPropertyReferences(JSObject* js_obj, int entry) {
           SetInternalReference(js_obj, entry, "hidden_properties", value);
           continue;
         }
-        if (ExtractAccessorPairProperty(js_obj, entry, k, value)) continue;
-        SetPropertyReference(js_obj, entry, Name::cast(k), value);
+        PropertyDetails details = dictionary->DetailsAt(i);
+        SetDataOrAccessorPropertyReference(details.kind(), js_obj, entry,
+                                           Name::cast(k), value);
       }
     }
   }
 }
 
 
-bool V8HeapExplorer::ExtractAccessorPairProperty(
-    JSObject* js_obj, int entry, Object* key, Object* callback_obj) {
-  if (!callback_obj->IsAccessorPair()) return false;
+void V8HeapExplorer::ExtractAccessorPairProperty(JSObject* js_obj, int entry,
+                                                 Name* key,
+                                                 Object* callback_obj,
+                                                 int field_offset) {
+  if (!callback_obj->IsAccessorPair()) return;
   AccessorPair* accessors = AccessorPair::cast(callback_obj);
+  SetPropertyReference(js_obj, entry, key, accessors, NULL, field_offset);
   Object* getter = accessors->getter();
   if (!getter->IsOddball()) {
-    SetPropertyReference(js_obj, entry, Name::cast(key), getter, "get %s");
+    SetPropertyReference(js_obj, entry, key, getter, "get %s");
   }
   Object* setter = accessors->setter();
   if (!setter->IsOddball()) {
-    SetPropertyReference(js_obj, entry, Name::cast(key), setter, "set %s");
+    SetPropertyReference(js_obj, entry, key, setter, "set %s");
   }
-  return true;
 }
 
 
@@ -2056,6 +2026,20 @@ void V8HeapExplorer::SetWeakReference(HeapObject* parent_obj,
 }
 
 
+void V8HeapExplorer::SetDataOrAccessorPropertyReference(
+    PropertyKind kind, JSObject* parent_obj, int parent_entry,
+    Name* reference_name, Object* child_obj, const char* name_format_string,
+    int field_offset) {
+  if (kind == kAccessor) {
+    ExtractAccessorPairProperty(parent_obj, parent_entry, reference_name,
+                                child_obj, field_offset);
+  } else {
+    SetPropertyReference(parent_obj, parent_entry, reference_name, child_obj,
+                         name_format_string, field_offset);
+  }
+}
+
+
 void V8HeapExplorer::SetPropertyReference(HeapObject* parent_obj,
                                           int parent_entry,
                                           Name* reference_name,
@@ -2166,6 +2150,9 @@ const char* V8HeapExplorer::GetStrongGcSubrootName(Object* object) {
 #undef STRING_NAME
 #define SYMBOL_NAME(name) NAME_ENTRY(name)
     PRIVATE_SYMBOL_LIST(SYMBOL_NAME)
+#undef SYMBOL_NAME
+#define SYMBOL_NAME(name, varname, description) NAME_ENTRY(name)
+    PUBLIC_SYMBOL_LIST(SYMBOL_NAME)
 #undef SYMBOL_NAME
 #undef NAME_ENTRY
     CHECK(!strong_gc_subroot_names_.is_empty());
@@ -2395,8 +2382,7 @@ void NativeObjectsExplorer::FillImplicitReferences() {
 
 List<HeapObject*>* NativeObjectsExplorer::GetListMaybeDisposeInfo(
     v8::RetainedObjectInfo* info) {
-  HashMap::Entry* entry =
-      objects_by_info_.Lookup(info, InfoHash(info), true);
+  HashMap::Entry* entry = objects_by_info_.LookupOrInsert(info, InfoHash(info));
   if (entry->value != NULL) {
     info->Dispose();
   } else {
@@ -2465,8 +2451,8 @@ NativeGroupRetainedObjectInfo* NativeObjectsExplorer::FindOrAddGroupInfo(
       label_copy,
       static_cast<int>(strlen(label_copy)),
       isolate_->heap()->HashSeed());
-  HashMap::Entry* entry = native_groups_.Lookup(const_cast<char*>(label_copy),
-                                                hash, true);
+  HashMap::Entry* entry =
+      native_groups_.LookupOrInsert(const_cast<char*>(label_copy), hash);
   if (entry->value == NULL) {
     entry->value = new NativeGroupRetainedObjectInfo(label);
   }
@@ -2483,6 +2469,9 @@ void NativeObjectsExplorer::SetNativeRootReference(
       FindOrAddGroupInfo(info->GetGroupLabel());
   HeapEntry* group_entry =
       filler_->FindOrAddEntry(group_info, synthetic_entries_allocator_);
+  // |FindOrAddEntry| can move and resize the entries backing store. Reload
+  // potentially-stale pointer.
+  child_entry = filler_->FindEntry(info);
   filler_->SetNamedAutoIndexReference(
       HeapGraphEdge::kInternal,
       group_entry->index(),
@@ -2563,13 +2552,17 @@ bool HeapSnapshotGenerator::GenerateSnapshot() {
 
 #ifdef VERIFY_HEAP
   Heap* debug_heap = heap_;
-  debug_heap->Verify();
+  if (FLAG_verify_heap) {
+    debug_heap->Verify();
+  }
 #endif
 
   SetProgressTotal(2);  // 2 passes.
 
 #ifdef VERIFY_HEAP
-  debug_heap->Verify();
+  if (FLAG_verify_heap) {
+    debug_heap->Verify();
+  }
 #endif
 
   snapshot_->AddSyntheticRootEntries();
@@ -2758,6 +2751,11 @@ void HeapSnapshotJSONSerializer::SerializeImpl() {
   if (writer_->aborted()) return;
   writer_->AddString("],\n");
 
+  writer_->AddString("\"samples\":[");
+  SerializeSamples();
+  if (writer_->aborted()) return;
+  writer_->AddString("],\n");
+
   writer_->AddString("\"strings\":[");
   SerializeStrings();
   if (writer_->aborted()) return;
@@ -2768,8 +2766,8 @@ void HeapSnapshotJSONSerializer::SerializeImpl() {
 
 
 int HeapSnapshotJSONSerializer::GetStringId(const char* s) {
-  HashMap::Entry* cache_entry = strings_.Lookup(
-      const_cast<char*>(s), StringHash(s), true);
+  HashMap::Entry* cache_entry =
+      strings_.LookupOrInsert(const_cast<char*>(s), StringHash(s));
   if (cache_entry->value == NULL) {
     cache_entry->value = reinterpret_cast<void*>(next_string_id_++);
   }
@@ -2893,12 +2891,7 @@ void HeapSnapshotJSONSerializer::SerializeNodes() {
 
 
 void HeapSnapshotJSONSerializer::SerializeSnapshot() {
-  writer_->AddString("\"title\":\"");
-  writer_->AddString(snapshot_->title());
-  writer_->AddString("\"");
-  writer_->AddString(",\"uid\":");
-  writer_->AddNumber(snapshot_->uid());
-  writer_->AddString(",\"meta\":");
+  writer_->AddString("\"meta\":");
   // The object describing node serialization layout.
   // We use a set of macros to improve readability.
 #define JSON_A(s) "[" s "]"
@@ -2959,7 +2952,10 @@ void HeapSnapshotJSONSerializer::SerializeSnapshot() {
         JSON_S("function_info_index") ","
         JSON_S("count") ","
         JSON_S("size") ","
-        JSON_S("children"))));
+        JSON_S("children")) ","
+    JSON_S("sample_fields") ":" JSON_A(
+        JSON_S("timestamp_us") ","
+        JSON_S("last_assigned_id"))));
 #undef JSON_S
 #undef JSON_O
 #undef JSON_A
@@ -3048,13 +3044,10 @@ void HeapSnapshotJSONSerializer::SerializeTraceNodeInfos() {
   EmbeddedVector<char, kBufferSize> buffer;
   const List<AllocationTracker::FunctionInfo*>& list =
       tracker->function_info_list();
-  bool first_entry = true;
   for (int i = 0; i < list.length(); i++) {
     AllocationTracker::FunctionInfo* info = list[i];
     int buffer_pos = 0;
-    if (first_entry) {
-      first_entry = false;
-    } else {
+    if (i > 0) {
       buffer[buffer_pos++] = ',';
     }
     buffer_pos = utoa(info->function_id, buffer, buffer_pos);
@@ -3070,6 +3063,34 @@ void HeapSnapshotJSONSerializer::SerializeTraceNodeInfos() {
     buffer_pos = SerializePosition(info->line, buffer, buffer_pos);
     buffer[buffer_pos++] = ',';
     buffer_pos = SerializePosition(info->column, buffer, buffer_pos);
+    buffer[buffer_pos++] = '\n';
+    buffer[buffer_pos++] = '\0';
+    writer_->AddString(buffer.start());
+  }
+}
+
+
+void HeapSnapshotJSONSerializer::SerializeSamples() {
+  const List<HeapObjectsMap::TimeInterval>& samples =
+      snapshot_->profiler()->heap_object_map()->samples();
+  if (samples.is_empty()) return;
+  base::TimeTicks start_time = samples[0].timestamp;
+  // The buffer needs space for 2 unsigned ints, 2 commas, \n and \0
+  const int kBufferSize = MaxDecimalDigitsIn<sizeof(
+                              base::TimeDelta().InMicroseconds())>::kUnsigned +
+                          MaxDecimalDigitsIn<sizeof(samples[0].id)>::kUnsigned +
+                          2 + 1 + 1;
+  EmbeddedVector<char, kBufferSize> buffer;
+  for (int i = 0; i < samples.length(); i++) {
+    HeapObjectsMap::TimeInterval& sample = samples[i];
+    int buffer_pos = 0;
+    if (i > 0) {
+      buffer[buffer_pos++] = ',';
+    }
+    base::TimeDelta time_delta = sample.timestamp - start_time;
+    buffer_pos = utoa(time_delta.InMicroseconds(), buffer, buffer_pos);
+    buffer[buffer_pos++] = ',';
+    buffer_pos = utoa(sample.last_assigned_id(), buffer, buffer_pos);
     buffer[buffer_pos++] = '\n';
     buffer[buffer_pos++] = '\0';
     writer_->AddString(buffer.start());
@@ -3110,7 +3131,7 @@ void HeapSnapshotJSONSerializer::SerializeString(const unsigned char* s) {
           WriteUChar(writer_, *s);
         } else {
           // Convert UTF-8 into \u UTF-16 literal.
-          unsigned length = 1, cursor = 0;
+          size_t length = 1, cursor = 0;
           for ( ; length <= 4 && *(s + length) != '\0'; ++length) { }
           unibrow::uchar c = unibrow::Utf8::CalculateValue(s, length, &cursor);
           if (c != unibrow::Utf8::kBadChar) {

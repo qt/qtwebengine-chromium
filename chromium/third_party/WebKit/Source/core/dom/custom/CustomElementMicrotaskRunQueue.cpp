@@ -40,8 +40,10 @@ void CustomElementMicrotaskRunQueue::enqueue(HTMLImportLoader* parentLoader, Pas
 
 void CustomElementMicrotaskRunQueue::dispatchIfAlive(WeakPtr<CustomElementMicrotaskRunQueue> self)
 {
-    if (self.get())
+    if (self.get()) {
+        RefPtrWillBeRawPtr<CustomElementMicrotaskRunQueue> protect(self.get());
         self->dispatch();
+    }
 }
 
 void CustomElementMicrotaskRunQueue::requestDispatchIfNeeded()
@@ -52,7 +54,7 @@ void CustomElementMicrotaskRunQueue::requestDispatchIfNeeded()
     m_dispatchIsPending = true;
 }
 
-void CustomElementMicrotaskRunQueue::trace(Visitor* visitor)
+DEFINE_TRACE(CustomElementMicrotaskRunQueue)
 {
     visitor->trace(m_syncQueue);
     visitor->trace(m_asyncQueue);
@@ -70,15 +72,5 @@ bool CustomElementMicrotaskRunQueue::isEmpty() const
 {
     return m_syncQueue->isEmpty() && m_asyncQueue->isEmpty();
 }
-
-#if !defined(NDEBUG)
-void CustomElementMicrotaskRunQueue::show(unsigned indent)
-{
-    fprintf(stderr, "Sync:\n");
-    m_syncQueue->show(indent);
-    fprintf(stderr, "Async:\n");
-    m_asyncQueue->show(indent);
-}
-#endif
 
 } // namespace blink

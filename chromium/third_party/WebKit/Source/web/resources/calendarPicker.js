@@ -75,7 +75,7 @@ function hasInaccuratePointingDevice() {
  * @return {!string} lowercase locale name. e.g. "en-us"
  */
 function getLocale() {
-    return global.params.locale || "en-us";
+    return (global.params.locale || "en-us").toLowerCase();
 }
 
 /**
@@ -114,19 +114,19 @@ function formatJapaneseImperialEra(year, month) {
     if (year > ImperialEraLimit)
         return "";
     if (year > 1989)
-        return "(平成" + localizeNumber(year - 1988) + "年)";
+        return "(\u5e73\u6210" + localizeNumber(year - 1988) + "\u5e74)";
     if (year == 1989)
-        return "(平成元年)";
+        return "(\u5e73\u6210\u5143\u5e74)";
     if (year >= 1927)
-        return "(昭和" + localizeNumber(year - 1925) + "年)";
+        return "(\u662d\u548c" + localizeNumber(year - 1925) + "\u5e74)";
     if (year > 1912)
-        return "(大正" + localizeNumber(year - 1911) + "年)";
+        return "(\u5927\u6b63" + localizeNumber(year - 1911) + "\u5e74)";
     if (year == 1912 && month >= 7)
-        return "(大正元年)";
+        return "(\u5927\u6b63\u5143\u5e74)";
     if (year > 1868)
-        return "(明治" + localizeNumber(year - 1867) + "年)";
+        return "(\u660e\u6cbb" + localizeNumber(year - 1867) + "\u5e74)";
     if (year == 1868)
-        return "(明治元年)";
+        return "(\u660e\u6cbb\u5143\u5e74)";
     return "";
 }
 
@@ -769,7 +769,7 @@ Month.prototype.toString = function() {
  */
 Month.prototype.toLocaleString = function() {
     if (global.params.locale === "ja")
-        return "" + this.year + "年" + formatJapaneseImperialEra(this.year, this.month) + " " + (this.month + 1) + "月";
+        return "" + this.year + "\u5e74" + formatJapaneseImperialEra(this.year, this.month) + " " + (this.month + 1) + "\u6708";
     return window.pagePopupController.formatMonth(this.year, this.month);
 };
 
@@ -835,65 +835,6 @@ function openCalendarPicker() {
     closePicker();
     global.picker = new CalendarPicker(global.params.mode, global.params);
     global.picker.attachTo($("main"));
-};
-
-/**
- * @constructor
- */
-function EventEmitter() {
-};
-
-/**
- * @param {!string} type
- * @param {!function({...*})} callback
- */
-EventEmitter.prototype.on = function(type, callback) {
-    console.assert(callback instanceof Function);
-    if (!this._callbacks)
-        this._callbacks = {};
-    if (!this._callbacks[type])
-        this._callbacks[type] = [];
-    this._callbacks[type].push(callback);
-};
-
-EventEmitter.prototype.hasListener = function(type) {
-    if (!this._callbacks)
-        return false;
-    var callbacksForType = this._callbacks[type];
-    if (!callbacksForType)
-        return false;
-    return callbacksForType.length > 0;
-};
-
-/**
- * @param {!string} type
- * @param {!function(Object)} callback
- */
-EventEmitter.prototype.removeListener = function(type, callback) {
-    if (!this._callbacks)
-        return;
-    var callbacksForType = this._callbacks[type];
-    if (!callbacksForType)
-        return;
-    callbacksForType.splice(callbacksForType.indexOf(callback), 1);
-    if (callbacksForType.length === 0)
-        delete this._callbacks[type];
-};
-
-/**
- * @param {!string} type
- * @param {...*} var_args
- */
-EventEmitter.prototype.dispatchEvent = function(type) {
-    if (!this._callbacks)
-        return;
-    var callbacksForType = this._callbacks[type];
-    if (!callbacksForType)
-        return;
-    callbacksForType = callbacksForType.slice(0);
-    for (var i = 0; i < callbacksForType.length; ++i) {
-        callbacksForType[i].apply(this, Array.prototype.slice.call(arguments, 1));
-    }
 };
 
 // Parameter t should be a number between 0 and 1.
@@ -2497,8 +2438,8 @@ YearListView.prototype.prepareNewCell = function(row) {
     if (this.highlightedMonth && row === this.highlightedMonth.year - 1) {
         var monthButton = cell.monthButtons[this.highlightedMonth.month];
         monthButton.classList.add(YearListCell.ClassNameHighlighted);
-        // aira-activedescendant assumes both elements have renderers, and
-        // |monthButton| might have no renderer yet.
+        // aira-activedescendant assumes both elements have layoutObjects, and
+        // |monthButton| might have no layoutObject yet.
         var element = this.element;
         setTimeout(function() {
             element.setAttribute("aria-activedescendant", monthButton.id);
@@ -3579,7 +3520,7 @@ CalendarTableView.prototype.updateCells = function() {
         }
     }
     if (activeCell) {
-        // Ensure a renderer because an element with no renderer doesn't post
+        // Ensure a layoutObject because an element with no layoutObject doesn't post
         // activedescendant events. This shouldn't run in the above |for| loop
         // to avoid CSS transition.
         activeCell.element.offsetLeft;

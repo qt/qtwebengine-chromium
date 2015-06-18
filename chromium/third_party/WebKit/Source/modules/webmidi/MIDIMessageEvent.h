@@ -36,13 +36,7 @@
 
 namespace blink {
 
-struct MIDIMessageEventInit : public EventInit {
-    MIDIMessageEventInit()
-        : receivedTime(0.0) { }
-
-    double receivedTime;
-    RefPtr<DOMUint8Array> data;
-};
+class MIDIMessageEventInit;
 
 class MIDIMessageEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
@@ -67,7 +61,7 @@ public:
 
     virtual const AtomicString& interfaceName() const override { return EventNames::MIDIMessageEvent; }
 
-    virtual void trace(Visitor* visitor) override { Event::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { Event::trace(visitor); }
 
 private:
     MIDIMessageEvent()
@@ -78,10 +72,7 @@ private:
         , m_receivedTime(receivedTime)
         , m_data(data) { }
 
-    MIDIMessageEvent(const AtomicString& type, const MIDIMessageEventInit& initializer)
-        : Event(type, initializer)
-        , m_receivedTime(initializer.receivedTime)
-        , m_data(initializer.data) { }
+    MIDIMessageEvent(const AtomicString& type, const MIDIMessageEventInit& initializer);
 
     double m_receivedTime;
     RefPtr<DOMUint8Array> m_data;

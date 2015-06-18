@@ -108,11 +108,15 @@
 
 #include <openssl/rsa.h>
 
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/mem.h>
 #include <openssl/err.h>
+#include <openssl/thread.h>
 
 #include "internal.h"
+
 
 #define BN_BLINDING_COUNTER 32
 
@@ -121,7 +125,6 @@ struct bn_blinding_st {
   BIGNUM *Ai;
   BIGNUM *e;
   BIGNUM *mod; /* just a reference */
-  CRYPTO_THREADID tid;
   int counter;
   unsigned long flags;
   BN_MONT_CTX *m_ctx;
@@ -164,13 +167,10 @@ BN_BLINDING *BN_BLINDING_new(const BIGNUM *A, const BIGNUM *Ai, BIGNUM *mod) {
    * to indicate that this is never-used fresh blinding
    * that does not need updating before first use. */
   ret->counter = -1;
-  CRYPTO_THREADID_current(&ret->tid);
   return ret;
 
 err:
-  if (ret != NULL) {
-    BN_BLINDING_free(ret);
-  }
+  BN_BLINDING_free(ret);
   return NULL;
 }
 
@@ -179,14 +179,10 @@ void BN_BLINDING_free(BN_BLINDING *r) {
     return;
   }
 
-  if (r->A != NULL)
-    BN_free(r->A);
-  if (r->Ai != NULL)
-    BN_free(r->Ai);
-  if (r->e != NULL)
-    BN_free(r->e);
-  if (r->mod != NULL)
-    BN_free(r->mod);
+  BN_free(r->A);
+  BN_free(r->Ai);
+  BN_free(r->e);
+  BN_free(r->mod);
   OPENSSL_free(r);
 }
 
@@ -279,8 +275,6 @@ int BN_BLINDING_invert_ex(BIGNUM *n, const BIGNUM *r, BN_BLINDING *b,
   return ret;
 }
 
-CRYPTO_THREADID *BN_BLINDING_thread_id(BN_BLINDING *b) { return &b->tid; }
-
 unsigned long BN_BLINDING_get_flags(const BN_BLINDING *b) { return b->flags; }
 
 void BN_BLINDING_set_flags(BN_BLINDING *b, unsigned long flags) {
@@ -313,9 +307,7 @@ BN_BLINDING *BN_BLINDING_create_param(
   }
 
   if (e != NULL) {
-    if (ret->e != NULL) {
-      BN_free(ret->e);
-    }
+    BN_free(ret->e);
     ret->e = BN_dup(e);
   }
   if (ret->e == NULL) {
@@ -364,7 +356,7 @@ BN_BLINDING *BN_BLINDING_create_param(
   return ret;
 
 err:
-  if (b == NULL && ret != NULL) {
+  if (b == NULL) {
     BN_BLINDING_free(ret);
     ret = NULL;
   }
@@ -410,6 +402,7 @@ BN_BLINDING *rsa_setup_blinding(RSA *rsa, BN_CTX *in_ctx) {
   BIGNUM *e, *n;
   BN_CTX *ctx;
   BN_BLINDING *ret = NULL;
+  BN_MONT_CTX *mont_ctx = NULL;
 
   if (in_ctx == NULL) {
     ctx = BN_CTX_new();
@@ -441,19 +434,19 @@ BN_BLINDING *rsa_setup_blinding(RSA *rsa, BN_CTX *in_ctx) {
   BN_with_flags(n, rsa->n, BN_FLG_CONSTTIME);
 
   if (rsa->flags & RSA_FLAG_CACHE_PUBLIC) {
-    if (!BN_MONT_CTX_set_locked(&rsa->_method_mod_n, CRYPTO_LOCK_RSA, rsa->n,
-                                ctx)) {
+    mont_ctx =
+        BN_MONT_CTX_set_locked(&rsa->_method_mod_n, &rsa->lock, rsa->n, ctx);
+    if (mont_ctx == NULL) {
       goto err;
     }
   }
 
   ret = BN_BLINDING_create_param(NULL, e, n, ctx, rsa->meth->bn_mod_exp,
-                                 rsa->_method_mod_n);
+                                 mont_ctx);
   if (ret == NULL) {
     OPENSSL_PUT_ERROR(RSA, rsa_setup_blinding, ERR_R_BN_LIB);
     goto err;
   }
-  CRYPTO_THREADID_current(BN_BLINDING_thread_id(ret));
 
 err:
   BN_CTX_end(ctx);

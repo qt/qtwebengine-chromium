@@ -33,24 +33,25 @@
  * @implements {WebInspector.CSSSourceMapping}
  * @param {!WebInspector.CSSStyleModel} cssModel
  * @param {!WebInspector.Workspace} workspace
- * @param {!WebInspector.NetworkWorkspaceBinding} networkWorkspaceBinding
+ * @param {!WebInspector.NetworkMapping} networkMapping
+ * @param {!WebInspector.NetworkProject} networkProject
  */
-WebInspector.SASSSourceMapping = function(cssModel, workspace, networkWorkspaceBinding)
+WebInspector.SASSSourceMapping = function(cssModel, workspace, networkMapping, networkProject)
 {
     this.pollPeriodMs = 30 * 1000;
     this.pollIntervalMs = 200;
-
     this._cssModel = cssModel;
     this._workspace = workspace;
-    this._networkWorkspaceBinding = networkWorkspaceBinding;
+    this._networkProject = networkProject;
     this._addingRevisionCounter = 0;
     this._reset();
     WebInspector.fileManager.addEventListener(WebInspector.FileManager.EventTypes.SavedURL, this._fileSaveFinished, this);
-    WebInspector.settings.cssSourceMapsEnabled.addChangeListener(this._toggleSourceMapSupport, this)
+    WebInspector.moduleSetting("cssSourceMapsEnabled").addChangeListener(this._toggleSourceMapSupport, this);
     this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetChanged, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAdded, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, this._uiSourceCodeContentCommitted, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._reset, this);
+    this._networkMapping = networkMapping;
 }
 
 WebInspector.SASSSourceMapping.prototype = {
@@ -97,7 +98,7 @@ WebInspector.SASSSourceMapping.prototype = {
 
     /**
      * @param {string} headerName
-     * @param {!NetworkAgent.Headers} headers
+     * @param {!Object.<string, string>} headers
      * @return {?string}
      */
     _headerValue: function(headerName, headers)
@@ -114,7 +115,7 @@ WebInspector.SASSSourceMapping.prototype = {
     },
 
     /**
-     * @param {!NetworkAgent.Headers} headers
+     * @param {!Object.<string, string>} headers
      * @return {?Date}
      */
     _lastModified: function(headers)
@@ -129,7 +130,7 @@ WebInspector.SASSSourceMapping.prototype = {
     },
 
     /**
-     * @param {!NetworkAgent.Headers} headers
+     * @param {!Object.<string, string>} headers
      * @param {string} url
      * @return {?Date}
      */
@@ -154,27 +155,26 @@ WebInspector.SASSSourceMapping.prototype = {
         var cssURLs = this._cssURLsForSASSURL[sassURL];
         if (!cssURLs)
             return;
-        if (!WebInspector.settings.cssReloadEnabled.get())
+        if (!WebInspector.moduleSetting("cssReloadEnabled").get())
             return;
 
-        var sassFile = this._workspace.uiSourceCodeForURL(sassURL);
+        var sassFile = this._networkMapping.uiSourceCodeForURL(sassURL, this._cssModel.target());
         console.assert(sassFile);
         if (wasLoadedFromFileSystem)
             sassFile.requestMetadata(metadataReceived.bind(this));
         else
-            NetworkAgent.loadResourceForFrontend(WebInspector.resourceTreeModel.mainFrame.id, sassURL, undefined, sassLoadedViaNetwork.bind(this));
+            WebInspector.ResourceLoader.load(sassURL, null, sassLoadedViaNetwork.bind(this));
 
         /**
-         * @param {?Protocol.Error} error
          * @param {number} statusCode
-         * @param {!NetworkAgent.Headers} headers
+         * @param {!Object.<string, string>} headers
          * @param {string} content
          * @this {WebInspector.SASSSourceMapping}
          */
-        function sassLoadedViaNetwork(error, statusCode, headers, content)
+        function sassLoadedViaNetwork(statusCode, headers, content)
         {
-            if (error || statusCode >= 400) {
-                console.error("Could not load content for " + sassURL + " : " + (error || ("HTTP status code: " + statusCode)));
+            if (statusCode >= 400) {
+                console.error("Could not load content for " + sassURL + " : " + "HTTP status code: " + statusCode);
                 return;
             }
             var lastModified = this._checkLastModified(headers, sassURL);
@@ -256,14 +256,14 @@ WebInspector.SASSSourceMapping.prototype = {
      */
     _reloadCSS: function(cssURL, sassURL, callback)
     {
-        var cssUISourceCode = this._workspace.uiSourceCodeForURL(cssURL);
+        var cssUISourceCode = this._networkMapping.uiSourceCodeForURL(cssURL, this._cssModel.target());
         if (!cssUISourceCode) {
             WebInspector.console.warn(WebInspector.UIString("%s resource missing. Please reload the page.", cssURL));
             callback(cssURL, sassURL, true);
             return;
         }
 
-        if (this._workspace.hasMappingForURL(sassURL))
+        if (this._networkMapping.hasMappingForURL(sassURL))
             this._reloadCSSFromFileSystem(cssUISourceCode, sassURL, callback);
         else
             this._reloadCSSFromNetwork(cssUISourceCode, sassURL, callback);
@@ -276,26 +276,25 @@ WebInspector.SASSSourceMapping.prototype = {
      */
     _reloadCSSFromNetwork: function(cssUISourceCode, sassURL, callback)
     {
-        var cssURL = cssUISourceCode.url;
+        var cssURL = this._networkMapping.networkURL(cssUISourceCode);
         var data = this._pollDataForSASSURL[sassURL];
         if (!data) {
             callback(cssURL, sassURL, true);
             return;
         }
         var headers = { "if-modified-since": new Date(data.sassTimestamp.getTime() - 1000).toUTCString() };
-        NetworkAgent.loadResourceForFrontend(WebInspector.resourceTreeModel.mainFrame.id, cssURL, headers, contentLoaded.bind(this));
+        WebInspector.ResourceLoader.load(cssURL, headers, contentLoaded.bind(this));
 
         /**
-         * @param {?Protocol.Error} error
          * @param {number} statusCode
-         * @param {!NetworkAgent.Headers} headers
+         * @param {!Object.<string, string>} headers
          * @param {string} content
          * @this {WebInspector.SASSSourceMapping}
          */
-        function contentLoaded(error, statusCode, headers, content)
+        function contentLoaded(statusCode, headers, content)
         {
-            if (error || statusCode >= 400) {
-                console.error("Could not load content for " + cssURL + " : " + (error || ("HTTP status code: " + statusCode)));
+            if (statusCode >= 400) {
+                console.error("Could not load content for " + cssURL + " : " + "HTTP status code: " + statusCode);
                 callback(cssURL, sassURL, true);
                 return;
             }
@@ -330,7 +329,8 @@ WebInspector.SASSSourceMapping.prototype = {
     {
         ++this._addingRevisionCounter;
         cssUISourceCode.addRevision(content);
-        this._cssUISourceCodeUpdated(cssUISourceCode.url, sassURL, callback);
+        var networkURL = this._networkMapping.networkURL(cssUISourceCode);
+        this._cssUISourceCodeUpdated(networkURL, sassURL, callback);
     },
 
     /**
@@ -348,7 +348,7 @@ WebInspector.SASSSourceMapping.prototype = {
          */
         function metadataCallback(timestamp)
         {
-            var cssURL = cssUISourceCode.url;
+            var cssURL = this._networkMapping.networkURL(cssUISourceCode);
             if (!timestamp) {
                 callback(cssURL, sassURL, false);
                 return;
@@ -407,7 +407,7 @@ WebInspector.SASSSourceMapping.prototype = {
      */
     addHeader: function(header)
     {
-        if (!header.sourceMapURL || !header.sourceURL || header.isInline || !WebInspector.settings.cssSourceMapsEnabled.get())
+        if (!header.sourceMapURL || !header.sourceURL || !WebInspector.moduleSetting("cssSourceMapsEnabled").get())
             return;
         var completeSourceMapURL = WebInspector.ParsedURL.completeURL(header.sourceURL, header.sourceMapURL);
         if (!completeSourceMapURL)
@@ -422,7 +422,7 @@ WebInspector.SASSSourceMapping.prototype = {
     removeHeader: function(header)
     {
         var sourceURL = header.sourceURL;
-        if (!sourceURL || !header.sourceMapURL || header.isInline || !this._completeSourceMapURLForCSSURL[sourceURL])
+        if (!sourceURL || !header.sourceMapURL || !this._completeSourceMapURLForCSSURL[sourceURL])
             return;
         delete this._sourceMapByStyleSheetURL[sourceURL];
         delete this._completeSourceMapURLForCSSURL[sourceURL];
@@ -541,14 +541,15 @@ WebInspector.SASSSourceMapping.prototype = {
         for (var i = 0; i < sources.length; ++i) {
             var url = sources[i];
             this._addCSSURLforSASSURL(rawURL, url);
-            if (!this._workspace.hasMappingForURL(url) && !this._workspace.uiSourceCodeForURL(url)) {
+            if (!this._networkMapping.hasMappingForURL(url) && !this._networkMapping.uiSourceCodeForURL(url, header.target())) {
                 var contentProvider = sourceMap.sourceContentProvider(url, WebInspector.resourceTypes.Stylesheet);
-                this._networkWorkspaceBinding.addFileForURL(url, contentProvider);
+                this._networkProject.addFileForURL(url, contentProvider);
             }
         }
     },
 
     /**
+     * @override
      * @param {!WebInspector.CSSLocation} rawLocation
      * @return {?WebInspector.UILocation}
      */
@@ -561,25 +562,26 @@ WebInspector.SASSSourceMapping.prototype = {
         entry = sourceMap.findEntry(rawLocation.lineNumber, rawLocation.columnNumber);
         if (!entry || entry.length === 2)
             return null;
-        var uiSourceCode = this._workspace.uiSourceCodeForURL(entry[2]);
+        var uiSourceCode = this._networkMapping.uiSourceCodeForURL(entry[2], rawLocation.target());
         if (!uiSourceCode)
             return null;
         return uiSourceCode.uiLocation(entry[3], entry[4]);
     },
 
     /**
+     * @override
      * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number} lineNumber
      * @param {number} columnNumber
-     * @return {!WebInspector.CSSLocation}
+     * @return {?WebInspector.CSSLocation}
      */
     uiLocationToRawLocation: function(uiSourceCode, lineNumber, columnNumber)
     {
-        // FIXME: Implement this when ui -> raw mapping has clients.
-        return new WebInspector.CSSLocation(this._cssModel.target(), null, uiSourceCode.url || "", lineNumber, columnNumber);
+        return null;
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     isIdentity: function()
@@ -588,6 +590,7 @@ WebInspector.SASSSourceMapping.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.UISourceCode} uiSourceCode
      * @param {number} lineNumber
      * @return {boolean}
@@ -611,7 +614,8 @@ WebInspector.SASSSourceMapping.prototype = {
     _uiSourceCodeAdded: function(event)
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data);
-        var cssURLs = this._cssURLsForSASSURL[uiSourceCode.url];
+        var networkURL = this._networkMapping.networkURL(uiSourceCode);
+        var cssURLs = this._cssURLsForSASSURL[networkURL];
         if (!cssURLs)
             return;
         for (var i = 0; i < cssURLs.length; ++i) {
@@ -630,8 +634,10 @@ WebInspector.SASSSourceMapping.prototype = {
     _uiSourceCodeContentCommitted: function(event)
     {
         var uiSourceCode = /** @type {!WebInspector.UISourceCode} */ (event.data.uiSourceCode);
-        if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem)
-            this._sassFileSaved(uiSourceCode.url, true);
+        if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem) {
+            var networkURL = this._networkMapping.networkURL(uiSourceCode);
+            this._sassFileSaved(networkURL, true);
+        }
     },
 
     _reset: function()

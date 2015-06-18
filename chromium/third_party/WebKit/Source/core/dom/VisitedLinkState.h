@@ -30,7 +30,7 @@
 #define VisitedLinkState_h
 
 #include "core/dom/Element.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "platform/LinkHash.h"
 #include "wtf/HashSet.h"
 
@@ -39,7 +39,7 @@ namespace blink {
 class Document;
 
 class VisitedLinkState : public NoBaseWillBeGarbageCollectedFinalized<VisitedLinkState> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(VisitedLinkState);
 public:
     static PassOwnPtrWillBeRawPtr<VisitedLinkState> create(const Document& document)
     {
@@ -56,7 +56,7 @@ public:
         return NotInsideLink;
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit VisitedLinkState(const Document&);

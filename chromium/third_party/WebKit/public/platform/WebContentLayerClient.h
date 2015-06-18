@@ -31,23 +31,37 @@
 
 namespace blink {
 
+class WebDisplayItemList;
 struct WebRect;
-struct WebFloatRect;
 
 class BLINK_PLATFORM_EXPORT WebContentLayerClient {
 public:
-    enum GraphicsContextStatus { GraphicsContextEnabled, GraphicsContextDisabled };
+    enum PaintingControlSetting {
+        PaintDefaultBehavior,
+        DisplayListConstructionDisabled,
+        DisplayListCachingDisabled,
+        DisplayListPaintingDisabled
+    };
 
     // Paints the content area for the layer, typically dirty rects submitted
     // through WebContentLayer::setNeedsDisplay, submitting drawing commands
     // through the WebCanvas.
     // The canvas is already clipped to the |clip| rect.
-    // Optionally, the implementation may set |opaque| to a rect covering pixels that
-    // the implementation knows are opaque. This information can be used for various
-    // optimizations.
-    // The |disableContext| enum controls most processing in
-    // GraphicsContext to isolate the painting code in performance tests.
-    virtual void paintContents(WebCanvas*, const WebRect& clip, bool canPaintLCDText, GraphicsContextStatus = GraphicsContextEnabled) = 0;
+    // The |PaintingControlSetting| enum controls painting to isolate different components in performance tests.
+    virtual void paintContents(WebCanvas*, const WebRect& clip, PaintingControlSetting = PaintDefaultBehavior) = 0;
+
+    // Paints the content area for the layer, typically dirty rects submitted
+    // through WebContentLayer::setNeedsDisplayInRect, submitting drawing commands
+    // to populate the WebDisplayItemList.
+    // The |clip| rect defines the region of interest. The resulting WebDisplayItemList should contain
+    // sufficient content to correctly paint the rect, but may also contain other content. The result
+    // will be clipped on playback.
+    // The |PaintingControlSetting| enum controls painting to isolate different components in performance tests.
+    // Currently the DisplayListConstructionDisabled does nothing.
+    virtual void paintContents(
+        WebDisplayItemList*,
+        const WebRect& clip,
+        PaintingControlSetting = PaintDefaultBehavior) = 0;
 
 protected:
     virtual ~WebContentLayerClient() { }

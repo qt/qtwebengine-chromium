@@ -32,11 +32,11 @@
 #define WebPrescientNetworking_h
 
 #include "WebCommon.h"
+#include "WebCrossOriginAttribute.h"
 #include "WebString.h"
+#include "WebURL.h"
 
 namespace blink {
-
-class WebURL;
 
 class WebPrescientNetworking {
 public:
@@ -45,6 +45,10 @@ public:
     // When a page navigation is speculated, DNS prefetch is triggered to hide
     // the host resolution latency.
     virtual void prefetchDNS(const WebString& hostname) { }
+
+    virtual void preconnect(const WebURL& url) { }
+
+    virtual void preconnect(const WebURL& url, const CrossOriginAttributeValue value) { }
 };
 
 } // namespace blink

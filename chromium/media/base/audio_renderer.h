@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/time/time.h"
 #include "media/base/buffering_state.h"
+#include "media/base/decryptor.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 
@@ -24,7 +25,11 @@ class MEDIA_EXPORT AudioRenderer {
   virtual ~AudioRenderer();
 
   // Initialize an AudioRenderer with |stream|, executing |init_cb| upon
-  // completion.
+  // completion. If initialization fails, only |init_cb| (not |error_cb|) will
+  // be called.
+  //
+  // |set_decryptor_ready_cb| is fired when a Decryptor is needed, i.e. when the
+  // |stream| is encrypted.
   //
   // |statistics_cb| is executed periodically with audio rendering stats.
   //
@@ -33,13 +38,19 @@ class MEDIA_EXPORT AudioRenderer {
   //
   // |ended_cb| is executed when audio rendering has reached the end of stream.
   //
-  // |error_cb| is executed if an error was encountered.
-  virtual void Initialize(DemuxerStream* stream,
-                          const PipelineStatusCB& init_cb,
-                          const StatisticsCB& statistics_cb,
-                          const BufferingStateCB& buffering_state_cb,
-                          const base::Closure& ended_cb,
-                          const PipelineStatusCB& error_cb) = 0;
+  // |error_cb| is executed if an error was encountered after initialization.
+  //
+  // |waiting_for_decryption_key_cb| is called whenever the key needed to
+  // decrypt the stream is not available.
+  virtual void Initialize(
+      DemuxerStream* stream,
+      const PipelineStatusCB& init_cb,
+      const SetDecryptorReadyCB& set_decryptor_ready_cb,
+      const StatisticsCB& statistics_cb,
+      const BufferingStateCB& buffering_state_cb,
+      const base::Closure& ended_cb,
+      const PipelineStatusCB& error_cb,
+      const base::Closure& waiting_for_decryption_key_cb) = 0;
 
   // Returns the TimeSource associated with audio rendering.
   virtual TimeSource* GetTimeSource() = 0;

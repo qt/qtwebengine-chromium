@@ -38,13 +38,18 @@
 namespace blink {
 
 class WebString;
-class WebURL;
 
 // WebSettings is owned by the WebView and allows code to modify the settings for
 // the WebView's page without any knowledge of WebCore itself.  For the most part,
 // these functions have a 1:1 mapping with the methods in WebCore/page/Settings.h.
 class WebSettings {
 public:
+    enum ImageAnimationPolicy {
+        ImageAnimationPolicyAllowed,
+        ImageAnimationPolicyAnimateOnce,
+        ImageAnimationPolicyNoAnimation
+    };
+
     enum EditingBehavior {
         EditingBehaviorMac,
         EditingBehaviorWin,
@@ -53,34 +58,57 @@ public:
     };
 
     enum V8CacheOptions {
-        V8CacheOptionsOff,
+        V8CacheOptionsDefault,
         V8CacheOptionsParse,
-        V8CacheOptionsCode
+        V8CacheOptionsCode,
+        V8CacheOptionsCodeCompressed,
+        V8CacheOptionsNone,
+        V8CacheOptionsParseMemory,
+        V8CacheOptionsHeuristics,
+        V8CacheOptionsHeuristicsMobile,
+        V8CacheOptionsHeuristicsDefault,
+        V8CacheOptionsHeuristicsDefaultMobile,
+        V8CacheOptionsRecent,
+        V8CacheOptionsRecentSmall
     };
 
-    enum V8ScriptStreamingMode {
-        V8ScriptStreamingModeAll,
-        V8ScriptStreamingModeOnlyAsyncAndDefer,
-        V8ScriptStreamingModeAllPlusBlockParsingBlocking,
-    };
-
-    // Bit field values to tell Blink what kind of pointer/hover types are
-    // available on the system. These must match the enums in
-    // core/css/PointerProperties.h and their equality is compile-time asserted
-    // in WebSettingsImpl.cpp.
+    // Bit field values indicating available pointer types. Identical to
+    // blink::PointerType enums, enforced by compile-time assertions in
+    // AssertMatchingEnums.cpp.
+    // TODO(mustaq): Move this into public/platform, like WebBlendMode.
     enum PointerType {
-        PointerTypeNone = 1,
-        PointerTypeCoarse = 2,
-        PointerTypeFine = 4
+        PointerTypeNone = 1 << 0,
+        PointerTypeCoarse = 1 << 1,
+        PointerTypeFine = 1 << 2
     };
 
+    // Bit field values indicating available hover types. Identical to
+    // blink::HoverType enums, enforced by compile-time assertions in
+    // AssertMatchingEnums.cpp.
     enum HoverType {
-        HoverTypeNone = 1,
+        HoverTypeNone = 1 << 0,
         // Indicates that the primary pointing system can hover, but it requires
-        // a significant action on the user’s part. e.g. hover on “long press”.
-        HoverTypeOnDemand = 2,
-        HoverTypeHover = 4
+        // a significant action on the user's part. e.g. hover on "long press".
+        HoverTypeOnDemand = 1 << 1,
+        HoverTypeHover = 1 << 2
     };
+
+    // Selection strategy defines how the selection granularity changes when the
+    // selection extent is moved.
+    enum class SelectionStrategyType {
+        // Always uses character granularity.
+        Character,
+        // "Expand by word, shrink by character" selection strategy.
+        // Uses character granularity when selection is shrinking. If the
+        // selection is expanding, granularity doesn't change until a word
+        // boundary is passed, after which the granularity switches to "word".
+        Direction
+    };
+
+    // Sets value of a setting by its string identifier from Settings.in and
+    // string representation of value. An enum's string representation is the
+    // string representation of the integer value of the enum.
+    virtual void setFromStrings(const WebString& name, const WebString& value) = 0;
 
     virtual bool mainFrameResizesAreOrientationChanges() const = 0;
     virtual int availablePointerTypes() const = 0;
@@ -109,12 +137,6 @@ public:
     // disallows it. The FrameLoaderClient set to the frame may override the
     // value set by this method.
     virtual void setAllowRunningOfInsecureContent(bool) = 0;
-    // If set to true, allows frames with an https origin to connect WebSockets
-    // with an insecure URL (ws://). Otherwise, disallows it. Only when this is
-    // set to true, this value overrides the value set by
-    // setAllowRunningOfInsecureContent() for WebSockets. The FrameLoaderClient
-    // set to the frame may override the value set by this method.
-    virtual void setAllowConnectingInsecureWebSocket(bool) = 0;
     virtual void setAllowScriptsToCloseWindows(bool) = 0;
     virtual void setAllowUniversalAccessFromFileURLs(bool) = 0;
     virtual void setAntialiased2dCanvasEnabled(bool) = 0;
@@ -123,7 +145,6 @@ public:
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool) = 0;
     virtual void setCaretBrowsingEnabled(bool) = 0;
     virtual void setClobberUserAgentInitialScaleQuirk(bool) = 0;
-    virtual void setContainerCullingEnabled(bool) = 0;
     virtual void setCookieEnabled(bool) = 0;
     virtual void setNavigateOnDragDrop(bool) = 0;
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
@@ -138,11 +159,14 @@ public:
     virtual void setDeviceScaleAdjustment(float) = 0;
     virtual void setDeviceSupportsMouse(bool) = 0;
     virtual void setDeviceSupportsTouch(bool) = 0;
+    virtual void setDisableReadingFromCanvas(bool) = 0;
     virtual void setDoubleTapToZoomEnabled(bool) = 0;
     virtual void setDownloadableBinaryFontsEnabled(bool) = 0;
     virtual void setEditingBehavior(EditingBehavior) = 0;
     virtual void setEnableScrollAnimator(bool) = 0;
     virtual void setEnableTouchAdjustment(bool) = 0;
+    virtual bool multiTargetTapNotificationEnabled() = 0;
+    virtual void setMultiTargetTapNotificationEnabled(bool) = 0;
     virtual void setRegionBasedColumnsEnabled(bool) = 0;
     virtual void setExperimentalWebGLEnabled(bool) = 0;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
@@ -151,13 +175,14 @@ public:
     virtual void setFullscreenSupported(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) = 0;
+    virtual void setImageAnimationPolicy(ImageAnimationPolicy) = 0;
     virtual void setImagesEnabled(bool) = 0;
     virtual void setInlineTextBoxAccessibilityEnabled(bool) = 0;
     virtual void setJavaEnabled(bool) = 0;
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) = 0;
     virtual void setJavaScriptEnabled(bool) = 0;
-    virtual void setLayerSquashingEnabled(bool) = 0;
+    void setLayerSquashingEnabled(bool) { }
     virtual void setLoadsImagesAutomatically(bool) = 0;
     virtual void setLoadWithOverviewMode(bool) = 0;
     virtual void setLocalStorageEnabled(bool) = 0;
@@ -177,7 +202,10 @@ public:
     virtual void setPerTilePaintingEnabled(bool) = 0;
     virtual void setPictographFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setPinchOverlayScrollbarThickness(int) = 0;
-    virtual void setPinchVirtualViewportEnabled(bool) = 0;
+
+    // TODO(bokan): Temporary, need to remove Chromium side users.
+    virtual void setPinchVirtualViewportEnabled(bool) { }
+
     virtual void setPluginsEnabled(bool) = 0;
     virtual void setAvailablePointerTypes(int) = 0;
     virtual void setPrimaryPointerType(PointerType) = 0;
@@ -186,16 +214,18 @@ public:
     virtual void setRenderVSyncNotificationEnabled(bool) = 0;
     virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool) = 0;
     virtual void setRootLayerScrolls(bool) = 0;
+    virtual void setRubberBandingOnCompositorThread(bool) = 0;
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setSelectTrailingWhitespaceEnabled(bool) = 0;
     virtual void setSelectionIncludesAltImageText(bool) = 0;
+    virtual void setSelectionStrategy(SelectionStrategyType) = 0;
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setShouldPrintBackgrounds(bool) = 0;
     virtual void setShouldClearDocumentBackground(bool) = 0;
     virtual void setShouldRespectImageOrientation(bool) = 0;
+    virtual void setShowContextMenuOnMouseUp(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setShowPaintRects(bool) = 0;
-    virtual void setShrinksStandaloneImagesToFit(bool) = 0;
     virtual void setShrinksViewportContentToFit(bool) = 0;
     virtual void setSmartInsertDeleteEnabled(bool) = 0;
     // Spatial navigation feature, when enabled, improves the experience
@@ -207,24 +237,32 @@ public:
     // elements using SPACE or ENTER keys.
     virtual void setSpatialNavigationEnabled(bool) = 0;
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
+    virtual void setStrictMixedContentChecking(bool) = 0;
+    virtual void setStrictPowerfulFeatureRestrictions(bool) = 0;
     virtual void setSupportDeprecatedTargetDensityDPI(bool) = 0;
     virtual void setSupportsMultipleWindows(bool) = 0;
     virtual void setSyncXHRInDocumentsEnabled(bool) = 0;
     virtual void setTextAreasAreResizable(bool) = 0;
     virtual void setTextAutosizingEnabled(bool) = 0;
     virtual void setAccessibilityFontScaleFactor(float) = 0;
+    virtual void setTextTrackBackgroundColor(const WebString&) = 0;
+    virtual void setTextTrackFontFamily(const WebString&) = 0;
+    virtual void setTextTrackFontStyle(const WebString&) = 0;
+    virtual void setTextTrackFontVariant(const WebString&) = 0;
+    virtual void setTextTrackTextColor(const WebString&) = 0;
+    virtual void setTextTrackTextShadow(const WebString&) = 0;
+    virtual void setTextTrackTextSize(const WebString&) = 0;
     virtual void setThreadedScrollingEnabled(bool) = 0;
     virtual void setTouchDragDropEnabled(bool) = 0;
     virtual void setTouchEditingEnabled(bool) = 0;
     virtual void setUnifiedTextCheckerEnabled(bool) = 0;
     virtual void setUnsafePluginPastingEnabled(bool) = 0;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) = 0;
+    virtual void setUseMobileViewportStyle(bool) = 0;
     virtual void setUseSolidColorScrollbars(bool) = 0;
     virtual void setUseWideViewport(bool) = 0;
     virtual void setUsesEncodingDetector(bool) = 0;
     virtual void setV8CacheOptions(V8CacheOptions) = 0;
-    virtual void setV8ScriptStreamingEnabled(bool) = 0;
-    virtual void setV8ScriptStreamingMode(V8ScriptStreamingMode) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
     virtual void setViewportMetaEnabled(bool) = 0;

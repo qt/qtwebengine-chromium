@@ -7,12 +7,16 @@
 
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "mojo/public/c/environment/async_waiter.h"
-#include "mojo/public/cpp/system/core.h"
+#include "ipc/ipc_message.h"
+#include "third_party/mojo/src/mojo/public/c/environment/async_waiter.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace IPC {
 namespace internal {
+
+class AsyncHandleWaiter;
 
 // A helper class to handle bytestream directly over mojo::MessagePipe
 // in template-method pattern. MessagePipeReader manages the lifetime
@@ -30,6 +34,13 @@ namespace internal {
 //
 class MessagePipeReader {
  public:
+  class Delegate {
+   public:
+    virtual void OnMessageReceived(Message& message) = 0;
+    virtual void OnPipeClosed(MessagePipeReader* reader) = 0;
+    virtual void OnPipeError(MessagePipeReader* reader) = 0;
+  };
+
   // Delay the object deletion using the current message loop.
   // This is intended to used by MessagePipeReader owners.
   class DelayedDeleter {
@@ -39,13 +50,16 @@ class MessagePipeReader {
     static void DeleteNow(MessagePipeReader* ptr) { delete ptr; }
 
     DelayedDeleter() {}
-    DelayedDeleter(const DefaultType&) {}
+    explicit DelayedDeleter(const DefaultType&) {}
     DelayedDeleter& operator=(const DefaultType&) { return *this; }
 
     void operator()(MessagePipeReader* ptr) const;
   };
 
-  explicit MessagePipeReader(mojo::ScopedMessagePipeHandle handle);
+  // Both parameters must be non-null.
+  // Build a reader that reads messages from |handle| and lets |delegate| know.
+  // Note that MessagePipeReader doesn't delete |delete|.
+  MessagePipeReader(mojo::ScopedMessagePipeHandle handle, Delegate* delegate);
   virtual ~MessagePipeReader();
 
   MojoHandle handle() const { return pipe_.get().value(); }
@@ -65,29 +79,31 @@ class MessagePipeReader {
   void Close();
   // Close the mesage pipe with notifying the client with the error.
   void CloseWithError(MojoResult error);
+  void CloseWithErrorLater(MojoResult error);
+  void CloseWithErrorIfPending();
+
   // Return true if the MessagePipe is alive.
   bool IsValid() { return pipe_.is_valid(); }
 
-  //
-  // The client have to implment these callback to get the readiness
-  // event from the reader
-  //
-  virtual void OnMessageReceived() = 0;
-  virtual void OnPipeClosed() = 0;
-  virtual void OnPipeError(MojoResult error) = 0;
+  bool Send(scoped_ptr<Message> message);
+  void ReadMessagesThenWait();
 
  private:
-  static void InvokePipeIsReady(void* closure, MojoResult result);
+  void OnMessageReceived();
+  void OnPipeClosed();
+  void OnPipeError(MojoResult error);
 
   MojoResult ReadMessageBytes();
   void PipeIsReady(MojoResult wait_result);
-  void StartWaiting();
-  void StopWaiting();
+  void ReadAvailableMessages();
 
   std::vector<char>  data_buffer_;
   std::vector<MojoHandle> handle_buffer_;
-  MojoAsyncWaitID pipe_wait_id_;
   mojo::ScopedMessagePipeHandle pipe_;
+  // |delegate_| and |async_waiter_| are null once the message pipe is closed.
+  Delegate* delegate_;
+  scoped_ptr<AsyncHandleWaiter> async_waiter_;
+  MojoResult pending_send_error_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePipeReader);
 };

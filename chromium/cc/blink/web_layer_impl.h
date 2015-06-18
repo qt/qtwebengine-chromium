@@ -6,6 +6,7 @@
 #define CC_BLINK_WEB_LAYER_IMPL_H_
 
 #include <string>
+#include <utility>
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -31,7 +32,7 @@ struct WebFloatRect;
 }
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 }
@@ -105,6 +106,7 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   virtual void setForceRenderSurface(bool force);
   virtual void setScrollPositionDouble(blink::WebDoublePoint position);
   virtual blink::WebDoublePoint scrollPositionDouble() const;
+  virtual void setScrollCompensationAdjustment(blink::WebDoublePoint position);
   virtual void setScrollClipLayer(blink::WebLayer* clip_layer);
   virtual bool scrollable() const;
   virtual void setUserScrollable(bool horizontal, bool vertical);
@@ -122,6 +124,12 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   virtual void setTouchEventHandlerRegion(
       const blink::WebVector<blink::WebRect>& region);
   virtual blink::WebVector<blink::WebRect> touchEventHandlerRegion() const;
+  virtual void setScrollBlocksOn(blink::WebScrollBlocksOn);
+  virtual blink::WebScrollBlocksOn scrollBlocksOn() const;
+  virtual void setFrameTimingRequests(
+      const blink::WebVector<std::pair<int64_t, blink::WebRect>>& requests);
+  virtual blink::WebVector<std::pair<int64_t, blink::WebRect>>
+  frameTimingRequests() const;
   virtual void setIsContainerForFixedPositionLayers(bool is_container);
   virtual bool isContainerForFixedPositionLayers() const;
   virtual void setPositionConstraint(
@@ -132,7 +140,8 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   virtual void setWebLayerClient(blink::WebLayerClient* client);
 
   // LayerClient implementation.
-  scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo() override;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo()
+      override;
 
   virtual void setScrollParent(blink::WebLayer* parent);
   virtual void setClipParent(blink::WebLayer* parent);

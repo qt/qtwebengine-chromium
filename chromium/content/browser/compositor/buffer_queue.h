@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_COMPOSITOR_BUFFERED_OUTPUT_SURFACE_H_
-#define CONTENT_BROWSER_COMPOSITOR_BUFFERED_OUTPUT_SURFACE_H_
+#ifndef CONTENT_BROWSER_COMPOSITOR_BUFFER_QUEUE_H_
+#define CONTENT_BROWSER_COMPOSITOR_BUFFER_QUEUE_H_
 
 #include <queue>
 #include <vector>
@@ -11,8 +11,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 class ContextProvider;
@@ -20,6 +20,7 @@ class ContextProvider;
 
 namespace content {
 
+class BrowserGpuMemoryBufferManager;
 class GLHelper;
 
 // Provides a surface that manages its own buffers, backed by GpuMemoryBuffers
@@ -30,17 +31,20 @@ class CONTENT_EXPORT BufferQueue {
  public:
   BufferQueue(scoped_refptr<cc::ContextProvider> context_provider,
               unsigned int internalformat,
-              GLHelper* gl_helper);
+              GLHelper* gl_helper,
+              BrowserGpuMemoryBufferManager* gpu_memory_buffer_manager,
+              int surface_id);
   virtual ~BufferQueue();
 
-  bool Initialize();
+  void Initialize();
 
   void BindFramebuffer();
   void SwapBuffers(const gfx::Rect& damage);
   void PageFlipComplete();
   void Reshape(const gfx::Size& size, float scale_factor);
 
-  unsigned int current_texture_id() { return current_surface_.texture; }
+  unsigned int current_texture_id() const { return current_surface_.texture; }
+  unsigned int fbo() const { return fbo_; }
 
  private:
   friend class BufferQueueTest;
@@ -78,13 +82,16 @@ class CONTENT_EXPORT BufferQueue {
   size_t allocated_count_;
   unsigned int internalformat_;
   AllocatedSurface current_surface_;  // This surface is currently bound.
+  AllocatedSurface displayed_surface_;  // The surface currently on the screen.
   std::vector<AllocatedSurface> available_surfaces_;  // These are free for use.
   std::deque<AllocatedSurface> in_flight_surfaces_;
   GLHelper* gl_helper_;
+  BrowserGpuMemoryBufferManager* gpu_memory_buffer_manager_;
+  int surface_id_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferQueue);
 };
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_COMPOSITOR_BUFFERED_OUTPUT_SURFACE_H_
+#endif  // CONTENT_BROWSER_COMPOSITOR_BUFFER_QUEUE_H_

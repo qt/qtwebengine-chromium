@@ -27,15 +27,10 @@
 
 #include "modules/EventModules.h"
 #include "modules/mediastream/MediaStream.h"
+#include "modules/mediastream/MediaStreamEventInit.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
-
-struct MediaStreamEventInit : public EventInit {
-    MediaStreamEventInit();
-
-    Member<MediaStream> stream;
-};
 
 class MediaStreamEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
@@ -51,7 +46,7 @@ public:
 
     virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaStreamEvent();

@@ -48,6 +48,11 @@ FilterOperations::FilterOperations()
 {
 }
 
+DEFINE_TRACE(FilterOperations)
+{
+    visitor->trace(m_operations);
+}
+
 FilterOperations& FilterOperations::operator=(const FilterOperations& other)
 {
     m_operations = other.m_operations;

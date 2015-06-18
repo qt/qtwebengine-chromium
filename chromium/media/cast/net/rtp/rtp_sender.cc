@@ -7,8 +7,6 @@
 #include "base/big_endian.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
-#include "media/cast/net/cast_transport_defines.h"
-#include "media/cast/net/pacing/paced_sender.h"
 
 namespace media {
 namespace cast {
@@ -27,11 +25,9 @@ PacketRef FastCopyPacket(const PacketRef& packet) {
 }  // namespace
 
 RtpSender::RtpSender(
-    base::TickClock* clock,
     const scoped_refptr<base::SingleThreadTaskRunner>& transport_task_runner,
     PacedSender* const transport)
-    : clock_(clock),
-      transport_(transport),
+    : transport_(transport),
       transport_task_runner_(transport_task_runner),
       weak_factory_(this) {
   // Randomly set sequence number start value.

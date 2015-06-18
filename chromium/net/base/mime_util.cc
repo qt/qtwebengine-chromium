@@ -25,27 +25,6 @@
 
 using std::string;
 
-namespace {
-
-struct MediaType {
-  const char name[12];
-  const char matcher[13];
-};
-
-static const MediaType kIanaMediaTypes[] = {
-  { "application", "application/" },
-  { "audio", "audio/" },
-  { "example", "example/" },
-  { "image", "image/" },
-  { "message", "message/" },
-  { "model", "model/" },
-  { "multipart", "multipart/" },
-  { "text", "text/" },
-  { "video", "video/" },
-};
-
-}  // namespace
-
 namespace net {
 
 // Singleton utility class for mime types.
@@ -59,7 +38,8 @@ class MimeUtil : public PlatformMimeUtil {
     MPEG2_AAC_MAIN,
     MPEG2_AAC_SSR,
     MPEG4_AAC_LC,
-    MPEG4_AAC_SBRv1,
+    MPEG4_AAC_SBR_v1,
+    MPEG4_AAC_SBR_PS_v2,
     VORBIS,
     OPUS,
     H264_BASELINE,
@@ -79,13 +59,7 @@ class MimeUtil : public PlatformMimeUtil {
   bool GetWellKnownMimeTypeFromExtension(const base::FilePath::StringType& ext,
                                          std::string* mime_type) const;
 
-  bool IsSupportedImageMimeType(const std::string& mime_type) const;
   bool IsSupportedMediaMimeType(const std::string& mime_type) const;
-  bool IsSupportedNonImageMimeType(const std::string& mime_type) const;
-  bool IsUnsupportedTextMimeType(const std::string& mime_type) const;
-  bool IsSupportedJavascriptMimeType(const std::string& mime_type) const;
-
-  bool IsSupportedMimeType(const std::string& mime_type) const;
 
   bool MatchesMimeType(const std::string &mime_type_pattern,
                        const std::string &mime_type) const;
@@ -162,21 +136,18 @@ class MimeUtil : public PlatformMimeUtil {
   // Returns true if |codec| refers to a proprietary codec.
   bool IsCodecProprietary(Codec codec) const;
 
-  // Returns true and sets |*default_codec| if |mime_type| has a
-  // default codec associated with it.
-  // Returns false otherwise and the value of |*default_codec| is undefined.
-  bool GetDefaultCodec(const std::string& mime_type,
-                       Codec* default_codec) const;
+  // Returns true and sets |*default_codec| if |mime_type| has a  default codec
+  // associated with it. Returns false otherwise and the value of
+  // |*default_codec| is undefined.
+  bool GetDefaultCodecLowerCase(const std::string& mime_type_lower_case,
+                                Codec* default_codec) const;
 
-  // Returns true if |mime_type| has a default codec associated with it
-  // and IsCodecSupported() returns true for that particular codec.
-  bool IsDefaultCodecSupported(const std::string& mime_type) const;
+  // Returns true if |mime_type_lower_case| has a default codec associated with
+  // it and IsCodecSupported() returns true for that particular codec.
+  bool IsDefaultCodecSupportedLowerCase(
+      const std::string& mime_type_lower_case) const;
 
-  MimeMappings image_map_;
   MimeMappings media_map_;
-  MimeMappings non_image_map_;
-  MimeMappings unsupported_text_map_;
-  MimeMappings javascript_map_;
 
   // A map of mime_types and hash map of the supported codecs for the mime_type.
   StrictMappings strict_format_map_;
@@ -194,8 +165,8 @@ static base::LazyInstance<MimeUtil>::Leaky g_mime_util =
     LAZY_INSTANCE_INITIALIZER;
 
 struct MimeInfo {
-  const char* mime_type;
-  const char* extensions;  // comma separated list
+  const char* const mime_type;
+  const char* const extensions;  // comma separated list
 };
 
 static const MimeInfo primary_mappings[] = {
@@ -245,6 +216,7 @@ static const MimeInfo secondary_mappings[] = {
   { "application/pkcs7-mime", "p7m,p7c,p7z" },
   { "application/pkcs7-signature", "p7s" },
   { "application/x-mpegurl", "m3u8" },
+  { "application/epub+zip", "epub" },
 };
 
 static const char* FindMimeType(const MimeInfo* mappings,
@@ -325,22 +297,6 @@ bool MimeUtil::GetMimeTypeFromExtensionHelper(
   return false;
 }
 
-// From WebKit's WebCore/platform/MIMETypeRegistry.cpp:
-
-static const char* const supported_image_types[] = {
-  "image/jpeg",
-  "image/pjpeg",
-  "image/jpg",
-  "image/webp",
-  "image/png",
-  "image/gif",
-  "image/bmp",
-  "image/vnd.microsoft.icon",    // ico
-  "image/x-icon",    // ico
-  "image/x-xbitmap",  // xbm
-  "image/x-png"
-};
-
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
 // A comprehensive mime type list: http://plugindoc.mozdev.org/winmime.php
 // This set of codecs is supported by all variations of Chromium.
@@ -361,7 +317,7 @@ static const char* const common_media_types[] = {
   "audio/x-wav",
 
 #if defined(OS_ANDROID)
-  // HLS. Supported by Android ICS and above.
+  // HLS.
   "application/vnd.apple.mpegurl",
   "application/x-mpegurl",
 #endif
@@ -379,91 +335,12 @@ static const char* const proprietary_media_types[] = {
   "audio/mp3",
   "audio/x-mp3",
   "audio/mpeg",
+  "audio/aac",
 
 #if defined(ENABLE_MPEG2TS_STREAM_PARSER)
   // MPEG-2 TS.
   "video/mp2t",
 #endif
-};
-
-// Note:
-// - does not include javascript types list (see supported_javascript_types)
-// - does not include types starting with "text/" (see
-//   IsSupportedNonImageMimeType())
-static const char* const supported_non_image_types[] = {
-  "image/svg+xml",  // SVG is text-based XML, even though it has an image/ type
-  "application/xml",
-  "application/atom+xml",
-  "application/rss+xml",
-  "application/xhtml+xml",
-  "application/json",
-  "multipart/related",  // For MHTML support.
-  "multipart/x-mixed-replace"
-  // Note: ADDING a new type here will probably render it AS HTML. This can
-  // result in cross site scripting.
-};
-
-// Dictionary of cryptographic file mime types.
-struct CertificateMimeTypeInfo {
-  const char* mime_type;
-  CertificateMimeType cert_type;
-};
-
-static const CertificateMimeTypeInfo supported_certificate_types[] = {
-  { "application/x-x509-user-cert",
-      CERTIFICATE_MIME_TYPE_X509_USER_CERT },
-#if defined(OS_ANDROID)
-  { "application/x-x509-ca-cert", CERTIFICATE_MIME_TYPE_X509_CA_CERT },
-  { "application/x-pkcs12", CERTIFICATE_MIME_TYPE_PKCS12_ARCHIVE },
-#endif
-};
-
-// These types are excluded from the logic that allows all text/ types because
-// while they are technically text, it's very unlikely that a user expects to
-// see them rendered in text form.
-static const char* const unsupported_text_types[] = {
-  "text/calendar",
-  "text/x-calendar",
-  "text/x-vcalendar",
-  "text/vcalendar",
-  "text/vcard",
-  "text/x-vcard",
-  "text/directory",
-  "text/ldif",
-  "text/qif",
-  "text/x-qif",
-  "text/x-csv",
-  "text/x-vcf",
-  "text/rtf",
-  "text/comma-separated-values",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/tsv",
-  "text/ofx",                           // http://crbug.com/162238
-  "text/vnd.sun.j2me.app-descriptor"    // http://crbug.com/176450
-};
-
-//  Mozilla 1.8 and WinIE 7 both accept text/javascript and text/ecmascript.
-//  Mozilla 1.8 accepts application/javascript, application/ecmascript, and
-// application/x-javascript, but WinIE 7 doesn't.
-//  WinIE 7 accepts text/javascript1.1 - text/javascript1.3, text/jscript, and
-// text/livescript, but Mozilla 1.8 doesn't.
-//  Mozilla 1.8 allows leading and trailing whitespace, but WinIE 7 doesn't.
-//  Mozilla 1.8 and WinIE 7 both accept the empty string, but neither accept a
-// whitespace-only string.
-//  We want to accept all the values that either of these browsers accept, but
-// not other values.
-static const char* const supported_javascript_types[] = {
-  "text/javascript",
-  "text/ecmascript",
-  "application/javascript",
-  "application/ecmascript",
-  "application/x-javascript",
-  "text/javascript1.1",
-  "text/javascript1.2",
-  "text/javascript1.3",
-  "text/jscript",
-  "text/livescript"
 };
 
 #if defined(OS_ANDROID)
@@ -475,7 +352,8 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
     case MimeUtil::PCM:
     case MimeUtil::MP3:
     case MimeUtil::MPEG4_AAC_LC:
-    case MimeUtil::MPEG4_AAC_SBRv1:
+    case MimeUtil::MPEG4_AAC_SBR_v1:
+    case MimeUtil::MPEG4_AAC_SBR_PS_v2:
     case MimeUtil::H264_BASELINE:
     case MimeUtil::H264_MAIN:
     case MimeUtil::H264_HIGH:
@@ -494,9 +372,8 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
       return base::android::BuildInfo::GetInstance()->sdk_int() >= 19;
 
     case MimeUtil::OPUS:
-      // TODO(vigneshv): Change this similar to the VP9 check once Opus is
-      // supported on Android (http://crbug.com/318436).
-      return false;
+      // Opus is supported only in Lollipop+ (API Level 21).
+      return base::android::BuildInfo::GetInstance()->sdk_int() >= 21;
 
     case MimeUtil::THEORA:
       return false;
@@ -504,21 +381,11 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
 
   return false;
 }
-
-static bool IsMimeTypeSupportedOnAndroid(const std::string& mimeType) {
-  // HLS codecs are supported in ICS and above (API level 14)
-  if ((!mimeType.compare("application/vnd.apple.mpegurl") ||
-      !mimeType.compare("application/x-mpegurl")) &&
-      base::android::BuildInfo::GetInstance()->sdk_int() < 14) {
-    return false;
-  }
-  return true;
-}
 #endif
 
 struct MediaFormatStrict {
-  const char* mime_type;
-  const char* codecs_list;
+  const char* const mime_type;
+  const char* const codecs_list;
 };
 
 // Following is the list of RFC 6381 compliant codecs:
@@ -528,35 +395,55 @@ struct MediaFormatStrict {
 //   mp4a.69     - MPEG-2 extension to MPEG-1
 //   mp4a.6B     - MPEG-1 audio
 //   mp4a.40.2   - MPEG-4 AAC LC
-//   mp4a.40.5   - MPEG-4 AAC SBRv1
+//   mp4a.40.02  - MPEG-4 AAC LC (leading 0 in aud-oti for compatibility)
+//   mp4a.40.5   - MPEG-4 HE-AAC v1 (AAC LC + SBR)
+//   mp4a.40.05  - MPEG-4 HE-AAC v1 (AAC LC + SBR) (leading 0 in aud-oti for
+//                 compatibility)
+//   mp4a.40.29  - MPEG-4 HE-AAC v2 (AAC LC + SBR + PS)
 //
 //   avc1.42E0xx - H.264 Baseline
 //   avc1.4D40xx - H.264 Main
 //   avc1.6400xx - H.264 High
 static const char kMP4AudioCodecsExpression[] =
-    "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.5";
+    "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.02,mp4a.40.5,"
+    "mp4a.40.05,mp4a.40.29";
 static const char kMP4VideoCodecsExpression[] =
-    "avc1.42E00A,avc1.4D400A,avc1.64000A," \
-    "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.5";
+    // This is not a complete list of supported avc1 codecs. It is simply used
+    // to register support for the corresponding Codec enum. Instead of using
+    // strings in these three arrays, we should use the Codec enum values.
+    // This will avoid confusion and unnecessary parsing at runtime.
+    // kUnambiguousCodecStringMap/kAmbiguousCodecStringMap should be the only
+    // mapping from strings to codecs. See crbug.com/461009.
+    "avc1.42E00A,avc1.4D400A,avc1.64000A,"
+    "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.02,mp4a.40.5,"
+    "mp4a.40.05,mp4a.40.29";
 
+// These containers are also included in
+// common_media_types/proprietary_media_types. See crbug.com/461012.
 static const MediaFormatStrict format_codec_mappings[] = {
-  { "video/webm", "opus,vorbis,vp8,vp8.0,vp9,vp9.0" },
-  { "audio/webm", "opus,vorbis" },
-  { "audio/wav", "1" },
-  { "audio/x-wav", "1" },
-  { "video/ogg", "opus,theora,vorbis" },
-  { "audio/ogg", "opus,vorbis" },
-  { "application/ogg", "opus,theora,vorbis" },
-  { "audio/mpeg", "mp3" },
-  { "audio/mp3", "" },
-  { "audio/x-mp3", "" },
-  { "audio/mp4", kMP4AudioCodecsExpression },
-  { "audio/x-m4a", kMP4AudioCodecsExpression },
-  { "video/mp4", kMP4VideoCodecsExpression },
-  { "video/x-m4v", kMP4VideoCodecsExpression },
-  { "application/x-mpegurl", kMP4VideoCodecsExpression },
-  { "application/vnd.apple.mpegurl", kMP4VideoCodecsExpression }
-};
+    {"video/webm", "opus,vorbis,vp8,vp8.0,vp9,vp9.0"},
+    {"audio/webm", "opus,vorbis"},
+    {"audio/wav", "1"},
+    {"audio/x-wav", "1"},
+// Android does not support Opus in Ogg container.
+#if defined(OS_ANDROID)
+    {"video/ogg", "theora,vorbis"},
+    {"audio/ogg", "vorbis"},
+    {"application/ogg", "theora,vorbis"},
+#else
+    {"video/ogg", "opus,theora,vorbis"},
+    {"audio/ogg", "opus,vorbis"},
+    {"application/ogg", "opus,theora,vorbis"},
+#endif
+    {"audio/mpeg", "mp3"},
+    {"audio/mp3", ""},
+    {"audio/x-mp3", ""},
+    {"audio/mp4", kMP4AudioCodecsExpression},
+    {"audio/x-m4a", kMP4AudioCodecsExpression},
+    {"video/mp4", kMP4VideoCodecsExpression},
+    {"video/x-m4v", kMP4VideoCodecsExpression},
+    {"application/x-mpegurl", kMP4VideoCodecsExpression},
+    {"application/vnd.apple.mpegurl", kMP4VideoCodecsExpression}};
 
 struct CodecIDMappings {
   const char* const codec_id;
@@ -567,33 +454,37 @@ struct CodecIDMappings {
 // codec and profile being requested.
 //
 // The "mp4a" strings come from RFC 6381.
-static const CodecIDMappings kUnambiguousCodecIDs[] = {
-  { "1", MimeUtil::PCM }, // We only allow this for WAV so it isn't ambiguous.
-  { "mp3", MimeUtil::MP3 },
-  { "mp4a.66", MimeUtil::MPEG2_AAC_MAIN },
-  { "mp4a.67", MimeUtil::MPEG2_AAC_LC },
-  { "mp4a.68", MimeUtil::MPEG2_AAC_SSR },
-  { "mp4a.69", MimeUtil::MP3 },
-  { "mp4a.6B", MimeUtil::MP3 },
-  { "mp4a.40.2", MimeUtil::MPEG4_AAC_LC },
-  { "mp4a.40.5", MimeUtil::MPEG4_AAC_SBRv1 },
-  { "vorbis", MimeUtil::VORBIS },
-  { "opus", MimeUtil::OPUS },
-  { "vp8", MimeUtil::VP8 },
-  { "vp8.0", MimeUtil::VP8 },
-  { "vp9", MimeUtil::VP9 },
-  { "vp9.0", MimeUtil::VP9 },
-  { "theora", MimeUtil::THEORA }
-};
+static const CodecIDMappings kUnambiguousCodecStringMap[] = {
+    {"1", MimeUtil::PCM},  // We only allow this for WAV so it isn't ambiguous.
+    // avc1/avc3.XXXXXX may be unambiguous; handled by ParseH264CodecID().
+    {"mp3", MimeUtil::MP3},
+    {"mp4a.66", MimeUtil::MPEG2_AAC_MAIN},
+    {"mp4a.67", MimeUtil::MPEG2_AAC_LC},
+    {"mp4a.68", MimeUtil::MPEG2_AAC_SSR},
+    {"mp4a.69", MimeUtil::MP3},
+    {"mp4a.6B", MimeUtil::MP3},
+    {"mp4a.40.2", MimeUtil::MPEG4_AAC_LC},
+    {"mp4a.40.02", MimeUtil::MPEG4_AAC_LC},
+    {"mp4a.40.5", MimeUtil::MPEG4_AAC_SBR_v1},
+    {"mp4a.40.05", MimeUtil::MPEG4_AAC_SBR_v1},
+    {"mp4a.40.29", MimeUtil::MPEG4_AAC_SBR_PS_v2},
+    {"vorbis", MimeUtil::VORBIS},
+    {"opus", MimeUtil::OPUS},
+    {"vp8", MimeUtil::VP8},
+    {"vp8.0", MimeUtil::VP8},
+    {"vp9", MimeUtil::VP9},
+    {"vp9.0", MimeUtil::VP9},
+    {"theora", MimeUtil::THEORA}};
 
 // List of codec IDs that are ambiguous and don't provide
 // enough information to determine the codec and profile.
 // The codec in these entries indicate the codec and profile
 // we assume the user is trying to indicate.
-static const CodecIDMappings kAmbiguousCodecIDs[] = {
-  { "mp4a.40", MimeUtil::MPEG4_AAC_LC },
-  { "avc1", MimeUtil::H264_BASELINE },
-  { "avc3", MimeUtil::H264_BASELINE },
+static const CodecIDMappings kAmbiguousCodecStringMap[] = {
+    {"mp4a.40", MimeUtil::MPEG4_AAC_LC},
+    {"avc1", MimeUtil::H264_BASELINE},
+    {"avc3", MimeUtil::H264_BASELINE},
+    // avc1/avc3.XXXXXX may be ambiguous; handled by ParseH264CodecID().
 };
 
 MimeUtil::MimeUtil() : allow_proprietary_codecs_(false) {
@@ -626,56 +517,24 @@ SupportsType MimeUtil::AreSupportedCodecs(
 }
 
 void MimeUtil::InitializeMimeTypeMaps() {
-  for (size_t i = 0; i < arraysize(supported_image_types); ++i)
-    image_map_.insert(supported_image_types[i]);
-
-  // Initialize the supported non-image types.
-  for (size_t i = 0; i < arraysize(supported_non_image_types); ++i)
-    non_image_map_.insert(supported_non_image_types[i]);
-  for (size_t i = 0; i < arraysize(supported_certificate_types); ++i)
-    non_image_map_.insert(supported_certificate_types[i].mime_type);
-  for (size_t i = 0; i < arraysize(unsupported_text_types); ++i)
-    unsupported_text_map_.insert(unsupported_text_types[i]);
-  for (size_t i = 0; i < arraysize(supported_javascript_types); ++i)
-    non_image_map_.insert(supported_javascript_types[i]);
-  for (size_t i = 0; i < arraysize(common_media_types); ++i) {
-#if defined(OS_ANDROID)
-    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
-      continue;
-#endif
-    non_image_map_.insert(common_media_types[i]);
-  }
+  // Initialize the supported media types.
+  for (size_t i = 0; i < arraysize(common_media_types); ++i)
+    media_map_.insert(common_media_types[i]);
 #if defined(USE_PROPRIETARY_CODECS)
   allow_proprietary_codecs_ = true;
 
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
-    non_image_map_.insert(proprietary_media_types[i]);
-#endif
-
-  // Initialize the supported media types.
-  for (size_t i = 0; i < arraysize(common_media_types); ++i) {
-#if defined(OS_ANDROID)
-    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
-      continue;
-#endif
-    media_map_.insert(common_media_types[i]);
-  }
-#if defined(USE_PROPRIETARY_CODECS)
-  for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     media_map_.insert(proprietary_media_types[i]);
 #endif
 
-  for (size_t i = 0; i < arraysize(supported_javascript_types); ++i)
-    javascript_map_.insert(supported_javascript_types[i]);
-
-  for (size_t i = 0; i < arraysize(kUnambiguousCodecIDs); ++i) {
-    string_to_codec_map_[kUnambiguousCodecIDs[i].codec_id] =
-        CodecEntry(kUnambiguousCodecIDs[i].codec, false);
+  for (size_t i = 0; i < arraysize(kUnambiguousCodecStringMap); ++i) {
+    string_to_codec_map_[kUnambiguousCodecStringMap[i].codec_id] =
+        CodecEntry(kUnambiguousCodecStringMap[i].codec, false);
   }
 
-  for (size_t i = 0; i < arraysize(kAmbiguousCodecIDs); ++i) {
-    string_to_codec_map_[kAmbiguousCodecIDs[i].codec_id] =
-        CodecEntry(kAmbiguousCodecIDs[i].codec, true);
+  for (size_t i = 0; i < arraysize(kAmbiguousCodecStringMap); ++i) {
+    string_to_codec_map_[kAmbiguousCodecStringMap[i].codec_id] =
+        CodecEntry(kAmbiguousCodecStringMap[i].codec, true);
   }
 
   // Initialize the strict supported media types.
@@ -698,64 +557,60 @@ void MimeUtil::InitializeMimeTypeMaps() {
   }
 }
 
-bool MimeUtil::IsSupportedImageMimeType(const std::string& mime_type) const {
-  return image_map_.find(mime_type) != image_map_.end();
-}
-
 bool MimeUtil::IsSupportedMediaMimeType(const std::string& mime_type) const {
-  return media_map_.find(mime_type) != media_map_.end();
-}
-
-bool MimeUtil::IsSupportedNonImageMimeType(const std::string& mime_type) const {
-  return non_image_map_.find(mime_type) != non_image_map_.end() ||
-      (mime_type.compare(0, 5, "text/") == 0 &&
-       !IsUnsupportedTextMimeType(mime_type)) ||
-      (mime_type.compare(0, 12, "application/") == 0 &&
-       MatchesMimeType("application/*+json", mime_type));
-}
-
-bool MimeUtil::IsUnsupportedTextMimeType(const std::string& mime_type) const {
-  return unsupported_text_map_.find(mime_type) != unsupported_text_map_.end();
-}
-
-bool MimeUtil::IsSupportedJavascriptMimeType(
-    const std::string& mime_type) const {
-  return javascript_map_.find(mime_type) != javascript_map_.end();
-}
-
-// Mirrors WebViewImpl::CanShowMIMEType()
-bool MimeUtil::IsSupportedMimeType(const std::string& mime_type) const {
-  return (mime_type.compare(0, 6, "image/") == 0 &&
-          IsSupportedImageMimeType(mime_type)) ||
-         IsSupportedNonImageMimeType(mime_type);
+  return media_map_.find(base::StringToLowerASCII(mime_type)) !=
+         media_map_.end();
 }
 
 // Tests for MIME parameter equality. Each parameter in the |mime_type_pattern|
 // must be matched by a parameter in the |mime_type|. If there are no
 // parameters in the pattern, the match is a success.
+//
+// According rfc2045 keys of parameters are case-insensitive, while values may
+// or may not be case-sensitive, but they are usually case-sensitive. So, this
+// function matches values in *case-sensitive* manner, however note that this
+// may produce some false negatives.
 bool MatchesMimeTypeParameters(const std::string& mime_type_pattern,
                                const std::string& mime_type) {
+  typedef std::map<std::string, std::string> StringPairMap;
+
   const std::string::size_type semicolon = mime_type_pattern.find(';');
   const std::string::size_type test_semicolon = mime_type.find(';');
   if (semicolon != std::string::npos) {
     if (test_semicolon == std::string::npos)
       return false;
 
-    std::vector<std::string> pattern_parameters;
-    base::SplitString(mime_type_pattern.substr(semicolon + 1),
-                      ';', &pattern_parameters);
+    base::StringPairs pattern_parameters;
+    base::SplitStringIntoKeyValuePairs(mime_type_pattern.substr(semicolon + 1),
+                                       '=', ';', &pattern_parameters);
+    base::StringPairs test_parameters;
+    base::SplitStringIntoKeyValuePairs(mime_type.substr(test_semicolon + 1),
+                                       '=', ';', &test_parameters);
 
-    std::vector<std::string> test_parameters;
-    base::SplitString(mime_type.substr(test_semicolon + 1),
-                      ';', &test_parameters);
+    // Put the parameters to maps with the keys converted to lower case.
+    StringPairMap pattern_parameter_map;
+    for (const auto& pair : pattern_parameters) {
+      pattern_parameter_map[base::StringToLowerASCII(pair.first)] = pair.second;
+    }
 
-    sort(pattern_parameters.begin(), pattern_parameters.end());
-    sort(test_parameters.begin(), test_parameters.end());
-    std::vector<std::string> difference =
-      base::STLSetDifference<std::vector<std::string> >(pattern_parameters,
-                                                        test_parameters);
-    return difference.size() == 0;
+    StringPairMap test_parameter_map;
+    for (const auto& pair : test_parameters) {
+      test_parameter_map[base::StringToLowerASCII(pair.first)] = pair.second;
+    }
+
+    if (pattern_parameter_map.size() > test_parameter_map.size())
+      return false;
+
+    for (const auto& parameter_pair : pattern_parameter_map) {
+      const auto& test_parameter_pair_it =
+          test_parameter_map.find(parameter_pair.first);
+      if (test_parameter_pair_it == test_parameter_map.end())
+        return false;
+      if (parameter_pair.second != test_parameter_pair_it->second)
+        return false;
+    }
   }
+
   return true;
 }
 
@@ -769,10 +624,6 @@ bool MatchesMimeTypeParameters(const std::string& mime_type_pattern,
 // in the tested type for a match to succeed.
 bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
                                const std::string& mime_type) const {
-  // Verify caller is passing lowercase strings.
-  DCHECK_EQ(base::StringToLowerASCII(mime_type_pattern), mime_type_pattern);
-  DCHECK_EQ(base::StringToLowerASCII(mime_type), mime_type);
-
   if (mime_type_pattern.empty())
     return false;
 
@@ -786,10 +637,13 @@ bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
 
   const std::string::size_type star = base_pattern.find('*');
   if (star == std::string::npos) {
-    if (base_pattern == base_type)
+    if (base_pattern.size() == base_type.size() &&
+        base::strncasecmp(base_pattern.c_str(), base_type.c_str(),
+                          base_pattern.size()) == 0) {
       return MatchesMimeTypeParameters(mime_type_pattern, mime_type);
-    else
+    } else {
       return false;
+    }
   }
 
   // Test length to prevent overlap between |left| and |right|.
@@ -799,18 +653,17 @@ bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
   const std::string left(base_pattern.substr(0, star));
   const std::string right(base_pattern.substr(star + 1));
 
-  if (base_type.find(left) != 0)
+  if (!StartsWithASCII(base_type, left, false))
     return false;
 
-  if (!right.empty() &&
-      base_type.rfind(right) != base_type.length() - right.length())
+  if (!right.empty() && !EndsWith(base_type, right, false))
     return false;
 
   return MatchesMimeTypeParameters(mime_type_pattern, mime_type);
 }
 
 // See http://www.iana.org/assignments/media-types/media-types.xhtml
-static const char* legal_top_level_types[] = {
+static const char* const legal_top_level_types[] = {
   "application",
   "audio",
   "example",
@@ -884,30 +737,34 @@ void MimeUtil::ParseCodecString(const std::string& codecs,
 }
 
 bool MimeUtil::IsStrictMediaMimeType(const std::string& mime_type) const {
-  return strict_format_map_.find(mime_type) != strict_format_map_.end();
+  return strict_format_map_.find(base::StringToLowerASCII(mime_type)) !=
+         strict_format_map_.end();
 }
 
 SupportsType MimeUtil::IsSupportedStrictMediaMimeType(
     const std::string& mime_type,
     const std::vector<std::string>& codecs) const {
+  const std::string mime_type_lower_case = base::StringToLowerASCII(mime_type);
   StrictMappings::const_iterator it_strict_map =
-      strict_format_map_.find(mime_type);
+      strict_format_map_.find(mime_type_lower_case);
   if (it_strict_map == strict_format_map_.end())
     return codecs.empty() ? MayBeSupported : IsNotSupported;
 
   if (it_strict_map->second.empty()) {
     // We get here if the mimetype does not expect a codecs parameter.
-    return (codecs.empty() && IsDefaultCodecSupported(mime_type)) ?
-        IsSupported : IsNotSupported;
+    return (codecs.empty() &&
+            IsDefaultCodecSupportedLowerCase(mime_type_lower_case))
+               ? IsSupported
+               : IsNotSupported;
   }
 
   if (codecs.empty()) {
     // We get here if the mimetype expects to get a codecs parameter,
-    // but didn't get one. If |mime_type| does not have a default codec
-    // the best we can do is say "maybe" because we don't have enough
+    // but didn't get one. If |mime_type_lower_case| does not have a default
+    // codec the best we can do is say "maybe" because we don't have enough
     // information.
     Codec default_codec = INVALID_CODEC;
-    if (!GetDefaultCodec(mime_type, &default_codec))
+    if (!GetDefaultCodecLowerCase(mime_type_lower_case, &default_codec))
       return MayBeSupported;
 
     return IsCodecSupported(default_codec) ? IsSupported : IsNotSupported;
@@ -917,10 +774,8 @@ SupportsType MimeUtil::IsSupportedStrictMediaMimeType(
 }
 
 void MimeUtil::RemoveProprietaryMediaTypesAndCodecsForTests() {
-  for (size_t i = 0; i < arraysize(proprietary_media_types); ++i) {
-    non_image_map_.erase(proprietary_media_types[i]);
+  for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     media_map_.erase(proprietary_media_types[i]);
-  }
   allow_proprietary_codecs_ = false;
 }
 
@@ -1044,7 +899,8 @@ bool MimeUtil::IsCodecProprietary(Codec codec) const {
     case MPEG2_AAC_MAIN:
     case MPEG2_AAC_SSR:
     case MPEG4_AAC_LC:
-    case MPEG4_AAC_SBRv1:
+    case MPEG4_AAC_SBR_v1:
+    case MPEG4_AAC_SBR_PS_v2:
     case H264_BASELINE:
     case H264_MAIN:
     case H264_HIGH:
@@ -1062,11 +918,11 @@ bool MimeUtil::IsCodecProprietary(Codec codec) const {
   return true;
 }
 
-bool MimeUtil::GetDefaultCodec(const std::string& mime_type,
-                               Codec* default_codec) const {
-  if (mime_type == "audio/mpeg" ||
-      mime_type == "audio/mp3" ||
-      mime_type == "audio/x-mp3") {
+bool MimeUtil::GetDefaultCodecLowerCase(const std::string& mime_type_lower_case,
+                                        Codec* default_codec) const {
+  if (mime_type_lower_case == "audio/mpeg" ||
+      mime_type_lower_case == "audio/mp3" ||
+      mime_type_lower_case == "audio/x-mp3") {
     *default_codec = MimeUtil::MP3;
     return true;
   }
@@ -1074,10 +930,10 @@ bool MimeUtil::GetDefaultCodec(const std::string& mime_type,
   return false;
 }
 
-
-bool MimeUtil::IsDefaultCodecSupported(const std::string& mime_type) const {
+bool MimeUtil::IsDefaultCodecSupportedLowerCase(
+    const std::string& mime_type_lower_case) const {
   Codec default_codec = Codec::INVALID_CODEC;
-  if (!GetDefaultCodec(mime_type, &default_codec))
+  if (!GetDefaultCodecLowerCase(mime_type_lower_case, &default_codec))
     return false;
   return IsCodecSupported(default_codec);
 }
@@ -1107,28 +963,8 @@ bool GetPreferredExtensionForMimeType(const std::string& mime_type,
                                                             extension);
 }
 
-bool IsSupportedImageMimeType(const std::string& mime_type) {
-  return g_mime_util.Get().IsSupportedImageMimeType(mime_type);
-}
-
 bool IsSupportedMediaMimeType(const std::string& mime_type) {
   return g_mime_util.Get().IsSupportedMediaMimeType(mime_type);
-}
-
-bool IsSupportedNonImageMimeType(const std::string& mime_type) {
-  return g_mime_util.Get().IsSupportedNonImageMimeType(mime_type);
-}
-
-bool IsUnsupportedTextMimeType(const std::string& mime_type) {
-  return g_mime_util.Get().IsUnsupportedTextMimeType(mime_type);
-}
-
-bool IsSupportedJavascriptMimeType(const std::string& mime_type) {
-  return g_mime_util.Get().IsSupportedJavascriptMimeType(mime_type);
-}
-
-bool IsSupportedMimeType(const std::string& mime_type) {
-  return g_mime_util.Get().IsSupportedMimeType(mime_type);
 }
 
 bool MatchesMimeType(const std::string& mime_type_pattern,
@@ -1233,7 +1069,7 @@ static const char* const kStandardVideoTypes[] = {
 };
 
 struct StandardType {
-  const char* leading_mime_type;
+  const char* const leading_mime_type;
   const char* const* standard_types;
   size_t standard_types_len;
 };
@@ -1249,7 +1085,6 @@ void GetExtensionsFromHardCodedMappings(
     size_t mappings_len,
     const std::string& leading_mime_type,
     base::hash_set<base::FilePath::StringType>* extensions) {
-  base::FilePath::StringType extension;
   for (size_t i = 0; i < mappings_len; ++i) {
     if (StartsWithASCII(mappings[i].mime_type, leading_mime_type, false)) {
       std::vector<string> this_extensions;
@@ -1301,7 +1136,8 @@ void HashSetToVector(base::hash_set<T>* source, std::vector<T>* target) {
        iter != source->end(); ++iter, ++i)
     (*target)[old_target_size + i] = *iter;
 }
-}
+
+}  // namespace
 
 void GetExtensionsForMimeType(
     const std::string& unsafe_mime_type,
@@ -1312,7 +1148,7 @@ void GetExtensionsForMimeType(
   const std::string mime_type = base::StringToLowerASCII(unsafe_mime_type);
   base::hash_set<base::FilePath::StringType> unique_extensions;
 
-  if (EndsWith(mime_type, "/*", true)) {
+  if (EndsWith(mime_type, "/*", false)) {
     std::string leading_mime_type = mime_type.substr(0, mime_type.length() - 1);
 
     // Find the matching StandardType from within kStandardTypes, or fall
@@ -1351,32 +1187,6 @@ void GetExtensionsForMimeType(
 
 void RemoveProprietaryMediaTypesAndCodecsForTests() {
   g_mime_util.Get().RemoveProprietaryMediaTypesAndCodecsForTests();
-}
-
-const std::string GetIANAMediaType(const std::string& mime_type) {
-  for (size_t i = 0; i < arraysize(kIanaMediaTypes); ++i) {
-    if (StartsWithASCII(mime_type, kIanaMediaTypes[i].matcher, true)) {
-      return kIanaMediaTypes[i].name;
-    }
-  }
-  return std::string();
-}
-
-CertificateMimeType GetCertificateMimeTypeForMimeType(
-    const std::string& mime_type) {
-  // Don't create a map, there is only one entry in the table,
-  // except on Android.
-  for (size_t i = 0; i < arraysize(supported_certificate_types); ++i) {
-    if (mime_type == net::supported_certificate_types[i].mime_type)
-      return net::supported_certificate_types[i].cert_type;
-  }
-  return CERTIFICATE_MIME_TYPE_UNKNOWN;
-}
-
-bool IsSupportedCertificateMimeType(const std::string& mime_type) {
-  CertificateMimeType file_type =
-      GetCertificateMimeTypeForMimeType(mime_type);
-  return file_type != CERTIFICATE_MIME_TYPE_UNKNOWN;
 }
 
 void AddMultipartValueForUpload(const std::string& value_name,

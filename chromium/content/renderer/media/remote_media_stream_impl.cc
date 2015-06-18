@@ -16,6 +16,7 @@
 #include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/webrtc/media_stream_remote_video_source.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
+#include "content/renderer/media/webrtc/track_observer.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
 namespace content {
@@ -124,7 +125,8 @@ class RemoteMediaStreamTrackAdapter
 
     blink::WebString webkit_track_id(base::UTF8ToUTF16(id_));
     blink::WebMediaStreamSource webkit_source;
-    webkit_source.initialize(webkit_track_id, type, webkit_track_id);
+    webkit_source.initialize(webkit_track_id, type, webkit_track_id,
+                             true /* remote */, true /* readonly */);
     webkit_track_.initialize(webkit_track_id, webkit_source);
     DCHECK(!webkit_track_.isNull());
   }
@@ -154,43 +156,24 @@ class RemoteVideoTrackAdapter
       const scoped_refptr<base::SingleThreadTaskRunner>& main_thread,
       webrtc::VideoTrackInterface* webrtc_track)
       : RemoteMediaStreamTrackAdapter(main_thread, webrtc_track) {
-    source_observer_ = new MediaStreamRemoteVideoSource::Observer(main_thread,
-        observed_track().get());
+    scoped_ptr<TrackObserver> observer(
+        new TrackObserver(main_thread, observed_track().get()));
     // Here, we use base::Unretained() to avoid a circular reference.
     webkit_initialize_ = base::Bind(
         &RemoteVideoTrackAdapter::InitializeWebkitVideoTrack,
-        base::Unretained(this), observed_track()->enabled());
+        base::Unretained(this), base::Passed(&observer),
+        observed_track()->enabled());
   }
 
  protected:
-  ~RemoteVideoTrackAdapter() override {
-    // If the source_observer_ is valid at this point, then that means we
-    // haven't been initialized and we need to unregister the observer before
-    // it gets automatically deleted.  We can't unregister from the destructor
-    // of the observer because at that point, the refcount will be 0 and we
-    // could receive an event during that time which would attempt to increment
-    // the refcount while we're running the dtor on this thread...
-    if (source_observer_.get()) {
-      DCHECK(!initialized());
-      source_observer_->Unregister();
-    }
-
-    // TODO(tommi): There's got to be a smarter way of solving this.
-    // We should probably separate the implementation of the observer itself
-    // and the ownerof the weakptr to the main thread's implementation of
-    // OnChanged.
-  }
+  ~RemoteVideoTrackAdapter() override {}
 
  private:
-  void InitializeWebkitVideoTrack(bool enabled) {
+  void InitializeWebkitVideoTrack(scoped_ptr<TrackObserver> observer,
+                                  bool enabled) {
     DCHECK(main_thread_->BelongsToCurrentThread());
     scoped_ptr<MediaStreamRemoteVideoSource> video_source(
-        new MediaStreamRemoteVideoSource(source_observer_));
-    // Now that we're being initialized, we do not want to unregister the
-    // observer in the dtor.  This will be done when the source goes out of
-    // scope.  A source can be shared by more than one tracks (e.g via cloning)
-    // so we must not unregister an observer that belongs to a live source.
-    source_observer_ = nullptr;
+        new MediaStreamRemoteVideoSource(observer.Pass()));
     InitializeWebkitTrack(blink::WebMediaStreamSource::TypeVideo);
     webkit_track()->source().setExtraData(video_source.get());
     // Initial constraints must be provided to a MediaStreamVideoTrack. But
@@ -202,11 +185,6 @@ class RemoteVideoTrackAdapter
             MediaStreamVideoSource::ConstraintsCallback(), enabled);
     webkit_track()->setExtraData(media_stream_track);
   }
-
-  // We hold on to the source observer in case we don't get initialized and
-  // need to unregister it in the dtor.
-  // TODO(tommi): There has to be a more elegant solution.
-  scoped_refptr<MediaStreamRemoteVideoSource::Observer> source_observer_;
 };
 
 // RemoteAudioTrackAdapter is responsible for listening on state
@@ -235,7 +213,7 @@ class RemoteAudioTrackAdapter
   void OnChangedOnMainThread(
       webrtc::MediaStreamTrackInterface::TrackState state);
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   bool unregistered_;
 #endif
 
@@ -249,10 +227,11 @@ RemoteAudioTrackAdapter::RemoteAudioTrackAdapter(
     const scoped_refptr<base::SingleThreadTaskRunner>& main_thread,
     webrtc::AudioTrackInterface* webrtc_track)
     : RemoteMediaStreamTrackAdapter(main_thread, webrtc_track),
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
       unregistered_(false),
 #endif
       state_(observed_track()->state()) {
+  // TODO(tommi): Use TrackObserver instead.
   observed_track()->RegisterObserver(this);
   scoped_ptr<RemoteMediaStreamAudioTrack> media_stream_track(
       new RemoteMediaStreamAudioTrack(observed_track().get(),
@@ -264,13 +243,13 @@ RemoteAudioTrackAdapter::RemoteAudioTrackAdapter(
 }
 
 RemoteAudioTrackAdapter::~RemoteAudioTrackAdapter() {
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   DCHECK(unregistered_);
 #endif
 }
 
 void RemoteAudioTrackAdapter::Unregister() {
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   DCHECK(!unregistered_);
   unregistered_ = true;
 #endif
@@ -373,9 +352,9 @@ RemoteMediaStreamImpl::RemoteMediaStreamImpl(
     const scoped_refptr<base::SingleThreadTaskRunner>& main_thread,
     webrtc::MediaStreamInterface* webrtc_stream)
     : signaling_thread_(base::ThreadTaskRunnerHandle::Get()),
-      weak_factory_(this),
-      observer_(new RemoteMediaStreamImpl::Observer(weak_factory_.GetWeakPtr(),
-                main_thread, webrtc_stream)) {
+      weak_factory_(this) {
+  observer_ = new RemoteMediaStreamImpl::Observer(
+      weak_factory_.GetWeakPtr(), main_thread, webrtc_stream);
   CreateAdaptersForTracks(webrtc_stream->GetAudioTracks(),
       &audio_track_observers_, main_thread);
   CreateAdaptersForTracks(webrtc_stream->GetVideoTracks(),

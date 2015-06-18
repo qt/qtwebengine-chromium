@@ -48,7 +48,7 @@ InspectorAgent::~InspectorAgent()
 #endif
 }
 
-void InspectorAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorAgent)
 {
     visitor->trace(m_instrumentingAgents);
     visitor->trace(m_state);
@@ -103,13 +103,13 @@ void InspectorAgentRegistry::discardAgents()
         m_agents[i]->discardAgent();
 }
 
-void InspectorAgentRegistry::flushPendingFrontendMessages()
+void InspectorAgentRegistry::flushPendingProtocolNotifications()
 {
     for (size_t i = 0; i < m_agents.size(); i++)
-        m_agents[i]->flushPendingFrontendMessages();
+        m_agents[i]->flushPendingProtocolNotifications();
 }
 
-void InspectorAgentRegistry::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorAgentRegistry)
 {
     visitor->trace(m_instrumentingAgents);
     visitor->trace(m_inspectorState);
@@ -118,10 +118,10 @@ void InspectorAgentRegistry::trace(Visitor* visitor)
 #endif
 }
 
-void InspectorAgentRegistry::didCommitLoadForMainFrame()
+void InspectorAgentRegistry::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
     for (size_t i = 0; i < m_agents.size(); i++)
-        m_agents[i]->didCommitLoadForMainFrame();
+        m_agents[i]->didCommitLoadForLocalFrame(frame);
 }
 
 } // namespace blink

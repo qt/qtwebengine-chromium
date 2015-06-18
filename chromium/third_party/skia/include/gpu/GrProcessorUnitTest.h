@@ -8,7 +8,7 @@
 #ifndef GrProcessorUnitTest_DEFINED
 #define GrProcessorUnitTest_DEFINED
 
-#include "SkRandom.h"
+#include "GrTestUtils.h"
 #include "SkTArray.h"
 #include "SkTypes.h"
 
@@ -21,11 +21,6 @@ enum {
     kSkiaPMTextureIdx = 0,
     kAlphaTextureIdx = 1,
 };
-
-/**
- * A helper for use in GrProcessor::TestCreate functions.
- */
-const SkMatrix& TestMatrix(SkRandom*);
 
 }
 
@@ -88,6 +83,14 @@ private:
                                            const GrDrawTargetCaps&,                                \
                                            GrTexture* dummyTextures[2])
 
+#define GR_DECLARE_XP_FACTORY_TEST                                                                 \
+    static GrProcessorTestFactory<GrXPFactory> gTestFactory SK_UNUSED;                             \
+    static GrXPFactory* TestCreate(SkRandom*,                                                      \
+                                   GrContext*,                                                     \
+                                   const GrDrawTargetCaps&,                                        \
+                                   GrTexture* dummyTextures[2])
+
+
 /** GrProcessor subclasses should insert this macro in their implementation file. They must then
  *  also implement this static function:
  *      GrProcessor* TestCreate(SkRandom*,
@@ -102,6 +105,9 @@ private:
 #define GR_DEFINE_FRAGMENT_PROCESSOR_TEST(Effect)                                                  \
     GrProcessorTestFactory<GrFragmentProcessor> Effect :: gTestFactory(Effect :: TestCreate)
 
+#define GR_DEFINE_XP_FACTORY_TEST(Factory)                                                         \
+    GrProcessorTestFactory<GrXPFactory> Factory :: gTestFactory(Factory :: TestCreate)
+
 #define GR_DEFINE_GEOMETRY_PROCESSOR_TEST(Effect)                                                  \
     GrProcessorTestFactory<GrGeometryProcessor> Effect :: gTestFactory(Effect :: TestCreate)
 
@@ -111,18 +117,27 @@ private:
 // its definitions will compile.
 #define GR_DECLARE_FRAGMENT_PROCESSOR_TEST                                                         \
     static GrFragmentProcessor* TestCreate(SkRandom*,                                              \
-                                GrContext*,                                                        \
-                                const GrDrawTargetCaps&,                                           \
-                                GrTexture* dummyTextures[2])
+                                           GrContext*,                                             \
+                                           const GrDrawTargetCaps&,                                \
+                                           GrTexture* dummyTextures[2])
 #define GR_DEFINE_FRAGMENT_PROCESSOR_TEST(X)
+
+// The unit test relies on static initializers. Just declare the TestCreate function so that
+// its definitions will compile.
+#define GR_DECLARE_XP_FACTORY_TEST                                                                 \
+    static GrXPFactory* TestCreate(SkRandom*,                                                      \
+                                   GrContext*,                                                     \
+                                   const GrDrawTargetCaps&,                                        \
+                                   GrTexture* dummyTextures[2])
+#define GR_DEFINE_XP_FACTORY_TEST(X)
 
 // The unit test relies on static initializers. Just declare the TestCreate function so that
 // its definitions will compile.
 #define GR_DECLARE_GEOMETRY_PROCESSOR_TEST                                                         \
     static GrGeometryProcessor* TestCreate(SkRandom*,                                              \
-                                GrContext*,                                                        \
-                                const GrDrawTargetCaps&,                                           \
-                                GrTexture* dummyTextures[2])
+                                           GrContext*,                                             \
+                                           const GrDrawTargetCaps&,                                \
+                                           GrTexture* dummyTextures[2])
 #define GR_DEFINE_GEOMETRY_PROCESSOR_TEST(X)
 
 #endif // !SK_ALLOW_STATIC_GLOBAL_INITIALIZERS

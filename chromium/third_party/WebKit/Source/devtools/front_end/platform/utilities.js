@@ -230,8 +230,10 @@ String.prototype.trimEnd = function(maxLength)
 String.prototype.trimURL = function(baseURLDomain)
 {
     var result = this.replace(/^(https|http|file):\/\//i, "");
-    if (baseURLDomain)
-        result = result.replace(new RegExp("^" + baseURLDomain.escapeForRegExp(), "i"), "");
+    if (baseURLDomain) {
+        if (result.toLowerCase().startsWith(baseURLDomain.toLowerCase()))
+            result = result.substr(baseURLDomain.length);
+    }
     return result;
 }
 
@@ -293,24 +295,64 @@ String.prototype.endsWith = function(substring)
 }
 
 /**
+ * @param {string|undefined} string
  * @return {number}
  */
-String.prototype.hashCode = function()
+String.hashCode = function(string)
 {
+    if (!string)
+        return 0;
     var result = 0;
-    for (var i = 0; i < this.length; ++i)
-        result = (result * 3 + this.charCodeAt(i)) | 0;
+    for (var i = 0; i < string.length; ++i)
+        result = (result * 3 + string.charCodeAt(i)) | 0;
     return result;
 }
 
 /**
+ * @param {string} string
  * @param {number} index
  * @return {boolean}
  */
-String.prototype.isDigitAt = function(index)
+String.isDigitAt = function(string, index)
 {
-    var c = this.charCodeAt(index);
+    var c = string.charCodeAt(index);
     return 48 <= c && c <= 57;
+}
+
+/**
+ * @return {string}
+ */
+String.prototype.toBase64 = function()
+{
+    /**
+     * @param {number} b
+     * @return {number}
+     */
+    function encodeBits(b)
+    {
+        return b < 26 ? b + 65 : b < 52 ? b + 71 : b < 62 ? b - 4 : b === 62 ? 43 : b === 63 ? 47 : 65;
+    }
+    var encoder = new TextEncoder();
+    var data = encoder.encode(this.toString());
+    var n = data.length;
+    var encoded = "";
+    if (n === 0)
+        return encoded;
+    var shift;
+    var v = 0;
+    for (var i = 0; i < n; i++) {
+        shift = i % 3;
+        v |= data[i] << (16 >>> shift & 24);
+        if (shift === 2) {
+            encoded += String.fromCharCode(encodeBits(v >>> 18 & 63), encodeBits(v >>> 12 & 63), encodeBits(v >>> 6 & 63), encodeBits(v & 63));
+            v = 0;
+        }
+    }
+    if (shift === 0)
+        encoded += String.fromCharCode(encodeBits(v >>> 18 & 63), encodeBits(v >>> 12 & 63), 61, 61);
+    else if (shift === 1)
+        encoded += String.fromCharCode(encodeBits(v >>> 18 & 63), encodeBits(v >>> 12 & 63), encodeBits(v >>> 6 & 63), 61);
+    return encoded;
 }
 
 /**
@@ -438,7 +480,7 @@ Date.prototype.toConsoleTime = function()
      */
     function leadZero3(x)
     {
-        return (Array(4 - x.toString().length)).join('0') + x;
+        return "0".repeat(3 - x.toString().length) + x;
     }
 
     return this.getFullYear() + "-" +
@@ -943,6 +985,8 @@ String.tokenizeFormatString = function(format, formatters)
 
     var index = 0;
     for (var precentIndex = format.indexOf("%", index); precentIndex !== -1; precentIndex = format.indexOf("%", index)) {
+        if (format.length === index)  // unescaped % sign at the end of the format string.
+            break;
         addStringToken(format.substring(index, precentIndex));
         index = precentIndex + 1;
 
@@ -953,10 +997,10 @@ String.tokenizeFormatString = function(format, formatters)
             continue;
         }
 
-        if (format.isDigitAt(index)) {
+        if (String.isDigitAt(format, index)) {
             // The first character is a number, it might be a substitution index.
             var number = parseInt(format.substring(index), 10);
-            while (format.isDigitAt(index))
+            while (String.isDigitAt(format, index))
                 ++index;
 
             // If the number is greater than zero and ends with a "$",
@@ -976,7 +1020,7 @@ String.tokenizeFormatString = function(format, formatters)
             if (isNaN(precision))
                 precision = 0;
 
-            while (format.isDigitAt(index))
+            while (String.isDigitAt(format, index))
                 ++index;
         }
 
@@ -1180,7 +1224,7 @@ function countRegexMatches(regex, content)
  */
 function spacesPadding(spacesCount)
 {
-    return Array(spacesCount).join("\u00a0");
+    return "\u00a0".repeat(spacesCount);
 }
 
 /**
@@ -1209,16 +1253,6 @@ Array.from = function(iterator)
 }
 
 /**
- * @param {!Array.<!T>} array
- * @return {!Set.<T>}
- * @template T
- */
-Set.fromArray = function(array)
-{
-    return new Set(array);
-}
-
-/**
  * @return {!Array.<T>}
  * @template T
  */
@@ -1226,8 +1260,6 @@ Set.prototype.valuesArray = function()
 {
     return Array.from(this.values());
 }
-
-Set.prototype.remove = Set.prototype.delete;
 
 /**
  * @return {T}
@@ -1262,18 +1294,18 @@ Map.prototype.keysArray = function()
 
 /**
  * @constructor
- * @template T
+ * @template K, V
  */
-var StringMultimap = function()
+var Multimap = function()
 {
-    /** @type {!Map.<string, !Set.<!T>>} */
+    /** @type {!Map.<K, !Set.<!V>>} */
     this._map = new Map();
 }
 
-StringMultimap.prototype = {
+Multimap.prototype = {
     /**
-     * @param {string} key
-     * @param {T} value
+     * @param {K} key
+     * @param {V} value
      */
     set: function(key, value)
     {
@@ -1286,8 +1318,8 @@ StringMultimap.prototype = {
     },
 
     /**
-     * @param {string} key
-     * @return {!Set.<!T>}
+     * @param {K} key
+     * @return {!Set.<!V>}
      */
     get: function(key)
     {
@@ -1298,27 +1330,27 @@ StringMultimap.prototype = {
     },
 
     /**
-     * @param {string} key
-     * @param {T} value
+     * @param {K} key
+     * @param {V} value
      */
     remove: function(key, value)
     {
         var values = this.get(key);
-        values.remove(value);
+        values.delete(value);
         if (!values.size)
-            this._map.remove(key)
+            this._map.delete(key);
     },
 
     /**
-     * @param {string} key
+     * @param {K} key
      */
     removeAll: function(key)
     {
-        this._map.remove(key)
+        this._map.delete(key);
     },
 
     /**
-     * @return {!Array.<string>}
+     * @return {!Array.<K>}
      */
     keysArray: function()
     {
@@ -1326,7 +1358,7 @@ StringMultimap.prototype = {
     },
 
     /**
-     * @return {!Array.<!T>}
+     * @return {!Array.<!V>}
      */
     valuesArray: function()
     {
@@ -1367,6 +1399,7 @@ function loadXHR(url)
         }
 
         var xhr = new XMLHttpRequest();
+        xhr.withCredentials = false;
         xhr.open("GET", url, true);
         xhr.onreadystatechange = onReadyStateChanged;
         xhr.send(null);
@@ -1432,6 +1465,21 @@ function suppressUnused(value)
  */
 self.setImmediate = function(callback)
 {
-    Promise.resolve().then(callback).done();
+    Promise.resolve().then(callback);
     return 0;
+}
+
+/**
+ * @param {function(...?)} callback
+ * @return {!Promise.<T>}
+ * @template T
+ */
+Promise.prototype.spread = function(callback)
+{
+    return this.then(spreadPromise);
+
+    function spreadPromise(arg)
+    {
+        return callback.apply(null, arg);
+    }
 }

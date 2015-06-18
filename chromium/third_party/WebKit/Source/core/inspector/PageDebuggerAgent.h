@@ -31,54 +31,63 @@
 #ifndef PageDebuggerAgent_h
 #define PageDebuggerAgent_h
 
-#include "bindings/core/v8/PageScriptDebugServer.h"
+#include "bindings/core/v8/MainThreadDebugger.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/InspectorOverlayHost.h"
+#include "core/inspector/InspectorOverlay.h"
+
+using blink::TypeBuilder::Debugger::ExceptionDetails;
+using blink::TypeBuilder::Debugger::ScriptId;
+using blink::TypeBuilder::Runtime::RemoteObject;
 
 namespace blink {
 
 class DocumentLoader;
-class InspectorOverlay;
 class InspectorPageAgent;
-class PageScriptDebugServer;
+class MainThreadDebugger;
 
 class PageDebuggerAgent final
     : public InspectorDebuggerAgent
-    , public InspectorOverlayHost::Listener {
+    , public InspectorOverlay::Listener {
     WTF_MAKE_NONCOPYABLE(PageDebuggerAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PageDebuggerAgent);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PageDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
-    virtual ~PageDebuggerAgent();
-    virtual void trace(Visitor*) override;
+    static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*, int debuggerId);
+    ~PageDebuggerAgent() override;
+    DECLARE_VIRTUAL_TRACE();
 
+    void enable(ErrorString*) final;
+    void compileScript(ErrorString*, const String& expression, const String& sourceURL, bool persistScript, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
+    void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
+
+    void didStartProvisionalLoad(LocalFrame*);
     void didClearDocumentOfWindowObject(LocalFrame*);
-    void didCommitLoad(LocalFrame*, DocumentLoader*);
+    void didCommitLoadForLocalFrame(LocalFrame*) override;
 
 protected:
-    virtual void enable() override;
-    virtual void disable() override;
+    void enable() override;
+    void disable() override;
 
 private:
-    virtual void startListeningScriptDebugServer() override;
-    virtual void stopListeningScriptDebugServer() override;
-    virtual PageScriptDebugServer& scriptDebugServer() override;
-    virtual void muteConsole() override;
-    virtual void unmuteConsole() override;
+    void startListeningScriptDebugServer() override;
+    void stopListeningScriptDebugServer() override;
+    ScriptDebugServer& scriptDebugServer() override;
+    void muteConsole() override;
+    void unmuteConsole() override;
 
-    // InspectorOverlayHost::Listener implementation.
-    virtual void overlayResumed() override;
-    virtual void overlaySteppedOver() override;
+    // InspectorOverlay::Listener implementation.
+    void overlayResumed() override;
+    void overlaySteppedOver() override;
 
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
-    virtual void setOverlayMessage(ErrorString*, const String*) override;
+    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    bool canExecuteScripts() const;
 
-    PageDebuggerAgent(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
-    // FIXME: Oilpan: Move PageScriptDebugServer to heap in follow-up CL.
-    PageScriptDebugServer* m_pageScriptDebugServer;
+    PageDebuggerAgent(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*, int debuggerId);
+    RawPtrWillBeMember<MainThreadDebugger> m_mainThreadDebugger;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    InspectorOverlay* m_overlay;
+    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    int m_debuggerId;
+    HashMap<String, String> m_compiledScriptURLs;
 };
 
 } // namespace blink

@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/ime/input_method_base.h"
 
 namespace ui {
@@ -79,8 +79,8 @@ class InputMethodBridge : public InputMethodBase,
   void OnCandidateWindowShown() override;
   void OnCandidateWindowUpdated() override;
   void OnCandidateWindowHidden() override;
-  bool IsEditingCommandEnabled(int command_id) override;
-  void ExecuteEditingCommand(int command_id) override;
+  bool IsEditCommandEnabled(int command_id) override;
+  void SetEditCommandForNextKeyEvent(int command_id) override;
 
   // Overridden from FocusChangeListener.
   void OnWillChangeFocus(View* focused_before, View* focused) override;

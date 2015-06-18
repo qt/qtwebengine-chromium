@@ -50,7 +50,7 @@ ColorChooserUIController::~ColorChooserUIController()
     endChooser();
 }
 
-void ColorChooserUIController::trace(Visitor* visitor)
+DEFINE_TRACE(ColorChooserUIController)
 {
     visitor->trace(m_frame);
     visitor->trace(m_client);
@@ -64,8 +64,8 @@ void ColorChooserUIController::openUI()
 
 void ColorChooserUIController::setSelectedColor(const Color& color)
 {
-    ASSERT(m_chooser);
-    m_chooser->setSelectedColor(static_cast<WebColor>(color.rgb()));
+    if (m_chooser)
+        m_chooser->setSelectedColor(static_cast<WebColor>(color.rgb()));
 }
 
 void ColorChooserUIController::endChooser()

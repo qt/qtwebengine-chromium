@@ -76,12 +76,10 @@ class CONTENT_EXPORT ContentMainDelegate {
   virtual void ZygoteForked() {}
 #endif  // OS_MACOSX
 
-  // Allows the embedder to disable termination on heap corruption.
-  // This is being used to measure the impact of this feature on crash reports.
-  // Termination on heap corruption is enabled by default.
-  // TODO(erikwright): Remove this by September 2014 when experimentation is
-  // complete.
-  virtual bool ShouldEnableTerminationOnHeapCorruption();
+  // TODO(vadimt, yiyaoliu): Remove this function once crbug.com/453640 is
+  // fixed.
+  // Returns whether or not profiler recording should be enabled.
+  virtual bool ShouldEnableProfilerRecording();
 
  protected:
   friend class ContentClientInitializer;

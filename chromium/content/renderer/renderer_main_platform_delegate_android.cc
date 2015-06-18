@@ -13,10 +13,6 @@
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #endif
 
-#ifdef ENABLE_VTUNE_JIT_INTERFACE
-#include "v8/src/third_party/vtune/v8-vtune.h"
-#endif
-
 namespace content {
 
 RendererMainPlatformDelegate::RendererMainPlatformDelegate(
@@ -28,11 +24,6 @@ RendererMainPlatformDelegate::~RendererMainPlatformDelegate() {
 }
 
 void RendererMainPlatformDelegate::PlatformInitialize() {
-#ifdef ENABLE_VTUNE_JIT_INTERFACE
-  const CommandLine& command_line = parameters_.command_line;
-  if (command_line.HasSwitch(switches::kEnableVtune))
-    vTune::InitializeVtuneForV8();
-#endif
 }
 
 void RendererMainPlatformDelegate::PlatformUninitialize() {
@@ -44,10 +35,16 @@ bool RendererMainPlatformDelegate::EnableSandbox() {
           switches::kEnableSeccompFilterSandbox)) {
     return true;
   }
+  if (!sandbox::SandboxBPF::SupportsSeccompSandbox(
+          sandbox::SandboxBPF::SeccompLevel::MULTI_THREADED)) {
+    LOG(WARNING) << "Seccomp-BPF sandbox enabled without kernel support. "
+                 << "Ignoring flag and proceeding without seccomp sandbox.";
+    return true;
+  }
 
-  sandbox::SandboxBPF sandbox;
-  sandbox.SetSandboxPolicy(new SandboxBPFBasePolicyAndroid());
-  CHECK(sandbox.StartSandbox(sandbox::SandboxBPF::PROCESS_MULTI_THREADED));
+  sandbox::SandboxBPF sandbox(new SandboxBPFBasePolicyAndroid());
+  CHECK(
+      sandbox.StartSandbox(sandbox::SandboxBPF::SeccompLevel::MULTI_THREADED));
 #endif
   return true;
 }

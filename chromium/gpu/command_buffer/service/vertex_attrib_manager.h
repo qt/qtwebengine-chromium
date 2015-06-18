@@ -65,6 +65,10 @@ class GPU_EXPORT VertexAttrib {
     return divisor_;
   }
 
+  GLboolean integer() const {
+    return integer_;
+  }
+
   bool enabled() const {
     return enabled_;
   }
@@ -112,7 +116,8 @@ class GPU_EXPORT VertexAttrib {
       GLboolean normalized,
       GLsizei gl_stride,
       GLsizei real_stride,
-      GLsizei offset);
+      GLsizei offset,
+      GLboolean integer);
 
   void SetDivisor(GLsizei divisor) {
     divisor_ = divisor;
@@ -146,6 +151,8 @@ class GPU_EXPORT VertexAttrib {
   GLsizei real_stride_;
 
   GLsizei divisor_;
+
+  GLboolean integer_;
 
   // Will be true if this was assigned to a client side array.
   bool is_client_side_array_;
@@ -197,7 +204,8 @@ class GPU_EXPORT VertexAttribManager :
       GLboolean normalized,
       GLsizei gl_stride,
       GLsizei real_stride,
-      GLsizei offset) {
+      GLsizei offset,
+      GLboolean integer) {
     VertexAttrib* attrib = GetVertexAttrib(index);
     if (attrib) {
       if (attrib->type() == GL_FIXED) {
@@ -206,8 +214,8 @@ class GPU_EXPORT VertexAttribManager :
       if (type == GL_FIXED) {
         ++num_fixed_attribs_;
       }
-      attrib->SetInfo(
-          buffer, size, type, normalized, gl_stride, real_stride, offset);
+      attrib->SetInfo(buffer, size, type, normalized, gl_stride, real_stride,
+                      offset, integer);
     }
   }
 

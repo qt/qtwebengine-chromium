@@ -327,16 +327,30 @@ class SourceProcessor(SourceFileProcessor):
     return (super(SourceProcessor, self).IgnoreDir(name) or
             name in ('third_party', 'gyp', 'out', 'obj', 'DerivedSources'))
 
-  IGNORE_COPYRIGHTS = ['cpplint.py',
+  IGNORE_COPYRIGHTS = ['box2d.js',
+                       'cpplint.py',
+                       'copy.js',
+                       'corrections.js',
+                       'crypto.js',
                        'daemon.py',
                        'earley-boyer.js',
-                       'raytrace.js',
-                       'crypto.js',
+                       'fannkuch.js',
+                       'fasta.js',
+                       'jsmin.py',
                        'libraries.cc',
                        'libraries-empty.cc',
-                       'jsmin.py',
+                       'lua_binarytrees.js',
+                       'memops.js',
+                       'poppler.js',
+                       'primes.js',
+                       'raytrace.js',
                        'regexp-pcre.js',
-                       'gnuplot-4.6.3-emscripten.js']
+                       'sqlite.js',
+                       'sqlite-change-heap.js',
+                       'sqlite-pointer-masking.js',
+                       'sqlite-safe-heap.js',
+                       'gnuplot-4.6.3-emscripten.js',
+                       'zlib.js']
   IGNORE_TABS = IGNORE_COPYRIGHTS + ['unicode-test.js', 'html-comments.js']
 
   def EndOfDeclaration(self, line):
@@ -429,6 +443,33 @@ def CheckExternalReferenceRegistration(workspace):
       [sys.executable, join(workspace, "tools", "external-reference-check.py")])
   return code == 0
 
+def CheckAuthorizedAuthor(input_api, output_api):
+  """For non-googler/chromites committers, verify the author's email address is
+  in AUTHORS.
+  """
+  # TODO(maruel): Add it to input_api?
+  import fnmatch
+
+  author = input_api.change.author_email
+  if not author:
+    input_api.logging.info('No author, skipping AUTHOR check')
+    return []
+  authors_path = input_api.os_path.join(
+      input_api.PresubmitLocalPath(), 'AUTHORS')
+  valid_authors = (
+      input_api.re.match(r'[^#]+\s+\<(.+?)\>\s*$', line)
+      for line in open(authors_path))
+  valid_authors = [item.group(1).lower() for item in valid_authors if item]
+  if not any(fnmatch.fnmatch(author.lower(), valid) for valid in valid_authors):
+    input_api.logging.info('Valid authors are %s', ', '.join(valid_authors))
+    return [output_api.PresubmitPromptWarning(
+        ('%s is not in AUTHORS file. If you are a new contributor, please visit'
+        '\n'
+        'http://www.chromium.org/developers/contributing-code and read the '
+        '"Legal" section\n'
+        'If you are a chromite, verify the contributor signed the CLA.') %
+        author)]
+  return []
 
 def GetOptions():
   result = optparse.OptionParser()

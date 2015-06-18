@@ -22,62 +22,72 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() SK_OVERRIDE {
+    enum ShapeType {
+        kShapeTypeCircle,
+        kShapeTypeRoundRect,
+        kShapeTypeRect,
+        kShapeTypeConvexPath,
+        kShapeTypeConcavePath,
+        kNumShapeTypes
+    };
+
+    SkString onShortName() override {
         return SkString("mixed_xfermodes");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(790, 640);
     }
 
     void drawShape(SkCanvas* canvas,
                    const SkPaint& paint,
-                   SkRandom* random) {
+                   ShapeType type) {
         static const SkRect kRect = SkRect::MakeXYWH(SkIntToScalar(-50), SkIntToScalar(-50),
                                                      SkIntToScalar(75), SkIntToScalar(105));
-        int shape = random->nextULessThan(5);
-        switch (shape) {
-        case 0:
-            canvas->drawCircle(0, 0, 50, paint);
-            break;
-        case 1:
-            canvas->drawRoundRect(kRect, SkIntToScalar(10), SkIntToScalar(20), paint);
-            break;
-        case 2:
-            canvas->drawRect(kRect, paint);
-            break;
-        case 3:
-            if (fConvexPath.isEmpty()) {
-                SkPoint points[4];
-                kRect.toQuad(points);
-                fConvexPath.moveTo(points[0]);
-                fConvexPath.quadTo(points[1], points[2]);
-                fConvexPath.quadTo(points[3], points[0]);
-                SkASSERT(fConvexPath.isConvex());
-            }
-            canvas->drawPath(fConvexPath, paint);
-            break;
-        case 4:
-            if (fConcavePath.isEmpty()) {
-                SkPoint points[5] = {{0, SkIntToScalar(-50)} };
-                SkMatrix rot;
-                rot.setRotate(SkIntToScalar(360) / 5);
-                for (int i = 1; i < 5; ++i) {
-                    rot.mapPoints(points + i, points + i - 1, 1);
+        switch (type) {
+            case kShapeTypeCircle:
+                canvas->drawCircle(0, 0, 50, paint);
+                break;
+            case kShapeTypeRoundRect:
+                canvas->drawRoundRect(kRect, SkIntToScalar(10), SkIntToScalar(20), paint);
+                break;
+            case kShapeTypeRect:
+                canvas->drawRect(kRect, paint);
+                break;
+            case kShapeTypeConvexPath:
+                if (fConvexPath.isEmpty()) {
+                    SkPoint points[4];
+                    kRect.toQuad(points);
+                    fConvexPath.moveTo(points[0]);
+                    fConvexPath.quadTo(points[1], points[2]);
+                    fConvexPath.quadTo(points[3], points[0]);
+                    SkASSERT(fConvexPath.isConvex());
                 }
-                fConcavePath.moveTo(points[0]);
-                for (int i = 0; i < 5; ++i) {
-                    fConcavePath.lineTo(points[(2 * i) % 5]);
+                canvas->drawPath(fConvexPath, paint);
+                break;
+            case kShapeTypeConcavePath:
+                if (fConcavePath.isEmpty()) {
+                    SkPoint points[5] = {{0, SkIntToScalar(-50)} };
+                    SkMatrix rot;
+                    rot.setRotate(SkIntToScalar(360) / 5);
+                    for (int i = 1; i < 5; ++i) {
+                        rot.mapPoints(points + i, points + i - 1, 1);
+                    }
+                    fConcavePath.moveTo(points[0]);
+                    for (int i = 0; i < 5; ++i) {
+                        fConcavePath.lineTo(points[(2 * i) % 5]);
+                    }
+                    fConcavePath.setFillType(SkPath::kEvenOdd_FillType);
+                    SkASSERT(!fConcavePath.isConvex());
                 }
-                fConcavePath.setFillType(SkPath::kEvenOdd_FillType);
-                SkASSERT(!fConcavePath.isConvex());
-            }
-            canvas->drawPath(fConcavePath, paint);
-            break;
+                canvas->drawPath(fConcavePath, paint);
+                break;
+            default:
+                break;
         }
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         if (NULL == fBG.get()) {
             static uint32_t kCheckerPixelData[] = { 0xFFFFFFFF,
                                                     0xFFCCCCCC,
@@ -108,6 +118,7 @@ protected:
             SkColor color = random.nextU();
             SkXfermode::Mode mode =
                 static_cast<SkXfermode::Mode>(random.nextULessThan(SkXfermode::kLastMode + 1));
+            ShapeType shapeType = static_cast<ShapeType>(random.nextULessThan(kNumShapeTypes));
 
             SkPaint p;
             p.setAntiAlias(true);
@@ -117,14 +128,40 @@ protected:
             canvas->translate(dx, dy);
             canvas->scale(s, s);
             canvas->rotate(r);
-            this->drawShape(canvas, p, &random);
+            this->drawShape(canvas, p, shapeType);
             canvas->restore();
         }
+
+        // This draw should not affect the test's result.
+        drawWithHueOnWhite(canvas);
     }
 
-    virtual uint32_t onGetFlags() const {
-        // Skip PDF rasterization since rendering this PDF takes forever.
-        return kSkipPDFRasterization_Flag | kSkipTiled_Flag;
+    /**
+     * Draws white color into a white square using the hue blend mode.
+     * The result color should be white, so it doesn't change the expectations.
+     * This will test a divide by 0 bug in shaders' setLum function,
+     * which used to output black pixels.
+     */
+    void drawWithHueOnWhite(SkCanvas* canvas) {
+        SkColor color = SkColorSetARGBMacro(225, 255, 255, 255);
+        SkXfermode::Mode mode = SkXfermode::kHue_Mode;
+        ShapeType shapeType = kShapeTypeConvexPath;
+
+        // Make it fit into a square.
+        SkScalar s = 0.15f;
+        // Look for a clean white square.
+        SkScalar dx = 30.f;
+        SkScalar dy = 350.f;
+
+        SkPaint p;
+        p.setAntiAlias(true);
+        p.setColor(color);
+        p.setXfermodeMode(mode);
+        canvas->save();
+        canvas->translate(dx, dy);
+        canvas->scale(s, s);
+        this->drawShape(canvas, p, shapeType);
+        canvas->restore();
     }
 
 private:

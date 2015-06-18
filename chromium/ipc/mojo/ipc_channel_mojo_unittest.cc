@@ -6,18 +6,26 @@
 
 #include "base/base_paths.h"
 #include "base/files/file.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
+#include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/test/test_timeouts.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_test_base.h"
 #include "ipc/ipc_test_channel_listener.h"
 #include "ipc/mojo/ipc_channel_mojo_host.h"
-#include "ipc/mojo/ipc_channel_mojo_readers.h"
+#include "ipc/mojo/ipc_mojo_handle_attachment.h"
+#include "ipc/mojo/ipc_mojo_message_helper.h"
+#include "ipc/mojo/ipc_mojo_param_traits.h"
+#include "ipc/mojo/scoped_ipc_support.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
+#include "ipc/ipc_platform_file_attachment_posix.h"
 #endif
 
 namespace {
@@ -60,14 +68,22 @@ class ListenerThatExpectsOK : public IPC::Listener {
 class ChannelClient {
  public:
   explicit ChannelClient(IPC::Listener* listener, const char* name) {
-    channel_ = IPC::ChannelMojo::Create(NULL,
+    channel_ = IPC::ChannelMojo::Create(NULL, main_message_loop_.task_runner(),
                                         IPCTestBase::GetChannelName(name),
-                                        IPC::Channel::MODE_CLIENT,
-                                        listener);
+                                        IPC::Channel::MODE_CLIENT, listener);
   }
 
   void Connect() {
     CHECK(channel_->Connect());
+  }
+
+  void Close() {
+    channel_->Close();
+
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  run_loop.QuitClosure());
+    run_loop.Run();
   }
 
   IPC::ChannelMojo* channel() const { return channel_.get(); }
@@ -77,20 +93,37 @@ class ChannelClient {
   scoped_ptr<IPC::ChannelMojo> channel_;
 };
 
-class IPCChannelMojoTest : public IPCTestBase {
+class IPCChannelMojoTestBase : public IPCTestBase {
+ public:
+  void InitWithMojo(const std::string& test_client_name) {
+    Init(test_client_name);
+  }
+
+  void TearDown() override {
+    // Make sure Mojo IPC support is properly shutdown on the I/O loop before
+    // TearDown continues.
+    base::RunLoop run_loop;
+    task_runner()->PostTask(FROM_HERE, run_loop.QuitClosure());
+    run_loop.Run();
+
+    IPCTestBase::TearDown();
+  }
+};
+
+class IPCChannelMojoTest : public IPCChannelMojoTestBase {
  protected:
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
-      base::TaskRunner* runner) override {
+      base::SequencedTaskRunner* runner) override {
     host_.reset(new IPC::ChannelMojoHost(task_runner()));
     return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
-                                                 handle);
+                                                 task_runner(), handle);
   }
 
   bool DidStartClient() override {
     bool ok = IPCTestBase::DidStartClient();
     DCHECK(ok);
-    host_->OnClientLaunched(client_process());
+    host_->OnClientLaunched(client_process().Handle());
     return ok;
   }
 
@@ -119,7 +152,7 @@ class TestChannelListenerWithExtraExpectations
 };
 
 TEST_F(IPCChannelMojoTest, ConnectedFromClient) {
-  Init("IPCChannelMojoTestClient");
+  InitWithMojo("IPCChannelMojoTestClient");
 
   // Set up IPC channel and start client.
   TestChannelListenerWithExtraExpectations listener;
@@ -156,6 +189,8 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoTestClient) {
   EXPECT_TRUE(listener.is_connected_called());
   EXPECT_TRUE(listener.HasSentAll());
 
+  client.Close();
+
   return 0;
 }
 
@@ -183,20 +218,20 @@ class ListenerExpectingErrors : public IPC::Listener {
 };
 
 
-class IPCChannelMojoErrorTest : public IPCTestBase {
+class IPCChannelMojoErrorTest : public IPCChannelMojoTestBase {
  protected:
   scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
       const IPC::ChannelHandle& handle,
-      base::TaskRunner* runner) override {
+      base::SequencedTaskRunner* runner) override {
     host_.reset(new IPC::ChannelMojoHost(task_runner()));
     return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
-                                                 handle);
+                                                 task_runner(), handle);
   }
 
   bool DidStartClient() override {
     bool ok = IPCTestBase::DidStartClient();
     DCHECK(ok);
-    host_->OnClientLaunched(client_process());
+    host_->OnClientLaunched(client_process().Handle());
     return ok;
   }
 
@@ -226,11 +261,13 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoErraticTestClient) {
 
   base::MessageLoop::current()->Run();
 
+  client.Close();
+
   return 0;
 }
 
 TEST_F(IPCChannelMojoErrorTest, SendFailWithPendingMessages) {
-  Init("IPCChannelMojoErraticTestClient");
+  InitWithMojo("IPCChannelMojoErraticTestClient");
 
   // Set up IPC channel and start client.
   ListenerExpectingErrors listener;
@@ -257,23 +294,281 @@ TEST_F(IPCChannelMojoErrorTest, SendFailWithPendingMessages) {
   DestroyChannel();
 }
 
-#if defined(OS_WIN)
-class IPCChannelMojoDeadHandleTest : public IPCTestBase {
- protected:
-  virtual scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
-      const IPC::ChannelHandle& handle,
-      base::TaskRunner* runner) override {
-    host_.reset(new IPC::ChannelMojoHost(task_runner()));
-    return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
-                                                 handle);
+struct TestingMessagePipe {
+  TestingMessagePipe() {
+    EXPECT_EQ(MOJO_RESULT_OK, mojo::CreateMessagePipe(nullptr, &self, &peer));
   }
 
-  virtual bool DidStartClient() override {
+  mojo::ScopedMessagePipeHandle self;
+  mojo::ScopedMessagePipeHandle peer;
+};
+
+class HandleSendingHelper {
+ public:
+  static std::string GetSendingFileContent() { return "Hello"; }
+
+  static void WritePipe(IPC::Message* message, TestingMessagePipe* pipe) {
+    std::string content = HandleSendingHelper::GetSendingFileContent();
+    EXPECT_EQ(MOJO_RESULT_OK,
+              mojo::WriteMessageRaw(pipe->self.get(), &content[0],
+                                    static_cast<uint32_t>(content.size()),
+                                    nullptr, 0, 0));
+    EXPECT_TRUE(
+        IPC::MojoMessageHelper::WriteMessagePipeTo(message, pipe->peer.Pass()));
+  }
+
+  static void WritePipeThenSend(IPC::Sender* sender, TestingMessagePipe* pipe) {
+    IPC::Message* message =
+        new IPC::Message(0, 2, IPC::Message::PRIORITY_NORMAL);
+    WritePipe(message, pipe);
+    ASSERT_TRUE(sender->Send(message));
+  }
+
+  static void ReadReceivedPipe(const IPC::Message& message,
+                               PickleIterator* iter) {
+    mojo::ScopedMessagePipeHandle pipe;
+    EXPECT_TRUE(
+        IPC::MojoMessageHelper::ReadMessagePipeFrom(&message, iter, &pipe));
+    std::string content(GetSendingFileContent().size(), ' ');
+
+    uint32_t num_bytes = static_cast<uint32_t>(content.size());
+    EXPECT_EQ(MOJO_RESULT_OK,
+              mojo::ReadMessageRaw(pipe.get(), &content[0], &num_bytes, nullptr,
+                                   nullptr, 0));
+    EXPECT_EQ(content, GetSendingFileContent());
+  }
+
+#if defined(OS_POSIX)
+  static base::FilePath GetSendingFilePath() {
+    base::FilePath path;
+    bool ok = PathService::Get(base::DIR_CACHE, &path);
+    EXPECT_TRUE(ok);
+    return path.Append("ListenerThatExpectsFile.txt");
+  }
+
+  static void WriteFile(IPC::Message* message, base::File& file) {
+    std::string content = GetSendingFileContent();
+    file.WriteAtCurrentPos(content.data(), content.size());
+    file.Flush();
+    message->WriteAttachment(new IPC::internal::PlatformFileAttachment(
+        base::ScopedFD(file.TakePlatformFile())));
+  }
+
+  static void WriteFileThenSend(IPC::Sender* sender, base::File& file) {
+    IPC::Message* message =
+        new IPC::Message(0, 2, IPC::Message::PRIORITY_NORMAL);
+    WriteFile(message, file);
+    ASSERT_TRUE(sender->Send(message));
+  }
+
+  static void WriteFileAndPipeThenSend(IPC::Sender* sender,
+                                       base::File& file,
+                                       TestingMessagePipe* pipe) {
+    IPC::Message* message =
+        new IPC::Message(0, 2, IPC::Message::PRIORITY_NORMAL);
+    WriteFile(message, file);
+    WritePipe(message, pipe);
+    ASSERT_TRUE(sender->Send(message));
+  }
+
+  static void ReadReceivedFile(const IPC::Message& message,
+                               PickleIterator* iter) {
+    base::ScopedFD fd;
+    scoped_refptr<IPC::MessageAttachment> attachment;
+    EXPECT_TRUE(message.ReadAttachment(iter, &attachment));
+    base::File file(attachment->TakePlatformFile());
+    std::string content(GetSendingFileContent().size(), ' ');
+    file.Read(0, &content[0], content.size());
+    EXPECT_EQ(content, GetSendingFileContent());
+  }
+#endif
+};
+
+class ListenerThatExpectsMessagePipe : public IPC::Listener {
+ public:
+  ListenerThatExpectsMessagePipe() : sender_(NULL) {}
+
+  ~ListenerThatExpectsMessagePipe() override {}
+
+  bool OnMessageReceived(const IPC::Message& message) override {
+    PickleIterator iter(message);
+    HandleSendingHelper::ReadReceivedPipe(message, &iter);
+    base::MessageLoop::current()->Quit();
+    ListenerThatExpectsOK::SendOK(sender_);
+    return true;
+  }
+
+  void OnChannelError() override { NOTREACHED(); }
+
+  void set_sender(IPC::Sender* sender) { sender_ = sender; }
+
+ private:
+  IPC::Sender* sender_;
+};
+
+TEST_F(IPCChannelMojoTest, SendMessagePipe) {
+  InitWithMojo("IPCChannelMojoTestSendMessagePipeClient");
+
+  ListenerThatExpectsOK listener;
+  CreateChannel(&listener);
+  ASSERT_TRUE(ConnectChannel());
+  ASSERT_TRUE(StartClient());
+
+  TestingMessagePipe pipe;
+  HandleSendingHelper::WritePipeThenSend(channel(), &pipe);
+
+  base::MessageLoop::current()->Run();
+  this->channel()->Close();
+
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
+}
+
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoTestSendMessagePipeClient) {
+  ListenerThatExpectsMessagePipe listener;
+  ChannelClient client(&listener, "IPCChannelMojoTestSendMessagePipeClient");
+  client.Connect();
+  listener.set_sender(client.channel());
+
+  base::MessageLoop::current()->Run();
+
+  client.Close();
+
+  return 0;
+}
+
+void ReadOK(mojo::MessagePipeHandle pipe) {
+  std::string should_be_ok("xx");
+  uint32_t num_bytes = static_cast<uint32_t>(should_be_ok.size());
+  CHECK_EQ(MOJO_RESULT_OK,
+           mojo::ReadMessageRaw(pipe, &should_be_ok[0], &num_bytes, nullptr,
+                                nullptr, 0));
+  EXPECT_EQ(should_be_ok, std::string("OK"));
+}
+
+void WriteOK(mojo::MessagePipeHandle pipe) {
+  std::string ok("OK");
+  CHECK_EQ(MOJO_RESULT_OK,
+           mojo::WriteMessageRaw(pipe, &ok[0], static_cast<uint32_t>(ok.size()),
+                                 nullptr, 0, 0));
+}
+
+class ListenerThatExpectsMessagePipeUsingParamTrait : public IPC::Listener {
+ public:
+  explicit ListenerThatExpectsMessagePipeUsingParamTrait(bool receiving_valid)
+      : sender_(NULL), receiving_valid_(receiving_valid) {}
+
+  ~ListenerThatExpectsMessagePipeUsingParamTrait() override {}
+
+  bool OnMessageReceived(const IPC::Message& message) override {
+    PickleIterator iter(message);
+    mojo::MessagePipeHandle handle;
+    EXPECT_TRUE(IPC::ParamTraits<mojo::MessagePipeHandle>::Read(&message, &iter,
+                                                                &handle));
+    EXPECT_EQ(handle.is_valid(), receiving_valid_);
+    if (receiving_valid_) {
+      ReadOK(handle);
+      MojoClose(handle.value());
+    }
+
+    base::MessageLoop::current()->Quit();
+    ListenerThatExpectsOK::SendOK(sender_);
+    return true;
+  }
+
+  void OnChannelError() override { NOTREACHED(); }
+  void set_sender(IPC::Sender* sender) { sender_ = sender; }
+
+ private:
+  IPC::Sender* sender_;
+  bool receiving_valid_;
+};
+
+void ParamTraitMessagePipeClient(bool receiving_valid_handle,
+                                  const char* channel_name) {
+  ListenerThatExpectsMessagePipeUsingParamTrait listener(
+      receiving_valid_handle);
+  ChannelClient client(&listener, channel_name);
+  client.Connect();
+  listener.set_sender(client.channel());
+
+  base::MessageLoop::current()->Run();
+
+  client.Close();
+}
+
+TEST_F(IPCChannelMojoTest, ParamTraitValidMessagePipe) {
+  InitWithMojo("ParamTraitValidMessagePipeClient");
+
+  ListenerThatExpectsOK listener;
+  CreateChannel(&listener);
+  ASSERT_TRUE(ConnectChannel());
+  ASSERT_TRUE(StartClient());
+
+  TestingMessagePipe pipe;
+
+  scoped_ptr<IPC::Message> message(new IPC::Message());
+  IPC::ParamTraits<mojo::MessagePipeHandle>::Write(message.get(),
+                                                   pipe.peer.release());
+  WriteOK(pipe.self.get());
+
+  this->channel()->Send(message.release());
+  base::MessageLoop::current()->Run();
+  this->channel()->Close();
+
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
+}
+
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(ParamTraitValidMessagePipeClient) {
+  ParamTraitMessagePipeClient(true, "ParamTraitValidMessagePipeClient");
+  return 0;
+}
+
+TEST_F(IPCChannelMojoTest, ParamTraitInvalidMessagePipe) {
+  InitWithMojo("ParamTraitInvalidMessagePipeClient");
+
+  ListenerThatExpectsOK listener;
+  CreateChannel(&listener);
+  ASSERT_TRUE(ConnectChannel());
+  ASSERT_TRUE(StartClient());
+
+  mojo::MessagePipeHandle invalid_handle;
+  scoped_ptr<IPC::Message> message(new IPC::Message());
+  IPC::ParamTraits<mojo::MessagePipeHandle>::Write(message.get(),
+                                                   invalid_handle);
+
+  this->channel()->Send(message.release());
+  base::MessageLoop::current()->Run();
+  this->channel()->Close();
+
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
+}
+
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(ParamTraitInvalidMessagePipeClient) {
+  ParamTraitMessagePipeClient(false, "ParamTraitInvalidMessagePipeClient");
+  return 0;
+}
+
+#if defined(OS_WIN)
+class IPCChannelMojoDeadHandleTest : public IPCChannelMojoTestBase {
+ protected:
+  scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
+      const IPC::ChannelHandle& handle,
+      base::SequencedTaskRunner* runner) override {
+    host_.reset(new IPC::ChannelMojoHost(task_runner()));
+    return IPC::ChannelMojo::CreateServerFactory(host_->channel_delegate(),
+                                                 task_runner(), handle);
+  }
+
+  bool DidStartClient() override {
     IPCTestBase::DidStartClient();
-    base::ProcessHandle client = client_process();
+    const base::ProcessHandle client = client_process().Handle();
     // Forces GetFileHandleForProcess() fail. It happens occasionally
     // in production, so we should exercise it somehow.
-    ::CloseHandle(client);
+    // TODO(morrita): figure out how to safely test this. See crbug.com/464109.
+    // ::CloseHandle(client);
     host_->OnClientLaunched(client);
     return true;
   }
@@ -284,7 +579,7 @@ class IPCChannelMojoDeadHandleTest : public IPCTestBase {
 
 TEST_F(IPCChannelMojoDeadHandleTest, InvalidClientHandle) {
   // Any client type is fine as it is going to be killed anyway.
-  Init("IPCChannelMojoTestDoNothingClient");
+  InitWithMojo("IPCChannelMojoTestDoNothingClient");
 
   // Set up IPC channel and start client.
   ListenerExpectingErrors listener;
@@ -296,9 +591,11 @@ TEST_F(IPCChannelMojoDeadHandleTest, InvalidClientHandle) {
 
   this->channel()->Close();
 
-  // WaitForClientShutdown() fails as client_hanadle() is already
-  // closed.
-  EXPECT_FALSE(WaitForClientShutdown());
+  // TODO(morrita): We need CloseHandle() call in DidStartClient(),
+  // which has been disabled since crrev.com/843113003, to
+  // make this fail. See crbug.com/464109.
+  // EXPECT_FALSE(WaitForClientShutdown());
+  WaitForClientShutdown();
   EXPECT_TRUE(listener.has_error());
 
   DestroyChannel();
@@ -326,13 +623,7 @@ class ListenerThatExpectsFile : public IPC::Listener {
 
   bool OnMessageReceived(const IPC::Message& message) override {
     PickleIterator iter(message);
-
-    base::ScopedFD fd;
-    EXPECT_TRUE(message.ReadFile(&iter, &fd));
-    base::File file(fd.release());
-    std::string content(GetSendingFileContent().size(), ' ');
-    file.Read(0, &content[0], content.size());
-    EXPECT_EQ(content, GetSendingFileContent());
+    HandleSendingHelper::ReadReceivedFile(message, &iter);
     base::MessageLoop::current()->Quit();
     ListenerThatExpectsOK::SendOK(sender_);
     return true;
@@ -340,27 +631,6 @@ class ListenerThatExpectsFile : public IPC::Listener {
 
   void OnChannelError() override {
     NOTREACHED();
-  }
-
-  static std::string GetSendingFileContent() {
-    return "Hello";
-  }
-
-  static base::FilePath GetSendingFilePath() {
-    base::FilePath path;
-    bool ok = PathService::Get(base::DIR_CACHE, &path);
-    EXPECT_TRUE(ok);
-    return path.Append("ListenerThatExpectsFile.txt");
-  }
-
-  static void WriteAndSendFile(IPC::Sender* sender, base::File& file) {
-    std::string content = GetSendingFileContent();
-    file.WriteAtCurrentPos(content.data(), content.size());
-    file.Flush();
-    IPC::Message* message = new IPC::Message(
-        0, 2, IPC::Message::PRIORITY_NORMAL);
-    message->WriteFile(base::ScopedFD(file.TakePlatformFile()));
-    ASSERT_TRUE(sender->Send(message));
   }
 
   void set_sender(IPC::Sender* sender) { sender_ = sender; }
@@ -371,17 +641,17 @@ class ListenerThatExpectsFile : public IPC::Listener {
 
 
 TEST_F(IPCChannelMojoTest, SendPlatformHandle) {
-  Init("IPCChannelMojoTestSendPlatformHandleClient");
+  InitWithMojo("IPCChannelMojoTestSendPlatformHandleClient");
 
   ListenerThatExpectsOK listener;
   CreateChannel(&listener);
   ASSERT_TRUE(ConnectChannel());
   ASSERT_TRUE(StartClient());
 
-  base::File file(ListenerThatExpectsFile::GetSendingFilePath(),
+  base::File file(HandleSendingHelper::GetSendingFilePath(),
                   base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE |
-                  base::File::FLAG_READ);
-  ListenerThatExpectsFile::WriteAndSendFile(channel(), file);
+                      base::File::FLAG_READ);
+  HandleSendingHelper::WriteFileThenSend(channel(), file);
   base::MessageLoop::current()->Run();
 
   this->channel()->Close();
@@ -399,8 +669,118 @@ MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoTestSendPlatformHandleClient) {
 
   base::MessageLoop::current()->Run();
 
+  client.Close();
+
   return 0;
 }
+
+class ListenerThatExpectsFileAndPipe : public IPC::Listener {
+ public:
+  ListenerThatExpectsFileAndPipe() : sender_(NULL) {}
+
+  ~ListenerThatExpectsFileAndPipe() override {}
+
+  bool OnMessageReceived(const IPC::Message& message) override {
+    PickleIterator iter(message);
+    HandleSendingHelper::ReadReceivedFile(message, &iter);
+    HandleSendingHelper::ReadReceivedPipe(message, &iter);
+    base::MessageLoop::current()->Quit();
+    ListenerThatExpectsOK::SendOK(sender_);
+    return true;
+  }
+
+  void OnChannelError() override { NOTREACHED(); }
+
+  void set_sender(IPC::Sender* sender) { sender_ = sender; }
+
+ private:
+  IPC::Sender* sender_;
+};
+
+TEST_F(IPCChannelMojoTest, SendPlatformHandleAndPipe) {
+  InitWithMojo("IPCChannelMojoTestSendPlatformHandleAndPipeClient");
+
+  ListenerThatExpectsOK listener;
+  CreateChannel(&listener);
+  ASSERT_TRUE(ConnectChannel());
+  ASSERT_TRUE(StartClient());
+
+  base::File file(HandleSendingHelper::GetSendingFilePath(),
+                  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE |
+                      base::File::FLAG_READ);
+  TestingMessagePipe pipe;
+  HandleSendingHelper::WriteFileAndPipeThenSend(channel(), file, &pipe);
+
+  base::MessageLoop::current()->Run();
+  this->channel()->Close();
+
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
+}
+
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(
+    IPCChannelMojoTestSendPlatformHandleAndPipeClient) {
+  ListenerThatExpectsFileAndPipe listener;
+  ChannelClient client(&listener,
+                       "IPCChannelMojoTestSendPlatformHandleAndPipeClient");
+  client.Connect();
+  listener.set_sender(client.channel());
+
+  base::MessageLoop::current()->Run();
+
+  client.Close();
+
+  return 0;
+}
+
 #endif
+
+#if defined(OS_LINUX)
+
+const base::ProcessId kMagicChildId = 54321;
+
+class ListenerThatVerifiesPeerPid : public IPC::Listener {
+ public:
+  void OnChannelConnected(int32 peer_pid) override {
+    EXPECT_EQ(peer_pid, kMagicChildId);
+    base::MessageLoop::current()->Quit();
+  }
+
+  bool OnMessageReceived(const IPC::Message& message) override {
+    NOTREACHED();
+    return true;
+  }
+};
+
+TEST_F(IPCChannelMojoTest, VerifyGlobalPid) {
+  InitWithMojo("IPCChannelMojoTestVerifyGlobalPidClient");
+
+  ListenerThatVerifiesPeerPid listener;
+  CreateChannel(&listener);
+  ASSERT_TRUE(ConnectChannel());
+  ASSERT_TRUE(StartClient());
+
+  base::MessageLoop::current()->Run();
+  channel()->Close();
+
+  EXPECT_TRUE(WaitForClientShutdown());
+  DestroyChannel();
+}
+
+MULTIPROCESS_IPC_TEST_CLIENT_MAIN(IPCChannelMojoTestVerifyGlobalPidClient) {
+  IPC::Channel::SetGlobalPid(kMagicChildId);
+  ListenerThatQuits listener;
+  ChannelClient client(&listener,
+                       "IPCChannelMojoTestVerifyGlobalPidClient");
+  client.Connect();
+
+  base::MessageLoop::current()->Run();
+
+  client.Close();
+
+  return 0;
+}
+
+#endif // OS_LINUX
 
 }  // namespace

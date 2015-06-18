@@ -10,10 +10,9 @@
 #include "base/bind.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/threading/worker_pool.h"
 #include "content/browser/devtools/protocol/color_picker.h"
-#include "content/browser/devtools/protocol/usage_and_quota_query.h"
-#include "content/browser/geolocation/geolocation_service_context.h"
-#include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
@@ -21,17 +20,17 @@
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/referrer.h"
-#include "content/public/common/url_constants.h"
-#include "storage/browser/quota/quota_manager.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/snapshot/snapshot.h"
 #include "url/gurl.h"
 
@@ -44,25 +43,44 @@ namespace {
 static const char kPng[] = "png";
 static const char kJpeg[] = "jpeg";
 static int kDefaultScreenshotQuality = 80;
-static int kFrameRateThresholdMs = 100;
+static int kFrameRetryDelayMs = 100;
 static int kCaptureRetryLimit = 2;
+static int kMaxScreencastFramesInFlight = 2;
 
-void QueryUsageAndQuotaCompletedOnIOThread(
-  const UsageAndQuotaQuery::Callback& callback,
-  scoped_ptr<QueryUsageAndQuotaResponse> response) {
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(callback, base::Passed(&response)));
-}
+std::string EncodeScreencastFrame(const SkBitmap& bitmap,
+                                  const std::string& format,
+                                  int quality) {
+  std::vector<unsigned char> data;
+  SkAutoLockPixels lock_image(bitmap);
+  bool encoded;
+  if (format == kPng) {
+    encoded = gfx::PNGCodec::Encode(
+        reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
+        gfx::PNGCodec::FORMAT_SkBitmap,
+        gfx::Size(bitmap.width(), bitmap.height()),
+        bitmap.width() * bitmap.bytesPerPixel(),
+        false, std::vector<gfx::PNGCodec::Comment>(), &data);
+  } else if (format == kJpeg) {
+    encoded = gfx::JPEGCodec::Encode(
+        reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
+        gfx::JPEGCodec::FORMAT_SkBitmap,
+        bitmap.width(),
+        bitmap.height(),
+        bitmap.width() * bitmap.bytesPerPixel(),
+        quality, &data);
+  } else {
+    encoded = false;
+  }
 
-void QueryUsageAndQuotaOnIOThread(
-    scoped_refptr<storage::QuotaManager> quota_manager,
-    const GURL& security_origin,
-    const UsageAndQuotaQuery::Callback& callback) {
-  new UsageAndQuotaQuery(
-      quota_manager,
-      security_origin,
-      base::Bind(&QueryUsageAndQuotaCompletedOnIOThread,
-                 callback));
+  if (!encoded)
+    return std::string();
+
+  std::string base_64_data;
+  base::Base64Encode(
+      base::StringPiece(reinterpret_cast<char*>(&data[0]), data.size()),
+      &base_64_data);
+
+  return base_64_data;
 }
 
 }  // namespace
@@ -71,29 +89,48 @@ typedef DevToolsProtocolClient::Response Response;
 
 PageHandler::PageHandler()
     : enabled_(false),
-      touch_emulation_enabled_(false),
       screencast_enabled_(false),
       screencast_quality_(kDefaultScreenshotQuality),
       screencast_max_width_(-1),
       screencast_max_height_(-1),
       capture_retry_count_(0),
-      has_last_compositor_frame_metadata_(false),
+      has_compositor_frame_metadata_(false),
+      screencast_frame_sent_(0),
+      screencast_frame_acked_(0),
+      processing_screencast_frame_(false),
       color_picker_(new ColorPicker(base::Bind(
           &PageHandler::OnColorPicked, base::Unretained(this)))),
       host_(nullptr),
+      screencast_listener_(nullptr),
       weak_factory_(this) {
 }
 
 PageHandler::~PageHandler() {
 }
 
-void PageHandler::SetRenderViewHost(RenderViewHostImpl* host) {
+void PageHandler::SetRenderFrameHost(RenderFrameHostImpl* host) {
   if (host_ == host)
     return;
 
-  color_picker_->SetRenderViewHost(host);
+  RenderWidgetHostImpl* widget_host =
+      host_ ? host_->GetRenderWidgetHost() : nullptr;
+  if (widget_host) {
+    registrar_.Remove(
+        this,
+        content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
+        content::Source<RenderWidgetHost>(widget_host));
+  }
+
   host_ = host;
-  UpdateTouchEventEmulationState();
+  widget_host = host_ ? host_->GetRenderWidgetHost() : nullptr;
+  color_picker_->SetRenderWidgetHost(widget_host);
+
+  if (widget_host) {
+    registrar_.Add(
+        this,
+        content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
+        content::Source<RenderWidgetHost>(widget_host));
+  }
 }
 
 void PageHandler::SetClient(scoped_ptr<Client> client) {
@@ -106,32 +143,40 @@ void PageHandler::Detached() {
 
 void PageHandler::OnSwapCompositorFrame(
     const cc::CompositorFrameMetadata& frame_metadata) {
-  last_compositor_frame_metadata_ = frame_metadata;
-  has_last_compositor_frame_metadata_ = true;
+  last_compositor_frame_metadata_ = has_compositor_frame_metadata_ ?
+      next_compositor_frame_metadata_ : frame_metadata;
+  next_compositor_frame_metadata_ = frame_metadata;
+  has_compositor_frame_metadata_ = true;
 
   if (screencast_enabled_)
     InnerSwapCompositorFrame();
   color_picker_->OnSwapCompositorFrame();
 }
 
-void PageHandler::OnVisibilityChanged(bool visible) {
+void PageHandler::Observe(int type,
+                          const NotificationSource& source,
+                          const NotificationDetails& details) {
   if (!screencast_enabled_)
     return;
+  DCHECK(type == content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED);
+  bool visible = *Details<bool>(details).ptr();
   NotifyScreencastVisibility(visible);
 }
 
 void PageHandler::DidAttachInterstitialPage() {
   if (!enabled_)
     return;
-  InterstitialShownParams params;
-  client_->InterstitialShown(params);
+  client_->InterstitialShown(InterstitialShownParams::Create());
 }
 
 void PageHandler::DidDetachInterstitialPage() {
   if (!enabled_)
     return;
-  InterstitialHiddenParams params;
-  client_->InterstitialHidden(params);
+  client_->InterstitialHidden(InterstitialHiddenParams::Create());
+}
+
+void PageHandler::SetScreencastListener(ScreencastListener* listener) {
+  screencast_listener_ = listener;
 }
 
 Response PageHandler::Enable() {
@@ -141,22 +186,19 @@ Response PageHandler::Enable() {
 
 Response PageHandler::Disable() {
   enabled_ = false;
-  touch_emulation_enabled_ = false;
   screencast_enabled_ = false;
-  UpdateTouchEventEmulationState();
   color_picker_->SetEnabled(false);
+  if (screencast_listener_)
+    screencast_listener_->ScreencastEnabledChanged();
   return Response::FallThrough();
 }
 
 Response PageHandler::Reload(const bool* ignoreCache,
                              const std::string* script_to_evaluate_on_load,
                              const std::string* script_preprocessor) {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(host_);
+  WebContentsImpl* web_contents = GetWebContents();
   if (!web_contents)
-    return Response::InternalError("No WebContents to reload");
+    return Response::InternalError("Could not connect to view");
 
   // Handle in browser only if it is crashed.
   if (!web_contents->IsCrashed())
@@ -172,48 +214,37 @@ Response PageHandler::Navigate(const std::string& url,
   if (!gurl.is_valid())
     return Response::InternalError("Cannot navigate to invalid URL");
 
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(host_);
+  WebContentsImpl* web_contents = GetWebContents();
   if (!web_contents)
-    return Response::InternalError("No WebContents to navigate");
+    return Response::InternalError("Could not connect to view");
 
   web_contents->GetController()
       .LoadURL(gurl, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
   return Response::FallThrough();
 }
 
-Response PageHandler::GetNavigationHistory(
-    int* current_index,
-    std::vector<NavigationEntry>* entries) {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(host_);
+Response PageHandler::GetNavigationHistory(int* current_index,
+                                           NavigationEntries* entries) {
+  WebContentsImpl* web_contents = GetWebContents();
   if (!web_contents)
-    return Response::InternalError("No WebContents to navigate");
+    return Response::InternalError("Could not connect to view");
 
   NavigationController& controller = web_contents->GetController();
   *current_index = controller.GetCurrentEntryIndex();
   for (int i = 0; i != controller.GetEntryCount(); ++i) {
-    NavigationEntry entry;
-    entry.set_id(controller.GetEntryAtIndex(i)->GetUniqueID());
-    entry.set_url(controller.GetEntryAtIndex(i)->GetURL().spec());
-    entry.set_title(
-        base::UTF16ToUTF8(controller.GetEntryAtIndex(i)->GetTitle()));
-    entries->push_back(entry);
+    entries->push_back(NavigationEntry::Create()
+        ->set_id(controller.GetEntryAtIndex(i)->GetUniqueID())
+        ->set_url(controller.GetEntryAtIndex(i)->GetURL().spec())
+        ->set_title(
+            base::UTF16ToUTF8(controller.GetEntryAtIndex(i)->GetTitle())));
   }
   return Response::OK();
 }
 
 Response PageHandler::NavigateToHistoryEntry(int entry_id) {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContents* web_contents = WebContents::FromRenderViewHost(host_);
+  WebContentsImpl* web_contents = GetWebContents();
   if (!web_contents)
-    return Response::InternalError("No WebContents to navigate");
+    return Response::InternalError("Could not connect to view");
 
   NavigationController& controller = web_contents->GetController();
   for (int i = 0; i != controller.GetEntryCount(); ++i) {
@@ -226,74 +257,14 @@ Response PageHandler::NavigateToHistoryEntry(int entry_id) {
   return Response::InvalidParams("No entry with passed id");
 }
 
-Response PageHandler::SetGeolocationOverride(double* latitude,
-                                             double* longitude,
-                                             double* accuracy) {
-  if (!host_)
+Response PageHandler::CaptureScreenshot(DevToolsCommandId command_id) {
+  if (!host_ || !host_->GetRenderWidgetHost())
     return Response::InternalError("Could not connect to view");
 
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(host_));
-  if (!web_contents)
-    return Response::InternalError("No WebContents to override");
-
-  GeolocationServiceContext* geolocation_context =
-      web_contents->GetGeolocationServiceContext();
-  scoped_ptr<Geoposition> geoposition(new Geoposition());
-  if (latitude && longitude && accuracy) {
-    geoposition->latitude = *latitude;
-    geoposition->longitude = *longitude;
-    geoposition->accuracy = *accuracy;
-    geoposition->timestamp = base::Time::Now();
-    if (!geoposition->Validate()) {
-      return Response::InternalError("Invalid geolocation");
-    }
-  } else {
-    geoposition->error_code = Geoposition::ERROR_CODE_POSITION_UNAVAILABLE;
-  }
-  geolocation_context->SetOverride(geoposition.Pass());
-  return Response::OK();
-}
-
-Response PageHandler::ClearGeolocationOverride() {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(host_));
-  if (!web_contents)
-    return Response::InternalError("No WebContents to override");
-
-  GeolocationServiceContext* geolocation_context =
-      web_contents->GetGeolocationServiceContext();
-  geolocation_context->ClearOverride();
-  return Response::OK();
-}
-
-Response PageHandler::SetTouchEmulationEnabled(bool enabled) {
-  touch_emulation_enabled_ = enabled;
-  UpdateTouchEventEmulationState();
-  return Response::FallThrough();
-}
-
-Response PageHandler::SetTouchEmulationEnabled(
-    bool enabled, const std::string* configuration) {
-  touch_emulation_enabled_ = enabled;
-  touch_emulation_configuration_ =
-      configuration ? *configuration : std::string();
-  UpdateTouchEventEmulationState();
-  return Response::FallThrough();
-}
-
-scoped_refptr<DevToolsProtocol::Response> PageHandler::CaptureScreenshot(
-    scoped_refptr<DevToolsProtocol::Command> command) {
-  if (!host_ || !host_->GetView())
-    return command->InternalErrorResponse("Could not connect to view");
-
-  host_->GetSnapshotFromBrowser(
+  host_->GetRenderWidgetHost()->GetSnapshotFromBrowser(
       base::Bind(&PageHandler::ScreenshotCaptured,
-          weak_factory_.GetWeakPtr(), command));
-  return command->AsyncResponsePromise();
+          weak_factory_.GetWeakPtr(), command_id));
+  return Response::OK();
 }
 
 Response PageHandler::CanScreencast(bool* result) {
@@ -305,28 +276,13 @@ Response PageHandler::CanScreencast(bool* result) {
   return Response::OK();
 }
 
-Response PageHandler::CanEmulate(bool* result) {
-#if defined(OS_ANDROID)
-  *result = false;
-#else
-  if (host_) {
-    if (WebContents* web_contents = WebContents::FromRenderViewHost(host_)) {
-      *result = !web_contents->GetVisibleURL().SchemeIs(kChromeDevToolsScheme);
-    } else {
-      *result = true;
-    }
-  } else {
-    *result = true;
-  }
-#endif  // defined(OS_ANDROID)
-  return Response::OK();
-}
-
 Response PageHandler::StartScreencast(const std::string* format,
                                       const int* quality,
                                       const int* max_width,
                                       const int* max_height) {
-  if (!host_)
+  RenderWidgetHostImpl* widget_host =
+      host_ ? host_->GetRenderWidgetHost() : nullptr;
+  if (!widget_host)
     return Response::InternalError("Could not connect to view");
 
   screencast_enabled_ = true;
@@ -337,23 +293,31 @@ Response PageHandler::StartScreencast(const std::string* format,
   screencast_max_width_ = max_width ? *max_width : -1;
   screencast_max_height_ = max_height ? *max_height : -1;
 
-  UpdateTouchEventEmulationState();
-  bool visible = !host_->is_hidden();
+  bool visible = !widget_host->is_hidden();
   NotifyScreencastVisibility(visible);
   if (visible) {
-    if (has_last_compositor_frame_metadata_)
+    if (has_compositor_frame_metadata_) {
       InnerSwapCompositorFrame();
-    else
-      host_->Send(new ViewMsg_ForceRedraw(host_->GetRoutingID(), 0));
+    } else {
+      widget_host->Send(
+          new ViewMsg_ForceRedraw(widget_host->GetRoutingID(), 0));
+    }
   }
+  if (screencast_listener_)
+    screencast_listener_->ScreencastEnabledChanged();
   return Response::FallThrough();
 }
 
 Response PageHandler::StopScreencast() {
-  last_frame_time_ = base::TimeTicks();
   screencast_enabled_ = false;
-  UpdateTouchEventEmulationState();
+  if (screencast_listener_)
+    screencast_listener_->ScreencastEnabledChanged();
   return Response::FallThrough();
+}
+
+Response PageHandler::ScreencastFrameAck(int frame_number) {
+  screencast_frame_acked_ = frame_number;
+  return Response::OK();
 }
 
 Response PageHandler::HandleJavaScriptDialog(bool accept,
@@ -362,15 +326,12 @@ Response PageHandler::HandleJavaScriptDialog(bool accept,
   if (prompt_text)
     prompt_override = base::UTF8ToUTF16(*prompt_text);
 
-  if (!host_)
+  WebContentsImpl* web_contents = GetWebContents();
+  if (!web_contents)
     return Response::InternalError("Could not connect to view");
 
-  WebContents* web_contents = WebContents::FromRenderViewHost(host_);
-  if (!web_contents)
-    return Response::InternalError("No JavaScript dialog to handle");
-
   JavaScriptDialogManager* manager =
-      web_contents->GetDelegate()->GetJavaScriptDialogManager();
+      web_contents->GetDelegate()->GetJavaScriptDialogManager(web_contents);
   if (manager && manager->HandleJavaScriptDialog(
           web_contents, accept, prompt_text ? &prompt_override : nullptr)) {
     return Response::OK();
@@ -379,26 +340,9 @@ Response PageHandler::HandleJavaScriptDialog(bool accept,
   return Response::InternalError("Could not handle JavaScript dialog");
 }
 
-scoped_refptr<DevToolsProtocol::Response> PageHandler::QueryUsageAndQuota(
-    const std::string& security_origin,
-    scoped_refptr<DevToolsProtocol::Command> command) {
-  if (!host_)
-    return command->InternalErrorResponse("Could not connect to view");
-
-  scoped_refptr<storage::QuotaManager> quota_manager =
-      host_->GetProcess()->GetStoragePartition()->GetQuotaManager();
-
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&QueryUsageAndQuotaOnIOThread,
-                 quota_manager,
-                 GURL(security_origin),
-                 base::Bind(&PageHandler::QueryUsageAndQuotaCompleted,
-                            weak_factory_.GetWeakPtr(),
-                            command)));
-
-  return command->AsyncResponsePromise();
+Response PageHandler::QueryUsageAndQuota(DevToolsCommandId command_id,
+                                         const std::string& security_origin) {
+  return Response::OK();
 }
 
 Response PageHandler::SetColorPickerEnabled(bool enabled) {
@@ -409,36 +353,27 @@ Response PageHandler::SetColorPickerEnabled(bool enabled) {
   return Response::OK();
 }
 
-void PageHandler::UpdateTouchEventEmulationState() {
-  if (!host_)
-    return;
-  bool enabled = touch_emulation_enabled_ || screencast_enabled_;
-  // TODO(dgozman): pass |touch_emulation_configuration_| once supported.
-  host_->SetTouchEventEmulationEnabled(enabled);
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(host_));
-  if (web_contents)
-    web_contents->SetForceDisableOverscrollContent(enabled);
+WebContentsImpl* PageHandler::GetWebContents() {
+  return host_ ?
+      static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(host_)) :
+      nullptr;
 }
 
 void PageHandler::NotifyScreencastVisibility(bool visible) {
   if (visible)
     capture_retry_count_ = kCaptureRetryLimit;
-  ScreencastVisibilityChangedParams params;
-  params.set_visible(visible);
-  client_->ScreencastVisibilityChanged(params);
+  client_->ScreencastVisibilityChanged(
+      ScreencastVisibilityChangedParams::Create()->set_visible(visible));
 }
 
 void PageHandler::InnerSwapCompositorFrame() {
-  if ((base::TimeTicks::Now() - last_frame_time_).InMilliseconds() <
-          kFrameRateThresholdMs) {
+  if (screencast_frame_sent_ - screencast_frame_acked_ >
+      kMaxScreencastFramesInFlight || processing_screencast_frame_) {
     return;
   }
 
   if (!host_ || !host_->GetView())
     return;
-
-  last_frame_time_ = base::TimeTicks::Now();
 
   RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
       host_->GetView());
@@ -471,115 +406,81 @@ void PageHandler::InnerSwapCompositorFrame() {
       gfx::ScaleSize(viewport_size_dip, scale)));
 
   if (snapshot_size_dip.width() > 0 && snapshot_size_dip.height() > 0) {
+    processing_screencast_frame_ = true;
     gfx::Rect viewport_bounds_dip(gfx::ToRoundedSize(viewport_size_dip));
     view->CopyFromCompositingSurface(
         viewport_bounds_dip,
         snapshot_size_dip,
         base::Bind(&PageHandler::ScreencastFrameCaptured,
                    weak_factory_.GetWeakPtr(),
-                   screencast_format_,
-                   screencast_quality_,
                    last_compositor_frame_metadata_),
         kN32_SkColorType);
   }
 }
 
 void PageHandler::ScreencastFrameCaptured(
-    const std::string& format,
-    int quality,
     const cc::CompositorFrameMetadata& metadata,
-    bool success,
-    const SkBitmap& bitmap) {
-  if (!success) {
+    const SkBitmap& bitmap,
+    ReadbackResponse response) {
+  if (response != READBACK_SUCCESS) {
+    processing_screencast_frame_ = false;
     if (capture_retry_count_) {
       --capture_retry_count_;
       base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&PageHandler::InnerSwapCompositorFrame,
                      weak_factory_.GetWeakPtr()),
-          base::TimeDelta::FromMilliseconds(kFrameRateThresholdMs));
+          base::TimeDelta::FromMilliseconds(kFrameRetryDelayMs));
     }
     return;
   }
-
-  std::vector<unsigned char> data;
-  SkAutoLockPixels lock_image(bitmap);
-  bool encoded;
-  if (format == kPng) {
-    encoded = gfx::PNGCodec::Encode(
-        reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
-        gfx::PNGCodec::FORMAT_SkBitmap,
-        gfx::Size(bitmap.width(), bitmap.height()),
-        bitmap.width() * bitmap.bytesPerPixel(),
-        false, std::vector<gfx::PNGCodec::Comment>(), &data);
-  } else if (format == kJpeg) {
-    encoded = gfx::JPEGCodec::Encode(
-        reinterpret_cast<unsigned char*>(bitmap.getAddr32(0, 0)),
-        gfx::JPEGCodec::FORMAT_SkBitmap,
-        bitmap.width(),
-        bitmap.height(),
-        bitmap.width() * bitmap.bytesPerPixel(),
-        quality, &data);
-  } else {
-    encoded = false;
-  }
-
-  if (!encoded)
-    return;
-
-  std::string base_64_data;
-  base::Base64Encode(
-      base::StringPiece(reinterpret_cast<char*>(&data[0]), data.size()),
-      &base_64_data);
-
-  ScreencastFrameMetadata param_metadata;
-  // Consider metadata empty in case it has no device scale factor.
-  if (metadata.device_scale_factor != 0 && host_) {
-    RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-        host_->GetView());
-    if (!view)
-      return;
-
-    gfx::SizeF viewport_size_dip = gfx::ScaleSize(
-        metadata.scrollable_viewport_size, metadata.page_scale_factor);
-    gfx::SizeF screen_size_dip = gfx::ScaleSize(
-        view->GetPhysicalBackingSize(), 1 / metadata.device_scale_factor);
-
-    param_metadata.set_device_scale_factor(metadata.device_scale_factor);
-    param_metadata.set_page_scale_factor(metadata.page_scale_factor);
-    param_metadata.set_page_scale_factor_min(metadata.min_page_scale_factor);
-    param_metadata.set_page_scale_factor_max(metadata.max_page_scale_factor);
-    param_metadata.set_offset_top(
-        metadata.location_bar_content_translation.y());
-    param_metadata.set_offset_bottom(screen_size_dip.height() -
-        metadata.location_bar_content_translation.y() -
-        viewport_size_dip.height());
-    param_metadata.set_device_width(screen_size_dip.width());
-    param_metadata.set_device_height(screen_size_dip.height());
-    param_metadata.set_scroll_offset_x(metadata.root_scroll_offset.x());
-    param_metadata.set_scroll_offset_y(metadata.root_scroll_offset.y());
-
-    devtools::dom::Rect viewport;
-    viewport.set_x(metadata.root_scroll_offset.x());
-    viewport.set_y(metadata.root_scroll_offset.y());
-    viewport.set_width(metadata.scrollable_viewport_size.width());
-    viewport.set_height(metadata.scrollable_viewport_size.height());
-    param_metadata.set_viewport(viewport);
-  }
-
-  ScreencastFrameParams params;
-  params.set_data(base_64_data);
-  params.set_metadata(param_metadata);
-  client_->ScreencastFrame(params);
+  base::PostTaskAndReplyWithResult(
+      base::WorkerPool::GetTaskRunner(true).get(),
+      FROM_HERE,
+      base::Bind(&EncodeScreencastFrame,
+                 bitmap, screencast_format_, screencast_quality_),
+      base::Bind(&PageHandler::ScreencastFrameEncoded,
+                 weak_factory_.GetWeakPtr(), metadata, base::Time::Now()));
 }
 
-void PageHandler::ScreenshotCaptured(
-    scoped_refptr<DevToolsProtocol::Command> command,
-    const unsigned char* png_data,
-    size_t png_size) {
+void PageHandler::ScreencastFrameEncoded(
+    const cc::CompositorFrameMetadata& metadata,
+    const base::Time& timestamp,
+    const std::string& data) {
+  processing_screencast_frame_ = false;
+
+  // Consider metadata empty in case it has no device scale factor.
+  if (metadata.device_scale_factor == 0 || !host_ || data.empty())
+    return;
+
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      host_->GetView());
+  if (!view)
+    return;
+
+  gfx::SizeF screen_size_dip = gfx::ScaleSize(
+      view->GetPhysicalBackingSize(), 1 / metadata.device_scale_factor);
+  scoped_refptr<ScreencastFrameMetadata> param_metadata =
+      ScreencastFrameMetadata::Create()
+          ->set_page_scale_factor(metadata.page_scale_factor)
+          ->set_offset_top(metadata.location_bar_content_translation.y())
+          ->set_device_width(screen_size_dip.width())
+          ->set_device_height(screen_size_dip.height())
+          ->set_scroll_offset_x(metadata.root_scroll_offset.x())
+          ->set_scroll_offset_y(metadata.root_scroll_offset.y())
+          ->set_timestamp(timestamp.ToDoubleT());
+  client_->ScreencastFrame(ScreencastFrameParams::Create()
+      ->set_data(data)
+      ->set_metadata(param_metadata)
+      ->set_frame_number(++screencast_frame_sent_));
+}
+
+void PageHandler::ScreenshotCaptured(DevToolsCommandId command_id,
+                                     const unsigned char* png_data,
+                                     size_t png_size) {
   if (!png_data || !png_size) {
-    client_->SendInternalErrorResponse(command,
-                                       "Unable to capture screenshot");
+    client_->SendError(command_id,
+                       Response::InternalError("Unable to capture screenshot"));
     return;
   }
 
@@ -588,26 +489,14 @@ void PageHandler::ScreenshotCaptured(
       base::StringPiece(reinterpret_cast<const char*>(png_data), png_size),
       &base_64_data);
 
-  CaptureScreenshotResponse response;
-  response.set_data(base_64_data);
-  client_->SendCaptureScreenshotResponse(command, response);
+  client_->SendCaptureScreenshotResponse(command_id,
+      CaptureScreenshotResponse::Create()->set_data(base_64_data));
 }
 
 void PageHandler::OnColorPicked(int r, int g, int b, int a) {
-  dom::RGBA color;
-  color.set_r(r);
-  color.set_g(g);
-  color.set_b(b);
-  color.set_a(a);
-  ColorPickedParams params;
-  params.set_color(color);
-  client_->ColorPicked(params);
-}
-
-void PageHandler::QueryUsageAndQuotaCompleted(
-    scoped_refptr<DevToolsProtocol::Command> command,
-    scoped_ptr<QueryUsageAndQuotaResponse> response_data) {
-  client_->SendQueryUsageAndQuotaResponse(command, *response_data);
+  scoped_refptr<dom::RGBA> color =
+      dom::RGBA::Create()->set_r(r)->set_g(g)->set_b(b)->set_a(a);
+  client_->ColorPicked(ColorPickedParams::Create()->set_color(color));
 }
 
 }  // namespace page

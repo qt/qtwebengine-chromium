@@ -43,23 +43,18 @@ class CONTENT_EXPORT WebRtcAudioCapturer
     : public base::RefCountedThreadSafe<WebRtcAudioCapturer>,
       NON_EXPORTED_BASE(public media::AudioCapturerSource::CaptureCallback) {
  public:
-  // Used to construct the audio capturer. |render_view_id| specifies the
-  // render view consuming audio for capture, |render_view_id| as -1 is used
-  // by the unittests to skip creating a source via
-  // AudioDeviceFactory::NewInputDevice(), and allow injecting their own source
-  // via SetCapturerSourceForTesting() at a later state.  |device_info|
-  // contains all the device information that the capturer is created for.
-  // |constraints| contains the settings for audio processing.
+  // Used to construct the audio capturer. |render_frame_id| specifies the
+  // RenderFrame consuming audio for capture; -1 is used for tests.
+  // |device_info| contains all the device information that the capturer is
+  // created for. |constraints| contains the settings for audio processing.
   // TODO(xians): Implement the interface for the audio source and move the
-  // |constraints| to ApplyConstraints().
-  // Called on the main render thread.
+  // |constraints| to ApplyConstraints(). Called on the main render thread.
   static scoped_refptr<WebRtcAudioCapturer> CreateCapturer(
-      int render_view_id,
+      int render_frame_id,
       const StreamDeviceInfo& device_info,
       const blink::WebMediaConstraints& constraints,
       WebRtcAudioDeviceImpl* audio_device,
       MediaStreamAudioSource* audio_source);
-
 
   // Add a audio track to the sinks of the capturer.
   // WebRtcAudioDeviceImpl calls this method on the main render thread but
@@ -105,14 +100,12 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   // call Stop()
   void Stop();
 
-  // Called by the WebAudioCapturerSource to get the audio processing params.
-  // This function is triggered by provideInput() on the WebAudio audio thread,
-  // TODO(xians): Remove after moving APM from WebRtc to Chrome.
-  void GetAudioProcessingParams(base::TimeDelta* delay, int* volume,
-                                bool* key_pressed);
+  // Returns the output format.
+  // Called on the main render thread.
+  media::AudioParameters GetOutputFormat() const;
 
-  // Used by the unittests to inject their own source to the capturer.
-  void SetCapturerSourceForTesting(
+  // Used by clients to inject their own source to the capturer.
+  void SetCapturerSource(
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::AudioParameters params);
 
@@ -124,7 +117,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   class TrackOwner;
   typedef TaggedList<TrackOwner> TrackList;
 
-  WebRtcAudioCapturer(int render_view_id,
+  WebRtcAudioCapturer(int render_frame_id,
                       const StreamDeviceInfo& device_info,
                       const blink::WebMediaConstraints& constraints,
                       WebRtcAudioDeviceImpl* audio_device,
@@ -139,17 +132,19 @@ class CONTENT_EXPORT WebRtcAudioCapturer
   void OnCaptureError() override;
 
   // Initializes the default audio capturing source using the provided render
-  // view id and device information. Return true if success, otherwise false.
+  // frame id and device information. Return true if success, otherwise false.
   bool Initialize();
 
-  // SetCapturerSource() is called if the client on the source side desires to
-  // provide their own captured audio data. Client is responsible for calling
-  // Start() on its own source to have the ball rolling.
+  // SetCapturerSourceInternal() is called if the client on the source side
+  // desires to provide their own captured audio data. Client is responsible
+  // for calling Start() on its own source to get the ball rolling.
   // Called on the main render thread.
-  void SetCapturerSource(
+  // buffer_size is optional. Set to 0 to let it be chosen automatically.
+  void SetCapturerSourceInternal(
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::ChannelLayout channel_layout,
-      float sample_rate);
+      int sample_rate,
+      int buffer_size);
 
   // Starts recording audio.
   // Triggered by AddSink() on the main render thread or a Libjingle working
@@ -184,7 +179,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
   bool running_;
 
-  int render_view_id_;
+  int render_frame_id_;
 
   // Cached information of the device used by the capturer.
   const StreamDeviceInfo device_info_;
@@ -195,13 +190,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
   // Flag which affects the buffer size used by the capturer.
   bool peer_connection_mode_;
-
-  // Cache value for the audio processing params.
-  base::TimeDelta audio_delay_;
-  bool key_pressed_;
-
-  // Flag to help deciding if the data needs audio processing.
-  bool need_audio_processing_;
 
   // Raw pointer to the WebRtcAudioDeviceImpl, which is valid for the lifetime
   // of RenderThread.

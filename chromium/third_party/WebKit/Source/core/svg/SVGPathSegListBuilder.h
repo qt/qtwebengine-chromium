@@ -26,7 +26,7 @@
 
 #include "core/svg/SVGPathConsumer.h"
 #include "core/svg/SVGPathSegList.h"
-#include "platform/geometry/FloatPoint.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -34,36 +34,18 @@ class SVGPathElement;
 
 class SVGPathSegListBuilder final : public SVGPathConsumer {
 public:
-    SVGPathSegListBuilder();
+    SVGPathSegListBuilder(SVGPathElement*, PassRefPtrWillBeRawPtr<SVGPathSegList>);
 
-    void setCurrentSVGPathElement(SVGPathElement* pathElement) { m_pathElement = pathElement; }
-    void setCurrentSVGPathSegList(PassRefPtr<SVGPathSegList> pathSegList) { m_pathSegList = pathSegList; }
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     virtual void incrementPathSegmentCount() override { }
     virtual bool continueConsuming() override { return true; }
-    virtual void cleanup() override
-    {
-        m_pathElement = 0;
-        m_pathSegList = nullptr;
-    }
 
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) override;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) override;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
-    virtual void closePath() override;
+    virtual void emitSegment(const PathSegmentData&) override;
 
-    // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode) override;
-    virtual void lineToVertical(float, PathCoordinateMode) override;
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) override;
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) override;
-
-    SVGPathElement* m_pathElement;
-    RefPtr<SVGPathSegList> m_pathSegList;
+    RawPtrWillBeMember<SVGPathElement> m_pathElement;
+    RefPtrWillBeMember<SVGPathSegList> m_pathSegList;
 };
 
 } // namespace blink

@@ -36,11 +36,8 @@ namespace blink {
 class AudioSourceNode : public AudioNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    AudioSourceNode(AudioContext* context, float sampleRate)
-        : AudioNode(context, sampleRate) { }
-protected:
-    virtual double tailTime() const override final { return 0; }
-    virtual double latencyTime() const override final { return 0; }
+    AudioSourceNode(AudioContext& context)
+        : AudioNode(context) { }
 };
 
 } // namespace blink

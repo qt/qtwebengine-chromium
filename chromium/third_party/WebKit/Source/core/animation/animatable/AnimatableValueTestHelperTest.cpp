@@ -32,9 +32,8 @@
 
 #include "core/animation/animatable/AnimatableValueTestHelper.h"
 
-#include "core/rendering/ClipPathOperation.h"
-#include "core/rendering/style/BasicShapes.h"
-#include "core/svg/SVGLengthContext.h"
+#include "core/layout/ClipPathOperation.h"
+#include "core/style/BasicShapes.h"
 #include "platform/transforms/ScaleTransformOperation.h"
 #include "platform/transforms/TranslateTransformOperation.h"
 
@@ -71,25 +70,16 @@ TEST_F(AnimationAnimatableValueTestHelperTest, PrintTo)
         PrintToString(const_cast<AnimatableValue*>(AnimatableValue::neutralValue())),
         testing::StartsWith("AnimatableNeutral@"));
 
-    RefPtr<SVGLength> length1cm = SVGLength::create(LengthModeOther);
-    RefPtr<SVGLength> length2cm = SVGLength::create(LengthModeOther);
-    length1cm->setValueAsString("1cm", ASSERT_NO_EXCEPTION);
-    length2cm->setValueAsString("2cm", ASSERT_NO_EXCEPTION);
-
-    EXPECT_EQ(
-        ::std::string("AnimatableSVGLength(1cm)"),
-        PrintToString(AnimatableSVGLength::create(length1cm)));
-
     EXPECT_THAT(
         PrintToString(AnimatableShapeValue::create(ShapeValue::createShapeValue(BasicShapeCircle::create().get(), ContentBox).get())),
         testing::StartsWith("AnimatableShapeValue@"));
 
-    RefPtr<SVGLengthList> l2 = SVGLengthList::create();
-    l2->append(length1cm);
-    l2->append(length2cm);
+    RefPtr<SVGDashArray> l2 = SVGDashArray::create();
+    l2->append(Length(1, blink::Fixed));
+    l2->append(Length(2, blink::Percent));
     EXPECT_EQ(
-        ::std::string("AnimatableStrokeDasharrayList(1cm, 2cm)"),
-        PrintToString(AnimatableStrokeDasharrayList::create(l2)));
+        ::std::string("AnimatableStrokeDasharrayList(1+0%, 0+2%)"),
+        PrintToString(AnimatableStrokeDasharrayList::create(l2, 1)));
 
     TransformOperations operations1;
     operations1.operations().append(TranslateTransformOperation::create(Length(2, blink::Fixed), Length(0, blink::Fixed), TransformOperation::TranslateX));

@@ -27,6 +27,7 @@
 #ifndef ShadowRoot_h
 #define ShadowRoot_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Element.h"
@@ -43,7 +44,7 @@ class InsertionPoint;
 class ShadowRootRareData;
 class StyleSheetList;
 
-class ShadowRoot final : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
+class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
     friend class WTF::DoublyLinkedListNode<ShadowRoot>;
@@ -54,7 +55,7 @@ public:
     // See https://bugs.webkit.org/show_bug.cgi?id=77503 and related bugs.
     enum ShadowRootType {
         UserAgentShadowRoot = 0,
-        AuthorShadowRoot
+        OpenShadowRoot
     };
 
     static PassRefPtrWillBeRawPtr<ShadowRoot> create(Document& document, ShadowRootType type)
@@ -74,11 +75,10 @@ public:
     ShadowRoot* youngerShadowRoot() const { return prev(); }
 
     ShadowRoot* olderShadowRootForBindings() const;
-    bool shouldExposeToBindings() const { return type() == AuthorShadowRoot; }
+    bool shouldExposeToBindings() const { return type() == OpenShadowRoot; }
 
     bool isYoungest() const { return !youngerShadowRoot(); }
     bool isOldest() const { return !olderShadowRoot(); }
-    bool isOldestAuthorShadowRoot() const;
 
     virtual void attach(const AttachContext& = AttachContext()) override;
 
@@ -104,7 +104,7 @@ public:
 
     void didAddInsertionPoint(InsertionPoint*);
     void didRemoveInsertionPoint(InsertionPoint*);
-    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& descendantInsertionPoints();
+    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>>& descendantInsertionPoints();
 
     ShadowRootType type() const { return static_cast<ShadowRootType>(m_type); }
 
@@ -125,7 +125,7 @@ public:
 
     StyleSheetList* styleSheets();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     ShadowRoot(Document&, ShadowRootType);

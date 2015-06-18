@@ -7,11 +7,12 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -19,6 +20,7 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/resources/grit/webui_resources.h"
 #include "ui/strings/grit/app_locale_settings.h"
 #include "url/gurl.h"
 
@@ -125,19 +127,42 @@ void ParsePathAndScale(const GURL& url,
   }
 }
 
-// static
-void SetFontAndTextDirection(base::DictionaryValue* localized_strings) {
-  int web_font_family_id = IDS_WEB_FONT_FAMILY;
-  int web_font_size_id = IDS_WEB_FONT_SIZE;
-#if defined(OS_WIN)
-  // Vary font settings for Windows XP.
-  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    web_font_family_id = IDS_WEB_FONT_FAMILY_XP;
-    web_font_size_id = IDS_WEB_FONT_SIZE_XP;
-  }
-#endif
+void SetLoadTimeDataDefaults(const std::string& app_locale,
+                             base::DictionaryValue* localized_strings) {
+  localized_strings->SetString("fontfamily", GetFontFamily());
+  localized_strings->SetString("fontsize", GetFontSize());
+  localized_strings->SetString("language", l10n_util::GetLanguage(app_locale));
+  localized_strings->SetString("textdirection", GetTextDirection());
+}
 
-  std::string font_family = l10n_util::GetStringUTF8(web_font_family_id);
+std::string GetWebUiCssTextDefaults() {
+  std::vector<std::string> placeholders;
+  placeholders.push_back(GetTextDirection());  // $1
+  placeholders.push_back(GetFontFamily());  // $2
+  placeholders.push_back(GetFontSize());  // $3
+
+  const ui::ResourceBundle& resource_bundle =
+      ui::ResourceBundle::GetSharedInstance();
+  const std::string& css_template =
+      resource_bundle.GetRawDataResource(IDR_WEBUI_CSS_TEXT_DEFAULTS)
+          .as_string();
+
+  return ReplaceStringPlaceholders(css_template, placeholders, nullptr);
+}
+
+void AppendWebUiCssTextDefaults(std::string* html) {
+  html->append("<style>");
+  html->append(GetWebUiCssTextDefaults());
+  html->append("</style>");
+}
+
+std::string GetFontFamily() {
+  std::string font_family = l10n_util::GetStringUTF8(
+#if defined(OS_WIN)
+      base::win::GetVersion() < base::win::VERSION_VISTA ?
+          IDS_WEB_FONT_FAMILY_XP :
+#endif
+          IDS_WEB_FONT_FAMILY);
 
 // TODO(dnicoara) Remove Ozone check when PlatformFont support is introduced
 // into Ozone: crbug.com/320050
@@ -146,11 +171,20 @@ void SetFontAndTextDirection(base::DictionaryValue* localized_strings) {
       ui::ResourceBundle::BaseFont).GetFontName() + ", " + font_family;
 #endif
 
-  localized_strings->SetString("fontfamily", font_family);
-  localized_strings->SetString("fontsize",
-      l10n_util::GetStringUTF8(web_font_size_id));
-  localized_strings->SetString("textdirection",
-      base::i18n::IsRTL() ? "rtl" : "ltr");
+  return font_family;
+}
+
+std::string GetFontSize() {
+  return l10n_util::GetStringUTF8(
+#if defined(OS_WIN)
+      base::win::GetVersion() < base::win::VERSION_VISTA ?
+          IDS_WEB_FONT_SIZE_XP :
+#endif
+          IDS_WEB_FONT_SIZE);
+}
+
+std::string GetTextDirection() {
+  return base::i18n::IsRTL() ? "rtl" : "ltr";
 }
 
 }  // namespace webui

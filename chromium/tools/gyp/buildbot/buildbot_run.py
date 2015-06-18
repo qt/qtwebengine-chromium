@@ -3,9 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-
 """Argument-less script to select what to run on the buildbots."""
-
 
 import filecmp
 import os
@@ -179,12 +177,12 @@ def GypTestFormat(title, format=None, msvs_version=None, tests=[]):
   if msvs_version:
     env['GYP_MSVS_VERSION'] = msvs_version
   command = ' '.join(
-      [sys.executable, 'trunk/gyptest.py',
+      [sys.executable, 'gyp/gyptest.py',
        '--all',
        '--passed',
        '--format', format,
        '--path', CMAKE_BIN_DIR,
-       '--chdir', 'trunk'] + tests)
+       '--chdir', 'gyp'] + tests)
   if format == 'android':
     # gyptest needs the environment setup from envsetup/lunch in order to build
     # using the 'android' backend, so this is done in a single shell.
@@ -232,9 +230,9 @@ def GypBuild():
       retcode += GypTestFormat('msvs-ninja-2013', format='msvs-ninja',
                                msvs_version='2013',
                                tests=[
-                                   'test\generator-output\gyptest-actions.py',
-                                   'test\generator-output\gyptest-relocate.py',
-                                   'test\generator-output\gyptest-rules.py'])
+                                  r'test\generator-output\gyptest-actions.py',
+                                  r'test\generator-output\gyptest-relocate.py',
+                                  r'test\generator-output\gyptest-rules.py'])
       retcode += GypTestFormat('msvs-2013', format='msvs', msvs_version='2013')
   else:
     raise Exception('Unknown platform')

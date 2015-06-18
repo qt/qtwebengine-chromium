@@ -14,12 +14,14 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/threading/thread.h"
+#include "media/midi/midi_export.h"
 #include "media/midi/midi_manager.h"
 #include "media/midi/midi_port_info.h"
 
 namespace media {
+namespace midi {
 
-class MEDIA_EXPORT MidiManagerMac : public MidiManager {
+class MIDI_EXPORT MidiManagerMac final : public MidiManager {
  public:
   MidiManagerMac();
   ~MidiManagerMac() override;
@@ -42,13 +44,18 @@ class MEDIA_EXPORT MidiManagerMac : public MidiManager {
   // StartInitialization().
   void InitializeCoreMIDI();
 
+  // CoreMIDI callback for MIDI notification.
+  // Receives MIDI related event notifications from CoreMIDI.
+  static void ReceiveMidiNotifyDispatch(const MIDINotification* message,
+                                        void* refcon);
+  void ReceiveMidiNotify(const MIDINotification* message);
+
   // CoreMIDI callback for MIDI data.
   // Each callback can contain multiple packets, each of which can contain
   // multiple MIDI messages.
-  static void ReadMidiDispatch(
-      const MIDIPacketList *pktlist,
-      void *read_proc_refcon,
-      void *src_conn_refcon);
+  static void ReadMidiDispatch(const MIDIPacketList* packet_list,
+                               void* read_proc_refcon,
+                               void* src_conn_refcon);
   virtual void ReadMidi(MIDIEndpointRef source, const MIDIPacketList *pktlist);
 
   // An internal callback that runs on MidiSendThread.
@@ -61,19 +68,15 @@ class MEDIA_EXPORT MidiManagerMac : public MidiManager {
   MIDIClientRef midi_client_;
   MIDIPortRef coremidi_input_;
   MIDIPortRef coremidi_output_;
-
-  enum{ kMaxPacketListSize = 512 };
-  char midi_buffer_[kMaxPacketListSize];
-  MIDIPacketList* packet_list_;
-  MIDIPacket* midi_packet_;
-
-  typedef std::map<MIDIEndpointRef, uint32> SourceMap;
+  std::vector<uint8> midi_buffer_;
 
   // Keeps track of the index (0-based) for each of our sources.
+  typedef std::map<MIDIEndpointRef, uint32> SourceMap;
   SourceMap source_map_;
 
   // Keeps track of all destinations.
-  std::vector<MIDIEndpointRef> destinations_;
+  typedef std::vector<MIDIEndpointRef> DestinationVector;
+  DestinationVector destinations_;
 
   // |client_thread_| is used to handle platform dependent operations.
   base::Thread client_thread_;
@@ -84,6 +87,7 @@ class MEDIA_EXPORT MidiManagerMac : public MidiManager {
   DISALLOW_COPY_AND_ASSIGN(MidiManagerMac);
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_MIDI_MANAGER_MAC_H_

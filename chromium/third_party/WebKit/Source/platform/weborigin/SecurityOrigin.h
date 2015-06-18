@@ -38,7 +38,7 @@ namespace blink {
 class KURL;
 class SecurityOriginCache;
 
-class PLATFORM_EXPORT SecurityOrigin : public ThreadSafeRefCounted<SecurityOrigin> {
+class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
 public:
     enum Policy {
         AlwaysDeny = 0,
@@ -113,12 +113,11 @@ public:
     // display content from the user's files system.
     bool canDisplay(const KURL&) const;
 
-    // A "secure origin" as defined by [1] are those that load resources either
-    // from the local machine (necessarily trusted) or over the network from a
-    // cryptographically-authenticated server.
-    //
-    // [1] http://www.chromium.org/Home/chromium-security/security-faq#TOC-Which-origins-are-secure-
-    bool canAccessFeatureRequiringSecureOrigin(String& errorMessage) const;
+    // Returns true if the origin loads resources either from the local
+    // machine or over the network from a
+    // cryptographically-authenticated origin, as described in
+    // https://w3c.github.io/webappsec/specs/powerfulfeatures/#is-origin-trustworthy.
+    bool isPotentiallyTrustworthy(String& errorMessage) const;
 
     // Returns true if this SecurityOrigin can load local resources, such
     // as images, iframes, and style sheets, and can link to local URLs.
@@ -149,6 +148,7 @@ public:
     bool canAccessCookies() const { return !isUnique(); }
     bool canAccessPasswordManager() const { return !isUnique(); }
     bool canAccessFileSystem() const { return !isUnique(); }
+    bool canAccessCacheStorage() const { return !isUnique(); };
     Policy canShowNotifications() const;
 
     // Technically, we should always allow access to sessionStorage, but we
@@ -201,7 +201,7 @@ public:
 
     bool needsDatabaseIdentifierQuirkForFiles() const { return m_needsDatabaseIdentifierQuirkForFiles; }
 
-    static const String& urlWithUniqueSecurityOrigin();
+    static const KURL& urlWithUniqueSecurityOrigin();
 
     // Transfer origin privileges from another security origin.
     // The following privileges are currently copied over:

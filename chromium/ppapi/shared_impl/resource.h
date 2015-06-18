@@ -29,13 +29,14 @@
   F(PPB_BrowserFont_Singleton_API)      \
   F(PPB_BrowserFont_Trusted_API)        \
   F(PPB_Buffer_API)                     \
+  F(PPB_CameraCapabilities_API)         \
+  F(PPB_CameraDevice_API)               \
   F(PPB_Compositor_API)                 \
   F(PPB_CompositorLayer_API)            \
   F(PPB_DeviceRef_API)                  \
   F(PPB_Ext_CrxFileSystem_Private_API)  \
   F(PPB_FileChooser_API)                \
   F(PPB_FileIO_API)                     \
-  F(PPB_FileMapping_API)                \
   F(PPB_FileRef_API)                    \
   F(PPB_FileSystem_API)                 \
   F(PPB_Find_API)                       \
@@ -67,7 +68,6 @@
   F(PPB_PlatformVerification_API)       \
   F(PPB_Printing_API)                   \
   F(PPB_Scrollbar_API)                  \
-  F(PPB_Talk_Private_API)               \
   F(PPB_TrueTypeFont_API)               \
   F(PPB_TrueTypeFont_Singleton_API)     \
   F(PPB_TCPServerSocket_Private_API)    \
@@ -83,6 +83,7 @@
   F(PPB_VideoDecoder_API)               \
   F(PPB_VideoDecoder_Dev_API)           \
   F(PPB_VideoDestination_Private_API)   \
+  F(PPB_VideoEncoder_API)               \
   F(PPB_VideoFrame_API)                 \
   F(PPB_VideoLayer_API)                 \
   F(PPB_VideoSource_Private_API)        \

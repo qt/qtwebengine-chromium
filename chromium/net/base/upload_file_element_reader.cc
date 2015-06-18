@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/task_runner_util.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
@@ -78,8 +77,8 @@ int UploadFileElementReader::Read(IOBuffer* buf,
                                   const CompletionCallback& callback) {
   DCHECK(!callback.is_null());
 
-  uint64 num_bytes_to_read =
-      std::min(BytesRemaining(), static_cast<uint64>(buf_length));
+  int num_bytes_to_read = static_cast<int>(
+      std::min(BytesRemaining(), static_cast<uint64>(buf_length)));
   if (num_bytes_to_read == 0)
     return 0;
 
@@ -104,11 +103,6 @@ void UploadFileElementReader::Reset() {
 void UploadFileElementReader::OnOpenCompleted(
     const CompletionCallback& callback,
     int result) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "423948 UploadFileElementReader::OnOpenCompleted"));
-
   DCHECK(!callback.is_null());
 
   if (result < 0) {
@@ -119,14 +113,13 @@ void UploadFileElementReader::OnOpenCompleted(
   }
 
   if (range_offset_) {
-    int result = file_stream_->Seek(
+    int seek_result = file_stream_->Seek(
         base::File::FROM_BEGIN, range_offset_,
         base::Bind(&UploadFileElementReader::OnSeekCompleted,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   callback));
-    DCHECK_GT(0, result);
-    if (result != ERR_IO_PENDING)
-      callback.Run(result);
+                   weak_ptr_factory_.GetWeakPtr(), callback));
+    DCHECK_GT(0, seek_result);
+    if (seek_result != ERR_IO_PENDING)
+      callback.Run(seek_result);
   } else {
     OnSeekCompleted(callback, OK);
   }
@@ -140,7 +133,7 @@ void UploadFileElementReader::OnSeekCompleted(
   if (result < 0) {
     DLOG(WARNING) << "Failed to seek \"" << path_.value()
                   << "\" to offset: " << range_offset_ << " (" << result << ")";
-    callback.Run(result);
+    callback.Run(static_cast<int>(result));
     return;
   }
 
@@ -174,12 +167,15 @@ void UploadFileElementReader::OnGetFileInfoCompleted(
   }
 
   // If the underlying file has been changed and the expected file modification
-  // time is set, treat it as error. Note that the expected modification time
-  // from WebKit is based on time_t precision. So we have to convert both to
-  // time_t to compare. This check is used for sliced files.
+  // time is set, treat it as error. Note that |expected_modification_time_| may
+  // have gone through multiple conversion steps involving loss of precision
+  // (including conversion to time_t). Therefore the check below only verifies
+  // that the timestamps are within one second of each other. This check is used
+  // for sliced files.
   if (!expected_modification_time_.is_null() &&
-      expected_modification_time_.ToTimeT() !=
-      file_info->last_modified.ToTimeT()) {
+      (expected_modification_time_ - file_info->last_modified)
+              .magnitude()
+              .InSeconds() != 0) {
     callback.Run(ERR_UPLOAD_FILE_CHANGED);
     return;
   }

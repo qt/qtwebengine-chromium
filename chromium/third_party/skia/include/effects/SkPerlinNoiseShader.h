@@ -72,15 +72,15 @@ public:
     }
 
 
-    virtual size_t contextSize() const SK_OVERRIDE;
+    size_t contextSize() const override;
 
     class PerlinNoiseShaderContext : public SkShader::Context {
     public:
         PerlinNoiseShaderContext(const SkPerlinNoiseShader& shader, const ContextRec&);
         virtual ~PerlinNoiseShaderContext();
 
-        virtual void shadeSpan(int x, int y, SkPMColor[], int count) SK_OVERRIDE;
-        virtual void shadeSpan16(int x, int y, uint16_t[], int count) SK_OVERRIDE;
+        void shadeSpan(int x, int y, SkPMColor[], int count) override;
+        void shadeSpan16(int x, int y, uint16_t[], int count) override;
 
     private:
         SkPMColor shade(const SkPoint& point, StitchData& stitchData) const;
@@ -96,18 +96,16 @@ public:
         typedef SkShader::Context INHERITED;
     };
 
-    virtual bool asFragmentProcessor(GrContext* context, const SkPaint&, const SkMatrix*, GrColor*,
-                                     GrFragmentProcessor**) const SK_OVERRIDE;
+    virtual bool asFragmentProcessor(GrContext* context, const SkPaint&, const SkMatrix& viewM,
+                                     const SkMatrix*, GrColor*,
+                                     GrFragmentProcessor**) const override;
 
     SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPerlinNoiseShader)
 
 protected:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkPerlinNoiseShader(SkReadBuffer&);
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
-    virtual Context* onCreateContext(const ContextRec&, void* storage) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
+    Context* onCreateContext(const ContextRec&, void* storage) const override;
 
 private:
     SkPerlinNoiseShader(SkPerlinNoiseShader::Type type, SkScalar baseFrequencyX,
@@ -115,16 +113,13 @@ private:
                         const SkISize* tileSize);
     virtual ~SkPerlinNoiseShader();
 
-    // TODO (scroggo): Once all SkShaders are created from a factory, and we have removed the
-    // constructor that creates SkPerlinNoiseShader from an SkReadBuffer, several fields can
-    // be made constant.
-    /*const*/ SkPerlinNoiseShader::Type fType;
-    /*const*/ SkScalar                  fBaseFrequencyX;
-    /*const*/ SkScalar                  fBaseFrequencyY;
-    /*const*/ int                       fNumOctaves;
-    /*const*/ SkScalar                  fSeed;
-    /*const*/ SkISize                   fTileSize;
-    /*const*/ bool                      fStitchTiles;
+    const SkPerlinNoiseShader::Type fType;
+    const SkScalar                  fBaseFrequencyX;
+    const SkScalar                  fBaseFrequencyY;
+    const int                       fNumOctaves;
+    const SkScalar                  fSeed;
+    const SkISize                   fTileSize;
+    const bool                      fStitchTiles;
 
     typedef SkShader INHERITED;
 };

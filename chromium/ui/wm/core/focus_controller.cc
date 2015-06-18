@@ -108,13 +108,6 @@ void FocusController::FocusWindow(aura::Window* window) {
     return;
   }
 
-  // We should not be messing with the focus if the window has capture, unless
-  // no has focus.
-  if (window && (aura::client::GetCaptureWindow(window) == window) &&
-      focused_window_) {
-    return;
-  }
-
   // Focusing a window also activates its containing activatable window. Note
   // that the rules could redirect activation activation and/or focus.
   aura::Window* focusable = rules_->GetFocusableWindow(window);
@@ -191,6 +184,9 @@ void FocusController::OnWindowVisibilityChanged(aura::Window* window,
 }
 
 void FocusController::OnWindowDestroying(aura::Window* window) {
+  // A window's modality state will interfere with focus restoration during its
+  // destruction.
+  window->ClearProperty(aura::client::kModalKey);
   WindowLostFocusFromDispositionChange(window, window->parent());
 }
 
@@ -332,9 +328,6 @@ void FocusController::SetActiveWindow(aura::Window* requested_window,
 void FocusController::WindowLostFocusFromDispositionChange(
     aura::Window* window,
     aura::Window* next) {
-  // A window's modality state will interfere with focus restoration during its
-  // destruction.
-  window->ClearProperty(aura::client::kModalKey);
   // TODO(beng): See if this function can be replaced by a call to
   //             FocusWindow().
   // Activation adjustments are handled first in the event of a disposition

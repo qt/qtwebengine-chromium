@@ -19,7 +19,7 @@ namespace gin {
 // The field at kDebugIdIndex is treated specially by V8 and is reserved for
 // a V8 debugger implementation (not used by gin).
 enum ContextEmbedderDataFields {
-  kDebugIdIndex = 0,
+  kDebugIdIndex = v8::Context::kDebugIdIndex,
   kPerContextDataStartIndex,
 };
 
@@ -33,11 +33,11 @@ class GIN_EXPORT ContextHolder {
 
   v8::Isolate* isolate() const { return isolate_; }
 
-  v8::Handle<v8::Context> context() const {
+  v8::Local<v8::Context> context() const {
     return v8::Local<v8::Context>::New(isolate_, context_);
   }
 
-  void SetContext(v8::Handle<v8::Context> context);
+  void SetContext(v8::Local<v8::Context> context);
 
  private:
   v8::Isolate* isolate_;

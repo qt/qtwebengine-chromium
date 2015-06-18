@@ -5,7 +5,9 @@
 #ifndef DeviceOrientationInspectorAgent_h
 #define DeviceOrientationInspectorAgent_h
 
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
+#include "modules/ModulesExport.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -15,10 +17,10 @@ class Page;
 
 typedef String ErrorString;
 
-class DeviceOrientationInspectorAgent final : public InspectorBaseAgent<DeviceOrientationInspectorAgent>, public InspectorBackendDispatcher::DeviceOrientationCommandHandler {
+class MODULES_EXPORT DeviceOrientationInspectorAgent final : public InspectorBaseAgent<DeviceOrientationInspectorAgent, InspectorFrontend::DeviceOrientation>, public InspectorBackendDispatcher::DeviceOrientationCommandHandler {
     WTF_MAKE_NONCOPYABLE(DeviceOrientationInspectorAgent);
 public:
-    static void provideTo(Page&);
+    static PassOwnPtrWillBeRawPtr<DeviceOrientationInspectorAgent> create(Page*);
 
     virtual ~DeviceOrientationInspectorAgent();
 
@@ -27,9 +29,9 @@ public:
     virtual void clearDeviceOrientationOverride(ErrorString*) override;
 
     // Inspector Controller API.
-    virtual void clearFrontend() override;
-    virtual void restore() override;
-    virtual void didCommitLoadForMainFrame() override;
+    void disable(ErrorString*) override;
+    void restore() override;
+    void didCommitLoadForLocalFrame(LocalFrame*) override;
 
 private:
     explicit DeviceOrientationInspectorAgent(Page&);

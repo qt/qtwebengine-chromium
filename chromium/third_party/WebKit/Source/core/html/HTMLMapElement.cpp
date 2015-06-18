@@ -30,7 +30,7 @@
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/rendering/HitTestResult.h"
+#include "core/layout/HitTestResult.h"
 
 namespace blink {
 
@@ -48,22 +48,16 @@ HTMLMapElement::~HTMLMapElement()
 {
 }
 
-bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size, HitTestResult& result)
+HTMLAreaElement* HTMLMapElement::areaForPoint(LayoutPoint location, const LayoutSize& containerSize)
 {
-    HTMLAreaElement* defaultArea = 0;
+    HTMLAreaElement* defaultArea = nullptr;
     for (HTMLAreaElement& area : Traversal<HTMLAreaElement>::descendantsOf(*this)) {
-        if (area.isDefault()) {
-            if (!defaultArea)
-                defaultArea = &area;
-        } else if (area.mapMouseEvent(location, size, result)) {
-            return true;
-        }
+        if (area.isDefault() && !defaultArea)
+            defaultArea = &area;
+        else if (area.pointInArea(location, containerSize))
+            return &area;
     }
 
-    if (defaultArea) {
-        result.setInnerNode(defaultArea);
-        result.setURLElement(defaultArea);
-    }
     return defaultArea;
 }
 

@@ -21,9 +21,9 @@ namespace dbus {
 void PropertyBase::Init(PropertySet* property_set, const std::string& name) {
   DCHECK(!property_set_);
   property_set_ = property_set;
+  is_valid_ = false;
   name_ = name;
 }
-
 
 //
 // PropertySet implementation.
@@ -78,10 +78,10 @@ void PropertySet::ChangedReceived(Signal* signal) {
                  << "expected dictionary: " << signal->ToString();
   }
 
-  // TODO(keybuk): dbus properties api has invalidated properties array
-  // on the end, we don't handle this right now because I don't know of
-  // any service that sends it - or what they expect us to do with it.
-  // Add later when we need it.
+  if (!InvalidatePropertiesFromReader(&reader)) {
+    LOG(WARNING) << "Property changed signal has wrong parameters: "
+                 << "expected array to invalidate: " << signal->ToString();
+  }
 }
 
 void PropertySet::ChangedConnected(const std::string& interface_name,
@@ -115,8 +115,15 @@ void PropertySet::OnGet(PropertyBase* property, GetCallback callback,
   }
 
   MessageReader reader(response);
-  if (property->PopValueFromReader(&reader))
+  if (property->PopValueFromReader(&reader)) {
+    property->set_valid(true);
     NotifyPropertyChanged(property->name());
+  } else {
+    if (property->is_valid()) {
+      property->set_valid(false);
+      NotifyPropertyChanged(property->name());
+    }
+  }
 
   if (!callback.is_null())
     callback.Run(response);
@@ -199,13 +206,42 @@ bool PropertySet::UpdatePropertyFromReader(MessageReader* reader) {
 
   PropertyBase* property = it->second;
   if (property->PopValueFromReader(reader)) {
+    property->set_valid(true);
     NotifyPropertyChanged(name);
     return true;
   } else {
+    if (property->is_valid()) {
+      property->set_valid(false);
+      NotifyPropertyChanged(property->name());
+    }
     return false;
   }
 }
 
+bool PropertySet::InvalidatePropertiesFromReader(MessageReader* reader) {
+  DCHECK(reader);
+  MessageReader array_reader(NULL);
+  if (!reader->PopArray(&array_reader))
+    return false;
+
+  while (array_reader.HasMoreData()) {
+    std::string name;
+    if (!array_reader.PopString(&name))
+      return false;
+
+    PropertiesMap::iterator it = properties_map_.find(name);
+    if (it == properties_map_.end())
+      continue;
+
+    PropertyBase* property = it->second;
+    if (property->is_valid()) {
+      property->set_valid(false);
+      NotifyPropertyChanged(property->name());
+    }
+  }
+
+  return true;
+}
 
 void PropertySet::NotifyPropertyChanged(const std::string& name) {
   if (!property_changed_callback_.is_null())
@@ -478,6 +514,103 @@ void Property<std::vector<uint8> >::AppendSetValueToWriter(
   writer->CloseContainer(&variant_writer);
 }
 
+//
+// Property<std::map<std::string, std::string>> specialization.
+//
+
+template <>
+bool Property<std::map<std::string, std::string>>::PopValueFromReader(
+    MessageReader* reader) {
+  MessageReader variant_reader(NULL);
+  MessageReader array_reader(NULL);
+  if (!reader->PopVariant(&variant_reader) ||
+      !variant_reader.PopArray(&array_reader))
+    return false;
+  value_.clear();
+  while (array_reader.HasMoreData()) {
+    dbus::MessageReader dict_entry_reader(NULL);
+    if (!array_reader.PopDictEntry(&dict_entry_reader))
+      return false;
+    std::string key;
+    std::string value;
+    if (!dict_entry_reader.PopString(&key) ||
+        !dict_entry_reader.PopString(&value))
+      return false;
+    value_[key] = value;
+  }
+  return true;
+}
+
+template <>
+void Property<std::map<std::string, std::string>>::AppendSetValueToWriter(
+    MessageWriter* writer) {
+  MessageWriter variant_writer(NULL);
+  MessageWriter dict_writer(NULL);
+  writer->OpenVariant("a{ss}", &variant_writer);
+  variant_writer.OpenArray("{ss}", &dict_writer);
+  for (const auto& pair : set_value_) {
+    dbus::MessageWriter entry_writer(NULL);
+    dict_writer.OpenDictEntry(&entry_writer);
+    entry_writer.AppendString(pair.first);
+    entry_writer.AppendString(pair.second);
+    dict_writer.CloseContainer(&entry_writer);
+  }
+  variant_writer.CloseContainer(&dict_writer);
+  writer->CloseContainer(&variant_writer);
+}
+
+//
+// Property<std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>
+// specialization.
+//
+
+template <>
+bool Property<std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>::
+    PopValueFromReader(MessageReader* reader) {
+  MessageReader variant_reader(NULL);
+  MessageReader array_reader(NULL);
+  if (!reader->PopVariant(&variant_reader) ||
+      !variant_reader.PopArray(&array_reader))
+    return false;
+
+  value_.clear();
+  while (array_reader.HasMoreData()) {
+    dbus::MessageReader struct_reader(NULL);
+    if (!array_reader.PopStruct(&struct_reader))
+      return false;
+
+    std::pair<std::vector<uint8_t>, uint16_t> entry;
+    const uint8* bytes = NULL;
+    size_t length = 0;
+    if (!struct_reader.PopArrayOfBytes(&bytes, &length))
+      return false;
+    entry.first.assign(bytes, bytes + length);
+    if (!struct_reader.PopUint16(&entry.second))
+      return false;
+    value_.push_back(entry);
+  }
+  return true;
+}
+
+template <>
+void Property<std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>::
+    AppendSetValueToWriter(MessageWriter* writer) {
+  MessageWriter variant_writer(NULL);
+  MessageWriter array_writer(NULL);
+  writer->OpenVariant("a(ayq)", &variant_writer);
+  variant_writer.OpenArray("(ayq)", &array_writer);
+  for (const auto& pair : set_value_) {
+    dbus::MessageWriter struct_writer(nullptr);
+    array_writer.OpenStruct(&struct_writer);
+    struct_writer.AppendArrayOfBytes(std::get<0>(pair).data(),
+                                     std::get<0>(pair).size());
+    struct_writer.AppendUint16(std::get<1>(pair));
+    array_writer.CloseContainer(&struct_writer);
+  }
+  variant_writer.CloseContainer(&array_writer);
+  writer->CloseContainer(&variant_writer);
+}
+
 template class Property<uint8>;
 template class Property<bool>;
 template class Property<int16>;
@@ -492,5 +625,7 @@ template class Property<ObjectPath>;
 template class Property<std::vector<std::string> >;
 template class Property<std::vector<ObjectPath> >;
 template class Property<std::vector<uint8> >;
+template class Property<std::map<std::string, std::string>>;
+template class Property<std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>;
 
 }  // namespace dbus

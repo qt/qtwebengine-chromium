@@ -4,10 +4,10 @@
 
 #include "base/synchronization/waitable_event.h"
 
-#include <math.h>
 #include <windows.h>
 
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 
@@ -20,16 +20,12 @@ WaitableEvent::WaitableEvent(bool manual_reset, bool signaled)
   CHECK(handle_.IsValid());
 }
 
-WaitableEvent::WaitableEvent(HANDLE handle)
-    : handle_(handle) {
+WaitableEvent::WaitableEvent(win::ScopedHandle handle)
+    : handle_(handle.Pass()) {
   CHECK(handle_.IsValid()) << "Tried to create WaitableEvent from NULL handle";
 }
 
 WaitableEvent::~WaitableEvent() {
-}
-
-HANDLE WaitableEvent::Release() {
-  return handle_.Take();
 }
 
 void WaitableEvent::Reset() {
@@ -41,7 +37,7 @@ void WaitableEvent::Signal() {
 }
 
 bool WaitableEvent::IsSignaled() {
-  return TimedWait(TimeDelta::FromMilliseconds(0));
+  return TimedWait(TimeDelta());
 }
 
 void WaitableEvent::Wait() {
@@ -54,13 +50,13 @@ void WaitableEvent::Wait() {
 
 bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
   base::ThreadRestrictions::AssertWaitAllowed();
-  DCHECK(max_time >= TimeDelta::FromMicroseconds(0));
-  // Be careful here.  TimeDelta has a precision of microseconds, but this API
-  // is in milliseconds.  If there are 5.5ms left, should the delay be 5 or 6?
-  // It should be 6 to avoid returning too early.
-  double timeout = ceil(max_time.InMillisecondsF());
-  DWORD result = WaitForSingleObject(handle_.Get(),
-                                     static_cast<DWORD>(timeout));
+  DCHECK_GE(max_time, TimeDelta());
+  // Truncate the timeout to milliseconds. The API specifies that this method
+  // can return in less than |max_time| (when returning false), as the argument
+  // is the maximum time that a caller is willing to wait.
+  DWORD timeout = saturated_cast<DWORD>(max_time.InMilliseconds());
+
+  DWORD result = WaitForSingleObject(handle_.Get(), timeout);
   switch (result) {
     case WAIT_OBJECT_0:
       return true;

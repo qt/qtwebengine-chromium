@@ -6,17 +6,9 @@
 // callback ForEachCallback = void(DOMString id, MIDIInput port);
 
 [
-    Iterable,
-    NoInterfaceObject,
     GarbageCollected,
+    RuntimeEnabled=WebMIDI,
 ] interface MIDIInputMap {
     readonly attribute unsigned long size;
-    Iterator keys();
-    Iterator entries();
-    Iterator values();
-    // This function returns undefined if |!this->has(id)|.
-    [ImplementedAs=getForBinding, CallWith=ScriptState] any get(DOMString id);
-    boolean has(DOMString key);
-    // FIXME: Implement forEach.
-    // void forEach (ForEachCallback callback);
+    readonly maplike<DOMString, MIDIInput>;
 };

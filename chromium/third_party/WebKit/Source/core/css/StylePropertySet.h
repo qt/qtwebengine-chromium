@@ -22,11 +22,13 @@
 #define StylePropertySet_h
 
 #include "core/CSSPropertyNames.h"
+#include "core/CoreExport.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSProperty.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
 #include "core/css/parser/CSSParserMode.h"
 #include "wtf/ListHashSet.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
@@ -37,7 +39,8 @@ class ImmutableStylePropertySet;
 class MutableStylePropertySet;
 class StyleSheetContents;
 
-class StylePropertySet : public RefCountedWillBeGarbageCollectedFinalized<StylePropertySet> {
+class CORE_EXPORT StylePropertySet : public RefCountedWillBeGarbageCollectedFinalized<StylePropertySet> {
+    WTF_MAKE_NONCOPYABLE(StylePropertySet);
     friend class PropertyReference;
 public:
 
@@ -66,9 +69,6 @@ public:
         bool isImportant() const { return propertyMetadata().m_important; }
         bool isInherited() const { return propertyMetadata().m_inherited; }
         bool isImplicit() const { return propertyMetadata().m_implicit; }
-
-        String cssName() const;
-        String cssText() const;
 
         const CSSValue* value() const { return propertyValue(); }
         // FIXME: We should try to remove this mutable overload.
@@ -122,8 +122,8 @@ public:
 
     bool propertyMatches(CSSPropertyID, const CSSValue*) const;
 
-    void trace(Visitor*);
-    void traceAfterDispatch(Visitor*) { }
+    DECLARE_TRACE();
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { }
 
 protected:
 
@@ -148,7 +148,7 @@ protected:
     friend class PropertySetCSSStyleDeclaration;
 };
 
-class ImmutableStylePropertySet : public StylePropertySet {
+class CORE_EXPORT ImmutableStylePropertySet : public StylePropertySet {
 public:
     ~ImmutableStylePropertySet();
     static PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> create(const CSSProperty* properties, unsigned count, CSSParserMode);
@@ -159,7 +159,7 @@ public:
     const StylePropertyMetadata* metadataArray() const;
     int findPropertyIndex(CSSPropertyID) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
     void* operator new(std::size_t, void* location)
     {
@@ -184,7 +184,7 @@ inline const StylePropertyMetadata* ImmutableStylePropertySet::metadataArray() c
 
 DEFINE_TYPE_CASTS(ImmutableStylePropertySet, StylePropertySet, set, !set->isMutable(), !set.isMutable());
 
-class MutableStylePropertySet : public StylePropertySet {
+class CORE_EXPORT MutableStylePropertySet : public StylePropertySet {
 public:
     ~MutableStylePropertySet() { }
     static PassRefPtrWillBeRawPtr<MutableStylePropertySet> create(CSSParserMode = HTMLQuirksMode);
@@ -192,21 +192,19 @@ public:
 
     unsigned propertyCount() const { return m_propertyVector.size(); }
 
-    void addParsedProperties(const WillBeHeapVector<CSSProperty, 256>&);
-    void addParsedProperty(const CSSProperty&);
+    // Returns whether this style set was changed.
+    bool addParsedProperties(const WillBeHeapVector<CSSProperty, 256>&);
+    bool addRespectingCascade(const CSSProperty&);
 
     // These expand shorthand properties into multiple properties.
-    bool setProperty(CSSPropertyID, const String& value, bool important = false, StyleSheetContents* contextStyleSheet = 0);
+    bool setProperty(CSSPropertyID unresolvedProperty, const String& value, bool important = false, StyleSheetContents* contextStyleSheet = 0);
     void setProperty(CSSPropertyID, PassRefPtrWillBeRawPtr<CSSValue>, bool important = false);
 
     // These do not. FIXME: This is too messy, we can do better.
     bool setProperty(CSSPropertyID, CSSValueID identifier, bool important = false);
-    void appendPrefixingVariantProperty(const CSSProperty&);
-    void setPrefixingVariantProperty(const CSSProperty&);
-    void setProperty(const CSSProperty&, CSSProperty* slot = 0);
+    bool setProperty(const CSSProperty&, CSSProperty* slot = 0);
 
     bool removeProperty(CSSPropertyID, String* returnText = 0);
-    void removePrefixedOrUnprefixedProperty(CSSPropertyID);
     void removeBlockProperties();
     bool removePropertiesInSet(const CSSPropertyID* set, unsigned length);
     void removeEquivalentProperties(const StylePropertySet*);
@@ -215,12 +213,12 @@ public:
     void mergeAndOverrideOnConflict(const StylePropertySet*);
 
     void clear();
-    void parseDeclaration(const String& styleDeclaration, StyleSheetContents* contextStyleSheet);
+    void parseDeclarationList(const String& styleDeclaration, StyleSheetContents* contextStyleSheet);
 
     CSSStyleDeclaration* ensureCSSStyleDeclaration();
     int findPropertyIndex(CSSPropertyID) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     explicit MutableStylePropertySet(CSSParserMode);

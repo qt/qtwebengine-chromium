@@ -5,55 +5,22 @@
 #ifndef CC_DEBUG_FRAME_VIEWER_INSTRUMENTATION_H_
 #define CC_DEBUG_FRAME_VIEWER_INSTRUMENTATION_H_
 
-#include "base/debug/trace_event.h"
-#include "cc/resources/tile.h"
+#include "base/trace_event/trace_event.h"
+#include "cc/tiles/tile.h"
+#include "cc/tiles/tile_priority.h"
 
 namespace cc {
 namespace frame_viewer_instrumentation {
-namespace internal {
 
-const char kCategory[] = "cc";
-const char kTileData[] = "tileData";
-const char kLayerId[] = "layerId";
-const char kTileId[] = "tileId";
-const char kTileResolution[] = "tileResolution";
-const char kSourceFrameNumber[] = "sourceFrameNumber";
-
-const char kAnalyzeTask[] = "AnalyzeTask";
-const char kRasterTask[] = "RasterTask";
-
-scoped_refptr<base::debug::ConvertableToTraceFormat> TileDataAsValue(
-    const void* tile_id,
-    TileResolution tile_resolution,
-    int source_frame_number,
-    int layer_id) {
-  scoped_refptr<base::debug::TracedValue> res(new base::debug::TracedValue());
-  TracedValue::SetIDRef(tile_id, res.get(), internal::kTileId);
-  res->SetString(internal::kTileResolution,
-                 TileResolutionToString(tile_resolution));
-  res->SetInteger(internal::kSourceFrameNumber, source_frame_number);
-  res->SetInteger(internal::kLayerId, layer_id);
-  return res;
-}
-
-}  // namespace internal
+extern const char kCategoryLayerTree[];
 
 class ScopedAnalyzeTask {
  public:
   ScopedAnalyzeTask(const void* tile_id,
                     TileResolution tile_resolution,
                     int source_frame_number,
-                    int layer_id) {
-    TRACE_EVENT_BEGIN1(
-        internal::kCategory,
-        internal::kAnalyzeTask,
-        internal::kTileData,
-        internal::TileDataAsValue(
-            tile_id, tile_resolution, source_frame_number, layer_id));
-  }
-  ~ScopedAnalyzeTask() {
-    TRACE_EVENT_END0(internal::kCategory, internal::kAnalyzeTask);
-  }
+                    int layer_id);
+  ~ScopedAnalyzeTask();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScopedAnalyzeTask);
@@ -64,21 +31,14 @@ class ScopedRasterTask {
   ScopedRasterTask(const void* tile_id,
                    TileResolution tile_resolution,
                    int source_frame_number,
-                   int layer_id) {
-    TRACE_EVENT_BEGIN1(
-        internal::kCategory,
-        internal::kRasterTask,
-        internal::kTileData,
-        internal::TileDataAsValue(
-            tile_id, tile_resolution, source_frame_number, layer_id));
-  }
-  ~ScopedRasterTask() {
-    TRACE_EVENT_END0(internal::kCategory, internal::kRasterTask);
-  }
+                   int layer_id);
+  ~ScopedRasterTask();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScopedRasterTask);
 };
+
+bool IsTracingLayerTreeSnapshots();
 
 }  // namespace frame_viewer_instrumentation
 }  // namespace cc

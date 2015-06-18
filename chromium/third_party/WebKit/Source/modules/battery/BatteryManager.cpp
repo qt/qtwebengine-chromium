@@ -9,7 +9,6 @@
 #include "core/events/Event.h"
 #include "modules/battery/BatteryDispatcher.h"
 #include "modules/battery/BatteryStatus.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
@@ -43,9 +42,8 @@ ScriptPromise BatteryManager::startRequest(ScriptState* scriptState)
     m_resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = m_resolver->promise();
 
-    ASSERT(executionContext());
     // If the context is in a stopped state already, do not start updating.
-    if (m_state == Resolved || executionContext()->activeDOMObjectsAreStopped()) {
+    if (m_state == Resolved || !executionContext() || executionContext()->activeDOMObjectsAreStopped()) {
         // FIXME: Consider returning the same promise in this case. See crbug.com/385025.
         m_state = Resolved;
         m_resolver->resolve(this);
@@ -80,7 +78,6 @@ double BatteryManager::level()
 
 void BatteryManager::didUpdateData()
 {
-    ASSERT(RuntimeEnabledFeatures::batteryStatusEnabled());
     ASSERT(m_state != NotStarted);
 
     BatteryStatus* oldStatus = m_batteryStatus;
@@ -151,11 +148,13 @@ bool BatteryManager::hasPendingActivity() const
     return m_state == Resolved && hasEventListeners();
 }
 
-void BatteryManager::trace(Visitor* visitor)
+DEFINE_TRACE(BatteryManager)
 {
+    visitor->trace(m_resolver);
     visitor->trace(m_batteryStatus);
     PlatformEventController::trace(visitor);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<BatteryManager>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

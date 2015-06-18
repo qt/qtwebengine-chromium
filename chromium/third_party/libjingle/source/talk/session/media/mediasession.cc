@@ -34,14 +34,13 @@
 
 #include "talk/media/base/constants.h"
 #include "talk/media/base/cryptoparams.h"
-#include "webrtc/p2p/base/constants.h"
 #include "talk/session/media/channelmanager.h"
 #include "talk/session/media/srtpfilter.h"
-#include "webrtc/libjingle/xmpp/constants.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/stringutils.h"
+#include "webrtc/p2p/base/constants.h"
 
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
@@ -72,6 +71,8 @@ const char kMediaProtocolRtpPrefix[] = "RTP/";
 
 const char kMediaProtocolSctp[] = "SCTP";
 const char kMediaProtocolDtlsSctp[] = "DTLS/SCTP";
+const char kMediaProtocolUdpDtlsSctp[] = "UDP/DTLS/SCTP";
+const char kMediaProtocolTcpDtlsSctp[] = "TCP/DTLS/SCTP";
 
 static bool IsMediaContentOfType(const ContentInfo* content,
                                  MediaType media_type) {
@@ -223,12 +224,11 @@ static bool GenerateCname(const StreamParamsVec& params_vec,
     if (synch_label != stream_it->sync_label)
       continue;
 
-    StreamParams param;
     // groupid is empty for StreamParams generated using
     // MediaSessionDescriptionFactory.
-    if (GetStreamByIds(params_vec, "", stream_it->id,
-                       &param)) {
-      *cname = param.cname;
+    const StreamParams* param = GetStreamByIds(params_vec, "", stream_it->id);
+    if (param) {
+      *cname = param->cname;
       return true;
     }
   }
@@ -255,7 +255,7 @@ static void GenerateSsrcs(const StreamParamsVec& params_vec,
     uint32 candidate;
     do {
       candidate = rtc::CreateRandomNonZeroId();
-    } while (GetStreamBySsrc(params_vec, candidate, NULL) ||
+    } while (GetStreamBySsrc(params_vec, candidate) ||
              std::count(ssrcs->begin(), ssrcs->end(), candidate) > 0);
     ssrcs->push_back(candidate);
   }
@@ -271,7 +271,7 @@ static bool GenerateSctpSid(const StreamParamsVec& params_vec,
   }
   while (true) {
     uint32 candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
-    if (!GetStreamBySsrc(params_vec, candidate, NULL)) {
+    if (!GetStreamBySsrc(params_vec, candidate)) {
       *sid = candidate;
       return true;
     }
@@ -463,11 +463,11 @@ static bool AddStreamParams(
     if (stream_it->type != media_type)
       continue;  // Wrong media type.
 
-    StreamParams param;
+    const StreamParams* param =
+        GetStreamByIds(*current_streams, "", stream_it->id);
     // groupid is empty for StreamParams generated using
     // MediaSessionDescriptionFactory.
-    if (!GetStreamByIds(*current_streams, "", stream_it->id,
-                        &param)) {
+    if (!param) {
       // This is a new stream.
       // Get a CNAME. Either new or same as one of the other synched streams.
       std::string cname;
@@ -507,7 +507,7 @@ static bool AddStreamParams(
       // This is necessary so that we can use the CNAME for other media types.
       current_streams->push_back(stream_param);
     } else {
-      content_description->AddStream(param);
+      content_description->AddStream(*param);
     }
   }
   return true;
@@ -752,6 +752,24 @@ static bool CreateMediaContentOffer(
 }
 
 template <class C>
+static bool ReferencedCodecsMatch(const std::vector<C>& codecs1,
+                                  const std::string& codec1_id_str,
+                                  const std::vector<C>& codecs2,
+                                  const std::string& codec2_id_str) {
+  int codec1_id;
+  int codec2_id;
+  C codec1;
+  C codec2;
+  if (!rtc::FromString(codec1_id_str, &codec1_id) ||
+      !rtc::FromString(codec2_id_str, &codec2_id) ||
+      !FindCodecById(codecs1, codec1_id, &codec1) ||
+      !FindCodecById(codecs2, codec2_id, &codec2)) {
+    return false;
+  }
+  return codec1.Matches(codec2);
+}
+
+template <class C>
 static void NegotiateCodecs(const std::vector<C>& local_codecs,
                             const std::vector<C>& offered_codecs,
                             std::vector<C>* negotiated_codecs) {
@@ -765,15 +783,26 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
         C negotiated = *ours;
         negotiated.IntersectFeedbackParams(*theirs);
         if (IsRtxCodec(negotiated)) {
-          // Only negotiate RTX if kCodecParamAssociatedPayloadType has been
-          // set.
-          std::string apt_value;
-          if (!theirs->GetParam(kCodecParamAssociatedPayloadType, &apt_value)) {
+          std::string offered_apt_value;
+          std::string local_apt_value;
+          if (!ours->GetParam(kCodecParamAssociatedPayloadType,
+                              &local_apt_value) ||
+              !theirs->GetParam(kCodecParamAssociatedPayloadType,
+                                &offered_apt_value)) {
             LOG(LS_WARNING) << "RTX missing associated payload type.";
             continue;
           }
-          negotiated.SetParam(kCodecParamAssociatedPayloadType, apt_value);
+          // Only negotiate RTX if kCodecParamAssociatedPayloadType has been
+          // set in local and remote codecs, and they match.
+          if (!ReferencedCodecsMatch(local_codecs, local_apt_value,
+                                     offered_codecs, offered_apt_value)) {
+            LOG(LS_WARNING) << "RTX associated codecs don't match.";
+            continue;
+          }
+          negotiated.SetParam(kCodecParamAssociatedPayloadType,
+                              offered_apt_value);
         }
+
         negotiated.id = theirs->id;
         // RFC3264: Although the answerer MAY list the formats in their desired
         // order of preference, it is RECOMMENDED that unless there is a

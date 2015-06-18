@@ -37,8 +37,8 @@
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderVideo.h"
+#include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutVideo.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -65,20 +65,20 @@ PassRefPtrWillBeRawPtr<HTMLVideoElement> HTMLVideoElement::create(Document& docu
     return video.release();
 }
 
-void HTMLVideoElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLVideoElement)
 {
     visitor->trace(m_imageLoader);
     HTMLMediaElement::trace(visitor);
 }
 
-bool HTMLVideoElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLVideoElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    return HTMLElement::rendererIsNeeded(style);
+    return HTMLElement::layoutObjectIsNeeded(style);
 }
 
-RenderObject* HTMLVideoElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLVideoElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderVideo(this);
+    return new LayoutVideo(this);
 }
 
 void HTMLVideoElement::attach(const AttachContext& context)
@@ -90,8 +90,8 @@ void HTMLVideoElement::attach(const AttachContext& context)
         if (!m_imageLoader)
             m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
-        if (renderer())
-            toRenderImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
+        if (layoutObject())
+            toLayoutImage(layoutObject())->imageResource()->setImageResource(m_imageLoader->image());
     }
 }
 
@@ -115,16 +115,20 @@ bool HTMLVideoElement::isPresentationAttribute(const QualifiedName& name) const
 void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == posterAttr) {
-        // Force a poster recalc by setting m_displayMode to Unknown directly before calling updateDisplayState.
-        HTMLMediaElement::setDisplayMode(Unknown);
-        updateDisplayState();
-        if (shouldDisplayPosterImage()) {
+        // In case the poster attribute is set after playback, don't update the
+        // display state, post playback the correct state will be picked up.
+        if (displayMode() < Video || !hasAvailableVideoFrame()) {
+            // Force a poster recalc by setting m_displayMode to Unknown directly before calling updateDisplayState.
+            HTMLMediaElement::setDisplayMode(Unknown);
+            updateDisplayState();
+        }
+        if (!posterImageURL().isEmpty()) {
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         } else {
-            if (renderer())
-                toRenderImage(renderer())->imageResource()->setImageResource(0);
+            if (layoutObject())
+                toLayoutImage(layoutObject())->imageResource()->setImageResource(0);
         }
         // Notify the player when the poster image URL changes.
         if (webMediaPlayer())
@@ -183,13 +187,13 @@ void HTMLVideoElement::setDisplayMode(DisplayMode mode)
         // Don't show the poster if there is a seek operation or
         // the video has restarted because of loop attribute
         if (mode == Video && oldMode == Poster && !hasAvailableVideoFrame())
-            mode = PosterWaitingForVideo;
+            return;
     }
 
     HTMLMediaElement::setDisplayMode(mode);
 
-    if (renderer() && displayMode() != oldMode)
-        renderer()->updateFromElement();
+    if (layoutObject() && displayMode() != oldMode)
+        layoutObject()->updateFromElement();
 }
 
 void HTMLVideoElement::updateDisplayState()
@@ -206,7 +210,7 @@ void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, cons
         return;
 
     WebCanvas* canvas = context->canvas();
-    SkXfermode::Mode mode = WebCoreCompositeToSkiaComposite(context->compositeOperation(), context->blendModeOperation());
+    SkXfermode::Mode mode = context->compositeOperation();
     webMediaPlayer()->paint(canvas, destRect, context->getNormalizedAlpha(), mode);
 }
 
@@ -226,7 +230,7 @@ bool HTMLVideoElement::hasAvailableVideoFrame() const
     if (!webMediaPlayer())
         return false;
 
-    return webMediaPlayer()->hasVideo() && webMediaPlayer()->readyState() >= blink::WebMediaPlayer::ReadyStateHaveCurrentData;
+    return webMediaPlayer()->hasVideo() && webMediaPlayer()->readyState() >= WebMediaPlayer::ReadyStateHaveCurrentData;
 }
 
 void HTMLVideoElement::webkitEnterFullscreen(ExceptionState& exceptionState)
@@ -310,18 +314,18 @@ PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode
 
     paintCurrentFrameInContext(imageBuffer->context(), IntRect(IntPoint(0, 0), intrinsicSize));
 
-    *status = NormalSourceImageStatus;
+    *status = (mode == CopySourceImageIfVolatile) ? NormalSourceImageStatus : ExternalSourceImageStatus;
     return imageBuffer->copyImage(mode == CopySourceImageIfVolatile ? CopyBackingStore : DontCopyBackingStore, Unscaled);
 }
 
 bool HTMLVideoElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
 {
-    return !hasSingleSecurityOrigin() || (!(webMediaPlayer() && webMediaPlayer()->didPassCORSAccessCheck()) && destinationSecurityOrigin->taintsCanvas(currentSrc()));
+    return !isMediaDataCORSSameOrigin(destinationSecurityOrigin);
 }
 
-FloatSize HTMLVideoElement::sourceSize() const
+FloatSize HTMLVideoElement::elementSize() const
 {
     return FloatSize(videoWidth(), videoHeight());
 }
 
-}
+} // namespace blink

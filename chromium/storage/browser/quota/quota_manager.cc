@@ -16,6 +16,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -23,6 +24,7 @@
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "net/base/net_util.h"
+#include "storage/browser/quota/client_usage_tracker.h"
 #include "storage/browser/quota/quota_database.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/quota_temporary_storage_evictor.h"
@@ -829,6 +831,10 @@ void QuotaManager::GetUsageAndQuotaForWebApps(
     const GURL& origin,
     StorageType type,
     const GetUsageAndQuotaCallback& callback) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "477117 QuotaManager::GetUsageAndQuotaForWebApps"));
   if (type != kStorageTypeTemporary &&
       type != kStorageTypePersistent &&
       type != kStorageTypeSyncable) {
@@ -1530,8 +1536,7 @@ void QuotaManager::DidGetPersistentHostQuota(const std::string& host,
                                              const int64* quota,
                                              bool success) {
   DidDatabaseWork(success);
-  persistent_host_quota_callbacks_.Run(
-      host, MakeTuple(kQuotaStatusOk, *quota));
+  persistent_host_quota_callbacks_.Run(host, kQuotaStatusOk, *quota);
 }
 
 void QuotaManager::DidSetPersistentHostQuota(const std::string& host,
@@ -1555,7 +1560,7 @@ void QuotaManager::DidInitialize(int64* temporary_quota_override,
                              kReportHistogramInterval),
                          this, &QuotaManager::ReportHistogram);
 
-  db_initialization_callbacks_.Run(MakeTuple());
+  db_initialization_callbacks_.Run();
   GetTemporaryGlobalQuota(
       base::Bind(&QuotaManager::DidGetInitialTemporaryGlobalQuota,
                  weak_factory_.GetWeakPtr()));
@@ -1599,7 +1604,7 @@ void QuotaManager::DidInitializeTemporaryOriginsInfo(bool success) {
 }
 
 void QuotaManager::DidGetAvailableSpace(int64 space) {
-  available_space_callbacks_.Run(MakeTuple(kQuotaStatusOk, space));
+  available_space_callbacks_.Run(kQuotaStatusOk, space);
 }
 
 void QuotaManager::DidDatabaseWork(bool success) {

@@ -228,9 +228,11 @@
       p                          += 34;
       decoder->bit_depth          = *p;
 
-      if ( decoder->strike_index_array > face->sbit_table_size             ||
-           decoder->strike_index_array + 8 * decoder->strike_index_count >
-             face->sbit_table_size                                         )
+      /* decoder->strike_index_array +                               */
+      /*   8 * decoder->strike_index_count > face->sbit_table_size ? */
+      if ( decoder->strike_index_array > face->sbit_table_size           ||
+           decoder->strike_index_count >
+             ( face->sbit_table_size - decoder->strike_index_array ) / 8 )
         error = SFNT_Err_Invalid_File_Format;
     }
 
@@ -819,11 +821,11 @@
     image_offset = FT_NEXT_ULONG( p );
 
     /* overflow check */
-    if ( decoder->eblc_base + decoder->strike_index_array + image_offset <
-           decoder->eblc_base )
+    p = decoder->eblc_base + decoder->strike_index_array;
+    if ( image_offset > (FT_ULong)( p_limit - p ) )
       goto Failure;
 
-    p = decoder->eblc_base + decoder->strike_index_array + image_offset;
+    p += image_offset;
     if ( p + 8 > p_limit )
       goto NoBitmap;
 
@@ -890,11 +892,9 @@
 
         num_glyphs = FT_NEXT_ULONG( p );
 
-        /* overflow check */
-        if ( p + ( num_glyphs + 1 ) * 4 < p )
-          goto Failure;
-
-        if ( p + ( num_glyphs + 1 ) * 4 > p_limit )
+        /* overflow check for p + ( num_glyphs + 1 ) * 4 */
+        if ( p + 4 > p_limit                                         ||
+             num_glyphs > (FT_ULong)( ( ( p_limit - p ) >> 2 ) - 1 ) )
           goto NoBitmap;
 
         for ( mm = 0; mm < num_glyphs; mm++ )
@@ -932,11 +932,8 @@
 
         num_glyphs = FT_NEXT_ULONG( p );
 
-        /* overflow check */
-        if ( p + 2 * num_glyphs < p )
-          goto Failure;
-
-        if ( p + 2 * num_glyphs > p_limit )
+        /* overflow check for p + 2 * num_glyphs */
+        if ( num_glyphs > (FT_ULong)( ( p_limit - p ) >> 1 ) )
           goto NoBitmap;
 
         for ( mm = 0; mm < num_glyphs; mm++ )

@@ -42,6 +42,7 @@ To merge multiple archives
 
 import calendar
 import certutils
+import cPickle
 import difflib
 import email.utils
 import httplib
@@ -50,7 +51,6 @@ import json
 import logging
 import optparse
 import os
-import persistentmixin
 import StringIO
 import subprocess
 import sys
@@ -60,6 +60,7 @@ import urlparse
 from collections import defaultdict
 
 
+
 def LogRunTime(fn):
   """Annotation which logs the run time of the function."""
   def wrapped(self, *args, **kwargs):
@@ -67,7 +68,7 @@ def LogRunTime(fn):
     try:
       return fn(self, *args, **kwargs)
     finally:
-      run_time = (time.time() - start_time) * 1000.0;
+      run_time = (time.time() - start_time) * 1000.0
       logging.debug('%s: %dms', fn.__name__, run_time)
   return wrapped
 
@@ -77,13 +78,8 @@ class HttpArchiveException(Exception):
   pass
 
 
-class HttpArchive(dict, persistentmixin.PersistentMixin):
+class HttpArchive(dict):
   """Dict with ArchivedHttpRequest keys and ArchivedHttpResponse values.
-
-  PersistentMixin adds the following methods:
-    AssertWritable(filename)
-    Load(filename)
-    Persist(filename)
 
   Attributes:
     responses_by_host: dict of {hostname, {request: response}}. This must remain
@@ -92,7 +88,7 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
         the archive to find potential matches.
   """
 
-  def __init__(self):
+  def __init__(self):  # pylint: disable=super-init-not-called
     self.responses_by_host = defaultdict(dict)
 
   def __setstate__(self, state):
@@ -198,7 +194,8 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
             status = 304  # not modified
     return status
 
-  def is_etag_match(self, request_etag, response_etag):
+  @staticmethod
+  def is_etag_match(request_etag, response_etag):
     """Determines whether the entity tags of the request/response matches.
 
     Args:
@@ -274,12 +271,13 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
       return
 
     out = StringIO.StringIO()
-    stats = {}
-    stats['Total'] = len(matching_requests)
-    stats['Domains'] = defaultdict(int)
-    stats['HTTP_response_code'] = defaultdict(int)
-    stats['content_type'] = defaultdict(int)
-    stats['Documents'] = defaultdict(int)
+    stats = {
+        'Total': len(matching_requests),
+        'Domains': defaultdict(int),
+        'HTTP_response_code': defaultdict(int),
+        'content_type': defaultdict(int),
+        'Documents': defaultdict(int),
+        }
 
     for request in matching_requests:
       stats['Domains'][request.host] += 1
@@ -411,37 +409,47 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
       return '\n'.join(difflib.ndiff(closest_request_lines, request_lines))
     return None
 
-  def set_root_cert(self, cert_path):
-    with open(cert_path, 'r') as cert_file:
-      cert_str = cert_file.read()
-    cert_str_response = create_response(200, body=cert_str)
-    root_request = ArchivedHttpRequest('ROOT_CERT', '', '', None, {})
-    self[root_request] = cert_str_response
-
-  def _get_server_cert(self, host):
+  def get_server_cert(self, host):
     """Gets certificate from the server and stores it in archive"""
     request = ArchivedHttpRequest('SERVER_CERT', host, '', None, {})
     if request not in self:
       self[request] = create_response(200, body=certutils.get_host_cert(host))
     return self[request].response_data[0]
 
-  def _get_root_cert(self):
-    request = ArchivedHttpRequest('ROOT_CERT', '', '', None, {})
-    if request not in self:
-      raise KeyError('Root cert is not in the archive')
-    return self[request].response_data[0]
-
-  def _generate_cert(self, host):
-    """Generate cert with the SNI field from the real server's response."""
-    root_ca_cert_str = self._get_root_cert()
-    return certutils.generate_cert(
-        root_ca_cert_str, self._get_server_cert(host), host)
-
   def get_certificate(self, host):
     request = ArchivedHttpRequest('DUMMY_CERT', host, '', None, {})
     if request not in self:
       self[request] = create_response(200, body=self._generate_cert(host))
     return self[request].response_data[0]
+
+  @classmethod
+  def AssertWritable(cls, filename):
+    """Raises an IOError if filename is not writable."""
+    persist_dir = os.path.dirname(os.path.abspath(filename))
+    if not os.path.exists(persist_dir):
+      raise IOError('Directory does not exist: %s' % persist_dir)
+    if os.path.exists(filename):
+      if not os.access(filename, os.W_OK):
+        raise IOError('Need write permission on file: %s' % filename)
+    elif not os.access(persist_dir, os.W_OK):
+      raise IOError('Need write permission on directory: %s' % persist_dir)
+
+  @classmethod
+  def Load(cls, filename):
+    """Load an instance from filename."""
+    return cPickle.load(open(filename, 'rb'))
+
+  def Persist(self, filename):
+    """Persist all state to filename."""
+    try:
+      original_checkinterval = sys.getcheckinterval()
+      sys.setcheckinterval(2**31-1)  # Lock out other threads so nothing can
+                                     # modify |self| during pickling.
+      pickled_self = cPickle.dumps(self, cPickle.HIGHEST_PROTOCOL)
+    finally:
+      sys.setcheckinterval(original_checkinterval)
+    with open(filename, 'wb') as f:
+      f.write(pickled_self)
 
 
 class ArchivedHttpRequest(object):
@@ -609,7 +617,8 @@ class ArchivedHttpRequest(object):
     - cache-control:  sometimes sent from Chrome with 'max-age=0' as value.
     - connection, method, scheme, url, version: Cause problems with spdy.
     - cookie: Extremely sensitive to request/response order.
-    - keep-alive: Not supported by Web Page Replay.
+    - keep-alive: Doesn't affect the content of the request, only some
+      transient state of the transport layer.
     - user-agent: Changes with every Chrome version.
     - proxy-connection: Sent for proxy requests.
 
@@ -627,11 +636,11 @@ class ArchivedHttpRequest(object):
     # TODO(tonyg): Strip sdch from the request headers because we can't
     # guarantee that the dictionary will be recorded, so replay may not work.
     if 'accept-encoding' in headers:
-      headers['accept-encoding'] = headers['accept-encoding'].replace(
-          'sdch', '')
-      # A little clean-up
-      if headers['accept-encoding'].endswith(','):
-        headers['accept-encoding'] = headers['accept-encoding'][:-1]
+      accept_encoding = headers['accept-encoding']
+      accept_encoding = accept_encoding.replace('sdch', '')
+      stripped_encodings = [e.strip() for e in accept_encoding.split(',')]
+      accept_encoding = ','.join(filter(bool, stripped_encodings))
+      headers['accept-encoding'] = accept_encoding
     undesirable_keys = [
         'accept', 'accept-charset', 'accept-language', 'cache-control',
         'connection', 'cookie', 'keep-alive', 'method',
@@ -762,7 +771,8 @@ class ArchivedHttpResponse(object):
         self.headers.pop(i)
         return
 
-  def _get_epoch_seconds(self, date_str):
+  @staticmethod
+  def _get_epoch_seconds(date_str):
     """Return the epoch seconds of a date header.
 
     Args:

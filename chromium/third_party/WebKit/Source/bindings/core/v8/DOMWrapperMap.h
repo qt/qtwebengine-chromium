@@ -48,7 +48,7 @@ public:
     {
     }
 
-    v8::Handle<v8::Object> newLocal(KeyType* key, v8::Isolate* isolate)
+    v8::Local<v8::Object> newLocal(v8::Isolate* isolate, KeyType* key)
     {
         return m_map.Get(key);
     }
@@ -58,7 +58,7 @@ public:
         return m_map.SetReturnValue(key, returnValue);
     }
 
-    void setReference(const v8::Persistent<v8::Object>& parent, KeyType* key, v8::Isolate* isolate)
+    void setReference(v8::Isolate* isolate, const v8::Persistent<v8::Object>& parent, KeyType* key)
     {
         m_map.SetReference(key, parent);
     }
@@ -68,13 +68,13 @@ public:
         return m_map.Contains(key);
     }
 
-    void set(KeyType* key, v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo)
+    void set(KeyType* key, v8::Local<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo)
     {
-        ASSERT(reinterpret_cast<KeyType*>(toScriptWrappableBase(wrapper)) == key);
+        ASSERT((getInternalField<KeyType, v8DOMWrapperObjectIndex>(wrapper)) == key);
         RELEASE_ASSERT(!containsKey(key)); // See crbug.com/368095
-        v8::UniquePersistent<v8::Object> unique(m_isolate, wrapper);
-        wrapperTypeInfo->configureWrapper(&unique);
-        m_map.Set(key, unique.Pass());
+        v8::Global<v8::Object> global(m_isolate, wrapper);
+        wrapperTypeInfo->configureWrapper(&global);
+        m_map.Set(key, global.Pass());
     }
 
     void clear()
@@ -122,8 +122,8 @@ private:
         }
 
         // Weak traits:
-        static const v8::PersistentContainerCallbackType kCallbackType = v8::kWeak;
-        typedef v8::PersistentValueMap<KeyType*, v8::Object, PersistentValueMapTraits> MapType;
+        static const v8::PersistentContainerCallbackType kCallbackType = v8::kWeakWithInternalFields;
+        typedef v8::GlobalValueMap<KeyType*, v8::Object, PersistentValueMapTraits> MapType;
         typedef MapType WeakCallbackDataType;
 
         static WeakCallbackDataType* WeakCallbackParameter(MapType* map, KeyType* key, v8::Local<v8::Object>& value)
@@ -133,19 +133,27 @@ private:
 
         static void DisposeCallbackData(WeakCallbackDataType* callbackData) { }
 
-        static MapType* MapFromWeakCallbackData(
-            const v8::WeakCallbackData<v8::Object, WeakCallbackDataType>& data)
+        static MapType* MapFromWeakCallbackInfo(const v8::WeakCallbackInfo<WeakCallbackDataType>& data)
         {
             return data.GetParameter();
         }
 
-        static KeyType* KeyFromWeakCallbackData(
-            const v8::WeakCallbackData<v8::Object, WeakCallbackDataType>& data)
+        static KeyType* KeyFromWeakCallbackInfo(const v8::WeakCallbackInfo<WeakCallbackDataType>& data)
         {
-            return reinterpret_cast<KeyType*>(toScriptWrappableBase(data.GetValue()));
+            return reinterpret_cast<KeyType*>(data.GetInternalField(v8DOMWrapperObjectIndex));
         }
 
-        static void Dispose(v8::Isolate* isolate, v8::UniquePersistent<v8::Object> value, KeyType* key) { }
+        static void Dispose(v8::Isolate* isolate, v8::Global<v8::Object> value, KeyType* key) { }
+
+        static void DisposeWeak(const v8::WeakCallbackInfo<WeakCallbackDataType>& data)
+        {
+            void* internalFields[v8::kInternalFieldsInWeakCallback] = {
+                data.GetInternalField(0),
+                data.GetInternalField(1)
+            };
+            DisposeWeak(data.GetIsolate(), internalFields, KeyFromWeakCallbackInfo(data));
+        }
+        static void DisposeWeak(v8::Isolate* isolate, void* internalFields[v8::kInternalFieldsInWeakCallback], KeyType* key) { }
     };
 
     v8::Isolate* m_isolate;

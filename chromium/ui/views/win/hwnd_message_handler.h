@@ -21,7 +21,7 @@
 #include "ui/base/ui_base_types.h"
 #include "ui/base/win/window_event_target.h"
 #include "ui/events/event.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/sequential_id_generator.h"
 #include "ui/gfx/win/window_impl.h"
 #include "ui/views/ime/input_method_delegate.h"
@@ -42,6 +42,7 @@ namespace views {
 class FullscreenHandler;
 class HWNDMessageHandlerDelegate;
 class InputMethod;
+class WindowsSessionChangeObserver;
 
 // These two messages aren't defined in winuser.h, but they are sent to windows
 // with captions. They appear to paint the window caption and frame.
@@ -55,16 +56,15 @@ const int WM_NCUAHDRAWCAPTION = 0xAE;
 const int WM_NCUAHDRAWFRAME = 0xAF;
 
 // IsMsgHandled() and BEGIN_SAFE_MSG_MAP_EX are a modified version of
-// BEGIN_MSG_MAP_EX. The main difference is it adds a WeakPtrFactory member
-// (|weak_factory_|) that is used in _ProcessWindowMessage() and changing
+// BEGIN_MSG_MAP_EX. The main difference is it uses a WeakPtrFactory member
+// (|weak_factory|) that is used in _ProcessWindowMessage() and changing
 // IsMsgHandled() from a member function to a define that checks if the weak
 // factory is still valid in addition to the member. Together these allow for
 // |this| to be deleted during dispatch.
 #define IsMsgHandled() !ref.get() || msg_handled_
 
-#define BEGIN_SAFE_MSG_MAP_EX(the_class) \
+#define BEGIN_SAFE_MSG_MAP_EX(weak_factory) \
  private: \
-  base::WeakPtrFactory<the_class> weak_factory_; \
   BOOL msg_handled_; \
 \
  public: \
@@ -77,8 +77,8 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
                             WPARAM w_param, \
                             LPARAM l_param, \
                             LRESULT& l_result, \
-                            DWORD msg_map_id = 0) { \
-    base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr()); \
+                            DWORD msg_map_id = 0) override { \
+    base::WeakPtr<HWNDMessageHandler> ref(weak_factory.GetWeakPtr()); \
     BOOL old_msg_handled = msg_handled_; \
     BOOL ret = _ProcessWindowMessage(hwnd, msg, w_param, l_param, l_result, \
                                      msg_map_id); \
@@ -92,7 +92,7 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
                              LPARAM lParam, \
                              LRESULT& lResult, \
                              DWORD dwMsgMapID) { \
-    base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr()); \
+    base::WeakPtr<HWNDMessageHandler> ref(weak_factory.GetWeakPtr()); \
     BOOL bHandled = TRUE; \
     hWnd; \
     uMsg; \
@@ -115,7 +115,7 @@ class VIEWS_EXPORT HWNDMessageHandler :
     public ui::WindowEventTarget {
  public:
   explicit HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate);
-  ~HWNDMessageHandler();
+  ~HWNDMessageHandler() override;
 
   void Init(HWND parent, const gfx::Rect& bounds);
   void InitModalType(ui::ModalType modal_type);
@@ -189,9 +189,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   void FrameTypeChanged();
 
-  void SchedulePaintInRect(const gfx::Rect& rect);
-  void SetOpacity(BYTE opacity);
-
   void SetWindowIcons(const gfx::ImageSkia& window_icon,
                       const gfx::ImageSkia& app_icon);
 
@@ -212,37 +209,38 @@ class VIEWS_EXPORT HWNDMessageHandler :
   typedef std::set<DWORD> TouchIDs;
 
   // Overridden from internal::InputMethodDelegate:
-  virtual void DispatchKeyEventPostIME(const ui::KeyEvent& key) override;
+  void DispatchKeyEventPostIME(const ui::KeyEvent& key) override;
 
   // Overridden from WindowImpl:
-  virtual HICON GetDefaultWindowIcon() const override;
-  virtual LRESULT OnWndProc(UINT message,
-                            WPARAM w_param,
-                            LPARAM l_param) override;
+  HICON GetDefaultWindowIcon() const override;
+  HICON GetSmallWindowIcon() const override;
+  LRESULT OnWndProc(UINT message, WPARAM w_param, LPARAM l_param) override;
 
   // Overridden from WindowEventTarget
-  virtual LRESULT HandleMouseMessage(unsigned int message,
-                                     WPARAM w_param,
-                                     LPARAM l_param,
-                                     bool* handled) override;
-  virtual LRESULT HandleKeyboardMessage(unsigned int message,
-                                        WPARAM w_param,
-                                        LPARAM l_param,
-                                        bool* handled) override;
-  virtual LRESULT HandleTouchMessage(unsigned int message,
-                                     WPARAM w_param,
-                                     LPARAM l_param,
-                                     bool* handled) override;
+  LRESULT HandleMouseMessage(unsigned int message,
+                             WPARAM w_param,
+                             LPARAM l_param,
+                             bool* handled) override;
+  LRESULT HandleKeyboardMessage(unsigned int message,
+                                WPARAM w_param,
+                                LPARAM l_param,
+                                bool* handled) override;
+  LRESULT HandleTouchMessage(unsigned int message,
+                             WPARAM w_param,
+                             LPARAM l_param,
+                             bool* handled) override;
 
-  virtual LRESULT HandleScrollMessage(unsigned int message,
-                                      WPARAM w_param,
-                                      LPARAM l_param,
-                                      bool* handled) override;
+  LRESULT HandleScrollMessage(unsigned int message,
+                              WPARAM w_param,
+                              LPARAM l_param,
+                              bool* handled) override;
 
-  virtual LRESULT HandleNcHitTestMessage(unsigned int message,
-                                         WPARAM w_param,
-                                         LPARAM l_param,
-                                         bool* handled) override;
+  LRESULT HandleNcHitTestMessage(unsigned int message,
+                                 WPARAM w_param,
+                                 LPARAM l_param,
+                                 bool* handled) override;
+
+  void HandleParentChanged() override;
 
   // Returns the auto-hide edges of the appbar. See
   // ViewsDelegate::GetAppbarAutohideEdges() for details. If the edges change,
@@ -306,17 +304,13 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Stops ignoring SetWindowPos() requests (see below).
   void StopIgnoringPosChanges() { ignore_window_pos_changes_ = false; }
 
-  // Synchronously updates the invalid contents of the Widget. Valid for
-  // layered windows only.
-  void RedrawLayeredWindowContents();
-
   // Attempts to force the window to be redrawn, ensuring that it gets
   // onscreen.
   void ForceRedrawWindow(int attempts);
 
   // Message Handlers ----------------------------------------------------------
 
-  BEGIN_SAFE_MSG_MAP_EX(HWNDMessageHandler)
+  BEGIN_SAFE_MSG_MAP_EX(weak_factory_)
     // Range handlers must go first!
     CR_MESSAGE_RANGE_HANDLER_EX(WM_MOUSEFIRST, WM_MOUSELAST, OnMouseRange)
     CR_MESSAGE_RANGE_HANDLER_EX(WM_NCMOUSEMOVE,
@@ -402,7 +396,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
     CR_MSG_WM_THEMECHANGED(OnThemeChanged)
     CR_MSG_WM_WINDOWPOSCHANGED(OnWindowPosChanged)
     CR_MSG_WM_WINDOWPOSCHANGING(OnWindowPosChanging)
-    CR_MSG_WM_WTSSESSION_CHANGE(OnSessionChange)
   CR_END_MSG_MAP()
 
   // Message Handlers.
@@ -447,7 +440,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void OnPaint(HDC dc);
   LRESULT OnReflectedMessage(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnScrollMessage(UINT message, WPARAM w_param, LPARAM l_param);
-  void OnSessionChange(WPARAM status_code, PWTSSESSION_NOTIFICATION session_id);
   LRESULT OnSetCursor(UINT message, WPARAM w_param, LPARAM l_param);
   void OnSetFocus(HWND last_focused_window);
   LRESULT OnSetIcon(UINT size_type, HICON new_icon);
@@ -459,6 +451,9 @@ class VIEWS_EXPORT HWNDMessageHandler :
   LRESULT OnTouchEvent(UINT message, WPARAM w_param, LPARAM l_param);
   void OnWindowPosChanging(WINDOWPOS* window_pos);
   void OnWindowPosChanged(WINDOWPOS* window_pos);
+
+  // Receives Windows Session Change notifications.
+  void OnSessionChange(WPARAM status_code);
 
   typedef std::vector<ui::TouchEvent> TouchEvents;
   // Helper to handle the list of touch events passed in. We need this because
@@ -545,39 +540,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
   HMONITOR last_monitor_;
   gfx::Rect last_monitor_rect_, last_work_area_;
 
-  // Layered windows -----------------------------------------------------------
-
-  // Should we keep an off-screen buffer? This is false by default, set to true
-  // when WS_EX_LAYERED is specified before the native window is created.
-  //
-  // NOTE: this is intended to be used with a layered window (a window with an
-  // extended window style of WS_EX_LAYERED). If you are using a layered window
-  // and NOT changing the layered alpha or anything else, then leave this value
-  // alone. OTOH if you are invoking SetLayeredWindowAttributes then you'll
-  // most likely want to set this to false, or after changing the alpha toggle
-  // the extended style bit to false than back to true. See MSDN for more
-  // details.
-  bool use_layered_buffer_;
-
-  // The default alpha to be applied to the layered window.
-  BYTE layered_alpha_;
-
-  // A canvas that contains the window contents in the case of a layered
-  // window.
-  scoped_ptr<gfx::Canvas> layered_window_contents_;
-
-  // We must track the invalid rect ourselves, for two reasons:
-  // For layered windows, Windows will not do this properly with
-  // InvalidateRect()/GetUpdateRect(). (In fact, it'll return misleading
-  // information from GetUpdateRect()).
-  // We also need to keep track of the invalid rectangle for the RootView should
-  // we need to paint the non-client area. The data supplied to WM_NCPAINT seems
-  // to be insufficient.
-  gfx::Rect invalid_rect_;
-
-  // Set to true when waiting for RedrawLayeredWindowContents().
-  bool waiting_for_redraw_layered_window_contents_;
-
   // True the first time nccalc is called on a sizable widget
   bool is_first_nccalc_;
 
@@ -586,9 +548,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   // If > 0 indicates a menu is running (we're showing a native menu).
   int menu_depth_;
-
-  // A factory used to lookup appbar autohide edges.
-  base::WeakPtrFactory<HWNDMessageHandler> autohide_factory_;
 
   // Generates touch-ids for touch-events.
   ui::SequentialIDGenerator id_generator_;
@@ -627,6 +586,18 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // This member variable is set to true if the window is transitioning to
   // glass. Defaults to false.
   bool dwm_transition_desired_;
+
+  // Manages observation of Windows Session Change messages.
+  scoped_ptr<WindowsSessionChangeObserver> windows_session_change_observer_;
+
+  // The WeakPtrFactories below must occur last in the class definition so they
+  // get destroyed last.
+
+  // The factory used to lookup appbar autohide edges.
+  base::WeakPtrFactory<HWNDMessageHandler> autohide_factory_;
+
+  // The factory used with BEGIN_SAFE_MSG_MAP_EX.
+  base::WeakPtrFactory<HWNDMessageHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };

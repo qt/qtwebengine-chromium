@@ -12,9 +12,9 @@
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
@@ -61,6 +61,7 @@ IPC_STRUCT_BEGIN(PluginMsg_FetchURL_Params)
   IPC_STRUCT_MEMBER(std::string, method)
   IPC_STRUCT_MEMBER(std::vector<char>, post_data)
   IPC_STRUCT_MEMBER(GURL, referrer)
+  IPC_STRUCT_MEMBER(blink::WebReferrerPolicy, referrer_policy)
   IPC_STRUCT_MEMBER(bool, notify_redirect)
   IPC_STRUCT_MEMBER(bool, is_plugin_src_load)
   IPC_STRUCT_MEMBER(int, render_frame_id)
@@ -304,11 +305,11 @@ IPC_SYNC_MESSAGE_ROUTED2_0(PluginHostMsg_SetWindowlessData,
                            HANDLE /* modal_loop_pump_messages_event */,
                            gfx::NativeViewId /* dummy_activation_window*/)
 
-// Send the IME status retrieved from a windowless plug-in. A windowless plug-in
-// uses the IME attached to a browser process as a renderer does. A plug-in
+// Send the IME status retrieved from a windowless plugin. A windowless plugin
+// uses the IME attached to a browser process as a renderer does. A plugin
 // sends this message to control the IME status of a browser process. I would
-// note that a plug-in sends this message to a renderer process that hosts this
-// plug-in (not directly to a browser process) so the renderer process can
+// note that a plugin sends this message to a renderer process that hosts this
+// plugin (not directly to a browser process) so the renderer process can
 // update its IME status.
 IPC_MESSAGE_ROUTED2(PluginHostMsg_NotifyIMEStatus,
                     int /* input_type */,

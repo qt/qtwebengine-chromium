@@ -36,12 +36,12 @@ SpeechGrammarList* SpeechGrammarList::create()
     return new SpeechGrammarList;
 }
 
-SpeechGrammar* SpeechGrammarList::item(unsigned long index) const
+SpeechGrammar* SpeechGrammarList::item(unsigned index) const
 {
     if (index >= m_grammars.size())
-        return 0;
+        return nullptr;
 
-    return m_grammars[index].get();
+    return m_grammars[index];
 }
 
 void SpeechGrammarList::addFromUri(ExecutionContext* executionContext, const String& src, double weight)
@@ -60,7 +60,7 @@ SpeechGrammarList::SpeechGrammarList()
 {
 }
 
-void SpeechGrammarList::trace(Visitor* visitor)
+DEFINE_TRACE(SpeechGrammarList)
 {
     visitor->trace(m_grammars);
 }

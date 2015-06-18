@@ -35,8 +35,8 @@
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "core/html/shadow/DateTimeFieldElements.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/StyleInheritedData.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/text/DateTimeFormat.h"
 #include "platform/text/PlatformLocale.h"
@@ -357,7 +357,7 @@ bool DateTimeEditBuilder::shouldHourFieldDisabled() const
     }
 
     const Decimal decimalMsPerDay(static_cast<int>(msPerDay));
-    Decimal hourPartOfMinimum = (stepRange().minimum().abs().remainder(decimalMsPerDay) / static_cast<int>(msPerHour)).floor();
+    Decimal hourPartOfMinimum = (stepRange().stepBase().abs().remainder(decimalMsPerDay) / static_cast<int>(msPerHour)).floor();
     return hourPartOfMinimum == m_dateValue.hour() && stepRange().step().remainder(decimalMsPerDay).isZero();
 }
 
@@ -367,7 +367,7 @@ bool DateTimeEditBuilder::shouldMillisecondFieldDisabled() const
         return true;
 
     const Decimal decimalMsPerSecond(static_cast<int>(msPerSecond));
-    return stepRange().minimum().abs().remainder(decimalMsPerSecond) == m_dateValue.millisecond() && stepRange().step().remainder(decimalMsPerSecond).isZero();
+    return stepRange().stepBase().abs().remainder(decimalMsPerSecond) == m_dateValue.millisecond() && stepRange().step().remainder(decimalMsPerSecond).isZero();
 }
 
 bool DateTimeEditBuilder::shouldMinuteFieldDisabled() const
@@ -376,7 +376,7 @@ bool DateTimeEditBuilder::shouldMinuteFieldDisabled() const
         return true;
 
     const Decimal decimalMsPerHour(static_cast<int>(msPerHour));
-    Decimal minutePartOfMinimum = (stepRange().minimum().abs().remainder(decimalMsPerHour) / static_cast<int>(msPerMinute)).floor();
+    Decimal minutePartOfMinimum = (stepRange().stepBase().abs().remainder(decimalMsPerHour) / static_cast<int>(msPerMinute)).floor();
     return minutePartOfMinimum == m_dateValue.minute() && stepRange().step().remainder(decimalMsPerHour).isZero();
 }
 
@@ -386,7 +386,7 @@ bool DateTimeEditBuilder::shouldSecondFieldDisabled() const
         return true;
 
     const Decimal decimalMsPerMinute(static_cast<int>(msPerMinute));
-    Decimal secondPartOfMinimum = (stepRange().minimum().abs().remainder(decimalMsPerMinute) / static_cast<int>(msPerSecond)).floor();
+    Decimal secondPartOfMinimum = (stepRange().stepBase().abs().remainder(decimalMsPerMinute) / static_cast<int>(msPerSecond)).floor();
     return secondPartOfMinimum == m_dateValue.second() && stepRange().step().remainder(decimalMsPerMinute).isZero();
 }
 
@@ -407,7 +407,7 @@ void DateTimeEditBuilder::visitLiteral(const String& text)
     if (m_parameters.locale.isRTL() && text.length()) {
         Direction dir = direction(text[0]);
         if (dir == SegmentSeparator || dir == WhiteSpaceNeutral || dir == OtherNeutral)
-            element->appendChild(Text::create(m_editElement.document(), String(&rightToLeftMark, 1)));
+            element->appendChild(Text::create(m_editElement.document(), String(&rightToLeftMarkCharacter, 1)));
     }
     element->appendChild(Text::create(m_editElement.document(), text));
     m_editElement.fieldsWrapperElement()->appendChild(element);
@@ -455,7 +455,7 @@ DateTimeEditElement::~DateTimeEditElement()
 #endif
 }
 
-void DateTimeEditElement::trace(Visitor* visitor)
+DEFINE_TRACE(DateTimeEditElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_fields);
@@ -501,12 +501,11 @@ PassRefPtrWillBeRawPtr<DateTimeEditElement> DateTimeEditElement::create(Document
     return container.release();
 }
 
-PassRefPtr<RenderStyle> DateTimeEditElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> DateTimeEditElement::customStyleForLayoutObject()
 {
-    // FIXME: This is a kind of layout. We might want to introduce new renderer.
-    FontCachePurgePreventer fontCachePurgePreventer;
-    RefPtr<RenderStyle> originalStyle = originalStyleForRenderer();
-    RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
+    // FIXME: This is a kind of layout. We might want to introduce new layoutObject.
+    RefPtr<ComputedStyle> originalStyle = originalStyleForLayoutObject();
+    RefPtr<ComputedStyle> style = ComputedStyle::clone(*originalStyle);
     float width = 0;
     for (Node* child = fieldsWrapperElement()->firstChild(); child; child = child->nextSibling()) {
         if (!child->isElementNode())

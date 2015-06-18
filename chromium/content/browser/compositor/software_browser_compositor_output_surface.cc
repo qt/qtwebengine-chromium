@@ -10,7 +10,6 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_output_device.h"
-#include "content/browser/compositor/browser_compositor_output_surface_proxy.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/vsync_provider.h"
@@ -18,25 +17,26 @@
 namespace content {
 
 SoftwareBrowserCompositorOutputSurface::SoftwareBrowserCompositorOutputSurface(
-    scoped_refptr<BrowserCompositorOutputSurfaceProxy> surface_proxy,
     scoped_ptr<cc::SoftwareOutputDevice> software_device,
-    int surface_id,
-    IDMap<BrowserCompositorOutputSurface>* output_surface_map,
     const scoped_refptr<ui::CompositorVSyncManager>& vsync_manager)
     : BrowserCompositorOutputSurface(software_device.Pass(),
-                                     surface_id,
-                                     output_surface_map,
                                      vsync_manager),
-      output_surface_proxy_(surface_proxy) {}
+      weak_factory_(this) {
+}
 
 SoftwareBrowserCompositorOutputSurface::
-    ~SoftwareBrowserCompositorOutputSurface() {}
+    ~SoftwareBrowserCompositorOutputSurface() {
+}
 
 void SoftwareBrowserCompositorOutputSurface::SwapBuffers(
     cc::CompositorFrame* frame) {
-  for (size_t i = 0; i < frame->metadata.latency_info.size(); i++) {
-    frame->metadata.latency_info[i].AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
+  base::TimeTicks swap_time = base::TimeTicks::Now();
+  for (auto& latency : frame->metadata.latency_info) {
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0, swap_time, 1);
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0,
+        swap_time, 1);
   }
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -46,11 +46,9 @@ void SoftwareBrowserCompositorOutputSurface::SwapBuffers(
 
   gfx::VSyncProvider* vsync_provider = software_device()->GetVSyncProvider();
   if (vsync_provider) {
-    vsync_provider->GetVSyncParameters(
-        base::Bind(&BrowserCompositorOutputSurfaceProxy::
-                        OnUpdateVSyncParametersOnCompositorThread,
-                   output_surface_proxy_,
-                   surface_id_));
+    vsync_provider->GetVSyncParameters(base::Bind(
+        &BrowserCompositorOutputSurface::OnUpdateVSyncParametersFromGpu,
+        weak_factory_.GetWeakPtr()));
   }
   PostSwapBuffersComplete();
   client_->DidSwapBuffers();
@@ -60,6 +58,15 @@ void SoftwareBrowserCompositorOutputSurface::SwapBuffers(
 void SoftwareBrowserCompositorOutputSurface::OnSurfaceDisplayed() {
   // See GpuBrowserCompositorOutputSurface for when and how this is used.
   NOTREACHED() << "Not expected for software surfaces.";
+}
+
+void SoftwareBrowserCompositorOutputSurface::SetSurfaceSuspendedForRecycle(
+    bool suspended) {
+}
+
+bool SoftwareBrowserCompositorOutputSurface::
+    SurfaceShouldNotShowFramesAfterSuspendForRecycle() const {
+  return false;
 }
 #endif
 

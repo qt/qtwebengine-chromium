@@ -34,13 +34,13 @@ enum CSSPropertyID {
 const int firstCSSProperty = %(first_property_id)s;
 const int numCSSProperties = %(properties_count)s;
 const int lastCSSProperty = %(last_property_id)d;
+const int lastUnresolvedCSSProperty = %(last_unresolved_property_id)d;
 const size_t maxCSSPropertyNameLength = %(max_name_length)d;
 
 const char* getPropertyName(CSSPropertyID);
 const WTF::AtomicString& getPropertyNameAtomicString(CSSPropertyID);
 WTF::String getPropertyNameString(CSSPropertyID);
 WTF::String getJSPropertyName(CSSPropertyID);
-bool isInternalProperty(CSSPropertyID id);
 
 inline CSSPropertyID convertToCSSPropertyID(int value)
 {
@@ -48,15 +48,21 @@ inline CSSPropertyID convertToCSSPropertyID(int value)
     return static_cast<CSSPropertyID>(value);
 }
 
+inline CSSPropertyID resolveCSSPropertyID(CSSPropertyID id)
+{
+    return convertToCSSPropertyID(id & ~512);
+}
+
+inline bool isPropertyAlias(CSSPropertyID id) { return id & 512; }
+
 } // namespace blink
 
 namespace WTF {
 template<> struct DefaultHash<blink::CSSPropertyID> { typedef IntHash<unsigned> Hash; };
 template<> struct HashTraits<blink::CSSPropertyID> : GenericHashTraits<blink::CSSPropertyID> {
     static const bool emptyValueIsZero = true;
-    static const bool needsDestruction = false;
-    static void constructDeletedValue(blink::CSSPropertyID& slot, bool) { slot = static_cast<blink::CSSPropertyID>(blink::lastCSSProperty + 1); }
-    static bool isDeletedValue(blink::CSSPropertyID value) { return value == (blink::lastCSSProperty + 1); }
+    static void constructDeletedValue(blink::CSSPropertyID& slot, bool) { slot = static_cast<blink::CSSPropertyID>(blink::lastUnresolvedCSSProperty + 1); }
+    static bool isDeletedValue(blink::CSSPropertyID value) { return value == (blink::lastUnresolvedCSSProperty + 1); }
 };
 }
 
@@ -109,23 +115,16 @@ const Property* findProperty(register const char* str, register unsigned int len
 
 const char* getPropertyName(CSSPropertyID id)
 {
-    if (id < firstCSSProperty)
-        return 0;
+    ASSERT(id >= firstCSSProperty && id <= lastUnresolvedCSSProperty);
     int index = id - firstCSSProperty;
-    if (index >= numCSSProperties)
-        return 0;
     return propertyNameStringsPool + propertyNameStringsOffsets[index];
 }
 
 const AtomicString& getPropertyNameAtomicString(CSSPropertyID id)
 {
-    if (id < firstCSSProperty)
-        return nullAtom;
+    ASSERT(id >= firstCSSProperty && id <= lastUnresolvedCSSProperty);
     int index = id - firstCSSProperty;
-    if (index >= numCSSProperties)
-        return nullAtom;
-
-    static AtomicString* propertyStrings = new AtomicString[numCSSProperties]; // Intentionally never destroyed.
+    static AtomicString* propertyStrings = new AtomicString[lastUnresolvedCSSProperty]; // Intentionally never destroyed.
     AtomicString& propertyString = propertyStrings[index];
     if (propertyString.isNull()) {
         const char* propertyName = propertyNameStringsPool + propertyNameStringsOffsets[index];
@@ -162,16 +161,6 @@ String getJSPropertyName(CSSPropertyID id)
     return String(result);
 }
 
-bool isInternalProperty(CSSPropertyID id)
-{
-    switch (id) {
-        %(internal_properties)s
-            return true;
-        default:
-            return false;
-    }
-}
-
 } // namespace blink
 """
 
@@ -192,31 +181,34 @@ class CSSPropertyNamesWriter(css_properties.CSSProperties):
         return HEADER_TEMPLATE % {
             'license': license.license_for_generated_cpp(),
             'class_name': self.class_name,
-            'property_enums': "\n".join(map(self._enum_declaration, self._properties_list)),
+            'property_enums': "\n".join(map(self._enum_declaration, self._properties_including_aliases)),
             'first_property_id': self._first_enum_value,
             'properties_count': len(self._properties),
             'last_property_id': self._first_enum_value + len(self._properties) - 1,
+            'last_unresolved_property_id': max(property["enum_value"] for property in self._properties_including_aliases),
             'max_name_length': max(map(len, self._properties)),
         }
 
     def generate_implementation(self):
+        enum_value_to_name = {property['enum_value']: property['name'] for property in self._properties_including_aliases}
         property_offsets = []
+        property_names = []
         current_offset = 0
-        for property in self._properties_list:
+        for enum_value in range(1, max(enum_value_to_name) + 1):
             property_offsets.append(current_offset)
-            current_offset += len(property["name"]) + 1
+            if enum_value in enum_value_to_name:
+                name = enum_value_to_name[enum_value]
+                property_names.append(name)
+                current_offset += len(name) + 1
 
-        css_name_and_enum_pairs = [(property['name'], property_id) for property_id, property in self._properties.items()]
-        for name, aliased_name in self._aliases.items():
-            css_name_and_enum_pairs.append((name, css_properties.css_name_to_enum(aliased_name)))
+        css_name_and_enum_pairs = [(property['name'], property['property_id']) for property in self._properties_including_aliases]
 
         gperf_input = GPERF_TEMPLATE % {
             'license': license.license_for_generated_cpp(),
             'class_name': self.class_name,
-            'property_name_strings': '\n'.join(map(lambda property: '    "%(name)s\\0"' % property, self._properties_list)),
-            'property_name_offsets': '\n'.join(map(lambda offset: '    %d,' % offset, property_offsets)),
-            'property_to_enum_map': '\n'.join(map(lambda property: '%s, %s' % property, css_name_and_enum_pairs)),
-            'internal_properties': '\n'.join("case %s:" % property_id for property_id, property in self._properties.items() if property['is_internal']),
+            'property_name_strings': '\n'.join('    "%s\\0"' % name for name in property_names),
+            'property_name_offsets': '\n'.join('    %d,' % offset for offset in property_offsets),
+            'property_to_enum_map': '\n'.join('%s, %s' % property for property in css_name_and_enum_pairs),
         }
         # FIXME: If we could depend on Python 2.7, we would use subprocess.check_output
         gperf_args = [self.gperf_path, '--key-positions=*', '-P', '-n']

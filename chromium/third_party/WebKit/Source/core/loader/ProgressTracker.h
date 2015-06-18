@@ -26,6 +26,7 @@
 #ifndef ProgressTracker_h
 #define ProgressTracker_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
@@ -42,13 +43,13 @@ struct ProgressItem;
 // FIXME: This is only used on Android. Android is the only Chrome
 // browser which shows a progress bar during loading.
 // We should find a better way for Android to get this data and remove this!
-class ProgressTracker final : public NoBaseWillBeGarbageCollectedFinalized<ProgressTracker> {
-    WTF_MAKE_NONCOPYABLE(ProgressTracker); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT ProgressTracker final : public NoBaseWillBeGarbageCollectedFinalized<ProgressTracker> {
+    WTF_MAKE_NONCOPYABLE(ProgressTracker); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ProgressTracker);
 public:
     static PassOwnPtrWillBeRawPtr<ProgressTracker> create(LocalFrame*);
 
     ~ProgressTracker();
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void dispose();
 
     double estimatedProgress() const;
@@ -57,7 +58,7 @@ public:
     void progressCompleted();
 
     void incrementProgress(unsigned long identifier, const ResourceResponse&);
-    void incrementProgress(unsigned long identifier, const char*, int);
+    void incrementProgress(unsigned long identifier, int);
     void completeProgress(unsigned long identifier);
 
     long long totalPageAndResourceBytesToLoad() const { return m_totalPageAndResourceBytesToLoad; }
@@ -69,7 +70,6 @@ private:
     void reset();
 
     RawPtrWillBeMember<LocalFrame> m_frame;
-    bool m_inProgress;
     long long m_totalPageAndResourceBytesToLoad;
     long long m_totalBytesReceived;
     double m_lastNotifiedProgressValue;
@@ -79,7 +79,7 @@ private:
     bool m_finalProgressChangedSent;
     double m_progressValue;
 
-    HashMap<unsigned long, OwnPtr<ProgressItem> > m_progressItems;
+    HashMap<unsigned long, OwnPtr<ProgressItem>> m_progressItems;
 };
 
 }

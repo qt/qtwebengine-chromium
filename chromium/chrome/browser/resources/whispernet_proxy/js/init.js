@@ -4,87 +4,71 @@
 
 'use strict';
 
-// Globals holding our encoder and decoder. We will never have more than one
-// Global variable that will be used to access this Nacl bridge.
+// Global holding our NaclBridge.
 var whispernetNacl = null;
 
-// copy of an encoder or a decoder at a time.
-var whisperEncoder = null;
-var whisperDecoder = null;
+// Encoders and decoders for each client.
+var whisperEncoders = {};
+var whisperDecoders = {};
 
 /**
  * Initialize the whispernet encoder and decoder.
- * @param {Object} audioParams Audio parameters used to initialize the encoder
- * and decoder.
+ * Call this before any other functions.
+ * @param {string} clientId A string identifying the requester.
+ * @param {Object} audioParams Audio parameters for token encoding and decoding.
  */
-function initialize(audioParams) {
+function audioConfig(clientId, audioParams) {
   if (!whispernetNacl) {
     chrome.copresencePrivate.sendInitialized(false);
     return;
   }
 
-  console.log('init: creating encoder!');
-  whisperEncoder = new WhisperEncoder(audioParams.play, whispernetNacl);
-  whisperEncoder.setAudioDataCallback(chrome.copresencePrivate.sendSamples);
-
-  console.log('init: creating decoder!');
-  whisperDecoder = new WhisperDecoder(audioParams.record, whispernetNacl);
-  whisperDecoder.setReceiveCallback(chrome.copresencePrivate.sendFound);
-  whisperDecoder.onDetectBroadcast(chrome.copresencePrivate.sendDetect);
-
-  chrome.copresencePrivate.sendInitialized(true);
+  console.log('Configuring encoder and decoder for client ' + clientId);
+  whisperEncoders[clientId] =
+      new WhisperEncoder(audioParams.paramData, whispernetNacl, clientId);
+  whisperDecoders[clientId] =
+      new WhisperDecoder(audioParams.paramData, whispernetNacl, clientId);
 }
 
 /**
  * Sends a request to whispernet to encode a token.
- * @param {string} token Token to encode. This needs to be a base64 string.
- * @param {boolean} audible Whether we should use encode audible samples.
+ * @param {string} clientId A string identifying the requester.
+ * @param {Object} params Encode token parameters object.
  */
-function encodeTokenRequest(token, audible) {
-  if (whisperEncoder) {
-    whisperEncoder.encode(atob(token), audible, true);
+function encodeTokenRequest(clientId, params) {
+  if (whisperEncoders[clientId]) {
+    whisperEncoders[clientId].encode(params);
   } else {
-    console.error('encodeTokenRequest: Whisper not initialized!');
+    console.error('encodeTokenRequest: Whisper not initialized for client ' +
+        clientId);
   }
 }
 
 /**
  * Sends a request to whispernet to decode samples.
- * @param {ArrayBuffer} samples Array of samples to process.
- * @param {Object} type Type of decoding to perform.
+ * @param {string} clientId A string identifying the requester.
+ * @param {Object} params Process samples parameters object.
  */
-function decodeSamplesRequest(samples, type) {
-  if (whisperDecoder) {
-    whisperDecoder.processSamples(samples, type);
+function decodeSamplesRequest(clientId, params) {
+  if (whisperDecoders[clientId]) {
+    whisperDecoders[clientId].processSamples(params);
   } else {
-    console.error('decodeSamplesRequest: Whisper not initialized!');
+    console.error('decodeSamplesRequest: Whisper not initialized for client ' +
+        clientId);
   }
 }
 
 /**
- * Sends a request to whispernet to detect broadcast.
- */
-function detectBroadcastRequest() {
-  if (whisperDecoder) {
-    whisperDecoder.detectBroadcast();
-  } else {
-    console.error('detectBroadcastRequest: Whisper not initialized!');
-  }
-}
-
-/**
- * Initialize our listerners and signal that the extension is loaded.
+ * Initialize our listeners and signal that the extension is loaded.
  */
 function onWhispernetLoaded() {
   console.log('init: Nacl ready!');
 
   // Setup all the listeners for the private API.
-  chrome.copresencePrivate.onInitialize.addListener(initialize);
+  chrome.copresencePrivate.onConfigAudio.addListener(audioConfig);
   chrome.copresencePrivate.onEncodeTokenRequest.addListener(encodeTokenRequest);
   chrome.copresencePrivate.onDecodeSamplesRequest.addListener(
       decodeSamplesRequest);
-  chrome.copresencePrivate.onDetectBroadcastRequest.addListener(
-      detectBroadcastRequest);
 
   // This first initialized is sent to indicate that the library is loaded.
   // Every other time, it will be sent only when Chrome wants to reinitialize

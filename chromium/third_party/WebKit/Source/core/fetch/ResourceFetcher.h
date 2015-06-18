@@ -26,7 +26,9 @@
 #ifndef ResourceFetcher_h
 #define ResourceFetcher_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/CachePolicy.h"
+#include "core/fetch/FetchContext.h"
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/Resource.h"
@@ -34,7 +36,6 @@
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "core/fetch/ResourcePtr.h"
 #include "platform/Timer.h"
-#include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/ListHashSet.h"
@@ -42,19 +43,16 @@
 
 namespace blink {
 
+class ArchiveResourceCollection;
 class CSSStyleSheetResource;
 class DocumentResource;
-class FetchContext;
 class FontResource;
 class ImageResource;
+class MHTMLArchive;
 class RawResource;
 class ScriptResource;
 class SubstituteData;
 class XSLStyleSheetResource;
-class Document;
-class DocumentLoader;
-class LocalFrame;
-class ImageLoader;
 class KURL;
 class ResourceTimingInfo;
 class ResourceLoaderSet;
@@ -67,16 +65,13 @@ class ResourceLoaderSet;
 // RefPtr<ResourceFetcher> for their lifetime (and will create one if they
 // are initialized without a LocalFrame), so a Document can keep a ResourceFetcher
 // alive past detach if scripts still reference the Document.
-class ResourceFetcher final : public RefCountedWillBeGarbageCollectedFinalized<ResourceFetcher>, public ResourceLoaderHost {
-    WTF_MAKE_NONCOPYABLE(ResourceFetcher); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT ResourceFetcher final : public RefCountedWillBeGarbageCollectedFinalized<ResourceFetcher>, public ResourceLoaderHost {
+    WTF_MAKE_NONCOPYABLE(ResourceFetcher); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ResourceFetcher);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ResourceFetcher);
-friend class ImageLoader;
-friend class ResourceCacheValidationSuppressor;
-
 public:
-    static PassRefPtrWillBeRawPtr<ResourceFetcher> create(DocumentLoader* documentLoader) { return adoptRefWillBeNoop(new ResourceFetcher(documentLoader)); }
+    static PassRefPtrWillBeRawPtr<ResourceFetcher> create(PassOwnPtrWillBeRawPtr<FetchContext> context) { return adoptRefWillBeNoop(new ResourceFetcher(context)); }
     virtual ~ResourceFetcher();
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 #if !ENABLE(OILPAN)
     using RefCounted<ResourceFetcher>::ref;
@@ -93,12 +88,10 @@ public:
     ResourcePtr<DocumentResource> fetchSVGDocument(FetchRequest&);
     ResourcePtr<XSLStyleSheetResource> fetchXSLStyleSheet(FetchRequest&);
     ResourcePtr<Resource> fetchLinkResource(Resource::Type, FetchRequest&);
+    ResourcePtr<Resource> fetchLinkPreloadResource(Resource::Type, FetchRequest&);
     ResourcePtr<RawResource> fetchImport(FetchRequest&);
     ResourcePtr<RawResource> fetchMedia(FetchRequest&);
     ResourcePtr<RawResource> fetchTextTrack(FetchRequest&);
-
-    // Logs an access denied message to the console for the specified URL.
-    void printAccessDeniedMessage(const KURL&) const;
 
     Resource* cachedResource(const KURL&) const;
 
@@ -112,30 +105,26 @@ public:
 
     bool shouldDeferImageLoad(const KURL&) const;
 
-    LocalFrame* frame() const; // Can be null
-    FetchContext& context() const;
-    Document* document() const { return m_document; } // Can be null
-    void setDocument(RawPtr<Document> document) { m_document = document; }
-
-    DocumentLoader* documentLoader() const { return m_documentLoader; }
-    void clearDocumentLoader() { m_documentLoader = nullptr; }
+    FetchContext& context() const { return m_context ? *m_context.get() : FetchContext::nullInstance(); }
+    void clearContext() { m_context.clear(); }
 
     void garbageCollectDocumentResources();
 
-    int requestCount() const { return m_requestCount; }
+    int requestCount() const;
 
-    bool isPreloaded(const String& urlString) const;
+    bool isPreloaded(const KURL&) const;
     void clearPreloads();
     void preload(Resource::Type, FetchRequest&, const String& charset);
     void printPreloadStats();
+
+    void addAllArchiveResources(MHTMLArchive*);
+    ArchiveResourceCollection* archiveResourceCollection() const { return m_archiveResourceCollection.get(); }
 
     void setDefersLoading(bool);
     void stopFetching();
     bool isFetching() const;
 
     // ResourceLoaderHost
-    virtual void incrementRequestCount(const Resource*) override;
-    virtual void decrementRequestCount(const Resource*) override;
     virtual void didLoadResource() override;
     virtual void redirectReceived(Resource*, const ResourceResponse&) override;
     virtual void didFinishLoading(Resource*, double finishTime, int64_t encodedDataLength) override;
@@ -147,12 +136,11 @@ public:
     virtual void didDownloadData(const Resource*, int dataLength, int encodedDataLength) override;
     virtual void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*) override;
     virtual void didInitializeResourceLoader(ResourceLoader*) override;
-    virtual void willTerminateResourceLoader(ResourceLoader*) override;
     virtual void willStartLoadingResource(Resource*, ResourceRequest&) override;
     virtual bool defersLoading() const override;
     virtual bool isLoadedBy(ResourceLoaderHost*) const override;
     virtual bool canAccessRedirect(Resource*, ResourceRequest&, const ResourceResponse&, ResourceLoaderOptions&) override;
-    virtual bool canAccessResource(Resource*, SecurityOrigin*, const KURL&) const override;
+    virtual bool canAccessResource(Resource*, SecurityOrigin*, const KURL&, AccessControlLoggingDecision) const override;
     virtual bool isControlledByServiceWorker() const override;
 
 #if !ENABLE(OILPAN)
@@ -160,22 +148,25 @@ public:
     virtual void derefResourceLoaderHost() override;
 #endif
 
-    int64_t serviceWorkerID() const;
+    void acceptDataFromThreadedReceiver(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
 
     enum ResourceLoadStartType {
         ResourceLoadingFromNetwork,
         ResourceLoadingFromCache
     };
-    void maybeNotifyInsecureContent(const Resource*) const;
     void requestLoadStarted(Resource*, const FetchRequest&, ResourceLoadStartType);
     static const ResourceLoaderOptions& defaultResourceOptions();
 
     String getCacheIdentifier() const;
 
-private:
-    explicit ResourceFetcher(DocumentLoader*);
+    virtual ResourceLoaderHost::LoaderHostType objectType() const override { return ResourceFetcherType; };
 
-    bool shouldLoadNewResource(Resource::Type) const;
+    static ResourceFetcher* toResourceFetcher(ResourceLoaderHost*);
+
+private:
+    friend class ResourceCacheValidationSuppressor;
+
+    explicit ResourceFetcher(PassOwnPtrWillBeRawPtr<FetchContext>);
 
     ResourcePtr<Resource> requestResource(Resource::Type, FetchRequest&);
     ResourcePtr<Resource> createResourceForRevalidation(const FetchRequest&, Resource*);
@@ -183,16 +174,13 @@ private:
     void preCacheDataURIImage(const FetchRequest&);
     void preCacheSubstituteDataForMainResource(const FetchRequest&, const SubstituteData&);
     void storeResourceTimingInitiatorInformation(Resource*);
-    void requestPreload(Resource::Type, FetchRequest&, const String& charset);
+    bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
     RevalidationPolicy determineRevalidationPolicy(Resource::Type, const FetchRequest&, Resource* existingResource) const;
 
     void determineRequestContext(ResourceRequest&, Resource::Type);
-    ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type);
     void addAdditionalRequestHeaders(ResourceRequest&, Resource::Type);
-
-    bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const;
 
     static bool resourceNeedsLoad(Resource*, const FetchRequest&, RevalidationPolicy);
 
@@ -206,17 +194,15 @@ private:
     bool clientDefersImage(const KURL&) const;
     void reloadImagesIfNotDeferred();
 
+    void willTerminateResourceLoader(ResourceLoader*);
+
+    OwnPtrWillBeMember<FetchContext> m_context;
+
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;
-    // FIXME: Oilpan: Ideally this should just be a traced Member but that will
-    // currently leak because RenderStyle and its data are not on the heap.
-    // See crbug.com/383860 for details.
-    RawPtrWillBeWeakMember<Document> m_document;
-    DocumentLoader* m_documentLoader;
-
-    int m_requestCount;
 
     OwnPtr<ListHashSet<Resource*>> m_preloads;
+    OwnPtrWillBeMember<ArchiveResourceCollection> m_archiveResourceCollection;
 
     Timer<ResourceFetcher> m_garbageCollectDocumentResourcesTimer;
     Timer<ResourceFetcher> m_resourceTimingReportTimer;
@@ -227,7 +213,7 @@ private:
     HashMap<RefPtr<ResourceTimingInfo>, bool> m_scheduledResourceTimingReports;
 
     OwnPtrWillBeMember<ResourceLoaderSet> m_loaders;
-    OwnPtrWillBeMember<ResourceLoaderSet> m_multipartLoaders;
+    OwnPtrWillBeMember<ResourceLoaderSet> m_nonBlockingLoaders;
 
     // Used in hit rate histograms.
     class DeadResourceStatsRecorder {
@@ -252,7 +238,7 @@ private:
 
 class ResourceCacheValidationSuppressor {
     WTF_MAKE_NONCOPYABLE(ResourceCacheValidationSuppressor);
-    WTF_MAKE_FAST_ALLOCATED;
+    STACK_ALLOCATED();
 public:
     ResourceCacheValidationSuppressor(ResourceFetcher* loader)
         : m_loader(loader)
@@ -269,10 +255,10 @@ public:
             m_loader->m_allowStaleResources = m_previousState;
     }
 private:
-    ResourceFetcher* m_loader;
+    RawPtrWillBeMember<ResourceFetcher> m_loader;
     bool m_previousState;
 };
 
 } // namespace blink
 
-#endif
+#endif // ResourceFetcher_h

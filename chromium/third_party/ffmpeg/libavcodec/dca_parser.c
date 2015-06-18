@@ -22,9 +22,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "parser.h"
 #include "dca.h"
+#include "dca_syncwords.h"
 #include "get_bits.h"
+#include "parser.h"
 
 typedef struct DCAParseContext {
     ParseContext pc;
@@ -35,15 +36,15 @@ typedef struct DCAParseContext {
 } DCAParseContext;
 
 #define IS_MARKER(state, i, buf, buf_size) \
- ((state == DCA_MARKER_14B_LE && (i < buf_size-2) && (buf[i+1] & 0xF0) == 0xF0 && buf[i+2] == 0x07) \
- || (state == DCA_MARKER_14B_BE && (i < buf_size-2) && buf[i+1] == 0x07 && (buf[i+2] & 0xF0) == 0xF0) \
- || state == DCA_MARKER_RAW_LE || state == DCA_MARKER_RAW_BE || state == DCA_HD_MARKER)
+    ((state == DCA_SYNCWORD_CORE_14B_LE && (i < buf_size - 2) && (buf[i + 1] & 0xF0) == 0xF0 &&  buf[i + 2]         == 0x07) || \
+     (state == DCA_SYNCWORD_CORE_14B_BE && (i < buf_size - 2) &&  buf[i + 1]         == 0x07 && (buf[i + 2] & 0xF0) == 0xF0) || \
+      state == DCA_SYNCWORD_CORE_LE || state == DCA_SYNCWORD_CORE_BE || state == DCA_SYNCWORD_SUBSTREAM)
 
 /**
  * Find the end of the current frame in the bitstream.
  * @return the position of the first byte of the next frame, or -1
  */
-static int dca_find_frame_end(DCAParseContext * pc1, const uint8_t * buf,
+static int dca_find_frame_end(DCAParseContext *pc1, const uint8_t *buf,
                               int buf_size)
 {
     int start_found, i;
@@ -51,15 +52,15 @@ static int dca_find_frame_end(DCAParseContext * pc1, const uint8_t * buf,
     ParseContext *pc = &pc1->pc;
 
     start_found = pc->frame_start_found;
-    state = pc->state;
+    state       = pc->state;
 
     i = 0;
     if (!start_found) {
         for (i = 0; i < buf_size; i++) {
             state = (state << 8) | buf[i];
             if (IS_MARKER(state, i, buf, buf_size)) {
-                if (!pc1->lastmarker || state == pc1->lastmarker || pc1->lastmarker == DCA_HD_MARKER) {
-                    start_found = 1;
+                if (!pc1->lastmarker || state == pc1->lastmarker || pc1->lastmarker == DCA_SYNCWORD_SUBSTREAM) {
+                    start_found     = 1;
                     pc1->lastmarker = state;
                     i++;
                     break;
@@ -71,24 +72,24 @@ static int dca_find_frame_end(DCAParseContext * pc1, const uint8_t * buf,
         for (; i < buf_size; i++) {
             pc1->size++;
             state = (state << 8) | buf[i];
-            if (state == DCA_HD_MARKER && !pc1->hd_pos)
+            if (state == DCA_SYNCWORD_SUBSTREAM && !pc1->hd_pos)
                 pc1->hd_pos = pc1->size;
-            if (IS_MARKER(state, i, buf, buf_size) && (state == pc1->lastmarker || pc1->lastmarker == DCA_HD_MARKER)) {
-                if(pc1->framesize > pc1->size)
+            if (IS_MARKER(state, i, buf, buf_size) && (state == pc1->lastmarker || pc1->lastmarker == DCA_SYNCWORD_SUBSTREAM)) {
+                if (pc1->framesize > pc1->size)
                     continue;
                 pc->frame_start_found = 0;
-                pc->state = -1;
-                pc1->size = 0;
+                pc->state             = -1;
+                pc1->size             = 0;
                 return i - 3;
             }
         }
     }
     pc->frame_start_found = start_found;
-    pc->state = state;
+    pc->state             = state;
     return END_NOT_FOUND;
 }
 
-static av_cold int dca_parse_init(AVCodecParserContext * s)
+static av_cold int dca_parse_init(AVCodecParserContext *s)
 {
     DCAParseContext *pc1 = s->priv_data;
 
@@ -122,7 +123,7 @@ static int dca_parse_params(const uint8_t *buf, int buf_size, int *duration,
         return AVERROR_INVALIDDATA;
 
     skip_bits(&gb, 6);
-    sr_code = get_bits(&gb, 4);
+    sr_code      = get_bits(&gb, 4);
     *sample_rate = avpriv_dca_sample_rates[sr_code];
     if (*sample_rate == 0)
         return AVERROR_INVALIDDATA;
@@ -130,10 +131,9 @@ static int dca_parse_params(const uint8_t *buf, int buf_size, int *duration,
     return 0;
 }
 
-static int dca_parse(AVCodecParserContext * s,
-                     AVCodecContext * avctx,
-                     const uint8_t ** poutbuf, int *poutbuf_size,
-                     const uint8_t * buf, int buf_size)
+static int dca_parse(AVCodecParserContext *s, AVCodecContext *avctx,
+                     const uint8_t **poutbuf, int *poutbuf_size,
+                     const uint8_t *buf, int buf_size)
 {
     DCAParseContext *pc1 = s->priv_data;
     ParseContext *pc = &pc1->pc;
@@ -145,7 +145,7 @@ static int dca_parse(AVCodecParserContext * s,
         next = dca_find_frame_end(pc1, buf, buf_size);
 
         if (ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
-            *poutbuf = NULL;
+            *poutbuf      = NULL;
             *poutbuf_size = 0;
             return buf_size;
         }
@@ -153,12 +153,12 @@ static int dca_parse(AVCodecParserContext * s,
 
     /* read the duration and sample rate from the frame header */
     if (!dca_parse_params(buf, buf_size, &duration, &sample_rate, &pc1->framesize)) {
-        s->duration = duration;
+        s->duration        = duration;
         avctx->sample_rate = sample_rate;
     } else
         s->duration = 0;
 
-    *poutbuf = buf;
+    *poutbuf      = buf;
     *poutbuf_size = buf_size;
     return next;
 }

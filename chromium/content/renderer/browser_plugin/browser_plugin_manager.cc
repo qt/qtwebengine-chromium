@@ -3,28 +3,26 @@
 // found in the LICENSE file.
 
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
-
 #include "base/memory/scoped_ptr.h"
 #include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/public/renderer/browser_plugin_delegate.h"
-#include "content/public/renderer/render_thread.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
+#include "content/renderer/render_thread_impl.h"
 #include "ipc/ipc_message_macros.h"
 
 namespace content {
 
 // static
-BrowserPluginManager* BrowserPluginManager::Create(
-    RenderViewImpl* render_view) {
-  return new BrowserPluginManager(render_view);
+BrowserPluginManager* BrowserPluginManager::Get() {
+  if (!RenderThreadImpl::current())
+    return nullptr;
+  return RenderThreadImpl::current()->browser_plugin_manager();
 }
 
-BrowserPluginManager::BrowserPluginManager(RenderViewImpl* render_view)
-    : RenderViewObserver(render_view),
-      current_instance_id_(browser_plugin::kInstanceIDNone),
-      render_view_(render_view->AsWeakPtr()) {
+BrowserPluginManager::BrowserPluginManager() {
 }
 
 BrowserPluginManager::~BrowserPluginManager() {
@@ -46,21 +44,13 @@ BrowserPlugin* BrowserPluginManager::GetBrowserPlugin(
 }
 
 int BrowserPluginManager::GetNextInstanceID() {
-  return ++current_instance_id_;
-}
-
-void BrowserPluginManager::UpdateDeviceScaleFactor() {
-  IDMap<BrowserPlugin>::iterator iter(&instances_);
-  while (!iter.IsAtEnd()) {
-    iter.GetCurrentValue()->UpdateDeviceScaleFactor();
-    iter.Advance();
-  }
+  return RenderThreadImpl::current()->GenerateRoutingID();
 }
 
 void BrowserPluginManager::UpdateFocusState() {
   IDMap<BrowserPlugin>::iterator iter(&instances_);
   while (!iter.IsAtEnd()) {
-    iter.GetCurrentValue()->UpdateGuestFocusState();
+    iter.GetCurrentValue()->UpdateGuestFocusState(blink::WebFocusTypeNone);
     iter.Advance();
   }
 }
@@ -71,25 +61,37 @@ void BrowserPluginManager::Attach(int browser_plugin_instance_id) {
     plugin->Attach();
 }
 
-BrowserPlugin* BrowserPluginManager::CreateBrowserPlugin(
-    RenderViewImpl* render_view,
-    blink::WebFrame* frame,
-    scoped_ptr<BrowserPluginDelegate> delegate) {
-  return new BrowserPlugin(render_view, frame, delegate.Pass());
+void BrowserPluginManager::Detach(int browser_plugin_instance_id) {
+  BrowserPlugin* plugin = GetBrowserPlugin(browser_plugin_instance_id);
+  if (plugin)
+    plugin->Detach();
 }
 
-void BrowserPluginManager::DidCommitCompositorFrame() {
+BrowserPlugin* BrowserPluginManager::CreateBrowserPlugin(
+    RenderFrame* render_frame,
+    scoped_ptr<BrowserPluginDelegate> delegate) {
+  return new BrowserPlugin(render_frame, delegate.Pass());
+}
+
+void BrowserPluginManager::DidCommitCompositorFrame(
+    int render_frame_routing_id) {
   IDMap<BrowserPlugin>::iterator iter(&instances_);
   while (!iter.IsAtEnd()) {
-    iter.GetCurrentValue()->DidCommitCompositorFrame();
+    if (iter.GetCurrentValue()->render_frame_routing_id() ==
+        render_frame_routing_id) {
+      iter.GetCurrentValue()->DidCommitCompositorFrame();
+    }
     iter.Advance();
   }
 }
 
-bool BrowserPluginManager::OnMessageReceived(
+bool BrowserPluginManager::OnControlMessageReceived(
     const IPC::Message& message) {
-  if (!BrowserPlugin::ShouldForwardToBrowserPlugin(message))
+  if (!BrowserPlugin::ShouldForwardToBrowserPlugin(message) &&
+      !content::GetContentClient()->renderer()->
+          ShouldForwardToGuestContainer(message)) {
     return false;
+  }
 
   int browser_plugin_instance_id = browser_plugin::kInstanceIDNone;
   // All allowed messages must have |browser_plugin_instance_id| as their
@@ -112,7 +114,7 @@ bool BrowserPluginManager::OnMessageReceived(
 }
 
 bool BrowserPluginManager::Send(IPC::Message* msg) {
-  return RenderThread::Get()->Send(msg);
+  return RenderThreadImpl::current()->Send(msg);
 }
 
 void BrowserPluginManager::OnCompositorFrameSwappedPluginUnavailable(
@@ -122,11 +124,11 @@ void BrowserPluginManager::OnCompositorFrameSwappedPluginUnavailable(
     return;
 
   FrameHostMsg_CompositorFrameSwappedACK_Params params;
-  params.producing_host_id = param.b.producing_host_id;
-  params.producing_route_id = param.b.producing_route_id;
-  params.output_surface_id = param.b.output_surface_id;
+  params.producing_host_id = get<1>(param).producing_host_id;
+  params.producing_route_id = get<1>(param).producing_route_id;
+  params.output_surface_id = get<1>(param).output_surface_id;
   Send(new BrowserPluginHostMsg_CompositorFrameSwappedACK(
-      routing_id(), param.a, params));
+      get<0>(param), params));
 }
 
 }  // namespace content

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "base/at_exit.h"
+#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/cancelable_callback.h"
 #include "base/command_line.h"
@@ -21,13 +22,13 @@
 #include "net/base/address_list.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/dns/dns_client.h"
 #include "net/dns/dns_config_service.h"
 #include "net/dns/dns_protocol.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver_impl.h"
+#include "net/log/net_log.h"
 #include "net/tools/gdig/file_net_log.h"
 
 #if defined(OS_MACOSX)
@@ -53,7 +54,7 @@ bool StringToIPEndPoint(const std::string& ip_address_and_port,
   if (!net::ParseIPLiteralToNumber(ip, &ip_number))
     return false;
 
-  *ip_end_point = net::IPEndPoint(ip_number, port);
+  *ip_end_point = net::IPEndPoint(ip_number, static_cast<uint16>(port));
   return true;
 }
 
@@ -90,7 +91,7 @@ std::string DnsHostsToString(const DnsHosts& dns_hosts) {
        ++i) {
     const DnsHostsKey& key = i->first;
     std::string host_name = key.first;
-    output.append(IPEndPoint(i->second, -1).ToStringWithoutPort());
+    output.append(IPEndPoint(i->second, 0).ToStringWithoutPort());
     output.append(" ").append(host_name).append("\n");
   }
   return output;
@@ -245,7 +246,7 @@ GDig::GDig()
 
 GDig::~GDig() {
   if (log_)
-    log_->RemoveThreadSafeObserver(log_observer_.get());
+    log_->DeprecatedRemoveObserver(log_observer_.get());
 }
 
 GDig::Result GDig::Main(int argc, const char* argv[]) {
@@ -295,15 +296,17 @@ bool GDig::ParseCommandLine(int argc, const char* argv[]) {
 
   if (parsed_command_line.HasSwitch("net_log")) {
     std::string log_param = parsed_command_line.GetSwitchValueASCII("net_log");
-    NetLog::LogLevel level = NetLog::LOG_ALL_BUT_BYTES;
+    NetLogCaptureMode capture_mode =
+        NetLogCaptureMode::IncludeCookiesAndCredentials();
 
     if (log_param.length() > 0) {
-      std::map<std::string, NetLog::LogLevel> log_levels;
-      log_levels["all"] = NetLog::LOG_ALL;
-      log_levels["no_bytes"] = NetLog::LOG_ALL_BUT_BYTES;
+      std::map<std::string, NetLogCaptureMode> capture_modes;
+      capture_modes["all"] = NetLogCaptureMode::IncludeSocketBytes();
+      capture_modes["no_bytes"] =
+          NetLogCaptureMode::IncludeCookiesAndCredentials();
 
-      if (log_levels.find(log_param) != log_levels.end()) {
-        level = log_levels[log_param];
+      if (capture_modes.find(log_param) != capture_modes.end()) {
+        capture_mode = capture_modes[log_param];
       } else {
         fprintf(stderr, "Invalid net_log parameter\n");
         return false;
@@ -311,7 +314,7 @@ bool GDig::ParseCommandLine(int argc, const char* argv[]) {
     }
     log_.reset(new NetLog);
     log_observer_.reset(new FileNetLogObserver(stderr));
-    log_->AddThreadSafeObserver(log_observer_.get(), level);
+    log_->DeprecatedAddObserver(log_observer_.get(), capture_mode);
   }
 
   print_config_ = parsed_command_line.HasSwitch("print_config");

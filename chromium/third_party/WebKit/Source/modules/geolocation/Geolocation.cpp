@@ -29,11 +29,13 @@
 #include "modules/geolocation/Geolocation.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "modules/geolocation/Coordinates.h"
 #include "modules/geolocation/GeolocationController.h"
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
@@ -95,13 +97,14 @@ Geolocation::~Geolocation()
     ASSERT(m_geolocationPermission != PermissionRequested);
 }
 
-void Geolocation::trace(Visitor* visitor)
+DEFINE_TRACE(Geolocation)
 {
     visitor->trace(m_oneShots);
     visitor->trace(m_watchers);
     visitor->trace(m_pendingForPermissionNotifiers);
     visitor->trace(m_lastPosition);
     visitor->trace(m_requestsAwaitingCachedPosition);
+    ActiveDOMObject::trace(visitor);
 }
 
 Document* Geolocation::document() const
@@ -145,36 +148,37 @@ void Geolocation::recordOriginTypeAccess() const
     Document* document = this->document();
     ASSERT(document);
 
-    // It is required by canAccessFeatureRequiringSecureOrigin() but isn't
+    // It is required by isPrivilegedContext() but isn't
     // actually used. This could be used later if a warning is shown in the
     // developer console.
     String insecureOriginMsg;
-    UseCounter::Feature counter = document->securityOrigin()->canAccessFeatureRequiringSecureOrigin(insecureOriginMsg)
-        ? UseCounter::GeolocationSecureOrigin : UseCounter::GeolocationInsecureOrigin;
-    UseCounter::count(document, counter);
+    if (document->isPrivilegedContext(insecureOriginMsg))
+        UseCounter::count(document, UseCounter::GeolocationSecureOrigin);
+    else
+        UseCounter::countDeprecation(document, UseCounter::GeolocationInsecureOrigin);
 }
 
-void Geolocation::getCurrentPosition(PositionCallback* successCallback, PositionErrorCallback* errorCallback, const Dictionary& options)
+void Geolocation::getCurrentPosition(PositionCallback* successCallback, PositionErrorCallback* errorCallback, const PositionOptions& options)
 {
     if (!frame())
         return;
 
     recordOriginTypeAccess();
 
-    GeoNotifier* notifier = GeoNotifier::create(this, successCallback, errorCallback, PositionOptions::create(options));
+    GeoNotifier* notifier = GeoNotifier::create(this, successCallback, errorCallback, options);
     startRequest(notifier);
 
     m_oneShots.add(notifier);
 }
 
-int Geolocation::watchPosition(PositionCallback* successCallback, PositionErrorCallback* errorCallback, const Dictionary& options)
+int Geolocation::watchPosition(PositionCallback* successCallback, PositionErrorCallback* errorCallback, const PositionOptions& options)
 {
     if (!frame())
         return 0;
 
     recordOriginTypeAccess();
 
-    GeoNotifier* notifier = GeoNotifier::create(this, successCallback, errorCallback, PositionOptions::create(options));
+    GeoNotifier* notifier = GeoNotifier::create(this, successCallback, errorCallback, options);
     startRequest(notifier);
 
     int watchID;
@@ -187,13 +191,21 @@ int Geolocation::watchPosition(PositionCallback* successCallback, PositionErrorC
 
 void Geolocation::startRequest(GeoNotifier *notifier)
 {
+    if (frame()->settings()->strictPowerfulFeatureRestrictions()) {
+        String errorMessage;
+        if (!executionContext()->isPrivilegedContext(errorMessage)) {
+            notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, errorMessage));
+            return;
+        }
+    }
+
     // Check whether permissions have already been denied. Note that if this is the case,
     // the permission state can not change again in the lifetime of this page.
     if (isDenied())
         notifier->setFatalError(PositionError::create(PositionError::PERMISSION_DENIED, permissionDeniedErrorMessage));
     else if (haveSuitableCachedPosition(notifier->options()))
         notifier->setUseCachedPosition();
-    else if (!notifier->options()->timeout())
+    else if (!notifier->options().timeout())
         notifier->startTimer();
     else if (!isAllowed()) {
         // if we don't yet have permission, request for permission before calling startUpdating()
@@ -249,7 +261,7 @@ void Geolocation::makeCachedPositionCallbacks()
         if (m_oneShots.contains(notifier))
             m_oneShots.remove(notifier);
         else if (m_watchers.contains(notifier)) {
-            if (!notifier->options()->timeout() || startUpdating(notifier))
+            if (!notifier->options().timeout() || startUpdating(notifier))
                 notifier->startTimer();
             else
                 notifier->setFatalError(PositionError::create(PositionError::POSITION_UNAVAILABLE, failedToStartServiceErrorMessage));
@@ -271,15 +283,15 @@ void Geolocation::requestTimedOut(GeoNotifier* notifier)
         stopUpdating();
 }
 
-bool Geolocation::haveSuitableCachedPosition(PositionOptions* options)
+bool Geolocation::haveSuitableCachedPosition(const PositionOptions& options)
 {
     Geoposition* cachedPosition = lastPosition();
     if (!cachedPosition)
         return false;
-    if (!options->maximumAge())
+    if (!options.maximumAge())
         return false;
     DOMTimeStamp currentTimeMillis = convertSecondsToDOMTimeStamp(currentTime());
-    return cachedPosition->timestamp() > currentTimeMillis - options->maximumAge();
+    return cachedPosition->timestamp() > currentTimeMillis - options.maximumAge();
 }
 
 void Geolocation::clearWatch(int watchID)
@@ -498,7 +510,7 @@ bool Geolocation::startUpdating(GeoNotifier* notifier)
     if (!frame)
         return false;
 
-    GeolocationController::from(frame)->addObserver(this, notifier->options()->enableHighAccuracy());
+    GeolocationController::from(frame)->addObserver(this, notifier->options().enableHighAccuracy());
     return true;
 }
 

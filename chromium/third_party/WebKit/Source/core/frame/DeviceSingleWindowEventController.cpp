@@ -71,10 +71,11 @@ void DeviceSingleWindowEventController::didRemoveAllEventListeners(LocalDOMWindo
     m_hasEventListener = false;
 }
 
-void DeviceSingleWindowEventController::trace(Visitor* visitor)
+DEFINE_TRACE(DeviceSingleWindowEventController)
 {
     visitor->trace(m_document);
     PlatformEventController::trace(visitor);
+    DOMWindowLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

@@ -31,8 +31,6 @@ class GPU_EXPORT GLContextVirtual : public gfx::GLContext {
       gfx::GLContext* shared_context,
       base::WeakPtr<gles2::GLES2Decoder> decoder);
 
-  gfx::Display* display();
-
   // Implement GLContext.
   bool Initialize(gfx::GLSurface* compatible_surface,
                   gfx::GpuPreference gpu_preference) override;
@@ -41,19 +39,21 @@ class GPU_EXPORT GLContextVirtual : public gfx::GLContext {
   void ReleaseCurrent(gfx::GLSurface* surface) override;
   bool IsCurrent(gfx::GLSurface* surface) override;
   void* GetHandle() override;
-  void SetSwapInterval(int interval) override;
+  scoped_refptr<gfx::GPUTimingClient> CreateGPUTimingClient() override;
+  void OnSetSwapInterval(int interval) override;
   std::string GetExtensions() override;
   bool GetTotalGpuMemory(size_t* bytes) override;
   void SetSafeToForceGpuSwitch() override;
   bool WasAllocatedUsingRobustnessExtension() override;
   void SetUnbindFboOnMakeCurrent() override;
+  base::Closure GetStateWasDirtiedExternallyCallback() override;
+  void RestoreStateIfDirtiedExternally() override;
 
  protected:
   ~GLContextVirtual() override;
 
  private:
   scoped_refptr<gfx::GLContext> shared_context_;
-  gfx::Display* display_;
   base::WeakPtr<gles2::GLES2Decoder> decoder_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextVirtual);

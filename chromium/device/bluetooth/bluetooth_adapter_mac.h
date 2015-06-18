@@ -16,7 +16,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "device/bluetooth/bluetooth_adapter.h"
+#include "device/bluetooth/bluetooth_audio_sink.h"
 #include "device/bluetooth/bluetooth_discovery_manager_mac.h"
+#include "device/bluetooth/bluetooth_export.h"
 
 @class IOBluetoothDevice;
 @class NSArray;
@@ -32,14 +34,13 @@ namespace device {
 
 class BluetoothAdapterMacTest;
 
-class BluetoothAdapterMac : public BluetoothAdapter,
-                            public BluetoothDiscoveryManagerMac::Observer {
+class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterMac
+    : public BluetoothAdapter,
+      public BluetoothDiscoveryManagerMac::Observer {
  public:
   static base::WeakPtr<BluetoothAdapter> CreateAdapter();
 
   // BluetoothAdapter:
-  void AddObserver(BluetoothAdapter::Observer* observer) override;
-  void RemoveObserver(BluetoothAdapter::Observer* observer) override;
   std::string GetAddress() const override;
   std::string GetName() const override;
   void SetName(const std::string& name,
@@ -66,6 +67,14 @@ class BluetoothAdapterMac : public BluetoothAdapter,
       const ServiceOptions& options,
       const CreateServiceCallback& callback,
       const CreateServiceErrorCallback& error_callback) override;
+  void RegisterAudioSink(
+      const BluetoothAudioSink::Options& options,
+      const AcquiredCallback& callback,
+      const BluetoothAudioSink::ErrorCallback& error_callback) override;
+  void RegisterAdvertisement(
+      scoped_ptr<BluetoothAdvertisement::Data> advertisement_data,
+      const CreateAdvertisementCallback& callback,
+      const CreateAdvertisementErrorCallback& error_callback) override;
 
   // BluetoothDiscoveryManagerMac::Observer overrides
   void DeviceFound(IOBluetoothDevice* device) override;
@@ -86,10 +95,15 @@ class BluetoothAdapterMac : public BluetoothAdapter,
   ~BluetoothAdapterMac() override;
 
   // BluetoothAdapter:
-  void AddDiscoverySession(const base::Closure& callback,
+  void AddDiscoverySession(BluetoothDiscoveryFilter* discovery_filter,
+                           const base::Closure& callback,
                            const ErrorCallback& error_callback) override;
-  void RemoveDiscoverySession(const base::Closure& callback,
+  void RemoveDiscoverySession(BluetoothDiscoveryFilter* discovery_filter,
+                              const base::Closure& callback,
                               const ErrorCallback& error_callback) override;
+  void SetDiscoveryFilter(scoped_ptr<BluetoothDiscoveryFilter> discovery_filter,
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) override;
 
   void Init();
   void InitForTest(scoped_refptr<base::SequencedTaskRunner> ui_task_runner);
@@ -114,9 +128,6 @@ class BluetoothAdapterMac : public BluetoothAdapter,
   scoped_ptr<BluetoothDiscoveryManagerMac> classic_discovery_manager_;
 
   scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
-
-  // List of observers interested in event notifications from us.
-  ObserverList<BluetoothAdapter::Observer> observers_;
 
   base::WeakPtrFactory<BluetoothAdapterMac> weak_ptr_factory_;
 

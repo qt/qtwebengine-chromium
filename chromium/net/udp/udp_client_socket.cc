@@ -4,7 +4,8 @@
 
 #include "net/udp/udp_client_socket.h"
 
-#include "net/base/net_log.h"
+#include "net/base/net_errors.h"
+#include "net/log/net_log.h"
 
 namespace net {
 
@@ -19,6 +20,9 @@ UDPClientSocket::~UDPClientSocket() {
 }
 
 int UDPClientSocket::Connect(const IPEndPoint& address) {
+  int rv = socket_.Open(address.GetFamily());
+  if (rv != OK)
+    return rv;
   return socket_.Connect(address);
 }
 
@@ -57,5 +61,11 @@ int UDPClientSocket::SetSendBufferSize(int32 size) {
 const BoundNetLog& UDPClientSocket::NetLog() const {
   return socket_.NetLog();
 }
+
+#if defined(OS_WIN)
+void UDPClientSocket::UseNonBlockingIO() {
+  socket_.UseNonBlockingIO();
+}
+#endif
 
 }  // namespace net

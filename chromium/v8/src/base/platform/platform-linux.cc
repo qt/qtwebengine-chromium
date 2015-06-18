@@ -8,10 +8,10 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <sys/types.h>
 
 // Ubuntu Dapper requires memory pages to be marked as
 // executable. Otherwise, OS raises an exception when executing code
@@ -109,7 +109,7 @@ const char* OS::LocalTimezone(double time, TimezoneCache* cache) {
   if (std::isnan(time)) return "";
   time_t tv = static_cast<time_t>(std::floor(time/msPerSecond));
   struct tm* t = localtime(&tv);
-  if (NULL == t) return "";
+  if (!t || !t->tm_zone) return "";
   return t->tm_zone;
 #endif
 }
@@ -139,64 +139,6 @@ void* OS::Allocate(const size_t requested,
   if (mbase == MAP_FAILED) return NULL;
   *allocated = msize;
   return mbase;
-}
-
-
-class PosixMemoryMappedFile : public OS::MemoryMappedFile {
- public:
-  PosixMemoryMappedFile(FILE* file, void* memory, int size)
-    : file_(file), memory_(memory), size_(size) { }
-  virtual ~PosixMemoryMappedFile();
-  virtual void* memory() { return memory_; }
-  virtual int size() { return size_; }
- private:
-  FILE* file_;
-  void* memory_;
-  int size_;
-};
-
-
-OS::MemoryMappedFile* OS::MemoryMappedFile::open(const char* name) {
-  FILE* file = fopen(name, "r+");
-  if (file == NULL) return NULL;
-
-  fseek(file, 0, SEEK_END);
-  int size = ftell(file);
-
-  void* memory =
-      mmap(OS::GetRandomMmapAddr(),
-           size,
-           PROT_READ | PROT_WRITE,
-           MAP_SHARED,
-           fileno(file),
-           0);
-  return new PosixMemoryMappedFile(file, memory, size);
-}
-
-
-OS::MemoryMappedFile* OS::MemoryMappedFile::create(const char* name, int size,
-    void* initial) {
-  FILE* file = fopen(name, "w+");
-  if (file == NULL) return NULL;
-  int result = fwrite(initial, size, 1, file);
-  if (result < 1) {
-    fclose(file);
-    return NULL;
-  }
-  void* memory =
-      mmap(OS::GetRandomMmapAddr(),
-           size,
-           PROT_READ | PROT_WRITE,
-           MAP_SHARED,
-           fileno(file),
-           0);
-  return new PosixMemoryMappedFile(file, memory, size);
-}
-
-
-PosixMemoryMappedFile::~PosixMemoryMappedFile() {
-  if (memory_) OS::Free(memory_, size_);
-  fclose(file_);
 }
 
 
@@ -271,7 +213,7 @@ void OS::SignalCodeMovingGC() {
   // it. This injects a GC marker into the stream of events generated
   // by the kernel and allows us to synchronize V8 code log and the
   // kernel log.
-  int size = sysconf(_SC_PAGESIZE);
+  long size = sysconf(_SC_PAGESIZE);  // NOLINT(runtime/int)
   FILE* f = fopen(OS::GetGCFakeMMapFile(), "w+");
   if (f == NULL) {
     OS::PrintError("Failed to open %s\n", OS::GetGCFakeMMapFile());
@@ -286,7 +228,7 @@ void OS::SignalCodeMovingGC() {
                     PROT_READ | PROT_EXEC,
 #endif
                     MAP_PRIVATE, fileno(f), 0);
-  DCHECK(addr != MAP_FAILED);
+  DCHECK_NE(MAP_FAILED, addr);
   OS::Free(addr, size);
   fclose(f);
 }

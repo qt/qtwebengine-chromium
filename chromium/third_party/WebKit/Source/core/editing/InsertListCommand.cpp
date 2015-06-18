@@ -31,9 +31,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLLIElement.h"
@@ -390,7 +390,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::listifyParagraph(const Vi
 
         // We inserted the list at the start of the content we're about to move
         // Update the start of content, so we don't try to move the list into itself.  bug 19066
-        // Layout is necessary since start's node's inline renderers may have been destroyed by the insertion
+        // Layout is necessary since start's node's inline layoutObjects may have been destroyed by the insertion
         // The end of the content may have changed after the insertion and layout so update it as well.
         if (insertionPos == start.deepEquivalent())
             start = originalStart;
@@ -412,7 +412,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::listifyParagraph(const Vi
     return listElement;
 }
 
-void InsertListCommand::trace(Visitor* visitor)
+DEFINE_TRACE(InsertListCommand)
 {
     visitor->trace(m_listElement);
     CompositeEditCommand::trace(visitor);

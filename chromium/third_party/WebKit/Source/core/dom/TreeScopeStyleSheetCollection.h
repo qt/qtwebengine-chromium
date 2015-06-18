@@ -28,6 +28,7 @@
 #ifndef TreeScopeStyleSheetCollection_h
 #define TreeScopeStyleSheetCollection_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentOrderedList.h"
 #include "core/dom/StyleSheetCollection.h"
@@ -41,12 +42,11 @@
 
 namespace blink {
 
-class ContainerNode;
 class Node;
 class StyleSheetContents;
 class StyleRuleFontFace;
 
-class TreeScopeStyleSheetCollection : public StyleSheetCollection {
+class CORE_EXPORT TreeScopeStyleSheetCollection : public StyleSheetCollection {
 public:
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
     void removeStyleSheetCandidateNode(Node* node) { m_styleSheetCandidateNodes.remove(node); }
@@ -54,12 +54,10 @@ public:
 
     bool usesRemUnits() const { return m_usesRemUnits; }
 
-    DocumentOrderedList& styleSheetCandidateNodes() { return m_styleSheetCandidateNodes; }
-
     void clearMediaQueryRuleSetStyleSheets();
-    void enableExitTransitionStylesheets();
+    void setExitTransitionStyleshetsEnabled(bool);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     explicit TreeScopeStyleSheetCollection(TreeScope&);
@@ -78,7 +76,7 @@ protected:
     public:
         StyleResolverUpdateType styleResolverUpdateType;
         bool requiresFullStyleRecalc;
-        WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> > fontFaceRulesToRemove;
+        WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>> fontFaceRulesToRemove;
 
         StyleSheetChange()
             : styleResolverUpdateType(Reconstruct)
@@ -89,8 +87,10 @@ protected:
     void updateUsesRemUnits();
 
 private:
-    static StyleResolverUpdateType compareStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& oldStyleSheets, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStylesheets, WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >& addedSheets);
-    bool activeLoadingStyleSheetLoaded(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStyleSheets);
+    static StyleResolverUpdateType compareStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& oldStyleSheets, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& newStylesheets, WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents>>& addedSheets);
+    bool activeLoadingStyleSheetLoaded(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& newStyleSheets);
+
+    friend class TreeScopeStyleSheetCollectionTest;
 
 protected:
     RawPtrWillBeMember<TreeScope> m_treeScope;

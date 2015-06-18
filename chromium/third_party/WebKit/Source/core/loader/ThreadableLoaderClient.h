@@ -31,6 +31,7 @@
 #ifndef ThreadableLoaderClient_h
 #define ThreadableLoaderClient_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebDataConsumerHandle.h"
 #include "wtf/FastAllocBase.h"
@@ -42,9 +43,9 @@ namespace blink {
     class ResourceError;
     class ResourceResponse;
 
-    class ThreadableLoaderClient {
+    class CORE_EXPORT ThreadableLoaderClient {
         WTF_MAKE_NONCOPYABLE(ThreadableLoaderClient);
-        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ThreadableLoaderClient);
     public:
         virtual void didSendData(unsigned long long /*bytesSent*/, unsigned long long /*totalBytesToBeSent*/) { }
 

@@ -17,14 +17,13 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
+#include "base/sys_info.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/demuxer_stream.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
-#include "media/base/video_decoder_config.h"
-#include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 
 // Include libvpx header files.
@@ -50,7 +49,7 @@ static int GetThreadCount(const VideoDecoderConfig& config) {
   // Refer to http://crbug.com/93932 for tsan suppressions on decoding.
   int decode_threads = kDecodeThreads;
 
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   std::string threads(cmd_line->GetSwitchValueASCII(switches::kVideoThreads));
   if (threads.empty() || !base::StringToInt(threads, &decode_threads)) {
     if (config.codec() == kCodecVP9) {
@@ -63,6 +62,8 @@ static int GetThreadCount(const VideoDecoderConfig& config) {
         decode_threads = 4;
     }
 
+    decode_threads = std::min(decode_threads,
+                              base::SysInfo::NumberOfProcessors());
     return decode_threads;
   }
 
@@ -353,10 +354,12 @@ void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
     return;
   }
 
-  base::ResetAndReturn(&decode_cb_).Run(kOk);
-
   if (video_frame.get())
     output_cb_.Run(video_frame);
+
+  // VideoDecoderShim expects that |decode_cb| is called only after
+  // |output_cb_|.
+  base::ResetAndReturn(&decode_cb_).Run(kOk);
 }
 
 bool VpxVideoDecoder::VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,
@@ -367,14 +370,18 @@ bool VpxVideoDecoder::VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,
   // Pass |buffer| to libvpx.
   int64 timestamp = buffer->timestamp().InMicroseconds();
   void* user_priv = reinterpret_cast<void*>(&timestamp);
-  vpx_codec_err_t status = vpx_codec_decode(vpx_codec_,
-                                            buffer->data(),
-                                            buffer->data_size(),
-                                            user_priv,
-                                            0);
-  if (status != VPX_CODEC_OK) {
-    LOG(ERROR) << "vpx_codec_decode() failed, status=" << status;
-    return false;
+
+  {
+    TRACE_EVENT1("video", "vpx_codec_decode", "timestamp", timestamp);
+    vpx_codec_err_t status = vpx_codec_decode(vpx_codec_,
+                                              buffer->data(),
+                                              buffer->data_size(),
+                                              user_priv,
+                                              0);
+    if (status != VPX_CODEC_OK) {
+      LOG(ERROR) << "vpx_codec_decode() failed, status=" << status;
+      return false;
+    }
   }
 
   // Gets pointer to decoded data.
@@ -400,15 +407,18 @@ bool VpxVideoDecoder::VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,
     const uint64 side_data_id = base::NetToHost64(
         *(reinterpret_cast<const uint64*>(buffer->side_data())));
     if (side_data_id == 1) {
-      status = vpx_codec_decode(vpx_codec_alpha_,
-                                buffer->side_data() + 8,
-                                buffer->side_data_size() - 8,
-                                user_priv_alpha,
-                                0);
-
-      if (status != VPX_CODEC_OK) {
-        LOG(ERROR) << "vpx_codec_decode() failed on alpha, status=" << status;
-        return false;
+      {
+        TRACE_EVENT1("video", "vpx_codec_decode_alpha",
+                     "timestamp_alpha", timestamp_alpha);
+        vpx_codec_err_t status = vpx_codec_decode(vpx_codec_alpha_,
+                                                  buffer->side_data() + 8,
+                                                  buffer->side_data_size() - 8,
+                                                  user_priv_alpha,
+                                                  0);
+        if (status != VPX_CODEC_OK) {
+          LOG(ERROR) << "vpx_codec_decode() failed on alpha, status=" << status;
+          return false;
+        }
       }
 
       // Gets pointer to decoded data.
@@ -422,6 +432,13 @@ bool VpxVideoDecoder::VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,
       if (vpx_image_alpha->user_priv !=
           reinterpret_cast<void*>(&timestamp_alpha)) {
         LOG(ERROR) << "Invalid output timestamp on alpha.";
+        return false;
+      }
+
+      if (vpx_image_alpha->d_h != vpx_image->d_h ||
+          vpx_image_alpha->d_w != vpx_image->d_w) {
+        LOG(ERROR) << "The alpha plane dimensions are not the same as the "
+                      "image dimensions.";
         return false;
       }
     }
@@ -448,15 +465,25 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
     codec_format = VideoFrame::YV24;
     uv_rows = vpx_image->d_h;
   } else if (vpx_codec_alpha_) {
+    // TODO(watk): A limitation of conflating color space with pixel format is
+    // that it's not possible to have BT709 with alpha.
+    // Until color space is separated from format, prefer YV12A over YV12HD.
     codec_format = VideoFrame::YV12A;
+  } else if (vpx_image->cs == VPX_CS_BT_709) {
+    codec_format = VideoFrame::YV12HD;
   }
 
-  gfx::Size size(vpx_image->d_w, vpx_image->d_h);
+  // The mixed |w|/|d_h| in |coded_size| is intentional. Setting the correct
+  // coded width is necessary to allow coalesced memory access, which may avoid
+  // frame copies. Setting the correct coded height however does not have any
+  // benefit, and only risk copying too much data.
+  const gfx::Size coded_size(vpx_image->w, vpx_image->d_h);
+  const gfx::Size visible_size(vpx_image->d_w, vpx_image->d_h);
 
   if (!vpx_codec_alpha_ && memory_pool_.get()) {
     *video_frame = VideoFrame::WrapExternalYuvData(
         codec_format,
-        size, gfx::Rect(size), config_.natural_size(),
+        coded_size, gfx::Rect(visible_size), config_.natural_size(),
         vpx_image->stride[VPX_PLANE_Y],
         vpx_image->stride[VPX_PLANE_U],
         vpx_image->stride[VPX_PLANE_V],
@@ -470,8 +497,8 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
 
   *video_frame = frame_pool_.CreateFrame(
       codec_format,
-      size,
-      gfx::Rect(size),
+      visible_size,
+      gfx::Rect(visible_size),
       config_.natural_size(),
       kNoTimestamp());
 
@@ -495,8 +522,8 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
     return;
   }
   CopyAPlane(vpx_image_alpha->planes[VPX_PLANE_Y],
-             vpx_image->stride[VPX_PLANE_Y],
-             vpx_image->d_h,
+             vpx_image_alpha->stride[VPX_PLANE_Y],
+             vpx_image_alpha->d_h,
              video_frame->get());
 }
 

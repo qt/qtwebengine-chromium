@@ -27,11 +27,8 @@ public:
         }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         SkString str("glyph_pos");
         if (fStrokeWidth == 0.0f) {
             str.append("_h"); // h == Hairline.
@@ -48,9 +45,9 @@ protected:
         return str;
     }
 
-    virtual SkISize onISize() { return SkISize::Make(800, 600); }
+    SkISize onISize() override { return SkISize::Make(800, 600); }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         if (!fProp) {
             fProp.reset(sk_tool_utils::create_portable_typeface("Helvetica", SkTypeface::kNormal));
         }
@@ -85,10 +82,8 @@ protected:
         canvas->scale(3.0f, 3.0f);
         SkMatrix skew;
         skew.setIdentity();
-        skew.setSkewX(SkScalarDiv(8.0f,
-                                  25.0f));
-        skew.setSkewY(SkScalarDiv(2.0f,
-                                  25.0f));
+        skew.setSkewX(8.0f / 25.0f);
+        skew.setSkewY(2.0f / 25.0f);
         canvas->concat(skew);
         drawTestCase(canvas, 1.0f);
         canvas->restore();
@@ -98,11 +93,9 @@ protected:
         canvas->save();
         SkMatrix perspective;
         perspective.setIdentity();
-        perspective.setPerspX(-SkScalarDiv(SK_Scalar1, 340.0f));
-        perspective.setSkewX(SkScalarDiv(8.0f,
-                                         25.0f));
-        perspective.setSkewY(SkScalarDiv(2.0f,
-                                         25.0f));
+        perspective.setPerspX(-SkScalarInvert(340));
+        perspective.setSkewX(8.0f / 25.0f);
+        perspective.setSkewY(2.0f / 25.0f);
 
 
         canvas->concat(perspective);

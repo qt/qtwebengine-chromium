@@ -395,8 +395,8 @@ void SetResolvedNumberSettings(Isolate* isolate,
   Handle<String> key =
       factory->NewStringFromStaticChars("minimumSignificantDigits");
   Maybe<bool> maybe = JSReceiver::HasOwnProperty(resolved, key);
-  CHECK(maybe.has_value);
-  if (maybe.value) {
+  CHECK(maybe.IsJust());
+  if (maybe.FromJust()) {
     JSObject::SetProperty(
         resolved, factory->NewStringFromStaticChars("minimumSignificantDigits"),
         factory->NewNumberFromInt(number_format->getMinimumSignificantDigits()),
@@ -405,8 +405,8 @@ void SetResolvedNumberSettings(Isolate* isolate,
 
   key = factory->NewStringFromStaticChars("maximumSignificantDigits");
   maybe = JSReceiver::HasOwnProperty(resolved, key);
-  CHECK(maybe.has_value);
-  if (maybe.value) {
+  CHECK(maybe.IsJust());
+  if (maybe.FromJust()) {
     JSObject::SetProperty(
         resolved, factory->NewStringFromStaticChars("maximumSignificantDigits"),
         factory->NewNumberFromInt(number_format->getMaximumSignificantDigits()),
@@ -704,6 +704,10 @@ icu::SimpleDateFormat* DateFormat::InitializeDateTimeFormat(
     icu::Locale no_extension_locale(icu_locale.getBaseName());
     date_format = CreateICUDateFormat(isolate, no_extension_locale, options);
 
+    if (!date_format) {
+      FATAL("Failed to create ICU date format, are ICU data files missing?");
+    }
+
     // Set resolved settings (pattern, numbering system, calendar).
     SetResolvedDateSettings(
         isolate, no_extension_locale, date_format, resolved);
@@ -721,8 +725,8 @@ icu::SimpleDateFormat* DateFormat::UnpackDateFormat(
   Handle<String> key =
       isolate->factory()->NewStringFromStaticChars("dateFormat");
   Maybe<bool> maybe = JSReceiver::HasOwnProperty(obj, key);
-  CHECK(maybe.has_value);
-  if (maybe.value) {
+  CHECK(maybe.IsJust());
+  if (maybe.FromJust()) {
     return reinterpret_cast<icu::SimpleDateFormat*>(
         obj->GetInternalField(0));
   }
@@ -780,6 +784,10 @@ icu::DecimalFormat* NumberFormat::InitializeNumberFormat(
     number_format = CreateICUNumberFormat(
         isolate, no_extension_locale, options);
 
+    if (!number_format) {
+      FATAL("Failed to create ICU number format, are ICU data files missing?");
+    }
+
     // Set resolved settings (pattern, numbering system).
     SetResolvedNumberSettings(
         isolate, no_extension_locale, number_format, resolved);
@@ -797,8 +805,8 @@ icu::DecimalFormat* NumberFormat::UnpackNumberFormat(
   Handle<String> key =
       isolate->factory()->NewStringFromStaticChars("numberFormat");
   Maybe<bool> maybe = JSReceiver::HasOwnProperty(obj, key);
-  CHECK(maybe.has_value);
-  if (maybe.value) {
+  CHECK(maybe.IsJust());
+  if (maybe.FromJust()) {
     return reinterpret_cast<icu::DecimalFormat*>(obj->GetInternalField(0));
   }
 
@@ -839,6 +847,10 @@ icu::Collator* Collator::InitializeCollator(
     icu::Locale no_extension_locale(icu_locale.getBaseName());
     collator = CreateICUCollator(isolate, no_extension_locale, options);
 
+    if (!collator) {
+      FATAL("Failed to create ICU collator, are ICU data files missing?");
+    }
+
     // Set resolved settings (pattern, numbering system).
     SetResolvedCollatorSettings(
         isolate, no_extension_locale, collator, resolved);
@@ -854,8 +866,8 @@ icu::Collator* Collator::UnpackCollator(Isolate* isolate,
                                         Handle<JSObject> obj) {
   Handle<String> key = isolate->factory()->NewStringFromStaticChars("collator");
   Maybe<bool> maybe = JSReceiver::HasOwnProperty(obj, key);
-  CHECK(maybe.has_value);
-  if (maybe.value) {
+  CHECK(maybe.IsJust());
+  if (maybe.FromJust()) {
     return reinterpret_cast<icu::Collator*>(obj->GetInternalField(0));
   }
 
@@ -898,6 +910,10 @@ icu::BreakIterator* BreakIterator::InitializeBreakIterator(
     break_iterator = CreateICUBreakIterator(
         isolate, no_extension_locale, options);
 
+    if (!break_iterator) {
+      FATAL("Failed to create ICU break iterator, are ICU data files missing?");
+    }
+
     // Set resolved settings (locale).
     SetResolvedBreakIteratorSettings(
         isolate, no_extension_locale, break_iterator, resolved);
@@ -915,8 +931,8 @@ icu::BreakIterator* BreakIterator::UnpackBreakIterator(Isolate* isolate,
   Handle<String> key =
       isolate->factory()->NewStringFromStaticChars("breakIterator");
   Maybe<bool> maybe = JSReceiver::HasOwnProperty(obj, key);
-  CHECK(maybe.has_value);
-  if (maybe.value) {
+  CHECK(maybe.IsJust());
+  if (maybe.FromJust()) {
     return reinterpret_cast<icu::BreakIterator*>(obj->GetInternalField(0));
   }
 

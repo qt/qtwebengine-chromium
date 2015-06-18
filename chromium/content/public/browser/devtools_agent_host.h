@@ -11,12 +11,19 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/devtools_agent_host_client.h"
 #include "url/gurl.h"
 
+namespace net {
+class ServerSocket;
+}
+
 namespace content {
 
+class BrowserContext;
 class DevToolsExternalAgentProxyDelegate;
 class WebContents;
 
@@ -28,6 +35,9 @@ class CONTENT_EXPORT DevToolsAgentHost
     // Agent host associated with WebContents.
     TYPE_WEB_CONTENTS,
 
+    // Agent host associated with RenderFrameHost.
+    TYPE_FRAME,
+
     // Agent host associated with shared worker.
     TYPE_SHARED_WORKER,
 
@@ -36,9 +46,18 @@ class CONTENT_EXPORT DevToolsAgentHost
 
     // Agent host associated with DevToolsExternalAgentProxyDelegate.
     TYPE_EXTERNAL,
+
+    // Agent host associated with browser.
+    TYPE_BROWSER,
   };
 
-  // Returns DevToolsAgentHost with a given |id| or NULL of it does not exist.
+  // Latest DevTools protocol version supported.
+  static std::string GetProtocolVersion();
+
+  // Returns whether particular version of DevTools protocol is supported.
+  static bool IsSupportedProtocolVersion(const std::string& version);
+
+  // Returns DevToolsAgentHost with a given |id| or nullptr of it doesn't exist.
   static scoped_refptr<DevToolsAgentHost> GetForId(const std::string& id);
 
   // Returns DevToolsAgentHost that can be used for inspecting |web_contents|.
@@ -61,6 +80,15 @@ class CONTENT_EXPORT DevToolsAgentHost
   static scoped_refptr<DevToolsAgentHost> Create(
       DevToolsExternalAgentProxyDelegate* delegate);
 
+  using CreateServerSocketCallback =
+      base::Callback<scoped_ptr<net::ServerSocket>(std::string*)>;
+
+  // Creates DevToolsAgentHost for the browser, which works with browser-wide
+  // debugging protocol.
+  static scoped_refptr<DevToolsAgentHost> CreateForBrowser(
+      scoped_refptr<base::MessageLoopProxy> tethering_message_loop,
+      const CreateServerSocketCallback& socket_callback);
+
   static bool IsDebuggerAttached(WebContents* web_contents);
 
   typedef std::vector<scoped_refptr<DevToolsAgentHost> > List;
@@ -77,8 +105,8 @@ class CONTENT_EXPORT DevToolsAgentHost
   // Returns true if there is a client attached.
   virtual bool IsAttached() = 0;
 
-  // Sends a message to the agent.
-  virtual void DispatchProtocolMessage(const std::string& message) = 0;
+  // Sends a message to the agent. Returns true if the message is handled.
+  virtual bool DispatchProtocolMessage(const std::string& message) = 0;
 
   // Starts inspecting element at position (|x|, |y|) in the specified page.
   virtual void InspectElement(int x, int y) = 0;
@@ -89,15 +117,15 @@ class CONTENT_EXPORT DevToolsAgentHost
   // Returns web contents instance for this host if any.
   virtual WebContents* GetWebContents() = 0;
 
+  // Returns related browser context instance if available.
+  virtual BrowserContext* GetBrowserContext() = 0;
+
   // Temporarily detaches render view host from this host. Must be followed by
   // a call to ConnectWebContents (may leak the host instance otherwise).
   virtual void DisconnectWebContents() = 0;
 
   // Attaches render view host to this host.
   virtual void ConnectWebContents(WebContents* web_contents) = 0;
-
-  // Returns true if DevToolsAgentHost is for worker.
-  virtual bool IsWorker() const = 0;
 
   // Returns agent host type.
   virtual Type GetType() = 0;

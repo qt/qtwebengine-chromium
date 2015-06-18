@@ -7,11 +7,12 @@
 
 #include <string>
 
+#include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
 
 namespace content {
 
-class RenderViewHost;
+class RenderFrameHost;
 
 // This class dispatches messages between DevTools frontend and Delegate
 // which is implemented by the embedder.
@@ -35,12 +36,20 @@ class DevToolsFrontendHost {
         const std::string& message) = 0;
   };
 
-  // Creates a new DevToolsFrontendHost for RenderViewHost where DevTools
+  // Creates a new DevToolsFrontendHost for RenderFrameHost where DevTools
   // frontend is loaded.
   CONTENT_EXPORT static DevToolsFrontendHost* Create(
-      RenderViewHost* frontend_rvh, Delegate* delegate);
+      RenderFrameHost* frontend_main_frame,
+      Delegate* delegate);
 
   CONTENT_EXPORT virtual ~DevToolsFrontendHost() {}
+
+  CONTENT_EXPORT virtual void BadMessageRecieved() {}
+
+  // Returns bundled DevTools frontend resource by |path|. Returns empty string
+  // if |path| does not correspond to any frontend resource.
+  CONTENT_EXPORT static base::StringPiece GetFrontendResource(
+      const std::string& path);
 };
 
 }  // namespace content

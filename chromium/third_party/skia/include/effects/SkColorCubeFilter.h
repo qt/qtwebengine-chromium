@@ -10,6 +10,7 @@
 
 #include "SkColorFilter.h"
 #include "SkData.h"
+#include "SkMutex.h"
 
 class SK_API SkColorCubeFilter : public SkColorFilter {
 public:
@@ -20,11 +21,11 @@ public:
      */
     static SkColorFilter* Create(SkData* cubeData, int cubeDimension);
 
-    virtual void filterSpan(const SkPMColor src[], int count, SkPMColor[]) const SK_OVERRIDE;
-    virtual uint32_t getFlags() const SK_OVERRIDE;
+    void filterSpan(const SkPMColor src[], int count, SkPMColor[]) const override;
+    uint32_t getFlags() const override;
 
 #if SK_SUPPORT_GPU
-   virtual GrFragmentProcessor* asFragmentProcessor(GrContext*) const SK_OVERRIDE;
+   bool asFragmentProcessors(GrContext*, SkTDArray<GrFragmentProcessor*>*) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()
@@ -32,10 +33,7 @@ public:
 
 protected:
     SkColorCubeFilter(SkData* cubeData, int cubeDimension);
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkColorCubeFilter(SkReadBuffer& buffer);
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
 
 private:
     /** The cache is initialized on-demand when getProcessingLuts is called.

@@ -32,6 +32,7 @@
 #define WorkerInspectorController_h
 
 #include "core/inspector/InspectorBaseAgent.h"
+#include "core/inspector/InspectorRuntimeAgent.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -40,6 +41,7 @@
 
 namespace blink {
 
+class AsyncCallTracker;
 class InjectedScriptManager;
 class InspectorBackendDispatcher;
 class InspectorFrontend;
@@ -48,40 +50,50 @@ class InspectorStateClient;
 class InstrumentingAgents;
 class WorkerDebuggerAgent;
 class WorkerGlobalScope;
-class WorkerScriptDebugServer;
+class WorkerRuntimeAgent;
+class WorkerThreadDebugger;
 
-class WorkerInspectorController : public RefCountedWillBeGarbageCollectedFinalized<WorkerInspectorController> {
+class WorkerInspectorController : public RefCountedWillBeGarbageCollectedFinalized<WorkerInspectorController>, public InspectorRuntimeAgent::Client {
     WTF_MAKE_NONCOPYABLE(WorkerInspectorController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WorkerInspectorController);
 public:
     explicit WorkerInspectorController(WorkerGlobalScope*);
     ~WorkerInspectorController();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
+    void registerModuleAgent(PassOwnPtrWillBeRawPtr<InspectorAgent>);
     void connectFrontend();
     void disconnectFrontend();
     void restoreInspectorStateFromCookie(const String& inspectorCookie);
     void dispatchMessageFromFrontend(const String&);
-    void resume();
     void dispose();
     void interruptAndDispatchInspectorCommands();
 
+    void pauseOnStart();
+
 private:
     friend InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope*);
+
+    // InspectorRuntimeAgent::Client implementation.
+    void resumeStartup() override;
+    bool isRunRequired() override;
 
     RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
     OwnPtr<InspectorStateClient> m_stateClient;
     OwnPtrWillBeMember<InspectorCompositeState> m_state;
     RefPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
     OwnPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
-    OwnPtr<WorkerScriptDebugServer> m_debugServer;
+    OwnPtrWillBeMember<WorkerThreadDebugger> m_workerThreadDebugger;
     InspectorAgentRegistry m_agents;
     OwnPtr<InspectorFrontendChannel> m_frontendChannel;
     OwnPtr<InspectorFrontend> m_frontend;
     RefPtrWillBeMember<InspectorBackendDispatcher> m_backendDispatcher;
     RawPtrWillBeMember<WorkerDebuggerAgent> m_workerDebuggerAgent;
+    OwnPtrWillBeMember<AsyncCallTracker> m_asyncCallTracker;
+    RawPtrWillBeMember<WorkerRuntimeAgent> m_workerRuntimeAgent;
+    bool m_paused;
 };
 
 }
 
-#endif // !defined(WorkerInspectorController_h)
+#endif // WorkerInspectorController_h

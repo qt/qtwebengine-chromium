@@ -17,7 +17,12 @@ const blink::WebGestureDevice kDefaultGestureDevice =
     blink::WebGestureDeviceTouchscreen;
 
 blink::WebGestureEvent Build(WebInputEvent::Type type) {
-  return SyntheticWebGestureEventBuilder::Build(type, kDefaultGestureDevice);
+  blink::WebGestureEvent event =
+      SyntheticWebGestureEventBuilder::Build(type, kDefaultGestureDevice);
+  // Default to providing a (valid) non-zero fling velocity.
+  if (type == WebInputEvent::GestureFlingStart)
+    event.data.flingStart.velocityX = 5;
+  return event;
 }
 
 }  // namespace
@@ -95,6 +100,17 @@ TEST(GestureEventStreamValidator, InvalidFling) {
 
   // No preceding ScrollBegin.
   event = Build(WebInputEvent::GestureFlingStart);
+  EXPECT_FALSE(validator.Validate(event, &error_msg));
+  EXPECT_FALSE(error_msg.empty());
+
+  // Zero velocity.
+  event = Build(WebInputEvent::GestureScrollBegin);
+  EXPECT_TRUE(validator.Validate(event, &error_msg));
+  EXPECT_TRUE(error_msg.empty());
+
+  event = Build(WebInputEvent::GestureFlingStart);
+  event.data.flingStart.velocityX = 0;
+  event.data.flingStart.velocityY = 0;
   EXPECT_FALSE(validator.Validate(event, &error_msg));
   EXPECT_FALSE(error_msg.empty());
 }
@@ -181,12 +197,16 @@ TEST(GestureEventStreamValidator, ValidTap) {
   EXPECT_TRUE(validator.Validate(event, &error_msg));
   EXPECT_TRUE(error_msg.empty());
 
-  // Tap and DoubleTap do not require a TapDown (unlike TapUnconfirmed and
-  // TapCancel).
+  event = Build(WebInputEvent::GestureTapDown);
+  EXPECT_TRUE(validator.Validate(event, &error_msg));
+  EXPECT_TRUE(error_msg.empty());
+
   event = Build(WebInputEvent::GestureTap);
   EXPECT_TRUE(validator.Validate(event, &error_msg));
   EXPECT_TRUE(error_msg.empty());
 
+  // DoubleTap does not require a TapDown (unlike Tap, TapUnconfirmed and
+  // TapCancel).
   event = Build(WebInputEvent::GestureDoubleTap);
   EXPECT_TRUE(validator.Validate(event, &error_msg));
   EXPECT_TRUE(error_msg.empty());
@@ -203,6 +223,10 @@ TEST(GestureEventStreamValidator, InvalidTap) {
   EXPECT_FALSE(error_msg.empty());
 
   event = Build(WebInputEvent::GestureTapCancel);
+  EXPECT_FALSE(validator.Validate(event, &error_msg));
+  EXPECT_FALSE(error_msg.empty());
+
+  event = Build(WebInputEvent::GestureTap);
   EXPECT_FALSE(validator.Validate(event, &error_msg));
   EXPECT_FALSE(error_msg.empty());
 

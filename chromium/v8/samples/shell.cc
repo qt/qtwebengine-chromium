@@ -35,10 +35,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef COMPRESS_STARTUP_DATA_BZ2
-#error Using compressed startup data is not supported for this sample
-#endif
-
 /**
  * This sample program shows how to implement a simple javascript shell
  * based on V8.  This includes initializing V8 with command line options,
@@ -86,8 +82,9 @@ int main(int argc, char* argv[]) {
   v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
   ShellArrayBufferAllocator array_buffer_allocator;
-  v8::V8::SetArrayBufferAllocator(&array_buffer_allocator);
-  v8::Isolate* isolate = v8::Isolate::New();
+  v8::Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = &array_buffer_allocator;
+  v8::Isolate* isolate = v8::Isolate::New(create_params);
   run_shell = (argc == 1);
   int result;
   {
@@ -102,6 +99,7 @@ int main(int argc, char* argv[]) {
     result = RunMain(isolate, argc, argv);
     if (run_shell) RunShell(context);
   }
+  isolate->Dispose();
   v8::V8::Dispose();
   v8::V8::ShutdownPlatform();
   delete platform;
@@ -241,18 +239,21 @@ v8::Handle<v8::String> ReadFile(v8::Isolate* isolate, const char* name) {
   if (file == NULL) return v8::Handle<v8::String>();
 
   fseek(file, 0, SEEK_END);
-  int size = ftell(file);
+  size_t size = ftell(file);
   rewind(file);
 
   char* chars = new char[size + 1];
   chars[size] = '\0';
-  for (int i = 0; i < size;) {
-    int read = static_cast<int>(fread(&chars[i], 1, size - i, file));
-    i += read;
+  for (size_t i = 0; i < size;) {
+    i += fread(&chars[i], 1, size - i, file);
+    if (ferror(file)) {
+      fclose(file);
+      return v8::Handle<v8::String>();
+    }
   }
   fclose(file);
-  v8::Handle<v8::String> result =
-      v8::String::NewFromUtf8(isolate, chars, v8::String::kNormalString, size);
+  v8::Handle<v8::String> result = v8::String::NewFromUtf8(
+      isolate, chars, v8::String::kNormalString, static_cast<int>(size));
   delete[] chars;
   return result;
 }

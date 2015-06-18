@@ -110,13 +110,12 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
   static scoped_refptr<StreamParserBuffer> CreateEOSBuffer();
 
   static scoped_refptr<StreamParserBuffer> CopyFrom(
-      const uint8* data, int data_size, bool is_keyframe, Type type,
+      const uint8* data, int data_size, bool is_key_frame, Type type,
       TrackId track_id);
   static scoped_refptr<StreamParserBuffer> CopyFrom(
       const uint8* data, int data_size,
-      const uint8* side_data, int side_data_size, bool is_keyframe, Type type,
+      const uint8* side_data, int side_data_size, bool is_key_frame, Type type,
       TrackId track_id);
-  bool IsKeyframe() const { return is_keyframe_; }
 
   // Decode timestamp. If not explicitly set, or set to kNoTimestamp(), the
   // value will be taken from the normal timestamp.
@@ -171,20 +170,26 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
 
   void set_timestamp(base::TimeDelta timestamp) override;
 
+  bool is_duration_estimated() const { return is_duration_estimated_; }
+
+  void set_is_duration_estimated(bool is_estimated) {
+    is_duration_estimated_ = is_estimated;
+  }
+
  private:
   StreamParserBuffer(const uint8* data, int data_size,
                      const uint8* side_data, int side_data_size,
-                     bool is_keyframe, Type type,
+                     bool is_key_frame, Type type,
                      TrackId track_id);
   ~StreamParserBuffer() override;
 
-  bool is_keyframe_;
   DecodeTimestamp decode_timestamp_;
   int config_id_;
   Type type_;
   TrackId track_id_;
   BufferQueue splice_buffers_;
   scoped_refptr<StreamParserBuffer> preroll_buffer_;
+  bool is_duration_estimated_;
 
   DISALLOW_COPY_AND_ASSIGN(StreamParserBuffer);
 };

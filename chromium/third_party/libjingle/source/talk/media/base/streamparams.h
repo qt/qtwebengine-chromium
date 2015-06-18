@@ -203,25 +203,153 @@ struct StreamSelector {
 
 typedef std::vector<StreamParams> StreamParamsVec;
 
-// Finds the stream in streams.  Returns true if found.
+// A collection of audio and video and data streams. Most of the
+// methods are merely for convenience. Many of these methods are keyed
+// by ssrc, which is the source identifier in the RTP spec
+// (http://tools.ietf.org/html/rfc3550).
+// TODO(pthatcher):  Add basic unit test for these.
+// See https://code.google.com/p/webrtc/issues/detail?id=4107
+struct MediaStreams {
+ public:
+  MediaStreams() {}
+  void CopyFrom(const MediaStreams& sources);
+
+  bool empty() const {
+    return audio_.empty() && video_.empty() && data_.empty();
+  }
+
+  std::vector<StreamParams>* mutable_audio() { return &audio_; }
+  std::vector<StreamParams>* mutable_video() { return &video_; }
+  std::vector<StreamParams>* mutable_data() { return &data_; }
+  const std::vector<StreamParams>& audio() const { return audio_; }
+  const std::vector<StreamParams>& video() const { return video_; }
+  const std::vector<StreamParams>& data() const { return data_; }
+
+  // Gets a stream, returning true if found.
+  bool GetAudioStream(
+      const StreamSelector& selector, StreamParams* stream);
+  bool GetVideoStream(
+      const StreamSelector& selector, StreamParams* stream);
+  bool GetDataStream(
+      const StreamSelector& selector, StreamParams* stream);
+  // Adds a stream.
+  void AddAudioStream(const StreamParams& stream);
+  void AddVideoStream(const StreamParams& stream);
+  void AddDataStream(const StreamParams& stream);
+  // Removes a stream, returning true if found and removed.
+  bool RemoveAudioStream(const StreamSelector& selector);
+  bool RemoveVideoStream(const StreamSelector& selector);
+  bool RemoveDataStream(const StreamSelector& selector);
+
+ private:
+  std::vector<StreamParams> audio_;
+  std::vector<StreamParams> video_;
+  std::vector<StreamParams> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(MediaStreams);
+};
+
+// A request for a specific format of a specific stream.
+struct StaticVideoView {
+  StaticVideoView(const StreamSelector& selector,
+                  int width, int height, int framerate)
+      : selector(selector),
+        width(width),
+        height(height),
+        framerate(framerate),
+        preference(0) {
+  }
+
+  StreamSelector selector;
+  int width;
+  int height;
+  int framerate;
+  int preference;
+};
+
+typedef std::vector<StaticVideoView> StaticVideoViews;
+
+// A request for several streams in various formats.
+struct ViewRequest {
+  StaticVideoViews static_video_views;
+};
+
+template <class Condition>
+const StreamParams* GetStream(const StreamParamsVec& streams,
+                              Condition condition) {
+  StreamParamsVec::const_iterator found =
+      std::find_if(streams.begin(), streams.end(), condition);
+  return found == streams.end() ? nullptr : &(*found);
+}
+
+inline const StreamParams* GetStreamBySsrc(const StreamParamsVec& streams,
+                                           uint32 ssrc) {
+  return GetStream(streams,
+      [&ssrc](const StreamParams& sp) { return sp.has_ssrc(ssrc); });
+}
+
+inline const StreamParams* GetStreamByIds(const StreamParamsVec& streams,
+                                          const std::string& groupid,
+                                          const std::string& id) {
+  return GetStream(streams,
+      [&groupid, &id](const StreamParams& sp) {
+        return sp.groupid == groupid && sp.id == id;
+      });
+}
+
+inline const StreamParams* GetStream(const StreamParamsVec& streams,
+                                     const StreamSelector& selector) {
+  return GetStream(streams,
+      [&selector](const StreamParams& sp) { return selector.Matches(sp); });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Deprecated methods that will be removed one of these days.
+// Please use the methods with the same name above.
 bool GetStream(const StreamParamsVec& streams,
                const StreamSelector& selector,
                StreamParams* stream_out);
-bool GetStreamBySsrc(const StreamParamsVec& streams, uint32 ssrc,
-                     StreamParams* stream_out);
-bool GetStreamByIds(const StreamParamsVec& streams,
-                    const std::string& groupid,
-                    const std::string& id,
-                    StreamParams* stream_out);
+inline bool GetStreamBySsrc(const StreamParamsVec& streams, uint32 ssrc,
+                            StreamParams* stream_out) {
+  return GetStream(streams, StreamSelector(ssrc), stream_out);
+}
+inline bool GetStreamByIds(const StreamParamsVec& streams,
+                           const std::string& groupid,
+                           const std::string& id,
+                           StreamParams* stream_out) {
+  return GetStream(streams, StreamSelector(groupid, id), stream_out);
+}
+// End deprecated methods.
+////////////////////////////////////////////////////////////////////////////////
+
+template <class Condition>
+bool RemoveStream(StreamParamsVec* streams, Condition condition) {
+  auto iter(std::remove_if(streams->begin(), streams->end(), condition));
+  if (iter == streams->end())
+    return false;
+  streams->erase(iter, streams->end());
+  return true;
+}
 
 // Removes the stream from streams. Returns true if a stream is
 // found and removed.
-bool RemoveStream(StreamParamsVec* streams,
-                  const StreamSelector& selector);
-bool RemoveStreamBySsrc(StreamParamsVec* streams, uint32 ssrc);
-bool RemoveStreamByIds(StreamParamsVec* streams,
-                       const std::string& groupid,
-                       const std::string& id);
+inline bool RemoveStream(StreamParamsVec* streams,
+                  const StreamSelector& selector) {
+  return RemoveStream(streams,
+      [&selector](const StreamParams& sp) { return selector.Matches(sp); });
+}
+inline bool RemoveStreamBySsrc(StreamParamsVec* streams, uint32 ssrc) {
+  return RemoveStream(streams,
+      [&ssrc](const StreamParams& sp) { return sp.has_ssrc(ssrc); });
+}
+inline bool RemoveStreamByIds(StreamParamsVec* streams,
+                              const std::string& groupid,
+                              const std::string& id) {
+  return RemoveStream(streams,
+      [&groupid, &id](const StreamParams& sp) {
+        return sp.groupid == groupid && sp.id == id;
+      });
+}
 
 // Checks if |sp| defines parameters for a single primary stream. There may
 // be an RTX stream associated with the primary stream. Leaving as non-static so

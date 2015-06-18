@@ -59,7 +59,8 @@ class GaiaOAuthClient::Core
   void GetUserInfo(const std::string& oauth_access_token,
                    int max_retries,
                    Delegate* delegate);
-  void GetTokenInfo(const std::string& oauth_access_token,
+  void GetTokenInfo(const std::string& qualifier,
+                    const std::string& query,
                     int max_retries,
                     Delegate* delegate);
 
@@ -172,9 +173,9 @@ void GaiaOAuthClient::Core::GetUserInfoImpl(
   request_type_ = type;
   delegate_ = delegate;
   num_retries_ = 0;
-  request_.reset(net::URLFetcher::Create(
+  request_ = net::URLFetcher::Create(
       kUrlFetcherId, GURL(GaiaUrls::GetInstance()->oauth_user_info_url()),
-      net::URLFetcher::GET, this));
+      net::URLFetcher::GET, this);
   request_->SetRequestContext(request_context_getter_.get());
   request_->AddExtraRequestHeader("Authorization: OAuth " + oauth_access_token);
   request_->SetMaxRetriesOn5xx(max_retries);
@@ -189,14 +190,15 @@ void GaiaOAuthClient::Core::GetUserInfoImpl(
   request_->Start();
 }
 
-void GaiaOAuthClient::Core::GetTokenInfo(const std::string& oauth_access_token,
+void GaiaOAuthClient::Core::GetTokenInfo(const std::string& qualifier,
+                                         const std::string& query,
                                          int max_retries,
                                          Delegate* delegate) {
   DCHECK_EQ(request_type_, NO_PENDING_REQUEST);
   DCHECK(!request_.get());
   request_type_ = TOKEN_INFO;
   std::string post_body =
-      "access_token=" + net::EscapeUrlEncodedData(oauth_access_token, true);
+      qualifier + "=" + net::EscapeUrlEncodedData(query, true);
   MakeGaiaRequest(GURL(GaiaUrls::GetInstance()->oauth2_token_info_url()),
                   post_body,
                   max_retries,
@@ -211,8 +213,8 @@ void GaiaOAuthClient::Core::MakeGaiaRequest(
   DCHECK(!request_.get()) << "Tried to fetch two things at once!";
   delegate_ = delegate;
   num_retries_ = 0;
-  request_.reset(net::URLFetcher::Create(
-      kUrlFetcherId, url, net::URLFetcher::POST, this));
+  request_ =
+      net::URLFetcher::Create(kUrlFetcherId, url, net::URLFetcher::POST, this);
   request_->SetRequestContext(request_context_getter_.get());
   request_->SetUploadData("application/x-www-form-urlencoded", post_body);
   request_->SetMaxRetriesOn5xx(max_retries);
@@ -396,7 +398,15 @@ void GaiaOAuthClient::GetUserInfo(const std::string& access_token,
 void GaiaOAuthClient::GetTokenInfo(const std::string& access_token,
                                    int max_retries,
                                    Delegate* delegate) {
-  return core_->GetTokenInfo(access_token, max_retries, delegate);
+  return core_->GetTokenInfo("access_token", access_token, max_retries,
+                             delegate);
+}
+
+void GaiaOAuthClient::GetTokenHandleInfo(const std::string& token_handle,
+                                         int max_retries,
+                                         Delegate* delegate) {
+  return core_->GetTokenInfo("token_handle", token_handle, max_retries,
+                             delegate);
 }
 
 }  // namespace gaia

@@ -35,13 +35,15 @@
 
 namespace blink {
 
-class InspectorController;
+class DevToolsEmulator;
 class Settings;
 
 class WebSettingsImpl final : public WebSettings {
 public:
-    explicit WebSettingsImpl(Settings*, InspectorController*);
+    WebSettingsImpl(Settings*, DevToolsEmulator*);
     virtual ~WebSettingsImpl() { }
+
+    virtual void setFromStrings(const WebString& name, const WebString& value) override;
 
     virtual bool mainFrameResizesAreOrientationChanges() const override;
     virtual bool shrinksViewportContentToFit() const override;
@@ -60,7 +62,6 @@ public:
     virtual void setAllowFileAccessFromFileURLs(bool) override;
     virtual void setAllowCustomScrollbarInMainFrame(bool) override;
     virtual void setAllowRunningOfInsecureContent(bool) override;
-    virtual void setAllowConnectingInsecureWebSocket(bool) override;
     virtual void setAllowScriptsToCloseWindows(bool) override;
     virtual void setAllowUniversalAccessFromFileURLs(bool) override;
     virtual void setAntialiased2dCanvasEnabled(bool) override;
@@ -69,7 +70,6 @@ public:
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool) override;
     virtual void setCaretBrowsingEnabled(bool) override;
     virtual void setClobberUserAgentInitialScaleQuirk(bool) override;
-    virtual void setContainerCullingEnabled(bool) override;
     virtual void setCookieEnabled(bool) override;
     virtual void setNavigateOnDragDrop(bool) override;
     virtual void setCursiveFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
@@ -81,17 +81,19 @@ public:
     virtual void setDefaultVideoPosterURL(const WebString&) override;
     virtual void setDeferredImageDecodingEnabled(bool) override;
     virtual void setDeviceScaleAdjustment(float) override;
-    virtual void setDeviceSupportsMouse(bool) override;
 
-    // FIXME: Remove once the pointer/hover features are converted to use the
-    // new APIs (e.g. setPrimaryPointerType) on the chromium side
+    // FIXME: Replace these two with pointer/hover queries? crbug.com/441813
+    virtual void setDeviceSupportsMouse(bool) override;
     virtual void setDeviceSupportsTouch(bool) override;
 
+    virtual void setDisableReadingFromCanvas(bool) override;
     virtual void setDoubleTapToZoomEnabled(bool) override;
     virtual void setDownloadableBinaryFontsEnabled(bool) override;
     virtual void setEditingBehavior(EditingBehavior) override;
     virtual void setEnableScrollAnimator(bool) override;
     virtual void setEnableTouchAdjustment(bool) override;
+    virtual bool multiTargetTapNotificationEnabled() override;
+    virtual void setMultiTargetTapNotificationEnabled(bool) override;
     virtual void setRegionBasedColumnsEnabled(bool) override;
     virtual void setExperimentalWebGLEnabled(bool) override;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
@@ -100,13 +102,13 @@ public:
     virtual void setFullscreenSupported(bool) override;
     virtual void setHyperlinkAuditingEnabled(bool) override;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) override;
+    virtual void setImageAnimationPolicy(ImageAnimationPolicy) override;
     virtual void setImagesEnabled(bool) override;
     virtual void setInlineTextBoxAccessibilityEnabled(bool) override;
     virtual void setJavaEnabled(bool) override;
     virtual void setJavaScriptCanAccessClipboard(bool) override;
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) override;
     virtual void setJavaScriptEnabled(bool) override;
-    virtual void setLayerSquashingEnabled(bool) override;
     virtual void setLoadsImagesAutomatically(bool) override;
     virtual void setLoadWithOverviewMode(bool) override;
     virtual void setLocalStorageEnabled(bool) override;
@@ -126,7 +128,6 @@ public:
     virtual void setPerTilePaintingEnabled(bool) override;
     virtual void setPictographFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
     virtual void setPinchOverlayScrollbarThickness(int) override;
-    virtual void setPinchVirtualViewportEnabled(bool) override;
     virtual void setPluginsEnabled(bool) override;
     virtual void setAvailablePointerTypes(int) override;
     virtual void setPrimaryPointerType(PointerType) override;
@@ -135,26 +136,37 @@ public:
     virtual void setRenderVSyncNotificationEnabled(bool) override;
     virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool) override;
     virtual void setRootLayerScrolls(bool) override;
+    virtual void setRubberBandingOnCompositorThread(bool) override;
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
     virtual void setSelectTrailingWhitespaceEnabled(bool override);
     virtual void setSelectionIncludesAltImageText(bool) override;
+    virtual void setSelectionStrategy(SelectionStrategyType) override;
     virtual void setSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
     virtual void setShouldPrintBackgrounds(bool) override;
     virtual void setShouldClearDocumentBackground(bool) override;
     virtual void setShouldRespectImageOrientation(bool) override;
+    virtual void setShowContextMenuOnMouseUp(bool) override;
     virtual void setShowFPSCounter(bool) override;
     virtual void setShowPaintRects(bool) override;
-    virtual void setShrinksStandaloneImagesToFit(bool) override;
     virtual void setShrinksViewportContentToFit(bool) override;
     virtual void setSmartInsertDeleteEnabled(bool) override;
     virtual void setSpatialNavigationEnabled(bool) override;
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
+    virtual void setStrictMixedContentChecking(bool) override;
+    virtual void setStrictPowerfulFeatureRestrictions(bool) override;
     virtual void setSupportDeprecatedTargetDensityDPI(bool) override;
     virtual void setSupportsMultipleWindows(bool) override;
     virtual void setSyncXHRInDocumentsEnabled(bool) override;
     virtual void setTextAreasAreResizable(bool) override;
     virtual void setTextAutosizingEnabled(bool) override;
     virtual void setAccessibilityFontScaleFactor(float) override;
+    virtual void setTextTrackBackgroundColor(const WebString&);
+    virtual void setTextTrackFontFamily(const WebString&);
+    virtual void setTextTrackFontStyle(const WebString&);
+    virtual void setTextTrackFontVariant(const WebString&);
+    virtual void setTextTrackTextColor(const WebString&);
+    virtual void setTextTrackTextShadow(const WebString&);
+    virtual void setTextTrackTextSize(const WebString&);
     virtual void setThreadedScrollingEnabled(bool) override;
     virtual void setTouchDragDropEnabled(bool) override;
     virtual void setTouchEditingEnabled(bool) override;
@@ -162,11 +174,10 @@ public:
     virtual void setUnsafePluginPastingEnabled(bool) override;
     virtual void setUsesEncodingDetector(bool) override;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) override;
+    virtual void setUseMobileViewportStyle(bool) override;
     virtual void setUseSolidColorScrollbars(bool) override;
     virtual void setUseWideViewport(bool) override;
     virtual void setV8CacheOptions(V8CacheOptions) override;
-    virtual void setV8ScriptStreamingEnabled(bool) override;
-    virtual void setV8ScriptStreamingMode(V8ScriptStreamingMode) override;
     virtual void setValidationMessageTimerMagnification(int) override;
     virtual void setViewportEnabled(bool) override;
     virtual void setViewportMetaEnabled(bool) override;
@@ -184,9 +195,10 @@ public:
     bool showPaintRects() const { return m_showPaintRects; }
     bool renderVSyncNotificationEnabled() const { return m_renderVSyncNotificationEnabled; }
     bool autoZoomFocusedNodeToLegibleScale() const { return m_autoZoomFocusedNodeToLegibleScale; }
-    bool doubleTapToZoomEnabled() const { return m_doubleTapToZoomEnabled; }
+    bool doubleTapToZoomEnabled() const;
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
     bool supportDeprecatedTargetDensityDPI() const { return m_supportDeprecatedTargetDensityDPI; }
+    bool viewportMetaEnabled() const;
     bool viewportMetaLayoutSizeQuirk() const { return m_viewportMetaLayoutSizeQuirk; }
     bool viewportMetaNonUserScalableQuirk() const { return m_viewportMetaNonUserScalableQuirk; }
     bool clobberUserAgentInitialScaleQuirk() const { return m_clobberUserAgentInitialScaleQuirk; }
@@ -196,13 +208,12 @@ public:
 
 private:
     Settings* m_settings;
-    InspectorController* m_inspectorController;
+    DevToolsEmulator* m_devToolsEmulator;
     bool m_showFPSCounter;
     bool m_showPaintRects;
     bool m_renderVSyncNotificationEnabled;
     bool m_autoZoomFocusedNodeToLegibleScale;
     bool m_deferredImageDecodingEnabled;
-    bool m_doubleTapToZoomEnabled;
     bool m_perTilePaintingEnabled;
     bool m_supportDeprecatedTargetDensityDPI;
     bool m_shrinksViewportContentToFit;

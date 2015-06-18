@@ -50,7 +50,7 @@ bool SignatureVerifier::VerifyInit(const uint8* signature_algorithm,
                                    const uint8* public_key_info,
                                    int public_key_info_len) {
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  ScopedOpenSSL<X509_ALGOR, X509_ALGOR_free>::Type algorithm(
+  ScopedOpenSSL<X509_ALGOR, X509_ALGOR_free> algorithm(
       d2i_X509_ALGOR(NULL, &signature_algorithm, signature_algorithm_len));
   if (!algorithm.get())
     return false;
@@ -122,8 +122,7 @@ bool SignatureVerifier::VerifyFinal() {
   int rv = EVP_DigestVerifyFinal(verify_context_->ctx.get(),
                                  vector_as_array(&signature_),
                                  signature_.size());
-  // rv is -1 if a DER-encoded ECDSA signature cannot be decoded correctly.
-  DCHECK_GE(rv, -1);
+  DCHECK_EQ(static_cast<int>(!!rv), rv);
   Reset();
   return rv == 1;
 }
@@ -141,19 +140,14 @@ bool SignatureVerifier::CommonInit(const EVP_MD* digest,
 
   signature_.assign(signature, signature + signature_len);
 
-  // BIO_new_mem_buf is not const aware, but it does not modify the buffer.
-  char* data = reinterpret_cast<char*>(const_cast<uint8*>(public_key_info));
-  ScopedBIO bio(BIO_new_mem_buf(data, public_key_info_len));
-  if (!bio.get())
-    return false;
-
-  ScopedEVP_PKEY public_key(d2i_PUBKEY_bio(bio.get(), NULL));
-  if (!public_key.get())
+  const uint8_t* ptr = public_key_info;
+  ScopedEVP_PKEY public_key(d2i_PUBKEY(nullptr, &ptr, public_key_info_len));
+  if (!public_key.get() || ptr != public_key_info + public_key_info_len)
     return false;
 
   verify_context_->ctx.reset(EVP_MD_CTX_create());
   int rv = EVP_DigestVerifyInit(verify_context_->ctx.get(), pkey_ctx,
-                                digest, NULL, public_key.get());
+                                digest, nullptr, public_key.get());
   return rv == 1;
 }
 

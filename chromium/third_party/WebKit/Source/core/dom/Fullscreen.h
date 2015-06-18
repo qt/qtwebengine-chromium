@@ -28,6 +28,7 @@
 #ifndef Fullscreen_h
 #define Fullscreen_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/Element.h"
@@ -40,12 +41,12 @@
 
 namespace blink {
 
-class RenderFullScreen;
-class RenderStyle;
+class LayoutFullScreen;
+class ComputedStyle;
 
-class Fullscreen final
+class CORE_EXPORT Fullscreen final
     : public NoBaseWillBeGarbageCollectedFinalized<Fullscreen>
-    , public DocumentSupplement
+    , public WillBeHeapSupplement<Document>
     , public DocumentLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Fullscreen);
 public:
@@ -60,9 +61,7 @@ public:
 
     enum RequestType {
         UnprefixedRequest, // Element.requestFullscreen()
-        PrefixedRequest, // Element.webkitRequestFullscreen()
-        PrefixedMozillaRequest, // Element.webkitRequestFullScreen()
-        PrefixedMozillaAllowKeyboardInputRequest, // Element.webkitRequestFullScreen(Element.ALLOW_KEYBOARD_INPUT)
+        PrefixedRequest, // Element.webkitRequestFullscreen() and webkitRequestFullScreen()
         PrefixedVideoRequest, // HTMLVideoElement.webkitEnterFullscreen() and webkitEnterFullScreen()
     };
 
@@ -76,14 +75,13 @@ public:
     void didEnterFullScreenForElement(Element*);
     void didExitFullScreenForElement(Element*);
 
-    void setFullScreenRenderer(RenderFullScreen*);
-    RenderFullScreen* fullScreenRenderer() const { return m_fullScreenRenderer; }
-    void fullScreenRendererDestroyed();
+    void setFullScreenLayoutObject(LayoutFullScreen*);
+    LayoutFullScreen* fullScreenLayoutObject() const { return m_fullScreenLayoutObject; }
+    void fullScreenLayoutObjectDestroyed();
 
     void elementRemoved(Element&);
 
     // Mozilla API
-    bool webkitFullScreenKeyboardInputAllowed() const { return m_fullScreenElement.get() && m_areKeysEnabledInFullScreen; }
     Element* webkitCurrentFullScreenElement() const { return m_fullScreenElement.get(); }
 
     virtual void documentWasDetached() override;
@@ -91,7 +89,7 @@ public:
     virtual void documentWasDisposed() override;
 #endif
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     static Fullscreen* fromIfExistsSlow(Document&);
@@ -108,14 +106,13 @@ private:
     void enqueueErrorEvent(Element&, RequestType);
     void eventQueueTimerFired(Timer<Fullscreen>*);
 
-    bool m_areKeysEnabledInFullScreen;
     RefPtrWillBeMember<Element> m_fullScreenElement;
-    WillBeHeapVector<std::pair<RefPtrWillBeMember<Element>, RequestType> > m_fullScreenElementStack;
-    RawPtrWillBeMember<RenderFullScreen> m_fullScreenRenderer;
+    WillBeHeapVector<std::pair<RefPtrWillBeMember<Element>, RequestType>> m_fullScreenElementStack;
+    LayoutFullScreen* m_fullScreenLayoutObject;
     Timer<Fullscreen> m_eventQueueTimer;
-    WillBeHeapDeque<RefPtrWillBeMember<Event> > m_eventQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Event>> m_eventQueue;
     LayoutRect m_savedPlaceholderFrameRect;
-    RefPtr<RenderStyle> m_savedPlaceholderRenderStyle;
+    RefPtr<ComputedStyle> m_savedPlaceholderComputedStyle;
 };
 
 inline bool Fullscreen::isActiveFullScreenElement(const Element& element)

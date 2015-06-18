@@ -39,7 +39,7 @@ namespace blink {
 class ExceptionState;
 class LocalFrame;
 
-class ApplicationCache final : public RefCountedWillBeGarbageCollectedFinalized<ApplicationCache>, public EventTargetWithInlineData, public DOMWindowProperty {
+class ApplicationCache final : public EventTargetWithInlineData, public RefCountedWillBeNoBase<ApplicationCache>, public DOMWindowProperty {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(ApplicationCache);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ApplicationCache);
@@ -78,7 +78,7 @@ public:
 
     static const AtomicString& toEventType(ApplicationCacheHost::EventID);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit ApplicationCache(LocalFrame*);

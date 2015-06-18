@@ -7,8 +7,8 @@ body {
 <if expr="not is_android and not is_ios">
   min-width: 47em;
 </if>
-  /* Should match needs-restart.height + 5 */
-  padding-bottom: 75px;
+  /* Should be larger than the evaluated height of needs-restart. */
+  padding-bottom: 100px;
 }
 
 a {
@@ -23,8 +23,8 @@ a {
 #header {
   -webkit-padding-start: 75px;
   background: -webkit-image-set(
-      url('../../app/theme/default_100_percent/flags_section.png') 1x,
-      url('../../app/theme/default_200_percent/flags_section.png') 2x)
+      url(../../app/theme/default_100_percent/flags_section.png) 1x,
+      url(../../app/theme/default_200_percent/flags_section.png) 2x)
       no-repeat left center;
   box-sizing: border-box;
   display: table;
@@ -164,19 +164,35 @@ html[dir=rtl] #experiment-reset-all {
 }
 
 div.needs-restart {
+  /* If you modify properties that change the height of this,
+   * update body.padding-bottom. */
   background: #FFF;
   border-top: 1px solid rgb(181, 199, 222);
   bottom: 0;
+  box-shadow: 0 -2px 2px #ddd;
   box-sizing: border-box;
-  /* If you change this, update body.padding-bottom */
-  height: 70px;
   left: 0;
-  padding-bottom: 25px;
+  padding-bottom: 15px;
   padding-left: 15px;
   padding-right: 15px;
   padding-top: 15px;
   position: fixed;
   width: 100%;
+}
+
+.experiment-restart-button {
+  -webkit-user-select: none;
+  background: rgb(76, 142, 250);
+  border: 0;
+  border-radius: 2px;
+  box-sizing: border-box;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 700;
+  margin-top: 10px;
+  padding: 10px 24px;
+  text-transform: uppercase;
+  transition: box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 button {

@@ -21,7 +21,9 @@ ClientContextState::EnableFlags::EnableFlags()
       sample_alpha_to_coverage(false),
       sample_coverage(false),
       scissor_test(false),
-      stencil_test(false) {
+      stencil_test(false),
+      rasterizer_discard(false),
+      primitive_restart_fixed_index(false) {
 }
 
 bool ClientContextState::SetCapabilityState(GLenum cap,
@@ -83,6 +85,18 @@ bool ClientContextState::SetCapabilityState(GLenum cap,
         enable_flags.stencil_test = enabled;
       }
       return true;
+    case GL_RASTERIZER_DISCARD:
+      if (enable_flags.rasterizer_discard != enabled) {
+        *changed = true;
+        enable_flags.rasterizer_discard = enabled;
+      }
+      return true;
+    case GL_PRIMITIVE_RESTART_FIXED_INDEX:
+      if (enable_flags.primitive_restart_fixed_index != enabled) {
+        *changed = true;
+        enable_flags.primitive_restart_fixed_index = enabled;
+      }
+      return true;
     default:
       return false;
   }
@@ -115,6 +129,12 @@ bool ClientContextState::GetEnabled(GLenum cap, bool* enabled) const {
       return true;
     case GL_STENCIL_TEST:
       *enabled = enable_flags.stencil_test;
+      return true;
+    case GL_RASTERIZER_DISCARD:
+      *enabled = enable_flags.rasterizer_discard;
+      return true;
+    case GL_PRIMITIVE_RESTART_FIXED_INDEX:
+      *enabled = enable_flags.primitive_restart_fixed_index;
       return true;
     default:
       return false;

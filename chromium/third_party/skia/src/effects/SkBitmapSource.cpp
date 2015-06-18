@@ -18,28 +18,26 @@ SkBitmapSource::SkBitmapSource(const SkBitmap& bitmap)
   , fSrcRect(SkRect::MakeWH(SkIntToScalar(bitmap.width()),
                             SkIntToScalar(bitmap.height())))
   , fDstRect(fSrcRect)
-{}
+  , fFilterQuality(kHigh_SkFilterQuality) {
+}
 
-SkBitmapSource::SkBitmapSource(const SkBitmap& bitmap, const SkRect& srcRect, const SkRect& dstRect)
+SkBitmapSource::SkBitmapSource(const SkBitmap& bitmap, 
+                               const SkRect& srcRect, const SkRect& dstRect,
+                               SkFilterQuality filterQuality)
   : INHERITED(0, 0)
   , fBitmap(bitmap)
   , fSrcRect(srcRect)
-  , fDstRect(dstRect) {}
-
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkBitmapSource::SkBitmapSource(SkReadBuffer& buffer) : INHERITED(0, buffer) {
-    if (buffer.isVersionLT(SkReadBuffer::kNoMoreBitmapFlatten_Version)) {
-        fBitmap.legacyUnflatten(buffer);
-    } else {
-        buffer.readBitmap(&fBitmap);
-    }
-    buffer.readRect(&fSrcRect);
-    buffer.readRect(&fDstRect);
-    buffer.validate(buffer.isValid() && SkIsValidRect(fSrcRect) && SkIsValidRect(fDstRect));
+  , fDstRect(dstRect)
+  , fFilterQuality(filterQuality) {
 }
-#endif
 
 SkFlattenable* SkBitmapSource::CreateProc(SkReadBuffer& buffer) {
+    SkFilterQuality filterQuality;
+    if (buffer.isVersionLT(SkReadBuffer::kBitmapSourceFilterQuality_Version)) {
+        filterQuality = kHigh_SkFilterQuality;
+    } else {
+        filterQuality = (SkFilterQuality)buffer.readInt();
+    }
     SkRect src, dst;
     buffer.readRect(&src);
     buffer.readRect(&dst);
@@ -47,10 +45,11 @@ SkFlattenable* SkBitmapSource::CreateProc(SkReadBuffer& buffer) {
     if (!buffer.readBitmap(&bitmap)) {
         return NULL;
     }
-    return SkBitmapSource::Create(bitmap, src, dst);
+    return SkBitmapSource::Create(bitmap, src, dst, filterQuality);
 }
 
 void SkBitmapSource::flatten(SkWriteBuffer& buffer) const {
+    buffer.writeInt(fFilterQuality);
     buffer.writeRect(fSrcRect);
     buffer.writeRect(fDstRect);
     buffer.writeBitmap(fBitmap);
@@ -67,9 +66,8 @@ bool SkBitmapSource::onFilterImage(Proxy* proxy, const SkBitmap&, const Context&
         offset->fX = offset->fY = 0;
         return true;
     }
-    SkIRect dstIRect;
-    dstRect.roundOut(&dstIRect);
 
+    const SkIRect dstIRect = dstRect.roundOut();
     SkAutoTUnref<SkBaseDevice> device(proxy->createDevice(dstIRect.width(), dstIRect.height()));
     if (NULL == device.get()) {
         return false;
@@ -83,17 +81,30 @@ bool SkBitmapSource::onFilterImage(Proxy* proxy, const SkBitmap&, const Context&
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
     // FIXME: this probably shouldn't be necessary, but drawBitmapRectToRect asserts
     // None filtering when it's translate-only
-    paint.setFilterLevel(
+    paint.setFilterQuality(
         fSrcRect.width() == dstRect.width() && fSrcRect.height() == dstRect.height() ?
-        SkPaint::kNone_FilterLevel : SkPaint::kHigh_FilterLevel);
+               kNone_SkFilterQuality : fFilterQuality);
     canvas.drawBitmapRectToRect(fBitmap, &fSrcRect, dstRect, &paint);
 
     *result = device.get()->accessBitmap(false);
     offset->fX = dstIRect.fLeft;
     offset->fY = dstIRect.fTop;
+
     return true;
 }
 
 void SkBitmapSource::computeFastBounds(const SkRect&, SkRect* dst) const {
     *dst = fDstRect;
 }
+
+#ifndef SK_IGNORE_TO_STRING
+void SkBitmapSource::toString(SkString* str) const {
+    str->appendf("SkBitmapSource: (");
+    str->appendf("src: (%f,%f,%f,%f) dst: (%f,%f,%f,%f) ",
+                 fSrcRect.fLeft, fSrcRect.fTop, fSrcRect.fRight, fSrcRect.fBottom,
+                 fDstRect.fLeft, fDstRect.fTop, fDstRect.fRight, fDstRect.fBottom);
+    str->appendf("bitmap: (%d,%d)",
+                 fBitmap.width(), fBitmap.height());
+    str->append(")");
+}
+#endif

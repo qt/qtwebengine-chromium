@@ -41,19 +41,19 @@ namespace blink {
 
 class Navigator;
 
-class NavigatorWebMIDI final : public NoBaseWillBeGarbageCollected<NavigatorWebMIDI>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorWebMIDI);
-    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(NavigatorWebMIDI);
+class NavigatorWebMIDI final : public GarbageCollectedFinalized<NavigatorWebMIDI>, public HeapSupplement<Navigator>, public DOMWindowProperty {
+    USING_GARBAGE_COLLECTED_MIXIN(NavigatorWebMIDI);
 public:
     static NavigatorWebMIDI& from(Navigator&);
+    virtual ~NavigatorWebMIDI();
 
     static ScriptPromise requestMIDIAccess(ScriptState*, Navigator&, const MIDIOptions&);
     ScriptPromise requestMIDIAccess(ScriptState*, const MIDIOptions&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    NavigatorWebMIDI(LocalFrame*);
+    explicit NavigatorWebMIDI(LocalFrame*);
     static const char* supplementName();
 };
 

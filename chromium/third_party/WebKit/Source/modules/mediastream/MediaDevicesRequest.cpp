@@ -77,12 +77,14 @@ void MediaDevicesRequest::succeed(const MediaDeviceInfoVector& mediaDevices)
 void MediaDevicesRequest::stop()
 {
     m_callback.clear();
-    m_controller = 0;
+    m_controller.clear();
 }
 
-void MediaDevicesRequest::trace(Visitor* visitor)
+DEFINE_TRACE(MediaDevicesRequest)
 {
+    visitor->trace(m_controller);
     visitor->trace(m_callback);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

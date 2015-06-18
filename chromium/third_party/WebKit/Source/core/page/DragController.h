@@ -26,6 +26,7 @@
 #ifndef DragController_h
 #define DragController_h
 
+#include "core/CoreExport.h"
 #include "core/page/DragActions.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/heap/Handle.h"
@@ -48,9 +49,9 @@ class Node;
 class Page;
 class PlatformMouseEvent;
 
-class DragController final : public NoBaseWillBeGarbageCollectedFinalized<DragController> {
+class CORE_EXPORT DragController final : public NoBaseWillBeGarbageCollectedFinalized<DragController> {
     WTF_MAKE_NONCOPYABLE(DragController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DragController);
 public:
     ~DragController();
 
@@ -71,7 +72,7 @@ public:
     bool populateDragDataTransfer(LocalFrame* src, const DragState&, const IntPoint& dragOrigin);
     bool startDrag(LocalFrame* src, const DragState&, const PlatformMouseEvent& dragEvent, const IntPoint& dragOrigin);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     static const int DragIconRightInset;
     static const int DragIconBottomInset;

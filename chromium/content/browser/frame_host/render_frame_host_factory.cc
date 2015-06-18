@@ -15,23 +15,22 @@ RenderFrameHostFactory* RenderFrameHostFactory::factory_ = NULL;
 
 // static
 scoped_ptr<RenderFrameHostImpl> RenderFrameHostFactory::Create(
+    SiteInstance* site_instance,
     RenderViewHostImpl* render_view_host,
     RenderFrameHostDelegate* delegate,
+    RenderWidgetHostDelegate* rwh_delegate,
     FrameTree* frame_tree,
     FrameTreeNode* frame_tree_node,
     int routing_id,
-    bool is_swapped_out) {
+    int flags) {
   if (factory_) {
-    return factory_->CreateRenderFrameHost(render_view_host,
-                                           delegate,
-                                           frame_tree,
-                                           frame_tree_node,
-                                           routing_id,
-                                           is_swapped_out).Pass();
+    return factory_->CreateRenderFrameHost(site_instance, render_view_host,
+                                           delegate, rwh_delegate, frame_tree,
+                                           frame_tree_node, routing_id, flags);
   }
   return make_scoped_ptr(new RenderFrameHostImpl(
-      render_view_host, delegate, frame_tree, frame_tree_node, routing_id,
-      is_swapped_out));
+      site_instance, render_view_host, delegate, rwh_delegate, frame_tree,
+      frame_tree_node, routing_id, flags));
 }
 
 // static

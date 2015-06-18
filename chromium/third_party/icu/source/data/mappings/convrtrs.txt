@@ -367,42 +367,34 @@ x-mac-cyrillic-html
     x-mac-cyrillic { MIME* HTML* }
     x-mac-ukrainian
 
-# Chrome: Added 4 GB2312 aliases and EUC-CN to Windows-936 to reflect the
-#         reality of the web (GB2312 is treated synonymously with its
-#         superset, Windows-936/GBK)
-#         HTML5 makes GBK an alias for GB18030
-#         TODO(jshin): Decide if Chrome should follow spec. crbug.com/339862
+# Keep GBK and GB18030 separate for now until we decide
+# what to do about them: crbug.com/339862
+# The encoding spec requires that decoding to Unicode should use GB18030
+# while encoding from Unicode should use GBK.
+
 windows-936-2000
-                        GB2312 { IANA MIME }
-                        GBK { IANA* MIME* }
-                        CP936 { IANA }
-                        MS936 { IANA }
-                        windows-936 { IANA }
-                        chinese { IANA }
-                        iso-ir-58 { IANA }
-                        gb2312-1980
-                        EUC-CN
-                        csGB2312 { IANA }
-                        GB_2312-80 { IANA }
-                        x-gbk
+                       GB2312 { IANA MIME }
+                       GBK { MIME* IANA* }
+                       CP936 { IANA }
+                       MS936 { IANA }
+                       windows-936 { IANA }
+                       chinese { IANA }
+                       iso-ir-58 { IANA }
+                       gb2312-1980
+                       EUC-CN
+                       csGB2312 { IANA }
+                       GB_2312-80 { IANA }
+                       x-gbk
 
 # GB 18030 is partly algorithmic, using the MBCS converter
-gb18030 { IANA* }      gb18030 { MIME* }  ibm-1392 windows-54936
+gb18030 { IANA* }      gb18030 { HTML* MIME* }  ibm-1392 windows-54936
 
-windows-950-2000
+big5-html
     Big5 { MIME* HTML* }
     cn-big5
     csbig5
     x-x-big5
-
-# Chrome: WHATWG encoding spec has big5-hkscs as an alias for big5
-#   TODO(jshin): Decide if Chrome should follow spec. crbug.com/277040
-ibm-1375_P100-2007 { UTR22* }   # Big5-HKSCS-2004 with Unicode 3.1 mappings. This uses supplementary characters.
-                        ibm-1375
-                        Big5-HKSCS { MIME* IANA* }
-                        big5hk
-                        HKSCS-BIG5  # From http://www.openi18n.org/localenameguide/
-
+    Big5-HKSCS
 
 euc-jp-html
     EUC-JP { MIME* HTML* }
@@ -422,7 +414,7 @@ shift_jis-html
     windows-31j
     x-sjis
 
-windows-949-2000
+euc-kr-html
     EUC-KR { MIME* HTML* }
     cseuckr
     csksc56011987

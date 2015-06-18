@@ -112,7 +112,7 @@ class CppTypeGenerator(object):
       item_cpp_type = self.GetCppType(type_.item_type, is_in_container=True)
       cpp_type = 'std::vector<%s>' % cpp_util.PadForGenerics(item_cpp_type)
     elif type_.property_type == PropertyType.BINARY:
-      cpp_type = 'std::string'
+      cpp_type = 'std::vector<char>'
     else:
       raise NotImplementedError('Cannot get type of %s' % type_.property_type)
 
@@ -244,30 +244,34 @@ class CppTypeGenerator(object):
         deps |= self._TypeDependencies(p.type_, hard=not p.optional)
     return deps
 
-  def GeneratePropertyValues(self, property, line, nodoc=False):
+  def GeneratePropertyValues(self, prop, line, nodoc=False):
     """Generates the Code to display all value-containing properties.
     """
     c = Code()
     if not nodoc:
-      c.Comment(property.description)
+      c.Comment(prop.description)
 
-    if property.value is not None:
+    if prop.value is not None:
+      cpp_type = self.GetCppType(prop.type_)
+      cpp_value = prop.value
+      if cpp_type == 'std::string':
+        cpp_value = '"%s"' % cpp_type
       c.Append(line % {
-          "type": self.GetCppType(property.type_),
-          "name": property.name,
-          "value": property.value
-        })
+        "type": cpp_type,
+        "name": prop.name,
+        "value": cpp_value
+      })
     else:
       has_child_code = False
-      c.Sblock('namespace %s {' % property.name)
-      for child_property in property.type_.properties.values():
+      c.Sblock('namespace %s {' % prop.name)
+      for child_property in prop.type_.properties.values():
         child_code = self.GeneratePropertyValues(child_property,
                                                  line,
                                                  nodoc=nodoc)
         if child_code:
           has_child_code = True
           c.Concat(child_code)
-      c.Eblock('}  // namespace %s' % property.name)
+      c.Eblock('}  // namespace %s' % prop.name)
       if not has_child_code:
         c = None
     return c

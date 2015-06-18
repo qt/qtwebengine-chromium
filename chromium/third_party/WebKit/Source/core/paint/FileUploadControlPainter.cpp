@@ -5,72 +5,76 @@
 #include "config.h"
 #include "core/paint/FileUploadControlPainter.h"
 
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderButton.h"
-#include "core/rendering/RenderFileUploadControl.h"
-#include "core/rendering/TextRunConstructor.h"
+#include "core/layout/LayoutButton.h"
+#include "core/layout/LayoutFileUploadControl.h"
+#include "core/layout/TextRunConstructor.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintInfo.h"
+#include "platform/graphics/paint/ClipRecorder.h"
 
 namespace blink {
 
 const int buttonShadowHeight = 2;
 
-void FileUploadControlPainter::paintObject(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (m_renderFileUploadControl.style()->visibility() != VISIBLE)
+    if (m_layoutFileUploadControl.style()->visibility() != VISIBLE)
         return;
 
     // Push a clip.
-    GraphicsContextStateSaver stateSaver(*paintInfo.context, false);
+    OwnPtr<ClipRecorder> clipRecorder;
     if (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseChildBlockBackgrounds) {
-        IntRect clipRect = enclosingIntRect(LayoutRect(paintOffset.x() + m_renderFileUploadControl.borderLeft(), paintOffset.y() + m_renderFileUploadControl.borderTop(),
-            m_renderFileUploadControl.width() - m_renderFileUploadControl.borderLeft() - m_renderFileUploadControl.borderRight(),
-            m_renderFileUploadControl.height() - m_renderFileUploadControl.borderBottom() - m_renderFileUploadControl.borderTop() + buttonShadowHeight));
+        IntRect clipRect = enclosingIntRect(LayoutRect(
+            LayoutPoint(paintOffset.x() + m_layoutFileUploadControl.borderLeft(), paintOffset.y() + m_layoutFileUploadControl.borderTop()),
+            m_layoutFileUploadControl.size() + LayoutSize(0, -m_layoutFileUploadControl.borderWidth() + buttonShadowHeight)));
         if (clipRect.isEmpty())
             return;
-        stateSaver.save();
-        paintInfo.context->clip(clipRect);
+        clipRecorder = adoptPtr(new ClipRecorder(*paintInfo.context, m_layoutFileUploadControl, DisplayItem::ClipFileUploadControlRect, LayoutRect(clipRect)));
     }
 
     if (paintInfo.phase == PaintPhaseForeground) {
-        const String& displayedFilename = m_renderFileUploadControl.fileTextValue();
-        const Font& font = m_renderFileUploadControl.style()->font();
-        TextRun textRun = constructTextRun(&m_renderFileUploadControl, font, displayedFilename, m_renderFileUploadControl.style(), TextRun::AllowTrailingExpansion, RespectDirection | RespectDirectionOverride);
+        const String& displayedFilename = m_layoutFileUploadControl.fileTextValue();
+        const Font& font = m_layoutFileUploadControl.style()->font();
+        TextRun textRun = constructTextRun(&m_layoutFileUploadControl, font, displayedFilename, m_layoutFileUploadControl.styleRef(), RespectDirection | RespectDirectionOverride);
+        textRun.setExpansionBehavior(TextRun::AllowTrailingExpansion);
 
         // Determine where the filename should be placed
-        LayoutUnit contentLeft = paintOffset.x() + m_renderFileUploadControl.borderLeft() + m_renderFileUploadControl.paddingLeft();
-        Node* button = m_renderFileUploadControl.uploadButton();
+        LayoutUnit contentLeft = paintOffset.x() + m_layoutFileUploadControl.borderLeft() + m_layoutFileUploadControl.paddingLeft();
+        Node* button = m_layoutFileUploadControl.uploadButton();
         if (!button)
             return;
 
-        int buttonWidth = (button && button->renderBox()) ? button->renderBox()->pixelSnappedWidth() : 0;
-        LayoutUnit buttonAndSpacingWidth = buttonWidth + RenderFileUploadControl::afterButtonSpacing;
+        int buttonWidth = (button && button->layoutBox()) ? button->layoutBox()->pixelSnappedWidth() : 0;
+        LayoutUnit buttonAndSpacingWidth = buttonWidth + LayoutFileUploadControl::afterButtonSpacing;
         float textWidth = font.width(textRun);
         LayoutUnit textX;
-        if (m_renderFileUploadControl.style()->isLeftToRightDirection())
+        if (m_layoutFileUploadControl.style()->isLeftToRightDirection())
             textX = contentLeft + buttonAndSpacingWidth;
         else
-            textX = contentLeft + m_renderFileUploadControl.contentWidth() - buttonAndSpacingWidth - textWidth;
+            textX = contentLeft + m_layoutFileUploadControl.contentWidth() - buttonAndSpacingWidth - textWidth;
 
         LayoutUnit textY = 0;
         // We want to match the button's baseline
         // FIXME: Make this work with transforms.
-        if (RenderButton* buttonRenderer = toRenderButton(button->renderer()))
-            textY = paintOffset.y() + m_renderFileUploadControl.borderTop() + m_renderFileUploadControl.paddingTop() + buttonRenderer->baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
+        if (LayoutButton* buttonLayoutObject = toLayoutButton(button->layoutObject()))
+            textY = paintOffset.y() + m_layoutFileUploadControl.borderTop() + m_layoutFileUploadControl.paddingTop() + buttonLayoutObject->baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
         else
-            textY = m_renderFileUploadControl.baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
+            textY = m_layoutFileUploadControl.baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
         TextRunPaintInfo textRunPaintInfo(textRun);
         // FIXME: Shouldn't these offsets be rounded? crbug.com/350474
-        textRunPaintInfo.bounds = FloatRect(textX.toFloat(), textY.toFloat() - m_renderFileUploadControl.style()->fontMetrics().ascent(),
-            textWidth, m_renderFileUploadControl.style()->fontMetrics().height());
+        textRunPaintInfo.bounds = FloatRect(textX.toFloat(), textY.toFloat() - m_layoutFileUploadControl.style()->fontMetrics().ascent(),
+            textWidth, m_layoutFileUploadControl.style()->fontMetrics().height());
 
-        paintInfo.context->setFillColor(m_renderFileUploadControl.resolveColor(CSSPropertyColor));
-
-        // Draw the filename
-        paintInfo.context->drawBidiText(font, textRunPaintInfo, IntPoint(roundToInt(textX), roundToInt(textY)));
+        // Draw the filename.
+        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutFileUploadControl, paintInfo.phase, textRunPaintInfo.bounds);
+        if (!recorder.canUseCachedDrawing()) {
+            paintInfo.context->setFillColor(m_layoutFileUploadControl.resolveColor(CSSPropertyColor));
+            paintInfo.context->drawBidiText(font, textRunPaintInfo, FloatPoint(roundToInt(textX), roundToInt(textY)));
+        }
     }
 
     // Paint the children.
-    m_renderFileUploadControl.RenderBlockFlow::paintObject(paintInfo, paintOffset);
+    m_layoutFileUploadControl.LayoutBlockFlow::paintObject(paintInfo, paintOffset);
 }
 
 } // namespace blink

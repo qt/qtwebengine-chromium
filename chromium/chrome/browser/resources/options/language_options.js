@@ -205,6 +205,8 @@ cr.define('options', function() {
           this.addBlockedLanguage_(addLanguageCode);
         } else {
           PageManager.showPageByName('addLanguage');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_Languages_Add']);
         }
       };
       $('language-options-add-button').onclick = onclick.bind(this);
@@ -272,9 +274,9 @@ cr.define('options', function() {
       // on the selected language. Note that we only have less than 100
       // input methods, so creating DOM nodes at once here should be ok.
       this.appendInputMethodElement_(loadTimeData.getValue('inputMethodList'));
-      this.appendInputMethodElement_(loadTimeData.getValue('extensionImeList'));
       this.appendComponentExtensionIme_(
           loadTimeData.getValue('componentExtensionImeList'));
+      this.appendInputMethodElement_(loadTimeData.getValue('extensionImeList'));
 
       // Listen to pref change once the input method list is initialized.
       Preferences.getInstance().addEventListener(
@@ -846,6 +848,10 @@ cr.define('options', function() {
       } else {
         this.handleCheckboxUpdate_(checkbox);
       }
+
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_Languages_InputMethodCheckbox' +
+                   (checkbox.checked ? '_Enable' : '_Disable')]);
     },
 
     /**
@@ -967,6 +973,8 @@ cr.define('options', function() {
       Preferences.setStringPref(SPELL_CHECK_DICTIONARY_PREF,
                                 languageCode, true);
       chrome.send('spellCheckLanguageChange', [languageCode]);
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_Languages_SpellCheck']);
     },
 
     /**
@@ -1316,12 +1324,15 @@ cr.define('options', function() {
       var tokens = languageCode.split('-');
       var main = tokens[0];
 
-      // See also: chrome/renderer/translate/translate_helper.cc.
+      // See also: components/translate/core/browser/common/translate_util.cc
       var synonyms = {
         'nb': 'no',
         'he': 'iw',
         'jv': 'jw',
         'fil': 'tl',
+        'zh-HK': 'zh-TW',
+        'zh-MO': 'zh-TW',
+        'zh-SG': 'zh-CN',
       };
 
       if (main in synonyms) {
@@ -1338,7 +1349,7 @@ cr.define('options', function() {
 
   /**
    * Shows the node at |index| in |nodes|, hides all others.
-   * @param {Array.<HTMLElement>} nodes The nodes to be shown or hidden.
+   * @param {Array<HTMLElement>} nodes The nodes to be shown or hidden.
    * @param {number} index The index of |nodes| to show.
    */
   function showMutuallyExclusiveNodes(nodes, index) {

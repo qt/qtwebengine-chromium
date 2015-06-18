@@ -17,7 +17,7 @@
 #define WEBRTC_MODULES_AUDIO_CODING_MAIN_ACM2_ACM_CODEC_DATABASE_H_
 
 #include "webrtc/common_types.h"
-#include "webrtc/modules/audio_coding/main/acm2/acm_generic_codec.h"
+#include "webrtc/engine_configurations.h"
 #include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
 
 namespace webrtc {
@@ -57,50 +57,15 @@ class ACMCodecDB {
 #ifdef WEBRTC_CODEC_ILBC
     , kILBC
 #endif
-#ifdef WEBRTC_CODEC_AMR
-    , kGSMAMR
-#endif
-#ifdef WEBRTC_CODEC_AMRWB
-    , kGSMAMRWB
-#endif
-#ifdef WEBRTC_CODEC_CELT
-    // Mono
-    , kCELT32
-    // Stereo
-    , kCELT32_2ch
-#endif
 #ifdef WEBRTC_CODEC_G722
     // Mono
     , kG722
     // Stereo
     , kG722_2ch
 #endif
-#ifdef WEBRTC_CODEC_G722_1
-    , kG722_1_32
-    , kG722_1_24
-    , kG722_1_16
-#endif
-#ifdef WEBRTC_CODEC_G722_1C
-    , kG722_1C_48
-    , kG722_1C_32
-    , kG722_1C_24
-#endif
-#ifdef WEBRTC_CODEC_G729
-    , kG729
-#endif
-#ifdef WEBRTC_CODEC_G729_1
-    , kG729_1
-#endif
-#ifdef WEBRTC_CODEC_GSMFR
-    , kGSMFR
-#endif
 #ifdef WEBRTC_CODEC_OPUS
     // Mono and stereo
     , kOpus
-#endif
-#ifdef WEBRTC_CODEC_SPEEX
-    , kSPEEX8
-    , kSPEEX16
 #endif
     , kCNNB
     , kCNWB
@@ -140,46 +105,11 @@ class ACMCodecDB {
 #ifndef WEBRTC_CODEC_ILBC
   enum {kILBC = -1};
 #endif
-#ifndef WEBRTC_CODEC_AMR
-  enum {kGSMAMR = -1};
-#endif
-#ifndef WEBRTC_CODEC_AMRWB
-  enum {kGSMAMRWB = -1};
-#endif
-#ifndef WEBRTC_CODEC_CELT
-  // Mono
-  enum {kCELT32 = -1};
-  // Stereo
-  enum {kCELT32_2ch = -1};
-#endif
 #ifndef WEBRTC_CODEC_G722
   // Mono
   enum {kG722 = -1};
   // Stereo
   enum {kG722_2ch = -1};
-#endif
-#ifndef WEBRTC_CODEC_G722_1
-  enum {kG722_1_32 = -1};
-  enum {kG722_1_24 = -1};
-  enum {kG722_1_16 = -1};
-#endif
-#ifndef WEBRTC_CODEC_G722_1C
-  enum {kG722_1C_48 = -1};
-  enum {kG722_1C_32 = -1};
-  enum {kG722_1C_24 = -1};
-#endif
-#ifndef WEBRTC_CODEC_G729
-  enum {kG729 = -1};
-#endif
-#ifndef WEBRTC_CODEC_G729_1
-  enum {kG729_1 = -1};
-#endif
-#ifndef WEBRTC_CODEC_GSMFR
-  enum {kGSMFR = -1};
-#endif
-#ifndef WEBRTC_CODEC_SPEEX
-  enum {kSPEEX8 = -1};
-  enum {kSPEEX16 = -1};
 #endif
 #ifndef WEBRTC_CODEC_OPUS
   // Mono and stereo
@@ -216,7 +146,7 @@ class ACMCodecDB {
   //                        implement ACMGenericCodec::Decoder(), which returns
   //                        a pointer to AudioDecoder. This pointer is injected
   //                        into NetEq when this codec is registered as receive
-  //                        codec.
+  //                        codec. DEPRECATED.
   struct CodecSettings {
     int num_packet_sizes;
     int packet_sizes_samples[kMaxNumPacketSize];
@@ -236,36 +166,17 @@ class ACMCodecDB {
   //   0 if successful, otherwise -1.
   static int Codec(int codec_id, CodecInst* codec_inst);
 
-  // Returns codec id and mirror id from database, given the information
-  // received in the input [codec_inst]. Mirror id is a number that tells
-  // where to find the codec's memory (instance). The number is either the
-  // same as codec id (most common), or a number pointing at a different
-  // entry in the database, if the codec has several entries with different
-  // payload types. This is used for codecs that must share one struct even if
-  // the payload type differs.
-  // One example is the codec iSAC which has the same struct for both 16 and
-  // 32 khz, but they have different entries in the database. Let's say the
-  // function is called with iSAC 32kHz. The function will return 1 as that is
-  // the entry in the data base, and [mirror_id] = 0, as that is the entry for
-  // iSAC 16 kHz, which holds the shared memory.
+  // Returns codec id from database, given the information received in the input
+  // [codec_inst].
   // Input:
   //   [codec_inst] - Information about the codec for which we require the
   //                  database id.
-  // Output:
-  //   [mirror_id] - mirror id, which most often is the same as the return
-  //                 value, see above.
-  //   [err_message] - if present, in the event of a mismatch found between the
-  //                   input and the database, a descriptive error message is
-  //                   written here.
-  //   [err_message] - if present, the length of error message is returned here.
   // Return:
   //   codec id if successful, otherwise < 0.
-  static int CodecNumber(const CodecInst& codec_inst, int* mirror_id,
-                         char* err_message, int max_message_len_byte);
-  static int CodecNumber(const CodecInst& codec_inst, int* mirror_id);
+  static int CodecNumber(const CodecInst& codec_inst);
   static int CodecId(const CodecInst& codec_inst);
   static int CodecId(const char* payload_name, int frequency, int channels);
-  static int ReceiverCodecNumber(const CodecInst& codec_inst, int* mirror_id);
+  static int ReceiverCodecNumber(const CodecInst& codec_inst);
 
   // Returns the codec sampling frequency for codec with id = "codec_id" in
   // database.
@@ -291,25 +202,6 @@ class ACMCodecDB {
   // Returns the NetEQ decoder database.
   static const NetEqDecoder* NetEQDecoders();
 
-  // Returns mirror id, which is a number that tells where to find the codec's
-  // memory (instance). It is either the same as codec id (most common), or a
-  // number pointing at a different entry in the database, if the codec have
-  // several entries with different payload types. This is used for codecs that
-  // must share struct even if the payload type differs.
-  // TODO(tlegrand): Check if function is needed, or if we can change
-  // to access database directly.
-  // Input:
-  //   [codec_id] - number that specifies codec's position in the database.
-  // Return:
-  //   Mirror id on success, otherwise -1.
-  static int MirrorID(int codec_id);
-
-  // Create memory/instance for storing codec state.
-  // Input:
-  //   [codec_inst] - information about codec. Only name of codec, "plname", is
-  //                  used in this function.
-  static ACMGenericCodec* CreateCodecInstance(const CodecInst& codec_inst);
-
   // Specifies if the codec specified by |codec_id| MUST own its own decoder.
   // This is the case for codecs which *should* share a single codec instance
   // between encoder and decoder. Or for codecs which ACM should have control
@@ -331,7 +223,6 @@ class ACMCodecDB {
   static bool IsG7291RateValid(int rate);
   static bool IsSpeexRateValid(int rate);
   static bool IsOpusRateValid(int rate);
-  static bool IsCeltRateValid(int rate);
 
   // Check if the payload type is valid, meaning that it is in the valid range
   // of 0 to 127.

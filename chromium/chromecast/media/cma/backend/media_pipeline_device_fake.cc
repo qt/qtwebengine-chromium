@@ -5,6 +5,7 @@
 #include "chromecast/media/cma/backend/media_pipeline_device_fake.h"
 
 #include <list>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -17,9 +18,8 @@
 #include "chromecast/media/cma/backend/media_component_device.h"
 #include "chromecast/media/cma/backend/video_pipeline_device.h"
 #include "chromecast/media/cma/base/decoder_buffer_base.h"
-#include "media/base/audio_decoder_config.h"
+#include "chromecast/public/media/decoder_config.h"
 #include "media/base/buffers.h"
-#include "media/base/video_decoder_config.h"
 
 namespace chromecast {
 namespace media {
@@ -27,14 +27,14 @@ namespace media {
 class MediaClockDeviceFake : public MediaClockDevice {
  public:
   MediaClockDeviceFake();
-  virtual ~MediaClockDeviceFake();
+  ~MediaClockDeviceFake() override;
 
   // MediaClockDevice implementation.
-  virtual State GetState() const override;
-  virtual bool SetState(State new_state) override;
-  virtual bool ResetTimeline(base::TimeDelta time) override;
-  virtual bool SetRate(float rate) override;
-  virtual base::TimeDelta GetTime() override;
+  State GetState() const override;
+  bool SetState(State new_state) override;
+  bool ResetTimeline(base::TimeDelta time) override;
+  bool SetRate(float rate) override;
+  base::TimeDelta GetTime() override;
 
  private:
   State state_;
@@ -130,20 +130,20 @@ const size_t kMaxFrameCount = 20;
 class MediaComponentDeviceFake : public MediaComponentDevice {
  public:
   explicit MediaComponentDeviceFake(MediaClockDeviceFake* media_clock_device);
-  virtual ~MediaComponentDeviceFake();
+  ~MediaComponentDeviceFake() override;
 
   // MediaComponentDevice implementation.
-  virtual void SetClient(const Client& client) override;
-  virtual State GetState() const override;
-  virtual bool SetState(State new_state) override;
-  virtual bool SetStartPts(base::TimeDelta time) override;
-  virtual FrameStatus PushFrame(
+  void SetClient(const Client& client) override;
+  State GetState() const override;
+  bool SetState(State new_state) override;
+  bool SetStartPts(base::TimeDelta time) override;
+  FrameStatus PushFrame(
       const scoped_refptr<DecryptContext>& decrypt_context,
       const scoped_refptr<DecoderBufferBase>& buffer,
       const FrameStatusCB& completion_cb) override;
-  virtual base::TimeDelta GetRenderingTime() const override;
-  virtual base::TimeDelta GetRenderingDelay() const override;
-  virtual bool GetStatistics(Statistics* stats) const override;
+  base::TimeDelta GetRenderingTime() const override;
+  base::TimeDelta GetRenderingDelay() const override;
+  bool GetStatistics(Statistics* stats) const override;
 
  private:
   struct FakeDecoderBuffer {
@@ -358,27 +358,28 @@ bool MediaComponentDeviceFake::GetStatistics(Statistics* stats) const {
 class AudioPipelineDeviceFake : public AudioPipelineDevice {
  public:
   explicit AudioPipelineDeviceFake(MediaClockDeviceFake* media_clock_device);
-  virtual ~AudioPipelineDeviceFake();
+  ~AudioPipelineDeviceFake() override;
 
   // AudioPipelineDevice implementation.
-  virtual void SetClient(const Client& client) override;
-  virtual State GetState() const override;
-  virtual bool SetState(State new_state) override;
-  virtual bool SetStartPts(base::TimeDelta time) override;
-  virtual FrameStatus PushFrame(
+  void SetClient(const Client& client) override;
+  State GetState() const override;
+  bool SetState(State new_state) override;
+  bool SetStartPts(base::TimeDelta time) override;
+  FrameStatus PushFrame(
       const scoped_refptr<DecryptContext>& decrypt_context,
       const scoped_refptr<DecoderBufferBase>& buffer,
       const FrameStatusCB& completion_cb) override;
-  virtual base::TimeDelta GetRenderingTime() const override;
-  virtual base::TimeDelta GetRenderingDelay() const override;
-  virtual bool SetConfig(const ::media::AudioDecoderConfig& config) override;
-  virtual void SetStreamVolumeMultiplier(float multiplier) override;
-  virtual bool GetStatistics(Statistics* stats) const override;
+  base::TimeDelta GetRenderingTime() const override;
+  base::TimeDelta GetRenderingDelay() const override;
+  bool SetConfig(const AudioConfig& config) override;
+  void SetStreamVolumeMultiplier(float multiplier) override;
+  bool GetStatistics(Statistics* stats) const override;
 
  private:
   scoped_ptr<MediaComponentDeviceFake> fake_pipeline_;
 
-  ::media::AudioDecoderConfig config_;
+  AudioConfig config_;
+  std::vector<uint8_t> config_extra_data_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioPipelineDeviceFake);
 };
@@ -406,10 +407,10 @@ bool AudioPipelineDeviceFake::SetState(State new_state) {
     return false;
 
   if (new_state == kStateIdle) {
-    DCHECK(config_.IsValidConfig());
+    DCHECK(IsValidConfig(config_));
   }
   if (new_state == kStateUninitialized) {
-    config_ = ::media::AudioDecoderConfig();
+    config_ = AudioConfig();
   }
   return true;
 }
@@ -433,12 +434,16 @@ base::TimeDelta AudioPipelineDeviceFake::GetRenderingDelay() const {
   return fake_pipeline_->GetRenderingDelay();
 }
 
-bool AudioPipelineDeviceFake::SetConfig(
-    const ::media::AudioDecoderConfig& config) {
+bool AudioPipelineDeviceFake::SetConfig(const AudioConfig& config) {
   DCHECK(CalledOnValidThread());
-  if (!config.IsValidConfig())
+  if (!IsValidConfig(config))
     return false;
   config_ = config;
+  if (config.extra_data_size > 0)
+    config_extra_data_.assign(config.extra_data,
+                              config.extra_data + config.extra_data_size);
+  else
+    config_extra_data_.clear();
   return true;
 }
 
@@ -454,27 +459,28 @@ bool AudioPipelineDeviceFake::GetStatistics(Statistics* stats) const {
 class VideoPipelineDeviceFake : public VideoPipelineDevice {
  public:
   explicit VideoPipelineDeviceFake(MediaClockDeviceFake* media_clock_device);
-  virtual ~VideoPipelineDeviceFake();
+  ~VideoPipelineDeviceFake() override;
 
   // VideoPipelineDevice implementation.
-  virtual void SetClient(const Client& client) override;
-  virtual State GetState() const override;
-  virtual bool SetState(State new_state) override;
-  virtual bool SetStartPts(base::TimeDelta time) override;
-  virtual FrameStatus PushFrame(
+  void SetClient(const Client& client) override;
+  State GetState() const override;
+  bool SetState(State new_state) override;
+  bool SetStartPts(base::TimeDelta time) override;
+  FrameStatus PushFrame(
       const scoped_refptr<DecryptContext>& decrypt_context,
       const scoped_refptr<DecoderBufferBase>& buffer,
       const FrameStatusCB& completion_cb) override;
-  virtual base::TimeDelta GetRenderingTime() const override;
-  virtual base::TimeDelta GetRenderingDelay() const override;
-  virtual void SetVideoClient(const VideoClient& client) override;
-  virtual bool SetConfig(const ::media::VideoDecoderConfig& config) override;
-  virtual bool GetStatistics(Statistics* stats) const override;
+  base::TimeDelta GetRenderingTime() const override;
+  base::TimeDelta GetRenderingDelay() const override;
+  void SetVideoClient(const VideoClient& client) override;
+  bool SetConfig(const VideoConfig& config) override;
+  bool GetStatistics(Statistics* stats) const override;
 
  private:
   scoped_ptr<MediaComponentDeviceFake> fake_pipeline_;
 
-  ::media::VideoDecoderConfig config_;
+  VideoConfig config_;
+  std::vector<uint8_t> config_extra_data_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoPipelineDeviceFake);
 };
@@ -502,10 +508,10 @@ bool VideoPipelineDeviceFake::SetState(State new_state) {
     return false;
 
   if (new_state == kStateIdle) {
-    DCHECK(config_.IsValidConfig());
+    DCHECK(IsValidConfig(config_));
   }
   if (new_state == kStateUninitialized) {
-    config_ = ::media::VideoDecoderConfig();
+    config_ = VideoConfig();
   }
   return true;
 }
@@ -532,12 +538,16 @@ base::TimeDelta VideoPipelineDeviceFake::GetRenderingDelay() const {
 void VideoPipelineDeviceFake::SetVideoClient(const VideoClient& client) {
 }
 
-bool VideoPipelineDeviceFake::SetConfig(
-    const ::media::VideoDecoderConfig& config) {
+bool VideoPipelineDeviceFake::SetConfig(const VideoConfig& config) {
   DCHECK(CalledOnValidThread());
-  if (!config.IsValidConfig())
+  if (!IsValidConfig(config))
     return false;
   config_ = config;
+  if (config.extra_data_size > 0)
+    config_extra_data_.assign(config.extra_data,
+                              config.extra_data + config.extra_data_size);
+  else
+    config_extra_data_.clear();
   return true;
 }
 

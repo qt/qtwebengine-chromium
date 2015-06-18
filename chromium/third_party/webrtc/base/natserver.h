@@ -54,7 +54,7 @@ class NATServer : public sigslot::has_slots<> {
   NATServer(
       NATType type, SocketFactory* internal, const SocketAddress& internal_addr,
       SocketFactory* external, const SocketAddress& external_ip);
-  ~NATServer();
+  ~NATServer() override;
 
   SocketAddress internal_address() const {
     return server_socket_->GetLocalAddress();
@@ -102,7 +102,7 @@ class NATServer : public sigslot::has_slots<> {
   AsyncSocket* tcp_server_socket_;
   InternalMap* int_map_;
   ExternalMap* ext_map_;
-  DISALLOW_EVIL_CONSTRUCTORS(NATServer);
+  DISALLOW_COPY_AND_ASSIGN(NATServer);
 };
 
 }  // namespace rtc

@@ -10,6 +10,7 @@
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebCompositorAnimationCurve.h"
 #include "third_party/WebKit/public/platform/WebCompositorSupport.h"
+#include "third_party/WebKit/public/platform/WebContentLayerClient.h"
 #include "third_party/WebKit/public/platform/WebLayer.h"
 #include "third_party/WebKit/public/platform/WebTransformOperations.h"
 

@@ -32,6 +32,8 @@
 
 #include "platform/graphics/ImageBufferSurface.h"
 
+#include "platform/graphics/BitmapImage.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
@@ -64,7 +66,6 @@ void ImageBufferSurface::clear()
             canvas()->drawARGB(255, 0, 0, 0, SkXfermode::kSrc_Mode);
         else
             canvas()->drawARGB(0, 0, 0, 0, SkXfermode::kClear_Mode);
-        didClearCanvas();
     }
 }
 
@@ -84,6 +85,30 @@ const SkBitmap& ImageBufferSurface::cachedBitmap() const
 PassRefPtr<SkImage> ImageBufferSurface::newImageSnapshot() const
 {
     return nullptr;
+}
+
+static SkBitmap deepSkBitmapCopy(const SkBitmap& bitmap)
+{
+    SkBitmap tmp;
+    if (!bitmap.deepCopyTo(&tmp))
+        bitmap.copyTo(&tmp, bitmap.colorType());
+
+    return tmp;
+}
+
+void ImageBufferSurface::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode op, bool needsCopy)
+{
+    SkBitmap bmp = bitmap();
+    // For ImageBufferSurface that enables cachedBitmap, Use the cached bitmap for CPU side usage
+    // if it is available, otherwise generate and use it.
+    if (!context->isAccelerated() && isAccelerated() && cachedBitmapEnabled() && isValid()) {
+        updateCachedBitmapIfNeeded();
+        bmp = cachedBitmap();
+    }
+
+    RefPtr<Image> image = BitmapImage::create(needsCopy ? deepSkBitmapCopy(bmp) : bmp);
+
+    context->drawImage(image.get(), destRect, srcRect, op, DoNotRespectImageOrientation);
 }
 
 } // namespace blink

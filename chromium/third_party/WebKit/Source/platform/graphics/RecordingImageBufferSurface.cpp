@@ -6,6 +6,7 @@
 
 #include "platform/graphics/RecordingImageBufferSurface.h"
 
+#include "platform/graphics/ExpensiveCanvasHeuristicParameters.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "public/platform/Platform.h"
@@ -19,8 +20,12 @@ namespace blink {
 RecordingImageBufferSurface::RecordingImageBufferSurface(const IntSize& size, PassOwnPtr<RecordingImageBufferFallbackSurfaceFactory> fallbackFactory, OpacityMode opacityMode)
     : ImageBufferSurface(size, opacityMode)
     , m_imageBuffer(0)
-    , m_initialSaveCount(0)
+    , m_currentFramePixelCount(0)
+    , m_previousFramePixelCount(0)
     , m_frameWasCleared(true)
+    , m_didRecordDrawCommandsInCurrentFrame(false)
+    , m_currentFrameHasExpensiveOp(false)
+    , m_previousFrameHasExpensiveOp(false)
     , m_fallbackFactory(fallbackFactory)
 {
     initializeCurrentFrame();
@@ -31,26 +36,15 @@ RecordingImageBufferSurface::~RecordingImageBufferSurface()
 
 bool RecordingImageBufferSurface::initializeCurrentFrame()
 {
-    StateStack stateStack;
-    bool saved = false;
-    if (m_currentFrame) {
-        saved = saveState(m_currentFrame->getRecordingCanvas(), &stateStack);
-        if (!saved)
-            return false;
-    }
-
     static SkRTreeFactory rTreeFactory;
     m_currentFrame = adoptPtr(new SkPictureRecorder);
     m_currentFrame->beginRecording(size().width(), size().height(), &rTreeFactory);
-    m_initialSaveCount = m_currentFrame->getRecordingCanvas()->getSaveCount();
     if (m_imageBuffer) {
-        m_imageBuffer->context()->resetCanvas(m_currentFrame->getRecordingCanvas());
-        m_imageBuffer->context()->setRegionTrackingMode(GraphicsContext::RegionTrackingOverwrite);
+        m_imageBuffer->resetCanvas(m_currentFrame->getRecordingCanvas());
     }
-
-    if (saved)
-        setCurrentState(m_currentFrame->getRecordingCanvas(), &stateStack);
-
+    m_didRecordDrawCommandsInCurrentFrame = false;
+    m_currentFrameHasExpensiveOp = false;
+    m_currentFramePixelCount = 0;
     return true;
 }
 
@@ -58,8 +52,7 @@ void RecordingImageBufferSurface::setImageBuffer(ImageBuffer* imageBuffer)
 {
     m_imageBuffer = imageBuffer;
     if (m_currentFrame && m_imageBuffer) {
-        m_imageBuffer->context()->setRegionTrackingMode(GraphicsContext::RegionTrackingOverwrite);
-        m_imageBuffer->context()->resetCanvas(m_currentFrame->getRecordingCanvas());
+        m_imageBuffer->resetCanvas(m_currentFrame->getRecordingCanvas());
     }
     if (m_fallbackSurface) {
         m_fallbackSurface->setImageBuffer(imageBuffer);
@@ -85,26 +78,21 @@ void RecordingImageBufferSurface::fallBackToRasterCanvas()
     m_fallbackSurface->setImageBuffer(m_imageBuffer);
 
     if (m_previousFrame) {
-        m_previousFrame->draw(m_fallbackSurface->canvas());
+        m_previousFrame->playback(m_fallbackSurface->canvas());
         m_previousFrame.clear();
     }
 
     if (m_currentFrame) {
-        bool savedState = false;
-        StateStack stateStack;
-        savedState = saveState(m_currentFrame->getRecordingCanvas(), &stateStack);
         RefPtr<SkPicture> currentPicture = adoptRef(m_currentFrame->endRecording());
-        currentPicture->draw(m_fallbackSurface->canvas());
+        currentPicture->playback(m_fallbackSurface->canvas());
         m_currentFrame.clear();
-        if (savedState)
-            setCurrentState(m_fallbackSurface->canvas(), &stateStack);
     }
 
     if (m_imageBuffer) {
-        m_imageBuffer->context()->setRegionTrackingMode(GraphicsContext::RegionTrackingDisabled);
-        m_imageBuffer->context()->resetCanvas(m_fallbackSurface->canvas());
+        m_imageBuffer->resetCanvas(m_fallbackSurface->canvas());
         m_imageBuffer->context()->setAccelerated(m_fallbackSurface->isAccelerated());
     }
+
 }
 
 PassRefPtr<SkImage> RecordingImageBufferSurface::newImageSnapshot() const
@@ -151,21 +139,34 @@ void RecordingImageBufferSurface::finalizeFrame(const FloatRect &dirtyRect)
         fallBackToRasterCanvas();
 }
 
-void RecordingImageBufferSurface::didClearCanvas()
+void RecordingImageBufferSurface::willOverwriteCanvas()
 {
-    if (m_fallbackSurface) {
-        m_fallbackSurface->didClearCanvas();
-        return;
-    }
     m_frameWasCleared = true;
+    m_previousFrame.clear();
+    m_previousFrameHasExpensiveOp = false;
+    m_previousFramePixelCount = 0;
+    if (m_didRecordDrawCommandsInCurrentFrame) {
+        // Discard previous draw commands
+        adoptRef(m_currentFrame->endRecording());
+        initializeCurrentFrame();
+    }
+}
+
+void RecordingImageBufferSurface::didDraw(const FloatRect& rect)
+{
+    m_didRecordDrawCommandsInCurrentFrame = true;
+    IntRect pixelBounds = enclosingIntRect(rect);
+    m_currentFramePixelCount += pixelBounds.width() * pixelBounds.height();
 }
 
 bool RecordingImageBufferSurface::finalizeFrameInternal()
 {
     ASSERT(!m_fallbackSurface);
+    ASSERT(m_currentFrame);
+    ASSERT(m_currentFrame->getRecordingCanvas());
 
     if (!m_imageBuffer->isDirty()) {
-        if (m_currentFrame && !m_previousFrame) {
+        if (!m_previousFrame) {
             // Create an initial blank frame
             m_previousFrame = adoptRef(m_currentFrame->endRecording());
             initializeCurrentFrame();
@@ -173,56 +174,18 @@ bool RecordingImageBufferSurface::finalizeFrameInternal()
         return m_currentFrame;
     }
 
-    IntRect canvasRect(IntPoint(0, 0), size());
-    if (!m_frameWasCleared && !m_imageBuffer->context()->opaqueRegion().asRect().contains(canvasRect)) {
+    if (!m_frameWasCleared || m_currentFrame->getRecordingCanvas()->getSaveCount() > ExpensiveCanvasHeuristicParameters::ExpensiveRecordingStackDepth) {
         return false;
     }
 
     m_previousFrame = adoptRef(m_currentFrame->endRecording());
+    m_previousFrameHasExpensiveOp = m_currentFrameHasExpensiveOp;
+    m_previousFramePixelCount = m_currentFramePixelCount;
     if (!initializeCurrentFrame())
         return false;
 
-
     m_frameWasCleared = false;
     return true;
-}
-
-bool RecordingImageBufferSurface::saveState(SkCanvas* srcCanvas, StateStack* stateStack)
-{
-    StateRec state;
-
-    // we will remove all the saved state stack in endRecording anyway, so it makes no difference
-    while (srcCanvas->getSaveCount() > m_initialSaveCount) {
-        state.m_ctm = srcCanvas->getTotalMatrix();
-        // FIXME: don't mess up the state in case we will have to fallback, crbug.com/408392
-        if (!srcCanvas->getClipDeviceBounds(&state.m_clip))
-            return false;
-        stateStack->push(state);
-        srcCanvas->restore();
-    }
-
-    state.m_ctm = srcCanvas->getTotalMatrix();
-    // FIXME: don't mess up the state in case we will have to fallback, crbug.com/408392
-    if (!srcCanvas->getClipDeviceBounds(&state.m_clip))
-        return false;
-    stateStack->push(state);
-
-    return true;
-}
-
-void RecordingImageBufferSurface::setCurrentState(SkCanvas* dstCanvas, StateStack* stateStack)
-{
-    while (stateStack->size() > 1) {
-        dstCanvas->resetMatrix();
-        dstCanvas->clipRect(SkRect::MakeFromIRect(stateStack->peek().m_clip));
-        dstCanvas->setMatrix(stateStack->peek().m_ctm);
-        dstCanvas->save();
-        stateStack->pop();
-    }
-
-    dstCanvas->resetMatrix();
-    dstCanvas->clipRect(SkRect::MakeFromIRect(stateStack->peek().m_clip));
-    dstCanvas->setMatrix(stateStack->peek().m_ctm);
 }
 
 void RecordingImageBufferSurface::willDrawVideo()
@@ -230,6 +193,48 @@ void RecordingImageBufferSurface::willDrawVideo()
     // Video draws need to be synchronous
     if (!m_fallbackSurface)
         fallBackToRasterCanvas();
+}
+
+void RecordingImageBufferSurface::draw(GraphicsContext* context, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode op, bool needsCopy)
+{
+    if (m_fallbackSurface) {
+        m_fallbackSurface->draw(context, destRect, srcRect, op, needsCopy);
+        return;
+    }
+
+    RefPtr<SkPicture> picture = getPicture();
+    if (picture) {
+        context->compositePicture(picture.get(), destRect, srcRect, op);
+    } else {
+        ImageBufferSurface::draw(context, destRect, srcRect, op, needsCopy);
+    }
+}
+
+bool RecordingImageBufferSurface::isExpensiveToPaint()
+{
+    if (m_fallbackSurface)
+        return m_fallbackSurface->isExpensiveToPaint();
+
+    if (m_didRecordDrawCommandsInCurrentFrame) {
+        if (m_currentFrameHasExpensiveOp)
+            return true;
+
+        if (m_currentFramePixelCount >= (size().width() * size().height() * ExpensiveCanvasHeuristicParameters::ExpensiveOverdrawThreshold))
+            return true;
+
+        if (m_frameWasCleared)
+            return false; // early exit because previous frame is overdrawn
+    }
+
+    if (m_previousFrame) {
+        if (m_previousFrameHasExpensiveOp)
+            return true;
+
+        if (m_previousFramePixelCount >= (size().width() * size().height() * ExpensiveCanvasHeuristicParameters::ExpensiveOverdrawThreshold))
+            return true;
+    }
+
+    return false;
 }
 
 // Fallback passthroughs

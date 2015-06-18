@@ -65,14 +65,12 @@ class SQLRecoveryTest : public testing::Test {
  public:
   SQLRecoveryTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(db_.Open(db_path()));
   }
 
-  virtual void TearDown() {
-    db_.Close();
-  }
+  void TearDown() override { db_.Close(); }
 
   sql::Connection& db() { return db_; }
 
@@ -330,8 +328,9 @@ TEST_F(SQLRecoveryTest, RecoverCorruptTable) {
   const char kCountSql[] = "SELECT COUNT (*) FROM x";
   EXPECT_EQ("9", ExecuteWithResults(&db(), kCountSql, "|", ","));
 
-  // A full table scan shows all of the original data.
-  const char kDistinctSql[] = "SELECT DISTINCT COUNT (id) FROM x";
+  // A full table scan shows all of the original data.  Using column [v] to
+  // force use of the table rather than the index.
+  const char kDistinctSql[] = "SELECT DISTINCT COUNT (v) FROM x";
   EXPECT_EQ("10", ExecuteWithResults(&db(), kDistinctSql, "|", ","));
 
   // Insert id 0 again.  Since it is not in the index, the insert

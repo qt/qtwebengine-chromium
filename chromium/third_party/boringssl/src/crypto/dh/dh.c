@@ -56,6 +56,8 @@
 
 #include <openssl/dh.h>
 
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/buf.h>
 #include <openssl/err.h>
@@ -64,9 +66,12 @@
 #include <openssl/thread.h>
 
 #include "internal.h"
+#include "../internal.h"
 
 
 extern const DH_METHOD DH_default_method;
+
+static CRYPTO_EX_DATA_CLASS g_ex_data_class = CRYPTO_EX_DATA_CLASS_INIT;
 
 DH *DH_new(void) { return DH_new_method(NULL); }
 
@@ -88,14 +93,16 @@ DH *DH_new_method(const ENGINE *engine) {
   }
   METHOD_ref(dh->meth);
 
+  CRYPTO_MUTEX_init(&dh->method_mont_p_lock);
+
   dh->references = 1;
-  if (!CRYPTO_new_ex_data(CRYPTO_EX_INDEX_DH, dh, &dh->ex_data)) {
+  if (!CRYPTO_new_ex_data(&g_ex_data_class, dh, &dh->ex_data)) {
     OPENSSL_free(dh);
     return NULL;
   }
 
   if (dh->meth->init && !dh->meth->init(dh)) {
-    CRYPTO_free_ex_data(CRYPTO_EX_INDEX_DH, dh, &dh->ex_data);
+    CRYPTO_free_ex_data(&g_ex_data_class, dh, &dh->ex_data);
     METHOD_unref(dh->meth);
     OPENSSL_free(dh);
     return NULL;
@@ -118,7 +125,7 @@ void DH_free(DH *dh) {
   }
   METHOD_unref(dh->meth);
 
-  CRYPTO_free_ex_data(CRYPTO_EX_INDEX_DH, dh, &dh->ex_data);
+  CRYPTO_free_ex_data(&g_ex_data_class, dh, &dh->ex_data);
 
   if (dh->method_mont_p) BN_MONT_CTX_free(dh->method_mont_p);
   if (dh->p != NULL) BN_clear_free(dh->p);
@@ -129,6 +136,7 @@ void DH_free(DH *dh) {
   if (dh->counter != NULL) BN_clear_free(dh->counter);
   if (dh->pub_key != NULL) BN_clear_free(dh->pub_key);
   if (dh->priv_key != NULL) BN_clear_free(dh->priv_key);
+  CRYPTO_MUTEX_cleanup(&dh->method_mont_p_lock);
 
   OPENSSL_free(dh);
 }
@@ -171,9 +179,7 @@ static int int_dh_bn_cpy(BIGNUM **dst, const BIGNUM *src) {
     }
   }
 
-  if (*dst) {
-    BN_free(*dst);
-  }
+  BN_free(*dst);
   *dst = a;
   return 1;
 }
@@ -196,11 +202,10 @@ static int int_dh_param_copy(DH *to, const DH *from, int is_x942) {
     return 0;
   }
 
-  if (to->seed) {
-    OPENSSL_free(to->seed);
-    to->seed = NULL;
-    to->seedlen = 0;
-  }
+  OPENSSL_free(to->seed);
+  to->seed = NULL;
+  to->seedlen = 0;
+
   if (from->seed) {
     to->seed = BUF_memdup(from->seed, from->seedlen);
     if (!to->seed) {
@@ -228,8 +233,12 @@ DH *DHparams_dup(const DH *dh) {
 
 int DH_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_func,
                         CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func) {
-  return CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_DH, argl, argp, new_func,
-                                 dup_func, free_func);
+  int index;
+  if (!CRYPTO_get_ex_new_index(&g_ex_data_class, &index, argl, argp, new_func,
+                               dup_func, free_func)) {
+    return -1;
+  }
+  return index;
 }
 
 int DH_set_ex_data(DH *d, int idx, void *arg) {

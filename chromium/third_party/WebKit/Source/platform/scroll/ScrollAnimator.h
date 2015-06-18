@@ -54,7 +54,7 @@ public:
     // already at the destination.  Otherwise, starts scrolling towards the
     // destination and returns true.  Scrolling may be immediate or animated.
     // The base class implementation always scrolls immediately, never animates.
-    virtual bool scroll(ScrollbarOrientation, ScrollGranularity, float step, float delta);
+    virtual ScrollResultOneDimensional scroll(ScrollbarOrientation, ScrollGranularity, float step, float delta);
 
     virtual void scrollToOffsetWithoutAnimation(const FloatPoint&);
 
@@ -62,7 +62,7 @@ public:
 
     virtual void setIsActive() { }
 
-    virtual bool handleWheelEvent(const PlatformWheelEvent&);
+    virtual ScrollResult handleWheelEvent(const PlatformWheelEvent&);
 
 #if OS(MACOSX)
     virtual void handleWheelEventPhase(PlatformWheelEventPhase) { }
@@ -73,6 +73,7 @@ public:
 
     virtual void cancelAnimations() { }
     virtual void serviceScrollAnimations() { }
+    virtual bool hasRunningAnimation() const { return false; }
 
     virtual void contentAreaWillPaint() const { }
     virtual void mouseEnteredContentArea() const { }
@@ -81,6 +82,7 @@ public:
     virtual void mouseEnteredScrollbar(Scrollbar*) const { }
     virtual void mouseExitedScrollbar(Scrollbar*) const { }
     virtual void willStartLiveResize() { }
+    virtual void updateAfterLayout() { }
     virtual void contentsResized() const { }
     virtual void willEndLiveResize() { }
     virtual void contentAreaDidShow() const { }
@@ -96,8 +98,6 @@ public:
     virtual bool shouldScrollbarParticipateInHitTesting(Scrollbar*) { return true; }
 
     virtual void notifyContentAreaScrolled(const FloatSize&) { }
-
-    virtual bool isRubberBandInProgress() const { return false; }
 
 protected:
     explicit ScrollAnimator(ScrollableArea*);

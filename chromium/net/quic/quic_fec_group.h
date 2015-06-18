@@ -9,6 +9,8 @@
 #ifndef NET_QUIC_QUIC_FEC_GROUP_H_
 #define NET_QUIC_QUIC_FEC_GROUP_H_
 
+#include <cstddef>
+
 #include "base/strings/string_piece.h"
 #include "net/quic/quic_protocol.h"
 
@@ -61,7 +63,7 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
     return min_protected_packet_;
   }
 
-  size_t NumReceivedPackets() const {
+  QuicPacketCount NumReceivedPackets() const {
     return received_packets_.size();
   }
 
@@ -72,9 +74,9 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
 
  private:
   bool UpdateParity(base::StringPiece payload);
-  // Returns the number of missing packets, or size_t max if the number
-  // of missing packets is not known.
-  size_t NumMissingPackets() const;
+  // Returns the number of missing packets, or QuicPacketCount max
+  // if the number of missing packets is not known.
+  QuicPacketCount NumMissingPackets() const;
 
   // Set of packets that we have recevied.
   SequenceNumberSet received_packets_;

@@ -69,6 +69,9 @@ class MEDIA_EXPORT Decryptor {
   //   decrypted buffer must be NULL.
   // - This parameter should not be set to kNeedMoreData.
   // Second parameter: The decrypted buffer.
+  // - Only |data|, |data_size| and |timestamp| are set in the returned
+  //   DecoderBuffer. The callback handler is responsible for setting other
+  //   fields as appropriate.
   typedef base::Callback<void(Status,
                               const scoped_refptr<DecoderBuffer>&)> DecryptCB;
 
@@ -102,8 +105,7 @@ class MEDIA_EXPORT Decryptor {
                                       const DecoderInitCB& init_cb) = 0;
 
   // Helper structure for managing multiple decoded audio buffers per input.
-  // TODO(xhwang): Rename this to AudioFrames.
-  typedef std::list<scoped_refptr<AudioBuffer> > AudioBuffers;
+  typedef std::list<scoped_refptr<AudioBuffer> > AudioFrames;
 
   // Indicates completion of audio/video decrypt-and-decode operation.
   //
@@ -121,7 +123,7 @@ class MEDIA_EXPORT Decryptor {
   // - Set to kError if unexpected error has occurred. In this case the
   //   returned frame(s) must be NULL/empty.
   // Second parameter: The decoded video frame or audio buffers.
-  typedef base::Callback<void(Status, const AudioBuffers&)> AudioDecodeCB;
+  typedef base::Callback<void(Status, const AudioFrames&)> AudioDecodeCB;
   typedef base::Callback<void(Status,
                               const scoped_refptr<VideoFrame>&)> VideoDecodeCB;
 

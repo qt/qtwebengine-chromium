@@ -42,6 +42,7 @@ public:
     static PassOwnPtrWillBeRawPtr<DatabaseClientImpl> create();
 
     virtual ~DatabaseClientImpl();
+    DECLARE_VIRTUAL_TRACE();
 
     virtual bool allowDatabase(ExecutionContext*, const String& name, const String& displayName, unsigned long estimatedSize) override;
 

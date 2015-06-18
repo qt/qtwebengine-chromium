@@ -13,15 +13,22 @@
 #include <set>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/files/file.h"
+#include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/media/va_surface.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
+#include "media/video/video_decode_accelerator.h"
+#include "media/video/video_encode_accelerator.h"
+#include "third_party/libva/va/va.h"
+#include "third_party/libva/va/va_vpp.h"
+#include "ui/gfx/geometry/size.h"
+#if defined(USE_X11)
 #include "third_party/libva/va/va_x11.h"
-#include "ui/gfx/size.h"
+#endif  // USE_X11
 
 namespace content {
 
@@ -40,20 +47,33 @@ class CONTENT_EXPORT VaapiWrapper {
   enum CodecMode {
     kDecode,
     kEncode,
+    kCodecModeMax,
   };
 
-  // |report_error_to_uma_cb| will be called independently from reporting
-  // errors to clients via method return values.
+  // Return an instance of VaapiWrapper initialized for |va_profile| and
+  // |mode|. |report_error_to_uma_cb| will be called independently from
+  // reporting errors to clients via method return values.
   static scoped_ptr<VaapiWrapper> Create(
       CodecMode mode,
+      VAProfile va_profile,
+      const base::Closure& report_error_to_uma_cb);
+
+  // Create VaapiWrapper for VideoCodecProfile. It maps VideoCodecProfile
+  // |profile| to VAProfile.
+  // |report_error_to_uma_cb| will be called independently from reporting
+  // errors to clients via method return values.
+  static scoped_ptr<VaapiWrapper> CreateForVideoCodec(
+      CodecMode mode,
       media::VideoCodecProfile profile,
-      Display* x_display,
       const base::Closure& report_error_to_uma_cb);
 
   // Return the supported encode profiles.
-  static std::vector<media::VideoCodecProfile> GetSupportedEncodeProfiles(
-      Display* x_display,
-      const base::Closure& report_error_to_uma_cb);
+  static media::VideoEncodeAccelerator::SupportedProfiles
+      GetSupportedEncodeProfiles();
+
+  // Return the supported decode profiles.
+  static media::VideoDecodeAccelerator::SupportedProfiles
+      GetSupportedDecodeProfiles();
 
   ~VaapiWrapper();
 
@@ -64,12 +84,21 @@ class CONTENT_EXPORT VaapiWrapper {
   // again to free the allocated surfaces first, but is not required to do so
   // at destruction time, as this will be done automatically from
   // the destructor.
-  bool CreateSurfaces(gfx::Size size,
+  bool CreateSurfaces(const gfx::Size& size,
                       size_t num_surfaces,
                       std::vector<VASurfaceID>* va_surfaces);
 
   // Free all memory allocated in CreateSurfaces.
   void DestroySurfaces();
+
+  // Create a VASurface of |va_format|, |size| and using |va_attribs|
+  // attributes. The ownership of the surface is transferred to the
+  // caller. It differs from surfaces created using CreateSurfaces(),
+  // where VaapiWrapper is the owner of the surfaces.
+  scoped_refptr<VASurface> CreateUnownedSurface(
+      unsigned int va_format,
+      const gfx::Size& size,
+      const std::vector<VASurfaceAttrib>& va_attribs);
 
   // Submit parameters or slice data of |va_buffer_type|, copying them from
   // |buffer| of size |size|, into HW codec. The data in |buffer| is no
@@ -97,25 +126,37 @@ class CONTENT_EXPORT VaapiWrapper {
   // buffers. Return false if Execute() fails.
   bool ExecuteAndDestroyPendingBuffers(VASurfaceID va_surface_id);
 
-  // Put data from |va_surface_id| into |x_pixmap| of size |size|,
-  // converting/scaling to it.
+#if defined(USE_X11)
+  // Put data from |va_surface_id| into |x_pixmap| of size
+  // |dest_size|, converting/scaling to it.
   bool PutSurfaceIntoPixmap(VASurfaceID va_surface_id,
                             Pixmap x_pixmap,
                             gfx::Size dest_size);
+#endif  // USE_X11
 
-  // Returns true if the VAAPI version is less than the specified version.
-  bool VAAPIVersionLessThan(int major, int minor);
+  // Get a VAImage from a VASurface and map it into memory. The size and format
+  // are derived from the surface. Use GetVaImage() instead if |format| or
+  // |size| are different from surface internal representation. The VAImage
+  // should be released using the ReturnVaImage function. Returns true when
+  // successful.
+  bool GetDerivedVaImage(VASurfaceID va_surface_id, VAImage* image, void** mem);
 
-  // Get a VAImage from a VASurface and map it into memory. The VAImage should
-  // be released using the ReturnVaImage function. Returns true when successful.
-  // This is intended for testing only.
-  bool GetVaImageForTesting(VASurfaceID va_surface_id,
-                            VAImage* image,
-                            void** mem);
+  // Get a VAImage from a VASurface |va_surface_id| and map it into memory with
+  // given |format| and |size|. The output is |image| and the mapped memory is
+  // |mem|. If |format| doesn't equal to the internal format, the underlying
+  // implementation will do format conversion if supported. |size| should be
+  // smaller than or equal to the surface. If |size| is smaller, the image will
+  // be cropped. The VAImage should be released using the ReturnVaImage
+  // function. Returns true when successful.
+  bool GetVaImage(VASurfaceID va_surface_id,
+                  VAImageFormat* format,
+                  const gfx::Size& size,
+                  VAImage* image,
+                  void** mem);
 
   // Release the VAImage (and the associated memory mapping) obtained from
-  // GetVaImage(). This is intended for testing only.
-  void ReturnVaImageForTesting(VAImage* image);
+  // GetVaImage() or GetDerivedVaImage().
+  void ReturnVaImage(VAImage* image);
 
   // Upload contents of |frame| into |va_surface_id| for encode.
   bool UploadVideoFrameToSurface(const scoped_refptr<media::VideoFrame>& frame,
@@ -139,21 +180,117 @@ class CONTENT_EXPORT VaapiWrapper {
   // Destroy all previously-allocated (and not yet destroyed) coded buffers.
   void DestroyCodedBuffers();
 
+  // Blits a VASurface |va_surface_id_src| into another VASurface
+  // |va_surface_id_dest| applying pixel format conversion and scaling
+  // if needed.
+  bool BlitSurface(VASurfaceID va_surface_id_src,
+                   const gfx::Size& src_size,
+                   VASurfaceID va_surface_id_dest,
+                   const gfx::Size& dest_size);
+
+  // Initialize static data before sandbox is enabled.
+  static void PreSandboxInitialization();
+
  private:
+  struct ProfileInfo {
+    VAProfile va_profile;
+    gfx::Size max_resolution;
+  };
+
+  class LazyProfileInfos {
+   public:
+    LazyProfileInfos();
+    ~LazyProfileInfos();
+    std::vector<ProfileInfo> GetSupportedProfileInfosForCodecMode(
+        CodecMode mode);
+    bool IsProfileSupported(CodecMode mode, VAProfile va_profile);
+
+   private:
+    std::vector<ProfileInfo> supported_profiles_[kCodecModeMax];
+  };
+
+  class VADisplayState {
+   public:
+    VADisplayState();
+    ~VADisplayState();
+
+    // |va_lock_| must be held on entry.
+    bool Initialize(VAStatus* status);
+    void Deinitialize(VAStatus* status);
+
+    base::Lock* va_lock() { return &va_lock_; }
+    VADisplay va_display() const { return va_display_; }
+
+#if defined(USE_OZONE)
+    void SetDrmFd(base::PlatformFile fd);
+#endif  // USE_OZONE
+
+   private:
+    friend class base::LazyInstance<VADisplayState>;
+
+    // Returns true if the VAAPI version is less than the specified version.
+    bool VAAPIVersionLessThan(int major, int minor);
+
+    // Protected by |va_lock_|.
+    int refcount_;
+
+    // Libva is not thread safe, so we have to do locking for it ourselves.
+    // This lock is to be taken for the duration of all VA-API calls and for
+    // the entire job submission sequence in ExecuteAndDestroyPendingBuffers().
+    base::Lock va_lock_;
+
+#if defined(USE_OZONE)
+    // Drm fd used to obtain access to the driver interface by VA.
+    base::ScopedFD drm_fd_;
+#endif  // USE_OZONE
+
+    // The VADisplay handle.
+    VADisplay va_display_;
+
+    // The VAAPI version.
+    int major_version_, minor_version_;
+
+    // True if vaInitialize has been called successfully.
+    bool va_initialized_;
+  };
+
   VaapiWrapper();
 
-  bool Initialize(CodecMode mode,
-                  media::VideoCodecProfile profile,
-                  Display* x_display,
-                  const base::Closure& report_error_to_uma_cb);
+  bool Initialize(CodecMode mode, VAProfile va_profile);
   void Deinitialize();
-  bool VaInitialize(Display* x_display,
-                    const base::Closure& report_error_to_uma_cb);
+  bool VaInitialize(const base::Closure& report_error_to_uma_cb);
   bool GetSupportedVaProfiles(std::vector<VAProfile>* profiles);
-  bool IsEntrypointSupported(VAProfile va_profile, VAEntrypoint entrypoint);
-  bool AreAttribsSupported(VAProfile va_profile,
-                           VAEntrypoint entrypoint,
-                           const std::vector<VAConfigAttrib>& required_attribs);
+
+  // Check if |va_profile| supports |entrypoint| or not. |va_lock_| must be
+  // held on entry.
+  bool IsEntrypointSupported_Locked(VAProfile va_profile,
+                                    VAEntrypoint entrypoint);
+
+  // Return true if |va_profile| for |entrypoint| with |required_attribs| is
+  // supported. |va_lock_| must be held on entry.
+  bool AreAttribsSupported_Locked(
+      VAProfile va_profile,
+      VAEntrypoint entrypoint,
+      const std::vector<VAConfigAttrib>& required_attribs);
+
+  // Get maximum resolution for |va_profile| and |entrypoint| with
+  // |required_attribs|. If return value is true, |resolution| is the maximum
+  // resolution. |va_lock_| must be held on entry.
+  bool GetMaxResolution_Locked(
+      VAProfile va_profile,
+      VAEntrypoint entrypoint,
+      std::vector<VAConfigAttrib>& required_attribs,
+      gfx::Size* resolution);
+
+  // Destroys a |va_surface| created using CreateUnownedSurface.
+  void DestroyUnownedSurface(VASurfaceID va_surface_id);
+
+  // Initialize the video post processing context with the |size| of
+  // the input pictures to be processed.
+  bool InitializeVpp_Locked();
+
+  // Deinitialize the video post processing context.
+  void DeinitializeVpp();
 
   // Execute pending job in hardware and destroy pending buffers. Return false
   // if vaapi driver refuses to accept parameter or slice buffers submitted
@@ -163,23 +300,32 @@ class CONTENT_EXPORT VaapiWrapper {
   // Attempt to set render mode to "render to texture.". Failure is non-fatal.
   void TryToSetVADisplayAttributeToLocalGPU();
 
+  // Get supported profile infos for |mode|.
+  std::vector<ProfileInfo> GetSupportedProfileInfosForCodecModeInternal(
+      CodecMode mode);
+
   // Lazily initialize static data after sandbox is enabled.  Return false on
   // init failure.
   static bool PostSandboxInitialization();
 
-  // Libva is not thread safe, so we have to do locking for it ourselves.
-  // This lock is to be taken for the duration of all VA-API calls and for
-  // the entire job submission sequence in ExecuteAndDestroyPendingBuffers().
-  base::Lock va_lock_;
+  // Map VideoCodecProfile enum values to VaProfile values. This function
+  // includes a workaround for crbug.com/345569. If va_profile is h264 baseline
+  // and it is not supported, we try constrained baseline.
+  static VAProfile ProfileToVAProfile(media::VideoCodecProfile profile,
+                                      CodecMode mode);
+
+  // Pointer to VADisplayState's member |va_lock_|. Guaranteed to be valid for
+  // the lifetime of VaapiWrapper.
+  base::Lock* va_lock_;
 
   // Allocated ids for VASurfaces.
   std::vector<VASurfaceID> va_surface_ids_;
 
-  // The VAAPI version.
-  int major_version_, minor_version_;
+  // Singleton instance of VADisplayState.
+  static base::LazyInstance<VADisplayState> va_display_state_;
 
   // VA handles.
-  // Both valid after successful Initialize() and until Deinitialize().
+  // All valid after successful Initialize() and until Deinitialize().
   VADisplay va_display_;
   VAConfigID va_config_id_;
   // Created for the current set of va_surface_ids_ in CreateSurfaces() and
@@ -196,6 +342,17 @@ class CONTENT_EXPORT VaapiWrapper {
   // Called to report codec errors to UMA. Errors to clients are reported via
   // return values from public methods.
   base::Closure report_error_to_uma_cb_;
+
+  // VPP (Video Post Processing) context, this is used to convert
+  // pictures used by the decoder to RGBA pictures usable by GL or the
+  // display hardware.
+  VAConfigID va_vpp_config_id_;
+  VAContextID va_vpp_context_id_;
+  VABufferID va_vpp_buffer_id_;
+
+  // Singleton variable to store supported profile information for encode and
+  // decode.
+  static base::LazyInstance<LazyProfileInfos> profile_infos_;
 
   DISALLOW_COPY_AND_ASSIGN(VaapiWrapper);
 };

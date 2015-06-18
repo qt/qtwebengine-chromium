@@ -113,7 +113,7 @@ void BrowserContext::GarbageCollectStoragePartitions(
 
 DownloadManager* BrowserContext::GetDownloadManager(
     BrowserContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!context->GetUserData(kDownloadManagerKeyName)) {
     ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
     DCHECK(rdh);
@@ -206,10 +206,11 @@ StoragePartition* BrowserContext::GetDefaultStoragePartition(
   return GetStoragePartition(browser_context, NULL);
 }
 
+// static
 void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
                                             const char* data, size_t length,
                                             const BlobCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ChromeBlobStorageContext* blob_context =
       ChromeBlobStorageContext::GetFor(browser_context);
@@ -221,13 +222,33 @@ void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
 }
 
 // static
+void BrowserContext::CreateFileBackedBlob(
+    BrowserContext* browser_context,
+    const base::FilePath& path,
+    int64_t offset,
+    int64_t size,
+    const base::Time& expected_modification_time,
+    const BlobCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  ChromeBlobStorageContext* blob_context =
+      ChromeBlobStorageContext::GetFor(browser_context);
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&ChromeBlobStorageContext::CreateFileBackedBlob,
+                 make_scoped_refptr(blob_context), path, offset, size,
+                 expected_modification_time),
+      callback);
+}
+
+// static
 void BrowserContext::DeliverPushMessage(
     BrowserContext* browser_context,
     const GURL& origin,
     int64 service_worker_registration_id,
     const std::string& data,
     const base::Callback<void(PushDeliveryStatus)>& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   PushMessagingRouter::DeliverMessage(
       browser_context, origin, service_worker_registration_id, data, callback);
 }

@@ -11,8 +11,9 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
 namespace base {
@@ -30,7 +31,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
                                        public IPC::Sender {
  public:
   // Returns the RenderFrameHost given its ID and the ID of its render process.
-  // Returns NULL if the IDs do not correspond to a live RenderFrameHost.
+  // Returns nullptr if the IDs do not correspond to a live RenderFrameHost.
   static RenderFrameHost* FromID(int render_process_id, int render_frame_id);
 
   ~RenderFrameHost() override {}
@@ -46,9 +47,9 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // Returns the process for this frame.
   virtual RenderProcessHost* GetProcess() = 0;
 
-  // Returns the current RenderFrameHost of the parent frame, or NULL if there
-  // is no parent. The result may be in a different process than the current
-  // RenderFrameHost.
+  // Returns the current RenderFrameHost of the parent frame, or nullptr if
+  // there is no parent. The result may be in a different process than the
+  // current RenderFrameHost.
   virtual RenderFrameHost* GetParent() = 0;
 
   // Returns the assigned name of the frame, the name of the iframe tag
@@ -72,10 +73,15 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   virtual void ExecuteJavaScript(const base::string16& javascript) = 0;
   virtual void ExecuteJavaScript(const base::string16& javascript,
                                  const JavaScriptResultCallback& callback) = 0;
+  virtual void ExecuteJavaScriptInIsolatedWorld(
+      const base::string16& javascript,
+      const JavaScriptResultCallback& callback,
+      int world_id) = 0;
 
   // ONLY FOR TESTS: Same as above but adds a fake UserGestureIndicator around
   // execution. (crbug.com/408426)
-  virtual void ExecuteJavaScriptForTests(const base::string16& javascript) = 0;
+  virtual void ExecuteJavaScriptWithUserGestureForTests(
+      const base::string16& javascript) = 0;
 
   // Accessibility actions - these send a message to the RenderFrame
   // to trigger an action on an accessibility object.
@@ -93,11 +99,24 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // result.
   virtual void ActivateFindInPageResultForAccessibility(int request_id) = 0;
 
+  // Roundtrips through the renderer and compositor pipeline to ensure that any
+  // changes to the contents resulting from operations executed prior to this
+  // call are visible on screen. The call completes asynchronously by running
+  // the supplied |callback| with a value of true upon successful completion and
+  // false otherwise (when the frame is destroyed, detached, etc..).
+  typedef base::Callback<void(bool)> VisualStateCallback;
+  virtual void InsertVisualStateCallback(
+      const VisualStateCallback& callback) = 0;
+
   // Temporary until we get rid of RenderViewHost.
   virtual RenderViewHost* GetRenderViewHost() = 0;
 
   // Returns the ServiceRegistry for this frame.
   virtual ServiceRegistry* GetServiceRegistry() = 0;
+
+  // Returns the visibility state of the frame. The different visibility states
+  // of a frame are defined in Blink.
+  virtual blink::WebPageVisibilityState GetVisibilityState() = 0;
 
  private:
   // This interface should only be implemented inside content.

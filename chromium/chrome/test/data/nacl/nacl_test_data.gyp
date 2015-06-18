@@ -18,7 +18,6 @@
         'test_files': [
           # TODO(ncbray) move into chrome/test/data/nacl when all tests are
           # converted.
-          '<(DEPTH)/ppapi/native_client/tests/ppapi_browser/progress_event_listener.js',
           '<(DEPTH)/ppapi/native_client/tools/browser_tester/browserdata/nacltest.js',
 
           # Files that aren't assosiated with any particular executable.
@@ -30,18 +29,33 @@
           'bad/ppapi_bad_manifest_uses_nexes.nmf',
           'bad/ppapi_bad_manifest_bad_files.nmf',
           'bad/ppapi_bad_manifest_nexe_arch.nmf',
-          'crash/ppapi_crash.html',
+          'crash/ppapi_crash.js',
+          'crash/ppapi_crash_via_check_failure.html',
+          'crash/ppapi_crash_via_exit_call.html',
+          'crash/ppapi_crash_in_callback.html',
+          'crash/ppapi_crash_ppapi_off_main_thread.html',
+          'crash/ppapi_crash_off_main_thread.html',
           'load_util.js',
           'manifest_file/test_file.txt',
+          'progress_event_listener.js',
+          'simple_cc.js',
         ],
       },
       'conditions': [
-        ['target_arch=="ia32" and OS=="linux"', {
-          # Enable nonsfi testing only on ia32-linux environment.
+        ['(target_arch=="ia32" or target_arch=="x64") and OS=="linux"', {
+          # Enable nonsfi testing on ia32-linux environment.
           # This flag causes test_files to be copied into nonsfi directory,
           # too.
           'variables': {
             'enable_x86_32_nonsfi': 1,
+          },
+        }],
+        ['target_arch=="arm" and OS=="linux"', {
+          # Enable nonsfi testing on arm-linux environment.
+          # This flag causes test_files to be copied into nonsfi directory,
+          # too.
+          'variables': {
+            'enable_arm_nonsfi': 1,
           },
         }],
       ],
@@ -109,11 +123,9 @@
           # Note that the .nexe names are embedded in this file.
           'extension_validation_cache/manifest.json',
           'load_util.js',
+	  'simple_cc.js',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
     },
     {
       'target_name': 'sysconf_nprocessors_onln_test',
@@ -147,34 +159,10 @@
           '../../../../ppapi/native_client/tests/ppapi_test_lib/get_browser_interface.cc',
           '../../../../ppapi/native_client/tests/ppapi_test_lib/internal_utils.cc',
           '../../../../ppapi/native_client/tests/ppapi_test_lib/module_instance.cc',
-          '../../../../ppapi/native_client/tests/ppapi_test_lib/testable_callback.cc',
           '../../../../ppapi/native_client/tests/ppapi_test_lib/test_interface.cc',
+          '../../../../ppapi/native_client/tests/ppapi_test_lib/testable_callback.cc',
         ]
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
-    },
-    {
-      'target_name': 'nacl_ppapi_util',
-      'type': 'none',
-      'variables': {
-        'nlib_target': 'libnacl_ppapi_util.a',
-        'nso_target': 'libnacl_ppapi_util.so',
-        'build_newlib': 1,
-        'build_glibc': 1,
-        'build_pnacl_newlib': 1,
-        'nexe_destination_dir': 'nacl_test_data',
-        'sources': [
-          # TODO(ncbray) move these files once SCons no longer depends on them.
-          '../../../../ppapi/native_client/src/untrusted/nacl_ppapi_util/string_buffer.cc',
-          '../../../../ppapi/native_client/src/untrusted/nacl_ppapi_util/nacl_ppapi_util.cc',
-          '../../../../ppapi/native_client/src/untrusted/nacl_ppapi_util/ppapi_srpc_main.c',
-        ]
-      },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
     },
     {
       'target_name': 'ppapi_progress_events',
@@ -199,7 +187,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -226,7 +213,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -251,7 +237,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -276,7 +261,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -301,7 +285,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -326,7 +309,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -351,7 +333,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -377,7 +358,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -405,7 +385,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -433,7 +412,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -461,7 +439,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -489,7 +466,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -509,14 +485,10 @@
         'build_pnacl_newlib': 0,
         'nexe_destination_dir': 'nacl_test_data',
         'link_flags': [
-          '-lnacl_ppapi_util',
           '-lppapi_cpp',
           '-lppapi',
-          '-lsrpc',
           '-lplatform',
           '-lgio',
-          '-limc',
-          '-limc_syscalls',
           '-lweak_ref',
           '-lnacl',
         ],
@@ -535,33 +507,36 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
-        '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
-        '<(DEPTH)/native_client/src/shared/imc/imc.gyp:imc_lib',
-        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:imc_syscalls_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib',
         '<(DEPTH)/native_client/src/trusted/weak_ref/weak_ref.gyp:weak_ref_lib',
-        'nacl_ppapi_util',
       ],
       'conditions': [
-        ['target_arch=="ia32" and OS=="linux"', {
-          # Enable nonsfi testing only on ia32-linux environment.
+        # These are needed to build a non-SFI nexe binary.
+        # Note that these trigger building nexe files for other
+        # architectures, such as x86-32 (based on enable_XXX variables).
+        # As described above, although the tests for pnacl are currently
+        # disabled, but building the binary should work.
+        # We cannot disable building, as enable_XXX variables are also used
+        # to build newlib linked nexes.
+        ['(target_arch=="ia32" or target_arch=="x64") and OS=="linux"', {
+          # Enable nonsfi testing on ia32-linux environment.
           'variables': {
-            # This is needed to build a non-SFI nexe binary.
-            # Note that this triggers building nexe files for other
-            # architectures, such as x86-32 (based on enable_XXX variables).
-            # As described above, although the tests for pnacl are currently
-            # disabled, but building the binary should work.
-            # We cannot disable building, as enable_XXX variables are also used
-            # to build newlib linked nexes.
             'build_pnacl_newlib': 1,
             'translate_pexe_with_build': 1,
             'enable_x86_32_nonsfi': 1,
+          },
+        }],
+        ['target_arch=="arm" and OS=="linux"', {
+          # Enable nonsfi testing on arm-linux environment.
+          'variables': {
+            'build_pnacl_newlib': 1,
+            'translate_pexe_with_build': 1,
+            'enable_arm_nonsfi': 1,
           },
         }],
       ],
@@ -592,7 +567,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_exception_lib',
@@ -602,10 +576,17 @@
         'ppapi_test_lib',
       ],
       'conditions': [
-        ['target_arch=="ia32" and OS=="linux"', {
-          # Enable nonsfi testing only on ia32-linux environment.
+        ['(target_arch=="ia32" or target_arch=="x64") and OS=="linux"', {
+          # Enable nonsfi testing on ia32-linux environment.
           'variables': {
             'enable_x86_32_nonsfi': 1,
+            'translate_pexe_with_build': 1,
+          },
+        }],
+        ['target_arch=="arm" and OS=="linux"', {
+          # Enable nonsfi testing on arm-linux environment.
+          'variables': {
+            'enable_arm_nonsfi': 1,
             'translate_pexe_with_build': 1,
           },
         }],
@@ -640,7 +621,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
@@ -665,9 +645,6 @@
           'pnacl_debug_url/pnacl_no_debug.nmf',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ]
     },
     {
       'target_name': 'pnacl_error_handling_test',
@@ -685,9 +662,6 @@
           'pnacl_error_handling/pnacl_illformed_manifest.nmf',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ]
     },
     {
       'target_name': 'pnacl_mime_type_test',
@@ -720,9 +694,6 @@
           'pnacl_nmf_options/pnacl_o_large.nmf',
         ],
       },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ]
     },
     {
       'target_name': 'pnacl_dyncode_syscall_disabled_test',
@@ -753,7 +724,6 @@
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_dyncode_private_lib',
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
@@ -788,7 +758,6 @@
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_exception_private_lib',
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
@@ -818,7 +787,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -849,7 +817,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -881,7 +848,6 @@
         ],
       },
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
@@ -919,9 +885,6 @@
               }],
             ],
           },
-          'dependencies': [
-            '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-          ],
         },
       ],
     }],

@@ -33,6 +33,7 @@ import time
 from pool import Pool
 from . import commands
 from . import perfdata
+from . import statusfile
 from . import utils
 
 
@@ -98,6 +99,10 @@ class Runner(object):
         "--stress-opt" in self.context.mode_flags or
         "--stress-opt" in self.context.extra_flags):
       timeout *= 4
+    # FIXME(machenbach): Make this more OO. Don't expose default outcomes or
+    # the like.
+    if statusfile.IsSlow(test.outcomes or [statusfile.PASS]):
+      timeout *= 2
     if test.dependency is not None:
       dep_command = [ c.replace(test.path, test.dependency) for c in command ]
     else:
@@ -225,11 +230,14 @@ class Runner(object):
     try:
       it = pool.imap_unordered(RunTest, queue)
       for result in it:
-        test = test_map[result[0]]
+        if result.heartbeat:
+          self.indicator.Heartbeat()
+          continue
+        test = test_map[result.value[0]]
         if self.context.predictable:
-          update_perf = self._ProcessTestPredictable(test, result, pool)
+          update_perf = self._ProcessTestPredictable(test, result.value, pool)
         else:
-          update_perf = self._ProcessTestNormal(test, result, pool)
+          update_perf = self._ProcessTestNormal(test, result.value, pool)
         if update_perf:
           self._RunPerfSafe(lambda: self.perfdata.UpdatePerfData(test))
     finally:

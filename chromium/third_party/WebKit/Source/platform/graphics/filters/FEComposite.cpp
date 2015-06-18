@@ -44,9 +44,9 @@ FEComposite::FEComposite(Filter* filter, const CompositeOperationType& type, flo
 {
 }
 
-PassRefPtr<FEComposite> FEComposite::create(Filter* filter, const CompositeOperationType& type, float k1, float k2, float k3, float k4)
+PassRefPtrWillBeRawPtr<FEComposite> FEComposite::create(Filter* filter, const CompositeOperationType& type, float k1, float k2, float k3, float k4)
 {
-    return adoptRef(new FEComposite(filter, type, k1, k2, k3, k4));
+    return adoptRefWillBeNoop(new FEComposite(filter, type, k1, k2, k3, k4));
 }
 
 CompositeOperationType FEComposite::operation() const
@@ -184,6 +184,8 @@ SkXfermode::Mode toXfermode(CompositeOperationType mode)
         return SkXfermode::kSrcATop_Mode;
     case FECOMPOSITE_OPERATOR_XOR:
         return SkXfermode::kXor_Mode;
+    case FECOMPOSITE_OPERATOR_LIGHTER:
+        return SkXfermode::kPlus_Mode;
     default:
         ASSERT_NOT_REACHED();
         return SkXfermode::kSrcOver_Mode;
@@ -236,6 +238,9 @@ static TextStream& operator<<(TextStream& ts, const CompositeOperationType& type
         break;
     case FECOMPOSITE_OPERATOR_ARITHMETIC:
         ts << "ARITHMETIC";
+        break;
+    case FECOMPOSITE_OPERATOR_LIGHTER:
+        ts << "LIGHTER";
         break;
     }
     return ts;

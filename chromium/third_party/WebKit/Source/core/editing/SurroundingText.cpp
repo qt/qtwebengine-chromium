@@ -35,7 +35,8 @@
 #include "core/dom/Element.h"
 #include "core/dom/Position.h"
 #include "core/dom/Range.h"
-#include "core/editing/TextIterator.h"
+#include "core/editing/iterators/BackwardsCharacterIterator.h"
+#include "core/editing/iterators/CharacterIterator.h"
 
 namespace blink {
 
@@ -61,7 +62,7 @@ void SurroundingText::initialize(const Position& startPosition, const Position& 
 
     Document* document = startPosition.document();
     // The position will have no document if it is null (as in no position).
-    if (!document)
+    if (!document || !document->documentElement())
         return;
 
     // The forward range starts at the selection end and ends at the document's

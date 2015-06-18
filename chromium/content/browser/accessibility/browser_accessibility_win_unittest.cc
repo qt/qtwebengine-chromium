@@ -11,7 +11,9 @@
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
+#include "content/browser/renderer_host/legacy_render_widget_host_win.h"
 #include "content/common/accessibility_messages.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/win/atl_module.h"
 
@@ -25,7 +27,7 @@ namespace {
 class CountedBrowserAccessibility : public BrowserAccessibilityWin {
  public:
   CountedBrowserAccessibility();
-  virtual ~CountedBrowserAccessibility();
+  ~CountedBrowserAccessibility() override;
 
   static void reset() { num_instances_ = 0; }
   static int num_instances() { return num_instances_; }
@@ -56,9 +58,9 @@ class CountedBrowserAccessibilityFactory : public BrowserAccessibilityFactory {
   CountedBrowserAccessibilityFactory();
 
  private:
-  virtual ~CountedBrowserAccessibilityFactory();
+  ~CountedBrowserAccessibilityFactory() override;
 
-  virtual BrowserAccessibility* Create() override;
+  BrowserAccessibility* Create() override;
 
   DISALLOW_COPY_AND_ASSIGN(CountedBrowserAccessibilityFactory);
 };
@@ -86,10 +88,12 @@ BrowserAccessibility* CountedBrowserAccessibilityFactory::Create() {
 class BrowserAccessibilityTest : public testing::Test {
  public:
   BrowserAccessibilityTest();
-  virtual ~BrowserAccessibilityTest();
+  ~BrowserAccessibilityTest() override;
 
  private:
-  virtual void SetUp() override;
+  void SetUp() override;
+
+  content::TestBrowserThreadBundle thread_bundle_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityTest);
 };
@@ -320,94 +324,156 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
 }
 
 TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
-  std::string text1_value = "One two three.\nFour five six.";
-
-  ui::AXNodeData text1;
-  text1.id = 11;
-  text1.role = ui::AX_ROLE_TEXT_FIELD;
-  text1.state = 0;
-  text1.AddStringAttribute(ui::AX_ATTR_VALUE, text1_value);
-  std::vector<int32> line_breaks;
-  line_breaks.push_back(15);
-  text1.AddIntListAttribute(
-      ui::AX_ATTR_LINE_BREAKS, line_breaks);
+  std::string line1 = "One two three.";
+  std::string line2 = "Four five six.";
+  std::string text_value = line1 + '\n' + line2;
 
   ui::AXNodeData root;
   root.id = 1;
   root.role = ui::AX_ROLE_ROOT_WEB_AREA;
-  root.state = 0;
-  root.child_ids.push_back(11);
+  root.child_ids.push_back(2);
+
+  ui::AXNodeData text_field;
+  text_field.id = 2;
+  text_field.role = ui::AX_ROLE_TEXT_FIELD;
+  text_field.AddStringAttribute(ui::AX_ATTR_VALUE, text_value);
+  std::vector<int32> line_start_offsets;
+  line_start_offsets.push_back(15);
+  text_field.AddIntListAttribute(
+      ui::AX_ATTR_LINE_BREAKS, line_start_offsets);
+  text_field.child_ids.push_back(3);
+  text_field.child_ids.push_back(5);
+  text_field.child_ids.push_back(6);
+
+  ui::AXNodeData static_text1;
+  static_text1.id = 3;
+  static_text1.role = ui::AX_ROLE_STATIC_TEXT;
+  static_text1.AddStringAttribute(ui::AX_ATTR_VALUE, line1);
+  static_text1.child_ids.push_back(4);
+
+  ui::AXNodeData inline_box1;
+  inline_box1.id = 4;
+  inline_box1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
+  inline_box1.AddStringAttribute(ui::AX_ATTR_VALUE, line1);
+  std::vector<int32> word_start_offsets1;
+  word_start_offsets1.push_back(0);
+  word_start_offsets1.push_back(4);
+  word_start_offsets1.push_back(8);
+  inline_box1.AddIntListAttribute(
+      ui::AX_ATTR_WORD_STARTS, word_start_offsets1);
+
+  ui::AXNodeData line_break;
+  line_break.id = 5;
+  line_break.role = ui::AX_ROLE_LINE_BREAK;
+  line_break.AddStringAttribute(ui::AX_ATTR_VALUE, "\n");
+
+  ui::AXNodeData static_text2;
+  static_text2.id = 6;
+  static_text2.role = ui::AX_ROLE_STATIC_TEXT;
+  static_text2.AddStringAttribute(ui::AX_ATTR_VALUE, line2);
+  static_text2.child_ids.push_back(7);
+
+  ui::AXNodeData inline_box2;
+  inline_box2.id = 7;
+  inline_box2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
+  inline_box2.AddStringAttribute(ui::AX_ATTR_VALUE, line2);
+  std::vector<int32> word_start_offsets2;
+  word_start_offsets2.push_back(0);
+  word_start_offsets2.push_back(5);
+  word_start_offsets2.push_back(10);
+  inline_box2.AddIntListAttribute(
+      ui::AX_ATTR_WORD_STARTS, word_start_offsets2);
 
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          MakeAXTreeUpdate(root, text1),
-          NULL, new CountedBrowserAccessibilityFactory()));
-  ASSERT_EQ(2, CountedBrowserAccessibility::num_instances());
+          MakeAXTreeUpdate(root, text_field, static_text1, inline_box1,
+          line_break, static_text2, inline_box2),
+          nullptr, new CountedBrowserAccessibilityFactory()));
+  ASSERT_EQ(7, CountedBrowserAccessibility::num_instances());
 
   BrowserAccessibilityWin* root_obj =
       manager->GetRoot()->ToBrowserAccessibilityWin();
-  BrowserAccessibilityWin* text1_obj =
-      root_obj->PlatformGetChild(0)->ToBrowserAccessibilityWin();
+  ASSERT_NE(nullptr, root_obj);
+  ASSERT_EQ(1, root_obj->PlatformChildCount());
 
-  long text1_len;
-  ASSERT_EQ(S_OK, text1_obj->get_nCharacters(&text1_len));
+  BrowserAccessibilityWin* text_field_obj =
+      root_obj->PlatformGetChild(0)->ToBrowserAccessibilityWin();
+  ASSERT_NE(nullptr, text_field_obj);
+
+  long text_len;
+  EXPECT_EQ(S_OK, text_field_obj->get_nCharacters(&text_len));
 
   base::win::ScopedBstr text;
-  ASSERT_EQ(S_OK, text1_obj->get_text(0, text1_len, text.Receive()));
-  ASSERT_EQ(text1_value, base::UTF16ToUTF8(base::string16(text)));
+  EXPECT_EQ(S_OK, text_field_obj->get_text(0, text_len, text.Receive()));
+  EXPECT_EQ(text_value, base::UTF16ToUTF8(base::string16(text)));
   text.Reset();
 
-  ASSERT_EQ(S_OK, text1_obj->get_text(0, 4, text.Receive()));
-  ASSERT_STREQ(L"One ", text);
+  EXPECT_EQ(S_OK, text_field_obj->get_text(0, 4, text.Receive()));
+  EXPECT_STREQ(L"One ", text);
   text.Reset();
 
   long start;
   long end;
-  ASSERT_EQ(S_OK, text1_obj->get_textAtOffset(
+  EXPECT_EQ(S_OK, text_field_obj->get_textAtOffset(
       1, IA2_TEXT_BOUNDARY_CHAR, &start, &end, text.Receive()));
-  ASSERT_EQ(1, start);
-  ASSERT_EQ(2, end);
-  ASSERT_STREQ(L"n", text);
+  EXPECT_EQ(1, start);
+  EXPECT_EQ(2, end);
+  EXPECT_STREQ(L"n", text);
   text.Reset();
 
-  ASSERT_EQ(S_FALSE, text1_obj->get_textAtOffset(
-      text1_len, IA2_TEXT_BOUNDARY_CHAR, &start, &end, text.Receive()));
-  ASSERT_EQ(text1_len, start);
-  ASSERT_EQ(text1_len, end);
+  EXPECT_EQ(S_FALSE, text_field_obj->get_textAtOffset(
+      text_len, IA2_TEXT_BOUNDARY_CHAR, &start, &end, text.Receive()));
+  EXPECT_EQ(0, start);
+  EXPECT_EQ(0, end);
+  EXPECT_EQ(nullptr, text);
   text.Reset();
 
-  ASSERT_EQ(S_OK, text1_obj->get_textAtOffset(
+  EXPECT_EQ(S_FALSE, text_field_obj->get_textAtOffset(
+      text_len, IA2_TEXT_BOUNDARY_WORD, &start, &end, text.Receive()));
+  EXPECT_EQ(0, start);
+  EXPECT_EQ(0, end);
+  EXPECT_EQ(nullptr, text);
+  text.Reset();
+
+  EXPECT_EQ(S_OK, text_field_obj->get_textAtOffset(
       1, IA2_TEXT_BOUNDARY_WORD, &start, &end, text.Receive()));
-  ASSERT_EQ(0, start);
-  ASSERT_EQ(3, end);
-  ASSERT_STREQ(L"One", text);
+  EXPECT_EQ(0, start);
+  EXPECT_EQ(4, end);
+  EXPECT_STREQ(L"One ", text);
   text.Reset();
 
-  ASSERT_EQ(S_OK, text1_obj->get_textAtOffset(
+  EXPECT_EQ(S_OK, text_field_obj->get_textAtOffset(
       6, IA2_TEXT_BOUNDARY_WORD, &start, &end, text.Receive()));
-  ASSERT_EQ(4, start);
-  ASSERT_EQ(7, end);
-  ASSERT_STREQ(L"two", text);
+  EXPECT_EQ(4, start);
+  EXPECT_EQ(8, end);
+  EXPECT_STREQ(L"two ", text);
   text.Reset();
 
-  ASSERT_EQ(S_OK, text1_obj->get_textAtOffset(
-      text1_len, IA2_TEXT_BOUNDARY_WORD, &start, &end, text.Receive()));
-  ASSERT_EQ(25, start);
-  ASSERT_EQ(29, end);
-  ASSERT_STREQ(L"six.", text);
+  EXPECT_EQ(S_OK, text_field_obj->get_textAtOffset(
+      text_len - 1, IA2_TEXT_BOUNDARY_WORD, &start, &end, text.Receive()));
+  EXPECT_EQ(25, start);
+  EXPECT_EQ(29, end);
+  EXPECT_STREQ(L"six.", text);
   text.Reset();
 
-  ASSERT_EQ(S_OK, text1_obj->get_textAtOffset(
+  EXPECT_EQ(S_OK, text_field_obj->get_textAtOffset(
       1, IA2_TEXT_BOUNDARY_LINE, &start, &end, text.Receive()));
-  ASSERT_EQ(0, start);
-  ASSERT_EQ(15, end);
-  ASSERT_STREQ(L"One two three.\n", text);
+  EXPECT_EQ(0, start);
+  EXPECT_EQ(15, end);
+  EXPECT_STREQ(L"One two three.\n", text);
   text.Reset();
 
-  ASSERT_EQ(S_OK,
-            text1_obj->get_text(0, IA2_TEXT_OFFSET_LENGTH, text.Receive()));
-  ASSERT_STREQ(L"One two three.\nFour five six.", text);
+  EXPECT_EQ(S_OK, text_field_obj->get_textAtOffset(
+      text_len, IA2_TEXT_BOUNDARY_LINE, &start, &end, text.Receive()));
+  EXPECT_EQ(15, start);
+  EXPECT_EQ(text_len, end);
+  EXPECT_STREQ(L"Four five six.", text);
+  text.Reset();
+
+  EXPECT_EQ(S_OK, text_field_obj->get_text(
+      0, IA2_TEXT_OFFSET_LENGTH, text.Receive()));
+  EXPECT_EQ(text_value, base::UTF16ToUTF8(base::string16(text)));
 
   // Delete the manager and test that all BrowserAccessibility instances are
   // deleted.
@@ -441,7 +507,7 @@ TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          MakeAXTreeUpdate(root, root, text1, text2),
+          MakeAXTreeUpdate(root, text1, text2),
           NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(3, CountedBrowserAccessibility::num_instances());
 
@@ -546,7 +612,7 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
   base::win::ScopedBstr text;
   ASSERT_EQ(S_OK, root_obj->get_text(0, text_len, text.Receive()));
   const std::string embed = base::UTF16ToUTF8(
-      BrowserAccessibilityWin::kEmbeddedCharacter);
+      base::string16(1, BrowserAccessibilityWin::kEmbeddedCharacter));
   EXPECT_EQ(text1_name + embed + text2_name + embed,
             base::UTF16ToUTF8(base::string16(text)));
   text.Reset();
@@ -701,6 +767,154 @@ TEST_F(BrowserAccessibilityTest, EmptyDocHasUniqueIdWin) {
 
   LONG unique_id_win = root->ToBrowserAccessibilityWin()->unique_id_win();
   ASSERT_EQ(root, manager->GetFromUniqueIdWin(unique_id_win));
+}
+
+TEST_F(BrowserAccessibilityTest, TestIA2Attributes) {
+  ui::AXNodeData checkbox;
+  checkbox.id = 2;
+  checkbox.SetName("Checkbox");
+  checkbox.role = ui::AX_ROLE_CHECK_BOX;
+  checkbox.state = 1 << ui::AX_STATE_CHECKED;
+
+  ui::AXNodeData root;
+  root.id = 1;
+  root.SetName("Document");
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root.state = (1 << ui::AX_STATE_READ_ONLY) | (1 << ui::AX_STATE_FOCUSABLE);
+  root.child_ids.push_back(2);
+
+  CountedBrowserAccessibility::reset();
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdate(root, checkbox),
+          nullptr, new CountedBrowserAccessibilityFactory()));
+  ASSERT_EQ(2, CountedBrowserAccessibility::num_instances());
+
+  ASSERT_NE(nullptr, manager->GetRoot());
+  BrowserAccessibilityWin* root_accessible =
+      manager->GetRoot()->ToBrowserAccessibilityWin();
+      ASSERT_NE(nullptr, root_accessible);
+  ASSERT_EQ(1, root_accessible->PlatformChildCount());
+  BrowserAccessibilityWin* checkbox_accessible =
+      root_accessible->PlatformGetChild(0)->ToBrowserAccessibilityWin();
+  ASSERT_NE(nullptr, checkbox_accessible);
+
+  base::win::ScopedBstr attributes;
+  HRESULT hr = checkbox_accessible->get_attributes(attributes.Receive());
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_NE(nullptr, static_cast<BSTR>(attributes));
+  std::wstring attributes_str(attributes, attributes.Length());
+  EXPECT_EQ(L"checkable:true;", attributes_str);
+
+  manager.reset();
+  ASSERT_EQ(0, CountedBrowserAccessibility::num_instances());
+}
+
+/**
+ * Ensures that ui::AX_ATTR_TEXT_SEL_START/END attributes are correctly used to
+ * determine caret position and text selection in various types of editable
+ * elements.
+ */
+TEST_F(BrowserAccessibilityTest, TestCaretAndTextSelection) {
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root.state = (1 << ui::AX_STATE_READ_ONLY) | (1 << ui::AX_STATE_FOCUSABLE);
+
+  ui::AXNodeData combo_box;
+  combo_box.id = 2;
+  combo_box.role = ui::AX_ROLE_COMBO_BOX;
+  combo_box.state = (1 << ui::AX_STATE_FOCUSABLE) | (1 << ui::AX_STATE_FOCUSED);
+  combo_box.SetValue("Test1");
+  // Place the caret between 't' and 'e'.
+  combo_box.AddIntAttribute(ui::AX_ATTR_TEXT_SEL_START, 1);
+  combo_box.AddIntAttribute(ui::AX_ATTR_TEXT_SEL_END, 1);
+
+  ui::AXNodeData text_field;
+  text_field.id = 3;
+  text_field.role = ui::AX_ROLE_TEXT_FIELD;
+  text_field.state = 1 << ui::AX_STATE_FOCUSABLE;
+  text_field.SetValue("Test2");
+  // Select the letter 'e'.
+  text_field.AddIntAttribute(ui::AX_ATTR_TEXT_SEL_START, 1);
+  text_field.AddIntAttribute(ui::AX_ATTR_TEXT_SEL_END, 2);
+
+  root.child_ids.push_back(2);
+  root.child_ids.push_back(3);
+
+  CountedBrowserAccessibility::reset();
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdate(root, combo_box, text_field),
+          nullptr, new CountedBrowserAccessibilityFactory()));
+  ASSERT_EQ(3, CountedBrowserAccessibility::num_instances());
+
+  ASSERT_NE(nullptr, manager->GetRoot());
+  BrowserAccessibilityWin* root_accessible =
+      manager->GetRoot()->ToBrowserAccessibilityWin();
+      ASSERT_NE(nullptr, root_accessible);
+  ASSERT_EQ(2, root_accessible->PlatformChildCount());
+
+  BrowserAccessibilityWin* combo_box_accessible =
+      root_accessible->PlatformGetChild(0)->ToBrowserAccessibilityWin();
+  ASSERT_NE(nullptr, combo_box_accessible);
+  manager->SetFocus(combo_box_accessible, false /* notify */);
+  ASSERT_EQ(combo_box_accessible,
+      manager->GetFocus(root_accessible)->ToBrowserAccessibilityWin());
+  BrowserAccessibilityWin* text_field_accessible =
+      root_accessible->PlatformGetChild(1)->ToBrowserAccessibilityWin();
+  ASSERT_NE(nullptr, text_field_accessible);
+
+  // -2 is never a valid offset.
+  LONG caret_offset = -2;
+  LONG n_selections = -2;
+  LONG selection_start = -2;
+  LONG selection_end = -2;
+
+  // Test get_caretOffset.
+  HRESULT hr = combo_box_accessible->get_caretOffset(&caret_offset);;
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1L, caret_offset);
+  // caret_offset should be -1 when the object is not focused.
+  hr = text_field_accessible->get_caretOffset(&caret_offset);;
+  EXPECT_EQ(S_FALSE, hr);
+  EXPECT_EQ(-1L, caret_offset);
+
+  // Move the focus to the text field.
+  combo_box.state &= ~(1 << ui::AX_STATE_FOCUSED);
+  text_field.state |= 1 << ui::AX_STATE_FOCUSED;
+  manager->SetFocus(text_field_accessible, false /* notify */);
+  ASSERT_EQ(text_field_accessible,
+      manager->GetFocus(root_accessible)->ToBrowserAccessibilityWin());
+
+  // The caret should be at the start of the selection.
+  hr = text_field_accessible->get_caretOffset(&caret_offset);;
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1L, caret_offset);
+
+  // Test get_nSelections.
+  hr = combo_box_accessible->get_nSelections(&n_selections);;
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(0L, n_selections);
+  hr = text_field_accessible->get_nSelections(&n_selections);;
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1L, n_selections);
+
+  // Test get_selection.
+  hr = combo_box_accessible->get_selection(
+      0L /* selection_index */, &selection_start, &selection_end);;
+  EXPECT_EQ(E_INVALIDARG, hr); // No selections available.
+  // Invalid in_args should not modify out_args.
+  EXPECT_EQ(-2L, selection_start);
+  EXPECT_EQ(-2L, selection_end);
+  hr = text_field_accessible->get_selection(
+      0L /* selection_index */, &selection_start, &selection_end);;
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1L, selection_start);
+  EXPECT_EQ(2L, selection_end);
+
+  manager.reset();
+  ASSERT_EQ(0, CountedBrowserAccessibility::num_instances());
 }
 
 }  // namespace content

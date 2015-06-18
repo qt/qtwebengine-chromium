@@ -42,7 +42,7 @@ class IntRect;
 class TransformationMatrix;
 
 class PLATFORM_EXPORT AffineTransform {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(AffineTransform);
 public:
     typedef double Transform[6];
 
@@ -50,6 +50,8 @@ public:
     AffineTransform(double a, double b, double c, double d, double e, double f);
 
     void setMatrix(double a, double b, double c, double d, double e, double f);
+
+    void setTransform(const AffineTransform& other) { setMatrix(other.m_transform); }
 
     void map(double x, double y, double& x2, double& y2) const;
 

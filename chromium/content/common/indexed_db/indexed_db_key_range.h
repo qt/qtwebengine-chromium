@@ -14,25 +14,28 @@ namespace content {
 class CONTENT_EXPORT IndexedDBKeyRange {
  public:
   IndexedDBKeyRange();
-  explicit IndexedDBKeyRange(const IndexedDBKey& onlyKey);
+  explicit IndexedDBKeyRange(const IndexedDBKey& key);
   IndexedDBKeyRange(const IndexedDBKey& lower,
                     const IndexedDBKey& upper,
                     bool lower_open,
                     bool upper_open);
+  IndexedDBKeyRange(const IndexedDBKeyRange& other);
   ~IndexedDBKeyRange();
+  IndexedDBKeyRange& operator=(const IndexedDBKeyRange& other);
 
   const IndexedDBKey& lower() const { return lower_; }
   const IndexedDBKey& upper() const { return upper_; }
-  bool lowerOpen() const { return lower_open_; }
-  bool upperOpen() const { return upper_open_; }
+  bool lower_open() const { return lower_open_; }
+  bool upper_open() const { return upper_open_; }
 
   bool IsOnlyKey() const;
+  bool IsEmpty() const;
 
  private:
-  IndexedDBKey lower_;
-  IndexedDBKey upper_;
-  bool lower_open_;
-  bool upper_open_;
+  IndexedDBKey lower_ = IndexedDBKey(blink::WebIDBKeyTypeNull);
+  IndexedDBKey upper_ = IndexedDBKey(blink::WebIDBKeyTypeNull);
+  bool lower_open_ = false;
+  bool upper_open_ = false;
 };
 
 }  // namespace content

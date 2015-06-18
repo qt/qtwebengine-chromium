@@ -31,10 +31,19 @@
 #ifndef WebSecurityOrigin_h
 #define WebSecurityOrigin_h
 
-#include "../platform/WebCommon.h"
+// TODO(tasak): WebSecurityOrigin should be in public/platform.
+// However, we could not move this file soon, because
+// content depends on public/web/WebSecurityOrigin. So firstly
+// (1) fix and create another WebSecurityOrigin.h in public/platform,
+// and copy the WebSecurityOrigin.h here.
+// (2) fix content side to use public/platform/WebSecurityOrigin after
+// blink roll.
+// (3) remove this public/web/WebSecurityOrigin.h.
 
-#if BLINK_IMPLEMENTATION
-namespace WTF { template <typename T> class PassRefPtr; }
+#include "public/platform/WebCommon.h"
+
+#if INSIDE_BLINK
+#include "wtf/PassRefPtr.h"
 #endif
 
 namespace blink {
@@ -56,61 +65,60 @@ public:
         return *this;
     }
 
-    BLINK_EXPORT static WebSecurityOrigin createFromDatabaseIdentifier(const WebString& databaseIdentifier);
-    BLINK_EXPORT static WebSecurityOrigin createFromString(const WebString&);
-    BLINK_EXPORT static WebSecurityOrigin create(const WebURL&);
+    BLINK_PLATFORM_EXPORT static WebSecurityOrigin createFromDatabaseIdentifier(const WebString& databaseIdentifier);
+    BLINK_PLATFORM_EXPORT static WebSecurityOrigin createFromString(const WebString&);
+    BLINK_PLATFORM_EXPORT static WebSecurityOrigin create(const WebURL&);
 
-    BLINK_EXPORT void reset();
-    BLINK_EXPORT void assign(const WebSecurityOrigin&);
+    BLINK_PLATFORM_EXPORT void reset();
+    BLINK_PLATFORM_EXPORT void assign(const WebSecurityOrigin&);
 
     bool isNull() const { return !m_private; }
 
-    BLINK_EXPORT WebString protocol() const;
-    BLINK_EXPORT WebString host() const;
-    BLINK_EXPORT unsigned short port() const;
+    BLINK_PLATFORM_EXPORT WebString protocol() const;
+    BLINK_PLATFORM_EXPORT WebString host() const;
+    BLINK_PLATFORM_EXPORT unsigned short port() const;
 
     // A unique WebSecurityOrigin is the least privileged WebSecurityOrigin.
-    BLINK_EXPORT bool isUnique() const;
+    BLINK_PLATFORM_EXPORT bool isUnique() const;
 
     // Returns true if this WebSecurityOrigin can script objects in the given
     // SecurityOrigin. For example, call this function before allowing
     // script from one security origin to read or write objects from
     // another SecurityOrigin.
-    BLINK_EXPORT bool canAccess(const WebSecurityOrigin&) const;
+    BLINK_PLATFORM_EXPORT bool canAccess(const WebSecurityOrigin&) const;
 
     // Returns true if this WebSecurityOrigin can read content retrieved from
     // the given URL. For example, call this function before allowing script
     // from a given security origin to receive contents from a given URL.
-    BLINK_EXPORT bool canRequest(const WebURL&) const;
+    BLINK_PLATFORM_EXPORT bool canRequest(const WebURL&) const;
 
-    // A "secure origin" as defined by [1] are those that load resources either
-    // from the local machine (necessarily trusted) or over the network from a
-    // cryptographically-authenticated server.
-    //
-    // [1] http://www.chromium.org/Home/chromium-security/security-faq#TOC-Which-origins-are-secure-
-    BLINK_EXPORT bool canAccessFeatureRequiringSecureOrigin(WebString& errorMessage) const;
+    // Returns true if the origin loads resources either from the local
+    // machine or over the network from a
+    // cryptographically-authenticated origin, as described in
+    // https://w3c.github.io/webappsec/specs/powerfulfeatures/#is-origin-trustworthy.
+    BLINK_PLATFORM_EXPORT bool isPotentiallyTrustworthy(WebString& errorMessage) const;
 
     // Returns a string representation of the WebSecurityOrigin.  The empty
     // WebSecurityOrigin is represented by "null".  The representation of a
     // non-empty WebSecurityOrigin resembles a standard URL.
-    BLINK_EXPORT WebString toString() const;
+    BLINK_PLATFORM_EXPORT WebString toString() const;
 
     // Returns a string representation of this WebSecurityOrigin that can
     // be used as a file.  Should be used in storage APIs only.
-    BLINK_EXPORT WebString databaseIdentifier() const;
+    BLINK_PLATFORM_EXPORT WebString databaseIdentifier() const;
 
     // Returns true if this WebSecurityOrigin can access usernames and
     // passwords stored in password manager.
-    BLINK_EXPORT bool canAccessPasswordManager() const;
+    BLINK_PLATFORM_EXPORT bool canAccessPasswordManager() const;
 
     // Allows this WebSecurityOrigin access to local resources.
-    BLINK_EXPORT void grantLoadLocalResources() const;
+    BLINK_PLATFORM_EXPORT void grantLoadLocalResources() const;
 
-#if BLINK_IMPLEMENTATION
-    WebSecurityOrigin(const WTF::PassRefPtr<SecurityOrigin>&);
-    WebSecurityOrigin& operator=(const WTF::PassRefPtr<SecurityOrigin>&);
-    operator WTF::PassRefPtr<SecurityOrigin>() const;
-    SecurityOrigin* get() const;
+#if INSIDE_BLINK
+    BLINK_PLATFORM_EXPORT WebSecurityOrigin(const WTF::PassRefPtr<SecurityOrigin>&);
+    BLINK_PLATFORM_EXPORT WebSecurityOrigin& operator=(const WTF::PassRefPtr<SecurityOrigin>&);
+    BLINK_PLATFORM_EXPORT operator WTF::PassRefPtr<SecurityOrigin>() const;
+    BLINK_PLATFORM_EXPORT SecurityOrigin* get() const;
 #endif
 
 private:

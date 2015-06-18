@@ -32,6 +32,7 @@ class StyleRuleCSSStyleDeclaration;
 class StyleRule;
 
 class CSSStyleRule final : public CSSRule {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CSSStyleRule> create(StyleRule* rule, CSSStyleSheet* sheet)
     {
@@ -40,7 +41,6 @@ public:
 
     virtual ~CSSStyleRule();
 
-    virtual CSSRule::Type type() const override { return STYLE_RULE; }
     virtual String cssText() const override;
     virtual void reattach(StyleRuleBase*) override;
 
@@ -52,10 +52,12 @@ public:
     // FIXME: Not CSSOM. Remove.
     StyleRule* styleRule() const { return m_styleRule.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CSSStyleRule(StyleRule*, CSSStyleSheet*);
+
+    virtual CSSRule::Type type() const override { return STYLE_RULE; }
 
     String generateSelectorText() const;
 

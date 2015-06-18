@@ -14,11 +14,11 @@ public:
     AlphaGradientsGM() {}
 
 protected:
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("alphagradients");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(640, 480);
     }
 
@@ -38,7 +38,7 @@ protected:
         canvas->drawRect(r, paint);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         static const struct {
             SkColor fColor0;
             SkColor fColor1;
@@ -71,8 +71,6 @@ protected:
             canvas->translate(r.width() + 10, 0);
         }
     }
-
-    virtual uint32_t onGetFlags() const { return kSkipPipe_Flag | kSkipTiled_Flag; }
 
 private:
     typedef skiagm::GM INHERITED;

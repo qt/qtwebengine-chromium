@@ -2,14 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "allocator_shim/allocator_stub.h"
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+#include <math.h> // needed for _set_FMA3_enable
+#endif  // WIN && ARCH_CPU_X86_64
+
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "init_webrtc.h"
-#include "talk/media/webrtc/webrtcmediaengine.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/logging.h"
+#include "third_party/libjingle/source/talk/media/webrtc/webrtcmediaengine.h"
+#include "third_party/libjingle/allocator_shim/allocator_stub.h"
+#include "third_party/libjingle/overrides/init_webrtc.h"
+#include "third_party/webrtc/base/basictypes.h"
+#include "third_party/webrtc/base/logging.h"
 
 #if !defined(LIBPEERCONNECTION_IMPLEMENTATION) || defined(LIBPEERCONNECTION_LIB)
 #error "Only compile the allocator proxy with the shared_library implementation"
@@ -83,7 +87,7 @@ extern "C" {
 // return pointers to libjingle's WebRTC factory methods.
 // Called from init_webrtc.cc.
 ALLOC_EXPORT
-bool InitializeModule(const CommandLine& command_line,
+bool InitializeModule(const base::CommandLine& command_line,
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
                       AllocateFunction alloc,
                       DellocateFunction dealloc,
@@ -113,11 +117,20 @@ bool InitializeModule(const CommandLine& command_line,
   *destroy_media_engine = &DestroyWebRtcMediaEngine;
   *init_diagnostic_logging = &rtc::InitDiagnosticLoggingDelegateFunction;
 
-  if (CommandLine::Init(0, NULL)) {
+#if defined(OS_WIN) && defined(ARCH_CPU_X86_64)
+  // VS2013 only checks the existence of FMA3 instructions, not the enabled-ness
+  // of them at the OS level (this is fixed in VS2015). We force off usage of
+  // FMA3 instructions in the CRT to avoid using that path and hitting illegal
+  // instructions when running on CPUs that support FMA3, but OSs that don't.
+  // See http://crbug.com/436603 and http://crbug.com/446983.
+  _set_FMA3_enable(0);
+#endif  // WIN && ARCH_CPU_X86_64
+
+  if (base::CommandLine::Init(0, NULL)) {
 #if !defined(OS_WIN)
     // This is not needed on Windows since CommandLine::Init has already
     // done the equivalent thing via the GetCommandLine() API.
-    CommandLine::ForCurrentProcess()->AppendArguments(command_line, true);
+    base::CommandLine::ForCurrentProcess()->AppendArguments(command_line, true);
 #endif
     logging::LoggingSettings settings;
     settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;

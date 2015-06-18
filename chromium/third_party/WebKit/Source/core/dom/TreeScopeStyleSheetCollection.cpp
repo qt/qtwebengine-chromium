@@ -55,13 +55,13 @@ void TreeScopeStyleSheetCollection::addStyleSheetCandidateNode(Node* node, bool 
     // since styles outside of the body and head continue to be shunted into the head
     // (and thus can shift to end up before dynamically added DOM content that is also
     // outside the body).
-    if (createdByParser && document().body())
+    if (createdByParser && document().body() && !node->nextSibling())
         m_styleSheetCandidateNodes.parserAdd(node);
     else
         m_styleSheetCandidateNodes.add(node);
 }
 
-TreeScopeStyleSheetCollection::StyleResolverUpdateType TreeScopeStyleSheetCollection::compareStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& oldStyleSheets, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStylesheets, WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >& addedSheets)
+TreeScopeStyleSheetCollection::StyleResolverUpdateType TreeScopeStyleSheetCollection::compareStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& oldStyleSheets, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& newStylesheets, WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents>>& addedSheets)
 {
     unsigned newStyleSheetCount = newStylesheets.size();
     unsigned oldStyleSheetCount = oldStyleSheets.size();
@@ -90,7 +90,7 @@ TreeScopeStyleSheetCollection::StyleResolverUpdateType TreeScopeStyleSheetCollec
     return hasInsertions ? Reset : Additive;
 }
 
-bool TreeScopeStyleSheetCollection::activeLoadingStyleSheetLoaded(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStyleSheets)
+bool TreeScopeStyleSheetCollection::activeLoadingStyleSheetLoaded(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& newStyleSheets)
 {
     // StyleSheets of <style> elements that @import stylesheets are active but loading. We need to trigger a full recalc when such loads are done.
     bool hasActiveLoadingStylesheet = false;
@@ -107,7 +107,7 @@ bool TreeScopeStyleSheetCollection::activeLoadingStyleSheetLoaded(const WillBeHe
     return false;
 }
 
-static bool findFontFaceRulesFromStyleSheetContents(const WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >& sheets, WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >& fontFaceRules)
+static bool findFontFaceRulesFromStyleSheetContents(const WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents>>& sheets, WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>& fontFaceRules)
 {
     bool hasFontFaceRule = false;
 
@@ -131,7 +131,7 @@ void TreeScopeStyleSheetCollection::analyzeStyleSheetChange(StyleResolverUpdateM
         return;
 
     // Find out which stylesheets are new.
-    WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> > addedSheets;
+    WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents>> addedSheets;
     if (m_activeAuthorStyleSheets.size() <= newCollection.activeAuthorStyleSheets().size()) {
         change.styleResolverUpdateType = compareStyleSheets(m_activeAuthorStyleSheets, newCollection.activeAuthorStyleSheets(), addedSheets);
     } else {
@@ -176,18 +176,18 @@ void TreeScopeStyleSheetCollection::clearMediaQueryRuleSetStyleSheets()
     }
 }
 
-void TreeScopeStyleSheetCollection::enableExitTransitionStylesheets()
+void TreeScopeStyleSheetCollection::setExitTransitionStyleshetsEnabled(bool enabled)
 {
     DocumentOrderedList::iterator begin = m_styleSheetCandidateNodes.begin();
     DocumentOrderedList::iterator end = m_styleSheetCandidateNodes.end();
     for (DocumentOrderedList::iterator it = begin; it != end; ++it) {
         Node* node = *it;
         if (isHTMLLinkElement(*node))
-            toHTMLLinkElement(node)->enableIfExitTransitionStyle();
+            toHTMLLinkElement(node)->setEnabledIfExitTransitionStyle(enabled);
     }
 }
 
-static bool styleSheetsUseRemUnits(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& sheets)
+static bool styleSheetsUseRemUnits(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& sheets)
 {
     for (unsigned i = 0; i < sheets.size(); ++i) {
         if (sheets[i]->contents()->usesRemUnits())
@@ -201,7 +201,7 @@ void TreeScopeStyleSheetCollection::updateUsesRemUnits()
     m_usesRemUnits = styleSheetsUseRemUnits(m_activeAuthorStyleSheets);
 }
 
-void TreeScopeStyleSheetCollection::trace(Visitor* visitor)
+DEFINE_TRACE(TreeScopeStyleSheetCollection)
 {
     visitor->trace(m_treeScope);
     visitor->trace(m_styleSheetCandidateNodes);

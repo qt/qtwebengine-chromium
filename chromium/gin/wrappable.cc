@@ -22,14 +22,20 @@ ObjectTemplateBuilder WrappableBase::GetObjectTemplateBuilder(
   return ObjectTemplateBuilder(isolate);
 }
 
-void WrappableBase::WeakCallback(
-    const v8::WeakCallbackData<v8::Object, WrappableBase>& data) {
+void WrappableBase::FirstWeakCallback(
+    const v8::WeakCallbackInfo<WrappableBase>& data) {
   WrappableBase* wrappable = data.GetParameter();
   wrappable->wrapper_.Reset();
+  data.SetSecondPassCallback(SecondWeakCallback);
+}
+
+void WrappableBase::SecondWeakCallback(
+    const v8::WeakCallbackInfo<WrappableBase>& data) {
+  WrappableBase* wrappable = data.GetParameter();
   delete wrappable;
 }
 
-v8::Handle<v8::Object> WrappableBase::GetWrapperImpl(v8::Isolate* isolate,
+v8::Local<v8::Object> WrappableBase::GetWrapperImpl(v8::Isolate* isolate,
                                                      WrapperInfo* info) {
   if (!wrapper_.IsEmpty()) {
     return v8::Local<v8::Object>::New(isolate, wrapper_);
@@ -43,7 +49,7 @@ v8::Handle<v8::Object> WrappableBase::GetWrapperImpl(v8::Isolate* isolate,
     data->SetObjectTemplate(info, templ);
   }
   CHECK_EQ(kNumberOfInternalFields, templ->InternalFieldCount());
-  v8::Handle<v8::Object> wrapper = templ->NewInstance();
+  v8::Local<v8::Object> wrapper = templ->NewInstance();
   // |wrapper| may be empty in some extreme cases, e.g., when
   // Object.prototype.constructor is overwritten.
   if (wrapper.IsEmpty()) {
@@ -55,17 +61,17 @@ v8::Handle<v8::Object> WrappableBase::GetWrapperImpl(v8::Isolate* isolate,
   wrapper->SetAlignedPointerInInternalField(kWrapperInfoIndex, info);
   wrapper->SetAlignedPointerInInternalField(kEncodedValueIndex, this);
   wrapper_.Reset(isolate, wrapper);
-  wrapper_.SetWeak(this, WeakCallback);
+  wrapper_.SetWeak(this, FirstWeakCallback, v8::WeakCallbackType::kParameter);
   return wrapper;
 }
 
 namespace internal {
 
-void* FromV8Impl(v8::Isolate* isolate, v8::Handle<v8::Value> val,
+void* FromV8Impl(v8::Isolate* isolate, v8::Local<v8::Value> val,
                  WrapperInfo* wrapper_info) {
   if (!val->IsObject())
     return NULL;
-  v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(val);
+  v8::Local<v8::Object> obj = v8::Local<v8::Object>::Cast(val);
   WrapperInfo* info = WrapperInfo::From(obj);
 
   // If this fails, the object is not managed by Gin. It is either a normal JS

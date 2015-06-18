@@ -56,10 +56,13 @@
 
 #include <openssl/asn1.h>
 
+#include <string.h>
+
 #include <openssl/asn1t.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
 #include <openssl/err.h>
+#include <openssl/thread.h>
 
 
 /* Utility functions for manipulating fields and offsets */

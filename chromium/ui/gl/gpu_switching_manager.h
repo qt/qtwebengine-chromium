@@ -13,10 +13,6 @@
 #include "ui/gl/gpu_preference.h"
 #include "ui/gl/gpu_switching_observer.h"
 
-#if defined(OS_MACOSX)
-#include <OpenGL/OpenGL.h>
-#endif  // OS_MACOSX
-
 namespace ui {
 
 class GL_EXPORT GpuSwitchingManager {
@@ -40,7 +36,9 @@ class GL_EXPORT GpuSwitchingManager {
   // --supports-dual-gpus commandline switch.
   bool SupportsDualGpus();
 
-  void SetGpuCount(size_t gpu_count);
+  // Sets the vendor IDs of the GPUs on the system. The length of this
+  // vector defines the count of GPUs.
+  void SetGpuVendorIds(const std::vector<uint32>& vendor_ids);
 
   void AddObserver(GpuSwitchingObserver* observer);
   void RemoveObserver(GpuSwitchingObserver* observer);
@@ -60,17 +58,18 @@ class GL_EXPORT GpuSwitchingManager {
 
 #if defined(OS_MACOSX)
   void SwitchToDiscreteGpuMac();
-
-  CGLPixelFormatObj discrete_pixel_format_;
 #endif  // OS_MACOSX
 
   gfx::GpuPreference gpu_switching_option_;
   bool gpu_switching_option_set_;
 
+  std::vector<uint32> vendor_ids_;
+
   bool supports_dual_gpus_;
   bool supports_dual_gpus_set_;
 
-  size_t gpu_count_;
+  struct PlatformSpecific;
+  scoped_ptr<PlatformSpecific> platform_specific_;
 
   ObserverList<GpuSwitchingObserver> observer_list_;
 

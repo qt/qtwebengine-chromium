@@ -59,19 +59,15 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("bitmapscroll");
     }
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
-
-    virtual SkISize onISize() {
+    SkISize onISize() override {
       return SkISize::Make(800, 600);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         this->init();
         SkIRect scrollCenterRegion = SkIRect::MakeXYWH(
             quarterWidth, quarterHeight, quarterWidth*2+1, quarterHeight*2+1);

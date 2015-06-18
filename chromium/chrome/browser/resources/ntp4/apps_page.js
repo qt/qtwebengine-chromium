@@ -11,7 +11,6 @@ cr.define('ntp', function() {
     NTP_APPS_COLLAPSED: 1,
     NTP_APPS_MENU: 2,
     NTP_MOST_VISITED: 3,
-    NTP_RECENTLY_CLOSED: 4,
     NTP_APP_RE_ENABLE: 16,
     NTP_WEBSTORE_FOOTER: 18,
     NTP_WEBSTORE_PLUS_ICON: 19,
@@ -49,12 +48,9 @@ cr.define('ntp', function() {
       this.launch_.addEventListener('activate', this.onLaunch_.bind(this));
 
       menu.appendChild(cr.ui.MenuItem.createSeparator());
-      if (loadTimeData.getBoolean('enableStreamlinedHostedApps'))
-        this.launchRegularTab_ = this.appendMenuItem_('applaunchtypetab');
-      else
-        this.launchRegularTab_ = this.appendMenuItem_('applaunchtyperegular');
+      this.launchRegularTab_ = this.appendMenuItem_('applaunchtyperegular');
       this.launchPinnedTab_ = this.appendMenuItem_('applaunchtypepinned');
-      if (!cr.isMac)
+      if (loadTimeData.getBoolean('enableNewBookmarkApps') || !cr.isMac)
         this.launchNewWindow_ = this.appendMenuItem_('applaunchtypewindow');
       this.launchFullscreen_ = this.appendMenuItem_('applaunchtypefullscreen');
 
@@ -67,12 +63,20 @@ cr.define('ntp', function() {
       this.launchTypeMenuSeparator_ = cr.ui.MenuItem.createSeparator();
       menu.appendChild(this.launchTypeMenuSeparator_);
       this.options_ = this.appendMenuItem_('appoptions');
-      this.details_ = this.appendMenuItem_('appdetails');
       this.uninstall_ = this.appendMenuItem_('appuninstall');
+
+      if (loadTimeData.getBoolean('canShowAppInfoDialog')) {
+        this.appinfo_ = this.appendMenuItem_('appinfodialog');
+        this.appinfo_.addEventListener('activate',
+                                       this.onShowAppInfo_.bind(this));
+      } else {
+        this.details_ = this.appendMenuItem_('appdetails');
+        this.details_.addEventListener('activate',
+                                       this.onShowDetails_.bind(this));
+      }
+
       this.options_.addEventListener('activate',
                                      this.onShowOptions_.bind(this));
-      this.details_.addEventListener('activate',
-                                     this.onShowDetails_.bind(this));
       this.uninstall_.addEventListener('activate',
                                        this.onUninstall_.bind(this));
 
@@ -131,20 +135,21 @@ cr.define('ntp', function() {
 
       this.launch_.textContent = app.appData.title;
 
-      var launchTypeRegularTab = this.launchRegularTab_;
+      var launchTypeWindow = this.launchNewWindow_;
       this.forAllLaunchTypes_(function(launchTypeButton, id) {
         launchTypeButton.disabled = false;
         launchTypeButton.checked = app.appData.launch_type == id;
-        // Streamlined hosted apps should only show the "Open as tab" button.
+        // If bookmark apps are enabled, only show the "Open as window" button.
         launchTypeButton.hidden = app.appData.packagedApp ||
-            (loadTimeData.getBoolean('enableStreamlinedHostedApps') &&
-             launchTypeButton != launchTypeRegularTab);
+            (loadTimeData.getBoolean('enableNewBookmarkApps') &&
+             launchTypeButton != launchTypeWindow);
       });
 
       this.launchTypeMenuSeparator_.hidden = app.appData.packagedApp;
 
       this.options_.disabled = !app.appData.optionsUrl || !app.appData.enabled;
-      this.details_.disabled = !app.appData.detailsUrl;
+      if (this.details_)
+        this.details_.disabled = !app.appData.detailsUrl;
       this.uninstall_.disabled = !app.appData.mayDisable;
 
       if (cr.isMac) {
@@ -168,11 +173,11 @@ cr.define('ntp', function() {
       var pressed = e.currentTarget;
       var app = this.app_;
       var targetLaunchType = pressed;
-      // Streamlined hosted apps can only toggle between open as window and open
-      // as tab.
-      if (loadTimeData.getBoolean('enableStreamlinedHostedApps')) {
-        targetLaunchType = this.launchRegularTab_.checked ?
-            this.launchNewWindow_ : this.launchRegularTab_;
+      // When bookmark apps are enabled, hosted apps can only toggle between
+      // open as window and open as tab.
+      if (loadTimeData.getBoolean('enableNewBookmarkApps')) {
+        targetLaunchType = this.launchNewWindow_.checked ?
+            this.launchRegularTab_ : this.launchNewWindow_;
       }
       this.forAllLaunchTypes_(function(launchTypeButton, id) {
         if (launchTypeButton == targetLaunchType) {
@@ -197,6 +202,9 @@ cr.define('ntp', function() {
     onCreateShortcut_: function(e) {
       chrome.send('createAppShortcut', [this.app_.appData.id]);
     },
+    onShowAppInfo_: function(e) {
+      chrome.send('showAppInfo', [this.app_.appData.id]);
+    }
   };
 
   /**

@@ -29,8 +29,8 @@
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/editing/VisiblePosition.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebURL.h"
@@ -43,7 +43,7 @@ class WebHitTestResultPrivate : public RefCountedWillBeGarbageCollectedFinalized
 public:
     static PassRefPtrWillBeRawPtr<WebHitTestResultPrivate> create(const HitTestResult&);
     static PassRefPtrWillBeRawPtr<WebHitTestResultPrivate> create(const WebHitTestResultPrivate&);
-    void trace(Visitor* visitor) { visitor->trace(m_result); }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_result); }
     const HitTestResult& result() const { return m_result; }
 
 private:

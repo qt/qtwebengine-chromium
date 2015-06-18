@@ -65,19 +65,13 @@ void PrintTo(const AnimatableRepeatable& animValue, ::std::ostream* os)
 {
     *os << "AnimatableRepeatable(";
 
-    const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > v = animValue.values();
-    for (WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >::const_iterator it = v.begin(); it != v.end(); ++it) {
+    const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>> v = animValue.values();
+    for (WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>>::const_iterator it = v.begin(); it != v.end(); ++it) {
         PrintTo(*(it->get()), os);
         if (it+1 != v.end())
             *os << ", ";
     }
     *os << ")";
-}
-
-void PrintTo(const AnimatableSVGLength& animSVGLength, ::std::ostream* os)
-{
-    *os << "AnimatableSVGLength("
-        << animSVGLength.toSVGLength()->valueAsString().utf8().data() << ")";
 }
 
 void PrintTo(const AnimatableShapeValue& animValue, ::std::ostream* os)
@@ -88,10 +82,14 @@ void PrintTo(const AnimatableShapeValue& animValue, ::std::ostream* os)
 void PrintTo(const AnimatableStrokeDasharrayList& animValue, ::std::ostream* os)
 {
     *os << "AnimatableStrokeDasharrayList(";
-    RefPtr<SVGLengthList> list = animValue.toSVGLengthList();
-    size_t length = list->length();
+    RefPtr<SVGDashArray> list = animValue.toSVGDashArray(1);
+    size_t length = list->size();
     for (size_t i = 0; i < length; ++i) {
-        *os << list->at(i)->valueAsString().utf8().data();
+        const Length& dashLength = list->at(i);
+        PixelsAndPercent pixelsAndPercent = dashLength.pixelsAndPercent();
+        *os << pixelsAndPercent.pixels << '+';
+        *os << pixelsAndPercent.percent << '%';
+
         if (i != length-1)
             *os << ", ";
     }
@@ -184,8 +182,6 @@ void PrintTo(const AnimatableValue& animValue, ::std::ostream* os)
         PrintTo(static_cast<const AnimatableNeutral&>(animValue), os);
     else if (animValue.isRepeatable())
         PrintTo(toAnimatableRepeatable(animValue), os);
-    else if (animValue.isSVGLength())
-        PrintTo(toAnimatableSVGLength(animValue), os);
     else if (animValue.isSVGPaint())
         PrintTo(toAnimatableSVGPaint(animValue), os);
     else if (animValue.isShapeValue())

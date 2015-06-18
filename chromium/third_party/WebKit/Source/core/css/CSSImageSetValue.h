@@ -27,12 +27,12 @@
 #define CSSImageSetValue_h
 
 #include "core/css/CSSValueList.h"
-#include "core/fetch/ResourceFetcher.h"
+#include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/weborigin/Referrer.h"
 
 namespace blink {
 
-class ResourceFetcher;
+class Document;
 class StyleFetchedImageSet;
 class StyleImage;
 
@@ -45,8 +45,8 @@ public:
     }
     ~CSSImageSetValue();
 
-    StyleFetchedImageSet* cachedImageSet(ResourceFetcher*, float deviceScaleFactor, const ResourceLoaderOptions&);
-    StyleFetchedImageSet* cachedImageSet(ResourceFetcher*, float deviceScaleFactor);
+    StyleFetchedImageSet* cachedImageSet(Document*, float deviceScaleFactor, const ResourceLoaderOptions&);
+    StyleFetchedImageSet* cachedImageSet(Document*, float deviceScaleFactor);
 
     // Returns a StyleFetchedImageSet if the best fit image has been cached already, otherwise a StylePendingImage.
     StyleImage* cachedOrPendingImageSet(float);
@@ -63,16 +63,13 @@ public:
 
     bool hasFailedOrCanceledSubresources() const;
 
-    PassRefPtrWillBeRawPtr<CSSImageSetValue> cloneForCSSOM() const;
-
-    void traceAfterDispatch(Visitor* visitor) { CSSValueList::traceAfterDispatch(visitor); }
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValueList::traceAfterDispatch(visitor); }
 
 protected:
     ImageWithScale bestImageForScaleFactor();
 
 private:
     CSSImageSetValue();
-    explicit CSSImageSetValue(const CSSImageSetValue& cloneFrom);
 
     void fillImageSet();
     static inline bool compareByScaleFactor(ImageWithScale first, ImageWithScale second) { return first.scaleFactor < second.scaleFactor; }

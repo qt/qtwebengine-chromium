@@ -22,17 +22,19 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// https://dom.spec.whatwg.org/#interface-domtokenlist
+
 [
     SetWrapperReferenceFrom=element,
     WillBeGarbageCollected,
 ] interface DOMTokenList {
     readonly attribute unsigned long length;
-    [TreatReturnedNullStringAs=Null] getter DOMString item(unsigned long index);
+    getter DOMString? item(unsigned long index);
     [RaisesException] boolean contains(DOMString token);
     [RaisesException, CustomElementCallbacks] void add(DOMString... tokens);
     [RaisesException, CustomElementCallbacks] void remove(DOMString... tokens);
     [RaisesException, CustomElementCallbacks] boolean toggle(DOMString token, optional boolean force);
-
+    // FIXME: stringifier should be enumerable.
     [NotEnumerable] stringifier;
+    iterable<DOMString>;
 };
-

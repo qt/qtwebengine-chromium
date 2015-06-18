@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "manifest_version": 2,
   "background" : {
-    "scripts": ["background.js", "channel.js"]
+    "scripts": ["channel.js", "background.js"]
   },
   "content_scripts": [
     {
@@ -25,8 +25,9 @@
       "all_frames": true
     }
   ],
-  "content_security_policy": "default-src 'self'; script-src 'self'; frame-src *; style-src 'self' 'unsafe-inline'",
+  "content_security_policy": "default-src 'self'; script-src 'self'; frame-src 'self' http: https:; style-src 'self'",
   "description": "GAIA Component Extension",
+  "incognito": "split",
   "web_accessible_resources": [
     "main.css",
     "main.html",

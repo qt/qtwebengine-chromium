@@ -32,12 +32,10 @@ class AppCacheService;
 // the UI thread. It must be destructed on the IO thread.
 class CONTENT_EXPORT ResourceContext : public base::SupportsUserData {
  public:
-#if defined(OS_IOS)
-  virtual ~ResourceContext() {}
-#else
+#if !defined(OS_IOS)
   ResourceContext();
-  ~ResourceContext() override;
 #endif
+  ~ResourceContext() override;
   virtual net::HostResolver* GetHostResolver() = 0;
 
   // DEPRECATED: This is no longer a valid given isolated apps/sites and
@@ -45,7 +43,7 @@ class CONTENT_EXPORT ResourceContext : public base::SupportsUserData {
   // with a BrowsingContext.
   virtual net::URLRequestContext* GetRequestContext() = 0;
 
-  // Get platform ClientCertStore. May return NULL.
+  // Get platform ClientCertStore. May return nullptr.
   virtual scoped_ptr<net::ClientCertStore> CreateClientCertStore();
 
   // Create a platform KeygenHandler and pass it to |callback|. The |callback|

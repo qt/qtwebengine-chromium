@@ -51,12 +51,11 @@ class PpapiPluginSandboxedProcessLauncherDelegate
   ~PpapiPluginSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  virtual bool ShouldSandbox() override {
+  bool ShouldSandbox() override {
     return !is_broker_;
   }
 
-  virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
-                              bool* success) {
+  void PreSpawnTarget(sandbox::TargetPolicy* policy, bool* success) override {
     if (is_broker_)
       return;
     // The Pepper process as locked-down as a renderer execpt that it can
@@ -74,7 +73,7 @@ class PpapiPluginSandboxedProcessLauncherDelegate
         *base::CommandLine::ForCurrentProcess();
     base::CommandLine::StringType plugin_launcher = browser_command_line
         .GetSwitchValueNative(switches::kPpapiPluginLauncher);
-    return !is_broker_ && plugin_launcher.empty() && info_.is_sandboxed;
+    return !is_broker_ && plugin_launcher.empty();
   }
   base::ScopedFD TakeIpcFd() override { return ipc_fd_.Pass(); }
 #endif  // OS_WIN
@@ -190,6 +189,24 @@ void PpapiPluginProcessHost::DidDeleteOutOfProcessInstance(
         iter->process_->GetData().id == plugin_process_id) {
       // Found the plugin.
       iter->host_impl_->DeleteInstance(pp_instance);
+      return;
+    }
+  }
+  // Note: It's possible that the plugin process has already been deleted by
+  // the time this message is received. For example, it could have crashed.
+  // That's OK, we can just ignore this message.
+}
+
+// static
+void PpapiPluginProcessHost::OnPluginInstanceThrottleStateChange(
+    int plugin_process_id,
+    int32 pp_instance,
+    bool is_throttled) {
+  for (PpapiPluginProcessHostIterator iter; !iter.Done(); ++iter) {
+    if (iter->process_.get() &&
+        iter->process_->GetData().id == plugin_process_id) {
+      // Found the plugin.
+      iter->host_impl_->OnThrottleStateChanged(pp_instance, is_throttled);
       return;
     }
   }
@@ -341,6 +358,10 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
       if (!existing_args.empty())
         existing_args.append(",");
       existing_args.append("enable_hw_video_decode=1");
+#if defined(OS_MACOSX)
+      // TODO(ihf): Remove this once Flash newer than 15.0.0.223 is released.
+      existing_args.append(",enable_hw_video_decode_mac=1");
+#endif
     }
     cmd_line->AppendSwitchASCII(switches::kPpapiFlashArgs, existing_args);
   }
@@ -355,18 +376,14 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
     cmd_line->PrependWrapper(plugin_launcher);
 
   // On posix, never use the zygote for the broker. Also, only use the zygote if
-  // the plugin is sandboxed, and we are not using a plugin launcher - having a
-  // plugin launcher means we need to use another process instead of just
-  // forking the zygote.
-#if defined(OS_POSIX)
-  if (!info.is_sandboxed)
-    cmd_line->AppendSwitchASCII(switches::kNoSandbox, std::string());
-#endif  // OS_POSIX
+  // we are not using a plugin launcher - having a plugin launcher means we need
+  // to use another process instead of just forking the zygote.
   process_->Launch(
       new PpapiPluginSandboxedProcessLauncherDelegate(is_broker_,
                                                       info,
                                                       process_->GetHost()),
-      cmd_line);
+      cmd_line,
+      true);
   return true;
 }
 
@@ -392,7 +409,7 @@ void PpapiPluginProcessHost::RequestPluginChannel(Client* client) {
 
 void PpapiPluginProcessHost::OnProcessLaunched() {
   VLOG(2) << "ppapi plugin process launched.";
-  host_impl_->set_plugin_process_handle(process_->GetHandle());
+  host_impl_->set_plugin_process(process_->GetProcess().Duplicate());
 }
 
 void PpapiPluginProcessHost::OnProcessCrashed(int exit_code) {

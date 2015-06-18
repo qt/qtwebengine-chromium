@@ -4,7 +4,7 @@
 
 #include "cc/quads/shared_quad_state.h"
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
@@ -46,24 +46,15 @@ void SharedQuadState::SetAll(const gfx::Transform& content_to_target_transform,
   this->sorting_context_id = sorting_context_id;
 }
 
-void SharedQuadState::AsValueInto(base::debug::TracedValue* value) const {
-  value->BeginArray("transform");
-  MathUtil::AddToTracedValue(content_to_target_transform, value);
-  value->EndArray();
-
-  value->BeginDictionary("layer_content_bounds");
-  MathUtil::AddToTracedValue(content_bounds, value);
-  value->EndDictionary();
-
-  value->BeginArray("layer_visible_content_rect");
-  MathUtil::AddToTracedValue(visible_content_rect, value);
-  value->EndArray();
+void SharedQuadState::AsValueInto(base::trace_event::TracedValue* value) const {
+  MathUtil::AddToTracedValue("transform", content_to_target_transform, value);
+  MathUtil::AddToTracedValue("layer_content_bounds", content_bounds, value);
+  MathUtil::AddToTracedValue("layer_visible_content_rect", visible_content_rect,
+                             value);
 
   value->SetBoolean("is_clipped", is_clipped);
 
-  value->BeginArray("clip_rect");
-  MathUtil::AddToTracedValue(clip_rect, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("clip_rect", clip_rect, value);
 
   value->SetDouble("opacity", opacity);
   value->SetString("blend_mode", SkXfermode::ModeName(blend_mode));

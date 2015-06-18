@@ -9,7 +9,7 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/media_export.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 
@@ -18,6 +18,10 @@ namespace media {
 class MEDIA_EXPORT PictureBuffer {
  public:
   PictureBuffer(int32 id, gfx::Size size, uint32 texture_id);
+  PictureBuffer(int32 id,
+                gfx::Size size,
+                uint32 texture_id,
+                uint32 internal_texture_id);
   PictureBuffer(int32 id,
                 gfx::Size size,
                 uint32 texture_id,
@@ -40,6 +44,8 @@ class MEDIA_EXPORT PictureBuffer {
     return texture_id_;
   }
 
+  uint32 internal_texture_id() const { return internal_texture_id_; }
+
   const gpu::Mailbox& texture_mailbox() const {
     return texture_mailbox_;
   }
@@ -48,6 +54,7 @@ class MEDIA_EXPORT PictureBuffer {
   int32 id_;
   gfx::Size size_;
   uint32 texture_id_;
+  uint32 internal_texture_id_;
   gpu::Mailbox texture_mailbox_;
 };
 
@@ -57,7 +64,8 @@ class MEDIA_EXPORT Picture {
  public:
   Picture(int32 picture_buffer_id,
           int32 bitstream_buffer_id,
-          const gfx::Rect& visible_rect);
+          const gfx::Rect& visible_rect,
+          bool allow_overlay);
 
   // Returns the id of the picture buffer where this picture is contained.
   int32 picture_buffer_id() const {
@@ -78,10 +86,13 @@ class MEDIA_EXPORT Picture {
   // Picture contained in the PictureBuffer.
   gfx::Rect visible_rect() const { return visible_rect_; }
 
+  bool allow_overlay() const { return allow_overlay_; }
+
  private:
   int32 picture_buffer_id_;
   int32 bitstream_buffer_id_;
   gfx::Rect visible_rect_;
+  bool allow_overlay_;
 };
 
 }  // namespace media

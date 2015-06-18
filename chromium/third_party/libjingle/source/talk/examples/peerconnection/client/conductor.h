@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -25,8 +25,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef PEERCONNECTION_SAMPLES_CLIENT_CONDUCTOR_H_
-#define PEERCONNECTION_SAMPLES_CLIENT_CONDUCTOR_H_
+#ifndef TALK_EXAMPLES_PEERCONNECTION_CLIENT_CONDUCTOR_H_
+#define TALK_EXAMPLES_PEERCONNECTION_CLIENT_CONDUCTOR_H_
 #pragma once
 
 #include <deque>
@@ -71,6 +71,8 @@ class Conductor
  protected:
   ~Conductor();
   bool InitializePeerConnection();
+  bool ReinitializePeerConnectionForLoopback();
+  bool CreatePeerConnection(bool dtls);
   void DeletePeerConnection();
   void EnsureStreamingUI();
   void AddStreams();
@@ -129,6 +131,7 @@ class Conductor
   void SendMessage(const std::string& json_object);
 
   int peer_id_;
+  bool loopback_;
   rtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
   rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
       peer_connection_factory_;
@@ -140,4 +143,4 @@ class Conductor
   std::string server_;
 };
 
-#endif  // PEERCONNECTION_SAMPLES_CLIENT_CONDUCTOR_H_
+#endif  // TALK_EXAMPLES_PEERCONNECTION_CLIENT_CONDUCTOR_H_

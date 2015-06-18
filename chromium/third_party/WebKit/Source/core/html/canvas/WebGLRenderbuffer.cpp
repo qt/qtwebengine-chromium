@@ -53,7 +53,7 @@ WebGLRenderbuffer::~WebGLRenderbuffer()
 }
 
 WebGLRenderbuffer::WebGLRenderbuffer(WebGLRenderingContextBase* ctx)
-    : WebGLSharedObject(ctx)
+    : WebGLSharedPlatform3DObject(ctx)
     , m_internalFormat(GL_RGBA4)
     , m_width(0)
     , m_height(0)
@@ -62,13 +62,14 @@ WebGLRenderbuffer::WebGLRenderbuffer(WebGLRenderingContextBase* ctx)
     setObject(ctx->webContext()->createRenderbuffer());
 }
 
-void WebGLRenderbuffer::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
+void WebGLRenderbuffer::deleteObjectImpl(WebGraphicsContext3D* context3d)
 {
-    context3d->deleteRenderbuffer(object);
+    context3d->deleteRenderbuffer(m_object);
+    m_object = 0;
     deleteEmulatedStencilBuffer(context3d);
 }
 
-void WebGLRenderbuffer::deleteEmulatedStencilBuffer(blink::WebGraphicsContext3D* context3d)
+void WebGLRenderbuffer::deleteEmulatedStencilBuffer(WebGraphicsContext3D* context3d)
 {
     if (!m_emulatedStencilBuffer)
         return;
@@ -76,10 +77,10 @@ void WebGLRenderbuffer::deleteEmulatedStencilBuffer(blink::WebGraphicsContext3D*
     m_emulatedStencilBuffer.clear();
 }
 
-void WebGLRenderbuffer::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLRenderbuffer)
 {
     visitor->trace(m_emulatedStencilBuffer);
-    WebGLSharedObject::trace(visitor);
+    WebGLSharedPlatform3DObject::trace(visitor);
 }
 
-}
+} // namespace blink

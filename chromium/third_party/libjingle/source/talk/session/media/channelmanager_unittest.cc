@@ -1,32 +1,33 @@
-// libjingle
-// Copyright 2008 Google Inc.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. The name of the author may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
-// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * libjingle
+ * Copyright 2008 Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "talk/media/base/fakecapturemanager.h"
 #include "talk/media/base/fakemediaengine.h"
 #include "talk/media/base/fakemediaprocessor.h"
-#include "talk/media/base/nullvideorenderer.h"
 #include "talk/media/base/testutils.h"
 #include "talk/media/devices/fakedevicemanager.h"
 #include "webrtc/p2p/base/fakesession.h"
@@ -39,7 +40,6 @@ namespace cricket {
 
 static const AudioCodec kAudioCodecs[] = {
   AudioCodec(97, "voice", 1, 2, 3, 0),
-  AudioCodec(110, "CELT", 32000, 48000, 2, 0),
   AudioCodec(111, "OPUS", 48000, 32000, 2, 0),
 };
 
@@ -135,7 +135,7 @@ TEST_F(ChannelManagerTest, CreateDestroyChannels) {
                              false, cricket::DCT_RTP);
   EXPECT_TRUE(data_channel != NULL);
   cm_->DestroyVideoChannel(video_channel);
-  cm_->DestroyVoiceChannel(voice_channel);
+  cm_->DestroyVoiceChannel(voice_channel, nullptr);
   cm_->DestroyDataChannel(data_channel);
   cm_->Terminate();
 }
@@ -158,7 +158,7 @@ TEST_F(ChannelManagerTest, CreateDestroyChannelsOnThread) {
                              false, cricket::DCT_RTP);
   EXPECT_TRUE(data_channel != NULL);
   cm_->DestroyVideoChannel(video_channel);
-  cm_->DestroyVoiceChannel(voice_channel);
+  cm_->DestroyVoiceChannel(voice_channel, nullptr);
   cm_->DestroyDataChannel(data_channel);
   cm_->Terminate();
 }
@@ -171,7 +171,7 @@ TEST_F(ChannelManagerTest, NoTransportChannelTest) {
   // The test is useless unless the session does not fail creating
   // cricket::TransportChannel.
   ASSERT_TRUE(session_->CreateChannel(
-      "audio", "rtp", cricket::ICE_CANDIDATE_COMPONENT_RTP) == NULL);
+      "audio", cricket::ICE_CANDIDATE_COMPONENT_RTP) == NULL);
 
   cricket::VoiceChannel* voice_channel = cm_->CreateVoiceChannel(
       session_, cricket::CN_AUDIO, false);

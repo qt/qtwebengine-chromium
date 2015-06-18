@@ -6,22 +6,28 @@
 #define WaitUntilObserver_h
 
 #include "core/dom/ContextLifecycleObserver.h"
+#include "modules/ModulesExport.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
+#include "platform/Timer.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
 
+class ExceptionState;
 class ExecutionContext;
 class ScriptState;
 class ScriptValue;
 
 // Created for each ExtendableEvent instance.
-class WaitUntilObserver final : public GarbageCollectedFinalized<WaitUntilObserver>, public ContextLifecycleObserver {
+class MODULES_EXPORT WaitUntilObserver final : public GarbageCollectedFinalized<WaitUntilObserver>, public ContextLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WaitUntilObserver);
 public:
     enum EventType {
         Activate,
-        Install
+        Install,
+        NotificationClick,
+        Push
     };
 
     static WaitUntilObserver* create(ExecutionContext*, EventType, int eventID);
@@ -32,11 +38,12 @@ public:
 
     // Observes the promise and delays calling the continuation until
     // the given promise is resolved or rejected.
-    void waitUntil(ScriptState*, const ScriptValue&);
+    void waitUntil(ScriptState*, const ScriptValue&, ExceptionState&);
 
-    void trace(Visitor*) { }
+    DECLARE_VIRTUAL_TRACE();
 
 private:
+    friend class InternalsServiceWorker;
     class ThenFunction;
 
     WaitUntilObserver(ExecutionContext*, EventType, int eventID);
@@ -46,10 +53,14 @@ private:
     void incrementPendingActivity();
     void decrementPendingActivity();
 
+    void consumeWindowInteraction(Timer<WaitUntilObserver>*);
+
     EventType m_type;
     int m_eventID;
     int m_pendingActivity;
     bool m_hasError;
+    bool m_eventDispatched;
+    Timer<WaitUntilObserver> m_consumeWindowInteractionTimer;
 };
 
 } // namespace blink

@@ -134,10 +134,9 @@ serial::StopBits StopBitsConstantToEnum(int stop_bits) {
 
 // static
 scoped_refptr<SerialIoHandler> SerialIoHandler::Create(
-    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop) {
-  return new SerialIoHandlerWin(file_thread_message_loop,
-                                ui_thread_message_loop);
+    scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner) {
+  return new SerialIoHandlerWin(file_thread_task_runner, ui_thread_task_runner);
 }
 
 bool SerialIoHandlerWin::PostOpen() {
@@ -167,26 +166,11 @@ bool SerialIoHandlerWin::PostOpen() {
   COMMTIMEOUTS timeouts = {0};
   timeouts.ReadIntervalTimeout = MAXDWORD;
   if (!::SetCommTimeouts(file().GetPlatformFile(), &timeouts)) {
+    VPLOG(1) << "Failed to set serial timeouts";
     return false;
   }
 
-  DCB config = {0};
-  config.DCBlength = sizeof(config);
-  if (!GetCommState(file().GetPlatformFile(), &config)) {
-    return false;
-  }
-  // Setup some sane default state.
-  config.fBinary = TRUE;
-  config.fParity = FALSE;
-  config.fAbortOnError = TRUE;
-  config.fOutxCtsFlow = FALSE;
-  config.fOutxDsrFlow = FALSE;
-  config.fRtsControl = RTS_CONTROL_ENABLE;
-  config.fDtrControl = DTR_CONTROL_ENABLE;
-  config.fDsrSensitivity = FALSE;
-  config.fOutX = FALSE;
-  config.fInX = FALSE;
-  return SetCommState(file().GetPlatformFile(), &config) != 0;
+  return true;
 }
 
 void SerialIoHandlerWin::ReadImpl() {
@@ -202,12 +186,15 @@ void SerialIoHandlerWin::ReadImpl() {
     return;
   }
 
-  SetCommMask(file().GetPlatformFile(), EV_RXCHAR);
+  if (!SetCommMask(file().GetPlatformFile(), EV_RXCHAR)) {
+    VPLOG(1) << "Failed to set serial event flags";
+  }
 
   event_mask_ = 0;
   BOOL ok = ::WaitCommEvent(
       file().GetPlatformFile(), &event_mask_, &comm_context_->overlapped);
   if (!ok && GetLastError() != ERROR_IO_PENDING) {
+    VPLOG(1) << "Failed to receive serial event";
     QueueReadCompleted(0, serial::RECEIVE_ERROR_SYSTEM_ERROR);
   }
   is_comm_pending_ = true;
@@ -240,10 +227,56 @@ void SerialIoHandlerWin::CancelWriteImpl() {
   ::CancelIo(file().GetPlatformFile());
 }
 
+bool SerialIoHandlerWin::ConfigurePortImpl() {
+  DCB config = {0};
+  config.DCBlength = sizeof(config);
+  if (!GetCommState(file().GetPlatformFile(), &config)) {
+    VPLOG(1) << "Failed to get serial port info";
+    return false;
+  }
+
+  // Set up some sane default options that are not configurable.
+  config.fBinary = TRUE;
+  config.fParity = FALSE;
+  config.fAbortOnError = TRUE;
+  config.fOutxDsrFlow = FALSE;
+  config.fDtrControl = DTR_CONTROL_ENABLE;
+  config.fDsrSensitivity = FALSE;
+  config.fOutX = FALSE;
+  config.fInX = FALSE;
+
+  DCHECK(options().bitrate);
+  config.BaudRate = BitrateToSpeedConstant(options().bitrate);
+
+  DCHECK(options().data_bits != serial::DATA_BITS_NONE);
+  config.ByteSize = DataBitsEnumToConstant(options().data_bits);
+
+  DCHECK(options().parity_bit != serial::PARITY_BIT_NONE);
+  config.Parity = ParityBitEnumToConstant(options().parity_bit);
+
+  DCHECK(options().stop_bits != serial::STOP_BITS_NONE);
+  config.StopBits = StopBitsEnumToConstant(options().stop_bits);
+
+  DCHECK(options().has_cts_flow_control);
+  if (options().cts_flow_control) {
+    config.fOutxCtsFlow = TRUE;
+    config.fRtsControl = RTS_CONTROL_HANDSHAKE;
+  } else {
+    config.fOutxCtsFlow = FALSE;
+    config.fRtsControl = RTS_CONTROL_ENABLE;
+  }
+
+  if (!SetCommState(file().GetPlatformFile(), &config)) {
+    VPLOG(1) << "Failed to set serial port info";
+    return false;
+  }
+  return true;
+}
+
 SerialIoHandlerWin::SerialIoHandlerWin(
-    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop)
-    : SerialIoHandler(file_thread_message_loop, ui_thread_message_loop),
+    scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner)
+    : SerialIoHandler(file_thread_task_runner, ui_thread_task_runner),
       event_mask_(0),
       is_comm_pending_(false) {
 }
@@ -298,41 +331,18 @@ void SerialIoHandlerWin::OnIOCompleted(
   }
 }
 
-bool SerialIoHandlerWin::ConfigurePort(
-    const serial::ConnectionOptions& options) {
-  DCB config = {0};
-  config.DCBlength = sizeof(config);
-  if (!GetCommState(file().GetPlatformFile(), &config)) {
+bool SerialIoHandlerWin::Flush() const {
+  if (!PurgeComm(file().GetPlatformFile(), PURGE_RXCLEAR | PURGE_TXCLEAR)) {
+    VPLOG(1) << "Failed to flush serial port";
     return false;
   }
-  if (options.bitrate)
-    config.BaudRate = BitrateToSpeedConstant(options.bitrate);
-  if (options.data_bits != serial::DATA_BITS_NONE)
-    config.ByteSize = DataBitsEnumToConstant(options.data_bits);
-  if (options.parity_bit != serial::PARITY_BIT_NONE)
-    config.Parity = ParityBitEnumToConstant(options.parity_bit);
-  if (options.stop_bits != serial::STOP_BITS_NONE)
-    config.StopBits = StopBitsEnumToConstant(options.stop_bits);
-  if (options.has_cts_flow_control) {
-    if (options.cts_flow_control) {
-      config.fOutxCtsFlow = TRUE;
-      config.fRtsControl = RTS_CONTROL_HANDSHAKE;
-    } else {
-      config.fOutxCtsFlow = FALSE;
-      config.fRtsControl = RTS_CONTROL_ENABLE;
-    }
-  }
-  return SetCommState(file().GetPlatformFile(), &config) != 0;
-}
-
-bool SerialIoHandlerWin::Flush() const {
-  return PurgeComm(file().GetPlatformFile(), PURGE_RXCLEAR | PURGE_TXCLEAR) !=
-         0;
+  return true;
 }
 
 serial::DeviceControlSignalsPtr SerialIoHandlerWin::GetControlSignals() const {
   DWORD status;
   if (!GetCommModemStatus(file().GetPlatformFile(), &status)) {
+    VPLOG(1) << "Failed to get port control signals";
     return serial::DeviceControlSignalsPtr();
   }
 
@@ -349,12 +359,14 @@ bool SerialIoHandlerWin::SetControlSignals(
   if (signals.has_dtr) {
     if (!EscapeCommFunction(file().GetPlatformFile(),
                             signals.dtr ? SETDTR : CLRDTR)) {
+      VPLOG(1) << "Failed to configure DTR signal";
       return false;
     }
   }
   if (signals.has_rts) {
     if (!EscapeCommFunction(file().GetPlatformFile(),
                             signals.rts ? SETRTS : CLRRTS)) {
+      VPLOG(1) << "Failed to configure RTS signal";
       return false;
     }
   }
@@ -365,6 +377,7 @@ serial::ConnectionInfoPtr SerialIoHandlerWin::GetPortInfo() const {
   DCB config = {0};
   config.DCBlength = sizeof(config);
   if (!GetCommState(file().GetPlatformFile(), &config)) {
+    VPLOG(1) << "Failed to get serial port info";
     return serial::ConnectionInfoPtr();
   }
   serial::ConnectionInfoPtr info(serial::ConnectionInfo::New());

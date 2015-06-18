@@ -28,7 +28,7 @@
 #include "ui/events/platform/platform_event_observer.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 
 namespace ui {
@@ -670,7 +670,7 @@ ClipboardAuraX11::~ClipboardAuraX11() {
   aurax11_details_->StoreCopyPasteDataAndWait();
 }
 
-uint64 ClipboardAuraX11::GetSequenceNumber(ClipboardType type) {
+uint64 ClipboardAuraX11::GetSequenceNumber(ClipboardType type) const {
   DCHECK(CalledOnValidThread());
   if (type == CLIPBOARD_TYPE_COPY_PASTE)
     return SelectionChangeObserver::GetInstance()->clipboard_sequence_number();
@@ -890,7 +890,8 @@ void ClipboardAuraX11::WriteBookmark(const char* title_data,
                                      size_t url_len) {
   // Write as a mozilla url (UTF16: URL, newline, title).
   base::string16 url = base::UTF8ToUTF16(std::string(url_data, url_len) + "\n");
-  base::string16 title = base::UTF8ToUTF16(std::string(title_data, title_len));
+  base::string16 title =
+      base::UTF8ToUTF16(base::StringPiece(title_data, title_len));
 
   std::vector<unsigned char> data;
   ui::AddString16ToVector(url, &data);

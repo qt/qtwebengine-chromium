@@ -22,20 +22,20 @@
 #ifndef PseudoStyleRequest_h
 #define PseudoStyleRequest_h
 
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "platform/scroll/ScrollTypes.h"
 
 namespace blink {
 
-class RenderScrollbar;
-class RenderStyle;
+class LayoutScrollbar;
+class ComputedStyle;
 
 class PseudoStyleRequest {
 public:
 
     enum RequestType { ForRenderer, ForComputedStyle };
 
-    PseudoStyleRequest(PseudoId pseudoId, RenderScrollbar* scrollbar = 0, ScrollbarPart scrollbarPart = NoPart)
+    PseudoStyleRequest(PseudoId pseudoId, LayoutScrollbar* scrollbar = 0, ScrollbarPart scrollbarPart = NoPart)
         : pseudoId(pseudoId)
         , type(ForRenderer)
         , scrollbarPart(scrollbarPart)
@@ -52,7 +52,7 @@ public:
     }
 
     // The spec disallows inheritance for ::backdrop.
-    bool allowsInheritance(const RenderStyle* parentStyle) const
+    bool allowsInheritance(const ComputedStyle* parentStyle) const
     {
         return parentStyle && pseudoId != BACKDROP;
     }
@@ -60,7 +60,7 @@ public:
     PseudoId pseudoId;
     RequestType type;
     ScrollbarPart scrollbarPart;
-    RenderScrollbar* scrollbar;
+    LayoutScrollbar* scrollbar;
 };
 
 } // namespace blink

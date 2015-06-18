@@ -5,6 +5,7 @@
 #include "content/child/worker_task_runner.h"
 
 #include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -13,12 +14,15 @@ namespace content {
 class WorkerTaskRunnerTest : public testing::Test {
  public:
   void FakeStart() {
-    task_runner_.OnWorkerRunLoopStarted(blink::WebWorkerRunLoop());
+    task_runner_.OnWorkerRunLoopStarted();
   }
   void FakeStop() {
-    task_runner_.OnWorkerRunLoopStopped(blink::WebWorkerRunLoop());
+    task_runner_.OnWorkerRunLoopStopped();
   }
   WorkerTaskRunner task_runner_;
+
+ private:
+  base::MessageLoop message_loop_;
 };
 
 class MockObserver : public WorkerTaskRunner::Observer {

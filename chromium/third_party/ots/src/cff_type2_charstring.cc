@@ -14,6 +14,8 @@
 #include <string>
 #include <utility>
 
+#define TABLE_NAME "CFF"
+
 namespace {
 
 // Type 2 Charstring Implementation Limits. See Appendix. B in Adobe Technical
@@ -28,7 +30,8 @@ const size_t kMaxSubrNesting = 10;
 // will fail with the dummy value.
 const int32_t dummy_result = INT_MAX;
 
-bool ExecuteType2CharString(size_t call_depth,
+bool ExecuteType2CharString(ots::OpenTypeFile *file,
+                            size_t call_depth,
                             const ots::CFFIndex& global_subrs_index,
                             const ots::CFFIndex& local_subrs_index,
                             ots::Buffer *cff_table,
@@ -37,6 +40,112 @@ bool ExecuteType2CharString(size_t call_depth,
                             bool *out_found_endchar,
                             bool *out_found_width,
                             size_t *in_out_num_stems);
+
+#ifdef DUMP_T2CHARSTRING
+// Converts |op| to a string and returns it.
+const char *Type2CharStringOperatorToString(ots::Type2CharStringOperator op) {
+  switch (op) {
+  case ots::kHStem:
+    return "HStem";
+  case ots::kVStem:
+    return "VStem";
+  case ots::kVMoveTo:
+    return "VMoveTo";
+  case ots::kRLineTo:
+    return "RLineTo";
+  case ots::kHLineTo:
+    return "HLineTo";
+  case ots::kVLineTo:
+    return "VLineTo";
+  case ots::kRRCurveTo:
+    return "RRCurveTo";
+  case ots::kCallSubr:
+    return "CallSubr";
+  case ots::kReturn:
+    return "Return";
+  case ots::kEndChar:
+    return "EndChar";
+  case ots::kHStemHm:
+    return "HStemHm";
+  case ots::kHintMask:
+    return "HintMask";
+  case ots::kCntrMask:
+    return "CntrMask";
+  case ots::kRMoveTo:
+    return "RMoveTo";
+  case ots::kHMoveTo:
+    return "HMoveTo";
+  case ots::kVStemHm:
+    return "VStemHm";
+  case ots::kRCurveLine:
+    return "RCurveLine";
+  case ots::kRLineCurve:
+    return "RLineCurve";
+  case ots::kVVCurveTo:
+    return "VVCurveTo";
+  case ots::kHHCurveTo:
+    return "HHCurveTo";
+  case ots::kCallGSubr:
+    return "CallGSubr";
+  case ots::kVHCurveTo:
+    return "VHCurveTo";
+  case ots::kHVCurveTo:
+    return "HVCurveTo";
+  case ots::kDotSection:
+    return "DotSection";
+  case ots::kAnd:
+    return "And";
+  case ots::kOr:
+    return "Or";
+  case ots::kNot:
+    return "Not";
+  case ots::kAbs:
+    return "Abs";
+  case ots::kAdd:
+    return "Add";
+  case ots::kSub:
+    return "Sub";
+  case ots::kDiv:
+    return "Div";
+  case ots::kNeg:
+    return "Neg";
+  case ots::kEq:
+    return "Eq";
+  case ots::kDrop:
+    return "Drop";
+  case ots::kPut:
+    return "Put";
+  case ots::kGet:
+    return "Get";
+  case ots::kIfElse:
+    return "IfElse";
+  case ots::kRandom:
+    return "Random";
+  case ots::kMul:
+    return "Mul";
+  case ots::kSqrt:
+    return "Sqrt";
+  case ots::kDup:
+    return "Dup";
+  case ots::kExch:
+    return "Exch";
+  case ots::kIndex:
+    return "Index";
+  case ots::kRoll:
+    return "Roll";
+  case ots::kHFlex:
+    return "HFlex";
+  case ots::kFlex:
+    return "Flex";
+  case ots::kHFlex1:
+    return "HFlex1";
+  case ots::kFlex1:
+    return "Flex1";
+  }
+
+  return "UNKNOWN";
+}
+#endif
 
 // Read one or more bytes from the |char_string| buffer and stores the number
 // read on |out_number|. If the number read is an operator (ex 'vstem'), sets
@@ -116,7 +225,8 @@ bool ReadNextNumberFromType2CharString(ots::Buffer *char_string,
 // succeeds. If the |op| is kCallSubr or kCallGSubr, the function recursively
 // calls ExecuteType2CharString() function. The arguments other than |op| and
 // |argument_stack| are passed for that reason.
-bool ExecuteType2CharStringOperator(int32_t op,
+bool ExecuteType2CharStringOperator(ots::OpenTypeFile *file,
+                                    int32_t op,
                                     size_t call_depth,
                                     const ots::CFFIndex& global_subrs_index,
                                     const ots::CFFIndex& local_subrs_index,
@@ -180,7 +290,8 @@ bool ExecuteType2CharStringOperator(int32_t op,
     }
     ots::Buffer char_string_to_jump(cff_table->buffer() + offset, length);
 
-    return ExecuteType2CharString(call_depth + 1,
+    return ExecuteType2CharString(file,
+                                  call_depth + 1,
                                   global_subrs_index,
                                   local_subrs_index,
                                   cff_table,
@@ -422,6 +533,13 @@ bool ExecuteType2CharStringOperator(int32_t op,
     return successful ? true : OTS_FAILURE();
   }
 
+  case ots::kDotSection:
+    // Deprecated operator but harmless, we probably should drop it some how.
+    if (stack_size != 0) {
+      return OTS_FAILURE();
+    }
+    return true;
+
   case ots::kAnd:
   case ots::kOr:
   case ots::kEq:
@@ -595,8 +713,7 @@ bool ExecuteType2CharStringOperator(int32_t op,
     return true;
   }
 
-  OTS_WARNING("Undefined operator: %d (0x%x)", op, op);
-  return OTS_FAILURE();
+  return OTS_FAILURE_MSG("Undefined operator: %d (0x%x)", op, op);
 }
 
 // Executes |char_string| and updates |argument_stack|.
@@ -612,7 +729,8 @@ bool ExecuteType2CharStringOperator(int32_t op,
 // in_out_found_width: true is set if |char_string| contains 'width' byte (which
 //                     is 0 or 1 byte.)
 // in_out_num_stems: total number of hstems and vstems processed so far.
-bool ExecuteType2CharString(size_t call_depth,
+bool ExecuteType2CharString(ots::OpenTypeFile *file,
+                            size_t call_depth,
                             const ots::CFFIndex& global_subrs_index,
                             const ots::CFFIndex& local_subrs_index,
                             ots::Buffer *cff_table,
@@ -636,19 +754,21 @@ bool ExecuteType2CharString(size_t call_depth,
       return OTS_FAILURE();
     }
 
+#ifdef DUMP_T2CHARSTRING
     /*
       You can dump all operators and operands (except mask bytes for hintmask
       and cntrmask) by the following code:
+    */
 
       if (!is_operator) {
         std::fprintf(stderr, "#%d# ", operator_or_operand);
       } else {
         std::fprintf(stderr, "#%s#\n",
            Type2CharStringOperatorToString(
-               Type2CharStringOperator(operator_or_operand)),
-           operator_or_operand);
+               ots::Type2CharStringOperator(operator_or_operand))
+           );
       }
-    */
+#endif
 
     if (!is_operator) {
       argument_stack->push(operator_or_operand);
@@ -659,7 +779,8 @@ bool ExecuteType2CharString(size_t call_depth,
     }
 
     // An operator is found. Execute it.
-    if (!ExecuteType2CharStringOperator(operator_or_operand,
+    if (!ExecuteType2CharStringOperator(file,
+                                        operator_or_operand,
                                         call_depth,
                                         global_subrs_index,
                                         local_subrs_index,
@@ -724,18 +845,21 @@ bool SelectLocalSubr(const std::map<uint16_t, uint8_t> &fd_select,
 namespace ots {
 
 bool ValidateType2CharStringIndex(
+    ots::OpenTypeFile *file,
     const CFFIndex& char_strings_index,
     const CFFIndex& global_subrs_index,
     const std::map<uint16_t, uint8_t> &fd_select,
     const std::vector<CFFIndex *> &local_subrs_per_font,
     const CFFIndex *local_subrs,
     Buffer* cff_table) {
-  if (char_strings_index.offsets.size() == 0) {
+  const uint16_t num_offsets =
+      static_cast<uint16_t>(char_strings_index.offsets.size());
+  if (num_offsets != char_strings_index.offsets.size() || num_offsets == 0) {
     return OTS_FAILURE();  // no charstring.
   }
 
   // For each glyph, validate the corresponding charstring.
-  for (unsigned i = 1; i < char_strings_index.offsets.size(); ++i) {
+  for (uint16_t i = 1; i < num_offsets; ++i) {
     // Prepare a Buffer object, |char_string|, which contains the charstring
     // for the |i|-th glyph.
     const size_t length =
@@ -751,7 +875,7 @@ bool ValidateType2CharStringIndex(
     Buffer char_string(cff_table->buffer() + offset, length);
 
     // Get a local subrs for the glyph.
-    const unsigned glyph_index = i - 1;  // index in the map is 0-origin.
+    const uint16_t glyph_index = i - 1;  // index in the map is 0-origin.
     const CFFIndex *local_subrs_to_use = NULL;
     if (!SelectLocalSubr(fd_select,
                          local_subrs_per_font,
@@ -771,7 +895,8 @@ bool ValidateType2CharStringIndex(
     bool found_endchar = false;
     bool found_width = false;
     size_t num_stems = 0;
-    if (!ExecuteType2CharString(0 /* initial call_depth is zero */,
+    if (!ExecuteType2CharString(file,
+                                0 /* initial call_depth is zero */,
                                 global_subrs_index, *local_subrs_to_use,
                                 cff_table, &char_string, &argument_stack,
                                 &found_endchar, &found_width, &num_stems)) {
@@ -785,3 +910,5 @@ bool ValidateType2CharStringIndex(
 }
 
 }  // namespace ots
+
+#undef TABLE_NAME

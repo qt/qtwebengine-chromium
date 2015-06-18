@@ -12,7 +12,7 @@
 #include "media/base/media.h"
 #include "media/filters/opus_audio_decoder.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(MEDIA_DISABLE_FFMPEG)
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #endif
@@ -23,6 +23,20 @@
 
 namespace media {
 namespace internal {
+
+class DummyVideoRendererSink : public VideoRendererSink {
+ public:
+  DummyVideoRendererSink() {}
+  ~DummyVideoRendererSink() override {}
+
+  void Start(RenderCallback* callback) override {}
+  void Stop() override {}
+  void PaintFrameUsingOldRenderingPath(
+      const scoped_refptr<VideoFrame>& frame) override {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DummyVideoRendererSink);
+};
 
 class DefaultRendererConfig : public PlatformRendererConfig {
  public:
@@ -55,7 +69,7 @@ class DefaultRendererConfig : public PlatformRendererConfig {
       const LogCB& media_log_cb) override {
     ScopedVector<AudioDecoder> audio_decoders;
 
-#if !defined(OS_ANDROID)
+#if !defined(MEDIA_DISABLE_FFMPEG)
     audio_decoders.push_back(
         new FFmpegAudioDecoder(media_task_runner, media_log_cb));
     audio_decoders.push_back(new OpusAudioDecoder(media_task_runner));
@@ -74,9 +88,9 @@ class DefaultRendererConfig : public PlatformRendererConfig {
 
 #if !defined(MEDIA_DISABLE_LIBVPX)
     video_decoders.push_back(new VpxVideoDecoder(media_task_runner));
-#endif  // !defined(MEDIA_DISABLE_LIBVPX)
+#endif
 
-#if !defined(OS_ANDROID)
+#if !defined(MEDIA_DISABLE_FFMPEG)
     video_decoders.push_back(new FFmpegVideoDecoder(media_task_runner));
 #endif
 
@@ -85,6 +99,10 @@ class DefaultRendererConfig : public PlatformRendererConfig {
 
   scoped_refptr<AudioRendererSink> GetAudioRendererSink() override {
     return new AudioOutputStreamSink();
+  }
+
+  scoped_ptr<VideoRendererSink> GetVideoRendererSink() override {
+    return make_scoped_ptr(new DummyVideoRendererSink());
   }
 
   const AudioHardwareConfig& GetAudioHardwareConfig() override {

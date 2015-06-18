@@ -63,7 +63,7 @@ void SkiaPreCacheFont(const LOGFONT& logfont) {
 
 // Main function for starting the PPAPI plugin process.
 int PpapiPluginMain(const MainFunctionParams& parameters) {
-  const CommandLine& command_line = parameters.command_line;
+  const base::CommandLine& command_line = parameters.command_line;
 
 #if defined(OS_WIN)
   g_target_services = parameters.sandbox_info->target_services;
@@ -111,11 +111,11 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
 
   base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");
-  base::debug::TraceLog::GetInstance()->SetProcessName("PPAPI Process");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("PPAPI Process");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventPpapiProcessSortIndex);
 
-#if defined(OS_LINUX) && defined(USE_NSS)
+#if defined(OS_LINUX) && defined(USE_NSS_CERTS)
   // Some out-of-process PPAPI plugins use NSS.
   // NSS must be initialized before enabling the sandbox below.
   crypto::InitNSSSafely();

@@ -59,9 +59,7 @@ DummyPageHolder::DummyPageHolder(
         m_pageClients.contextMenuClient = pageClients->contextMenuClient;
         m_pageClients.editorClient = pageClients->editorClient;
         m_pageClients.dragClient = pageClients->dragClient;
-        m_pageClients.inspectorClient = pageClients->inspectorClient;
         m_pageClients.spellCheckerClient = pageClients->spellCheckerClient;
-        m_pageClients.storageClient = pageClients->storageClient;
     }
     m_page = adoptPtrWillBeNoop(new Page(m_pageClients));
     Settings& settings = m_page->settings();
@@ -82,9 +80,6 @@ DummyPageHolder::~DummyPageHolder()
 {
     m_page->willBeDestroyed();
     m_page.clear();
-#if !ENABLE(OILPAN)
-    ASSERT(m_frame->hasOneRef());
-#endif
     m_frame.clear();
 }
 

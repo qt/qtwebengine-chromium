@@ -11,7 +11,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "content/browser/devtools/embedded_worker_devtools_manager.h"
+#include "content/browser/devtools/shared_worker_devtools_manager.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/shared_worker/shared_worker_host.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
@@ -190,7 +190,7 @@ class SharedWorkerServiceImpl::SharedWorkerReserver
   void TryReserve(const base::Callback<void(bool)>& success_cb,
                   const base::Closure& failure_cb,
                   bool (*try_increment_worker_ref_count)(int)) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (!try_increment_worker_ref_count(worker_process_id_)) {
       BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, failure_cb);
       return;
@@ -198,7 +198,7 @@ class SharedWorkerServiceImpl::SharedWorkerReserver
     bool pause_on_start = false;
     if (is_new_worker_) {
       pause_on_start =
-          EmbeddedWorkerDevToolsManager::GetInstance()->SharedWorkerCreated(
+          SharedWorkerDevToolsManager::GetInstance()->WorkerCreated(
               worker_process_id_, worker_route_id_, instance_);
     }
     BrowserThread::PostTask(
@@ -220,7 +220,7 @@ bool (*SharedWorkerServiceImpl::s_try_increment_worker_ref_count_)(int) =
     TryIncrementWorkerRefCount;
 
 SharedWorkerServiceImpl* SharedWorkerServiceImpl::GetInstance() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return Singleton<SharedWorkerServiceImpl>::get();
 }
 
@@ -269,12 +269,12 @@ std::vector<WorkerService::WorkerInfo> SharedWorkerServiceImpl::GetWorkers() {
 }
 
 void SharedWorkerServiceImpl::AddObserver(WorkerServiceObserver* observer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   observers_.AddObserver(observer);
 }
 
 void SharedWorkerServiceImpl::RemoveObserver(WorkerServiceObserver* observer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   observers_.RemoveObserver(observer);
 }
 
@@ -285,7 +285,7 @@ void SharedWorkerServiceImpl::CreateWorker(
     ResourceContext* resource_context,
     const WorkerStoragePartitionId& partition_id,
     bool* url_mismatch) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   *url_mismatch = false;
   scoped_ptr<SharedWorkerInstance> instance(
       new SharedWorkerInstance(params.url,
@@ -401,6 +401,8 @@ void SharedWorkerServiceImpl::AllowDatabase(
     SharedWorkerMessageFilter* filter) {
   if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id))
     host->AllowDatabase(url, name, display_name, estimated_size, result);
+  else
+    *result = false;
 }
 
 void SharedWorkerServiceImpl::AllowFileSystem(
@@ -424,6 +426,8 @@ void SharedWorkerServiceImpl::AllowIndexedDB(
     SharedWorkerMessageFilter* filter) {
   if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id))
     host->AllowIndexedDB(url, name, result);
+  else
+    *result = false;
 }
 
 void SharedWorkerServiceImpl::OnSharedWorkerMessageFilterClosing(
@@ -464,7 +468,7 @@ void SharedWorkerServiceImpl::NotifyWorkerDestroyed(int worker_process_id,
 void SharedWorkerServiceImpl::ReserveRenderProcessToCreateWorker(
     scoped_ptr<SharedWorkerPendingInstance> pending_instance,
     bool* url_mismatch) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!FindPendingInstance(*pending_instance->instance()));
   if (url_mismatch)
     *url_mismatch = false;
@@ -525,7 +529,7 @@ void SharedWorkerServiceImpl::RenderProcessReservedCallback(
     int worker_route_id,
     bool is_new_worker,
     bool pause_on_start) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // To offset the TryIncrementWorkerRefCount called for the reservation,
   // calls DecrementWorkerRefCount after CheckWorkerDependency in
   // ScopeWorkerDependencyChecker's destructor.

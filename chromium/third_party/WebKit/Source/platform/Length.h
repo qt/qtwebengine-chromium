@@ -64,7 +64,7 @@ struct PixelsAndPercent {
 class CalculationValue;
 
 class PLATFORM_EXPORT Length {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(Length);
 public:
     Length()
         :  m_intValue(0), m_quirk(false), m_type(Auto), m_isFloat(false)
@@ -144,6 +144,7 @@ public:
         return *this;
     }
 
+    // FIXME: Make this private (if possible) or at least rename it (http://crbug.com/432707).
     inline float value() const
     {
         return getFloatValue();
@@ -242,7 +243,6 @@ public:
     }
 
     bool isAuto() const { return type() == Auto; }
-    bool isPercent() const { return type() == Percent || type() == Calculated; }
     bool isFixed() const { return type() == Fixed; }
     bool isIntrinsicOrAuto() const { return type() == Auto || isLegacyIntrinsic() || isIntrinsic(); }
     bool isLegacyIntrinsic() const { return type() == Intrinsic || type() == MinIntrinsic; }
@@ -255,6 +255,7 @@ public:
     bool isMaxContent() const { return type() == MaxContent; }
     bool isFillAvailable() const { return type() == FillAvailable; }
     bool isFitContent() const { return type() == FitContent; }
+    bool hasPercent() const { return type() == Percent || type() == Calculated; }
 
     Length blend(const Length& from, double progress, ValueRange range) const
     {
@@ -290,7 +291,7 @@ public:
         ASSERT(!isMaxSizeNone());
         return m_isFloat ? m_floatValue : m_intValue;
     }
-    float nonNanCalculatedValue(int maxValue) const;
+    float nonNanCalculatedValue(LayoutUnit maxValue) const;
 
     Length subtractFromOneHundredPercent() const;
 

@@ -40,10 +40,15 @@ namespace content {
 
 class AppCacheService;
 class BrowserContext;
+class HostZoomLevelContext;
+class HostZoomMap;
 class DOMStorageContext;
 class GeofencingManager;
 class IndexedDBContext;
+class NavigatorConnectContext;
+class PlatformNotificationContext;
 class ServiceWorkerContext;
+class ZoomLevelDelegate;
 
 // Defines what persistent state a child process can access.
 //
@@ -64,6 +69,11 @@ class CONTENT_EXPORT StoragePartition {
   virtual IndexedDBContext* GetIndexedDBContext() = 0;
   virtual ServiceWorkerContext* GetServiceWorkerContext() = 0;
   virtual GeofencingManager* GetGeofencingManager() = 0;
+  virtual HostZoomMap* GetHostZoomMap() = 0;
+  virtual HostZoomLevelContext* GetHostZoomLevelContext() = 0;
+  virtual ZoomLevelDelegate* GetZoomLevelDelegate() = 0;
+  virtual NavigatorConnectContext* GetNavigatorConnectContext() = 0;
+  virtual PlatformNotificationContext* GetPlatformNotificationContext() = 0;
 
   static const uint32 REMOVE_DATA_MASK_APPCACHE        = 1 << 0;
   static const uint32 REMOVE_DATA_MASK_COOKIES         = 1 << 1;
@@ -110,7 +120,8 @@ class CONTENT_EXPORT StoragePartition {
       OriginMatcherFunction;
 
   // Similar to ClearDataForOrigin().
-  // Deletes all data out fo the StoragePartition if |storage_origin| is NULL.
+  // Deletes all data out fo the StoragePartition if |storage_origin| is
+  // nullptr.
   // |origin_matcher| is present if special storage policy is to be handled,
   // otherwise the callback can be null (base::Callback::is_null() == true).
   // |callback| is called when data deletion is done or at least the deletion is
@@ -122,6 +133,11 @@ class CONTENT_EXPORT StoragePartition {
                          const base::Time begin,
                          const base::Time end,
                          const base::Closure& callback) = 0;
+
+  // Write any unwritten data to disk.
+  // Note: this method does not sync the data - it only ensures that any
+  // unwritten data has been written out to the filesystem.
+  virtual void Flush() = 0;
 
  protected:
   virtual ~StoragePartition() {}

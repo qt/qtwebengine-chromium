@@ -31,54 +31,82 @@
 #ifndef MIDIPort_h
 #define MIDIPort_h
 
+#include "bindings/core/v8/ScriptPromise.h"
+#include "core/dom/ActiveDOMObject.h"
+#include "core/dom/ExceptionCode.h"
 #include "modules/EventTargetModules.h"
+#include "modules/webmidi/MIDIAccessor.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
 class MIDIAccess;
 
-class MIDIPort : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MIDIPort>, public EventTargetWithInlineData {
+class MIDIPort : public RefCountedGarbageCollectedEventTargetWithInlineData<MIDIPort>, public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MIDIPort>);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIPort);
 public:
-    enum MIDIPortTypeCode {
-        MIDIPortTypeInput,
-        MIDIPortTypeOutput
+    enum ConnectionState {
+        ConnectionStateOpen,
+        ConnectionStateClosed,
+        ConnectionStatePending
+    };
+
+    enum TypeCode {
+        TypeInput,
+        TypeOutput
     };
 
     virtual ~MIDIPort() { }
 
+    String connection() const;
     String id() const { return m_id; }
     String manufacturer() const { return m_manufacturer; }
     String name() const { return m_name; }
+    String state() const;
     String type() const;
     String version() const { return m_version; }
 
+    ScriptPromise open(ScriptState*);
+    ScriptPromise close(ScriptState*);
+
     MIDIAccess* midiAccess() const { return m_access; }
-    bool isActive() const { return m_isActive; }
-    void setActiveState(bool isActive) { m_isActive = isActive; }
+    MIDIAccessor::MIDIPortState getState() const { return m_state; }
+    void setState(MIDIAccessor::MIDIPortState);
+    ConnectionState getConnection() const { return m_connection; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const override { return EventTargetNames::MIDIPort; }
-    virtual ExecutionContext* executionContext() const override final;
+    const AtomicString& interfaceName() const override { return EventTargetNames::MIDIPort; }
+    ExecutionContext* executionContext() const override final;
+
+    // ActiveDOMObject
+    bool hasPendingActivity() const override;
+    void stop() override;
 
 protected:
-    MIDIPort(MIDIAccess*, const String& id, const String& manufacturer, const String& name, MIDIPortTypeCode, const String& version, bool isActive);
+    MIDIPort(MIDIAccess*, const String& id, const String& manufacturer, const String& name, TypeCode, const String& version, MIDIAccessor::MIDIPortState);
+
+    void open();
 
 private:
+    ScriptPromise accept(ScriptState*);
+    ScriptPromise reject(ScriptState*, ExceptionCode, const String& message);
+
+    void setStates(MIDIAccessor::MIDIPortState, ConnectionState);
+
     String m_id;
     String m_manufacturer;
     String m_name;
-    MIDIPortTypeCode m_type;
+    TypeCode m_type;
     String m_version;
     Member<MIDIAccess> m_access;
-    bool m_isActive;
+    MIDIAccessor::MIDIPortState m_state;
+    ConnectionState m_connection;
 };
 
 } // namespace blink

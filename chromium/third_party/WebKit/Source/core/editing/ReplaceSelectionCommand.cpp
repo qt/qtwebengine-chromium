@@ -43,9 +43,9 @@
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 #include "core/editing/SmartReplace.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/frame/LocalFrame.h"
@@ -57,8 +57,8 @@
 #include "core/html/HTMLQuoteElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLSpanElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
@@ -169,8 +169,8 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
 
     if (!editableRoot->getAttributeEventListener(EventTypeNames::webkitBeforeTextInserted)
         // FIXME: Remove these checks once textareas and textfields actually register an event handler.
-        && !(shadowAncestorElement && shadowAncestorElement->renderer() && shadowAncestorElement->renderer()->isTextControl())
-        && editableRoot->rendererIsRichlyEditable()) {
+        && !(shadowAncestorElement && shadowAncestorElement->layoutObject() && shadowAncestorElement->layoutObject()->isTextControl())
+        && editableRoot->layoutObjectIsRichlyEditable()) {
         removeInterchangeNodes(m_fragment.get());
         return;
     }
@@ -191,7 +191,7 @@ ReplacementFragment::ReplacementFragment(Document* document, DocumentFragment* f
     // Give the root a chance to change the text.
     RefPtrWillBeRawPtr<BeforeTextInsertedEvent> evt = BeforeTextInsertedEvent::create(text);
     editableRoot->dispatchEvent(evt, ASSERT_NO_EXCEPTION);
-    if (text != evt->text() || !editableRoot->rendererIsRichlyEditable()) {
+    if (text != evt->text() || !editableRoot->layoutObjectIsRichlyEditable()) {
         restoreAndRemoveTestRenderingNodesToFragment(holder.get());
 
         m_fragment = createFragmentFromText(selection.toNormalizedRange().get(), evt->text());
@@ -286,7 +286,7 @@ void ReplacementFragment::removeUnrenderedNodes(ContainerNode* holder)
     WillBeHeapVector<RefPtrWillBeMember<Node>> unrendered;
 
     for (Node& node : NodeTraversal::descendantsOf(*holder)) {
-        if (!isNodeRendered(&node) && !isTableStructureNode(&node))
+        if (!isNodeRendered(node) && !isTableStructureNode(&node))
             unrendered.append(&node);
     }
 
@@ -550,7 +550,7 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
             continue;
         }
 
-        if (element->parentNode() && element->parentNode()->rendererIsRichlyEditable())
+        if (element->parentNode() && element->parentNode()->layoutObjectIsRichlyEditable())
             removeElementAttribute(element, contenteditableAttr);
 
         // WebKit used to not add display: inline and float: none on copy.
@@ -571,7 +571,7 @@ void ReplaceSelectionCommand::removeRedundantStylesAndKeepStyleSpanInline(Insert
             // Mutate using the CSSOM wrapper so we get the same event behavior as a script.
             if (isBlock(element))
                 element->style()->setPropertyInternal(CSSPropertyDisplay, "inline", false, IGNORE_EXCEPTION);
-            if (element->renderer() && element->renderer()->style()->isFloating())
+            if (element->layoutObject() && element->layoutObject()->style()->isFloating())
                 element->style()->setPropertyInternal(CSSPropertyFloat, "none", false, IGNORE_EXCEPTION);
         }
     }
@@ -682,9 +682,9 @@ void ReplaceSelectionCommand::moveElementOutOfAncestor(PassRefPtrWillBeRawPtr<El
         removeNode(ancestor.release());
 }
 
-static inline bool nodeHasVisibleRenderText(Text& text)
+static inline bool nodeHasVisibleLayoutText(Text& text)
 {
-    return text.renderer() && text.renderer()->renderedTextLength() > 0;
+    return text.layoutObject() && text.layoutObject()->resolvedTextLength() > 0;
 }
 
 void ReplaceSelectionCommand::removeUnrenderedTextNodesAtEnds(InsertedNodes& insertedNodes)
@@ -692,7 +692,7 @@ void ReplaceSelectionCommand::removeUnrenderedTextNodesAtEnds(InsertedNodes& ins
     document().updateLayoutIgnorePendingStylesheets();
 
     Node* lastLeafInserted = insertedNodes.lastLeafInserted();
-    if (lastLeafInserted && lastLeafInserted->isTextNode() && !nodeHasVisibleRenderText(toText(*lastLeafInserted))
+    if (lastLeafInserted && lastLeafInserted->isTextNode() && !nodeHasVisibleLayoutText(toText(*lastLeafInserted))
         && !enclosingElementWithTag(firstPositionInOrBeforeNode(lastLeafInserted), selectTag)
         && !enclosingElementWithTag(firstPositionInOrBeforeNode(lastLeafInserted), scriptTag)) {
         insertedNodes.willRemoveNode(*lastLeafInserted);
@@ -702,7 +702,7 @@ void ReplaceSelectionCommand::removeUnrenderedTextNodesAtEnds(InsertedNodes& ins
     // We don't have to make sure that firstNodeInserted isn't inside a select or script element, because
     // it is a top level node in the fragment and the user can't insert into those elements.
     Node* firstNodeInserted = insertedNodes.firstNodeInserted();
-    if (firstNodeInserted && firstNodeInserted->isTextNode() && !nodeHasVisibleRenderText(toText(*firstNodeInserted))) {
+    if (firstNodeInserted && firstNodeInserted->isTextNode() && !nodeHasVisibleLayoutText(toText(*firstNodeInserted))) {
         insertedNodes.willRemoveNode(*firstNodeInserted);
         removeNode(firstNodeInserted);
     }
@@ -932,8 +932,8 @@ void ReplaceSelectionCommand::doApply()
         return;
 
     // We can skip matching the style if the selection is plain text.
-    if ((selection.start().deprecatedNode()->renderer() && selection.start().deprecatedNode()->renderer()->style()->userModify() == READ_WRITE_PLAINTEXT_ONLY)
-        && (selection.end().deprecatedNode()->renderer() && selection.end().deprecatedNode()->renderer()->style()->userModify() == READ_WRITE_PLAINTEXT_ONLY))
+    if ((selection.start().deprecatedNode()->layoutObject() && selection.start().deprecatedNode()->layoutObject()->style()->userModify() == READ_WRITE_PLAINTEXT_ONLY)
+        && (selection.end().deprecatedNode()->layoutObject() && selection.end().deprecatedNode()->layoutObject()->style()->userModify() == READ_WRITE_PLAINTEXT_ONLY))
         m_matchStyle = false;
 
     if (m_matchStyle) {
@@ -1111,7 +1111,7 @@ void ReplaceSelectionCommand::doApply()
 
     Element* blockStart = enclosingBlock(insertionPos.deprecatedNode());
     if ((isHTMLListElement(refNode.get()) || (isLegacyAppleHTMLSpanElement(refNode.get()) && isHTMLListElement(refNode->firstChild())))
-        && blockStart && blockStart->renderer()->isListItem())
+        && blockStart && blockStart->layoutObject()->isListItem())
         refNode = insertAsListItems(toHTMLElement(refNode), blockStart, insertionPos, insertedNodes);
     else {
         insertNodeAt(refNode, insertionPos);
@@ -1299,7 +1299,7 @@ bool ReplaceSelectionCommand::shouldPerformSmartReplace() const
 
 static bool isCharacterSmartReplaceExemptConsideringNonBreakingSpace(UChar32 character, bool previousCharacter)
 {
-    return isCharacterSmartReplaceExempt(character == noBreakSpace ? ' ' : character, previousCharacter);
+    return isCharacterSmartReplaceExempt(character == noBreakSpaceCharacter ? ' ' : character, previousCharacter);
 }
 
 void ReplaceSelectionCommand::addSpacesForSmartReplace()
@@ -1317,7 +1317,7 @@ void ReplaceSelectionCommand::addSpacesForSmartReplace()
 
     bool needsTrailingSpace = !isEndOfParagraph(endOfInsertedContent) && !isCharacterSmartReplaceExemptConsideringNonBreakingSpace(endOfInsertedContent.characterAfter(), false);
     if (needsTrailingSpace && endNode) {
-        bool collapseWhiteSpace = !endNode->renderer() || endNode->renderer()->style()->collapseWhiteSpace();
+        bool collapseWhiteSpace = !endNode->layoutObject() || endNode->layoutObject()->style()->collapseWhiteSpace();
         if (endNode->isTextNode()) {
             insertTextIntoNode(toText(endNode), endOffset, collapseWhiteSpace ? nonBreakingSpaceString() : " ");
             if (m_endOfInsertedContent.containerNode() == endNode)
@@ -1341,7 +1341,7 @@ void ReplaceSelectionCommand::addSpacesForSmartReplace()
 
     bool needsLeadingSpace = !isStartOfParagraph(startOfInsertedContent) && !isCharacterSmartReplaceExemptConsideringNonBreakingSpace(startOfInsertedContent.previous().characterAfter(), true);
     if (needsLeadingSpace && startNode) {
-        bool collapseWhiteSpace = !startNode->renderer() || startNode->renderer()->style()->collapseWhiteSpace();
+        bool collapseWhiteSpace = !startNode->layoutObject() || startNode->layoutObject()->style()->collapseWhiteSpace();
         if (startNode->isTextNode()) {
             insertTextIntoNode(toText(startNode), startOffset, collapseWhiteSpace ? nonBreakingSpaceString() : " ");
             if (m_endOfInsertedContent.containerNode() == startNode && m_endOfInsertedContent.offsetInContainerNode())
@@ -1539,7 +1539,7 @@ bool ReplaceSelectionCommand::performTrivialReplace(const ReplacementFragment& f
     return true;
 }
 
-void ReplaceSelectionCommand::trace(Visitor* visitor)
+DEFINE_TRACE(ReplaceSelectionCommand)
 {
     visitor->trace(m_startOfInsertedContent);
     visitor->trace(m_endOfInsertedContent);

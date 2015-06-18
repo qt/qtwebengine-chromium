@@ -4,10 +4,9 @@
 
 #include "media/base/media_log.h"
 
-#include <string>
 
 #include "base/atomic_sequence_num.h"
-#include "base/logging.h"
+#include "base/json/json_writer.h"
 #include "base/values.h"
 
 namespace media {
@@ -16,7 +15,33 @@ namespace media {
 // unique IDs.
 static base::StaticAtomicSequenceNumber g_media_log_count;
 
-const char* MediaLog::EventTypeToString(MediaLogEvent::Type type) {
+std::string MediaLog::MediaLogLevelToString(MediaLogLevel level) {
+  switch (level) {
+    case MEDIALOG_ERROR:
+      return "error";
+    case MEDIALOG_INFO:
+      return "info";
+    case MEDIALOG_DEBUG:
+      return "debug";
+  }
+  NOTREACHED();
+  return NULL;
+}
+
+MediaLogEvent::Type MediaLog::MediaLogLevelToEventType(MediaLogLevel level) {
+  switch (level) {
+    case MEDIALOG_ERROR:
+      return MediaLogEvent::MEDIA_ERROR_LOG_ENTRY;
+    case MEDIALOG_INFO:
+      return MediaLogEvent::MEDIA_INFO_LOG_ENTRY;
+    case MEDIALOG_DEBUG:
+      return MediaLogEvent::MEDIA_DEBUG_LOG_ENTRY;
+  }
+  NOTREACHED();
+  return MediaLogEvent::MEDIA_ERROR_LOG_ENTRY;
+}
+
+std::string MediaLog::EventTypeToString(MediaLogEvent::Type type) {
   switch (type) {
     case MediaLogEvent::WEBMEDIAPLAYER_CREATED:
       return "WEBMEDIAPLAYER_CREATED";
@@ -52,8 +77,12 @@ const char* MediaLog::EventTypeToString(MediaLogEvent::Type type) {
       return "TEXT_ENDED";
     case MediaLogEvent::BUFFERED_EXTENTS_CHANGED:
       return "BUFFERED_EXTENTS_CHANGED";
-    case MediaLogEvent::MEDIA_SOURCE_ERROR:
-      return "MEDIA_SOURCE_ERROR";
+    case MediaLogEvent::MEDIA_ERROR_LOG_ENTRY:
+      return "MEDIA_ERROR_LOG_ENTRY";
+    case MediaLogEvent::MEDIA_INFO_LOG_ENTRY:
+      return "MEDIA_INFO_LOG_ENTRY";
+    case MediaLogEvent::MEDIA_DEBUG_LOG_ENTRY:
+      return "MEDIA_DEBUG_LOG_ENTRY";
     case MediaLogEvent::PROPERTY_CHANGE:
       return "PROPERTY_CHANGE";
   }
@@ -61,7 +90,7 @@ const char* MediaLog::EventTypeToString(MediaLogEvent::Type type) {
   return NULL;
 }
 
-const char* MediaLog::PipelineStatusToString(PipelineStatus status) {
+std::string MediaLog::PipelineStatusToString(PipelineStatus status) {
   switch (status) {
     case PIPELINE_OK:
       return "pipeline: ok";
@@ -88,7 +117,7 @@ const char* MediaLog::PipelineStatusToString(PipelineStatus status) {
     case DEMUXER_ERROR_COULD_NOT_OPEN:
       return "demuxer: could not open";
     case DEMUXER_ERROR_COULD_NOT_PARSE:
-      return "dumuxer: could not parse";
+      return "demuxer: could not parse";
     case DEMUXER_ERROR_NO_SUPPORTED_STREAMS:
       return "demuxer: no supported streams";
     case DECODER_ERROR_NOT_SUPPORTED:
@@ -98,12 +127,20 @@ const char* MediaLog::PipelineStatusToString(PipelineStatus status) {
   return NULL;
 }
 
-LogHelper::LogHelper(const LogCB& log_cb) : log_cb_(log_cb) {}
-
-LogHelper::~LogHelper() {
-  if (log_cb_.is_null())
-    return;
-  log_cb_.Run(stream_.str());
+std::string MediaLog::MediaEventToLogString(const MediaLogEvent& event) {
+  // Special case for PIPELINE_ERROR, since that's by far the most useful
+  // event for figuring out media pipeline failures, and just reporting
+  // pipeline status as numeric code is not very helpful/user-friendly.
+  int error_code = 0;
+  if (event.type == MediaLogEvent::PIPELINE_ERROR &&
+      event.params.GetInteger("pipeline_error", &error_code)) {
+    PipelineStatus status = static_cast<PipelineStatus>(error_code);
+    return EventTypeToString(event.type) + " " +
+        media::MediaLog::PipelineStatusToString(status);
+  }
+  std::string params_json;
+  base::JSONWriter::Write(&event.params, &params_json);
+  return EventTypeToString(event.type) + " " + params_json;
 }
 
 MediaLog::MediaLog() : id_(g_media_log_count.GetNext()) {}
@@ -121,21 +158,27 @@ scoped_ptr<MediaLogEvent> MediaLog::CreateEvent(MediaLogEvent::Type type) {
 }
 
 scoped_ptr<MediaLogEvent> MediaLog::CreateBooleanEvent(
-    MediaLogEvent::Type type, const char* property, bool value) {
+    MediaLogEvent::Type type,
+    const std::string& property,
+    bool value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(type));
   event->params.SetBoolean(property, value);
   return event.Pass();
 }
 
 scoped_ptr<MediaLogEvent> MediaLog::CreateStringEvent(
-    MediaLogEvent::Type type, const char* property, const std::string& value) {
+    MediaLogEvent::Type type,
+    const std::string& property,
+    const std::string& value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(type));
   event->params.SetString(property, value);
   return event.Pass();
 }
 
 scoped_ptr<MediaLogEvent> MediaLog::CreateTimeEvent(
-    MediaLogEvent::Type type, const char* property, base::TimeDelta value) {
+    MediaLogEvent::Type type,
+    const std::string& property,
+    base::TimeDelta value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(type));
   if (value.is_max())
     event->params.SetString(property, "unknown");
@@ -167,7 +210,7 @@ scoped_ptr<MediaLogEvent> MediaLog::CreatePipelineStateChangedEvent(
 scoped_ptr<MediaLogEvent> MediaLog::CreatePipelineErrorEvent(
     PipelineStatus error) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PIPELINE_ERROR));
-  event->params.SetString("pipeline_error", PipelineStatusToString(error));
+  event->params.SetInteger("pipeline_error", error);
   return event.Pass();
 }
 
@@ -191,50 +234,58 @@ scoped_ptr<MediaLogEvent> MediaLog::CreateBufferedExtentsChangedEvent(
   return event.Pass();
 }
 
-scoped_ptr<MediaLogEvent> MediaLog::CreateMediaSourceErrorEvent(
-    const std::string& error) {
-  scoped_ptr<MediaLogEvent> event(
-      CreateEvent(MediaLogEvent::MEDIA_SOURCE_ERROR));
-  event->params.SetString("error", error);
-  return event.Pass();
+void MediaLog::AddLogEvent(MediaLogLevel level, const std::string& message) {
+  scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogLevelToEventType(level)));
+  event->params.SetString(MediaLogLevelToString(level), message);
+  AddEvent(event.Pass());
 }
 
 void MediaLog::SetStringProperty(
-    const char* key, const std::string& value) {
+    const std::string& key, const std::string& value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
   event->params.SetString(key, value);
   AddEvent(event.Pass());
 }
 
 void MediaLog::SetIntegerProperty(
-    const char* key, int value) {
+    const std::string& key, int value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
   event->params.SetInteger(key, value);
   AddEvent(event.Pass());
 }
 
 void MediaLog::SetDoubleProperty(
-    const char* key, double value) {
+    const std::string& key, double value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
   event->params.SetDouble(key, value);
   AddEvent(event.Pass());
 }
 
 void MediaLog::SetBooleanProperty(
-    const char* key, bool value) {
+    const std::string& key, bool value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
   event->params.SetBoolean(key, value);
   AddEvent(event.Pass());
 }
 
 void MediaLog::SetTimeProperty(
-    const char* key, base::TimeDelta value) {
+    const std::string& key, base::TimeDelta value) {
   scoped_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::PROPERTY_CHANGE));
   if (value.is_max())
     event->params.SetString(key, "unknown");
   else
     event->params.SetDouble(key, value.InSecondsF());
   AddEvent(event.Pass());
+}
+
+LogHelper::LogHelper(MediaLog::MediaLogLevel level, const LogCB& log_cb)
+    : level_(level), log_cb_(log_cb) {
+}
+
+LogHelper::~LogHelper() {
+  if (log_cb_.is_null())
+    return;
+  log_cb_.Run(level_, stream_.str());
 }
 
 }  //namespace media

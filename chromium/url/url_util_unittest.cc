@@ -273,6 +273,15 @@ TEST(URLUtilTest, TestResolveRelativeWithNonStandardBase) {
       // any URL scheme is we might break javascript: URLs by doing so...
     {"javascript:alert('foo#bar')", "#badfrag", true,
       "javascript:alert('foo#badfrag" },
+      // In this case, the backslashes will not be canonicalized because it's a
+      // non-standard URL, but they will be treated as a path separators,
+      // giving the base URL here a path of "\".
+      //
+      // The result here is somewhat arbitrary. One could argue it should be
+      // either "aaa://a\" or "aaa://a/" since the path is being replaced with
+      // the "current directory". But in the context of resolving on data URLs,
+      // adding the requested dot doesn't seem wrong either.
+    {"aaa://a\\", "aaa:.", true, "aaa://a\\." }
   };
 
   for (size_t i = 0; i < arraysize(resolve_non_standard_cases); i++) {
@@ -293,6 +302,27 @@ TEST(URLUtilTest, TestResolveRelativeWithNonStandardBase) {
     if (test_data.is_valid && valid)
       EXPECT_EQ(test_data.out, resolved) << i;
   }
+}
+
+TEST(URLUtilTest, TestNoRefComponent) {
+  // The hash-mark must be ignored when mailto: scheme is
+  // parsed, even if the url has a base and relative part.
+  const char* base = "mailto://to/";
+  const char* rel = "any#body";
+
+  Parsed base_parsed;
+  ParsePathURL(base, strlen(base), false, &base_parsed);
+
+  std::string resolved;
+  StdStringCanonOutput output(&resolved);
+  Parsed resolved_parsed;
+
+  bool valid = ResolveRelative(base, strlen(base),
+                               base_parsed, rel,
+                               strlen(rel), NULL, &output,
+                               &resolved_parsed);
+  EXPECT_TRUE(valid);
+  EXPECT_FALSE(resolved_parsed.ref.is_valid());
 }
 
 }  // namespace url

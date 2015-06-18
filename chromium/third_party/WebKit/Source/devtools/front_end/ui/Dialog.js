@@ -69,14 +69,14 @@ WebInspector.Dialog.currentInstance = function()
 }
 
 /**
- * @param {!Element} relativeToElement
+ * @param {?Element} relativeToElement
  * @param {!WebInspector.DialogDelegate} delegate
  */
 WebInspector.Dialog.show = function(relativeToElement, delegate)
 {
     if (WebInspector.Dialog._instance)
         return;
-    WebInspector.Dialog._instance = new WebInspector.Dialog(relativeToElement, delegate);
+    WebInspector.Dialog._instance = new WebInspector.Dialog(relativeToElement || WebInspector.Dialog.modalHostView().element, delegate);
 }
 
 WebInspector.Dialog.hide = function()
@@ -143,8 +143,7 @@ WebInspector.Dialog.prototype = {
  */
 WebInspector.DialogDelegate = function()
 {
-    /** @type {!Element} */
-    this.element;
+    this.element = createElement("div");
 }
 
 WebInspector.DialogDelegate.prototype = {
@@ -155,7 +154,7 @@ WebInspector.DialogDelegate.prototype = {
     {
         element.appendChild(this.element);
         this.element.classList.add("dialog-contents");
-        element.classList.add("dialog", "toolbar-colors");
+        element.classList.add("dialog");
     },
 
     /**
@@ -186,11 +185,11 @@ WebInspector.DialogDelegate.prototype = {
     __proto__: WebInspector.Object.prototype
 }
 
-/** @type {?WebInspector.View} */
+/** @type {?WebInspector.Widget} */
 WebInspector.Dialog._modalHostView = null;
 
 /**
- * @param {!WebInspector.View} view
+ * @param {!WebInspector.Widget} view
  */
 WebInspector.Dialog.setModalHostView = function(view)
 {
@@ -200,7 +199,7 @@ WebInspector.Dialog.setModalHostView = function(view)
 /**
  * FIXME: make utility method in Dialog, so clients use it instead of this getter.
  * Method should be like Dialog.showModalElement(position params, reposition callback).
- * @return {?WebInspector.View}
+ * @return {?WebInspector.Widget}
  */
 WebInspector.Dialog.modalHostView = function()
 {

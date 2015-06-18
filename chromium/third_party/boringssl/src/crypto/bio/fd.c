@@ -57,12 +57,15 @@
 #include <openssl/bio.h>
 
 #include <errno.h>
+#include <string.h>
 
 #if !defined(OPENSSL_WINDOWS)
 #include <unistd.h>
 #else
 #include <io.h>
-#include <Windows.h>
+#pragma warning(push, 3)
+#include <windows.h>
+#pragma warning(pop)
 #endif
 
 #include <openssl/buf.h>

@@ -32,9 +32,9 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkColorShader.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
+#include <algorithm>
 
 typedef Vector<SkScalar, 8> ColorStopOffsetVector;
 typedef Vector<SkColor, 8> ColorStopColorVector;
@@ -99,16 +99,6 @@ void Gradient::sortStopsIfNecessary()
         return;
 
     std::stable_sort(m_stops.begin(), m_stops.end(), compareStops);
-}
-
-bool Gradient::hasAlpha() const
-{
-    for (size_t i = 0; i < m_stops.size(); i++) {
-        if (m_stops[i].color.hasAlpha())
-            return true;
-    }
-
-    return false;
 }
 
 void Gradient::setSpreadMethod(GradientSpreadMethod spreadMethod)
@@ -260,7 +250,7 @@ SkShader* Gradient::shader()
 
     if (!m_gradient) {
         // use last color, since our "geometry" was degenerate (e.g. radius==0)
-        m_gradient = adoptRef(new SkColorShader(colors[countUsed - 1]));
+        m_gradient = adoptRef(SkShader::CreateColorShader(colors[countUsed - 1]));
     }
     return m_gradient.get();
 }

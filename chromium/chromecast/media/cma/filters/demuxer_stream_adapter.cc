@@ -27,13 +27,13 @@ class DummyMediaTaskRunner : public MediaTaskRunner {
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   // MediaTaskRunner implementation.
-  virtual bool PostMediaTask(
+  bool PostMediaTask(
       const tracked_objects::Location& from_here,
       const base::Closure& task,
       base::TimeDelta timestamp) override;
 
  private:
-  virtual ~DummyMediaTaskRunner();
+  ~DummyMediaTaskRunner() override;
 
   scoped_refptr<base::SingleThreadTaskRunner> const task_runner_;
 
@@ -182,6 +182,13 @@ void DemuxerStreamAdapter::OnNewBuffer(
   }
 
   DCHECK_EQ(status, ::media::DemuxerStream::kOk);
+
+  if (input->end_of_stream()) {
+    // This stream has ended, its media time will stop increasing, but there
+    // might be other streams that are still playing. Remove the task runner of
+    // this stream to ensure other streams are not blocked waiting for this one.
+    ResetMediaTaskRunner();
+  }
 
   // Updates the timestamp used for task scheduling.
   if (!input->end_of_stream() &&

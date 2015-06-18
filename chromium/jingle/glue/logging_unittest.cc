@@ -7,15 +7,17 @@
 // Also note that we are only allowed to call InitLogging() twice so the test
 // cases are more dense than normal.
 
-// The following include must be first in this file. It ensures that
+// We must include Chromium headers before including the overrides header
+// since webrtc's logging.h file may conflict with chromium.
+#include "base/command_line.h"
+#include "base/files/file_util.h"
+#include "testing/gtest/include/gtest/gtest.h"
+
+// The following include come before including logging.h. It ensures that
 // libjingle style logging is used.
 #define LOGGING_INSIDE_WEBRTC
 
 #include "third_party/webrtc/overrides/webrtc/base/logging.h"
-
-#include "base/command_line.h"
-#include "base/files/file_util.h"
-#include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
 static const wchar_t* const log_file_name = L"libjingle_logging.log";
@@ -50,7 +52,7 @@ static bool ContainsString(const std::string& original,
 static bool Initialize(int verbosity_level) {
   if (verbosity_level != kDefaultVerbosity) {
     // Update the command line with specified verbosity level for this file.
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     std::ostringstream value_stream;
     value_stream << "logging_unittest=" << verbosity_level;
     const std::string& value = value_stream.str();
@@ -74,7 +76,7 @@ static bool Initialize(int verbosity_level) {
 TEST(LibjingleLogTest, DefaultConfiguration) {
   ASSERT_TRUE(Initialize(kDefaultVerbosity));
 
-  // In the default configuration nothing should be logged.
+  // In the default configuration only warnings and errors should be logged.
   LOG_V(rtc::LS_ERROR) << AsString(rtc::LS_ERROR);
   LOG_V(rtc::LS_WARNING) << AsString(rtc::LS_WARNING);
   LOG_V(rtc::LS_INFO) << AsString(rtc::LS_INFO);
@@ -87,9 +89,8 @@ TEST(LibjingleLogTest, DefaultConfiguration) {
   base::ReadFileToString(file_path, &contents_of_file);
 
   // Make sure string contains the expected values.
-  EXPECT_FALSE(ContainsString(contents_of_file, AsString(rtc::LS_ERROR)));
-  EXPECT_FALSE(ContainsString(contents_of_file,
-                              AsString(rtc::LS_WARNING)));
+  EXPECT_TRUE(ContainsString(contents_of_file, AsString(rtc::LS_ERROR)));
+  EXPECT_TRUE(ContainsString(contents_of_file, AsString(rtc::LS_WARNING)));
   EXPECT_FALSE(ContainsString(contents_of_file, AsString(rtc::LS_INFO)));
   EXPECT_FALSE(ContainsString(contents_of_file,
                               AsString(rtc::LS_VERBOSE)));
@@ -98,7 +99,7 @@ TEST(LibjingleLogTest, DefaultConfiguration) {
 }
 
 TEST(LibjingleLogTest, InfoConfiguration) {
-  ASSERT_TRUE(Initialize(rtc::LS_INFO));
+  ASSERT_TRUE(Initialize(0));  // 0 == Chrome's 'info' level.
 
   // In this configuration everything lower or equal to LS_INFO should be
   // logged.
@@ -117,7 +118,7 @@ TEST(LibjingleLogTest, InfoConfiguration) {
   EXPECT_TRUE(ContainsString(contents_of_file, AsString(rtc::LS_ERROR)));
   EXPECT_TRUE(ContainsString(contents_of_file,
                              AsString(rtc::LS_WARNING)));
-  EXPECT_TRUE(ContainsString(contents_of_file, AsString(rtc::LS_INFO)));
+  EXPECT_FALSE(ContainsString(contents_of_file, AsString(rtc::LS_INFO)));
   EXPECT_FALSE(ContainsString(contents_of_file,
                               AsString(rtc::LS_VERBOSE)));
   EXPECT_FALSE(ContainsString(contents_of_file,
@@ -130,7 +131,7 @@ TEST(LibjingleLogTest, InfoConfiguration) {
 }
 
 TEST(LibjingleLogTest, LogEverythingConfiguration) {
-  ASSERT_TRUE(Initialize(rtc::LS_SENSITIVE));
+  ASSERT_TRUE(Initialize(2));  // verbosity at level 2 allows LS_SENSITIVE.
 
   // In this configuration everything should be logged.
   LOG_V(rtc::LS_ERROR) << AsString(rtc::LS_ERROR);

@@ -157,20 +157,20 @@ class PrintBackendWin : public PrintBackend {
   PrintBackendWin() {}
 
   // PrintBackend implementation.
-  virtual bool EnumeratePrinters(PrinterList* printer_list) override;
-  virtual std::string GetDefaultPrinterName() override;
-  virtual bool GetPrinterSemanticCapsAndDefaults(
+  bool EnumeratePrinters(PrinterList* printer_list) override;
+  std::string GetDefaultPrinterName() override;
+  bool GetPrinterSemanticCapsAndDefaults(
       const std::string& printer_name,
       PrinterSemanticCapsAndDefaults* printer_info) override;
-  virtual bool GetPrinterCapsAndDefaults(
+  bool GetPrinterCapsAndDefaults(
       const std::string& printer_name,
       PrinterCapsAndDefaults* printer_info) override;
-  virtual std::string GetPrinterDriverInfo(
+  std::string GetPrinterDriverInfo(
       const std::string& printer_name) override;
-  virtual bool IsValidPrinter(const std::string& printer_name) override;
+  bool IsValidPrinter(const std::string& printer_name) override;
 
  protected:
-  virtual ~PrintBackendWin() {}
+  ~PrintBackendWin() override {}
 };
 
 bool PrintBackendWin::EnumeratePrinters(PrinterList* printer_list) {
@@ -304,12 +304,10 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
     hr = CreateStreamOnHGlobal(NULL, TRUE,
                                print_capabilities_stream.Receive());
     DCHECK(SUCCEEDED(hr));
-    if (print_capabilities_stream) {
+    if (print_capabilities_stream.get()) {
       base::win::ScopedBstr error;
-      hr = XPSModule::GetPrintCapabilities(provider,
-                                           NULL,
-                                           print_capabilities_stream,
-                                           error.Receive());
+      hr = XPSModule::GetPrintCapabilities(
+          provider, NULL, print_capabilities_stream.get(), error.Receive());
       DCHECK(SUCCEEDED(hr));
       if (FAILED(hr)) {
         return false;
@@ -329,10 +327,11 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
       hr = CreateStreamOnHGlobal(NULL, TRUE,
                                  printer_defaults_stream.Receive());
       DCHECK(SUCCEEDED(hr));
-      if (printer_defaults_stream) {
+      if (printer_defaults_stream.get()) {
         DWORD dm_size = devmode_out->dmSize + devmode_out->dmDriverExtra;
-        hr = XPSModule::ConvertDevModeToPrintTicket(provider, dm_size,
-            devmode_out.get(), kPTJobScope, printer_defaults_stream);
+        hr = XPSModule::ConvertDevModeToPrintTicket(
+            provider, dm_size, devmode_out.get(), kPTJobScope,
+            printer_defaults_stream.get());
         DCHECK(SUCCEEDED(hr));
         if (SUCCEEDED(hr)) {
           hr = StreamOnHGlobalToString(printer_defaults_stream.get(),

@@ -14,7 +14,7 @@
 #include "SkXfermode.h"
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
-#include "effects/GrSimpleTextureEffect.h"
+#include "effects/GrTextureDomain.h"
 #include "SkGr.h"
 #endif
 
@@ -22,9 +22,8 @@
 
 SkXfermodeImageFilter::SkXfermodeImageFilter(SkXfermode* mode,
                                              SkImageFilter* inputs[2],
-                                             const CropRect* cropRect,
-                                             uint32_t uniqueID)
-  : INHERITED(2, inputs, cropRect, uniqueID), fMode(mode) {
+                                             const CropRect* cropRect)
+  : INHERITED(2, inputs, cropRect), fMode(mode) {
     SkSafeRef(fMode);
 }
 
@@ -32,17 +31,10 @@ SkXfermodeImageFilter::~SkXfermodeImageFilter() {
     SkSafeUnref(fMode);
 }
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkXfermodeImageFilter::SkXfermodeImageFilter(SkReadBuffer& buffer)
-  : INHERITED(2, buffer) {
-    fMode = buffer.readXfermode();
-}
-#endif
-
 SkFlattenable* SkXfermodeImageFilter::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 2);
     SkAutoTUnref<SkXfermode> mode(buffer.readXfermode());
-    return Create(mode, common.getInput(0), common.getInput(1), &common.cropRect(), common.uniqueID());
+    return Create(mode, common.getInput(0), common.getInput(1), &common.cropRect());
 }
 
 void SkXfermodeImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -105,6 +97,17 @@ bool SkXfermodeImageFilter::onFilterImage(Proxy* proxy,
     return true;
 }
 
+#ifndef SK_IGNORE_TO_STRING
+void SkXfermodeImageFilter::toString(SkString* str) const {
+    str->appendf("SkXfermodeImageFilter: (");
+    str->appendf("xfermode: (");
+    if (fMode) {
+        fMode->toString(str);
+    }
+    str->append("))");
+}
+#endif
+
 #if SK_SUPPORT_GPU
 
 bool SkXfermodeImageFilter::canFilterImageGPU() const {
@@ -123,6 +126,12 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
         return onFilterImage(proxy, src, ctx, result, offset);
     }
     GrTexture* backgroundTex = background.getTexture();
+
+    if (NULL == backgroundTex) {
+        SkASSERT(false);
+        return false;
+    }
+
     SkBitmap foreground = src;
     SkIPoint foregroundOffset = SkIPoint::Make(0, 0);
     if (getInput(1) && !getInput(1)->getInputResultGPU(proxy, src, ctx, &foreground,
@@ -135,16 +144,15 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     GrFragmentProcessor* xferProcessor = NULL;
 
     GrSurfaceDesc desc;
-    desc.fFlags = kRenderTarget_GrSurfaceFlag | kNoStencil_GrSurfaceFlag;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
     desc.fWidth = src.width();
     desc.fHeight = src.height();
     desc.fConfig = kSkia8888_GrPixelConfig;
-    SkAutoTUnref<GrTexture> dst(
-        context->refScratchTexture(desc, GrContext::kApprox_ScratchTexMatch));
+    SkAutoTUnref<GrTexture> dst(context->textureProvider()->refScratchTexture(
+        desc, GrTextureProvider::kApprox_ScratchTexMatch));
     if (!dst) {
         return false;
     }
-    GrContext::AutoRenderTarget art(context, dst->asRenderTarget());
 
     if (!fMode || !fMode->asFragmentProcessor(&xferProcessor, backgroundTex)) {
         // canFilterImageGPU() should've taken care of this
@@ -161,9 +169,16 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     src.getBounds(&srcRect);
 
     GrPaint paint;
-    paint.addColorTextureProcessor(foregroundTex, foregroundMatrix);
+    SkAutoTUnref<GrFragmentProcessor> foregroundDomain(GrTextureDomainEffect::Create(
+        foregroundTex, foregroundMatrix,
+        GrTextureDomain::MakeTexelDomain(foregroundTex, foreground.bounds()),
+        GrTextureDomain::kDecal_Mode,
+        GrTextureParams::kNone_FilterMode)
+    );
+
+    paint.addColorProcessor(foregroundDomain.get());
     paint.addColorProcessor(xferProcessor)->unref();
-    context->drawRect(paint, srcRect);
+    context->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, SkMatrix::I(), srcRect);
 
     offset->fX = backgroundOffset.fX;
     offset->fY = backgroundOffset.fY;
@@ -172,3 +187,4 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
 }
 
 #endif
+

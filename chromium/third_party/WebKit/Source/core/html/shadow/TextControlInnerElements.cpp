@@ -29,16 +29,16 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/TextEvent.h"
 #include "core/events/TextEventInputType.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/layout/LayoutTextControlSingleLine.h"
+#include "core/layout/LayoutView.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderTextControlSingleLine.h"
-#include "core/rendering/RenderView.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace blink {
@@ -57,9 +57,9 @@ PassRefPtrWillBeRawPtr<TextControlInnerContainer> TextControlInnerContainer::cre
     return element.release();
 }
 
-RenderObject* TextControlInnerContainer::createRenderer(RenderStyle*)
+LayoutObject* TextControlInnerContainer::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderTextControlInnerContainer(this);
+    return new LayoutTextControlInnerContainer(this);
 }
 
 // ---------------------------
@@ -77,14 +77,15 @@ PassRefPtrWillBeRawPtr<EditingViewPortElement> EditingViewPortElement::create(Do
     return element.release();
 }
 
-PassRefPtr<RenderStyle> EditingViewPortElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> EditingViewPortElement::customStyleForLayoutObject()
 {
     // FXIME: Move these styles to html.css.
 
-    RefPtr<RenderStyle> style = RenderStyle::create();
-    style->inheritFrom(shadowHost()->renderStyle());
+    RefPtr<ComputedStyle> style = ComputedStyle::create();
+    style->inheritFrom(shadowHost()->computedStyleRef());
 
     style->setFlexGrow(1);
+    style->setMinWidth(Length(0, Fixed));
     style->setDisplay(BLOCK);
     style->setDirection(LTR);
 
@@ -130,18 +131,18 @@ void TextControlInnerEditorElement::defaultEventHandler(Event* event)
         HTMLDivElement::defaultEventHandler(event);
 }
 
-RenderObject* TextControlInnerEditorElement::createRenderer(RenderStyle*)
+LayoutObject* TextControlInnerEditorElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderTextControlInnerBlock(this);
+    return new LayoutTextControlInnerBlock(this);
 }
 
-PassRefPtr<RenderStyle> TextControlInnerEditorElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> TextControlInnerEditorElement::customStyleForLayoutObject()
 {
-    RenderObject* parentRenderer = shadowHost()->renderer();
-    if (!parentRenderer || !parentRenderer->isTextControl())
-        return originalStyleForRenderer();
-    RenderTextControl* textControlRenderer = toRenderTextControl(parentRenderer);
-    return textControlRenderer->createInnerEditorStyle(textControlRenderer->style());
+    LayoutObject* parentLayoutObject = shadowHost()->layoutObject();
+    if (!parentLayoutObject || !parentLayoutObject->isTextControl())
+        return originalStyleForLayoutObject();
+    LayoutTextControl* textControlLayoutObject = toLayoutTextControl(parentLayoutObject);
+    return textControlLayoutObject->createInnerEditorStyle(textControlLayoutObject->styleRef());
 }
 
 // ----------------------------
@@ -179,7 +180,7 @@ void SearchFieldDecorationElement::defaultEventHandler(Event* event)
     HTMLInputElement* input = toHTMLInputElement(shadowHost());
     if (input && event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         input->focus();
-        input->select();
+        input->select(NotDispatchSelectEvent);
         event->setDefaultHandled();
     }
 

@@ -35,10 +35,12 @@
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontTraits.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/Image.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/weborigin/KURL.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -62,9 +64,8 @@ public:
         : Image(0)
         , m_size(size)
     {
-        SkBitmap bitmap;
-        bitmap.allocN32Pixels(size.width(), size.height());
-        m_nativeImage = NativeImageSkia::create(bitmap);
+        m_bitmap.allocN32Pixels(size.width(), size.height());
+        m_bitmap.eraseColor(SK_ColorTRANSPARENT);
     }
 
     virtual IntSize size() const override
@@ -72,12 +73,13 @@ public:
         return m_size;
     }
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() override
+    virtual bool bitmapForCurrentFrame(SkBitmap* bitmap) override
     {
         if (m_size.isZero())
-            return nullptr;
+            return false;
 
-        return m_nativeImage;
+        *bitmap = m_bitmap;
+        return true;
     }
 
     // Stub implementations of pure virtual Image functions.
@@ -90,7 +92,7 @@ public:
         return false;
     }
 
-    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, CompositeOperator, WebBlendMode) override
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect&, SkXfermode::Mode, RespectImageOrientationEnum) override
     {
     }
 
@@ -98,7 +100,7 @@ private:
 
     IntSize m_size;
 
-    RefPtr<NativeImageSkia> m_nativeImage;
+    SkBitmap m_bitmap;
 };
 
 TEST(DragImageTest, NullHandling)
@@ -127,7 +129,7 @@ TEST(DragImageTest, CreateDragImage)
 {
     {
         // Tests that the DrageImage implementation doesn't choke on null values
-        // of nativeImageForCurrentFrame().
+        // of bitmapForCurrentFrame().
         RefPtr<TestImage> testImage(TestImage::create(IntSize()));
         EXPECT_FALSE(DragImage::create(testImage.get()));
     }
@@ -137,8 +139,10 @@ TEST(DragImageTest, CreateDragImage)
         RefPtr<TestImage> testImage(TestImage::create(IntSize(1, 1)));
         OwnPtr<DragImage> dragImage = DragImage::create(testImage.get());
         ASSERT_TRUE(dragImage);
-        SkAutoLockPixels lock1(dragImage->bitmap()), lock2(testImage->nativeImageForCurrentFrame()->bitmap());
-        EXPECT_NE(dragImage->bitmap().getPixels(), testImage->nativeImageForCurrentFrame()->bitmap().getPixels());
+        SkBitmap bitmap;
+        EXPECT_TRUE(testImage->bitmapForCurrentFrame(&bitmap));
+        SkAutoLockPixels lock1(dragImage->bitmap()), lock2(bitmap);
+        EXPECT_NE(dragImage->bitmap().getPixels(), bitmap.getPixels());
     }
 }
 
@@ -163,6 +167,83 @@ TEST(DragImageTest, TrimWhitespace)
         DragImage::create(url, expectedLabel, fontDescription, deviceScaleFactor);
 
     EXPECT_EQ(testImage->size().width(), expectedImage->size().width());
+}
+
+// SkPixelRef which fails to lock, as a lazy pixel ref might if its pixels
+// cannot be generated.
+class InvalidPixelRef : public SkPixelRef {
+public:
+    InvalidPixelRef(const SkImageInfo& info) : SkPixelRef(info) { }
+private:
+    bool onNewLockPixels(LockRec*) override { return false; }
+    void onUnlockPixels() override { ASSERT_NOT_REACHED(); }
+};
+
+TEST(DragImageTest, InvalidRotatedBitmapImage)
+{
+    // This test is mostly useful with MSAN builds, which can actually detect
+    // the use of uninitialized memory.
+
+    // Create a BitmapImage which will fail to produce pixels, and hence not
+    // draw.
+    SkImageInfo info = SkImageInfo::MakeN32Premul(100, 100);
+    RefPtr<SkPixelRef> pixelRef = adoptRef(new InvalidPixelRef(info));
+    SkBitmap invalidBitmap;
+    invalidBitmap.setInfo(info);
+    invalidBitmap.setPixelRef(pixelRef.get());
+    RefPtr<BitmapImage> image = BitmapImage::createWithOrientationForTesting(invalidBitmap, OriginRightTop);
+
+    // Create a DragImage from it. In MSAN builds, this will cause a failure if
+    // the pixel memory is not initialized, if we have to respect non-default
+    // orientation.
+    OwnPtr<DragImage> dragImage = DragImage::create(image.get(), RespectImageOrientation);
+
+    // The DragImage should be fully transparent.
+    const SkBitmap& dragImageBitmap = dragImage->bitmap();
+    SkAutoLockPixels lock(dragImageBitmap);
+    ASSERT_NE(nullptr, dragImageBitmap.getPixels());
+    for (int x = 0; x < dragImageBitmap.width(); x++) {
+        for (int y = 0; y < dragImageBitmap.height(); y++) {
+            int alpha = SkColorGetA(dragImageBitmap.getColor(x, y));
+            ASSERT_EQ(0, alpha);
+        }
+    }
+}
+
+TEST(DragImageTest, InterpolationNone)
+{
+    SkBitmap expectedBitmap;
+    expectedBitmap.allocN32Pixels(4, 4);
+    {
+        SkAutoLockPixels lock(expectedBitmap);
+        expectedBitmap.eraseArea(SkIRect::MakeXYWH(0, 0, 2, 2), 0xFFFFFFFF);
+        expectedBitmap.eraseArea(SkIRect::MakeXYWH(0, 2, 2, 2), 0xFF000000);
+        expectedBitmap.eraseArea(SkIRect::MakeXYWH(2, 0, 2, 2), 0xFF000000);
+        expectedBitmap.eraseArea(SkIRect::MakeXYWH(2, 2, 2, 2), 0xFFFFFFFF);
+    }
+
+    RefPtr<TestImage> testImage(TestImage::create(IntSize(2, 2)));
+    SkBitmap testBitmap;
+    EXPECT_TRUE(testImage->bitmapForCurrentFrame(&testBitmap));
+    {
+        SkAutoLockPixels lock(testBitmap);
+        testBitmap.eraseArea(SkIRect::MakeXYWH(0, 0, 1, 1), 0xFFFFFFFF);
+        testBitmap.eraseArea(SkIRect::MakeXYWH(0, 1, 1, 1), 0xFF000000);
+        testBitmap.eraseArea(SkIRect::MakeXYWH(1, 0, 1, 1), 0xFF000000);
+        testBitmap.eraseArea(SkIRect::MakeXYWH(1, 1, 1, 1), 0xFFFFFFFF);
+    }
+
+    OwnPtr<DragImage> dragImage = DragImage::create(testImage.get(), DoNotRespectImageOrientation, 1, InterpolationNone);
+    ASSERT_TRUE(dragImage);
+    dragImage->scale(2, 2);
+    const SkBitmap& dragBitmap = dragImage->bitmap();
+    {
+        SkAutoLockPixels lock1(dragBitmap);
+        SkAutoLockPixels lock2(expectedBitmap);
+        for (int x = 0; x < dragBitmap.width(); ++x)
+            for (int y = 0; y < dragBitmap.height(); ++y)
+                EXPECT_EQ(expectedBitmap.getColor(x, y), dragBitmap.getColor(x, y));
+    }
 }
 
 } // anonymous namespace

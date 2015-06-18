@@ -4,10 +4,12 @@
 
 #include "cc/layers/picture_layer.h"
 
+#include "base/thread_task_runner_handle.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/resources/resource_update_queue.h"
 #include "cc/test/fake_layer_tree_host.h"
+#include "cc/test/fake_picture_layer.h"
 #include "cc/test/fake_picture_layer_impl.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/impl_side_painting_settings.h"
@@ -20,11 +22,15 @@ namespace {
 
 class MockContentLayerClient : public ContentLayerClient {
  public:
-  void PaintContents(
-      SkCanvas* canvas,
+  void PaintContents(SkCanvas* canvas,
+                     const gfx::Rect& clip,
+                     PaintingControlSetting picture_control) override {}
+  void PaintContentsToDisplayList(
+      DisplayItemList* display_list,
       const gfx::Rect& clip,
-      ContentLayerClient::GraphicsContextStatus gc_status) override {}
-  void DidChangeLayerCanUseLCDText() override {}
+      PaintingControlSetting picture_control) override {
+    NOTIMPLEMENTED();
+  }
   bool FillsBoundsCompletely() const override { return false; };
 };
 
@@ -57,8 +63,8 @@ TEST(PictureLayerTest, NoTilesIfEmptyBounds) {
     DebugScopedSetImplThread impl_thread(&proxy);
 
     TestSharedBitmapManager shared_bitmap_manager;
-    FakeLayerTreeHostImpl host_impl(
-        ImplSidePaintingSettings(), &proxy, &shared_bitmap_manager);
+    FakeLayerTreeHostImpl host_impl(ImplSidePaintingSettings(), &proxy,
+                                    &shared_bitmap_manager, nullptr);
     host_impl.CreatePendingTree();
     scoped_ptr<FakePictureLayerImpl> layer_impl =
         FakePictureLayerImpl::Create(host_impl.pending_tree(), 1);
@@ -66,23 +72,26 @@ TEST(PictureLayerTest, NoTilesIfEmptyBounds) {
     layer->PushPropertiesTo(layer_impl.get());
     EXPECT_FALSE(layer_impl->CanHaveTilings());
     EXPECT_TRUE(layer_impl->bounds() == gfx::Size(0, 0));
-    EXPECT_EQ(gfx::Size(), layer_impl->pile()->tiling_size());
-    EXPECT_FALSE(layer_impl->pile()->HasRecordings());
+    EXPECT_EQ(gfx::Size(), layer_impl->raster_source()->GetSize());
+    EXPECT_FALSE(layer_impl->raster_source()->HasRecordings());
   }
 }
 
 TEST(PictureLayerTest, SuitableForGpuRasterization) {
   MockContentLayerClient client;
   scoped_refptr<PictureLayer> layer = PictureLayer::Create(&client);
-  PicturePile* pile = layer->GetPicturePileForTesting();
+  FakeLayerTreeHostClient host_client(FakeLayerTreeHostClient::DIRECT_3D);
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create(&host_client);
+  host->SetRootLayer(layer);
+  RecordingSource* recording_source = layer->GetRecordingSourceForTesting();
 
   // Layer is suitable for gpu rasterization by default.
-  EXPECT_TRUE(pile->is_suitable_for_gpu_rasterization());
+  EXPECT_TRUE(recording_source->IsSuitableForGpuRasterization());
   EXPECT_TRUE(layer->IsSuitableForGpuRasterization());
 
   // Veto gpu rasterization.
-  pile->SetUnsuitableForGpuRasterizationForTesting();
-  EXPECT_FALSE(pile->is_suitable_for_gpu_rasterization());
+  recording_source->SetUnsuitableForGpuRasterizationForTesting();
+  EXPECT_FALSE(recording_source->IsSuitableForGpuRasterization());
   EXPECT_FALSE(layer->IsSuitableForGpuRasterization());
 }
 
@@ -98,10 +107,67 @@ TEST(PictureLayerTest, UseTileGridSize) {
   host->SetRootLayer(layer);
 
   // Tile-grid is set according to its setting.
-  SkTileGridFactory::TileGridInfo info =
-      layer->GetPicturePileForTesting()->GetTileGridInfoForTesting();
-  EXPECT_EQ(info.fTileInterval.width(), 123 - 2 * info.fMargin.width());
-  EXPECT_EQ(info.fTileInterval.height(), 123 - 2 * info.fMargin.height());
+  gfx::Size size =
+      layer->GetRecordingSourceForTesting()->GetTileGridSizeForTesting();
+  EXPECT_EQ(size.width(), 123);
+  EXPECT_EQ(size.height(), 123);
+}
+
+// PicturePile uses the source frame number as a unit for measuring invalidation
+// frequency. When a pile moves between compositors, the frame number increases
+// non-monotonically. This executes that code path under this scenario allowing
+// for the code to verify correctness with DCHECKs.
+TEST(PictureLayerTest, NonMonotonicSourceFrameNumber) {
+  LayerTreeSettings settings;
+  settings.single_thread_proxy_scheduler = false;
+
+  FakeLayerTreeHostClient host_client1(FakeLayerTreeHostClient::DIRECT_3D);
+  FakeLayerTreeHostClient host_client2(FakeLayerTreeHostClient::DIRECT_3D);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+
+  MockContentLayerClient client;
+  scoped_refptr<FakePictureLayer> layer = FakePictureLayer::Create(&client);
+
+  LayerTreeHost::InitParams params;
+  params.client = &host_client1;
+  params.shared_bitmap_manager = shared_bitmap_manager.get();
+  params.settings = &settings;
+  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
+  scoped_ptr<LayerTreeHost> host1 =
+      LayerTreeHost::CreateSingleThreaded(&host_client1, &params);
+  host_client1.SetLayerTreeHost(host1.get());
+
+  params.client = &host_client2;
+  scoped_ptr<LayerTreeHost> host2 =
+      LayerTreeHost::CreateSingleThreaded(&host_client2, &params);
+  host_client2.SetLayerTreeHost(host2.get());
+
+  // The PictureLayer is put in one LayerTreeHost.
+  host1->SetRootLayer(layer);
+  // Do a main frame, record the picture layers.
+  EXPECT_EQ(0u, layer->update_count());
+  layer->SetNeedsDisplay();
+  host1->Composite(base::TimeTicks::Now());
+  EXPECT_EQ(1u, layer->update_count());
+  EXPECT_EQ(1, host1->source_frame_number());
+
+  // The source frame number in |host1| is now higher than host2.
+  layer->SetNeedsDisplay();
+  host1->Composite(base::TimeTicks::Now());
+  EXPECT_EQ(2u, layer->update_count());
+  EXPECT_EQ(2, host1->source_frame_number());
+
+  // Then moved to another LayerTreeHost.
+  host1->SetRootLayer(nullptr);
+  host2->SetRootLayer(layer);
+
+  // Do a main frame, record the picture layers. The frame number has changed
+  // non-monotonically.
+  layer->SetNeedsDisplay();
+  host2->Composite(base::TimeTicks::Now());
+  EXPECT_EQ(3u, layer->update_count());
+  EXPECT_EQ(1, host2->source_frame_number());
 }
 
 }  // namespace

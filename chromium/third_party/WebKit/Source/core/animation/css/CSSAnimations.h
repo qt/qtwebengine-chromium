@@ -31,15 +31,15 @@
 #ifndef CSSAnimations_h
 #define CSSAnimations_h
 
-#include "core/animation/Animation.h"
-#include "core/animation/AnimationPlayer.h"
-#include "core/animation/InertAnimation.h"
+#include "core/animation/InertEffect.h"
 #include "core/animation/Interpolation.h"
+#include "core/animation/css/CSSAnimationData.h"
+#include "core/animation/css/CSSAnimationUpdate.h"
+#include "core/css/CSSKeyframesRule.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/dom/Element.h"
 #include "wtf/HashMap.h"
-#include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
@@ -48,118 +48,6 @@ class CSSTransitionData;
 class Element;
 class StylePropertyShorthand;
 class StyleResolver;
-class StyleRuleKeyframes;
-
-// This class stores the CSS Animations/Transitions information we use during a style recalc.
-// This includes updates to animations/transitions as well as the Interpolations to be applied.
-class CSSAnimationUpdate final : public NoBaseWillBeGarbageCollectedFinalized<CSSAnimationUpdate> {
-public:
-    void startAnimation(AtomicString& animationName, PassRefPtrWillBeRawPtr<InertAnimation> animation)
-    {
-        animation->setName(animationName);
-        NewAnimation newAnimation;
-        newAnimation.name = animationName;
-        newAnimation.animation = animation;
-        m_newAnimations.append(newAnimation);
-    }
-    // Returns whether player has been cancelled and should be filtered during style application.
-    bool isCancelledAnimation(const AnimationPlayer* player) const { return m_cancelledAnimationPlayers.contains(player); }
-    void cancelAnimation(const AtomicString& name, AnimationPlayer& player)
-    {
-        m_cancelledAnimationNames.append(name);
-        m_cancelledAnimationPlayers.add(&player);
-    }
-    void toggleAnimationPaused(const AtomicString& name)
-    {
-        m_animationsWithPauseToggled.append(name);
-    }
-
-    void startTransition(CSSPropertyID id, CSSPropertyID eventId, const AnimatableValue* from, const AnimatableValue* to, PassRefPtrWillBeRawPtr<InertAnimation> animation)
-    {
-        animation->setName(getPropertyName(id));
-        NewTransition newTransition;
-        newTransition.id = id;
-        newTransition.eventId = eventId;
-        newTransition.from = from;
-        newTransition.to = to;
-        newTransition.animation = animation;
-        m_newTransitions.set(id, newTransition);
-    }
-    bool isCancelledTransition(CSSPropertyID id) const { return m_cancelledTransitions.contains(id); }
-    void cancelTransition(CSSPropertyID id) { m_cancelledTransitions.add(id); }
-
-    struct NewAnimation {
-        ALLOW_ONLY_INLINE_ALLOCATION();
-    public:
-        void trace(Visitor* visitor)
-        {
-            visitor->trace(animation);
-        }
-
-        AtomicString name;
-        RefPtrWillBeMember<InertAnimation> animation;
-    };
-    const WillBeHeapVector<NewAnimation>& newAnimations() const { return m_newAnimations; }
-    const Vector<AtomicString>& cancelledAnimationNames() const { return m_cancelledAnimationNames; }
-    const WillBeHeapHashSet<RawPtrWillBeMember<const AnimationPlayer>>& cancelledAnimationAnimationPlayers() const { return m_cancelledAnimationPlayers; }
-    const Vector<AtomicString>& animationsWithPauseToggled() const { return m_animationsWithPauseToggled; }
-
-    struct NewTransition {
-        ALLOW_ONLY_INLINE_ALLOCATION();
-    public:
-        void trace(Visitor* visitor)
-        {
-            visitor->trace(from);
-            visitor->trace(to);
-            visitor->trace(animation);
-        }
-
-        CSSPropertyID id;
-        CSSPropertyID eventId;
-        RawPtrWillBeMember<const AnimatableValue> from;
-        RawPtrWillBeMember<const AnimatableValue> to;
-        RefPtrWillBeMember<InertAnimation> animation;
-    };
-    using NewTransitionMap = WillBeHeapHashMap<CSSPropertyID, NewTransition>;
-    const NewTransitionMap& newTransitions() const { return m_newTransitions; }
-    const HashSet<CSSPropertyID>& cancelledTransitions() const { return m_cancelledTransitions; }
-
-    void adoptActiveInterpolationsForAnimations(WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>>& newMap) { newMap.swap(m_activeInterpolationsForAnimations); }
-    void adoptActiveInterpolationsForTransitions(WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>>& newMap) { newMap.swap(m_activeInterpolationsForTransitions); }
-    const WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>>& activeInterpolationsForAnimations() const { return m_activeInterpolationsForAnimations; }
-    const WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>>& activeInterpolationsForTransitions() const { return m_activeInterpolationsForTransitions; }
-    WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>>& activeInterpolationsForAnimations() { return m_activeInterpolationsForAnimations; }
-
-    bool isEmpty() const
-    {
-        return m_newAnimations.isEmpty()
-            && m_cancelledAnimationNames.isEmpty()
-            && m_cancelledAnimationPlayers.isEmpty()
-            && m_animationsWithPauseToggled.isEmpty()
-            && m_newTransitions.isEmpty()
-            && m_cancelledTransitions.isEmpty()
-            && m_activeInterpolationsForAnimations.isEmpty()
-            && m_activeInterpolationsForTransitions.isEmpty();
-    }
-
-    void trace(Visitor*);
-
-private:
-    // Order is significant since it defines the order in which new animations
-    // will be started. Note that there may be multiple animations present
-    // with the same name, due to the way in which we split up animations with
-    // incomplete keyframes.
-    WillBeHeapVector<NewAnimation> m_newAnimations;
-    Vector<AtomicString> m_cancelledAnimationNames;
-    WillBeHeapHashSet<RawPtrWillBeMember<const AnimationPlayer>> m_cancelledAnimationPlayers;
-    Vector<AtomicString> m_animationsWithPauseToggled;
-
-    NewTransitionMap m_newTransitions;
-    HashSet<CSSPropertyID> m_cancelledTransitions;
-
-    WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>> m_activeInterpolationsForAnimations;
-    WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>> m_activeInterpolationsForTransitions;
-};
 
 class CSSAnimations final {
     WTF_MAKE_NONCOPYABLE(CSSAnimations);
@@ -167,42 +55,66 @@ class CSSAnimations final {
 public:
     CSSAnimations();
 
-    const AtomicString getAnimationNameForInspector(const AnimationPlayer&);
+    const AtomicString getAnimationNameForInspector(const Animation&);
+    bool isTransitionAnimationForInspector(const Animation&) const;
 
-    // FIXME: This method is only used here and in the legacy animations
-    // implementation. It should be made private or file-scope when the legacy
-    // engine is removed.
-    static const StyleRuleKeyframes* matchScopedKeyframesRule(StyleResolver*, const Element*, const StringImpl*);
-
-    static const StylePropertyShorthand& animatableProperties();
+    static const StylePropertyShorthand& propertiesForTransitionAll();
     static bool isAllowedAnimation(CSSPropertyID);
-    // FIXME: We should change the Element* to a const Element*
-    static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(const Element* animatingElement, Element&, const RenderStyle&, RenderStyle* parentStyle, StyleResolver*);
+    static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(const Element* animatingElement, Element&, const ComputedStyle&, ComputedStyle* parentStyle, StyleResolver*);
 
     void setPendingUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> update) { m_pendingUpdate = update; }
     void maybeApplyPendingUpdate(Element*);
     bool isEmpty() const { return m_animations.isEmpty() && m_transitions.isEmpty() && !m_pendingUpdate; }
     void cancel();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
+    class RunningAnimation final : public RefCountedWillBeGarbageCollectedFinalized<RunningAnimation> {
+    public:
+        RunningAnimation(PassRefPtrWillBeRawPtr<Animation> animation, CSSAnimationUpdate::NewAnimation newAnimation)
+            : animation(animation)
+            , specifiedTiming(newAnimation.timing)
+            , styleRule(newAnimation.styleRule)
+            , styleRuleVersion(newAnimation.styleRuleVersion)
+        {
+        }
+
+        void update(CSSAnimationUpdate::UpdatedAnimation update)
+        {
+            styleRule = update.styleRule;
+            styleRuleVersion = update.styleRuleVersion;
+            specifiedTiming = update.specifiedTiming;
+        }
+
+        DEFINE_INLINE_TRACE()
+        {
+            visitor->trace(animation);
+            visitor->trace(styleRule);
+        }
+
+        RefPtrWillBeMember<Animation> animation;
+        Timing specifiedTiming;
+        RefPtrWillBeMember<StyleRuleKeyframes> styleRule;
+        unsigned styleRuleVersion;
+    };
+
     struct RunningTransition {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
+            visitor->trace(animation);
             visitor->trace(from);
             visitor->trace(to);
-            visitor->trace(player);
         }
 
-        RefPtrWillBeMember<AnimationPlayer> player;
+        RefPtrWillBeMember<Animation> animation;
         RawPtrWillBeMember<const AnimatableValue> from;
         RawPtrWillBeMember<const AnimatableValue> to;
     };
 
-    using AnimationMap = WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<AnimationPlayer>>;
+    using AnimationMap = WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<RunningAnimation>>;
     AnimationMap m_animations;
 
     using TransitionMap = WillBeHeapHashMap<CSSPropertyID, RunningTransition>;
@@ -210,55 +122,64 @@ private:
 
     OwnPtrWillBeMember<CSSAnimationUpdate> m_pendingUpdate;
 
-    WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>> m_previousActiveInterpolationsForAnimations;
+    ActiveInterpolationMap m_previousActiveInterpolationsForAnimations;
 
-    static void calculateAnimationUpdate(CSSAnimationUpdate*, const Element* animatingElement, Element&, const RenderStyle&, RenderStyle* parentStyle, StyleResolver*);
-    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element* animatingElement, const RenderStyle&);
-    static void calculateTransitionUpdateForProperty(CSSPropertyID, CSSPropertyID eventId, const CSSTransitionData&, size_t transitionIndex, const RenderStyle& oldStyle, const RenderStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*, const Element*);
+    static void calculateAnimationUpdate(CSSAnimationUpdate*, const Element* animatingElement, Element&, const ComputedStyle&, ComputedStyle* parentStyle, StyleResolver*);
+    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element* animatingElement, const ComputedStyle&);
+    static void calculateTransitionUpdateForProperty(CSSPropertyID, const CSSTransitionData&, size_t transitionIndex, const ComputedStyle& oldStyle, const ComputedStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*, const Element*);
 
     static void calculateAnimationActiveInterpolations(CSSAnimationUpdate*, const Element* animatingElement, double timelineCurrentTime);
     static void calculateTransitionActiveInterpolations(CSSAnimationUpdate*, const Element* animatingElement, double timelineCurrentTime);
 
-    class AnimationEventDelegate final : public AnimationNode::EventDelegate {
+    class AnimationEventDelegate final : public AnimationEffect::EventDelegate {
     public:
-        AnimationEventDelegate(Element* target, const AtomicString& name)
-            : m_target(target)
+        AnimationEventDelegate(Element* animationTarget, const AtomicString& name)
+            : m_animationTarget(animationTarget)
             , m_name(name)
-            , m_previousPhase(AnimationNode::PhaseNone)
+            , m_previousPhase(AnimationEffect::PhaseNone)
             , m_previousIteration(nullValue())
         {
         }
-        virtual void onEventCondition(const AnimationNode*) override;
-        virtual void trace(Visitor*) override;
+        virtual bool requiresIterationEvents(const AnimationEffect&) override;
+        virtual void onEventCondition(const AnimationEffect&) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
+        const Element& animationTarget() const { return *m_animationTarget; }
+        EventTarget* eventTarget() const;
+        Document& document() const { return m_animationTarget->document(); }
+
         void maybeDispatch(Document::ListenerType, const AtomicString& eventName, double elapsedTime);
-        RawPtrWillBeMember<Element> m_target;
+        RawPtrWillBeMember<Element> m_animationTarget;
         const AtomicString m_name;
-        AnimationNode::Phase m_previousPhase;
+        AnimationEffect::Phase m_previousPhase;
         double m_previousIteration;
     };
 
-    class TransitionEventDelegate final : public AnimationNode::EventDelegate {
+    class TransitionEventDelegate final : public AnimationEffect::EventDelegate {
     public:
-        TransitionEventDelegate(Element* target, CSSPropertyID property)
-            : m_target(target)
+        TransitionEventDelegate(Element* transitionTarget, CSSPropertyID property)
+            : m_transitionTarget(transitionTarget)
             , m_property(property)
-            , m_previousPhase(AnimationNode::PhaseNone)
+            , m_previousPhase(AnimationEffect::PhaseNone)
         {
         }
-        virtual void onEventCondition(const AnimationNode*) override;
-        virtual void trace(Visitor*) override;
+        virtual bool requiresIterationEvents(const AnimationEffect&) override { return false; }
+        virtual void onEventCondition(const AnimationEffect&) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
-        RawPtrWillBeMember<Element> m_target;
+        const Element& transitionTarget() const { return *m_transitionTarget; }
+        EventTarget* eventTarget() const;
+        PseudoId pseudoId() const { return m_transitionTarget->pseudoId(); }
+        Document& document() const { return m_transitionTarget->document(); }
+
+        RawPtrWillBeMember<Element> m_transitionTarget;
         const CSSPropertyID m_property;
-        AnimationNode::Phase m_previousPhase;
+        AnimationEffect::Phase m_previousPhase;
     };
 };
 
 } // namespace blink
-
-WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::CSSAnimationUpdate::NewAnimation);
 
 #endif

@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/output/copy_output_result.h"
 #include "cc/resources/texture_mailbox.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -32,7 +32,8 @@ CopyOutputRequest::CopyOutputRequest() {}
 CopyOutputRequest::CopyOutputRequest(
     bool force_bitmap_result,
     const CopyOutputRequestCallback& result_callback)
-    : force_bitmap_result_(force_bitmap_result),
+    : source_(nullptr),
+      force_bitmap_result_(force_bitmap_result),
       has_area_(false),
       has_texture_mailbox_(false),
       result_callback_(result_callback) {

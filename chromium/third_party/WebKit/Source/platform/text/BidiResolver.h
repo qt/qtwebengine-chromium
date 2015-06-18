@@ -33,7 +33,7 @@
 
 namespace blink {
 
-class RenderObject;
+class LayoutObject;
 
 template <class Iterator> class MidpointState {
 public:
@@ -61,9 +61,9 @@ public:
         addMidpoint(midpoint);
     }
 
-    // When ignoring spaces, this needs to be called for objects that need line boxes such as RenderInlines or
+    // When ignoring spaces, this needs to be called for objects that need line boxes such as LayoutInlines or
     // hard line breaks to ensure that they're not ignored.
-    void ensureLineBoxInsideIgnoredSpaces(RenderObject* renderer)
+    void ensureLineBoxInsideIgnoredSpaces(LayoutObject* renderer)
     {
         Iterator midpoint(0, renderer, 0);
         stopIgnoringSpaces(midpoint);
@@ -256,7 +256,16 @@ public:
 
     bool isEndOfLine(const Iterator& end) { return m_current == end || m_current.atEnd(); }
 
-    TextDirection determineParagraphDirectionality(bool* hasStrongDirectionality = 0);
+    TextDirection determineParagraphDirectionality(bool* hasStrongDirectionality = 0)
+    {
+        bool breakOnParagraph = true;
+        return determineDirectionalityInternal(breakOnParagraph, hasStrongDirectionality);
+    }
+    TextDirection determineDirectionality(bool* hasStrongDirectionality = 0)
+    {
+        bool breakOnParagraph = false;
+        return determineDirectionalityInternal(breakOnParagraph, hasStrongDirectionality);
+    }
 
     void setMidpointStateForIsolatedRun(Run*, const MidpointState<Iterator>&);
     MidpointState<Iterator> midpointStateForIsolatedRun(Run*);
@@ -311,8 +320,10 @@ private:
     // http://www.unicode.org/reports/tr9/#L1
     void applyL1Rule(BidiRunList<Run>&);
 
+    TextDirection determineDirectionalityInternal(bool breakOnParagraph, bool* hasStrongDirectionality);
+
     Vector<BidiEmbedding, 8> m_currentExplicitEmbeddingSequence;
-    HashMap<Run *, MidpointState<Iterator> > m_midpointStateForIsolatedRun;
+    HashMap<Run *, MidpointState<Iterator>> m_midpointStateForIsolatedRun;
 };
 
 #if ENABLE(ASSERT)
@@ -336,8 +347,20 @@ void BidiResolver<Iterator, Run>::appendRun(BidiRunList<Run>& runs)
             endOffset = m_endOfRunAtEndOfLine.offset();
         }
 
-        if (endOffset >= startOffset)
-            runs.addRun(new Run(startOffset, endOffset + 1, context(), m_direction));
+        // m_eor and m_endOfRunAtEndOfLine are inclusive while BidiRun's stop is
+        // exclusive so offset needs to be increased by one.
+        endOffset += 1;
+
+        // Append BidiRun objects, at most 64K chars at a time, until all
+        // text between |startOffset| and |endOffset| is represented.
+        while (startOffset < endOffset) {
+            unsigned end = endOffset;
+            const int limit = USHRT_MAX; // InlineTextBox stores text length as unsigned short.
+            if (end - startOffset > limit)
+                end = startOffset + limit;
+            runs.addRun(new Run(startOffset, end, context(), m_direction));
+            startOffset = end;
+        }
 
         m_eor.increment();
         m_sor = m_eor;
@@ -617,14 +640,15 @@ inline void BidiResolver<Iterator, Run>::reorderRunsFromLevels(BidiRunList<Run>&
 }
 
 template <class Iterator, class Run>
-TextDirection BidiResolver<Iterator, Run>::determineParagraphDirectionality(bool* hasStrongDirectionality)
+TextDirection BidiResolver<Iterator, Run>::determineDirectionalityInternal(
+    bool breakOnParagraph, bool* hasStrongDirectionality)
 {
     while (!m_current.atEnd()) {
         if (inIsolate()) {
             increment();
             continue;
         }
-        if (m_current.atParagraphSeparator())
+        if (breakOnParagraph && m_current.atParagraphSeparator())
             break;
         UChar32 current = m_current.current();
         if (UNLIKELY(U16_IS_SURROGATE(current))) {
@@ -656,6 +680,14 @@ TextDirection BidiResolver<Iterator, Run>::determineParagraphDirectionality(bool
     }
     if (hasStrongDirectionality)
         *hasStrongDirectionality = false;
+    return LTR;
+}
+
+inline TextDirection directionForCharacter(UChar32 character)
+{
+    WTF::Unicode::Direction charDirection = WTF::Unicode::direction(character);
+    if (charDirection == WTF::Unicode::RightToLeft || charDirection == WTF::Unicode::RightToLeftArabic)
+        return RTL;
     return LTR;
 }
 

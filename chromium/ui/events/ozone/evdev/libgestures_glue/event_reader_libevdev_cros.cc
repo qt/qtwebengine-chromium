@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
 
 namespace ui {
 
@@ -28,8 +29,24 @@ std::string FormatLog(const char* fmt, va_list args) {
 EventReaderLibevdevCros::EventReaderLibevdevCros(int fd,
                                                  const base::FilePath& path,
                                                  int id,
+                                                 InputDeviceType type,
+                                                 const EventDeviceInfo& devinfo,
                                                  scoped_ptr<Delegate> delegate)
-    : EventConverterEvdev(fd, path, id), delegate_(delegate.Pass()) {
+    : EventConverterEvdev(fd,
+                          path,
+                          id,
+                          type,
+                          devinfo.name(),
+                          devinfo.vendor_id(),
+                          devinfo.product_id()),
+      has_keyboard_(devinfo.HasKeyboard()),
+      has_mouse_(devinfo.HasMouse()),
+      has_touchpad_(devinfo.HasTouchpad()),
+      has_caps_lock_led_(devinfo.HasLedEvent(LED_CAPSL)),
+      delegate_(delegate.Pass()) {
+  // This class assumes it does not deal with internal keyboards.
+  CHECK(!has_keyboard_ || type != INPUT_DEVICE_INTERNAL);
+
   memset(&evdev_, 0, sizeof(evdev_));
   evdev_.log = OnLogMessage;
   evdev_.log_udata = this;
@@ -54,6 +71,9 @@ EventReaderLibevdevCros::~EventReaderLibevdevCros() {
 EventReaderLibevdevCros::Delegate::~Delegate() {}
 
 void EventReaderLibevdevCros::OnFileCanReadWithoutBlocking(int fd) {
+  TRACE_EVENT1("evdev", "EventReaderLibevdevCros::OnFileCanReadWithoutBlocking",
+               "fd", fd);
+
   if (EvdevRead(&evdev_)) {
     if (errno == EINTR || errno == EAGAIN)
       return;
@@ -64,11 +84,34 @@ void EventReaderLibevdevCros::OnFileCanReadWithoutBlocking(int fd) {
   }
 }
 
+bool EventReaderLibevdevCros::HasKeyboard() const {
+  return has_keyboard_;
+}
+
+bool EventReaderLibevdevCros::HasMouse() const {
+  return has_mouse_;
+}
+
+bool EventReaderLibevdevCros::HasTouchpad() const {
+  return has_touchpad_;
+}
+
+bool EventReaderLibevdevCros::HasCapsLockLed() const {
+  return has_caps_lock_led_;
+}
+
+void EventReaderLibevdevCros::OnStopped() {
+  delegate_->OnLibEvdevCrosStopped(&evdev_, &evstate_);
+}
+
 // static
 void EventReaderLibevdevCros::OnSynReport(void* data,
                                           EventStateRec* evstate,
                                           struct timeval* tv) {
   EventReaderLibevdevCros* reader = static_cast<EventReaderLibevdevCros*>(data);
+  if (reader->ignore_events_)
+    return;
+
   reader->delegate_->OnLibEvdevCrosEvent(&reader->evdev_, evstate, *tv);
 }
 

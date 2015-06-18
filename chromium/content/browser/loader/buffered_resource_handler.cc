@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
+#include "components/mime_util/mime_util.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/download/download_stats.h"
 #include "content/browser/loader/certificate_resource_handler.h"
@@ -20,6 +21,7 @@
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
+#include "content/public/browser/plugin_service.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "content/public/common/resource_response.h"
@@ -30,10 +32,6 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_content_disposition.h"
 #include "net/http/http_response_headers.h"
-
-#if defined(ENABLE_PLUGINS)
-#include "content/browser/plugin_service_impl.h"
-#endif
 
 namespace content {
 
@@ -83,10 +81,12 @@ class DependentIOBuffer : public net::WrappedIOBuffer {
 BufferedResourceHandler::BufferedResourceHandler(
     scoped_ptr<ResourceHandler> next_handler,
     ResourceDispatcherHostImpl* host,
+    PluginService* plugin_service,
     net::URLRequest* request)
     : LayeredResourceHandler(request, next_handler.Pass()),
       state_(STATE_STARTING),
       host_(host),
+      plugin_service_(plugin_service),
       read_buffer_size_(0),
       bytes_read_(0),
       must_download_(false),
@@ -111,16 +111,9 @@ bool BufferedResourceHandler::OnResponseStarted(ResourceResponse* response,
                                                 bool* defer) {
   response_ = response;
 
-  // TODO(darin): It is very odd to special-case 304 responses at this level.
-  // We do so only because the code always has, see r24977 and r29355.  The
-  // fact that 204 is no longer special-cased this way suggests that 304 need
-  // not be special-cased either.
-  //
-  // The network stack only forwards 304 responses that were not received in
-  // response to a conditional request (i.e., If-Modified-Since).  Other 304
-  // responses end up being translated to 200 or whatever the cached response
-  // code happens to be.  It should be very rare to see a 304 at this level.
-
+  // A 304 response should not contain a Content-Type header (RFC 7232 section
+  // 4.1). The following code may incorrectly attempt to add a Content-Type to
+  // the response, and so must be skipped for 304 responses.
   if (!(response_->head.headers.get() &&
         response_->head.headers->response_code() == 304)) {
     if (ShouldSniffContent()) {
@@ -304,7 +297,7 @@ bool BufferedResourceHandler::SelectNextHandler(bool* defer) {
   ResourceRequestInfoImpl* info = GetRequestInfo();
   const std::string& mime_type = response_->head.mime_type;
 
-  if (net::IsSupportedCertificateMimeType(mime_type)) {
+  if (mime_util::IsSupportedCertificateMimeType(mime_type)) {
     // Install certificate file.
     info->set_is_download(true);
     scoped_ptr<ResourceHandler> handler(
@@ -312,12 +305,30 @@ bool BufferedResourceHandler::SelectNextHandler(bool* defer) {
     return UseAlternateNextHandler(handler.Pass(), std::string());
   }
 
+  // Allow requests for object/embed tags to be intercepted as streams.
+  if (info->GetResourceType() == content::RESOURCE_TYPE_OBJECT) {
+    DCHECK(!info->allow_download());
+    std::string payload;
+    scoped_ptr<ResourceHandler> handler(
+        host_->MaybeInterceptAsStream(request(), response_.get(), &payload));
+    if (handler) {
+      DCHECK(!mime_util::IsSupportedMimeType(mime_type));
+      return UseAlternateNextHandler(handler.Pass(), payload);
+    }
+  }
+
   if (!info->allow_download())
     return true;
 
+  // info->allow_download() == true implies
+  // info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME or
+  // info->GetResourceType() == RESOURCE_TYPE_SUB_FRAME.
+  DCHECK(info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME ||
+         info->GetResourceType() == RESOURCE_TYPE_SUB_FRAME);
+
   bool must_download = MustDownload();
   if (!must_download) {
-    if (net::IsSupportedMimeType(mime_type))
+    if (mime_util::IsSupportedMimeType(mime_type))
       return true;
 
     std::string payload;
@@ -332,7 +343,7 @@ bool BufferedResourceHandler::SelectNextHandler(bool* defer) {
     bool has_plugin = HasSupportingPlugin(&stale);
     if (stale) {
       // Refresh the plugins asynchronously.
-      PluginServiceImpl::GetInstance()->GetPlugins(
+      plugin_service_->GetPlugins(
           base::Bind(&BufferedResourceHandler::OnPluginsLoaded,
                      weak_ptr_factory_.GetWeakPtr()));
       request()->LogBlockedBy("BufferedResourceHandler");
@@ -464,7 +475,7 @@ bool BufferedResourceHandler::HasSupportingPlugin(bool* stale) {
 
   bool allow_wildcard = false;
   WebPluginInfo plugin;
-  return PluginServiceImpl::GetInstance()->GetPluginInfo(
+  return plugin_service_->GetPluginInfo(
       info->GetChildID(), info->GetRenderFrameID(), info->GetContext(),
       request()->url(), GURL(), response_->head.mime_type, allow_wildcard,
       stale, &plugin, NULL);

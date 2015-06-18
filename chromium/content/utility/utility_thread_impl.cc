@@ -14,6 +14,7 @@
 #include "content/common/utility_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/utility/content_utility_client.h"
+#include "content/utility/utility_blink_platform_impl.h"
 #include "ipc/ipc_sync_channel.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 
@@ -35,13 +36,15 @@ void ConvertVector(const SRC& src, DEST* dest) {
 
 }  // namespace
 
-UtilityThreadImpl::UtilityThreadImpl() : single_process_(false) {
+UtilityThreadImpl::UtilityThreadImpl()
+    : ChildThreadImpl(ChildThreadImpl::Options::Builder().Build()) {
   Init();
 }
 
-UtilityThreadImpl::UtilityThreadImpl(const std::string& channel_name)
-    : ChildThread(Options(channel_name, false)),
-      single_process_(true) {
+UtilityThreadImpl::UtilityThreadImpl(const InProcessChildThreadParams& params)
+    : ChildThreadImpl(ChildThreadImpl::Options::Builder()
+                          .InBrowserProcess(params)
+                          .Build()) {
   Init();
 }
 
@@ -49,21 +52,17 @@ UtilityThreadImpl::~UtilityThreadImpl() {
 }
 
 void UtilityThreadImpl::Shutdown() {
-  ChildThread::Shutdown();
+  ChildThreadImpl::Shutdown();
 
-  if (!single_process_)
+  if (!IsInBrowserProcess())
     blink::shutdown();
-}
-
-bool UtilityThreadImpl::Send(IPC::Message* msg) {
-  return ChildThread::Send(msg);
 }
 
 void UtilityThreadImpl::ReleaseProcessIfNeeded() {
   if (batch_mode_)
     return;
 
-  if (single_process_) {
+  if (IsInBrowserProcess()) {
     // Close the channel to cause UtilityProcessHostImpl to be deleted. We need
     // to take a different code path than the multi-process case because that
     // depends on the child process going away to close the channel, but that
@@ -74,30 +73,19 @@ void UtilityThreadImpl::ReleaseProcessIfNeeded() {
   }
 }
 
-#if defined(OS_WIN)
-
-void UtilityThreadImpl::PreCacheFont(const LOGFONT& log_font) {
-  Send(new ChildProcessHostMsg_PreCacheFont(log_font));
-}
-
-void UtilityThreadImpl::ReleaseCachedFonts() {
-  Send(new ChildProcessHostMsg_ReleaseCachedFonts());
-}
-
-#endif  // OS_WIN
-
 void UtilityThreadImpl::Init() {
   batch_mode_ = false;
   ChildProcess::current()->AddRefProcess();
-  if (!single_process_) {
+  if (!IsInBrowserProcess()) {
     // We can only initialize WebKit on one thread, and in single process mode
     // we run the utility thread on separate thread. This means that if any code
     // needs WebKit initialized in the utility process, they need to have
     // another path to support single process mode.
-    blink_platform_impl_.reset(new BlinkPlatformImpl);
+    blink_platform_impl_.reset(new UtilityBlinkPlatformImpl);
     blink::initialize(blink_platform_impl_.get());
   }
   GetContentClient()->utility()->UtilityThreadStarted();
+  GetContentClient()->utility()->RegisterMojoServices(service_registry());
 }
 
 bool UtilityThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
@@ -131,8 +119,8 @@ void UtilityThreadImpl::OnLoadPlugins(
   PluginList* plugin_list = PluginList::Singleton();
 
   std::vector<WebPluginInfo> plugins;
-  // TODO(bauerb): If we restart loading plug-ins, we might mess up the logic in
-  // PluginList::ShouldLoadPlugin due to missing the previously loaded plug-ins
+  // TODO(bauerb): If we restart loading plugins, we might mess up the logic in
+  // PluginList::ShouldLoadPlugin due to missing the previously loaded plugins
   // in |plugin_groups|.
   for (size_t i = 0; i < plugin_paths.size(); ++i) {
     WebPluginInfo plugin;

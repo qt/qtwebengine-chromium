@@ -14,11 +14,11 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/box_f.h"
+#include "ui/gfx/geometry/box_f.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/vector3d_f.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/quad_f.h"
 #include "ui/gfx/transform_util.h"
 
 namespace gfx {
@@ -731,49 +731,6 @@ TEST(XFormTest, BlendRotate) {
       expected.RotateAbout(axes[index], 90 * t);
 
       EXPECT_TRUE(MatricesAreNearlyEqual(expected, to));
-    }
-  }
-}
-
-#if defined(_WIN64)
-// http://crbug.com/406574
-#define MAYBE_BlendRotateFollowsShortestPath DISABLED_BlendRotateFollowsShortestPath
-#else
-#define MAYBE_BlendRotateFollowsShortestPath BlendRotateFollowsShortestPath
-#endif
-TEST(XFormTest, MAYBE_BlendRotateFollowsShortestPath) {
-  // Verify that we interpolate along the shortest path regardless of whether
-  // this path crosses the 180-degree point.
-  Vector3dF axes[] = {
-    Vector3dF(1, 0, 0),
-    Vector3dF(0, 1, 0),
-    Vector3dF(0, 0, 1),
-    Vector3dF(1, 1, 1)
-  };
-  for (size_t index = 0; index < arraysize(axes); ++index) {
-    for (int i = -5; i < 15; ++i) {
-      Transform from1;
-      from1.RotateAbout(axes[index], 130.0);
-      Transform to1;
-      to1.RotateAbout(axes[index], 175.0);
-
-      Transform from2;
-      from2.RotateAbout(axes[index], 140.0);
-      Transform to2;
-      to2.RotateAbout(axes[index], 185.0);
-
-      double t = i / 9.0;
-      EXPECT_TRUE(to1.Blend(from1, t));
-      EXPECT_TRUE(to2.Blend(from2, t));
-
-      Transform expected1;
-      expected1.RotateAbout(axes[index], 130.0 + 45.0 * t);
-
-      Transform expected2;
-      expected2.RotateAbout(axes[index], 140.0 + 45.0 * t);
-
-      EXPECT_TRUE(MatricesAreNearlyEqual(expected1, to1));
-      EXPECT_TRUE(MatricesAreNearlyEqual(expected2, to2));
     }
   }
 }
@@ -2435,6 +2392,29 @@ TEST(XFormTest, verifyFlattenTo2d) {
   EXPECT_ROW4_EQ(13.0f, 17.0f, 0.0f, 25.0f, A);
 }
 
+TEST(XFormTest, IsFlat) {
+  Transform transform;
+  InitializeTestMatrix(&transform);
+
+  // A transform with all entries non-zero isn't flat.
+  EXPECT_FALSE(transform.IsFlat());
+
+  transform.matrix().set(0, 2, 0.f);
+  transform.matrix().set(1, 2, 0.f);
+  transform.matrix().set(2, 2, 1.f);
+  transform.matrix().set(3, 2, 0.f);
+
+  EXPECT_FALSE(transform.IsFlat());
+
+  transform.matrix().set(2, 0, 0.f);
+  transform.matrix().set(2, 1, 0.f);
+  transform.matrix().set(2, 3, 0.f);
+
+  // Since the third column and row are both (0, 0, 1, 0), the transform is
+  // flat.
+  EXPECT_TRUE(transform.IsFlat());
+}
+
 // Another implementation of Preserves2dAxisAlignment that isn't as fast,
 // good for testing the faster implementation.
 static bool EmpiricallyPreserves2dAxisAlignment(const Transform& transform) {
@@ -2702,6 +2682,30 @@ TEST(XFormTest, TransformBoxReverse) {
   Transform singular;
   singular.Scale3d(0.f, 0.f, 0.f);
   EXPECT_FALSE(singular.TransformBoxReverse(&box));
+}
+
+TEST(XFormTest, RoundTranslationComponents) {
+  Transform translation;
+  Transform expected;
+
+  translation.RoundTranslationComponents();
+  EXPECT_EQ(expected.ToString(), translation.ToString());
+
+  translation.Translate(1.0f, 1.0f);
+  expected.Translate(1.0f, 1.0f);
+  translation.RoundTranslationComponents();
+  EXPECT_EQ(expected.ToString(), translation.ToString());
+
+  translation.Translate(0.5f, 0.4f);
+  expected.Translate(1.0f, 0.0f);
+  translation.RoundTranslationComponents();
+  EXPECT_EQ(expected.ToString(), translation.ToString());
+
+  // Rounding should only affect 2d translation components.
+  translation.Translate3d(0.f, 0.f, 0.5f);
+  expected.Translate3d(0.f, 0.f, 0.5f);
+  translation.RoundTranslationComponents();
+  EXPECT_EQ(expected.ToString(), translation.ToString());
 }
 
 }  // namespace

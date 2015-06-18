@@ -19,18 +19,16 @@
 #include "vp9/encoder/vp9_segmentation.h"
 #include "vp9/common/vp9_systemdependent.h"
 
-#define ENERGY_MIN (-1)
+#define ENERGY_MIN (-4)
 #define ENERGY_MAX (1)
 #define ENERGY_SPAN (ENERGY_MAX - ENERGY_MIN +  1)
 #define ENERGY_IN_BOUNDS(energy)\
   assert((energy) >= ENERGY_MIN && (energy) <= ENERGY_MAX)
 
-static double q_ratio[MAX_SEGMENTS] = { 1, 1, 1, 1, 1, 1, 1, 1 };
-static double rdmult_ratio[MAX_SEGMENTS] = { 1, 1, 1, 1, 1, 1, 1, 1 };
-static int segment_id[MAX_SEGMENTS] = { 5, 3, 1, 0, 2, 4, 6, 7 };
+static const double rate_ratio[MAX_SEGMENTS] =
+  {2.5, 2.0, 1.5, 1.0, 0.75, 1.0, 1.0, 1.0};
+static const int segment_id[ENERGY_SPAN] = {0, 1, 1, 2, 3, 4};
 
-#define Q_RATIO(i) q_ratio[(i) - ENERGY_MIN]
-#define RDMULT_RATIO(i) rdmult_ratio[(i) - ENERGY_MIN]
 #define SEGMENT_ID(i) segment_id[(i) - ENERGY_MIN]
 
 DECLARE_ALIGNED(16, static const uint8_t, vp9_64_zeros[64]) = {0};
@@ -40,47 +38,12 @@ DECLARE_ALIGNED(16, static const uint16_t, vp9_highbd_64_zeros[64]) = {0};
 
 unsigned int vp9_vaq_segment_id(int energy) {
   ENERGY_IN_BOUNDS(energy);
-
   return SEGMENT_ID(energy);
-}
-
-double vp9_vaq_rdmult_ratio(int energy) {
-  ENERGY_IN_BOUNDS(energy);
-
-  vp9_clear_system_state();
-
-  return RDMULT_RATIO(energy);
-}
-
-double vp9_vaq_inv_q_ratio(int energy) {
-  ENERGY_IN_BOUNDS(energy);
-
-  vp9_clear_system_state();
-
-  return Q_RATIO(-energy);
-}
-
-void vp9_vaq_init() {
-  int i;
-  double base_ratio;
-
-  assert(ENERGY_SPAN <= MAX_SEGMENTS);
-
-  vp9_clear_system_state();
-
-  base_ratio = 1.5;
-
-  for (i = ENERGY_MIN; i <= ENERGY_MAX; i++) {
-    Q_RATIO(i) = pow(base_ratio, i/3.0);
-  }
 }
 
 void vp9_vaq_frame_setup(VP9_COMP *cpi) {
   VP9_COMMON *cm = &cpi->common;
   struct segmentation *seg = &cm->seg;
-  const double base_q = vp9_convert_qindex_to_q(cm->base_qindex, cm->bit_depth);
-  const int base_rdmult = vp9_compute_rd_mult(cpi, cm->base_qindex +
-                                              cm->y_dc_delta_q);
   int i;
 
   if (cm->frame_type == KEY_FRAME ||
@@ -91,26 +54,28 @@ void vp9_vaq_frame_setup(VP9_COMP *cpi) {
 
     seg->abs_delta = SEGMENT_DELTADATA;
 
-  vp9_clear_system_state();
+    vp9_clear_system_state();
 
-    for (i = ENERGY_MIN; i <= ENERGY_MAX; i++) {
-      int qindex_delta, segment_rdmult;
+    for (i = 0; i < MAX_SEGMENTS; ++i) {
+      int qindex_delta =
+          vp9_compute_qdelta_by_rate(&cpi->rc, cm->frame_type, cm->base_qindex,
+                                     rate_ratio[i], cm->bit_depth);
 
-      if (Q_RATIO(i) == 1) {
-        // No need to enable SEG_LVL_ALT_Q for this segment
-        RDMULT_RATIO(i) = 1;
+      // We don't allow qindex 0 in a segment if the base value is not 0.
+      // Q index 0 (lossless) implies 4x4 encoding only and in AQ mode a segment
+      // Q delta is sometimes applied without going back around the rd loop.
+      // This could lead to an illegal combination of partition size and q.
+      if ((cm->base_qindex != 0) && ((cm->base_qindex + qindex_delta) == 0)) {
+        qindex_delta = -cm->base_qindex + 1;
+      }
+
+      // No need to enable SEG_LVL_ALT_Q for this segment.
+      if (rate_ratio[i] == 1.0) {
         continue;
       }
 
-      qindex_delta = vp9_compute_qdelta(&cpi->rc, base_q, base_q * Q_RATIO(i),
-                                        cm->bit_depth);
-      vp9_set_segdata(seg, SEGMENT_ID(i), SEG_LVL_ALT_Q, qindex_delta);
-      vp9_enable_segfeature(seg, SEGMENT_ID(i), SEG_LVL_ALT_Q);
-
-      segment_rdmult = vp9_compute_rd_mult(cpi, cm->base_qindex + qindex_delta +
-                                           cm->y_dc_delta_q);
-
-      RDMULT_RATIO(i) = (double) segment_rdmult / base_rdmult;
+      vp9_set_segdata(seg, i, SEG_LVL_ALT_Q, qindex_delta);
+      vp9_enable_segfeature(seg, i, SEG_LVL_ALT_Q);
     }
   }
 }
@@ -167,12 +132,19 @@ static unsigned int block_variance(VP9_COMP *cpi, MACROBLOCK *x,
   }
 }
 
+double vp9_log_block_var(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bs) {
+  unsigned int var = block_variance(cpi, x, bs);
+  vp9_clear_system_state();
+  return log(var + 1.0);
+}
+
+#define DEFAULT_E_MIDPOINT 10.0
 int vp9_block_energy(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bs) {
   double energy;
-  unsigned int var = block_variance(cpi, x, bs);
-
+  double energy_midpoint;
   vp9_clear_system_state();
-
-  energy = 0.9 * (log(var + 1.0) - 10.0);
+  energy_midpoint =
+    (cpi->oxcf.pass == 2) ? cpi->twopass.mb_av_energy : DEFAULT_E_MIDPOINT;
+  energy = vp9_log_block_var(cpi, x, bs) - energy_midpoint;
   return clamp((int)round(energy), ENERGY_MIN, ENERGY_MAX);
 }

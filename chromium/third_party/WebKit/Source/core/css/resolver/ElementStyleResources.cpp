@@ -25,9 +25,9 @@
 
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
-#include "core/rendering/style/StyleGeneratedImage.h"
-#include "core/rendering/style/StyleImage.h"
-#include "core/rendering/style/StylePendingImage.h"
+#include "core/style/StyleGeneratedImage.h"
+#include "core/style/StyleImage.h"
+#include "core/style/StylePendingImage.h"
 #include "platform/graphics/filters/FilterOperation.h"
 
 namespace blink {
@@ -42,11 +42,8 @@ PassRefPtr<StyleImage> ElementStyleResources::styleImage(Document& document, con
     if (value->isImageValue())
         return cachedOrPendingFromValue(document, property, toCSSImageValue(value));
 
-    if (value->isImageGeneratorValue()) {
-        if (value->isGradientValue())
-            return generatedOrPendingFromValue(property, toCSSGradientValue(value)->gradientWithStylesResolved(textLinkColors, currentColor).get());
+    if (value->isImageGeneratorValue())
         return generatedOrPendingFromValue(property, toCSSImageGeneratorValue(value));
-    }
 
     if (value->isImageSetValue())
         return setOrPendingFromValue(property, toCSSImageSetValue(value));

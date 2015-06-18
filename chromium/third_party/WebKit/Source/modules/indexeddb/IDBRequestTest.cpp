@@ -28,6 +28,7 @@
 
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/testing/NullExecutionContext.h"
@@ -35,9 +36,10 @@
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
+#include "modules/indexeddb/IDBValue.h"
 #include "platform/SharedBuffer.h"
 #include "public/platform/WebBlobInfo.h"
-#include "public/platform/WebIDBDatabase.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -53,14 +55,19 @@ class IDBRequestTest : public testing::Test {
 public:
     IDBRequestTest()
         : m_scope(v8::Isolate::GetCurrent())
-        , m_executionContext(adoptRefWillBeNoop(new NullExecutionContext()))
     {
+    }
+
+    virtual void SetUp() override
+    {
+        m_executionContext = adoptRefWillBeNoop(new NullExecutionContext());
         m_scope.scriptState()->setExecutionContext(m_executionContext.get());
     }
 
-    ~IDBRequestTest()
+    virtual void TearDown() override
     {
-        m_scope.scriptState()->setExecutionContext(0);
+        m_executionContext->notifyContextDestroyed();
+        m_scope.scriptState()->setExecutionContext(nullptr);
     }
 
     v8::Isolate* isolate() const { return m_scope.isolate(); }
@@ -74,7 +81,7 @@ private:
 
 TEST_F(IDBRequestTest, EventsAfterStopping)
 {
-    IDBTransaction* transaction = 0;
+    IDBTransaction* transaction = nullptr;
     IDBRequest* request = IDBRequest::create(scriptState(), IDBAny::createUndefined(), transaction);
     EXPECT_EQ(request->readyState(), "pending");
     executionContext()->stopActiveDOMObjects();
@@ -82,18 +89,17 @@ TEST_F(IDBRequestTest, EventsAfterStopping)
     // Ensure none of the following raise assertions in stopped state:
     request->onError(DOMError::create(AbortError, "Description goes here."));
     request->onSuccess(Vector<String>());
-    request->onSuccess(nullptr, IDBKey::createInvalid(), IDBKey::createInvalid(), nullptr, adoptPtr(new Vector<WebBlobInfo>()));
+    request->onSuccess(nullptr, IDBKey::createInvalid(), IDBKey::createInvalid(), IDBValue::create());
     request->onSuccess(IDBKey::createInvalid());
-    request->onSuccess(PassRefPtr<SharedBuffer>(nullptr), adoptPtr(new Vector<WebBlobInfo>()));
-    request->onSuccess(PassRefPtr<SharedBuffer>(nullptr), adoptPtr(new Vector<WebBlobInfo>()), IDBKey::createInvalid(), IDBKeyPath());
+    request->onSuccess(IDBValue::create());
     request->onSuccess(static_cast<int64_t>(0));
     request->onSuccess();
-    request->onSuccess(IDBKey::createInvalid(), IDBKey::createInvalid(), nullptr, adoptPtr(new Vector<WebBlobInfo>()));
+    request->onSuccess(IDBKey::createInvalid(), IDBKey::createInvalid(), IDBValue::create());
 }
 
 TEST_F(IDBRequestTest, AbortErrorAfterAbort)
 {
-    IDBTransaction* transaction = 0;
+    IDBTransaction* transaction = nullptr;
     IDBRequest* request = IDBRequest::create(scriptState(), IDBAny::createUndefined(), transaction);
     EXPECT_EQ(request->readyState(), "pending");
 
@@ -103,6 +109,10 @@ TEST_F(IDBRequestTest, AbortErrorAfterAbort)
     // Now simulate the back end having fired an abort error at the request to clear up any intermediaries.
     // Ensure an assertion is not raised.
     request->onError(DOMError::create(AbortError, "Description goes here."));
+
+    // Stop the request lest it be GCed and its destructor
+    // finds the object in a pending state (and asserts.)
+    executionContext()->stopActiveDOMObjects();
 }
 
 class MockWebIDBDatabase : public WebIDBDatabase {

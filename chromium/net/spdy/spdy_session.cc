@@ -15,7 +15,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -27,7 +26,6 @@
 #include "crypto/ec_private_key.h"
 #include "crypto/ec_signature_creator.h"
 #include "net/base/connection_type_histograms.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/cert_verify_result.h"
@@ -36,6 +34,7 @@
 #include "net/http/http_server_properties.h"
 #include "net/http/http_util.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_buffer_producer.h"
 #include "net/spdy/spdy_frame_builder.h"
@@ -60,13 +59,13 @@ const int kMinPushedStreamLifetimeSeconds = 300;
 
 scoped_ptr<base::ListValue> SpdyHeaderBlockToListValue(
     const SpdyHeaderBlock& headers,
-    net::NetLog::LogLevel log_level) {
+    NetLogCaptureMode capture_mode) {
   scoped_ptr<base::ListValue> headers_list(new base::ListValue());
   for (SpdyHeaderBlock::const_iterator it = headers.begin();
        it != headers.end(); ++it) {
     headers_list->AppendString(
         it->first + ": " +
-        ElideHeaderValueForNetLog(log_level, it->first, it->second));
+        ElideHeaderValueForNetLog(capture_mode, it->first, it->second));
   }
   return headers_list.Pass();
 }
@@ -76,13 +75,12 @@ base::Value* NetLogSpdySynStreamSentCallback(const SpdyHeaderBlock* headers,
                                              bool unidirectional,
                                              SpdyPriority spdy_priority,
                                              SpdyStreamId stream_id,
-                                             NetLog::LogLevel log_level) {
+                                             NetLogCaptureMode capture_mode) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers",
-            SpdyHeaderBlockToListValue(*headers, log_level).release());
+  dict->Set("headers", SpdyHeaderBlockToListValue(*headers, capture_mode));
   dict->SetBoolean("fin", fin);
   dict->SetBoolean("unidirectional", unidirectional);
-  dict->SetInteger("spdy_priority", static_cast<int>(spdy_priority));
+  dict->SetInteger("priority", static_cast<int>(spdy_priority));
   dict->SetInteger("stream_id", stream_id);
   return dict;
 }
@@ -94,13 +92,12 @@ base::Value* NetLogSpdySynStreamReceivedCallback(
     SpdyPriority spdy_priority,
     SpdyStreamId stream_id,
     SpdyStreamId associated_stream,
-    NetLog::LogLevel log_level) {
+    NetLogCaptureMode capture_mode) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers",
-            SpdyHeaderBlockToListValue(*headers, log_level).release());
+  dict->Set("headers", SpdyHeaderBlockToListValue(*headers, capture_mode));
   dict->SetBoolean("fin", fin);
   dict->SetBoolean("unidirectional", unidirectional);
-  dict->SetInteger("spdy_priority", static_cast<int>(spdy_priority));
+  dict->SetInteger("priority", static_cast<int>(spdy_priority));
   dict->SetInteger("stream_id", stream_id);
   dict->SetInteger("associated_stream", associated_stream);
   return dict;
@@ -110,18 +107,18 @@ base::Value* NetLogSpdySynReplyOrHeadersReceivedCallback(
     const SpdyHeaderBlock* headers,
     bool fin,
     SpdyStreamId stream_id,
-    NetLog::LogLevel log_level) {
+    NetLogCaptureMode capture_mode) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers",
-            SpdyHeaderBlockToListValue(*headers, log_level).release());
+  dict->Set("headers", SpdyHeaderBlockToListValue(*headers, capture_mode));
   dict->SetBoolean("fin", fin);
   dict->SetInteger("stream_id", stream_id);
   return dict;
 }
 
-base::Value* NetLogSpdySessionCloseCallback(int net_error,
-                                            const std::string* description,
-                                            NetLog::LogLevel /* log_level */) {
+base::Value* NetLogSpdySessionCloseCallback(
+    int net_error,
+    const std::string* description,
+    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("net_error", net_error);
   dict->SetString("description", *description);
@@ -129,16 +126,17 @@ base::Value* NetLogSpdySessionCloseCallback(int net_error,
 }
 
 base::Value* NetLogSpdySessionCallback(const HostPortProxyPair* host_pair,
-                                       NetLog::LogLevel /* log_level */) {
+                                       NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("host", host_pair->first.ToString());
   dict->SetString("proxy", host_pair->second.ToPacString());
   return dict;
 }
 
-base::Value* NetLogSpdyInitializedCallback(NetLog::Source source,
-                                           const NextProto protocol_version,
-                                           NetLog::LogLevel /* log_level */) {
+base::Value* NetLogSpdyInitializedCallback(
+    NetLog::Source source,
+    const NextProto protocol_version,
+    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   if (source.IsValid()) {
     source.AddToEventParameters(dict);
@@ -150,7 +148,7 @@ base::Value* NetLogSpdyInitializedCallback(NetLog::Source source,
 
 base::Value* NetLogSpdySettingsCallback(const HostPortPair& host_port_pair,
                                         bool clear_persisted,
-                                        NetLog::LogLevel /* log_level */) {
+                                        NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("host", host_port_pair.ToString());
   dict->SetBoolean("clear_persisted", clear_persisted);
@@ -161,7 +159,7 @@ base::Value* NetLogSpdySettingCallback(SpdySettingsIds id,
                                        const SpdyMajorVersion protocol_version,
                                        SpdySettingsFlags flags,
                                        uint32 value,
-                                       NetLog::LogLevel /* log_level */) {
+                                       NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("id",
                    SpdyConstants::SerializeSettingId(protocol_version, id));
@@ -173,9 +171,9 @@ base::Value* NetLogSpdySettingCallback(SpdySettingsIds id,
 base::Value* NetLogSpdySendSettingsCallback(
     const SettingsMap* settings,
     const SpdyMajorVersion protocol_version,
-    NetLog::LogLevel /* log_level */) {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  base::ListValue* settings_list = new base::ListValue();
+    NetLogCaptureMode /* capture_mode */) {
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+  scoped_ptr<base::ListValue> settings_list(new base::ListValue());
   for (SettingsMap::const_iterator it = settings->begin();
        it != settings->end(); ++it) {
     const SpdySettingsIds id = it->first;
@@ -187,14 +185,14 @@ base::Value* NetLogSpdySendSettingsCallback(
         flags,
         value)));
   }
-  dict->Set("settings", settings_list);
-  return dict;
+  dict->Set("settings", settings_list.Pass());
+  return dict.release();
 }
 
 base::Value* NetLogSpdyWindowUpdateFrameCallback(
     SpdyStreamId stream_id,
     uint32 delta,
-    NetLog::LogLevel /* log_level */) {
+    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("stream_id", static_cast<int>(stream_id));
   dict->SetInteger("delta", delta);
@@ -204,7 +202,7 @@ base::Value* NetLogSpdyWindowUpdateFrameCallback(
 base::Value* NetLogSpdySessionWindowUpdateCallback(
     int32 delta,
     int32 window_size,
-    NetLog::LogLevel /* log_level */) {
+    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("delta", delta);
   dict->SetInteger("window_size", window_size);
@@ -214,7 +212,7 @@ base::Value* NetLogSpdySessionWindowUpdateCallback(
 base::Value* NetLogSpdyDataCallback(SpdyStreamId stream_id,
                                     int size,
                                     bool fin,
-                                    NetLog::LogLevel /* log_level */) {
+                                    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("stream_id", static_cast<int>(stream_id));
   dict->SetInteger("size", size);
@@ -225,7 +223,7 @@ base::Value* NetLogSpdyDataCallback(SpdyStreamId stream_id,
 base::Value* NetLogSpdyRstCallback(SpdyStreamId stream_id,
                                    int status,
                                    const std::string* description,
-                                   NetLog::LogLevel /* log_level */) {
+                                   NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("stream_id", static_cast<int>(stream_id));
   dict->SetInteger("status", status);
@@ -236,9 +234,9 @@ base::Value* NetLogSpdyRstCallback(SpdyStreamId stream_id,
 base::Value* NetLogSpdyPingCallback(SpdyPingId unique_id,
                                     bool is_ack,
                                     const char* type,
-                                    NetLog::LogLevel /* log_level */) {
+                                    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetInteger("unique_id", unique_id);
+  dict->SetInteger("unique_id", static_cast<int>(unique_id));
   dict->SetString("type", type);
   dict->SetBoolean("is_ack", is_ack);
   return dict;
@@ -248,7 +246,7 @@ base::Value* NetLogSpdyGoAwayCallback(SpdyStreamId last_stream_id,
                                       int active_streams,
                                       int unclaimed_streams,
                                       SpdyGoAwayStatus status,
-                                      NetLog::LogLevel /* log_level */) {
+                                      NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("last_accepted_stream_id",
                    static_cast<int>(last_stream_id));
@@ -262,12 +260,21 @@ base::Value* NetLogSpdyPushPromiseReceivedCallback(
     const SpdyHeaderBlock* headers,
     SpdyStreamId stream_id,
     SpdyStreamId promised_stream_id,
-    NetLog::LogLevel log_level) {
+    NetLogCaptureMode capture_mode) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->Set("headers",
-            SpdyHeaderBlockToListValue(*headers, log_level).release());
+  dict->Set("headers", SpdyHeaderBlockToListValue(*headers, capture_mode));
   dict->SetInteger("id", stream_id);
   dict->SetInteger("promised_stream_id", promised_stream_id);
+  return dict;
+}
+
+base::Value* NetLogSpdyAdoptedPushStreamCallback(
+    SpdyStreamId stream_id,
+    const GURL* url,
+    NetLogCaptureMode capture_mode) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->SetInteger("stream_id", stream_id);
+  dict->SetString("url", url->spec());
   return dict;
 }
 
@@ -398,6 +405,10 @@ SpdyProtocolErrorDetails MapRstStreamStatusToProtocolError(
       return STATUS_CODE_CONNECT_ERROR;
     case RST_STREAM_ENHANCE_YOUR_CALM:
       return STATUS_CODE_ENHANCE_YOUR_CALM;
+    case RST_STREAM_INADEQUATE_SECURITY:
+      return STATUS_CODE_INADEQUATE_SECURITY;
+    case RST_STREAM_HTTP_1_1_REQUIRED:
+      return STATUS_CODE_HTTP_1_1_REQUIRED;
     default:
       NOTREACHED();
       return static_cast<SpdyProtocolErrorDetails>(-1);
@@ -438,8 +449,8 @@ void SplitPushedHeadersToRequestAndResponse(const SpdyHeaderBlock& headers,
         to_insert = request_headers;
     } else {
       const char* host = protocol_version >= SPDY4 ? ":authority" : ":host";
-      static const char* scheme = ":scheme";
-      static const char* path = ":path";
+      static const char scheme[] = ":scheme";
+      static const char path[] = ":path";
       if (it->first == host || it->first == scheme || it->first == path)
         to_insert = request_headers;
     }
@@ -597,9 +608,9 @@ SpdySession::SpdySession(
     bool enable_compression,
     bool enable_ping_based_connection_checking,
     NextProto default_protocol,
-    size_t stream_initial_recv_window_size,
+    size_t session_max_recv_window_size,
+    size_t stream_max_recv_window_size,
     size_t initial_max_concurrent_streams,
-    size_t max_concurrent_streams_limit,
     TimeFunc time_func,
     const HostPortPair& trusted_spdy_proxy,
     NetLog* net_log)
@@ -624,9 +635,6 @@ SpdySession::SpdySession(
       max_concurrent_streams_(initial_max_concurrent_streams == 0
                                   ? kInitialMaxConcurrentStreams
                                   : initial_max_concurrent_streams),
-      max_concurrent_streams_limit_(max_concurrent_streams_limit == 0
-                                        ? kMaxConcurrentStreamLimit
-                                        : max_concurrent_streams_limit),
       max_concurrent_pushed_streams_(kMaxConcurrentPushedStreams),
       streams_initiated_count_(0),
       streams_pushed_count_(0),
@@ -643,14 +651,14 @@ SpdySession::SpdySession(
       check_ping_status_pending_(false),
       send_connection_header_prefix_(false),
       flow_control_state_(FLOW_CONTROL_NONE),
-      stream_initial_send_window_size_(kSpdyStreamInitialWindowSize),
-      stream_initial_recv_window_size_(stream_initial_recv_window_size == 0
-                                           ? kDefaultInitialRecvWindowSize
-                                           : stream_initial_recv_window_size),
       session_send_window_size_(0),
+      session_max_recv_window_size_(session_max_recv_window_size),
       session_recv_window_size_(0),
       session_unacked_recv_window_bytes_(0),
-      net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_SPDY_SESSION)),
+      stream_initial_send_window_size_(
+          GetDefaultInitialWindowSize(default_protocol)),
+      stream_max_recv_window_size_(stream_max_recv_window_size),
+      net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_HTTP2_SESSION)),
       verify_domain_authentication_(verify_domain_authentication),
       enable_sending_initial_data_(enable_sending_initial_data),
       enable_compression_(enable_compression),
@@ -667,7 +675,7 @@ SpdySession::SpdySession(
   DCHECK_LE(protocol_, kProtoSPDYMaximumVersion);
   DCHECK(HttpStreamFactory::spdy_enabled());
   net_log_.BeginEvent(
-      NetLog::TYPE_SPDY_SESSION,
+      NetLog::TYPE_HTTP2_SESSION,
       base::Bind(&NetLogSpdySessionCallback, &host_port_proxy_pair()));
   next_unclaimed_push_stream_sweep_time_ = time_func_() +
       base::TimeDelta::FromSeconds(kMinPushedStreamLifetimeSeconds);
@@ -686,7 +694,7 @@ SpdySession::~SpdySession() {
 
   RecordHistograms();
 
-  net_log_.EndEvent(NetLog::TYPE_SPDY_SESSION);
+  net_log_.EndEvent(NetLog::TYPE_HTTP2_SESSION);
 }
 
 void SpdySession::InitializeWithSocket(
@@ -706,9 +714,6 @@ void SpdySession::InitializeWithSocket(
   // requires re-working CreateFakeSpdySession(), though.
   DCHECK(connection->socket());
 
-  base::StatsCounter spdy_sessions("spdy.sessions");
-  spdy_sessions.Increment();
-
   connection_ = connection.Pass();
   is_secure_ = is_secure;
   certificate_error_code_ = certificate_error_code;
@@ -717,17 +722,19 @@ void SpdySession::InitializeWithSocket(
       connection_->socket()->GetNegotiatedProtocol();
   if (protocol_negotiated != kProtoUnknown) {
     protocol_ = protocol_negotiated;
+    stream_initial_send_window_size_ = GetDefaultInitialWindowSize(protocol_);
   }
   DCHECK_GE(protocol_, kProtoSPDYMinimumVersion);
   DCHECK_LE(protocol_, kProtoSPDYMaximumVersion);
 
-  if (protocol_ == kProtoSPDY4)
+  if ((protocol_ >= kProtoSPDY4MinimumVersion) &&
+      (protocol_ <= kProtoSPDY4MaximumVersion))
     send_connection_header_prefix_ = true;
 
   if (protocol_ >= kProtoSPDY31) {
     flow_control_state_ = FLOW_CONTROL_STREAM_AND_SESSION;
-    session_send_window_size_ = kSpdySessionInitialWindowSize;
-    session_recv_window_size_ = kSpdySessionInitialWindowSize;
+    session_send_window_size_ = GetDefaultInitialWindowSize(protocol_);
+    session_recv_window_size_ = GetDefaultInitialWindowSize(protocol_);
   } else if (protocol_ >= kProtoSPDY3) {
     flow_control_state_ = FLOW_CONTROL_STREAM;
   } else {
@@ -741,13 +748,13 @@ void SpdySession::InitializeWithSocket(
   buffered_spdy_framer_->set_debug_visitor(this);
   UMA_HISTOGRAM_ENUMERATION(
       "Net.SpdyVersion2",
-      protocol_ - kProtoSPDYMinimumVersion,
+      protocol_ - kProtoSPDYHistogramOffset,
       kProtoSPDYMaximumVersion - kProtoSPDYMinimumVersion + 1);
 
-  net_log_.AddEvent(NetLog::TYPE_SPDY_SESSION_INITIALIZED,
-                    base::Bind(&NetLogSpdyInitializedCallback,
-                               connection_->socket()->NetLog().source(),
-                               protocol_));
+  net_log_.AddEvent(
+      NetLog::TYPE_HTTP2_SESSION_INITIALIZED,
+      base::Bind(&NetLogSpdyInitializedCallback,
+                 connection_->socket()->NetLog().source(), protocol_));
 
   DCHECK_EQ(availability_state_, STATE_AVAILABLE);
   connection_->AddHigherLayeredPool(this);
@@ -842,7 +849,7 @@ int SpdySession::TryCreateStream(
   }
 
   stalled_streams_++;
-  net_log().AddEvent(NetLog::TYPE_SPDY_SESSION_STALLED_MAX_STREAMS);
+  net_log().AddEvent(NetLog::TYPE_HTTP2_SESSION_STALLED_MAX_STREAMS);
   RequestPriority priority = request->priority();
   CHECK_GE(priority, MINIMUM_PRIORITY);
   CHECK_LE(priority, MAXIMUM_PRIORITY);
@@ -869,24 +876,19 @@ int SpdySession::CreateStream(const SpdyStreamRequest& request,
   }
 
   DCHECK(connection_->socket());
-  DCHECK(connection_->socket()->IsConnected());
-  if (connection_->socket()) {
-    UMA_HISTOGRAM_BOOLEAN("Net.SpdySession.CreateStreamWithSocketConnected",
-                          connection_->socket()->IsConnected());
-    if (!connection_->socket()->IsConnected()) {
-      DoDrainSession(
-          ERR_CONNECTION_CLOSED,
-          "Tried to create SPDY stream for a closed socket connection.");
-      return ERR_CONNECTION_CLOSED;
-    }
+  UMA_HISTOGRAM_BOOLEAN("Net.SpdySession.CreateStreamWithSocketConnected",
+                        connection_->socket()->IsConnected());
+  if (!connection_->socket()->IsConnected()) {
+    DoDrainSession(
+        ERR_CONNECTION_CLOSED,
+        "Tried to create SPDY stream for a closed socket connection.");
+    return ERR_CONNECTION_CLOSED;
   }
 
   scoped_ptr<SpdyStream> new_stream(
       new SpdyStream(request.type(), GetWeakPtr(), request.url(),
-                     request.priority(),
-                     stream_initial_send_window_size_,
-                     stream_initial_recv_window_size_,
-                     request.net_log()));
+                     request.priority(), stream_initial_send_window_size_,
+                     stream_max_recv_window_size_, request.net_log()));
   *stream = new_stream->GetWeakPtr();
   InsertCreatedStream(new_stream.Pass());
 
@@ -904,7 +906,7 @@ void SpdySession::CancelStreamRequest(
   CHECK_GE(priority, MINIMUM_PRIORITY);
   CHECK_LE(priority, MAXIMUM_PRIORITY);
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   // |request| should not be in a queue not matching its priority.
   for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
     if (priority == i)
@@ -1070,18 +1072,18 @@ scoped_ptr<SpdyFrame> SpdySession::CreateSynStream(
     syn_frame.reset(buffered_spdy_framer_->SerializeFrame(headers));
   }
 
-  base::StatsCounter spdy_requests("spdy.requests");
-  spdy_requests.Increment();
   streams_initiated_count_++;
 
-  if (net_log().IsLogging()) {
-    net_log().AddEvent(NetLog::TYPE_SPDY_SESSION_SYN_STREAM,
-                       base::Bind(&NetLogSpdySynStreamSentCallback,
-                                  &block,
+  if (net_log().IsCapturing()) {
+    const NetLog::EventType type =
+        (GetProtocolVersion() <= SPDY3)
+            ? NetLog::TYPE_HTTP2_SESSION_SYN_STREAM
+            : NetLog::TYPE_HTTP2_SESSION_SEND_HEADERS;
+    net_log().AddEvent(type,
+                       base::Bind(&NetLogSpdySynStreamSentCallback, &block,
                                   (flags & CONTROL_FLAG_FIN) != 0,
                                   (flags & CONTROL_FLAG_UNIDIRECTIONAL) != 0,
-                                  spdy_priority,
-                                  stream_id));
+                                  spdy_priority, stream_id));
   }
 
   return syn_frame.Pass();
@@ -1152,7 +1154,7 @@ scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
       // might end up being stalled by the session also.
       QueueSendStalledStream(*stream);
       net_log().AddEvent(
-          NetLog::TYPE_SPDY_SESSION_STREAM_STALLED_BY_STREAM_SEND_WINDOW,
+          NetLog::TYPE_HTTP2_SESSION_STREAM_STALLED_BY_STREAM_SEND_WINDOW,
           NetLog::IntegerCallback("stream_id", stream_id));
       return scoped_ptr<SpdyBuffer>();
     }
@@ -1167,7 +1169,7 @@ scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
       stream->set_send_stalled_by_flow_control(true);
       QueueSendStalledStream(*stream);
       net_log().AddEvent(
-          NetLog::TYPE_SPDY_SESSION_STREAM_STALLED_BY_SESSION_SEND_WINDOW,
+          NetLog::TYPE_HTTP2_SESSION_STREAM_STALLED_BY_SESSION_SEND_WINDOW,
           NetLog::IntegerCallback("stream_id", stream_id));
       return scoped_ptr<SpdyBuffer>();
     }
@@ -1182,11 +1184,10 @@ scoped_ptr<SpdyBuffer> SpdySession::CreateDataBuffer(SpdyStreamId stream_id,
   if (effective_len < len)
     flags = static_cast<SpdyDataFlags>(flags & ~DATA_FLAG_FIN);
 
-  if (net_log().IsLogging()) {
-    net_log().AddEvent(
-        NetLog::TYPE_SPDY_SESSION_SEND_DATA,
-        base::Bind(&NetLogSpdyDataCallback, stream_id, effective_len,
-                   (flags & DATA_FLAG_FIN) != 0));
+  if (net_log().IsCapturing()) {
+    net_log().AddEvent(NetLog::TYPE_HTTP2_SESSION_SEND_DATA,
+                       base::Bind(&NetLogSpdyDataCallback, stream_id,
+                                  effective_len, (flags & DATA_FLAG_FIN) != 0));
   }
 
   // Send PrefacePing for DATA_FRAMEs with nonzero payload size.
@@ -1325,7 +1326,7 @@ void SpdySession::EnqueueResetStreamFrame(SpdyStreamId stream_id,
   DCHECK_NE(stream_id, 0u);
 
   net_log().AddEvent(
-      NetLog::TYPE_SPDY_SESSION_SEND_RST_STREAM,
+      NetLog::TYPE_HTTP2_SESSION_SEND_RST_STREAM,
       base::Bind(&NetLogSpdyRstCallback, stream_id, status, &description));
 
   DCHECK(buffered_spdy_framer_.get());
@@ -1337,10 +1338,9 @@ void SpdySession::EnqueueResetStreamFrame(SpdyStreamId stream_id,
 }
 
 void SpdySession::PumpReadLoop(ReadState expected_read_state, int result) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/462774 is fixed.
   tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "418183 DoReadCallback => SpdySession::PumpReadLoop"));
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("462774 SpdySession::PumpReadLoop"));
 
   CHECK(!in_io_loop_);
   if (availability_state_ == STATE_DRAINING) {
@@ -1541,6 +1541,10 @@ int SpdySession::DoWrite() {
       }
     }
 
+    // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is
+    // fixed.
+    tracked_objects::ScopedTracker tracking_profile1(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::DoWrite1"));
     in_flight_write_ = producer->ProduceBuffer();
     if (!in_flight_write_) {
       NOTREACHED();
@@ -1558,6 +1562,9 @@ int SpdySession::DoWrite() {
   // Explicitly store in a scoped_refptr<IOBuffer> to avoid problems
   // with Socket implementations that don't store their IOBuffer
   // argument in a scoped_refptr<IOBuffer> (see crbug.com/232345).
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::DoWrite2"));
   scoped_refptr<IOBuffer> write_io_buffer =
       in_flight_write_->GetIOBufferForRemainingData();
   return connection_->socket()->Write(
@@ -1617,7 +1624,7 @@ int SpdySession::DoWriteComplete(int result) {
 }
 
 void SpdySession::DcheckGoingAway() const {
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   DCHECK_GE(availability_state_, STATE_GOING_AWAY);
   for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
     DCHECK(pending_create_stream_queues_[i].empty());
@@ -1691,6 +1698,11 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   }
   MakeUnavailable();
 
+  // Mark host_port_pair requiring HTTP/1.1 for subsequent connections.
+  if (err == ERR_HTTP_1_1_REQUIRED) {
+    http_server_properties_->SetHTTP11Required(host_port_pair());
+  }
+
   // If |err| indicates an error occurred, inform the peer that we're closing
   // and why. Don't GOAWAY on a graceful or idle close, as that may
   // unnecessarily wake the radio. We could technically GOAWAY on network errors
@@ -1699,7 +1711,7 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   if (err != OK &&
       err != ERR_ABORTED &&  // Used by SpdySessionPool to close idle sessions.
       err != ERR_NETWORK_CHANGED &&  // Used to deprecate sessions on IP change.
-      err != ERR_SOCKET_NOT_CONNECTED &&
+      err != ERR_SOCKET_NOT_CONNECTED && err != ERR_HTTP_1_1_REQUIRED &&
       err != ERR_CONNECTION_CLOSED && err != ERR_CONNECTION_RESET) {
     // Enqueue a GOAWAY to inform the peer of why we're closing the connection.
     SpdyGoAwayIR goaway_ir(last_accepted_push_stream_id_,
@@ -1715,7 +1727,7 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   error_on_close_ = err;
 
   net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_CLOSE,
+      NetLog::TYPE_HTTP2_SESSION_CLOSE,
       base::Bind(&NetLogSpdySessionCloseCallback, err, &description));
 
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SpdySession.ClosedOnError", -err);
@@ -1749,13 +1761,9 @@ void SpdySession::LogAbandonedActiveStream(ActiveStreamMap::const_iterator it,
   DCHECK_GT(it->first, 0u);
   LogAbandonedStream(it->second.stream, status);
   ++streams_abandoned_count_;
-  base::StatsCounter abandoned_streams("spdy.abandoned_streams");
-  abandoned_streams.Increment();
   if (it->second.stream->type() == SPDY_PUSH_STREAM &&
       unclaimed_pushed_streams_.find(it->second.stream->url()) !=
       unclaimed_pushed_streams_.end()) {
-    base::StatsCounter abandoned_push_streams("spdy.abandoned_push_streams");
-    abandoned_push_streams.Increment();
   }
 }
 
@@ -1780,20 +1788,17 @@ void SpdySession::MakeUnavailable() {
 }
 
 base::Value* SpdySession::GetInfoAsValue() const {
-  base::DictionaryValue* dict = new base::DictionaryValue();
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
 
   dict->SetInteger("source_id", net_log_.source().id);
 
   dict->SetString("host_port_pair", host_port_pair().ToString());
   if (!pooled_aliases_.empty()) {
-    base::ListValue* alias_list = new base::ListValue();
-    for (std::set<SpdySessionKey>::const_iterator it =
-             pooled_aliases_.begin();
-         it != pooled_aliases_.end(); it++) {
-      alias_list->Append(new base::StringValue(
-          it->host_port_pair().ToString()));
+    scoped_ptr<base::ListValue> alias_list(new base::ListValue());
+    for (const auto& alias : pooled_aliases_) {
+      alias_list->AppendString(alias.host_port_pair().ToString());
     }
-    dict->Set("aliases", alias_list);
+    dict->Set("aliases", alias_list.Pass());
   }
   dict->SetString("proxy", host_port_proxy_pair().second.ToURI());
 
@@ -1826,7 +1831,7 @@ base::Value* SpdySession::GetInfoAsValue() const {
   dict->SetInteger("recv_window_size", session_recv_window_size_);
   dict->SetInteger("unacked_recv_window_bytes",
                    session_unacked_recv_window_bytes_);
-  return dict;
+  return dict.release();
 }
 
 bool SpdySession::IsReused() const {
@@ -1943,8 +1948,6 @@ void SpdySession::DeleteStream(scoped_ptr<SpdyStream> stream, int status) {
 }
 
 base::WeakPtr<SpdyStream> SpdySession::GetActivePushStream(const GURL& url) {
-  base::StatsCounter used_push_streams("spdy.claimed_push_streams");
-
   PushedStreamMap::iterator unclaimed_it = unclaimed_pushed_streams_.find(url);
   if (unclaimed_it == unclaimed_pushed_streams_.end())
     return base::WeakPtr<SpdyStream>();
@@ -1958,8 +1961,9 @@ base::WeakPtr<SpdyStream> SpdySession::GetActivePushStream(const GURL& url) {
     return base::WeakPtr<SpdyStream>();
   }
 
-  net_log_.AddEvent(NetLog::TYPE_SPDY_STREAM_ADOPTED_PUSH_STREAM);
-  used_push_streams.Increment();
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_STREAM_ADOPTED_PUSH_STREAM,
+                    base::Bind(&NetLogSpdyAdoptedPushStreamCallback,
+                               active_it->second.stream->stream_id(), &url));
   return active_it->second.stream->GetWeakPtr();
 }
 
@@ -1969,14 +1973,6 @@ bool SpdySession::GetSSLInfo(SSLInfo* ssl_info,
   *was_npn_negotiated = connection_->socket()->WasNpnNegotiated();
   *protocol_negotiated = connection_->socket()->GetNegotiatedProtocol();
   return connection_->socket()->GetSSLInfo(ssl_info);
-}
-
-bool SpdySession::GetSSLCertRequestInfo(
-    SSLCertRequestInfo* cert_request_info) {
-  if (!is_secure_)
-    return false;
-  GetSSLClientSocket()->GetSSLCertRequestInfo(cert_request_info);
-  return true;
 }
 
 void SpdySession::OnError(SpdyFramer::SpdyError error_code) {
@@ -2030,18 +2026,10 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
                                     size_t len,
                                     bool fin) {
   CHECK(in_io_loop_);
-
-  if (data == NULL && len != 0) {
-    // This is notification of consumed data padding.
-    // TODO(jgraettinger): Properly flow padding into WINDOW_UPDATE frames.
-    // See crbug.com/353012.
-    return;
-  }
-
   DCHECK_LT(len, 1u << 24);
-  if (net_log().IsLogging()) {
+  if (net_log().IsCapturing()) {
     net_log().AddEvent(
-        NetLog::TYPE_SPDY_SESSION_RECV_DATA,
+        NetLog::TYPE_HTTP2_SESSION_RECV_DATA,
         base::Bind(&NetLogSpdyDataCallback, stream_id, len, fin));
   }
 
@@ -2087,17 +2075,35 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
   stream->OnDataReceived(buffer.Pass());
 }
 
+void SpdySession::OnStreamPadding(SpdyStreamId stream_id, size_t len) {
+  CHECK(in_io_loop_);
+
+  if (flow_control_state_ != FLOW_CONTROL_STREAM_AND_SESSION)
+    return;
+
+  // Decrease window size because padding bytes are received.
+  // Increase window size because padding bytes are consumed (by discarding).
+  // Net result: |session_unacked_recv_window_bytes_| increases by |len|,
+  // |session_recv_window_size_| does not change.
+  DecreaseRecvWindowSize(static_cast<int32>(len));
+  IncreaseRecvWindowSize(static_cast<int32>(len));
+
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
+  if (it == active_streams_.end())
+    return;
+  it->second.stream->OnPaddingConsumed(len);
+}
+
 void SpdySession::OnSettings(bool clear_persisted) {
   CHECK(in_io_loop_);
 
   if (clear_persisted)
     http_server_properties_->ClearSpdySettings(host_port_pair());
 
-  if (net_log_.IsLogging()) {
-    net_log_.AddEvent(
-        NetLog::TYPE_SPDY_SESSION_RECV_SETTINGS,
-        base::Bind(&NetLogSpdySettingsCallback, host_port_pair(),
-                   clear_persisted));
+  if (net_log_.IsCapturing()) {
+    net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_RECV_SETTINGS,
+                      base::Bind(&NetLogSpdySettingsCallback, host_port_pair(),
+                                 clear_persisted));
   }
 
   if (GetProtocolVersion() >= SPDY4) {
@@ -2127,12 +2133,9 @@ void SpdySession::OnSetting(SpdySettingsIds id,
 
   // Log the setting.
   const SpdyMajorVersion protocol_version = GetProtocolVersion();
-  net_log_.AddEvent(NetLog::TYPE_SPDY_SESSION_RECV_SETTING,
-                    base::Bind(&NetLogSpdySettingCallback,
-                               id,
-                               protocol_version,
-                               static_cast<SpdySettingsFlags>(flags),
-                               value));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_RECV_SETTING,
+                    base::Bind(&NetLogSpdySettingCallback, id, protocol_version,
+                               static_cast<SpdySettingsFlags>(flags), value));
 }
 
 void SpdySession::OnSendCompressedFrame(
@@ -2210,12 +2213,11 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
   base::Time response_time = base::Time::Now();
   base::TimeTicks recv_first_byte_time = time_func_();
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
-        NetLog::TYPE_SPDY_SESSION_PUSHED_SYN_STREAM,
-        base::Bind(&NetLogSpdySynStreamReceivedCallback,
-                   &headers, fin, unidirectional, priority,
-                   stream_id, associated_stream_id));
+        NetLog::TYPE_HTTP2_SESSION_PUSHED_SYN_STREAM,
+        base::Bind(&NetLogSpdySynStreamReceivedCallback, &headers, fin,
+                   unidirectional, priority, stream_id, associated_stream_id));
   }
 
   // Split headers to simulate push promise and response.
@@ -2234,14 +2236,9 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
     return;
   }
 
-  if (OnInitialResponseHeadersReceived(response_headers,
-                                       response_time,
-                                       recv_first_byte_time,
-                                       active_it->second.stream) != OK)
-    return;
-
-  base::StatsCounter push_requests("spdy.pushed_streams");
-  push_requests.Increment();
+  OnInitialResponseHeadersReceived(response_headers, response_time,
+                                   recv_first_byte_time,
+                                   active_it->second.stream);
 }
 
 void SpdySession::DeleteExpiredPushedStreams() {
@@ -2288,11 +2285,10 @@ void SpdySession::OnSynReply(SpdyStreamId stream_id,
   base::Time response_time = base::Time::Now();
   base::TimeTicks recv_first_byte_time = time_func_();
 
-  if (net_log().IsLogging()) {
-    net_log().AddEvent(
-        NetLog::TYPE_SPDY_SESSION_SYN_REPLY,
-        base::Bind(&NetLogSpdySynReplyOrHeadersReceivedCallback,
-                   &headers, fin, stream_id));
+  if (net_log().IsCapturing()) {
+    net_log().AddEvent(NetLog::TYPE_HTTP2_SESSION_SYN_REPLY,
+                       base::Bind(&NetLogSpdySynReplyOrHeadersReceivedCallback,
+                                  &headers, fin, stream_id));
   }
 
   ActiveStreamMap::iterator it = active_streams_.find(stream_id);
@@ -2334,11 +2330,10 @@ void SpdySession::OnHeaders(SpdyStreamId stream_id,
                             const SpdyHeaderBlock& headers) {
   CHECK(in_io_loop_);
 
-  if (net_log().IsLogging()) {
-    net_log().AddEvent(
-        NetLog::TYPE_SPDY_SESSION_RECV_HEADERS,
-        base::Bind(&NetLogSpdySynReplyOrHeadersReceivedCallback,
-                   &headers, fin, stream_id));
+  if (net_log().IsCapturing()) {
+    net_log().AddEvent(NetLog::TYPE_HTTP2_SESSION_RECV_HEADERS,
+                       base::Bind(&NetLogSpdySynReplyOrHeadersReceivedCallback,
+                                  &headers, fin, stream_id));
   }
 
   ActiveStreamMap::iterator it = active_streams_.find(stream_id);
@@ -2399,9 +2394,8 @@ void SpdySession::OnRstStream(SpdyStreamId stream_id,
 
   std::string description;
   net_log().AddEvent(
-      NetLog::TYPE_SPDY_SESSION_RST_STREAM,
-      base::Bind(&NetLogSpdyRstCallback,
-                 stream_id, status, &description));
+      NetLog::TYPE_HTTP2_SESSION_RST_STREAM,
+      base::Bind(&NetLogSpdyRstCallback, stream_id, status, &description));
 
   ActiveStreamMap::iterator it = active_streams_.find(stream_id);
   if (it == active_streams_.end()) {
@@ -2416,6 +2410,13 @@ void SpdySession::OnRstStream(SpdyStreamId stream_id,
     it->second.stream->OnDataReceived(scoped_ptr<SpdyBuffer>());
   } else if (status == RST_STREAM_REFUSED_STREAM) {
     CloseActiveStreamIterator(it, ERR_SPDY_SERVER_REFUSED_STREAM);
+  } else if (status == RST_STREAM_HTTP_1_1_REQUIRED) {
+    // TODO(bnc): Record histogram with number of open streams capped at 50.
+    it->second.stream->LogStreamError(
+        ERR_HTTP_1_1_REQUIRED,
+        base::StringPrintf(
+            "SPDY session closed because of stream with status: %d", status));
+    DoDrainSession(ERR_HTTP_1_1_REQUIRED, "HTTP_1_1_REQUIRED for stream.");
   } else {
     RecordProtocolErrorHistogram(
         PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM);
@@ -2434,14 +2435,17 @@ void SpdySession::OnGoAway(SpdyStreamId last_accepted_stream_id,
 
   // TODO(jgraettinger): UMA histogram on |status|.
 
-  net_log_.AddEvent(NetLog::TYPE_SPDY_SESSION_GOAWAY,
-      base::Bind(&NetLogSpdyGoAwayCallback,
-                 last_accepted_stream_id,
-                 active_streams_.size(),
-                 unclaimed_pushed_streams_.size(),
-                 status));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_GOAWAY,
+                    base::Bind(&NetLogSpdyGoAwayCallback,
+                               last_accepted_stream_id, active_streams_.size(),
+                               unclaimed_pushed_streams_.size(), status));
   MakeUnavailable();
-  StartGoingAway(last_accepted_stream_id, ERR_ABORTED);
+  if (status == GOAWAY_HTTP_1_1_REQUIRED) {
+    // TODO(bnc): Record histogram with number of open streams capped at 50.
+    DoDrainSession(ERR_HTTP_1_1_REQUIRED, "HTTP_1_1_REQUIRED for stream.");
+  } else {
+    StartGoingAway(last_accepted_stream_id, ERR_ABORTED);
+  }
   // This is to handle the case when we already don't have any active
   // streams (i.e., StartGoingAway() did nothing). Otherwise, we have
   // active streams and so the last one being closed will finish the
@@ -2453,12 +2457,12 @@ void SpdySession::OnPing(SpdyPingId unique_id, bool is_ack) {
   CHECK(in_io_loop_);
 
   net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_PING,
+      NetLog::TYPE_HTTP2_SESSION_PING,
       base::Bind(&NetLogSpdyPingCallback, unique_id, is_ack, "received"));
 
   // Send response to a PING from server.
-  if ((protocol_ >= kProtoSPDY4 && !is_ack) ||
-      (protocol_ < kProtoSPDY4 && unique_id % 2 == 0)) {
+  if ((protocol_ >= kProtoSPDY4MinimumVersion && !is_ack) ||
+      (protocol_ < kProtoSPDY4MinimumVersion && unique_id % 2 == 0)) {
     WritePingFrame(unique_id, true);
     return;
   }
@@ -2484,10 +2488,9 @@ void SpdySession::OnWindowUpdate(SpdyStreamId stream_id,
   CHECK(in_io_loop_);
 
   DCHECK_LE(delta_window_size, static_cast<uint32>(kint32max));
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_RECEIVED_WINDOW_UPDATE_FRAME,
-      base::Bind(&NetLogSpdyWindowUpdateFrameCallback,
-                 stream_id, delta_window_size));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_RECEIVED_WINDOW_UPDATE_FRAME,
+                    base::Bind(&NetLogSpdyWindowUpdateFrameCallback, stream_id,
+                               delta_window_size));
 
   if (stream_id == kSessionFlowControlStreamId) {
     // WINDOW_UPDATE for the session.
@@ -2668,13 +2671,10 @@ bool SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
     return false;
   }
 
-  scoped_ptr<SpdyStream> stream(new SpdyStream(SPDY_PUSH_STREAM,
-                                               GetWeakPtr(),
-                                               gurl,
-                                               request_priority,
-                                               stream_initial_send_window_size_,
-                                               stream_initial_recv_window_size_,
-                                               net_log_));
+  scoped_ptr<SpdyStream> stream(
+      new SpdyStream(SPDY_PUSH_STREAM, GetWeakPtr(), gurl, request_priority,
+                     stream_initial_send_window_size_,
+                     stream_max_recv_window_size_, net_log_));
   stream->set_stream_id(stream_id);
 
   // In spdy4/http2 PUSH_PROMISE arrives on associated stream.
@@ -2687,12 +2687,12 @@ bool SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
 
   last_compressed_frame_len_ = 0;
 
-  DeleteExpiredPushedStreams();
   PushedStreamMap::iterator inserted_pushed_it =
       unclaimed_pushed_streams_.insert(
           pushed_it,
           std::make_pair(gurl, PushedStreamInfo(stream_id, time_func_())));
   DCHECK(inserted_pushed_it != pushed_it);
+  DeleteExpiredPushedStreams();
 
   InsertActivatedStream(stream.Pass());
 
@@ -2713,21 +2713,16 @@ void SpdySession::OnPushPromise(SpdyStreamId stream_id,
                                 const SpdyHeaderBlock& headers) {
   CHECK(in_io_loop_);
 
-  if (net_log_.IsLogging()) {
-    net_log_.AddEvent(NetLog::TYPE_SPDY_SESSION_RECV_PUSH_PROMISE,
+  if (net_log_.IsCapturing()) {
+    net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_RECV_PUSH_PROMISE,
                       base::Bind(&NetLogSpdyPushPromiseReceivedCallback,
-                                 &headers,
-                                 stream_id,
-                                 promised_stream_id));
+                                 &headers, stream_id, promised_stream_id));
   }
 
   // Any priority will do.
   // TODO(baranovich): pass parent stream id priority?
   if (!TryCreatePushStream(promised_stream_id, stream_id, 0, headers))
     return;
-
-  base::StatsCounter push_requests("spdy.pushed_streams");
-  push_requests.Increment();
 }
 
 void SpdySession::SendStreamWindowUpdate(SpdyStreamId stream_id,
@@ -2744,7 +2739,8 @@ void SpdySession::SendInitialData() {
   DCHECK(enable_sending_initial_data_);
 
   if (send_connection_header_prefix_) {
-    DCHECK_EQ(protocol_, kProtoSPDY4);
+    DCHECK_GE(protocol_, kProtoSPDY4MinimumVersion);
+    DCHECK_LE(protocol_, kProtoSPDY4MaximumVersion);
     scoped_ptr<SpdyFrame> connection_header_prefix_frame(
         new SpdyFrame(const_cast<char*>(kHttp2ConnectionHeaderPrefix),
                       kHttp2ConnectionHeaderPrefixSize,
@@ -2762,10 +2758,9 @@ void SpdySession::SendInitialData() {
   settings_map[SETTINGS_MAX_CONCURRENT_STREAMS] =
       SettingsFlagsAndValue(SETTINGS_FLAG_NONE, kMaxConcurrentPushedStreams);
   if (flow_control_state_ >= FLOW_CONTROL_STREAM &&
-      stream_initial_recv_window_size_ != kSpdyStreamInitialWindowSize) {
+      stream_max_recv_window_size_ != GetDefaultInitialWindowSize(protocol_)) {
     settings_map[SETTINGS_INITIAL_WINDOW_SIZE] =
-        SettingsFlagsAndValue(SETTINGS_FLAG_NONE,
-                              stream_initial_recv_window_size_);
+        SettingsFlagsAndValue(SETTINGS_FLAG_NONE, stream_max_recv_window_size_);
   }
   SendSettings(settings_map);
 
@@ -2774,12 +2769,14 @@ void SpdySession::SendInitialData() {
     // Bump up the receive window size to the real initial value. This
     // has to go here since the WINDOW_UPDATE frame sent by
     // IncreaseRecvWindowSize() call uses |buffered_spdy_framer_|.
-    DCHECK_GT(kDefaultInitialRecvWindowSize, session_recv_window_size_);
-    // This condition implies that |kDefaultInitialRecvWindowSize| -
+    // This condition implies that |session_max_recv_window_size_| -
     // |session_recv_window_size_| doesn't overflow.
-    DCHECK_GT(session_recv_window_size_, 0);
-    IncreaseRecvWindowSize(
-        kDefaultInitialRecvWindowSize - session_recv_window_size_);
+    DCHECK_GE(session_max_recv_window_size_, session_recv_window_size_);
+    DCHECK_GE(session_recv_window_size_, 0);
+    if (session_max_recv_window_size_ > session_recv_window_size_) {
+      IncreaseRecvWindowSize(session_max_recv_window_size_ -
+                             session_recv_window_size_);
+    }
   }
 
   if (protocol_ <= kProtoSPDY31) {
@@ -2811,7 +2808,7 @@ void SpdySession::SendInitialData() {
 void SpdySession::SendSettings(const SettingsMap& settings) {
   const SpdyMajorVersion protocol_version = GetProtocolVersion();
   net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_SEND_SETTINGS,
+      NetLog::TYPE_HTTP2_SESSION_SEND_SETTINGS,
       base::Bind(&NetLogSpdySendSettingsCallback, &settings, protocol_version));
   // Create the SETTINGS frame and send it.
   DCHECK(buffered_spdy_framer_.get());
@@ -2831,13 +2828,13 @@ void SpdySession::HandleSetting(uint32 id, uint32 value) {
     case SETTINGS_INITIAL_WINDOW_SIZE: {
       if (flow_control_state_ < FLOW_CONTROL_STREAM) {
         net_log().AddEvent(
-            NetLog::TYPE_SPDY_SESSION_INITIAL_WINDOW_SIZE_NO_FLOW_CONTROL);
+            NetLog::TYPE_HTTP2_SESSION_INITIAL_WINDOW_SIZE_NO_FLOW_CONTROL);
         return;
       }
 
       if (value > static_cast<uint32>(kint32max)) {
         net_log().AddEvent(
-            NetLog::TYPE_SPDY_SESSION_INITIAL_WINDOW_SIZE_OUT_OF_RANGE,
+            NetLog::TYPE_HTTP2_SESSION_INITIAL_WINDOW_SIZE_OUT_OF_RANGE,
             NetLog::IntegerCallback("initial_window_size", value));
         return;
       }
@@ -2848,7 +2845,7 @@ void SpdySession::HandleSetting(uint32 id, uint32 value) {
       stream_initial_send_window_size_ = static_cast<int32>(value);
       UpdateStreamsSendWindowSize(delta_window_size);
       net_log().AddEvent(
-          NetLog::TYPE_SPDY_SESSION_UPDATE_STREAMS_SEND_WINDOW_SIZE,
+          NetLog::TYPE_HTTP2_SESSION_UPDATE_STREAMS_SEND_WINDOW_SIZE,
           NetLog::IntegerCallback("delta_window_size", delta_window_size));
       break;
     }
@@ -2894,10 +2891,9 @@ void SpdySession::SendWindowUpdateFrame(SpdyStreamId stream_id,
     CHECK_EQ(stream_id, kSessionFlowControlStreamId);
   }
 
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_SENT_WINDOW_UPDATE_FRAME,
-      base::Bind(&NetLogSpdyWindowUpdateFrameCallback,
-                 stream_id, delta_window_size));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_SENT_WINDOW_UPDATE_FRAME,
+                    base::Bind(&NetLogSpdyWindowUpdateFrameCallback, stream_id,
+                               delta_window_size));
 
   DCHECK(buffered_spdy_framer_.get());
   scoped_ptr<SpdyFrame> window_update_frame(
@@ -2905,15 +2901,15 @@ void SpdySession::SendWindowUpdateFrame(SpdyStreamId stream_id,
   EnqueueSessionWrite(priority, WINDOW_UPDATE, window_update_frame.Pass());
 }
 
-void SpdySession::WritePingFrame(uint32 unique_id, bool is_ack) {
+void SpdySession::WritePingFrame(SpdyPingId unique_id, bool is_ack) {
   DCHECK(buffered_spdy_framer_.get());
   scoped_ptr<SpdyFrame> ping_frame(
       buffered_spdy_framer_->CreatePingFrame(unique_id, is_ack));
   EnqueueSessionWrite(HIGHEST, PING, ping_frame.Pass());
 
-  if (net_log().IsLogging()) {
+  if (net_log().IsCapturing()) {
     net_log().AddEvent(
-        NetLog::TYPE_SPDY_SESSION_PING,
+        NetLog::TYPE_HTTP2_SESSION_PING,
         base::Bind(&NetLogSpdyPingCallback, unique_id, is_ack, "sent"));
   }
   if (!is_ack) {
@@ -2950,8 +2946,6 @@ void SpdySession::CheckPingStatus(base::TimeTicks last_check_time) {
   base::TimeDelta delay = hung_interval_ - (now - last_activity_time_);
 
   if (delay.InMilliseconds() < 0 || last_activity_time_ < last_check_time) {
-    // Track all failed PING messages in a separate bucket.
-    RecordPingRTTHistogram(base::TimeDelta::Max());
     DoDrainSession(ERR_SPDY_PING_FAILED, "Failed ping.");
     return;
   }
@@ -2965,7 +2959,9 @@ void SpdySession::CheckPingStatus(base::TimeTicks last_check_time) {
 }
 
 void SpdySession::RecordPingRTTHistogram(base::TimeDelta duration) {
-  UMA_HISTOGRAM_TIMES("Net.SpdyPing.RTT", duration);
+  UMA_HISTOGRAM_CUSTOM_TIMES("Net.SpdyPing.RTT", duration,
+                             base::TimeDelta::FromMilliseconds(1),
+                             base::TimeDelta::FromMinutes(10), 100);
 }
 
 void SpdySession::RecordProtocolErrorHistogram(
@@ -3122,10 +3118,9 @@ void SpdySession::IncreaseSendWindowSize(int32 delta_window_size) {
 
   session_send_window_size_ += delta_window_size;
 
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_UPDATE_SEND_WINDOW,
-      base::Bind(&NetLogSpdySessionWindowUpdateCallback,
-                 delta_window_size, session_send_window_size_));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_UPDATE_SEND_WINDOW,
+                    base::Bind(&NetLogSpdySessionWindowUpdateCallback,
+                               delta_window_size, session_send_window_size_));
 
   DCHECK(!IsSendStalled());
   ResumeSendStalledStreams();
@@ -3145,10 +3140,9 @@ void SpdySession::DecreaseSendWindowSize(int32 delta_window_size) {
 
   session_send_window_size_ -= delta_window_size;
 
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_UPDATE_SEND_WINDOW,
-      base::Bind(&NetLogSpdySessionWindowUpdateCallback,
-                 -delta_window_size, session_send_window_size_));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_UPDATE_SEND_WINDOW,
+                    base::Bind(&NetLogSpdySessionWindowUpdateCallback,
+                               -delta_window_size, session_send_window_size_));
 }
 
 void SpdySession::OnReadBufferConsumed(
@@ -3173,13 +3167,12 @@ void SpdySession::IncreaseRecvWindowSize(int32 delta_window_size) {
   DCHECK_LE(delta_window_size, kint32max - session_recv_window_size_);
 
   session_recv_window_size_ += delta_window_size;
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_STREAM_UPDATE_RECV_WINDOW,
-      base::Bind(&NetLogSpdySessionWindowUpdateCallback,
-                 delta_window_size, session_recv_window_size_));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_STREAM_UPDATE_RECV_WINDOW,
+                    base::Bind(&NetLogSpdySessionWindowUpdateCallback,
+                               delta_window_size, session_recv_window_size_));
 
   session_unacked_recv_window_bytes_ += delta_window_size;
-  if (session_unacked_recv_window_bytes_ > kSpdySessionInitialWindowSize / 2) {
+  if (session_unacked_recv_window_bytes_ > session_max_recv_window_size_ / 2) {
     SendWindowUpdateFrame(kSessionFlowControlStreamId,
                           session_unacked_recv_window_bytes_,
                           HIGHEST);
@@ -3192,10 +3185,12 @@ void SpdySession::DecreaseRecvWindowSize(int32 delta_window_size) {
   DCHECK_EQ(flow_control_state_, FLOW_CONTROL_STREAM_AND_SESSION);
   DCHECK_GE(delta_window_size, 1);
 
-  // Since we never decrease the initial receive window size,
-  // |delta_window_size| should never cause |recv_window_size_| to go
-  // negative. If we do, the receive window isn't being respected.
-  if (delta_window_size > session_recv_window_size_) {
+  // The receiving window size as the peer knows it is
+  // |session_recv_window_size_ - session_unacked_recv_window_bytes_|, if more
+  // data are sent by the peer, that means that the receive window is not being
+  // respected.
+  if (delta_window_size >
+      session_recv_window_size_ - session_unacked_recv_window_bytes_) {
     RecordProtocolErrorHistogram(PROTOCOL_ERROR_RECEIVE_WINDOW_VIOLATION);
     DoDrainSession(
         ERR_SPDY_FLOW_CONTROL_ERROR,
@@ -3206,10 +3201,9 @@ void SpdySession::DecreaseRecvWindowSize(int32 delta_window_size) {
   }
 
   session_recv_window_size_ -= delta_window_size;
-  net_log_.AddEvent(
-      NetLog::TYPE_SPDY_SESSION_UPDATE_RECV_WINDOW,
-      base::Bind(&NetLogSpdySessionWindowUpdateCallback,
-                 -delta_window_size, session_recv_window_size_));
+  net_log_.AddEvent(NetLog::TYPE_HTTP2_SESSION_UPDATE_RECV_WINDOW,
+                    base::Bind(&NetLogSpdySessionWindowUpdateCallback,
+                               -delta_window_size, session_recv_window_size_));
 }
 
 void SpdySession::QueueSendStalledStream(const SpdyStream& stream) {
@@ -3230,7 +3224,7 @@ void SpdySession::ResumeSendStalledStreams() {
 
   while (!IsSendStalled()) {
     size_t old_size = 0;
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     old_size = GetTotalSize(stream_send_unstall_queue_);
 #endif
 

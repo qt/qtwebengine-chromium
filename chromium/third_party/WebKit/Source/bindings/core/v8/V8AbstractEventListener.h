@@ -33,6 +33,7 @@
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
 #include "bindings/core/v8/ScopedPersistent.h"
+#include "core/CoreExport.h"
 #include "core/events/EventListener.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -50,7 +51,7 @@ class Event;
 // Why does this matter?
 // WebKit does not allow duplicated HTML event handlers of the same type,
 // but ALLOWs duplicated non-HTML event handlers.
-class V8AbstractEventListener : public EventListener {
+class CORE_EXPORT V8AbstractEventListener : public EventListener {
 public:
     virtual ~V8AbstractEventListener();
 
@@ -70,17 +71,18 @@ public:
 
     virtual bool operator==(const EventListener& other) override { return this == &other; }
 
-    virtual void handleEvent(ExecutionContext*, Event*) override;
+    virtual void handleEvent(ExecutionContext*, Event*) override final;
+    virtual void handleEvent(ScriptState*, Event*);
 
     // Returns the listener object, either a function or an object.
-    v8::Local<v8::Object> getListenerObject(ExecutionContext* context)
+    v8::Local<v8::Object> getListenerObject(ExecutionContext* executionContext)
     {
         // prepareListenerObject can potentially deref this event listener
         // as it may attempt to compile a function (lazy event listener), get an error
         // and invoke onerror callback which can execute arbitrary JS code.
         // Protect this event listener to keep it alive.
         RefPtr<V8AbstractEventListener> guard(this);
-        prepareListenerObject(context);
+        prepareListenerObject(executionContext);
         return m_listener.newLocal(m_isolate);
     }
 
@@ -108,46 +110,38 @@ public:
 
     virtual bool belongsToTheCurrentWorld() const override final;
     v8::Isolate* isolate() const { return m_isolate; }
-    virtual DOMWrapperWorld& world() const { return scriptState()->world(); }
-    ScriptState* scriptState() const
-    {
-        ASSERT(m_scriptState);
-        return m_scriptState.get();
-    }
-    void setScriptState(ScriptState* scriptState) { m_scriptState = scriptState; }
+    DOMWrapperWorld& world() const { return *m_world; }
 
 protected:
-    V8AbstractEventListener(bool isAttribute, ScriptState*);
-    V8AbstractEventListener(bool isAttribute, v8::Isolate*);
+    V8AbstractEventListener(bool isAttribute, DOMWrapperWorld&, v8::Isolate*);
 
     virtual void prepareListenerObject(ExecutionContext*) { }
 
-    void setListenerObject(v8::Handle<v8::Object>);
+    void setListenerObject(v8::Local<v8::Object>);
 
-    void invokeEventHandler(Event*, v8::Local<v8::Value> jsEvent);
+    void invokeEventHandler(ScriptState*, Event*, v8::Local<v8::Value>);
 
     // Get the receiver object to use for event listener call.
-    v8::Local<v8::Object> getReceiverObject(Event*);
+    v8::Local<v8::Object> getReceiverObject(ScriptState*, Event*);
 
 private:
     // Implementation of EventListener function.
     virtual bool virtualisAttribute() const override { return m_isAttribute; }
 
-    virtual v8::Local<v8::Value> callListenerFunction(v8::Handle<v8::Value> jsevent, Event*) = 0;
+    // This could return an empty handle and callers need to check return value.
+    // We don't use v8::MaybeLocal because it can fail without exception.
+    virtual v8::Local<v8::Value> callListenerFunction(ScriptState*, v8::Local<v8::Value> jsevent, Event*) = 0;
 
     virtual bool shouldPreventDefault(v8::Local<v8::Value> returnValue);
 
-    static void setWeakCallback(const v8::WeakCallbackData<v8::Object, V8AbstractEventListener>&);
+    static void setWeakCallback(const v8::WeakCallbackInfo<V8AbstractEventListener>&);
 
     ScopedPersistent<v8::Object> m_listener;
 
     // Indicates if this is an HTML type listener.
     bool m_isAttribute;
 
-    // For V8LazyEventListener, m_scriptState can be 0 until V8LazyEventListener is actually used.
-    // m_scriptState is set lazily because V8LazyEventListener doesn't know the associated frame
-    // until the listener is actually used.
-    RefPtr<ScriptState> m_scriptState;
+    RefPtr<DOMWrapperWorld> m_world;
     v8::Isolate* m_isolate;
 };
 

@@ -1,3 +1,8 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 # conditions used in both common.gypi and skia.gyp in chromium
 #
 {
@@ -5,7 +10,7 @@
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=<(skia_static_initializers)',
     'SK_SUPPORT_GPU=<(skia_gpu)',
     'SK_SUPPORT_OPENCL=<(skia_opencl)',
-    'SK_FORCE_DISTANCEFIELD_FONTS=<(skia_force_distancefield_fonts)',
+    'SK_FORCE_DISTANCE_FIELD_TEXT=<(skia_force_distance_field_text)',
   ],
   'conditions' : [
     ['skia_pic', {
@@ -129,12 +134,30 @@
             'configurations': {
               'Debug_x64': {
                 'inherit_from': ['Debug'],
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                     # /ZI is not supported on 64bit
+                    'DebugInformationFormat': '3', # programDatabase (/Zi)
+                  },
+                },
               },
               'Release_x64': {
                 'inherit_from': ['Release'],
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                     # Don't specify /arch. SSE2 is implied by 64bit and specifying it warns.
+                    'EnableEnhancedInstructionSet': '0', #
+                  },
+                },
               },
               'Release_Developer_x64': {
                 'inherit_from': ['Release_Developer'],
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                     # Don't specify /arch. SSE2 is implied by 64bit and specifying it warns.
+                    'EnableEnhancedInstructionSet': '0', #
+                  },
+                },
               },
             },
           }],
@@ -185,7 +208,7 @@
     ],
 
     # The following section is common to linux + derivatives and android
-    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos", "android"]',
+    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos", "android"]',
       {
         'cflags': [
           '-g',
@@ -196,19 +219,21 @@
           '-Wextra',
           '-Winit-self',
           '-Wpointer-arith',
+          '-Wsign-compare',
 
-          '-Wno-c++11-extensions',
           '-Wno-unused-parameter',
         ],
         'cflags_cc': [
+          '-std=c++11',
           '-fno-rtti',
           '-Wnon-virtual-dtor',
           '-Wno-invalid-offsetof',  # GCC <4.6 is old-school strict about what is POD.
         ],
         'conditions': [
+          [ 'skia_fast', { 'cflags': [ '<@(skia_fast_flags)' ] }],
           [ 'skia_os != "chromeos"', {
             'conditions': [
-              [ 'skia_arch_width == 64 and skia_arch_type == "x86"', {
+              [ 'skia_arch_type == "x86_64" and not skia_android_framework', {
                 'cflags': [
                   '-m64',
                 ],
@@ -216,7 +241,7 @@
                   '-m64',
                 ],
               }],
-              [ 'skia_arch_width == 32 and skia_arch_type == "x86"', {
+              [ 'skia_arch_type == "x86" and not skia_android_framework', {
                 'cflags': [
                   '-m32',
                 ],
@@ -240,28 +265,10 @@
               '-fno-omit-frame-pointer',
             ],
           }],
-          [ 'skia_arch_type == "arm" and arm_thumb == 1', {
-            'cflags': [
-              '-mthumb',
-            ],
-            # The --fix-cortex-a8 switch enables a link-time workaround for
-            # an erratum in certain Cortex-A8 processors.  The workaround is
-            # enabled by default if you target the ARM v7-A arch profile.
-            # It can be enabled otherwise by specifying --fix-cortex-a8, or
-            # disabled unconditionally by specifying --no-fix-cortex-a8.
-            #
-            # The erratum only affects Thumb-2 code.
-            'conditions': [
-              [ 'arm_version < 7', {
-                'ldflags': [
-                  '-Wl,--fix-cortex-a8',
-                ],
-              }],
-            ],
-          }],
           [ 'skia_arch_type == "arm" and arm_version >= 7', {
             'cflags': [
               '-march=armv7-a',
+              '-mthumb',
             ],
             'ldflags': [
               '-march=armv7-a',
@@ -280,7 +287,7 @@
                   'SK_ARM_HAS_OPTIONAL_NEON',
                 ],
               }],
-              [ 'skia_os != "chromeos"', {
+              [ 'skia_os != "chromeos" and skia_os != "linux"', {
                 'cflags': [
                   '-mfloat-abi=softfp',
                 ],
@@ -335,6 +342,11 @@
         # Revert to -D_FORTIFY_SOURCE=1
         '-U_FORTIFY_SOURCE',
         '-D_FORTIFY_SOURCE=1',
+
+        # We can't use the skia_shared_library gyp setting because we need to
+        # isolate this define to Skia sources. CFLAGS are local to Android.mk
+        # and ensures that this define is not exported to clients of the library
+        '-DSKIA_IMPLEMENTATION=1',
       ],
       # Remove flags which are either unnecessary or problematic for the
       # Android framework build. Many of these flags are removed simply because
@@ -358,6 +370,7 @@
         '-Wextra',
         '-Winit-self',
         '-Wpointer-arith',
+        '-Wsign-compare',
       ],
       'cflags_cc!': [
         '-fno-rtti',
@@ -375,18 +388,19 @@
         # Optimizations for chromium (m30)
         'GR_GL_CUSTOM_SETUP_HEADER "gl/GrGLConfig_chrome.h"',
         'IGNORE_ROT_AA_RECT_OPT',
-        'SkLONGLONG int64_t',
         'SK_DEFAULT_FONT_CACHE_LIMIT   (768 * 1024)',
-        # Transitional, for deprecated SkCanvas::SaveFlags methods.
-        'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
         'SK_DEFAULT_GLOBAL_DISCARDABLE_MEMORY_POOL_SIZE (512 * 1024)',
         'SK_IGNORE_ETC1_SUPPORT',
+        # We can't use the skia_shared_library gyp setting because we need expose
+        # this define globally and the the implemention define as a cflag.
+        'SKIA_DLL',
+        'SK_PRINT_CODEC_MESSAGES',
         # Defines from skia_for_android_framework_defines.gypi
         '<@(skia_for_android_framework_defines)',
       ],
     }],
 
-    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos"]',
+    [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]',
       {
         'defines': [
           'SK_SAMPLES_FOR_X',
@@ -413,26 +427,6 @@
               'SKIA_IMPLEMENTATION=1',
             ],
           }],
-          [ 'skia_os == "nacl"', {
-            'defines': [
-              'SK_BUILD_FOR_NACL',
-            ],
-            'variables': {
-              'nacl_sdk_root': '<!(echo ${NACL_SDK_ROOT})',
-            },
-            'link_settings': {
-              'libraries': [
-                '-lppapi',
-                '-lppapi_cpp',
-                '-lnosys',
-                '-pthread',
-              ],
-              'ldflags': [
-                '-L<(nacl_sdk_root)/lib/newlib_x86_<(skia_arch_width)/Release',
-                '-L<(nacl_sdk_root)/ports/lib/newlib_x86_<(skia_arch_width)/Release',
-              ],
-            },
-          }],
           # Enable asan, tsan, etc.
           [ 'skia_sanitizer', {
             'cflags': [
@@ -443,7 +437,7 @@
             ],
             'conditions' : [
               [ 'skia_sanitizer == "thread"', {
-                'defines': [ 'SK_DYNAMIC_ANNOTATIONS_ENABLED=1' ],
+                'defines': [ 'THREAD_SANITIZER' ],
               }],
               [ 'skia_sanitizer == "undefined"', {
                 'cflags_cc!': ['-fno-rtti'],
@@ -452,8 +446,6 @@
           }],
           [ 'skia_clang_build', {
             'cflags_cc': [
-                # Build in C++11 mode to make sure we'll have an easy time switching.
-                '-std=c++11',
                 '-Wno-unknown-warning-option',  # Allows unknown warnings.
                 '-Wno-deprecated',              # From Qt, via debugger (older Clang).
                 '-Wno-deprecated-register',     # From Qt, via debugger (newer Clang).
@@ -494,6 +486,7 @@
         },
         'xcode_settings': {
           'conditions': [
+            [ 'skia_fast', { 'WARNING_CFLAGS': [ '<@(skia_fast_flags)' ] } ],
             [ 'skia_warnings_as_errors', { 'GCC_TREAT_WARNINGS_AS_ERRORS': 'YES' }],
             [ 'skia_arch_width == 32', { 'ARCHS': ['i386']   }],
             [ 'skia_arch_width == 64', { 'ARCHS': ['x86_64'] }],
@@ -503,6 +496,7 @@
               'MACOSX_DEPLOYMENT_TARGET': '<(skia_osx_deployment_target)',
             }],
           ],
+          'CLANG_CXX_LANGUAGE_STANDARD':               'c++11',
           'GCC_ENABLE_SUPPLEMENTAL_SSE3_INSTRUCTIONS': 'YES',  # -mssse3
           'GCC_SYMBOLS_PRIVATE_EXTERN':                'NO',   # -fvisibility=hidden
           'GCC_INLINES_ARE_PRIVATE_EXTERN':            'NO',   # -fvisibility-inlines-hidden
@@ -512,8 +506,11 @@
           'WARNING_CFLAGS': [
             '-Wall',
             '-Wextra',
+            '-Winit-self',
+            '-Wpointer-arith',
+            '-Wsign-compare',
+
             '-Wno-unused-parameter',
-            '-Wno-uninitialized',  # Disabled because we think GCC 4.2 is bad at this.
           ],
         },
       },
@@ -549,12 +546,13 @@
         'xcode_settings': {
           'ARCHS': ['armv7'],
           'CODE_SIGNING_REQUIRED': 'NO',
-          'CODE_SIGN_IDENTITY[sdk=iphoneos*]': '',
+          'CODE_SIGN_IDENTITY[sdk=iphoneos*]': 'iPhone Developer: Google Development (3F4Y5873JF)',
           'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_sdk_version)',
           'SDKROOT': 'iphoneos',
           'TARGETED_DEVICE_FAMILY': '1,2',
           'GCC_WARN_ABOUT_INVALID_OFFSETOF_MACRO': 'NO',   # -Wno-invalid-offsetof
           'OTHER_CPLUSPLUSFLAGS': [
+            '-std=c++0x',
             '-fvisibility=hidden',
             '-fvisibility-inlines-hidden',
           ],
@@ -591,7 +589,7 @@
           '-fuse-ld=gold',
         ],
         'conditions': [
-          [ 'skia_arch_type == "x86"', {
+          [ '"x86" in skia_arch_type', {
             'cflags': [
               '-mssse3',
             ],
@@ -599,6 +597,7 @@
           [ 'skia_android_framework', {
             'cflags!': [
               '-fuse-ld=gold',
+              '-mssse3',
             ],
           }],
           [ 'skia_shared_lib', {
@@ -616,22 +615,10 @@
       },
     ],
 
-    # We can POD-style initialization of static mutexes to avoid generating
-    # static initializers if we're using a pthread-compatible thread interface.
-    [ 'skia_os != "win"', {
-      'defines': [
-        'SK_USE_POSIX_THREADS',
-      ],
-    }],
-
     [ 'skia_moz2d', {
       'defines': [
         # add flags here (e.g. SK_SUPPORT_LEGACY_...) needed by moz2d
       ],
-    }],
-
-    [ 'skia_is_bot', {
-      'defines': [ 'SK_CRASH_HANDLER' ],
     }],
 
   ], # end 'conditions'

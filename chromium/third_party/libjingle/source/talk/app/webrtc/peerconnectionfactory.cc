@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2004--2011, Google Inc.
+ * Copyright 2004--2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,10 +28,13 @@
 #include "talk/app/webrtc/peerconnectionfactory.h"
 
 #include "talk/app/webrtc/audiotrack.h"
+#include "talk/app/webrtc/dtlsidentityservice.h"
+#include "talk/app/webrtc/dtlsidentitystore.h"
 #include "talk/app/webrtc/localaudiosource.h"
 #include "talk/app/webrtc/mediastreamproxy.h"
 #include "talk/app/webrtc/mediastreamtrackproxy.h"
 #include "talk/app/webrtc/peerconnection.h"
+#include "talk/app/webrtc/peerconnectionfactoryproxy.h"
 #include "talk/app/webrtc/peerconnectionproxy.h"
 #include "talk/app/webrtc/portallocatorfactory.h"
 #include "talk/app/webrtc/videosource.h"
@@ -44,72 +47,6 @@
 #include "webrtc/base/bind.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 
-using rtc::scoped_refptr;
-
-namespace {
-
-typedef rtc::TypedMessageData<bool> InitMessageData;
-
-struct CreatePeerConnectionParams : public rtc::MessageData {
-  CreatePeerConnectionParams(
-      const webrtc::PeerConnectionInterface::RTCConfiguration& configuration,
-      const webrtc::MediaConstraintsInterface* constraints,
-      webrtc::PortAllocatorFactoryInterface* allocator_factory,
-      webrtc::DTLSIdentityServiceInterface* dtls_identity_service,
-      webrtc::PeerConnectionObserver* observer)
-      : configuration(configuration),
-        constraints(constraints),
-        allocator_factory(allocator_factory),
-        dtls_identity_service(dtls_identity_service),
-        observer(observer) {
-  }
-  scoped_refptr<webrtc::PeerConnectionInterface> peerconnection;
-  const webrtc::PeerConnectionInterface::RTCConfiguration& configuration;
-  const webrtc::MediaConstraintsInterface* constraints;
-  scoped_refptr<webrtc::PortAllocatorFactoryInterface> allocator_factory;
-  webrtc::DTLSIdentityServiceInterface* dtls_identity_service;
-  webrtc::PeerConnectionObserver* observer;
-};
-
-struct CreateAudioSourceParams : public rtc::MessageData {
-  explicit CreateAudioSourceParams(
-      const webrtc::MediaConstraintsInterface* constraints)
-      : constraints(constraints) {
-  }
-  const webrtc::MediaConstraintsInterface* constraints;
-  scoped_refptr<webrtc::AudioSourceInterface> source;
-};
-
-struct CreateVideoSourceParams : public rtc::MessageData {
-  CreateVideoSourceParams(cricket::VideoCapturer* capturer,
-                          const webrtc::MediaConstraintsInterface* constraints)
-      : capturer(capturer),
-        constraints(constraints) {
-  }
-  cricket::VideoCapturer* capturer;
-  const webrtc::MediaConstraintsInterface* constraints;
-  scoped_refptr<webrtc::VideoSourceInterface> source;
-};
-
-struct StartAecDumpParams : public rtc::MessageData {
-  explicit StartAecDumpParams(rtc::PlatformFile aec_dump_file)
-      : aec_dump_file(aec_dump_file) {
-  }
-  rtc::PlatformFile aec_dump_file;
-  bool result;
-};
-
-enum {
-  MSG_INIT_FACTORY = 1,
-  MSG_TERMINATE_FACTORY,
-  MSG_CREATE_PEERCONNECTION,
-  MSG_CREATE_AUDIOSOURCE,
-  MSG_CREATE_VIDEOSOURCE,
-  MSG_START_AEC_DUMP,
-};
-
-}  // namespace
-
 namespace webrtc {
 
 rtc::scoped_refptr<PeerConnectionFactoryInterface>
@@ -117,10 +54,19 @@ CreatePeerConnectionFactory() {
   rtc::scoped_refptr<PeerConnectionFactory> pc_factory(
       new rtc::RefCountedObject<PeerConnectionFactory>());
 
-  if (!pc_factory->Initialize()) {
+
+  // Call Initialize synchronously but make sure its executed on
+  // |signaling_thread|.
+  MethodCall0<PeerConnectionFactory, bool> call(
+      pc_factory.get(),
+      &PeerConnectionFactory::Initialize);
+  bool result =  call.Marshal(pc_factory->signaling_thread());
+
+  if (!result) {
     return NULL;
   }
-  return pc_factory;
+  return PeerConnectionFactoryProxy::Create(pc_factory->signaling_thread(),
+                                            pc_factory);
 }
 
 rtc::scoped_refptr<PeerConnectionFactoryInterface>
@@ -132,24 +78,34 @@ CreatePeerConnectionFactory(
     cricket::WebRtcVideoDecoderFactory* decoder_factory) {
   rtc::scoped_refptr<PeerConnectionFactory> pc_factory(
       new rtc::RefCountedObject<PeerConnectionFactory>(worker_thread,
-                                                             signaling_thread,
-                                                             default_adm,
-                                                             encoder_factory,
-                                                             decoder_factory));
-  if (!pc_factory->Initialize()) {
+                                                       signaling_thread,
+                                                       default_adm,
+                                                       encoder_factory,
+                                                       decoder_factory));
+
+  // Call Initialize synchronously but make sure its executed on
+  // |signaling_thread|.
+  MethodCall0<PeerConnectionFactory, bool> call(
+      pc_factory.get(),
+      &PeerConnectionFactory::Initialize);
+  bool result =  call.Marshal(signaling_thread);
+
+  if (!result) {
     return NULL;
   }
-  return pc_factory;
+  return PeerConnectionFactoryProxy::Create(signaling_thread, pc_factory);
 }
 
 PeerConnectionFactory::PeerConnectionFactory()
     : owns_ptrs_(true),
-      signaling_thread_(new rtc::Thread),
+      wraps_current_thread_(false),
+      signaling_thread_(rtc::ThreadManager::Instance()->CurrentThread()),
       worker_thread_(new rtc::Thread) {
-  bool result = signaling_thread_->Start();
-  ASSERT(result);
-  result = worker_thread_->Start();
-  ASSERT(result);
+  if (!signaling_thread_) {
+    signaling_thread_ = rtc::ThreadManager::Instance()->WrapCurrentThread();
+    wraps_current_thread_ = true;
+  }
+  worker_thread_->Start();
 }
 
 PeerConnectionFactory::PeerConnectionFactory(
@@ -159,6 +115,7 @@ PeerConnectionFactory::PeerConnectionFactory(
     cricket::WebRtcVideoEncoderFactory* video_encoder_factory,
     cricket::WebRtcVideoDecoderFactory* video_decoder_factory)
     : owns_ptrs_(false),
+      wraps_current_thread_(false),
       signaling_thread_(signaling_thread),
       worker_thread_(worker_thread),
       default_adm_(default_adm),
@@ -172,113 +129,74 @@ PeerConnectionFactory::PeerConnectionFactory(
 }
 
 PeerConnectionFactory::~PeerConnectionFactory() {
-  signaling_thread_->Clear(this);
-  signaling_thread_->Send(this, MSG_TERMINATE_FACTORY);
+  DCHECK(signaling_thread_->IsCurrent());
+  channel_manager_.reset(NULL);
+  default_allocator_factory_ = NULL;
+
+  // Make sure |worker_thread_| and |signaling_thread_| outlive
+  // |dtls_identity_store_|.
+  dtls_identity_store_.reset(NULL);
+
   if (owns_ptrs_) {
-    delete signaling_thread_;
+    if (wraps_current_thread_)
+      rtc::ThreadManager::Instance()->UnwrapCurrentThread();
     delete worker_thread_;
   }
 }
 
 bool PeerConnectionFactory::Initialize() {
-  InitMessageData result(false);
-  signaling_thread_->Send(this, MSG_INIT_FACTORY, &result);
-  return result.data();
-}
-
-void PeerConnectionFactory::OnMessage(rtc::Message* msg) {
-  switch (msg->message_id) {
-    case MSG_INIT_FACTORY: {
-     InitMessageData* pdata = static_cast<InitMessageData*>(msg->pdata);
-     pdata->data() = Initialize_s();
-     break;
-    }
-    case MSG_TERMINATE_FACTORY: {
-      Terminate_s();
-      break;
-    }
-    case MSG_CREATE_PEERCONNECTION: {
-      CreatePeerConnectionParams* pdata =
-          static_cast<CreatePeerConnectionParams*> (msg->pdata);
-      pdata->peerconnection = CreatePeerConnection_s(
-          pdata->configuration,
-          pdata->constraints,
-          pdata->allocator_factory,
-          pdata->dtls_identity_service,
-          pdata->observer);
-      break;
-    }
-    case MSG_CREATE_AUDIOSOURCE: {
-      CreateAudioSourceParams* pdata =
-          static_cast<CreateAudioSourceParams*>(msg->pdata);
-      pdata->source = CreateAudioSource_s(pdata->constraints);
-      break;
-    }
-    case MSG_CREATE_VIDEOSOURCE: {
-      CreateVideoSourceParams* pdata =
-          static_cast<CreateVideoSourceParams*>(msg->pdata);
-      pdata->source = CreateVideoSource_s(pdata->capturer, pdata->constraints);
-      break;
-    }
-    case MSG_START_AEC_DUMP: {
-      StartAecDumpParams* pdata =
-          static_cast<StartAecDumpParams*>(msg->pdata);
-      pdata->result = StartAecDump_s(pdata->aec_dump_file);
-      break;
-    }
-  }
-}
-
-bool PeerConnectionFactory::Initialize_s() {
+  DCHECK(signaling_thread_->IsCurrent());
   rtc::InitRandom(rtc::Time());
 
-  allocator_factory_ = PortAllocatorFactory::Create(worker_thread_);
-  if (!allocator_factory_)
+  default_allocator_factory_ = PortAllocatorFactory::Create(worker_thread_);
+  if (!default_allocator_factory_)
     return false;
 
   cricket::DummyDeviceManager* device_manager(
       new cricket::DummyDeviceManager());
+
   // TODO:  Need to make sure only one VoE is created inside
   // WebRtcMediaEngine.
-  cricket::MediaEngineInterface* media_engine(
-      cricket::WebRtcMediaEngineFactory::Create(default_adm_.get(),
-                                                NULL,  // No secondary adm.
-                                                video_encoder_factory_.get(),
-                                                video_decoder_factory_.get()));
+  cricket::MediaEngineInterface* media_engine =
+      worker_thread_->Invoke<cricket::MediaEngineInterface*>(rtc::Bind(
+      &PeerConnectionFactory::CreateMediaEngine_w, this));
 
   channel_manager_.reset(new cricket::ChannelManager(
       media_engine, device_manager, worker_thread_));
+
   channel_manager_->SetVideoRtxEnabled(true);
   if (!channel_manager_->Init()) {
     return false;
   }
+
+  dtls_identity_store_.reset(
+      new DtlsIdentityStore(signaling_thread_, worker_thread_));
+  dtls_identity_store_->Initialize();
+
   return true;
 }
 
-// Terminate what we created on the signaling thread.
-void PeerConnectionFactory::Terminate_s() {
-  channel_manager_.reset(NULL);
-  allocator_factory_ = NULL;
-}
-
 rtc::scoped_refptr<AudioSourceInterface>
-PeerConnectionFactory::CreateAudioSource_s(
+PeerConnectionFactory::CreateAudioSource(
     const MediaConstraintsInterface* constraints) {
+  DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<LocalAudioSource> source(
       LocalAudioSource::Create(options_, constraints));
   return source;
 }
 
 rtc::scoped_refptr<VideoSourceInterface>
-PeerConnectionFactory::CreateVideoSource_s(
+PeerConnectionFactory::CreateVideoSource(
     cricket::VideoCapturer* capturer,
     const MediaConstraintsInterface* constraints) {
+  DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<VideoSource> source(
       VideoSource::Create(channel_manager_.get(), capturer, constraints));
   return VideoSourceProxy::Create(signaling_thread_, source);
 }
 
-bool PeerConnectionFactory::StartAecDump_s(rtc::PlatformFile file) {
+bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file) {
+  DCHECK(signaling_thread_->IsCurrent());
   return channel_manager_->StartAecDump(file);
 }
 
@@ -289,28 +207,23 @@ PeerConnectionFactory::CreatePeerConnection(
     PortAllocatorFactoryInterface* allocator_factory,
     DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
-  CreatePeerConnectionParams params(configuration, constraints,
-                                    allocator_factory, dtls_identity_service,
-                                    observer);
-  signaling_thread_->Send(
-      this, MSG_CREATE_PEERCONNECTION, &params);
-  return params.peerconnection;
-}
+  DCHECK(signaling_thread_->IsCurrent());
+  DCHECK(allocator_factory || default_allocator_factory_);
 
-rtc::scoped_refptr<PeerConnectionInterface>
-PeerConnectionFactory::CreatePeerConnection_s(
-    const PeerConnectionInterface::RTCConfiguration& configuration,
-    const MediaConstraintsInterface* constraints,
-    PortAllocatorFactoryInterface* allocator_factory,
-    DTLSIdentityServiceInterface* dtls_identity_service,
-    PeerConnectionObserver* observer) {
-  ASSERT(allocator_factory || allocator_factory_);
+  if (!dtls_identity_service) {
+    dtls_identity_service = new DtlsIdentityService(dtls_identity_store_.get());
+  }
+
+  PortAllocatorFactoryInterface* chosen_allocator_factory =
+      allocator_factory ? allocator_factory : default_allocator_factory_.get();
+  chosen_allocator_factory->SetNetworkIgnoreMask(options_.network_ignore_mask);
+
   rtc::scoped_refptr<PeerConnection> pc(
       new rtc::RefCountedObject<PeerConnection>(this));
   if (!pc->Initialize(
       configuration,
       constraints,
-      allocator_factory ? allocator_factory : allocator_factory_.get(),
+      chosen_allocator_factory,
       dtls_identity_service,
       observer)) {
     return NULL;
@@ -320,33 +233,16 @@ PeerConnectionFactory::CreatePeerConnection_s(
 
 rtc::scoped_refptr<MediaStreamInterface>
 PeerConnectionFactory::CreateLocalMediaStream(const std::string& label) {
+  DCHECK(signaling_thread_->IsCurrent());
   return MediaStreamProxy::Create(signaling_thread_,
                                   MediaStream::Create(label));
-}
-
-rtc::scoped_refptr<AudioSourceInterface>
-PeerConnectionFactory::CreateAudioSource(
-    const MediaConstraintsInterface* constraints) {
-  CreateAudioSourceParams params(constraints);
-  signaling_thread_->Send(this, MSG_CREATE_AUDIOSOURCE, &params);
-  return params.source;
-}
-
-rtc::scoped_refptr<VideoSourceInterface>
-PeerConnectionFactory::CreateVideoSource(
-    cricket::VideoCapturer* capturer,
-    const MediaConstraintsInterface* constraints) {
-
-  CreateVideoSourceParams params(capturer,
-                                 constraints);
-  signaling_thread_->Send(this, MSG_CREATE_VIDEOSOURCE, &params);
-  return params.source;
 }
 
 rtc::scoped_refptr<VideoTrackInterface>
 PeerConnectionFactory::CreateVideoTrack(
     const std::string& id,
     VideoSourceInterface* source) {
+  DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<VideoTrackInterface> track(
       VideoTrack::Create(id, source));
   return VideoTrackProxy::Create(signaling_thread_, track);
@@ -355,27 +251,33 @@ PeerConnectionFactory::CreateVideoTrack(
 rtc::scoped_refptr<AudioTrackInterface>
 PeerConnectionFactory::CreateAudioTrack(const std::string& id,
                                         AudioSourceInterface* source) {
+  DCHECK(signaling_thread_->IsCurrent());
   rtc::scoped_refptr<AudioTrackInterface> track(
       AudioTrack::Create(id, source));
   return AudioTrackProxy::Create(signaling_thread_, track);
 }
 
-bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file) {
-  StartAecDumpParams params(file);
-  signaling_thread_->Send(this, MSG_START_AEC_DUMP, &params);
-  return params.result;
-}
-
 cricket::ChannelManager* PeerConnectionFactory::channel_manager() {
+  DCHECK(signaling_thread_->IsCurrent());
   return channel_manager_.get();
 }
 
 rtc::Thread* PeerConnectionFactory::signaling_thread() {
+  // This method can be called on a different thread when the factory is
+  // created in CreatePeerConnectionFactory().
   return signaling_thread_;
 }
 
 rtc::Thread* PeerConnectionFactory::worker_thread() {
+  DCHECK(signaling_thread_->IsCurrent());
   return worker_thread_;
+}
+
+cricket::MediaEngineInterface* PeerConnectionFactory::CreateMediaEngine_w() {
+  ASSERT(worker_thread_ == rtc::Thread::Current());
+  return cricket::WebRtcMediaEngineFactory::Create(
+      default_adm_.get(), NULL, video_encoder_factory_.get(),
+      video_decoder_factory_.get());
 }
 
 }  // namespace webrtc

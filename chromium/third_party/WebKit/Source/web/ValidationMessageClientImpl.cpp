@@ -28,7 +28,7 @@
 
 #include "core/dom/Element.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/HostWindow.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
@@ -68,20 +68,20 @@ void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, c
         hideValidationMessage(anchor);
         return;
     }
-    if (!anchor.renderBox())
+    if (!anchor.layoutBox())
         return;
     if (m_currentAnchor)
         hideValidationMessage(*m_currentAnchor);
     m_currentAnchor = &anchor;
-    IntRect anchorInRootView = currentView()->contentsToRootView(anchor.pixelSnappedBoundingBox());
-    m_lastAnchorRectInScreen = currentView()->hostWindow()->rootViewToScreen(anchorInRootView);
+    IntRect anchorInViewport = currentView()->contentsToViewport(anchor.pixelSnappedBoundingBox());
+    m_lastAnchorRectInScreen = currentView()->hostWindow()->viewportToScreen(anchorInViewport);
     m_lastPageScaleFactor = m_webView.pageScaleFactor();
     m_message = message;
     const double minimumSecondToShowValidationMessage = 5.0;
     const double secondPerCharacter = 0.05;
     const double statusCheckInterval = 0.1;
 
-    m_webView.client()->showValidationMessage(anchorInRootView, m_message, toWebTextDirection(messageDir),
+    m_webView.client()->showValidationMessage(anchorInViewport, m_message, toWebTextDirection(messageDir),
         subMessage, toWebTextDirection(subMessageDir));
 
     m_finishTime = monotonicallyIncreasingTime() + std::max(minimumSecondToShowValidationMessage, (message.length() + subMessage.length()) * secondPerCharacter);
@@ -122,19 +122,23 @@ void ValidationMessageClientImpl::checkAnchorStatus(Timer<ValidationMessageClien
 
     // Check the visibility of the element.
     // FIXME: Can we check invisibility by scrollable non-frame elements?
-    IntRect newAnchorRect = currentView()->contentsToRootView(m_currentAnchor->pixelSnappedBoundingBox());
-    newAnchorRect = intersection(currentView()->convertToContainingWindow(currentView()->boundsRect()), newAnchorRect);
-    if (newAnchorRect.isEmpty()) {
+    IntRect newAnchorRectInViewport = currentView()->contentsToViewport(m_currentAnchor->pixelSnappedBoundingBox());
+
+    // FIXME: This intersection eliminates the part of the rect outside the root view.
+    // If this is meant as a visiblity test, intersecting it against the viewport rect
+    // likely makes more sense.
+    newAnchorRectInViewport = intersection(currentView()->convertToContainingWindow(currentView()->boundsRect()), newAnchorRectInViewport);
+    if (newAnchorRectInViewport.isEmpty()) {
         hideValidationMessage(*m_currentAnchor);
         return;
     }
 
-    IntRect newAnchorRectInScreen = currentView()->hostWindow()->rootViewToScreen(newAnchorRect);
-    if (newAnchorRectInScreen == m_lastAnchorRectInScreen && m_webView.pageScaleFactor() == m_lastPageScaleFactor)
+    IntRect newAnchorRectInViewportInScreen = currentView()->hostWindow()->viewportToScreen(newAnchorRectInViewport);
+    if (newAnchorRectInViewportInScreen == m_lastAnchorRectInScreen && m_webView.pageScaleFactor() == m_lastPageScaleFactor)
         return;
-    m_lastAnchorRectInScreen = newAnchorRectInScreen;
+    m_lastAnchorRectInScreen = newAnchorRectInViewportInScreen;
     m_lastPageScaleFactor = m_webView.pageScaleFactor();
-    m_webView.client()->moveValidationMessage(newAnchorRect);
+    m_webView.client()->moveValidationMessage(newAnchorRectInViewport);
 }
 
 void ValidationMessageClientImpl::willBeDestroyed()
@@ -143,7 +147,7 @@ void ValidationMessageClientImpl::willBeDestroyed()
         hideValidationMessage(*m_currentAnchor);
 }
 
-void ValidationMessageClientImpl::trace(Visitor* visitor)
+DEFINE_TRACE(ValidationMessageClientImpl)
 {
     visitor->trace(m_currentAnchor);
     ValidationMessageClient::trace(visitor);

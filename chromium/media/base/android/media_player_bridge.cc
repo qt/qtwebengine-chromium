@@ -105,21 +105,6 @@ void MediaPlayerBridge::CreateJavaMediaPlayerBridge() {
   AttachListener(j_media_player_bridge_.obj());
 }
 
-void MediaPlayerBridge::SetJavaMediaPlayerBridge(
-    jobject j_media_player_bridge) {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  CHECK(env);
-
-  j_media_player_bridge_.Reset(env, j_media_player_bridge);
-}
-
-base::android::ScopedJavaLocalRef<jobject> MediaPlayerBridge::
-    GetJavaMediaPlayerBridge() {
-  base::android::ScopedJavaLocalRef<jobject> j_bridge(
-      j_media_player_bridge_);
-  return j_bridge;
-}
-
 void MediaPlayerBridge::SetDuration(base::TimeDelta duration) {
   duration_ = duration;
 }
@@ -370,6 +355,8 @@ void MediaPlayerBridge::Release() {
   if (j_media_player_bridge_.is_null())
     return;
 
+  SetAudible(false);
+
   time_update_timer_.Stop();
   if (prepared_) {
     pending_seek_ = GetCurrentTime();
@@ -386,15 +373,22 @@ void MediaPlayerBridge::Release() {
 }
 
 void MediaPlayerBridge::SetVolume(double volume) {
-  if (j_media_player_bridge_.is_null()) {
-    volume_ = volume;
+  volume_ = volume;
+
+  if (j_media_player_bridge_.is_null())
     return;
-  }
 
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
+
+  // Update the audible state if we are playing.
+  jboolean is_playing = Java_MediaPlayerBridge_isPlaying(
+      env, j_media_player_bridge_.obj());
+  if (is_playing)
+    SetAudible(volume_ > 0);
+
   Java_MediaPlayerBridge_setVolume(
-      env, j_media_player_bridge_.obj(), volume);
+      env, j_media_player_bridge_.obj(), volume_);
 }
 
 void MediaPlayerBridge::OnVideoSizeChanged(int width, int height) {
@@ -404,11 +398,13 @@ void MediaPlayerBridge::OnVideoSizeChanged(int width, int height) {
 }
 
 void MediaPlayerBridge::OnPlaybackComplete() {
+  SetAudible(false);
   time_update_timer_.Stop();
   MediaPlayerAndroid::OnPlaybackComplete();
 }
 
 void MediaPlayerBridge::OnMediaInterrupted() {
+  SetAudible(false);
   time_update_timer_.Stop();
   MediaPlayerAndroid::OnMediaInterrupted();
 }
@@ -468,9 +464,13 @@ void MediaPlayerBridge::StartInternal() {
         base::TimeDelta::FromMilliseconds(kTimeUpdateInterval),
         this, &MediaPlayerBridge::OnTimeUpdateTimerFired);
   }
+
+  SetAudible(volume_ > 0);
 }
 
 void MediaPlayerBridge::PauseInternal() {
+  SetAudible(false);
+
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_MediaPlayerBridge_pause(env, j_media_player_bridge_.obj());
   time_update_timer_.Stop();
@@ -504,9 +504,7 @@ void MediaPlayerBridge::OnTimeUpdateTimerFired() {
 }
 
 bool MediaPlayerBridge::RegisterMediaPlayerBridge(JNIEnv* env) {
-  bool ret = RegisterNativesImpl(env);
-  DCHECK(g_MediaPlayerBridge_clazz);
-  return ret;
+  return RegisterNativesImpl(env);
 }
 
 bool MediaPlayerBridge::CanPause() {

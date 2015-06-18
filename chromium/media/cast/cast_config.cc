@@ -23,14 +23,11 @@ namespace cast {
 
 VideoSenderConfig::VideoSenderConfig()
     : ssrc(0),
-      incoming_feedback_ssrc(0),
-      rtcp_interval(kDefaultRtcpIntervalMs),
+      receiver_ssrc(0),
       max_playout_delay(
           base::TimeDelta::FromMilliseconds(kDefaultRtpMaxDelayMs)),
       rtp_payload_type(0),
       use_external_encoder(false),
-      width(0),
-      height(0),
       congestion_control_back_off(kDefaultCongestionControlBackOff),
       max_bitrate(5000000),
       min_bitrate(1000000),
@@ -46,8 +43,7 @@ VideoSenderConfig::~VideoSenderConfig() {}
 
 AudioSenderConfig::AudioSenderConfig()
     : ssrc(0),
-      incoming_feedback_ssrc(0),
-      rtcp_interval(kDefaultRtcpIntervalMs),
+      receiver_ssrc(0),
       max_playout_delay(
           base::TimeDelta::FromMilliseconds(kDefaultRtpMaxDelayMs)),
       rtp_payload_type(0),
@@ -60,14 +56,13 @@ AudioSenderConfig::AudioSenderConfig()
 AudioSenderConfig::~AudioSenderConfig() {}
 
 FrameReceiverConfig::FrameReceiverConfig()
-    : feedback_ssrc(0),
-      incoming_ssrc(0),
-      rtcp_interval(kDefaultRtcpIntervalMs),
+    : receiver_ssrc(0),
+      sender_ssrc(0),
       rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
       rtp_payload_type(0),
-      frequency(0),
+      rtp_timebase(0),
       channels(0),
-      max_frame_rate(0),
+      target_frame_rate(0),
       codec(CODEC_UNKNOWN) {}
 
 FrameReceiverConfig::~FrameReceiverConfig() {}

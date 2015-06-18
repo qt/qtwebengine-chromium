@@ -16,11 +16,11 @@
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/layout/LayoutTreeAsText.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/SpellCheckerClient.h"
-#include "core/rendering/RenderTreeAsText.h"
 #include "core/testing/DummyPageHolder.h"
-#include "core/testing/UnitTestHelpers.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "wtf/OwnPtr.h"
 #include <gtest/gtest.h>
 
@@ -79,7 +79,7 @@ void HTMLTextFormControlElementTest::SetUp()
 
     m_document = toHTMLDocument(&m_dummyPageHolder->document());
     m_document->documentElement()->setInnerHTML("<body><textarea id=textarea></textarea><input id=input /></body>", ASSERT_NO_EXCEPTION);
-    m_document->view()->updateLayoutAndStyleIfNeededRecursive();
+    m_document->view()->updateLayoutAndStyleForPainting();
     m_textControl = toHTMLTextFormControlElement(m_document->getElementById("textarea"));
     m_textControl->focus();
     m_input = toHTMLInputElement(m_document->getElementById("input"));
@@ -115,21 +115,21 @@ TEST_F(HTMLTextFormControlElementTest, SetSelectionRangeDoesNotCauseLayout)
     input().setSelectionRange(1, 1);
     FrameSelection& frameSelection = document().frame()->selection();
     forceLayoutFlag();
-    LayoutRect oldCaretRect = frameSelection.absoluteCaretBounds();
+    LayoutRect oldCaretRect(frameSelection.absoluteCaretBounds());
     EXPECT_FALSE(oldCaretRect.isEmpty());
     int startLayoutCount = layoutCount();
     input().setSelectionRange(1, 1);
     EXPECT_EQ(startLayoutCount, layoutCount());
-    LayoutRect newCaretRect = frameSelection.absoluteCaretBounds();
+    LayoutRect newCaretRect(frameSelection.absoluteCaretBounds());
     EXPECT_EQ(oldCaretRect, newCaretRect);
 
     forceLayoutFlag();
-    oldCaretRect = frameSelection.absoluteCaretBounds();
+    oldCaretRect = LayoutRect(frameSelection.absoluteCaretBounds());
     EXPECT_FALSE(oldCaretRect.isEmpty());
     startLayoutCount = layoutCount();
     input().setSelectionRange(2, 2);
     EXPECT_EQ(startLayoutCount, layoutCount());
-    newCaretRect = frameSelection.absoluteCaretBounds();
+    newCaretRect = LayoutRect(frameSelection.absoluteCaretBounds());
     EXPECT_NE(oldCaretRect, newCaretRect);
 }
 

@@ -14,6 +14,8 @@ enum MultipleDisplayState {
   MULTIPLE_DISPLAY_STATE_SINGLE,
   MULTIPLE_DISPLAY_STATE_DUAL_MIRROR,
   MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED,
+  // TODO(oshima): consolidate DUAL_EXTENDED and MULTI_EXTENDED.
+  MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED,
 };
 
 // Video output types.
@@ -38,7 +40,14 @@ enum ContentProtectionMethod {
 };
 
 // HDCP protection state.
-enum HDCPState { HDCP_STATE_UNDESIRED, HDCP_STATE_DESIRED, HDCP_STATE_ENABLED };
+enum HDCPState {
+  HDCP_STATE_UNDESIRED,
+  HDCP_STATE_DESIRED,
+  HDCP_STATE_ENABLED,
+
+  // Update this when adding a new type.
+  HDCP_STATE_LAST = HDCP_STATE_ENABLED
+};
 
 // Color calibration profiles. Don't change the order, and edit
 // tools/metrics/histograms/histograms.xml when a new item is added.

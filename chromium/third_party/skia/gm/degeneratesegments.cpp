@@ -22,10 +22,6 @@ protected:
         const char* fName2;
     };
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
-
     SkString onShortName() {
         return SkString("degeneratesegments");
     }
@@ -302,7 +298,7 @@ protected:
                             20 * SK_Scalar1,
                             titlePaint);
 
-        SkLCGRandom rand;
+        SkRandom rand;
         SkRect rect = SkRect::MakeWH(220*SK_Scalar1, 50*SK_Scalar1);
         canvas->save();
         canvas->translate(2*SK_Scalar1, 30 * SK_Scalar1); // The title

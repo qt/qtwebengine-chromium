@@ -297,9 +297,6 @@ class CHROME_DBUS_EXPORT ObjectProxy
   std::string service_name_;
   ObjectPath object_path_;
 
-  // True if the message filter was added.
-  bool filter_added_;
-
   // The method table where keys are absolute signal names (i.e. interface
   // name + signal name), and values are lists of the corresponding callbacks.
   typedef std::map<std::string, std::vector<SignalCallback> > MethodTable;
@@ -318,6 +315,8 @@ class CHROME_DBUS_EXPORT ObjectProxy
 
   // Known name owner of the well-known bus name represented by |service_name_|.
   std::string service_name_owner_;
+
+  std::set<DBusPendingCall*> pending_calls_;
 
   DISALLOW_COPY_AND_ASSIGN(ObjectProxy);
 };

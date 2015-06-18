@@ -57,19 +57,35 @@ static jint WaitMany(JNIEnv* env,
                      jobject jcaller,
                      jobject buffer,
                      jlong deadline) {
-  // Buffer contains first the list of handles, then the list of signals.
-  const void* buffer_start = env->GetDirectBufferAddress(buffer);
+  // |buffer| contains, in this order
+  // input: The array of N handles (MojoHandle, 4 bytes each)
+  // input: The array of N signals (MojoHandleSignals, 4 bytes each)
+  // space for output: The array of N handle states (MojoHandleSignalsState, 8
+  //                   bytes each)
+  // space for output: The result index (uint32_t, 4 bytes)
+  uint8_t* buffer_start =
+      static_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
   DCHECK(buffer_start);
-  DCHECK_EQ(reinterpret_cast<const uintptr_t>(buffer_start) % 8, 0u);
-  const size_t record_size = 8;
+  DCHECK_EQ(reinterpret_cast<uintptr_t>(buffer_start) % 8, 0u);
+  // Each handle of the input array contributes 4 (MojoHandle) + 4
+  // (MojoHandleSignals) + 8 (MojoHandleSignalsState) = 16 bytes to the size of
+  // the buffer.
+  const size_t size_per_handle = 16;
   const size_t buffer_size = env->GetDirectBufferCapacity(buffer);
-  DCHECK_EQ(buffer_size % record_size, 0u);
+  DCHECK_EQ((buffer_size - 4) % size_per_handle, 0u);
 
-  const size_t nb_handles = buffer_size / record_size;
-  const MojoHandle* handle_start = static_cast<const MojoHandle*>(buffer_start);
+  const size_t nb_handles = (buffer_size - 4) / size_per_handle;
+  const MojoHandle* handle_start =
+      reinterpret_cast<const MojoHandle*>(buffer_start);
   const MojoHandleSignals* signals_start =
-      static_cast<const MojoHandleSignals*>(handle_start + nb_handles);
-  return MojoWaitMany(handle_start, signals_start, nb_handles, deadline);
+      reinterpret_cast<const MojoHandleSignals*>(buffer_start + 4 * nb_handles);
+  MojoHandleSignalsState* states_start =
+      reinterpret_cast<MojoHandleSignalsState*>(buffer_start + 8 * nb_handles);
+  uint32_t* result_index =
+      reinterpret_cast<uint32_t*>(buffer_start + 16 * nb_handles);
+  *result_index = static_cast<uint32_t>(-1);
+  return MojoWaitMany(handle_start, signals_start, nb_handles, deadline,
+                      result_index, states_start);
 }
 
 static jobject CreateMessagePipe(JNIEnv* env,
@@ -128,8 +144,7 @@ static jobject CreateSharedBuffer(JNIEnv* env,
   }
   MojoHandle handle;
   MojoResult result = MojoCreateSharedBuffer(options, num_bytes, &handle);
-  return Java_CoreImpl_newNativeCreationResult(env, result, handle, 0)
-      .Release();
+  return Java_CoreImpl_newResultAndInteger(env, result, handle).Release();
 }
 
 static jint Close(JNIEnv* env, jobject jcaller, jint mojo_handle) {
@@ -138,10 +153,19 @@ static jint Close(JNIEnv* env, jobject jcaller, jint mojo_handle) {
 
 static jint Wait(JNIEnv* env,
                  jobject jcaller,
+                 jobject buffer,
                  jint mojo_handle,
                  jint signals,
                  jlong deadline) {
-  return MojoWait(mojo_handle, signals, deadline);
+  // Buffer contains space for the MojoHandleSignalsState
+  void* buffer_start = env->GetDirectBufferAddress(buffer);
+  DCHECK(buffer_start);
+  DCHECK_EQ(reinterpret_cast<const uintptr_t>(buffer_start) % 8, 0u);
+  DCHECK_EQ(sizeof(struct MojoHandleSignalsState),
+            static_cast<size_t>(env->GetDirectBufferCapacity(buffer)));
+  struct MojoHandleSignalsState* signals_state =
+      static_cast<struct MojoHandleSignalsState*>(buffer_start);
+  return MojoWait(mojo_handle, signals, deadline, signals_state);
 }
 
 static jint WriteMessage(JNIEnv* env,
@@ -198,12 +222,12 @@ static jobject ReadMessage(JNIEnv* env,
              env, result, buffer_size, num_handles).Release();
 }
 
-static jint ReadData(JNIEnv* env,
-                     jobject jcaller,
-                     jint mojo_handle,
-                     jobject elements,
-                     jint elements_capacity,
-                     jint flags) {
+static jobject ReadData(JNIEnv* env,
+                        jobject jcaller,
+                        jint mojo_handle,
+                        jobject elements,
+                        jint elements_capacity,
+                        jint flags) {
   void* buffer_start = 0;
   uint32_t buffer_size = elements_capacity;
   if (elements) {
@@ -213,10 +237,9 @@ static jint ReadData(JNIEnv* env,
   }
   MojoResult result =
       MojoReadData(mojo_handle, buffer_start, &buffer_size, flags);
-  if (result < 0) {
-    return result;
-  }
-  return buffer_size;
+  return Java_CoreImpl_newResultAndInteger(
+             env, result, (result == MOJO_RESULT_OK) ? buffer_size : 0)
+      .Release();
 }
 
 static jobject BeginReadData(JNIEnv* env,
@@ -233,8 +256,7 @@ static jobject BeginReadData(JNIEnv* env,
     byte_buffer =
         env->NewDirectByteBuffer(const_cast<void*>(buffer), buffer_size);
   }
-  return Java_CoreImpl_newNativeCodeAndBufferResult(env, result, byte_buffer)
-      .Release();
+  return Java_CoreImpl_newResultAndBuffer(env, result, byte_buffer).Release();
 }
 
 static jint EndReadData(JNIEnv* env,
@@ -244,22 +266,21 @@ static jint EndReadData(JNIEnv* env,
   return MojoEndReadData(mojo_handle, num_bytes_read);
 }
 
-static jint WriteData(JNIEnv* env,
-                      jobject jcaller,
-                      jint mojo_handle,
-                      jobject elements,
-                      jint limit,
-                      jint flags) {
+static jobject WriteData(JNIEnv* env,
+                         jobject jcaller,
+                         jint mojo_handle,
+                         jobject elements,
+                         jint limit,
+                         jint flags) {
   void* buffer_start = env->GetDirectBufferAddress(elements);
   DCHECK(buffer_start);
   DCHECK(limit <= env->GetDirectBufferCapacity(elements));
   uint32_t buffer_size = limit;
   MojoResult result =
       MojoWriteData(mojo_handle, buffer_start, &buffer_size, flags);
-  if (result < 0) {
-    return result;
-  }
-  return buffer_size;
+  return Java_CoreImpl_newResultAndInteger(
+             env, result, (result == MOJO_RESULT_OK) ? buffer_size : 0)
+      .Release();
 }
 
 static jobject BeginWriteData(JNIEnv* env,
@@ -275,8 +296,7 @@ static jobject BeginWriteData(JNIEnv* env,
   if (result == MOJO_RESULT_OK) {
     byte_buffer = env->NewDirectByteBuffer(buffer, buffer_size);
   }
-  return Java_CoreImpl_newNativeCodeAndBufferResult(env, result, byte_buffer)
-      .Release();
+  return Java_CoreImpl_newResultAndBuffer(env, result, byte_buffer).Release();
 }
 
 static jint EndWriteData(JNIEnv* env,
@@ -302,8 +322,7 @@ static jobject Duplicate(JNIEnv* env,
   }
   MojoHandle handle;
   MojoResult result = MojoDuplicateBufferHandle(mojo_handle, options, &handle);
-  return Java_CoreImpl_newNativeCreationResult(env, result, handle, 0)
-      .Release();
+  return Java_CoreImpl_newResultAndInteger(env, result, handle).Release();
 }
 
 static jobject Map(JNIEnv* env,
@@ -319,8 +338,7 @@ static jobject Map(JNIEnv* env,
   if (result == MOJO_RESULT_OK) {
     byte_buffer = env->NewDirectByteBuffer(buffer, num_bytes);
   }
-  return Java_CoreImpl_newNativeCodeAndBufferResult(env, result, byte_buffer)
-      .Release();
+  return Java_CoreImpl_newResultAndBuffer(env, result, byte_buffer).Release();
 }
 
 static int Unmap(JNIEnv* env, jobject jcaller, jobject buffer) {
@@ -368,6 +386,18 @@ static void CancelAsyncWait(JNIEnv* env,
   scoped_ptr<AsyncWaitCallbackData> deleter(
       reinterpret_cast<AsyncWaitCallbackData*>(data_ptr));
   Environment::GetDefaultAsyncWaiter()->CancelWait(id);
+}
+
+static jint GetNativeBufferOffset(JNIEnv* env,
+                                  jobject jcaller,
+                                  jobject buffer,
+                                  jint alignment) {
+  jint offset =
+      reinterpret_cast<uintptr_t>(env->GetDirectBufferAddress(buffer)) %
+      alignment;
+  if (offset == 0)
+    return 0;
+  return alignment - offset;
 }
 
 bool RegisterCoreImpl(JNIEnv* env) {

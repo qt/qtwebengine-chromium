@@ -11,7 +11,7 @@
   ],
   'targets': [
     {
-      # GN version: //ppapi:ppapi_c
+      # GN version: //ppapi/c
       'target_name': 'ppapi_c',
       'type': 'none',
       'all_dependent_settings': {
@@ -24,7 +24,7 @@
       ],
     },
     {
-      # GN version: //ppapi:ppapi_cpp_objects
+      # GN version: //ppapi/cpp:objects
       'target_name': 'ppapi_cpp_objects',
       'type': 'static_library',
       'dependencies': [
@@ -36,29 +36,9 @@
       'sources': [
         '<@(cpp_source_files)',
       ],
-      'conditions': [
-        ['OS=="win"', {
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'AdditionalOptions': ['/we4244'],  # implicit conversion, possible loss of data
-            },
-          },
-          'msvs_disabled_warnings': [
-            4267,
-          ],
-        }],
-        ['OS=="linux"', {
-          'cflags': ['-Wextra', '-pedantic'],
-        }],
-        ['OS=="mac"', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': ['-Wextra', '-pedantic'],
-           },
-        }],
-      ],
     },
     {
-      # GN version: //ppapi:ppapi_cpp
+      # GN version: //ppapi/cpp
       'target_name': 'ppapi_cpp',
       'type': 'static_library',
       'dependencies': [
@@ -72,19 +52,9 @@
         'cpp/module_embedder.h',
         'cpp/ppp_entrypoints.cc',
       ],
-      'conditions': [
-        ['OS=="linux"', {
-          'cflags': ['-Wextra', '-pedantic'],
-        }],
-        ['OS=="mac"', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': ['-Wextra', '-pedantic'],
-           },
-        }]
-      ],
     },
     {
-      # GN version: //ppapi:ppapi_internal_module
+      # GN version: //ppapi/cpp/private:internal_module
       'target_name': 'ppapi_internal_module',
       'type': 'static_library',
       'include_dirs+': [

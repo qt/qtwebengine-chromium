@@ -31,7 +31,7 @@ class FakePacketSender : public PacketSender {
   FakePacketSender()
       : paused_(false), packets_sent_(0), bytes_sent_(0) {}
 
-  bool SendPacket(PacketRef packet, const base::Closure& cb) override {
+  bool SendPacket(PacketRef packet, const base::Closure& cb) final {
     if (paused_) {
       stored_packet_ = packet;
       callback_ = cb;
@@ -42,7 +42,7 @@ class FakePacketSender : public PacketSender {
     return true;
   }
 
-  int64 GetBytesSent() override { return bytes_sent_; }
+  int64 GetBytesSent() final { return bytes_sent_; }
 
   void SetPaused(bool paused) {
     paused_ = paused;
@@ -80,11 +80,13 @@ class CastTransportSenderImplTest : public ::testing::Test {
         new CastTransportSenderImpl(NULL,
                                     &testing_clock_,
                                     net::IPEndPoint(),
+                                    net::IPEndPoint(),
                                     make_scoped_ptr(new base::DictionaryValue),
                                     base::Bind(&UpdateCastTransportStatus),
                                     BulkRawEventsCallback(),
                                     base::TimeDelta(),
                                     task_runner_,
+                                    PacketReceiverCallback(),
                                     &transport_));
     task_runner_->RunTasks();
   }
@@ -101,11 +103,13 @@ class CastTransportSenderImplTest : public ::testing::Test {
         new CastTransportSenderImpl(NULL,
                                     &testing_clock_,
                                     net::IPEndPoint(),
+                                    net::IPEndPoint(),
                                     options.Pass(),
                                     base::Bind(&UpdateCastTransportStatus),
                                     BulkRawEventsCallback(),
                                     base::TimeDelta(),
                                     task_runner_,
+                                    PacketReceiverCallback(),
                                     &transport_));
     task_runner_->RunTasks();
   }
@@ -115,12 +119,14 @@ class CastTransportSenderImplTest : public ::testing::Test {
         NULL,
         &testing_clock_,
         net::IPEndPoint(),
+        net::IPEndPoint(),
         make_scoped_ptr(new base::DictionaryValue),
         base::Bind(&UpdateCastTransportStatus),
         base::Bind(&CastTransportSenderImplTest::LogRawEvents,
                    base::Unretained(this)),
         base::TimeDelta::FromMilliseconds(10),
         task_runner_,
+        PacketReceiverCallback(),
         &transport_));
     task_runner_->RunTasks();
   }

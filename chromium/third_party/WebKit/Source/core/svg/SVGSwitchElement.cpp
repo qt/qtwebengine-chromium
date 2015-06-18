@@ -24,7 +24,7 @@
 
 #include "core/SVGNames.h"
 #include "core/frame/UseCounter.h"
-#include "core/rendering/svg/RenderSVGTransformableContainer.h"
+#include "core/layout/svg/LayoutSVGTransformableContainer.h"
 
 namespace blink {
 
@@ -36,9 +36,9 @@ inline SVGSwitchElement::SVGSwitchElement(Document& document)
 
 DEFINE_NODE_FACTORY(SVGSwitchElement)
 
-RenderObject* SVGSwitchElement::createRenderer(RenderStyle*)
+LayoutObject* SVGSwitchElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGTransformableContainer(this);
+    return new LayoutSVGTransformableContainer(this);
 }
 
 } // namespace blink

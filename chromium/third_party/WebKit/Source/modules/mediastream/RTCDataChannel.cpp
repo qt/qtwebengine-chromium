@@ -89,6 +89,11 @@ RTCDataChannel::~RTCDataChannel()
         m_handler->setClient(0);
 }
 
+RTCDataChannel::ReadyState RTCDataChannel::getHandlerState() const
+{
+    return m_handler->state();
+}
+
 String RTCDataChannel::label() const
 {
     return m_handler->label();
@@ -146,7 +151,7 @@ String RTCDataChannel::readyState() const
     return String();
 }
 
-unsigned long RTCDataChannel::bufferedAmount() const
+unsigned RTCDataChannel::bufferedAmount() const
 {
     return m_handler->bufferedAmount();
 }
@@ -309,10 +314,10 @@ void RTCDataChannel::scheduledEventTimerFired(Timer<RTCDataChannel>*)
     if (m_stopped)
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> events;
     events.swap(m_scheduledEvents);
 
-    WillBeHeapVector<RefPtrWillBeMember<Event> >::iterator it = events.begin();
+    WillBeHeapVector<RefPtrWillBeMember<Event>>::iterator it = events.begin();
     for (; it != events.end(); ++it)
         dispatchEvent((*it).release());
 
@@ -321,17 +326,18 @@ void RTCDataChannel::scheduledEventTimerFired(Timer<RTCDataChannel>*)
 
 void RTCDataChannel::clearWeakMembers(Visitor* visitor)
 {
-    if (visitor->isAlive(m_connection))
+    if (visitor->isHeapObjectAlive(m_connection))
         return;
     stop();
     m_connection = nullptr;
 }
 
-void RTCDataChannel::trace(Visitor* visitor)
+DEFINE_TRACE(RTCDataChannel)
 {
+    visitor->trace(m_executionContext);
     visitor->trace(m_scheduledEvents);
-    visitor->registerWeakMembers<RTCDataChannel, &RTCDataChannel::clearWeakMembers>(this);
-    EventTargetWithInlineData::trace(visitor);
+    visitor->template registerWeakMembers<RTCDataChannel, &RTCDataChannel::clearWeakMembers>(this);
+    RefCountedGarbageCollectedEventTargetWithInlineData<RTCDataChannel>::trace(visitor);
 }
 
 } // namespace blink

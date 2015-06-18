@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -36,19 +36,24 @@
 #include <vector>
 
 #include "talk/app/webrtc/mediastreaminterface.h"
+#include "talk/app/webrtc/mediastreamsignaling.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/webrtcsession.h"
 
 namespace webrtc {
 
+// Conversion function to convert candidate type string to the corresponding one
+// from  enum RTCStatsIceCandidateType.
+const char* IceCandidateTypeToStatsType(const std::string& candidate_type);
+
+// Conversion function to convert adapter type to report string which are more
+// fitting to the general style of http://w3c.github.io/webrtc-stats. This is
+// only used by stats collector.
+const char* AdapterTypeToStatsType(rtc::AdapterType type);
+
 class StatsCollector {
  public:
-  enum TrackDirection {
-    kSending = 0,
-    kReceiving,
-  };
-
   // The caller is responsible for ensuring that the session outlives the
   // StatsCollector instance.
   explicit StatsCollector(WebRtcSession* session);
@@ -79,40 +84,50 @@ class StatsCollector {
   void GetStats(MediaStreamTrackInterface* track,
                 StatsReports* reports);
 
-  // Prepare an SSRC report for the given ssrc. Used internally
+  // Prepare a local or remote SSRC report for the given ssrc. Used internally
   // in the ExtractStatsFromList template.
-  StatsReport* PrepareLocalReport(uint32 ssrc, const std::string& transport,
-                                  TrackDirection direction);
-  // Prepare an SSRC report for the given remote ssrc. Used internally.
-  StatsReport* PrepareRemoteReport(uint32 ssrc, const std::string& transport,
-                                   TrackDirection direction);
+  StatsReport* PrepareReport(bool local, uint32 ssrc,
+      const StatsReport::Id& transport_id, StatsReport::Direction direction);
 
   // Method used by the unittest to force a update of stats since UpdateStats()
   // that occur less than kMinGatherStatsPeriod number of ms apart will be
   // ignored.
-  void ClearUpdateStatsCache();
+  void ClearUpdateStatsCacheForTest();
 
  private:
+  friend class StatsCollectorTest;
+
+  // Overridden in unit tests to fake timing.
+  virtual double GetTimeNow();
+
   bool CopySelectedReports(const std::string& selector, StatsReports* reports);
 
   // Helper method for AddCertificateReports.
-  std::string AddOneCertificateReport(
-      const rtc::SSLCertificate* cert, const std::string& issuer_id);
+  StatsReport* AddOneCertificateReport(
+      const rtc::SSLCertificate* cert, const StatsReport* issuer);
+
+  // Helper method for creating IceCandidate report. |is_local| indicates
+  // whether this candidate is local or remote.
+  StatsReport* AddCandidateReport(const cricket::Candidate& candidate,
+                                  bool local);
 
   // Adds a report for this certificate and every certificate in its chain, and
-  // returns the leaf certificate's report's ID.
-  std::string AddCertificateReports(const rtc::SSLCertificate* cert);
+  // returns the leaf certificate's report.
+  StatsReport* AddCertificateReports(const rtc::SSLCertificate* cert);
 
+  StatsReport* AddConnectionInfoReport(const std::string& content_name,
+      int component, int connection_id,
+      const StatsReport::Id& channel_report_id,
+      const cricket::ConnectionInfo& info);
+
+  void ExtractDataInfo();
   void ExtractSessionInfo();
   void ExtractVoiceInfo();
   void ExtractVideoInfo(PeerConnectionInterface::StatsOutputLevel level);
   void BuildSsrcToTransportId();
-  webrtc::StatsReport* GetOrCreateReport(const std::string& type,
-                                         const std::string& id,
-                                         TrackDirection direction);
-  webrtc::StatsReport* GetReport(const std::string& type,
+  webrtc::StatsReport* GetReport(const StatsReport::StatsType& type,
                                  const std::string& id,
-                                 TrackDirection direction);
+                                 StatsReport::Direction direction);
 
   // Helper method to get stats from the local audio tracks.
   void UpdateStatsFromExistingLocalAudioTracks();
@@ -122,15 +137,17 @@ class StatsCollector {
   // Helper method to get the id for the track identified by ssrc.
   // |direction| tells if the track is for sending or receiving.
   bool GetTrackIdBySsrc(uint32 ssrc, std::string* track_id,
-                        TrackDirection direction);
+                        StatsReport::Direction direction);
 
-  // A map from the report id to the report.
-  StatsSet reports_;
+  // A collection for all of our stats reports.
+  StatsCollection reports_;
   // Raw pointer to the session the statistics are gathered from.
   WebRtcSession* const session_;
   double stats_gathering_started_;
   cricket::ProxyTransportMap proxy_to_transport_;
 
+  // TODO(tommi): We appear to be holding on to raw pointers to reference
+  // counted objects?  We should be using scoped_refptr here.
   typedef std::vector<std::pair<AudioTrackInterface*, uint32> >
       LocalAudioTrackVector;
   LocalAudioTrackVector local_audio_tracks_;

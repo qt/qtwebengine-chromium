@@ -1,6 +1,7 @@
-diff -r db5b7e3c69a5 lib/certhigh/certvfy.c
---- a/lib/certhigh/certvfy.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/certhigh/certvfy.c	Fri May 31 17:44:06 2013 -0700
+diff --git a/nss/lib/certhigh/certvfy.c b/nss/lib/certhigh/certvfy.c
+index 3141163..c9d26f0 100644
+--- a/nss/lib/certhigh/certvfy.c
++++ b/nss/lib/certhigh/certvfy.c
 @@ -13,9 +13,11 @@
  #include "certdb.h"
  #include "certi.h"
@@ -61,10 +62,11 @@ diff -r db5b7e3c69a5 lib/certhigh/certvfy.c
  /*
   * Check the validity times of a certificate
   */
-diff -r db5b7e3c69a5 lib/ckfw/nssck.api
---- a/lib/ckfw/nssck.api	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/ckfw/nssck.api	Fri May 31 17:44:06 2013 -0700
-@@ -1752,7 +1752,7 @@
+diff --git a/nss/lib/ckfw/nssck.api b/nss/lib/ckfw/nssck.api
+index 55b4351..8364258 100644
+--- a/nss/lib/ckfw/nssck.api
++++ b/nss/lib/ckfw/nssck.api
+@@ -1752,7 +1752,7 @@ C_WaitForSlotEvent
  }
  #endif /* DECLARE_STRICT_CRYPTOKI_NAMES */
  
@@ -73,7 +75,7 @@ diff -r db5b7e3c69a5 lib/ckfw/nssck.api
  __ADJOIN(MODULE_NAME,C_GetFunctionList)
  (
    CK_FUNCTION_LIST_PTR_PTR ppFunctionList
-@@ -1830,7 +1830,7 @@
+@@ -1830,7 +1830,7 @@ __ADJOIN(MODULE_NAME,C_CancelFunction),
  __ADJOIN(MODULE_NAME,C_WaitForSlotEvent)
  };
  
@@ -82,7 +84,7 @@ diff -r db5b7e3c69a5 lib/ckfw/nssck.api
  __ADJOIN(MODULE_NAME,C_GetFunctionList)
  (
    CK_FUNCTION_LIST_PTR_PTR ppFunctionList
-@@ -1840,6 +1840,7 @@
+@@ -1840,6 +1840,7 @@ __ADJOIN(MODULE_NAME,C_GetFunctionList)
    return CKR_OK;
  }
  
@@ -90,7 +92,7 @@ diff -r db5b7e3c69a5 lib/ckfw/nssck.api
  /* This one is always present */
  CK_RV CK_ENTRY
  C_GetFunctionList
-@@ -1849,6 +1850,7 @@
+@@ -1849,6 +1850,7 @@ C_GetFunctionList
  {
    return __ADJOIN(MODULE_NAME,C_GetFunctionList)(ppFunctionList);
  }
@@ -98,10 +100,11 @@ diff -r db5b7e3c69a5 lib/ckfw/nssck.api
  
  #undef __ADJOIN
  
-diff -r db5b7e3c69a5 lib/freebl/rsa.c
---- a/lib/freebl/rsa.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/freebl/rsa.c	Fri May 31 17:44:06 2013 -0700
-@@ -1559,6 +1559,13 @@
+diff --git a/nss/lib/freebl/rsa.c b/nss/lib/freebl/rsa.c
+index 498cc96..780c3c7 100644
+--- a/nss/lib/freebl/rsa.c
++++ b/nss/lib/freebl/rsa.c
+@@ -1535,6 +1535,13 @@ void BL_Cleanup(void)
      RSA_Cleanup();
  }
  
@@ -115,10 +118,11 @@ diff -r db5b7e3c69a5 lib/freebl/rsa.c
  PRBool bl_parentForkedAfterC_Initialize;
  
  /*
-diff -r db5b7e3c69a5 lib/freebl/shvfy.c
---- a/lib/freebl/shvfy.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/freebl/shvfy.c	Fri May 31 17:44:06 2013 -0700
-@@ -273,9 +273,21 @@
+diff --git a/nss/lib/freebl/shvfy.c b/nss/lib/freebl/shvfy.c
+index ad64a26..33714b8 100644
+--- a/nss/lib/freebl/shvfy.c
++++ b/nss/lib/freebl/shvfy.c
+@@ -273,9 +273,21 @@ readItem(PRFileDesc *fd, SECItem *item)
      return SECSuccess;
  }
  
@@ -140,7 +144,7 @@ diff -r db5b7e3c69a5 lib/freebl/shvfy.c
      PRBool result = PR_FALSE; /* if anything goes wrong,
  			       * the signature does not verify */
      /* find our shared library name */
-@@ -291,11 +303,15 @@
+@@ -291,11 +303,15 @@ loser:
      }
  
      return result;
@@ -156,7 +160,7 @@ diff -r db5b7e3c69a5 lib/freebl/shvfy.c
      char *checkName = NULL;
      PRFileDesc *checkFD = NULL;
      PRFileDesc *shFD = NULL;
-@@ -492,6 +508,7 @@
+@@ -492,6 +508,7 @@ loser:
      }
  
      return result;
@@ -164,10 +168,11 @@ diff -r db5b7e3c69a5 lib/freebl/shvfy.c
  }
  
  PRBool
-diff -r db5b7e3c69a5 lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
---- a/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c	Fri May 31 17:44:06 2013 -0700
-@@ -201,7 +201,10 @@
+diff --git a/nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c b/nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
+index 30aefb8..ac814cd 100755
+--- a/nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
++++ b/nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
+@@ -201,7 +201,10 @@ certCallback(void *arg, SECItem **secitemCerts, int numcerts)
  
  typedef SECStatus (*pkix_DecodeCertsFunc)(char *certbuf, int certlen,
                                            CERTImportCertificateFunc f, void *arg);
@@ -179,7 +184,7 @@ diff -r db5b7e3c69a5 lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
  
  struct pkix_DecodeFuncStr {
      pkix_DecodeCertsFunc func;          /* function pointer to the 
-@@ -223,6 +226,11 @@
+@@ -223,6 +226,11 @@ static const PRCallOnceType pkix_pristine;
   */
  static PRStatus PR_CALLBACK pkix_getDecodeFunction(void)
  {
@@ -191,7 +196,7 @@ diff -r db5b7e3c69a5 lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
      pkix_decodeFunc.smimeLib = 
  		PR_LoadLibrary(SHLIB_PREFIX"smime3."SHLIB_SUFFIX);
      if (pkix_decodeFunc.smimeLib == NULL) {
-@@ -235,7 +243,7 @@
+@@ -235,7 +243,7 @@ static PRStatus PR_CALLBACK pkix_getDecodeFunction(void)
  	return PR_FAILURE;
      }
      return PR_SUCCESS;
@@ -200,9 +205,10 @@ diff -r db5b7e3c69a5 lib/libpkix/pkix_pl_nss/module/pkix_pl_httpcertstore.c
  }
  
  /*
-diff -r db5b7e3c69a5 lib/nss/nssinit.c
---- a/lib/nss/nssinit.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/nss/nssinit.c	Fri May 31 17:44:06 2013 -0700
+diff --git a/nss/lib/nss/nssinit.c b/nss/lib/nss/nssinit.c
+index 6218a7e..208e71d 100644
+--- a/nss/lib/nss/nssinit.c
++++ b/nss/lib/nss/nssinit.c
 @@ -20,9 +20,11 @@
  #include "secerr.h"
  #include "nssbase.h"
@@ -215,7 +221,7 @@ diff -r db5b7e3c69a5 lib/nss/nssinit.c
  
  #include "pki3hack.h"
  #include "certi.h"
-@@ -530,8 +532,10 @@
+@@ -530,8 +532,10 @@ nss_Init(const char *configdir, const char *certPrefix, const char *keyPrefix,
  		 PRBool dontFinalizeModules)
  {
      SECStatus rv = SECFailure;
@@ -226,7 +232,7 @@ diff -r db5b7e3c69a5 lib/nss/nssinit.c
      PRBool isReallyInitted;
      char *configStrings = NULL;
      char *configName = NULL;
-@@ -685,6 +689,7 @@
+@@ -685,6 +689,7 @@ nss_Init(const char *configdir, const char *certPrefix, const char *keyPrefix,
  	pk11sdr_Init();
  	cert_CreateSubjectKeyIDHashTable();
  
@@ -234,7 +240,7 @@ diff -r db5b7e3c69a5 lib/nss/nssinit.c
  	pkixError = PKIX_Initialize
  	    (PKIX_FALSE, PKIX_MAJOR_VERSION, PKIX_MINOR_VERSION,
  	    PKIX_MINOR_VERSION, &actualMinorVersion, &plContext);
-@@ -697,6 +702,7 @@
+@@ -697,6 +702,7 @@ nss_Init(const char *configdir, const char *certPrefix, const char *keyPrefix,
                  CERT_SetUsePKIXForValidation(PR_TRUE);
              }
          }
@@ -242,7 +248,7 @@ diff -r db5b7e3c69a5 lib/nss/nssinit.c
  
  
      }
-@@ -1081,7 +1087,9 @@
+@@ -1081,7 +1087,9 @@ nss_Shutdown(void)
      cert_DestroyLocks();
      ShutdownCRLCache();
      OCSP_ShutdownGlobal();
@@ -252,10 +258,11 @@ diff -r db5b7e3c69a5 lib/nss/nssinit.c
      SECOID_Shutdown();
      status = STAN_Shutdown();
      cert_DestroySubjectKeyIDHashTable();
-diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
---- a/lib/pk11wrap/pk11load.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/pk11wrap/pk11load.c	Fri May 31 17:44:06 2013 -0700
-@@ -318,6 +318,12 @@
+diff --git a/nss/lib/pk11wrap/pk11load.c b/nss/lib/pk11wrap/pk11load.c
+index 6700180..1811a1a 100644
+--- a/nss/lib/pk11wrap/pk11load.c
++++ b/nss/lib/pk11wrap/pk11load.c
+@@ -341,6 +341,12 @@ SECMOD_SetRootCerts(PK11SlotInfo *slot, SECMODModule *mod) {
      }
  }
  
@@ -268,7 +275,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  static const char* my_shlib_name =
      SHLIB_PREFIX"nss"SHLIB_VERSION"."SHLIB_SUFFIX;
  static const char* softoken_shlib_name =
-@@ -326,12 +332,14 @@
+@@ -349,12 +355,14 @@ static const PRCallOnceType pristineCallOnce;
  static PRCallOnceType loadSoftokenOnce;
  static PRLibrary* softokenLib;
  static PRInt32 softokenLoadCount;
@@ -283,7 +290,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  /* This function must be run only once. */
  /*  determine if hybrid platform, then actually load the DSO. */
  static PRStatus
-@@ -348,6 +356,7 @@
+@@ -371,6 +379,7 @@ softoken_LoadDSO( void )
    }
    return PR_FAILURE;
  }
@@ -291,7 +298,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  
  /*
   * load a new module into our address space and initialize it.
-@@ -366,6 +375,16 @@
+@@ -389,6 +398,16 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule) {
  
      /* intenal modules get loaded from their internal list */
      if (mod->internal && (mod->dllName == NULL)) {
@@ -308,7 +315,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
      /*
       * Loads softoken as a dynamic library,
       * even though the rest of NSS assumes this as the "internal" module.
-@@ -391,6 +410,7 @@
+@@ -414,6 +433,7 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule) {
          mod->moduleDBFunc = (CK_C_GetFunctionList) 
                      PR_FindSymbol(softokenLib, "NSC_ModuleDBFunc");
      }
@@ -316,7 +323,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  
      if (mod->moduleDBOnly) {
          mod->loaded = PR_TRUE;
-@@ -401,6 +421,15 @@
+@@ -424,6 +444,15 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule) {
  	if (mod->dllName == NULL) {
  	    return SECFailure;
  	}
@@ -332,7 +339,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  
  	/* load the library. If this succeeds, then we have to remember to
  	 * unload the library if anything goes wrong from here on out...
-@@ -423,6 +452,9 @@
+@@ -446,6 +475,9 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule) {
  	    mod->moduleDBFunc = (void *)
  			PR_FindSymbol(library, "NSS_ReturnModuleSpecData");
  	}
@@ -342,7 +349,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  	if (mod->moduleDBFunc == NULL) mod->isModuleDB = PR_FALSE;
  	if (entry == NULL) {
  	    if (mod->isModuleDB) {
-@@ -562,6 +594,7 @@
+@@ -585,6 +617,7 @@ SECMOD_UnloadModule(SECMODModule *mod) {
       * if not, we should change this to SECFailure and move it above the
       * mod->loaded = PR_FALSE; */
      if (mod->internal && (mod->dllName == NULL)) {
@@ -350,7 +357,7 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
          if (0 == PR_ATOMIC_DECREMENT(&softokenLoadCount)) {
            if (softokenLib) {
                disableUnload = PR_GetEnv("NSS_DISABLE_UNLOAD");
-@@ -573,12 +606,18 @@
+@@ -596,12 +629,18 @@ SECMOD_UnloadModule(SECMODModule *mod) {
            }
            loadSoftokenOnce = pristineCallOnce;
          }
@@ -369,10 +376,11 @@ diff -r db5b7e3c69a5 lib/pk11wrap/pk11load.c
  	return SECFailure;
      }
  
-diff -r db5b7e3c69a5 lib/softoken/lgglue.c
---- a/lib/softoken/lgglue.c	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/softoken/lgglue.c	Fri May 31 17:44:06 2013 -0700
-@@ -23,6 +23,7 @@
+diff --git a/nss/lib/softoken/lgglue.c b/nss/lib/softoken/lgglue.c
+index c7b82bd..64e6415 100644
+--- a/nss/lib/softoken/lgglue.c
++++ b/nss/lib/softoken/lgglue.c
+@@ -23,6 +23,7 @@ static LGDeleteSecmodFunc legacy_glue_deleteSecmod = NULL;
  static LGAddSecmodFunc legacy_glue_addSecmod = NULL;
  static LGShutdownFunc legacy_glue_shutdown = NULL;
  
@@ -380,7 +388,7 @@ diff -r db5b7e3c69a5 lib/softoken/lgglue.c
  /*
   * The following 3 functions duplicate the work done by bl_LoadLibrary.
   * We should make bl_LoadLibrary a global and replace the call to
-@@ -160,6 +161,7 @@
+@@ -160,6 +161,7 @@ done:
  
      return lib;
  }
@@ -388,7 +396,7 @@ diff -r db5b7e3c69a5 lib/softoken/lgglue.c
  
  /*
   * stub files for legacy db's to be able to encrypt and decrypt
-@@ -272,6 +274,21 @@
+@@ -272,6 +274,21 @@ sftkdbLoad_Legacy(PRBool isFIPS)
  	return SECSuccess;
      }
  
@@ -410,7 +418,7 @@ diff -r db5b7e3c69a5 lib/softoken/lgglue.c
      lib = sftkdb_LoadLibrary(LEGACY_LIB_NAME);
      if (lib == NULL) {
  	return SECFailure;
-@@ -297,11 +314,14 @@
+@@ -297,11 +314,14 @@ sftkdbLoad_Legacy(PRBool isFIPS)
  	PR_UnloadLibrary(lib);
  	return SECFailure;
      }
@@ -425,7 +433,7 @@ diff -r db5b7e3c69a5 lib/softoken/lgglue.c
  	    return SECFailure;
  	}
      	legacy_glue_libCheckSucceeded = PR_TRUE;
-@@ -418,10 +438,12 @@
+@@ -418,10 +438,12 @@ sftkdbCall_Shutdown(void)
  #endif
  	crv = (*legacy_glue_shutdown)(parentForkedAfterC_Initialize);
      }
@@ -438,10 +446,11 @@ diff -r db5b7e3c69a5 lib/softoken/lgglue.c
      legacy_glue_lib = NULL;
      legacy_glue_open = NULL;
      legacy_glue_readSecmod = NULL;
-diff -r db5b7e3c69a5 lib/softoken/lgglue.h
---- a/lib/softoken/lgglue.h	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/softoken/lgglue.h	Fri May 31 17:44:06 2013 -0700
-@@ -38,6 +38,25 @@
+diff --git a/nss/lib/softoken/lgglue.h b/nss/lib/softoken/lgglue.h
+index b87f756..c8c562f 100644
+--- a/nss/lib/softoken/lgglue.h
++++ b/nss/lib/softoken/lgglue.h
+@@ -38,6 +38,25 @@ typedef SECStatus (*LGShutdownFunc)(PRBool forked);
  typedef void (*LGSetForkStateFunc)(PRBool);
  typedef void (*LGSetCryptFunc)(LGEncryptFunc, LGDecryptFunc);
  
@@ -467,10 +476,11 @@ diff -r db5b7e3c69a5 lib/softoken/lgglue.h
  /*
   * Softoken Glue Functions
   */
-diff -r db5b7e3c69a5 lib/util/secport.h
---- a/lib/util/secport.h	Tue May 28 23:37:46 2013 +0200
-+++ b/lib/util/secport.h	Fri May 31 17:44:06 2013 -0700
-@@ -210,6 +210,7 @@
+diff --git a/nss/lib/util/secport.h b/nss/lib/util/secport.h
+index 5b09b9c..f01eb74 100644
+--- a/nss/lib/util/secport.h
++++ b/nss/lib/util/secport.h
+@@ -210,6 +210,7 @@ extern int NSS_PutEnv(const char * envVarName, const char * envValue);
  
  extern int NSS_SecureMemcmp(const void *a, const void *b, size_t n);
  
@@ -478,7 +488,7 @@ diff -r db5b7e3c69a5 lib/util/secport.h
  /*
   * Load a shared library called "newShLibName" in the same directory as
   * a shared library that is already loaded, called existingShLibName.
-@@ -244,6 +245,7 @@
+@@ -244,6 +245,7 @@ PRLibrary *
  PORT_LoadLibraryFromOrigin(const char* existingShLibName,
                   PRFuncPtr staticShLibFunc,
                   const char *newShLibName);

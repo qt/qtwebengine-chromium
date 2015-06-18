@@ -7,6 +7,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "google_apis/gaia/fake_oauth2_token_service.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -46,18 +47,16 @@ class MockUbertokenConsumer : public UbertokenConsumer {
 
 class UbertokenFetcherTest : public testing::Test {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     request_context_getter_ = new net::TestURLRequestContextGetter(
-        base::MessageLoopProxy::current());
+        base::ThreadTaskRunnerHandle::Get());
     fetcher_.reset(new UbertokenFetcher(&token_service_,
                                         &consumer_,
                                         GaiaConstants::kChromeSource,
                                         request_context_getter_.get()));
   }
 
-  virtual void TearDown() override {
-    fetcher_.reset();
-  }
+  void TearDown() override { fetcher_.reset(); }
 
  protected:
   base::MessageLoop message_loop_;

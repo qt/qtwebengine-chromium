@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "crypto/nss_util_internal.h"
 #include "crypto/scoped_test_nss_chromeos_user.h"
 #include "crypto/scoped_test_nss_db.h"
@@ -48,7 +48,7 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
   NSSCertDatabaseChromeOSTest()
       : observer_added_(false), user_1_("user1"), user_2_("user2") {}
 
-  virtual void SetUp() override {
+  void SetUp() override {
     // Initialize nss_util slots.
     ASSERT_TRUE(user_1_.constructed_successfully());
     ASSERT_TRUE(user_2_.constructed_successfully());
@@ -61,7 +61,7 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
         crypto::GetPrivateSlotForChromeOSUser(
             user_1_.username_hash(),
             base::Callback<void(crypto::ScopedPK11Slot)>())));
-    db_1_->SetSlowTaskRunnerForTest(base::MessageLoopProxy::current());
+    db_1_->SetSlowTaskRunnerForTest(base::ThreadTaskRunnerHandle::Get());
     db_1_->SetSystemSlot(
         crypto::ScopedPK11Slot(PK11_ReferenceSlot(system_db_.slot())));
     db_2_.reset(new NSSCertDatabaseChromeOS(
@@ -69,7 +69,7 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
         crypto::GetPrivateSlotForChromeOSUser(
             user_2_.username_hash(),
             base::Callback<void(crypto::ScopedPK11Slot)>())));
-    db_2_->SetSlowTaskRunnerForTest(base::MessageLoopProxy::current());
+    db_2_->SetSlowTaskRunnerForTest(base::ThreadTaskRunnerHandle::Get());
 
     // Add observer to CertDatabase for checking that notifications from
     // NSSCertDatabaseChromeOS are proxied to the CertDatabase.
@@ -77,19 +77,19 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
     observer_added_ = true;
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     if (observer_added_)
       CertDatabase::GetInstance()->RemoveObserver(this);
   }
 
   // CertDatabase::Observer:
-  virtual void OnCertAdded(const X509Certificate* cert) override {
+  void OnCertAdded(const X509Certificate* cert) override {
     added_.push_back(cert ? cert->os_cert_handle() : NULL);
   }
 
-  virtual void OnCertRemoved(const X509Certificate* cert) override {}
+  void OnCertRemoved(const X509Certificate* cert) override {}
 
-  virtual void OnCACertChanged(const X509Certificate* cert) override {
+  void OnCACertChanged(const X509Certificate* cert) override {
     added_ca_.push_back(cert ? cert->os_cert_handle() : NULL);
   }
 

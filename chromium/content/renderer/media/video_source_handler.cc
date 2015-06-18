@@ -6,15 +6,15 @@
 
 #include <string>
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/trace_event/trace_event.h"
 #include "content/public/renderer/media_stream_video_sink.h"
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
 #include "media/base/bind_to_current_loop.h"
-#include "media/video/capture/video_capture_types.h"
+#include "media/base/video_capture_types.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
@@ -53,10 +53,8 @@ class PpFrameReceiver : public MediaStreamVideoSink {
     reader_ = reader;
   }
 
-  void OnVideoFrame(
-      const scoped_refptr<media::VideoFrame>& frame,
-      const media::VideoCaptureFormat& format,
-      const base::TimeTicks& estimated_capture_time) {
+  void OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame,
+                    const base::TimeTicks& estimated_capture_time) {
     TRACE_EVENT0("video", "PpFrameReceiver::OnVideoFrame");
     if (reader_) {
       reader_->GotFrame(frame);
@@ -141,8 +139,7 @@ void VideoSourceHandler::DeliverFrameForTesting(
     return;
   }
   PpFrameReceiver* receiver = it->second->receiver_.get();
-  receiver->OnVideoFrame(frame, media::VideoCaptureFormat(),
-                         base::TimeTicks());
+  receiver->OnVideoFrame(frame, base::TimeTicks());
 }
 
 VideoSourceHandler::SourceInfo::SourceInfo(

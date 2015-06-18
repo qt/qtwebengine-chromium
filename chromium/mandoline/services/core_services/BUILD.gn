@@ -1,0 +1,85 @@
+# Copyright 2015 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+#
+# core_services should be thought of as a bundle of many of the services which
+# we ship with.
+
+import("//build/config/ui.gni")
+import("//third_party/mojo/src/mojo/public/mojo_application.gni")
+import("//testing/test.gni")
+
+if (is_android) {
+  import("//build/config/android/rules.gni")
+
+  java_library_path = "$target_out_dir/java_library.dex.jar"
+
+  mojo_android_application("core_services") {
+    input_so = "$root_out_dir/lib.stripped/libcore_services.so"
+    input_dex_jar = java_library_path
+  }
+
+  shared_library("native_library") {
+    output_name = "core_services"
+
+    sources = [
+      "android_hooks.cc",
+    ]
+
+    deps = [
+      ":sources",
+      "//base",
+      "//components/resource_provider:jni_headers",
+      "//net",
+      "//third_party/mojo/src/mojo/public/c/system:for_shared_library",
+    ]
+  }
+
+  android_standalone_library("java_library") {
+    dex_path = java_library_path
+
+    deps = [
+      "//components/resource_provider:java_library",
+      "//net/android:net_java",
+    ]
+  }
+} else {
+  mojo_native_application("core_services") {
+    deps = [
+      ":sources",
+    ]
+  }
+}
+
+source_set("sources") {
+  sources = [
+    "core_services_application_delegate.cc",
+    "main.cc",
+  ]
+
+  deps = [
+    "//base",
+    "//components/clipboard:lib",
+    "//components/surfaces:lib",
+    "//components/resource_provider:lib",
+    "//components/view_manager:view_manager_lib",
+    "//mandoline/ui/browser:kiosk_wm_lib",
+    "//mojo/application",
+    "//mojo/application/public/interfaces",
+    "//mojo/common",
+    "//mojo/common:tracing_impl",
+    "//mojo/environment:chromium",
+    "//mojo/services/network:lib",
+    "//mojo/services/tracing:lib",
+    "//third_party/mojo/src/mojo/public/cpp/bindings:bindings",
+    "//third_party/mojo_services/src/content_handler/public/interfaces",
+  ]
+
+  if (!is_android) {
+    deps += [
+      "//components/native_viewport:lib",
+      "//components/native_viewport/public/cpp:args",
+      "//mandoline/ui/omnibox:lib",
+    ]
+  }
+}

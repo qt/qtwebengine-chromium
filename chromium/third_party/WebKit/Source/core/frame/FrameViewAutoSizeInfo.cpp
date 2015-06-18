@@ -7,8 +7,8 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutBox.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
@@ -22,7 +22,7 @@ FrameViewAutoSizeInfo::FrameViewAutoSizeInfo(FrameView* view)
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(FrameViewAutoSizeInfo);
 
-void FrameViewAutoSizeInfo::trace(Visitor* visitor)
+DEFINE_TRACE(FrameViewAutoSizeInfo)
 {
     visitor->trace(m_frameView);
 }
@@ -69,17 +69,17 @@ void FrameViewAutoSizeInfo::autoSizeIfNeeded()
         // Update various sizes including contentsSize, scrollHeight, etc.
         document->updateLayoutIgnorePendingStylesheets();
 
-        RenderView* renderView = document->renderView();
-        if (!renderView)
+        LayoutView* layoutView = document->layoutView();
+        if (!layoutView)
             return;
 
-        int width = renderView->minPreferredLogicalWidth();
+        int width = layoutView->minPreferredLogicalWidth();
 
-        RenderBox* documentRenderBox = documentElement->renderBox();
-        if (!documentRenderBox)
+        LayoutBox* documentLayoutBox = documentElement->layoutBox();
+        if (!documentLayoutBox)
             return;
 
-        int height = documentRenderBox->scrollHeight();
+        int height = documentLayoutBox->scrollHeight();
         IntSize newSize(width, height);
 
         // Check to see if a scrollbar is needed for a given dimension and

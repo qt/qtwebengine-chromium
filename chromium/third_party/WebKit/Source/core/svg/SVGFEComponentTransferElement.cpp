@@ -40,22 +40,26 @@ inline SVGFEComponentTransferElement::SVGFEComponentTransferElement(Document& do
     addToPropertyMap(m_in1);
 }
 
+DEFINE_TRACE(SVGFEComponentTransferElement)
+{
+    visitor->trace(m_in1);
+    SVGFilterPrimitiveStandardAttributes::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGFEComponentTransferElement)
 
-bool SVGFEComponentTransferElement::isSupportedAttribute(const QualifiedName& attrName)
+void SVGFEComponentTransferElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::inAttr);
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
+    if (attrName == SVGNames::inAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+        invalidate();
+        return;
+    }
+
+    SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
-void SVGFEComponentTransferElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
-PassRefPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
+PassRefPtrWillBeRawPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
 
@@ -78,7 +82,7 @@ PassRefPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* 
             alpha = toSVGFEFuncAElement(*element).transferFunction();
     }
 
-    RefPtr<FilterEffect> effect = FEComponentTransfer::create(filter, red, green, blue, alpha);
+    RefPtrWillBeRawPtr<FilterEffect> effect = FEComponentTransfer::create(filter, red, green, blue, alpha);
     effect->inputEffects().append(input1);
     return effect.release();
 }

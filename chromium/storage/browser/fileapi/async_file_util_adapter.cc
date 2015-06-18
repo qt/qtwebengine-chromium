@@ -10,11 +10,11 @@
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/thread_task_runner_handle.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_file_util.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_util.h"
 
 using base::Bind;
@@ -86,7 +86,7 @@ class GetFileInfoHelper {
 void ReadDirectoryHelper(FileSystemFileUtil* file_util,
                          FileSystemOperationContext* context,
                          const FileSystemURL& url,
-                         base::SingleThreadTaskRunner* origin_loop,
+                         base::SingleThreadTaskRunner* origin_runner,
                          const AsyncFileUtil::ReadDirectoryCallback& callback) {
   base::File::Info file_info;
   base::FilePath platform_path;
@@ -98,7 +98,7 @@ void ReadDirectoryHelper(FileSystemFileUtil* file_util,
 
   std::vector<DirectoryEntry> entries;
   if (error != base::File::FILE_OK) {
-    origin_loop->PostTask(
+    origin_runner->PostTask(
         FROM_HERE, base::Bind(callback, error, entries, false /* has_more */));
     return;
   }
@@ -121,13 +121,13 @@ void ReadDirectoryHelper(FileSystemFileUtil* file_util,
     entries.push_back(entry);
 
     if (entries.size() == kResultChunkSize) {
-      origin_loop->PostTask(
+      origin_runner->PostTask(
           FROM_HERE, base::Bind(callback, base::File::FILE_OK, entries,
                                 true /* has_more */));
       entries.clear();
     }
   }
-  origin_loop->PostTask(
+  origin_runner->PostTask(
       FROM_HERE, base::Bind(callback, base::File::FILE_OK, entries,
                             false /* has_more */));
 }

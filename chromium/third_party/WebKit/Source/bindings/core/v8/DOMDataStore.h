@@ -36,6 +36,7 @@
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/StdLibExtras.h"
 #include <v8.h>
 
@@ -46,45 +47,17 @@ class Node;
 class DOMDataStore {
     WTF_MAKE_NONCOPYABLE(DOMDataStore);
 public:
-    explicit DOMDataStore(bool isMainWorld)
+    DOMDataStore(v8::Isolate* isolate, bool isMainWorld)
         : m_isMainWorld(isMainWorld)
-        , m_wrapperMap(v8::Isolate::GetCurrent()) { }
-    ~DOMDataStore()
-    {
-        // We never actually destruct the main world's DOMDataStore.
-        ASSERT(!m_isMainWorld);
-        m_wrapperMap.clear();
-    }
+        // We never use |m_wrapperMap| when it's the main world.
+        , m_wrapperMap(adoptPtr(
+            isMainWorld
+            ? nullptr
+            : new DOMWrapperMap<ScriptWrappable>(isolate))) { }
 
     static DOMDataStore& current(v8::Isolate* isolate)
     {
         return DOMWrapperWorld::current(isolate).domDataStore();
-    }
-
-    static bool setReturnValueFast(v8::ReturnValue<v8::Value> returnValue, ScriptWrappable* object, v8::Local<v8::Object> holder, const ScriptWrappable* wrappable)
-    {
-        // The second fastest way to check if we're in the main world is to check if
-        // the wrappable's wrapper is the same as the holder.
-        // FIXME: Investigate if it's worth having this check for performance.
-        if (holderContainsWrapper(holder, wrappable))
-            return object->setReturnValue(returnValue);
-        return current(returnValue.GetIsolate()).setReturnValueFrom(returnValue, object);
-    }
-
-    static bool setReturnValueFast(v8::ReturnValue<v8::Value> returnValue, Node* node, v8::Local<v8::Object> holder, const ScriptWrappable* wrappable)
-    {
-        if (canUseScriptWrappable(node)
-            // The second fastest way to check if we're in the main world is to
-            // check if the wrappable's wrapper is the same as the holder.
-            // FIXME: Investigate if it's worth having this check for performance.
-            || holderContainsWrapper(holder, wrappable))
-            return ScriptWrappable::fromNode(node)->setReturnValue(returnValue);
-        return current(returnValue.GetIsolate()).setReturnValueFrom(returnValue, ScriptWrappable::fromNode(node));
-    }
-
-    static bool setReturnValue(v8::ReturnValue<v8::Value> returnValue, ScriptWrappableBase* object)
-    {
-        return current(returnValue.GetIsolate()).setReturnValueFrom(returnValue, object);
     }
 
     static bool setReturnValue(v8::ReturnValue<v8::Value> returnValue, ScriptWrappable* object)
@@ -104,30 +77,35 @@ public:
         return object->setReturnValue(returnValue);
     }
 
-    static v8::Handle<v8::Object> getWrapper(ScriptWrappableBase* object, v8::Isolate* isolate)
+    static bool setReturnValueFast(v8::ReturnValue<v8::Value> returnValue, ScriptWrappable* object, v8::Local<v8::Object> holder, const ScriptWrappable* wrappable)
+    {
+        // The second fastest way to check if we're in the main world is to check if
+        // the wrappable's wrapper is the same as the holder.
+        if (holderContainsWrapper(holder, wrappable))
+            return object->setReturnValue(returnValue);
+        return current(returnValue.GetIsolate()).setReturnValueFrom(returnValue, object);
+    }
+
+    static bool setReturnValueFast(v8::ReturnValue<v8::Value> returnValue, Node* node, v8::Local<v8::Object> holder, const ScriptWrappable* wrappable)
+    {
+        if (canUseScriptWrappable(node)
+            // The second fastest way to check if we're in the main world is to
+            // check if the wrappable's wrapper is the same as the holder.
+            || holderContainsWrapper(holder, wrappable))
+            return ScriptWrappable::fromNode(node)->setReturnValue(returnValue);
+        return current(returnValue.GetIsolate()).setReturnValueFrom(returnValue, ScriptWrappable::fromNode(node));
+    }
+
+    static v8::Local<v8::Object> getWrapper(ScriptWrappable* object, v8::Isolate* isolate)
     {
         return current(isolate).get(object, isolate);
     }
 
-    static v8::Handle<v8::Object> getWrapper(ScriptWrappable* object, v8::Isolate* isolate)
+    static v8::Local<v8::Object> getWrapper(Node* node, v8::Isolate* isolate)
     {
-        return current(isolate).get(object, isolate);
-    }
-
-    static v8::Handle<v8::Object> getWrapper(Node* node, v8::Isolate* isolate)
-    {
-        if (canUseScriptWrappable(node)) {
-            v8::Handle<v8::Object> result = ScriptWrappable::fromNode(node)->newLocalWrapper(isolate);
-            // Security: always guard against malicious tampering.
-            ScriptWrappable::fromNode(node)->assertWrapperSanity(result);
-            return result;
-        }
+        if (canUseScriptWrappable(node))
+            return ScriptWrappable::fromNode(node)->newLocalWrapper(isolate);
         return current(isolate).get(ScriptWrappable::fromNode(node), isolate);
-    }
-
-    static void setWrapperReference(const v8::Persistent<v8::Object>& parent, ScriptWrappableBase* child, v8::Isolate* isolate)
-    {
-        current(isolate).setReference(parent, child, isolate);
     }
 
     static void setWrapperReference(const v8::Persistent<v8::Object>& parent, ScriptWrappable* child, v8::Isolate* isolate)
@@ -144,17 +122,12 @@ public:
         current(isolate).setReference(parent, ScriptWrappable::fromNode(child), isolate);
     }
 
-    static void setWrapper(ScriptWrappableBase* object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
+    static void setWrapper(ScriptWrappable* object, v8::Local<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
     {
         return current(isolate).set(object, wrapper, isolate, wrapperTypeInfo);
     }
 
-    static void setWrapper(ScriptWrappable* object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
-    {
-        return current(isolate).set(object, wrapper, isolate, wrapperTypeInfo);
-    }
-
-    static void setWrapper(Node* node, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
+    static void setWrapper(Node* node, v8::Local<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
     {
         if (canUseScriptWrappable(node)) {
             ScriptWrappable::fromNode(node)->setWrapper(wrapper, isolate, wrapperTypeInfo);
@@ -163,31 +136,16 @@ public:
         return current(isolate).set(ScriptWrappable::fromNode(node), wrapper, isolate, wrapperTypeInfo);
     }
 
-    static bool containsWrapper(ScriptWrappableBase* object, v8::Isolate* isolate)
-    {
-        return current(isolate).containsWrapper(object);
-    }
-
     static bool containsWrapper(ScriptWrappable* object, v8::Isolate* isolate)
     {
         return current(isolate).containsWrapper(object);
     }
 
-    v8::Handle<v8::Object> get(ScriptWrappableBase* object, v8::Isolate* isolate)
-    {
-        return m_wrapperMap.newLocal(object->toScriptWrappableBase(), isolate);
-    }
-
-    v8::Handle<v8::Object> get(ScriptWrappable* object, v8::Isolate* isolate)
+    v8::Local<v8::Object> get(ScriptWrappable* object, v8::Isolate* isolate)
     {
         if (m_isMainWorld)
             return object->newLocalWrapper(isolate);
-        return m_wrapperMap.newLocal(object->toScriptWrappableBase(), isolate);
-    }
-
-    void setReference(const v8::Persistent<v8::Object>& parent, ScriptWrappableBase* child, v8::Isolate* isolate)
-    {
-        m_wrapperMap.setReference(parent, child, isolate);
+        return m_wrapperMap->newLocal(isolate, object);
     }
 
     void setReference(const v8::Persistent<v8::Object>& parent, ScriptWrappable* child, v8::Isolate* isolate)
@@ -196,42 +154,25 @@ public:
             child->setReference(parent, isolate);
             return;
         }
-        m_wrapperMap.setReference(parent, child->toScriptWrappableBase(), isolate);
-    }
-
-    bool setReturnValueFrom(v8::ReturnValue<v8::Value> returnValue, ScriptWrappableBase* object)
-    {
-        return m_wrapperMap.setReturnValueFrom(returnValue, object);
+        m_wrapperMap->setReference(isolate, parent, child);
     }
 
     bool setReturnValueFrom(v8::ReturnValue<v8::Value> returnValue, ScriptWrappable* object)
     {
         if (m_isMainWorld)
             return object->setReturnValue(returnValue);
-        return m_wrapperMap.setReturnValueFrom(returnValue, object->toScriptWrappableBase());
-    }
-
-    bool containsWrapper(ScriptWrappableBase* object)
-    {
-        return m_wrapperMap.containsKey(object->toScriptWrappableBase());
+        return m_wrapperMap->setReturnValueFrom(returnValue, object);
     }
 
     bool containsWrapper(ScriptWrappable* object)
     {
         if (m_isMainWorld)
             return object->containsWrapper();
-        return m_wrapperMap.containsKey(object->toScriptWrappableBase());
+        return m_wrapperMap->containsKey(object);
     }
 
 private:
-    void set(ScriptWrappableBase* object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
-    {
-        ASSERT(object);
-        ASSERT(!wrapper.IsEmpty());
-        m_wrapperMap.set(object->toScriptWrappableBase(), wrapper, wrapperTypeInfo);
-    }
-
-    void set(ScriptWrappable* object, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
+    void set(ScriptWrappable* object, v8::Local<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
     {
         ASSERT(object);
         ASSERT(!wrapper.IsEmpty());
@@ -239,7 +180,7 @@ private:
             object->setWrapper(wrapper, isolate, wrapperTypeInfo);
             return;
         }
-        m_wrapperMap.set(object->toScriptWrappableBase(), wrapper, wrapperTypeInfo);
+        m_wrapperMap->set(object, wrapper, wrapperTypeInfo);
     }
 
     // We can use a wrapper stored in a ScriptWrappable when we're in the main world.
@@ -267,17 +208,24 @@ private:
     }
 
     bool m_isMainWorld;
-    DOMWrapperMap<ScriptWrappableBase> m_wrapperMap;
+    OwnPtr<DOMWrapperMap<ScriptWrappable>> m_wrapperMap;
 };
 
-template<>
-inline void DOMWrapperMap<ScriptWrappableBase>::PersistentValueMapTraits::Dispose(
+template <>
+inline void DOMWrapperMap<ScriptWrappable>::PersistentValueMapTraits::Dispose(
     v8::Isolate* isolate,
-    v8::UniquePersistent<v8::Object> value,
-    ScriptWrappableBase* key)
+    v8::Global<v8::Object> value,
+    ScriptWrappable* key)
 {
     RELEASE_ASSERT(!value.IsEmpty()); // See crbug.com/368095.
-    releaseObject(v8::Local<v8::Object>::New(isolate, value));
+    releaseObject(value);
+}
+
+template <>
+inline void DOMWrapperMap<ScriptWrappable>::PersistentValueMapTraits::DisposeWeak(v8::Isolate* isolate, void* internalFields[v8::kInternalFieldsInWeakCallback], ScriptWrappable* key)
+{
+    auto typeInfo = reinterpret_cast<WrapperTypeInfo*>(internalFields[v8DOMWrapperTypeIndex]);
+    typeInfo->derefObject(key);
 }
 
 } // namespace blink

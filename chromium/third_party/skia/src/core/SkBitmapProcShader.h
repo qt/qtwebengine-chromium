@@ -20,10 +20,10 @@ public:
                        const SkMatrix* localMatrix = NULL);
 
     // overrides from SkShader
-    virtual bool isOpaque() const SK_OVERRIDE;
-    virtual BitmapType asABitmap(SkBitmap*, SkMatrix*, TileMode*) const SK_OVERRIDE;
+    bool isOpaque() const override;
+    BitmapType asABitmap(SkBitmap*, SkMatrix*, TileMode*) const override;
 
-    virtual size_t contextSize() const SK_OVERRIDE;
+    size_t contextSize() const override;
 
     static bool CanDo(const SkBitmap&, TileMode tx, TileMode ty);
 
@@ -31,9 +31,8 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkBitmapProcShader)
 
 
-    bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix*, GrColor*,
-                             GrFragmentProcessor**)
-            const SK_OVERRIDE;
+    bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix& viewM, const SkMatrix*,
+                             GrColor*, GrFragmentProcessor**) const override;
 
     class BitmapProcShaderContext : public SkShader::Context {
     public:
@@ -42,11 +41,11 @@ public:
         BitmapProcShaderContext(const SkBitmapProcShader&, const ContextRec&, SkBitmapProcState*);
         virtual ~BitmapProcShaderContext();
 
-        virtual void shadeSpan(int x, int y, SkPMColor dstC[], int count) SK_OVERRIDE;
-        virtual ShadeProc asAShadeProc(void** ctx) SK_OVERRIDE;
-        virtual void shadeSpan16(int x, int y, uint16_t dstC[], int count) SK_OVERRIDE;
+        void shadeSpan(int x, int y, SkPMColor dstC[], int count) override;
+        ShadeProc asAShadeProc(void** ctx) override;
+        void shadeSpan16(int x, int y, uint16_t dstC[], int count) override;
 
-        virtual uint32_t getFlags() const SK_OVERRIDE { return fFlags; }
+        uint32_t getFlags() const override { return fFlags; }
 
     private:
         SkBitmapProcState*  fState;
@@ -56,11 +55,8 @@ public:
     };
 
 protected:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkBitmapProcShader(SkReadBuffer& );
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
-    virtual Context* onCreateContext(const ContextRec&, void* storage) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
+    Context* onCreateContext(const ContextRec&, void* storage) const override;
 
     SkBitmap    fRawBitmap;   // experimental for RLE encoding
     uint8_t     fTileModeX, fTileModeY;
@@ -78,7 +74,7 @@ typedef SkSmallAllocator<3, 1024> SkTBlitterAllocator;
 
 // If alloc is non-NULL, it will be used to allocate the returned SkShader, and MUST outlive
 // the SkShader.
-SkShader* CreateBitmapShader(const SkBitmap& src, SkShader::TileMode, SkShader::TileMode,
-                             const SkMatrix* localMatrix, SkTBlitterAllocator* alloc);
+SkShader* SkCreateBitmapShader(const SkBitmap& src, SkShader::TileMode, SkShader::TileMode,
+                               const SkMatrix* localMatrix, SkTBlitterAllocator* alloc);
 
 #endif

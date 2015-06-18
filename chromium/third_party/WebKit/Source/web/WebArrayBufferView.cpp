@@ -30,7 +30,6 @@
 #include "public/web/WebArrayBufferView.h"
 
 #include "bindings/core/v8/V8ArrayBufferView.h"
-#include "wtf/ArrayBufferView.h"
 
 namespace blink {
 
@@ -59,26 +58,26 @@ unsigned WebArrayBufferView::byteLength() const
     return m_private->byteLength();
 }
 
-WebArrayBufferView* WebArrayBufferView::createFromV8Value(v8::Handle<v8::Value> value)
+WebArrayBufferView* WebArrayBufferView::createFromV8Value(v8::Local<v8::Value> value)
 {
     if (!value->IsArrayBufferView())
         return 0;
-    DOMArrayBufferView* view = V8ArrayBufferView::toImpl(value->ToObject());
-    return new WebArrayBufferView(view->view());
+    DOMArrayBufferView* view = V8ArrayBufferView::toImpl(value.As<v8::Object>());
+    return new WebArrayBufferView(view);
 }
 
-WebArrayBufferView::WebArrayBufferView(const PassRefPtr<ArrayBufferView>& value)
+WebArrayBufferView::WebArrayBufferView(const PassRefPtr<DOMArrayBufferView>& value)
     : m_private(value)
 {
 }
 
-WebArrayBufferView& WebArrayBufferView::operator=(const PassRefPtr<ArrayBufferView>& value)
+WebArrayBufferView& WebArrayBufferView::operator=(const PassRefPtr<DOMArrayBufferView>& value)
 {
     m_private = value;
     return *this;
 }
 
-WebArrayBufferView::operator PassRefPtr<ArrayBufferView>() const
+WebArrayBufferView::operator PassRefPtr<DOMArrayBufferView>() const
 {
     return m_private.get();
 }

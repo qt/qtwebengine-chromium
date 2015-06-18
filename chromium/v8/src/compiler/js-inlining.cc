@@ -2,61 +2,64 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/compiler/js-inlining.h"
+
 #include "src/ast.h"
 #include "src/ast-numbering.h"
-#include "src/compiler/access-builder.h"
+#include "src/compiler/all-nodes.h"
 #include "src/compiler/ast-graph-builder.h"
 #include "src/compiler/common-operator.h"
-#include "src/compiler/generic-node-inl.h"
-#include "src/compiler/graph-inl.h"
-#include "src/compiler/graph-visualizer.h"
-#include "src/compiler/js-inlining.h"
-#include "src/compiler/js-intrinsic-builder.h"
+#include "src/compiler/js-context-specialization.h"
 #include "src/compiler/js-operator.h"
-#include "src/compiler/node-aux-data-inl.h"
 #include "src/compiler/node-matchers.h"
-#include "src/compiler/node-properties-inl.h"
-#include "src/compiler/simplified-operator.h"
-#include "src/compiler/typer.h"
+#include "src/compiler/node-properties.h"
+#include "src/compiler/operator-properties.h"
 #include "src/full-codegen.h"
 #include "src/parser.h"
 #include "src/rewriter.h"
 #include "src/scopes.h"
 
-
 namespace v8 {
 namespace internal {
 namespace compiler {
 
-class InlinerVisitor : public NullNodeVisitor {
- public:
-  explicit InlinerVisitor(JSInliner* inliner) : inliner_(inliner) {}
+#define TRACE(...)                                      \
+  do {                                                  \
+    if (FLAG_trace_turbo_inlining) PrintF(__VA_ARGS__); \
+  } while (false)
 
-  void Post(Node* node) {
-    switch (node->opcode()) {
-      case IrOpcode::kJSCallFunction:
-        inliner_->TryInlineJSCall(node);
-        break;
-      case IrOpcode::kJSCallRuntime:
-        if (FLAG_turbo_inlining_intrinsics) {
-          inliner_->TryInlineRuntimeCall(node);
-        }
-        break;
-      default:
-        break;
-    }
+
+// Provides convenience accessors for calls to JS functions.
+class JSCallFunctionAccessor {
+ public:
+  explicit JSCallFunctionAccessor(Node* call) : call_(call) {
+    DCHECK_EQ(IrOpcode::kJSCallFunction, call->opcode());
   }
 
+  Node* jsfunction() { return call_->InputAt(0); }
+
+  Node* receiver() { return call_->InputAt(1); }
+
+  Node* formal_argument(size_t index) {
+    DCHECK(index < formal_arguments());
+    return call_->InputAt(static_cast<int>(2 + index));
+  }
+
+  size_t formal_arguments() {
+    // {value_inputs} includes jsfunction and receiver.
+    size_t value_inputs = call_->op()->ValueInputCount();
+    DCHECK_GE(call_->InputCount(), 2);
+    return value_inputs - 2;
+  }
+
+  Node* frame_state() { return NodeProperties::GetFrameStateInput(call_, 0); }
+
  private:
-  JSInliner* inliner_;
+  Node* call_;
 };
 
 
-void JSInliner::Inline() {
-  InlinerVisitor visitor(this);
-  jsgraph_->graph()->VisitNodeInputsFromEnd(&visitor);
-}
-
+namespace {
 
 // A facade on a JSFunction's graph to facilitate inlining. It assumes the
 // that the function graph has only one return statement, and provides
@@ -79,6 +82,11 @@ class Inlinee {
   Node* value_output() {
     return NodeProperties::GetValueInput(unique_return(), 0);
   }
+  // Return the control output of the graph,
+  // that is the control input of the return statement of the inlinee.
+  Node* control_output() {
+    return NodeProperties::GetControlInput(unique_return(), 0);
+  }
   // Return the unique return statement of the graph.
   Node* unique_return() {
     Node* unique_return = NodeProperties::GetControlInput(end_);
@@ -87,17 +95,17 @@ class Inlinee {
   }
 
   // Counts JSFunction, Receiver, arguments, context but not effect, control.
-  size_t total_parameters() { return start_->op()->OutputCount(); }
+  size_t total_parameters() { return start_->op()->ValueOutputCount(); }
 
   // Counts only formal parameters.
   size_t formal_parameters() {
-    DCHECK_GE(total_parameters(), 3);
+    DCHECK_GE(total_parameters(), 3u);
     return total_parameters() - 3;
   }
 
   // Inline this graph at {call}, use {jsgraph} and its zone to create
   // any new nodes.
-  void InlineAtCall(JSGraph* jsgraph, Node* call);
+  Reduction InlineAtCall(JSGraph* jsgraph, Node* call);
 
   // Ensure that only a single return reaches the end node.
   static void UnifyReturn(JSGraph* jsgraph);
@@ -127,19 +135,17 @@ void Inlinee::UnifyReturn(JSGraph* jsgraph) {
   NodeVector effects(jsgraph->zone());
   // Iterate over all control flow predecessors,
   // which must be return statements.
-  InputIter iter = final_merge->inputs().begin();
-  while (iter != final_merge->inputs().end()) {
-    Node* input = *iter;
+  for (Edge edge : final_merge->input_edges()) {
+    Node* input = edge.to();
     switch (input->opcode()) {
       case IrOpcode::kReturn:
         values.push_back(NodeProperties::GetValueInput(input, 0));
         effects.push_back(NodeProperties::GetEffectInput(input));
-        iter.UpdateToAndIncrement(NodeProperties::GetControlInput(input));
-        input->RemoveAllInputs();
+        edge.UpdateTo(NodeProperties::GetControlInput(input));
+        input->NullAllInputs();
         break;
       default:
         UNREACHABLE();
-        ++iter;
         break;
     }
   }
@@ -155,88 +161,69 @@ void Inlinee::UnifyReturn(JSGraph* jsgraph) {
 }
 
 
-class CopyVisitor : public NullNodeVisitor {
+class CopyVisitor {
  public:
   CopyVisitor(Graph* source_graph, Graph* target_graph, Zone* temp_zone)
-      : copies_(source_graph->NodeCount(), NULL, temp_zone),
-        sentinels_(source_graph->NodeCount(), NULL, temp_zone),
+      : sentinel_op_(IrOpcode::kDead, Operator::kNoProperties, "Sentinel", 0, 0,
+                     0, 0, 0, 0),
+        sentinel_(target_graph->NewNode(&sentinel_op_)),
+        copies_(source_graph->NodeCount(), sentinel_, temp_zone),
         source_graph_(source_graph),
         target_graph_(target_graph),
-        temp_zone_(temp_zone),
-        sentinel_op_(IrOpcode::kDead, Operator::kNoProperties, "sentinel", 0, 0,
-                     0, 0, 0, 0) {}
+        temp_zone_(temp_zone) {}
 
-  void Post(Node* original) {
-    NodeVector inputs(temp_zone_);
-    for (InputIter it = original->inputs().begin();
-         it != original->inputs().end(); ++it) {
-      inputs.push_back(GetCopy(*it));
-    }
-
-    // Reuse the operator in the copy. This assumes that op lives in a zone
-    // that lives longer than graph()'s zone.
-    Node* copy =
-        target_graph_->NewNode(original->op(), static_cast<int>(inputs.size()),
-                               (inputs.empty() ? NULL : &inputs.front()));
-    copies_[original->id()] = copy;
-  }
-
-  Node* GetCopy(Node* original) {
-    Node* copy = copies_[original->id()];
-    if (copy == NULL) {
-      copy = GetSentinel(original);
-    }
-    DCHECK_NE(NULL, copy);
-    return copy;
-  }
+  Node* GetCopy(Node* orig) { return copies_[orig->id()]; }
 
   void CopyGraph() {
-    source_graph_->VisitNodeInputsFromEnd(this);
-    ReplaceSentinels();
+    NodeVector inputs(temp_zone_);
+    // TODO(bmeurer): AllNodes should be turned into something like
+    // Graph::CollectNodesReachableFromEnd() and the gray set stuff should be
+    // removed since it's only needed by the visualizer.
+    AllNodes all(temp_zone_, source_graph_);
+    // Copy all nodes reachable from end.
+    for (Node* orig : all.live) {
+      Node* copy = GetCopy(orig);
+      if (copy != sentinel_) {
+        // Mapping already exists.
+        continue;
+      }
+      // Copy the node.
+      inputs.clear();
+      for (Node* input : orig->inputs()) inputs.push_back(copies_[input->id()]);
+      copy = target_graph_->NewNode(orig->op(), orig->InputCount(),
+                                    inputs.empty() ? nullptr : &inputs[0]);
+      copies_[orig->id()] = copy;
+    }
+    // For missing inputs.
+    for (Node* orig : all.live) {
+      Node* copy = copies_[orig->id()];
+      for (int i = 0; i < copy->InputCount(); ++i) {
+        Node* input = copy->InputAt(i);
+        if (input == sentinel_) {
+          copy->ReplaceInput(i, GetCopy(orig->InputAt(i)));
+        }
+      }
+    }
   }
 
-  const NodeVector& copies() { return copies_; }
+  const NodeVector& copies() const { return copies_; }
 
  private:
-  void ReplaceSentinels() {
-    for (NodeId id = 0; id < source_graph_->NodeCount(); ++id) {
-      Node* sentinel = sentinels_[id];
-      if (sentinel == NULL) continue;
-      Node* copy = copies_[id];
-      DCHECK_NE(NULL, copy);
-      sentinel->ReplaceUses(copy);
-    }
-  }
-
-  Node* GetSentinel(Node* original) {
-    Node* sentinel = sentinels_[original->id()];
-    if (sentinel == NULL) {
-      sentinel = target_graph_->NewNode(&sentinel_op_);
-    }
-    return sentinel;
-  }
-
+  Operator const sentinel_op_;
+  Node* const sentinel_;
   NodeVector copies_;
-  NodeVector sentinels_;
-  Graph* source_graph_;
-  Graph* target_graph_;
-  Zone* temp_zone_;
-  Operator sentinel_op_;
+  Graph* const source_graph_;
+  Graph* const target_graph_;
+  Zone* const temp_zone_;
 };
 
 
-void Inlinee::InlineAtCall(JSGraph* jsgraph, Node* call) {
+Reduction Inlinee::InlineAtCall(JSGraph* jsgraph, Node* call) {
   // The scheduler is smart enough to place our code; we just ensure {control}
-  // becomes the control input of the start of the inlinee.
+  // becomes the control input of the start of the inlinee, and {effect} becomes
+  // the effect input of the start of the inlinee.
   Node* control = NodeProperties::GetControlInput(call);
-
-  // The inlinee uses the context from the JSFunction object. This will
-  // also be the effect dependency for the inlinee as it produces an effect.
-  SimplifiedOperatorBuilder simplified(jsgraph->zone());
-  Node* context = jsgraph->graph()->NewNode(
-      simplified.LoadField(AccessBuilder::ForJSFunctionContext()),
-      NodeProperties::GetValueInput(call, 0),
-      NodeProperties::GetEffectInput(call), control);
+  Node* effect = NodeProperties::GetEffectInput(call);
 
   // Context is last argument.
   int inlinee_context_index = static_cast<int>(total_parameters()) - 1;
@@ -244,35 +231,33 @@ void Inlinee::InlineAtCall(JSGraph* jsgraph, Node* call) {
   // context, effect, control.
   int inliner_inputs = call->op()->ValueInputCount();
   // Iterate over all uses of the start node.
-  UseIter iter = start_->uses().begin();
-  while (iter != start_->uses().end()) {
-    Node* use = *iter;
+  for (Edge edge : start_->use_edges()) {
+    Node* use = edge.from();
     switch (use->opcode()) {
       case IrOpcode::kParameter: {
-        int index = 1 + OpParameter<int>(use->op());
+        int index = 1 + ParameterIndexOf(use->op());
         if (index < inliner_inputs && index < inlinee_context_index) {
           // There is an input from the call, and the index is a value
           // projection but not the context, so rewire the input.
-          NodeProperties::ReplaceWithValue(*iter, call->InputAt(index));
+          NodeProperties::ReplaceWithValue(use, call->InputAt(index));
         } else if (index == inlinee_context_index) {
-          // This is the context projection, rewire it to the context from the
-          // JSFunction object.
-          NodeProperties::ReplaceWithValue(*iter, context);
+          // TODO(turbofan): We always context specialize inlinees currently, so
+          // we should never get here.
+          UNREACHABLE();
         } else if (index < inlinee_context_index) {
           // Call has fewer arguments than required, fill with undefined.
-          NodeProperties::ReplaceWithValue(*iter, jsgraph->UndefinedConstant());
+          NodeProperties::ReplaceWithValue(use, jsgraph->UndefinedConstant());
         } else {
           // We got too many arguments, discard for now.
           // TODO(sigurds): Fix to treat arguments array correctly.
         }
-        ++iter;
         break;
       }
       default:
-        if (NodeProperties::IsEffectEdge(iter.edge())) {
-          iter.UpdateToAndIncrement(context);
-        } else if (NodeProperties::IsControlEdge(iter.edge())) {
-          iter.UpdateToAndIncrement(control);
+        if (NodeProperties::IsEffectEdge(edge)) {
+          edge.UpdateTo(effect);
+        } else if (NodeProperties::IsControlEdge(edge)) {
+          edge.UpdateTo(control);
         } else {
           UNREACHABLE();
         }
@@ -280,41 +265,13 @@ void Inlinee::InlineAtCall(JSGraph* jsgraph, Node* call) {
     }
   }
 
-  NodeProperties::ReplaceWithValue(call, value_output(), effect_output());
-  call->RemoveAllInputs();
-  DCHECK_EQ(0, call->UseCount());
+  NodeProperties::ReplaceWithValue(call, value_output(), effect_output(),
+                                   control_output());
+
+  return Reducer::Replace(value_output());
 }
 
-
-// TODO(turbofan) Provide such accessors for every node, possibly even
-// generate them.
-class JSCallFunctionAccessor {
- public:
-  explicit JSCallFunctionAccessor(Node* call) : call_(call) {
-    DCHECK_EQ(IrOpcode::kJSCallFunction, call->opcode());
-  }
-
-  Node* jsfunction() { return call_->InputAt(0); }
-
-  Node* receiver() { return call_->InputAt(1); }
-
-  Node* formal_argument(size_t index) {
-    DCHECK(index < formal_arguments());
-    return call_->InputAt(static_cast<int>(2 + index));
-  }
-
-  size_t formal_arguments() {
-    // {value_inputs} includes jsfunction and receiver.
-    size_t value_inputs = call_->op()->ValueInputCount();
-    DCHECK_GE(call_->InputCount(), 2);
-    return value_inputs - 2;
-  }
-
-  Node* frame_state() { return NodeProperties::GetFrameStateInput(call_); }
-
- private:
-  Node* call_;
-};
+}  // namespace
 
 
 void JSInliner::AddClosureToFrameState(Node* frame_state,
@@ -350,55 +307,52 @@ Node* JSInliner::CreateArgumentsAdaptorFrameState(JSCallFunctionAccessor* call,
 }
 
 
-void JSInliner::TryInlineJSCall(Node* call_node) {
-  JSCallFunctionAccessor call(call_node);
+Reduction JSInliner::Reduce(Node* node) {
+  if (node->opcode() != IrOpcode::kJSCallFunction) return NoChange();
 
+  JSCallFunctionAccessor call(node);
   HeapObjectMatcher<JSFunction> match(call.jsfunction());
-  if (!match.HasValue()) {
-    return;
-  }
+  if (!match.HasValue()) return NoChange();
 
   Handle<JSFunction> function = match.Value().handle();
-
-  if (function->shared()->native()) {
-    if (FLAG_trace_turbo_inlining) {
-      SmartArrayPointer<char> name =
-          function->shared()->DebugName()->ToCString();
-      PrintF("Not Inlining %s into %s because inlinee is native\n", name.get(),
-             info_->shared_info()->DebugName()->ToCString().get());
-    }
-    return;
+  if (!function->IsJSFunction()) return NoChange();
+  if (mode_ == kBuiltinsInlining && !function->shared()->inline_builtin()) {
+    return NoChange();
   }
 
-  CompilationInfoWithZone info(function);
-  // TODO(wingo): ParseAndAnalyze can fail due to stack overflow.
-  CHECK(Compiler::ParseAndAnalyze(&info));
-  CHECK(Compiler::EnsureDeoptimizationSupport(&info));
+  Zone zone;
+  ParseInfo parse_info(&zone, function);
+  CompilationInfo info(&parse_info);
 
-  if (info.scope()->arguments() != NULL && info.strict_mode() != STRICT) {
+  if (!Compiler::ParseAndAnalyze(info.parse_info())) return NoChange();
+  if (!Compiler::EnsureDeoptimizationSupport(&info)) return NoChange();
+
+  if (info.scope()->arguments() != NULL && is_sloppy(info.language_mode())) {
     // For now do not inline functions that use their arguments array.
-    SmartArrayPointer<char> name = function->shared()->DebugName()->ToCString();
-    if (FLAG_trace_turbo_inlining) {
-      PrintF(
-          "Not Inlining %s into %s because inlinee uses arguments "
-          "array\n",
-          name.get(), info_->shared_info()->DebugName()->ToCString().get());
-    }
-    return;
+    TRACE("Not Inlining %s into %s because inlinee uses arguments array\n",
+          function->shared()->DebugName()->ToCString().get(),
+          info_->shared_info()->DebugName()->ToCString().get());
+    return NoChange();
   }
 
-  if (FLAG_trace_turbo_inlining) {
-    SmartArrayPointer<char> name = function->shared()->DebugName()->ToCString();
-    PrintF("Inlining %s into %s\n", name.get(),
-           info_->shared_info()->DebugName()->ToCString().get());
-  }
+  TRACE("Inlining %s into %s\n",
+        function->shared()->DebugName()->ToCString().get(),
+        info_->shared_info()->DebugName()->ToCString().get());
 
   Graph graph(info.zone());
-  JSGraph jsgraph(&graph, jsgraph_->common(), jsgraph_->javascript(),
-                  jsgraph_->machine());
+  JSGraph jsgraph(info.isolate(), &graph, jsgraph_->common(),
+                  jsgraph_->javascript(), jsgraph_->machine());
 
+  // The inlinee specializes to the context from the JSFunction object.
+  // TODO(turbofan): We might want to load the context from the JSFunction at
+  // runtime in case we only know the SharedFunctionInfo once we have dynamic
+  // type feedback in the compiler.
   AstGraphBuilder graph_builder(local_zone_, &info, &jsgraph);
-  graph_builder.CreateGraph();
+  graph_builder.CreateGraph(true, false);
+  JSContextSpecializer context_specializer(&jsgraph);
+  GraphReducer graph_reducer(&graph, local_zone_);
+  graph_reducer.AddReducer(&context_specializer);
+  graph_reducer.ReduceGraph();
   Inlinee::UnifyReturn(&jsgraph);
 
   CopyVisitor visitor(&graph, jsgraph_->graph(), info.zone());
@@ -413,83 +367,17 @@ void JSInliner::TryInlineJSCall(Node* call_node) {
         CreateArgumentsAdaptorFrameState(&call, function, info.zone());
   }
 
-  for (NodeVectorConstIter it = visitor.copies().begin();
-       it != visitor.copies().end(); ++it) {
-    Node* node = *it;
-    if (node != NULL && node->opcode() == IrOpcode::kFrameState) {
+  for (Node* node : visitor.copies()) {
+    if (node && node->opcode() == IrOpcode::kFrameState) {
+      DCHECK_EQ(1, OperatorProperties::GetFrameStateInputCount(node->op()));
       AddClosureToFrameState(node, function);
-      NodeProperties::ReplaceFrameStateInput(node, outer_frame_state);
+      NodeProperties::ReplaceFrameStateInput(node, 0, outer_frame_state);
     }
   }
 
-  inlinee.InlineAtCall(jsgraph_, call_node);
+  return inlinee.InlineAtCall(jsgraph_, node);
 }
 
-
-class JSCallRuntimeAccessor {
- public:
-  explicit JSCallRuntimeAccessor(Node* call) : call_(call) {
-    DCHECK_EQ(IrOpcode::kJSCallRuntime, call->opcode());
-  }
-
-  Node* formal_argument(size_t index) {
-    DCHECK(index < formal_arguments());
-    return call_->InputAt(static_cast<int>(index));
-  }
-
-  size_t formal_arguments() {
-    size_t value_inputs = call_->op()->ValueInputCount();
-    return value_inputs;
-  }
-
-  Node* frame_state() const {
-    return NodeProperties::GetFrameStateInput(call_);
-  }
-  Node* context() const { return NodeProperties::GetContextInput(call_); }
-  Node* control() const { return NodeProperties::GetControlInput(call_); }
-  Node* effect() const { return NodeProperties::GetEffectInput(call_); }
-
-  const Runtime::Function* function() const {
-    return Runtime::FunctionForId(CallRuntimeParametersOf(call_->op()).id());
-  }
-
-  NodeVector inputs(Zone* zone) const {
-    NodeVector inputs(zone);
-    for (InputIter it = call_->inputs().begin(); it != call_->inputs().end();
-         ++it) {
-      inputs.push_back(*it);
-    }
-    return inputs;
-  }
-
- private:
-  Node* call_;
-};
-
-
-void JSInliner::TryInlineRuntimeCall(Node* call_node) {
-  JSCallRuntimeAccessor call(call_node);
-  const Runtime::Function* f = call.function();
-
-  if (f->intrinsic_type != Runtime::IntrinsicType::INLINE) {
-    return;
-  }
-
-  JSIntrinsicBuilder intrinsic_builder(jsgraph_);
-
-  ResultAndEffect r = intrinsic_builder.BuildGraphFor(
-      f->function_id, call.inputs(jsgraph_->zone()));
-
-  if (r.first != NULL) {
-    if (FLAG_trace_turbo_inlining) {
-      PrintF("Inlining %s into %s\n", f->name,
-             info_->shared_info()->DebugName()->ToCString().get());
-    }
-    NodeProperties::ReplaceWithValue(call_node, r.first, r.second);
-    call_node->RemoveAllInputs();
-    DCHECK_EQ(0, call_node->UseCount());
-  }
-}
-}
-}
-}  // namespace v8::internal::compiler
+}  // namespace compiler
+}  // namespace internal
+}  // namespace v8

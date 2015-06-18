@@ -36,7 +36,7 @@ config("jingle_unexported_configs") {
   # Assumes libpeer is linked statically.
   defines += [ "LIBPEERCONNECTION_LIB=1" ]
 
-  if (is_win && cpu_arch == "x86") {
+  if (is_win && current_cpu == "x86") {
     defines += [ "_USE_32BIT_TIME_T" ]
   }
 
@@ -52,11 +52,10 @@ config("jingle_unexported_configs") {
       "SSL_USE_NSS_RNG",
     ]
   }
-
 }
 
 # From third_party/libjingle/libjingle.gyp's target_defaults.
-config("jingle_direct_dependent_configs") {
+config("jingle_public_configs") {
   include_dirs = [
     "../../third_party/webrtc/overrides",
     "overrides",
@@ -72,15 +71,26 @@ config("jingle_direct_dependent_configs") {
     "NO_MAIN_THREAD_WRAPPING",
     "NO_SOUND_SYSTEM",
   ]
+
   # TODO(GYP): Port is_win blocks.
   if (is_linux) {
-    defines += [ "LINUX", "WEBRTC_LINUX" ]
+    defines += [
+      "LINUX",
+      "WEBRTC_LINUX",
+    ]
   }
   if (is_mac) {
-    defines += [ "OSX", "WEBRTC_MAC" ]
+    defines += [
+      "OSX",
+      "WEBRTC_MAC",
+    ]
   }
   if (is_ios) {
-    defines += [ "IOS", "WEBRTC_MAC", "WEBRTC_IOS" ]
+    defines += [
+      "IOS",
+      "WEBRTC_MAC",
+      "WEBRTC_IOS",
+    ]
   }
   if (is_win) {
     defines += [ "WEBRTC_WIN" ]
@@ -89,8 +99,9 @@ config("jingle_direct_dependent_configs") {
     defines += [ "ANDROID" ]
   }
   if (is_posix) {
-    defines += [ "POSIX", "WEBRTC_POSIX" ]
+    defines += [ "WEBRTC_POSIX" ]
   }
+
   # TODO(GYP): Support these in GN.
   # if (is_bsd) {
   #   defines += [ "BSD" ]
@@ -149,16 +160,10 @@ static_library("libjingle") {
     "$p2p_dir/base/p2ptransport.h",
     "$p2p_dir/base/p2ptransportchannel.cc",
     "$p2p_dir/base/p2ptransportchannel.h",
-    "$p2p_dir/base/parsing.cc",
-    "$p2p_dir/base/parsing.h",
     "$p2p_dir/base/port.cc",
     "$p2p_dir/base/port.h",
     "$p2p_dir/base/portallocator.cc",
     "$p2p_dir/base/portallocator.h",
-    "$p2p_dir/base/portallocatorsessionproxy.cc",
-    "$p2p_dir/base/portallocatorsessionproxy.h",
-    "$p2p_dir/base/portproxy.cc",
-    "$p2p_dir/base/portproxy.h",
     "$p2p_dir/base/pseudotcp.cc",
     "$p2p_dir/base/pseudotcp.h",
     "$p2p_dir/base/rawtransport.cc",
@@ -169,14 +174,9 @@ static_library("libjingle") {
     "$p2p_dir/base/relayport.h",
     "$p2p_dir/base/session.cc",
     "$p2p_dir/base/session.h",
-    "$p2p_dir/base/sessionclient.h",
     "$p2p_dir/base/sessiondescription.cc",
     "$p2p_dir/base/sessiondescription.h",
     "$p2p_dir/base/sessionid.h",
-    "$p2p_dir/base/sessionmanager.cc",
-    "$p2p_dir/base/sessionmanager.h",
-    "$p2p_dir/base/sessionmessages.cc",
-    "$p2p_dir/base/sessionmessages.h",
     "$p2p_dir/base/stun.cc",
     "$p2p_dir/base/stun.h",
     "$p2p_dir/base/stunport.cc",
@@ -202,8 +202,6 @@ static_library("libjingle") {
     "$p2p_dir/client/basicportallocator.h",
     "$p2p_dir/client/httpportallocator.cc",
     "$p2p_dir/client/httpportallocator.h",
-    "$p2p_dir/client/sessionmanagertask.h",
-    "$p2p_dir/client/sessionsendtask.h",
     "$p2p_dir/client/socketmonitor.cc",
     "$p2p_dir/client/socketmonitor.h",
     "$xmllite_dir/qname.cc",
@@ -251,28 +249,26 @@ static_library("libjingle") {
     "$p2p_dir/base/constants.cc",
     "$p2p_dir/base/constants.h",
   ]
+
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
   public_deps = [
-    ":jingle_deps"
+    ":jingle_deps",
   ]
   deps = [
-    "//third_party/webrtc/base:webrtc_base",
+    "//third_party/webrtc/base:rtc_base",
     ":libjingle_p2p_constants",
   ]
 
   # From libjingle_common.gypi's conditions list.
   if (is_win) {
-    cflags = [ "/wd4005", "/wd4267" ]
+    cflags = [ "/wd4005" ]
   }
 
-  configs += [
-    ":jingle_unexported_configs"
-  ]
-  public_configs = [
-    ":jingle_direct_dependent_configs",
-  ]
-  all_dependent_configs = [
-    ":jingle_all_dependent_configs",
-  ]
+  configs += [ ":jingle_unexported_configs" ]
+  public_configs = [ ":jingle_public_configs" ]
+  all_dependent_configs = [ ":jingle_all_dependent_configs" ]
 }
 
 # This has to be is a separate project due to a bug in MSVS 2008 and the
@@ -293,15 +289,9 @@ static_library("libjingle_p2p_constants") {
   public_deps = [
     ":jingle_deps",
   ]
-  configs += [
-    ":jingle_unexported_configs"
-  ]
-  public_configs = [
-    ":jingle_direct_dependent_configs",
-  ]
-  all_dependent_configs = [
-    ":jingle_all_dependent_configs",
-  ]
+  configs += [ ":jingle_unexported_configs" ]
+  public_configs = [ ":jingle_public_configs" ]
+  all_dependent_configs = [ ":jingle_all_dependent_configs" ]
 }
 
 # GYP version: third_party/libjingle.gyp:peerconnnection_server
@@ -316,9 +306,7 @@ source_set("peerconnnection_server") {
     "source/talk/examples/peerconnection/server/utils.cc",
     "source/talk/examples/peerconnection/server/utils.h",
   ]
-  include_dirs = [
-    "source",
-  ]
+  include_dirs = [ "source" ]
   public_deps = [
     ":jingle_deps",
   ]
@@ -326,15 +314,9 @@ source_set("peerconnnection_server") {
     ":libjingle",
     ":jingle_deps",
   ]
-  configs += [
-    ":jingle_unexported_configs"
-  ]
-  public_configs = [
-    ":jingle_direct_dependent_configs",
-  ]
-  all_dependent_configs = [
-    ":jingle_all_dependent_configs",
-  ]
+  configs += [ ":jingle_unexported_configs" ]
+  public_configs = [ ":jingle_public_configs" ]
+  all_dependent_configs = [ ":jingle_all_dependent_configs" ]
   if (is_win) {
     # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
     cflags = [ "/wd4309" ]
@@ -342,15 +324,16 @@ source_set("peerconnnection_server") {
 }
 
 if (enable_webrtc) {
-
   source_set("libjingle_webrtc") {
     sources = [
       "overrides/init_webrtc.cc",
       "overrides/init_webrtc.h",
     ]
     configs += [ ":jingle_unexported_configs" ]
-    public_configs = [ ":jingle_direct_dependent_configs" ]
-    deps = [ ":libjingle_webrtc_common" ]
+    public_configs = [ ":jingle_public_configs" ]
+    deps = [
+      ":libjingle_webrtc_common",
+    ]
   }
 
   # Note: this does not support the shared library build of libpeerconnection
@@ -358,13 +341,16 @@ if (enable_webrtc) {
   source_set("libjingle_webrtc_common") {
     sources = [
       "overrides/talk/media/webrtc/webrtcexport.h",
-
       "source/talk/app/webrtc/audiotrack.cc",
       "source/talk/app/webrtc/audiotrack.h",
       "source/talk/app/webrtc/audiotrackrenderer.cc",
       "source/talk/app/webrtc/audiotrackrenderer.h",
       "source/talk/app/webrtc/datachannel.cc",
       "source/talk/app/webrtc/datachannel.h",
+      "source/talk/app/webrtc/dtlsidentityservice.cc",
+      "source/talk/app/webrtc/dtlsidentityservice.h",
+      "source/talk/app/webrtc/dtlsidentitystore.cc",
+      "source/talk/app/webrtc/dtlsidentitystore.h",
       "source/talk/app/webrtc/dtmfsender.cc",
       "source/talk/app/webrtc/dtmfsender.h",
       "source/talk/app/webrtc/jsep.h",
@@ -403,6 +389,7 @@ if (enable_webrtc) {
       "source/talk/app/webrtc/sctputils.h",
       "source/talk/app/webrtc/statscollector.cc",
       "source/talk/app/webrtc/statscollector.h",
+      "source/talk/app/webrtc/statstypes.cc",
       "source/talk/app/webrtc/statstypes.h",
       "source/talk/app/webrtc/streamcollection.h",
       "source/talk/app/webrtc/umametrics.h",
@@ -452,6 +439,8 @@ if (enable_webrtc) {
       "source/talk/media/base/videocommon.h",
       "source/talk/media/base/videoframe.cc",
       "source/talk/media/base/videoframe.h",
+      "source/talk/media/base/videoframefactory.cc",
+      "source/talk/media/base/videoframefactory.h",
       "source/talk/media/devices/dummydevicemanager.cc",
       "source/talk/media/devices/dummydevicemanager.h",
       "source/talk/media/devices/filevideocapturer.cc",
@@ -459,8 +448,6 @@ if (enable_webrtc) {
       "source/talk/media/webrtc/webrtccommon.h",
       "source/talk/media/webrtc/webrtcpassthroughrender.cc",
       "source/talk/media/webrtc/webrtcpassthroughrender.h",
-      "source/talk/media/webrtc/webrtctexturevideoframe.cc",
-      "source/talk/media/webrtc/webrtctexturevideoframe.h",
       "source/talk/media/webrtc/webrtcvideocapturer.cc",
       "source/talk/media/webrtc/webrtcvideocapturer.h",
       "source/talk/media/webrtc/webrtcvideoframe.cc",
@@ -473,8 +460,6 @@ if (enable_webrtc) {
       "source/talk/session/media/audiomonitor.h",
       "source/talk/session/media/bundlefilter.cc",
       "source/talk/session/media/bundlefilter.h",
-      "source/talk/session/media/call.cc",
-      "source/talk/session/media/call.h",
       "source/talk/session/media/channel.cc",
       "source/talk/session/media/channel.h",
       "source/talk/session/media/channelmanager.cc",
@@ -483,14 +468,10 @@ if (enable_webrtc) {
       "source/talk/session/media/currentspeakermonitor.h",
       "source/talk/session/media/externalhmac.cc",
       "source/talk/session/media/externalhmac.h",
-      "source/talk/session/media/mediamessages.cc",
-      "source/talk/session/media/mediamessages.h",
       "source/talk/session/media/mediamonitor.cc",
       "source/talk/session/media/mediamonitor.h",
       "source/talk/session/media/mediasession.cc",
       "source/talk/session/media/mediasession.h",
-      "source/talk/session/media/mediasessionclient.cc",
-      "source/talk/session/media/mediasessionclient.h",
       "source/talk/session/media/mediasink.h",
       "source/talk/session/media/rtcpmuxfilter.cc",
       "source/talk/session/media/rtcpmuxfilter.h",
@@ -501,16 +482,16 @@ if (enable_webrtc) {
       "source/talk/session/media/typingmonitor.cc",
       "source/talk/session/media/typingmonitor.h",
       "source/talk/session/media/voicechannel.h",
-      "source/talk/session/tunnel/pseudotcpchannel.cc",
-      "source/talk/session/tunnel/pseudotcpchannel.h",
-      "source/talk/session/tunnel/tunnelsessionclient.cc",
-      "source/talk/session/tunnel/tunnelsessionclient.h",
     ]
 
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
+
     configs += [ ":jingle_unexported_configs" ]
-    public_configs = [ ":jingle_direct_dependent_configs" ]
+    public_configs = [ ":jingle_public_configs" ]
 
     deps = [
+      ":libjingle",
       "//third_party/libsrtp",
       "//third_party/webrtc/modules/media_file",
       "//third_party/webrtc/modules/video_capture",
@@ -526,16 +507,14 @@ if (enable_webrtc) {
       defines = [ "HAVE_SCTP" ]
       deps += [ "//third_party/usrsctp" ]
     }
-
-    if (is_clang) {
-      cflags = [ "-Wno-unused-private-field" ]
-    }
   }
 
   # Note: this does not support the shared library build of libpeerconnection
   # as is supported in the GYP build. It's not clear what this is used for.
   source_set("libpeerconnection") {
     sources = [
+      "source/talk/media/webrtc/simulcast.cc",
+      "source/talk/media/webrtc/simulcast.h",
       "source/talk/media/webrtc/webrtcmediaengine.cc",
       "source/talk/media/webrtc/webrtcmediaengine.h",
       "source/talk/media/webrtc/webrtcvideoengine.cc",
@@ -547,50 +526,18 @@ if (enable_webrtc) {
     ]
 
     configs += [ ":jingle_unexported_configs" ]
-    public_configs = [ ":jingle_direct_dependent_configs" ]
+    public_configs = [ ":jingle_public_configs" ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
 
     deps = [
+      # TODO(GYP): crbug.com/481633. Consider depending on :libjingle_webrtc
+      # instead.
       ":libjingle_webrtc_common",
       "//third_party/webrtc",
       "//third_party/webrtc/system_wrappers",
       "//third_party/webrtc/voice_engine",
     ]
   }
-
-  source_set("libjingle_peerconnection_so") {
-    sources = [
-      "source/talk/app/webrtc/java/jni/peerconnection_jni.cc",
-    ]
-    deps = [
-      "libjingle_webrtc",
-      "libpeerconnection",
-    ]
-  }
-
-  android_library("libjingle_peerconnection_java") {
-    java_files = [
-      "source/talk/app/webrtc/java/src/org/webrtc/AudioSource.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/AudioTrack.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/DataChannel.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/IceCandidate.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/Logging.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/MediaConstraints.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/MediaSource.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/MediaStream.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/MediaStreamTrack.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/PeerConnectionFactory.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/PeerConnection.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/SdpObserver.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/StatsObserver.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/StatsReport.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/SessionDescription.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/VideoCapturer.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/VideoRenderer.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/VideoSource.java",
-      "source/talk/app/webrtc/java/src/org/webrtc/VideoTrack.java",
-    ]
-  }
-
 }  # enable_webrtc
-
 # TODO(GYP): Port libjingle.gyp's enable_webrtc condition block.

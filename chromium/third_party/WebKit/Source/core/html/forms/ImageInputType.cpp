@@ -25,14 +25,17 @@
 
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MouseEvent.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLImageFallbackHelper.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderImage.h"
+#include "core/layout/LayoutBlockFlow.h"
+#include "core/layout/LayoutImage.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -42,6 +45,7 @@ using namespace HTMLNames;
 
 inline ImageInputType::ImageInputType(HTMLInputElement& element)
     : BaseButtonInputType(element)
+    , m_useFallbackContent(false)
 {
 }
 
@@ -117,46 +121,52 @@ void ImageInputType::handleDOMActivateEvent(Event* event)
     event->setDefaultHandled();
 }
 
-RenderObject* ImageInputType::createRenderer(RenderStyle*) const
+LayoutObject* ImageInputType::createLayoutObject(const ComputedStyle& style) const
 {
-    RenderImage* image = new RenderImage(&element());
-    image->setImageResource(RenderImageResource::create());
+    if (m_useFallbackContent)
+        return new LayoutBlockFlow(&element());
+    LayoutImage* image = new LayoutImage(&element());
+    image->setImageResource(LayoutImageResource::create());
     return image;
 }
 
 void ImageInputType::altAttributeChanged()
 {
-    RenderImage* image = toRenderImage(element().renderer());
-    if (!image)
-        return;
-    image->updateAltText();
+    if (element().userAgentShadowRoot()) {
+        Element* text = element().userAgentShadowRoot()->getElementById("alttext");
+        String value = element().altText();
+        if (text && text->textContent() != value)
+            text->setTextContent(element().altText());
+    }
 }
 
 void ImageInputType::srcAttributeChanged()
 {
-    if (!element().renderer())
+    if (!element().layoutObject())
         return;
-    element().imageLoader()->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
+    element().ensureImageLoader().updateFromElement(ImageLoader::UpdateIgnorePreviousError);
+}
+
+void ImageInputType::valueAttributeChanged()
+{
+    if (m_useFallbackContent)
+        return;
+    BaseButtonInputType::valueAttributeChanged();
 }
 
 void ImageInputType::startResourceLoading()
 {
     BaseButtonInputType::startResourceLoading();
 
-    HTMLImageLoader* imageLoader = element().imageLoader();
-    imageLoader->updateFromElement();
+    HTMLImageLoader& imageLoader = element().ensureImageLoader();
+    imageLoader.updateFromElement();
 
-    RenderImage* renderer = toRenderImage(element().renderer());
-    if (!renderer)
+    LayoutObject* layoutObject = element().layoutObject();
+    if (!layoutObject || !layoutObject->isLayoutImage())
         return;
 
-    RenderImageResource* imageResource = renderer->imageResource();
-    imageResource->setImageResource(imageLoader->image());
-
-    // If we have no image at all because we have no src attribute, set
-    // image height and width for the alt text instead.
-    if (!imageLoader->image() && !imageResource->cachedImage())
-        renderer->setImageSizeForAltText();
+    LayoutImageResource* imageResource = toLayoutImage(layoutObject)->imageResource();
+    imageResource->setImageResource(imageLoader.image());
 }
 
 bool ImageInputType::shouldRespectAlignAttribute()
@@ -174,6 +184,11 @@ bool ImageInputType::isEnumeratable()
     return false;
 }
 
+bool ImageInputType::isImage() const
+{
+    return true;
+}
+
 bool ImageInputType::shouldRespectHeightAndWidthAttributes()
 {
     return true;
@@ -183,23 +198,21 @@ unsigned ImageInputType::height() const
 {
     RefPtrWillBeRawPtr<HTMLInputElement> element(this->element());
 
-    if (!element->renderer()) {
+    if (!element->layoutObject()) {
         // Check the attribute first for an explicit pixel value.
         unsigned height;
         if (parseHTMLNonNegativeInteger(element->fastGetAttribute(heightAttr), height))
             return height;
 
         // If the image is available, use its height.
-        if (element->hasImageLoader()) {
-            HTMLImageLoader* imageLoader = element->imageLoader();
-            if (imageLoader->image())
-                return imageLoader->image()->imageSizeForRenderer(element->renderer(), 1).height();
-        }
+        HTMLImageLoader* imageLoader = element->imageLoader();
+        if (imageLoader && imageLoader->image())
+            return imageLoader->image()->imageSizeForLayoutObject(element->layoutObject(), 1).height();
     }
 
     element->document().updateLayout();
 
-    RenderBox* box = element->renderBox();
+    LayoutBox* box = element->layoutBox();
     return box ? adjustForAbsoluteZoom(box->contentHeight(), box) : 0;
 }
 
@@ -207,23 +220,21 @@ unsigned ImageInputType::width() const
 {
     RefPtrWillBeRawPtr<HTMLInputElement> element(this->element());
 
-    if (!element->renderer()) {
+    if (!element->layoutObject()) {
         // Check the attribute first for an explicit pixel value.
         unsigned width;
         if (parseHTMLNonNegativeInteger(element->fastGetAttribute(widthAttr), width))
             return width;
 
         // If the image is available, use its width.
-        if (element->hasImageLoader()) {
-            HTMLImageLoader* imageLoader = element->imageLoader();
-            if (imageLoader->image())
-                return imageLoader->image()->imageSizeForRenderer(element->renderer(), 1).width();
-        }
+        HTMLImageLoader* imageLoader = element->imageLoader();
+        if (imageLoader && imageLoader->image())
+            return imageLoader->image()->imageSizeForLayoutObject(element->layoutObject(), 1).width();
     }
 
     element->document().updateLayout();
 
-    RenderBox* box = element->renderBox();
+    LayoutBox* box = element->layoutBox();
     return box ? adjustForAbsoluteZoom(box->contentWidth(), box) : 0;
 }
 
@@ -235,6 +246,61 @@ bool ImageInputType::hasLegalLinkAttribute(const QualifiedName& name) const
 const QualifiedName& ImageInputType::subResourceAttributeName() const
 {
     return srcAttr;
+}
+
+void ImageInputType::ensureFallbackContent()
+{
+    if (m_useFallbackContent)
+        return;
+    setUseFallbackContent();
+    reattachFallbackContent();
+}
+
+void ImageInputType::setUseFallbackContent()
+{
+    if (m_useFallbackContent)
+        return;
+    m_useFallbackContent = true;
+    if (element().document().inStyleRecalc())
+        return;
+    if (ShadowRoot* root = element().userAgentShadowRoot())
+        root->removeChildren();
+    createShadowSubtree();
+}
+
+void ImageInputType::ensurePrimaryContent()
+{
+    if (!m_useFallbackContent)
+        return;
+    m_useFallbackContent = false;
+    reattachFallbackContent();
+}
+
+void ImageInputType::reattachFallbackContent()
+{
+    // This can happen inside of attach() in the middle of a recalcStyle so we need to
+    // reattach synchronously here.
+    if (element().document().inStyleRecalc())
+        element().reattach();
+    else
+        element().lazyReattachIfAttached();
+}
+
+void ImageInputType::createShadowSubtree()
+{
+    if (!m_useFallbackContent) {
+        BaseButtonInputType::createShadowSubtree();
+        return;
+    }
+    HTMLImageFallbackHelper::createAltTextShadowTree(element());
+}
+
+PassRefPtr<ComputedStyle> ImageInputType::customStyleForLayoutObject(PassRefPtr<ComputedStyle> newStyle)
+{
+    if (!m_useFallbackContent)
+        return newStyle;
+
+    return HTMLImageFallbackHelper::customStyleForAltText(element(), newStyle);
 }
 
 } // namespace blink

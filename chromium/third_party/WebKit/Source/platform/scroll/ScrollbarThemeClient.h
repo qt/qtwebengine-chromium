@@ -30,6 +30,7 @@
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
@@ -85,6 +86,12 @@ public:
 
     virtual bool isAlphaLocked() const = 0;
     virtual void setIsAlphaLocked(bool) = 0;
+
+    virtual float elasticOverscroll() const = 0;
+    virtual void setElasticOverscroll(float) = 0;
+
+    virtual DisplayItemClient displayItemClient() const = 0;
+    virtual String debugName() const = 0;
 
 protected:
     virtual ~ScrollbarThemeClient() { }

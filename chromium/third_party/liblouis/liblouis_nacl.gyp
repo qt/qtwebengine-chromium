@@ -5,7 +5,7 @@
 {
   'variables': {
     'braille_test_data_dir': '<(PRODUCT_DIR)/chromevox_test_data/braille',
-    'braille_chromevox_dir': '<(PRODUCT_DIR)/resources/chromeos/chromevox/chromevox/background/braille',
+    'braille_chromevox_dir': '<(PRODUCT_DIR)/resources/chromeos/chromevox/braille',
     'table_files': [
       '>!@pymod_do_main(liblouis_list_tables -D . -D src/tables -e cvox-common.cti tables.json)',
     ],
@@ -48,6 +48,7 @@
             'overrides/liblouis',
             'src/liblouis',
             '.',
+            '../..',
           ],
           'direct_dependent_settings': {
             'include_dirs': [
@@ -63,9 +64,6 @@
             'src/liblouis/lou_translateString.c',
             'src/liblouis/transcommon.ci',
             'src/liblouis/wrappers.c',
-          ],
-          'dependencies': [
-            '../../native_client/tools.gyp:prep_toolchain',
           ],
         },
         {
@@ -118,7 +116,6 @@
           ],
           'dependencies': [
             '../../native_client/src/untrusted/nacl/nacl.gyp:nacl_lib',
-            '../../native_client/tools.gyp:prep_toolchain',
             '../../native_client_sdk/native_client_sdk_untrusted.gyp:nacl_io_untrusted',
             '../../ppapi/native_client/native_client.gyp:ppapi_lib',
             '../../ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
@@ -137,6 +134,8 @@
                 '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
                 '>@(_inputs)',
                 '--output=>(nmf)',
+                '--no-default-libpath',
+                '--objdump=>(nacl_glibc_tc_root)/bin/x86_64-nacl-objdump',
               ],
             },
           ],

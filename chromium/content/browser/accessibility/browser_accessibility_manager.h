@@ -75,6 +75,8 @@ class CONTENT_EXPORT BrowserAccessibilityDelegate {
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() = 0;
   virtual BrowserAccessibilityManager* AccessibilityGetChildFrame(
       int accessibility_node_id) = 0;
+  virtual void AccessibilityGetAllChildFrames(
+      std::vector<BrowserAccessibilityManager*>* child_frames) = 0;
   virtual BrowserAccessibility* AccessibilityGetParentFrame() = 0;
 };
 
@@ -143,6 +145,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
   // Called to notify the accessibility manager that its associated native
   // view lost focus.
   virtual void OnWindowBlurred();
+
+  // Notify the accessibility manager about page navigation.
+  void UserIsNavigatingAway();
+  virtual void UserIsReloading();
+  void NavigationSucceeded();
+  void NavigationFailed();
 
   // Called to notify the accessibility manager that a mouse down event
   // occurred in the tab.
@@ -233,16 +241,22 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
 
   // AXTreeDelegate implementation.
   void OnNodeWillBeDeleted(ui::AXNode* node) override;
+  void OnSubtreeWillBeDeleted(ui::AXNode* node) override;
   void OnNodeCreated(ui::AXNode* node) override;
   void OnNodeChanged(ui::AXNode* node) override;
-  void OnNodeCreationFinished(ui::AXNode* node) override;
-  void OnNodeChangeFinished(ui::AXNode* node) override;
-  void OnRootChanged(ui::AXNode* new_root) override {}
+  void OnAtomicUpdateFinished(
+      bool root_changed,
+      const std::vector<ui::AXTreeDelegate::Change>& changes) override;
 
   BrowserAccessibilityDelegate* delegate() const { return delegate_; }
   void set_delegate(BrowserAccessibilityDelegate* delegate) {
     delegate_ = delegate;
   }
+
+  // If this BrowserAccessibilityManager is a child frame or guest frame,
+  // return the BrowserAccessibilityDelegate from the highest ancestor frame
+  // in the frame tree.
+  BrowserAccessibilityDelegate* GetDelegateFromRootManager();
 
   // Get a snapshot of the current tree as an AXTreeUpdate.
   ui::AXTreeUpdate SnapshotAXTreeForTesting();
@@ -256,9 +270,6 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
-
-  // Called at the end of updating the tree.
-  virtual void OnTreeUpdateFinished() {}
 
  private:
   // The following states keep track of whether or not the
@@ -298,6 +309,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
 
   // A mapping from a node id to its wrapper of type BrowserAccessibility.
   base::hash_map<int32, BrowserAccessibility*> id_wrapper_map_;
+
+  // True if the user has initiated a navigation to another page.
+  bool user_is_navigating_away_;
 
   // The on-screen keyboard state.
   OnScreenKeyboardState osk_state_;

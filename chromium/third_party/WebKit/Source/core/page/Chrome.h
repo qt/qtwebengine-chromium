@@ -22,11 +22,12 @@
 #ifndef Chrome_h
 #define Chrome_h
 
+#include "core/CoreExport.h"
 #include "core/loader/NavigationPolicy.h"
-#include "core/page/FocusType.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebFocusType.h"
 #include "wtf/Forward.h"
 
 namespace blink {
@@ -37,7 +38,6 @@ class ColorChooserClient;
 class DateTimeChooser;
 class DateTimeChooserClient;
 class FileChooser;
-class FloatRect;
 class LocalFrame;
 class HTMLInputElement;
 class HitTestResult;
@@ -52,7 +52,7 @@ struct DateTimeChooserParameters;
 struct ViewportDescription;
 struct WindowFeatures;
 
-class Chrome final : public HostWindow {
+class CORE_EXPORT Chrome final : public HostWindow {
 public:
     virtual ~Chrome();
 
@@ -61,34 +61,32 @@ public:
     ChromeClient& client() { return *m_client; }
 
     // HostWindow methods.
-    virtual void invalidateContentsAndRootView(const IntRect&) override;
-    virtual void invalidateContentsForSlowScroll(const IntRect&) override;
-    virtual IntRect rootViewToScreen(const IntRect&) const override;
-    virtual blink::WebScreenInfo screenInfo() const override;
-
+    virtual void invalidateRect(const IntRect&) override;
+    virtual IntRect viewportToScreen(const IntRect&) const override;
     virtual void scheduleAnimation() override;
+
+    WebScreenInfo screenInfo() const;
+
+    void scheduleAnimationForFrame(LocalFrame* localRoot);
 
     void contentsSizeChanged(LocalFrame*, const IntSize&) const;
 
     void setCursor(const Cursor&);
+    Cursor getLastSetCursorForTesting() const;
 
-    void setWindowRect(const FloatRect&) const;
-    FloatRect windowRect() const;
+    void setWindowRect(const IntRect&) const;
+    IntRect windowRect() const;
 
-    FloatRect pageRect() const;
+    IntRect pageRect() const;
 
     void focus() const;
 
-    bool canTakeFocus(FocusType) const;
-    void takeFocus(FocusType) const;
+    bool canTakeFocus(WebFocusType) const;
+    void takeFocus(WebFocusType) const;
 
-    void focusedNodeChanged(Node*) const;
+    void focusedNodeChanged(Node*, Node*) const;
 
     void show(NavigationPolicy = NavigationPolicyIgnore) const;
-
-    bool canRunModal() const;
-    bool canRunModalNow() const;
-    void runModal() const;
 
     void setWindowFeatures(const WindowFeatures&) const;
 
@@ -109,7 +107,7 @@ public:
 
     IntRect windowResizerRect() const;
 
-    void mouseDidMoveOverElement(const HitTestResult&, unsigned modifierFlags);
+    void mouseDidMoveOverElement(const HitTestResult&);
 
     void setToolTip(const HitTestResult&);
 
@@ -125,10 +123,12 @@ public:
     void dispatchViewportPropertiesDidChange(const ViewportDescription&) const;
 
     bool hasOpenedPopup() const;
-    PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const;
+    PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*);
 
     void registerPopupOpeningObserver(PopupOpeningObserver*);
     void unregisterPopupOpeningObserver(PopupOpeningObserver*);
+
+    void registerViewportLayers() const;
 
     void willBeDestroyed();
 
@@ -139,6 +139,7 @@ private:
     Page* m_page;
     ChromeClient* m_client;
     Vector<PopupOpeningObserver*> m_popupOpeningObservers;
+    Cursor m_lastSetMouseCursorForTesting;
 };
 
 } // namespace blink

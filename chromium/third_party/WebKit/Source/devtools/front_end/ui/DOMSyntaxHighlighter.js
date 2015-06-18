@@ -57,17 +57,9 @@ WebInspector.DOMSyntaxHighlighter.prototype = {
 
     /**
      * @param {!Element} node
+     * @return {!Promise.<undefined>}
      */
     syntaxHighlightNode: function(node)
-    {
-        this.syntaxHighlightNodePromise(node).done();
-    },
-
-    /**
-     * @param {!Element} node
-     * @return {!Promise}
-     */
-    syntaxHighlightNodePromise: function(node)
     {
         var lines = node.textContent.split("\n");
         var plainTextStart;
@@ -92,7 +84,7 @@ WebInspector.DOMSyntaxHighlighter.prototype = {
                     node.createTextChild(plainText);
                 }
                 if (i < lines.length - 1)
-                    node.createChild("br");
+                    node.createTextChild("\n");
             }
         }
 
@@ -116,4 +108,17 @@ WebInspector.DOMSyntaxHighlighter.prototype = {
             plainTextStart = newColumn;
         }
     }
+}
+
+/**
+ * @interface
+ */
+WebInspector.TokenizerFactory = function() { }
+
+WebInspector.TokenizerFactory.prototype = {
+    /**
+     * @param {string} mimeType
+     * @return {function(string, function(string, ?string, number, number))}
+     */
+    createTokenizer: function(mimeType) { }
 }

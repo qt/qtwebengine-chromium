@@ -31,125 +31,139 @@
 #ifndef WebDevToolsAgentImpl_h
 #define WebDevToolsAgentImpl_h
 
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorFrontendChannel.h"
-
+#include "core/inspector/InspectorRuntimeAgent.h"
+#include "core/inspector/InspectorStateClient.h"
+#include "core/inspector/InspectorTracingAgent.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebSize.h"
 #include "public/platform/WebThread.h"
-#include "public/web/WebPageOverlay.h"
-#include "web/WebDevToolsAgentPrivate.h"
+#include "public/web/WebDevToolsAgent.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
+class DebuggerTask;
+class GraphicsLayer;
+class InspectorInspectorAgent;
+class InspectorOverlay;
+class InspectorPageAgent;
 class LocalFrame;
-class InspectorClient;
-class InspectorController;
 class Page;
+class PageConsoleAgent;
+class PlatformGestureEvent;
 class PlatformKeyboardEvent;
+class PlatformMouseEvent;
+class PlatformTouchEvent;
 class WebDevToolsAgentClient;
+class WebFrameWidgetImpl;
+class WebInputEvent;
+class WebLayerTreeView;
 class WebLocalFrameImpl;
 class WebString;
 class WebViewImpl;
 
 class WebDevToolsAgentImpl final
-    : public WebDevToolsAgentPrivate
-    , public InspectorClient
+    : public NoBaseWillBeGarbageCollectedFinalized<WebDevToolsAgentImpl>
+    , public WebDevToolsAgent
+    , public InspectorStateClient
+    , public InspectorTracingAgent::Client
+    , public InspectorRuntimeAgent::Client
     , public InspectorFrontendChannel
-    , public WebPageOverlay
     , private WebThread::TaskObserver {
 public:
-    WebDevToolsAgentImpl(WebViewImpl* webViewImpl, WebDevToolsAgentClient* client);
-    virtual ~WebDevToolsAgentImpl();
+    static PassOwnPtrWillBeRawPtr<WebDevToolsAgentImpl> create(WebLocalFrameImpl*, WebDevToolsAgentClient*);
+    ~WebDevToolsAgentImpl() override;
+    void dispose();
+    DECLARE_VIRTUAL_TRACE();
 
+    void willBeDestroyed();
     WebDevToolsAgentClient* client() { return m_client; }
+    bool handleInputEvent(const WebInputEvent&);
+    void flushPendingProtocolNotifications();
+    void dispatchMessageFromFrontend(const String& message);
+    void registerAgent(PassOwnPtrWillBeRawPtr<InspectorAgent>);
+    static void webViewImplClosed(WebViewImpl*);
+    static void webFrameWidgetImplClosed(WebFrameWidgetImpl*);
 
-    // WebDevToolsAgentPrivate implementation.
-    virtual void didCreateScriptContext(WebLocalFrameImpl*, int worldId) override;
-    virtual bool handleInputEvent(Page*, const WebInputEvent&) override;
-    virtual void didLayout() override;
+    // Instrumentation from web/ layer.
+    void didCommitLoadForLocalFrame(LocalFrame*);
+    bool screencastEnabled();
+    void willAddPageOverlay(const GraphicsLayer*);
+    void didRemovePageOverlay(const GraphicsLayer*);
+    void layerTreeViewChanged(WebLayerTreeView*);
 
     // WebDevToolsAgent implementation.
-    virtual void attach(const WebString& hostId) override;
-    virtual void reattach(const WebString& hostId, const WebString& savedState) override;
-    virtual void detach() override;
-    virtual void continueProgram() override;
-    virtual void didBeginFrame(int frameId) override;
-    virtual void didCancelFrame() override;
-    virtual void willComposite() override;
-    virtual void didComposite() override;
-    virtual void dispatchOnInspectorBackend(const WebString& message) override;
-    virtual void inspectElementAt(const WebPoint&) override;
-    virtual void evaluateInWebInspector(long callId, const WebString& script) override;
-    virtual void setLayerTreeId(int) override;
-    virtual void processGPUEvent(const GPUEvent&) override;
-
-    // InspectorClient implementation.
-    virtual void highlight() override;
-    virtual void hideHighlight() override;
-    virtual void updateInspectorStateCookie(const WTF::String&) override;
-    virtual void sendMessageToFrontend(PassRefPtr<JSONObject> message) override;
-    virtual void flush() override;
-    virtual void resumeStartup() override;
-
-    virtual void setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool mobile, bool fitWindow, float scale, float offsetX, float offsetY) override;
-    virtual void clearDeviceMetricsOverride() override;
-    virtual void setTouchEventEmulationEnabled(bool) override;
-
-    virtual void setTraceEventCallback(const WTF::String& categoryFilter, TraceEventCallback) override;
-    virtual void resetTraceEventCallback() override;
-    virtual void enableTracing(const WTF::String& categoryFilter) override;
-    virtual void disableTracing() override;
-
-    virtual void startGPUEventsRecording() override;
-    virtual void stopGPUEventsRecording() override;
-
-    virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) override;
-    virtual void dispatchMouseEvent(const PlatformMouseEvent&) override;
-
-    // WebPageOverlay
-    virtual void paintPageOverlay(WebCanvas*) override;
-
-    void flushPendingFrontendMessages();
+    void attach(const WebString& hostId) override;
+    void reattach(const WebString& hostId, const WebString& savedState) override;
+    void detach() override;
+    void continueProgram() override;
+    void dispatchOnInspectorBackend(const WebString& message) override;
+    void inspectElementAt(const WebPoint&) override;
+    void evaluateInWebInspector(long callId, const WebString& script) override;
 
 private:
-    // WebThread::TaskObserver
-    virtual void willProcessTask() override;
-    virtual void didProcessTask() override;
+    WebDevToolsAgentImpl(WebLocalFrameImpl*, WebDevToolsAgentClient*, InspectorOverlay*);
 
-    void enableMobileEmulation();
-    void disableMobileEmulation();
-    void updatePageScaleFactorLimits();
+    // InspectorStateClient implementation.
+    void updateInspectorStateCookie(const WTF::String&) override;
 
-    InspectorController* inspectorController();
-    LocalFrame* mainFrame();
+    // InspectorTracingAgent::Client implementation.
+    void enableTracing(const WTF::String& categoryFilter) override;
+    void disableTracing() override;
 
-    int m_debuggerId;
-    int m_layerTreeId;
+    // InspectorRuntimeAgent::Client implementation.
+    void resumeStartup() override;
+
+    // InspectorFrontendChannel implementation.
+    void sendProtocolResponse(int callId, PassRefPtr<JSONObject> message) override;
+    void sendProtocolNotification(PassRefPtr<JSONObject> message) override;
+    void flush() override;
+
+    // WebThread::TaskObserver implementation.
+    void willProcessTask() override;
+    void didProcessTask() override;
+
+    void initializeDeferredAgents();
+    bool handleGestureEvent(LocalFrame*, const PlatformGestureEvent&);
+    bool handleMouseEvent(LocalFrame*, const PlatformMouseEvent&);
+    bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
+
     WebDevToolsAgentClient* m_client;
-    WebViewImpl* m_webViewImpl;
+    WebLocalFrameImpl* m_webLocalFrameImpl;
     bool m_attached;
-    bool m_generatingEvent;
+#if ENABLE(ASSERT)
+    bool m_hasBeenDisposed;
+#endif
 
-    bool m_webViewDidLayoutOnceAfterLoad;
+    RefPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
+    OwnPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
+    OwnPtrWillBeMember<InspectorCompositeState> m_state;
+    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    OwnPtrWillBeMember<AsyncCallTracker> m_asyncCallTracker;
 
-    bool m_deviceMetricsEnabled;
-    bool m_emulateMobileEnabled;
-    bool m_originalViewportEnabled;
-    bool m_isOverlayScrollbarsEnabled;
+    RawPtrWillBeMember<InspectorInspectorAgent> m_inspectorAgent;
+    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
+    RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
+    RawPtrWillBeMember<InspectorLayerTreeAgent> m_layerTreeAgent;
+    RawPtrWillBeMember<InspectorTracingAgent> m_tracingAgent;
+    RawPtrWillBeMember<PageRuntimeAgent> m_pageRuntimeAgent;
+    RawPtrWillBeMember<PageConsoleAgent> m_pageConsoleAgent;
 
-    float m_originalMinimumPageScaleFactor;
-    float m_originalMaximumPageScaleFactor;
-    bool m_pageScaleLimitsOverriden;
+    RefPtrWillBeMember<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
+    OwnPtr<InspectorFrontend> m_inspectorFrontend;
+    InspectorAgentRegistry m_agents;
+    bool m_deferredAgentsInitialized;
 
-    bool m_touchEventEmulationEnabled;
-    OwnPtr<IntPoint> m_lastPinchAnchorCss;
-    OwnPtr<IntPoint> m_lastPinchAnchorDip;
+    typedef Vector<RefPtr<JSONObject>> NotificationQueue;
+    NotificationQueue m_notificationQueue;
+    String m_stateCookie;
 
-    typedef Vector<RefPtr<JSONObject> > FrontendMessageQueue;
-    FrontendMessageQueue m_frontendMessageQueue;
+    friend class DebuggerTask;
 };
 
 } // namespace blink

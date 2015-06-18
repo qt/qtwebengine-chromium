@@ -65,33 +65,32 @@ class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
     self.raw_requestline = self.rfile.readline(65537)
 
 
-class WrappedErrorHandler(sslproxy.SslHandshakeHandler, Handler):
+class WrappedErrorHandler(Handler):
   """Wraps handler to verify expected sslproxy errors are being raised."""
 
   def setup(self):
     Handler.setup(self)
     try:
-      sslproxy.SslHandshakeHandler.setup(self)
+      sslproxy._SetUpUsingDummyCert(self)
     except certutils.Error:
       self.server.error_function = certutils.Error
 
   def finish(self):
-    sslproxy.SslHandshakeHandler.finish(self)
     Handler.finish(self)
+    self.connection.shutdown()
+    self.connection.close()
 
 
 class DummyArchive(object):
 
-  def __init__(self, cert_str):
-    self.root_ca_cert_str = cert_str
+  def __init__(self):
+    pass
 
-  def get_certificate(self, host):
-    return certutils.generate_cert(self.root_ca_cert_str, '', host)
 
 class DummyFetch(object):
 
-  def __init__(self, cert_str):
-    self.http_archive = DummyArchive(cert_str)
+  def __init__(self):
+    self.http_archive = DummyArchive()
 
 
 class Server(BaseHTTPServer.HTTPServer):
@@ -101,8 +100,8 @@ class Server(BaseHTTPServer.HTTPServer):
                host='localhost'):
     self.ca_cert_path = ca_cert_path
     with open(ca_cert_path, 'r') as ca_file:
-      ca_cert_str = ca_file.read()
-    self.http_archive_fetch = DummyFetch(ca_cert_str)
+      self.ca_cert_str = ca_file.read()
+    self.http_archive_fetch = DummyFetch()
     if use_error_handler:
       self.HANDLER = WrappedErrorHandler
     else:
@@ -127,6 +126,9 @@ class Server(BaseHTTPServer.HTTPServer):
 
   def __exit__(self, type_, value_, traceback_):
     self.cleanup()
+
+  def get_certificate(self, host):
+    return certutils.generate_cert(self.ca_cert_str, '', host)
 
 
 class TestClient(unittest.TestCase):

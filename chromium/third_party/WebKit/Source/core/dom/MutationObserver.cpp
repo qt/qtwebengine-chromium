@@ -54,23 +54,31 @@ struct MutationObserver::ObserverLessThan {
     }
 };
 
-PassRefPtrWillBeRawPtr<MutationObserver> MutationObserver::create(PassOwnPtr<MutationCallback> callback)
+PassRefPtrWillBeRawPtr<MutationObserver> MutationObserver::create(PassOwnPtrWillBeRawPtr<MutationCallback> callback)
 {
     ASSERT(isMainThread());
     return adoptRefWillBeNoop(new MutationObserver(callback));
 }
 
-MutationObserver::MutationObserver(PassOwnPtr<MutationCallback> callback)
+MutationObserver::MutationObserver(PassOwnPtrWillBeRawPtr<MutationCallback> callback)
     : m_callback(callback)
     , m_priority(s_observerPriority++)
 {
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(*this);
+#endif
 }
 
 MutationObserver::~MutationObserver()
 {
 #if !ENABLE(OILPAN)
     ASSERT(m_registrations.isEmpty());
+    dispose();
 #endif
+}
+
+void MutationObserver::dispose()
+{
     if (!m_records.isEmpty())
         InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
 }
@@ -148,8 +156,12 @@ void MutationObserver::disconnect()
     m_records.clear();
     InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
     MutationObserverRegistrationSet registrations(m_registrations);
-    for (MutationObserverRegistrationSet::iterator iter = registrations.begin(); iter != registrations.end(); ++iter)
-        (*iter)->unregister();
+    for (auto& registration : registrations) {
+        // The registration may be already unregistered while iteration.
+        // Only call unregister if it is still in the original set.
+        if (m_registrations.contains(registration))
+            registration->unregister();
+    }
     ASSERT(m_registrations.isEmpty());
 }
 
@@ -199,11 +211,11 @@ void MutationObserver::setHasTransientRegistration()
     activateObserver(this);
 }
 
-WillBeHeapHashSet<RawPtrWillBeMember<Node> > MutationObserver::getObservedNodes() const
+WillBeHeapHashSet<RawPtrWillBeMember<Node>> MutationObserver::getObservedNodes() const
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<Node> > observedNodes;
-    for (MutationObserverRegistrationSet::const_iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter)
-        (*iter)->addRegistrationNodesToSet(observedNodes);
+    WillBeHeapHashSet<RawPtrWillBeMember<Node>> observedNodes;
+    for (const auto& registration : m_registrations)
+        registration->addRegistrationNodesToSet(observedNodes);
     return observedNodes;
 }
 
@@ -219,9 +231,9 @@ void MutationObserver::deliver()
     // Calling clearTransientRegistrations() can modify m_registrations, so it's necessary
     // to make a copy of the transient registrations before operating on them.
     WillBeHeapVector<RawPtrWillBeMember<MutationObserverRegistration>, 1> transientRegistrations;
-    for (MutationObserverRegistrationSet::iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter) {
-        if ((*iter)->hasTransientRegistrations())
-            transientRegistrations.append(*iter);
+    for (auto& registration : m_registrations) {
+        if (registration->hasTransientRegistrations())
+            transientRegistrations.append(registration);
     }
     for (size_t i = 0; i < transientRegistrations.size(); ++i)
         transientRegistrations[i]->clearTransientRegistrations();
@@ -268,11 +280,13 @@ void MutationObserver::deliverMutations()
     }
 }
 
-void MutationObserver::trace(Visitor* visitor)
+DEFINE_TRACE(MutationObserver)
 {
 #if ENABLE(OILPAN)
+    visitor->trace(m_callback);
     visitor->trace(m_records);
     visitor->trace(m_registrations);
+    visitor->trace(m_callback);
 #endif
 }
 

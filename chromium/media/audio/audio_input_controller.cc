@@ -5,12 +5,13 @@
 #include "media/audio/audio_input_controller.h"
 
 #include "base/bind.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
-#include "media/audio/audio_parameters.h"
-#include "media/base/scoped_histogram_timer.h"
 #include "media/base/user_input_monitor.h"
 
 using base::TimeDelta;
@@ -119,7 +120,7 @@ AudioInputController::AudioInputController(EventHandler* handler,
                                            SyncWriter* sync_writer,
                                            UserInputMonitor* user_input_monitor,
                                            const bool agc_is_enabled)
-    : creator_task_runner_(base::MessageLoopProxy::current()),
+    : creator_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       handler_(handler),
       stream_(NULL),
       data_is_active_(false),
@@ -329,7 +330,17 @@ void AudioInputController::DoCreateForStream(
 
   // Set AGC state using mode in |agc_is_enabled_| which can only be enabled in
   // CreateLowLatency().
+#if defined(AUDIO_POWER_MONITORING)
+  bool agc_is_supported = false;
+  agc_is_supported = stream_->SetAutomaticGainControl(agc_is_enabled_);
+  // Disable power measurements on platforms that does not support AGC at a
+  // lower level. AGC can fail on platforms where we don't support the
+  // functionality to modify the input volume slider. One such example is
+  // Windows XP.
+  power_measurement_is_enabled_ &= agc_is_supported;
+#else
   stream_->SetAutomaticGainControl(agc_is_enabled_);
+#endif
 
   // Create the data timer which will call FirstCheckForNoData(). The timer
   // is started in DoRecord() and restarted in each DoCheckForNoData()

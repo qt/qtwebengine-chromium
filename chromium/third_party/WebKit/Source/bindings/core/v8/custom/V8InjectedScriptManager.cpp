@@ -42,15 +42,15 @@
 #include "bindings/core/v8/V8Window.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/InjectedScriptHost.h"
+#include "core/inspector/InjectedScriptNative.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
 InjectedScriptManager::CallbackData* InjectedScriptManager::createCallbackData(InjectedScriptManager* injectedScriptManager)
 {
-    OwnPtr<InjectedScriptManager::CallbackData> callbackData = adoptPtr(new InjectedScriptManager::CallbackData());
+    OwnPtrWillBeRawPtr<InjectedScriptManager::CallbackData> callbackData = InjectedScriptManager::CallbackData::create(injectedScriptManager);
     InjectedScriptManager::CallbackData* callbackDataPtr = callbackData.get();
-    callbackData->injectedScriptManager = injectedScriptManager;
     m_callbackDataSet.add(callbackData.release());
     return callbackDataPtr;
 }
@@ -58,14 +58,15 @@ InjectedScriptManager::CallbackData* InjectedScriptManager::createCallbackData(I
 void InjectedScriptManager::removeCallbackData(InjectedScriptManager::CallbackData* callbackData)
 {
     ASSERT(m_callbackDataSet.contains(callbackData));
+    callbackData->dispose();
     m_callbackDataSet.remove(callbackData);
 }
 
-static v8::Local<v8::Object> createInjectedScriptHostV8Wrapper(PassRefPtrWillBeRawPtr<InjectedScriptHost> host, InjectedScriptManager* injectedScriptManager, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+static v8::Local<v8::Object> createInjectedScriptHostV8Wrapper(v8::Isolate* isolate, PassRefPtrWillBeRawPtr<InjectedScriptHost> host, InjectedScriptManager* injectedScriptManager, v8::Local<v8::Object> creationContext)
 {
     ASSERT(host);
 
-    v8::Handle<v8::Object> wrapper = V8DOMWrapper::createWrapper(creationContext, &V8InjectedScriptHost::wrapperTypeInfo, host->toScriptWrappableBase(), isolate);
+    v8::Local<v8::Object> wrapper = V8DOMWrapper::createWrapper(isolate, creationContext, &V8InjectedScriptHost::wrapperTypeInfo, host.get());
     if (UNLIKELY(wrapper.IsEmpty()))
         return wrapper;
 
@@ -76,12 +77,12 @@ static v8::Local<v8::Object> createInjectedScriptHostV8Wrapper(PassRefPtrWillBeR
     callbackData->handle.set(isolate, wrapper);
     callbackData->handle.setWeak(callbackData, &InjectedScriptManager::setWeakCallback);
 
-    V8DOMWrapper::setNativeInfo(wrapper, &V8InjectedScriptHost::wrapperTypeInfo, host->toScriptWrappableBase());
-    ASSERT(V8DOMWrapper::isDOMWrapper(wrapper));
+    V8DOMWrapper::setNativeInfo(wrapper, &V8InjectedScriptHost::wrapperTypeInfo, host.get());
+    ASSERT(V8DOMWrapper::hasInternalFieldsSet(wrapper));
     return wrapper;
 }
 
-ScriptValue InjectedScriptManager::createInjectedScript(const String& scriptSource, ScriptState* inspectedScriptState, int id)
+ScriptValue InjectedScriptManager::createInjectedScript(const String& scriptSource, ScriptState* inspectedScriptState, int id, InjectedScriptNative* injectedScriptNative)
 {
     v8::Isolate* isolate = inspectedScriptState->isolate();
     ScriptState::Scope scope(inspectedScriptState);
@@ -90,22 +91,27 @@ ScriptValue InjectedScriptManager::createInjectedScript(const String& scriptSour
     // instead of calling toV8() that would create the
     // wrapper in the current context.
     // FIXME: make it possible to use generic bindings factory for InjectedScriptHost.
-    v8::Local<v8::Object> scriptHostWrapper = createInjectedScriptHostV8Wrapper(m_injectedScriptHost, this, inspectedScriptState->context()->Global(), inspectedScriptState->isolate());
+    v8::Local<v8::Object> scriptHostWrapper = createInjectedScriptHostV8Wrapper(inspectedScriptState->isolate(), m_injectedScriptHost, this, inspectedScriptState->context()->Global());
     if (scriptHostWrapper.IsEmpty())
         return ScriptValue();
+
+    injectedScriptNative->setOnInjectedScriptHost(scriptHostWrapper);
 
     // Inject javascript into the context. The compiled script is supposed to evaluate into
     // a single anonymous function(it's anonymous to avoid cluttering the global object with
     // inspector's stuff) the function is called a few lines below with InjectedScriptHost wrapper,
     // injected script id and explicit reference to the inspected global object. The function is expected
     // to create and configure InjectedScript instance that is going to be used by the inspector.
-    v8::Local<v8::Value> value = V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, scriptSource), isolate);
-    ASSERT(!value.IsEmpty());
+    v8::Local<v8::Value> value;
+    if (!V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, scriptSource), isolate).ToLocal(&value))
+        return ScriptValue();
     ASSERT(value->IsFunction());
 
     v8::Local<v8::Object> windowGlobal = inspectedScriptState->context()->Global();
-    v8::Handle<v8::Value> info[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedScriptState->isolate(), id) };
-    v8::Local<v8::Value> injectedScriptValue = V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(info), info, inspectedScriptState->isolate());
+    v8::Local<v8::Value> info[] = { scriptHostWrapper, windowGlobal, v8::Number::New(inspectedScriptState->isolate(), id) };
+    v8::Local<v8::Value> injectedScriptValue;
+    if (!V8ScriptRunner::callInternalFunction(v8::Local<v8::Function>::Cast(value), windowGlobal, WTF_ARRAY_LENGTH(info), info, inspectedScriptState->isolate()).ToLocal(&injectedScriptValue))
+        return ScriptValue();
     return ScriptValue(inspectedScriptState, injectedScriptValue);
 }
 
@@ -115,15 +121,15 @@ bool InjectedScriptManager::canAccessInspectedWindow(ScriptState* scriptState)
     v8::Local<v8::Object> global = scriptState->context()->Global();
     if (global.IsEmpty())
         return false;
-    v8::Handle<v8::Object> holder = V8Window::findInstanceInPrototypeChain(global, scriptState->isolate());
+    v8::Local<v8::Object> holder = V8Window::findInstanceInPrototypeChain(global, scriptState->isolate());
     if (holder.IsEmpty())
         return false;
-    LocalFrame* frame = V8Window::toImpl(holder)->frame();
+    LocalFrame* frame = toLocalDOMWindow(V8Window::toImpl(holder))->frame();
 
     return BindingSecurity::shouldAllowAccessToFrame(scriptState->isolate(), frame, DoNotReportSecurityError);
 }
 
-void InjectedScriptManager::setWeakCallback(const v8::WeakCallbackData<v8::Object, InjectedScriptManager::CallbackData>& data)
+void InjectedScriptManager::setWeakCallback(const v8::WeakCallbackInfo<InjectedScriptManager::CallbackData>& data)
 {
     InjectedScriptManager::CallbackData* callbackData = data.GetParameter();
     callbackData->injectedScriptManager->removeCallbackData(callbackData);

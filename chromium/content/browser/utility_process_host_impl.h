@@ -24,9 +24,11 @@ class Thread;
 
 namespace content {
 class BrowserChildProcessHostImpl;
+class InProcessChildThreadParams;
+class MojoApplicationHost;
 
 typedef base::Thread* (*UtilityMainThreadFactoryFunction)(
-    const std::string& id);
+    const InProcessChildThreadParams&);
 
 class CONTENT_EXPORT UtilityProcessHostImpl
     : public NON_EXPORTED_BASE(UtilityProcessHost),
@@ -48,12 +50,15 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   void EnableMDns() override;
   void DisableSandbox() override;
 #if defined(OS_WIN)
-  virtual void ElevatePrivileges() override;
+  void ElevatePrivileges() override;
 #endif
   const ChildProcessData& GetData() override;
 #if defined(OS_POSIX)
   void SetEnv(const base::EnvironmentMap& env) override;
 #endif
+  bool StartMojoMode() override;
+  ServiceRegistry* GetServiceRegistry() override;
+  void SetName(const base::string16& name) override;
 
   void set_child_flags(int flags) { child_flags_ = flags; }
 
@@ -66,6 +71,7 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   bool OnMessageReceived(const IPC::Message& message) override;
   void OnProcessLaunchFailed() override;
   void OnProcessCrashed(int exit_code) override;
+  void OnProcessLaunched() override;
 
   // A pointer to our client interface, who will be informed of progress.
   scoped_refptr<UtilityProcessHostClient> client_;
@@ -93,10 +99,18 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 
   bool started_;
 
+  // A user-visible name identifying this process. Used to indentify this
+  // process in the task manager.
+  base::string16 name_;
+
   scoped_ptr<BrowserChildProcessHostImpl> process_;
 
   // Used in single-process mode instead of process_.
   scoped_ptr<base::Thread> in_process_thread_;
+
+  // Browser-side Mojo endpoint which sets up a Mojo channel with the child
+  // process and contains the browser's ServiceRegistry.
+  scoped_ptr<MojoApplicationHost> mojo_application_host_;
 
   DISALLOW_COPY_AND_ASSIGN(UtilityProcessHostImpl);
 };

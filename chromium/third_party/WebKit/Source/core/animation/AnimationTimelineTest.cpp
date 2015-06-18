@@ -31,9 +31,9 @@
 #include "config.h"
 #include "core/animation/AnimationTimeline.h"
 
-#include "core/animation/Animation.h"
 #include "core/animation/AnimationClock.h"
-#include "core/animation/AnimationNode.h"
+#include "core/animation/AnimationEffect.h"
+#include "core/animation/KeyframeEffect.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -78,7 +78,7 @@ public:
         EXPECT_CALL(*this, wakeAfter(when)).InSequence(sequence);
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         AnimationTimeline::PlatformTiming::trace(visitor);
     }
@@ -111,6 +111,7 @@ protected:
         document->animationClock().updateTime(time);
         document->compositorPendingAnimations().update(false);
         timeline->serviceAnimations(TimingUpdateForAnimationFrame);
+        timeline->scheduleNextService();
     }
 
     RefPtrWillBePersistent<Document> document;
@@ -138,14 +139,14 @@ TEST_F(AnimationAnimationTimelineTest, HasStarted)
 TEST_F(AnimationAnimationTimelineTest, EmptyKeyframeAnimation)
 {
     RefPtrWillBeRawPtr<AnimatableValueKeyframeEffectModel> effect = AnimatableValueKeyframeEffectModel::create(AnimatableValueKeyframeVector());
-    RefPtrWillBeRawPtr<Animation> anim = Animation::create(element.get(), effect, timing);
+    RefPtrWillBeRawPtr<KeyframeEffect> keyframeEffect = KeyframeEffect::create(element.get(), effect, timing);
 
-    timeline->play(anim.get());
+    timeline->play(keyframeEffect.get());
 
     platformTiming->expectNoMoreActions();
     updateClockAndService(0);
     EXPECT_FLOAT_EQ(0, timeline->currentTimeInternal());
-    EXPECT_FALSE(anim->isInEffect());
+    EXPECT_FALSE(keyframeEffect->isInEffect());
 
     platformTiming->expectNoMoreActions();
     updateClockAndService(100);
@@ -156,14 +157,14 @@ TEST_F(AnimationAnimationTimelineTest, EmptyForwardsKeyframeAnimation)
 {
     RefPtrWillBeRawPtr<AnimatableValueKeyframeEffectModel> effect = AnimatableValueKeyframeEffectModel::create(AnimatableValueKeyframeVector());
     timing.fillMode = Timing::FillModeForwards;
-    RefPtrWillBeRawPtr<Animation> anim = Animation::create(element.get(), effect, timing);
+    RefPtrWillBeRawPtr<KeyframeEffect> keyframeEffect = KeyframeEffect::create(element.get(), effect, timing);
 
-    timeline->play(anim.get());
+    timeline->play(keyframeEffect.get());
 
     platformTiming->expectNoMoreActions();
     updateClockAndService(0);
     EXPECT_FLOAT_EQ(0, timeline->currentTimeInternal());
-    EXPECT_TRUE(anim->isInEffect());
+    EXPECT_TRUE(keyframeEffect->isInEffect());
 
     platformTiming->expectNoMoreActions();
     updateClockAndService(100);
@@ -186,18 +187,173 @@ TEST_F(AnimationAnimationTimelineTest, ZeroTime)
     EXPECT_FALSE(isNull);
 }
 
+TEST_F(AnimationAnimationTimelineTest, PlaybackRateNormal)
+{
+    timeline = AnimationTimeline::create(document.get());
+    double zeroTime = timeline->zeroTime();
+    bool isNull;
+
+    timeline->setPlaybackRate(1.0);
+    EXPECT_EQ(1.0, timeline->playbackRate());
+    document->animationClock().updateTime(100);
+    EXPECT_EQ(zeroTime, timeline->zeroTime());
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(100, timeline->currentTimeInternal(isNull));
+    EXPECT_FALSE(isNull);
+
+    document->animationClock().updateTime(200);
+    EXPECT_EQ(zeroTime, timeline->zeroTime());
+    EXPECT_EQ(200, timeline->currentTimeInternal());
+    EXPECT_EQ(200, timeline->currentTimeInternal(isNull));
+    EXPECT_FALSE(isNull);
+}
+
+TEST_F(AnimationAnimationTimelineTest, PlaybackRatePause)
+{
+    timeline = AnimationTimeline::create(document.get());
+    bool isNull;
+
+    document->animationClock().updateTime(100);
+    EXPECT_EQ(0, timeline->zeroTime());
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(100, timeline->currentTimeInternal(isNull));
+    EXPECT_FALSE(isNull);
+
+    timeline->setPlaybackRate(0.0);
+    EXPECT_EQ(0.0, timeline->playbackRate());
+    document->animationClock().updateTime(200);
+    EXPECT_EQ(100, timeline->zeroTime());
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(100, timeline->currentTimeInternal(isNull));
+
+    timeline->setPlaybackRate(1.0);
+    EXPECT_EQ(1.0, timeline->playbackRate());
+    document->animationClock().updateTime(400);
+    EXPECT_EQ(100, timeline->zeroTime());
+    EXPECT_EQ(300, timeline->currentTimeInternal());
+    EXPECT_EQ(300, timeline->currentTimeInternal(isNull));
+
+    EXPECT_FALSE(isNull);
+}
+
+TEST_F(AnimationAnimationTimelineTest, PlaybackRateSlow)
+{
+    timeline = AnimationTimeline::create(document.get());
+    bool isNull;
+
+    document->animationClock().updateTime(100);
+    EXPECT_EQ(0, timeline->zeroTime());
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(100, timeline->currentTimeInternal(isNull));
+    EXPECT_FALSE(isNull);
+
+    timeline->setPlaybackRate(0.5);
+    EXPECT_EQ(0.5, timeline->playbackRate());
+    document->animationClock().updateTime(300);
+    EXPECT_EQ(-100, timeline->zeroTime());
+    EXPECT_EQ(200, timeline->currentTimeInternal());
+    EXPECT_EQ(200, timeline->currentTimeInternal(isNull));
+
+    timeline->setPlaybackRate(1.0);
+    EXPECT_EQ(1.0, timeline->playbackRate());
+    document->animationClock().updateTime(400);
+    EXPECT_EQ(100, timeline->zeroTime());
+    EXPECT_EQ(300, timeline->currentTimeInternal());
+    EXPECT_EQ(300, timeline->currentTimeInternal(isNull));
+
+    EXPECT_FALSE(isNull);
+}
+
+TEST_F(AnimationAnimationTimelineTest, PlaybackRateFast)
+{
+    timeline = AnimationTimeline::create(document.get());
+    bool isNull;
+
+    document->animationClock().updateTime(100);
+    EXPECT_EQ(0, timeline->zeroTime());
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(100, timeline->currentTimeInternal(isNull));
+    EXPECT_FALSE(isNull);
+
+    timeline->setPlaybackRate(2.0);
+    EXPECT_EQ(2.0, timeline->playbackRate());
+    document->animationClock().updateTime(300);
+    EXPECT_EQ(50, timeline->zeroTime());
+    EXPECT_EQ(500, timeline->currentTimeInternal());
+    EXPECT_EQ(500, timeline->currentTimeInternal(isNull));
+
+    timeline->setPlaybackRate(1.0);
+    EXPECT_EQ(1.0, timeline->playbackRate());
+    document->animationClock().updateTime(400);
+    EXPECT_EQ(-200, timeline->zeroTime());
+    EXPECT_EQ(600, timeline->currentTimeInternal());
+    EXPECT_EQ(600, timeline->currentTimeInternal(isNull));
+
+    EXPECT_FALSE(isNull);
+}
+
+TEST_F(AnimationAnimationTimelineTest, SetCurrentTime)
+{
+    timeline = AnimationTimeline::create(document.get());
+    double zeroTime = timeline->zeroTime();
+
+    document->animationClock().updateTime(100);
+    EXPECT_EQ(zeroTime, timeline->zeroTime());
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+
+    timeline->setCurrentTimeInternal(0);
+    EXPECT_EQ(0, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime + 100, timeline->zeroTime());
+
+    timeline->setCurrentTimeInternal(100);
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime, timeline->zeroTime());
+
+    timeline->setCurrentTimeInternal(200);
+    EXPECT_EQ(200, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime - 100, timeline->zeroTime());
+
+    document->animationClock().updateTime(200);
+    EXPECT_EQ(300, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime - 100, timeline->zeroTime());
+
+    timeline->setCurrentTimeInternal(0);
+    EXPECT_EQ(0, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime + 200, timeline->zeroTime());
+
+    timeline->setCurrentTimeInternal(100);
+    EXPECT_EQ(100, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime + 100, timeline->zeroTime());
+
+    timeline->setCurrentTimeInternal(200);
+    EXPECT_EQ(200, timeline->currentTimeInternal());
+    EXPECT_EQ(zeroTime, timeline->zeroTime());
+
+    timeline->setCurrentTime(0);
+    EXPECT_EQ(0, timeline->currentTime());
+    EXPECT_EQ(zeroTime + 200, timeline->zeroTime());
+
+    timeline->setCurrentTime(1000);
+    EXPECT_EQ(1000, timeline->currentTime());
+    EXPECT_EQ(zeroTime + 199, timeline->zeroTime());
+
+    timeline->setCurrentTime(2000);
+    EXPECT_EQ(2000, timeline->currentTime());
+    EXPECT_EQ(zeroTime + 198, timeline->zeroTime());
+}
+
 TEST_F(AnimationAnimationTimelineTest, PauseForTesting)
 {
     float seekTime = 1;
     timing.fillMode = Timing::FillModeForwards;
-    RefPtrWillBeRawPtr<Animation> anim1 = Animation::create(element.get(), AnimatableValueKeyframeEffectModel::create(AnimatableValueKeyframeVector()), timing);
-    RefPtrWillBeRawPtr<Animation> anim2  = Animation::create(element.get(), AnimatableValueKeyframeEffectModel::create(AnimatableValueKeyframeVector()), timing);
-    AnimationPlayer* player1 = timeline->play(anim1.get());
-    AnimationPlayer* player2 = timeline->play(anim2.get());
+    RefPtrWillBeRawPtr<KeyframeEffect> anim1 = KeyframeEffect::create(element.get(), AnimatableValueKeyframeEffectModel::create(AnimatableValueKeyframeVector()), timing);
+    RefPtrWillBeRawPtr<KeyframeEffect> anim2  = KeyframeEffect::create(element.get(), AnimatableValueKeyframeEffectModel::create(AnimatableValueKeyframeVector()), timing);
+    Animation* animation1 = timeline->play(anim1.get());
+    Animation* animation2 = timeline->play(anim2.get());
     timeline->pauseAnimationsForTesting(seekTime);
 
-    EXPECT_FLOAT_EQ(seekTime, player1->currentTime() / 1000.0);
-    EXPECT_FLOAT_EQ(seekTime, player2->currentTime() / 1000.0);
+    EXPECT_FLOAT_EQ(seekTime, animation1->currentTime() / 1000.0);
+    EXPECT_FLOAT_EQ(seekTime, animation2->currentTime() / 1000.0);
 }
 
 TEST_F(AnimationAnimationTimelineTest, DelayBeforeAnimationStart)
@@ -205,11 +361,11 @@ TEST_F(AnimationAnimationTimelineTest, DelayBeforeAnimationStart)
     timing.iterationDuration = 2;
     timing.startDelay = 5;
 
-    RefPtrWillBeRawPtr<Animation> anim = Animation::create(element.get(), nullptr, timing);
+    RefPtrWillBeRawPtr<KeyframeEffect> keyframeEffect = KeyframeEffect::create(element.get(), nullptr, timing);
 
-    timeline->play(anim.get());
+    timeline->play(keyframeEffect.get());
 
-    // TODO: Put the player startTime in the future when we add the capability to change player startTime
+    // TODO: Put the animation startTime in the future when we add the capability to change animation startTime
     platformTiming->expectDelayedAction(timing.startDelay - minimumDelay());
     updateClockAndService(0);
 
@@ -232,17 +388,17 @@ TEST_F(AnimationAnimationTimelineTest, PlayAfterDocumentDeref)
     element = nullptr;
     document = nullptr;
 
-    RefPtrWillBeRawPtr<Animation> anim = Animation::create(0, nullptr, timing);
+    RefPtrWillBeRawPtr<KeyframeEffect> keyframeEffect = KeyframeEffect::create(0, nullptr, timing);
     // Test passes if this does not crash.
-    timeline->play(anim.get());
+    timeline->play(keyframeEffect.get());
 }
 
-TEST_F(AnimationAnimationTimelineTest, UseAnimationPlayerAfterTimelineDeref)
+TEST_F(AnimationAnimationTimelineTest, UseAnimationAfterTimelineDeref)
 {
-    RefPtrWillBeRawPtr<AnimationPlayer> player = timeline->createAnimationPlayer(0);
+    RefPtrWillBeRawPtr<Animation> animation = timeline->play(0);
     timeline.clear();
     // Test passes if this does not crash.
-    player->setStartTime(0);
+    animation->setStartTime(0);
 }
 
 }

@@ -38,8 +38,7 @@ bool IsKeyEvent(const XEvent* xev) {
 scoped_ptr<ui::ScopedEventDispatcher> OverrideDispatcher(
     ui::PlatformEventDispatcher* dispatcher) {
   ui::PlatformEventSource* source = ui::PlatformEventSource::GetInstance();
-  return source ? source->OverrideDispatcher(dispatcher)
-                : scoped_ptr<ui::ScopedEventDispatcher>();
+  return source ? source->OverrideDispatcher(dispatcher) : nullptr;
 }
 
 }  // namespace
@@ -56,7 +55,7 @@ class NestedAcceleratorDispatcherLinux : public NestedAcceleratorDispatcher,
  private:
   // AcceleratorDispatcher:
   scoped_ptr<base::RunLoop> CreateRunLoop() override {
-    return scoped_ptr<base::RunLoop>(new base::RunLoop());
+    return make_scoped_ptr(new base::RunLoop());
   }
 
   // ui::PlatformEventDispatcher:
@@ -97,8 +96,7 @@ class NestedAcceleratorDispatcherLinux : public NestedAcceleratorDispatcher,
 scoped_ptr<NestedAcceleratorDispatcher> NestedAcceleratorDispatcher::Create(
     NestedAcceleratorDelegate* delegate,
     base::MessagePumpDispatcher* nested_dispatcher) {
-  return scoped_ptr<NestedAcceleratorDispatcher>(
-      new NestedAcceleratorDispatcherLinux(delegate));
+  return make_scoped_ptr(new NestedAcceleratorDispatcherLinux(delegate));
 }
 
 }  // namespace wm

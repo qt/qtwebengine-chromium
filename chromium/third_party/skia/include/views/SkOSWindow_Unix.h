@@ -38,11 +38,6 @@ public:
         kNativeGL_BackEndType,
     };
 
-    struct AttachmentInfo {
-        int fSampleCount;
-        int fStencilBits;
-    };
-
     bool attach(SkBackEndTypes attachType, int msaaSampleCount, AttachmentInfo*);
     void detach();
     void present();
@@ -53,7 +48,7 @@ public:
 
 protected:
     // Overridden from from SkWindow:
-    virtual void onSetTitle(const char title[]) SK_OVERRIDE;
+    void onSetTitle(const char title[]) override;
 
 private:
     enum NextXEventResult {

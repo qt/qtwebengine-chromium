@@ -31,6 +31,7 @@
 namespace blink {
 
 class QualifiedName;
+class CSSParserTokenRange;
 
 struct CSSParserString {
     void init(const LChar* characters, unsigned length)
@@ -49,22 +50,17 @@ struct CSSParserString {
 
     void init(const String& string)
     {
-        init(string, 0, string.length());
-    }
-
-    void init(const String& string, unsigned startOffset, unsigned length)
-    {
-        m_length = length;
-        if (!m_length) {
+        m_length = string.length();
+        if (string.isNull()) {
             m_data.characters8 = 0;
             m_is8Bit = true;
             return;
         }
         if (string.is8Bit()) {
-            m_data.characters8 = const_cast<LChar*>(string.characters8()) + startOffset;
+            m_data.characters8 = const_cast<LChar*>(string.characters8());
             m_is8Bit = true;
         } else {
-            m_data.characters16 = const_cast<UChar*>(string.characters16()) + startOffset;
+            m_data.characters16 = const_cast<UChar*>(string.characters16());
             m_is8Bit = false;
         }
     }
@@ -100,19 +96,6 @@ struct CSSParserString {
             return false;
         ASSERT(strlen(str) >= length());
         return str[length()] == '\0';
-    }
-
-    template <size_t strLength>
-    bool startsWithIgnoringCase(const char (&str)[strLength]) const
-    {
-        return startsWithIgnoringCase(str, strLength - 1);
-    }
-
-    bool startsWithIgnoringCase(const char* str, size_t strLength) const
-    {
-        if (length() < strLength)
-            return false;
-        return is8Bit() ? WTF::equalIgnoringCase(str, characters8(), strLength) : WTF::equalIgnoringCase(str, characters16(), strLength);
     }
 
     operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : StringImpl::create8BitIfPossible(m_data.characters16, m_length); }
@@ -152,21 +135,28 @@ struct CSSParserValue {
         Function  = 0x100001,
         ValueList = 0x100002,
         Q_EMS     = 0x100003,
+        HexColor = 0x100004,
+        // Represents a dimension as an unparsed string, only used by the Bison parser
+        Dimension = 0x100005,
+        // Represents a dimension by a list of two values, a CSS_NUMBER and an CSS_IDENT
+        DimensionList = 0x100006,
     };
     int unit;
 
     inline void setFromNumber(double value, int unit = CSSPrimitiveValue::CSS_NUMBER);
+    inline void setFromOperator(UChar);
     inline void setFromFunction(CSSParserFunction*);
     inline void setFromValueList(PassOwnPtr<CSSParserValueList>);
 };
 
-class CSSParserValueList {
-    WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT CSSParserValueList {
+    WTF_MAKE_FAST_ALLOCATED(CSSParserValueList);
 public:
     CSSParserValueList()
         : m_current(0)
     {
     }
+    CSSParserValueList(CSSParserTokenRange, bool& usesRemUnits);
     ~CSSParserValueList();
 
     void addValue(const CSSParserValue&);
@@ -202,17 +192,21 @@ private:
 };
 
 struct CSSParserFunction {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(CSSParserFunction);
 public:
     CSSValueID id;
     OwnPtr<CSSParserValueList> args;
 };
 
 class CSSParserSelector {
-    WTF_MAKE_NONCOPYABLE(CSSParserSelector); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(CSSParserSelector); WTF_MAKE_FAST_ALLOCATED(CSSParserSelector);
 public:
     CSSParserSelector();
-    explicit CSSParserSelector(const QualifiedName&);
+    explicit CSSParserSelector(const QualifiedName&, bool isImplicit = false);
+
+    static PassOwnPtr<CSSParserSelector> create() { return adoptPtr(new CSSParserSelector); }
+    static PassOwnPtr<CSSParserSelector> create(const QualifiedName& name, bool isImplicit = false) { return adoptPtr(new CSSParserSelector(name, isImplicit)); }
+
     ~CSSParserSelector();
 
     PassOwnPtr<CSSSelector> releaseSelector() { return m_selector.release(); }
@@ -227,7 +221,8 @@ public:
     void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
     bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
 
-    void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
+    void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector>>& selectorVector);
+    void setSelectorList(PassOwnPtr<CSSSelectorList>);
 
     bool hasHostPseudoSelector() const;
     bool isContentPseudoElement() const { return m_selector->isContentPseudoElement(); }
@@ -244,7 +239,7 @@ public:
     void clearTagHistory() { m_tagHistory.clear(); }
     void insertTagHistory(CSSSelector::Relation before, PassOwnPtr<CSSParserSelector>, CSSSelector::Relation after);
     void appendTagHistory(CSSSelector::Relation, PassOwnPtr<CSSParserSelector>);
-    void prependTagSelector(const QualifiedName&, bool tagIsForNamespaceRule = false);
+    void prependTagSelector(const QualifiedName&, bool tagIsImplicit = false);
 
 private:
     OwnPtr<CSSSelector> m_selector;
@@ -260,11 +255,16 @@ inline void CSSParserValue::setFromNumber(double value, int unit)
 {
     id = CSSValueInvalid;
     isInt = false;
-    if (std::isfinite(value))
-        fValue = value;
-    else
-        fValue = 0;
-    this->unit = unit;
+    fValue = value;
+    this->unit = std::isfinite(value) ? unit : CSSPrimitiveValue::CSS_UNKNOWN;
+}
+
+inline void CSSParserValue::setFromOperator(UChar c)
+{
+    id = CSSValueInvalid;
+    unit = Operator;
+    iValue = c;
+    isInt = false;
 }
 
 inline void CSSParserValue::setFromFunction(CSSParserFunction* function)

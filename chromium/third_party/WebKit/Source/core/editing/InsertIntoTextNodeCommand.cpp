@@ -30,7 +30,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/frame/Settings.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutText.h"
 
 namespace blink {
 
@@ -55,9 +55,9 @@ void InsertIntoTextNodeCommand::doApply()
         return;
 
     if (passwordEchoEnabled) {
-        RenderText* renderText = m_node->renderer();
-        if (renderText && renderText->isSecure())
-            renderText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
+        LayoutText* layoutText = m_node->layoutObject();
+        if (layoutText && layoutText->isSecure())
+            layoutText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
     }
 
     m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
@@ -71,7 +71,7 @@ void InsertIntoTextNodeCommand::doUnapply()
     m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
 }
 
-void InsertIntoTextNodeCommand::trace(Visitor* visitor)
+DEFINE_TRACE(InsertIntoTextNodeCommand)
 {
     visitor->trace(m_node);
     SimpleEditCommand::trace(visitor);

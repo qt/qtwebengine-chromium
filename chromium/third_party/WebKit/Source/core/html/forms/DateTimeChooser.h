@@ -31,6 +31,7 @@
 #ifndef DateTimeChooser_h
 #define DateTimeChooser_h
 
+#include "core/CoreExport.h"
 #include "platform/geometry/IntRect.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -47,7 +48,8 @@ struct DateTimeSuggestion {
 
 struct DateTimeChooserParameters {
     AtomicString type;
-    IntRect anchorRectInRootView;
+    IntRect anchorRectInRootFrame;
+    IntRect anchorRectInScreen;
     // Locale name for which the chooser should be localized. This
     // might be an invalid name because it comes from HTML lang
     // attributes.
@@ -65,7 +67,7 @@ struct DateTimeChooserParameters {
 };
 
 // For pickers like color pickers and date pickers.
-class DateTimeChooser : public RefCounted<DateTimeChooser> {
+class CORE_EXPORT DateTimeChooser : public RefCounted<DateTimeChooser> {
 public:
     virtual ~DateTimeChooser();
 

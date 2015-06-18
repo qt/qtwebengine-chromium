@@ -104,7 +104,7 @@ class LogTest {
   StringSource source_;
   ReportCollector report_;
   bool reading_;
-  Writer writer_;
+  Writer* writer_;
   Reader reader_;
 
   // Record metadata for testing initial offset functionality
@@ -113,14 +113,23 @@ class LogTest {
 
  public:
   LogTest() : reading_(false),
-              writer_(&dest_),
+              writer_(new Writer(&dest_)),
               reader_(&source_, &report_, true/*checksum*/,
                       0/*initial_offset*/) {
   }
 
+  ~LogTest() {
+    delete writer_;
+  }
+
+  void ReopenForAppend() {
+    delete writer_;
+    writer_ = new Writer(&dest_, dest_.contents_.size());
+  }
+
   void Write(const std::string& msg) {
     ASSERT_TRUE(!reading_) << "Write() after starting to read";
-    writer_.AddRecord(Slice(msg));
+    writer_->AddRecord(Slice(msg));
   }
 
   size_t WrittenBytes() const {
@@ -318,6 +327,15 @@ TEST(LogTest, AlignedEof) {
   ASSERT_EQ("EOF", Read());
 }
 
+TEST(LogTest, OpenForAppend) {
+  Write("hello");
+  ReopenForAppend();
+  Write("world");
+  ASSERT_EQ("hello", Read());
+  ASSERT_EQ("world", Read());
+  ASSERT_EQ("EOF", Read());
+}
+
 TEST(LogTest, RandomRead) {
   const int N = 500;
   Random write_rnd(301);
@@ -463,7 +481,7 @@ TEST(LogTest, ErrorJoinsRecords) {
 
   ASSERT_EQ("correct", Read());
   ASSERT_EQ("EOF", Read());
-  const int dropped = DroppedBytes();
+  const size_t dropped = DroppedBytes();
   ASSERT_LE(dropped, 2*kBlockSize + 100);
   ASSERT_GE(dropped, 2*kBlockSize);
 }

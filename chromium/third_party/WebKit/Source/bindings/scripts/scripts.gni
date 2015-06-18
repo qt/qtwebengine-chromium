@@ -28,7 +28,7 @@ idl_compiler_files = get_path_info(_gypi.idl_compiler_files, "abspath")
 #   sources_generated = list of generated IDL files to pass as inputs
 #   component_dir = name if subdirectory (one word, no slashes) of component.
 #   interfaces_info_file = output pickle file for interfaces info.
-#   component_wide_info_file = output pickle file for component wide info.
+#   component_info_file = output pickle file for component wide info.
 #   deps = dependencies
 #
 # FIXME: Note the static/generated split is for consistency with GYP. This
@@ -53,7 +53,7 @@ template("compute_interfaces_info_individual") {
 
     outputs = [
       invoker.interfaces_info_file,
-      invoker.component_wide_info_file,
+      invoker.component_info_file,
     ]
 
     args = [
@@ -63,7 +63,7 @@ template("compute_interfaces_info_individual") {
       "--interfaces-info-file",
       rebase_path(invoker.interfaces_info_file, root_build_dir),
       "--component-info-file",
-      rebase_path(invoker.component_wide_info_file, root_build_dir),
+      rebase_path(invoker.component_info_file, root_build_dir),
       "--write-file-only-if-changed=1",
       "--",
     ] + rebase_path(invoker.sources_generated, root_build_dir)
@@ -162,9 +162,8 @@ template("idl_compiler") {
       rebase_path(bindings_scripts_output_dir, root_build_dir),
       "--output-dir",
       rebase_path(output_dir, root_build_dir),
-      "--interfaces-info",
-      rebase_path("$bindings_modules_output_dir/InterfacesInfoOverall.pickle",
-                  root_build_dir),
+      "--info-dir",
+      rebase_path("$bindings_output_dir", root_build_dir),
       "--write-file-only-if-changed=1",  # Always true for Ninja.
       "--target-component",
       invoker.target_component,
@@ -189,8 +188,6 @@ template("idl_compiler") {
 #   sources = a list of IDL files to process
 #   outputs = a list of files to write to
 #   output_dir = the directory to put the output files
-#   component_wide_info = a filename of pickle file which contains component
-#     wide information
 #   target_component = component to generate code for
 template("idl_impl") {
   dictionary_impl_output_dir = "$root_gen_dir/blink/"
@@ -200,7 +197,16 @@ template("idl_impl") {
     idl_files_list = "$target_gen_dir/${target_name}_file_list.tmp"
     write_file(idl_files_list, rebase_path(invoker.sources, root_build_dir))
 
-    inputs = [ idl_files_list ] + invoker.sources
+    inputs =
+      idl_lexer_parser_files +  # to be explicit (covered by parsetab)
+      idl_compiler_files
+    inputs += [
+      "$bindings_scripts_output_dir/lextab.py",
+      "$bindings_scripts_output_dir/parsetab.pickle",
+      "$bindings_scripts_output_dir/cached_jinja_templates.stamp",
+      "$bindings_dir/IDLExtendedAttributes.txt",
+    ]
+    inputs += [ idl_files_list ] + invoker.sources
     outputs = invoker.outputs
 
     args = [
@@ -210,11 +216,8 @@ template("idl_impl") {
       rebase_path(invoker.output_dir, root_build_dir),
       "--impl-output-dir",
       rebase_path(dictionary_impl_output_dir, root_build_dir),
-      "--interfaces-info",
-      rebase_path("$bindings_modules_output_dir/InterfacesInfoOverall.pickle",
-                  root_build_dir),
-      "--component-info",
-      rebase_path(invoker.component_wide_info, root_build_dir),
+      "--info-dir",
+      rebase_path("$bindings_output_dir", root_build_dir),
       "--target-component",
       invoker.target_component,
       "--write-file-only-if-changed=1",

@@ -24,6 +24,7 @@
 #ifndef HTMLFormControlElement_h
 #define HTMLFormControlElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/FormAssociatedElement.h"
 #include "core/html/LabelableElement.h"
 
@@ -38,12 +39,12 @@ enum CheckValidityEventBehavior { CheckValidityDispatchNoEvent, CheckValidityDis
 // HTMLFormControlElement is the default implementation of FormAssociatedElement,
 // and form-associated element implementations should use HTMLFormControlElement
 // unless there is a special reason.
-class HTMLFormControlElement : public LabelableElement, public FormAssociatedElement {
+class CORE_EXPORT HTMLFormControlElement : public LabelableElement, public FormAssociatedElement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLFormControlElement);
 
 public:
     virtual ~HTMLFormControlElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     String formEnctype() const;
     void setFormEnctype(const AtomicString&);
@@ -112,6 +113,7 @@ public:
     String nameForAutofill() const;
 
     virtual void setFocus(bool flag) override;
+    virtual void copyNonAttributePropertiesFromElement(const Element&) override;
 
 #if !ENABLE(OILPAN)
     using Node::ref;
@@ -135,8 +137,8 @@ protected:
     virtual bool isKeyboardFocusable() const override;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
     virtual bool shouldHaveFocusAppearance() const override final;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) override;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
     virtual void willCallDefaultEventHandler(const Event&) override final;
 
     virtual void didRecalcStyle(StyleRecalcChange) override final;
@@ -190,8 +192,8 @@ private:
     mutable bool m_willValidate : 1;
 
     // Cache of valid().
-    // But "candidate for constraint validation" doesn't affect m_isValid.
     bool m_isValid : 1;
+    bool m_validityIsDirty : 1;
 
     bool m_wasChangedSinceLastFormControlChangeEvent : 1;
     bool m_wasFocusedByMouse : 1;

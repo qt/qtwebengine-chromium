@@ -33,6 +33,7 @@
 #define EventTarget_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/events/EventListenerMap.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "platform/heap/Handle.h"
@@ -59,8 +60,8 @@ struct FiringEventIterator {
 };
 typedef Vector<FiringEventIterator, 1> FiringEventIteratorVector;
 
-struct EventTargetData {
-    WTF_MAKE_NONCOPYABLE(EventTargetData); WTF_MAKE_FAST_ALLOCATED;
+struct CORE_EXPORT EventTargetData {
+    WTF_MAKE_NONCOPYABLE(EventTargetData); WTF_MAKE_FAST_ALLOCATED(EventTargetData);
 public:
     EventTargetData();
     ~EventTargetData();
@@ -74,26 +75,38 @@ public:
 // - Make your IDL interface inherit from EventTarget.
 //   Optionally add "attribute EventHandler onfoo;" attributes.
 // - Inherit from EventTargetWithInlineData (only in rare cases should you use
-//   EventTarget directly).
+//   EventTarget directly); or, if you want YourClass to be inherited from
+//   RefCountedGarbageCollected<YourClass> in addition to EventTargetWithInlineData,
+//   inherit from RefCountedGarbageCollectedEventTargetWithInlineData<YourClass>.
+// - In your class declaration, EventTargetWithInlineData (or
+//   RefCountedGarbageCollectedEventTargetWithInlineData<>) must come first in
+//   the base class list. If your class is non-final, classes inheriting from
+//   your class need to come first, too.
 // - Figure out if you now need to inherit from ActiveDOMObject as well.
 // - In your class declaration, you will typically use
-//   REFCOUNTED_EVENT_TARGET(YourClassName) and
-//   WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(YourClassName). Make sure to include
-//   this header file in your .h file, or you will get very strange compiler
-//   errors.
+//   REFCOUNTED_EVENT_TARGET(YourClass) if YourClass is a RefCounted<>,
+//   or DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(OtherRefCounted<YourClass>)
+//   if YourClass uses a different kind of reference counting template such as
+//   RefCountedGarbageCollected<YourClass>.
+// - Make sure to include this header file in your .h file, or you will get
+//   very strange compiler errors.
 // - If you added an onfoo attribute, use DEFINE_ATTRIBUTE_EVENT_LISTENER(foo)
 //   in your class declaration.
 // - Override EventTarget::interfaceName() and executionContext(). The former
 //   will typically return EventTargetNames::YourClassName. The latter will
 //   return ActiveDOMObject::executionContext (if you are an ActiveDOMObject)
 //   or the document you're in.
-// - Your trace() method will need to call EventTargetWithInlineData::trace.
+// - Your trace() method will need to call EventTargetWithInlineData::trace
+//   or RefCountedGarbageCollectedEventTargetWithInlineData<YourClass>::trace,
+//   depending on the base class of your class.
 //
 // Optionally, add a FooEvent.idl class, but that's outside the scope of this
 // comment (and much more straightforward).
-class EventTarget : public WillBeGarbageCollectedMixin, public ScriptWrappable {
+class CORE_EXPORT EventTarget : public NoBaseWillBeGarbageCollectedFinalized<EventTarget>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
+    virtual ~EventTarget();
+
 #if !ENABLE(OILPAN)
     void ref() { refEventTarget(); }
     void deref() { derefEventTarget(); }
@@ -109,11 +122,9 @@ public:
     // FIXME: first 2 args to addEventListener and removeEventListener should
     // be required (per spec), but throwing TypeError breaks legacy content.
     // http://crbug.com/353484
-    bool addEventListener() { return false; }
-    bool addEventListener(const AtomicString& eventType) { return false; }
+    bool addEventListener();
     virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
-    bool removeEventListener() { return false; }
-    bool removeEventListener(const AtomicString& eventType) { return false; }
+    bool removeEventListener();
     virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     virtual void removeAllEventListeners();
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
@@ -132,13 +143,20 @@ public:
 
     bool fireEventListeners(Event*);
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     virtual bool keepEventInNode(Event*) { return false; };
 
+#if ENABLE(OILPAN)
+    // Needed for TraceTrait<> specialization; see below.
+    void mark(Visitor*) const;
+#if ENABLE(ASSERT)
+    void checkGCInfo() const;
+#endif
+#endif
+
 protected:
     EventTarget();
-    virtual ~EventTarget();
 
     // Subclasses should likely not override these themselves; instead, they should subclass EventTargetWithInlineData.
     virtual EventTargetData* eventTargetData() = 0;
@@ -160,13 +178,32 @@ private:
     friend class EventListenerIterator;
 };
 
-class EventTargetWithInlineData : public EventTarget {
+class CORE_EXPORT EventTargetWithInlineData : public EventTarget {
 protected:
     virtual EventTargetData* eventTargetData() override final { return &m_eventTargetData; }
     virtual EventTargetData& ensureEventTargetData() override final { return m_eventTargetData; }
 private:
     EventTargetData m_eventTargetData;
 };
+
+// Base class for classes that wish to inherit from RefCountedGarbageCollected (in non-Oilpan world) and
+// EventTargetWithInlineData (in both worlds). For details about how to use this class template, see the comments for
+// EventTargetWithInlineData above.
+//
+// This class template exists to circumvent Oilpan's "leftmost class rule", where the Oilpan classes must come first in
+// the base class list to avoid memory offset adjustment. In non-Oilpan world, RefCountedGarbageCollected<T> must come
+// first, but in Oilpan world EventTargetWithInlineData needs to come first. This class templates does the required
+// #if-switch here, in order to avoid a lot of "#if ENABLE(OILPAN)"-s sprinkled in the derived classes.
+#if ENABLE(OILPAN)
+template <typename T>
+class RefCountedGarbageCollectedEventTargetWithInlineData : public EventTargetWithInlineData { };
+#else
+template <typename T>
+class RefCountedGarbageCollectedEventTargetWithInlineData : public RefCountedGarbageCollected<T>, public EventTargetWithInlineData {
+public:
+    DEFINE_INLINE_VIRTUAL_TRACE() { EventTargetWithInlineData::trace(visitor); }
+};
+#endif
 
 // FIXME: These macros should be split into separate DEFINE and DECLARE
 // macros to avoid causing so many header includes.
@@ -241,14 +278,12 @@ inline bool EventTarget::hasCapturingEventListeners(const AtomicString& eventTyp
 } // namespace blink
 
 #if ENABLE(OILPAN)
-#define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass) \
-public: \
-    using baseClass::ref; \
-    using baseClass::deref; \
-private: \
-    typedef int thisIsHereToForceASemiColonAfterThisEventTargetMacro
+
+#define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass)
 #define DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(baseClass)
-#else
+
+#else // !ENABLE(OILPAN)
+
 #define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass) \
 public: \
     using baseClass::ref; \
@@ -258,7 +293,8 @@ private: \
     virtual void derefEventTarget() override final { deref(); } \
     typedef int thisIsHereToForceASemiColonAfterThisEventTargetMacro
 #define DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(baseClass) DEFINE_EVENT_TARGET_REFCOUNTING(baseClass)
-#endif
+
+#endif // ENABLE(OILPAN)
 
 // Use this macro if your EventTarget subclass is also a subclass of WTF::RefCounted.
 // A ref-counted class that uses a different method of refcounting should use DEFINE_EVENT_TARGET_REFCOUNTING directly.

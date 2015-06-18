@@ -15,7 +15,6 @@
 #include "base/threading/non_thread_safe.h"
 #include "net/cert/cert_database.h"
 #include "net/http/http_network_session.h"
-#include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/client_socket_pool_manager.h"
 
 namespace net {
@@ -23,13 +22,10 @@ namespace net {
 class CertVerifier;
 class ChannelIDService;
 class ClientSocketFactory;
-class ClientSocketPoolHistograms;
 class CTVerifier;
 class HttpProxyClientSocketPool;
 class HostResolver;
 class NetLog;
-class ProxyDelegate;
-class ProxyService;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
@@ -43,8 +39,7 @@ template <typename Key, typename Value>
 class OwnedPoolMap : public std::map<Key, Value> {
  public:
   OwnedPoolMap() {
-    COMPILE_ASSERT(base::is_pointer<Value>::value,
-                   value_must_be_a_pointer);
+    static_assert(base::is_pointer<Value>::value, "value must be a pointer");
   }
 
   ~OwnedPoolMap() {
@@ -65,11 +60,9 @@ class ClientSocketPoolManagerImpl : public base::NonThreadSafe,
                               ChannelIDService* channel_id_service,
                               TransportSecurityState* transport_security_state,
                               CTVerifier* cert_transparency_verifier,
+                              CertPolicyEnforcer* cert_policy_enforcer,
                               const std::string& ssl_session_cache_shard,
-                              ProxyService* proxy_service,
                               SSLConfigService* ssl_config_service,
-                              bool enable_ssl_connect_job_waiting,
-                              ProxyDelegate* proxy_delegate,
                               HttpNetworkSession::SocketPoolType pool_type);
   ~ClientSocketPoolManagerImpl() override;
 
@@ -114,42 +107,22 @@ class ClientSocketPoolManagerImpl : public base::NonThreadSafe,
   ChannelIDService* const channel_id_service_;
   TransportSecurityState* const transport_security_state_;
   CTVerifier* const cert_transparency_verifier_;
+  CertPolicyEnforcer* const cert_policy_enforcer_;
   const std::string ssl_session_cache_shard_;
-  ProxyService* const proxy_service_;
   const scoped_refptr<SSLConfigService> ssl_config_service_;
-  bool enable_ssl_connect_job_waiting_;
   const HttpNetworkSession::SocketPoolType pool_type_;
 
   // Note: this ordering is important.
 
-  ClientSocketPoolHistograms transport_pool_histograms_;
   scoped_ptr<TransportClientSocketPool> transport_socket_pool_;
-
-  ClientSocketPoolHistograms ssl_pool_histograms_;
   scoped_ptr<SSLClientSocketPool> ssl_socket_pool_;
-
-  ClientSocketPoolHistograms transport_for_socks_pool_histograms_;
   TransportSocketPoolMap transport_socket_pools_for_socks_proxies_;
-
-  ClientSocketPoolHistograms socks_pool_histograms_;
   SOCKSSocketPoolMap socks_socket_pools_;
-
-  ClientSocketPoolHistograms transport_for_http_proxy_pool_histograms_;
   TransportSocketPoolMap transport_socket_pools_for_http_proxies_;
-
-  ClientSocketPoolHistograms transport_for_https_proxy_pool_histograms_;
   TransportSocketPoolMap transport_socket_pools_for_https_proxies_;
-
-  ClientSocketPoolHistograms ssl_for_https_proxy_pool_histograms_;
   SSLSocketPoolMap ssl_socket_pools_for_https_proxies_;
-
-  ClientSocketPoolHistograms http_proxy_pool_histograms_;
   HTTPProxySocketPoolMap http_proxy_socket_pools_;
-
-  ClientSocketPoolHistograms ssl_socket_pool_for_proxies_histograms_;
   SSLSocketPoolMap ssl_socket_pools_for_proxies_;
-
-  const ProxyDelegate* proxy_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientSocketPoolManagerImpl);
 };

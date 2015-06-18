@@ -37,8 +37,10 @@ class NET_EXPORT HttpResponseInfo {
     CONNECTION_INFO_HTTP1 = 1,
     CONNECTION_INFO_DEPRECATED_SPDY2 = 2,
     CONNECTION_INFO_SPDY3 = 3,
-    CONNECTION_INFO_SPDY4 = 4,
+    CONNECTION_INFO_HTTP2 = 4,  // HTTP/2.
     CONNECTION_INFO_QUIC1_SPDY3 = 5,
+    CONNECTION_INFO_HTTP2_14 = 6,  // HTTP/2 draft-14.
+    CONNECTION_INFO_HTTP2_15 = 7,  // HTTP/2 draft-15.
     NUM_OF_CONNECTION_INFOS,
   };
 
@@ -56,6 +58,11 @@ class NET_EXPORT HttpResponseInfo {
   void Persist(Pickle* pickle,
                bool skip_transient_headers,
                bool response_truncated) const;
+
+  // Whether QUIC is used or not.
+  bool DidUseQuic() const {
+    return connection_info == CONNECTION_INFO_QUIC1_SPDY3;
+  }
 
   // The following is only defined if the request_time member is set.
   // If this resource was found in the cache, then this bool is set, and
@@ -92,6 +99,10 @@ class NET_EXPORT HttpResponseInfo {
 
   // Whether the request use http proxy or server authentication.
   bool did_use_http_auth;
+
+  // True if the resource was originally fetched for a prefetch and has not been
+  // used since.
+  bool unused_since_prefetch;
 
   // Remote address of the socket which fetched this resource.
   //

@@ -9,8 +9,8 @@
 
 goog.provide('cvox.OptionsPage');
 
-goog.require('cvox.BrailleBackground');
 goog.require('cvox.BrailleTable');
+goog.require('cvox.BrailleTranslatorManager');
 goog.require('cvox.ChromeEarcons');
 goog.require('cvox.ChromeHost');
 goog.require('cvox.ChromeTts');
@@ -24,12 +24,6 @@ goog.require('cvox.KeySequence');
 goog.require('cvox.Msgs');
 goog.require('cvox.PlatformFilter');
 goog.require('cvox.PlatformUtil');
-
-/**
- * This object is exported by the main background page.
- */
-window.braille;
-
 
 /**
  * Class to manage the options page.
@@ -48,7 +42,7 @@ cvox.OptionsPage.prefs;
 /**
  * A mapping from keycodes to their human readable text equivalents.
  * This is initialized in cvox.OptionsPage.init for internationalization.
- * @type {Object.<string, string>}
+ * @type {Object<string, string>}
  */
 cvox.OptionsPage.KEYCODE_TO_TEXT = {
 };
@@ -56,7 +50,7 @@ cvox.OptionsPage.KEYCODE_TO_TEXT = {
 /**
  * A mapping from human readable text to keycode values.
  * This is initialized in cvox.OptionsPage.init for internationalization.
- * @type {Object.<string, string>}
+ * @type {Object<string, string>}
  */
 cvox.OptionsPage.TEXT_TO_KEYCODE = {
 };
@@ -74,9 +68,12 @@ cvox.OptionsPage.init = function() {
   cvox.OptionsPage.addKeys();
   cvox.OptionsPage.populateVoicesSelect();
   cvox.BrailleTable.getAll(function(tables) {
-    /** @type {!Array.<cvox.BrailleTable.Table>} */
+    /** @type {!Array<cvox.BrailleTable.Table>} */
     cvox.OptionsPage.brailleTables = tables;
     cvox.OptionsPage.populateBrailleTablesSelect();
+  });
+  chrome.storage.local.get({'brailleWordWrap': true}, function(items) {
+    $('brailleWordWrap').checked = items.brailleWordWrap;
   });
 
   cvox.ChromeVox.msgs.addTranslatedMessagesToDom(document);
@@ -101,6 +98,31 @@ cvox.OptionsPage.init = function() {
     $('version').textContent =
         chrome.app.getDetails().version;
   }
+
+  // Temporary secret way to enable ChromeVox Next for the current run of
+  // ChromeVox.
+  var next = 'next';
+  document.body.addEventListener('keypress', function(evt) {
+    if (next === undefined) {
+      return;
+    }
+    var key = String.fromCharCode(evt.charCode);
+    if (next[0] === key) {
+      next = next.slice(1);
+
+      if (next === '') {
+        cvox.OptionsPage.speak(
+            'You are now running ChromeVox Next; open a new tab to start',
+            cvox.QueueMode.FLUSH);
+        next = undefined;
+        chrome.extension.getBackgroundPage()['global']
+            .backgroundObj.forceChromeVoxNextActive();
+      }
+    } else {
+      next = 'next';
+    }
+    return true;
+  }, true);
 };
 
 /**
@@ -360,7 +382,6 @@ cvox.OptionsPage.populateVoicesSelect = function() {
 
 /**
  * Populates the braille select control.
- * @this {cvox.OptionsPage}
  */
 cvox.OptionsPage.populateBrailleTablesSelect = function() {
   if (!cvox.ChromeVox.isChromeOS) {
@@ -400,9 +421,7 @@ cvox.OptionsPage.populateBrailleTablesSelect = function() {
       var sel = node.options[selIndex];
       localStorage['brailleTable'] = sel.id;
       localStorage[node.id] = sel.id;
-      /** @type {cvox.BrailleBackground} */
-      var braille = chrome.extension.getBackgroundPage().braille;
-      braille.refreshTranslator();
+      cvox.OptionsPage.getBrailleTranslatorManager().refresh();
     };
   };
 
@@ -441,8 +460,7 @@ cvox.OptionsPage.populateBrailleTablesSelect = function() {
       tableTypeButton.textContent =
           cvox.ChromeVox.msgs.getMsg('options_braille_table_type_8');
     }
-    var braille = chrome.extension.getBackgroundPage().braille;
-    braille.refreshTranslator();
+    cvox.OptionsPage.getBrailleTranslatorManager().refresh();
   };
   updateTableType(false);
 
@@ -478,7 +496,9 @@ cvox.OptionsPage.setValue = function(element, value) {
 cvox.OptionsPage.eventListener = function(event) {
   window.setTimeout(function() {
     var target = event.target;
-    if (target.classList.contains('pref')) {
+    if (target.id == 'brailleWordWrap') {
+      chrome.storage.local.set({brailleWordWrap: target.checked});
+    } else if (target.classList.contains('pref')) {
       if (target.tagName == 'INPUT' && target.type == 'checkbox') {
         cvox.OptionsPage.prefs.setPref(target.name, target.checked);
       } else if (target.tagName == 'INPUT' && target.type == 'radio') {
@@ -511,7 +531,7 @@ cvox.OptionsPage.eventListener = function(event) {
 
 /**
  * Refreshes all dynamic content on the page.
-This includes all key related information.
+ * This includes all key related information.
  */
 cvox.OptionsPage.reset = function() {
   var selectKeyMap = $('cvox_keymaps');
@@ -564,6 +584,13 @@ cvox.OptionsPage.speak = function(textString, queueMode, properties) {
   var speak =
       /** @type Function} */ (chrome.extension.getBackgroundPage()['speak']);
   speak.apply(null, arguments);
+};
+
+/**
+ * @return {cvox.BrailleTranslatorManager}
+ */
+cvox.OptionsPage.getBrailleTranslatorManager = function() {
+  return chrome.extension.getBackgroundPage()['braille_translator_manager'];
 };
 
 document.addEventListener('DOMContentLoaded', function() {

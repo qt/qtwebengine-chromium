@@ -4,10 +4,11 @@
     "items": [
       {
         "title": "Learn Basics",
+        "href": "/devtools",
         "items": [
           {
             "title": "Overview",
-            "href": "/devtools/index"
+            "href": "/devtools"
           },
           {
             "title": "Development Workflow",
@@ -47,6 +48,7 @@
       },
       {
         "title": "Use Tools",
+        "href": "/devtools/docs/dom-and-styles",
         "items": [
           {
             "title": "Inspecting & Tweaking",
@@ -86,6 +88,7 @@
       },
       {
         "title": "Performance & Profiling",
+        "href": "/devtools/docs/network", 
         "items": [
           {
             "title": "Evaluating Network Performance",
@@ -121,6 +124,7 @@
       },
       {
         "title": "Reference",
+        "href": "/devtools/docs/console-api",
         "items": [
           {
             "title": "Console API Reference",
@@ -131,20 +135,16 @@
             "href": "/devtools/docs/commandline-api"
           },
           {
+            "title": "Integrating with DevTools & Chrome",
+            "href": "/devtools/docs/integrating"
+          },  
+          {
             "title": "DevTools Extensions API",
-            "href": "/devtools/docs/integrating",
+            "href": "/extensions/devtools",
             "items": [
-              {
-                "title": "Integrating with DevTools",
-                "href": "/devtools/docs/integrating"
-              },
               {
                 "title": "Sample DevTools Extensions",
                 "href": "/devtools/docs/sample-extensions"
-              },
-              {
-                "title": "Sample DevTools Protocol Clients",
-                "href": "/devtools/docs/debugging-clients"
               }
             ]
           },
@@ -161,12 +161,16 @@
             "href": "/devtools/docs/debugger-protocol",
             "items": [
               {
-                "title": "Remote Debugging Protocol",
-                "href": "/devtools/docs/debugger-protocol"
+                "title": "Showcase Debugging Protocol Clients",
+                "href": "/devtools/docs/debugging-clients"
               },
               {
-                "title": "Version 1.1",
+                "title": "Version 1.1 (Stable)",
                 "href": "/devtools/docs/protocol/1.1/index"
+              },
+              {
+                "title": "Tip-of-tree (Unstable)",
+                "href": "https://chromedevtools.github.io/debugger-protocol-viewer/"
               },
               {
                 "title": "Version 1.0",
@@ -175,10 +179,6 @@
               {
                 "title": "Version .1",
                 "href": "/devtools/docs/protocol/0.1/index"
-              },
-              {
-                "title": "Tip-of-tree",
-                "href": "/devtools/docs/protocol/tot/index"
               }
             ]
           }
@@ -191,10 +191,11 @@
     "items": [
       {
         "title": "Getting Started",
+        "href": "/multidevice",
         "items": [
           {
             "title": "Chrome for a Multi-Device World",
-            "href": "/multidevice/index"
+            "href": "/multidevice"
           },
           {
             "title": "Data Compression Proxy",
@@ -220,6 +221,7 @@
       },
       {
         "title": "Chrome for Android",
+        "href": "/multidevice/android/overview",
         "items": [
           {
             "title": "Overview",
@@ -237,6 +239,7 @@
       },
       {
         "title": "Chrome WebView",
+        "href": "/multidevice/webview/overview",
         "items": [
           {
             "title": "WebView for Android",
@@ -262,6 +265,7 @@
       },
       {
         "title": "Chrome for iOS",
+        "href": "/multidevice/ios/overview",
         "items": [
           {
             "title": "Overview",
@@ -298,6 +302,7 @@
     "items": [
       {
         "title": "Apps",
+        "href": "/apps/about_apps",
         "items": [
           {
             "title": "Learn Basics",
@@ -364,6 +369,24 @@
             ]
           },
           {
+            "title": "Run Chrome Apps on Mobile",
+            "href": "/apps/chrome_apps_on_mobile"
+          },
+          {
+            "title": "Run Android Apps on Chrome OS",
+            "href": "/apps/getstarted_arc",
+            "items": [
+              {
+                "title": "Getting Started With ARC",
+                "href": "/apps/getstarted_arc"
+              },
+              {
+                "title": "Enable Play Services in Your ARC App",
+                "href": "/apps/arc_playservices"
+              }
+            ]
+          },
+          {
             "title": "Samples",
             "href": "/apps/samples"
           },
@@ -384,6 +407,10 @@
                 "href": "/apps/app_storage"
               },
               {
+                "title": "Managing Offline Storage",
+                "href": "/apps/offline_storage"
+              },
+              {
                 "title": "Keep Users Informed",
                 "href": "/apps/inform_users"
               },
@@ -391,6 +418,10 @@
                 "title": "Cloud Messaging",
                 "href": "/apps/cloudMessaging"
               },
+              {
+                "title": "Native Messaging",
+                "href": "/apps/nativeMessaging"
+              },  
               {
                 "title": "Rich Notifications",
                 "href": "/apps/richNotifications"
@@ -454,10 +485,6 @@
                 "href": "/apps/publish_app"
               },
               {
-                "title": "Run Chrome Apps on Mobile",
-                "href": "/apps/chrome_apps_on_mobile"
-              },
-              {
                 "title": "Monetize Your App",
                 "href": "/apps/google_wallet"
               },
@@ -486,6 +513,10 @@
               {
                 "title": "Webview Tag",
                 "href": "/apps/tags/webview"
+              },
+              {
+                "title": "Appview Tag",
+                "href": "/apps/tags/appview"
               },
               {
                 "title": "Web APIs",
@@ -519,10 +550,11 @@
       },
       {
         "title": "Extensions",
+        "href": "/extensions",
         "items": [
           {
             "title": "Learn Basics",
-            "href": "/extensions/overview",
+            "href": "/extensions",
             "items": [
               {
                 "title": "Overview",
@@ -592,12 +624,24 @@
                 "href": "/extensions/messaging"
               },
               {
+                "title": "Native Messaging",
+                "href": "/extensions/nativeMessaging"
+              },
+              {
                 "title": "Migrate to Manifest 2",
                 "href": "/extensions/tut_migration_to_manifest_v2"
               },
               {
                 "title": "OAuth",
                 "href": "/extensions/tut_oauth"
+              },
+              {
+                "title": "Options",
+                "href": "/extensions/options"
+              },
+              { 
+                "title": "Options Version 2",
+                "href": "/extensions/optionsV2"
               }
             ]
           },
@@ -687,10 +731,11 @@
       },
       {
         "title": "Native Client",
+        "href": "/native-client",
         "items": [
           {
             "title": "Learn Basics",
-            "href": "/native-client/overview",
+            "href": "/native-client",
             "items": [
               {
                 "title": "Technical Overview",
@@ -731,6 +776,10 @@
               {
                 "title": "Part 2: SDK Build System and Chrome Apps",
                 "href": "/native-client/devguide/tutorial/tutorial-part2"
+              },
+              {
+                "title": "Chrome Dev Summit 2014 - Codelabs",
+                "href": "/native-client/cds2014"
               }
             ]
           },
@@ -815,12 +864,28 @@
             "href": "/native-client/c-api",
             "items": [
               {
-                "title": "Pepper C API",
+                "title": "Pepper C API (Stable)",
                 "href": "/native-client/c-api"
               },
               {
-                "title": "Pepper C++ API",
+                "title": "Pepper C++ API (Stable)",
                 "href": "/native-client/cpp-api"
+              },
+              {
+                "title": "Pepper C API (Beta)",
+                "href": "/native-client/c-api-beta"
+              },
+              {
+                "title": "Pepper C++ API (Beta)",
+                "href": "/native-client/cpp-api-beta"
+              },
+              {
+                "title": "Pepper C API (Dev)",
+                "href": "/native-client/c-api-dev"
+              },
+              {
+                "title": "Pepper C++ API (Dev)",
+                "href": "/native-client/cpp-api-dev"
               }
             ]
           },
@@ -833,8 +898,16 @@
                 "href": "/native-client/glossary"
               },
               {
+                "title": "Contributor Ideas",
+                "href": "/native-client/reference/ideas"
+              },
+              {
                 "title": "Native Client Manifest (nmf) Format",
                 "href": "/native-client/reference/nacl-manifest-format"
+              },
+              {
+                "title": "Contents of PNaCl Bitcode Files",
+                "href": "/native-client/reference/pnacl-bitcode-manual"
               },
               {
                 "title": "PNaCl Bitcode Reference Manual",
@@ -894,10 +967,15 @@
       },
       {
         "title": "Store",
+        "href": "/webstore",
         "items": [
           {
+            "title": "Distribution Overview",
+            "href": "/webstore"
+          },
+          {
             "title": "What Is the Chrome Web Store?",
-            "href": "/webstore/index"
+            "href": "/webstore/about_webstore"
           },
           {
             "title": "What Can You Publish?",

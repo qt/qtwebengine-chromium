@@ -31,10 +31,12 @@
 #include "config.h"
 #include "core/dom/Document.h"
 
+#include "core/frame/FrameView.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/heap/Handle.h"
+#include "platform/weborigin/ReferrerPolicy.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -56,6 +58,8 @@ protected:
     Document& document() const { return m_dummyPageHolder->document(); }
     Page& page() const { return m_dummyPageHolder->page(); }
 
+    void setHtmlInnerHTML(const char*);
+
 private:
     OwnPtr<DummyPageHolder> m_dummyPageHolder;
 };
@@ -63,6 +67,12 @@ private:
 void DocumentTest::SetUp()
 {
     m_dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
+}
+
+void DocumentTest::setHtmlInnerHTML(const char* htmlContent)
+{
+    document().documentElement()->setInnerHTML(String::fromUTF8(htmlContent), ASSERT_NO_EXCEPTION);
+    document().view()->updateLayoutAndStyleForPainting();
 }
 
 class MockDocumentVisibilityObserver
@@ -75,7 +85,7 @@ public:
         return adoptPtrWillBeNoop(new MockDocumentVisibilityObserver(document));
     }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     MOCK_METHOD1(didChangeVisibilityState, void(PageVisibilityState));
 
@@ -138,6 +148,38 @@ TEST_F(DocumentTest, VisibilityOberver)
     EXPECT_CALL(*observer1, didChangeVisibilityState(PageVisibilityStateHidden)).Times(0);
     EXPECT_CALL(*observer1, didChangeVisibilityState(PageVisibilityStateVisible)).Times(1);
     page().setVisibilityState(PageVisibilityStateVisible, false);
+}
+
+// This tests that we properly resize and re-layout pages for printing in the presence of
+// media queries effecting elements in a subtree layout boundary
+TEST_F(DocumentTest, PrintRelayout)
+{
+    setHtmlInnerHTML(
+        "<style>"
+        "    div {"
+        "        width: 100px;"
+        "        height: 100px;"
+        "        overflow: hidden;"
+        "    }"
+        "    span {"
+        "        width: 50px;"
+        "        height: 50px;"
+        "    }"
+        "    @media screen {"
+        "        span {"
+        "            width: 20px;"
+        "        }"
+        "    }"
+        "</style>"
+        "<p><div><span></span></div></p>");
+    FloatSize pageSize(400, 400);
+    float maximumShrinkRatio = 1.6;
+
+    document().frame()->setPrinting(true, pageSize, pageSize, maximumShrinkRatio);
+    EXPECT_EQ(document().documentElement()->offsetWidth(), 400);
+    document().frame()->setPrinting(false, FloatSize(), FloatSize(), 0);
+    EXPECT_EQ(document().documentElement()->offsetWidth(), 800);
+
 }
 
 // This test checks that Documunt::linkManifest() returns a value conform to the specification.
@@ -210,6 +252,106 @@ TEST_F(DocumentTest, LinkManifest)
     EXPECT_EQ(link, document().linkManifest());
     link->setAttribute(blink::HTMLNames::mediaAttr, "print");
     EXPECT_EQ(link, document().linkManifest());
+}
+
+// This test checks that Documunt::linkDefaultPresentation() returns a value conform to the specification.
+TEST_F(DocumentTest, linkDefaultPresentation)
+{
+    // Test the default result.
+    EXPECT_EQ(0, document().linkDefaultPresentation());
+
+    // Check that we use the first element with <link rel='default-presentation'>
+    RefPtrWillBeRawPtr<HTMLLinkElement> link = HTMLLinkElement::create(document(), false);
+    link->setAttribute(blink::HTMLNames::relAttr, "default-presentation");
+    link->setAttribute(blink::HTMLNames::hrefAttr, "presentation.html");
+    document().head()->appendChild(link);
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    RefPtrWillBeRawPtr<HTMLLinkElement> link2 = HTMLLinkElement::create(document(), false);
+    link2->setAttribute(blink::HTMLNames::relAttr, "default-presentation");
+    link2->setAttribute(blink::HTMLNames::hrefAttr, "presentation.html");
+    document().head()->insertBefore(link2, link.get());
+    EXPECT_EQ(link2, document().linkDefaultPresentation());
+    document().head()->appendChild(link2);
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    // Check that crazy URLs are accepted.
+    link->setAttribute(blink::HTMLNames::hrefAttr, "far:foo.bar");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    // Check that empty URLs are accepted.
+    link->setAttribute(blink::HTMLNames::hrefAttr, "");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    // Check that URLs from different origins are accepted.
+    link->setAttribute(blink::HTMLNames::hrefAttr, "http://example.org/presentation.html");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::hrefAttr, "http://foo.example.org/presentation.html");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::hrefAttr, "http://foo.bar/presentation.html");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    // More than one token in @rel is accepted.
+    link->setAttribute(blink::HTMLNames::relAttr, "foo bar default-presentation");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    // Such as spaces around the token.
+    link->setAttribute(blink::HTMLNames::relAttr, " default-presentation ");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+
+    // Check that rel=default-presentation actually matters.
+    link->setAttribute(blink::HTMLNames::relAttr, "");
+    EXPECT_EQ(link2, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::relAttr, "default-presentation");
+
+    // Check that links outside of the <head> are ignored.
+    document().head()->removeChild(link.get(), ASSERT_NO_EXCEPTION);
+    document().head()->removeChild(link2.get(), ASSERT_NO_EXCEPTION);
+    EXPECT_EQ(0, document().linkDefaultPresentation());
+    document().body()->appendChild(link);
+    EXPECT_EQ(0, document().linkDefaultPresentation());
+    document().head()->appendChild(link);
+    document().head()->appendChild(link2);
+
+    // Check that some attribute values do not have an effect.
+    link->setAttribute(blink::HTMLNames::crossoriginAttr, "use-credentials");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::hreflangAttr, "klingon");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::typeAttr, "image/gif");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::sizesAttr, "16x16");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+    link->setAttribute(blink::HTMLNames::mediaAttr, "print");
+    EXPECT_EQ(link, document().linkDefaultPresentation());
+}
+
+TEST_F(DocumentTest, referrerPolicyParsing)
+{
+    EXPECT_EQ(ReferrerPolicyDefault, document().referrerPolicy());
+
+    struct TestCase {
+        const char* policy;
+        ReferrerPolicy expected;
+    } tests[] = {
+        { "always", ReferrerPolicyAlways },
+        { "default", ReferrerPolicyNoReferrerWhenDowngrade },
+        { "never", ReferrerPolicyNever },
+        { "no-referrer", ReferrerPolicyNever },
+        { "no-referrer-when-downgrade", ReferrerPolicyNoReferrerWhenDowngrade },
+        { "not-a-real-policy", ReferrerPolicyDefault },
+        { "origin", ReferrerPolicyOrigin },
+        { "origin-when-crossorigin", ReferrerPolicyOriginWhenCrossOrigin },
+        { "origin-when-cross-origin", ReferrerPolicyOriginWhenCrossOrigin },
+        { "unsafe-url", ReferrerPolicyAlways },
+    };
+
+    for (auto test : tests) {
+        document().setReferrerPolicy(ReferrerPolicyDefault);
+
+        document().processReferrerPolicy(test.policy);
+        EXPECT_EQ(test.expected, document().referrerPolicy()) << test.policy;
+    }
 }
 
 } // unnamed namespace

@@ -7,6 +7,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
@@ -17,13 +18,16 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/frame_timing_request.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/paint_properties.h"
 #include "cc/layers/render_surface.h"
+#include "cc/layers/scroll_blocks_on.h"
 #include "cc/output/filter_operations.h"
+#include "cc/trees/property_tree.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -40,7 +44,7 @@ class BoxF;
 }
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 }
@@ -51,11 +55,11 @@ class Animation;
 class AnimationDelegate;
 struct AnimationEvent;
 class CopyOutputRequest;
-class LayerAnimationDelegate;
 class LayerAnimationEventObserver;
 class LayerClient;
 class LayerImpl;
 class LayerTreeHost;
+class LayerTreeHostCommon;
 class LayerTreeImpl;
 class PriorityCalculator;
 class RenderingStatsInstrumentation;
@@ -100,7 +104,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // This requests the layer and its subtree be rendered and given to the
   // callback. If the copy is unable to be produced (the layer is destroyed
-  // first), then the callback is called with a nullptr/empty result.
+  // first), then the callback is called with a nullptr/empty result. If the
+  // request's source property is set, any prior uncommitted requests having the
+  // same source will be aborted.
   void RequestCopyOfOutput(scoped_ptr<CopyOutputRequest> request);
   bool HasCopyRequest() const {
     return !copy_requests_.empty();
@@ -169,6 +175,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetIsContainerForFixedPositionLayers(bool container);
   bool IsContainerForFixedPositionLayers() const;
 
+  gfx::Vector2dF FixedContainerSizeDelta() const {
+    return gfx::Vector2dF();
+  }
+
   void SetPositionConstraint(const LayerPositionConstraint& constraint);
   const LayerPositionConstraint& position_constraint() const {
     return position_constraint_;
@@ -177,10 +187,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetTransform(const gfx::Transform& transform);
   const gfx::Transform& transform() const { return transform_; }
   bool TransformIsAnimating() const;
+  bool AnimationsPreserveAxisAlignment() const;
   bool transform_is_invertible() const { return transform_is_invertible_; }
 
   void SetTransformOrigin(const gfx::Point3F&);
-  gfx::Point3F transform_origin() { return transform_origin_; }
+  gfx::Point3F transform_origin() const { return transform_origin_; }
 
   void SetScrollParent(Layer* parent);
 
@@ -236,7 +247,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool screen_space_opacity_is_animating() const {
     return draw_properties_.screen_space_opacity_is_animating;
   }
-  bool can_use_lcd_text() const { return draw_properties_.can_use_lcd_text; }
   bool is_clipped() const { return draw_properties_.is_clipped; }
   gfx::Rect clip_rect() const { return draw_properties_.clip_rect; }
   gfx::Rect drawable_content_rect() const {
@@ -255,14 +265,16 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
            draw_properties_.render_target->render_surface());
     return draw_properties_.render_target;
   }
-  RenderSurface* render_surface() const {
-    return draw_properties_.render_surface.get();
-  }
   int num_unclipped_descendants() const {
     return draw_properties_.num_unclipped_descendants;
   }
 
+  RenderSurface* render_surface() const { return render_surface_.get(); }
   void SetScrollOffset(const gfx::ScrollOffset& scroll_offset);
+  void SetScrollCompensationAdjustment(
+      const gfx::Vector2dF& scroll_compensation_adjustment);
+  gfx::Vector2dF ScrollCompensationAdjustment() const;
+
   gfx::ScrollOffset scroll_offset() const { return scroll_offset_; }
   void SetScrollOffsetFromImplSide(const gfx::ScrollOffset& scroll_offset);
 
@@ -298,6 +310,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return touch_event_handler_region_;
   }
 
+  void SetScrollBlocksOn(ScrollBlocksOn scroll_blocks_on);
+  ScrollBlocksOn scroll_blocks_on() const { return scroll_blocks_on_; }
+
   void set_did_scroll_callback(const base::Closure& callback) {
     did_scroll_callback_ = callback;
   }
@@ -311,9 +326,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool force_render_surface() const { return force_render_surface_; }
 
   gfx::Vector2dF ScrollDelta() const { return gfx::Vector2dF(); }
-  gfx::ScrollOffset TotalScrollOffset() const {
-    return ScrollOffsetWithDelta(scroll_offset(), ScrollDelta());
-  }
+  gfx::ScrollOffset CurrentScrollOffset() const { return scroll_offset_; }
 
   void SetDoubleSided(bool double_sided);
   bool double_sided() const { return double_sided_; }
@@ -368,7 +381,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void OnOutputSurfaceCreated() {}
   virtual bool IsSuitableForGpuRasterization() const;
 
-  virtual scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo();
+  virtual scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+  TakeDebugInfo();
 
   void SetLayerClient(LayerClient* client) { client_ = client; }
 
@@ -376,6 +390,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void CreateRenderSurface();
   void ClearRenderSurface();
+
   void ClearRenderSurfaceLayerList();
 
   // The contents scale converts from logical, non-page-scaled pixels to target
@@ -400,6 +415,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool AddAnimation(scoped_ptr<Animation> animation);
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
+  void RemoveAnimation(int animation_id, Animation::TargetProperty property);
 
   LayerAnimationController* layer_animation_controller() {
     return layer_animation_controller_.get();
@@ -446,8 +462,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   float raster_scale() const { return raster_scale_; }
   bool raster_scale_is_unknown() const { return raster_scale_ == 0.f; }
 
-  virtual bool SupportsLCDText() const;
-
   void SetNeedsPushProperties();
   bool needs_push_properties() const { return needs_push_properties_; }
   bool descendant_needs_push_properties() const {
@@ -461,6 +475,89 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void Set3dSortingContextId(int id);
   int sorting_context_id() const { return sorting_context_id_; }
+
+  void set_property_tree_sequence_number(int sequence_number) {
+    property_tree_sequence_number_ = sequence_number;
+  }
+
+  void SetTransformTreeIndex(int index);
+  int transform_tree_index() const;
+
+  void SetClipTreeIndex(int index);
+  int clip_tree_index() const;
+
+  void SetOpacityTreeIndex(int index);
+  int opacity_tree_index() const;
+
+  void set_offset_to_transform_parent(gfx::Vector2dF offset) {
+    if (offset_to_transform_parent_ == offset)
+      return;
+    offset_to_transform_parent_ = offset;
+    SetNeedsPushProperties();
+  }
+  gfx::Vector2dF offset_to_transform_parent() const {
+    return offset_to_transform_parent_;
+  }
+
+  // TODO(vollick): Once we transition to transform and clip trees, rename these
+  // functions and related values.  The "from property trees" functions below
+  // use the transform and clip trees.  Eventually, we will use these functions
+  // to compute the official values, but these functions are retained for
+  // testing purposes until we've migrated.
+
+  const gfx::Rect& visible_rect_from_property_trees() const {
+    return visible_rect_from_property_trees_;
+  }
+  void set_visible_rect_from_property_trees(const gfx::Rect& rect) {
+    // No push properties here, as this acts like a draw property.
+    visible_rect_from_property_trees_ = rect;
+  }
+
+  void set_should_flatten_transform_from_property_tree(bool should_flatten) {
+    if (should_flatten_transform_from_property_tree_ == should_flatten)
+      return;
+    should_flatten_transform_from_property_tree_ = should_flatten;
+    SetNeedsPushProperties();
+  }
+  bool should_flatten_transform_from_property_tree() const {
+    return should_flatten_transform_from_property_tree_;
+  }
+
+  // TODO(vollick): These values are temporary and will be removed as soon as
+  // render surface determinations are moved out of CDP. They only exist because
+  // certain logic depends on whether or not a layer would render to a separate
+  // surface, but CDP destroys surfaces and targets it doesn't need, so without
+  // this boolean, this is impossible to determine after the fact without
+  // wastefully recomputing it. This is public for the time being so that it can
+  // be accessed from CDP.
+  bool has_render_surface() const {
+    return has_render_surface_;
+  }
+
+  // Sets new frame timing requests for this layer.
+  void SetFrameTimingRequests(const std::vector<FrameTimingRequest>& requests);
+
+  // Accessor for unit tests
+  const std::vector<FrameTimingRequest>& FrameTimingRequests() const {
+    return frame_timing_requests_;
+  }
+
+  void DidBeginTracing();
+  void set_num_layer_or_descandant_with_copy_request(
+      int num_layer_or_descendants_with_copy_request) {
+    num_layer_or_descendants_with_copy_request_ =
+        num_layer_or_descendants_with_copy_request;
+  }
+
+  void set_num_layer_or_descandant_with_input_handler(
+      int num_layer_or_descendants_with_input_handler) {
+    num_layer_or_descendants_with_input_handler_ =
+        num_layer_or_descendants_with_input_handler;
+  }
+
+  int num_layer_or_descendants_with_input_handler() {
+    return num_layer_or_descendants_with_input_handler_;
+  }
 
  protected:
   friend class LayerImpl;
@@ -479,6 +576,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // knows immediately that a commit is required.  This implies SetNeedsUpdate
   // as well as SetNeedsPushProperties to push that property.
   void SetNeedsCommit();
+  // This is identical to SetNeedsCommit, but the former requests a rebuild of
+  // the property trees.
+  void SetNeedsCommitNoRebuild();
   // Called when there's been a change in layer structure.  Implies both
   // SetNeedsUpdate and SetNeedsCommit, but not SetNeedsPushProperties.
   void SetNeedsFullTreeSync();
@@ -541,9 +641,13 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
  private:
   friend class base::RefCounted<Layer>;
-
+  friend class LayerTreeHostCommon;
   void SetParent(Layer* layer);
   bool DescendantIsFixedToContainerLayer() const;
+
+  // This should only be called during BeginMainFrame since it does not
+  // trigger a Commit.
+  void SetHasRenderSurface(bool has_render_surface);
 
   // Returns the index of the child or -1 if not found.
   int IndexOfChild(const Layer* reference);
@@ -570,6 +674,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // children.
   void RemoveFromClipTree();
 
+  void UpdateNumCopyRequestsForSubtree(bool add);
+  void UpdateNumInputHandlersForSubtree(bool add);
+
   LayerList children_;
   Layer* parent_;
 
@@ -584,11 +691,20 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::Size bounds_;
 
   gfx::ScrollOffset scroll_offset_;
+  gfx::Vector2dF scroll_compensation_adjustment_;
   // This variable indicates which ancestor layer (if any) whose size,
   // transformed relative to this layer, defines the maximum scroll offset for
   // this layer.
   int scroll_clip_layer_id_;
   int num_descendants_that_draw_content_;
+  int transform_tree_index_;
+  int opacity_tree_index_;
+  int clip_tree_index_;
+  int property_tree_sequence_number_;
+  int num_layer_or_descendants_with_copy_request_;
+  int num_layer_or_descendants_with_input_handler_;
+  gfx::Vector2dF offset_to_transform_parent_;
+  bool should_flatten_transform_from_property_tree_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;
@@ -607,6 +723,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool draw_checkerboard_for_missing_tiles_ : 1;
   bool force_render_surface_ : 1;
   bool transform_is_invertible_ : 1;
+  bool has_render_surface_ : 1;
+  ScrollBlocksOn scroll_blocks_on_ : 3;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
@@ -640,6 +758,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   DrawProperties<Layer> draw_properties_;
 
   PaintProperties paint_properties_;
+  // TODO(awoloszyn): This is redundant with has_render_surface_,
+  // and should get removed once it is no longer needed on main thread.
+  scoped_ptr<RenderSurface> render_surface_;
+
+  gfx::Rect visible_rect_from_property_trees_;
+
+  std::vector<FrameTimingRequest> frame_timing_requests_;
+  bool frame_timing_requests_dirty_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

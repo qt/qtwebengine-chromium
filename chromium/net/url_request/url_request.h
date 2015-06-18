@@ -21,14 +21,14 @@
 #include "net/base/load_states.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/base/network_delegate.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 #include "net/cookies/canonical_cookie.h"
-#include "net/cookies/cookie_store.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
+#include "net/log/net_log.h"
+#include "net/socket/connection_attempts.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
 
@@ -39,12 +39,6 @@ namespace debug {
 class StackTrace;
 }  // namespace debug
 }  // namespace base
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace content {
-class AppCacheInterceptor;
-}
 
 namespace net {
 
@@ -88,26 +82,26 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
                                            NetworkDelegate* network_delegate,
                                            const std::string& scheme);
 
-  // HTTP request/response header IDs (via some preprocessor fun) for use with
-  // SetRequestHeaderById and GetResponseHeaderById.
-  enum {
-#define HTTP_ATOM(x) HTTP_ ## x,
-#include "net/http/http_atom_list.h"
-#undef HTTP_ATOM
-  };
-
   // Referrer policies (see set_referrer_policy): During server redirects, the
   // referrer header might be cleared, if the protocol changes from HTTPS to
   // HTTP. This is the default behavior of URLRequest, corresponding to
   // CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE. Alternatively, the
-  // referrer policy can be set to never change the referrer header. This
-  // behavior corresponds to NEVER_CLEAR_REFERRER. Embedders will want to use
-  // NEVER_CLEAR_REFERRER when implementing the meta-referrer support
-  // (http://wiki.whatwg.org/wiki/Meta_referrer) and sending requests with a
-  // non-default referrer policy. Only the default referrer policy requires
-  // the referrer to be cleared on transitions from HTTPS to HTTP.
+  // referrer policy can be set to strip the referrer down to an origin upon
+  // cross-origin navigation (ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN), or
+  // never change the referrer header (NEVER_CLEAR_REFERRER). Embedders will
+  // want to use these options when implementing referrer policy support
+  // (https://w3c.github.io/webappsec/specs/referrer-policy/).
+  //
+  // REDUCE_REFERRER_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN is a slight variant
+  // on CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE: If the request
+  // downgrades from HTTPS to HTTP, the referrer will be cleared. If the request
+  // transitions cross-origin (but does not downgrade), the referrer's
+  // granularity will be reduced (currently stripped down to an origin rather
+  // than a full URL). Same-origin requests will send the full referrer.
   enum ReferrerPolicy {
     CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+    REDUCE_REFERRER_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN,
+    ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN,
     NEVER_CLEAR_REFERRER,
   };
 
@@ -118,58 +112,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   enum FirstPartyURLPolicy {
     NEVER_CHANGE_FIRST_PARTY_URL,
     UPDATE_FIRST_PARTY_URL_ON_REDIRECT,
-  };
-
-  // This class handles network interception.  Use with
-  // (Un)RegisterRequestInterceptor.
-  class NET_EXPORT Interceptor {
-   public:
-    virtual ~Interceptor() {}
-
-    // Called for every request made.  Should return a new job to handle the
-    // request if it should be intercepted, or NULL to allow the request to
-    // be handled in the normal manner.
-    virtual URLRequestJob* MaybeIntercept(
-        URLRequest* request, NetworkDelegate* network_delegate) = 0;
-
-    // Called after having received a redirect response, but prior to the
-    // the request delegate being informed of the redirect. Can return a new
-    // job to replace the existing job if it should be intercepted, or NULL
-    // to allow the normal handling to continue. If a new job is provided,
-    // the delegate never sees the original redirect response, instead the
-    // response produced by the intercept job will be returned.
-    virtual URLRequestJob* MaybeInterceptRedirect(
-        URLRequest* request,
-        NetworkDelegate* network_delegate,
-        const GURL& location);
-
-    // Called after having received a final response, but prior to the
-    // the request delegate being informed of the response. This is also
-    // called when there is no server response at all to allow interception
-    // on dns or network errors. Can return a new job to replace the existing
-    // job if it should be intercepted, or NULL to allow the normal handling to
-    // continue. If a new job is provided, the delegate never sees the original
-    // response, instead the response produced by the intercept job will be
-    // returned.
-    virtual URLRequestJob* MaybeInterceptResponse(
-        URLRequest* request, NetworkDelegate* network_delegate);
-  };
-
-  // Deprecated interfaces in net::URLRequest. They have been moved to
-  // URLRequest's private section to prevent new uses. Existing uses are
-  // explicitly friended here and should be removed over time.
-  class NET_EXPORT Deprecated {
-   private:
-    // TODO(willchan): Kill off these friend declarations.
-    friend class TestInterceptor;
-    friend class content::AppCacheInterceptor;
-
-    // TODO(pauljensen): Remove this when AppCacheInterceptor is a
-    // ProtocolHandler, see crbug.com/161547.
-    static void RegisterRequestInterceptor(Interceptor* interceptor);
-    static void UnregisterRequestInterceptor(Interceptor* interceptor);
-
-    DISALLOW_IMPLICIT_CONSTRUCTORS(Deprecated);
   };
 
   // The delegate's methods are called from the message loop of the thread
@@ -339,12 +281,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   const std::string& method() const { return method_; }
   void set_method(const std::string& method);
 
-  // Determines the new method of the request afer following a redirect.
-  // |method| is the method used to arrive at the redirect,
-  // |http_status_code| is the status code associated with the redirect.
-  static std::string ComputeMethodForRedirect(const std::string& method,
-                                              int http_status_code);
-
   // The referrer URL for the request.  This header may actually be suppressed
   // from the underlying network request for security reasons (e.g., a HTTPS
   // URL will not be sent as the referrer for a HTTP request).  The referrer
@@ -367,10 +303,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void EnableChunkedUpload();
 
   // Appends the given bytes to the request's upload data to be sent
-  // immediately via chunked transfer encoding. When all data has been sent,
-  // call MarkEndOfChunks() to indicate the end of upload data.
+  // immediately via chunked transfer encoding. When all data has been added,
+  // set |is_last_chunk| to true to indicate the end of upload data.  All chunks
+  // but the last must have |bytes_len| > 0.
   //
   // This method may be called only after calling EnableChunkedUpload().
+  //
+  // Despite the name of this method, over-the-wire chunk boundaries will most
+  // likely not match the "chunks" appended with this function.
   void AppendChunkToUpload(const char* bytes,
                            int bytes_len,
                            bool is_last_chunk);
@@ -384,11 +324,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns true if the request has a non-empty message body to upload.
   bool has_upload() const;
 
-  // Set an extra request header by ID or name, or remove one by name.  These
-  // methods may only be called before Start() is called, or before a new
-  // redirect in the request chain.
-  void SetExtraRequestHeaderById(int header_id, const std::string& value,
-                                 bool overwrite);
+  // Set or remove a extra request header.  These methods may only be called
+  // before Start() is called, or between receiving a redirect and trying to
+  // follow it.
   void SetExtraRequestHeaderByName(const std::string& name,
                                    const std::string& value, bool overwrite);
   void RemoveRequestHeaderByName(const std::string& name);
@@ -427,8 +365,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   LoadStateWithParam GetLoadState() const;
 
   // Returns a partial representation of the request's state as a value, for
-  // debugging.  Caller takes ownership of returned value.
-  base::Value* GetStateAsValue() const;
+  // debugging.
+  scoped_ptr<base::Value> GetStateAsValue() const;
 
   // Logs information about the what external object currently blocking the
   // request.  LogUnblocked must be called before resuming the request.  This
@@ -451,18 +389,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // chunked, size is set to zero, but position will not be.
   UploadProgress GetUploadProgress() const;
 
-  // Get response header(s) by ID or name.  These methods may only be called
+  // Get response header(s) by name.  This method may only be called
   // once the delegate's OnResponseStarted method has been called.  Headers
   // that appear more than once in the response are coalesced, with values
   // separated by commas (per RFC 2616). This will not work with cookies since
   // comma can be used in cookie values.
-  // TODO(darin): add API to enumerate response headers.
-  void GetResponseHeaderById(int header_id, std::string* value);
   void GetResponseHeaderByName(const std::string& name, std::string* value);
-
-  // Get all response headers, \n-delimited and \n\0-terminated.  This includes
-  // the response status line.  Restrictions on GetResponseHeaders apply.
-  void GetAllResponseHeaders(std::string* headers);
 
   // The time when |this| was constructed.
   base::TimeTicks creation_time() const { return creation_time_; }
@@ -677,14 +609,17 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     return proxy_server_;
   }
 
+  // Gets the connection attempts made in the process of servicing this
+  // URLRequest. Only guaranteed to be valid if called after the request fails
+  // or after the response headers are received.
+  void GetConnectionAttempts(ConnectionAttempts* out) const;
+
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
   void set_is_pending(bool value) { is_pending_ = value; }
 
   // Allow the URLRequestJob class to set our status too
   void set_status(const URLRequestStatus& value) { status_ = value; }
-
-  CookieStore* cookie_store() const { return cookie_store_.get(); }
 
   // Allow the URLRequestJob to redirect this request.  Returns OK if
   // successful, otherwise an error code is returned.
@@ -708,18 +643,13 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // URLRequests are always created by calling URLRequestContext::CreateRequest.
   //
-  // If no cookie store or network delegate are passed in, will use the ones
-  // from the URLRequestContext.
+  // If no network delegate is passed in, will use the ones from the
+  // URLRequestContext.
   URLRequest(const GURL& url,
              RequestPriority priority,
              Delegate* delegate,
              const URLRequestContext* context,
-             CookieStore* cookie_store,
              NetworkDelegate* network_delegate);
-
-  // Registers or unregisters a network interception class.
-  static void RegisterRequestInterceptor(Interceptor* interceptor);
-  static void UnregisterRequestInterceptor(Interceptor* interceptor);
 
   // Resumes or blocks a request paused by the NetworkDelegate::OnBeforeRequest
   // handler. If |blocked| is true, the request is blocked and an error page is
@@ -890,9 +820,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Keeps track of whether or not OnBeforeNetworkStart has been called yet.
   bool notified_before_network_start_;
-
-  // The cookie store to be used for this request.
-  scoped_refptr<CookieStore> cookie_store_;
 
   // The proxy server used for this request, if any.
   HostPortPair proxy_server_;

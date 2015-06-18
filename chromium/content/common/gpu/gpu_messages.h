@@ -10,6 +10,7 @@
 
 #include "base/memory/shared_memory.h"
 #include "content/common/content_export.h"
+#include "content/common/content_param_traits.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/gpu/gpu_result_codes.h"
@@ -20,6 +21,7 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/command_buffer/common/value_state.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_channel_handle.h"
@@ -28,9 +30,9 @@
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
 
 #if defined(OS_ANDROID)
@@ -52,6 +54,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(gfx::SurfaceType,
                           gfx::SURFACE_TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(gpu::MemoryAllocation::PriorityCutoff,
                           gpu::MemoryAllocation::CUTOFF_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(gpu::error::Error, gpu::error::kErrorLast)
 IPC_ENUM_TRAITS_MAX_VALUE(gpu::error::ContextLostReason,
                           gpu::error::kContextLostReasonLast)
 IPC_ENUM_TRAITS_MAX_VALUE(media::VideoEncodeAccelerator::Error,
@@ -76,12 +79,12 @@ IPC_STRUCT_BEGIN(GPUCreateCommandBufferConfig)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(GpuMsg_CreateGpuMemoryBuffer_Params)
-  IPC_STRUCT_MEMBER(gfx::GpuMemoryBufferType, type)
   IPC_STRUCT_MEMBER(int32, id)
   IPC_STRUCT_MEMBER(gfx::Size, size)
   IPC_STRUCT_MEMBER(gfx::GpuMemoryBuffer::Format, format)
   IPC_STRUCT_MEMBER(gfx::GpuMemoryBuffer::Usage, usage)
   IPC_STRUCT_MEMBER(int32, client_id)
+  IPC_STRUCT_MEMBER(gfx::PluginWindowHandle, surface_handle)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params)
@@ -136,18 +139,18 @@ IPC_STRUCT_END()
   IPC_STRUCT_TRAITS_MEMBER(children)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(gpu::GpuPerformanceStats)
-  IPC_STRUCT_TRAITS_MEMBER(graphics)
-  IPC_STRUCT_TRAITS_MEMBER(gaming)
-  IPC_STRUCT_TRAITS_MEMBER(overall)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo::GPUDevice)
   IPC_STRUCT_TRAITS_MEMBER(vendor_id)
   IPC_STRUCT_TRAITS_MEMBER(device_id)
   IPC_STRUCT_TRAITS_MEMBER(active)
   IPC_STRUCT_TRAITS_MEMBER(vendor_string)
   IPC_STRUCT_TRAITS_MEMBER(device_string)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(gpu::VideoDecodeAcceleratorSupportedProfile)
+  IPC_STRUCT_TRAITS_MEMBER(profile)
+  IPC_STRUCT_TRAITS_MEMBER(max_resolution)
+  IPC_STRUCT_TRAITS_MEMBER(min_resolution)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(gpu::VideoEncodeAcceleratorSupportedProfile)
@@ -170,6 +173,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(driver_date)
   IPC_STRUCT_TRAITS_MEMBER(pixel_shader_version)
   IPC_STRUCT_TRAITS_MEMBER(vertex_shader_version)
+  IPC_STRUCT_TRAITS_MEMBER(max_msaa_samples)
   IPC_STRUCT_TRAITS_MEMBER(machine_model_name)
   IPC_STRUCT_TRAITS_MEMBER(machine_model_version)
   IPC_STRUCT_TRAITS_MEMBER(gl_version)
@@ -181,7 +185,6 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(gl_ws_extensions)
   IPC_STRUCT_TRAITS_MEMBER(gl_reset_notification_strategy)
   IPC_STRUCT_TRAITS_MEMBER(can_lose_context)
-  IPC_STRUCT_TRAITS_MEMBER(performance_stats)
   IPC_STRUCT_TRAITS_MEMBER(software_rendering)
   IPC_STRUCT_TRAITS_MEMBER(direct_rendering)
   IPC_STRUCT_TRAITS_MEMBER(sandboxed)
@@ -192,6 +195,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(dx_diagnostics_info_state)
   IPC_STRUCT_TRAITS_MEMBER(dx_diagnostics)
 #endif
+  IPC_STRUCT_TRAITS_MEMBER(video_decode_accelerator_supported_profiles)
   IPC_STRUCT_TRAITS_MEMBER(video_encode_accelerator_supported_profiles)
 IPC_STRUCT_TRAITS_END()
 
@@ -263,8 +267,7 @@ IPC_MESSAGE_CONTROL1(GpuMsg_CreateGpuMemoryBuffer,
                      GpuMsg_CreateGpuMemoryBuffer_Params)
 
 // Tells the GPU process to destroy buffer.
-IPC_MESSAGE_CONTROL4(GpuMsg_DestroyGpuMemoryBuffer,
-                     gfx::GpuMemoryBufferType, /* type */
+IPC_MESSAGE_CONTROL3(GpuMsg_DestroyGpuMemoryBuffer,
                      gfx::GpuMemoryBufferId, /* id */
                      int32, /* client_id */
                      int32 /* sync_point */)
@@ -300,6 +303,17 @@ IPC_MESSAGE_CONTROL0(GpuMsg_DisableWatchdog)
 
 // Tells the GPU process that the browser has seen a GPU switch.
 IPC_MESSAGE_CONTROL0(GpuMsg_GpuSwitched)
+
+// Tells the GPU process to delete the default_offscreen surface. It will also
+// close the display and any other resources when the last GL surface is
+// deleted. GPU process will respond with GphHosMsg_ResourcesRelinquished.
+IPC_MESSAGE_CONTROL0(GpuMsg_RelinquishResources)
+
+// Sends an input event to the gpu service.
+IPC_MESSAGE_CONTROL3(GpuMsg_UpdateValueState,
+                     int, /* client_id */
+                     unsigned int, /* target */
+                     gpu::ValueState /* valuestate */)
 
 //------------------------------------------------------------------------------
 // GPU Host Messages
@@ -381,12 +395,6 @@ IPC_MESSAGE_CONTROL2(GpuHostMsg_AcceleratedSurfaceInitialized,
 IPC_MESSAGE_CONTROL1(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
                      GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params)
 
-// Tells the browser about updated parameters for vsync alignment.
-IPC_MESSAGE_CONTROL3(GpuHostMsg_UpdateVSyncParameters,
-                     int32 /* surface_id */,
-                     base::TimeTicks /* timebase */,
-                     base::TimeDelta /* interval */)
-
 IPC_MESSAGE_CONTROL1(GpuHostMsg_DidCreateOffscreenContext,
                      GURL /* url */)
 
@@ -401,6 +409,21 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_DidDestroyOffscreenContext,
 // Tells the browser about GPU memory usage statistics for UMA logging.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_GpuMemoryUmaStats,
                      content::GPUMemoryUmaStats /* GPU memory UMA stats */)
+
+// Response to GpuMsg_RelinquishResources.
+IPC_MESSAGE_CONTROL0(GpuHostMsg_ResourcesRelinquished)
+
+// Tells the browser that a context has subscribed to a new target and
+// the browser should start sending the corresponding information
+IPC_MESSAGE_CONTROL2(GpuHostMsg_AddSubscription,
+                     int32 /* client_id */,
+                     unsigned int /* target */)
+
+// Tells the browser that no contexts are subscribed to the target anymore
+// so the browser should stop sending the corresponding information
+IPC_MESSAGE_CONTROL2(GpuHostMsg_RemoveSubscription,
+                     int32 /* client_id */,
+                     unsigned int /* target */)
 
 //------------------------------------------------------------------------------
 // GPU Channel Messages
@@ -419,15 +442,6 @@ IPC_SYNC_MESSAGE_CONTROL3_1(GpuChannelMsg_CreateOffscreenCommandBuffer,
 // object that it's hosting.
 IPC_SYNC_MESSAGE_CONTROL1_0(GpuChannelMsg_DestroyCommandBuffer,
                             int32 /* instance_id */)
-
-// Sent by DevTools agent in the inspected renderer process to initiate GPU
-// instrumentation events recording.
-IPC_SYNC_MESSAGE_CONTROL1_1(GpuChannelMsg_DevToolsStartEventsRecording,
-                            int32, /* route_id */
-                            bool /* succeeded */)
-
-// The message is sent when DevTools want to stop events recording.
-IPC_MESSAGE_CONTROL0(GpuChannelMsg_DevToolsStopEventsRecording)
 
 #if defined(OS_ANDROID)
 //------------------------------------------------------------------------------
@@ -539,12 +553,18 @@ IPC_SYNC_MESSAGE_ROUTED5_1(GpuCommandBufferMsg_CreateVideoEncoder,
 
 // Tells the proxy that there was an error and the command buffer had to be
 // destroyed for some reason.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_Destroyed,
-                    gpu::error::ContextLostReason /* reason */)
+IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_Destroyed,
+                    gpu::error::ContextLostReason, /* reason */
+                    gpu::error::Error /* error */)
 
 // Tells the browser that SwapBuffers returned and passes latency info
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SwapBuffersCompleted,
                     std::vector<ui::LatencyInfo> /* latency_info */)
+
+// Tells the browser about updated parameters for vsync alignment.
+IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_UpdateVSyncParameters,
+                    base::TimeTicks /* timebase */,
+                    base::TimeDelta /* interval */)
 
 // Send to stub on surface visibility change.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetSurfaceVisible, bool /* visible */)
@@ -661,10 +681,11 @@ IPC_MESSAGE_ROUTED1(AcceleratedVideoDecoderHostMsg_DismissPictureBuffer,
                     int32) /* Picture buffer ID */
 
 // Decoder reports that a picture is ready.
-IPC_MESSAGE_ROUTED3(AcceleratedVideoDecoderHostMsg_PictureReady,
+IPC_MESSAGE_ROUTED4(AcceleratedVideoDecoderHostMsg_PictureReady,
                     int32,     /* Picture buffer ID */
                     int32,     /* Bitstream buffer ID */
-                    gfx::Rect) /* Visible rectangle */
+                    gfx::Rect, /* Visible rectangle */
+                    bool)      /* Buffer is HW overlay capable */
 
 // Confirm decoder has been flushed.
 IPC_MESSAGE_ROUTED0(AcceleratedVideoDecoderHostMsg_FlushDone)
@@ -681,10 +702,11 @@ IPC_MESSAGE_ROUTED1(AcceleratedVideoDecoderHostMsg_ErrorNotification,
 // These messages are sent from the Renderer process to GPU process.
 
 // Queue a input buffer to the encoder to encode. |frame_id| will be returned by
-// AcceleratedVideoEncoderHostMsg_NotifyEncodeDone.
-IPC_MESSAGE_ROUTED4(AcceleratedVideoEncoderMsg_Encode,
+// AcceleratedVideoEncoderHostMsg_NotifyInputDone.
+IPC_MESSAGE_ROUTED5(AcceleratedVideoEncoderMsg_Encode,
                     int32 /* frame_id */,
                     base::SharedMemoryHandle /* buffer_handle */,
+                    uint32 /* buffer_offset */,
                     uint32 /* buffer_size */,
                     bool /* force_keyframe */)
 

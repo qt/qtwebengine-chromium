@@ -11,6 +11,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
+#include <stdint.h>
 
 namespace blink {
 
@@ -35,7 +36,7 @@ public:
     {
         m_impl->didReceiveTextMessage(payload);
     }
-    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char> > payload) override
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>> payload) override
     {
         m_impl->didReceiveBinaryMessage(payload);
     }
@@ -43,7 +44,7 @@ public:
     {
         m_impl->didError();
     }
-    virtual void didConsumeBufferedAmount(unsigned long consumed) override
+    virtual void didConsumeBufferedAmount(uint64_t consumed) override
     {
         m_impl->didConsumeBufferedAmount(consumed);
     }
@@ -56,6 +57,11 @@ public:
         WebSocketImpl* impl = m_impl;
         m_impl = nullptr;
         impl->didClose(status, code, reason);
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        WebSocketChannelClient::trace(visitor);
     }
 
 private:

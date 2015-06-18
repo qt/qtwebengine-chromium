@@ -24,9 +24,11 @@
 #define SimpleShaper_h
 
 #include "platform/PlatformExport.h"
+#include "platform/fonts/shaping/Shaper.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
 #include "platform/text/TextRun.h"
 #include "wtf/HashSet.h"
-#include "wtf/Vector.h"
 #include "wtf/unicode/Unicode.h"
 
 namespace blink {
@@ -37,25 +39,11 @@ class SimpleFontData;
 class TextRun;
 struct GlyphData;
 
-struct PLATFORM_EXPORT SimpleShaper {
-    WTF_MAKE_FAST_ALLOCATED;
+struct PLATFORM_EXPORT SimpleShaper : public Shaper {
+    WTF_MAKE_FAST_ALLOCATED(SimpleShaper);
 public:
-    class GlyphBounds {
-    public:
-        GlyphBounds()
-        {
-            maxGlyphBoundingBoxY = std::numeric_limits<float>::min();
-            minGlyphBoundingBoxY = std::numeric_limits<float>::max();
-            firstGlyphOverflow = 0;
-            lastGlyphOverflow = 0;
-        }
-        float maxGlyphBoundingBoxY;
-        float minGlyphBoundingBoxY;
-        float firstGlyphOverflow;
-        float lastGlyphOverflow;
-    };
-
-    SimpleShaper(const Font*, const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphBounds* = 0, bool forTextEmphasis = false);
+    SimpleShaper(const Font*, const TextRun&, const GlyphData* emphasisData = nullptr,
+        HashSet<const SimpleFontData*>* fallbackFonts = nullptr, FloatRect* = nullptr);
 
     unsigned advance(unsigned to, GlyphBuffer* = 0);
     bool advanceOneCharacter(float& width);
@@ -65,13 +53,8 @@ public:
     unsigned currentOffset() { return m_currentCharacter; }
 
 private:
-    const Font* m_font;
-    const TextRun& m_run;
     unsigned m_currentCharacter;
     float m_runWidthSoFar;
-    float m_expansion;
-    float m_expansionPerOpportunity;
-    bool m_isAfterExpansion;
 
     struct CharacterData {
         UChar32 character;
@@ -81,16 +64,10 @@ private:
 
     GlyphData glyphDataForCharacter(CharacterData&, bool normalizeSpace = false);
     float characterWidth(UChar32, const GlyphData&) const;
-    void cacheFallbackFont(const SimpleFontData*, const SimpleFontData* primaryFont);
-    float adjustSpacing(float, const CharacterData&, const SimpleFontData&, GlyphBuffer*);
-    void updateGlyphBounds(const GlyphData&, float width, bool firstCharacter);
+    float adjustSpacing(float, const CharacterData&);
 
     template <typename TextIterator>
     unsigned advanceInternal(TextIterator&, GlyphBuffer*);
-
-    HashSet<const SimpleFontData*>* m_fallbackFonts;
-    GlyphBounds* m_bounds;
-    bool m_forTextEmphasis : 1;
 };
 
 } // namespace blink

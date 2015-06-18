@@ -53,7 +53,7 @@ class GpuDataManager {
   // process, establish GPU channel, and GPU info collection, should be
   // blocked.
   // Can be called on any thread.
-  // If |reason| is not NULL and GPU access is blocked, upon return, |reason|
+  // If |reason| is not nullptr and GPU access is blocked, upon return, |reason|
   // contains a description of the reason why GPU access is blocked.
   virtual bool GpuAccessAllowed(std::string* reason) const = 0;
 
@@ -109,6 +109,10 @@ class GpuDataManager {
 
   // Whether the browser compositor can be used.
   virtual bool CanUseGpuBrowserCompositor() const = 0;
+
+  // Extensions that are currently disabled.
+  virtual void GetDisabledExtensions(
+      std::string* disabled_extensions) const = 0;
 
  protected:
   virtual ~GpuDataManager() {}

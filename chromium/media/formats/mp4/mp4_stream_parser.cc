@@ -4,7 +4,6 @@
 
 #include "media/formats/mp4/mp4_stream_parser.h"
 
-#include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/time/time.h"
@@ -21,8 +20,6 @@
 
 namespace media {
 namespace mp4 {
-
-static const char kCencInitDataType[] = "cenc";
 
 MP4StreamParser::MP4StreamParser(const std::set<int>& audio_object_types,
                                  bool has_sbr)
@@ -42,27 +39,28 @@ MP4StreamParser::MP4StreamParser(const std::set<int>& audio_object_types,
 
 MP4StreamParser::~MP4StreamParser() {}
 
-void MP4StreamParser::Init(const InitCB& init_cb,
-                           const NewConfigCB& config_cb,
-                           const NewBuffersCB& new_buffers_cb,
-                           bool /* ignore_text_tracks */ ,
-                           const NeedKeyCB& need_key_cb,
-                           const NewMediaSegmentCB& new_segment_cb,
-                           const base::Closure& end_of_segment_cb,
-                           const LogCB& log_cb) {
+void MP4StreamParser::Init(
+    const InitCB& init_cb,
+    const NewConfigCB& config_cb,
+    const NewBuffersCB& new_buffers_cb,
+    bool /* ignore_text_tracks */,
+    const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
+    const NewMediaSegmentCB& new_segment_cb,
+    const base::Closure& end_of_segment_cb,
+    const LogCB& log_cb) {
   DCHECK_EQ(state_, kWaitingForInit);
   DCHECK(init_cb_.is_null());
   DCHECK(!init_cb.is_null());
   DCHECK(!config_cb.is_null());
   DCHECK(!new_buffers_cb.is_null());
-  DCHECK(!need_key_cb.is_null());
+  DCHECK(!encrypted_media_init_data_cb.is_null());
   DCHECK(!end_of_segment_cb.is_null());
 
   ChangeState(kParsingBoxes);
   init_cb_ = init_cb;
   config_cb_ = config_cb;
   new_buffers_cb_ = new_buffers_cb;
-  need_key_cb_ = need_key_cb;
+  encrypted_media_init_data_cb_ = encrypted_media_init_data_cb;
   new_segment_cb_ = new_segment_cb;
   end_of_segment_cb_ = end_of_segment_cb;
   log_cb_ = log_cb;
@@ -161,8 +159,8 @@ bool MP4StreamParser::ParseBox(bool* err) {
     // before the head of the 'moof', so keeping this box around is sufficient.)
     return !(*err);
   } else {
-    MEDIA_LOG(log_cb_) << "Skipping unrecognized top-level box: "
-                       << FourCCToString(reader->type());
+    MEDIA_LOG(DEBUG, log_cb_) << "Skipping unrecognized top-level box: "
+                              << FourCCToString(reader->type());
   }
 
   queue_.Pop(reader->size());
@@ -216,17 +214,18 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
       if (!(entry.format == FOURCC_MP4A ||
             (entry.format == FOURCC_ENCA &&
              entry.sinf.format.format == FOURCC_MP4A))) {
-        MEDIA_LOG(log_cb_) << "Unsupported audio format 0x"
-                           << std::hex << entry.format << " in stsd box.";
+        MEDIA_LOG(ERROR, log_cb_) << "Unsupported audio format 0x" << std::hex
+                                  << entry.format << " in stsd box.";
         return false;
       }
 
       uint8 audio_type = entry.esds.object_type;
       DVLOG(1) << "audio_type " << std::hex << static_cast<int>(audio_type);
       if (audio_object_types_.find(audio_type) == audio_object_types_.end()) {
-        MEDIA_LOG(log_cb_) << "audio object type 0x" << std::hex << audio_type
-                           << " does not match what is specified in the"
-                           << " mimetype.";
+        MEDIA_LOG(ERROR, log_cb_) << "audio object type 0x" << std::hex
+                                  << audio_type
+                                  << " does not match what is specified in the"
+                                  << " mimetype.";
         return false;
       }
 
@@ -244,8 +243,8 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
         extra_data = aac.codec_specific_data();
 #endif
       } else {
-        MEDIA_LOG(log_cb_) << "Unsupported audio object type 0x" << std::hex
-                           << audio_type << " in esds.";
+        MEDIA_LOG(ERROR, log_cb_) << "Unsupported audio object type 0x"
+                                  << std::hex << audio_type << " in esds.";
         return false;
       }
 
@@ -278,8 +277,8 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
       const VideoSampleEntry& entry = samp_descr.video_entries[desc_idx];
 
       if (!entry.IsFormatValid()) {
-        MEDIA_LOG(log_cb_) << "Unsupported video format 0x"
-                           << std::hex << entry.format << " in stsd box.";
+        MEDIA_LOG(ERROR, log_cb_) << "Unsupported video format 0x" << std::hex
+                                  << entry.format << " in stsd box.";
         return false;
       }
 
@@ -314,9 +313,11 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
   }
 
   if (!init_cb_.is_null())
-    base::ResetAndReturn(&init_cb_).Run(true, params);
+    base::ResetAndReturn(&init_cb_).Run(params);
 
-  EmitNeedKeyIfNecessary(moov_->pssh);
+  if (!moov_->pssh.empty())
+    OnEncryptedMediaInitData(moov_->pssh);
+
   return true;
 }
 
@@ -328,20 +329,20 @@ bool MP4StreamParser::ParseMoof(BoxReader* reader) {
     runs_.reset(new TrackRunIterator(moov_.get(), log_cb_));
   RCHECK(runs_->Init(moof));
   RCHECK(ComputeHighestEndOffset(moof));
-  EmitNeedKeyIfNecessary(moof.pssh);
+
+  if (!moof.pssh.empty())
+    OnEncryptedMediaInitData(moof.pssh);
+
   new_segment_cb_.Run();
   ChangeState(kWaitingForSampleData);
   return true;
 }
 
-void MP4StreamParser::EmitNeedKeyIfNecessary(
+void MP4StreamParser::OnEncryptedMediaInitData(
     const std::vector<ProtectionSystemSpecificHeader>& headers) {
   // TODO(strobe): ensure that the value of init_data (all PSSH headers
   // concatenated in arbitrary order) matches the EME spec.
   // See https://www.w3.org/Bugs/Public/show_bug.cgi?id=17673.
-  if (headers.empty())
-    return;
-
   size_t total_size = 0;
   for (size_t i = 0; i < headers.size(); i++)
     total_size += headers[i].raw_box.size();
@@ -353,7 +354,7 @@ void MP4StreamParser::EmitNeedKeyIfNecessary(
            headers[i].raw_box.size());
     pos += headers[i].raw_box.size();
   }
-  need_key_cb_.Run(kCencInitDataType, init_data);
+  encrypted_media_init_data_cb_.Run(EmeInitDataType::CENC, init_data);
 }
 
 bool MP4StreamParser::PrepareAVCBuffer(
@@ -395,10 +396,8 @@ bool MP4StreamParser::PrepareAACBuffer(
   // As above, adjust subsample information to account for the headers. AAC is
   // not required to use subsample encryption, so we may need to add an entry.
   if (subsamples->empty()) {
-    SubsampleEntry entry;
-    entry.clear_bytes = kADTSHeaderMinSize;
-    entry.cypher_bytes = frame_buf->size() - kADTSHeaderMinSize;
-    subsamples->push_back(entry);
+    subsamples->push_back(SubsampleEntry(
+        kADTSHeaderMinSize, frame_buf->size() - kADTSHeaderMinSize));
   } else {
     (*subsamples)[0].clear_bytes += kADTSHeaderMinSize;
   }
@@ -480,7 +479,7 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
   if (video) {
     if (!PrepareAVCBuffer(runs_->video_description().avcc,
                           &frame_buf, &subsamples)) {
-      MEDIA_LOG(log_cb_) << "Failed to prepare AVC sample for decode";
+      MEDIA_LOG(ERROR, log_cb_) << "Failed to prepare AVC sample for decode";
       *err = true;
       return false;
     }
@@ -490,7 +489,7 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
     if (ESDescriptor::IsAAC(runs_->audio_description().esds.object_type) &&
         !PrepareAACBuffer(runs_->audio_description().esds.aac,
                           &frame_buf, &subsamples)) {
-      MEDIA_LOG(log_cb_) << "Failed to prepare AAC sample for decode";
+      MEDIA_LOG(ERROR, log_cb_) << "Failed to prepare AAC sample for decode";
       *err = true;
       return false;
     }
@@ -581,8 +580,8 @@ bool MP4StreamParser::ReadAndDiscardMDATsUntil(int64 max_clear_offset) {
       break;
 
     if (type != FOURCC_MDAT) {
-      MEDIA_LOG(log_cb_) << "Unexpected box type while parsing MDATs: "
-                         << FourCCToString(type);
+      MEDIA_LOG(DEBUG, log_cb_) << "Unexpected box type while parsing MDATs: "
+                                << FourCCToString(type);
     }
     mdat_tail_ += box_sz;
   }

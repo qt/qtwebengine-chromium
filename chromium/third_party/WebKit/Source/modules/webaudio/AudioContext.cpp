@@ -23,17 +23,18 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioContext.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/inspector/ScriptCallStack.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/webaudio/AnalyserNode.h"
 #include "modules/webaudio/AudioBuffer.h"
@@ -60,11 +61,10 @@
 #include "modules/webaudio/PannerNode.h"
 #include "modules/webaudio/PeriodicWave.h"
 #include "modules/webaudio/ScriptProcessorNode.h"
+#include "modules/webaudio/StereoPannerNode.h"
 #include "modules/webaudio/WaveShaperNode.h"
-#include "platform/audio/FFTFrame.h"
-#include "platform/audio/HRTFPanner.h"
-#include "wtf/Atomics.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/ThreadSafeFunctional.h"
+#include "public/platform/Platform.h"
 #include "wtf/text/WTFString.h"
 
 #if DEBUG_AUDIONODE_REFERENCES
@@ -76,15 +76,19 @@ namespace blink {
 // Don't allow more than this number of simultaneous AudioContexts talking to hardware.
 const unsigned MaxHardwareContexts = 6;
 unsigned AudioContext::s_hardwareContextCount = 0;
+unsigned AudioContext::s_contextId = 0;
 
 AudioContext* AudioContext::create(Document& document, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     if (s_hardwareContextCount >= MaxHardwareContexts) {
         exceptionState.throwDOMException(
-            SyntaxError,
-            "number of hardware contexts reached maximum (" + String::number(MaxHardwareContexts) + ").");
-        return 0;
+            NotSupportedError,
+            ExceptionMessages::indexExceedsMaximumBound(
+                "number of hardware contexts",
+                s_hardwareContextCount,
+                MaxHardwareContexts));
+        return nullptr;
     }
 
     AudioContext* audioContext = new AudioContext(&document);
@@ -99,18 +103,18 @@ AudioContext::AudioContext(Document* document)
     , m_isCleared(false)
     , m_isInitialized(false)
     , m_destinationNode(nullptr)
-    , m_automaticPullNodesNeedUpdating(false)
+    , m_isResolvingResumePromises(false)
     , m_connectionCount(0)
-    , m_audioThread(0)
+    , m_didInitializeContextGraphMutex(false)
+    , m_deferredTaskHandler(DeferredTaskHandler::create())
     , m_isOfflineContext(false)
+    , m_contextState(Suspended)
+    , m_cachedSampleFrame(0)
 {
-    m_referencedNodes = new HeapVector<Member<AudioNode>>();
+    m_didInitializeContextGraphMutex = true;
     m_destinationNode = DefaultAudioDestinationNode::create(this);
 
     initialize();
-#if DEBUG_AUDIONODE_REFERENCES
-    fprintf(stderr, "%p: AudioContext::AudioContext() #%u\n", this, AudioContext::s_hardwareContextCount);
-#endif
 }
 
 // Constructor for offline (non-realtime) rendering.
@@ -120,12 +124,15 @@ AudioContext::AudioContext(Document* document, unsigned numberOfChannels, size_t
     , m_isCleared(false)
     , m_isInitialized(false)
     , m_destinationNode(nullptr)
-    , m_automaticPullNodesNeedUpdating(false)
+    , m_isResolvingResumePromises(false)
     , m_connectionCount(0)
-    , m_audioThread(0)
+    , m_didInitializeContextGraphMutex(false)
+    , m_deferredTaskHandler(DeferredTaskHandler::create())
     , m_isOfflineContext(true)
+    , m_contextState(Suspended)
+    , m_cachedSampleFrame(0)
 {
-    m_referencedNodes = new HeapVector<Member<AudioNode>>();
+    m_didInitializeContextGraphMutex = true;
     // Create a new destination for offline rendering.
     m_renderTarget = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate);
     if (m_renderTarget.get())
@@ -137,15 +144,16 @@ AudioContext::AudioContext(Document* document, unsigned numberOfChannels, size_t
 AudioContext::~AudioContext()
 {
 #if DEBUG_AUDIONODE_REFERENCES
-    fprintf(stderr, "%p: AudioContext::~AudioContext()\n", this);
+    fprintf(stderr, "%p: AudioContext::~AudioContext(): %u\n", this, m_contextId);
 #endif
+    deferredTaskHandler().contextWillBeDestroyed();
     // AudioNodes keep a reference to their context, so there should be no way to be in the destructor if there are still AudioNodes around.
     ASSERT(!m_isInitialized);
-    ASSERT(!m_finishedNodes.size());
-    ASSERT(!m_automaticPullNodes.size());
-    if (m_automaticPullNodesNeedUpdating)
-        m_renderingAutomaticPullNodes.resize(m_automaticPullNodes.size());
-    ASSERT(!m_renderingAutomaticPullNodes.size());
+    ASSERT(!m_activeSourceNodes.size());
+    ASSERT(!m_finishedSourceHandlers.size());
+    ASSERT(!m_suspendResolvers.size());
+    ASSERT(!m_isResolvingResumePromises);
+    ASSERT(!m_resumeResolvers.size());
 }
 
 void AudioContext::initialize()
@@ -157,27 +165,32 @@ void AudioContext::initialize()
     m_listener = AudioListener::create();
 
     if (m_destinationNode.get()) {
-        m_destinationNode->initialize();
+        m_destinationNode->handler().initialize();
 
         if (!isOfflineContext()) {
             // This starts the audio thread. The destination node's provideInput() method will now be called repeatedly to render audio.
             // Each time provideInput() is called, a portion of the audio stream is rendered. Let's call this time period a "render quantum".
             // NOTE: for now default AudioContext does not need an explicit startRendering() call from JavaScript.
             // We may want to consider requiring it for symmetry with OfflineAudioContext.
-            m_destinationNode->startRendering();
+            startRendering();
             ++s_hardwareContextCount;
         }
 
+        m_contextId = s_contextId++;
         m_isInitialized = true;
+#if DEBUG_AUDIONODE_REFERENCES
+        fprintf(stderr, "%p: AudioContext::AudioContext(): %u #%u\n",
+            this, m_contextId, AudioContext::s_hardwareContextCount);
+#endif
     }
 }
 
 void AudioContext::clear()
 {
-    // We need to run disposers before destructing m_contextGraphMutex.
-    m_liveAudioSummingJunctions.clear();
-    m_liveNodes.clear();
     m_destinationNode.clear();
+    // The audio rendering thread is dead.  Nobody will schedule AudioHandler
+    // deletion.  Let's do it ourselves.
+    deferredTaskHandler().clearHandlersToBeDeleted();
     m_isCleared = true;
 }
 
@@ -188,8 +201,11 @@ void AudioContext::uninitialize()
     if (!isInitialized())
         return;
 
+    m_isInitialized = false;
+
     // This stops the audio thread and all audio rendering.
-    m_destinationNode->uninitialize();
+    if (m_destinationNode)
+        m_destinationNode->handler().uninitialize();
 
     if (!isOfflineContext()) {
         ASSERT(s_hardwareContextCount);
@@ -197,9 +213,23 @@ void AudioContext::uninitialize()
     }
 
     // Get rid of the sources which may still be playing.
-    derefUnfinishedSourceNodes();
+    releaseActiveSourceNodes();
 
-    m_isInitialized = false;
+    // Reject any pending resolvers before we go away.
+    rejectPendingResolvers();
+
+    // For an offline audio context, the completion event will set the state to closed.  For an
+    // online context, we need to do it here.  We only want to set the closed state once.
+    if (!isOfflineContext())
+        setContextState(Closed);
+
+    // Resolve the promise now, if any
+    if (m_closeResolver)
+        m_closeResolver->resolve();
+
+    ASSERT(m_listener);
+    m_listener->waitForHRTFDatabaseLoaderThreadCompletion();
+
     clear();
 }
 
@@ -214,39 +244,57 @@ void AudioContext::stop()
     // of dealing with all of its ActiveDOMObjects at this point. uninitialize() can de-reference other
     // ActiveDOMObjects so let's schedule uninitialize() to be called later.
     // FIXME: see if there's a more direct way to handle this issue.
-    callOnMainThread(bind(&AudioContext::uninitialize, this));
+    Platform::current()->mainThread()->postTask(FROM_HERE, bind(&AudioContext::uninitialize, this));
 }
 
 bool AudioContext::hasPendingActivity() const
 {
-    // According to spec AudioContext must die only after page navigates.
+    // There's no pending activity if the audio context has been cleared.
     return !m_isCleared;
+}
+
+void AudioContext::throwExceptionForClosedState(ExceptionState& exceptionState)
+{
+    exceptionState.throwDOMException(InvalidStateError, "AudioContext has been closed.");
 }
 
 AudioBuffer* AudioContext::createBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
 {
+    // It's ok to call createBuffer, even if the context is closed because the AudioBuffer doesn't
+    // really "belong" to any particular context.
+
     return AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate, exceptionState);
 }
 
 void AudioContext::decodeAudioData(DOMArrayBuffer* audioData, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback, ExceptionState& exceptionState)
 {
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return;
+    }
+
     if (!audioData) {
         exceptionState.throwDOMException(
             SyntaxError,
             "invalid ArrayBuffer for audioData.");
         return;
     }
-    m_audioDecoder.decodeAsync(audioData->buffer(), sampleRate(), successCallback, errorCallback);
+    m_audioDecoder.decodeAsync(audioData, sampleRate(), successCallback, errorCallback);
 }
 
-AudioBufferSourceNode* AudioContext::createBufferSource()
+AudioBufferSourceNode* AudioContext::createBufferSource(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    AudioBufferSourceNode* node = AudioBufferSourceNode::create(this, m_destinationNode->sampleRate());
 
-    // Because this is an AudioScheduledSourceNode, the context keeps a reference until it has finished playing.
-    // When this happens, AudioScheduledSourceNode::finish() calls AudioContext::notifyNodeFinishedProcessing().
-    refNode(node);
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    AudioBufferSourceNode* node = AudioBufferSourceNode::create(*this, sampleRate());
+
+    // Do not add a reference to this source node now. The reference will be added when start() is
+    // called.
 
     return node;
 }
@@ -254,11 +302,17 @@ AudioBufferSourceNode* AudioContext::createBufferSource()
 MediaElementAudioSourceNode* AudioContext::createMediaElementSource(HTMLMediaElement* mediaElement, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
     if (!mediaElement) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "invalid HTMLMedialElement.");
-        return 0;
+        return nullptr;
     }
 
     // First check if this media element already has a source node.
@@ -266,25 +320,31 @@ MediaElementAudioSourceNode* AudioContext::createMediaElementSource(HTMLMediaEle
         exceptionState.throwDOMException(
             InvalidStateError,
             "HTMLMediaElement already connected previously to a different MediaElementSourceNode.");
-        return 0;
+        return nullptr;
     }
 
-    MediaElementAudioSourceNode* node = MediaElementAudioSourceNode::create(this, mediaElement);
+    MediaElementAudioSourceNode* node = MediaElementAudioSourceNode::create(*this, *mediaElement);
 
     mediaElement->setAudioSourceNode(node);
 
-    refNode(node); // context keeps reference until node is disconnected
+    notifySourceNodeStartedProcessing(node); // context keeps reference until node is disconnected
     return node;
 }
 
 MediaStreamAudioSourceNode* AudioContext::createMediaStreamSource(MediaStream* mediaStream, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
     if (!mediaStream) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "invalid MediaStream source");
-        return 0;
+        return nullptr;
     }
 
     MediaStreamTrackVector audioTracks = mediaStream->getAudioTracks();
@@ -292,25 +352,30 @@ MediaStreamAudioSourceNode* AudioContext::createMediaStreamSource(MediaStream* m
         exceptionState.throwDOMException(
             InvalidStateError,
             "MediaStream has no audio track");
-        return 0;
+        return nullptr;
     }
 
     // Use the first audio track in the media stream.
     MediaStreamTrack* audioTrack = audioTracks[0];
     OwnPtr<AudioSourceProvider> provider = audioTrack->createWebAudioSource();
-    MediaStreamAudioSourceNode* node = MediaStreamAudioSourceNode::create(this, mediaStream, audioTrack, provider.release());
+    MediaStreamAudioSourceNode* node = MediaStreamAudioSourceNode::create(*this, *mediaStream, audioTrack, provider.release());
 
     // FIXME: Only stereo streams are supported right now. We should be able to accept multi-channel streams.
     node->setFormat(2, sampleRate());
 
-    refNode(node); // context keeps reference until node is disconnected
+    notifySourceNodeStartedProcessing(node); // context keeps reference until node is disconnected
     return node;
 }
 
-MediaStreamAudioDestinationNode* AudioContext::createMediaStreamDestination()
+MediaStreamAudioDestinationNode* AudioContext::createMediaStreamDestination(ExceptionState& exceptionState)
 {
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
     // Set number of output channels to stereo by default.
-    return MediaStreamAudioDestinationNode::create(this, 2);
+    return MediaStreamAudioDestinationNode::create(*this, 2);
 }
 
 ScriptProcessorNode* AudioContext::createScriptProcessor(ExceptionState& exceptionState)
@@ -334,7 +399,13 @@ ScriptProcessorNode* AudioContext::createScriptProcessor(size_t bufferSize, size
 ScriptProcessorNode* AudioContext::createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, size_t numberOfOutputChannels, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    ScriptProcessorNode* node = ScriptProcessorNode::create(this, m_destinationNode->sampleRate(), bufferSize, numberOfInputChannels, numberOfOutputChannels);
+
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    ScriptProcessorNode* node = ScriptProcessorNode::create(*this, sampleRate(), bufferSize, numberOfInputChannels, numberOfOutputChannels);
 
     if (!node) {
         if (!numberOfInputChannels && !numberOfOutputChannels) {
@@ -359,53 +430,99 @@ ScriptProcessorNode* AudioContext::createScriptProcessor(size_t bufferSize, size
                 "buffer size (" + String::number(bufferSize)
                 + ") must be a power of two between 256 and 16384.");
         }
-        return 0;
+        return nullptr;
     }
 
-    refNode(node); // context keeps reference until we stop making javascript rendering callbacks
+    notifySourceNodeStartedProcessing(node); // context keeps reference until we stop making javascript rendering callbacks
     return node;
 }
 
-BiquadFilterNode* AudioContext::createBiquadFilter()
+StereoPannerNode* AudioContext::createStereoPanner(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return BiquadFilterNode::create(this, m_destinationNode->sampleRate());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return StereoPannerNode::create(*this, sampleRate());
 }
 
-WaveShaperNode* AudioContext::createWaveShaper()
+BiquadFilterNode* AudioContext::createBiquadFilter(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return WaveShaperNode::create(this);
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return BiquadFilterNode::create(*this, sampleRate());
 }
 
-PannerNode* AudioContext::createPanner()
+WaveShaperNode* AudioContext::createWaveShaper(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return PannerNode::create(this, m_destinationNode->sampleRate());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return WaveShaperNode::create(*this);
 }
 
-ConvolverNode* AudioContext::createConvolver()
+PannerNode* AudioContext::createPanner(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return ConvolverNode::create(this, m_destinationNode->sampleRate());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return PannerNode::create(*this, sampleRate());
 }
 
-DynamicsCompressorNode* AudioContext::createDynamicsCompressor()
+ConvolverNode* AudioContext::createConvolver(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return DynamicsCompressorNode::create(this, m_destinationNode->sampleRate());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return ConvolverNode::create(*this, sampleRate());
 }
 
-AnalyserNode* AudioContext::createAnalyser()
+DynamicsCompressorNode* AudioContext::createDynamicsCompressor(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return AnalyserNode::create(this, m_destinationNode->sampleRate());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return DynamicsCompressorNode::create(*this, sampleRate());
 }
 
-GainNode* AudioContext::createGain()
+AnalyserNode* AudioContext::createAnalyser(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    return GainNode::create(this, m_destinationNode->sampleRate());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return AnalyserNode::create(*this, sampleRate());
+}
+
+GainNode* AudioContext::createGain(ExceptionState& exceptionState)
+{
+    ASSERT(isMainThread());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return GainNode::create(*this, sampleRate());
 }
 
 DelayNode* AudioContext::createDelay(ExceptionState& exceptionState)
@@ -417,10 +534,12 @@ DelayNode* AudioContext::createDelay(ExceptionState& exceptionState)
 DelayNode* AudioContext::createDelay(double maxDelayTime, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    DelayNode* node = DelayNode::create(this, m_destinationNode->sampleRate(), maxDelayTime, exceptionState);
-    if (exceptionState.hadException())
-        return 0;
-    return node;
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    return DelayNode::create(*this, sampleRate(), maxDelayTime, exceptionState);
 }
 
 ChannelSplitterNode* AudioContext::createChannelSplitter(ExceptionState& exceptionState)
@@ -433,7 +552,12 @@ ChannelSplitterNode* AudioContext::createChannelSplitter(size_t numberOfOutputs,
 {
     ASSERT(isMainThread());
 
-    ChannelSplitterNode* node = ChannelSplitterNode::create(this, m_destinationNode->sampleRate(), numberOfOutputs);
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
+    ChannelSplitterNode* node = ChannelSplitterNode::create(*this, sampleRate(), numberOfOutputs);
 
     if (!node) {
         exceptionState.throwDOMException(
@@ -441,7 +565,7 @@ ChannelSplitterNode* AudioContext::createChannelSplitter(size_t numberOfOutputs,
             "number of outputs (" + String::number(numberOfOutputs)
             + ") must be between 1 and "
             + String::number(AudioContext::maxNumberOfChannels()) + ".");
-        return 0;
+        return nullptr;
     }
 
     return node;
@@ -456,30 +580,41 @@ ChannelMergerNode* AudioContext::createChannelMerger(ExceptionState& exceptionSt
 ChannelMergerNode* AudioContext::createChannelMerger(size_t numberOfInputs, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
 
-    ChannelMergerNode* node = ChannelMergerNode::create(this, m_destinationNode->sampleRate(), numberOfInputs);
+    ChannelMergerNode* node = ChannelMergerNode::create(*this, sampleRate(), numberOfInputs);
 
     if (!node) {
         exceptionState.throwDOMException(
             IndexSizeError,
-            "number of inputs (" + String::number(numberOfInputs)
-            + ") must be between 1 and "
-            + String::number(AudioContext::maxNumberOfChannels()) + ".");
-        return 0;
+            ExceptionMessages::indexOutsideRange<size_t>(
+                "number of inputs",
+                numberOfInputs,
+                1,
+                ExceptionMessages::InclusiveBound,
+                AudioContext::maxNumberOfChannels(),
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
     }
 
     return node;
 }
 
-OscillatorNode* AudioContext::createOscillator()
+OscillatorNode* AudioContext::createOscillator(ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
 
-    OscillatorNode* node = OscillatorNode::create(this, m_destinationNode->sampleRate());
+    OscillatorNode* node = OscillatorNode::create(*this, sampleRate());
 
-    // Because this is an AudioScheduledSourceNode, the context keeps a reference until it has finished playing.
-    // When this happens, AudioScheduledSourceNode::finish() calls AudioContext::notifyNodeFinishedProcessing().
-    refNode(node);
+    // Do not add a reference to this source node now. The reference will be added when start() is
+    // called.
 
     return node;
 }
@@ -488,18 +623,49 @@ PeriodicWave* AudioContext::createPeriodicWave(DOMFloat32Array* real, DOMFloat32
 {
     ASSERT(isMainThread());
 
+    if (isContextClosed()) {
+        throwExceptionForClosedState(exceptionState);
+        return nullptr;
+    }
+
     if (!real) {
         exceptionState.throwDOMException(
             SyntaxError,
             "invalid real array");
-        return 0;
+        return nullptr;
     }
 
     if (!imag) {
         exceptionState.throwDOMException(
             SyntaxError,
             "invalid imaginary array");
-        return 0;
+        return nullptr;
+    }
+
+    if (real->length() > PeriodicWave::kMaxPeriodicWaveArraySize) {
+        exceptionState.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::indexOutsideRange(
+                "length of the real part array",
+                real->length(),
+                1u,
+                ExceptionMessages::InclusiveBound,
+                PeriodicWave::kMaxPeriodicWaveArraySize,
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
+    }
+
+    if (imag->length() > PeriodicWave::kMaxPeriodicWaveArraySize) {
+        exceptionState.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::indexOutsideRange(
+                "length of the imaginary part array",
+                imag->length(),
+                1u,
+                ExceptionMessages::InclusiveBound,
+                PeriodicWave::kMaxPeriodicWaveArraySize,
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
     }
 
     if (real->length() != imag->length()) {
@@ -508,117 +674,194 @@ PeriodicWave* AudioContext::createPeriodicWave(DOMFloat32Array* real, DOMFloat32
             "length of real array (" + String::number(real->length())
             + ") and length of imaginary array (" +  String::number(imag->length())
             + ") must match.");
-        return 0;
+        return nullptr;
     }
 
-    if (real->length() > 4096) {
-        exceptionState.throwDOMException(
-            IndexSizeError,
-            "length of real array (" + String::number(real->length())
-            + ") exceeds allowed maximum of 4096");
-        return 0;
-    }
-
-    if (imag->length() > 4096) {
-        exceptionState.throwDOMException(
-            IndexSizeError,
-            "length of imaginary array (" + String::number(imag->length())
-            + ") exceeds allowed maximum of 4096");
-        return 0;
-    }
-
-    return PeriodicWave::create(sampleRate(), real->view(), imag->view());
+    return PeriodicWave::create(sampleRate(), real, imag);
 }
 
-void AudioContext::notifyNodeFinishedProcessing(AudioNode* node)
+size_t AudioContext::currentSampleFrame() const
 {
-    ASSERT(isAudioThread());
-    m_finishedNodes.append(node);
+    if (isAudioThread())
+        return m_destinationNode ? m_destinationNode->audioDestinationHandler().currentSampleFrame() : 0;
+
+    return m_cachedSampleFrame;
 }
 
-void AudioContext::derefFinishedSourceNodes()
+double AudioContext::currentTime() const
 {
-    ASSERT(isGraphOwner());
-    ASSERT(isAudioThread());
-    for (unsigned i = 0; i < m_finishedNodes.size(); i++)
-        derefNode(m_finishedNodes[i]);
+    if (isAudioThread())
+        return m_destinationNode ? m_destinationNode->audioDestinationHandler().currentTime() : 0;
 
-    m_finishedNodes.clear();
+    return m_cachedSampleFrame / static_cast<double>(sampleRate());
 }
 
-void AudioContext::refNode(AudioNode* node)
+String AudioContext::state() const
+{
+    // These strings had better match the strings for AudioContextState in AudioContext.idl.
+    switch (m_contextState) {
+    case Suspended:
+        return "suspended";
+    case Running:
+        return "running";
+    case Closed:
+        return "closed";
+    }
+    ASSERT_NOT_REACHED();
+    return "";
+}
+
+void AudioContext::setContextState(AudioContextState newState)
+{
+    ASSERT(isMainThread());
+
+    // Validate the transitions.  The valid transitions are Suspended->Running, Running->Suspended,
+    // and anything->Closed.
+    switch (newState) {
+    case Suspended:
+        ASSERT(m_contextState == Running);
+        break;
+    case Running:
+        ASSERT(m_contextState == Suspended);
+        break;
+    case Closed:
+        ASSERT(m_contextState != Closed);
+        break;
+    }
+
+    if (newState == m_contextState) {
+        // ASSERTs above failed; just return.
+        return;
+    }
+
+    m_contextState = newState;
+
+    // Notify context that state changed
+    if (executionContext())
+        executionContext()->postTask(FROM_HERE, createSameThreadTask(&AudioContext::notifyStateChange, this));
+}
+
+void AudioContext::notifyStateChange()
+{
+    dispatchEvent(Event::create(EventTypeNames::statechange));
+}
+
+ScriptPromise AudioContext::suspendContext(ScriptState* scriptState)
 {
     ASSERT(isMainThread());
     AutoLocker locker(this);
 
-    m_referencedNodes->append(node);
-    node->makeConnection();
+    if (isOfflineContext()) {
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(
+                InvalidAccessError,
+                "cannot suspend an OfflineAudioContext"));
+    }
+
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+
+    // Save the resolver.  If the context is running, it will get resolved at the end of a rendering
+    // quantum.  Otherwise, resolve it now.
+    m_suspendResolvers.append(resolver);
+
+    if (m_contextState != Running) {
+        // Context is not running so we can't wait for a rendering quantum to resolve the
+        // promise. Just resolve it now (along with any other pending suspend promises).
+        resolvePromisesForSuspendOnMainThread();
+    }
+
+    return promise;
 }
 
-void AudioContext::derefNode(AudioNode* node)
+ScriptPromise AudioContext::resumeContext(ScriptState* scriptState)
+{
+    ASSERT(isMainThread());
+    AutoLocker locker(this);
+
+    if (isOfflineContext()) {
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(
+                InvalidAccessError,
+                "cannot resume an OfflineAudioContext"));
+    }
+
+    if (isContextClosed()) {
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(
+                InvalidAccessError,
+                "cannot resume a closed AudioContext"));
+    }
+
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+
+    // Restart the destination node to pull on the audio graph.
+    if (m_destinationNode)
+        startRendering();
+
+    // Save the resolver which will get resolved when the destination node starts pulling on the
+    // graph again.
+    m_resumeResolvers.append(resolver);
+
+    return promise;
+}
+
+void AudioContext::notifySourceNodeFinishedProcessing(AudioHandler* handler)
+{
+    ASSERT(isAudioThread());
+    m_finishedSourceHandlers.append(handler);
+}
+
+void AudioContext::releaseFinishedSourceNodes()
+{
+    ASSERT(isGraphOwner());
+    ASSERT(isAudioThread());
+    for (AudioHandler* handler : m_finishedSourceHandlers) {
+        for (unsigned i = 0; i < m_activeSourceNodes.size(); ++i) {
+            if (handler == &m_activeSourceNodes[i]->handler()) {
+                handler->breakConnection();
+                m_activeSourceNodes.remove(i);
+                break;
+            }
+        }
+    }
+
+    m_finishedSourceHandlers.clear();
+}
+
+void AudioContext::notifySourceNodeStartedProcessing(AudioNode* node)
+{
+    ASSERT(isMainThread());
+    AutoLocker locker(this);
+
+    m_activeSourceNodes.append(node);
+    node->handler().makeConnection();
+}
+
+void AudioContext::releaseActiveSourceNodes()
+{
+    ASSERT(isMainThread());
+    for (auto& sourceNode : m_activeSourceNodes)
+        sourceNode->handler().breakConnection();
+
+    m_activeSourceNodes.clear();
+}
+
+void AudioContext::handleStoppableSourceNodes()
 {
     ASSERT(isGraphOwner());
 
-    for (unsigned i = 0; i < m_referencedNodes->size(); ++i) {
-        if (node == m_referencedNodes->at(i).get()) {
-            node->breakConnection();
-            m_referencedNodes->remove(i);
-            break;
+    // Find AudioBufferSourceNodes to see if we can stop playing them.
+    for (AudioNode* node : m_activeSourceNodes) {
+        if (node->handler().nodeType() == AudioHandler::NodeTypeAudioBufferSource) {
+            AudioBufferSourceNode* sourceNode = static_cast<AudioBufferSourceNode*>(node);
+            sourceNode->audioBufferSourceHandler().handleStoppableSourceNode();
         }
     }
-}
-
-void AudioContext::derefUnfinishedSourceNodes()
-{
-    ASSERT(isMainThread());
-    for (unsigned i = 0; i < m_referencedNodes->size(); ++i)
-        m_referencedNodes->at(i)->breakConnection();
-
-    m_referencedNodes->clear();
-}
-
-void AudioContext::lock()
-{
-    // Don't allow regular lock in real-time audio thread.
-    ASSERT(isMainThread());
-    m_contextGraphMutex.lock();
-}
-
-bool AudioContext::tryLock()
-{
-    // Try to catch cases of using try lock on main thread
-    // - it should use regular lock.
-    ASSERT(isAudioThread());
-    if (!isAudioThread()) {
-        // In release build treat tryLock() as lock() (since above
-        // ASSERT(isAudioThread) never fires) - this is the best we can do.
-        lock();
-        return true;
-    }
-    return m_contextGraphMutex.tryLock();
-}
-
-void AudioContext::unlock()
-{
-    m_contextGraphMutex.unlock();
-}
-
-bool AudioContext::isAudioThread() const
-{
-    return currentThread() == m_audioThread;
-}
-
-#if ENABLE(ASSERT)
-bool AudioContext::isGraphOwner()
-{
-    return m_contextGraphMutex.locked();
-}
-#endif
-
-void AudioContext::addDeferredBreakConnection(AudioNode& node)
-{
-    ASSERT(isAudioThread());
-    m_deferredBreakConnectionList.append(&node);
 }
 
 void AudioContext::handlePreRenderTasks()
@@ -628,14 +871,16 @@ void AudioContext::handlePreRenderTasks()
     // At the beginning of every render quantum, try to update the internal rendering graph state (from main thread changes).
     // It's OK if the tryLock() fails, we'll just take slightly longer to pick up the changes.
     if (tryLock()) {
-        // Update the channel count mode.
-        updateChangedChannelCountMode();
+        deferredTaskHandler().handleDeferredTasks();
 
-        // Fixup the state of any dirty AudioSummingJunctions and AudioNodeOutputs.
-        handleDirtyAudioSummingJunctions();
-        handleDirtyAudioNodeOutputs();
+        resolvePromisesForResume();
 
-        updateAutomaticPullNodes();
+        // Check to see if source nodes can be stopped because the end time has passed.
+        handleStoppableSourceNodes();
+
+        // Update the cached sample frame value.
+        m_cachedSampleFrame = currentSampleFrame();
+
         unlock();
     }
 }
@@ -648,157 +893,103 @@ void AudioContext::handlePostRenderTasks()
     // The worst that can happen is that there will be some nodes which will take slightly longer than usual to be deleted or removed
     // from the render graph (in which case they'll render silence).
     if (tryLock()) {
-        // Update the channel count mode.
-        updateChangedChannelCountMode();
-
         // Take care of AudioNode tasks where the tryLock() failed previously.
-        handleDeferredAudioNodeTasks();
+        deferredTaskHandler().breakConnections();
 
         // Dynamically clean up nodes which are no longer needed.
-        derefFinishedSourceNodes();
+        releaseFinishedSourceNodes();
 
-        // Fixup the state of any dirty AudioSummingJunctions and AudioNodeOutputs.
-        handleDirtyAudioSummingJunctions();
-        handleDirtyAudioNodeOutputs();
+        deferredTaskHandler().handleDeferredTasks();
+        deferredTaskHandler().requestToDeleteHandlersOnMainThread();
 
-        updateAutomaticPullNodes();
+        resolvePromisesForSuspend();
+
         unlock();
     }
 }
 
-void AudioContext::handleDeferredAudioNodeTasks()
-{
-    ASSERT(isAudioThread() && isGraphOwner());
-
-    for (unsigned i = 0; i < m_deferredBreakConnectionList.size(); ++i)
-        m_deferredBreakConnectionList[i]->breakConnectionWithLock();
-    m_deferredBreakConnectionList.clear();
-}
-
-void AudioContext::registerLiveNode(AudioNode& node)
-{
-    ASSERT(isMainThread());
-    m_liveNodes.add(&node, adoptPtr(new AudioNodeDisposer(node)));
-}
-
-AudioContext::AudioNodeDisposer::~AudioNodeDisposer()
-{
-    ASSERT(isMainThread());
-    AudioContext::AutoLocker locker(m_node.context());
-    m_node.dispose();
-}
-
-void AudioContext::registerLiveAudioSummingJunction(AudioSummingJunction& junction)
-{
-    ASSERT(isMainThread());
-    m_liveAudioSummingJunctions.add(&junction, adoptPtr(new AudioSummingJunctionDisposer(junction)));
-}
-
-AudioContext::AudioSummingJunctionDisposer::~AudioSummingJunctionDisposer()
-{
-    ASSERT(isMainThread());
-    m_junction.dispose();
-}
-
-void AudioContext::disposeOutputs(AudioNode& node)
-{
-    ASSERT(isGraphOwner());
-    ASSERT(isMainThread());
-    for (unsigned i = 0; i < node.numberOfOutputs(); ++i)
-        node.output(i)->dispose();
-}
-
-void AudioContext::markSummingJunctionDirty(AudioSummingJunction* summingJunction)
-{
-    ASSERT(isGraphOwner());
-    m_dirtySummingJunctions.add(summingJunction);
-}
-
-void AudioContext::removeMarkedSummingJunction(AudioSummingJunction* summingJunction)
+void AudioContext::resolvePromisesForResumeOnMainThread()
 {
     ASSERT(isMainThread());
     AutoLocker locker(this);
-    m_dirtySummingJunctions.remove(summingJunction);
-}
 
-void AudioContext::markAudioNodeOutputDirty(AudioNodeOutput* output)
-{
-    ASSERT(isGraphOwner());
-    ASSERT(isMainThread());
-    m_dirtyAudioNodeOutputs.add(output);
-}
-
-void AudioContext::removeMarkedAudioNodeOutput(AudioNodeOutput* output)
-{
-    ASSERT(isGraphOwner());
-    ASSERT(isMainThread());
-    m_dirtyAudioNodeOutputs.remove(output);
-}
-
-void AudioContext::handleDirtyAudioSummingJunctions()
-{
-    ASSERT(isGraphOwner());
-
-    for (HashSet<AudioSummingJunction*>::iterator i = m_dirtySummingJunctions.begin(); i != m_dirtySummingJunctions.end(); ++i)
-        (*i)->updateRenderingState();
-
-    m_dirtySummingJunctions.clear();
-}
-
-void AudioContext::handleDirtyAudioNodeOutputs()
-{
-    ASSERT(isGraphOwner());
-
-    for (HashSet<AudioNodeOutput*>::iterator i = m_dirtyAudioNodeOutputs.begin(); i != m_dirtyAudioNodeOutputs.end(); ++i)
-        (*i)->updateRenderingState();
-
-    m_dirtyAudioNodeOutputs.clear();
-}
-
-void AudioContext::addAutomaticPullNode(AudioNode* node)
-{
-    ASSERT(isGraphOwner());
-
-    if (!m_automaticPullNodes.contains(node)) {
-        m_automaticPullNodes.add(node);
-        m_automaticPullNodesNeedUpdating = true;
-    }
-}
-
-void AudioContext::removeAutomaticPullNode(AudioNode* node)
-{
-    ASSERT(isGraphOwner());
-
-    if (m_automaticPullNodes.contains(node)) {
-        m_automaticPullNodes.remove(node);
-        m_automaticPullNodesNeedUpdating = true;
-    }
-}
-
-void AudioContext::updateAutomaticPullNodes()
-{
-    ASSERT(isGraphOwner());
-
-    if (m_automaticPullNodesNeedUpdating) {
-        // Copy from m_automaticPullNodes to m_renderingAutomaticPullNodes.
-        m_renderingAutomaticPullNodes.resize(m_automaticPullNodes.size());
-
-        unsigned j = 0;
-        for (HashSet<AudioNode*>::iterator i = m_automaticPullNodes.begin(); i != m_automaticPullNodes.end(); ++i, ++j) {
-            AudioNode* output = *i;
-            m_renderingAutomaticPullNodes[j] = output;
+    for (auto& resolver : m_resumeResolvers) {
+        if (m_contextState == Closed) {
+            resolver->reject(
+                DOMException::create(InvalidStateError, "Cannot resume a context that has been closed"));
+        } else {
+            resolver->resolve();
         }
+    }
 
-        m_automaticPullNodesNeedUpdating = false;
+    m_resumeResolvers.clear();
+    m_isResolvingResumePromises = false;
+}
+
+void AudioContext::resolvePromisesForResume()
+{
+    // This runs inside the AudioContext's lock when handling pre-render tasks.
+    ASSERT(isAudioThread());
+    ASSERT(isGraphOwner());
+
+    // Resolve any pending promises created by resume(). Only do this if we haven't already started
+    // resolving these promises. This gets called very often and it takes some time to resolve the
+    // promises in the main thread.
+    if (!m_isResolvingResumePromises && m_resumeResolvers.size() > 0) {
+        m_isResolvingResumePromises = true;
+        Platform::current()->mainThread()->postTask(FROM_HERE, threadSafeBind(&AudioContext::resolvePromisesForResumeOnMainThread, this));
     }
 }
 
-void AudioContext::processAutomaticPullNodes(size_t framesToProcess)
+void AudioContext::resolvePromisesForSuspendOnMainThread()
 {
-    ASSERT(isAudioThread());
+    ASSERT(isMainThread());
+    AutoLocker locker(this);
 
-    for (unsigned i = 0; i < m_renderingAutomaticPullNodes.size(); ++i)
-        m_renderingAutomaticPullNodes[i]->processIfNecessary(framesToProcess);
+    // We can stop rendering now.
+    if (m_destinationNode)
+        stopRendering();
+
+    for (auto& resolver : m_suspendResolvers) {
+        if (m_contextState == Closed) {
+            resolver->reject(
+                DOMException::create(InvalidStateError, "Cannot suspend a context that has been closed"));
+        } else {
+            resolver->resolve();
+        }
+    }
+
+    m_suspendResolvers.clear();
+}
+
+void AudioContext::resolvePromisesForSuspend()
+{
+    // This runs inside the AudioContext's lock when handling pre-render tasks.
+    ASSERT(isAudioThread());
+    ASSERT(isGraphOwner());
+
+    // Resolve any pending promises created by suspend()
+    if (m_suspendResolvers.size() > 0)
+        Platform::current()->mainThread()->postTask(FROM_HERE, threadSafeBind(&AudioContext::resolvePromisesForSuspendOnMainThread, this));
+}
+
+void AudioContext::rejectPendingResolvers()
+{
+    ASSERT(isMainThread());
+
+    // Audio context is closing down so reject any suspend or resume promises that are still
+    // pending.
+
+    for (auto& resolver : m_suspendResolvers) {
+        resolver->reject(DOMException::create(InvalidStateError, "Audio context is going away"));
+    }
+    m_suspendResolvers.clear();
+
+    for (auto& resolver : m_resumeResolvers) {
+        resolver->reject(DOMException::create(InvalidStateError, "Audio context is going away"));
+    }
+    m_resumeResolvers.clear();
+    m_isResolvingResumePromises = false;
 }
 
 const AtomicString& AudioContext::interfaceName() const
@@ -813,7 +1004,27 @@ ExecutionContext* AudioContext::executionContext() const
 
 void AudioContext::startRendering()
 {
-    destination()->startRendering();
+    // This is called for both online and offline contexts.
+    ASSERT(isMainThread());
+    ASSERT(m_destinationNode);
+
+    if (m_contextState == Suspended) {
+        destination()->audioDestinationHandler().startRendering();
+        setContextState(Running);
+    }
+}
+
+void AudioContext::stopRendering()
+{
+    ASSERT(isMainThread());
+    ASSERT(m_destinationNode);
+    ASSERT(!isOfflineContext());
+
+    if (m_contextState == Running) {
+        destination()->audioDestinationHandler().stopRendering();
+        setContextState(Suspended);
+        deferredTaskHandler().clearHandlersToBeDeleted();
+    }
 }
 
 void AudioContext::fireCompletionEvent()
@@ -824,57 +1035,78 @@ void AudioContext::fireCompletionEvent()
 
     AudioBuffer* renderedBuffer = m_renderTarget.get();
 
+    // For an offline context, we set the state to closed here so that the oncomplete handler sees
+    // that the context has been closed.
+    setContextState(Closed);
+
     ASSERT(renderedBuffer);
     if (!renderedBuffer)
         return;
 
     // Avoid firing the event if the document has already gone away.
     if (executionContext()) {
-        // Call the offline rendering completion event listener.
+        // Call the offline rendering completion event listener and resolve the promise too.
         dispatchEvent(OfflineAudioCompletionEvent::create(renderedBuffer));
+        m_offlineResolver->resolve(renderedBuffer);
     }
 }
 
-void AudioContext::trace(Visitor* visitor)
+DEFINE_TRACE(AudioContext)
 {
+    visitor->trace(m_closeResolver);
+    visitor->trace(m_offlineResolver);
     visitor->trace(m_renderTarget);
     visitor->trace(m_destinationNode);
     visitor->trace(m_listener);
     // trace() can be called in AudioContext constructor, and
-    // m_contextGraphMutex might be unavailable.  We can use m_contextGraphMutex
-    // if m_referencedNodes is not null because m_referencedNodes is initialized
-    // after m_contextGraphMutex.
-    if (m_referencedNodes) {
+    // m_contextGraphMutex might be unavailable.
+    if (m_didInitializeContextGraphMutex) {
         AutoLocker lock(this);
-        visitor->trace(m_referencedNodes);
+        visitor->trace(m_activeSourceNodes);
+    } else {
+        visitor->trace(m_activeSourceNodes);
     }
-    visitor->trace(m_liveNodes);
-    visitor->trace(m_liveAudioSummingJunctions);
-    EventTargetWithInlineData::trace(visitor);
+    visitor->trace(m_resumeResolvers);
+    visitor->trace(m_suspendResolvers);
+    RefCountedGarbageCollectedEventTargetWithInlineData<AudioContext>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
-void AudioContext::addChangedChannelCountMode(AudioNode* node)
+SecurityOrigin* AudioContext::securityOrigin() const
 {
-    ASSERT(isGraphOwner());
-    ASSERT(isMainThread());
-    m_deferredCountModeChange.add(node);
+    if (executionContext())
+        return executionContext()->securityOrigin();
+
+    return nullptr;
 }
 
-void AudioContext::removeChangedChannelCountMode(AudioNode* node)
+ScriptPromise AudioContext::closeContext(ScriptState* scriptState)
 {
-    ASSERT(isGraphOwner());
+    if (isOfflineContext()) {
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(InvalidAccessError, "cannot close an OfflineAudioContext."));
+    }
 
-    m_deferredCountModeChange.remove(node);
-}
+    if (isContextClosed()) {
+        // We've already closed the context previously, but it hasn't yet been resolved, so just
+        // create a new promise and reject it.
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(InvalidStateError,
+                "Cannot close a context that is being closed or has already been closed."));
+    }
 
-void AudioContext::updateChangedChannelCountMode()
-{
-    ASSERT(isGraphOwner());
+    m_closeResolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = m_closeResolver->promise();
 
-    for (HashSet<AudioNode*>::iterator k = m_deferredCountModeChange.begin(); k != m_deferredCountModeChange.end(); ++k)
-        (*k)->updateChannelCountMode();
+    // Stop the audio context. This will stop the destination node from pulling audio anymore. And
+    // since we have disconnected the destination from the audio graph, and thus has no references,
+    // the destination node can GCed if JS has no references. stop() will also resolve the Promise
+    // created here.
+    stop();
 
-    m_deferredCountModeChange.clear();
+    return promise;
 }
 
 } // namespace blink

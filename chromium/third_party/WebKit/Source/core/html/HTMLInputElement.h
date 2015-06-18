@@ -25,6 +25,7 @@
 #ifndef HTMLInputElement_h
 #define HTMLInputElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/forms/StepRange.h"
 #include "platform/FileChooser.h"
@@ -44,12 +45,12 @@ class ListAttributeTargetObserver;
 class RadioButtonGroupScope;
 struct DateTimeChooserParameters;
 
-class HTMLInputElement : public HTMLTextFormControlElement {
+class CORE_EXPORT HTMLInputElement : public HTMLTextFormControlElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLInputElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitspeechchange);
 
@@ -91,13 +92,16 @@ public:
     // or url.
     bool isTextField() const;
 
+    bool isImage() const;
+
     bool checked() const { return m_isChecked; }
     void setChecked(bool, TextFieldEventBehavior = DispatchNoEvent);
+    void dispatchChangeEventIfNeeded();
 
     // 'indeterminate' is a state independent of the checked state that causes the control to draw in a way that hides the actual state.
     bool indeterminate() const { return m_isIndeterminate; }
     void setIndeterminate(bool);
-    // shouldAppearChecked is used by the rendering tree/CSS while checked() is used by JS to determine checked state
+    // shouldAppearChecked is used by the layout tree/CSS while checked() is used by JS to determine checked state
     bool shouldAppearChecked() const;
     virtual bool shouldAppearIndeterminate() const override;
 
@@ -143,8 +147,8 @@ public:
     void setSelectionRangeForBinding(int start, int end, ExceptionState&);
     void setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionState&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override final;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override final;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual void detach(const AttachContext& = AttachContext()) override final;
     virtual void updateFocusAppearance(bool restorePreviousSelection) override final;
 
@@ -154,7 +158,7 @@ public:
     virtual bool isActivatedSubmit() const override final;
     virtual void setActivatedSubmit(bool flag) override final;
 
-    String altText() const;
+    virtual String altText() const override final;
 
     int maxResults() const { return m_maxResults; }
 
@@ -184,7 +188,7 @@ public:
 
     String droppedFileSystemId();
 
-    // These functions are used for rendering the input active during a
+    // These functions are used for laying out the input active during a
     // drag-and-drop operation.
     bool canReceiveDroppedFiles() const;
     void setCanReceiveDroppedFiles(bool);
@@ -240,8 +244,8 @@ public:
     virtual void setRangeText(const String& replacement, ExceptionState&) override final;
     virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&) override final;
 
-    bool hasImageLoader() const { return m_imageLoader; }
-    HTMLImageLoader* imageLoader();
+    HTMLImageLoader* imageLoader() const { return m_imageLoader.get(); }
+    HTMLImageLoader& ensureImageLoader();
 
     bool setupDateTimeChooserParameters(DateTimeChooserParameters&);
 
@@ -252,6 +256,9 @@ public:
     AXObject* popupRootAXObject();
     virtual void didNotifySubtreeInsertionsToDocument() override;
 
+    virtual void ensureFallbackContent();
+    virtual void ensurePrimaryContent();
+    bool hasFallbackContent() const;
 protected:
     HTMLInputElement(Document&, HTMLFormElement*, bool createdByParser);
 
@@ -261,7 +268,7 @@ private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
 
     virtual void didAddUserAgentShadowRoot(ShadowRoot&) override final;
-    virtual void willAddFirstAuthorShadowRoot() override final;
+    virtual void willAddFirstOpenShadowRoot() override final;
 
     virtual void willChangeForm() override final;
     virtual void didChangeForm() override final;
@@ -296,6 +303,7 @@ private:
     virtual bool isPresentationAttribute(const QualifiedName&) const override final;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override final;
     virtual void finishParsingChildren() override final;
+    virtual void parserDidSetAttributes() override final;
 
     virtual void copyNonAttributePropertiesFromElement(const Element&) override final;
 
@@ -325,15 +333,19 @@ private:
     virtual void updatePlaceholderText() override final;
     virtual bool isEmptyValue() const override final { return innerEditorValue().isEmpty(); }
     virtual bool isEmptySuggestedValue() const override final { return suggestedValue().isEmpty(); }
-    virtual void handleFocusEvent(Element* oldFocusedElement, FocusType) override final;
+    virtual void handleFocusEvent(Element* oldFocusedElement, WebFocusType) override final;
     virtual void handleBlurEvent() override final;
-    virtual void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, FocusType) override final;
+    virtual void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType) override final;
+    virtual bool supportsAutocapitalize() const override final;
+    virtual const AtomicString& defaultAutocapitalize() const override final;
 
     virtual bool isOptionalFormControl() const override final { return !isRequiredFormControl(); }
     virtual bool isRequiredFormControl() const override final;
     virtual bool recalcWillValidate() const override final;
     virtual void requiredAttributeChanged() override final;
 
+    void updateTouchEventHandlerRegistry();
+    void initializeTypeInParsing();
     void updateType();
 
     virtual void subtreeHasChanged() override final;
@@ -348,9 +360,7 @@ private:
     RadioButtonGroupScope* radioButtonGroupScope() const;
     void addToRadioButtonGroup();
     void removeFromRadioButtonGroup();
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
-#endif
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
 
     virtual bool shouldDispatchFormControlChangeEvent(String&, String&) override;
 
@@ -361,19 +371,19 @@ private:
     int m_maxLength;
     int m_minLength;
     short m_maxResults;
-    bool m_isChecked : 1;
-    bool m_reflectsCheckedAttribute : 1;
-    bool m_isIndeterminate : 1;
-    bool m_isActivatedSubmit : 1;
+    unsigned m_isChecked : 1;
+    unsigned m_reflectsCheckedAttribute : 1;
+    unsigned m_isIndeterminate : 1;
+    unsigned m_isActivatedSubmit : 1;
     unsigned m_autocomplete : 2; // AutoCompleteSetting
-    bool m_hasNonEmptyList : 1;
-    bool m_stateRestored : 1;
-    bool m_parsingInProgress : 1;
-    bool m_valueAttributeWasUpdatedAfterParsing : 1;
-    bool m_canReceiveDroppedFiles : 1;
-    bool m_hasTouchEventHandler : 1;
-    bool m_shouldRevealPassword : 1;
-    bool m_needsToUpdateViewValue : 1;
+    unsigned m_hasNonEmptyList : 1;
+    unsigned m_stateRestored : 1;
+    unsigned m_parsingInProgress : 1;
+    unsigned m_valueAttributeWasUpdatedAfterParsing : 1;
+    unsigned m_canReceiveDroppedFiles : 1;
+    unsigned m_hasTouchEventHandler : 1;
+    unsigned m_shouldRevealPassword : 1;
+    unsigned m_needsToUpdateViewValue : 1;
     RefPtrWillBeMember<InputType> m_inputType;
     RefPtrWillBeMember<InputTypeView> m_inputTypeView;
     // The ImageLoader must be owned by this element because the loader code assumes

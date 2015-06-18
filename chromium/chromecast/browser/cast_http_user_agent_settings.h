@@ -7,7 +7,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "base/prefs/pref_member.h"
 #include "net/url_request/http_user_agent_settings.h"
 
 namespace chromecast {
@@ -16,13 +15,14 @@ namespace shell {
 class CastHttpUserAgentSettings : public net::HttpUserAgentSettings {
  public:
   CastHttpUserAgentSettings();
-  virtual ~CastHttpUserAgentSettings();
+  ~CastHttpUserAgentSettings() override;
 
   // net::HttpUserAgentSettings implementation:
-  virtual std::string GetAcceptLanguage() const override;
-  virtual std::string GetUserAgent() const override;
+  std::string GetAcceptLanguage() const override;
+  std::string GetUserAgent() const override;
 
  private:
+  mutable std::string last_locale_;
   mutable std::string accept_language_;
 
   DISALLOW_COPY_AND_ASSIGN(CastHttpUserAgentSettings);

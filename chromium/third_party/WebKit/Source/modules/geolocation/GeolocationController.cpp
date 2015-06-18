@@ -27,7 +27,6 @@
 
 #include "modules/geolocation/GeolocationController.h"
 
-#include "core/inspector/InspectorController.h"
 #include "core/page/Page.h"
 #include "modules/geolocation/GeolocationClient.h"
 #include "modules/geolocation/GeolocationError.h"
@@ -133,7 +132,7 @@ void GeolocationController::positionChanged(GeolocationPosition* position)
         return;
     }
     m_lastPosition = position;
-    HeapVector<Member<Geolocation> > observersVector;
+    HeapVector<Member<Geolocation>> observersVector;
     copyToVector(m_observers, observersVector);
     for (size_t i = 0; i < observersVector.size(); ++i)
         observersVector[i]->positionChanged();
@@ -141,7 +140,7 @@ void GeolocationController::positionChanged(GeolocationPosition* position)
 
 void GeolocationController::errorOccurred(GeolocationError* error)
 {
-    HeapVector<Member<Geolocation> > observersVector;
+    HeapVector<Member<Geolocation>> observersVector;
     copyToVector(m_observers, observersVector);
     for (size_t i = 0; i < observersVector.size(); ++i)
         observersVector[i]->setError(error);
@@ -184,13 +183,14 @@ const char* GeolocationController::supplementName()
     return "GeolocationController";
 }
 
-void GeolocationController::trace(Visitor* visitor)
+DEFINE_TRACE(GeolocationController)
 {
     visitor->trace(m_client);
     visitor->trace(m_lastPosition);
     visitor->trace(m_observers);
     visitor->trace(m_highAccuracyObservers);
     WillBeHeapSupplement<LocalFrame>::trace(visitor);
+    PageLifecycleObserver::trace(visitor);
 }
 
 void provideGeolocationTo(LocalFrame& frame, GeolocationClient* client)

@@ -12,6 +12,8 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "ui/gfx/geometry/quad_f.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gfx_export.h"
 
 class SkBitmap;
@@ -31,6 +33,10 @@ GFX_EXPORT SkIRect RectToSkIRect(const Rect& rect);
 GFX_EXPORT Rect SkIRectToRect(const SkIRect& rect);
 GFX_EXPORT SkRect RectFToSkRect(const RectF& rect);
 GFX_EXPORT RectF SkRectToRectF(const SkRect& rect);
+GFX_EXPORT SkSize SizeFToSkSize(const SizeF& size);
+GFX_EXPORT SizeF SkSizeToSizeF(const SkSize& size);
+
+GFX_EXPORT void QuadFToSkPoints(const gfx::QuadF& quad, SkPoint points[4]);
 
 GFX_EXPORT void TransformToFlattenedSkMatrix(const gfx::Transform& transform,
                                              SkMatrix* flattened);

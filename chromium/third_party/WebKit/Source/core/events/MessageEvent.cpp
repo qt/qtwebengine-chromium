@@ -135,7 +135,7 @@ PassRefPtrWillBeRawPtr<MessageEvent> MessageEvent::create(const AtomicString& ty
     return adoptRefWillBeNoop(new MessageEvent(type, initializer));
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
 {
     if (dispatched())
         return;
@@ -149,7 +149,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bo
     m_ports = ports;
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
 {
     if (dispatched())
         return;
@@ -177,7 +177,7 @@ void MessageEvent::entangleMessagePorts(ExecutionContext* context)
     m_ports = MessagePort::entanglePorts(*context, m_channels.release());
 }
 
-void MessageEvent::trace(Visitor* visitor)
+DEFINE_TRACE(MessageEvent)
 {
     visitor->trace(m_dataAsBlob);
     visitor->trace(m_source);
@@ -187,9 +187,9 @@ void MessageEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-v8::Handle<v8::Object> MessageEvent::associateWithWrapper(const WrapperTypeInfo* wrapperType, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
+v8::Local<v8::Object> MessageEvent::associateWithWrapper(v8::Isolate* isolate, const WrapperTypeInfo* wrapperType, v8::Local<v8::Object> wrapper)
 {
-    Event::associateWithWrapper(wrapperType, wrapper, isolate);
+    Event::associateWithWrapper(isolate, wrapperType, wrapper);
 
     // Ensures a wrapper is created for the data to return now so that V8 knows how
     // much memory is used via the wrapper. To keep the wrapper alive, it's set to

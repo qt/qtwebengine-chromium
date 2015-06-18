@@ -26,7 +26,6 @@
 #ifndef WebGLFramebuffer_h
 #define WebGLFramebuffer_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLContextObject.h"
 #include "core/html/canvas/WebGLSharedObject.h"
 #include "wtf/PassRefPtr.h"
@@ -37,7 +36,7 @@ namespace blink {
 class WebGLRenderbuffer;
 class WebGLTexture;
 
-class WebGLFramebuffer final : public WebGLContextObject, public ScriptWrappable {
+class WebGLFramebuffer final : public WebGLContextObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class WebGLAttachment : public RefCountedWillBeGarbageCollectedFinalized<WebGLAttachment> {
@@ -55,19 +54,21 @@ public:
         virtual WebGLSharedObject* object() const = 0;
         virtual bool isSharedObject(WebGLSharedObject*) const = 0;
         virtual bool valid() const = 0;
-        virtual void onDetached(blink::WebGraphicsContext3D*) = 0;
-        virtual void attach(blink::WebGraphicsContext3D*, GLenum attachment) = 0;
-        virtual void unattach(blink::WebGraphicsContext3D*, GLenum attachment) = 0;
+        virtual void onDetached(WebGraphicsContext3D*) = 0;
+        virtual void attach(WebGraphicsContext3D*, GLenum attachment) = 0;
+        virtual void unattach(WebGraphicsContext3D*, GLenum attachment) = 0;
 
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     protected:
         WebGLAttachment();
     };
 
-    virtual ~WebGLFramebuffer();
+    ~WebGLFramebuffer() override;
 
     static PassRefPtrWillBeRawPtr<WebGLFramebuffer> create(WebGLRenderingContextBase*);
+
+    Platform3DObject object() const { return m_object; }
 
     void setAttachmentForBoundFramebuffer(GLenum attachment, GLenum texTarget, WebGLTexture*, GLint level);
     void setAttachmentForBoundFramebuffer(GLenum attachment, WebGLRenderbuffer*);
@@ -83,7 +84,7 @@ public:
     // readPixels, copyTexImage2D, copyTexSubImage2D if this framebuffer is
     // currently bound.
     // Return false if the framebuffer is incomplete.
-    bool onAccess(blink::WebGraphicsContext3D*, const char** reason);
+    bool onAccess(WebGraphicsContext3D*, const char** reason);
 
     // Software version of glCheckFramebufferStatus(), except that when
     // FRAMEBUFFER_COMPLETE is returned, it is still possible for
@@ -102,12 +103,13 @@ public:
 
     GLenum getDrawBuffer(GLenum);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     explicit WebGLFramebuffer(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
+    bool hasObject() const override { return m_object != 0; }
+    void deleteObjectImpl(WebGraphicsContext3D*) override;
 
 private:
     WebGLAttachment* getAttachment(GLenum) const;
@@ -121,6 +123,8 @@ private:
 
     // Check if a new drawBuffers call should be issued. This is called when we add or remove an attachment.
     void drawBuffersIfNecessary(bool force);
+
+    Platform3DObject m_object;
 
     typedef WillBeHeapHashMap<GLenum, RefPtrWillBeMember<WebGLAttachment>> AttachmentMap;
 

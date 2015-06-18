@@ -54,17 +54,14 @@ public:
     virtual void setProxy(WebServiceWorkerProxy*) { }
     virtual WebServiceWorkerProxy* proxy() { return 0; }
 
-    // Called by this worker's ServiceWorkerProxy when it has become ready or
-    // not ready for state change notifications.
-    virtual void proxyReadyChanged() { }
-
-    virtual WebURL scope() const { return WebURL(); }
     virtual WebURL url() const { return WebURL(); }
     virtual WebServiceWorkerState state() const { return WebServiceWorkerStateUnknown; }
 
     // Callee receives ownership of the passed vector.
     // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
     virtual void postMessage(const WebString&, WebMessagePortChannelArray*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    virtual void terminate() { }
 };
 
 }

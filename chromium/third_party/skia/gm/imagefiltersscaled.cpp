@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm.h"
-#include "SkColor.h"
+#include "sk_tool_utils.h"
 #include "SkBitmapSource.h"
 #include "SkBlurImageFilter.h"
+#include "SkColor.h"
 #include "SkDisplacementMapEffect.h"
 #include "SkDropShadowImageFilter.h"
 #include "SkGradientShader.h"
@@ -17,8 +17,8 @@
 #include "SkOffsetImageFilter.h"
 #include "SkPerlinNoiseShader.h"
 #include "SkRectShaderImageFilter.h"
-#include "SkMatrixImageFilter.h"
 #include "SkScalar.h"
+#include "gm.h"
 
 #define RESIZE_FACTOR SkIntToScalar(4)
 
@@ -31,9 +31,6 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     virtual SkString onShortName() {
         return SkString("imagefiltersscaled");
@@ -41,27 +38,6 @@ protected:
 
     virtual SkISize onISize() {
         return SkISize::Make(1428, 500);
-    }
-
-    void make_checkerboard() {
-        fCheckerboard.allocN32Pixels(64, 64);
-        SkCanvas canvas(fCheckerboard);
-        canvas.clear(0x00000000);
-        SkPaint darkPaint;
-        darkPaint.setColor(0xFF404040);
-        SkPaint lightPaint;
-        lightPaint.setColor(0xFFA0A0A0);
-        for (int y = 0; y < 64; y += 16) {
-          for (int x = 0; x < 64; x += 16) {
-            canvas.save();
-            canvas.translate(SkIntToScalar(x), SkIntToScalar(y));
-            canvas.drawRect(SkRect::MakeXYWH(0, 0, 8, 8), darkPaint);
-            canvas.drawRect(SkRect::MakeXYWH(8, 0, 8, 8), lightPaint);
-            canvas.drawRect(SkRect::MakeXYWH(0, 8, 8, 8), lightPaint);
-            canvas.drawRect(SkRect::MakeXYWH(8, 8, 8, 8), darkPaint);
-            canvas.restore();
-          }
-        }
     }
 
     void make_gradient_circle(int width, int height) {
@@ -85,11 +61,14 @@ protected:
 
     virtual void onDraw(SkCanvas* canvas) {
         if (!fInitialized) {
-            this->make_checkerboard();
+            fCheckerboard.allocN32Pixels(64, 64);
+            SkCanvas checkerboardCanvas(fCheckerboard);
+            sk_tool_utils::draw_checkerboard(&checkerboardCanvas, 0xFFA0A0A0, 0xFF404040, 8);
+
             this->make_gradient_circle(64, 64);
             fInitialized = true;
         }
-        canvas->clear(0x00000000);
+        canvas->clear(SK_ColorBLACK);
 
         SkAutoTUnref<SkImageFilter> gradient(SkBitmapSource::Create(fGradientCircle));
         SkAutoTUnref<SkImageFilter> checkerboard(SkBitmapSource::Create(fCheckerboard));
@@ -120,7 +99,7 @@ protected:
             SkDilateImageFilter::Create(1, 1, checkerboard.get()),
             SkErodeImageFilter::Create(1, 1, checkerboard.get()),
             SkOffsetImageFilter::Create(SkIntToScalar(32), 0),
-            SkMatrixImageFilter::Create(resizeMatrix, SkPaint::kNone_FilterLevel),
+            SkImageFilter::CreateMatrixFilter(resizeMatrix, kNone_SkFilterQuality),
             SkRectShaderImageFilter::Create(noise),
             SkLightingImageFilter::CreatePointLitDiffuse(pointLocation, white, surfaceScale, kd),
             SkLightingImageFilter::CreateSpotLitDiffuse(spotLocation, spotTarget, spotExponent,
@@ -155,8 +134,7 @@ protected:
                     canvas->scale(SkScalarInvert(RESIZE_FACTOR),
                                   SkScalarInvert(RESIZE_FACTOR));
                 }
-                canvas->drawCircle(r.centerX(), r.centerY(),
-                                   SkScalarDiv(r.width()*2, SkIntToScalar(5)), paint);
+                canvas->drawCircle(r.centerX(), r.centerY(), r.width()*2/5, paint);
                 canvas->restore();
                 canvas->translate(r.width() * scales[j].fX + margin, 0);
             }

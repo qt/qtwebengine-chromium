@@ -25,7 +25,6 @@
 #include "core/svg/SVGAnimateTransformElement.h"
 #include "core/svg/SVGAnimatedColor.h"
 #include "core/svg/SVGAnimationElement.h"
-#include "core/svg/SVGElement.h"
 #include "core/svg/SVGLength.h"
 #include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGNumber.h"
@@ -35,12 +34,25 @@
 
 namespace blink {
 
-SVGAnimatedTypeAnimator::SVGAnimatedTypeAnimator(SVGAnimationElement* animationElement, SVGElement* contextElement)
+SVGAnimatedTypeAnimator::SVGAnimatedTypeAnimator(SVGAnimationElement* animationElement)
     : m_animationElement(animationElement)
-    , m_contextElement(contextElement)
+    , m_contextElement(nullptr)
+    , m_type(AnimatedUnknown)
 {
     ASSERT(m_animationElement);
-    ASSERT(m_contextElement);
+}
+
+void SVGAnimatedTypeAnimator::clear()
+{
+    m_contextElement = nullptr;
+    m_animatedProperty = nullptr;
+    m_type = AnimatedUnknown;
+}
+
+void SVGAnimatedTypeAnimator::reset(SVGElement* contextElement)
+{
+    ASSERT(contextElement);
+    m_contextElement = contextElement;
 
     const QualifiedName& attributeName = m_animationElement->attributeName();
     m_animatedProperty = m_contextElement->propertyFromAttribute(attributeName);
@@ -49,7 +61,7 @@ SVGAnimatedTypeAnimator::SVGAnimatedTypeAnimator(SVGAnimationElement* animationE
 
     // Only <animateTransform> is allowed to animate AnimatedTransformList.
     // http://www.w3.org/TR/SVG/animate.html#AnimationAttributesAndProperties
-    if (m_type == AnimatedTransformList && !isSVGAnimateTransformElement(*animationElement))
+    if (m_type == AnimatedTransformList && !isSVGAnimateTransformElement(*m_animationElement))
         m_type = AnimatedUnknown;
 
     ASSERT(m_type != AnimatedPoint
@@ -57,12 +69,10 @@ SVGAnimatedTypeAnimator::SVGAnimatedTypeAnimator(SVGAnimationElement* animationE
         && m_type != AnimatedTransform);
 }
 
-SVGAnimatedTypeAnimator::~SVGAnimatedTypeAnimator()
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::createPropertyForAnimation(const String& value)
 {
-}
+    ASSERT(m_contextElement);
 
-PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::createPropertyForAnimation(const String& value)
-{
     if (isAnimatingSVGDom()) {
         // SVG DOM animVal animation code-path.
 
@@ -89,22 +99,22 @@ PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::createPropertyForAnimation(
     case AnimatedColor:
         return SVGColorProperty::create(value.isEmpty() ? StyleColor::currentColor() : CSSParser::colorFromRGBColorString(value));
     case AnimatedNumber: {
-        RefPtr<SVGNumber> property = SVGNumber::create();
+        RefPtrWillBeRawPtr<SVGNumber> property = SVGNumber::create();
         property->setValueAsString(value, IGNORE_EXCEPTION);
         return property.release();
     }
     case AnimatedLength: {
-        RefPtr<SVGLength> property = SVGLength::create(LengthModeOther);
+        RefPtrWillBeRawPtr<SVGLength> property = SVGLength::create();
         property->setValueAsString(value, IGNORE_EXCEPTION);
         return property.release();
     }
     case AnimatedLengthList: {
-        RefPtr<SVGLengthList> property = SVGLengthList::create(LengthModeOther);
+        RefPtrWillBeRawPtr<SVGLengthList> property = SVGLengthList::create();
         property->setValueAsString(value, IGNORE_EXCEPTION);
         return property.release();
     }
     case AnimatedString: {
-        RefPtr<SVGString> property = SVGString::create();
+        RefPtrWillBeRawPtr<SVGString> property = SVGString::create();
         property->setValueAsString(value, IGNORE_EXCEPTION);
         return property.release();
     }
@@ -135,18 +145,18 @@ PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::createPropertyForAnimation(
     return nullptr;
 }
 
-PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::constructFromString(const String& value)
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::constructFromString(const String& value)
 {
     return createPropertyForAnimation(value);
 }
 
-void SVGAnimatedTypeAnimator::calculateFromAndToValues(RefPtr<SVGPropertyBase>& from, RefPtr<SVGPropertyBase>& to, const String& fromString, const String& toString)
+void SVGAnimatedTypeAnimator::calculateFromAndToValues(RefPtrWillBeMember<SVGPropertyBase>& from, RefPtrWillBeMember<SVGPropertyBase>& to, const String& fromString, const String& toString)
 {
     from = constructFromString(fromString);
     to = constructFromString(toString);
 }
 
-void SVGAnimatedTypeAnimator::calculateFromAndByValues(RefPtr<SVGPropertyBase>& from, RefPtr<SVGPropertyBase>& to, const String& fromString, const String& byString)
+void SVGAnimatedTypeAnimator::calculateFromAndByValues(RefPtrWillBeMember<SVGPropertyBase>& from, RefPtrWillBeMember<SVGPropertyBase>& to, const String& fromString, const String& byString)
 {
     from = constructFromString(fromString);
     to = constructFromString(byString);
@@ -156,14 +166,12 @@ void SVGAnimatedTypeAnimator::calculateFromAndByValues(RefPtr<SVGPropertyBase>& 
 
 namespace {
 
-void setAnimatedValueOnAllTargetProperties(const WillBeHeapVector<RawPtrWillBeMember<SVGElement> >& list, const QualifiedName& attributeName, PassRefPtr<SVGPropertyBase> passValue)
+void setAnimatedValueOnAllTargetProperties(const SVGElementInstances& list, const QualifiedName& attributeName, PassRefPtrWillBeRawPtr<SVGPropertyBase> passValue)
 {
-    RefPtr<SVGPropertyBase> value = passValue;
+    RefPtrWillBeRawPtr<SVGPropertyBase> value = passValue;
 
-    WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator it = list.begin();
-    WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator itEnd = list.end();
-    for (; it != itEnd; ++it) {
-        RefPtr<SVGAnimatedPropertyBase> animatedProperty = (*it)->propertyFromAttribute(attributeName);
+    for (SVGElement* elementInstance : list) {
+        RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> animatedProperty = elementInstance->propertyFromAttribute(attributeName);
         if (animatedProperty)
             animatedProperty->setAnimatedValue(value);
     }
@@ -171,17 +179,17 @@ void setAnimatedValueOnAllTargetProperties(const WillBeHeapVector<RawPtrWillBeMe
 
 }
 
-PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::resetAnimation(const WillBeHeapVector<RawPtrWillBeMember<SVGElement> >& list)
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::resetAnimation(const SVGElementInstances& list)
 {
     ASSERT(isAnimatingSVGDom());
-    RefPtr<SVGPropertyBase> animatedValue = m_animatedProperty->createAnimatedValue();
+    RefPtrWillBeRawPtr<SVGPropertyBase> animatedValue = m_animatedProperty->createAnimatedValue();
     ASSERT(animatedValue->type() == m_type);
     setAnimatedValueOnAllTargetProperties(list, m_animatedProperty->attributeName(), animatedValue);
 
     return animatedValue.release();
 }
 
-PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::startAnimValAnimation(const WillBeHeapVector<RawPtrWillBeMember<SVGElement> >& list)
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::startAnimValAnimation(const SVGElementInstances& list)
 {
     ASSERT(isAnimatingSVGDom());
     SVGElement::InstanceUpdateBlocker blocker(m_contextElement);
@@ -189,21 +197,22 @@ PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::startAnimValAnimation(const
     return resetAnimation(list);
 }
 
-void SVGAnimatedTypeAnimator::stopAnimValAnimation(const WillBeHeapVector<RawPtrWillBeMember<SVGElement> >& list)
+void SVGAnimatedTypeAnimator::stopAnimValAnimation(const SVGElementInstances& list)
 {
-    ASSERT(isAnimatingSVGDom());
+    if (!isAnimatingSVGDom())
+        return;
+
+    ASSERT(m_contextElement);
     SVGElement::InstanceUpdateBlocker blocker(m_contextElement);
 
-    WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator it = list.begin();
-    WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator itEnd = list.end();
-    for (; it != itEnd; ++it) {
-        RefPtr<SVGAnimatedPropertyBase> animatedProperty = (*it)->propertyFromAttribute(m_animatedProperty->attributeName());
+    for (SVGElement* elementInstance : list) {
+        RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> animatedProperty = elementInstance->propertyFromAttribute(m_animatedProperty->attributeName());
         if (animatedProperty)
             animatedProperty->animationEnded();
     }
 }
 
-PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::resetAnimValToBaseVal(const WillBeHeapVector<RawPtrWillBeMember<SVGElement> >& list)
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::resetAnimValToBaseVal(const SVGElementInstances& list)
 {
     SVGElement::InstanceUpdateBlocker blocker(m_contextElement);
 
@@ -211,19 +220,20 @@ PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::resetAnimValToBaseVal(const
 }
 
 class ParsePropertyFromString {
+    STACK_ALLOCATED();
 public:
     explicit ParsePropertyFromString(SVGAnimatedTypeAnimator* animator)
         : m_animator(animator)
     {
     }
 
-    PassRefPtr<SVGPropertyBase> operator()(SVGAnimationElement*, const String& value)
+    PassRefPtrWillBeRawPtr<SVGPropertyBase> operator()(SVGAnimationElement*, const String& value)
     {
         return m_animator->createPropertyForAnimation(value);
     }
 
 private:
-    SVGAnimatedTypeAnimator* m_animator;
+    RawPtrWillBeMember<SVGAnimatedTypeAnimator> m_animator;
 };
 
 void SVGAnimatedTypeAnimator::calculateAnimatedValue(float percentage, unsigned repeatCount, SVGPropertyBase* from, SVGPropertyBase* to, SVGPropertyBase* toAtEndOfDuration, SVGPropertyBase* animated)
@@ -231,32 +241,32 @@ void SVGAnimatedTypeAnimator::calculateAnimatedValue(float percentage, unsigned 
     ASSERT(m_animationElement);
     ASSERT(m_contextElement);
 
-    RefPtr<SVGPropertyBase> fromValue = m_animationElement->animationMode() == ToAnimation ? animated : from;
-    RefPtr<SVGPropertyBase> toValue = to;
-    RefPtr<SVGPropertyBase> toAtEndOfDurationValue = toAtEndOfDuration;
-    RefPtr<SVGPropertyBase> animatedValue = animated;
+    RefPtrWillBeRawPtr<SVGPropertyBase> fromValue = m_animationElement->animationMode() == ToAnimation ? animated : from;
+    RefPtrWillBeRawPtr<SVGPropertyBase> toValue = to;
+    RefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue = toAtEndOfDuration;
+    RefPtrWillBeRawPtr<SVGPropertyBase> animatedValue = animated;
 
     // Apply CSS inheritance rules.
     ParsePropertyFromString parsePropertyFromString(this);
-    m_animationElement->adjustForInheritance<RefPtr<SVGPropertyBase>, ParsePropertyFromString>(parsePropertyFromString, m_animationElement->fromPropertyValueType(), fromValue, m_contextElement);
-    m_animationElement->adjustForInheritance<RefPtr<SVGPropertyBase>, ParsePropertyFromString>(parsePropertyFromString, m_animationElement->toPropertyValueType(), toValue, m_contextElement);
+    m_animationElement->adjustForInheritance<RefPtrWillBeRawPtr<SVGPropertyBase>, ParsePropertyFromString>(parsePropertyFromString, m_animationElement->fromPropertyValueType(), fromValue, m_contextElement);
+    m_animationElement->adjustForInheritance<RefPtrWillBeRawPtr<SVGPropertyBase>, ParsePropertyFromString>(parsePropertyFromString, m_animationElement->toPropertyValueType(), toValue, m_contextElement);
 
     animatedValue->calculateAnimatedValue(m_animationElement, percentage, repeatCount, fromValue, toValue, toAtEndOfDurationValue, m_contextElement);
 }
 
 float SVGAnimatedTypeAnimator::calculateDistance(const String& fromString, const String& toString)
 {
-    ASSERT(m_animationElement);
     ASSERT(m_contextElement);
-    RefPtr<SVGPropertyBase> fromValue = createPropertyForAnimation(fromString);
-    RefPtr<SVGPropertyBase> toValue = createPropertyForAnimation(toString);
+    RefPtrWillBeRawPtr<SVGPropertyBase> fromValue = createPropertyForAnimation(fromString);
+    RefPtrWillBeRawPtr<SVGPropertyBase> toValue = createPropertyForAnimation(toString);
     return fromValue->calculateDistance(toValue, m_contextElement);
 }
 
-void SVGAnimatedTypeAnimator::trace(Visitor* visitor)
+DEFINE_TRACE(SVGAnimatedTypeAnimator)
 {
     visitor->trace(m_animationElement);
     visitor->trace(m_contextElement);
+    visitor->trace(m_animatedProperty);
 }
 
 }

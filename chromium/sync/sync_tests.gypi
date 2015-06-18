@@ -35,6 +35,8 @@
         'sessions/test_util.cc',
         'sessions/test_util.h',
         'test/callback_counter.h',
+        "test/directory_backing_store_corruption_testing.cc",
+        "test/directory_backing_store_corruption_testing.h",
         'test/engine/fake_model_worker.cc',
         'test/engine/fake_model_worker.h',
         'test/engine/fake_sync_scheduler.cc',
@@ -66,19 +68,21 @@
         'test/mock_invalidation.h',
         'test/mock_invalidation_tracker.cc',
         'test/mock_invalidation_tracker.h',
-        'test/trackable_mock_invalidation.cc',
-        'test/trackable_mock_invalidation.h',
         'test/null_directory_change_delegate.cc',
         'test/null_directory_change_delegate.h',
         'test/null_transaction_observer.cc',
         'test/null_transaction_observer.h',
-        'test/sessions/test_scoped_session_event_listener.h',
-        'test/sessions/mock_debug_info_getter.h',
         'test/sessions/mock_debug_info_getter.cc',
+        'test/sessions/mock_debug_info_getter.h',
+        'test/sessions/test_scoped_session_event_listener.h',
         'test/test_directory_backing_store.cc',
         'test/test_directory_backing_store.h',
         'test/test_transaction_observer.cc',
         'test/test_transaction_observer.h',
+        'test/trackable_mock_invalidation.cc',
+        'test/trackable_mock_invalidation.h',
+        'util/mock_unrecoverable_error_handler.cc',
+        'util/mock_unrecoverable_error_handler.h',
         'util/test_unrecoverable_error_handler.cc',
         'util/test_unrecoverable_error_handler.h',
       ],
@@ -150,6 +154,8 @@
         'test/fake_server/fake_server_verifier.h',
         'test/fake_server/permanent_entity.cc',
         'test/fake_server/permanent_entity.h',
+        'test/fake_server/sessions_hierarchy.cc',
+        'test/fake_server/sessions_hierarchy.h',
         'test/fake_server/tombstone_entity.cc',
         'test/fake_server/tombstone_entity.h',
         'test/fake_server/unique_client_entity.cc',
@@ -218,10 +224,10 @@
         'sync',
       ],
       'sources': [
-        'api/fake_syncable_service.cc',
-        'api/fake_syncable_service.h',
         'api/fake_sync_change_processor.cc',
         'api/fake_sync_change_processor.h',
+        'api/fake_syncable_service.cc',
+        'api/fake_syncable_service.h',
         'api/sync_change_processor_wrapper_for_test.cc',
         'api/sync_change_processor_wrapper_for_test.h',
         'api/sync_error_factory_mock.cc',
@@ -247,6 +253,7 @@
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
         '../sql/sql.gyp:sql',
+        '../sql/sql.gyp:test_support_sql',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
@@ -260,6 +267,7 @@
       ],
       'sources': [
         'api/attachments/attachment_id_unittest.cc',
+        'api/attachments/attachment_metadata_unittest.cc',
         'api/attachments/attachment_unittest.cc',
         'api/sync_change_unittest.cc',
         'api/sync_data_unittest.cc',
@@ -281,7 +289,7 @@
         'internal_api/attachments/attachment_downloader_impl_unittest.cc',
         'internal_api/attachments/attachment_service_impl_unittest.cc',
         'internal_api/attachments/attachment_service_proxy_unittest.cc',
-        'internal_api/attachments/attachment_store_handle_unittest.cc',
+        'internal_api/attachments/attachment_store_frontend_unittest.cc',
         'internal_api/attachments/attachment_store_test_template.h',
         'internal_api/attachments/attachment_uploader_impl_unittest.cc',
         'internal_api/attachments/fake_attachment_downloader_unittest.cc',
@@ -365,46 +373,6 @@
         }],
       ],
     },
-
-    # Test support files for using the Test Accounts service.
-    # GN version: //sync:test_support_accounts_client
-    {
-      'target_name': 'test_support_accounts_client',
-      'type': 'static_library',
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '..',
-        ],
-      },
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../net/net.gyp:net',
-      ],
-      'sources': [
-        'test/accounts_client/test_accounts_client.cc',
-        'test/accounts_client/test_accounts_client.h',
-        'test/accounts_client/url_request_context_getter.cc',
-        'test/accounts_client/url_request_context_getter.h',
-      ],
-    },
-
-    # The Sync end-to-end (and associated infrastructure) tests.
-    # GN version: //sync:sync_endtoend_tests
-    {
-      'target_name': 'sync_endtoend_tests',
-      'type': '<(gtest_target_type)',
-      'dependencies': [
-        '../base/base.gyp:run_all_unittests',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        '../url/url.gyp:url_lib',
-        'test_support_accounts_client',
-      ],
-      'sources': [
-        'test/accounts_client/test_accounts_client_unittest.cc',
-      ],
-    },
-
   ],
   'conditions': [
     ['OS != "ios"', {
@@ -459,7 +427,7 @@
           'target_name': 'sync_fake_server_jni_headers',
           'type': 'none',
           'sources': [
-            '../chrome/android/sync_shell/javatests/src/chromium/chrome/browser/sync/FakeServerHelper.java',
+            '../chrome/android/sync_shell/javatests/src/org/chromium/chrome/browser/sync/FakeServerHelper.java',
           ],
           'variables': {
             'jni_gen_package': 'sync/test/fake_server',
@@ -468,13 +436,54 @@
           'includes': [ '../build/jni_generator.gypi' ],
         },
         {
+          # TODO(pvalenzuela): Create GN version of this target.
+          # http://crbug.com/475612
+          'target_name': 'test_support_sync_proto_java',
+          'type': 'none',
+          'variables': {
+            'proto_in_dir': '<(INTERMEDIATE_DIR)/sync_protos',
+            # Set this variable so that sync_proto_source_paths refers to the
+            # temporary proto definitions created here.
+            'sync_proto_sources_dir': '<(INTERMEDIATE_DIR)/sync_protos',
+          },
+          'actions': [
+            {
+              'action_name': 'run_script',
+              'inputs': [
+                'protocol/prepare_protos_for_java_tests.py',
+                # Use the original list of proto files (defined in sync.gyp).
+                '<@(sync_proto_sources)',
+              ],
+              'outputs': [
+                '<@(sync_proto_source_paths)',
+              ],
+              'action': [
+                'python',
+                'protocol/prepare_protos_for_java_tests.py',
+                '--output_dir',
+                '<(INTERMEDIATE_DIR)/sync_protos',
+                # Use the original list of proto files (defined in sync.gyp).
+                '<@(sync_proto_sources)'
+              ],
+            },
+          ],
+          'sources': [
+            '<@(sync_proto_source_paths)',
+          ],
+          'includes': ['protocol/protocol.gypi', '../build/protoc_java.gypi'],
+        },
+        {
           # GN: //sync:test_support_sync_fake_server_android
           'target_name': 'test_support_sync_fake_server_android',
           'type': 'static_library',
           'dependencies': [
             'sync_fake_server_jni_headers',
             'test_support_sync_fake_server',
+            '../testing/gtest.gyp:gtest',
             '../base/base.gyp:base',
+          ],
+          'export_dependent_settings': [
+            '../testing/gtest.gyp:gtest',
           ],
           'sources': [
             'test/fake_server/android/fake_server_helper_android.cc',

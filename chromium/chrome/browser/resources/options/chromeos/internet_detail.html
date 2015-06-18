@@ -73,7 +73,8 @@
                   <span>
                     <span i18n-content="inetPreferredNetwork"></span>
                     <span class="controlled-setting-indicator"
-                          managed="Priority"></span>
+                          managed="Priority"
+                          internet-detail-for="prefer-network-wifi"></span>
                   </span>
                 </label>
               </div>
@@ -87,7 +88,9 @@
                   <span>
                     <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                          managed="WiFi.AutoConnect"></span>
+                          managed="WiFi.AutoConnect"
+                          internet-detail-for="auto-connect-network-wifi">
+                    </span>
                   </span>
                 </label>
               </div>
@@ -157,7 +160,9 @@
                   <span>
                     <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                          managed="WiMAX.AutoConnect"></span>
+                          managed="WiMAX.AutoConnect"
+                          internet-detail-for="auto-connect-network-wimax">
+                    </span>
                   </span>
                 </label>
               </div>
@@ -198,7 +203,7 @@
     <div id="vpn-tab" class="subpages-tab-contents vpn-details">
       <section>
         <table class="option-control-table">
-          <tr class="auto-connect-network">
+          <tr class="auto-connect-network built-in-vpn-provider-only">
             <td>
               <div class="checkbox controlled-setting-with-label">
                 <label>
@@ -206,7 +211,8 @@
                   <span>
                     <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                          managed="VPN.AutoConnect"></span>
+                          managed="VPN.AutoConnect"
+                          internet-detail-for="auto-connect-network-vpn"></span>
                   </span>
                 </label>
               </div>
@@ -216,19 +222,24 @@
             <td class="option-name" i18n-content="inetServiceName"></td>
             <td id="inet-service-name" class="option-value"></td>
           </tr>
-          <tr>
+          <tr class="built-in-vpn-provider-only">
             <td class="option-name" i18n-content="inetServerHostname"></td>
             <td>
               <input class="option-value" id="inet-server-hostname"></input>
               <span class="controlled-setting-indicator"
-                    managed="VPN.Host"></span>
+                    managed="VPN.Host"
+                    internet-detail-for="inet-server-hostname"></span>
             </td>
           </tr>
           <tr>
             <td class="option-name" i18n-content="inetProviderType"></td>
             <td id="inet-provider-type" class="option-value"></td>
           </tr>
-          <tr>
+          <tr class="third-party-vpn-provider-only">
+            <td class="option-name" i18n-content="inetProviderName"></td>
+            <td id="inet-provider-name" class="option-value"></td>
+          </tr>
+          <tr class="built-in-vpn-provider-only">
             <td class="option-name" i18n-content="inetUsername"></td>
             <td id="inet-username" class="option-value"></td>
           </tr>
@@ -283,7 +294,8 @@
                 </option>
               </select>
               <span class="controlled-setting-indicator"
-                    managed="Cellular.APN"></span>
+                    managed="Cellular.APN"
+                    internet-detail-for="select-apn"></span>
             </td>
           </tr>
           <tr class="gsm-only apn-details-view">
@@ -323,7 +335,9 @@
                   <span>
                     <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                          managed="Cellular.AutoConnect"></span>
+                          managed="Cellular.AutoConnect"
+                          internet-detail-for="auto-connect-network-cellular">
+                    </span>
                   </span>
                 </label>
               </div>
@@ -409,7 +423,7 @@
             <span>
               <span i18n-content="ipAutomaticConfiguration"></span>
               <span class="controlled-setting-indicator"
-                    managed="StaticIPConfig.IPAddress"></span>
+                    managed="IPAddressConfigType"></span>
             </span>
           </label>
         </div>
@@ -438,7 +452,11 @@
           <label>
             <input id="automatic-dns-radio" type="radio" name="dnstype"
                 value="automatic">
-            <span i18n-content="automaticNameServers"></span>
+            <span>
+              <span i18n-content="automaticNameServers"></span>
+              <span class="controlled-setting-indicator"
+                    managed="NameServersConfigType"></span>
+            </span>
           </label>
         </div>
         <div id="automatic-dns-display" class="dns-display"></div>
@@ -497,7 +515,8 @@
               <span>
                 <span i18n-content="lockSimCard"></span>
                 <span class="controlled-setting-indicator"
-                      managed="Cellular.SIMLockStatus.LockEnabled"></span>
+                      managed="Cellular.SIMLockStatus.LockEnabled"
+                      internet-detail-for="sim-card-lock-enabled"></span>
               </span>
             </label>
           </div>
@@ -506,7 +525,8 @@
           <div id="change-pin-area">
             <button id="change-pin" i18n-content="changePinButton"></button>
             <span class="controlled-setting-indicator"
-                  managed="Cellular.SIMLockStatus.LockType"></span>
+                  managed="Cellular.SIMLockStatus.LockType"
+                  internet-detail-for="change-pin"></span>
           </div>
         </section>
       </div>

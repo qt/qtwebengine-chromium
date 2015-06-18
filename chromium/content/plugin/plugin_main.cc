@@ -44,11 +44,11 @@ int PluginMain(const MainFunctionParams& parameters) {
 #endif
   base::MessageLoopForUI main_message_loop;
   base::PlatformThread::SetName("CrPluginMain");
-  base::debug::TraceLog::GetInstance()->SetProcessName("Plugin Process");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("Plugin Process");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventPluginProcessSortIndex);
 
-  const CommandLine& parsed_command_line = parameters.command_line;
+  const base::CommandLine& parsed_command_line = parameters.command_line;
 
 #if defined(OS_WIN)
   base::win::ScopedCOMInitializer com_initializer;

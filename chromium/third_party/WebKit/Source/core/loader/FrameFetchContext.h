@@ -31,7 +31,9 @@
 #ifndef FrameFetchContext_h
 #define FrameFetchContext_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/FetchContext.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/PassOwnPtr.h"
@@ -46,34 +48,78 @@ class ResourceLoader;
 class ResourceResponse;
 class ResourceRequest;
 
-class FrameFetchContext final : public FetchContext {
+class CORE_EXPORT FrameFetchContext final : public FetchContext {
 public:
-    static PassOwnPtrWillBeRawPtr<FrameFetchContext> create(LocalFrame* frame)
+    static PassRefPtrWillBeRawPtr<ResourceFetcher> createContextAndFetcher(DocumentLoader* loader)
     {
-        return adoptPtrWillBeNoop(new FrameFetchContext(frame));
+        return ResourceFetcher::create(adoptPtrWillBeNoop(new FrameFetchContext(loader)));
     }
 
-    virtual void reportLocalLoadFailed(const KURL&) override;
-    virtual void addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType) override;
-    virtual void setFirstPartyForCookies(ResourceRequest&) override;
-    virtual CachePolicy cachePolicy(Document*) const override;
-    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority, int intraPriorityValue);
-    virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo()) override;
-    virtual void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) override;
-    virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0) override;
-    virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength) override;
-    virtual void dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)  override;
-    virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime, int64_t encodedDataLength) override;
-    virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&, bool isInternalRequest) override;
-    virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength) override;
+    static void provideDocumentToContext(FetchContext& context, Document* document)
+    {
+        ASSERT(document);
+        RELEASE_ASSERT(context.isLiveContext());
+        static_cast<FrameFetchContext&>(context).m_document = document;
+    }
 
-    virtual void trace(Visitor*) override;
+    ~FrameFetchContext();
+
+    bool isLiveContext() { return true; }
+
+    void addAdditionalRequestHeaders(ResourceRequest&, FetchResourceType) override;
+    void setFirstPartyForCookies(ResourceRequest&) override;
+    CachePolicy cachePolicy() const override;
+    ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type) const override;
+    void dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority, int intraPriorityValue) override;
+    void dispatchWillSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& = FetchInitiatorInfo()) override;
+    void dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&) override;
+    void dispatchDidReceiveResponse(unsigned long identifier, const ResourceResponse&, ResourceLoader* = 0) override;
+    void dispatchDidReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength) override;
+    void dispatchDidDownloadData(unsigned long identifier, int dataLength, int encodedDataLength)  override;
+    void dispatchDidFinishLoading(unsigned long identifier, double finishTime, int64_t encodedDataLength) override;
+    void dispatchDidFail(unsigned long identifier, const ResourceError&, bool isInternalRequest) override;
+    void sendRemainingDelegateMessages(unsigned long identifier, const ResourceResponse&, int dataLength) override;
+
+    bool shouldLoadNewResource(Resource::Type) const override;
+    void dispatchWillRequestResource(FetchRequest*) override;
+    void willStartLoadingResource(ResourceRequest&) override;
+    void didLoadResource() override;
+
+    void addResourceTiming(ResourceTimingInfo*, bool isMainResource) override;
+    bool allowImage(bool imagesEnabled, const KURL&) const override;
+    bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const override;
+
+    bool isControlledByServiceWorker() const override;
+    int64_t serviceWorkerID() const override;
+
+    bool isMainFrame() const override;
+    bool hasSubstituteData() const override;
+    bool defersLoading() const override;
+    bool isLoadComplete() const override;
+    bool pageDismissalEventBeingDispatched() const override;
+    bool updateTimingInfoForIFrameNavigation(ResourceTimingInfo*) override;
+    void sendImagePing(const KURL&) override;
+    void addConsoleMessage(const String&) const override;
+    SecurityOrigin* securityOrigin() const override;
+    String charset() const override;
+    void upgradeInsecureRequest(FetchRequest&) override;
+    void addClientHintsIfNecessary(FetchRequest&) override;
+    void addCSPHeaderIfNecessary(Resource::Type, FetchRequest&) override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    explicit FrameFetchContext(LocalFrame*);
-    inline DocumentLoader* ensureLoader(DocumentLoader*);
+    explicit FrameFetchContext(DocumentLoader*);
+    inline DocumentLoader* ensureLoaderForNotifications();
 
-    RawPtrWillBeMember<LocalFrame> m_frame;
+    LocalFrame* frame() const; // Can be null
+    void printAccessDeniedMessage(const KURL&) const;
+
+    // FIXME: Oilpan: Ideally this should just be a traced Member but that will
+    // currently leak because ComputedStyle and its data are not on the heap.
+    // See crbug.com/383860 for details.
+    RawPtrWillBeWeakMember<Document> m_document;
+    DocumentLoader* m_documentLoader;
 };
 
 }

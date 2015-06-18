@@ -46,14 +46,20 @@ scoped_ptr<Layer> LayerOwner::RecreateLayer() {
   new_layer->SetFillsBoundsOpaquely(old_layer->fills_bounds_opaquely());
   new_layer->SetFillsBoundsCompletely(old_layer->FillsBoundsCompletely());
   new_layer->SetSubpixelPositionOffset(old_layer->subpixel_position_offset());
+  if (old_layer->type() == LAYER_SOLID_COLOR)
+    new_layer->SetColor(old_layer->GetTargetColor());
   SkRegion* alpha_shape = old_layer->alpha_shape();
   if (alpha_shape)
     new_layer->SetAlphaShape(make_scoped_ptr(new SkRegion(*alpha_shape)));
 
-  // Install new layer as a sibling of the old layer, stacked below it.
   if (old_layer->parent()) {
+    // Install new layer as a sibling of the old layer, stacked below it.
     old_layer->parent()->Add(new_layer);
     old_layer->parent()->StackBelow(new_layer, old_layer.get());
+  } else if (old_layer->GetCompositor()) {
+    // If old_layer was the layer tree root then we need to move the Compositor
+    // over to the new root.
+    old_layer->GetCompositor()->SetRootLayer(new_layer);
   }
 
   // Migrate all the child layers over to the new layer. Copy the list because

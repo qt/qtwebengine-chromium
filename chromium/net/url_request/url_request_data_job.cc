@@ -6,7 +6,6 @@
 
 #include "net/url_request/url_request_data_job.h"
 
-#include "base/profiler/scoped_tracker.h"
 #include "net/base/data_url.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
@@ -19,10 +18,10 @@ int URLRequestDataJob::BuildResponse(const GURL& url,
                                      std::string* charset,
                                      std::string* data,
                                      HttpResponseHeaders* headers) {
-  if (!net::DataURL::Parse(url, mime_type, charset, data))
-    return net::ERR_INVALID_URL;
+  if (!DataURL::Parse(url, mime_type, charset, data))
+    return ERR_INVALID_URL;
 
-  // |mime_type| set by net::DataURL::Parse() is guaranteed to be in
+  // |mime_type| set by DataURL::Parse() is guaranteed to be in
   //     token "/" token
   // form. |charset| is also guaranteed to be a token.
 
@@ -41,7 +40,7 @@ int URLRequestDataJob::BuildResponse(const GURL& url,
     headers->AddHeader("Access-Control-Allow-Origin: *");
   }
 
-  return net::OK;
+  return OK;
 }
 
 URLRequestDataJob::URLRequestDataJob(
@@ -53,10 +52,6 @@ int URLRequestDataJob::GetData(std::string* mime_type,
                                std::string* charset,
                                std::string* data,
                                const CompletionCallback& callback) const {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422489 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("422489 URLRequestDataJob::GetData"));
-
   // Check if data URL is valid. If not, don't bother to try to extract data.
   // Otherwise, parse the data from the data URL.
   const GURL& url = request_->url();

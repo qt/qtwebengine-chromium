@@ -27,9 +27,9 @@ static void copy_and_extend_plane(const uint8_t *src, int src_pitch,
   uint8_t *dst_ptr2 = dst + w;
 
   for (i = 0; i < h; i++) {
-    vpx_memset(dst_ptr1, src_ptr1[0], extend_left);
-    vpx_memcpy(dst_ptr1 + extend_left, src_ptr1, w);
-    vpx_memset(dst_ptr2, src_ptr2[0], extend_right);
+    memset(dst_ptr1, src_ptr1[0], extend_left);
+    memcpy(dst_ptr1 + extend_left, src_ptr1, w);
+    memset(dst_ptr2, src_ptr2[0], extend_right);
     src_ptr1 += src_pitch;
     src_ptr2 += src_pitch;
     dst_ptr1 += dst_pitch;
@@ -45,12 +45,12 @@ static void copy_and_extend_plane(const uint8_t *src, int src_pitch,
   linesize = extend_left + extend_right + w;
 
   for (i = 0; i < extend_top; i++) {
-    vpx_memcpy(dst_ptr1, src_ptr1, linesize);
+    memcpy(dst_ptr1, src_ptr1, linesize);
     dst_ptr1 += dst_pitch;
   }
 
   for (i = 0; i < extend_bottom; i++) {
-    vpx_memcpy(dst_ptr2, src_ptr2, linesize);
+    memcpy(dst_ptr2, src_ptr2, linesize);
     dst_ptr2 += dst_pitch;
   }
 }
@@ -73,7 +73,7 @@ static void highbd_copy_and_extend_plane(const uint8_t *src8, int src_pitch,
 
   for (i = 0; i < h; i++) {
     vpx_memset16(dst_ptr1, src_ptr1[0], extend_left);
-    vpx_memcpy(dst_ptr1 + extend_left, src_ptr1, w * sizeof(uint16_t));
+    memcpy(dst_ptr1 + extend_left, src_ptr1, w * sizeof(uint16_t));
     vpx_memset16(dst_ptr2, src_ptr2[0], extend_right);
     src_ptr1 += src_pitch;
     src_ptr2 += src_pitch;
@@ -90,12 +90,12 @@ static void highbd_copy_and_extend_plane(const uint8_t *src8, int src_pitch,
   linesize = extend_left + extend_right + w;
 
   for (i = 0; i < extend_top; i++) {
-    vpx_memcpy(dst_ptr1, src_ptr1, linesize * sizeof(uint16_t));
+    memcpy(dst_ptr1, src_ptr1, linesize * sizeof(uint16_t));
     dst_ptr1 += dst_pitch;
   }
 
   for (i = 0; i < extend_bottom; i++) {
-    vpx_memcpy(dst_ptr2, src_ptr2, linesize * sizeof(uint16_t));
+    memcpy(dst_ptr2, src_ptr2, linesize * sizeof(uint16_t));
     dst_ptr2 += dst_pitch;
   }
 }
@@ -110,9 +110,9 @@ void vp9_copy_and_extend_frame(const YV12_BUFFER_CONFIG *src,
   // Motion estimation may use src block variance with the block size up
   // to 64x64, so the right and bottom need to be extended to 64 multiple
   // or up to 16, whichever is greater.
-  const int eb_y = MAX(src->y_width + 16, ALIGN_POWER_OF_TWO(src->y_width, 6))
+  const int er_y = MAX(src->y_width + 16, ALIGN_POWER_OF_TWO(src->y_width, 6))
       - src->y_crop_width;
-  const int er_y = MAX(src->y_height + 16, ALIGN_POWER_OF_TWO(src->y_height, 6))
+  const int eb_y = MAX(src->y_height + 16, ALIGN_POWER_OF_TWO(src->y_height, 6))
       - src->y_crop_height;
   const int uv_width_subsampling = (src->uv_width != src->y_width);
   const int uv_height_subsampling = (src->uv_height != src->y_height);

@@ -56,17 +56,23 @@
 
 #include <openssl/rsa.h>
 
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/engine.h>
 #include <openssl/err.h>
 #include <openssl/ex_data.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
+#include <openssl/thread.h>
 
 #include "internal.h"
+#include "../internal.h"
 
 
 extern const RSA_METHOD RSA_default_method;
+
+static CRYPTO_EX_DATA_CLASS g_ex_data_class = CRYPTO_EX_DATA_CLASS_INIT;
 
 RSA *RSA_new(void) { return RSA_new_method(NULL); }
 
@@ -90,15 +96,16 @@ RSA *RSA_new_method(const ENGINE *engine) {
 
   rsa->references = 1;
   rsa->flags = rsa->meth->flags;
+  CRYPTO_MUTEX_init(&rsa->lock);
 
-  if (!CRYPTO_new_ex_data(CRYPTO_EX_INDEX_RSA, rsa, &rsa->ex_data)) {
+  if (!CRYPTO_new_ex_data(&g_ex_data_class, rsa, &rsa->ex_data)) {
     METHOD_unref(rsa->meth);
     OPENSSL_free(rsa);
     return NULL;
   }
 
   if (rsa->meth->init && !rsa->meth->init(rsa)) {
-    CRYPTO_free_ex_data(CRYPTO_EX_INDEX_RSA, rsa, &rsa->ex_data);
+    CRYPTO_free_ex_data(&g_ex_data_class, rsa, &rsa->ex_data);
     METHOD_unref(rsa->meth);
     OPENSSL_free(rsa);
     return NULL;
@@ -123,31 +130,22 @@ void RSA_free(RSA *rsa) {
   }
   METHOD_unref(rsa->meth);
 
-  CRYPTO_free_ex_data(CRYPTO_EX_INDEX_DSA, rsa, &rsa->ex_data);
+  CRYPTO_free_ex_data(&g_ex_data_class, rsa, &rsa->ex_data);
 
-  if (rsa->n != NULL)
-    BN_clear_free(rsa->n);
-  if (rsa->e != NULL)
-    BN_clear_free(rsa->e);
-  if (rsa->d != NULL)
-    BN_clear_free(rsa->d);
-  if (rsa->p != NULL)
-    BN_clear_free(rsa->p);
-  if (rsa->q != NULL)
-    BN_clear_free(rsa->q);
-  if (rsa->dmp1 != NULL)
-    BN_clear_free(rsa->dmp1);
-  if (rsa->dmq1 != NULL)
-    BN_clear_free(rsa->dmq1);
-  if (rsa->iqmp != NULL)
-    BN_clear_free(rsa->iqmp);
+  BN_clear_free(rsa->n);
+  BN_clear_free(rsa->e);
+  BN_clear_free(rsa->d);
+  BN_clear_free(rsa->p);
+  BN_clear_free(rsa->q);
+  BN_clear_free(rsa->dmp1);
+  BN_clear_free(rsa->dmq1);
+  BN_clear_free(rsa->iqmp);
   for (u = 0; u < rsa->num_blindings; u++) {
     BN_BLINDING_free(rsa->blindings[u]);
   }
-  if (rsa->blindings != NULL)
-    OPENSSL_free(rsa->blindings);
-  if (rsa->blindings_inuse != NULL)
-    OPENSSL_free(rsa->blindings_inuse);
+  OPENSSL_free(rsa->blindings);
+  OPENSSL_free(rsa->blindings_inuse);
+  CRYPTO_MUTEX_cleanup(&rsa->lock);
   OPENSSL_free(rsa);
 }
 
@@ -260,10 +258,21 @@ int RSA_is_opaque(const RSA *rsa) {
   return rsa->meth && (rsa->meth->flags & RSA_FLAG_OPAQUE);
 }
 
+int RSA_supports_digest(const RSA *rsa, const EVP_MD *md) {
+  if (rsa->meth && rsa->meth->supports_digest) {
+    return rsa->meth->supports_digest(rsa, md);
+  }
+  return 1;
+}
+
 int RSA_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_func,
                          CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func) {
-  return CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_RSA, argl, argp, new_func,
-                                 dup_func, free_func);
+  int index;
+  if (!CRYPTO_get_ex_new_index(&g_ex_data_class, &index, argl, argp, new_func,
+                               dup_func, free_func)) {
+    return -1;
+  }
+  return index;
 }
 
 int RSA_set_ex_data(RSA *d, int idx, void *arg) {
@@ -329,12 +338,6 @@ static const struct pkcs1_sig_prefix kPKCS1SigPrefixes[] = {
       0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40},
     },
     {
-     NID_ripemd160,
-     14,
-     {0x30, 0x20, 0x30, 0x08, 0x06, 0x06, 0x28, 0xcf, 0x06, 0x03, 0x00, 0x31,
-      0x04, 0x14},
-    },
-    {
      NID_undef, 0, {0},
     },
 };
@@ -348,15 +351,11 @@ static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
                               int *is_alloced, int hash_nid, const uint8_t *msg,
                               size_t msg_len) {
   unsigned i;
-  const uint8_t* prefix = NULL;
-  unsigned prefix_len;
-  uint8_t *signed_msg;
-  unsigned signed_msg_len;
 
   if (hash_nid == NID_md5_sha1) {
     /* Special case: SSL signature, just check the length. */
     if (msg_len != SSL_SIG_LENGTH) {
-      OPENSSL_PUT_ERROR(RSA, RSA_sign, RSA_R_INVALID_MESSAGE_LENGTH);
+      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_INVALID_MESSAGE_LENGTH);
       return 0;
     }
 
@@ -368,38 +367,39 @@ static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
 
   for (i = 0; kPKCS1SigPrefixes[i].nid != NID_undef; i++) {
     const struct pkcs1_sig_prefix *sig_prefix = &kPKCS1SigPrefixes[i];
-    if (sig_prefix->nid == hash_nid) {
-      prefix = sig_prefix->bytes;
-      prefix_len = sig_prefix->len;
-      break;
+    if (sig_prefix->nid != hash_nid) {
+      continue;
     }
+
+    const uint8_t* prefix = sig_prefix->bytes;
+    unsigned prefix_len = sig_prefix->len;
+    unsigned signed_msg_len;
+    uint8_t *signed_msg;
+
+    signed_msg_len = prefix_len + msg_len;
+    if (signed_msg_len < prefix_len) {
+      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_TOO_LONG);
+      return 0;
+    }
+
+    signed_msg = OPENSSL_malloc(signed_msg_len);
+    if (!signed_msg) {
+      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, ERR_R_MALLOC_FAILURE);
+      return 0;
+    }
+
+    memcpy(signed_msg, prefix, prefix_len);
+    memcpy(signed_msg + prefix_len, msg, msg_len);
+
+    *out_msg = signed_msg;
+    *out_msg_len = signed_msg_len;
+    *is_alloced = 1;
+
+    return 1;
   }
 
-  if (prefix == NULL) {
-    OPENSSL_PUT_ERROR(RSA, RSA_sign, RSA_R_UNKNOWN_ALGORITHM_TYPE);
-    return 0;
-  }
-
-  signed_msg_len = prefix_len + msg_len;
-  if (signed_msg_len < prefix_len) {
-    OPENSSL_PUT_ERROR(RSA, RSA_sign, RSA_R_TOO_LONG);
-    return 0;
-  }
-
-  signed_msg = OPENSSL_malloc(signed_msg_len);
-  if (!signed_msg) {
-    OPENSSL_PUT_ERROR(RSA, RSA_sign, ERR_R_MALLOC_FAILURE);
-    return 0;
-  }
-
-  memcpy(signed_msg, prefix, prefix_len);
-  memcpy(signed_msg + prefix_len, msg, msg_len);
-
-  *out_msg = signed_msg;
-  *out_msg_len = signed_msg_len;
-  *is_alloced = 1;
-
-  return 1;
+  OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_UNKNOWN_ALGORITHM_TYPE);
+  return 0;
 }
 
 int RSA_sign(int hash_nid, const uint8_t *in, unsigned in_len, uint8_t *out,
@@ -486,9 +486,7 @@ int RSA_verify(int hash_nid, const uint8_t *msg, size_t msg_len,
   ret = 1;
 
 out:
-  if (buf != NULL) {
-    OPENSSL_free(buf);
-  }
+  OPENSSL_free(buf);
   if (signed_msg_is_alloced) {
     OPENSSL_free(signed_msg);
   }
@@ -496,10 +494,6 @@ out:
 }
 
 static void bn_free_and_null(BIGNUM **bn) {
-  if (*bn == NULL) {
-    return;
-  }
-
   BN_free(*bn);
   *bn = NULL;
 }
@@ -749,4 +743,8 @@ int RSA_private_transform(RSA *rsa, uint8_t *out, const uint8_t *in,
   }
 
   return RSA_default_method.private_transform(rsa, out, in, len);
+}
+
+int RSA_blinding_on(RSA *rsa, BN_CTX *ctx) {
+  return 1;
 }

@@ -15,42 +15,60 @@ namespace blink {
 
 class Animation;
 class AnimationNode;
-class AnimationPlayer;
+class AnimationTimeline;
 class Element;
 class InspectorDOMAgent;
-class StringKeyframe;
+class InspectorPageAgent;
+class TimingFunction;
 
-class InspectorAnimationAgent final : public InspectorBaseAgent<InspectorAnimationAgent>, public InspectorBackendDispatcher::AnimationCommandHandler {
+class InspectorAnimationAgent final : public InspectorBaseAgent<InspectorAnimationAgent, InspectorFrontend::Animation>, public InspectorBackendDispatcher::AnimationCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorAnimationAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorAnimationAgent> create(InspectorDOMAgent* domAgent)
+    static PassOwnPtrWillBeRawPtr<InspectorAnimationAgent> create(InspectorPageAgent* pageAgent, InspectorDOMAgent* domAgent)
     {
-        return adoptPtrWillBeNoop(new InspectorAnimationAgent(domAgent));
+        return adoptPtrWillBeNoop(new InspectorAnimationAgent(pageAgent, domAgent));
     }
 
     // Base agent methods.
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void clearFrontend() override;
-    void reset();
+    void restore() override;
+    void disable(ErrorString*) override;
+    void didCommitLoadForLocalFrame(LocalFrame*) override;
 
-    // Protocol method implementations.
-    virtual void getAnimationPlayersForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::Animation::AnimationPlayer> >& animationPlayersArray) override;
-    virtual void pauseAnimationPlayer(ErrorString*, const String& id, RefPtr<TypeBuilder::Animation::AnimationPlayer>&) override;
-    virtual void playAnimationPlayer(ErrorString*, const String& id, RefPtr<TypeBuilder::Animation::AnimationPlayer>&) override;
-    virtual void setAnimationPlayerCurrentTime(ErrorString*, const String& id, double currentTime, RefPtr<TypeBuilder::Animation::AnimationPlayer>&) override;
-    virtual void getAnimationPlayerState(ErrorString*, const String& id, double* currentTime, bool* isRunning) override;
+    // Protocol method implementations
+    virtual void getAnimationPlayersForNode(ErrorString*, int nodeId, bool includeSubtreeAnimations, RefPtr<TypeBuilder::Array<TypeBuilder::Animation::AnimationPlayer> >& animationPlayersArray) override;
+    virtual void getPlaybackRate(ErrorString*, double* playbackRate) override;
+    virtual void setPlaybackRate(ErrorString*, double playbackRate) override;
+    virtual void setCurrentTime(ErrorString*, double currentTime) override;
+    virtual void setTiming(ErrorString*, const String& playerId, double duration, double delay) override;
+
+    // API for InspectorInstrumentation
+    void didCreateAnimation(Animation*);
+    void didCancelAnimation(Animation*);
+    void didClearDocumentOfWindowObject(LocalFrame*);
+
+    // API for InspectorFrontend
+    virtual void enable(ErrorString*) override;
 
     // Methods for other agents to use.
-    AnimationPlayer* assertAnimationPlayer(ErrorString*, const String& id);
+    Animation* assertAnimation(ErrorString*, const String& id);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    InspectorAnimationAgent(InspectorDOMAgent*);
+    InspectorAnimationAgent(InspectorPageAgent*, InspectorDOMAgent*);
 
+    typedef TypeBuilder::Animation::AnimationPlayer::Type::Enum AnimationType;
+
+    PassRefPtr<TypeBuilder::Animation::AnimationPlayer> buildObjectForAnimationPlayer(Animation&);
+    PassRefPtr<TypeBuilder::Animation::AnimationPlayer> buildObjectForAnimationPlayer(Animation&, AnimationType, PassRefPtr<TypeBuilder::Animation::KeyframesRule> keyframeRule = nullptr);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::Animation::AnimationPlayer>> buildArrayForAnimations(Element&, const WillBeHeapVector<RefPtrWillBeMember<Animation>>);
+    double normalizedStartTime(Animation&);
+    AnimationTimeline& referenceTimeline();
+
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
-    InspectorFrontend::Animation* m_frontend;
-    WillBeHeapHashMap<String, RefPtrWillBeMember<AnimationPlayer> > m_idToAnimationPlayer;
+    WillBeHeapHashMap<String, RefPtrWillBeMember<Animation>> m_idToAnimation;
+    WillBeHeapHashMap<String, AnimationType> m_idToAnimationType;
 };
 
 }

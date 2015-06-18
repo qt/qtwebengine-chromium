@@ -37,7 +37,7 @@ namespace XPath {
 class Number final : public Expression {
 public:
     explicit Number(double);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     virtual Value evaluate(EvaluationContext&) const override;
@@ -49,7 +49,7 @@ private:
 class StringExpression final : public Expression {
 public:
     explicit StringExpression(const String&);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     virtual Value evaluate(EvaluationContext&) const override;
@@ -69,7 +69,7 @@ public:
     enum Opcode {
         OP_Add, OP_Sub, OP_Mul, OP_Div, OP_Mod
     };
-    NumericOp(Opcode, PassOwnPtrWillBeRawPtr<Expression> lhs, PassOwnPtrWillBeRawPtr<Expression> rhs);
+    NumericOp(Opcode, Expression* lhs, Expression* rhs);
 
 private:
     virtual Value evaluate(EvaluationContext&) const override;
@@ -81,7 +81,7 @@ private:
 class EqTestOp final : public Expression {
 public:
     enum Opcode { OpcodeEqual, OpcodeNotEqual, OpcodeGreaterThan, OpcodeLessThan, OpcodeGreaterOrEqual, OpcodeLessOrEqual };
-    EqTestOp(Opcode, PassOwnPtrWillBeRawPtr<Expression> lhs, PassOwnPtrWillBeRawPtr<Expression> rhs);
+    EqTestOp(Opcode, Expression* lhs, Expression* rhs);
     virtual Value evaluate(EvaluationContext&) const override;
 
 private:
@@ -94,7 +94,7 @@ private:
 class LogicalOp final : public Expression {
 public:
     enum Opcode { OP_And, OP_Or };
-    LogicalOp(Opcode, PassOwnPtrWillBeRawPtr<Expression> lhs, PassOwnPtrWillBeRawPtr<Expression> rhs);
+    LogicalOp(Opcode, Expression* lhs, Expression* rhs);
 
 private:
     virtual Value::Type resultType() const override { return Value::BooleanValue; }
@@ -110,22 +110,22 @@ private:
     virtual Value::Type resultType() const override { return Value::NodeSetValue; }
 };
 
-class Predicate final : public NoBaseWillBeGarbageCollected<Predicate> {
-    WTF_MAKE_NONCOPYABLE(Predicate); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(Predicate);
+class Predicate final : public GarbageCollected<Predicate> {
+    WTF_MAKE_NONCOPYABLE(Predicate);
 public:
-    explicit Predicate(PassOwnPtrWillBeRawPtr<Expression>);
-    void trace(Visitor*);
+    explicit Predicate(Expression*);
+    DECLARE_TRACE();
 
     bool evaluate(EvaluationContext&) const;
     bool isContextPositionSensitive() const { return m_expr->isContextPositionSensitive() || m_expr->resultType() == Value::NumberValue; }
     bool isContextSizeSensitive() const { return m_expr->isContextSizeSensitive(); }
 
 private:
-    OwnPtrWillBeMember<Expression> m_expr;
+    Member<Expression> m_expr;
 };
 
-}
+} // namespace XPath
 
-}
+} // namespace blink
+
 #endif // XPathPredicate_h

@@ -27,6 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+"use strict";
 
 (function () {
 
@@ -53,21 +54,6 @@ DebuggerScript.getAfterCompileScript = function(eventData)
     return DebuggerScript._formatScript(eventData.script_.script_);
 }
 
-DebuggerScript.getWorkerScripts = function()
-{
-    var result = [];
-    var scripts = Debug.scripts();
-    for (var i = 0; i < scripts.length; ++i) {
-        var script = scripts[i];
-        // Workers don't share same V8 heap now so there is no need to complicate stuff with
-        // the context id like we do to discriminate between scripts from different pages.
-        // However we need to filter out v8 native scripts.
-        if (script.context_data && script.context_data === "worker")
-            result.push(DebuggerScript._formatScript(script));
-    }
-    return result;
-}
-
 DebuggerScript.getFunctionScopes = function(fun)
 {
     var mirror = MakeMirror(fun);
@@ -77,9 +63,37 @@ DebuggerScript.getFunctionScopes = function(fun)
     var result = [];
     for (var i = 0; i < count; i++) {
         var scopeDetails = mirror.scope(i).details();
-        result[i] = {
+        var scopeObject = DebuggerScript._buildScopeObject(scopeDetails.type(), scopeDetails.object());
+        if (!scopeObject)
+            continue;
+        result.push({
             type: scopeDetails.type(),
-            object: DebuggerScript._buildScopeObject(scopeDetails.type(), scopeDetails.object())
+            object: scopeObject
+        });
+    }
+    return result;
+}
+
+DebuggerScript.getGeneratorObjectDetails = function(object)
+{
+    var mirror = MakeMirror(object, true /* transient */);
+    if (!mirror.isGenerator())
+        return null;
+    var funcMirror = mirror.func();
+    if (!funcMirror.resolved())
+        return null;
+    var result = {
+        "function": funcMirror.value(),
+        "functionName": DebuggerScript._displayFunctionName(funcMirror) || "",
+        "status": mirror.status()
+    };
+    var script = funcMirror.script();
+    var location = mirror.sourceLocation() || funcMirror.sourceLocation();
+    if (script && location) {
+        result["location"] = {
+            "scriptId": String(script.id()),
+            "lineNumber": location.line,
+            "columnNumber": location.column
         };
     }
     return result;
@@ -90,9 +104,9 @@ DebuggerScript.getCollectionEntries = function(object)
     var mirror = MakeMirror(object, true /* transient */);
     if (mirror.isMap())
         return mirror.entries();
-    if (mirror.isSet()) {
+    if (mirror.isSet() || mirror.isIterator()) {
         var result = [];
-        var values = mirror.values();
+        var values = mirror.isSet() ? mirror.values() : mirror.preview();
         for (var i = 0; i < values.length; ++i)
             result.push({ value: values[i] });
         return result;
@@ -130,24 +144,21 @@ DebuggerScript._setScopeVariableValue = function(scopeHolder, scopeIndex, variab
     return undefined;
 }
 
-DebuggerScript.getScripts = function(contextData)
+DebuggerScript.getScripts = function(contextDataSubstring)
 {
     var result = [];
-
-    if (!contextData)
-        return result;
-    var comma = contextData.indexOf(",");
-    if (comma === -1)
-        return result;
-    // Context data is a string in the following format:
-    // ("page"|"injected")","<page id>
-    var idSuffix = contextData.substring(comma); // including the comma
-
     var scripts = Debug.scripts();
     for (var i = 0; i < scripts.length; ++i) {
         var script = scripts[i];
-        if (script.context_data && script.context_data.lastIndexOf(idSuffix) != -1)
-            result.push(DebuggerScript._formatScript(script));
+        if (contextDataSubstring) {
+            if (!script.context_data)
+                continue;
+            // Context data is a string in the following format:
+            // "["("page"|"injected"|"worker")","<id>"]"
+            if (script.context_data.indexOf(contextDataSubstring) === -1)
+                continue;
+        }
+        result.push(DebuggerScript._formatScript(script));
     }
     return result;
 }
@@ -179,7 +190,8 @@ DebuggerScript._formatScript = function(script)
         startColumn: script.column_offset,
         endLine: endLine,
         endColumn: endColumn,
-        isContentScript: !!script.context_data && script.context_data.indexOf("injected") == 0
+        isContentScript: !!script.context_data && script.context_data.indexOf("[injected,") === 0,
+        isInternalScript: script.is_debugger_script
     };
 }
 
@@ -257,6 +269,11 @@ DebuggerScript.stepIntoStatement = function(execState)
     execState.prepareStep(Debug.StepAction.StepIn, 1);
 }
 
+DebuggerScript.stepFrameStatement = function(execState)
+{
+    execState.prepareStep(Debug.StepAction.StepFrame, 1);
+}
+
 DebuggerScript.stepOverStatement = function(execState, callFrame)
 {
     execState.prepareStep(Debug.StepAction.StepNext, 1);
@@ -265,6 +282,11 @@ DebuggerScript.stepOverStatement = function(execState, callFrame)
 DebuggerScript.stepOutOfFunction = function(execState, callFrame)
 {
     execState.prepareStep(Debug.StepAction.StepOut, 1);
+}
+
+DebuggerScript.clearStepping = function()
+{
+    Debug.clearStepping();
 }
 
 // Returns array in form:
@@ -348,6 +370,17 @@ DebuggerScript.isEvalCompilation = function(eventData)
     return (script.compilationType() === Debug.ScriptCompilationType.Eval);
 }
 
+DebuggerScript._displayFunctionName = function(funcMirror)
+{
+    if (!funcMirror.resolved())
+        return undefined
+    var displayName;
+    var valueMirror = funcMirror.property("displayName").value();
+    if (valueMirror && valueMirror.isString())
+        displayName = valueMirror.value();
+    return displayName || funcMirror.name() || funcMirror.inferredName();
+}
+
 // NOTE: This function is performance critical, as it can be run on every
 // statement that generates an async event (like addEventListener) to support
 // asynchronous call stacks. Thus, when possible, initialize the data lazily.
@@ -382,11 +415,25 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
     {
         if (!scopeChain) {
             scopeChain = [];
-            for (var i = 0; i < scopeObjects.length; ++i)
-                scopeChain.push(DebuggerScript._buildScopeObject(scopeTypes[i], scopeObjects[i]));
+            for (var i = 0, j = 0; i < scopeObjects.length; ++i) {
+                var scopeObject = DebuggerScript._buildScopeObject(scopeTypes[i], scopeObjects[i]);
+                if (scopeObject) {
+                    scopeTypes[j] = scopeTypes[i];
+                    scopeChain[j] = scopeObject;
+                    ++j;
+                }
+            }
+            scopeTypes.length = scopeChain.length;
             scopeObjects = null; // Free for GC.
         }
         return scopeChain;
+    }
+
+    function lazyScopeTypes()
+    {
+        if (!scopeChain)
+            lazyScopeChain();
+        return scopeTypes;
     }
 
     function ensureFuncMirror()
@@ -435,14 +482,19 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
 
     function functionName()
     {
-        var func = ensureFuncMirror();
-        if (!func.resolved())
-            return undefined;
-        var displayName;
-        var valueMirror = func.property("displayName").value();
-        if (valueMirror && valueMirror.isString())
-            displayName = valueMirror.value();
-        return displayName || func.name() || func.inferredName();
+        return DebuggerScript._displayFunctionName(ensureFuncMirror());
+    }
+
+    function functionLine()
+    {
+        var location = ensureFuncMirror().sourceLocation();
+        return location ? location.line : 0;
+    }
+
+    function functionColumn()
+    {
+        var location = ensureFuncMirror().sourceLocation();
+        return location ? location.column : 0;
     }
 
     function evaluate(expression, scopeExtension)
@@ -488,9 +540,11 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
         "column": column,
         "scriptName": scriptName,
         "functionName": functionName,
+        "functionLine": functionLine,
+        "functionColumn": functionColumn,
         "thisObject": thisObject,
         "scopeChain": lazyScopeChain,
-        "scopeType": scopeTypes,
+        "scopeType": lazyScopeTypes,
         "evaluate": evaluate,
         "caller": callerFrame,
         "restart": restart,
@@ -508,12 +562,18 @@ DebuggerScript._buildScopeObject = function(scopeType, scopeObject)
     case ScopeType.Local:
     case ScopeType.Closure:
     case ScopeType.Catch:
+    case ScopeType.Block:
+    case ScopeType.Script:
         // For transient objects we create a "persistent" copy that contains
         // the same properties.
         // Reset scope object prototype to null so that the proto properties
         // don't appear in the local scope section.
-        result = { __proto__: null };
         var properties = MakeMirror(scopeObject, true /* transient */).properties();
+        // Almost always Script scope will be empty, so just filter out that noise.
+        // Also drop empty Block scopes, should we get any.
+        if (!properties.length && (scopeType === ScopeType.Script || scopeType === ScopeType.Block))
+            break;
+        result = { __proto__: null };
         for (var j = 0; j < properties.length; j++) {
             var name = properties[j].name();
             if (name.charAt(0) === ".")
@@ -524,9 +584,6 @@ DebuggerScript._buildScopeObject = function(scopeType, scopeObject)
     case ScopeType.Global:
     case ScopeType.With:
         result = scopeObject;
-        break;
-    case ScopeType.Block:
-        // Unsupported yet. Mustn't be reachable.
         break;
     }
     return result;

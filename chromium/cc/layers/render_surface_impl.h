@@ -14,6 +14,7 @@
 #include "cc/layers/layer_lists.h"
 #include "cc/quads/render_pass.h"
 #include "cc/quads/shared_quad_state.h"
+#include "cc/trees/occlusion.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/transform.h"
@@ -22,8 +23,7 @@ namespace cc {
 
 class DamageTracker;
 class DelegatedRendererLayerImpl;
-template <typename LayerType>
-class OcclusionTracker;
+class Occlusion;
 class RenderPassId;
 class RenderPassSink;
 class LayerImpl;
@@ -59,6 +59,12 @@ class CC_EXPORT RenderSurfaceImpl {
     draw_opacity_is_animating_ = draw_opacity_is_animating;
   }
   bool draw_opacity_is_animating() const { return draw_opacity_is_animating_; }
+
+  SkColor GetDebugBorderColor() const;
+  SkColor GetReplicaDebugBorderColor() const;
+
+  float GetDebugBorderWidth() const;
+  float GetReplicaDebugBorderWidth() const;
 
   void SetDrawTransform(const gfx::Transform& draw_transform) {
     draw_transform_ = draw_transform;
@@ -120,6 +126,13 @@ class CC_EXPORT RenderSurfaceImpl {
   void SetContentRect(const gfx::Rect& content_rect);
   gfx::Rect content_rect() const { return content_rect_; }
 
+  const Occlusion& occlusion_in_content_space() const {
+    return occlusion_in_content_space_;
+  }
+  void set_occlusion_in_content_space(const Occlusion& occlusion) {
+    occlusion_in_content_space_ = occlusion;
+  }
+
   LayerImplList& layer_list() { return layer_list_; }
   void AddContributingDelegatedRenderPassLayer(LayerImpl* layer);
   void ClearLayerLists();
@@ -136,9 +149,12 @@ class CC_EXPORT RenderSurfaceImpl {
 
   void AppendRenderPasses(RenderPassSink* pass_sink);
   void AppendQuads(RenderPass* render_pass,
-                   const OcclusionTracker<LayerImpl>& occlusion_tracker,
+                   const gfx::Transform& draw_transform,
+                   const Occlusion& occlusion_in_content_space,
+                   SkColor debug_border_color,
+                   float debug_border_width,
+                   LayerImpl* mask_layer,
                    AppendQuadsData* append_quads_data,
-                   bool for_replica,
                    RenderPassId render_pass_id);
 
  private:
@@ -166,6 +182,7 @@ class CC_EXPORT RenderSurfaceImpl {
   LayerImplList layer_list_;
   std::vector<DelegatedRendererLayerImpl*>
       contributing_delegated_render_pass_layer_list_;
+  Occlusion occlusion_in_content_space_;
 
   // The nearest ancestor target surface that will contain the contents of this
   // surface, and that ignores outside occlusion. This can point to itself.

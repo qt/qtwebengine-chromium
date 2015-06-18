@@ -56,10 +56,14 @@
 
 #include <openssl/asn1.h>
 
+#include <string.h>
+
 #include <openssl/asn1t.h>
 #include <openssl/buf.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
+
+#include "../internal.h"
 
 
 static int asn1_check_eoc(const unsigned char **in, long len);
@@ -302,8 +306,19 @@ int ASN1_item_ex_d2i(ASN1_VALUE **pval, const unsigned char **in, long len,
 		if (asn1_cb && !asn1_cb(ASN1_OP_D2I_PRE, pval, it, NULL))
 				goto auxerr;
 
-		/* Allocate structure */
-		if (!*pval && !ASN1_item_ex_new(pval, it))
+		if (*pval)
+			{
+			/* Free up and zero CHOICE value if initialised */
+			i = asn1_get_choice_selector(pval, it);
+			if ((i >= 0) && (i < it->tcount))
+				{
+				tt = it->templates + i;
+				pchptr = asn1_get_field_ptr(pval, tt);
+				ASN1_template_free(pchptr, tt);
+				asn1_set_choice_selector(pval, -1, it);
+				}
+			}
+		else if (!ASN1_item_ex_new(pval, it))
 			{
 			OPENSSL_PUT_ERROR(ASN1, ASN1_item_ex_d2i,  ASN1_R_NESTED_ASN1_ERROR);
 			goto err;
@@ -391,6 +406,19 @@ int ASN1_item_ex_d2i(ASN1_VALUE **pval, const unsigned char **in, long len,
 
 		if (asn1_cb && !asn1_cb(ASN1_OP_D2I_PRE, pval, it, NULL))
 				goto auxerr;
+
+		/* Free up and zero any ADB found */
+		for (i = 0, tt = it->templates; i < it->tcount; i++, tt++)
+			{
+			if (tt->flags & ASN1_TFLG_ADB_MASK)
+				{
+				const ASN1_TEMPLATE *seqtt;
+				ASN1_VALUE **pseqval;
+				seqtt = asn1_do_adb(pval, tt, 1);
+				pseqval = asn1_get_field_ptr(pval, seqtt);
+				ASN1_template_free(pseqval, seqtt);
+				}
+			}
 
 		/* Get each field entry */
 		for (i = 0, tt = it->templates; i < it->tcount; i++, tt++)
@@ -599,14 +627,13 @@ static int asn1_template_noexp_d2i(ASN1_VALUE **val,
 	{
 	int flags, aclass;
 	int ret;
-	const unsigned char *p, *q;
+	const unsigned char *p;
 	if (!val)
 		return 0;
 	flags = tt->flags;
 	aclass = flags & ASN1_TFLG_TAG_CLASS;
 
 	p = *in;
-	q = p;
 
 	if (flags & ASN1_TFLG_SK_MASK)
 		{
@@ -663,7 +690,7 @@ static int asn1_template_noexp_d2i(ASN1_VALUE **val,
 		while(len > 0)
 			{
 			ASN1_VALUE *skfield;
-			q = p;
+			const unsigned char *q = p;
 			/* See if EOC found */
 			if (asn1_check_eoc(&p, len))
 				{
@@ -737,6 +764,7 @@ static int asn1_d2i_ex_primitive(ASN1_VALUE **pval,
 				const unsigned char **in, long inlen, 
 				const ASN1_ITEM *it,
 				int tag, int aclass, char opt, ASN1_TLC *ctx)
+        OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS
 	{
 	int ret = 0, utype;
 	long plen;
@@ -836,6 +864,16 @@ static int asn1_d2i_ex_primitive(ASN1_VALUE **pval,
 		}
 	else if (cst)
 		{
+		if (utype == V_ASN1_NULL || utype == V_ASN1_BOOLEAN
+			|| utype == V_ASN1_OBJECT || utype == V_ASN1_INTEGER
+			|| utype == V_ASN1_ENUMERATED)
+			{
+			/* These types only have primitive encodings. */
+			OPENSSL_PUT_ERROR(ASN1, asn1_d2i_ex_primitive,
+				ASN1_R_TYPE_NOT_PRIMITIVE);
+			return 0;
+			}
+
 		buf.length = 0;
 		buf.max = 0;
 		buf.data = NULL;
@@ -1182,7 +1220,7 @@ static int collect_data(BUF_MEM *buf, const unsigned char **p, long plen)
 		len = buf->length;
 		if (!BUF_MEM_grow_clean(buf, len + plen))
 			{
-			OPENSSL_PUT_ERROR(ASN1, asn1_collect,  ERR_R_MALLOC_FAILURE);
+			OPENSSL_PUT_ERROR(ASN1, collect_data,  ERR_R_MALLOC_FAILURE);
 			return 0;
 			}
 		memcpy(buf->data + len, *p, plen);

@@ -8,7 +8,9 @@
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
-#include "cc/trees/layer_tree_host.h"
+#include "cc/output/renderer_capabilities.h"
+#include "cc/output/renderer_settings.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -37,6 +39,7 @@ struct RendererCapabilitiesImpl {
   bool using_image;
   bool using_discard_framebuffer;
   bool allow_rasterize_on_demand;
+  int max_msaa_samples;
 
   RendererCapabilities MainThreadCapabilities() const;
 };
@@ -80,13 +83,13 @@ class CC_EXPORT Renderer {
   void SetVisible(bool visible);
 
  protected:
-  explicit Renderer(RendererClient* client, const LayerTreeSettings* settings)
+  Renderer(RendererClient* client, const RendererSettings* settings)
       : client_(client), settings_(settings), visible_(true) {}
 
   virtual void DidChangeVisibility() = 0;
 
   RendererClient* client_;
-  const LayerTreeSettings* settings_;
+  const RendererSettings* settings_;
   bool visible_;
 
  private:

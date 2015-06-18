@@ -22,7 +22,7 @@
 #include "core/svg/SVGTextPathElement.h"
 
 #include "core/XLinkNames.h"
-#include "core/rendering/svg/RenderSVGTextPath.h"
+#include "core/layout/svg/LayoutSVGTextPath.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
 namespace blink {
@@ -50,7 +50,7 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPath
 inline SVGTextPathElement::SVGTextPathElement(Document& document)
     : SVGTextContentElement(SVGNames::textPathTag, document)
     , SVGURIReference(this)
-    , m_startOffset(SVGAnimatedLength::create(this, SVGNames::startOffsetAttr, SVGLength::create(LengthModeOther), AllowNegativeLengths))
+    , m_startOffset(SVGAnimatedLength::create(this, SVGNames::startOffsetAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
     , m_method(SVGAnimatedEnumeration<SVGTextPathMethodType>::create(this, SVGNames::methodAttr, SVGTextPathMethodAlign))
     , m_spacing(SVGAnimatedEnumeration<SVGTextPathSpacingType>::create(this, SVGNames::spacingAttr, SVGTextPathSpacingExact))
 {
@@ -68,33 +68,24 @@ SVGTextPathElement::~SVGTextPathElement()
 #endif
 }
 
+DEFINE_TRACE(SVGTextPathElement)
+{
+    visitor->trace(m_startOffset);
+    visitor->trace(m_method);
+    visitor->trace(m_spacing);
+    SVGTextContentElement::trace(visitor);
+    SVGURIReference::trace(visitor);
+}
+
 void SVGTextPathElement::clearResourceReferences()
 {
     removeAllOutgoingReferences();
 }
 
-bool SVGTextPathElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::startOffsetAttr);
-        supportedAttributes.add(SVGNames::methodAttr);
-        supportedAttributes.add(SVGNames::spacingAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGTextPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGTextContentElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         buildPendingResource();
         return;
     }
@@ -102,19 +93,28 @@ void SVGTextPathElement::svgAttributeChanged(const QualifiedName& attrName)
     if (attrName == SVGNames::startOffsetAttr)
         updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
-        markForLayoutAndParentResourceInvalidation(object);
+    if (attrName == SVGNames::startOffsetAttr
+        || attrName == SVGNames::methodAttr
+        || attrName == SVGNames::spacingAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+        if (LayoutObject* object = layoutObject())
+            markForLayoutAndParentResourceInvalidation(object);
+
+        return;
+    }
+
+    SVGTextContentElement::svgAttributeChanged(attrName);
 }
 
-RenderObject* SVGTextPathElement::createRenderer(RenderStyle*)
+LayoutObject* SVGTextPathElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGTextPath(this);
+    return new LayoutSVGTextPath(this);
 }
 
-bool SVGTextPathElement::rendererIsNeeded(const RenderStyle& style)
+bool SVGTextPathElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     if (parentNode() && (isSVGAElement(*parentNode()) || isSVGTextElement(*parentNode())))
-        return Element::rendererIsNeeded(style);
+        return Element::layoutObjectIsNeeded(style);
 
     return false;
 }

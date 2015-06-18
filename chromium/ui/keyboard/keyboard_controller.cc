@@ -20,8 +20,8 @@
 #include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
@@ -48,41 +48,13 @@ const int kHideAnimationDurationMs = 100;
 // allowed to be shown with zero opacity, we always animate to 0.01 instead.
 const float kAnimationStartOrAfterHideOpacity = 0.01f;
 
-// Event targeter for the keyboard container.
-class KeyboardContainerTargeter : public wm::MaskedWindowTargeter {
- public:
-  KeyboardContainerTargeter(aura::Window* container,
-                            keyboard::KeyboardControllerProxy* proxy)
-      : wm::MaskedWindowTargeter(container),
-        proxy_(proxy) {
-  }
-
-  ~KeyboardContainerTargeter() override {}
-
- private:
-  // wm::MaskedWindowTargeter:
-  bool GetHitTestMask(aura::Window* window, gfx::Path* mask) const override {
-    if (proxy_ && !proxy_->HasKeyboardWindow())
-      return true;
-    gfx::Rect keyboard_bounds = proxy_ ? proxy_->GetKeyboardWindow()->bounds() :
-        keyboard::DefaultKeyboardBoundsFromWindowBounds(window->bounds());
-    mask->addRect(RectToSkRect(keyboard_bounds));
-    return true;
-  }
-
-  keyboard::KeyboardControllerProxy* proxy_;
-
-  DISALLOW_COPY_AND_ASSIGN(KeyboardContainerTargeter);
-};
-
 // The KeyboardWindowDelegate makes sure the keyboard-window does not get focus.
 // This is necessary to make sure that the synthetic key-events reach the target
 // window.
 // The delegate deletes itself when the window is destroyed.
 class KeyboardWindowDelegate : public aura::WindowDelegate {
  public:
-  explicit KeyboardWindowDelegate(keyboard::KeyboardControllerProxy* proxy)
-      : proxy_(proxy) {}
+  KeyboardWindowDelegate() {}
   ~KeyboardWindowDelegate() override {}
 
  private:
@@ -90,8 +62,9 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
   gfx::Size GetMinimumSize() const override { return gfx::Size(); }
   gfx::Size GetMaximumSize() const override { return gfx::Size(); }
   void OnBoundsChanged(const gfx::Rect& old_bounds,
-                       const gfx::Rect& new_bounds) override {
-    bounds_ = new_bounds;
+                       const gfx::Rect& new_bounds) override {}
+  ui::TextInputClient* GetFocusedTextInputClient() override {
+    return nullptr;
   }
   gfx::NativeCursor GetCursor(const gfx::Point& point) override {
     return gfx::kNullCursor;
@@ -106,24 +79,13 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
   }
   bool CanFocus() override { return false; }
   void OnCaptureLost() override {}
-  void OnPaint(gfx::Canvas* canvas) override {}
+  void OnPaint(const ui::PaintContext& context) override {}
   void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
   void OnWindowDestroying(aura::Window* window) override {}
   void OnWindowDestroyed(aura::Window* window) override { delete this; }
   void OnWindowTargetVisibilityChanged(bool visible) override {}
-  bool HasHitTestMask() const override {
-    return !proxy_ || proxy_->HasKeyboardWindow();
-  }
-  void GetHitTestMask(gfx::Path* mask) const override {
-    if (proxy_ && !proxy_->HasKeyboardWindow())
-      return;
-    gfx::Rect keyboard_bounds = proxy_ ? proxy_->GetKeyboardWindow()->bounds() :
-        keyboard::DefaultKeyboardBoundsFromWindowBounds(bounds_);
-    mask->addRect(RectToSkRect(keyboard_bounds));
-  }
-
-  gfx::Rect bounds_;
-  keyboard::KeyboardControllerProxy* proxy_;
+  bool HasHitTestMask() const override { return false; }
+  void GetHitTestMask(gfx::Path* mask) const override {}
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardWindowDelegate);
 };
@@ -132,7 +94,7 @@ void ToggleTouchEventLogging(bool enable) {
 #if defined(OS_CHROMEOS)
   if (!base::SysInfo::IsRunningOnChromeOS())
     return;
-  CommandLine command(
+  base::CommandLine command(
       base::FilePath("/opt/google/touchscreen/toggle_touch_event_logging"));
   if (enable)
     command.AppendArg("1");
@@ -141,19 +103,8 @@ void ToggleTouchEventLogging(bool enable) {
   VLOG(1) << "Running " << command.GetCommandLineString();
   base::LaunchOptions options;
   options.wait = true;
-  base::LaunchProcess(command, options, NULL);
+  base::LaunchProcess(command, options);
 #endif
-}
-
-aura::Window *GetFrameWindow(aura::Window *window) {
-  // Each container window has a non-negative id.  Stop traversing at the child
-  // of a container window.
-  if (!window)
-    return NULL;
-  while (window->parent() && window->parent()->id() < 0) {
-    window = window->parent();
-  }
-  return window;
 }
 
 }  // namespace
@@ -164,7 +115,7 @@ namespace keyboard {
 // KeyboardController.
 class CallbackAnimationObserver : public ui::LayerAnimationObserver {
  public:
-  CallbackAnimationObserver(ui::LayerAnimator* animator,
+  CallbackAnimationObserver(const scoped_refptr<ui::LayerAnimator>& animator,
                             base::Callback<void(void)> callback);
   ~CallbackAnimationObserver() override;
 
@@ -174,14 +125,15 @@ class CallbackAnimationObserver : public ui::LayerAnimationObserver {
   void OnLayerAnimationAborted(ui::LayerAnimationSequence* seq) override;
   void OnLayerAnimationScheduled(ui::LayerAnimationSequence* seq) override {}
 
-  ui::LayerAnimator* animator_;
+  scoped_refptr<ui::LayerAnimator> animator_;
   base::Callback<void(void)> callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CallbackAnimationObserver);
 };
 
 CallbackAnimationObserver::CallbackAnimationObserver(
-    ui::LayerAnimator* animator, base::Callback<void(void)> callback)
+    const scoped_refptr<ui::LayerAnimator>& animator,
+    base::Callback<void(void)> callback)
     : animator_(animator), callback_(callback) {
 }
 
@@ -252,20 +204,26 @@ KeyboardController::KeyboardController(KeyboardControllerProxy* proxy)
       keyboard_visible_(false),
       show_on_resize_(false),
       lock_keyboard_(false),
+      keyboard_mode_(FULL_WIDTH),
       type_(ui::TEXT_INPUT_TYPE_NONE),
       weak_factory_(this) {
   CHECK(proxy);
   input_method_ = proxy_->GetInputMethod();
   input_method_->AddObserver(this);
   window_bounds_observer_.reset(new WindowBoundsChangeObserver());
+  proxy_->SetController(this);
 }
 
 KeyboardController::~KeyboardController() {
-  if (container_)
+  if (container_) {
+    if (container_->GetRootWindow())
+      container_->GetRootWindow()->RemoveObserver(this);
     container_->RemoveObserver(this);
+  }
   if (input_method_)
     input_method_->RemoveObserver(this);
   ResetWindowInsets();
+  proxy_->SetController(nullptr);
 }
 
 // static
@@ -282,13 +240,10 @@ KeyboardController* KeyboardController::GetInstance() {
 
 aura::Window* KeyboardController::GetContainerWindow() {
   if (!container_.get()) {
-    container_.reset(new aura::Window(
-        new KeyboardWindowDelegate(proxy_.get())));
-    container_->SetEventTargeter(scoped_ptr<ui::EventTargeter>(
-        new KeyboardContainerTargeter(container_.get(), proxy_.get())));
+    container_.reset(new aura::Window(new KeyboardWindowDelegate()));
     container_->SetName("KeyboardContainer");
     container_->set_owned_by_parent(false);
-    container_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+    container_->Init(ui::LAYER_NOT_DRAWN);
     container_->AddObserver(this);
     container_->SetLayoutManager(new KeyboardLayoutManager(this));
   }
@@ -309,18 +264,18 @@ void KeyboardController::NotifyKeyboardBoundsChanging(
       // window is created while the keyboard is visible.
       scoped_ptr<content::RenderWidgetHostIterator> widgets(
           content::RenderWidgetHost::GetRenderWidgetHosts());
-      aura::Window *keyboard_window = proxy_->GetKeyboardWindow();
-      aura::Window *root_window = keyboard_window->GetRootWindow();
+      aura::Window* keyboard_window = proxy_->GetKeyboardWindow();
+      aura::Window* root_window = keyboard_window->GetRootWindow();
       while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
         content::RenderWidgetHostView* view = widget->GetView();
         // Can be NULL, e.g. if the RenderWidget is being destroyed or
         // the render process crashed.
         if (view) {
-          aura::Window *window = view->GetNativeView();
+          aura::Window* window = view->GetNativeView();
           // If virtual keyboard failed to load, a widget that displays error
           // message will be created and adds as a child of the virtual keyboard
           // window. We want to avoid add BoundsChangedObserver to that window.
-          if (GetFrameWindow(window) != keyboard_window &&
+          if (!keyboard_window->Contains(window) &&
               window->GetRootWindow() == root_window) {
             gfx::Rect window_bounds = window->GetBoundsInScreen();
             gfx::Rect intersect = gfx::IntersectRects(window_bounds,
@@ -380,6 +335,29 @@ void KeyboardController::RemoveObserver(KeyboardControllerObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
+void KeyboardController::SetKeyboardMode(KeyboardMode mode) {
+  if (keyboard_mode_ == mode)
+    return;
+
+  keyboard_mode_ = mode;
+  // When keyboard is floating, no overscroll or resize is necessary. Sets
+  // keyboard bounds to zero so overscroll or resize is disabled.
+  if (keyboard_mode_ == FLOATING) {
+    NotifyKeyboardBoundsChanging(gfx::Rect());
+  } else if (keyboard_mode_ == FULL_WIDTH) {
+    // TODO(bshe): revisit this logic after we decide to support resize virtual
+    // keyboard.
+    int keyboard_height = GetContainerWindow()->bounds().height();
+    const gfx::Rect& root_bounds = container_->GetRootWindow()->bounds();
+    gfx::Rect new_bounds = root_bounds;
+    new_bounds.set_y(root_bounds.height() - keyboard_height);
+    new_bounds.set_height(keyboard_height);
+    GetContainerWindow()->SetBounds(new_bounds);
+    // No animation added, so call ShowAnimationFinished immediately.
+    ShowAnimationFinished();
+  }
+}
+
 void KeyboardController::ShowKeyboard(bool lock) {
   set_lock_keyboard(lock);
   ShowKeyboardInternal();
@@ -389,6 +367,45 @@ void KeyboardController::OnWindowHierarchyChanged(
     const HierarchyChangeParams& params) {
   if (params.new_parent && params.target == container_.get())
     OnTextInputStateChanged(proxy_->GetInputMethod()->GetTextInputClient());
+}
+
+void KeyboardController::OnWindowAddedToRootWindow(aura::Window* window) {
+  if (!window->GetRootWindow()->HasObserver(this))
+    window->GetRootWindow()->AddObserver(this);
+}
+
+void KeyboardController::OnWindowRemovingFromRootWindow(aura::Window* window,
+    aura::Window* new_root) {
+  if (window->GetRootWindow()->HasObserver(this))
+    window->GetRootWindow()->RemoveObserver(this);
+}
+
+void KeyboardController::OnWindowBoundsChanged(aura::Window* window,
+                                               const gfx::Rect& old_bounds,
+                                               const gfx::Rect& new_bounds) {
+  if (!window->IsRootWindow())
+    return;
+  // Keep the same height when window resize. It gets called when screen
+  // rotate.
+  if (!keyboard_container_initialized() || !proxy_->HasKeyboardWindow())
+    return;
+
+  int container_height = container_->bounds().height();
+  if (keyboard_mode_ == FULL_WIDTH) {
+    container_->SetBounds(gfx::Rect(new_bounds.x(),
+                                    new_bounds.bottom() - container_height,
+                                    new_bounds.width(),
+                                    container_height));
+  } else if (keyboard_mode_ == FLOATING) {
+    // When screen rotate, horizontally center floating virtual keyboard
+    // window and vertically align it to the bottom.
+    int container_width = container_->bounds().width();
+    container_->SetBounds(gfx::Rect(
+        new_bounds.x() + (new_bounds.width() - container_width) / 2,
+        new_bounds.bottom() - container_height,
+        container_width,
+        container_height));
+  }
 }
 
 void KeyboardController::Reload() {
@@ -444,15 +461,14 @@ void KeyboardController::OnShowImeIfNeeded() {
 }
 
 bool KeyboardController::ShouldEnableInsets(aura::Window* window) {
-  aura::Window *keyboard_window = proxy_->GetKeyboardWindow();
+  aura::Window* keyboard_window = proxy_->GetKeyboardWindow();
   return (keyboard_window->GetRootWindow() == window->GetRootWindow() &&
           keyboard::IsKeyboardOverscrollEnabled() &&
-          proxy_->GetKeyboardWindow()->IsVisible() &&
-          keyboard_visible_);
+          keyboard_window->IsVisible() && keyboard_visible_);
 }
 
 void KeyboardController::UpdateWindowInsets(aura::Window* window) {
-  aura::Window *keyboard_window = proxy_->GetKeyboardWindow();
+  aura::Window* keyboard_window = proxy_->GetKeyboardWindow();
   if (window == keyboard_window)
     return;
 
@@ -462,8 +478,8 @@ void KeyboardController::UpdateWindowInsets(aura::Window* window) {
     content::RenderWidgetHostView* view = widget->GetView();
     if (view && window->Contains(view->GetNativeView())) {
       gfx::Rect window_bounds = view->GetNativeView()->GetBoundsInScreen();
-      gfx::Rect intersect = gfx::IntersectRects(window_bounds,
-          proxy_->GetKeyboardWindow()->bounds());
+      gfx::Rect intersect =
+          gfx::IntersectRects(window_bounds, keyboard_window->bounds());
       int overlap = ShouldEnableInsets(window) ? intersect.height() : 0;
       if (overlap > 0 && overlap < window_bounds.height())
         view->SetInsets(gfx::Insets(0, 0, overlap, 0));
@@ -526,11 +542,15 @@ void KeyboardController::ShowKeyboardInternal() {
 
   container_animator->set_preemption_strategy(
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  animation_observer_.reset(new CallbackAnimationObserver(
-      container_animator,
-      base::Bind(&KeyboardController::ShowAnimationFinished,
-                 base::Unretained(this))));
-  container_animator->AddObserver(animation_observer_.get());
+  if (keyboard_mode_ == FLOATING) {
+    animation_observer_.reset();
+  } else {
+    animation_observer_.reset(new CallbackAnimationObserver(
+        container_animator,
+        base::Bind(&KeyboardController::ShowAnimationFinished,
+                   base::Unretained(this))));
+    container_animator->AddObserver(animation_observer_.get());
+  }
 
   proxy_->ShowKeyboardContainer(container_.get());
 
@@ -567,7 +587,7 @@ bool KeyboardController::WillHideKeyboard() const {
 void KeyboardController::ShowAnimationFinished() {
   // Notify observers after animation finished to prevent reveal desktop
   // background during animation.
-  NotifyKeyboardBoundsChanging(proxy_->GetKeyboardWindow()->bounds());
+  NotifyKeyboardBoundsChanging(container_->bounds());
   proxy_->EnsureCaretInWorkArea();
 }
 
@@ -576,7 +596,7 @@ void KeyboardController::HideAnimationFinished() {
 }
 
 void KeyboardController::AddBoundsChangedObserver(aura::Window* window) {
-  aura::Window* target_window = GetFrameWindow(window);
+  aura::Window* target_window = window ? window->GetToplevelWindow() : nullptr;
   if (target_window)
     window_bounds_observer_->AddObservedWindow(target_window);
 }

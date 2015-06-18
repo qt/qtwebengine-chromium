@@ -34,16 +34,15 @@ public:
 
     // LocalCredential.idl
     const String& password() const;
-    DOMFormData* formData() const { return m_formData.get(); };
+    DOMFormData* formData() const { return m_formData; };
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     LocalCredential(WebLocalCredential*);
     LocalCredential(const String& id, const String& password, const String& name, const KURL& avatar);
 
-    // FIXME: Reconsider use of GarbageCollectedFinalized once this can be a Member.
-    RefPtrWillBeMember<DOMFormData> m_formData;
+    Member<DOMFormData> m_formData;
 };
 
 } // namespace blink

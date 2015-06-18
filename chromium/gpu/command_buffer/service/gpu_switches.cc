@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "base/basictypes.h"
+
+#include "base/macros.h"
 
 namespace switches {
 
@@ -43,9 +44,6 @@ const char kEnforceGLMinimums[]             = "enforce-gl-minimums";
 // Sets the total amount of memory that may be allocated for GPU resources
 const char kForceGpuMemAvailableMb[]        = "force-gpu-mem-available-mb";
 
-// Pass a set of GpuDriverBugWorkaroundType ids, seperated by ','.
-const char kGpuDriverBugWorkarounds[] = "gpu-driver-bug-workarounds";
-
 // Sets the maximum size of the in-memory gpu program cache, in kb
 const char kGpuProgramCacheSizeKb[]         = "gpu-program-cache-size-kb";
 
@@ -56,10 +54,22 @@ const char kDisableGpuShaderDiskCache[]     = "disable-gpu-shader-disk-cache";
 const char kEnableShareGroupAsyncTextureUpload[] =
     "enable-share-group-async-texture-upload";
 
+// Enable WebGL subscribe uniform extension.
+const char kEnableSubscribeUniformExtension[] =
+    "enable-subscribe-uniform-extension";
+
 // Simulates shared textures when share groups are not available. Not available
 // everywhere.
 const char kEnableThreadedTextureMailboxes[] =
     "enable-threaded-texture-mailboxes";
+
+// Include ANGLE's intermediate representation (AST) output in shader
+// compilation info logs.
+const char kGLShaderIntermOutput[] = "gl-shader-interm-output";
+
+// Emulate ESSL lowp and mediump float precisions by mutating the shaders to
+// round intermediate values in ANGLE.
+const char kEmulateShaderPrecision[] = "emulate-shader-precision";
 
 const char* kGpuSwitches[] = {
   kCompileShaderAlwaysSucceeds,
@@ -77,6 +87,9 @@ const char* kGpuSwitches[] = {
   kGpuProgramCacheSizeKb,
   kDisableGpuShaderDiskCache,
   kEnableShareGroupAsyncTextureUpload,
+  kEnableSubscribeUniformExtension,
+  kGLShaderIntermOutput,
+  kEmulateShaderPrecision,
 };
 
 const int kNumGpuSwitches = arraysize(kGpuSwitches);

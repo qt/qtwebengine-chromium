@@ -52,6 +52,7 @@ struct WebLocalizedString {
         AXListMarkerText, // Deprecated.
         AXMediaAudioElement,
         AXMediaAudioElementHelp,
+        AXMediaAudioSliderHelp,
         AxMediaCastOffButton,
         AxMediaCastOffButtonHelp,
         AxMediaCastOnButton,
@@ -74,7 +75,6 @@ struct WebLocalizedString {
         AXMediaShowClosedCaptionsButton,
         AXMediaShowClosedCaptionsButtonHelp,
         AXMediaSlider, // Deprecated.
-        AXMediaSliderHelp,
         AXMediaSliderThumb, // Deprecated.
         AXMediaSliderThumbHelp, // Deprecated.
         AXMediaStatusDisplay,
@@ -85,6 +85,7 @@ struct WebLocalizedString {
         AXMediaUnMuteButtonHelp,
         AXMediaVideoElement,
         AXMediaVideoElementHelp,
+        AXMediaVideoSliderHelp,
         AXMillisecondFieldText,
         AXMinuteFieldText,
         AXMonthFieldText,

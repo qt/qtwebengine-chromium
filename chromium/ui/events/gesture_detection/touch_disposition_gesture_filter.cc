@@ -12,8 +12,8 @@ namespace ui {
 namespace {
 
 // A BitSet32 is used for tracking dropped gesture types.
-COMPILE_ASSERT(ET_GESTURE_TYPE_END - ET_GESTURE_TYPE_START < 32,
-               gesture_type_count_too_large);
+static_assert(ET_GESTURE_TYPE_END - ET_GESTURE_TYPE_START < 32,
+              "gesture type count too large");
 
 GestureEventData CreateGesture(EventType type,
                                int motion_event_id,
@@ -170,20 +170,43 @@ TouchDispositionGestureFilter::OnGesturePacket(
   return SUCCESS;
 }
 
-void TouchDispositionGestureFilter::OnTouchEventAck(bool event_consumed) {
-  // Spurious touch acks from the renderer should not trigger a crash.
+void TouchDispositionGestureFilter::OnTouchEventAckForQueueFront(
+    bool event_consumed) {
+  // Spurious asynchronous acks should not trigger a crash.
   if (IsEmpty() || (Head().empty() && sequences_.size() == 1))
     return;
 
   if (Head().empty())
     PopGestureSequence();
 
-  GestureSequence& sequence = Head();
+  Head().front().Ack(event_consumed);
+  SendAckedEvents();
+}
 
-  // Dispatch the packet corresponding to the ack'ed touch, as well as any
-  // additional timeout-based packets queued before the ack was received.
+void TouchDispositionGestureFilter::OnTouchEventAckForQueueBack(
+    bool event_consumed) {
+  // Make sure there is an event to ack.
+  CHECK(!IsEmpty());
+  CHECK(!Tail().empty());
+
+  Tail().back().Ack(event_consumed);
+
+  if (Head().empty())
+    PopGestureSequence();
+
+  if (sequences_.size() == 1 && Tail().size() == 1)
+    SendAckedEvents();
+}
+
+void TouchDispositionGestureFilter::SendAckedEvents() {
+  // Dispatch all packets corresponding to ack'ed touches, as well as
+  // any pending timeout-based packets.
   bool touch_packet_for_current_ack_handled = false;
-  while (!sequence.empty()) {
+  while (!IsEmpty() && (!Head().empty() || sequences_.size() != 1)) {
+    if (Head().empty())
+      PopGestureSequence();
+    GestureSequence& sequence = Head();
+
     DCHECK_NE(sequence.front().gesture_source(),
               GestureEventDataPacket::UNDEFINED);
     DCHECK_NE(sequence.front().gesture_source(),
@@ -191,17 +214,21 @@ void TouchDispositionGestureFilter::OnTouchEventAck(bool event_consumed) {
 
     GestureEventDataPacket::GestureSource source =
         sequence.front().gesture_source();
+    GestureEventDataPacket::AckState ack_state = sequence.front().ack_state();
+
     if (source != GestureEventDataPacket::TOUCH_TIMEOUT) {
-      // We should handle at most one non-timeout based packet.
-      if (touch_packet_for_current_ack_handled)
+      // We've sent all packets which aren't pending their ack.
+      if (ack_state == GestureEventDataPacket::AckState::PENDING)
         break;
-      state_.OnTouchEventAck(event_consumed, IsTouchStartEvent(source));
-      touch_packet_for_current_ack_handled = true;
+      state_.OnTouchEventAck(
+          ack_state == GestureEventDataPacket::AckState::CONSUMED,
+          IsTouchStartEvent(source));
     }
     // We need to pop the current sequence before sending the packet, because
     // sending the packet could result in this method being re-entered (e.g. on
     // Aura, we could trigger a touch-cancel). As popping the sequence destroys
     // the packet, we copy the packet before popping it.
+    touch_packet_for_current_ack_handled = true;
     const GestureEventDataPacket packet = sequence.front();
     sequence.pop();
     FilterAndSendPacket(packet);
@@ -314,6 +341,15 @@ void TouchDispositionGestureFilter::SendGesture(
       ending_event_primary_tool_type_ = event.primary_tool_type;
       needs_scroll_ending_event_ = true;
       break;
+    case ET_GESTURE_SCROLL_UPDATE:
+      if (state_.HasFilteredGestureType(ET_GESTURE_SCROLL_UPDATE)) {
+        GestureEventData modified_event(ET_GESTURE_SCROLL_UPDATE, event);
+        modified_event.details
+            .mark_previous_scroll_update_in_sequence_prevented();
+        client_->ForwardGestureEvent(modified_event);
+        return;
+      }
+      break;
     case ET_GESTURE_SCROLL_END:
       needs_scroll_ending_event_ = false;
       break;
@@ -418,10 +454,17 @@ bool TouchDispositionGestureFilter::GestureHandlingState::Filter(
        last_gesture_of_type_dropped_.has_bit(
            GetGestureTypeIndex(antecedent_event_type)))) {
     last_gesture_of_type_dropped_.mark_bit(GetGestureTypeIndex(gesture_type));
+    any_gesture_of_type_dropped_.mark_bit(GetGestureTypeIndex(gesture_type));
     return true;
   }
   last_gesture_of_type_dropped_.clear_bit(GetGestureTypeIndex(gesture_type));
   return false;
+}
+
+bool TouchDispositionGestureFilter::GestureHandlingState::
+    HasFilteredGestureType(EventType gesture_type) const {
+  return any_gesture_of_type_dropped_.has_bit(
+      GetGestureTypeIndex(gesture_type));
 }
 
 }  // namespace content

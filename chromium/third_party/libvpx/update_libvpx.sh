@@ -7,7 +7,7 @@
 # This tool is used to update libvpx source code with the latest git
 # repository.
 #
-# Make sure you run this in a svn checkout of deps/third_party/libvpx!
+# Make sure you run this in a git checkout of deps/third_party/libvpx!
 
 # Usage:
 #
@@ -17,13 +17,12 @@
 # Tools required for running this tool:
 #
 # 1. Linux / Mac
-# 2. svn
-# 3. git
+# 2. git
 
 export LC_ALL=C
 
 # Location for the remote git repository.
-GIT_REPO="http://git.chromium.org/webm/libvpx.git"
+GIT_REPO="https://chromium.googlesource.com/webm/libvpx"
 
 GIT_BRANCH="origin/master"
 LIBVPX_SRC_DIR="source/libvpx"
@@ -41,34 +40,42 @@ fi
 prev_hash="$(egrep "^Commit: [[:alnum:]]" README.chromium | awk '{ print $2 }')"
 echo "prev_hash:$prev_hash"
 
-rm -rf $(svn ls $LIBVPX_SRC_DIR)
-svn update $LIBVPX_SRC_DIR
-
+rm -rf $LIBVPX_SRC_DIR
+mkdir $LIBVPX_SRC_DIR
 cd $LIBVPX_SRC_DIR
 
-# Make sure git doesn't mess up with svn.
-echo ".svn" >> .gitignore
-
 # Start a local git repo.
-git init
-git add .
-git commit -a -m "Current libvpx"
-
-# Add the remote repo.
-git remote add origin $GIT_REPO
-git fetch
-
-add="$(git diff-index --diff-filter=D $GIT_BRANCH | \
-tr -s '\t' ' ' | cut -f6 -d\ )"
-delete="$(git diff-index --diff-filter=A $GIT_BRANCH | \
-tr -s '\t' ' ' | cut -f6 -d\ )"
+git clone $GIT_REPO .
 
 # Switch the content to the latest git repo.
 git checkout -b tot $GIT_BRANCH
 
-# Output the current commit hash.
+add="$(git diff-index --diff-filter=A $prev_hash | \
+tr -s [:blank:] ' ' | cut -f6 -d\ )"
+delete="$(git diff-index --diff-filter=D $prev_hash | \
+tr -s [:blank:] ' ' | cut -f6 -d\ )"
+
+# Get the current commit hash.
 hash=$(git log -1 --format="%H")
+
+# README reminder.
+echo "Update README.chromium:"
+echo "==============="
+echo "Date: $(date +"%A %B %d %Y")"
+echo "Branch: master"
+echo "Commit: $hash"
+echo "==============="
+echo ""
+
+# Commit message header.
+echo "Commit message:"
+echo "==============="
+echo "libvpx: Pull from upstream"
+echo ""
+
+# Output the current commit hash.
 echo "Current HEAD: $hash"
+echo ""
 
 # Output log for upstream from current hash.
 if [ -n "$prev_hash" ]; then
@@ -77,6 +84,7 @@ if [ -n "$prev_hash" ]; then
                     --no-merges \
                     --topo-order \
                     --pretty="%h %s" \
+                    --max-count=20 \
                     $prev_hash..$hash)"
   if [ -z "$pretty_git_log" ]; then
     echo "No log found. Checking for reverts."
@@ -84,20 +92,30 @@ if [ -n "$prev_hash" ]; then
                       --no-merges \
                       --topo-order \
                       --pretty="%h %s" \
+                      --max-count=20 \
                       $hash..$prev_hash)"
   fi
   echo "$pretty_git_log"
+  # If it makes it to 20 then it's probably skipping even more.
+  if [ `echo "$pretty_git_log" | wc -l` -eq 20 ]; then
+    echo "<...>"
+  fi
 fi
+
+# Commit message footer.
+echo ""
+echo "TBR=tomfinegan@chromium.org"
+echo "==============="
 
 # Git is useless now, remove the local git repo.
 rm -rf .git
 
-# Update SVN with the added and deleted files.
-echo "$add" | xargs -I {} svn add --parents {}
-echo "$delete" | xargs -I {} svn rm {}
+# Add and remove files.
+echo "$add" | xargs -I {} git add {}
+echo "$delete" | xargs -I {} git rm {}
 
-# Find empty directories and remove them from SVN.
-find . -type d -empty -not -iwholename '*.svn*' -exec svn rm {} \;
+# Find empty directories and remove them.
+find . -type d -empty -exec git rm {} \;
 
 chmod 755 build/make/*.sh build/make/*.pl configure
 

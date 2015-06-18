@@ -52,6 +52,7 @@ LLVM_BOOTSTRAP_INSTALL_DIR="${LLVM_DIR}/../llvm-bootstrap-install"
 LLVM_BUILD_DIR="${THIS_DIR}/../../../third_party/llvm-build"
 LLVM_BIN_DIR="${LLVM_BUILD_DIR}/Release+Asserts/bin"
 LLVM_LIB_DIR="${LLVM_BUILD_DIR}/Release+Asserts/lib"
+STAMP_FILE="${LLVM_DIR}/../llvm-build/cr_build_revision"
 
 echo "Diff in llvm:" | tee buildlog.txt
 svn stat "${LLVM_DIR}" 2>&1 | tee -a buildlog.txt
@@ -73,6 +74,7 @@ svn diff "${LLVM_DIR}/projects/libcxxabi" 2>&1 | tee -a buildlog.txt
 echo "Starting build" | tee -a buildlog.txt
 
 set -exu
+set -o pipefail
 
 # Do a clobber build.
 rm -rf "${LLVM_BOOTSTRAP_DIR}"
@@ -85,14 +87,18 @@ fi
 "${THIS_DIR}"/update.sh --bootstrap --force-local-build --run-tests \
     ${extra_flags} 2>&1 | tee -a buildlog.txt
 
-R=$("${LLVM_BIN_DIR}/clang" --version | \
-     sed -ne 's/clang version .*(\([0-9]*\))/\1/p')
+R=$(cat "${STAMP_FILE}")
 
 PDIR=clang-$R
 rm -rf $PDIR
 mkdir $PDIR
 mkdir $PDIR/bin
 mkdir $PDIR/lib
+
+GOLDDIR=llvmgold-$R
+if [ "$(uname -s)" = "Linux" ]; then
+  mkdir -p $GOLDDIR/lib
+fi
 
 if [ "$(uname -s)" = "Darwin" ]; then
   SO_EXT="dylib"
@@ -121,11 +127,12 @@ fi
 # Copy plugins. Some of the dylibs are pretty big, so copy only the ones we
 # care about.
 cp "${LLVM_LIB_DIR}/libFindBadConstructs.${SO_EXT}" $PDIR/lib
+cp "${LLVM_LIB_DIR}/libBlinkGCPlugin.${SO_EXT}" $PDIR/lib
 
-BLINKGCPLUGIN_LIBNAME=\
-$(grep 'set(LIBRARYNAME' "$THIS_DIR"/../blink_gc_plugin/CMakeLists.txt \
-    | cut -d ' ' -f 2 | tr -d ')')
-cp "${LLVM_LIB_DIR}/lib${BLINKGCPLUGIN_LIBNAME}.${SO_EXT}" $PDIR/lib
+# Copy gold plugin on Linux.
+if [ "$(uname -s)" = "Linux" ]; then
+  cp "${LLVM_LIB_DIR}/LLVMgold.${SO_EXT}" $GOLDDIR/lib
+fi
 
 if [[ -n "${gcc_toolchain}" ]]; then
   # Copy the stdlibc++.so.6 we linked Clang against so it can run.
@@ -172,6 +179,10 @@ else
   tar zcf $PDIR.tgz -C $PDIR bin lib buildlog.txt
 fi
 
+if [ "$(uname -s)" = "Linux" ]; then
+  tar zcf $GOLDDIR.tgz -C $GOLDDIR lib
+fi
+
 if [ "$(uname -s)" = "Darwin" ]; then
   PLATFORM=Mac
 else
@@ -181,3 +192,9 @@ fi
 echo To upload, run:
 echo gsutil cp -a public-read $PDIR.tgz \
      gs://chromium-browser-clang/$PLATFORM/$PDIR.tgz
+if [ "$(uname -s)" = "Linux" ]; then
+  echo gsutil cp -a public-read $GOLDDIR.tgz \
+       gs://chromium-browser-clang/$PLATFORM/$GOLDDIR.tgz
+fi
+
+# FIXME: Warn if the file already exists on the server.

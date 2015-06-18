@@ -14,38 +14,17 @@ namespace content {
 // Implementation of GPU memory buffer based on SurfaceTextures.
 class GpuMemoryBufferImplSurfaceTexture : public GpuMemoryBufferImpl {
  public:
-  static void Create(gfx::GpuMemoryBufferId id,
-                     const gfx::Size& size,
-                     Format format,
-                     int client_id,
-                     const CreationCallback& callback);
-
-  static void AllocateForChildProcess(gfx::GpuMemoryBufferId id,
-                                      const gfx::Size& size,
-                                      Format format,
-                                      int child_client_id,
-                                      const AllocationCallback& callback);
-
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
       Format format,
       const DestructionCallback& callback);
 
-  static void DeletedByChildProcess(gfx::GpuMemoryBufferId id,
-                                    int child_client_id,
-                                    uint32_t sync_point);
-
-  static bool IsFormatSupported(Format format);
-  static bool IsUsageSupported(Usage usage);
-  static bool IsConfigurationSupported(Format format, Usage usage);
-  static int WindowFormat(Format format);
-
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void* Map() override;
-  virtual void Unmap() override;
-  virtual gfx::GpuMemoryBufferHandle GetHandle() const override;
-  virtual uint32 GetStride() const override;
+  bool Map(void** data) override;
+  void Unmap() override;
+  gfx::GpuMemoryBufferHandle GetHandle() const override;
+  void GetStride(int* stride) const override;
 
  private:
   GpuMemoryBufferImplSurfaceTexture(gfx::GpuMemoryBufferId id,
@@ -53,7 +32,7 @@ class GpuMemoryBufferImplSurfaceTexture : public GpuMemoryBufferImpl {
                                     Format format,
                                     const DestructionCallback& callback,
                                     ANativeWindow* native_window);
-  virtual ~GpuMemoryBufferImplSurfaceTexture();
+  ~GpuMemoryBufferImplSurfaceTexture() override;
 
   ANativeWindow* native_window_;
   size_t stride_;

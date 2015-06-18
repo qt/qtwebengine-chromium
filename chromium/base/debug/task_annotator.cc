@@ -5,8 +5,8 @@
 #include "base/debug/task_annotator.h"
 
 #include "base/debug/alias.h"
-#include "base/debug/trace_event.h"
 #include "base/pending_task.h"
+#include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
 
 namespace base {
@@ -28,7 +28,6 @@ void TaskAnnotator::DidQueueTask(const char* queue_function,
 void TaskAnnotator::RunTask(const char* queue_function,
                             const char* run_function,
                             const PendingTask& pending_task) {
-  tracked_objects::ThreadData::PrepareForStartOfRun(pending_task.birth_tally);
   tracked_objects::TaskStopwatch stopwatch;
   stopwatch.Start();
   tracked_objects::Duration queue_duration =

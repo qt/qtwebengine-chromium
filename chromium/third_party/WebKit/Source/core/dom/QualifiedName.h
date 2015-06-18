@@ -21,6 +21,7 @@
 #ifndef QualifiedName_h
 #define QualifiedName_h
 
+#include "core/CoreExport.h"
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/HashTraits.h"
 #include "wtf/RefCounted.h"
@@ -41,8 +42,8 @@ struct QualifiedNameData {
     bool m_isStatic;
 };
 
-class QualifiedName {
-    WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT QualifiedName {
+    WTF_MAKE_FAST_ALLOCATED(QualifiedName);
 public:
     class QualifiedNameImpl : public RefCounted<QualifiedNameImpl> {
     public:
@@ -170,8 +171,6 @@ struct QualifiedNameHash {
 } // namespace blink
 
 namespace WTF {
-
-    template<typename T> struct DefaultHash;
 
     template<> struct DefaultHash<blink::QualifiedName> {
         typedef blink::QualifiedNameHash Hash;

@@ -16,8 +16,8 @@
 
 #include <algorithm>  // find_if()
 
+#include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
 #include "webrtc/modules/audio_coding/neteq/decoder_database.h"
-#include "webrtc/modules/audio_coding/neteq/interface/audio_decoder.h"
 
 namespace webrtc {
 
@@ -47,6 +47,10 @@ PacketBuffer::~PacketBuffer() {
 // Flush the buffer. All packets in the buffer will be destroyed.
 void PacketBuffer::Flush() {
   DeleteAllPackets(&buffer_);
+}
+
+bool PacketBuffer::Empty() const {
+  return buffer_.empty();
 }
 
 int PacketBuffer::InsertPacket(Packet* packet) {
@@ -227,6 +231,14 @@ int PacketBuffer::DiscardOldPackets(uint32_t timestamp_limit,
     }
   }
   return 0;
+}
+
+int PacketBuffer::DiscardAllOldPackets(uint32_t timestamp_limit) {
+  return DiscardOldPackets(timestamp_limit, 0);
+}
+
+int PacketBuffer::NumPacketsInBuffer() const {
+  return static_cast<int>(buffer_.size());
 }
 
 int PacketBuffer::NumSamplesInBuffer(DecoderDatabase* decoder_database,

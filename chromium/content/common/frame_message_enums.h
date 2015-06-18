@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_COMMON_FRAME_MESSAGES_ENUMS_H_
-#define CONTENT_COMMON_FRAME_MESSAGES_ENUMS_H_
+#ifndef CONTENT_COMMON_FRAME_MESSAGE_ENUMS_H_
+#define CONTENT_COMMON_FRAME_MESSAGE_ENUMS_H_
 
 #include "content/common/accessibility_mode_enums.h"
 
@@ -37,4 +37,20 @@ struct FrameMsg_Navigate_Type {
   };
 };
 
-#endif  // CONTENT_COMMON_FRAME_MESSAGES_ENUMS_H_
+struct FrameMsg_UILoadMetricsReportType {
+ public:
+  enum Value {
+    // Do not report metrics for this load.
+    NO_REPORT,
+
+    // Report metrics for this load, that originated from clicking on a link.
+    REPORT_LINK,
+
+    // Report metrics for this load, that originated from an Android OS intent.
+    REPORT_INTENT,
+
+    REPORT_TYPE_LAST = REPORT_INTENT,
+  };
+};
+
+#endif  // CONTENT_COMMON_FRAME_MESSAGE_ENUMS_H_

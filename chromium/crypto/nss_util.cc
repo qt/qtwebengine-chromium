@@ -18,6 +18,10 @@
 #include <sys/param.h>
 #endif
 
+#if defined(OS_CHROMEOS)
+#include <dlfcn.h>
+#endif
+
 #include <map>
 #include <vector>
 
@@ -43,14 +47,13 @@
 #include "base/threading/worker_pool.h"
 #include "build/build_config.h"
 
-// USE_NSS means we use NSS for everything crypto-related.  If USE_NSS is not
-// defined, such as on Mac and Windows, we use NSS for SSL only -- we don't
-// use NSS for crypto or certificate verification, and we don't use the NSS
-// certificate and key databases.
-#if defined(USE_NSS)
+// USE_NSS_CERTS means NSS is used for certificates and platform integration.
+// This requires additional support to manage the platform certificate and key
+// stores.
+#if defined(USE_NSS_CERTS)
 #include "base/synchronization/lock.h"
 #include "crypto/nss_crypto_module_delegate.h"
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
 namespace crypto {
 
@@ -80,7 +83,7 @@ std::string GetNSSErrorMessage() {
   return result;
 }
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 #if !defined(OS_CHROMEOS)
 base::FilePath GetDefaultConfigDirectory() {
   base::FilePath dir;
@@ -142,8 +145,8 @@ char* PKCS11PasswordFunc(PK11SlotInfo* slot, PRBool retry, void* arg) {
 // the NSS environment variable NSS_SDB_USE_CACHE to "yes" to override NSS's
 // detection when database_dir is on NFS.  See http://crbug.com/48585.
 //
-// TODO(wtc): port this function to other USE_NSS platforms.  It is defined
-// only for OS_LINUX and OS_OPENBSD simply because the statfs structure
+// TODO(wtc): port this function to other USE_NSS_CERTS platforms.  It is
+// defined only for OS_LINUX and OS_OPENBSD simply because the statfs structure
 // is OS-specific.
 //
 // Because this function sets an environment variable it must be run before we
@@ -170,7 +173,7 @@ void UseLocalCacheOfNSSDatabaseIfNFS(const base::FilePath& database_dir) {
   }
 }
 
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
 // A singleton to initialize/deinitialize NSPR.
 // Separate from the NSS singleton because we initialize NSPR on the UI thread.
@@ -268,6 +271,38 @@ class ChromeOSUserData {
       SlotReadyCallbackList;
   SlotReadyCallbackList tpm_ready_callback_list_;
 };
+
+class ScopedChapsLoadFixup {
+  public:
+    ScopedChapsLoadFixup();
+    ~ScopedChapsLoadFixup();
+
+  private:
+#if defined(COMPONENT_BUILD)
+    void *chaps_handle_;
+#endif
+};
+
+#if defined(COMPONENT_BUILD)
+
+ScopedChapsLoadFixup::ScopedChapsLoadFixup() {
+  // HACK: libchaps links the system protobuf and there are symbol conflicts
+  // with the bundled copy. Load chaps with RTLD_DEEPBIND to workaround.
+  chaps_handle_ = dlopen(kChapsPath, RTLD_LOCAL | RTLD_NOW | RTLD_DEEPBIND);
+}
+
+ScopedChapsLoadFixup::~ScopedChapsLoadFixup() {
+  // LoadModule() will have taken a 2nd reference.
+  if (chaps_handle_)
+    dlclose(chaps_handle_);
+}
+
+#else
+
+ScopedChapsLoadFixup::ScopedChapsLoadFixup() {}
+ScopedChapsLoadFixup::~ScopedChapsLoadFixup() {}
+
+#endif  // defined(COMPONENT_BUILD)
 #endif  // defined(OS_CHROMEOS)
 
 class NSSInitSingleton {
@@ -361,6 +396,8 @@ class NSSInitSingleton {
     // This tries to load the Chaps module so NSS can talk to the hardware
     // TPM.
     if (!tpm_args->chaps_module) {
+      ScopedChapsLoadFixup chaps_loader;
+
       DVLOG(3) << "Loading chaps...";
       tpm_args->chaps_module = LoadModule(
           kChapsModuleName,
@@ -628,11 +665,11 @@ class NSSInitSingleton {
   }
 #endif
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   base::Lock* write_lock() {
     return &write_lock_;
   }
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
   // This method is used to force NSS to be initialized without a DB.
   // Call this method before NSSInitSingleton() is constructed.
@@ -659,11 +696,11 @@ class NSSInitSingleton {
     EnsureNSPRInit();
 
     // We *must* have NSS >= 3.14.3.
-    COMPILE_ASSERT(
+    static_assert(
         (NSS_VMAJOR == 3 && NSS_VMINOR == 14 && NSS_VPATCH >= 3) ||
         (NSS_VMAJOR == 3 && NSS_VMINOR > 14) ||
         (NSS_VMAJOR > 3),
-        nss_version_check_failed);
+        "nss version check failed");
     // Also check the run-time NSS version.
     // NSS_VersionCheck is a >= check, not strict equality.
     if (!NSS_VersionCheck("3.14.3")) {
@@ -676,7 +713,7 @@ class NSSInitSingleton {
     SECStatus status = SECFailure;
     bool nodb_init = force_nodb_init_;
 
-#if !defined(USE_NSS)
+#if !defined(USE_NSS_CERTS)
     // Use the system certificate store, so initialize NSS without database.
     nodb_init = true;
 #endif
@@ -691,7 +728,7 @@ class NSSInitSingleton {
       root_ = InitDefaultRootCerts();
 #endif  // defined(OS_IOS)
     } else {
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
       base::FilePath database_dir = GetInitialConfigDirectory();
       if (!database_dir.empty()) {
         // This duplicates the work which should have been done in
@@ -738,7 +775,7 @@ class NSSInitSingleton {
       }
 
       root_ = InitDefaultRootCerts();
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
     }
 
     // Disable MD5 certificate signatures. (They are disabled by default in
@@ -783,7 +820,7 @@ class NSSInitSingleton {
     }
   }
 
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
   // Load nss's built-in root certs.
   SECMODModule* InitDefaultRootCerts() {
     SECMODModule* root = LoadModule("Root Certs", "libnssckbi.so", NULL);
@@ -835,7 +872,8 @@ class NSSInitSingleton {
       base::CPU cpu;
 
       if (cpu.has_avx_hardware() && !cpu.has_avx()) {
-        base::Environment::Create()->SetVar("NSS_DISABLE_HW_AES", "1");
+        scoped_ptr<base::Environment> env(base::Environment::Create());
+        env->SetVar("NSS_DISABLE_HW_AES", "1");
       }
     }
   }
@@ -855,11 +893,11 @@ class NSSInitSingleton {
   ChromeOSUserMap chromeos_user_map_;
   ScopedPK11Slot test_system_slot_;
 #endif
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // TODO(davidben): When https://bugzilla.mozilla.org/show_bug.cgi?id=564011
   // is fixed, we will no longer need the lock.
   base::Lock write_lock_;
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
   base::ThreadChecker thread_checker_;
 };
@@ -871,7 +909,7 @@ base::LazyInstance<NSSInitSingleton>::Leaky
     g_nss_singleton = LAZY_INSTANCE_INITIALIZER;
 }  // namespace
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 ScopedPK11Slot OpenSoftwareNSSDB(const base::FilePath& path,
                                  const std::string& description) {
   const std::string modspec =
@@ -930,7 +968,7 @@ void DisableNSSForkCheck() {
 
 void LoadNSSLibraries() {
   // Some NSS libraries are linked dynamically so load them here.
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // Try to search for multiple directories to load the libraries.
   std::vector<base::FilePath> paths;
 
@@ -979,14 +1017,14 @@ void LoadNSSLibraries() {
   } else {
     LOG(ERROR) << "Failed to load NSS libraries.";
   }
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 }
 
 bool CheckNSSVersion(const char* version) {
   return !!NSS_VersionCheck(version);
 }
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 base::Lock* GetNSSWriteLock() {
   return g_nss_singleton.Get().write_lock();
 }
@@ -1012,7 +1050,7 @@ AutoSECMODListReadLock::AutoSECMODListReadLock()
 AutoSECMODListReadLock::~AutoSECMODListReadLock() {
   SECMOD_ReleaseReadLock(lock_);
 }
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
 #if defined(OS_CHROMEOS)
 ScopedPK11Slot GetSystemNSSKeySlot(

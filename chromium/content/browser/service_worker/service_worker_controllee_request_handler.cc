@@ -4,7 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_controllee_request_handler.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
@@ -87,15 +87,10 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
   // It's for original request (A) or redirect case (B-a or B-b).
   DCHECK(!job_.get() || job_->ShouldForwardToServiceWorker());
 
-  job_ = new ServiceWorkerURLRequestJob(request,
-                                        network_delegate,
-                                        provider_host_,
-                                        blob_storage_context_,
-                                        request_mode_,
-                                        credentials_mode_,
-                                        request_context_type_,
-                                        frame_type_,
-                                        body_);
+  job_ = new ServiceWorkerURLRequestJob(
+      request, network_delegate, provider_host_, blob_storage_context_,
+      resource_context, request_mode_, credentials_mode_,
+      is_main_resource_load_, request_context_type_, frame_type_, body_);
   resource_context_ = resource_context;
 
   if (is_main_resource_load_)
@@ -155,13 +150,12 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   // registration while we're finding an existing registration.
   provider_host_->SetAllowAssociation(false);
 
-  GURL stripped_url = net::SimplifyUrlForRequest(request->url());
-  provider_host_->SetDocumentUrl(stripped_url);
+  stripped_url_ = net::SimplifyUrlForRequest(request->url());
+  provider_host_->SetDocumentUrl(stripped_url_);
   provider_host_->SetTopmostFrameUrl(request->first_party_for_cookies());
   context_->storage()->FindRegistrationForDocument(
-      stripped_url,
-      base::Bind(&self::DidLookupRegistrationForMainResource,
-                 weak_factory_.GetWeakPtr()));
+      stripped_url_, base::Bind(&self::DidLookupRegistrationForMainResource,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void
@@ -183,9 +177,9 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
   DCHECK(registration.get());
 
   if (!GetContentClient()->browser()->AllowServiceWorker(
-          registration->pattern(),
-          provider_host_->topmost_frame_url(),
-          resource_context_)) {
+          registration->pattern(), provider_host_->topmost_frame_url(),
+          resource_context_, provider_host_->process_id(),
+          provider_host_->frame_id())) {
     job_->FallbackToNetwork();
     TRACE_EVENT_ASYNC_END2(
         "ServiceWorker",
@@ -237,9 +231,10 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
     return;
   }
 
-  ServiceWorkerMetrics::CountControlledPageLoad();
+  ServiceWorkerMetrics::CountControlledPageLoad(stripped_url_);
 
-  provider_host_->AssociateRegistration(registration.get());
+  provider_host_->AssociateRegistration(registration.get(),
+                                        false /* notify_controllerchange */);
   job_->ForwardToServiceWorker();
   TRACE_EVENT_ASYNC_END2(
       "ServiceWorker",
@@ -262,9 +257,10 @@ void ServiceWorkerControlleeRequestHandler::OnVersionStatusChanged(
     return;
   }
 
-  ServiceWorkerMetrics::CountControlledPageLoad();
+  ServiceWorkerMetrics::CountControlledPageLoad(stripped_url_);
 
-  provider_host_->AssociateRegistration(registration);
+  provider_host_->AssociateRegistration(registration,
+                                        false /* notify_controllerchange */);
   job_->ForwardToServiceWorker();
 }
 

@@ -112,46 +112,54 @@ cr.define('cr.ui', function() {
      * @type {ArrayDataModel}
      */
     set dataModel(dataModel) {
-      if (this.dataModel_ != dataModel) {
-        if (!this.boundHandleDataModelPermuted_) {
-          this.boundHandleDataModelPermuted_ =
-              this.handleDataModelPermuted_.bind(this);
-          this.boundHandleDataModelChange_ =
-              this.handleDataModelChange_.bind(this);
-        }
+      if (this.dataModel_ == dataModel)
+        return;
 
-        if (this.dataModel_) {
-          this.dataModel_.removeEventListener(
-              'permuted',
-              this.boundHandleDataModelPermuted_);
-          this.dataModel_.removeEventListener('change',
-                                              this.boundHandleDataModelChange_);
-        }
-
-        this.dataModel_ = dataModel;
-
-        this.cachedItems_ = {};
-        this.cachedItemHeights_ = {};
-        this.selectionModel.clear();
-        if (dataModel)
-          this.selectionModel.adjustLength(dataModel.length);
-
-        if (this.dataModel_) {
-          this.dataModel_.addEventListener(
-              'permuted',
-              this.boundHandleDataModelPermuted_);
-          this.dataModel_.addEventListener('change',
-                                           this.boundHandleDataModelChange_);
-        }
-
-        this.redraw();
+      if (!this.boundHandleDataModelPermuted_) {
+        this.boundHandleDataModelPermuted_ =
+            this.handleDataModelPermuted_.bind(this);
+        this.boundHandleDataModelChange_ =
+            this.handleDataModelChange_.bind(this);
       }
+
+      if (this.dataModel_) {
+        this.dataModel_.removeEventListener(
+            'permuted',
+            this.boundHandleDataModelPermuted_);
+        this.dataModel_.removeEventListener('change',
+                                            this.boundHandleDataModelChange_);
+      }
+
+      this.dataModel_ = dataModel;
+
+      this.cachedItems_ = {};
+      this.cachedItemHeights_ = {};
+      this.selectionModel.clear();
+      if (dataModel)
+        this.selectionModel.adjustLength(dataModel.length);
+
+      if (this.dataModel_) {
+        this.dataModel_.addEventListener(
+            'permuted',
+            this.boundHandleDataModelPermuted_);
+        this.dataModel_.addEventListener('change',
+                                         this.boundHandleDataModelChange_);
+      }
+
+      this.redraw();
+      this.onSetDataModelComplete();
     },
 
     get dataModel() {
       return this.dataModel_;
     },
 
+    /**
+     * Override to be notified when |this.dataModel| is set.
+     * @protected
+     */
+    onSetDataModelComplete: function() {
+    },
 
     /**
      * Cached item for measuring the default item size by measureItem().
@@ -173,7 +181,7 @@ cr.define('cr.ui', function() {
 
       if (!this.boundHandleOnChange_) {
         this.boundHandleOnChange_ = this.handleOnChange_.bind(this);
-        this.boundHandleLeadChange_ = this.handleLeadChange_.bind(this);
+        this.boundHandleLeadChange_ = this.handleLeadChange.bind(this);
       }
 
       if (oldSm) {
@@ -588,21 +596,21 @@ cr.define('cr.ui', function() {
 
     /**
      * Handles a change of the lead item from the selection model.
-     * @param {Event} pe The property change event.
-     * @private
+     * @param {Event} e The property change event.
+     * @protected
      */
-    handleLeadChange_: function(pe) {
+    handleLeadChange: function(e) {
       var element;
-      if (pe.oldValue != -1) {
-        if ((element = this.getListItemByIndex(pe.oldValue)))
+      if (e.oldValue != -1) {
+        if ((element = this.getListItemByIndex(e.oldValue)))
           element.lead = false;
       }
 
-      if (pe.newValue != -1) {
-        if ((element = this.getListItemByIndex(pe.newValue)))
+      if (e.newValue != -1) {
+        if ((element = this.getListItemByIndex(e.newValue)))
           element.lead = true;
-        if (pe.oldValue != pe.newValue) {
-          this.scrollIndexIntoView(pe.newValue);
+        if (e.oldValue != e.newValue) {
+          this.scrollIndexIntoView(e.newValue);
           // If the lead item has a different height than other items, then we
           // may run into a problem that requires a second attempt to scroll
           // it into view. The first scroll attempt will trigger a redraw,
@@ -615,7 +623,7 @@ cr.define('cr.ui', function() {
           // not the most elegant solution, but no others seem obvious.
           var self = this;
           window.setTimeout(function() {
-            self.scrollIndexIntoView(pe.newValue);
+            self.scrollIndexIntoView(e.newValue);
           }, 0);
         }
       }
@@ -807,7 +815,7 @@ cr.define('cr.ui', function() {
 
     /**
      * Creates a new list item.
-     * @param {*} value The value to use for the item.
+     * @param {?} value The value to use for the item.
      * @return {!cr.ui.ListItem} The newly created list item.
      */
     createItem: function(value) {

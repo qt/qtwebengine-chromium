@@ -56,6 +56,9 @@
 
 #include <openssl/asn1.h>
 
+#include <string.h>
+#include <time.h>
+
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/time_support.h>
@@ -285,7 +288,7 @@ int ASN1_UTCTIME_cmp_time_t(const ASN1_UTCTIME *s, time_t t)
 	if (!OPENSSL_gmtime(&t, &ttm))
 		return -2;
 
-	if (!OPENSSL_gmtime_diff(&day, &sec, &stm, &ttm))
+	if (!OPENSSL_gmtime_diff(&day, &sec, &ttm, &stm))
 		return -2;
 
 	if (day > 0)

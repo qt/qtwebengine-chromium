@@ -6,13 +6,11 @@
 #define NET_QUIC_QUIC_STREAM_SEQUENCER_H_
 
 #include <map>
+#include <string>
 
 #include "base/basictypes.h"
 #include "net/base/iovec.h"
 #include "net/quic/quic_protocol.h"
-
-using std::map;
-using std::string;
 
 namespace net {
 
@@ -25,7 +23,6 @@ class ReliableQuicStream;
 
 // Buffers frames until we have something which can be passed
 // up to the next layer.
-// TOOD(alyssar) add some checks for overflow attempts [1, 256,] [2, 256]
 class NET_EXPORT_PRIVATE QuicStreamSequencer {
  public:
   explicit QuicStreamSequencer(ReliableQuicStream* quic_stream);
@@ -78,6 +75,8 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
     return num_duplicate_frames_received_;
   }
 
+  int num_early_frames_received() const { return num_early_frames_received_; }
+
  private:
   friend class test::QuicStreamSequencerPeer;
 
@@ -103,7 +102,7 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
   // frames, in which case we will have to allow receipt of overlapping frames.
   // Maybe write new frames into a ring buffer, and keep track of consumed
   // bytes, and gaps.
-  typedef map<QuicStreamOffset, string> FrameMap;
+  typedef std::map<QuicStreamOffset, std::string> FrameMap;
 
   // Stores buffered frames (maps from sequence number -> frame data as string).
   FrameMap buffered_frames_;
@@ -124,6 +123,10 @@ class NET_EXPORT_PRIVATE QuicStreamSequencer {
 
   // Count of the number of duplicate frames received.
   int num_duplicate_frames_received_;
+
+  // Count of the number of frames received before all previous frames were
+  // received.
+  int num_early_frames_received_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStreamSequencer);
 };

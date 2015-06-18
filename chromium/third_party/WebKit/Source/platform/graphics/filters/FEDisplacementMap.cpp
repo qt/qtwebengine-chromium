@@ -40,10 +40,10 @@ FEDisplacementMap::FEDisplacementMap(Filter* filter, ChannelSelectorType xChanne
 {
 }
 
-PassRefPtr<FEDisplacementMap> FEDisplacementMap::create(Filter* filter, ChannelSelectorType xChannelSelector,
+PassRefPtrWillBeRawPtr<FEDisplacementMap> FEDisplacementMap::create(Filter* filter, ChannelSelectorType xChannelSelector,
     ChannelSelectorType yChannelSelector, float scale)
 {
-    return adoptRef(new FEDisplacementMap(filter, xChannelSelector, yChannelSelector, scale));
+    return adoptRefWillBeNoop(new FEDisplacementMap(filter, xChannelSelector, yChannelSelector, scale));
 }
 
 FloatRect FEDisplacementMap::mapPaintRect(const FloatRect& rect, bool)
@@ -91,15 +91,6 @@ bool FEDisplacementMap::setScale(float scale)
         return false;
     m_scale = scale;
     return true;
-}
-
-void FEDisplacementMap::setResultColorSpace(ColorSpace)
-{
-    // Spec: The 'color-interpolation-filters' property only applies to the 'in2' source image
-    // and does not apply to the 'in' source image. The 'in' source image must remain in its
-    // current color space.
-    // The result is in that smae color space because it is a displacement of the 'in' image.
-    FilterEffect::setResultColorSpace(inputEffect(0)->resultColorSpace());
 }
 
 static SkDisplacementMapEffect::ChannelSelectorType toSkiaMode(ChannelSelectorType type)

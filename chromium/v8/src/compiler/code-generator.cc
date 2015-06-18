@@ -12,21 +12,48 @@ namespace v8 {
 namespace internal {
 namespace compiler {
 
+class CodeGenerator::JumpTable final : public ZoneObject {
+ public:
+  JumpTable(JumpTable* next, Label** targets, size_t target_count)
+      : next_(next), targets_(targets), target_count_(target_count) {}
+
+  Label* label() { return &label_; }
+  JumpTable* next() const { return next_; }
+  Label** targets() const { return targets_; }
+  size_t target_count() const { return target_count_; }
+
+ private:
+  Label label_;
+  JumpTable* const next_;
+  Label** const targets_;
+  size_t const target_count_;
+};
+
+
 CodeGenerator::CodeGenerator(Frame* frame, Linkage* linkage,
                              InstructionSequence* code, CompilationInfo* info)
     : frame_(frame),
       linkage_(linkage),
       code_(code),
       info_(info),
-      current_block_(BasicBlock::RpoNumber::Invalid()),
+      labels_(zone()->NewArray<Label>(code->InstructionBlockCount())),
+      current_block_(RpoNumber::Invalid()),
       current_source_position_(SourcePosition::Invalid()),
-      masm_(code->zone()->isolate(), NULL, 0),
+      masm_(info->isolate(), NULL, 0),
       resolver_(this),
       safepoints_(code->zone()),
+      handlers_(code->zone()),
       deoptimization_states_(code->zone()),
       deoptimization_literals_(code->zone()),
       translations_(code->zone()),
-      last_lazy_deopt_pc_(0) {}
+      last_lazy_deopt_pc_(0),
+      jump_tables_(nullptr),
+      ools_(nullptr),
+      osr_pc_offset_(-1) {
+  for (int i = 0; i < code->InstructionBlockCount(); ++i) {
+    new (&labels_[i]) Label;
+  }
+}
 
 
 Handle<Code> CodeGenerator::GenerateCode() {
@@ -45,25 +72,44 @@ Handle<Code> CodeGenerator::GenerateCode() {
   info->set_prologue_offset(masm()->pc_offset());
   AssemblePrologue();
 
-  // Assemble all non-deferred instructions.
-  for (auto const block : code()->instruction_blocks()) {
-    if (block->IsDeferred()) continue;
-    for (int i = block->code_start(); i < block->code_end(); ++i) {
-      AssembleInstruction(code()->InstructionAt(i));
+  // Assemble all non-deferred blocks, followed by deferred ones.
+  for (int deferred = 0; deferred < 2; ++deferred) {
+    for (auto const block : code()->instruction_blocks()) {
+      if (block->IsDeferred() == (deferred == 0)) {
+        continue;
+      }
+      // Align loop headers on 16-byte boundaries.
+      if (block->IsLoopHeader()) masm()->Align(16);
+      // Bind a label for a block.
+      current_block_ = block->rpo_number();
+      if (FLAG_code_comments) {
+        // TODO(titzer): these code comments are a giant memory leak.
+        Vector<char> buffer = Vector<char>::New(200);
+        SNPrintF(buffer, "-- B%d start%s%s%s%s --", block->rpo_number().ToInt(),
+                 block->IsDeferred() ? " (deferred)" : "",
+                 block->needs_frame() ? "" : " (no frame)",
+                 block->must_construct_frame() ? " (construct frame)" : "",
+                 block->must_deconstruct_frame() ? " (deconstruct frame)" : "");
+        masm()->RecordComment(buffer.start());
+      }
+      masm()->bind(GetLabel(current_block_));
+      for (int i = block->code_start(); i < block->code_end(); ++i) {
+        AssembleInstruction(code()->InstructionAt(i));
+      }
     }
   }
 
-  // Assemble all deferred instructions.
-  for (auto const block : code()->instruction_blocks()) {
-    if (!block->IsDeferred()) continue;
-    for (int i = block->code_start(); i < block->code_end(); ++i) {
-      AssembleInstruction(code()->InstructionAt(i));
+  // Assemble all out-of-line code.
+  if (ools_) {
+    masm()->RecordComment("-- Out of line code --");
+    for (OutOfLineCode* ool = ools_; ool; ool = ool->next()) {
+      masm()->bind(ool->entry());
+      ool->Generate();
+      if (ool->exit()->is_bound()) masm()->jmp(ool->exit());
     }
   }
 
-  FinishCode(masm());
-
-  // Ensure there is space for lazy deopt.
+  // Ensure there is space for lazy deoptimization in the code.
   if (!info->IsStub()) {
     int target_offset = masm()->pc_offset() + Deoptimizer::patch_size();
     while (masm()->pc_offset() < target_offset) {
@@ -71,20 +117,44 @@ Handle<Code> CodeGenerator::GenerateCode() {
     }
   }
 
+  FinishCode(masm());
+
+  // Emit the jump tables.
+  if (jump_tables_) {
+    masm()->Align(kPointerSize);
+    for (JumpTable* table = jump_tables_; table; table = table->next()) {
+      masm()->bind(table->label());
+      AssembleJumpTable(table->targets(), table->target_count());
+    }
+  }
+
   safepoints()->Emit(masm(), frame()->GetSpillSlotCount());
 
-  // TODO(titzer): what are the right code flags here?
-  Code::Kind kind = Code::STUB;
-  if (linkage()->GetIncomingDescriptor()->IsJSFunctionCall()) {
-    kind = Code::OPTIMIZED_FUNCTION;
-  }
   Handle<Code> result = v8::internal::CodeGenerator::MakeCodeEpilogue(
-      masm(), Code::ComputeFlags(kind), info);
+      masm(), info->flags(), info);
   result->set_is_turbofanned(true);
   result->set_stack_slots(frame()->GetSpillSlotCount());
   result->set_safepoint_table_offset(safepoints()->GetCodeOffset());
 
+  // Emit exception handler table.
+  if (!handlers_.empty()) {
+    Handle<HandlerTable> table =
+        Handle<HandlerTable>::cast(isolate()->factory()->NewFixedArray(
+            HandlerTable::LengthForReturn(static_cast<int>(handlers_.size())),
+            TENURED));
+    for (size_t i = 0; i < handlers_.size(); ++i) {
+      table->SetReturnOffset(static_cast<int>(i), handlers_[i].pc_offset);
+      table->SetReturnHandler(static_cast<int>(i), handlers_[i].handler->pos());
+    }
+    result->set_handler_table(*table);
+  }
+
   PopulateDeoptimizationData(result);
+
+  // Ensure there is space for lazy deoptimization in the relocation info.
+  if (!info->IsStub()) {
+    Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(result);
+  }
 
   // Emit a code line info recording stop event.
   void* line_info = recorder->DetachJITHandlerData();
@@ -94,104 +164,129 @@ Handle<Code> CodeGenerator::GenerateCode() {
 }
 
 
-bool CodeGenerator::IsNextInAssemblyOrder(BasicBlock::RpoNumber block) const {
+bool CodeGenerator::IsNextInAssemblyOrder(RpoNumber block) const {
   return code()->InstructionBlockAt(current_block_)->ao_number().IsNext(
       code()->InstructionBlockAt(block)->ao_number());
 }
 
 
-void CodeGenerator::RecordSafepoint(PointerMap* pointers, Safepoint::Kind kind,
-                                    int arguments,
+void CodeGenerator::RecordSafepoint(ReferenceMap* references,
+                                    Safepoint::Kind kind, int arguments,
                                     Safepoint::DeoptMode deopt_mode) {
-  const ZoneList<InstructionOperand*>* operands =
-      pointers->GetNormalizedOperands();
   Safepoint safepoint =
       safepoints()->DefineSafepoint(masm(), kind, arguments, deopt_mode);
-  for (int i = 0; i < operands->length(); i++) {
-    InstructionOperand* pointer = operands->at(i);
-    if (pointer->IsStackSlot()) {
-      safepoint.DefinePointerSlot(pointer->index(), zone());
-    } else if (pointer->IsRegister() && (kind & Safepoint::kWithRegisters)) {
-      Register reg = Register::FromAllocationIndex(pointer->index());
+  for (auto& operand : references->reference_operands()) {
+    if (operand.IsStackSlot()) {
+      safepoint.DefinePointerSlot(StackSlotOperand::cast(operand).index(),
+                                  zone());
+    } else if (operand.IsRegister() && (kind & Safepoint::kWithRegisters)) {
+      Register reg =
+          Register::FromAllocationIndex(RegisterOperand::cast(operand).index());
       safepoint.DefinePointerRegister(reg, zone());
     }
   }
 }
 
 
-void CodeGenerator::AssembleInstruction(Instruction* instr) {
-  if (instr->IsBlockStart()) {
-    // Bind a label for a block start and handle parallel moves.
-    BlockStartInstruction* block_start = BlockStartInstruction::cast(instr);
-    current_block_ = block_start->rpo_number();
-    if (FLAG_code_comments) {
-      // TODO(titzer): these code comments are a giant memory leak.
-      Vector<char> buffer = Vector<char>::New(32);
-      SNPrintF(buffer, "-- B%d start --", block_start->id().ToInt());
-      masm()->RecordComment(buffer.start());
+bool CodeGenerator::IsMaterializableFromFrame(Handle<HeapObject> object,
+                                              int* offset_return) {
+  if (linkage()->GetIncomingDescriptor()->IsJSFunctionCall()) {
+    if (object.is_identical_to(info()->context())) {
+      *offset_return = StandardFrameConstants::kContextOffset;
+      return true;
+    } else if (object.is_identical_to(info()->closure())) {
+      *offset_return = JavaScriptFrameConstants::kFunctionOffset;
+      return true;
     }
-    masm()->bind(block_start->label());
   }
-  if (instr->IsGapMoves()) {
-    // Handle parallel moves associated with the gap instruction.
-    AssembleGap(GapInstruction::cast(instr));
-  } else if (instr->IsSourcePosition()) {
-    AssembleSourcePosition(SourcePositionInstruction::cast(instr));
-  } else {
-    // Assemble architecture-specific code for the instruction.
-    AssembleArchInstruction(instr);
+  return false;
+}
 
-    // Assemble branches or boolean materializations after this instruction.
-    FlagsMode mode = FlagsModeField::decode(instr->opcode());
-    FlagsCondition condition = FlagsConditionField::decode(instr->opcode());
-    switch (mode) {
-      case kFlags_none:
-        return;
-      case kFlags_set:
-        return AssembleArchBoolean(instr, condition);
-      case kFlags_branch:
-        return AssembleArchBranch(instr, condition);
+
+bool CodeGenerator::IsMaterializableFromRoot(
+    Handle<HeapObject> object, Heap::RootListIndex* index_return) {
+  if (linkage()->GetIncomingDescriptor()->IsJSFunctionCall()) {
+    return isolate()->heap()->GetRootListIndex(object, index_return);
+  }
+  return false;
+}
+
+
+void CodeGenerator::AssembleInstruction(Instruction* instr) {
+  AssembleGaps(instr);
+  AssembleSourcePosition(instr);
+  // Assemble architecture-specific code for the instruction.
+  AssembleArchInstruction(instr);
+
+  FlagsMode mode = FlagsModeField::decode(instr->opcode());
+  FlagsCondition condition = FlagsConditionField::decode(instr->opcode());
+  if (mode == kFlags_branch) {
+    // Assemble a branch after this instruction.
+    InstructionOperandConverter i(this, instr);
+    RpoNumber true_rpo = i.InputRpo(instr->InputCount() - 2);
+    RpoNumber false_rpo = i.InputRpo(instr->InputCount() - 1);
+
+    if (true_rpo == false_rpo) {
+      // redundant branch.
+      if (!IsNextInAssemblyOrder(true_rpo)) {
+        AssembleArchJump(true_rpo);
+      }
+      return;
     }
-    UNREACHABLE();
+    if (IsNextInAssemblyOrder(true_rpo)) {
+      // true block is next, can fall through if condition negated.
+      std::swap(true_rpo, false_rpo);
+      condition = NegateFlagsCondition(condition);
+    }
+    BranchInfo branch;
+    branch.condition = condition;
+    branch.true_label = GetLabel(true_rpo);
+    branch.false_label = GetLabel(false_rpo);
+    branch.fallthru = IsNextInAssemblyOrder(false_rpo);
+    // Assemble architecture-specific branch.
+    AssembleArchBranch(instr, &branch);
+  } else if (mode == kFlags_set) {
+    // Assemble a boolean materialization after this instruction.
+    AssembleArchBoolean(instr, condition);
   }
 }
 
 
-void CodeGenerator::AssembleSourcePosition(SourcePositionInstruction* instr) {
-  SourcePosition source_position = instr->source_position();
+void CodeGenerator::AssembleSourcePosition(Instruction* instr) {
+  SourcePosition source_position;
+  if (!code()->GetSourcePosition(instr, &source_position)) return;
   if (source_position == current_source_position_) return;
   DCHECK(!source_position.IsInvalid());
-  if (!source_position.IsUnknown()) {
-    int code_pos = source_position.raw();
-    masm()->positions_recorder()->RecordPosition(source_position.raw());
-    masm()->positions_recorder()->WriteRecordedPositions();
-    if (FLAG_code_comments) {
-      Vector<char> buffer = Vector<char>::New(256);
-      CompilationInfo* info = this->info();
-      int ln = Script::GetLineNumber(info->script(), code_pos);
-      int cn = Script::GetColumnNumber(info->script(), code_pos);
-      if (info->script()->name()->IsString()) {
-        Handle<String> file(String::cast(info->script()->name()));
-        base::OS::SNPrintF(buffer.start(), buffer.length(), "-- %s:%d:%d --",
-                           file->ToCString().get(), ln, cn);
-      } else {
-        base::OS::SNPrintF(buffer.start(), buffer.length(),
-                           "-- <unknown>:%d:%d --", ln, cn);
-      }
-      masm()->RecordComment(buffer.start());
-    }
-  }
   current_source_position_ = source_position;
+  if (source_position.IsUnknown()) return;
+  int code_pos = source_position.raw();
+  masm()->positions_recorder()->RecordPosition(source_position.raw());
+  masm()->positions_recorder()->WriteRecordedPositions();
+  if (FLAG_code_comments) {
+    Vector<char> buffer = Vector<char>::New(256);
+    CompilationInfo* info = this->info();
+    int ln = Script::GetLineNumber(info->script(), code_pos);
+    int cn = Script::GetColumnNumber(info->script(), code_pos);
+    if (info->script()->name()->IsString()) {
+      Handle<String> file(String::cast(info->script()->name()));
+      base::OS::SNPrintF(buffer.start(), buffer.length(), "-- %s:%d:%d --",
+                         file->ToCString().get(), ln, cn);
+    } else {
+      base::OS::SNPrintF(buffer.start(), buffer.length(),
+                         "-- <unknown>:%d:%d --", ln, cn);
+    }
+    masm()->RecordComment(buffer.start());
+  }
 }
 
 
-void CodeGenerator::AssembleGap(GapInstruction* instr) {
-  for (int i = GapInstruction::FIRST_INNER_POSITION;
-       i <= GapInstruction::LAST_INNER_POSITION; i++) {
-    GapInstruction::InnerPosition inner_pos =
-        static_cast<GapInstruction::InnerPosition>(i);
+void CodeGenerator::AssembleGaps(Instruction* instr) {
+  for (int i = Instruction::FIRST_GAP_POSITION;
+       i <= Instruction::LAST_GAP_POSITION; i++) {
+    Instruction::GapPosition inner_pos =
+        static_cast<Instruction::GapPosition>(i);
     ParallelMove* move = instr->GetParallelMove(inner_pos);
-    if (move != NULL) resolver()->Resolve(move);
+    if (move != nullptr) resolver()->Resolve(move);
   }
 }
 
@@ -199,7 +294,7 @@ void CodeGenerator::AssembleGap(GapInstruction* instr) {
 void CodeGenerator::PopulateDeoptimizationData(Handle<Code> code_object) {
   CompilationInfo* info = this->info();
   int deopt_count = static_cast<int>(deoptimization_states_.size());
-  if (deopt_count == 0) return;
+  if (deopt_count == 0 && !info->is_osr()) return;
   Handle<DeoptimizationInputData> data =
       DeoptimizationInputData::New(isolate(), deopt_count, TENURED);
 
@@ -229,16 +324,21 @@ void CodeGenerator::PopulateDeoptimizationData(Handle<Code> code_object) {
     data->SetLiteralArray(*literals);
   }
 
-  // No OSR in Turbofan yet...
-  BailoutId osr_ast_id = BailoutId::None();
-  data->SetOsrAstId(Smi::FromInt(osr_ast_id.ToInt()));
-  data->SetOsrPcOffset(Smi::FromInt(-1));
+  if (info->is_osr()) {
+    DCHECK(osr_pc_offset_ >= 0);
+    data->SetOsrAstId(Smi::FromInt(info_->osr_ast_id().ToInt()));
+    data->SetOsrPcOffset(Smi::FromInt(osr_pc_offset_));
+  } else {
+    BailoutId osr_ast_id = BailoutId::None();
+    data->SetOsrAstId(Smi::FromInt(osr_ast_id.ToInt()));
+    data->SetOsrPcOffset(Smi::FromInt(-1));
+  }
 
   // Populate deoptimization entries.
   for (int i = 0; i < deopt_count; i++) {
     DeoptimizationState* deoptimization_state = deoptimization_states_[i];
     data->SetAstId(i, deoptimization_state->bailout_id());
-    CHECK_NE(NULL, deoptimization_states_[i]);
+    CHECK(deoptimization_states_[i]);
     data->SetTranslationIndex(
         i, Smi::FromInt(deoptimization_states_[i]->translation_id()));
     data->SetArgumentsStackHeight(i, Smi::FromInt(0));
@@ -249,14 +349,27 @@ void CodeGenerator::PopulateDeoptimizationData(Handle<Code> code_object) {
 }
 
 
-void CodeGenerator::AddSafepointAndDeopt(Instruction* instr) {
+Label* CodeGenerator::AddJumpTable(Label** targets, size_t target_count) {
+  jump_tables_ = new (zone()) JumpTable(jump_tables_, targets, target_count);
+  return jump_tables_->label();
+}
+
+
+void CodeGenerator::RecordCallPosition(Instruction* instr) {
   CallDescriptor::Flags flags(MiscField::decode(instr->opcode()));
 
   bool needs_frame_state = (flags & CallDescriptor::kNeedsFrameState);
 
   RecordSafepoint(
-      instr->pointer_map(), Safepoint::kSimple, 0,
+      instr->reference_map(), Safepoint::kSimple, 0,
       needs_frame_state ? Safepoint::kLazyDeopt : Safepoint::kNoLazyDeopt);
+
+  if (flags & CallDescriptor::kHasExceptionHandler) {
+    InstructionOperandConverter i(this, instr);
+    RpoNumber handler_rpo =
+        i.InputRpo(static_cast<int>(instr->InputCount()) - 1);
+    handlers_.push_back({GetLabel(handler_rpo), masm()->pc_offset()});
+  }
 
   if (flags & CallDescriptor::kNeedsNopAfterCall) {
     AddNopForSmiCodeInlining();
@@ -264,10 +377,8 @@ void CodeGenerator::AddSafepointAndDeopt(Instruction* instr) {
 
   if (needs_frame_state) {
     MarkLazyDeoptSite();
-    // If the frame state is present, it starts at argument 1
-    // (just after the code address).
-    InstructionOperandConverter converter(this, instr);
-    // Deoptimization info starts at argument 1
+    // If the frame state is present, it starts at argument 1 (just after the
+    // code address).
     size_t frame_state_offset = 1;
     FrameStateDescriptor* descriptor =
         GetFrameStateDescriptor(instr, frame_state_offset);
@@ -311,8 +422,8 @@ int CodeGenerator::DefineDeoptimizationLiteral(Handle<Object> literal) {
 FrameStateDescriptor* CodeGenerator::GetFrameStateDescriptor(
     Instruction* instr, size_t frame_state_offset) {
   InstructionOperandConverter i(this, instr);
-  InstructionSequence::StateId state_id = InstructionSequence::StateId::FromInt(
-      i.InputInt32(static_cast<int>(frame_state_offset)));
+  InstructionSequence::StateId state_id =
+      InstructionSequence::StateId::FromInt(i.InputInt32(frame_state_offset));
   return code()->GetFrameStateDescriptor(state_id);
 }
 
@@ -421,25 +532,30 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
                                              InstructionOperand* op,
                                              MachineType type) {
   if (op->IsStackSlot()) {
-    if (type == kMachBool || type == kMachInt32 || type == kMachInt8 ||
-        type == kMachInt16) {
-      translation->StoreInt32StackSlot(op->index());
-    } else if (type == kMachUint32) {
-      translation->StoreUint32StackSlot(op->index());
+    if (type == kMachBool || type == kRepBit) {
+      translation->StoreBoolStackSlot(StackSlotOperand::cast(op)->index());
+    } else if (type == kMachInt32 || type == kMachInt8 || type == kMachInt16) {
+      translation->StoreInt32StackSlot(StackSlotOperand::cast(op)->index());
+    } else if (type == kMachUint32 || type == kMachUint16 ||
+               type == kMachUint8) {
+      translation->StoreUint32StackSlot(StackSlotOperand::cast(op)->index());
     } else if ((type & kRepMask) == kRepTagged) {
-      translation->StoreStackSlot(op->index());
+      translation->StoreStackSlot(StackSlotOperand::cast(op)->index());
     } else {
       CHECK(false);
     }
   } else if (op->IsDoubleStackSlot()) {
     DCHECK((type & (kRepFloat32 | kRepFloat64)) != 0);
-    translation->StoreDoubleStackSlot(op->index());
+    translation->StoreDoubleStackSlot(
+        DoubleStackSlotOperand::cast(op)->index());
   } else if (op->IsRegister()) {
     InstructionOperandConverter converter(this, instr);
-    if (type == kMachBool || type == kMachInt32 || type == kMachInt8 ||
-        type == kMachInt16) {
+    if (type == kMachBool || type == kRepBit) {
+      translation->StoreBoolRegister(converter.ToRegister(op));
+    } else if (type == kMachInt32 || type == kMachInt8 || type == kMachInt16) {
       translation->StoreInt32Register(converter.ToRegister(op));
-    } else if (type == kMachUint32) {
+    } else if (type == kMachUint32 || type == kMachUint16 ||
+               type == kMachUint8) {
       translation->StoreUint32Register(converter.ToRegister(op));
     } else if ((type & kRepMask) == kRepTagged) {
       translation->StoreRegister(converter.ToRegister(op));
@@ -456,12 +572,15 @@ void CodeGenerator::AddTranslationForOperand(Translation* translation,
     Handle<Object> constant_object;
     switch (constant.type()) {
       case Constant::kInt32:
-        DCHECK(type == kMachInt32 || type == kMachUint32);
+        DCHECK(type == kMachInt32 || type == kMachUint32 || type == kRepBit);
         constant_object =
             isolate()->factory()->NewNumberFromInt(constant.ToInt32());
         break;
       case Constant::kFloat64:
-        DCHECK(type == kMachFloat64 || type == kMachAnyTagged);
+        DCHECK(type == kMachFloat64 || type == kMachAnyTagged ||
+               type == kRepTagged || type == (kTypeNumber | kRepTagged) ||
+               type == (kTypeInt32 | kRepTagged) ||
+               type == (kTypeUint32 | kRepTagged));
         constant_object = isolate()->factory()->NewNumber(constant.ToFloat64());
         break;
       case Constant::kHeapObject:
@@ -491,7 +610,7 @@ void CodeGenerator::AssembleArchInstruction(Instruction* instr) {
 
 
 void CodeGenerator::AssembleArchBranch(Instruction* instr,
-                                       FlagsCondition condition) {
+                                       BranchInfo* branch) {
   UNIMPLEMENTED();
 }
 
@@ -502,7 +621,11 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
 }
 
 
-void CodeGenerator::AssembleDeoptimizerCall(int deoptimization_id) {
+void CodeGenerator::AssembleArchJump(RpoNumber target) { UNIMPLEMENTED(); }
+
+
+void CodeGenerator::AssembleDeoptimizerCall(
+    int deoptimization_id, Deoptimizer::BailoutType bailout_type) {
   UNIMPLEMENTED();
 }
 
@@ -527,7 +650,21 @@ void CodeGenerator::AssembleSwap(InstructionOperand* source,
 
 void CodeGenerator::AddNopForSmiCodeInlining() { UNIMPLEMENTED(); }
 
+
+void CodeGenerator::AssembleJumpTable(Label** targets, size_t target_count) {
+  UNIMPLEMENTED();
+}
+
 #endif  // !V8_TURBOFAN_BACKEND
+
+
+OutOfLineCode::OutOfLineCode(CodeGenerator* gen)
+    : masm_(gen->masm()), next_(gen->ools_) {
+  gen->ools_ = this;
+}
+
+
+OutOfLineCode::~OutOfLineCode() {}
 
 }  // namespace compiler
 }  // namespace internal

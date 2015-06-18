@@ -37,7 +37,7 @@
     }],
     ['OS!="android" or _toolset=="host" or >(nacl_untrusted_build)==1', {
       'sources/': [
-        ['exclude', '_android(_unittest)?\\.cc$'],
+        ['exclude', '_android(_unittest)?\\.(h|cc)$'],
         ['exclude', '(^|/)android/'],
       ],
     }],
@@ -104,11 +104,6 @@
     ['<(use_ozone_evdev)==0 or >(nacl_untrusted_build)==1', {
       'sources/': [ ['exclude', '_evdev(_browsertest|_unittest)?\\.(h|cc)$'],
                     ['exclude', '(^|/)evdev/'],
-      ]
-    }],
-    ['<(ozone_platform_dri)==0 or >(nacl_untrusted_build)==1', {
-      'sources/': [ ['exclude', '_dri(_browsertest|_unittest)?\\.(h|cc)$'],
-                    ['exclude', '(^|/)dri/'],
       ]
     }],
     ['<(use_pango)==0', {

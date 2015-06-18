@@ -25,14 +25,26 @@
 
 namespace blink {
 
-SVGFilterBuilder::SVGFilterBuilder(PassRefPtr<FilterEffect> sourceGraphic, PassRefPtr<FilterEffect> sourceAlpha)
+SVGFilterBuilder::SVGFilterBuilder(PassRefPtrWillBeRawPtr<FilterEffect> sourceGraphic)
 {
-    m_builtinEffects.add(SourceGraphic::effectName(), sourceGraphic);
-    m_builtinEffects.add(SourceAlpha::effectName(), sourceAlpha);
+    RefPtrWillBeRawPtr<FilterEffect> sourceGraphicRef = sourceGraphic;
+    m_builtinEffects.add(SourceGraphic::effectName(), sourceGraphicRef);
+    m_builtinEffects.add(SourceAlpha::effectName(), SourceAlpha::create(sourceGraphicRef.get()));
     addBuiltinEffects();
 }
 
-void SVGFilterBuilder::add(const AtomicString& id, PassRefPtr<FilterEffect> effect)
+DEFINE_TRACE(SVGFilterBuilder)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_builtinEffects);
+    visitor->trace(m_namedEffects);
+    visitor->trace(m_effectRenderer);
+    visitor->trace(m_effectReferences);
+    visitor->trace(m_lastEffect);
+#endif
+}
+
+void SVGFilterBuilder::add(const AtomicString& id, PassRefPtrWillBeRawPtr<FilterEffect> effect)
 {
     if (id.isEmpty()) {
         m_lastEffect = effect;
@@ -62,9 +74,9 @@ FilterEffect* SVGFilterBuilder::getEffectById(const AtomicString& id) const
     return m_builtinEffects.get(SourceGraphic::effectName());
 }
 
-void SVGFilterBuilder::appendEffectToEffectReferences(PassRefPtr<FilterEffect> prpEffect, RenderObject* object)
+void SVGFilterBuilder::appendEffectToEffectReferences(PassRefPtrWillBeRawPtr<FilterEffect> prpEffect, LayoutObject* object)
 {
-    RefPtr<FilterEffect> effect = prpEffect;
+    RefPtrWillBeRawPtr<FilterEffect> effect = prpEffect;
 
     // The effect must be a newly created filter effect.
     ASSERT(!m_effectReferences.contains(effect));
@@ -95,10 +107,9 @@ void SVGFilterBuilder::clearResultsRecursive(FilterEffect* effect)
 
     effect->clearResult();
 
-    HashSet<FilterEffect*>& effectReferences = this->effectReferences(effect);
-    HashSet<FilterEffect*>::iterator end = effectReferences.end();
-    for (HashSet<FilterEffect*>::iterator it = effectReferences.begin(); it != end; ++it)
-         clearResultsRecursive(*it);
+    FilterEffectSet& effectReferences = this->effectReferences(effect);
+    for (FilterEffect* effectReference : effectReferences)
+        clearResultsRecursive(effectReference);
 }
 
 } // namespace blink

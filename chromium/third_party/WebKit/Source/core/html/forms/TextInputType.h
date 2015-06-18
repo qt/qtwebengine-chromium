@@ -41,10 +41,10 @@ public:
 
 private:
     TextInputType(HTMLInputElement& element) : BaseTextInputType(element) { }
-    virtual void countUsage() override;
-    virtual const AtomicString& formControlType() const override;
-    virtual bool shouldRespectSpeechAttribute() override;
-    virtual bool supportsInputModeAttribute() const override;
+    void countUsage() override;
+    const AtomicString& formControlType() const override;
+    bool supportsInputModeAttribute() const override;
+    const AtomicString& defaultAutocapitalize() const override;
 };
 
 } // namespace blink

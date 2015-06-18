@@ -8,7 +8,7 @@
 #include "base/process/process_handle.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_platform_file.h"
-#include "mojo/edk/embedder/platform_channel_pair.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
 
 namespace IPC {
 
@@ -61,7 +61,7 @@ void MojoServerBootstrap::SendClientPipe() {
     // GetFileHandleForProcess() only fails on Windows.
     NOTREACHED();
 #endif
-    DLOG(WARNING) << "Failed to translate file handle for client process.";
+    LOG(WARNING) << "Failed to translate file handle for client process.";
     Fail();
     return;
   }
@@ -100,9 +100,14 @@ void MojoServerBootstrap::OnChannelConnected(int32 peer_pid) {
 }
 
 bool MojoServerBootstrap::OnMessageReceived(const Message&) {
-  DCHECK_EQ(state(), STATE_WAITING_ACK);
-  set_state(STATE_READY);
+  if (state() != STATE_WAITING_ACK) {
+    set_state(STATE_ERROR);
+    LOG(ERROR) << "Got inconsistent message from client.";
+    return false;
+  }
 
+  set_state(STATE_READY);
+  CHECK(server_pipe_.is_valid());
   delegate()->OnPipeAvailable(
       mojo::embedder::ScopedPlatformHandle(server_pipe_.release()));
 
@@ -129,10 +134,16 @@ MojoClientBootstrap::MojoClientBootstrap() {
 }
 
 bool MojoClientBootstrap::OnMessageReceived(const Message& message) {
+  if (state() != STATE_INITIALIZED) {
+    set_state(STATE_ERROR);
+    LOG(ERROR) << "Got inconsistent message from server.";
+    return false;
+  }
+
   PlatformFileForTransit pipe;
   PickleIterator iter(message);
   if (!ParamTraits<PlatformFileForTransit>::Read(&message, &iter, &pipe)) {
-    DLOG(WARNING) << "Failed to read a file handle from bootstrap channel.";
+    LOG(WARNING) << "Failed to read a file handle from bootstrap channel.";
     message.set_dispatch_error();
     return false;
   }
@@ -187,6 +198,10 @@ void MojoBootstrap::Init(scoped_ptr<Channel> channel, Delegate* delegate) {
 
 bool MojoBootstrap::Connect() {
   return channel_->Connect();
+}
+
+base::ProcessId MojoBootstrap::GetSelfPID() const {
+  return channel_->GetSelfPID();
 }
 
 void MojoBootstrap::OnBadMessageReceived(const Message& message) {

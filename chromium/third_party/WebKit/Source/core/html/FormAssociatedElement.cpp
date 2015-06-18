@@ -39,10 +39,10 @@ namespace blink {
 using namespace HTMLNames;
 
 class FormAttributeTargetObserver : public IdTargetObserver {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FormAttributeTargetObserver);
 public:
     static PassOwnPtrWillBeRawPtr<FormAttributeTargetObserver> create(const AtomicString& id, FormAssociatedElement*);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void idTargetChanged() override;
 
 private:
@@ -61,7 +61,7 @@ FormAssociatedElement::~FormAssociatedElement()
     // We can't call setForm here because it contains virtual calls.
 }
 
-void FormAssociatedElement::trace(Visitor* visitor)
+DEFINE_TRACE(FormAssociatedElement)
 {
     visitor->trace(m_formAttributeTargetObserver);
     visitor->trace(m_form);
@@ -174,6 +174,10 @@ void FormAssociatedElement::willChangeForm()
 
 void FormAssociatedElement::didChangeForm()
 {
+    if (!m_formWasSetByParser && m_form && m_form->inDocument()) {
+        HTMLElement* element = toHTMLElement(this);
+        element->document().didAssociateFormControl(element);
+    }
 }
 
 void FormAssociatedElement::resetFormOwner()
@@ -189,12 +193,7 @@ void FormAssociatedElement::resetFormOwner()
     if (m_form && formId.isNull() && m_form.get() == nearestForm)
         return;
 
-    HTMLFormElement* originalForm = m_form.get();
     setForm(findAssociatedForm(element));
-    // FIXME: Move didAssociateFormControl call to didChangeForm or
-    // HTMLFormElement::associate.
-    if (m_form && m_form.get() != originalForm && m_form->inDocument())
-        element->document().didAssociateFormControl(element);
 }
 
 void FormAssociatedElement::formAttributeChanged()
@@ -347,7 +346,7 @@ FormAttributeTargetObserver::FormAttributeTargetObserver(const AtomicString& id,
 {
 }
 
-void FormAttributeTargetObserver::trace(Visitor* visitor)
+DEFINE_TRACE(FormAttributeTargetObserver)
 {
     visitor->trace(m_element);
     IdTargetObserver::trace(visitor);

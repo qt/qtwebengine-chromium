@@ -60,14 +60,14 @@ public:
     // Binary encoding results in smaller MHTML files but they might not work in other browsers.
     static PassRefPtr<SharedBuffer> generateMHTMLData(const Vector<SerializedResource>&, EncodingPolicy, const String& title, const String& mimeType);
 
-    typedef WillBeHeapVector<RefPtrWillBeMember<ArchiveResource> > SubArchiveResources;
-    typedef WillBeHeapVector<RefPtrWillBeMember<MHTMLArchive> > SubFrameArchives;
+    typedef WillBeHeapVector<RefPtrWillBeMember<ArchiveResource>> SubArchiveResources;
+    typedef WillBeHeapVector<RefPtrWillBeMember<MHTMLArchive>> SubFrameArchives;
 
     ArchiveResource* mainResource() { return m_mainResource.get(); }
     const SubArchiveResources& subresources() const { return m_subresources; }
     const SubFrameArchives& subframeArchives() const { return m_subframeArchives; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     friend class MHTMLParser;

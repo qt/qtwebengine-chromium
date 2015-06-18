@@ -15,13 +15,14 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/gfx_paths.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/transform.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/wm/core/default_activation_client.h"
@@ -42,10 +43,13 @@ class TestPaintingWindowDelegate : public aura::test::TestWindowDelegate {
 
   ~TestPaintingWindowDelegate() override {}
 
-  void OnPaint(gfx::Canvas* canvas) override {
+  void OnPaint(const ui::PaintContext& context) override {
+    ui::PaintRecorder recorder(context);
     for (int y = 0; y < window_size_.height(); ++y) {
-      for (int x = 0; x < window_size_.width(); ++x)
-        canvas->FillRect(gfx::Rect(x, y, 1, 1), GetExpectedColorForPoint(x, y));
+      for (int x = 0; x < window_size_.width(); ++x) {
+        recorder.canvas()->FillRect(gfx::Rect(x, y, 1, 1),
+                                    GetExpectedColorForPoint(x, y));
+      }
     }
   }
 
@@ -114,7 +118,8 @@ class SnapshotAuraTest : public testing::Test {
 
   void WaitForDraw() {
     helper_->host()->compositor()->ScheduleDraw();
-    ui::DrawWaiterForTest::Wait(helper_->host()->compositor());
+    ui::DrawWaiterForTest::WaitForCompositingEnded(
+        helper_->host()->compositor());
   }
 
   void SetupTestWindow(const gfx::Rect& window_bounds) {

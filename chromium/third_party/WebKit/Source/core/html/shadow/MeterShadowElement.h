@@ -44,7 +44,7 @@ protected:
     HTMLMeterElement* meterElement() const;
 
 private:
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 };
 
 class MeterInnerElement final : public MeterShadowElement {
@@ -53,8 +53,8 @@ public:
 
 private:
     explicit MeterInnerElement(Document&);
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 };
 
 class MeterBarElement final : public MeterShadowElement {

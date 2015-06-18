@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/common/buffer.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/gpu_export.h"
@@ -27,6 +28,19 @@ class TestHelper;
 // Info about Buffers currently in the system.
 class GPU_EXPORT Buffer : public base::RefCounted<Buffer> {
  public:
+  struct MappedRange {
+    GLintptr offset;
+    GLsizeiptr size;
+    GLenum access;
+    void* pointer;  // Pointer returned by driver.
+    scoped_refptr<gpu::Buffer> shm;  // Client side mem.
+
+    MappedRange(GLintptr offset, GLsizeiptr size, GLenum access,
+                void* pointer, scoped_refptr<gpu::Buffer> shm);
+    ~MappedRange();
+    void* GetShmPointer() const;
+  };
+
   Buffer(BufferManager* manager, GLuint service_id);
 
   GLuint service_id() const {
@@ -65,6 +79,19 @@ class GPU_EXPORT Buffer : public base::RefCounted<Buffer> {
 
   bool IsClientSideArray() const {
     return is_client_side_array_;
+  }
+
+  void SetMappedRange(GLintptr offset, GLsizeiptr size, GLenum access,
+                      void* pointer, scoped_refptr<gpu::Buffer> shm) {
+    mapped_range_.reset(new MappedRange(offset, size, access, pointer, shm));
+  }
+
+  void RemoveMappedRange() {
+    mapped_range_.reset(nullptr);
+  }
+
+  const MappedRange* GetMappedRange() const {
+    return mapped_range_.get();
   }
 
  private:
@@ -163,6 +190,9 @@ class GPU_EXPORT Buffer : public base::RefCounted<Buffer> {
   // Usage of buffer.
   GLenum usage_;
 
+  // Data cached from last glMapBufferRange call.
+  scoped_ptr<MappedRange> mapped_range_;
+
   // A map of ranges to the highest value in that range of a certain type.
   typedef std::map<Range, GLuint, Range::Less> RangeToMaxValueMap;
   RangeToMaxValueMap range_set_;
@@ -217,6 +247,10 @@ class GPU_EXPORT BufferManager {
     allow_buffers_on_multiple_targets_ = allow;
   }
 
+  void set_allow_fixed_attribs(bool allow) {
+    allow_fixed_attribs_ = allow;
+  }
+
   size_t mem_represented() const {
     return memory_tracker_->GetMemRepresented();
   }
@@ -228,14 +262,15 @@ class GPU_EXPORT BufferManager {
   // set to a non-zero size.
   bool UseNonZeroSizeForClientSideArrayBuffer();
 
+  Buffer* GetBufferInfoForTarget(ContextState* state, GLenum target) const;
+
  private:
   friend class Buffer;
   friend class TestHelper;  // Needs access to DoBufferData.
   friend class BufferManagerTestBase;  // Needs access to DoBufferSubData.
+
   void StartTracking(Buffer* buffer);
   void StopTracking(Buffer* buffer);
-
-  Buffer* GetBufferInfoForTarget(ContextState* state, GLenum target);
 
   // Does a glBufferSubData and updates the approriate accounting.
   // Assumes the values have already been validated.
@@ -269,6 +304,9 @@ class GPU_EXPORT BufferManager {
 
   // Whether or not buffers can be bound to multiple targets.
   bool allow_buffers_on_multiple_targets_;
+
+  // Whether or not allow using GL_FIXED type for vertex attribs.
+  bool allow_fixed_attribs_;
 
   // Counts the number of Buffer allocated with 'this' as its manager.
   // Allows to check no Buffer will outlive this.

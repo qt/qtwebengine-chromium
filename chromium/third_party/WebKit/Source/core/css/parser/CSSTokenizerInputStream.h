@@ -9,9 +9,11 @@
 
 namespace blink {
 
+struct CSSParserString;
+
 class CSSTokenizerInputStream {
     WTF_MAKE_NONCOPYABLE(CSSTokenizerInputStream);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(CSSTokenizerInputStream);
 public:
     CSSTokenizerInputStream(String input);
 
@@ -21,34 +23,35 @@ public:
         return peek(0);
     }
 
-    void advance(unsigned = 1);
+    // For fast-path code, don't replace nulls with replacement characters
+    UChar peekWithoutReplacement(unsigned lookaheadOffset)
+    {
+        ASSERT((m_offset + lookaheadOffset) <= m_stringLength);
+        if ((m_offset + lookaheadOffset) == m_stringLength)
+            return '\0';
+        return (*m_string)[m_offset + lookaheadOffset];
+    }
+
+    void advance(unsigned offset = 1) { m_offset += offset; }
     void pushBack(UChar);
 
-    inline size_t maxLength()
-    {
-        return m_string.length() + 1;
-    }
-
-    inline size_t leftChars()
-    {
-        return m_string.length() - m_offset;
-
-    }
-
-    unsigned long long getUInt(unsigned start, unsigned end);
     double getDouble(unsigned start, unsigned end);
 
     template<bool characterPredicate(UChar)>
     unsigned skipWhilePredicate(unsigned offset)
     {
-        while ((m_offset + offset) < m_string.length() && characterPredicate(m_string[m_offset + offset]))
+        while ((m_offset + offset) < m_stringLength && characterPredicate((*m_string)[m_offset + offset]))
             ++offset;
         return offset;
     }
 
+    unsigned offset() const { return std::min(m_offset, m_stringLength); }
+    CSSParserString rangeAsCSSParserString(unsigned start, unsigned length) const;
+
 private:
     size_t m_offset;
-    String m_string;
+    const size_t m_stringLength;
+    const RefPtr<StringImpl> m_string;
 };
 
 } // namespace blink

@@ -150,11 +150,11 @@ cvox.ChromeVox.verbosity = cvox.VERBOSITY_VERBOSE;
 cvox.ChromeVox.typingEcho = 0;
 /**
  * Echoing on key press events.
- * @type {Object.<string, boolean>}
+ * @type {Object<string, boolean>}
  */
 cvox.ChromeVox.keyEcho = {};
 /**
- * @type {Object.<string, {x:number, y:number}>}
+ * @type {Object<string, {x:number, y:number}>}
  */
 cvox.ChromeVox.position = {};
 /**
@@ -181,10 +181,10 @@ if (cvox.ChromeVox.isChromeOS) {
  * where the subsequent independent key downs (while modifier keys are down)
  * are a part of the same shortcut. This array is populated in
  * cvox.ChromeVoxKbHandler.loadKeyToFunctionsTable().
- * @type {!Array.<cvox.KeySequence>}
+ * @type {!Array<cvox.KeySequence>}
  */
 cvox.ChromeVox.sequenceSwitchKeyCodes = [];
-/** @type {Object.<string, boolean>} */
+/** @type {Object<string, boolean>} */
 cvox.ChromeVox.visitedUrls = {};
 /**
  * This function can be called before doing an operation that may trigger
@@ -275,3 +275,20 @@ function $(id) {
  * @param {Array} tabs
  */
 cvox.ChromeVox.injectChromeVoxIntoTabs = function(tabs) {};
+
+/**
+ * Returns whether the document has focus, taking into account whether
+ * it's hidden and also that if an iframe or webview element has focus,
+ * the focus is really inside that frame and not in this document.
+ * @return {boolean} True if the document has focus.
+ */
+cvox.ChromeVox.documentHasFocus = function() {
+  if (!document.hasFocus() || document.hidden) {
+    return false;
+  }
+  if (document.activeElement.tagName == 'IFRAME' ||
+      document.activeElement.tagName == 'WEBVIEW') {
+    return false;
+  }
+  return true;
+};

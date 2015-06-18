@@ -13,9 +13,13 @@
 #include "ppapi/nacl_irt/plugin_startup.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
-namespace ppapi {
+#if !defined(OS_NACL_SFI)
+#include <pthread.h>
+#include <map>
+#include <string>
+#endif
 
-const char kFilePrefix[] = "files/";
+namespace ppapi {
 
 // IPC channel is asynchronously set up. So, the NaCl process may try to
 // send a OpenResource message to the host before the connection is
@@ -29,7 +33,7 @@ class ManifestMessageFilter : public IPC::SyncMessageFilter {
             true /* manual_reset */, false /* initially_signaled */) {
   }
 
-  virtual bool Send(IPC::Message* message) override {
+  bool Send(IPC::Message* message) override {
     // Wait until set up is actually done.
     connected_event_.Wait();
     return SyncMessageFilter::Send(message);
@@ -37,19 +41,19 @@ class ManifestMessageFilter : public IPC::SyncMessageFilter {
 
   // When set up is done, OnFilterAdded is called on IO thread. Unblocks the
   // Send().
-  virtual void OnFilterAdded(IPC::Sender* sender) override {
+  void OnFilterAdded(IPC::Sender* sender) override {
     SyncMessageFilter::OnFilterAdded(sender);
     connected_event_.Signal();
   }
 
   // If an error is found, unblocks the Send(), too, to return an error.
-  virtual void OnChannelError() override {
+  void OnChannelError() override {
     SyncMessageFilter::OnChannelError();
     connected_event_.Signal();
   }
 
   // Similar to OnChannelError, unblocks the Send() on the channel closing.
-  virtual void OnChannelClosing() override {
+  void OnChannelClosing() override {
     SyncMessageFilter::OnChannelClosing();
     connected_event_.Signal();
   }
@@ -92,10 +96,10 @@ bool ManifestService::OpenResource(const char* file, int* fd) {
 
   // File tokens are ignored here, but needed when the message is processed
   // inside NaClIPCAdapter.
-  uint64_t file_token_lo;
-  uint64_t file_token_hi;
+  uint64_t file_token_lo = 0;
+  uint64_t file_token_hi = 0;
   if (!filter_->Send(new PpapiHostMsg_OpenResource(
-          std::string(kFilePrefix) + file,
+          file,
           &ipc_fd,
           &file_token_lo,
           &file_token_hi))) {
@@ -104,16 +108,11 @@ bool ManifestService::OpenResource(const char* file, int* fd) {
     return false;
   }
 
-#if defined(OS_NACL_SFI)
   // File tokens are used internally by NaClIPCAdapter and should have
   // been cleared from the message when it is received here.
-  // Note that, on Non-SFI NaCl, the IPC channel is directly connected to the
-  // renderer process, so NaClIPCAdapter does not work. It means,
-  // file_token_{lo,hi} fields may be properly filled, although it is just
-  // ignored here.
+  // These tokens should never be set for Non-SFI mode.
   CHECK(file_token_lo == 0);
   CHECK(file_token_hi == 0);
-#endif
 
   // Copy the file if we received a valid file descriptor. Otherwise, if we got
   // a reply, the file doesn't exist, so provide an fd of -1.
@@ -125,10 +124,42 @@ bool ManifestService::OpenResource(const char* file, int* fd) {
   return true;
 }
 
+#if !defined(OS_NACL_SFI)
+namespace {
+
+pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
+std::map<std::string, int>* g_prefetched_fds;
+
+}  // namespace
+
+void RegisterPreopenedDescriptorsNonSfi(
+    std::map<std::string, int>* key_fd_map) {
+  pthread_mutex_lock(&g_mu);
+  DCHECK(!g_prefetched_fds);
+  g_prefetched_fds = key_fd_map;
+  pthread_mutex_unlock(&g_mu);
+}
+#endif
+
 int IrtOpenResource(const char* file, int* fd) {
   // Remove leading '/' character.
   if (file[0] == '/')
     ++file;
+
+#if !defined(OS_NACL_SFI)
+  // Fast path for prefetched FDs.
+  pthread_mutex_lock(&g_mu);
+  if (g_prefetched_fds) {
+    std::map<std::string, int>::iterator it = g_prefetched_fds->find(file);
+    if (it != g_prefetched_fds->end()) {
+      *fd = it->second;
+      g_prefetched_fds->erase(it);
+      pthread_mutex_unlock(&g_mu);
+      return 0;
+    }
+  }
+  pthread_mutex_unlock(&g_mu);
+#endif
 
   ManifestService* manifest_service = GetManifestService();
   if (manifest_service == NULL ||

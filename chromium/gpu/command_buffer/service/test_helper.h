@@ -5,6 +5,9 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 
+#include <string>
+#include <vector>
+
 #include "gpu/command_buffer/service/shader_translator.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
@@ -35,6 +38,8 @@ class TestHelper {
   static const GLint kMaxRenderbufferSize = 1024;
   static const GLint kMaxTextureSize = 2048;
   static const GLint kMaxCubeMapTextureSize = 256;
+  static const GLint kMax3DTextureSize = 256;
+  static const GLint kMaxRectangleTextureSize = 64;
   static const GLint kNumVertexAttribs = 16;
   static const GLint kNumTextureUnits = 8;
   static const GLint kMaxTextureImageUnits = 8;
@@ -114,6 +119,7 @@ class TestHelper {
       bool expected_valid,
       const std::string* const expected_log_info,
       const std::string* const expected_translated_source,
+      const int* const expected_shader_version,
       const AttributeMap* const expected_attrib_map,
       const UniformMap* const expected_uniform_map,
       const VaryingMap* const expected_varying_map,
@@ -139,6 +145,8 @@ class TestHelper {
   static void SetupTextureDestructionExpectations(::gfx::MockGLInterface* gl,
                                                   GLenum target,
                                                   bool use_default_textures);
+
+  static std::vector<std::string> split_extensions_;
 };
 
 // This object temporaritly Sets what gfx::GetGLImplementation returns. During

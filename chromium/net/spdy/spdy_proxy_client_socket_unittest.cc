@@ -8,14 +8,15 @@
 #include "base/bind_helpers.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/address_list.h"
-#include "net/base/capturing_net_log.h"
-#include "net/base/net_log.h"
-#include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/winsock_init.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
+#include "net/log/net_log.h"
+#include "net/log/test_net_log.h"
+#include "net/log/test_net_log_entry.h"
+#include "net/log/test_net_log_util.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_test_util.h"
@@ -110,7 +111,7 @@ class SpdyProxyClientSocketTest
     data_->Run();
   }
 
-  void CloseSpdySession(net::Error error, const std::string& description) {
+  void CloseSpdySession(Error error, const std::string& description) {
     spdy_session_->CloseSessionOnError(error, description);
   }
 
@@ -119,7 +120,7 @@ class SpdyProxyClientSocketTest
   TestCompletionCallback read_callback_;
   TestCompletionCallback write_callback_;
   scoped_ptr<DeterministicSocketData> data_;
-  CapturingBoundNetLog net_log_;
+  BoundTestNetLog net_log_;
 
  private:
   scoped_refptr<HttpNetworkSession> session_;
@@ -139,11 +140,11 @@ class SpdyProxyClientSocketTest
   DISALLOW_COPY_AND_ASSIGN(SpdyProxyClientSocketTest);
 };
 
-INSTANTIATE_TEST_CASE_P(
-    NextProto,
-    SpdyProxyClientSocketTest,
-    testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
+INSTANTIATE_TEST_CASE_P(NextProto,
+                        SpdyProxyClientSocketTest,
+                        testing::Values(kProtoSPDY31,
+                                        kProtoSPDY4_14,
+                                        kProtoSPDY4));
 
 SpdyProxyClientSocketTest::SpdyProxyClientSocketTest()
     : spdy_util_(GetParam()),
@@ -199,12 +200,10 @@ void SpdyProxyClientSocketTest::Initialize(MockRead* reads,
   ASSERT_TRUE(spdy_stream.get() != NULL);
 
   // Create the SpdyProxyClientSocket.
-  sock_.reset(
-      new SpdyProxyClientSocket(spdy_stream, user_agent_,
-                                endpoint_host_port_pair_, url_,
-                                proxy_host_port_, net_log_.bound(),
-                                session_->http_auth_cache(),
-                                session_->http_auth_handler_factory()));
+  sock_.reset(new SpdyProxyClientSocket(
+      spdy_stream, user_agent_, endpoint_host_port_pair_, proxy_host_port_,
+      net_log_.bound(), session_->http_auth_cache(),
+      session_->http_auth_handler_factory()));
 }
 
 scoped_refptr<IOBufferWithSize> SpdyProxyClientSocketTest::CreateBuffer(
@@ -541,7 +540,7 @@ TEST_P(SpdyProxyClientSocketTest, GetPeerAddressReturnsCorrectValues) {
 
   Initialize(reads, arraysize(reads), writes, arraysize(writes));
 
-  net::IPEndPoint addr;
+  IPEndPoint addr;
   EXPECT_EQ(ERR_SOCKET_NOT_CONNECTED, sock_->GetPeerAddress(&addr));
 
   AssertConnectSucceeds();
@@ -1276,14 +1275,14 @@ TEST_P(SpdyProxyClientSocketTest, NetLog) {
   NetLog::Source sock_source = sock_->NetLog().source();
   sock_.reset();
 
-  CapturingNetLog::CapturedEntryList entry_list;
+  TestNetLogEntry::List entry_list;
   net_log_.GetEntriesForSource(sock_source, &entry_list);
 
   ASSERT_EQ(entry_list.size(), 10u);
   EXPECT_TRUE(LogContainsBeginEvent(entry_list, 0, NetLog::TYPE_SOCKET_ALIVE));
   EXPECT_TRUE(LogContainsEvent(entry_list, 1,
-                  NetLog::TYPE_SPDY_PROXY_CLIENT_SESSION,
-                  NetLog::PHASE_NONE));
+                               NetLog::TYPE_HTTP2_PROXY_CLIENT_SESSION,
+                               NetLog::PHASE_NONE));
   EXPECT_TRUE(LogContainsBeginEvent(entry_list, 2,
                   NetLog::TYPE_HTTP_TRANSACTION_TUNNEL_SEND_REQUEST));
   EXPECT_TRUE(LogContainsEvent(entry_list, 3,

@@ -7,7 +7,7 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/events/event.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -320,11 +320,15 @@ void InputMethodBridge::OnCandidateWindowUpdated() {
 void InputMethodBridge::OnCandidateWindowHidden() {
 }
 
-bool InputMethodBridge::IsEditingCommandEnabled(int command_id) {
-  return false;
+bool InputMethodBridge::IsEditCommandEnabled(int command_id) {
+  TextInputClient* client = GetTextInputClient();
+  return client ? client->IsEditCommandEnabled(command_id) : false;
 }
 
-void InputMethodBridge::ExecuteEditingCommand(int command_id) {
+void InputMethodBridge::SetEditCommandForNextKeyEvent(int command_id) {
+  TextInputClient* client = GetTextInputClient();
+  if (client)
+    client->SetEditCommandForNextKeyEvent(command_id);
 }
 
 // Overridden from FocusChangeListener.

@@ -61,7 +61,7 @@ static void normalize(SkScalar v[3]) {
     mag = SkScalarSqrt(mag);
 
     for (int i = 0; i < 3; i++) {
-        v[i] = SkScalarDiv(v[i], mag);
+        v[i] /= mag;
     }
 }
 
@@ -123,15 +123,6 @@ bool SkEmbossMaskFilter::filterMask(SkMask* dst, const SkMask& src,
 
     return true;
 }
-
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkEmbossMaskFilter::SkEmbossMaskFilter(SkReadBuffer& buffer) : SkMaskFilter(buffer) {
-    SkASSERT(buffer.getArrayCount() == sizeof(Light));
-    buffer.readByteArray(&fLight, sizeof(Light));
-    SkASSERT(fLight.fPad == 0); // for the font-cache lookup to be clean
-    fBlurSigma = buffer.readScalar();
-}
-#endif
 
 SkFlattenable* SkEmbossMaskFilter::CreateProc(SkReadBuffer& buffer) {
     Light light;

@@ -28,7 +28,7 @@
 // Forward declaration; real one in <x509.h>
 typedef struct x509_st X509;
 typedef struct x509_store_st X509_STORE;
-#elif defined(USE_NSS)
+#elif defined(USE_NSS_CERTS)
 // Forward declaration; real one in <cert.h>
 struct CERTCertificateStr;
 #endif
@@ -59,7 +59,7 @@ class NET_EXPORT X509Certificate
   typedef SecCertificateRef OSCertHandle;
 #elif defined(USE_OPENSSL_CERTS)
   typedef X509* OSCertHandle;
-#elif defined(USE_NSS)
+#elif defined(USE_NSS_CERTS)
   typedef struct CERTCertificateStr* OSCertHandle;
 #else
   // TODO(ericroman): not implemented
@@ -155,7 +155,7 @@ class NET_EXPORT X509Certificate
   // The returned pointer must be stored in a scoped_refptr<X509Certificate>.
   static X509Certificate* CreateFromBytes(const char* data, int length);
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // Create an X509Certificate from the DER-encoded representation.
   // |nickname| can be NULL if an auto-generated nickname is desired.
   // Returns NULL on failure.  The returned pointer must be stored in a
@@ -179,8 +179,7 @@ class NET_EXPORT X509Certificate
   // Returns NULL on failure.
   //
   // The returned pointer must be stored in a scoped_refptr<X509Certificate>.
-  static X509Certificate* CreateFromPickle(const Pickle& pickle,
-                                           PickleIterator* pickle_iter,
+  static X509Certificate* CreateFromPickle(PickleIterator* pickle_iter,
                                            PickleType type);
 
   // Parses all of the certificates possible from |data|. |format| is a
@@ -252,12 +251,12 @@ class NET_EXPORT X509Certificate
   // Does this certificate's usage allow SSL client authentication?
   bool SupportsSSLClientAuth() const;
 
-  // Returns a new CFArrayRef containing this certificate and its intermediate
-  // certificates in the form expected by Security.framework and Keychain
-  // Services, or NULL on failure.
+  // Returns a new CFMutableArrayRef containing this certificate and its
+  // intermediate certificates in the form expected by Security.framework
+  // and Keychain Services, or NULL on failure.
   // The first item in the array will be this certificate, followed by its
   // intermediates, if any.
-  CFArrayRef CreateOSCertChainForCert() const;
+  CFMutableArrayRef CreateOSCertChainForCert() const;
 #endif
 
   // Do any of the given issuer names appear in this cert's chain of trust?
@@ -363,7 +362,7 @@ class NET_EXPORT X509Certificate
   static OSCertHandle CreateOSCertHandleFromBytes(const char* data,
                                                   int length);
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // Creates an OS certificate handle from the DER-encoded representation.
   // Returns NULL on failure.  Sets the default nickname if |nickname| is
   // non-NULL.
@@ -509,7 +508,7 @@ class NET_EXPORT X509Certificate
   // that may be needed for chain building.
   OSCertHandles intermediate_ca_certs_;
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // This stores any default nickname that has been set on the certificate
   // at creation time with CreateFromBytesWithNickname.
   // If this is empty, then GetDefaultNickname will return a generated name

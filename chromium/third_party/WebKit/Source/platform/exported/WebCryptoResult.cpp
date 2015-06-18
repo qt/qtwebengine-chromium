@@ -32,8 +32,7 @@
 #include "public/platform/WebCrypto.h"
 
 #include "platform/CryptoResult.h"
-#include "public/platform/WebArrayBuffer.h"
-#include "wtf/PassRefPtr.h"
+#include "platform/heap/Heap.h"
 #include <string.h>
 
 namespace blink {
@@ -44,19 +43,10 @@ void WebCryptoResult::completeWithError(WebCryptoErrorType errorType, const WebS
     reset();
 }
 
-void WebCryptoResult::completeWithBuffer(const WebArrayBuffer& buffer)
-{
-    RELEASE_ASSERT(!buffer.isNull());
-    m_impl->completeWithBuffer(buffer);
-    reset();
-}
-
 void WebCryptoResult::completeWithBuffer(const void* bytes, unsigned bytesSize)
 {
-    WebArrayBuffer buffer = WebArrayBuffer::create(bytesSize, 1);
-    RELEASE_ASSERT(!buffer.isNull());
-    memcpy(buffer.data(), bytes, bytesSize);
-    completeWithBuffer(buffer);
+    m_impl->completeWithBuffer(bytes, bytesSize);
+    reset();
 }
 
 void WebCryptoResult::completeWithJson(const char* utf8Data, unsigned length)
@@ -91,7 +81,7 @@ bool WebCryptoResult::cancelled() const
     return m_impl->cancelled();
 }
 
-WebCryptoResult::WebCryptoResult(const PassRefPtr<CryptoResult>& impl)
+WebCryptoResult::WebCryptoResult(const PassRefPtrWillBeRawPtr<CryptoResult>& impl)
     : m_impl(impl)
 {
     ASSERT(m_impl.get());

@@ -5,6 +5,7 @@
 #ifndef SizesAttributeParser_h
 #define SizesAttributeParser_h
 
+#include "core/CoreExport.h"
 #include "core/css/MediaValues.h"
 #include "core/css/parser/MediaQueryBlockWatcher.h"
 #include "core/css/parser/MediaQueryParser.h"
@@ -13,7 +14,7 @@
 
 namespace blink {
 
-class SizesAttributeParser {
+class CORE_EXPORT SizesAttributeParser {
     STACK_ALLOCATED();
 public:
     SizesAttributeParser(PassRefPtr<MediaValues>, const String&);
@@ -21,10 +22,9 @@ public:
     float length();
 
 private:
-    bool parse(Vector<CSSParserToken>& tokens);
-    bool parseMediaConditionAndLength(CSSParserTokenIterator startToken, CSSParserTokenIterator endToken);
+    bool parse(CSSParserTokenRange);
     float effectiveSize();
-    bool calculateLengthInPixels(CSSParserTokenIterator startToken, CSSParserTokenIterator endToken, float& result);
+    bool calculateLengthInPixels(CSSParserTokenRange, float& result);
     bool mediaConditionMatches(PassRefPtrWillBeRawPtr<MediaQuerySet> mediaCondition);
     unsigned effectiveSizeDefaultValue();
 
@@ -32,9 +32,7 @@ private:
     RefPtr<MediaValues> m_mediaValues;
     float m_length;
     bool m_lengthWasSet;
-    Vector<CSSParserToken> m_tokens;
     bool m_isValid;
-    MediaQueryBlockWatcher m_blockWatcher;
 };
 
 } // namespace

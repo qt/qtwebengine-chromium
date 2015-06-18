@@ -3,9 +3,7 @@
 # found in the LICENSE file.
 
 config("snappy_config") {
-  include_dirs = [
-    "src",
-  ]
+  include_dirs = [ "src" ]
 
   # These OS-specific generated headers were made by running the configure
   # script offline.
@@ -37,10 +35,5 @@ static_library("snappy") {
     # snappy-stubs-internal.h unapologetically has: using namespace std
     # https://code.google.com/p/snappy/issues/detail?id=70
     configs -= [ "//build/config/clang:extra_warnings" ]
-  }
-
-  if (is_win) {
-    # https://code.google.com/p/snappy/issues/detail?id=75
-    cflags = [ "/wd4267" ]  # Conversion from size_t to 'type'.
   }
 }

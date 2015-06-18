@@ -7,11 +7,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "content/common/view_messages.h"
+#include "content/public/child/v8_value_converter.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
-#include "content/public/renderer/v8_value_converter.h"
 #include "content/renderer/chrome_object_extensions_utils.h"
 #include "content/renderer/web_ui_extension_data.h"
 #include "gin/arguments.h"
@@ -64,13 +64,13 @@ bool ShouldRespondToRequest(
 void WebUIExtension::Install(blink::WebFrame* frame) {
   v8::Isolate* isolate = blink::mainThreadIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
+  v8::Local<v8::Context> context = frame->mainWorldScriptContext();
   if (context.IsEmpty())
     return;
 
   v8::Context::Scope context_scope(context);
 
-  v8::Handle<v8::Object> chrome = GetOrCreateChromeObject(isolate,
+  v8::Local<v8::Object> chrome = GetOrCreateChromeObject(isolate,
                                                           context->Global());
   chrome->Set(gin::StringToSymbol(isolate, "send"),
               gin::CreateFunctionTemplate(
@@ -100,7 +100,7 @@ void WebUIExtension::Send(gin::Arguments* args) {
   if (args->PeekNext().IsEmpty() || args->PeekNext()->IsUndefined()) {
     content.reset(new base::ListValue());
   } else {
-    v8::Handle<v8::Object> obj;
+    v8::Local<v8::Object> obj;
     if (!args->GetNext(&obj)) {
       args->ThrowError();
       return;

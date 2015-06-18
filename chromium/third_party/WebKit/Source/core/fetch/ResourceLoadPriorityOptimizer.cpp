@@ -30,7 +30,7 @@
 
 #include "config.h"
 #include "core/fetch/ResourceLoadPriorityOptimizer.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/TraceEvent.h"
 
 #include "wtf/Vector.h"
@@ -62,18 +62,18 @@ ResourceLoadPriorityOptimizer::~ResourceLoadPriorityOptimizer()
 {
 }
 
-void ResourceLoadPriorityOptimizer::addRenderObject(RenderObject* renderer)
+void ResourceLoadPriorityOptimizer::addLayoutObject(LayoutObject* layoutObject)
 {
-    m_objects.add(renderer);
-    renderer->setHasPendingResourceUpdate(true);
+    m_objects.add(layoutObject);
+    layoutObject->setHasPendingResourceUpdate(true);
 }
 
-void ResourceLoadPriorityOptimizer::removeRenderObject(RenderObject* renderer)
+void ResourceLoadPriorityOptimizer::removeLayoutObject(LayoutObject* layoutObject)
 {
-    if (!renderer->hasPendingResourceUpdate())
+    if (!layoutObject->hasPendingResourceUpdate())
         return;
-    m_objects.remove(renderer);
-    renderer->setHasPendingResourceUpdate(false);
+    m_objects.remove(layoutObject);
+    layoutObject->setHasPendingResourceUpdate(false);
 }
 
 void ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities()
@@ -82,10 +82,10 @@ void ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities()
 
     m_imageResources.clear();
 
-    Vector<RenderObject*> objectsToRemove;
-    for (const auto& renderObject : m_objects) {
-        if (!renderObject->updateImageLoadingPriorities())
-            objectsToRemove.append(renderObject);
+    Vector<LayoutObject*> objectsToRemove;
+    for (const auto& layoutObject : m_objects) {
+        if (!layoutObject->updateImageLoadingPriorities())
+            objectsToRemove.append(layoutObject);
     }
     m_objects.removeAll(objectsToRemove);
 

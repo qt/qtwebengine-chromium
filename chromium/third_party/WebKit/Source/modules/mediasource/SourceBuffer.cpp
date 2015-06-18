@@ -83,6 +83,7 @@ SourceBuffer::SourceBuffer(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSou
     : ActiveDOMObject(source->executionContext())
     , m_webSourceBuffer(webSourceBuffer)
     , m_source(source)
+    , m_trackDefaults(TrackDefaultList::create())
     , m_asyncEventQueue(asyncEventQueue)
     , m_mode(segmentsKeyword())
     , m_updating(false)
@@ -279,13 +280,13 @@ void SourceBuffer::appendBuffer(PassRefPtr<DOMArrayBufferView> data, ExceptionSt
     appendBufferInternal(static_cast<const unsigned char*>(data->baseAddress()), data->byteLength(), exceptionState);
 }
 
-void SourceBuffer::appendStream(PassRefPtrWillBeRawPtr<Stream> stream, ExceptionState& exceptionState)
+void SourceBuffer::appendStream(Stream* stream, ExceptionState& exceptionState)
 {
     m_streamMaxSizeValid = false;
     appendStreamInternal(stream, exceptionState);
 }
 
-void SourceBuffer::appendStream(PassRefPtrWillBeRawPtr<Stream> stream, unsigned long long maxSize, ExceptionState& exceptionState)
+void SourceBuffer::appendStream(Stream* stream, unsigned long long maxSize, ExceptionState& exceptionState)
 {
     m_streamMaxSizeValid = maxSize > 0;
     if (m_streamMaxSizeValid)
@@ -366,6 +367,22 @@ void SourceBuffer::remove(double start, double end, ExceptionState& exceptionSta
     m_removeAsyncPartRunner.runAsync();
 }
 
+void SourceBuffer::setTrackDefaults(TrackDefaultList* trackDefaults, ExceptionState& exceptionState)
+{
+    // Per 02 Dec 2014 Editor's Draft
+    // http://w3c.github.io/media-source/#widl-SourceBuffer-trackDefaults
+    // 1. If this object has been removed from the sourceBuffers attribute of
+    //    the parent media source, then throw an InvalidStateError exception
+    //    and abort these steps.
+    // 2. If the updating attribute equals true, then throw an InvalidStateError
+    //    exception and abort these steps.
+    if (throwExceptionIfRemovedOrUpdating(isRemoved(), m_updating, exceptionState))
+        return;
+
+    // 3. Update the attribute to the new value.
+    m_trackDefaults = trackDefaults;
+}
+
 void SourceBuffer::abortIfUpdating()
 {
     // Section 3.2 abort() method step 3 substeps.
@@ -419,7 +436,7 @@ void SourceBuffer::removedFromMediaSource()
     m_webSourceBuffer->removedFromMediaSource();
     m_webSourceBuffer.clear();
     m_source = nullptr;
-    m_asyncEventQueue = 0;
+    m_asyncEventQueue = nullptr;
 }
 
 void SourceBuffer::initializationSegmentReceived()
@@ -611,7 +628,7 @@ void SourceBuffer::removeAsyncPart()
     scheduleEvent(EventTypeNames::updateend);
 }
 
-void SourceBuffer::appendStreamInternal(PassRefPtrWillBeRawPtr<Stream> stream, ExceptionState& exceptionState)
+void SourceBuffer::appendStreamInternal(Stream* stream, ExceptionState& exceptionState)
 {
     // Section 3.2 appendStream()
     // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#widl-SourceBuffer-appendStream-void-Stream-stream-unsigned-long-long-maxSize
@@ -742,11 +759,14 @@ void SourceBuffer::didFail(FileError::ErrorCode errorCode)
     appendStreamDone(false);
 }
 
-void SourceBuffer::trace(Visitor* visitor)
+DEFINE_TRACE(SourceBuffer)
 {
     visitor->trace(m_source);
     visitor->trace(m_stream);
-    EventTargetWithInlineData::trace(visitor);
+    visitor->trace(m_trackDefaults);
+    visitor->trace(m_asyncEventQueue);
+    RefCountedGarbageCollectedEventTargetWithInlineData<SourceBuffer>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

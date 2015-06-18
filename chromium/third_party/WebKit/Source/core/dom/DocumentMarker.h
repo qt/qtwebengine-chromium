@@ -23,6 +23,7 @@
 #ifndef DocumentMarker_h
 #define DocumentMarker_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/VectorTraits.h"
 #include "wtf/text/WTFString.h"
@@ -35,7 +36,7 @@ class DocumentMarkerDetails;
 // It optionally includes a description that could be displayed in the user interface.
 // It also optionally includes a flag specifying whether the match is active, which is ignored
 // for all types other than type TextMatch.
-class DocumentMarker : public NoBaseWillBeGarbageCollected<DocumentMarker> {
+class CORE_EXPORT DocumentMarker : public NoBaseWillBeGarbageCollected<DocumentMarker> {
 public:
     enum MarkerTypeIndex {
         SpellingMarkerIndex = 0,
@@ -92,10 +93,8 @@ public:
         }
     };
 
-    DocumentMarker();
     DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset, const String& description, uint32_t hash);
     DocumentMarker(unsigned startOffset, unsigned endOffset, bool activeMatch);
-    DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset, PassRefPtrWillBeRawPtr<DocumentMarkerDetails>);
     DocumentMarker(const DocumentMarker&);
 
     MarkerType type() const { return m_type; }
@@ -126,7 +125,7 @@ public:
         return !(*this == o);
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     MarkerType m_type;
@@ -151,7 +150,7 @@ public:
     virtual bool isDescription() const { return false; }
     virtual bool isTextMatch() const { return false; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
 } // namespace blink

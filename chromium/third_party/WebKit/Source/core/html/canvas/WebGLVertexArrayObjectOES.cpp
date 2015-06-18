@@ -38,6 +38,7 @@ PassRefPtrWillBeRawPtr<WebGLVertexArrayObjectOES> WebGLVertexArrayObjectOES::cre
 
 WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContextBase* ctx, VaoType type)
     : WebGLContextObject(ctx)
+    , m_object(0)
     , m_type(type)
     , m_hasEverBeenBound(false)
 #if ENABLE(OILPAN)
@@ -45,13 +46,13 @@ WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContextBase* 
 #endif
     , m_boundElementArrayBuffer(nullptr)
 {
-    m_vertexAttribState.resize(ctx->maxVertexAttribs());
+    m_vertexAttribState.reserveCapacity(ctx->maxVertexAttribs());
 
     switch (m_type) {
     case VaoTypeDefault:
         break;
     default:
-        setObject(context()->webContext()->createVertexArrayOES());
+        m_object = context()->webContext()->createVertexArrayOES();
         break;
     }
 }
@@ -73,25 +74,26 @@ WebGLVertexArrayObjectOES::~WebGLVertexArrayObjectOES()
     detachAndDeleteObject();
 }
 
-void WebGLVertexArrayObjectOES::dispatchDetached(blink::WebGraphicsContext3D* context3d)
+void WebGLVertexArrayObjectOES::dispatchDetached(WebGraphicsContext3D* context3d)
 {
     if (m_boundElementArrayBuffer)
         m_boundElementArrayBuffer->onDetached(context3d);
 
     for (size_t i = 0; i < m_vertexAttribState.size(); ++i) {
-        VertexAttribState& state = m_vertexAttribState[i];
-        if (state.bufferBinding)
-            state.bufferBinding->onDetached(context3d);
+        VertexAttribState* state = m_vertexAttribState[i].get();
+        if (state->bufferBinding)
+            state->bufferBinding->onDetached(context3d);
     }
 }
 
-void WebGLVertexArrayObjectOES::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
+void WebGLVertexArrayObjectOES::deleteObjectImpl(WebGraphicsContext3D* context3d)
 {
     switch (m_type) {
     case VaoTypeDefault:
         break;
     default:
-        context3d->deleteVertexArrayOES(object);
+        context3d->deleteVertexArrayOES(m_object);
+        m_object = 0;
         break;
     }
 
@@ -117,26 +119,34 @@ void WebGLVertexArrayObjectOES::setElementArrayBuffer(PassRefPtrWillBeRawPtr<Web
     m_boundElementArrayBuffer = buffer;
 }
 
+WebGLVertexArrayObjectOES::VertexAttribState* WebGLVertexArrayObjectOES::getVertexAttribState(size_t index)
+{
+    ASSERT(index < context()->maxVertexAttribs());
+    // Lazily create the vertex attribute states.
+    for (size_t i = m_vertexAttribState.size(); i <= index; i++)
+        m_vertexAttribState.append(adoptPtrWillBeNoop(new VertexAttribState()));
+    return m_vertexAttribState[index].get();
+}
+
 void WebGLVertexArrayObjectOES::setVertexAttribState(
     GLuint index, GLsizei bytesPerElement, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLintptr offset, PassRefPtrWillBeRawPtr<WebGLBuffer> buffer)
 {
     GLsizei validatedStride = stride ? stride : bytesPerElement;
-
-    VertexAttribState& state = m_vertexAttribState[index];
+    VertexAttribState* state = getVertexAttribState(index);
 
     if (buffer)
         buffer->onAttached();
-    if (state.bufferBinding)
-        state.bufferBinding->onDetached(context()->webContext());
+    if (state->bufferBinding)
+        state->bufferBinding->onDetached(context()->webContext());
 
-    state.bufferBinding = buffer;
-    state.bytesPerElement = bytesPerElement;
-    state.size = size;
-    state.type = type;
-    state.normalized = normalized;
-    state.stride = validatedStride;
-    state.originalStride = stride;
-    state.offset = offset;
+    state->bufferBinding = buffer;
+    state->bytesPerElement = bytesPerElement;
+    state->size = size;
+    state->type = type;
+    state->normalized = normalized;
+    state->stride = validatedStride;
+    state->originalStride = stride;
+    state->offset = offset;
 }
 
 void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtrWillBeRawPtr<WebGLBuffer> buffer)
@@ -147,30 +157,30 @@ void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtrWillBeRawPtr<WebGLBuffer>
     }
 
     for (size_t i = 0; i < m_vertexAttribState.size(); ++i) {
-        VertexAttribState& state = m_vertexAttribState[i];
-        if (state.bufferBinding == buffer) {
+        VertexAttribState* state = m_vertexAttribState[i].get();
+        if (state->bufferBinding == buffer) {
             buffer->onDetached(context()->webContext());
-            state.bufferBinding = nullptr;
+            state->bufferBinding = nullptr;
         }
     }
 }
 
 void WebGLVertexArrayObjectOES::setVertexAttribDivisor(GLuint index, GLuint divisor)
 {
-    VertexAttribState& state = m_vertexAttribState[index];
-    state.divisor = divisor;
+    VertexAttribState* state = getVertexAttribState(index);
+    state->divisor = divisor;
 }
 
-void WebGLVertexArrayObjectOES::VertexAttribState::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLVertexArrayObjectOES::VertexAttribState)
 {
     visitor->trace(bufferBinding);
 }
 
-void WebGLVertexArrayObjectOES::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLVertexArrayObjectOES)
 {
     visitor->trace(m_boundElementArrayBuffer);
     visitor->trace(m_vertexAttribState);
     WebGLContextObject::trace(visitor);
 }
 
-}
+} // namespace blink

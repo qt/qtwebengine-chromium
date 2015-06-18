@@ -27,6 +27,7 @@ For the full list of functions, see the bottom of the file.
 
 import atexit
 import distutils.spawn
+import distutils.version
 import fileinput
 import logging
 import os
@@ -36,7 +37,6 @@ import socket
 import stat
 import subprocess
 import sys
-import tempfile
 import time
 import urlparse
 
@@ -62,14 +62,15 @@ class NotAdministratorError(PlatformSettingsError):
 
 
 class CalledProcessError(PlatformSettingsError):
-    """Raised when a _check_output() process returns a non-zero exit status."""
-    def __init__(self, returncode, cmd):
-        self.returncode = returncode
-        self.cmd = cmd
+  """Raised when a _check_output() process returns a non-zero exit status."""
+  def __init__(self, returncode, cmd):
+    super(CalledProcessError, self).__init__()
+    self.returncode = returncode
+    self.cmd = cmd
 
-    def __str__(self):
-        return 'Command "%s" returned non-zero exit status %d' % (
-            ' '.join(self.cmd), self.returncode)
+  def __str__(self):
+    return 'Command "%s" returned non-zero exit status %d' % (
+        ' '.join(self.cmd), self.returncode)
 
 
 def FindExecutable(executable):
@@ -89,6 +90,31 @@ def FindExecutable(executable):
                                                           '/usr/sbin/',
                                                           '/usr/local/sbin',
                                                           ]))
+
+def HasSniSupport():
+  try:
+    import OpenSSL
+    return (distutils.version.StrictVersion(OpenSSL.__version__) >=
+            distutils.version.StrictVersion('0.13'))
+  except ImportError:
+    return False
+
+
+def SupportsFdLimitControl():
+  """Whether the platform supports changing the process fd limit."""
+  return os.name is 'posix'
+
+
+def GetFdLimit():
+  """Returns a tuple of (soft_limit, hard_limit)."""
+  import resource
+  return resource.getrlimit(resource.RLIMIT_NOFILE)
+
+
+def AdjustFdLimit(new_soft_limit, new_hard_limit):
+  """Sets a new soft and hard limit for max number of fds."""
+  import resource
+  resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft_limit, new_hard_limit))
 
 
 class SystemProxy(object):
@@ -158,6 +184,7 @@ class _BasePlatformSettings(object):
 
   def get_system_proxy(self, use_ssl):
     """Returns the system HTTP(S) proxy host, port."""
+    del use_ssl
     return SystemProxy(None, None)
 
   def _ipfw_cmd(self):
@@ -166,6 +193,15 @@ class _BasePlatformSettings(object):
   def ipfw(self, *args):
     ipfw_cmd = (self._ipfw_cmd(), ) + args
     return self._check_output(*ipfw_cmd, elevate_privilege=True)
+
+  def has_ipfw(self):
+    try:
+      self.ipfw('list')
+      return True
+    except AssertionError as e:
+      logging.warning('Failed to start ipfw command. '
+                      'Error: %s' % e.message)
+      return False
 
   def _get_cwnd(self):
     return None
@@ -242,7 +278,7 @@ class _BasePlatformSettings(object):
   def _get_primary_nameserver(self):
     raise NotImplementedError
 
-  def _set_primary_nameserver(self):
+  def _set_primary_nameserver(self, _):
     raise NotImplementedError
 
   def get_original_primary_nameserver(self):
@@ -263,6 +299,9 @@ class _BasePlatformSettings(object):
 
 
 class _PosixPlatformSettings(_BasePlatformSettings):
+
+  # pylint: disable=abstract-method
+  # Suppress lint check for _get_primary_nameserver & _set_primary_nameserver
 
   def rerun_as_administrator(self):
     """If needed, rerun the program with administrative privileges.
@@ -556,6 +595,9 @@ class _LinuxPlatformSettings(_PosixPlatformSettings):
 
 class _WindowsPlatformSettings(_BasePlatformSettings):
 
+  # pylint: disable=abstract-method
+  # Suppress lint check for _ipfw_cmd
+
   def get_system_logging_handler(self):
     """Return a handler for the logging module (optional).
 
@@ -658,7 +700,7 @@ class _WindowsPlatformSettings(_BasePlatformSettings):
     """Modify DNS information on the primary interface."""
     output = self._check_output('netsh', 'interface', 'ip', 'set', 'dns',
                                 iface_name, 'dhcp')
-                           
+
   def _get_interfaces_with_dns(self):
     output = self._netsh_show_dns()
     lines = output.split('\n')
@@ -681,7 +723,7 @@ class _WindowsPlatformSettings(_BasePlatformSettings):
         elif iface_dns_config == "DNS servers configured through DHCP":
           iface_kind = "dhcp"
       if iface_name and iface_dns and iface_kind:
-        ifaces.append( (iface_dns, iface_name, iface_kind) )
+        ifaces.append((iface_dns, iface_name, iface_kind))
         iface_name = None
         iface_dns = None
     return ifaces
@@ -691,24 +733,24 @@ class _WindowsPlatformSettings(_BasePlatformSettings):
     # configured. We should save/restore all of them.
     ifaces = self._get_interfaces_with_dns()
     self._primary_interfaces = ifaces
-    
+
   def _restore_primary_interface_properties(self):
     for iface in self._primary_interfaces:
-      (iface_dns, iface_name, iface_kind) = iface 
+      (iface_dns, iface_name, iface_kind) = iface
       self._netsh_set_dns(iface_name, iface_dns)
       if iface_kind == "dhcp":
         self._netsh_set_dns_dhcp(iface_name)
-    
+
   def _get_primary_nameserver(self):
     ifaces = self._get_interfaces_with_dns()
     if not len(ifaces):
       raise DnsUpdateError("Interface with valid DNS configured not found.")
     (iface_dns, iface_name, iface_kind) = ifaces[0]
     return iface_dns
-  
+
   def _set_primary_nameserver(self, dns):
     for iface in self._primary_interfaces:
-      (iface_dns, iface_name, iface_kind) = iface 
+      (iface_dns, iface_name, iface_kind) = iface
       self._netsh_set_dns(iface_name, dns)
 
 
@@ -744,6 +786,7 @@ get_server_ip_address = _inst.get_server_ip_address
 get_httpproxy_ip_address = _inst.get_httpproxy_ip_address
 get_system_proxy = _inst.get_system_proxy
 ipfw = _inst.ipfw
+has_ipfw = _inst.has_ipfw
 set_temporary_tcp_init_cwnd = _inst.set_temporary_tcp_init_cwnd
 setup_temporary_loopback_config = _inst.setup_temporary_loopback_config
 

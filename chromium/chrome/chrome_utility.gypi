@@ -13,6 +13,8 @@
       'utility/cloud_print/bitmap_image.h',
       'utility/cloud_print/pwg_encoder.cc',
       'utility/cloud_print/pwg_encoder.h',
+      'utility/font_cache_handler_win.cc',
+      'utility/font_cache_handler_win.h',
       'utility/local_discovery/service_discovery_message_handler.cc',
       'utility/local_discovery/service_discovery_message_handler.h',
       'utility/printing_handler.cc',
@@ -20,14 +22,10 @@
       'utility/shell_handler_win.cc',
       'utility/shell_handler_win.h',
       'utility/utility_message_handler.h',
-      'utility/web_resource_unpacker.cc',
-      'utility/web_resource_unpacker.h',
     ],
     'chrome_utility_extensions_sources': [
       'utility/extensions/extensions_handler.cc',
       'utility/extensions/extensions_handler.h',
-      'utility/extensions/unpacker.cc',
-      'utility/extensions/unpacker.h',
       'utility/image_writer/disk_unmounter_mac.cc',
       'utility/image_writer/disk_unmounter_mac.h',
       'utility/image_writer/error_messages.cc',
@@ -103,6 +101,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../components/components_strings.gyp:components_strings',
+        '../components/components.gyp:search_engines',
         '../components/components.gyp:url_fixer',
         '../content/content.gyp:content_common',
         '../content/content.gyp:content_utility',
@@ -121,12 +120,28 @@
         '<@(chrome_utility_sources)',
       ],
       'conditions': [
-        ['OS!="win" and OS!="mac" and use_openssl==1', {
-          'sources!': [
-            'utility/importer/nss_decryptor.cc',
-          ]
+        ['OS=="win"', {
+          'link_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'DelayLoadDLLs': [
+                  # Prevent wininet from loading in the renderer.
+                  # http://crbug.com/460679
+                  'wininet.dll',
+                ],
+              },
+            },
+          },
         }],
-        ['OS!="win" and OS!="mac" and use_openssl==0', {
+        ['OS!="android"', {
+          'dependencies': [
+            '../net/net.gyp:net_utility_services',
+          ],
+          'sources': [
+            '<@(chrome_utility_importer_sources)',
+          ],
+        }],
+        ['use_nss_certs==1', {
           'dependencies': [
             '../crypto/crypto.gyp:crypto',
           ],
@@ -135,10 +150,11 @@
             'utility/importer/nss_decryptor_system_nss.h',
           ],
         }],
-        ['OS!="android"', {
-          'sources': [
-            '<@(chrome_utility_importer_sources)',
+        ['OS=="android" and use_seccomp_bpf==1', {
+          'dependencies': [
+            '../sandbox/sandbox.gyp:seccomp_bpf',
           ],
+          'defines': ['USE_SECCOMP_BPF'],
         }],
         ['enable_extensions==1', {
           'dependencies': [
@@ -184,9 +200,6 @@
             'utility/local_discovery/service_discovery_message_handler.cc',
             'utility/local_discovery/service_discovery_message_handler.h',
           ]
-        }],
-        ['safe_browsing==1', {
-          'defines': [ 'FULL_SAFE_BROWSING' ],
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.

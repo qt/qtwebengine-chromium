@@ -4,6 +4,7 @@
 
 #include "ui/events/gesture_detection/gesture_configuration.h"
 
+#include "base/memory/singleton.h"
 #include "ui/gfx/android/view_configuration.h"
 #include "ui/gfx/screen.h"
 
@@ -33,6 +34,7 @@ class GestureConfigurationAndroid : public GestureConfiguration {
     float raw_pixel_to_dip_ratio = 1.f / gfx::Screen::GetNativeScreen()
                                        ->GetPrimaryDisplay()
                                        .device_scale_factor();
+    set_double_tap_enabled(true);
     set_double_tap_timeout_in_ms(ViewConfiguration::GetDoubleTapTimeoutInMs());
     set_gesture_begin_end_types_enabled(false);
     set_long_press_time_in_ms(ViewConfiguration::GetLongPressTimeoutInMs());
@@ -67,7 +69,7 @@ class GestureConfigurationAndroid : public GestureConfiguration {
 }  // namespace
 
 // Create a GestureConfigurationAura singleton instance when using Android.
-GestureConfiguration* GestureConfiguration::GetInstance() {
+GestureConfiguration* GestureConfiguration::GetPlatformSpecificInstance() {
   return GestureConfigurationAndroid::GetInstance();
 }
 

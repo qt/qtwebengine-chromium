@@ -47,8 +47,11 @@ void HistogramTimer::Start() {
 // Stop the timer and record the results.
 void HistogramTimer::Stop() {
   if (Enabled()) {
-    // Compute the delta between start and stop, in milliseconds.
-    AddSample(static_cast<int>(timer_.Elapsed().InMilliseconds()));
+    int64_t sample = resolution_ == MICROSECOND
+                         ? timer_.Elapsed().InMicroseconds()
+                         : timer_.Elapsed().InMilliseconds();
+    // Compute the delta between start and stop, in microseconds.
+    AddSample(static_cast<int>(sample));
     timer_.Stop();
   }
   Logger::CallEventLogger(isolate(), name(), Logger::END, true);
@@ -61,18 +64,40 @@ Counters::Counters(Isolate* isolate) {
   HISTOGRAM_RANGE_LIST(HR)
 #undef HR
 
-#define HT(name, caption) \
-    name##_ = HistogramTimer(#caption, 0, 10000, 50, isolate);
+#define HT(name, caption, max, res) \
+  name##_ = HistogramTimer(#caption, 0, max, HistogramTimer::res, 50, isolate);
     HISTOGRAM_TIMER_LIST(HT)
 #undef HT
+
+#define AHT(name, caption) \
+  name##_ = AggregatableHistogramTimer(#caption, 0, 10000000, 50, isolate);
+    AGGREGATABLE_HISTOGRAM_TIMER_LIST(AHT)
+#undef AHT
 
 #define HP(name, caption) \
     name##_ = Histogram(#caption, 0, 101, 100, isolate);
     HISTOGRAM_PERCENTAGE_LIST(HP)
 #undef HP
 
+
+// Exponential histogram assigns bucket limits to points
+// p[1], p[2], ... p[n] such that p[i+1] / p[i] = constant.
+// The constant factor is equal to the n-th root of (high / low),
+// where the n is the number of buckets, the low is the lower limit,
+// the high is the upper limit.
+// For n = 50, low = 1000, high = 500000: the factor = 1.13.
 #define HM(name, caption) \
     name##_ = Histogram(#caption, 1000, 500000, 50, isolate);
+  HISTOGRAM_LEGACY_MEMORY_LIST(HM)
+#undef HM
+// For n = 100, low = 4000, high = 2000000: the factor = 1.06.
+#define HM(name, caption) \
+  name##_ = Histogram(#caption, 4000, 2000000, 100, isolate);
+  HISTOGRAM_MEMORY_LIST(HM)
+#undef HM
+
+#define HM(name, caption) \
+  aggregated_##name##_ = AggregatedMemoryHistogram<Histogram>(&name##_);
     HISTOGRAM_MEMORY_LIST(HM)
 #undef HM
 
@@ -152,16 +177,20 @@ void Counters::ResetHistograms() {
   HISTOGRAM_RANGE_LIST(HR)
 #undef HR
 
-#define HT(name, caption) name##_.Reset();
+#define HT(name, caption, max, res) name##_.Reset();
     HISTOGRAM_TIMER_LIST(HT)
 #undef HT
+
+#define AHT(name, caption) name##_.Reset();
+    AGGREGATABLE_HISTOGRAM_TIMER_LIST(AHT)
+#undef AHT
 
 #define HP(name, caption) name##_.Reset();
     HISTOGRAM_PERCENTAGE_LIST(HP)
 #undef HP
 
 #define HM(name, caption) name##_.Reset();
-    HISTOGRAM_MEMORY_LIST(HM)
+    HISTOGRAM_LEGACY_MEMORY_LIST(HM)
 #undef HM
 }
 

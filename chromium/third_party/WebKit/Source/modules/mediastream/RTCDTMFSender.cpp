@@ -38,11 +38,11 @@
 
 namespace blink {
 
-static const long minToneDurationMs = 70;
-static const long defaultToneDurationMs = 100;
-static const long maxToneDurationMs = 6000;
-static const long minInterToneGapMs = 50;
-static const long defaultInterToneGapMs = 50;
+static const int minToneDurationMs = 70;
+static const int defaultToneDurationMs = 100;
+static const int maxToneDurationMs = 6000;
+static const int minInterToneGapMs = 50;
+static const int defaultInterToneGapMs = 50;
 
 RTCDTMFSender* RTCDTMFSender::create(ExecutionContext* context, WebRTCPeerConnectionHandler* peerConnectionHandler, MediaStreamTrack* track, ExceptionState& exceptionState)
 {
@@ -93,12 +93,12 @@ void RTCDTMFSender::insertDTMF(const String& tones, ExceptionState& exceptionSta
     insertDTMF(tones, defaultToneDurationMs, defaultInterToneGapMs, exceptionState);
 }
 
-void RTCDTMFSender::insertDTMF(const String& tones, long duration, ExceptionState& exceptionState)
+void RTCDTMFSender::insertDTMF(const String& tones, int duration, ExceptionState& exceptionState)
 {
     insertDTMF(tones, duration, defaultInterToneGapMs, exceptionState);
 }
 
-void RTCDTMFSender::insertDTMF(const String& tones, long duration, long interToneGap, ExceptionState& exceptionState)
+void RTCDTMFSender::insertDTMF(const String& tones, int duration, int interToneGap, ExceptionState& exceptionState)
 {
     if (!canInsertDTMF()) {
         exceptionState.throwDOMException(NotSupportedError, "The 'canInsertDTMF' attribute is false: this sender cannot send DTMF.");
@@ -156,19 +156,20 @@ void RTCDTMFSender::scheduledEventTimerFired(Timer<RTCDTMFSender>*)
     if (m_stopped)
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> events;
     events.swap(m_scheduledEvents);
 
-    WillBeHeapVector<RefPtrWillBeMember<Event> >::iterator it = events.begin();
+    WillBeHeapVector<RefPtrWillBeMember<Event>>::iterator it = events.begin();
     for (; it != events.end(); ++it)
         dispatchEvent((*it).release());
 }
 
-void RTCDTMFSender::trace(Visitor* visitor)
+DEFINE_TRACE(RTCDTMFSender)
 {
     visitor->trace(m_track);
     visitor->trace(m_scheduledEvents);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<RTCDTMFSender>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

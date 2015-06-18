@@ -35,7 +35,6 @@
 #include "platform/mediastream/RTCConfiguration.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
-#include "public/platform/WebVector.h"
 
 namespace blink {
 
@@ -113,6 +112,22 @@ WebRTCIceTransports WebRTCConfiguration::iceTransports() const
         ASSERT_NOT_REACHED();
     }
     return WebRTCIceTransportsAll;
+}
+
+WebRTCBundlePolicy WebRTCConfiguration::bundlePolicy() const
+{
+    ASSERT(!isNull());
+    switch (m_private->bundlePolicy()) {
+    case RTCBundlePolicyBalanced:
+        return WebRTCBundlePolicyBalanced;
+    case RTCBundlePolicyMaxCompat:
+        return WebRTCBundlePolicyMaxCompat;
+    case RTCBundlePolicyMaxBundle:
+        return WebRTCBundlePolicyMaxBundle;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    return WebRTCBundlePolicyBalanced;
 }
 
 } // namespace blink

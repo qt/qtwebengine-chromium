@@ -41,6 +41,9 @@
 // the manager.
 - (content::BrowserAccessibilityDelegate*)delegate;
 
+// Get the BrowserAccessibility that this object wraps.
+- (content::BrowserAccessibility*)browserAccessibility;
+
 // Convert the local objet's origin to a global point.
 - (NSPoint)pointInScreen:(NSPoint)origin
                     size:(NSSize)size;
@@ -117,4 +120,4 @@
 @property(nonatomic, readonly) id window;
 @end
 
-#endif // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_COCOA_H_
+#endif  // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_COCOA_H_

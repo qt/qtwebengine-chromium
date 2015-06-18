@@ -29,11 +29,13 @@
 
 #include "platform/PlatformThreadData.h"
 #include "platform/ThreadTimers.h"
+#include "wtf/Atomics.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/HashSet.h"
+#include <algorithm>
 #include <limits.h>
-#include <math.h>
 #include <limits>
+#include <math.h>
 
 namespace blink {
 
@@ -201,7 +203,7 @@ TimerBase::~TimerBase()
     ASSERT(!inHeap());
 }
 
-void TimerBase::start(double nextFireInterval, double repeatInterval, const TraceLocation& caller)
+void TimerBase::start(double nextFireInterval, double repeatInterval, const WebTraceLocation& caller)
 {
     ASSERT(m_thread == currentThread());
 
@@ -378,7 +380,7 @@ void TimerBase::setNextFireTime(double newUnalignedTime)
     if (oldTime != newTime) {
         m_nextFireTime = newTime;
         static unsigned currentHeapInsertionOrder;
-        m_heapInsertionOrder = currentHeapInsertionOrder++;
+        m_heapInsertionOrder = atomicAdd(&currentHeapInsertionOrder, 1);
 
         bool wasFirstTimerInHeap = m_heapIndex == 0;
 
@@ -393,12 +395,6 @@ void TimerBase::setNextFireTime(double newUnalignedTime)
     checkConsistency();
 }
 
-void TimerBase::fireTimersInNestedEventLoop()
-{
-    // Redirect to ThreadTimers.
-    PlatformThreadData::current().threadTimers().fireTimersInNestedEventLoop();
-}
-
 void TimerBase::didChangeAlignmentInterval()
 {
     setNextFireTime(m_unalignedNextFireTime);
@@ -411,4 +407,3 @@ double TimerBase::nextUnalignedFireInterval() const
 }
 
 } // namespace blink
-

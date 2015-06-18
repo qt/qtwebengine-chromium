@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 import("//third_party/WebKit/Source/build/scripts/scripts.gni")
 import("//third_party/WebKit/Source/config.gni")
 import("//third_party/WebKit/Source/platform/platform.gni")
@@ -11,11 +12,14 @@ import("//third_party/WebKit/Source/platform/platform_generated.gni")
 # Most targets in this file are private actions so use that as the default.
 visibility = [ ":*" ]
 
-heap_gypi = exec_script(
-    "//build/gypi_to_gn.py",
-    [ rebase_path("heap/blink_heap.gypi") ],
-    "scope",
-    [ "heap/blink_heap.gypi" ])
+if (!is_mac) {
+  # TODO(GYP): can't link Blink binaries yet on mac.
+  heap_gypi = exec_script(
+      "//build/gypi_to_gn.py",
+      [ rebase_path("heap/blink_heap.gypi") ],
+      "scope",
+      [ "heap/blink_heap.gypi" ])
+}
 
 blink_platform_neon_files = [
   "graphics/cpu/arm/WebGLImageConversionNEON.h",
@@ -75,7 +79,6 @@ if (is_mac) {
       "WebScrollbarPartAnimation=ChromiumWebCoreObjCWebScrollbarPartAnimation",
       "WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView",
       "WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell",
-      "WebCoreRenderThemeNotificationObserver=ChromiumWebCoreObjCWebCoreRenderThemeNotificationObserver",
     ]
   }
 }
@@ -173,6 +176,8 @@ component("platform") {
     get_target_outputs(":color_data")
 
   configs += [
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    "//build/config/compiler:no_size_t_to_int_warning",
     "//third_party/WebKit/Source:config",
     "//third_party/WebKit/Source:non_test_config",
   ]
@@ -209,11 +214,6 @@ component("platform") {
 
   if (is_mac) {
     sources -= [
-      "fonts/opentype/OpenTypeTypes.h",
-      "fonts/opentype/OpenTypeVerticalData.cpp",
-      "fonts/opentype/OpenTypeVerticalData.h",
-      # The Mac currently uses FontCustomPlatformDataMac.cpp instead.
-      "fonts/skia/FontCustomPlatformDataSkia.cpp",
       "fonts/skia/FontCacheSkia.cpp",
       # Uses LocaleMac instead.
       "text/LocaleICU.cpp",
@@ -254,20 +254,18 @@ component("platform") {
 
   if (is_win) {
     sources -= [
+      "clipboard/ClipboardUtilitiesPosix.cpp",
       # Uses LocaleWin instead.
       "text/LocaleICU.cpp",
       "text/LocaleICU.h",
     ]
     cflags = [
-      "/wd4267",  # Conversion from 'size_t' to 'type', possible loss of data.
       "/wd4334",  # Result of 32-bit shift implicitly converted to 64 bits.
       "/wd4724",  # Modulo by 0.
     ]
   } else {
     sources -= [
       "clipboard/ClipboardUtilitiesWin.cpp",
-      "fonts/opentype/OpenTypeUtilities.cpp",
-      "fonts/opentype/OpenTypeUtilities.h",
       "text/LocaleWin.cpp",
     ]
   }
@@ -297,7 +295,7 @@ component("platform") {
     ]
   }
 
-  if (cpu_arch == "arm") {
+  if (current_cpu == "arm") {
     deps += [ ":blink_arm_neon" ]
   }
 
@@ -311,71 +309,79 @@ component("platform") {
   }
 }
 
-test("heap_unittests") {
-  visibility = []  # Allow re-assignment of list.
-  visibility = [ "//third_party/WebKit/*" ]
-  output_name = "blink_heap_unittests"
+if (!is_mac) {
+  # TODO(GYP): Can't link Blink binaries yet.
+  test("heap_unittests") {
+    visibility = []  # Allow re-assignment of list.
+    visibility = [ "*" ]
+    output_name = "blink_heap_unittests"
 
-  sources = rebase_path(heap_gypi.platform_heap_test_files, ".", "heap")
-  sources += [ "heap/RunAllTests.cpp" ]
+    sources = rebase_path(heap_gypi.platform_heap_test_files, ".", "heap")
+    sources += [ "heap/RunAllTests.cpp" ]
 
-  configs += [
-    "//third_party/WebKit/Source/wtf:wtf_config",
-    "//third_party/WebKit/Source:config",
-  ]
+    configs += [
+      "//third_party/WebKit/Source/wtf:wtf_config",
+      "//third_party/WebKit/Source:config",
+    ]
 
-  deps = [
-    ":platform",
-    "//base",
-    "//base/allocator",
-    "//base/test:test_support",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/WebKit/Source/wtf",
-    "//third_party/WebKit/Source/wtf:test_support",
-    "//content/test:test_support",
-  ]
+    defines = [
+      "INSIDE_BLINK",
+    ]
+
+    deps = [
+      ":platform",
+      "//base",
+      "//base/allocator",
+      "//base/test:test_support",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/WebKit/Source/wtf",
+      "//third_party/WebKit/Source/wtf:test_support",
+      "//content/test:test_support",
+    ]
+  }
+
+  test("platform_unittests") {
+    visibility = []  # Allow re-assignment of list.
+    visibility = [ "*" ]
+    output_name = "blink_platform_unittests"
+
+    sources = platform_test_files
+
+    sources += [ "testing/RunAllTests.cpp" ]
+
+    configs += [
+      "//third_party/WebKit/Source/wtf:wtf_config",
+      "//third_party/WebKit/Source:config",
+    ]
+
+    deps = [
+      ":blink_common",
+      ":platform",
+      "//base",
+      "//base/allocator",
+      "//base/test:test_support",
+      "//skia",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/harfbuzz-ng",
+      "//third_party/WebKit/Source/wtf",
+      "//third_party/WebKit/Source/wtf:test_support",
+      "//url",
+    ]
+
+    defines = [
+      "INSIDE_BLINK",
+    ]
+
+    include_dirs = [
+      "$root_gen_dir/blink",
+    ]
+  }
 }
 
-test("platform_unittests") {
-  visibility = []  # Allow re-assignment of list.
-  visibility = [ "//third_party/WebKit/*" ]
-  output_name = "blink_platform_unittests"
 
-  sources = platform_test_files
-
-  sources += [ "testing/RunAllTests.cpp" ]
-
-  configs += [
-    "//third_party/WebKit/Source/wtf:wtf_config",
-    "//third_party/WebKit/Source:config",
-  ]
-
-  deps = [
-    ":blink_common",
-    ":platform",
-    "//base",
-    "//base/allocator",
-    "//base/test:test_support",
-    "//skia",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/WebKit/Source/wtf",
-    "//third_party/WebKit/Source/wtf:test_support",
-    "//url",
-  ]
-
-  defines = [
-    "INSIDE_BLINK",
-  ]
-
-  include_dirs = [
-    "$root_gen_dir/blink",
-  ]
-}
-
-
-if (cpu_arch == "arm") {
+if (current_cpu == "arm") {
   source_set("blink_arm_neon") {
     sources = blink_platform_neon_files
 

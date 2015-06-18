@@ -34,6 +34,7 @@
 #include "platform/audio/AudioSourceProvider.h"
 #include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/WebAudioSourceProviderClient.h"
+#include "public/platform/WebEncryptedMediaTypes.h"
 #include "public/platform/WebMediaPlayerClient.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
@@ -69,7 +70,9 @@ public:
     virtual void keyAdded(const WebString& keySystem, const WebString& sessionId) override;
     virtual void keyError(const WebString& keySystem, const WebString& sessionId, MediaKeyErrorCode, unsigned short systemCode) override;
     virtual void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL) override;
-    virtual void encrypted(const WebString& initDataType, const unsigned char* initData, unsigned initDataLength) override;
+    virtual void encrypted(WebEncryptedMediaInitDataType, const unsigned char* initData, unsigned initDataLength) override;
+    virtual void didBlockPlaybackWaitingForKey() override;
+    virtual void didResumePlaybackBlockedForKey() override;
 
     virtual void setWebLayer(WebLayer*) override;
     virtual WebMediaPlayer::TrackId addAudioTrack(const WebString& id, AudioTrackKind, const WebString& label, const WebString& language, bool enabled) override;
@@ -118,7 +121,7 @@ private:
         // WebAudioSourceProviderClient
         virtual void setFormat(size_t numberOfChannels, float sampleRate) override;
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         Member<AudioSourceProviderClient> m_client;

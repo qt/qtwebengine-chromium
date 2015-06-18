@@ -6,12 +6,12 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/base/proxy_delegate.h"
 #include "net/http/http_basic_stream.h"
@@ -20,6 +20,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_stream_parser.h"
 #include "net/http/proxy_connect_redirect_http_stream.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_handle.h"
 #include "url/gurl.h"
 
@@ -27,7 +28,6 @@ namespace net {
 
 HttpProxyClientSocket::HttpProxyClientSocket(
     ClientSocketHandle* transport_socket,
-    const GURL& request_url,
     const std::string& user_agent,
     const HostPortPair& endpoint,
     const HostPortPair& proxy_server,
@@ -59,8 +59,8 @@ HttpProxyClientSocket::HttpProxyClientSocket(
       proxy_delegate_(proxy_delegate),
       net_log_(transport_socket->socket()->NetLog()) {
   // Synthesize the bits of a request that we actually use.
-  request_.url = request_url;
-  request_.method = "GET";
+  request_.url = GURL("https://" + endpoint.ToString());
+  request_.method = "CONNECT";
   if (!user_agent.empty())
     request_.extra_headers.SetHeader(HttpRequestHeaders::kUserAgent,
                                      user_agent);
@@ -213,6 +213,11 @@ bool HttpProxyClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
   return false;
 }
 
+void HttpProxyClientSocket::GetConnectionAttempts(
+    ConnectionAttempts* out) const {
+  out->clear();
+}
+
 int HttpProxyClientSocket::Read(IOBuffer* buf, int buf_len,
                                 const CompletionCallback& callback) {
   DCHECK(user_callback_.is_null());
@@ -301,7 +306,6 @@ int HttpProxyClientSocket::DidDrainBodyForAuthRestart(bool keep_alive) {
 void HttpProxyClientSocket::LogBlockedTunnelResponse() const {
   ProxyClientSocket::LogBlockedTunnelResponse(
       response_.headers->response_code(),
-      request_.url,
       is_https_proxy_);
 }
 
@@ -413,7 +417,12 @@ int HttpProxyClientSocket::DoSendRequest() {
       proxy_delegate_->OnBeforeTunnelRequest(proxy_server_,
                                              &authorization_headers);
     }
-    BuildTunnelRequest(request_, authorization_headers, endpoint_,
+    std::string user_agent;
+    if (!request_.extra_headers.GetHeader(HttpRequestHeaders::kUserAgent,
+                                          &user_agent)) {
+      user_agent.clear();
+    }
+    BuildTunnelRequest(endpoint_, authorization_headers, user_agent,
                        &request_line_, &request_headers_);
 
     net_log_.AddEvent(
@@ -483,25 +492,27 @@ int HttpProxyClientSocket::DoReadHeadersComplete(int result) {
       // sanitize the response.  This still allows a rogue HTTPS proxy to
       // redirect an HTTPS site load to a similar-looking site, but no longer
       // allows it to impersonate the site the user requested.
-      if (is_https_proxy_ && SanitizeProxyRedirect(&response_, request_.url)) {
-        bool is_connection_reused = http_stream_parser_->IsConnectionReused();
-        redirect_has_load_timing_info_ =
-            transport_->GetLoadTimingInfo(
-                is_connection_reused, &redirect_load_timing_info_);
-        transport_.reset();
-        http_stream_parser_.reset();
-        return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
+      if (!is_https_proxy_ || !SanitizeProxyRedirect(&response_)) {
+        LogBlockedTunnelResponse();
+        return ERR_TUNNEL_CONNECTION_FAILED;
       }
 
-      // We're not using an HTTPS proxy, or we couldn't sanitize the redirect.
-      LogBlockedTunnelResponse();
-      return ERR_TUNNEL_CONNECTION_FAILED;
+      redirect_has_load_timing_info_ = transport_->GetLoadTimingInfo(
+          http_stream_parser_->IsConnectionReused(),
+          &redirect_load_timing_info_);
+      transport_.reset();
+      http_stream_parser_.reset();
+      return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
 
     case 407:  // Proxy Authentication Required
       // We need this status code to allow proxy authentication.  Our
       // authentication code is smart enough to avoid being tricked by an
       // active network attacker.
       // The next state is intentionally not set as it should be STATE_NONE;
+      if (!SanitizeProxyAuth(&response_)) {
+        LogBlockedTunnelResponse();
+        return ERR_TUNNEL_CONNECTION_FAILED;
+      }
       return HandleProxyAuthChallenge(auth_.get(), &response_, net_log_);
 
     default:
@@ -543,6 +554,11 @@ int HttpProxyClientSocket::DoTCPRestart() {
 }
 
 int HttpProxyClientSocket::DoTCPRestartComplete(int result) {
+  // TODO(rvargas): Remove ScopedTracker below once crbug.com/462784 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "462784 HttpProxyClientSocket::DoTCPRestartComplete"));
+
   if (result != OK)
     return result;
 

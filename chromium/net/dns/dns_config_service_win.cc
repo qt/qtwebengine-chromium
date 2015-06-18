@@ -15,7 +15,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -310,10 +309,6 @@ class RegistryWatcher : public base::NonThreadSafe {
   }
 
   void OnObjectSignaled() {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("RegistryWatcher_OnObjectSignaled"));
-
     DCHECK(CalledOnValidThread());
     DCHECK(!callback_.is_null());
     if (key_.StartWatching(base::Bind(&RegistryWatcher::OnObjectSignaled,
@@ -441,6 +436,34 @@ void ConfigureSuffixSearch(const DnsSystemSettings& settings,
 
 }  // namespace
 
+DnsSystemSettings::DnsSystemSettings()
+    : policy_search_list(),
+      tcpip_search_list(),
+      tcpip_domain(),
+      primary_dns_suffix(),
+      policy_devolution(),
+      dnscache_devolution(),
+      tcpip_devolution(),
+      append_to_multi_label_name(),
+      have_name_resolution_policy(false) {
+  policy_search_list.set = false;
+  tcpip_search_list.set = false;
+  tcpip_domain.set = false;
+  primary_dns_suffix.set = false;
+
+  policy_devolution.enabled.set = false;
+  policy_devolution.level.set = false;
+  dnscache_devolution.enabled.set = false;
+  dnscache_devolution.level.set = false;
+  tcpip_devolution.enabled.set = false;
+  tcpip_devolution.level.set = false;
+
+  append_to_multi_label_name.set = false;
+}
+
+DnsSystemSettings::~DnsSystemSettings() {
+}
+
 bool ParseSearchList(const base::string16& value,
                      std::vector<std::string>* output) {
   DCHECK(output);
@@ -548,9 +571,7 @@ class DnsConfigServiceWin::Watcher
     : public NetworkChangeNotifier::IPAddressObserver {
  public:
   explicit Watcher(DnsConfigServiceWin* service) : service_(service) {}
-  ~Watcher() {
-    NetworkChangeNotifier::RemoveIPAddressObserver(this);
-  }
+  ~Watcher() override { NetworkChangeNotifier::RemoveIPAddressObserver(this); }
 
   bool Watch() {
     RegistryWatcher::CallbackType callback =
@@ -603,7 +624,7 @@ class DnsConfigServiceWin::Watcher
   }
 
   // NetworkChangeNotifier::IPAddressObserver:
-  virtual void OnIPAddressChanged() override {
+  void OnIPAddressChanged() override {
     // Need to update non-loopback IP of local host.
     service_->OnHostsChanged(true);
   }
@@ -627,9 +648,9 @@ class DnsConfigServiceWin::ConfigReader : public SerialWorker {
         success_(false) {}
 
  private:
-  virtual ~ConfigReader() {}
+  ~ConfigReader() override {}
 
-  virtual void DoWork() override {
+  void DoWork() override {
     // Should be called on WorkerPool.
     base::TimeTicks start_time = base::TimeTicks::Now();
     DnsSystemSettings settings = {};
@@ -645,7 +666,7 @@ class DnsConfigServiceWin::ConfigReader : public SerialWorker {
                         base::TimeTicks::Now() - start_time);
   }
 
-  virtual void OnWorkFinished() override {
+  void OnWorkFinished() override {
     DCHECK(loop()->BelongsToCurrentThread());
     DCHECK(!IsCancelled());
     if (success_) {
@@ -677,9 +698,9 @@ class DnsConfigServiceWin::HostsReader : public SerialWorker {
   }
 
  private:
-  virtual ~HostsReader() {}
+  ~HostsReader() override {}
 
-  virtual void DoWork() override {
+  void DoWork() override {
     base::TimeTicks start_time = base::TimeTicks::Now();
     HostsParseWinResult result = HOSTS_PARSE_WIN_UNREADABLE_HOSTS_FILE;
     if (ParseHostsFile(path_, &hosts_))
@@ -692,7 +713,7 @@ class DnsConfigServiceWin::HostsReader : public SerialWorker {
                         base::TimeTicks::Now() - start_time);
   }
 
-  virtual void OnWorkFinished() override {
+  void OnWorkFinished() override {
     DCHECK(loop()->BelongsToCurrentThread());
     if (success_) {
       service_->OnHostsRead(hosts_);

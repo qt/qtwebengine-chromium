@@ -30,9 +30,15 @@
 
 {
   # The following defines turn WebKit features on and off.
+  #
+  # ====================================
+  #
+  #     Keep the GN version in Sync:
+  #     Source/config.gni
+  #
+  # ====================================
   'variables': {
     'feature_defines': [
-      'ENABLE_OPENTYPE_VERTICAL=1',
       'ENABLE_LAYOUT_UNIT_IN_INLINE_BOXES=0',
       # WTF_USE_DYNAMIC_ANNOTATIONS=1 may be defined in build/common.gypi
       # We can't define it here because it should be present only
@@ -43,9 +49,9 @@
     'variables': {
       # Enables the Oilpan garbage-collection infrastructure.
       'enable_oilpan%': 0,
-      'gc_profile_heap%': 0,
-      'gc_profile_marking%': 0,
+      'blink_gc_profiling%': 0,
       'blink_logging_always_on%': 0,
+      'link_core_modules_separately%': 0,
     },
     'conditions': [
       ['use_concatenated_impulse_responses==1', {
@@ -80,18 +86,12 @@
       ['enable_oilpan==1', {
         'feature_defines': [
           'ENABLE_OILPAN=1',
+          'ENABLE_INLINED_TRACE=1',
         ],
       }],
-      ['gc_profile_heap==1', {
+      ['blink_gc_profiling==1', {
         'feature_defines': [
           'ENABLE_GC_PROFILING=1',
-          'ENABLE_GC_PROFILE_HEAP=1',
-        ],
-      }],
-      ['gc_profile_marking==1', {
-        'feature_defines': [
-          'ENABLE_GC_PROFILING=1',
-          'ENABLE_GC_PROFILE_MARKING=1',
         ],
       }],
       ['blink_logging_always_on==1', {
@@ -99,6 +99,14 @@
           'LOG_DISABLED=0',
         ],
       }],
+      ['link_core_modules_separately==1', {
+        'feature_defines': [
+          'LINK_CORE_MODULES_SEPARATELY',
+        ],
+      }],
     ],
+
+    # shared build only. If set to 1, link web, core and modules separately.
+    'link_core_modules_separately%': '<(link_core_modules_separately)',
   },
 }

@@ -21,17 +21,17 @@
 #include "config.h"
 #include "core/svg/SVGLineElement.h"
 
-#include "core/rendering/svg/RenderSVGShape.h"
+#include "core/layout/svg/LayoutSVGShape.h"
 #include "core/svg/SVGLength.h"
 
 namespace blink {
 
 inline SVGLineElement::SVGLineElement(Document& document)
     : SVGGeometryElement(SVGNames::lineTag, document)
-    , m_x1(SVGAnimatedLength::create(this, SVGNames::x1Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y1(SVGAnimatedLength::create(this, SVGNames::y1Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_x1(SVGAnimatedLength::create(this, SVGNames::x1Attr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y1(SVGAnimatedLength::create(this, SVGNames::y1Attr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
 {
     addToPropertyMap(m_x1);
     addToPropertyMap(m_y1);
@@ -39,53 +39,36 @@ inline SVGLineElement::SVGLineElement(Document& document)
     addToPropertyMap(m_y2);
 }
 
+DEFINE_TRACE(SVGLineElement)
+{
+    visitor->trace(m_x1);
+    visitor->trace(m_y1);
+    visitor->trace(m_x2);
+    visitor->trace(m_y2);
+    SVGGeometryElement::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGLineElement)
-
-bool SVGLineElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::x1Attr);
-        supportedAttributes.add(SVGNames::x2Attr);
-        supportedAttributes.add(SVGNames::y1Attr);
-        supportedAttributes.add(SVGNames::y2Attr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGLineElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
 
 void SVGLineElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGGeometryElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    bool isLengthAttribute = attrName == SVGNames::x1Attr
-                          || attrName == SVGNames::y1Attr
-                          || attrName == SVGNames::x2Attr
-                          || attrName == SVGNames::y2Attr;
-
-    if (isLengthAttribute)
+    if (attrName == SVGNames::x1Attr
+        || attrName == SVGNames::y1Attr
+        || attrName == SVGNames::x2Attr
+        || attrName == SVGNames::y2Attr) {
         updateRelativeLengthsInformation();
 
-    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
-    if (!renderer)
-        return;
+        LayoutSVGShape* layoutObject = toLayoutSVGShape(this->layoutObject());
+        if (!layoutObject)
+            return;
 
-    if (isLengthAttribute) {
-        renderer->setNeedsShapeUpdate();
-        markForLayoutAndParentResourceInvalidation(renderer);
+        SVGElement::InvalidationGuard invalidationGuard(this);
+        layoutObject->setNeedsShapeUpdate();
+        markForLayoutAndParentResourceInvalidation(layoutObject);
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGGeometryElement::svgAttributeChanged(attrName);
 }
 
 bool SVGLineElement::selfHasRelativeLengths() const

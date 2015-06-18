@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # GYP file to build flag parser
 #
 {
@@ -5,6 +9,7 @@
     {
       'target_name': 'flags',
       'type': 'static_library',
+      'include_dirs': [ '../src/core', ],
       'sources': [
         '../tools/flags/SkCommandLineFlags.cpp',
         '../tools/flags/SkCommandLineFlags.h',

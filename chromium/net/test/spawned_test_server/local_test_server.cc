@@ -8,7 +8,6 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/process/kill.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
@@ -121,21 +120,19 @@ bool LocalTestServer::BlockUntilStarted() {
 bool LocalTestServer::Stop() {
   CleanUpWhenStoppingServer();
 
-  if (!process_handle_)
+  if (!process_.IsValid())
     return true;
 
   // First check if the process has already terminated.
-  bool ret = base::WaitForSingleProcess(process_handle_, base::TimeDelta());
-  if (!ret) {
-    ret = base::KillProcess(process_handle_, 1, true);
-  }
+  int exit_code;
+  bool ret = process_.WaitForExitWithTimeout(base::TimeDelta(), &exit_code);
+  if (!ret)
+    ret = process_.Terminate(1, true);
 
-  if (ret) {
-    base::CloseProcessHandle(process_handle_);
-    process_handle_ = base::kNullProcessHandle;
-  } else {
+  if (ret)
+    process_.Close();
+  else
     VLOG(1) << "Kill failed?";
-  }
 
   return ret;
 }
@@ -149,7 +146,6 @@ bool LocalTestServer::Init(const base::FilePath& document_root) {
   // number out over a pipe that this TestServer object will read from. Once
   // that is complete, the host port pair will contain the actual port.
   DCHECK(!GetPort());
-  process_handle_ = base::kNullProcessHandle;
 
   base::FilePath src_dir;
   if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_dir))

@@ -61,13 +61,15 @@ class ApacheHTTP(server_base.ServerBase):
         media_resources_dir = self._filesystem.join(test_dir, "media")
         mime_types_path = self._filesystem.join(test_dir, "http", "conf", "mime.types")
         cert_file = self._filesystem.join(test_dir, "http", "conf", "webkit-httpd.pem")
+        inspector_sources_dir = self._port_obj.inspector_build_directory()
 
         self._access_log_path = self._filesystem.join(output_dir, "access_log.txt")
         self._error_log_path = self._filesystem.join(output_dir, "error_log.txt")
 
         self._is_win = self._port_obj.host.platform.is_win()
 
-        start_cmd = [executable,
+        start_cmd = [
+            executable,
             '-f', '%s' % self._port_obj.path_to_apache_config_file(),
             '-C', 'ServerRoot "%s"' % server_root,
             '-C', 'DocumentRoot "%s"' % document_root,
@@ -78,10 +80,11 @@ class ApacheHTTP(server_base.ServerBase):
             '-c', 'ErrorLog "%s"' % self._error_log_path,
             '-c', 'PidFile %s' % self._pid_file,
             '-c', 'SSLCertificateFile "%s"' % cert_file,
+            '-c', 'Alias /inspector-sources "%s"' % inspector_sources_dir,
             ]
 
         if self._is_win:
-            start_cmd += ['-c', "ThreadsPerChild %d" % (self._number_of_servers * 2)]
+            start_cmd += ['-c', "ThreadsPerChild %d" % (self._number_of_servers * 4)]
         else:
             start_cmd += ['-c', "StartServers %d" % self._number_of_servers,
                           '-c', "MinSpareServers %d" % self._number_of_servers,
@@ -126,12 +129,10 @@ class ApacheHTTP(server_base.ServerBase):
 
     def _spawn_process(self):
         _log.debug('Starting %s server, cmd="%s"' % (self._name, str(self._start_cmd)))
-        self._process = self._executive.popen(self._start_cmd, stderr=self._executive.PIPE)
-        if self._process.returncode is not None:
-            retval = self._process.returncode
-            err = self._process.stderr.read()
-            if retval or len(err):
-                raise server_base.ServerError('Failed to start %s: %s' % (self._name, err))
+        self._process = self._executive.popen(self._start_cmd)
+        retval = self._process.returncode
+        if retval:
+            raise server_base.ServerError('Failed to start %s: %s' % (self._name, retval))
 
         # For some reason apache isn't guaranteed to have created the pid file before
         # the process exits, so we wait a little while longer.

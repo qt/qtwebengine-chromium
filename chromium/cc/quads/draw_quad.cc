@@ -4,8 +4,8 @@
 
 #include "cc/quads/draw_quad.h"
 
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
@@ -25,9 +25,7 @@
 namespace cc {
 
 DrawQuad::DrawQuad()
-    : material(INVALID),
-      needs_blending(false),
-      shared_quad_state() {
+    : material(INVALID), needs_blending(false), shared_quad_state(0) {
 }
 
 void DrawQuad::SetAll(const SharedQuadState* shared_quad_state,
@@ -57,43 +55,35 @@ void DrawQuad::SetAll(const SharedQuadState* shared_quad_state,
 DrawQuad::~DrawQuad() {
 }
 
-void DrawQuad::AsValueInto(base::debug::TracedValue* value) const {
+void DrawQuad::AsValueInto(base::trace_event::TracedValue* value) const {
   value->SetInteger("material", material);
   TracedValue::SetIDRef(shared_quad_state, value, "shared_state");
 
-  value->BeginArray("content_space_rect");
-  MathUtil::AddToTracedValue(rect, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("content_space_rect", rect, value);
 
   bool rect_is_clipped;
   gfx::QuadF rect_as_target_space_quad = MathUtil::MapQuad(
       shared_quad_state->content_to_target_transform,
       gfx::QuadF(rect),
       &rect_is_clipped);
-  value->BeginArray("rect_as_target_space_quad");
-  MathUtil::AddToTracedValue(rect_as_target_space_quad, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("rect_as_target_space_quad",
+                             rect_as_target_space_quad, value);
 
   value->SetBoolean("rect_is_clipped", rect_is_clipped);
 
-  value->BeginArray("content_space_opaque_rect");
-  MathUtil::AddToTracedValue(opaque_rect, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("content_space_opaque_rect", opaque_rect, value);
 
   bool opaque_rect_is_clipped;
   gfx::QuadF opaque_rect_as_target_space_quad = MathUtil::MapQuad(
       shared_quad_state->content_to_target_transform,
       gfx::QuadF(opaque_rect),
       &opaque_rect_is_clipped);
-  value->BeginArray("opaque_rect_as_target_space_quad");
-  MathUtil::AddToTracedValue(opaque_rect_as_target_space_quad, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("opaque_rect_as_target_space_quad",
+                             opaque_rect_as_target_space_quad, value);
 
   value->SetBoolean("opaque_rect_is_clipped", opaque_rect_is_clipped);
 
-  value->BeginArray("content_space_visible_rect");
-  MathUtil::AddToTracedValue(visible_rect, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("content_space_visible_rect", visible_rect, value);
 
   bool visible_rect_is_clipped;
   gfx::QuadF visible_rect_as_target_space_quad = MathUtil::MapQuad(
@@ -101,9 +91,8 @@ void DrawQuad::AsValueInto(base::debug::TracedValue* value) const {
       gfx::QuadF(visible_rect),
       &visible_rect_is_clipped);
 
-  value->BeginArray("visible_rect_as_target_space_quad");
-  MathUtil::AddToTracedValue(visible_rect_as_target_space_quad, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("visible_rect_as_target_space_quad",
+                             visible_rect_as_target_space_quad, value);
 
   value->SetBoolean("visible_rect_is_clipped", visible_rect_is_clipped);
 

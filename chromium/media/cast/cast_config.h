@@ -33,9 +33,7 @@ struct AudioSenderConfig {
   uint32 ssrc;
 
   // The receiver's SSRC identifier.
-  uint32 incoming_feedback_ssrc;
-
-  int rtcp_interval;
+  uint32 receiver_ssrc;
 
   // The total amount of time between a frame's capture/recording on the sender
   // and its playback on the receiver (i.e., shown to a user).  This should be
@@ -70,9 +68,7 @@ struct VideoSenderConfig {
   uint32 ssrc;
 
   // The receiver's SSRC identifier.
-  uint32 incoming_feedback_ssrc;  // TODO(miu): Rename to receiver_ssrc.
-
-  int rtcp_interval;
+  uint32 receiver_ssrc;
 
   // The total amount of time between a frame's capture/recording on the sender
   // and its playback on the receiver (i.e., shown to a user).  This should be
@@ -87,8 +83,6 @@ struct VideoSenderConfig {
   int rtp_payload_type;
 
   bool use_external_encoder;
-  int width;  // Incoming frames will be scaled to this size.
-  int height;
 
   float congestion_control_back_off;
   int max_bitrate;
@@ -97,7 +91,19 @@ struct VideoSenderConfig {
   int max_qp;
   int min_qp;
   int max_frame_rate;  // TODO(miu): Should be double, not int.
-  int max_number_of_video_buffers_used;  // Max value depend on codec.
+
+  // This field is used differently by various encoders. It defaults to 1.
+  //
+  // For VP8, it should be 1 to operate in single-buffer mode, or 3 to operate
+  // in multi-buffer mode. See
+  // http://www.webmproject.org/docs/encoder-parameters/ for details.
+  //
+  // For H.264 on Mac or iOS, it controls the max number of frames the encoder
+  // may hold before emitting a frame. A larger window may allow higher encoding
+  // efficiency at the cost of latency and memory. Set to 0 to let the encoder
+  // choose a suitable value for the platform and other encoding settings.
+  int max_number_of_video_buffers_used;
+
   Codec codec;
   int number_of_encode_threads;
 
@@ -114,14 +120,10 @@ struct FrameReceiverConfig {
   ~FrameReceiverConfig();
 
   // The receiver's SSRC identifier.
-  uint32 feedback_ssrc;  // TODO(miu): Rename to receiver_ssrc for clarity.
+  uint32 receiver_ssrc;
 
   // The sender's SSRC identifier.
-  uint32 incoming_ssrc;  // TODO(miu): Rename to sender_ssrc for clarity.
-
-  // Mean interval (in milliseconds) between RTCP reports.
-  // TODO(miu): Remove this since it's never not kDefaultRtcpIntervalMs.
-  int rtcp_interval;
+  uint32 sender_ssrc;
 
   // The total amount of time between a frame's capture/recording on the sender
   // and its playback on the receiver (i.e., shown to a user).  This is fixed as
@@ -136,7 +138,7 @@ struct FrameReceiverConfig {
 
   // RTP timebase: The number of RTP units advanced per one second.  For audio,
   // this is the sampling rate.  For video, by convention, this is 90 kHz.
-  int frequency;  // TODO(miu): Rename to rtp_timebase for clarity.
+  int rtp_timebase;
 
   // Number of channels.  For audio, this is normally 2.  For video, this must
   // be 1 as Cast does not have support for stereoscopic video.
@@ -145,7 +147,7 @@ struct FrameReceiverConfig {
   // The target frame rate.  For audio, this is normally 100 (i.e., frames have
   // a duration of 10ms each).  For video, this is normally 30, but any frame
   // rate is supported.
-  int max_frame_rate;  // TODO(miu): Rename to target_frame_rate.
+  int target_frame_rate;
 
   // Codec used for the compression of signal data.
   // TODO(miu): Merge the AudioCodec and VideoCodec enums into one so this union
@@ -164,8 +166,11 @@ struct FrameReceiverConfig {
 typedef Packet Packet;
 typedef PacketList PacketList;
 
-typedef base::Callback<void(CastInitializationStatus)>
-    CastInitializationCallback;
+// Callback that is run to update the client with current status.  This is used
+// to allow the client to wait for asynchronous initialization to complete
+// before sending frames, and also to be notified of any runtime errors that
+// have halted the session.
+typedef base::Callback<void(OperationalStatus)> StatusChangeCallback;
 
 typedef base::Callback<void(scoped_refptr<base::SingleThreadTaskRunner>,
                             scoped_ptr<media::VideoEncodeAccelerator>)>

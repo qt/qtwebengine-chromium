@@ -50,6 +50,11 @@ public:
      *
      *  This pixelref will ref() the specified colortable (if not NULL).
      *
+     *  If ReleaseProc is NULL, the pixels will never be released. This
+     *  can be useful if the pixels were stack allocated. However, such an
+     *  SkMallocPixelRef must not live beyond its pixels (e.g. by copying
+     *  an SkBitmap pointing to it, or drawing to an SkPicture).
+     *
      *  Returns NULL on failure.
      */
     typedef void (*ReleaseProc)(void* addr, void* context);
@@ -79,7 +84,7 @@ public:
     public:
         virtual SkPixelRef* create(const SkImageInfo&,
                                    size_t rowBytes,
-                                   SkColorTable*) SK_OVERRIDE;
+                                   SkColorTable*) override;
     };
 
 protected:
@@ -88,9 +93,9 @@ protected:
                      bool ownPixels);
     virtual ~SkMallocPixelRef();
 
-    virtual bool onNewLockPixels(LockRec*) SK_OVERRIDE;
-    virtual void onUnlockPixels() SK_OVERRIDE;
-    virtual size_t getAllocatedSizeInBytes() const SK_OVERRIDE;
+    bool onNewLockPixels(LockRec*) override;
+    void onUnlockPixels() override;
+    size_t getAllocatedSizeInBytes() const override;
 
 private:
     void*           fStorage;

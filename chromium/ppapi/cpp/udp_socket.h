@@ -125,6 +125,9 @@ class UDPSocket : public Resource {
   /// been sent; otherwise, an error code from <code>pp_errors.h</code>.
   /// <code>PP_ERROR_NOACCESS</code> will be returned if the caller doesn't have
   /// required permissions.
+  /// <code>PP_ERROR_INPROGRESS</code> will be returned if the socket is busy
+  /// sending. The caller should wait until a pending send completes before
+  /// retrying.
   int32_t SendTo(const char* buffer,
                  int32_t num_bytes,
                  const NetAddress& addr,
@@ -153,6 +156,30 @@ class UDPSocket : public Resource {
   int32_t SetOption(PP_UDPSocket_Option name,
                     const Var& value,
                     const CompletionCallback& callback);
+
+  /// Joins the multicast group with address specified by <code>group</code>
+  /// parameter, which is expected to be a <code>NetAddress</code> object.
+  ///
+  /// @param[in] group A <code>NetAddress</code> corresponding to the network
+  /// address of the multicast group.
+  /// @param[in] callback A <code>CompletionCallback</code> to be called upon
+  /// completion.
+  ///
+  /// @return An int32_t containing an error code from <code>pp_errors.h</code>.
+  int32_t JoinGroup(const NetAddress& group,
+                    const CompletionCallback callback);
+
+  /// Leaves the multicast group with address specified by <code>group</code>
+  /// parameter, which is expected to be a <code>NetAddress</code> object.
+  ///
+  /// @param[in] group A <code>NetAddress</code> corresponding to the network
+  /// address of the multicast group.
+  /// @param[in] callback A <code>CompletionCallback</code> to be called upon
+  /// completion.
+  ///
+  /// @return An int32_t containing an error code from <code>pp_errors.h</code>.
+  int32_t LeaveGroup(const NetAddress& group,
+                     const CompletionCallback callback);
 };
 
 }  // namespace pp

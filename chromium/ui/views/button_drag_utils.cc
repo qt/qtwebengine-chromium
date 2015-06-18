@@ -8,8 +8,10 @@
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/image/image.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/views/controls/button/label_button.h"
@@ -48,8 +50,11 @@ void SetDragImage(const GURL& url,
       widget ? widget->GetNativeTheme() : ui::NativeTheme::instance();
   button.SetTextColor(views::Button::STATE_NORMAL,
       theme->GetSystemColor(ui::NativeTheme::kColorId_LabelEnabledColor));
-  gfx::ShadowValues shadows(10, gfx::ShadowValue(gfx::Point(0,0), 1.0f,
-      theme->GetSystemColor(ui::NativeTheme::kColorId_LabelBackgroundColor)));
+  gfx::ShadowValues shadows(
+      10,
+      gfx::ShadowValue(gfx::Vector2d(0, 0), 1.0f,
+                       theme->GetSystemColor(
+                           ui::NativeTheme::kColorId_LabelBackgroundColor)));
   button.SetTextShadows(shadows);
   button.SetMaxSize(gfx::Size(kLinkDragImageMaxWidth, 0));
   if (icon.isNull()) {
@@ -71,7 +76,7 @@ void SetDragImage(const GURL& url,
   // Render the image.
   scoped_ptr<gfx::Canvas> canvas(
       views::GetCanvasForDragImage(widget, prefsize));
-  button.Paint(canvas.get(), views::CullSet());
+  button.Paint(ui::PaintContext(canvas.get()));
   drag_utils::SetDragImageOnDataObject(*canvas, press_point, data);
 }
 

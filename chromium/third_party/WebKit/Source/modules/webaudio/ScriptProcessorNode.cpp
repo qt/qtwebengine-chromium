@@ -23,13 +23,12 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/ScriptProcessorNode.h"
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/CrossThreadTask.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "modules/webaudio/AudioContext.h"
@@ -37,95 +36,45 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "modules/webaudio/AudioProcessingEvent.h"
 #include "public/platform/Platform.h"
-#include "wtf/Float32Array.h"
 
 namespace blink {
 
-static size_t chooseBufferSize()
-{
-    // Choose a buffer size based on the audio hardware buffer size. Arbitarily make it a power of
-    // two that is 4 times greater than the hardware buffer size.
-    // FIXME: What is the best way to choose this?
-    size_t hardwareBufferSize = Platform::current()->audioHardwareBufferSize();
-    size_t bufferSize = 1 << static_cast<unsigned>(log2(4 * hardwareBufferSize) + 0.5);
-
-    if (bufferSize < 256)
-        return 256;
-    if (bufferSize > 16384)
-        return 16384;
-
-    return bufferSize;
-}
-
-ScriptProcessorNode* ScriptProcessorNode::create(AudioContext* context, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels)
-{
-    // Check for valid buffer size.
-    switch (bufferSize) {
-    case 0:
-        bufferSize = chooseBufferSize();
-        break;
-    case 256:
-    case 512:
-    case 1024:
-    case 2048:
-    case 4096:
-    case 8192:
-    case 16384:
-        break;
-    default:
-        return 0;
-    }
-
-    if (!numberOfInputChannels && !numberOfOutputChannels)
-        return 0;
-
-    if (numberOfInputChannels > AudioContext::maxNumberOfChannels())
-        return 0;
-
-    if (numberOfOutputChannels > AudioContext::maxNumberOfChannels())
-        return 0;
-
-    return new ScriptProcessorNode(context, sampleRate, bufferSize, numberOfInputChannels, numberOfOutputChannels);
-}
-
-ScriptProcessorNode::ScriptProcessorNode(AudioContext* context, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels)
-    : AudioNode(context, sampleRate)
+ScriptProcessorHandler::ScriptProcessorHandler(AudioNode& node, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels)
+    : AudioHandler(NodeTypeJavaScript, node, sampleRate)
     , m_doubleBufferIndex(0)
     , m_doubleBufferIndexForEvent(0)
     , m_bufferSize(bufferSize)
     , m_bufferReadWriteIndex(0)
     , m_numberOfInputChannels(numberOfInputChannels)
     , m_numberOfOutputChannels(numberOfOutputChannels)
-    , m_internalInputBus(AudioBus::create(numberOfInputChannels, AudioNode::ProcessingSizeInFrames, false))
+    , m_internalInputBus(AudioBus::create(numberOfInputChannels, ProcessingSizeInFrames, false))
 {
     // Regardless of the allowed buffer sizes, we still need to process at the granularity of the AudioNode.
-    if (m_bufferSize < AudioNode::ProcessingSizeInFrames)
-        m_bufferSize = AudioNode::ProcessingSizeInFrames;
+    if (m_bufferSize < ProcessingSizeInFrames)
+        m_bufferSize = ProcessingSizeInFrames;
 
     ASSERT(numberOfInputChannels <= AudioContext::maxNumberOfChannels());
 
     addInput();
-    addOutput(AudioNodeOutput::create(this, numberOfOutputChannels));
+    addOutput(numberOfOutputChannels);
 
-    setNodeType(NodeTypeJavaScript);
     m_channelCount = numberOfInputChannels;
     m_channelCountMode = Explicit;
 
     initialize();
 }
 
-ScriptProcessorNode::~ScriptProcessorNode()
+PassRefPtr<ScriptProcessorHandler> ScriptProcessorHandler::create(AudioNode& node, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels)
 {
-    ASSERT(!isInitialized());
+    return adoptRef(new ScriptProcessorHandler(node, sampleRate, bufferSize, numberOfInputChannels, numberOfOutputChannels));
 }
 
-void ScriptProcessorNode::dispose()
+ScriptProcessorHandler::~ScriptProcessorHandler()
 {
     uninitialize();
-    AudioNode::dispose();
 }
 
-void ScriptProcessorNode::initialize()
+void ScriptProcessorHandler::initialize()
 {
     if (isInitialized())
         return;
@@ -142,21 +91,10 @@ void ScriptProcessorNode::initialize()
         m_outputBuffers.append(outputBuffer);
     }
 
-    AudioNode::initialize();
+    AudioHandler::initialize();
 }
 
-void ScriptProcessorNode::uninitialize()
-{
-    if (!isInitialized())
-        return;
-
-    m_inputBuffers.clear();
-    m_outputBuffers.clear();
-
-    AudioNode::uninitialize();
-}
-
-void ScriptProcessorNode::process(size_t framesToProcess)
+void ScriptProcessorHandler::process(size_t framesToProcess)
 {
     // Discussion about inputs and outputs:
     // As in other AudioNodes, ScriptProcessorNode uses an AudioBus for its input and output (see inputBus and outputBus below).
@@ -165,8 +103,8 @@ void ScriptProcessorNode::process(size_t framesToProcess)
     // The JavaScript code is the consumer of inputBuffer and the producer for outputBuffer.
 
     // Get input and output busses.
-    AudioBus* inputBus = this->input(0)->bus();
-    AudioBus* outputBus = this->output(0)->bus();
+    AudioBus* inputBus = input(0).bus();
+    AudioBus* outputBus = output(0).bus();
 
     // Get input and output buffers. We double-buffer both the input and output sides.
     unsigned doubleBufferIndex = this->doubleBufferIndex();
@@ -203,7 +141,7 @@ void ScriptProcessorNode::process(size_t framesToProcess)
     if (!channelsAreGood)
         return;
 
-    for (unsigned i = 0; i < numberOfInputChannels; i++)
+    for (unsigned i = 0; i < numberOfInputChannels; ++i)
         m_internalInputBus->setChannelMemory(i, inputBuffer->getChannelData(i)->data() + m_bufferReadWriteIndex, framesToProcess);
 
     if (numberOfInputChannels)
@@ -230,14 +168,14 @@ void ScriptProcessorNode::process(size_t framesToProcess)
         } else if (context()->executionContext()) {
             // Fire the event on the main thread, not this one (which is the realtime audio thread).
             m_doubleBufferIndexForEvent = m_doubleBufferIndex;
-            context()->executionContext()->postTask(createCrossThreadTask(&ScriptProcessorNode::fireProcessEvent, this));
+            context()->executionContext()->postTask(FROM_HERE, createCrossThreadTask(&ScriptProcessorHandler::fireProcessEvent, PassRefPtr<ScriptProcessorHandler>(this)));
         }
 
         swapBuffers();
     }
 }
 
-void ScriptProcessorNode::fireProcessEvent()
+void ScriptProcessorHandler::fireProcessEvent()
 {
     ASSERT(isMainThread());
 
@@ -253,7 +191,7 @@ void ScriptProcessorNode::fireProcessEvent()
         return;
 
     // Avoid firing the event if the document has already gone away.
-    if (context()->executionContext()) {
+    if (node() && context() && context()->executionContext()) {
         // This synchronizes with process().
         MutexLocker processLocker(m_processEventLock);
 
@@ -262,21 +200,21 @@ void ScriptProcessorNode::fireProcessEvent()
         double playbackTime = (context()->currentSampleFrame() + m_bufferSize) / static_cast<double>(context()->sampleRate());
 
         // Call the JavaScript event handler which will do the audio processing.
-        dispatchEvent(AudioProcessingEvent::create(inputBuffer, outputBuffer, playbackTime));
+        node()->dispatchEvent(AudioProcessingEvent::create(inputBuffer, outputBuffer, playbackTime));
     }
 }
 
-double ScriptProcessorNode::tailTime() const
+double ScriptProcessorHandler::tailTime() const
 {
     return std::numeric_limits<double>::infinity();
 }
 
-double ScriptProcessorNode::latencyTime() const
+double ScriptProcessorHandler::latencyTime() const
 {
     return std::numeric_limits<double>::infinity();
 }
 
-void ScriptProcessorNode::setChannelCount(unsigned long channelCount, ExceptionState& exceptionState)
+void ScriptProcessorHandler::setChannelCount(unsigned long channelCount, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     AudioContext::AutoLocker locker(context());
@@ -288,7 +226,7 @@ void ScriptProcessorNode::setChannelCount(unsigned long channelCount, ExceptionS
     }
 }
 
-void ScriptProcessorNode::setChannelCountMode(const String& mode, ExceptionState& exceptionState)
+void ScriptProcessorHandler::setChannelCountMode(const String& mode, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     AudioContext::AutoLocker locker(context());
@@ -300,11 +238,64 @@ void ScriptProcessorNode::setChannelCountMode(const String& mode, ExceptionState
     }
 }
 
-void ScriptProcessorNode::trace(Visitor* visitor)
+// ----------------------------------------------------------------
+
+ScriptProcessorNode::ScriptProcessorNode(AudioContext& context, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels)
+    : AudioNode(context)
 {
-    visitor->trace(m_inputBuffers);
-    visitor->trace(m_outputBuffers);
-    AudioNode::trace(visitor);
+    setHandler(ScriptProcessorHandler::create(*this, sampleRate, bufferSize, numberOfInputChannels, numberOfOutputChannels));
+}
+
+static size_t chooseBufferSize()
+{
+    // Choose a buffer size based on the audio hardware buffer size. Arbitarily make it a power of
+    // two that is 4 times greater than the hardware buffer size.
+    // FIXME: What is the best way to choose this?
+    size_t hardwareBufferSize = Platform::current()->audioHardwareBufferSize();
+    size_t bufferSize = 1 << static_cast<unsigned>(log2(4 * hardwareBufferSize) + 0.5);
+
+    if (bufferSize < 256)
+        return 256;
+    if (bufferSize > 16384)
+        return 16384;
+
+    return bufferSize;
+}
+
+ScriptProcessorNode* ScriptProcessorNode::create(AudioContext& context, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels)
+{
+    // Check for valid buffer size.
+    switch (bufferSize) {
+    case 0:
+        bufferSize = chooseBufferSize();
+        break;
+    case 256:
+    case 512:
+    case 1024:
+    case 2048:
+    case 4096:
+    case 8192:
+    case 16384:
+        break;
+    default:
+        return nullptr;
+    }
+
+    if (!numberOfInputChannels && !numberOfOutputChannels)
+        return nullptr;
+
+    if (numberOfInputChannels > AudioContext::maxNumberOfChannels())
+        return nullptr;
+
+    if (numberOfOutputChannels > AudioContext::maxNumberOfChannels())
+        return nullptr;
+
+    return new ScriptProcessorNode(context, sampleRate, bufferSize, numberOfInputChannels, numberOfOutputChannels);
+}
+
+size_t ScriptProcessorNode::bufferSize() const
+{
+    return static_cast<ScriptProcessorHandler&>(handler()).bufferSize();
 }
 
 } // namespace blink

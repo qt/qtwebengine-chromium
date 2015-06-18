@@ -32,18 +32,18 @@
 #include "config.h"
 #include "web/TextFinder.h"
 
-#include "core/accessibility/AXObject.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Range.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/Editor.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleSelection.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/FrameView.h"
+#include "core/layout/LayoutObject.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
+#include "modules/accessibility/AXObject.h"
+#include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/Timer.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebAXObject.h"
@@ -63,7 +63,7 @@ TextFinder::FindMatch::FindMatch(PassRefPtrWillBeRawPtr<Range> range, int ordina
 {
 }
 
-void TextFinder::FindMatch::trace(Visitor* visitor)
+DEFINE_TRACE(TextFinder::FindMatch)
 {
     visitor->trace(m_range);
 }
@@ -75,7 +75,7 @@ public:
         return adoptPtrWillBeNoop(new DeferredScopeStringMatches(textFinder, identifier, searchText, options, reset));
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_textFinder);
     }
@@ -151,12 +151,12 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
         if (!options.findNext)
             clearFindMatchesCache();
 
-        ownerFrame().invalidateAll();
+        ownerFrame().frameView()->invalidatePaintForTickmarks();
         return false;
     }
 
 #if OS(ANDROID)
-    ownerFrame().viewImpl()->zoomToFindInPageRect(ownerFrame().frameView()->contentsToWindow(enclosingIntRect(RenderObject::absoluteBoundingBoxRectForRange(m_activeMatch.get()))));
+    ownerFrame().viewImpl()->zoomToFindInPageRect(ownerFrame().frameView()->contentsToRootFrame(enclosingIntRect(LayoutObject::absoluteBoundingBoxRectForRange(m_activeMatch.get()))));
 #endif
 
     setMarkerActive(m_activeMatch.get(), true);
@@ -189,7 +189,7 @@ bool TextFinder::find(int identifier, const WebString& searchText, const WebFind
                 m_activeMatchIndexInCurrentFrame = m_lastMatchCount - 1;
         }
         if (selectionRect) {
-            *selectionRect = ownerFrame().frameView()->contentsToWindow(m_activeMatch->boundingBox());
+            *selectionRect = ownerFrame().frameView()->contentsToRootFrame(m_activeMatch->boundingBox());
             reportFindInPageSelection(*selectionRect, m_activeMatchIndexInCurrentFrame + 1, identifier);
         }
     }
@@ -206,13 +206,13 @@ void TextFinder::stopFindingAndClearSelection()
     ownerFrame().frame()->editor().setMarkedTextMatchesAreHighlighted(false);
     clearFindMatchesCache();
 
-    // Let the frame know that we don't want tickmarks or highlighting anymore.
-    ownerFrame().invalidateAll();
+    // Let the frame know that we don't want tickmarks anymore.
+    ownerFrame().frameView()->invalidatePaintForTickmarks();
 }
 
 void TextFinder::reportFindInPageResultToAccessibility(int identifier)
 {
-    AXObjectCache* axObjectCache = ownerFrame().frame()->document()->existingAXObjectCache();
+    AXObjectCacheImpl* axObjectCache = toAXObjectCacheImpl(ownerFrame().frame()->document()->existingAXObjectCache());
     if (!axObjectCache)
         return;
 
@@ -343,7 +343,7 @@ void TextFinder::scopeStringMatches(int identifier, const WebString& searchText,
 
             // Notify browser of new location for the selected rectangle.
             reportFindInPageSelection(
-                ownerFrame().frameView()->contentsToWindow(resultBounds),
+                ownerFrame().frameView()->contentsToRootFrame(resultBounds),
                 m_activeMatchIndexInCurrentFrame + 1,
                 identifier);
         }
@@ -411,7 +411,7 @@ void TextFinder::finishCurrentScopingEffort(int identifier)
     m_lastFindRequestCompletedWithNoMatches = !m_lastMatchCount;
 
     // This frame is done, so show any scrollbar tickmarks we haven't drawn yet.
-    ownerFrame().invalidateScrollbar();
+    ownerFrame().frameView()->invalidatePaintForTickmarks();
 }
 
 void TextFinder::cancelPendingScopingEffort()
@@ -621,16 +621,16 @@ int TextFinder::selectFindMatch(unsigned index, WebRect* selectionRect)
     }
 
     IntRect activeMatchRect;
-    IntRect activeMatchBoundingBox = enclosingIntRect(RenderObject::absoluteBoundingBoxRectForRange(m_activeMatch.get()));
+    IntRect activeMatchBoundingBox = enclosingIntRect(LayoutObject::absoluteBoundingBoxRectForRange(m_activeMatch.get()));
 
     if (!activeMatchBoundingBox.isEmpty()) {
-        if (m_activeMatch->firstNode() && m_activeMatch->firstNode()->renderer()) {
-            m_activeMatch->firstNode()->renderer()->scrollRectToVisible(
-                activeMatchBoundingBox, ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
+        if (m_activeMatch->firstNode() && m_activeMatch->firstNode()->layoutObject()) {
+            m_activeMatch->firstNode()->layoutObject()->scrollRectToVisible(
+                LayoutRect(activeMatchBoundingBox), ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
         }
 
         // Zoom to the active match.
-        activeMatchRect = ownerFrame().frameView()->contentsToWindow(activeMatchBoundingBox);
+        activeMatchRect = ownerFrame().frameView()->contentsToRootFrame(activeMatchBoundingBox);
         ownerFrame().viewImpl()->zoomToFindInPageRect(activeMatchRect);
     }
 
@@ -744,7 +744,7 @@ void TextFinder::invalidateIfNecessary()
     if (m_lastMatchCount <= m_nextInvalidateAfter)
         return;
 
-    // FIXME: (http://b/1088165) Optimize the drawing of the tickmarks and
+    // FIXME: (http://crbug.com/6819) Optimize the drawing of the tickmarks and
     // remove this. This calculation sets a milestone for when next to
     // invalidate the scrollbar and the content area. We do this so that we
     // don't spend too much time drawing the scrollbar over and over again.
@@ -756,7 +756,7 @@ void TextFinder::invalidateIfNecessary()
 
     int i = m_lastMatchCount / startSlowingDownAfter;
     m_nextInvalidateAfter += i * slowdown;
-    ownerFrame().invalidateScrollbar();
+    ownerFrame().frameView()->invalidatePaintForTickmarks();
 }
 
 void TextFinder::flushCurrentScoping()
@@ -786,14 +786,16 @@ int TextFinder::ordinalOfFirstMatch() const
     return ordinalOfFirstMatchForFrame(m_ownerFrame.get());
 }
 
-void TextFinder::trace(Visitor* visitor)
+DEFINE_TRACE(TextFinder)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_ownerFrame);
     visitor->trace(m_currentActiveMatchFrame);
     visitor->trace(m_activeMatch);
     visitor->trace(m_resumeScopingFromRange);
     visitor->trace(m_deferredScopingWork);
     visitor->trace(m_findMatchesCache);
+#endif
 }
 
 } // namespace blink

@@ -55,6 +55,7 @@ struct WrapperTypeInfo;
 // Document::registerElement.
 class CustomElementConstructorBuilder {
     WTF_MAKE_NONCOPYABLE(CustomElementConstructorBuilder);
+    STACK_ALLOCATED();
 public:
     CustomElementConstructorBuilder(ScriptState*, const ElementRegistrationOptions&);
 
@@ -64,7 +65,7 @@ public:
 
     bool isFeatureAllowed() const;
     bool validateOptions(const AtomicString& type, QualifiedName& tagName, ExceptionState&);
-    PassRefPtr<CustomElementLifecycleCallbacks> createCallbacks();
+    PassRefPtrWillBeRawPtr<CustomElementLifecycleCallbacks> createCallbacks();
     bool createConstructor(Document*, CustomElementDefinition*, ExceptionState&);
     bool didRegisterDefinition(CustomElementDefinition*) const;
 
@@ -76,13 +77,13 @@ public:
 private:
     bool hasValidPrototypeChainFor(const WrapperTypeInfo*) const;
     bool prototypeIsValid(const AtomicString& type, ExceptionState&) const;
-    v8::Handle<v8::Function> retrieveCallback(v8::Isolate*, const char* name);
+    v8::MaybeLocal<v8::Function> retrieveCallback(const char* name);
 
     RefPtr<ScriptState> m_scriptState;
     const ElementRegistrationOptions& m_options;
-    v8::Handle<v8::Object> m_prototype;
-    v8::Handle<v8::Function> m_constructor;
-    RefPtr<V8CustomElementLifecycleCallbacks> m_callbacks;
+    v8::Local<v8::Object> m_prototype;
+    v8::Local<v8::Function> m_constructor;
+    RefPtrWillBeMember<V8CustomElementLifecycleCallbacks> m_callbacks;
 };
 
 } // namespace blink

@@ -26,7 +26,7 @@ public:
         , fQuality(quality)
         , fRRect(rrect)
     {
-        this->init(&gRRectBlurKeyNamespaceLabel,
+        this->init(&gRRectBlurKeyNamespaceLabel, 0,
                    sizeof(fSigma) + sizeof(fStyle) + sizeof(fQuality) + sizeof(fRRect));
     }
 
@@ -51,8 +51,8 @@ struct RRectBlurRec : public SkResourceCache::Rec {
     RRectBlurKey   fKey;
     MaskValue      fValue;
 
-    virtual const Key& getKey() const SK_OVERRIDE { return fKey; }
-    virtual size_t bytesUsed() const SK_OVERRIDE { return sizeof(*this) + fValue.fData->size(); }
+    const Key& getKey() const override { return fKey; }
+    size_t bytesUsed() const override { return sizeof(*this) + fValue.fData->size(); }
 
     static bool Visitor(const SkResourceCache::Rec& baseRec, void* contextData) {
         const RRectBlurRec& rec = static_cast<const RRectBlurRec&>(baseRec);
@@ -104,19 +104,27 @@ public:
         , fQuality(quality)
     {
         SkASSERT(1 == count || 2 == count);
-        fRects[0] = SkRect::MakeEmpty();
-        fRects[1] = SkRect::MakeEmpty();
+        SkIRect ir;
+        rects[0].roundOut(&ir);
+        fSizes[0] = SkSize::Make(0, 0);
+        fSizes[1] = SkSize::Make(0, 0);
+        fSizes[2] = SkSize::Make(0, 0);
+        fSizes[3] = SkSize::Make(rects[0].x() - ir.x(), rects[0].y() - ir.y());
         for (int i = 0; i < count; i++) {
-            fRects[i] = rects[i];
+            fSizes[i] = SkSize::Make(rects[i].width(), rects[i].height());
         }
-        this->init(&gRectsBlurKeyNamespaceLabel,
-                   sizeof(fSigma) + sizeof(fStyle) + sizeof(fQuality) + sizeof(fRects));
+        if (2 == count) {
+            fSizes[2] = SkSize::Make(rects[0].x() - rects[1].x(), rects[0].y() - rects[1].y());
+        }
+
+        this->init(&gRectsBlurKeyNamespaceLabel, 0,
+                   sizeof(fSigma) + sizeof(fStyle) + sizeof(fQuality) + sizeof(fSizes));
     }
 
     SkScalar    fSigma;
     int32_t     fStyle;
     int32_t     fQuality;
-    SkRect      fRects[2];
+    SkSize      fSizes[4];
 };
 
 struct RectsBlurRec : public SkResourceCache::Rec {
@@ -134,12 +142,12 @@ struct RectsBlurRec : public SkResourceCache::Rec {
     RectsBlurKey   fKey;
     MaskValue      fValue;
 
-    virtual const Key& getKey() const SK_OVERRIDE { return fKey; }
-    virtual size_t bytesUsed() const SK_OVERRIDE { return sizeof(*this) + fValue.fData->size(); }
+    const Key& getKey() const override { return fKey; }
+    size_t bytesUsed() const override { return sizeof(*this) + fValue.fData->size(); }
 
     static bool Visitor(const SkResourceCache::Rec& baseRec, void* contextData) {
         const RectsBlurRec& rec = static_cast<const RectsBlurRec&>(baseRec);
-        MaskValue* result = (MaskValue*)contextData;
+        MaskValue* result = static_cast<MaskValue*>(contextData);
 
         SkCachedData* tmpData = rec.fValue.fData;
         tmpData->ref();

@@ -39,9 +39,9 @@ FEFlood::FEFlood(Filter* filter, const Color& floodColor, float floodOpacity)
     FilterEffect::setOperatingColorSpace(ColorSpaceDeviceRGB);
 }
 
-PassRefPtr<FEFlood> FEFlood::create(Filter* filter, const Color& floodColor, float floodOpacity)
+PassRefPtrWillBeRawPtr<FEFlood> FEFlood::create(Filter* filter, const Color& floodColor, float floodOpacity)
 {
-    return adoptRef(new FEFlood(filter, floodColor, floodOpacity));
+    return adoptRefWillBeNoop(new FEFlood(filter, floodColor, floodOpacity));
 }
 
 Color FEFlood::floodColor() const
@@ -84,7 +84,7 @@ TextStream& FEFlood::externalRepresentation(TextStream& ts, int indent) const
     writeIndent(ts, indent);
     ts << "[feFlood";
     FilterEffect::externalRepresentation(ts);
-    ts << " flood-color=\"" << floodColor().nameForRenderTreeAsText() << "\" "
+    ts << " flood-color=\"" << floodColor().nameForLayoutTreeAsText() << "\" "
        << "flood-opacity=\"" << floodOpacity() << "\"]\n";
     return ts;
 }

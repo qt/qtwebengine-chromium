@@ -37,18 +37,19 @@
 namespace blink {
 
 class SVGAnimatedEnumerationBase : public SVGAnimatedProperty<SVGEnumerationBase> {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~SVGAnimatedEnumerationBase();
 
     void setBaseVal(unsigned short, ExceptionState&);
 
 protected:
-    SVGAnimatedEnumerationBase(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtr<SVGEnumerationBase> initialValue)
+    SVGAnimatedEnumerationBase(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtrWillBeRawPtr<SVGEnumerationBase> initialValue)
         : SVGAnimatedProperty<SVGEnumerationBase>(contextElement, attributeName, initialValue)
     {
     }
 };
 
-}
+} // namespace blink
 
 #endif // SVGAnimatedEnumerationBase_h

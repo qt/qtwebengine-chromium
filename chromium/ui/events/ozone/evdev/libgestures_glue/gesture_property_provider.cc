@@ -11,10 +11,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <algorithm>
-#include <iostream>
-#include <vector>
 
-#include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
@@ -25,134 +22,107 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringize_macros.h"
 #include "base/strings/stringprintf.h"
+#include "ui/events/ozone/evdev/libgestures_glue/gesture_feedback.h"
 #include "ui/events/ozone/evdev/libgestures_glue/gesture_interpreter_libevdev_cros.h"
 
-// Severity level for general info logging purpose.
-#define GPROP_LOG DVLOG
-#define INFO_SEVERITY 1
+// GesturesProp implementation.
+//
+// Check the header file for its definition.
+GesturesProp::GesturesProp(const std::string& name,
+                           const PropertyType type,
+                           const size_t count)
+    : name_(name),
+      type_(type),
+      count_(count),
+      get_(NULL),
+      set_(NULL),
+      handler_data_(NULL) {
+}
 
-/* Implementation of GesturesProp declared in gestures.h
- *
- * libgestures requires that this be in the top level namespace.
- * */
-class GesturesProp {
- public:
-  typedef ui::GesturePropertyProvider::PropertyType PropertyType;
+std::vector<int> GesturesProp::GetIntValue() const {
+  NOTREACHED();
+  return std::vector<int>();
+}
 
-  GesturesProp(const std::string& name,
-               const PropertyType type,
-               const size_t count)
-      : name_(name),
-        type_(type),
-        count_(count),
-        get_(NULL),
-        set_(NULL),
-        handler_data_(NULL) {}
-  virtual ~GesturesProp() {}
+bool GesturesProp::SetIntValue(const std::vector<int>& value) {
+  NOTREACHED();
+  return false;
+}
 
-  // Variant-ish interfaces for accessing the property value. Each type of
-  // property should override the corresponding interfaces for it.
-  virtual std::vector<int> GetIntValue() const {
-    NOTREACHED();
-    return std::vector<int>();
-  }
-  virtual bool SetIntValue(const std::vector<int>& value) {
-    NOTREACHED();
-    return false;
-  }
-  virtual std::vector<int16_t> GetShortValue() const {
-    NOTREACHED();
-    return std::vector<int16_t>();
-  }
-  virtual bool SetShortValue(const std::vector<int16_t>& value) {
-    NOTREACHED();
-    return false;
-  }
-  virtual std::vector<bool> GetBoolValue() const {
-    NOTREACHED();
-    return std::vector<bool>();
-  }
-  virtual bool SetBoolValue(const std::vector<bool>& value) {
-    NOTREACHED();
-    return false;
-  }
-  virtual std::string GetStringValue() const {
-    NOTREACHED();
-    return std::string();
-  }
-  virtual bool SetStringValue(const std::string& value) {
-    NOTREACHED();
-    return false;
-  }
-  virtual std::vector<double> GetDoubleValue() const {
-    NOTREACHED();
-    return std::vector<double>();
-  }
-  virtual bool SetDoubleValue(const std::vector<double>& value) {
-    NOTREACHED();
-    return false;
-  }
+std::vector<int16_t> GesturesProp::GetShortValue() const {
+  NOTREACHED();
+  return std::vector<int16_t>();
+}
 
-  // Set property access handlers.
-  void SetHandlers(GesturesPropGetHandler get,
-                   GesturesPropSetHandler set,
-                   void* data) {
-    get_ = get;
-    set_ = set;
-    handler_data_ = data;
-  }
+bool GesturesProp::SetShortValue(const std::vector<int16_t>& value) {
+  NOTREACHED();
+  return false;
+}
 
-  // Accessors.
-  const std::string& name() const { return name_; }
-  PropertyType type() const { return type_; }
-  size_t count() const { return count_; }
-  virtual bool IsReadOnly() const = 0;
+std::vector<bool> GesturesProp::GetBoolValue() const {
+  NOTREACHED();
+  return std::vector<bool>();
+}
 
- protected:
-  void OnGet() const {
-    // We don't have the X server now so there is currently nothing to do when
-    // the get handler returns true.
-    // TODO(sheckylin): Re-visit this if we use handlers that modifies the
-    // property.
-    if (get_)
-      get_(handler_data_);
-  }
+bool GesturesProp::SetBoolValue(const std::vector<bool>& value) {
+  NOTREACHED();
+  return false;
+}
 
-  void OnSet() const {
-    // Call the property set handler if available.
-    if (set_)
-      set_(handler_data_);
-  }
+std::string GesturesProp::GetStringValue() const {
+  NOTREACHED();
+  return std::string();
+}
 
- private:
-  // For logging purpose.
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const GesturesProp& property);
+bool GesturesProp::SetStringValue(const std::string& value) {
+  NOTREACHED();
+  return false;
+}
 
-  // Interfaces for getting internal pointers and stuff.
-  virtual const char** GetStringWritebackPtr() const {
-    NOTREACHED();
-    return NULL;
-  }
-  virtual bool IsAllocated() const {
-    NOTREACHED();
-    return false;
-  }
+std::vector<double> GesturesProp::GetDoubleValue() const {
+  NOTREACHED();
+  return std::vector<double>();
+}
 
-  // Property name, type and number of elements.
-  std::string name_;
-  PropertyType type_;
-  size_t count_;
+bool GesturesProp::SetDoubleValue(const std::vector<double>& value) {
+  NOTREACHED();
+  return false;
+}
 
-  // Handler function pointers and the data to be passed to them when the
-  // property is accessed.
-  GesturesPropGetHandler get_;
-  GesturesPropSetHandler set_;
-  void* handler_data_;
+void GesturesProp::SetHandlers(GesturesPropGetHandler get,
+                               GesturesPropSetHandler set,
+                               void* data) {
+  get_ = get;
+  set_ = set;
+  handler_data_ = data;
+}
 
-  DISALLOW_COPY_AND_ASSIGN(GesturesProp);
-};
+void GesturesProp::OnGet() const {
+  // We don't have the X server now so there is currently nothing to do when
+  // the get handler returns true.
+  // TODO(sheckylin): Re-visit this if we use handlers that modifies the
+  // property.
+  if (get_)
+    get_(handler_data_);
+}
 
+void GesturesProp::OnSet() const {
+  // Call the property set handler if available.
+  if (set_)
+    set_(handler_data_);
+}
+
+const char** GesturesProp::GetStringWritebackPtr() const {
+  NOTREACHED();
+  return NULL;
+}
+
+bool GesturesProp::IsAllocated() const {
+  NOTREACHED();
+  return false;
+}
+
+// Type-templated GesturesProp.
 template <typename T>
 class TypedGesturesProp : public GesturesProp {
  public:
@@ -206,7 +176,7 @@ class TypedGesturesProp : public GesturesProp {
   void InitializeNumericalProperty(const T* init,
                                    const GesturesProp* default_property) {
     if (IsDefaultPropertyUsable(default_property)) {
-      GPROP_LOG(INFO_SEVERITY) << "Default property found. Using its value ...";
+      DVLOG(2) << "Default property found. Using its value ...";
       this->template SetNumericalValue(default_property->GetDoubleValue());
     } else {
       // To work with the interface exposed by the gesture lib, we have no
@@ -390,7 +360,7 @@ class GesturesStringProp : public TypedGesturesProp<std::string> {
                                 const GesturesProp* default_property) {
     // Initialize the property value similar to the numerical types.
     if (IsDefaultPropertyUsable(default_property)) {
-      GPROP_LOG(INFO_SEVERITY) << "Default property found. Using its value ...";
+      DVLOG(2) << "Default property found. Using its value ...";
       *value_ = default_property->GetStringValue();
     } else {
       *value_ = init;
@@ -458,34 +428,50 @@ const char* kFalse[] = {"off", "false", "no"};
 
 // Check if a device falls into one device type category.
 bool IsDeviceOfType(const ui::GesturePropertyProvider::DevicePtr device,
-                    const ui::GesturePropertyProvider::DeviceType type) {
+                    const ui::EventDeviceType type,
+                    const GesturesProp* device_mouse_property,
+                    const GesturesProp* device_touchpad_property) {
+  // Get the device type info from gesture properties if they are available.
+  // Otherwise, fallback to the libevdev device info.
+  bool is_mouse = false, is_touchpad = false;
   EvdevClass evdev_class = device->info.evdev_class;
+  if (device_mouse_property) {
+    is_mouse = device_mouse_property->GetBoolValue()[0];
+  } else {
+    is_mouse = (evdev_class == EvdevClassMouse ||
+                evdev_class == EvdevClassMultitouchMouse);
+  }
+  if (device_touchpad_property) {
+    is_touchpad = device_touchpad_property->GetBoolValue()[0];
+  } else {
+    is_touchpad = (evdev_class == EvdevClassTouchpad ||
+                   evdev_class == EvdevClassTouchscreen ||
+                   evdev_class == EvdevClassMultitouchMouse);
+  }
+
   switch (type) {
-    case ui::GesturePropertyProvider::DT_MOUSE:
-      return (evdev_class == EvdevClassMouse ||
-              evdev_class == EvdevClassMultitouchMouse);
+    case ui::DT_KEYBOARD:
+      return (evdev_class == EvdevClassKeyboard);
       break;
-    case ui::GesturePropertyProvider::DT_TOUCHPAD:
-      // Note that the behavior here is different from the inputcontrol script
-      // which actually returns touchscreen devices as well.
-      return (evdev_class == EvdevClassTouchpad);
+    case ui::DT_MOUSE:
+      return is_mouse;
       break;
-    case ui::GesturePropertyProvider::DT_TOUCHSCREEN:
+    case ui::DT_TOUCHPAD:
+      return (!is_mouse) && is_touchpad;
+      break;
+    case ui::DT_TOUCHSCREEN:
       return (evdev_class == EvdevClassTouchscreen);
       break;
-    case ui::GesturePropertyProvider::DT_MULTITOUCH:
-      return (evdev_class == EvdevClassTouchpad ||
-              evdev_class == EvdevClassTouchscreen ||
-              evdev_class == EvdevClassMultitouchMouse);
+    case ui::DT_MULTITOUCH:
+      return is_touchpad;
       break;
-    case ui::GesturePropertyProvider::DT_MULTITOUCH_MOUSE:
-      return (evdev_class == EvdevClassMultitouchMouse);
+    case ui::DT_MULTITOUCH_MOUSE:
+      return is_mouse && is_touchpad;
       break;
-    case ui::GesturePropertyProvider::DT_ALL:
+    case ui::DT_ALL:
       return true;
       break;
     default:
-      NOTREACHED();
       break;
   }
   return false;
@@ -567,6 +553,12 @@ std::ostream& operator<<(std::ostream& out,
   return out << s;
 }
 
+// A relay function that dumps evdev log to a place that we have access to
+// (the default directory is inaccessible without X11).
+void DumpTouchEvdevDebugLog(void* data) {
+  Event_Dump_Debug_Log_To(data, ui::kTouchpadEvdevLogPath);
+}
+
 }  // namespace
 
 // GesturesProp logging function.
@@ -616,7 +608,8 @@ namespace internal {
 // Mapping table from a property name to its corresponding GesturesProp
 // object pointer.
 typedef base::hash_map<std::string, GesturesProp*> PropertiesMap;
-typedef base::ScopedPtrHashMap<std::string, GesturesProp> ScopedPropertiesMap;
+typedef base::ScopedPtrHashMap<std::string, scoped_ptr<GesturesProp>>
+    ScopedPropertiesMap;
 
 // Struct holding properties of a device.
 //
@@ -653,16 +646,16 @@ class MatchCriteria {
 class MatchProduct : public MatchCriteria {
  public:
   explicit MatchProduct(const std::string& arg);
-  virtual ~MatchProduct() {}
-  virtual bool Match(const DevicePtr device);
+  ~MatchProduct() override {}
+  bool Match(const DevicePtr device) override;
 };
 
 // Math a device based on its device node path.
 class MatchDevicePath : public MatchCriteria {
  public:
   explicit MatchDevicePath(const std::string& arg);
-  virtual ~MatchDevicePath() {}
-  virtual bool Match(const DevicePtr device);
+  ~MatchDevicePath() override {}
+  bool Match(const DevicePtr device) override;
 };
 
 // Math a USB device based on its USB vid and pid.
@@ -670,8 +663,8 @@ class MatchDevicePath : public MatchCriteria {
 class MatchUSBID : public MatchCriteria {
  public:
   explicit MatchUSBID(const std::string& arg);
-  virtual ~MatchUSBID() {}
-  virtual bool Match(const DevicePtr device);
+  ~MatchUSBID() override {}
+  bool Match(const DevicePtr device) override;
 
  private:
   bool IsValidPattern(const std::string& pattern);
@@ -683,8 +676,7 @@ class MatchUSBID : public MatchCriteria {
 class MatchDeviceType : public MatchCriteria {
  public:
   explicit MatchDeviceType(const std::string& arg);
-  virtual ~MatchDeviceType() {}
-  virtual bool Match(const DevicePtr device) = 0;
+  ~MatchDeviceType() override {}
 
  protected:
   bool value_;
@@ -695,24 +687,24 @@ class MatchDeviceType : public MatchCriteria {
 class MatchIsPointer : public MatchDeviceType {
  public:
   explicit MatchIsPointer(const std::string& arg);
-  virtual ~MatchIsPointer() {}
-  virtual bool Match(const DevicePtr device);
+  ~MatchIsPointer() override {}
+  bool Match(const DevicePtr device) override;
 };
 
 // Check if a device is a touchpad.
 class MatchIsTouchpad : public MatchDeviceType {
  public:
   explicit MatchIsTouchpad(const std::string& arg);
-  virtual ~MatchIsTouchpad() {}
-  virtual bool Match(const DevicePtr device);
+  ~MatchIsTouchpad() override {}
+  bool Match(const DevicePtr device) override;
 };
 
 // Check if a device is a touchscreen.
 class MatchIsTouchscreen : public MatchDeviceType {
  public:
   explicit MatchIsTouchscreen(const std::string& arg);
-  virtual ~MatchIsTouchscreen() {}
-  virtual bool Match(const DevicePtr device);
+  ~MatchIsTouchscreen() override {}
+  bool Match(const DevicePtr device) override;
 };
 
 // Struct for sections in xorg conf files.
@@ -874,19 +866,58 @@ GesturePropertyProvider::GesturePropertyProvider() {
 GesturePropertyProvider::~GesturePropertyProvider() {
 }
 
-void GesturePropertyProvider::GetDeviceIdsByType(
-    const DeviceType type,
+bool GesturePropertyProvider::GetDeviceIdsByType(
+    const EventDeviceType type,
     std::vector<DeviceId>* device_ids) {
-  device_ids->clear();
+  bool exists = false;
   DeviceMap::const_iterator it = device_map_.begin();
-  for (; it != device_map_.end(); ++it)
-    if (IsDeviceOfType(it->second, type))
-      device_ids->push_back(it->first);
+  for (; it != device_map_.end(); ++it) {
+    if (IsDeviceIdOfType(it->first, type)) {
+      exists = true;
+      if (device_ids)
+        device_ids->push_back(it->first);
+    }
+  }
+  return exists;
+}
+
+bool GesturePropertyProvider::IsDeviceIdOfType(const DeviceId device_id,
+                                               const EventDeviceType type) {
+  DeviceMap::const_iterator it = device_map_.find(device_id);
+  if (it == device_map_.end())
+    return false;
+  return IsDeviceOfType(it->second, type,
+                        GetProperty(device_id, "Device Mouse"),
+                        GetProperty(device_id, "Device Touchpad"));
 }
 
 GesturesProp* GesturePropertyProvider::GetProperty(const DeviceId device_id,
                                                    const std::string& name) {
   return FindProperty(device_id, name);
+}
+
+std::vector<std::string> GesturePropertyProvider::GetPropertyNamesById(
+    const DeviceId device_id) {
+  internal::GestureDevicePropertyData* device_data =
+      device_data_map_.get(device_id);
+  if (!device_data)
+    return std::vector<std::string>();
+
+  // Dump all property names of the device.
+  std::vector<std::string> names;
+  for (internal::ScopedPropertiesMap::const_iterator it =
+           device_data->properties.begin();
+       it != device_data->properties.end(); ++it)
+    names.push_back(it->first);
+  return names;
+}
+
+std::string GesturePropertyProvider::GetDeviceNameById(
+    const DeviceId device_id) {
+  DeviceMap::const_iterator it = device_map_.find(device_id);
+  if (it == device_map_.end())
+    return std::string();
+  return std::string(it->second->info.name);
 }
 
 void GesturePropertyProvider::RegisterDevice(const DeviceId id,
@@ -968,13 +999,13 @@ void GesturePropertyProvider::LoadDeviceConfigurations() {
        path = file_enum.Next()) {
     files.insert(path);
   }
-  GPROP_LOG(INFO_SEVERITY) << files.size() << " conf files were found";
+  DVLOG(2) << files.size() << " conf files were found";
 
   // Parse conf files one-by-one.
   for (std::set<base::FilePath>::iterator file_iter = files.begin();
        file_iter != files.end();
        ++file_iter) {
-    GPROP_LOG(INFO_SEVERITY) << "Parsing conf file: " << (*file_iter).value();
+    DVLOG(2) << "Parsing conf file: " << (*file_iter).value();
     std::string content;
     if (!base::ReadFileToString(*file_iter, &content)) {
       LOG(ERROR) << "Can't loading gestures conf file: "
@@ -1062,12 +1093,12 @@ void GesturePropertyProvider::ParseXorgConfFile(const std::string& content) {
               has_error = true;
               is_input_class_section = false;
             } else {
-              GPROP_LOG(INFO_SEVERITY) << "New InputClass section found";
+              DVLOG(2) << "New InputClass section found";
               has_checked_section_type = true;
             }
             break;
           } else if (next_is_identifier) {
-            GPROP_LOG(INFO_SEVERITY) << "Identifier: " << arg;
+            DVLOG(2) << "Identifier: " << arg;
             config->identifier = arg;
             next_is_identifier = false;
             break;
@@ -1098,9 +1129,7 @@ void GesturePropertyProvider::ParseXorgConfFile(const std::string& content) {
           // Otherwise, look for valid entries according to the spec.
           if (has_checked_section_type) {
             if (piece == "Driver") {
-              // TODO(sheckylin): Support "Driver" so that we can force a device
-              // not to use the gesture lib.
-              NOTIMPLEMENTED();
+              // "Driver" field is meaningless for non-X11 setup.
               break;
             } else if (piece == "Identifier") {
               is_parsing = true;
@@ -1159,8 +1188,7 @@ void GesturePropertyProvider::ParseXorgConfFile(const std::string& content) {
 internal::MatchCriteria* GesturePropertyProvider::CreateMatchCriteria(
     const std::string& match_type,
     const std::string& arg) {
-  GPROP_LOG(INFO_SEVERITY) << "Creating match criteria: (" << match_type << ", "
-                           << arg << ")";
+  DVLOG(2) << "Creating match criteria: (" << match_type << ", " << arg << ")";
   if (match_type == "MatchProduct")
     return new internal::MatchProduct(arg);
   if (match_type == "MatchDevicePath")
@@ -1190,8 +1218,7 @@ GesturesProp* GesturePropertyProvider::CreateDefaultProperty(
   // 5. The property is treated as numeric if and only if all of its elements
   //    (if any) are numerics. Otherwise, it will be treated as a string.
   // 6. A string property will be trimmed before storing its value.
-  GPROP_LOG(INFO_SEVERITY) << "Creating default property: (" << name << ", "
-                           << value << ")";
+  DVLOG(2) << "Creating default property: (" << name << ", " << value << ")";
 
   // Parse elements one-by-one.
   std::string delimiters(base::kWhitespaceASCII);
@@ -1232,7 +1259,7 @@ GesturesProp* GesturePropertyProvider::CreateDefaultProperty(
     property = new GesturesStringProp(name, NULL, value.c_str(), NULL);
   }
 
-  GPROP_LOG(INFO_SEVERITY) << "Prop: " << *property;
+  DVLOG(2) << "Prop: " << *property;
   // The function will always succeed for now but it may change later if we
   // specify some name or args as invalid.
   return property;
@@ -1240,18 +1267,16 @@ GesturesProp* GesturePropertyProvider::CreateDefaultProperty(
 
 void GesturePropertyProvider::SetupDefaultProperties(const DeviceId device_id,
                                                      const DevicePtr device) {
-  GPROP_LOG(INFO_SEVERITY) << "Setting up default properties for (" << device
-                           << ", " << device_id << ", " << device->info.name
-                           << ")";
+  DVLOG(2) << "Setting up default properties for (" << device << ", "
+           << device_id << ", " << device->info.name << ")";
 
   // Go through all parsed sections.
   internal::PropertiesMap& property_map =
       device_data_map_.get(device_id)->default_properties;
   for (size_t i = 0; i < configurations_.size(); ++i) {
     if (configurations_[i]->Match(device)) {
-      GPROP_LOG(INFO_SEVERITY) << "Conf section \""
-                               << configurations_[i]->identifier
-                               << "\" is matched";
+      DVLOG(2) << "Conf section \"" << configurations_[i]->identifier
+               << "\" is matched";
       for (size_t j = 0; j < configurations_[i]->properties.size(); j++) {
         GesturesProp* property = configurations_[i]->properties[j];
         // We can't use insert here because a property may be set for several
@@ -1334,7 +1359,7 @@ void GesturesPropFunctionsWrapper::Free(void* device_data,
 
   // No need to manually delete the prop pointer as it is implicitly handled
   // with scoped ptr.
-  GPROP_LOG(3) << "Freeing Property: \"" << property->name() << "\"";
+  DVLOG(3) << "Freeing Property: \"" << property->name() << "\"";
   provider->DeleteProperty(GetDeviceId(device_data), property->name());
 }
 
@@ -1400,8 +1425,8 @@ bool GesturesPropFunctionsWrapper::InitializeDeviceProperties(
   // set.
   GesturesProp* dump_debug_log_prop = CreateBoolSingle(
       device_data, "Dump Debug Log", &properties->dump_debug_log, false);
-  RegisterHandlers(
-      device_data, dump_debug_log_prop, device, NULL, Event_Dump_Debug_Log);
+  RegisterHandlers(device_data, dump_debug_log_prop, device, NULL,
+                   DumpTouchEvdevDebugLog);
 
   // Whether to do the gesture recognition or just passing the multi-touch data
   // to upper layers.
@@ -1446,7 +1471,7 @@ bool GesturesPropFunctionsWrapper::PreCreateProperty(
   provider->RegisterDevice(device_id, GetDevicePointer(device_data));
 
   // First, see if the GesturesProp already exists.
-  GPROP_LOG(3) << "Creating Property: \"" << name << "\"";
+  DVLOG(3) << "Creating Property: \"" << name << "\"";
   GesturesProp* property = provider->FindProperty(device_id, name);
 
   // If so, delete it as we can't reuse the data structure (newly-created
@@ -1472,7 +1497,7 @@ void GesturesPropFunctionsWrapper::PostCreateProperty(void* device_data,
   provider->AddProperty(GetDeviceId(device_data), name, property);
 
   // Log the creation.
-  GPROP_LOG(INFO_SEVERITY) << "Created active prop: " << *property;
+  DVLOG(3) << "Created active prop: " << *property;
 }
 
 GesturesProp* GesturesPropFunctionsWrapper::CreateIntSingle(void* device_data,

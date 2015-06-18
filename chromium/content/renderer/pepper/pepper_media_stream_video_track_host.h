@@ -14,7 +14,7 @@
 #include "ppapi/c/ppb_video_frame.h"
 #include "ppapi/shared_impl/media_stream_video_track_shared.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 
@@ -56,7 +56,6 @@ class PepperMediaStreamVideoTrackHost : public PepperMediaStreamTrackHostBase,
   int32_t SendFrameToTrack(int32_t index);
 
   void OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame,
-                    const media::VideoCaptureFormat& format,
                     const base::TimeTicks& estimated_capture_time);
 
   // MediaStreamVideoSource overrides:
@@ -68,6 +67,7 @@ class PepperMediaStreamVideoTrackHost : public PepperMediaStreamTrackHostBase,
 
   void StartSourceImpl(
       const media::VideoCaptureFormat& format,
+      const blink::WebMediaConstraints& constraints,
       const VideoCaptureDeliverFrameCB& frame_callback) override;
 
   void StopSourceImpl() override;

@@ -67,7 +67,8 @@ QuicTime::Delta QuicTime::Delta::Multiply(int i) const {
 }
 
 QuicTime::Delta QuicTime::Delta::Multiply(double d) const {
-  return QuicTime::Delta::FromMicroseconds(ToMicroseconds() * d);
+  return QuicTime::Delta::FromMicroseconds(
+      static_cast<int64>(ToMicroseconds() * d));
 }
 
 // static
@@ -172,6 +173,7 @@ QuicWallTime QuicWallTime::Add(QuicTime::Delta delta) const {
   return QuicWallTime(seconds);
 }
 
+// TODO(ianswett) Test this.
 QuicWallTime QuicWallTime::Subtract(QuicTime::Delta delta) const {
   uint64 seconds = seconds_ - delta.ToSeconds();
   if (seconds > seconds_) {

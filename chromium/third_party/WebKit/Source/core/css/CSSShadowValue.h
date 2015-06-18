@@ -21,6 +21,7 @@
 #ifndef CSSShadowValue_h
 #define CSSShadowValue_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -30,7 +31,7 @@ namespace blink {
 class CSSPrimitiveValue;
 
 // Used for text-shadow and box-shadow
-class CSSShadowValue : public CSSValue {
+class CORE_EXPORT CSSShadowValue : public CSSValue {
 public:
     static PassRefPtrWillBeRawPtr<CSSShadowValue> create(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> x,
         PassRefPtrWillBeRawPtr<CSSPrimitiveValue> y,
@@ -53,7 +54,7 @@ public:
     RefPtrWillBeMember<CSSPrimitiveValue> style;
     RefPtrWillBeMember<CSSPrimitiveValue> color;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     CSSShadowValue(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> x,

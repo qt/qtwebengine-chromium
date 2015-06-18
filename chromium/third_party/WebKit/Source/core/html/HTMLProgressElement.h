@@ -21,14 +21,15 @@
 #ifndef HTMLProgressElement_h
 #define HTMLProgressElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/LabelableElement.h"
 
 namespace blink {
 
 class ProgressValueElement;
-class RenderProgress;
+class LayoutProgress;
 
-class HTMLProgressElement final : public LabelableElement {
+class CORE_EXPORT HTMLProgressElement final : public LabelableElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static const double IndeterminatePosition;
@@ -46,18 +47,19 @@ public:
 
     virtual bool canContainRangeEndPoint() const override { return false; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit HTMLProgressElement(Document&);
     virtual ~HTMLProgressElement();
 
     virtual bool areAuthorShadowsAllowed() const override { return false; }
+    virtual void willAddFirstOpenShadowRoot() override;
     virtual bool shouldAppearIndeterminate() const override;
     virtual bool supportLabels() const override { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
-    RenderProgress* renderProgress() const;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    LayoutProgress* layoutProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 

@@ -17,6 +17,8 @@
 // Format" Color Font Technology and MATH layout support'. Meanwhile, you can
 // contact Microsoft's engineer Murray Sargent to obtain a copy.
 
+#define TABLE_NAME "MATH"
+
 namespace {
 
 // The size of MATH header.
@@ -48,7 +50,8 @@ const unsigned kGlyphPartRecordSize = 5 * 2;
 
 // Shared Table: MathValueRecord
 
-bool ParseMathValueRecord(ots::Buffer* subtable, const uint8_t *data,
+bool ParseMathValueRecord(const ots::OpenTypeFile *file,
+                          ots::Buffer* subtable, const uint8_t *data,
                           const size_t length) {
   // Check the Value field.
   if (!subtable->Skip(2)) {
@@ -64,7 +67,7 @@ bool ParseMathValueRecord(ots::Buffer* subtable, const uint8_t *data,
     if (offset >= length) {
       return OTS_FAILURE();
     }
-    if (!ots::ParseDeviceTable(data + offset, length - offset)) {
+    if (!ots::ParseDeviceTable(file, data + offset, length - offset)) {
       return OTS_FAILURE();
     }
   }
@@ -72,7 +75,8 @@ bool ParseMathValueRecord(ots::Buffer* subtable, const uint8_t *data,
   return true;
 }
 
-bool ParseMathConstantsTable(const uint8_t *data, size_t length) {
+bool ParseMathConstantsTable(const ots::OpenTypeFile *file,
+                             const uint8_t *data, size_t length) {
   ots::Buffer subtable(data, length);
 
   // Part 1: int16 or uint16 constants.
@@ -142,7 +146,7 @@ bool ParseMathConstantsTable(const uint8_t *data, size_t length) {
   //
   // RadicalKernAfterDegree
   for (unsigned i = 0; i < static_cast<unsigned>(51); ++i) {
-    if (!ParseMathValueRecord(&subtable, data, length)) {
+    if (!ParseMathValueRecord(file, &subtable, data, length)) {
       return OTS_FAILURE();
     }
   }
@@ -156,7 +160,8 @@ bool ParseMathConstantsTable(const uint8_t *data, size_t length) {
   return true;
 }
 
-bool ParseMathValueRecordSequenceForGlyphs(ots::Buffer* subtable,
+bool ParseMathValueRecordSequenceForGlyphs(const ots::OpenTypeFile *file,
+                                           ots::Buffer* subtable,
                                            const uint8_t *data,
                                            const size_t length,
                                            const uint16_t num_glyphs) {
@@ -178,7 +183,7 @@ bool ParseMathValueRecordSequenceForGlyphs(ots::Buffer* subtable,
   if (offset_coverage < sequence_end || offset_coverage >= length) {
     return OTS_FAILURE();
   }
-  if (!ots::ParseCoverageTable(data + offset_coverage,
+  if (!ots::ParseCoverageTable(file, data + offset_coverage,
                                length - offset_coverage,
                                num_glyphs, sequence_count)) {
     return OTS_FAILURE();
@@ -186,7 +191,7 @@ bool ParseMathValueRecordSequenceForGlyphs(ots::Buffer* subtable,
 
   // Check sequence.
   for (unsigned i = 0; i < sequence_count; ++i) {
-    if (!ParseMathValueRecord(subtable, data, length)) {
+    if (!ParseMathValueRecord(file, subtable, data, length)) {
       return OTS_FAILURE();
     }
   }
@@ -194,23 +199,26 @@ bool ParseMathValueRecordSequenceForGlyphs(ots::Buffer* subtable,
   return true;
 }
 
-bool ParseMathItalicsCorrectionInfoTable(const uint8_t *data,
+bool ParseMathItalicsCorrectionInfoTable(const ots::OpenTypeFile *file,
+                                         const uint8_t *data,
                                          size_t length,
                                          const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
-  return ParseMathValueRecordSequenceForGlyphs(&subtable, data, length,
+  return ParseMathValueRecordSequenceForGlyphs(file, &subtable, data, length,
                                                num_glyphs);
 }
 
-bool ParseMathTopAccentAttachmentTable(const uint8_t *data,
+bool ParseMathTopAccentAttachmentTable(const ots::OpenTypeFile *file,
+                                       const uint8_t *data,
                                        size_t length,
                                        const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
-  return ParseMathValueRecordSequenceForGlyphs(&subtable, data, length,
+  return ParseMathValueRecordSequenceForGlyphs(file, &subtable, data, length,
                                                num_glyphs);
 }
 
-bool ParseMathKernTable(const uint8_t *data, size_t length) {
+bool ParseMathKernTable(const ots::OpenTypeFile *file,
+                        const uint8_t *data, size_t length) {
   ots::Buffer subtable(data, length);
 
   // Check the Height count.
@@ -221,14 +229,14 @@ bool ParseMathKernTable(const uint8_t *data, size_t length) {
 
   // Check the Correction Heights.
   for (unsigned i = 0; i < height_count; ++i) {
-    if (!ParseMathValueRecord(&subtable, data, length)) {
+    if (!ParseMathValueRecord(file, &subtable, data, length)) {
       return OTS_FAILURE();
     }
   }
 
   // Check the Kern Values.
   for (unsigned i = 0; i <= height_count; ++i) {
-    if (!ParseMathValueRecord(&subtable, data, length)) {
+    if (!ParseMathValueRecord(file, &subtable, data, length)) {
       return OTS_FAILURE();
     }
   }
@@ -236,7 +244,8 @@ bool ParseMathKernTable(const uint8_t *data, size_t length) {
   return true;
 }
 
-bool ParseMathKernInfoTable(const uint8_t *data, size_t length,
+bool ParseMathKernInfoTable(const ots::OpenTypeFile *file,
+                            const uint8_t *data, size_t length,
                             const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
 
@@ -258,7 +267,7 @@ bool ParseMathKernInfoTable(const uint8_t *data, size_t length,
   if (offset_coverage < sequence_end || offset_coverage >= length) {
     return OTS_FAILURE();
   }
-  if (!ots::ParseCoverageTable(data + offset_coverage, length - offset_coverage,
+  if (!ots::ParseCoverageTable(file, data + offset_coverage, length - offset_coverage,
                                num_glyphs, sequence_count)) {
     return OTS_FAILURE();
   }
@@ -273,7 +282,7 @@ bool ParseMathKernInfoTable(const uint8_t *data, size_t length,
       }
       if (offset_math_kern) {
         if (offset_math_kern < sequence_end || offset_math_kern >= length ||
-            !ParseMathKernTable(data + offset_math_kern,
+            !ParseMathKernTable(file, data + offset_math_kern,
                                 length - offset_math_kern)) {
           return OTS_FAILURE();
         }
@@ -284,7 +293,8 @@ bool ParseMathKernInfoTable(const uint8_t *data, size_t length,
   return true;
 }
 
-bool ParseMathGlyphInfoTable(const uint8_t *data, size_t length,
+bool ParseMathGlyphInfoTable(const ots::OpenTypeFile *file,
+                             const uint8_t *data, size_t length,
                              const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
 
@@ -308,7 +318,7 @@ bool ParseMathGlyphInfoTable(const uint8_t *data, size_t length,
     if (offset_math_italics_correction_info >= length ||
         offset_math_italics_correction_info < kMathGlyphInfoHeaderSize ||
         !ParseMathItalicsCorrectionInfoTable(
-            data + offset_math_italics_correction_info,
+            file, data + offset_math_italics_correction_info,
             length - offset_math_italics_correction_info,
             num_glyphs)) {
       return OTS_FAILURE();
@@ -317,7 +327,7 @@ bool ParseMathGlyphInfoTable(const uint8_t *data, size_t length,
   if (offset_math_top_accent_attachment) {
     if (offset_math_top_accent_attachment >= length ||
         offset_math_top_accent_attachment < kMathGlyphInfoHeaderSize ||
-        !ParseMathTopAccentAttachmentTable(data +
+        !ParseMathTopAccentAttachmentTable(file, data +
                                            offset_math_top_accent_attachment,
                                            length -
                                            offset_math_top_accent_attachment,
@@ -328,7 +338,7 @@ bool ParseMathGlyphInfoTable(const uint8_t *data, size_t length,
   if (offset_extended_shaped_coverage) {
     if (offset_extended_shaped_coverage >= length ||
         offset_extended_shaped_coverage < kMathGlyphInfoHeaderSize ||
-        !ots::ParseCoverageTable(data + offset_extended_shaped_coverage,
+        !ots::ParseCoverageTable(file, data + offset_extended_shaped_coverage,
                                  length - offset_extended_shaped_coverage,
                                  num_glyphs)) {
       return OTS_FAILURE();
@@ -337,7 +347,7 @@ bool ParseMathGlyphInfoTable(const uint8_t *data, size_t length,
   if (offset_math_kern_info) {
     if (offset_math_kern_info >= length ||
         offset_math_kern_info < kMathGlyphInfoHeaderSize ||
-        !ParseMathKernInfoTable(data + offset_math_kern_info,
+        !ParseMathKernInfoTable(file, data + offset_math_kern_info,
                                 length - offset_math_kern_info, num_glyphs)) {
       return OTS_FAILURE();
     }
@@ -346,13 +356,14 @@ bool ParseMathGlyphInfoTable(const uint8_t *data, size_t length,
   return true;
 }
 
-bool ParseGlyphAssemblyTable(const uint8_t *data,
+bool ParseGlyphAssemblyTable(const ots::OpenTypeFile *file,
+                             const uint8_t *data,
                              size_t length, const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
 
   // Check the header.
   uint16_t part_count = 0;
-  if (!ParseMathValueRecord(&subtable, data, length) ||
+  if (!ParseMathValueRecord(file, &subtable, data, length) ||
       !subtable.ReadU16(&part_count)) {
     return OTS_FAILURE();
   }
@@ -373,19 +384,18 @@ bool ParseGlyphAssemblyTable(const uint8_t *data,
       return OTS_FAILURE();
     }
     if (glyph >= num_glyphs) {
-      OTS_WARNING("bad glyph ID: %u", glyph);
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("bad glyph ID: %u", glyph);
     }
     if (part_flags & ~0x00000001) {
-      OTS_WARNING("unknown part flag: %u", part_flags);
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("unknown part flag: %u", part_flags);
     }
   }
 
   return true;
 }
 
-bool ParseMathGlyphConstructionTable(const uint8_t *data,
+bool ParseMathGlyphConstructionTable(const ots::OpenTypeFile *file,
+                                     const uint8_t *data,
                                      size_t length, const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
 
@@ -409,7 +419,7 @@ bool ParseMathGlyphConstructionTable(const uint8_t *data,
         offset_glyph_assembly < sequence_end) {
       return OTS_FAILURE();
     }
-    if (!ParseGlyphAssemblyTable(data + offset_glyph_assembly,
+    if (!ParseGlyphAssemblyTable(file, data + offset_glyph_assembly,
                                  length - offset_glyph_assembly, num_glyphs)) {
       return OTS_FAILURE();
     }
@@ -423,15 +433,15 @@ bool ParseMathGlyphConstructionTable(const uint8_t *data,
       return OTS_FAILURE();
     }
     if (glyph >= num_glyphs) {
-      OTS_WARNING("bad glyph ID: %u", glyph);
-      return OTS_FAILURE();
+      return OTS_FAILURE_MSG("bad glyph ID: %u", glyph);
     }
   }
 
   return true;
 }
 
-bool ParseMathGlyphConstructionSequence(ots::Buffer* subtable,
+bool ParseMathGlyphConstructionSequence(const ots::OpenTypeFile *file,
+                                        ots::Buffer* subtable,
                                         const uint8_t *data,
                                         size_t length,
                                         const uint16_t num_glyphs,
@@ -442,7 +452,7 @@ bool ParseMathGlyphConstructionSequence(ots::Buffer* subtable,
   if (offset_coverage < sequence_end || offset_coverage >= length) {
     return OTS_FAILURE();
   }
-  if (!ots::ParseCoverageTable(data + offset_coverage,
+  if (!ots::ParseCoverageTable(file, data + offset_coverage,
                                length - offset_coverage,
                                num_glyphs, glyph_count)) {
     return OTS_FAILURE();
@@ -456,7 +466,7 @@ bool ParseMathGlyphConstructionSequence(ots::Buffer* subtable,
       }
       if (offset_glyph_construction < sequence_end ||
           offset_glyph_construction >= length ||
-          !ParseMathGlyphConstructionTable(data + offset_glyph_construction,
+          !ParseMathGlyphConstructionTable(file, data + offset_glyph_construction,
                                            length - offset_glyph_construction,
                                            num_glyphs)) {
         return OTS_FAILURE();
@@ -466,7 +476,8 @@ bool ParseMathGlyphConstructionSequence(ots::Buffer* subtable,
   return true;
 }
 
-bool ParseMathVariantsTable(const uint8_t *data,
+bool ParseMathVariantsTable(const ots::OpenTypeFile *file,
+                            const uint8_t *data,
                             size_t length, const uint16_t num_glyphs) {
   ots::Buffer subtable(data, length);
 
@@ -489,11 +500,11 @@ bool ParseMathVariantsTable(const uint8_t *data,
     return OTS_FAILURE();
   }
 
-  if (!ParseMathGlyphConstructionSequence(&subtable, data, length, num_glyphs,
+  if (!ParseMathGlyphConstructionSequence(file, &subtable, data, length, num_glyphs,
                                           offset_vert_glyph_coverage,
                                           vert_glyph_count,
                                           sequence_end) ||
-      !ParseMathGlyphConstructionSequence(&subtable, data, length, num_glyphs,
+      !ParseMathGlyphConstructionSequence(file, &subtable, data, length, num_glyphs,
                                           offset_horiz_glyph_coverage,
                                           horiz_glyph_count,
                                           sequence_end)) {
@@ -505,8 +516,12 @@ bool ParseMathVariantsTable(const uint8_t *data,
 
 }  // namespace
 
-#define DROP_THIS_TABLE \
-  do { file->math->data = 0; file->math->length = 0; } while (0)
+#define DROP_THIS_TABLE(msg_) \
+  do { \
+    OTS_FAILURE_MSG(msg_ ", table discarded"); \
+    file->math->data = 0; \
+    file->math->length = 0; \
+  } while (0)
 
 namespace ots {
 
@@ -528,8 +543,7 @@ bool ots_math_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
     return OTS_FAILURE();
   }
   if (version != 0x00010000) {
-    OTS_WARNING("bad MATH version");
-    DROP_THIS_TABLE;
+    DROP_THIS_TABLE("bad MATH version");
     return true;
   }
 
@@ -548,24 +562,23 @@ bool ots_math_parse(OpenTypeFile *file, const uint8_t *data, size_t length) {
       offset_math_glyph_info < kMathHeaderSize ||
       offset_math_variants >= length ||
       offset_math_variants < kMathHeaderSize) {
-    OTS_WARNING("bad offset in MATH header");
-    DROP_THIS_TABLE;
+    DROP_THIS_TABLE("bad offset in MATH header");
     return true;
   }
 
-  if (!ParseMathConstantsTable(data + offset_math_constants,
+  if (!ParseMathConstantsTable(file, data + offset_math_constants,
                                length - offset_math_constants)) {
-    DROP_THIS_TABLE;
+    DROP_THIS_TABLE("failed to parse MathConstants table");
     return true;
   }
-  if (!ParseMathGlyphInfoTable(data + offset_math_glyph_info,
+  if (!ParseMathGlyphInfoTable(file, data + offset_math_glyph_info,
                                length - offset_math_glyph_info, num_glyphs)) {
-    DROP_THIS_TABLE;
+    DROP_THIS_TABLE("failed to parse MathGlyphInfo table");
     return true;
   }
-  if (!ParseMathVariantsTable(data + offset_math_variants,
+  if (!ParseMathVariantsTable(file, data + offset_math_variants,
                               length - offset_math_variants, num_glyphs)) {
-    DROP_THIS_TABLE;
+    DROP_THIS_TABLE("failed to parse MathVariants table");
     return true;
   }
 
@@ -592,3 +605,5 @@ void ots_math_free(OpenTypeFile *file) {
 
 }  // namespace ots
 
+#undef TABLE_NAME
+#undef DROP_THIS_TABLE

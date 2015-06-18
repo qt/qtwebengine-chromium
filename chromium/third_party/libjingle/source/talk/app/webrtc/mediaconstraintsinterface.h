@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -75,6 +75,7 @@ class MediaConstraintsInterface {
   // These keys are google specific.
   static const char kEchoCancellation[];  // googEchoCancellation
   static const char kExperimentalEchoCancellation[];  // googEchoCancellation2
+  static const char kDAEchoCancellation[];  // googDAEchoCancellation
   static const char kAutoGainControl[];  // googAutoGainControl
   static const char kExperimentalAutoGainControl[];  // googAutoGainControl2
   static const char kNoiseSuppression[];  // googNoiseSuppression
@@ -82,6 +83,7 @@ class MediaConstraintsInterface {
   static const char kHighpassFilter[];  // googHighpassFilter
   static const char kTypingNoiseDetection[];  // googTypingNoiseDetection
   static const char kAudioMirroring[];  // googAudioMirroring
+  static const char kAecDump[];               // audioDebugRecording
 
   // Google-specific constraint keys for a local video source
   static const char kNoiseReduction[];  // googNoiseReduction

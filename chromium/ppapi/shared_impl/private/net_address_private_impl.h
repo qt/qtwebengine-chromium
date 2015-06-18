@@ -27,15 +27,17 @@ class PPAPI_SHARED_EXPORT NetAddressPrivateImpl {
                                    PP_NetAddress_Private* net_addr);
 
   static bool IPEndPointToNetAddress(const std::vector<unsigned char>& address,
-                                     int port,
+                                     uint16 port,
                                      PP_NetAddress_Private* net_addr);
 
   static bool NetAddressToIPEndPoint(const PP_NetAddress_Private& net_addr,
                                      std::vector<unsigned char>* address,
-                                     int* port);
+                                     uint16* port);
 
   static std::string DescribeNetAddress(const PP_NetAddress_Private& addr,
                                         bool include_port);
+
+  static void GetAnyAddress(PP_Bool is_ipv6, PP_NetAddress_Private* addr);
 
   // Conversion methods to make PPB_NetAddress resource work with
   // PP_NetAddress_Private.

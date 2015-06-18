@@ -46,7 +46,7 @@ function setClassFromValue(value) {
 }
 
 // Allow signin_index.html to access the functions above using the
-// corresponding chrome.signin.<method> calls.
+// corresponding chrome.signin<method> calls.
 chrome.signin['highlightIfChanged'] = highlightIfChanged;
 chrome.signin['highlightIfAnyChanged'] = highlightIfAnyChanged;
 chrome.signin['setClassFromValue'] = setClassFromValue;
@@ -168,6 +168,7 @@ function refreshSigninInfo(signinInfo) {
   chrome.signin.internalsInfo = signinInfo;
   jstProcess(new JsEvalContext(signinInfo), $('signin-info'));
   jstProcess(new JsEvalContext(signinInfo), $('token-info'));
+  jstProcess(new JsEvalContext(signinInfo), $('account-info'));
 }
 
 // Replace the cookie information with the fetched values.

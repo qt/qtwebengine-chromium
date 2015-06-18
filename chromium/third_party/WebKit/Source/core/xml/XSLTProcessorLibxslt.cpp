@@ -23,10 +23,10 @@
 #include "config.h"
 #include "core/xml/XSLTProcessor.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/TransformSource.h"
 #include "core/editing/markup.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/FrameConsole.h"
@@ -194,11 +194,10 @@ static const char** xsltParamArrayFromParameterMap(XSLTProcessor::ParameterMap& 
 
     const char** parameterArray = static_cast<const char**>(fastMalloc(((parameters.size() * 2) + 1) * sizeof(char*)));
 
-    XSLTProcessor::ParameterMap::iterator end = parameters.end();
     unsigned index = 0;
-    for (XSLTProcessor::ParameterMap::iterator it = parameters.begin(); it != end; ++it) {
-        parameterArray[index++] = fastStrDup(it->key.utf8().data());
-        parameterArray[index++] = fastStrDup(it->value.utf8().data());
+    for (auto& parameter : parameters) {
+        parameterArray[index++] = fastStrDup(parameter.key.utf8().data());
+        parameterArray[index++] = fastStrDup(parameter.value.utf8().data());
     }
     parameterArray[index] = 0;
 
@@ -249,7 +248,7 @@ static inline xmlDocPtr xmlDocPtrFromNode(Node* sourceNode, bool& shouldDelete)
     if (sourceIsDocument && ownerDocument->transformSource())
         sourceDoc = (xmlDocPtr)ownerDocument->transformSource()->platformSource();
     if (!sourceDoc) {
-        sourceDoc = (xmlDocPtr)xmlDocPtrForString(ownerDocument->fetcher(), createMarkup(sourceNode),
+        sourceDoc = (xmlDocPtr)xmlDocPtrForString(ownerDocument.get(), createMarkup(sourceNode),
             sourceIsDocument ? ownerDocument->url().string() : String());
         shouldDelete = sourceDoc;
     }

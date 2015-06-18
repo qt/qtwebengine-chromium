@@ -22,10 +22,10 @@
 #include "config.h"
 #include "core/css/StyleRuleImport.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/fetch/CSSStyleSheetResource.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 
@@ -59,7 +59,7 @@ StyleRuleImport::~StyleRuleImport()
         m_resource->removeClient(&m_styleSheetClient);
 }
 
-void StyleRuleImport::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRuleImport)
 {
     visitor->trace(m_parentStyleSheet);
     visitor->trace(m_mediaQueries);

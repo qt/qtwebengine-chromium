@@ -31,15 +31,16 @@
 #ifndef SurroundingText_h
 #define SurroundingText_h
 
+#include "core/CoreExport.h"
+#include "core/dom/Position.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class Position;
 class Range;
 
-class SurroundingText {
+class CORE_EXPORT SurroundingText {
     WTF_MAKE_NONCOPYABLE(SurroundingText);
 public:
     SurroundingText(const Range&, unsigned maxLength);

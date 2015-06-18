@@ -48,7 +48,7 @@ class CSSStyleSheet;
 class Document;
 class Element;
 class ExceptionState;
-class InspectorPageAgent;
+class InspectorCSSAgent;
 class InspectorResourceAgent;
 class InspectorStyleSheetBase;
 
@@ -96,7 +96,7 @@ public:
 
     bool hasRawText() const { return !rawText.isEmpty(); }
 
-    void trace(Visitor* visitor) { visitor->trace(sourceData); }
+    DEFINE_INLINE_TRACE() { visitor->trace(sourceData); }
 
     CSSPropertySourceData sourceData;
     bool hasSource;
@@ -114,7 +114,7 @@ public:
     bool styleText(String* result) const;
     bool textForRange(const SourceRange&, String* result) const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     InspectorStyle(const InspectorCSSId&, PassRefPtrWillBeRawPtr<CSSStyleDeclaration>, InspectorStyleSheetBase* parentStyleSheet);
@@ -146,7 +146,7 @@ public:
         virtual void didReparseStyleSheet() = 0;
     };
     virtual ~InspectorStyleSheetBase() { }
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     String id() const { return m_id; }
 
@@ -189,10 +189,10 @@ private:
 
 class InspectorStyleSheet : public InspectorStyleSheetBase {
 public:
-    static PassRefPtrWillBeRawPtr<InspectorStyleSheet> create(InspectorPageAgent*, InspectorResourceAgent*, const String& id, PassRefPtrWillBeRawPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum, const String& documentURL, Listener*);
+    static PassRefPtrWillBeRawPtr<InspectorStyleSheet> create(InspectorResourceAgent*, const String& id, PassRefPtrWillBeRawPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum, const String& documentURL, InspectorCSSAgent*);
 
     virtual ~InspectorStyleSheet();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     String finalURL() const;
     virtual Document* ownerDocument() const override;
@@ -200,6 +200,8 @@ public:
     virtual bool getText(String* result) const override;
     String ruleSelector(const InspectorCSSId&, ExceptionState&);
     bool setRuleSelector(const InspectorCSSId&, const String& selector, ExceptionState&);
+    String mediaRuleText(const InspectorCSSId&, ExceptionState&);
+    bool setMediaRuleText(const InspectorCSSId&, const String& text, ExceptionState&);
     CSSStyleRule* addRule(const String& ruleText, const SourceRange& location, ExceptionState&);
     bool deleteRule(const InspectorCSSId&, const String& oldText, ExceptionState&);
 
@@ -213,12 +215,14 @@ public:
 
     InspectorCSSId ruleId(CSSStyleRule*) const;
     CSSStyleRule* ruleForId(const InspectorCSSId&) const;
+    CSSMediaRule* mediaRuleForId(const InspectorCSSId&) const;
 
     virtual InspectorCSSId styleId(CSSStyleDeclaration*) const override;
     virtual CSSStyleDeclaration* styleForId(const InspectorCSSId&) const override;
     virtual bool setStyleText(const InspectorCSSId&, const String&) override;
 
     bool findRuleBySelectorRange(const SourceRange&, InspectorCSSId*);
+    bool findMediaRuleByRange(const SourceRange&, InspectorCSSId*);
 
     const CSSRuleVector& flatRules();
 
@@ -231,12 +235,14 @@ protected:
     virtual bool ensureParsedDataReady() override;
 
 private:
-    InspectorStyleSheet(InspectorPageAgent*, InspectorResourceAgent*, const String& id, PassRefPtrWillBeRawPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum, const String& documentURL, Listener*);
+    InspectorStyleSheet(InspectorResourceAgent*, const String& id, PassRefPtrWillBeRawPtr<CSSStyleSheet> pageStyleSheet, TypeBuilder::CSS::StyleSheetOrigin::Enum, const String& documentURL, InspectorCSSAgent*);
     unsigned ruleIndexBySourceRange(const CSSMediaRule* parentMediaRule, const SourceRange&);
     CSSStyleRule* insertCSSOMRuleInStyleSheet(const SourceRange&, const String& ruleText, ExceptionState&);
     CSSStyleRule* insertCSSOMRuleInMediaRule(CSSMediaRule*, const SourceRange&, const String& ruleText, ExceptionState&);
     CSSStyleRule* insertCSSOMRuleBySourceRange(const SourceRange&, const String& ruleText, ExceptionState&);
     bool verifyRuleText(const String& ruleText);
+    bool verifySelectorText(const String& selectorText);
+    bool verifyMediaText(const String& mediaText);
     unsigned ruleIndexByStyle(CSSStyleDeclaration*) const;
     String sourceMapURL() const;
     String sourceURL() const;
@@ -255,7 +261,7 @@ private:
     void updateText(const String& newText);
     Element* ownerStyleElement() const;
 
-    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
     RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
     RefPtrWillBeMember<CSSStyleSheet> m_pageStyleSheet;
     TypeBuilder::CSS::StyleSheetOrigin::Enum m_origin;
@@ -278,7 +284,7 @@ public:
     virtual InspectorCSSId styleId(CSSStyleDeclaration* style) const override { return InspectorCSSId(id(), 0); }
     virtual bool setStyleText(const InspectorCSSId&, const String&) override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     virtual PassRefPtrWillBeRawPtr<InspectorStyle> inspectorStyleForId(const InspectorCSSId&) override;

@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/debug/leak_annotations.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
@@ -17,9 +18,10 @@
 #include "base/synchronization/lock.h"
 #include "gin/array_buffer.h"
 #include "gin/public/isolate_holder.h"
+#include "gin/v8_initializer.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_script.h"
 #include "url/gurl.h"
@@ -196,7 +198,7 @@ bool V8ObjectToUTF16String(v8::Local<v8::Value> object,
     return false;
 
   v8::HandleScope scope(isolate);
-  v8::Local<v8::String> str_object = object->ToString();
+  v8::Local<v8::String> str_object = object->ToString(isolate);
   if (str_object.IsEmpty())
     return false;
   *utf16_result = V8StringToUTF16(str_object);
@@ -211,7 +213,8 @@ bool GetHostnameArgument(const v8::FunctionCallbackInfo<v8::Value>& args,
   if (args.Length() == 0 || args[0].IsEmpty() || !args[0]->IsString())
     return false;
 
-  const base::string16 hostname_utf16 = V8StringToUTF16(args[0]->ToString());
+  const base::string16 hostname_utf16 =
+      V8StringToUTF16(v8::Local<v8::String>::Cast(args[0]));
 
   // If the hostname is already in ASCII, simply return it as is.
   if (base::IsStringASCII(hostname_utf16)) {
@@ -333,6 +336,68 @@ bool IsInNetEx(const std::string& ip_address, const std::string& ip_prefix) {
   return IPNumberMatchesPrefix(address, prefix, prefix_length_in_bits);
 }
 
+// Consider only single component domains like 'foo' as plain host names.
+bool IsPlainHostName(const std::string& hostname_utf8) {
+  if (hostname_utf8.find('.') != std::string::npos)
+    return false;
+
+  // IPv6 literals might not contain any periods, however are not considered
+  // plain host names.
+  IPAddressNumber unused;
+  return !ParseIPLiteralToNumber(hostname_utf8, &unused);
+}
+
+// All instances of ProxyResolverV8 share the same v8::Isolate. This isolate is
+// created lazily the first time it is needed and lives until process shutdown.
+// This creation might happen from any thread, as ProxyResolverV8 is typically
+// run in a threadpool.
+//
+// TODO(eroman): The lazily created isolate is never freed. Instead it should be
+// disposed once there are no longer any ProxyResolverV8 referencing it.
+class SharedIsolateFactory {
+ public:
+  SharedIsolateFactory() : has_initialized_v8_(false) {}
+
+  // Lazily creates a v8::Isolate, or returns the already created instance.
+  v8::Isolate* GetSharedIsolate() {
+    base::AutoLock l(lock_);
+
+    if (!holder_) {
+      // Do one-time initialization for V8.
+      if (!has_initialized_v8_) {
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+        gin::V8Initializer::LoadV8Snapshot();
+#endif
+
+        gin::IsolateHolder::Initialize(
+            gin::IsolateHolder::kNonStrictMode,
+            gin::ArrayBufferAllocator::SharedInstance());
+
+        has_initialized_v8_ = true;
+      }
+
+      holder_.reset(new gin::IsolateHolder(gin::IsolateHolder::kUseLocker));
+    }
+
+    return holder_->isolate();
+  }
+
+  v8::Isolate* GetSharedIsolateWithoutCreating() {
+    base::AutoLock l(lock_);
+    return holder_ ? holder_->isolate() : NULL;
+  }
+
+ private:
+  base::Lock lock_;
+  scoped_ptr<gin::IsolateHolder> holder_;
+  bool has_initialized_v8_;
+
+  DISALLOW_COPY_AND_ASSIGN(SharedIsolateFactory);
+};
+
+base::LazyInstance<SharedIsolateFactory>::Leaky g_isolate_factory =
+    LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 // ProxyResolverV8::Context ---------------------------------------------------
@@ -367,11 +432,9 @@ class ProxyResolverV8::Context {
     v8::Context::Scope function_scope(context);
 
     v8::Local<v8::Value> function;
-    if (!GetFindProxyForURL(&function)) {
-      js_bindings()->OnError(
-          -1, base::ASCIIToUTF16("FindProxyForURL() is undefined."));
-      return ERR_PAC_SCRIPT_FAILED;
-    }
+    int rv = GetFindProxyForURL(&function);
+    if (rv != OK)
+      return rv;
 
     v8::Local<v8::Value> argv[] = {
       ASCIIStringToV8String(isolate_, query_url.spec()),
@@ -393,7 +456,7 @@ class ProxyResolverV8::Context {
       return ERR_PAC_SCRIPT_FAILED;
     }
 
-    base::string16 ret_str = V8StringToUTF16(ret->ToString());
+    base::string16 ret_str = V8StringToUTF16(v8::Local<v8::String>::Cast(ret));
 
     if (!base::IsStringASCII(ret_str)) {
       // TODO(eroman): Rather than failing when a wide string is returned, we
@@ -437,6 +500,11 @@ class ProxyResolverV8::Context {
         v8::FunctionTemplate::New(isolate_, &DnsResolveCallback, v8_this);
     global_template->Set(ASCIILiteralToV8String(isolate_, "dnsResolve"),
                          dns_resolve_template);
+
+    v8::Local<v8::FunctionTemplate> is_plain_host_name_template =
+        v8::FunctionTemplate::New(isolate_, &IsPlainHostNameCallback, v8_this);
+    global_template->Set(ASCIILiteralToV8String(isolate_, "isPlainHostName"),
+                         is_plain_host_name_template);
 
     // Microsoft's PAC extensions:
 
@@ -492,23 +560,41 @@ class ProxyResolverV8::Context {
     // At a minimum, the FindProxyForURL() function must be defined for this
     // to be a legitimiate PAC script.
     v8::Local<v8::Value> function;
-    if (!GetFindProxyForURL(&function)) {
+    return GetFindProxyForURL(&function);
+  }
+
+ private:
+  int GetFindProxyForURL(v8::Local<v8::Value>* function) {
+    v8::Local<v8::Context> context =
+        v8::Local<v8::Context>::New(isolate_, v8_context_);
+
+    v8::TryCatch try_catch;
+
+    *function =
+        context->Global()->Get(
+            ASCIILiteralToV8String(isolate_, "FindProxyForURL"));
+
+    if (try_catch.HasCaught())
+      HandleError(try_catch.Message());
+
+    // The value should only be empty if an exception was thrown. Code
+    // defensively just in case.
+    DCHECK_EQ(function->IsEmpty(), try_catch.HasCaught());
+    if (function->IsEmpty() || try_catch.HasCaught()) {
       js_bindings()->OnError(
-          -1, base::ASCIIToUTF16("FindProxyForURL() is undefined."));
+          -1,
+          base::ASCIIToUTF16("Accessing FindProxyForURL threw an exception."));
+      return ERR_PAC_SCRIPT_FAILED;
+    }
+
+    if (!(*function)->IsFunction()) {
+      js_bindings()->OnError(
+          -1, base::ASCIIToUTF16(
+                  "FindProxyForURL is undefined or not a function."));
       return ERR_PAC_SCRIPT_FAILED;
     }
 
     return OK;
-  }
-
- private:
-  bool GetFindProxyForURL(v8::Local<v8::Value>* function) {
-    v8::Local<v8::Context> context =
-        v8::Local<v8::Context>::New(isolate_, v8_context_);
-    *function =
-        context->Global()->Get(
-            ASCIILiteralToV8String(isolate_, "FindProxyForURL"));
-    return (*function)->IsFunction();
   }
 
   // Handle an exception thrown by V8.
@@ -656,7 +742,8 @@ class ProxyResolverV8::Context {
       return;
     }
 
-    std::string ip_address_list = V8StringToUTF8(args[0]->ToString());
+    std::string ip_address_list =
+        V8StringToUTF8(v8::Local<v8::String>::Cast(args[0]));
     if (!base::IsStringASCII(ip_address_list)) {
       args.GetReturnValue().SetNull();
       return;
@@ -681,17 +768,35 @@ class ProxyResolverV8::Context {
       return;
     }
 
-    std::string ip_address = V8StringToUTF8(args[0]->ToString());
+    std::string ip_address =
+        V8StringToUTF8(v8::Local<v8::String>::Cast(args[0]));
     if (!base::IsStringASCII(ip_address)) {
       args.GetReturnValue().Set(false);
       return;
     }
-    std::string ip_prefix = V8StringToUTF8(args[1]->ToString());
+    std::string ip_prefix =
+        V8StringToUTF8(v8::Local<v8::String>::Cast(args[1]));
     if (!base::IsStringASCII(ip_prefix)) {
       args.GetReturnValue().Set(false);
       return;
     }
     args.GetReturnValue().Set(IsInNetEx(ip_address, ip_prefix));
+  }
+
+  // V8 callback for when "isPlainHostName()" is invoked by the PAC script.
+  static void IsPlainHostNameCallback(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    // Need at least 1 string arguments.
+    if (args.Length() < 1 || args[0].IsEmpty() || !args[0]->IsString()) {
+      args.GetIsolate()->ThrowException(
+          v8::Exception::TypeError(ASCIIStringToV8String(
+              args.GetIsolate(), "Requires 1 string parameter")));
+      return;
+    }
+
+    std::string hostname_utf8 =
+        V8StringToUTF8(v8::Local<v8::String>::Cast(args[0]));
+    args.GetReturnValue().Set(IsPlainHostName(hostname_utf8));
   }
 
   mutable base::Lock lock_;
@@ -753,7 +858,8 @@ int ProxyResolverV8::SetPacScript(
     return ERR_PAC_SCRIPT_FAILED;
 
   // Try parsing the PAC script.
-  scoped_ptr<Context> context(new Context(this, GetDefaultIsolate()));
+  scoped_ptr<Context> context(
+      new Context(this, g_isolate_factory.Get().GetSharedIsolate()));
   int rv = context->InitV8(script_data);
   if (rv == OK)
     context_.reset(context.release());
@@ -761,45 +867,30 @@ int ProxyResolverV8::SetPacScript(
 }
 
 // static
-void ProxyResolverV8::EnsureIsolateCreated() {
-  if (g_proxy_resolver_isolate_)
-    return;
-  gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode,
-                                 gin::ArrayBufferAllocator::SharedInstance());
-  g_proxy_resolver_isolate_ = new gin::IsolateHolder;
-  ANNOTATE_LEAKING_OBJECT_PTR(g_proxy_resolver_isolate_);
-}
-
-// static
-v8::Isolate* ProxyResolverV8::GetDefaultIsolate() {
-  DCHECK(g_proxy_resolver_isolate_)
-      << "Must call ProxyResolverV8::EnsureIsolateCreated() first";
-  return g_proxy_resolver_isolate_->isolate();
-}
-
-gin::IsolateHolder* ProxyResolverV8::g_proxy_resolver_isolate_ = NULL;
-
-// static
 size_t ProxyResolverV8::GetTotalHeapSize() {
-  if (!g_proxy_resolver_isolate_)
+  v8::Isolate* isolate =
+      g_isolate_factory.Get().GetSharedIsolateWithoutCreating();
+  if (!isolate)
     return 0;
 
-  v8::Locker locked(g_proxy_resolver_isolate_->isolate());
-  v8::Isolate::Scope isolate_scope(g_proxy_resolver_isolate_->isolate());
+  v8::Locker locked(isolate);
+  v8::Isolate::Scope isolate_scope(isolate);
   v8::HeapStatistics heap_statistics;
-  g_proxy_resolver_isolate_->isolate()->GetHeapStatistics(&heap_statistics);
+  isolate->GetHeapStatistics(&heap_statistics);
   return heap_statistics.total_heap_size();
 }
 
 // static
 size_t ProxyResolverV8::GetUsedHeapSize() {
-  if (!g_proxy_resolver_isolate_)
+  v8::Isolate* isolate =
+      g_isolate_factory.Get().GetSharedIsolateWithoutCreating();
+  if (!isolate)
     return 0;
 
-  v8::Locker locked(g_proxy_resolver_isolate_->isolate());
-  v8::Isolate::Scope isolate_scope(g_proxy_resolver_isolate_->isolate());
+  v8::Locker locked(isolate);
+  v8::Isolate::Scope isolate_scope(isolate);
   v8::HeapStatistics heap_statistics;
-  g_proxy_resolver_isolate_->isolate()->GetHeapStatistics(&heap_statistics);
+  isolate->GetHeapStatistics(&heap_statistics);
   return heap_statistics.used_heap_size();
 }
 

@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2014, Google Inc.
+ * Copyright 2014 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -31,8 +31,12 @@
 
 #import "RTCOpenGLVideoRenderer.h"
 
+#include <string.h>
+
+#include "webrtc/base/scoped_ptr.h"
+
 #if TARGET_OS_IPHONE
-#import <OpenGLES/ES2/gl.h>
+#import <OpenGLES/ES3/gl.h>
 #else
 #import <OpenGL/gl3.h>
 #endif
@@ -178,6 +182,9 @@ static const GLsizei kNumTextures = 3 * kNumTextureSets;
   GLint _ySampler;
   GLint _uSampler;
   GLint _vSampler;
+  // Used to create a non-padded plane for GPU upload when we receive padded
+  // frames.
+  rtc::scoped_ptr<uint8_t[]> _planeBuffer;
 }
 
 + (void)initialize {
@@ -361,53 +368,91 @@ static const GLsizei kNumTextures = 3 * kNumTextureSets;
                  GL_UNSIGNED_BYTE,
                  0);
   }
+  if (frame.yPitch != frame.width || frame.uPitch != frame.chromaWidth ||
+      frame.vPitch != frame.chromaWidth) {
+    _planeBuffer.reset(new uint8_t[frame.width * frame.height]);
+  } else {
+    _planeBuffer.reset();
+  }
   return YES;
+}
+
+- (void)uploadPlane:(const uint8_t*)plane
+            sampler:(GLint)sampler
+             offset:(NSUInteger)offset
+              width:(NSUInteger)width
+             height:(NSUInteger)height
+             stride:(NSInteger)stride {
+  glActiveTexture(GL_TEXTURE0 + offset);
+  // When setting texture sampler uniforms, the texture index is used not
+  // the texture handle.
+  glUniform1i(sampler, offset);
+#if TARGET_OS_IPHONE
+  BOOL hasUnpackRowLength = _context.API == kEAGLRenderingAPIOpenGLES3;
+#else
+  BOOL hasUnpackRowLength = YES;
+#endif
+  const uint8_t* uploadPlane = plane;
+  if (stride != width) {
+   if (hasUnpackRowLength) {
+      // GLES3 allows us to specify stride.
+      glPixelStorei(GL_UNPACK_ROW_LENGTH, stride);
+      glTexImage2D(GL_TEXTURE_2D,
+                   0,
+                   RTC_PIXEL_FORMAT,
+                   width,
+                   height,
+                   0,
+                   RTC_PIXEL_FORMAT,
+                   GL_UNSIGNED_BYTE,
+                   uploadPlane);
+      glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+      return;
+    } else {
+      // Make an unpadded copy and upload that instead. Quick profiling showed
+      // that this is faster than uploading row by row using glTexSubImage2D.
+      uint8_t* unpaddedPlane = _planeBuffer.get();
+      for (NSUInteger y = 0; y < height; ++y) {
+        memcpy(unpaddedPlane + y * width, plane + y * stride, width);
+      }
+      uploadPlane = unpaddedPlane;
+    }
+  }
+  glTexImage2D(GL_TEXTURE_2D,
+               0,
+               RTC_PIXEL_FORMAT,
+               width,
+               height,
+               0,
+               RTC_PIXEL_FORMAT,
+               GL_UNSIGNED_BYTE,
+               uploadPlane);
 }
 
 - (BOOL)updateTextureDataForFrame:(RTCI420Frame*)frame {
   NSUInteger textureOffset = _currentTextureSet * 3;
   NSAssert(textureOffset + 3 <= kNumTextures, @"invalid offset");
-  NSParameterAssert(frame.yPitch == frame.width);
-  NSParameterAssert(frame.uPitch == frame.chromaWidth);
-  NSParameterAssert(frame.vPitch == frame.chromaWidth);
 
-  glActiveTexture(GL_TEXTURE0 + textureOffset);
-  // When setting texture sampler uniforms, the texture index is used not
-  // the texture handle.
-  glUniform1i(_ySampler, textureOffset);
-  glTexImage2D(GL_TEXTURE_2D,
-               0,
-               RTC_PIXEL_FORMAT,
-               frame.width,
-               frame.height,
-               0,
-               RTC_PIXEL_FORMAT,
-               GL_UNSIGNED_BYTE,
-               frame.yPlane);
+  [self uploadPlane:frame.yPlane
+            sampler:_ySampler
+             offset:textureOffset
+              width:frame.width
+             height:frame.height
+             stride:frame.yPitch];
 
-  glActiveTexture(GL_TEXTURE0 + textureOffset + 1);
-  glUniform1i(_uSampler, textureOffset + 1);
-  glTexImage2D(GL_TEXTURE_2D,
-               0,
-               RTC_PIXEL_FORMAT,
-               frame.chromaWidth,
-               frame.chromaHeight,
-               0,
-               RTC_PIXEL_FORMAT,
-               GL_UNSIGNED_BYTE,
-               frame.uPlane);
+  [self uploadPlane:frame.uPlane
+            sampler:_uSampler
+             offset:textureOffset + 1
+              width:frame.chromaWidth
+             height:frame.chromaHeight
+             stride:frame.uPitch];
 
-  glActiveTexture(GL_TEXTURE0 + textureOffset + 2);
-  glUniform1i(_vSampler, textureOffset + 2);
-  glTexImage2D(GL_TEXTURE_2D,
-               0,
-               RTC_PIXEL_FORMAT,
-               frame.chromaWidth,
-               frame.chromaHeight,
-               0,
-               RTC_PIXEL_FORMAT,
-               GL_UNSIGNED_BYTE,
-               frame.vPlane);
+  [self uploadPlane:frame.vPlane
+            sampler:_vSampler
+             offset:textureOffset + 2
+              width:frame.chromaWidth
+             height:frame.chromaHeight
+             stride:frame.vPitch];
 
   _currentTextureSet = (_currentTextureSet + 1) % kNumTextureSets;
   return YES;

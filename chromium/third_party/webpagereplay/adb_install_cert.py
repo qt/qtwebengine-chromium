@@ -40,9 +40,13 @@ class AndroidCertInstaller(object):
     self.cert_name = cert_name
     self.cert_path = cert_path
     self.file_name = os.path.basename(self.cert_path)
+    self.reformatted_cert_fname = None
+    self.reformatted_cert_path = None
+    self.android_cacerts_path = None
 
-  def _run_cmd(self, cmd):
-    return subprocess.check_output(cmd)
+  @staticmethod
+  def _run_cmd(cmd, dirname=None):
+    return subprocess.check_output(cmd, cwd=dirname)
 
   def _adb(self, *args):
     """Runs the adb command."""
@@ -80,7 +84,8 @@ class AndroidCertInstaller(object):
     """Inputs text."""
     self._adb('shell', 'input', 'text', text)
 
-  def _remove(self, file_name):
+  @staticmethod
+  def _remove(file_name):
     """Deletes file."""
     if os.path.exists(file_name):
       os.remove(file_name)
@@ -105,11 +110,26 @@ class AndroidCertInstaller(object):
             self.android_cacerts_path)
 
   def _generate_reformatted_cert_path(self):
+    # Determine OpenSSL version, string is of the form
+    # 'OpenSSL 0.9.8za 5 Jun 2014' .
+    openssl_version = self._run_cmd(['openssl', 'version']).split()
+
+    if len(openssl_version) < 2:
+      raise ValueError('Unexpected OpenSSL version string: ', openssl_version)
+
+    # subject_hash flag name changed as of OpenSSL version 1.0.0 .
+    is_old_openssl_version = openssl_version[1].startswith('0')
+    subject_hash_flag = (
+        '-subject_hash' if is_old_openssl_version else '-subject_hash_old')
+
     output = self._run_cmd(['openssl', 'x509', '-inform', 'PEM',
-                            '-subject_hash_old', '-in', self.cert_path])
-    self.reformatted_cert_path = output.partition('\n')[0].strip() + '.0'
-    self.android_cacerts_path = ('/system/etc/security/cacerts/%s'
-                                 % self.reformatted_cert_path)
+                            subject_hash_flag, '-in', self.cert_path],
+                           os.path.dirname(self.cert_path))
+    self.reformatted_cert_fname = output.partition('\n')[0].strip() + '.0'
+    self.reformatted_cert_path = os.path.join(os.path.dirname(self.cert_path),
+                                              self.reformatted_cert_fname)
+    self.android_cacerts_path = ('/system/etc/security/cacerts/%s' %
+                                 self.reformatted_cert_fname)
 
   def remove_cert(self):
     self._generate_reformatted_cert_path()
@@ -136,8 +156,8 @@ class AndroidCertInstaller(object):
     self._remove(self.reformatted_cert_path)
     self._adb_su_shell('mount', '-o', 'remount,rw', '/system')
     self._adb_su_shell(
-        'sh', '-c', 'cat /sdcard/%s > /system/etc/security/cacerts/%s'
-        % (self.reformatted_cert_path, self.reformatted_cert_path))
+        'cp', '/sdcard/%s' % self.reformatted_cert_fname,
+        '/system/etc/security/cacerts/%s' % self.reformatted_cert_fname)
     self._adb_su_shell('chmod', '644', self.android_cacerts_path)
     if not self._is_cert_installed():
       raise CertInstallError('Cert Install Failed')

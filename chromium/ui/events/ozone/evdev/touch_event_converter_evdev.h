@@ -9,6 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_pump_libevent.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
@@ -17,51 +18,70 @@
 
 namespace ui {
 
+class DeviceEventDispatcherEvdev;
 class TouchEvent;
+class TouchNoiseFinder;
+struct InProgressTouchEvdev;
 
 class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
     : public EventConverterEvdev {
  public:
-  enum {
-    MAX_FINGERS = 11
-  };
   TouchEventConverterEvdev(int fd,
                            base::FilePath path,
                            int id,
-                           const EventDeviceInfo& info,
-                           const EventDispatchCallback& dispatch);
+                           InputDeviceType type,
+                           const EventDeviceInfo& devinfo,
+                           DeviceEventDispatcherEvdev* dispatcher);
   ~TouchEventConverterEvdev() override;
 
   // EventConverterEvdev:
   bool HasTouchscreen() const override;
   gfx::Size GetTouchscreenSize() const override;
-  bool IsInternal() const override;
+  int GetTouchPoints() const override;
+  void OnStopped() override;
+
+  // Unsafe part of initialization.
+  virtual void Initialize(const EventDeviceInfo& info);
 
  private:
   friend class MockTouchEventConverterEvdev;
-
-  // Unsafe part of initialization.
-  void Init(const EventDeviceInfo& info);
 
   // Overidden from base::MessagePumpLibevent::Watcher.
   void OnFileCanReadWithoutBlocking(int fd) override;
 
   virtual bool Reinitialize();
 
-  void ProcessInputEvent(const input_event& input);
+  void ProcessMultitouchEvent(const input_event& input);
+  void EmulateMultitouchEvent(const input_event& input);
+  void ProcessKey(const input_event& input);
   void ProcessAbs(const input_event& input);
   void ProcessSyn(const input_event& input);
 
+  // Returns an EventType to dispatch for |touch|. Returns ET_UNKNOWN if an
+  // event should not be dispatched.
+  EventType GetEventTypeForTouch(const InProgressTouchEvdev& touch);
+
+  void ReportEvent(const InProgressTouchEvdev& event,
+                   EventType event_type,
+                   const base::TimeDelta& delta);
   void ReportEvents(base::TimeDelta delta);
 
-  // Callback for dispatching events.
-  EventDispatchCallback callback_;
+  void UpdateTrackingId(int slot, int tracking_id);
+  void ReleaseTouches();
+
+  // Normalize pressure value to [0, 1].
+  float ScalePressure(int32_t value);
+
+  int NextTrackingId();
+
+  // Dispatcher for events.
+  DeviceEventDispatcherEvdev* dispatcher_;
 
   // Set if we have seen a SYN_DROPPED and not yet re-synced with the device.
   bool syn_dropped_;
 
-  // Set if this is a type A device (uses SYN_MT_REPORT).
-  bool is_type_a_;
+  // Device has multitouch capability.
+  bool has_mt_;
 
   // Pressure values.
   int pressure_min_;
@@ -75,42 +95,20 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   float y_min_tuxels_;
   float y_num_tuxels_;
 
-  // Output range for x-axis.
-  float x_min_pixels_;
-  float x_num_pixels_;
+  // Number of touch points reported by driver
+  int touch_points_;
 
-  // Output range for y-axis.
-  float y_min_pixels_;
-  float y_num_pixels_;
-
-  // Size of the touchscreen as reported by the driver.
-  gfx::Size native_size_;
+  // Tracking id counter.
+  int next_tracking_id_;
 
   // Touch point currently being updated from the /dev/input/event* stream.
-  int current_slot_;
-
-  // Bit field tracking which in-progress touch points have been modified
-  // without a syn event.
-  std::bitset<MAX_FINGERS> altered_slots_;
-
-  struct InProgressEvents {
-    InProgressEvents();
-
-    float x_;
-    float y_;
-    int id_;  // Device reported "unique" touch point id; -1 means not active
-    int finger_;  // "Finger" id starting from 0; -1 means not active
-
-    EventType type_;
-    float radius_x_;
-    float radius_y_;
-    float pressure_;
-  };
+  size_t current_slot_;
 
   // In-progress touch points.
-  InProgressEvents events_[MAX_FINGERS];
+  std::vector<InProgressTouchEvdev> events_;
 
-  bool is_internal_;
+  // Finds touch noise.
+  scoped_ptr<TouchNoiseFinder> touch_noise_finder_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEventConverterEvdev);
 };

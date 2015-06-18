@@ -31,14 +31,28 @@
 #include "config.h"
 #include "bindings/core/v8/V8JavaScriptCallFrame.h"
 
-#include "bindings/core/v8/V8Binding.h"
-
 namespace blink {
+
+void V8JavaScriptCallFrame::evaluateWithExceptionDetailsMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
+{
+    JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toImpl(info.Holder());
+    v8SetReturnValue(info, impl->evaluateWithExceptionDetails(info[0], info[1]));
+}
 
 void V8JavaScriptCallFrame::restartMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toImpl(info.Holder());
     v8SetReturnValue(info, impl->restart());
+}
+
+void V8JavaScriptCallFrame::setVariableValueMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
+{
+    JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toImpl(info.Holder());
+    v8::Maybe<int32_t> maybeScopeIndex = info[0]->Int32Value(info.GetIsolate()->GetCurrentContext());
+    if (maybeScopeIndex.IsNothing())
+        return;
+    int scopeIndex = maybeScopeIndex.FromJust();
+    v8SetReturnValue(info, impl->setVariableValue(scopeIndex, info[1], info[2]));
 }
 
 void V8JavaScriptCallFrame::scopeChainAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -50,7 +64,10 @@ void V8JavaScriptCallFrame::scopeChainAttributeGetterCustom(const v8::PropertyCa
 void V8JavaScriptCallFrame::scopeTypeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toImpl(info.Holder());
-    int scopeIndex = info[0]->Int32Value();
+    v8::Maybe<int32_t> maybeScopeIndex = info[0]->Int32Value(info.GetIsolate()->GetCurrentContext());
+    if (maybeScopeIndex.IsNothing())
+        return;
+    int scopeIndex = maybeScopeIndex.FromJust();
     v8SetReturnValue(info, impl->scopeType(scopeIndex));
 }
 
@@ -64,11 +81,6 @@ void V8JavaScriptCallFrame::returnValueAttributeGetterCustom(const v8::PropertyC
 {
     JavaScriptCallFrame* impl = V8JavaScriptCallFrame::toImpl(info.Holder());
     v8SetReturnValue(info, impl->returnValue());
-}
-
-void V8JavaScriptCallFrame::typeAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
-{
-    v8SetReturnValue(info, v8AtomicString(info.GetIsolate(), "function"));
 }
 
 } // namespace blink

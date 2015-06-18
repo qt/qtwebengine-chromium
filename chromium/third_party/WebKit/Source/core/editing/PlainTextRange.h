@@ -26,6 +26,7 @@
 #ifndef PlainTextRange_h
 #define PlainTextRange_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/NotFound.h"
 #include "wtf/PassRefPtr.h"
@@ -35,7 +36,7 @@ namespace blink {
 class ContainerNode;
 class Range;
 
-class PlainTextRange {
+class CORE_EXPORT PlainTextRange {
 public:
     PlainTextRange();
     PlainTextRange(const PlainTextRange&);
@@ -54,7 +55,7 @@ public:
     static PlainTextRange create(const ContainerNode& scope, const Range&);
 
 private:
-    PlainTextRange& operator=(const PlainTextRange&)  WTF_DELETED_FUNCTION;
+    PlainTextRange& operator=(const PlainTextRange&) = delete;
 
     enum GetRangeFor { ForGeneric, ForSelection };
     PassRefPtrWillBeRawPtr<Range> createRangeFor(const ContainerNode& scope, GetRangeFor) const;

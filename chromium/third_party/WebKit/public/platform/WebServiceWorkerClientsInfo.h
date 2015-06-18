@@ -5,17 +5,41 @@
 #ifndef WebServiceWorkerClientsInfo_h
 #define WebServiceWorkerClientsInfo_h
 
-#include "WebCallbacks.h"
-#include "WebVector.h"
+#include "public/platform/WebCallbacks.h"
+#include "public/platform/WebPageVisibilityState.h"
+#include "public/platform/WebServiceWorkerClientType.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
+#include "public/platform/WebVector.h"
 
 namespace blink {
 
 struct WebServiceWorkerError;
 
-struct WebServiceWorkerClientsInfo {
-    WebVector<int> clientIDs;
+struct WebServiceWorkerClientInfo {
+    WebServiceWorkerClientInfo()
+        : pageVisibilityState(WebPageVisibilityStateLast)
+        , isFocused(false)
+        , frameType(WebURLRequest::FrameTypeNone)
+        , clientType(WebServiceWorkerClientTypeWindow)
+    {
+    }
+
+    WebString uuid;
+
+    WebPageVisibilityState pageVisibilityState;
+    bool isFocused;
+    WebURL url;
+    WebURLRequest::FrameType frameType;
+    WebServiceWorkerClientType clientType;
 };
 
+struct WebServiceWorkerClientsInfo {
+    WebVector<WebServiceWorkerClientInfo> clients;
+};
+
+// Two WebCallbacks, one for one client, one for a WebVector of clients.
+typedef WebCallbacks<WebServiceWorkerClientInfo, WebServiceWorkerError> WebServiceWorkerClientCallbacks;
 typedef WebCallbacks<WebServiceWorkerClientsInfo, WebServiceWorkerError> WebServiceWorkerClientsCallbacks;
 
 } // namespace blink

@@ -7,24 +7,20 @@
 
 namespace blink {
 
-class AffineTransform;
-class FloatRect;
-class ImageBuffer;
-class IntSize;
 struct PaintInfo;
-class RenderSVGImage;
+class LayoutSVGImage;
 
 class SVGImagePainter {
 public:
-    SVGImagePainter(RenderSVGImage& renderSVGImage) : m_renderSVGImage(renderSVGImage) { }
+    SVGImagePainter(LayoutSVGImage& layoutSVGImage) : m_layoutSVGImage(layoutSVGImage) { }
 
-    void paint(PaintInfo&);
+    void paint(const PaintInfo&);
 
 private:
     // Assumes the PaintInfo context has had all local transforms applied.
-    void paintForeground(PaintInfo&);
+    void paintForeground(const PaintInfo&);
 
-    RenderSVGImage& m_renderSVGImage;
+    LayoutSVGImage& m_layoutSVGImage;
 };
 
 } // namespace blink

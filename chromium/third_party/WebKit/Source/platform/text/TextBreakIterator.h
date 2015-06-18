@@ -51,6 +51,12 @@ PLATFORM_EXPORT bool isWordTextBreak(TextBreakIterator*);
 
 const int TextBreakDone = -1;
 
+enum class LineBreakType {
+    Normal,
+    BreakAll, // word-break:break-all allows breaks between letters/numbers
+    KeepAll, // word-break:keep-all doesn't allow breaks between all kind of letters/numbers except some south east asians'.
+};
+
 class PLATFORM_EXPORT LazyLineBreakIterator {
 public:
     LazyLineBreakIterator()
@@ -81,33 +87,33 @@ public:
 
     UChar lastCharacter() const
     {
-        COMPILE_ASSERT(WTF_ARRAY_LENGTH(m_priorContext) == 2, TextBreakIterator_unexpected_prior_context_length);
+        static_assert(WTF_ARRAY_LENGTH(m_priorContext) == 2, "TextBreakIterator has unexpected prior context length");
         return m_priorContext[1];
     }
 
     UChar secondToLastCharacter() const
     {
-        COMPILE_ASSERT(WTF_ARRAY_LENGTH(m_priorContext) == 2, TextBreakIterator_unexpected_prior_context_length);
+        static_assert(WTF_ARRAY_LENGTH(m_priorContext) == 2, "TextBreakIterator has unexpected prior context length");
         return m_priorContext[0];
     }
 
     void setPriorContext(UChar last, UChar secondToLast)
     {
-        COMPILE_ASSERT(WTF_ARRAY_LENGTH(m_priorContext) == 2, TextBreakIterator_unexpected_prior_context_length);
+        static_assert(WTF_ARRAY_LENGTH(m_priorContext) == 2, "TextBreakIterator has unexpected prior context length");
         m_priorContext[0] = secondToLast;
         m_priorContext[1] = last;
     }
 
     void updatePriorContext(UChar last)
     {
-        COMPILE_ASSERT(WTF_ARRAY_LENGTH(m_priorContext) == 2, TextBreakIterator_unexpected_prior_context_length);
+        static_assert(WTF_ARRAY_LENGTH(m_priorContext) == 2, "TextBreakIterator has unexpected prior context length");
         m_priorContext[0] = m_priorContext[1];
         m_priorContext[1] = last;
     }
 
     void resetPriorContext()
     {
-        COMPILE_ASSERT(WTF_ARRAY_LENGTH(m_priorContext) == 2, TextBreakIterator_unexpected_prior_context_length);
+        static_assert(WTF_ARRAY_LENGTH(m_priorContext) == 2, "TextBreakIterator has unexpected prior context length");
         m_priorContext[0] = 0;
         m_priorContext[1] = 0;
     }
@@ -115,7 +121,7 @@ public:
     unsigned priorContextLength() const
     {
         unsigned priorContextLength = 0;
-        COMPILE_ASSERT(WTF_ARRAY_LENGTH(m_priorContext) == 2, TextBreakIterator_unexpected_prior_context_length);
+        static_assert(WTF_ARRAY_LENGTH(m_priorContext) == 2, "TextBreakIterator has unexpected prior context length");
         if (m_priorContext[1]) {
             ++priorContextLength;
             if (m_priorContext[0])
@@ -157,7 +163,28 @@ public:
         m_cachedPriorContextLength = 0;
     }
 
+    inline bool isBreakable(int pos, int& nextBreakable, LineBreakType lineBreakType = LineBreakType::Normal)
+    {
+        if (pos > nextBreakable) {
+            switch (lineBreakType) {
+            case LineBreakType::BreakAll:
+                nextBreakable = nextBreakablePositionBreakAll(pos);
+                break;
+            case LineBreakType::KeepAll:
+                nextBreakable = nextBreakablePositionKeepAll(pos);
+                break;
+            default:
+                nextBreakable = nextBreakablePositionIgnoringNBSP(pos);
+            }
+        }
+        return pos == nextBreakable;
+    }
+
 private:
+    int nextBreakablePositionIgnoringNBSP(int pos);
+    int nextBreakablePositionBreakAll(int pos);
+    int nextBreakablePositionKeepAll(int pos);
+
     static const unsigned priorContextCapacity = 2;
     String m_string;
     AtomicString m_locale;
@@ -228,9 +255,6 @@ private:
 // of a non-combining character and following combining characters is
 // counted as 1 grapheme cluster.
 PLATFORM_EXPORT unsigned numGraphemeClusters(const String&);
-// Returns the number of characters which will be less than or equal to
-// the specified grapheme cluster length.
-PLATFORM_EXPORT unsigned numCharactersInGraphemeClusters(const String&, unsigned);
 
 }
 

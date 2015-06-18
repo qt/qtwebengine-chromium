@@ -66,7 +66,7 @@ TEST(GlyphPageTreeNode, rootChild)
     size_t pageCountBeforeTest = GlyphPageTreeNode::treeGlyphPageCount();
     {
         RefPtr<TestSimpleFontData> data = TestSimpleFontData::create('a', 'z');
-        GlyphPageTreeNode* node = GlyphPageTreeNode::getRootChild(data.get(), kPageNumber);
+        GlyphPageTreeNode* node = GlyphPageTreeNode::getNormalRootChild(data.get(), kPageNumber);
         EXPECT_EQ(pageCountBeforeTest + 1, GlyphPageTreeNode::treeGlyphPageCount());
         EXPECT_TRUE(node->page()->glyphAt('a'));
         EXPECT_FALSE(node->page()->glyphAt('A'));
@@ -84,8 +84,8 @@ TEST(GlyphPageTreeNode, level2)
     {
         RefPtr<TestSimpleFontData> dataAtoC = TestSimpleFontData::create('A', 'C');
         RefPtr<TestSimpleFontData> dataCtoE = TestSimpleFontData::create('C', 'E');
-        GlyphPageTreeNode* node1 = GlyphPageTreeNode::getRootChild(dataAtoC.get(), kPageNumber);
-        GlyphPageTreeNode* node2 = node1->getChild(dataCtoE.get(), kPageNumber);
+        GlyphPageTreeNode* node1 = GlyphPageTreeNode::getNormalRootChild(dataAtoC.get(), kPageNumber);
+        GlyphPageTreeNode* node2 = node1->getNormalChild(dataCtoE.get(), kPageNumber);
         EXPECT_EQ(pageCountBeforeTest + 3, GlyphPageTreeNode::treeGlyphPageCount());
 
         EXPECT_EQ(2u, node2->level());
@@ -106,7 +106,7 @@ TEST(GlyphPageTreeNode, segmentedData)
         RefPtr<SegmentedFontData> segmentedData = SegmentedFontData::create();
         segmentedData->appendRange(FontDataRange('A', 'C', dataBtoC));
         segmentedData->appendRange(FontDataRange('C', 'D', dataCtoE));
-        GlyphPageTreeNode* node = GlyphPageTreeNode::getRootChild(segmentedData.get(), kPageNumber);
+        GlyphPageTreeNode* node = GlyphPageTreeNode::getNormalRootChild(segmentedData.get(), kPageNumber);
 
         EXPECT_EQ(0, node->page()->glyphDataForCharacter('A').fontData);
         EXPECT_EQ(dataBtoC, node->page()->glyphDataForCharacter('B').fontData);
@@ -123,7 +123,7 @@ TEST(GlyphPageTreeNode, outsideBMP)
     size_t pageCountBeforeTest = GlyphPageTreeNode::treeGlyphPageCount();
     {
         RefPtr<TestSimpleFontData> data = TestSimpleFontData::create(0x1f310, 0x1f320);
-        GlyphPageTreeNode* node = GlyphPageTreeNode::getRootChild(data.get(), kPageNumber);
+        GlyphPageTreeNode* node = GlyphPageTreeNode::getNormalRootChild(data.get(), kPageNumber);
         EXPECT_EQ(pageCountBeforeTest + 1, GlyphPageTreeNode::treeGlyphPageCount());
         EXPECT_FALSE(node->page()->glyphForCharacter(0x1f30f));
         EXPECT_TRUE(node->page()->glyphForCharacter(0x1f310));
@@ -145,7 +145,7 @@ TEST(GlyphPageTreeNode, customData)
         segmentedData->appendRange(FontDataRange('A', 'C', dataAtoC));
         segmentedData->appendRange(FontDataRange('B', 'D', dataBtoD));
         segmentedData->appendRange(FontDataRange('C', 'E', dataCtoE));
-        GlyphPageTreeNode* node = GlyphPageTreeNode::getRootChild(segmentedData.get(), kPageNumber);
+        GlyphPageTreeNode* node = GlyphPageTreeNode::getNormalRootChild(segmentedData.get(), kPageNumber);
 
         EXPECT_EQ(0, node->page()->glyphDataForCharacter('A').fontData);
         EXPECT_EQ(dataBtoD, node->page()->glyphDataForCharacter('B').fontData);
@@ -176,9 +176,9 @@ TEST(GlyphPageTreeNode, customDataWithMultiplePages)
         segmentedData1->appendRange(FontDataRange('A', 'C', dataAtoC));
         segmentedData2->appendRange(FontDataRange('B', 'D', dataBtoD));
         segmentedData3->appendRange(FontDataRange('C', 'E', dataCtoE));
-        GlyphPageTreeNode* node1 = GlyphPageTreeNode::getRootChild(segmentedData1.get(), kPageNumber);
-        GlyphPageTreeNode* node2 = node1->getChild(segmentedData2.get(), kPageNumber);
-        GlyphPageTreeNode* node3 = node2->getChild(segmentedData3.get(), kPageNumber);
+        GlyphPageTreeNode* node1 = GlyphPageTreeNode::getNormalRootChild(segmentedData1.get(), kPageNumber);
+        GlyphPageTreeNode* node2 = node1->getNormalChild(segmentedData2.get(), kPageNumber);
+        GlyphPageTreeNode* node3 = node2->getNormalChild(segmentedData3.get(), kPageNumber);
 
         EXPECT_EQ(0, node3->page()->glyphDataForCharacter('A').fontData);
         EXPECT_EQ(dataBtoD, node3->page()->glyphDataForCharacter('B').fontData);
@@ -204,9 +204,9 @@ TEST(GlyphPageTreeNode, systemFallback)
         RefPtr<TestSimpleFontData> dataBtoD = TestSimpleFontData::create('B', 'D');
         RefPtr<SegmentedFontData> segmentedData = SegmentedFontData::create();
         segmentedData->appendRange(FontDataRange('A', 'C', dataAtoC));
-        GlyphPageTreeNode* node1 = GlyphPageTreeNode::getRootChild(segmentedData.get(), kPageNumber);
-        GlyphPageTreeNode* node2 = node1->getChild(dataBtoD.get(), kPageNumber);
-        GlyphPageTreeNode* node3 = node2->getChild(0, kPageNumber);
+        GlyphPageTreeNode* node1 = GlyphPageTreeNode::getNormalRootChild(segmentedData.get(), kPageNumber);
+        GlyphPageTreeNode* node2 = node1->getNormalChild(dataBtoD.get(), kPageNumber);
+        SystemFallbackGlyphPageTreeNode* node3 = node2->getSystemFallbackChild(kPageNumber);
 
         EXPECT_TRUE(node3->isSystemFallback());
 
@@ -221,6 +221,29 @@ TEST(GlyphPageTreeNode, systemFallback)
         EXPECT_EQ(0, node3->page()->customFontToLoadAt('D'));
     }
     EXPECT_EQ(pageCountBeforeTest, GlyphPageTreeNode::treeGlyphPageCount());
+}
+
+TEST(GlyphPageTreeNode, systemFallbackScriptIsolation)
+{
+    const unsigned kPageNumber = 0;
+    RefPtr<TestSimpleFontData> defaultData = TestSimpleFontData::create('A', 'B');
+    GlyphPageTreeNode* node1 = GlyphPageTreeNode::getNormalRootChild(defaultData.get(), kPageNumber);
+    SystemFallbackGlyphPageTreeNode* node2 = node1->getSystemFallbackChild(kPageNumber);
+
+    EXPECT_TRUE(node2->isSystemFallback());
+
+    GlyphPage* commonPage = node2->page(USCRIPT_COMMON);
+    GlyphPage* latinPage = node2->page(USCRIPT_LATIN);
+    GlyphPage* simplifiedChinesePage = node2->page(USCRIPT_SIMPLIFIED_HAN);
+    GlyphPage* traditionalChinesePage = node2->page(USCRIPT_TRADITIONAL_HAN);
+    GlyphPage* japanesePage = node2->page(USCRIPT_KATAKANA_OR_HIRAGANA);
+    EXPECT_NE(commonPage, latinPage);
+    EXPECT_NE(commonPage, simplifiedChinesePage);
+    EXPECT_NE(commonPage, traditionalChinesePage);
+    EXPECT_NE(simplifiedChinesePage, traditionalChinesePage);
+    EXPECT_NE(commonPage, japanesePage);
+    EXPECT_NE(japanesePage, simplifiedChinesePage);
+    EXPECT_NE(japanesePage, traditionalChinesePage);
 }
 
 } // namespace blink

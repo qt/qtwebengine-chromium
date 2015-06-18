@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//testing/test.gni")
 
 if (enable_webrtc || !is_android) {
   jingle_includes = exec_script("//build/gypi_to_gn.py",
@@ -21,6 +22,8 @@ if (enable_webrtc || !is_android) {
       "//base/third_party/dynamic_annotations",
       "//net",
     ]
+
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
   }
 
   # A library for sending and receiving peer-issued notifications.
@@ -32,8 +35,8 @@ if (enable_webrtc || !is_android) {
       "notifier/base/gaia_constants.h",
       "notifier/base/gaia_token_pre_xmpp_auth.cc",
       "notifier/base/gaia_token_pre_xmpp_auth.h",
-      "notifier/base/notification_method.h",
       "notifier/base/notification_method.cc",
+      "notifier/base/notification_method.h",
       "notifier/base/notifier_options.cc",
       "notifier/base/notifier_options.h",
       "notifier/base/notifier_options_util.cc",
@@ -58,10 +61,10 @@ if (enable_webrtc || !is_android) {
       "notifier/listener/notification_constants.h",
       "notifier/listener/notification_defines.cc",
       "notifier/listener/notification_defines.h",
-      "notifier/listener/push_client_observer.cc",
-      "notifier/listener/push_client_observer.h",
       "notifier/listener/push_client.cc",
       "notifier/listener/push_client.h",
+      "notifier/listener/push_client_observer.cc",
+      "notifier/listener/push_client_observer.h",
       "notifier/listener/push_notifications_listen_task.cc",
       "notifier/listener/push_notifications_listen_task.h",
       "notifier/listener/push_notifications_send_update_task.cc",
@@ -75,9 +78,7 @@ if (enable_webrtc || !is_android) {
       "notifier/listener/xmpp_push_client.cc",
       "notifier/listener/xmpp_push_client.h",
     ]
-    defines = [
-     "_CRT_SECURE_NO_WARNINGS",
-    ]
+    defines = [ "_CRT_SECURE_NO_WARNINGS" ]
 
     public_deps = [
       "//third_party/libjingle",
@@ -110,9 +111,7 @@ if (enable_webrtc || !is_android) {
   }
 
   # GYP version: jingle/jingle.gyp:jingle_unittests
-  # TODO(GYP): Convert to executable when its dependencies are linkable.
-  source_set("jingle_unittests") {
-    testonly = true
+  test("jingle_unittests") {
     sources = [
       "glue/channel_socket_adapter_unittest.cc",
       "glue/chrome_async_socket_unittest.cc",
@@ -151,6 +150,8 @@ if (enable_webrtc || !is_android) {
       ]
     }
 
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
     public_deps = [
       "//third_party/libjingle",
     ]
@@ -170,25 +171,28 @@ if (enable_webrtc || !is_android) {
 } else {
   # !enable_webrtc and is_android
   # Stub targets as Android doesn't use libjingle when webrtc is disabled.
-  source_set("jingle_glue") { }
+  source_set("jingle_glue") {
+  }
 
-  source_set("jingle_glue_test_util") { }
+  source_set("jingle_glue_test_util") {
+  }
 
   # GYP version: jingle/jingle.gyp:notifier
   static_library("notifier") {
     sources = [
       "notifier/base/gaia_constants.cc",
       "notifier/base/gaia_constants.h",
-      "notifier/base/notification_method.h",
       "notifier/base/notification_method.cc",
+      "notifier/base/notification_method.h",
       "notifier/base/notifier_options.cc",
       "notifier/base/notifier_options.h",
     ]
     deps = [
       "//base",
-      "//net"
+      "//net",
     ]
   }
 
-  source_set("notifier_test_util") { }
+  source_set("notifier_test_util") {
+  }
 }

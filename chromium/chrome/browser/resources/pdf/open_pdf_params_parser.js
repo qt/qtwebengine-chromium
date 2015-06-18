@@ -7,12 +7,12 @@
 /**
  * Creates a new OpenPDFParamsParser. This parses the open pdf parameters
  * passed in the url to set initial viewport settings for opening the pdf.
- * @param {string} url to be parsed.
+ * @param {Object} getNamedDestinationsFunction The function called to fetch
+ *     the page number for a named destination.
  */
-function OpenPDFParamsParser(url) {
-  this.url_ = url;
-  this.urlParams = {};
-  this.parseOpenPDFParams_();
+function OpenPDFParamsParser(getNamedDestinationsFunction) {
+  this.outstandingRequests_ = [];
+  this.getNamedDestinationsFunction_ = getNamedDestinationsFunction;
 }
 
 OpenPDFParamsParser.prototype = {
@@ -22,8 +22,9 @@ OpenPDFParamsParser.prototype = {
    * parameter is passed while opening PDF then PDF should be opened
    * at the specified zoom level.
    * @param {number} zoom value.
+   * @param {Object} viewportPosition to store zoom and position value.
    */
-  parseZoomParam_: function(paramValue) {
+  parseZoomParam_: function(paramValue, viewportPosition) {
     var paramValueSplit = paramValue.split(',');
     if ((paramValueSplit.length != 1) && (paramValueSplit.length != 3))
       return;
@@ -35,31 +36,48 @@ OpenPDFParamsParser.prototype = {
 
     // Handle #zoom=scale.
     if (paramValueSplit.length == 1) {
-      this.urlParams['zoom'] = zoomFactor;
+      viewportPosition['zoom'] = zoomFactor;
       return;
     }
 
     // Handle #zoom=scale,left,top.
     var position = {x: parseFloat(paramValueSplit[1]),
                     y: parseFloat(paramValueSplit[2])};
-    this.urlParams['position'] = position;
-    this.urlParams['zoom'] = zoomFactor;
+    viewportPosition['position'] = position;
+    viewportPosition['zoom'] = zoomFactor;
   },
 
   /**
    * @private
-   * Parse open PDF parameters. These parameters are mentioned in the url
+   * Parse PDF url parameters. These parameters are mentioned in the url
    * and specify actions to be performed when opening pdf files.
    * See http://www.adobe.com/content/dam/Adobe/en/devnet/acrobat/
    * pdfs/pdf_open_parameters.pdf for details.
+   * @param {string} url that needs to be parsed.
+   * @param {Function} callback function to be called with viewport info.
    */
-  parseOpenPDFParams_: function() {
-    var originalUrl = this.url_;
-    var paramIndex = originalUrl.search('#');
-    if (paramIndex == -1)
+  getViewportFromUrlParams: function(url, callback) {
+    var viewportPosition = {};
+    viewportPosition['url'] = url;
+    var paramIndex = url.search('#');
+    if (paramIndex == -1) {
+      callback(viewportPosition);
       return;
+    }
 
-    var paramTokens = originalUrl.substring(paramIndex + 1).split('&');
+    var paramTokens = url.substring(paramIndex + 1).split('&');
+    if ((paramTokens.length == 1) && (paramTokens[0].search('=') == -1)) {
+      // Handle the case of http://foo.com/bar#NAMEDDEST. This is not
+      // explicitly mentioned except by example in the Adobe
+      // "PDF Open Parameters" document.
+      this.outstandingRequests_.push({
+        callback: callback,
+        viewportPosition: viewportPosition
+      });
+      this.getNamedDestinationsFunction_(paramTokens[0]);
+      return;
+    }
+
     var paramsDictionary = {};
     for (var i = 0; i < paramTokens.length; ++i) {
       var keyValueSplit = paramTokens[i].split('=');
@@ -71,11 +89,35 @@ OpenPDFParamsParser.prototype = {
     if ('page' in paramsDictionary) {
       // |pageNumber| is 1-based, but goToPage() take a zero-based page number.
       var pageNumber = parseInt(paramsDictionary['page']);
-      if (!isNaN(pageNumber))
-        this.urlParams['page'] = pageNumber - 1;
+      if (!isNaN(pageNumber) && pageNumber > 0)
+        viewportPosition['page'] = pageNumber - 1;
     }
 
     if ('zoom' in paramsDictionary)
-      this.parseZoomParam_(paramsDictionary['zoom']);
-  }
+      this.parseZoomParam_(paramsDictionary['zoom'], viewportPosition);
+
+    if (viewportPosition.page === undefined &&
+        'nameddest' in paramsDictionary) {
+      this.outstandingRequests_.push({
+        callback: callback,
+        viewportPosition: viewportPosition
+      });
+      this.getNamedDestinationsFunction_(paramsDictionary['nameddest']);
+    } else {
+      callback(viewportPosition);
+    }
+  },
+
+  /**
+   * This is called when a named destination is received and the page number
+   * corresponding to the request for which a named destination is passed.
+   * @param {number} pageNumber The page corresponding to the named destination
+   *    requested.
+   */
+  onNamedDestinationReceived: function(pageNumber) {
+    var outstandingRequest = this.outstandingRequests_.shift();
+    if (pageNumber != -1)
+      outstandingRequest.viewportPosition.page = pageNumber;
+    outstandingRequest.callback(outstandingRequest.viewportPosition);
+  },
 };

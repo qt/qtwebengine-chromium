@@ -17,7 +17,7 @@
         '../ppapi/ppapi.gyp:ppapi_cpp_objects',
         '../ppapi/ppapi.gyp:ppapi_internal_module',
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
-        '../ui/events/events.gyp:dom4_keycode_converter',
+        '../ui/events/events.gyp:dom_keycode_converter',
         'remoting_base',
         'remoting_client',
         'remoting_protocol',
@@ -42,7 +42,6 @@
         'remoting_protocol',
         '../third_party/libyuv/libyuv.gyp:libyuv',
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
-        '../third_party/libwebm/libwebm.gyp:libwebm',
       ],
       'sources': [
         '<@(remoting_client_sources)',
@@ -50,11 +49,12 @@
     },  # end of target 'remoting_client'
 
     {
+      # GN version: //remoting/webapp:html
       'target_name': 'remoting_webapp_html',
       'type': 'none',
       'actions': [
         {
-          # GN version: //remoting/webapp:html
+          # GN version: //remoting/webapp:main_html
           'action_name': 'Build Remoting Webapp main.html',
           'inputs': [
             'webapp/build-html.py',
@@ -62,49 +62,69 @@
             '<@(remoting_webapp_template_files)',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/main.html',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/main.html',
           ],
           'action': [
             'python', 'webapp/build-html.py',
-            '<(SHARED_INTERMEDIATE_DIR)/main.html',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/main.html',
             '<(remoting_webapp_template_main)',
-            '--template', '<@(remoting_webapp_template_files)',
-            '--js', '<@(remoting_webapp_main_html_js_files)',
+            '--template-dir', '<(DEPTH)/remoting',
+            '--templates', '<@(remoting_webapp_template_files)',
+            '--js',
+            '<@(remoting_webapp_crd_main_html_all_js_files)',
           ],
         },
         {
+          # GN version: //remoting/webapp:wcs_sandbox_html
           'action_name': 'Build Remoting Webapp wcs_sandbox.html',
           'inputs': [
             'webapp/build-html.py',
             '<(remoting_webapp_template_wcs_sandbox)',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/wcs_sandbox.html',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/wcs_sandbox.html',
           ],
           'action': [
             'python', 'webapp/build-html.py',
-            '<(SHARED_INTERMEDIATE_DIR)/wcs_sandbox.html',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/wcs_sandbox.html',
             '<(remoting_webapp_template_wcs_sandbox)',
-            '--js', '<@(remoting_webapp_wcs_sandbox_html_js_files)',
+            '--js', '<@(remoting_webapp_wcs_sandbox_html_all_js_files)',
           ],
         },
         {
+          # GN version: //remoting/webapp:background_html
           'action_name': 'Build Remoting Webapp background.html',
           'inputs': [
             'webapp/build-html.py',
             '<(remoting_webapp_template_background)',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/background.html',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/background.html',
           ],
           'action': [
             'python', 'webapp/build-html.py',
-            '<(SHARED_INTERMEDIATE_DIR)/background.html',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/background.html',
             '<(remoting_webapp_template_background)',
-            '--js', '<@(remoting_webapp_background_js_files)',
+            '--js', '<@(remoting_webapp_background_html_all_js_files)',
           ],
         },
-      ],
+        {
+          'action_name': 'Build Remoting Webapp message_window.html',
+          'inputs': [
+            'webapp/build-html.py',
+            '<(remoting_webapp_template_message_window)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/message_window.html',
+          ],
+          'action': [
+            'python', 'webapp/build-html.py',
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/message_window.html',
+            '<(remoting_webapp_template_message_window)',
+            '--js', '<@(remoting_webapp_message_window_html_all_js_files)',
+          ],
+        },
+      ],  # end of actions
     },  # end of target 'remoting_webapp_html'
 
     {
@@ -112,7 +132,13 @@
       'type': 'none',
       'dependencies': [
         'remoting_webapp_v1',
-        'remoting_webapp_v2',
+      ],
+      'conditions': [
+        ['disable_nacl==0 and disable_nacl_untrusted==0', {
+          'dependencies': [
+            'remoting_webapp_v2',
+          ],
+        }]
       ],
     },  # end of target 'remoting_webapp'
 
@@ -126,33 +152,38 @@
       },
       'includes': [ 'remoting_webapp.gypi', ],
     },  # end of target 'remoting_webapp_v1'
+  ],  # end of targets
 
-    {
-      'target_name': 'remoting_webapp_v2',
-      'type': 'none',
-      'variables': {
-        'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
-        'zip_path': '<(PRODUCT_DIR)/remoting-webapp.v2.zip',
-      },
-      'conditions': [
-        ['disable_nacl==0 and disable_nacl_untrusted==0', {
-          'dependencies': [
-            'remoting_nacl.gyp:remoting_client_plugin_nacl',
-          ],
+  'conditions': [
+    ['disable_nacl==0 and disable_nacl_untrusted==0', {
+      'targets': [
+        {
+          'target_name': 'remoting_webapp_v2',
+          'type': 'none',
           'variables': {
+            'output_dir': '<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
+            'zip_path': '<(PRODUCT_DIR)/remoting-webapp.v2.zip',
             'webapp_type': 'v2_pnacl',
             'extra_files': [
-              'webapp/crd/remoting_client_pnacl.nmf',
+              'webapp/crd/remoting_client_pnacl.nmf.jinja2',
               '<(PRODUCT_DIR)/remoting_client_plugin_newlib.pexe',
             ],
           },
-        }, {
-          'variables': {
-            'webapp_type': 'v2',
-          },
-        }],
+          'dependencies': [
+            'remoting_nacl.gyp:remoting_client_plugin_nacl',
+          ],
+          'conditions': [
+            ['buildtype == "Dev"', {
+              'variables': {
+                'extra_files': [
+                  '<(PRODUCT_DIR)/remoting_client_plugin_newlib.pexe.debug',
+                ],
+              },
+            }],
+          ],
+          'includes': [ 'remoting_webapp.gypi', ],
+        },  # end of target 'remoting_webapp_v2'
       ],
-      'includes': [ 'remoting_webapp.gypi', ],
-    },  # end of target 'remoting_webapp_v2'
-  ],  # end of targets
+    }],
+  ],
 }

@@ -31,19 +31,17 @@
 #ifndef CloseEvent_h
 #define CloseEvent_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/EventTypeNames.h"
+#include "core/events/Event.h"
 #include "modules/EventModules.h"
+#include "modules/websockets/CloseEventInit.h"
+#include "platform/heap/Handle.h"
+#include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
-
-struct CloseEventInit : public EventInit {
-    CloseEventInit()
-        : wasClean(false)
-        , code(0) { }
-
-    bool wasClean;
-    unsigned short code;
-    String reason;
-};
 
 class CloseEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
@@ -70,7 +68,7 @@ public:
     // Event function.
     virtual const AtomicString& interfaceName() const override { return EventNames::CloseEvent; }
 
-    virtual void trace(Visitor* visitor) override { Event::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { Event::trace(visitor); }
 
 private:
     CloseEvent()
@@ -84,11 +82,7 @@ private:
         , m_code(code)
         , m_reason(reason) { }
 
-    CloseEvent(const AtomicString& type, const CloseEventInit& initializer)
-        : Event(type, initializer)
-        , m_wasClean(initializer.wasClean)
-        , m_code(initializer.code)
-        , m_reason(initializer.reason) { }
+    CloseEvent(const AtomicString& type, const CloseEventInit& initializer);
 
     bool m_wasClean;
     unsigned short m_code;

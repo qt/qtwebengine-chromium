@@ -44,6 +44,9 @@ namespace content {
 const base::FilePath::CharType IndexedDBContextImpl::kIndexedDBDirectory[] =
     FILE_PATH_LITERAL("IndexedDB");
 
+static const base::FilePath::CharType kBlobExtension[] =
+    FILE_PATH_LITERAL(".blob");
+
 static const base::FilePath::CharType kIndexedDBExtension[] =
     FILE_PATH_LITERAL(".indexeddb");
 
@@ -139,12 +142,10 @@ std::vector<IndexedDBInfo> IndexedDBContextImpl::GetAllOriginsInfo() {
   std::vector<GURL> origins = GetAllOrigins();
   std::vector<IndexedDBInfo> result;
   for (const auto& origin_url : origins) {
-    base::FilePath idb_directory = GetFilePath(origin_url);
     size_t connection_count = GetConnectionCount(origin_url);
     result.push_back(IndexedDBInfo(origin_url,
                                    GetOriginDiskUsage(origin_url),
                                    GetOriginLastModified(origin_url),
-                                   idb_directory,
                                    connection_count));
   }
   return result;
@@ -167,8 +168,12 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
     info->SetString("size", ui::FormatBytes(GetOriginDiskUsage(origin_url)));
     info->SetDouble("last_modified",
                     GetOriginLastModified(origin_url).ToJsTime());
-    if (!is_incognito())
-      info->SetString("path", GetFilePath(origin_url).value());
+    if (!is_incognito()) {
+      scoped_ptr<base::ListValue> paths(new base::ListValue());
+      for (const base::FilePath& path : GetStoragePaths(origin_url))
+        paths->AppendString(path.value());
+      info->Set("paths", paths.release());
+    }
     info->SetDouble("connection_count", GetConnectionCount(origin_url));
 
     // This ends up being O(n^2) since we iterate over all open databases
@@ -268,6 +273,19 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
   return list.release();
 }
 
+int IndexedDBContextImpl::GetOriginBlobFileCount(const GURL& origin_url) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
+  int count = 0;
+  base::FileEnumerator file_enumerator(
+      GetBlobPath(storage::GetIdentifierFromOrigin(origin_url)), true,
+      base::FileEnumerator::FILES);
+  for (base::FilePath file_path = file_enumerator.Next(); !file_path.empty();
+       file_path = file_enumerator.Next()) {
+    count++;
+  }
+  return count;
+}
+
 int64 IndexedDBContextImpl::GetOriginDiskUsage(const GURL& origin_url) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
@@ -280,7 +298,7 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return base::Time();
-  base::FilePath idb_directory = GetFilePath(origin_url);
+  base::FilePath idb_directory = GetLevelDBPath(origin_url);
   base::File::Info file_info;
   if (!base::GetFileInfo(idb_directory, &file_info))
     return base::Time();
@@ -293,7 +311,7 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
-  base::FilePath idb_directory = GetFilePath(origin_url);
+  base::FilePath idb_directory = GetLevelDBPath(origin_url);
   EnsureDiskUsageCacheInitialized(origin_url);
   leveldb::Status s = LevelDBDatabase::Destroy(idb_directory);
   if (!s.ok()) {
@@ -306,12 +324,46 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
     const bool kNonRecursive = false;
     base::DeleteFile(idb_directory, kNonRecursive);
   }
-
+  base::DeleteFile(GetBlobPath(storage::GetIdentifierFromOrigin(origin_url)),
+                   true /* recursive */);
   QueryDiskAndUpdateQuotaUsage(origin_url);
   if (s.ok()) {
     RemoveFromOriginSet(origin_url);
     origin_size_map_.erase(origin_url);
     space_available_map_.erase(origin_url);
+  }
+}
+
+void IndexedDBContextImpl::CopyOriginData(const GURL& origin_url,
+                                          IndexedDBContext* dest_context) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
+
+  if (data_path_.empty() || !IsInOriginSet(origin_url))
+    return;
+
+  IndexedDBContextImpl* dest_context_impl =
+      static_cast<IndexedDBContextImpl*>(dest_context);
+
+  ForceClose(origin_url, FORCE_CLOSE_COPY_ORIGIN);
+  std::string origin_id = storage::GetIdentifierFromOrigin(origin_url);
+
+  // Make sure we're not about to delete our own database.
+  CHECK_NE(dest_context_impl->data_path().value(), data_path().value());
+
+  // Delete any existing storage paths in the destination context.
+  // A previously failed migration may have left behind partially copied
+  // directories.
+  for (const base::FilePath& dest_path :
+       dest_context_impl->GetStoragePaths(origin_url))
+    base::DeleteFile(dest_path, true);
+
+  base::FilePath dest_data_path = dest_context_impl->data_path();
+  base::CreateDirectory(dest_data_path);
+
+  for (const base::FilePath& src_data_path : GetStoragePaths(origin_url)) {
+    if (base::PathExists(src_data_path)) {
+      base::CopyDirectory(src_data_path, dest_data_path, true);
+    }
   }
 }
 
@@ -341,14 +393,24 @@ size_t IndexedDBContextImpl::GetConnectionCount(const GURL& origin_url) {
   return factory_->GetConnectionCount(origin_url);
 }
 
-base::FilePath IndexedDBContextImpl::GetFilePath(const GURL& origin_url) const {
+base::FilePath IndexedDBContextImpl::GetLevelDBPath(
+    const GURL& origin_url) const {
   std::string origin_id = storage::GetIdentifierFromOrigin(origin_url);
-  return GetIndexedDBFilePath(origin_id);
+  return GetLevelDBPath(origin_id);
+}
+
+std::vector<base::FilePath> IndexedDBContextImpl::GetStoragePaths(
+    const GURL& origin_url) const {
+  std::string origin_id = storage::GetIdentifierFromOrigin(origin_url);
+  std::vector<base::FilePath> paths;
+  paths.push_back(GetLevelDBPath(origin_id));
+  paths.push_back(GetBlobPath(origin_id));
+  return paths;
 }
 
 base::FilePath IndexedDBContextImpl::GetFilePathForTesting(
     const std::string& origin_id) const {
-  return GetIndexedDBFilePath(origin_id);
+  return GetLevelDBPath(origin_id);
 }
 
 void IndexedDBContextImpl::SetTaskRunnerForTesting(
@@ -446,7 +508,14 @@ IndexedDBContextImpl::~IndexedDBContextImpl() {
           &ClearSessionOnlyOrigins, data_path_, special_storage_policy_));
 }
 
-base::FilePath IndexedDBContextImpl::GetIndexedDBFilePath(
+base::FilePath IndexedDBContextImpl::GetBlobPath(
+    const std::string& origin_id) const {
+  DCHECK(!data_path_.empty());
+  return data_path_.AppendASCII(origin_id).AddExtension(kIndexedDBExtension)
+      .AddExtension(kBlobExtension);
+}
+
+base::FilePath IndexedDBContextImpl::GetLevelDBPath(
     const std::string& origin_id) const {
   DCHECK(!data_path_.empty());
   return data_path_.AppendASCII(origin_id).AddExtension(kIndexedDBExtension)
@@ -456,8 +525,10 @@ base::FilePath IndexedDBContextImpl::GetIndexedDBFilePath(
 int64 IndexedDBContextImpl::ReadUsageFromDisk(const GURL& origin_url) const {
   if (data_path_.empty())
     return 0;
-  base::FilePath file_path = GetFilePath(origin_url);
-  return base::ComputeDirectorySize(file_path);
+  int64 total_size = 0;
+  for (const base::FilePath& path : GetStoragePaths(origin_url))
+    total_size += base::ComputeDirectorySize(path);
+  return total_size;
 }
 
 void IndexedDBContextImpl::EnsureDiskUsageCacheInitialized(
@@ -488,7 +559,7 @@ void IndexedDBContextImpl::GotUsageAndQuota(const GURL& origin_url,
                                             storage::QuotaStatusCode status,
                                             int64 usage,
                                             int64 quota) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(status == storage::kQuotaStatusOk ||
          status == storage::kQuotaErrorAbort)
       << "status was " << status;
@@ -523,7 +594,7 @@ void IndexedDBContextImpl::QueryAvailableQuota(const GURL& origin_url) {
     }
     return;
   }
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!quota_manager_proxy() || !quota_manager_proxy()->quota_manager())
     return;
   quota_manager_proxy()->quota_manager()->GetUsageAndQuota(

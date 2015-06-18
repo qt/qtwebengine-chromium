@@ -8,8 +8,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
+#include "core/layout/LayoutView.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
 #include "platform/audio/AudioBus.h"
@@ -18,7 +17,6 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/gpu/Extensions3DUtil.h"
-#include "platform/graphics/skia/GaneshUtils.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebAudioSourceProvider.h"
 #include "public/platform/WebCString.h"
@@ -69,8 +67,6 @@ WebMediaPlayerClientImpl::~WebMediaPlayerClientImpl()
 {
     // Explicitly destroy the WebMediaPlayer to allow verification of tear down.
     m_webMediaPlayer.clear();
-
-    HTMLMediaElementEncryptedMedia::playerDestroyed(mediaElement());
 }
 
 void WebMediaPlayerClientImpl::networkStateChanged()
@@ -123,9 +119,19 @@ void WebMediaPlayerClientImpl::keyMessage(const WebString& keySystem, const WebS
     HTMLMediaElementEncryptedMedia::keyMessage(mediaElement(), keySystem, sessionId, message, messageLength, defaultURL);
 }
 
-void WebMediaPlayerClientImpl::encrypted(const WebString& initDataType, const unsigned char* initData, unsigned initDataLength)
+void WebMediaPlayerClientImpl::encrypted(WebEncryptedMediaInitDataType initDataType, const unsigned char* initData, unsigned initDataLength)
 {
     HTMLMediaElementEncryptedMedia::encrypted(mediaElement(), initDataType, initData, initDataLength);
+}
+
+void WebMediaPlayerClientImpl::didBlockPlaybackWaitingForKey()
+{
+    HTMLMediaElementEncryptedMedia::didBlockPlaybackWaitingForKey(mediaElement());
+}
+
+void WebMediaPlayerClientImpl::didResumePlaybackBlockedForKey()
+{
+    HTMLMediaElementEncryptedMedia::didResumePlaybackBlockedForKey(mediaElement());
 }
 
 void WebMediaPlayerClientImpl::setWebLayer(WebLayer* layer)
@@ -218,7 +224,12 @@ void WebMediaPlayerClientImpl::load(WebMediaPlayer::LoadType loadType, const WTF
 
     m_webMediaPlayer->setPoster(poster);
 
+    setPreload(mediaElement().effectivePreloadType());
+
     m_webMediaPlayer->load(loadType, kurl, corsMode);
+
+    if (mediaElement().isFullscreen())
+        m_webMediaPlayer->enterFullscreen();
 }
 
 void WebMediaPlayerClientImpl::setPreload(MediaPlayer::Preload preload)
@@ -303,7 +314,7 @@ void WebMediaPlayerClientImpl::AudioClientImpl::setFormat(size_t numberOfChannel
         m_client->setFormat(numberOfChannels, sampleRate);
 }
 
-void WebMediaPlayerClientImpl::AudioClientImpl::trace(Visitor* visitor)
+DEFINE_TRACE(WebMediaPlayerClientImpl::AudioClientImpl)
 {
     visitor->trace(m_client);
 }

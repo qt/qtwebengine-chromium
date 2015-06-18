@@ -58,8 +58,10 @@
 
 #include <openssl/bn.h>
 #include <openssl/err.h>
+#include <openssl/thread.h>
 
 #include "internal.h"
+
 
 #define OPENSSL_DH_MAX_MODULUS_BITS 10000
 
@@ -206,8 +208,8 @@ static int generate_key(DH *dh) {
     pub_key = dh->pub_key;
   }
 
-  mont =
-      BN_MONT_CTX_set_locked(&dh->method_mont_p, CRYPTO_LOCK_DH, dh->p, ctx);
+  mont = BN_MONT_CTX_set_locked(&dh->method_mont_p, &dh->method_mont_p_lock,
+                                dh->p, ctx);
   if (!mont) {
     goto err;
   }
@@ -221,6 +223,7 @@ static int generate_key(DH *dh) {
       } while (BN_is_zero(priv_key) || BN_is_one(priv_key));
     } else {
       /* secret exponent length */
+      DH_check_standard_parameters(dh);
       l = dh->priv_length ? dh->priv_length : BN_num_bits(dh->p) - 1;
       if (!BN_rand(priv_key, l, 0, 0)) {
         goto err;
@@ -242,10 +245,10 @@ err:
     OPENSSL_PUT_ERROR(DH, generate_key, ERR_R_BN_LIB);
   }
 
-  if (pub_key != NULL && dh->pub_key == NULL) {
+  if (dh->pub_key == NULL) {
     BN_free(pub_key);
   }
-  if (priv_key != NULL && dh->priv_key == NULL) {
+  if (dh->priv_key == NULL) {
     BN_free(priv_key);
   }
   BN_CTX_free(ctx);
@@ -280,8 +283,8 @@ static int compute_key(DH *dh, unsigned char *out, const BIGNUM *pub_key) {
     goto err;
   }
 
-  mont =
-      BN_MONT_CTX_set_locked(&dh->method_mont_p, CRYPTO_LOCK_DH, dh->p, ctx);
+  mont = BN_MONT_CTX_set_locked(&dh->method_mont_p, &dh->method_mont_p_lock,
+                                dh->p, ctx);
   if (!mont) {
     goto err;
   }

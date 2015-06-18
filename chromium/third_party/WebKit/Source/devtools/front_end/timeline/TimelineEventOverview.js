@@ -32,88 +32,215 @@
  * @constructor
  * @extends {WebInspector.TimelineOverviewBase}
  * @param {!WebInspector.TimelineModel} model
- * @param {!WebInspector.TimelineUIUtils} uiUtils
  */
-WebInspector.TimelineEventOverview = function(model, uiUtils)
+WebInspector.TimelineEventOverview = function(model)
 {
     WebInspector.TimelineOverviewBase.call(this, model);
-    this._uiUtils = uiUtils;
     this.element.id = "timeline-overview-events";
 
     this._fillStyles = {};
     var categories = WebInspector.TimelineUIUtils.categories();
     for (var category in categories) {
-        this._fillStyles[category] = WebInspector.TimelineUIUtils.createFillStyleForCategory(this._context, 0, WebInspector.TimelineEventOverview._stripGradientHeight, categories[category]);
+        this._fillStyles[category] = categories[category].fillColorStop1;
         categories[category].addEventListener(WebInspector.TimelineCategory.Events.VisibilityChanged, this._onCategoryVisibilityChanged, this);
     }
 
-    this._disabledCategoryFillStyle = WebInspector.TimelineUIUtils.createFillStyle(this._context, 0, WebInspector.TimelineEventOverview._stripGradientHeight,
-        "hsl(0, 0%, 85%)", "hsl(0, 0%, 67%)", "hsl(0, 0%, 56%)");
-
-    this._disabledCategoryBorderStyle = "rgb(143, 143, 143)";
+    this._disabledCategoryFillStyle = "hsl(0, 0%, 67%)";
 }
 
 /** @const */
-WebInspector.TimelineEventOverview._numberOfStrips = 3;
-
+WebInspector.TimelineEventOverview._mainStripHeight = 16;
 /** @const */
-WebInspector.TimelineEventOverview._stripGradientHeight = 120;
+WebInspector.TimelineEventOverview._smallStripHeight = 8;
 
 WebInspector.TimelineEventOverview.prototype = {
+    /**
+     * @override
+     */
     dispose: function()
     {
+        WebInspector.TimelineOverviewBase.prototype.dispose.call(this);
         var categories = WebInspector.TimelineUIUtils.categories();
         for (var category in categories)
             categories[category].removeEventListener(WebInspector.TimelineCategory.Events.VisibilityChanged, this._onCategoryVisibilityChanged, this);
     },
 
+    /**
+     * @override
+     */
     update: function()
     {
         this.resetCanvas();
+        var threads = this._model.virtualThreads();
+        var mainThreadEvents = this._model.mainThreadEvents();
+        var networkHeight = this._canvas.clientHeight
+            - WebInspector.TimelineEventOverview._mainStripHeight
+            - 2 * WebInspector.TimelineEventOverview._smallStripHeight;
+        var position = 0;
+        if (Runtime.experiments.isEnabled("inputEventsOnTimelineOverview")) {
+            var inputHeight = this._drawInputEvents(mainThreadEvents, position, WebInspector.TimelineEventOverview._smallStripHeight);
+            position += inputHeight;
+            networkHeight -= inputHeight;
+        }
+        position += this._drawNetwork(mainThreadEvents, position, networkHeight);
+        position += this._drawEvents(mainThreadEvents, position, WebInspector.TimelineEventOverview._mainStripHeight);
+        for (var thread of threads.filter(function(thread) { return !thread.isWorker(); }))
+            this._drawEvents(thread.events, position, WebInspector.TimelineEventOverview._smallStripHeight);
+        position += WebInspector.TimelineEventOverview._smallStripHeight;
+        for (var thread of threads.filter(function(thread) { return thread.isWorker(); }))
+            this._drawEvents(thread.events, position, WebInspector.TimelineEventOverview._smallStripHeight);
+        position += WebInspector.TimelineEventOverview._smallStripHeight;
+        console.assert(position === this._canvas.clientHeight);
+    },
 
-        var stripHeight = Math.round(this._canvas.height  / WebInspector.TimelineEventOverview._numberOfStrips);
+    /**
+     * @param {!Array.<!WebInspector.TracingModel.Event>} events
+     * @param {number} position
+     * @param {number} height
+     * @return {number}
+     */
+    _drawInputEvents: function(events, position, height)
+    {
+        var /** @const */ padding = 1;
+        var descriptors = WebInspector.TimelineUIUtils.eventDispatchDesciptors();
+        /** @type {!Map.<string,!WebInspector.TimelineUIUtils.EventDispatchTypeDescriptor>} */
+        var descriptorsByType = new Map();
+        var maxPriority = -1;
+        for (var descriptor of descriptors) {
+            for (var type of descriptor.eventTypes)
+                descriptorsByType.set(type, descriptor);
+            maxPriority = Math.max(maxPriority, descriptor.priority);
+        }
+
+        var /** @const */ minWidth = 2 * window.devicePixelRatio;
+        var stripHeight = height - padding;
+        var timeOffset = this._model.minimumRecordTime();
+        var timeSpan = this._model.maximumRecordTime() - timeOffset;
+        var canvasWidth = this._canvas.width;
+        var scale = canvasWidth / timeSpan;
+
+        for (var priority = 0; priority <= maxPriority; ++priority) {
+            for (var i = 0; i < events.length; ++i) {
+                var event = events[i];
+                if (event.name !== WebInspector.TimelineModel.RecordType.EventDispatch)
+                    continue;
+                var descriptor = descriptorsByType.get(event.args["data"]["type"]);
+                if (!descriptor || descriptor.priority !== priority)
+                    continue;
+                var start = Number.constrain(Math.floor((event.startTime - timeOffset) * scale), 0, canvasWidth);
+                var end = Number.constrain(Math.ceil((event.endTime - timeOffset) * scale), 0, canvasWidth);
+                var width = Math.max(end - start, minWidth);
+                this._renderBar(start, start + width, position + padding, stripHeight, descriptor.color);
+            }
+        }
+
+        return height;
+    },
+
+    /**
+     * @param {!Array.<!WebInspector.TracingModel.Event>} events
+     * @param {number} position
+     * @param {number} height
+     * @return {number}
+     */
+    _drawNetwork: function(events, position, height)
+    {
+        var /** @const */ padding = 1;
+        var /** @const */ maxBandHeight = 4;
+        position += padding;
+        var bandsCount = WebInspector.TimelineUIUtils.calculateNetworkBandsCount(events);
+        var bandInterval = Math.min(maxBandHeight, (height - padding) / (bandsCount || 1));
+        var bandHeight = Math.ceil(bandInterval);
+        var timeOffset = this._model.minimumRecordTime();
+        var timeSpan = this._model.maximumRecordTime() - timeOffset;
+        var canvasWidth = this._canvas.width;
+        var scale = canvasWidth / timeSpan;
+        var loadingCategory = WebInspector.TimelineUIUtils.categories()["loading"];
+        var waitingColor = loadingCategory.backgroundColor;
+        var processingColor = loadingCategory.fillColorStop1;
+
+        /**
+         * @param {number} band
+         * @param {number} startTime
+         * @param {number} endTime
+         * @param {?WebInspector.TracingModel.Event} event
+         * @this {WebInspector.TimelineEventOverview}
+         */
+        function drawBar(band, startTime, endTime, event)
+        {
+            var start = Number.constrain((startTime - timeOffset) * scale, 0, canvasWidth);
+            var end = Number.constrain((endTime - timeOffset) * scale, 0, canvasWidth);
+            var color = !event ||
+                event.name === WebInspector.TimelineModel.RecordType.ResourceReceiveResponse ||
+                event.name === WebInspector.TimelineModel.RecordType.ResourceSendRequest ? waitingColor : processingColor;
+            this._renderBar(Math.floor(start), Math.ceil(end), Math.floor(position + band * bandInterval), bandHeight, color);
+        }
+
+        WebInspector.TimelineUIUtils.iterateNetworkRequestsInRoundRobin(events, bandsCount, drawBar.bind(this));
+        return height;
+    },
+
+    /**
+     * @param {!Array.<!WebInspector.TracingModel.Event>} events
+     * @param {number} position
+     * @param {number} stripHeight
+     * @return {number}
+     */
+    _drawEvents: function(events, position, stripHeight)
+    {
+        var /** @const */ padding = 1;
+        var visualHeight = stripHeight - padding;
         var timeOffset = this._model.minimumRecordTime();
         var timeSpan = this._model.maximumRecordTime() - timeOffset;
         var scale = this._canvas.width / timeSpan;
-
-        var lastBarByGroup = [];
-
-        this._context.fillStyle = "rgba(0, 0, 0, 0.05)";
-        for (var i = 1; i < WebInspector.TimelineEventOverview._numberOfStrips; i += 2)
-            this._context.fillRect(0.5, i * stripHeight + 0.5, this._canvas.width, stripHeight);
+        var ditherer = new WebInspector.Dithering();
+        var categoryStack = [];
+        var lastX = 0;
+        position += padding;
 
         /**
-         * @param {!WebInspector.TimelineModel.Record} record
+         * @param {!WebInspector.TimelineCategory} category
+         * @return {string}
          * @this {WebInspector.TimelineEventOverview}
          */
-        function appendRecord(record)
+        function categoryColor(category)
         {
-            if (this._uiUtils.isBeginFrame(record))
-                return;
-            var recordStart = Math.floor((record.startTime() - timeOffset) * scale);
-            var recordEnd = Math.ceil((record.endTime() - timeOffset) * scale);
-            var category = this._uiUtils.categoryForRecord(record);
-            if (category.overviewStripGroupIndex < 0)
-                return;
-            var bar = lastBarByGroup[category.overviewStripGroupIndex];
-            // This bar may be merged with previous -- so just adjust the previous bar.
-            if (bar) {
-                // If record fits entirely into previous bar just absorb it ignoring the category match.
-                if (recordEnd <= bar.end)
-                    return;
-                if (bar.category === category && recordStart <= bar.end) {
-                    bar.end = recordEnd;
-                    return;
-                }
-                this._renderBar(bar.start, bar.end, stripHeight, bar.category);
+            return category.hidden ? this._disabledCategoryFillStyle : this._fillStyles[category.name];
+        }
+
+        /**
+         * @param {!WebInspector.TracingModel.Event} e
+         * @this {WebInspector.TimelineEventOverview}
+         */
+        function onEventStart(e)
+        {
+            var pos = (e.startTime - timeOffset) * scale;
+            if (categoryStack.length) {
+                var category = categoryStack.peekLast();
+                var bar = ditherer.appendInterval(category, lastX, pos);
+                if (bar)
+                    this._renderBar(bar.start, bar.end, position, visualHeight, categoryColor.call(this, category));
             }
-            lastBarByGroup[category.overviewStripGroupIndex] = { start: recordStart, end: recordEnd, category: category };
+            categoryStack.push(WebInspector.TimelineUIUtils.eventStyle(e).category);
+            lastX = pos;
         }
-        this._model.forAllRecords(appendRecord.bind(this));
-        for (var i = 0; i < lastBarByGroup.length; ++i) {
-            if (lastBarByGroup[i])
-                this._renderBar(lastBarByGroup[i].start, lastBarByGroup[i].end, stripHeight, lastBarByGroup[i].category);
+
+        /**
+         * @param {!WebInspector.TracingModel.Event} e
+         * @this {WebInspector.TimelineEventOverview}
+         */
+        function onEventEnd(e)
+        {
+            var category = categoryStack.pop();
+            var pos = (e.endTime - timeOffset) * scale;
+            var bar = ditherer.appendInterval(category, lastX, pos);
+            if (bar)
+                this._renderBar(bar.start, bar.end, position, visualHeight, categoryColor.call(this, category));
+            lastX = pos;
         }
+
+        WebInspector.TimelineModel.forEachEvent(events, onEventStart.bind(this), onEventEnd.bind(this));
+        return stripHeight;
     },
 
     _onCategoryVisibilityChanged: function()
@@ -124,32 +251,96 @@ WebInspector.TimelineEventOverview.prototype = {
     /**
      * @param {number} begin
      * @param {number} end
+     * @param {number} position
      * @param {number} height
-     * @param {!WebInspector.TimelineCategory} category
+     * @param {string} color
      */
-    _renderBar: function(begin, end, height, category)
+    _renderBar: function(begin, end, position, height, color)
     {
-        const stripPadding = 4 * window.devicePixelRatio;
-        const innerStripHeight = height - 2 * stripPadding;
-
         var x = begin;
-        var y = category.overviewStripGroupIndex * height + stripPadding + 0.5;
-        var width = Math.max(end - begin, 1);
-
-        this._context.save();
-        this._context.translate(x, y);
-        this._context.beginPath();
-        this._context.scale(1, innerStripHeight / WebInspector.TimelineEventOverview._stripGradientHeight);
-        this._context.fillStyle = category.hidden ? this._disabledCategoryFillStyle : this._fillStyles[category.name];
-        this._context.fillRect(0, 0, width, WebInspector.TimelineEventOverview._stripGradientHeight);
-        this._context.strokeStyle = category.hidden ? this._disabledCategoryBorderStyle : category.borderColor;
-        this._context.moveTo(0, 0);
-        this._context.lineTo(width, 0);
-        this._context.moveTo(0, WebInspector.TimelineEventOverview._stripGradientHeight);
-        this._context.lineTo(width, WebInspector.TimelineEventOverview._stripGradientHeight);
-        this._context.stroke();
-        this._context.restore();
+        var y = position * window.devicePixelRatio;
+        var width = end - begin;
+        this._context.fillStyle = color;
+        this._context.fillRect(x, y, width, height * window.devicePixelRatio);
     },
 
     __proto__: WebInspector.TimelineOverviewBase.prototype
+}
+
+/**
+ * @constructor
+ * @template T
+ */
+WebInspector.Dithering = function()
+{
+    /** @type {!Map.<?T,number>} */
+    this._groupError = new Map();
+    this._position = 0;
+    this._lastReportedPosition = 0;
+}
+
+WebInspector.Dithering.prototype = {
+    /**
+     * @param {!T} group
+     * @param {number} start
+     * @param {number} end
+     * @return {?{start: number, end: number}}
+     * @template T
+     */
+    appendInterval: function(group, start, end)
+    {
+        this._innerAppend(null, start); // Append an empty space before.
+        return this._innerAppend(group, end); // Append the interval itself.
+    },
+
+    /**
+     * @param {?T} group
+     * @param {number} position
+     * @return {?{start: number, end: number}}
+     * @template T
+     */
+    _innerAppend: function(group, position)
+    {
+        if (position < this._position)
+            return null;
+        var result = null;
+        var length = position - this._position;
+        length += this._groupError.get(group) || 0;
+        if (length >= 1) {
+            if (!group)
+                length -= this._distributeExtraAmount(length - 1);
+            var newReportedPosition = this._lastReportedPosition + Math.floor(length);
+            result = { start: this._lastReportedPosition, end: newReportedPosition };
+            this._lastReportedPosition = newReportedPosition;
+            length %= 1;
+        }
+        this._groupError.set(group, length);
+        this._position = position;
+        return result;
+    },
+
+    /**
+     * @param {number} amount
+     * @return {number}
+     */
+    _distributeExtraAmount: function(amount)
+    {
+        var canConsume = 0;
+        for (var g of this._groupError.keys()) {
+            if (g)
+                canConsume += 1 - this._groupError.get(g);
+        }
+        var toDistribute = Math.min(amount, canConsume);
+        if (toDistribute <= 0)
+            return 0;
+        var ratio = toDistribute / canConsume;
+        for (var g of this._groupError.keys()) {
+            if (!g)
+                continue;
+            var value = this._groupError.get(g);
+            value += (1 - value) * ratio;
+            this._groupError.set(g, value);
+        }
+        return toDistribute;
+    }
 }

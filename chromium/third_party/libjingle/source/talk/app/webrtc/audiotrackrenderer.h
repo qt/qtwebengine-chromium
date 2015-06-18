@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -47,8 +47,8 @@ class AudioTrackRenderer : public cricket::AudioRenderer {
   ~AudioTrackRenderer();
 
   // Implements cricket::AudioRenderer.
-  virtual void AddChannel(int channel_id) OVERRIDE;
-  virtual void RemoveChannel(int channel_id) OVERRIDE;
+  void AddChannel(int channel_id) override;
+  void RemoveChannel(int channel_id) override;
 
  private:
   int channel_id_;

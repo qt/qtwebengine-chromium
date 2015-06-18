@@ -14,37 +14,40 @@
 namespace blink {
 
 class CSSFontSelector;
+class Document;
 class FontResource;
 
 class FontLoader : public RefCountedWillBeGarbageCollectedFinalized<FontLoader> {
 public:
-    static PassRefPtrWillBeRawPtr<FontLoader> create(CSSFontSelector* fontSelector, ResourceFetcher* fetcher)
+    static PassRefPtrWillBeRawPtr<FontLoader> create(CSSFontSelector* fontSelector, Document* document)
     {
-        return adoptRefWillBeNoop(new FontLoader(fontSelector, fetcher));
+        return adoptRefWillBeNoop(new FontLoader(fontSelector, document));
     }
     ~FontLoader();
 
     void addFontToBeginLoading(FontResource*);
     void loadPendingFonts();
     void fontFaceInvalidated();
+    void didFailToDecode(FontResource*);
 
 #if !ENABLE(OILPAN)
-    void clearResourceFetcherAndFontSelector();
+    void clearDocumentAndFontSelector();
 #endif
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    FontLoader(CSSFontSelector*, ResourceFetcher*);
+    FontLoader(CSSFontSelector*, Document*);
     void beginLoadTimerFired(Timer<FontLoader>*);
     void clearPendingFonts();
 
     Timer<FontLoader> m_beginLoadingTimer;
 
-    typedef Vector<std::pair<ResourcePtr<FontResource>, ResourceLoader::RequestCountTracker> > FontsToLoadVector;
+    struct FontToLoad;
+    typedef Vector<OwnPtr<FontToLoad>> FontsToLoadVector;
     FontsToLoadVector m_fontsToBeginLoading;
     RawPtrWillBeMember<CSSFontSelector> m_fontSelector;
-    RawPtrWillBeWeakMember<ResourceFetcher> m_resourceFetcher;
+    RawPtrWillBeWeakMember<Document> m_document;
 };
 
 } // namespace blink

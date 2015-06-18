@@ -32,6 +32,7 @@
 #define DOMSelection_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/Position.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -42,7 +43,6 @@ namespace blink {
 
 class ExceptionState;
 class Node;
-class Position;
 class Range;
 class TreeScope;
 class VisibleSelection;
@@ -96,7 +96,7 @@ public:
     // Microsoft Selection Object API
     void empty();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit DOMSelection(const TreeScope*);

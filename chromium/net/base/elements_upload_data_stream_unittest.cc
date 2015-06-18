@@ -64,13 +64,13 @@ class MockUploadElementReader : public UploadElementReader {
         init_result_(OK),
         read_result_(OK) {}
 
-  virtual ~MockUploadElementReader() {}
+  ~MockUploadElementReader() override {}
 
   // UploadElementReader overrides.
   MOCK_METHOD1(Init, int(const CompletionCallback& callback));
-  virtual uint64 GetContentLength() const override { return content_length_; }
-  virtual uint64 BytesRemaining() const override { return bytes_remaining_; }
-  virtual bool IsInMemory() const override { return is_in_memory_; }
+  uint64 GetContentLength() const override { return content_length_; }
+  uint64 BytesRemaining() const override { return bytes_remaining_; }
+  bool IsInMemory() const override { return is_in_memory_; }
   MOCK_METHOD3(Read, int(IOBuffer* buf,
                          int buf_length,
                          const CompletionCallback& callback));
@@ -669,8 +669,8 @@ TEST_F(ElementsUploadDataStreamTest, InitToReset) {
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
   std::vector<char> expected_data(kTestData, kTestData + kTestDataSize);
-  expected_data.insert(expected_data.end(), expected_data.begin(),
-                       expected_data.begin() + kTestDataSize);
+  expected_data.insert(expected_data.end(), kTestData,
+                       kTestData + kTestDataSize);
 
   // Call Init().
   TestCompletionCallback init_callback1;
@@ -728,8 +728,8 @@ TEST_F(ElementsUploadDataStreamTest, InitDuringAsyncInit) {
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
   std::vector<char> expected_data(kTestData, kTestData + kTestDataSize);
-  expected_data.insert(expected_data.end(), expected_data.begin(),
-                       expected_data.begin() + kTestDataSize);
+  expected_data.insert(expected_data.end(), kTestData,
+                       kTestData + kTestDataSize);
 
   // Start Init.
   TestCompletionCallback init_callback1;
@@ -777,8 +777,8 @@ TEST_F(ElementsUploadDataStreamTest, InitDuringAsyncRead) {
       new ElementsUploadDataStream(element_readers_.Pass(), 0));
 
   std::vector<char> expected_data(kTestData, kTestData + kTestDataSize);
-  expected_data.insert(expected_data.end(), expected_data.begin(),
-                       expected_data.begin() + kTestDataSize);
+  expected_data.insert(expected_data.end(), kTestData,
+                       kTestData + kTestDataSize);
 
   // Call Init().
   TestCompletionCallback init_callback1;

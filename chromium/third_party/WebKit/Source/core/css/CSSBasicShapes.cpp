@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -129,14 +129,14 @@ bool CSSBasicShapeCircle::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapeCircleType)
         return false;
 
-    const CSSBasicShapeCircle& other = static_cast<const CSSBasicShapeCircle&>(shape);
+    const CSSBasicShapeCircle& other = toCSSBasicShapeCircle(shape);
     return compareCSSValuePtr(m_centerX, other.m_centerX)
         && compareCSSValuePtr(m_centerY, other.m_centerY)
         && compareCSSValuePtr(m_radius, other.m_radius)
         && compareCSSValuePtr(m_referenceBox, other.m_referenceBox);
 }
 
-void CSSBasicShapeCircle::trace(Visitor* visitor)
+DEFINE_TRACE(CSSBasicShapeCircle)
 {
     visitor->trace(m_centerX);
     visitor->trace(m_centerY);
@@ -210,7 +210,7 @@ bool CSSBasicShapeEllipse::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapeEllipseType)
         return false;
 
-    const CSSBasicShapeEllipse& other = static_cast<const CSSBasicShapeEllipse&>(shape);
+    const CSSBasicShapeEllipse& other = toCSSBasicShapeEllipse(shape);
     return compareCSSValuePtr(m_centerX, other.m_centerX)
         && compareCSSValuePtr(m_centerY, other.m_centerY)
         && compareCSSValuePtr(m_radiusX, other.m_radiusX)
@@ -218,7 +218,7 @@ bool CSSBasicShapeEllipse::equals(const CSSBasicShape& shape) const
         && compareCSSValuePtr(m_referenceBox, other.m_referenceBox);
 }
 
-void CSSBasicShapeEllipse::trace(Visitor* visitor)
+DEFINE_TRACE(CSSBasicShapeEllipse)
 {
     visitor->trace(m_centerX);
     visitor->trace(m_centerY);
@@ -235,7 +235,7 @@ static String buildPolygonString(const WindRule& windRule, const Vector<String>&
     const char evenOddOpening[] = "polygon(evenodd, ";
     const char nonZeroOpening[] = "polygon(";
     const char commaSeparator[] = ", ";
-    COMPILE_ASSERT(sizeof(evenOddOpening) > sizeof(nonZeroOpening), polygon_string_openings_have_same_length);
+    static_assert(sizeof(evenOddOpening) > sizeof(nonZeroOpening), "polygon string openings should be the same length");
 
     // Compute the required capacity in advance to reduce allocations.
     size_t length = sizeof(evenOddOpening) - 1;
@@ -288,7 +288,7 @@ bool CSSBasicShapePolygon::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapePolygonType)
         return false;
 
-    const CSSBasicShapePolygon& rhs = static_cast<const CSSBasicShapePolygon&>(shape);
+    const CSSBasicShapePolygon& rhs = toCSSBasicShapePolygon(shape);
 
     if (!compareCSSValuePtr(m_referenceBox, rhs.m_referenceBox))
         return false;
@@ -296,7 +296,7 @@ bool CSSBasicShapePolygon::equals(const CSSBasicShape& shape) const
     return compareCSSValueVector(m_values, rhs.m_values);
 }
 
-void CSSBasicShapePolygon::trace(Visitor* visitor)
+DEFINE_TRACE(CSSBasicShapePolygon)
 {
     visitor->trace(m_values);
     CSSBasicShape::trace(visitor);
@@ -424,7 +424,7 @@ bool CSSBasicShapeInset::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapeInsetType)
         return false;
 
-    const CSSBasicShapeInset& other = static_cast<const CSSBasicShapeInset&>(shape);
+    const CSSBasicShapeInset& other = toCSSBasicShapeInset(shape);
     return compareCSSValuePtr(m_top, other.m_top)
         && compareCSSValuePtr(m_right, other.m_right)
         && compareCSSValuePtr(m_bottom, other.m_bottom)
@@ -435,7 +435,7 @@ bool CSSBasicShapeInset::equals(const CSSBasicShape& shape) const
         && compareCSSValuePtr(m_bottomLeftRadius, other.m_bottomLeftRadius);
 }
 
-void CSSBasicShapeInset::trace(Visitor* visitor)
+DEFINE_TRACE(CSSBasicShapeInset)
 {
     visitor->trace(m_top);
     visitor->trace(m_right);

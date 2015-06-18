@@ -7,33 +7,32 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
 
 namespace blink {
 
+class PushSubscriptionOptions;
 class ScriptPromise;
 class ScriptState;
-class ScriptPromiseResolver;
-class WebPushClient;
-class WebServiceWorkerProvider;
+class ServiceWorkerRegistration;
 
 class PushManager final : public GarbageCollected<PushManager>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PushManager* create()
+    static PushManager* create(ServiceWorkerRegistration* registration)
     {
-        return new PushManager();
+        return new PushManager(registration);
     }
 
-    ScriptPromise registerPushMessaging(ScriptState*);
-    ScriptPromise hasPermission(ScriptState*);
+    ScriptPromise subscribe(ScriptState*, const PushSubscriptionOptions&);
+    ScriptPromise getSubscription(ScriptState*);
+    ScriptPromise permissionState(ScriptState*, const PushSubscriptionOptions&);
 
-    void doRegister(WebPushClient*, PassRefPtr<ScriptPromiseResolver>, WebServiceWorkerProvider*);
-
-    void trace(Visitor*) { }
+    DECLARE_TRACE();
 
 private:
-    PushManager();
+    explicit PushManager(ServiceWorkerRegistration*);
+
+    Member<ServiceWorkerRegistration> m_registration;
 };
 
 } // namespace blink

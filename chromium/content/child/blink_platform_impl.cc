@@ -13,10 +13,8 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -25,40 +23,51 @@
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
+#include "base/trace_event/memory_dump_manager.h"
+#include "blink/public/resources/grit/blink_image_resources.h"
 #include "blink/public/resources/grit/blink_resources.h"
+#include "components/mime_util/mime_util.h"
+#include "components/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "content/app/resources/grit/content_resources.h"
 #include "content/app/strings/grit/content_strings.h"
-#include "content/child/child_thread.h"
+#include "content/child/background_sync/background_sync_provider.h"
+#include "content/child/background_sync/background_sync_provider_thread_proxy.h"
+#include "content/child/bluetooth/web_bluetooth_impl.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/geofencing/web_geofencing_provider_impl.h"
+#include "content/child/navigator_connect/navigator_connect_provider.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/notifications/notification_manager.h"
+#include "content/child/permissions/permission_dispatcher.h"
+#include "content/child/permissions/permission_dispatcher_thread_proxy.h"
+#include "content/child/push_messaging/push_dispatcher.h"
+#include "content/child/push_messaging/push_provider.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_discardable_memory_impl.h"
-#include "content/child/web_gesture_curve_impl.h"
+#include "content/child/web_memory_dump_provider_adapter.h"
 #include "content/child/web_url_loader_impl.h"
+#include "content/child/web_url_request_util.h"
 #include "content/child/websocket_bridge.h"
-#include "content/child/webthread_impl.h"
 #include "content/child/worker_task_runner.h"
 #include "content/public/common/content_client.h"
 #include "net/base/data_url.h"
-#include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "third_party/WebKit/public/platform/WebConvertableToTraceFormat.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
+#include "third_party/WebKit/public/platform/WebMemoryDumpProvider.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "ui/base/layout.h"
-
-#if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
-#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
-#endif
+#include "ui/events/gestures/blink/web_gesture_curve_impl.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 
 using blink::WebData;
 using blink::WebFallbackThemeEngine;
@@ -139,11 +148,14 @@ class MemoryUsageCache {
 };
 
 class ConvertableToTraceFormatWrapper
-    : public base::debug::ConvertableToTraceFormat {
+    : public base::trace_event::ConvertableToTraceFormat {
  public:
+  // We move a reference pointer from |convertable| to |convertable_|,
+  // rather than copying, for thread safety. https://crbug.com/478149
   explicit ConvertableToTraceFormatWrapper(
-      const blink::WebConvertableToTraceFormat& convertable)
-      : convertable_(convertable) {}
+      blink::WebConvertableToTraceFormat& convertable) {
+    convertable_.moveFrom(convertable);
+  }
   void AppendAsTraceFormat(std::string* out) const override {
     *out += convertable_.asTraceFormat().utf8();
   }
@@ -153,13 +165,6 @@ class ConvertableToTraceFormatWrapper
 
   blink::WebConvertableToTraceFormat convertable_;
 };
-
-bool isHostnameReservedIPAddress(const std::string& host) {
-  net::IPAddressNumber address;
-  if (!net::ParseURLHostnameToNumber(host, &address))
-    return false;
-  return net::IsIPAddressReserved(address);
-}
 
 }  // namespace
 
@@ -243,8 +248,10 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_PLAY_BUTTON_HELP;
     case WebLocalizedString::AXMediaPauseButtonHelp:
       return IDS_AX_MEDIA_PAUSE_BUTTON_HELP;
-    case WebLocalizedString::AXMediaSliderHelp:
-      return IDS_AX_MEDIA_SLIDER_HELP;
+    case WebLocalizedString::AXMediaAudioSliderHelp:
+      return IDS_AX_MEDIA_AUDIO_SLIDER_HELP;
+    case WebLocalizedString::AXMediaVideoSliderHelp:
+      return IDS_AX_MEDIA_VIDEO_SLIDER_HELP;
     case WebLocalizedString::AXMediaSliderThumbHelp:
       return IDS_AX_MEDIA_SLIDER_THUMB_HELP;
     case WebLocalizedString::AXMediaCurrentTimeDisplayHelp:
@@ -418,31 +425,62 @@ static int ToMessageID(WebLocalizedString::Name name) {
 }
 
 BlinkPlatformImpl::BlinkPlatformImpl()
-    : main_loop_(base::MessageLoop::current()),
+    : main_thread_task_runner_(base::MessageLoopProxy::current()),
       shared_timer_func_(NULL),
       shared_timer_fire_time_(0.0),
       shared_timer_fire_time_was_set_while_suspended_(false),
-      shared_timer_suspended_(0),
-      current_thread_slot_(&DestroyCurrentThread) {
+      shared_timer_suspended_(0) {
+  InternalInit();
+}
+
+BlinkPlatformImpl::BlinkPlatformImpl(
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner)
+    : main_thread_task_runner_(main_thread_task_runner),
+      shared_timer_func_(NULL),
+      shared_timer_fire_time_(0.0),
+      shared_timer_fire_time_was_set_while_suspended_(false),
+      shared_timer_suspended_(0) {
+  // TODO(alexclarke): Use c++11 delegated constructors when allowed.
+  InternalInit();
+}
+
+void BlinkPlatformImpl::InternalInit() {
   // ChildThread may not exist in some tests.
-  if (ChildThread::current()) {
+  if (ChildThreadImpl::current()) {
     geofencing_provider_.reset(new WebGeofencingProviderImpl(
-        ChildThread::current()->thread_safe_sender()));
-    thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
+        ChildThreadImpl::current()->thread_safe_sender()));
+    bluetooth_.reset(
+        new WebBluetoothImpl(ChildThreadImpl::current()->thread_safe_sender()));
+    thread_safe_sender_ = ChildThreadImpl::current()->thread_safe_sender();
     notification_dispatcher_ =
-        ChildThread::current()->notification_dispatcher();
+        ChildThreadImpl::current()->notification_dispatcher();
+    push_dispatcher_ = ChildThreadImpl::current()->push_dispatcher();
+    permission_client_.reset(new PermissionDispatcher(
+        ChildThreadImpl::current()->service_registry()));
+    sync_provider_.reset(new BackgroundSyncProvider(
+        ChildThreadImpl::current()->service_registry()));
   }
+
+  if (main_thread_task_runner_.get()) {
+    shared_timer_.SetTaskRunner(main_thread_task_runner_);
+  }
+}
+
+void BlinkPlatformImpl::UpdateWebThreadTLS(blink::WebThread* thread) {
+  DCHECK(!current_thread_slot_.Get());
+  current_thread_slot_.Set(thread);
 }
 
 BlinkPlatformImpl::~BlinkPlatformImpl() {
 }
 
 WebURLLoader* BlinkPlatformImpl::createURLLoader() {
-  ChildThread* child_thread = ChildThread::current();
+  ChildThreadImpl* child_thread = ChildThreadImpl::current();
   // There may be no child thread in RenderViewTests.  These tests can still use
   // data URLs to bypass the ResourceDispatcher.
   return new WebURLLoaderImpl(
-      child_thread ? child_thread->resource_dispatcher() : NULL);
+      child_thread ? child_thread->resource_dispatcher() : NULL,
+      MainTaskRunnerForCurrentThread());
 }
 
 blink::WebSocketHandle* BlinkPlatformImpl::createWebSocketHandle() {
@@ -457,8 +495,8 @@ WebData BlinkPlatformImpl::parseDataURL(const WebURL& url,
                                         WebString& mimetype_out,
                                         WebString& charset_out) {
   std::string mime_type, char_set, data;
-  if (net::DataURL::Parse(url, &mime_type, &char_set, &data)
-      && net::IsSupportedMimeType(mime_type)) {
+  if (net::DataURL::Parse(url, &mime_type, &char_set, &data) &&
+      mime_util::IsSupportedMimeType(mime_type)) {
     mimetype_out = WebString::fromUTF8(mime_type);
     charset_out = WebString::fromUTF8(char_set);
     return data;
@@ -468,36 +506,40 @@ WebData BlinkPlatformImpl::parseDataURL(const WebURL& url,
 
 WebURLError BlinkPlatformImpl::cancelledError(
     const WebURL& unreachableURL) const {
-  return WebURLLoaderImpl::CreateError(unreachableURL, false, net::ERR_ABORTED);
+  return CreateWebURLError(unreachableURL, false, net::ERR_ABORTED);
 }
 
 bool BlinkPlatformImpl::isReservedIPAddress(
-    const blink::WebSecurityOrigin& securityOrigin) const {
-  return isHostnameReservedIPAddress(securityOrigin.host().utf8());
+    const blink::WebString& host) const {
+  net::IPAddressNumber address;
+  if (!net::ParseURLHostnameToNumber(host.utf8(), &address))
+    return false;
+  return net::IsIPAddressReserved(address);
 }
 
-bool BlinkPlatformImpl::isReservedIPAddress(const blink::WebURL& url) const {
-  return isHostnameReservedIPAddress(GURL(url).host());
+bool BlinkPlatformImpl::portAllowed(const blink::WebURL& url) const {
+  GURL gurl = GURL(url);
+  if (!gurl.has_port())
+    return true;
+  int port = gurl.IntPort();
+  if (net::IsPortAllowedByOverride(port))
+    return true;
+  if (gurl.SchemeIs("ftp"))
+    return net::IsPortAllowedByFtp(port);
+  return net::IsPortAllowedByDefault(port);
 }
 
 blink::WebThread* BlinkPlatformImpl::createThread(const char* name) {
-  return new WebThreadImpl(name);
+  scheduler::WebThreadImplForWorkerScheduler* thread =
+      new scheduler::WebThreadImplForWorkerScheduler(name);
+  thread->TaskRunner()->PostTask(
+      FROM_HERE, base::Bind(&BlinkPlatformImpl::UpdateWebThreadTLS,
+                            base::Unretained(this), thread));
+  return thread;
 }
 
 blink::WebThread* BlinkPlatformImpl::currentThread() {
-  WebThreadImplForMessageLoop* thread =
-      static_cast<WebThreadImplForMessageLoop*>(current_thread_slot_.Get());
-  if (thread)
-    return (thread);
-
-  scoped_refptr<base::MessageLoopProxy> message_loop =
-      base::MessageLoopProxy::current();
-  if (!message_loop.get())
-    return NULL;
-
-  thread = new WebThreadImplForMessageLoop(message_loop.get());
-  current_thread_slot_.Set(thread);
-  return thread;
+  return static_cast<blink::WebThread*>(current_thread_slot_.Get());
 }
 
 void BlinkPlatformImpl::yieldCurrentThread() {
@@ -520,11 +562,9 @@ blink::WebWaitableEvent* BlinkPlatformImpl::waitMultipleEvents(
 }
 
 void BlinkPlatformImpl::decrementStatsCounter(const char* name) {
-  base::StatsCounter(name).Decrement();
 }
 
 void BlinkPlatformImpl::incrementStatsCounter(const char* name) {
-  base::StatsCounter(name).Increment();
 }
 
 void BlinkPlatformImpl::histogramCustomCounts(
@@ -560,39 +600,48 @@ const unsigned char* BlinkPlatformImpl::getTraceCategoryEnabledFlag(
   return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group);
 }
 
-long* BlinkPlatformImpl::getTraceSamplingState(
-    const unsigned thread_bucket) {
+blink::Platform::TraceEventAPIAtomicWord*
+BlinkPlatformImpl::getTraceSamplingState(const unsigned thread_bucket) {
   switch (thread_bucket) {
     case 0:
-      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(0));
+      return reinterpret_cast<blink::Platform::TraceEventAPIAtomicWord*>(
+          &TRACE_EVENT_API_THREAD_BUCKET(0));
     case 1:
-      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(1));
+      return reinterpret_cast<blink::Platform::TraceEventAPIAtomicWord*>(
+          &TRACE_EVENT_API_THREAD_BUCKET(1));
     case 2:
-      return reinterpret_cast<long*>(&TRACE_EVENT_API_THREAD_BUCKET(2));
+      return reinterpret_cast<blink::Platform::TraceEventAPIAtomicWord*>(
+          &TRACE_EVENT_API_THREAD_BUCKET(2));
     default:
       NOTREACHED() << "Unknown thread bucket type.";
   }
   return NULL;
 }
 
-COMPILE_ASSERT(
+static_assert(
     sizeof(blink::Platform::TraceEventHandle) ==
-        sizeof(base::debug::TraceEventHandle),
-    TraceEventHandle_types_must_be_same_size);
+        sizeof(base::trace_event::TraceEventHandle),
+    "TraceEventHandle types must be same size");
 
 blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
     unsigned long long id,
+    double timestamp,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
     unsigned char flags) {
-  base::debug::TraceEventHandle handle = TRACE_EVENT_API_ADD_TRACE_EVENT(
-      phase, category_group_enabled, name, id,
-      num_args, arg_names, arg_types, arg_values, NULL, flags);
+  base::TimeTicks timestamp_tt = base::TimeTicks::FromInternalValue(
+      static_cast<int64>(timestamp * base::Time::kMicrosecondsPerSecond));
+  base::trace_event::TraceEventHandle handle =
+      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
+          phase, category_group_enabled, name, id,
+          base::PlatformThread::CurrentId(),
+          timestamp_tt,
+          num_args, arg_names, arg_types, arg_values, NULL, flags);
   blink::Platform::TraceEventHandle result;
   memcpy(&result, &handle, sizeof(result));
   return result;
@@ -603,13 +652,15 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
     const unsigned char* category_group_enabled,
     const char* name,
     unsigned long long id,
+    double timestamp,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
-    const blink::WebConvertableToTraceFormat* convertable_values,
+    blink::WebConvertableToTraceFormat* convertable_values,
     unsigned char flags) {
-  scoped_refptr<base::debug::ConvertableToTraceFormat> convertable_wrappers[2];
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+      convertable_wrappers[2];
   if (convertable_values) {
     size_t size = std::min(static_cast<size_t>(num_args),
                            arraysize(convertable_wrappers));
@@ -620,11 +671,15 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
       }
     }
   }
-  base::debug::TraceEventHandle handle =
-      TRACE_EVENT_API_ADD_TRACE_EVENT(phase,
+  base::TimeTicks timestamp_tt = base::TimeTicks::FromInternalValue(
+      static_cast<int64>(timestamp * base::Time::kMicrosecondsPerSecond));
+  base::trace_event::TraceEventHandle handle =
+      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(phase,
                                       category_group_enabled,
                                       name,
                                       id,
+                                      base::PlatformThread::CurrentId(),
+                                      timestamp_tt,
                                       num_args,
                                       arg_names,
                                       arg_types,
@@ -640,10 +695,34 @@ void BlinkPlatformImpl::updateTraceEventDuration(
     const unsigned char* category_group_enabled,
     const char* name,
     TraceEventHandle handle) {
-  base::debug::TraceEventHandle traceEventHandle;
+  base::trace_event::TraceEventHandle traceEventHandle;
   memcpy(&traceEventHandle, &handle, sizeof(handle));
   TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(
       category_group_enabled, name, traceEventHandle);
+}
+
+void BlinkPlatformImpl::registerMemoryDumpProvider(
+    blink::WebMemoryDumpProvider* wmdp) {
+  WebMemoryDumpProviderAdapter* wmdp_adapter =
+      new WebMemoryDumpProviderAdapter(wmdp);
+  bool did_insert =
+      memory_dump_providers_.add(wmdp, make_scoped_ptr(wmdp_adapter)).second;
+  if (!did_insert)
+    return;
+  wmdp_adapter->set_is_registered(true);
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      wmdp_adapter, base::ThreadTaskRunnerHandle::Get());
+}
+
+void BlinkPlatformImpl::unregisterMemoryDumpProvider(
+    blink::WebMemoryDumpProvider* wmdp) {
+  scoped_ptr<WebMemoryDumpProviderAdapter> wmdp_adapter =
+      memory_dump_providers_.take_and_erase(wmdp);
+  if (!wmdp_adapter)
+    return;
+  base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
+      wmdp_adapter.get());
+  wmdp_adapter->set_is_registered(false);
 }
 
 namespace {
@@ -712,165 +791,222 @@ struct DataResource {
 };
 
 const DataResource kDataResources[] = {
-  { "missingImage", IDR_BROKENIMAGE, ui::SCALE_FACTOR_100P },
-  { "missingImage@2x", IDR_BROKENIMAGE, ui::SCALE_FACTOR_200P },
-  { "mediaplayerPause", IDR_MEDIAPLAYER_PAUSE_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerPauseHover",
-    IDR_MEDIAPLAYER_PAUSE_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerPauseDown",
-    IDR_MEDIAPLAYER_PAUSE_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerPlay", IDR_MEDIAPLAYER_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerPlayHover",
-    IDR_MEDIAPLAYER_PLAY_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerPlayDown",
-    IDR_MEDIAPLAYER_PLAY_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerPlayDisabled",
-    IDR_MEDIAPLAYER_PLAY_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel3",
-    IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel3Hover",
-    IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel3Down",
-    IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel2",
-    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel2Hover",
-    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel2Down",
-    IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel1",
-    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel1Hover",
-    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel1Down",
-    IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel0",
-    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel0Hover",
-    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundLevel0Down",
-    IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSoundDisabled",
-    IDR_MEDIAPLAYER_SOUND_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSliderThumb",
-    IDR_MEDIAPLAYER_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSliderThumbHover",
-    IDR_MEDIAPLAYER_SLIDER_THUMB_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerSliderThumbDown",
-    IDR_MEDIAPLAYER_SLIDER_THUMB_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerVolumeSliderThumb",
-    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB, ui::SCALE_FACTOR_100P },
-  { "mediaplayerVolumeSliderThumbHover",
-    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerVolumeSliderThumbDown",
-    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerVolumeSliderThumbDisabled",
-    IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaplayerClosedCaption",
-    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerClosedCaptionHover",
-    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerClosedCaptionDown",
-    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerClosedCaptionDisabled",
-    IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaplayerFullscreen",
-    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerFullscreenHover",
-    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_HOVER, ui::SCALE_FACTOR_100P },
-  { "mediaplayerFullscreenDown",
-    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN, ui::SCALE_FACTOR_100P },
-  { "mediaplayerCastOff",
-    IDR_MEDIAPLAYER_CAST_BUTTON_OFF, ui::SCALE_FACTOR_100P },
-  { "mediaplayerCastOn",
-    IDR_MEDIAPLAYER_CAST_BUTTON_ON, ui::SCALE_FACTOR_100P },
-  { "mediaplayerFullscreenDisabled",
-    IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED, ui::SCALE_FACTOR_100P },
-  { "mediaplayerOverlayCastOff",
-    IDR_MEDIAPLAYER_OVERLAY_CAST_BUTTON_OFF, ui::SCALE_FACTOR_100P },
-  { "mediaplayerOverlayPlay",
-    IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
-#if defined(OS_MACOSX)
-  { "overhangPattern", IDR_OVERHANG_PATTERN, ui::SCALE_FACTOR_100P },
-  { "overhangShadow", IDR_OVERHANG_SHADOW, ui::SCALE_FACTOR_100P },
-#endif
-  { "panIcon", IDR_PAN_SCROLL_ICON, ui::SCALE_FACTOR_100P },
-  { "searchCancel", IDR_SEARCH_CANCEL, ui::SCALE_FACTOR_100P },
-  { "searchCancelPressed", IDR_SEARCH_CANCEL_PRESSED, ui::SCALE_FACTOR_100P },
-  { "searchMagnifier", IDR_SEARCH_MAGNIFIER, ui::SCALE_FACTOR_100P },
-  { "searchMagnifierResults",
-    IDR_SEARCH_MAGNIFIER_RESULTS, ui::SCALE_FACTOR_100P },
-  { "textAreaResizeCorner", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_100P },
-  { "textAreaResizeCorner@2x", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_200P },
-  { "generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P },
-  { "generatePasswordHover",
-    IDR_PASSWORD_GENERATION_ICON_HOVER, ui::SCALE_FACTOR_100P },
-  { "html.css", IDR_UASTYLE_HTML_CSS, ui::SCALE_FACTOR_NONE },
-  { "quirks.css", IDR_UASTYLE_QUIRKS_CSS, ui::SCALE_FACTOR_NONE },
-  { "view-source.css", IDR_UASTYLE_VIEW_SOURCE_CSS, ui::SCALE_FACTOR_NONE },
-  { "themeChromium.css", IDR_UASTYLE_THEME_CHROMIUM_CSS,
-    ui::SCALE_FACTOR_NONE },
+    {"missingImage", IDR_BROKENIMAGE, ui::SCALE_FACTOR_100P},
+    {"missingImage@2x", IDR_BROKENIMAGE, ui::SCALE_FACTOR_200P},
+    {"mediaplayerPause", IDR_MEDIAPLAYER_PAUSE_BUTTON, ui::SCALE_FACTOR_100P},
+    {"mediaplayerPauseHover",
+     IDR_MEDIAPLAYER_PAUSE_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerPauseDown",
+     IDR_MEDIAPLAYER_PAUSE_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerPlay", IDR_MEDIAPLAYER_PLAY_BUTTON, ui::SCALE_FACTOR_100P},
+    {"mediaplayerPlayHover",
+     IDR_MEDIAPLAYER_PLAY_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerPlayDown",
+     IDR_MEDIAPLAYER_PLAY_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerPlayDisabled",
+     IDR_MEDIAPLAYER_PLAY_BUTTON_DISABLED,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel3",
+     IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel3Hover",
+     IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel3Down",
+     IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel2",
+     IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel2Hover",
+     IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel2Down",
+     IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel1",
+     IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel1Hover",
+     IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel1Down",
+     IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel0",
+     IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel0Hover",
+     IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundLevel0Down",
+     IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSoundDisabled",
+     IDR_MEDIAPLAYER_SOUND_DISABLED,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSliderThumb",
+     IDR_MEDIAPLAYER_SLIDER_THUMB,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSliderThumbHover",
+     IDR_MEDIAPLAYER_SLIDER_THUMB_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerSliderThumbDown",
+     IDR_MEDIAPLAYER_SLIDER_THUMB_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerVolumeSliderThumb",
+     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerVolumeSliderThumbHover",
+     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerVolumeSliderThumbDown",
+     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerVolumeSliderThumbDisabled",
+     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DISABLED,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerClosedCaption",
+     IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerClosedCaptionHover",
+     IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerClosedCaptionDown",
+     IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerClosedCaptionDisabled",
+     IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DISABLED,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerFullscreen",
+     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerFullscreenHover",
+     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerFullscreenDown",
+     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerCastOff",
+     IDR_MEDIAPLAYER_CAST_BUTTON_OFF,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerCastOn",
+     IDR_MEDIAPLAYER_CAST_BUTTON_ON,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerFullscreenDisabled",
+     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DISABLED,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerOverlayCastOff",
+     IDR_MEDIAPLAYER_OVERLAY_CAST_BUTTON_OFF,
+     ui::SCALE_FACTOR_100P},
+    {"mediaplayerOverlayPlay",
+     IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON,
+     ui::SCALE_FACTOR_100P},
+    {"panIcon", IDR_PAN_SCROLL_ICON, ui::SCALE_FACTOR_100P},
+    {"searchCancel", IDR_SEARCH_CANCEL, ui::SCALE_FACTOR_100P},
+    {"searchCancelPressed", IDR_SEARCH_CANCEL_PRESSED, ui::SCALE_FACTOR_100P},
+    {"searchMagnifier", IDR_SEARCH_MAGNIFIER, ui::SCALE_FACTOR_100P},
+    {"searchMagnifierResults",
+     IDR_SEARCH_MAGNIFIER_RESULTS,
+     ui::SCALE_FACTOR_100P},
+    {"textAreaResizeCorner", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_100P},
+    {"textAreaResizeCorner@2x", IDR_TEXTAREA_RESIZER, ui::SCALE_FACTOR_200P},
+    {"generatePassword", IDR_PASSWORD_GENERATION_ICON, ui::SCALE_FACTOR_100P},
+    {"generatePasswordHover",
+     IDR_PASSWORD_GENERATION_ICON_HOVER,
+     ui::SCALE_FACTOR_100P},
+    {"html.css", IDR_UASTYLE_HTML_CSS, ui::SCALE_FACTOR_NONE},
+    {"quirks.css", IDR_UASTYLE_QUIRKS_CSS, ui::SCALE_FACTOR_NONE},
+    {"view-source.css", IDR_UASTYLE_VIEW_SOURCE_CSS, ui::SCALE_FACTOR_NONE},
+    {"themeChromium.css",
+     IDR_UASTYLE_THEME_CHROMIUM_CSS,
+     ui::SCALE_FACTOR_NONE},
 #if defined(OS_ANDROID)
-  { "themeChromiumAndroid.css", IDR_UASTYLE_THEME_CHROMIUM_ANDROID_CSS,
-    ui::SCALE_FACTOR_NONE },
-  { "mediaControlsAndroid.css", IDR_UASTYLE_MEDIA_CONTROLS_ANDROID_CSS,
-    ui::SCALE_FACTOR_NONE },
+    {"themeChromiumAndroid.css",
+     IDR_UASTYLE_THEME_CHROMIUM_ANDROID_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"mediaControlsAndroid.css",
+     IDR_UASTYLE_MEDIA_CONTROLS_ANDROID_CSS,
+     ui::SCALE_FACTOR_NONE},
 #endif
 #if !defined(OS_WIN)
-  { "themeChromiumLinux.css", IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS,
-    ui::SCALE_FACTOR_NONE },
+    {"themeChromiumLinux.css",
+     IDR_UASTYLE_THEME_CHROMIUM_LINUX_CSS,
+     ui::SCALE_FACTOR_NONE},
 #endif
-  { "themeChromiumSkia.css", IDR_UASTYLE_THEME_CHROMIUM_SKIA_CSS,
-    ui::SCALE_FACTOR_NONE },
-  { "themeInputMultipleFields.css",
-    IDR_UASTYLE_THEME_INPUT_MULTIPLE_FIELDS_CSS, ui::SCALE_FACTOR_NONE },
+    {"themeChromiumSkia.css",
+     IDR_UASTYLE_THEME_CHROMIUM_SKIA_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"themeInputMultipleFields.css",
+     IDR_UASTYLE_THEME_INPUT_MULTIPLE_FIELDS_CSS,
+     ui::SCALE_FACTOR_NONE},
 #if defined(OS_MACOSX)
-  { "themeMac.css", IDR_UASTYLE_THEME_MAC_CSS, ui::SCALE_FACTOR_NONE },
+    {"themeMac.css", IDR_UASTYLE_THEME_MAC_CSS, ui::SCALE_FACTOR_NONE},
 #endif
-  { "themeWin.css", IDR_UASTYLE_THEME_WIN_CSS, ui::SCALE_FACTOR_NONE },
-  { "themeWinQuirks.css", IDR_UASTYLE_THEME_WIN_QUIRKS_CSS,
-    ui::SCALE_FACTOR_NONE },
-  { "svg.css", IDR_UASTYLE_SVG_CSS, ui::SCALE_FACTOR_NONE},
-  { "navigationTransitions.css", IDR_UASTYLE_NAVIGATION_TRANSITIONS_CSS,
-    ui::SCALE_FACTOR_NONE },
-  { "mathml.css", IDR_UASTYLE_MATHML_CSS, ui::SCALE_FACTOR_NONE},
-  { "mediaControls.css", IDR_UASTYLE_MEDIA_CONTROLS_CSS,
-    ui::SCALE_FACTOR_NONE },
-  { "fullscreen.css", IDR_UASTYLE_FULLSCREEN_CSS, ui::SCALE_FACTOR_NONE},
-  { "xhtmlmp.css", IDR_UASTYLE_XHTMLMP_CSS, ui::SCALE_FACTOR_NONE},
-  { "viewportAndroid.css", IDR_UASTYLE_VIEWPORT_ANDROID_CSS,
-    ui::SCALE_FACTOR_NONE},
-  { "InspectorOverlayPage.html", IDR_INSPECTOR_OVERLAY_PAGE_HTML,
-    ui::SCALE_FACTOR_NONE },
-  { "InjectedScriptCanvasModuleSource.js",
-    IDR_INSPECTOR_INJECTED_SCRIPT_CANVAS_MODULE_SOURCE_JS,
-    ui::SCALE_FACTOR_NONE },
-  { "InjectedScriptSource.js", IDR_INSPECTOR_INJECTED_SCRIPT_SOURCE_JS,
-    ui::SCALE_FACTOR_NONE },
-  { "DebuggerScriptSource.js", IDR_INSPECTOR_DEBUGGER_SCRIPT_SOURCE_JS,
-    ui::SCALE_FACTOR_NONE },
-  { "DocumentExecCommand.js", IDR_PRIVATE_SCRIPT_DOCUMENTEXECCOMMAND_JS,
-    ui::SCALE_FACTOR_NONE },
-  { "DocumentXMLTreeViewer.js", IDR_PRIVATE_SCRIPT_DOCUMENTXMLTREEVIEWER_JS,
-    ui::SCALE_FACTOR_NONE },
-  { "HTMLMarqueeElement.js", IDR_PRIVATE_SCRIPT_HTMLMARQUEEELEMENT_JS,
-    ui::SCALE_FACTOR_NONE },
-  { "PluginPlaceholderElement.js",
-    IDR_PRIVATE_SCRIPT_PLUGINPLACEHOLDERELEMENT_JS, ui::SCALE_FACTOR_NONE },
-  { "PrivateScriptRunner.js", IDR_PRIVATE_SCRIPT_PRIVATESCRIPTRUNNER_JS,
-    ui::SCALE_FACTOR_NONE },
+    {"themeWin.css", IDR_UASTYLE_THEME_WIN_CSS, ui::SCALE_FACTOR_NONE},
+    {"themeWinQuirks.css",
+     IDR_UASTYLE_THEME_WIN_QUIRKS_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"svg.css", IDR_UASTYLE_SVG_CSS, ui::SCALE_FACTOR_NONE},
+    {"navigationTransitions.css",
+     IDR_UASTYLE_NAVIGATION_TRANSITIONS_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"mathml.css", IDR_UASTYLE_MATHML_CSS, ui::SCALE_FACTOR_NONE},
+    {"mediaControls.css",
+     IDR_UASTYLE_MEDIA_CONTROLS_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"fullscreen.css", IDR_UASTYLE_FULLSCREEN_CSS, ui::SCALE_FACTOR_NONE},
+    {"xhtmlmp.css", IDR_UASTYLE_XHTMLMP_CSS, ui::SCALE_FACTOR_NONE},
+    {"viewportAndroid.css",
+     IDR_UASTYLE_VIEWPORT_ANDROID_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"InspectorOverlayPage.html",
+     IDR_INSPECTOR_OVERLAY_PAGE_HTML,
+     ui::SCALE_FACTOR_NONE},
+    {"InjectedScriptSource.js",
+     IDR_INSPECTOR_INJECTED_SCRIPT_SOURCE_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"DebuggerScriptSource.js",
+     IDR_INSPECTOR_DEBUGGER_SCRIPT_SOURCE_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"DocumentExecCommand.js",
+     IDR_PRIVATE_SCRIPT_DOCUMENTEXECCOMMAND_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"DocumentXMLTreeViewer.css",
+     IDR_PRIVATE_SCRIPT_DOCUMENTXMLTREEVIEWER_CSS,
+     ui::SCALE_FACTOR_NONE},
+    {"DocumentXMLTreeViewer.js",
+     IDR_PRIVATE_SCRIPT_DOCUMENTXMLTREEVIEWER_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"HTMLMarqueeElement.js",
+     IDR_PRIVATE_SCRIPT_HTMLMARQUEEELEMENT_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"PluginPlaceholderElement.js",
+     IDR_PRIVATE_SCRIPT_PLUGINPLACEHOLDERELEMENT_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"PrivateScriptRunner.js",
+     IDR_PRIVATE_SCRIPT_PRIVATESCRIPTRUNNER_JS,
+     ui::SCALE_FACTOR_NONE},
 #ifdef IDR_PICKER_COMMON_JS
-  { "pickerCommon.js", IDR_PICKER_COMMON_JS, ui::SCALE_FACTOR_NONE },
-  { "pickerCommon.css", IDR_PICKER_COMMON_CSS, ui::SCALE_FACTOR_NONE },
-  { "calendarPicker.js", IDR_CALENDAR_PICKER_JS, ui::SCALE_FACTOR_NONE },
-  { "calendarPicker.css", IDR_CALENDAR_PICKER_CSS, ui::SCALE_FACTOR_NONE },
-  { "pickerButton.css", IDR_PICKER_BUTTON_CSS, ui::SCALE_FACTOR_NONE },
-  { "suggestionPicker.js", IDR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
-  { "suggestionPicker.css", IDR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
-  { "colorSuggestionPicker.js",
-    IDR_COLOR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
-  { "colorSuggestionPicker.css",
-    IDR_COLOR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+    {"pickerCommon.js", IDR_PICKER_COMMON_JS, ui::SCALE_FACTOR_NONE},
+    {"pickerCommon.css", IDR_PICKER_COMMON_CSS, ui::SCALE_FACTOR_NONE},
+    {"calendarPicker.js", IDR_CALENDAR_PICKER_JS, ui::SCALE_FACTOR_NONE},
+    {"calendarPicker.css", IDR_CALENDAR_PICKER_CSS, ui::SCALE_FACTOR_NONE},
+    {"listPicker.js", IDR_LIST_PICKER_JS, ui::SCALE_FACTOR_NONE},
+    {"listPicker.css", IDR_LIST_PICKER_CSS, ui::SCALE_FACTOR_NONE},
+    {"pickerButton.css", IDR_PICKER_BUTTON_CSS, ui::SCALE_FACTOR_NONE},
+    {"suggestionPicker.js", IDR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE},
+    {"suggestionPicker.css", IDR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE},
+    {"colorSuggestionPicker.js",
+     IDR_COLOR_SUGGESTION_PICKER_JS,
+     ui::SCALE_FACTOR_NONE},
+    {"colorSuggestionPicker.css",
+     IDR_COLOR_SUGGESTION_PICKER_CSS,
+     ui::SCALE_FACTOR_NONE},
 #endif
 };
 
@@ -948,6 +1084,11 @@ double BlinkPlatformImpl::monotonicallyIncreasingTime() {
       static_cast<double>(base::Time::kMicrosecondsPerSecond);
 }
 
+double BlinkPlatformImpl::systemTraceTime() {
+  return base::TimeTicks::NowFromSystemTraceTime().ToInternalValue() /
+      static_cast<double>(base::Time::kMicrosecondsPerSecond);
+}
+
 void BlinkPlatformImpl::cryptographicallyRandomValues(
     unsigned char* buffer, size_t length) {
   base::RandBytes(buffer, length);
@@ -992,31 +1133,24 @@ void BlinkPlatformImpl::stopSharedTimer() {
   shared_timer_.Stop();
 }
 
-void BlinkPlatformImpl::callOnMainThread(
-    void (*func)(void*), void* context) {
-  main_loop_->PostTask(FROM_HERE, base::Bind(func, context));
-}
-
 blink::WebGestureCurve* BlinkPlatformImpl::createFlingAnimationCurve(
     blink::WebGestureDevice device_source,
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
-  auto curve = WebGestureCurveImpl::CreateFromDefaultPlatformCurve(
-      gfx::Vector2dF(velocity.x, velocity.y),
-      gfx::Vector2dF(cumulative_scroll.width, cumulative_scroll.height));
-  return curve.release();
+  return ui::WebGestureCurveImpl::CreateFromDefaultPlatformCurve(
+             gfx::Vector2dF(velocity.x, velocity.y),
+             gfx::Vector2dF(cumulative_scroll.width, cumulative_scroll.height),
+             IsMainThread()).release();
 }
 
-void BlinkPlatformImpl::didStartWorkerRunLoop(
-    const blink::WebWorkerRunLoop& runLoop) {
+void BlinkPlatformImpl::didStartWorkerRunLoop() {
   WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
-  worker_task_runner->OnWorkerRunLoopStarted(runLoop);
+  worker_task_runner->OnWorkerRunLoopStarted();
 }
 
-void BlinkPlatformImpl::didStopWorkerRunLoop(
-    const blink::WebWorkerRunLoop& runLoop) {
+void BlinkPlatformImpl::didStopWorkerRunLoop() {
   WorkerTaskRunner* worker_task_runner = WorkerTaskRunner::Instance();
-  worker_task_runner->OnWorkerRunLoopStopped(runLoop);
+  worker_task_runner->OnWorkerRunLoopStopped();
 }
 
 blink::WebCrypto* BlinkPlatformImpl::crypto() {
@@ -1027,6 +1161,10 @@ blink::WebGeofencingProvider* BlinkPlatformImpl::geofencingProvider() {
   return geofencing_provider_.get();
 }
 
+blink::WebBluetooth* BlinkPlatformImpl::bluetooth() {
+  return bluetooth_.get();
+}
+
 blink::WebNotificationManager*
 BlinkPlatformImpl::notificationManager() {
   if (!thread_safe_sender_.get() || !notification_dispatcher_.get())
@@ -1034,7 +1172,47 @@ BlinkPlatformImpl::notificationManager() {
 
   return NotificationManager::ThreadSpecificInstance(
       thread_safe_sender_.get(),
+      main_thread_task_runner_.get(),
       notification_dispatcher_.get());
+}
+
+blink::WebPushProvider* BlinkPlatformImpl::pushProvider() {
+  if (!thread_safe_sender_.get() || !push_dispatcher_.get())
+    return nullptr;
+
+  return PushProvider::ThreadSpecificInstance(thread_safe_sender_.get(),
+                                              push_dispatcher_.get());
+}
+
+blink::WebNavigatorConnectProvider*
+BlinkPlatformImpl::navigatorConnectProvider() {
+  if (!thread_safe_sender_.get())
+    return nullptr;
+
+  return NavigatorConnectProvider::ThreadSpecificInstance(
+      thread_safe_sender_.get(), main_thread_task_runner_);
+}
+
+blink::WebPermissionClient* BlinkPlatformImpl::permissionClient() {
+  if (!permission_client_.get())
+    return nullptr;
+
+  if (IsMainThread())
+    return permission_client_.get();
+
+  return PermissionDispatcherThreadProxy::GetThreadInstance(
+      main_thread_task_runner_.get(), permission_client_.get());
+}
+
+blink::WebSyncProvider* BlinkPlatformImpl::backgroundSyncProvider() {
+  if (!sync_provider_.get())
+    return nullptr;
+
+  if (IsMainThread())
+    return sync_provider_.get();
+
+  return BackgroundSyncProviderThreadProxy::GetThreadInstance(
+      main_thread_task_runner_.get(), sync_provider_.get());
 }
 
 WebThemeEngine* BlinkPlatformImpl::themeEngine() {
@@ -1072,6 +1250,11 @@ long long BlinkPlatformImpl::databaseGetFileSize(
 long long BlinkPlatformImpl::databaseGetSpaceAvailableForOrigin(
     const blink::WebString& origin_identifier) {
   return 0;
+}
+
+bool BlinkPlatformImpl::databaseSetFileSize(
+    const blink::WebString& vfs_file_name, long long size) {
+  return false;
 }
 
 blink::WebString BlinkPlatformImpl::signedPublicKeyAndChallengeString(
@@ -1127,38 +1310,6 @@ size_t BlinkPlatformImpl::numberOfProcessors() {
   return static_cast<size_t>(base::SysInfo::NumberOfProcessors());
 }
 
-void BlinkPlatformImpl::startHeapProfiling(
-  const blink::WebString& prefix) {
-  // FIXME(morrita): Make this built on windows.
-#if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
-  HeapProfilerStart(prefix.utf8().data());
-#endif
-}
-
-void BlinkPlatformImpl::stopHeapProfiling() {
-#if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
-  HeapProfilerStop();
-#endif
-}
-
-void BlinkPlatformImpl::dumpHeapProfiling(
-  const blink::WebString& reason) {
-#if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
-  HeapProfilerDump(reason.utf8().data());
-#endif
-}
-
-WebString BlinkPlatformImpl::getHeapProfile() {
-#if !defined(NO_TCMALLOC) && defined(USE_TCMALLOC) && !defined(OS_WIN)
-  char* data = GetHeapProfile();
-  WebString result = WebString::fromUTF8(std::string(data));
-  free(data);
-  return result;
-#else
-  return WebString();
-#endif
-}
-
 bool BlinkPlatformImpl::processMemorySizesInBytes(
     size_t* private_bytes,
     size_t* shared_bytes) {
@@ -1171,10 +1322,6 @@ bool BlinkPlatformImpl::memoryAllocatorWasteInBytes(size_t* size) {
 
 blink::WebDiscardableMemory*
 BlinkPlatformImpl::allocateAndLockDiscardableMemory(size_t bytes) {
-  base::DiscardableMemoryType type =
-      base::DiscardableMemory::GetPreferredType();
-  if (type == base::DISCARDABLE_MEMORY_TYPE_EMULATED)
-    return NULL;
   return content::WebDiscardableMemoryImpl::CreateLockedMemory(bytes).release();
 }
 
@@ -1215,11 +1362,29 @@ void BlinkPlatformImpl::ResumeSharedTimer() {
   }
 }
 
-// static
-void BlinkPlatformImpl::DestroyCurrentThread(void* thread) {
-  WebThreadImplForMessageLoop* impl =
-      static_cast<WebThreadImplForMessageLoop*>(thread);
-  delete impl;
+scoped_refptr<base::SingleThreadTaskRunner>
+BlinkPlatformImpl::MainTaskRunnerForCurrentThread() {
+  if (main_thread_task_runner_.get() &&
+      main_thread_task_runner_->BelongsToCurrentThread()) {
+    return main_thread_task_runner_;
+  } else {
+    return base::MessageLoopProxy::current();
+  }
+}
+
+bool BlinkPlatformImpl::IsMainThread() const {
+  return main_thread_task_runner_.get() &&
+         main_thread_task_runner_->BelongsToCurrentThread();
+}
+
+WebString BlinkPlatformImpl::domCodeStringFromEnum(int dom_code) {
+  return WebString::fromUTF8(ui::KeycodeConverter::DomCodeToCodeString(
+      static_cast<ui::DomCode>(dom_code)));
+}
+
+int BlinkPlatformImpl::domEnumFromCodeString(const WebString& code) {
+  return static_cast<int>(ui::KeycodeConverter::CodeStringToDomCode(
+      code.utf8().data()));
 }
 
 }  // namespace content

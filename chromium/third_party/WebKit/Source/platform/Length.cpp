@@ -66,11 +66,7 @@ static Length parseHTMLAreaCoordinate(const CharType* data, unsigned length)
     unsigned doubleLength;
     splitLength(data, length, intLength, doubleLength);
 
-    bool ok;
-    int r = charactersToIntStrict(data, intLength, &ok);
-    if (ok)
-        return Length(r, Fixed);
-    return Length(0, Fixed);
+    return Length(charactersToIntStrict(data, intLength), Fixed);
 }
 
 // FIXME: Per HTML5, this should follow the "rules for parsing a list of integers".
@@ -111,7 +107,7 @@ Vector<Length> parseHTMLAreaElementCoords(const String& string)
 }
 
 class CalculationValueHandleMap {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(CalculationValueHandleMap);
 public:
     CalculationValueHandleMap()
         : m_index(1)
@@ -159,7 +155,7 @@ public:
 
 private:
     int m_index;
-    HashMap<int, RefPtr<CalculationValue> > m_map;
+    HashMap<int, RefPtr<CalculationValue>> m_map;
 };
 
 static CalculationValueHandleMap& calcHandles()
@@ -232,10 +228,10 @@ void Length::decrementCalculatedRef() const
     calcHandles().decrementRef(calculationHandle());
 }
 
-float Length::nonNanCalculatedValue(int maxValue) const
+float Length::nonNanCalculatedValue(LayoutUnit maxValue) const
 {
     ASSERT(isCalculated());
-    float result = calculationValue().evaluate(maxValue);
+    float result = calculationValue().evaluate(maxValue.toFloat());
     if (std::isnan(result))
         return 0;
     return result;
@@ -250,6 +246,6 @@ struct SameSizeAsLength {
     int32_t value;
     int32_t metaData;
 };
-COMPILE_ASSERT(sizeof(Length) == sizeof(SameSizeAsLength), length_should_stay_small);
+static_assert(sizeof(Length) == sizeof(SameSizeAsLength), "length should stay small");
 
 } // namespace blink

@@ -13,18 +13,14 @@
       'target_name': 'rtc_xmpp',
       'type': 'static_library',
       'dependencies': [
-        '<(webrtc_root)/base/base.gyp:webrtc_base',
+        '<(webrtc_root)/base/base.gyp:rtc_base',
         '<(webrtc_root)/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
-        '<(DEPTH)/third_party/expat/expat.gyp:expat',
       ],
       'defines': [
         'FEATURE_ENABLE_SSL',
       ],
       'cflags_cc!': [
         '-Wnon-virtual-dtor',
-      ],
-      'export_dependent_settings': [
-        '<(DEPTH)/third_party/expat/expat.gyp:expat',
       ],
       'sources': [
         'asyncsocket.h',
@@ -111,6 +107,14 @@
         ],
       },
       'conditions': [
+        ['build_expat==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/expat/expat.gyp:expat',
+          ],
+          'export_dependent_settings': [
+            '<(DEPTH)/third_party/expat/expat.gyp:expat',
+          ],
+        }],
         ['build_with_chromium==0', {
           'defines': [
             'FEATURE_ENABLE_VOICEMAIL',
@@ -138,4 +142,4 @@
       ],
     }],
 }
-  
+

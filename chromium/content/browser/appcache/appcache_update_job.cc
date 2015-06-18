@@ -7,12 +7,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/browser/appcache/appcache_group.h"
 #include "content/browser/appcache/appcache_histograms.h"
-#include "net/base/host_port_pair.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -20,15 +20,6 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_context.h"
-
-namespace {
-bool IsDataReductionProxy(const net::HostPortPair& proxy_server) {
-  return (
-      proxy_server.Equals(net::HostPortPair("proxy.googlezip.net", 443)) ||
-      proxy_server.Equals(net::HostPortPair("compress.googlezip.net", 80)) ||
-      proxy_server.Equals(net::HostPortPair("proxy-dev.googlezip.net", 80)));
-}
-}  // namspace
 
 namespace content {
 
@@ -133,7 +124,7 @@ AppCacheUpdateJob::URLFetcher::URLFetcher(const GURL& url,
       retry_503_attempts_(0),
       buffer_(new net::IOBuffer(kBufferSize)),
       request_(job->service_->request_context()
-                   ->CreateRequest(url, net::DEFAULT_PRIORITY, this, NULL)),
+                   ->CreateRequest(url, net::DEFAULT_PRIORITY, this)),
       result_(UPDATE_OK),
       redirect_response_code_(-1) {}
 
@@ -142,8 +133,6 @@ AppCacheUpdateJob::URLFetcher::~URLFetcher() {
 
 void AppCacheUpdateJob::URLFetcher::Start() {
   request_->set_first_party_for_cookies(job_->manifest_url_);
-  request_->SetLoadFlags(request_->load_flags() |
-                         net::LOAD_DISABLE_INTERCEPT);
   if (existing_response_headers_.get())
     AddConditionalHeaders(existing_response_headers_.get());
   request_->Start();
@@ -154,16 +143,6 @@ void AppCacheUpdateJob::URLFetcher::OnReceivedRedirect(
     const net::RedirectInfo& redirect_info,
     bool* defer_redirect) {
   DCHECK(request_ == request);
-  // TODO(bengr): Remove this special case logic when crbug.com/429505 is
-  // resolved. Until then, the data reduction proxy client logic uses the
-  // redirect mechanism to resend requests over a direct connection when
-  // the proxy instructs it to do so. The redirect is to the same location
-  // as the original URL.
-  if ((request->load_flags() & net::LOAD_BYPASS_PROXY) &&
-      IsDataReductionProxy(request->proxy_server())) {
-    DCHECK_EQ(request->original_url(), request->url());
-    return;
-  }
   // Redirect is not allowed by the update process.
   job_->MadeProgress();
   redirect_response_code_ = request->GetResponseCode();
@@ -190,7 +169,7 @@ void AppCacheUpdateJob::URLFetcher::OnResponseStarted(
     return;
   }
 
-  if (url_.SchemeIsSecure()) {
+  if (url_.SchemeIsCryptographic()) {
     // Do not cache content with cert errors.
     // Also, we willfully violate the HTML5 spec at this point in order
     // to support the appcaching of cross-origin HTTPS resources.
@@ -199,7 +178,12 @@ void AppCacheUpdateJob::URLFetcher::OnResponseStarted(
     // requested on the whatwg list.
     // See http://code.google.com/p/chromium/issues/detail?id=69594
     // TODO(michaeln): Consider doing this for cross-origin HTTP too.
-    if (net::IsCertStatusError(request->ssl_info().cert_status) ||
+    const net::HttpNetworkSession::Params* session_params =
+        request->context()->GetNetworkSessionParams();
+    bool ignore_cert_errors = session_params &&
+                              session_params->ignore_certificate_errors;
+    if ((net::IsCertStatusError(request->ssl_info().cert_status) &&
+            !ignore_cert_errors) ||
         (url_.GetOrigin() != job_->manifest_url_.GetOrigin() &&
             request->response_headers()->
                 HasHeaderValue("cache-control", "no-store"))) {
@@ -360,7 +344,7 @@ bool AppCacheUpdateJob::URLFetcher::MaybeRetryRequest() {
   ++retry_503_attempts_;
   result_ = UPDATE_OK;
   request_ = job_->service_->request_context()->CreateRequest(
-      url_, net::DEFAULT_PRIORITY, this, NULL);
+      url_, net::DEFAULT_PRIORITY, this);
   Start();
   return true;
 }
@@ -377,7 +361,8 @@ AppCacheUpdateJob::AppCacheUpdateJob(AppCacheServiceImpl* service,
       manifest_fetcher_(NULL),
       manifest_has_valid_mime_type_(false),
       stored_state_(UNSTORED),
-      storage_(service->storage()) {
+      storage_(service->storage()),
+      weak_factory_(this) {
     service_->AddObserver(this);
 }
 
@@ -457,7 +442,10 @@ void AppCacheUpdateJob::StartUpdate(AppCacheHost* host,
                               is_new_pending_master_entry);
   }
 
-  FetchManifest(true);
+  BrowserThread::PostAfterStartupTask(
+      FROM_HERE, base::ThreadTaskRunnerHandle::Get(),
+      base::Bind(&AppCacheUpdateJob::FetchManifest, weak_factory_.GetWeakPtr(),
+                 true));
 }
 
 AppCacheResponseWriter* AppCacheUpdateJob::CreateResponseWriter() {

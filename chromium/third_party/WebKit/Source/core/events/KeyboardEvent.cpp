@@ -23,6 +23,8 @@
 #include "config.h"
 #include "core/events/KeyboardEvent.h"
 
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/WindowsKeyboardCodes.h"
 
@@ -85,14 +87,11 @@ static inline KeyboardEvent::KeyLocationCode keyLocationCode(const PlatformKeybo
     }
 }
 
-KeyboardEventInit::KeyboardEventInit()
-    : location(0)
-    , ctrlKey(false)
-    , altKey(false)
-    , shiftKey(false)
-    , metaKey(false)
-    , repeat(false)
+PassRefPtrWillBeRawPtr<KeyboardEvent> KeyboardEvent::create(ScriptState* scriptState, const AtomicString& type, const KeyboardEventInit& initializer)
 {
+    if (scriptState->world().isIsolatedWorld())
+        UIEventWithKeyState::didCreateEventInIsolatedWorld(initializer.ctrlKey(), initializer.altKey(), initializer.shiftKey(), initializer.metaKey());
+    return adoptRefWillBeNoop(new KeyboardEvent(type, initializer));
 }
 
 KeyboardEvent::KeyboardEvent()
@@ -106,24 +105,28 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
                           true, true, view, 0, key.ctrlKey(), key.altKey(), key.shiftKey(), key.metaKey())
     , m_keyEvent(adoptPtr(new PlatformKeyboardEvent(key)))
     , m_keyIdentifier(key.keyIdentifier())
+    , m_code(key.code())
+    , m_key(key.key())
     , m_location(keyLocationCode(key))
     , m_isAutoRepeat(key.isAutoRepeat())
 {
+    setUICreateTime(key.timestamp());
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventInit& initializer)
-    : UIEventWithKeyState(eventType, initializer.bubbles, initializer.cancelable, initializer.view, initializer.detail, initializer.ctrlKey, initializer.altKey, initializer.shiftKey, initializer.metaKey)
-    , m_keyIdentifier(initializer.keyIdentifier)
-    , m_location(initializer.location)
-    , m_isAutoRepeat(initializer.repeat)
+    : UIEventWithKeyState(eventType, initializer.bubbles(), initializer.cancelable(), initializer.view(), initializer.detail(), initializer.ctrlKey(), initializer.altKey(), initializer.shiftKey(), initializer.metaKey())
+    , m_keyIdentifier(initializer.keyIdentifier())
+    , m_location(initializer.location())
+    , m_isAutoRepeat(initializer.repeat())
 {
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, AbstractView *view,
-                             const String &keyIdentifier,  unsigned location,
-                             bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+    const String& keyIdentifier, const String& code, const String& key, unsigned location, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
     : UIEventWithKeyState(eventType, canBubble, cancelable, view, 0, ctrlKey, altKey, shiftKey, metaKey)
     , m_keyIdentifier(keyIdentifier)
+    , m_code(code)
+    , m_key(key)
     , m_location(location)
     , m_isAutoRepeat(false)
 {
@@ -133,12 +136,14 @@ KeyboardEvent::~KeyboardEvent()
 {
 }
 
-void KeyboardEvent::initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
-                                      const String &keyIdentifier, unsigned location,
-                                      bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+void KeyboardEvent::initKeyboardEvent(ScriptState* scriptState, const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
+    const String& keyIdentifier, unsigned location, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
 {
     if (dispatched())
         return;
+
+    if (scriptState->world().isIsolatedWorld())
+        UIEventWithKeyState::didCreateEventInIsolatedWorld(ctrlKey, altKey, shiftKey, metaKey);
 
     initUIEvent(type, canBubble, cancelable, view, 0);
 
@@ -172,6 +177,14 @@ int KeyboardEvent::keyCode() const
     // We match IE.
     if (!m_keyEvent)
         return 0;
+
+#if OS(ANDROID)
+    // FIXME: Check to see if this applies to other OS.
+    // If the key event belongs to IME composition then propagate to JS.
+    if (m_keyEvent->nativeVirtualKeyCode() == 0xE5) // VKEY_PROCESSKEY
+        return m_keyEvent->nativeVirtualKeyCode();
+#endif
+
     if (type() == EventTypeNames::keydown || type() == EventTypeNames::keyup)
         return windowsVirtualKeyCodeWithoutLocation(m_keyEvent->windowsVirtualKeyCode());
 
@@ -207,7 +220,7 @@ int KeyboardEvent::which() const
     return keyCode();
 }
 
-void KeyboardEvent::trace(Visitor* visitor)
+DEFINE_TRACE(KeyboardEvent)
 {
     UIEventWithKeyState::trace(visitor);
 }
@@ -222,10 +235,10 @@ KeyboardEventDispatchMediator::KeyboardEventDispatchMediator(PassRefPtrWillBeRaw
 {
 }
 
-bool KeyboardEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool KeyboardEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
     // Make sure not to return true if we already took default action while handling the event.
-    return EventDispatchMediator::dispatchEvent(dispatcher) && !event()->defaultHandled();
+    return EventDispatchMediator::dispatchEvent(dispatcher) && !event().defaultHandled();
 }
 
 } // namespace blink

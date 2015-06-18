@@ -7,29 +7,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "net/base/ip_endpoint.h"
-#include "ui/gfx/range/range.h"
 
 namespace IPC {
-
-void ParamTraits<gfx::Range>::Write(Message* m, const gfx::Range& r) {
-  m->WriteSizeT(r.start());
-  m->WriteSizeT(r.end());
-}
-
-bool ParamTraits<gfx::Range>::Read(const Message* m,
-                                  PickleIterator* iter,
-                                  gfx::Range* r) {
-  size_t start, end;
-  if (!m->ReadSizeT(iter, &start) || !m->ReadSizeT(iter, &end))
-    return false;
-  r->set_start(start);
-  r->set_end(end);
-  return true;
-}
-
-void ParamTraits<gfx::Range>::Log(const gfx::Range& r, std::string* l) {
-  l->append(base::StringPrintf("(%" PRIuS ", %" PRIuS ")", r.start(), r.end()));
-}
 
 void ParamTraits<WebInputEventPointer>::Write(Message* m, const param_type& p) {
   m->WriteData(reinterpret_cast<const char*>(p), p->size);
@@ -40,7 +19,7 @@ bool ParamTraits<WebInputEventPointer>::Read(const Message* m,
                                              param_type* r) {
   const char* data;
   int data_length;
-  if (!m->ReadData(iter, &data, &data_length)) {
+  if (!iter->ReadData(&data, &data_length)) {
     NOTREACHED();
     return false;
   }

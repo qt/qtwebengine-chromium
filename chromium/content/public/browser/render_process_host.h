@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_PROCESS_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_PROCESS_HOST_H_
 
+#include <list>
+
 #include "base/basictypes.h"
 #include "base/id_map.h"
 #include "base/process/kill.h"
@@ -20,6 +22,15 @@ struct ViewMsg_SwapOut_Params;
 
 namespace base {
 class TimeDelta;
+}
+
+namespace gpu {
+union ValueState;
+}
+
+namespace media {
+class AudioOutputController;
+class BrowserCdm;
 }
 
 namespace content {
@@ -42,14 +53,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Details for RENDERER_PROCESS_CLOSED notifications.
   struct RendererClosedDetails {
-    RendererClosedDetails(base::ProcessHandle handle,
-                          base::TerminationStatus status,
+    RendererClosedDetails(base::TerminationStatus status,
                           int exit_code) {
-      this->handle = handle;
       this->status = status;
       this->exit_code = exit_code;
     }
-    base::ProcessHandle handle;
     base::TerminationStatus status;
     int exit_code;
   };
@@ -80,8 +88,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void AddObserver(RenderProcessHostObserver* observer) = 0;
   virtual void RemoveObserver(RenderProcessHostObserver* observer) = 0;
 
-  // Called when a received message cannot be decoded.
-  virtual void ReceivedBadMessage() = 0;
+  // Called when a received message cannot be decoded. Terminates the renderer.
+  // Most callers should not call this directly, but instead should call
+  // bad_message::BadMessageReceived() or an equivalent method outside of the
+  // content module.
+  virtual void ShutdownForBadMessage() = 0;
 
   // Track the count of visible widgets. Called by listeners to register and
   // unregister visibility.
@@ -102,17 +113,20 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // http://crbug.com/158595
   virtual StoragePartition* GetStoragePartition() const = 0;
 
-  // Try to shutdown the associated renderer process as fast as possible.
+  // Try to shut down the associated renderer process without running unload
+  // handlers, etc, giving it the specified exit code. If |wait| is true, wait
+  // for the process to be actually terminated before returning.
+  // Returns true if it was able to shut down.
+  virtual bool Shutdown(int exit_code, bool wait) = 0;
+
+  // Try to shut down the associated renderer process as fast as possible.
   // If this renderer has any RenderViews with unload handlers, then this
-  // function does nothing.  The current implementation uses TerminateProcess.
-  // Returns True if it was able to do fast shutdown.
+  // function does nothing.
+  // Returns true if it was able to do fast shutdown.
   virtual bool FastShutdownIfPossible() = 0;
 
   // Returns true if fast shutdown was started for the renderer.
   virtual bool FastShutdownStarted() const = 0;
-
-  // Dump the child process' handle table before shutting down.
-  virtual void DumpHandles() = 0;
 
   // Returns the process object associated with the child process.  In certain
   // tests or single-process mode, this will actually represent the current
@@ -140,8 +154,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // This will never return ChildProcessHost::kInvalidUniqueID.
   virtual int GetID() const = 0;
 
-  // Returns true iff channel_ has been set to non-NULL. Use this for checking
-  // if there is connection or not. Virtual for mocking out for tests.
+  // Returns true iff channel_ has been set to non-nullptr. Use this for
+  // checking if there is connection or not. Virtual for mocking out for tests.
   virtual bool HasConnection() const = 0;
 
   // Call this to allow queueing of IPC messages that are sent before the
@@ -224,7 +238,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Notifies the renderer that the timezone configuration of the system might
   // have changed.
-  virtual void NotifyTimezoneChange() = 0;
+  virtual void NotifyTimezoneChange(const std::string& zone_id) = 0;
 
   // Returns the ServiceRegistry for this process.
   virtual ServiceRegistry* GetServiceRegistry() = 0;
@@ -235,6 +249,39 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // value.
   // Note: Do not use! Will disappear after PlzNavitate is completed.
   virtual const base::TimeTicks& GetInitTimeForNavigationMetrics() const = 0;
+
+  // Returns whether or not the CHROMIUM_subscribe_uniform WebGL extension
+  // is currently enabled
+  virtual bool SubscribeUniformEnabled() const = 0;
+
+  // Handlers for subscription target changes to update subscription_set_
+  virtual void OnAddSubscription(unsigned int target) = 0;
+  virtual void OnRemoveSubscription(unsigned int target) = 0;
+
+  // Send a new ValueState to the Gpu Service to update a subscription target
+  virtual void SendUpdateValueState(
+      unsigned int target, const gpu::ValueState& state) = 0;
+
+  // Retrieves the list of AudioOutputController objects associated
+  // with this object and passes it to the callback you specify, on
+  // the same thread on which you called the method.
+  typedef std::list<scoped_refptr<media::AudioOutputController>>
+      AudioOutputControllerList;
+  typedef base::Callback<void(const AudioOutputControllerList&)>
+      GetAudioOutputControllersCallback;
+  virtual void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const = 0;
+
+#if defined(ENABLE_BROWSER_CDMS)
+  // Returns the ::media::BrowserCdm instance associated with |render_frame_id|
+  // and |cdm_id|, or nullptr if not found.
+  virtual media::BrowserCdm* GetBrowserCdm(int render_frame_id,
+                                           int cdm_id) const = 0;
+#endif
+
+  // Returns the current number of active views in this process.  Excludes
+  // any RenderViewHosts that are swapped out.
+  int GetActiveViewCount();
 
   // Static management functions -----------------------------------------------
 
@@ -252,10 +299,10 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   static void SetRunRendererInProcess(bool value);
 
   // Allows iteration over all the RenderProcessHosts in the browser. Note
-  // that each host may not be active, and therefore may have NULL channels.
+  // that each host may not be active, and therefore may have nullptr channels.
   static iterator AllHostsIterator();
 
-  // Returns the RenderProcessHost given its ID.  Returns NULL if the ID does
+  // Returns the RenderProcessHost given its ID.  Returns nullptr if the ID does
   // not correspond to a live RenderProcessHost.
   static RenderProcessHost* FromID(int render_process_id);
 
@@ -274,7 +321,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // context, if possible.  The renderer process is chosen randomly from
   // suitable renderers that share the same context and type (determined by the
   // site url).
-  // Returns NULL if no suitable renderer process is available, in which case
+  // Returns nullptr if no suitable renderer process is available, in which case
   // the caller is free to create a new renderer.
   static RenderProcessHost* GetExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& site_url);

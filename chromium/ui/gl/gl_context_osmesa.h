@@ -29,13 +29,14 @@ class GLContextOSMesa : public GLContextReal {
   void ReleaseCurrent(GLSurface* surface) override;
   bool IsCurrent(GLSurface* surface) override;
   void* GetHandle() override;
-  void SetSwapInterval(int interval) override;
+  void OnSetSwapInterval(int interval) override;
 
  protected:
   ~GLContextOSMesa() override;
 
  private:
   OSMesaContext context_;
+  bool is_released_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextOSMesa);
 };

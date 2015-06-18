@@ -22,6 +22,7 @@
 #include "ui/events/event_handler.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/wm/core/base_focus_rules.h"
+#include "ui/wm/core/window_util.h"
 #include "ui/wm/core/wm_state.h"
 #include "ui/wm/public/activation_change_observer.h"
 #include "ui/wm/public/activation_client.h"
@@ -472,7 +473,7 @@ class FocusControllerTestBase : public aura::test::AuraTestBase {
   virtual void ShiftFocusOnActivation() {}
   virtual void ShiftFocusOnActivationDueToHide() {}
   virtual void NoShiftActiveOnActivation() {}
-  virtual void NoFocusChangeOnClickOnCaptureWindow() {}
+  virtual void FocusChangeDuringDrag() {}
   virtual void ChangeFocusWhenNothingFocusedAndCaptured() {}
   virtual void DontPassDeletedWindow() {}
   virtual void FocusedTextInputClient() {}
@@ -752,24 +753,35 @@ class FocusControllerDirectTestBase : public FocusControllerTestBase {
     // from being made in response to an activation change notification.
   }
 
-  void NoFocusChangeOnClickOnCaptureWindow() override {
+  void FocusChangeDuringDrag() override {
     scoped_ptr<aura::client::DefaultCaptureClient> capture_client(
         new aura::client::DefaultCaptureClient(root_window()));
-    // Clicking on a window which has capture should not cause a focus change
-    // to the window. This test verifies whether that is indeed the case.
+    // Activating an inactive window during drag should activate the window.
+    // This emulates the behavior of tab dragging which is merged into the
+    // window below.
     ActivateWindowById(1);
 
     EXPECT_EQ(1, GetActiveWindowId());
     EXPECT_EQ(1, GetFocusedWindowId());
 
     aura::Window* w2 = root_window()->GetChildById(2);
-    aura::client::GetCaptureClient(root_window())->SetCapture(w2);
     ui::test::EventGenerator generator(root_window(), w2);
-    generator.ClickLeftButton();
+    generator.PressLeftButton();
+    aura::client::GetCaptureClient(root_window())->SetCapture(w2);
+    EXPECT_EQ(2, GetActiveWindowId());
+    EXPECT_EQ(2, GetFocusedWindowId());
+    generator.MoveMouseTo(gfx::Point(0, 0));
 
+    // Emulate the behavior of merging a tab into an inactive window:
+    // transferring the mouse capture and activate the window.
+    aura::Window* w1 = root_window()->GetChildById(1);
+    aura::client::GetCaptureClient(root_window())->SetCapture(w1);
+    aura::client::GetActivationClient(root_window())->ActivateWindow(w1);
     EXPECT_EQ(1, GetActiveWindowId());
     EXPECT_EQ(1, GetFocusedWindowId());
-    aura::client::GetCaptureClient(root_window())->ReleaseCapture(w2);
+
+    generator.ReleaseLeftButton();
+    aura::client::GetCaptureClient(root_window())->ReleaseCapture(w1);
   }
 
   // Verifies focus change is honored while capture held.
@@ -971,7 +983,7 @@ class FocusControllerImplicitTestBase : public FocusControllerTestBase {
 
   // Allow each disposition change test to add additional post-disposition
   // change expectations.
-  virtual void PostDispostionChangeExpectations() {}
+  virtual void PostDispositionChangeExpectations() {}
 
   // Overridden from FocusControllerTestBase:
   void BasicFocus() override {
@@ -996,7 +1008,7 @@ class FocusControllerImplicitTestBase : public FocusControllerTestBase {
 
     ChangeWindowDisposition(w2);
     EXPECT_EQ(3, GetActiveWindowId());
-    PostDispostionChangeExpectations();
+    PostDispositionChangeExpectations();
   }
   void FocusEvents() override {
     aura::Window* w211 = root_window()->GetChildById(211);
@@ -1099,6 +1111,26 @@ class FocusControllerHideTest : public FocusControllerImplicitTestBase {
 class FocusControllerParentHideTest : public FocusControllerHideTest {
  public:
   FocusControllerParentHideTest() : FocusControllerHideTest(true) {}
+
+  // The parent window's visibility change should not change its transient child
+  // window's modality property.
+  void TransientChildWindowActivationTest() {
+    aura::Window* w1 = root_window()->GetChildById(1);
+    aura::Window* w11 = root_window()->GetChildById(11);
+    ::wm::AddTransientChild(w1, w11);
+    w11->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_WINDOW);
+
+    EXPECT_EQ(ui::MODAL_TYPE_NONE, w1->GetProperty(aura::client::kModalKey));
+    EXPECT_EQ(ui::MODAL_TYPE_WINDOW, w11->GetProperty(aura::client::kModalKey));
+
+    // Hide the parent window w1 and show it again.
+    w1->Hide();
+    w1->Show();
+
+    // Test that child window w11 doesn't change its modality property.
+    EXPECT_EQ(ui::MODAL_TYPE_NONE, w1->GetProperty(aura::client::kModalKey));
+    EXPECT_EQ(ui::MODAL_TYPE_WINDOW, w11->GetProperty(aura::client::kModalKey));
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(FocusControllerParentHideTest);
@@ -1256,14 +1288,17 @@ DIRECT_FOCUS_CHANGE_TESTS(ShiftFocusOnActivation);
 DIRECT_FOCUS_CHANGE_TESTS(ShiftFocusOnActivationDueToHide);
 DIRECT_FOCUS_CHANGE_TESTS(NoShiftActiveOnActivation);
 
-// Clicking on a window which has capture should not result in a focus change.
-DIRECT_FOCUS_CHANGE_TESTS(NoFocusChangeOnClickOnCaptureWindow);
+FOCUS_CONTROLLER_TEST(FocusControllerApiTest, FocusChangeDuringDrag);
 
 FOCUS_CONTROLLER_TEST(FocusControllerApiTest,
                       ChangeFocusWhenNothingFocusedAndCaptured);
 
 // See description above DontPassDeletedWindow() for details.
 FOCUS_CONTROLLER_TEST(FocusControllerApiTest, DontPassDeletedWindow);
+
+// See description above TransientChildWindowActivationTest() for details.
+FOCUS_CONTROLLER_TEST(FocusControllerParentHideTest,
+                      TransientChildWindowActivationTest);
 
 // - Verifies that the focused text input client is cleard when the window focus
 //   changes.

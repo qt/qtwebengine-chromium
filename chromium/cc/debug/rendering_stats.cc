@@ -17,11 +17,13 @@ void RenderingStats::TimeDeltaList::Append(base::TimeDelta value) {
 }
 
 void RenderingStats::TimeDeltaList::AddToTracedValue(
-    base::debug::TracedValue* list_value) const {
-  std::list<base::TimeDelta>::const_iterator iter;
-  for (iter = values.begin(); iter != values.end(); ++iter) {
-    list_value->AppendDouble(iter->InMillisecondsF());
+    const char* name,
+    base::trace_event::TracedValue* list_value) const {
+  list_value->BeginArray(name);
+  for (const auto& value : values) {
+    list_value->AppendDouble(value.InMillisecondsF());
   }
+  list_value->EndArray();
 }
 
 void RenderingStats::TimeDeltaList::Add(const TimeDeltaList& other) {
@@ -32,81 +34,51 @@ base::TimeDelta RenderingStats::TimeDeltaList::GetLastTimeDelta() const {
   return values.empty() ? base::TimeDelta() : values.back();
 }
 
-RenderingStats::MainThreadRenderingStats::MainThreadRenderingStats()
-    : painted_pixel_count(0), recorded_pixel_count(0) {
-}
-
-RenderingStats::MainThreadRenderingStats::~MainThreadRenderingStats() {
-}
-
-scoped_refptr<base::debug::ConvertableToTraceFormat>
-RenderingStats::MainThreadRenderingStats::AsTraceableData() const {
-  scoped_refptr<base::debug::TracedValue> record_data =
-      new base::debug::TracedValue();
-  record_data->SetDouble("paint_time", paint_time.InSecondsF());
-  record_data->SetInteger("painted_pixel_count", painted_pixel_count);
-  record_data->SetDouble("record_time", record_time.InSecondsF());
-  record_data->SetInteger("recorded_pixel_count", recorded_pixel_count);
-  return record_data;
-}
-
-void RenderingStats::MainThreadRenderingStats::Add(
-    const MainThreadRenderingStats& other) {
-  paint_time += other.paint_time;
-  painted_pixel_count += other.painted_pixel_count;
-  record_time += other.record_time;
-  recorded_pixel_count += other.recorded_pixel_count;
-}
-
-RenderingStats::ImplThreadRenderingStats::ImplThreadRenderingStats()
+RenderingStats::RenderingStats()
     : frame_count(0),
       visible_content_area(0),
-      approximated_visible_content_area(0) {
+      approximated_visible_content_area(0),
+      checkerboarded_visible_content_area(0) {
 }
 
-RenderingStats::ImplThreadRenderingStats::~ImplThreadRenderingStats() {
+RenderingStats::~RenderingStats() {
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
-RenderingStats::ImplThreadRenderingStats::AsTraceableData() const {
-  scoped_refptr<base::debug::TracedValue> record_data =
-      new base::debug::TracedValue();
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+RenderingStats::AsTraceableData() const {
+  scoped_refptr<base::trace_event::TracedValue> record_data =
+      new base::trace_event::TracedValue();
   record_data->SetInteger("frame_count", frame_count);
   record_data->SetInteger("visible_content_area", visible_content_area);
   record_data->SetInteger("approximated_visible_content_area",
                           approximated_visible_content_area);
-  record_data->BeginArray("draw_duration_ms");
-  draw_duration.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  record_data->SetInteger("checkerboarded_visible_content_area",
+                          checkerboarded_visible_content_area);
+  draw_duration.AddToTracedValue("draw_duration_ms", record_data.get());
 
-  record_data->BeginArray("draw_duration_estimate_ms");
-  draw_duration_estimate.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  draw_duration_estimate.AddToTracedValue("draw_duration_estimate_ms",
+                                          record_data.get());
 
-  record_data->BeginArray("begin_main_frame_to_commit_duration_ms");
-  begin_main_frame_to_commit_duration.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  begin_main_frame_to_commit_duration.AddToTracedValue(
+      "begin_main_frame_to_commit_duration_ms", record_data.get());
 
-  record_data->BeginArray("begin_main_frame_to_commit_duration_estimate_ms");
   begin_main_frame_to_commit_duration_estimate.AddToTracedValue(
-      record_data.get());
-  record_data->EndArray();
+      "begin_main_frame_to_commit_duration_estimate_ms", record_data.get());
 
-  record_data->BeginArray("commit_to_activate_duration_ms");
-  commit_to_activate_duration.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  commit_to_activate_duration.AddToTracedValue("commit_to_activate_duration_ms",
+                                               record_data.get());
 
-  record_data->BeginArray("commit_to_activate_duration_estimate_ms");
-  commit_to_activate_duration_estimate.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  commit_to_activate_duration_estimate.AddToTracedValue(
+      "commit_to_activate_duration_estimate_ms", record_data.get());
   return record_data;
 }
 
-void RenderingStats::ImplThreadRenderingStats::Add(
-    const ImplThreadRenderingStats& other) {
+void RenderingStats::Add(const RenderingStats& other) {
   frame_count += other.frame_count;
   visible_content_area += other.visible_content_area;
   approximated_visible_content_area += other.approximated_visible_content_area;
+  checkerboarded_visible_content_area +=
+      other.checkerboarded_visible_content_area;
 
   draw_duration.Add(other.draw_duration);
   draw_duration_estimate.Add(other.draw_duration_estimate);
@@ -117,11 +89,6 @@ void RenderingStats::ImplThreadRenderingStats::Add(
   commit_to_activate_duration.Add(other.commit_to_activate_duration);
   commit_to_activate_duration_estimate.Add(
       other.commit_to_activate_duration_estimate);
-}
-
-void RenderingStats::Add(const RenderingStats& other) {
-  main_stats.Add(other.main_stats);
-  impl_stats.Add(other.impl_stats);
 }
 
 }  // namespace cc

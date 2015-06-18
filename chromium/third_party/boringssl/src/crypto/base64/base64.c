@@ -58,6 +58,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <string.h>
 
 
 static const unsigned char data_bin2ascii[65] =
@@ -370,6 +371,10 @@ int EVP_DecodeUpdate(EVP_ENCODE_CTX *ctx, uint8_t *out, int *out_len,
         n = 0;
         if (v < 0) {
           rv = 0;
+          goto end;
+        }
+        if (eof > v) {
+          rv = -1;
           goto end;
         }
         ret += (v - eof);

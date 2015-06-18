@@ -50,7 +50,7 @@ enum LifetimeManagementType {
 
 template<typename T>
 class LifetimeOf {
-    static const bool isGarbageCollected = WTF::IsSubclassOfTemplate<T, GarbageCollected>::value;
+    static const bool isGarbageCollected = WTF::IsSubclassOfTemplate<T, GarbageCollected>::value || IsGarbageCollectedMixin<T>::value;
     static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<T, RefCountedGarbageCollected>::value;
 public:
     static const LifetimeManagementType value =
@@ -78,6 +78,13 @@ public:
         T* val = other.get();
         WTF::refIfNotNull(val);
         m_ptr = val;
+    }
+
+    void moveFrom(PtrStorageImpl& other)
+    {
+        release();
+        m_ptr = other.m_ptr;
+        other.m_ptr = 0;
     }
 
     T* get() const { return m_ptr; }
@@ -113,6 +120,13 @@ public:
 
     void assign(const PtrStorageImpl& other) { assign(other.get()); }
 
+    void moveFrom(PtrStorageImpl& other)
+    {
+        release();
+        m_handle = other.m_handle;
+        other.m_handle = 0;
+    }
+
     T* get() const { return m_handle ? m_handle->get() : 0; }
 
     void release()
@@ -138,13 +152,13 @@ class PtrStorage : public PtrStorageImpl<T, LifetimeOf<T>::value> {
 public:
     static PtrStorage& fromSlot(void** slot)
     {
-        COMPILE_ASSERT(sizeof(PtrStorage) == sizeof(void*), PtrStorage_must_be_pointer_size);
+        static_assert(sizeof(PtrStorage) == sizeof(void*), "PtrStorage must be the size of a pointer");
         return *reinterpret_cast<PtrStorage*>(slot);
     }
 
     static const PtrStorage& fromSlot(void* const* slot)
     {
-        COMPILE_ASSERT(sizeof(PtrStorage) == sizeof(void*), PtrStorage_must_be_pointer_size);
+        static_assert(sizeof(PtrStorage) == sizeof(void*), "PtrStorage must be the size of a pointer");
         return *reinterpret_cast<const PtrStorage*>(slot);
     }
 
@@ -221,6 +235,12 @@ public:
     {
         storage().assign(other.storage());
         return *this;
+    }
+
+    void moveFrom(WebPrivatePtr<T>& other)
+    {
+        storage().moveFrom(other.storage());
+        return;
     }
 
     template<typename U>

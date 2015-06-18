@@ -8,8 +8,8 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/input/scrollbar.h"
 #include "cc/layers/layer.h"
@@ -19,7 +19,8 @@
 
 namespace cc {
 
-typedef base::ScopedPtrHashMap<int, LayerImpl> ScopedPtrLayerImplMap;
+typedef base::ScopedPtrHashMap<int, scoped_ptr<LayerImpl>>
+    ScopedPtrLayerImplMap;
 typedef base::hash_map<int, LayerImpl*> RawPtrLayerImplMap;
 
 void CollectExistingLayerImplRecursive(ScopedPtrLayerImplMap* old_layers,
@@ -297,7 +298,7 @@ void TreeSynchronizer::PushProperties(Layer* layer,
   size_t num_dependents_need_push_properties = 0;
   PushPropertiesInternal(
       layer, layer_impl, &num_dependents_need_push_properties);
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   CheckScrollAndClipPointersRecursive(layer, layer_impl);
 #endif
 }

@@ -32,6 +32,8 @@
 #ifndef PrerendererClient_h
 #define PrerendererClient_h
 
+#include "core/CoreExport.h"
+#include "core/page/Page.h"
 #include "platform/Supplementable.h"
 
 namespace blink {
@@ -39,7 +41,7 @@ namespace blink {
 class Page;
 class Prerender;
 
-class PrerendererClient : public WillBeHeapSupplement<Page> {
+class CORE_EXPORT PrerendererClient : public WillBeHeapSupplement<Page> {
 public:
     virtual void willAddPrerender(Prerender*) = 0;
 
@@ -50,7 +52,7 @@ protected:
     PrerendererClient() { }
 };
 
-void providePrerendererClientTo(Page&, PrerendererClient*);
+CORE_EXPORT void providePrerendererClientTo(Page&, PrerendererClient*);
 
 } // namespace blink
 

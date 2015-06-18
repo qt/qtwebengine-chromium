@@ -5,11 +5,12 @@
 #ifndef MediaValuesCached_h
 #define MediaValuesCached_h
 
+#include "core/CoreExport.h"
 #include "core/css/MediaValues.h"
 
 namespace blink {
 
-class MediaValuesCached final : public MediaValues {
+class CORE_EXPORT MediaValuesCached final : public MediaValues {
 public:
     struct MediaValuesCachedData {
         // Members variables must be thread safe, since they're copied to the parser thread
@@ -28,6 +29,7 @@ public:
         bool threeDEnabled;
         bool strictMode;
         String mediaType;
+        WebDisplayMode displayMode;
 
         MediaValuesCachedData()
             : viewportWidth(0)
@@ -44,6 +46,7 @@ public:
             , defaultFontSize(16)
             , threeDEnabled(false)
             , strictMode(true)
+            , displayMode(WebDisplayModeBrowser)
         {
         }
     };
@@ -73,7 +76,12 @@ public:
     virtual Document* document() const override;
     virtual bool hasValues() const override;
     virtual const String mediaType() const override;
+    virtual WebDisplayMode displayMode() const override;
 
+    void setViewportWidth(int);
+    void setViewportHeight(int);
+
+    virtual bool isCached() const override { return true; }
 protected:
     MediaValuesCached();
     MediaValuesCached(LocalFrame*);

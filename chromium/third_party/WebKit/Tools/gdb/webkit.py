@@ -117,7 +117,10 @@ class WTFCStringPrinter(StringPrinter):
     "Print a WTF::CString"
     def to_string(self):
         # The CString holds a buffer, which is a refptr to a WTF::CStringBuffer.
-        data = self.val['m_buffer']['m_ptr']['m_data'].cast(gdb.lookup_type('char').pointer())
+        buf_ptr = self.val['m_buffer']['m_ptr']
+        if not buf_ptr:
+            return 0
+        data = (buf_ptr + 1).cast(gdb.lookup_type('char').pointer())
         length = self.val['m_buffer']['m_ptr']['m_length']
         return ''.join([chr((data + i).dereference()) for i in range(length)])
 
@@ -222,6 +225,64 @@ class blinkQualifiedNamePrinter(StringPrinter):
                 return self.local_name_printer.to_string()
 
 
+class BlinkPixelsAndPercentPrinter:
+    "Print a blink::PixelsAndPercent value"
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        return "(%gpx, %g%%)" % (self.val['pixels'], self.val['percent'])
+
+
+class BlinkLengthPrinter:
+    """Print a blink::Length."""
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        ltype = self.val['m_type']
+        if self.val['m_isFloat']:
+            val = self.val['m_floatValue']
+        else:
+            val = int(self.val['m_intValue'])
+
+        quirk = ''
+        if self.val['m_quirk']:
+            quirk = ', quirk=true'
+
+        if ltype == 0:
+            return 'Length(Auto)'
+        if ltype == 1:
+            return 'Length(%g%%, Percent%s)' % (val, quirk)
+        if ltype == 2:
+            return 'Length(%g, Fixed%s)' % (val, quirk)
+        if ltype == 3:
+            return 'Length(Intrinsic)'
+        if ltype == 4:
+            return 'Length(MinIntrinsic)'
+        if ltype == 5:
+            return 'Length(MinContent)'
+        if ltype == 6:
+            return 'Length(MaxContent)'
+        if ltype == 7:
+            return 'Length(FillAvailable)'
+        if ltype == 8:
+            return 'Length(FitContent)'
+        if ltype == 9:
+            # Would like to print pixelsAndPercent() but can't call member
+            # functions - https://sourceware.org/bugzilla/show_bug.cgi?id=13326
+            return 'Length(Calculated)'
+        if ltype == 10:
+            return 'Length(ExtendToZoom)'
+        if ltype == 11:
+            return 'Length(DeviceWidth)'
+        if ltype == 12:
+            return 'Length(DeviceHeight)'
+        if ltype == 13:
+            return 'Length(MaxSizeNone)'
+        return 'Length(unknown type %i)' % ltype
+
+
 class WTFVectorPrinter:
     """Pretty Printer for a WTF::Vector.
 
@@ -287,6 +348,37 @@ class WTFVectorPrinter:
     def display_hint(self):
         return 'array'
 
+
+# Copied from //tools/gdb/gdb_chrome.py
+def typed_ptr(ptr):
+    """Prints a pointer along with its exact type.
+
+    By default, gdb would print just the address, which takes more
+    steps to interpret.
+    """
+    # Returning this as a cast expression surrounded by parentheses
+    # makes it easier to cut+paste inside of gdb.
+    return '((%s)%s)' % (ptr.dynamic_type, ptr)
+
+
+class WTFRefOrOwnPtrPrinter:
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        type_without_param = re.sub(r'<.*>', '', self.val.type.name)
+        return '%s%s' % (type_without_param, typed_ptr(self.val['m_ptr']))
+
+
+class BlinkDataRefPrinter:
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        return 'DataRef(%s)' % (
+            WTFRefOrOwnPtrPrinter(self.val['m_data']).to_string())
+
+
 def add_pretty_printers():
     pretty_printers = (
         (re.compile("^WTF::Vector<.*>$"), WTFVectorPrinter),
@@ -299,6 +391,10 @@ def add_pretty_printers():
         (re.compile("^blink::LayoutPoint$"), blinkLayoutPointPrinter),
         (re.compile("^blink::LayoutSize$"), blinkLayoutSizePrinter),
         (re.compile("^blink::QualifiedName$"), blinkQualifiedNamePrinter),
+        (re.compile("^blink::PixelsAndPercent$"), BlinkPixelsAndPercentPrinter),
+        (re.compile("^blink::Length$"), BlinkLengthPrinter),
+        (re.compile("^WTF::(Ref|Own)Ptr<.*>$"), WTFRefOrOwnPtrPrinter),
+        (re.compile("^blink::DataRef<.*>$"), BlinkDataRefPrinter),
     )
 
     def lookup_function(val):

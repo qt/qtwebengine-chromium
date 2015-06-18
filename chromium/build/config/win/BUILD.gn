@@ -13,74 +13,47 @@ config("sdk") {
     "_ATL_NO_OPENGL",
     "_WINDOWS",
     "CERT_CHAIN_PARA_HAS_EXTRA_FIELDS",
-    "NTDDI_VERSION=0x06020000",
+    "NTDDI_VERSION=0x06030000",
     "PSAPI_VERSION=1",
     "WIN32",
+    "_SECURE_ATL",
+
+    # This is required for ATL to use XP-safe versions of its functions.
+    "_USING_V110_SDK71_",
   ]
-
-  include_dirs = system_include_dirs
-
-  if (is_visual_studio_express) {
-    # https://code.google.com/p/chromium/issues/detail?id=372451#c20
-    # Warning 4702 ("Unreachable code") should be re-enabled once Express users
-    # are updated to VS2013 Update 2.
-    cflags = [ "/wd4702" ]
-  } else {
-    # Only supported on non-Express versions.
-    defines += [ "_SECURE_ATL" ]
-  }
 }
 
 # Sets the default Windows build version. This is separated because some
 # targets need to manually override it for their compiles.
 config("winver") {
   defines = [
-    "_WIN32_WINNT=0x0602",
-    "WINVER=0x0602",
+    "_WIN32_WINNT=0x0603",
+    "WINVER=0x0603",
   ]
 }
 
 # Linker flags for Windows SDK setup, this is applied only to EXEs and DLLs.
 config("sdk_link") {
-  if (cpu_arch == "x64") {
+  if (current_cpu == "x64") {
     ldflags = [ "/MACHINE:X64" ]
     lib_dirs = [
-      "$windows_sdk_path\Lib\win8\um\x64",
+      "$windows_sdk_path\Lib\winv6.3\um\x64",
       "$visual_studio_path\VC\lib\amd64",
       "$visual_studio_path\VC\atlmfc\lib\amd64",
     ]
-    if (is_visual_studio_express) {
-      lib_dirs += [ "$wdk_path/lib/ATL/amd64" ]
-    }
   } else {
     ldflags = [
       "/MACHINE:X86",
       "/SAFESEH",  # Not compatible with x64 so use only for x86.
     ]
     lib_dirs = [
-      "$windows_sdk_path\Lib\win8\um\x86",
+      "$windows_sdk_path\Lib\winv6.3\um\x86",
       "$visual_studio_path\VC\lib",
       "$visual_studio_path\VC\atlmfc\lib",
     ]
-    if (is_visual_studio_express) {
-      lib_dirs += [ "$wdk_path/lib/ATL/i386" ]
-    }
     if (!is_asan) {
       ldflags += [ "/largeaddressaware" ]
     }
-  }
-
-  if (is_visual_studio_express) {
-    # Explicitly required when using the ATL with express.
-    libs = [ "atlthunk.lib" ]
-
-    # ATL 8.0 included in WDK 7.1 makes the linker to generate almost eight
-    # hundred LNK4254 and LNK4078 warnings:
-    #   - warning LNK4254: section 'ATL' (50000040) merged into '.rdata'
-    #     (40000040) with different attributes
-    #   - warning LNK4078: multiple 'ATL' sections found with different
-    #     attributes
-    ldflags += [ "/ignore:4254", "/ignore:4078" ]
   }
 }
 
@@ -93,6 +66,12 @@ config("common_linker_setup") {
     "/ignore:4199",
     "/ignore:4221",
     "/NXCOMPAT",
+
+    # Suggested by Microsoft Devrel to avoid
+    #   LINK : fatal error LNK1248: image size (80000000)
+    #   exceeds maximum allowable size (80000000)
+    # which started happening more regularly after VS2013 Update 4.
+    "/maxilksize:2147483647",
   ]
 
   # ASLR makes debugging with windbg difficult because Chrome.exe and
@@ -118,20 +97,58 @@ config("common_linker_setup") {
 
 # Subsystem --------------------------------------------------------------------
 
+# This is appended to the subsystem to specify a minimum version.
+if (current_cpu == "x64") {
+  # The number after the comma is the minimum required OS version.
+  # 5.02 = Windows Server 2003.
+  subsystem_version_suffix = ",5.02"
+} else {
+  # Don't specify a min version on x86.
+  subsystem_version_suffix = ""
+}
+
 config("console") {
-  ldflags = [ "/SUBSYSTEM:CONSOLE" ]
+  ldflags = [ "/SUBSYSTEM:CONSOLE$subsystem_version_suffix" ]
 }
 config("windowed") {
-  ldflags = [ "/SUBSYSTEM:WINDOWS" ]
+  ldflags = [ "/SUBSYSTEM:WINDOWS$subsystem_version_suffix" ]
 }
 
 # Incremental linking ----------------------------------------------------------
 
+incremental_linking_on_switch = [ "/INCREMENTAL" ]
+incremental_linking_off_switch = [ "/INCREMENTAL:NO" ]
+if (is_debug) {
+  default_incremental_linking_switch = incremental_linking_on_switch
+} else {
+  default_incremental_linking_switch = incremental_linking_off_switch
+}
+
+# Applies incremental linking or not depending on the current configuration.
+config("default_incremental_linking") {
+  ldflags = default_incremental_linking_switch
+}
+
+# Explicitly on or off incremental linking
 config("incremental_linking") {
-  ldflags = [ "/INCREMENTAL" ]
+  ldflags = incremental_linking_on_switch
 }
 config("no_incremental_linking") {
-  ldflags = [ "/INCREMENTAL:NO" ]
+  ldflags = incremental_linking_off_switch
+}
+
+# Some large modules can't handle incremental linking in some situations. This
+# config should be applied to large modules to turn off incremental linking
+# when it won't work.
+config("default_large_module_incremental_linking") {
+  if (symbol_level > 0 && (current_cpu == "x86" || !is_component_build)) {
+    # When symbols are on, things get so large that the tools fail due to the
+    # size of the .ilk files.
+    ldflags = incremental_linking_off_switch
+  } else {
+    # Otherwise just do the default incremental linking for this build type.
+    ldflags = default_incremental_linking_switch
+  }
 }
 
 # Character set ----------------------------------------------------------------
@@ -150,9 +167,7 @@ config("unicode") {
 # to have a separate config for it. Remove this config from your target to
 # get the "bloaty and accomodating" version of windows.h.
 config("lean_and_mean") {
-  defines = [
-    "WIN32_LEAN_AND_MEAN",
-  ]
+  defines = [ "WIN32_LEAN_AND_MEAN" ]
 }
 
 # Nominmax --------------------------------------------------------------------
@@ -162,7 +177,5 @@ config("lean_and_mean") {
 # For such targets, this config can be removed.
 
 config("nominmax") {
-  defines = [
-    "NOMINMAX",
-  ]
+  defines = [ "NOMINMAX" ]
 }

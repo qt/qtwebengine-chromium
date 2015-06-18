@@ -15,6 +15,7 @@ namespace content {
 struct LoadCommittedDetails;
 struct LoadNotificationDetails;
 struct NativeWebKeyboardEvent;
+class FrameTree;
 class InterstitialPage;
 class InterstitialPageImpl;
 class RenderFrameHost;
@@ -46,15 +47,14 @@ class NavigationControllerDelegate {
 
   // Methods from WebContentsImpl that NavigationControllerImpl needs to
   // call.
+  virtual FrameTree* GetFrameTree() = 0;
   virtual void NotifyBeforeFormRepostWarningShow() = 0;
   virtual void NotifyNavigationEntryCommitted(
       const LoadCommittedDetails& load_details) = 0;
   virtual bool NavigateToPendingEntry(
       NavigationController::ReloadType reload_type) = 0;
-  virtual void SetHistoryLengthAndPrune(
-      const SiteInstance* site_instance,
-      int merge_history_length,
-      int32 minimum_page_id) = 0;
+  virtual void SetHistoryOffsetAndLength(int history_offset,
+                                         int history_length) = 0;
   virtual void CopyMaxPageIDsFrom(WebContents* web_contents) = 0;
   virtual void UpdateMaxPageID(int32 page_id) = 0;
   virtual void UpdateMaxPageIDForSiteInstance(SiteInstance* site_instance,
@@ -73,8 +73,7 @@ class NavigationControllerDelegate {
   virtual void AttachInterstitialPage(
       InterstitialPageImpl* interstitial_page) = 0;
   virtual void DetachInterstitialPage() = 0;
-  virtual void SetIsLoading(RenderViewHost* render_view_host,
-                            bool is_loading,
+  virtual void SetIsLoading(bool is_loading,
                             bool to_different_document,
                             LoadNotificationDetails* details) = 0;
 };

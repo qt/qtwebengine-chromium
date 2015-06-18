@@ -31,20 +31,21 @@
 #ifndef InsertionPoint_h
 #define InsertionPoint_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSSelectorList.h"
-#include "core/dom/shadow/ContentDistribution.h"
+#include "core/dom/shadow/DistributedNodes.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLElement.h"
 
 namespace blink {
 
-class InsertionPoint : public HTMLElement {
+class CORE_EXPORT InsertionPoint : public HTMLElement {
 public:
     virtual ~InsertionPoint();
 
-    bool hasDistribution() const { return !m_distribution.isEmpty(); }
-    void setDistribution(ContentDistribution&);
-    void clearDistribution() { m_distribution.clear(); }
+    bool hasDistribution() const { return !m_distributedNodes.isEmpty(); }
+    void setDistributedNodes(DistributedNodes&);
+    void clearDistribution() { m_distributedNodes.clear(); }
     bool isActive() const;
     bool canBeActive() const;
 
@@ -60,31 +61,31 @@ public:
 
     bool shouldUseFallbackElements() const;
 
-    size_t size() const { return m_distribution.size(); }
-    Node* at(size_t index)  const { return m_distribution.at(index).get(); }
-    Node* first() const { return m_distribution.isEmpty() ? 0 : m_distribution.first().get(); }
-    Node* last() const { return m_distribution.isEmpty() ? 0 : m_distribution.last().get(); }
-    Node* nextTo(const Node* node) const { return m_distribution.nextTo(node); }
-    Node* previousTo(const Node* node) const { return m_distribution.previousTo(node); }
+    size_t distributedNodesSize() const { return m_distributedNodes.size(); }
+    Node* distributedNodeAt(size_t index)  const { return m_distributedNodes.at(index).get(); }
+    Node* firstDistributedNode() const { return m_distributedNodes.isEmpty() ? 0 : m_distributedNodes.first().get(); }
+    Node* lastDistributedNode() const { return m_distributedNodes.isEmpty() ? 0 : m_distributedNodes.last().get(); }
+    Node* distributedNodeNextTo(const Node* node) const { return m_distributedNodes.nextTo(node); }
+    Node* distributedNodePreviousTo(const Node* node) const { return m_distributedNodes.previousTo(node); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     InsertionPoint(const QualifiedName&, Document&);
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
     virtual void willRecalcStyle(StyleRecalcChange) override;
 
 private:
-    bool isInsertionPoint() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isInsertionPoint() const = delete; // This will catch anyone doing an unnecessary check.
 
-    ContentDistribution m_distribution;
+    DistributedNodes m_distributedNodes;
     bool m_registeredWithShadowRoot;
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> > DestinationInsertionPoints;
+typedef WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>, 1> DestinationInsertionPoints;
 
 DEFINE_ELEMENT_TYPE_CASTS(InsertionPoint, isInsertionPoint());
 

@@ -22,17 +22,16 @@ class FakeAudioRenderCallback
   // where x = [|number_of_frames| * m, |number_of_frames| * (m + 1)] and m =
   // the number of Render() calls fulfilled thus far.
   explicit FakeAudioRenderCallback(double step);
-  virtual ~FakeAudioRenderCallback();
+  ~FakeAudioRenderCallback() override;
 
   // Renders a sine wave into the provided audio data buffer.  If |half_fill_|
   // is set, will only fill half the buffer.
-  virtual int Render(AudioBus* audio_bus,
-                     int audio_delay_milliseconds) override;
+  int Render(AudioBus* audio_bus, int audio_delay_milliseconds) override;
   MOCK_METHOD0(OnRenderError, void());
 
   // AudioTransform::ProvideAudioTransformInput implementation.
-  virtual double ProvideInput(AudioBus* audio_bus,
-                              base::TimeDelta buffer_delay) override;
+  double ProvideInput(AudioBus* audio_bus,
+                      base::TimeDelta buffer_delay) override;
 
   // Toggles only filling half the requested amount during Render().
   void set_half_fill(bool half_fill) { half_fill_ = half_fill; }
@@ -42,16 +41,21 @@ class FakeAudioRenderCallback
 
   // Returns the last |audio_delay_milliseconds| provided to Render() or -1 if
   // no Render() call occurred.
-  int last_audio_delay_milliseconds() { return last_audio_delay_milliseconds_; }
+  int last_audio_delay_milliseconds() const {
+    return last_audio_delay_milliseconds_;
+  }
 
   // Set volume information used by ProvideAudioTransformInput().
   void set_volume(double volume) { volume_ = volume; }
+
+  int last_channel_count() const { return last_channel_count_; }
 
  private:
   bool half_fill_;
   double x_;
   double step_;
   int last_audio_delay_milliseconds_;
+  int last_channel_count_;
   double volume_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAudioRenderCallback);

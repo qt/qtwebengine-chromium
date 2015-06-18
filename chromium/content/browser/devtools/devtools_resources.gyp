@@ -11,7 +11,7 @@
         '../../../third_party/WebKit/public/blink_devtools.gyp:blink_generate_devtools_grd',
       ],
       'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/webkit',
+        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/blink',
       },
       'actions': [
         {
@@ -23,6 +23,21 @@
             'grit_cmd': ['python', '../../../tools/grit/grit.py'],
             'grit_grd_file': '<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd',
             'grit_rc_header_format%': '',
+
+            'conditions': [
+              # These scripts can skip writing generated files if they are
+              # identical to the already existing files, which avoids further
+              # build steps, like recompilation. However, a dependency (earlier
+              # build step) having a newer timestamp than an output (later
+              # build step) confuses some build systems, so only use this on
+              # ninja, which explicitly supports this use case (gyp turns all
+              # actions into ninja restat rules).
+              ['"<(GENERATOR)"=="ninja"', {
+                'write_only_new': '1',
+              }, {
+                'write_only_new': '0',
+              }],
+            ],
           },
           'inputs': [
             '<(grit_grd_file)',
@@ -38,39 +53,12 @@
                      '-i', '<(grit_grd_file)', 'build',
                      '-f', '<(DEPTH)/tools/gritsettings/resource_ids',
                      '-o', '<(grit_out_dir)',
+                     '--write-only-new=<(write_only_new)',
                      '-D', 'SHARED_INTERMEDIATE_DIR=<(SHARED_INTERMEDIATE_DIR)',
                      '<@(grit_defines)',
                      '<@(grit_rc_header_format)'],
           'message': 'Generating resources from <(grit_grd_file)',
         },
-        {
-          'action_name': 'devtools_protocol_constants',
-          'variables': {
-            'blink_protocol': '../../../third_party/WebKit/Source/devtools/protocol.json',
-            'browser_protocol': 'browser_protocol.json',
-            'generator': '../../public/browser/devtools_protocol_constants_generator.py',
-            'package': 'content'
-          },
-          'inputs': [
-            '<(blink_protocol)',
-            '<(browser_protocol)',
-            '<(generator)',
-          ],
-          'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.h'
-          ],
-          'action':[
-            'python',
-            '<(generator)',
-            '<(package)',
-            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.cc',
-            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.h',
-            '<(blink_protocol)',
-            '<(browser_protocol)',
-          ],
-          'message': 'Generating DevTools protocol constants from <(blink_protocol)'
-        }
       ],
       'direct_dependent_settings': {
         'include_dirs': [

@@ -10,22 +10,34 @@ cr.define('options.contentSettings', function() {
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
+   * Returns whether exceptions list for the type is editable.
+   *
+   * @param {string} contentType The type of the list.
+   */
+  function IsEditableType(contentType) {
+    // Exceptions of the following lists are not editable for now.
+    return !(contentType == 'notifications' ||
+             contentType == 'location' ||
+             contentType == 'fullscreen' ||
+             contentType == 'media-stream' ||
+             contentType == 'midi-sysex' ||
+             contentType == 'zoomlevels');
+  }
+
+  /**
    * Creates a new exceptions list item.
    *
    * @param {string} contentType The type of the list.
    * @param {string} mode The browser mode, 'otr' or 'normal'.
-   * @param {boolean} enableAskOption Whether to show an 'ask every time'
-   *     option in the select.
    * @param {Object} exception A dictionary that contains the data of the
    *     exception.
    * @constructor
    * @extends {options.InlineEditableItem}
    */
-  function ExceptionsListItem(contentType, mode, enableAskOption, exception) {
+  function ExceptionsListItem(contentType, mode, exception) {
     var el = cr.doc.createElement('div');
     el.mode = mode;
     el.contentType = contentType;
-    el.enableAskOption = enableAskOption;
     el.dataItem = exception;
     el.__proto__ = ExceptionsListItem.prototype;
     el.decorate();
@@ -71,11 +83,11 @@ cr.define('options.contentSettings', function() {
       optionAllow.value = 'allow';
       select.appendChild(optionAllow);
 
-      if (this.enableAskOption) {
-        var optionAsk = cr.doc.createElement('option');
-        optionAsk.textContent = loadTimeData.getString('askException');
-        optionAsk.value = 'ask';
-        select.appendChild(optionAsk);
+      if (this.contentType == 'plugins') {
+        var optionDetect = cr.doc.createElement('option');
+        optionDetect.textContent = loadTimeData.getString('detectException');
+        optionDetect.value = 'detect';
+        select.appendChild(optionDetect);
       }
 
       if (this.contentType == 'cookies') {
@@ -127,7 +139,6 @@ cr.define('options.contentSettings', function() {
 
       if (this.contentType == 'zoomlevels') {
         this.deletable = true;
-        this.editable = false;
 
         var zoomLabel = cr.doc.createElement('span');
         zoomLabel.textContent = this.dataItem.zoom;
@@ -154,14 +165,7 @@ cr.define('options.contentSettings', function() {
       this.select = select;
 
       this.updateEditables();
-
-      // Editing notifications, geolocation and media-stream is disabled for
-      // now.
-      if (this.contentType == 'notifications' ||
-          this.contentType == 'location' ||
-          this.contentType == 'media-stream') {
-        this.editable = false;
-      }
+      this.editable = this.editable && IsEditableType(this.contentType);
 
       // If the source of the content setting exception is not a user
       // preference, that source controls the exception and the user cannot edit
@@ -192,7 +196,7 @@ cr.define('options.contentSettings', function() {
       // icon of the app.
       if (controlledBy == 'HostedApp') {
         this.title =
-            loadTimeData.getString('set_by') + ' ' + this.dataItem.appName;
+            loadTimeData.getString('setBy') + ' ' + this.dataItem.appName;
         var button = this.querySelector('.row-delete-button');
         // Use the host app's favicon (16px, match bigger size).
         // See c/b/ui/webui/extensions/extension_icon_source.h
@@ -284,6 +288,8 @@ cr.define('options.contentSettings', function() {
         return loadTimeData.getString('askException');
       else if (setting == 'session')
         return loadTimeData.getString('sessionException');
+      else if (setting == 'detect')
+        return loadTimeData.getString('detectException');
       else if (setting == 'default')
         return '';
 
@@ -394,16 +400,13 @@ cr.define('options.contentSettings', function() {
    *
    * @param {string} contentType The type of the list.
    * @param {string} mode The browser mode, 'otr' or 'normal'.
-   * @param {boolean} enableAskOption Whether to show an 'ask every time' option
-   *     in the select.
    * @constructor
    * @extends {options.contentSettings.ExceptionsListItem}
    */
-  function ExceptionsAddRowListItem(contentType, mode, enableAskOption) {
+  function ExceptionsAddRowListItem(contentType, mode) {
     var el = cr.doc.createElement('div');
     el.mode = mode;
     el.contentType = contentType;
-    el.enableAskOption = enableAskOption;
     el.dataItem = [];
     el.__proto__ = ExceptionsAddRowListItem.prototype;
     el.decorate();
@@ -478,10 +481,6 @@ cr.define('options.contentSettings', function() {
       }
 
       this.mode = this.getAttribute('mode');
-
-      // Whether the exceptions in this list allow an 'Ask every time' option.
-      this.enableAskOption = this.contentType == 'plugins';
-
       this.autoExpands = true;
       this.reset();
     },
@@ -495,12 +494,10 @@ cr.define('options.contentSettings', function() {
       if (entry) {
         return new ExceptionsListItem(this.contentType,
                                       this.mode,
-                                      this.enableAskOption,
                                       entry);
       } else {
         var addRowItem = new ExceptionsAddRowListItem(this.contentType,
-                                                      this.mode,
-                                                      this.enableAskOption);
+                                                      this.mode);
         addRowItem.deletable = false;
         return addRowItem;
       }
@@ -509,7 +506,7 @@ cr.define('options.contentSettings', function() {
     /**
      * Sets the exceptions in the js model.
      *
-     * @param {Array.<options.Exception>} entries A list of dictionaries of
+     * @param {Array<options.Exception>} entries A list of dictionaries of
      *     values, each dictionary represents an exception.
      */
     setExceptions: function(entries) {
@@ -550,11 +547,7 @@ cr.define('options.contentSettings', function() {
      */
     isEditable: function() {
       // Exceptions of the following lists are not editable for now.
-      return !(this.contentType == 'notifications' ||
-               this.contentType == 'location' ||
-               this.contentType == 'fullscreen' ||
-               this.contentType == 'media-stream' ||
-               this.contentType == 'zoomlevels');
+      return IsEditableType(this.contentType);
     },
 
     /**
@@ -631,7 +624,10 @@ cr.define('options.contentSettings', function() {
       this.title = loadTimeData.getString(type + 'TabTitle');
 
       var header = this.pageDiv.querySelector('h1');
-      header.textContent = loadTimeData.getString(type + '_header');
+      var camelCasedType = type.replace(/-([a-z])/g, function(g) {
+        return g[1].toUpperCase();
+      });
+      header.textContent = loadTimeData.getString(camelCasedType + 'Header');
 
       var divs = this.pageDiv.querySelectorAll('div[contentType]');
       for (var i = 0; i < divs.length; i++) {

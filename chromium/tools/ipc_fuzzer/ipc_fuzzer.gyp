@@ -8,14 +8,14 @@
   },
   'targets': [
     {
-      'target_name': 'ipc_fuzzer',
+      'target_name': 'ipc_fuzzer_all',
       'type': 'none',
       'dependencies': [
-        'ipclist/ipclist.gyp:ipclist',
-        'mutate/mutate.gyp:ipc_fuzzer_mutate',
-        'mutate/mutate.gyp:ipc_fuzzer_generate',
-        'mutate/mutate.gyp:ipc_message_util',
-        'replay/replay.gyp:ipc_fuzzer_replay',
+        'fuzzer/fuzzer.gyp:ipc_fuzzer',
+        'message_dump/message_dump.gyp:ipc_message_dump',
+        'message_replay/message_replay.gyp:ipc_fuzzer_replay',
+        'message_tools/message_tools.gyp:ipc_message_list',
+        'message_tools/message_tools.gyp:ipc_message_util',
       ],
     },
   ],

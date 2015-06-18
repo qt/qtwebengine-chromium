@@ -81,6 +81,7 @@ typedef struct {
   const vp9_prob *prob;
   int len;
   int base_val;
+  const int16_t *cost;
 } vp9_extra_bit;
 
 // indexed by token value
@@ -141,10 +142,10 @@ static INLINE void reset_skip_context(MACROBLOCKD *xd, BLOCK_SIZE bsize) {
   for (i = 0; i < MAX_MB_PLANE; i++) {
     struct macroblockd_plane *const pd = &xd->plane[i];
     const BLOCK_SIZE plane_bsize = get_plane_block_size(bsize, pd);
-    vpx_memset(pd->above_context, 0, sizeof(ENTROPY_CONTEXT) *
-                   num_4x4_blocks_wide_lookup[plane_bsize]);
-    vpx_memset(pd->left_context, 0, sizeof(ENTROPY_CONTEXT) *
-                   num_4x4_blocks_high_lookup[plane_bsize]);
+    memset(pd->above_context, 0,
+           sizeof(ENTROPY_CONTEXT) * num_4x4_blocks_wide_lookup[plane_bsize]);
+    memset(pd->left_context, 0,
+           sizeof(ENTROPY_CONTEXT) * num_4x4_blocks_high_lookup[plane_bsize]);
   }
 }
 
@@ -172,6 +173,7 @@ static INLINE const uint8_t *get_band_translate(TX_SIZE tx_size) {
 #define PIVOT_NODE                  2   // which node is pivot
 
 #define MODEL_NODES (ENTROPY_NODES - UNCONSTRAINED_NODES)
+extern const vp9_tree_index vp9_coef_con_tree[TREE_SIZE(ENTROPY_TOKENS)];
 extern const vp9_prob vp9_pareto8_full[COEFF_PROB_MODELS][MODEL_NODES];
 
 typedef vp9_prob vp9_coeff_probs_model[REF_TYPES][COEF_BANDS]
@@ -214,7 +216,7 @@ static INLINE int get_entropy_context(TX_SIZE tx_size, const ENTROPY_CONTEXT *a,
 
 static INLINE const scan_order *get_scan(const MACROBLOCKD *xd, TX_SIZE tx_size,
                                          PLANE_TYPE type, int block_idx) {
-  const MODE_INFO *const mi = xd->mi[0].src_mi;
+  const MODE_INFO *const mi = xd->mi[0];
 
   if (is_inter_block(&mi->mbmi) || type != PLANE_TYPE_Y || xd->lossless) {
     return &vp9_default_scan_orders[tx_size];

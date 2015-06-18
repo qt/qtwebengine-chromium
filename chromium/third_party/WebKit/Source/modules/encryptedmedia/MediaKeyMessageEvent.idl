@@ -23,11 +23,19 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// https://w3c.github.io/encrypted-media/#mediakeymessageevent
+
+enum MediaKeyMessageType {
+    "license-request",
+    "license-renewal",
+    "license-release"
+};
+
 [
-    EventConstructor,
+    Constructor(DOMString type, optional MediaKeyMessageEventInit eventInitDict),
     RuntimeEnabled=EncryptedMedia
 ] interface MediaKeyMessageEvent : Event {
+    readonly attribute MediaKeyMessageType messageType;
     readonly attribute ArrayBuffer message;
-    [InitializedByEventConstructor] readonly attribute DOMString destinationURL;
 };
 

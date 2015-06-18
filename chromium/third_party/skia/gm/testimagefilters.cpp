@@ -97,17 +97,13 @@ public:
 
 protected:
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("testimagefilters");
     }
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
+    SkISize onISize() override { return SkISize::Make(700, 460); }
 
-    virtual SkISize onISize() { return SkISize::Make(700, 460); }
-
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
 //        this->drawSizeBounds(canvas, 0xFFCCCCCC);
 
         static SkImageFilter* (*gFilterProc[])() = {

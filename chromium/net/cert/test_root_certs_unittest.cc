@@ -14,7 +14,7 @@
 #include "net/test/cert_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
 #include <nss.h>
 #endif
 
@@ -68,7 +68,7 @@ TEST(TestRootCertsTest, AddFromFile) {
 // the results of the rest of net_unittests, ensuring that the trust status
 // is properly being set and cleared.
 TEST(TestRootCertsTest, OverrideTrust) {
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
   if (NSS_VersionCheck("3.14.2") && !NSS_VersionCheck("3.15")) {
     // See http://bugzil.la/863947 for details
     LOG(INFO) << "Skipping test for NSS 3.14.2 - NSS 3.15";
@@ -89,12 +89,9 @@ TEST(TestRootCertsTest, OverrideTrust) {
   int flags = 0;
   CertVerifyResult bad_verify_result;
   scoped_refptr<CertVerifyProc> verify_proc(CertVerifyProc::CreateDefault());
-  int bad_status = verify_proc->Verify(test_cert.get(),
-                                       "127.0.0.1",
-                                       flags,
-                                       NULL,
-                                       CertificateList(),
-                                       &bad_verify_result);
+  int bad_status =
+      verify_proc->Verify(test_cert.get(), "127.0.0.1", std::string(), flags,
+                          NULL, CertificateList(), &bad_verify_result);
   EXPECT_NE(OK, bad_status);
   EXPECT_NE(0u, bad_verify_result.cert_status & CERT_STATUS_AUTHORITY_INVALID);
 
@@ -106,12 +103,9 @@ TEST(TestRootCertsTest, OverrideTrust) {
   // Test that the certificate verification now succeeds, because the
   // TestRootCerts is successfully imbuing trust.
   CertVerifyResult good_verify_result;
-  int good_status = verify_proc->Verify(test_cert.get(),
-                                        "127.0.0.1",
-                                        flags,
-                                        NULL,
-                                        CertificateList(),
-                                        &good_verify_result);
+  int good_status =
+      verify_proc->Verify(test_cert.get(), "127.0.0.1", std::string(), flags,
+                          NULL, CertificateList(), &good_verify_result);
   EXPECT_EQ(OK, good_status);
   EXPECT_EQ(0u, good_verify_result.cert_status);
 
@@ -122,12 +116,9 @@ TEST(TestRootCertsTest, OverrideTrust) {
   // revert to their original state, and don't linger. If trust status
   // lingers, it will likely break other tests in net_unittests.
   CertVerifyResult restored_verify_result;
-  int restored_status = verify_proc->Verify(test_cert.get(),
-                                            "127.0.0.1",
-                                            flags,
-                                            NULL,
-                                            CertificateList(),
-                                            &restored_verify_result);
+  int restored_status =
+      verify_proc->Verify(test_cert.get(), "127.0.0.1", std::string(), flags,
+                          NULL, CertificateList(), &restored_verify_result);
   EXPECT_NE(OK, restored_status);
   EXPECT_NE(0u,
             restored_verify_result.cert_status & CERT_STATUS_AUTHORITY_INVALID);
@@ -135,7 +126,8 @@ TEST(TestRootCertsTest, OverrideTrust) {
   EXPECT_EQ(bad_verify_result.cert_status, restored_verify_result.cert_status);
 }
 
-#if defined(USE_NSS) || (defined(USE_OPENSSL_CERTS) && !defined(OS_ANDROID))
+#if defined(USE_NSS_CERTS) || \
+    (defined(USE_OPENSSL_CERTS) && !defined(OS_ANDROID))
 TEST(TestRootCertsTest, Contains) {
   // Another test root certificate.
   const char kRootCertificateFile2[] = "2048-rsa-root.pem";

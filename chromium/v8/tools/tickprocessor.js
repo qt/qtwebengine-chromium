@@ -154,7 +154,9 @@ function TickProcessor(
     snapshotLogProcessor,
     distortion,
     range,
-    sourceMap) {
+    sourceMap,
+    timedRange,
+    pairwiseTimedRange) {
   LogReader.call(this, {
       'shared-library': { parsers: [null, parseInt, parseInt],
           processor: this.processSharedLibrary },
@@ -187,10 +189,13 @@ function TickProcessor(
       'function-move': null,
       'function-delete': null,
       'heap-sample-item': null,
+      'current-time': null,  // Handled specially, not parsed.
       // Obsolete row types.
       'code-allocate': null,
       'begin-code-region': null,
-      'end-code-region': null });
+      'end-code-region': null },
+      timedRange,
+      pairwiseTimedRange);
 
   this.cppEntriesProvider_ = cppEntriesProvider;
   this.callGraphSize_ = callGraphSize;
@@ -292,7 +297,7 @@ TickProcessor.prototype.isCppCode = function(name) {
 
 
 TickProcessor.prototype.isJsCode = function(name) {
-  return !(name in this.codeTypes_);
+  return name !== "UNKNOWN" && !(name in this.codeTypes_);
 };
 
 
@@ -875,13 +880,18 @@ function ArgumentsProcessor(args) {
     '--distortion': ['distortion', 0,
         'Specify the logging overhead in picoseconds'],
     '--source-map': ['sourceMap', null,
-        'Specify the source map that should be used for output']
+        'Specify the source map that should be used for output'],
+    '--timed-range': ['timedRange', true,
+        'Ignore ticks before first and after last Date.now() call'],
+    '--pairwise-timed-range': ['pairwiseTimedRange', true,
+        'Ignore ticks outside pairs of Date.now() calls']
   };
   this.argsDispatch_['--js'] = this.argsDispatch_['-j'];
   this.argsDispatch_['--gc'] = this.argsDispatch_['-g'];
   this.argsDispatch_['--compiler'] = this.argsDispatch_['-c'];
   this.argsDispatch_['--other'] = this.argsDispatch_['-o'];
   this.argsDispatch_['--external'] = this.argsDispatch_['-e'];
+  this.argsDispatch_['--ptr'] = this.argsDispatch_['--pairwise-timed-range'];
 };
 
 
@@ -896,17 +906,19 @@ ArgumentsProcessor.DEFAULTS = {
   targetRootFS: '',
   nm: 'nm',
   range: 'auto,auto',
-  distortion: 0
+  distortion: 0,
+  timedRange: false,
+  pairwiseTimedRange: false
 };
 
 
 ArgumentsProcessor.prototype.parse = function() {
   while (this.args_.length) {
-    var arg = this.args_[0];
+    var arg = this.args_.shift();
     if (arg.charAt(0) != '-') {
-      break;
+      this.result_.logFileName = arg;
+      continue;
     }
-    this.args_.shift();
     var userValue = null;
     var eqPos = arg.indexOf('=');
     if (eqPos != -1) {
@@ -919,10 +931,6 @@ ArgumentsProcessor.prototype.parse = function() {
     } else {
       return false;
     }
-  }
-
-  if (this.args_.length >= 1) {
-      this.result_.logFileName = this.args_.shift();
   }
   return true;
 };
@@ -948,15 +956,15 @@ ArgumentsProcessor.prototype.printUsageAndExit = function() {
         ArgumentsProcessor.DEFAULTS.logFileName + '".\n');
   print('Options:');
   for (var arg in this.argsDispatch_) {
-    var synonims = [arg];
+    var synonyms = [arg];
     var dispatch = this.argsDispatch_[arg];
     for (var synArg in this.argsDispatch_) {
       if (arg !== synArg && dispatch === this.argsDispatch_[synArg]) {
-        synonims.push(synArg);
+        synonyms.push(synArg);
         delete this.argsDispatch_[synArg];
       }
     }
-    print('  ' + padRight(synonims.join(', '), 20) + dispatch[2]);
+    print('  ' + padRight(synonyms.join(', '), 20) + " " + dispatch[2]);
   }
   quit(2);
 };

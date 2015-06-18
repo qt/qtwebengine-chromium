@@ -12,7 +12,7 @@
 #include "cc/base/cc_export.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 class SingleThreadTaskRunner;
@@ -55,7 +55,7 @@ class CC_EXPORT DelayBasedTimeSource
   // Virtual for testing.
   virtual base::TimeTicks Now() const;
 
-  virtual void AsValueInto(base::debug::TracedValue* dict) const;
+  virtual void AsValueInto(base::trace_event::TracedValue* dict) const;
 
  protected:
   DelayBasedTimeSource(base::TimeDelta interval,
@@ -95,7 +95,9 @@ class CC_EXPORT DelayBasedTimeSource
   DISALLOW_COPY_AND_ASSIGN(DelayBasedTimeSource);
 };
 
-// DelayBasedTimeSource uses base::TimeTicks::HighResNow as its timebase.
+// DelayBasedTimeSource that once used base::TimeTicks::HighResNow as its time
+// source, but is now a no-op.
+// TODO(brianderson): Remove along with gfx::/FrameTime.http://crbug.com/447329
 class DelayBasedTimeSourceHighRes : public DelayBasedTimeSource {
  public:
   static scoped_refptr<DelayBasedTimeSourceHighRes> Create(

@@ -30,8 +30,8 @@
 #define PeriodicWave_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMTypedArray.h"
 #include "platform/audio/AudioArray.h"
-#include "wtf/Float32Array.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 
@@ -40,13 +40,15 @@ namespace blink {
 class PeriodicWave : public GarbageCollectedFinalized<PeriodicWave>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
+    // Maximum array size allowed for creating PeriodicWave's.
+    static const unsigned kMaxPeriodicWaveArraySize;
     static PeriodicWave* createSine(float sampleRate);
     static PeriodicWave* createSquare(float sampleRate);
     static PeriodicWave* createSawtooth(float sampleRate);
     static PeriodicWave* createTriangle(float sampleRate);
 
     // Creates an arbitrary periodic wave given the frequency components (Fourier coefficients).
-    static PeriodicWave* create(float sampleRate, Float32Array* real, Float32Array* imag);
+    static PeriodicWave* create(float sampleRate, DOMFloat32Array* real, DOMFloat32Array* imag);
 
     // Returns pointers to the lower and higher wave data for the pitch range containing
     // the given fundamental frequency. These two tables are in adjacent "pitch" ranges
@@ -54,14 +56,14 @@ public:
     // at this fundamental frequency. The lower wave is the next range containing fewer partials than the higher wave.
     // Interpolation between these two tables can be made according to tableInterpolationFactor.
     // Where values from 0 -> 1 interpolate between lower -> higher.
-    void waveDataForFundamentalFrequency(float, float* &lowerWaveData, float* &higherWaveData, float& tableInterpolationFactor);
+    void waveDataForFundamentalFrequency(float, float*& lowerWaveData, float*& higherWaveData, float& tableInterpolationFactor);
 
     // Returns the scalar multiplier to the oscillator frequency to calculate wave buffer phase increment.
     float rateScale() const { return m_rateScale; }
 
     unsigned periodicWaveSize() const { return m_periodicWaveSize; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     explicit PeriodicWave(float sampleRate);
@@ -87,7 +89,7 @@ private:
 
     // Creates tables based on numberOfComponents Fourier coefficients.
     void createBandLimitedTables(const float* real, const float* imag, unsigned numberOfComponents);
-    Vector<OwnPtr<AudioFloatArray> > m_bandLimitedTables;
+    Vector<OwnPtr<AudioFloatArray>> m_bandLimitedTables;
 };
 
 } // namespace blink

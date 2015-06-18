@@ -35,7 +35,7 @@ const GUID GUID_IAccessibleContentDocument = {
     0xa5d8e1f3, 0x3571, 0x4d8f,
     0x95, 0x21, 0x07, 0xed, 0x28, 0xfb, 0x07, 0x2e};
 
-const base::char16 BrowserAccessibilityWin::kEmbeddedCharacter[] = L"\xfffc";
+const base::char16 BrowserAccessibilityWin::kEmbeddedCharacter = L'\xfffc';
 
 // static
 LONG BrowserAccessibilityWin::next_unique_id_win_ =
@@ -63,15 +63,16 @@ class BrowserAccessibilityRelation
   CONTENT_EXPORT void AddTarget(int target_id);
 
   // IAccessibleRelation methods.
-  CONTENT_EXPORT STDMETHODIMP get_relationType(BSTR* relation_type);
-  CONTENT_EXPORT STDMETHODIMP get_nTargets(long* n_targets);
-  CONTENT_EXPORT STDMETHODIMP get_target(long target_index, IUnknown** target);
-  CONTENT_EXPORT STDMETHODIMP get_targets(long max_targets,
-                                          IUnknown** targets,
-                                          long* n_targets);
+  CONTENT_EXPORT STDMETHODIMP get_relationType(BSTR* relation_type) override;
+  CONTENT_EXPORT STDMETHODIMP get_nTargets(long* n_targets) override;
+  CONTENT_EXPORT STDMETHODIMP
+  get_target(long target_index, IUnknown** target) override;
+  CONTENT_EXPORT STDMETHODIMP
+  get_targets(long max_targets, IUnknown** targets, long* n_targets) override;
 
   // IAccessibleRelation methods not implemented.
-  CONTENT_EXPORT STDMETHODIMP get_localizedRelationType(BSTR* relation_type) {
+  CONTENT_EXPORT STDMETHODIMP
+  get_localizedRelationType(BSTR* relation_type) override {
     return E_NOTIMPL;
   }
 
@@ -175,6 +176,20 @@ STDMETHODIMP BrowserAccessibilityRelation::get_targets(long max_targets,
 }
 
 //
+// BrowserAccessibilityWin::WinAttributes
+//
+
+BrowserAccessibilityWin::WinAttributes::WinAttributes()
+    : ia_role(0),
+      ia_state(0),
+      ia2_role(0),
+      ia2_state(0) {
+}
+
+BrowserAccessibilityWin::WinAttributes::~WinAttributes() {
+}
+
+//
 // BrowserAccessibilityWin
 //
 
@@ -192,12 +207,7 @@ BrowserAccessibilityWin* BrowserAccessibility::ToBrowserAccessibilityWin() {
 }
 
 BrowserAccessibilityWin::BrowserAccessibilityWin()
-    : ia_role_(0),
-      ia_state_(0),
-      ia2_role_(0),
-      ia2_state_(0),
-      first_time_(true),
-      old_ia_state_(0),
+    : win_attributes_(new WinAttributes()),
       previous_scroll_x_(0),
       previous_scroll_y_(0) {
   // Start unique IDs at -1 and decrement each time, because get_accChild
@@ -382,7 +392,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_accDefaultAction(VARIANT var_id,
     return E_INVALIDARG;
 
   return target->GetStringAttributeAsBstr(
-      ui::AX_ATTR_SHORTCUT, def_action);
+      ui::AX_ATTR_ACTION, def_action);
 }
 
 STDMETHODIMP BrowserAccessibilityWin::get_accDescription(VARIANT var_id,
@@ -397,8 +407,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_accDescription(VARIANT var_id,
   if (!target)
     return E_INVALIDARG;
 
-  return target->GetStringAttributeAsBstr(
-      ui::AX_ATTR_DESCRIPTION, desc);
+  base::string16 description_str = target->description();
+  if (description_str.empty())
+    return S_FALSE;
+
+  *desc = SysAllocString(description_str.c_str());
+
+  DCHECK(*desc);
+  return S_OK;
 }
 
 STDMETHODIMP BrowserAccessibilityWin::get_accFocus(VARIANT* focus_child) {
@@ -434,8 +450,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_accHelp(VARIANT var_id, BSTR* help) {
   if (!target)
     return E_INVALIDARG;
 
-  return target->GetStringAttributeAsBstr(
-      ui::AX_ATTR_HELP, help);
+  base::string16 help_str = target->help();
+  if (help_str.empty())
+    return S_FALSE;
+
+  *help = SysAllocString(help_str.c_str());
+
+  DCHECK(*help);
+  return S_OK;
 }
 
 STDMETHODIMP BrowserAccessibilityWin::get_accKeyboardShortcut(VARIANT var_id,
@@ -465,24 +487,24 @@ STDMETHODIMP BrowserAccessibilityWin::get_accName(VARIANT var_id, BSTR* name) {
   if (!target)
     return E_INVALIDARG;
 
-  std::string name_str = target->name();
+  base::string16 name_str = target->name();
 
   // If the name is empty, see if it's labeled by another element.
   if (name_str.empty()) {
     int title_elem_id;
     if (target->GetIntAttribute(ui::AX_ATTR_TITLE_UI_ELEMENT,
                                 &title_elem_id)) {
-      BrowserAccessibility* title_elem =
-          manager()->GetFromID(title_elem_id);
+      BrowserAccessibilityWin* title_elem =
+          manager()->GetFromID(title_elem_id)->ToBrowserAccessibilityWin();
       if (title_elem)
-        name_str = title_elem->GetTextRecursive();
+        name_str = title_elem->GetNameRecursive();
     }
   }
 
   if (name_str.empty())
     return S_FALSE;
 
-  *name = SysAllocString(base::UTF8ToUTF16(name_str).c_str());
+  *name = SysAllocString(name_str.c_str());
 
   DCHECK(*name);
   return S_OK;
@@ -530,12 +552,12 @@ STDMETHODIMP BrowserAccessibilityWin::get_accRole(VARIANT var_id,
   if (!target)
     return E_INVALIDARG;
 
-  if (!target->role_name_.empty()) {
+  if (!target->role_name().empty()) {
     role->vt = VT_BSTR;
-    role->bstrVal = SysAllocString(target->role_name_.c_str());
+    role->bstrVal = SysAllocString(target->role_name().c_str());
   } else {
     role->vt = VT_I4;
-    role->lVal = target->ia_role_;
+    role->lVal = target->ia_role();
   }
   return S_OK;
 }
@@ -553,7 +575,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_accState(VARIANT var_id,
     return E_INVALIDARG;
 
   state->vt = VT_I4;
-  state->lVal = target->ia_state_;
+  state->lVal = target->ia_state();
   if (manager()->GetFocus(NULL) == this)
     state->lVal |= STATE_SYSTEM_FOCUSED;
 
@@ -583,22 +605,20 @@ STDMETHODIMP BrowserAccessibilityWin::get_accValue(VARIANT var_id,
 
   // Expose color well value.
   if (target->ia2_role() == IA2_ROLE_COLOR_CHOOSER) {
-    int r = target->GetIntAttribute(
-        ui::AX_ATTR_COLOR_VALUE_RED);
-    int g = target->GetIntAttribute(
-        ui::AX_ATTR_COLOR_VALUE_GREEN);
-    int b = target->GetIntAttribute(
-        ui::AX_ATTR_COLOR_VALUE_BLUE);
+    int color = target->GetIntAttribute(ui::AX_ATTR_COLOR_VALUE);
+    int red = (color >> 16) & 0xFF;
+    int green = (color >> 8) & 0xFF;
+    int blue = color & 0xFF;
     base::string16 value_text;
-    value_text = base::IntToString16((r * 100) / 255) + L"% red " +
-                 base::IntToString16((g * 100) / 255) + L"% green " +
-                 base::IntToString16((b * 100) / 255) + L"% blue";
+    value_text = base::IntToString16((red * 100) / 255) + L"% red " +
+                 base::IntToString16((green * 100) / 255) + L"% green " +
+                 base::IntToString16((blue * 100) / 255) + L"% blue";
     *value = SysAllocString(value_text.c_str());
     DCHECK(*value);
     return S_OK;
   }
 
-  *value = SysAllocString(base::UTF8ToUTF16(target->value()).c_str());
+  *value = SysAllocString(target->value().c_str());
   DCHECK(*value);
   return S_OK;
 }
@@ -670,6 +690,15 @@ STDMETHODIMP BrowserAccessibilityWin::accSelect(
   return S_FALSE;
 }
 
+STDMETHODIMP
+BrowserAccessibilityWin::put_accName(VARIANT var_id, BSTR put_name) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::put_accValue(VARIANT var_id, BSTR put_val) {
+  return E_NOTIMPL;
+}
+
 //
 // IAccessible2 methods.
 //
@@ -681,7 +710,7 @@ STDMETHODIMP BrowserAccessibilityWin::role(LONG* role) {
   if (!role)
     return E_INVALIDARG;
 
-  *role = ia2_role_;
+  *role = ia2_role();
 
   return S_OK;
 }
@@ -696,10 +725,9 @@ STDMETHODIMP BrowserAccessibilityWin::get_attributes(BSTR* attributes) {
   // The iaccessible2 attributes are a set of key-value pairs
   // separated by semicolons, with a colon between the key and the value.
   base::string16 str;
-  for (unsigned int i = 0; i < ia2_attributes_.size(); ++i) {
-    if (i != 0)
-      str += L';';
-    str += ia2_attributes_[i];
+  const std::vector<base::string16>& attributes_list = ia2_attributes();
+  for (unsigned int i = 0; i < attributes_list.size(); ++i) {
+    str += attributes_list[i] + L';';
   }
 
   if (str.empty())
@@ -717,7 +745,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_states(AccessibleStates* states) {
   if (!states)
     return E_INVALIDARG;
 
-  *states = ia2_state_;
+  *states = ia2_state();
 
   return S_OK;
 }
@@ -886,15 +914,42 @@ STDMETHODIMP BrowserAccessibilityWin::get_groupPosition(
   if (!group_level || !similar_items_in_group || !position_in_group)
     return E_INVALIDARG;
 
-  if (GetRole() == ui::AX_ROLE_LIST_BOX_OPTION &&
-      GetParent() &&
-      GetParent()->GetRole() == ui::AX_ROLE_LIST_BOX) {
-    *group_level = 0;
-    *similar_items_in_group = GetParent()->PlatformChildCount();
-    *position_in_group = GetIndexInParent() + 1;
-    return S_OK;
-  }
+  *group_level = 0;
+  *similar_items_in_group = GetIntAttribute(ui::AX_ATTR_SET_SIZE);
+  *position_in_group = GetIntAttribute(ui::AX_ATTR_POS_IN_SET);
+  return S_OK;
+}
 
+//
+// IAccessibleEx methods not implemented.
+//
+
+STDMETHODIMP BrowserAccessibilityWin::get_extendedRole(BSTR* extended_role) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_localizedExtendedRole(
+    BSTR* localized_extended_role) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_nExtendedStates(LONG* n_extended_states) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_extendedStates(LONG max_extended_states,
+                                            BSTR** extended_states,
+                                            LONG* n_extended_states) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_localizedExtendedStates(
+    LONG max_localized_extended_states,
+    BSTR** localized_extended_states,
+    LONG* n_localized_extended_states) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::get_locale(IA2Locale* locale) {
   return E_NOTIMPL;
 }
 
@@ -981,8 +1036,13 @@ STDMETHODIMP BrowserAccessibilityWin::get_description(BSTR* desc) {
   if (!desc)
     return E_INVALIDARG;
 
-  return GetStringAttributeAsBstr(
-      ui::AX_ATTR_DESCRIPTION, desc);
+  if (description().empty())
+    return S_FALSE;
+
+  *desc = SysAllocString(description().c_str());
+
+  DCHECK(*desc);
+  return S_OK;
 }
 
 STDMETHODIMP BrowserAccessibilityWin::get_imagePosition(
@@ -1158,8 +1218,10 @@ STDMETHODIMP BrowserAccessibilityWin::get_columnDescription(long column,
         return S_OK;
       }
 
-      return cell->GetStringAttributeAsBstr(
-          ui::AX_ATTR_DESCRIPTION, description);
+      if (cell->description().size() > 0) {
+        *description = SysAllocString(cell->description().c_str());
+        return S_OK;
+      }
     }
   }
 
@@ -1345,8 +1407,10 @@ STDMETHODIMP BrowserAccessibilityWin::get_rowDescription(long row,
         return S_OK;
       }
 
-      return cell->GetStringAttributeAsBstr(
-          ui::AX_ATTR_DESCRIPTION, description);
+      if (cell->description().size() > 0) {
+        *description = SysAllocString(cell->description().c_str());
+        return S_OK;
+      }
     }
   }
 
@@ -1562,6 +1626,27 @@ STDMETHODIMP BrowserAccessibilityWin::get_rowColumnExtentsAtIndex(
   }
 
   return S_FALSE;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::selectRow(long row) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::selectColumn(long column) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::unselectRow(long row) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::unselectColumn(long column) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP
+BrowserAccessibilityWin::get_modelChange(IA2TableModelChange* model_change) {
+  return E_NOTIMPL;
 }
 
 //
@@ -1916,9 +2001,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_caretOffset(LONG* offset) {
   if (!offset)
     return E_INVALIDARG;
 
+  // IA2 spec says that caret offset should be -1 if the object is not focused.
+  if (manager()->GetFocus(this) != this) {
+    *offset = -1;
+    return S_FALSE;
+  }
+
   *offset = 0;
-  if (GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-      GetRole() == ui::AX_ROLE_TEXT_AREA) {
+  if (IsEditableText()) {
     int sel_start = 0;
     if (GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START,
                         &sel_start))
@@ -1973,8 +2063,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_nSelections(LONG* n_selections) {
     return E_INVALIDARG;
 
   *n_selections = 0;
-  if (GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-      GetRole() == ui::AX_ROLE_TEXT_AREA) {
+  if (IsEditableText()) {
     int sel_start = 0;
     int sel_end = 0;
     if (GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START,
@@ -1996,10 +2085,13 @@ STDMETHODIMP BrowserAccessibilityWin::get_selection(LONG selection_index,
   if (!start_offset || !end_offset || selection_index != 0)
     return E_INVALIDARG;
 
+  LONG n_selections = 0;
+  if (FAILED(get_nSelections(&n_selections)) || n_selections < 1)
+    return E_INVALIDARG;
+
   *start_offset = 0;
   *end_offset = 0;
-  if (GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-      GetRole() == ui::AX_ROLE_TEXT_AREA) {
+  if (IsEditableText()) {
     int sel_start = 0;
     int sel_end = 0;
     if (GetIntAttribute(
@@ -2065,6 +2157,15 @@ STDMETHODIMP BrowserAccessibilityWin::get_textAtOffset(
   if (!start_offset || !end_offset || !text)
     return E_INVALIDARG;
 
+  const base::string16& text_str = TextForIAccessibleText();
+  HandleSpecialTextOffset(text_str, &offset);
+  if (offset < 0)
+    return E_INVALIDARG;
+
+  LONG text_len = text_str.length();
+  if (offset > text_len)
+    return E_INVALIDARG;
+
   // The IAccessible2 spec says we don't have to implement the "sentence"
   // boundary type, we can just let the screenreader handle it.
   if (boundary_type == IA2_TEXT_BOUNDARY_SENTENCE) {
@@ -2074,7 +2175,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_textAtOffset(
     return S_FALSE;
   }
 
-  const base::string16& text_str = TextForIAccessibleText();
+  // According to the IA2 Spec, only line boundaries should succeed when
+  // the offset is one past the end of the text.
+  if (offset == text_len && boundary_type != IA2_TEXT_BOUNDARY_LINE) {
+    *start_offset = 0;
+    *end_offset = 0;
+    *text = nullptr;
+    return S_FALSE;
+  }
 
   *start_offset = FindBoundary(
       text_str, boundary_type, offset, ui::BACKWARDS_DIRECTION);
@@ -2148,11 +2256,18 @@ STDMETHODIMP BrowserAccessibilityWin::get_newText(IA2TextSegment* new_text) {
   if (!new_text)
     return E_INVALIDARG;
 
-  base::string16 text = TextForIAccessibleText();
+  if (!old_win_attributes_)
+    return E_FAIL;
 
-  new_text->text = SysAllocString(text.c_str());
-  new_text->start = 0;
-  new_text->end = static_cast<long>(text.size());
+  int start, old_len, new_len;
+  ComputeHypertextRemovedAndInserted(&start, &old_len, &new_len);
+  if (new_len == 0)
+    return E_FAIL;
+
+  base::string16 substr = hypertext().substr(start, new_len);
+  new_text->text = SysAllocString(substr.c_str());
+  new_text->start = static_cast<long>(start);
+  new_text->end = static_cast<long>(start + new_len);
   return S_OK;
 }
 
@@ -2163,9 +2278,19 @@ STDMETHODIMP BrowserAccessibilityWin::get_oldText(IA2TextSegment* old_text) {
   if (!old_text)
     return E_INVALIDARG;
 
-  old_text->text = SysAllocString(old_text_.c_str());
-  old_text->start = 0;
-  old_text->end = static_cast<long>(old_text_.size());
+  if (!old_win_attributes_)
+    return E_FAIL;
+
+  int start, old_len, new_len;
+  ComputeHypertextRemovedAndInserted(&start, &old_len, &new_len);
+  if (old_len == 0)
+    return E_FAIL;
+
+  base::string16 old_hypertext = old_win_attributes_->hypertext;
+  base::string16 substr = old_hypertext.substr(start, old_len);
+  old_text->text = SysAllocString(substr.c_str());
+  old_text->start = static_cast<long>(start);
+  old_text->end = static_cast<long>(start + old_len);
   return S_OK;
 }
 
@@ -2256,6 +2381,17 @@ STDMETHODIMP BrowserAccessibilityWin::setSelection(LONG selection_index,
 }
 
 //
+// IAccessibleText methods not implemented.
+//
+
+STDMETHODIMP BrowserAccessibilityWin::get_attributes(LONG offset,
+                                                     LONG* start_offset,
+                                                     LONG* end_offset,
+                                                     BSTR* text_attributes) {
+  return E_NOTIMPL;
+}
+
+//
 // IAccessibleHypertext methods.
 //
 
@@ -2266,7 +2402,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_nHyperlinks(long* hyperlink_count) {
   if (!hyperlink_count)
     return E_INVALIDARG;
 
-  *hyperlink_count = hyperlink_offset_to_index_.size();
+  *hyperlink_count = hyperlink_offset_to_index().size();
   return S_OK;
 }
 
@@ -2278,14 +2414,19 @@ STDMETHODIMP BrowserAccessibilityWin::get_hyperlink(
 
   if (!hyperlink ||
       index < 0 ||
-      index >= static_cast<long>(hyperlinks_.size())) {
+      index >= static_cast<long>(hyperlinks().size())) {
     return E_INVALIDARG;
   }
 
+  int32 id = hyperlinks()[index];
   BrowserAccessibilityWin* child =
-      InternalGetChild(hyperlinks_[index])->ToBrowserAccessibilityWin();
-  *hyperlink = static_cast<IAccessibleHyperlink*>(child->NewReference());
-  return S_OK;
+      manager()->GetFromID(id)->ToBrowserAccessibilityWin();
+  if (child) {
+    *hyperlink = static_cast<IAccessibleHyperlink*>(child->NewReference());
+    return S_OK;
+  }
+
+  return E_FAIL;
 }
 
 STDMETHODIMP BrowserAccessibilityWin::get_hyperlinkIndex(
@@ -2299,16 +2440,68 @@ STDMETHODIMP BrowserAccessibilityWin::get_hyperlinkIndex(
 
   *hyperlink_index = -1;
 
-  if (char_index < 0 || char_index >= static_cast<long>(hypertext_.size()))
+  if (char_index < 0 ||
+      char_index >= static_cast<long>(hypertext().size())) {
     return E_INVALIDARG;
+  }
 
   std::map<int32, int32>::iterator it =
-      hyperlink_offset_to_index_.find(char_index);
-  if (it == hyperlink_offset_to_index_.end())
+      hyperlink_offset_to_index().find(char_index);
+  if (it == hyperlink_offset_to_index().end())
     return E_FAIL;
 
   *hyperlink_index = it->second;
   return S_OK;
+}
+
+//
+// IAccessibleHyperlink not implemented.
+//
+
+STDMETHODIMP BrowserAccessibilityWin::get_anchor(long index, VARIANT* anchor) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_anchorTarget(long index, VARIANT* anchor_target) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::get_startIndex(long* index) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::get_endIndex(long* index) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::get_valid(boolean* valid) {
+  return E_NOTIMPL;
+}
+
+//
+// IAccessibleAction not implemented.
+//
+
+STDMETHODIMP BrowserAccessibilityWin::nActions(long* n_actions) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::doAction(long action_index) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_description(long action_index, BSTR* description) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::get_keyBinding(long action_index,
+                                                     long n_max_bindings,
+                                                     BSTR** key_bindings,
+                                                     long* n_bindings) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP BrowserAccessibilityWin::get_name(long action_index, BSTR* name) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::get_localizedName(long action_index,
+                                           BSTR* localized_name) {
+  return E_NOTIMPL;
 }
 
 //
@@ -2423,6 +2616,17 @@ STDMETHODIMP BrowserAccessibilityWin::get_docType(BSTR* doc_type) {
       ui::AX_ATTR_DOC_DOCTYPE, doc_type);
 }
 
+STDMETHODIMP
+BrowserAccessibilityWin::get_nameSpaceURIForID(short name_space_id,
+                                               BSTR* name_space_uri) {
+  return E_NOTIMPL;
+}
+STDMETHODIMP
+BrowserAccessibilityWin::put_alternateViewMediaTypes(
+    BSTR* comma_separated_media_types) {
+  return E_NOTIMPL;
+}
+
 //
 // ISimpleDOMNode methods.
 //
@@ -2449,14 +2653,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_nodeInfo(
     *node_name = NULL;
 
   *name_space_id = 0;
-  *node_value = SysAllocString(base::UTF8ToUTF16(value()).c_str());
+  *node_value = SysAllocString(value().c_str());
   *num_children = PlatformChildCount();
   *unique_id = unique_id_win_;
 
-  if (ia_role_ == ROLE_SYSTEM_DOCUMENT) {
+  if (ia_role() == ROLE_SYSTEM_DOCUMENT) {
     *node_type = NODETYPE_DOCUMENT;
-  } else if (ia_role_ == ROLE_SYSTEM_TEXT &&
-             ((ia2_state_ & IA2_STATE_EDITABLE) == 0)) {
+  } else if (ia_role() == ROLE_SYSTEM_TEXT &&
+             ((ia2_state() & IA2_STATE_EDITABLE) == 0)) {
     *node_type = NODETYPE_TEXT;
   } else {
     *node_type = NODETYPE_ELEMENT;
@@ -2686,6 +2890,19 @@ STDMETHODIMP BrowserAccessibilityWin::get_childAt(
   return S_OK;
 }
 
+STDMETHODIMP BrowserAccessibilityWin::get_innerHTML(BSTR* innerHTML) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP
+BrowserAccessibilityWin::get_localInterface(void** local_interface) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::get_language(BSTR* language) {
+  return E_NOTIMPL;
+}
+
 //
 // ISimpleDOMText methods.
 //
@@ -2763,6 +2980,10 @@ STDMETHODIMP BrowserAccessibilityWin::scrollToSubstring(
   return S_OK;
 }
 
+STDMETHODIMP BrowserAccessibilityWin::get_fontFamily(BSTR* font_family) {
+  return E_NOTIMPL;
+}
+
 //
 // IServiceProvider methods.
 //
@@ -2819,6 +3040,27 @@ STDMETHODIMP BrowserAccessibilityWin::QueryService(REFGUID guidService,
   return E_FAIL;
 }
 
+STDMETHODIMP
+BrowserAccessibilityWin::GetObjectForChild(long child_id, IAccessibleEx** ret) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP
+BrowserAccessibilityWin::GetIAccessiblePair(IAccessible** acc, long* child_id) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::GetRuntimeId(SAFEARRAY** runtime_id) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP
+BrowserAccessibilityWin::ConvertReturnedElement(
+    IRawElementProviderSimple* element,
+    IAccessibleEx** acc) {
+  return E_NOTIMPL;
+}
+
 STDMETHODIMP BrowserAccessibilityWin::GetPatternProvider(PATTERNID id,
                                                          IUnknown** provider) {
   DVLOG(1) << "In Function: "
@@ -2855,6 +3097,16 @@ STDMETHODIMP BrowserAccessibilityWin::GetPropertyValue(PROPERTYID id,
   return S_OK;
 }
 
+STDMETHODIMP BrowserAccessibilityWin::get_ProviderOptions(
+    enum ProviderOptions* ret) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP BrowserAccessibilityWin::get_HostRawElementProvider(
+    IRawElementProviderSimple** provider) {
+  return E_NOTIMPL;
+}
+
 //
 // CComObjectRootEx methods.
 //
@@ -2865,8 +3117,9 @@ HRESULT WINAPI BrowserAccessibilityWin::InternalQueryInterface(
     const _ATL_INTMAP_ENTRY* entries,
     REFIID iid,
     void** object) {
-  int32 ia_role =
-      reinterpret_cast<BrowserAccessibilityWin*>(this_ptr)->ia_role_;
+  BrowserAccessibilityWin* accessibility =
+      reinterpret_cast<BrowserAccessibilityWin*>(this_ptr);
+  int32 ia_role = accessibility->ia_role();
   if (iid == IID_IAccessibleImage) {
     if (ia_role != ROLE_SYSTEM_GRAPHIC) {
       *object = NULL;
@@ -2878,7 +3131,7 @@ HRESULT WINAPI BrowserAccessibilityWin::InternalQueryInterface(
       return E_NOINTERFACE;
     }
   } else if (iid == IID_IAccessibleTableCell) {
-    if (ia_role != ROLE_SYSTEM_CELL) {
+    if (!accessibility->IsCellOrTableHeaderRole()) {
       *object = NULL;
       return E_NOINTERFACE;
     }
@@ -2904,14 +3157,23 @@ HRESULT WINAPI BrowserAccessibilityWin::InternalQueryInterface(
 // Private methods.
 //
 
-// Called every time this node's data changes.
-void BrowserAccessibilityWin::OnDataChanged() {
-  BrowserAccessibility::OnDataChanged();
+void BrowserAccessibilityWin::UpdateStep1ComputeWinAttributes() {
+  // Swap win_attributes_ to old_win_attributes_, allowing us to see
+  // exactly what changed and fire appropriate events. Note that
+  // old_win_attributes_ is cleared at the end of UpdateStep3FireEvents.
+  old_win_attributes_.swap(win_attributes_);
+  win_attributes_.reset(new WinAttributes());
 
   InitRoleAndState();
 
+  win_attributes_->ia2_attributes.clear();
+
+  // Expose autocomplete attribute for combobox and textbox.
+  StringAttributeToIA2(ui::AX_ATTR_AUTO_COMPLETE, "autocomplete");
+
   // Expose the "display" and "tag" attributes.
   StringAttributeToIA2(ui::AX_ATTR_DISPLAY, "display");
+  StringAttributeToIA2(ui::AX_ATTR_DROPEFFECT, "dropeffect");
   StringAttributeToIA2(ui::AX_ATTR_TEXT_INPUT_TYPE, "text-input-type");
   StringAttributeToIA2(ui::AX_ATTR_HTML_TAG, "tag");
   StringAttributeToIA2(ui::AX_ATTR_ROLE, "xml-roles");
@@ -2919,22 +3181,16 @@ void BrowserAccessibilityWin::OnDataChanged() {
   // Expose "level" attribute for headings, trees, etc.
   IntAttributeToIA2(ui::AX_ATTR_HIERARCHICAL_LEVEL, "level");
 
-  // Expose the set size and position in set for listbox options.
-  if (GetRole() == ui::AX_ROLE_LIST_BOX_OPTION &&
-      GetParent() &&
-      GetParent()->GetRole() == ui::AX_ROLE_LIST_BOX) {
-    ia2_attributes_.push_back(
-        L"setsize:" + base::IntToString16(GetParent()->PlatformChildCount()));
-    ia2_attributes_.push_back(
-        L"setsize:" + base::IntToString16(GetIndexInParent() + 1));
-  }
+  // Expose the set size and position in set.
+  IntAttributeToIA2(ui::AX_ATTR_SET_SIZE, "setsize");
+  IntAttributeToIA2(ui::AX_ATTR_POS_IN_SET, "posinset");
 
-  if (ia_role_ == ROLE_SYSTEM_CHECKBUTTON ||
-      ia_role_ == ROLE_SYSTEM_RADIOBUTTON ||
-      ia2_role_ == IA2_ROLE_CHECK_MENU_ITEM ||
-      ia2_role_ == IA2_ROLE_RADIO_MENU_ITEM ||
-      ia2_role_ == IA2_ROLE_TOGGLE_BUTTON) {
-    ia2_attributes_.push_back(L"checkable:true");
+  if (ia_role() == ROLE_SYSTEM_CHECKBUTTON ||
+      ia_role() == ROLE_SYSTEM_RADIOBUTTON ||
+      ia2_role() == IA2_ROLE_CHECK_MENU_ITEM ||
+      ia2_role() == IA2_ROLE_RADIO_MENU_ITEM ||
+      ia2_role() == IA2_ROLE_TOGGLE_BUTTON) {
+    win_attributes_->ia2_attributes.push_back(L"checkable:true");
   }
 
   // Expose live region attributes.
@@ -2942,6 +3198,9 @@ void BrowserAccessibilityWin::OnDataChanged() {
   StringAttributeToIA2(ui::AX_ATTR_LIVE_RELEVANT, "relevant");
   BoolAttributeToIA2(ui::AX_ATTR_LIVE_ATOMIC, "atomic");
   BoolAttributeToIA2(ui::AX_ATTR_LIVE_BUSY, "busy");
+
+  // Expose aria-grabbed attributes.
+  BoolAttributeToIA2(ui::AX_ATTR_GRABBED, "grabbed");
 
   // Expose container live region attributes.
   StringAttributeToIA2(ui::AX_ATTR_CONTAINER_LIVE_STATUS,
@@ -2953,15 +3212,8 @@ void BrowserAccessibilityWin::OnDataChanged() {
   BoolAttributeToIA2(ui::AX_ATTR_CONTAINER_LIVE_BUSY,
                      "container-busy");
 
-  // Expose slider value.
-  if (ia_role_ == ROLE_SYSTEM_PROGRESSBAR ||
-      ia_role_ == ROLE_SYSTEM_SCROLLBAR ||
-      ia_role_ == ROLE_SYSTEM_SLIDER) {
-    ia2_attributes_.push_back(L"valuetext:" + GetValueText());
-  }
-
   // Expose table cell index.
-  if (ia_role_ == ROLE_SYSTEM_CELL) {
+  if (IsCellOrTableHeaderRole()) {
     BrowserAccessibility* table = GetParent();
     while (table && table->GetRole() != ui::AX_ROLE_TABLE)
       table = table->GetParent();
@@ -2970,10 +3222,69 @@ void BrowserAccessibilityWin::OnDataChanged() {
           ui::AX_ATTR_UNIQUE_CELL_IDS);
       for (size_t i = 0; i < unique_cell_ids.size(); ++i) {
         if (unique_cell_ids[i] == GetId()) {
-          ia2_attributes_.push_back(
+          win_attributes_->ia2_attributes.push_back(
               base::string16(L"table-cell-index:") + base::IntToString16(i));
         }
       }
+    }
+  }
+
+  // Expose invalid state for form controls and elements with aria-invalid.
+  int invalid_state;
+  if (GetIntAttribute(ui::AX_ATTR_INVALID_STATE, &invalid_state)) {
+    // TODO(nektar): Handle the possibility of having multiple aria-invalid
+    // attributes defined, e.g., "invalid:spelling,grammar".
+    switch (invalid_state) {
+      case ui::AX_INVALID_STATE_FALSE:
+        win_attributes_->ia2_attributes.push_back(L"invalid:false");
+        break;
+      case ui::AX_INVALID_STATE_TRUE:
+        win_attributes_->ia2_attributes.push_back(L"invalid:true");
+        break;
+      case ui::AX_INVALID_STATE_SPELLING:
+        win_attributes_->ia2_attributes.push_back(L"invalid:spelling");
+        break;
+      case ui::AX_INVALID_STATE_GRAMMAR:
+        win_attributes_->ia2_attributes.push_back(L"invalid:grammar");
+        break;
+      case ui::AX_INVALID_STATE_OTHER:
+        {
+          base::string16 aria_invalid_value;
+          if (GetString16Attribute(ui::AX_ATTR_ARIA_INVALID_VALUE,
+                                   &aria_invalid_value)) {
+            win_attributes_->ia2_attributes.push_back(
+                L"invalid:" + aria_invalid_value);
+          } else {
+            // Set the attribute to L"true", since we cannot be more specific.
+            win_attributes_->ia2_attributes.push_back(L"invalid:true");
+          }
+        }
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+
+  // Expose row or column header sort direction.
+  int32 sort_direction;
+  if ((ia_role() == ROLE_SYSTEM_COLUMNHEADER ||
+      ia_role() == ROLE_SYSTEM_ROWHEADER) &&
+      GetIntAttribute(ui::AX_ATTR_SORT_DIRECTION, &sort_direction)) {
+    switch (sort_direction) {
+      case ui::AX_SORT_DIRECTION_UNSORTED:
+        win_attributes_->ia2_attributes.push_back(L"sort:none");
+        break;
+      case ui::AX_SORT_DIRECTION_ASCENDING:
+        win_attributes_->ia2_attributes.push_back(L"sort:ascending");
+        break;
+      case ui::AX_SORT_DIRECTION_DESCENDING:
+        win_attributes_->ia2_attributes.push_back(L"sort:descending");
+        break;
+      case ui::AX_SORT_DIRECTION_OTHER:
+        win_attributes_->ia2_attributes.push_back(L"sort:other");
+        break;
+      default:
+        NOTREACHED();
     }
   }
 
@@ -2998,16 +3309,16 @@ void BrowserAccessibilityWin::OnDataChanged() {
   // always returns the primary name in "name" and the secondary name,
   // if any, in "description".
 
-  int title_elem_id = GetIntAttribute(
-      ui::AX_ATTR_TITLE_UI_ELEMENT);
-  std::string help = GetStringAttribute(ui::AX_ATTR_HELP);
-  std::string description = GetStringAttribute(
-      ui::AX_ATTR_DESCRIPTION);
+  int title_elem_id = GetIntAttribute(ui::AX_ATTR_TITLE_UI_ELEMENT);
+  base::string16 name = GetString16Attribute(ui::AX_ATTR_NAME);
+  base::string16 description = GetString16Attribute(ui::AX_ATTR_DESCRIPTION);
+  base::string16 help = GetString16Attribute(ui::AX_ATTR_HELP);
+  base::string16 value = GetString16Attribute(ui::AX_ATTR_VALUE);
 
   // WebKit annoyingly puts the title in the description if there's no other
   // description, which just confuses the rest of the logic. Put it back.
   // Now "help" is always the value of the "title" attribute, if present.
-  std::string title_attr;
+  base::string16 title_attr;
   if (GetHtmlAttribute("title", &title_attr) &&
       description == title_attr &&
       help.empty()) {
@@ -3019,55 +3330,57 @@ void BrowserAccessibilityWin::OnDataChanged() {
   // it's nonempty, and the help should become the description if
   // there's no description - or the name if there's no name or description.
   if (!description.empty()) {
-    set_name(description);
+    name = description;
     description.clear();
   }
   if (!help.empty() && description.empty()) {
     description = help;
     help.clear();
   }
-  if (!description.empty() && name().empty() && !title_elem_id) {
-    set_name(description);
+  if (!description.empty() && name.empty() && !title_elem_id) {
+    name = description;
     description.clear();
   }
 
   // If it's a text field, also consider the placeholder.
-  std::string placeholder;
+  base::string16 placeholder;
   if (GetRole() == ui::AX_ROLE_TEXT_FIELD &&
       HasState(ui::AX_STATE_FOCUSABLE) &&
       GetHtmlAttribute("placeholder", &placeholder)) {
-    if (name().empty() && !title_elem_id) {
-      set_name(placeholder);
+    if (name.empty() && !title_elem_id) {
+      name = placeholder;
     } else if (description.empty()) {
       description = placeholder;
     }
   }
 
-  SetStringAttribute(ui::AX_ATTR_DESCRIPTION, description);
-  SetStringAttribute(ui::AX_ATTR_HELP, help);
-
   // On Windows, the value of a document should be its url.
   if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA ||
       GetRole() == ui::AX_ROLE_WEB_AREA) {
-    set_value(GetStringAttribute(ui::AX_ATTR_DOC_URL));
+    value = GetString16Attribute(ui::AX_ATTR_DOC_URL);
   }
 
   // For certain roles (listbox option, static text, and list marker)
   // WebKit stores the main accessible text in the "value" - swap it so
   // that it's the "name".
-  if (name().empty() &&
-      (GetRole() == ui::AX_ROLE_LIST_BOX_OPTION ||
-       GetRole() == ui::AX_ROLE_STATIC_TEXT ||
-       GetRole() == ui::AX_ROLE_LIST_MARKER)) {
-    std::string tmp = value();
-    set_value(name());
-    set_name(tmp);
+  if (name.empty() &&
+      (GetRole() == ui::AX_ROLE_STATIC_TEXT ||
+       GetRole() == ui::AX_ROLE_LIST_MARKER ||
+       IsListBoxOptionOrMenuListOption())) {
+    base::string16 tmp = value;
+    value = name;
+    name = tmp;
   }
 
   // If this doesn't have a value and is linked then set its value to the url
   // attribute. This allows screen readers to read an empty link's destination.
-  if (value().empty() && (ia_state_ & STATE_SYSTEM_LINKED))
-    set_value(GetStringAttribute(ui::AX_ATTR_URL));
+  if (value.empty() && (ia_state() & STATE_SYSTEM_LINKED))
+    value = GetString16Attribute(ui::AX_ATTR_URL);
+
+  win_attributes_->name = name;
+  win_attributes_->description = description;
+  win_attributes_->help = help;
+  win_attributes_->value = value;
 
   // Clear any old relationships between this node and other nodes.
   for (size_t i = 0; i < relations_.size(); ++i)
@@ -3086,88 +3399,151 @@ void BrowserAccessibilityWin::OnDataChanged() {
     relation->AddTarget(title_elem_id);
     relations_.push_back(relation);
   }
+
+  // Expose slider value.
+  if (ia_role() == ROLE_SYSTEM_PROGRESSBAR ||
+      ia_role() == ROLE_SYSTEM_SCROLLBAR ||
+      ia_role() == ROLE_SYSTEM_SLIDER) {
+    win_attributes_->ia2_attributes.push_back(L"valuetext:" + GetValueText());
+  }
+
+  // If this is a web area for a presentational iframe, give it a role of
+  // something other than DOCUMENT so that the fact that it's a separate doc
+  // is not exposed to AT.
+  if (IsWebAreaForPresentationalIframe()) {
+    win_attributes_->ia_role = ROLE_SYSTEM_GROUPING;
+    win_attributes_->ia2_role = ROLE_SYSTEM_GROUPING;
+  }
 }
 
-void BrowserAccessibilityWin::OnUpdateFinished() {
-  // Construct the hypertext for this node.
-  hyperlink_offset_to_index_.clear();
-  hyperlinks_.clear();
-  hypertext_.clear();
+void BrowserAccessibilityWin::UpdateStep2ComputeHypertext() {
+  // Construct the hypertext for this node, which contains the concatenation
+  // of all of the static text of this node's children and an embedded object
+  // character for all non-static-text children. Build up a map from the
+  // character index of each embedded object character to the id of the
+  // child object it points to.
   for (unsigned int i = 0; i < PlatformChildCount(); ++i) {
-    BrowserAccessibility* child = PlatformGetChild(i);
+    BrowserAccessibilityWin* child =
+        PlatformGetChild(i)->ToBrowserAccessibilityWin();
     if (child->GetRole() == ui::AX_ROLE_STATIC_TEXT) {
-      hypertext_ += base::UTF8ToUTF16(child->name());
+      win_attributes_->hypertext += child->name();
     } else {
-      hyperlink_offset_to_index_[hypertext_.size()] = hyperlinks_.size();
-      hypertext_ += kEmbeddedCharacter;
-      hyperlinks_.push_back(i);
+      int32 char_offset = hypertext().size();
+      int32 child_id = child->GetId();
+      int32 index = hyperlinks().size();
+      win_attributes_->hyperlink_offset_to_index[char_offset] = index;
+      win_attributes_->hyperlinks.push_back(child_id);
+      win_attributes_->hypertext += kEmbeddedCharacter;
     }
   }
-  DCHECK_EQ(hyperlink_offset_to_index_.size(), hyperlinks_.size());
+}
 
-  // Fire an event when an alert first appears.
-  if (GetRole() == ui::AX_ROLE_ALERT && first_time_)
-    manager()->NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, this);
-
-  // Fire events if text has changed.
-  base::string16 text = TextForIAccessibleText();
-  if (previous_text_ != text) {
-    if (!previous_text_.empty() && !text.empty()) {
-      manager()->NotifyAccessibilityEvent(
-          ui::AX_EVENT_SHOW, this);
-    }
-
-    // TODO(dmazzoni): Look into HIDE events, too.
-
-    old_text_ = previous_text_;
-    previous_text_ = text;
-  }
-
+void BrowserAccessibilityWin::UpdateStep3FireEvents(bool is_subtree_creation) {
   BrowserAccessibilityManagerWin* manager =
       this->manager()->ToBrowserAccessibilityManagerWin();
 
-  // Fire events if the state has changed.
-  if (!first_time_ && ia_state_ != old_ia_state_) {
+  // Fire an event when an alert first appears.
+  if (ia_role() == ROLE_SYSTEM_ALERT &&
+      old_win_attributes_->ia_role != ROLE_SYSTEM_ALERT) {
+    manager->NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, this);
+  }
+
+  // Fire an event when a new subtree is created.
+  if (is_subtree_creation)
+    manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SHOW, this);
+
+  // The rest of the events only fire on changes, not on new objects.
+  if (old_win_attributes_->ia_role != 0 ||
+      !old_win_attributes_->role_name.empty()) {
+    // Fire an event if the name, description, help, or value changes.
+    if (name() != old_win_attributes_->name)
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_NAMECHANGE, this);
+    if (description() != old_win_attributes_->description)
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_DESCRIPTIONCHANGE, this);
+    if (help() != old_win_attributes_->help)
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_HELPCHANGE, this);
+    if (value() != old_win_attributes_->value)
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_VALUECHANGE, this);
+    if (ia_state() != old_win_attributes_->ia_state)
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_STATECHANGE, this);
+
     // Normally focus events are handled elsewhere, however
     // focus for managed descendants is platform-specific.
     // Fire a focus event if the focused descendant in a multi-select
     // list box changes.
     if (GetRole() == ui::AX_ROLE_LIST_BOX_OPTION &&
-        (ia_state_ & STATE_SYSTEM_FOCUSABLE) &&
-        (ia_state_ & STATE_SYSTEM_SELECTABLE) &&
-        (ia_state_ & STATE_SYSTEM_FOCUSED) &&
-        !(old_ia_state_ & STATE_SYSTEM_FOCUSED)) {
-      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_FOCUS, unique_id_win());
+        (ia_state() & STATE_SYSTEM_FOCUSABLE) &&
+        (ia_state() & STATE_SYSTEM_SELECTABLE) &&
+        (ia_state() & STATE_SYSTEM_FOCUSED) &&
+        !(old_win_attributes_->ia_state & STATE_SYSTEM_FOCUSED)) {
+      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_FOCUS, this);
     }
 
-    if ((ia_state_ & STATE_SYSTEM_SELECTED) &&
-        !(old_ia_state_ & STATE_SYSTEM_SELECTED)) {
-      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTIONADD,
-                                       unique_id_win());
-    } else if (!(ia_state_ & STATE_SYSTEM_SELECTED) &&
-               (old_ia_state_ & STATE_SYSTEM_SELECTED)) {
-      manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTIONREMOVE,
-                                       unique_id_win());
+    // Handle selection being added or removed.
+    bool is_selected_now = (ia_state() & STATE_SYSTEM_SELECTED) != 0;
+    bool was_selected_before =
+        (old_win_attributes_->ia_state & STATE_SYSTEM_SELECTED) != 0;
+    if (is_selected_now || was_selected_before) {
+      bool multiselect = false;
+      if (GetParent() && GetParent()->HasState(ui::AX_STATE_MULTISELECTABLE))
+        multiselect = true;
+
+      if (multiselect) {
+        // In a multi-select box, fire SELECTIONADD and SELECTIONREMOVE events.
+        if (is_selected_now && !was_selected_before) {
+          manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTIONADD, this);
+        } else if (!is_selected_now && was_selected_before) {
+          manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTIONREMOVE, this);
+        }
+      } else if (is_selected_now && !was_selected_before) {
+        // In a single-select box, only fire SELECTION events.
+        manager->MaybeCallNotifyWinEvent(EVENT_OBJECT_SELECTION, this);
+      }
     }
 
-    old_ia_state_ = ia_state_;
+    // Fire an event if this container object has scrolled.
+    int sx = 0;
+    int sy = 0;
+    if (GetIntAttribute(ui::AX_ATTR_SCROLL_X, &sx) &&
+        GetIntAttribute(ui::AX_ATTR_SCROLL_Y, &sy)) {
+      if (sx != previous_scroll_x_ || sy != previous_scroll_y_)
+        manager->MaybeCallNotifyWinEvent(EVENT_SYSTEM_SCROLLINGEND, this);
+      previous_scroll_x_ = sx;
+      previous_scroll_y_ = sy;
+    }
+
+    // Changing a static text node can affect the IAccessibleText hypertext
+    // of the parent node, so force an update on the parent.
+    BrowserAccessibilityWin* parent = GetParent()->ToBrowserAccessibilityWin();
+    if (parent &&
+        GetRole() == ui::AX_ROLE_STATIC_TEXT &&
+        name() != old_win_attributes_->name) {
+      parent->UpdateStep1ComputeWinAttributes();
+      parent->UpdateStep2ComputeHypertext();
+      parent->UpdateStep3FireEvents(false);
+    }
+
+    // Fire hypertext-related events.
+    int start, old_len, new_len;
+    ComputeHypertextRemovedAndInserted(&start, &old_len, &new_len);
+    if (old_len > 0) {
+      // In-process screen readers may call IAccessibleText::get_oldText
+      // in reaction to this event to retrieve the text that was removed.
+      manager->MaybeCallNotifyWinEvent(IA2_EVENT_TEXT_REMOVED, this);
+    }
+    if (new_len > 0) {
+      // In-process screen readers may call IAccessibleText::get_newText
+      // in reaction to this event to retrieve the text that was inserted.
+      manager->MaybeCallNotifyWinEvent(IA2_EVENT_TEXT_INSERTED, this);
+    }
   }
 
-  // Fire an event if this container object has scrolled.
-  int sx = 0;
-  int sy = 0;
-  if (GetIntAttribute(ui::AX_ATTR_SCROLL_X, &sx) &&
-      GetIntAttribute(ui::AX_ATTR_SCROLL_Y, &sy)) {
-    if (!first_time_ &&
-        (sx != previous_scroll_x_ || sy != previous_scroll_y_)) {
-      manager->MaybeCallNotifyWinEvent(EVENT_SYSTEM_SCROLLINGEND,
-                                       unique_id_win());
-    }
-    previous_scroll_x_ = sx;
-    previous_scroll_y_ = sy;
-  }
+  old_win_attributes_.reset(nullptr);
+}
 
-  first_time_ = false;
+void BrowserAccessibilityWin::OnSubtreeWillBeDeleted() {
+  manager()->ToBrowserAccessibilityManagerWin()->MaybeCallNotifyWinEvent(
+      EVENT_OBJECT_HIDE, this);
 }
 
 void BrowserAccessibilityWin::NativeAddReference() {
@@ -3184,7 +3560,7 @@ bool BrowserAccessibilityWin::IsNative() const {
 
 void BrowserAccessibilityWin::OnLocationChanged() {
   manager()->ToBrowserAccessibilityManagerWin()->MaybeCallNotifyWinEvent(
-      EVENT_OBJECT_LOCATIONCHANGE, unique_id_win());
+      EVENT_OBJECT_LOCATIONCHANGE, this);
 }
 
 BrowserAccessibilityWin* BrowserAccessibilityWin::NewReference() {
@@ -3229,8 +3605,10 @@ void BrowserAccessibilityWin::StringAttributeToIA2(
     ui::AXStringAttribute attribute,
     const char* ia2_attr) {
   base::string16 value;
-  if (GetString16Attribute(attribute, &value))
-    ia2_attributes_.push_back(base::ASCIIToUTF16(ia2_attr) + L":" + value);
+  if (GetString16Attribute(attribute, &value)) {
+    win_attributes_->ia2_attributes.push_back(
+        base::ASCIIToUTF16(ia2_attr) + L":" + value);
+  }
 }
 
 void BrowserAccessibilityWin::BoolAttributeToIA2(
@@ -3238,8 +3616,9 @@ void BrowserAccessibilityWin::BoolAttributeToIA2(
     const char* ia2_attr) {
   bool value;
   if (GetBoolAttribute(attribute, &value)) {
-    ia2_attributes_.push_back((base::ASCIIToUTF16(ia2_attr) + L":") +
-                              (value ? L"true" : L"false"));
+    win_attributes_->ia2_attributes.push_back(
+        (base::ASCIIToUTF16(ia2_attr) + L":") +
+        (value ? L"true" : L"false"));
   }
 }
 
@@ -3248,14 +3627,28 @@ void BrowserAccessibilityWin::IntAttributeToIA2(
     const char* ia2_attr) {
   int value;
   if (GetIntAttribute(attribute, &value)) {
-    ia2_attributes_.push_back(base::ASCIIToUTF16(ia2_attr) + L":" +
-                              base::IntToString16(value));
+    win_attributes_->ia2_attributes.push_back(
+        base::ASCIIToUTF16(ia2_attr) + L":" +
+        base::IntToString16(value));
   }
+}
+
+base::string16 BrowserAccessibilityWin::GetNameRecursive() const {
+  if (!name().empty()) {
+    return name();
+  }
+
+  base::string16 result;
+  for (uint32 i = 0; i < PlatformChildCount(); ++i) {
+    result += PlatformGetChild(i)->ToBrowserAccessibilityWin()->
+        GetNameRecursive();
+  }
+  return result;
 }
 
 base::string16 BrowserAccessibilityWin::GetValueText() {
   float fval;
-  base::string16 value = base::UTF8ToUTF16(this->value());
+  base::string16 value = this->value();
 
   if (value.empty() &&
       GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE, &fval)) {
@@ -3265,10 +3658,78 @@ base::string16 BrowserAccessibilityWin::GetValueText() {
 }
 
 base::string16 BrowserAccessibilityWin::TextForIAccessibleText() {
-  if (IsEditableText())
-    return base::UTF8ToUTF16(value());
-  return (GetRole() == ui::AX_ROLE_STATIC_TEXT) ?
-      base::UTF8ToUTF16(name()) : hypertext_;
+  if (IsEditableText() || GetRole() == ui::AX_ROLE_MENU_LIST_OPTION)
+    return value();
+  return (GetRole() == ui::AX_ROLE_STATIC_TEXT) ? name() : hypertext();
+}
+
+bool BrowserAccessibilityWin::IsSameHypertextCharacter(size_t old_char_index,
+                                                       size_t new_char_index) {
+  CHECK(old_win_attributes_);
+
+  // For anything other than the "embedded character", we just compare the
+  // characters directly.
+  base::char16 old_ch = old_win_attributes_->hypertext[old_char_index];
+  base::char16 new_ch = win_attributes_->hypertext[new_char_index];
+  if (old_ch != new_ch)
+    return false;
+  if (old_ch == new_ch && new_ch != kEmbeddedCharacter)
+    return true;
+
+  // If it's an embedded character, they're only identical if the child id
+  // the hyperlink points to is the same.
+  std::map<int32, int32>& old_offset_to_index =
+      old_win_attributes_->hyperlink_offset_to_index;
+  std::vector<int32>& old_hyperlinks = old_win_attributes_->hyperlinks;
+  int32 old_hyperlinks_count = static_cast<int32>(old_hyperlinks.size());
+  std::map<int32, int32>::iterator iter;
+  iter = old_offset_to_index.find(old_char_index);
+  int old_index = (iter != old_offset_to_index.end()) ? iter->second : -1;
+  int old_child_id = (old_index >= 0 && old_index < old_hyperlinks_count) ?
+      old_hyperlinks[old_index] : -1;
+
+  std::map<int32, int32>& new_offset_to_index =
+      win_attributes_->hyperlink_offset_to_index;
+  std::vector<int32>& new_hyperlinks = win_attributes_->hyperlinks;
+  int32 new_hyperlinks_count = static_cast<int32>(new_hyperlinks.size());
+  iter = new_offset_to_index.find(new_char_index);
+  int new_index = (iter != new_offset_to_index.end()) ? iter->second : -1;
+  int new_child_id = (new_index >= 0 && new_index < new_hyperlinks_count) ?
+      new_hyperlinks[new_index] : -1;
+
+  return old_child_id == new_child_id;
+}
+
+void BrowserAccessibilityWin::ComputeHypertextRemovedAndInserted(
+    int* start, int* old_len, int* new_len) {
+  CHECK(old_win_attributes_);
+
+  *start = 0;
+  *old_len = 0;
+  *new_len = 0;
+
+  const base::string16& old_text = old_win_attributes_->hypertext;
+  const base::string16& new_text = hypertext();
+
+  size_t common_prefix = 0;
+  while (common_prefix < old_text.size() &&
+         common_prefix < new_text.size() &&
+         IsSameHypertextCharacter(common_prefix, common_prefix)) {
+    ++common_prefix;
+  }
+
+  size_t common_suffix = 0;
+  while (common_prefix + common_suffix < old_text.size() &&
+         common_prefix + common_suffix < new_text.size() &&
+         IsSameHypertextCharacter(
+             old_text.size() - common_suffix - 1,
+             new_text.size() - common_suffix - 1)) {
+    ++common_suffix;
+  }
+
+  *start = common_prefix;
+  *old_len = old_text.size() - common_prefix - common_suffix;
+  *new_len = new_text.size() - common_prefix - common_suffix;
 }
 
 void BrowserAccessibilityWin::HandleSpecialTextOffset(
@@ -3283,16 +3744,22 @@ void BrowserAccessibilityWin::HandleSpecialTextOffset(
 ui::TextBoundaryType BrowserAccessibilityWin::IA2TextBoundaryToTextBoundary(
     IA2TextBoundaryType ia2_boundary) {
   switch(ia2_boundary) {
-    case IA2_TEXT_BOUNDARY_CHAR: return ui::CHAR_BOUNDARY;
-    case IA2_TEXT_BOUNDARY_WORD: return ui::WORD_BOUNDARY;
-    case IA2_TEXT_BOUNDARY_LINE: return ui::LINE_BOUNDARY;
-    case IA2_TEXT_BOUNDARY_SENTENCE: return ui::SENTENCE_BOUNDARY;
-    case IA2_TEXT_BOUNDARY_PARAGRAPH: return ui::PARAGRAPH_BOUNDARY;
-    case IA2_TEXT_BOUNDARY_ALL: return ui::ALL_BOUNDARY;
+    case IA2_TEXT_BOUNDARY_CHAR:
+      return ui::CHAR_BOUNDARY;
+    case IA2_TEXT_BOUNDARY_WORD:
+      return ui::WORD_BOUNDARY;
+    case IA2_TEXT_BOUNDARY_LINE:
+      return ui::LINE_BOUNDARY;
+    case IA2_TEXT_BOUNDARY_SENTENCE:
+      return ui::SENTENCE_BOUNDARY;
+    case IA2_TEXT_BOUNDARY_PARAGRAPH:
+      return ui::PARAGRAPH_BOUNDARY;
+    case IA2_TEXT_BOUNDARY_ALL:
+      return ui::ALL_BOUNDARY;
     default:
       NOTREACHED();
-      return ui::CHAR_BOUNDARY;
   }
+  return ui::CHAR_BOUNDARY;
 }
 
 LONG BrowserAccessibilityWin::FindBoundary(
@@ -3301,6 +3768,11 @@ LONG BrowserAccessibilityWin::FindBoundary(
     LONG start_offset,
     ui::TextBoundaryDirection direction) {
   HandleSpecialTextOffset(text, &start_offset);
+  if (ia2_boundary == IA2_TEXT_BOUNDARY_WORD &&
+      GetRole() == ui::AX_ROLE_TEXT_FIELD) {
+    return GetWordStartBoundary(static_cast<int>(start_offset), direction);
+  }
+
   ui::TextBoundaryType boundary = IA2TextBoundaryToTextBoundary(ia2_boundary);
   const std::vector<int32>& line_breaks = GetIntListAttribute(
       ui::AX_ATTR_LINE_BREAKS);
@@ -3312,531 +3784,543 @@ BrowserAccessibilityWin* BrowserAccessibilityWin::GetFromID(int32 id) {
   return manager()->GetFromID(id)->ToBrowserAccessibilityWin();
 }
 
+bool BrowserAccessibilityWin::IsListBoxOptionOrMenuListOption() {
+  if (!GetParent())
+    return false;
+
+  int32 role = GetRole();
+  int32 parent_role = GetParent()->GetRole();
+
+  if (role == ui::AX_ROLE_LIST_BOX_OPTION &&
+      parent_role == ui::AX_ROLE_LIST_BOX) {
+    return true;
+  }
+
+  if (role == ui::AX_ROLE_MENU_LIST_OPTION &&
+      parent_role == ui::AX_ROLE_MENU_LIST_POPUP) {
+    return true;
+  }
+
+  return false;
+}
+
 void BrowserAccessibilityWin::InitRoleAndState() {
-  ia_state_ = 0;
-  ia2_state_ = IA2_STATE_OPAQUE;
-  ia2_attributes_.clear();
+  int32 ia_role = 0;
+  int32 ia_state = 0;
+  base::string16 role_name;
+  int32 ia2_role = 0;
+  int32 ia2_state = IA2_STATE_OPAQUE;
 
   if (HasState(ui::AX_STATE_BUSY))
-    ia_state_ |= STATE_SYSTEM_BUSY;
+    ia_state |= STATE_SYSTEM_BUSY;
   if (HasState(ui::AX_STATE_CHECKED))
-    ia_state_ |= STATE_SYSTEM_CHECKED;
+    ia_state |= STATE_SYSTEM_CHECKED;
   if (HasState(ui::AX_STATE_COLLAPSED))
-    ia_state_ |= STATE_SYSTEM_COLLAPSED;
+    ia_state |= STATE_SYSTEM_COLLAPSED;
   if (HasState(ui::AX_STATE_EXPANDED))
-    ia_state_ |= STATE_SYSTEM_EXPANDED;
+    ia_state |= STATE_SYSTEM_EXPANDED;
   if (HasState(ui::AX_STATE_FOCUSABLE))
-    ia_state_ |= STATE_SYSTEM_FOCUSABLE;
+    ia_state |= STATE_SYSTEM_FOCUSABLE;
   if (HasState(ui::AX_STATE_HASPOPUP))
-    ia_state_ |= STATE_SYSTEM_HASPOPUP;
-  if (HasState(ui::AX_STATE_HOVERED))
-    ia_state_ |= STATE_SYSTEM_HOTTRACKED;
+    ia_state |= STATE_SYSTEM_HASPOPUP;
   if (HasState(ui::AX_STATE_INDETERMINATE))
-    ia_state_ |= STATE_SYSTEM_INDETERMINATE;
+    ia_state |= STATE_SYSTEM_INDETERMINATE;
+  if (HasIntAttribute(ui::AX_ATTR_INVALID_STATE) &&
+      GetIntAttribute(ui::AX_ATTR_INVALID_STATE) != ui::AX_INVALID_STATE_FALSE)
+    ia2_state |= IA2_STATE_INVALID_ENTRY;
   if (HasState(ui::AX_STATE_INVISIBLE))
-    ia_state_ |= STATE_SYSTEM_INVISIBLE;
+    ia_state |= STATE_SYSTEM_INVISIBLE;
   if (HasState(ui::AX_STATE_LINKED))
-    ia_state_ |= STATE_SYSTEM_LINKED;
+    ia_state |= STATE_SYSTEM_LINKED;
   if (HasState(ui::AX_STATE_MULTISELECTABLE)) {
-    ia_state_ |= STATE_SYSTEM_EXTSELECTABLE;
-    ia_state_ |= STATE_SYSTEM_MULTISELECTABLE;
+    ia_state |= STATE_SYSTEM_EXTSELECTABLE;
+    ia_state |= STATE_SYSTEM_MULTISELECTABLE;
   }
   // TODO(ctguil): Support STATE_SYSTEM_EXTSELECTABLE/accSelect.
   if (HasState(ui::AX_STATE_OFFSCREEN))
-    ia_state_ |= STATE_SYSTEM_OFFSCREEN;
+    ia_state |= STATE_SYSTEM_OFFSCREEN;
   if (HasState(ui::AX_STATE_PRESSED))
-    ia_state_ |= STATE_SYSTEM_PRESSED;
+    ia_state |= STATE_SYSTEM_PRESSED;
   if (HasState(ui::AX_STATE_PROTECTED))
-    ia_state_ |= STATE_SYSTEM_PROTECTED;
+    ia_state |= STATE_SYSTEM_PROTECTED;
   if (HasState(ui::AX_STATE_REQUIRED))
-    ia2_state_ |= IA2_STATE_REQUIRED;
+    ia2_state |= IA2_STATE_REQUIRED;
   if (HasState(ui::AX_STATE_SELECTABLE))
-    ia_state_ |= STATE_SYSTEM_SELECTABLE;
+    ia_state |= STATE_SYSTEM_SELECTABLE;
   if (HasState(ui::AX_STATE_SELECTED))
-    ia_state_ |= STATE_SYSTEM_SELECTED;
+    ia_state |= STATE_SYSTEM_SELECTED;
   if (HasState(ui::AX_STATE_VISITED))
-    ia_state_ |= STATE_SYSTEM_TRAVERSED;
+    ia_state |= STATE_SYSTEM_TRAVERSED;
   if (!HasState(ui::AX_STATE_ENABLED))
-    ia_state_ |= STATE_SYSTEM_UNAVAILABLE;
-  if (HasState(ui::AX_STATE_VERTICAL)) {
-    ia2_state_ |= IA2_STATE_VERTICAL;
-  } else {
-    ia2_state_ |= IA2_STATE_HORIZONTAL;
-  }
+    ia_state |= STATE_SYSTEM_UNAVAILABLE;
+  if (HasState(ui::AX_STATE_VERTICAL))
+    ia2_state |= IA2_STATE_VERTICAL;
+  if (HasState(ui::AX_STATE_HORIZONTAL))
+    ia2_state |= IA2_STATE_HORIZONTAL;
   if (HasState(ui::AX_STATE_VISITED))
-    ia_state_ |= STATE_SYSTEM_TRAVERSED;
+    ia_state |= STATE_SYSTEM_TRAVERSED;
+
+  // Expose whether or not the mouse is over an element, but suppress
+  // this for tests because it can make the test results flaky depending
+  // on the position of the mouse.
+  BrowserAccessibilityStateImpl* accessibility_state =
+      BrowserAccessibilityStateImpl::GetInstance();
+  if (!accessibility_state->disable_hot_tracking_for_testing()) {
+    if (HasState(ui::AX_STATE_HOVERED))
+      ia_state |= STATE_SYSTEM_HOTTRACKED;
+  }
 
   // WebKit marks everything as readonly unless it's editable text, so if it's
   // not readonly, mark it as editable now. The final computation of the
   // READONLY state for MSAA is below, after the switch.
   if (!HasState(ui::AX_STATE_READ_ONLY))
-    ia2_state_ |= IA2_STATE_EDITABLE;
-
-  base::string16 invalid;
-  if (GetHtmlAttribute("aria-invalid", &invalid))
-    ia2_state_ |= IA2_STATE_INVALID_ENTRY;
+    ia2_state |= IA2_STATE_EDITABLE;
 
   if (GetBoolAttribute(ui::AX_ATTR_BUTTON_MIXED))
-    ia_state_ |= STATE_SYSTEM_MIXED;
+    ia_state |= STATE_SYSTEM_MIXED;
 
   if (GetBoolAttribute(ui::AX_ATTR_CAN_SET_VALUE))
-    ia2_state_ |= IA2_STATE_EDITABLE;
+    ia2_state |= IA2_STATE_EDITABLE;
+
+  if (!GetStringAttribute(ui::AX_ATTR_AUTO_COMPLETE).empty())
+    ia2_state |= IA2_STATE_SUPPORTS_AUTOCOMPLETION;
 
   base::string16 html_tag = GetString16Attribute(
       ui::AX_ATTR_HTML_TAG);
-  ia_role_ = 0;
-  ia2_role_ = 0;
   switch (GetRole()) {
     case ui::AX_ROLE_ALERT:
-      ia_role_ = ROLE_SYSTEM_ALERT;
+      ia_role = ROLE_SYSTEM_ALERT;
       break;
     case ui::AX_ROLE_ALERT_DIALOG:
-      ia_role_ = ROLE_SYSTEM_DIALOG;
+      ia_role = ROLE_SYSTEM_DIALOG;
       break;
     case ui::AX_ROLE_APPLICATION:
-      ia_role_ = ROLE_SYSTEM_APPLICATION;
+      ia_role = ROLE_SYSTEM_APPLICATION;
       break;
     case ui::AX_ROLE_ARTICLE:
-      ia_role_ = ROLE_SYSTEM_DOCUMENT;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_DOCUMENT;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_BANNER:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_HEADER;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_HEADER;
       break;
     case ui::AX_ROLE_BLOCKQUOTE:
-      role_name_ = html_tag;
-      ia2_role_ = IA2_ROLE_SECTION;
+      role_name = html_tag;
+      ia2_role = IA2_ROLE_SECTION;
       break;
     case ui::AX_ROLE_BUSY_INDICATOR:
-      ia_role_ = ROLE_SYSTEM_ANIMATION;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_ANIMATION;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_BUTTON:
-      ia_role_ = ROLE_SYSTEM_PUSHBUTTON;
-      bool is_aria_pressed_defined;
-      bool is_mixed;
-      if (GetAriaTristate("aria-pressed", &is_aria_pressed_defined, &is_mixed))
-        ia_state_ |= STATE_SYSTEM_PRESSED;
-      if (is_aria_pressed_defined)
-        ia2_role_ = IA2_ROLE_TOGGLE_BUTTON;
-      if (is_mixed)
-        ia_state_ |= STATE_SYSTEM_MIXED;
+      ia_role = ROLE_SYSTEM_PUSHBUTTON;
       break;
     case ui::AX_ROLE_CANVAS:
       if (GetBoolAttribute(ui::AX_ATTR_CANVAS_HAS_FALLBACK)) {
-        role_name_ = L"canvas";
-        ia2_role_ = IA2_ROLE_CANVAS;
+        role_name = L"canvas";
+        ia2_role = IA2_ROLE_CANVAS;
       } else {
-        ia_role_ = ROLE_SYSTEM_GRAPHIC;
+        ia_role = ROLE_SYSTEM_GRAPHIC;
       }
       break;
+    case ui::AX_ROLE_CAPTION:
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_CAPTION;
+      break;
     case ui::AX_ROLE_CELL:
-      ia_role_ = ROLE_SYSTEM_CELL;
+      ia_role = ROLE_SYSTEM_CELL;
       break;
     case ui::AX_ROLE_CHECK_BOX:
-      ia_role_ = ROLE_SYSTEM_CHECKBUTTON;
-      ia2_state_ |= IA2_STATE_CHECKABLE;
+      ia_role = ROLE_SYSTEM_CHECKBUTTON;
+      ia2_state |= IA2_STATE_CHECKABLE;
       break;
     case ui::AX_ROLE_COLOR_WELL:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
-      ia2_role_ = IA2_ROLE_COLOR_CHOOSER;
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_COLOR_CHOOSER;
       break;
     case ui::AX_ROLE_COLUMN:
-      ia_role_ = ROLE_SYSTEM_COLUMN;
+      ia_role = ROLE_SYSTEM_COLUMN;
       break;
     case ui::AX_ROLE_COLUMN_HEADER:
-      ia_role_ = ROLE_SYSTEM_COLUMNHEADER;
+      ia_role = ROLE_SYSTEM_COLUMNHEADER;
       break;
     case ui::AX_ROLE_COMBO_BOX:
-      ia_role_ = ROLE_SYSTEM_COMBOBOX;
+      ia_role = ROLE_SYSTEM_COMBOBOX;
       break;
     case ui::AX_ROLE_COMPLEMENTARY:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_NOTE;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_NOTE;
       break;
     case ui::AX_ROLE_CONTENT_INFO:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_role_ = IA2_ROLE_PARAGRAPH;
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_PARAGRAPH;
       break;
     case ui::AX_ROLE_DATE:
-      ia_role_ = ROLE_SYSTEM_DROPLIST;
-      ia2_role_ = IA2_ROLE_DATE_EDITOR;
-      break;
     case ui::AX_ROLE_DATE_TIME:
-      ia_role_ = ROLE_SYSTEM_DROPLIST;
-      ia2_role_ = IA2_ROLE_DATE_EDITOR;
+      ia_role = ROLE_SYSTEM_DROPLIST;
+      ia2_role = IA2_ROLE_DATE_EDITOR;
       break;
     case ui::AX_ROLE_DIV:
-      role_name_ = L"div";
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_SECTION;
+      role_name = L"div";
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_SECTION;
       break;
     case ui::AX_ROLE_DEFINITION:
-      role_name_ = html_tag;
-      ia2_role_ = IA2_ROLE_PARAGRAPH;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      role_name = html_tag;
+      ia2_role = IA2_ROLE_PARAGRAPH;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_DESCRIPTION_LIST_DETAIL:
-      role_name_ = html_tag;
-      ia2_role_ = IA2_ROLE_PARAGRAPH;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      role_name = html_tag;
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_PARAGRAPH;
       break;
     case ui::AX_ROLE_DESCRIPTION_LIST:
-      role_name_ = html_tag;
-      ia_role_ = ROLE_SYSTEM_LIST;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      role_name = html_tag;
+      ia_role = ROLE_SYSTEM_LIST;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_DESCRIPTION_LIST_TERM:
-      ia_role_ = ROLE_SYSTEM_LISTITEM;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_LISTITEM;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_DETAILS:
-      role_name_ = html_tag;
-      ia_role_ = ROLE_SYSTEM_GROUPING;
+      role_name = html_tag;
+      ia_role = ROLE_SYSTEM_GROUPING;
       break;
     case ui::AX_ROLE_DIALOG:
-      ia_role_ = ROLE_SYSTEM_DIALOG;
+      ia_role = ROLE_SYSTEM_DIALOG;
       break;
     case ui::AX_ROLE_DISCLOSURE_TRIANGLE:
-      ia_role_ = ROLE_SYSTEM_PUSHBUTTON;
+      ia_role = ROLE_SYSTEM_PUSHBUTTON;
       break;
     case ui::AX_ROLE_DOCUMENT:
     case ui::AX_ROLE_ROOT_WEB_AREA:
     case ui::AX_ROLE_WEB_AREA:
-      ia_role_ = ROLE_SYSTEM_DOCUMENT;
-      ia_state_ |= STATE_SYSTEM_READONLY;
-      ia_state_ |= STATE_SYSTEM_FOCUSABLE;
+      ia_role = ROLE_SYSTEM_DOCUMENT;
+      ia_state |= STATE_SYSTEM_READONLY;
+      ia_state |= STATE_SYSTEM_FOCUSABLE;
       break;
-    case ui::AX_ROLE_EDITABLE_TEXT:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_state_ |= IA2_STATE_SINGLE_LINE;
-      ia2_state_ |= IA2_STATE_EDITABLE;
+    case ui::AX_ROLE_EMBEDDED_OBJECT:
+      ia_role = ROLE_SYSTEM_CLIENT;
+      ia2_role = IA2_ROLE_EMBEDDED_OBJECT;
       break;
     case ui::AX_ROLE_FIGCAPTION:
-      role_name_ = html_tag;
-      ia2_role_ = IA2_ROLE_CAPTION;
+      role_name = html_tag;
+      ia2_role = IA2_ROLE_CAPTION;
       break;
     case ui::AX_ROLE_FIGURE:
-      role_name_ = html_tag;
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_SECTION;
+      ia_role = ROLE_SYSTEM_GROUPING;
       break;
     case ui::AX_ROLE_FORM:
-      role_name_ = L"form";
-      ia2_role_ = IA2_ROLE_FORM;
+      role_name = L"form";
+      ia2_role = IA2_ROLE_FORM;
       break;
     case ui::AX_ROLE_FOOTER:
-      ia_role_ = IA2_ROLE_FOOTER;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_FOOTER;
       break;
     case ui::AX_ROLE_GRID:
-      ia_role_ = ROLE_SYSTEM_TABLE;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_TABLE;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_GROUP: {
       base::string16 aria_role = GetString16Attribute(
           ui::AX_ATTR_ROLE);
       if (aria_role == L"group" || html_tag == L"fieldset") {
-        ia_role_ = ROLE_SYSTEM_GROUPING;
+        ia_role = ROLE_SYSTEM_GROUPING;
       } else if (html_tag == L"li") {
-        ia_role_ = ROLE_SYSTEM_LISTITEM;
-        ia_state_ |= STATE_SYSTEM_READONLY;
+        ia_role = ROLE_SYSTEM_LISTITEM;
+        ia_state |= STATE_SYSTEM_READONLY;
       } else {
         if (html_tag.empty())
-          role_name_ = L"div";
+          role_name = L"div";
         else
-          role_name_ = html_tag;
-        ia2_role_ = IA2_ROLE_SECTION;
+          role_name = html_tag;
+        ia2_role = IA2_ROLE_SECTION;
       }
       break;
     }
-    case ui::AX_ROLE_GROW_AREA:
-      ia_role_ = ROLE_SYSTEM_GRIP;
-      ia_state_ |= STATE_SYSTEM_READONLY;
-      break;
     case ui::AX_ROLE_HEADING:
-      role_name_ = html_tag;
-      ia2_role_ = IA2_ROLE_HEADING;
-      break;
-    case ui::AX_ROLE_HORIZONTAL_RULE:
-      ia_role_ = ROLE_SYSTEM_SEPARATOR;
+      role_name = html_tag;
+      ia2_role = IA2_ROLE_HEADING;
       break;
     case ui::AX_ROLE_IFRAME:
-      ia_role_ = ROLE_SYSTEM_DOCUMENT;
-      ia2_role_ = IA2_ROLE_INTERNAL_FRAME;
-      ia_state_ = STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_DOCUMENT;
+      ia2_role = IA2_ROLE_INTERNAL_FRAME;
+      ia_state = STATE_SYSTEM_READONLY;
+      break;
+    case ui::AX_ROLE_IFRAME_PRESENTATIONAL:
+      ia_role = ROLE_SYSTEM_GROUPING;
       break;
     case ui::AX_ROLE_IMAGE:
-      ia_role_ = ROLE_SYSTEM_GRAPHIC;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_GRAPHIC;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_IMAGE_MAP:
-      role_name_ = html_tag;
-      ia2_role_ = IA2_ROLE_IMAGE_MAP;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      role_name = html_tag;
+      ia2_role = IA2_ROLE_IMAGE_MAP;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_IMAGE_MAP_LINK:
-      ia_role_ = ROLE_SYSTEM_LINK;
-      ia_state_ |= STATE_SYSTEM_LINKED;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_LINK;
+      ia_state |= STATE_SYSTEM_LINKED;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_LABEL_TEXT:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_role_ = IA2_ROLE_LABEL;
-      break;
-    case ui::AX_ROLE_SEARCH:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_SECTION;
+    case ui::AX_ROLE_LEGEND:
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_LABEL;
       break;
     case ui::AX_ROLE_LINK:
-      ia_role_ = ROLE_SYSTEM_LINK;
-      ia_state_ |= STATE_SYSTEM_LINKED;
+      ia_role = ROLE_SYSTEM_LINK;
+      ia_state |= STATE_SYSTEM_LINKED;
       break;
     case ui::AX_ROLE_LIST:
-      ia_role_ = ROLE_SYSTEM_LIST;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_LIST;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_LIST_BOX:
-      ia_role_ = ROLE_SYSTEM_LIST;
+      ia_role = ROLE_SYSTEM_LIST;
       break;
     case ui::AX_ROLE_LIST_BOX_OPTION:
-      ia_role_ = ROLE_SYSTEM_LISTITEM;
-      if (ia_state_ & STATE_SYSTEM_SELECTABLE) {
-        ia_state_ |= STATE_SYSTEM_FOCUSABLE;
+      ia_role = ROLE_SYSTEM_LISTITEM;
+      if (ia_state & STATE_SYSTEM_SELECTABLE) {
+        ia_state |= STATE_SYSTEM_FOCUSABLE;
         if (HasState(ui::AX_STATE_FOCUSED))
-          ia_state_ |= STATE_SYSTEM_FOCUSED;
+          ia_state |= STATE_SYSTEM_FOCUSED;
       }
       break;
     case ui::AX_ROLE_LIST_ITEM:
-      ia_role_ = ROLE_SYSTEM_LISTITEM;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_LISTITEM;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_MAIN:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_PARAGRAPH;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_PARAGRAPH;
       break;
     case ui::AX_ROLE_MARQUEE:
-      ia_role_ = ROLE_SYSTEM_ANIMATION;
+      ia_role = ROLE_SYSTEM_ANIMATION;
       break;
     case ui::AX_ROLE_MATH:
-      ia_role_ = ROLE_SYSTEM_EQUATION;
+      ia_role = ROLE_SYSTEM_EQUATION;
       break;
     case ui::AX_ROLE_MENU:
     case ui::AX_ROLE_MENU_BUTTON:
-      ia_role_ = ROLE_SYSTEM_MENUPOPUP;
+      ia_role = ROLE_SYSTEM_MENUPOPUP;
       break;
     case ui::AX_ROLE_MENU_BAR:
-      ia_role_ = ROLE_SYSTEM_MENUBAR;
+      ia_role = ROLE_SYSTEM_MENUBAR;
       break;
     case ui::AX_ROLE_MENU_ITEM:
-      ia_role_ = ROLE_SYSTEM_MENUITEM;
+      ia_role = ROLE_SYSTEM_MENUITEM;
       break;
     case ui::AX_ROLE_MENU_ITEM_CHECK_BOX:
-      ia_role_ = ROLE_SYSTEM_MENUITEM;
-      ia2_role_ = IA2_ROLE_CHECK_MENU_ITEM;
-      ia2_state_ |= IA2_STATE_CHECKABLE;
+      ia_role = ROLE_SYSTEM_MENUITEM;
+      ia2_role = IA2_ROLE_CHECK_MENU_ITEM;
+      ia2_state |= IA2_STATE_CHECKABLE;
       break;
     case ui::AX_ROLE_MENU_ITEM_RADIO:
-      ia_role_ = ROLE_SYSTEM_MENUITEM;
-      ia2_role_ = IA2_ROLE_RADIO_MENU_ITEM;
+      ia_role = ROLE_SYSTEM_MENUITEM;
+      ia2_role = IA2_ROLE_RADIO_MENU_ITEM;
       break;
     case ui::AX_ROLE_MENU_LIST_POPUP:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
+      ia_role = ROLE_SYSTEM_LIST;
+      ia2_state &= ~(IA2_STATE_EDITABLE);
       break;
     case ui::AX_ROLE_MENU_LIST_OPTION:
-      ia_role_ = ROLE_SYSTEM_LISTITEM;
-      if (ia_state_ & STATE_SYSTEM_SELECTABLE) {
-        ia_state_ |= STATE_SYSTEM_FOCUSABLE;
+      ia_role = ROLE_SYSTEM_LISTITEM;
+      ia2_state &= ~(IA2_STATE_EDITABLE);
+      if (ia_state & STATE_SYSTEM_SELECTABLE) {
+        ia_state |= STATE_SYSTEM_FOCUSABLE;
         if (HasState(ui::AX_STATE_FOCUSED))
-          ia_state_ |= STATE_SYSTEM_FOCUSED;
+          ia_state |= STATE_SYSTEM_FOCUSED;
       }
       break;
     case ui::AX_ROLE_METER:
-      role_name_ = html_tag;
-      ia_role_ = ROLE_SYSTEM_PROGRESSBAR;
+      role_name = html_tag;
+      ia_role = ROLE_SYSTEM_PROGRESSBAR;
       break;
     case ui::AX_ROLE_NAVIGATION:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_SECTION;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_SECTION;
       break;
     case ui::AX_ROLE_NOTE:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_NOTE;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_NOTE;
       break;
     case ui::AX_ROLE_OUTLINE:
-      ia_role_ = ROLE_SYSTEM_OUTLINE;
+      ia_role = ROLE_SYSTEM_OUTLINE;
       break;
     case ui::AX_ROLE_PARAGRAPH:
-      role_name_ = L"P";
-      ia2_role_ = IA2_ROLE_PARAGRAPH;
+      role_name = L"P";
+      ia2_role = IA2_ROLE_PARAGRAPH;
       break;
     case ui::AX_ROLE_POP_UP_BUTTON:
       if (html_tag == L"select") {
-        ia_role_ = ROLE_SYSTEM_COMBOBOX;
+        ia_role = ROLE_SYSTEM_COMBOBOX;
       } else {
-        ia_role_ = ROLE_SYSTEM_BUTTONMENU;
+        ia_role = ROLE_SYSTEM_BUTTONMENU;
       }
       break;
     case ui::AX_ROLE_PRE:
-      role_name_ = html_tag;
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_role_ = IA2_ROLE_PARAGRAPH;
+      role_name = html_tag;
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_PARAGRAPH;
       break;
     case ui::AX_ROLE_PROGRESS_INDICATOR:
-      ia_role_ = ROLE_SYSTEM_PROGRESSBAR;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_PROGRESSBAR;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_RADIO_BUTTON:
-      ia_role_ = ROLE_SYSTEM_RADIOBUTTON;
+      ia_role = ROLE_SYSTEM_RADIOBUTTON;
+      ia2_state = IA2_STATE_CHECKABLE;
       break;
     case ui::AX_ROLE_RADIO_GROUP:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
+      ia_role = ROLE_SYSTEM_GROUPING;
       break;
     case ui::AX_ROLE_REGION:
       if (html_tag == L"section") {
-        ia_role_ = ROLE_SYSTEM_GROUPING;
-        ia2_role_ = IA2_ROLE_SECTION;
+        ia_role = ROLE_SYSTEM_GROUPING;
+        ia2_role = IA2_ROLE_SECTION;
       } else {
-        ia_role_ = ROLE_SYSTEM_PANE;
+        ia_role = ROLE_SYSTEM_PANE;
       }
       break;
     case ui::AX_ROLE_ROW:
-      ia_role_ = ROLE_SYSTEM_ROW;
+      ia_role = ROLE_SYSTEM_ROW;
       break;
     case ui::AX_ROLE_ROW_HEADER:
-      ia_role_ = ROLE_SYSTEM_ROWHEADER;
+      ia_role = ROLE_SYSTEM_ROWHEADER;
+      break;
+    case ui::AX_ROLE_RUBY:
+      ia_role = ROLE_SYSTEM_TEXT;
+      ia2_role = IA2_ROLE_TEXT_FRAME;
       break;
     case ui::AX_ROLE_RULER:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
-      ia2_role_ = IA2_ROLE_RULER;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_CLIENT;
+      ia2_role = IA2_ROLE_RULER;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_SCROLL_AREA:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
-      ia2_role_ = IA2_ROLE_SCROLL_PANE;
-      ia_state_ |= STATE_SYSTEM_READONLY;
-      ia2_state_ &= ~(IA2_STATE_EDITABLE);
+      ia_role = ROLE_SYSTEM_CLIENT;
+      ia2_role = IA2_ROLE_SCROLL_PANE;
+      ia_state |= STATE_SYSTEM_READONLY;
+      ia2_state &= ~(IA2_STATE_EDITABLE);
       break;
     case ui::AX_ROLE_SCROLL_BAR:
-      ia_role_ = ROLE_SYSTEM_SCROLLBAR;
+      ia_role = ROLE_SYSTEM_SCROLLBAR;
+      break;
+    case ui::AX_ROLE_SEARCH:
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_SECTION;
       break;
     case ui::AX_ROLE_SLIDER:
-      ia_role_ = ROLE_SYSTEM_SLIDER;
+      ia_role = ROLE_SYSTEM_SLIDER;
       break;
     case ui::AX_ROLE_SPIN_BUTTON:
-      ia_role_ = ROLE_SYSTEM_SPINBUTTON;
+      ia_role = ROLE_SYSTEM_SPINBUTTON;
       break;
     case ui::AX_ROLE_SPIN_BUTTON_PART:
-      ia_role_ = ROLE_SYSTEM_PUSHBUTTON;
-      break;
-    case ui::AX_ROLE_SPLIT_GROUP:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
-      ia2_role_ = IA2_ROLE_SPLIT_PANE;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_PUSHBUTTON;
       break;
     case ui::AX_ROLE_ANNOTATION:
     case ui::AX_ROLE_LIST_MARKER:
     case ui::AX_ROLE_STATIC_TEXT:
-      ia_role_ = ROLE_SYSTEM_STATICTEXT;
+      ia_role = ROLE_SYSTEM_STATICTEXT;
       break;
     case ui::AX_ROLE_STATUS:
-      ia_role_ = ROLE_SYSTEM_STATUSBAR;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_STATUSBAR;
       break;
     case ui::AX_ROLE_SPLITTER:
-      ia_role_ = ROLE_SYSTEM_SEPARATOR;
+      ia_role = ROLE_SYSTEM_SEPARATOR;
       break;
     case ui::AX_ROLE_SVG_ROOT:
-      ia_role_ = ROLE_SYSTEM_GRAPHIC;
+      ia_role = ROLE_SYSTEM_GRAPHIC;
+      break;
+    case ui::AX_ROLE_SWITCH:
+      role_name = L"switch";
+      ia2_role = IA2_ROLE_TOGGLE_BUTTON;
       break;
     case ui::AX_ROLE_TAB:
-      ia_role_ = ROLE_SYSTEM_PAGETAB;
+      ia_role = ROLE_SYSTEM_PAGETAB;
       break;
     case ui::AX_ROLE_TABLE: {
       base::string16 aria_role = GetString16Attribute(
           ui::AX_ATTR_ROLE);
       if (aria_role == L"treegrid") {
-        ia_role_ = ROLE_SYSTEM_OUTLINE;
+        ia_role = ROLE_SYSTEM_OUTLINE;
       } else {
-        ia_role_ = ROLE_SYSTEM_TABLE;
+        ia_role = ROLE_SYSTEM_TABLE;
       }
       break;
     }
     case ui::AX_ROLE_TABLE_HEADER_CONTAINER:
-      ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_SECTION;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_SECTION;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_TAB_LIST:
-      ia_role_ = ROLE_SYSTEM_PAGETABLIST;
+      ia_role = ROLE_SYSTEM_PAGETABLIST;
       break;
     case ui::AX_ROLE_TAB_PANEL:
-      ia_role_ = ROLE_SYSTEM_PROPERTYPAGE;
+      ia_role = ROLE_SYSTEM_PROPERTYPAGE;
       break;
     case ui::AX_ROLE_TOGGLE_BUTTON:
-      ia_role_ = ROLE_SYSTEM_PUSHBUTTON;
-      ia2_role_ = IA2_ROLE_TOGGLE_BUTTON;
-      break;
-    case ui::AX_ROLE_TEXT_AREA:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_state_ |= IA2_STATE_MULTI_LINE;
-      ia2_state_ |= IA2_STATE_EDITABLE;
-      ia2_state_ |= IA2_STATE_SELECTABLE_TEXT;
+      ia_role = ROLE_SYSTEM_PUSHBUTTON;
+      ia2_role = IA2_ROLE_TOGGLE_BUTTON;
       break;
     case ui::AX_ROLE_TEXT_FIELD:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_state_ |= IA2_STATE_SINGLE_LINE;
-      ia2_state_ |= IA2_STATE_EDITABLE;
-      ia2_state_ |= IA2_STATE_SELECTABLE_TEXT;
+    case ui::AX_ROLE_SEARCH_BOX:
+      ia_role = ROLE_SYSTEM_TEXT;
+      if (HasState(ui::AX_STATE_MULTILINE))
+        ia2_state |= IA2_STATE_MULTI_LINE;
+      else
+        ia2_state |= IA2_STATE_SINGLE_LINE;
+      ia2_state |= IA2_STATE_EDITABLE;
+      ia2_state |= IA2_STATE_SELECTABLE_TEXT;
       break;
     case ui::AX_ROLE_TIME:
-      ia_role_ = ROLE_SYSTEM_SPINBUTTON;
+      ia_role = ROLE_SYSTEM_SPINBUTTON;
       break;
     case ui::AX_ROLE_TIMER:
-      ia_role_ = ROLE_SYSTEM_CLOCK;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_CLOCK;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_TOOLBAR:
-      ia_role_ = ROLE_SYSTEM_TOOLBAR;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_TOOLBAR;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_TOOLTIP:
-      ia_role_ = ROLE_SYSTEM_TOOLTIP;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role = ROLE_SYSTEM_TOOLTIP;
+      ia_state |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_TREE:
-      ia_role_ = ROLE_SYSTEM_OUTLINE;
+      ia_role = ROLE_SYSTEM_OUTLINE;
       break;
     case ui::AX_ROLE_TREE_GRID:
-      ia_role_ = ROLE_SYSTEM_OUTLINE;
+      ia_role = ROLE_SYSTEM_OUTLINE;
       break;
     case ui::AX_ROLE_TREE_ITEM:
-      ia_role_ = ROLE_SYSTEM_OUTLINEITEM;
+      ia_role = ROLE_SYSTEM_OUTLINEITEM;
+      break;
+    case ui::AX_ROLE_LINE_BREAK:
+      ia_role = ROLE_SYSTEM_WHITESPACE;
       break;
     case ui::AX_ROLE_WINDOW:
-      ia_role_ = ROLE_SYSTEM_WINDOW;
+      ia_role = ROLE_SYSTEM_WINDOW;
       break;
 
     // TODO(dmazzoni): figure out the proper MSAA role for all of these.
-    case ui::AX_ROLE_BROWSER:
     case ui::AX_ROLE_DIRECTORY:
-    case ui::AX_ROLE_DRAWER:
-    case ui::AX_ROLE_HELP_TAG:
     case ui::AX_ROLE_IGNORED:
-    case ui::AX_ROLE_INCREMENTOR:
     case ui::AX_ROLE_LOG:
-    case ui::AX_ROLE_MATTE:
     case ui::AX_ROLE_NONE:
     case ui::AX_ROLE_PRESENTATIONAL:
-    case ui::AX_ROLE_RULER_MARKER:
-    case ui::AX_ROLE_SHEET:
     case ui::AX_ROLE_SLIDER_THUMB:
-    case ui::AX_ROLE_SYSTEM_WIDE:
-    case ui::AX_ROLE_VALUE_INDICATOR:
     default:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
+      ia_role = ROLE_SYSTEM_CLIENT;
       break;
   }
 
@@ -3847,21 +4331,27 @@ void BrowserAccessibilityWin::InitRoleAndState() {
   // We clear the READONLY state on focusable controls and on a document.
   // Everything else, the majority of objects, do not have this state set.
   if (HasState(ui::AX_STATE_FOCUSABLE) &&
-      ia_role_ != ROLE_SYSTEM_DOCUMENT) {
-    ia_state_ &= ~(STATE_SYSTEM_READONLY);
+      ia_role != ROLE_SYSTEM_DOCUMENT) {
+    ia_state &= ~(STATE_SYSTEM_READONLY);
   }
   if (!HasState(ui::AX_STATE_READ_ONLY))
-    ia_state_ &= ~(STATE_SYSTEM_READONLY);
+    ia_state &= ~(STATE_SYSTEM_READONLY);
   if (GetBoolAttribute(ui::AX_ATTR_ARIA_READONLY))
-    ia_state_ |= STATE_SYSTEM_READONLY;
+    ia_state |= STATE_SYSTEM_READONLY;
 
   // The role should always be set.
-  DCHECK(!role_name_.empty() || ia_role_);
+  DCHECK(!role_name.empty() || ia_role);
 
   // If we didn't explicitly set the IAccessible2 role, make it the same
   // as the MSAA role.
-  if (!ia2_role_)
-    ia2_role_ = ia_role_;
+  if (!ia2_role)
+    ia2_role = ia_role;
+
+  win_attributes_->ia_role = ia_role;
+  win_attributes_->ia_state = ia_state;
+  win_attributes_->role_name = role_name;
+  win_attributes_->ia2_role = ia2_role;
+  win_attributes_->ia2_state = ia2_state;
 }
 
 }  // namespace content

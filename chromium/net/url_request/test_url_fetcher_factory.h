@@ -95,6 +95,9 @@ class TestURLFetcher : public URLFetcher {
       uint64 range_offset,
       uint64 range_length,
       scoped_refptr<base::TaskRunner> file_task_runner) override;
+  void SetUploadStreamFactory(
+      const std::string& upload_content_type,
+      const CreateUploadStreamCallback& callback) override;
   void SetChunkedUpload(const std::string& upload_content_type) override;
   // Overriden to cache the chunks uploaded. Caller can read back the uploaded
   // chunks with the upload_chunks() accessor.
@@ -239,10 +242,10 @@ class TestURLFetcherFactory : public URLFetcherFactory,
   TestURLFetcherFactory();
   ~TestURLFetcherFactory() override;
 
-  URLFetcher* CreateURLFetcher(int id,
-                               const GURL& url,
-                               URLFetcher::RequestType request_type,
-                               URLFetcherDelegate* d) override;
+  scoped_ptr<URLFetcher> CreateURLFetcher(int id,
+                                          const GURL& url,
+                                          URLFetcher::RequestType request_type,
+                                          URLFetcherDelegate* d) override;
   TestURLFetcher* GetFetcherByID(int id) const;
   void RemoveFetcherFromMap(int id);
   void SetDelegateForTests(TestURLFetcherDelegateForTests* delegate_for_tests);
@@ -398,10 +401,10 @@ class FakeURLFetcherFactory : public URLFetcherFactory,
   // NULL.
   // Otherwise, it will return a URLFetcher object which will respond with the
   // pre-baked response that the client has set by calling SetFakeResponse().
-  URLFetcher* CreateURLFetcher(int id,
-                               const GURL& url,
-                               URLFetcher::RequestType request_type,
-                               URLFetcherDelegate* d) override;
+  scoped_ptr<URLFetcher> CreateURLFetcher(int id,
+                                          const GURL& url,
+                                          URLFetcher::RequestType request_type,
+                                          URLFetcherDelegate* d) override;
 
   // Sets the fake response for a given URL. The |response_data| may be empty.
   // The |response_code| may be any HttpStatusCode. For instance, HTTP_OK will
@@ -450,10 +453,10 @@ class URLFetcherImplFactory : public URLFetcherFactory {
   ~URLFetcherImplFactory() override;
 
   // This method will create a real URLFetcher.
-  URLFetcher* CreateURLFetcher(int id,
-                               const GURL& url,
-                               URLFetcher::RequestType request_type,
-                               URLFetcherDelegate* d) override;
+  scoped_ptr<URLFetcher> CreateURLFetcher(int id,
+                                          const GURL& url,
+                                          URLFetcher::RequestType request_type,
+                                          URLFetcherDelegate* d) override;
 };
 
 }  // namespace net

@@ -3,9 +3,7 @@
 # found in the LICENSE file.
 
 config("libpng_config") {
-  include_dirs = [
-    ".",
-  ]
+  include_dirs = [ "." ]
 
   defines = [
     "CHROME_PNG_WRITE_SUPPORT",
@@ -14,9 +12,7 @@ config("libpng_config") {
 
   if (is_android) {
     #'toolsets': ['target', 'host'],
-    defines += [
-      "CHROME_PNG_READ_PACK_SUPPORT",  # Required by freetype.
-    ]
+    defines += [ "CHROME_PNG_READ_PACK_SUPPORT" ]  # Required by freetype.
   }
 
   if (is_win) {
@@ -30,7 +26,7 @@ config("libpng_config") {
 }
 
 source_set("libpng_sources") {
-  sources =  [
+  sources = [
     "png.c",
     "png.h",
     "pngconf.h",
@@ -56,25 +52,27 @@ source_set("libpng_sources") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
-  if (is_win) {
-    cflags = [ "/wd4267" ]  # TODO(jschuh): http://crbug.com/167187
-
-    if (component_mode == "shared_library") {
-      defines = [ "PNG_BUILD_DLL" ]
-    }
+  if (is_win && is_component_build) {
+    defines = [ "PNG_BUILD_DLL" ]
   }
 
   public_configs = [ ":libpng_config" ]
 
-  public_deps = [ "//third_party/zlib" ]
+  public_deps = [
+    "//third_party/zlib",
+  ]
 }
 
 if (is_win) {
   component("libpng") {
-    public_deps = [ ":libpng_sources" ]
+    public_deps = [
+      ":libpng_sources",
+    ]
   }
 } else {
   group("libpng") {
-    public_deps = [ ":libpng_sources" ]
+    public_deps = [
+      ":libpng_sources",
+    ]
   }
 }

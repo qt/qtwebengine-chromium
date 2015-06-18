@@ -33,7 +33,7 @@ class ExternalPopupMenuTest : public RenderViewTest {
     return view()->GetMainRenderFrame();
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     RenderViewTest::SetUp();
     // We need to set this explictly as RenderMain is not run.
     blink::WebView::setUseExternalPopupMenus(true);
@@ -86,10 +86,10 @@ TEST_F(ExternalPopupMenuTest, NormalCase) {
   const IPC::Message* message =
       sink.GetUniqueMessageMatching(FrameHostMsg_ShowPopup::ID);
   ASSERT_TRUE(message != NULL);
-  Tuple1<FrameHostMsg_ShowPopup_Params> param;
+  Tuple<FrameHostMsg_ShowPopup_Params> param;
   FrameHostMsg_ShowPopup::Read(message, &param);
-  ASSERT_EQ(3U, param.a.popup_items.size());
-  EXPECT_EQ(1, param.a.selected_item);
+  ASSERT_EQ(3U, get<0>(param).popup_items.size());
+  EXPECT_EQ(1, get<0>(param).selected_item);
 
   // Simulate the user canceling the popup; the index should not have changed.
   frame()->OnSelectPopupMenuItem(-1);
@@ -106,8 +106,8 @@ TEST_F(ExternalPopupMenuTest, NormalCase) {
   message = sink.GetUniqueMessageMatching(FrameHostMsg_ShowPopup::ID);
   ASSERT_TRUE(message != NULL);
   FrameHostMsg_ShowPopup::Read(message, &param);
-  ASSERT_EQ(3U, param.a.popup_items.size());
-  EXPECT_EQ(0, param.a.selected_item);
+  ASSERT_EQ(3U, get<0>(param).popup_items.size());
+  EXPECT_EQ(0, get<0>(param).selected_item);
 }
 
 // Page shows popup, then navigates away while popup showing, then select.
@@ -154,7 +154,7 @@ class ExternalPopupMenuDisplayNoneTest : public ExternalPopupMenuTest {
   public:
   ExternalPopupMenuDisplayNoneTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     RenderViewTest::SetUp();
     // We need to set this explictly as RenderMain is not run.
     blink::WebView::setUseExternalPopupMenus(true);
@@ -189,11 +189,11 @@ TEST_F(ExternalPopupMenuDisplayNoneTest, SelectItem) {
   const IPC::Message* message =
       sink.GetUniqueMessageMatching(FrameHostMsg_ShowPopup::ID);
   ASSERT_TRUE(message != NULL);
-  Tuple1<FrameHostMsg_ShowPopup_Params> param;
+  Tuple<FrameHostMsg_ShowPopup_Params> param;
   FrameHostMsg_ShowPopup::Read(message, &param);
   // Number of items should match item count minus the number
   // of "display: none" items.
-  ASSERT_EQ(5U, param.a.popup_items.size());
+  ASSERT_EQ(5U, get<0>(param).popup_items.size());
 
   // Select index 1 item. This should select item with index 2,
   // skipping the item with 'display: none'

@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "base/numerics/safe_math.h"
 #include "gpu/command_buffer/common/gles2_utils_export.h"
 
 namespace gpu {
@@ -25,44 +26,29 @@ namespace gles2 {
 // Multiplies 2 32 bit unsigned numbers checking for overflow.
 // If there was no overflow returns true.
 inline bool SafeMultiplyUint32(uint32_t a, uint32_t b, uint32_t* dst) {
-  if (b == 0) {
-    *dst = 0;
-    return true;
-  }
-  uint32_t v = a * b;
-  if (v / b != a) {
-    *dst = 0;
-    return false;
-  }
-  *dst = v;
-  return true;
+  DCHECK(dst);
+  base::CheckedNumeric<uint32_t> checked = a;
+  checked *= b;
+  *dst = checked.ValueOrDefault(0);
+  return checked.IsValid();
 }
 
 // Does an add checking for overflow.  If there was no overflow returns true.
 inline bool SafeAddUint32(uint32_t a, uint32_t b, uint32_t* dst) {
-  if (a + b < a) {
-    *dst = 0;
-    return false;
-  }
-  *dst = a + b;
-  return true;
+  DCHECK(dst);
+  base::CheckedNumeric<uint32_t> checked = a;
+  checked += b;
+  *dst = checked.ValueOrDefault(0);
+  return checked.IsValid();
 }
 
 // Does an add checking for overflow.  If there was no overflow returns true.
 inline bool SafeAddInt32(int32_t a, int32_t b, int32_t* dst) {
-  int64_t sum64 = static_cast<int64_t>(a) + b;
-  int32_t sum32 = static_cast<int32_t>(sum64);
-  bool safe = sum64 == static_cast<int64_t>(sum32);
-  *dst = safe ? sum32 : 0;
-  return safe;
-}
-
-// Return false if |value| is more than a 32 bit integer can represent.
-template<typename T>
-inline bool FitInt32NonNegative(T value) {
-  const int32_t max = std::numeric_limits<int32_t>::max();
-  return (std::numeric_limits<T>::max() <= max ||
-          value <= static_cast<T>(max));
+  DCHECK(dst);
+  base::CheckedNumeric<int32_t> checked = a;
+  checked += b;
+  *dst = checked.ValueOrDefault(0);
+  return checked.IsValid();
 }
 
 // Utilties for GLES2 support.
@@ -126,12 +112,18 @@ class GLES2_UTILS_EXPORT GLES2Util {
   // then the padded_row_size will be the same as the unpadded_row_size since
   // padding is not necessary.
   static bool ComputeImageDataSizes(
-      int width, int height, int format, int type, int unpack_alignment,
-      uint32_t* size, uint32_t* unpadded_row_size, uint32_t* padded_row_size);
+      int width, int height, int depth, int format, int type,
+      int unpack_alignment, uint32_t* size, uint32_t* unpadded_row_size,
+      uint32_t* padded_row_size);
 
   static size_t RenderbufferBytesPerPixel(int format);
 
-  static uint32_t GetGLDataTypeSizeForUniforms(int type);
+  // Return the element's number of bytes.
+  // For example, GL_FLOAT_MAT3 returns sizeof(GLfloat).
+  static uint32_t GetElementSizeForUniformType(int type);
+  // Return the number of elements.
+  // For example, GL_FLOAT_MAT3 returns 9.
+  static uint32_t GetElementCountForUniformType(int type);
 
   static size_t GetGLTypeSizeForTexturesAndBuffers(uint32_t type);
 
@@ -183,6 +175,15 @@ class GLES2_UTILS_EXPORT GLES2Util {
       int* element_index,
       bool* getting_array);
 
+  static size_t CalcClearBufferivDataCount(int buffer);
+  static size_t CalcClearBufferfvDataCount(int buffer);
+
+  static void MapUint64ToTwoUint32(
+      uint64_t v64, uint32_t* v32_0, uint32_t* v32_1);
+  static uint64_t MapTwoUint32ToUint64(uint32_t v32_0, uint32_t v32_1);
+
+  static uint32_t MapBufferTargetToBindingEnum(uint32_t target);
+
   #include "../common/gles2_cmd_utils_autogen.h"
 
  private:
@@ -215,6 +216,7 @@ struct GLES2_UTILS_EXPORT ContextCreationAttribHelper {
   bool bind_generates_resource;
   bool fail_if_major_perf_caveat;
   bool lose_context_when_out_of_memory;
+  bool es3_context_required;
 };
 
 }  // namespace gles2

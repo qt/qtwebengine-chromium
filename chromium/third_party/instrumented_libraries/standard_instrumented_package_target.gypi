@@ -19,18 +19,19 @@
       'outputs': [
         '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)/<(_package_name).txt',
       ],
-      'action': ['./download_build_install.py',
-        '--product-directory=<(PRODUCT_DIR)',
-        '--package=<(_package_name)',
-        '--intermediate-directory=<(INTERMEDIATE_DIR)',
-        '--sanitizer-type=<(_sanitizer_type)',
-        '--extra-configure-flags=>(_extra_configure_flags)',
-        '--cflags=>(_package_cflags)',
-        '--ldflags=>(_package_ldflags)',
-        '--cc=<(_cc)',
-        '--cxx=<(_cxx)',
-        '--jobs=>(_jobs)',
+      'action': ['scripts/download_build_install.py',
         '--build-method=>(_build_method)',
+        '--cc=<(_cc)',
+        '--cflags=>(_package_cflags)',
+        '--cxx=<(_cxx)',
+        '--extra-configure-flags=>(_extra_configure_flags)',
+        '--intermediate-dir=<(INTERMEDIATE_DIR)',
+        '--jobs=>(_jobs)',
+        '--ldflags=>(_package_ldflags)',
+        '--libdir=<(_libdir)',
+        '--package=<(_package_name)',
+        '--product-dir=<(PRODUCT_DIR)',
+        '--sanitizer=<(_sanitizer_type)',
       ],
       'conditions': [
         ['verbose_libraries_build==1', {
@@ -48,12 +49,12 @@
             '>(_patch)',
           ],
         }],
-        ['">(_run_before_build)"!=""', {
+        ['">(_pre_build)"!=""', {
           'action+': [
-            '--run-before-build=>(_run_before_build)',
+            '--pre-build=>(_pre_build)',
           ],
           'inputs+': [
-            '>(_run_before_build)',
+            '>(_pre_build)',
           ],
         }],
         ['">(_<(_sanitizer_type)_blacklist)"!=""', {

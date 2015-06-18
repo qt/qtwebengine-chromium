@@ -5,8 +5,6 @@
 #ifndef WebCompositorAnimation_h
 #define WebCompositorAnimation_h
 
-#define WEB_ANIMATION_SUPPORTS_FILL_MODE 1
-
 namespace blink {
 
 // A compositor driven animation.
@@ -35,7 +33,7 @@ public:
 
     virtual ~WebCompositorAnimation() { }
 
-    // An id is effectively the animation's name, and it is not unique.
+    // An id must be unique.
     virtual int id() = 0;
     virtual int group() = 0;
 

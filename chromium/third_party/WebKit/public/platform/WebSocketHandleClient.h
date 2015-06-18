@@ -32,19 +32,18 @@
 #define WebSocketHandleClient_h
 
 #include "WebCommon.h"
+#include "WebString.h"
 #include "public/platform/WebSocketHandle.h"
 
 namespace blink {
 
 class WebSocketHandshakeRequestInfo;
 class WebSocketHandshakeResponseInfo;
-class WebString;
-class WebURL;
 
 class WebSocketHandleClient {
 public:
     // Called when the handle is opened.
-    virtual void didConnect(WebSocketHandle*, bool fail, const WebString& selectedProtocol, const WebString& extensions) = 0;
+    virtual void didConnect(WebSocketHandle*, const WebString& selectedProtocol, const WebString& extensions) = 0;
 
     // Called when the browser starts the opening handshake.
     // This notification can be omitted when the inspector is not active.

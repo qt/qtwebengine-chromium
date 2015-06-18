@@ -4,7 +4,6 @@
 
 #include "build/build_config.h"
 
-#include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/threading/thread.h"
 #include "ipc/ipc_message.h"
@@ -47,7 +46,6 @@ namespace {
 class QuitListener : public IPC::Listener {
  public:
   QuitListener() : bad_message_received_(false) {}
-  ~QuitListener() override {}
 
   bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(QuitListener, message)
@@ -76,7 +74,6 @@ class QuitListener : public IPC::Listener {
 class ChannelReflectorListener : public IPC::Listener {
  public:
   ChannelReflectorListener() : channel_(NULL) {}
-  ~ChannelReflectorListener() override {}
 
   void Init(IPC::Channel* channel) {
     DCHECK(!channel_);
@@ -232,9 +229,9 @@ class MessageCountFilter : public IPC::MessageFilter {
 class IPCChannelProxyTest : public IPCTestBase {
  public:
   IPCChannelProxyTest() {}
-  virtual ~IPCChannelProxyTest() {}
+  ~IPCChannelProxyTest() override {}
 
-  virtual void SetUp() override {
+  void SetUp() override {
     IPCTestBase::SetUp();
 
     Init("ChannelProxyClient");
@@ -245,12 +242,12 @@ class IPCChannelProxyTest : public IPCTestBase {
     thread_->StartWithOptions(options);
 
     listener_.reset(new QuitListener());
-    CreateChannelProxy(listener_.get(), thread_->message_loop_proxy().get());
+    CreateChannelProxy(listener_.get(), thread_->task_runner().get());
 
     ASSERT_TRUE(StartClient());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     DestroyChannelProxy();
     thread_.reset();
     listener_.reset();
@@ -380,10 +377,7 @@ TEST_F(IPCChannelProxyTest, BadMessageOnIPCThread) {
 
 class IPCChannelBadMessageTest : public IPCTestBase {
  public:
-  IPCChannelBadMessageTest() {}
-  virtual ~IPCChannelBadMessageTest() {}
-
-  virtual void SetUp() override {
+  void SetUp() override {
     IPCTestBase::SetUp();
 
     Init("ChannelProxyClient");
@@ -395,7 +389,7 @@ class IPCChannelBadMessageTest : public IPCTestBase {
     ASSERT_TRUE(StartClient());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     listener_.reset();
     IPCTestBase::TearDown();
   }

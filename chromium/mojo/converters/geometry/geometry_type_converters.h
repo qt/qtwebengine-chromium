@@ -6,12 +6,11 @@
 #define MOJO_CONVERTERS_GEOMETRY_GEOMETRY_TYPE_CONVERTERS_H_
 
 #include "mojo/converters/geometry/mojo_geometry_export.h"
-#include "mojo/services/public/interfaces/geometry/geometry.mojom.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/transform.h"
+#include "ui/mojo/geometry/geometry.mojom.h"
 
 namespace mojo {
 
@@ -61,12 +60,12 @@ struct MOJO_GEOMETRY_EXPORT TypeConverter<gfx::RectF, RectFPtr> {
 };
 
 template <>
-struct MOJO_GEOMETRY_EXPORT TypeConverter<TransformPtr, gfx::Transform> {
-  static TransformPtr Convert(const gfx::Transform& input);
+struct MOJO_GEOMETRY_EXPORT TypeConverter<Rect, gfx::Rect> {
+  static Rect Convert(const gfx::Rect& input);
 };
 template <>
-struct MOJO_GEOMETRY_EXPORT TypeConverter<gfx::Transform, TransformPtr> {
-  static gfx::Transform Convert(const TransformPtr& input);
+struct MOJO_GEOMETRY_EXPORT TypeConverter<gfx::Rect, Rect> {
+  static gfx::Rect Convert(const Rect& input);
 };
 
 }  // namespace mojo

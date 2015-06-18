@@ -27,25 +27,28 @@
 #ifndef PageLifecycleObserver_h
 #define PageLifecycleObserver_h
 
+#include "core/CoreExport.h"
+#include "core/page/Page.h"
 #include "platform/LifecycleObserver.h"
 
 namespace blink {
 
 class LocalFrame;
-class Page;
+class PageLifecycleNotifier;
 
-template<> void observerContext(Page*, LifecycleObserver<Page>*);
-template<> void unobserverContext(Page*, LifecycleObserver<Page>*);
-
-class PageLifecycleObserver : public LifecycleObserver<Page> {
+class CORE_EXPORT PageLifecycleObserver : public LifecycleObserver<Page, PageLifecycleObserver, PageLifecycleNotifier> {
 public:
-    explicit PageLifecycleObserver(Page*);
-    virtual ~PageLifecycleObserver();
-
-    Page* page() const;
-
     virtual void pageVisibilityChanged() { }
     virtual void didCommitLoad(LocalFrame*) { }
+
+    Page* page() const { return lifecycleContext(); }
+
+protected:
+    explicit PageLifecycleObserver(Page* page)
+        : LifecycleObserver(page)
+    {
+    }
+
 };
 
 } // namespace blink

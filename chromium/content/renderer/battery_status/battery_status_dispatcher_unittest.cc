@@ -2,11 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "battery_status_dispatcher.h"
+#include "content/renderer/battery_status/battery_status_dispatcher.h"
 
-#include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
-#include "content/common/battery_status_messages.h"
 #include "content/public/test/mock_render_thread.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -16,12 +13,11 @@ namespace content {
 
 class MockBatteryStatusListener : public blink::WebBatteryStatusListener {
  public:
-  MockBatteryStatusListener() : did_change_battery_status_(false) { }
-  virtual ~MockBatteryStatusListener() { }
+  MockBatteryStatusListener() : did_change_battery_status_(false) {}
+  virtual ~MockBatteryStatusListener() {}
 
   // blink::WebBatteryStatusListener method.
-  virtual void updateBatteryStatus(
-      const blink::WebBatteryStatus& status) override {
+  void updateBatteryStatus(const blink::WebBatteryStatus& status) override {
     status_ = status;
     did_change_battery_status_ = true;
   }
@@ -37,48 +33,48 @@ class MockBatteryStatusListener : public blink::WebBatteryStatusListener {
 };
 
 class BatteryStatusDispatcherTest : public testing::Test {
+ public:
+  void UpdateBatteryStatus(const device::BatteryStatus& status) {
+    device::BatteryStatusPtr status_ptr(device::BatteryStatus::New());
+    *status_ptr = status;
+    dispatcher_->DidChange(status_ptr.Pass());
+  }
+
+  const MockBatteryStatusListener& listener() const {
+    return listener_;
+  }
+
+ protected:
+  void SetUp() override {
+    dispatcher_.reset(new BatteryStatusDispatcher(&listener_));
+  }
+
  private:
   // We need to create a MockRenderThread so RenderThread::Get() doesn't return
   // null.
   MockRenderThread render_thread_;
+  MockBatteryStatusListener listener_;
+  scoped_ptr<BatteryStatusDispatcher> dispatcher_;
 };
 
 TEST_F(BatteryStatusDispatcherTest, UpdateListener) {
-  MockBatteryStatusListener listener;
-  BatteryStatusDispatcher dispatcher(0);
+  // TODO(darin): This test isn't super interesting. It just exercises
+  // conversion b/w device::BatteryStatus and blink::WebBatteryStatus.
 
-  blink::WebBatteryStatus status;
+  device::BatteryStatus status;
   status.charging = true;
-  status.chargingTime = 100;
-  status.dischargingTime = 200;
+  status.charging_time = 100;
+  status.discharging_time = 200;
   status.level = 0.5;
 
-  dispatcher.Start(&listener);
+  UpdateBatteryStatus(status);
 
-  BatteryStatusMsg_DidChange message(status);
-  dispatcher.OnControlMessageReceived(message);
-
-  const blink::WebBatteryStatus& received_status = listener.status();
-  EXPECT_TRUE(listener.did_change_battery_status());
+  const blink::WebBatteryStatus& received_status = listener().status();
+  EXPECT_TRUE(listener().did_change_battery_status());
   EXPECT_EQ(status.charging, received_status.charging);
-  EXPECT_EQ(status.chargingTime, received_status.chargingTime);
-  EXPECT_EQ(status.dischargingTime, received_status.dischargingTime);
+  EXPECT_EQ(status.charging_time, received_status.chargingTime);
+  EXPECT_EQ(status.discharging_time, received_status.dischargingTime);
   EXPECT_EQ(status.level, received_status.level);
-
-  dispatcher.Stop();
-}
-
-TEST_F(BatteryStatusDispatcherTest, NoUpdateWhenNullListener) {
-  MockBatteryStatusListener listener;
-  BatteryStatusDispatcher dispatcher(0);
-
-  dispatcher.Start(0);
-  dispatcher.Stop();
-
-  blink::WebBatteryStatus status;
-  BatteryStatusMsg_DidChange message(status);
-  dispatcher.OnControlMessageReceived(message);
-  EXPECT_FALSE(listener.did_change_battery_status());
 }
 
 }  // namespace content

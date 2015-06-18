@@ -31,15 +31,18 @@
 #import "platform/fonts/FontCache.h"
 
 #import <AppKit/AppKit.h>
-#import "platform/LayoutTestSupport.h"
-#import "platform/RuntimeEnabledFeatures.h"
-#import "platform/fonts/FontDescription.h"
-#import "platform/fonts/FontFaceCreationParams.h"
-#import "platform/fonts/FontPlatformData.h"
-#import "platform/fonts/SimpleFontData.h"
-#import "platform/mac/WebFontCache.h"
-#import <wtf/MainThread.h>
-#import <wtf/StdLibExtras.h>
+#include "platform/LayoutTestSupport.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/fonts/FontDescription.h"
+#include "platform/fonts/FontFaceCreationParams.h"
+#include  "platform/fonts/FontPlatformData.h"
+#include "platform/fonts/SimpleFontData.h"
+#include "platform/fonts/mac/FontFamilyMatcherMac.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebTraceLocation.h"
+#include <wtf/Functional.h>
+#include <wtf/MainThread.h>
+#include <wtf/StdLibExtras.h>
 
 // Forward declare Mac SPIs.
 // Request for public API: rdar://13803570
@@ -50,11 +53,10 @@
 
 namespace blink {
 
-// The "void*" parameter makes the function match the prototype for callbacks from callOnMainThread.
-static void invalidateFontCache(void*)
+static void invalidateFontCache()
 {
     if (!isMainThread()) {
-        callOnMainThread(&invalidateFontCache, 0);
+        Platform::current()->mainThread()->postTask(FROM_HERE, bind(&invalidateFontCache));
         return;
     }
     FontCache::fontCache()->invalidate();
@@ -64,7 +66,7 @@ static void fontCacheRegisteredFontsChangedNotificationCallback(CFNotificationCe
 {
     ASSERT_UNUSED(observer, observer == FontCache::fontCache());
     ASSERT_UNUSED(name, CFEqual(name, kCTFontManagerRegisteredFontsChangedNotification));
-    invalidateFontCache(0);
+    invalidateFontCache();
 }
 
 static bool useHinting()
@@ -72,7 +74,7 @@ static bool useHinting()
     // Enable hinting when subpixel font scaling is disabled or
     // when running the set of standard non-subpixel layout tests,
     // otherwise use subpixel glyph positioning.
-    return (LayoutTestSupport::isRunningLayoutTest() && !LayoutTestSupport::isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+    return (LayoutTestSupport::isRunningLayoutTest() && !LayoutTestSupport::isFontAntialiasingEnabledForTest());
 }
 
 void FontCache::platformInit()
@@ -117,7 +119,7 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
     }
 
     const FontPlatformData& platformData = fontDataToSubstitute->platformData();
-    NSFont *nsFont = platformData.font();
+    NSFont* nsFont = toNSFont(platformData.ctFont());
 
     NSString *string = [[NSString alloc] initWithCharactersNoCopy:codeUnits length:codeUnitsLength freeWhenDone:NO];
     NSFont *substituteFont = [NSFont findFontLike:nsFont forString:string withRange:NSMakeRange(0, codeUnitsLength) inLanguage:nil];
@@ -127,10 +129,6 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
     if (!substituteFont && codeUnitsLength == 1)
         substituteFont = [NSFont findFontLike:nsFont forCharacter:codeUnits[0] inLanguage:nil];
     if (!substituteFont)
-        return nullptr;
-
-    // Chromium can't render AppleColorEmoji.
-    if ([[substituteFont familyName] isEqual:@"Apple Color Emoji"])
         return nullptr;
 
     // Use the family name from the AppKit-supplied substitute font, requesting the
@@ -208,7 +206,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     NSInteger weight = toAppKitFontWeight(fontDescription.weight());
     float size = fontSize;
 
-    NSFont *nsFont = [WebFontCache fontWithFamily:creationParams.family() traits:traits weight:weight size:size];
+    NSFont *nsFont = MatchNSFontFamily(creationParams.family(),traits, weight, size);
     if (!nsFont)
         return 0;
 
@@ -222,11 +220,14 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     bool syntheticBold = (isAppKitFontWeightBold(weight) && !isAppKitFontWeightBold(actualWeight)) || fontDescription.isSyntheticBold();
     bool syntheticItalic = ((traits & NSFontItalicTrait) && !(actualTraits & NSFontItalicTrait)) || fontDescription.isSyntheticItalic();
 
-    // FontPlatformData::font() can be null for the case of Chromium out-of-process font loading.
-    // In that case, we don't want to use the platformData.
-    OwnPtr<FontPlatformData> platformData = adoptPtr(new FontPlatformData(platformFont, size, syntheticBold, syntheticItalic, fontDescription.orientation(), fontDescription.widthVariant()));
-    if (!platformData->font())
-        return 0;
+    // FontPlatformData::typeface() is null in the case of Chromium out-of-process font loading failing.
+    // Out-of-process loading occurs for registered fonts stored in non-system locations.
+    // When loading fails, we do not want to use the returned FontPlatformData since it will not have
+    // a valid SkTypeface.
+    OwnPtr<FontPlatformData> platformData = adoptPtr(new FontPlatformData(platformFont, size, syntheticBold, syntheticItalic, fontDescription.orientation()));
+    if (!platformData->typeface()) {
+        return nullptr;
+    }
     return platformData.leakPtr();
 }
 

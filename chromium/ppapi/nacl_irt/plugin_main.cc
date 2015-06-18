@@ -18,10 +18,6 @@
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 
-#if defined(__native_client__)
-#include "native_client/src/shared/srpc/nacl_srpc.h"
-#endif
-
 void PpapiPluginRegisterThreadCreator(
     const struct PP_ThreadFunctions* thread_functions) {
   // Initialize all classes that need to create threads that call back into
@@ -31,21 +27,9 @@ void PpapiPluginRegisterThreadCreator(
 
 int PpapiPluginMain() {
   base::MessageLoop loop;
-  ppapi::proxy::PluginGlobals plugin_globals;
-
-#if defined(OS_NACL_SFI)
-  // Currently on non-SFI mode, we don't use SRPC server on plugin.
-  // TODO(hidehiko): Make sure this SRPC is actually used on SFI-mode.
-
-  // Start up the SRPC server on another thread. Otherwise, when it blocks
-  // on an RPC, the PPAPI proxy will hang. Do this before we initialize the
-  // module and start the PPAPI proxy so that the NaCl plugin can continue
-  // loading the app.
-  static struct NaClSrpcHandlerDesc srpc_methods[] = { { NULL, NULL } };
-  if (!NaClSrpcAcceptClientOnThread(srpc_methods)) {
-    return 1;
-  }
-#endif
+  ppapi::proxy::PluginGlobals plugin_globals(
+      scoped_refptr<base::TaskRunner>(
+          ppapi::GetIOThread()->message_loop_proxy()));
 
   ppapi::PpapiDispatcher ppapi_dispatcher(
       ppapi::GetIOThread()->message_loop_proxy(),

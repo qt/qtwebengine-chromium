@@ -10,6 +10,9 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/browser/resource_dispatcher_host_delegate.h"
+#include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
@@ -39,11 +42,9 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
   void SetUpOnMainThread() override {
     base::FilePath path = GetTestFilePath("", "");
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
+        BrowserThread::IO, FROM_HERE,
         base::Bind(
-            &net::URLRequestMockHTTPJob::AddUrlHandler,
-            path,
+            &net::URLRequestMockHTTPJob::AddUrlHandlers, path,
             make_scoped_refptr(content::BrowserThread::GetBlockingPool())));
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
@@ -463,13 +464,58 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest, CookiePolicy) {
       base::Bind(&HandleRedirectRequest, "/redirect?"));
 
   std::string set_cookie_url(base::StringPrintf(
-      "http://localhost:%d/set_cookie.html", embedded_test_server()->port()));
+      "http://localhost:%u/set_cookie.html", embedded_test_server()->port()));
   GURL url(embedded_test_server()->GetURL("/redirect?" + set_cookie_url));
 
   ShellContentBrowserClient::SetSwapProcessesForRedirect(true);
   ShellNetworkDelegate::SetAcceptAllCookies(false);
 
   CheckTitleTest(url, "cookie set");
+}
+
+class PageTransitionResourceDispatcherHostDelegate
+    : public ResourceDispatcherHostDelegate {
+ public:
+  PageTransitionResourceDispatcherHostDelegate(GURL watch_url)
+    : watch_url_(watch_url) {}
+
+  // ResourceDispatcherHostDelegate implementation:
+  void RequestBeginning(net::URLRequest* request,
+                        ResourceContext* resource_context,
+                        AppCacheService* appcache_service,
+                        ResourceType resource_type,
+                        ScopedVector<ResourceThrottle>* throttles) override {
+    if (request->url() == watch_url_) {
+      const ResourceRequestInfo* info =
+          ResourceRequestInfo::ForRequest(request);
+      page_transition_ = info->GetPageTransition();
+    }
+  }
+
+  ui::PageTransition page_transition() { return page_transition_; }
+
+ private:
+  GURL watch_url_;
+  ui::PageTransition page_transition_;
+};
+
+// Test that ui::PAGE_TRANSITION_CLIENT_REDIRECT is correctly set
+// when encountering a meta refresh tag.
+IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
+                       PageTransitionClientRedirect) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  PageTransitionResourceDispatcherHostDelegate delegate(
+      embedded_test_server()->GetURL("/title1.html"));
+  ResourceDispatcherHost::Get()->SetDelegate(&delegate);
+
+  NavigateToURLBlockUntilNavigationsComplete(
+      shell(),
+      embedded_test_server()->GetURL("/client_redirect.html"),
+      2);
+
+  EXPECT_TRUE(
+      delegate.page_transition() & ui::PAGE_TRANSITION_CLIENT_REDIRECT);
 }
 
 }  // namespace content

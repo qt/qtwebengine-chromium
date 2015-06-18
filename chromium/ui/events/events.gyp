@@ -8,17 +8,20 @@
   },
   'targets': [
     {
-      # GN version: //ui/events:dom4_keycode_converter
-      'target_name': 'dom4_keycode_converter',
+      # GN version: //ui/events:dom_keycode_converter
+      'target_name': 'dom_keycode_converter',
       'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
-        'keycodes/dom4/keycode_converter.cc',
-        'keycodes/dom4/keycode_converter.h',
-        'keycodes/dom4/keycode_converter_data.h',
+        'keycodes/dom/dom_code.h',
+        'keycodes/dom/dom_key.h',
+        'keycodes/dom/dom_key_data.inc',
+        'keycodes/dom/keycode_converter.cc',
+        'keycodes/dom/keycode_converter.h',
+        'keycodes/dom/keycode_converter_data.inc',
       ],
     },
     {
@@ -31,7 +34,7 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
-        'dom4_keycode_converter',
+        'dom_keycode_converter',
       ],
       'defines': [
         'EVENTS_BASE_IMPLEMENTATION',
@@ -40,6 +43,8 @@
         # Note: sources list duplicated in GN build.
         'android/scroller.cc',
         'android/scroller.h',
+        'base_event_utils.cc',
+        'base_event_utils.h',
         'event_constants.h',
         'event_switches.cc',
         'event_switches.h',
@@ -49,6 +54,7 @@
         'gesture_event_details.h',
         'gestures/fling_curve.cc',
         'gestures/fling_curve.h',
+        'keycodes/dom_us_layout_data.h',
         'keycodes/keyboard_code_conversion.cc',
         'keycodes/keyboard_code_conversion.h',
         'keycodes/keyboard_code_conversion_android.cc',
@@ -75,6 +81,13 @@
             '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
+        ['use_x11==1 or use_xkbcommon==1', {
+          'sources': [
+            'keycodes/keyboard_code_conversion_xkb.cc',
+            'keycodes/keyboard_code_conversion_xkb.h',
+            'keycodes/xkb_keysym.h',
+          ],
+        }],
       ],
     },
     {
@@ -87,6 +100,7 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
+        'dom_keycode_converter',
         'events_base',
         'gesture_detection',
       ],
@@ -127,18 +141,21 @@
         'gestures/gesture_types.h',
         'gestures/motion_event_aura.cc',
         'gestures/motion_event_aura.h',
-        'ozone/events_ozone.cc',
-        'win/events_win.cc',
-        'x/events_x.cc',
         'linux/text_edit_command_auralinux.cc',
         'linux/text_edit_command_auralinux.h',
         'linux/text_edit_key_bindings_delegate_auralinux.cc',
         'linux/text_edit_key_bindings_delegate_auralinux.h',
+        'null_event_targeter.cc',
+        'null_event_targeter.h',
+        'ozone/events_ozone.cc',
+        'win/events_win.cc',
+        'x/events_x.cc',
       ],
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
             'devices/events_devices.gyp:events_devices',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
             '../../build/linux/system.gyp:x11',
           ],
         }],
@@ -169,6 +186,44 @@
             'linux/text_edit_key_bindings_delegate_auralinux.h',
           ],
         }],
+        ['use_ozone==1', {
+          'dependencies': [
+            'ozone/events_ozone.gyp:events_ozone_layout',
+          ],
+        }],
+      ],
+    },
+    {
+      # GN version: //ui/events/blink
+      'target_name': 'blink',
+      'type': 'static_library',
+      'dependencies': [
+        '../../third_party/WebKit/public/blink_headers.gyp:blink_headers',
+        '../gfx/gfx.gyp:gfx_geometry',
+        'events',
+        'gesture_detection',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        'blink/blink_event_util.cc',
+        'blink/blink_event_util.h',
+      ],
+    },
+    {
+      # GN version: //ui/events/gestures/blink
+      'target_name': 'gestures_blink',
+      'type': 'static_library',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../third_party/WebKit/public/blink_headers.gyp:blink_headers',
+        '../gfx/gfx.gyp:gfx_geometry',
+        'events',
+        'gesture_detection',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        'gestures/blink/web_gesture_curve_impl.cc',
+        'gestures/blink/web_gesture_curve_impl.h',
       ],
     },
     {
@@ -205,8 +260,8 @@
         'gesture_detection/gesture_listeners.h',
         'gesture_detection/gesture_provider.cc',
         'gesture_detection/gesture_provider.h',
-        "gesture_detection/gesture_provider_config_helper.cc",
-        "gesture_detection/gesture_provider_config_helper.h",
+        'gesture_detection/gesture_provider_config_helper.cc',
+        'gesture_detection/gesture_provider_config_helper.h',
         'gesture_detection/gesture_touch_uma_histogram.cc',
         'gesture_detection/gesture_touch_uma_histogram.h',
         'gesture_detection/motion_event.cc',
@@ -223,10 +278,10 @@
         'gesture_detection/snap_scroll_controller.h',
         'gesture_detection/touch_disposition_gesture_filter.cc',
         'gesture_detection/touch_disposition_gesture_filter.h',
-        'gesture_detection/velocity_tracker_state.cc',
-        'gesture_detection/velocity_tracker_state.h',
         'gesture_detection/velocity_tracker.cc',
         'gesture_detection/velocity_tracker.h',
+        'gesture_detection/velocity_tracker_state.cc',
+        'gesture_detection/velocity_tracker_state.h',
       ],
       'conditions': [
         ['use_aura!=1 and OS!="android"', {
@@ -292,15 +347,17 @@
         '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/mesa/mesa.gyp:osmesa',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx_test_support',
         'devices/events_devices.gyp:events_devices',
-        'dom4_keycode_converter',
+        'dom_keycode_converter',
         'events',
         'events_base',
         'events_test_support',
         'gesture_detection',
+        'gestures_blink',
         'platform/events_platform.gyp:events_platform',
       ],
       'sources': [
@@ -313,6 +370,7 @@
         'event_rewriter_unittest.cc',
         'event_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
+        'gesture_detection/filtered_gesture_provider_unittest.cc',
         'gesture_detection/gesture_event_data_packet_unittest.cc',
         'gesture_detection/gesture_provider_unittest.cc',
         'gesture_detection/motion_event_buffer_unittest.cc',
@@ -320,13 +378,18 @@
         'gesture_detection/snap_scroll_controller_unittest.cc',
         'gesture_detection/touch_disposition_gesture_filter_unittest.cc',
         'gesture_detection/velocity_tracker_unittest.cc',
+        'gestures/blink/web_gesture_curve_impl_unittest.cc',
         'gestures/fling_curve_unittest.cc',
         'gestures/gesture_provider_aura_unittest.cc',
         'gestures/motion_event_aura_unittest.cc',
-        'keycodes/dom4/keycode_converter_unittest.cc',
+        'keycodes/dom/keycode_converter_unittest.cc',
+        'keycodes/keyboard_code_conversion_unittest.cc',
         'latency_info_unittest.cc',
         'platform/platform_event_source_unittest.cc',
         'x/events_x_unittest.cc',
+      ],
+      'include_dirs': [
+        '../../testing/gmock/include',
       ],
       'conditions': [
         ['use_x11==1', {
@@ -337,12 +400,25 @@
         }],
         ['use_ozone==1', {
           'sources': [
+            'ozone/chromeos/cursor_controller_unittest.cc',
             'ozone/evdev/event_converter_evdev_impl_unittest.cc',
+            'ozone/evdev/event_converter_test_util.cc',
+            'ozone/evdev/event_device_info_unittest.cc',
+            'ozone/evdev/event_device_test_util.cc',
+            'ozone/evdev/input_injector_evdev_unittest.cc',
+            'ozone/evdev/tablet_event_converter_evdev_unittest.cc',
             'ozone/evdev/touch_event_converter_evdev_unittest.cc',
+            'ozone/evdev/touch_noise/touch_noise_finder_unittest.cc',
           ],
           'dependencies': [
             'ozone/events_ozone.gyp:events_ozone',
             'ozone/events_ozone.gyp:events_ozone_evdev',
+            'ozone/events_ozone.gyp:events_ozone_layout',
+          ]
+        }],
+        ['use_xkbcommon==1', {
+          'sources': [
+            'ozone/layout/xkb/xkb_keyboard_layout_engine_unittest.cc',
           ]
         }],
         ['use_aura==0', {
@@ -384,6 +460,30 @@
             'test_suite_name': 'events_unittests',
           },
           'includes': [ '../../build/apk_test.gypi' ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'events_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'events_unittests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            'events_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
+          ],
         },
       ],
     }],

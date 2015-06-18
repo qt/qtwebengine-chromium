@@ -31,13 +31,26 @@ RendererPreferences::RendererPreferences()
       use_custom_colors(true),
       enable_referrers(true),
       enable_do_not_track(false),
+      enable_webrtc_multiple_routes(true),
       default_zoom_level(0),
       report_frame_name_changes(false),
       tap_multiple_targets_strategy(TAP_MULTIPLE_TARGETS_STRATEGY_POPUP),
       disable_client_blocked_error_page(false),
       plugin_fullscreen_allowed(true),
-      use_video_overlay_for_embedded_encrypted_video(false) {
-}
+      use_video_overlay_for_embedded_encrypted_video(false),
+      use_view_overlay_for_all_video(false)
+#if defined(OS_WIN)
+      , caption_font_height(0),
+      small_caption_font_height(0),
+      menu_font_height(0),
+      status_font_height(0),
+      message_font_height(0),
+      vertical_scroll_bar_width_in_dips(0),
+      horizontal_scroll_bar_height_in_dips(0),
+      arrow_bitmap_height_vertical_scroll_bar_in_dips(0),
+      arrow_bitmap_width_horizontal_scroll_bar_in_dips(0)
+#endif
+{}
 
 RendererPreferences::~RendererPreferences() { }
 

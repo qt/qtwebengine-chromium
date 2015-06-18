@@ -31,13 +31,15 @@
 #ifndef HTMLParserThread_h
 #define HTMLParserThread_h
 
+#include "core/CoreExport.h"
 #include "platform/WebThreadSupportingGC.h"
 #include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
-class HTMLParserThread {
+class CORE_EXPORT HTMLParserThread {
 public:
     static void init();
     static void shutdown();
@@ -45,8 +47,8 @@ public:
     // It is an error to call shared() before init() or after shutdown();
     static HTMLParserThread* shared();
 
-    void postTask(const Closure&);
-    blink::WebThread& platformThread();
+    void postTask(PassOwnPtr<Closure>);
+    WebThread& platformThread();
     bool isRunning();
 
 private:

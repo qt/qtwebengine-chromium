@@ -13,12 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ast
 import calendar
 import email.utils
 import httparchive
-import os
-import time
 import unittest
 
 
@@ -77,6 +74,11 @@ class HttpArchiveTest(unittest.TestCase):
     header3 = {'referer': 'www.google.com', 'cookie': 'cookie_monster!',
                'hello': 'world'}
     self.assertEqual(request._TrimHeaders(header3), [('hello', 'world')])
+
+    # Tests that spaces and trailing comma get stripped.
+    header4 = {'accept-encoding': 'gzip, deflate,, '}
+    self.assertEqual(request._TrimHeaders(header4),
+                     [('accept-encoding', 'gzip,deflate')])
 
   def test_matches(self):
     headers = {}
@@ -254,8 +256,8 @@ class HttpArchiveTest(unittest.TestCase):
     precondition_failed_response = httparchive.create_response(412)
 
     # if-match headers
-    # If the request would, without the If-Match header field, 
-    # result in anything other than a 2xx or 412 status, 
+    # If the request would, without the If-Match header field,
+    # result in anything other than a 2xx or 412 status,
     # then the If-Match header MUST be ignored.
 
     request_headers = {
@@ -305,8 +307,8 @@ class HttpArchiveTest(unittest.TestCase):
     precondition_failed_response = httparchive.create_response(412)
 
     # if-none-match headers
-    # If the request would, without the If-None-Match header field, 
-    # result in anything other than a 2xx or 304 status, 
+    # If the request would, without the If-None-Match header field,
+    # result in anything other than a 2xx or 304 status,
     # then the If-None-Match header MUST be ignored.
 
     request_headers = {

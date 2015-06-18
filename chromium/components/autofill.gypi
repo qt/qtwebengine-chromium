@@ -5,31 +5,12 @@
 {
   'targets': [
     {
-      # Private target only used in components/autofill.
-      # GN version: //components/autofill/core/browser:regexes
-      'target_name': 'autofill_regexes',
-      'type': 'none',
-      'actions': [{
-        'action_name': 'autofill_regexes',
-        'inputs': [
-          '<(DEPTH)/build/escape_unicode.py',
-          'autofill/core/browser/autofill_regex_constants.cc.utf8',
-        ],
-        'outputs': [
-          '<(SHARED_INTERMEDIATE_DIR)/autofill_regex_constants.cc',
-        ],
-        'action': ['python', '<(DEPTH)/build/escape_unicode.py',
-                   '-o', '<(SHARED_INTERMEDIATE_DIR)',
-                   'autofill/core/browser/autofill_regex_constants.cc.utf8'],
-      }],
-    },
-
-    {
       # GN version: //components/autofill/core/common
       'target_name': 'autofill_core_common',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../url/url.gyp:url_lib',
@@ -42,8 +23,12 @@
         'autofill/core/common/autofill_constants.h',
         'autofill/core/common/autofill_data_validation.cc',
         'autofill/core/common/autofill_data_validation.h',
+        'autofill/core/common/autofill_l10n_util.cc',
+        'autofill/core/common/autofill_l10n_util.h',
         'autofill/core/common/autofill_pref_names.cc',
         'autofill/core/common/autofill_pref_names.h',
+        'autofill/core/common/autofill_regexes.cc',
+        'autofill/core/common/autofill_regexes.h',
         'autofill/core/common/autofill_switches.cc',
         'autofill/core/common/autofill_switches.h',
         'autofill/core/common/form_data.cc',
@@ -65,6 +50,9 @@
         'autofill/core/common/web_element_descriptor.cc',
         'autofill/core/common/web_element_descriptor.h',
       ],
+
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [4267, ],
     },
 
     {
@@ -79,8 +67,10 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:base_prefs',
         '../google_apis/google_apis.gyp:google_apis',
+        '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../sql/sql.gyp:sql',
+        '../sync/sync.gyp:sync',
         '../third_party/fips181/fips181.gyp:fips181',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
@@ -92,12 +82,15 @@
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../url/url.gyp:url_lib',
         'autofill_core_common',
-        'autofill_regexes',
         'components_resources.gyp:components_resources',
         'components_strings.gyp:components_strings',
+        'infobars_core',
         'keyed_service_core',
         'os_crypt',
         'pref_registry',
+        'rappor',
+        'signin_core_browser',
+        'signin_core_common',
         'webdata_common',
       ],
       'sources': [
@@ -110,6 +103,9 @@
         'autofill/core/browser/autocomplete_history_manager.cc',
         'autofill/core/browser/autocomplete_history_manager.h',
         'autofill/core/browser/autofill-inl.h',
+        'autofill/core/browser/autofill_cc_infobar_delegate.cc',
+        'autofill/core/browser/autofill_cc_infobar_delegate.h',
+        'autofill/core/browser/autofill_client.h',
         'autofill/core/browser/autofill_country.cc',
         'autofill/core/browser/autofill_country.h',
         'autofill/core/browser/autofill_data_model.cc',
@@ -117,6 +113,8 @@
         'autofill/core/browser/autofill_download_manager.cc',
         'autofill/core/browser/autofill_download_manager.h',
         'autofill/core/browser/autofill_driver.h',
+        'autofill/core/browser/autofill_experiments.cc',
+        'autofill/core/browser/autofill_experiments.h',
         'autofill/core/browser/autofill_external_delegate.cc',
         'autofill/core/browser/autofill_external_delegate.h',
         'autofill/core/browser/autofill_field.cc',
@@ -125,30 +123,34 @@
         'autofill/core/browser/autofill_ie_toolbar_import_win.h',
         'autofill/core/browser/autofill_manager.cc',
         'autofill/core/browser/autofill_manager.h',
-        'autofill/core/browser/autofill_client.h',
         'autofill/core/browser/autofill_manager_test_delegate.h',
         'autofill/core/browser/autofill_metrics.cc',
         'autofill/core/browser/autofill_metrics.h',
         'autofill/core/browser/autofill_popup_delegate.h',
         'autofill/core/browser/autofill_profile.cc',
         'autofill/core/browser/autofill_profile.h',
-        'autofill/core/browser/autofill_regex_constants.cc.utf8',
+        'autofill/core/browser/autofill_regex_constants.cc',
         'autofill/core/browser/autofill_regex_constants.h',
-        'autofill/core/browser/autofill_regexes.cc',
-        'autofill/core/browser/autofill_regexes.h',
         'autofill/core/browser/autofill_scanner.cc',
         'autofill/core/browser/autofill_scanner.h',
         'autofill/core/browser/autofill_server_field_info.h',
+        'autofill/core/browser/autofill_sync_constants.cc',
+        'autofill/core/browser/autofill_sync_constants.h',
         'autofill/core/browser/autofill_type.cc',
         'autofill/core/browser/autofill_type.h',
         'autofill/core/browser/autofill_xml_parser.cc',
         'autofill/core/browser/autofill_xml_parser.h',
+        'autofill/core/browser/card_unmask_delegate.cc',
+        'autofill/core/browser/card_unmask_delegate.h',
         'autofill/core/browser/contact_info.cc',
         'autofill/core/browser/contact_info.h',
         'autofill/core/browser/credit_card.cc',
         'autofill/core/browser/credit_card.h',
         'autofill/core/browser/credit_card_field.cc',
         'autofill/core/browser/credit_card_field.h',
+        'autofill/core/browser/detail_input.cc',
+        'autofill/core/browser/detail_input.h',
+        'autofill/core/browser/dialog_section.h',
         'autofill/core/browser/email_field.cc',
         'autofill/core/browser/email_field.h',
         'autofill/core/browser/field_types.h',
@@ -160,6 +162,8 @@
         'autofill/core/browser/form_structure.h',
         'autofill/core/browser/name_field.cc',
         'autofill/core/browser/name_field.h',
+        'autofill/core/browser/options_util.cc',
+        'autofill/core/browser/options_util.h',
         'autofill/core/browser/password_generator.cc',
         'autofill/core/browser/password_generator.h',
         'autofill/core/browser/personal_data_manager.cc',
@@ -173,10 +177,18 @@
         'autofill/core/browser/phone_number_i18n.cc',
         'autofill/core/browser/phone_number_i18n.h',
         'autofill/core/browser/popup_item_ids.h',
+        'autofill/core/browser/server_field_types_util.cc',
+        'autofill/core/browser/server_field_types_util.h',
         'autofill/core/browser/state_names.cc',
         'autofill/core/browser/state_names.h',
+        'autofill/core/browser/suggestion.cc',
+        'autofill/core/browser/suggestion.h',
         'autofill/core/browser/validation.cc',
         'autofill/core/browser/validation.h',
+        'autofill/core/browser/wallet/real_pan_wallet_client.cc',
+        'autofill/core/browser/wallet/real_pan_wallet_client.h',
+        'autofill/core/browser/webdata/autocomplete_syncable_service.cc',
+        'autofill/core/browser/webdata/autocomplete_syncable_service.h',
         'autofill/core/browser/webdata/autofill_change.cc',
         'autofill/core/browser/webdata/autofill_change.h',
         'autofill/core/browser/webdata/autofill_entry.cc',
@@ -185,6 +197,8 @@
         'autofill/core/browser/webdata/autofill_profile_syncable_service.h',
         'autofill/core/browser/webdata/autofill_table.cc',
         'autofill/core/browser/webdata/autofill_table.h',
+        'autofill/core/browser/webdata/autofill_wallet_syncable_service.cc',
+        'autofill/core/browser/webdata/autofill_wallet_syncable_service.h',
         'autofill/core/browser/webdata/autofill_webdata.h',
         'autofill/core/browser/webdata/autofill_webdata_backend.h',
         'autofill/core/browser/webdata/autofill_webdata_backend_impl.cc',
@@ -192,39 +206,6 @@
         'autofill/core/browser/webdata/autofill_webdata_service.cc',
         'autofill/core/browser/webdata/autofill_webdata_service.h',
         'autofill/core/browser/webdata/autofill_webdata_service_observer.h',
-
-        # This file is generated by the autofill_regexes action.
-        '<(SHARED_INTERMEDIATE_DIR)/autofill_regex_constants.cc',
-      ],
-      'variables': {
-        'conditions': [
-          ['android_webview_build == 1', {
-            # Android WebView doesn't support sync.
-            'autofill_enable_sync%': 0,
-          }, {
-            'autofill_enable_sync%': 1,
-          }],
-        ],
-      },
-      'conditions': [
-        ['autofill_enable_sync == 1', {
-          'defines': [
-            'AUTOFILL_ENABLE_SYNC',
-          ],
-          'dependencies': [
-            '../sync/sync.gyp:sync',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              'AUTOFILL_ENABLE_SYNC',
-            ],
-          },
-        }, { # 'autofill_enable_sync == 0'
-          'sources!': [
-            'autofill/core/browser/webdata/autofill_profile_syncable_service.cc',
-            'autofill/core/browser/webdata/autofill_profile_syncable_service.h',
-          ],
-        }],
       ],
 
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -236,16 +217,24 @@
       'target_name': 'autofill_core_test_support',
       'type': 'static_library',
       'dependencies': [
-        'autofill_core_common',
-        'autofill_core_browser',
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_prefs',
+        '../base/base.gyp:test_support_base',
         '../skia/skia.gyp:skia',
         '../testing/gtest.gyp:gtest',
+        'autofill_core_common',
+        'autofill_core_browser',
+        'os_crypt',
+        'pref_registry',
+        'rappor',
+        'signin_core_browser_test_support',
       ],
       'sources': [
         'autofill/core/browser/autofill_test_utils.cc',
         'autofill/core/browser/autofill_test_utils.h',
         'autofill/core/browser/data_driven_test.cc',
         'autofill/core/browser/data_driven_test.h',
+        'autofill/core/browser/suggestion_test_helpers.h',
         'autofill/core/browser/test_autofill_client.cc',
         'autofill/core/browser/test_autofill_client.h',
         'autofill/core/browser/test_autofill_driver.cc',
@@ -272,6 +261,7 @@
             '../third_party/WebKit/public/blink.gyp:blink_minimal',
             '../ui/gfx/gfx.gyp:gfx',
             '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
+            '../url/url.gyp:url_lib',
           ],
           'include_dirs': [
             '..',
@@ -328,6 +318,7 @@
             '../content/content.gyp:content_common',
             '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
+            '../net/net.gyp:net',
             '../skia/skia.gyp:skia',
             '../sql/sql.gyp:sql',
             '../third_party/icu/icu.gyp:icui18n',
@@ -342,7 +333,6 @@
             'autofill_content_risk_proto',
             'autofill_core_browser',
             'autofill_core_common',
-            'autofill_regexes',
             'components_resources.gyp:components_resources',
             'components_strings.gyp:components_strings',
             'os_crypt',
@@ -352,6 +342,8 @@
           'sources': [
             'autofill/content/browser/content_autofill_driver.cc',
             'autofill/content/browser/content_autofill_driver.h',
+            'autofill/content/browser/content_autofill_driver_factory.cc',
+            'autofill/content/browser/content_autofill_driver_factory.h',
             'autofill/content/browser/request_autocomplete_manager.cc',
             'autofill/content/browser/request_autocomplete_manager.h',
             'autofill/content/browser/risk/fingerprint.cc',
@@ -381,15 +373,6 @@
 
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
-
-          'conditions': [
-            [ 'OS == "android"', {
-              'sources!': [
-                'autofill/content/browser/risk/fingerprint.cc',
-                'autofill/content/browser/risk/fingerprint.h',
-              ],
-            }],
-          ],
         },
 
         {
@@ -403,9 +386,14 @@
             '../base/base.gyp:base',
             '../content/content.gyp:content_common',
             '../content/content.gyp:content_renderer',
+            '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
+            '../net/net.gyp:net',
             '../skia/skia.gyp:skia',
+            '../third_party/icu/icu.gyp:icui18n',
+            '../third_party/icu/icu.gyp:icuuc',
             '../third_party/WebKit/public/blink.gyp:blink',
+            '../ui/base/ui_base.gyp:ui_base',
             'autofill_content_common',
             'autofill_core_common',
             'components_strings.gyp:components_strings',
@@ -431,6 +419,52 @@
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
+        },
+      ],
+    }],
+    ['OS == "ios"', {
+      'targets': [
+        {
+          'target_name': 'autofill_ios_browser',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            'autofill_core_browser',
+            'autofill_core_common',
+            'autofill_ios_injected_js',
+            '../ios/provider/ios_provider_web.gyp:ios_provider_web',
+            '../ios/web/ios_web.gyp:ios_web',
+          ],
+          'sources': [
+            'autofill/ios/browser/autofill_driver_ios.h',
+            'autofill/ios/browser/autofill_driver_ios.mm',
+            'autofill/ios/browser/autofill_driver_ios_bridge.h',
+            'autofill/ios/browser/form_suggestion.h',
+            'autofill/ios/browser/form_suggestion.mm',
+            'autofill/ios/browser/js_autofill_manager.h',
+            'autofill/ios/browser/js_autofill_manager.mm',
+            'autofill/ios/browser/js_suggestion_manager.h',
+            'autofill/ios/browser/js_suggestion_manager.mm',
+          ],
+        },
+        {
+          'target_name': 'autofill_ios_injected_js',
+          'type': 'none',
+          'sources': [
+            'autofill/ios/browser/resources/autofill_controller.js',
+            'autofill/ios/browser/resources/suggestion_controller.js',
+          ],
+          'link_settings': {
+            'mac_bundle_resources': [
+              '<(SHARED_INTERMEDIATE_DIR)/autofill_controller.js',
+              '<(SHARED_INTERMEDIATE_DIR)/suggestion_controller.js',
+            ],
+          },
+          'includes': [
+            '../ios/web/js_compile.gypi',
+          ],
         },
       ],
     }],

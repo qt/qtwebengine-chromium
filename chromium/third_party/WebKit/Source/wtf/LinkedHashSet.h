@@ -182,6 +182,7 @@ public:
     ~LinkedHashSet();
 
     static void finalize(void* pointer) { reinterpret_cast<LinkedHashSet*>(pointer)->~LinkedHashSet(); }
+    void finalizeGarbageCollectedObject() { finalize(this); }
 
     void swap(LinkedHashSet&);
 
@@ -245,7 +246,9 @@ public:
     template<typename Collection>
     void removeAll(const Collection& other) { WTF::removeAll(*this, other); }
 
-    void trace(typename Allocator::Visitor* visitor) { m_impl.trace(visitor); }
+    using HasInlinedTraceMethodMarker = int;
+    template<typename VisitorDispatcher>
+    void trace(VisitorDispatcher visitor) { m_impl.trace(visitor); }
 
     int64_t modifications() const { return m_impl.modifications(); }
     void checkModifications(int64_t mods) const { m_impl.checkModifications(mods); }
@@ -295,7 +298,7 @@ struct LinkedHashSetExtractor {
 };
 
 template<typename Value, typename ValueTraitsArg, typename Allocator>
-struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Value, Allocator> > {
+struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Value, Allocator>> {
     typedef LinkedHashSetNode<Value, Allocator> Node;
     typedef ValueTraitsArg ValueTraits;
 
@@ -310,10 +313,6 @@ struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Valu
 
     static void constructDeletedValue(Node& slot, bool) { slot.m_next = reinterpret_cast<Node*>(deletedValue); }
     static bool isDeletedValue(const Node& slot) { return slot.m_next == reinterpret_cast<Node*>(deletedValue); }
-
-    // We always need to call destructors, that's how we get linked and
-    // unlinked from the chain.
-    static const bool needsDestruction = true;
 
     // Whether we need to trace and do weak processing depends on the traits of
     // the type inside the node.
@@ -601,7 +600,7 @@ template<typename Value, typename U, typename V, typename W>
 template<typename HashTranslator, typename T>
 inline bool LinkedHashSet<Value, U, V, W>::contains(const T& value) const
 {
-    return m_impl.template contains<LinkedHashSetTranslatorAdapter<HashTranslator> >(value);
+    return m_impl.template contains<LinkedHashSetTranslatorAdapter<HashTranslator>>(value);
 }
 
 template<typename T, typename U, typename V, typename W>
@@ -709,10 +708,15 @@ template<typename T, typename Allocator>
 inline void swap(LinkedHashSetNode<T, Allocator>& a, LinkedHashSetNode<T, Allocator>& b)
 {
     typedef LinkedHashSetNodeBase Base;
-    Allocator::enterNoAllocationScope();
+    // The key and value cannot be swapped atomically, and it would be
+    // wrong to have a GC when only one was swapped and the other still
+    // contained garbage (eg. from a previous use of the same slot).
+    // Therefore we forbid a GC until both the key and the value are
+    // swapped.
+    Allocator::enterGCForbiddenScope();
     swap(static_cast<Base&>(a), static_cast<Base&>(b));
     swap(a.m_value, b.m_value);
-    Allocator::leaveNoAllocationScope();
+    Allocator::leaveGCForbiddenScope();
 }
 
 // Warning: After and while calling this you have a collection with deleted
@@ -729,7 +733,7 @@ void deleteAllValues(const LinkedHashSet<ValueType, T, U>& set)
 
 #if !ENABLE(OILPAN)
 template<typename T, typename U, typename V>
-struct NeedsTracing<LinkedHashSet<T, U, V> > {
+struct NeedsTracing<LinkedHashSet<T, U, V>> {
     static const bool value = false;
 };
 #endif

@@ -21,37 +21,6 @@
 
 namespace webrtc {
 
-struct RtpStatistics {
-  RtpStatistics()
-      : ssrc(0),
-        fraction_loss(0),
-        cumulative_loss(0),
-        extended_max_sequence_number(0) {}
-  uint32_t ssrc;
-  int fraction_loss;
-  int cumulative_loss;
-  int extended_max_sequence_number;
-};
-
-struct SsrcStats {
-  SsrcStats()
-      : key_frames(0),
-        delta_frames(0),
-        total_bitrate_bps(0),
-        retransmit_bitrate_bps(0),
-        avg_delay_ms(0),
-        max_delay_ms(0) {}
-  uint32_t key_frames;
-  uint32_t delta_frames;
-  // TODO(holmer): Move bitrate_bps out to the webrtc::Call layer.
-  int total_bitrate_bps;
-  int retransmit_bitrate_bps;
-  int avg_delay_ms;
-  int max_delay_ms;
-  StreamDataCounters rtp_stats;
-  RtcpStatistics rtcp_stats;
-};
-
 // Settings for NACK, see RFC 4585 for details.
 struct NackConfig {
   NackConfig() : rtp_history_ms(0) {}
@@ -65,36 +34,39 @@ struct NackConfig {
 // Settings for forward error correction, see RFC 5109 for details. Set the
 // payload types to '-1' to disable.
 struct FecConfig {
-  FecConfig() : ulpfec_payload_type(-1), red_payload_type(-1) {}
+  FecConfig()
+      : ulpfec_payload_type(-1),
+        red_payload_type(-1),
+        red_rtx_payload_type(-1) {}
   std::string ToString() const;
   // Payload type used for ULPFEC packets.
   int ulpfec_payload_type;
 
   // Payload type used for RED packets.
   int red_payload_type;
+
+  // RTX payload type for RED payload.
+  int red_rtx_payload_type;
 };
 
 // RTP header extension to use for the video stream, see RFC 5285.
 struct RtpExtension {
   RtpExtension(const std::string& name, int id) : name(name), id(id) {}
   std::string ToString() const;
-  static bool IsSupported(const std::string& name);
+  static bool IsSupportedForAudio(const std::string& name);
+  static bool IsSupportedForVideo(const std::string& name);
 
   static const char* kTOffset;
   static const char* kAbsSendTime;
+  static const char* kVideoRotation;
+  static const char* kAudioLevel;
   std::string name;
   int id;
 };
 
 struct VideoStream {
-  VideoStream()
-      : width(0),
-        height(0),
-        max_framerate(-1),
-        min_bitrate_bps(-1),
-        target_bitrate_bps(-1),
-        max_bitrate_bps(-1),
-        max_qp(-1) {}
+  VideoStream();
+  ~VideoStream();
   std::string ToString() const;
 
   size_t width;
@@ -121,16 +93,13 @@ struct VideoStream {
 };
 
 struct VideoEncoderConfig {
-  enum ContentType {
+  enum class ContentType {
     kRealtimeVideo,
-    kScreenshare,
+    kScreen,
   };
 
-  VideoEncoderConfig()
-      : content_type(kRealtimeVideo),
-        encoder_specific_settings(NULL),
-        min_transmit_bitrate_bps(0) {}
-
+  VideoEncoderConfig();
+  ~VideoEncoderConfig();
   std::string ToString() const;
 
   std::vector<VideoStream> streams;
@@ -142,6 +111,20 @@ struct VideoEncoderConfig {
   // maintaining a higher bitrate estimate. Padding will however not be sent
   // unless the estimated bandwidth indicates that the link can handle it.
   int min_transmit_bitrate_bps;
+};
+
+// Controls the capacity of the packet buffer in NetEq. The capacity is the
+// maximum number of packets that the buffer can contain. If the limit is
+// exceeded, the buffer will be flushed. The capacity does not affect the actual
+// audio delay in the general case, since this is governed by the target buffer
+// level (calculated from the jitter profile). It is only in the rare case of
+// severe network freezes that a higher capacity will lead to a (transient)
+// increase in audio delay.
+struct NetEqCapacityConfig {
+  NetEqCapacityConfig() : enabled(false), capacity(0) {}
+  explicit NetEqCapacityConfig(int value) : enabled(true), capacity(value) {}
+  bool enabled;
+  int capacity;
 };
 
 }  // namespace webrtc

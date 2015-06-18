@@ -21,6 +21,21 @@ cr.define('login', function() {
     // Whether guest button should be shown when header bar is in normal mode.
     showGuest_: false,
 
+    // Whether new Gaia flow is active.
+    isNewGaiaFlow_: false,
+
+    // Whether the reboot button should be shown the when header bar is in
+    // normal mode.
+    showReboot_: false,
+
+    // Whether the shutdown button should be shown when the header bar is in
+    // normal mode.
+    showShutdown_: true,
+
+    // Whether the create supervised user button should be shown when the header
+    // bar is in normal mode. It will be shown in "More settings" menu.
+    showCreateSupervised_: false,
+
     // Current UI state of the sign-in screen.
     signinUIState_: SIGNIN_UI_STATE.HIDDEN,
 
@@ -29,12 +44,19 @@ cr.define('login', function() {
 
     /** @override */
     decorate: function() {
+      document.addEventListener('click', this.handleClick_.bind(this));
       $('shutdown-header-bar-item').addEventListener('click',
           this.handleShutdownClick_);
       $('shutdown-button').addEventListener('click',
           this.handleShutdownClick_);
+      $('restart-header-bar-item').addEventListener('click',
+          this.handleShutdownClick_);
+      $('restart-button').addEventListener('click',
+          this.handleShutdownClick_);
       $('add-user-button').addEventListener('click',
           this.handleAddUserClick_);
+      $('more-settings-button').addEventListener('click',
+          this.handleMoreSettingsClick_.bind(this));
       $('cancel-add-user-button').addEventListener('click',
           this.handleCancelAddUserClick_);
       $('guest-user-header-bar-item').addEventListener('click',
@@ -48,6 +70,8 @@ cr.define('login', function() {
       $('cancel-consumer-management-enrollment-button').addEventListener(
           'click',
           this.handleCancelConsumerManagementEnrollmentClick_);
+      this.addSupervisedUserMenu.addEventListener('click',
+          this.handleAddSupervisedUserClick_.bind(this));
       if (Oobe.getInstance().displayType == DISPLAY_TYPE.LOGIN ||
           Oobe.getInstance().displayType == DISPLAY_TYPE.OOBE) {
         if (Oobe.getInstance().newKioskUI)
@@ -82,6 +106,32 @@ cr.define('login', function() {
           button.disabled = value;
     },
 
+    get getMoreSettingsMenu() {
+      return $('more-settings-header-bar-item');
+    },
+
+    get addSupervisedUserMenu() {
+      return this.querySelector('.add-supervised-user-menu');
+    },
+
+    /**
+     * Whether action box button is in active state.
+     * @type {boolean}
+     */
+    get isMoreSettingsActive() {
+      return this.getMoreSettingsMenu.classList.contains('active');
+    },
+    set isMoreSettingsActive(active) {
+      if (active == this.isMoreSettingsActive)
+        return;
+      if (active) {
+        this.getMoreSettingsMenu.classList.add('active');
+      } else {
+        this.getMoreSettingsMenu.classList.remove('active');
+      }
+    },
+
+
     /**
      * Add user button click handler.
      *
@@ -93,6 +143,21 @@ cr.define('login', function() {
       // handler of document object will set wallpaper to user's wallpaper when
       // there is only one existing user. See http://crbug.com/166477
       e.stopPropagation();
+    },
+
+    handleMoreSettingsClick_: function(e) {
+      this.isMoreSettingsActive = !this.isMoreSettingsActive;
+      this.addSupervisedUserMenu.focus();
+      e.stopPropagation();
+    },
+
+    handleClick_: function(e) {
+      this.isMoreSettingsActive = false;
+    },
+
+    handleAddSupervisedUserClick_: function(e) {
+      chrome.send('showSupervisedUserCreationScreen');
+      e.preventDefault();
     },
 
     /**
@@ -176,6 +241,36 @@ cr.define('login', function() {
       this.updateUI_();
     },
 
+    set newGaiaFlow(value) {
+      this.isNewGaiaFlow_ = value;
+      this.updateUI_();
+    },
+
+    set showCreateSupervisedButton(value) {
+      this.showCreateSupervised_ = value;
+      this.updateUI_();
+    },
+
+    /**
+     * If true the "Restart" button is shown.
+     *
+     * @type {boolean}
+     */
+    set showRebootButton(value) {
+      this.showReboot_ = value;
+      this.updateUI_();
+    },
+
+    /**
+     * If true the "Shutdown" button is shown.
+     *
+     * @type {boolean}
+     */
+    set showShutdownButton(value) {
+      this.showShutdown_ = value;
+      this.updateUI_();
+    },
+
     /**
      * Current header bar UI / sign in state.
      *
@@ -228,23 +323,48 @@ cr.define('login', function() {
           (this.signinUIState_ == SIGNIN_UI_STATE.SAML_PASSWORD_CONFIRM);
       var isEnrollingConsumerManagement = (this.signinUIState_ ==
           SIGNIN_UI_STATE.CONSUMER_MANAGEMENT_ENROLLMENT);
+      var isPasswordChangedUI =
+          (this.signinUIState_ == SIGNIN_UI_STATE.PASSWORD_CHANGED);
       var isMultiProfilesUI =
           (Oobe.getInstance().displayType == DISPLAY_TYPE.USER_ADDING);
       var isLockScreen =
           (Oobe.getInstance().displayType == DISPLAY_TYPE.LOCK);
+      var isNewGaiaScreenWithBackButton =
+           gaiaIsActive &&
+           this.isNewGaiaFlow_ &&
+           !($('back-button-item').hidden);
+      var supervisedUserCreationDialogIsActiveAndNotIntro =
+          supervisedUserCreationDialogIsActive &&
+          $('supervised-user-creation').currentPage_ != 'intro';
 
       $('add-user-button').hidden =
-          !accountPickerIsActive || isMultiProfilesUI || isLockScreen;
-      $('cancel-add-user-button').hidden = accountPickerIsActive ||
+          (!this.isNewGaiaFlow_ && !accountPickerIsActive) ||
+          (this.isNewGaiaFlow_ && gaiaIsActive) ||
+          isMultiProfilesUI ||
+          isLockScreen ||
+          supervisedUserCreationDialogIsActiveAndNotIntro;
+      $('more-settings-header-bar-item').hidden =
+          !this.showCreateSupervised_ ||
+          isNewGaiaScreenWithBackButton ||
+          supervisedUserCreationDialogIsActive;
+      $('cancel-add-user-button').hidden =
+          ((gaiaIsActive || isPasswordChangedUI || isSamlPasswordConfirm) &&
+              this.isNewGaiaFlow_) ||
+          accountPickerIsActive ||
           !this.allowCancel_ ||
           wrongHWIDWarningIsActive ||
-          isMultiProfilesUI;
-      $('guest-user-header-bar-item').hidden = gaiaIsActive ||
-          supervisedUserCreationDialogIsActive ||
+          isMultiProfilesUI ||
+          supervisedUserCreationDialogIsActive;
+      $('guest-user-header-bar-item').hidden =
+          (gaiaIsActive && !this.isNewGaiaFlow_) ||
+          supervisedUserCreationDialogIsActiveAndNotIntro ||
           !this.showGuest_ ||
           wrongHWIDWarningIsActive ||
           isSamlPasswordConfirm ||
-          isMultiProfilesUI;
+          isMultiProfilesUI ||
+          isNewGaiaScreenWithBackButton;
+      $('restart-header-bar-item').hidden = !this.showReboot_;
+      $('shutdown-header-bar-item').hidden = !this.showShutdown_;
       $('sign-out-user-item').hidden = !isLockScreen;
 
       $('add-user-header-bar-item').hidden =
@@ -282,11 +402,13 @@ cr.define('login', function() {
     },
 
     /**
-     * Animates Header bar to slowly appear on the screen.
+     * Animates Header bar to appear on the screen.
      *
+     * @param {boolean} fast Whether the animation should complete quickly or
+     *     slowly.
      * @param {function()} callback will be called once animation is finished.
      */
-    animateIn: function(callback) {
+    animateIn: function(fast, callback) {
       if (callback) {
         var launcher = this;
         launcher.addEventListener(
@@ -298,7 +420,7 @@ cr.define('login', function() {
         ensureTransitionEndEvent(launcher, 2250);
       }
 
-      if (Oobe.getInstance().displayType == DISPLAY_TYPE.OOBE) {
+      if (fast) {
         this.classList.remove('login-header-bar-animate-slow');
         this.classList.add('login-header-bar-animate-fast');
       } else {
@@ -320,8 +442,8 @@ cr.define('login', function() {
   /**
    * Convenience wrapper of animateIn.
    */
-  HeaderBar.animateIn = function(callback) {
-    $('login-header-bar').animateIn(callback);
+  HeaderBar.animateIn = function(fast, callback) {
+    $('login-header-bar').animateIn(fast, callback);
   };
 
   return {

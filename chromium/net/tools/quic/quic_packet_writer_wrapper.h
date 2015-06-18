@@ -14,8 +14,8 @@ namespace tools {
 
 // Wraps a writer object to allow dynamically extending functionality. Use
 // cases: replace writer while dispatcher and connections hold on to the
-// wrapper; mix in monitoring in internal server; mix in mocks in unit tests.
-class QuicPacketWriterWrapper : public net::QuicPacketWriter {
+// wrapper; mix in monitoring; mix in mocks in unit tests.
+class QuicPacketWriterWrapper : public QuicPacketWriter {
  public:
   QuicPacketWriterWrapper();
   explicit QuicPacketWriterWrapper(QuicPacketWriter* writer);
@@ -33,9 +33,6 @@ class QuicPacketWriterWrapper : public net::QuicPacketWriter {
 
   // Takes ownership of |writer|.
   void set_writer(QuicPacketWriter* writer);
-
-  // Releases ownership of |writer_|.
-  QuicPacketWriter* release_writer();
 
  private:
   scoped_ptr<QuicPacketWriter> writer_;

@@ -18,7 +18,7 @@ static uint16_t gData[] = { 0xFFFF, 0xCCCF, 0xCCCF, 0xFFFF };
 class ColorTypeXfermodeGM : public GM {
     SkBitmap    fBG;
 
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         fBG.installPixels(SkImageInfo::Make(2, 2, kARGB_4444_SkColorType,
                                             kOpaque_SkAlphaType), gData, 4);
     }
@@ -54,15 +54,15 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() {
+    virtual SkString onShortName() override {
         return SkString("colortype_xfermodes");
     }
 
-    virtual SkISize onISize() {
+    virtual SkISize onISize() override {
         return SkISize::Make(400, 640);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    virtual void onDraw(SkCanvas* canvas) override {
         canvas->translate(SkIntToScalar(10), SkIntToScalar(20));
 
         const struct {
@@ -154,10 +154,6 @@ protected:
             }
         }
         s->unref();
-    }
-
-    virtual uint32_t onGetFlags() const {
-        return kSkipPipe_Flag | kSkipPicture_Flag;
     }
 
 private:

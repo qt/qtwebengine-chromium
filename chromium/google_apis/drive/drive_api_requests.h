@@ -6,9 +6,11 @@
 #define GOOGLE_APIS_DRIVE_DRIVE_API_REQUESTS_H_
 
 #include <string>
+#include <vector>
 
 #include "base/callback_forward.h"
 #include "base/location.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
@@ -20,23 +22,64 @@
 
 namespace google_apis {
 
-// Callback used for requests that the server returns FileResource data
-// formatted into JSON value.
-typedef base::Callback<void(GDataErrorCode error,
-                            scoped_ptr<FileResource> entry)>
-    FileResourceCallback;
-
 // Callback used for requests that the server returns FileList data
 // formatted into JSON value.
-typedef base::Callback<void(GDataErrorCode error,
+typedef base::Callback<void(DriveApiErrorCode error,
                             scoped_ptr<FileList> entry)> FileListCallback;
 
 // Callback used for requests that the server returns ChangeList data
 // formatted into JSON value.
-typedef base::Callback<void(GDataErrorCode error,
+typedef base::Callback<void(DriveApiErrorCode error,
                             scoped_ptr<ChangeList> entry)> ChangeListCallback;
 
 namespace drive {
+
+// Represents a property for a file or a directory.
+// https://developers.google.com/drive/v2/reference/properties
+class Property {
+ public:
+  Property();
+  ~Property();
+
+  // Visibility of the property. Either limited to the same client, or to any.
+  enum Visibility { VISIBILITY_PRIVATE, VISIBILITY_PUBLIC };
+
+  // Whether the property is public or private.
+  Visibility visibility() const { return visibility_; }
+
+  // Name of the property.
+  const std::string& key() const { return key_; }
+
+  // Value of the property.
+  const std::string& value() const { return value_; }
+
+  void set_visibility(Visibility visibility) { visibility_ = visibility; }
+  void set_key(const std::string& key) { key_ = key; }
+  void set_value(const std::string& value) { value_ = value; }
+
+ private:
+  Visibility visibility_;
+  std::string key_;
+  std::string value_;
+};
+
+// List of properties for a single file or a directory.
+typedef std::vector<Property> Properties;
+
+// Child response embedded in multipart parent response.
+struct MultipartHttpResponse {
+  MultipartHttpResponse();
+  ~MultipartHttpResponse();
+  DriveApiErrorCode code;
+  std::string body;
+};
+
+// Splits multipart |response| into |parts|. Each part must be HTTP sub-response
+// of drive batch request. |content_type| is a value of Content-Type response
+// header. Returns true on succcess.
+bool ParseMultipartResponse(const std::string& content_type,
+                            const std::string& response,
+                            std::vector<MultipartHttpResponse>* parts);
 
 //============================ DriveApiPartialFieldRequest ====================
 
@@ -74,7 +117,7 @@ class DriveApiPartialFieldRequest : public UrlFetchRequestBase {
 template<class DataType>
 class DriveApiDataRequest : public DriveApiPartialFieldRequest {
  public:
-  typedef base::Callback<void(GDataErrorCode error,
+  typedef base::Callback<void(DriveApiErrorCode error,
                               scoped_ptr<DataType> data)> Callback;
 
   // |callback| is called when the request finishes either by success or by
@@ -85,12 +128,12 @@ class DriveApiDataRequest : public DriveApiPartialFieldRequest {
         weak_ptr_factory_(this) {
     DCHECK(!callback_.is_null());
   }
-  virtual ~DriveApiDataRequest() {}
+  ~DriveApiDataRequest() override {}
 
  protected:
   // UrlFetchRequestBase overrides.
-  virtual void ProcessURLFetchResults(const net::URLFetcher* source) override {
-    GDataErrorCode error = GetErrorCode();
+  void ProcessURLFetchResults(const net::URLFetcher* source) override {
+    DriveApiErrorCode error = GetErrorCode();
     switch (error) {
       case HTTP_SUCCESS:
       case HTTP_CREATED:
@@ -108,7 +151,7 @@ class DriveApiDataRequest : public DriveApiPartialFieldRequest {
     }
   }
 
-  virtual void RunCallbackOnPrematureFailure(GDataErrorCode error) override {
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode error) override {
     callback_.Run(error, scoped_ptr<DataType>());
   }
 
@@ -120,9 +163,9 @@ class DriveApiDataRequest : public DriveApiPartialFieldRequest {
   }
 
   // Receives the parsed result and invokes the callback.
-  void OnDataParsed(GDataErrorCode error, scoped_ptr<DataType> value) {
+  void OnDataParsed(DriveApiErrorCode error, scoped_ptr<DataType> value) {
     if (!value)
-      error = GDATA_PARSE_ERROR;
+      error = DRIVE_PARSE_ERROR;
     callback_.Run(error, value.Pass());
     OnProcessURLFetchResultsComplete();
   }
@@ -145,6 +188,7 @@ class FilesGetRequest : public DriveApiDataRequest<FileResource> {
  public:
   FilesGetRequest(RequestSender* sender,
                   const DriveApiUrlGenerator& url_generator,
+                  bool use_internal_endpoint,
                   const FileResourceCallback& callback);
   ~FilesGetRequest() override;
 
@@ -152,13 +196,21 @@ class FilesGetRequest : public DriveApiDataRequest<FileResource> {
   const std::string& file_id() const { return file_id_; }
   void set_file_id(const std::string& file_id) { file_id_ = file_id; }
 
+  // Optional parameter.
+  const GURL& embed_origin() const { return embed_origin_; }
+  void set_embed_origin(const GURL& embed_origin) {
+    embed_origin_ = embed_origin;
+  }
+
  protected:
   // Overridden from DriveApiDataRequest.
   GURL GetURLInternal() const override;
 
  private:
   const DriveApiUrlGenerator url_generator_;
+  const bool use_internal_endpoint_;
   std::string file_id_;
+  GURL embed_origin_;
 
   DISALLOW_COPY_AND_ASSIGN(FilesGetRequest);
 };
@@ -233,6 +285,11 @@ class FilesInsertRequest : public DriveApiDataRequest<FileResource> {
   const std::string& title() const { return title_; }
   void set_title(const std::string& title) { title_ = title; }
 
+  const Properties& properties() const { return properties_; }
+  void set_properties(const Properties& properties) {
+    properties_ = properties;
+  }
+
  protected:
   // Overridden from GetDataRequest.
   net::URLFetcher::RequestType GetRequestType() const override;
@@ -250,6 +307,7 @@ class FilesInsertRequest : public DriveApiDataRequest<FileResource> {
   base::Time modified_date_;
   std::vector<std::string> parents_;
   std::string title_;
+  Properties properties_;
 
   DISALLOW_COPY_AND_ASSIGN(FilesInsertRequest);
 };
@@ -303,6 +361,11 @@ class FilesPatchRequest : public DriveApiDataRequest<FileResource> {
   const std::vector<std::string>& parents() const { return parents_; }
   void add_parent(const std::string& parent) { parents_.push_back(parent); }
 
+  const Properties& properties() const { return properties_; }
+  void set_properties(const Properties& properties) {
+    properties_ = properties;
+  }
+
  protected:
   // Overridden from URLFetchRequestBase.
   net::URLFetcher::RequestType GetRequestType() const override;
@@ -324,6 +387,7 @@ class FilesPatchRequest : public DriveApiDataRequest<FileResource> {
   base::Time modified_date_;
   base::Time last_viewed_by_me_date_;
   std::vector<std::string> parents_;
+  Properties properties_;
 
   DISALLOW_COPY_AND_ASSIGN(FilesPatchRequest);
 };
@@ -617,7 +681,7 @@ class AppsListRequest : public DriveApiDataRequest<AppList> {
 
  private:
   const DriveApiUrlGenerator url_generator_;
-  bool use_internal_endpoint_;
+  const bool use_internal_endpoint_;
 
   DISALLOW_COPY_AND_ASSIGN(AppsListRequest);
 };
@@ -753,6 +817,10 @@ class InitiateUploadNewFileRequest : public InitiateUploadRequestBase {
   void set_last_viewed_by_me_date(const base::Time& last_viewed_by_me_date) {
     last_viewed_by_me_date_ = last_viewed_by_me_date;
   }
+  const Properties& properties() const { return properties_; }
+  void set_properties(const Properties& properties) {
+    properties_ = properties;
+  }
 
  protected:
   // UrlFetchRequestBase overrides.
@@ -768,6 +836,7 @@ class InitiateUploadNewFileRequest : public InitiateUploadRequestBase {
 
   base::Time modified_date_;
   base::Time last_viewed_by_me_date_;
+  Properties properties_;
 
   DISALLOW_COPY_AND_ASSIGN(InitiateUploadNewFileRequest);
 };
@@ -809,6 +878,10 @@ class InitiateUploadExistingFileRequest : public InitiateUploadRequestBase {
   void set_last_viewed_by_me_date(const base::Time& last_viewed_by_me_date) {
     last_viewed_by_me_date_ = last_viewed_by_me_date;
   }
+  const Properties& properties() const { return properties_; }
+  void set_properties(const Properties& properties) {
+    properties_ = properties;
+  }
 
  protected:
   // UrlFetchRequestBase overrides.
@@ -827,6 +900,7 @@ class InitiateUploadExistingFileRequest : public InitiateUploadRequestBase {
   std::string title_;
   base::Time modified_date_;
   base::Time last_viewed_by_me_date_;
+  Properties properties_;
 
   DISALLOW_COPY_AND_ASSIGN(InitiateUploadExistingFileRequest);
 };
@@ -894,6 +968,82 @@ class GetUploadStatusRequest : public GetUploadStatusRequestBase {
   DISALLOW_COPY_AND_ASSIGN(GetUploadStatusRequest);
 };
 
+//======================= MultipartUploadNewFileDelegate =======================
+
+// This class performs the request for initiating the upload of a new file.
+class MultipartUploadNewFileDelegate : public MultipartUploadRequestBase {
+ public:
+  // |parent_resource_id| should be the resource id of the parent directory.
+  // |title| should be set.
+  // See also the comments of MultipartUploadRequestBase for more details
+  // about the other parameters.
+  MultipartUploadNewFileDelegate(RequestSender* sender,
+                                 const std::string& title,
+                                 const std::string& parent_resource_id,
+                                 const std::string& content_type,
+                                 int64 content_length,
+                                 const base::Time& modified_date,
+                                 const base::Time& last_viewed_by_me_date,
+                                 const base::FilePath& local_file_path,
+                                 const Properties& properties,
+                                 const DriveApiUrlGenerator& url_generator,
+                                 const FileResourceCallback& callback,
+                                 const ProgressCallback& progress_callback);
+  ~MultipartUploadNewFileDelegate() override;
+
+ protected:
+  // UrlFetchRequestBase overrides.
+  GURL GetURL() const override;
+  net::URLFetcher::RequestType GetRequestType() const override;
+
+ private:
+  const bool has_modified_date_;
+  const DriveApiUrlGenerator url_generator_;
+
+  DISALLOW_COPY_AND_ASSIGN(MultipartUploadNewFileDelegate);
+};
+
+//====================== MultipartUploadExistingFileDelegate ===================
+
+// This class performs the request for initiating the upload of a new file.
+class MultipartUploadExistingFileDelegate : public MultipartUploadRequestBase {
+ public:
+  // |parent_resource_id| should be the resource id of the parent directory.
+  // |title| should be set.
+  // See also the comments of MultipartUploadRequestBase for more details
+  // about the other parameters.
+  MultipartUploadExistingFileDelegate(
+      RequestSender* sender,
+      const std::string& title,
+      const std::string& resource_id,
+      const std::string& parent_resource_id,
+      const std::string& content_type,
+      int64 content_length,
+      const base::Time& modified_date,
+      const base::Time& last_viewed_by_me_date,
+      const base::FilePath& local_file_path,
+      const std::string& etag,
+      const Properties& properties,
+      const DriveApiUrlGenerator& url_generator,
+      const FileResourceCallback& callback,
+      const ProgressCallback& progress_callback);
+  ~MultipartUploadExistingFileDelegate() override;
+
+ protected:
+  // UrlFetchRequestBase overrides.
+  std::vector<std::string> GetExtraRequestHeaders() const override;
+  GURL GetURL() const override;
+  net::URLFetcher::RequestType GetRequestType() const override;
+
+ private:
+  const std::string resource_id_;
+  const std::string etag_;
+  const bool has_modified_date_;
+  const DriveApiUrlGenerator url_generator_;
+
+  DISALLOW_COPY_AND_ASSIGN(MultipartUploadExistingFileDelegate);
+};
+
 //========================== DownloadFileRequest ==========================
 
 // This class performs the request for downloading of a specified file.
@@ -958,6 +1108,133 @@ class PermissionsInsertRequest : public EntryActionRequest {
   std::string value_;
 
   DISALLOW_COPY_AND_ASSIGN(PermissionsInsertRequest);
+};
+
+//======================= SingleBatchableDelegateRequest =======================
+
+// Request that is operated by single BatchableDelegate.
+class SingleBatchableDelegateRequest : public UrlFetchRequestBase {
+ public:
+  // The instance takes ownership of |delegate|.
+  SingleBatchableDelegateRequest(RequestSender* sender,
+                                 BatchableDelegate* delegate);
+  ~SingleBatchableDelegateRequest() override;
+
+ private:
+  GURL GetURL() const override;
+  net::URLFetcher::RequestType GetRequestType() const override;
+  std::vector<std::string> GetExtraRequestHeaders() const override;
+  void Prepare(const PrepareCallback& callback) override;
+  bool GetContentData(std::string* upload_content_type,
+                      std::string* upload_content) override;
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode code) override;
+  void ProcessURLFetchResults(const net::URLFetcher* source) override;
+  void OnURLFetchUploadProgress(const net::URLFetcher* source,
+                                int64 current,
+                                int64 total) override;
+  scoped_ptr<BatchableDelegate> delegate_;
+
+  // Note: This should remain the last member so it'll be destroyed and
+  // invalidate its weak pointers before any other members are destroyed.
+  base::WeakPtrFactory<SingleBatchableDelegateRequest> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(SingleBatchableDelegateRequest);
+};
+
+//========================== BatchUploadRequest ==========================
+
+class BatchUploadChildEntry {
+ public:
+  explicit BatchUploadChildEntry(BatchableDelegate* request);
+  ~BatchUploadChildEntry();
+  scoped_ptr<BatchableDelegate> request;
+  bool prepared;
+  int64 data_offset;
+  int64 data_size;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BatchUploadChildEntry);
+};
+
+class BatchUploadRequest : public UrlFetchRequestBase {
+ public:
+  BatchUploadRequest(RequestSender* sender,
+                     const DriveApiUrlGenerator& url_generator);
+  ~BatchUploadRequest() override;
+
+  // Adds request to the batch request. The instance takes ownership of
+  // |request|.
+  void AddRequest(BatchableDelegate* request);
+
+  // Completes building batch upload request, and starts to send the request to
+  // server. Must add at least one request before calling |Commit|.
+  void Commit();
+
+  // Obtains weak pointer of this.
+  base::WeakPtr<BatchUploadRequest> GetWeakPtrAsBatchUploadRequest();
+
+  // Set boundary. Only tests can use this method.
+  void SetBoundaryForTesting(const std::string& boundary);
+
+  // Obtains reference to RequestSender that owns the request.
+  RequestSender* sender() const { return sender_; }
+
+  // Obtains URLGenerator.
+  const DriveApiUrlGenerator& url_generator() const { return url_generator_; }
+
+  // UrlFetchRequestBase overrides.
+  void Prepare(const PrepareCallback& callback) override;
+  void Cancel() override;
+  GURL GetURL() const override;
+  net::URLFetcher::RequestType GetRequestType() const override;
+  std::vector<std::string> GetExtraRequestHeaders() const override;
+  bool GetContentData(std::string* upload_content_type,
+                      std::string* upload_content) override;
+  void ProcessURLFetchResults(const net::URLFetcher* source) override;
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode code) override;
+
+  // content::UrlFetcherDelegate overrides.
+  void OnURLFetchUploadProgress(const net::URLFetcher* source,
+                                int64 current,
+                                int64 total) override;
+
+ private:
+  typedef void* RequestID;
+  // Obtains corresponding child entry of |request_id|. Returns NULL if the
+  // entry is not found.
+  ScopedVector<BatchUploadChildEntry>::iterator GetChildEntry(
+      RequestID request_id);
+
+  // Called after child requests' |Prepare| method.
+  void OnChildRequestPrepared(RequestID request_id, DriveApiErrorCode result);
+
+  // Complete |Prepare| if possible.
+  void MayCompletePrepare();
+
+  // Process result for each child.
+  void ProcessURLFetchResultsForChild(RequestID id, const std::string& body);
+
+  RequestSender* const sender_;
+  const DriveApiUrlGenerator url_generator_;
+  ScopedVector<BatchUploadChildEntry> child_requests_;
+
+  PrepareCallback prepare_callback_;
+  bool committed_;
+
+  // Boundary of multipart body.
+  std::string boundary_;
+
+  // Multipart of child requests.
+  ContentTypeAndData upload_content_;
+
+  // Last reported progress value.
+  int64 last_progress_value_;
+
+  // Note: This should remain the last member so it'll be destroyed and
+  // invalidate its weak pointers before any other members are destroyed.
+  base::WeakPtrFactory<BatchUploadRequest> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(BatchUploadRequest);
 };
 
 }  // namespace drive

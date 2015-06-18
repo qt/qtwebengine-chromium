@@ -34,8 +34,8 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
+#include "core/dom/Position.h"
 #include "core/editing/WritingDirection.h"
-#include "platform/fonts/FixedPitchFontType.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
@@ -54,9 +54,8 @@ class Element;
 class HTMLElement;
 class MutableStylePropertySet;
 class Node;
-class Position;
 class QualifiedName;
-class RenderStyle;
+class ComputedStyle;
 class StylePropertySet;
 class VisibleSelection;
 
@@ -142,7 +141,7 @@ public:
     static PassRefPtrWillBeRawPtr<EditingStyle> styleAtSelectionStart(const VisibleSelection&, bool shouldUseBackgroundColorInEffect = false);
     static WritingDirection textDirectionForSelection(const VisibleSelection&, EditingStyle* typingStyle, bool& hasNestedOrMultipleEmbeddings);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     EditingStyle();
@@ -151,9 +150,9 @@ private:
     explicit EditingStyle(const StylePropertySet*);
     EditingStyle(CSSPropertyID, const String& value);
     void init(Node*, PropertiesToInclude);
-    void removeTextFillAndStrokeColorsIfNeeded(RenderStyle*);
+    void removeTextFillAndStrokeColorsIfNeeded(const ComputedStyle*);
     void setProperty(CSSPropertyID, const String& value, bool important = false);
-    void replaceFontSizeByKeywordIfPossible(RenderStyle*, CSSComputedStyleDeclaration*);
+    void replaceFontSizeByKeywordIfPossible(const ComputedStyle*, CSSComputedStyleDeclaration*);
     void extractFontSizeDelta();
     TriState triStateOfStyle(CSSStyleDeclaration* styleToCompare, ShouldIgnoreTextOnlyProperties) const;
     bool conflictsWithInlineStyleOfElement(HTMLElement*, EditingStyle* extractedStyle, Vector<CSSPropertyID>* conflictingProperties) const;
@@ -161,7 +160,7 @@ private:
     void mergeStyle(const StylePropertySet*, CSSPropertyOverrideMode);
 
     RefPtrWillBeMember<MutableStylePropertySet> m_mutableStyle;
-    FixedPitchFontType m_fixedPitchFontType;
+    bool m_isMonospaceFont;
     float m_fontSizeDelta;
 
     friend class HTMLElementEquivalent;
@@ -214,7 +213,7 @@ public:
         return !(*this == other);
     }
 private:
-    void extractTextStyles(Document*, MutableStylePropertySet*, FixedPitchFontType);
+    void extractTextStyles(Document*, MutableStylePropertySet*, bool isMonospaceFont);
 
     String m_cssStyle;
     bool m_applyBold;

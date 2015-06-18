@@ -9,15 +9,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
-#include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_stream_factory_impl.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_service.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/client_socket_pool_manager.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_session_key.h"
 #include "net/ssl/ssl_config_service.h"
@@ -55,12 +56,9 @@ class HttpStreamFactoryImpl::Job {
   int RestartTunnelWithProxyAuth(const AuthCredentials& credentials);
   LoadState GetLoadState() const;
 
-  // Marks this Job as the "alternate" job, from Alternate-Protocol. Tracks the
-  // original url so we can mark the Alternate-Protocol as broken if
-  // we fail to connect.  |alternate| specifies the alternate protocol to use
-  // and alternate port to connect to.
-  void MarkAsAlternate(const GURL& original_url,
-                       AlternateProtocolInfo alternate);
+  // Marks this Job as the "alternate" job, from Alternate-Protocol or Alt-Svc
+  // using the specified alternate service.
+  void MarkAsAlternate(AlternativeService alternative_service);
 
   // Tells |this| to wait for |job| to resume it.
   void WaitFor(Job* job);
@@ -93,7 +91,7 @@ class HttpStreamFactoryImpl::Job {
 
   // Called to indicate that this job succeeded, and some other jobs
   // will be orphaned.
-  void ReportJobSuccededForRequest();
+  void ReportJobSucceededForRequest();
 
   // Marks that the other |job| has completed.
   void MarkOtherJobComplete(const Job& job);
@@ -140,6 +138,50 @@ class HttpStreamFactoryImpl::Job {
     STATUS_FAILED,
     STATUS_BROKEN,
     STATUS_SUCCEEDED
+  };
+
+  // Wrapper class for SpdySessionPool methods to enforce certificate
+  // requirements for SpdySessions.
+  class ValidSpdySessionPool {
+   public:
+    ValidSpdySessionPool(SpdySessionPool* spdy_session_pool,
+                         GURL& origin_url,
+                         bool is_spdy_alternate);
+
+    // Returns OK if a SpdySession was not found (in which case |spdy_session|
+    // is set to nullptr), or if one was found (in which case |spdy_session| is
+    // set to it) and it has an associated SSL certificate with is valid for
+    // |origin_url_|, or if this requirement does not apply because the Job is
+    // not a SPDY alternate job.  Returns the appropriate error code otherwise,
+    // in which case |spdy_session| should not be used.
+    int FindAvailableSession(const SpdySessionKey& key,
+                             const BoundNetLog& net_log,
+                             base::WeakPtr<SpdySession>* spdy_session);
+
+    // Creates a SpdySession and sets |spdy_session| to point to it.  Returns OK
+    // if the associated SSL certificate is valid for |origin_url_|, or if this
+    // requirement does not apply because the Job is not a SPDY alternate job.
+    // Returns the appropriate error code otherwise, in which case
+    // |spdy_session| should not be used.
+    int CreateAvailableSessionFromSocket(
+        const SpdySessionKey& key,
+        scoped_ptr<ClientSocketHandle> connection,
+        const BoundNetLog& net_log,
+        int certificate_error_code,
+        bool is_secure,
+        base::WeakPtr<SpdySession>* spdy_session);
+
+   private:
+    // Returns OK if |spdy_session| has an associated SSL certificate with is
+    // valid for |origin_url_|, or if this requirement does not apply because
+    // the Job is not a SPDY alternate job, or if |spdy_session| is null.
+    // Returns appropriate error code otherwise.
+    int CheckAlternativeServiceValidityForOrigin(
+        base::WeakPtr<SpdySession> spdy_session);
+
+    SpdySessionPool* const spdy_session_pool_;
+    const GURL origin_url_;
+    const bool is_spdy_alternate_;
   };
 
   void OnStreamReadyCallback();
@@ -189,9 +231,16 @@ class HttpStreamFactoryImpl::Job {
 
   bool IsHttpsProxyAndHttpUrl() const;
 
-  // Sets several fields of ssl_config for the given origin_server based on the
-  // proxy info and other factors.
-  void InitSSLConfig(const HostPortPair& origin_server,
+  // Returns true iff this Job is an alternate, that is, iff MarkAsAlternate has
+  // been called.
+  bool IsAlternate() const;
+
+  // Returns true if this Job is a SPDY alternate job.
+  bool IsSpdyAlternate() const;
+
+  // Sets several fields of |ssl_config| for |server| based on the proxy info
+  // and other factors.
+  void InitSSLConfig(const HostPortPair& server,
                      SSLConfig* ssl_config,
                      bool is_proxy) const;
 
@@ -224,16 +273,14 @@ class HttpStreamFactoryImpl::Job {
   // Moves this stream request into SPDY mode.
   void SwitchToSpdyMode();
 
-  // Should we force SPDY to run over SSL for this stream request.
-  bool ShouldForceSpdySSL() const;
-
-  // Should we force SPDY to run without SSL for this stream request.
-  bool ShouldForceSpdyWithoutSSL() const;
-
   // Should we force QUIC for this stream request.
   bool ShouldForceQuic() const;
 
-  void MaybeMarkAlternateProtocolBroken();
+  void MaybeMarkAlternativeServiceBroken();
+
+  ClientSocketPoolManager::SocketGroupType GetSocketGroup() const;
+
+  void MaybeCopyConnectionAttemptsFromSocketOrHandle();
 
   // Record histograms of latency until Connect() completes.
   static void LogHttpConnectedMetrics(const ClientSocketHandle& handle);
@@ -264,16 +311,19 @@ class HttpStreamFactoryImpl::Job {
   ProxyService::PacRequest* pac_request_;
   SSLInfo ssl_info_;
 
-  // The origin server we're trying to reach.
-  HostPortPair origin_;
+  // The server we are trying to reach, could be that of the origin or of the
+  // alternative service.
+  HostPortPair server_;
 
   // The origin url we're trying to reach. This url may be different from the
   // original request when host mapping rules are set-up.
   GURL origin_url_;
 
-  // If this is a Job for an "Alternate-Protocol", then this will be non-NULL
-  // and will specify the original URL.
-  scoped_ptr<GURL> original_url_;
+  // AlternateProtocol for this job if this is an alternate job.
+  AlternativeService alternative_service_;
+
+  // AlternateProtocol for the other job if this is not an alternate job.
+  AlternativeService other_job_alternative_service_;
 
   // This is the Job we're dependent on. It will notify us if/when it's OK to
   // proceed.
@@ -322,6 +372,8 @@ class HttpStreamFactoryImpl::Job {
   // 0 if we're not preconnecting. Otherwise, the number of streams to
   // preconnect.
   int num_streams_;
+
+  scoped_ptr<ValidSpdySessionPool> valid_spdy_session_pool_;
 
   // Initialized when we create a new SpdySession.
   base::WeakPtr<SpdySession> new_spdy_session_;

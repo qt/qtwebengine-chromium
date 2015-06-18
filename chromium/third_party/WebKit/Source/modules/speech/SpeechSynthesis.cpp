@@ -63,16 +63,16 @@ void SpeechSynthesis::voicesDidChange()
         dispatchEvent(Event::create(EventTypeNames::voiceschanged));
 }
 
-const HeapVector<Member<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
+const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices()
 {
     if (m_voiceList.size())
         return m_voiceList;
 
     // If the voiceList is empty, that's the cue to get the voices from the platform again.
-    const HeapVector<Member<PlatformSpeechSynthesisVoice> >& platformVoices = m_platformSpeechSynthesizer->voiceList();
+    const HeapVector<Member<PlatformSpeechSynthesisVoice>>& platformVoices = m_platformSpeechSynthesizer->voiceList();
     size_t voiceCount = platformVoices.size();
     for (size_t k = 0; k < voiceCount; k++)
-        m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k].get()));
+        m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k]));
 
     return m_voiceList;
 }
@@ -145,7 +145,7 @@ void SpeechSynthesis::resume()
 void SpeechSynthesis::fireEvent(const AtomicString& type, SpeechSynthesisUtterance* utterance, unsigned long charIndex, const String& name)
 {
     if (executionContext() && !executionContext()->activeDOMObjectsAreStopped())
-        utterance->dispatchEvent(SpeechSynthesisEvent::create(type, charIndex, (currentTime() - utterance->startTime()), name));
+        utterance->dispatchEvent(SpeechSynthesisEvent::create(type, utterance, charIndex, (currentTime() - utterance->startTime()), name));
 }
 
 void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utterance, bool errorOccurred)
@@ -222,9 +222,10 @@ void SpeechSynthesis::speakingErrorOccurred(PlatformSpeechSynthesisUtterance* ut
 
 SpeechSynthesisUtterance* SpeechSynthesis::currentSpeechUtterance() const
 {
-    if (!m_utteranceQueue.isEmpty())
-        return m_utteranceQueue.first().get();
-    return 0;
+    if (m_utteranceQueue.isEmpty())
+        return nullptr;
+
+    return m_utteranceQueue.first();
 }
 
 const AtomicString& SpeechSynthesis::interfaceName() const
@@ -232,13 +233,14 @@ const AtomicString& SpeechSynthesis::interfaceName() const
     return EventTargetNames::SpeechSynthesis;
 }
 
-void SpeechSynthesis::trace(Visitor* visitor)
+DEFINE_TRACE(SpeechSynthesis)
 {
     visitor->trace(m_platformSpeechSynthesizer);
     visitor->trace(m_voiceList);
     visitor->trace(m_utteranceQueue);
     PlatformSpeechSynthesizerClient::trace(visitor);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<SpeechSynthesis>::trace(visitor);
+    ContextLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

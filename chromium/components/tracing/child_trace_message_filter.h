@@ -7,6 +7,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/trace_event/memory_dump_request_args.h"
 #include "ipc/message_filter.h"
 
 namespace base {
@@ -25,6 +26,12 @@ class ChildTraceMessageFilter : public IPC::MessageFilter {
   void OnFilterRemoved() override;
   bool OnMessageReceived(const IPC::Message& message) override;
 
+  void SendGlobalMemoryDumpRequest(
+      const base::trace_event::MemoryDumpRequestArgs& args,
+      const base::trace_event::MemoryDumpCallback& callback);
+
+  base::MessageLoopProxy* ipc_message_loop() const { return ipc_message_loop_; }
+
  protected:
   ~ChildTraceMessageFilter() override;
 
@@ -39,11 +46,14 @@ class ChildTraceMessageFilter : public IPC::MessageFilter {
                           const std::string& options);
   void OnDisableMonitoring();
   void OnCaptureMonitoringSnapshot();
-  void OnGetTraceBufferPercentFull();
+  void OnGetTraceLogStatus();
   void OnSetWatchEvent(const std::string& category_name,
                        const std::string& event_name);
   void OnCancelWatchEvent();
   void OnWatchEventMatched();
+  void OnProcessMemoryDumpRequest(
+      const base::trace_event::MemoryDumpRequestArgs& args);
+  void OnGlobalMemoryDumpResponse(uint64 dump_guid, bool success);
 
   // Callback from trace subsystem.
   void OnTraceDataCollected(
@@ -54,8 +64,17 @@ class ChildTraceMessageFilter : public IPC::MessageFilter {
       const scoped_refptr<base::RefCountedString>& events_str_ptr,
       bool has_more_events);
 
+  void OnProcessMemoryDumpDone(uint64 dump_guid, bool success);
+
   IPC::Sender* sender_;
   base::MessageLoopProxy* ipc_message_loop_;
+
+  // guid of the outstanding request (to the Browser's MemoryDumpManager), if
+  // any. 0 if there is no request pending.
+  uint64 pending_memory_dump_guid_;
+
+  // callback of the outstanding memory dump request, if any.
+  base::trace_event::MemoryDumpCallback pending_memory_dump_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildTraceMessageFilter);
 };

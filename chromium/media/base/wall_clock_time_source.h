@@ -7,12 +7,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/time/default_tick_clock.h"
 #include "media/base/media_export.h"
 #include "media/base/time_source.h"
-
-namespace base {
-class TickClock;
-}
 
 namespace media {
 
@@ -25,23 +22,32 @@ class MEDIA_EXPORT WallClockTimeSource : public TimeSource {
   // TimeSource implementation.
   void StartTicking() override;
   void StopTicking() override;
-  void SetPlaybackRate(float playback_rate) override;
+  void SetPlaybackRate(double playback_rate) override;
   void SetMediaTime(base::TimeDelta time) override;
   base::TimeDelta CurrentMediaTime() override;
-  base::TimeDelta CurrentMediaTimeForSyncingVideo() override;
+  bool GetWallClockTimes(
+      const std::vector<base::TimeDelta>& media_timestamps,
+      std::vector<base::TimeTicks>* wall_clock_times) override;
 
-  void SetTickClockForTesting(scoped_ptr<base::TickClock> tick_clock);
+  void set_tick_clock_for_testing(base::TickClock* tick_clock) {
+    tick_clock_ = tick_clock;
+  }
 
  private:
   base::TimeDelta CurrentMediaTime_Locked();
 
-  scoped_ptr<base::TickClock> tick_clock_;
+  // Allow for an injectable tick clock for testing.
+  base::DefaultTickClock default_tick_clock_;
+
+  // If specified, used instead of |default_tick_clock_|.
+  base::TickClock* tick_clock_;
+
   bool ticking_;
 
   // While ticking we can interpolate the current media time by measuring the
   // delta between our reference ticks and the current system ticks and scaling
   // that time by the playback rate.
-  float playback_rate_;
+  double playback_rate_;
   base::TimeDelta base_time_;
   base::TimeTicks reference_wall_ticks_;
 

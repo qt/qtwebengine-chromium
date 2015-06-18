@@ -5,15 +5,17 @@
 #include "content/renderer/p2p/ipc_socket_factory.h"
 
 #include <algorithm>
-#include <deque>
+#include <list>
 
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/trace_event/trace_event.h"
 #include "content/renderer/media/webrtc_logging.h"
 #include "content/renderer/p2p/host_address_request.h"
 #include "content/renderer/p2p/socket_client_delegate.h"
@@ -63,7 +65,7 @@ bool JingleSocketOptionToP2PSocketOption(rtc::Socket::Option option,
 
 // TODO(miu): This needs tuning.  http://crbug.com/237960
 // http://crbug.com/427555
-const size_t kMaximumInFlightBytes = 256 * 1024;  // 256 KB
+const size_t kMaximumInFlightBytes = 64 * 1024;  // 64 KB
 
 // IpcPacketSocket implements rtc::AsyncPacketSocket interface
 // using P2PSocketClient that works over IPC-channel. It must be used
@@ -73,6 +75,19 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
  public:
   IpcPacketSocket();
   ~IpcPacketSocket() override;
+
+  // Struct to track information when a packet is received by this socket for
+  // send. The information tracked here will be used to match with the
+  // P2PSendPacketMetrics from the underneath system socket.
+  struct InFlightPacketRecord {
+    InFlightPacketRecord(uint64_t packet_id, size_t packet_size)
+        : packet_id(packet_id), packet_size(packet_size) {}
+
+    uint64_t packet_id;
+    size_t packet_size;
+  };
+
+  typedef std::list<InFlightPacketRecord> InFlightPacketList;
 
   // Always takes ownership of client even if initialization fails.
   bool Init(P2PSocketType type, P2PSocketClientImpl* client,
@@ -101,7 +116,7 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
               const net::IPEndPoint& remote_address) override;
   void OnIncomingTcpConnection(const net::IPEndPoint& address,
                                P2PSocketClient* client) override;
-  void OnSendComplete() override;
+  void OnSendComplete(const P2PSendPacketMetrics& send_metrics) override;
   void OnError() override;
   void OnDataReceived(const net::IPEndPoint& address,
                       const std::vector<char>& data,
@@ -122,7 +137,7 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
 
   // Update trace of send throttling internal state. This should be called
   // immediately after any changes to |send_bytes_available_| and/or
-  // |in_flight_packet_sizes_|.
+  // |in_flight_packet_records_|.
   void TraceSendThrottlingState() const;
 
   void InitAcceptedTcp(P2PSocketClient* client,
@@ -130,6 +145,10 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
                        const rtc::SocketAddress& remote_address);
 
   int DoSetOption(P2PSocketOption option, int value);
+
+  // Allow a finch experiment to control the initial value of
+  // send_bytes_available_;
+  void AdjustUdpSendBufferSize();
 
   P2PSocketType type_;
 
@@ -157,7 +176,11 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
   // allows short bursts of high-rate sending without dropping packets, but
   // quickly restricts the client to a sustainable steady-state rate.
   size_t send_bytes_available_;
-  std::deque<size_t> in_flight_packet_sizes_;
+
+  // Used to detect when browser doesn't send SendComplete message for some
+  // packets. In normal case, the first packet should be the one that we're
+  // going to receive the next completion signal.
+  InFlightPacketList in_flight_packet_records_;
 
   // Set to true once EWOULDBLOCK was returned from Send(). Indicates that the
   // caller expects SignalWritable notification.
@@ -215,7 +238,7 @@ IpcPacketSocket::IpcPacketSocket()
       current_discard_bytes_sequence_(0),
       packets_discarded_(0),
       total_packets_(0) {
-  COMPILE_ASSERT(kMaximumInFlightBytes > 0, would_send_at_zero_rate);
+  static_assert(kMaximumInFlightBytes > 0, "would send at zero rate");
   std::fill_n(options_, static_cast<int> (P2P_SOCKET_OPT_MAX),
               kDefaultNonSetOptionValue);
 }
@@ -226,9 +249,8 @@ IpcPacketSocket::~IpcPacketSocket() {
     Close();
   }
 
-  UMA_HISTOGRAM_COUNTS_10000("WebRTC.ApplicationMaxConsecutiveBytesDiscard",
-                             max_discard_bytes_sequence_);
-
+  UMA_HISTOGRAM_CUSTOM_COUNTS("WebRTC.ApplicationMaxConsecutiveBytesDiscard.v2",
+                              max_discard_bytes_sequence_, 1, 1000000, 200);
   if (total_packets_ > 0) {
     UMA_HISTOGRAM_PERCENTAGE("WebRTC.ApplicationPercentPacketsDiscarded",
                              (packets_discarded_ * 100) / total_packets_);
@@ -239,7 +261,7 @@ void IpcPacketSocket::TraceSendThrottlingState() const {
   TRACE_COUNTER_ID1("p2p", "P2PSendBytesAvailable", local_address_.port(),
                     send_bytes_available_);
   TRACE_COUNTER_ID1("p2p", "P2PSendPacketsInFlight", local_address_.port(),
-                    in_flight_packet_sizes_.size());
+                    in_flight_packet_records_.size());
 }
 
 void IpcPacketSocket::IncrementDiscardCounters(size_t bytes_discarded) {
@@ -248,6 +270,19 @@ void IpcPacketSocket::IncrementDiscardCounters(size_t bytes_discarded) {
 
   if (current_discard_bytes_sequence_ > max_discard_bytes_sequence_) {
     max_discard_bytes_sequence_ = current_discard_bytes_sequence_;
+  }
+}
+
+void IpcPacketSocket::AdjustUdpSendBufferSize() {
+  DCHECK_EQ(type_, P2P_SOCKET_UDP);
+  unsigned int send_buffer_size = 0;
+
+  base::StringToUint(
+      base::FieldTrialList::FindFullName("WebRTC-ApplicationUDPSendSocketSize"),
+      &send_buffer_size);
+
+  if (send_buffer_size > 0) {
+    send_bytes_available_ = send_buffer_size;
   }
 }
 
@@ -268,6 +303,10 @@ bool IpcPacketSocket::Init(P2PSocketType type,
   if (!jingle_glue::SocketAddressToIPEndPoint(
           local_address, &local_endpoint)) {
     return false;
+  }
+
+  if (type_ == P2P_SOCKET_UDP) {
+    AdjustUdpSendBufferSize();
   }
 
   net::IPEndPoint remote_endpoint;
@@ -362,7 +401,7 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
     if (!writable_signal_expected_) {
       WebRtcLogMessage(base::StringPrintf(
           "IpcPacketSocket: sending is blocked. %d packets_in_flight.",
-          static_cast<int>(in_flight_packet_sizes_.size())));
+          static_cast<int>(in_flight_packet_records_.size())));
 
       writable_signal_expected_ = true;
     }
@@ -375,22 +414,33 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
   }
 
   net::IPEndPoint address_chrome;
-  if (!jingle_glue::SocketAddressToIPEndPoint(address, &address_chrome)) {
-    VLOG(1) << "Failed to convert remote address to IPEndPoint: address = "
-            << address.ToSensitiveString() << ", remote_address_ = "
-            << remote_address_.ToSensitiveString();
-    NOTREACHED();
-    error_ = EINVAL;
-    return -1;
+  if (address.IsUnresolvedIP()) {
+    address_chrome = net::IPEndPoint(net::IPAddressNumber(), address.port());
+  } else {
+    if (!jingle_glue::SocketAddressToIPEndPoint(address, &address_chrome)) {
+      LOG(WARNING) << "Failed to convert remote address to IPEndPoint: address="
+                   << address.ipaddr().ToSensitiveString()
+                   << ", remote_address_="
+                   << remote_address_.ipaddr().ToSensitiveString();
+      NOTREACHED();
+      error_ = EINVAL;
+      return -1;
+    }
   }
 
   send_bytes_available_ -= data_size;
-  in_flight_packet_sizes_.push_back(data_size);
-  TraceSendThrottlingState();
 
   const char* data_char = reinterpret_cast<const char*>(data);
   std::vector<char> data_vector(data_char, data_char + data_size);
-  client_->SendWithDscp(address_chrome, data_vector, options);
+  uint64_t packet_id = client_->Send(address_chrome, data_vector, options);
+
+  // Ensure packet_id is not 0. It can't be the case according to
+  // P2PSocketClientImpl::Send().
+  DCHECK_NE(packet_id, 0uL);
+
+  in_flight_packet_records_.push_back(
+      InFlightPacketRecord(packet_id, data_size));
+  TraceSendThrottlingState();
 
   // Fake successful send. The caller ignores result anyway.
   return data_size;
@@ -506,12 +556,14 @@ void IpcPacketSocket::OnOpen(const net::IPEndPoint& local_address,
     // over the network.
     if (remote_address_.IsUnresolvedIP()) {
       rtc::SocketAddress jingle_socket_address;
-      if (!jingle_glue::IPEndPointToSocketAddress(
-            remote_address, &jingle_socket_address)) {
-        NOTREACHED();
+      // |remote_address| could be unresolved if the connection is behind a
+      // proxy.
+      if (!remote_address.address().empty() &&
+          jingle_glue::IPEndPointToSocketAddress(
+              remote_address, &jingle_socket_address)) {
+        // Set only the IP address.
+        remote_address_.SetResolvedIP(jingle_socket_address.ipaddr());
       }
-      // Set only the IP address.
-      remote_address_.SetResolvedIP(jingle_socket_address.ipaddr());
     }
 
     // SignalConnect after updating the |remote_address_| so that the listener
@@ -536,21 +588,29 @@ void IpcPacketSocket::OnIncomingTcpConnection(
   SignalNewConnection(this, socket.release());
 }
 
-void IpcPacketSocket::OnSendComplete() {
+void IpcPacketSocket::OnSendComplete(const P2PSendPacketMetrics& send_metrics) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
-  CHECK(!in_flight_packet_sizes_.empty());
-  send_bytes_available_ += in_flight_packet_sizes_.front();
+  CHECK(!in_flight_packet_records_.empty());
+
+  const InFlightPacketRecord& record = in_flight_packet_records_.front();
+
+  // Tracking is not turned on for TCP so it's always 0. For UDP, this will
+  // cause a crash when the packet ids don't match.
+  CHECK(send_metrics.packet_id == 0 ||
+        record.packet_id == send_metrics.packet_id);
+
+  send_bytes_available_ += record.packet_size;
 
   DCHECK_LE(send_bytes_available_, kMaximumInFlightBytes);
 
-  in_flight_packet_sizes_.pop_front();
+  in_flight_packet_records_.pop_front();
   TraceSendThrottlingState();
 
   if (writable_signal_expected_ && send_bytes_available_ > 0) {
     WebRtcLogMessage(base::StringPrintf(
         "IpcPacketSocket: sending is unblocked. %d packets in flight.",
-        static_cast<int>(in_flight_packet_sizes_.size())));
+        static_cast<int>(in_flight_packet_records_.size())));
 
     SignalReadyToSend(this);
     writable_signal_expected_ = false;
@@ -573,11 +633,18 @@ void IpcPacketSocket::OnDataReceived(const net::IPEndPoint& address,
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
 
   rtc::SocketAddress address_lj;
-  if (!jingle_glue::IPEndPointToSocketAddress(address, &address_lj)) {
-    // We should always be able to convert address here because we
-    // don't expect IPv6 address on IPv4 connections.
-    NOTREACHED();
-    return;
+
+  if (address.address().empty()) {
+    DCHECK(IsTcpClientSocket(type_));
+    // |address| could be empty for TCP connections behind a proxy.
+    address_lj = remote_address_;
+  } else {
+    if (!jingle_glue::IPEndPointToSocketAddress(address, &address_lj)) {
+      // We should always be able to convert address here because we
+      // don't expect IPv6 address on IPv4 connections.
+      NOTREACHED();
+      return;
+    }
   }
 
   rtc::PacketTime packet_time(timestamp.ToInternalValue(), 0);

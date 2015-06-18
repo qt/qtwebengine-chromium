@@ -10,6 +10,9 @@ goog.provide('AutomationPredicate');
 goog.provide('AutomationPredicate.Binary');
 goog.provide('AutomationPredicate.Unary');
 
+goog.scope(function() {
+var RoleType = chrome.automation.RoleType;
+
 /**
  * @constructor
  */
@@ -28,34 +31,110 @@ AutomationPredicate.Binary;
 
 /**
  * Constructs a predicate given a role.
- * @param {chrome.automation.RoleType} role
+ * @param {RoleType} role
  * @return {AutomationPredicate.Unary}
  */
-AutomationPredicate.makeRolePredicate = function(role) {
+AutomationPredicate.withRole = function(role) {
   return function(node) {
     return node.role == role;
   };
 };
 
 /** @type {AutomationPredicate.Unary} */
-AutomationPredicate.heading =
-    AutomationPredicate.makeRolePredicate(
-        chrome.automation.RoleType.heading);
+AutomationPredicate.checkBox = AutomationPredicate.withRole(RoleType.checkBox);
+/** @type {AutomationPredicate.Unary} */
+AutomationPredicate.comboBox = AutomationPredicate.withRole(RoleType.comboBox);
+/** @type {AutomationPredicate.Unary} */
+AutomationPredicate.editText = AutomationPredicate.withRole(RoleType.textField);
+/** @type {AutomationPredicate.Unary} */
+AutomationPredicate.heading = AutomationPredicate.withRole(RoleType.heading);
 /** @type {AutomationPredicate.Unary} */
 AutomationPredicate.inlineTextBox =
-    AutomationPredicate.makeRolePredicate(
-        chrome.automation.RoleType.inlineTextBox);
+    AutomationPredicate.withRole(RoleType.inlineTextBox);
 /** @type {AutomationPredicate.Unary} */
-AutomationPredicate.link =
-    AutomationPredicate.makeRolePredicate(
-        chrome.automation.RoleType.link);
+AutomationPredicate.link = AutomationPredicate.withRole(RoleType.link);
+/** @type {AutomationPredicate.Unary} */
+AutomationPredicate.table = AutomationPredicate.withRole(RoleType.table);
+
+/**
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
+AutomationPredicate.button = function(node) {
+  return /button/i.test(node.role);
+};
+
+/**
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
+AutomationPredicate.formField = function(node) {
+  switch (node.role) {
+    case 'button':
+    case 'buttonDropDown':
+    case 'checkBox':
+    case 'comboBox':
+    case 'date':
+    case 'dateTime':
+    case 'details':
+    case 'disclosureTriangle':
+    case 'form':
+    case 'menuButton':
+    case 'menuListPopup':
+    case 'popUpButton':
+    case 'radioButton':
+    case 'searchBox':
+    case 'slider':
+    case 'spinButton':
+    case 'switch':
+    case 'tab':
+    case 'textField':
+    case 'time':
+    case 'toggleButton':
+    case 'tree':
+      return true;
+  }
+  return false;
+};
+
+/**
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
+AutomationPredicate.landmark = function(node) {
+  switch (node.role) {
+    case 'application':
+    case 'banner':
+    case 'complementary':
+    case 'contentInfo':
+    case 'form':
+    case 'main':
+    case 'navigation':
+    case 'search':
+      return true;
+  }
+  return false;
+};
+
+/**
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
+AutomationPredicate.visitedLink = function(node) {
+  return node.state.visited;
+};
 
 /**
  * @param {chrome.automation.AutomationNode} node
  * @return {boolean}
  */
 AutomationPredicate.leaf = function(node) {
-  return !node.firstChild();
+  return !node.firstChild ||
+      node.role == RoleType.button ||
+      node.role == RoleType.slider ||
+      node.children.every(function(n) {
+        return n.state.invisible;
+      });
 };
 
 /**
@@ -79,3 +158,15 @@ AutomationPredicate.linebreak = function(first, second) {
   return fl.top != sl.top ||
       (fl.top + fl.height != sl.top + sl.height);
 };
+
+/**
+ * Leaf nodes that should be ignored.
+ * @param {chrome.automation.AutomationNode} node
+ * @return {boolean}
+ */
+AutomationPredicate.shouldIgnoreLeaf = function(node) {
+  return AutomationPredicate.leaf(node) &&
+      node.role == RoleType.client;
+};
+
+});  // goog.scope

@@ -26,13 +26,14 @@
 #ifndef GestureEvent_h
 #define GestureEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/EventDispatcher.h"
 #include "core/events/MouseRelatedEvent.h"
 #include "platform/PlatformGestureEvent.h"
 
 namespace blink {
 
-class GestureEvent final : public MouseRelatedEvent {
+class CORE_EXPORT GestureEvent final : public MouseRelatedEvent {
 public:
     virtual ~GestureEvent() { }
 
@@ -45,11 +46,11 @@ public:
     float deltaX() const { return m_deltaX; }
     float deltaY() const { return m_deltaY; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     GestureEvent();
-    GestureEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY);
+    GestureEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY, double uiTimeStamp);
 
     float m_deltaX;
     float m_deltaY;
@@ -65,9 +66,9 @@ public:
 private:
     explicit GestureEventDispatchMediator(PassRefPtrWillBeRawPtr<GestureEvent>);
 
-    GestureEvent* event() const;
+    GestureEvent& event() const;
 
-    virtual bool dispatchEvent(EventDispatcher*) const override;
+    virtual bool dispatchEvent(EventDispatcher&) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(GestureEvent);

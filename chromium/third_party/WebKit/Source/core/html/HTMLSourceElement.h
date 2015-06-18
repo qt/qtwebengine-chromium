@@ -54,10 +54,12 @@ public:
 
     bool mediaQueryMatches() const;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit HTMLSourceElement(Document&);
+
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
@@ -65,6 +67,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     void notifyMediaQueryChanged();
+    void createMediaQueryList(const AtomicString& media);
 
     RefPtrWillBeMember<MediaQueryList> m_mediaQueryList;
     RefPtrWillBeMember<Listener> m_listener;

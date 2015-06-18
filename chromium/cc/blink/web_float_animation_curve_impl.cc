@@ -31,8 +31,9 @@ void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe) {
 
 void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe,
                                      TimingFunctionType type) {
-  curve_->AddKeyframe(cc::FloatKeyframe::Create(
-      keyframe.time, keyframe.value, CreateTimingFunction(type)));
+  curve_->AddKeyframe(
+      cc::FloatKeyframe::Create(base::TimeDelta::FromSecondsD(keyframe.time),
+                                keyframe.value, CreateTimingFunction(type)));
 }
 
 void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe,
@@ -41,25 +42,44 @@ void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe,
                                      double x2,
                                      double y2) {
   curve_->AddKeyframe(cc::FloatKeyframe::Create(
-      keyframe.time,
-      keyframe.value,
+      base::TimeDelta::FromSecondsD(keyframe.time), keyframe.value,
       cc::CubicBezierTimingFunction::Create(x1, y1, x2, y2)));
 }
 
-void WebFloatAnimationCurveImpl::setTimingFunction(TimingFunctionType type) {
+void WebFloatAnimationCurveImpl::add(const WebFloatKeyframe& keyframe,
+                                     int steps,
+                                     float steps_start_offset) {
+  curve_->AddKeyframe(cc::FloatKeyframe::Create(
+      base::TimeDelta::FromSecondsD(keyframe.time), keyframe.value,
+      cc::StepsTimingFunction::Create(steps, steps_start_offset)));
+}
+
+void WebFloatAnimationCurveImpl::setLinearTimingFunction() {
+  curve_->SetTimingFunction(nullptr);
+}
+
+void WebFloatAnimationCurveImpl::setCubicBezierTimingFunction(
+    TimingFunctionType type) {
   curve_->SetTimingFunction(CreateTimingFunction(type));
 }
 
-void WebFloatAnimationCurveImpl::setTimingFunction(double x1,
-                                                   double y1,
-                                                   double x2,
-                                                   double y2) {
+void WebFloatAnimationCurveImpl::setCubicBezierTimingFunction(double x1,
+                                                              double y1,
+                                                              double x2,
+                                                              double y2) {
   curve_->SetTimingFunction(
       cc::CubicBezierTimingFunction::Create(x1, y1, x2, y2).Pass());
 }
 
+void WebFloatAnimationCurveImpl::setStepsTimingFunction(
+    int number_of_steps,
+    float steps_start_offset) {
+  curve_->SetTimingFunction(cc::StepsTimingFunction::Create(
+                                number_of_steps, steps_start_offset).Pass());
+}
+
 float WebFloatAnimationCurveImpl::getValue(double time) const {
-  return curve_->GetValue(time);
+  return curve_->GetValue(base::TimeDelta::FromSecondsD(time));
 }
 
 scoped_ptr<cc::AnimationCurve>

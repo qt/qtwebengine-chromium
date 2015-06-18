@@ -26,6 +26,7 @@
 #ifndef VisiblePosition_h
 #define VisiblePosition_h
 
+#include "core/CoreExport.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/editing/PositionWithAffinity.h"
 #include "platform/heap/Handle.h"
@@ -49,7 +50,7 @@ namespace blink {
 class InlineBox;
 class Range;
 
-class VisiblePosition final {
+class CORE_EXPORT VisiblePosition final {
     DISALLOW_ALLOCATION();
 public:
     // NOTE: UPSTREAM affinity will be used only if pos is at end of a wrapped line,
@@ -93,15 +94,15 @@ public:
         m_deepPosition.getInlineBoxAndOffset(m_affinity, inlineBox, caretOffset);
     }
 
-    // Rect is local to the returned renderer
-    LayoutRect localCaretRect(RenderObject*&) const;
+    // Rect is local to the returned layoutObject
+    LayoutRect localCaretRect(LayoutObject*&) const;
     // Bounds of (possibly transformed) caret in absolute coords
     IntRect absoluteCaretBounds() const;
     // Abs x/y position of the caret ignoring transforms.
     // FIXME: navigation with transforms should be smarter.
     int lineDirectionPointForBlockDirectionNavigation() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 #ifndef NDEBUG
     void debugPosition(const char* msg = "") const;

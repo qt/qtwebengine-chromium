@@ -1,3 +1,4 @@
+
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -14,10 +15,12 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/page/FocusController.h"
 #include "core/testing/DummyPageHolder.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebURL.h"
 #include "wtf/OwnPtr.h"
@@ -40,7 +43,7 @@ public:
 
     // The returned ScriptFunction can outlive the StubScriptFunction,
     // but it should not be called after the StubScriptFunction dies.
-    v8::Handle<v8::Function> function(ScriptState* scriptState)
+    v8::Local<v8::Function> function(ScriptState* scriptState)
     {
         return ScriptFunctionImpl::createFunction(scriptState, *this);
     }
@@ -54,7 +57,7 @@ private:
 
     class ScriptFunctionImpl : public ScriptFunction {
     public:
-        static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, StubScriptFunction& owner)
+        static v8::Local<v8::Function> createFunction(ScriptState* scriptState, StubScriptFunction& owner)
         {
             ScriptFunctionImpl* self = new ScriptFunctionImpl(scriptState, owner);
             return self->bindToV8Function();
@@ -157,13 +160,13 @@ protected:
 
     void provide(PassOwnPtr<WebServiceWorkerProvider> provider)
     {
-        m_page->document().DocumentSupplementable::provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(provider));
+        m_page->document().WillBeHeapSupplementable<Document>::provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(provider));
     }
 
     void setPageURL(const String& url)
     {
         // For URL completion.
-        m_page->document().setBaseURLOverride(KURL(KURL(), url));
+        m_page->document().setURL(KURL(KURL(), url));
 
         // The basis for security checks.
         m_page->document().setSecurityOrigin(SecurityOrigin::createFromString(url));
@@ -207,7 +210,7 @@ TEST_F(ServiceWorkerContainerTest, Register_NonSecureOriginIsRejected)
     testRegisterRejected(
         "http://www.example.com/worker.js",
         "http://www.example.com/",
-        ExpectDOMException("NotSupportedError", "Only secure origins are allowed. http://goo.gl/lq4gCo"));
+        ExpectDOMException("NotSupportedError", "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV)."));
 }
 
 TEST_F(ServiceWorkerContainerTest, Register_CrossOriginScriptIsRejected)
@@ -216,7 +219,7 @@ TEST_F(ServiceWorkerContainerTest, Register_CrossOriginScriptIsRejected)
     testRegisterRejected(
         "https://www.example.com:8080/", // Differs by port
         "https://www.example.com/",
-        ExpectDOMException("SecurityError", "The origin of the script must match the current origin."));
+        ExpectDOMException("SecurityError", "Failed to register a ServiceWorker: The origin of the provided scriptURL ('https://www.example.com:8080') does not match the current origin ('https://www.example.com')."));
 }
 
 TEST_F(ServiceWorkerContainerTest, Register_CrossOriginScopeIsRejected)
@@ -225,16 +228,7 @@ TEST_F(ServiceWorkerContainerTest, Register_CrossOriginScopeIsRejected)
     testRegisterRejected(
         "https://www.example.com",
         "wss://www.example.com/", // Differs by protocol
-        ExpectDOMException("SecurityError", "The scope must match the current origin."));
-}
-
-TEST_F(ServiceWorkerContainerTest, Register_DifferentDirectoryThanScript)
-{
-    setPageURL("https://www.example.com/");
-    testRegisterRejected(
-        "https://www.example.com/js/worker.js",
-        "https://www.example.com/",
-        ExpectDOMException("SecurityError", "The scope must be under the directory of the script URL."));
+        ExpectDOMException("SecurityError", "Failed to register a ServiceWorker: The origin of the provided scope ('wss://www.example.com') does not match the current origin ('https://www.example.com')."));
 }
 
 TEST_F(ServiceWorkerContainerTest, GetRegistration_NonSecureOriginIsRejected)
@@ -242,7 +236,7 @@ TEST_F(ServiceWorkerContainerTest, GetRegistration_NonSecureOriginIsRejected)
     setPageURL("http://www.example.com/");
     testGetRegistrationRejected(
         "http://www.example.com/",
-        ExpectDOMException("NotSupportedError", "Only secure origins are allowed. http://goo.gl/lq4gCo"));
+        ExpectDOMException("NotSupportedError", "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV)."));
 }
 
 TEST_F(ServiceWorkerContainerTest, GetRegistration_CrossOriginURLIsRejected)
@@ -250,7 +244,7 @@ TEST_F(ServiceWorkerContainerTest, GetRegistration_CrossOriginURLIsRejected)
     setPageURL("https://www.example.com/");
     testGetRegistrationRejected(
         "https://foo.example.com/", // Differs by host
-        ExpectDOMException("SecurityError", "The documentURL must match the current origin."));
+        ExpectDOMException("SecurityError", "Failed to get a ServiceWorkerRegistration: The origin of the provided documentURL ('https://foo.example.com') does not match the current origin ('https://www.example.com')."));
 }
 
 class StubWebServiceWorkerProvider {
@@ -303,8 +297,8 @@ private:
 
     private:
         StubWebServiceWorkerProvider& m_owner;
-        Vector<OwnPtr<WebServiceWorkerRegistrationCallbacks> > m_registrationCallbacksToDelete;
-        Vector<OwnPtr<WebServiceWorkerGetRegistrationCallbacks> > m_getRegistrationCallbacksToDelete;
+        Vector<OwnPtr<WebServiceWorkerRegistrationCallbacks>> m_registrationCallbacksToDelete;
+        Vector<OwnPtr<WebServiceWorkerGetRegistrationCallbacks>> m_getRegistrationCallbacksToDelete;
     };
 
 private:

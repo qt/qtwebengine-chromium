@@ -28,8 +28,7 @@ class CONTENT_EXPORT WebRtcAudioDeviceNotImpl
   // TODO(henrika): it is possible to add functionality in these methods.
   // Only adding very basic support for now without triggering any callback
   // in the webrtc::AudioDeviceObserver interface.
-  int32_t ChangeUniqueId(const int32_t id) override;
-  int32_t TimeUntilNextProcess() override;
+  int64_t TimeUntilNextProcess() override;
   int32_t Process() override;
 
   // Methods in webrtc::AudioDeviceModule which are not yet implemented.
@@ -101,6 +100,8 @@ class CONTENT_EXPORT WebRtcAudioDeviceNotImpl
   int32_t GetLoudspeakerStatus(bool* enabled) const override;
   int32_t SetAGC(bool enable) override;
   bool AGC() const override;
+  bool BuiltInAECIsAvailable() const override;
+  int32_t EnableBuiltInAEC(bool enable) override;
 
  protected:
   ~WebRtcAudioDeviceNotImpl() override{};

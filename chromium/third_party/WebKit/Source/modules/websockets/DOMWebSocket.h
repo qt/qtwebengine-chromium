@@ -31,9 +31,12 @@
 #ifndef DOMWebSocket_h
 #define DOMWebSocket_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "platform/Timer.h"
@@ -41,7 +44,10 @@
 #include "platform/weborigin/KURL.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
-#include "wtf/text/AtomicStringHash.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
+#include <stdint.h>
 
 namespace blink {
 
@@ -49,8 +55,10 @@ class Blob;
 class DOMArrayBuffer;
 class DOMArrayBufferView;
 class ExceptionState;
+class ExecutionContext;
+class StringOrStringSequence;
 
-class DOMWebSocket : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<DOMWebSocket>, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
+class MODULES_EXPORT DOMWebSocket : public RefCountedGarbageCollectedEventTargetWithInlineData<DOMWebSocket>, public ActiveDOMObject, public WebSocketChannelClient {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<DOMWebSocket>);
     DEFINE_WRAPPERTYPEINFO();
     USING_GARBAGE_COLLECTED_MIXIN(DOMWebSocket);
@@ -60,8 +68,7 @@ public:
     // lifetime management is designed assuming the V8 holds a ref on it while
     // hasPendingActivity() returns true.
     static DOMWebSocket* create(ExecutionContext*, const String& url, ExceptionState&);
-    static DOMWebSocket* create(ExecutionContext*, const String& url, const String& protocol, ExceptionState&);
-    static DOMWebSocket* create(ExecutionContext*, const String& url, const Vector<String>& protocols, ExceptionState&);
+    static DOMWebSocket* create(ExecutionContext*, const String& url, const StringOrStringSequence& protocols, ExceptionState&);
     virtual ~DOMWebSocket();
 
     enum State {
@@ -89,7 +96,7 @@ public:
 
     const KURL& url() const;
     State readyState() const;
-    unsigned long bufferedAmount() const;
+    unsigned bufferedAmount() const;
 
     String protocol() const;
     String extensions() const;
@@ -118,13 +125,13 @@ public:
     // WebSocketChannelClient functions.
     virtual void didConnect(const String& subprotocol, const String& extensions) override;
     virtual void didReceiveTextMessage(const String& message) override;
-    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char> >) override;
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>>) override;
     virtual void didError() override;
-    virtual void didConsumeBufferedAmount(unsigned long) override;
+    virtual void didConsumeBufferedAmount(uint64_t) override;
     virtual void didStartClosingHandshake() override;
     virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     static bool isValidSubprotocolString(const String&);
 
@@ -152,7 +159,7 @@ private:
         void resume();
         void stop();
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         enum State {
@@ -169,8 +176,8 @@ private:
         void resumeTimerFired(Timer<EventQueue>*);
 
         State m_state;
-        EventTarget* m_target;
-        WillBeHeapDeque<RefPtrWillBeMember<Event> > m_events;
+        RawPtrWillBeMember<EventTarget> m_target;
+        WillBeHeapDeque<RefPtrWillBeMember<Event>> m_events;
         Timer<EventQueue> m_resumeTimer;
     };
 
@@ -180,6 +187,13 @@ private:
         WebSocketSendTypeArrayBufferView,
         WebSocketSendTypeBlob,
         WebSocketSendTypeMax,
+    };
+
+    enum WebSocketReceiveType {
+        WebSocketReceiveTypeString,
+        WebSocketReceiveTypeArrayBuffer,
+        WebSocketReceiveTypeBlob,
+        WebSocketReceiveTypeMax,
     };
 
     // This function is virtual for unittests.
@@ -197,11 +211,9 @@ private:
     // not.
     void closeInternal(int, const String&, ExceptionState&);
 
-    size_t getFramingOverhead(size_t payloadSize);
-
     // Updates m_bufferedAmountAfterClose given the amount of data passed to
     // send() method after the state changed to CLOSING or CLOSED.
-    void updateBufferedAmountAfterClose(unsigned long);
+    void updateBufferedAmountAfterClose(uint64_t);
     void reflectBufferedAmountConsumption(Timer<DOMWebSocket>*);
 
     void releaseChannel();
@@ -215,11 +227,11 @@ private:
 
     State m_state;
     KURL m_url;
-    unsigned long m_bufferedAmount;
+    uint64_t m_bufferedAmount;
     // The consumed buffered amount that will be reflected to m_bufferedAmount
     // later. It will be cleared once reflected.
-    unsigned long m_consumedBufferedAmount;
-    unsigned long m_bufferedAmountAfterClose;
+    uint64_t m_consumedBufferedAmount;
+    uint64_t m_bufferedAmountAfterClose;
     BinaryType m_binaryType;
     // The subprotocol the server selected.
     String m_subprotocol;

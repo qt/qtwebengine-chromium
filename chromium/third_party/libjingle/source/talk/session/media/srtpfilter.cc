@@ -35,6 +35,8 @@
 
 #include "talk/media/base/rtputils.h"
 #include "webrtc/base/base64.h"
+#include "webrtc/base/byteorder.h"
+#include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/timeutils.h"
@@ -43,15 +45,15 @@
 // #define SRTP_DEBUG
 
 #ifdef HAVE_SRTP
+extern "C" {
 #ifdef SRTP_RELATIVE_PATH
 #include "srtp.h"  // NOLINT
-extern "C" srtp_stream_t srtp_get_stream(srtp_t srtp, uint32_t ssrc);
 #include "srtp_priv.h"  // NOLINT
 #else
-#include "third_party/libsrtp/include/srtp.h"
-extern "C" srtp_stream_t srtp_get_stream(srtp_t srtp, uint32_t ssrc);
-#include "third_party/libsrtp/include/srtp_priv.h"
+#include "third_party/libsrtp/srtp/include/srtp.h"
+#include "third_party/libsrtp/srtp/include/srtp_priv.h"
 #endif  // SRTP_RELATIVE_PATH
+}
 #ifdef  ENABLE_EXTERNAL_AUTH
 #include "talk/session/media/externalhmac.h"
 #endif  // ENABLE_EXTERNAL_AUTH
@@ -598,12 +600,12 @@ bool SrtpSession::UnprotectRtcp(void* p, int in_len, int* out_len) {
 bool SrtpSession::GetRtpAuthParams(uint8** key, int* key_len,
                                    int* tag_len) {
 #if defined(ENABLE_EXTERNAL_AUTH)
-  external_hmac_ctx_t* external_hmac = NULL;
+  ExternalHmacContext* external_hmac = NULL;
   // stream_template will be the reference context for other streams.
   // Let's use it for getting the keys.
   srtp_stream_ctx_t* srtp_context = session_->stream_template;
   if (srtp_context && srtp_context->rtp_auth) {
-    external_hmac = reinterpret_cast<external_hmac_ctx_t*>(
+    external_hmac = reinterpret_cast<ExternalHmacContext*>(
         srtp_context->rtp_auth->state);
   }
 
@@ -628,7 +630,8 @@ bool SrtpSession::GetSendStreamPacketIndex(void* p, int in_len, int64* index) {
     return false;
 
   // Shift packet index, put into network byte order
-  *index = be64_to_cpu(rdbx_get_packet_index(&stream->rtp_rdbx) << 16);
+  *index = static_cast<int64>(
+      rtc::NetworkToHost64(rdbx_get_packet_index(&stream->rtp_rdbx) << 16));
   return true;
 }
 

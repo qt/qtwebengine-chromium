@@ -11,7 +11,7 @@ namespace net {
 
 namespace {
 
-const char* kSourceNames[] = {
+const char* const kSourceNames[] = {
   "UNKNOWN",
   "SYSTEM",
   "SYSTEM FAILED",
@@ -22,8 +22,8 @@ const char* kSourceNames[] = {
   "CUSTOM",
   "TEST"
 };
-COMPILE_ASSERT(arraysize(kSourceNames) == NUM_PROXY_CONFIG_SOURCES,
-               source_names_incorrect_size);
+static_assert(arraysize(kSourceNames) == NUM_PROXY_CONFIG_SOURCES,
+              "kSourceNames has incorrect size");
 
 }  // namespace
 

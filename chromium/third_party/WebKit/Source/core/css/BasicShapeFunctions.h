@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -30,7 +30,7 @@
 #ifndef BasicShapeFunctions_h
 #define BasicShapeFunctions_h
 
-#include "core/rendering/style/BasicShapes.h"
+#include "core/style/BasicShapes.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
@@ -41,9 +41,9 @@ class CSSBasicShape;
 class CSSValue;
 class FloatPoint;
 class StyleResolverState;
-class RenderStyle;
+class ComputedStyle;
 
-PassRefPtrWillBeRawPtr<CSSValue> valueForBasicShape(const RenderStyle&, const BasicShape*);
+PassRefPtrWillBeRawPtr<CSSValue> valueForBasicShape(const ComputedStyle&, const BasicShape*);
 PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState&, const CSSBasicShape*);
 FloatPoint floatPointForCenterCoordinate(const BasicShapeCenterCoordinate&, const BasicShapeCenterCoordinate&, FloatSize);
 

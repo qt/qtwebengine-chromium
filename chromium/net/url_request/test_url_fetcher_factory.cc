@@ -15,6 +15,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_fetcher_impl.h"
@@ -48,6 +49,7 @@ TestURLFetcher::TestURLFetcher(int id,
       fake_response_destination_(STRING),
       fake_was_fetched_via_proxy_(false),
       fake_max_retries_(0) {
+  CHECK(original_url_.is_valid());
 }
 
 TestURLFetcher::~TestURLFetcher() {
@@ -70,6 +72,11 @@ void TestURLFetcher::SetUploadFilePath(
     uint64 range_length,
     scoped_refptr<base::TaskRunner> file_task_runner) {
   upload_file_path_ = file_path;
+}
+
+void TestURLFetcher::SetUploadStreamFactory(
+    const std::string& upload_content_type,
+    const CreateUploadStreamCallback& factory) {
 }
 
 void TestURLFetcher::SetChunkedUpload(const std::string& upload_content_type) {
@@ -293,7 +300,7 @@ TestURLFetcherFactory::TestURLFetcherFactory()
 
 TestURLFetcherFactory::~TestURLFetcherFactory() {}
 
-URLFetcher* TestURLFetcherFactory::CreateURLFetcher(
+scoped_ptr<URLFetcher> TestURLFetcherFactory::CreateURLFetcher(
     int id,
     const GURL& url,
     URLFetcher::RequestType request_type,
@@ -303,7 +310,7 @@ URLFetcher* TestURLFetcherFactory::CreateURLFetcher(
     fetcher->set_owner(this);
   fetcher->SetDelegateForTests(delegate_for_tests_);
   fetchers_[id] = fetcher;
-  return fetcher;
+  return scoped_ptr<URLFetcher>(fetcher);
 }
 
 TestURLFetcher* TestURLFetcherFactory::GetFetcherByID(int id) const {
@@ -392,7 +399,7 @@ scoped_ptr<FakeURLFetcher> FakeURLFetcherFactory::DefaultFakeURLFetcherCreator(
 
 FakeURLFetcherFactory::~FakeURLFetcherFactory() {}
 
-URLFetcher* FakeURLFetcherFactory::CreateURLFetcher(
+scoped_ptr<URLFetcher> FakeURLFetcherFactory::CreateURLFetcher(
     int id,
     const GURL& url,
     URLFetcher::RequestType request_type,
@@ -408,11 +415,10 @@ URLFetcher* FakeURLFetcherFactory::CreateURLFetcher(
     }
   }
 
-  scoped_ptr<FakeURLFetcher> fake_fetcher =
-      creator_.Run(url, d, it->second.response_data,
-                   it->second.response_code, it->second.status);
-  // TODO: Make URLFetcherFactory::CreateURLFetcher return a scoped_ptr
-  return fake_fetcher.release();
+  scoped_ptr<URLFetcher> fake_fetcher =
+      creator_.Run(url, d, it->second.response_data, it->second.response_code,
+                   it->second.status);
+  return fake_fetcher;
 }
 
 void FakeURLFetcherFactory::SetFakeResponse(
@@ -436,12 +442,12 @@ URLFetcherImplFactory::URLFetcherImplFactory() {}
 
 URLFetcherImplFactory::~URLFetcherImplFactory() {}
 
-URLFetcher* URLFetcherImplFactory::CreateURLFetcher(
+scoped_ptr<URLFetcher> URLFetcherImplFactory::CreateURLFetcher(
     int id,
     const GURL& url,
     URLFetcher::RequestType request_type,
     URLFetcherDelegate* d) {
-  return new URLFetcherImpl(url, request_type, d);
+  return scoped_ptr<URLFetcher>(new URLFetcherImpl(url, request_type, d));
 }
 
 }  // namespace net

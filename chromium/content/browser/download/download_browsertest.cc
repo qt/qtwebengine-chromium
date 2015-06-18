@@ -34,12 +34,12 @@
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
 #include "content/shell/browser/shell_network_delegate.h"
-#include "content/test/net/url_request_slow_download_job.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
+#include "net/test/url_request/url_request_slow_download_job.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -173,9 +173,9 @@ class DownloadFileWithDelayFactory : public DownloadFileFactory {
   void WaitForSomeCallback();
 
  private:
-  base::WeakPtrFactory<DownloadFileWithDelayFactory> weak_ptr_factory_;
   std::vector<base::Closure> rename_callbacks_;
   bool waiting_;
+  base::WeakPtrFactory<DownloadFileWithDelayFactory> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadFileWithDelayFactory);
 };
@@ -201,7 +201,7 @@ DownloadFileWithDelay::~DownloadFileWithDelay() {}
 void DownloadFileWithDelay::RenameAndUniquify(
     const base::FilePath& full_path,
     const RenameCompletionCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   DownloadFileImpl::RenameAndUniquify(
       full_path, base::Bind(DownloadFileWithDelay::RenameCallbackWrapper,
                             owner_, callback));
@@ -209,7 +209,7 @@ void DownloadFileWithDelay::RenameAndUniquify(
 
 void DownloadFileWithDelay::RenameAndAnnotate(
     const base::FilePath& full_path, const RenameCompletionCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   DownloadFileImpl::RenameAndAnnotate(
       full_path, base::Bind(DownloadFileWithDelay::RenameCallbackWrapper,
                             owner_, callback));
@@ -221,15 +221,16 @@ void DownloadFileWithDelay::RenameCallbackWrapper(
     const RenameCompletionCallback& original_callback,
     DownloadInterruptReason reason,
     const base::FilePath& path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!factory)
     return;
   factory->AddRenameCallback(base::Bind(original_callback, reason, path));
 }
 
 DownloadFileWithDelayFactory::DownloadFileWithDelayFactory()
-    : weak_ptr_factory_(this),
-      waiting_(false) {}
+    : waiting_(false),
+      weak_ptr_factory_(this) {}
+
 DownloadFileWithDelayFactory::~DownloadFileWithDelayFactory() {}
 
 DownloadFile* DownloadFileWithDelayFactory::CreateFile(
@@ -241,10 +242,9 @@ DownloadFile* DownloadFileWithDelayFactory::CreateFile(
     scoped_ptr<ByteStreamReader> stream,
     const net::BoundNetLog& bound_net_log,
     base::WeakPtr<DownloadDestinationObserver> observer) {
-  scoped_ptr<PowerSaveBlocker> psb(
-      PowerSaveBlocker::Create(
-          PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-          "Download in progress"));
+  scoped_ptr<PowerSaveBlocker> psb(PowerSaveBlocker::Create(
+      PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
+      PowerSaveBlocker::kReasonOther, "Download in progress"));
   return new DownloadFileWithDelay(
       save_info.Pass(), default_download_directory, url, referrer_url,
       calculate_hash, stream.Pass(), bound_net_log,
@@ -252,7 +252,7 @@ DownloadFile* DownloadFileWithDelayFactory::CreateFile(
 }
 
 void DownloadFileWithDelayFactory::AddRenameCallback(base::Closure callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   rename_callbacks_.push_back(callback);
   if (waiting_)
     base::MessageLoopForUI::current()->Quit();
@@ -260,12 +260,12 @@ void DownloadFileWithDelayFactory::AddRenameCallback(base::Closure callback) {
 
 void DownloadFileWithDelayFactory::GetAllRenameCallbacks(
     std::vector<base::Closure>* results) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   results->swap(rename_callbacks_);
 }
 
 void DownloadFileWithDelayFactory::WaitForSomeCallback() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (rename_callbacks_.empty()) {
     waiting_ = true;
@@ -291,18 +291,18 @@ class CountingDownloadFile : public DownloadFileImpl {
                          stream.Pass(), bound_net_log, observer) {}
 
   ~CountingDownloadFile() override {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    DCHECK_CURRENTLY_ON(BrowserThread::FILE);
     active_files_--;
   }
 
   void Initialize(const InitializeCallback& callback) override {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    DCHECK_CURRENTLY_ON(BrowserThread::FILE);
     active_files_++;
     return DownloadFileImpl::Initialize(callback);
   }
 
   static void GetNumberActiveFiles(int* result) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    DCHECK_CURRENTLY_ON(BrowserThread::FILE);
     *result = active_files_;
   }
 
@@ -341,10 +341,9 @@ class CountingDownloadFileFactory : public DownloadFileFactory {
       scoped_ptr<ByteStreamReader> stream,
       const net::BoundNetLog& bound_net_log,
       base::WeakPtr<DownloadDestinationObserver> observer) override {
-    scoped_ptr<PowerSaveBlocker> psb(
-        PowerSaveBlocker::Create(
-            PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-            "Download in progress"));
+    scoped_ptr<PowerSaveBlocker> psb(PowerSaveBlocker::Create(
+        PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
+        PowerSaveBlocker::kReasonOther, "Download in progress"));
     return new CountingDownloadFile(
         save_info.Pass(), default_downloads_directory, url, referrer_url,
         calculate_hash, stream.Pass(), bound_net_log,
@@ -471,7 +470,7 @@ class DownloadCreateObserver : DownloadManager::Observer {
   }
 
   DownloadItem* WaitForFinished() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (!item_) {
       waiting_ = true;
       RunMessageLoop();
@@ -582,14 +581,12 @@ class DownloadContentTest : public ContentBrowserTest {
 
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&URLRequestSlowDownloadJob::AddUrlHandler));
+        base::Bind(&net::URLRequestSlowDownloadJob::AddUrlHandler));
     base::FilePath mock_base(GetTestFilePath("download", ""));
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
+        BrowserThread::IO, FROM_HERE,
         base::Bind(
-            &net::URLRequestMockHTTPJob::AddUrlHandler,
-            mock_base,
+            &net::URLRequestMockHTTPJob::AddUrlHandlers, mock_base,
             make_scoped_refptr(content::BrowserThread::GetBlockingPool())));
   }
 
@@ -746,7 +743,7 @@ class DownloadContentTest : public ContentBrowserTest {
 
  private:
   static void EnsureNoPendingDownloadJobsOnIO(bool* result) {
-    if (URLRequestSlowDownloadJob::NumberOutstandingRequests())
+    if (net::URLRequestSlowDownloadJob::NumberOutstandingRequests())
       *result = false;
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE, base::MessageLoop::QuitClosure());
@@ -764,7 +761,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadCancelled) {
   // we're in the expected state.
   scoped_ptr<DownloadCreateObserver> observer(
       CreateInProgressWaiter(shell(), 1));
-  NavigateToURL(shell(), GURL(URLRequestSlowDownloadJob::kUnknownSizeUrl));
+  NavigateToURL(shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
   observer->WaitForFinished();
 
   std::vector<DownloadItem*> downloads;
@@ -791,7 +788,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, MultiDownload) {
   // we're in the expected state.
   scoped_ptr<DownloadCreateObserver> observer1(
       CreateInProgressWaiter(shell(), 1));
-  NavigateToURL(shell(), GURL(URLRequestSlowDownloadJob::kUnknownSizeUrl));
+  NavigateToURL(shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
   observer1->WaitForFinished();
 
   std::vector<DownloadItem*> downloads;
@@ -818,7 +815,8 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, MultiDownload) {
 
   // Allow the first request to finish.
   scoped_ptr<DownloadTestObserver> observer2(CreateWaiter(shell(), 1));
-  NavigateToURL(shell(), GURL(URLRequestSlowDownloadJob::kFinishDownloadUrl));
+  NavigateToURL(shell(),
+                GURL(net::URLRequestSlowDownloadJob::kFinishDownloadUrl));
   observer2->WaitForFinished();  // Wait for the third request.
   EXPECT_EQ(1u, observer2->NumDownloadsSeenInState(DownloadItem::COMPLETE));
 
@@ -830,8 +828,8 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, MultiDownload) {
   // |file1| should be full of '*'s, and |file2| should be the same as the
   // source file.
   base::FilePath file1(download1->GetTargetFilePath());
-  size_t file_size1 = URLRequestSlowDownloadJob::kFirstDownloadSize +
-                      URLRequestSlowDownloadJob::kSecondDownloadSize;
+  size_t file_size1 = net::URLRequestSlowDownloadJob::kFirstDownloadSize +
+                      net::URLRequestSlowDownloadJob::kSecondDownloadSize;
   std::string expected_contents(file_size1, '*');
   ASSERT_TRUE(VerifyFile(file1, expected_contents, file_size1));
 
@@ -854,6 +852,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadOctetStream) {
   plugin_info.name = base::ASCIIToUTF16(kTestPluginName);
   plugin_info.mime_types.push_back(
       WebPluginMimeType(kTestMimeType, kTestFileType, ""));
+  plugin_info.type = WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
   PluginServiceImpl::GetInstance()->RegisterInternalPlugin(plugin_info, false);
 
   // The following is served with a Content-Type of application/octet-stream.
@@ -970,7 +969,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ShutdownInProgress) {
   // Create a download that won't complete.
   scoped_ptr<DownloadCreateObserver> observer(
       CreateInProgressWaiter(shell(), 1));
-  NavigateToURL(shell(), GURL(URLRequestSlowDownloadJob::kUnknownSizeUrl));
+  NavigateToURL(shell(), GURL(net::URLRequestSlowDownloadJob::kUnknownSizeUrl));
   observer->WaitForFinished();
 
   // Get the item.

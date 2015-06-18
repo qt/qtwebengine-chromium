@@ -58,7 +58,7 @@ SpellCheckRequest::~SpellCheckRequest()
 {
 }
 
-void SpellCheckRequest::trace(Visitor* visitor)
+DEFINE_TRACE(SpellCheckRequest)
 {
     visitor->trace(m_requester);
     visitor->trace(m_checkingRange);
@@ -170,7 +170,7 @@ bool SpellCheckRequester::canCheckAsynchronously(Range* range) const
 
 bool SpellCheckRequester::isCheckable(Range* range) const
 {
-    if (!range || !range->firstNode() || !range->firstNode()->renderer())
+    if (!range || !range->firstNode() || !range->firstNode()->layoutObject())
         return false;
     const Node* node = range->startContainer();
     if (node && node->isElementNode() && !toElement(node)->isSpellCheckingEnabled())
@@ -276,7 +276,7 @@ void SpellCheckRequester::didCheckCancel(int sequence)
     didCheck(sequence, results);
 }
 
-void SpellCheckRequester::trace(Visitor* visitor)
+DEFINE_TRACE(SpellCheckRequester)
 {
     visitor->trace(m_frame);
     visitor->trace(m_processingRequest);

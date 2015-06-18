@@ -6,8 +6,8 @@
 
 namespace {
 
-void EnumerateGPUDevice(gpu::GPUInfo::Enumerator* enumerator,
-                        const gpu::GPUInfo::GPUDevice& device) {
+void EnumerateGPUDevice(const gpu::GPUInfo::GPUDevice& device,
+                        gpu::GPUInfo::Enumerator* enumerator) {
   enumerator->BeginGPUDevice();
   enumerator->AddInt("vendorId", device.vendor_id);
   enumerator->AddInt("deviceId", device.device_id);
@@ -17,9 +17,21 @@ void EnumerateGPUDevice(gpu::GPUInfo::Enumerator* enumerator,
   enumerator->EndGPUDevice();
 }
 
+void EnumerateVideoDecodeAcceleratorSupportedProfile(
+    const gpu::VideoDecodeAcceleratorSupportedProfile& profile,
+    gpu::GPUInfo::Enumerator* enumerator) {
+  enumerator->BeginVideoDecodeAcceleratorSupportedProfile();
+  enumerator->AddInt("profile", profile.profile);
+  enumerator->AddInt("maxResolutionWidth", profile.max_resolution.width());
+  enumerator->AddInt("maxResolutionHeight", profile.max_resolution.height());
+  enumerator->AddInt("minResolutionWidth", profile.min_resolution.width());
+  enumerator->AddInt("minResolutionHeight", profile.min_resolution.height());
+  enumerator->EndVideoDecodeAcceleratorSupportedProfile();
+}
+
 void EnumerateVideoEncodeAcceleratorSupportedProfile(
-    gpu::GPUInfo::Enumerator* enumerator,
-    const gpu::VideoEncodeAcceleratorSupportedProfile profile) {
+    const gpu::VideoEncodeAcceleratorSupportedProfile& profile,
+    gpu::GPUInfo::Enumerator* enumerator) {
   enumerator->BeginVideoEncodeAcceleratorSupportedProfile();
   enumerator->AddInt("profile", profile.profile);
   enumerator->AddInt("maxResolutionWidth", profile.max_resolution.width());
@@ -79,6 +91,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     std::string driver_date;
     std::string pixel_shader_version;
     std::string vertex_shader_version;
+    std::string max_msaa_samples;
     std::string machine_model_name;
     std::string machine_model_version;
     std::string gl_version_string;
@@ -90,7 +103,6 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     std::string gl_ws_extensions;
     uint32 gl_reset_notification_strategy;
     bool can_lose_context;
-    GpuPerformanceStats performance_stats;
     bool software_rendering;
     bool direct_rendering;
     bool sandboxed;
@@ -101,24 +113,25 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     CollectInfoResult dx_diagnostics_info_state;
     DxDiagNode dx_diagnostics;
 #endif
-    std::vector<VideoEncodeAcceleratorSupportedProfile>
+    VideoDecodeAcceleratorSupportedProfiles
+        video_decode_accelerator_supported_profiles;
+    VideoEncodeAcceleratorSupportedProfiles
         video_encode_accelerator_supported_profiles;
   };
 
   // If this assert fails then most likely something below needs to be updated.
   // Note that this assert is only approximate. If a new field is added to
   // GPUInfo which fits within the current padding then it will not be caught.
-  COMPILE_ASSERT(
+  static_assert(
       sizeof(GPUInfo) == sizeof(GPUInfoKnownFields),
-      Fields_Have_Changed_In_GPUInfo_So_Update_Below);
+      "fields have changed in GPUInfo, GPUInfoKnownFields must be updated");
 
   // Required fields (according to DevTools protocol) first.
   enumerator->AddString("machineModelName", machine_model_name);
   enumerator->AddString("machineModelVersion", machine_model_version);
-  EnumerateGPUDevice(enumerator, gpu);
-  for (size_t ii = 0; ii < secondary_gpus.size(); ++ii) {
-    EnumerateGPUDevice(enumerator, secondary_gpus[ii]);
-  }
+  EnumerateGPUDevice(gpu, enumerator);
+  for (const auto& secondary_gpu: secondary_gpus)
+    EnumerateGPUDevice(secondary_gpu, enumerator);
 
   enumerator->BeginAuxAttributes();
   enumerator->AddTimeDeltaInSecondsF("initializationTime",
@@ -136,6 +149,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddString("driverDate", driver_date);
   enumerator->AddString("pixelShaderVersion", pixel_shader_version);
   enumerator->AddString("vertexShaderVersion", vertex_shader_version);
+  enumerator->AddString("maxMsaaSamples", max_msaa_samples);
   enumerator->AddString("glVersion", gl_version);
   enumerator->AddString("glVendor", gl_vendor);
   enumerator->AddString("glRenderer", gl_renderer);
@@ -158,11 +172,10 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddInt("DxDiagnosticsInfoState", dx_diagnostics_info_state);
 #endif
   // TODO(kbr): add dx_diagnostics on Windows.
-  for (size_t ii = 0; ii < video_encode_accelerator_supported_profiles.size();
-       ++ii) {
-    EnumerateVideoEncodeAcceleratorSupportedProfile(
-        enumerator, video_encode_accelerator_supported_profiles[ii]);
-  }
+  for (const auto& profile : video_decode_accelerator_supported_profiles)
+    EnumerateVideoDecodeAcceleratorSupportedProfile(profile, enumerator);
+  for (const auto& profile : video_encode_accelerator_supported_profiles)
+    EnumerateVideoEncodeAcceleratorSupportedProfile(profile, enumerator);
   enumerator->EndAuxAttributes();
 }
 

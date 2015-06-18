@@ -8,7 +8,9 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+// TODO(ricea): Remove the following include once all callers have been fixed.
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 
 namespace base {
 
@@ -18,7 +20,7 @@ namespace base {
 // Sample usage:
 // class Foo : public RefCountedDeleteOnMessageLoop<Foo> {
 //
-//   Foo(const scoped_refptr<MessageLoopProxy>& loop)
+//   Foo(const scoped_refptr<SingleThreadTaskRunner>& loop)
 //       : RefCountedDeleteOnMessageLoop<Foo>(loop) {
 //     ...
 //   }
@@ -30,12 +32,18 @@ namespace base {
 //   ~Foo();
 // };
 
+// TODO(skyostil): Rename this to RefCountedDeleteOnTaskRunner.
 template <class T>
 class RefCountedDeleteOnMessageLoop : public subtle::RefCountedThreadSafeBase {
  public:
+  // This constructor will accept a MessageL00pProxy object, but new code should
+  // prefer a SingleThreadTaskRunner. A SingleThreadTaskRunner for the
+  // MessageLoop on the current thread can be acquired by calling
+  // MessageLoop::current()->task_runner().
   RefCountedDeleteOnMessageLoop(
-      const scoped_refptr<MessageLoopProxy>& proxy) : proxy_(proxy) {
-    DCHECK(proxy_.get());
+      const scoped_refptr<SingleThreadTaskRunner>& task_runner)
+      : task_runner_(task_runner) {
+    DCHECK(task_runner_);
   }
 
   void AddRef() const {
@@ -53,13 +61,13 @@ class RefCountedDeleteOnMessageLoop : public subtle::RefCountedThreadSafeBase {
 
   void DestructOnMessageLoop() const {
     const T* t = static_cast<const T*>(this);
-    if (proxy_->BelongsToCurrentThread())
+    if (task_runner_->BelongsToCurrentThread())
       delete t;
     else
-      proxy_->DeleteSoon(FROM_HERE, t);
+      task_runner_->DeleteSoon(FROM_HERE, t);
   }
 
-  scoped_refptr<MessageLoopProxy> proxy_;
+  scoped_refptr<SingleThreadTaskRunner> task_runner_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RefCountedDeleteOnMessageLoop);

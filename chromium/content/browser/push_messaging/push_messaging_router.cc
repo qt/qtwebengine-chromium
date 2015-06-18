@@ -8,11 +8,24 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
+#include "content/common/service_worker/service_worker_status_code.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
 
 namespace content {
+
+namespace {
+
+void RunDeliverCallback(
+    const PushMessagingRouter::DeliverMessageCallback& deliver_message_callback,
+    PushDeliveryStatus delivery_status) {
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(deliver_message_callback, delivery_status));
+}
+
+}  // namespace
 
 // static
 void PushMessagingRouter::DeliverMessage(
@@ -21,7 +34,7 @@ void PushMessagingRouter::DeliverMessage(
     int64 service_worker_registration_id,
     const std::string& data,
     const DeliverMessageCallback& deliver_message_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   StoragePartition* partition =
       BrowserContext::GetStoragePartitionForSite(browser_context, origin);
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context =
@@ -45,10 +58,10 @@ void PushMessagingRouter::FindServiceWorkerRegistration(
     const std::string& data,
     const DeliverMessageCallback& deliver_message_callback,
     scoped_refptr<ServiceWorkerContextWrapper> service_worker_context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Try to acquire the registration from storage. If it's already live we'll
   // receive it right away. If not, it will be revived from storage.
-  service_worker_context->context()->storage()->FindRegistrationForId(
+  service_worker_context->FindRegistrationForId(
       service_worker_registration_id,
       origin,
       base::Bind(&PushMessagingRouter::FindServiceWorkerRegistrationCallback,
@@ -63,25 +76,40 @@ void PushMessagingRouter::FindServiceWorkerRegistrationCallback(
     ServiceWorkerStatusCode service_worker_status,
     const scoped_refptr<ServiceWorkerRegistration>&
         service_worker_registration) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (service_worker_status == SERVICE_WORKER_OK) {
-    // Hold on to the service worker registration in the callback to keep it
-    // alive until the callback dies. Otherwise the registration could be
-    // released when this method returns - before the event is delivered to the
-    // service worker.
-    base::Callback<void(ServiceWorkerStatusCode)> dispatch_event_callback =
-        base::Bind(&PushMessagingRouter::DeliverMessageEnd,
-                   deliver_message_callback,
-                   service_worker_registration);
-    service_worker_registration->active_version()->DispatchPushEvent(
-        dispatch_event_callback, data);
-  } else {
-    // TODO(mvanouwerkerk): UMA logging.
-    BrowserThread::PostTask(BrowserThread::UI,
-                            FROM_HERE,
-                            base::Bind(deliver_message_callback,
-                                       PUSH_DELIVERY_STATUS_NO_SERVICE_WORKER));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // TODO(mvanouwerkerk): UMA logging.
+  if (service_worker_status != SERVICE_WORKER_OK) {
+    RunDeliverCallback(deliver_message_callback,
+                PUSH_DELIVERY_STATUS_NO_SERVICE_WORKER);
+    return;
   }
+
+  ServiceWorkerVersion* version = service_worker_registration->active_version();
+  if (!version) {
+    // Using NO_SERVICE_WORKER status will unsubscribe with GCM, so don't use it
+    // if we have a waiting version in the hopper. On the other hand, if there
+    // is no waiting version, it's an unexpected error case: we should have been
+    // informed the registration went away (but we may not have been:
+    // crbug.com/402458)
+    // TODO(falken): Promote the waiting version instead of returning error.
+    if (service_worker_registration->waiting_version()) {
+      RunDeliverCallback(deliver_message_callback,
+                  PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR);
+    } else {
+      RunDeliverCallback(deliver_message_callback,
+                  PUSH_DELIVERY_STATUS_NO_SERVICE_WORKER);
+    }
+    return;
+  }
+
+  // Hold on to the service worker registration in the callback to keep it
+  // alive until the callback dies. Otherwise the registration could be
+  // released when this method returns - before the event is delivered to the
+  // service worker.
+  base::Callback<void(ServiceWorkerStatusCode)> dispatch_event_callback =
+      base::Bind(&PushMessagingRouter::DeliverMessageEnd,
+                 deliver_message_callback, service_worker_registration);
+  version->DispatchPushEvent(dispatch_event_callback, data);
 }
 
 // static
@@ -89,16 +117,41 @@ void PushMessagingRouter::DeliverMessageEnd(
     const DeliverMessageCallback& deliver_message_callback,
     const scoped_refptr<ServiceWorkerRegistration>& service_worker_registration,
     ServiceWorkerStatusCode service_worker_status) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // TODO(mvanouwerkerk): UMA logging.
   PushDeliveryStatus delivery_status =
-      service_worker_status == SERVICE_WORKER_OK
-          ? PUSH_DELIVERY_STATUS_SUCCESS
-          : PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR;
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(deliver_message_callback, delivery_status));
+      PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR;
+  switch (service_worker_status) {
+    case SERVICE_WORKER_OK:
+      delivery_status = PUSH_DELIVERY_STATUS_SUCCESS;
+      break;
+    case SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED:
+      delivery_status = PUSH_DELIVERY_STATUS_EVENT_WAITUNTIL_REJECTED;
+      break;
+    case SERVICE_WORKER_ERROR_FAILED:
+    case SERVICE_WORKER_ERROR_ABORT:
+    case SERVICE_WORKER_ERROR_START_WORKER_FAILED:
+    case SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND:
+    case SERVICE_WORKER_ERROR_NOT_FOUND:
+    case SERVICE_WORKER_ERROR_IPC_FAILED:
+    case SERVICE_WORKER_ERROR_TIMEOUT:
+    case SERVICE_WORKER_ERROR_SCRIPT_EVALUATE_FAILED:
+    case SERVICE_WORKER_ERROR_DISK_CACHE:
+      delivery_status = PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR;
+      break;
+    case SERVICE_WORKER_ERROR_EXISTS:
+    case SERVICE_WORKER_ERROR_INSTALL_WORKER_FAILED:
+    case SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED:
+    case SERVICE_WORKER_ERROR_NETWORK:
+    case SERVICE_WORKER_ERROR_SECURITY:
+    case SERVICE_WORKER_ERROR_STATE:
+    case SERVICE_WORKER_ERROR_MAX_VALUE:
+      NOTREACHED() << "Got unexpected error code: " << service_worker_status
+                   << " " << ServiceWorkerStatusToString(service_worker_status);
+      delivery_status = PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR;
+      break;
+  }
+  RunDeliverCallback(deliver_message_callback, delivery_status);
 }
 
 }  // namespace content

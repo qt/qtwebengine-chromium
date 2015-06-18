@@ -13,11 +13,13 @@ cr.define('hotword', function() {
    *     triggered.
    * @param {!function()} startedCb Callback invoked when the session has
    *     been started successfully.
+   * @param {function()=} opt_modelSavedCb Callback invoked when the speaker
+   *     model has been saved successfully.
    * @constructor
    * @struct
    * @private
    */
-  function Session_(source, triggerCb, startedCb) {
+  function Session_(source, triggerCb, startedCb, opt_modelSavedCb) {
     /**
      * Source of the hotword session request.
      * @private {!hotword.constants.SessionSource}
@@ -35,6 +37,12 @@ cr.define('hotword', function() {
      * @private {?function()}
      */
     this.startedCb_ = startedCb;
+
+    /**
+     * Callback invoked when the session has been started successfully.
+     * @private {?function()}
+     */
+    this.speakerModelSavedCb_ = opt_modelSavedCb;
   }
 
   /**
@@ -64,9 +72,15 @@ cr.define('hotword', function() {
 
     /**
      * Currently active hotwording sessions.
-     * @private {!Array.<Session_>}
+     * @private {!Array<Session_>}
      */
     this.sessions_ = [];
+
+    /**
+     * The mode to start the recognizer in.
+     * @private {!hotword.constants.RecognizerStartMode}
+     */
+    this.startMode_ = hotword.constants.RecognizerStartMode.NORMAL;
 
     /**
      * Event that fires when the hotwording status has changed.
@@ -87,6 +101,7 @@ cr.define('hotword', function() {
      * @private
      */
     this.idleStateChangedListener_ = this.handleIdleStateChanged_.bind(this);
+    this.startupListener_ = this.handleStartup_.bind(this);
 
     /**
      * Whether this user is locked.
@@ -94,13 +109,51 @@ cr.define('hotword', function() {
      */
     this.isLocked_ = false;
 
+    /**
+     * Current state of audio logging.
+     * This is tracked separately from hotwordStatus_ because we need to restart
+     * the hotword detector when this value changes.
+     * @private {boolean}
+     */
+    this.loggingEnabled_ = false;
+
+    /**
+     * Current state of training.
+     * This is tracked separately from |hotwordStatus_| because we need to
+     * restart the hotword detector when this value changes.
+     * @private {!boolean}
+     */
+    this.trainingEnabled_ = false;
+
+    /**
+     * Helper class to keep this extension alive while the hotword detector is
+     * running in always-on mode.
+     * @private {!hotword.KeepAlive}
+     */
+    this.keepAlive_ = new hotword.KeepAlive();
+
     // Get the initial status.
     chrome.hotwordPrivate.getStatus(this.handleStatus_.bind(this));
 
     // Setup the chime and insert into the page.
+    // Set preload=none to prevent an audio output stream from being created
+    // when the extension loads.
+    this.chime_.preload = 'none';
     this.chime_.src = chrome.extension.getURL(
         hotword.constants.SHARED_MODULE_ROOT + '/audio/chime.wav');
     document.body.appendChild(this.chime_);
+
+    // In order to remove this listener, it must first be added. This handles
+    // the case on first Chrome startup where this event is never registered,
+    // so can't be removed when it's determined that hotwording is disabled.
+    // Why not only remove the listener if it exists? Extension API events have
+    // two parts to them, the Javascript listeners, and a browser-side component
+    // that wakes up the extension if it's an event page. The browser-side
+    // wake-up event is only removed when the number of javascript listeners
+    // becomes 0. To clear the browser wake-up event, a listener first needs to
+    // be added, then removed in order to drop the count to 0 and remove the
+    // event.
+    chrome.runtime.onStartup.addListener(this.startupListener_);
   }
 
   /**
@@ -143,6 +196,13 @@ cr.define('hotword', function() {
         hotword.constants.UmaMediaStreamOpenResult.INVALID_SECURITY_ORIGIN
   };
 
+  var UmaTriggerSources_ = {
+    'launcher': hotword.constants.UmaTriggerSource.LAUNCHER,
+    'ntp': hotword.constants.UmaTriggerSource.NTP_GOOGLE_COM,
+    'always': hotword.constants.UmaTriggerSource.ALWAYS_ON,
+    'training': hotword.constants.UmaTriggerSource.TRAINING
+  };
+
   StateManager.prototype = {
     /**
      * Request status details update. Intended to be called from the
@@ -169,7 +229,8 @@ cr.define('hotword', function() {
      */
     isAlwaysOnEnabled: function() {
       assert(this.hotwordStatus_, 'No hotword status (isAlwaysOnEnabled)');
-      return this.hotwordStatus_.alwaysOnEnabled;
+      return this.hotwordStatus_.alwaysOnEnabled &&
+          !this.hotwordStatus_.trainingEnabled;
     },
 
     /**
@@ -205,24 +266,44 @@ cr.define('hotword', function() {
       if (this.hotwordStatus_.enabled ||
           this.hotwordStatus_.alwaysOnEnabled ||
           this.hotwordStatus_.trainingEnabled) {
-        // Start the detector if there's a session and the user is unlocked, and
-        // shut it down otherwise.
-        if (this.sessions_.length && !this.isLocked_)
-          this.startDetector_();
-        else
+        // Detect changes to audio logging and kill the detector if that setting
+        // has changed.
+        if (this.hotwordStatus_.audioLoggingEnabled != this.loggingEnabled_)
           this.shutdownDetector_();
+        this.loggingEnabled_ = this.hotwordStatus_.audioLoggingEnabled;
+
+        // If the training state has changed, we need to first shut down the
+        // detector so that we can restart in a different mode.
+        if (this.hotwordStatus_.trainingEnabled != this.trainingEnabled_)
+          this.shutdownDetector_();
+        this.trainingEnabled_ = this.hotwordStatus_.trainingEnabled;
+
+        // Start the detector if there's a session and the user is unlocked, and
+        // stops it otherwise.
+        if (this.sessions_.length && !this.isLocked_ &&
+            this.hotwordStatus_.userIsActive) {
+          this.startDetector_();
+        } else {
+          this.shutdownDetector_();
+        }
 
         if (!chrome.idle.onStateChanged.hasListener(
                 this.idleStateChangedListener_)) {
           chrome.idle.onStateChanged.addListener(
               this.idleStateChangedListener_);
         }
+        if (!chrome.runtime.onStartup.hasListener(this.startupListener_))
+          chrome.runtime.onStartup.addListener(this.startupListener_);
       } else {
         // Not enabled. Shut down if running.
         this.shutdownDetector_();
 
         chrome.idle.onStateChanged.removeListener(
             this.idleStateChangedListener_);
+        // If hotwording isn't enabled, don't start this component extension on
+        // Chrome startup. If a user enables hotwording, the status change
+        // event will be fired and the onStartup event will be registered.
+        chrome.runtime.onStartup.removeListener(this.startupListener_);
       }
     },
 
@@ -239,21 +320,36 @@ cr.define('hotword', function() {
 
       if (!this.pluginManager_) {
         this.state_ = State_.STARTING;
-        this.pluginManager_ = new hotword.NaClManager();
+        var isHotwordStream = this.isAlwaysOnEnabled() &&
+            this.hotwordStatus_.hotwordHardwareAvailable;
+        this.pluginManager_ = new hotword.NaClManager(this.loggingEnabled_,
+                                                      isHotwordStream);
         this.pluginManager_.addEventListener(hotword.constants.Event.READY,
                                              this.onReady_.bind(this));
         this.pluginManager_.addEventListener(hotword.constants.Event.ERROR,
                                              this.onError_.bind(this));
         this.pluginManager_.addEventListener(hotword.constants.Event.TRIGGER,
                                              this.onTrigger_.bind(this));
+        this.pluginManager_.addEventListener(hotword.constants.Event.TIMEOUT,
+                                             this.onTimeout_.bind(this));
+        this.pluginManager_.addEventListener(
+            hotword.constants.Event.SPEAKER_MODEL_SAVED,
+            this.onSpeakerModelSaved_.bind(this));
         chrome.runtime.getPlatformInfo(function(platform) {
           var naclArch = platform.nacl_arch;
 
           // googDucking set to false so that audio output level from other tabs
           // is not affected when hotword is enabled. https://crbug.com/357773
           // content/common/media/media_stream_options.cc
+          // When always-on is enabled, request the hotword stream.
+          // Optional because we allow power users to bypass the hardware
+          // detection via a flag, and hence the hotword stream may not be
+          // available.
           var constraints = /** @type {googMediaStreamConstraints} */
-              ({audio: {optional: [{googDucking: false}]}});
+              ({audio: {optional: [
+                { googDucking: false },
+                { googHotword: this.isAlwaysOnEnabled() }
+              ]}});
           navigator.webkitGetUserMedia(
               /** @type {MediaStreamConstraints} */ (constraints),
               function(stream) {
@@ -261,6 +357,15 @@ cr.define('hotword', function() {
                     hotword.constants.UmaMetrics.MEDIA_STREAM_RESULT,
                     hotword.constants.UmaMediaStreamOpenResult.SUCCESS,
                     hotword.constants.UmaMediaStreamOpenResult.MAX);
+                // The detector could have been shut down before the stream
+                // finishes opening.
+                if (this.pluginManager_ == null) {
+                  stream.getAudioTracks()[0].stop();
+                  return;
+                }
+
+                if (this.isAlwaysOnEnabled())
+                  this.keepAlive_.start();
                 if (!this.pluginManager_.initialize(naclArch, stream)) {
                   this.state_ = State_.ERROR;
                   this.shutdownPluginManager_();
@@ -296,7 +401,9 @@ cr.define('hotword', function() {
       assert(this.pluginManager_, 'No NaCl plugin loaded');
       if (this.state_ != State_.RUNNING) {
         this.state_ = State_.RUNNING;
-        this.pluginManager_.startRecognizer();
+        if (this.isAlwaysOnEnabled())
+          this.keepAlive_.start();
+        this.pluginManager_.startRecognizer(this.startMode_);
       }
       for (var i = 0; i < this.sessions_.length; i++) {
         var session = this.sessions_[i];
@@ -308,10 +415,23 @@ cr.define('hotword', function() {
     },
 
     /**
+     * Stops the hotword detector, if it's running.
+     * @private
+     */
+    stopDetector_: function() {
+      this.keepAlive_.stop();
+      if (this.pluginManager_ && this.state_ == State_.RUNNING) {
+        this.state_ = State_.STOPPED;
+        this.pluginManager_.stopRecognizer();
+      }
+    },
+
+    /**
      * Shuts down and removes the plugin manager, if it exists.
      * @private
      */
     shutdownPluginManager_: function() {
+      this.keepAlive_.stop();
       if (this.pluginManager_) {
         this.pluginManager_.shutdown();
         this.pluginManager_ = null;
@@ -325,6 +445,20 @@ cr.define('hotword', function() {
     shutdownDetector_: function() {
       this.state_ = State_.STOPPED;
       this.shutdownPluginManager_();
+    },
+
+    /**
+     * Finalizes the speaker model. Assumes the plugin has been loaded and
+     * started.
+     */
+    finalizeSpeakerModel: function() {
+      assert(this.pluginManager_,
+             'Cannot finalize speaker model: No NaCl plugin loaded');
+      if (this.state_ != State_.RUNNING) {
+        hotword.debug('Cannot finalize speaker model: NaCl plugin not started');
+        return;
+      }
+      this.pluginManager_.finalizeSpeakerModel();
     },
 
     /**
@@ -353,9 +487,11 @@ cr.define('hotword', function() {
 
     /**
      * Handle hotword triggering.
+     * @param {!Event} event Event containing audio log data.
      * @private
      */
-    onTrigger_: function() {
+    onTrigger_: function(event) {
+      this.keepAlive_.stop();
       hotword.debug('Hotword triggered!');
       chrome.metricsPrivate.recordUserAction(
           hotword.constants.UmaMetrics.TRIGGER);
@@ -370,8 +506,47 @@ cr.define('hotword', function() {
       // order to restart the detector.
       if (this.sessions_.length) {
         var session = this.sessions_.pop();
-        if (session.triggerCb_)
-          session.triggerCb_();
+        session.triggerCb_(event.log);
+
+        hotword.metrics.recordEnum(
+            hotword.constants.UmaMetrics.TRIGGER_SOURCE,
+            UmaTriggerSources_[session.source_],
+            hotword.constants.UmaTriggerSource.MAX);
+      }
+
+      // If we're in always-on mode, shut down the hotword detector. The hotword
+      // stream requires that we close and re-open it after a trigger, and the
+      // only way to accomplish this is to shut everything down.
+      if (this.isAlwaysOnEnabled())
+        this.shutdownDetector_();
+    },
+
+    /**
+     * Handle hotword timeout.
+     * @private
+     */
+    onTimeout_: function() {
+      hotword.debug('Hotword timeout!');
+
+      // We get this event when the hotword detector thinks there's a false
+      // trigger. In this case, we need to shut down and restart the detector to
+      // re-arm the DSP.
+      this.shutdownDetector_();
+      this.updateStateFromStatus_();
+    },
+
+    /**
+     * Handle speaker model saved.
+     * @private
+     */
+    onSpeakerModelSaved_: function() {
+      hotword.debug('Speaker model saved!');
+
+      if (this.sessions_.length) {
+        // Only call the callback of the the top session.
+        var session = this.sessions_[this.sessions_.length - 1];
+        if (session.speakerModelSavedCb_)
+          session.speakerModelSavedCb_();
       }
     },
 
@@ -397,12 +572,22 @@ cr.define('hotword', function() {
      * @param {!function()} startedCb Callback invoked when the session has
      *     been started successfully.
      * @param {!function()} triggerCb Callback invoked when the hotword has
-     *     triggered.
+     * @param {function()=} modelSavedCb Callback invoked when the speaker model
+     *     has been saved.
+     * @param {hotword.constants.RecognizerStartMode=} opt_mode The mode to
+     *     start the recognizer in.
      */
-    startSession: function(source, startedCb, triggerCb) {
+    startSession: function(source, startedCb, triggerCb,
+                           opt_modelSavedCb, opt_mode) {
+      if (this.isTrainingEnabled() && opt_mode) {
+        this.startMode_ = opt_mode;
+      } else {
+        this.startMode_ = hotword.constants.RecognizerStartMode.NORMAL;
+      }
       hotword.debug('Starting session for source: ' + source);
       this.removeSession_(source);
-      this.sessions_.push(new Session_(source, triggerCb, startedCb));
+      this.sessions_.push(new Session_(source, triggerCb, startedCb,
+                                       opt_modelSavedCb));
       this.updateStateFromStatus_();
     },
 
@@ -414,6 +599,10 @@ cr.define('hotword', function() {
     stopSession: function(source) {
       hotword.debug('Stopping session for source: ' + source);
       this.removeSession_(source);
+      // If this is a training session then switch the start mode back to
+      // normal.
+      if (source == hotword.constants.SessionSource.TRAINING)
+        this.startMode_ = hotword.constants.RecognizerStartMode.NORMAL;
       this.updateStateFromStatus_();
     },
 
@@ -432,6 +621,14 @@ cr.define('hotword', function() {
 
       if (oldLocked != this.isLocked_)
         this.updateStateFromStatus_();
+    },
+
+    /**
+     * Handles a chrome.runtime.onStartup event.
+     * @private
+     */
+    handleStartup_: function() {
+      updateStatus();
     }
   };
 

@@ -30,7 +30,7 @@ cr.define('extensions', function() {
     /**
      * Populate the content area of the code div with the given code. This will
      * highlight the erroneous section (if any).
-     * @param {ExtensionHighlight} code The 'highlight' strings represent the
+     * @param {?ExtensionHighlight} code The 'highlight' strings represent the
      *     three portions of the file's content to display - the portion which
      *     is most relevant and should be emphasized (highlight), and the parts
      *     both before and after this portion. The title is the error message,
@@ -43,18 +43,19 @@ cr.define('extensions', function() {
       // Clear any remnant content, so we don't have multiple code listed.
       this.clear();
 
-      var sourceDiv = document.createElement('div');
-      sourceDiv.classList.add('extension-code-source');
-      this.appendChild(sourceDiv);
-
       // If there's no code, then display an appropriate message.
       if (!code ||
           (!code.highlight && !code.beforeHighlight && !code.afterHighlight)) {
         var span = document.createElement('span');
+        span.classList.add('extension-code-empty');
         span.textContent = emptyMessage;
-        sourceDiv.appendChild(span);
+        this.appendChild(span);
         return;
       }
+
+      var sourceDiv = document.createElement('div');
+      sourceDiv.classList.add('extension-code-source');
+      this.appendChild(sourceDiv);
 
       var lineCount = 0;
       var createSpan = function(source, isHighlighted) {

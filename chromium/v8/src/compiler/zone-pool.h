@@ -9,15 +9,15 @@
 #include <set>
 #include <vector>
 
-#include "src/v8.h"
+#include "src/zone.h"
 
 namespace v8 {
 namespace internal {
 namespace compiler {
 
-class ZonePool FINAL {
+class ZonePool final {
  public:
-  class Scope FINAL {
+  class Scope final {
    public:
     explicit Scope(ZonePool* zone_pool) : zone_pool_(zone_pool), zone_(NULL) {}
     ~Scope() { Destroy(); }
@@ -37,7 +37,7 @@ class ZonePool FINAL {
     DISALLOW_COPY_AND_ASSIGN(Scope);
   };
 
-  class StatsScope FINAL {
+  class StatsScope final {
    public:
     explicit StatsScope(ZonePool* zone_pool);
     ~StatsScope();
@@ -60,7 +60,7 @@ class ZonePool FINAL {
     DISALLOW_COPY_AND_ASSIGN(StatsScope);
   };
 
-  explicit ZonePool(Isolate* isolate);
+  ZonePool();
   ~ZonePool();
 
   size_t GetMaxAllocatedBytes();
@@ -76,7 +76,6 @@ class ZonePool FINAL {
   typedef std::vector<Zone*> Used;
   typedef std::vector<StatsScope*> Stats;
 
-  Isolate* const isolate_;
   Unused unused_;
   Used used_;
   Stats stats_;

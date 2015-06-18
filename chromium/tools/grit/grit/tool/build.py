@@ -39,7 +39,7 @@ _format_modules = {
 _format_modules.update(
     (type, 'policy_templates.template_formatter') for type in
         [ 'adm', 'admx', 'adml', 'reg', 'doc', 'json',
-          'plist', 'plist_strings', 'ios_plist' ])
+          'plist', 'plist_strings', 'ios_plist', 'android_policy' ])
 
 
 def GetFormatter(type):
@@ -109,6 +109,19 @@ Options:
                     output_all_resource_defines attribute of the root <grit>
                     element of the input .grd file.
 
+  --write-only-new flag
+                    If flag is non-0, write output files to a temporary file
+                    first, and copy it to the real output only if the new file
+                    is different from the old file.  This allows some build
+                    systems to realize that dependent build steps might be
+                    unnecessary, at the cost of comparing the output data at
+                    grit time.
+
+  --depend-on-stamp
+                    If specified along with --depfile and --depdir, the depfile
+                    generated will depend on a stampfile instead of the first
+                    output in the input .grd file.
+
 Conditional inclusion of resources only affects the output of files which
 control which resources get linked into a binary, e.g. it affects .rc files
 meant for compilation but it does not affect resource header files (that define
@@ -129,10 +142,14 @@ are exported to translation interchange files (e.g. XMB files), etc.
     depdir = None
     rc_header_format = None
     output_all_resource_defines = None
+    write_only_new = False
+    depend_on_stamp = False
     (own_opts, args) = getopt.getopt(args, 'a:o:D:E:f:w:t:h:',
         ('depdir=','depfile=','assert-file-list=',
          'output-all-resource-defines',
-         'no-output-all-resource-defines',))
+         'no-output-all-resource-defines',
+         'depend-on-stamp',
+         'write-only-new='))
     for (key, val) in own_opts:
       if key == '-a':
         assert_output_files.append(val)
@@ -166,6 +183,10 @@ are exported to translation interchange files (e.g. XMB files), etc.
         depdir = val
       elif key == '--depfile':
         depfile = val
+      elif key == '--write-only-new':
+        write_only_new = val != '0'
+      elif key == '--depend-on-stamp':
+        depend_on_stamp = True
 
     if len(args):
       print 'This tool takes no tool-specific arguments.'
@@ -184,6 +205,8 @@ are exported to translation interchange files (e.g. XMB files), etc.
         self.VerboseOut('Using whitelist: %s\n' % whitelist_filename);
         whitelist_contents = util.ReadFile(whitelist_filename, util.RAW_TEXT)
         self.whitelist_names.update(whitelist_contents.strip().split('\n'))
+
+    self.write_only_new = write_only_new
 
     self.res = grd_reader.Parse(opts.input,
                                 debug=opts.extra_verbose,
@@ -210,7 +233,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
         return 2
 
     if depfile and depdir:
-      self.GenerateDepfile(depfile, depdir)
+      self.GenerateDepfile(depfile, depdir, first_ids_file, depend_on_stamp)
 
     return 0
 
@@ -235,6 +258,9 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # The set of names that are whitelisted to actually be included in the
     # output.
     self.whitelist_names = None
+
+    # Whether to compare outputs to their old contents before writing.
+    self.write_only_new = False
 
   @staticmethod
   def AddWhitelistTags(start_node, whitelist_names):
@@ -302,7 +328,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
           'resource_map_source', 'resource_file_map_source'):
         encoding = 'cp1252'
       elif output.GetType() in ('android', 'c_format', 'js_map_format', 'plist',
-                                'plist_strings', 'doc', 'json'):
+                                'plist_strings', 'doc', 'json', 'android_policy'):
         encoding = 'utf_8'
       elif output.GetType() in ('chrome_messages_json'):
         # Chrome Web Store currently expects BOM for UTF-8 files :-(
@@ -341,13 +367,17 @@ are exported to translation interchange files (e.g. XMB files), etc.
       else:
         # CHROMIUM SPECIFIC CHANGE.
         # This clashes with gyp + vstudio, which expect the output timestamp
-        # to change on a rebuild, even if nothing has changed.
-        #files_match = filecmp.cmp(output.GetOutputFilename(),
-        #    output.GetOutputFilename() + '.tmp')
-        #if (output.GetType() != 'rc_header' or not files_match
-        #    or sys.platform != 'win32'):
-        shutil.copy2(output.GetOutputFilename() + '.tmp',
-                     output.GetOutputFilename())
+        # to change on a rebuild, even if nothing has changed, so only do
+        # it when opted in.
+        if not self.write_only_new:
+          write_file = True
+        else:
+          files_match = filecmp.cmp(output.GetOutputFilename(),
+              output.GetOutputFilename() + '.tmp')
+          write_file = not files_match
+        if write_file:
+          shutil.copy2(output.GetOutputFilename() + '.tmp',
+                       output.GetOutputFilename())
         os.remove(output.GetOutputFilename() + '.tmp')
 
       self.VerboseOut(' done.\n')
@@ -402,7 +432,7 @@ Extra output files:
     return True
 
 
-  def GenerateDepfile(self, depfile, depdir):
+  def GenerateDepfile(self, depfile, depdir, first_ids_file, depend_on_stamp):
     '''Generate a depfile that contains the imlicit dependencies of the input
     grd. The depfile will be in the same format as a makefile, and will contain
     references to files relative to |depdir|. It will be put in |depfile|.
@@ -424,7 +454,9 @@ Extra output files:
       gen/blah.h: ../src/input1.xtb ../src/input2.xtb
 
     Where "gen/blah.h" is the first output (Ninja expects the .d file to list
-    the first output in cases where there is more than one).
+    the first output in cases where there is more than one). If the flag
+    --depend-on-stamp is specified, "gen/blah.rd.d.stamp" will be used that is
+    'touched' whenever a new depfile is generated.
 
     Note that all paths in the depfile are relative to ../out, the depdir.
     '''
@@ -432,11 +464,22 @@ Extra output files:
     depdir = os.path.abspath(depdir)
     infiles = self.res.GetInputFiles()
 
-    # Get the first output file relative to the depdir.
-    outputs = self.res.GetOutputFiles()
-    output_file = os.path.relpath(os.path.join(
-          self.output_directory, outputs[0].GetFilename()), depdir)
+    # We want to trigger a rebuild if the first ids change.
+    if first_ids_file is not None:
+      infiles.append(first_ids_file)
 
+    if (depend_on_stamp):
+      output_file = depfile + ".stamp"
+      # Touch the stamp file before generating the depfile.
+      with open(output_file, 'a'):
+        os.utime(output_file, None)
+    else:
+      # Get the first output file relative to the depdir.
+      outputs = self.res.GetOutputFiles()
+      output_file = os.path.join(self.output_directory,
+                                 outputs[0].GetFilename())
+
+    output_file = os.path.relpath(output_file, depdir)
     # The path prefix to prepend to dependencies in the depfile.
     prefix = os.path.relpath(os.getcwd(), depdir)
     deps_text = ' '.join([os.path.join(prefix, i) for i in infiles])

@@ -88,7 +88,6 @@ namespace gles2 {
 class MockShaderTranslator : public ShaderTranslatorInterface {
  public:
   MockShaderTranslator();
-  virtual ~MockShaderTranslator();
 
   MOCK_METHOD5(Init, bool(
       sh::GLenum shader_type,
@@ -96,16 +95,19 @@ class MockShaderTranslator : public ShaderTranslatorInterface {
       const ShBuiltInResources* resources,
       GlslImplementationType glsl_implementation_type,
       ShCompileOptions driver_bug_workarounds));
-  MOCK_CONST_METHOD7(Translate, bool(
+  MOCK_CONST_METHOD8(Translate, bool(
       const std::string& shader_source,
       std::string* info_log,
       std::string* translated_source,
+      int* shader_version,
       AttributeMap* attrib_map,
       UniformMap* uniform_map,
       VaryingMap* varying_map,
       NameMap* name_map));
   MOCK_CONST_METHOD0(
       GetStringForOptionsThatWouldAffectCompilation, std::string());
+ private:
+  ~MockShaderTranslator() override;
 };
 
 class MockProgramCache : public ProgramCache {
@@ -116,19 +118,19 @@ class MockProgramCache : public ProgramCache {
   MOCK_METHOD7(LoadLinkedProgram, ProgramLoadResult(
       GLuint program,
       Shader* shader_a,
-      const ShaderTranslatorInterface* translator_a,
       Shader* shader_b,
-      const ShaderTranslatorInterface* translator_b,
       const LocationMap* bind_attrib_location_map,
+      const std::vector<std::string>& transform_feedback_varyings,
+      GLenum transform_feedback_buffer_mode,
       const ShaderCacheCallback& callback));
 
   MOCK_METHOD7(SaveLinkedProgram, void(
       GLuint program,
       const Shader* shader_a,
-      const ShaderTranslatorInterface* translator_a,
       const Shader* shader_b,
-      const ShaderTranslatorInterface* translator_b,
       const LocationMap* bind_attrib_location_map,
+      const std::vector<std::string>& transform_feedback_varyings,
+      GLenum transform_feedback_buffer_mode,
       const ShaderCacheCallback& callback));
   MOCK_METHOD1(LoadProgram, void(const std::string&));
 

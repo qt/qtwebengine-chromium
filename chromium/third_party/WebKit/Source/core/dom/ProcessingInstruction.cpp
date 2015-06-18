@@ -21,7 +21,6 @@
 #include "config.h"
 #include "core/dom/ProcessingInstruction.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
@@ -29,9 +28,11 @@
 #include "core/dom/IncrementLoadEventDelayCount.h"
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/XSLStyleSheetResource.h"
+#include "core/xml/DocumentXSLT.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/parser/XMLDocumentParser.h" // for parseAttributes()
 
@@ -45,6 +46,7 @@ inline ProcessingInstruction::ProcessingInstruction(Document& document, const St
     , m_createdByParser(false)
     , m_isCSS(false)
     , m_isXSL(false)
+    , m_listenerForXSLT(nullptr)
 {
 }
 
@@ -62,13 +64,26 @@ ProcessingInstruction::~ProcessingInstruction()
     // FIXME: ProcessingInstruction should not be in document here.
     // However, if we add ASSERT(!inDocument()), fast/xsl/xslt-entity.xml
     // crashes. We need to investigate ProcessingInstruction lifetime.
-    if (inDocument()) {
-        if (m_isCSS)
-            document().styleEngine()->removeStyleSheetCandidateNode(this);
-        else if (m_isXSL)
-            document().styleEngine()->removeXSLStyleSheet(this);
-    }
+    if (inDocument() && m_isCSS)
+        document().styleEngine().removeStyleSheetCandidateNode(this);
 #endif
+    clearEventListenerForXSLT();
+}
+
+EventListener* ProcessingInstruction::eventListenerForXSLT()
+{
+    if (!m_listenerForXSLT)
+        return 0;
+
+    return m_listenerForXSLT->toEventListener();
+}
+
+void ProcessingInstruction::clearEventListenerForXSLT()
+{
+    if (m_listenerForXSLT) {
+        m_listenerForXSLT->detach();
+        m_listenerForXSLT.clear();
+    }
 }
 
 String ProcessingInstruction::nodeName() const
@@ -139,7 +154,7 @@ void ProcessingInstruction::process(const String& href, const String& charset)
         // We need to make a synthetic XSLStyleSheet that is embedded.
         // It needs to be able to kick off import/include loads that
         // can hang off some parent sheet.
-        if (m_isXSL) {
+        if (m_isXSL && RuntimeEnabledFeatures::xsltEnabled()) {
             KURL finalURL(ParsedURLString, m_localHref);
             m_sheet = XSLStyleSheet::createEmbedded(this, finalURL);
             m_loading = false;
@@ -154,7 +169,8 @@ void ProcessingInstruction::process(const String& href, const String& charset)
     ResourcePtr<StyleSheetResource> resource;
     FetchRequest request(ResourceRequest(document().completeURL(href)), FetchInitiatorTypeNames::processinginstruction);
     if (m_isXSL) {
-        resource = document().fetcher()->fetchXSLStyleSheet(request);
+        if (RuntimeEnabledFeatures::xsltEnabled())
+            resource = document().fetcher()->fetchXSLStyleSheet(request);
     } else {
         request.setCharset(charset.isEmpty() ? document().charset() : charset);
         resource = document().fetcher()->fetchCSSStyleSheet(request);
@@ -162,7 +178,8 @@ void ProcessingInstruction::process(const String& href, const String& charset)
 
     if (resource) {
         m_loading = true;
-        document().styleEngine()->addPendingSheet();
+        if (!m_isXSL)
+            document().styleEngine().addPendingSheet();
         setResource(resource);
     }
 }
@@ -179,7 +196,8 @@ bool ProcessingInstruction::isLoading() const
 bool ProcessingInstruction::sheetLoaded()
 {
     if (!isLoading()) {
-        document().styleEngine()->removePendingSheet(this);
+        if (!DocumentXSLT::sheetLoaded(document(), this))
+            document().styleEngine().removePendingSheet(this);
         return true;
     }
     return false;
@@ -207,7 +225,7 @@ void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& bas
     // We don't need the cross-origin security check here because we are
     // getting the sheet text in "strict" mode. This enforces a valid CSS MIME
     // type.
-    parseStyleSheet(sheet->sheetText(true));
+    parseStyleSheet(sheet->sheetText());
 }
 
 void ProcessingInstruction::setXSLStyleSheet(const String& href, const KURL& baseURL, const String& sheet)
@@ -258,10 +276,8 @@ Node::InsertionNotificationRequest ProcessingInstruction::insertedInto(Container
     String href;
     String charset;
     bool isValid = checkStyleSheet(href, charset);
-    if (m_isCSS)
-        document().styleEngine()->addStyleSheetCandidateNode(this, m_createdByParser);
-    else if (m_isXSL)
-        document().styleEngine()->addXSLStyleSheet(this, m_createdByParser);
+    if (!DocumentXSLT::processingInstructionInsertedIntoDocument(document(), this))
+        document().styleEngine().addStyleSheetCandidateNode(this, m_createdByParser);
     if (isValid)
         process(href, charset);
     return InsertionDone;
@@ -273,17 +289,18 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
     if (!insertionPoint->inDocument())
         return;
 
-    if (m_isCSS)
-        document().styleEngine()->removeStyleSheetCandidateNode(this);
-    else if (m_isXSL)
-        document().styleEngine()->removeXSLStyleSheet(this);
+    // No need to remove XSLStyleSheet from StyleEngine.
+    if (!DocumentXSLT::processingInstructionRemovedFromDocument(document(), this))
+        document().styleEngine().removeStyleSheetCandidateNode(this);
 
     RefPtrWillBeRawPtr<StyleSheet> removedSheet = m_sheet;
-
     if (m_sheet) {
         ASSERT(m_sheet->ownerNode() == this);
         clearSheet();
     }
+
+    // No need to remove pending sheets.
+    clearResource();
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
     if (document().isActive())
@@ -294,11 +311,11 @@ void ProcessingInstruction::clearSheet()
 {
     ASSERT(m_sheet);
     if (m_sheet->isLoading())
-        document().styleEngine()->removePendingSheet(this);
+        document().styleEngine().removePendingSheet(this);
     m_sheet.release()->clearOwnerNode();
 }
 
-void ProcessingInstruction::trace(Visitor* visitor)
+DEFINE_TRACE(ProcessingInstruction)
 {
     visitor->trace(m_sheet);
     CharacterData::trace(visitor);

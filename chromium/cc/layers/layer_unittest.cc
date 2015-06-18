@@ -4,9 +4,12 @@
 
 #include "cc/layers/layer.h"
 
+#include "base/thread_task_runner_handle.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/test/animation_test_common.h"
 #include "cc/test/fake_impl_proxy.h"
@@ -16,6 +19,7 @@
 #include "cc/test/layer_test_common.h"
 #include "cc/test/test_gpu_memory_buffer_manager.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -40,9 +44,11 @@ namespace {
 
 class MockLayerTreeHost : public LayerTreeHost {
  public:
-  explicit MockLayerTreeHost(FakeLayerTreeHostClient* client)
-      : LayerTreeHost(client, nullptr, nullptr, LayerTreeSettings()) {
-    InitializeSingleThreaded(client, base::MessageLoopProxy::current());
+  MockLayerTreeHost(LayerTreeHostSingleThreadClient* single_thread_client,
+                    LayerTreeHost::InitParams* params)
+      : LayerTreeHost(params) {
+    InitializeSingleThreaded(single_thread_client,
+                             base::ThreadTaskRunnerHandle::Get(), nullptr);
   }
 
   MOCK_METHOD0(SetNeedsCommit, void());
@@ -58,15 +64,20 @@ class MockLayerPainter : public LayerPainter {
 class LayerTest : public testing::Test {
  public:
   LayerTest()
-      : host_impl_(&proxy_, &shared_bitmap_manager_),
+      : host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_),
         fake_client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
  protected:
-  virtual void SetUp() override {
-    layer_tree_host_.reset(new StrictMock<MockLayerTreeHost>(&fake_client_));
+  void SetUp() override {
+    LayerTreeHost::InitParams params;
+    LayerTreeSettings settings;
+    params.client = &fake_client_;
+    params.settings = &settings;
+    layer_tree_host_.reset(
+        new StrictMock<MockLayerTreeHost>(&fake_client_, &params));
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
     EXPECT_CALL(*layer_tree_host_, SetNeedsFullTreeSync()).Times(AnyNumber());
     parent_ = nullptr;
@@ -129,6 +140,7 @@ class LayerTest : public testing::Test {
 
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
 
   FakeLayerTreeHostClient fake_client_;
@@ -736,8 +748,9 @@ TEST_F(LayerTest,
                                    1.0,
                                    0,
                                    100);
-  impl_layer->layer_animation_controller()->GetAnimation(Animation::Transform)->
-      set_is_impl_only(true);
+  impl_layer->layer_animation_controller()
+      ->GetAnimation(Animation::TRANSFORM)
+      ->set_is_impl_only(true);
   transform.Rotate(45.0);
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetTransform(transform));
 
@@ -777,8 +790,9 @@ TEST_F(LayerTest,
                                    0.3f,
                                    0.7f,
                                    false);
-  impl_layer->layer_animation_controller()->GetAnimation(Animation::Opacity)->
-      set_is_impl_only(true);
+  impl_layer->layer_animation_controller()
+      ->GetAnimation(Animation::OPACITY)
+      ->set_is_impl_only(true);
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetOpacity(0.75f));
 
   EXPECT_FALSE(impl_layer->LayerPropertyChanged());
@@ -813,8 +827,9 @@ TEST_F(LayerTest,
   impl_layer->ResetAllChangeTrackingForSubtree();
   AddAnimatedFilterToController(
       impl_layer->layer_animation_controller(), 1.0, 1.f, 2.f);
-  impl_layer->layer_animation_controller()->GetAnimation(Animation::Filter)->
-      set_is_impl_only(true);
+  impl_layer->layer_animation_controller()
+      ->GetAnimation(Animation::FILTER)
+      ->set_is_impl_only(true);
   filters.Append(FilterOperation::CreateSepiaFilter(0.5f));
   EXPECT_SET_NEEDS_COMMIT(1, test_layer->SetFilters(filters));
 
@@ -928,24 +943,16 @@ class LayerTreeHostFactory {
         shared_bitmap_manager_(new TestSharedBitmapManager),
         gpu_memory_buffer_manager_(new TestGpuMemoryBufferManager) {}
 
-  scoped_ptr<LayerTreeHost> Create() {
-    return LayerTreeHost::CreateSingleThreaded(
-               &client_,
-               &client_,
-               shared_bitmap_manager_.get(),
-               gpu_memory_buffer_manager_.get(),
-               LayerTreeSettings(),
-               base::MessageLoopProxy::current()).Pass();
-  }
+  scoped_ptr<LayerTreeHost> Create() { return Create(LayerTreeSettings()); }
 
   scoped_ptr<LayerTreeHost> Create(LayerTreeSettings settings) {
-    return LayerTreeHost::CreateSingleThreaded(
-               &client_,
-               &client_,
-               shared_bitmap_manager_.get(),
-               gpu_memory_buffer_manager_.get(),
-               settings,
-               base::MessageLoopProxy::current()).Pass();
+    LayerTreeHost::InitParams params;
+    params.client = &client_;
+    params.shared_bitmap_manager = shared_bitmap_manager_.get();
+    params.gpu_memory_buffer_manager = gpu_memory_buffer_manager_.get();
+    params.settings = &settings;
+    params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
+    return LayerTreeHost::CreateSingleThreaded(&client_, &params);
   }
 
  private:
@@ -1140,10 +1147,11 @@ TEST(LayerLayerTreeHostTest, DestroyHostWithNonNullRootLayer) {
 static bool AddTestAnimation(Layer* layer) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve =
       KeyframedFloatAnimationCurve::Create();
-  curve->AddKeyframe(FloatKeyframe::Create(0.0, 0.3f, nullptr));
-  curve->AddKeyframe(FloatKeyframe::Create(1.0, 0.7f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(base::TimeDelta(), 0.3f, nullptr));
+  curve->AddKeyframe(
+      FloatKeyframe::Create(base::TimeDelta::FromSecondsD(1.0), 0.7f, nullptr));
   scoped_ptr<Animation> animation =
-      Animation::Create(curve.Pass(), 0, 0, Animation::Opacity);
+      Animation::Create(curve.Pass(), 0, 0, Animation::OPACITY);
 
   return layer->AddAnimation(animation.Pass());
 }
@@ -1247,6 +1255,74 @@ TEST_F(LayerTest, DrawsContentChangedInSetLayerTreeHost) {
   becomes_draws_content->SetIsDrawable(true);
   root_layer->AddChild(becomes_draws_content);
   EXPECT_EQ(1, root_layer->NumDescendantsThatDrawContent());
+}
+
+void ReceiveCopyOutputResult(int* result_count,
+                             scoped_ptr<CopyOutputResult> result) {
+  ++(*result_count);
+}
+
+TEST_F(LayerTest, DedupesCopyOutputRequestsBySource) {
+  scoped_refptr<Layer> layer = Layer::Create();
+  int result_count = 0;
+
+  // Create identical requests without the source being set, and expect the
+  // layer does not abort either one.
+  scoped_ptr<CopyOutputRequest> request = CopyOutputRequest::CreateRequest(
+      base::Bind(&ReceiveCopyOutputResult, &result_count));
+  layer->RequestCopyOfOutput(request.Pass());
+  EXPECT_EQ(0, result_count);
+  request = CopyOutputRequest::CreateRequest(
+      base::Bind(&ReceiveCopyOutputResult, &result_count));
+  layer->RequestCopyOfOutput(request.Pass());
+  EXPECT_EQ(0, result_count);
+
+  // When the layer is destroyed, expect both requests to be aborted.
+  layer = nullptr;
+  EXPECT_EQ(2, result_count);
+
+  layer = Layer::Create();
+  result_count = 0;
+
+  // Create identical requests, but this time the source is being set.  Expect
+  // the first request from |this| source aborts immediately when the second
+  // request from |this| source is made.
+  int did_receive_first_result_from_this_source = 0;
+  request = CopyOutputRequest::CreateRequest(base::Bind(
+      &ReceiveCopyOutputResult, &did_receive_first_result_from_this_source));
+  request->set_source(this);
+  layer->RequestCopyOfOutput(request.Pass());
+  EXPECT_EQ(0, did_receive_first_result_from_this_source);
+  // Make a request from a different source.
+  int did_receive_result_from_different_source = 0;
+  request = CopyOutputRequest::CreateRequest(base::Bind(
+      &ReceiveCopyOutputResult, &did_receive_result_from_different_source));
+  request->set_source(reinterpret_cast<void*>(0xdeadbee0));
+  layer->RequestCopyOfOutput(request.Pass());
+  EXPECT_EQ(0, did_receive_result_from_different_source);
+  // Make a request without specifying the source.
+  int did_receive_result_from_anonymous_source = 0;
+  request = CopyOutputRequest::CreateRequest(base::Bind(
+      &ReceiveCopyOutputResult, &did_receive_result_from_anonymous_source));
+  layer->RequestCopyOfOutput(request.Pass());
+  EXPECT_EQ(0, did_receive_result_from_anonymous_source);
+  // Make the second request from |this| source.
+  int did_receive_second_result_from_this_source = 0;
+  request = CopyOutputRequest::CreateRequest(base::Bind(
+      &ReceiveCopyOutputResult, &did_receive_second_result_from_this_source));
+  request->set_source(this);
+  layer->RequestCopyOfOutput(request.Pass());  // First request to be aborted.
+  EXPECT_EQ(1, did_receive_first_result_from_this_source);
+  EXPECT_EQ(0, did_receive_result_from_different_source);
+  EXPECT_EQ(0, did_receive_result_from_anonymous_source);
+  EXPECT_EQ(0, did_receive_second_result_from_this_source);
+
+  // When the layer is destroyed, the other three requests should be aborted.
+  layer = nullptr;
+  EXPECT_EQ(1, did_receive_first_result_from_this_source);
+  EXPECT_EQ(1, did_receive_result_from_different_source);
+  EXPECT_EQ(1, did_receive_result_from_anonymous_source);
+  EXPECT_EQ(1, did_receive_second_result_from_this_source);
 }
 
 }  // namespace

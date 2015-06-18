@@ -32,6 +32,7 @@
 #define DataTransferItem_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
@@ -42,15 +43,14 @@ namespace blink {
 class Blob;
 class DataObjectItem;
 class DataTransfer;
-class File;
 class StringCallback;
 class ExecutionContext;
 
-class DataTransferItem final : public RefCountedWillBeGarbageCollected<DataTransferItem>, public ScriptWrappable {
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DataTransferItem);
+class CORE_EXPORT DataTransferItem final : public GarbageCollected<DataTransferItem>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
+    WTF_MAKE_NONCOPYABLE(DataTransferItem);
 public:
-    static PassRefPtrWillBeRawPtr<DataTransferItem> create(PassRefPtrWillBeRawPtr<DataTransfer>, PassRefPtrWillBeRawPtr<DataObjectItem>);
+    static DataTransferItem* create(DataTransfer*, DataObjectItem*);
 
     String kind() const;
     String type() const;
@@ -61,13 +61,13 @@ public:
     DataTransfer* dataTransfer() { return m_dataTransfer.get(); }
     DataObjectItem* dataObjectItem() { return m_item.get(); }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    DataTransferItem(PassRefPtrWillBeRawPtr<DataTransfer>, PassRefPtrWillBeRawPtr<DataObjectItem>);
+    DataTransferItem(DataTransfer*, DataObjectItem*);
 
-    RefPtrWillBeMember<DataTransfer> m_dataTransfer;
-    RefPtrWillBeMember<DataObjectItem> m_item;
+    Member<DataTransfer> m_dataTransfer;
+    Member<DataObjectItem> m_item;
 };
 
 } // namespace blink

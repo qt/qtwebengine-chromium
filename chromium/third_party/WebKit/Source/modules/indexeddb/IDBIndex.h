@@ -32,9 +32,9 @@
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IDBRequest.h"
-#include "public/platform/WebIDBCursor.h"
-#include "public/platform/WebIDBDatabase.h"
-#include "public/platform/WebIDBTypes.h"
+#include "public/platform/modules/indexeddb/WebIDBCursor.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
+#include "public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -51,7 +51,7 @@ public:
         return new IDBIndex(metadata, objectStore, transaction);
     }
     ~IDBIndex();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // Implement the IDL
     const String& name() const { return m_metadata.name; }

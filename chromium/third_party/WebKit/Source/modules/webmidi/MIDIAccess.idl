@@ -29,14 +29,13 @@
  */
 
 [
-    NoInterfaceObject,
-    ActiveDOMObject
+    ActiveDOMObject,
+    RuntimeEnabled=WebMIDI,
 ] interface MIDIAccess : EventTarget {
     readonly attribute MIDIInputMap inputs;
     readonly attribute MIDIOutputMap outputs;
 
     readonly attribute boolean sysexEnabled;
 
-    attribute EventHandler onconnect;
-    attribute EventHandler ondisconnect;
+    attribute EventHandler onstatechange;
 };

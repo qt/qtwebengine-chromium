@@ -31,12 +31,13 @@
 #ifndef DocumentLifecycle_h
 #define DocumentLifecycle_h
 
+#include "core/CoreExport.h"
 #include "wtf/Assertions.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
 
-class DocumentLifecycle {
+class CORE_EXPORT DocumentLifecycle {
     WTF_MAKE_NONCOPYABLE(DocumentLifecycle);
 public:
     enum State {
@@ -50,6 +51,9 @@ public:
         InStyleRecalc,
         StyleClean,
 
+        InLayoutSubtreeChange,
+        LayoutSubtreeChangeClean,
+
         InPreLayout,
         InPerformLayout,
         AfterPerformLayout,
@@ -62,7 +66,7 @@ public:
         PaintInvalidationClean,
 
         // Once the document starts shuting down, we cannot return
-        // to the style/layout/rendering states.
+        // to the style/layout/compositing states.
         Stopping,
         Stopped,
         Disposed,
@@ -121,8 +125,10 @@ public:
     State state() const { return m_state; }
 
     bool stateAllowsTreeMutations() const;
-    bool stateAllowsRenderTreeMutations() const;
+    bool stateAllowsLayoutTreeMutations() const;
     bool stateAllowsDetach() const;
+    bool stateAllowsLayoutInvalidation() const;
+    bool stateAllowsLayoutTreeNotifications() const;
 
     void advanceTo(State);
     void ensureStateAtMost(State);
@@ -153,9 +159,14 @@ inline bool DocumentLifecycle::stateAllowsTreeMutations() const
         && m_state != InCompositingUpdate;
 }
 
-inline bool DocumentLifecycle::stateAllowsRenderTreeMutations() const
+inline bool DocumentLifecycle::stateAllowsLayoutTreeMutations() const
 {
-    return m_detachCount || m_state == InStyleRecalc;
+    return m_detachCount || m_state == InStyleRecalc || m_state == InLayoutSubtreeChange;
+}
+
+inline bool DocumentLifecycle::stateAllowsLayoutTreeNotifications() const
+{
+    return m_state == InLayoutSubtreeChange;
 }
 
 inline bool DocumentLifecycle::stateAllowsDetach() const
@@ -163,6 +174,7 @@ inline bool DocumentLifecycle::stateAllowsDetach() const
     return m_state == VisualUpdatePending
         || m_state == InStyleRecalc
         || m_state == StyleClean
+        || m_state == LayoutSubtreeChangeClean
         || m_state == InPreLayout
         || m_state == LayoutClean
         || m_state == CompositingClean
@@ -170,6 +182,13 @@ inline bool DocumentLifecycle::stateAllowsDetach() const
         || m_state == Stopping;
 }
 
+inline bool DocumentLifecycle::stateAllowsLayoutInvalidation() const
+{
+    return m_state != InPerformLayout
+        && m_state != InCompositingUpdate
+        && m_state != InPaintInvalidation;
 }
+
+} // namespace blink
 
 #endif

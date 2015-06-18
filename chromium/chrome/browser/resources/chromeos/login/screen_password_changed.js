@@ -42,6 +42,21 @@ login.createScreen('PasswordChangedScreen', 'password-changed', function() {
             $('password-changed-ok-button').disabled = true;
           }
         });
+
+      var gaiaPasswordChanged = $('gaia-password-changed');
+      gaiaPasswordChanged.addEventListener('cancel', function(e) {
+          chrome.send('cancelPasswordChangedFlow',
+              [$('gaia-password-changed').email]);
+          gaiaPasswordChanged.reset();
+        });
+
+      gaiaPasswordChanged.addEventListener('passwordEnter', function(e) {
+          chrome.send('migrateUserData', [e.detail.password]);
+        });
+
+      gaiaPasswordChanged.addEventListener('proceedAnyway', function() {
+          chrome.send('resyncUserData');
+        });
     },
 
     /**
@@ -124,7 +139,7 @@ login.createScreen('PasswordChangedScreen', 'password-changed', function() {
      */
     cancel: function() {
       this.disabled = true;
-      chrome.send('cancelPasswordChangedFlow');
+      chrome.send('cancelPasswordChangedFlow', ['']);
     },
 
     /**
@@ -137,6 +152,11 @@ login.createScreen('PasswordChangedScreen', 'password-changed', function() {
       }
       this.disabled = true;
       chrome.send('migrateUserData', [$('old-password').value]);
+    },
+
+    onAfterShow: function(data) {
+      if (Oobe.isNewGaiaFlow())
+        $('gaia-password-changed').focus();
     },
 
     /**
@@ -158,19 +178,32 @@ login.createScreen('PasswordChangedScreen', 'password-changed', function() {
      * Show password changed screen.
      * @param {boolean} showError Whether to show the incorrect password error.
      */
-    show: function(showError) {
+    show: function(showError, email) {
+      if (Oobe.isNewGaiaFlow()) {
+        $('password-changed-contents').hidden = true;
+        $('password-changed-controls').hidden = true;
+        var gaiaPasswordChanged = $('gaia-password-changed');
+        gaiaPasswordChanged.reset();
+        gaiaPasswordChanged.hidden = false;
+        if (showError)
+          gaiaPasswordChanged.invalidate();
+        if (email)
+          gaiaPasswordChanged.email = email;
+      } else {
+        var screen = $('password-changed');
+        screen.classList.toggle('password-error', showError);
+        screen.classList.add('migrate');
+        screen.classList.remove('resync');
+        $('old-password').value = '';
+        $('password-changed').disabled = false;
+      }
       // We'll get here after the successful online authentication.
       // It assumes session is about to start so hides login screen controls.
       Oobe.getInstance().headerHidden = false;
-      var screen = $('password-changed');
-      screen.classList.toggle('password-error', showError);
-      screen.classList.add('migrate');
-      screen.classList.remove('resync');
-      $('old-password').value = '';
-      $('password-changed').disabled = false;
-
       Oobe.showScreen({id: SCREEN_PASSWORD_CHANGED});
-      $('password-changed-ok-button').disabled = true;
+      $('login-header-bar').signinUIState = SIGNIN_UI_STATE.PASSWORD_CHANGED;
+      if (!Oobe.isNewGaiaFlow())
+        $('password-changed-ok-button').disabled = true;
     }
   };
 });

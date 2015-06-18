@@ -11,7 +11,8 @@
 #include "GrSurface.h"
 #include "SkRect.h"
 
-class GrStencilBuffer;
+class GrStencilAttachment;
+class GrRenderTargetPriv;
 
 /**
  * GrRenderTarget represents a 2D buffer of pixels that can be rendered to.
@@ -25,24 +26,10 @@ public:
     SK_DECLARE_INST_COUNT(GrRenderTarget)
 
     // GrSurface overrides
-    virtual GrRenderTarget* asRenderTarget() SK_OVERRIDE { return this; }
-    virtual const GrRenderTarget* asRenderTarget() const  SK_OVERRIDE { return this; }
+    GrRenderTarget* asRenderTarget() override { return this; }
+    const GrRenderTarget* asRenderTarget() const  override { return this; }
 
     // GrRenderTarget
-    /**
-     * If this RT is multisampled, this is the multisample buffer
-     * @return the 3D API's handle to this object (e.g. FBO ID in OpenGL)
-     */
-    virtual GrBackendObject getRenderTargetHandle() const = 0;
-
-    /**
-     * If this RT is multisampled, this is the buffer it is resolved to.
-     * Otherwise, same as getRenderTargetHandle().
-     * (In GL a separate FBO ID is used for the MSAA and resolved buffers)
-     * @return the 3D API's handle to this object (e.g. FBO ID in OpenGL)
-     */
-    virtual GrBackendObject getRenderTargetResolvedHandle() const = 0;
-
     /**
      * @return true if the surface is multisampled, false otherwise
      */
@@ -102,29 +89,30 @@ public:
     };
     virtual ResolveType getResolveType() const = 0;
 
-    /**
-     * GrStencilBuffer is not part of the public API.
-     */
-    GrStencilBuffer* getStencilBuffer() const { return fStencilBuffer; }
-    void setStencilBuffer(GrStencilBuffer* stencilBuffer);
+    // Provides access to functions that aren't part of the public API.
+    GrRenderTargetPriv renderTargetPriv();
+    const GrRenderTargetPriv renderTargetPriv() const;
 
 protected:
-    GrRenderTarget(GrGpu* gpu,
-                   bool isWrapped,
-                   const GrSurfaceDesc& desc)
-        : INHERITED(gpu, isWrapped, desc)
-        , fStencilBuffer(NULL) {
+    GrRenderTarget(GrGpu* gpu, LifeCycle lifeCycle, const GrSurfaceDesc& desc)
+        : INHERITED(gpu, lifeCycle, desc)
+        , fStencilAttachment(NULL) {
         fResolveRect.setLargestInverted();
     }
 
     // override of GrResource
-    virtual void onAbandon() SK_OVERRIDE;
-    virtual void onRelease() SK_OVERRIDE;
+    void onAbandon() override;
+    void onRelease() override;
 
 private:
-    GrStencilBuffer*  fStencilBuffer;
+    // Checked when this object is asked to attach a stencil buffer.
+    virtual bool canAttemptStencilAttachment() const = 0;
 
-    SkIRect           fResolveRect;
+    friend class GrRenderTargetPriv;
+
+    GrStencilAttachment*  fStencilAttachment;
+
+    SkIRect               fResolveRect;
 
     typedef GrSurface INHERITED;
 };

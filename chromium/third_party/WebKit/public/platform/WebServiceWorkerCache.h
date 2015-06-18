@@ -20,20 +20,20 @@ namespace blink {
 // This object is owned by Blink, and should be destroyed as each Cache instance is no longer in use.
 class WebServiceWorkerCache {
 public:
-    typedef WebCallbacks<WebServiceWorkerResponse, WebServiceWorkerCacheError> CacheMatchCallbacks;
-    typedef WebCallbacks<WebVector<WebServiceWorkerResponse>, WebServiceWorkerCacheError> CacheWithResponsesCallbacks;
-    typedef WebCallbacks<WebVector<WebServiceWorkerRequest>, WebServiceWorkerCacheError> CacheWithRequestsCallbacks;
+    using CacheMatchCallbacks = WebCallbacks<WebServiceWorkerResponse, WebServiceWorkerCacheError>;
+    using CacheWithResponsesCallbacks = WebCallbacks<WebVector<WebServiceWorkerResponse>, WebServiceWorkerCacheError>;
+    using CacheWithRequestsCallbacks = WebCallbacks<WebVector<WebServiceWorkerRequest>, WebServiceWorkerCacheError>;
+    using CacheBatchCallbacks = WebCallbacks<void, WebServiceWorkerCacheError>;
 
     virtual ~WebServiceWorkerCache() { }
 
     // Options that affect the scope of searches.
     struct QueryParams {
-        QueryParams() : ignoreSearch(false), ignoreMethod(false), ignoreVary(false), prefixMatch(false) { }
+        QueryParams() : ignoreSearch(false), ignoreMethod(false), ignoreVary(false) { }
 
         bool ignoreSearch;
         bool ignoreMethod;
         bool ignoreVary;
-        bool prefixMatch;
         WebString cacheName;
     };
 
@@ -60,7 +60,7 @@ public:
     virtual void dispatchMatch(CacheMatchCallbacks*, const WebServiceWorkerRequest&, const QueryParams&) = 0;
     virtual void dispatchMatchAll(CacheWithResponsesCallbacks*, const WebServiceWorkerRequest&, const QueryParams&) = 0;
     virtual void dispatchKeys(CacheWithRequestsCallbacks*, const WebServiceWorkerRequest*, const QueryParams&) = 0;
-    virtual void dispatchBatch(CacheWithResponsesCallbacks*, const WebVector<BatchOperation>&) = 0;
+    virtual void dispatchBatch(CacheBatchCallbacks*, const WebVector<BatchOperation>&) = 0;
 };
 
 } // namespace blink

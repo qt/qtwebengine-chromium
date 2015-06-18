@@ -12,12 +12,12 @@ cr.define('cr.ui', function() {
    *
    * @param {Object=} opt_propertyBag Optional properties.
    * @constructor
-   * @extends {HTMLMenuElement}
+   * @extends {HTMLElement}
    */
-  var Menu = cr.ui.define('menu');
+  var Menu = cr.ui.define('cr-menu');
 
   Menu.prototype = {
-    __proto__: HTMLMenuElement.prototype,
+    __proto__: HTMLElement.prototype,
 
     selectedIndex_: -1,
 
@@ -25,11 +25,6 @@ cr.define('cr.ui', function() {
      * Element for which menu is being shown.
      */
     contextElement: null,
-
-    /**
-     * Selector for children which are menu items.
-     */
-    menuItemSelector: '*',
 
     /**
      * Initializes the menu element.
@@ -55,7 +50,7 @@ cr.define('cr.ui', function() {
      * @return {cr.ui.MenuItem} The created menu item.
      */
     addMenuItem: function(item) {
-      var menuItem = this.ownerDocument.createElement('menuitem');
+      var menuItem = this.ownerDocument.createElement('cr-menu-item');
       this.appendChild(menuItem);
 
       cr.ui.decorate(menuItem, MenuItem);
@@ -93,7 +88,7 @@ cr.define('cr.ui', function() {
      * @private
      */
     findMenuItem_: function(node) {
-      while (node && node.parentNode != this) {
+      while (node && node.parentNode != this && !(node instanceof MenuItem)) {
         node = node.parentNode;
       }
       return node ? assertInstanceof(node, MenuItem) : null;
@@ -119,7 +114,7 @@ cr.define('cr.ui', function() {
     },
 
     get menuItems() {
-      return this.querySelectorAll(this.menuItemSelector);
+      return this.querySelectorAll(this.menuItemSelector || '*');
     },
 
     /**
@@ -226,12 +221,15 @@ cr.define('cr.ui', function() {
         case 'Enter':
         case 'U+0020': // Space
           if (item) {
+            // Store |contextElement| since it'll be removed when handling the
+            // 'activate' event.
+            var contextElement = this.contextElement;
             var activationEvent = cr.doc.createEvent('Event');
             activationEvent.initEvent('activate', true, true);
             activationEvent.originalEvent = e;
             if (item.dispatchEvent(activationEvent)) {
               if (item.command)
-                item.command.execute();
+                item.command.execute(contextElement);
             }
           }
           return true;
@@ -271,6 +269,11 @@ cr.define('cr.ui', function() {
    */
   cr.defineProperty(Menu, 'selectedIndex', cr.PropertyKind.JS,
       selectedIndexChanged);
+
+  /**
+   * Selector for children which are menu items.
+   */
+  cr.defineProperty(Menu, 'menuItemSelector', cr.PropertyKind.ATTR);
 
   // Export
   return {

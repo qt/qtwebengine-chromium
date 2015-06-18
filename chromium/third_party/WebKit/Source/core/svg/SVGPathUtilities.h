@@ -20,35 +20,30 @@
 #ifndef SVGPathUtilities_h
 #define SVGPathUtilities_h
 
-#include "core/svg/SVGPathConsumer.h"
+#include "core/svg/SVGPathParser.h"
 #include "platform/geometry/FloatPoint.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 class Path;
 class SVGPathByteStream;
-class SVGPathSeg;
-class SVGPathSegList;
 
 // String/SVGPathByteStream -> Path
 bool buildPathFromString(const String&, Path&);
-bool buildPathFromByteStream(const SVGPathByteStream*, Path&);
+bool buildPathFromByteStream(const SVGPathByteStream&, Path&);
 
-// SVGPathSegList/String -> SVGPathByteStream
-bool appendSVGPathByteStreamFromSVGPathSeg(PassRefPtr<SVGPathSeg>, SVGPathByteStream*, PathParsingMode);
-bool buildSVGPathByteStreamFromString(const String&, SVGPathByteStream*, PathParsingMode);
+// String -> SVGPathByteStream
+bool buildSVGPathByteStreamFromString(const String&, SVGPathByteStream&, PathParsingMode);
 
-// SVGPathByteStream/SVGPathSegList -> String
-bool buildStringFromByteStream(const SVGPathByteStream*, String&, PathParsingMode);
-bool buildStringFromSVGPathSegList(PassRefPtr<SVGPathSegList>, String&, PathParsingMode);
+// SVGPathByteStream -> String
+bool buildStringFromByteStream(const SVGPathByteStream&, String&, PathParsingMode);
 
-bool addToSVGPathByteStream(SVGPathByteStream*, const SVGPathByteStream*, unsigned repeatCount = 1);
+bool addToSVGPathByteStream(SVGPathByteStream&, const SVGPathByteStream&, unsigned repeatCount = 1);
 
-bool getSVGPathSegAtLengthFromSVGPathByteStream(const SVGPathByteStream*, float length, unsigned& pathSeg);
-bool getTotalLengthOfSVGPathByteStream(const SVGPathByteStream*, float& totalLength);
-bool getPointAtLengthOfSVGPathByteStream(const SVGPathByteStream*, float length, FloatPoint&);
+unsigned getSVGPathSegAtLengthFromSVGPathByteStream(const SVGPathByteStream&, float length);
+float getTotalLengthOfSVGPathByteStream(const SVGPathByteStream&);
+FloatPoint getPointAtLengthOfSVGPathByteStream(const SVGPathByteStream&, float length);
 
 } // namespace blink
 

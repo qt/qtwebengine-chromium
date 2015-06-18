@@ -14,7 +14,6 @@
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/events/gesture_detection/bitset_32.h"
 #include "ui/gfx/geometry/point_f.h"
 
 namespace content {
@@ -38,34 +37,8 @@ class CONTENT_EXPORT TouchEventQueueClient {
 // A queue for throttling and coalescing touch-events.
 class CONTENT_EXPORT TouchEventQueue {
  public:
-  // Different ways of dealing with touch events during scrolling.
-  // TODO(rbyers): Remove this once we're confident that touch move absorption
-  // is OK. http://crbug.com/350430
-  enum TouchScrollingMode {
-    // Send a touchcancel on scroll start and no further touch events for the
-    // duration of the scroll.  Chrome Android's traditional behavior.
-    TOUCH_SCROLLING_MODE_TOUCHCANCEL,
-    // Send touchmove events throughout a scroll, blocking on each ACK and
-    // using the disposition to determine whether a scroll update should be
-    // sent.  Mobile Safari's default overflow scroll behavior.
-    TOUCH_SCROLLING_MODE_SYNC_TOUCHMOVE,
-    // Send touchmove events throughout a scroll, but throttle sending and
-    // ignore the ACK as long as scrolling remains possible.  Unconsumed scroll
-    // events return touchmove events to being dispatched synchronously.
-    TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE,
-    TOUCH_SCROLLING_MODE_DEFAULT = TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE
-  };
-
   struct CONTENT_EXPORT Config {
     Config();
-
-    // Determines the bounds of the (square) touchmove slop suppression region.
-    // Defaults to 0 (disabled).
-    double touchmove_slop_suppression_length_dips;
-
-    // Determines the type of touch scrolling.
-    // Defaults to TouchEventQueue:::TOUCH_SCROLLING_MODE_DEFAULT.
-    TouchEventQueue::TouchScrollingMode touch_scrolling_mode;
 
     // Controls whether touch ack timeouts will trigger touch cancellation.
     // Defaults to 200ms.
@@ -168,8 +141,9 @@ class CONTENT_EXPORT TouchEventQueue {
   // Safely pop the head of the queue.
   scoped_ptr<CoalescedWebTouchEvent> PopTouchEvent();
 
-  // Dispatch |touch| to the client.
-  void SendTouchEventImmediately(const TouchEventWithLatencyInfo& touch);
+  // Dispatch |touch| to the client. Before dispatching, updates pointer
+  // states in touchmove events for pointers that have not changed position.
+  void SendTouchEventImmediately(TouchEventWithLatencyInfo* touch);
 
   enum PreFilterResult {
     ACK_WITH_NO_CONSUMER_EXISTS,
@@ -189,20 +163,13 @@ class CONTENT_EXPORT TouchEventQueue {
   typedef std::deque<CoalescedWebTouchEvent*> TouchQueue;
   TouchQueue touch_queue_;
 
-  // Maps whether each active pointer has a consumer (i.e., a touch point has a
-  // valid consumer iff |touch_consumer_states[pointer.id]| is true.).
-  // TODO(jdduke): Consider simply tracking whether *any* touchstart had a
-  // consumer, crbug.com/416497.
-  ui::BitSet32 touch_consumer_states_;
-
   // Position of the first touch in the most recent sequence forwarded to the
   // client.
   gfx::PointF touch_sequence_start_position_;
 
   // Used to defer touch forwarding when ack dispatch triggers |QueueEvent()|.
-  // If not NULL, |dispatching_touch_ack_| is the touch event of which the ack
-  // is being dispatched.
-  const CoalescedWebTouchEvent* dispatching_touch_ack_;
+  // True within the scope of |AckTouchEventToClient()|.
+  bool dispatching_touch_ack_;
 
   // Used to prevent touch timeout scheduling if we receive a synchronous
   // ack after forwarding a touch event to the client.
@@ -211,12 +178,14 @@ class CONTENT_EXPORT TouchEventQueue {
   // Whether the renderer has at least one touch handler.
   bool has_handlers_;
 
+  // Whether any pointer in the touch sequence reported having a consumer.
+  bool has_handler_for_current_sequence_;
+
   // Whether to allow any remaining touches for the current sequence. Note that
   // this is a stricter condition than an empty |touch_consumer_states_|, as it
   // also prevents forwarding of touchstart events for new pointers in the
   // current sequence. This is only used when the event is synthetically
-  // cancelled after a touch timeout, or after a scroll event when the
-  // mode is TOUCH_SCROLLING_MODE_TOUCHCANCEL.
+  // cancelled after a touch timeout.
   bool drop_remaining_touches_in_sequence_;
 
   // Optional handler for timed-out touch event acks.
@@ -232,14 +201,11 @@ class CONTENT_EXPORT TouchEventQueue {
   // until a sufficient time period has elapsed since the last sent touch event.
   // For details see the design doc at http://goo.gl/lVyJAa.
   bool send_touch_events_async_;
-  bool needs_async_touchmove_for_outer_slop_region_;
   scoped_ptr<TouchEventWithLatencyInfo> pending_async_touchmove_;
   double last_sent_touch_timestamp_sec_;
 
-  // How touch events are handled during scrolling.  For now this is a global
-  // setting for experimentation, but we may evolve it into an app-controlled
-  // mode.
-  const TouchScrollingMode touch_scrolling_mode_;
+  // Event is saved to compare pointer positions for new touchmove events.
+  scoped_ptr<blink::WebTouchEvent> last_sent_touchevent_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEventQueue);
 };

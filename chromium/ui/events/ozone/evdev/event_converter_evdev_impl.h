@@ -5,18 +5,25 @@
 #ifndef UI_EVENTS_OZONE_EVDEV_EVENT_CONVERTER_EVDEV_IMPL_H_
 #define UI_EVENTS_OZONE_EVDEV_EVENT_CONVERTER_EVDEV_IMPL_H_
 
+#include <bitset>
+
 #include "base/files/file_path.h"
 #include "base/message_loop/message_pump_libevent.h"
+#include "ui/events/devices/input_device.h"
 #include "ui/events/event.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
+#include "ui/events/ozone/evdev/event_device_info.h"
 #include "ui/events/ozone/evdev/event_modifiers_evdev.h"
 #include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
 #include "ui/events/ozone/evdev/keyboard_evdev.h"
+#include "ui/events/ozone/evdev/mouse_button_map_evdev.h"
 
 struct input_event;
 
 namespace ui {
+
+class DeviceEventDispatcherEvdev;
 
 class EVENTS_OZONE_EVDEV_EXPORT EventConverterEvdevImpl
     : public EventConverterEvdev {
@@ -24,27 +31,45 @@ class EVENTS_OZONE_EVDEV_EXPORT EventConverterEvdevImpl
   EventConverterEvdevImpl(int fd,
                           base::FilePath path,
                           int id,
-                          EventModifiersEvdev* modifiers,
+                          InputDeviceType type,
+                          const EventDeviceInfo& info,
                           CursorDelegateEvdev* cursor,
-                          KeyboardEvdev* keyboard,
-                          const EventDispatchCallback& callback);
+                          DeviceEventDispatcherEvdev* dispatcher);
   ~EventConverterEvdevImpl() override;
 
   // EventConverterEvdev:
   void OnFileCanReadWithoutBlocking(int fd) override;
+  bool HasKeyboard() const override;
+  bool HasTouchpad() const override;
+  bool HasCapsLockLed() const override;
+  void SetAllowedKeys(scoped_ptr<std::set<DomCode>> allowed_keys) override;
+  void AllowAllKeys() override;
+  void OnStopped() override;
 
   void ProcessEvents(const struct input_event* inputs, int count);
 
  private:
   void ConvertKeyEvent(const input_event& input);
-
   void ConvertMouseMoveEvent(const input_event& input);
-
+  void OnKeyChange(unsigned int key,
+                   bool down,
+                   const base::TimeDelta& timestamp);
+  void ReleaseKeys();
+  void ReleaseMouseButtons();
+  void OnLostSync();
   void DispatchMouseButton(const input_event& input);
+  void OnButtonChange(int code, bool down, const base::TimeDelta& timestamp);
 
   // Flush events delimited by EV_SYN. This is useful for handling
   // non-axis-aligned movement properly.
-  void FlushEvents();
+  void FlushEvents(const input_event& input);
+
+  // Input modalities for this device.
+  bool has_keyboard_;
+  bool has_touchpad_;
+
+  // LEDs for this device.
+  bool has_caps_lock_led_;
 
   // Save x-axis events of relative devices to be flushed at EV_SYN time.
   int x_offset_;
@@ -55,17 +80,21 @@ class EVENTS_OZONE_EVDEV_EXPORT EventConverterEvdevImpl
   // Controller for watching the input fd.
   base::MessagePumpLibevent::FileDescriptorWatcher controller_;
 
+  // The evdev codes of the keys which should be blocked.
+  std::bitset<KEY_CNT> blocked_keys_;
+
+  // Pressed keys bitset.
+  std::bitset<KEY_CNT> key_state_;
+
+  // Last mouse button state.
+  static const int kMouseButtonCount = BTN_JOYSTICK - BTN_MOUSE;
+  std::bitset<kMouseButtonCount> mouse_button_state_;
+
   // Shared cursor state.
   CursorDelegateEvdev* cursor_;
 
-  // Shared keyboard state.
-  KeyboardEvdev* keyboard_;
-
-  // Modifier key state (shift, ctrl, etc).
-  EventModifiersEvdev* modifiers_;
-
-  // Callback for dispatching events.
-  EventDispatchCallback callback_;
+  // Callbacks for dispatching events.
+  DeviceEventDispatcherEvdev* dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(EventConverterEvdevImpl);
 };

@@ -34,7 +34,6 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   bool WillDraw(DrawMode draw_mode,
                 ResourceProvider* resource_provider) override;
   void AppendQuads(RenderPass* render_pass,
-                   const Occlusion& occlusion_in_content_space,
                    AppendQuadsData* append_quads_data) override;
   void PushPropertiesTo(LayerImpl* layer) override;
 
@@ -59,16 +58,17 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   const RenderPassList& RenderPassesInDrawOrderForTesting() const {
     return render_passes_in_draw_order_;
   }
-  const ResourceProvider::ResourceIdArray& ResourcesForTesting() const {
+  const ResourceProvider::ResourceIdSet& ResourcesForTesting() const {
     return resources_;
   }
 
  private:
   void ClearChildId();
 
-  void AppendRainbowDebugBorder(RenderPass* render_pass,
-                                AppendQuadsData* append_quads_data);
+  void AppendRainbowDebugBorder(RenderPass* render_pass);
 
+  void TakeOwnershipOfResourcesIfOnActiveTree(
+      const ResourceProvider::ResourceIdSet& resources);
   void SetRenderPasses(RenderPassList* render_passes_in_draw_order);
   void ClearRenderPasses();
 
@@ -78,8 +78,6 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
                                     RenderPassId* output_render_pass_id) const;
 
   void AppendRenderPassQuads(RenderPass* render_pass,
-                             const Occlusion& occlusion_in_content_space,
-                             AppendQuadsData* append_quads_data,
                              const RenderPass* delegated_render_pass,
                              const gfx::Size& frame_size) const;
 
@@ -90,7 +88,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   float inverse_device_scale_factor_;
   RenderPassList render_passes_in_draw_order_;
   base::hash_map<RenderPassId, int> render_passes_index_by_id_;
-  ResourceProvider::ResourceIdArray resources_;
+  ResourceProvider::ResourceIdSet resources_;
 
   int child_id_;
   bool own_child_id_;

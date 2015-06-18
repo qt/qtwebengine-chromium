@@ -155,9 +155,10 @@ void CustomElementRegistrationContext::setTypeExtension(Element* element, const 
     context->didGiveTypeExtension(element, element->document().convertLocalName(type));
 }
 
-void CustomElementRegistrationContext::trace(Visitor* visitor)
+DEFINE_TRACE(CustomElementRegistrationContext)
 {
     visitor->trace(m_candidates);
+    visitor->trace(m_registry);
 }
 
 } // namespace blink

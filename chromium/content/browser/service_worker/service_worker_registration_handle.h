@@ -28,14 +28,11 @@ class ServiceWorkerRegistrationHandle
  public:
   CONTENT_EXPORT ServiceWorkerRegistrationHandle(
       base::WeakPtr<ServiceWorkerContextCore> context,
-      ServiceWorkerDispatcherHost* dispatcher_host,
-      int provider_id,
+      base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       ServiceWorkerRegistration* registration);
   virtual ~ServiceWorkerRegistrationHandle();
 
   ServiceWorkerRegistrationObjectInfo GetObjectInfo();
-  ServiceWorkerObjectInfo CreateServiceWorkerHandleAndPass(
-      ServiceWorkerVersion* version);
 
   bool HasNoRefCount() const { return ref_count_ <= 0; }
   void IncrementRefCount();
@@ -56,25 +53,20 @@ class ServiceWorkerRegistrationHandle
   void OnUpdateFound(ServiceWorkerRegistration* registration) override;
 
   // Sets the corresponding version field to the given version or if the given
-  // version is NULL, clears the field.
+  // version is nullptr, clears the field.
   void SetVersionAttributes(
+      ChangedVersionAttributesMask changed_mask,
       ServiceWorkerVersion* installing_version,
       ServiceWorkerVersion* waiting_version,
       ServiceWorkerVersion* active_version);
 
-  // Clears all version fields.
-  void ClearVersionAttributes();
-
   base::WeakPtr<ServiceWorkerContextCore> context_;
-  ServiceWorkerDispatcherHost* dispatcher_host_;
+  base::WeakPtr<ServiceWorkerProviderHost> provider_host_;
   const int provider_id_;
   const int handle_id_;
   int ref_count_;  // Created with 1.
 
   scoped_refptr<ServiceWorkerRegistration> registration_;
-  scoped_refptr<ServiceWorkerVersion> installing_version_;
-  scoped_refptr<ServiceWorkerVersion> waiting_version_;
-  scoped_refptr<ServiceWorkerVersion> active_version_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegistrationHandle);
 };

@@ -31,12 +31,13 @@
 #ifndef AnimatableVisibility_h
 #define AnimatableVisibility_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 
 namespace blink {
 
-class AnimatableVisibility final : public AnimatableValue {
+class CORE_EXPORT AnimatableVisibility final : public AnimatableValue {
 public:
     virtual ~AnimatableVisibility() { }
     static PassRefPtrWillBeRawPtr<AnimatableVisibility> create(EVisibility visibility)
@@ -46,7 +47,7 @@ public:
 
     EVisibility visibility() const { return m_visibility; }
 
-    virtual void trace(Visitor* visitor) override { AnimatableValue::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
 
 protected:
     virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;

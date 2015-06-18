@@ -17,12 +17,12 @@ devtools_core_files =
   gypi_values.devtools_bindings_js_files +
   gypi_values.devtools_common_js_files +
   gypi_values.devtools_components_js_files +
+  gypi_values.devtools_devtools_app_js_files +
+  gypi_values.devtools_emulation_js_files +
   gypi_values.devtools_host_js_files +
   gypi_values.devtools_main_js_files +
   gypi_values.devtools_platform_js_files +
-  gypi_values.devtools_screencast_js_files +
   gypi_values.devtools_sdk_js_files +
-  gypi_values.devtools_toolbox_js_files +
   gypi_values.devtools_toolbox_bootstrap_js_files +
   gypi_values.devtools_ui_js_files +
   gypi_values.devtools_workspace_js_files +
@@ -33,10 +33,11 @@ devtools_extensions_js_files = gypi_values.devtools_extensions_js_files -
   gypi_values.devtools_extension_api_files
 
 devtools_modules_js_files =
+  gypi_values.devtools_accessibility_js_files +
   gypi_values.devtools_audits_js_files +
+  gypi_values.devtools_cm_modes_js_files +
+  gypi_values.devtools_components_lazy_js_files +
   gypi_values.devtools_console_js_files +
-  gypi_values.devtools_devices_js_files +
-  gypi_values.devtools_documentation_js_files +
   gypi_values.devtools_elements_js_files +
   devtools_extensions_js_files +
   gypi_values.devtools_heap_snapshot_worker_js_files +
@@ -45,12 +46,15 @@ devtools_modules_js_files =
   gypi_values.devtools_profiler_js_files +
   gypi_values.devtools_promises_js_files +
   gypi_values.devtools_resources_js_files +
+  gypi_values.devtools_screencast_js_files +
   gypi_values.devtools_script_formatter_worker_js_files +
   gypi_values.devtools_settings_js_files +
+  gypi_values.devtools_snippets_js_files +
   gypi_values.devtools_source_frame_js_files +
   gypi_values.devtools_sources_js_files +
   gypi_values.devtools_temp_storage_shared_worker_js_files +
-  gypi_values.devtools_timeline_js_files
+  gypi_values.devtools_timeline_js_files +
+  gypi_values.devtools_ui_lazy_js_files
 
 all_devtools_files =
   gypi_values.devtools_cm_css_files +
@@ -58,7 +62,7 @@ all_devtools_files =
   devtools_core_files +
   gypi_values.devtools_module_json_files +
   devtools_modules_js_files +
-  gypi_values.devtools_uglify_files
+  gypi_values.devtools_acorn_files
 
 # FIXME: Fix the generate_devtools_grd.py script to accept trailing slashes.
 resources_out_dir_no_slash = "$root_out_dir/resources/inspector"
@@ -87,6 +91,7 @@ group("devtools_frontend_resources") {
     # and thus should be guarded out in Debug builds.
     deps += [
       ":concatenated_devtools_css",
+      ":concatenated_inspector_css",
       ":concatenated_toolbox_css",
     ]
   }
@@ -112,22 +117,28 @@ action("generate_devtools_grd") {
     # Debug: all files are picked as-is.
     generated_files = generated_scripts + [
       resources_out_dir + "devtools.html",
+      resources_out_dir + "inspector.html",
       resources_out_dir + "toolbox.html",
     ]
     static_files += all_devtools_files + [ "front_end/Runtime.js" ]
   } else {
-    # Release: pick compiled files and lazy-loaded CSS.
+    # Release: pick compiled non-remote files and lazy-loaded CSS.
+    # TODO(dgozman): remove remote modules from here once experiment is over.
     generated_files = [
       resources_out_dir + "devtools.css",
       resources_out_dir + "devtools.html",
       resources_out_dir + "devtools.js",
+      resources_out_dir + "inspector.css",
+      resources_out_dir + "inspector.html",
+      resources_out_dir + "inspector.js",
       resources_out_dir + "toolbox.css",
       resources_out_dir + "toolbox.html",
       resources_out_dir + "toolbox.js",
+      resources_out_dir + "accessibility_module.js",
       resources_out_dir + "audits_module.js",
+      resources_out_dir + "cm_modes_module.js",
+      resources_out_dir + "components_lazy_module.js",
       resources_out_dir + "console_module.js",
-      resources_out_dir + "devices_module.js",
-      resources_out_dir + "documentation_module.js",
       resources_out_dir + "elements_module.js",
       resources_out_dir + "heap_snapshot_worker_module.js",
       resources_out_dir + "layers_module.js",
@@ -135,12 +146,15 @@ action("generate_devtools_grd") {
       resources_out_dir + "profiler_module.js",
       resources_out_dir + "promises_module.js",
       resources_out_dir + "resources_module.js",
+      resources_out_dir + "screencast_module.js",
       resources_out_dir + "script_formatter_worker_module.js",
       resources_out_dir + "settings_module.js",
+      resources_out_dir + "snippets_module.js",
       resources_out_dir + "source_frame_module.js",
       resources_out_dir + "sources_module.js",
       resources_out_dir + "temp_storage_shared_worker_module.js",
       resources_out_dir + "timeline_module.js",
+      resources_out_dir + "ui_lazy_module.js",
       resources_out_dir + "devtools_extension_api.js",
     ]
   }
@@ -210,11 +224,13 @@ action("build_applications") {
 
   inputs = helper_scripts + all_devtools_files + generated_scripts + [
     "front_end/devtools.html",
+    "front_end/inspector.html",
     "front_end/toolbox.html",
   ]
 
   outputs = [
     resources_out_dir + "devtools.html",
+    resources_out_dir + "inspector.html",
     resources_out_dir + "toolbox.html",
   ]
 
@@ -225,11 +241,13 @@ action("build_applications") {
   } else {
     outputs += [
       resources_out_dir + "devtools.js",
+      resources_out_dir + "inspector.js",
       resources_out_dir + "toolbox.js",
+      resources_out_dir + "accessibility_module.js",
       resources_out_dir + "audits_module.js",
+      resources_out_dir + "cm_modes_module.js",
+      resources_out_dir + "components_lazy_module.js",
       resources_out_dir + "console_module.js",
-      resources_out_dir + "devices_module.js",
-      resources_out_dir + "documentation_module.js",
       resources_out_dir + "elements_module.js",
       resources_out_dir + "heap_snapshot_worker_module.js",
       resources_out_dir + "layers_module.js",
@@ -237,12 +255,15 @@ action("build_applications") {
       resources_out_dir + "profiler_module.js",
       resources_out_dir + "promises_module.js",
       resources_out_dir + "resources_module.js",
+      resources_out_dir + "screencast_module.js",
       resources_out_dir + "script_formatter_worker_module.js",
       resources_out_dir + "settings_module.js",
+      resources_out_dir + "snippets_module.js",
       resources_out_dir + "source_frame_module.js",
       resources_out_dir + "sources_module.js",
       resources_out_dir + "temp_storage_shared_worker_module.js",
       resources_out_dir + "timeline_module.js",
+      resources_out_dir + "ui_lazy_module.js",
     ]
 
     deps = [
@@ -254,7 +275,7 @@ action("build_applications") {
   }
 
   args = [
-    "devtools", "toolbox",
+    "devtools", "inspector", "toolbox",
     "--input_path", rebase_path("front_end", root_build_dir),
     "--output_path", rebase_path(resources_out_dir, root_build_dir),
     "--debug", debug_mode
@@ -266,7 +287,7 @@ if (debug_devtools) {
   group("copy_debug_non_modules") {
     deps = [
       ":copy_runtime_core",
-      ":copy_uglify_js_files",
+      ":copy_acorn_js_files",
       ":copy_codemirror_files",
     ]
   }
@@ -277,9 +298,9 @@ if (debug_devtools) {
     outputs = [ resources_out_dir + "/{{source_file_part}}" ]
   }
 
-  copy("copy_uglify_js_files") {
-    sources = gypi_values.devtools_uglify_files
-    outputs = [ resources_out_dir + "UglifyJS/{{source_file_part}}" ]
+  copy("copy_acorn_js_files") {
+    sources = gypi_values.devtools_acorn_files
+    outputs = [ resources_out_dir + "acorn/{{source_file_part}}" ]
   }
 
   copy("copy_codemirror_files") {
@@ -310,6 +331,10 @@ if (!debug_devtools) {
 
   concatenate_css("concatenated_devtools_css") {
     app_name = "devtools"
+  }
+
+  concatenate_css("concatenated_inspector_css") {
+    app_name = "inspector"
   }
 
   concatenate_css("concatenated_toolbox_css") {

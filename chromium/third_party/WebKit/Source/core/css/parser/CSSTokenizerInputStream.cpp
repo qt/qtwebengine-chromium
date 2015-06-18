@@ -5,28 +5,24 @@
 #include "config.h"
 #include "core/css/parser/CSSTokenizerInputStream.h"
 
+#include "core/css/parser/CSSParserValues.h"
 #include "core/html/parser/InputStreamPreprocessor.h"
 
 namespace blink {
 
 CSSTokenizerInputStream::CSSTokenizerInputStream(String input)
     : m_offset(0)
-    , m_string(input)
+    , m_stringLength(input.length())
+    , m_string(input.impl())
 {
 }
 
 UChar CSSTokenizerInputStream::peek(unsigned lookaheadOffset)
 {
-    ASSERT((m_offset + lookaheadOffset) <= maxLength());
-    if ((m_offset + lookaheadOffset) >= m_string.length())
+    if ((m_offset + lookaheadOffset) >= m_stringLength)
         return kEndOfFileMarker;
-    return m_string[m_offset + lookaheadOffset];
-}
-
-void CSSTokenizerInputStream::advance(unsigned offset)
-{
-    ASSERT(m_offset + offset <= maxLength());
-    m_offset += offset;
+    UChar result = (*m_string)[m_offset + lookaheadOffset];
+    return result ? result : 0xFFFD;
 }
 
 void CSSTokenizerInputStream::pushBack(UChar cc)
@@ -35,32 +31,30 @@ void CSSTokenizerInputStream::pushBack(UChar cc)
     ASSERT(nextInputChar() == cc);
 }
 
-unsigned long long CSSTokenizerInputStream::getUInt(unsigned start, unsigned end)
-{
-    ASSERT(start <= end && ((m_offset + end) <= m_string.length()));
-    bool isResultOK = false;
-    unsigned long long result = 0;
-    if (start < end) {
-        if (m_string.is8Bit())
-            result = charactersToUInt64Strict(m_string.characters8() + m_offset + start, end - start, &isResultOK);
-        else
-            result = charactersToUInt64Strict(m_string.characters16() + m_offset + start, end - start, &isResultOK);
-    }
-    return isResultOK ? result : 0;
-}
-
 double CSSTokenizerInputStream::getDouble(unsigned start, unsigned end)
 {
-    ASSERT(start <= end && ((m_offset + end) <= m_string.length()));
+    ASSERT(start <= end && ((m_offset + end) <= m_stringLength));
     bool isResultOK = false;
     double result = 0.0;
     if (start < end) {
-        if (m_string.is8Bit())
-            result = charactersToDouble(m_string.characters8() + m_offset + start, end - start, &isResultOK);
+        if (m_string->is8Bit())
+            result = charactersToDouble(m_string->characters8() + m_offset + start, end - start, &isResultOK);
         else
-            result = charactersToDouble(m_string.characters16() + m_offset + start, end - start, &isResultOK);
+            result = charactersToDouble(m_string->characters16() + m_offset + start, end - start, &isResultOK);
     }
+    // FIXME: It looks like callers ensure we have a valid number
     return isResultOK ? result : 0.0;
+}
+
+CSSParserString CSSTokenizerInputStream::rangeAsCSSParserString(unsigned start, unsigned length) const
+{
+    ASSERT(start + length <= m_stringLength);
+    CSSParserString result;
+    if (m_string->is8Bit())
+        result.init(m_string->characters8() + start, length);
+    else
+        result.init(m_string->characters16() + start, length);
+    return result;
 }
 
 } // namespace blink

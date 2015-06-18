@@ -17,7 +17,6 @@
 #include "base/path_service.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
-#include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -50,15 +49,15 @@ int RunSlave(RankCrashes action) {
   base::CommandLine cmdline(exe);
   cmdline.AppendArg(base::IntToString(action));
 
-  base::ProcessHandle handle;
-  if (!base::LaunchProcess(cmdline, base::LaunchOptions(), &handle)) {
+  base::Process process = base::LaunchProcess(cmdline, base::LaunchOptions());
+  if (!process.IsValid()) {
     printf("Unable to run test %d\n", action);
     return GENERIC;
   }
 
   int exit_code;
 
-  if (!base::WaitForExitCode(handle, &exit_code)) {
+  if (!process.WaitForExit(&exit_code)) {
     printf("Unable to get return code, test %d\n", action);
     return GENERIC;
   }
@@ -85,12 +84,12 @@ namespace disk_cache {
 NET_EXPORT_PRIVATE extern RankCrashes g_rankings_crash;
 }
 
-const char* kCrashEntryName = "the first key";
+const char kCrashEntryName[] = "the first key";
 
 // Creates the destinaton folder for this run, and returns it on full_path.
 bool CreateTargetFolder(const base::FilePath& path, RankCrashes action,
                         base::FilePath* full_path) {
-  const char* folders[] = {
+  const char* const folders[] = {
     "",
     "insert_empty1",
     "insert_empty2",
@@ -115,7 +114,7 @@ bool CreateTargetFolder(const base::FilePath& path, RankCrashes action,
     "remove_load2",
     "remove_load3"
   };
-  COMPILE_ASSERT(arraysize(folders) == disk_cache::MAX_CRASH, sync_folders);
+  static_assert(arraysize(folders) == disk_cache::MAX_CRASH, "sync folders");
   DCHECK(action > disk_cache::NO_CRASH && action < disk_cache::MAX_CRASH);
 
   *full_path = path.AppendASCII(folders[action]);

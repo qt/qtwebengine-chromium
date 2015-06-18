@@ -23,6 +23,7 @@
 #ifndef RawResource_h
 #define RawResource_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
 #include "public/platform/WebDataConsumerHandle.h"
@@ -31,7 +32,7 @@
 namespace blink {
 class RawResourceClient;
 
-class RawResource final : public Resource {
+class CORE_EXPORT RawResource final : public Resource {
 public:
     typedef RawResourceClient ClientType;
 
@@ -53,6 +54,7 @@ private:
     void willFollowRedirect(ResourceRequest&, const ResourceResponse&) override;
     void updateRequest(const ResourceRequest&) override;
     void responseReceived(const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    void setSerializedCachedMetadata(const char*, size_t) override;
     void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
     void didDownloadData(int) override;
 };
@@ -70,7 +72,7 @@ inline RawResource* toRawResource(const ResourcePtr<Resource>& resource)
     return static_cast<RawResource*>(resource.get());
 }
 
-class RawResourceClient : public ResourceClient {
+class CORE_EXPORT RawResourceClient : public ResourceClient {
 public:
     virtual ~RawResourceClient() { }
     static ResourceClientType expectedType() { return RawResourceType; }
@@ -78,6 +80,7 @@ public:
 
     virtual void dataSent(Resource*, unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
     virtual void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) { }
+    virtual void setSerializedCachedMetadata(Resource*, const char*, size_t) { }
     virtual void dataReceived(Resource*, const char* /* data */, unsigned /* length */) { }
     virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) { }
     virtual void updateRequest(Resource*, const ResourceRequest&) { }

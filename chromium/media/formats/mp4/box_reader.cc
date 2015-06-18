@@ -6,13 +6,10 @@
 
 #include <string.h>
 #include <algorithm>
-#include <map>
 #include <set>
 
-#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/formats/mp4/box_definitions.h"
-#include "media/formats/mp4/rcheck.h"
 
 namespace media {
 namespace mp4 {
@@ -160,8 +157,8 @@ bool BoxReader::IsValidTopLevelBox(const FourCC& type,
       return true;
     default:
       // Hex is used to show nonprintable characters and aid in debugging
-      MEDIA_LOG(log_cb) << "Unrecognized top-level box type "
-                        << FourCCToString(type);
+      MEDIA_LOG(DEBUG, log_cb) << "Unrecognized top-level box type "
+                               << FourCCToString(type);
       return false;
   }
 }
@@ -222,7 +219,8 @@ bool BoxReader::ReadHeader(bool* err) {
   CHECK(Read4Into8(&size) && ReadFourCC(&type_));
 
   if (size == 0) {
-    // Media Source specific: we do not support boxes that run to EOS.
+    MEDIA_LOG(DEBUG, log_cb_) << "Media Source Extensions do not support ISO "
+                                 "BMFF boxes that run to EOS";
     *err = true;
     return false;
   } else if (size == 1) {

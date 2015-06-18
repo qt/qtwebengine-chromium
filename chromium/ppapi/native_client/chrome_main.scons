@@ -44,15 +44,11 @@ ppapi_scons_files['irt_variant_test_scons_files'] = [
     # 'inbrowser_test_runner' must be in the irt_variant list
     # otherwise it will run no tests.
     'tests/nacl_browser/inbrowser_test_runner/nacl.scons',
-    # Disabled by Brad Chen 4 Sep to try to green Chromium
-    # nacl_integration tests
-    #'tests/nacl_browser/fault_injection/nacl.scons',
 ]
 
 ppapi_scons_files['untrusted_scons_files'] = [
     'src/shared/ppapi/nacl.scons',
     'src/untrusted/irt_stub/nacl.scons',
-    'src/untrusted/nacl_ppapi_util/nacl.scons',
 ]
 
 
@@ -104,29 +100,6 @@ def ChromeBinary(env):
     return no_browser
 
 pre_base_env.AddMethod(ChromeBinary)
-
-
-def GetPPAPIPluginPath(env, allow_64bit_redirect=True):
-  if 'force_ppapi_plugin' in ARGUMENTS:
-    return env.SConstructAbsPath(ARGUMENTS['force_ppapi_plugin'])
-  if env.Bit('mac'):
-    fn = env.File('${STAGING_DIR}/ppNaClPlugin')
-  else:
-    fn = env.File('${STAGING_DIR}/${SHLIBPREFIX}ppNaClPlugin${SHLIBSUFFIX}')
-  if allow_64bit_redirect and env.Bit('target_x86_64'):
-    # On 64-bit Windows and on Mac, we need the 32-bit plugin because
-    # the browser is 32-bit.
-    # Unfortunately it is tricky to build the 32-bit plugin (and all the
-    # libraries it needs) in a 64-bit build... so we'll assume it has already
-    # been built in a previous invocation.
-    # TODO(ncbray) better 32/64 builds.
-    if env.Bit('windows'):
-      fn = env.subst(fn).abspath.replace('-win-x86-64', '-win-x86-32')
-    elif env.Bit('mac'):
-      fn = env.subst(fn).abspath.replace('-mac-x86-64', '-mac-x86-32')
-  return fn
-
-pre_base_env.AddMethod(GetPPAPIPluginPath)
 
 
 # runnable-ld.so log has following format:
@@ -535,7 +508,7 @@ pre_base_env.AddMethod(PPAPIBrowserTester)
 # Disabled for ARM and MIPS because Chrome binaries for ARM and MIPS are not
 # available.
 def PPAPIBrowserTesterIsBroken(env):
-  return env.Bit('target_arm') or env.Bit('target_mips32')
+  return env.Bit('build_arm') or env.Bit('build_mips32')
 
 pre_base_env.AddMethod(PPAPIBrowserTesterIsBroken)
 

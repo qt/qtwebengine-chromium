@@ -44,17 +44,18 @@
 #include "public/web/WebSharedWorkerClient.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
-#include "wtf/WeakPtr.h"
 
 namespace blink {
 
 class ConsoleMessage;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
+class WebLocalFrameImpl;
+class WebServiceWorkerNetworkProvider;
+class WebSharedWorkerClient;
 class WebString;
 class WebURL;
 class WebView;
-class WebSharedWorkerClient;
 class WorkerInspectorProxy;
 
 // This class is used by the worker process code to talk to the SharedWorker implementation.
@@ -63,35 +64,34 @@ class WorkerInspectorProxy;
 // convert to Chrome data types first and then call the supplied WebCommonWorkerClient.
 class WebSharedWorkerImpl final
     : public WorkerReportingProxy
-    , public WorkerLoaderProxy
     , public WebFrameClient
     , public WebSharedWorker
-    , public WebDevToolsAgentClient {
+    , public WebDevToolsAgentClient
+    , private WorkerLoaderProxyProvider {
 public:
     explicit WebSharedWorkerImpl(WebSharedWorkerClient*);
 
     // WorkerReportingProxy methods:
     virtual void reportException(
-        const WTF::String&, int, int, const WTF::String&) override;
+        const WTF::String&, int, int, const WTF::String&, int) override;
     virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
     virtual void postMessageToPageInspector(const WTF::String&) override;
+    virtual void postWorkerConsoleAgentEnabled() override { }
     virtual void didEvaluateWorkerScript(bool success) override { };
     virtual void workerGlobalScopeStarted(WorkerGlobalScope*) override;
     virtual void workerGlobalScopeClosed() override;
     virtual void workerThreadTerminated() override;
     virtual void willDestroyWorkerGlobalScope() override { }
 
-    // WorkerLoaderProxy methods:
-    virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask>) override;
-    virtual bool postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>) override;
-
     // WebFrameClient methods to support resource loading thru the 'shadow page'.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) override;
+    virtual void willSendRequest(WebLocalFrame*, unsigned identifier, WebURLRequest&, const WebURLResponse& redirectResponse) override;
     virtual void didFinishDocumentLoad(WebLocalFrame*) override;
+    virtual bool isControlledByServiceWorker(WebDataSource&) override;
+    virtual int64_t serviceWorkerID(WebDataSource&) override;
 
     // WebDevToolsAgentClient overrides.
-    virtual void sendMessageToInspectorFrontend(const WebString&) override;
-    virtual void saveAgentRuntimeState(const WebString&) override;
+    virtual void sendProtocolMessage(int callId, const WebString&, const WebString&) override;
     virtual void resumeStartup() override;
 
     // WebSharedWorker methods:
@@ -126,25 +126,32 @@ private:
     void didReceiveScriptLoaderResponse();
     void onScriptLoaderFinished();
 
-    static void connectTask(ExecutionContext*, PassOwnPtr<WebMessagePortChannel>);
+    static void connectTask(PassOwnPtr<WebMessagePortChannel>, ExecutionContext*);
     // Tasks that are run on the main thread.
     void workerGlobalScopeClosedOnMainThread();
     void workerThreadTerminatedOnMainThread();
 
     void postMessageToPageInspectorOnMainThread(const String& message);
 
+    // WorkerLoaderProxyProvider
+    void postTaskToLoader(PassOwnPtr<ExecutionContextTask>);
+    bool postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>);
+
     // 'shadow page' - created to proxy loading requests from the worker.
     RefPtrWillBePersistent<ExecutionContext> m_loadingDocument;
     WebView* m_webView;
-    WebFrame* m_mainFrame;
+    WebLocalFrameImpl* m_mainFrame;
     bool m_askedToTerminate;
+
+    // This one is bound to and used only on the main thread.
+    OwnPtr<WebServiceWorkerNetworkProvider> m_networkProvider;
 
     OwnPtr<WorkerInspectorProxy> m_workerInspectorProxy;
 
     RefPtr<WorkerThread> m_workerThread;
 
     // This one's initialized and bound to the main thread.
-    RefPtr<WeakReference<WebSharedWorkerClient> > m_client;
+    RefPtr<WeakReference<WebSharedWorkerClient>> m_client;
 
     // Usually WeakPtr is created by WeakPtrFactory exposed by Client
     // class itself, but here it's implemented by Chrome so we create
@@ -156,6 +163,9 @@ private:
 
     // Kept around only while main script loading is ongoing.
     OwnPtr<Loader> m_mainScriptLoader;
+
+    RefPtr<WorkerLoaderProxy> m_loaderProxy;
+
     WebURL m_url;
     WebString m_name;
     WebString m_contentSecurityPolicy;
@@ -164,4 +174,4 @@ private:
 
 } // namespace blink
 
-#endif
+#endif // WebSharedWorkerImpl_h

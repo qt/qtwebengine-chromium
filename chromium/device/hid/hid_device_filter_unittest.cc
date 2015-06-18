@@ -4,26 +4,32 @@
 
 #include "device/hid/hid_device_filter.h"
 #include "device/hid/hid_device_info.h"
+#include "device/hid/test_report_descriptors.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace device {
 
 namespace {
 
+#if defined(OS_MACOSX)
+const uint64_t kTestDeviceId = 42;
+#else
+const char* kTestDeviceId = "device1";
+#endif
+
+}  // namespace
+
 class HidFilterTest : public testing::Test {
  public:
   void SetUp() override {
-    device_info_.vendor_id = 0x046d;
-    device_info_.product_id = 0xc31c;
-
-    HidCollectionInfo collection;
-    collection.usage.usage_page = HidUsageAndPage::kPageKeyboard;
-    collection.usage.usage = 0x01;
-    device_info_.collections.push_back(collection);
+    device_info_ = new HidDeviceInfo(
+        kTestDeviceId, 0x046d, 0xc31c, "Test Keyboard", "123ABC",
+        kHIDBusTypeUSB,
+        std::vector<uint8>(kKeyboard, kKeyboard + kKeyboardSize));
   }
 
  protected:
-  HidDeviceInfo device_info_;
+  scoped_refptr<HidDeviceInfo> device_info_;
 };
 
 TEST_F(HidFilterTest, MatchAny) {
@@ -59,7 +65,7 @@ TEST_F(HidFilterTest, MatchProductIdNegative) {
 
 TEST_F(HidFilterTest, MatchUsagePage) {
   HidDeviceFilter filter;
-  filter.SetUsagePage(HidUsageAndPage::kPageKeyboard);
+  filter.SetUsagePage(HidUsageAndPage::kPageGenericDesktop);
   ASSERT_TRUE(filter.Matches(device_info_));
 }
 
@@ -72,20 +78,20 @@ TEST_F(HidFilterTest, MatchUsagePageNegative) {
 TEST_F(HidFilterTest, MatchVendorAndUsagePage) {
   HidDeviceFilter filter;
   filter.SetVendorId(0x046d);
-  filter.SetUsagePage(HidUsageAndPage::kPageKeyboard);
+  filter.SetUsagePage(HidUsageAndPage::kPageGenericDesktop);
   ASSERT_TRUE(filter.Matches(device_info_));
 }
 
 TEST_F(HidFilterTest, MatchUsageAndPage) {
   HidDeviceFilter filter;
-  filter.SetUsagePage(HidUsageAndPage::kPageKeyboard);
-  filter.SetUsage(0x01);
+  filter.SetUsagePage(HidUsageAndPage::kPageGenericDesktop);
+  filter.SetUsage(HidUsageAndPage::kGenericDesktopKeyboard);
   ASSERT_TRUE(filter.Matches(device_info_));
 }
 
 TEST_F(HidFilterTest, MatchUsageAndPageNegative) {
   HidDeviceFilter filter;
-  filter.SetUsagePage(HidUsageAndPage::kPageKeyboard);
+  filter.SetUsagePage(HidUsageAndPage::kPageGenericDesktop);
   filter.SetUsage(0x02);
   ASSERT_FALSE(filter.Matches(device_info_));
 }
@@ -98,7 +104,7 @@ TEST_F(HidFilterTest, MatchEmptyFilterListNegative) {
 TEST_F(HidFilterTest, MatchFilterList) {
   std::vector<HidDeviceFilter> filters;
   HidDeviceFilter filter;
-  filter.SetUsagePage(HidUsageAndPage::kPageKeyboard);
+  filter.SetUsagePage(HidUsageAndPage::kPageGenericDesktop);
   filters.push_back(filter);
   ASSERT_TRUE(HidDeviceFilter::MatchesAny(device_info_, filters));
 }
@@ -110,7 +116,5 @@ TEST_F(HidFilterTest, MatchFilterListNegative) {
   filters.push_back(filter);
   ASSERT_FALSE(HidDeviceFilter::MatchesAny(device_info_, filters));
 }
-
-}  // namespace
 
 }  // namespace device

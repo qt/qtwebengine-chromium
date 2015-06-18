@@ -63,9 +63,9 @@ PassRefPtrWillBeRawPtr<SharedWorker> SharedWorker::create(ExecutionContext* cont
 
     RefPtrWillBeRawPtr<SharedWorker> worker = adoptRefWillBeNoop(new SharedWorker(context));
 
-    RefPtrWillBeRawPtr<MessageChannel> channel = MessageChannel::create(context);
+    MessageChannel* channel = MessageChannel::create(context);
     worker->m_port = channel->port1();
-    OwnPtr<blink::WebMessagePortChannel> remotePort = channel->port2()->disentangle();
+    OwnPtr<WebMessagePortChannel> remotePort = channel->port2()->disentangle();
     ASSERT(remotePort);
 
     worker->suspendIfNeeded();
@@ -101,7 +101,7 @@ bool SharedWorker::hasPendingActivity() const
     return m_isBeingConnected;
 }
 
-void SharedWorker::trace(Visitor* visitor)
+DEFINE_TRACE(SharedWorker)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_port);

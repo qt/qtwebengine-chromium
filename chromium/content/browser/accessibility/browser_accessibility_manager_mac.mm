@@ -26,8 +26,7 @@ BrowserAccessibilityManagerMac::BrowserAccessibilityManagerMac(
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(delegate, factory),
-      parent_view_(parent_view),
-      created_live_region_(false) {
+      parent_view_(parent_view) {
   Initialize(initial_tree);
 }
 
@@ -45,8 +44,14 @@ ui::AXTreeUpdate BrowserAccessibilityManagerMac::GetEmptyDocument() {
 
 BrowserAccessibility* BrowserAccessibilityManagerMac::GetFocus(
     BrowserAccessibility* root) {
-  BrowserAccessibility* node = GetActiveDescendantFocus(root);
-  return node;
+  // On Mac, list boxes should always get focus on the whole list, otherwise
+  // information about the number of selected items will never be reported.
+  BrowserAccessibility* node = BrowserAccessibilityManager::GetFocus(root);
+  if (node && node->GetRole() == ui::AX_ROLE_LIST_BOX)
+    return node;
+
+  // For other roles, follow the active descendant.
+  return GetActiveDescendantFocus(root);
 }
 
 void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
@@ -54,6 +59,15 @@ void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
     BrowserAccessibility* node) {
   if (!node->IsNative())
     return;
+
+  if (event_type == ui::AX_EVENT_FOCUS &&
+      node->GetRole() == ui::AX_ROLE_LIST_BOX_OPTION &&
+      node->HasState(ui::AX_STATE_SELECTED) &&
+      node->GetParent() &&
+      node->GetParent()->GetRole() == ui::AX_ROLE_LIST_BOX) {
+    node = node->GetParent();
+    SetFocus(node, false);
+  }
 
   // Refer to AXObjectCache.mm (webkit).
   NSString* event_id = @"";
@@ -140,19 +154,28 @@ void BrowserAccessibilityManagerMac::NotifyAccessibilityEvent(
       LOG(WARNING) << "Unknown accessibility event: " << event_type;
       return;
   }
+
   BrowserAccessibilityCocoa* native_node = node->ToBrowserAccessibilityCocoa();
   DCHECK(native_node);
   NSAccessibilityPostNotification(native_node, event_id);
 }
 
-void BrowserAccessibilityManagerMac::OnNodeCreationFinished(ui::AXNode* node) {
-  BrowserAccessibility* obj = GetFromAXNode(node);
-  if (obj && obj->HasStringAttribute(ui::AX_ATTR_LIVE_STATUS))
-    created_live_region_ = true;
-}
+void BrowserAccessibilityManagerMac::OnAtomicUpdateFinished(
+    bool root_changed, const std::vector<ui::AXTreeDelegate::Change>& changes) {
+  BrowserAccessibilityManager::OnAtomicUpdateFinished(root_changed, changes);
 
-void BrowserAccessibilityManagerMac::OnTreeUpdateFinished() {
-  if (!created_live_region_)
+  bool created_live_region = false;
+  for (size_t i = 0; i < changes.size(); ++i) {
+    if (changes[i].type != NODE_CREATED && changes[i].type != SUBTREE_CREATED)
+      continue;
+    BrowserAccessibility* obj = GetFromAXNode(changes[i].node);
+    if (obj && obj->HasStringAttribute(ui::AX_ATTR_LIVE_STATUS)) {
+      created_live_region = true;
+      break;
+    }
+  }
+
+  if (!created_live_region)
     return;
 
   // This code is to work around a bug in VoiceOver, where a new live
@@ -164,8 +187,6 @@ void BrowserAccessibilityManagerMac::OnTreeUpdateFinished() {
       static_cast<BrowserAccessibilityMac*>(GetRoot());
   root->RecreateNativeObject();
   NotifyAccessibilityEvent(ui::AX_EVENT_CHILDREN_CHANGED, root);
-
-  created_live_region_ = false;
 }
 
 }  // namespace content

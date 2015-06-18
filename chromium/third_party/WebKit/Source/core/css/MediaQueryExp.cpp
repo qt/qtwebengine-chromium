@@ -47,24 +47,27 @@ static inline bool featureWithCSSValueID(const String& mediaFeature, const CSSPa
     if (!value->id)
         return false;
 
-    return mediaFeature == orientationMediaFeature
+    return mediaFeature == displayModeMediaFeature
+        || mediaFeature == orientationMediaFeature
         || mediaFeature == pointerMediaFeature
         || mediaFeature == anyPointerMediaFeature
-        || (mediaFeature == hoverMediaFeature && RuntimeEnabledFeatures::hoverMediaQueryKeywordsEnabled())
+        || mediaFeature == hoverMediaFeature
         || mediaFeature == anyHoverMediaFeature
         || mediaFeature == scanMediaFeature;
 }
 
 static inline bool featureWithValidIdent(const String& mediaFeature, CSSValueID ident)
 {
+    if (mediaFeature == displayModeMediaFeature)
+        return ident == CSSValueFullscreen || ident == CSSValueStandalone || ident == CSSValueMinimalUi || ident == CSSValueBrowser;
+
     if (mediaFeature == orientationMediaFeature)
         return ident == CSSValuePortrait || ident == CSSValueLandscape;
 
     if (mediaFeature == pointerMediaFeature || mediaFeature == anyPointerMediaFeature)
         return ident == CSSValueNone || ident == CSSValueCoarse || ident == CSSValueFine;
 
-    if ((mediaFeature == hoverMediaFeature && RuntimeEnabledFeatures::hoverMediaQueryKeywordsEnabled())
-        || mediaFeature == anyHoverMediaFeature)
+    if (mediaFeature == hoverMediaFeature || mediaFeature == anyHoverMediaFeature)
         return ident == CSSValueNone || ident == CSSValueOnDemand || ident == CSSValueHover;
 
     if (mediaFeature == scanMediaFeature)
@@ -74,27 +77,9 @@ static inline bool featureWithValidIdent(const String& mediaFeature, CSSValueID 
     return false;
 }
 
-static bool positiveLengthUnit(const int unit)
-{
-    switch (unit) {
-    case CSSPrimitiveValue::CSS_EMS:
-    case CSSPrimitiveValue::CSS_EXS:
-    case CSSPrimitiveValue::CSS_PX:
-    case CSSPrimitiveValue::CSS_CM:
-    case CSSPrimitiveValue::CSS_MM:
-    case CSSPrimitiveValue::CSS_IN:
-    case CSSPrimitiveValue::CSS_PT:
-    case CSSPrimitiveValue::CSS_PC:
-    case CSSPrimitiveValue::CSS_REMS:
-    case CSSPrimitiveValue::CSS_CHS:
-        return true;
-    }
-    return false;
-}
-
 static inline bool featureWithValidPositiveLength(const String& mediaFeature, const CSSParserValue* value)
 {
-    if (!(positiveLengthUnit(value->unit) || (value->unit == CSSPrimitiveValue::CSS_NUMBER && value->fValue == 0)) || value->fValue < 0)
+    if (!(CSSPrimitiveValue::isLength((CSSPrimitiveValue::UnitType)value->unit) || (value->unit == CSSPrimitiveValue::CSS_NUMBER && value->fValue == 0)) || value->fValue < 0)
         return false;
 
 
@@ -154,8 +139,7 @@ static inline bool featureWithZeroOrOne(const String& mediaFeature, const CSSPar
     if (!value->isInt || !(value->fValue == 1 || !value->fValue))
         return false;
 
-    return mediaFeature == gridMediaFeature
-        || (mediaFeature == hoverMediaFeature && !RuntimeEnabledFeatures::hoverMediaQueryKeywordsEnabled());
+    return mediaFeature == gridMediaFeature;
 }
 
 static inline bool featureWithAspectRatio(const String& mediaFeature)

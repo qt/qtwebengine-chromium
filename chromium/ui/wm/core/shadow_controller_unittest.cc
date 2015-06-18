@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/window.h"
@@ -62,7 +63,7 @@ class ShadowControllerTest : public aura::test::AuraTestBase {
 TEST_F(ShadowControllerTest, Shadow) {
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
   window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window->Init(aura::WINDOW_LAYER_TEXTURED);
+  window->Init(ui::LAYER_TEXTURED);
   ParentWindow(window.get());
 
   // We should create the shadow before the window is visible (the shadow's
@@ -98,7 +99,7 @@ TEST_F(ShadowControllerTest, Shadow) {
 TEST_F(ShadowControllerTest, ShadowBounds) {
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
   window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window->Init(aura::WINDOW_LAYER_TEXTURED);
+  window->Init(ui::LAYER_TEXTURED);
   ParentWindow(window.get());
   window->Show();
 
@@ -127,7 +128,7 @@ TEST_F(ShadowControllerTest, ShadowStyle) {
 
   scoped_ptr<aura::Window> window1(new aura::Window(NULL));
   window1->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window1->Init(aura::WINDOW_LAYER_TEXTURED);
+  window1->Init(ui::LAYER_TEXTURED);
   ParentWindow(window1.get());
   window1->SetBounds(gfx::Rect(10, 20, 300, 400));
   window1->Show();
@@ -141,7 +142,7 @@ TEST_F(ShadowControllerTest, ShadowStyle) {
   // Create another window and activate it.
   scoped_ptr<aura::Window> window2(new aura::Window(NULL));
   window2->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window2->Init(aura::WINDOW_LAYER_TEXTURED);
+  window2->Init(ui::LAYER_TEXTURED);
   ParentWindow(window2.get());
   window2->SetBounds(gfx::Rect(11, 21, 301, 401));
   window2->Show();
@@ -154,13 +155,37 @@ TEST_F(ShadowControllerTest, ShadowStyle) {
   EXPECT_EQ(Shadow::STYLE_ACTIVE, shadow2->style());
 }
 
+// Tests that shadow gets updated when the window show state changes.
+TEST_F(ShadowControllerTest, ShowState) {
+  ShadowController::TestApi api(shadow_controller());
+
+  scoped_ptr<aura::Window> window(new aura::Window(NULL));
+  window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+  window->Init(ui::LAYER_TEXTURED);
+  ParentWindow(window.get());
+  window->Show();
+
+  Shadow* shadow = api.GetShadowForWindow(window.get());
+  ASSERT_TRUE(shadow != NULL);
+  EXPECT_EQ(Shadow::STYLE_INACTIVE, shadow->style());
+
+  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+  EXPECT_FALSE(shadow->layer()->visible());
+
+  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
+  EXPECT_TRUE(shadow->layer()->visible());
+
+  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_FULLSCREEN);
+  EXPECT_FALSE(shadow->layer()->visible());
+}
+
 // Tests that we use smaller shadows for tooltips and menus.
 TEST_F(ShadowControllerTest, SmallShadowsForTooltipsAndMenus) {
   ShadowController::TestApi api(shadow_controller());
 
   scoped_ptr<aura::Window> tooltip_window(new aura::Window(NULL));
   tooltip_window->SetType(ui::wm::WINDOW_TYPE_TOOLTIP);
-  tooltip_window->Init(aura::WINDOW_LAYER_TEXTURED);
+  tooltip_window->Init(ui::LAYER_TEXTURED);
   ParentWindow(tooltip_window.get());
   tooltip_window->SetBounds(gfx::Rect(10, 20, 300, 400));
   tooltip_window->Show();
@@ -171,7 +196,7 @@ TEST_F(ShadowControllerTest, SmallShadowsForTooltipsAndMenus) {
 
   scoped_ptr<aura::Window> menu_window(new aura::Window(NULL));
   menu_window->SetType(ui::wm::WINDOW_TYPE_MENU);
-  menu_window->Init(aura::WINDOW_LAYER_TEXTURED);
+  menu_window->Init(ui::LAYER_TEXTURED);
   ParentWindow(menu_window.get());
   menu_window->SetBounds(gfx::Rect(10, 20, 300, 400));
   menu_window->Show();
@@ -188,7 +213,7 @@ TEST_F(ShadowControllerTest, TransientParentKeepsActiveShadow) {
 
   scoped_ptr<aura::Window> window1(new aura::Window(NULL));
   window1->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window1->Init(aura::WINDOW_LAYER_TEXTURED);
+  window1->Init(ui::LAYER_TEXTURED);
   ParentWindow(window1.get());
   window1->SetBounds(gfx::Rect(10, 20, 300, 400));
   window1->Show();
@@ -204,7 +229,7 @@ TEST_F(ShadowControllerTest, TransientParentKeepsActiveShadow) {
   // active shadow.
   scoped_ptr<aura::Window> window2(new aura::Window(NULL));
   window2->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window2->Init(aura::WINDOW_LAYER_TEXTURED);
+  window2->Init(ui::LAYER_TEXTURED);
   ParentWindow(window2.get());
   window2->SetBounds(gfx::Rect(11, 21, 301, 401));
   AddTransientChild(window1.get(), window2.get());
@@ -214,60 +239,6 @@ TEST_F(ShadowControllerTest, TransientParentKeepsActiveShadow) {
 
   // window1 is now inactive, but its shadow should still appear active.
   EXPECT_EQ(Shadow::STYLE_ACTIVE, shadow1->style());
-}
-
-TEST_F(ShadowControllerTest, AlwaysActive) {
-  ShadowController::TestApi api(shadow_controller());
-
-  scoped_ptr<aura::Window> window1(new aura::Window(NULL));
-  window1->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window1->Init(aura::WINDOW_LAYER_TEXTURED);
-  ParentWindow(window1.get());
-  window1->SetBounds(gfx::Rect(10, 20, 300, 400));
-  SetShadowType(window1.get(), SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE);
-  window1->Show();
-
-  // Showing the window with SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE should
-  // have active shadow.
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window1.get())->style());
-
-  scoped_ptr<aura::Window> window2(new aura::Window(NULL));
-  window2->SetType(ui::wm::WINDOW_TYPE_NORMAL);
-  window2->Init(aura::WINDOW_LAYER_TEXTURED);
-  ParentWindow(window2.get());
-  window2->SetBounds(gfx::Rect(11, 21, 301, 401));
-  window2->Show();
-
-  // Setting SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE to the visible window
-  // should set the active shadow.
-  EXPECT_EQ(Shadow::STYLE_INACTIVE,
-            api.GetShadowForWindow(window2.get())->style());
-  SetShadowType(window2.get(), SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE);
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window2.get())->style());
-
-  // Activation should not change the shadow style.
-  ActivateWindow(window2.get());
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window1.get())->style());
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window2.get())->style());
-
-  ActivateWindow(window1.get());
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window1.get())->style());
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window2.get())->style());
-
-  // Restore the style to plain RECTANGULAR and make sure the inactive window
-  // gets the inactive shadow.
-  SetShadowType(window1.get(), SHADOW_TYPE_RECTANGULAR);
-  SetShadowType(window2.get(), SHADOW_TYPE_RECTANGULAR);
-  EXPECT_EQ(Shadow::STYLE_ACTIVE,
-            api.GetShadowForWindow(window1.get())->style());
-  EXPECT_EQ(Shadow::STYLE_INACTIVE,
-            api.GetShadowForWindow(window2.get())->style());
 }
 
 }  // namespace wm

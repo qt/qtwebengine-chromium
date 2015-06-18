@@ -11,7 +11,7 @@
 #include "crypto/ghash.h"
 #include "crypto/scoped_nss_types.h"
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 #include <dlfcn.h>
 #endif
 
@@ -40,7 +40,7 @@ class GcmSupportChecker {
   friend struct base::DefaultLazyInstanceTraits<GcmSupportChecker>;
 
   GcmSupportChecker() {
-#if !defined(USE_NSS)
+#if !defined(USE_NSS_CERTS)
     // Using a bundled version of NSS that is guaranteed to have this symbol.
     pk11_encrypt_func_ = PK11_Encrypt;
 #else
@@ -209,9 +209,9 @@ SECStatus My_Encrypt(PK11SymKey* key,
 Aes128Gcm12Encrypter::Aes128Gcm12Encrypter()
     : AeadBaseEncrypter(CKM_AES_GCM, My_Encrypt, kKeySize, kAuthTagSize,
                         kNoncePrefixSize) {
-  COMPILE_ASSERT(kKeySize <= kMaxKeySize, key_size_too_big);
-  COMPILE_ASSERT(kNoncePrefixSize <= kMaxNoncePrefixSize,
-                 nonce_prefix_size_too_big);
+  static_assert(kKeySize <= kMaxKeySize, "key size too big");
+  static_assert(kNoncePrefixSize <= kMaxNoncePrefixSize,
+                "nonce prefix size too big");
   ignore_result(g_gcm_support_checker.Get());
 }
 

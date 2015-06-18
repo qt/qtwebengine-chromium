@@ -259,9 +259,6 @@ void AndroidVideoDecodeAccelerator::DequeueOutput() {
       }
 
       case media::MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
-        RETURN_ON_FAILURE(media_codec_->GetOutputBuffers(),
-                          "Cannot get output buffer from MediaCodec.",
-                          PLATFORM_FAILURE);
         break;
 
       case media::MEDIA_CODEC_OK:
@@ -367,7 +364,6 @@ void AndroidVideoDecodeAccelerator::SendCurrentSurfaceToClient(
                                       GL_TEXTURE_EXTERNAL_OES,
                                       surface_texture_id_,
                                       picture_buffer_texture_id,
-                                      0,
                                       size_.width(),
                                       size_.height(),
                                       false,
@@ -376,11 +372,10 @@ void AndroidVideoDecodeAccelerator::SendCurrentSurfaceToClient(
                                       default_matrix);
 
   base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(
-          &AndroidVideoDecodeAccelerator::NotifyPictureReady,
-          weak_this_factory_.GetWeakPtr(),
-          media::Picture(picture_buffer_id, bitstream_id, gfx::Rect(size_))));
+      FROM_HERE, base::Bind(&AndroidVideoDecodeAccelerator::NotifyPictureReady,
+                            weak_this_factory_.GetWeakPtr(),
+                            media::Picture(picture_buffer_id, bitstream_id,
+                                           gfx::Rect(size_), false)));
 }
 
 void AndroidVideoDecodeAccelerator::Decode(
@@ -557,6 +552,22 @@ void AndroidVideoDecodeAccelerator::NotifyResetDone() {
 void AndroidVideoDecodeAccelerator::NotifyError(
     media::VideoDecodeAccelerator::Error error) {
   client_->NotifyError(error);
+}
+
+// static
+media::VideoDecodeAccelerator::SupportedProfiles
+AndroidVideoDecodeAccelerator::GetSupportedProfiles() {
+  SupportedProfiles profiles;
+  if (media::VideoCodecBridge::IsKnownUnaccelerated(
+          media::kCodecVP8, media::MEDIA_CODEC_DECODER)) {
+    return profiles;
+  }
+  SupportedProfile profile;
+  profile.profile = media::VP8PROFILE_ANY;
+  profile.min_resolution.SetSize(16, 16);
+  profile.max_resolution.SetSize(1920, 1088);
+  profiles.push_back(profile);
+  return profiles;
 }
 
 }  // namespace content

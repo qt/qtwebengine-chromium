@@ -11,6 +11,7 @@
 #include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/values.h"
 #include "net/base/auth.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
@@ -19,9 +20,39 @@
 #include "net/base/network_delegate.h"
 #include "net/filter/filter.h"
 #include "net/http/http_response_headers.h"
-#include "net/url_request/url_request.h"
 
 namespace net {
+
+namespace {
+
+// Callback for TYPE_URL_REQUEST_FILTERS_SET net-internals event.
+base::Value* FiltersSetCallback(Filter* filter,
+                                NetLogCaptureMode /* capture_mode */) {
+  scoped_ptr<base::DictionaryValue> event_params(new base::DictionaryValue());
+  event_params->SetString("filters", filter->OrderedFilterList());
+  return event_params.release();
+}
+
+std::string ComputeMethodForRedirect(const std::string& method,
+                                     int http_status_code) {
+  // For 303 redirects, all request methods except HEAD are converted to GET,
+  // as per the latest httpbis draft.  The draft also allows POST requests to
+  // be converted to GETs when following 301/302 redirects, for historical
+  // reasons. Most major browsers do this and so shall we.  Both RFC 2616 and
+  // the httpbis draft say to prompt the user to confirm the generation of new
+  // requests, other than GET and HEAD requests, but IE omits these prompts and
+  // so shall we.
+  // See:
+  // https://tools.ietf.org/html/draft-ietf-httpbis-p2-semantics-17#section-7.3
+  if ((http_status_code == 303 && method != "HEAD") ||
+      ((http_status_code == 301 || http_status_code == 302) &&
+       method == "POST")) {
+    return "GET";
+  }
+  return method;
+}
+
+}  // namespace
 
 URLRequestJob::URLRequestJob(URLRequest* request,
                              NetworkDelegate* network_delegate)
@@ -29,7 +60,6 @@ URLRequestJob::URLRequestJob(URLRequest* request,
       done_(false),
       prefilter_bytes_read_(0),
       postfilter_bytes_read_(0),
-      filter_input_byte_count_(0),
       filter_needs_more_output_space_(false),
       filtered_read_buffer_len_(0),
       has_handled_response_(false),
@@ -97,6 +127,7 @@ bool URLRequestJob::Read(IOBuffer* buf, int buf_size, int *bytes_read) {
       rv = false;  // Error, or a new IO is pending.
     }
   }
+
   if (rv && *bytes_read == 0)
     NotifyDone(URLRequestStatus());
   return rv;
@@ -242,6 +273,46 @@ void URLRequestJob::OnSuspend() {
 void URLRequestJob::NotifyURLRequestDestroyed() {
 }
 
+void URLRequestJob::GetConnectionAttempts(ConnectionAttempts* out) const {
+  out->clear();
+}
+
+// static
+GURL URLRequestJob::ComputeReferrerForRedirect(
+    URLRequest::ReferrerPolicy policy,
+    const std::string& referrer,
+    const GURL& redirect_destination) {
+  GURL original_referrer(referrer);
+  bool secure_referrer_but_insecure_destination =
+      original_referrer.SchemeIsCryptographic() &&
+      !redirect_destination.SchemeIsCryptographic();
+  bool same_origin =
+      original_referrer.GetOrigin() == redirect_destination.GetOrigin();
+  switch (policy) {
+    case URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
+      return secure_referrer_but_insecure_destination ? GURL()
+                                                      : original_referrer;
+
+    case URLRequest::REDUCE_REFERRER_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN:
+      if (same_origin) {
+        return original_referrer;
+      } else if (secure_referrer_but_insecure_destination) {
+        return GURL();
+      } else {
+        return original_referrer.GetOrigin();
+      }
+
+    case URLRequest::ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN:
+      return same_origin ? original_referrer : original_referrer.GetOrigin();
+
+    case URLRequest::NEVER_CLEAR_REFERRER:
+      return original_referrer;
+  }
+
+  NOTREACHED();
+  return GURL();
+}
+
 URLRequestJob::~URLRequestJob() {
   base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
   if (power_monitor)
@@ -286,12 +357,6 @@ bool URLRequestJob::CanEnablePrivacyMode() const {
   return request_->CanEnablePrivacyMode();
 }
 
-CookieStore* URLRequestJob::GetCookieStore() const {
-  DCHECK(request_);
-
-  return request_->cookie_store();
-}
-
 void URLRequestJob::NotifyBeforeNetworkStart(bool* defer) {
   if (!request_)
     return;
@@ -300,11 +365,6 @@ void URLRequestJob::NotifyBeforeNetworkStart(bool* defer) {
 }
 
 void URLRequestJob::NotifyHeadersComplete() {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "423948 URLRequestJob::NotifyHeadersComplete"));
-
   if (!request_ || !request_->has_delegate())
     return;  // The request was destroyed, so there is no more work to do.
 
@@ -326,45 +386,18 @@ void URLRequestJob::NotifyHeadersComplete() {
   // survival until we can get out of this method.
   scoped_refptr<URLRequestJob> self_preservation(this);
 
-  if (request_) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile1(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 1"));
-
+  if (request_)
     request_->OnHeadersComplete();
-  }
-
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-  tracked_objects::ScopedTracker tracking_profile2(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "423948 URLRequestJob::NotifyHeadersComplete 2"));
 
   GURL new_location;
   int http_status_code;
   if (IsRedirectResponse(&new_location, &http_status_code)) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile3(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 3"));
-
     // Redirect response bodies are not read. Notify the transaction
     // so it does not treat being stopped as an error.
     DoneReadingRedirectResponse();
 
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile4(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 4"));
-
     RedirectInfo redirect_info =
         ComputeRedirectInfo(new_location, http_status_code);
-
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile5(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 5"));
-
     bool defer_redirect = false;
     request_->NotifyReceivedRedirect(redirect_info, &defer_redirect);
 
@@ -372,11 +405,6 @@ void URLRequestJob::NotifyHeadersComplete() {
     // NotifyReceivedRedirect
     if (!request_ || !request_->has_delegate())
       return;
-
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile6(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 6"));
 
     // If we were not cancelled, then maybe follow the redirect.
     if (request_->status().is_success()) {
@@ -388,18 +416,8 @@ void URLRequestJob::NotifyHeadersComplete() {
       return;
     }
   } else if (NeedsAuth()) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile7(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 7"));
-
     scoped_refptr<AuthChallengeInfo> auth_info;
     GetAuthChallengeInfo(&auth_info);
-
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile8(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "423948 URLRequestJob::NotifyHeadersComplete 8"));
 
     // Need to check for a NULL auth_info because the server may have failed
     // to send a challenge with the 401 response.
@@ -410,11 +428,6 @@ void URLRequestJob::NotifyHeadersComplete() {
     }
   }
 
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-  tracked_objects::ScopedTracker tracking_profile9(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "423948 URLRequestJob::NotifyHeadersComplete 9"));
-
   has_handled_response_ = true;
   if (request_->status().is_success())
     filter_.reset(SetupFilter());
@@ -424,17 +437,21 @@ void URLRequestJob::NotifyHeadersComplete() {
     request_->GetResponseHeaderByName("content-length", &content_length);
     if (!content_length.empty())
       base::StringToInt64(content_length, &expected_content_size_);
+  } else {
+    request_->net_log().AddEvent(
+        NetLog::TYPE_URL_REQUEST_FILTERS_SET,
+        base::Bind(&FiltersSetCallback, base::Unretained(filter_.get())));
   }
-
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-  tracked_objects::ScopedTracker tracking_profile10(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "423948 URLRequestJob::NotifyHeadersComplete 10"));
 
   request_->NotifyResponseStarted();
 }
 
 void URLRequestJob::NotifyReadComplete(int bytes_read) {
+  // TODO(cbentzel): Remove ScopedTracker below once crbug.com/475755 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "475755 URLRequestJob::NotifyReadComplete"));
+
   if (!request_ || !request_->has_delegate())
     return;  // The request was destroyed, so there is no more work to do.
 
@@ -685,11 +702,11 @@ bool URLRequestJob::ReadFilteredData(int* bytes_read) {
       }
 
       // If logging all bytes is enabled, log the filtered bytes read.
-      if (rv && request() && request()->net_log().IsLoggingBytes() &&
-          filtered_data_len > 0) {
+      if (rv && request() && filtered_data_len > 0 &&
+          request()->net_log().IsCapturing()) {
         request()->net_log().AddByteTransferEvent(
-            NetLog::TYPE_URL_REQUEST_JOB_FILTERED_BYTES_READ,
-            filtered_data_len, filtered_read_buffer_->data());
+            NetLog::TYPE_URL_REQUEST_JOB_FILTERED_BYTES_READ, filtered_data_len,
+            filtered_read_buffer_->data());
       }
     } else {
       // we are done, or there is no data left.
@@ -776,8 +793,8 @@ void URLRequestJob::FollowRedirect(const RedirectInfo& redirect_info) {
 void URLRequestJob::OnRawReadComplete(int bytes_read) {
   DCHECK(raw_read_buffer_.get());
   // If |filter_| is non-NULL, bytes will be logged after it is applied instead.
-  if (!filter_.get() && request() && request()->net_log().IsLoggingBytes() &&
-      bytes_read > 0) {
+  if (!filter_.get() && request() && bytes_read > 0 &&
+      request()->net_log().IsCapturing()) {
     request()->net_log().AddByteTransferEvent(
         NetLog::TYPE_URL_REQUEST_JOB_BYTES_READ,
         bytes_read, raw_read_buffer_->data());
@@ -790,7 +807,6 @@ void URLRequestJob::OnRawReadComplete(int bytes_read) {
 }
 
 void URLRequestJob::RecordBytesRead(int bytes_read) {
-  filter_input_byte_count_ += bytes_read;
   prefilter_bytes_read_ += bytes_read;
   if (!filter_.get())
     postfilter_bytes_read_ += bytes_read;
@@ -820,8 +836,8 @@ RedirectInfo URLRequestJob::ComputeRedirectInfo(const GURL& location,
   redirect_info.status_code = http_status_code;
 
   // The request method may change, depending on the status code.
-  redirect_info.new_method = URLRequest::ComputeMethodForRedirect(
-      request_->method(), http_status_code);
+  redirect_info.new_method =
+      ComputeMethodForRedirect(request_->method(), http_status_code);
 
   // Move the reference fragment of the old location to the new one if the
   // new one has none. This duplicates mozilla's behavior.
@@ -846,15 +862,11 @@ RedirectInfo URLRequestJob::ComputeRedirectInfo(const GURL& location,
         request_->first_party_for_cookies();
   }
 
-  // Suppress the referrer if we're redirecting out of https.
-  if (request_->referrer_policy() ==
-          URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE &&
-      GURL(request_->referrer()).SchemeIsSecure() &&
-      !redirect_info.new_url.SchemeIsSecure()) {
-    redirect_info.new_referrer.clear();
-  } else {
-    redirect_info.new_referrer = request_->referrer();
-  }
+  // Alter the referrer if redirecting cross-origin (especially HTTP->HTTPS).
+  redirect_info.new_referrer =
+      ComputeReferrerForRedirect(request_->referrer_policy(),
+                                 request_->referrer(),
+                                 redirect_info.new_url).spec();
 
   return redirect_info;
 }

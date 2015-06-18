@@ -9,7 +9,7 @@
 #import <Carbon/Carbon.h>
 
 #include "base/logging.h"
-#include "ui/events/keycodes/dom4/keycode_converter.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 
 namespace ui {
 
@@ -19,7 +19,7 @@ namespace {
 struct KeyCodeMap {
   KeyboardCode keycode;
   int macKeycode;
-  unichar characterIgnoringModifiers;
+  unichar characterIgnoringAllModifiers;
 };
 
 // Customized less operator for using std::lower_bound() on a KeyCodeMap array.
@@ -65,8 +65,8 @@ const KeyCodeMap kKeyCodesMap[] = {
   { VKEY_PRINT /* 0x2A */, -1, NSPrintFunctionKey },
   { VKEY_EXECUTE /* 0x2B */, -1, NSExecuteFunctionKey },
   { VKEY_SNAPSHOT /* 0x2C */, -1, NSPrintScreenFunctionKey },
-  { VKEY_INSERT /* 0x2D */, -1, NSInsertFunctionKey },
-  { VKEY_DELETE /* 0x2E */, kVK_ForwardDelete, kDeleteCharCode },
+  { VKEY_INSERT /* 0x2D */, kVK_Help, NSInsertFunctionKey },
+  { VKEY_DELETE /* 0x2E */, kVK_ForwardDelete, NSDeleteFunctionKey },
   { VKEY_HELP /* 0x2F */, kVK_Help, kHelpCharCode },
   { VKEY_0 /* 0x30 */, kVK_ANSI_0, '0' },
   { VKEY_1 /* 0x31 */, kVK_ANSI_1, '1' },
@@ -453,8 +453,12 @@ KeyboardCode KeyboardCodeFromKeyCode(unsigned short keyCode) {
 
 int MacKeyCodeForWindowsKeyCode(KeyboardCode keycode,
                                 NSUInteger flags,
-                                unichar* character,
-                                unichar* characterIgnoringModifiers) {
+                                unichar* us_keyboard_shifted_character,
+                                unichar* keyboard_character) {
+  // In release code, |flags| is used to lookup accelerators, so logic to handle
+  // caps lock properly isn't implemented.
+  DCHECK_EQ(0u, flags & NSAlphaShiftKeyMask);
+
   KeyCodeMap from;
   from.keycode = keycode;
 
@@ -466,54 +470,55 @@ int MacKeyCodeForWindowsKeyCode(KeyboardCode keycode,
     return -1;
 
   int macKeycode = ptr->macKeycode;
-  if (characterIgnoringModifiers)
-    *characterIgnoringModifiers = ptr->characterIgnoringModifiers;
+  if (keyboard_character)
+    *keyboard_character = ptr->characterIgnoringAllModifiers;
 
-  if (!character)
+  if (!us_keyboard_shifted_character)
     return macKeycode;
 
-  *character = ptr->characterIgnoringModifiers;
+  *us_keyboard_shifted_character = ptr->characterIgnoringAllModifiers;
 
-  // Fill in |character| according to flags.
+  // Fill in |us_keyboard_shifted_character| according to flags.
   if (flags & NSShiftKeyMask) {
     if (keycode >= VKEY_0 && keycode <= VKEY_9) {
-      *character = kShiftCharsForNumberKeys[keycode - VKEY_0];
+      *us_keyboard_shifted_character =
+          kShiftCharsForNumberKeys[keycode - VKEY_0];
     } else if (keycode >= VKEY_A && keycode <= VKEY_Z) {
-      *character = 'A' + (keycode - VKEY_A);
+      *us_keyboard_shifted_character = 'A' + (keycode - VKEY_A);
     } else {
       switch (macKeycode) {
         case kVK_ANSI_Grave:
-          *character = '~';
+          *us_keyboard_shifted_character = '~';
           break;
         case kVK_ANSI_Minus:
-          *character = '_';
+          *us_keyboard_shifted_character = '_';
           break;
         case kVK_ANSI_Equal:
-          *character = '+';
+          *us_keyboard_shifted_character = '+';
           break;
         case kVK_ANSI_LeftBracket:
-          *character = '{';
+          *us_keyboard_shifted_character = '{';
           break;
         case kVK_ANSI_RightBracket:
-          *character = '}';
+          *us_keyboard_shifted_character = '}';
           break;
         case kVK_ANSI_Backslash:
-          *character = '|';
+          *us_keyboard_shifted_character = '|';
           break;
         case kVK_ANSI_Semicolon:
-          *character = ':';
+          *us_keyboard_shifted_character = ':';
           break;
         case kVK_ANSI_Quote:
-          *character = '\"';
+          *us_keyboard_shifted_character = '\"';
           break;
         case kVK_ANSI_Comma:
-          *character = '<';
+          *us_keyboard_shifted_character = '<';
           break;
         case kVK_ANSI_Period:
-          *character = '>';
+          *us_keyboard_shifted_character = '>';
           break;
         case kVK_ANSI_Slash:
-          *character = '?';
+          *us_keyboard_shifted_character = '?';
           break;
         default:
           break;
@@ -544,8 +549,8 @@ KeyboardCode KeyboardCodeFromNSEvent(NSEvent* event) {
   return KeyboardCodeFromKeyCode([event keyCode]);
 }
 
-const char* CodeFromNSEvent(NSEvent* event) {
-  return ui::KeycodeConverter::NativeKeycodeToCode([event keyCode]);
+DomCode CodeFromNSEvent(NSEvent* event) {
+  return ui::KeycodeConverter::NativeKeycodeToDomCode([event keyCode]);
 }
 
 }  // namespace ui

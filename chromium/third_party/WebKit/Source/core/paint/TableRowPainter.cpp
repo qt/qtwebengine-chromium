@@ -5,34 +5,47 @@
 #include "config.h"
 #include "core/paint/TableRowPainter.h"
 
-#include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderTableCell.h"
-#include "core/rendering/RenderTableRow.h"
+#include "core/layout/LayoutTableCell.h"
+#include "core/layout/LayoutTableRow.h"
+#include "core/paint/GraphicsContextAnnotator.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/ObjectPainter.h"
+#include "core/paint/PaintInfo.h"
+#include "core/paint/TableCellPainter.h"
 
 namespace blink {
 
-void TableRowPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void TableRowPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ASSERT(m_renderTableRow.hasSelfPaintingLayer());
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_renderTableRow);
+    ASSERT(m_layoutTableRow.hasSelfPaintingLayer());
+    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_layoutTableRow);
 
     paintOutlineForRowIfNeeded(paintInfo, paintOffset);
-    for (RenderTableCell* cell = m_renderTableRow.firstCell(); cell; cell = cell->nextCell()) {
+    for (LayoutTableCell* cell = m_layoutTableRow.firstCell(); cell; cell = cell->nextCell()) {
         // Paint the row background behind the cell.
-        if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground)
-            cell->paintBackgroundsBehindCell(paintInfo, paintOffset, &m_renderTableRow);
+        if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground) {
+            if (m_layoutTableRow.hasBackground()) {
+                TableCellPainter tableCellPainter(*cell);
+                LayoutObjectDrawingRecorder recorder(*paintInfo.context, *cell, DisplayItem::TableCellBackgroundFromSelfPaintingRow, tableCellPainter.paintBounds(paintOffset, TableCellPainter::AddOffsetFromParent));
+                if (!recorder.canUseCachedDrawing())
+                    tableCellPainter.paintBackgroundsBehindCell(paintInfo, paintOffset, &m_layoutTableRow);
+            }
+        }
+
         if (!cell->hasSelfPaintingLayer())
             cell->paint(paintInfo, paintOffset);
     }
 }
 
-void TableRowPainter::paintOutlineForRowIfNeeded(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void TableRowPainter::paintOutlineForRowIfNeeded(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    LayoutPoint adjustedPaintOffset = paintOffset + m_renderTableRow.location();
+    LayoutPoint adjustedPaintOffset = paintOffset + m_layoutTableRow.location();
     PaintPhase paintPhase = paintInfo.phase;
-    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_renderTableRow.style()->visibility() == VISIBLE)
-        m_renderTableRow.paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, m_renderTableRow.size()));
+    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutTableRow.style()->visibility() == VISIBLE) {
+        LayoutRect visualOverflowRect(m_layoutTableRow.visualOverflowRect());
+        visualOverflowRect.moveBy(adjustedPaintOffset);
+        ObjectPainter(m_layoutTableRow).paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, m_layoutTableRow.size()), visualOverflowRect);
+    }
 }
 
 } // namespace blink

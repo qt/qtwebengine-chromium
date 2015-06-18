@@ -11,7 +11,6 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/browser/frame_host/frame_tree.h"
@@ -58,6 +57,8 @@ NativeWebKeyboardEvent NativeWebKeyboardEventFromKeyEvent(
     type = blink::WebInputEvent::RawKeyDown;
   else if (action == AKEY_EVENT_ACTION_UP)
     type = blink::WebInputEvent::KeyUp;
+  else
+    NOTREACHED() << "Invalid Android key event action: " << action;
   return NativeWebKeyboardEvent(java_key_event, type, modifiers,
       time_ms / 1000.0, key_code, unicode_char, is_system_key);
 }
@@ -65,39 +66,7 @@ NativeWebKeyboardEvent NativeWebKeyboardEventFromKeyEvent(
 }  // anonymous namespace
 
 bool RegisterImeAdapter(JNIEnv* env) {
-  if (!RegisterNativesImpl(env))
-    return false;
-
-  Java_ImeAdapter_initializeWebInputEvents(env,
-                                           blink::WebInputEvent::RawKeyDown,
-                                           blink::WebInputEvent::KeyUp,
-                                           blink::WebInputEvent::Char,
-                                           blink::WebInputEvent::ShiftKey,
-                                           blink::WebInputEvent::AltKey,
-                                           blink::WebInputEvent::ControlKey,
-                                           blink::WebInputEvent::CapsLockOn,
-                                           blink::WebInputEvent::NumLockOn);
-  Java_ImeAdapter_initializeTextInputTypes(
-      env,
-      ui::TEXT_INPUT_TYPE_NONE,
-      ui::TEXT_INPUT_TYPE_TEXT,
-      ui::TEXT_INPUT_TYPE_TEXT_AREA,
-      ui::TEXT_INPUT_TYPE_PASSWORD,
-      ui::TEXT_INPUT_TYPE_SEARCH,
-      ui::TEXT_INPUT_TYPE_URL,
-      ui::TEXT_INPUT_TYPE_EMAIL,
-      ui::TEXT_INPUT_TYPE_TELEPHONE,
-      ui::TEXT_INPUT_TYPE_NUMBER,
-      ui::TEXT_INPUT_TYPE_CONTENT_EDITABLE);
-  Java_ImeAdapter_initializeTextInputFlags(
-      env,
-      blink::WebTextInputFlagAutocompleteOn,
-      blink::WebTextInputFlagAutocompleteOff,
-      blink::WebTextInputFlagAutocorrectOn,
-      blink::WebTextInputFlagAutocorrectOff,
-      blink::WebTextInputFlagSpellcheckOn,
-      blink::WebTextInputFlagSpellcheckOff);
-  return true;
+  return RegisterNativesImpl(env);
 }
 
 // Callback from Java to convert BackgroundColorSpan data to a
@@ -108,8 +77,8 @@ void AppendBackgroundColorSpan(JNIEnv*,
                                jint start,
                                jint end,
                                jint background_color) {
-  DCHECK(start >= 0);
-  DCHECK(end >= 0);
+  DCHECK_GE(start, 0);
+  DCHECK_GE(end, 0);
   // Do not check |background_color|.
   std::vector<blink::WebCompositionUnderline>* underlines =
       reinterpret_cast<std::vector<blink::WebCompositionUnderline>*>(
@@ -129,8 +98,8 @@ void AppendUnderlineSpan(JNIEnv*,
                          jlong underlines_ptr,
                          jint start,
                          jint end) {
-  DCHECK(start >= 0);
-  DCHECK(end >= 0);
+  DCHECK_GE(start, 0);
+  DCHECK_GE(end, 0);
   std::vector<blink::WebCompositionUnderline>* underlines =
       reinterpret_cast<std::vector<blink::WebCompositionUnderline>*>(
           underlines_ptr);
@@ -266,36 +235,6 @@ void ImeAdapterAndroid::FocusedNodeChanged(bool is_editable_node) {
                                        obj.obj(),
                                        is_editable_node);
   }
-}
-
-void ImeAdapterAndroid::SetCharacterBounds(
-    const std::vector<gfx::Rect>& character_bounds) {
-  JNIEnv* env = AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jobject> obj = java_ime_adapter_.get(env);
-  if (obj.is_null())
-    return;
-
-  const size_t coordinates_array_size = character_bounds.size() * 4;
-  base::android::ScopedJavaLocalRef<jfloatArray> coordinates_dest_array(
-      env, env->NewFloatArray(coordinates_array_size));
-  if (coordinates_dest_array.is_null())
-    return;
-
-  scoped_ptr<jfloat[]> coordinates_array(new jfloat[coordinates_array_size]);
-  for (size_t i = 0; i < character_bounds.size(); ++i) {
-    const gfx::Rect& rect = character_bounds[i];
-    const size_t coordinates_array_index = i * 4;
-    coordinates_array[coordinates_array_index + 0] = rect.x();
-    coordinates_array[coordinates_array_index + 1] = rect.y();
-    coordinates_array[coordinates_array_index + 2] = rect.right();
-    coordinates_array[coordinates_array_index + 3] = rect.bottom();
-  }
-  // TODO(yukawa): Consider to move this to base/android/jni_array.h
-  env->SetFloatArrayRegion(coordinates_dest_array.obj(), 0,
-                           coordinates_array_size, coordinates_array.get());
-  base::android::CheckException(env);
-  Java_ImeAdapter_setCharacterBounds(env, obj.obj(),
-                                     coordinates_dest_array.obj());
 }
 
 void ImeAdapterAndroid::SetEditableSelectionOffsets(JNIEnv*, jobject,

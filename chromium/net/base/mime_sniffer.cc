@@ -100,7 +100,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
-#include "net/base/mime_util.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -110,11 +109,11 @@ namespace net {
 static const size_t kBytesRequiredForMagic = 42;
 
 struct MagicNumber {
-  const char* mime_type;
-  const char* magic;
+  const char* const mime_type;
+  const char* const magic;
   size_t magic_len;
   bool is_string;
-  const char* mask;  // if set, must have same length as |magic|
+  const char* const mask;  // if set, must have same length as |magic|
 };
 
 #define MAGIC_NUMBER(mime_type, magic) \
@@ -122,7 +121,8 @@ struct MagicNumber {
 
 template <int MagicSize, int MaskSize>
 class VerifySizes {
-  COMPILE_ASSERT(MagicSize == MaskSize, sizes_must_be_equal);
+  static_assert(MagicSize == MaskSize, "sizes must be equal");
+
  public:
   enum { SIZES = MagicSize };
 };
@@ -162,10 +162,6 @@ static const MagicNumber kMagicNumbers[] = {
   MAGIC_NUMBER("audio/mpeg", "ID3")
   MAGIC_NUMBER("image/webp", "RIFF....WEBPVP8 ")
   MAGIC_NUMBER("video/webm", "\x1A\x45\xDF\xA3")
-  // TODO(abarth): we don't handle partial byte matches yet
-  // MAGIC_NUMBER("video/mpeg", "\x00\x00\x01\xB")
-  // MAGIC_NUMBER("audio/mpeg", "\xFF\xE")
-  // MAGIC_NUMBER("audio/mpeg", "\xFF\xF")
   MAGIC_NUMBER("application/zip", "PK\x03\x04")
   MAGIC_NUMBER("application/x-rar-compressed", "Rar!\x1A\x07\x00")
   MAGIC_NUMBER("application/x-msmetafile", "\xD7\xCD\xC6\x9A")
@@ -208,7 +204,7 @@ enum OfficeDocType {
 
 struct OfficeExtensionType {
   OfficeDocType doc_type;
-  const char* extension;
+  const char* const extension;
   size_t extension_len;
 };
 
@@ -723,7 +719,7 @@ static bool SniffBinary(const char* content,
 static bool IsUnknownMimeType(const std::string& mime_type) {
   // TODO(tc): Maybe reuse some code in net/http/http_response_headers.* here.
   // If we do, please be careful not to alter the semantics at all.
-  static const char* kUnknownMimeTypes[] = {
+  static const char* const kUnknownMimeTypes[] = {
     // Empty mime types are as unknown as they get.
     "",
     // The unknown/unknown type is popular and uninformative
@@ -818,7 +814,7 @@ bool ShouldSniffMimeType(const GURL& url, const std::string& mime_type) {
     return false;
   }
 
-  static const char* kSniffableTypes[] = {
+  static const char* const kSniffableTypes[] = {
     // Many web servers are misconfigured to send text/plain for many
     // different types of content.
     "text/plain",

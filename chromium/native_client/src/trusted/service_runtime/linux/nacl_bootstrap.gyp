@@ -62,16 +62,6 @@
         '-fno-pie', '-fno-PIE',
       ],
       'cflags!': [
-        # ld_bfd.py that is used to link nacl_bootstrap_raw doesn't recognize
-        # the Clang driver flags and will fail to link instrumented
-        # nacl_bootstrap.o.
-        # We hope there's nothing to search for in this small program and
-        # disable all the sanitizers for it.
-        '-fsanitize=address',
-        '-fsanitize=memory',
-        '-fsanitize=null',
-        '-fsanitize=vptr',
-        '-fsanitize=undefined',
         '-w',
         # We filter these out because release_extra_cflags or another
         # such thing might be adding them in, and those options wind up
@@ -84,6 +74,16 @@
         '-funwind-tables',
         # This causes an "unused argument" warning in C targets.
         '-stdlib=libc++',
+        # ld_bfd.py cannot link LTO objects.
+        '-flto',
+      ],
+      'cflags/': [
+        # ld_bfd.py that is used to link nacl_bootstrap_raw doesn't recognize
+        # the Clang driver flags and will fail to link instrumented
+        # nacl_bootstrap.o.
+        # We hope there's nothing to search for in this small program and
+        # disable all the sanitizers for it.
+        ['exclude', '^-fsanitize'],
       ],
       'conditions': [
         ['clang==1', {
@@ -91,6 +91,15 @@
             # TODO(bbudge) Remove this when Clang supports -fno-pic.
             '-Qunused-arguments',
           ],
+        }],
+        ['clang==1 and target_arch=="ia32"', {
+          'cflags!': [
+            # TODO(binji): This is a horrible hack to workaround a miscompile
+            # in clang 3.6.0 (trunk 223108) when compiling
+            # nacl_helper_bootstrap with -m32 and -mstackrealign. See
+            # crbug.com/445647
+            '-mstackrealign',
+          ]
         }],
       ],
     },

@@ -9,8 +9,8 @@
 
 #include "base/compiler_specific.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_export.h"
@@ -43,6 +43,8 @@ class GL_EXPORT GLSurfaceGLX : public GLSurface {
 
  protected:
   ~GLSurfaceGLX() override;
+
+  static void* GetConfig(gfx::AcceleratedWidget window);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GLSurfaceGLX);
@@ -93,9 +95,9 @@ class GL_EXPORT NativeViewGLSurfaceGLX : public GLSurfaceGLX,
 };
 
 // A surface used to render to an offscreen pbuffer.
-class GL_EXPORT PbufferGLSurfaceGLX : public GLSurfaceGLX {
+class GL_EXPORT UnmappedNativeViewGLSurfaceGLX : public GLSurfaceGLX {
  public:
-  explicit PbufferGLSurfaceGLX(const gfx::Size& size);
+  explicit UnmappedNativeViewGLSurfaceGLX(const gfx::Size& size);
 
   // Implement GLSurfaceGLX.
   bool Initialize() override;
@@ -107,14 +109,15 @@ class GL_EXPORT PbufferGLSurfaceGLX : public GLSurfaceGLX {
   void* GetConfig() override;
 
  protected:
-  ~PbufferGLSurfaceGLX() override;
+  ~UnmappedNativeViewGLSurfaceGLX() override;
 
  private:
   gfx::Size size_;
   void* config_;
-  XID pbuffer_;
+  // Unmapped dummy window, used to provide a compatible surface.
+  gfx::AcceleratedWidget window_;
 
-  DISALLOW_COPY_AND_ASSIGN(PbufferGLSurfaceGLX);
+  DISALLOW_COPY_AND_ASSIGN(UnmappedNativeViewGLSurfaceGLX);
 };
 
 }  // namespace gfx

@@ -339,7 +339,6 @@ OPENSSL_EXPORT int PEM_write_bio_##name(BIO *bp, type *x, const EVP_CIPHER *enc,
 
 #endif
 
-#ifndef OPENSSL_NO_BIO
 #define DECLARE_PEM_read_bio(name, type) \
 	OPENSSL_EXPORT type *PEM_read_bio_##name(BIO *bp, type **x, pem_password_cb *cb, void *u);
 
@@ -353,14 +352,6 @@ OPENSSL_EXPORT int PEM_write_bio_##name(BIO *bp, type *x, const EVP_CIPHER *enc,
 	OPENSSL_EXPORT int PEM_write_bio_##name(BIO *bp, type *x, const EVP_CIPHER *enc, \
 	     unsigned char *kstr, int klen, pem_password_cb *cb, void *u);
 
-#else
-
-#define DECLARE_PEM_read_bio(name, type) /**/
-#define DECLARE_PEM_write_bio(name, type) /**/
-#define DECLARE_PEM_write_bio_const(name, type) /**/
-#define DECLARE_PEM_write_cb_bio(name, type) /**/
-
-#endif
 
 #define DECLARE_PEM_write(name, type) \
 	DECLARE_PEM_write_bio(name, type) \
@@ -401,7 +392,6 @@ typedef int pem_password_cb(char *buf, int size, int rwflag);
 OPENSSL_EXPORT int	PEM_get_EVP_CIPHER_INFO(char *header, EVP_CIPHER_INFO *cipher);
 OPENSSL_EXPORT int	PEM_do_header (EVP_CIPHER_INFO *cipher, unsigned char *data,long *len, pem_password_cb *callback,void *u);
 
-#ifndef OPENSSL_NO_BIO
 OPENSSL_EXPORT int	PEM_read_bio(BIO *bp, char **name, char **header, unsigned char **data,long *len);
 OPENSSL_EXPORT int	PEM_write_bio(BIO *bp,const char *name, const char *hdr, const unsigned char *data, long len);
 OPENSSL_EXPORT int PEM_bytes_read_bio(unsigned char **pdata, long *plen, char **pnm, const char *name, BIO *bp, pem_password_cb *cb, void *u);
@@ -410,7 +400,6 @@ OPENSSL_EXPORT int	PEM_ASN1_write_bio(i2d_of_void *i2d,const char *name,BIO *bp,
 
 OPENSSL_EXPORT STACK_OF(X509_INFO) *	PEM_X509_INFO_read_bio(BIO *bp, STACK_OF(X509_INFO) *sk, pem_password_cb *cb, void *u);
 OPENSSL_EXPORT int	PEM_X509_INFO_write_bio(BIO *bp,X509_INFO *xi, EVP_CIPHER *enc, unsigned char *kstr, int klen, pem_password_cb *cd, void *u);
-#endif
 
 OPENSSL_EXPORT int	PEM_read(FILE *fp, char **name, char **header, unsigned char **data,long *len);
 OPENSSL_EXPORT int	PEM_write(FILE *fp, const char *name, const char *hdr, const unsigned char *data, long len);
@@ -513,57 +502,44 @@ void ERR_load_PEM_strings(void);
 }
 #endif
 
-#define PEM_F_PEM_read_bio_DHparams 100
-#define PEM_F_load_iv 101
-#define PEM_F_PEM_write 102
-#define PEM_F_do_pk8pkey_fp 103
-#define PEM_F_PEM_read_PrivateKey 104
-#define PEM_F_PEM_read_DHparams 105
-#define PEM_F_PEM_ASN1_read_bio 106
-#define PEM_F_PEM_ASN1_read 107
+#define PEM_F_PEM_ASN1_read 100
+#define PEM_F_PEM_ASN1_read_bio 101
+#define PEM_F_PEM_ASN1_write 102
+#define PEM_F_PEM_ASN1_write_bio 103
+#define PEM_F_PEM_X509_INFO_read 104
+#define PEM_F_PEM_X509_INFO_read_bio 105
+#define PEM_F_PEM_X509_INFO_write_bio 106
+#define PEM_F_PEM_do_header 107
 #define PEM_F_PEM_get_EVP_CIPHER_INFO 108
-#define PEM_F_PEM_X509_INFO_read 109
-#define PEM_F_PEM_read_bio_Parameters 110
-#define PEM_F_PEM_read 111
-#define PEM_F_PEM_X509_INFO_read_bio 112
-#define PEM_F_PEM_X509_INFO_write_bio 113
-#define PEM_F_PEM_ASN1_write 114
-#define PEM_F_d2i_PKCS8PrivateKey_bio 115
-#define PEM_F_d2i_PKCS8PrivateKey_fp 116
-#define PEM_F_PEM_read_bio_PrivateKey 117
-#define PEM_F_PEM_write_PrivateKey 118
-#define PEM_F_PEM_ASN1_write_bio 119
-#define PEM_F_PEM_do_header 120
-#define PEM_F_PEM_write_bio 121
-#define PEM_F_do_pk8pkey 122
-#define PEM_F_PEM_read_bio 123
-#define PEM_R_NO_START_LINE 100
-#define PEM_R_NOT_PROC_TYPE 101
-#define PEM_R_SHORT_HEADER 102
+#define PEM_F_PEM_read 109
+#define PEM_F_PEM_read_DHparams 110
+#define PEM_F_PEM_read_PrivateKey 111
+#define PEM_F_PEM_read_bio 112
+#define PEM_F_PEM_read_bio_DHparams 113
+#define PEM_F_PEM_read_bio_Parameters 114
+#define PEM_F_PEM_read_bio_PrivateKey 115
+#define PEM_F_PEM_write 116
+#define PEM_F_PEM_write_PrivateKey 117
+#define PEM_F_PEM_write_bio 118
+#define PEM_F_d2i_PKCS8PrivateKey_bio 119
+#define PEM_F_d2i_PKCS8PrivateKey_fp 120
+#define PEM_F_do_pk8pkey 121
+#define PEM_F_do_pk8pkey_fp 122
+#define PEM_F_load_iv 123
+#define PEM_R_BAD_BASE64_DECODE 100
+#define PEM_R_BAD_DECRYPT 101
+#define PEM_R_BAD_END_LINE 102
 #define PEM_R_BAD_IV_CHARS 103
-#define PEM_R_ERROR_CONVERTING_PRIVATE_KEY 104
-#define PEM_R_BAD_END_LINE 105
-#define PEM_R_CIPHER_IS_NULL 106
-#define PEM_R_BAD_MAGIC_NUMBER 107
-#define PEM_R_BAD_DECRYPT 108
-#define PEM_R_UNSUPPORTED_ENCRYPTION 109
-#define PEM_R_PVK_DATA_TOO_SHORT 110
-#define PEM_R_PROBLEMS_GETTING_PASSWORD 111
-#define PEM_R_KEYBLOB_HEADER_PARSE_ERROR 112
-#define PEM_R_BIO_WRITE_FAILURE 113
-#define PEM_R_INCONSISTENT_HEADER 114
-#define PEM_R_PUBLIC_KEY_NO_RSA 115
-#define PEM_R_EXPECTING_PUBLIC_KEY_BLOB 116
-#define PEM_R_KEYBLOB_TOO_SHORT 117
-#define PEM_R_BAD_BASE64_DECODE 118
-#define PEM_R_READ_KEY 119
-#define PEM_R_BAD_PASSWORD_READ 120
-#define PEM_R_UNSUPPORTED_KEY_COMPONENTS 121
-#define PEM_R_UNSUPPORTED_CIPHER 122
-#define PEM_R_NOT_ENCRYPTED 123
-#define PEM_R_NOT_DEK_INFO 124
-#define PEM_R_BAD_VERSION_NUMBER 125
-#define PEM_R_EXPECTING_PRIVATE_KEY_BLOB 126
-#define PEM_R_PVK_TOO_SHORT 127
+#define PEM_R_BAD_PASSWORD_READ 104
+#define PEM_R_CIPHER_IS_NULL 105
+#define PEM_R_ERROR_CONVERTING_PRIVATE_KEY 106
+#define PEM_R_NOT_DEK_INFO 107
+#define PEM_R_NOT_ENCRYPTED 108
+#define PEM_R_NOT_PROC_TYPE 109
+#define PEM_R_NO_START_LINE 110
+#define PEM_R_READ_KEY 111
+#define PEM_R_SHORT_HEADER 112
+#define PEM_R_UNSUPPORTED_CIPHER 113
+#define PEM_R_UNSUPPORTED_ENCRYPTION 114
 
 #endif  /* OPENSSL_HEADER_PEM_H */

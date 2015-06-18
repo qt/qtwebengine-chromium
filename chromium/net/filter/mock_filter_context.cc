@@ -10,8 +10,6 @@ namespace net {
 
 MockFilterContext::MockFilterContext()
     : is_cached_content_(false),
-      is_download_(false),
-      is_sdch_response_(false),
       ok_to_call_get_url_(true),
       response_code_(-1),
       context_(new URLRequestContext()) {
@@ -38,13 +36,6 @@ bool MockFilterContext::GetURL(GURL* gurl) const {
   return true;
 }
 
-bool MockFilterContext::GetContentDisposition(std::string* disposition) const {
-  if (content_disposition_.empty())
-    return false;
-  *disposition = content_disposition_;
-  return true;
-}
-
 // What was this data requested from a server?
 base::Time MockFilterContext::GetRequestTime() const {
   return request_time_;
@@ -52,10 +43,9 @@ base::Time MockFilterContext::GetRequestTime() const {
 
 bool MockFilterContext::IsCachedContent() const { return is_cached_content_; }
 
-bool MockFilterContext::IsDownload() const { return is_download_; }
-
-bool MockFilterContext::SdchResponseExpected() const {
-  return is_sdch_response_;
+SdchManager::DictionarySet*
+MockFilterContext::SdchDictionariesAdvertised() const {
+  return dictionaries_handle_.get();
 }
 
 int64 MockFilterContext::GetByteReadCount() const { return 0; }
@@ -64,6 +54,10 @@ int MockFilterContext::GetResponseCode() const { return response_code_; }
 
 const URLRequestContext* MockFilterContext::GetURLRequestContext() const {
   return context_.get();
+}
+
+const BoundNetLog& MockFilterContext::GetNetLog() const {
+  return net_log_;
 }
 
 }  // namespace net

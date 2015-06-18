@@ -27,19 +27,23 @@
 #define ScrollableArea_h
 
 #include "platform/PlatformExport.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/DoublePoint.h"
 #include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/Scrollbar.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
+class DoubleRect;
 class FloatPoint;
 class GraphicsLayer;
 class HostWindow;
 class PlatformWheelEvent;
 class ProgrammaticScrollAnimator;
+struct ScrollAlignment;
 class ScrollAnimator;
 
 enum ScrollBehavior {
@@ -60,33 +64,47 @@ public:
     static float minFractionToStepWhenPaging();
     static int maxOverlapBetweenPages();
 
+    // Convert a non-finite scroll value (Infinity, -Infinity, NaN) to 0 as
+    // per http://dev.w3.org/csswg/cssom-view/#normalize-non_finite-values.
+    static double normalizeNonFiniteScroll(double value) { return std::isfinite(value) ? value : 0.0; }
+
     // The window that hosts the ScrollableArea. The ScrollableArea will communicate scrolls and repaints to the
     // host window in the window's coordinate space.
     virtual HostWindow* hostWindow() const { return 0; };
 
-    bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
-    void scrollToOffsetWithoutAnimation(const FloatPoint&);
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
+    virtual void setScrollPosition(const DoublePoint&, ScrollBehavior = ScrollBehaviorInstant);
+    void scrollToOffsetWithoutAnimation(const FloatPoint&, bool cancelProgrammaticAnimations = true);
     void scrollToOffsetWithoutAnimation(ScrollbarOrientation, float offset);
+
+    // Scrolls the area so that the given rect, given in the document's content coordinates, such that it's
+    // visible in the area. Returns the new location of the input rect relative once again to the document.
+    // Note, in the case of a Document container, such as FrameView, the output will always be the input rect
+    // since scrolling it can't change the location of content relative to the document, unlike an overflowing
+    // element.
+    virtual LayoutRect scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
+
+    // Scrolls the area so that the given rect, given in the area's content coordinates, such that it's
+    // cenetered in the second rect, which is given relative to the area's origin.
+    void scrollIntoRect(const LayoutRect& rectInContent, const FloatRect& targetRectInFrame);
 
     void programmaticallyScrollSmoothlyToOffset(const FloatPoint&);
 
     // Should be called when the scroll position changes externally, for example if the scroll layer position
     // is updated on the scrolling thread and we need to notify the main thread.
-    void notifyScrollPositionChanged(const IntPoint&);
+    void notifyScrollPositionChanged(const DoublePoint&);
 
     static bool scrollBehaviorFromString(const String&, ScrollBehavior&);
 
-    bool handleWheelEvent(const PlatformWheelEvent&);
+    virtual ScrollResult handleWheel(const PlatformWheelEvent&);
 
     // Functions for controlling if you can scroll past the end of the document.
     bool constrainsScrollingToContentEdge() const { return m_constrainsScrollingToContentEdge; }
     void setConstrainsScrollingToContentEdge(bool constrainsScrollingToContentEdge) { m_constrainsScrollingToContentEdge = constrainsScrollingToContentEdge; }
 
-    void setVerticalScrollElasticity(ScrollElasticity scrollElasticity) { m_verticalScrollElasticity = scrollElasticity; }
-    ScrollElasticity verticalScrollElasticity() const { return static_cast<ScrollElasticity>(m_verticalScrollElasticity); }
-
-    void setHorizontalScrollElasticity(ScrollElasticity scrollElasticity) { m_horizontalScrollElasticity = scrollElasticity; }
-    ScrollElasticity horizontalScrollElasticity() const { return static_cast<ScrollElasticity>(m_horizontalScrollElasticity); }
+    // Adjust the passed in scroll position to keep it between the minimum and maximum positions.
+    IntPoint adjustScrollPositionWithinRange(const IntPoint&) const;
+    DoublePoint adjustScrollPositionWithinRange(const DoublePoint&) const;
 
     bool inLiveResize() const { return m_inLiveResize; }
     void willStartLiveResize();
@@ -126,6 +144,14 @@ public:
 
     const IntPoint& scrollOrigin() const { return m_scrollOrigin; }
     bool scrollOriginChanged() const { return m_scrollOriginChanged; }
+
+
+    // This is used to determine whether the incoming fractional scroll offset should
+    // be truncated to integer. Current rule is that if preferCompositingToLCDTextEnabled()
+    // is disabled (which is true on low-dpi device by default) we should do the truncation.
+    // The justification is that non-composited elements using fractional scroll offsets
+    // is causing too much nasty bugs but does not add too benefit on low-dpi devices.
+    virtual bool shouldUseIntegerScrollOffset() const { return !RuntimeEnabledFeatures::fractionalScrollOffsetsEnabled(); }
 
     // FIXME(bokan): Meaningless name, rename to isActiveFocus
     virtual bool isActive() const = 0;
@@ -167,13 +193,15 @@ public:
     virtual IntPoint scrollPosition() const = 0;
     virtual DoublePoint scrollPositionDouble() const { return DoublePoint(scrollPosition()); }
     virtual IntPoint minimumScrollPosition() const = 0;
+    virtual DoublePoint minimumScrollPositionDouble() const { return DoublePoint(minimumScrollPosition()); }
     virtual IntPoint maximumScrollPosition() const = 0;
+    virtual DoublePoint maximumScrollPositionDouble() const { return DoublePoint(maximumScrollPosition()); }
 
+    virtual DoubleRect visibleContentRectDouble(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual int visibleHeight() const { return visibleContentRect().height(); }
     virtual int visibleWidth() const { return visibleContentRect().width(); }
     virtual IntSize contentsSize() const = 0;
-    virtual IntSize overhangAmount() const { return IntSize(); }
     virtual IntPoint lastKnownMousePosition() const { return IntPoint(); }
 
     virtual bool shouldSuspendScrollAnimations() const { return true; }
@@ -184,19 +212,23 @@ public:
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
     virtual IntRect scrollableAreaBoundingBox() const = 0;
 
-    virtual bool isRubberBandInProgress() const { return false; }
-
     virtual bool scrollAnimatorEnabled() const { return false; }
 
     // NOTE: Only called from Internals for testing.
     void setScrollOffsetFromInternals(const IntPoint&);
 
     IntPoint clampScrollPosition(const IntPoint&) const;
+    DoublePoint clampScrollPosition(const DoublePoint&) const;
 
     // Let subclasses provide a way of asking for and servicing scroll
     // animations.
     bool scheduleAnimation();
-    void serviceScrollAnimations(double monotonicTime);
+    virtual void serviceScrollAnimations(double monotonicTime);
+    void updateCompositorScrollAnimations();
+    virtual void registerForAnimation() { }
+    virtual void deregisterForAnimation() { }
+
+    void notifyCompositorAnimationFinished(int groupId);
 
     virtual bool usesCompositedScrolling() const { return false; }
 
@@ -240,17 +272,38 @@ public:
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;
 
+    void layerForScrollingDidChange();
+
     void cancelProgrammaticScrollAnimation();
 
-protected:
-    ScrollableArea();
     virtual ~ScrollableArea();
-
-    void setScrollOrigin(const IntPoint&);
-    void resetScrollOriginChanged() { m_scrollOriginChanged = false; }
 
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) = 0;
     virtual void invalidateScrollCornerRect(const IntRect&) = 0;
+
+    // Returns the default scroll style this area should scroll with when not
+    // explicitly specified. E.g. The scrolling behavior of an element can be
+    // specified in CSS.
+    virtual ScrollBehavior scrollBehaviorStyle() const { return ScrollBehaviorInstant; }
+
+    // TODO(bokan): This is only used in FrameView to check scrollability but is
+    // needed here to allow RootFrameViewport to preserve wheelHandler
+    // semantics. Not sure why it's FrameView specific, it could probably be
+    // generalized to other types of ScrollableAreas.
+    virtual bool isScrollable() { return true; }
+
+    // TODO(bokan): FrameView::setScrollPosition uses updateScrollbars to scroll
+    // which bails out early if its already in updateScrollbars, the effect being
+    // that programmatic scrolls (i.e. setScrollPosition) are disabled when in
+    // updateScrollbars. Expose this here to allow RootFrameViewport to match the
+    // semantics for now but it should be cleaned up at the source.
+    virtual bool isProgrammaticallyScrollable() { return true; }
+
+protected:
+    ScrollableArea();
+
+    void setScrollOrigin(const IntPoint&);
+    void resetScrollOriginChanged() { m_scrollOriginChanged = false; }
 
 private:
     void scrollPositionChanged(const DoublePoint&);
@@ -290,9 +343,6 @@ private:
     unsigned m_constrainsScrollingToContentEdge : 1;
 
     unsigned m_inLiveResize : 1;
-
-    unsigned m_verticalScrollElasticity : 2; // ScrollElasticity
-    unsigned m_horizontalScrollElasticity : 2; // ScrollElasticity
 
     unsigned m_scrollbarOverlayStyle : 2; // ScrollbarOverlayStyle
 

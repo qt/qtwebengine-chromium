@@ -6,7 +6,6 @@
   'dependencies': [
     '../base/base.gyp:base',
     '../courgette/courgette.gyp:courgette_lib',
-    '../mojo/public/mojo_public.gyp:mojo_application_bindings',
   ],
   'sources': [
     'public/utility/content_utility_client.cc',
@@ -15,9 +14,13 @@
     'public/utility/utility_thread.h',
     'utility/in_process_utility_thread.cc',
     'utility/in_process_utility_thread.h',
+    'utility/utility_blink_platform_impl.cc',
+    'utility/utility_blink_platform_impl.h',
     'utility/utility_main.cc',
     'utility/utility_thread_impl.cc',
     'utility/utility_thread_impl.h',
+    'utility/webthread_impl_for_utility_thread.cc',
+    'utility/webthread_impl_for_utility_thread.h',
   ],
   'include_dirs': [
     '..',

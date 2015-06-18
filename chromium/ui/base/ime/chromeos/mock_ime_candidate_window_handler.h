@@ -7,11 +7,11 @@
 
 #include "ui/base/ime/candidate_window.h"
 #include "ui/base/ime/chromeos/ime_bridge.h"
-#include "ui/base/ui_base_export.h"
+#include "ui/base/ime/ui_base_ime_export.h"
 
 namespace chromeos {
 
-class UI_BASE_EXPORT MockIMECandidateWindowHandler
+class UI_BASE_IME_EXPORT MockIMECandidateWindowHandler
     : public IMECandidateWindowHandlerInterface {
  public:
   struct UpdateLookupTableArg {
@@ -25,16 +25,16 @@ class UI_BASE_EXPORT MockIMECandidateWindowHandler
   };
 
   MockIMECandidateWindowHandler();
-  virtual ~MockIMECandidateWindowHandler();
+  ~MockIMECandidateWindowHandler() override;
 
   // IMECandidateWindowHandlerInterface override.
-  virtual void UpdateLookupTable(
-      const ui::CandidateWindow& candidate_window,
-      bool visible) override;
-  virtual void UpdatePreeditText(
-      const base::string16& text, uint32 cursor_pos, bool visible) override;
-  virtual void SetCursorBounds(const gfx::Rect& cursor_bounds,
-                               const gfx::Rect& composition_head) override;
+  void UpdateLookupTable(const ui::CandidateWindow& candidate_window,
+                         bool visible) override;
+  void UpdatePreeditText(const base::string16& text,
+                         uint32 cursor_pos,
+                         bool visible) override;
+  void SetCursorBounds(const gfx::Rect& cursor_bounds,
+                       const gfx::Rect& composition_head) override;
 
   int set_cursor_bounds_call_count() const {
     return set_cursor_bounds_call_count_;

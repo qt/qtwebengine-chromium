@@ -44,6 +44,24 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
     return source;
   }
 
+  bool CanDragEnter(content::WebContents* source,
+                    const content::DropData& data,
+                    blink::WebDragOperationsMask operations_allowed) override {
+    return false;
+  }
+
+  bool ShouldCreateWebContents(
+      content::WebContents* web_contents,
+      int route_id,
+      int main_frame_route_id,
+      WindowContainerType window_container_type,
+      const base::string16& frame_name,
+      const GURL& target_url,
+      const std::string& partition_id,
+      content::SessionStorageNamespace* session_storage_namespace) override {
+    return false;
+  }
+
   bool IsPopupOrPanel(const content::WebContents* source) const override {
     return true;
   }
@@ -55,15 +73,10 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
     // point. Otherwise, wrong keyboard bounds is used and may cause problem as
     // described in crbug.com/367788.
     DCHECK(keyboard->parent());
-    gfx::Rect bounds = keyboard->bounds();
-    int new_height = pos.height();
-    bounds.set_y(bounds.y() + bounds.height() - new_height);
-    bounds.set_height(new_height);
-    // Keyboard bounds should only be reset when it actually changes. Otherwise
-    // it interrupts the initial animation of showing the keyboard. Described in
-    // crbug.com/356753.
-    if (bounds != keyboard->bounds())
-      keyboard->SetBounds(bounds);
+    // keyboard window bounds may not set to |pos| after this call. If keyboard
+    // is in FULL_WIDTH mode, only the height of keyboard window will be
+    // changed.
+    keyboard->SetBounds(pos);
   }
 
   // Overridden from content::WebContentsDelegate:
@@ -86,8 +99,9 @@ class KeyboardContentsDelegate : public content::WebContentsDelegate,
 
 namespace keyboard {
 
-KeyboardControllerProxy::KeyboardControllerProxy()
-    : default_url_(kKeyboardURL) {
+KeyboardControllerProxy::KeyboardControllerProxy(
+    content::BrowserContext* context)
+    : browser_context_(context), default_url_(kKeyboardURL) {
 }
 
 KeyboardControllerProxy::~KeyboardControllerProxy() {
@@ -116,7 +130,7 @@ void KeyboardControllerProxy::LoadContents(const GURL& url) {
 
 aura::Window* KeyboardControllerProxy::GetKeyboardWindow() {
   if (!keyboard_contents_) {
-    content::BrowserContext* context = GetBrowserContext();
+    content::BrowserContext* context = browser_context();
     keyboard_contents_.reset(content::WebContents::Create(
         content::WebContents::CreateParams(context,
             content::SiteInstance::CreateForURL(context,

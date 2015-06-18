@@ -10,13 +10,16 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
+#include "content/public/common/message_port_types.h"
 #include "ipc/ipc_listener.h"
 #include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
+class Value;
 }
 
 namespace content {
@@ -29,21 +32,37 @@ class WebMessagePortChannelImpl
       public base::RefCountedThreadSafe<WebMessagePortChannelImpl> {
  public:
   explicit WebMessagePortChannelImpl(
-      const scoped_refptr<base::MessageLoopProxy>& child_thread_loop);
+      const scoped_refptr<base::SingleThreadTaskRunner>&
+          main_thread_task_runner);
   WebMessagePortChannelImpl(
       int route_id,
-      int message_port_id,
-      const scoped_refptr<base::MessageLoopProxy>& child_thread_loop);
+      const TransferredMessagePort& port,
+      const scoped_refptr<base::SingleThreadTaskRunner>&
+          main_thread_task_runner);
 
   static void CreatePair(
-      const scoped_refptr<base::MessageLoopProxy>& child_thread_loop,
+      const scoped_refptr<base::SingleThreadTaskRunner>&
+          main_thread_task_runner,
       blink::WebMessagePortChannel** channel1,
       blink::WebMessagePortChannel** channel2);
 
   // Extracts port IDs for passing on to the browser process, and queues any
   // received messages. Takes ownership of the passed array (and deletes it).
-  static std::vector<int> ExtractMessagePortIDs(
+  static std::vector<TransferredMessagePort> ExtractMessagePortIDs(
       blink::WebMessagePortChannelArray* channels);
+
+  // Extracts port IDs for passing on to the browser process, and queues any
+  // received messages.
+  static std::vector<TransferredMessagePort> ExtractMessagePortIDs(
+      const blink::WebMessagePortChannelArray& channels);
+
+  // Creates WebMessagePortChannelImpl instances for port IDs passed in from the
+  // browser process.
+  static blink::WebMessagePortChannelArray CreatePorts(
+      const std::vector<TransferredMessagePort>& message_ports,
+      const std::vector<int>& new_routing_ids,
+      const scoped_refptr<base::SingleThreadTaskRunner>&
+          main_thread_task_runner);
 
   // Queues received and incoming messages until there are no more in-flight
   // messages, then sends all of them to the browser process.
@@ -65,14 +84,14 @@ class WebMessagePortChannelImpl
   void Init();
   void Entangle(scoped_refptr<WebMessagePortChannelImpl> channel);
   void Send(IPC::Message* message);
-  void PostMessage(const base::string16& message,
+  void PostMessage(const MessagePortMessage& message,
                    blink::WebMessagePortChannelArray* channels);
 
   // IPC::Listener implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
 
-  void OnMessage(const base::string16& message,
-                 const std::vector<int>& sent_message_port_ids,
+  void OnMessage(const MessagePortMessage& message,
+                 const std::vector<TransferredMessagePort>& sent_message_ports,
                  const std::vector<int>& new_routing_ids);
   void OnMessagesQueued();
 
@@ -80,8 +99,8 @@ class WebMessagePortChannelImpl
     Message();
     ~Message();
 
-    base::string16 message;
-    std::vector<WebMessagePortChannelImpl*> ports;
+    MessagePortMessage message;
+    blink::WebMessagePortChannelArray ports;
   };
 
   typedef std::queue<Message> MessageQueue;
@@ -92,7 +111,11 @@ class WebMessagePortChannelImpl
 
   int route_id_;  // The routing id for this object.
   int message_port_id_;  // A globally unique identifier for this message port.
-  scoped_refptr<base::MessageLoopProxy> child_thread_loop_;
+  // Flag to indicate if messages should be sent to the browser process as
+  // base::Value instances as opposed to being serialized using the default
+  // blink::WebSerializedScriptValue.
+  bool send_messages_as_values_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMessagePortChannelImpl);
 };

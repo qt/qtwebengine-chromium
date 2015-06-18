@@ -64,11 +64,7 @@ InvalidationBenchmark::~InvalidationBenchmark() {
 void InvalidationBenchmark::DidUpdateLayers(LayerTreeHost* host) {
   LayerTreeHostCommon::CallFunctionForSubtree(
       host->root_layer(),
-      base::Bind(&InvalidationBenchmark::Run, base::Unretained(this)));
-}
-
-void InvalidationBenchmark::Run(Layer* layer) {
-  layer->RunMicroBenchmark(this);
+      [this](Layer* layer) { layer->RunMicroBenchmark(this); });
 }
 
 void InvalidationBenchmark::RunOnLayer(PictureLayer* layer) {
@@ -120,7 +116,7 @@ bool InvalidationBenchmark::ProcessMessage(scoped_ptr<base::Value> value) {
   if (message->HasKey("notify_done")) {
     message->GetBoolean("notify_done", &notify_done);
     if (notify_done)
-      NotifyDone(scoped_ptr<base::Value>(base::Value::CreateNullValue()));
+      NotifyDone(base::Value::CreateNullValue());
     return true;
   }
   return false;

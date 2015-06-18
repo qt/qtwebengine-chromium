@@ -24,27 +24,34 @@
 
 #include "core/animation/css/CSSAnimations.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/frame/FrameHost.h"
 
 namespace blink {
 
-StyleResolverState::StyleResolverState(Document& document, Element* element, RenderStyle* parentStyle)
-    : m_elementContext(element ? ElementResolveContext(*element) : ElementResolveContext(document))
+StyleResolverState::StyleResolverState(Document& document, const ElementResolveContext& elementContext, const ComputedStyle* parentStyle)
+    : m_elementContext(elementContext)
     , m_document(document)
     , m_style(nullptr)
-    , m_cssToLengthConversionData(0, rootElementStyle(), document.renderView())
-    , m_parentStyle(parentStyle)
+    // TODO(jchaffraix): We should make m_parentStyle const (https://crbug.com/468152)
+    , m_parentStyle(const_cast<ComputedStyle*>(parentStyle))
     , m_applyPropertyToRegularStyle(true)
     , m_applyPropertyToVisitedLinkStyle(false)
+    , m_hasDirAutoAttribute(false)
     , m_fontBuilder(document)
-    , m_styleMap(*this, m_elementStyleResources)
 {
-    if (!parentStyle && m_elementContext.parentNode())
-        m_parentStyle = m_elementContext.parentNode()->renderStyle();
+    if (!m_parentStyle) {
+        // TODO(jchaffraix): We should make m_parentStyle const (https://crbug.com/468152)
+        m_parentStyle = const_cast<ComputedStyle*>(m_elementContext.parentStyle());
+    }
 
     ASSERT(document.isActive());
     m_elementStyleResources.setDeviceScaleFactor(document.frameHost()->deviceScaleFactor());
+}
+
+StyleResolverState::StyleResolverState(Document& document, Element* element, const ComputedStyle* parentStyle)
+    : StyleResolverState(document, element ? ElementResolveContext(*element) : ElementResolveContext(document), parentStyle)
+{
 }
 
 StyleResolverState::~StyleResolverState()

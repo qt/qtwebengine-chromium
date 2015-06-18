@@ -25,8 +25,8 @@ body.uber-frame > .page.big-topbar-page {
 }
 
 #spinner {
-  position: relative;
-  top: 3px;
+  -webkit-margin-end: 5px;
+  vertical-align: bottom;
 }
 
 #notification-bar {
@@ -79,7 +79,7 @@ html[dir='rtl'] #editing-controls {
 
 #range-next,
 #range-previous {
-  background-image: url('../disclosure_triangle_small.png'),
+  background-image: url(../disclosure_triangle_small.png),
                     -webkit-linear-gradient(rgb(241, 241, 241),
                                             rgb(241, 241, 241) 38%,
                                             rgb(230, 230, 230));
@@ -92,7 +92,7 @@ html[dir='rtl'] #editing-controls {
 #range-previous:disabled {
   /* Change the gradient manually in order to make it look like the other
    * disabled buttons since you can't set opacity on background images only. */
-  background-image: url('../disclosure_triangle_small.png'),
+  background-image: url(../disclosure_triangle_small.png),
                     -webkit-linear-gradient(rgb(231, 231, 231),
                                             rgb(231, 231, 231) 38%,
                                             rgb(220, 220, 220));
@@ -417,6 +417,11 @@ html[dir='rtl'] .site-domain {
   border-radius: 2px;
 }
 
+.entry-box > div,
+.site-domain-row > div {
+  min-width: 0;
+}
+
 .active :-webkit-any(.entry-box, .site-domain-row) {
   background-color: rgba(0, 0, 0, .05);
 }
@@ -458,7 +463,6 @@ html[dir='rtl'] .blocked-indicator {
   background-position-x: right;
 }
 
-<if expr="not is_android">
 /* TODO(sergiu): If this is the final icon replace it with a separate resource.
  */
 .entry .blocked-indicator {
@@ -469,7 +473,6 @@ html[dir='rtl'] .blocked-indicator {
 .blocked-indicator .title {
   color: rgb(151, 156, 160);
 }
-</if>
 
 .site-domain button:hover {
   text-decoration: none;

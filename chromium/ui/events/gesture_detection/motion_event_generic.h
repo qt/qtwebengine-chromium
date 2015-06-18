@@ -28,6 +28,8 @@ struct GESTURE_DETECTION_EXPORT PointerProperties {
   float touch_major;
   float touch_minor;
   float orientation;
+  // source_device_id is only used on Aura.
+  int source_device_id;
 };
 
 // A generic MotionEvent implementation.
@@ -41,7 +43,7 @@ class GESTURE_DETECTION_EXPORT MotionEventGeneric : public MotionEvent {
   ~MotionEventGeneric() override;
 
   // MotionEvent implementation.
-  int GetId() const override;
+  uint32 GetUniqueEventId() const override;
   Action GetAction() const override;
   int GetActionIndex() const override;
   size_t GetPointerCount() const override;
@@ -68,7 +70,16 @@ class GESTURE_DETECTION_EXPORT MotionEventGeneric : public MotionEvent {
   float GetHistoricalY(size_t pointer_index,
                        size_t historical_index) const override;
 
-  void PushPointer(const PointerProperties& pointer);
+  // Adds |pointer| to the set of pointers returning the index it was added at.
+  size_t PushPointer(const PointerProperties& pointer);
+
+  // Removes the PointerProperties at |index|.
+  void RemovePointerAt(size_t index);
+
+  PointerProperties& pointer(size_t index) { return pointers_[index]; }
+  const PointerProperties& pointer(size_t index) const {
+    return pointers_[index];
+  }
 
   // Add an event to the history. |this| and |event| must have the same pointer
   // count and must both have an action of ACTION_MOVE.
@@ -76,7 +87,9 @@ class GESTURE_DETECTION_EXPORT MotionEventGeneric : public MotionEvent {
 
   void set_action(Action action) { action_ = action; }
   void set_event_time(base::TimeTicks event_time) { event_time_ = event_time; }
-  void set_id(int id) { id_ = id; }
+  void set_unique_event_id(uint32 unique_event_id) {
+    unique_event_id_ = unique_event_id;
+  }
   void set_action_index(int action_index) { action_index_ = action_index; }
   void set_button_state(int button_state) { button_state_ = button_state; }
   void set_flags(int flags) { flags_ = flags; }
@@ -91,17 +104,12 @@ class GESTURE_DETECTION_EXPORT MotionEventGeneric : public MotionEvent {
 
   void PopPointer();
 
-  PointerProperties& pointer(size_t index) { return pointers_[index]; }
-  const PointerProperties& pointer(size_t index) const {
-    return pointers_[index];
-  }
-
  private:
   enum { kTypicalMaxPointerCount = 5 };
 
   Action action_;
   base::TimeTicks event_time_;
-  int id_;
+  uint32 unique_event_id_;
   int action_index_;
   int button_state_;
   int flags_;

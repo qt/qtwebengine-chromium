@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "base/win/scoped_handle.h"
+#include "base/win/windows_version.h"
 #include "sandbox/win/src/ipc_tags.h"
 #include "sandbox/win/src/policy_engine_opcodes.h"
 #include "sandbox/win/src/policy_params.h"
@@ -54,6 +55,18 @@ NTSTATUS NtCreateFileInTarget(HANDLE* target_file_handle,
   return STATUS_SUCCESS;
 }
 
+// Get an initialized anonymous level Security QOS.
+SECURITY_QUALITY_OF_SERVICE GetAnonymousQOS() {
+  SECURITY_QUALITY_OF_SERVICE security_qos = {0};
+  security_qos.Length = sizeof(security_qos);
+  security_qos.ImpersonationLevel = SecurityAnonymous;
+  // Set dynamic tracking so that a pipe doesn't capture the broker's token
+  security_qos.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING;
+  security_qos.EffectiveOnly = TRUE;
+
+  return security_qos;
+}
+
 }  // namespace.
 
 namespace sandbox {
@@ -66,18 +79,16 @@ bool FileSystemPolicy::GenerateRules(const wchar_t* name,
     return false;
   }
 
-  // Don't do any pre-processing if the name starts like the the native
-  // object manager style.
-  if (0 != _wcsnicmp(mod_name.c_str(), kNTObjManPrefix, kNTObjManPrefixLen)) {
-    // TODO(cpu) bug 32224: This prefix add is a hack because we don't have the
-    // infrastructure to normalize names. In any case we need to escape the
-    // question marks.
-    if (!PreProcessName(mod_name, &mod_name)) {
-      // The path to be added might contain a reparse point.
-      NOTREACHED();
-      return false;
-    }
+  if (!PreProcessName(mod_name, &mod_name)) {
+    // The path to be added might contain a reparse point.
+    NOTREACHED();
+    return false;
+  }
 
+  // TODO(cpu) bug 32224: This prefix add is a hack because we don't have the
+  // infrastructure to normalize names. In any case we need to escape the
+  // question marks.
+  if (_wcsnicmp(mod_name.c_str(), kNTDevicePrefix, kNTDevicePrefixLen)) {
     mod_name = FixNTPrefixForMatch(mod_name);
     name = mod_name.c_str();
   }
@@ -115,7 +126,9 @@ bool FileSystemPolicy::GenerateRules(const wchar_t* name,
                             GENERIC_READ | GENERIC_EXECUTE | READ_CONTROL;
       DWORD restricted_flags = ~allowed_flags;
       open.AddNumberMatch(IF_NOT, OpenFile::ACCESS, restricted_flags, AND);
+      open.AddNumberMatch(IF, OpenFile::DISPOSITION, FILE_OPEN, EQUAL);
       create.AddNumberMatch(IF_NOT, OpenFile::ACCESS, restricted_flags, AND);
+      create.AddNumberMatch(IF, OpenFile::DISPOSITION, FILE_OPEN, EQUAL);
 
       // Read only access don't work for rename.
       rule_to_add &= ~kCallNtSetInfoRename;
@@ -245,7 +258,10 @@ bool FileSystemPolicy::CreateFileAction(EvalResult eval_result,
   IO_STATUS_BLOCK io_block = {0};
   UNICODE_STRING uni_name = {0};
   OBJECT_ATTRIBUTES obj_attributes = {0};
-  InitObjectAttribs(file, attributes, NULL, &obj_attributes, &uni_name);
+  SECURITY_QUALITY_OF_SERVICE security_qos = GetAnonymousQOS();
+
+  InitObjectAttribs(file, attributes, NULL, &obj_attributes,
+                    &uni_name, IsPipe(file) ? &security_qos : NULL);
   *nt_status = NtCreateFileInTarget(handle, desired_access, &obj_attributes,
                                     &io_block, file_attributes, share_access,
                                     create_disposition, create_options, NULL,
@@ -276,7 +292,10 @@ bool FileSystemPolicy::OpenFileAction(EvalResult eval_result,
   IO_STATUS_BLOCK io_block = {0};
   UNICODE_STRING uni_name = {0};
   OBJECT_ATTRIBUTES obj_attributes = {0};
-  InitObjectAttribs(file, attributes, NULL, &obj_attributes, &uni_name);
+  SECURITY_QUALITY_OF_SERVICE security_qos = GetAnonymousQOS();
+
+  InitObjectAttribs(file, attributes, NULL, &obj_attributes,
+                    &uni_name, IsPipe(file) ? &security_qos : NULL);
   *nt_status = NtCreateFileInTarget(handle, desired_access, &obj_attributes,
                                     &io_block, 0, share_access, FILE_OPEN,
                                     open_options, NULL, 0,
@@ -305,7 +324,10 @@ bool FileSystemPolicy::QueryAttributesFileAction(
 
   UNICODE_STRING uni_name = {0};
   OBJECT_ATTRIBUTES obj_attributes = {0};
-  InitObjectAttribs(file, attributes, NULL, &obj_attributes, &uni_name);
+  SECURITY_QUALITY_OF_SERVICE security_qos = GetAnonymousQOS();
+
+  InitObjectAttribs(file, attributes, NULL, &obj_attributes,
+                    &uni_name, IsPipe(file) ? &security_qos : NULL);
   *nt_status = NtQueryAttributesFile(&obj_attributes, file_info);
 
   return true;
@@ -330,7 +352,10 @@ bool FileSystemPolicy::QueryFullAttributesFileAction(
 
   UNICODE_STRING uni_name = {0};
   OBJECT_ATTRIBUTES obj_attributes = {0};
-  InitObjectAttribs(file, attributes, NULL, &obj_attributes, &uni_name);
+  SECURITY_QUALITY_OF_SERVICE security_qos = GetAnonymousQOS();
+
+  InitObjectAttribs(file, attributes, NULL, &obj_attributes,
+                    &uni_name, IsPipe(file) ? &security_qos : NULL);
   *nt_status = NtQueryFullAttributesFile(&obj_attributes, file_info);
 
   return true;

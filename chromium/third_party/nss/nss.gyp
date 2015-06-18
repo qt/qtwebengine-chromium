@@ -253,6 +253,10 @@
               # nspr passes "int*" through "unsigned int*".
               '-Wno-pointer-sign',
             ],
+            'clang_warning_flags_unset': [
+              # nspr uses assert(!"foo") instead of assert(false && "foo").
+              '-Wstring-conversion',
+            ],
           },
           'conditions': [
             ['OS=="mac" or OS=="ios"', {
@@ -567,7 +571,6 @@
             'nss/lib/certhigh/certreq.c',
             'nss/lib/certhigh/certvfy.c',
             'nss/lib/certhigh/certvfypkix.c',
-            'nss/lib/certhigh/certvfypkixprint.c',
             'nss/lib/certhigh/crlv2.c',
             'nss/lib/certhigh/ocsp.c',
             'nss/lib/certhigh/ocsp.h',

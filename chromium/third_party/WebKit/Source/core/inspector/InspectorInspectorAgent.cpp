@@ -38,9 +38,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -52,121 +50,68 @@ namespace InspectorAgentState {
 static const char inspectorAgentEnabled[] = "inspectorAgentEnabled";
 }
 
-InspectorInspectorAgent::InspectorInspectorAgent(Page* page, InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorInspectorAgent>("Inspector")
-    , m_inspectedPage(page)
-    , m_frontend(0)
+InspectorInspectorAgent::InspectorInspectorAgent(InjectedScriptManager* injectedScriptManager)
+    : InspectorBaseAgent<InspectorInspectorAgent, InspectorFrontend::Inspector>("Inspector")
     , m_injectedScriptManager(injectedScriptManager)
 {
-    ASSERT_ARG(page, page);
 }
 
 InspectorInspectorAgent::~InspectorInspectorAgent()
 {
-#if !ENABLE(OILPAN)
-    m_instrumentingAgents->setInspectorInspectorAgent(0);
-#endif
 }
 
-void InspectorInspectorAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorInspectorAgent)
 {
-    visitor->trace(m_inspectedPage);
     visitor->trace(m_injectedScriptManager);
     InspectorBaseAgent::trace(visitor);
-}
-
-void InspectorInspectorAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
-{
-    if (m_injectedScriptForOrigin.isEmpty())
-        return;
-
-    String origin = frame->document()->securityOrigin()->toRawString();
-    String script = m_injectedScriptForOrigin.get(origin);
-    if (script.isEmpty())
-        return;
-    int injectedScriptId = m_injectedScriptManager->injectedScriptIdFor(ScriptState::forMainWorld(frame));
-    StringBuilder scriptSource;
-    scriptSource.append(script);
-    scriptSource.append('(');
-    scriptSource.appendNumber(injectedScriptId);
-    scriptSource.append(')');
-    frame->script().executeScriptInMainWorld(scriptSource.toString());
-}
-
-void InspectorInspectorAgent::init()
-{
-    m_instrumentingAgents->setInspectorInspectorAgent(this);
-}
-
-void InspectorInspectorAgent::setFrontend(InspectorFrontend* inspectorFrontend)
-{
-    m_frontend = inspectorFrontend->inspector();
-}
-
-void InspectorInspectorAgent::clearFrontend()
-{
-    m_pendingEvaluateTestCommands.clear();
-    m_frontend = 0;
-    m_injectedScriptManager->discardInjectedScripts();
-    ErrorString error;
-    disable(&error);
 }
 
 void InspectorInspectorAgent::enable(ErrorString*)
 {
     m_state->setBoolean(InspectorAgentState::inspectorAgentEnabled, true);
-
-    if (m_pendingInspectData.first)
-        inspect(m_pendingInspectData.first, m_pendingInspectData.second);
-
-    for (Vector<pair<long, String> >::iterator it = m_pendingEvaluateTestCommands.begin(); m_frontend && it != m_pendingEvaluateTestCommands.end(); ++it)
-        m_frontend->evaluateForTestInFrontend(static_cast<int>((*it).first), (*it).second);
+    for (Vector<pair<long, String>>::iterator it = m_pendingEvaluateTestCommands.begin(); frontend() && it != m_pendingEvaluateTestCommands.end(); ++it)
+        frontend()->evaluateForTestInFrontend(static_cast<int>((*it).first), (*it).second);
     m_pendingEvaluateTestCommands.clear();
 }
 
 void InspectorInspectorAgent::disable(ErrorString*)
 {
     m_state->setBoolean(InspectorAgentState::inspectorAgentEnabled, false);
+    m_pendingEvaluateTestCommands.clear();
+    m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
+    m_injectedScriptManager->discardInjectedScripts();
 }
 
-void InspectorInspectorAgent::reset(ErrorString*)
+void InspectorInspectorAgent::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
-    m_inspectedPage->inspectorController().reconnectFrontend();
-}
-
-void InspectorInspectorAgent::domContentLoadedEventFired(LocalFrame* frame)
-{
-    if (frame->page()->mainFrame() != frame)
+    if (frame != frame->localFrameRoot())
         return;
 
     m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
 }
 
+void InspectorInspectorAgent::restore()
+{
+    if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled)) {
+        ErrorString error;
+        enable(&error);
+    }
+}
+
 void InspectorInspectorAgent::evaluateForTestInFrontend(long callId, const String& script)
 {
     if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled)) {
-        m_frontend->evaluateForTestInFrontend(static_cast<int>(callId), script);
-        m_frontend->flush();
+        frontend()->evaluateForTestInFrontend(static_cast<int>(callId), script);
+        frontend()->flush();
     } else {
         m_pendingEvaluateTestCommands.append(pair<long, String>(callId, script));
     }
 }
 
-void InspectorInspectorAgent::setInjectedScriptForOrigin(const String& origin, const String& source)
-{
-    m_injectedScriptForOrigin.set(origin, source);
-}
-
 void InspectorInspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<JSONObject> hints)
 {
-    if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled) && m_frontend) {
-        m_frontend->inspect(objectToInspect, hints);
-        m_pendingInspectData.first = nullptr;
-        m_pendingInspectData.second = nullptr;
-        return;
-    }
-    m_pendingInspectData.first = objectToInspect;
-    m_pendingInspectData.second = hints;
+    if (frontend() && m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled))
+        frontend()->inspect(objectToInspect, hints);
 }
 
 } // namespace blink

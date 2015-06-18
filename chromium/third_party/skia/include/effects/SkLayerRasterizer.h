@@ -69,15 +69,12 @@ public:
 protected:
     SkLayerRasterizer();
     SkLayerRasterizer(SkDeque* layers);
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkLayerRasterizer(SkReadBuffer&);
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
 
     // override from SkRasterizer
     virtual bool onRasterize(const SkPath& path, const SkMatrix& matrix,
                              const SkIRect* clipBounds,
-                             SkMask* mask, SkMask::CreateMode mode) const;
+                             SkMask* mask, SkMask::CreateMode mode) const override;
 
 private:
     const SkDeque* const fLayers;

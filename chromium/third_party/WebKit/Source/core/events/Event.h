@@ -25,7 +25,9 @@
 #define Event_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/DOMTimeStamp.h"
+#include "core/events/EventInitDictionary.h"
 #include "core/events/EventPath.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
@@ -45,7 +47,7 @@ public:
     bool cancelable;
 };
 
-class Event : public RefCountedWillBeGarbageCollectedFinalized<Event>,  public ScriptWrappable {
+class CORE_EXPORT Event : public RefCountedWillBeGarbageCollectedFinalized<Event>,  public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum PhaseType {
@@ -72,6 +74,12 @@ public:
         BLUR                = 8192,
         SELECT              = 16384,
         CHANGE              = 32768
+    };
+
+    enum RailsMode {
+        RailsModeFree       = 0,
+        RailsModeHorizontal = 1,
+        RailsModeVertical   = 2
     };
 
     static PassRefPtrWillBeRawPtr<Event> create()
@@ -145,6 +153,7 @@ public:
     virtual bool isGestureEvent() const;
     virtual bool isWheelEvent() const;
     virtual bool isRelatedEvent() const;
+    virtual bool isPointerEvent() const;
 
     // Drag events are a subset of mouse events.
     virtual bool isDragEvent() const;
@@ -176,21 +185,27 @@ public:
     void setUnderlyingEvent(PassRefPtrWillBeRawPtr<Event>);
 
     EventPath& eventPath() { ASSERT(m_eventPath); return *m_eventPath; }
-    EventPath& ensureEventPath();
+    void initEventPath(Node&);
 
-    PassRefPtrWillBeRawPtr<StaticNodeList> path() const;
+    WillBeHeapVector<RefPtrWillBeMember<EventTarget>> path() const;
 
     bool isBeingDispatched() const { return eventPhase(); }
 
-    virtual void trace(Visitor*);
+    double uiCreateTime() const { return m_uiCreateTime; }
+    void setUICreateTime(double uiCreateTime) { m_uiCreateTime = uiCreateTime; }
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     Event();
     Event(const AtomicString& type, bool canBubble, bool cancelable);
     Event(const AtomicString& type, const EventInit&);
+    Event(const AtomicString& type, const EventInitDictionary&);
 
     virtual void receivedTarget();
     bool dispatched() const { return m_target; }
+
+    void setCanBubble(bool bubble) { m_canBubble = bubble; }
 
 private:
     AtomicString m_type;
@@ -209,6 +224,7 @@ private:
     DOMTimeStamp m_createTime;
     RefPtrWillBeMember<Event> m_underlyingEvent;
     OwnPtrWillBeMember<EventPath> m_eventPath;
+    double m_uiCreateTime; // For input events, the time the event was recorded by the UI.
 };
 
 #define DEFINE_EVENT_TYPE_CASTS(typeName) \

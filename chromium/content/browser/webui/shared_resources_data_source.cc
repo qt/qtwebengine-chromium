@@ -4,54 +4,64 @@
 
 #include "content/browser/webui/shared_resources_data_source.h"
 
+#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/mime_util.h"
+#include "ui/base/layout.h"
+#include "ui/base/webui/web_ui_util.h"
+#include "ui/resources/grit/webui_resources.h"
 #include "ui/resources/grit/webui_resources_map.h"
+
+namespace content {
 
 namespace {
 
-const char kAppImagesPath[] = "images/apps/";
-const char kAppImagesPath2x[] = "images/2x/apps/";
+using ResourcesMap = base::hash_map<std::string, int>;
 
-const char kReplacement[] = "../../resources/default_100_percent/common/";
-const char kReplacement2x[] = "../../resources/default_200_percent/common/";
+// TODO(rkc): Once we have a separate source for apps, remove '*/apps/' aliases.
+const char* kPathAliases[][2] = {
+    {"../../../third_party/polymer/components-chromium/", "polymer/"},
+    {"../../../third_party/polymer/v0_8/components-chromium/", "polymer/v0_8/"},
+    {"../../../third_party/web-animations-js/sources/",
+     "polymer/web-animations-js/"},
+    {"../../resources/default_100_percent/common/", "images/apps/"},
+    {"../../resources/default_200_percent/common/", "images/2x/apps/"},
+    {"../../webui/resources/cr_elements/", "cr_elements/"}};
 
-// This entire method is a hack introduced to be able to handle apps images
-// that exist in the ui/resources directory. From JS/CSS, we still load the
-// image as if it were chrome://resources/images/apps/myappimage.png, if that
-// path doesn't exist, we check to see if it that image exists in the relative
-// path to ui/resources instead.
-// TODO(rkc): Once we have a separate source for apps, remove this code.
-bool AppsRelativePathMatch(const std::string& path,
-                           const std::string& compareto) {
-  if (StartsWithASCII(path, kAppImagesPath, false)) {
-    if (compareto ==
-        (kReplacement + path.substr(arraysize(kAppImagesPath) - 1)))
-      return true;
-  } else if (StartsWithASCII(path, kAppImagesPath2x, false)) {
-    if (compareto ==
-        (kReplacement2x + path.substr(arraysize(kAppImagesPath2x) - 1)))
-      return true;
-  }
-  return false;
+void AddResource(const std::string& path,
+                 int resource_id,
+                 ResourcesMap* resources_map) {
+  if (!resources_map->insert(std::make_pair(path, resource_id)).second)
+    NOTREACHED() << "Redefinition of '" << path << "'";
 }
 
-int PathToIDR(const std::string& path) {
-  int idr = -1;
+const ResourcesMap* CreateResourcesMap() {
+  ResourcesMap* result = new ResourcesMap();
   for (size_t i = 0; i < kWebuiResourcesSize; ++i) {
-    if ((path == kWebuiResources[i].name) ||
-        AppsRelativePathMatch(path, kWebuiResources[i].name)) {
-      idr = kWebuiResources[i].value;
-      break;
+    const std::string resource_name = kWebuiResources[i].name;
+    const int resource_id = kWebuiResources[i].value;
+    AddResource(resource_name, resource_id, result);
+    for (const char* (&alias)[2]: kPathAliases) {
+      if (StartsWithASCII(resource_name, alias[0], true)) {
+        AddResource(alias[1] + resource_name.substr(strlen(alias[0])),
+                    resource_id, result);
+      }
     }
   }
 
-  return idr;
+  return result;
+}
+
+const ResourcesMap& GetResourcesMap() {
+  // This pointer will be intentionally leaked on shutdown.
+  static const ResourcesMap* resources_map = CreateResourcesMap();
+  return *resources_map;
 }
 
 }  // namespace
@@ -63,18 +73,26 @@ SharedResourcesDataSource::~SharedResourcesDataSource() {
 }
 
 std::string SharedResourcesDataSource::GetSource() const {
-  return content::kChromeUIResourcesHost;
+  return kChromeUIResourcesHost;
 }
 
 void SharedResourcesDataSource::StartDataRequest(
     const std::string& path,
     int render_process_id,
     int render_frame_id,
-    const content::URLDataSource::GotDataCallback& callback) {
-  int idr = PathToIDR(path);
+    const URLDataSource::GotDataCallback& callback) {
+  const ResourcesMap& resources_map = GetResourcesMap();
+  auto it = resources_map.find(path);
+  int idr = (it != resources_map.end()) ? it->second : -1;
   DCHECK_NE(-1, idr) << " path: " << path;
-  scoped_refptr<base::RefCountedStaticMemory> bytes(
-      content::GetContentClient()->GetDataResourceBytes(idr));
+  scoped_refptr<base::RefCountedMemory> bytes;
+
+  if (idr == IDR_WEBUI_CSS_TEXT_DEFAULTS) {
+    std::string css = webui::GetWebUiCssTextDefaults();
+    bytes = base::RefCountedString::TakeString(&css);
+  } else {
+    bytes = GetContentClient()->GetDataResourceBytes(idr);
+  }
 
   callback.Run(bytes.get());
 }
@@ -97,9 +115,11 @@ SharedResourcesDataSource::GetAccessControlAllowOriginForOrigin(
   // According to CORS spec, Access-Control-Allow-Origin header doesn't support
   // wildcards, so we need to set its value explicitly by passing the |origin|
   // back.
-  std::string allowed_origin_prefix = content::kChromeUIScheme;
+  std::string allowed_origin_prefix = kChromeUIScheme;
   allowed_origin_prefix += "://";
   if (origin.find(allowed_origin_prefix) != 0)
-    return "none";
+    return "null";
   return origin;
 }
+
+}  // namespace content

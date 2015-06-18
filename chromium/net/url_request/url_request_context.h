@@ -18,11 +18,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/base/request_priority.h"
+#include "net/base/sdch_manager.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request.h"
 
@@ -59,12 +60,9 @@ class NET_EXPORT URLRequestContext
   // May return NULL if this context doesn't have an associated network session.
   const HttpNetworkSession::Params* GetNetworkSessionParams() const;
 
-  // Creates a URLRequest. If |cookie_store| is non-NULL, it will be used
-  // instead of the context's cookie store.
   scoped_ptr<URLRequest> CreateRequest(const GURL& url,
                                        RequestPriority priority,
-                                       URLRequest::Delegate* delegate,
-                                       CookieStore* cookie_store) const;
+                                       URLRequest::Delegate* delegate) const;
 
   NetLog* net_log() const {
     return net_log_;
@@ -186,10 +184,17 @@ class NET_EXPORT URLRequestContext
 
   // May be NULL.
   SdchManager* sdch_manager() const {
-    return sdch_manager_;
+    // For investigation of http://crbug.com/454198; remove ?: when resolved.
+    CHECK(!have_sdch_manager_ || sdch_manager_.get());
+    return have_sdch_manager_ ? sdch_manager_.get() : NULL;
   }
   void set_sdch_manager(SdchManager* sdch_manager) {
-    sdch_manager_ = sdch_manager;
+    // For investigation of http://crbug.com/454198; simplify when resolved.
+    have_sdch_manager_ = !!sdch_manager;
+    if (have_sdch_manager_)
+      sdch_manager_ = sdch_manager->GetWeakPtr();
+    else
+      sdch_manager_.reset();
   }
 
   // Gets the URLRequest objects that hold a reference to this
@@ -238,7 +243,9 @@ class NET_EXPORT URLRequestContext
   HttpTransactionFactory* http_transaction_factory_;
   const URLRequestJobFactory* job_factory_;
   URLRequestThrottlerManager* throttler_manager_;
-  SdchManager* sdch_manager_;
+  // For investigation of http://crbug.com/454198; remove WeakPtr when resolved.
+  bool have_sdch_manager_;
+  base::WeakPtr<SdchManager> sdch_manager_;
 
   // ---------------------------------------------------------------------------
   // Important: When adding any new members below, consider whether they need to

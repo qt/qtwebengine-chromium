@@ -167,7 +167,7 @@ void WontCompile() {
   method_bound_to_array_cb.Run();
 }
 
-#elif defined(NCTEST_NO_RAW_PTR_FOR_REFCOUNTED_TYPES)  // [r"fatal error: static_assert failed \"p1_is_refcounted_type_and_needs_scoped_refptr\""]
+#elif defined(NCTEST_NO_RAW_PTR_FOR_REFCOUNTED_TYPES)  // [r"fatal error: static_assert failed \"a_parameter_is_refcounted_type_and_needs_scoped_refptr\""]
 
 // Refcounted types should not be bound as a raw pointer.
 void WontCompile() {
@@ -190,7 +190,7 @@ void WontCompile() {
   weak_ptr_with_non_void_return_type.Run();
 }
 
-#elif defined(NCTEST_DISALLOW_ASSIGN_DIFFERENT_TYPES)  // [r"fatal error: no viable conversion from 'Callback<typename internal::BindState<typename internal::FunctorTraits<void \(\*\)\(int\)>::RunnableType, typename internal::FunctorTraits<void \(\*\)\(int\)>::RunType, void \(\)>::UnboundRunType>' to 'Callback<void \(\)>'"]
+#elif defined(NCTEST_DISALLOW_ASSIGN_DIFFERENT_TYPES)  // [r"fatal error: no viable conversion from 'Callback<typename internal::BindState<typename internal::FunctorTraits<void \(\*\)\(int\)>::RunnableType, typename internal::FunctorTraits<void \(\*\)\(int\)>::RunType, internal::TypeList<> >::UnboundRunType>' to 'Callback<void \(\)>'"]
 
 // Bind result cannot be assigned to Callbacks with a mismatching type.
 void WontCompile() {

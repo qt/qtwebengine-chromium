@@ -87,16 +87,16 @@ bool SkWStream::writeText(const char text[])
 
 bool SkWStream::writeDecAsText(int32_t dec)
 {
-    SkString    tmp;
-    tmp.appendS32(dec);
-    return this->write(tmp.c_str(), tmp.size());
+    char buffer[SkStrAppendS32_MaxSize];
+    char* stop = SkStrAppendS32(buffer, dec);
+    return this->write(buffer, stop - buffer);
 }
 
 bool SkWStream::writeBigDecAsText(int64_t dec, int minDigits)
 {
-    SkString    tmp;
-    tmp.appendS64(dec, minDigits);
-    return this->write(tmp.c_str(), tmp.size());
+    char buffer[SkStrAppendU64_MaxSize];
+    char* stop = SkStrAppendU64(buffer, dec, minDigits);
+    return this->write(buffer, stop - buffer);
 }
 
 bool SkWStream::writeHexAsText(uint32_t hex, int digits)
@@ -108,9 +108,9 @@ bool SkWStream::writeHexAsText(uint32_t hex, int digits)
 
 bool SkWStream::writeScalarAsText(SkScalar value)
 {
-    SkString    tmp;
-    tmp.appendScalar(value);
-    return this->write(tmp.c_str(), tmp.size());
+    char buffer[SkStrAppendScalar_MaxSize];
+    char* stop = SkStrAppendScalar(buffer, value);
+    return this->write(buffer, stop - buffer);
 }
 
 bool SkWStream::write8(U8CPU value) {
@@ -239,7 +239,7 @@ SkStreamAsset* SkFILEStream::duplicate() const {
     }
 
     if (!fName.isEmpty()) {
-        SkAutoTUnref<SkFILEStream> that(new SkFILEStream(fName.c_str()));
+        SkAutoTDelete<SkFILEStream> that(new SkFILEStream(fName.c_str()));
         if (sk_fidentical(that->fFILE, this->fFILE)) {
             return that.detach();
         }
@@ -265,7 +265,7 @@ bool SkFILEStream::move(long offset) {
 }
 
 SkStreamAsset* SkFILEStream::fork() const {
-    SkAutoTUnref<SkStreamAsset> that(this->duplicate());
+    SkAutoTDelete<SkStreamAsset> that(this->duplicate());
     that->seek(this->getPosition());
     return that.detach();
 }
@@ -367,6 +367,20 @@ size_t SkMemoryStream::read(void* buffer, size_t size) {
     return size;
 }
 
+bool SkMemoryStream::peek(void* buffer, size_t size) const {
+    SkASSERT(buffer != NULL);
+    const size_t position = fOffset;
+    if (size > fData->size() - position) {
+        // The stream is not large enough to satisfy this request.
+        return false;
+    }
+    SkMemoryStream* nonConstThis = const_cast<SkMemoryStream*>(this);
+    SkDEBUGCODE(const size_t bytesRead =) nonConstThis->read(buffer, size);
+    SkASSERT(bytesRead == size);
+    nonConstThis->fOffset = position;
+    return true;
+}
+
 bool SkMemoryStream::isAtEnd() const {
     return fOffset == fData->size();
 }
@@ -396,7 +410,7 @@ bool SkMemoryStream::move(long offset) {
 }
 
 SkMemoryStream* SkMemoryStream::fork() const {
-    SkAutoTUnref<SkMemoryStream> that(this->duplicate());
+    SkAutoTDelete<SkMemoryStream> that(this->duplicate());
     that->seek(fOffset);
     return that.detach();
 }
@@ -621,6 +635,12 @@ void SkDynamicMemoryWStream::copyTo(void* dst) const
     }
 }
 
+void SkDynamicMemoryWStream::writeToStream(SkWStream* dst) const {
+    for (Block* block = fHead; block != NULL; block = block->fNext) {
+        dst->write(block->start(), block->written());
+    }
+}
+
 void SkDynamicMemoryWStream::padToAlign4()
 {
     // cast to remove unary-minus warning
@@ -674,7 +694,7 @@ public:
         : fBlockMemory(SkRef(headRef)), fCurrent(fBlockMemory->fHead)
         , fSize(size) , fOffset(0), fCurrentOffset(0) { }
 
-    virtual size_t read(void* buffer, size_t rawCount) SK_OVERRIDE {
+    size_t read(void* buffer, size_t rawCount) override {
         size_t count = rawCount;
         if (fOffset + count > fSize) {
             count = fSize - fOffset;
@@ -700,26 +720,26 @@ public:
         return 0;
     }
 
-    virtual bool isAtEnd() const SK_OVERRIDE {
+    bool isAtEnd() const override {
         return fOffset == fSize;
     }
 
-    virtual bool rewind() SK_OVERRIDE {
+    bool rewind() override {
         fCurrent = fBlockMemory->fHead;
         fOffset = 0;
         fCurrentOffset = 0;
         return true;
     }
 
-    virtual SkBlockMemoryStream* duplicate() const SK_OVERRIDE {
+    SkBlockMemoryStream* duplicate() const override {
         return SkNEW_ARGS(SkBlockMemoryStream, (fBlockMemory.get(), fSize));
     }
 
-    virtual size_t getPosition() const SK_OVERRIDE {
+    size_t getPosition() const override {
         return fOffset;
     }
 
-    virtual bool seek(size_t position) SK_OVERRIDE {
+    bool seek(size_t position) override {
         // If possible, skip forward.
         if (position >= fOffset) {
             size_t skipAmount = position - fOffset;
@@ -736,23 +756,23 @@ public:
         return this->rewind() && this->skip(position) == position;
     }
 
-    virtual bool move(long offset) SK_OVERRIDE {
+    bool move(long offset) override {
         return seek(fOffset + offset);
     }
 
-    virtual SkBlockMemoryStream* fork() const SK_OVERRIDE {
-        SkAutoTUnref<SkBlockMemoryStream> that(this->duplicate());
+    SkBlockMemoryStream* fork() const override {
+        SkAutoTDelete<SkBlockMemoryStream> that(this->duplicate());
         that->fCurrent = this->fCurrent;
         that->fOffset = this->fOffset;
         that->fCurrentOffset = this->fCurrentOffset;
         return that.detach();
     }
 
-    virtual size_t getLength() const SK_OVERRIDE {
+    size_t getLength() const override {
         return fSize;
     }
 
-    virtual const void* getMemoryBase() SK_OVERRIDE {
+    const void* getMemoryBase() override {
         if (NULL == fBlockMemory->fHead->fNext) {
             return fBlockMemory->fHead->start();
         }
@@ -827,7 +847,7 @@ SkStreamAsset* SkStream::NewFromFile(const char path[]) {
     // file access.
     SkFILEStream* stream = SkNEW_ARGS(SkFILEStream, (path));
     if (!stream->isValid()) {
-        stream->unref();
+        SkDELETE(stream);
         stream = NULL;
     }
     return stream;
@@ -886,7 +906,7 @@ SkStreamRewindable* SkStreamRewindableFromSkStream(SkStream* stream) {
     if (!stream) {
         return NULL;
     }
-    SkAutoTUnref<SkStreamRewindable> dupStream(stream->duplicate());
+    SkAutoTDelete<SkStreamRewindable> dupStream(stream->duplicate());
     if (dupStream) {
         return dupStream.detach();
     }

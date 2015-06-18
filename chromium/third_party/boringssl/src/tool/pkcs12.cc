@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #if defined(OPENSSL_WINDOWS)
@@ -30,6 +31,7 @@
 #endif
 
 #include <openssl/bytestring.h>
+#include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs8.h>
 #include <openssl/stack.h>
@@ -45,10 +47,11 @@ typedef ssize_t read_result_t;
 
 static const struct argument kArguments[] = {
     {
-     "-dump", false, "Dump the key and contents of the given file to stdout",
+     "-dump", kOptionalArgument,
+     "Dump the key and contents of the given file to stdout",
     },
     {
-     "", false, "",
+     "", kOptionalArgument, "",
     },
 };
 
@@ -121,7 +124,7 @@ bool DoPKCS12(const std::vector<std::string> &args) {
 
   if (!PKCS12_get_key_and_certs(&key, certs, &pkcs12, password)) {
     fprintf(stderr, "Failed to parse PKCS#12 data:\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     return false;
   }
 

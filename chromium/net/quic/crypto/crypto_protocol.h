@@ -26,10 +26,12 @@ namespace net {
 
 typedef std::string ServerConfigID;
 
+// clang-format off
 const QuicTag kCHLO = TAG('C', 'H', 'L', 'O');   // Client hello
 const QuicTag kSHLO = TAG('S', 'H', 'L', 'O');   // Server hello
 const QuicTag kSCFG = TAG('S', 'C', 'F', 'G');   // Server config
 const QuicTag kREJ  = TAG('R', 'E', 'J', '\0');  // Reject
+const QuicTag kSREJ = TAG('S', 'R', 'E', 'J');   // Stateless reject
 const QuicTag kCETV = TAG('C', 'E', 'T', 'V');   // Client encrypted tag-value
                                                  // pairs
 const QuicTag kPRST = TAG('P', 'R', 'S', 'T');   // Public reset
@@ -53,15 +55,16 @@ const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');   // TCP cubic
 // Connection options (COPT) values
 const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
 const QuicTag kRENO = TAG('R', 'E', 'N', 'O');   // Reno Congestion Control
+const QuicTag kBYTE = TAG('B', 'Y', 'T', 'E');   // TCP cubic or reno in bytes
 const QuicTag kIW10 = TAG('I', 'W', '1', '0');   // Force ICWND to 10
-const QuicTag kPACE = TAG('P', 'A', 'C', 'E');   // Paced TCP cubic
 const QuicTag k1CON = TAG('1', 'C', 'O', 'N');   // Emulate a single connection
 const QuicTag kNTLP = TAG('N', 'T', 'L', 'P');   // No tail loss probe
 const QuicTag kNCON = TAG('N', 'C', 'O', 'N');   // N Connection Congestion Ctrl
-
-// Loss detection algorithm types
-const QuicTag kNACK = TAG('N', 'A', 'C', 'K');   // TCP style nack counting
-const QuicTag kTIME = TAG('T', 'I', 'M', 'E');   // Time based
+const QuicTag kNRTO = TAG('N', 'R', 'T', 'O');   // CWND reduction on loss
+const QuicTag kTIME = TAG('T', 'I', 'M', 'E');   // Time based loss detection
+const QuicTag kMIN1 = TAG('M', 'I', 'N', '1');   // Min CWND of 1 packet
+const QuicTag kMIN4 = TAG('M', 'I', 'N', '4');   // Min CWND of 4 packets,
+                                                 // with a min rate of 1 BDP.
 
 // Optional support of truncated Connection IDs.  If sent by a peer, the value
 // is the minimum number of bytes allowed for the connection ID sent to the
@@ -70,6 +73,10 @@ const QuicTag kTCID = TAG('T', 'C', 'I', 'D');   // Connection ID truncation.
 
 // FEC options
 const QuicTag kFHDR = TAG('F', 'H', 'D', 'R');   // FEC protect headers
+
+// Enable bandwidth resumption experiment.
+const QuicTag kBWRE = TAG('B', 'W', 'R', 'E');  // Bandwidth resumption.
+const QuicTag kBWMX = TAG('B', 'W', 'M', 'X');  // Max bandwidth resumption.
 
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R
@@ -86,12 +93,10 @@ const QuicTag kNONC = TAG('N', 'O', 'N', 'C');   // The client's nonce
 const QuicTag kKEXS = TAG('K', 'E', 'X', 'S');   // Key exchange methods
 const QuicTag kAEAD = TAG('A', 'E', 'A', 'D');   // Authenticated
                                                  // encryption algorithms
-const QuicTag kCGST = TAG('C', 'G', 'S', 'T');   // Congestion control
-                                                 // feedback types
 const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Connection options
 const QuicTag kICSL = TAG('I', 'C', 'S', 'L');   // Idle connection state
                                                  // lifetime
-const QuicTag kKATO = TAG('K', 'A', 'T', 'O');   // Keepalive timeout
+const QuicTag kSCLS = TAG('S', 'C', 'L', 'S');   // Silently close on timeout
 const QuicTag kMSPC = TAG('M', 'S', 'P', 'C');   // Max streams per connection.
 const QuicTag kIRTT = TAG('I', 'R', 'T', 'T');   // Estimated initial RTT in us.
 const QuicTag kSWND = TAG('S', 'W', 'N', 'D');   // Server's Initial congestion
@@ -106,9 +111,6 @@ const QuicTag kPROF = TAG('P', 'R', 'O', 'F');   // Proof (signature).
 const QuicTag kCCS  = TAG('C', 'C', 'S', 0);     // Common certificate set
 const QuicTag kCCRT = TAG('C', 'C', 'R', 'T');   // Cached certificate
 const QuicTag kEXPY = TAG('E', 'X', 'P', 'Y');   // Expiry
-// TODO(rjshade): Remove kIFCW when removing QUIC_VERSION_19.
-const QuicTag kIFCW = TAG('I', 'F', 'C', 'W');   // Initial flow control receive
-                                                 // window.
 const QuicTag kSFCW = TAG('S', 'F', 'C', 'W');   // Initial stream flow control
                                                  // receive window.
 const QuicTag kCFCW = TAG('C', 'F', 'C', 'W');   // Initial session/connection
@@ -117,8 +119,9 @@ const QuicTag kUAID = TAG('U', 'A', 'I', 'D');   // Client's User Agent ID.
 
 // Rejection tags
 const QuicTag kRREJ = TAG('R', 'R', 'E', 'J');   // Reasons for server sending
-                                                 // rejection message tag.
-
+// Stateless Reject tags
+const QuicTag kRCID = TAG('R', 'C', 'I', 'D');   // Server-designated
+                                                 // connection ID
 // Server hello tags
 const QuicTag kCADR = TAG('C', 'A', 'D', 'R');   // Client IP address and port
 
@@ -132,6 +135,7 @@ const QuicTag kRSEQ = TAG('R', 'S', 'E', 'Q');   // Rejected sequence number
 
 // Universal tags
 const QuicTag kPAD  = TAG('P', 'A', 'D', '\0');  // Padding
+// clang-format on
 
 // These tags have a special form so that they appear either at the beginning
 // or the end of a handshake message. Since handshake messages are sorted by

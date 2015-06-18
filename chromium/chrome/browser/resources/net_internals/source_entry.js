@@ -79,6 +79,7 @@ var SourceEntry = (function() {
 
       switch (e.source.type) {
         case EventSourceType.URL_REQUEST:
+        // TODO(ricea): Remove SOCKET_STREAM after M41 is released.
         case EventSourceType.SOCKET_STREAM:
         case EventSourceType.HTTP_STREAM_JOB:
         case EventSourceType.ASYNC_REVALIDATION:
@@ -87,7 +88,6 @@ var SourceEntry = (function() {
         case EventSourceType.CONNECT_JOB:
           this.description_ = e.params.group_name;
           break;
-        case EventSourceType.HOST_RESOLVER_IMPL_REQUEST:
         case EventSourceType.HOST_RESOLVER_IMPL_JOB:
         case EventSourceType.HOST_RESOLVER_IMPL_PROC_TASK:
           this.description_ = e.params.host;
@@ -100,7 +100,7 @@ var SourceEntry = (function() {
           if (e.params.host != undefined)
             this.description_ = e.params.host;
           break;
-        case EventSourceType.SPDY_SESSION:
+        case EventSourceType.HTTP2_SESSION:
           if (e.params.host)
             this.description_ = e.params.host + ' (' + e.params.proxy + ')';
           break;
@@ -181,8 +181,8 @@ var SourceEntry = (function() {
     /**
      * Returns the starting entry for this source. Conceptually this is the
      * first entry that was logged to this source. However, we skip over the
-     * TYPE_REQUEST_ALIVE entries which wrap TYPE_URL_REQUEST_START_JOB /
-     * TYPE_SOCKET_STREAM_CONNECT.
+     * TYPE_REQUEST_ALIVE entries which wrap TYPE_URL_REQUEST_START_JOB
+     * entries.
      */
     getStartEntry_: function() {
       if (this.entries_.length < 1)

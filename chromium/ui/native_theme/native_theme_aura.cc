@@ -10,11 +10,11 @@
 #include "ui/base/layout.h"
 #include "ui/base/nine_image_painter_factory.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/nine_image_painter.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/native_theme/common_theme.h"
@@ -87,10 +87,10 @@ NativeThemeAura::NativeThemeAura() {
 #endif
 
   // Images and alphas declarations assume the following order.
-  COMPILE_ASSERT(kDisabled == 0, states_unexpectedly_changed);
-  COMPILE_ASSERT(kHovered == 1, states_unexpectedly_changed);
-  COMPILE_ASSERT(kNormal == 2, states_unexpectedly_changed);
-  COMPILE_ASSERT(kPressed == 3, states_unexpectedly_changed);
+  static_assert(kDisabled == 0, "states unexpectedly changed");
+  static_assert(kHovered == 1, "states unexpectedly changed");
+  static_assert(kNormal == 2, "states unexpectedly changed");
+  static_assert(kPressed == 3, "states unexpectedly changed");
 }
 
 NativeThemeAura::~NativeThemeAura() {

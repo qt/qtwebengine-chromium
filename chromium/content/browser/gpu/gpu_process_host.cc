@@ -10,12 +10,12 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
 #include "base/sha1.h"
 #include "base/threading/thread.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -25,6 +25,7 @@
 #include "content/browser/renderer_host/render_widget_resize_helper.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/in_process_child_thread_params.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -43,6 +44,10 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/build_info.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -76,11 +81,11 @@ static const char* const kSwitchNames[] = {
   switches::kDisableBreakpad,
   switches::kDisableGpuSandbox,
   switches::kDisableGpuWatchdog,
+  switches::kDisableGLExtensions,
   switches::kDisableLogging,
   switches::kDisableSeccompFilterSandbox,
 #if defined(ENABLE_WEBRTC)
   switches::kDisableWebRtcHWEncoding,
-  switches::kEnableWebRtcHWVp8Encoding,
 #endif
   switches::kEnableLogging,
   switches::kEnableShareGroupAsyncTextureUpload,
@@ -91,10 +96,11 @@ static const char* const kSwitchNames[] = {
   switches::kGpuSandboxAllowSysVShm,
   switches::kGpuSandboxFailuresFatal,
   switches::kGpuSandboxStartEarly,
-  switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode,
   switches::kLoggingLevel,
-  switches::kLowEndDeviceMode,
+  switches::kEnableLowEndDeviceMode,
+  switches::kDisableLowEndDeviceMode,
   switches::kNoSandbox,
+  switches::kProfilerTiming,
   switches::kTestGLLib,
   switches::kTraceStartup,
   switches::kTraceToConsole,
@@ -156,7 +162,7 @@ class GpuSandboxedProcessLauncherDelegate
   ~GpuSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  virtual bool ShouldSandbox() override {
+  bool ShouldSandbox() override {
     bool sandbox = !cmd_line_->HasSwitch(switches::kDisableGpuSandbox);
     if(! sandbox) {
       DVLOG(1) << "GPU sandbox is disabled";
@@ -164,8 +170,8 @@ class GpuSandboxedProcessLauncherDelegate
     return sandbox;
   }
 
-  virtual void PreSandbox(bool* disable_default_policy,
-                          base::FilePath* exposed_dir) override {
+  void PreSandbox(bool* disable_default_policy,
+                  base::FilePath* exposed_dir) override {
     *disable_default_policy = true;
   }
 
@@ -173,8 +179,7 @@ class GpuSandboxedProcessLauncherDelegate
   // which is USER_RESTRICTED breaks both the DirectX backend and the OpenGL
   // backend. Note that the GPU process is connected to the interactive
   // desktop.
-  virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
-                              bool* success) {
+  void PreSpawnTarget(sandbox::TargetPolicy* policy, bool* success) override {
     if (base::win::GetVersion() > base::win::VERSION_XP) {
       if (cmd_line_->GetSwitchValueASCII(switches::kUseGL) ==
           gfx::kGLImplementationDesktopName) {
@@ -284,7 +289,7 @@ bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
 // static
 GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind,
                                     CauseForGpuLaunch cause) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Don't grant further access to GPU if it is not allowed.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
@@ -326,9 +331,10 @@ void GpuProcessHost::GetProcessHandles(
   }
   std::list<base::ProcessHandle> handles;
   for (size_t i = 0; i < arraysize(g_gpu_process_hosts); ++i) {
+    // TODO(rvargas) crbug/417532: don't store ProcessHandles!.
     GpuProcessHost* host = g_gpu_process_hosts[i];
     if (host && ValidateHost(host))
-      handles.push_back(host->process_->GetHandle());
+      handles.push_back(host->process_->GetProcess().Handle());
   }
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -357,7 +363,7 @@ void GpuProcessHost::RegisterGpuMainThreadFactory(
 
 // static
 GpuProcessHost* GpuProcessHost::FromID(int host_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   for (int i = 0; i < GPU_PROCESS_KIND_COUNT; ++i) {
     GpuProcessHost* host = g_gpu_process_hosts[i];
@@ -501,15 +507,11 @@ bool GpuProcessHost::Init() {
     return false;
 
   if (in_process_) {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     DCHECK(g_gpu_main_thread_factory);
-    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-    command_line->AppendSwitch(switches::kDisableGpuWatchdog);
-
-    GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
-    DCHECK(gpu_data_manager);
-    gpu_data_manager->AppendGpuCommandLine(command_line);
-
-    in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
+    in_process_gpu_thread_.reset(
+        g_gpu_main_thread_factory(InProcessChildThreadParams(
+            channel_id, base::MessageLoop::current()->task_runner())));
     base::Thread::Options options;
 #if defined(OS_WIN)
     // WGL needs to create its own window and pump messages on it.
@@ -651,40 +653,46 @@ void GpuProcessHost::CreateViewCommandBuffer(
 }
 
 void GpuProcessHost::CreateGpuMemoryBuffer(
-    gfx::GpuMemoryBufferType type,
     gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
     gfx::GpuMemoryBuffer::Format format,
     gfx::GpuMemoryBuffer::Usage usage,
     int client_id,
+    int32 surface_id,
     const CreateGpuMemoryBufferCallback& callback) {
   TRACE_EVENT0("gpu", "GpuProcessHost::CreateGpuMemoryBuffer");
 
   DCHECK(CalledOnValidThread());
 
   GpuMsg_CreateGpuMemoryBuffer_Params params;
-  params.type = type;
   params.id = id;
   params.size = size;
   params.format = format;
   params.usage = usage;
   params.client_id = client_id;
+  params.surface_handle =
+      GpuSurfaceTracker::GetInstance()->GetSurfaceHandle(surface_id).handle;
   if (Send(new GpuMsg_CreateGpuMemoryBuffer(params))) {
     create_gpu_memory_buffer_requests_.push(callback);
+    create_gpu_memory_buffer_surface_refs_.push(surface_id);
+    if (surface_id) {
+      surface_refs_.insert(std::make_pair(
+          surface_id, GpuSurfaceTracker::GetInstance()->GetSurfaceRefForSurface(
+                          surface_id)));
+    }
   } else {
     callback.Run(gfx::GpuMemoryBufferHandle());
   }
 }
 
-void GpuProcessHost::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
-                                            gfx::GpuMemoryBufferId id,
+void GpuProcessHost::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                                             int client_id,
                                             int sync_point) {
   TRACE_EVENT0("gpu", "GpuProcessHost::DestroyGpuMemoryBuffer");
 
   DCHECK(CalledOnValidThread());
 
-  Send(new GpuMsg_DestroyGpuMemoryBuffer(type, id, client_id, sync_point));
+  Send(new GpuMsg_DestroyGpuMemoryBuffer(id, client_id, sync_point));
 }
 
 void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
@@ -760,6 +768,13 @@ void GpuProcessHost::OnGpuMemoryBufferCreated(
       create_gpu_memory_buffer_requests_.front();
   create_gpu_memory_buffer_requests_.pop();
   callback.Run(handle);
+
+  int32 surface_id = create_gpu_memory_buffer_surface_refs_.front();
+  create_gpu_memory_buffer_surface_refs_.pop();
+  SurfaceRefMap::iterator it = surface_refs_.find(surface_id);
+  if (it != surface_refs_.end()) {
+    surface_refs_.erase(it);
+  }
 }
 
 void GpuProcessHost::OnDidCreateOffscreenContext(const GURL& url) {
@@ -870,6 +885,13 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   base::CommandLine::StringType gpu_launcher =
       browser_command_line.GetSwitchValueNative(switches::kGpuLauncher);
 
+#if defined(OS_ANDROID)
+  // crbug.com/447735. readlink("self/proc/exe") sometimes fails on Android
+  // at startup with EACCES. As a workaround ignore this here, since the
+  // executable name is actually not used or useful anyways.
+  base::CommandLine* cmd_line =
+      new base::CommandLine(base::CommandLine::NO_PROGRAM);
+#else
 #if defined(OS_LINUX)
   int child_flags = gpu_launcher.empty() ? ChildProcessHost::CHILD_ALLOW_SELF :
                                            ChildProcessHost::CHILD_NORMAL;
@@ -882,6 +904,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     return false;
 
   base::CommandLine* cmd_line = new base::CommandLine(exe_path);
+#endif
   cmd_line->AppendSwitchASCII(switches::kProcessType, switches::kGpuProcess);
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id);
 
@@ -918,7 +941,8 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   process_->Launch(
       new GpuSandboxedProcessLauncherDelegate(cmd_line,
                                               process_->GetHost()),
-      cmd_line);
+      cmd_line,
+      true);
   process_launched_ = true;
 
   UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessLifetimeEvents",
@@ -1030,6 +1054,9 @@ std::string GpuProcessHost::GetShaderPrefixKey() {
     gpu::GPUInfo info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
 
     std::string in_str = GetContentClient()->GetProduct() + "-" +
+#if defined(OS_ANDROID)
+        base::android::BuildInfo::GetInstance()->android_build_fp() + "-" +
+#endif
         info.gl_vendor + "-" + info.gl_renderer + "-" +
         info.driver_version + "-" + info.driver_vendor;
 

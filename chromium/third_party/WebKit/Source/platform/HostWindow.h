@@ -27,6 +27,7 @@
 #define HostWindow_h
 
 #include "platform/PlatformExport.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 
@@ -35,21 +36,22 @@ class IntRect;
 struct WebScreenInfo;
 
 class PLATFORM_EXPORT HostWindow {
-    WTF_MAKE_NONCOPYABLE(HostWindow); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(HostWindow); WTF_MAKE_FAST_ALLOCATED(HostWindow);
 public:
     HostWindow() { }
     virtual ~HostWindow() { }
 
-    // Requests the host invalidate the contents and the root view.
-    virtual void invalidateContentsAndRootView(const IntRect& updateRect) = 0;
+    // Requests the host invalidate the contents.
+    virtual void invalidateRect(const IntRect& updateRect) = 0;
 
-    // Requests the host invalidate the contents, not the root view. This is the slow path for scrolling.
-    virtual void invalidateContentsForSlowScroll(const IntRect& updateRect) = 0;
+    // Requests the host to invalidate display items, if owned by the host
+    // window. At present Chrome does not (display items are owned by the
+    // GraphicsLayer instead), but PopupContainerClient does.
+    virtual void invalidateDisplayItemClient(DisplayItemClient) { }
+    virtual void invalidateAllDisplayItems() { }
 
-    // Methods for doing coordinate conversions to screen coordinates.
-    virtual IntRect rootViewToScreen(const IntRect&) const = 0;
-
-    virtual WebScreenInfo screenInfo() const = 0;
+    // Converts from the window coordinates to screen coordinates.
+    virtual IntRect viewportToScreen(const IntRect&) const = 0;
 
     virtual void scheduleAnimation() = 0;
 };

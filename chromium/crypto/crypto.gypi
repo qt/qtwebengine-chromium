@@ -23,11 +23,12 @@
         'wincrypt_shim.h',
       ],
     },
-    'hmac_win64_related_sources': [ '<@(hmac_win64_related_sources)' ],
     'crypto_sources': [
       # NOTE: all transitive dependencies of HMAC on windows need
       #     to be placed in the source list above.
       '<@(hmac_win64_related_sources)',
+      'aead_openssl.cc',
+      'aead_openssl.h',
       'apple_keychain.h',
       'apple_keychain_ios.mm',
       'apple_keychain_mac.mm',
@@ -66,6 +67,8 @@
       'p224_spake.cc',
       'p224_spake.h',
       'nss_crypto_module_delegate.h',
+      'nss_key_util.cc',
+      'nss_key_util.h',
       'nss_util.cc',
       'nss_util.h',
       'nss_util_internal.h',
@@ -100,6 +103,11 @@
       'third_party/nss/pk11akey.cc',
       'third_party/nss/rsawrapr.c',
       'third_party/nss/secsign.cc',
-    ]
+    ],
+    'nacl_win64_sources': [
+      '<@(hmac_win64_related_sources)',
+      'random.cc',
+      'random.h',
+    ],
   }
 }

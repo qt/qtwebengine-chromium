@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 
-using std::make_pair;
 using std::max;
 using std::min;
 using std::pair;
@@ -66,9 +65,9 @@ class StrikeRegister::InternalNode {
 
   uint32 child(unsigned n) const { return data_[n] >> 8; }
 
-  uint8 critbyte() const { return data_[0]; }
+  uint8 critbyte() const { return static_cast<uint8>(data_[0]); }
 
-  uint8 otherbits() const { return data_[1]; }
+  uint8 otherbits() const { return static_cast<uint8>(data_[1]); }
 
   // These bytes are organised thus:
   //   <24 bits> left child
@@ -194,9 +193,10 @@ InsertStatus StrikeRegister::Insert(const uint8 nonce[32],
   }
 
   // Now we need to find the first bit where we differ from |best_match|.
-  unsigned differing_byte;
+  uint8 differing_byte;
   uint8 new_other_bits;
-  for (differing_byte = 0; differing_byte < sizeof(value); differing_byte++) {
+  for (differing_byte = 0; differing_byte < arraysize(value);
+       differing_byte++) {
     new_other_bits = value[differing_byte] ^ best_match[differing_byte];
     if (new_other_bits) {
       break;
@@ -323,7 +323,7 @@ pair<uint32, uint32> StrikeRegister::GetValidRange(
     uint32 current_time_internal) const {
   if (current_time_internal < horizon_) {
     // Empty valid range.
-    return make_pair(std::numeric_limits<uint32>::max(), 0);
+    return std::make_pair(std::numeric_limits<uint32>::max(), 0);
   }
 
   uint32 lower_bound;
@@ -343,7 +343,7 @@ pair<uint32, uint32> StrikeRegister::GetValidRange(
       current_time_internal + min(current_time_internal - horizon_,
                                   window_secs_);
 
-  return make_pair(lower_bound, upper_bound);
+  return std::make_pair(lower_bound, upper_bound);
 }
 
 uint32 StrikeRegister::ExternalTimeToInternal(uint32 external_time) const {
@@ -495,14 +495,13 @@ void StrikeRegister::ValidateTree(
       CHECK_EQ(used_external_nodes->count(ext), 0u);
       used_external_nodes->insert(ext);
       const uint8* bytes = external_node(ext);
-      for (vector<pair<unsigned, bool> >::const_iterator i = bits.begin();
-           i != bits.end(); i++) {
-        unsigned byte = i->first / 8;
+      for (const pair<unsigned, bool>& pair : bits) {
+        unsigned byte = pair.first / 8;
         DCHECK_LE(byte, 0xffu);
-        unsigned bit = i->first % 8;
+        unsigned bit_new = pair.first % 8;
         static const uint8 kMasks[8] =
             {0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01};
-        CHECK_EQ((bytes[byte] & kMasks[bit]) != 0, i->second);
+        CHECK_EQ((bytes[byte] & kMasks[bit_new]) != 0, pair.second);
       }
     } else {
       uint32 inter = i->child(child);

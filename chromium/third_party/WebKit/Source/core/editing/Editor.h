@@ -26,16 +26,16 @@
 #ifndef Editor_h
 #define Editor_h
 
+#include "core/CoreExport.h"
 #include "core/clipboard/DataTransferAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
 #include "core/editing/FindOptions.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/WritingDirection.h"
-#include "core/frame/FrameDestructionObserver.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "platform/PasteMode.h"
 #include "platform/heap/Handle.h"
 
@@ -54,10 +54,10 @@ class StylePropertySet;
 class TextEvent;
 class UndoStack;
 
-enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
+enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
-class Editor final : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
+class CORE_EXPORT Editor final : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
     WTF_MAKE_NONCOPYABLE(Editor);
 public:
     static PassOwnPtrWillBeRawPtr<Editor> create(LocalFrame&);
@@ -75,7 +75,6 @@ public:
 
     bool canDHTMLCut();
     bool canDHTMLCopy();
-    bool canDHTMLPaste();
 
     bool canCut() const;
     bool canCopy() const;
@@ -121,7 +120,7 @@ public:
     void setShouldStyleWithCSS(bool flag) { m_shouldStyleWithCSS = flag; }
     bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
 
-    class Command {
+    class CORE_EXPORT Command {
         STACK_ALLOCATED();
     public:
         Command();
@@ -201,8 +200,6 @@ public:
     Element* findEventTargetFrom(const VisibleSelection&) const;
 
     bool findString(const String&, FindOptions);
-    // FIXME: Switch callers over to the FindOptions version and retire this one.
-    bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
 
     PassRefPtrWillBeRawPtr<Range> findStringAndScrollToVisible(const String&, Range*, FindOptions);
 
@@ -226,15 +223,16 @@ public:
 
     class RevealSelectionScope {
         WTF_MAKE_NONCOPYABLE(RevealSelectionScope);
+        STACK_ALLOCATED();
     public:
-        RevealSelectionScope(Editor*);
+        explicit RevealSelectionScope(Editor*);
         ~RevealSelectionScope();
     private:
-        Editor* m_editor;
+        RawPtrWillBeMember<Editor> m_editor;
     };
     friend class RevealSelectionScope;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     RawPtrWillBeMember<LocalFrame> m_frame;
@@ -267,7 +265,7 @@ private:
     bool canSmartReplaceWithPasteboard(Pasteboard*);
     void pasteAsPlainTextWithPasteboard(Pasteboard*);
     void pasteWithPasteboard(Pasteboard*);
-    void writeSelectionToPasteboard(Pasteboard*, Range*, const String& plainText);
+    void writeSelectionToPasteboard();
     bool dispatchCPPEvent(const AtomicString&, DataTransferAccessPolicy, PasteMode = AllMimeTypes);
 
     void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
@@ -280,7 +278,7 @@ private:
 
     SpellChecker& spellChecker() const;
 
-    bool handleEditingKeyboardEvent(blink::KeyboardEvent*);
+    bool handleEditingKeyboardEvent(KeyboardEvent*);
 };
 
 inline void Editor::setStartNewKillRingSequence(bool flag)

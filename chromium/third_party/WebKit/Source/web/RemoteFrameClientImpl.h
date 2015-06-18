@@ -15,6 +15,7 @@ public:
     explicit RemoteFrameClientImpl(WebRemoteFrameImpl*);
 
     // FrameClient overrides:
+    virtual void willBeDetached() override;
     virtual void detached() override;
 
     virtual Frame* opener() const override;
@@ -31,6 +32,7 @@ public:
 
     // RemoteFrameClient overrides:
     virtual void navigate(const ResourceRequest&, bool shouldReplaceCurrentEntry) override;
+    virtual void reload(ReloadPolicy, ClientRedirectPolicy) override;
     virtual void forwardInputEvent(Event*) override;
 
     WebRemoteFrameImpl* webFrame() const { return m_webFrame; }

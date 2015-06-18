@@ -17,57 +17,58 @@
         'java_in_dir': 'test/shell',
         'native_lib_target': 'libstandalonelibwebviewchromium',
         'resource_dir': 'test/shell/res',
-        'extensions_to_not_compress': 'pak',
+        'extensions_to_not_compress': 'pak,dat,bin',
+        'asset_location': '<(PRODUCT_DIR)/android_webview_apk/assets',
         'extra_native_libs': ['<(SHARED_LIB_DIR)/libdrawgl.>(android_product_extension)'],
+        'snapshot_copy_files': '<(snapshot_copy_files)',
         'additional_input_paths': [
-          '<(PRODUCT_DIR)/android_webview_assets/webviewchromium.pak',
-          '<(PRODUCT_DIR)/android_webview_assets/en-US.pak',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/asset_file.html',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/cookie_test.html',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/asset_icon.png',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video.js',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video_test.html',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video_inside_div_test.html',
-          '<(PRODUCT_DIR)/android_webview_apk/assets/video.mp4',
+          '<(asset_location)/webviewchromium.pak',
+          '<(asset_location)/en-US.pak',
+          '<(asset_location)/asset_file.html',
+          '<(asset_location)/cookie_test.html',
+          '<(asset_location)/asset_icon.png',
+          '<(asset_location)/full_screen_video.js',
+          '<(asset_location)/full_screen_video_test.html',
+          '<(asset_location)/full_screen_video_inside_div_test.html',
+          '<(asset_location)/multiple_videos_test.html',
+          '<(asset_location)/video.mp4',
+          '<(asset_location)/visual_state_during_fullscreen_test.html',
+          '<(asset_location)/visual_state_waits_for_js_test.html',
+          '<(asset_location)/visual_state_on_page_commit_visible_test.html',
+          '<@(snapshot_additional_input_paths)',
         ],
         'conditions': [
           ['icu_use_data_file_flag==1', {
             'additional_input_paths': [
-              '<(PRODUCT_DIR)/icudtl.dat',
-            ],
-          }],
-          ['v8_use_external_startup_data==1', {
-            'additional_input_paths': [
-              '<(PRODUCT_DIR)/natives_blob.bin',
-              '<(PRODUCT_DIR)/snapshot_blob.bin',
+              '<(asset_location)/icudtl.dat',
             ],
           }],
         ],
+        'includes': [ 'snapshot_copying.gypi' ],
       },
       'copies': [
         {
-          'destination': '<(PRODUCT_DIR)/android_webview_apk/assets',
+          'destination': '<(asset_location)',
           'files': [
             '<(PRODUCT_DIR)/android_webview_assets/webviewchromium.pak',
-            '<(PRODUCT_DIR)/android_webview_assets/en-US.pak',
+            '<(PRODUCT_DIR)/android_webview_assets/locales/en-US.pak',
             '<(java_in_dir)/assets/asset_file.html',
             '<(java_in_dir)/assets/asset_icon.png',
             '<(java_in_dir)/assets/cookie_test.html',
             '<(java_in_dir)/assets/full_screen_video.js',
             '<(java_in_dir)/assets/full_screen_video_test.html',
             '<(java_in_dir)/assets/full_screen_video_inside_div_test.html',
+            '<(java_in_dir)/assets/multiple_videos_test.html',
             '<(java_in_dir)/assets/video.mp4',
+            '<(java_in_dir)/assets/visual_state_during_fullscreen_test.html',
+            '<(java_in_dir)/assets/visual_state_waits_for_js_test.html',
+            '<(java_in_dir)/assets/visual_state_on_page_commit_visible_test.html',
+            '<@(snapshot_copy_files)',
           ],
-	  'conditions': [
+          'conditions': [
             ['icu_use_data_file_flag==1', {
               'files': [
                 '<(PRODUCT_DIR)/icudtl.dat',
-              ],
-            }],
-            ['v8_use_external_startup_data==1', {
-              'files': [
-                '<(PRODUCT_DIR)/natives_blob.bin',
-                '<(PRODUCT_DIR)/snapshot_blob.bin',
               ],
             }],
           ],
@@ -93,6 +94,8 @@
         '../base/base.gyp:base_java_test_support',
         '../content/content_shell_and_tests.gyp:content_java_test_support',
         '../net/net.gyp:net_java_test_support',
+        '../testing/android/on_device_instrumentation.gyp:broker_java',
+        '../testing/android/on_device_instrumentation.gyp:require_driver_apk',
         'android_webview_apk_java',
       ],
       'variables': {
@@ -113,6 +116,7 @@
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../ui/base/ui_base.gyp:ui_base_jni_headers',
+        '../ui/gl/gl.gyp:gl',
         'android_webview_common',
         'android_webview_unittests_jni',
       ],
@@ -124,8 +128,13 @@
       'sources': [
         'browser/aw_static_cookie_policy_unittest.cc',
         'browser/aw_form_database_service_unittest.cc',
+        'browser/browser_view_renderer_unittest.cc',
         'browser/net/android_stream_reader_url_request_job_unittest.cc',
         'browser/net/input_stream_reader_unittest.cc',
+        'browser/test/fake_window.cc',
+        'browser/test/fake_window.h',
+        'browser/test/rendering_test.cc',
+        'browser/test/rendering_test.h',
         'lib/main/webview_tests.cc',
         'native/aw_contents_client_bridge_unittest.cc',
         'native/aw_media_url_interceptor_unittest.cc',
@@ -191,6 +200,11 @@
       'include_dirs': [
         '..',
       ],
+      'variables': {
+        # This library uses native JNI exports; tell gyp so that the required
+        # symbols will be kept.
+        'use_native_jni_exports': 1,
+      },
       'sources': [
           '../android_webview/test/shell/src/draw_gl/draw_gl.cc',
       ],

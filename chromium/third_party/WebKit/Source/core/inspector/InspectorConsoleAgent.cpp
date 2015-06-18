@@ -26,50 +26,26 @@
 #include "config.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 
-#include "bindings/core/v8/ScriptCallStackFactory.h"
-#include "bindings/core/v8/ScriptController.h"
-#include "bindings/core/v8/ScriptProfiler.h"
-#include "core/frame/LocalFrame.h"
-#include "core/frame/UseCounter.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScript.h"
-#include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/InspectorTimelineAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptAsyncCallStack.h"
-#include "core/inspector/ScriptCallFrame.h"
-#include "core/inspector/ScriptCallStack.h"
-#include "core/loader/DocumentLoader.h"
-#include "core/page/Page.h"
-#include "core/xmlhttprequest/XMLHttpRequest.h"
-#include "platform/network/ResourceError.h"
-#include "platform/network/ResourceResponse.h"
-#include "wtf/CurrentTime.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 namespace ConsoleAgentState {
-static const char monitoringXHR[] = "monitoringXHR";
 static const char consoleMessagesEnabled[] = "consoleMessagesEnabled";
-static const char tracingBasedTimeline[] = "tracingBasedTimeline";
 }
 
-int InspectorConsoleAgent::s_enabledAgentCount = 0;
-
-InspectorConsoleAgent::InspectorConsoleAgent(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorConsoleAgent>("Console")
-    , m_timelineAgent(timelineAgent)
+InspectorConsoleAgent::InspectorConsoleAgent(InjectedScriptManager* injectedScriptManager)
+    : InspectorBaseAgent<InspectorConsoleAgent, InspectorFrontend::Console>("Console")
     , m_injectedScriptManager(injectedScriptManager)
-    , m_frontend(0)
     , m_enabled(false)
 {
 }
@@ -81,9 +57,8 @@ InspectorConsoleAgent::~InspectorConsoleAgent()
 #endif
 }
 
-void InspectorConsoleAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorConsoleAgent)
 {
-    visitor->trace(m_timelineAgent);
     visitor->trace(m_injectedScriptManager);
     InspectorBaseAgent::trace(visitor);
 }
@@ -94,9 +69,7 @@ void InspectorConsoleAgent::enable(ErrorString*)
         return;
     m_instrumentingAgents->setInspectorConsoleAgent(this);
     m_enabled = true;
-    if (!s_enabledAgentCount)
-        ScriptController::setCaptureCallStackForUncaughtExceptions(true);
-    ++s_enabledAgentCount;
+    enableStackCapturingIfNeeded();
 
     m_state->setBoolean(ConsoleAgentState::consoleMessagesEnabled, true);
 
@@ -116,84 +89,31 @@ void InspectorConsoleAgent::disable(ErrorString*)
 {
     if (!m_enabled)
         return;
-    m_instrumentingAgents->setInspectorConsoleAgent(0);
+    m_instrumentingAgents->setInspectorConsoleAgent(nullptr);
     m_enabled = false;
-    if (!(--s_enabledAgentCount))
-        ScriptController::setCaptureCallStackForUncaughtExceptions(false);
-    m_state->setBoolean(ConsoleAgentState::consoleMessagesEnabled, false);
-    m_state->setBoolean(ConsoleAgentState::tracingBasedTimeline, false);
-}
+    disableStackCapturingIfNeeded();
 
-void InspectorConsoleAgent::clearMessages(ErrorString*)
-{
-    messageStorage()->clear();
+    m_state->setBoolean(ConsoleAgentState::consoleMessagesEnabled, false);
 }
 
 void InspectorConsoleAgent::restore()
 {
     if (m_state->getBoolean(ConsoleAgentState::consoleMessagesEnabled)) {
-        m_frontend->messagesCleared();
+        frontend()->messagesCleared();
         ErrorString error;
         enable(&error);
     }
 }
 
-void InspectorConsoleAgent::setFrontend(InspectorFrontend* frontend)
-{
-    m_frontend = frontend->console();
-}
-
-void InspectorConsoleAgent::clearFrontend()
-{
-    m_frontend = 0;
-    String errorString;
-    disable(&errorString);
-}
-
 void InspectorConsoleAgent::addMessageToConsole(ConsoleMessage* consoleMessage)
 {
-    if (m_frontend)
-        sendConsoleMessageToFrontend(consoleMessage, true);
+    sendConsoleMessageToFrontend(consoleMessage, true);
 }
 
 void InspectorConsoleAgent::consoleMessagesCleared()
 {
     m_injectedScriptManager->releaseObjectGroup("console");
-    if (m_frontend)
-        m_frontend->messagesCleared();
-}
-
-void InspectorConsoleAgent::setTracingBasedTimeline(ErrorString*, bool enabled)
-{
-    m_state->setBoolean(ConsoleAgentState::tracingBasedTimeline, enabled);
-}
-
-void InspectorConsoleAgent::consoleTimeline(ExecutionContext* context, const String& title, ScriptState* scriptState)
-{
-    UseCounter::count(context, UseCounter::DevToolsConsoleTimeline);
-    if (!m_state->getBoolean(ConsoleAgentState::tracingBasedTimeline))
-        m_timelineAgent->consoleTimeline(context, title, scriptState);
-}
-
-void InspectorConsoleAgent::consoleTimelineEnd(ExecutionContext* context, const String& title, ScriptState* scriptState)
-{
-    if (!m_state->getBoolean(ConsoleAgentState::tracingBasedTimeline))
-        m_timelineAgent->consoleTimelineEnd(context, title, scriptState);
-}
-
-void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url)
-{
-    if (m_frontend && m_state->getBoolean(ConsoleAgentState::monitoringXHR)) {
-        String message = "XHR finished loading: " + method + " \"" + url + "\".";
-        RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(NetworkMessageSource, DebugMessageLevel, message);
-        consoleMessage->setRequestIdentifier(requestIdentifier);
-        messageStorage()->reportMessage(consoleMessage.release());
-    }
-}
-
-void InspectorConsoleAgent::setMonitoringXHREnabled(ErrorString*, bool enabled)
-{
-    m_state->setBoolean(ConsoleAgentState::monitoringXHR, enabled);
+    frontend()->messagesCleared();
 }
 
 static TypeBuilder::Console::ConsoleMessage::Source::Enum messageSourceValue(MessageSource source)
@@ -206,7 +126,6 @@ static TypeBuilder::Console::ConsoleMessage::Source::Enum messageSourceValue(Mes
     case StorageMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Storage;
     case AppCacheMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Appcache;
     case RenderingMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Rendering;
-    case CSSMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Css;
     case SecurityMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Security;
     case OtherMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Other;
     case DeprecationMessageSource: return TypeBuilder::Console::ConsoleMessage::Source::Deprecation;
@@ -242,6 +161,7 @@ static TypeBuilder::Console::ConsoleMessage::Level::Enum messageLevelValue(Messa
     case WarningMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Warning;
     case ErrorMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Error;
     case InfoMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::Info;
+    case RevokedErrorMessageLevel: return TypeBuilder::Console::ConsoleMessage::Level::RevokedError;
     }
     return TypeBuilder::Console::ConsoleMessage::Level::Log;
 }
@@ -301,34 +221,12 @@ void InspectorConsoleAgent::sendConsoleMessageToFrontend(ConsoleMessage* console
         if (asyncCallStack)
             jsonObj->setAsyncStackTrace(asyncCallStack->buildInspectorObject());
     }
-    m_frontend->messageAdded(jsonObj);
-    m_frontend->flush();
-}
-
-class InspectableHeapObject final : public InjectedScriptHost::InspectableObject {
-public:
-    explicit InspectableHeapObject(int heapObjectId) : m_heapObjectId(heapObjectId) { }
-    virtual ScriptValue get(ScriptState*) override
-    {
-        return ScriptProfiler::objectByHeapObjectId(m_heapObjectId);
-    }
-private:
-    int m_heapObjectId;
-};
-
-void InspectorConsoleAgent::addInspectedHeapObject(ErrorString*, int inspectedHeapObjectId)
-{
-    m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtr(new InspectableHeapObject(inspectedHeapObjectId)));
-}
-
-void InspectorConsoleAgent::setLastEvaluationResult(ErrorString* errorString, const String& objectId)
-{
-    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (injectedScript.isEmpty()) {
-        *errorString = "Inspected frame has gone";
-        return;
-    }
-    injectedScript.setLastEvaluationResult(objectId);
+    if (consoleMessage->messageId())
+        jsonObj->setMessageId(consoleMessage->messageId());
+    if (consoleMessage->relatedMessageId())
+        jsonObj->setRelatedMessageId(consoleMessage->relatedMessageId());
+    frontend()->messageAdded(jsonObj);
+    frontend()->flush();
 }
 
 } // namespace blink

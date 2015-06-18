@@ -26,19 +26,20 @@
 #ifndef IDBOpenDBRequest_h
 #define IDBOpenDBRequest_h
 
+#include "modules/ModulesExport.h"
 #include "modules/indexeddb/IDBRequest.h"
-#include "public/platform/WebIDBDatabase.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
 
 namespace blink {
 
 class IDBDatabaseCallbacks;
 
-class IDBOpenDBRequest final : public IDBRequest {
+class MODULES_EXPORT IDBOpenDBRequest final : public IDBRequest {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static IDBOpenDBRequest* create(ScriptState*, IDBDatabaseCallbacks*, int64_t transactionId, int64_t version);
     virtual ~IDBOpenDBRequest();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     using IDBRequest::onSuccess;
 

@@ -13,8 +13,6 @@
 class SkReadBuffer;
 class SkWriteBuffer;
 
-#define SK_SUPPORT_LEGACY_DEEPFLATTENING
-
 /*
  *  Flattening is straight-forward:
  *      1. call getFactory() so we have a function-ptr to recreate the subclass
@@ -42,27 +40,6 @@ class SkWriteBuffer;
 #define SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END \
     }
 
-#define SK_DECLARE_UNFLATTENABLE_OBJECT() \
-    virtual Factory getFactory() const SK_OVERRIDE { return NULL; }
-
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-#define SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(flattenable) \
-    SkFlattenable::Registrar(#flattenable, flattenable::DeepCreateProc, \
-                             flattenable::GetFlattenableType());
-
-#define SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(flattenable)    \
-    private:                                                                \
-    static SkFlattenable* CreateProc(SkReadBuffer&);                        \
-    static SkFlattenable* DeepCreateProc(SkReadBuffer& buffer) {            \
-        if (NeedsDeepUnflatten(buffer)) {                                   \
-            return SkNEW_ARGS(flattenable, (buffer));                       \
-        }                                                                   \
-        return CreateProc(buffer);                                          \
-    }                                                                       \
-    friend class SkPrivateEffectInitializer;                                \
-    public:                                                                 \
-    virtual Factory getFactory() const SK_OVERRIDE {return DeepCreateProc;}
-#else
 #define SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(flattenable) \
     SkFlattenable::Registrar(#flattenable, flattenable::CreateProc, \
                              flattenable::GetFlattenableType());
@@ -72,12 +49,7 @@ class SkWriteBuffer;
     static SkFlattenable* CreateProc(SkReadBuffer&);                        \
     friend class SkPrivateEffectInitializer;                                \
     public:                                                                 \
-    virtual Factory getFactory() const SK_OVERRIDE { return CreateProc; }
-#endif
-
-// If your subclass will *never* need to be unflattened, declare this.
-#define SK_DECLARE_NOT_FLATTENABLE_PROCS(flattenable)   \
-    virtual Factory getFactory() const SK_OVERRIDE { return ReturnNullCreateProc; }
+    Factory getFactory() const override { return CreateProc; }
 
 /** For SkFlattenable derived objects with a valid type
     This macro should only be used in base class objects in core
@@ -142,16 +114,6 @@ public:
      *  from its CreateProc (returned by getFactory()).
      */
     virtual void flatten(SkWriteBuffer&) const {}
-
-protected:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    static bool NeedsDeepUnflatten(const SkReadBuffer&);
-    SkFlattenable(SkReadBuffer&) {}
-#endif
-
-    static SkFlattenable* ReturnNullCreateProc(SkReadBuffer&) {
-        return NULL;
-    }
 
 private:
     static void InitializeFlattenablesIfNeeded();

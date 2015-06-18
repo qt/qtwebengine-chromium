@@ -29,11 +29,6 @@
 
 namespace blink {
 
-TransitionEventInit::TransitionEventInit()
-    : elapsedTime(0)
-{
-}
-
 TransitionEvent::TransitionEvent()
     : m_elapsedTime(0)
 {
@@ -49,10 +44,14 @@ TransitionEvent::TransitionEvent(const AtomicString& type, const String& propert
 
 TransitionEvent::TransitionEvent(const AtomicString& type, const TransitionEventInit& initializer)
     : Event(type, initializer)
-    , m_propertyName(initializer.propertyName)
-    , m_elapsedTime(initializer.elapsedTime)
-    , m_pseudoElement(initializer.pseudoElement)
+    , m_elapsedTime(0)
 {
+    if (initializer.hasPropertyName())
+        m_propertyName = initializer.propertyName();
+    if (initializer.hasElapsedTime())
+        m_elapsedTime = initializer.elapsedTime();
+    if (initializer.hasPseudoElement())
+        m_pseudoElement = initializer.pseudoElement();
 }
 
 TransitionEvent::~TransitionEvent()
@@ -79,7 +78,7 @@ const AtomicString& TransitionEvent::interfaceName() const
     return EventNames::TransitionEvent;
 }
 
-void TransitionEvent::trace(Visitor* visitor)
+DEFINE_TRACE(TransitionEvent)
 {
     Event::trace(visitor);
 }

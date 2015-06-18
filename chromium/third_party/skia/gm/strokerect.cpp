@@ -46,19 +46,16 @@ public:
     StrokeRectGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("strokerect");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(1024, 740);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         canvas->drawColor(SK_ColorWHITE);
         canvas->translate(STROKE_WIDTH*3/2, STROKE_WIDTH*3/2);
 

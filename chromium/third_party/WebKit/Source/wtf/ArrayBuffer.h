@@ -44,7 +44,11 @@ public:
     static inline PassRefPtr<ArrayBuffer> create(const void* source, unsigned byteLength);
     static inline PassRefPtr<ArrayBuffer> create(ArrayBufferContents&);
 
-    // Only for use by Uint8ClampedArray::createUninitialized and SharedBuffer::getAsArrayBuffer.
+    static inline PassRefPtr<ArrayBuffer> createOrNull(unsigned numElements, unsigned elementByteSize);
+
+    // Only for use by Uint8ClampedArray::createUninitialized,
+    // XMLHttpRequest::responseArrayBuffer and Internals::serializeObject
+    // (through DOMArrayBuffer::createUninitialized).
     static inline PassRefPtr<ArrayBuffer> createUninitialized(unsigned numElements, unsigned elementByteSize);
 
     inline void* data();
@@ -62,11 +66,11 @@ public:
     bool transfer(ArrayBufferContents&);
     bool isNeutered() { return m_isNeutered; }
 
-    void setDeallocationObserver(ArrayBufferDeallocationObserver* observer)
+    void setDeallocationObserver(ArrayBufferDeallocationObserver& observer)
     {
         m_contents.setDeallocationObserver(observer);
     }
-    void setDeallocationObserverWithoutAllocationNotification(ArrayBufferDeallocationObserver* observer)
+    void setDeallocationObserverWithoutAllocationNotification(ArrayBufferDeallocationObserver& observer)
     {
         m_contents.setDeallocationObserverWithoutAllocationNotification(observer);
     }
@@ -78,6 +82,7 @@ protected:
 
 private:
     static inline PassRefPtr<ArrayBuffer> create(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy);
+    static inline PassRefPtr<ArrayBuffer> createOrNull(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy);
 
     inline PassRefPtr<ArrayBuffer> sliceImpl(unsigned begin, unsigned end) const;
     inline unsigned clampIndex(int index) const;
@@ -111,8 +116,7 @@ PassRefPtr<ArrayBuffer> ArrayBuffer::create(ArrayBuffer* other)
 PassRefPtr<ArrayBuffer> ArrayBuffer::create(const void* source, unsigned byteLength)
 {
     ArrayBufferContents contents(byteLength, 1, ArrayBufferContents::ZeroInitialize);
-    if (!contents.data())
-        return nullptr;
+    RELEASE_ASSERT(contents.data());
     RefPtr<ArrayBuffer> buffer = adoptRef(new ArrayBuffer(contents));
     memcpy(buffer->data(), source, byteLength);
     return buffer.release();
@@ -123,12 +127,24 @@ PassRefPtr<ArrayBuffer> ArrayBuffer::create(ArrayBufferContents& contents)
     return adoptRef(new ArrayBuffer(contents));
 }
 
+PassRefPtr<ArrayBuffer> ArrayBuffer::createOrNull(unsigned numElements, unsigned elementByteSize)
+{
+    return createOrNull(numElements, elementByteSize, ArrayBufferContents::ZeroInitialize);
+}
+
 PassRefPtr<ArrayBuffer> ArrayBuffer::createUninitialized(unsigned numElements, unsigned elementByteSize)
 {
     return create(numElements, elementByteSize, ArrayBufferContents::DontInitialize);
 }
 
 PassRefPtr<ArrayBuffer> ArrayBuffer::create(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy policy)
+{
+    ArrayBufferContents contents(numElements, elementByteSize, policy);
+    RELEASE_ASSERT(contents.data());
+    return adoptRef(new ArrayBuffer(contents));
+}
+
+PassRefPtr<ArrayBuffer> ArrayBuffer::createOrNull(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy policy)
 {
     ArrayBufferContents contents(numElements, elementByteSize, policy);
     if (!contents.data())

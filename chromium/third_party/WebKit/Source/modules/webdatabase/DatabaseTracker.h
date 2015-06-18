@@ -29,6 +29,7 @@
 #ifndef DatabaseTracker_h
 #define DatabaseTracker_h
 
+#include "modules/ModulesExport.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
@@ -43,8 +44,8 @@ class Database;
 class DatabaseContext;
 class SecurityOrigin;
 
-class DatabaseTracker {
-    WTF_MAKE_NONCOPYABLE(DatabaseTracker); WTF_MAKE_FAST_ALLOCATED;
+class MODULES_EXPORT DatabaseTracker {
+    WTF_MAKE_NONCOPYABLE(DatabaseTracker); WTF_MAKE_FAST_ALLOCATED(DatabaseTracker);
 public:
     static DatabaseTracker& tracker();
     // This singleton will potentially be used from multiple worker threads and the page's context thread simultaneously.  To keep this safe, it's

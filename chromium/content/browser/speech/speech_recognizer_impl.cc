@@ -13,7 +13,6 @@
 #include "content/browser/speech/google_one_shot_remote_engine.h"
 #include "content/public/browser/speech_recognition_event_listener.h"
 #include "media/base/audio_converter.h"
-#include "net/url_request/url_request_context_getter.h"
 
 #if defined(OS_WIN)
 #include "media/audio/win/core_audio_util_win.h"
@@ -56,7 +55,6 @@ class SpeechRecognizerImpl::OnDataConverter
   const AudioParameters input_parameters_;
   const AudioParameters output_parameters_;
   bool waiting_for_input_;
-  scoped_ptr<uint8[]> converted_data_;
 
   DISALLOW_COPY_AND_ASSIGN(OnDataConverter);
 };
@@ -108,20 +106,20 @@ const int SpeechRecognizerImpl::kNoSpeechTimeoutMs = 8000;
 const int SpeechRecognizerImpl::kEndpointerEstimationTimeMs = 300;
 media::AudioManager* SpeechRecognizerImpl::audio_manager_for_tests_ = NULL;
 
-COMPILE_ASSERT(SpeechRecognizerImpl::kNumBitsPerAudioSample % 8 == 0,
-               kNumBitsPerAudioSample_must_be_a_multiple_of_8);
+static_assert(SpeechRecognizerImpl::kNumBitsPerAudioSample % 8 == 0,
+              "kNumBitsPerAudioSample must be a multiple of 8");
 
 // SpeechRecognizerImpl::OnDataConverter implementation
 
 SpeechRecognizerImpl::OnDataConverter::OnDataConverter(
-    const AudioParameters& input_params, const AudioParameters& output_params)
+    const AudioParameters& input_params,
+    const AudioParameters& output_params)
     : audio_converter_(input_params, output_params, false),
       input_bus_(AudioBus::Create(input_params)),
       output_bus_(AudioBus::Create(output_params)),
       input_parameters_(input_params),
       output_parameters_(output_params),
-      waiting_for_input_(false),
-      converted_data_(new uint8[output_parameters_.GetBytesPerBuffer()]) {
+      waiting_for_input_(false) {
   audio_converter_.AddInput(this);
 }
 
@@ -140,16 +138,13 @@ scoped_refptr<AudioChunk> SpeechRecognizerImpl::OnDataConverter::Convert(
   waiting_for_input_ = true;
   audio_converter_.Convert(output_bus_.get());
 
-  output_bus_->ToInterleaved(
-      output_bus_->frames(), output_parameters_.bits_per_sample() / 8,
-      converted_data_.get());
-
-  // TODO(primiano): Refactor AudioChunk to avoid the extra-copy here
-  // (see http://crbug.com/249316 for details).
-  return scoped_refptr<AudioChunk>(new AudioChunk(
-      converted_data_.get(),
-      output_parameters_.GetBytesPerBuffer(),
-      output_parameters_.bits_per_sample() / 8));
+  scoped_refptr<AudioChunk> chunk(
+      new AudioChunk(output_parameters_.GetBytesPerBuffer(),
+                     output_parameters_.bits_per_sample() / 8));
+  output_bus_->ToInterleaved(output_bus_->frames(),
+                             output_parameters_.bits_per_sample() / 8,
+                             chunk->writable_data());
+  return chunk;
 }
 
 double SpeechRecognizerImpl::OnDataConverter::ProvideInput(
@@ -236,12 +231,12 @@ void SpeechRecognizerImpl::StopAudioCapture() {
 bool SpeechRecognizerImpl::IsActive() const {
   // Checking the FSM state from another thread (thus, while the FSM is
   // potentially concurrently evolving) is meaningless.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return state_ != STATE_IDLE && state_ != STATE_ENDED;
 }
 
 bool SpeechRecognizerImpl::IsCapturingAudio() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO)); // See IsActive().
+  DCHECK_CURRENTLY_ON(BrowserThread::IO); // See IsActive().
   const bool is_capturing_audio = state_ >= STATE_STARTING &&
                                   state_ <= STATE_RECOGNIZING;
   DCHECK((is_capturing_audio && (audio_controller_.get() != NULL)) ||
@@ -255,7 +250,7 @@ SpeechRecognizerImpl::recognition_engine() const {
 }
 
 SpeechRecognizerImpl::~SpeechRecognizerImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   endpointer_.EndSession();
   if (audio_controller_.get()) {
     audio_controller_->Close(
@@ -317,7 +312,7 @@ void SpeechRecognizerImpl::OnSpeechRecognitionEngineError(
 // does, but they will become flaky if TestAudioInputController will be fixed.
 
 void SpeechRecognizerImpl::DispatchEvent(const FSMEventArgs& event_args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_LE(event_args.event, EVENT_MAX_VALUE);
   DCHECK_LE(state_, STATE_MAX_VALUE);
 
@@ -508,7 +503,7 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
   // TODO(xians): Check if the OS has the device with |device_id_|, return
   // |SPEECH_AUDIO_ERROR_DETAILS_NO_MIC| if the target device does not exist.
   if (!audio_manager->HasAudioInputDevices()) {
-    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO,
+    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO_CAPTURE,
                                         SPEECH_AUDIO_ERROR_DETAILS_NO_MIC));
   }
 
@@ -518,7 +513,8 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
       device_id_);
   if (!in_params.IsValid() && !unit_test_is_active) {
     DLOG(ERROR) << "Invalid native audio input parameters";
-    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
+    return Abort(
+        SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO_CAPTURE));
   }
 
   // Audio converter shall provide audio based on these parameters as output.
@@ -569,7 +565,8 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
       audio_manager, this, input_parameters, device_id_, NULL);
 
   if (!audio_controller_.get()) {
-    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
+    return Abort(
+        SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO_CAPTURE));
   }
 
   audio_log_->OnCreated(0, input_parameters, device_id_);
@@ -654,7 +651,8 @@ SpeechRecognizerImpl::AbortSilently(const FSMEventArgs& event_args) {
 SpeechRecognizerImpl::FSMState
 SpeechRecognizerImpl::AbortWithError(const FSMEventArgs& event_args) {
   if (event_args.event == EVENT_AUDIO_ERROR) {
-    return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
+    return Abort(
+        SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO_CAPTURE));
   } else if (event_args.event == EVENT_ENGINE_ERROR) {
     return Abort(event_args.engine_error);
   }

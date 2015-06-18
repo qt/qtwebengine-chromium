@@ -4,8 +4,8 @@
 
 #include "media/audio/android/opensles_output.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "media/audio/android/audio_manager_android.h"
 
 #define LOG_ON_FAILURE_AND_RETURN(op, ...)      \
@@ -165,6 +165,12 @@ void OpenSLESOutputStream::Close() {
 void OpenSLESOutputStream::SetVolume(double volume) {
   DVLOG(2) << "OpenSLESOutputStream::SetVolume(" << volume << ")";
   DCHECK(thread_checker_.CalledOnValidThread());
+
+  double volume_override = 0;
+  if (audio_manager_->HasOutputVolumeOverride(&volume_override)) {
+    volume = volume_override;
+  }
+
   float volume_float = static_cast<float>(volume);
   if (volume_float < 0.0f || volume_float > 1.0f) {
     return;

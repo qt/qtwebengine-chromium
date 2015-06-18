@@ -1,5 +1,7 @@
 include_rules = [
   "+cc",
   "-cc/blink",
+  "+components/surfaces",
   "+gpu/command_buffer/client",
+  "+mojo/gpu",
 ]

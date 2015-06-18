@@ -14,7 +14,9 @@ using std::min;
 
 namespace net {
 
-#define ENDPOINT (session()->is_server() ? "Server: " : " Client: ")
+#define ENDPOINT                                                               \
+  (session()->perspective() == Perspective::IS_SERVER ? "Server: " : "Client:" \
+                                                                     " ")
 
 namespace {
 
@@ -26,14 +28,11 @@ QuicPriority kDefaultPriority = 3;
 
 }  // namespace
 
-QuicDataStream::QuicDataStream(QuicStreamId id,
-                               QuicSession* session)
+QuicDataStream::QuicDataStream(QuicStreamId id, QuicSession* session)
     : ReliableQuicStream(id, session),
       visitor_(nullptr),
       headers_decompressed_(false),
-      priority_(kDefaultPriority),
-      decompression_failed_(false),
-      priority_parsed_(false) {
+      priority_(kDefaultPriority) {
   DCHECK_NE(kCryptoStreamId, id);
   // Don't receive any callbacks from the sequencer until headers
   // are complete.
@@ -48,7 +47,7 @@ size_t QuicDataStream::WriteHeaders(
     bool fin,
     QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
   size_t bytes_written = session()->WriteHeaders(
-      id(), header_block, fin, ack_notifier_delegate);
+      id(), header_block, fin, priority_, ack_notifier_delegate);
   if (fin) {
     // TODO(rch): Add test to ensure fin_sent_ is set whenever a fin is sent.
     set_fin_sent(true);
@@ -124,14 +123,6 @@ uint32 QuicDataStream::ProcessRawData(const char* data, uint32 data_len) {
   return ProcessData(data, data_len);
 }
 
-const IPEndPoint& QuicDataStream::GetPeerAddress() {
-  return session()->peer_address();
-}
-
-bool QuicDataStream::GetSSLInfo(SSLInfo* ssl_info) {
-  return session()->GetSSLInfo(ssl_info);
-}
-
 uint32 QuicDataStream::ProcessHeaderData() {
   if (decompressed_headers_.empty()) {
     return 0;
@@ -153,7 +144,7 @@ void QuicDataStream::OnStreamHeaders(StringPiece headers_data) {
 }
 
 void QuicDataStream::OnStreamHeadersPriority(QuicPriority priority) {
-  DCHECK(session()->connection()->is_server());
+  DCHECK_EQ(Perspective::IS_SERVER, session()->connection()->perspective());
   set_priority(priority);
 }
 

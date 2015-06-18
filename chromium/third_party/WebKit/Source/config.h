@@ -87,8 +87,6 @@
 
 #if OS(ANDROID)
 #define WTF_USE_LOW_QUALITY_IMAGE_INTERPOLATION 1
-#define WTF_USE_LOW_QUALITY_IMAGE_NO_JPEG_DITHERING 1
-#define WTF_USE_LOW_QUALITY_IMAGE_NO_JPEG_FANCY_UPSAMPLING 1
 #else
 #define WTF_USE_ICCJPEG 1
 #define WTF_USE_QCMSLIB 1
@@ -96,7 +94,6 @@
 
 #if OS(MACOSX)
 #define WTF_USE_CF 1
-#define WTF_USE_RUBBER_BANDING 1
 #endif /* OS(MACOSX) */
 
 #if OS(POSIX)
@@ -137,4 +134,11 @@
 #include <ciso646>
 #include <cstddef>
 
+#endif
+
+// Adopted from base/compiler_specific.h where you can find a detailed explanation.
+#if COMPILER(MSVC)
+#define STATIC_CONST_MEMBER_DEFINITION __declspec(selectany)
+#else
+#define STATIC_CONST_MEMBER_DEFINITION
 #endif

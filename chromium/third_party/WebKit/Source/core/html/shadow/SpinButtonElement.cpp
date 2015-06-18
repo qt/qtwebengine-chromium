@@ -32,10 +32,10 @@
 #include "core/events/WheelEvent.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/layout/LayoutBox.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderBox.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
 namespace blink {
@@ -74,7 +74,7 @@ void SpinButtonElement::defaultEventHandler(Event* event)
         return;
     }
 
-    RenderBox* box = renderBox();
+    LayoutBox* box = layoutBox();
     if (!box) {
         if (!event->defaultHandled())
             HTMLDivElement::defaultEventHandler(event);
@@ -88,16 +88,16 @@ void SpinButtonElement::defaultEventHandler(Event* event)
     }
 
     MouseEvent* mouseEvent = toMouseEvent(event);
-    IntPoint local = roundedIntPoint(box->absoluteToLocal(mouseEvent->absoluteLocation(), UseTransforms));
+    IntPoint local = roundedIntPoint(box->absoluteToLocal(FloatPoint(mouseEvent->absoluteLocation()), UseTransforms));
     if (mouseEvent->type() == EventTypeNames::mousedown && mouseEvent->button() == LeftButton) {
         if (box->pixelSnappedBorderBoxRect().contains(local)) {
             // The following functions of HTMLInputElement may run JavaScript
             // code which detaches this shadow node. We need to take a reference
-            // and check renderer() after such function calls.
+            // and check layoutObject() after such function calls.
             RefPtrWillBeRawPtr<Node> protector(this);
             if (m_spinButtonOwner)
                 m_spinButtonOwner->focusAndSelectSpinButtonOwner();
-            if (renderer()) {
+            if (layoutObject()) {
                 if (m_upDownState != Indeterminate) {
                     // A JavaScript event handler called in doStepAction() below
                     // might change the element state and we might need to
@@ -123,9 +123,9 @@ void SpinButtonElement::defaultEventHandler(Event* event)
                 }
             }
             UpDownState oldUpDownState = m_upDownState;
-            m_upDownState = (local.y() < box->height() / 2) ? Up : Down;
+            m_upDownState = (local.y() < box->size().height() / 2) ? Up : Down;
             if (m_upDownState != oldUpDownState)
-                renderer()->setShouldDoFullPaintInvalidation();
+                layoutObject()->setShouldDoFullPaintInvalidation();
         } else {
             releaseCapture();
             m_upDownState = Indeterminate;
@@ -144,7 +144,7 @@ void SpinButtonElement::willOpenPopup()
 
 void SpinButtonElement::forwardEvent(Event* event)
 {
-    if (!renderBox())
+    if (!layoutBox())
         return;
 
     if (!event->hasInterface(EventNames::WheelEvent))
@@ -162,7 +162,7 @@ void SpinButtonElement::forwardEvent(Event* event)
 
 bool SpinButtonElement::willRespondToMouseMoveEvents()
 {
-    if (renderBox() && shouldRespondToMouseEvents())
+    if (layoutBox() && shouldRespondToMouseEvents())
         return true;
 
     return HTMLDivElement::willRespondToMouseMoveEvents();
@@ -170,7 +170,7 @@ bool SpinButtonElement::willRespondToMouseMoveEvents()
 
 bool SpinButtonElement::willRespondToMouseClickEvents()
 {
-    if (renderBox() && shouldRespondToMouseEvents())
+    if (layoutBox() && shouldRespondToMouseEvents())
         return true;
 
     return HTMLDivElement::willRespondToMouseClickEvents();
@@ -257,7 +257,7 @@ bool SpinButtonElement::shouldRespondToMouseEvents()
     return !m_spinButtonOwner || m_spinButtonOwner->shouldSpinButtonRespondToMouseEvents();
 }
 
-void SpinButtonElement::trace(Visitor* visitor)
+DEFINE_TRACE(SpinButtonElement)
 {
     visitor->trace(m_spinButtonOwner);
     HTMLDivElement::trace(visitor);

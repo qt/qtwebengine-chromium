@@ -45,7 +45,7 @@ public:
     virtual bool isLoaded() const { return true; }
     virtual bool isValid() const { return true; }
 
-    virtual FontResource* resource() { return 0; }
+    virtual FontResource* resource() { return nullptr; }
     void setFontFace(CSSFontFace* face) { m_face = face; }
 
     PassRefPtr<SimpleFontData> getFontData(const FontDescription&);
@@ -56,13 +56,13 @@ public:
     // For UMA reporting
     virtual bool hadBlankText() { return false; }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     CSSFontFaceSource();
     virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) = 0;
 
-    typedef HashMap<unsigned, RefPtr<SimpleFontData> > FontDataTable; // The hash key is composed of size synthetic styles.
+    typedef HashMap<unsigned, RefPtr<SimpleFontData>> FontDataTable; // The hash key is composed of size synthetic styles.
 
     RawPtrWillBeMember<CSSFontFace> m_face; // Our owning font face.
     FontDataTable m_fontDataTable;

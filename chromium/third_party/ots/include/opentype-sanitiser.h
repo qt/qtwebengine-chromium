@@ -24,10 +24,13 @@ typedef unsigned __int64 uint64_t;
 #include <stdint.h>
 #endif
 
-#include <algorithm>  // for std::min
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+
+#define OTS_TAG(c1,c2,c3,c4) ((uint32_t)((((uint8_t)(c1))<<24)|(((uint8_t)(c2))<<16)|(((uint8_t)(c3))<<8)|((uint8_t)(c4))))
+#define OTS_UNTAG(tag)       ((uint8_t)((tag)>>24)), ((uint8_t)((tag)>>16)), ((uint8_t)((tag)>>8)), ((uint8_t)(tag))
 
 namespace ots {
 
@@ -37,9 +40,7 @@ namespace ots {
 // -----------------------------------------------------------------------------
 class OTSStream {
  public:
-  OTSStream() {
-    ResetChecksum();
-  }
+  OTSStream() : chksum_(0) {}
 
   virtual ~OTSStream() {}
 
@@ -51,35 +52,32 @@ class OTSStream {
 
     const size_t orig_length = length;
     size_t offset = 0;
-    if (chksum_buffer_offset_) {
-      const size_t l =
-        std::min(length, static_cast<size_t>(4) - chksum_buffer_offset_);
-      std::memcpy(chksum_buffer_ + chksum_buffer_offset_, data, l);
-      chksum_buffer_offset_ += l;
-      offset += l;
-      length -= l;
-    }
 
-    if (chksum_buffer_offset_ == 4) {
-      uint32_t chksum;
-      std::memcpy(&chksum, chksum_buffer_, 4);
-      chksum_ += ntohl(chksum);
-      chksum_buffer_offset_ = 0;
+    size_t chksum_offset = Tell() & 3;
+    if (chksum_offset) {
+      const size_t l = std::min(length, static_cast<size_t>(4) - chksum_offset);
+      uint32_t tmp = 0;
+      std::memcpy(reinterpret_cast<uint8_t *>(&tmp) + chksum_offset, data, l);
+      chksum_ += ntohl(tmp);
+      length -= l;
+      offset += l;
     }
 
     while (length >= 4) {
-      chksum_ += ntohl(*reinterpret_cast<const uint32_t*>(
-          reinterpret_cast<const uint8_t*>(data) + offset));
+      uint32_t tmp;
+      std::memcpy(&tmp, reinterpret_cast<const uint8_t *>(data) + offset,
+        sizeof(uint32_t));
+      chksum_ += ntohl(tmp);
       length -= 4;
       offset += 4;
     }
 
     if (length) {
-      if (chksum_buffer_offset_ != 0) return false;  // not reached
       if (length > 4) return false;  // not reached
-      std::memcpy(chksum_buffer_,
-             reinterpret_cast<const uint8_t*>(data) + offset, length);
-      chksum_buffer_offset_ = length;
+      uint32_t tmp = 0;
+      std::memcpy(&tmp,
+                  reinterpret_cast<const uint8_t*>(data) + offset, length);
+      chksum_ += ntohl(tmp);
     }
 
     return WriteRaw(data, orig_length);
@@ -140,63 +138,56 @@ class OTSStream {
   }
 
   void ResetChecksum() {
+    assert((Tell() & 3) == 0);
     chksum_ = 0;
-    chksum_buffer_offset_ = 0;
   }
 
   uint32_t chksum() const {
-    assert(chksum_buffer_offset_ == 0);
     return chksum_;
-  }
-
-  struct ChecksumState {
-    uint32_t chksum;
-    uint8_t chksum_buffer[4];
-    unsigned chksum_buffer_offset;
-  };
-
-  ChecksumState SaveChecksumState() const {
-    ChecksumState s;
-    s.chksum = chksum_;
-    s.chksum_buffer_offset = chksum_buffer_offset_;
-    std::memcpy(s.chksum_buffer, chksum_buffer_, 4);
-
-    return s;
-  }
-
-  void RestoreChecksum(const ChecksumState &s) {
-    assert(chksum_buffer_offset_ == 0);
-    chksum_ += s.chksum;
-    chksum_buffer_offset_ = s.chksum_buffer_offset;
-    std::memcpy(chksum_buffer_, s.chksum_buffer, 4);
   }
 
  protected:
   uint32_t chksum_;
-  uint8_t chksum_buffer_[4];
-  unsigned chksum_buffer_offset_;
 };
 
-// -----------------------------------------------------------------------------
-// Process a given OpenType file and write out a sanitised version
-//   output: a pointer to an object implementing the OTSStream interface. The
-//     sanitisied output will be written to this. In the even of a failure,
-//     partial output may have been written.
-//   input: the OpenType file
-//   length: the size, in bytes, of |input|
-// -----------------------------------------------------------------------------
-bool Process(OTSStream *output, const uint8_t *input, size_t length);
+#ifdef __GCC__
+#define MSGFUNC_FMT_ATTR __attribute__((format(printf, 2, 3)))
+#else
+#define MSGFUNC_FMT_ATTR
+#endif
 
-// Force to disable debug output even when the library is compiled with
-// -DOTS_DEBUG.
-void DisableDebugOutput();
+enum TableAction {
+  TABLE_ACTION_DEFAULT,  // Use OTS's default action for that table
+  TABLE_ACTION_SANITIZE, // Sanitize the table, potentially droping it
+  TABLE_ACTION_PASSTHRU, // Serialize the table unchanged
+  TABLE_ACTION_DROP      // Drop the table
+};
 
-// Enable WOFF2 support(experimental).
-// TODO(bashi): Remove WOFF2 from OTS.
-void EnableWOFF2();
+class OTSContext {
+  public:
+    OTSContext() {}
+    virtual ~OTSContext() {}
 
-// Force to disable dropping CBDT/CBLC tables.
-void DoNotDropColorBitmapTables();
+    // Process a given OpenType file and write out a sanitised version
+    //   output: a pointer to an object implementing the OTSStream interface. The
+    //     sanitisied output will be written to this. In the even of a failure,
+    //     partial output may have been written.
+    //   input: the OpenType file
+    //   length: the size, in bytes, of |input|
+    bool Process(OTSStream *output, const uint8_t *input, size_t length);
+
+    // This function will be called when OTS is reporting an error.
+    //   level: the severity of the generated message:
+    //     0: error messages in case OTS fails to sanitize the font.
+    //     1: warning messages about issue OTS fixed in the sanitized font.
+    virtual void Message(int level, const char *format, ...) MSGFUNC_FMT_ATTR {}
+
+    // This function will be called when OTS needs to decide what to do for a
+    // font table.
+    //   tag: table tag as an integer in big-endian byte order, independent of
+    //   platform endianness
+    virtual TableAction GetTableAction(uint32_t tag) { return ots::TABLE_ACTION_DEFAULT; }
+};
 
 }  // namespace ots
 

@@ -27,7 +27,7 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace content {
 // static
@@ -258,12 +258,11 @@ void RendererPpapiHostImpl::CreateBrowserResourceHosts(
   }
 }
 
-GURL RendererPpapiHostImpl::GetDocumentURL(PP_Instance instance) const {
-  PepperPluginInstanceImpl* instance_object = GetAndValidateInstance(instance);
-  if (!instance_object)
+GURL RendererPpapiHostImpl::GetDocumentURL(PP_Instance pp_instance) const {
+  PepperPluginInstanceImpl* instance = GetAndValidateInstance(pp_instance);
+  if (!instance)
     return GURL();
-
-  return instance_object->container()->element().document().url();
+  return instance->document_url();
 }
 
 PepperPluginInstanceImpl* RendererPpapiHostImpl::GetAndValidateInstance(

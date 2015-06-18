@@ -29,24 +29,40 @@
 #include "config.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/OriginAccessEntry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 #include "wtf/MainThread.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/Threading.h"
 #include "wtf/text/StringHash.h"
 
 namespace blink {
 
-typedef Vector<OriginAccessEntry> OriginAccessWhiteList;
-typedef HashMap<String, OwnPtr<OriginAccessWhiteList> > OriginAccessMap;
+using OriginAccessWhiteList = Vector<OriginAccessEntry>;
+using OriginAccessMap = HashMap<String, OwnPtr<OriginAccessWhiteList>>;
+using OriginSet = HashSet<String>;
 
 static OriginAccessMap& originAccessMap()
 {
     DEFINE_STATIC_LOCAL(OriginAccessMap, originAccessMap, ());
     return originAccessMap;
+}
+
+static OriginSet& trustworthyOriginSet()
+{
+    DEFINE_STATIC_LOCAL(OriginSet, trustworthyOriginSet, ());
+    return trustworthyOriginSet;
+}
+
+void SecurityPolicy::init()
+{
+    originAccessMap();
+    trustworthyOriginSet();
 }
 
 bool SecurityPolicy::shouldHideReferrer(const KURL& url, const String& referrer)
@@ -73,6 +89,9 @@ Referrer SecurityPolicy::generateReferrer(ReferrerPolicy referrerPolicy, const K
     if (!(protocolIs(referrer, "https") || protocolIs(referrer, "http")))
         return Referrer(String(), referrerPolicy);
 
+    if (SecurityOrigin::shouldUseInnerURL(url))
+        return Referrer(String(), referrerPolicy);
+
     switch (referrerPolicy) {
     case ReferrerPolicyNever:
         return Referrer(String(), referrerPolicy);
@@ -80,17 +99,51 @@ Referrer SecurityPolicy::generateReferrer(ReferrerPolicy referrerPolicy, const K
         return Referrer(referrer, referrerPolicy);
     case ReferrerPolicyOrigin: {
         String origin = SecurityOrigin::createFromString(referrer)->toString();
-        if (origin == "null")
-            return Referrer(String(), referrerPolicy);
         // A security origin is not a canonical URL as it lacks a path. Add /
         // to turn it into a canonical URL we can use as referrer.
         return Referrer(origin + "/", referrerPolicy);
     }
-    case ReferrerPolicyDefault:
+    case ReferrerPolicyOriginWhenCrossOrigin: {
+        RefPtr<SecurityOrigin> referrerOrigin = SecurityOrigin::createFromString(referrer);
+        RefPtr<SecurityOrigin> urlOrigin = SecurityOrigin::create(url);
+        if (!urlOrigin->isSameSchemeHostPort(referrerOrigin.get())) {
+            String origin = referrerOrigin->toString();
+            return Referrer(origin + "/", referrerPolicy);
+        }
+        break;
+    }
+    case ReferrerPolicyDefault: {
+        // If the flag is enabled, and we're dealing with a cross-origin request, strip it.
+        // Otherwise fallthrough to NoReferrerWhenDowngrade behavior.
+        RefPtr<SecurityOrigin> referrerOrigin = SecurityOrigin::createFromString(referrer);
+        RefPtr<SecurityOrigin> urlOrigin = SecurityOrigin::create(url);
+        if (RuntimeEnabledFeatures::reducedReferrerGranularityEnabled() && !urlOrigin->isSameSchemeHostPort(referrerOrigin.get())) {
+            String origin = referrerOrigin->toString();
+            return Referrer(shouldHideReferrer(url, referrer) ? String() : origin + "/", referrerPolicy);
+        }
+        break;
+    }
+    case ReferrerPolicyNoReferrerWhenDowngrade:
         break;
     }
 
     return Referrer(shouldHideReferrer(url, referrer) ? String() : referrer, referrerPolicy);
+}
+
+void SecurityPolicy::addOriginTrustworthyWhiteList(PassRefPtr<SecurityOrigin> origin)
+{
+    // Must be called before we start other threads.
+    ASSERT(WTF::isBeforeThreadCreated());
+    if (origin->isUnique())
+        return;
+    trustworthyOriginSet().add(origin->toRawString());
+}
+
+bool SecurityPolicy::isOriginWhiteListedTrustworthy(const SecurityOrigin& origin)
+{
+    if (origin.isUnique())
+        return false;
+    return trustworthyOriginSet().contains(origin.toRawString());
 }
 
 bool SecurityPolicy::isAccessWhiteListed(const SecurityOrigin* activeOrigin, const SecurityOrigin* targetOrigin)

@@ -20,11 +20,11 @@
 #include "ui/gfx/transform.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 class Value;
-};
+}
 
 namespace cc {
 
@@ -77,7 +77,7 @@ class CC_EXPORT RenderPass {
               const gfx::Transform& transform_to_root_target,
               bool has_transparent_background);
 
-  void AsValueInto(base::debug::TracedValue* dict) const;
+  void AsValueInto(base::trace_event::TracedValue* dict) const;
 
   SharedQuadState* CreateAndAppendSharedQuadState();
 

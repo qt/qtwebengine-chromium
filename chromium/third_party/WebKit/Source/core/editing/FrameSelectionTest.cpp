@@ -32,7 +32,7 @@ protected:
     HTMLDocument& document() const;
     void setSelection(const VisibleSelection&);
     FrameSelection& selection() const;
-    Text* textNode() { return m_textNode.get(); }
+    PassRefPtrWillBeRawPtr<Text> appendTextNode(const String& data);
     int layoutCount() const { return m_dummyPageHolder->frameView().layoutCount(); }
 
 private:
@@ -46,8 +46,6 @@ void FrameSelectionTest::SetUp()
     m_dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
     m_document = toHTMLDocument(&m_dummyPageHolder->document());
     ASSERT(m_document);
-    m_textNode = m_document->createTextNode("Hello, World!");
-    m_document->body()->appendChild(m_textNode.get());
 }
 
 HTMLDocument& FrameSelectionTest::document() const
@@ -65,9 +63,17 @@ FrameSelection& FrameSelectionTest::selection() const
     return m_dummyPageHolder->frame().selection();
 }
 
+PassRefPtrWillBeRawPtr<Text> FrameSelectionTest::appendTextNode(const String& data)
+{
+    RefPtrWillBeRawPtr<Text> text = document().createTextNode(data);
+    document().body()->appendChild(text);
+    return text.release();
+}
+
 TEST_F(FrameSelectionTest, SetValidSelection)
 {
-    VisibleSelection validSelection(Position(textNode(), 0), Position(textNode(), 5));
+    RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
+    VisibleSelection validSelection(Position(text, 0), Position(text, 5));
     EXPECT_FALSE(validSelection.isNone());
     setSelection(validSelection);
     EXPECT_FALSE(selection().isNone());
@@ -94,16 +100,17 @@ TEST_F(FrameSelectionTest, SetInvalidSelection)
 
 TEST_F(FrameSelectionTest, InvalidateCaretRect)
 {
-    document().view()->updateLayoutAndStyleIfNeededRecursive();
+    RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
+    document().view()->updateLayoutAndStyleForPainting();
 
-    VisibleSelection validSelection(Position(textNode(), 0), Position(textNode(), 0));
+    VisibleSelection validSelection(Position(text, 0), Position(text, 0));
     setSelection(validSelection);
     selection().setCaretRectNeedsUpdate();
     EXPECT_TRUE(selection().isCaretBoundsDirty());
     selection().invalidateCaretRect();
     EXPECT_FALSE(selection().isCaretBoundsDirty());
 
-    document().body()->removeChild(textNode());
+    document().body()->removeChild(text);
     document().updateLayoutIgnorePendingStylesheets();
     selection().setCaretRectNeedsUpdate();
     EXPECT_TRUE(selection().isCaretBoundsDirty());
@@ -113,13 +120,14 @@ TEST_F(FrameSelectionTest, InvalidateCaretRect)
 
 TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout)
 {
-    document().view()->updateLayoutAndStyleIfNeededRecursive();
+    RefPtrWillBeRawPtr<Text> text = appendTextNode("Hello, World!");
+    document().view()->updateLayoutAndStyleForPainting();
 
     document().body()->setContentEditable("true", ASSERT_NO_EXCEPTION);
     document().body()->focus();
     EXPECT_TRUE(document().body()->focused());
 
-    VisibleSelection validSelection(Position(textNode(), 0), Position(textNode(), 0));
+    VisibleSelection validSelection(Position(text, 0), Position(text, 0));
     selection().setCaretVisible(true);
     setSelection(validSelection);
     EXPECT_TRUE(selection().isCaret());
@@ -144,8 +152,7 @@ TEST_F(FrameSelectionTest, PaintCaretShouldNotLayout)
 TEST_F(FrameSelectionTest, SelectWordAroundPosition)
 {
     // "Foo Bar  Baz,"
-    RefPtrWillBeRawPtr<Text> text = document().createTextNode("Foo Bar&nbsp;&nbsp;Baz,");
-    document().body()->appendChild(text);
+    RefPtrWillBeRawPtr<Text> text = appendTextNode("Foo Bar&nbsp;&nbsp;Baz,");
     // "Fo|o Bar  Baz,"
     EXPECT_TRUE(selection().selectWordAroundPosition(VisiblePosition(Position(text, 2))));
     EXPECT_EQ_SELECTED_TEXT("Foo");
@@ -159,4 +166,25 @@ TEST_F(FrameSelectionTest, SelectWordAroundPosition)
     EXPECT_EQ_SELECTED_TEXT("Baz");
 }
 
+TEST_F(FrameSelectionTest, MoveRangeSelectionTest)
+{
+    // "Foo Bar Baz,"
+    RefPtrWillBeRawPtr<Text> text = appendTextNode("Foo Bar Baz,");
+    // Itinitializes with "Foo B|a>r Baz," (| means start and > means end).
+    selection().setSelection(VisibleSelection(Position(text, 5), Position(text, 6)));
+    EXPECT_EQ_SELECTED_TEXT("a");
+
+    // "Foo B|ar B>az," with the Character granularity.
+    selection().moveRangeSelection(VisiblePosition(Position(text, 5)), VisiblePosition(Position(text, 9)), CharacterGranularity);
+    EXPECT_EQ_SELECTED_TEXT("ar B");
+    // "Foo B|ar B>az," with the Word granularity.
+    selection().moveRangeSelection(VisiblePosition(Position(text, 5)), VisiblePosition(Position(text, 9)), WordGranularity);
+    EXPECT_EQ_SELECTED_TEXT("Bar Baz");
+    // "Fo<o B|ar Baz," with the Character granularity.
+    selection().moveRangeSelection(VisiblePosition(Position(text, 5)), VisiblePosition(Position(text, 2)), CharacterGranularity);
+    EXPECT_EQ_SELECTED_TEXT("o B");
+    // "Fo<o B|ar Baz," with the Word granularity.
+    selection().moveRangeSelection(VisiblePosition(Position(text, 5)), VisiblePosition(Position(text, 2)), WordGranularity);
+    EXPECT_EQ_SELECTED_TEXT("Foo Bar");
+}
 }

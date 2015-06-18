@@ -24,7 +24,7 @@ namespace content {
 const char kNPAPITestPluginMimeType[] = "application/vnd.npapi-test";
 
 void OpenChannel(PluginProcessHost::Client* client) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Start opening the channel
   PluginServiceImpl::GetInstance()->OpenChannelToNpapiPlugin(
       0, 0, GURL(), GURL(), kNPAPITestPluginMimeType, client);
@@ -132,7 +132,7 @@ class PluginServiceTest : public ContentBrowserTest {
     return shell()->web_contents()->GetBrowserContext()->GetResourceContext();
   }
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
 #if defined(OS_MACOSX)
     base::FilePath browser_directory;
     PathService::Get(base::DIR_MODULE, &browser_directory);
@@ -181,11 +181,11 @@ class MockCanceledPluginServiceClient : public PluginProcessHost::Client {
         get_resource_context_called_(false) {
   }
 
-  virtual ~MockCanceledPluginServiceClient() {}
+  ~MockCanceledPluginServiceClient() override {}
 
   // Client implementation.
   MOCK_METHOD0(ID, int());
-  virtual ResourceContext* GetResourceContext() override {
+  ResourceContext* GetResourceContext() override {
     get_resource_context_called_ = true;
     return context_;
   }
@@ -250,13 +250,13 @@ class MockCanceledBeforeSentPluginProcessHostClient
 
   // Client implementation.
   void SetPluginInfo(const WebPluginInfo& info) override {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     ASSERT_TRUE(info.mime_types.size());
     ASSERT_EQ(kNPAPITestPluginMimeType, info.mime_types[0].mime_type);
     set_plugin_info_called_ = true;
   }
   void OnFoundPluginProcessHost(PluginProcessHost* host) override {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     set_on_found_plugin_process_host_called();
     set_host(host);
     // This gets called right before we request the plugin<=>renderer channel,
@@ -327,7 +327,7 @@ class MockCanceledAfterSentPluginProcessHostClient
 
   // We override this guy again since we don't want to cancel yet.
   void OnFoundPluginProcessHost(PluginProcessHost* host) override {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     set_on_found_plugin_process_host_called();
     set_host(host);
   }

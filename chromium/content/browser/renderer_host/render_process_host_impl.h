@@ -20,7 +20,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gpu_switching_observer.h"
 
@@ -33,6 +33,10 @@ namespace gfx {
 class Size;
 }
 
+namespace gpu {
+class ValueStateMap;
+}
+
 namespace IPC {
 class ChannelMojoHost;
 }
@@ -42,12 +46,14 @@ class AudioRendererHost;
 class BrowserCdmManager;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
+class InProcessChildThreadParams;
 class MessagePortMessageFilter;
 class MojoApplicationHost;
 class NotificationMessageFilter;
 #if defined(ENABLE_WEBRTC)
 class P2PSocketDispatcherHost;
 #endif
+class PermissionServiceContext;
 class PeerConnectionTrackerHost;
 class RendererMainThread;
 class RenderWidgetHelper;
@@ -58,7 +64,7 @@ class StoragePartition;
 class StoragePartitionImpl;
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
-    const std::string& id);
+    const InProcessChildThreadParams& params);
 
 // Implements a concrete RenderProcessHost for the browser process for talking
 // to actual renderer processes (as opposed to mocks).
@@ -97,14 +103,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void RemoveRoute(int32 routing_id) override;
   void AddObserver(RenderProcessHostObserver* observer) override;
   void RemoveObserver(RenderProcessHostObserver* observer) override;
-  void ReceivedBadMessage() override;
+  void ShutdownForBadMessage() override;
   void WidgetRestored() override;
   void WidgetHidden() override;
   int VisibleWidgetCount() const override;
   bool IsIsolatedGuest() const override;
   StoragePartition* GetStoragePartition() const override;
+  bool Shutdown(int exit_code, bool wait) override;
   bool FastShutdownIfPossible() override;
-  void DumpHandles() override;
   base::ProcessHandle GetHandle() const override;
   BrowserContext* GetBrowserContext() const override;
   bool InSameStoragePartition(StoragePartition* partition) const override;
@@ -135,9 +141,18 @@ class CONTENT_EXPORT RenderProcessHostImpl
       const WebRtcRtpPacketCallback& packet_callback) override;
 #endif
   void ResumeDeferredNavigation(const GlobalRequestID& request_id) override;
-  void NotifyTimezoneChange() override;
+  void NotifyTimezoneChange(const std::string& timezone) override;
   ServiceRegistry* GetServiceRegistry() override;
   const base::TimeTicks& GetInitTimeForNavigationMetrics() const override;
+  bool SubscribeUniformEnabled() const override;
+  void OnAddSubscription(unsigned int target) override;
+  void OnRemoveSubscription(unsigned int target) override;
+  void SendUpdateValueState(
+      unsigned int target, const gpu::ValueState& state) override;
+#if defined(ENABLE_BROWSER_CDMS)
+  media::BrowserCdm* GetBrowserCdm(int render_frame_id,
+                                   int cdm_id) const override;
+#endif
 
   // IPC::Sender via RenderProcessHost.
   bool Send(IPC::Message* msg) override;
@@ -150,6 +165,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // ChildProcessLauncher::Client implementation.
   void OnProcessLaunched() override;
+  void OnProcessLaunchFailed() override;
 
   scoped_refptr<AudioRendererHost> audio_renderer_host() const;
 
@@ -158,10 +174,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void mark_child_process_activity_time() {
     child_process_activity_time_ = base::TimeTicks::Now();
   }
-
-  // Returns the current number of active views in this process.  Excludes
-  // any RenderViewHosts that are swapped out.
-  int GetActiveViewCount();
 
   // Start and end frame subscription for a specific renderer.
   // This API only supports subscription to accelerated composited frames.
@@ -259,6 +271,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // immediately after receiving response headers.
   void ResumeResponseDeferredAtStart(const GlobalRequestID& request_id);
 
+  void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const override;
+
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread (see
   // browser_process.h)
@@ -286,8 +301,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
  private:
   friend class VisitRelayingRenderProcessHost;
+  friend class ChildProcessLauncherBrowserTest_ChildSpawnFail_Test;
 
-  bool ShouldUseMojoChannel() const;
   scoped_ptr<IPC::ChannelProxy> CreateChannelProxy(
       const std::string& channel_id);
 
@@ -299,7 +314,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Control message handlers.
   void OnShutdownRequest();
-  void OnDumpHandlesDone();
   void SuddenTerminationChanged(bool enabled);
   void OnUserMetricsRecordAction(const std::string& action);
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);
@@ -320,7 +334,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SetBackgrounded(bool backgrounded);
 
   // Handle termination of our process.
-  void ProcessDied(bool already_dead);
+  void ProcessDied(bool already_dead, RendererClosedDetails* known_details);
 
   // GpuSwitchingObserver implementation.
   void OnGpuSwitched() override;
@@ -464,6 +478,27 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Records the time when the process starts surviving for workers for UMA.
   base::TimeTicks survive_for_worker_start_time_;
+
+  // Records the maximum # of workers simultaneously hosted in this process
+  // for UMA.
+  int max_worker_count_;
+
+  // Context shared for each PermissionService instance created for this RPH.
+  scoped_ptr<PermissionServiceContext> permission_service_context_;
+
+  // This is a set of all subscription targets valuebuffers in the GPU process
+  // are currently subscribed too. Used to prevent sending unnecessary
+  // ValueState updates.
+  typedef base::hash_set<unsigned int> SubscriptionSet;
+  SubscriptionSet subscription_set_;
+
+  // Maintains ValueStates which are not currently subscribed too so we can
+  // pass them to the GpuService if a Valuebuffer ever subscribes to the
+  // respective subscription target
+  scoped_refptr<gpu::ValueStateMap> pending_valuebuffer_state_;
+
+  // Whether or not the CHROMIUM_subscribe_uniform WebGL extension is enabled
+  bool subscribe_uniform_enabled_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

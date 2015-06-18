@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_COMMON_APPCACHE_APPCACHE_INTERFACES_H_
-#define CONTENT_COMMON_APPCACHE_APPCACHE_INTERFACES_H_
+#ifndef CONTENT_COMMON_APPCACHE_INTERFACES_H_
+#define CONTENT_COMMON_APPCACHE_INTERFACES_H_
 
 #include <string>
 
@@ -163,15 +163,10 @@ class CONTENT_EXPORT AppCacheBackend {
 };
 
 // Useful string constants.
-// Note: These are also defined elsewhere in the chrome code base in
-// url_contants.h .cc, however the content library can not have
-// any dependencies on the chrome library, so we can't use them in here.
-CONTENT_EXPORT extern const char kHttpScheme[];
-CONTENT_EXPORT extern const char kHttpsScheme[];
 CONTENT_EXPORT extern const char kHttpGETMethod[];
 CONTENT_EXPORT extern const char kHttpHEADMethod[];
 
-// CommandLine flag to turn this experimental feature on.
+// base::CommandLine flag to turn this experimental feature on.
 CONTENT_EXPORT extern const char kEnableExecutableHandlers[];
 
 CONTENT_EXPORT bool IsSchemeSupportedForAppCache(const GURL& url);
@@ -185,4 +180,4 @@ CONTENT_EXPORT extern const base::FilePath::CharType
 
 }  // namespace
 
-#endif  // CONTENT_COMMON_APPCACHE_APPCACHE_INTERFACES_H_
+#endif  // CONTENT_COMMON_APPCACHE_INTERFACES_H_

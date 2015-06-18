@@ -31,13 +31,13 @@
 #ifndef DataObject_h
 #define DataObject_h
 
+#include "core/CoreExport.h"
 #include "core/clipboard/DataObjectItem.h"
 #include "platform/PasteMode.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/ListHashSet.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
+#include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
@@ -46,29 +46,29 @@ namespace blink {
 
 class KURL;
 class SharedBuffer;
+class WebDragData;
 
 // A data object for holding data that would be in a clipboard or moved
 // during a drag-n-drop operation. This is the data that WebCore is aware
 // of and is not specific to a platform.
-class DataObject : public RefCountedWillBeGarbageCollectedFinalized<DataObject>, public WillBeHeapSupplementable<DataObject> {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DataObject);
+class CORE_EXPORT DataObject : public GarbageCollectedFinalized<DataObject>, public HeapSupplementable<DataObject> {
+    USING_GARBAGE_COLLECTED_MIXIN(DataObject);
 public:
-    static PassRefPtrWillBeRawPtr<DataObject> createFromPasteboard(PasteMode);
-    static PassRefPtrWillBeRawPtr<DataObject> create();
-
-    PassRefPtrWillBeRawPtr<DataObject> copy() const;
+    static DataObject* createFromPasteboard(PasteMode);
+    static DataObject* create();
+    static DataObject* create(WebDragData);
 
     virtual ~DataObject();
 
     // DataTransferItemList support.
     size_t length() const;
-    PassRefPtrWillBeRawPtr<DataObjectItem> item(unsigned long index);
+    DataObjectItem* item(unsigned long index);
     // FIXME: Implement V8DataTransferItemList::indexedPropertyDeleter to get this called.
     void deleteItem(unsigned long index);
     void clearAll();
     // Returns null if an item already exists with the provided type.
-    PassRefPtrWillBeRawPtr<DataObjectItem> add(const String& data, const String& type);
-    PassRefPtrWillBeRawPtr<DataObjectItem> add(File*);
+    DataObjectItem* add(const String& data, const String& type);
+    DataObjectItem* add(File*);
 
     // WebCore helpers.
     void clearData(const String& type);
@@ -94,23 +94,24 @@ public:
     // Used to handle files (images) being dragged out.
     void addSharedBuffer(const String& name, PassRefPtr<SharedBuffer>);
 
-    int modifierKeyState() const { return m_modifierKeyState; }
-    void setModifierKeyState(int modifierKeyState) { m_modifierKeyState = modifierKeyState; }
+    int modifiers() const { return m_modifiers; }
+    void setModifiers(int modifiers) { m_modifiers = modifiers; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
+
+    WebDragData toWebDragData();
 
 private:
     DataObject();
-    explicit DataObject(const DataObject&);
 
-    PassRefPtrWillBeRawPtr<DataObjectItem> findStringItem(const String& type) const;
-    bool internalAddStringItem(PassRefPtrWillBeRawPtr<DataObjectItem>);
-    void internalAddFileItem(PassRefPtrWillBeRawPtr<DataObjectItem>);
+    DataObjectItem* findStringItem(const String& type) const;
+    bool internalAddStringItem(DataObjectItem*);
+    void internalAddFileItem(DataObjectItem*);
 
-    WillBeHeapVector<RefPtrWillBeMember<DataObjectItem> > m_itemList;
+    HeapVector<Member<DataObjectItem>> m_itemList;
 
-    // State of Shift/Ctrl/Alt/Meta keys.
-    int m_modifierKeyState;
+    // State of Shift/Ctrl/Alt/Meta keys and Left/Right/Middle mouse buttons
+    int m_modifiers;
     String m_filesystemId;
 };
 

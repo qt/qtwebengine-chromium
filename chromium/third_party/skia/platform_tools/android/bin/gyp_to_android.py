@@ -10,6 +10,7 @@ Script for generating the Android framework's version of Skia from gyp
 files.
 """
 
+import argparse
 import os
 import shutil
 import sys
@@ -35,7 +36,8 @@ import gyp_gen.vars_dict_lib as vars_dict_lib
 GYP_FOLDER = 'gyp'
 
 
-def generate_var_dict(target_dir, target_file, skia_arch_type, have_neon):
+def generate_var_dict(target_dir, target_file, skia_arch_type, have_neon,
+                      gyp_source_dir):
   """Create a VarsDict for a particular arch type.
 
   Each paramater is passed directly to android_framework_gyp.main().
@@ -45,18 +47,20 @@ def generate_var_dict(target_dir, target_file, skia_arch_type, have_neon):
     target_file: Target gyp file.
     skia_arch_type: Target architecture.
     have_neon: Whether the target should build for neon.
+    gyp_source_dir: Directory for gyp source.
   Returns:
     A VarsDict containing the variable definitions determined by gyp.
   """
   result_file = android_framework_gyp.main(target_dir, target_file,
-                                           skia_arch_type, have_neon)
+                                           skia_arch_type, have_neon,
+                                           gyp_source_dir)
   var_dict = vars_dict_lib.VarsDict()
   gypd_parser.parse_gypd(var_dict, result_file, '.')
   android_framework_gyp.clean_gypd_files(target_dir)
   print '.',
   return var_dict
 
-def main(target_dir=None, require_sk_user_config=False):
+def main(target_dir=None, require_sk_user_config=False, gyp_source_dir=None):
   """Create Android.mk for the Android framework's external/skia.
 
   Builds Android.mk using Skia's gyp files.
@@ -66,6 +70,7 @@ def main(target_dir=None, require_sk_user_config=False):
       will be placed in skia's root directory.
     require_sk_user_config: If True, raise an AssertionError if
       SkUserConfig.h does not exist.
+    gyp_source_dir: Source directory for gyp.
   """
   # Create a temporary folder to hold gyp and gypd files. Create it in SKIA_DIR
   # so that it is a sibling of gyp/, so the relationships between gyp files and
@@ -95,26 +100,31 @@ def main(target_dir=None, require_sk_user_config=False):
     # The default uses a non-existant archtype, to find all the general
     # variable definitions.
     default_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'other',
-                                         False)
-    arm_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'arm', False)
+                                         False, gyp_source_dir)
+    arm_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'arm', False,
+                                     gyp_source_dir)
     arm_neon_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'arm',
-                                          True)
-    x86_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'x86', False)
+                                          True, gyp_source_dir)
+    x86_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'x86', False,
+                                     gyp_source_dir)
+    x86_64_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'x86_64',
+                                        False, gyp_source_dir)
 
-    mips_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'mips', False)
+    mips_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'mips', False,
+                                      gyp_source_dir)
 
     mips64_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'mips64',
-                                        False)
+                                        False, gyp_source_dir)
 
     arm64_var_dict = generate_var_dict(tmp_folder, main_gyp_file, 'arm64',
-                                       False)
+                                       False, gyp_source_dir)
 
     # Compute the intersection of all targets. All the files in the intersection
     # should be part of the makefile always. Each dict will now contain trimmed
     # lists containing only variable definitions specific to that configuration.
     var_dict_list = [default_var_dict, arm_var_dict, arm_neon_var_dict,
-                     x86_var_dict, mips_var_dict, mips64_var_dict,
-                     arm64_var_dict]
+                     x86_var_dict, x86_64_var_dict, mips_var_dict,
+                     mips64_var_dict, arm64_var_dict]
     common = vars_dict_lib.intersect(var_dict_list)
 
     common.LOCAL_MODULE.add('libskia')
@@ -138,16 +148,8 @@ def main(target_dir=None, require_sk_user_config=False):
                                        skia_lib_var_dict=common,
                                        local_module_name='skia_nanobench',
                                        local_module_tags=['tests'],
-                                       desired_targets=['nanobench'])
-
-    tool_makefile_writer.generate_tool(gyp_dir=tmp_folder,
-                                       target_file='gm.gyp',
-                                       skia_trunk=target_dir,
-                                       dest_dir='gm',
-                                       skia_lib_var_dict=common,
-                                       local_module_name='skia_gm',
-                                       local_module_tags=['tests'],
-                                       desired_targets=['gm'])
+                                       desired_targets=['nanobench'],
+                                       gyp_source_dir=gyp_source_dir)
 
     tool_makefile_writer.generate_tool(gyp_dir=tmp_folder,
                                        target_file='dm.gyp',
@@ -156,7 +158,8 @@ def main(target_dir=None, require_sk_user_config=False):
                                        skia_lib_var_dict=common,
                                        local_module_name='skia_dm',
                                        local_module_tags=['tests'],
-                                       desired_targets=['dm'])
+                                       desired_targets=['dm'],
+                                       gyp_source_dir=gyp_source_dir)
 
     # Now that the defines have been written to SkUserConfig and they've been
     # used to skip adding them to the tools makefiles, they are not needed in
@@ -177,8 +180,7 @@ def main(target_dir=None, require_sk_user_config=False):
         arm_neon_var_dict, 'arm', 'ARCH_ARM_HAVE_NEON'))
     deviations_from_common.append(makefile_writer.VarsDictData(x86_var_dict,
                                                                'x86'))
-    # Currently, x86_64 is identical to x86
-    deviations_from_common.append(makefile_writer.VarsDictData(x86_var_dict,
+    deviations_from_common.append(makefile_writer.VarsDictData(x86_64_var_dict,
                                                                'x86_64'))
 
     deviations_from_common.append(makefile_writer.VarsDictData(mips_var_dict,
@@ -197,4 +199,9 @@ def main(target_dir=None, require_sk_user_config=False):
     shutil.rmtree(tmp_folder)
 
 if __name__ == '__main__':
-  main()
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--gyp_source_dir', help='Source of gyp program. '
+                      'e.g. <path_to_skia>/third_party/externals/gyp')
+  args = parser.parse_args()
+
+  main(gyp_source_dir=args.gyp_source_dir)

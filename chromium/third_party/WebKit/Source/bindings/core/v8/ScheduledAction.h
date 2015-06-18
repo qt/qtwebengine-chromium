@@ -35,6 +35,7 @@
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/V8PersistentValueVector.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include <v8.h>
 
@@ -44,19 +45,24 @@ class LocalFrame;
 class ExecutionContext;
 class WorkerGlobalScope;
 
-class ScheduledAction {
+class ScheduledAction final : public NoBaseWillBeGarbageCollectedFinalized<ScheduledAction> {
     WTF_MAKE_NONCOPYABLE(ScheduledAction);
 public:
-    ScheduledAction(ScriptState*, v8::Handle<v8::Function>, int argc, v8::Handle<v8::Value> argv[], v8::Isolate*);
-    ScheduledAction(ScriptState*, const String&, const KURL&, v8::Isolate*);
+    static PassOwnPtrWillBeRawPtr<ScheduledAction> create(ScriptState*, const ScriptValue& handler, const Vector<ScriptValue>& arguments);
+    static PassOwnPtrWillBeRawPtr<ScheduledAction> create(ScriptState*, const String& handler);
+
     ~ScheduledAction();
+    DECLARE_TRACE();
 
     void execute(ExecutionContext*);
 
 private:
+    ScheduledAction(ScriptState*, const ScriptValue& handler, const Vector<ScriptValue>& arguments);
+    ScheduledAction(ScriptState*, const String& handler);
+
     void execute(LocalFrame*);
     void execute(WorkerGlobalScope*);
-    void createLocalHandlesForArgs(Vector<v8::Handle<v8::Value> >* handles);
+    void createLocalHandlesForArgs(Vector<v8::Local<v8::Value>>* handles);
 
     ScriptStateProtectingContext m_scriptState;
     ScopedPersistent<v8::Function> m_function;

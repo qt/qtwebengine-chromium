@@ -28,6 +28,7 @@
 #define NET_BASE_FILE_STREAM_CONTEXT_H_
 
 #include "base/files/file.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/move.h"
 #include "base/task_runner.h"
@@ -60,7 +61,7 @@ class FileStream::Context {
   explicit Context(const scoped_refptr<base::TaskRunner>& task_runner);
   Context(base::File file, const scoped_refptr<base::TaskRunner>& task_runner);
 #if defined(OS_WIN)
-  virtual ~Context();
+  ~Context() override;
 #elif defined(OS_POSIX)
   ~Context();
 #endif
@@ -100,11 +101,11 @@ class FileStream::Context {
  private:
   struct IOResult {
     IOResult();
-    IOResult(int64 result, int os_error);
-    static IOResult FromOSError(int64 os_error);
+    IOResult(int64 result, logging::SystemErrorCode os_error);
+    static IOResult FromOSError(logging::SystemErrorCode os_error);
 
     int64 result;
-    int os_error;  // Set only when result < 0.
+    logging::SystemErrorCode os_error;  // Set only when result < 0.
   };
 
   struct OpenResult {
@@ -156,9 +157,49 @@ class FileStream::Context {
   void IOCompletionIsPending(const CompletionCallback& callback, IOBuffer* buf);
 
   // Implementation of MessageLoopForIO::IOHandler.
-  virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
-                             DWORD bytes_read,
-                             DWORD error) override;
+  void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                     DWORD bytes_read,
+                     DWORD error) override;
+
+  // Invokes the user callback.
+  void InvokeUserCallback();
+
+  // Deletes an orphaned context.
+  void DeleteOrphanedContext();
+
+  // The ReadFile call on Windows can execute synchonously at times.
+  // http://support.microsoft.com/kb/156932. This ends up blocking the calling
+  // thread which is undesirable. To avoid this we execute the ReadFile call
+  // on a worker thread.
+  // The |context| parameter is a pointer to the current Context instance. It
+  // is safe to pass this as is to the pool as the Context instance should
+  // remain valid until the pending Read operation completes.
+  // The |file| parameter is the handle to the file being read.
+  // The |buf| parameter is the buffer where we want the ReadFile to read the
+  // data into.
+  // The |buf_len| parameter contains the number of bytes to be read.
+  // The |overlapped| parameter is a pointer to the OVERLAPPED structure being
+  // used.
+  // The |origin_thread_loop| is a MessageLoopProxy instance used to post tasks
+  // back to the originating thread.
+  static void ReadAsync(
+      FileStream::Context* context,
+      HANDLE file,
+      scoped_refptr<IOBuffer> buf,
+      int buf_len,
+      OVERLAPPED* overlapped,
+      scoped_refptr<base::MessageLoopProxy> origin_thread_loop);
+
+  // This callback executes on the main calling thread. It informs the caller
+  // about the result of the ReadFile call.
+  // The |read_file_ret| parameter contains the return value of the ReadFile
+  // call.
+  // The |bytes_read| contains the number of bytes read from the file, if
+  // ReadFile succeeds.
+  // The |os_error| parameter contains the value of the last error returned by
+  // the ReadFile API.
+  void ReadAsyncResult(BOOL read_file_ret, DWORD bytes_read, DWORD os_error);
+
 #elif defined(OS_POSIX)
   // ReadFileImpl() is a simple wrapper around read() that handles EINTR
   // signals and calls RecordAndMapError() to map errno to net error codes.
@@ -179,6 +220,18 @@ class FileStream::Context {
   base::MessageLoopForIO::IOContext io_context_;
   CompletionCallback callback_;
   scoped_refptr<IOBuffer> in_flight_buf_;
+  // This flag is set to true when we receive a Read request which is queued to
+  // the thread pool.
+  bool async_read_initiated_;
+  // This flag is set to true when we receive a notification ReadAsyncResult()
+  // on the calling thread which indicates that the asynchronous Read
+  // operation is complete.
+  bool async_read_completed_;
+  // This flag is set to true when we receive an IO completion notification for
+  // an asynchonously initiated Read operaton. OnIOComplete().
+  bool io_complete_for_read_received_;
+  // Tracks the result of the IO completion operation. Set in OnIOComplete.
+  int result_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(Context);

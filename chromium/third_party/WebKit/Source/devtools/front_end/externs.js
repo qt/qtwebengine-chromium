@@ -39,6 +39,9 @@ Object.observe = function(object, callback) {}
 /** @type {boolean} */
 Event.prototype.isMetaOrCtrlForTest;
 
+/** @type {string} */
+Event.prototype.code;
+
 /**
  * @type {number}
  */
@@ -179,6 +182,72 @@ function DOMFileSystem() {}
  */
 DOMFileSystem.prototype.root = null;
 
+var DevToolsHost = {};
+
+/** @typedef {{type:string, id:(number|undefined),
+              label:(string|undefined), enabled:(boolean|undefined), checked:(boolean|undefined),
+              subItems:(!Array.<!DevToolsHost.ContextMenuDescriptor>|undefined)}} */
+DevToolsHost.ContextMenuDescriptor;
+
+/**
+ * @return {number}
+ */
+DevToolsHost.zoomFactor = function() { }
+
+/**
+ * @param {string} origin
+ * @param {string} script
+ */
+DevToolsHost.setInjectedScriptForOrigin = function(origin, script) { }
+
+/**
+ * @param {string} text
+ */
+DevToolsHost.copyText = function(text) { }
+
+/**
+ * @return {string}
+ */
+DevToolsHost.platform = function() { }
+
+/**
+ * @param {number} x
+ * @param {number} y
+ * @param {!Array.<!DevToolsHost.ContextMenuDescriptor>} items
+ * @param {!Document} document
+ */
+DevToolsHost.showContextMenuAtPoint = function(x, y, items, document) { }
+
+/**
+ * @param {string} message
+ */
+DevToolsHost.sendMessageToBackend = function(message) { }
+
+/**
+ * @param {string} message
+ */
+DevToolsHost.sendMessageToEmbedder = function(message) { }
+
+/**
+ * @return {string}
+ */
+DevToolsHost.getSelectionBackgroundColor = function() { }
+
+/**
+ * @return {string}
+ */
+DevToolsHost.getSelectionForegroundColor = function() { }
+
+/**
+ * @return {boolean}
+ */
+DevToolsHost.isUnderTest = function() { }
+
+/**
+ * @return {boolean}
+ */
+DevToolsHost.isHostedMode = function() { }
+
 // FIXME: remove everything below.
 var FormatterWorker = {}
 var WebInspector = {}
@@ -224,9 +293,14 @@ function ExtensionDescriptor() {
 function ExtensionReloadOptions() {
     this.ignoreCache = false;
     this.injectedScript = "";
-    this.preprocessingScript = "";
     this.userAgent = "";
 }
+
+var Adb = {};
+/** @typedef {{id: string, adbBrowserChromeVersion: string, compatibleVersion: boolean, adbBrowserName: string, source: string, adbBrowserVersion: string}} */
+Adb.Browser;
+/** @typedef {{id: string, adbModel: string, adbSerial: string, browsers: !Array.<!Adb.Browser>, adbPortStatus: !Array.<number>, adbConnected: boolean}} */
+Adb.Device;
 
 /* jsdifflib API */
 var difflib = {};
@@ -298,10 +372,13 @@ CodeMirror.prototype = {
     getInputField: function(){ },
     getLine: function(line) { },
     /**
-     * @return {!{wrapClass: string}}
+     * @return {!{wrapClass: string, height: number}}
      */
     getLineHandle: function(line) { },
     getLineNumber: function(line) { },
+    /**
+     * @return {!{token: function(CodeMirror.StringStream, Object):string}}
+     */
     getMode: function() { },
     getOption: function(option) { },
     /** @param {*=} lineSep */
@@ -398,6 +475,12 @@ CodeMirror.overlayMode = function(mode1, mode2, squashSpans) { };
 CodeMirror.defineMode = function(modeName, modeConstructor) { };
 CodeMirror.startState = function(mode) { };
 
+/** @typedef {{canceled: boolean, from: !CodeMirror.Pos, to: !CodeMirror.Pos, text: string, origin: string, cancel: function()}} */
+CodeMirror.BeforeChangeObject;
+
+/** @typedef {{from: !CodeMirror.Pos, to: !CodeMirror.Pos, origin: string, text: !Array.<string>, removed: !Array.<string>}} */
+CodeMirror.ChangeObject;
+
 /** @constructor */
 CodeMirror.Pos = function(line, ch) { }
 /** @type {number} */
@@ -419,25 +502,25 @@ CodeMirror.StringStream = function(line)
     this.start = 0;
 }
 CodeMirror.StringStream.prototype = {
-    backUp: function (n) { },
-    column: function () { },
-    current: function () { },
-    eat: function (match) { },
-    eatSpace: function () { },
-    eatWhile: function (match) { },
-    eol: function () { },
-    indentation: function () { },
+    backUp: function(n) { },
+    column: function() { },
+    current: function() { },
+    eat: function(match) { },
+    eatSpace: function() { },
+    eatWhile: function(match) { },
+    eol: function() { },
+    indentation: function() { },
     /**
      * @param {!RegExp|string} pattern
      * @param {boolean=} consume
      * @param {boolean=} caseInsensitive
      */
-    match: function (pattern, consume, caseInsensitive) { },
-    next: function () { },
-    peek: function () { },
-    skipTo: function (ch) { },
-    skipToEnd: function () { },
-    sol: function () { }
+    match: function(pattern, consume, caseInsensitive) { },
+    next: function() { },
+    peek: function() { },
+    skipTo: function(ch) { },
+    skipToEnd: function() { },
+    sol: function() { }
 }
 
 /** @type {Object.<string, !Object.<string, string>>} */
@@ -449,118 +532,117 @@ CodeMirror.doc;
 /** @type {boolean} */
 window.dispatchStandaloneTestRunnerMessages;
 
-// FIXME: Remove once ES6 is supported natively by JS compiler.
-
-/** @typedef {string} */
-var symbol;
+// FIXME: This should be removed once transpilation is not required for closure compiler ES6
+/**
+ * @param {number} count
+ * @return {string}
+ */
+String.prototype.repeat = function(count) {}
 
 /**
- * @param {string} description
- * @return {symbol}
+ * @param {*} obj
+ * @return {boolean}
  */
-function Symbol(description) {}
+ArrayBuffer.isView = function(obj) { }
 
 /**
- * @interface
- * @template T
+ * @param {Array.<Object>} keyframes
+ * @param {number|Object} timing
+ * @return {Object}
  */
-var Iterator = function() { }
+Element.prototype.animate = function(keyframes, timing) { }
 
-Iterator.prototype = {
+var acorn = {
     /**
-     * @return {{done: boolean, value: (T|undefined)}}
+     * @param {string} text
+     * @param {Object.<string, boolean>} options
+     * @return {!ESTree.Node}
      */
-    next: function() { }
+    parse: function(text, options) {},
+
+    /**
+     * @param {string} text
+     * @param {Object.<string, boolean>} options
+     * @return {!Acorn.Tokenizer}
+     */
+    tokenizer: function(text, options) {},
+
+    tokTypes: {
+        _true: new Acorn.TokenType(),
+        _false: new Acorn.TokenType(),
+        num: new Acorn.TokenType(),
+        regexp: new Acorn.TokenType(),
+        string: new Acorn.TokenType(),
+        name: new Acorn.TokenType(),
+        eof: new Acorn.TokenType()
+    }
+};
+
+var Acorn = {};
+/**
+ * @constructor
+ */
+Acorn.Tokenizer = function() {
+    /** @type {function():!Acorn.Token} */
+    this.getToken;
 }
 
 /**
  * @constructor
- * @template K, V
  */
-var Map = function() { }
-
-Map.prototype = {
-    /**
-     * @param {K} key
-     * @param {V} value
-     */
-    set: function(key, value) { },
-
-    /**
-     * @param {K} key
-     * @return {boolean}
-     */
-    delete: function(key) { },
-
-    /**
-     * @return {!Iterator.<K>}
-     */
-    keys: function() { },
-
-    /**
-     * @return {!Iterator.<V>}
-     */
-    values: function() { },
-
-    /**
-     * @param {K} key
-     * @return {V}
-     */
-    get: function(key) { },
-
-    /**
-     * @param {K} key
-     * @return {boolean}
-     */
-    has: function(key) { },
-
-    clear: function() { },
-
-    /**
-     * @return {number}
-     */
-    get size() { }
+Acorn.TokenType = function() {
+    /** @type {string} */
+    this.label;
+    /** @type {(string|undefined)} */
+    this.keyword;
 }
 
-// FIXME: $jscomp.Iterable hack below should be removed once transpilation is not required for closure compiler ES6
+/**
+ * @typedef {{type: !Acorn.TokenType, value: string, start: number, end: number}}
+ */
+Acorn.Token;
+
+/**
+ * @typedef {{type: string, value: string, start: number, end: number}}
+ */
+Acorn.Comment;
+
+/**
+ * @typedef {(!Acorn.Token|!Acorn.Comment)}
+ */
+Acorn.TokenOrComment;
+
+var ESTree = {};
+
 /**
  * @constructor
- * @implements $jscomp.Iterable.<V>
- * @param {!Array.<V>|!Iterator.<V>=} iterable
- * @template V
  */
-var Set = function(iterable) { }
+ESTree.Node = function()
+{
+    /** @type {number} */
+    this.start;
+    /** @type {number} */
+    this.end;
+    /** @type {string} */
+    this.type;
+    /** @type {(!ESTree.Node|undefined)} */
+    this.body;
+    /** @type {(!Array.<!ESTree.Node>|undefined)} */
+    this.declarations;
+    /** @type {(!Array.<!ESTree.Node>|undefined)} */
+    this.properties;
+    /** @type {(!ESTree.Node|undefined)} */
+    this.init;
+}
 
-Set.prototype = {
-    /**
-     * @param {V} value
-     */
-    add: function(value) { },
-
-    /**
-     * @param {V} value
-     * @return {boolean}
-     */
-    delete: function(value) { },
-
-    /**
-     * @return {!Iterator.<V>}
-     */
-    values: function() { },
-
-    /**
-     * @param {V} value
-     * @return {boolean}
-     */
-    has: function(value) { },
-
-    clear: function() { },
-
-    /**
-     * @return {number}
-     */
-    get size() { },
-
-    // FIXME: This should be removed once transpilation is not required for closure compiler ES6
-    $$iterator: function() { }
+/**
+ * @extends {ESTree.Node}
+ * @constructor
+ */
+ESTree.TemplateLiteralNode = function()
+{
+    /** @type {!Array.<!ESTree.Node>} */
+    this.quasis;
+    /** @type {!Array.<!ESTree.Node>} */
+    this.expressions;
 }

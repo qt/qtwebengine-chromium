@@ -124,7 +124,9 @@
 #define OPENSSL_HEADER_BN_H
 
 #include <openssl/base.h>
+#include <openssl/thread.h>
 
+#include <inttypes.h>  /* for PRIu64 and friends */
 #include <stdio.h>  /* for FILE* */
 
 #if defined(__cplusplus)
@@ -137,13 +139,24 @@ extern "C" {
  * will allow you to work with numbers until you run out of memory. */
 
 
-/* BN_ULONG is the native word size when working with big integers. */
+/* BN_ULONG is the native word size when working with big integers.
+ *
+ * Note: on some platforms, inttypes.h does not define print format macros in
+ * C++ unless |__STDC_FORMAT_MACROS| defined. As this is a public header, bn.h
+ * does not define |__STDC_FORMAT_MACROS| itself. C++ source files which use the
+ * FMT macros must define it externally. */
 #if defined(OPENSSL_64_BIT)
 #define BN_ULONG uint64_t
 #define BN_BITS2 64
+#define BN_DEC_FMT1	"%" PRIu64
+#define BN_DEC_FMT2	"%019" PRIu64
+#define BN_HEX_FMT1	"%" PRIx64
 #elif defined(OPENSSL_32_BIT)
 #define BN_ULONG uint32_t
 #define BN_BITS2 32
+#define BN_DEC_FMT1	"%" PRIu32
+#define BN_DEC_FMT2	"%09" PRIu32
+#define BN_HEX_FMT1	"%" PRIx32
 #else
 #error "Must define either OPENSSL_32_BIT or OPENSSL_64_BIT"
 #endif
@@ -473,7 +486,8 @@ OPENSSL_EXPORT BN_ULONG BN_mod_word(const BIGNUM *a, BN_ULONG w);
   BN_div(NULL, (rem), (numerator), (divisor), (ctx))
 
 /* BN_nnmod is a non-negative modulo function. It acts like |BN_mod|, but 0 <=
- * |rem| < |divisor| is always true. */
+ * |rem| < |divisor| is always true. It returns one on success and zero on
+ * error. */
 OPENSSL_EXPORT int BN_nnmod(BIGNUM *rem, const BIGNUM *numerator,
                             const BIGNUM *divisor, BN_CTX *ctx);
 
@@ -710,15 +724,13 @@ OPENSSL_EXPORT BN_MONT_CTX *BN_MONT_CTX_copy(BN_MONT_CTX *to,
 OPENSSL_EXPORT int BN_MONT_CTX_set(BN_MONT_CTX *mont, const BIGNUM *mod,
                                    BN_CTX *ctx);
 
-/* BN_MONT_CTX_set_locked takes the lock indicated by |lock| and checks whether
- * |*pmont| is NULL. If so, it creates a new |BN_MONT_CTX| and sets the modulus
- * for it to |mod|. It then stores it as |*pmont| and returns it, or NULL on
- * error.
+/* BN_MONT_CTX_set_locked takes |lock| and checks whether |*pmont| is NULL. If
+ * so, it creates a new |BN_MONT_CTX| and sets the modulus for it to |mod|. It
+ * then stores it as |*pmont| and returns it, or NULL on error.
  *
  * If |*pmont| is already non-NULL then the existing value is returned. */
-OPENSSL_EXPORT BN_MONT_CTX *BN_MONT_CTX_set_locked(BN_MONT_CTX **pmont,
-                                                   int lock, const BIGNUM *mod,
-                                                   BN_CTX *ctx);
+BN_MONT_CTX *BN_MONT_CTX_set_locked(BN_MONT_CTX **pmont, CRYPTO_MUTEX *lock,
+                                    const BIGNUM *mod, BN_CTX *bn_ctx);
 
 /* BN_to_montgomery sets |ret| equal to |a| in the Montgomery domain. It
  * returns one on success and zero on error. */
@@ -802,51 +814,60 @@ OPENSSL_EXPORT unsigned BN_num_bits_word(BN_ULONG l);
 #define BN_FLG_CONSTTIME 0x04
 
 
+/* Android compatibility section.
+ *
+ * These functions are declared, temporarily, for Android because
+ * wpa_supplicant will take a little time to sync with upstream. Outside of
+ * Android they'll have no definition. */
+
+OPENSSL_EXPORT BIGNUM *get_rfc3526_prime_1536(BIGNUM *bn);
+
+
 #if defined(__cplusplus)
 }  /* extern C */
 #endif
 
-#define BN_F_BN_bn2hex 100
-#define BN_F_BN_new 101
-#define BN_F_BN_exp 102
-#define BN_F_mod_exp_recp 103
-#define BN_F_BN_mod_sqrt 104
-#define BN_F_BN_rand 105
-#define BN_F_BN_rand_range 106
-#define BN_F_bn_wexpand 107
-#define BN_F_BN_mod_exp_mont 108
-#define BN_F_BN_mod_exp2_mont 109
-#define BN_F_BN_CTX_get 110
-#define BN_F_BN_mod_inverse 111
-#define BN_F_BN_bn2dec 112
-#define BN_F_BN_div 113
-#define BN_F_BN_div_recp 114
-#define BN_F_BN_mod_exp_mont_consttime 115
-#define BN_F_BN_mod_exp_mont_word 116
-#define BN_F_BN_CTX_start 117
-#define BN_F_BN_usub 118
-#define BN_F_BN_mod_lshift_quick 119
-#define BN_F_BN_CTX_new 120
-#define BN_F_BN_mod_inverse_no_branch 121
-#define BN_F_BN_generate_dsa_nonce 122
-#define BN_F_BN_generate_prime_ex 123
-#define BN_F_BN_sqrt 124
-#define BN_R_NOT_A_SQUARE 100
-#define BN_R_TOO_MANY_ITERATIONS 101
-#define BN_R_INPUT_NOT_REDUCED 102
-#define BN_R_TOO_MANY_TEMPORARY_VARIABLES 103
-#define BN_R_NO_INVERSE 104
-#define BN_R_NOT_INITIALIZED 105
-#define BN_R_DIV_BY_ZERO 106
-#define BN_R_CALLED_WITH_EVEN_MODULUS 107
-#define BN_R_EXPAND_ON_STATIC_BIGNUM_DATA 108
-#define BN_R_BAD_RECIPROCAL 109
-#define BN_R_P_IS_NOT_PRIME 110
-#define BN_R_INVALID_RANGE 111
-#define BN_R_ARG2_LT_ARG3 112
-#define BN_R_BIGNUM_TOO_LONG 113
-#define BN_R_PRIVATE_KEY_TOO_LARGE 114
-#define BN_R_BITS_TOO_SMALL 115
-#define BN_R_NEGATIVE_NUMBER 116
+#define BN_F_BN_CTX_get 100
+#define BN_F_BN_CTX_new 101
+#define BN_F_BN_CTX_start 102
+#define BN_F_BN_bn2dec 103
+#define BN_F_BN_bn2hex 104
+#define BN_F_BN_div 105
+#define BN_F_BN_div_recp 106
+#define BN_F_BN_exp 107
+#define BN_F_BN_generate_dsa_nonce 108
+#define BN_F_BN_generate_prime_ex 109
+#define BN_F_BN_mod_exp2_mont 110
+#define BN_F_BN_mod_exp_mont 111
+#define BN_F_BN_mod_exp_mont_consttime 112
+#define BN_F_BN_mod_exp_mont_word 113
+#define BN_F_BN_mod_inverse 114
+#define BN_F_BN_mod_inverse_no_branch 115
+#define BN_F_BN_mod_lshift_quick 116
+#define BN_F_BN_mod_sqrt 117
+#define BN_F_BN_new 118
+#define BN_F_BN_rand 119
+#define BN_F_BN_rand_range 120
+#define BN_F_BN_sqrt 121
+#define BN_F_BN_usub 122
+#define BN_F_bn_wexpand 123
+#define BN_F_mod_exp_recp 124
+#define BN_R_ARG2_LT_ARG3 100
+#define BN_R_BAD_RECIPROCAL 101
+#define BN_R_BIGNUM_TOO_LONG 102
+#define BN_R_BITS_TOO_SMALL 103
+#define BN_R_CALLED_WITH_EVEN_MODULUS 104
+#define BN_R_DIV_BY_ZERO 105
+#define BN_R_EXPAND_ON_STATIC_BIGNUM_DATA 106
+#define BN_R_INPUT_NOT_REDUCED 107
+#define BN_R_INVALID_RANGE 108
+#define BN_R_NEGATIVE_NUMBER 109
+#define BN_R_NOT_A_SQUARE 110
+#define BN_R_NOT_INITIALIZED 111
+#define BN_R_NO_INVERSE 112
+#define BN_R_PRIVATE_KEY_TOO_LARGE 113
+#define BN_R_P_IS_NOT_PRIME 114
+#define BN_R_TOO_MANY_ITERATIONS 115
+#define BN_R_TOO_MANY_TEMPORARY_VARIABLES 116
 
 #endif  /* OPENSSL_HEADER_BN_H */

@@ -39,23 +39,22 @@ WebInspector.ElementsPanel = function()
     WebInspector.Panel.call(this, "elements");
     this.registerRequiredCSS("elements/elementsPanel.css");
 
-    this._splitView = new WebInspector.SplitView(true, true, "elementsPanelSplitViewState", 325, 325);
-    this._splitView.addEventListener(WebInspector.SplitView.Events.SidebarSizeChanged, this._updateTreeOutlineVisibleWidth.bind(this));
-    this._splitView.show(this.element);
+    this._splitWidget = new WebInspector.SplitWidget(true, true, "elementsPanelSplitViewState", 325, 325);
+    this._splitWidget.addEventListener(WebInspector.SplitWidget.Events.SidebarSizeChanged, this._updateTreeOutlineVisibleWidth.bind(this));
+    this._splitWidget.show(this.element);
 
     this._searchableView = new WebInspector.SearchableView(this);
     this._searchableView.setMinimumSize(25, 19);
-    this._searchableView.show(this._splitView.mainElement());
+    this._searchableView.setPlaceholder(WebInspector.UIString("Find by string, selector, or XPath"));
+    this._splitWidget.setMainWidget(this._searchableView);
     var stackElement = this._searchableView.element;
 
     this._contentElement = stackElement.createChild("div");
     this._contentElement.id = "elements-content";
     // FIXME: crbug.com/425984
-    if (WebInspector.settings.domWordWrap.get())
+    if (WebInspector.moduleSetting("domWordWrap").get())
         this._contentElement.classList.add("elements-wrap");
-    WebInspector.settings.domWordWrap.addChangeListener(this._domWordWrapSettingChanged.bind(this));
-
-    this._splitView.sidebarElement().addEventListener("contextmenu", this._sidebarContextMenuEventFired.bind(this), false);
+    WebInspector.moduleSetting("domWordWrap").addChangeListener(this._domWordWrapSettingChanged.bind(this));
 
     var crumbsContainer = stackElement.createChild("div");
     crumbsContainer.id = "elements-crumbs";
@@ -64,43 +63,77 @@ WebInspector.ElementsPanel = function()
     this._breadcrumbs.addEventListener(WebInspector.ElementsBreadcrumbs.Events.NodeSelected, this._crumbNodeSelected, this);
 
     this.sidebarPanes = {};
+    /** @type !Array<!WebInspector.ElementsSidebarViewWrapperPane> */
+    this._elementsSidebarViewWrappers = [];
     this.sidebarPanes.platformFonts = new WebInspector.PlatformFontsSidebarPane();
     this.sidebarPanes.computedStyle = new WebInspector.ComputedStyleSidebarPane();
-    this.sidebarPanes.styles = new WebInspector.StylesSidebarPane(this.sidebarPanes.computedStyle, this._setPseudoClassForNode.bind(this));
+    this.sidebarPanes.styles = new WebInspector.StylesSidebarPane(this.sidebarPanes.computedStyle, this._showStylesSidebar.bind(this));
     this.sidebarPanes.styles.addEventListener(WebInspector.StylesSidebarPane.Events.SelectorEditingStarted, this._onEditingSelectorStarted.bind(this));
     this.sidebarPanes.styles.addEventListener(WebInspector.StylesSidebarPane.Events.SelectorEditingEnded, this._onEditingSelectorEnded.bind(this));
 
     this._matchedStylesFilterBoxContainer = createElement("div");
     this._matchedStylesFilterBoxContainer.className = "sidebar-pane-filter-box";
+    this.sidebarPanes.styles.setFilterBoxContainer(this._matchedStylesFilterBoxContainer);
+
     this._computedStylesFilterBoxContainer = createElement("div");
     this._computedStylesFilterBoxContainer.className = "sidebar-pane-filter-box";
-    this.sidebarPanes.styles.setFilterBoxContainers(this._matchedStylesFilterBoxContainer, this._computedStylesFilterBoxContainer);
+    this.sidebarPanes.computedStyle.setFilterBoxContainer(this._computedStylesFilterBoxContainer);
 
     this.sidebarPanes.metrics = new WebInspector.MetricsSidebarPane();
     this.sidebarPanes.properties = new WebInspector.PropertiesSidebarPane();
     this.sidebarPanes.domBreakpoints = WebInspector.domBreakpointsSidebarPane.createProxy(this);
     this.sidebarPanes.eventListeners = new WebInspector.EventListenersSidebarPane();
-    this.sidebarPanes.animations = new WebInspector.AnimationsSidebarPane(this.sidebarPanes.styles);
+    if (Runtime.experiments.isEnabled("animationInspection"))
+        this.sidebarPanes.animations = new WebInspector.AnimationsSidebarPane();
 
     WebInspector.dockController.addEventListener(WebInspector.DockController.Events.DockSideChanged, this._dockSideChanged.bind(this));
-    WebInspector.settings.splitVerticallyWhenDockedToRight.addChangeListener(this._dockSideChanged.bind(this));
+    WebInspector.moduleSetting("splitVerticallyWhenDockedToRight").addChangeListener(this._dockSideChanged.bind(this));
     this._dockSideChanged();
-
-    this._popoverHelper = new WebInspector.PopoverHelper(this._splitView.sidebarElement(), this._getPopoverAnchor.bind(this), this._showPopover.bind(this));
-    this._popoverHelper.setTimeout(0);
+    this._loadSidebarViews();
 
     /** @type {!Array.<!WebInspector.ElementsTreeOutline>} */
     this._treeOutlines = [];
-    /** @type {!Map.<!WebInspector.Target, !WebInspector.ElementsTreeOutline>} */
-    this._targetToTreeOutline = new Map();
+    /** @type {!Map.<!WebInspector.DOMModel, !WebInspector.ElementsTreeOutline>} */
+    this._modelToTreeOutline = new Map();
     WebInspector.targetManager.observeTargets(this);
-    WebInspector.settings.showUAShadowDOM.addChangeListener(this._showUAShadowDOMChanged.bind(this));
+    WebInspector.moduleSetting("showUAShadowDOM").addChangeListener(this._showUAShadowDOMChanged.bind(this));
     WebInspector.targetManager.addModelListener(WebInspector.DOMModel, WebInspector.DOMModel.Events.DocumentUpdated, this._documentUpdatedEvent, this);
     WebInspector.targetManager.addModelListener(WebInspector.CSSStyleModel, WebInspector.CSSStyleModel.Events.ModelWasEnabled, this._updateSidebars, this);
+    WebInspector.targetManager.addModelListener(WebInspector.CSSStyleModel, WebInspector.CSSStyleModel.Events.PseudoStateForced, this._pseudoStateForced, this);
     WebInspector.extensionServer.addEventListener(WebInspector.ExtensionServer.Events.SidebarPaneAdded, this._extensionSidebarPaneAdded, this);
 }
 
+WebInspector.ElementsPanel._elementsSidebarViewTitleSymbol = Symbol("title");
+
 WebInspector.ElementsPanel.prototype = {
+    _loadSidebarViews: function()
+    {
+        var extensions = self.runtime.extensions("@WebInspector.ElementsSidebarView");
+
+        for (var i = 0; i < extensions.length; ++i) {
+            var descriptor = extensions[i].descriptor();
+            var title = WebInspector.UIString(descriptor["title"]);
+            extensions[i].instancePromise().then(addSidebarView.bind(this, title));
+        }
+
+        /**
+         * @param {string} title
+         * @param {!Object} object
+         * @this {WebInspector.ElementsPanel}
+         */
+        function addSidebarView(title, object)
+        {
+            var sidebarView = /** @type {!WebInspector.ElementsSidebarView} */ (object);
+            var elementsSidebarViewWrapperPane = new WebInspector.ElementsSidebarViewWrapperPane(title, sidebarView);
+            this._elementsSidebarViewWrappers.push(elementsSidebarViewWrapperPane);
+
+            if (this.sidebarPaneView)
+                this.sidebarPaneView.addPane(elementsSidebarViewWrapperPane);
+
+            sidebarView.setNode(this.selectedDOMNode());
+        }
+    },
+
     _onEditingSelectorStarted: function()
     {
         for (var i = 0; i < this._treeOutlines.length; ++i)
@@ -114,18 +147,22 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetAdded: function(target)
     {
-        var treeOutline = new WebInspector.ElementsTreeOutline(target, true, true, this._setPseudoClassForNode.bind(this));
-        treeOutline.setWordWrap(WebInspector.settings.domWordWrap.get());
+        var domModel = WebInspector.DOMModel.fromTarget(target);
+        if (!domModel)
+            return;
+        var treeOutline = new WebInspector.ElementsTreeOutline(domModel, true, true);
+        treeOutline.setWordWrap(WebInspector.moduleSetting("domWordWrap").get());
         treeOutline.wireToDOMModel();
         treeOutline.addEventListener(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, this._selectedNodeChanged, this);
         treeOutline.addEventListener(WebInspector.ElementsTreeOutline.Events.NodePicked, this._onNodePicked, this);
         treeOutline.addEventListener(WebInspector.ElementsTreeOutline.Events.ElementsTreeUpdated, this._updateBreadcrumbIfNeeded, this);
         this._treeOutlines.push(treeOutline);
-        this._targetToTreeOutline.set(target, treeOutline);
+        this._modelToTreeOutline.set(domModel, treeOutline);
 
         // Perform attach if necessary.
         if (this.isShowing())
@@ -133,22 +170,18 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetRemoved: function(target)
     {
-        var treeOutline = this._targetToTreeOutline.remove(target);
+        var domModel = WebInspector.DOMModel.fromTarget(target);
+        if (!domModel)
+            return;
+        var treeOutline = this._modelToTreeOutline.remove(domModel);
         treeOutline.unwireFromDOMModel();
         this._treeOutlines.remove(treeOutline);
         treeOutline.element.remove();
-    },
-
-    /**
-     * @return {?WebInspector.ElementsTreeOutline}
-     */
-    _firstTreeOutlineDeprecated: function()
-    {
-        return this._treeOutlines[0] || null;
     },
 
     _updateTreeOutlineVisibleWidth: function()
@@ -156,9 +189,9 @@ WebInspector.ElementsPanel.prototype = {
         if (!this._treeOutlines.length)
             return;
 
-        var width = this._splitView.element.offsetWidth;
-        if (this._splitView.isVertical())
-            width -= this._splitView.sidebarSize();
+        var width = this._splitWidget.element.offsetWidth;
+        if (this._splitWidget.isVertical())
+            width -= this._splitWidget.sidebarSize();
         for (var i = 0; i < this._treeOutlines.length; ++i) {
             this._treeOutlines[i].setVisibleWidth(width);
             this._treeOutlines[i].updateSelection();
@@ -167,6 +200,7 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @override
      * @return {!Element}
      */
     defaultFocusedElement: function()
@@ -175,6 +209,7 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.SearchableView}
      */
     searchableView: function()
@@ -204,21 +239,21 @@ WebInspector.ElementsPanel.prototype = {
                 else
                     treeOutline.domModel().requestDocument();
         }
-        WebInspector.context.setFlavor(WebInspector.ElementsPanel, this);
+
     },
 
     willHide: function()
     {
+        WebInspector.DOMModel.hideDOMNodeHighlight();
         for (var i = 0; i < this._treeOutlines.length; ++i) {
             var treeOutline = this._treeOutlines[i];
-            treeOutline.domModel().hideDOMNodeHighlight();
             treeOutline.setVisible(false);
             // Detach heavy component on hide
             this._contentElement.removeChild(treeOutline.element);
         }
-        this._popoverHelper.hidePopover();
+        if (this._popoverHelper)
+            this._popoverHelper.hidePopover();
         WebInspector.Panel.prototype.willHide.call(this);
-        WebInspector.context.setFlavor(WebInspector.ElementsPanel, null);
     },
 
     onResize: function()
@@ -227,25 +262,12 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.DOMNode} node
-     * @param {string} pseudoClass
-     * @param {boolean} enable
+     * @param {!WebInspector.Event} event
      */
-    _setPseudoClassForNode: function(node, pseudoClass, enable)
+    _pseudoStateForced: function(event)
     {
-        if (!node || !node.target().cssModel.forcePseudoState(node, pseudoClass, enable))
-            return;
-
+        var node = /** @type {!WebInspector.DOMNode} */ (event.data["node"]);
         this._treeOutlineForNode(node).updateOpenCloseTags(node);
-
-        this._updateCSSSidebars();
-
-        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
-            action: WebInspector.UserMetrics.UserActionNames.ForcedElementState,
-            selector: WebInspector.DOMPresentationUtils.fullQualifiedSelector(node, false),
-            enabled: enable,
-            state: pseudoClass
-        });
     },
 
     /**
@@ -277,18 +299,29 @@ WebInspector.ElementsPanel.prototype = {
         this._updateSidebars();
 
         if (selectedNode) {
-            ConsoleAgent.addInspectedNode(selectedNode.id);
+            selectedNode.setAsInspectedNode();
             this._lastValidSelectedNode = selectedNode;
         }
         WebInspector.notifications.dispatchEventToListeners(WebInspector.NotificationService.Events.SelectedNodeChanged);
+        this._selectedNodeChangedForTest();
     },
+
+    _selectedNodeChangedForTest: function() { },
 
     _updateSidebars: function()
     {
-        this._updateCSSSidebars();
-        this.sidebarPanes.properties.setNode(this.selectedDOMNode());
-        this.sidebarPanes.eventListeners.setNode(this.selectedDOMNode());
-        this.sidebarPanes.animations.setNode(this.selectedDOMNode());
+        var selectedDOMNode = this.selectedDOMNode();
+        if (selectedDOMNode && WebInspector.CSSStyleModel.fromNode(selectedDOMNode).isEnabled()) {
+            this.sidebarPanes.styles.setNode(selectedDOMNode);
+            this.sidebarPanes.metrics.setNode(selectedDOMNode);
+            this.sidebarPanes.platformFonts.setNode(selectedDOMNode);
+        }
+        this.sidebarPanes.properties.setNode(selectedDOMNode);
+        this.sidebarPanes.eventListeners.setNode(selectedDOMNode);
+        if (this.sidebarPanes.animations)
+            this.sidebarPanes.animations.setNode(selectedDOMNode);
+        for (var sidebarView of this._elementsSidebarViewWrappers)
+            sidebarView.setNode(selectedDOMNode);
     },
 
     _reset: function()
@@ -313,7 +346,7 @@ WebInspector.ElementsPanel.prototype = {
         this._reset();
         this.searchCanceled();
 
-        var treeOutline = this._targetToTreeOutline.get(domModel.target());
+        var treeOutline = this._modelToTreeOutline.get(domModel);
         treeOutline.rootDOMNode = inspectedRootDocument;
 
         if (!inspectedRootDocument) {
@@ -322,7 +355,7 @@ WebInspector.ElementsPanel.prototype = {
             return;
         }
 
-        WebInspector.domBreakpointsSidebarPane.restoreBreakpoints(domModel.target());
+        WebInspector.domBreakpointsSidebarPane.restoreBreakpoints(domModel);
 
         /**
          * @this {WebInspector.ElementsPanel}
@@ -336,9 +369,11 @@ WebInspector.ElementsPanel.prototype = {
             if (!candidateFocusNode)
                 return;
 
-            this.selectDOMNode(candidateFocusNode);
-            if (treeOutline.selectedTreeElement)
-                treeOutline.selectedTreeElement.expand();
+            if (!this._pendingNodeReveal) {
+                this.selectDOMNode(candidateFocusNode);
+                if (treeOutline.selectedTreeElement)
+                    treeOutline.selectedTreeElement.expand();
+            }
         }
 
         /**
@@ -365,6 +400,9 @@ WebInspector.ElementsPanel.prototype = {
         delete this._selectedPathOnReset;
     },
 
+    /**
+     * @override
+     */
     searchCanceled: function()
     {
         delete this._searchQuery;
@@ -375,12 +413,11 @@ WebInspector.ElementsPanel.prototype = {
         delete this._currentSearchResultIndex;
         delete this._searchResults;
 
-        var targets = WebInspector.targetManager.targets();
-        for (var i = 0; i < targets.length; ++i)
-            targets[i].domModel.cancelSearch();
+        WebInspector.DOMModel.cancelSearch();
     },
 
     /**
+     * @override
      * @param {!WebInspector.SearchableView.SearchConfig} searchConfig
      * @param {boolean} shouldJump
      * @param {boolean=} jumpBackwards
@@ -397,10 +434,10 @@ WebInspector.ElementsPanel.prototype = {
 
         this._searchQuery = query;
 
-        var targets = WebInspector.targetManager.targets();
         var promises = [];
-        for (var i = 0; i < targets.length; ++i)
-            promises.push(targets[i].domModel.performSearchPromise(whitespaceTrimmedQuery, WebInspector.settings.showUAShadowDOM.get()));
+        var domModels = WebInspector.DOMModel.instances();
+        for (var domModel of domModels)
+            promises.push(domModel.performSearchPromise(whitespaceTrimmedQuery, WebInspector.moduleSetting("showUAShadowDOM").get()));
         Promise.all(promises).then(resultCountCallback.bind(this));
 
         /**
@@ -410,13 +447,13 @@ WebInspector.ElementsPanel.prototype = {
         function resultCountCallback(resultCounts)
         {
             /**
-             * @type {!Array.<{target: !WebInspector.Target, index: number, node: (?WebInspector.DOMNode|undefined)}>}
+             * @type {!Array.<{domModel: !WebInspector.DOMModel, index: number, node: (?WebInspector.DOMNode|undefined)}>}
              */
             this._searchResults = [];
             for (var i = 0; i < resultCounts.length; ++i) {
                 var resultCount = resultCounts[i];
                 for (var j = 0; j < resultCount; ++j)
-                    this._searchResults.push({target: targets[i], index: j, node: undefined});
+                    this._searchResults.push({domModel: domModels[i], index: j, node: undefined});
             }
             this._searchableView.updateSearchMatchesCount(this._searchResults.length);
             if (!this._searchResults.length)
@@ -484,7 +521,7 @@ WebInspector.ElementsPanel.prototype = {
             if (!contents)
                 return;
             popover.setCanShrink(false);
-            popover.show(contents, anchor);
+            popover.showForAnchor(contents, anchor);
         }
     },
 
@@ -495,6 +532,9 @@ WebInspector.ElementsPanel.prototype = {
         this._highlightCurrentSearchResult();
     },
 
+    /**
+     * @override
+     */
     jumpToNextSearchResult: function()
     {
         if (!this._searchResults)
@@ -502,6 +542,9 @@ WebInspector.ElementsPanel.prototype = {
         this._jumpToSearchResult(this._currentSearchResultIndex + 1);
     },
 
+    /**
+     * @override
+     */
     jumpToPreviousSearchResult: function()
     {
         if (!this._searchResults)
@@ -510,6 +553,7 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     supportsCaseSensitiveSearch: function()
@@ -518,6 +562,7 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @override
      * @return {boolean}
      */
     supportsRegexSearch: function()
@@ -548,7 +593,7 @@ WebInspector.ElementsPanel.prototype = {
 
         if (typeof searchResult.node === "undefined") {
             // No data for slot, request it.
-            searchResult.target.domModel.searchResult(searchResult.index, searchCallback.bind(this));
+            searchResult.domModel.searchResult(searchResult.index, searchCallback.bind(this));
             return;
         }
 
@@ -558,7 +603,7 @@ WebInspector.ElementsPanel.prototype = {
         if (treeElement) {
             treeElement.highlightSearchResults(this._searchQuery);
             treeElement.reveal();
-            var matches = treeElement.listItemElement.getElementsByClassName("highlighted-search-result");
+            var matches = treeElement.listItemElement.getElementsByClassName(WebInspector.highlightedSearchResultClassName);
             if (matches.length)
                 matches[0].scrollIntoViewIfNeeded();
         }
@@ -571,7 +616,7 @@ WebInspector.ElementsPanel.prototype = {
         var searchResult = this._searchResults[this._currentSearchResultIndex];
         if (!searchResult.node)
             return;
-        var treeOutline = this._targetToTreeOutline.get(searchResult.target);
+        var treeOutline = this._modelToTreeOutline.get(searchResult.node.domModel());
         var treeElement = treeOutline.findTreeElement(searchResult.node);
         if (treeElement)
             treeElement.hideSearchHighlights();
@@ -598,7 +643,7 @@ WebInspector.ElementsPanel.prototype = {
     {
         for (var i = 0; i < this._treeOutlines.length; ++i) {
             var treeOutline = this._treeOutlines[i];
-            if (treeOutline.target() === node.target())
+            if (treeOutline.domModel() === node.domModel())
                 treeOutline.selectDOMNode(node, focus);
             else
                 treeOutline.selectDOMNode(null);
@@ -623,41 +668,48 @@ WebInspector.ElementsPanel.prototype = {
         this.selectDOMNode(node, true);
     },
 
-    _updateCSSSidebars: function()
-    {
-        var selectedDOMNode = this.selectedDOMNode();
-        if (!selectedDOMNode || !selectedDOMNode.target().cssModel.isEnabled())
-            return;
-
-        this.sidebarPanes.styles.update(selectedDOMNode, true);
-        this.sidebarPanes.metrics.setNode(selectedDOMNode);
-        this.sidebarPanes.platformFonts.setNode(selectedDOMNode);
-    },
-
-    _undo: function()
-    {
-        var treeOutline = this._treeOutlineForNode(this._lastValidSelectedNode);
-        if (!treeOutline || WebInspector.isEditing())
-            return;
-        treeOutline.target().domModel.undo(this._updateSidebars.bind(this));
-    },
-
-    _redo: function()
-    {
-        var treeOutline = this._treeOutlineForNode(this._lastValidSelectedNode);
-        if (!treeOutline || WebInspector.isEditing())
-            return;
-        treeOutline.target().domModel.redo(this._updateSidebars.bind(this));
-    },
-
     /**
+     * @override
      * @param {!KeyboardEvent} event
      */
     handleShortcut: function(event)
     {
-        var treeOutline = this._treeOutlineForNode(this._lastValidSelectedNode);
+        /**
+         * @param {!WebInspector.ElementsTreeOutline} treeOutline
+         * @this {WebInspector.ElementsPanel}
+         */
+        function handleUndoRedo(treeOutline)
+        {
+            if (WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) && !event.shiftKey && event.keyIdentifier === "U+005A") { // Z key
+                treeOutline.domModel().undo(this._updateSidebars.bind(this));
+                event.handled = true;
+                return;
+            }
+
+            var isRedoKey = WebInspector.isMac() ? event.metaKey && event.shiftKey && event.keyIdentifier === "U+005A" : // Z key
+                                                   event.ctrlKey && event.keyIdentifier === "U+0059"; // Y key
+            if (isRedoKey) {
+                treeOutline.domModel().redo(this._updateSidebars.bind(this));
+                event.handled = true;
+            }
+        }
+
+        if (WebInspector.isEditing())
+            return;
+
+        var treeOutline = null;
+        for (var i = 0; i < this._treeOutlines.length; ++i) {
+            if (this._treeOutlines[i].selectedDOMNode() === this._lastValidSelectedNode)
+                treeOutline = this._treeOutlines[i];
+        }
         if (!treeOutline)
             return;
+
+        if (!treeOutline.editing()) {
+            handleUndoRedo.call(this, treeOutline);
+            if (event.handled)
+                return;
+        }
 
         treeOutline.handleShortcut(event);
         if (event.handled)
@@ -674,7 +726,19 @@ WebInspector.ElementsPanel.prototype = {
     {
         if (!node)
             return null;
-        return this._targetToTreeOutline.get(node.target()) || null;
+        return this._modelToTreeOutline.get(node.domModel()) || null;
+    },
+
+    /**
+     * @return {?WebInspector.ElementsTreeOutline}
+     */
+    _focusedTreeOutline: function()
+    {
+        for (var i = 0; i < this._treeOutlines.length; ++i) {
+            if (this._treeOutlines[i].hasFocus())
+                return this._treeOutlines[i];
+        }
+        return null;
     },
 
     /**
@@ -692,9 +756,7 @@ WebInspector.ElementsPanel.prototype = {
      */
     handleCopyEvent: function(event)
     {
-        if (!WebInspector.currentFocusElement().enclosingNodeOrSelfWithClass("elements-tree-outline"))
-            return;
-        var treeOutline = this._treeOutlineForNode(this.selectedDOMNode());
+        var treeOutline = this._focusedTreeOutline();
         if (treeOutline)
             treeOutline.handleCopyOrCutKeyboardEvent(false, event);
     },
@@ -704,7 +766,7 @@ WebInspector.ElementsPanel.prototype = {
      */
     handleCutEvent: function(event)
     {
-        var treeOutline = this._treeOutlineForNode(this.selectedDOMNode());
+        var treeOutline = this._focusedTreeOutline();
         if (treeOutline)
             treeOutline.handleCopyOrCutKeyboardEvent(true, event);
     },
@@ -714,7 +776,7 @@ WebInspector.ElementsPanel.prototype = {
      */
     handlePasteEvent: function(event)
     {
-        var treeOutline = this._treeOutlineForNode(this.selectedDOMNode());
+        var treeOutline = this._focusedTreeOutline();
         if (treeOutline)
             treeOutline.handlePasteKeyboardEvent(event);
     },
@@ -741,7 +803,7 @@ WebInspector.ElementsPanel.prototype = {
 
         this._omitDefaultSelection = true;
         WebInspector.inspectorView.setCurrentPanel(this);
-        node = WebInspector.settings.showUAShadowDOM.get() ? node : this._leaveUserAgentShadowDOM(node);
+        node = WebInspector.moduleSetting("showUAShadowDOM").get() ? node : this._leaveUserAgentShadowDOM(node);
         node.highlightForTwoSeconds();
         this.selectDOMNode(node, true);
         delete this._omitDefaultSelection;
@@ -775,7 +837,7 @@ WebInspector.ElementsPanel.prototype = {
             return;
         var commandCallback = WebInspector.Revealer.reveal.bind(WebInspector.Revealer, object);
 
-        contextMenu.appendItem(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Elements panel" : "Reveal in Elements Panel", commandCallback);
+        contextMenu.appendItem(WebInspector.UIString.capitalize("Reveal in Elements ^panel"), commandCallback);
     },
 
     _sidebarContextMenuEventFired: function(event)
@@ -786,7 +848,7 @@ WebInspector.ElementsPanel.prototype = {
 
     _dockSideChanged: function()
     {
-        var vertically = WebInspector.dockController.isVertical() && WebInspector.settings.splitVerticallyWhenDockedToRight.get();
+        var vertically = WebInspector.dockController.isVertical() && WebInspector.moduleSetting("splitVerticallyWhenDockedToRight").get();
         this._splitVertically(vertically);
     },
 
@@ -796,28 +858,35 @@ WebInspector.ElementsPanel.prototype = {
             this._treeOutlines[i].update();
     },
 
+    _showStylesSidebar: function()
+    {
+        this.sidebarPaneView.selectTab(this.sidebarPanes.styles.title());
+    },
+
     /**
      * @param {boolean} vertically
      */
     _splitVertically: function(vertically)
     {
-        if (this.sidebarPaneView && vertically === !this._splitView.isVertical())
+        if (this.sidebarPaneView && vertically === !this._splitWidget.isVertical())
             return;
+
+        var extensionSidebarPanes = WebInspector.extensionServer.sidebarPanes();
+        if (this.sidebarPaneView && extensionSidebarPanes.length)
+            return; // We can't reparent extension iframes.
 
         if (this.sidebarPaneView) {
             this.sidebarPaneView.detach();
-            this._splitView.uninstallResizer(this.sidebarPaneView.headerElement());
+            this._splitWidget.uninstallResizer(this.sidebarPaneView.headerElement());
         }
 
-        this._splitView.setVertical(!vertically);
+        this._splitWidget.setVertical(!vertically);
 
         var computedPane = new WebInspector.SidebarPane(WebInspector.UIString("Computed"));
         computedPane.element.classList.add("composite");
         computedPane.element.classList.add("fill");
-        var expandComputed = computedPane.expand.bind(computedPane);
 
         computedPane.bodyElement.classList.add("metrics-and-computed");
-        this.sidebarPanes.computedStyle.setExpandCallback(expandComputed);
 
         var matchedStylePanesWrapper = createElement("div");
         matchedStylePanesWrapper.className = "style-panes-wrapper";
@@ -850,43 +919,42 @@ WebInspector.ElementsPanel.prototype = {
         }
 
         this.sidebarPaneView = new WebInspector.SidebarTabbedPane();
+        this.sidebarPaneView.element.addEventListener("contextmenu", this._sidebarContextMenuEventFired.bind(this), false);
+        if (this._popoverHelper)
+            this._popoverHelper.hidePopover();
+        this._popoverHelper = new WebInspector.PopoverHelper(this.sidebarPaneView.element, this._getPopoverAnchor.bind(this), this._showPopover.bind(this));
+        this._popoverHelper.setTimeout(0);
 
         if (vertically) {
-            this._splitView.installResizer(this.sidebarPaneView.headerElement());
-            this.sidebarPanes.metrics.setExpandCallback(expandComputed);
+            this._splitWidget.installResizer(this.sidebarPaneView.headerElement());
 
             var compositePane = new WebInspector.SidebarPane(this.sidebarPanes.styles.title());
             compositePane.element.classList.add("composite");
             compositePane.element.classList.add("fill");
-            var expandComposite = compositePane.expand.bind(compositePane);
 
-            var splitView = new WebInspector.SplitView(true, true, "stylesPaneSplitViewState", 0.5);
-            splitView.show(compositePane.bodyElement);
+            var splitWidget = new WebInspector.SplitWidget(true, true, "stylesPaneSplitViewState", 215);
+            splitWidget.show(compositePane.bodyElement);
 
-            splitView.mainElement().appendChild(matchedStylePanesWrapper);
-            splitView.sidebarElement().appendChild(computedStylePanesWrapper);
+            var vbox1 = new WebInspector.VBox();
+            vbox1.element.appendChild(matchedStylePanesWrapper);
+            vbox1.element.appendChild(this._matchedStylesFilterBoxContainer);
+            splitWidget.setMainWidget(vbox1);
 
-            this.sidebarPanes.styles.setExpandCallback(expandComposite);
+            var vbox2 = new WebInspector.VBox();
+            vbox2.element.appendChild(computedStylePanesWrapper);
+            vbox2.element.appendChild(this._computedStylesFilterBoxContainer);
+            splitWidget.setSidebarWidget(vbox2);
 
             computedPane.show(computedStylePanesWrapper);
-            computedPane.setExpandCallback(expandComposite);
-
-            splitView.mainElement().appendChild(this._matchedStylesFilterBoxContainer);
-            splitView.sidebarElement().appendChild(this._computedStylesFilterBoxContainer);
-
             this.sidebarPaneView.addPane(compositePane);
         } else {
             var stylesPane = new WebInspector.SidebarPane(this.sidebarPanes.styles.title());
             stylesPane.element.classList.add("composite");
             stylesPane.element.classList.add("fill");
-            var expandStyles = stylesPane.expand.bind(stylesPane);
             stylesPane.bodyElement.classList.add("metrics-and-styles");
 
             stylesPane.bodyElement.appendChild(matchedStylePanesWrapper);
             computedPane.bodyElement.appendChild(computedStylePanesWrapper);
-
-            this.sidebarPanes.styles.setExpandCallback(expandStyles);
-            this.sidebarPanes.metrics.setExpandCallback(expandStyles);
 
             this.sidebarPaneView.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, tabSelected, this);
 
@@ -906,15 +974,18 @@ WebInspector.ElementsPanel.prototype = {
         this.sidebarPaneView.addPane(this.sidebarPanes.eventListeners);
         this.sidebarPaneView.addPane(this.sidebarPanes.domBreakpoints);
         this.sidebarPaneView.addPane(this.sidebarPanes.properties);
-        if (Runtime.experiments.isEnabled("animationInspection"))
+        if (this.sidebarPanes.animations)
             this.sidebarPaneView.addPane(this.sidebarPanes.animations);
+
+        for (var sidebarViewWrapper of this._elementsSidebarViewWrappers)
+            this.sidebarPaneView.addPane(sidebarViewWrapper);
+
         this._extensionSidebarPanesContainer = this.sidebarPaneView;
 
-        var extensionSidebarPanes = WebInspector.extensionServer.sidebarPanes();
         for (var i = 0; i < extensionSidebarPanes.length; ++i)
             this._addExtensionSidebarPane(extensionSidebarPanes[i]);
 
-        this.sidebarPaneView.show(this._splitView.sidebarElement());
+        this._splitWidget.setSidebarWidget(this.sidebarPaneView);
         this.sidebarPanes.styles.expand();
     },
 
@@ -951,6 +1022,7 @@ WebInspector.ElementsPanel.ContextMenuProvider = function()
 
 WebInspector.ElementsPanel.ContextMenuProvider.prototype = {
     /**
+     * @override
      * @param {!Event} event
      * @param {!WebInspector.ContextMenu} contextMenu
      * @param {!Object} target
@@ -971,11 +1043,15 @@ WebInspector.ElementsPanel.DOMNodeRevealer = function()
 
 WebInspector.ElementsPanel.DOMNodeRevealer.prototype = {
     /**
+     * @override
      * @param {!Object} node
      * @return {!Promise}
      */
     reveal: function(node)
     {
+        var panel = WebInspector.ElementsPanel.instance();
+        panel._pendingNodeReveal = true;
+
         return new Promise(revealPromise);
 
         /**
@@ -984,21 +1060,28 @@ WebInspector.ElementsPanel.DOMNodeRevealer.prototype = {
          */
         function revealPromise(resolve, reject)
         {
-            var panel = WebInspector.ElementsPanel.instance();
-            if (node instanceof WebInspector.DOMNode)
+            if (node instanceof WebInspector.DOMNode) {
                 onNodeResolved(/** @type {!WebInspector.DOMNode} */ (node));
-            else if (node instanceof WebInspector.DeferredDOMNode)
+            } else if (node instanceof WebInspector.DeferredDOMNode) {
                 (/** @type {!WebInspector.DeferredDOMNode} */ (node)).resolve(onNodeResolved);
-            else if (node instanceof WebInspector.RemoteObject)
-                (/** @type {!WebInspector.RemoteObject} */ (node)).pushNodeToFrontend(onNodeResolved);
-            else
+            } else if (node instanceof WebInspector.RemoteObject) {
+                var domModel = WebInspector.DOMModel.fromTarget(/** @type {!WebInspector.RemoteObject} */ (node).target());
+                if (domModel)
+                    domModel.pushObjectAsNodeToFrontend(node, onNodeResolved);
+                else
+                    reject(new Error("Could not resolve a node to reveal."));
+            } else {
                 reject(new Error("Can't reveal a non-node."));
+                panel._pendingNodeReveal = false;
+            }
 
             /**
              * @param {?WebInspector.DOMNode} resolvedNode
              */
             function onNodeResolved(resolvedNode)
             {
+                panel._pendingNodeReveal = false;
+
                 if (resolvedNode) {
                     panel.revealAndSelectNode(resolvedNode);
                     resolve(undefined);
@@ -1035,6 +1118,7 @@ WebInspector.ElementsPanelFactory = function()
 
 WebInspector.ElementsPanelFactory.prototype = {
     /**
+     * @override
      * @return {!WebInspector.Panel}
      */
     createPanel: function()
@@ -1042,44 +1126,3 @@ WebInspector.ElementsPanelFactory.prototype = {
         return WebInspector.ElementsPanel.instance();
     }
 }
-
-/**
- * @constructor
- * @implements {WebInspector.ActionDelegate}
- */
-WebInspector.ElementsPanel.UndoActionDelegate = function()
-{
-}
-
-WebInspector.ElementsPanel.UndoActionDelegate.prototype = {
-    /**
-     * @return {boolean}
-     */
-    handleAction: function()
-    {
-        var panel = WebInspector.ElementsPanel.instance();
-        panel._undo();
-        return true;
-    }
-}
-
-/**
- * @constructor
- * @implements {WebInspector.ActionDelegate}
- */
-WebInspector.ElementsPanel.RedoActionDelegate = function()
-{
-}
-
-WebInspector.ElementsPanel.RedoActionDelegate.prototype = {
-    /**
-     * @return {boolean}
-     */
-    handleAction: function()
-    {
-        var panel = WebInspector.ElementsPanel.instance();
-        panel._redo();
-        return true;
-    }
-}
-

@@ -71,6 +71,7 @@ SharedMemory::SharedMemory(SharedMemoryHandle handle, bool read_only,
 }
 
 SharedMemory::~SharedMemory() {
+  Unmap();
   Close();
   if (lock_ != NULL)
     CloseHandle(lock_);
@@ -118,8 +119,8 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     return false;
 
   size_t rounded_size = (options.size + kSectionMask) & ~kSectionMask;
-  name_ = ASCIIToWide(options.name_deprecated == NULL ? "" :
-                      *options.name_deprecated);
+  name_ = options.name_deprecated ?
+      ASCIIToUTF16(*options.name_deprecated) : L"";
   SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, FALSE };
   SECURITY_DESCRIPTOR sd;
   ACL dacl;
@@ -137,13 +138,14 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     // Windows ignores DACLs on certain unnamed objects (like shared sections).
     // So, we generate a random name when we need to enforce read-only.
     uint64_t rand_values[4];
-    base::RandBytes(&rand_values, sizeof(rand_values));
-    name_ = base::StringPrintf(L"CrSharedMem_%016x%016x%016x%016x",
-                               rand_values[0], rand_values[1],
-                               rand_values[2], rand_values[3]);
+    RandBytes(&rand_values, sizeof(rand_values));
+    name_ = StringPrintf(L"CrSharedMem_%016x%016x%016x%016x",
+                         rand_values[0], rand_values[1],
+                         rand_values[2], rand_values[3]);
   }
   mapped_file_ = CreateFileMapping(INVALID_HANDLE_VALUE, &sa,
-      PAGE_READWRITE, 0, static_cast<DWORD>(rounded_size), name_.c_str());
+      PAGE_READWRITE, 0, static_cast<DWORD>(rounded_size),
+      name_.empty() ? nullptr : name_.c_str());
   if (!mapped_file_)
     return false;
 
@@ -171,7 +173,7 @@ bool SharedMemory::Delete(const std::string& name) {
 bool SharedMemory::Open(const std::string& name, bool read_only) {
   DCHECK(!mapped_file_);
 
-  name_ = ASCIIToWide(name);
+  name_ = ASCIIToUTF16(name);
   read_only_ = read_only;
   mapped_file_ = OpenFileMapping(
       read_only_ ? FILE_MAP_READ : FILE_MAP_READ | FILE_MAP_WRITE,
@@ -218,7 +220,7 @@ bool SharedMemory::Unmap() {
 }
 
 bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
-                                        SharedMemoryHandle *new_handle,
+                                        SharedMemoryHandle* new_handle,
                                         bool close_self,
                                         ShareMode share_mode) {
   *new_handle = 0;
@@ -249,11 +251,6 @@ bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
 
 
 void SharedMemory::Close() {
-  if (memory_ != NULL) {
-    UnmapViewOfFile(memory_);
-    memory_ = NULL;
-  }
-
   if (mapped_file_ != NULL) {
     CloseHandle(mapped_file_);
     mapped_file_ = NULL;

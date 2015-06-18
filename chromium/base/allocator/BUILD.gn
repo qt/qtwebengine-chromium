@@ -10,7 +10,9 @@ import("//build/config/allocator.gni")
 # to the build settings.
 group("allocator") {
   if (use_allocator == "tcmalloc") {
-    deps = [ ":tcmalloc" ]
+    deps = [
+      ":tcmalloc",
+    ]
   }
 }
 
@@ -28,19 +30,26 @@ if (is_win) {
 
   action("prep_libc") {
     script = "prep_libc.py"
-    outputs = [ "$target_gen_dir/allocator/libcmt.lib" ]
+    outputs = [
+      "$target_gen_dir/allocator/libcmt.lib",
+    ]
     args = [
       visual_studio_path + "/vc/lib",
       rebase_path("$target_gen_dir/allocator"),
-      cpu_arch,
+      current_cpu,
     ]
   }
 }
 
-if (!is_android) {
+if (use_allocator == "tcmalloc") {
   # tcmalloc currently won't compile on Android.
   source_set("tcmalloc") {
     tcmalloc_dir = "//third_party/tcmalloc/chromium"
+
+    # Don't check tcmalloc's includes. These files include various files like
+    # base/foo.h and they actually refer to tcmalloc's forked copy of base
+    # rather than the regular one, which confuses the header checker.
+    check_includes = false
 
     sources = [
       # Generated for our configuration from tcmalloc"s build
@@ -54,6 +63,7 @@ if (!is_android) {
       "$tcmalloc_dir/src/base/abort.cc",
       "$tcmalloc_dir/src/base/abort.h",
       "$tcmalloc_dir/src/base/arm_instruction_set_select.h",
+
       # We don't list dynamic_annotations.c since its copy is already
       # present in the dynamic_annotations target.
       "$tcmalloc_dir/src/base/elf_mem_image.cc",
@@ -79,6 +89,7 @@ if (!is_android) {
       "$tcmalloc_dir/src/central_freelist.h",
       "$tcmalloc_dir/src/common.cc",
       "$tcmalloc_dir/src/common.h",
+
       # #included by debugallocation_shim.cc
       #"$tcmalloc_dir/src/debugallocation.cc",
       "$tcmalloc_dir/src/deep-heap-profile.cc",
@@ -120,15 +131,14 @@ if (!is_android) {
       "$tcmalloc_dir/src/symbolize.h",
       "$tcmalloc_dir/src/system-alloc.cc",
       "$tcmalloc_dir/src/system-alloc.h",
+
       # #included by debugallocation_shim.cc
       #"$tcmalloc_dir/src/tcmalloc.cc",
       "$tcmalloc_dir/src/thread_cache.cc",
       "$tcmalloc_dir/src/thread_cache.h",
       "$tcmalloc_dir/src/windows/port.cc",
       "$tcmalloc_dir/src/windows/port.h",
-
       "allocator_shim.cc",
-      "allocator_shim.h",
       "debugallocation_shim.cc",
 
       # These are both #included by allocator_shim for maximal linking.
@@ -170,10 +180,10 @@ if (!is_android) {
         # cpuprofiler
         "$tcmalloc_dir/src/base/thread_lister.c",
         "$tcmalloc_dir/src/base/thread_lister.h",
-        "$tcmalloc_dir/src/profiledata.cc",
-        "$tcmalloc_dir/src/profiledata.h",
         "$tcmalloc_dir/src/profile-handler.cc",
         "$tcmalloc_dir/src/profile-handler.h",
+        "$tcmalloc_dir/src/profiledata.cc",
+        "$tcmalloc_dir/src/profiledata.h",
         "$tcmalloc_dir/src/profiler.cc",
       ]
       defines += [ "PERFTOOLS_DLL_DECL=" ]
@@ -186,9 +196,7 @@ if (!is_android) {
 
       public_configs = [ ":nocmt" ]
 
-      deps += [
-        ":prep_libc",
-      ]
+      deps += [ ":prep_libc" ]
     }
 
     if (is_linux || is_android) {
@@ -215,6 +223,7 @@ if (!is_android) {
         # Don't let linker rip this symbol out, otherwise the heap&cpu
         # profilers will not initialize properly on startup.
         "-Wl,-uIsHeapProfilerRunning,-uProfilerStart",
+
         # Do the same for heap leak checker.
         "-Wl,-u_Z21InitialMallocHook_NewPKvj,-u_Z22InitialMallocHook_MMapPKvS0_jiiix,-u_Z22InitialMallocHook_SbrkPKvi",
         "-Wl,-u_Z21InitialMallocHook_NewPKvm,-u_Z22InitialMallocHook_MMapPKvS0_miiil,-u_Z22InitialMallocHook_SbrkPKvl",
@@ -229,9 +238,7 @@ if (!is_android) {
       configs += [ "//build/config/compiler:optimize_max" ]
     }
 
-    deps += [
-      "//base/third_party/dynamic_annotations",
-    ]
+    deps += [ "//base/third_party/dynamic_annotations" ]
 
     if (is_win) {
       ldflags = [ "/ignore:4006:4221" ]

@@ -7,7 +7,7 @@
 #include "src/bootstrapper.h"
 #include "src/codegen.h"
 #include "src/deoptimizer.h"
-#include "src/isolate-inl.h"
+#include "src/messages.h"
 #include "src/vm-state-inl.h"
 
 namespace v8 {
@@ -20,16 +20,16 @@ StackGuard::StackGuard()
 
 void StackGuard::set_interrupt_limits(const ExecutionAccess& lock) {
   DCHECK(isolate_ != NULL);
-  thread_local_.jslimit_ = kInterruptLimit;
-  thread_local_.climit_ = kInterruptLimit;
+  thread_local_.set_jslimit(kInterruptLimit);
+  thread_local_.set_climit(kInterruptLimit);
   isolate_->heap()->SetStackLimits();
 }
 
 
 void StackGuard::reset_limits(const ExecutionAccess& lock) {
   DCHECK(isolate_ != NULL);
-  thread_local_.jslimit_ = thread_local_.real_jslimit_;
-  thread_local_.climit_ = thread_local_.real_climit_;
+  thread_local_.set_jslimit(thread_local_.real_jslimit_);
+  thread_local_.set_climit(thread_local_.real_climit_);
   isolate_->heap()->SetStackLimits();
 }
 
@@ -37,10 +37,15 @@ void StackGuard::reset_limits(const ExecutionAccess& lock) {
 static void PrintDeserializedCodeInfo(Handle<JSFunction> function) {
   if (function->code() == function->shared()->code() &&
       function->shared()->deserialized()) {
-    PrintF("Running deserialized script ");
+    PrintF("[Running deserialized script");
     Object* script = function->shared()->script();
-    if (script->IsScript()) Script::cast(script)->name()->ShortPrint();
-    PrintF("\n");
+    if (script->IsScript()) {
+      Object* name = Script::cast(script)->name();
+      if (name->IsString()) {
+        PrintF(": %s", String::cast(name)->ToCString().get());
+      }
+    }
+    PrintF("]\n");
   }
 }
 
@@ -52,6 +57,26 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
     int argc,
     Handle<Object> args[]) {
   Isolate* isolate = function->GetIsolate();
+
+  // api callbacks can be called directly.
+  if (!is_construct && function->shared()->IsApiFunction()) {
+    SaveContext save(isolate);
+    isolate->set_context(function->context());
+    if (receiver->IsGlobalObject()) {
+      receiver = handle(Handle<GlobalObject>::cast(receiver)->global_proxy());
+    }
+    DCHECK(function->context()->global_object()->IsGlobalObject());
+    auto value = Builtins::InvokeApiFunction(function, receiver, argc, args);
+    bool has_exception = value.is_null();
+    DCHECK(has_exception == isolate->has_pending_exception());
+    if (has_exception) {
+      isolate->ReportPendingMessages();
+      return MaybeHandle<Object>();
+    } else {
+      isolate->clear_pending_message();
+    }
+    return value;
+  }
 
   // Entering JavaScript.
   VMState<JS> state(isolate);
@@ -104,7 +129,9 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
   }
 
 #ifdef VERIFY_HEAP
-  value->ObjectVerify();
+  if (FLAG_verify_heap) {
+    value->ObjectVerify();
+  }
 #endif
 
   // Update the pending exception flag and return the value.
@@ -139,8 +166,7 @@ MaybeHandle<Object> Execution::Call(Isolate* isolate,
 
   // In sloppy mode, convert receiver.
   if (convert_receiver && !receiver->IsJSReceiver() &&
-      !func->shared()->native() &&
-      func->shared()->strict_mode() == SLOPPY) {
+      !func->shared()->native() && is_sloppy(func->shared()->language_mode())) {
     if (receiver->IsUndefined() || receiver->IsNull()) {
       receiver = handle(func->global_proxy());
       DCHECK(!receiver->IsJSBuiltinsObject());
@@ -184,11 +210,11 @@ MaybeHandle<Object> Execution::TryCall(Handle<JSFunction> func,
       DCHECK(catcher.HasCaught());
       DCHECK(isolate->has_pending_exception());
       DCHECK(isolate->external_caught_exception());
-      if (exception_out != NULL) {
-        if (isolate->pending_exception() ==
-            isolate->heap()->termination_exception()) {
-          is_termination = true;
-        } else {
+      if (isolate->pending_exception() ==
+          isolate->heap()->termination_exception()) {
+        is_termination = true;
+      } else {
+        if (exception_out != NULL) {
           *exception_out = v8::Utils::OpenHandle(*catcher.Exception());
         }
       }
@@ -196,9 +222,11 @@ MaybeHandle<Object> Execution::TryCall(Handle<JSFunction> func,
     }
 
     DCHECK(!isolate->has_pending_exception());
-    DCHECK(!isolate->external_caught_exception());
   }
-  if (is_termination) isolate->TerminateExecution();
+
+  // Re-request terminate execution interrupt to trigger later.
+  if (is_termination) isolate->stack_guard()->RequestTerminateExecution();
+
   return maybe_result;
 }
 
@@ -251,8 +279,8 @@ MaybeHandle<Object> Execution::TryGetFunctionDelegate(Isolate* isolate,
 
   // If the Object doesn't have an instance-call handler we should
   // throw a non-callable exception.
-  THROW_NEW_ERROR(isolate, NewTypeError("called_non_callable",
-                                        i::HandleVector<i::Object>(&object, 1)),
+  THROW_NEW_ERROR(isolate,
+                  NewTypeError(MessageTemplate::kCalledNonCallable, object),
                   Object);
 }
 
@@ -307,8 +335,8 @@ MaybeHandle<Object> Execution::TryGetConstructorDelegate(
 
   // If the Object doesn't have an instance-call handler we should
   // throw a non-callable exception.
-  THROW_NEW_ERROR(isolate, NewTypeError("called_non_callable",
-                                        i::HandleVector<i::Object>(&object, 1)),
+  THROW_NEW_ERROR(isolate,
+                  NewTypeError(MessageTemplate::kCalledNonCallable, object),
                   Object);
 }
 
@@ -326,11 +354,11 @@ void StackGuard::SetStackLimit(uintptr_t limit) {
   // If the current limits are special (e.g. due to a pending interrupt) then
   // leave them alone.
   uintptr_t jslimit = SimulatorStack::JsLimitFromCLimit(isolate_, limit);
-  if (thread_local_.jslimit_ == thread_local_.real_jslimit_) {
-    thread_local_.jslimit_ = jslimit;
+  if (thread_local_.jslimit() == thread_local_.real_jslimit_) {
+    thread_local_.set_jslimit(jslimit);
   }
-  if (thread_local_.climit_ == thread_local_.real_climit_) {
-    thread_local_.climit_ = limit;
+  if (thread_local_.climit() == thread_local_.real_climit_) {
+    thread_local_.set_climit(limit);
   }
   thread_local_.real_climit_ = limit;
   thread_local_.real_jslimit_ = jslimit;
@@ -446,9 +474,9 @@ void StackGuard::FreeThreadResources() {
 
 void StackGuard::ThreadLocal::Clear() {
   real_jslimit_ = kIllegalLimit;
-  jslimit_ = kIllegalLimit;
+  set_jslimit(kIllegalLimit);
   real_climit_ = kIllegalLimit;
-  climit_ = kIllegalLimit;
+  set_climit(kIllegalLimit);
   postpone_interrupts_ = NULL;
   interrupt_flags_ = 0;
 }
@@ -461,9 +489,9 @@ bool StackGuard::ThreadLocal::Initialize(Isolate* isolate) {
     DCHECK(GetCurrentStackPosition() > kLimitSize);
     uintptr_t limit = GetCurrentStackPosition() - kLimitSize;
     real_jslimit_ = SimulatorStack::JsLimitFromCLimit(isolate, limit);
-    jslimit_ = SimulatorStack::JsLimitFromCLimit(isolate, limit);
+    set_jslimit(SimulatorStack::JsLimitFromCLimit(isolate, limit));
     real_climit_ = limit;
-    climit_ = limit;
+    set_climit(limit);
     should_set_stack_limits = true;
   }
   postpone_interrupts_ = NULL;
@@ -545,6 +573,12 @@ MaybeHandle<Object> Execution::ToInt32(
 }
 
 
+MaybeHandle<Object> Execution::ToLength(
+    Isolate* isolate, Handle<Object> obj) {
+  RETURN_NATIVE_CALL(to_length, { obj });
+}
+
+
 MaybeHandle<Object> Execution::NewDate(Isolate* isolate, double time) {
   Handle<Object> time_obj = isolate->factory()->NewNumber(time);
   RETURN_NATIVE_CALL(create_date, { time_obj });
@@ -597,73 +631,6 @@ Handle<Object> Execution::CharAt(Handle<String> string, uint32_t index) {
 }
 
 
-MaybeHandle<JSFunction> Execution::InstantiateFunction(
-    Handle<FunctionTemplateInfo> data) {
-  Isolate* isolate = data->GetIsolate();
-  if (!data->do_not_cache()) {
-    // Fast case: see if the function has already been instantiated
-    int serial_number = Smi::cast(data->serial_number())->value();
-    Handle<JSObject> cache(isolate->native_context()->function_cache());
-    Handle<Object> elm =
-        Object::GetElement(isolate, cache, serial_number).ToHandleChecked();
-    if (elm->IsJSFunction()) return Handle<JSFunction>::cast(elm);
-  }
-  // The function has not yet been instantiated in this context; do it.
-  Handle<Object> args[] = { data };
-  Handle<Object> result;
-  ASSIGN_RETURN_ON_EXCEPTION(
-      isolate, result,
-      Call(isolate,
-           isolate->instantiate_fun(),
-           isolate->js_builtins_object(),
-           arraysize(args),
-           args),
-      JSFunction);
-  return Handle<JSFunction>::cast(result);
-}
-
-
-MaybeHandle<JSObject> Execution::InstantiateObject(
-    Handle<ObjectTemplateInfo> data) {
-  Isolate* isolate = data->GetIsolate();
-  Handle<Object> result;
-  if (data->property_list()->IsUndefined() &&
-      !data->constructor()->IsUndefined()) {
-    Handle<FunctionTemplateInfo> cons_template =
-        Handle<FunctionTemplateInfo>(
-            FunctionTemplateInfo::cast(data->constructor()));
-    Handle<JSFunction> cons;
-    ASSIGN_RETURN_ON_EXCEPTION(
-        isolate, cons, InstantiateFunction(cons_template), JSObject);
-    ASSIGN_RETURN_ON_EXCEPTION(isolate, result, New(cons, 0, NULL), JSObject);
-  } else {
-    Handle<Object> args[] = { data };
-    ASSIGN_RETURN_ON_EXCEPTION(
-        isolate, result,
-        Call(isolate,
-             isolate->instantiate_fun(),
-             isolate->js_builtins_object(),
-             arraysize(args),
-             args),
-        JSObject);
-  }
-  return Handle<JSObject>::cast(result);
-}
-
-
-MaybeHandle<Object> Execution::ConfigureInstance(
-    Isolate* isolate,
-    Handle<Object> instance,
-    Handle<Object> instance_template) {
-  Handle<Object> args[] = { instance, instance_template };
-  return Execution::Call(isolate,
-                         isolate->configure_instance_fun(),
-                         isolate->js_builtins_object(),
-                         arraysize(args),
-                         args);
-}
-
-
 Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
                                             Handle<JSFunction> fun,
                                             Handle<Object> pos,
@@ -684,9 +651,16 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
 }
 
 
+void StackGuard::CheckAndHandleGCInterrupt() {
+  if (CheckAndClearInterrupt(GC_REQUEST)) {
+    isolate_->heap()->HandleGCRequest();
+  }
+}
+
+
 Object* StackGuard::HandleInterrupts() {
   if (CheckAndClearInterrupt(GC_REQUEST)) {
-    isolate_->heap()->CollectAllGarbage(Heap::kNoGCFlags, "GC interrupt");
+    isolate_->heap()->HandleGCRequest();
   }
 
   if (CheckDebugBreak() || CheckDebugCommand()) {
@@ -703,12 +677,12 @@ Object* StackGuard::HandleInterrupts() {
 
   if (CheckAndClearInterrupt(INSTALL_CODE)) {
     DCHECK(isolate_->concurrent_recompilation_enabled());
-    isolate_->optimizing_compiler_thread()->InstallOptimizedFunctions();
+    isolate_->optimizing_compile_dispatcher()->InstallOptimizedFunctions();
   }
 
   if (CheckAndClearInterrupt(API_INTERRUPT)) {
-    // Callback must be invoked outside of ExecusionAccess lock.
-    isolate_->InvokeApiInterruptCallback();
+    // Callbacks must be invoked outside of ExecusionAccess lock.
+    isolate_->InvokeApiInterruptCallbacks();
   }
 
   isolate_->counters()->stack_interrupts()->Increment();

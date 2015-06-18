@@ -8,12 +8,19 @@ cr.define('options.passwordManager', function() {
   /** @const */ var DeletableItem = options.DeletableItem;
   /** @const */ var List = cr.ui.List;
 
+  /** @const */ var URL_DATA_INDEX = 0;
+  /** @const */ var USERNAME_DATA_INDEX = 1;
+  /** @const */ var PASSWORD_DATA_INDEX = 2;
+  /** @const */ var FEDERATION_DATA_INDEX = 3;
+  /** @const */ var ORIGINAL_DATA_INDEX = 4;
+
   /**
    * Creates a new passwords list item.
    * @param {cr.ui.ArrayDataModel} dataModel The data model that contains this
    *     item.
-   * @param {Array} entry An array of the form [url, username, password]. When
-   *     the list has been filtered, a fourth element [index] may be present.
+   * @param {Array} entry An array of the form [url, username, password,
+   *     federation]. When the list has been filtered, a fifth element [index]
+   *     may be present.
    * @param {boolean} showPasswords If true, add a button to the element to
    *     allow the user to reveal the saved password.
    * @constructor
@@ -24,7 +31,8 @@ cr.define('options.passwordManager', function() {
     el.dataItem = entry;
     el.dataModel = dataModel;
     el.__proto__ = PasswordListItem.prototype;
-    el.decorate(showPasswords);
+    el.showPasswords_ = showPasswords;
+    el.decorate();
 
     return el;
   }
@@ -33,7 +41,7 @@ cr.define('options.passwordManager', function() {
     __proto__: DeletableItem.prototype,
 
     /** @override */
-    decorate: function(showPasswords) {
+    decorate: function() {
       DeletableItem.prototype.decorate.call(this);
 
       // The URL of the site.
@@ -60,37 +68,53 @@ cr.define('options.passwordManager', function() {
       usernameLabel.title = this.username;
       this.contentElement.appendChild(usernameLabel);
 
-      // The stored password.
-      var passwordInputDiv = this.ownerDocument.createElement('div');
-      passwordInputDiv.className = 'password';
+      if (this.federation) {
+        // The federation.
+        var federationDiv = this.ownerDocument.createElement('div');
+        federationDiv.className = 'federation';
+        federationDiv.textContent = this.federation;
+        this.contentElement.appendChild(federationDiv);
+      } else {
+        // The stored password.
+        var passwordInputDiv = this.ownerDocument.createElement('div');
+        passwordInputDiv.className = 'password';
 
-      // The password input field.
-      var passwordInput = this.ownerDocument.createElement('input');
-      passwordInput.type = 'password';
-      passwordInput.className = 'inactive-password';
-      passwordInput.readOnly = true;
-      passwordInput.value = showPasswords ? this.password : '********';
-      passwordInputDiv.appendChild(passwordInput);
-      this.passwordField = passwordInput;
+        // The password input field.
+        var passwordInput = this.ownerDocument.createElement('input');
+        passwordInput.type = 'password';
+        passwordInput.className = 'inactive-password';
+        passwordInput.readOnly = true;
+        passwordInput.value = this.showPasswords_ ? this.password : '********';
+        passwordInputDiv.appendChild(passwordInput);
+        var deletableItem = this;
+        passwordInput.addEventListener('focus', function() {
+          deletableItem.handleFocus();
+        });
+        this.passwordField = passwordInput;
+        this.setFocusable_(false);
 
-      // The show/hide button.
-      if (showPasswords) {
-        var button = this.ownerDocument.createElement('button');
-        button.hidden = true;
-        button.className = 'list-inline-button custom-appearance';
-        button.textContent = loadTimeData.getString('passwordShowButton');
-        button.addEventListener('click', this.onClick_.bind(this), true);
-        button.addEventListener('mousedown', function(event) {
-          // Don't focus on this button by mousedown.
-          event.preventDefault();
-          // Don't handle list item selection. It causes focus change.
-          event.stopPropagation();
-        }, false);
-        passwordInputDiv.appendChild(button);
-        this.passwordShowButton = button;
+        // The show/hide button.
+        if (this.showPasswords_) {
+          var button = this.ownerDocument.createElement('button');
+          button.hidden = true;
+          button.className = 'list-inline-button custom-appearance';
+          button.textContent = loadTimeData.getString('passwordShowButton');
+          button.addEventListener('click', this.onClick_.bind(this), true);
+          button.addEventListener('mousedown', function(event) {
+            // Don't focus on this button by mousedown.
+            event.preventDefault();
+            // Don't handle list item selection. It causes focus change.
+            event.stopPropagation();
+          }, false);
+          button.addEventListener('focus', function() {
+            deletableItem.handleFocus();
+          });
+          passwordInputDiv.appendChild(button);
+          this.passwordShowButton = button;
+        }
+        this.contentElement.appendChild(passwordInputDiv);
       }
 
-      this.contentElement.appendChild(passwordInputDiv);
     },
 
     /** @override */
@@ -103,11 +127,24 @@ cr.define('options.passwordManager', function() {
 
       if (this.selected) {
         input.classList.remove('inactive-password');
+        this.setFocusable_(true);
         button.hidden = false;
+        input.focus();
       } else {
         input.classList.add('inactive-password');
+        this.setFocusable_(false);
         button.hidden = true;
       }
+    },
+
+    /**
+     * Set the focusability of this row.
+     * @param {boolean} focusable
+     * @private
+     */
+    setFocusable_: function(focusable) {
+      var tabIndex = focusable ? 0 : -1;
+      this.passwordField.tabIndex = this.closeButtonElement.tabIndex = tabIndex;
     },
 
     /**
@@ -139,7 +176,7 @@ cr.define('options.passwordManager', function() {
      * @private
      */
     getOriginalIndex_: function() {
-      var index = this.dataItem[3];
+      var index = this.dataItem[ORIGINAL_DATA_INDEX];
       return index ? index : this.dataModel.indexOf(this.dataItem);
     },
 
@@ -162,10 +199,10 @@ cr.define('options.passwordManager', function() {
      * @type {string}
      */
     get url() {
-      return this.dataItem[0];
+      return this.dataItem[URL_DATA_INDEX];
     },
     set url(url) {
-      this.dataItem[0] = url;
+      this.dataItem[URL_DATA_INDEX] = url;
     },
 
     /**
@@ -173,10 +210,10 @@ cr.define('options.passwordManager', function() {
      * @type {string}
      */
     get username() {
-      return this.dataItem[1];
+      return this.dataItem[USERNAME_DATA_INDEX];
     },
     set username(username) {
-      this.dataItem[1] = username;
+      this.dataItem[USERNAME_DATA_INDEX] = username;
     },
 
     /**
@@ -184,10 +221,21 @@ cr.define('options.passwordManager', function() {
      * @type {string}
      */
     get password() {
-      return this.dataItem[2];
+      return this.dataItem[PASSWORD_DATA_INDEX];
     },
     set password(password) {
-      this.dataItem[2] = password;
+      this.dataItem[PASSWORD_DATA_INDEX] = password;
+    },
+
+    /**
+     * Get and set the federation for the entry.
+     * @type {string}
+     */
+    get federation() {
+      return this.dataItem[FEDERATION_DATA_INDEX];
+    },
+    set federation(federation) {
+      this.dataItem[FEDERATION_DATA_INDEX] = federation;
     },
   };
 
@@ -267,6 +315,7 @@ cr.define('options.passwordManager', function() {
       Preferences.getInstance().addEventListener(
           'profile.password_manager_allow_show_passwords',
           this.onPreferenceChanged_.bind(this));
+      this.addEventListener('focus', this.onFocus_.bind(this));
     },
 
     /**
@@ -295,9 +344,9 @@ cr.define('options.passwordManager', function() {
     /** @override */
     deleteItemAtIndex: function(index) {
       var item = this.dataModel.item(index);
-      if (item && item.length > 3) {
-        // The fourth element, if present, is the original index to delete.
-        index = item[3];
+      if (item && item[ORIGINAL_DATA_INDEX] != undefined) {
+        // The fifth element, if present, is the original index to delete.
+        index = item[ORIGINAL_DATA_INDEX];
       }
       PasswordManager.removeSavedPassword(index);
     },
@@ -308,12 +357,23 @@ cr.define('options.passwordManager', function() {
     get length() {
       return this.dataModel.length;
     },
+
+    /**
+     * Will make to first row focusable if none are selected. This makes it
+     * possible to tab into the rows without pressing up/down first.
+     * @param {Event} e The focus event.
+     * @private
+     */
+    onFocus_: function(e) {
+      if (!this.selectedItem && this.items)
+        this.items[0].setFocusable_(true);
+    },
   };
 
   /**
    * Create a new passwords list.
    * @constructor
-   * @extends {cr.ui.List}
+   * @extends {options.DeletableItemList}
    */
   var PasswordExceptionsList = cr.ui.define('list');
 

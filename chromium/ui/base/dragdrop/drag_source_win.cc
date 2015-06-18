@@ -4,9 +4,11 @@
 
 #include "ui/base/dragdrop/drag_source_win.h"
 
+#include "ui/base/dragdrop/os_exchange_data_provider_win.h"
+
 namespace ui {
 
-DragSourceWin::DragSourceWin() : cancel_drag_(false) {
+DragSourceWin::DragSourceWin() : cancel_drag_(false), data_(nullptr) {
 }
 
 HRESULT DragSourceWin::QueryContinueDrag(BOOL escape_pressed, DWORD key_state) {
@@ -31,25 +33,10 @@ HRESULT DragSourceWin::GiveFeedback(DWORD effect) {
   return DRAGDROP_S_USEDEFAULTCURSORS;
 }
 
-HRESULT DragSourceWin::QueryInterface(const IID& iid, void** object) {
-  *object = NULL;
-  if (IsEqualIID(iid, IID_IUnknown) || IsEqualIID(iid, IID_IDropSource)) {
-    *object = this;
-  } else {
-    return E_NOINTERFACE;
-  }
-  AddRef();
-  return S_OK;
-}
-
-ULONG DragSourceWin::AddRef() {
-  base::RefCountedThreadSafe<DragSourceWin>::AddRef();
-  return 0;
-}
-
-ULONG DragSourceWin::Release() {
-  base::RefCountedThreadSafe<DragSourceWin>::Release();
-  return 0;
+void DragSourceWin::OnDragSourceDrop() {
+  DCHECK(data_);
+  ui::OSExchangeDataProviderWin::GetDataObjectImpl(*data_)
+      ->set_in_drag_loop(false);
 }
 
 }  // namespace ui

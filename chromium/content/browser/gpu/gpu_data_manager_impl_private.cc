@@ -7,13 +7,13 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
+#include "base/trace_event/trace_event.h"
 #include "base/version.h"
 #include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_process_host.h"
@@ -29,6 +29,7 @@
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_implementation.h"
@@ -77,7 +78,7 @@ int GetGpuBlacklistHistogramValueWin(GpuFeatureStatus status) {
       version_str = version_str.substr(0, pos);
     Version os_version(version_str);
     if (os_version.IsValid() && os_version.components().size() >= 2) {
-      const std::vector<uint16>& version_numbers = os_version.components();
+      const std::vector<uint32_t>& version_numbers = os_version.components();
       if (version_numbers[0] == 5)
         sub_version = kWinXP;
       else if (version_numbers[0] == 6 && version_numbers[1] == 0)
@@ -411,8 +412,10 @@ void GpuDataManagerImplPrivate::RegisterSwiftShaderPath(
 }
 
 bool GpuDataManagerImplPrivate::ShouldUseWarp() const {
-  return use_warp_ ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseWarp);
+  std::string angle_impl_flag =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kUseANGLE);
+  return use_warp_ || angle_impl_flag == gfx::kANGLEImplementationWARPName;
 }
 
 void GpuDataManagerImplPrivate::AddObserver(GpuDataManagerObserver* observer) {
@@ -495,8 +498,7 @@ void GpuDataManagerImplPrivate::Initialize() {
     return;
   }
 
-  const base::CommandLine* command_line =
-      base::CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kSkipGpuDataLoading))
     return;
 
@@ -540,6 +542,12 @@ void GpuDataManagerImplPrivate::Initialize() {
   InitializeImpl(gpu_blacklist_string,
                  gpu_driver_bug_list_string,
                  gpu_info);
+
+  if (command_line->HasSwitch(switches::kSingleProcess) ||
+      command_line->HasSwitch(switches::kInProcessGPU)) {
+    command_line->AppendSwitch(switches::kDisableGpuWatchdog);
+    AppendGpuCommandLine(command_line);
+  }
 }
 
 void GpuDataManagerImplPrivate::UpdateGpuInfoHelper() {
@@ -556,6 +564,9 @@ void GpuDataManagerImplPrivate::UpdateGpuInfoHelper() {
   if (gpu_driver_bug_list_) {
     gpu_driver_bugs_ = gpu_driver_bug_list_->MakeDecision(
         gpu::GpuControlList::kOsAny, std::string(), gpu_info_);
+
+    disabled_extensions_ =
+        JoinString(gpu_driver_bug_list_->GetDisabledExtensions(), ' ');
   }
   gpu::GpuDriverBugList::AppendWorkaroundsFromCommandLine(
       &gpu_driver_bugs_, *base::CommandLine::ForCurrentProcess());
@@ -569,9 +580,14 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
   if (use_swiftshader_ || ShouldUseWarp())
     return;
 
+  bool was_info_available = IsCompleteGpuInfoAvailable();
   gpu::MergeGPUInfo(&gpu_info_, gpu_info);
-  if (IsCompleteGpuInfoAvailable())
+  if (IsCompleteGpuInfoAvailable()) {
     complete_gpu_info_already_requested_ = true;
+  } else if (was_info_available) {
+    // Allow future requests to go through properly.
+    complete_gpu_info_already_requested_ = false;
+  }
 
   UpdateGpuInfoHelper();
 }
@@ -579,7 +595,8 @@ void GpuDataManagerImplPrivate::UpdateGpuInfo(const gpu::GPUInfo& gpu_info) {
 void GpuDataManagerImplPrivate::UpdateVideoMemoryUsageStats(
     const GPUVideoMemoryUsageStats& video_memory_usage_stats) {
   GpuDataManagerImpl::UnlockedSession session(owner_);
-  observer_list_->Notify(&GpuDataManagerObserver::OnVideoMemoryUsageStatsUpdate,
+  observer_list_->Notify(FROM_HERE,
+                         &GpuDataManagerObserver::OnVideoMemoryUsageStatsUpdate,
                          video_memory_usage_stats);
 }
 
@@ -587,8 +604,7 @@ void GpuDataManagerImplPrivate::AppendRendererCommandLine(
     base::CommandLine* command_line) const {
   DCHECK(command_line);
 
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
-      !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
+  if (ShouldDisableAcceleratedVideoDecode(command_line))
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
 #if defined(ENABLE_WEBRTC)
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE) &&
@@ -643,8 +659,7 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
                                     IntSetToString(gpu_driver_bugs_));
   }
 
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
-      !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
+  if (ShouldDisableAcceleratedVideoDecode(command_line)) {
     command_line->AppendSwitch(switches::kDisableAcceleratedVideoDecode);
   }
 #if defined(ENABLE_WEBRTC)
@@ -667,8 +682,10 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
   command_line->AppendSwitchASCII(switches::kGpuDriverVersion,
       gpu_info_.driver_version);
 
-  if (ShouldUseWarp())
-    command_line->AppendSwitch(switches::kUseWarp);
+  if (ShouldUseWarp() && !command_line->HasSwitch(switches::kUseANGLE)) {
+    command_line->AppendSwitchASCII(switches::kUseANGLE,
+                                    gfx::kANGLEImplementationWARPName);
+  }
 }
 
 void GpuDataManagerImplPrivate::AppendPluginCommandLine(
@@ -706,9 +723,15 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     prefs->flash_stage3d_baseline_enabled = false;
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS))
     prefs->accelerated_2d_canvas_enabled = false;
-  if (IsDriverBugWorkaroundActive(gpu::DISABLE_MULTISAMPLING) ||
+  // TODO(senorblanco): The renderer shouldn't have an extra setting
+  // for this, but should rely on extension availability.
+  // Note that |gl_multisampling_enabled| only affects the decoder's
+  // default framebuffer allocation, which does not support
+  // multisampled_render_to_texture, only msaa with explicit resolve.
+  if (IsDriverBugWorkaroundActive(
+          gpu::DISABLE_CHROMIUM_FRAMEBUFFER_MULTISAMPLE) ||
       (IsDriverBugWorkaroundActive(gpu::DISABLE_MULTIMONITOR_MULTISAMPLING) &&
-          display_count_ > 1))
+       display_count_ > 1))
     prefs->gl_multisampling_enabled = false;
 
 #if defined(USE_AURA)
@@ -718,9 +741,10 @@ void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
   }
 #endif
 
-  if (!IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE) &&
-      !base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableAcceleratedVideoDecode)) {
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
+  if (!ShouldDisableAcceleratedVideoDecode(command_line) &&
+      !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
     prefs->pepper_accelerated_video_decode_enabled = true;
   }
 }
@@ -756,14 +780,16 @@ void GpuDataManagerImplPrivate::GetBlacklistReasons(
     gpu_driver_bug_list_->GetReasons(reasons, "workarounds");
 }
 
-void GpuDataManagerImplPrivate::GetDriverBugWorkarounds(
-    base::ListValue* workarounds) const {
+std::vector<std::string>
+GpuDataManagerImplPrivate::GetDriverBugWorkarounds() const {
+  std::vector<std::string> workarounds;
   for (std::set<int>::const_iterator it = gpu_driver_bugs_.begin();
        it != gpu_driver_bugs_.end(); ++it) {
-    workarounds->AppendString(
+    workarounds.push_back(
         gpu::GpuDriverBugWorkaroundTypeToString(
             static_cast<gpu::GpuDriverBugWorkaroundType>(*it)));
   }
+  return workarounds;
 }
 
 void GpuDataManagerImplPrivate::AddLogMessage(
@@ -788,7 +814,7 @@ void GpuDataManagerImplPrivate::ProcessCrashed(
     gpu_info_.process_crash_count = GpuProcessHost::gpu_crash_count();
     GpuDataManagerImpl::UnlockedSession session(owner_);
     observer_list_->Notify(
-        &GpuDataManagerObserver::OnGpuProcessCrashed, exit_code);
+        FROM_HERE, &GpuDataManagerObserver::OnGpuProcessCrashed, exit_code);
   }
 }
 
@@ -844,7 +870,7 @@ bool GpuDataManagerImplPrivate::UpdateActiveGpu(
 }
 
 bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuCompositing))
     return false;
   if (ShouldUseWarp())
@@ -854,6 +880,33 @@ bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING))
     return false;
   return true;
+}
+
+
+bool GpuDataManagerImplPrivate::ShouldDisableAcceleratedVideoDecode(
+    const base::CommandLine* command_line) const {
+  // Make sure that we initialize the experiment first to make sure that
+  // statistics are bucket correctly in all cases.
+  // This experiment is temporary and will be removed once enough data
+  // to resolve crbug/442039 has been collected.
+  const std::string group_name = base::FieldTrialList::FindFullName(
+      "DisableAcceleratedVideoDecode");
+  if (command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
+    // It was already disabled on the command line.
+    return false;
+  }
+  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE))
+    return true;
+  if (group_name == "Disabled")
+    return true;
+  return false;
+}
+
+void GpuDataManagerImplPrivate::GetDisabledExtensions(
+    std::string* disabled_extensions) const {
+  DCHECK(disabled_extensions);
+
+  *disabled_extensions = disabled_extensions_;
 }
 
 void GpuDataManagerImplPrivate::BlockDomainFrom3DAPIs(
@@ -979,8 +1032,14 @@ void GpuDataManagerImplPrivate::UpdatePreliminaryBlacklistedFeatures() {
 
 void GpuDataManagerImplPrivate::UpdateGpuSwitchingManager(
     const gpu::GPUInfo& gpu_info) {
-  ui::GpuSwitchingManager::GetInstance()->SetGpuCount(
-      gpu_info.secondary_gpus.size() + 1);
+  // The vendor IDs might be 0 on non-PCI devices (like Android), but
+  // the length of the vector is all we care about in most cases.
+  std::vector<uint32> vendor_ids;
+  vendor_ids.push_back(gpu_info.gpu.vendor_id);
+  for (const auto& device : gpu_info.secondary_gpus) {
+    vendor_ids.push_back(device.vendor_id);
+  }
+  ui::GpuSwitchingManager::GetInstance()->SetGpuVendorIds(vendor_ids);
 
   if (ui::GpuSwitchingManager::GetInstance()->SupportsDualGpus()) {
     if (gpu_driver_bugs_.count(gpu::FORCE_DISCRETE_GPU) == 1)
@@ -991,7 +1050,7 @@ void GpuDataManagerImplPrivate::UpdateGpuSwitchingManager(
 }
 
 void GpuDataManagerImplPrivate::NotifyGpuInfoUpdate() {
-  observer_list_->Notify(&GpuDataManagerObserver::OnGpuInfoUpdate);
+  observer_list_->Notify(FROM_HERE, &GpuDataManagerObserver::OnGpuInfoUpdate);
 }
 
 void GpuDataManagerImplPrivate::EnableSwiftShaderIfNecessary() {
@@ -1013,9 +1072,9 @@ void GpuDataManagerImplPrivate::EnableWarpIfNecessary() {
     return;
   // We should only use WARP if we are unable to use the regular GPU for
   // compositing, and if we in Metro mode.
-  use_warp_ =
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kViewerConnect) &&
-      !CanUseGpuBrowserCompositor();
+  use_warp_ = base::CommandLine::ForCurrentProcess()->HasSwitch(
+                  switches::kViewerConnect) &&
+              !CanUseGpuBrowserCompositor();
 #endif
 }
 
@@ -1124,7 +1183,7 @@ void GpuDataManagerImplPrivate::Notify3DAPIBlocked(const GURL& url,
                                                    int render_view_id,
                                                    ThreeDAPIType requester) {
   GpuDataManagerImpl::UnlockedSession session(owner_);
-  observer_list_->Notify(&GpuDataManagerObserver::DidBlock3DAPIs,
+  observer_list_->Notify(FROM_HERE, &GpuDataManagerObserver::DidBlock3DAPIs,
                          url, render_process_id, render_view_id, requester);
 }
 

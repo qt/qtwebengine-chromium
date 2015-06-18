@@ -35,14 +35,14 @@
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
-#include "core/accessibility/AXObjectCache.h"
+#include "core/dom/AXObjectCache.h"
+#include "core/dom/Touch.h"
+#include "core/dom/TouchList.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/ScopedEventQueue.h"
-#include "core/dom/Touch.h"
 #include "core/events/TouchEvent.h"
-#include "core/dom/TouchList.h"
-#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLDivElement.h"
@@ -52,7 +52,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SliderThumbElement.h"
-#include "core/rendering/RenderSlider.h"
+#include "core/layout/LayoutSlider.h"
 #include "platform/PlatformMouseEvent.h"
 #include "wtf/MathExtras.h"
 #include "wtf/NonCopyingSort.h"
@@ -191,8 +191,8 @@ void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
     const Decimal bigStep = std::max((stepRange.maximum() - stepRange.minimum()) / 10, step);
 
     bool isVertical = false;
-    if (element().renderer()) {
-        ControlPart part = element().renderer()->style()->appearance();
+    if (element().layoutObject()) {
+        ControlPart part = element().layoutObject()->style()->appearance();
         isVertical = part == SliderVerticalPart;
     }
 
@@ -244,9 +244,9 @@ void RangeInputType::createShadowSubtree()
     element().userAgentShadowRoot()->appendChild(container.release());
 }
 
-RenderObject* RangeInputType::createRenderer(RenderStyle*) const
+LayoutObject* RangeInputType::createLayoutObject(const ComputedStyle&) const
 {
-    return new RenderSlider(&element());
+    return new LayoutSlider(&element());
 }
 
 Decimal RangeInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
@@ -273,17 +273,19 @@ void RangeInputType::sanitizeValueInResponseToMinOrMaxAttributeChange()
 {
     if (element().hasDirtyValue())
         element().setValue(element().value());
-
-    sliderThumbElement()->setPositionFromValue();
+    element().updateView();
 }
 
 void RangeInputType::setValue(const String& value, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     InputType::setValue(value, valueChanged, eventBehavior);
 
-    if (!valueChanged)
-        return;
+    if (valueChanged)
+        element().updateView();
+}
 
+void RangeInputType::updateView()
+{
     sliderThumbElement()->setPositionFromValue();
 }
 
@@ -324,8 +326,8 @@ void RangeInputType::listAttributeTargetChanged()
 {
     m_tickMarkValuesDirty = true;
     Element* sliderTrackElement = this->sliderTrackElement();
-    if (sliderTrackElement->renderer())
-        sliderTrackElement->renderer()->setNeedsLayoutAndFullPaintInvalidation();
+    if (sliderTrackElement->layoutObject())
+        sliderTrackElement->layoutObject()->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
 }
 
 static bool decimalCompare(const Decimal& a, const Decimal& b)

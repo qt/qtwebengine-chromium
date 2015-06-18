@@ -9,20 +9,20 @@ namespace blink {
 
 struct PaintInfo;
 class Path;
+class LayoutListMarker;
 class LayoutPoint;
-class RenderListMarker;
 
 class ListMarkerPainter {
 public:
-    ListMarkerPainter(RenderListMarker& renderListMarker) : m_renderListMarker(renderListMarker) { }
+    ListMarkerPainter(LayoutListMarker& layoutListMarker) : m_layoutListMarker(layoutListMarker) { }
 
-    void paint(PaintInfo&, const LayoutPoint& paintOffset);
+    void paint(const PaintInfo&, const LayoutPoint& paintOffset);
 
 private:
     Path getCanonicalPath() const;
     Path getPath(const LayoutPoint& origin) const;
 
-    RenderListMarker& m_renderListMarker;
+    LayoutListMarker& m_layoutListMarker;
 };
 
 } // namespace blink

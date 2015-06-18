@@ -5,10 +5,13 @@
 #ifndef CONTENT_BROWSER_PUSH_MESSAGING_PUSH_MESSAGING_MESSAGE_FILTER_H_
 #define CONTENT_BROWSER_PUSH_MESSAGING_PUSH_MESSAGING_MESSAGE_FILTER_H_
 
+#include <stdint.h>
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "content/common/service_worker/service_worker_status_code.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/push_messaging_status.h"
 #include "url/gurl.h"
@@ -20,6 +23,9 @@ namespace content {
 class PushMessagingService;
 class ServiceWorkerContextWrapper;
 
+extern const char kPushSenderIdServiceWorkerKey[];
+extern const char kPushRegistrationIdServiceWorkerKey[];
+
 class PushMessagingMessageFilter : public BrowserMessageFilter {
  public:
   PushMessagingMessageFilter(
@@ -27,46 +33,127 @@ class PushMessagingMessageFilter : public BrowserMessageFilter {
       ServiceWorkerContextWrapper* service_worker_context);
 
  private:
+  struct RegisterData;
+  class Core;
+
+  friend class BrowserThread;
+  friend class base::DeleteHelper<PushMessagingMessageFilter>;
+
   ~PushMessagingMessageFilter() override;
 
   // BrowserMessageFilter implementation.
+  void OnDestruct() const override;
   bool OnMessageReceived(const IPC::Message& message) override;
 
-  void OnRegister(int render_frame_id,
-                  int callbacks_id,
-                  const std::string& sender_id,
-                  bool user_gesture,
-                  int service_worker_provider_id);
+  // Register methods on IO thread ---------------------------------------------
 
-  void OnPermissionStatusRequest(int render_frame_id,
-                                 int service_worker_provider_id,
-                                 int permission_callback_id);
+  void OnRegisterFromDocument(int render_frame_id,
+                              int request_id,
+                              const std::string& sender_id,
+                              bool user_visible,
+                              int64_t service_worker_registration_id);
 
-  void DoRegister(int render_frame_id,
-                  int callbacks_id,
-                  const std::string& sender_id,
-                  bool user_gesture,
-                  const GURL& origin,
-                  int64 service_worker_registration_id);
+  void OnRegisterFromWorker(int request_id,
+                            int64_t service_worker_registration_id,
+                            bool user_visible);
 
-  void DoPermissionStatusRequest(const GURL& requesting_origin,
-                                 int render_frame_id,
-                                 int callback_id);
-  void DidRegister(int render_frame_id,
-                   int callbacks_id,
-                   const GURL& push_endpoint,
-                   const std::string& push_registration_id,
-                   PushRegistrationStatus status);
+  void DidPersistSenderId(const RegisterData& data,
+                          const std::string& sender_id,
+                          ServiceWorkerStatusCode service_worker_status);
 
-  PushMessagingService* service();
+  // sender_id is ignored if data.FromDocument() is false.
+  void CheckForExistingRegistration(
+      const RegisterData& data,
+      const std::string& sender_id);
 
-  int render_process_id_;
+  // sender_id is ignored if data.FromDocument() is false.
+  void DidCheckForExistingRegistration(
+      const RegisterData& data,
+      const std::string& sender_id,
+      const std::string& push_registration_id,
+      ServiceWorkerStatusCode service_worker_status);
+
+  void DidGetSenderIdFromStorage(const RegisterData& data,
+                                 const std::string& sender_id,
+                                 ServiceWorkerStatusCode service_worker_status);
+
+  // Called via PostTask from UI thread.
+  void PersistRegistrationOnIO(const RegisterData& data,
+                               const std::string& push_registration_id);
+
+  void DidPersistRegistrationOnIO(
+      const RegisterData& data,
+      const std::string& push_registration_id,
+      ServiceWorkerStatusCode service_worker_status);
+
+  // Called both from IO thread, and via PostTask from UI thread.
+  void SendRegisterError(const RegisterData& data,
+                         PushRegistrationStatus status);
+  // Called both from IO thread, and via PostTask from UI thread.
+  void SendRegisterSuccess(const RegisterData& data,
+                           PushRegistrationStatus status,
+                           const std::string& push_registration_id);
+
+  // Unregister methods on IO thread -------------------------------------------
+
+  void OnUnregister(int request_id, int64_t service_worker_registration_id);
+
+  void UnregisterHavingGottenPushRegistrationId(
+      int request_id,
+      int64_t service_worker_registration_id,
+      const GURL& requesting_origin,
+      const std::string& push_registration_id,
+      ServiceWorkerStatusCode service_worker_status);
+
+  void UnregisterHavingGottenSenderId(
+      int request_id,
+      int64_t service_worker_registration_id,
+      const GURL& requesting_origin,
+      const std::string& sender_id,
+      ServiceWorkerStatusCode service_worker_status);
+
+  // Called via PostTask from UI thread.
+  void ClearRegistrationData(int request_id,
+                             int64_t service_worker_registration_id,
+                             PushUnregistrationStatus unregistration_status);
+
+  void DidClearRegistrationData(int request_id,
+                                PushUnregistrationStatus unregistration_status,
+                                ServiceWorkerStatusCode service_worker_status);
+
+  // Called both from IO thread, and via PostTask from UI thread.
+  void DidUnregister(int request_id,
+                     PushUnregistrationStatus unregistration_status);
+
+  // GetRegistration methods on IO thread --------------------------------------
+
+  void OnGetRegistration(int request_id,
+                         int64_t service_worker_registration_id);
+
+  void DidGetRegistration(int request_id,
+                          const std::string& push_registration_id,
+                          ServiceWorkerStatusCode status);
+
+  // GetPermission methods on IO thread ----------------------------------------
+
+  void OnGetPermissionStatus(int request_id,
+                             int64_t service_worker_registration_id,
+                             bool user_visible);
+
+  // Helper methods on IO thread -----------------------------------------------
+
+  // Called via PostTask from UI thread.
+  void SendIPC(scoped_ptr<IPC::Message> message);
+
+  // Inner core of this message filter which lives on the UI thread.
+  scoped_ptr<Core, BrowserThread::DeleteOnUIThread> ui_core_;
+
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
 
-  // Owned by the content embedder's browsing context.
-  PushMessagingService* service_;
+  // Empty if no PushMessagingService was available when constructed.
+  GURL push_endpoint_;
 
-  base::WeakPtrFactory<PushMessagingMessageFilter> weak_factory_;
+  base::WeakPtrFactory<PushMessagingMessageFilter> weak_factory_io_to_io_;
 
   DISALLOW_COPY_AND_ASSIGN(PushMessagingMessageFilter);
 };

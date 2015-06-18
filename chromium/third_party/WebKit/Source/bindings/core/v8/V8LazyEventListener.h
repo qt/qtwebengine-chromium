@@ -47,21 +47,16 @@ class V8LazyEventListener final : public V8AbstractEventListener {
 public:
     static PassRefPtr<V8LazyEventListener> create(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String& sourceURL, const TextPosition& position, Node* node, v8::Isolate* isolate)
     {
-        return adoptRef(new V8LazyEventListener(functionName, eventParameterName, code, sourceURL, position, node, isolate));
+        return adoptRef(new V8LazyEventListener(isolate, functionName, eventParameterName, code, sourceURL, position, node));
     }
-
-    // V8LazyEventListener is always for the main world.
-    virtual DOMWrapperWorld& world() const override { return DOMWrapperWorld::mainWorld(); }
-
-    virtual void handleEvent(ExecutionContext*, Event*) override;
 
 protected:
     virtual void prepareListenerObject(ExecutionContext*) override;
 
 private:
-    V8LazyEventListener(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String sourceURL, const TextPosition&, Node*, v8::Isolate*);
+    V8LazyEventListener(v8::Isolate*, const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String sourceURL, const TextPosition&, Node*);
 
-    virtual v8::Local<v8::Value> callListenerFunction(v8::Handle<v8::Value> jsEvent, Event*) override;
+    virtual v8::Local<v8::Value> callListenerFunction(ScriptState*, v8::Local<v8::Value>, Event*) override;
 
     // Needs to return true for all event handlers implemented in JavaScript so that
     // the SVG code does not add the event handler in both

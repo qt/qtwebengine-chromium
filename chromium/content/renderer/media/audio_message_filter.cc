@@ -22,7 +22,6 @@ class AudioMessageFilter::AudioOutputIPCImpl
     : public NON_EXPORTED_BASE(media::AudioOutputIPC) {
  public:
   AudioOutputIPCImpl(const scoped_refptr<AudioMessageFilter>& filter,
-                     int render_view_id,
                      int render_frame_id);
   ~AudioOutputIPCImpl() override;
 
@@ -37,7 +36,6 @@ class AudioMessageFilter::AudioOutputIPCImpl
 
  private:
   const scoped_refptr<AudioMessageFilter> filter_;
-  const int render_view_id_;
   const int render_frame_id_;
   int stream_id_;
 };
@@ -47,7 +45,6 @@ AudioMessageFilter* AudioMessageFilter::g_filter = NULL;
 AudioMessageFilter::AudioMessageFilter(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
     : sender_(NULL),
-      audio_hardware_config_(NULL),
       io_message_loop_(io_message_loop) {
   DCHECK(!g_filter);
   g_filter = this;
@@ -65,20 +62,18 @@ AudioMessageFilter* AudioMessageFilter::Get() {
 
 AudioMessageFilter::AudioOutputIPCImpl::AudioOutputIPCImpl(
     const scoped_refptr<AudioMessageFilter>& filter,
-    int render_view_id,
     int render_frame_id)
     : filter_(filter),
-      render_view_id_(render_view_id),
       render_frame_id_(render_frame_id),
       stream_id_(kStreamIDNotSet) {}
 
 AudioMessageFilter::AudioOutputIPCImpl::~AudioOutputIPCImpl() {}
 
 scoped_ptr<media::AudioOutputIPC> AudioMessageFilter::CreateAudioOutputIPC(
-    int render_view_id, int render_frame_id) {
-  DCHECK_GT(render_view_id, 0);
+    int render_frame_id) {
+  DCHECK_GT(render_frame_id, 0);
   return scoped_ptr<media::AudioOutputIPC>(
-      new AudioOutputIPCImpl(this, render_view_id, render_frame_id));
+      new AudioOutputIPCImpl(this, render_frame_id));
 }
 
 void AudioMessageFilter::AudioOutputIPCImpl::CreateStream(
@@ -89,8 +84,8 @@ void AudioMessageFilter::AudioOutputIPCImpl::CreateStream(
   DCHECK(delegate);
   DCHECK_EQ(stream_id_, kStreamIDNotSet);
   stream_id_ = filter_->delegates_.Add(delegate);
-  filter_->Send(new AudioHostMsg_CreateStream(
-      stream_id_, render_view_id_, render_frame_id_, session_id, params));
+  filter_->Send(new AudioHostMsg_CreateStream(stream_id_, render_frame_id_,
+                                              session_id, params));
 }
 
 void AudioMessageFilter::AudioOutputIPCImpl::PlayStream() {
@@ -131,7 +126,6 @@ bool AudioMessageFilter::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(AudioMessageFilter, message)
     IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamCreated, OnStreamCreated)
     IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamStateChanged, OnStreamStateChanged)
-    IPC_MESSAGE_HANDLER(AudioMsg_NotifyDeviceChanged, OnOutputDeviceChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -200,46 +194,6 @@ void AudioMessageFilter::OnStreamStateChanged(
     return;
   }
   delegate->OnStateChanged(state);
-}
-
-void AudioMessageFilter::OnOutputDeviceChanged(int stream_id,
-                                               int new_buffer_size,
-                                               int new_sample_rate) {
-  DCHECK(io_message_loop_->BelongsToCurrentThread());
-  base::AutoLock auto_lock(lock_);
-
-  WebRtcLogMessage(base::StringPrintf(
-      "AMF::OnOutputDeviceChanged. stream_id=%d"
-      ", new_buffer_size=%d, new_sample_rate=%d",
-      stream_id,
-      new_buffer_size,
-      new_sample_rate));
-
-  // Ignore the message if an audio hardware config hasn't been created; this
-  // can occur if the renderer is using the high latency audio path.
-  CHECK(audio_hardware_config_);
-
-  // TODO(crogers): fix OnOutputDeviceChanged() to pass AudioParameters.
-  media::ChannelLayout channel_layout =
-      audio_hardware_config_->GetOutputChannelLayout();
-  int channels = audio_hardware_config_->GetOutputChannels();
-
-  media::AudioParameters output_params;
-  output_params.Reset(
-      media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-      channel_layout,
-      channels,
-      new_sample_rate,
-      16,
-      new_buffer_size);
-
-  audio_hardware_config_->UpdateOutputConfig(output_params);
-}
-
-void AudioMessageFilter::SetAudioHardwareConfig(
-    media::AudioHardwareConfig* config) {
-  base::AutoLock auto_lock(lock_);
-  audio_hardware_config_ = config;
 }
 
 }  // namespace content

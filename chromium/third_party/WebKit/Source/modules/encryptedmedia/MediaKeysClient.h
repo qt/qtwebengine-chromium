@@ -12,10 +12,11 @@ namespace blink {
 
 class ExecutionContext;
 class WebContentDecryptionModule;
+class WebEncryptedMediaClient;
 
 class MediaKeysClient {
 public:
-    virtual PassOwnPtr<WebContentDecryptionModule> createContentDecryptionModule(ExecutionContext*, const String& keySystem) = 0;
+    virtual WebEncryptedMediaClient* encryptedMediaClient(ExecutionContext*) = 0;
 
 protected:
     virtual ~MediaKeysClient() { }

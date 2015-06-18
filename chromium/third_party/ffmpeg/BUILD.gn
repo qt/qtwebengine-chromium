@@ -17,9 +17,13 @@ sig_files = [ "chromium/ffmpegsumo.sigs" ]
 
 # TODO(ajwong): Should be in ffmpeg_generate_stubs if we could grab the
 # outputs of an action via a function.
-stubs_filename_root = "ffmpeg_stubs"
+if (is_win) {
+  stubs_filename_root = "ffmpegsumo"
+} else {
+  stubs_filename_root = "ffmpeg_stubs"
+}
 
-if (cpu_arch != "arm" && os_config != "linux-noasm") {
+if ((current_cpu == "x86" || current_cpu == "x64") && os_config != "linux-noasm") {
   import("//third_party/yasm/yasm_assemble.gni")
   yasm_assemble("ffmpeg_yasm") {
     sources = ffmpeg_yasm_sources
@@ -27,9 +31,9 @@ if (cpu_arch != "arm" && os_config != "linux-noasm") {
     # Ensure the architecture defines go in the command line before the -P
     # file below, so don't use defines.
     yasm_flags = []
-    if (cpu_arch == "x86") {
+    if (current_cpu == "x86") {
       yasm_flags += [ "-DARCH_X86_32" ]
-    } else if (cpu_arch == "x64") {
+    } else if (current_cpu == "x64") {
       yasm_flags += [ "-DARCH_X86_64" ]
     }
 
@@ -69,7 +73,7 @@ action("ffmpeg_generate_stubs") {
   inputs = [ extra_header ]
 
   if (is_win) {
-    if (build_cpu_arch == "x64") {
+    if (current_cpu == "x64") {
       outfile_type = "windows_lib_x64"
     } else {
       outfile_type = "windows_lib"
@@ -164,8 +168,39 @@ if (build_ffmpegsumo) {
       # a lot of unresolved symbols. The only supported mode is 'size' (see
       # crbug.com/264459).
       configs += [ "//build/config/compiler:optimize" ]
+      ldflags =
+          [ "/DEF:" +
+            rebase_path("$target_gen_dir/ffmpegsumo.def", root_build_dir) ]
     } else {
       configs += [ "//build/config/compiler:optimize_max" ]
+    }
+
+    # gn orders flags on a target before flags from configs. The default config
+    # adds -Wall, and these flags have to be after -Wall -- so they need to come
+    # from a config and can't be on the target directly.
+    config("ffmpegsumo_warnings") {
+      if (is_clang) {
+        cflags = [
+          "-Wno-absolute-value",
+          # ffmpeg uses its own deprecated functions.
+          "-Wno-deprecated-declarations",
+          # ffmpeg doesn't care about pointer constness.
+          "-Wno-incompatible-pointer-types",
+          # ffmpeg doesn't follow usual parentheses conventions.
+          "-Wno-logical-op-parentheses",
+          # ffmpeg doesn't care about pointer signedness.
+          "-Wno-parentheses",
+          # ffmpeg doesn't care about pointer signedness.
+          "-Wno-pointer-sign",
+          # ffmpeg doesn't believe in exhaustive switch statements.
+          "-Wno-switch",
+          # matroskadec.c has a "failed:" label that's only used if some
+          # CONFIG_ flags we don't set are set.
+          "-Wno-unused-label",
+          # This fires on `av_assert0(!"valid element size")` in utils.c
+          "-Wno-string-conversion",
+        ]
+       }
     }
 
     if (is_posix) {
@@ -176,26 +211,19 @@ if (build_ffmpegsumo) {
         "-Wno-deprecated-declarations",
       ]
 
-      if (is_clang) {
-        cflags += [
-          "-Wno-absolute-value",
-          "-Wno-incompatible-pointer-types",
-          "-Wno-logical-op-parentheses",
-          "-Wno-parentheses",
-          "-Wno-pointer-sign",
-          "-Wno-switch",
-        ]
-      } else {
+      configs += [ ":ffmpegsumo_warnings" ]
+
+      if (!is_clang) {
         # gcc doesn't have flags for specific warnings, so disable them
         # all.
         cflags += [ "-w" ]
       }
-      if (cpu_arch == "x86") {
+      if (current_cpu == "x86") {
         # Turn off valgrind build option that breaks ffmpeg builds.
         # TODO(ajwong): The gyp file had special removals for
         # debug_extra_cflags and release_extra_cflags. Do we care?
 #cflags -= [ "-fno-omit-frame-pointer" ]
-      } else if (cpu_arch == "arm") {
+      } else if (current_cpu == "arm") {
         # TODO(ihf): See the long comment in build_ffmpeg.sh
         # We want to be consistent with CrOS and have configured
         # ffmpeg for thumb. Protect yourself from -marm.
@@ -213,10 +241,11 @@ if (build_ffmpegsumo) {
         } else {
           cflags += [ "-DHAVE_VFP_ARGS=0" ]
         }
-      } else if (cpu_arch == "mipsel") {
+      } else if (current_cpu == "mipsel") {
         cflags += [
           "-mips32",
-          "-EL -Wl,-EL",
+          "-EL",
+          "-Wl,-EL",
         ]
       }
     }
@@ -250,7 +279,11 @@ if (build_ffmpegsumo) {
         "-Wl,-Bsymbolic",
         "-L", rebase_path(target_gen_dir, root_build_dir),
       ]
-      libs = [ "z" ]
+      libs = [
+        "m",
+        "rt",  # for clock_gettime on precise
+        "z",
+      ]
 # TODO(ajwong): How to handle openbsd? Especially w/o the is_posix?
 #      if (is_openbsd) {
 #       # OpenBSD's gcc (4.2.1) does not support this flag
@@ -268,14 +301,14 @@ if (build_ffmpegsumo) {
 #                    'mac_real_dsym': 1,
 #                  },
 #              }],
-      if (cpu_arch != "x64") {
+      if (current_cpu != "x64") {
         # This is needed because even though FFmpeg now builds
         # with -fPIC, it's not quite a complete PIC build, only
         # partial :( Thus we need to instruct the linker to allow
         # relocations for read-only segments for this target to be
         # able to generated the shared library on Mac.
         #
-#TODO(ajwong): Check if this can be cpu_arch == "x86"
+#TODO(ajwong): Check if this can be current_cpu == "x86"
         # Note -read_only_relocs cannot be used in x86_64
         #
         # This makes Mark sad, but he's okay with it since it is
@@ -317,9 +350,6 @@ if (build_ffmpegsumo) {
         "vsnprintf=avpriv_vsnprintf",
       ]
 
-      include_dirs += [
-        "chromium/include/win"
-      ]
       # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
       cflags += [
         "/wd4996", # 'function': was declared deprecated
@@ -351,7 +381,7 @@ if (build_ffmpegsumo) {
         "/ignore:4217", # locally defined symbol 'symbol' imported in
                         #   function 'function'
       ]
-      if (cpu_arch == "x64") {
+      if (current_cpu == "x64") {
         # TODO(wolenetz): We should fix this.  http://crbug.com/171009
         cflags += [
           "/wd4267"  # Conversion from size_t to 'type'.
@@ -360,7 +390,8 @@ if (build_ffmpegsumo) {
       deps += [ ":ffmpeg_generate_def" ]
     }
 
-    if (cpu_arch != "arm" && cpu_arch != "mipsel" && os_config != "linux-noasm") {
+    if ((current_cpu == "x86" || current_cpu == "x64") &&
+        os_config != "linux-noasm") {
       deps += [ ":ffmpeg_yasm" ]
     }
   }
@@ -370,10 +401,9 @@ if (is_win) {
   config("ffmpeg_win_dependent_config") {
     include_dirs = [
       platform_config_root,
-      "chromium/include/win",
       ".",
     ]
-    libs = [ "$target_out_dir/ffmpegsumo.lib" ]
+    libs = [ rebase_path("$target_gen_dir/ffmpegsumo.lib", root_build_dir) ]
     ldflags = [ "/DELAYLOAD:ffmpegsumo.dll" ]
   }
 
@@ -420,6 +450,10 @@ if (is_win) {
     ]
 
     public_configs = [ ":ffmpeg_posix_dependent_config" ]
-    deps = [ ":ffmpeg_generate_stubs", ":ffmpegsumo" ]
+    deps = [
+      ":ffmpeg_generate_stubs",
+      ":ffmpegsumo",
+      "//base",  # ffmpeg_stubs use base's logging functionality
+    ]
   }
 }

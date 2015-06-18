@@ -31,6 +31,7 @@
 #ifndef NavigationScheduler_h
 #define NavigationScheduler_h
 
+#include "core/CoreExport.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -67,7 +68,7 @@ private:
     static unsigned s_navigationDisableCount;
 };
 
-class NavigationScheduler final {
+class CORE_EXPORT NavigationScheduler final {
     WTF_MAKE_NONCOPYABLE(NavigationScheduler);
     DISALLOW_ALLOCATION();
 public:
@@ -79,26 +80,26 @@ public:
     void scheduleRedirect(double delay, const String& url);
     void scheduleLocationChange(Document*, const String& url, bool lockBackForwardList = true);
     void schedulePageBlock(Document*);
-    void scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission>);
+    void scheduleFormSubmission(Document*, PassRefPtrWillBeRawPtr<FormSubmission>);
     void scheduleReload();
 
     void startTimer();
     void cancel();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    bool shouldScheduleNavigation() const;
+    bool shouldScheduleReload() const;
     bool shouldScheduleNavigation(const String& url) const;
 
     void timerFired(Timer<NavigationScheduler>*);
-    void schedule(PassOwnPtr<ScheduledNavigation>);
+    void schedule(PassOwnPtrWillBeRawPtr<ScheduledNavigation>);
 
     static bool mustLockBackForwardList(LocalFrame* targetFrame);
 
     RawPtrWillBeMember<LocalFrame> m_frame;
     Timer<NavigationScheduler> m_timer;
-    OwnPtr<ScheduledNavigation> m_redirect;
+    OwnPtrWillBeMember<ScheduledNavigation> m_redirect;
 };
 
 } // namespace blink

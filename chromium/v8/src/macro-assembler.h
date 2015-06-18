@@ -27,10 +27,8 @@ enum AllocationFlags {
   SIZE_IN_WORDS = 1 << 2,
   // Align the allocation to a multiple of kDoubleSize
   DOUBLE_ALIGNMENT = 1 << 3,
-  // Directly allocate in old pointer space
-  PRETENURE_OLD_POINTER_SPACE = 1 << 4,
-  // Directly allocate in old data space
-  PRETENURE_OLD_DATA_SPACE = 1 << 5
+  // Directly allocate in old space
+  PRETENURE = 1 << 4,
 };
 
 
@@ -64,6 +62,13 @@ const int kInvalidProtoDepth = -1;
 #include "src/arm/assembler-arm-inl.h"
 #include "src/code.h"                     // NOLINT, must be after assembler_*.h
 #include "src/arm/macro-assembler-arm.h"  // NOLINT
+#elif V8_TARGET_ARCH_PPC
+#include "src/ppc/constants-ppc.h"
+#include "src/assembler.h"          // NOLINT
+#include "src/ppc/assembler-ppc.h"  // NOLINT
+#include "src/ppc/assembler-ppc-inl.h"
+#include "src/code.h"  // NOLINT, must be after assembler_*.h
+#include "src/ppc/macro-assembler-ppc.h"
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/constants-mips.h"
 #include "src/assembler.h"            // NOLINT
@@ -244,11 +249,8 @@ class AllocationUtils {
  public:
   static ExternalReference GetAllocationTopReference(
       Isolate* isolate, AllocationFlags flags) {
-    if ((flags & PRETENURE_OLD_POINTER_SPACE) != 0) {
-      return ExternalReference::old_pointer_space_allocation_top_address(
-          isolate);
-    } else if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
-      return ExternalReference::old_data_space_allocation_top_address(isolate);
+    if ((flags & PRETENURE) != 0) {
+      return ExternalReference::old_space_allocation_top_address(isolate);
     }
     return ExternalReference::new_space_allocation_top_address(isolate);
   }
@@ -256,12 +258,8 @@ class AllocationUtils {
 
   static ExternalReference GetAllocationLimitReference(
       Isolate* isolate, AllocationFlags flags) {
-    if ((flags & PRETENURE_OLD_POINTER_SPACE) != 0) {
-      return ExternalReference::old_pointer_space_allocation_limit_address(
-          isolate);
-    } else if ((flags & PRETENURE_OLD_DATA_SPACE) != 0) {
-      return ExternalReference::old_data_space_allocation_limit_address(
-          isolate);
+    if ((flags & PRETENURE) != 0) {
+      return ExternalReference::old_space_allocation_limit_address(isolate);
     }
     return ExternalReference::new_space_allocation_limit_address(isolate);
   }

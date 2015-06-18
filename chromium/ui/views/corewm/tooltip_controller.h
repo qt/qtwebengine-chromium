@@ -12,7 +12,7 @@
 #include "base/timer/timer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/events/event_handler.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/views/views_export.h"
 #include "ui/wm/public/tooltip_client.h"
 
@@ -38,6 +38,8 @@ class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
   ~TooltipController() override;
 
   // Overridden from aura::client::TooltipClient.
+  int GetMaxWidth(const gfx::Point& location,
+                  aura::Window* context) const override;
   void UpdateTooltip(aura::Window* target) override;
   void SetTooltipShownTimeout(aura::Window* target, int timeout_in_ms) override;
   void SetTooltipsEnabled(bool enable) override;

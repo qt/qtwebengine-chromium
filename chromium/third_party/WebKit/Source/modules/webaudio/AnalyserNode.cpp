@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AnalyserNode.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -36,34 +34,32 @@
 
 namespace blink {
 
-AnalyserNode::AnalyserNode(AudioContext* context, float sampleRate)
-    : AudioBasicInspectorNode(context, sampleRate, 2)
+AnalyserHandler::AnalyserHandler(AudioNode& node, float sampleRate)
+    : AudioBasicInspectorHandler(NodeTypeAnalyser, node, sampleRate, 2)
 {
-    setNodeType(NodeTypeAnalyser);
     initialize();
 }
 
-AnalyserNode::~AnalyserNode()
+PassRefPtr<AnalyserHandler> AnalyserHandler::create(AudioNode& node, float sampleRate)
 {
-    ASSERT(!isInitialized());
+    return adoptRef(new AnalyserHandler(node, sampleRate));
 }
 
-void AnalyserNode::dispose()
+AnalyserHandler::~AnalyserHandler()
 {
     uninitialize();
-    AudioBasicInspectorNode::dispose();
 }
 
-void AnalyserNode::process(size_t framesToProcess)
+void AnalyserHandler::process(size_t framesToProcess)
 {
-    AudioBus* outputBus = output(0)->bus();
+    AudioBus* outputBus = output(0).bus();
 
-    if (!isInitialized() || !input(0)->isConnected()) {
+    if (!isInitialized() || !input(0).isConnected()) {
         outputBus->zero();
         return;
     }
 
-    AudioBus* inputBus = input(0)->bus();
+    AudioBus* inputBus = input(0).bus();
 
     // Give the analyser the audio which is passing through this AudioNode.
     m_analyser.writeInput(inputBus, framesToProcess);
@@ -74,7 +70,7 @@ void AnalyserNode::process(size_t framesToProcess)
         outputBus->copyFrom(*inputBus);
 }
 
-void AnalyserNode::setFftSize(unsigned size, ExceptionState& exceptionState)
+void AnalyserHandler::setFftSize(unsigned size, ExceptionState& exceptionState)
 {
     if (!m_analyser.setFftSize(size)) {
         exceptionState.throwDOMException(
@@ -85,7 +81,7 @@ void AnalyserNode::setFftSize(unsigned size, ExceptionState& exceptionState)
     }
 }
 
-void AnalyserNode::setMinDecibels(double k, ExceptionState& exceptionState)
+void AnalyserHandler::setMinDecibels(double k, ExceptionState& exceptionState)
 {
     if (k < maxDecibels()) {
         m_analyser.setMinDecibels(k);
@@ -96,7 +92,7 @@ void AnalyserNode::setMinDecibels(double k, ExceptionState& exceptionState)
     }
 }
 
-void AnalyserNode::setMaxDecibels(double k, ExceptionState& exceptionState)
+void AnalyserHandler::setMaxDecibels(double k, ExceptionState& exceptionState)
 {
     if (k > minDecibels()) {
         m_analyser.setMaxDecibels(k);
@@ -107,7 +103,7 @@ void AnalyserNode::setMaxDecibels(double k, ExceptionState& exceptionState)
     }
 }
 
-void AnalyserNode::setSmoothingTimeConstant(double k, ExceptionState& exceptionState)
+void AnalyserHandler::setSmoothingTimeConstant(double k, ExceptionState& exceptionState)
 {
     if (k >= 0 && k <= 1) {
         m_analyser.setSmoothingTimeConstant(k);
@@ -116,6 +112,89 @@ void AnalyserNode::setSmoothingTimeConstant(double k, ExceptionState& exceptionS
             IndexSizeError,
             ExceptionMessages::indexOutsideRange("smoothing value", k, 0.0, ExceptionMessages::InclusiveBound, 1.0, ExceptionMessages::InclusiveBound));
     }
+}
+
+// ----------------------------------------------------------------
+
+AnalyserNode::AnalyserNode(AudioContext& context, float sampleRate)
+    : AudioBasicInspectorNode(context)
+{
+    setHandler(AnalyserHandler::create(*this, sampleRate));
+}
+
+AnalyserNode* AnalyserNode::create(AudioContext& context, float sampleRate)
+{
+    return new AnalyserNode(context, sampleRate);
+}
+
+AnalyserHandler& AnalyserNode::analyserHandler() const
+{
+    return static_cast<AnalyserHandler&>(handler());
+}
+
+unsigned AnalyserNode::fftSize() const
+{
+    return analyserHandler().fftSize();
+}
+
+void AnalyserNode::setFftSize(unsigned size, ExceptionState& exceptionState)
+{
+    return analyserHandler().setFftSize(size, exceptionState);
+}
+
+unsigned AnalyserNode::frequencyBinCount() const
+{
+    return analyserHandler().frequencyBinCount();
+}
+
+void AnalyserNode::setMinDecibels(double min, ExceptionState& exceptionState)
+{
+    analyserHandler().setMinDecibels(min, exceptionState);
+}
+
+double AnalyserNode::minDecibels() const
+{
+    return analyserHandler().minDecibels();
+}
+
+void AnalyserNode::setMaxDecibels(double max, ExceptionState& exceptionState)
+{
+    analyserHandler().setMaxDecibels(max, exceptionState);
+}
+
+double AnalyserNode::maxDecibels() const
+{
+    return analyserHandler().maxDecibels();
+}
+
+void AnalyserNode::setSmoothingTimeConstant(double smoothingTime, ExceptionState& exceptionState)
+{
+    analyserHandler().setSmoothingTimeConstant(smoothingTime, exceptionState);
+}
+
+double AnalyserNode::smoothingTimeConstant() const
+{
+    return analyserHandler().smoothingTimeConstant();
+}
+
+void AnalyserNode::getFloatFrequencyData(DOMFloat32Array* array)
+{
+    analyserHandler().getFloatFrequencyData(array);
+}
+
+void AnalyserNode::getByteFrequencyData(DOMUint8Array* array)
+{
+    analyserHandler().getByteFrequencyData(array);
+}
+
+void AnalyserNode::getFloatTimeDomainData(DOMFloat32Array* array)
+{
+    analyserHandler().getFloatTimeDomainData(array);
+}
+
+void AnalyserNode::getByteTimeDomainData(DOMUint8Array* array)
+{
+    analyserHandler().getByteTimeDomainData(array);
 }
 
 } // namespace blink

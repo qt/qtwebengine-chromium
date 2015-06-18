@@ -7,7 +7,7 @@
     'version_py': '<(DEPTH)/build/util/version.py',
     'version_path': '<(DEPTH)/chrome/VERSION',
     'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
-    # 'branding_dir' is set in the 'conditions' section at the bottom.
+    'branding_dir': '<(DEPTH)/chrome/app/theme/<(branding_path_component)',
     'msvs_use_common_release': 0,
     'msvs_use_common_linker_extras': 0,
   },
@@ -27,21 +27,12 @@
             '<(DEPTH)',
           ],
           'sources': [
-            'tools/validate_installation_main.cc',
             'tools/validate_installation.rc',
+            'tools/validate_installation_main.cc',
             'tools/validate_installation_resource.h',
           ],
         },
       ],
-    }],
-    [ 'branding == "Chrome"', {
-      'variables': {
-         'branding_dir': '<(DEPTH)/chrome/app/theme/google_chrome',
-      },
-    }, { # else branding!="Chrome"
-      'variables': {
-         'branding_dir': '<(DEPTH)/chrome/app/theme/chromium',
-      },
     }],
   ],
 }

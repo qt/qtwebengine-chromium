@@ -28,6 +28,8 @@
 #ifndef Frame_h
 #define Frame_h
 
+#include "core/CoreExport.h"
+#include "core/frame/FrameTypes.h"
 #include "core/page/FrameTree.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -36,33 +38,35 @@
 namespace blink {
 
 class ChromeClient;
+class DOMWindow;
+class DOMWrapperWorld;
 class Document;
 class FrameClient;
 class FrameHost;
 class FrameOwner;
 class HTMLFrameOwnerElement;
-class LocalDOMWindow;
+class LayoutPart;
 class KURL;
 class Page;
-class RenderPart;
+class SecurityContext;
 class Settings;
-class WebLayer;
+class WindowProxy;
+class WindowProxyManager;
 
-struct Referrer;
-
-class Frame : public RefCountedWillBeGarbageCollectedFinalized<Frame> {
+class CORE_EXPORT Frame : public RefCountedWillBeGarbageCollectedFinalized<Frame> {
 public:
     virtual ~Frame();
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     virtual bool isLocalFrame() const { return false; }
     virtual bool isRemoteFrame() const { return false; }
 
-    // FIXME: This should return a DOMWindow*.
-    virtual LocalDOMWindow* domWindow() const = 0;
+    virtual DOMWindow* domWindow() const = 0;
+    virtual WindowProxy* windowProxy(DOMWrapperWorld&) = 0;
 
     virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) = 0;
+    virtual void reload(ReloadPolicy, ClientRedirectPolicy) = 0;
 
     virtual void detach();
     void detachChildren();
@@ -86,22 +90,34 @@ public:
     FrameTree& tree() const;
     ChromeClient& chromeClient() const;
 
-    RenderPart* ownerRenderer() const; // Renderer for the element that contains this frame.
+    virtual SecurityContext* securityContext() const = 0;
 
-    // FIXME: These should move to RemoteFrame when that is instantiated.
-    void setRemotePlatformLayer(WebLayer*);
-    WebLayer* remotePlatformLayer() const { return m_remotePlatformLayer; }
+    Frame* findFrameForNavigation(const AtomicString& name, Frame& activeFrame);
+    Frame* findUnsafeParentScrollPropagationBoundary();
+
+    void finishSwapFrom(Frame*);
+
+    bool canNavigate(const Frame&);
+    virtual void printNavigationErrorMessage(const Frame&, const char* reason) = 0;
+
+    LayoutPart* ownerLayoutObject() const; // LayoutObject for the element that contains this frame.
+
+    int64_t frameID() const { return m_frameID; }
 
     Settings* settings() const; // can be null
 
-    // FIXME: This method identifies a LocalFrame that is acting as a RemoteFrame.
-    // It is necessary only until we can instantiate a RemoteFrame, at which point
-    // it can be removed and its callers can be converted to use the isRemoteFrame()
-    // method.
-    bool isRemoteFrameTemporary() const { return m_remotePlatformLayer; }
+    // isLoading() is true when the embedder should think a load is in progress.
+    // In the case of LocalFrames, it means that the frame has sent a didStartLoading()
+    // callback, but not the matching didStopLoading(). Inside blink, you probably
+    // want Document::loadEventFinished() instead.
+    void setIsLoading(bool isLoading) { m_isLoading = isLoading; }
+    bool isLoading() const { return m_isLoading; }
+    virtual bool isLoadingAsChild() const { return isLoading(); }
 
 protected:
     Frame(FrameClient*, FrameHost*, FrameOwner*);
+
+    virtual WindowProxyManager* windowProxyManager() const = 0;
 
     mutable FrameTree m_treeNode;
 
@@ -110,7 +126,9 @@ protected:
 
 private:
     FrameClient* m_client;
-    WebLayer* m_remotePlatformLayer;
+    // Needed to identify Frame Timing requests.
+    int64_t m_frameID;
+    bool m_isLoading;
 };
 
 inline FrameClient* Frame::client() const

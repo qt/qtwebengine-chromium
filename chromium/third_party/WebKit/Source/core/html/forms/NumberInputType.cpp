@@ -36,10 +36,12 @@
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/KeyboardEvent.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderTextControl.h"
+#include "core/layout/LayoutTextControl.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/MathExtras.h"
 #include "wtf/PassOwnPtr.h"
@@ -181,9 +183,15 @@ bool NumberInputType::isSteppable() const
 
 void NumberInputType::handleKeydownEvent(KeyboardEvent* event)
 {
+    EventQueueScope scope;
     handleKeydownEventForSpinButton(event);
     if (!event->defaultHandled())
         TextFieldInputType::handleKeydownEvent(event);
+}
+
+void NumberInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* event)
+{
+    event->setText(locale().stripInvalidNumberCharacters(event->text(), "0123456789.Ee-+"));
 }
 
 Decimal NumberInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
@@ -256,11 +264,6 @@ String NumberInputType::rangeUnderflowText(const Decimal& minimum) const
     return locale().queryString(WebLocalizedString::ValidationRangeUnderflow, localizeValue(serialize(minimum)));
 }
 
-bool NumberInputType::shouldRespectSpeechAttribute()
-{
-    return true;
-}
-
 bool NumberInputType::supportsPlaceholder() const
 {
     return true;
@@ -270,16 +273,16 @@ void NumberInputType::minOrMaxAttributeChanged()
 {
     InputType::minOrMaxAttributeChanged();
 
-    if (element().renderer())
-        element().renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+    if (element().layoutObject())
+        element().layoutObject()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
 }
 
 void NumberInputType::stepAttributeChanged()
 {
     InputType::stepAttributeChanged();
 
-    if (element().renderer())
-        element().renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+    if (element().layoutObject())
+        element().layoutObject()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
 }
 
 bool NumberInputType::supportsSelectionAPI() const

@@ -12,7 +12,7 @@
  *            modifiedTime: string,
  *            name: string,
  *            tag: string,
- *            windows: Array.<WindowData>}}
+ *            windows: Array<WindowData>}}
  * @see chrome/browser/ui/webui/ntp/foreign_session_handler.cc
  */
 var SessionData;
@@ -72,8 +72,8 @@ cr.define('ntp', function() {
     decorate: function() {
       MenuButton.prototype.decorate.call(this);
       this.menu = new Menu;
+      this.menu.menuItemSelector = '[role=menuitem]';  // before decoration
       cr.ui.decorate(this.menu, Menu);
-      this.menu.menuItemSelector = '[role=menuitem]';
       this.menu.classList.add('footer-menu');
       this.menu.addEventListener('contextmenu',
                                  this.onContextMenu_.bind(this), true);
@@ -257,7 +257,7 @@ cr.define('ntp', function() {
      * foreign sessions, or tab sync is disabled for this profile.
      * |isTabSyncEnabled| makes it possible to distinguish between the cases.
      *
-     * @param {Array.<SessionData>} sessionList Array of objects describing the
+     * @param {Array<SessionData>} sessionList Array of objects describing the
      *     sessions from other devices.
      * @param {boolean} isTabSyncEnabled Is tab sync enabled for this profile?
      */

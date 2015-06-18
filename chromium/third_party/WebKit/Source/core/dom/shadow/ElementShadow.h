@@ -27,6 +27,7 @@
 #ifndef ElementShadow_h
 #define ElementShadow_h
 
+#include "core/CoreExport.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -38,9 +39,9 @@
 
 namespace blink {
 
-class ElementShadow final : public NoBaseWillBeGarbageCollectedFinalized<ElementShadow> {
+class CORE_EXPORT ElementShadow final : public NoBaseWillBeGarbageCollectedFinalized<ElementShadow> {
     WTF_MAKE_NONCOPYABLE(ElementShadow);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ElementShadow);
 public:
     static PassOwnPtrWillBeRawPtr<ElementShadow> create();
     ~ElementShadow();
@@ -57,7 +58,6 @@ public:
     void attach(const Node::AttachContext&);
     void detach(const Node::AttachContext&);
 
-    void distributedNodePseudoStateChanged(CSSSelector::PseudoType);
     void willAffectSelector();
     const SelectRuleFeatureSet& ensureSelectFeatureSet();
 
@@ -69,7 +69,7 @@ public:
 
     void didDistributeNode(const Node*, InsertionPoint*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     ElementShadow();
@@ -87,7 +87,13 @@ private:
     bool needsSelectFeatureSet() const { return m_needsSelectFeatureSet; }
     void setNeedsSelectFeatureSet() { m_needsSelectFeatureSet = true; }
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<const Node>, DestinationInsertionPoints> NodeToDestinationInsertionPoints;
+#if ENABLE(OILPAN)
+    // The cost of |new| in Oilpan is lower than non-Oilpan.  We should reduce
+    // the size of HashMap entry.
+    typedef HeapHashMap<Member<const Node>, Member<DestinationInsertionPoints>> NodeToDestinationInsertionPoints;
+#else
+    typedef HashMap<const Node*, DestinationInsertionPoints> NodeToDestinationInsertionPoints;
+#endif
     NodeToDestinationInsertionPoints m_nodeToInsertionPoints;
 
     SelectRuleFeatureSet m_selectFeatures;

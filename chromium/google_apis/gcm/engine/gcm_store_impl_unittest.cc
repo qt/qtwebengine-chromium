@@ -33,6 +33,7 @@ const int kNumMessagesPerApp = 20;
 
 // App name for testing.
 const char kAppName[] = "my_app";
+const char kAppName2[] = "my_app_2";
 
 // Category name for testing.
 const char kCategoryName[] = "my_category";
@@ -43,9 +44,9 @@ const uint64 kDeviceToken = 55;
 class GCMStoreImplTest : public testing::Test {
  public:
   GCMStoreImplTest();
-  virtual ~GCMStoreImplTest();
+  ~GCMStoreImplTest() override;
 
-  scoped_ptr<GCMStore> BuildGCMStore();
+  scoped_ptr<GCMStoreImpl> BuildGCMStore();
 
   std::string GetNextPersistentId();
 
@@ -72,8 +73,8 @@ GCMStoreImplTest::GCMStoreImplTest()
 
 GCMStoreImplTest::~GCMStoreImplTest() {}
 
-scoped_ptr<GCMStore> GCMStoreImplTest::BuildGCMStore() {
-  return scoped_ptr<GCMStore>(new GCMStoreImpl(
+scoped_ptr<GCMStoreImpl> GCMStoreImplTest::BuildGCMStore() {
+  return scoped_ptr<GCMStoreImpl>(new GCMStoreImpl(
       temp_directory_.path(),
       message_loop_.message_loop_proxy(),
       make_scoped_ptr<Encryptor>(new FakeEncryptor)));
@@ -137,7 +138,7 @@ TEST_F(GCMStoreImplTest, DeviceCredentials) {
 }
 
 TEST_F(GCMStoreImplTest, LastCheckinInfo) {
-  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStoreImpl> gcm_store(BuildGCMStore());
   scoped_ptr<GCMStore::LoadResult> load_result;
   gcm_store->Load(base::Bind(
       &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
@@ -160,6 +161,19 @@ TEST_F(GCMStoreImplTest, LastCheckinInfo) {
   PumpLoop();
   ASSERT_EQ(last_checkin_time, load_result->last_checkin_time);
   ASSERT_EQ(accounts, load_result->last_checkin_accounts);
+
+  // Negative cases, where the value read is gibberish.
+  gcm_store->SetValueForTesting(
+      "last_checkin_time",
+      "gibberish",
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+  EXPECT_EQ(base::Time(), load_result->last_checkin_time);
 }
 
 TEST_F(GCMStoreImplTest, GServicesSettings_ProtocolV2) {
@@ -597,6 +611,57 @@ TEST_F(GCMStoreImplTest, AccountMapping) {
   EXPECT_EQ(account_mapping2.last_message_id, iter->last_message_id);
 }
 
+TEST_F(GCMStoreImplTest, HeartbeatInterval) {
+  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStore::LoadResult> load_result;
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+
+  std::string scope1 = "scope1";
+  std::string scope2 = "scope2";
+  int heartbeat1 = 120 * 1000;
+  int heartbeat2 = 360 * 1000;
+
+  gcm_store->AddHeartbeatInterval(
+      scope1,
+      heartbeat1,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+  gcm_store->AddHeartbeatInterval(
+      scope2,
+      heartbeat2,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  EXPECT_EQ(2UL, load_result->heartbeat_intervals.size());
+  ASSERT_TRUE(load_result->heartbeat_intervals.find(scope1) !=
+              load_result->heartbeat_intervals.end());
+  EXPECT_EQ(heartbeat1, load_result->heartbeat_intervals[scope1]);
+  ASSERT_TRUE(load_result->heartbeat_intervals.find(scope2) !=
+              load_result->heartbeat_intervals.end());
+  EXPECT_EQ(heartbeat2, load_result->heartbeat_intervals[scope2]);
+
+  gcm_store->RemoveHeartbeatInterval(
+      scope2,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  EXPECT_EQ(1UL, load_result->heartbeat_intervals.size());
+  ASSERT_TRUE(load_result->heartbeat_intervals.find(scope1) !=
+              load_result->heartbeat_intervals.end());
+  EXPECT_EQ(heartbeat1, load_result->heartbeat_intervals[scope1]);
+}
+
 // When the database is destroyed, all database updates should fail. At the
 // same time, they per-app message counts should not go up, as failures should
 // result in decrementing the counts.
@@ -644,7 +709,7 @@ TEST_F(GCMStoreImplTest, ReloadAfterClose) {
 }
 
 TEST_F(GCMStoreImplTest, LastTokenFetchTime) {
-  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStoreImpl> gcm_store(BuildGCMStore());
   scoped_ptr<GCMStore::LoadResult> load_result;
   gcm_store->Load(base::Bind(
       &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
@@ -662,6 +727,69 @@ TEST_F(GCMStoreImplTest, LastTokenFetchTime) {
       &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
   PumpLoop();
   EXPECT_EQ(last_token_fetch_time, load_result->last_token_fetch_time);
+
+  // Negative cases, where the value read is gibberish.
+  gcm_store->SetValueForTesting(
+      "last_token_fetch_time",
+      "gibberish",
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+  EXPECT_EQ(base::Time(), load_result->last_token_fetch_time);
+}
+
+TEST_F(GCMStoreImplTest, InstanceIDData) {
+  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStore::LoadResult> load_result;
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  std::string instance_id_data("Foo");
+  gcm_store->AddInstanceIDData(
+      kAppName,
+      instance_id_data,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  std::string instance_id_data2("Hello Instance ID");
+  gcm_store->AddInstanceIDData(
+      kAppName2,
+      instance_id_data2,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  ASSERT_EQ(2u, load_result->instance_id_data.size());
+  ASSERT_TRUE(load_result->instance_id_data.find(kAppName) !=
+              load_result->instance_id_data.end());
+  ASSERT_TRUE(load_result->instance_id_data.find(kAppName2) !=
+              load_result->instance_id_data.end());
+  EXPECT_EQ(instance_id_data, load_result->instance_id_data[kAppName]);
+  EXPECT_EQ(instance_id_data2, load_result->instance_id_data[kAppName2]);
+
+  gcm_store->RemoveInstanceIDData(
+      kAppName,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  ASSERT_EQ(1u, load_result->instance_id_data.size());
+  ASSERT_TRUE(load_result->instance_id_data.find(kAppName2) !=
+              load_result->instance_id_data.end());
+  EXPECT_EQ(instance_id_data2, load_result->instance_id_data[kAppName2]);
 }
 
 }  // namespace

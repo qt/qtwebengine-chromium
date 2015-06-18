@@ -7,10 +7,6 @@
 
 namespace blink {
 
-RelatedEventInit::RelatedEventInit()
-{
-}
-
 RelatedEvent::~RelatedEvent()
 {
 }
@@ -42,11 +38,12 @@ RelatedEvent::RelatedEvent(const AtomicString& type, bool canBubble, bool cancel
 
 RelatedEvent::RelatedEvent(const AtomicString& eventType, const RelatedEventInit& initializer)
     : Event(eventType, initializer)
-    , m_relatedTarget(initializer.relatedTarget)
 {
+    if (initializer.hasRelatedTarget())
+        m_relatedTarget = initializer.relatedTarget();
 }
 
-void RelatedEvent::trace(Visitor* visitor)
+DEFINE_TRACE(RelatedEvent)
 {
     visitor->trace(m_relatedTarget);
     Event::trace(visitor);

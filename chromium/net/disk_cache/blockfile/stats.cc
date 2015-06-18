@@ -24,7 +24,7 @@ struct OnDiskStats {
   int data_sizes[disk_cache::Stats::kDataSizesLength];
   int64 counters[disk_cache::Stats::MAX_COUNTER];
 };
-COMPILE_ASSERT(sizeof(OnDiskStats) < 512, needs_more_than_2_blocks);
+static_assert(sizeof(OnDiskStats) < 512, "needs more than 2 blocks");
 
 // Returns the "floor" (as opposed to "ceiling") of log base 2 of number.
 int LogBase2(int32 number) {
@@ -43,7 +43,7 @@ int LogBase2(int32 number) {
 }
 
 // WARNING: Add new stats only at the end, or change LoadStats().
-static const char* kCounterNames[] = {
+const char* const kCounterNames[] = {
   "Open miss",
   "Open hit",
   "Create miss",
@@ -67,8 +67,8 @@ static const char* kCounterNames[] = {
   "Doom recent entries",
   "unused"
 };
-COMPILE_ASSERT(arraysize(kCounterNames) == disk_cache::Stats::MAX_COUNTER,
-               update_the_names);
+static_assert(arraysize(kCounterNames) == disk_cache::Stats::MAX_COUNTER,
+              "update the names");
 
 }  // namespace
 
@@ -107,8 +107,18 @@ bool Stats::Init(void* data, int num_bytes, Addr address) {
     local_stats.size = sizeof(local_stats);
   } else if (num_bytes >= static_cast<int>(sizeof(*stats))) {
     stats = reinterpret_cast<OnDiskStats*>(data);
-    if (!VerifyStats(stats))
-      return false;
+    if (!VerifyStats(stats)) {
+      memset(&local_stats, 0, sizeof(local_stats));
+      if (memcmp(stats, &local_stats, sizeof(local_stats))) {
+        return false;
+      } else {
+        // The storage is empty which means that SerializeStats() was never
+        // called on the last run. Just re-initialize everything.
+        local_stats.signature = kDiskSignature;
+        local_stats.size = sizeof(local_stats);
+        stats = &local_stats;
+      }
+    }
   } else {
     return false;
   }
@@ -155,7 +165,7 @@ void Stats::InitSizeHistogram() {
 int Stats::StorageSize() {
   // If we have more than 512 bytes of counters, change kDiskSignature so we
   // don't overwrite something else (LoadStats must fail).
-  COMPILE_ASSERT(sizeof(OnDiskStats) <= 256 * 2, use_more_blocks);
+  static_assert(sizeof(OnDiskStats) <= 256 * 2, "use more blocks");
   return 256 * 2;
 }
 
@@ -300,7 +310,7 @@ int Stats::GetStatsBucket(int32 size) {
   // From this point on, use a logarithmic scale.
   int result =  LogBase2(size) + 1;
 
-  COMPILE_ASSERT(kDataSizesLength > 16, update_the_scale);
+  static_assert(kDataSizesLength > 16, "update the scale");
   if (result >= kDataSizesLength)
     result = kDataSizesLength - 1;
 

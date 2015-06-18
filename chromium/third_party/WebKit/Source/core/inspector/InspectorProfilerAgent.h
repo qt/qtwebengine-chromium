@@ -48,26 +48,24 @@ class InspectorOverlay;
 
 typedef String ErrorString;
 
-class InspectorProfilerAgent final : public InspectorBaseAgent<InspectorProfilerAgent>, public InspectorBackendDispatcher::ProfilerCommandHandler {
+class InspectorProfilerAgent final : public InspectorBaseAgent<InspectorProfilerAgent, InspectorFrontend::Profiler>, public InspectorBackendDispatcher::ProfilerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorProfilerAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorProfilerAgent);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> create(InjectedScriptManager*, InspectorOverlay*);
     virtual ~InspectorProfilerAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void consoleProfile(ExecutionContext*, const String& title);
     void consoleProfileEnd(const String& title);
 
-    virtual void enable(ErrorString*) override;
-    virtual void disable(ErrorString*) override;
-    virtual void setSamplingInterval(ErrorString*, int) override;
-    virtual void start(ErrorString*) override;
-    virtual void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) override;
+    void enable(ErrorString*) override;
+    void setSamplingInterval(ErrorString*, int) override;
+    void start(ErrorString*) override;
+    void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) override;
 
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void clearFrontend() override;
-    virtual void restore() override;
+    void disable(ErrorString*) override;
+    void restore() override;
 
     void willProcessTask();
     void didProcessTask();
@@ -82,7 +80,6 @@ private:
     String nextProfileId();
 
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
-    InspectorFrontend::Profiler* m_frontend;
     bool m_recordingCPUProfile;
     class ProfileDescriptor;
     Vector<ProfileDescriptor> m_startedProfiles;
@@ -91,7 +88,7 @@ private:
     typedef HashMap<String, double> ProfileNameIdleTimeMap;
     ProfileNameIdleTimeMap* m_profileNameIdleTimeMap;
     double m_idleStartTime;
-    InspectorOverlay* m_overlay;
+    RawPtrWillBeMember<InspectorOverlay> m_overlay;
 
     void idleStarted();
     void idleFinished();

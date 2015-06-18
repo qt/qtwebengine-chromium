@@ -37,8 +37,6 @@
 
 namespace blink {
 
-class WebApplicationCacheHost;
-class WebString;
 class WebURL;
 class WebURLRequest;
 class WebURLResponse;
@@ -90,10 +88,6 @@ public:
 
     // The type of navigation that triggered the creation of this datasource.
     virtual WebNavigationType navigationType() const = 0;
-
-    // The time in seconds (since the epoch) of the event that triggered
-    // the creation of this datasource.  Returns 0 if unknown.
-    virtual double triggeringEventTime() const = 0;
 
     // Extra data associated with this datasource.  If non-null, the extra
     // data pointer will be deleted when the datasource is destroyed.

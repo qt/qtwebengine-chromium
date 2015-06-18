@@ -750,7 +750,7 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
                       OMIT_SMI_CHECK);
   // Replace receiver's backing store with newly created FixedDoubleArray.
   __ Addu(scratch1, array, Operand(kHeapObjectTag));
-  __ sw(scratch1, FieldMemOperand(a2, JSObject::kElementsOffset));
+  __ sw(scratch1, FieldMemOperand(receiver, JSObject::kElementsOffset));
   __ RecordWriteField(receiver,
                       JSObject::kElementsOffset,
                       scratch1,
@@ -771,15 +771,16 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Repurpose registers no longer in use.
   Register hole_lower = elements;
   Register hole_upper = length;
-
   __ li(hole_lower, Operand(kHoleNanLower32));
+  __ li(hole_upper, Operand(kHoleNanUpper32));
+
   // scratch1: begin of source FixedArray element fields, not tagged
   // hole_lower: kHoleNanLower32
   // hole_upper: kHoleNanUpper32
   // array_end: end of destination FixedDoubleArray, not tagged
   // scratch3: begin of FixedDoubleArray element fields, not tagged
-  __ Branch(USE_DELAY_SLOT, &entry);
-  __ li(hole_upper, Operand(kHoleNanUpper32));  // In delay slot.
+
+  __ Branch(&entry);
 
   __ bind(&only_change_map);
   __ sw(target_map, FieldMemOperand(receiver, HeapObject::kMapOffset));
@@ -826,9 +827,9 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   __ sw(hole_lower, MemOperand(scratch3, Register::kMantissaOffset));
   // exponent
   __ sw(hole_upper, MemOperand(scratch3, Register::kExponentOffset));
-  __ bind(&entry);
   __ addiu(scratch3, scratch3, kDoubleSize);
 
+  __ bind(&entry);
   __ Branch(&loop, lt, scratch3, Operand(array_end));
 
   __ bind(&done);
@@ -1145,7 +1146,7 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
   // Mov 1 in double_scratch2 as math_exp_constants_array[8] == 1.
   DCHECK(*reinterpret_cast<double*>
          (ExternalReference::math_exp_constants(8).address()) == 1);
-  __ Move(double_scratch2, 1);
+  __ Move(double_scratch2, 1.);
   __ add_d(result, result, double_scratch2);
   __ srl(temp1, temp2, 11);
   __ Ext(temp2, temp2, 0, 11);

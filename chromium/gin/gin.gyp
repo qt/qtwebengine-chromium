@@ -5,6 +5,7 @@
 {
   'variables': {
     'chromium_code': 1,
+    'gin_gen_path': '<(SHARED_INTERMEDIATE_DIR)/gin/',
   },
   'targets': [
     {
@@ -14,7 +15,6 @@
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../v8/tools/gyp/v8.gyp:v8',
-
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
@@ -73,11 +73,39 @@
         'shell_runner.h',
         'try_catch.cc',
         'try_catch.h',
+        'v8_initializer.h',
+        'v8_initializer.cc',
+        'v8_isolate_memory_dump_provider.cc',
+        'v8_isolate_memory_dump_provider.h',
         'v8_platform.cc',
         'wrappable.cc',
         'wrappable.h',
         'wrapper_info.cc',
       ],
+      'conditions': [
+        ['v8_use_external_startup_data==1 and OS=="win"', {
+          'dependencies': [
+            'gin_v8_snapshot_fingerprint',
+            '../crypto/crypto.gyp:crypto',
+          ],
+          'sources': [
+            '<(gin_gen_path)/v8_snapshot_fingerprint.cc',
+          ],
+          'defines': [
+            'V8_VERIFY_EXTERNAL_STARTUP_DATA',
+          ]
+        }],
+      ],
+    },
+    {
+      'target_name': 'gin_v8_snapshot_fingerprint',
+      'type': 'none',
+      'variables': {
+        'snapshot_file': '<(PRODUCT_DIR)/snapshot_blob.bin',
+        'natives_file': '<(PRODUCT_DIR)/natives_blob.bin',
+        'output_file': '<(gin_gen_path)/v8_snapshot_fingerprint.cc',
+      },
+      'includes': [ '../gin/fingerprint/fingerprint_v8_snapshot.gypi' ],
     },
     {
       'target_name': 'gin_shell',

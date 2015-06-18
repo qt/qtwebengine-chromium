@@ -13,14 +13,16 @@ namespace chromecast {
 class CastServiceAndroid : public CastService {
  public:
   CastServiceAndroid(content::BrowserContext* browser_context,
-                     const OptInStatsChangedCallback& opt_in_stats_callback);
-  virtual ~CastServiceAndroid();
+                     PrefService* pref_service,
+                     metrics::CastMetricsServiceClient* metrics_service_client);
+  ~CastServiceAndroid() override;
 
  protected:
   // CastService implementation.
-  virtual void Initialize() override;
-  virtual void StartInternal() override;
-  virtual void StopInternal() override;
+  void InitializeInternal() override;
+  void FinalizeInternal() override;
+  void StartInternal() override;
+  void StopInternal() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CastServiceAndroid);

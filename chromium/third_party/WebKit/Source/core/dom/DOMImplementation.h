@@ -24,6 +24,7 @@
 #ifndef DOMImplementation_h
 #define DOMImplementation_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 #include "wtf/PassRefPtr.h"
 
@@ -38,9 +39,9 @@ class HTMLDocument;
 class KURL;
 class XMLDocument;
 
-class DOMImplementation final : public NoBaseWillBeGarbageCollected<DOMImplementation>, public ScriptWrappable {
+class CORE_EXPORT DOMImplementation final : public NoBaseWillBeGarbageCollected<DOMImplementation>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DOMImplementation);
 public:
     static PassOwnPtrWillBeRawPtr<DOMImplementation> create(Document& document)
     {
@@ -54,8 +55,7 @@ public:
     Document& document() const { return *m_document; }
 
     // DOM methods & attributes for DOMImplementation
-    static bool hasFeature(const String& feature, const String& version);
-    bool hasFeatureForBindings(const String& feature, const String& version);
+    bool hasFeature() { return true; }
     PassRefPtrWillBeRawPtr<DocumentType> createDocumentType(const AtomicString& qualifiedName, const String& publicId, const String& systemId, ExceptionState&);
     PassRefPtrWillBeRawPtr<XMLDocument> createDocument(const AtomicString& namespaceURI, const AtomicString& qualifiedName, DocumentType*, ExceptionState&);
 
@@ -63,14 +63,13 @@ public:
     PassRefPtrWillBeRawPtr<HTMLDocument> createHTMLDocument(const String& title);
 
     // Other methods (not part of DOM)
-    static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, LocalFrame*, const KURL&, bool inViewSourceMode);
     static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool inViewSourceMode);
 
     static bool isXMLMIMEType(const String&);
     static bool isTextMIMEType(const String&);
     static bool isJSONMIMEType(const String&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit DOMImplementation(Document&);

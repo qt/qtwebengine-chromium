@@ -16,11 +16,12 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/win/shell.h"
 #include "ui/compositor/compositor_constants.h"
-#include "ui/gfx/insets.h"
+#include "ui/compositor/paint_context.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_win.h"
-#include "ui/gfx/vector2d.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/native_theme/native_theme_win.h"
@@ -40,6 +41,8 @@
 #include "ui/wm/core/window_animations.h"
 #include "ui/wm/public/scoped_tooltip_disabler.h"
 
+DECLARE_WINDOW_PROPERTY_TYPE(views::DesktopWindowTreeHostWin*);
+
 namespace views {
 
 namespace {
@@ -54,7 +57,7 @@ gfx::Size GetExpandedWindowSize(DWORD window_style, gfx::Size size) {
   return expanded;
 }
 
-void InsetBottomRight(gfx::Rect* rect, gfx::Vector2d vector) {
+void InsetBottomRight(gfx::Rect* rect, const gfx::Vector2d& vector) {
   rect->Inset(0, 0, vector.x(), vector.y());
 }
 
@@ -170,14 +173,14 @@ void DesktopWindowTreeHostWin::OnNativeWidgetCreated(
 scoped_ptr<corewm::Tooltip> DesktopWindowTreeHostWin::CreateTooltip() {
   DCHECK(!tooltip_);
   tooltip_ = new corewm::TooltipWin(GetAcceleratedWidget());
-  return scoped_ptr<corewm::Tooltip>(tooltip_);
+  return make_scoped_ptr(tooltip_);
 }
 
 scoped_ptr<aura::client::DragDropClient>
 DesktopWindowTreeHostWin::CreateDragDropClient(
     DesktopNativeCursorManager* cursor_manager) {
   drag_drop_client_ = new DesktopDragDropClientWin(window(), GetHWND());
-  return scoped_ptr<aura::client::DragDropClient>(drag_drop_client_).Pass();
+  return make_scoped_ptr(drag_drop_client_);
 }
 
 void DesktopWindowTreeHostWin::Close() {
@@ -419,7 +422,6 @@ bool DesktopWindowTreeHostWin::IsFullscreen() const {
 }
 
 void DesktopWindowTreeHostWin::SetOpacity(unsigned char opacity) {
-  message_handler_->SetOpacity(static_cast<BYTE>(opacity));
   content_window_->layer()->SetOpacity(opacity / 255.0);
 }
 
@@ -672,7 +674,7 @@ void DesktopWindowTreeHostWin::ResetWindowControls() {
 }
 
 void DesktopWindowTreeHostWin::PaintLayeredWindow(gfx::Canvas* canvas) {
-  GetWidget()->GetRootView()->Paint(canvas, views::CullSet());
+  GetWidget()->GetRootView()->Paint(ui::PaintContext(canvas));
 }
 
 gfx::NativeViewAccessible DesktopWindowTreeHostWin::GetNativeViewAccessible() {
@@ -818,16 +820,10 @@ void DesktopWindowTreeHostWin::HandleFrameChanged() {
 
 void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
-  InputMethod* input_method = GetInputMethod();
-  if (input_method)
-    input_method->OnFocus();
 }
 
 void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
-  InputMethod* input_method = GetInputMethod();
-  if (input_method)
-    input_method->OnBlur();
 }
 
 bool DesktopWindowTreeHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
@@ -895,15 +891,10 @@ void DesktopWindowTreeHostWin::HandleInputLanguageChange(
       input_method()->OnInputLocaleChanged();
 }
 
-bool DesktopWindowTreeHostWin::HandlePaintAccelerated(
+void DesktopWindowTreeHostWin::HandlePaintAccelerated(
     const gfx::Rect& invalid_rect) {
-  return native_widget_delegate_->OnNativeWidgetPaintAccelerated(invalid_rect);
-}
-
-void DesktopWindowTreeHostWin::HandlePaint(gfx::Canvas* canvas) {
-  // It appears possible to get WM_PAINT after WM_DESTROY.
   if (compositor())
-    compositor()->ScheduleRedrawRect(gfx::Rect());
+    compositor()->ScheduleRedrawRect(invalid_rect);
 }
 
 bool DesktopWindowTreeHostWin::HandleTooltipNotify(int w_param,
@@ -941,7 +932,7 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
   if (compositor() && need_synchronous_paint_) {
-    compositor()->FinishAllRendering();
+    compositor()->DisableSwapUntilResize();
     // If we received the window size changing notification due to a restore or
     // maximize operation, then we can reset the need_synchronous_paint_ flag
     // here. For a sizing operation, the flag will be reset at the end of the

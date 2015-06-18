@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -100,9 +100,8 @@ class JsepSessionDescriptionTest : public testing::Test {
   virtual void SetUp() {
     int port = 1234;
     rtc::SocketAddress address("127.0.0.1", port++);
-    cricket::Candidate candidate("rtp", cricket::ICE_CANDIDATE_COMPONENT_RTP,
-                                 "udp", address, 1, "",
-                                 "", "local", "eth0", 0, "1");
+    cricket::Candidate candidate(cricket::ICE_CANDIDATE_COMPONENT_RTP, "udp",
+                                 address, 1, "", "", "local", 0, "1");
     candidate_ = candidate;
     const std::string session_id =
         rtc::ToString(rtc::CreateRandomId64());

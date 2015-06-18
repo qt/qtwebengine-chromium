@@ -72,9 +72,10 @@ bool CustomElementCallbackQueue::processInElementQueue(ElementQueueId caller)
     return didWork;
 }
 
-void CustomElementCallbackQueue::trace(Visitor* visitor)
+DEFINE_TRACE(CustomElementCallbackQueue)
 {
     visitor->trace(m_element);
+    visitor->trace(m_queue);
 }
 
 } // namespace blink

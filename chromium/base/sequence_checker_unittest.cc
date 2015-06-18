@@ -9,8 +9,8 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/sequence_checker.h"
+#include "base/single_thread_task_runner.h"
 #include "base/test/sequenced_worker_pool_owner.h"
 #include "base/threading/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -56,14 +56,12 @@ class SequenceCheckerTest : public testing::Test {
  public:
   SequenceCheckerTest() : other_thread_("sequence_checker_test_other_thread") {}
 
-  virtual ~SequenceCheckerTest() {}
-
-  virtual void SetUp() override {
+  void SetUp() override {
     other_thread_.Start();
     ResetPool();
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     other_thread_.Stop();
     pool()->Shutdown();
   }
@@ -86,10 +84,9 @@ class SequenceCheckerTest : public testing::Test {
 
   void PostDoStuffToOtherThread(
       SequenceCheckedObject* sequence_checked_object) {
-    other_thread()->message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(&SequenceCheckedObject::DoStuff,
-                   base::Unretained(sequence_checked_object)));
+    other_thread()->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&SequenceCheckedObject::DoStuff,
+                              base::Unretained(sequence_checked_object)));
   }
 
   void PostDeleteToOtherThread(

@@ -6,15 +6,27 @@
 
 namespace content {
 
+bool BrowserPluginGuestDelegate::CanRunInDetachedState() const {
+  return false;
+}
+
 WebContents* BrowserPluginGuestDelegate::CreateNewGuestWindow(
     const WebContents::CreateParams& create_params) {
-  return NULL;
+  NOTREACHED();
+  return nullptr;
+}
+
+WebContents* BrowserPluginGuestDelegate::GetOwnerWebContents() const {
+  return nullptr;
 }
 
 bool BrowserPluginGuestDelegate::Find(int request_id,
                                       const base::string16& search_text,
-                                      const blink::WebFindOptions& options,
-                                      bool is_full_page_plugin) {
+                                      const blink::WebFindOptions& options) {
+  return false;
+}
+
+bool BrowserPluginGuestDelegate::StopFinding(StopFindAction action) {
   return false;
 }
 

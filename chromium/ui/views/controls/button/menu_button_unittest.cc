@@ -4,11 +4,9 @@
 
 #include "ui/views/controls/button/menu_button.h"
 
-#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/drag_controller.h"
@@ -28,12 +26,6 @@ class MenuButtonTest : public ViewsTestBase {
  public:
   MenuButtonTest() : widget_(nullptr), button_(nullptr) {}
   ~MenuButtonTest() override {}
-
-  void SetUp() override {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableTouchFeedback);
-    ViewsTestBase::SetUp();
-  }
 
   void TearDown() override {
     if (widget_ && !widget_->IsClosed())
@@ -179,7 +171,7 @@ class TestDragDropClient : public aura::client::DragDropClient,
   int StartDragAndDrop(const ui::OSExchangeData& data,
                        aura::Window* root_window,
                        aura::Window* source_window,
-                       const gfx::Point& root_location,
+                       const gfx::Point& screen_location,
                        int operation,
                        ui::DragDropTypes::DragEventSource source) override;
   void DragUpdate(aura::Window* target, const ui::LocatedEvent& event) override;
@@ -211,7 +203,7 @@ int TestDragDropClient::StartDragAndDrop(
     const ui::OSExchangeData& data,
     aura::Window* root_window,
     aura::Window* source_window,
-    const gfx::Point& root_location,
+    const gfx::Point& screen_location,
     int operation,
     ui::DragDropTypes::DragEventSource source) {
   if (IsDragDropInProgress())
@@ -274,22 +266,6 @@ TEST_F(MenuButtonTest, ActivateNonDropDownOnMouseClick) {
   EXPECT_EQ(Button::STATE_HOVERED, button_listener.last_sender_state());
 }
 
-// Tests if the listener is notified correctly when a gesture tap happens on a
-// MenuButton that has a regular ButtonListener.
-TEST_F(MenuButtonTest, ActivateNonDropDownOnGestureTap) {
-  TestButtonListener button_listener;
-  CreateMenuButtonWithButtonListener(&button_listener);
-
-  ui::test::EventGenerator generator(GetContext(), widget()->GetNativeWindow());
-  generator.GestureTapAt(gfx::Point(10, 10));
-
-  // Check that MenuButton has notified the listener on gesture tap event, while
-  // it was in hovered state.
-  EXPECT_EQ(button(), button_listener.last_sender());
-  EXPECT_EQ(ui::ET_GESTURE_TAP, button_listener.last_event_type());
-  EXPECT_EQ(Button::STATE_HOVERED, button_listener.last_sender_state());
-}
-
 // Tests if the listener is notified correctly when a mouse click happens on a
 // MenuButton that has a MenuButtonListener.
 TEST_F(MenuButtonTest, ActivateDropDownOnMouseClick) {
@@ -300,21 +276,6 @@ TEST_F(MenuButtonTest, ActivateDropDownOnMouseClick) {
 
   generator.set_current_location(gfx::Point(10, 10));
   generator.ClickLeftButton();
-
-  // Check that MenuButton has notified the listener, while it was in pressed
-  // state.
-  EXPECT_EQ(button(), menu_button_listener.last_source());
-  EXPECT_EQ(Button::STATE_PRESSED, menu_button_listener.last_source_state());
-}
-
-// Tests if the listener is notified correctly when a gesture tap happens on a
-// MenuButton that has a MenuButtonListener.
-TEST_F(MenuButtonTest, ActivateDropDownOnGestureTap) {
-  TestMenuButtonListener menu_button_listener;
-  CreateMenuButtonWithMenuButtonListener(&menu_button_listener);
-
-  ui::test::EventGenerator generator(GetContext(), widget()->GetNativeWindow());
-  generator.GestureTapAt(gfx::Point(10, 10));
 
   // Check that MenuButton has notified the listener, while it was in pressed
   // state.
@@ -356,6 +317,31 @@ TEST_F(MenuButtonTest, MenuButtonPressedLock) {
   // ...And it should respond to mouse movement again.
   generator.MoveMouseTo(gfx::Point(10, 10));
   EXPECT_EQ(Button::STATE_HOVERED, button()->state());
+
+  // Test that the button returns to the appropriate state after the press; if
+  // the mouse ends over the button, the button should be hovered.
+  pressed_lock1.reset(new MenuButton::PressedLock(button()));
+  EXPECT_EQ(Button::STATE_PRESSED, button()->state());
+  pressed_lock1.reset();
+  EXPECT_EQ(Button::STATE_HOVERED, button()->state());
+
+  // If the button is disabled before the pressed lock, it should be disabled
+  // after the pressed lock.
+  button()->SetState(Button::STATE_DISABLED);
+  pressed_lock1.reset(new MenuButton::PressedLock(button()));
+  EXPECT_EQ(Button::STATE_PRESSED, button()->state());
+  pressed_lock1.reset();
+  EXPECT_EQ(Button::STATE_DISABLED, button()->state());
+
+  generator.MoveMouseTo(gfx::Point(300, 10));
+
+  // Edge case: the button is disabled, a pressed lock is added, and then the
+  // button is re-enabled. It should be enabled after the lock is removed.
+  pressed_lock1.reset(new MenuButton::PressedLock(button()));
+  EXPECT_EQ(Button::STATE_PRESSED, button()->state());
+  button()->SetState(Button::STATE_NORMAL);
+  pressed_lock1.reset();
+  EXPECT_EQ(Button::STATE_NORMAL, button()->state());
 }
 
 // Test that the MenuButton does not become pressed if it can be dragged, until
@@ -378,6 +364,7 @@ TEST_F(MenuButtonTest, DraggableMenuButtonActivatesOnRelease) {
 }
 
 #if defined(USE_AURA)
+
 // Tests that the MenuButton does not become pressed if it can be dragged, and a
 // DragDropClient is processing the events.
 TEST_F(MenuButtonTest, DraggableMenuButtonDoesNotActivateOnDrag) {
@@ -396,7 +383,42 @@ TEST_F(MenuButtonTest, DraggableMenuButtonDoesNotActivateOnDrag) {
   EXPECT_EQ(nullptr, menu_button_listener.last_source());
   EXPECT_EQ(Button::STATE_NORMAL, menu_button_listener.last_source_state());
 }
-#endif
+
+#endif  // USE_AURA
+
+// No touch on desktop Mac. Tracked in http://crbug.com/445520.
+#if !defined(OS_MACOSX) || defined(USE_AURA)
+
+// Tests if the listener is notified correctly when a gesture tap happens on a
+// MenuButton that has a regular ButtonListener.
+TEST_F(MenuButtonTest, ActivateNonDropDownOnGestureTap) {
+  TestButtonListener button_listener;
+  CreateMenuButtonWithButtonListener(&button_listener);
+
+  ui::test::EventGenerator generator(GetContext(), widget()->GetNativeWindow());
+  generator.GestureTapAt(gfx::Point(10, 10));
+
+  // Check that MenuButton has notified the listener on gesture tap event, while
+  // it was in hovered state.
+  EXPECT_EQ(button(), button_listener.last_sender());
+  EXPECT_EQ(ui::ET_GESTURE_TAP, button_listener.last_event_type());
+  EXPECT_EQ(Button::STATE_HOVERED, button_listener.last_sender_state());
+}
+
+// Tests if the listener is notified correctly when a gesture tap happens on a
+// MenuButton that has a MenuButtonListener.
+TEST_F(MenuButtonTest, ActivateDropDownOnGestureTap) {
+  TestMenuButtonListener menu_button_listener;
+  CreateMenuButtonWithMenuButtonListener(&menu_button_listener);
+
+  ui::test::EventGenerator generator(GetContext(), widget()->GetNativeWindow());
+  generator.GestureTapAt(gfx::Point(10, 10));
+
+  // Check that MenuButton has notified the listener, while it was in pressed
+  // state.
+  EXPECT_EQ(button(), menu_button_listener.last_source());
+  EXPECT_EQ(Button::STATE_PRESSED, menu_button_listener.last_source_state());
+}
 
 // Tests that the button enters a hovered state upon a tap down, before becoming
 // pressed at activation.
@@ -427,5 +449,7 @@ TEST_F(MenuButtonTest, TouchFeedbackDuringTapCancel) {
   EXPECT_EQ(Button::STATE_NORMAL, button()->state());
   EXPECT_EQ(nullptr, menu_button_listener.last_source());
 }
+
+#endif  // !defined(OS_MACOSX) || defined(USE_AURA)
 
 }  // namespace views

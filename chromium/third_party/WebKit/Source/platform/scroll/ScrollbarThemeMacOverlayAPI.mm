@@ -33,13 +33,14 @@
 
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/mac/LocalCurrentGraphicsContext.h"
 #include "platform/mac/NSScrollerImpDetails.h"
 #include "platform/scroll/ScrollbarThemeClient.h"
 
 namespace blink {
 
-typedef HashMap<ScrollbarThemeClient*, RetainPtr<ScrollbarPainter> > ScrollbarPainterMap;
+typedef HashMap<ScrollbarThemeClient*, RetainPtr<ScrollbarPainter>> ScrollbarPainterMap;
 
 static ScrollbarPainterMap* scrollbarPainterMap()
 {
@@ -85,6 +86,10 @@ ScrollbarPainter ScrollbarThemeMacOverlayAPI::painterForScrollbar(ScrollbarTheme
 }
 
 void ScrollbarThemeMacOverlayAPI::paintTrackBackground(GraphicsContext* context, ScrollbarThemeClient* scrollbar, const IntRect& rect) {
+    DrawingRecorder recorder(*context, *scrollbar, DisplayItem::ScrollbarTrackBackground, rect);
+    if (recorder.canUseCachedDrawing())
+        return;
+
     ASSERT(isOverlayAPIAvailable());
 
     GraphicsContextStateSaver stateSaver(*context);
@@ -101,6 +106,10 @@ void ScrollbarThemeMacOverlayAPI::paintTrackBackground(GraphicsContext* context,
 }
 
 void ScrollbarThemeMacOverlayAPI::paintThumb(GraphicsContext* context, ScrollbarThemeClient* scrollbar, const IntRect& rect) {
+    DrawingRecorder recorder(*context, *scrollbar, DisplayItem::ScrollbarThumb, rect);
+    if (recorder.canUseCachedDrawing())
+        return;
+
     ASSERT(isOverlayAPIAvailable());
 
     GraphicsContextStateSaver stateSaver(*context);
@@ -122,7 +131,8 @@ void ScrollbarThemeMacOverlayAPI::paintThumb(GraphicsContext* context, Scrollbar
 
 int ScrollbarThemeMacOverlayAPI::scrollbarThickness(ScrollbarControlSize controlSize)
 {
-    ScrollbarPainter scrollbarPainter = [NSClassFromString(@"NSScrollerImp") scrollerImpWithStyle:recommendedScrollerStyle() controlSize:controlSize horizontal:NO replacingScrollerImp:nil];
+    NSControlSize nsControlSize = static_cast<NSControlSize>(controlSize);
+    ScrollbarPainter scrollbarPainter = [NSClassFromString(@"NSScrollerImp") scrollerImpWithStyle:recommendedScrollerStyle() controlSize:nsControlSize horizontal:NO replacingScrollerImp:nil];
     if (supportsExpandedScrollbars())
         [scrollbarPainter setExpanded:YES];
     return [scrollbarPainter trackBoxWidth];

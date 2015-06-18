@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/socket/stream_socket.h"
 #include "third_party/webrtc/p2p/base/pseudotcp.h"
 
@@ -53,6 +53,10 @@ class PseudoTcpAdapter : public net::StreamSocket, base::NonThreadSafe {
   bool WasNpnNegotiated() const override;
   net::NextProto GetNegotiatedProtocol() const override;
   bool GetSSLInfo(net::SSLInfo* ssl_info) override;
+  void GetConnectionAttempts(net::ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const net::ConnectionAttempts& attempts) override {
+  }
 
   // Set the delay for sending ACK.
   void SetAckDelay(int delay_ms);

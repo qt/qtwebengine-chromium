@@ -32,77 +32,12 @@
 #define ScriptWrappable_h
 
 #include "bindings/core/v8/WrapperTypeInfo.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Noncopyable.h"
 #include <v8.h>
 
 namespace blink {
-
-/**
- * The base class of all wrappable objects.
- *
- * This class provides the internal pointer to be stored in the wrapper objects,
- * and its conversions from / to the DOM instances.
- *
- * Note that this class must not have vtbl (any virtual function) or any member
- * variable which increase the size of instances. Some of the classes sensitive
- * to the size inherit from this class. So this class must be zero size.
- */
-#if COMPILER(MSVC)
-// VC++ 2013 doesn't support EBCO (Empty Base Class Optimization). It causes
-// that not always pointers to an empty base class are aligned to 4 byte
-// alignment. For example,
-//
-//   class EmptyBase1 {};
-//   class EmptyBase2 {};
-//   class Derived : public EmptyBase1, public EmptyBase2 {};
-//   Derived d;
-//   // &d                           == 0x1000
-//   // static_cast<EmptyBase1*>(&d) == 0x1000
-//   // static_cast<EmptyBase2*>(&d) == 0x1001  // Not 4 byte alignment!
-//
-// This doesn't happen with other compilers which support EBCO. All the
-// addresses in the above example will be 0x1000 with EBCO supported.
-//
-// Since v8::Object::SetAlignedPointerInInternalField requires the pointers to
-// be aligned, we need a hack to specify at least 4 byte alignment to MSVC.
-__declspec(align(4))
-#endif
-class ScriptWrappableBase {
-public:
-    template<typename T>
-    T* toImpl()
-    {
-        // Check if T* is castable to ScriptWrappableBase*, which means T
-        // doesn't have two or more ScriptWrappableBase as superclasses.
-        // If T has two ScriptWrappableBase as superclasses, conversions
-        // from T* to ScriptWrappableBase* are ambiguous.
-        ASSERT(static_cast<ScriptWrappableBase*>(static_cast<T*>(this)));
-        // The internal pointers must be aligned to at least 4 byte alignment.
-        ASSERT((reinterpret_cast<intptr_t>(this) & 0x3) == 0);
-        return static_cast<T*>(this);
-    }
-    ScriptWrappableBase* toScriptWrappableBase()
-    {
-        ASSERT(this);
-        // The internal pointers must be aligned to at least 4 byte alignment.
-        ASSERT((reinterpret_cast<intptr_t>(this) & 0x3) == 0);
-        return this;
-    }
-
-    // Creates and returns a new wrapper object.
-    // Do not call this method for a ScriptWrappable or its subclasses. This
-    // non-virtual version of "wrap" is meant only for non-ScriptWrappable
-    // objects. This wrap takes an extra third argument of type WrapperTypeInfo
-    // because ScriptWrappableBase doesn't have wrapperTypeInfo() method unlike
-    // ScriptWrappable.
-    v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*, const WrapperTypeInfo*);
-
-    void assertWrapperSanity(v8::Local<v8::Object> object)
-    {
-        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(object.IsEmpty()
-            || object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex) == toScriptWrappableBase());
-    }
-};
 
 /**
  * ScriptWrappable wraps a V8 object and its WrapperTypeInfo.
@@ -116,9 +51,21 @@ public:
  *  - disposeWrapper (via setWeakCallback, triggered by V8 garbage collecter):
  *        remove v8::Persistent and become empty.
  */
-class ScriptWrappable : public ScriptWrappableBase {
+class CORE_EXPORT ScriptWrappable {
+    WTF_MAKE_NONCOPYABLE(ScriptWrappable);
 public:
     ScriptWrappable() { }
+
+    template<typename T>
+    T* toImpl()
+    {
+        // Check if T* is castable to ScriptWrappable*, which means T doesn't
+        // have two or more ScriptWrappable as superclasses. If T has two
+        // ScriptWrappable as superclasses, conversions from T* to
+        // ScriptWrappable* are ambiguous.
+        ASSERT(static_cast<ScriptWrappable*>(static_cast<T*>(this)));
+        return static_cast<T*>(this);
+    }
 
     // Returns the WrapperTypeInfo of the instance.
     //
@@ -126,19 +73,20 @@ public:
     virtual const WrapperTypeInfo* wrapperTypeInfo() const = 0;
 
     // Creates and returns a new wrapper object.
-    virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*);
+    virtual v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext);
 
     // Associates the instance with the existing wrapper. Returns |wrapper|.
-    virtual v8::Handle<v8::Object> associateWithWrapper(const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper, v8::Isolate*);
+    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper);
 
-    void setWrapper(v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
+    void setWrapper(v8::Local<v8::Object> wrapper, v8::Isolate* isolate, const WrapperTypeInfo* wrapperTypeInfo)
     {
-        ASSERT(!containsWrapper());
+        RELEASE_ASSERT(!containsWrapper());
         if (!*wrapper)
             return;
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(toScriptWrappable(wrapper) == this);
         m_wrapper.Reset(isolate, wrapper);
         wrapperTypeInfo->configureWrapper(&m_wrapper);
-        m_wrapper.SetWeak(this, &setWeakCallback);
+        m_wrapper.SetWeak(this, &firstWeakCallback, v8::WeakCallbackType::kInternalFields);
         ASSERT(containsWrapper());
     }
 
@@ -212,21 +160,28 @@ protected:
     // already broken), we must not hit the RELEASE_ASSERT.
 
 private:
-    void disposeWrapper(v8::Local<v8::Object> wrapper)
+    void disposeWrapper(const v8::WeakCallbackInfo<ScriptWrappable>& data)
     {
-        ASSERT(containsWrapper());
-        ASSERT(wrapper == m_wrapper);
+        auto scriptWrappable = reinterpret_cast<ScriptWrappable*>(data.GetInternalField(v8DOMWrapperObjectIndex));
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(scriptWrappable == this);
+        RELEASE_ASSERT(containsWrapper());
         m_wrapper.Reset();
     }
 
-    static void setWeakCallback(const v8::WeakCallbackData<v8::Object, ScriptWrappable>& data)
+    static void firstWeakCallback(const v8::WeakCallbackInfo<ScriptWrappable>& data)
     {
-        data.GetParameter()->disposeWrapper(data.GetValue());
+        data.GetParameter()->disposeWrapper(data);
+        data.SetSecondPassCallback(secondWeakCallback);
+    }
 
+    static void secondWeakCallback(const v8::WeakCallbackInfo<ScriptWrappable>& data)
+    {
         // FIXME: I noticed that 50%~ of minor GC cycle times can be consumed
         // inside data.GetParameter()->deref(), which causes Node destructions. We should
         // make Node destructions incremental.
-        releaseObject(data.GetValue());
+        auto scriptWrappable = reinterpret_cast<ScriptWrappable*>(data.GetInternalField(v8DOMWrapperObjectIndex));
+        auto typeInfo = reinterpret_cast<WrapperTypeInfo*>(data.GetInternalField(v8DOMWrapperTypeIndex));
+        typeInfo->derefObject(scriptWrappable);
     }
 
     v8::Persistent<v8::Object> m_wrapper;
@@ -236,18 +191,10 @@ private:
 // the instance. Also declares a static member of type WrapperTypeInfo, of which
 // the definition is given by the IDL code generator.
 //
-// Every DOM Class T must meet either of the following conditions:
-// - T.idl inherits from [NotScriptWrappable].
-// - T inherits from ScriptWrappable and has DEFINE_WRAPPERTYPEINFO().
-//
-// If a DOM class T does not inherit from ScriptWrappable, you have to write
-// [NotScriptWrappable] in the IDL file as an extended attribute in order to let
-// IDL code generator know that T does not inherit from ScriptWrappable. Note
-// that [NotScriptWrappable] is inheritable.
-//
 // All the derived classes of ScriptWrappable, regardless of directly or
-// indirectly, must write this macro in the class definition.
-#define DEFINE_WRAPPERTYPEINFO() \
+// indirectly, must write this macro in the class definition as long as the
+// class has a corresponding .idl file.
+#define DEFINE_WRAPPERTYPEINFO()                \
 public: \
     virtual const WrapperTypeInfo* wrapperTypeInfo() const override \
     { \
@@ -255,6 +202,42 @@ public: \
     } \
 private: \
     static const WrapperTypeInfo& s_wrapperTypeInfo
+
+// Defines 'wrapperTypeInfo' virtual method, which should never be called.
+//
+// This macro is used when there exists a class hierarchy with a root class
+// and most of the subclasses are script-wrappable but not all of them.
+// In that case, the root class can inherit from ScriptWrappable and use
+// this macro, and let subclasses have a choice whether or not use
+// DEFINE_WRAPPERTYPEINFO macro. The script-wrappable subclasses which have
+// corresponding IDL file must call DEFINE_WRAPPERTYPEINFO, and the others
+// must not.
+#define DEFINE_WRAPPERTYPEINFO_NOT_REACHED() \
+public: \
+    virtual const WrapperTypeInfo* wrapperTypeInfo() const override \
+    { \
+        ASSERT_NOT_REACHED(); \
+        return 0; \
+    } \
+private: \
+    typedef void end_of_define_wrappertypeinfo_not_reached_t
+
+
+// Declares 'wrapperTypeInfo' method without definition.
+//
+// This macro is used for template classes. e.g. DOMTypedArray<>.
+// To export such a template class X, we need to instantiate X with EXPORT_API,
+// i.e. "extern template class EXPORT_API X;"
+// However, once we instantiate X, we cannot specialize X after
+// the instantiation. i.e. we will see "error: explicit specialization of ...
+// after instantiation". So we cannot define X's s_wrapperTypeInfo in generated
+// code by using specialization. Instead, we need to implement wrapperTypeInfo
+// in X's cpp code, and instantiate X, i.e. "template class X;".
+#define DECLARE_WRAPPERTYPEINFO() \
+public: \
+    virtual const WrapperTypeInfo* wrapperTypeInfo() const override; \
+private: \
+    typedef void end_of_define_wrappertypeinfo_not_reached_t
 
 } // namespace blink
 

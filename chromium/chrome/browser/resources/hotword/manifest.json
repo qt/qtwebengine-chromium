@@ -3,7 +3,7 @@
   "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDbHXRPiq2De9EJ+4pvNN6uE/D2avxrqyLSpA/Hq3II+btkPl1gboY3oUPTfevpVOFa90Y1c1b3/W682dXqybT0klIvFLKhdQx0LiVqSUQyIaDrwOCSo/ZcukbEwDRojegWymCjHvX6WZk4kKZzTJYzY1vrp0TWKLhttEMN9KFmowIDAQAB",
 
   "name": "Hotword triggering",
-  "version": "0.0.1.3",
+  "version": "0.0.1.4",
   "manifest_version": 2,
 
   "background": {
@@ -12,6 +12,7 @@
       "chrome://resources/js/util.js",
       "chrome://resources/js/cr/event_target.js",
       "constants.js",
+      "keep_alive.js",
       "logging.js",
       "metrics.js",
       "nacl_manager.js",
@@ -27,11 +28,22 @@
   },
 
   "permissions": [
+    "*://*.google.at/*",
+    "*://*.google.ca/*",
     "*://*.google.com/*",
-    "*://*.google.ru/*",
+    "*://*.google.com.au/*",
+    "*://*.google.com.mx/*",
+    "*://*.google.com.br/*",
+    "*://*.google.co.jp/*",
+    "*://*.google.co.kr/*",
+    "*://*.google.co.nz/*",
     "*://*.google.co.uk/*",
-    "*://*.google.fr/*",
+    "*://*.google.co.za/*",
     "*://*.google.de/*",
+    "*://*.google.es/*",
+    "*://*.google.fr/*",
+    "*://*.google.it/*",
+    "*://*.google.ru/*",
     "chrome://newtab/",
     "chrome://resources/",
     "audioCapture",
@@ -39,8 +51,31 @@
     "idle",
     "management",
     "metricsPrivate",
-    "tabs"
+    "tabs",
+    "unlimitedStorage"
   ],
+
+  "externally_connectable": {
+    "matches": [
+      "*://*.google.at/*",
+      "*://*.google.ca/*",
+      "*://*.google.com/*",
+      "*://*.google.com.au/*",
+      "*://*.google.com.mx/*",
+      "*://*.google.com.br/*",
+      "*://*.google.co.jp/*",
+      "*://*.google.co.kr/*",
+      "*://*.google.co.nz/*",
+      "*://*.google.co.uk/*",
+      "*://*.google.co.za/*",
+      "*://*.google.de/*",
+      "*://*.google.es/*",
+      "*://*.google.fr/*",
+      "*://*.google.it/*",
+      "*://*.google.ru/*",
+      "chrome://newtab/"
+    ]
+  },
 
   "import": [
     {

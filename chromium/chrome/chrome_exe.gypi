@@ -58,18 +58,25 @@
         'enable_wexit_time_destructors': 1,
       },
       'sources': [
-        'app/chrome_exe_main_aura.cc',
-        'app/chrome_exe_main_mac.cc',
-        'app/chrome_exe_main_win.cc',
-        'app/chrome_exe_resource.h',
-        'app/client_util.cc',
-        'app/client_util.h',
-        'app/signature_validator_win.cc',
-        'app/signature_validator_win.h',
         # Note that due to InitializeSandboxInfo, this must be directly linked
         # into chrome.exe, not into a dependent.
         '<(DEPTH)/content/app/startup_helper_win.cc',
         '<(DEPTH)/content/public/common/content_switches.cc',
+        'app/chrome_exe_load_config_win.cc',
+        'app/chrome_exe_main_aura.cc',
+        'app/chrome_exe_main_mac.cc',
+        'app/chrome_exe_main_win.cc',
+        'app/chrome_exe_resource.h',
+        'app/chrome_watcher_client_win.cc',
+        'app/chrome_watcher_client_win.h',
+        'app/chrome_watcher_command_line_win.cc',
+        'app/chrome_watcher_command_line_win.h',
+        'app/client_util.cc',
+        'app/client_util.h',
+        'app/kasko_client.cc',
+        'app/kasko_client.h',
+        'app/signature_validator_win.cc',
+        'app/signature_validator_win.h',
       ],
       'mac_bundle_resources': [
         'app/app-Info.plist',
@@ -98,6 +105,20 @@
             }],
           ]
         }],
+        ['OS == "win"', {
+          'dependencies': [
+            'chrome_watcher',
+            'chrome_watcher_client',
+            '../components/components.gyp:browser_watcher_client',
+          ],
+          'conditions': [
+            ['kasko==1', {
+              'dependencies': [
+                'kasko_dll',
+              ],
+            }],
+          ],
+        }],
         ['OS == "android"', {
           # Don't put the 'chrome' target in 'all' on android
           'suppress_wildcard': 1,
@@ -122,14 +143,15 @@
                 }],
               ],
               'inputs': [
-                'tools/build/linux/sed.sh',
+                'tools/build/linux/sed.py',
                 'app/resources/manpage.1.in',
               ],
               'outputs': [
                 '<(PRODUCT_DIR)/chrome.1',
               ],
               'action': [
-                'tools/build/linux/sed.sh',
+                'python',
+                'tools/build/linux/sed.py',
                 'app/resources/manpage.1.in',
                 '<@(_outputs)',
                 '-e', 's/@@NAME@@/<(name)/',
@@ -158,17 +180,8 @@
                   'files': ['tools/build/linux/chrome-wrapper',
                             '../third_party/xdg-utils/scripts/xdg-mime',
                             '../third_party/xdg-utils/scripts/xdg-settings',
+                            'app/theme/<(branding_path_component)/product_logo_48.png',
                             ],
-                  # The wrapper script above may need to generate a .desktop
-                  # file, which requires an icon. So, copy one next to the
-                  # script.
-                  'conditions': [
-                    ['branding=="Chrome"', {
-                      'files': ['app/theme/google_chrome/product_logo_48.png']
-                    }, { # else: 'branding!="Chrome"
-                      'files': ['app/theme/chromium/product_logo_48.png']
-                    }],
-                  ],
                 },
               ],
             }],
@@ -177,6 +190,11 @@
               'dependencies': [
                 '../build/linux/system.gyp:x11',
                 '../build/linux/system.gyp:xext',
+              ],
+            }],
+            ['OS=="linux" and enable_plugins==1', {
+              'dependencies': [
+                '../pdf/pdf.gyp:pdf',
               ],
             }],
           ],
@@ -199,22 +217,7 @@
           ],
         }],
         ['OS=="mac"', {
-          # 'branding' is a variable defined in common.gypi
-          # (e.g. "Chromium", "Chrome")
           'conditions': [
-            ['branding=="Chrome"', {
-              'mac_bundle_resources': [
-                'app/theme/google_chrome/mac/app.icns',
-                'app/theme/google_chrome/mac/document.icns',
-                'browser/ui/cocoa/applescript/scripting.sdef',
-              ],
-            }, {  # else: 'branding!="Chrome"
-              'mac_bundle_resources': [
-                'app/theme/chromium/mac/app.icns',
-                'app/theme/chromium/mac/document.icns',
-                'browser/ui/cocoa/applescript/scripting.sdef',
-              ],
-            }],
             ['mac_breakpad==1', {
               'variables': {
                 # A real .dSYM is needed for dump_syms to operate on.
@@ -279,6 +282,9 @@
             'chrome_dll',
           ],
           'mac_bundle_resources': [
+            'app/theme/<(branding_path_component)/mac/app.icns',
+            'app/theme/<(branding_path_component)/mac/document.icns',
+            'browser/ui/cocoa/applescript/scripting.sdef',
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
           ],
           'actions': [
@@ -290,18 +296,8 @@
                 # Unique dir to write to so the [lang].lproj/InfoPlist.strings
                 # for the main app and the helper app don't name collide.
                 'output_path': '<(INTERMEDIATE_DIR)/app_infoplist_strings',
+                'branding_name': '<(branding_path_component)_strings',
               },
-              'conditions': [
-                [ 'branding == "Chrome"', {
-                  'variables': {
-                     'branding_name': 'google_chrome_strings',
-                  },
-                }, { # else branding!="Chrome"
-                  'variables': {
-                     'branding_name': 'chromium_strings',
-                  },
-                }],
-              ],
               'inputs': [
                 '<(tool_path)',
                 '<(version_path)',
@@ -417,20 +413,6 @@
             # NOTE: chrome/app/theme/chromium/BRANDING and
             # chrome/app/theme/google_chrome/BRANDING have the short name
             # "chrome" etc.; should we try to extract from there instead?
-
-            # CrOS does this in a separate build step.
-            ['OS=="linux" and chromeos==0 and linux_dump_symbols==1', {
-              'dependencies': [
-                '../pdf/pdf.gyp:pdf_linux_symbols',
-              ],
-            }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
-            # Android doesn't use pdfium.
-            ['OS!="android"', {
-              'dependencies': [
-                # On Mac, this is done in chrome_dll.gypi.
-                '../pdf/pdf.gyp:pdf',
-              ],
-            }], # OS=="android"
           ],
           'dependencies': [
             '../components/components.gyp:startup_metric_utils',
@@ -448,12 +430,6 @@
         }],
         ['chrome_multiple_dll', {
           'defines': ['CHROME_MULTIPLE_DLL'],
-        }],
-        ['OS=="mac" and asan==1', {
-          'xcode_settings': {
-            # Override the outer definition of CHROMIUM_STRIP_SAVE_FILE.
-            'CHROMIUM_STRIP_SAVE_FILE': 'app/app_asan.saves',
-          },
         }],
         ['OS=="linux"', {
           'conditions': [
@@ -496,12 +472,12 @@
             '../win8/delegate_execute/delegate_execute.gyp:*',
           ],
           'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
             'app/chrome_crash_reporter_client.cc',
             'app/chrome_crash_reporter_client.h',
             'app/chrome_exe.rc',
             'common/crash_keys.cc',
             'common/crash_keys.h',
-            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
           ],
           'sources!': [
             # We still want the _win entry point for sandbox, etc.
@@ -603,15 +579,15 @@
               'type': 'executable',
               'product_name': 'nacl64',
               'sources': [
-                'app/chrome_crash_reporter_client.cc',
-                'common/crash_keys.cc',
-                'nacl/nacl_exe_win_64.cc',
                 '../content/app/startup_helper_win.cc',
                 '../content/common/sandbox_init_win.cc',
                 '../content/common/sandbox_win.cc',
                 '../content/public/common/content_switches.cc',
                 '../content/public/common/sandboxed_process_launcher_delegate.cc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
+                'app/chrome_crash_reporter_client.cc',
+                'common/crash_keys.cc',
+                'nacl/nacl_exe_win_64.cc',
               ],
               'dependencies': [
                 'chrome_version_resources',

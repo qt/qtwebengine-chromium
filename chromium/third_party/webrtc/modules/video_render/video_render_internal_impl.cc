@@ -10,10 +10,10 @@
 
 #include <assert.h>
 
+#include "webrtc/common_video/interface/incoming_video_stream.h"
 #include "webrtc/engine_configurations.h"
 #include "webrtc/modules/video_render/i_video_render.h"
 #include "webrtc/modules/video_render/include/video_render_defines.h"
-#include "webrtc/modules/video_render/incoming_video_stream.h"
 #include "webrtc/modules/video_render/video_render_impl.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/trace.h"
@@ -294,22 +294,7 @@ ModuleVideoRenderImpl::~ModuleVideoRenderImpl()
     }
 }
 
-int32_t ModuleVideoRenderImpl::ChangeUniqueId(const int32_t id)
-{
-
-    CriticalSectionScoped cs(&_moduleCrit);
-
-    _id = id;
-
-    if (_ptrRenderer)
-    {
-        _ptrRenderer->ChangeUniqueId(_id);
-    }
-
-    return 0;
-}
-
-int32_t ModuleVideoRenderImpl::TimeUntilNextProcess()
+int64_t ModuleVideoRenderImpl::TimeUntilNextProcess()
 {
     // Not used
     return 50;
@@ -435,27 +420,9 @@ ModuleVideoRenderImpl::AddIncomingRenderStream(const uint32_t streamId,
     }
 
     // Create platform independant code
-    IncomingVideoStream* ptrIncomingStream = new IncomingVideoStream(_id,
-                                                                     streamId);
-    if (ptrIncomingStream == NULL)
-    {
-        WEBRTC_TRACE(kTraceError, kTraceVideoRenderer, _id,
-                     "%s: Can't create incoming stream", __FUNCTION__);
-        return NULL;
-    }
-
-
-    if (ptrIncomingStream->SetRenderCallback(ptrRenderCallback) == -1)
-    {
-        WEBRTC_TRACE(kTraceError, kTraceVideoRenderer, _id,
-                     "%s: Can't set render callback", __FUNCTION__);
-        delete ptrIncomingStream;
-        _ptrRenderer->DeleteIncomingRenderStream(streamId);
-        return NULL;
-    }
-
-    VideoRenderCallback* moduleCallback =
-            ptrIncomingStream->ModuleCallback();
+    IncomingVideoStream* ptrIncomingStream = new IncomingVideoStream(streamId);
+    ptrIncomingStream->SetRenderCallback(ptrRenderCallback);
+    VideoRenderCallback* moduleCallback = ptrIncomingStream->ModuleCallback();
 
     // Store the stream
     _streamRenderMap[streamId] = ptrIncomingStream;
@@ -511,7 +478,8 @@ int32_t ModuleVideoRenderImpl::AddExternalRenderCallback(
                      "%s: could not get stream", __FUNCTION__);
         return -1;
     }
-    return item->second->SetExternalCallback(renderObject);
+    item->second->SetExternalCallback(renderObject);
+    return 0;
 }
 
 int32_t ModuleVideoRenderImpl::GetIncomingRenderStreamProperties(
@@ -761,33 +729,6 @@ int32_t ModuleVideoRenderImpl::SetBitmap(const void* bitMap,
                                    right, bottom);
 }
 
-int32_t ModuleVideoRenderImpl::GetLastRenderedFrame(
-    const uint32_t streamId,
-    I420VideoFrame &frame) const
-{
-    CriticalSectionScoped cs(&_moduleCrit);
-
-    if (!_ptrRenderer)
-    {
-        WEBRTC_TRACE(kTraceError, kTraceVideoRenderer, _id,
-                     "%s: No renderer", __FUNCTION__);
-        return -1;
-    }
-
-    IncomingVideoStreamMap::const_iterator item =
-        _streamRenderMap.find(streamId);
-    if (item == _streamRenderMap.end())
-    {
-        // This stream doesn't exist
-        WEBRTC_TRACE(kTraceError, kTraceVideoRenderer, _id,
-                     "%s: stream doesn't exist", __FUNCTION__);
-        return 0;
-    }
-
-    assert(item->second != NULL);
-    return item->second->GetLastRenderedFrame(frame);
-}
-
 int32_t ModuleVideoRenderImpl::SetExpectedRenderDelay(
     uint32_t stream_id, int32_t delay_ms) {
   CriticalSectionScoped cs(&_moduleCrit);
@@ -884,34 +825,6 @@ int32_t ModuleVideoRenderImpl::SetTimeoutImage(
     }
     assert(item->second != NULL);
     return item->second->SetTimeoutImage(videoFrame, timeout);
-}
-
-int32_t ModuleVideoRenderImpl::MirrorRenderStream(const int renderId,
-                                                  const bool enable,
-                                                  const bool mirrorXAxis,
-                                                  const bool mirrorYAxis)
-{
-    CriticalSectionScoped cs(&_moduleCrit);
-
-    if (!_ptrRenderer)
-    {
-        WEBRTC_TRACE(kTraceError, kTraceVideoRenderer, _id,
-                     "%s: No renderer", __FUNCTION__);
-        return -1;
-    }
-
-    IncomingVideoStreamMap::const_iterator item =
-        _streamRenderMap.find(renderId);
-    if (item == _streamRenderMap.end())
-    {
-        // This stream doesn't exist
-        WEBRTC_TRACE(kTraceError, kTraceVideoRenderer, _id,
-                     "%s: stream doesn't exist", __FUNCTION__);
-        return 0;
-    }
-    assert(item->second != NULL);
-
-    return item->second->EnableMirroring(enable, mirrorXAxis, mirrorYAxis);
 }
 
 }  // namespace webrtc

@@ -6,115 +6,103 @@
  * @fileoverview App launcher start page implementation.
  */
 
-<include src="recommended_apps.js">
-<include src="speech_manager.js">
-
 cr.define('appList.startPage', function() {
   'use strict';
 
-  var speechManager = null;
-
-  /**
-   * Creates a StartPage object.
-   * @constructor
-   * @extends {HTMLDivElement}
-   */
-  var StartPage = cr.ui.define('div');
-
-  StartPage.prototype = {
-    __proto__: HTMLDivElement.prototype,
-
-    /**
-     * Instance of the recommended apps card.
-     * @type {appsList.startPage.RecommendedApps}
-     * @private
-     */
-    recommendedApps_: null,
-
-    /** @override */
-    decorate: function() {
-      this.recommendedApps_ = new appList.startPage.RecommendedApps();
-      this.appendChild(this.recommendedApps_);
-    },
-
-    /**
-     * Sets the recommended apps.
-     * @param {!Array.<!{appId: string,
-     *                   iconUrl: string,
-     *                   textTitle: string}>} apps An array of app info
-     *     dictionary to be displayed in the AppItemView.
-     */
-    setRecommendedApps: function(apps) {
-      this.recommendedApps_.setApps(apps);
-    }
-  };
+  // The element containing the current Google Doodle.
+  var doodle = null;
 
   /**
    * Initialize the page.
    */
   function initialize() {
-    StartPage.decorate($('start-page'));
-    speechManager = new speech.SpeechManager();
     chrome.send('initialize');
   }
 
   /**
-   * Sets the recommended apps.
-   * @param {Array.<Object>} apps An array of app info dictionary.
-   */
-  function setRecommendedApps(apps) {
-    $('start-page').setRecommendedApps(apps);
-  }
-
-  /**
-   * Invoked when the hotword plugin availability is changed.
-   *
-   * @param {boolean} enabled Whether the plugin is enabled or not.
-   */
-  function setHotwordEnabled(enabled) {
-    speechManager.setHotwordEnabled(enabled);
-  }
-
-  /**
-   * Sets the architecture of NaCl module to be loaded for hotword.
-   * @param {string} arch The architecture.
-   */
-  function setNaclArch(arch) {
-    speechManager.setNaclArch(arch);
-  }
-
-  /**
    * Invoked when the app-list bubble is shown.
+   */
+  function onAppListShown() {
+    chrome.send('appListShown', [this.doodle != null]);
+  }
+
+  /**
+   * Sets the doodle's visibility, hiding or showing the default logo.
    *
-   * @param {boolean} hotwordEnabled Whether the hotword is enabled or not.
+   * @param {boolean} visible Whether the doodle should be made visible.
    */
-  function onAppListShown(hotwordEnabled) {
-    speechManager.onShown(hotwordEnabled);
+  function setDoodleVisible(visible) {
+    var doodle = $('doodle');
+    var defaultLogo = $('default_logo');
+    if (visible) {
+      doodle.style.display = 'flex';
+      defaultLogo.style.display = 'none';
+    } else {
+      if (doodle)
+        doodle.style.display = 'none';
+
+      defaultLogo.style.display = 'block';
+    }
   }
 
   /**
-   * Invoked when the app-list bubble is hidden.
+   * Invoked when the app-list doodle is updated.
+   *
+   * @param {Object} data The data object representing the current doodle.
    */
-  function onAppListHidden() {
-    speechManager.onHidden();
-  }
+  function onAppListDoodleUpdated(data, base_url) {
+    if (this.doodle) {
+      this.doodle.parentNode.removeChild(this.doodle);
+      this.doodle = null;
+    }
 
-  /**
-   * Invoked when the user explicitly wants to toggle the speech recognition
-   * state.
-   */
-  function toggleSpeechRecognition() {
-    speechManager.toggleSpeechRecognition();
+    var doodleData = data.ddljson;
+    if (!doodleData || !doodleData.transparent_large_image) {
+      setDoodleVisible(false);
+      return;
+    }
+
+    // Set the page's base URL so that links will resolve relative to the Google
+    // homepage.
+    $('base').href = base_url;
+
+    this.doodle = document.createElement('div');
+    this.doodle.id = 'doodle';
+    this.doodle.style.display = 'none';
+
+    var doodleImage = document.createElement('img');
+    doodleImage.id = 'doodle_image';
+    if (doodleData.alt_text) {
+      doodleImage.alt = doodleData.alt_text;
+      doodleImage.title = doodleData.alt_text;
+    }
+
+    doodleImage.onload = function() {
+      setDoodleVisible(true);
+    };
+    doodleImage.src = doodleData.transparent_large_image.url;
+
+    if (doodleData.target_url) {
+      var doodleLink = document.createElement('a');
+      doodleLink.id = 'doodle_link';
+      doodleLink.href = doodleData.target_url;
+      doodleLink.target = '_blank';
+      doodleLink.appendChild(doodleImage);
+      doodleLink.onclick = function() {
+        chrome.send('doodleClicked');
+        return true;
+      };
+      this.doodle.appendChild(doodleLink);
+    } else {
+      this.doodle.appendChild(doodleImage);
+    }
+    $('logo_container').appendChild(this.doodle);
   }
 
   return {
     initialize: initialize,
-    setRecommendedApps: setRecommendedApps,
-    setHotwordEnabled: setHotwordEnabled,
-    setNaclArch: setNaclArch,
+    onAppListDoodleUpdated: onAppListDoodleUpdated,
     onAppListShown: onAppListShown,
-    onAppListHidden: onAppListHidden,
-    toggleSpeechRecognition: toggleSpeechRecognition
   };
 });
 

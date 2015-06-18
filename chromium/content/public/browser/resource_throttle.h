@@ -9,6 +9,10 @@
 
 class GURL;
 
+namespace net {
+struct RedirectInfo;
+}
+
 namespace content {
 
 class ResourceController;
@@ -22,13 +26,24 @@ class ResourceThrottle {
  public:
   virtual ~ResourceThrottle() {}
 
+  // Called before the resource request is started.
   virtual void WillStartRequest(bool* defer) {}
+
+  // Called before the resource request uses the network for the first time.
   virtual void WillStartUsingNetwork(bool* defer) {}
-  virtual void WillRedirectRequest(const GURL& new_url, bool* defer) {}
+
+  // Called when the request was redirected.  |redirect_info| contains the
+  // redirect responses's HTTP status code and some information about the new
+  // request that will be sent if the redirect is followed, including the new
+  // URL and new method.
+  virtual void WillRedirectRequest(const net::RedirectInfo& redirect_info,
+                                   bool* defer) {}
+
+  // Called when the response headers and meta data are available.
   virtual void WillProcessResponse(bool* defer) {}
 
   // Returns the name of the throttle, as a UTF-8 C-string, for logging
-  // purposes.  NULL is not allowed.  Caller does *not* take ownership of the
+  // purposes.  nullptr is not allowed.  Caller does *not* take ownership of the
   // returned string.
   virtual const char* GetNameForLogging() const = 0;
 
@@ -37,7 +52,7 @@ class ResourceThrottle {
   }
 
  protected:
-  ResourceThrottle() : controller_(NULL) {}
+  ResourceThrottle() : controller_(nullptr) {}
   ResourceController* controller() { return controller_; }
 
  private:

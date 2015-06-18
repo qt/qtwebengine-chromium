@@ -24,6 +24,7 @@
 #ifndef HTMLFormElement_h
 #define HTMLFormElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormControlElement.h"
 #include "core/html/forms/RadioButtonGroupScope.h"
@@ -41,14 +42,12 @@ class HTMLFormControlsCollection;
 class HTMLImageElement;
 class RadioNodeListOrElement;
 
-class HTMLFormElement final : public HTMLElement {
+class CORE_EXPORT HTMLFormElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFormElement> create(Document&);
     virtual ~HTMLFormElement();
-    virtual void trace(Visitor*) override;
-
-    void setNeedsValidityCheck();
+    DECLARE_VIRTUAL_TRACE();
 
     PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
     void getNamedElements(const AtomicString&, WillBeHeapVector<RefPtrWillBeMember<Element>>&);
@@ -74,7 +73,6 @@ public:
     void didAssociateByParser();
 
     void prepareForSubmission(Event*);
-    void submit();
     void submitFromJavaScript();
     void reset();
 
@@ -123,12 +121,12 @@ public:
 private:
     explicit HTMLFormElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
     virtual void finishParsingChildren() override;
 
-    virtual void handleLocalEvents(Event*) override;
+    virtual void handleLocalEvents(Event&) override;
 
     virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
@@ -140,7 +138,7 @@ private:
     virtual void copyNonAttributePropertiesFromElement(const Element&) override;
 
     void submitDialog(PassRefPtrWillBeRawPtr<FormSubmission>);
-    void submit(Event*, bool activateSubmitButton, bool processingUserGesture, FormSubmissionTrigger);
+    void submit(Event*, bool activateSubmitButton, bool processingUserGesture);
 
     void scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission>);
 

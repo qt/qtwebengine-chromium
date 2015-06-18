@@ -25,39 +25,16 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if defined(LIBPEERCONNECTION_LIB) || \
-    defined(LIBPEERCONNECTION_IMPLEMENTATION)
+#if defined(LIBPEERCONNECTION_LIB) || defined(LIBPEERCONNECTION_IMPLEMENTATION)
 
 #include "talk/media/webrtc/webrtcmediaengine.h"
-#include "talk/media/webrtc/webrtcvideoengine.h"
-#ifdef WEBRTC_CHROMIUM_BUILD
 #include "talk/media/webrtc/webrtcvideoengine2.h"
-#endif
 #include "talk/media/webrtc/webrtcvoiceengine.h"
-#ifdef WEBRTC_CHROMIUM_BUILD
-#include "webrtc/system_wrappers/interface/field_trial.h"
-#endif
 
 namespace cricket {
 
-class WebRtcMediaEngine :
-      public CompositeMediaEngine<WebRtcVoiceEngine, WebRtcVideoEngine> {
- public:
-  WebRtcMediaEngine() {}
-  WebRtcMediaEngine(webrtc::AudioDeviceModule* adm,
-      webrtc::AudioDeviceModule* adm_sc,
-      WebRtcVideoEncoderFactory* encoder_factory,
-      WebRtcVideoDecoderFactory* decoder_factory) {
-    voice_.SetAudioDeviceModule(adm, adm_sc);
-    video_.SetVoiceEngine(&voice_);
-    video_.SetExternalEncoderFactory(encoder_factory);
-    video_.SetExternalDecoderFactory(decoder_factory);
-  }
-};
-
-#ifdef WEBRTC_CHROMIUM_BUILD
-class WebRtcMediaEngine2 :
-      public CompositeMediaEngine<WebRtcVoiceEngine, WebRtcVideoEngine2> {
+class WebRtcMediaEngine2
+    : public CompositeMediaEngine<WebRtcVoiceEngine, WebRtcVideoEngine2> {
  public:
   WebRtcMediaEngine2(webrtc::AudioDeviceModule* adm,
                      webrtc::AudioDeviceModule* adm_sc,
@@ -66,10 +43,8 @@ class WebRtcMediaEngine2 :
     voice_.SetAudioDeviceModule(adm, adm_sc);
     video_.SetExternalDecoderFactory(decoder_factory);
     video_.SetExternalEncoderFactory(encoder_factory);
-    video_.SetVoiceEngine(&voice_);
   }
 };
-#endif  // WEBRTC_CHROMIUM_BUILD
 
 }  // namespace cricket
 
@@ -79,14 +54,8 @@ cricket::MediaEngineInterface* CreateWebRtcMediaEngine(
     webrtc::AudioDeviceModule* adm_sc,
     cricket::WebRtcVideoEncoderFactory* encoder_factory,
     cricket::WebRtcVideoDecoderFactory* decoder_factory) {
-#ifdef WEBRTC_CHROMIUM_BUILD
-  if (webrtc::field_trial::FindFullName("WebRTC-NewVideoAPI") == "Enabled") {
-    return new cricket::WebRtcMediaEngine2(
-        adm, adm_sc, encoder_factory, decoder_factory);
-  }
-#endif // WEBRTC_CHROMIUM_BUILD
-  return new cricket::WebRtcMediaEngine(
-      adm, adm_sc, encoder_factory, decoder_factory);
+  return new cricket::WebRtcMediaEngine2(adm, adm_sc, encoder_factory,
+                                         decoder_factory);
 }
 
 WRME_EXPORT
@@ -95,12 +64,6 @@ void DestroyWebRtcMediaEngine(cricket::MediaEngineInterface* media_engine) {
 }
 
 namespace cricket {
-
-// Used by ChannelManager when no media engine is passed in to it
-// explicitly (acts as a default).
-MediaEngineInterface* WebRtcMediaEngineFactory::Create() {
-  return new cricket::WebRtcMediaEngine();
-}
 
 // Used by PeerConnectionFactory to create a media engine passed into
 // ChannelManager.

@@ -188,6 +188,49 @@ void testByteByByteDecode(const char* webpFile, size_t expectedFrameCount, int e
     EXPECT_EQ(expectedRepetitionCount, decoder->repetitionCount());
 }
 
+void testByteByByteSizeAvailable(const char* webpFile, size_t frameOffset, bool hasColorProfile, int expectedRepetitionCount)
+{
+    OwnPtr<WEBPImageDecoder> decoder = createDecoder();
+    RefPtr<SharedBuffer> data = readFile(webpFile);
+    ASSERT_TRUE(data.get());
+    EXPECT_LT(frameOffset, data->size());
+
+    // Send data to the decoder byte-by-byte and use the provided frame offset in the data to check
+    // isSizeAvailable() changes state only when that offset is reached, and the associated decoder
+    // state also: size, colorProfile, frameCount, repetitionCount ...
+
+    for (size_t length = 1; length <= frameOffset; ++length) {
+        RefPtr<SharedBuffer> tempData = SharedBuffer::create(data->data(), length);
+        decoder->setData(tempData.get(), false);
+
+        if (length < frameOffset) {
+            EXPECT_FALSE(decoder->isSizeAvailable());
+            EXPECT_TRUE(decoder->size().isEmpty());
+            EXPECT_FALSE(decoder->hasColorProfile());
+            EXPECT_EQ(0u, decoder->frameCount());
+            EXPECT_EQ(cAnimationLoopOnce, decoder->repetitionCount());
+            EXPECT_FALSE(decoder->frameBufferAtIndex(0));
+        } else {
+            EXPECT_TRUE(decoder->isSizeAvailable());
+            EXPECT_FALSE(decoder->size().isEmpty());
+#if USE(QCMSLIB)
+            if (hasColorProfile)
+                EXPECT_TRUE(decoder->hasColorProfile());
+            else
+                EXPECT_FALSE(decoder->hasColorProfile());
+#else
+            EXPECT_FALSE(decoder->hasColorProfile());
+#endif
+            EXPECT_EQ(1u, decoder->frameCount());
+            EXPECT_EQ(expectedRepetitionCount, decoder->repetitionCount());
+        }
+
+        EXPECT_FALSE(decoder->failed());
+        if (decoder->failed())
+            return;
+    }
+}
+
 // If 'parseErrorExpected' is true, error is expected during parse (frameCount()
 // call); else error is expected during decode (frameBufferAtIndex() call).
 void testInvalidImage(const char* webpFile, bool parseErrorExpected)
@@ -198,13 +241,17 @@ void testInvalidImage(const char* webpFile, bool parseErrorExpected)
     ASSERT_TRUE(data.get());
     decoder->setData(data.get(), true);
 
-    if (parseErrorExpected)
+    if (parseErrorExpected) {
         EXPECT_EQ(0u, decoder->frameCount());
-    else
-        EXPECT_LT(0u, decoder->frameCount());
-    ImageFrame* frame = decoder->frameBufferAtIndex(0);
-    EXPECT_FALSE(frame);
+        EXPECT_FALSE(decoder->frameBufferAtIndex(0));
+    } else {
+        EXPECT_GT(decoder->frameCount(), 0u);
+        ImageFrame* frame = decoder->frameBufferAtIndex(0);
+        ASSERT_TRUE(frame);
+        EXPECT_EQ(ImageFrame::FramePartial, frame->status());
+    }
     EXPECT_EQ(cAnimationLoopOnce, decoder->repetitionCount());
+    EXPECT_TRUE(decoder->failed());
 }
 
 uint32_t premultiplyColor(uint32_t c)
@@ -432,10 +479,17 @@ TEST(AnimatedWebPTests, truncatedLastFrame)
 
     size_t frameCount = 8;
     EXPECT_EQ(frameCount, decoder->frameCount());
-    ImageFrame* frame = decoder->frameBufferAtIndex(frameCount - 1);
-    EXPECT_FALSE(frame);
+    ImageFrame* frame = decoder->frameBufferAtIndex(0);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FrameComplete, frame->status());
+    EXPECT_FALSE(decoder->failed());
+    frame = decoder->frameBufferAtIndex(frameCount - 1);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FramePartial, frame->status());
+    EXPECT_TRUE(decoder->failed());
     frame = decoder->frameBufferAtIndex(0);
-    EXPECT_FALSE(frame);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FrameComplete, frame->status());
 }
 
 TEST(AnimatedWebPTests, truncatedInBetweenFrame)
@@ -447,8 +501,13 @@ TEST(AnimatedWebPTests, truncatedInBetweenFrame)
     RefPtr<SharedBuffer> data = SharedBuffer::create(fullData->data(), fullData->size() - 1);
     decoder->setData(data.get(), false);
 
-    ImageFrame* frame = decoder->frameBufferAtIndex(2);
-    EXPECT_FALSE(frame);
+    ImageFrame* frame = decoder->frameBufferAtIndex(1);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FrameComplete, frame->status());
+    frame = decoder->frameBufferAtIndex(2);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FramePartial, frame->status());
+    EXPECT_TRUE(decoder->failed());
 }
 
 // Reproduce a crash that used to happen for a specific file with specific sequence of method calls.
@@ -465,13 +524,19 @@ TEST(AnimatedWebPTests, reproCrash)
     RefPtr<SharedBuffer> data = SharedBuffer::create(fullData->data(), partialSize);
     decoder->setData(data.get(), false);
     EXPECT_EQ(1u, decoder->frameCount());
+    ImageFrame* frame = decoder->frameBufferAtIndex(0);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FramePartial, frame->status());
+    EXPECT_FALSE(decoder->failed());
 
     // Parse full data now. The error in bitstream should now be detected.
     decoder->setData(fullData.get(), true);
-    EXPECT_EQ(0u, decoder->frameCount());
-    ImageFrame* frame = decoder->frameBufferAtIndex(0);
-    EXPECT_FALSE(frame);
+    EXPECT_EQ(1u, decoder->frameCount());
+    frame = decoder->frameBufferAtIndex(0);
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(ImageFrame::FramePartial, frame->status());
     EXPECT_EQ(cAnimationLoopOnce, decoder->repetitionCount());
+    EXPECT_TRUE(decoder->failed());
 }
 
 TEST(AnimatedWebPTests, progressiveDecode)
@@ -593,7 +658,7 @@ TEST(AnimatedWebPTests, randomDecodeAfterClearFrameBufferCache)
     testRandomDecodeAfterClearFrameBufferCache("/LayoutTests/fast/images/resources/webp-animated-icc-xmp.webp");
 }
 
-TEST(AnimatedWebPTests, resumePartialDecodeAfterClearFrameBufferCache)
+TEST(AnimatedWebPTests, DISABLED_resumePartialDecodeAfterClearFrameBufferCache)
 {
     RefPtr<SharedBuffer> fullData = readFile("/LayoutTests/fast/images/resources/webp-animated-large.webp");
     ASSERT_TRUE(fullData.get());
@@ -639,6 +704,13 @@ TEST(AnimatedWebPTests, alphaBlending)
     testAlphaBlending("/LayoutTests/fast/images/resources/webp-animated-semitransparent4.webp");
 }
 
+TEST(AnimatedWebPTests, isSizeAvailable)
+{
+    testByteByByteSizeAvailable("/LayoutTests/fast/images/resources/webp-animated.webp", 142u, false, cAnimationLoopInfinite);
+    // FIXME: Add color profile support for animated webp images.
+    testByteByByteSizeAvailable("/LayoutTests/fast/images/resources/webp-animated-icc-xmp.webp", 1404u, false, 31999);
+}
+
 TEST(StaticWebPTests, truncatedImage)
 {
     // VP8 data is truncated.
@@ -651,6 +723,12 @@ TEST(StaticWebPTests, incrementalDecode)
 {
     // Regression test for a bug where some valid images were failing to decode incrementally.
     testByteByByteDecode("/LayoutTests/fast/images/resources/crbug.364830.webp", 1u, cAnimationNone);
+}
+
+TEST(StaticWebPTests, isSizeAvailable)
+{
+    testByteByByteSizeAvailable("/LayoutTests/fast/images/resources/webp-color-profile-lossy.webp", 520u, true, cAnimationNone);
+    testByteByByteSizeAvailable("/LayoutTests/fast/images/resources/test.webp", 30u, false, cAnimationNone);
 }
 
 TEST(StaticWebPTests, notAnimated)

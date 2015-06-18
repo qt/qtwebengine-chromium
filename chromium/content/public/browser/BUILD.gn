@@ -8,9 +8,13 @@ import("//build/config/ui.gni")
 # See //content/BUILD.gn for how this works.
 group("browser") {
   if (is_component_build) {
-    public_deps = [ "//content" ]
+    public_deps = [
+      "//content",
+    ]
   } else {
-    public_deps = [ ":browser_sources" ]
+    public_deps = [
+      ":browser_sources",
+    ]
   }
 }
 
@@ -31,7 +35,8 @@ source_set("browser_sources") {
     ]
   } else {
     sources = rebase_path(content_browser_gypi_values.public_browser_sources,
-                          ".", "//content")
+                          ".",
+                          "//content")
   }
 
   if (use_aura) {
@@ -41,8 +46,11 @@ source_set("browser_sources") {
   configs += [ "//content:content_implementation" ]
 
   public_deps = [
+    "//content/public/common:mojo_bindings",
+
     # We expose skia headers in the public API.
     "//skia",
+    "//third_party/mojo/src/mojo/public/cpp/system",
   ]
   deps = [
     "//content/browser",

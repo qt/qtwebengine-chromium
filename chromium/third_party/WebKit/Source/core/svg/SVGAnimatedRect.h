@@ -37,10 +37,11 @@
 namespace blink {
 
 class SVGAnimatedRect : public SVGAnimatedProperty<SVGRect> {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGAnimatedRect> create(SVGElement* contextElement, const QualifiedName& attributeName)
+    static PassRefPtrWillBeRawPtr<SVGAnimatedRect> create(SVGElement* contextElement, const QualifiedName& attributeName)
     {
-        return adoptRef(new SVGAnimatedRect(contextElement, attributeName));
+        return adoptRefWillBeNoop(new SVGAnimatedRect(contextElement, attributeName));
     }
 
 protected:

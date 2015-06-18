@@ -1,0 +1,33 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../mojo_sdk.gni")
+
+config("gles2_config") {
+  defines = [ "GLES2_USE_MOJO" ]
+}
+
+group("gles2") {
+  public_configs = [ "//third_party/khronos:khronos_headers" ]
+  public_deps = [
+    ":headers",
+  ]
+  deps = [
+    "../../platform/native:gles2",
+  ]
+}
+
+mojo_sdk_source_set("headers") {
+  sources = [
+    "gles2.h",
+    "gles2_export.h",
+  ]
+
+  public_configs = [ ":gles2_config" ]
+
+  mojo_sdk_public_deps = [
+    "mojo/public/c/environment",
+    "mojo/public/c/system",
+  ]
+}

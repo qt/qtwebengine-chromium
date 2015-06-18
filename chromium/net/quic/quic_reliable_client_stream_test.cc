@@ -42,7 +42,8 @@ class QuicReliableClientStreamTest
     : public ::testing::TestWithParam<QuicVersion> {
  public:
   QuicReliableClientStreamTest()
-      : session_(new MockConnection(false, SupportedVersions(GetParam()))) {
+      : session_(new MockConnection(Perspective::IS_CLIENT,
+                                    SupportedVersions(GetParam()))) {
     stream_ = new QuicReliableClientStream(kStreamId, &session_, BoundNetLog());
     session_.ActivateStream(stream_);
     stream_->SetDelegate(&delegate_);
@@ -90,8 +91,8 @@ INSTANTIATE_TEST_CASE_P(Version, QuicReliableClientStreamTest,
 
 TEST_P(QuicReliableClientStreamTest, OnFinRead) {
   InitializeHeaders();
-  string uncompressed_headers =
-      SpdyUtils::SerializeUncompressedHeaders(headers_);
+  std::string uncompressed_headers =
+      SpdyUtils::SerializeUncompressedHeaders(headers_, GetParam());
   EXPECT_CALL(delegate_, OnDataReceived(StrEq(uncompressed_headers.data()),
                                         uncompressed_headers.size()));
   QuicStreamOffset offset = 0;

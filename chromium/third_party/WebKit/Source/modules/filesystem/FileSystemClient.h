@@ -31,6 +31,7 @@
 #ifndef FileSystemClient_h
 #define FileSystemClient_h
 
+#include "modules/ModulesExport.h"
 #include "platform/FileSystemType.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -39,7 +40,7 @@ namespace blink {
 
 class ExecutionContext;
 class LocalFrame;
-class PermissionCallbacks;
+class ContentSettingCallbacks;
 class WorkerClients;
 
 class FileSystemClient {
@@ -49,12 +50,12 @@ public:
     virtual ~FileSystemClient() { }
 
     virtual bool requestFileSystemAccessSync(ExecutionContext*) = 0;
-    virtual void requestFileSystemAccessAsync(ExecutionContext*, PassOwnPtr<PermissionCallbacks>) = 0;
+    virtual void requestFileSystemAccessAsync(ExecutionContext*, PassOwnPtr<ContentSettingCallbacks>) = 0;
 };
 
-void provideLocalFileSystemTo(LocalFrame&, PassOwnPtr<FileSystemClient>);
+MODULES_EXPORT void provideLocalFileSystemTo(LocalFrame&, PassOwnPtr<FileSystemClient>);
 
-void provideLocalFileSystemToWorker(WorkerClients*, PassOwnPtr<FileSystemClient>);
+MODULES_EXPORT void provideLocalFileSystemToWorker(WorkerClients*, PassOwnPtr<FileSystemClient>);
 
 } // namespace blink
 

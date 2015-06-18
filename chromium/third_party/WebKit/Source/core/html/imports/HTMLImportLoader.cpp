@@ -54,26 +54,21 @@ HTMLImportLoader::HTMLImportLoader(HTMLImportsController* controller)
 HTMLImportLoader::~HTMLImportLoader()
 {
 #if !ENABLE(OILPAN)
-    clear();
+    dispose();
 #endif
 }
 
-#if !ENABLE(OILPAN)
-void HTMLImportLoader::importDestroyed()
-{
-    clear();
-}
-
-void HTMLImportLoader::clear()
+void HTMLImportLoader::dispose()
 {
     m_controller = nullptr;
     if (m_document) {
-        m_document->setImportsController(0);
+        if (m_document->parser())
+            m_document->parser()->removeClient(this);
+        m_document->setImportsController(nullptr);
         m_document->cancelParsing();
         m_document.clear();
     }
 }
-#endif
 
 void HTMLImportLoader::startLoading(const ResourcePtr<RawResource>& resource)
 {
@@ -85,7 +80,7 @@ void HTMLImportLoader::responseReceived(Resource* resource, const ResourceRespon
     ASSERT_UNUSED(handle, !handle);
     // Resource may already have been loaded with the import loader
     // being added as a client later & now being notified. Fail early.
-    if (resource->loadFailedOrCanceled() || response.httpStatusCode() >= 400) {
+    if (resource->loadFailedOrCanceled() || response.httpStatusCode() >= 400 || !response.httpHeaderField("Content-Disposition").isNull()) {
         setState(StateError);
         return;
     }
@@ -116,7 +111,7 @@ HTMLImportLoader::State HTMLImportLoader::startWritingAndParsing(const ResourceR
     DocumentInit init = DocumentInit(response.url(), 0, m_controller->master()->contextDocument(), m_controller)
         .withRegistrationContext(m_controller->master()->registrationContext());
     m_document = HTMLDocument::create(init);
-    m_writer = DocumentWriter::create(m_document.get(), response.mimeType(), "UTF-8");
+    m_writer = DocumentWriter::create(m_document.get(), AllowAsynchronousParsing, response.mimeType(), "UTF-8");
 
     DocumentParser* parser = m_document->parser();
     ASSERT(parser);
@@ -176,7 +171,7 @@ void HTMLImportLoader::didRemoveAllPendingStylesheet()
 
 bool HTMLImportLoader::hasPendingResources() const
 {
-    return m_document && m_document->styleEngine()->hasPendingSheets();
+    return m_document && m_document->styleEngine().hasPendingSheets();
 }
 
 void HTMLImportLoader::didFinishLoading()
@@ -207,13 +202,11 @@ void HTMLImportLoader::addImport(HTMLImportChild* import)
         import->didFinishLoading();
 }
 
-#if !ENABLE(OILPAN)
 void HTMLImportLoader::removeImport(HTMLImportChild* client)
 {
     ASSERT(kNotFound != m_imports.find(client));
     m_imports.remove(m_imports.find(client));
 }
-#endif
 
 bool HTMLImportLoader::shouldBlockScriptExecution() const
 {
@@ -225,7 +218,7 @@ PassRefPtrWillBeRawPtr<CustomElementSyncMicrotaskQueue> HTMLImportLoader::microt
     return m_microtaskQueue;
 }
 
-void HTMLImportLoader::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLImportLoader)
 {
     visitor->trace(m_controller);
 #if ENABLE(OILPAN)

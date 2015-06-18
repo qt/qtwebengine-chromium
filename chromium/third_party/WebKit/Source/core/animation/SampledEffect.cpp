@@ -5,62 +5,45 @@
 #include "config.h"
 #include "core/animation/SampledEffect.h"
 
+#include "core/animation/SVGInterpolation.h"
 #include "core/animation/StyleInterpolation.h"
+#include "core/svg/SVGElement.h"
 
 namespace blink {
 
-SampledEffect::SampledEffect(Animation* animation, PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > interpolations)
-    : m_animation(animation)
-#if !ENABLE(OILPAN)
-    , m_player(animation->player())
-#endif
+SampledEffect::SampledEffect(KeyframeEffect* effect, PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>> interpolations)
+    : m_effect(effect)
+    , m_animation(effect->animation())
     , m_interpolations(interpolations)
-    , m_sequenceNumber(animation->player()->sequenceNumber())
-    , m_priority(animation->priority())
+    , m_sequenceNumber(effect->animation()->sequenceNumber())
+    , m_priority(effect->priority())
 {
     ASSERT(m_interpolations && !m_interpolations->isEmpty());
 }
 
-bool SampledEffect::canChange() const
-{
-#if ENABLE(OILPAN)
-    return m_animation;
-#else
-    if (!m_animation)
-        return false;
-    // FIXME: This check won't be needed when Animation and AnimationPlayer are moved to Oilpan.
-    return !m_player->canFree();
-#endif
-}
-
 void SampledEffect::clear()
 {
-#if !ENABLE(OILPAN)
-    m_player = nullptr;
-#endif
+    m_effect = nullptr;
     m_animation = nullptr;
     m_interpolations->clear();
 }
 
-void SampledEffect::removeReplacedInterpolationsIfNeeded(const BitArray<numCSSProperties>& replacedProperties)
+DEFINE_TRACE(SampledEffect)
 {
-    if (canChange() && m_animation->isCurrent())
-        return;
-
-    size_t dest = 0;
-    for (size_t i = 0; i < m_interpolations->size(); i++) {
-        if (!replacedProperties.get(toStyleInterpolation(m_interpolations->at(i).get())->id()))
-            m_interpolations->at(dest++) = m_interpolations->at(i);
-    }
-    m_interpolations->shrink(dest);
-}
-
-void SampledEffect::trace(Visitor* visitor)
-{
+    visitor->trace(m_effect);
     visitor->trace(m_animation);
 #if ENABLE(OILPAN)
     visitor->trace(m_interpolations);
 #endif
+}
+
+void SampledEffect::applySVGUpdate(SVGElement& targetElement)
+{
+    for (const auto& interpolation : *m_interpolations) {
+        if (interpolation->isSVGInterpolation()) {
+            toSVGInterpolation(interpolation.get())->apply(targetElement);
+        }
+    }
 }
 
 } // namespace blink

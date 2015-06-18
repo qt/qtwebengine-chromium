@@ -21,7 +21,7 @@ PassRefPtr<MediaValues> MediaValuesDynamic::create(Document& document)
 
 PassRefPtr<MediaValues> MediaValuesDynamic::create(LocalFrame* frame)
 {
-    if (!frame || !frame->view() || !frame->document() || !frame->document()->renderView())
+    if (!frame || !frame->view() || !frame->document() || !frame->document()->layoutView())
         return MediaValuesCached::create();
     return adoptRef(new MediaValuesDynamic(frame));
 }
@@ -125,6 +125,11 @@ bool MediaValuesDynamic::threeDEnabled() const
 const String MediaValuesDynamic::mediaType() const
 {
     return calculateMediaType(m_frame);
+}
+
+WebDisplayMode MediaValuesDynamic::displayMode() const
+{
+    return calculateDisplayMode(m_frame);
 }
 
 bool MediaValuesDynamic::strictMode() const

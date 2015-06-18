@@ -29,11 +29,6 @@
 
 namespace blink {
 
-SpeechRecognitionEventInit::SpeechRecognitionEventInit()
-    : resultIndex(0)
-{
-}
-
 PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::create()
 {
     return adoptRefWillBeNoop(new SpeechRecognitionEvent);
@@ -44,7 +39,7 @@ PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::create(co
     return adoptRefWillBeNoop(new SpeechRecognitionEvent(eventName, initializer));
 }
 
-PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createResult(unsigned long resultIndex, const HeapVector<Member<SpeechRecognitionResult> >& results)
+PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createResult(unsigned long resultIndex, const HeapVector<Member<SpeechRecognitionResult>>& results)
 {
     return adoptRefWillBeNoop(new SpeechRecognitionEvent(EventTypeNames::result, resultIndex, SpeechRecognitionResultList::create(results)));
 }
@@ -52,7 +47,7 @@ PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createRes
 PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createNoMatch(SpeechRecognitionResult* result)
 {
     if (result) {
-        HeapVector<Member<SpeechRecognitionResult> > results;
+        HeapVector<Member<SpeechRecognitionResult>> results;
         results.append(result);
         return adoptRefWillBeNoop(new SpeechRecognitionEvent(EventTypeNames::nomatch, 0, SpeechRecognitionResultList::create(results)));
     }
@@ -72,9 +67,12 @@ SpeechRecognitionEvent::SpeechRecognitionEvent()
 
 SpeechRecognitionEvent::SpeechRecognitionEvent(const AtomicString& eventName, const SpeechRecognitionEventInit& initializer)
     : Event(eventName, initializer)
-    , m_resultIndex(initializer.resultIndex)
-    , m_results(initializer.results)
+    , m_resultIndex(0)
 {
+    if (initializer.hasResultIndex())
+        m_resultIndex = initializer.resultIndex();
+    if (initializer.hasResults())
+        m_results = initializer.results();
 }
 
 SpeechRecognitionEvent::SpeechRecognitionEvent(const AtomicString& eventName, unsigned long resultIndex, SpeechRecognitionResultList* results)
@@ -88,7 +86,7 @@ SpeechRecognitionEvent::~SpeechRecognitionEvent()
 {
 }
 
-void SpeechRecognitionEvent::trace(Visitor* visitor)
+DEFINE_TRACE(SpeechRecognitionEvent)
 {
     visitor->trace(m_results);
     Event::trace(visitor);

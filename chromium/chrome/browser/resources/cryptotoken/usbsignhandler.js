@@ -22,7 +22,7 @@ function UsbSignHandler(request) {
   this.notified_ = false;
   /** @private {boolean} */
   this.anyGnubbiesFound_ = false;
-  /** @private {!Array.<!Gnubby>} */
+  /** @private {!Array<!Gnubby>} */
   this.notEnrolledGnubbies_ = [];
 }
 
@@ -47,7 +47,6 @@ UsbSignHandler.prototype.run = function(cb) {
   this.cb_ = cb;
   if (!this.request_.signData || !this.request_.signData.length) {
     // Fail a sign request with an empty set of challenges.
-    this.notifyError_(DeviceStatusCodes.INVALID_DATA_STATUS);
     return false;
   }
   var timeoutMillis =
@@ -168,7 +167,7 @@ UsbSignHandler.prototype.sendBogusEnroll_ = function(gnubby) {
         self.notifyError_(DeviceStatusCodes.INVALID_DATA_STATUS);
     }
     gnubby.enroll(
-        /** @type {Array.<number>} */ (enrollChallenge),
+        /** @type {Array<number>} */ (enrollChallenge),
         UsbSignHandler.BOGUS_APP_ID_HASH,
         self.enrollCallback_.bind(self, gnubby));
   });

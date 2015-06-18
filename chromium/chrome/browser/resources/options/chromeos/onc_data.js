@@ -21,6 +21,8 @@ cr.define('cr.onc', function() {
   }
 
   OncData.prototype = {
+    /** @return {string} The GUID of the network. */
+    guid: function() { return this.data_['GUID']; },
 
     /**
      * Returns either a managed property dictionary or an unmanaged value.
@@ -47,9 +49,9 @@ cr.define('cr.onc', function() {
      * Sets the value of a property. Currently only supports unmanaged
      * properties.
      * @param {string} key The property key.
-     * @param {Object} value The property value to set.
+     * @param {?} value The property value to set.
      */
-    setManagedProperty: function(key, value) {
+    setProperty: function(key, value) {
       var data = this.data_;
       while (true) {
         var index = key.indexOf('.');
@@ -177,6 +179,13 @@ cr.define('cr.onc', function() {
           return property[effective];
       }
       return undefined;
+    },
+
+    /**
+     * Returns the complete ONC dictionary.
+     */
+    getData: function() {
+      return this.data_;
     }
   };
 

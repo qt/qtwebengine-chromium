@@ -25,10 +25,12 @@ def apply_gyp_environment_from_file(file_path):
   supported_vars = (
       'CC',
       'CC_wrapper',
+      'CC.host_wrapper',
       'CHROMIUM_GYP_FILE',
       'CHROMIUM_GYP_SYNTAX_CHECK',
       'CXX',
       'CXX_wrapper',
+      'CXX.host_wrapper',
       'GYP_DEFINES',
       'GYP_GENERATOR_FLAGS',
       'GYP_CROSSCOMPILE',
@@ -42,9 +44,19 @@ def apply_gyp_environment_from_file(file_path):
     file_val = file_data.get(var)
     if file_val:
       if var in os.environ:
-        print 'INFO: Environment value for "%s" overrides value in %s.' % (
-            var, os.path.abspath(file_path)
+        behavior = 'replaces'
+        if var == 'GYP_DEFINES':
+          result = file_val + ' ' + os.environ[var]
+          behavior = 'merges with, and individual components override,'
+        else:
+          result = os.environ[var]
+        print 'INFO: Environment value for "%s" %s value in %s' % (
+            var, behavior, os.path.abspath(file_path)
         )
+        string_padding = max(len(var), len(file_path), len('result'))
+        print '      %s: %s' % (var.rjust(string_padding), os.environ[var])
+        print '      %s: %s' % (file_path.rjust(string_padding), file_val)
+        os.environ[var] = result
       else:
         os.environ[var] = file_val
 

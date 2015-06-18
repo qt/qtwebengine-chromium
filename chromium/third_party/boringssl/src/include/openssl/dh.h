@@ -61,6 +61,7 @@
 
 #include <openssl/engine.h>
 #include <openssl/ex_data.h>
+#include <openssl/thread.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -144,6 +145,10 @@ OPENSSL_EXPORT int DH_size(const DH *dh);
 #define DH_CHECK_INVALID_Q_VALUE 0x20
 #define DH_CHECK_INVALID_J_VALUE 0x40
 
+/* These are compatibility defines. */
+#define DH_NOT_SUITABLE_GENERATOR DH_CHECK_NOT_SUITABLE_GENERATOR
+#define DH_UNABLE_TO_CHECK_GENERATOR DH_CHECK_UNABLE_TO_CHECK_GENERATOR
+
 /* DH_check checks the suitability of |dh| as a Diffie-Hellman group. and sets
  * |DH_CHECK_*| flags in |*out_flags| if it finds any errors. It returns one if
  * |*out_flags| was successfully set and zero on error.
@@ -185,7 +190,7 @@ OPENSSL_EXPORT int i2d_DHparams(const DH *in, unsigned char **outp);
 
 /* ex_data functions.
  *
- * These functions are wrappers. See |ex_data.h| for details. */
+ * See |ex_data.h| for details. */
 
 OPENSSL_EXPORT int DH_get_ex_new_index(long argl, void *argp,
                                        CRYPTO_EX_new *new_func,
@@ -232,6 +237,8 @@ struct dh_st {
   /* priv_length contains the length, in bits, of the private value. If zero,
    * the private value will be the same length as |p|. */
   unsigned priv_length;
+
+  CRYPTO_MUTEX method_mont_p_lock;
   BN_MONT_CTX *method_mont_p;
 
   /* Place holders if we want to do X9.42 DH */
@@ -251,12 +258,12 @@ struct dh_st {
 }  /* extern C */
 #endif
 
-#define DH_F_generate_parameters 100
-#define DH_F_generate_key 101
-#define DH_F_compute_key 102
-#define DH_F_DH_new_method 103
-#define DH_R_INVALID_PUBKEY 100
-#define DH_R_BAD_GENERATOR 101
+#define DH_F_DH_new_method 100
+#define DH_F_compute_key 101
+#define DH_F_generate_key 102
+#define DH_F_generate_parameters 103
+#define DH_R_BAD_GENERATOR 100
+#define DH_R_INVALID_PUBKEY 101
 #define DH_R_MODULUS_TOO_LARGE 102
 #define DH_R_NO_PRIVATE_VALUE 103
 

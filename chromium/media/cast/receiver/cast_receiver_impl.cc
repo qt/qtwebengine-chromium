@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "media/cast/receiver/audio_decoder.h"
 #include "media/cast/receiver/video_decoder.h"
 
@@ -20,42 +20,36 @@ scoped_ptr<CastReceiver> CastReceiver::Create(
     scoped_refptr<CastEnvironment> cast_environment,
     const FrameReceiverConfig& audio_config,
     const FrameReceiverConfig& video_config,
-    PacketSender* const packet_sender) {
+    CastTransportSender* const transport) {
   return scoped_ptr<CastReceiver>(new CastReceiverImpl(
-      cast_environment, audio_config, video_config, packet_sender));
+      cast_environment, audio_config, video_config, transport));
 }
 
 CastReceiverImpl::CastReceiverImpl(
     scoped_refptr<CastEnvironment> cast_environment,
     const FrameReceiverConfig& audio_config,
     const FrameReceiverConfig& video_config,
-    PacketSender* const packet_sender)
+    CastTransportSender* const transport)
     : cast_environment_(cast_environment),
-      pacer_(kTargetBurstSize,
-             kMaxBurstSize,
-             cast_environment->Clock(),
-             cast_environment->Logging(),
-             packet_sender,
-             cast_environment->GetTaskRunner(CastEnvironment::MAIN)),
-      audio_receiver_(cast_environment, audio_config, AUDIO_EVENT, &pacer_),
-      video_receiver_(cast_environment, video_config, VIDEO_EVENT, &pacer_),
-      ssrc_of_audio_sender_(audio_config.incoming_ssrc),
-      ssrc_of_video_sender_(video_config.incoming_ssrc),
+      audio_receiver_(cast_environment, audio_config, AUDIO_EVENT, transport),
+      video_receiver_(cast_environment, video_config, VIDEO_EVENT, transport),
+      ssrc_of_audio_sender_(audio_config.sender_ssrc),
+      ssrc_of_video_sender_(video_config.sender_ssrc),
       num_audio_channels_(audio_config.channels),
-      audio_sampling_rate_(audio_config.frequency),
+      audio_sampling_rate_(audio_config.rtp_timebase),
       audio_codec_(audio_config.codec),
       video_codec_(video_config.codec) {}
 
 CastReceiverImpl::~CastReceiverImpl() {}
 
-void CastReceiverImpl::DispatchReceivedPacket(scoped_ptr<Packet> packet) {
+void CastReceiverImpl::ReceivePacket(scoped_ptr<Packet> packet) {
   const uint8_t* const data = &packet->front();
   const size_t length = packet->size();
 
   uint32 ssrc_of_sender;
   if (Rtcp::IsRtcpPacket(data, length)) {
     ssrc_of_sender = Rtcp::GetSsrcOfSender(data, length);
-  } else if (!FrameReceiver::ParseSenderSsrc(data, length, &ssrc_of_sender)) {
+  } else if (!RtpParser::ParseSsrc(data, length, &ssrc_of_sender)) {
     VLOG(1) << "Invalid RTP packet.";
     return;
   }
@@ -76,14 +70,6 @@ void CastReceiverImpl::DispatchReceivedPacket(scoped_ptr<Packet> packet) {
       base::Bind(base::IgnoreResult(&FrameReceiver::ProcessPacket),
                  target,
                  base::Passed(&packet)));
-}
-
-PacketReceiverCallback CastReceiverImpl::packet_receiver() {
-  return base::Bind(&CastReceiverImpl::DispatchReceivedPacket,
-                    // TODO(miu): This code structure is dangerous, since the
-                    // callback could be stored and then invoked after
-                    // destruction of |this|.
-                    base::Unretained(this));
 }
 
 void CastReceiverImpl::RequestDecodedAudioFrame(

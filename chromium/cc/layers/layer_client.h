@@ -11,7 +11,7 @@
 #include "cc/base/cc_export.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 }
@@ -24,7 +24,7 @@ class CC_EXPORT LayerClient {
   // If not, returns nullptr.
   // If the returned pointer is non-nullptr, the caller takes
   // ownership of the pointer.
-  virtual scoped_refptr<base::debug::ConvertableToTraceFormat>
+  virtual scoped_refptr<base::trace_event::ConvertableToTraceFormat>
       TakeDebugInfo() = 0;
 
  protected:

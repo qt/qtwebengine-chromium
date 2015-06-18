@@ -27,6 +27,7 @@
 #ifndef EventQueue_h
 #define EventQueue_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -36,10 +37,10 @@ namespace blink {
 
 class Event;
 
-class EventQueue : public NoBaseWillBeGarbageCollectedFinalized<EventQueue> {
+class CORE_EXPORT EventQueue : public NoBaseWillBeGarbageCollectedFinalized<EventQueue> {
 public:
     virtual ~EventQueue() { }
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
     virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) = 0;
     virtual bool cancelEvent(Event*) = 0;
     // The accumulated and all the future events will be discarded, no events will be dispatched anymore.

@@ -4,8 +4,8 @@
 
 #include "ppapi/proxy/host_dispatcher.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/ppb_var.h"
 #include "ppapi/proxy/host_var_serialization_rules.h"
@@ -224,10 +224,7 @@ const void* HostDispatcher::GetProxiedInterface(const std::string& iface_name) {
     // Need to query. Cache the result so we only do this once.
     bool supported = false;
 
-    bool previous_reentrancy_value = allow_plugin_reentrancy_;
-    allow_plugin_reentrancy_ = true;
     Send(new PpapiMsg_SupportsInterface(iface_name, &supported));
-    allow_plugin_reentrancy_ = previous_reentrancy_value;
 
     std::pair<PluginSupportedMap::iterator, bool> iter_success_pair;
     iter_success_pair = plugin_supported_.insert(

@@ -110,7 +110,7 @@ var StatsTable = (function(ssrcInfoManager) {
      *
      * @param {!Element} statsTable Which table to update.
      * @param {number} time The number of miliseconds since epoch.
-     * @param {Array.<string>} statsData An array of stats name and value pairs.
+     * @param {Array<string>} statsData An array of stats name and value pairs.
      * @private
      */
     addStatsToTable_: function(statsTable, time, statsData) {
@@ -142,7 +142,7 @@ var StatsTable = (function(ssrcInfoManager) {
       trElement.cells[1].textContent = value;
 
       // Highlights the table for the active connection.
-      if (rowName == 'googActiveConnection' && value == 'true')
+      if (rowName == 'googActiveConnection' && value == true)
         statsTable.parentElement.classList.add('stats-table-active-connection');
     }
   };

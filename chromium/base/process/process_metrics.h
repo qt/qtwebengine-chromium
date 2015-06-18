@@ -85,17 +85,6 @@ struct CommittedKBytes {
   size_t image;
 };
 
-// Free memory (Megabytes marked as free) in the 2G process address space.
-// total : total amount in megabytes marked as free. Maximum value is 2048.
-// largest : size of the largest contiguous amount of memory found. It is
-//   always smaller or equal to FreeMBytes::total.
-// largest_ptr: starting address of the largest memory block.
-struct FreeMBytes {
-  size_t total;
-  size_t largest;
-  void* largest_ptr;
-};
-
 // Convert a POSIX timeval to microseconds.
 BASE_EXPORT int64 TimeValToMicroseconds(const struct timeval& tv);
 
@@ -153,6 +142,14 @@ class BASE_EXPORT ProcessMetrics {
   // Fills a WorkingSetKBytes containing resident private and shared memory
   // usage in bytes, as per definition of WorkingSetBytes.
   bool GetWorkingSetKBytes(WorkingSetKBytes* ws_usage) const;
+
+#if defined(OS_MACOSX)
+  // Fills both CommitedKBytes and WorkingSetKBytes in a single operation. This
+  // is more efficient on Mac OS X, as the two can be retrieved with a single
+  // system call.
+  bool GetCommittedAndWorkingSetKBytes(CommittedKBytes* usage,
+                                       WorkingSetKBytes* ws_usage) const;
+#endif
 
   // Returns the CPU usage in percent since the last time this method or
   // GetPlatformIndependentCPUUsage() was called. The first time this method
@@ -231,10 +228,13 @@ class BASE_EXPORT ProcessMetrics {
 // Returns 0 if it can't compute the commit charge.
 BASE_EXPORT size_t GetSystemCommitCharge();
 
+// Returns the number of bytes in a memory page.
+BASE_EXPORT size_t GetPageSize();
+
 #if defined(OS_POSIX)
 // Returns the maximum number of file descriptors that can be open by a process
 // at once. If the number is unavailable, a conservative best guess is returned.
-size_t GetMaxFds();
+BASE_EXPORT size_t GetMaxFds();
 
 // Sets the file descriptor soft limit to |max_descriptors| or the OS hard
 // limit, whichever is lower.

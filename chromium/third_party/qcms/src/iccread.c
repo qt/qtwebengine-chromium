@@ -341,6 +341,7 @@ qcms_bool qcms_profile_is_bogus(qcms_profile *profile)
 #define TAG_B2A0 0x42324130
 #define TAG_CHAD 0x63686164
 #define TAG_desc 0x64657363
+#define TAG_vcgt 0x76636774
 
 static struct tag *find_tag(struct tag_index index, uint32_t tag_id)
 {
@@ -356,6 +357,70 @@ static struct tag *find_tag(struct tag_index index, uint32_t tag_id)
 
 #define DESC_TYPE 0x64657363 // 'desc'
 #define MLUC_TYPE 0x6d6c7563 // 'mluc'
+#define MMOD_TYPE 0x6D6D6F64 // 'mmod'
+#define VCGT_TYPE 0x76636774 // 'vcgt'
+
+// Check unsigned short is uint16_t.
+typedef char assert_short_not_16b[(sizeof(unsigned short) == sizeof(uint16_t)) ? 1 : -1];
+
+qcms_bool read_tag_vcgtType(qcms_profile *profile, struct mem_source *src, struct tag_index index) {
+	size_t tag_offset = find_tag(index, TAG_vcgt)->offset;
+	uint32_t tag_type = read_u32(src, tag_offset);
+	uint32_t vcgt_type = read_u32(src, tag_offset + 8);
+	uint16_t channels = read_u16(src, tag_offset + 12);
+	uint16_t elements = read_u16(src, tag_offset + 14);
+	uint16_t byte_depth = read_u16(src, tag_offset + 16);
+	size_t table_offset = tag_offset + 18;
+	uint32_t i;
+	uint16_t *dest;
+
+	if (!src->valid || tag_type != VCGT_TYPE)
+		goto invalid_vcgt_tag;
+
+	// Only support 3 channels.
+	if (channels != 3)
+		return true;
+	// Only support single or double byte values.
+	if (byte_depth != 1 && byte_depth != 2)
+		return true;
+	// Only support table data, not equation.
+	if (vcgt_type != 0)
+		return true;
+	// Limit the table to a sensible size; 10-bit gamma is a reasonable
+	// maximum for hardware correction.
+	if (elements > 1024)
+		return true;
+
+	// Empty table is invalid.
+	if (!elements)
+		goto invalid_vcgt_tag;
+
+	profile->vcgt.length = elements;
+	profile->vcgt.data = malloc(3 * elements * sizeof(uint16_t));
+	if (!profile->vcgt.data)
+		return false;
+
+	dest = profile->vcgt.data;
+
+	for (i = 0; i < 3 * elements; ++i) {
+		if (byte_depth == 1) {
+			*dest++ = read_u8(src, table_offset) * 256;
+		} else {
+			*dest++ = read_u16(src, table_offset);
+		}
+
+		table_offset += byte_depth;
+
+		if (!src->valid)
+			goto invalid_vcgt_tag;
+	}
+
+	return true;
+
+invalid_vcgt_tag:
+	invalid_source(src, "invalid vcgt tag");
+	return false;
+}
 
 static bool read_tag_descType(qcms_profile *profile, struct mem_source *src, struct tag_index index, uint32_t tag_id)
 {
@@ -365,23 +430,31 @@ static bool read_tag_descType(qcms_profile *profile, struct mem_source *src, str
 		uint32_t offset = tag->offset;
 		uint32_t type = read_u32(src, offset);
 		uint32_t length = read_u32(src, offset+8);
-		uint32_t i, description;
+		uint32_t i, description_offset;
+		bool mluc = false;
 		if (length && type == MLUC_TYPE) {
 			length = read_u32(src, offset+20);
 			if (!length || (length & 1) || (read_u32(src, offset+12) != 12))
 				goto invalid_desc_tag;
-			description = offset + read_u32(src, offset+24);
+			description_offset = offset + read_u32(src, offset+24);
 			if (!src->valid)
 				goto invalid_desc_tag;
+			mluc = true;
 		} else if (length && type == DESC_TYPE) {
-			description = offset + 12;
+			description_offset = offset + 12;
 		} else {
 			goto invalid_desc_tag;
 		}
 		if (length >= limit)
 			length = limit - 1;
-		for (i = 0; i < length; ++i)
-			profile->description[i] = read_u8(src, description+i);
+		for (i = 0; i < length; ++i) {
+			uint8_t value = read_u8(src, description_offset + i);
+			if (!src->valid)
+				goto invalid_desc_tag;
+			if (mluc && !value)
+				value = '.';
+			profile->description[i] = value;
+		}
 		profile->description[length] = 0;
 	} else {
 		goto invalid_desc_tag;
@@ -394,6 +467,102 @@ invalid_desc_tag:
 	invalid_source(src, "invalid description");
 	return false;
 }
+
+#if defined(__APPLE__)
+
+// Use the dscm tag to change profile description "Display" to its more specific en-localized monitor name, if any.
+
+#define TAG_dscm  0x6473636D // 'dscm'
+
+static bool read_tag_dscmType(qcms_profile *profile, struct mem_source *src, struct tag_index index, uint32_t tag_id)
+{
+	if (strcmp(profile->description, "Display") != 0)
+		return true;
+
+	struct tag *tag = find_tag(index, tag_id);
+	if (tag) {
+		uint32_t offset = tag->offset;
+		uint32_t type = read_u32(src, offset);
+		uint32_t records = read_u32(src, offset+8);
+
+		if (!src->valid || !records || type != MLUC_TYPE)
+			goto invalid_dscm_tag;
+		if (read_u32(src, offset+12) != 12) // MLUC record size: bytes
+			goto invalid_dscm_tag;
+
+		for (uint32_t i = 0; i < records; ++i) {
+			const uint32_t limit = sizeof profile->description;
+			const uint16_t isoen = 0x656E; // ISO-3166-1 language 'en'
+
+			uint16_t language = read_u16(src, offset + 16 + (i * 12) + 0);
+			uint32_t length = read_u32(src, offset + 16 + (i * 12) + 4);
+			uint32_t description_offset = read_u32(src, offset + 16 + (i * 12) + 8);
+
+			if (!src->valid || !length || (length & 1))
+				goto invalid_dscm_tag;
+			if (language != isoen)
+				continue;
+
+			// Use a prefix to identify the display description source
+			strcpy(profile->description, "dscm:");
+			length += 5;
+
+			if (length >= limit)
+				length = limit - 1;
+			for (uint32_t j = 5; j < length; ++j) {
+				uint8_t value = read_u8(src, offset + description_offset + j - 5);
+				if (!src->valid)
+					goto invalid_dscm_tag;
+				profile->description[j] = value ? value : '.';
+			}
+			profile->description[length] = 0;
+			break;
+		}
+	}
+
+	if (src->valid)
+		return true;
+
+invalid_dscm_tag:
+	invalid_source(src, "invalid dscm tag");
+	return false;
+}
+
+// Use the mmod tag to change profile description "Display" to its specific mmod maker model data, if any.
+
+#define TAG_mmod  0x6D6D6F64 // 'mmod'
+
+static bool read_tag_mmodType(qcms_profile *profile, struct mem_source *src, struct tag_index index, uint32_t tag_id)
+{
+	if (strcmp(profile->description, "Display") != 0)
+		return true;
+
+	struct tag *tag = find_tag(index, tag_id);
+	if (tag) {
+		const uint8_t length = 4 * 4; // Four 4-byte fields: 'mmod', 0, maker, model.
+
+		uint32_t offset = tag->offset;
+		if (tag->size < 40 || read_u32(src, offset) != MMOD_TYPE)
+			goto invalid_mmod_tag;
+
+		for (uint8_t i = 0; i < length; ++i) {
+			uint8_t value = read_u8(src, offset + i);
+			if (!src->valid)
+				goto invalid_mmod_tag;
+			profile->description[i] = value ? value : '.';
+		}
+		profile->description[length] = 0;
+	}
+
+	if (src->valid)
+		return true;
+
+invalid_mmod_tag:
+	invalid_source(src, "invalid mmod tag");
+	return false;
+}
+
+#endif // __APPLE__
 
 #define XYZ_TYPE		0x58595a20 // 'XYZ '
 #define CURVE_TYPE		0x63757276 // 'curv'
@@ -595,7 +764,7 @@ static struct lutmABType *read_tag_lutmABType(struct mem_source *src, struct tag
 	// We require 3in/out channels since we only support RGB->XYZ (or RGB->LAB)
 	// XXX: If we remove this restriction make sure that the number of channels
 	//      is less or equal to the maximum number of mAB curves in qcmsint.h
-	//      also check for clut_size overflow.
+	//      also check for clut_size overflow. Also make sure it's != 0
 	if (num_in_channels != 3 || num_out_channels != 3)
 		return NULL;
 
@@ -625,6 +794,9 @@ static struct lutmABType *read_tag_lutmABType(struct mem_source *src, struct tag
 		// clut_size can not overflow since lg(256^num_in_channels) = 24 bits.
 		for (i = 0; i < num_in_channels; i++) {
 			clut_size *= read_u8(src, clut_offset + i);
+			if (clut_size == 0) {
+				invalid_source(src, "bad clut_size");
+			}
 		}
 	} else {
 		clut_size = 0;
@@ -645,6 +817,9 @@ static struct lutmABType *read_tag_lutmABType(struct mem_source *src, struct tag
 
 	for (i = 0; i < num_in_channels; i++) {
 		lut->num_grid_points[i] = read_u8(src, clut_offset + i);
+		if (lut->num_grid_points[i] == 0) {
+			invalid_source(src, "bad grid_points");
+		}
 	}
 
 	// Reverse the processing of transformation elements for mBA type.
@@ -727,6 +902,10 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 	} else if (type == LUT16_TYPE) {
 		num_input_table_entries  = read_u16(src, offset + 48);
 		num_output_table_entries = read_u16(src, offset + 50);
+		if (num_input_table_entries == 0 || num_output_table_entries == 0) {
+			invalid_source(src, "Bad channel count");
+			return NULL;
+		}
 		entry_size = 2;
 	} else {
 		assert(0); // the caller checks that this doesn't happen
@@ -740,15 +919,18 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 
 	clut_size = pow(grid_points, in_chan);
 	if (clut_size > MAX_CLUT_SIZE) {
+		invalid_source(src, "CLUT too large");
 		return NULL;
 	}
 
 	if (in_chan != 3 || out_chan != 3) {
+		invalid_source(src, "CLUT only supports RGB");
 		return NULL;
 	}
 
 	lut = malloc(sizeof(struct lutType) + (num_input_table_entries * in_chan + clut_size*out_chan + num_output_table_entries * out_chan)*sizeof(float));
 	if (!lut) {
+		invalid_source(src, "CLUT too large");
 		return NULL;
 	}
 
@@ -759,9 +941,9 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 
 	lut->num_input_table_entries  = num_input_table_entries;
 	lut->num_output_table_entries = num_output_table_entries;
-	lut->num_input_channels   = read_u8(src, offset + 8);
-	lut->num_output_channels  = read_u8(src, offset + 9);
-	lut->num_clut_grid_points = read_u8(src, offset + 10);
+	lut->num_input_channels   = in_chan;
+	lut->num_output_channels  = out_chan;
+	lut->num_clut_grid_points = grid_points;
 	lut->e00 = read_s15Fixed16Number(src, offset+12);
 	lut->e01 = read_s15Fixed16Number(src, offset+16);
 	lut->e02 = read_s15Fixed16Number(src, offset+20);
@@ -1041,7 +1223,6 @@ qcms_profile* qcms_profile_sRGB(void)
 	return profile;
 }
 
-
 /* qcms_profile_from_memory does not hold a reference to the memory passed in */
 qcms_profile* qcms_profile_from_memory(const void *mem, size_t size)
 {
@@ -1091,11 +1272,22 @@ qcms_profile* qcms_profile_from_memory(const void *mem, size_t size)
 
 	if (!read_tag_descType(profile, src, index, TAG_desc))
 		goto invalid_tag_table;
+#if defined(__APPLE__)
+	if (!read_tag_dscmType(profile, src, index, TAG_dscm))
+		goto invalid_tag_table;
+	if (!read_tag_mmodType(profile, src, index, TAG_mmod))
+		goto invalid_tag_table;
+#endif // __APPLE__
 
 	if (find_tag(index, TAG_CHAD)) {
 		profile->chromaticAdaption = read_tag_s15Fixed16ArrayType(src, index, TAG_CHAD);
 	} else {
 		profile->chromaticAdaption.invalid = true; //Signal the data is not present
+	}
+
+	if (find_tag(index, TAG_vcgt)) {
+		if (!read_tag_vcgtType(profile, src, index))
+			goto invalid_tag_table;
 	}
 
 	if (profile->class == DISPLAY_DEVICE_PROFILE || profile->class == INPUT_DEVICE_PROFILE ||
@@ -1167,6 +1359,11 @@ qcms_bool qcms_profile_match(qcms_profile *p1, qcms_profile *p2)
     return memcmp(p1->description, p2->description, sizeof p1->description) == 0;
 }
 
+const char* qcms_profile_get_description(qcms_profile *profile)
+{
+    return profile->description;
+}
+
 qcms_intent qcms_profile_get_rendering_intent(qcms_profile *profile)
 {
 	return profile->rendering_intent;
@@ -1181,6 +1378,18 @@ qcms_profile_get_color_space(qcms_profile *profile)
 static void lut_release(struct lutType *lut)
 {
 	free(lut);
+}
+
+size_t qcms_profile_get_vcgt_channel_length(qcms_profile *profile) {
+	return profile->vcgt.length;
+}
+
+qcms_bool qcms_profile_get_vcgt_rgb_channels(qcms_profile *profile, unsigned short *data) {
+	size_t vcgt_channel_bytes = qcms_profile_get_vcgt_channel_length(profile) * sizeof(uint16_t);
+	if (!vcgt_channel_bytes || !data)
+		return false;
+	memcpy(data, profile->vcgt.data, 3 * vcgt_channel_bytes);
+	return true;
 }
 
 void qcms_profile_release(qcms_profile *profile)
@@ -1201,6 +1410,9 @@ void qcms_profile_release(qcms_profile *profile)
 		mAB_release(profile->mAB);
 	if (profile->mBA)
 		mAB_release(profile->mBA);
+
+	if (profile->vcgt.data)
+		free(profile->vcgt.data);
 
 	free(profile->redTRC);
 	free(profile->blueTRC);

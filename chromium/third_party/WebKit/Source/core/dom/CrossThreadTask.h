@@ -33,701 +33,142 @@
 
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "platform/CrossThreadCopier.h"
+#include "platform/ThreadSafeFunctional.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/TypeTraits.h"
 
 namespace blink {
 
-// Traits for the CrossThreadTask.
-template<typename T> struct CrossThreadTaskTraits {
-    typedef const T& ParamType;
-};
-
-template<typename T> struct CrossThreadTaskTraits<T*> {
-    typedef T* ParamType;
-};
-
-template<typename T> struct CrossThreadTaskTraits<PassRefPtr<T> > {
-    typedef PassRefPtr<T> ParamType;
-};
-
-template<typename T> struct CrossThreadTaskTraits<PassOwnPtr<T> > {
-    typedef PassOwnPtr<T> ParamType;
-};
-
-// FIXME: Oilpan: Using a RawPtr is not safe, because the RawPtr does not keep
-// the pointee alive while the ExecutionContextTask holds the RawPtr.
-//
-// - Ideally, we want to move the ExecutionContextTask to Oilpan's heap and use a Member.
-// However we cannot do that easily because the ExecutionContextTask outlives the thread
-// that created the ExecutionContextTask. Oilpan does not support objects that
-// outlives the thread that created the objects.
-//
-// - It's not either easy to keep the ExecutionContextTask off-heap
-// and use a Persistent handle. This is because the Persistent handle can cause a cycle.
-// It's possible that the ExecutionContextTask holds a Persistent handle to the object
-// that owns the ExecutionContextTask.
-//
-// Given the above, we cannot avoid using a RawPtr at the moment.
-// It's a responsibility of the caller sites to manage the lifetime of the pointee.
-template<typename T> struct CrossThreadTaskTraits<RawPtr<T> > {
-    typedef RawPtr<T> ParamType;
-};
-
-template<typename P1, typename MP1>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask1 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1);
-    typedef CrossThreadTask1<P1, MP1> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1));
-    }
-
-private:
-    CrossThreadTask1(Method method, Param1 parameter1)
-        : m_method(method)
-        , m_parameter1(parameter1)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask2 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2);
-    typedef CrossThreadTask2<P1, MP1, P2, MP2> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2));
-    }
-
-private:
-    CrossThreadTask2(Method method, Param1 parameter1, Param2 parameter2)
-        : m_method(method)
-        , m_parameter1(parameter1)
-        , m_parameter2(parameter2)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask3 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2, MP3);
-    typedef CrossThreadTask3<P1, MP1, P2, MP2, P3, MP3> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-    typedef typename CrossThreadTaskTraits<P3>::ParamType Param3;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2, parameter3));
-    }
-
-private:
-    CrossThreadTask3(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3)
-        : m_method(method)
-        , m_parameter1(parameter1)
-        , m_parameter2(parameter2)
-        , m_parameter3(parameter3)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2, m_parameter3);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-    P3 m_parameter3;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask4 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2, MP3, MP4);
-    typedef CrossThreadTask4<P1, MP1, P2, MP2, P3, MP3, P4, MP4> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-    typedef typename CrossThreadTaskTraits<P3>::ParamType Param3;
-    typedef typename CrossThreadTaskTraits<P4>::ParamType Param4;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2, parameter3, parameter4));
-    }
-
-private:
-    CrossThreadTask4(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4)
-        : m_method(method)
-        , m_parameter1(parameter1)
-        , m_parameter2(parameter2)
-        , m_parameter3(parameter3)
-        , m_parameter4(parameter4)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2, m_parameter3, m_parameter4);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-    P3 m_parameter3;
-    P4 m_parameter4;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask5 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5);
-    typedef CrossThreadTask5<P1, MP1, P2, MP2, P3, MP3, P4, MP4, P5, MP5> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-    typedef typename CrossThreadTaskTraits<P3>::ParamType Param3;
-    typedef typename CrossThreadTaskTraits<P4>::ParamType Param4;
-    typedef typename CrossThreadTaskTraits<P5>::ParamType Param5;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2, parameter3, parameter4, parameter5));
-    }
-
-private:
-    CrossThreadTask5(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5)
-        : m_method(method)
-        , m_parameter1(parameter1)
-        , m_parameter2(parameter2)
-        , m_parameter3(parameter3)
-        , m_parameter4(parameter4)
-        , m_parameter5(parameter5)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2, m_parameter3, m_parameter4, m_parameter5);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-    P3 m_parameter3;
-    P4 m_parameter4;
-    P5 m_parameter5;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask6 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6);
-    typedef CrossThreadTask6<P1, MP1, P2, MP2, P3, MP3, P4, MP4, P5, MP5, P6, MP6> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-    typedef typename CrossThreadTaskTraits<P3>::ParamType Param3;
-    typedef typename CrossThreadTaskTraits<P4>::ParamType Param4;
-    typedef typename CrossThreadTaskTraits<P5>::ParamType Param5;
-    typedef typename CrossThreadTaskTraits<P6>::ParamType Param6;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5, Param6 parameter6)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2, parameter3, parameter4, parameter5, parameter6));
-    }
-
-private:
-    CrossThreadTask6(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5, Param6 parameter6)
-        : m_method(method)
-        , m_parameter1(parameter1)
-        , m_parameter2(parameter2)
-        , m_parameter3(parameter3)
-        , m_parameter4(parameter4)
-        , m_parameter5(parameter5)
-        , m_parameter6(parameter6)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2, m_parameter3, m_parameter4, m_parameter5, m_parameter6);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-    P3 m_parameter3;
-    P4 m_parameter4;
-    P5 m_parameter5;
-    P6 m_parameter6;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6, typename P7, typename MP7>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask7 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6, MP7);
-    typedef CrossThreadTask7<P1, MP1, P2, MP2, P3, MP3, P4, MP4, P5, MP5, P6, MP6, P7, MP7> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-    typedef typename CrossThreadTaskTraits<P3>::ParamType Param3;
-    typedef typename CrossThreadTaskTraits<P4>::ParamType Param4;
-    typedef typename CrossThreadTaskTraits<P5>::ParamType Param5;
-    typedef typename CrossThreadTaskTraits<P6>::ParamType Param6;
-    typedef typename CrossThreadTaskTraits<P7>::ParamType Param7;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5, Param6 parameter6, Param7 parameter7)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2, parameter3, parameter4, parameter5, parameter6, parameter7));
-    }
-
-private:
-    CrossThreadTask7(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5, Param6 parameter6, Param7 parameter7)
-        : m_method(method)
-        , m_parameter1(parameter1)
-        , m_parameter2(parameter2)
-        , m_parameter3(parameter3)
-        , m_parameter4(parameter4)
-        , m_parameter5(parameter5)
-        , m_parameter6(parameter6)
-        , m_parameter7(parameter7)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2, m_parameter3, m_parameter4, m_parameter5, m_parameter6, m_parameter7);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-    P3 m_parameter3;
-    P4 m_parameter4;
-    P5 m_parameter5;
-    P6 m_parameter6;
-    P7 m_parameter7;
-};
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6, typename P7, typename MP7, typename P8, typename MP8>
-class GC_PLUGIN_IGNORE("crbug.com/378192") CrossThreadTask8 : public ExecutionContextTask {
-public:
-    typedef void (*Method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6, MP7, MP8);
-    typedef CrossThreadTask8<P1, MP1, P2, MP2, P3, MP3, P4, MP4, P5, MP5, P6, MP6, P7, MP7, P8, MP8> CrossThreadTask;
-    typedef typename CrossThreadTaskTraits<P1>::ParamType Param1;
-    typedef typename CrossThreadTaskTraits<P2>::ParamType Param2;
-    typedef typename CrossThreadTaskTraits<P3>::ParamType Param3;
-    typedef typename CrossThreadTaskTraits<P4>::ParamType Param4;
-    typedef typename CrossThreadTaskTraits<P5>::ParamType Param5;
-    typedef typename CrossThreadTaskTraits<P6>::ParamType Param6;
-    typedef typename CrossThreadTaskTraits<P7>::ParamType Param7;
-    typedef typename CrossThreadTaskTraits<P8>::ParamType Param8;
-
-    static PassOwnPtr<CrossThreadTask> create(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5, Param6 parameter6, Param7 parameter7, Param8 parameter8)
-    {
-        return adoptPtr(new CrossThreadTask(method, parameter1, parameter2, parameter3, parameter4, parameter5, parameter6, parameter7, parameter8));
-    }
-
-private:
-    CrossThreadTask8(Method method, Param1 parameter1, Param2 parameter2, Param3 parameter3, Param4 parameter4, Param5 parameter5, Param6 parameter6, Param7 parameter7, Param8 parameter8)
-    : m_method(method)
-    , m_parameter1(parameter1)
-    , m_parameter2(parameter2)
-    , m_parameter3(parameter3)
-    , m_parameter4(parameter4)
-    , m_parameter5(parameter5)
-    , m_parameter6(parameter6)
-    , m_parameter7(parameter7)
-    , m_parameter8(parameter8)
-    {
-    }
-
-    virtual void performTask(ExecutionContext* context)
-    {
-        (*m_method)(context, m_parameter1, m_parameter2, m_parameter3, m_parameter4, m_parameter5, m_parameter6, m_parameter7, m_parameter8);
-    }
-
-private:
-    Method m_method;
-    P1 m_parameter1;
-    P2 m_parameter2;
-    P3 m_parameter3;
-    P4 m_parameter4;
-    P5 m_parameter5;
-    P6 m_parameter6;
-    P7 m_parameter7;
-    P8 m_parameter8;
-};
-
-template<typename P1, typename MP1>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1),
-    const P1& parameter1)
-{
-    return CrossThreadTask1<typename CrossThreadCopier<P1>::Type, MP1>::create(
-        method,
-        CrossThreadCopier<P1>::copy(parameter1));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2),
-    const P1& parameter1, const P2& parameter2)
-{
-    return CrossThreadTask2<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2>::create(
-        method,
-        CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2, MP3),
-    const P1& parameter1, const P2& parameter2, const P3& parameter3)
-{
-    return CrossThreadTask3<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2, typename CrossThreadCopier<P3>::Type, MP3>::create(
-        method,
-        CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4),
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
-{
-    return CrossThreadTask4<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2, typename CrossThreadCopier<P3>::Type, MP3,
-        typename CrossThreadCopier<P4>::Type, MP4>::create(
-            method,
-            CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2),
-            CrossThreadCopier<P3>::copy(parameter3), CrossThreadCopier<P4>::copy(parameter4));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5),
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
-{
-    return CrossThreadTask5<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2, typename CrossThreadCopier<P3>::Type, MP3,
-        typename CrossThreadCopier<P4>::Type, MP4, typename CrossThreadCopier<P5>::Type, MP5>::create(
-            method,
-            CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2),
-            CrossThreadCopier<P3>::copy(parameter3), CrossThreadCopier<P4>::copy(parameter4),
-            CrossThreadCopier<P5>::copy(parameter5));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6),
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6)
-{
-    return CrossThreadTask6<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2, typename CrossThreadCopier<P3>::Type, MP3,
-        typename CrossThreadCopier<P4>::Type, MP4, typename CrossThreadCopier<P5>::Type, MP5, typename CrossThreadCopier<P6>::Type, MP6>::create(
-            method,
-            CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2),
-            CrossThreadCopier<P3>::copy(parameter3), CrossThreadCopier<P4>::copy(parameter4),
-            CrossThreadCopier<P5>::copy(parameter5), CrossThreadCopier<P6>::copy(parameter6));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6, typename P7, typename MP7>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6, MP7),
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6, const P7& parameter7)
-{
-    return CrossThreadTask7<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2, typename CrossThreadCopier<P3>::Type, MP3,
-        typename CrossThreadCopier<P4>::Type, MP4, typename CrossThreadCopier<P5>::Type, MP5, typename CrossThreadCopier<P6>::Type, MP6,
-        typename CrossThreadCopier<P7>::Type, MP7>::create(
-            method,
-            CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2),
-            CrossThreadCopier<P3>::copy(parameter3), CrossThreadCopier<P4>::copy(parameter4),
-            CrossThreadCopier<P5>::copy(parameter5), CrossThreadCopier<P6>::copy(parameter6),
-            CrossThreadCopier<P7>::copy(parameter7));
-}
-
-template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6, typename P7, typename MP7, typename P8, typename MP8>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6, MP7, MP8),
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6, const P7& parameter7, const P8& parameter8)
-{
-    return CrossThreadTask8<typename CrossThreadCopier<P1>::Type, MP1, typename CrossThreadCopier<P2>::Type, MP2, typename CrossThreadCopier<P3>::Type, MP3,
-    typename CrossThreadCopier<P4>::Type, MP4, typename CrossThreadCopier<P5>::Type, MP5, typename CrossThreadCopier<P6>::Type, MP6,
-    typename CrossThreadCopier<P7>::Type, MP7, typename CrossThreadCopier<P8>::Type, MP8>::create(
-                                                       method,
-                                                       CrossThreadCopier<P1>::copy(parameter1), CrossThreadCopier<P2>::copy(parameter2),
-                                                       CrossThreadCopier<P3>::copy(parameter3), CrossThreadCopier<P4>::copy(parameter4),
-                                                       CrossThreadCopier<P5>::copy(parameter5), CrossThreadCopier<P6>::copy(parameter6),
-                                                       CrossThreadCopier<P7>::copy(parameter7), CrossThreadCopier<P8>::copy(parameter8));
-}
-
 // createCrossThreadTask(...) is similar to but safer than
 // CallClosureTask::create(bind(...)) for cross-thread task posting.
 // postTask(CallClosureTask::create(bind(...))) is not thread-safe
 // due to temporary objects, see http://crbug.com/390851 for details.
 //
-// createCrossThreadTask copies its arguments into Closure
-// by CrossThreadCopier, rather than copy constructors.
-// This means it creates deep copy of each argument if necessary.
+// Example:
+//     void func1(int, const String&);
+//     createCrossThreadTask(func1, 42, str);
+// func1(42, str2) will be called, where |str2| is a deep copy of
+// |str| (created by str.isolatedCopy()).
 //
-// To pass things that cannot be copied by CrossThreadCopier
-// (e.g. pointers), use AllowCrossThreadAccess() explicitly.
+// Don't (if you pass the task across threads):
+//     bind(func1, 42, str);
+//     bind(func1, 42, str.isolatedCopy());
 //
-// If the first argument of createCrossThreadTask
-// is a pointer to a member function in class C,
-// then the second argument of createCrossThreadTask
-// is a raw pointer (C*) or a weak pointer (const WeakPtr<C>&) to C.
-// createCrossThreadTask does not use CrossThreadCopier for the pointer,
-// assuming the user of createCrossThreadTask knows that the pointer
-// can be accessed from the target thread.
+// Usage:
+//     For functions:
+//         void functionEC(MP1, ..., MPn, ExecutionContext*);
+//         void function(MP1, ..., MPn);
+//         class C {
+//             void memberEC(MP1, ..., MPn, ExecutionContext*);
+//             void member(MP1, ..., MPn);
+//         };
+//     We create tasks represented by PassOwnPtr<ExecutionContextTask>:
+//         [1] createCrossThreadTask(functionEC, const P1& p1, ..., const Pn& pn);
+//         [2] createCrossThreadTask(memberEC, C* ptr, const P1& p1, ..., const Pn& pn);
+//         [3] createCrossThreadTask(function, const P1& p1, ..., const Pn& pn);
+//         [4] createCrossThreadTask(member, C* ptr, const P1& p1, ..., const Pn& pn);
+//         [5] createCrossThreadTask(member, const WeakPtr<C>& ptr, const P1& p1, ..., const Pn& pn);
+//         [6] createCrossThreadTask(member, RawPtr<C> p0, const P1& p1, ..., const Pn& pn);
+//     and then the following are called on the target thread:
+//         [1]   functionEC(p1, ..., pn, context);
+//         [2]   ptr->memberEC(p1, ..., pn, context);
+//         [3]   function(p1, ..., pn);
+//         [4,5] ptr->member(p1, ..., pn);
+//         [6]   p0->member(p1, ..., pn);
+//
+// ExecutionContext:
+//     |context| is supplied by the target thread.
+//
+// Deep copies by threadSafeBind():
+//     |p0|, |p1|, ..., |pn| are processed by threadSafeBind() and thus
+//     CrossThreadCopier.
+//     You don't have to call manually e.g. isolatedCopy().
+//     To pass things that cannot be copied by CrossThreadCopier
+//     (e.g. pointers), use AllowCrossThreadAccess() explicitly.
+//     |ptr| is assumed safe to be passed across threads, and
+//     AllowCrossThreadAccess() is applied automatically.
 
-// Templates for member function of class C + raw pointer (C*)
-// which do not use CrossThreadCopier for the raw pointer (a1)
-template<typename C>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(),
-    C* p)
+namespace internal {
+
+class CallClosureWithExecutionContextTask final : public CallClosureTaskBase<void(ExecutionContext*)> {
+public:
+    // Do not use |create| other than in createCrossThreadTask and
+    // createSameThreadTask.
+    // See http://crbug.com/390851
+    static PassOwnPtr<CallClosureWithExecutionContextTask> create(PassOwnPtr<Function<void(ExecutionContext*)>> closure, bool isSameThread = false)
+    {
+        return adoptPtr(new CallClosureWithExecutionContextTask(closure, isSameThread));
+    }
+
+    virtual void performTask(ExecutionContext* context) override
+    {
+        checkThread();
+        (*m_closure)(context);
+    }
+
+private:
+    CallClosureWithExecutionContextTask(PassOwnPtr<Function<void(ExecutionContext*)>> closure, bool isSameThread)
+        : CallClosureTaskBase<void(ExecutionContext*)>(closure, isSameThread)
+    {
+    }
+};
+
+} // namespace internal
+
+// RETTYPE, PS, and MPS are added as template parameters to circumvent MSVC 18.00.21005.1 (VS 2013) issues.
+
+// [1] createCrossThreadTask() for non-member functions (with ExecutionContext* argument).
+// (P = <P1, ..., Pn>, MP = <MP1, ..., MPn, ExecutionContext*>)
+template<typename... P, typename... MP,
+    typename RETTYPE = PassOwnPtr<ExecutionContextTask>, size_t PS = sizeof...(P), size_t MPS = sizeof...(MP)>
+typename WTF::EnableIf<PS + 1 == MPS, RETTYPE>::Type createCrossThreadTask(void (*function)(MP...), const P&... parameters)
 {
-    return CallClosureTask::create(bind(function,
-        p));
+    return internal::CallClosureWithExecutionContextTask::create(threadSafeBind<ExecutionContext*>(function, parameters...));
 }
 
-template<typename C, typename P1, typename MP1>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1),
-    C* p, const P1& parameter1)
+// [2] createCrossThreadTask() for member functions of class C (with ExecutionContext* argument) + raw pointer (C*).
+// (P = <P1, ..., Pn>, MP = <MP1, ..., MPn, ExecutionContext*>)
+template<typename C, typename... P, typename... MP,
+    typename RETTYPE = PassOwnPtr<ExecutionContextTask>, size_t PS = sizeof...(P), size_t MPS = sizeof...(MP)>
+typename WTF::EnableIf<PS + 1 == MPS, RETTYPE>::Type createCrossThreadTask(void (C::*function)(MP...), C* p, const P&... parameters)
 {
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1)));
+    return internal::CallClosureWithExecutionContextTask::create(threadSafeBind<ExecutionContext*>(function, AllowCrossThreadAccess(p), parameters...));
 }
 
-template<typename C, typename P1, typename MP1, typename P2, typename MP2>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2),
-    C* p, const P1& parameter1, const P2& parameter2)
+// [3] createCrossThreadTask() for non-member functions
+// (P = <P1, ..., Pn>, MP = <MP1, ..., MPn>)
+template<typename... P, typename... MP,
+    typename RETTYPE = PassOwnPtr<ExecutionContextTask>, size_t PS = sizeof...(P), size_t MPS = sizeof...(MP)>
+typename WTF::EnableIf<PS == MPS, RETTYPE>::Type createCrossThreadTask(void (*function)(MP...), const P&... parameters)
 {
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2)));
+    return internal::CallClosureTask::create(threadSafeBind(function, parameters...));
 }
 
-template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2, MP3),
-    C* p, const P1& parameter1, const P2& parameter2, const P3& parameter3)
+// [4] createCrossThreadTask() for member functions of class C + raw pointer (C*)
+// [5] createCrossThreadTask() for member functions of class C + weak pointer (const WeakPtr<C>&)
+// (P = <P1, ..., Pn>, MP = <MP1, ..., MPn>)
+template<typename C, typename... P, typename... MP,
+    typename RETTYPE = PassOwnPtr<ExecutionContextTask>, size_t PS = sizeof...(P), size_t MPS = sizeof...(MP)>
+typename WTF::EnableIf<PS == MPS, RETTYPE>::Type createCrossThreadTask(void (C::*function)(MP...), C* p, const P&... parameters)
 {
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3)));
+    return internal::CallClosureTask::create(threadSafeBind(function, AllowCrossThreadAccess(p), parameters...));
 }
 
-template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2, MP3, MP4),
-    C* p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
+template<typename C, typename... P, typename... MP,
+    typename RETTYPE = PassOwnPtr<ExecutionContextTask>, size_t PS = sizeof...(P), size_t MPS = sizeof...(MP)>
+typename WTF::EnableIf<PS == MPS, RETTYPE>::Type createCrossThreadTask(void (C::*function)(MP...), const WeakPtr<C>& p, const P&... parameters)
 {
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4)));
+    return internal::CallClosureTask::create(threadSafeBind(function, AllowCrossThreadAccess(p), parameters...));
 }
 
-template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2, MP3, MP4, MP5),
-    C* p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
+// [6] createCrossThreadTask() for member functions + pointers to class C other than C* or const WeakPtr<C>&
+// (P = <P0, P1, ..., Pn>, MP = <MP1, ..., MPn>)
+template<typename C, typename... P, typename... MP,
+    typename RETTYPE = PassOwnPtr<ExecutionContextTask>, size_t PS = sizeof...(P), size_t MPS = sizeof...(MP)>
+typename WTF::EnableIf<PS == MPS + 1, RETTYPE>::Type createCrossThreadTask(void (C::*function)(MP...), const P&... parameters)
 {
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4),
-        CrossThreadCopier<P5>::copy(parameter5)));
-}
-
-// Templates for member function of class C + weak pointer (const WeakPtr<C>&)
-// which do not use CrossThreadCopier for the weak pointer (a1)
-template<typename C>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(),
-    const WeakPtr<C>& p)
-{
-    return CallClosureTask::create(bind(function,
-        p));
-}
-
-template<typename C, typename P1, typename MP1>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1),
-    const WeakPtr<C>& p, const P1& parameter1)
-{
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1)));
-}
-
-template<typename C, typename P1, typename MP1, typename P2, typename MP2>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2),
-    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2)
-{
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2)));
-}
-
-template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2, MP3),
-    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2, const P3& parameter3)
-{
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3)));
-}
-
-template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2, MP3, MP4),
-    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
-{
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4)));
-}
-
-template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    void (C::*function)(MP1, MP2, MP3, MP4, MP5),
-    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
-{
-    return CallClosureTask::create(bind(function,
-        p,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4),
-        CrossThreadCopier<P5>::copy(parameter5)));
-}
-
-// Other cases; use CrossThreadCopier for all arguments
-template<typename FunctionType>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function)
-{
-    return CallClosureTask::create(bind(function));
-}
-
-template<typename FunctionType, typename P1>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function,
-    const P1& parameter1)
-{
-    return CallClosureTask::create(bind(function,
-        CrossThreadCopier<P1>::copy(parameter1)));
-}
-
-template<typename FunctionType, typename P1, typename P2>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function,
-    const P1& parameter1, const P2& parameter2)
-{
-    return CallClosureTask::create(bind(function,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2)));
-}
-
-template<typename FunctionType, typename P1, typename P2, typename P3>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function,
-    const P1& parameter1, const P2& parameter2, const P3& parameter3)
-{
-    return CallClosureTask::create(bind(function,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3)));
-}
-
-template<typename FunctionType, typename P1, typename P2, typename P3, typename P4>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function,
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
-{
-    return CallClosureTask::create(bind(function,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4)));
-}
-
-template<typename FunctionType, typename P1, typename P2, typename P3, typename P4, typename P5>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function,
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
-{
-    return CallClosureTask::create(bind(function,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4),
-        CrossThreadCopier<P5>::copy(parameter5)));
-}
-
-template<typename FunctionType, typename P1, typename P2, typename P3, typename P4, typename P5, typename P6>
-PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
-    FunctionType function,
-    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6)
-{
-    return CallClosureTask::create(bind(function,
-        CrossThreadCopier<P1>::copy(parameter1),
-        CrossThreadCopier<P2>::copy(parameter2),
-        CrossThreadCopier<P3>::copy(parameter3),
-        CrossThreadCopier<P4>::copy(parameter4),
-        CrossThreadCopier<P5>::copy(parameter5),
-        CrossThreadCopier<P6>::copy(parameter6)));
+    return internal::CallClosureTask::create(threadSafeBind(function, parameters...));
 }
 
 } // namespace blink

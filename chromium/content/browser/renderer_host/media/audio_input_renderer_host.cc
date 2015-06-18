@@ -71,11 +71,13 @@ AudioInputRendererHost::AudioEntry::AudioEntry()
 AudioInputRendererHost::AudioEntry::~AudioEntry() {}
 
 AudioInputRendererHost::AudioInputRendererHost(
+    int render_process_id,
     media::AudioManager* audio_manager,
     MediaStreamManager* media_stream_manager,
     AudioMirroringManager* audio_mirroring_manager,
     media::UserInputMonitor* user_input_monitor)
     : BrowserMessageFilter(AudioMsgStart),
+      render_process_id_(render_process_id),
       audio_manager_(audio_manager),
       media_stream_manager_(media_stream_manager),
       audio_mirroring_manager_(audio_mirroring_manager),
@@ -84,7 +86,7 @@ AudioInputRendererHost::AudioInputRendererHost(
           media::AudioLogFactory::AUDIO_INPUT_CONTROLLER)) {}
 
 AudioInputRendererHost::~AudioInputRendererHost() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(audio_entries_.empty());
 }
 
@@ -272,7 +274,7 @@ bool AudioInputRendererHost::OnMessageReceived(const IPC::Message& message) {
 
 void AudioInputRendererHost::OnCreateStream(
     int stream_id,
-    int render_view_id,
+    int render_frame_id,
     int session_id,
     const AudioInputHostMsg_CreateStream_Config& config) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -282,32 +284,28 @@ void AudioInputRendererHost::OnCreateStream(
       media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
     media_stream_manager_->audio_input_device_manager()
         ->RegisterKeyboardMicStream(
-            base::Bind(&AudioInputRendererHost::DoCreateStream,
-                       this,
-                       stream_id,
-                       render_view_id,
-                       session_id,
-                       config));
+            base::Bind(&AudioInputRendererHost::DoCreateStream, this, stream_id,
+                       render_frame_id, session_id, config));
   } else {
-    DoCreateStream(stream_id, render_view_id, session_id, config);
+    DoCreateStream(stream_id, render_frame_id, session_id, config);
   }
 #else
-  DoCreateStream(stream_id, render_view_id, session_id, config);
+  DoCreateStream(stream_id, render_frame_id, session_id, config);
 #endif
 }
 
 void AudioInputRendererHost::DoCreateStream(
     int stream_id,
-    int render_view_id,
+    int render_frame_id,
     int session_id,
     const AudioInputHostMsg_CreateStream_Config& config) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   std::ostringstream oss;
   oss << "[stream_id=" << stream_id << "] "
-      << "AIRH::OnCreateStream(render_view_id=" << render_view_id
+      << "AIRH::OnCreateStream(render_frame_id=" << render_frame_id
       << ", session_id=" << session_id << ")";
-  DCHECK_GT(render_view_id, 0);
+  DCHECK_GT(render_frame_id, 0);
 
   // media::AudioParameters is validated in the deserializer.
   if (LookupById(stream_id) != NULL) {
@@ -423,6 +421,8 @@ void AudioInputRendererHost::DoCreateStream(
   entry->stream_id = stream_id;
   audio_entries_.insert(std::make_pair(stream_id, entry.release()));
   audio_log_->OnCreated(stream_id, audio_params, device_id);
+  MediaInternals::GetInstance()->SetWebContentsTitleForAudioLogEntry(
+      stream_id, render_process_id_, render_frame_id, audio_log_.get());
 }
 
 void AudioInputRendererHost::OnRecordStream(int stream_id) {

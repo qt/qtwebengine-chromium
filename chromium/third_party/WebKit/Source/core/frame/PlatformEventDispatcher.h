@@ -5,18 +5,19 @@
 #ifndef PlatformEventDispatcher_h
 #define PlatformEventDispatcher_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 class PlatformEventController;
 
-class PlatformEventDispatcher : public GarbageCollectedMixin {
+class CORE_EXPORT PlatformEventDispatcher : public GarbageCollectedMixin {
 public:
     void addController(PlatformEventController*);
     void removeController(PlatformEventController*);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     PlatformEventDispatcher();

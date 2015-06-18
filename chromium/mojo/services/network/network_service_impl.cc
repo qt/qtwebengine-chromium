@@ -4,8 +4,9 @@
 
 #include "mojo/services/network/network_service_impl.h"
 
-#include "mojo/public/cpp/application/application_connection.h"
+#include "mojo/application/public/cpp/application_connection.h"
 #include "mojo/services/network/cookie_store_impl.h"
+#include "mojo/services/network/http_server_impl.h"
 #include "mojo/services/network/net_adapters.h"
 #include "mojo/services/network/tcp_bound_socket_impl.h"
 #include "mojo/services/network/udp_socket_impl.h"
@@ -25,7 +26,10 @@ NetworkServiceImpl::~NetworkServiceImpl() {
 
 void NetworkServiceImpl::CreateURLLoader(InterfaceRequest<URLLoader> loader) {
   // TODO(darin): Plumb origin_. Use for CORS.
-  BindToRequest(new URLLoaderImpl(context_), &loader);
+  // The loader will delete itself when the pipe is closed, unless a request is
+  // in progress. In which case, the loader will delete itself when the request
+  // is finished.
+  new URLLoaderImpl(context_, loader.Pass());
 }
 
 void NetworkServiceImpl::GetCookieStore(InterfaceRequest<CookieStore> store) {
@@ -39,7 +43,7 @@ void NetworkServiceImpl::CreateWebSocket(InterfaceRequest<WebSocket> socket) {
 void NetworkServiceImpl::CreateTCPBoundSocket(
     NetAddressPtr local_address,
     InterfaceRequest<TCPBoundSocket> bound_socket,
-    const Callback<void(NetworkErrorPtr, NetAddressPtr)>& callback) {
+    const CreateTCPBoundSocketCallback& callback) {
   scoped_ptr<TCPBoundSocketImpl> bound(new TCPBoundSocketImpl);
   int net_error = bound->Bind(local_address.Pass());
   if (net_error != net::OK) {
@@ -56,15 +60,23 @@ void NetworkServiceImpl::CreateTCPConnectedSocket(
     ScopedDataPipeConsumerHandle send_stream,
     ScopedDataPipeProducerHandle receive_stream,
     InterfaceRequest<TCPConnectedSocket> client_socket,
-    const Callback<void(NetworkErrorPtr, NetAddressPtr)>& callback) {
+    const CreateTCPConnectedSocketCallback& callback) {
   // TODO(brettw) implement this. We need to know what type of socket to use
   // so we can create the right one (i.e. to pass to TCPSocket::Open) before
   // doing the connect.
   callback.Run(MakeNetworkError(net::ERR_NOT_IMPLEMENTED), NetAddressPtr());
 }
 
-void NetworkServiceImpl::CreateUDPSocket(InterfaceRequest<UDPSocket> socket) {
-  BindToRequest(new UDPSocketImpl(), &socket);
+void NetworkServiceImpl::CreateUDPSocket(InterfaceRequest<UDPSocket> request) {
+  // The lifetime of this UDPSocketImpl is bound to that of the underlying pipe.
+  new UDPSocketImpl(request.Pass());
+}
+
+void NetworkServiceImpl::CreateHttpServer(
+    NetAddressPtr local_address,
+    HttpServerDelegatePtr delegate,
+    const CreateHttpServerCallback& callback) {
+  HttpServerImpl::Create(local_address.Pass(), delegate.Pass(), callback);
 }
 
 }  // namespace mojo

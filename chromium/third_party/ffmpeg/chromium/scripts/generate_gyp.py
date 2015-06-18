@@ -11,9 +11,12 @@ FFmpeg's configure scripts and Makefiles. It scans through build directories for
 object files then does a reverse lookup against the FFmpeg source tree to find
 the corresponding C or assembly file.
 
-Running build_ffmpeg.sh for ia32, arm, and arm-neon platforms is required
-prior to running this script. The arm and arm-neon platforms assume a
-Chromium OS build environment.
+Running build_ffmpeg.sh for ia32, arm, arm-neon and mips32 platforms is
+required prior to running this script. The arm, arm-neon and mips32 platforms
+assume a Chromium OS build environment.
+
+The Ensemble branding supports the following architectures: ia32, x86, arm, and
+mipsel.
 
 Step 1: Have a Chromium OS checkout (refer to http://dev.chromium.org)
   mkdir chromeos
@@ -43,11 +46,17 @@ Step 6: Build for arm/arm-neon platforms inside chroot
   ./chromium/scripts/build_ffmpeg.sh linux arm path/to/chromeos/deps/ffmpeg
   ./chromium/scripts/build_ffmpeg.sh linux arm-neon path/to/chromeos/deps/ffmpeg
 
-Step 7: Build for Windows platform; you will need a MinGW shell started from
+Step 7: Setup build environment for MIPS:
+  ./setup_board --board mipsel-o32-generic
+
+Step 8: Build for mipsel platform inside chroot
+  ./chromium/scripts/build_ffmpeg.py linux mipsel
+
+Step 9: Build for Windows platform; you will need a MinGW shell started from
 inside a Visual Studio Command Prompt to run build_ffmpeg.sh:
   ./chromium/scripts/build_ffmpeg.sh win ia32 $(pwd)
 
-Step 8: Exit chroot and generate gyp file
+Step 10: Exit chroot and generate gyp file
   exit
   cd path/to/chromeos/deps/ffmpeg
   ./chromium/scripts/generate_gyp.py
@@ -131,8 +140,8 @@ GN_SOURCE_END = """]
 """
 
 # Controls GYP conditional stanza generation.
-SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon', 'x64']
-SUPPORTED_TARGETS = ['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS']
+SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon', 'x64', 'mipsel']
+SUPPORTED_TARGETS = ['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS', 'Ensemble']
 # Mac doesn't have any platform specific files, so just use linux and win.
 SUPPORTED_PLATFORMS = ['linux', 'win']
 
@@ -169,6 +178,7 @@ def CleanObjectFiles(object_files):
       'libavutil/audio_fifo.o',
       'libavutil/aes.o',
       'libavutil/blowfish.o',
+      'libavutil/cast5.o',
       'libavutil/des.o',
       'libavutil/file.o',
       'libavutil/hash.o',
@@ -280,7 +290,7 @@ def GetSourceFileSet(object_to_sources, object_files):
     object_files: A list of object file paths.
 
   Returns:
-    A python set of source files requried to build said objects.
+    A python set of source files required to build said objects.
   """
   source_set = set()
   for name in object_files:
@@ -300,7 +310,7 @@ class SourceSet(object):
 
     Args:
       sources: a python set of source files
-      architectures: a python set of architectures (i.e., arm, x64)
+      architectures: a python set of architectures (i.e., arm, x64, mipsel)
       targets: a python set of targets (i.e., Chromium, Chrome)
       platforms: a python set of platforms (i.e., win, linux)
     """
@@ -428,16 +438,16 @@ class SourceSet(object):
 
     # Only build a non-trivial conditional if it's a subset of all supported
     # architectures. targets. Arch conditions look like:
-    #   (cpu_arch == "arm" || (cpu_arch == "arm" && arm_use_neon))
+    #   (current_cpu == "arm" || (current_cpu == "arm" && arm_use_neon))
     arch_conditions = []
     if self.architectures != set(SUPPORTED_ARCHITECTURES):
       for arch in self.architectures:
         if arch == 'arm-neon':
-          arch_conditions.append('(cpu_arch == "arm" && arm_use_neon)')
+          arch_conditions.append('(current_cpu == "arm" && arm_use_neon)')
         elif arch == 'ia32':
-          arch_conditions.append('cpu_arch == "x86"')
+          arch_conditions.append('current_cpu == "x86"')
         else:
-          arch_conditions.append('cpu_arch == "%s"' % arch)
+          arch_conditions.append('current_cpu == "%s"' % arch)
 
     # Only build a non-trivial conditional if it's a subset of all supported
     # targets. Branding conditions look like:

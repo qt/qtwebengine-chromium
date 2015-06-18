@@ -39,14 +39,14 @@ namespace blink {
 struct SameSizeAsFontDescription {
     FontFamily familyList;
     RefPtr<FontFeatureSettings> m_featureSettings;
-    String locale;
-    float sizes[4];
+    AtomicString locale;
+    float sizes[6];
     // FXIME: Make them fit into one word.
     uint32_t bitfields;
     uint32_t bitfields2 : 7;
 };
 
-COMPILE_ASSERT(sizeof(FontDescription) == sizeof(SameSizeAsFontDescription), FontDescription_should_stay_small);
+static_assert(sizeof(FontDescription) == sizeof(SameSizeAsFontDescription), "FontDescription should stay small");
 
 TypesettingFeatures FontDescription::s_defaultTypesettingFeatures = 0;
 
@@ -123,6 +123,21 @@ FontDescription::VariantLigatures FontDescription::variantLigatures() const
     return ligatures;
 }
 
+static const AtomicString& defaultLocale()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, locale, ());
+    if (locale.isNull())
+        locale = AtomicString("en");
+    return locale;
+}
+
+const AtomicString& FontDescription::locale() const
+{
+    if (m_locale.isNull())
+        return defaultLocale();
+    return m_locale;
+}
+
 void FontDescription::setTraits(FontTraits traits)
 {
     setStyle(traits.style());
@@ -143,13 +158,10 @@ void FontDescription::setVariantLigatures(const VariantLigatures& ligatures)
 
 float FontDescription::effectiveFontSize() const
 {
-    float size = (RuntimeEnabledFeatures::subpixelFontScalingEnabled())
-        ? computedSize()
-        : computedPixelSize();
-
     // Ensure that the effective precision matches the font-cache precision.
     // This guarantees that the same precision is used regardless of cache status.
-    return floorf(size * FontCacheKey::precisionMultiplier()) / FontCacheKey::precisionMultiplier();
+    float computedOrAdjustedSize = hasSizeAdjust() ? adjustedSize() : computedSize();
+    return floorf(computedOrAdjustedSize * FontCacheKey::precisionMultiplier()) / FontCacheKey::precisionMultiplier();
 }
 
 FontCacheKey FontDescription::cacheKey(const FontFaceCreationParams& creationParams, FontTraits desiredTraits) const
@@ -157,9 +169,8 @@ FontCacheKey FontDescription::cacheKey(const FontFaceCreationParams& creationPar
     FontTraits fontTraits = desiredTraits.bitfield() ? desiredTraits : traits();
 
     unsigned options =
-        static_cast<unsigned>(m_syntheticItalic) << 7 | // bit 8
-        static_cast<unsigned>(m_syntheticBold) << 6 | // bit 7
-        static_cast<unsigned>(m_fontSmoothing) << 4 | // bits 5-6
+        static_cast<unsigned>(m_syntheticItalic) << 5 | // bit 6
+        static_cast<unsigned>(m_syntheticBold) << 4 | // bit 5
         static_cast<unsigned>(m_textRendering) << 2 | // bits 3-4
         static_cast<unsigned>(m_orientation) << 1 | // bit 2
         static_cast<unsigned>(m_subpixelTextPosition); // bit 1

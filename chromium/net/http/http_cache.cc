@@ -23,12 +23,12 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
+#include "base/time/default_clock.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/io_buffer.h"
@@ -55,11 +55,6 @@ bool UseCertCache() {
          "ExperimentGroup";
 }
 
-// Adaptor to delete a file on a worker thread.
-void DeletePath(base::FilePath path) {
-  base::DeleteFile(path, false);
-}
-
 }  // namespace
 
 namespace net {
@@ -81,7 +76,7 @@ HttpCache::DefaultBackend::~DefaultBackend() {}
 
 // static
 HttpCache::BackendFactory* HttpCache::DefaultBackend::InMemory(int max_bytes) {
-  return new DefaultBackend(MEMORY_CACHE, net::CACHE_BACKEND_DEFAULT,
+  return new DefaultBackend(MEMORY_CACHE, CACHE_BACKEND_DEFAULT,
                             base::FilePath(), max_bytes, NULL);
 }
 
@@ -150,8 +145,10 @@ class HttpCache::WorkItem {
         trans_(trans),
         entry_(entry),
         backend_(NULL) {}
-  WorkItem(WorkItemOperation operation, Transaction* trans,
-           const net::CompletionCallback& cb, disk_cache::Backend** backend)
+  WorkItem(WorkItemOperation operation,
+           Transaction* trans,
+           const CompletionCallback& cb,
+           disk_cache::Backend** backend)
       : operation_(operation),
         trans_(trans),
         entry_(NULL),
@@ -191,7 +188,7 @@ class HttpCache::WorkItem {
   WorkItemOperation operation_;
   Transaction* trans_;
   ActiveEntry** entry_;
-  net::CompletionCallback callback_;  // User callback.
+  CompletionCallback callback_;  // User callback.
   disk_cache::Backend** backend_;
 };
 
@@ -210,7 +207,9 @@ class HttpCache::MetadataWriter {
   ~MetadataWriter() {}
 
   // Implements the bulk of HttpCache::WriteMetadata.
-  void Write(const GURL& url, base::Time expected_response_time, IOBuffer* buf,
+  void Write(const GURL& url,
+             base::Time expected_response_time,
+             IOBuffer* buf,
              int buf_len);
 
  private:
@@ -229,7 +228,8 @@ class HttpCache::MetadataWriter {
 
 void HttpCache::MetadataWriter::Write(const GURL& url,
                                       base::Time expected_response_time,
-                                      IOBuffer* buf, int buf_len) {
+                                      IOBuffer* buf,
+                                      int buf_len) {
   DCHECK_GT(buf_len, 0);
   DCHECK(buf);
   DCHECK(buf->data());
@@ -361,7 +361,7 @@ void HttpCache::AsyncValidation::Start(const BoundNetLog& net_log,
 
   DCHECK_EQ(0, request_.load_flags & LOAD_ASYNC_REVALIDATION);
   request_.load_flags |= LOAD_ASYNC_REVALIDATION;
-  start_time_ = base::Time::Now();
+  start_time_ = cache_->clock()->Now();
   // This use of base::Unretained is safe because |transaction_| is owned by
   // this object.
   read_callback_ = base::Bind(&AsyncValidation::OnRead, base::Unretained(this));
@@ -439,7 +439,7 @@ void HttpCache::AsyncValidation::Terminate(int result) {
     // anyway.
     cache_->DoomEntry(transaction_->key(), transaction_.get());
   }
-  base::TimeDelta duration = base::Time::Now() - start_time_;
+  base::TimeDelta duration = cache_->clock()->Now() - start_time_;
   UMA_HISTOGRAM_TIMES("HttpCache.AsyncValidationDuration", duration);
   transaction_->net_log().EndEventWithNetErrorCode(
       NetLog::TYPE_ASYNC_REVALIDATION, result);
@@ -448,15 +448,17 @@ void HttpCache::AsyncValidation::Terminate(int result) {
 }
 
 //-----------------------------------------------------------------------------
-HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
+HttpCache::HttpCache(const HttpNetworkSession::Params& params,
                      BackendFactory* backend_factory)
     : net_log_(params.net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
       bypass_lock_for_test_(false),
+      fail_conditionalization_for_test_(false),
       use_stale_while_revalidate_(params.use_stale_while_revalidate),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))),
+      clock_(new base::DefaultClock()),
       weak_factory_(this) {
   SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
@@ -470,9 +472,11 @@ HttpCache::HttpCache(HttpNetworkSession* session,
       backend_factory_(backend_factory),
       building_backend_(false),
       bypass_lock_for_test_(false),
+      fail_conditionalization_for_test_(false),
       use_stale_while_revalidate_(session->params().use_stale_while_revalidate),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(session)),
+      clock_(new base::DefaultClock()),
       weak_factory_(this) {
 }
 
@@ -483,9 +487,11 @@ HttpCache::HttpCache(HttpTransactionFactory* network_layer,
       backend_factory_(backend_factory),
       building_backend_(false),
       bypass_lock_for_test_(false),
+      fail_conditionalization_for_test_(false),
       use_stale_while_revalidate_(false),
       mode_(NORMAL),
       network_layer_(network_layer),
+      clock_(new base::DefaultClock()),
       weak_factory_(this) {
   SetupQuicServerInfoFactory(network_layer_->GetSession());
   HttpNetworkSession* session = network_layer_->GetSession();
@@ -578,7 +584,7 @@ void HttpCache::WriteMetadata(const GURL& url,
   // Do lazy initialization of disk cache if needed.
   if (!disk_cache_.get()) {
     // We don't care about the result.
-    CreateBackend(NULL, net::CompletionCallback());
+    CreateBackend(NULL, CompletionCallback());
   }
 
   HttpCache::Transaction* trans =
@@ -603,7 +609,7 @@ void HttpCache::CloseIdleConnections() {
 
 void HttpCache::OnExternalCacheHit(const GURL& url,
                                    const std::string& http_method) {
-  if (!disk_cache_.get())
+  if (!disk_cache_.get() || mode_ == DISABLE)
     return;
 
   HttpRequestInfo request_info;
@@ -613,24 +619,20 @@ void HttpCache::OnExternalCacheHit(const GURL& url,
   disk_cache_->OnExternalCacheHit(key);
 }
 
-void HttpCache::InitializeInfiniteCache(const base::FilePath& path) {
-  if (base::FieldTrialList::FindFullName("InfiniteCache") != "Yes")
-    return;
-  base::WorkerPool::PostTask(FROM_HERE, base::Bind(&DeletePath, path), true);
-}
-
 int HttpCache::CreateTransaction(RequestPriority priority,
                                  scoped_ptr<HttpTransaction>* trans) {
   // Do lazy initialization of disk cache if needed.
   if (!disk_cache_.get()) {
     // We don't care about the result.
-    CreateBackend(NULL, net::CompletionCallback());
+    CreateBackend(NULL, CompletionCallback());
   }
 
    HttpCache::Transaction* transaction =
       new HttpCache::Transaction(priority, this);
    if (bypass_lock_for_test_)
     transaction->BypassLockForTest();
+   if (fail_conditionalization_for_test_)
+     transaction->FailConditionalizationForTest();
 
   trans->reset(transaction);
   return OK;
@@ -655,7 +657,7 @@ HttpCache::SetHttpNetworkTransactionFactoryForTesting(
 //-----------------------------------------------------------------------------
 
 int HttpCache::CreateBackend(disk_cache::Backend** backend,
-                             const net::CompletionCallback& callback) {
+                             const CompletionCallback& callback) {
   if (!backend_factory_.get())
     return ERR_FAILED;
 
@@ -696,8 +698,8 @@ int HttpCache::GetBackendForTransaction(Transaction* trans) {
   if (!building_backend_)
     return ERR_FAILED;
 
-  WorkItem* item = new WorkItem(
-      WI_CREATE_BACKEND, trans, net::CompletionCallback(), NULL);
+  WorkItem* item =
+      new WorkItem(WI_CREATE_BACKEND, trans, CompletionCallback(), NULL);
   PendingOp* pending_op = GetPendingOp(std::string());
   DCHECK(pending_op->writer);
   pending_op->pending_queue.push_back(item);
@@ -709,39 +711,16 @@ std::string HttpCache::GenerateCacheKey(const HttpRequestInfo* request) {
   // Strip out the reference, username, and password sections of the URL.
   std::string url = HttpUtil::SpecForRequest(request->url);
 
-  DCHECK(mode_ != DISABLE);
-  if (mode_ == NORMAL) {
-    // No valid URL can begin with numerals, so we should not have to worry
-    // about collisions with normal URLs.
-    if (request->upload_data_stream &&
-        request->upload_data_stream->identifier()) {
-      url.insert(0, base::StringPrintf(
-          "%" PRId64 "/", request->upload_data_stream->identifier()));
-    }
-    return url;
+  DCHECK_NE(DISABLE, mode_);
+  // No valid URL can begin with numerals, so we should not have to worry
+  // about collisions with normal URLs.
+  if (request->upload_data_stream &&
+      request->upload_data_stream->identifier()) {
+    url.insert(0,
+               base::StringPrintf("%" PRId64 "/",
+                                  request->upload_data_stream->identifier()));
   }
-
-  // In playback and record mode, we cache everything.
-
-  // Lazily initialize.
-  if (playback_cache_map_ == NULL)
-    playback_cache_map_.reset(new PlaybackCacheMap());
-
-  // Each time we request an item from the cache, we tag it with a
-  // generation number.  During playback, multiple fetches for the same
-  // item will use the same generation number and pull the proper
-  // instance of an URL from the cache.
-  int generation = 0;
-  DCHECK(playback_cache_map_ != NULL);
-  if (playback_cache_map_->find(url) != playback_cache_map_->end())
-    generation = (*playback_cache_map_)[url];
-  (*playback_cache_map_)[url] = generation + 1;
-
-  // The key into the cache is GENERATION # + METHOD + URL.
-  std::string result = base::IntToString(generation);
-  result.append(request->method);
-  result.append(url);
-  return result;
+  return url;
 }
 
 void HttpCache::DoomActiveEntry(const std::string& key) {
@@ -1355,11 +1334,6 @@ void HttpCache::OnIOComplete(int result, PendingOp* pending_op) {
 void HttpCache::OnPendingOpComplete(const base::WeakPtr<HttpCache>& cache,
                                     PendingOp* pending_op,
                                     int rv) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422516 HttpCache::OnPendingOpComplete"));
-
   if (cache.get()) {
     cache->OnIOComplete(rv, pending_op);
   } else {

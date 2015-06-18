@@ -7,19 +7,27 @@
 #include "base/sys_byteorder.h"
 
 namespace net {
+namespace {
+
+// 0 is invalid according to both the SPDY 3.1 and HTTP/2 specifications.
+const SpdyStreamId kInvalidStreamId = 0;
+
+}  // anonymous namespace
 
 const size_t SpdyHeadersBlockParser::kMaximumFieldLength = 16 * 1024;
 
 SpdyHeadersBlockParser::SpdyHeadersBlockParser(
     SpdyMajorVersion spdy_version,
-    SpdyHeadersHandlerInterface* handler) :
-    state_(READING_HEADER_BLOCK_LEN),
-    length_field_size_(LengthFieldSizeForVersion(spdy_version)),
-    max_headers_in_block_(MaxNumberOfHeadersForVersion(spdy_version)),
-    total_bytes_received_(0),
-    remaining_key_value_pairs_for_frame_(0),
-    handler_(handler),
-    error_(OK) {
+    SpdyHeadersHandlerInterface* handler)
+    : state_(READING_HEADER_BLOCK_LEN),
+      length_field_size_(LengthFieldSizeForVersion(spdy_version)),
+      max_headers_in_block_(MaxNumberOfHeadersForVersion(spdy_version)),
+      total_bytes_received_(0),
+      remaining_key_value_pairs_for_frame_(0),
+      handler_(handler),
+      stream_id_(kInvalidStreamId),
+      error_(NO_PARSER_ERROR),
+      spdy_version_(spdy_version) {
   // The handler that we set must not be NULL.
   DCHECK(handler_ != NULL);
 }
@@ -31,17 +39,29 @@ bool SpdyHeadersBlockParser::HandleControlFrameHeadersData(
     const char* headers_data,
     size_t headers_data_length) {
   if (error_ == NEED_MORE_DATA) {
-    error_ = OK;
+    error_ = NO_PARSER_ERROR;
   }
-  CHECK_EQ(error_, OK);
+  if (error_ != NO_PARSER_ERROR) {
+    LOG(DFATAL) << "Unexpected error: " << error_;
+    return false;
+  }
 
   // If this is the first call with the current header block,
   // save its stream id.
-  if (state_ == READING_HEADER_BLOCK_LEN) {
+  if (state_ == READING_HEADER_BLOCK_LEN && stream_id_ == kInvalidStreamId) {
     stream_id_ = stream_id;
   }
-  CHECK_EQ(stream_id_, stream_id);
-
+  if (stream_id != stream_id_) {
+    LOG(DFATAL) << "Unexpected stream id: " << stream_id << " (expected "
+                << stream_id_ << ")";
+    error_ = UNEXPECTED_STREAM_ID;
+    return false;
+  }
+  if (stream_id_ == kInvalidStreamId) {
+    LOG(DFATAL) << "Expected nonzero stream id, saw: " << stream_id_;
+    error_ = UNEXPECTED_STREAM_ID;
+    return false;
+  }
   total_bytes_received_ += headers_data_length;
 
   SpdyPinnableBufferPiece prefix, key, value;
@@ -53,7 +73,7 @@ bool SpdyHeadersBlockParser::HandleControlFrameHeadersData(
   // from last invocation, plus newly-available headers data.
   Reader reader(prefix.buffer(), prefix.length(),
                 headers_data, headers_data_length);
-  while (error_ == OK) {
+  while (error_ == NO_PARSER_ERROR) {
     ParserState next_state(FINISHED_HEADER);
 
     switch (state_) {
@@ -80,7 +100,7 @@ bool SpdyHeadersBlockParser::HandleControlFrameHeadersData(
         if (!reader.ReadN(next_field_length_, &value)) {
           error_ = NEED_MORE_DATA;
         } else {
-          handler_->OnHeader(stream_id, key, value);
+          handler_->OnHeader(key, value);
         }
         break;
       case FINISHED_HEADER:
@@ -89,18 +109,17 @@ bool SpdyHeadersBlockParser::HandleControlFrameHeadersData(
           next_state = READING_KEY_LEN;
         } else {
           next_state = READING_HEADER_BLOCK_LEN;
-          handler_->OnHeaderBlockEnd(stream_id, total_bytes_received_);
+          handler_->OnHeaderBlockEnd(total_bytes_received_);
+          stream_id_ = kInvalidStreamId;
           // Expect to have consumed all buffer.
           if (reader.Available() != 0) {
             error_ = TOO_MUCH_DATA;
           }
         }
         break;
-      default:
-        CHECK(false) << "Not reached.";
     }
 
-    if (error_ == OK) {
+    if (error_ == NO_PARSER_ERROR) {
       state_ = next_state;
 
       if (next_state == READING_HEADER_BLOCK_LEN) {
@@ -119,24 +138,23 @@ bool SpdyHeadersBlockParser::HandleControlFrameHeadersData(
       headers_block_prefix_.Pin();
     }
   }
-  return error_ == OK;
+  return error_ == NO_PARSER_ERROR;
 }
 
 void SpdyHeadersBlockParser::ParseBlockLength(Reader* reader) {
   ParseLength(reader, &remaining_key_value_pairs_for_frame_);
-  if (error_ == OK &&
-    remaining_key_value_pairs_for_frame_ > max_headers_in_block_) {
+  if (error_ == NO_PARSER_ERROR &&
+      remaining_key_value_pairs_for_frame_ > max_headers_in_block_) {
     error_ = HEADER_BLOCK_TOO_LARGE;
   }
-  if (error_ == OK) {
-    handler_->OnHeaderBlock(stream_id_, remaining_key_value_pairs_for_frame_);
+  if (error_ == NO_PARSER_ERROR) {
+    handler_->OnHeaderBlock(remaining_key_value_pairs_for_frame_);
   }
 }
 
 void SpdyHeadersBlockParser::ParseFieldLength(Reader* reader) {
   ParseLength(reader, &next_field_length_);
-  if (error_ == OK &&
-      next_field_length_ > kMaximumFieldLength) {
+  if (error_ == NO_PARSER_ERROR && next_field_length_ > kMaximumFieldLength) {
     error_ = HEADER_FIELD_TOO_LARGE;
   }
 }
@@ -154,21 +172,6 @@ void SpdyHeadersBlockParser::ParseLength(Reader* reader,
   } else {
     *parsed_length = ntohs(*reinterpret_cast<const uint16_t *>(buffer));
   }
-}
-
-void SpdyHeadersBlockParser::Reset() {
-  {
-    SpdyPinnableBufferPiece empty;
-    headers_block_prefix_.Swap(&empty);
-  }
-  {
-    SpdyPinnableBufferPiece empty;
-    key_.Swap(&empty);
-  }
-  error_ = OK;
-  state_ = READING_HEADER_BLOCK_LEN;
-  stream_id_ = 0;
-  total_bytes_received_ = 0;
 }
 
 size_t SpdyHeadersBlockParser::LengthFieldSizeForVersion(

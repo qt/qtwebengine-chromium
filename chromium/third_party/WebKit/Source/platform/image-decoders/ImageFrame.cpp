@@ -31,7 +31,7 @@ namespace blink {
 
 ImageFrame::ImageFrame()
     : m_allocator(0)
-    , m_hasAlpha(false)
+    , m_hasAlpha(true)
     , m_status(FrameEmpty)
     , m_duration(0)
     , m_disposalMethod(DisposeNotSpecified)
@@ -39,9 +39,6 @@ ImageFrame::ImageFrame()
     , m_premultiplyAlpha(true)
     , m_pixelsChanged(false)
     , m_requiredPreviousFrameIndex(kNotFound)
-#if ENABLE(ASSERT)
-    , m_requiredPreviousFrameIndexValid(false)
-#endif
 {
 }
 
@@ -67,11 +64,7 @@ ImageFrame& ImageFrame::operator=(const ImageFrame& other)
     // Be sure that this is called after we've called setStatus(), since we
     // look at our status to know what to do with the alpha value.
     setHasAlpha(other.hasAlpha());
-    // Copy raw fields to avoid ASSERT failure in requiredPreviousFrameIndex().
-    m_requiredPreviousFrameIndex = other.m_requiredPreviousFrameIndex;
-#if ENABLE(ASSERT)
-    m_requiredPreviousFrameIndexValid = other.m_requiredPreviousFrameIndexValid;
-#endif
+    setRequiredPreviousFrameIndex(other.requiredPreviousFrameIndex());
     return *this;
 }
 
@@ -114,9 +107,9 @@ bool ImageFrame::setSize(int newWidth, int newHeight)
     return true;
 }
 
-PassRefPtr<NativeImageSkia> ImageFrame::asNewNativeImage() const
+const SkBitmap& ImageFrame::bitmap() const
 {
-    return NativeImageSkia::create(m_bitmap);
+    return m_bitmap;
 }
 
 bool ImageFrame::hasAlpha() const

@@ -5,12 +5,15 @@
 #include "net/quic/quic_crypto_client_stream.h"
 
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/null_encrypter.h"
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
+
+using std::string;
 
 namespace net {
 
@@ -84,7 +87,10 @@ QuicCryptoClientStream::QuicCryptoClientStream(
       channel_id_source_callback_run_(false),
       channel_id_source_callback_(nullptr),
       verify_context_(verify_context),
-      proof_verify_callback_(nullptr) {}
+      proof_verify_callback_(nullptr),
+      stateless_reject_received_(false) {
+  DCHECK_EQ(Perspective::IS_CLIENT, session->connection()->perspective());
+}
 
 QuicCryptoClientStream::~QuicCryptoClientStream() {
   if (channel_id_source_callback_) {
@@ -120,16 +126,16 @@ void QuicCryptoClientStream::OnHandshakeMessage(
   DoHandshakeLoop(&message);
 }
 
-bool QuicCryptoClientStream::CryptoConnect() {
+void QuicCryptoClientStream::CryptoConnect() {
   next_state_ = STATE_INITIALIZE;
   DoHandshakeLoop(nullptr);
-  return true;
 }
 
 int QuicCryptoClientStream::num_sent_client_hellos() const {
   return num_client_hellos_;
 }
 
+// Used in Chromium, but not in the server.
 bool QuicCryptoClientStream::WasChannelIDSent() const {
   return channel_id_sent_;
 }
@@ -189,7 +195,7 @@ void QuicCryptoClientStream::DoHandshakeLoop(
         break;
       case STATE_SEND_CHLO:
         DoSendCHLO(in, cached);
-        return;
+        return;  // return waiting to hear from server.
       case STATE_RECV_REJ:
         DoReceiveREJ(in, cached);
         break;
@@ -241,6 +247,19 @@ void QuicCryptoClientStream::DoInitialize(
 void QuicCryptoClientStream::DoSendCHLO(
     const CryptoHandshakeMessage* in,
     QuicCryptoClientConfig::CachedState* cached) {
+  if (stateless_reject_received_) {
+    // If we've gotten to this point, we've sent at least one hello
+    // and received a stateless reject in response.  We cannot
+    // continue to send hellos because the server has abandoned state
+    // for this connection.  Abandon further handshakes.
+    next_state_ = STATE_NONE;
+    if (session()->connection()->connected()) {
+      session()->connection()->CloseConnection(
+          QUIC_CRYPTO_HANDSHAKE_STATELESS_REJECT, false);
+    }
+    return;
+  }
+
   // Send the client hello in plaintext.
   session()->connection()->SetDefaultEncryptionLevel(ENCRYPTION_NONE);
   if (num_client_hellos_ > kMaxClientHellos) {
@@ -250,14 +269,19 @@ void QuicCryptoClientStream::DoSendCHLO(
   num_client_hellos_++;
 
   CryptoHandshakeMessage out;
+  DCHECK(session() != nullptr);
+  DCHECK(session()->config() != nullptr);
+  // Send all the options, regardless of whether we're sending an
+  // inchoate or subsequent hello.
+  session()->config()->ToHandshakeMessage(&out);
   if (!cached->IsComplete(session()->connection()->clock()->WallNow())) {
     crypto_config_->FillInchoateClientHello(
         server_id_,
         session()->connection()->supported_versions().front(),
         cached, &crypto_negotiated_params_, &out);
     // Pad the inchoate client hello to fill up a packet.
-    const size_t kFramingOverhead = 50;  // A rough estimate.
-    const size_t max_packet_size =
+    const QuicByteCount kFramingOverhead = 50;  // A rough estimate.
+    const QuicByteCount max_packet_size =
         session()->connection()->max_packet_length();
     if (max_packet_size <= kFramingOverhead) {
       DLOG(DFATAL) << "max_packet_length (" << max_packet_size
@@ -270,13 +294,13 @@ void QuicCryptoClientStream::DoSendCHLO(
       CloseConnection(QUIC_INTERNAL_ERROR);
       return;
     }
-    out.set_minimum_size(max_packet_size - kFramingOverhead);
+    out.set_minimum_size(
+        static_cast<size_t>(max_packet_size - kFramingOverhead));
     next_state_ = STATE_RECV_REJ;
     SendHandshakeMessage(out);
     return;
   }
 
-  session()->config()->ToHandshakeMessage(&out);
   string error_details;
   QuicErrorCode error = crypto_config_->FillClientHello(
       server_id_,
@@ -289,6 +313,7 @@ void QuicCryptoClientStream::DoSendCHLO(
       &crypto_negotiated_params_,
       &out,
       &error_details);
+
   if (error != QUIC_NO_ERROR) {
     // Flush the cached config so that, if it's bad, the server has a
     // chance to send us another in the future.
@@ -328,20 +353,27 @@ void QuicCryptoClientStream::DoSendCHLO(
 void QuicCryptoClientStream::DoReceiveREJ(
     const CryptoHandshakeMessage* in,
     QuicCryptoClientConfig::CachedState* cached) {
+  // TODO(rtenneti): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicCryptoClientStream::DoReceiveREJ"));
+
   // We sent a dummy CHLO because we didn't have enough information to
   // perform a handshake, or we sent a full hello that the server
   // rejected. Here we hope to have a REJ that contains the information
   // that we need.
-  if (in->tag() != kREJ) {
+  if ((in->tag() != kREJ) && (in->tag() != kSREJ)) {
     next_state_ = STATE_NONE;
     CloseConnectionWithDetails(QUIC_INVALID_CRYPTO_MESSAGE_TYPE,
                                "Expected REJ");
     return;
   }
+  stateless_reject_received_ = in->tag() == kSREJ;
   string error_details;
   QuicErrorCode error = crypto_config_->ProcessRejection(
       *in, session()->connection()->clock()->WallNow(), cached,
       server_id_.is_https(), &crypto_negotiated_params_, &error_details);
+
   if (error != QUIC_NO_ERROR) {
     next_state_ = STATE_NONE;
     CloseConnectionWithDetails(error, error_details);
@@ -406,7 +438,9 @@ void QuicCryptoClientStream::DoVerifyProofComplete(
     QuicCryptoClientConfig::CachedState* cached) {
   if (!verify_ok_) {
     next_state_ = STATE_NONE;
-    client_session()->OnProofVerifyDetailsAvailable(*verify_details_);
+    if (verify_details_.get()) {
+      client_session()->OnProofVerifyDetailsAvailable(*verify_details_);
+    }
     UMA_HISTOGRAM_BOOLEAN("Net.QuicVerifyProofFailed.HandshakeConfirmed",
                           handshake_confirmed());
     CloseConnectionWithDetails(
@@ -477,9 +511,11 @@ void QuicCryptoClientStream::DoReceiveSHLO(
     const CryptoHandshakeMessage* in,
     QuicCryptoClientConfig::CachedState* cached) {
   next_state_ = STATE_NONE;
-  // We sent a CHLO that we expected to be accepted and now we're hoping
-  // for a SHLO from the server to confirm that.
-  if (in->tag() == kREJ) {
+  // We sent a CHLO that we expected to be accepted and now we're
+  // hoping for a SHLO from the server to confirm that.  First check
+  // to see whether the response was a reject, and if so, move on to
+  // the reject-processing state.
+  if ((in->tag() == kREJ) || (in->tag() == kSREJ)) {
     // alternative_decrypter will be nullptr if the original alternative
     // decrypter latched and became the primary decrypter. That happens
     // if we received a message encrypted with the INITIAL key.
@@ -577,7 +613,7 @@ bool QuicCryptoClientStream::RequiresChannelID(
     return false;
   }
   const CryptoHandshakeMessage* scfg = cached->GetServerConfig();
-  if (!scfg) {  // scfg may be null when we send an inchoate CHLO.
+  if (!scfg) {  // scfg may be null then we send an inchoate CHLO.
     return false;
   }
   const QuicTag* their_proof_demands;

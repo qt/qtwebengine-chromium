@@ -69,6 +69,7 @@
     'has_java_resources%': 0,
     'res_extra_dirs': [],
     'res_extra_files': [],
+    'res_v14_skip%': 0,
     'res_v14_verify_only%': 0,
     'resource_input_paths': ['>@(res_extra_files)'],
     'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/<(_target_name)',
@@ -77,6 +78,8 @@
     'lint_result': '<(intermediate_dir)/lint_result.xml',
     'lint_config': '<(intermediate_dir)/lint_config.xml',
     'never_lint%': 0,
+    'findbugs_stamp': '<(intermediate_dir)/findbugs.stamp',
+    'run_findbugs%': 0,
     'proguard_config%': '',
     'proguard_preprocess%': '0',
     'variables': {
@@ -113,9 +116,9 @@
     }],
     ['has_java_resources == 1', {
       'variables': {
-        'res_dir': '<(java_in_dir)/res',
-        'res_input_dirs': ['<(res_dir)', '<@(res_extra_dirs)'],
-        'resource_input_paths': ['<!@(find <(res_dir) -type f)'],
+        'resource_dir': '<(java_in_dir)/res',
+        'res_input_dirs': ['<(resource_dir)', '<@(res_extra_dirs)'],
+        'resource_input_paths': ['<!@(find <(resource_dir) -type f)'],
 
         'R_dir': '<(intermediate_dir)/java_R',
         'R_text_file': '<(R_dir)/R.txt',
@@ -155,6 +158,9 @@
             'inputs_list_file': '>|(java_resources.<(_target_name).gypcmd >@(resource_input_paths))',
             'process_resources_options': [],
             'conditions': [
+              ['res_v14_skip == 1', {
+                'process_resources_options': ['--v14-skip']
+              }],
               ['res_v14_verify_only == 1', {
                 'process_resources_options': ['--v14-verify-only']
               }],
@@ -214,6 +220,31 @@
             '--proguard-config=<(proguard_config)',
             '--classpath=<(android_sdk_jar) >(input_jars_paths)',
           ]
+        },
+      ],
+    }],
+    ['run_findbugs == 1', {
+      'actions': [
+        {
+          'action_name': 'findbugs_<(_target_name)',
+          'message': 'Running findbugs on <(_target_name)',
+          'inputs': [
+            '<(DEPTH)/build/android/findbugs_diff.py',
+            '<(DEPTH)/build/android/findbugs_filter/findbugs_exclude.xml',
+            '<(DEPTH)/build/android/pylib/utils/findbugs.py',
+            '>@(input_jars_paths)',
+            '<(jar_final_path)',
+            '<(compile_stamp)',
+          ],
+          'outputs': [
+            '<(findbugs_stamp)',
+          ],
+          'action': [
+            'python', '<(DEPTH)/build/android/findbugs_diff.py',
+            '--auxclasspath-gyp', '>(input_jars_paths)',
+            '--stamp', '<(findbugs_stamp)',
+            '<(jar_final_path)',
+          ],
         },
       ],
     }],

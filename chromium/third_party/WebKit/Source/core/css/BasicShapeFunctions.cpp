@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -35,12 +35,12 @@
 #include "core/css/CSSValuePool.h"
 #include "core/css/Pair.h"
 #include "core/css/resolver/StyleResolverState.h"
-#include "core/rendering/style/BasicShapes.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/style/BasicShapes.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
-static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> valueForCenterCoordinate(CSSValuePool& pool, const RenderStyle& style, const BasicShapeCenterCoordinate& center, EBoxOrient orientation)
+static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> valueForCenterCoordinate(CSSValuePool& pool, const ComputedStyle& style, const BasicShapeCenterCoordinate& center, EBoxOrient orientation)
 {
     if (center.direction() == BasicShapeCenterCoordinate::TopLeft)
         return pool.createValue(center.length(), style);
@@ -50,7 +50,7 @@ static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> valueForCenterCoordinate(CSSVal
     return pool.createValue(Pair::create(pool.createIdentifierValue(keyword), pool.createValue(center.length(), style), Pair::DropIdenticalValues));
 }
 
-static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> basicShapeRadiusToCSSValue(CSSValuePool& pool, const RenderStyle& style, const BasicShapeRadius& radius)
+static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> basicShapeRadiusToCSSValue(CSSValuePool& pool, const ComputedStyle& style, const BasicShapeRadius& radius)
 {
     switch (radius.type()) {
     case BasicShapeRadius::Value:
@@ -65,7 +65,7 @@ static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> basicShapeRadiusToCSSValue(CSSV
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<CSSValue> valueForBasicShape(const RenderStyle& style, const BasicShape* basicShape)
+PassRefPtrWillBeRawPtr<CSSValue> valueForBasicShape(const ComputedStyle& style, const BasicShape* basicShape)
 {
     CSSValuePool& pool = cssValuePool();
 
@@ -132,7 +132,7 @@ static Length convertToLength(const StyleResolverState& state, CSSPrimitiveValue
 {
     if (!value)
         return Length(0, Fixed);
-    return value->convertToLength<FixedConversion | PercentConversion>(state.cssToLengthConversionData());
+    return value->convertToLength(state.cssToLengthConversionData());
 }
 
 static LengthSize convertToLengthSize(const StyleResolverState& state, CSSPrimitiveValue* value)
@@ -209,7 +209,7 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
 
     switch (basicShapeValue->type()) {
     case CSSBasicShape::CSSBasicShapeCircleType: {
-        const CSSBasicShapeCircle* circleValue = static_cast<const CSSBasicShapeCircle *>(basicShapeValue);
+        const CSSBasicShapeCircle* circleValue = toCSSBasicShapeCircle(basicShapeValue);
         RefPtr<BasicShapeCircle> circle = BasicShapeCircle::create();
 
         circle->setCenterX(convertToCenterCoordinate(state, circleValue->centerX()));
@@ -220,7 +220,7 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
         break;
     }
     case CSSBasicShape::CSSBasicShapeEllipseType: {
-        const CSSBasicShapeEllipse* ellipseValue = static_cast<const CSSBasicShapeEllipse *>(basicShapeValue);
+        const CSSBasicShapeEllipse* ellipseValue = toCSSBasicShapeEllipse(basicShapeValue);
         RefPtr<BasicShapeEllipse> ellipse = BasicShapeEllipse::create();
 
         ellipse->setCenterX(convertToCenterCoordinate(state, ellipseValue->centerX()));
@@ -232,11 +232,11 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
         break;
     }
     case CSSBasicShape::CSSBasicShapePolygonType: {
-        const CSSBasicShapePolygon* polygonValue = static_cast<const CSSBasicShapePolygon *>(basicShapeValue);
+        const CSSBasicShapePolygon* polygonValue = toCSSBasicShapePolygon(basicShapeValue);
         RefPtr<BasicShapePolygon> polygon = BasicShapePolygon::create();
 
         polygon->setWindRule(polygonValue->windRule());
-        const WillBeHeapVector<RefPtrWillBeMember<CSSPrimitiveValue> >& values = polygonValue->values();
+        const WillBeHeapVector<RefPtrWillBeMember<CSSPrimitiveValue>>& values = polygonValue->values();
         for (unsigned i = 0; i < values.size(); i += 2)
             polygon->appendPoint(convertToLength(state, values.at(i).get()), convertToLength(state, values.at(i + 1).get()));
 
@@ -244,7 +244,7 @@ PassRefPtr<BasicShape> basicShapeForValue(const StyleResolverState& state, const
         break;
     }
     case CSSBasicShape::CSSBasicShapeInsetType: {
-        const CSSBasicShapeInset* rectValue = static_cast<const CSSBasicShapeInset* >(basicShapeValue);
+        const CSSBasicShapeInset* rectValue = toCSSBasicShapeInset(basicShapeValue);
         RefPtr<BasicShapeInset> rect = BasicShapeInset::create();
 
         rect->setTop(convertToLength(state, rectValue->top()));

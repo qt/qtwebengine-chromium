@@ -10,7 +10,7 @@
 
 #include <windows.h>
 #include <GL/GL.h>
-#include "SkWGL.h"
+#include "win/SkWGL.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -20,9 +20,9 @@ namespace {
 class WinGLContext : public SkGLContext {
 public:
     WinGLContext(GrGLStandard forcedGpuAPI);
-	virtual ~WinGLContext() SK_OVERRIDE;
-    virtual void makeCurrent() const SK_OVERRIDE;
-    virtual void swapBuffers() const SK_OVERRIDE;
+	~WinGLContext() override;
+    void makeCurrent() const override;
+    void swapBuffers() const override;
 
 private:
     void destroyGLContext();

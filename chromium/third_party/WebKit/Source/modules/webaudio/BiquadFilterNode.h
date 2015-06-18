@@ -26,14 +26,14 @@
 #define BiquadFilterNode_h
 
 #include "core/dom/DOMTypedArray.h"
-#include "modules/webaudio/AudioBasicProcessorNode.h"
+#include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/BiquadProcessor.h"
 
 namespace blink {
 
 class AudioParam;
 
-class BiquadFilterNode final : public AudioBasicProcessorNode {
+class BiquadFilterNode final : public AudioNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // These must be defined as in the .idl file and must match those in the BiquadProcessor class.
@@ -48,28 +48,34 @@ public:
         ALLPASS = 7
     };
 
-    static BiquadFilterNode* create(AudioContext* context, float sampleRate)
+    static BiquadFilterNode* create(AudioContext& context, float sampleRate)
     {
         return new BiquadFilterNode(context, sampleRate);
     }
+    DECLARE_VIRTUAL_TRACE();
 
     String type() const;
     void setType(const String&);
 
-    AudioParam* frequency() { return biquadProcessor()->parameter1(); }
-    AudioParam* q() { return biquadProcessor()->parameter2(); }
-    AudioParam* gain() { return biquadProcessor()->parameter3(); }
-    AudioParam* detune() { return biquadProcessor()->parameter4(); }
+    AudioParam* frequency() { return m_frequency; }
+    AudioParam* q() { return m_q; }
+    AudioParam* gain() { return m_gain; }
+    AudioParam* detune() { return m_detune; }
 
     // Get the magnitude and phase response of the filter at the given
     // set of frequencies (in Hz). The phase response is in radians.
     void getFrequencyResponse(const DOMFloat32Array* frequencyHz, DOMFloat32Array* magResponse, DOMFloat32Array* phaseResponse);
 
 private:
-    BiquadFilterNode(AudioContext*, float sampleRate);
+    BiquadFilterNode(AudioContext&, float sampleRate);
 
-    BiquadProcessor* biquadProcessor() { return static_cast<BiquadProcessor*>(processor()); }
+    BiquadProcessor* biquadProcessor() const;
     bool setType(unsigned); // Returns true on success.
+
+    Member<AudioParam> m_frequency;
+    Member<AudioParam> m_q;
+    Member<AudioParam> m_gain;
+    Member<AudioParam> m_detune;
 };
 
 } // namespace blink

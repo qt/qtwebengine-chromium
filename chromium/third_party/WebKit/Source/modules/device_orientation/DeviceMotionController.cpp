@@ -6,10 +6,14 @@
 #include "modules/device_orientation/DeviceMotionController.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "modules/EventModules.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
 #include "modules/device_orientation/DeviceMotionEvent.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
 
 namespace blink {
 
@@ -32,12 +36,34 @@ const char* DeviceMotionController::supplementName()
 
 DeviceMotionController& DeviceMotionController::from(Document& document)
 {
-    DeviceMotionController* controller = static_cast<DeviceMotionController*>(DocumentSupplement::from(document, supplementName()));
+    DeviceMotionController* controller = static_cast<DeviceMotionController*>(WillBeHeapSupplement<Document>::from(document, supplementName()));
     if (!controller) {
         controller = new DeviceMotionController(document);
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(controller));
+        WillBeHeapSupplement<Document>::provideTo(document, supplementName(), adoptPtrWillBeNoop(controller));
     }
     return *controller;
+}
+
+void DeviceMotionController::didAddEventListener(LocalDOMWindow* window, const AtomicString& eventType)
+{
+    if (eventType != eventTypeName())
+        return;
+
+    if (document().frame()) {
+        String errorMessage;
+        if (document().isPrivilegedContext(errorMessage)) {
+            UseCounter::count(document().frame(), UseCounter::DeviceMotionSecureOrigin);
+        } else {
+            UseCounter::count(document().frame(), UseCounter::DeviceMotionInsecureOrigin);
+            if (document().frame()->settings()->strictPowerfulFeatureRestrictions())
+                return;
+        }
+    }
+
+    if (!m_hasEventListener)
+        Platform::current()->recordRapporURL("DeviceSensors.DeviceMotion", WebURL(document().url()));
+
+    DeviceSingleWindowEventController::didAddEventListener(window, eventType);
 }
 
 bool DeviceMotionController::hasLastData()
@@ -71,10 +97,10 @@ const AtomicString& DeviceMotionController::eventTypeName() const
     return EventTypeNames::devicemotion;
 }
 
-void DeviceMotionController::trace(Visitor* visitor)
+DEFINE_TRACE(DeviceMotionController)
 {
     DeviceSingleWindowEventController::trace(visitor);
-    DocumentSupplement::trace(visitor);
+    WillBeHeapSupplement<Document>::trace(visitor);
 }
 
 } // namespace blink

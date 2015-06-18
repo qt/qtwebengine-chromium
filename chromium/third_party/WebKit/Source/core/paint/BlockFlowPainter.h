@@ -7,18 +7,17 @@
 
 namespace blink {
 
-class FloatingObject;
 class LayoutPoint;
 struct PaintInfo;
-class RenderBlockFlow;
+class LayoutBlockFlow;
 
 class BlockFlowPainter {
 public:
-    BlockFlowPainter(RenderBlockFlow& renderBlockFlow) : m_renderBlockFlow(renderBlockFlow) { }
-    void paintFloats(PaintInfo&, const LayoutPoint&, bool preservePhase);
-
+    BlockFlowPainter(LayoutBlockFlow& layoutBlockFlow) : m_layoutBlockFlow(layoutBlockFlow) { }
+    void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase);
+    void paintSelection(const PaintInfo&, const LayoutPoint&);
 private:
-    RenderBlockFlow& m_renderBlockFlow;
+    LayoutBlockFlow& m_layoutBlockFlow;
 };
 
 } // namespace blink

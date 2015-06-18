@@ -4,6 +4,7 @@
 
 #include "net/base/keygen_handler.h"
 
+#include <openssl/mem.h>
 #include <openssl/ssl.h>
 
 #include "base/logging.h"
@@ -23,7 +24,7 @@ std::string KeygenHandler::GenKeyAndSignChallenge() {
   if (stores_key_)
     OpenSSLPrivateKeyStore::StoreKeyPair(url_, pkey);
 
-  crypto::ScopedOpenSSL<NETSCAPE_SPKI, NETSCAPE_SPKI_free>::Type spki(
+  crypto::ScopedOpenSSL<NETSCAPE_SPKI, NETSCAPE_SPKI_free> spki(
       NETSCAPE_SPKI_new());
   ASN1_STRING_set(spki.get()->spkac->challenge,
                   challenge_.data(), challenge_.size());

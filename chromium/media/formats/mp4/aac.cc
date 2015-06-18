@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 #include "media/base/bit_reader.h"
-#include "media/base/media_log.h"
 #include "media/formats/mp4/rcheck.h"
 #include "media/formats/mpeg/adts_constants.h"
 
@@ -58,8 +57,8 @@ bool AAC::Parse(const std::vector<uint8>& data, const LogCB& log_cb) {
     RCHECK(reader.ReadBits(5, &profile_));
   }
 
-  MEDIA_LOG(log_cb) << "Audio codec: mp4a.40."
-                    << std::hex << static_cast<int>(profile_);
+  MEDIA_LOG(INFO, log_cb) << "Audio codec: mp4a.40." << std::hex
+                          << static_cast<int>(profile_);
 
   RCHECK(SkipDecoderGASpecificConfig(&reader));
   RCHECK(SkipErrorSpecificConfig());

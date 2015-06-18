@@ -52,6 +52,8 @@ except ImportError, e:
 
 def get_ssl_context(method=SSL_METHOD):
   # One of: One of SSLv2_METHOD, SSLv3_METHOD, SSLv23_METHOD, or TLSv1_METHOD
+  if openssl_import_error:
+    raise openssl_import_error  # pylint: disable=raising-bad-type
   return SSL.Context(method)
 
 
@@ -110,7 +112,7 @@ def generate_dummy_ca_cert(subject='_WebPageReplayCert'):
     certificate
   """
   if openssl_import_error:
-    raise openssl_import_error
+    raise openssl_import_error  # pylint: disable=raising-bad-type
 
   key = crypto.PKey()
   key.generate_key(crypto.TYPE_RSA, 1024)
@@ -146,8 +148,8 @@ def get_host_cert(host, port=443):
   host_certs = []
   def verify_cb(conn, cert, errnum, depth, ok):
     host_certs.append(cert)
-    # The return code of 1 indicates that the certificate was ok.
-    return 1
+    # Return True to indicates that the certificate was ok.
+    return True
 
   context = SSL.Context(SSL.SSLv23_METHOD)
   context.set_verify(SSL.VERIFY_PEER, verify_cb)  # Demand a certificate
@@ -163,9 +165,10 @@ def get_host_cert(host, port=443):
   finally:
     connection.shutdown()
     connection.close()
-  if len(host_certs) > 0:
-    return _dump_cert(host_certs[-1])
-  return ''
+  if not host_certs:
+    logging.warning('Unable to get host certificate from %s:%s', host, port)
+    return ''
+  return _dump_cert(host_certs[-1])
 
 
 def write_dummy_ca_cert(ca_cert_str, key_str, cert_path):
@@ -225,23 +228,23 @@ def generate_cert(root_ca_cert_str, server_cert_str, server_host):
     a PEM formatted certificate string
   """
   if openssl_import_error:
-    raise openssl_import_error
+    raise openssl_import_error  # pylint: disable=raising-bad-type
 
   common_name = server_host
   if server_cert_str:
     cert = load_cert(server_cert_str)
     common_name = cert.get_subject().commonName
+  else:
+    cert = crypto.X509()
 
   ca_cert = load_cert(root_ca_cert_str)
   key = load_privatekey(root_ca_cert_str)
 
   req = crypto.X509Req()
-  subj = req.get_subject()
-  subj.CN = common_name
+  req.get_subject().CN = common_name
   req.set_pubkey(ca_cert.get_pubkey())
   req.sign(key, 'sha1')
 
-  cert = crypto.X509()
   cert.gmtime_adj_notBefore(-60 * 60)
   cert.gmtime_adj_notAfter(60 * 60 * 24 * 30)
   cert.set_issuer(ca_cert.get_subject())

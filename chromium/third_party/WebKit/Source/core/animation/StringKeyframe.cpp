@@ -5,37 +5,81 @@
 #include "config.h"
 #include "core/animation/StringKeyframe.h"
 
-#include "core/animation/DefaultStyleInterpolation.h"
+#include "core/animation/AngleSVGInterpolation.h"
+#include "core/animation/ColorStyleInterpolation.h"
+#include "core/animation/CompositorAnimations.h"
+#include "core/animation/ConstantStyleInterpolation.h"
+#include "core/animation/DefaultSVGInterpolation.h"
 #include "core/animation/DeferredLegacyStyleInterpolation.h"
+#include "core/animation/DoubleStyleInterpolation.h"
+#include "core/animation/FilterStyleInterpolation.h"
+#include "core/animation/ImageSliceStyleInterpolation.h"
+#include "core/animation/ImageStyleInterpolation.h"
+#include "core/animation/IntegerOptionalIntegerSVGInterpolation.h"
+#include "core/animation/IntegerSVGInterpolation.h"
 #include "core/animation/LegacyStyleInterpolation.h"
+#include "core/animation/LengthBoxStyleInterpolation.h"
+#include "core/animation/LengthPairStyleInterpolation.h"
+#include "core/animation/LengthSVGInterpolation.h"
 #include "core/animation/LengthStyleInterpolation.h"
+#include "core/animation/ListSVGInterpolation.h"
+#include "core/animation/ListStyleInterpolation.h"
+#include "core/animation/NumberOptionalNumberSVGInterpolation.h"
+#include "core/animation/NumberSVGInterpolation.h"
+#include "core/animation/PathSVGInterpolation.h"
+#include "core/animation/PointSVGInterpolation.h"
+#include "core/animation/RectSVGInterpolation.h"
+#include "core/animation/SVGStrokeDasharrayStyleInterpolation.h"
+#include "core/animation/ShadowStyleInterpolation.h"
+#include "core/animation/TransformSVGInterpolation.h"
+#include "core/animation/VisibilityStyleInterpolation.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSPropertyMetadata.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/style/ComputedStyle.h"
+#include "core/svg/SVGElement.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
 
 StringKeyframe::StringKeyframe(const StringKeyframe& copyFrom)
     : Keyframe(copyFrom.m_offset, copyFrom.m_composite, copyFrom.m_easing)
     , m_propertySet(copyFrom.m_propertySet->mutableCopy())
+    , m_svgPropertyMap(copyFrom.m_svgPropertyMap)
 {
 }
 
-void StringKeyframe::setPropertyValue(CSSPropertyID property, const String& value, StyleSheetContents* styleSheetContents)
+void StringKeyframe::setPropertyValue(CSSPropertyID property, const String& value, Element* element, StyleSheetContents* styleSheetContents)
 {
     ASSERT(property != CSSPropertyInvalid);
     if (CSSAnimations::isAllowedAnimation(property))
         m_propertySet->setProperty(property, value, false, styleSheetContents);
 }
 
-PropertySet StringKeyframe::properties() const
+void StringKeyframe::setPropertyValue(CSSPropertyID property, PassRefPtrWillBeRawPtr<CSSValue> value)
+{
+    ASSERT(property != CSSPropertyInvalid);
+    ASSERT(CSSAnimations::isAllowedAnimation(property));
+    m_propertySet->setProperty(property, value, false);
+}
+
+void StringKeyframe::setPropertyValue(const QualifiedName& attributeName, const String& value, Element* element)
+{
+    ASSERT(element->isSVGElement());
+    m_svgPropertyMap.set(&attributeName, value);
+}
+
+PropertyHandleSet StringKeyframe::properties() const
 {
     // This is not used in time-critical code, so we probably don't need to
     // worry about caching this result.
-    PropertySet properties;
+    PropertyHandleSet properties;
     for (unsigned i = 0; i < m_propertySet->propertyCount(); ++i)
-        properties.add(m_propertySet->propertyAt(i).id());
+        properties.add(PropertyHandle(m_propertySet->propertyAt(i).id()));
+
+    for (const auto& key: m_svgPropertyMap.keys())
+        properties.add(PropertyHandle(*key));
+
     return properties;
 }
 
@@ -43,46 +87,114 @@ PassRefPtrWillBeRawPtr<Keyframe> StringKeyframe::clone() const
 {
     return adoptRefWillBeNoop(new StringKeyframe(*this));
 }
-PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::createPropertySpecificKeyframe(CSSPropertyID property) const
+
+PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::createPropertySpecificKeyframe(PropertyHandle property) const
 {
-    return adoptPtrWillBeNoop(new PropertySpecificKeyframe(offset(), &easing(), propertyValue(property), composite()));
+    if (property.isCSSProperty())
+        return adoptPtrWillBeNoop(new CSSPropertySpecificKeyframe(offset(), &easing(), cssPropertyValue(property.cssProperty()), composite()));
+
+    ASSERT(property.isSVGAttribute());
+    return adoptPtrWillBeNoop(new SVGPropertySpecificKeyframe(offset(), &easing(), svgPropertyValue(*property.svgAttribute()), composite()));
 }
 
-void StringKeyframe::trace(Visitor* visitor)
+DEFINE_TRACE(StringKeyframe)
 {
     visitor->trace(m_propertySet);
     Keyframe::trace(visitor);
 }
 
-StringKeyframe::PropertySpecificKeyframe::PropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, CSSValue* value, AnimationEffect::CompositeOperation op)
+StringKeyframe::CSSPropertySpecificKeyframe::CSSPropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, CSSValue* value, EffectModel::CompositeOperation op)
     : Keyframe::PropertySpecificKeyframe(offset, easing, op)
     , m_value(value)
 { }
 
-StringKeyframe::PropertySpecificKeyframe::PropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, CSSValue* value)
-    : Keyframe::PropertySpecificKeyframe(offset, easing, AnimationEffect::CompositeReplace)
+StringKeyframe::CSSPropertySpecificKeyframe::CSSPropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, CSSValue* value)
+    : Keyframe::PropertySpecificKeyframe(offset, easing, EffectModel::CompositeReplace)
     , m_value(value)
 {
     ASSERT(!isNull(m_offset));
 }
 
-PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::PropertySpecificKeyframe::createInterpolation(CSSPropertyID property, Keyframe::PropertySpecificKeyframe* end, Element* element) const
+void StringKeyframe::CSSPropertySpecificKeyframe::populateAnimatableValue(CSSPropertyID property, Element& element, const ComputedStyle* baseStyle) const
 {
+    if (!m_animatableValueCache && (baseStyle || !m_value->isInheritedValue()))
+        m_animatableValueCache = StyleResolver::createAnimatableValueSnapshot(element, baseStyle, property, m_value.get());
+}
+
+namespace {
+InterpolationRange setRange(CSSPropertyID id)
+{
+    switch (id) {
+    case CSSPropertyOrphans:
+    case CSSPropertyWebkitColumnCount:
+    case CSSPropertyWidows:
+        return RangeRoundGreaterThanOrEqualToOne;
+    case CSSPropertyWebkitColumnRuleWidth:
+    case CSSPropertyZIndex:
+        return RangeRound;
+    case CSSPropertyFloodOpacity:
+    case CSSPropertyStopOpacity:
+    case CSSPropertyStrokeOpacity:
+    case CSSPropertyShapeImageThreshold:
+        return RangeZeroToOne;
+    case CSSPropertyFillOpacity:
+    case CSSPropertyOpacity:
+        return RangeOpacityFIXME;
+    case CSSPropertyStrokeMiterlimit:
+        return RangeGreaterThanOrEqualToOne;
+    case CSSPropertyFontSizeAdjust:
+        return RangeNonNegative;
+    default:
+        ASSERT_NOT_REACHED();
+        return RangeAll;
+    }
+}
+
+} // namespace
+
+PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::CSSPropertySpecificKeyframe::maybeCreateInterpolation(PropertyHandle propertyHandle, Keyframe::PropertySpecificKeyframe& end, Element* element, const ComputedStyle* baseStyle) const
+{
+    CSSPropertyID property = propertyHandle.cssProperty();
+
+    // FIXME: Refactor this into a generic piece that lives in InterpolationEffect, and a template parameter specific converter.
     CSSValue* fromCSSValue = m_value.get();
-    CSSValue* toCSSValue = toStringPropertySpecificKeyframe(end)->value();
-    ValueRange range = ValueRangeAll;
+    CSSValue* toCSSValue = toCSSPropertySpecificKeyframe(end).value();
+    InterpolationRange range = RangeAll;
+    bool fallBackToLegacy = false;
 
-    if (!CSSPropertyMetadata::isAnimatableProperty(property))
-        return DefaultStyleInterpolation::create(fromCSSValue, toCSSValue, property);
+    // FIXME: Remove this flag once we can rely on legacy's behaviour being correct.
+    bool forceDefaultInterpolation = false;
 
+    // FIXME: Remove this check once neutral keyframes are implemented in StringKeyframes.
+    if (!fromCSSValue || !toCSSValue)
+        return DeferredLegacyStyleInterpolation::create(fromCSSValue, toCSSValue, property);
+
+    ASSERT(fromCSSValue && toCSSValue);
+
+    if (!CSSPropertyMetadata::isAnimatableProperty(property)) {
+        if (fromCSSValue == toCSSValue)
+            return ConstantStyleInterpolation::create(fromCSSValue, property);
+
+        return nullptr;
+    }
+
+    // FIXME: Generate this giant switch statement.
     switch (property) {
+    case CSSPropertyLineHeight:
+        if (LengthStyleInterpolation::canCreateFrom(*fromCSSValue) && LengthStyleInterpolation::canCreateFrom(*toCSSValue))
+            return LengthStyleInterpolation::create(*fromCSSValue, *toCSSValue, property, RangeNonNegative);
+
+        if (DoubleStyleInterpolation::canCreateFrom(*fromCSSValue) && DoubleStyleInterpolation::canCreateFrom(*toCSSValue))
+            return DoubleStyleInterpolation::create(*fromCSSValue, *toCSSValue, property, CSSPrimitiveValue::CSS_NUMBER, RangeNonNegative);
+
+        break;
     case CSSPropertyBorderBottomWidth:
     case CSSPropertyBorderLeftWidth:
     case CSSPropertyBorderRightWidth:
     case CSSPropertyBorderTopWidth:
+    case CSSPropertyFlexBasis:
     case CSSPropertyFontSize:
     case CSSPropertyHeight:
-    case CSSPropertyLineHeight:
     case CSSPropertyMaxHeight:
     case CSSPropertyMaxWidth:
     case CSSPropertyMinHeight:
@@ -93,61 +205,354 @@ PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::PropertySpecificKeyframe::
     case CSSPropertyPaddingRight:
     case CSSPropertyPaddingTop:
     case CSSPropertyPerspective:
+    case CSSPropertyR:
+    case CSSPropertyRx:
+    case CSSPropertyRy:
     case CSSPropertyShapeMargin:
+    case CSSPropertyStrokeWidth:
+    case CSSPropertyWebkitBorderHorizontalSpacing:
+    case CSSPropertyWebkitBorderVerticalSpacing:
+    case CSSPropertyWebkitColumnGap:
+    case CSSPropertyWebkitColumnWidth:
     case CSSPropertyWidth:
-        range = ValueRangeNonNegative;
+        range = RangeNonNegative;
         // Fall through
+    case CSSPropertyBaselineShift:
     case CSSPropertyBottom:
+    case CSSPropertyCx:
+    case CSSPropertyCy:
     case CSSPropertyLeft:
     case CSSPropertyLetterSpacing:
     case CSSPropertyMarginBottom:
     case CSSPropertyMarginLeft:
     case CSSPropertyMarginRight:
     case CSSPropertyMarginTop:
+    case CSSPropertyMotionOffset:
     case CSSPropertyOutlineOffset:
     case CSSPropertyRight:
+    case CSSPropertyStrokeDashoffset:
     case CSSPropertyTop:
     case CSSPropertyVerticalAlign:
     case CSSPropertyWordSpacing:
-        if (LengthStyleInterpolation::canCreateFrom(*fromCSSValue) && LengthStyleInterpolation::canCreateFrom(*toCSSValue))
-            return LengthStyleInterpolation::create(fromCSSValue, toCSSValue, property, range);
+    case CSSPropertyWebkitColumnRuleWidth:
+    case CSSPropertyWebkitPerspectiveOriginX:
+    case CSSPropertyWebkitPerspectiveOriginY:
+    case CSSPropertyWebkitTransformOriginX:
+    case CSSPropertyWebkitTransformOriginY:
+    case CSSPropertyWebkitTransformOriginZ:
+    case CSSPropertyX:
+    case CSSPropertyY:
+        if (LengthStyleInterpolation::canCreateFrom(*fromCSSValue, property) && LengthStyleInterpolation::canCreateFrom(*toCSSValue, property))
+            return LengthStyleInterpolation::create(*fromCSSValue, *toCSSValue, property, range);
+
+        // FIXME: Handle keywords e.g. 'smaller', 'larger'.
+        if (property == CSSPropertyFontSize)
+            fallBackToLegacy = true;
+
+        // FIXME: Handle keywords e.g. 'baseline', 'sub'.
+        if (property == CSSPropertyBaselineShift)
+            fallBackToLegacy = true;
+
         break;
-    default:
+    case CSSPropertyOrphans:
+    case CSSPropertyWidows:
+    case CSSPropertyZIndex:
+    case CSSPropertyWebkitColumnCount:
+    case CSSPropertyShapeImageThreshold:
+    case CSSPropertyFillOpacity:
+    case CSSPropertyFloodOpacity:
+    case CSSPropertyFontSizeAdjust:
+    case CSSPropertyOpacity:
+    case CSSPropertyStopOpacity:
+    case CSSPropertyStrokeOpacity:
+    case CSSPropertyStrokeMiterlimit:
+        if (DoubleStyleInterpolation::canCreateFrom(*fromCSSValue) && DoubleStyleInterpolation::canCreateFrom(*toCSSValue))
+            return DoubleStyleInterpolation::create(*fromCSSValue, *toCSSValue, property, toCSSPrimitiveValue(fromCSSValue)->primitiveType(), setRange(property));
+        break;
+
+    case CSSPropertyMotionRotation: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = DoubleStyleInterpolation::maybeCreateFromMotionRotation(*fromCSSValue, *toCSSValue, property);
+        if (interpolation)
+            return interpolation.release();
+            break;
+        }
+    case CSSPropertyVisibility:
+        if (VisibilityStyleInterpolation::canCreateFrom(*fromCSSValue) && VisibilityStyleInterpolation::canCreateFrom(*toCSSValue) && (VisibilityStyleInterpolation::isVisible(*fromCSSValue) || VisibilityStyleInterpolation::isVisible(*toCSSValue)))
+            return VisibilityStyleInterpolation::create(*fromCSSValue, *toCSSValue, property);
+
+        break;
+
+    case CSSPropertyBackgroundColor:
+    case CSSPropertyBorderBottomColor:
+    case CSSPropertyBorderLeftColor:
+    case CSSPropertyBorderRightColor:
+    case CSSPropertyBorderTopColor:
+    case CSSPropertyColor:
+    case CSSPropertyFill:
+    case CSSPropertyFloodColor:
+    case CSSPropertyLightingColor:
+    case CSSPropertyOutlineColor:
+    case CSSPropertyStopColor:
+    case CSSPropertyStroke:
+    case CSSPropertyTextDecorationColor:
+    case CSSPropertyWebkitColumnRuleColor:
+    case CSSPropertyWebkitTextStrokeColor:
+        {
+            RefPtrWillBeRawPtr<Interpolation> interpolation = ColorStyleInterpolation::maybeCreateFromColor(*fromCSSValue, *toCSSValue, property);
+            if (interpolation)
+                return interpolation.release();
+
+            // Current color should use LegacyStyleInterpolation
+            if (ColorStyleInterpolation::shouldUseLegacyStyleInterpolation(*fromCSSValue, *toCSSValue))
+                fallBackToLegacy = true;
+
+            break;
+        }
+
+    case CSSPropertyBorderImageSource:
+    case CSSPropertyListStyleImage:
+    case CSSPropertyWebkitMaskBoxImageSource:
+        if (fromCSSValue == toCSSValue)
+            return ConstantStyleInterpolation::create(fromCSSValue, property);
+
+        if (ImageStyleInterpolation::canCreateFrom(*fromCSSValue) && ImageStyleInterpolation::canCreateFrom(*toCSSValue))
+            return ImageStyleInterpolation::create(*fromCSSValue, *toCSSValue, property);
+
+        forceDefaultInterpolation = true;
+        break;
+    case CSSPropertyBorderBottomLeftRadius:
+    case CSSPropertyBorderBottomRightRadius:
+    case CSSPropertyBorderTopLeftRadius:
+    case CSSPropertyBorderTopRightRadius:
+        range = RangeNonNegative;
+        // Fall through
+    case CSSPropertyObjectPosition:
+        if (LengthPairStyleInterpolation::canCreateFrom(*fromCSSValue) && LengthPairStyleInterpolation::canCreateFrom(*toCSSValue))
+            return LengthPairStyleInterpolation::create(*fromCSSValue, *toCSSValue, property, range);
+        break;
+
+    case CSSPropertyPerspectiveOrigin:
+    case CSSPropertyTransformOrigin: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = ListStyleInterpolation<LengthStyleInterpolation>::maybeCreateFromList(*fromCSSValue, *toCSSValue, property, range);
+        if (interpolation)
+            return interpolation.release();
+
+        // FIXME: Handle keywords: top, right, left, center, bottom
+        fallBackToLegacy = true;
+
         break;
     }
 
-    if (DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*fromCSSValue) || DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*toCSSValue))
-        return DeferredLegacyStyleInterpolation::create(fromCSSValue, toCSSValue, property);
+    case CSSPropertyBoxShadow:
+    case CSSPropertyTextShadow: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = ListStyleInterpolation<ShadowStyleInterpolation>::maybeCreateFromList(*fromCSSValue, *toCSSValue, property);
+        if (interpolation)
+            return interpolation.release();
 
-    // FIXME: Remove the use of AnimatableValues, RenderStyles and Elements here.
-    // FIXME: Remove this cache
-    ASSERT(element);
-    if (!m_animatableValueCache)
-        m_animatableValueCache = StyleResolver::createAnimatableValueSnapshot(*element, property, *fromCSSValue);
+        // FIXME: AnimatableShadow incorrectly animates between inset and non-inset values so it will never indicate it needs default interpolation
+        if (ShadowStyleInterpolation::usesDefaultStyleInterpolation(*fromCSSValue, *toCSSValue)) {
+            forceDefaultInterpolation = true;
+            break;
+        }
 
-    RefPtrWillBeRawPtr<AnimatableValue> to = StyleResolver::createAnimatableValueSnapshot(*element, property, *toCSSValue);
-    toStringPropertySpecificKeyframe(end)->m_animatableValueCache = to;
+        // FIXME: Handle interpolation from/to none, unspecified color values
+        fallBackToLegacy = true;
 
-    return LegacyStyleInterpolation::create(m_animatableValueCache.get(), to.release(), property);
+        break;
+
+    }
+
+    case CSSPropertyClip: {
+        if (LengthBoxStyleInterpolation::usesDefaultInterpolation(*fromCSSValue, *toCSSValue)) {
+            forceDefaultInterpolation = true;
+            break;
+        }
+        RefPtrWillBeRawPtr<Interpolation> interpolation = LengthBoxStyleInterpolation::maybeCreateFrom(*fromCSSValue, *toCSSValue, property);
+        if (interpolation)
+            return interpolation.release();
+        break;
+    }
+
+    case CSSPropertyBorderImageSlice:
+    case CSSPropertyWebkitMaskBoxImageSlice: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = ImageSliceStyleInterpolation::maybeCreate(*fromCSSValue, *toCSSValue, property);
+        if (interpolation)
+            return interpolation.release();
+        if (ImageSliceStyleInterpolation::usesDefaultInterpolation(*fromCSSValue, *toCSSValue))
+            forceDefaultInterpolation = true;
+
+        break;
+    }
+
+    case CSSPropertyStrokeDasharray: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = SVGStrokeDasharrayStyleInterpolation::maybeCreate(*fromCSSValue, *toCSSValue, property);
+        if (interpolation)
+            return interpolation.release();
+
+        break;
+    }
+
+    case CSSPropertyWebkitFilter: {
+        RefPtrWillBeRawPtr<Interpolation> interpolation = FilterStyleInterpolation::maybeCreateList(*fromCSSValue, *toCSSValue, property);
+        if (interpolation)
+            return interpolation.release();
+
+        // FIXME: Support drop shadow interpolation.
+        fallBackToLegacy = true;
+        break;
+    }
+
+    default:
+        // Fall back to LegacyStyleInterpolation.
+        fallBackToLegacy = true;
+        break;
+    }
+
+    if (fromCSSValue == toCSSValue)
+        return ConstantStyleInterpolation::create(fromCSSValue, property);
+
+    if (forceDefaultInterpolation)
+        return nullptr;
+
+    if (fromCSSValue->isCSSWideKeyword() || toCSSValue->isCSSWideKeyword())
+        fallBackToLegacy = true;
+
+    if (fallBackToLegacy) {
+        if (DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*fromCSSValue) || DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*toCSSValue)) {
+            // FIXME: Handle these cases outside of DeferredLegacyStyleInterpolation.
+            return DeferredLegacyStyleInterpolation::create(fromCSSValue, toCSSValue, property);
+        }
+
+        // FIXME: Remove the use of AnimatableValues and Elements here.
+        ASSERT(element);
+        populateAnimatableValue(property, *element, baseStyle);
+        end.populateAnimatableValue(property, *element, baseStyle);
+        return LegacyStyleInterpolation::create(getAnimatableValue(), end.getAnimatableValue(), property);
+    }
+
+    ASSERT(AnimatableValue::usesDefaultInterpolation(
+        StyleResolver::createAnimatableValueSnapshot(*element, baseStyle, property, fromCSSValue).get(),
+        StyleResolver::createAnimatableValueSnapshot(*element, baseStyle, property, toCSSValue).get()));
+
+    return nullptr;
+
 }
 
-PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::PropertySpecificKeyframe::neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const
+PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::CSSPropertySpecificKeyframe::neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const
 {
-    return adoptPtrWillBeNoop(new PropertySpecificKeyframe(offset, easing, 0, AnimationEffect::CompositeAdd));
+    return adoptPtrWillBeNoop(new CSSPropertySpecificKeyframe(offset, easing, static_cast<CSSValue*>(0), EffectModel::CompositeAdd));
 }
 
-PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::PropertySpecificKeyframe::cloneWithOffset(double offset) const
+PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::CSSPropertySpecificKeyframe::cloneWithOffset(double offset) const
 {
-    Keyframe::PropertySpecificKeyframe* theClone = new PropertySpecificKeyframe(offset, m_easing, m_value.get());
-    toStringPropertySpecificKeyframe(theClone)->m_animatableValueCache = m_animatableValueCache;
+    Keyframe::PropertySpecificKeyframe* theClone = new CSSPropertySpecificKeyframe(offset, m_easing, m_value.get());
+    toCSSPropertySpecificKeyframe(theClone)->m_animatableValueCache = m_animatableValueCache;
     return adoptPtrWillBeNoop(theClone);
 }
 
-void StringKeyframe::PropertySpecificKeyframe::trace(Visitor* visitor)
+DEFINE_TRACE(StringKeyframe::CSSPropertySpecificKeyframe)
 {
     visitor->trace(m_value);
     visitor->trace(m_animatableValueCache);
     Keyframe::PropertySpecificKeyframe::trace(visitor);
 }
 
+SVGPropertySpecificKeyframe::SVGPropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, const String& value, EffectModel::CompositeOperation op)
+    : Keyframe::PropertySpecificKeyframe(offset, easing, op)
+    , m_value(value)
+{
 }
+
+SVGPropertySpecificKeyframe::SVGPropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, const String& value)
+    : Keyframe::PropertySpecificKeyframe(offset, easing, EffectModel::CompositeReplace)
+    , m_value(value)
+{
+    ASSERT(!isNull(m_offset));
+}
+
+DEFINE_TRACE(StringKeyframe::SVGPropertySpecificKeyframe)
+{
+    Keyframe::PropertySpecificKeyframe::trace(visitor);
+}
+
+PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> SVGPropertySpecificKeyframe::cloneWithOffset(double offset) const
+{
+    return adoptPtrWillBeNoop(new SVGPropertySpecificKeyframe(offset, m_easing, m_value));
+}
+
+PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> SVGPropertySpecificKeyframe::neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const
+{
+    return adoptPtrWillBeNoop(new SVGPropertySpecificKeyframe(offset, easing, "", EffectModel::CompositeAdd));
+}
+
+namespace {
+
+PassRefPtrWillBeRawPtr<Interpolation> createSVGInterpolation(SVGPropertyBase* fromValue, SVGPropertyBase* toValue, SVGAnimatedPropertyBase* attribute)
+{
+    RefPtrWillBeRawPtr<Interpolation> interpolation = nullptr;
+    ASSERT(fromValue->type() == toValue->type());
+    switch (fromValue->type()) {
+    case AnimatedAngle:
+        if (AngleSVGInterpolation::canCreateFrom(fromValue) && AngleSVGInterpolation::canCreateFrom(toValue))
+            return AngleSVGInterpolation::create(fromValue, toValue, attribute);
+        break;
+    case AnimatedInteger:
+        return IntegerSVGInterpolation::create(fromValue, toValue, attribute);
+    case AnimatedIntegerOptionalInteger: {
+        int min = &attribute->attributeName() == &SVGNames::orderAttr ? 1 : 0;
+        return IntegerOptionalIntegerSVGInterpolation::create(fromValue, toValue, attribute, min);
+    }
+    case AnimatedLength:
+        return LengthSVGInterpolation::create(fromValue, toValue, attribute);
+    case AnimatedLengthList:
+        interpolation = ListSVGInterpolation<LengthSVGInterpolation>::maybeCreate(fromValue, toValue, attribute);
+        break;
+    case AnimatedNumber: {
+        SVGNumberNegativeValuesMode negativeValuesMode = &attribute->attributeName() == &SVGNames::pathLengthAttr ? ForbidNegativeNumbers : AllowNegativeNumbers;
+        return NumberSVGInterpolation::create(fromValue, toValue, attribute, negativeValuesMode);
+    }
+    case AnimatedNumberOptionalNumber:
+        return NumberOptionalNumberSVGInterpolation::create(fromValue, toValue, attribute);
+    case AnimatedNumberList:
+        interpolation = ListSVGInterpolation<NumberSVGInterpolation>::maybeCreate(fromValue, toValue, attribute);
+        break;
+    case AnimatedPath:
+        interpolation = PathSVGInterpolation::maybeCreate(fromValue, toValue, attribute);
+        break;
+    case AnimatedPoints:
+        interpolation = ListSVGInterpolation<PointSVGInterpolation>::maybeCreate(fromValue, toValue, attribute);
+        break;
+    case AnimatedRect:
+        return RectSVGInterpolation::create(fromValue, toValue, attribute);
+    case AnimatedTransformList:
+        interpolation = ListSVGInterpolation<TransformSVGInterpolation>::maybeCreate(fromValue, toValue, attribute);
+        break;
+
+    // TODO(ericwilligers): Support more animation types.
+    default:
+        break;
+    }
+    if (interpolation)
+        return interpolation.release();
+
+    return DefaultSVGInterpolation::create(fromValue, toValue, attribute);
+}
+
+} // namespace
+
+PassRefPtrWillBeRawPtr<Interpolation> SVGPropertySpecificKeyframe::maybeCreateInterpolation(PropertyHandle propertyHandle, Keyframe::PropertySpecificKeyframe& end, Element* element, const ComputedStyle* baseStyle) const
+{
+    ASSERT(element);
+    RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> attribute = toSVGElement(element)->propertyFromAttribute(*propertyHandle.svgAttribute());
+    ASSERT(attribute);
+
+    RefPtrWillBeRawPtr<SVGPropertyBase> fromValue = attribute->currentValueBase()->cloneForAnimation(m_value);
+    RefPtrWillBeRawPtr<SVGPropertyBase> toValue = attribute->currentValueBase()->cloneForAnimation(toSVGPropertySpecificKeyframe(end).value());
+
+    if (!fromValue || !toValue)
+        return nullptr;
+
+    return createSVGInterpolation(fromValue.get(), toValue.get(), attribute.get());
+}
+
+} // namespace blink

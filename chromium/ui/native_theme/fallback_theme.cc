@@ -82,13 +82,31 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       color_utils::AlphaBlend(
           SK_ColorBLACK, kTextfieldSelectionBackgroundFocused, 0xBB);
   static const SkColor kResultsTableSelectedOrHoveredUrl =
-      SkColorSetARGB(0xff, 0x00, 0x66, 0x22);
+      SkColorSetARGB(0xff, 0x0b, 0x80, 0x43);
   static const SkColor kResultsTableNormalDivider = color_utils::AlphaBlend(
       kResultsTableNormalText, kTextfieldDefaultBackground, 0x34);
   static const SkColor kResultsTableHoveredDivider = color_utils::AlphaBlend(
       kResultsTableHoveredText, kResultsTableHoveredBackground, 0x34);
   static const SkColor kResultsTabSelectedDivider = color_utils::AlphaBlend(
       kResultsTableSelectedText, kTextfieldSelectionBackgroundFocused, 0x34);
+  const SkColor kPositiveTextColor = SkColorSetRGB(0x0b, 0x80, 0x43);
+  const SkColor kNegativeTextColor = SkColorSetRGB(0xc5, 0x39, 0x29);
+  static const SkColor kResultsTablePositiveText = color_utils::AlphaBlend(
+      kPositiveTextColor, kTextfieldDefaultBackground, 0xDD);
+  static const SkColor kResultsTablePositiveHoveredText =
+      color_utils::AlphaBlend(kPositiveTextColor,
+                              kResultsTableHoveredBackground, 0xDD);
+  static const SkColor kResultsTablePositiveSelectedText =
+      color_utils::AlphaBlend(kPositiveTextColor,
+                              kTextfieldSelectionBackgroundFocused, 0xDD);
+  static const SkColor kResultsTableNegativeText = color_utils::AlphaBlend(
+      kNegativeTextColor, kTextfieldDefaultBackground, 0xDD);
+  static const SkColor kResultsTableNegativeHoveredText =
+      color_utils::AlphaBlend(kNegativeTextColor,
+                              kResultsTableHoveredBackground, 0xDD);
+  static const SkColor kResultsTableNegativeSelectedText =
+      color_utils::AlphaBlend(kNegativeTextColor,
+                              kTextfieldSelectionBackgroundFocused, 0xDD);
 
   SkColor color;
   if (CommonThemeGetSystemColor(color_id, &color))
@@ -205,6 +223,18 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       return kResultsTableHoveredDivider;
     case kColorId_ResultsTableSelectedDivider:
       return kResultsTabSelectedDivider;
+    case kColorId_ResultsTablePositiveText:
+      return kResultsTablePositiveText;
+    case kColorId_ResultsTablePositiveHoveredText:
+      return kResultsTablePositiveHoveredText;
+    case kColorId_ResultsTablePositiveSelectedText:
+      return kResultsTablePositiveSelectedText;
+    case kColorId_ResultsTableNegativeText:
+      return kResultsTableNegativeText;
+    case kColorId_ResultsTableNegativeHoveredText:
+      return kResultsTableNegativeHoveredText;
+    case kColorId_ResultsTableNegativeSelectedText:
+      return kResultsTableNegativeSelectedText;
 
     default:
       NOTREACHED();

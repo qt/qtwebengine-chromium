@@ -86,7 +86,7 @@ const char* inet_ntop_v6(const void* src, char* dst, socklen_t size) {
       reinterpret_cast<const uint16*>(src);
   int runpos[8];
   int current = 1;
-  int max = 1;
+  int max = 0;
   int maxpos = -1;
   int run_array_size = ARRAY_SIZE(runpos);
   // Run over the address marking runs of 0s.
@@ -100,11 +100,11 @@ const char* inet_ntop_v6(const void* src, char* dst, socklen_t size) {
       ++current;
     } else {
       runpos[i] = -1;
-      current =1;
+      current = 1;
     }
   }
 
-  if (max > 1) {
+  if (max > 0) {
     int tmpmax = maxpos;
     // Run back through, setting -1 for all but the longest run.
     for (int i = run_array_size - 1; i >= 0; i--) {
@@ -452,5 +452,20 @@ bool GetCurrentProcessIntegrityLevel(int* level) {
     CloseHandle(token);
   }
   return ret;
+}
+
+void SetCurrentThreadName(const char* name) {
+  struct {
+    DWORD dwType;
+    LPCSTR szName;
+    DWORD dwThreadID;
+    DWORD dwFlags;
+  } threadname_info = {0x100, name, static_cast<DWORD>(-1), 0};
+
+  __try {
+    ::RaiseException(0x406D1388, 0, sizeof(threadname_info) / sizeof(DWORD),
+                     reinterpret_cast<ULONG_PTR*>(&threadname_info));
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
 }
 }  // namespace rtc

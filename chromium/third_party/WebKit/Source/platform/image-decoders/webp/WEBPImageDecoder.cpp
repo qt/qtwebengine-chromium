@@ -29,9 +29,6 @@
 #include "config.h"
 #include "platform/image-decoders/webp/WEBPImageDecoder.h"
 
-#include "platform/PlatformInstrumentation.h"
-#include "platform/RuntimeEnabledFeatures.h"
-
 #if USE(QCMSLIB)
 #include "qcms.h"
 #endif
@@ -125,22 +122,18 @@ void alphaBlendNonPremultiplied(blink::ImageFrame& src, blink::ImageFrame& dst, 
 
 namespace blink {
 
-WEBPImageDecoder::WEBPImageDecoder(ImageSource::AlphaOption alphaOption,
-    ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption,
-    size_t maxDecodedBytes)
-    : ImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes)
+WEBPImageDecoder::WEBPImageDecoder(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption colorOptions, size_t maxDecodedBytes)
+    : ImageDecoder(alphaOption, colorOptions, maxDecodedBytes)
     , m_decoder(0)
     , m_formatFlags(0)
     , m_frameBackgroundHasAlpha(false)
     , m_hasColorProfile(false)
 #if USE(QCMSLIB)
-    , m_haveReadProfile(false)
     , m_transform(0)
 #endif
     , m_demux(0)
     , m_demuxState(WEBP_DEMUX_PARSING_HEADER)
     , m_haveAlreadyParsedThisData(false)
-    , m_haveReadAnimationParameters(false)
     , m_repetitionCount(cAnimationLoopOnce)
     , m_decodedHeight(0)
 {
@@ -170,72 +163,11 @@ void WEBPImageDecoder::clearDecoder()
     m_frameBackgroundHasAlpha = false;
 }
 
-bool WEBPImageDecoder::isSizeAvailable()
-{
-    if (!ImageDecoder::isSizeAvailable())
-        updateDemuxer();
-
-    return ImageDecoder::isSizeAvailable();
-}
-
-size_t WEBPImageDecoder::frameCount()
-{
-    if (!updateDemuxer())
-        return 0;
-
-    return m_frameBufferCache.size();
-}
-
-ImageFrame* WEBPImageDecoder::frameBufferAtIndex(size_t index)
-{
-    if (index >= frameCount())
-        return 0;
-
-    ImageFrame& frame = m_frameBufferCache[index];
-    if (frame.status() == ImageFrame::FrameComplete)
-        return &frame;
-
-    Vector<size_t> framesToDecode;
-    size_t frameToDecode = index;
-    do {
-        framesToDecode.append(frameToDecode);
-        frameToDecode = m_frameBufferCache[frameToDecode].requiredPreviousFrameIndex();
-    } while (frameToDecode != kNotFound && m_frameBufferCache[frameToDecode].status() != ImageFrame::FrameComplete);
-
-    ASSERT(m_demux);
-    for (size_t i = framesToDecode.size(); i > 0; --i) {
-        size_t frameIndex = framesToDecode[i - 1];
-        if ((m_formatFlags & ANIMATION_FLAG) && !initFrameBuffer(frameIndex))
-            return 0;
-        WebPIterator webpFrame;
-        if (!WebPDemuxGetFrame(m_demux, frameIndex + 1, &webpFrame))
-            return 0;
-        PlatformInstrumentation::willDecodeImage("WEBP");
-        decode(webpFrame.fragment.bytes, webpFrame.fragment.size, false, frameIndex);
-        PlatformInstrumentation::didDecodeImage();
-        WebPDemuxReleaseIterator(&webpFrame);
-
-        if (failed())
-            return 0;
-
-        // We need more data to continue decoding.
-        if (m_frameBufferCache[frameIndex].status() != ImageFrame::FrameComplete)
-            break;
-    }
-
-    // It is also a fatal error if all data is received and we have decoded all
-    // frames available but the file is truncated.
-    if (index >= m_frameBufferCache.size() - 1 && isAllDataReceived() && m_demux && m_demuxState != WEBP_DEMUX_DONE)
-        setFailed();
-
-    frame.notifyBitmapIfPixelsChanged();
-    return &frame;
-}
-
 void WEBPImageDecoder::setData(SharedBuffer* data, bool allDataReceived)
 {
     if (failed())
         return;
+
     ImageDecoder::setData(data, allDataReceived);
     m_haveAlreadyParsedThisData = false;
 }
@@ -270,9 +202,9 @@ bool WEBPImageDecoder::updateDemuxer()
 
     m_haveAlreadyParsedThisData = true;
 
-    const unsigned webpHeaderSize = 20;
+    const unsigned webpHeaderSize = 30;
     if (m_data->size() < webpHeaderSize)
-        return false; // Wait for headers so that WebPDemuxPartial doesn't return null.
+        return false; // Await VP8X header so WebPDemuxPartial succeeds.
 
     WebPDemuxDelete(m_demux);
     WebPData inputData = { reinterpret_cast<const uint8_t*>(m_data->data()), m_data->size() };
@@ -280,70 +212,43 @@ bool WEBPImageDecoder::updateDemuxer()
     if (!m_demux || (isAllDataReceived() && m_demuxState != WEBP_DEMUX_DONE))
         return setFailed();
 
-    if (m_demuxState <= WEBP_DEMUX_PARSING_HEADER)
-        return false; // Not enough data for parsing canvas width/height yet.
+    ASSERT(m_demuxState > WEBP_DEMUX_PARSING_HEADER);
+    if (!WebPDemuxGetI(m_demux, WEBP_FF_FRAME_COUNT))
+        return false; // Wait until the encoded image frame data arrives.
 
-    bool hasAnimation = (m_formatFlags & ANIMATION_FLAG);
-    if (!ImageDecoder::isSizeAvailable()) {
+    if (!isDecodedSizeAvailable()) {
+        int width = WebPDemuxGetI(m_demux, WEBP_FF_CANVAS_WIDTH);
+        int height = WebPDemuxGetI(m_demux, WEBP_FF_CANVAS_HEIGHT);
+        if (!setSize(width, height))
+            return setFailed();
+
         m_formatFlags = WebPDemuxGetI(m_demux, WEBP_FF_FORMAT_FLAGS);
-        hasAnimation = (m_formatFlags & ANIMATION_FLAG);
-        if (!hasAnimation)
+        if (!(m_formatFlags & ANIMATION_FLAG)) {
             m_repetitionCount = cAnimationNone;
-        else
-            m_formatFlags &= ~ICCP_FLAG; // FIXME: Implement ICC profile support for animated images.
+        } else {
+            // Since we have parsed at least one frame, even if partially,
+            // the global animation (ANIM) properties have been read since
+            // an ANIM chunk must precede the ANMF frame chunks.
+            m_repetitionCount = WebPDemuxGetI(m_demux, WEBP_FF_LOOP_COUNT);
+            // Repetition count is always <= 16 bits.
+            ASSERT(m_repetitionCount == (m_repetitionCount & 0xffff));
+            // Repetition count is the number of animation cycles to show,
+            // where 0 means "infinite". But ImageSource::repetitionCount()
+            // returns -1 for "infinite", and 0 and up for "show the image
+            // animation one cycle more than the value". Subtract one here
+            // to correctly handle the finite and infinite cases.
+            --m_repetitionCount;
+            // FIXME: Implement ICC profile support for animated images.
+            m_formatFlags &= ~ICCP_FLAG;
+        }
+
 #if USE(QCMSLIB)
         if ((m_formatFlags & ICCP_FLAG) && !ignoresGammaAndColorProfile())
-            m_hasColorProfile = true;
+            readColorProfile();
 #endif
-        if (!setSize(WebPDemuxGetI(m_demux, WEBP_FF_CANVAS_WIDTH), WebPDemuxGetI(m_demux, WEBP_FF_CANVAS_HEIGHT)))
-            return setFailed();
     }
 
-    ASSERT(ImageDecoder::isSizeAvailable());
-    const size_t newFrameCount = WebPDemuxGetI(m_demux, WEBP_FF_FRAME_COUNT);
-    if (hasAnimation && !m_haveReadAnimationParameters && newFrameCount) {
-        // As we have parsed at least one frame (even if partially),
-        // we must already have parsed the animation properties.
-        // This is because ANIM chunk always precedes ANMF chunks.
-        m_repetitionCount = WebPDemuxGetI(m_demux, WEBP_FF_LOOP_COUNT);
-        ASSERT(m_repetitionCount == (m_repetitionCount & 0xffff)); // Loop count is always <= 16 bits.
-        // |m_repetitionCount| is the total number of animation cycles to show,
-        // with 0 meaning "infinite". But ImageSource::repetitionCount()
-        // returns -1 for "infinite", and 0 and up for "show the animation one
-        // cycle more than this value". By subtracting one here, we convert
-        // both finite and infinite cases correctly.
-        --m_repetitionCount;
-        m_haveReadAnimationParameters = true;
-    }
-
-    const size_t oldFrameCount = m_frameBufferCache.size();
-    if (newFrameCount > oldFrameCount) {
-        m_frameBufferCache.resize(newFrameCount);
-        for (size_t i = oldFrameCount; i < newFrameCount; ++i) {
-            m_frameBufferCache[i].setPremultiplyAlpha(m_premultiplyAlpha);
-            if (!hasAnimation) {
-                ASSERT(!i);
-                m_frameBufferCache[i].setRequiredPreviousFrameIndex(kNotFound);
-                continue;
-            }
-            WebPIterator animatedFrame;
-            WebPDemuxGetFrame(m_demux, i + 1, &animatedFrame);
-            ASSERT(animatedFrame.complete == 1);
-            m_frameBufferCache[i].setDuration(animatedFrame.duration);
-            m_frameBufferCache[i].setDisposalMethod(animatedFrame.dispose_method == WEBP_MUX_DISPOSE_BACKGROUND ? ImageFrame::DisposeOverwriteBgcolor : ImageFrame::DisposeKeep);
-            m_frameBufferCache[i].setAlphaBlendSource(animatedFrame.blend_method == WEBP_MUX_BLEND ? ImageFrame::BlendAtopPreviousFrame : ImageFrame::BlendAtopBgcolor);
-            IntRect frameRect(animatedFrame.x_offset, animatedFrame.y_offset, animatedFrame.width, animatedFrame.height);
-            // Make sure the frameRect doesn't extend outside the buffer.
-            if (frameRect.maxX() > size().width())
-                frameRect.setWidth(size().width() - animatedFrame.x_offset);
-            if (frameRect.maxY() > size().height())
-                frameRect.setHeight(size().height() - animatedFrame.y_offset);
-            m_frameBufferCache[i].setOriginalFrameRect(frameRect);
-            m_frameBufferCache[i].setRequiredPreviousFrameIndex(findRequiredPreviousFrame(i, !animatedFrame.has_alpha));
-            WebPDemuxReleaseIterator(&animatedFrame);
-        }
-    }
-
+    ASSERT(isDecodedSizeAvailable());
     return true;
 }
 
@@ -458,7 +363,7 @@ void WEBPImageDecoder::readColorProfile()
         ignoreProfile = true;
 
     if (!ignoreProfile)
-        createColorTransform(profileData, profileSize);
+        m_hasColorProfile = createColorTransform(profileData, profileSize);
 
     WebPDemuxReleaseChunkIterator(&chunkIterator);
 }
@@ -482,16 +387,11 @@ void WEBPImageDecoder::applyPostProcessing(size_t frameIndex)
     const int top = frameRect.y();
 
 #if USE(QCMSLIB)
-    if ((m_formatFlags & ICCP_FLAG) && !ignoresGammaAndColorProfile()) {
-        if (!m_haveReadProfile) {
-            readColorProfile();
-            m_haveReadProfile = true;
-        }
+    if (qcms_transform* transform = colorTransform()) {
         for (int y = m_decodedHeight; y < decodedHeight; ++y) {
             const int canvasY = top + y;
             uint8_t* row = reinterpret_cast<uint8_t*>(buffer.getAddr(left, canvasY));
-            if (qcms_transform* transform = colorTransform())
-                qcms_transform_data_type(transform, row, row, width, QCMS_OUTPUT_RGBX);
+            qcms_transform_data_type(transform, row, row, width, QCMS_OUTPUT_RGBX);
             uint8_t* pixel = row;
             for (int x = 0; x < width; ++x, pixel += 4) {
                 const int canvasX = left + x;
@@ -536,29 +436,76 @@ void WEBPImageDecoder::applyPostProcessing(size_t frameIndex)
     buffer.setPixelsChanged(true);
 }
 
-bool WEBPImageDecoder::decode(const uint8_t* dataBytes, size_t dataSize, bool onlySize, size_t frameIndex)
+size_t WEBPImageDecoder::decodeFrameCount()
+{
+    // If updateDemuxer() fails, return the existing number of frames.  This way
+    // if we get halfway through the image before decoding fails, we won't
+    // suddenly start reporting that the image has zero frames.
+    return updateDemuxer() ? WebPDemuxGetI(m_demux, WEBP_FF_FRAME_COUNT) : m_frameBufferCache.size();
+}
+
+void WEBPImageDecoder::initializeNewFrame(size_t index)
+{
+    if (!(m_formatFlags & ANIMATION_FLAG)) {
+        ASSERT(!index);
+        return;
+    }
+    WebPIterator animatedFrame;
+    WebPDemuxGetFrame(m_demux, index + 1, &animatedFrame);
+    ASSERT(animatedFrame.complete == 1);
+    ImageFrame* buffer = &m_frameBufferCache[index];
+    IntRect frameRect(animatedFrame.x_offset, animatedFrame.y_offset, animatedFrame.width, animatedFrame.height);
+    buffer->setOriginalFrameRect(intersection(frameRect, IntRect(IntPoint(), size())));
+    buffer->setDuration(animatedFrame.duration);
+    buffer->setDisposalMethod(animatedFrame.dispose_method == WEBP_MUX_DISPOSE_BACKGROUND ? ImageFrame::DisposeOverwriteBgcolor : ImageFrame::DisposeKeep);
+    buffer->setAlphaBlendSource(animatedFrame.blend_method == WEBP_MUX_BLEND ? ImageFrame::BlendAtopPreviousFrame : ImageFrame::BlendAtopBgcolor);
+    buffer->setRequiredPreviousFrameIndex(findRequiredPreviousFrame(index, !animatedFrame.has_alpha));
+    WebPDemuxReleaseIterator(&animatedFrame);
+}
+
+void WEBPImageDecoder::decode(size_t index)
+{
+    if (failed())
+        return;
+
+    Vector<size_t> framesToDecode;
+    size_t frameToDecode = index;
+    do {
+        framesToDecode.append(frameToDecode);
+        frameToDecode = m_frameBufferCache[frameToDecode].requiredPreviousFrameIndex();
+    } while (frameToDecode != kNotFound && m_frameBufferCache[frameToDecode].status() != ImageFrame::FrameComplete);
+
+    ASSERT(m_demux);
+    for (auto i = framesToDecode.rbegin(); i != framesToDecode.rend(); ++i) {
+        if ((m_formatFlags & ANIMATION_FLAG) && !initFrameBuffer(*i))
+            return;
+        WebPIterator webpFrame;
+        if (!WebPDemuxGetFrame(m_demux, *i + 1, &webpFrame)) {
+            setFailed();
+        } else {
+            decodeSingleFrame(webpFrame.fragment.bytes, webpFrame.fragment.size, *i);
+            WebPDemuxReleaseIterator(&webpFrame);
+        }
+        if (failed())
+            return;
+
+        // We need more data to continue decoding.
+        if (m_frameBufferCache[*i].status() != ImageFrame::FrameComplete)
+            break;
+    }
+
+    // It is also a fatal error if all data is received and we have decoded all
+    // frames available but the file is truncated.
+    if (index >= m_frameBufferCache.size() - 1 && isAllDataReceived() && m_demux && m_demuxState != WEBP_DEMUX_DONE)
+        setFailed();
+}
+
+bool WEBPImageDecoder::decodeSingleFrame(const uint8_t* dataBytes, size_t dataSize, size_t frameIndex)
 {
     if (failed())
         return false;
 
-    if (!ImageDecoder::isSizeAvailable()) {
-        static const size_t imageHeaderSize = 30;
-        if (dataSize < imageHeaderSize)
-            return false;
-        int width, height;
-        WebPBitstreamFeatures features;
-        if (WebPGetFeatures(dataBytes, dataSize, &features) != VP8_STATUS_OK)
-            return setFailed();
-        width = features.width;
-        height = features.height;
-        m_formatFlags = features.has_alpha ? ALPHA_FLAG : 0;
-        if (!setSize(width, height))
-            return setFailed();
-    }
-
-    ASSERT(ImageDecoder::isSizeAvailable());
-    if (onlySize)
-        return true;
+    ASSERT(isDecodedSizeAvailable());
 
     ASSERT(m_frameBufferCache.size() > frameIndex);
     ImageFrame& buffer = m_frameBufferCache[frameIndex];
@@ -580,7 +527,7 @@ bool WEBPImageDecoder::decode(const uint8_t* dataBytes, size_t dataSize, bool on
         if (!m_premultiplyAlpha)
             mode = outputMode(false);
 #if USE(QCMSLIB)
-        if ((m_formatFlags & ICCP_FLAG) && !ignoresGammaAndColorProfile())
+        if (colorTransform())
             mode = MODE_RGBA; // Decode to RGBA for input to libqcms.
 #endif
         WebPInitDecBuffer(&m_decoderBuffer);

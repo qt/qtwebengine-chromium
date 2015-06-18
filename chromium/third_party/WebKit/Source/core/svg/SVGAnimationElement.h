@@ -32,6 +32,8 @@
 
 namespace blink {
 
+class ExceptionState;
+
 enum AnimationMode {
     NoAnimation,
     FromToAnimation,
@@ -60,9 +62,9 @@ class SVGAnimationElement : public SVGSMILElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // SVGAnimationElement
-    float getStartTime() const;
+    float getStartTime(ExceptionState&) const;
     float getCurrentTime() const;
-    float getSimpleDuration() const;
+    float getSimpleDuration(ExceptionState&) const;
 
     void beginElement();
     void beginElementAt(float offset);
@@ -83,7 +85,8 @@ public:
     enum ShouldApplyAnimation {
         DontApplyAnimation,
         ApplyCSSAnimation,
-        ApplyXMLAnimation
+        ApplyXMLAnimation,
+        ApplyXMLandCSSAnimation
     };
 
     ShouldApplyAnimation shouldApplyAnimation(SVGElement* targetElement, const QualifiedName& attributeName);
@@ -135,7 +138,6 @@ protected:
     void computeCSSPropertyValue(SVGElement*, CSSPropertyID, String& value);
     void determinePropertyValueTypes(const String& from, const String& to);
 
-    bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
@@ -167,12 +169,12 @@ protected:
     void setCalcMode(CalcMode calcMode) { m_calcMode = calcMode; }
 
 private:
-    virtual bool isValid() const override final { return SVGTests::isValid(); }
+    virtual bool isValid() const override final { return SVGTests::isValid(document()); }
 
     virtual void animationAttributeChanged() override;
     void setAttributeType(const AtomicString&);
 
-    void checkInvalidCSSAttributeType(SVGElement*);
+    void checkInvalidCSSAttributeType();
 
     virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString) = 0;
     virtual bool calculateFromAndToValues(const String& fromString, const String& toString) = 0;

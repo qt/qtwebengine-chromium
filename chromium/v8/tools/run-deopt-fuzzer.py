@@ -66,6 +66,8 @@ SUPPORTED_ARCHS = ["android_arm",
                    "android_ia32",
                    "arm",
                    "ia32",
+                   "ppc",
+                   "ppc64",
                    "mipsel",
                    "nacl_ia32",
                    "nacl_x64",
@@ -159,6 +161,9 @@ def BuildOptions():
                     default=False, action="store_true")
   result.add_option("--buildbot",
                     help="Adapt to path structure used on buildbots",
+                    default=False, action="store_true")
+  result.add_option("--dcheck-always-on",
+                    help="Indicates that V8 was compiled with DCHECKs enabled",
                     default=False, action="store_true")
   result.add_option("--command-prefix",
                     help="Prepended to each shell command used to run a test",
@@ -374,7 +379,8 @@ def Execute(arch, mode, args, options, suites, workspace):
                         True,  # No sorting of test cases.
                         0,  # Don't rerun failing tests.
                         0,  # No use of a rerun-failing-tests maximum.
-                        False)  # No predictable mode.
+                        False,  # No predictable mode.
+                        False)  # No no_harness mode.
 
   # Find available test suites and read test cases from them.
   variables = {
@@ -390,6 +396,8 @@ def Execute(arch, mode, args, options, suites, workspace):
     "system": utils.GuessOS(),
     "tsan": False,
     "msan": False,
+    "dcheck_always_on": options.dcheck_always_on,
+    "byteorder": sys.byteorder,
   }
   all_tests = []
   num_tests = 0

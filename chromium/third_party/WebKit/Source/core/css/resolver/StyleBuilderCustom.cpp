@@ -43,7 +43,6 @@
 #include "core/StyleBuilderFunctions.h"
 #include "core/StylePropertyShorthand.h"
 #include "core/css/BasicShapeFunctions.h"
-#include "core/css/CSSContentDistributionValue.h"
 #include "core/css/CSSCursorImageValue.h"
 #include "core/css/CSSFontValue.h"
 #include "core/css/CSSGradientValue.h"
@@ -51,6 +50,7 @@
 #include "core/css/CSSHelper.h"
 #include "core/css/CSSImageSetValue.h"
 #include "core/css/CSSLineBoxContainValue.h"
+#include "core/css/CSSPathValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSPropertyMetadata.h"
 #include "core/css/Counter.h"
@@ -64,12 +64,13 @@
 #include "core/css/resolver/TransformBuilder.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/rendering/style/CounterContent.h"
-#include "core/rendering/style/QuotesData.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/RenderStyleConstants.h"
-#include "core/rendering/style/SVGRenderStyle.h"
-#include "core/rendering/style/StyleGeneratedImage.h"
+#include "core/style/CounterContent.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/ComputedStyleConstants.h"
+#include "core/style/PathStyleMotionPath.h"
+#include "core/style/QuotesData.h"
+#include "core/style/SVGComputedStyle.h"
+#include "core/style/StyleGeneratedImage.h"
 #include "platform/fonts/FontDescription.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
@@ -119,15 +120,22 @@ void StyleBuilder::applyProperty(CSSPropertyID id, StyleResolverState& state, CS
         return;
     }
 
-    if (isInherit && !state.parentStyle()->hasExplicitlyInheritedProperties() && !CSSPropertyMetadata::isInheritedProperty(id))
+    if (isInherit && !state.parentStyle()->hasExplicitlyInheritedProperties() && !CSSPropertyMetadata::isInheritedProperty(id)) {
         state.parentStyle()->setHasExplicitlyInheritedProperties();
+    } else if (value->isUnsetValue()) {
+        ASSERT(!isInherit && !isInitial);
+        if (CSSPropertyMetadata::isInheritedProperty(id))
+            isInherit = true;
+        else
+            isInitial = true;
+    }
 
     StyleBuilder::applyProperty(id, state, value, isInitial, isInherit);
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyColor(StyleResolverState& state)
 {
-    Color color = RenderStyle::initialColor();
+    Color color = ComputedStyle::initialColor();
     if (state.applyPropertyToRegularStyle())
         state.style()->setColor(color);
     if (state.applyPropertyToVisitedLinkStyle())
@@ -158,66 +166,10 @@ void StyleBuilderFunctions::applyValueCSSPropertyColor(StyleResolverState& state
         state.style()->setVisitedLinkColor(StyleBuilderConverter::convertColor(state, value, true));
 }
 
-void StyleBuilderFunctions::applyInitialCSSPropertyJustifyItems(StyleResolverState& state)
-{
-    state.style()->setJustifyItems(RenderStyle::initialJustifyItems());
-    state.style()->setJustifyItemsOverflowAlignment(RenderStyle::initialJustifyItemsOverflowAlignment());
-    state.style()->setJustifyItemsPositionType(RenderStyle::initialJustifyItemsPositionType());
-}
-
-void StyleBuilderFunctions::applyInheritCSSPropertyJustifyItems(StyleResolverState& state)
-{
-    state.style()->setJustifyItems(state.parentStyle()->justifyItems());
-    state.style()->setJustifyItemsOverflowAlignment(state.parentStyle()->justifyItemsOverflowAlignment());
-    state.style()->setJustifyItemsPositionType(state.parentStyle()->justifyItemsPositionType());
-}
-
-void StyleBuilderFunctions::applyValueCSSPropertyJustifyItems(StyleResolverState& state, CSSValue* value)
-{
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (Pair* pairValue = primitiveValue->getPairValue()) {
-        if (pairValue->first()->getValueID() == CSSValueLegacy) {
-            state.style()->setJustifyItemsPositionType(LegacyPosition);
-            state.style()->setJustifyItems(*pairValue->second());
-        } else {
-            state.style()->setJustifyItems(*pairValue->first());
-            state.style()->setJustifyItemsOverflowAlignment(*pairValue->second());
-        }
-    } else {
-        state.style()->setJustifyItems(*primitiveValue);
-    }
-}
-
-void StyleBuilderFunctions::applyInitialCSSPropertyJustifyContent(StyleResolverState& state)
-{
-    state.style()->setJustifyContent(RenderStyle::initialJustifyContent());
-    state.style()->setJustifyContentOverflowAlignment(RenderStyle::initialJustifyContentOverflowAlignment());
-    state.style()->setJustifyContentDistribution(RenderStyle::initialJustifyContentDistribution());
-}
-
-void StyleBuilderFunctions::applyInheritCSSPropertyJustifyContent(StyleResolverState& state)
-{
-    state.style()->setJustifyContent(state.parentStyle()->justifyContent());
-    state.style()->setJustifyContentOverflowAlignment(state.parentStyle()->justifyContentOverflowAlignment());
-    state.style()->setJustifyContentDistribution(state.parentStyle()->justifyContentDistribution());
-}
-
-void StyleBuilderFunctions::applyValueCSSPropertyJustifyContent(StyleResolverState& state, CSSValue* value)
-{
-    CSSContentDistributionValue* contentValue = toCSSContentDistributionValue(value);
-    if (contentValue->distribution()->getValueID() != CSSValueInvalid)
-        state.style()->setJustifyContentDistribution(*contentValue->distribution());
-    if (contentValue->position()->getValueID() != CSSValueInvalid)
-        state.style()->setJustifyContent(*contentValue->position());
-    if (contentValue->overflow()->getValueID() != CSSValueInvalid)
-        state.style()->setJustifyContentOverflowAlignment(*contentValue->overflow());
-}
-
 void StyleBuilderFunctions::applyInitialCSSPropertyCursor(StyleResolverState& state)
 {
     state.style()->clearCursorList();
-    state.style()->setCursor(RenderStyle::initialCursor());
+    state.style()->setCursor(ComputedStyle::initialCursor());
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyCursor(StyleResolverState& state)
@@ -239,7 +191,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyCursor(StyleResolverState& stat
                 CSSCursorImageValue* image = toCSSCursorImageValue(item);
                 if (image->updateIfSVGCursorIsUsed(state.element())) // Elements with SVG cursors are not allowed to share style.
                     state.style()->setUnique();
-                state.style()->addCursor(state.styleImage(CSSPropertyCursor, image), image->hotSpot());
+                state.style()->addCursor(state.styleImage(CSSPropertyCursor, image), image->hotSpotSpecified(), image->hotSpot());
             } else {
                 state.style()->setCursor(*toCSSPrimitiveValue(item));
             }
@@ -252,9 +204,6 @@ void StyleBuilderFunctions::applyValueCSSPropertyCursor(StyleResolverState& stat
 void StyleBuilderFunctions::applyValueCSSPropertyDirection(StyleResolverState& state, CSSValue* value)
 {
     state.style()->setDirection(*toCSSPrimitiveValue(value));
-    Element* element = state.element();
-    if (element && element == element->document().documentElement())
-        element->document().setDirectionSetOnDocumentElement(true);
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyGlyphOrientationVertical(StyleResolverState& state, CSSValue* value)
@@ -267,9 +216,9 @@ void StyleBuilderFunctions::applyValueCSSPropertyGlyphOrientationVertical(StyleR
 
 void StyleBuilderFunctions::applyInitialCSSPropertyGridTemplateAreas(StyleResolverState& state)
 {
-    state.style()->setNamedGridArea(RenderStyle::initialNamedGridArea());
-    state.style()->setNamedGridAreaRowCount(RenderStyle::initialNamedGridAreaCount());
-    state.style()->setNamedGridAreaColumnCount(RenderStyle::initialNamedGridAreaCount());
+    state.style()->setNamedGridArea(ComputedStyle::initialNamedGridArea());
+    state.style()->setNamedGridAreaRowCount(ComputedStyle::initialNamedGridAreaCount());
+    state.style()->setNamedGridAreaColumnCount(ComputedStyle::initialNamedGridAreaCount());
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyGridTemplateAreas(StyleResolverState& state)
@@ -290,8 +239,10 @@ void StyleBuilderFunctions::applyValueCSSPropertyGridTemplateAreas(StyleResolver
     CSSGridTemplateAreasValue* gridTemplateAreasValue = toCSSGridTemplateAreasValue(value);
     const NamedGridAreaMap& newNamedGridAreas = gridTemplateAreasValue->gridAreaMap();
 
-    NamedGridLinesMap namedGridColumnLines = state.style()->namedGridColumnLines();
-    NamedGridLinesMap namedGridRowLines = state.style()->namedGridRowLines();
+    NamedGridLinesMap namedGridColumnLines;
+    NamedGridLinesMap namedGridRowLines;
+    StyleBuilderConverter::convertOrderedNamedGridLinesMapToNamedGridLinesMap(state.style()->orderedNamedGridColumnLines(), namedGridColumnLines);
+    StyleBuilderConverter::convertOrderedNamedGridLinesMapToNamedGridLinesMap(state.style()->orderedNamedGridRowLines(), namedGridRowLines);
     StyleBuilderConverter::createImplicitNamedGridLinesFromGridArea(newNamedGridAreas, namedGridColumnLines, ForColumns);
     StyleBuilderConverter::createImplicitNamedGridLinesFromGridArea(newNamedGridAreas, namedGridRowLines, ForRows);
     state.style()->setNamedGridColumnLines(namedGridColumnLines);
@@ -302,34 +253,6 @@ void StyleBuilderFunctions::applyValueCSSPropertyGridTemplateAreas(StyleResolver
     state.style()->setNamedGridAreaColumnCount(gridTemplateAreasValue->columnCount());
 }
 
-void StyleBuilderFunctions::applyValueCSSPropertyLineHeight(StyleResolverState& state, CSSValue* value)
-{
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    Length lineHeight;
-
-    if (primitiveValue->getValueID() == CSSValueNormal) {
-        lineHeight = RenderStyle::initialLineHeight();
-    } else if (primitiveValue->isLength()) {
-        float multiplier = state.style()->effectiveZoom();
-        if (LocalFrame* frame = state.document().frame())
-            multiplier *= frame->textZoomFactor();
-        lineHeight = primitiveValue->computeLength<Length>(state.cssToLengthConversionData().copyWithAdjustedZoom(multiplier));
-    } else if (primitiveValue->isPercentage()) {
-        lineHeight = Length((state.style()->computedFontSize() * primitiveValue->getIntValue()) / 100.0, Fixed);
-    } else if (primitiveValue->isNumber()) {
-        lineHeight = Length(primitiveValue->getDoubleValue() * 100.0, Percent);
-    } else if (primitiveValue->isCalculated()) {
-        double multiplier = state.style()->effectiveZoom();
-        if (LocalFrame* frame = state.document().frame())
-            multiplier *= frame->textZoomFactor();
-        Length zoomedLength = Length(primitiveValue->cssCalcValue()->toCalcValue(state.cssToLengthConversionData().copyWithAdjustedZoom(multiplier)));
-        lineHeight = Length(valueForLength(zoomedLength, state.style()->fontSize()), Fixed);
-    } else {
-        return;
-    }
-    state.style()->setLineHeight(lineHeight);
-}
-
 void StyleBuilderFunctions::applyValueCSSPropertyListStyleImage(StyleResolverState& state, CSSValue* value)
 {
     state.style()->setListStyleImage(state.styleImage(CSSPropertyListStyleImage, value));
@@ -337,8 +260,8 @@ void StyleBuilderFunctions::applyValueCSSPropertyListStyleImage(StyleResolverSta
 
 void StyleBuilderFunctions::applyInitialCSSPropertyOutlineStyle(StyleResolverState& state)
 {
-    state.style()->setOutlineStyleIsAuto(RenderStyle::initialOutlineStyleIsAuto());
-    state.style()->setOutlineStyle(RenderStyle::initialBorderStyle());
+    state.style()->setOutlineStyleIsAuto(ComputedStyle::initialOutlineStyleIsAuto());
+    state.style()->setOutlineStyle(ComputedStyle::initialBorderStyle());
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyOutlineStyle(StyleResolverState& state)
@@ -368,80 +291,31 @@ void StyleBuilderFunctions::applyValueCSSPropertyResize(StyleResolverState& stat
     state.style()->setResize(r);
 }
 
-static Length mmLength(double mm) { return Length(mm * cssPixelsPerMillimeter, Fixed); }
-static Length inchLength(double inch) { return Length(inch * cssPixelsPerInch, Fixed); }
-static bool getPageSizeFromName(CSSPrimitiveValue* pageSizeName, CSSPrimitiveValue* pageOrientation, Length& width, Length& height)
+static float mmToPx(float mm) { return mm * cssPixelsPerMillimeter; }
+static float inchToPx(float inch) { return inch * cssPixelsPerInch; }
+static FloatSize getPageSizeFromName(CSSPrimitiveValue* pageSizeName)
 {
-    DEFINE_STATIC_LOCAL(Length, a5Width, (mmLength(148)));
-    DEFINE_STATIC_LOCAL(Length, a5Height, (mmLength(210)));
-    DEFINE_STATIC_LOCAL(Length, a4Width, (mmLength(210)));
-    DEFINE_STATIC_LOCAL(Length, a4Height, (mmLength(297)));
-    DEFINE_STATIC_LOCAL(Length, a3Width, (mmLength(297)));
-    DEFINE_STATIC_LOCAL(Length, a3Height, (mmLength(420)));
-    DEFINE_STATIC_LOCAL(Length, b5Width, (mmLength(176)));
-    DEFINE_STATIC_LOCAL(Length, b5Height, (mmLength(250)));
-    DEFINE_STATIC_LOCAL(Length, b4Width, (mmLength(250)));
-    DEFINE_STATIC_LOCAL(Length, b4Height, (mmLength(353)));
-    DEFINE_STATIC_LOCAL(Length, letterWidth, (inchLength(8.5)));
-    DEFINE_STATIC_LOCAL(Length, letterHeight, (inchLength(11)));
-    DEFINE_STATIC_LOCAL(Length, legalWidth, (inchLength(8.5)));
-    DEFINE_STATIC_LOCAL(Length, legalHeight, (inchLength(14)));
-    DEFINE_STATIC_LOCAL(Length, ledgerWidth, (inchLength(11)));
-    DEFINE_STATIC_LOCAL(Length, ledgerHeight, (inchLength(17)));
-
-    if (!pageSizeName)
-        return false;
-
     switch (pageSizeName->getValueID()) {
     case CSSValueA5:
-        width = a5Width;
-        height = a5Height;
-        break;
+        return FloatSize(mmToPx(148), mmToPx(210));
     case CSSValueA4:
-        width = a4Width;
-        height = a4Height;
-        break;
+        return FloatSize(mmToPx(210), mmToPx(297));
     case CSSValueA3:
-        width = a3Width;
-        height = a3Height;
-        break;
+        return FloatSize(mmToPx(297), mmToPx(420));
     case CSSValueB5:
-        width = b5Width;
-        height = b5Height;
-        break;
+        return FloatSize(mmToPx(176), mmToPx(250));
     case CSSValueB4:
-        width = b4Width;
-        height = b4Height;
-        break;
+        return FloatSize(mmToPx(250), mmToPx(353));
     case CSSValueLetter:
-        width = letterWidth;
-        height = letterHeight;
-        break;
+        return FloatSize(inchToPx(8.5), inchToPx(11));
     case CSSValueLegal:
-        width = legalWidth;
-        height = legalHeight;
-        break;
+        return FloatSize(inchToPx(8.5), inchToPx(14));
     case CSSValueLedger:
-        width = ledgerWidth;
-        height = ledgerHeight;
-        break;
+        return FloatSize(inchToPx(11), inchToPx(17));
     default:
-        return false;
+        ASSERT_NOT_REACHED();
+        return FloatSize(0, 0);
     }
-
-    if (pageOrientation) {
-        switch (pageOrientation->getValueID()) {
-        case CSSValueLandscape:
-            std::swap(width, height);
-            break;
-        case CSSValuePortrait:
-            // Nothing to do.
-            break;
-        default:
-            return false;
-        }
-    }
-    return true;
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertySize(StyleResolverState&) { }
@@ -449,41 +323,37 @@ void StyleBuilderFunctions::applyInheritCSSPropertySize(StyleResolverState&) { }
 void StyleBuilderFunctions::applyValueCSSPropertySize(StyleResolverState& state, CSSValue* value)
 {
     state.style()->resetPageSizeType();
-    Length width;
-    Length height;
+    FloatSize size;
     PageSizeType pageSizeType = PAGE_SIZE_AUTO;
     CSSValueList* list = toCSSValueList(value);
-    switch (list->length()) {
-    case 2: {
+    if (list->length() == 2) {
         // <length>{2} | <page-size> <orientation>
         CSSPrimitiveValue* first = toCSSPrimitiveValue(list->item(0));
         CSSPrimitiveValue* second = toCSSPrimitiveValue(list->item(1));
         if (first->isLength()) {
             // <length>{2}
-            if (!second->isLength())
-                return;
-            width = first->computeLength<Length>(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0));
-            height = second->computeLength<Length>(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0));
+            size = FloatSize(first->computeLength<float>(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0)),
+                second->computeLength<float>(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0)));
         } else {
             // <page-size> <orientation>
-            // The value order is guaranteed. See BisonCSSParser::parseSizeParameter.
-            if (!getPageSizeFromName(first, second, width, height))
-                return;
+            size = getPageSizeFromName(first);
+
+            ASSERT(second->getValueID() == CSSValueLandscape || second->getValueID() == CSSValuePortrait);
+            if (second->getValueID() == CSSValueLandscape)
+                size = size.transposedSize();
         }
         pageSizeType = PAGE_SIZE_RESOLVED;
-        break;
-    }
-    case 1: {
+    } else {
+        ASSERT(list->length() == 1);
         // <length> | auto | <page-size> | [ portrait | landscape]
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(list->item(0));
         if (primitiveValue->isLength()) {
             // <length>
             pageSizeType = PAGE_SIZE_RESOLVED;
-            width = height = primitiveValue->computeLength<Length>(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0));
+            float width = primitiveValue->computeLength<float>(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0));
+            size = FloatSize(width, width);
         } else {
             switch (primitiveValue->getValueID()) {
-            case 0:
-                return;
             case CSSValueAuto:
                 pageSizeType = PAGE_SIZE_AUTO;
                 break;
@@ -496,30 +366,17 @@ void StyleBuilderFunctions::applyValueCSSPropertySize(StyleResolverState& state,
             default:
                 // <page-size>
                 pageSizeType = PAGE_SIZE_RESOLVED;
-                if (!getPageSizeFromName(primitiveValue, 0, width, height))
-                    return;
+                size = getPageSizeFromName(primitiveValue);
             }
         }
-        break;
-    }
-    default:
-        return;
     }
     state.style()->setPageSizeType(pageSizeType);
-    state.style()->setPageSize(LengthSize(width, height));
+    state.style()->setPageSize(size);
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyTextAlign(StyleResolverState& state, CSSValue* value)
 {
-    if (!value->isPrimitiveValue())
-        return;
-
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    // FIXME : Per http://www.w3.org/TR/css3-text/#text-align0 can now take <string> but this is not implemented in the
-    // rendering code.
-    if (primitiveValue->isString())
-        return;
-
     if (primitiveValue->isValueID() && primitiveValue->getValueID() != CSSValueWebkitMatchParent)
         state.style()->setTextAlign(*primitiveValue);
     else if (state.parentStyle()->textAlign() == TASTART)
@@ -539,24 +396,21 @@ void StyleBuilderFunctions::applyInheritCSSPropertyTextIndent(StyleResolverState
 
 void StyleBuilderFunctions::applyInitialCSSPropertyTextIndent(StyleResolverState& state)
 {
-    state.style()->setTextIndent(RenderStyle::initialTextIndent());
-    state.style()->setTextIndentLine(RenderStyle::initialTextIndentLine());
-    state.style()->setTextIndentType(RenderStyle::initialTextIndentType());
+    state.style()->setTextIndent(ComputedStyle::initialTextIndent());
+    state.style()->setTextIndentLine(ComputedStyle::initialTextIndentLine());
+    state.style()->setTextIndentType(ComputedStyle::initialTextIndentType());
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyTextIndent(StyleResolverState& state, CSSValue* value)
 {
-    if (!value->isValueList())
-        return;
-
     Length lengthOrPercentageValue;
-    TextIndentLine textIndentLineValue = RenderStyle::initialTextIndentLine();
-    TextIndentType textIndentTypeValue = RenderStyle::initialTextIndentType();
+    TextIndentLine textIndentLineValue = ComputedStyle::initialTextIndentLine();
+    TextIndentType textIndentTypeValue = ComputedStyle::initialTextIndentType();
 
-    for (CSSValueListIterator i(value); i.hasMore(); i.advance()) {
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(i.value());
+    for (auto& listValue : toCSSValueList(*value)) {
+        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(listValue.get());
         if (!primitiveValue->getValueID())
-            lengthOrPercentageValue = primitiveValue->convertToLength<FixedConversion | PercentConversion>(state.cssToLengthConversionData());
+            lengthOrPercentageValue = primitiveValue->convertToLength(state.cssToLengthConversionData());
         else if (primitiveValue->getValueID() == CSSValueEachLine)
             textIndentLineValue = TextIndentEachLine;
         else if (primitiveValue->getValueID() == CSSValueHanging)
@@ -572,9 +426,73 @@ void StyleBuilderFunctions::applyValueCSSPropertyTextIndent(StyleResolverState& 
 
 void StyleBuilderFunctions::applyValueCSSPropertyTransform(StyleResolverState& state, CSSValue* value)
 {
+    // FIXME: We should just make this a converter
     TransformOperations operations;
-    TransformBuilder::createTransformOperations(value, state.cssToLengthConversionData(), operations);
+    TransformBuilder::createTransformOperations(*value, state.cssToLengthConversionData(), operations);
     state.style()->setTransform(operations);
+}
+
+void StyleBuilderFunctions::applyInheritCSSPropertyMotionPath(StyleResolverState& state)
+{
+    if (state.parentStyle()->motionPath())
+        state.style()->setMotionPath(state.parentStyle()->motionPath());
+    else
+        state.style()->resetMotionPath();
+}
+
+void StyleBuilderFunctions::applyValueCSSPropertyMotionPath(StyleResolverState& state, CSSValue* value)
+{
+    if (value->isPathValue()) {
+        const String& pathString = toCSSPathValue(value)->pathString();
+        state.style()->setMotionPath(PathStyleMotionPath::create(pathString));
+        return;
+    }
+
+    ASSERT(value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueNone);
+    state.style()->resetMotionPath();
+}
+
+void StyleBuilderFunctions::applyInitialCSSPropertyMotionPath(StyleResolverState& state)
+{
+    state.style()->resetMotionPath();
+}
+
+void StyleBuilderFunctions::applyInheritCSSPropertyMotionRotation(StyleResolverState& state)
+{
+    state.style()->setMotionRotation(state.parentStyle()->motionRotation());
+    state.style()->setMotionRotationType(state.parentStyle()->motionRotationType());
+}
+
+void StyleBuilderFunctions::applyInitialCSSPropertyMotionRotation(StyleResolverState& state)
+{
+    state.style()->setMotionRotation(ComputedStyle::initialMotionRotation());
+    state.style()->setMotionRotationType(ComputedStyle::initialMotionRotationType());
+}
+
+void StyleBuilderFunctions::applyValueCSSPropertyMotionRotation(StyleResolverState& state, CSSValue* value)
+{
+    float rotation = 0;
+    MotionRotationType rotationType = MotionRotationFixed;
+
+    ASSERT(value->isValueList());
+    CSSValueList* list = toCSSValueList(value);
+    int len = list->length();
+    for (int i = 0; i < len; i++) {
+        CSSValue* item = list->item(i);
+        ASSERT(item->isPrimitiveValue());
+        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(item);
+        if (primitiveValue->getValueID() == CSSValueAuto) {
+            rotationType = MotionRotationAuto;
+        } else if (primitiveValue->getValueID() == CSSValueReverse) {
+            rotationType = MotionRotationAuto;
+            rotation += 180;
+        } else {
+            rotation += primitiveValue->computeDegrees();
+        }
+    }
+
+    state.style()->setMotionRotation(rotation);
+    state.style()->setMotionRotationType(rotationType);
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyVerticalAlign(StyleResolverState& state)
@@ -587,29 +505,24 @@ void StyleBuilderFunctions::applyInheritCSSPropertyVerticalAlign(StyleResolverSt
 
 void StyleBuilderFunctions::applyValueCSSPropertyVerticalAlign(StyleResolverState& state, CSSValue* value)
 {
-    if (!value->isPrimitiveValue())
-        return;
-
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
-    if (primitiveValue->getValueID()) {
+    if (primitiveValue->getValueID())
         state.style()->setVerticalAlign(*primitiveValue);
-        return;
-    }
-
-    state.style()->setVerticalAlignLength(primitiveValue->convertToLength<FixedConversion | PercentConversion>(state.cssToLengthConversionData()));
+    else
+        state.style()->setVerticalAlignLength(primitiveValue->convertToLength(state.cssToLengthConversionData()));
 }
 
 static void resetEffectiveZoom(StyleResolverState& state)
 {
     // Reset the zoom in effect. This allows the setZoom method to accurately compute a new zoom in effect.
-    state.setEffectiveZoom(state.parentStyle() ? state.parentStyle()->effectiveZoom() : RenderStyle::initialZoom());
+    state.setEffectiveZoom(state.parentStyle() ? state.parentStyle()->effectiveZoom() : ComputedStyle::initialZoom());
 }
 
 void StyleBuilderFunctions::applyInitialCSSPropertyZoom(StyleResolverState& state)
 {
     resetEffectiveZoom(state);
-    state.setZoom(RenderStyle::initialZoom());
+    state.setZoom(ComputedStyle::initialZoom());
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyZoom(StyleResolverState& state)
@@ -625,12 +538,12 @@ void StyleBuilderFunctions::applyValueCSSPropertyZoom(StyleResolverState& state,
 
     if (primitiveValue->getValueID() == CSSValueNormal) {
         resetEffectiveZoom(state);
-        state.setZoom(RenderStyle::initialZoom());
+        state.setZoom(ComputedStyle::initialZoom());
     } else if (primitiveValue->getValueID() == CSSValueReset) {
-        state.setEffectiveZoom(RenderStyle::initialZoom());
-        state.setZoom(RenderStyle::initialZoom());
+        state.setEffectiveZoom(ComputedStyle::initialZoom());
+        state.setZoom(ComputedStyle::initialZoom());
     } else if (primitiveValue->getValueID() == CSSValueDocument) {
-        float docZoom = state.rootElementStyle() ? state.rootElementStyle()->zoom() : RenderStyle::initialZoom();
+        float docZoom = state.rootElementStyle() ? state.rootElementStyle()->zoom() : ComputedStyle::initialZoom();
         state.setEffectiveZoom(docZoom);
         state.setZoom(docZoom);
     } else if (primitiveValue->isPercentage()) {
@@ -647,7 +560,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyZoom(StyleResolverState& state,
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitBorderImage(StyleResolverState& state, CSSValue* value)
 {
     NinePieceImage image;
-    state.styleMap().mapNinePieceImage(state.style(), CSSPropertyWebkitBorderImage, value, image);
+    CSSToStyleMap::mapNinePieceImage(state, CSSPropertyWebkitBorderImage, value, image);
     state.style()->setBorderImage(image);
 }
 
@@ -677,9 +590,9 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitFilter(StyleResolverState
 
 void StyleBuilderFunctions::applyInitialCSSPropertyWebkitTextEmphasisStyle(StyleResolverState& state)
 {
-    state.style()->setTextEmphasisFill(RenderStyle::initialTextEmphasisFill());
-    state.style()->setTextEmphasisMark(RenderStyle::initialTextEmphasisMark());
-    state.style()->setTextEmphasisCustomMark(RenderStyle::initialTextEmphasisCustomMark());
+    state.style()->setTextEmphasisFill(ComputedStyle::initialTextEmphasisFill());
+    state.style()->setTextEmphasisMark(ComputedStyle::initialTextEmphasisMark());
+    state.style()->setTextEmphasisCustomMark(ComputedStyle::initialTextEmphasisCustomMark());
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyWebkitTextEmphasisStyle(StyleResolverState& state)
@@ -694,14 +607,8 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitTextEmphasisStyle(StyleRe
     if (value->isValueList()) {
         CSSValueList* list = toCSSValueList(value);
         ASSERT(list->length() == 2);
-        if (list->length() != 2)
-            return;
         for (unsigned i = 0; i < 2; ++i) {
-            CSSValue* item = list->item(i);
-            if (!item->isPrimitiveValue())
-                continue;
-
-            CSSPrimitiveValue* value = toCSSPrimitiveValue(item);
+            CSSPrimitiveValue* value = toCSSPrimitiveValue(list->item(i));
             if (value->getValueID() == CSSValueFilled || value->getValueID() == CSSValueOpen)
                 state.style()->setTextEmphasisFill(*value);
             else
@@ -711,8 +618,6 @@ void StyleBuilderFunctions::applyValueCSSPropertyWebkitTextEmphasisStyle(StyleRe
         return;
     }
 
-    if (!value->isPrimitiveValue())
-        return;
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
     if (primitiveValue->isString()) {
@@ -756,8 +661,8 @@ void StyleBuilderFunctions::applyValueCSSPropertyWillChange(StyleResolverState& 
     bool willChangeScrollPosition = false;
     Vector<CSSPropertyID> willChangeProperties;
 
-    for (CSSValueListIterator i(value); i.hasMore(); i.advance()) {
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(i.value());
+    for (auto& willChangeValue : toCSSValueList(*value)) {
+        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(willChangeValue.get());
         if (CSSPropertyID propertyID = primitiveValue->getPropertyID())
             willChangeProperties.append(propertyID);
         else if (primitiveValue->getValueID() == CSSValueContents)
@@ -788,25 +693,18 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
 {
     // list of string, uri, counter, attr, i
 
-    if (!value->isValueList())
-        return;
-
     bool didSet = false;
-    for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
-        CSSValue* item = i.value();
+    for (auto& item : toCSSValueList(*value)) {
         if (item->isImageGeneratorValue()) {
-            if (item->isGradientValue())
-                state.style()->setContent(StyleGeneratedImage::create(toCSSGradientValue(item)->gradientWithStylesResolved(state.document().textLinkColors(), state.style()->color()).get()), didSet);
-            else
-                state.style()->setContent(StyleGeneratedImage::create(toCSSImageGeneratorValue(item)), didSet);
+            state.style()->setContent(StyleGeneratedImage::create(toCSSImageGeneratorValue(item.get())), didSet);
             didSet = true;
         } else if (item->isImageSetValue()) {
-            state.style()->setContent(state.elementStyleResources().setOrPendingFromValue(CSSPropertyContent, toCSSImageSetValue(item)), didSet);
+            state.style()->setContent(state.elementStyleResources().setOrPendingFromValue(CSSPropertyContent, toCSSImageSetValue(item.get())), didSet);
             didSet = true;
         }
 
         if (item->isImageValue()) {
-            state.style()->setContent(state.elementStyleResources().cachedOrPendingFromValue(state.document(), CSSPropertyContent, toCSSImageValue(item)), didSet);
+            state.style()->setContent(state.elementStyleResources().cachedOrPendingFromValue(state.document(), CSSPropertyContent, toCSSImageValue(item.get())), didSet);
             didSet = true;
             continue;
         }
@@ -814,7 +712,7 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
         if (!item->isPrimitiveValue())
             continue;
 
-        CSSPrimitiveValue* contentValue = toCSSPrimitiveValue(item);
+        CSSPrimitiveValue* contentValue = toCSSPrimitiveValue(item.get());
 
         if (contentValue->isString()) {
             state.style()->setContent(contentValue->getStringValue().impl(), didSet);
@@ -829,8 +727,6 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
             const AtomicString& value = state.element()->getAttribute(attr);
             state.style()->setContent(value.isNull() ? emptyString() : value.string(), didSet);
             didSet = true;
-            // register the fact that the attribute value affects the style
-            state.contentAttrValues().append(attr.localName());
         } else if (contentValue->isCounter()) {
             Counter* counterValue = contentValue->getCounterValue();
             EListStyleType listStyleType = NoneListStyle;
@@ -870,8 +766,6 @@ void StyleBuilderFunctions::applyValueCSSPropertyContent(StyleResolverState& sta
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitLocale(StyleResolverState& state, CSSValue* value)
 {
-    if (!value->isPrimitiveValue())
-        return;
     const CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == CSSValueAuto)
         state.style()->setLocale(nullAtom);
@@ -890,40 +784,26 @@ void StyleBuilderFunctions::applyInheritCSSPropertyWebkitAppRegion(StyleResolver
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitAppRegion(StyleResolverState& state, CSSValue* value)
 {
-    if (!value->isPrimitiveValue())
-        return;
     const CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (!primitiveValue->getValueID())
-        return;
     state.style()->setDraggableRegionMode(primitiveValue->getValueID() == CSSValueDrag ? DraggableRegionDrag : DraggableRegionNoDrag);
     state.document().setHasAnnotatedRegions(true);
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitWritingMode(StyleResolverState& state, CSSValue* value)
 {
-    if (value->isPrimitiveValue()) {
-        WritingMode writingMode = *toCSSPrimitiveValue(value);
-        state.setWritingMode(writingMode);
-        if (writingMode != TopToBottomWritingMode)
-            state.document().setContainsAnyRareWritingMode(true);
-    }
-
-    // FIXME: It is not ok to modify document state while applying style.
-    if (state.element() && state.element() == state.document().documentElement())
-        state.document().setWritingModeSetOnDocumentElement(true);
+    state.setWritingMode(*toCSSPrimitiveValue(value));
 }
 
 void StyleBuilderFunctions::applyValueCSSPropertyWebkitTextOrientation(StyleResolverState& state, CSSValue* value)
 {
-    if (value->isPrimitiveValue())
-        state.setTextOrientation(*toCSSPrimitiveValue(value));
+    state.setTextOrientation(*toCSSPrimitiveValue(value));
 }
 
 void StyleBuilderFunctions::applyInheritCSSPropertyBaselineShift(StyleResolverState& state)
 {
-    const SVGRenderStyle& parentSvgStyle = state.parentStyle()->svgStyle();
+    const SVGComputedStyle& parentSvgStyle = state.parentStyle()->svgStyle();
     EBaselineShift baselineShift = parentSvgStyle.baselineShift();
-    SVGRenderStyle& svgStyle = state.style()->accessSVGStyle();
+    SVGComputedStyle& svgStyle = state.style()->accessSVGStyle();
     svgStyle.setBaselineShift(baselineShift);
     if (baselineShift == BS_LENGTH)
         svgStyle.setBaselineShiftValue(parentSvgStyle.baselineShiftValue());
@@ -931,16 +811,17 @@ void StyleBuilderFunctions::applyInheritCSSPropertyBaselineShift(StyleResolverSt
 
 void StyleBuilderFunctions::applyValueCSSPropertyBaselineShift(StyleResolverState& state, CSSValue* value)
 {
-    SVGRenderStyle& svgStyle = state.style()->accessSVGStyle();
+    SVGComputedStyle& svgStyle = state.style()->accessSVGStyle();
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (!primitiveValue->isValueID()) {
         svgStyle.setBaselineShift(BS_LENGTH);
-        svgStyle.setBaselineShiftValue(SVGLength::fromCSSPrimitiveValue(primitiveValue));
+        svgStyle.setBaselineShiftValue(StyleBuilderConverter::convertLength(state, primitiveValue));
         return;
     }
     switch (primitiveValue->getValueID()) {
     case CSSValueBaseline:
-        svgStyle.setBaselineShift(BS_BASELINE);
+        svgStyle.setBaselineShift(BS_LENGTH);
+        svgStyle.setBaselineShiftValue(Length(Fixed));
         return;
     case CSSValueSub:
         svgStyle.setBaselineShift(BS_SUB);

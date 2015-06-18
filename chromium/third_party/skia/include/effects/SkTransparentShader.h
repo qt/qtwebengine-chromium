@@ -14,16 +14,16 @@ class SK_API SkTransparentShader : public SkShader {
 public:
     SkTransparentShader() {}
 
-    virtual size_t contextSize() const SK_OVERRIDE;
+    size_t contextSize() const override;
 
     class TransparentShaderContext : public SkShader::Context {
     public:
         TransparentShaderContext(const SkTransparentShader& shader, const ContextRec&);
         virtual ~TransparentShaderContext();
 
-        virtual uint32_t getFlags() const SK_OVERRIDE;
-        virtual void shadeSpan(int x, int y, SkPMColor[], int count) SK_OVERRIDE;
-        virtual void shadeSpan16(int x, int y, uint16_t span[], int count) SK_OVERRIDE;
+        uint32_t getFlags() const override;
+        void shadeSpan(int x, int y, SkPMColor[], int count) override;
+        void shadeSpan16(int x, int y, uint16_t span[], int count) override;
 
     private:
         const SkBitmap* fDevice;
@@ -35,16 +35,12 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkTransparentShader)
 
 protected:
-    virtual Context* onCreateContext(const ContextRec&, void* storage) const SK_OVERRIDE;
+    Context* onCreateContext(const ContextRec&, void* storage) const override;
 
     // we don't need to flatten anything at all
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE {}
+    void flatten(SkWriteBuffer&) const override {}
 
 private:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkTransparentShader(SkReadBuffer& buffer) : INHERITED(buffer) {}
-#endif
-
     typedef SkShader INHERITED;
 };
 

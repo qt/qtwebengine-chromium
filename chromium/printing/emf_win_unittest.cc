@@ -19,8 +19,8 @@
 #include "base/win/scoped_hdc.h"
 #include "printing/printing_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace printing {
 
@@ -41,8 +41,8 @@ class EmfPrintingTest : public testing::Test, public PrintingContext::Delegate {
   }
 
   // PrintingContext::Delegate methods.
-  virtual gfx::NativeView GetParentView() override { return NULL; }
-  virtual std::string GetAppLocale() override { return std::string(); }
+  gfx::NativeView GetParentView() override { return NULL; }
+  std::string GetAppLocale() override { return std::string(); }
 };
 
 const uint32 EMF_HEADER_SIZE = 128;

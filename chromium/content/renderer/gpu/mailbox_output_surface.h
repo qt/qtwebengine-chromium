@@ -11,7 +11,7 @@
 #include "cc/resources/resource_format.h"
 #include "cc/resources/transferable_resource.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 class CompositorFrameAck;
@@ -30,6 +30,8 @@ class MailboxOutputSurface : public CompositorOutputSurface {
       int32 routing_id,
       uint32 output_surface_id,
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
+      const scoped_refptr<ContextProviderCommandBuffer>&
+          worker_context_provider,
       scoped_ptr<cc::SoftwareOutputDevice> software_device,
       scoped_refptr<FrameSwapMessageQueue> swap_frame_message_queue,
       cc::ResourceFormat format);

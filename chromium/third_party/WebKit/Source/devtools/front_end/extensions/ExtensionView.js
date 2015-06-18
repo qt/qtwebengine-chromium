@@ -30,7 +30,7 @@
 
 /**
  * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.Widget}
  * @param {!WebInspector.ExtensionServer} server
  * @param {string} id
  * @param {string} src
@@ -38,8 +38,8 @@
  */
 WebInspector.ExtensionView = function(server, id, src, className)
 {
-    WebInspector.View.call(this);
-    this.element.className = "extension-view fill"; // Override
+    WebInspector.Widget.call(this);
+    this.element.className = "vbox flex-auto"; // Override
 
     this._server = server;
     this._id = id;
@@ -73,7 +73,7 @@ WebInspector.ExtensionView.prototype = {
             this._server.notifyViewShown(this._id, this._frameIndex);
     },
 
-    __proto__: WebInspector.View.prototype
+    __proto__: WebInspector.Widget.prototype
 }
 
 /**

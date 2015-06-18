@@ -126,19 +126,16 @@ public:
     RRectGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("rrect");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(820, 710);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         static const InsetProc insetProcs[] = {
             inset0, inset1, inset2, inset3
         };

@@ -29,32 +29,30 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
 class ExceptionState;
 class Node;
+class ScriptValue;
 class XPathExpression;
 class XPathNSResolver;
 class XPathResult;
 
-class XPathEvaluator final : public RefCountedWillBeGarbageCollected<XPathEvaluator>, public ScriptWrappable {
+class XPathEvaluator final : public GarbageCollected<XPathEvaluator>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<XPathEvaluator> create()
+    static XPathEvaluator* create()
     {
-        return adoptRefWillBeNoop(new XPathEvaluator);
+        return new XPathEvaluator;
     }
 
-    PassRefPtrWillBeRawPtr<XPathExpression> createExpression(const String& expression, PassRefPtrWillBeRawPtr<XPathNSResolver>, ExceptionState&);
-    PassRefPtrWillBeRawPtr<XPathNSResolver> createNSResolver(Node* nodeResolver);
-    PassRefPtrWillBeRawPtr<XPathResult> evaluate(const String& expression, Node* contextNode,
-        PassRefPtrWillBeRawPtr<XPathNSResolver>, unsigned short type, XPathResult*, ExceptionState&);
+    XPathExpression* createExpression(const String& expression, XPathNSResolver*, ExceptionState&);
+    XPathNSResolver* createNSResolver(Node* nodeResolver);
+    XPathResult* evaluate(const String& expression, Node* contextNode,
+        XPathNSResolver*, unsigned short type, const ScriptValue&, ExceptionState&);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     XPathEvaluator() { }

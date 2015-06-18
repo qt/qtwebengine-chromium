@@ -16,9 +16,7 @@ class ScriptState;
 class MIDIInputMap : public MIDIPortMap<MIDIInput>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    explicit MIDIInputMap(const HeapHashMap<String, Member<MIDIInput> >);
-
-    ScriptValue getForBinding(ScriptState*, const String& id);
+    explicit MIDIInputMap(const HeapVector<Member<MIDIInput>>&);
 };
 
 } // namespace blink

@@ -37,21 +37,20 @@
 #include "wtf/HashMap.h"
 
 namespace blink {
-class JSONObject;
+class PageConsoleAgent;
 class KURL;
 class WorkerInspectorProxy;
 
 typedef String ErrorString;
 
-class InspectorWorkerAgent final : public InspectorBaseAgent<InspectorWorkerAgent>, public InspectorBackendDispatcher::WorkerCommandHandler {
+class InspectorWorkerAgent final : public InspectorBaseAgent<InspectorWorkerAgent, InspectorFrontend::Worker>, public InspectorBackendDispatcher::WorkerCommandHandler {
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorWorkerAgent> create();
+    static PassOwnPtrWillBeRawPtr<InspectorWorkerAgent> create(PageConsoleAgent*);
     virtual ~InspectorWorkerAgent();
 
-    virtual void init() override;
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void restore() override;
-    virtual void clearFrontend() override;
+    void init() override;
+    void disable(ErrorString*) override;
+    void restore() override;
 
     // Called from InspectorInstrumentation
     bool shouldPauseDedicatedWorkerOnStart();
@@ -60,29 +59,33 @@ public:
 
     // Called from InspectorBackendDispatcher
     virtual void enable(ErrorString*) override;
-    virtual void disable(ErrorString*) override;
-    virtual void canInspectWorkers(ErrorString*, bool*) override;
-    virtual void connectToWorker(ErrorString*, int workerId) override;
-    virtual void disconnectFromWorker(ErrorString*, int workerId) override;
-    virtual void sendMessageToWorker(ErrorString*, int workerId, const RefPtr<JSONObject>& message) override;
+    virtual void connectToWorker(ErrorString*, const String& workerId) override;
+    virtual void disconnectFromWorker(ErrorString*, const String& workerId) override;
+    virtual void sendMessageToWorker(ErrorString*, const String& workerId, const String& message) override;
     virtual void setAutoconnectToWorkers(ErrorString*, bool value) override;
 
     void setTracingSessionId(const String&);
 
 private:
-    InspectorWorkerAgent();
-    void createWorkerFrontendChannelsForExistingWorkers();
-    void createWorkerFrontendChannel(WorkerInspectorProxy*, const String& url);
-    void destroyWorkerFrontendChannels();
+    InspectorWorkerAgent(PageConsoleAgent*);
+    void createWorkerAgentClientsForExistingWorkers();
+    void createWorkerAgentClient(WorkerInspectorProxy*, const String& url, const String& id);
+    void destroyWorkerAgentClients();
 
-    InspectorFrontend::Worker* m_frontend;
-
-    class WorkerFrontendChannel;
-    typedef HashMap<int, WorkerFrontendChannel*> WorkerChannels;
-    WorkerChannels m_idToChannel;
-    typedef HashMap<WorkerInspectorProxy*, String> WorkerIds;
-    WorkerIds m_workerIds;
+    class WorkerInfo {
+    public:
+        WorkerInfo() { }
+        WorkerInfo(const String& url, const String& id) : url(url), id(id) { }
+        String url;
+        String id;
+    };
+    class WorkerAgentClient;
+    typedef HashMap<String, WorkerAgentClient*> WorkerClients;
+    WorkerClients m_idToClient;
+    typedef HashMap<WorkerInspectorProxy*, WorkerInfo> WorkerInfos;
+    WorkerInfos m_workerInfos;
     String m_tracingSessionId;
+    PageConsoleAgent* m_consoleAgent;
 };
 
 } // namespace blink

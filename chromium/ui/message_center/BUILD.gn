@@ -4,6 +4,7 @@
 
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 
 component("message_center") {
   deps = [
@@ -21,6 +22,9 @@ component("message_center") {
     "//ui/strings",
     "//url",
   ]
+
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   defines = [ "MESSAGE_CENTER_IMPLEMENTATION" ]
 
@@ -47,23 +51,23 @@ component("message_center") {
       "message_center.cc",
       "message_center.h",
       "message_center_export.h",
-      "notification_delegate.cc",
-      "notification_delegate.h",
       "message_center_impl.cc",
       "message_center_impl.h",
       "message_center_observer.h",
       "message_center_style.cc",
       "message_center_style.h",
+      "message_center_switches.cc",
+      "message_center_switches.h",
       "message_center_tray.cc",
       "message_center_tray.h",
       "message_center_tray_delegate.h",
       "message_center_types.h",
-      "message_center_switches.h",
-      "message_center_switches.cc",
       "notification.cc",
       "notification.h",
       "notification_blocker.cc",
       "notification_blocker.h",
+      "notification_delegate.cc",
+      "notification_delegate.h",
       "notification_list.cc",
       "notification_list.h",
       "notification_types.cc",
@@ -73,8 +77,6 @@ component("message_center") {
     ]
 
     if (is_win) {
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      cflags = [ "/wd4267" ]
       deps += [ "//ui/aura" ]
     }
 
@@ -87,23 +89,25 @@ component("message_center") {
         "views/constants.h",
         "views/desktop_popup_alignment_delegate.cc",
         "views/desktop_popup_alignment_delegate.h",
-        "views/message_center_controller.h",
         "views/message_center_button_bar.cc",
         "views/message_center_button_bar.h",
+        "views/message_center_controller.h",
         "views/message_center_view.cc",
         "views/message_center_view.h",
+        "views/message_list_view.cc",
+        "views/message_list_view.h",
         "views/message_popup_collection.cc",
         "views/message_popup_collection.h",
         "views/message_view.cc",
         "views/message_view.h",
         "views/message_view_context_menu_controller.cc",
         "views/message_view_context_menu_controller.h",
-        "views/notifier_settings_view.cc",
-        "views/notifier_settings_view.h",
         "views/notification_button.cc",
         "views/notification_button.h",
         "views/notification_view.cc",
         "views/notification_view.h",
+        "views/notifier_settings_view.cc",
+        "views/notifier_settings_view.h",
         "views/padded_button.cc",
         "views/padded_button.h",
         "views/popup_alignment_delegate.cc",
@@ -128,7 +132,6 @@ component("message_center") {
         "views/message_center_bubble.h",
       ]
     }
-
   } else {
     # Notification service disabled.
     sources = [
@@ -136,6 +139,7 @@ component("message_center") {
       "notification_delegate.cc",
       "notification_delegate.h",
     ]
+
     # Android implements its own notification UI manager instead of deferring to
     # the message center (when notifications are enabled). Include a minimal
     # set of files required for notifications on Android.
@@ -153,12 +157,12 @@ component("message_center") {
 static_library("test_support") {
   testonly = true
   sources = [
-    "fake_message_center.h",
     "fake_message_center.cc",
-    "fake_message_center_tray_delegate.h",
+    "fake_message_center.h",
     "fake_message_center_tray_delegate.cc",
-    "fake_notifier_settings_provider.h",
+    "fake_message_center_tray_delegate.h",
     "fake_notifier_settings_provider.cc",
+    "fake_notifier_settings_provider.h",
   ]
 
   public_deps = [
@@ -206,8 +210,8 @@ test("message_center_unittests") {
       "cocoa/status_item_view_unittest.mm",
       "cocoa/tray_controller_unittest.mm",
       "cocoa/tray_view_controller_unittest.mm",
-      "message_center_tray_unittest.cc",
       "message_center_impl_unittest.cc",
+      "message_center_tray_unittest.cc",
       "notification_delegate_unittest.cc",
       "notification_list_unittest.cc",
     ]

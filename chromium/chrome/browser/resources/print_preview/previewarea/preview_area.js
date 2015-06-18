@@ -108,7 +108,8 @@ cr.define('print_preview', function() {
         this.documentInfo_,
         this.printTicketStore_.marginsType,
         this.printTicketStore_.customMargins,
-        this.printTicketStore_.measurementSystem);
+        this.printTicketStore_.measurementSystem,
+        this.onMarginDragChanged_.bind(this));
     this.addChild(this.marginControlContainer_);
 
     /**
@@ -200,7 +201,6 @@ cr.define('print_preview', function() {
     OPEN_SYSTEM_DIALOG_BUTTON_THROBBER:
         'preview-area-open-system-dialog-button-throbber',
     OVERLAY: 'preview-area-overlay-layer',
-    OVERLAYED: 'preview-area-overlayed',
     MARGIN_CONTROL: 'margin-control',
     PREVIEW_AREA: 'preview-area-plugin-wrapper'
   };
@@ -231,7 +231,7 @@ cr.define('print_preview', function() {
 
   /**
    * Maps message IDs to the CSS class that contains them.
-   * @type {Object.<print_preview.PreviewArea.MessageId_, string>}
+   * @type {Object<print_preview.PreviewArea.MessageId_, string>}
    * @private
    */
   PreviewArea.MessageIdClassMap_ = {};
@@ -300,8 +300,18 @@ cr.define('print_preview', function() {
 
       // No scroll bar anywhere, or the active element is something else, like a
       // button. Note: buttons have a bigger scrollHeight than clientHeight.
-      this.plugin_.sendKeyEvent(e.keyCode);
+      this.plugin_.sendKeyEvent(e);
       e.preventDefault();
+    },
+
+    /**
+     * Set a callback that gets called when a key event is received that
+     * originates in the plugin.
+     * @param {function(Event)} callback The callback to be called with a key
+     *     event.
+     */
+    setPluginKeyEventCallback: function(callback) {
+      this.keyEventCallback_ = callback;
     },
 
     /**
@@ -525,14 +535,12 @@ cr.define('print_preview', function() {
       var marginControls = this.getElement().getElementsByClassName(
           PreviewArea.Classes_.MARGIN_CONTROL);
       for (var i = 0; i < marginControls.length; ++i) {
-        marginControls[i].classList.toggle(PreviewArea.Classes_.OVERLAYED,
-                                           visible);
+        marginControls[i].setAttribute('aria-hidden', visible);
       }
       var previewAreaControls = this.getElement().getElementsByClassName(
           PreviewArea.Classes_.PREVIEW_AREA);
       for (var i = 0; i < previewAreaControls.length; ++i) {
-        previewAreaControls[i].classList.toggle(PreviewArea.Classes_.OVERLAYED,
-                                                visible);
+        previewAreaControls[i].setAttribute('aria-hidden', visible);
       }
 
       if (!visible) {
@@ -563,6 +571,7 @@ cr.define('print_preview', function() {
       } else {
         this.plugin_ = /** @type {print_preview.PDFPlugin} */(
             PDFCreateOutOfProcessPlugin(srcUrl));
+        this.plugin_.setKeyEventCallback(this.keyEventCallback_);
       }
 
       this.plugin_.setAttribute('class', 'preview-area-plugin');
@@ -793,6 +802,22 @@ cr.define('print_preview', function() {
         this.marginControlContainer_.updateClippingMask(
             new print_preview.Size(viewportWidth, viewportHeight));
       }
+    },
+
+    /**
+     * Called when dragging margins starts or stops.
+     * @param {boolean} isDragging True if the margin is currently being dragged
+     *     and false otherwise.
+     */
+    onMarginDragChanged_: function(isDragging) {
+      if (!this.plugin_)
+        return;
+
+      // When hovering over the plugin (which may be in a separate iframe)
+      // pointer events will be sent to the frame. When dragging the margins,
+      // we don't want this to happen as it can cause the margin to stop
+      // being draggable.
+      this.plugin_.style.pointerEvents = isDragging ? 'none' : 'auto';
     }
   };
 

@@ -12,7 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
-#include "media/base/media_export.h"
+#include "media/midi/midi_export.h"
 #include "media/midi/midi_port_info.h"
 #include "media/midi/midi_result.h"
 
@@ -21,11 +21,12 @@ class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace media {
+namespace midi {
 
 // A MidiManagerClient registers with the MidiManager to receive MIDI data.
 // See MidiManager::RequestAccess() and MidiManager::ReleaseAccess()
 // for details.
-class MEDIA_EXPORT MidiManagerClient {
+class MIDI_EXPORT MidiManagerClient {
  public:
   virtual ~MidiManagerClient() {}
 
@@ -35,10 +36,10 @@ class MEDIA_EXPORT MidiManagerClient {
   virtual void AddInputPort(const MidiPortInfo& info) = 0;
   virtual void AddOutputPort(const MidiPortInfo& info) = 0;
 
-  // TODO(toyoshim): DisableInputPort(const MidiPortInfo& info) and
-  // DisableOutputPort(const MidiPortInfo& info) should be added.
-  // On DisableInputPort(), internal states, e.g. received_messages_queues in
-  // MidiHost, should be reset.
+  // SetInputPortState() and SetOutputPortState() are called to notify a known
+  // device gets disconnected, or connected again.
+  virtual void SetInputPortState(uint32 port_index, MidiPortState state) = 0;
+  virtual void SetOutputPortState(uint32 port_index, MidiPortState state) = 0;
 
   // CompleteStartSession() is called when platform dependent preparation is
   // finished.
@@ -63,7 +64,7 @@ class MEDIA_EXPORT MidiManagerClient {
 };
 
 // Manages access to all MIDI hardware.
-class MEDIA_EXPORT MidiManager {
+class MIDI_EXPORT MidiManager {
  public:
   static const size_t kMaxPendingClientCount = 128;
 
@@ -85,6 +86,10 @@ class MEDIA_EXPORT MidiManager {
 
   // A client calls EndSession() to stop receiving MIDI data.
   void EndSession(MidiManagerClient* client);
+
+  // Invoke AccumulateMidiBytesSent() for |client| safely. If the session was
+  // already closed, do nothing.
+  void AccumulateMidiBytesSent(MidiManagerClient* client, size_t n);
 
   // DispatchSendMidiData() is called when MIDI data should be sent to the MIDI
   // system.
@@ -122,6 +127,8 @@ class MEDIA_EXPORT MidiManager {
 
   void AddInputPort(const MidiPortInfo& info);
   void AddOutputPort(const MidiPortInfo& info);
+  void SetInputPortState(uint32 port_index, MidiPortState state);
+  void SetOutputPortState(uint32 port_index, MidiPortState state);
 
   // Dispatches to all clients.
   // TODO(toyoshim): Fix the mac implementation to use
@@ -177,6 +184,7 @@ class MEDIA_EXPORT MidiManager {
   DISALLOW_COPY_AND_ASSIGN(MidiManager);
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_MIDI_MANAGER_H_

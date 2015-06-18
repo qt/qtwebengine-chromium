@@ -28,7 +28,7 @@
 namespace blink {
 
 class Element;
-class RenderStyle;
+class ComputedStyle;
 class RuleFeatureSet;
 class RuleSet;
 class SpaceSplitString;
@@ -50,7 +50,7 @@ public:
         , m_context(context)
     { }
 
-    RenderStyle* findSharedStyle();
+    ComputedStyle* findSharedStyle();
 
 private:
     Element* findElementForStyleSharing() const;

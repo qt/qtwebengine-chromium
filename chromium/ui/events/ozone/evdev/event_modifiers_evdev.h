@@ -19,8 +19,11 @@ enum {
   EVDEV_MODIFIER_LEFT_MOUSE_BUTTON,
   EVDEV_MODIFIER_MIDDLE_MOUSE_BUTTON,
   EVDEV_MODIFIER_RIGHT_MOUSE_BUTTON,
+  EVDEV_MODIFIER_BACK_MOUSE_BUTTON,
+  EVDEV_MODIFIER_FORWARD_MOUSE_BUTTON,
   EVDEV_MODIFIER_COMMAND,
   EVDEV_MODIFIER_ALTGR,
+  EVDEV_MODIFIER_MOD3,
   EVDEV_NUM_MODIFIERS
 };
 
@@ -49,6 +52,9 @@ class EVENTS_OZONE_EVDEV_EXPORT EventModifiersEvdev {
 
   // Record key press or release for locking modifier key (caps lock).
   void UpdateModifierLock(unsigned int modifier, bool down);
+
+  // Directly set the state of a locking modifier key (caps lock).
+  void SetModifierLock(unsigned int modifier, bool locked);
 
   // Return current flags to use for incoming events.
   int GetModifierFlags();

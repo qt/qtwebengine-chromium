@@ -7,6 +7,9 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/lock.h"
+#include "content/common/gpu/gpu_memory_buffer_factory.h"
+#include "gpu/command_buffer/service/image_factory.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -17,33 +20,44 @@ class SurfaceTexture;
 
 namespace content {
 
-class GpuMemoryBufferFactorySurfaceTexture {
+class GpuMemoryBufferFactorySurfaceTexture : public GpuMemoryBufferFactory,
+                                             public gpu::ImageFactory {
  public:
   GpuMemoryBufferFactorySurfaceTexture();
-  ~GpuMemoryBufferFactorySurfaceTexture();
+  ~GpuMemoryBufferFactorySurfaceTexture() override;
 
-  // Creates a SurfaceTexture backed GPU memory buffer with |size| and
-  // |internalformat|. A valid handle is returned on success.
-  gfx::GpuMemoryBufferHandle CreateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
-                                                   const gfx::Size& size,
-                                                   unsigned internalformat,
-                                                   int client_id);
+  static bool IsGpuMemoryBufferConfigurationSupported(
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage);
 
-  // Destroy a previously created GPU memory buffer.
-  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id, int client_id);
-
-  // Creates a GLImage instance for a GPU memory buffer.
-  scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
+  // Overridden from GpuMemoryBufferFactory:
+  void GetSupportedGpuMemoryBufferConfigurations(
+      std::vector<Configuration>* configurations) override;
+  gfx::GpuMemoryBufferHandle CreateGpuMemoryBuffer(
       gfx::GpuMemoryBufferId id,
       const gfx::Size& size,
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage,
+      int client_id,
+      gfx::PluginWindowHandle surface_handle) override;
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                              int client_id) override;
+  gpu::ImageFactory* AsImageFactory() override;
+
+  // Overridden from gpu::ImageFactory:
+  scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
+      const gfx::GpuMemoryBufferHandle& handle,
+      const gfx::Size& size,
+      gfx::GpuMemoryBuffer::Format format,
       unsigned internalformat,
-      int client_id);
+      int client_id) override;
 
  private:
   typedef std::pair<int, int> SurfaceTextureMapKey;
   typedef base::hash_map<SurfaceTextureMapKey,
                          scoped_refptr<gfx::SurfaceTexture>> SurfaceTextureMap;
   SurfaceTextureMap surface_textures_;
+  base::Lock surface_textures_lock_;
 };
 
 }  // namespace content

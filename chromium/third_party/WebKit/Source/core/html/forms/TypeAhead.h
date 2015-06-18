@@ -26,6 +26,7 @@
 #ifndef TypeAhead_h
 #define TypeAhead_h
 
+#include "core/CoreExport.h"
 #include "core/dom/DOMTimeStamp.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
@@ -34,7 +35,7 @@ namespace blink {
 
 class KeyboardEvent;
 
-class TypeAheadDataSource {
+class CORE_EXPORT TypeAheadDataSource {
 public:
     virtual ~TypeAheadDataSource() { }
 
@@ -52,11 +53,11 @@ public:
         CycleFirstChar = 1 << 1,
         MatchIndex = 1 << 2,
     };
-    typedef unsigned MatchModeFlags;
+    using MatchModeFlags = unsigned;
 
     // Returns the index for the matching option.
     int handleEvent(KeyboardEvent*, MatchModeFlags);
-
+    bool hasActiveSession(KeyboardEvent*);
 private:
     TypeAheadDataSource* m_dataSource;
     DOMTimeStamp m_lastTypeTime;

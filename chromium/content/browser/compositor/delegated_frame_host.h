@@ -21,10 +21,11 @@
 #include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_owner_delegate.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace cc {
 class SurfaceFactory;
+enum class SurfaceDrawStatus;
 }
 
 namespace media {
@@ -44,26 +45,26 @@ class ResizeLock;
 // display them.
 class CONTENT_EXPORT DelegatedFrameHostClient {
  public:
-  virtual ui::Compositor* GetCompositor() const = 0;
-  virtual ui::Layer* GetLayer() = 0;
-  virtual RenderWidgetHostImpl* GetHost() = 0;
-  virtual bool IsVisible() = 0;
-  virtual scoped_ptr<ResizeLock> CreateResizeLock(
+  virtual ui::Layer* DelegatedFrameHostGetLayer() const = 0;
+  virtual bool DelegatedFrameHostIsVisible() const = 0;
+  virtual gfx::Size DelegatedFrameHostDesiredSizeInDIP() const = 0;
+
+  virtual bool DelegatedFrameCanCreateResizeLock() const = 0;
+  virtual scoped_ptr<ResizeLock> DelegatedFrameHostCreateResizeLock(
       bool defer_compositor_lock) = 0;
-  virtual gfx::Size DesiredFrameSize() = 0;
+  virtual void DelegatedFrameHostResizeLockWasReleased() = 0;
 
-  // TODO(ccameron): It is likely that at least one of these two functions is
-  // redundant. Find which one, and delete it.
-  virtual float CurrentDeviceScaleFactor() = 0;
-  virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) = 0;
+  virtual void DelegatedFrameHostSendCompositorSwapAck(
+      int output_surface_id,
+      const cc::CompositorFrameAck& ack) = 0;
+  virtual void DelegatedFrameHostSendReclaimCompositorResources(
+      int output_surface_id,
+      const cc::CompositorFrameAck& ack) = 0;
+  virtual void DelegatedFrameHostOnLostCompositorResources() = 0;
 
-  // These are to be overridden for testing only.
-  // TODO(ccameron): This is convoluted. Make the tests that need to override
-  // these functions test DelegatedFrameHost directly (rather than do it
-  // through RenderWidgetHostViewAura).
-  virtual DelegatedFrameHost* GetDelegatedFrameHost() const = 0;
-  virtual bool ShouldCreateResizeLock();
-  virtual void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
+  virtual void DelegatedFrameHostUpdateVSyncParameters(
+      const base::TimeTicks& timebase,
+      const base::TimeDelta& interval) = 0;
 };
 
 // The DelegatedFrameHost is used to host all of the RenderWidgetHostView state
@@ -83,6 +84,34 @@ class CONTENT_EXPORT DelegatedFrameHost
   DelegatedFrameHost(DelegatedFrameHostClient* client);
   ~DelegatedFrameHost() override;
 
+  // ui::CompositorObserver implementation.
+  void OnCompositingDidCommit(ui::Compositor* compositor) override;
+  void OnCompositingStarted(ui::Compositor* compositor,
+                            base::TimeTicks start_time) override;
+  void OnCompositingEnded(ui::Compositor* compositor) override;
+  void OnCompositingAborted(ui::Compositor* compositor) override;
+  void OnCompositingLockStateChanged(ui::Compositor* compositor) override;
+  void OnCompositingShuttingDown(ui::Compositor* compositor) override;
+
+  // ui::CompositorVSyncManager::Observer implementation.
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval) override;
+
+  // ui::LayerOwnerObserver implementation.
+  void OnLayerRecreated(ui::Layer* old_layer, ui::Layer* new_layer) override;
+
+  // ImageTransportFactoryObserver implementation.
+  void OnLostResources() override;
+
+  // DelegatedFrameEvictorClient implementation.
+  void EvictDelegatedFrame() override;
+
+  // cc::DelegatedFrameProviderClient implementation.
+  void UnusedResourcesAreAvailable() override;
+
+  // cc::SurfaceFactoryClient implementation.
+  void ReturnResources(const cc::ReturnedResourceArray& resources) override;
+
   bool CanCopyToBitmap() const;
 
   // Public interface exposed to RenderWidgetHostView.
@@ -96,12 +125,14 @@ class CONTENT_EXPORT DelegatedFrameHost
   void WasResized();
   bool HasSavedFrame();
   gfx::Size GetRequestedRendererSize() const;
-  void AddedToWindow();
-  void RemovingFromWindow();
+  void SetCompositor(ui::Compositor* compositor);
+  void ResetCompositor();
+  // Note: |src_subset| is specified in DIP dimensions while |output_size|
+  // expects pixels.
   void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
                                   const gfx::Size& output_size,
-                                  CopyFromCompositingSurfaceCallback& callback,
-                                  const SkColorType color_type);
+                                  ReadbackRequestCallback& callback,
+                                  const SkColorType preferred_color_type);
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -112,6 +143,7 @@ class CONTENT_EXPORT DelegatedFrameHost
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription();
   bool HasFrameSubscriber() const { return frame_subscriber_; }
+  uint32_t GetSurfaceIdNamespace();
 
   // Exposed for tests.
   cc::DelegatedFrameProvider* FrameProviderForTesting() const {
@@ -121,9 +153,12 @@ class CONTENT_EXPORT DelegatedFrameHost
   void OnCompositingDidCommitForTesting(ui::Compositor* compositor) {
     OnCompositingDidCommit(compositor);
   }
-  bool ShouldCreateResizeLockForTesting() { return ShouldCreateResizeLock(); }
   bool ReleasedFrontLockActiveForTesting() const {
     return !!released_front_lock_.get();
+  }
+  void SetRequestCopyOfOutputCallbackForTesting(
+      const base::Callback<void(scoped_ptr<cc::CopyOutputRequest>)>& callback) {
+    request_copy_of_output_callback_for_testing_ = callback;
   }
 
  private:
@@ -139,28 +174,9 @@ class CONTENT_EXPORT DelegatedFrameHost
     return frame_subscriber_.get();
   }
   bool ShouldCreateResizeLock();
-  void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
-
   void LockResources();
   void UnlockResources();
-
-  // Overridden from ui::CompositorObserver:
-  void OnCompositingDidCommit(ui::Compositor* compositor) override;
-  void OnCompositingStarted(ui::Compositor* compositor,
-                            base::TimeTicks start_time) override;
-  void OnCompositingEnded(ui::Compositor* compositor) override;
-  void OnCompositingAborted(ui::Compositor* compositor) override;
-  void OnCompositingLockStateChanged(ui::Compositor* compositor) override;
-
-  // Overridden from ui::CompositorVSyncManager::Observer:
-  void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                               base::TimeDelta interval) override;
-
-  // Overridden from ui::LayerOwnerObserver:
-  void OnLayerRecreated(ui::Layer* old_layer, ui::Layer* new_layer) override;
-
-  // Overridden from ImageTransportFactoryObserver:
-  void OnLostResources() override;
+  void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
 
   bool ShouldSkipFrame(gfx::Size size_in_dip) const;
 
@@ -182,17 +198,17 @@ class CONTENT_EXPORT DelegatedFrameHost
   static void CopyFromCompositingSurfaceHasResult(
       const gfx::Size& dst_size_in_pixel,
       const SkColorType color_type,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareTextureCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
       const SkColorType color_type,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareBitmapCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
       const SkColorType color_type,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void CopyFromCompositingSurfaceHasResultForVideo(
       base::WeakPtr<DelegatedFrameHost> rwhva,
@@ -212,20 +228,15 @@ class CONTENT_EXPORT DelegatedFrameHost
       uint32 sync_point);
 
   void SendDelegatedFrameAck(uint32 output_surface_id);
+  void SurfaceDrawn(uint32 output_surface_id, cc::SurfaceDrawStatus drawn);
   void SendReturnedDelegatedResources(uint32 output_surface_id);
 
-  // DelegatedFrameEvictorClient implementation.
-  void EvictDelegatedFrame() override;
-
-  // cc::DelegatedFrameProviderClient implementation.
-  void UnusedResourcesAreAvailable() override;
-
-  // cc::SurfaceFactoryClient implementation.
-  void ReturnResources(const cc::ReturnedResourceArray& resources) override;
-
+  // Called to consult the current |frame_subscriber_|, to determine and maybe
+  // initiate a copy-into-video-frame request.
   void DidReceiveFrameFromRenderer(const gfx::Rect& damage_rect);
 
-  DelegatedFrameHostClient* client_;
+  DelegatedFrameHostClient* const client_;
+  ui::Compositor* compositor_;
 
   // True if this renders into a Surface, false if it renders into a delegated
   // layer.
@@ -268,6 +279,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   scoped_ptr<cc::SurfaceFactory> surface_factory_;
   cc::SurfaceId surface_id_;
   gfx::Size current_surface_size_;
+  float current_scale_factor_;
   cc::ReturnedResourceArray surface_returned_resources_;
 
   // This lock is the one waiting for a frame of the right size to come back
@@ -300,6 +312,11 @@ class CONTENT_EXPORT DelegatedFrameHost
   // Subscriber that listens to frame presentation events.
   scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
   std::vector<scoped_refptr<OwnedMailbox> > idle_frame_subscriber_textures_;
+
+  // Callback used to pass the output request to the layer or to a function
+  // specified by a test.
+  base::Callback<void(scoped_ptr<cc::CopyOutputRequest>)>
+      request_copy_of_output_callback_for_testing_;
 
   // YUV readback pipeline.
   scoped_ptr<content::ReadbackYUVInterface>

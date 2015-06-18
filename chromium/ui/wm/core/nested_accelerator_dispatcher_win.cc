@@ -31,16 +31,16 @@ class NestedAcceleratorDispatcherWin : public NestedAcceleratorDispatcher,
   NestedAcceleratorDispatcherWin(NestedAcceleratorDelegate* delegate,
                                  MessagePumpDispatcher* nested)
       : NestedAcceleratorDispatcher(delegate), nested_dispatcher_(nested) {}
-  virtual ~NestedAcceleratorDispatcherWin() {}
+  ~NestedAcceleratorDispatcherWin() override {}
 
  private:
   // NestedAcceleratorDispatcher:
-  virtual scoped_ptr<base::RunLoop> CreateRunLoop() override {
-    return scoped_ptr<base::RunLoop>(new base::RunLoop(this));
+  scoped_ptr<base::RunLoop> CreateRunLoop() override {
+    return make_scoped_ptr(new base::RunLoop(this));
   }
 
   // MessagePumpDispatcher:
-  virtual uint32_t Dispatch(const MSG& event) override {
+  uint32_t Dispatch(const MSG& event) override {
     if (IsKeyEvent(event)) {
       ui::KeyEvent key_event(event);
       ui::Accelerator accelerator = CreateAcceleratorFromKeyEvent(key_event);
@@ -67,7 +67,7 @@ class NestedAcceleratorDispatcherWin : public NestedAcceleratorDispatcher,
 scoped_ptr<NestedAcceleratorDispatcher> NestedAcceleratorDispatcher::Create(
     NestedAcceleratorDelegate* delegate,
     MessagePumpDispatcher* nested_dispatcher) {
-  return scoped_ptr<NestedAcceleratorDispatcher>(
+  return make_scoped_ptr(
       new NestedAcceleratorDispatcherWin(delegate, nested_dispatcher));
 }
 

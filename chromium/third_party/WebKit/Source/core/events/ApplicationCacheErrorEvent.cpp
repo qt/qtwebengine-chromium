@@ -7,7 +7,7 @@
 
 namespace blink {
 
-static const String& errorReasonToString(blink::WebApplicationCacheHost::ErrorReason reason)
+static const String& errorReasonToString(WebApplicationCacheHost::ErrorReason reason)
 {
     DEFINE_STATIC_LOCAL(String, errorManifest, ("manifest"));
     DEFINE_STATIC_LOCAL(String, errorSignature, ("signature"));
@@ -19,37 +19,32 @@ static const String& errorReasonToString(blink::WebApplicationCacheHost::ErrorRe
     DEFINE_STATIC_LOCAL(String, errorUnknown, ("unknown"));
 
     switch (reason) {
-    case blink::WebApplicationCacheHost::ManifestError:
+    case WebApplicationCacheHost::ManifestError:
         return errorManifest;
-    case blink::WebApplicationCacheHost::SignatureError:
+    case WebApplicationCacheHost::SignatureError:
         return errorSignature;
-    case blink::WebApplicationCacheHost::ResourceError:
+    case WebApplicationCacheHost::ResourceError:
         return errorResource;
-    case blink::WebApplicationCacheHost::ChangedError:
+    case WebApplicationCacheHost::ChangedError:
         return errorChanged;
-    case blink::WebApplicationCacheHost::AbortError:
+    case WebApplicationCacheHost::AbortError:
         return errorAbort;
-    case blink::WebApplicationCacheHost::QuotaError:
+    case WebApplicationCacheHost::QuotaError:
         return errorQuota;
-    case blink::WebApplicationCacheHost::PolicyError:
+    case WebApplicationCacheHost::PolicyError:
         return errorPolicy;
-    case blink::WebApplicationCacheHost::UnknownError:
+    case WebApplicationCacheHost::UnknownError:
         return errorUnknown;
     }
     ASSERT_NOT_REACHED();
     return emptyString();
 }
 
-ApplicationCacheErrorEventInit::ApplicationCacheErrorEventInit()
-    : status(0)
-{
-}
-
 ApplicationCacheErrorEvent::ApplicationCacheErrorEvent()
 {
 }
 
-ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(blink::WebApplicationCacheHost::ErrorReason reason, const String& url, int status, const String& message)
+ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(WebApplicationCacheHost::ErrorReason reason, const String& url, int status, const String& message)
     : Event(EventTypeNames::error, false, false)
     , m_reason(errorReasonToString(reason))
     , m_url(url)
@@ -60,18 +55,23 @@ ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(blink::WebApplicationCach
 
 ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(const AtomicString& eventType, const ApplicationCacheErrorEventInit& initializer)
     : Event(eventType, initializer)
-    , m_reason(initializer.reason)
-    , m_url(initializer.url)
-    , m_status(initializer.status)
-    , m_message(initializer.message)
+    , m_status(0)
 {
+    if (initializer.hasReason())
+        m_reason = initializer.reason();
+    if (initializer.hasURL())
+        m_url = initializer.url();
+    if (initializer.hasStatus())
+        m_status = initializer.status();
+    if (initializer.hasMessage())
+        m_message = initializer.message();
 }
 
 ApplicationCacheErrorEvent::~ApplicationCacheErrorEvent()
 {
 }
 
-void ApplicationCacheErrorEvent::trace(Visitor* visitor)
+DEFINE_TRACE(ApplicationCacheErrorEvent)
 {
     Event::trace(visitor);
 }

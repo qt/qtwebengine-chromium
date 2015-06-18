@@ -5,7 +5,7 @@
 #ifndef UI_VIEWS_CONTROLS_SCROLLBAR_BASE_SCROLL_BAR_THUMB_H_
 #define UI_VIEWS_CONTROLS_SCROLLBAR_BASE_SCROLL_BAR_THUMB_H_
 
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/scrollbar/scroll_bar.h"
 #include "ui/views/view.h"
@@ -44,11 +44,11 @@ class VIEWS_EXPORT BaseScrollBarThumb : public View {
   int GetPosition() const;
 
   // View overrides:
-  virtual gfx::Size GetPreferredSize() const override = 0;
+  gfx::Size GetPreferredSize() const override = 0;
 
  protected:
   // View overrides:
-  virtual void OnPaint(gfx::Canvas* canvas) override = 0;
+  void OnPaint(gfx::Canvas* canvas) override = 0;
   void OnMouseEntered(const ui::MouseEvent& event) override;
   void OnMouseExited(const ui::MouseEvent& event) override;
   bool OnMousePressed(const ui::MouseEvent& event) override;

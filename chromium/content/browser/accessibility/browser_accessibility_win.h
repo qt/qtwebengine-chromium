@@ -82,7 +82,7 @@ BrowserAccessibilityWin
   // Represents a non-static text node in IAccessibleHypertext. This character
   // is embedded in the response to IAccessibleText::get_text, indicating the
   // position where a non-static text child object appears.
-  CONTENT_EXPORT static const base::char16 kEmbeddedCharacter[];
+  CONTENT_EXPORT static const base::char16 kEmbeddedCharacter;
 
   // Mappings from roles and states to human readable strings. Initialize
   // with |InitializeStringMaps|.
@@ -91,21 +91,28 @@ BrowserAccessibilityWin
 
   CONTENT_EXPORT BrowserAccessibilityWin();
 
-  CONTENT_EXPORT virtual ~BrowserAccessibilityWin();
+  CONTENT_EXPORT ~BrowserAccessibilityWin() override;
 
   // The Windows-specific unique ID, used as the child ID for MSAA methods
   // like NotifyWinEvent, and as the unique ID for IAccessible2 and ISimpleDOM.
   LONG unique_id_win() const { return unique_id_win_; }
 
+  // Called after an atomic tree update completes. See
+  // BrowserAccessibilityManagerWin::OnAtomicUpdateFinished for more
+  // details on what these do.
+  CONTENT_EXPORT void UpdateStep1ComputeWinAttributes();
+  CONTENT_EXPORT void UpdateStep2ComputeHypertext();
+  CONTENT_EXPORT void UpdateStep3FireEvents(bool is_subtree_creation);
+  CONTENT_EXPORT void UpdateStep4DeleteOldWinAttributes();
+
   //
   // BrowserAccessibility methods.
   //
-  CONTENT_EXPORT virtual void OnDataChanged() override;
-  CONTENT_EXPORT virtual void OnUpdateFinished() override;
-  CONTENT_EXPORT virtual void NativeAddReference() override;
-  CONTENT_EXPORT virtual void NativeReleaseReference() override;
-  CONTENT_EXPORT virtual bool IsNative() const override;
-  CONTENT_EXPORT virtual void OnLocationChanged() override;
+  CONTENT_EXPORT void OnSubtreeWillBeDeleted() override;
+  CONTENT_EXPORT void NativeAddReference() override;
+  CONTENT_EXPORT void NativeReleaseReference() override;
+  CONTENT_EXPORT bool IsNative() const override;
+  CONTENT_EXPORT void OnLocationChanged() override;
 
   //
   // IAccessible methods.
@@ -183,13 +190,9 @@ BrowserAccessibilityWin
 
   // Deprecated methods, not implemented.
   CONTENT_EXPORT STDMETHODIMP
-  put_accName(VARIANT var_id, BSTR put_name) override {
-    return E_NOTIMPL;
-  }
+  put_accName(VARIANT var_id, BSTR put_name) override;
   CONTENT_EXPORT STDMETHODIMP
-  put_accValue(VARIANT var_id, BSTR put_val) override {
-    return E_NOTIMPL;
-  }
+  put_accValue(VARIANT var_id, BSTR put_val) override;
 
   //
   // IAccessible2 methods.
@@ -239,32 +242,20 @@ BrowserAccessibilityWin
   //
   // IAccessibleEx methods not implemented.
   //
-  CONTENT_EXPORT STDMETHODIMP get_extendedRole(BSTR* extended_role) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP get_extendedRole(BSTR* extended_role) override;
   CONTENT_EXPORT STDMETHODIMP
-  get_localizedExtendedRole(BSTR* localized_extended_role) override {
-    return E_NOTIMPL;
-  }
+  get_localizedExtendedRole(BSTR* localized_extended_role) override;
   CONTENT_EXPORT STDMETHODIMP
-  get_nExtendedStates(LONG* n_extended_states) override {
-    return E_NOTIMPL;
-  }
+  get_nExtendedStates(LONG* n_extended_states) override;
   CONTENT_EXPORT STDMETHODIMP
   get_extendedStates(LONG max_extended_states,
                      BSTR** extended_states,
-                     LONG* n_extended_states) override {
-    return E_NOTIMPL;
-  }
+                     LONG* n_extended_states) override;
   CONTENT_EXPORT STDMETHODIMP
   get_localizedExtendedStates(LONG max_localized_extended_states,
                               BSTR** localized_extended_states,
-                              LONG* n_localized_extended_states) override {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP get_locale(IA2Locale* locale) override {
-    return E_NOTIMPL;
-  }
+                              LONG* n_localized_extended_states) override;
+  CONTENT_EXPORT STDMETHODIMP get_locale(IA2Locale* locale) override;
 
   //
   // IAccessibleApplication methods.
@@ -370,24 +361,16 @@ BrowserAccessibilityWin
                               long* column_extents,
                               boolean* is_selected) override;
 
-  CONTENT_EXPORT STDMETHODIMP selectRow(long row) override { return E_NOTIMPL; }
+  CONTENT_EXPORT STDMETHODIMP selectRow(long row) override;
 
-  CONTENT_EXPORT STDMETHODIMP selectColumn(long column) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP selectColumn(long column) override;
 
-  CONTENT_EXPORT STDMETHODIMP unselectRow(long row) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP unselectRow(long row) override;
 
-  CONTENT_EXPORT STDMETHODIMP unselectColumn(long column) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP unselectColumn(long column) override;
 
   CONTENT_EXPORT STDMETHODIMP
-  get_modelChange(IA2TableModelChange* model_change) override {
-    return E_NOTIMPL;
-  }
+  get_modelChange(IA2TableModelChange* model_change) override;
 
   //
   // IAccessibleTable2 methods.
@@ -525,9 +508,7 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP get_attributes(LONG offset,
                                              LONG* start_offset,
                                              LONG* end_offset,
-                                             BSTR* text_attributes) override {
-    return E_NOTIMPL;
-  }
+                                             BSTR* text_attributes) override;
 
   //
   // IAccessibleHypertext methods.
@@ -542,47 +523,25 @@ BrowserAccessibilityWin
   get_hyperlinkIndex(long char_index, long* hyperlink_index) override;
 
   // IAccessibleHyperlink not implemented.
-  CONTENT_EXPORT STDMETHODIMP get_anchor(long index, VARIANT* anchor) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP get_anchor(long index, VARIANT* anchor) override;
   CONTENT_EXPORT STDMETHODIMP
-  get_anchorTarget(long index, VARIANT* anchor_target) override {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP get_startIndex(long* index) override {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP get_endIndex(long* index) override {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP get_valid(boolean* valid) override {
-    return E_NOTIMPL;
-  }
+  get_anchorTarget(long index, VARIANT* anchor_target) override;
+  CONTENT_EXPORT STDMETHODIMP get_startIndex(long* index) override;
+  CONTENT_EXPORT STDMETHODIMP get_endIndex(long* index) override;
+  CONTENT_EXPORT STDMETHODIMP get_valid(boolean* valid) override;
 
   // IAccessibleAction not implemented.
-  CONTENT_EXPORT STDMETHODIMP nActions(long* n_actions) override {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP doAction(long action_index) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP nActions(long* n_actions) override;
+  CONTENT_EXPORT STDMETHODIMP doAction(long action_index) override;
   CONTENT_EXPORT STDMETHODIMP
-  get_description(long action_index, BSTR* description) override {
-    return E_NOTIMPL;
-  }
+  get_description(long action_index, BSTR* description) override;
   CONTENT_EXPORT STDMETHODIMP get_keyBinding(long action_index,
                                              long n_max_bindings,
                                              BSTR** key_bindings,
-                                             long* n_bindings) override {
-    return E_NOTIMPL;
-  }
-  CONTENT_EXPORT STDMETHODIMP get_name(long action_index, BSTR* name) override {
-    return E_NOTIMPL;
-  }
+                                             long* n_bindings) override;
+  CONTENT_EXPORT STDMETHODIMP get_name(long action_index, BSTR* name) override;
   CONTENT_EXPORT STDMETHODIMP
-  get_localizedName(long action_index, BSTR* localized_name) override {
-    return E_NOTIMPL;
-  }
+  get_localizedName(long action_index, BSTR* localized_name) override;
 
   //
   // IAccessibleValue methods.
@@ -609,13 +568,9 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP get_docType(BSTR* doc_type) override;
 
   CONTENT_EXPORT STDMETHODIMP
-  get_nameSpaceURIForID(short name_space_id, BSTR* name_space_uri) override {
-    return E_NOTIMPL;
-  }
+  get_nameSpaceURIForID(short name_space_id, BSTR* name_space_uri) override;
   CONTENT_EXPORT STDMETHODIMP
-  put_alternateViewMediaTypes(BSTR* comma_separated_media_types) override {
-    return E_NOTIMPL;
-  }
+  put_alternateViewMediaTypes(BSTR* comma_separated_media_types) override;
 
   //
   // ISimpleDOMNode methods.
@@ -670,18 +625,12 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP
   get_childAt(unsigned int child_index, ISimpleDOMNode** node) override;
 
-  CONTENT_EXPORT STDMETHODIMP get_innerHTML(BSTR* innerHTML) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP get_innerHTML(BSTR* innerHTML) override;
 
   CONTENT_EXPORT STDMETHODIMP
-  get_localInterface(void** local_interface) override {
-    return E_NOTIMPL;
-  }
+  get_localInterface(void** local_interface) override;
 
-  CONTENT_EXPORT STDMETHODIMP get_language(BSTR* language) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP get_language(BSTR* language) override;
 
   //
   // ISimpleDOMText methods.
@@ -708,9 +657,7 @@ BrowserAccessibilityWin
   CONTENT_EXPORT STDMETHODIMP
   scrollToSubstring(unsigned int start_index, unsigned int end_index) override;
 
-  CONTENT_EXPORT STDMETHODIMP get_fontFamily(BSTR* font_family) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP get_fontFamily(BSTR* font_family) override;
 
   //
   // IServiceProvider methods.
@@ -721,24 +668,16 @@ BrowserAccessibilityWin
 
   // IAccessibleEx methods not implemented.
   CONTENT_EXPORT STDMETHODIMP
-  GetObjectForChild(long child_id, IAccessibleEx** ret) override {
-    return E_NOTIMPL;
-  }
+  GetObjectForChild(long child_id, IAccessibleEx** ret) override;
 
   CONTENT_EXPORT STDMETHODIMP
-  GetIAccessiblePair(IAccessible** acc, long* child_id) override {
-    return E_NOTIMPL;
-  }
+  GetIAccessiblePair(IAccessible** acc, long* child_id) override;
 
-  CONTENT_EXPORT STDMETHODIMP GetRuntimeId(SAFEARRAY** runtime_id) override {
-    return E_NOTIMPL;
-  }
+  CONTENT_EXPORT STDMETHODIMP GetRuntimeId(SAFEARRAY** runtime_id) override;
 
   CONTENT_EXPORT STDMETHODIMP
   ConvertReturnedElement(IRawElementProviderSimple* element,
-                         IAccessibleEx** acc) override {
-    return E_NOTIMPL;
-  }
+                         IAccessibleEx** acc) override;
 
   //
   // IRawElementProviderSimple methods.
@@ -754,14 +693,9 @@ BrowserAccessibilityWin
   // IRawElementProviderSimple methods not implemented
   //
   CONTENT_EXPORT STDMETHODIMP
-  get_ProviderOptions(enum ProviderOptions* ret) override {
-    return E_NOTIMPL;
-  }
-
+  get_ProviderOptions(enum ProviderOptions* ret) override;
   CONTENT_EXPORT STDMETHODIMP
-  get_HostRawElementProvider(IRawElementProviderSimple** provider) override {
-    return E_NOTIMPL;
-  }
+  get_HostRawElementProvider(IRawElementProviderSimple** provider) override;
 
   //
   // CComObjectRootEx methods.
@@ -775,14 +709,23 @@ BrowserAccessibilityWin
                          void** object);
 
   // Accessors.
-  int32 ia_role() const { return ia_role_; }
-  int32 ia_state() const { return ia_state_; }
-  const base::string16& role_name() const { return role_name_; }
-  int32 ia2_role() const { return ia2_role_; }
-  int32 ia2_state() const { return ia2_state_; }
+  int32 ia_role() const { return win_attributes_->ia_role; }
+  int32 ia_state() const { return win_attributes_->ia_state; }
+  const base::string16& role_name() const { return win_attributes_->role_name; }
+  int32 ia2_role() const { return win_attributes_->ia2_role; }
+  int32 ia2_state() const { return win_attributes_->ia2_state; }
   const std::vector<base::string16>& ia2_attributes() const {
-    return ia2_attributes_;
+    return win_attributes_->ia2_attributes;
   }
+  base::string16 name() const { return win_attributes_->name; }
+  base::string16 description() const { return win_attributes_->description; }
+  base::string16 help() const { return win_attributes_->help; }
+  base::string16 value() const { return win_attributes_->value; }
+  base::string16 hypertext() const { return win_attributes_->hypertext; }
+  std::map<int32, int32>& hyperlink_offset_to_index() const {
+    return win_attributes_->hyperlink_offset_to_index;
+  }
+  std::vector<int32>& hyperlinks() const { return win_attributes_->hyperlinks; }
 
  private:
   // Add one to the reference count and return the same object. Always
@@ -823,6 +766,9 @@ BrowserAccessibilityWin
   void IntAttributeToIA2(ui::AXIntAttribute attribute,
                          const char* ia2_attr);
 
+  // Append the accessible name from this node and its children.
+  base::string16 GetNameRecursive() const;
+
   // Get the value text, which might come from the floating-point
   // value for some roles.
   base::string16 GetValueText();
@@ -830,6 +776,10 @@ BrowserAccessibilityWin
   // Get the text of this node for the purposes of IAccessibleText - it may
   // be the name, it may be the value, etc. depending on the role.
   base::string16 TextForIAccessibleText();
+
+  bool IsSameHypertextCharacter(size_t old_char_index, size_t new_char_index);
+  void ComputeHypertextRemovedAndInserted(
+      int* start, int* old_len, int* new_len);
 
   // If offset is a member of IA2TextSpecialOffsets this function updates the
   // value of offset and returns, otherwise offset remains unchanged.
@@ -850,51 +800,56 @@ BrowserAccessibilityWin
   // does not make a new reference.
   BrowserAccessibilityWin* GetFromID(int32 id);
 
+  // Returns true if this is a list box option with a parent of type list box,
+  // or a menu list option with a parent of type menu list popup.
+  bool IsListBoxOptionOrMenuListOption();
+
   // Windows-specific unique ID (unique within the browser process),
   // used for get_accChild, NotifyWinEvent, and as the unique ID for
   // IAccessible2 and ISimpleDOM.
   LONG unique_id_win_;
 
-  // IAccessible role and state.
-  int32 ia_role_;
-  int32 ia_state_;
-  base::string16 role_name_;
+  struct WinAttributes {
+    WinAttributes();
+    ~WinAttributes();
 
-  // IAccessible2 role and state.
-  int32 ia2_role_;
-  int32 ia2_state_;
+    // IAccessible role and state.
+    int32 ia_role;
+    int32 ia_state;
+    base::string16 role_name;
 
-  // IAccessible2 attributes.
-  std::vector<base::string16> ia2_attributes_;
+    // IAccessible name, description, help, value.
+    base::string16 name;
+    base::string16 description;
+    base::string16 help;
+    base::string16 value;
 
-  // True in Initialize when the object is first created, and false
-  // subsequent times.
-  bool first_time_;
+    // IAccessible2 role and state.
+    int32 ia2_role;
+    int32 ia2_state;
 
-  // The previous text, before the last update to this object.
-  base::string16 previous_text_;
+    // IAccessible2 attributes.
+    std::vector<base::string16> ia2_attributes;
 
-  // The old text to return in IAccessibleText::get_oldText - this is like
-  // previous_text_ except that it's NOT updated when the object
-  // is initialized again but the text doesn't change.
-  base::string16 old_text_;
+    // Hypertext.
+    base::string16 hypertext;
 
-  // The previous state, used to see if there was a state change.
-  int32 old_ia_state_;
+    // Maps the |hypertext_| embedded character offset to an index in
+    // |hyperlinks_|.
+    std::map<int32, int32> hyperlink_offset_to_index;
+
+    // The id of a BrowserAccessibilityWin for each hyperlink.
+    std::vector<int32> hyperlinks;
+  };
+
+  scoped_ptr<WinAttributes> win_attributes_;
+
+  // Only valid during the scope of a IA2_EVENT_TEXT_REMOVED or
+  // IA2_EVENT_TEXT_INSERTED event.
+  scoped_ptr<WinAttributes> old_win_attributes_;
 
   // Relationships between this node and other nodes.
   std::vector<BrowserAccessibilityRelation*> relations_;
-
-  // The text of this node including embedded hyperlink characters.
-  base::string16 hypertext_;
-
-  // Maps the |hypertext_| embedded character offset to an index in
-  // |hyperlinks_|.
-  std::map<int32, int32> hyperlink_offset_to_index_;
-
-  // Collection of non-static text child indicies, each of which corresponds to
-  // a hyperlink.
-  std::vector<int32> hyperlinks_;
 
   // The previous scroll position, so we can tell if this object scrolled.
   int previous_scroll_x_;

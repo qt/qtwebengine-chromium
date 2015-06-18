@@ -8,7 +8,6 @@
 #include "Benchmark.h"
 #include "SkCanvas.h"
 #include "SkChecksum.h"
-#include "SkFontHost.h"
 #include "SkPaint.h"
 #include "SkString.h"
 #include "SkTemplates.h"
@@ -29,11 +28,11 @@ public:
     FontCacheBench()  {}
 
 protected:
-    virtual const char* onGetName() SK_OVERRIDE {
+    const char* onGetName() override {
         return "fontcache";
     }
 
-    virtual void onDraw(const int loops, SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(const int loops, SkCanvas* canvas) override {
         SkPaint paint;
         this->setupPaint(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
@@ -105,11 +104,11 @@ public:
     }
 
 protected:
-    virtual const char* onGetName() SK_OVERRIDE {
+    const char* onGetName() override {
         return "fontefficiency";
     }
 
-    virtual void onDraw(const int loops, SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(const int loops, SkCanvas* canvas) override {
         static bool gDone;
         if (gDone) {
             return;

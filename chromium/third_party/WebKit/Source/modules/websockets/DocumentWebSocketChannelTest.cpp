@@ -5,6 +5,7 @@
 #include "config.h"
 #include "modules/websockets/WebSocketChannel.h"
 
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/Document.h"
 #include "core/fileapi/Blob.h"
 #include "core/frame/ConsoleTypes.h"
@@ -19,10 +20,10 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
-#include "wtf/ArrayBuffer.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
+#include <stdint.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -37,7 +38,7 @@ namespace blink {
 
 namespace {
 
-typedef testing::StrictMock< testing::MockFunction<void(int)> > Checkpoint;
+typedef testing::StrictMock< testing::MockFunction<void(int)>> Checkpoint;
 
 class MockWebSocketChannelClient : public GarbageCollectedFinalized<MockWebSocketChannelClient>, public WebSocketChannelClient {
     USING_GARBAGE_COLLECTED_MIXIN(MockWebSocketChannelClient);
@@ -53,17 +54,17 @@ public:
 
     MOCK_METHOD2(didConnect, void(const String&, const String&));
     MOCK_METHOD1(didReceiveTextMessage, void(const String&));
-    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char> > payload) override
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>> payload) override
     {
         didReceiveBinaryMessageMock(*payload);
     }
     MOCK_METHOD1(didReceiveBinaryMessageMock, void(const Vector<char>&));
     MOCK_METHOD0(didError, void());
-    MOCK_METHOD1(didConsumeBufferedAmount, void(unsigned long));
+    MOCK_METHOD1(didConsumeBufferedAmount, void(uint64_t));
     MOCK_METHOD0(didStartClosingHandshake, void());
     MOCK_METHOD3(didClose, void(ClosingHandshakeCompletionStatus, unsigned short, const String&));
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         WebSocketChannelClient::trace(visitor);
     }
@@ -138,7 +139,7 @@ public:
             EXPECT_CALL(*channelClient(), didConnect(String("a"), String("b")));
         }
         EXPECT_TRUE(channel()->connect(KURL(KURL(), "ws://localhost/"), "x"));
-        handleClient()->didConnect(handle(), false, WebString("a"), WebString("b"));
+        handleClient()->didConnect(handle(), WebString("a"), WebString("b"));
         ::testing::Mock::VerifyAndClearExpectations(this);
     }
 
@@ -172,7 +173,7 @@ TEST_F(DocumentWebSocketChannelTest, connectSuccess)
 
     EXPECT_TRUE(channel()->connect(KURL(KURL(), "ws://localhost/"), "x"));
     checkpoint.Call(1);
-    handleClient()->didConnect(handle(), false, WebString("a"), WebString("b"));
+    handleClient()->didConnect(handle(), WebString("a"), WebString("b"));
 }
 
 TEST_F(DocumentWebSocketChannelTest, sendText)
@@ -228,57 +229,6 @@ TEST_F(DocumentWebSocketChannelTest, sendTextContinuation)
     EXPECT_EQ(62ul, m_sumOfConsumedBufferedAmount);
 }
 
-TEST_F(DocumentWebSocketChannelTest, sendTextNonLatin1)
-{
-    connect();
-    {
-        InSequence s;
-        EXPECT_CALL(*handle(), send(true, WebSocketHandle::MessageTypeText, MemEq("\xe7\x8b\x90\xe0\xa4\x94", 6), 6));
-    }
-
-    handleClient()->didReceiveFlowControl(handle(), 16);
-    EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
-
-    UChar nonLatin1String[] = {
-        0x72d0,
-        0x0914,
-        0x0000
-    };
-    channel()->send(nonLatin1String);
-
-    EXPECT_EQ(6ul, m_sumOfConsumedBufferedAmount);
-}
-
-TEST_F(DocumentWebSocketChannelTest, sendTextNonLatin1Continuation)
-{
-    connect();
-    Checkpoint checkpoint;
-    {
-        InSequence s;
-        EXPECT_CALL(*handle(), send(false, WebSocketHandle::MessageTypeText, MemEq("\xe7\x8b\x90\xe0\xa4\x94\xe7\x8b\x90\xe0\xa4\x94\xe7\x8b\x90\xe0", 16), 16));
-        EXPECT_CALL(checkpoint, Call(1));
-        EXPECT_CALL(*handle(), send(true, WebSocketHandle::MessageTypeContinuation, MemEq("\xa4\x94", 2), 2));
-    }
-
-    handleClient()->didReceiveFlowControl(handle(), 16);
-    EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
-
-    UChar nonLatin1String[] = {
-        0x72d0,
-        0x0914,
-        0x72d0,
-        0x0914,
-        0x72d0,
-        0x0914,
-        0x0000
-    };
-    channel()->send(nonLatin1String);
-    checkpoint.Call(1);
-    handleClient()->didReceiveFlowControl(handle(), 16);
-
-    EXPECT_EQ(18ul, m_sumOfConsumedBufferedAmount);
-}
-
 TEST_F(DocumentWebSocketChannelTest, sendBinaryInVector)
 {
     connect();
@@ -292,7 +242,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInVector)
 
     Vector<char> fooVector;
     fooVector.append("foo", 3);
-    channel()->send(adoptPtr(new Vector<char>(fooVector)));
+    channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(fooVector)));
 
     EXPECT_EQ(3ul, m_sumOfConsumedBufferedAmount);
 }
@@ -314,22 +264,22 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInVectorWithNullBytes)
     {
         Vector<char> v;
         v.append("\0ar", 3);
-        channel()->send(adoptPtr(new Vector<char>(v)));
+        channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
     }
     {
         Vector<char> v;
         v.append("b\0z", 3);
-        channel()->send(adoptPtr(new Vector<char>(v)));
+        channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
     }
     {
         Vector<char> v;
         v.append("qu\0", 3);
-        channel()->send(adoptPtr(new Vector<char>(v)));
+        channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
     }
     {
         Vector<char> v;
         v.append("\0\0\0", 3);
-        channel()->send(adoptPtr(new Vector<char>(v)));
+        channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
     }
 
     EXPECT_EQ(12ul, m_sumOfConsumedBufferedAmount);
@@ -345,7 +295,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInVectorNonLatin1UTF8)
 
     Vector<char> v;
     v.append("\xe7\x8b\x90", 3);
-    channel()->send(adoptPtr(new Vector<char>(v)));
+    channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
 
     EXPECT_EQ(3ul, m_sumOfConsumedBufferedAmount);
 }
@@ -360,7 +310,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInVectorNonUTF8)
 
     Vector<char> v;
     v.append("\x80\xff\xe7", 3);
-    channel()->send(adoptPtr(new Vector<char>(v)));
+    channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
 
     EXPECT_EQ(3ul, m_sumOfConsumedBufferedAmount);
 }
@@ -381,7 +331,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInVectorNonLatin1UTF8Continuation
 
     Vector<char> v;
     v.append("\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90", 18);
-    channel()->send(adoptPtr(new Vector<char>(v)));
+    channel()->sendBinaryAsCharVector(adoptPtr(new Vector<char>(v)));
     checkpoint.Call(1);
 
     handleClient()->didReceiveFlowControl(handle(), 16);
@@ -400,7 +350,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInArrayBuffer)
     handleClient()->didReceiveFlowControl(handle(), 16);
     EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
 
-    RefPtr<ArrayBuffer> fooBuffer = ArrayBuffer::create("foo", 3);
+    RefPtr<DOMArrayBuffer> fooBuffer = DOMArrayBuffer::create("foo", 3);
     channel()->send(*fooBuffer, 0, 3);
 
     EXPECT_EQ(3ul, m_sumOfConsumedBufferedAmount);
@@ -420,8 +370,8 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInArrayBufferPartial)
     handleClient()->didReceiveFlowControl(handle(), 16);
     EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
 
-    RefPtr<ArrayBuffer> foobarBuffer = ArrayBuffer::create("foobar", 6);
-    RefPtr<ArrayBuffer> qbazuxBuffer = ArrayBuffer::create("qbazux", 6);
+    RefPtr<DOMArrayBuffer> foobarBuffer = DOMArrayBuffer::create("foobar", 6);
+    RefPtr<DOMArrayBuffer> qbazuxBuffer = DOMArrayBuffer::create("qbazux", 6);
     channel()->send(*foobarBuffer, 0, 3);
     channel()->send(*foobarBuffer, 3, 3);
     channel()->send(*qbazuxBuffer, 1, 3);
@@ -445,19 +395,19 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInArrayBufferWithNullBytes)
     EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
 
     {
-        RefPtr<ArrayBuffer> b = ArrayBuffer::create("\0ar", 3);
+        RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("\0ar", 3);
         channel()->send(*b, 0, 3);
     }
     {
-        RefPtr<ArrayBuffer> b = ArrayBuffer::create("b\0z", 3);
+        RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("b\0z", 3);
         channel()->send(*b, 0, 3);
     }
     {
-        RefPtr<ArrayBuffer> b = ArrayBuffer::create("qu\0", 3);
+        RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("qu\0", 3);
         channel()->send(*b, 0, 3);
     }
     {
-        RefPtr<ArrayBuffer> b = ArrayBuffer::create("\0\0\0", 3);
+        RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("\0\0\0", 3);
         channel()->send(*b, 0, 3);
     }
 
@@ -472,7 +422,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInArrayBufferNonLatin1UTF8)
     handleClient()->didReceiveFlowControl(handle(), 16);
     EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
 
-    RefPtr<ArrayBuffer> b = ArrayBuffer::create("\xe7\x8b\x90", 3);
+    RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("\xe7\x8b\x90", 3);
     channel()->send(*b, 0, 3);
 
     EXPECT_EQ(3ul, m_sumOfConsumedBufferedAmount);
@@ -486,7 +436,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInArrayBufferNonUTF8)
     handleClient()->didReceiveFlowControl(handle(), 16);
     EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
 
-    RefPtr<ArrayBuffer> b = ArrayBuffer::create("\x80\xff\xe7", 3);
+    RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("\x80\xff\xe7", 3);
     channel()->send(*b, 0, 3);
 
     EXPECT_EQ(3ul, m_sumOfConsumedBufferedAmount);
@@ -506,7 +456,7 @@ TEST_F(DocumentWebSocketChannelTest, sendBinaryInArrayBufferNonLatin1UTF8Continu
     handleClient()->didReceiveFlowControl(handle(), 16);
     EXPECT_CALL(*channelClient(), didConsumeBufferedAmount(_)).Times(AnyNumber());
 
-    RefPtr<ArrayBuffer> b = ArrayBuffer::create("\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90", 18);
+    RefPtr<DOMArrayBuffer> b = DOMArrayBuffer::create("\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90\xe7\x8b\x90", 18);
     channel()->send(*b, 0, 18);
     checkpoint.Call(1);
 

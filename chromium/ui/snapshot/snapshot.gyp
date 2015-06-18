@@ -21,6 +21,9 @@
         'SNAPSHOT_IMPLEMENTATION',
       ],
       'sources': [
+        'screenshot_grabber.cc',
+        'screenshot_grabber.h',
+        'screenshot_grabber_observer.h',
         'snapshot.h',
         'snapshot_android.cc',
         'snapshot_async.cc',
@@ -34,6 +37,11 @@
         '..',
       ],
       'conditions': [
+        ['OS=="android"', {
+          'dependencies': [
+            '../android/ui_android.gyp:ui_android',
+          ],
+        }],
         ['use_aura==1 or OS=="android"', {
           'dependencies': [
             '../../cc/cc.gyp:cc',

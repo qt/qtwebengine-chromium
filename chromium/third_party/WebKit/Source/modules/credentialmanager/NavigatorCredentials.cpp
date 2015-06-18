@@ -18,14 +18,16 @@ NavigatorCredentials::NavigatorCredentials(Navigator& navigator)
 {
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorCredentials);
+NavigatorCredentials::~NavigatorCredentials()
+{
+}
 
 NavigatorCredentials& NavigatorCredentials::from(Navigator& navigator)
 {
-    NavigatorCredentials* supplement = static_cast<NavigatorCredentials*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
+    NavigatorCredentials* supplement = static_cast<NavigatorCredentials*>(HeapSupplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
         supplement = new NavigatorCredentials(navigator);
-        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
+        provideTo(navigator, supplementName(), supplement);
     }
     return *supplement;
 }
@@ -47,10 +49,10 @@ CredentialsContainer* NavigatorCredentials::credentials()
     return m_credentialsContainer.get();
 }
 
-void NavigatorCredentials::trace(Visitor* visitor)
+DEFINE_TRACE(NavigatorCredentials)
 {
     visitor->trace(m_credentialsContainer);
-    WillBeHeapSupplement<Navigator>::trace(visitor);
+    HeapSupplement<Navigator>::trace(visitor);
     DOMWindowProperty::trace(visitor);
 }
 

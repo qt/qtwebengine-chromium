@@ -78,7 +78,7 @@ void PlatformSpeechSynthesizer::cancel()
         m_webSpeechSynthesizer->cancel();
 }
 
-void PlatformSpeechSynthesizer::setVoiceList(HeapVector<Member<PlatformSpeechSynthesisVoice> >& voices)
+void PlatformSpeechSynthesizer::setVoiceList(HeapVector<Member<PlatformSpeechSynthesisVoice>>& voices)
 {
     m_voiceList = voices;
 }
@@ -89,7 +89,7 @@ void PlatformSpeechSynthesizer::initializeVoiceList()
         m_webSpeechSynthesizer->updateVoiceList();
 }
 
-void PlatformSpeechSynthesizer::trace(Visitor* visitor)
+DEFINE_TRACE(PlatformSpeechSynthesizer)
 {
     visitor->trace(m_speechSynthesizerClient);
     visitor->trace(m_voiceList);

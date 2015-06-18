@@ -36,7 +36,6 @@ class TransportChannelImpl : public TransportChannel {
   virtual IceRole GetIceRole() const = 0;
   virtual void SetIceRole(IceRole role) = 0;
   virtual void SetIceTiebreaker(uint64 tiebreaker) = 0;
-  virtual size_t GetConnectionCount() const = 0;
   // To toggle G-ICE/ICE.
   virtual bool GetIceProtocolType(IceProtocolType* type) const = 0;
   virtual void SetIceProtocolType(IceProtocolType type) = 0;
@@ -55,9 +54,6 @@ class TransportChannelImpl : public TransportChannel {
 
   // Begins the process of attempting to make a connection to the other client.
   virtual void Connect() = 0;
-
-  // Resets this channel back to the initial state (i.e., not connecting).
-  virtual void Reset() = 0;
 
   // Allows an individual channel to request signaling and be notified when it
   // is ready.  This is useful if the individual named channels have need to
@@ -103,7 +99,7 @@ class TransportChannelImpl : public TransportChannel {
   sigslot::signal1<TransportChannelImpl*> SignalConnectionRemoved;
 
  private:
-  DISALLOW_EVIL_CONSTRUCTORS(TransportChannelImpl);
+  DISALLOW_COPY_AND_ASSIGN(TransportChannelImpl);
 };
 
 }  // namespace cricket

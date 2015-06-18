@@ -29,6 +29,7 @@
 #include "core/frame/DOMWindowLifecycleObserver.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/frame/PlatformEventController.h"
+#include "modules/ModulesExport.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
@@ -40,22 +41,18 @@ class Document;
 class Gamepad;
 class GamepadList;
 class Navigator;
-class WebKitGamepadList;
 
-class NavigatorGamepad final : public NoBaseWillBeGarbageCollectedFinalized<NavigatorGamepad>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty, public PlatformEventController, public DOMWindowLifecycleObserver {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorGamepad);
+class MODULES_EXPORT NavigatorGamepad final : public GarbageCollectedFinalized<NavigatorGamepad>, public HeapSupplement<Navigator>, public DOMWindowProperty, public PlatformEventController, public DOMWindowLifecycleObserver {
+    USING_GARBAGE_COLLECTED_MIXIN(NavigatorGamepad);
 public:
     static NavigatorGamepad* from(Document&);
     static NavigatorGamepad& from(Navigator&);
     virtual ~NavigatorGamepad();
 
-    static WebKitGamepadList* webkitGetGamepads(Navigator&);
     static GamepadList* getGamepads(Navigator&);
-
-    WebKitGamepadList* webkitGamepads();
     GamepadList* gamepads();
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     void didConnectOrDisconnectGamepad(unsigned index, const WebGamepad&, bool connected);
 
@@ -66,6 +63,7 @@ private:
 
     void dispatchOneEvent();
     void didRemoveGamepadEventListeners();
+    bool startUpdatingIfAttached();
 
     // DOMWindowProperty
     virtual void willDestroyGlobalObjectInFrame() override;
@@ -83,9 +81,8 @@ private:
     virtual void didRemoveEventListener(LocalDOMWindow*, const AtomicString&) override;
     virtual void didRemoveAllEventListeners(LocalDOMWindow*) override;
 
-    PersistentWillBeMember<GamepadList> m_gamepads;
-    PersistentWillBeMember<WebKitGamepadList> m_webkitGamepads;
-    PersistentHeapDequeWillBeHeapDeque<Member<Gamepad> > m_pendingEvents;
+    Member<GamepadList> m_gamepads;
+    HeapDeque<Member<Gamepad>> m_pendingEvents;
     AsyncMethodRunner<NavigatorGamepad> m_dispatchOneEventRunner;
 };
 

@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/output/filter_operation.h"
@@ -255,7 +255,7 @@ FilterOperation FilterOperation::Blend(const FilterOperation* from,
   return blended_filter;
 }
 
-void FilterOperation::AsValueInto(base::debug::TracedValue* value) const {
+void FilterOperation::AsValueInto(base::trace_event::TracedValue* value) const {
   value->SetInteger("type", type_);
   switch (type_) {
     case FilterOperation::GRAYSCALE:
@@ -272,9 +272,7 @@ void FilterOperation::AsValueInto(base::debug::TracedValue* value) const {
       break;
     case FilterOperation::DROP_SHADOW:
       value->SetDouble("std_deviation", amount_);
-      value->BeginArray("offset");
-      MathUtil::AddToTracedValue(drop_shadow_offset_, value);
-      value->EndArray();
+      MathUtil::AddToTracedValue("offset", drop_shadow_offset_, value);
       value->SetInteger("color", drop_shadow_color_);
       break;
     case FilterOperation::COLOR_MATRIX: {

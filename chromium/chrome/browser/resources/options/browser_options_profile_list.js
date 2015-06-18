@@ -51,6 +51,7 @@ cr.define('options.browser_options', function() {
       var iconEl = this.ownerDocument.createElement('img');
       iconEl.className = 'profile-img';
       iconEl.style.content = getProfileAvatarIcon(profileInfo.iconURL);
+      iconEl.alt = '';
       containerEl.appendChild(iconEl);
 
       var nameEl = this.ownerDocument.createElement('div');
@@ -69,7 +70,8 @@ cr.define('options.browser_options', function() {
       if (profileInfo.isSupervised) {
         var supervisedEl = this.ownerDocument.createElement('div');
         supervisedEl.className = 'profile-supervised';
-        supervisedEl.textContent =
+        supervisedEl.textContent = profileInfo.isChild ?
+            loadTimeData.getString('childLabel') :
             loadTimeData.getString('supervisedUserLabel');
         containerEl.appendChild(supervisedEl);
       }
@@ -101,8 +103,6 @@ cr.define('options.browser_options', function() {
 
     /** @override */
     deleteItemAtIndex: function(index) {
-      if (loadTimeData.getBoolean('profileIsSupervised'))
-        return;
       ManageProfileOverlay.showDeleteDialog(this.dataModel.item(index));
     },
 
@@ -119,6 +119,13 @@ cr.define('options.browser_options', function() {
      */
     set canDeleteItems(value) {
       this.canDeleteItems_ = value;
+    },
+
+    /**
+     * @type {boolean} whether the items in this list are deletable.
+     */
+    get canDeleteItems() {
+      return this.canDeleteItems_;
     },
 
     /**

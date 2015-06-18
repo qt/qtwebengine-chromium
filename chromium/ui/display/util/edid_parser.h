@@ -12,26 +12,34 @@
 
 #include "ui/display/util/display_util_export.h"
 
+namespace gfx {
+class Size;
+}
+
 // EDID (Extended Display Identification Data) is a format for monitor
 // metadata. This provides a parser for the data.
 
 namespace ui {
 
-// Generates the display id for the pair of |edid| and |index|, and store in
-// |display_id_out|. Returns true if the display id is successfully generated,
-// or false otherwise.
+// Generates the display id and product id for the pair of |edid| and |index|,
+// and store in |display_id_out| and |product_id_out|. Returns true if the
+// display id is successfully generated, or false otherwise.
 DISPLAY_UTIL_EXPORT bool GetDisplayIdFromEDID(const std::vector<uint8_t>& edid,
                                               uint8_t index,
-                                              int64_t* display_id_out);
+                                              int64_t* display_id_out,
+                                              int64_t* product_id_out);
 
-// Parses |edid| as EDID data and stores extracted data into |manufacturer_id|
-// and |human_readable_name| and returns true. NULL can be passed for unwanted
-// output parameters. Some devices (especially internal displays) may not have
-// the field for |human_readable_name|, and it will return true in that case.
+// Parses |edid| as EDID data and stores extracted data into |manufacturer_id|,
+// |human_readable_name|, |active_pixel_out| and |physical_display_size_out|,
+// then returns true. nullptr can be passed for unwanted output parameters.
+// Some devices (especially internal displays) may not have the field for
+// |human_readable_name|, and it will return true in that case.
 DISPLAY_UTIL_EXPORT bool ParseOutputDeviceData(
     const std::vector<uint8_t>& edid,
     uint16_t* manufacturer_id,
-    std::string* human_readable_name);
+    std::string* human_readable_name,
+    gfx::Size* active_pixel_out,
+    gfx::Size* physical_display_size_out);
 
 DISPLAY_UTIL_EXPORT bool ParseOutputOverscanFlag(
     const std::vector<uint8_t>& edid,

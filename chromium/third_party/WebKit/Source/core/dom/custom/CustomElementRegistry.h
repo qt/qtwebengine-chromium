@@ -48,18 +48,24 @@ class ExceptionState;
 
 class CustomElementRegistry final {
     WTF_MAKE_NONCOPYABLE(CustomElementRegistry);
+    DISALLOW_ALLOCATION();
+public:
+    DECLARE_TRACE();
+    void documentWasDetached() { m_documentWasDetached = true; }
+
 protected:
     friend class CustomElementRegistrationContext;
 
-    CustomElementRegistry() { }
+    CustomElementRegistry() : m_documentWasDetached(false) { }
 
     CustomElementDefinition* registerElement(Document*, CustomElementConstructorBuilder*, const AtomicString& name, CustomElement::NameSet validNames, ExceptionState&);
     CustomElementDefinition* find(const CustomElementDescriptor&) const;
 
 private:
-    typedef HashMap<CustomElementDescriptor, RefPtr<CustomElementDefinition> > DefinitionMap;
+    typedef WillBeHeapHashMap<CustomElementDescriptor, RefPtrWillBeMember<CustomElementDefinition>> DefinitionMap;
     DefinitionMap m_definitions;
     HashSet<AtomicString> m_registeredTypeNames;
+    bool m_documentWasDetached;
 };
 
 } // namespace blink

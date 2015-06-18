@@ -13,10 +13,10 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/vector2d.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/menu/menu_config.h"
@@ -434,6 +434,10 @@ MenuItemView* MenuController::Run(Widget* parent,
       // Set exit_all_, which makes sure all nested loops exit immediately.
       if (exit_type_ != EXIT_DESTROYED)
         SetExitType(EXIT_ALL);
+    } else if (exit_type_ != EXIT_NONE && message_loop_depth_) {
+      // If we're closing all menus, also mark the next topmost menu
+      // message loop for termination, so that we'll unwind fully.
+      TerminateNestedMessageLoop();
     }
   }
 
@@ -800,6 +804,22 @@ void MenuController::OnDragComplete(bool should_close) {
   }
 }
 
+ui::PostDispatchAction MenuController::OnWillDispatchKeyEvent(
+    base::char16 character,
+    ui::KeyboardCode key_code) {
+  if (exit_type() == MenuController::EXIT_ALL ||
+      exit_type() == MenuController::EXIT_DESTROYED) {
+    TerminateNestedMessageLoop();
+    return ui::POST_DISPATCH_PERFORM_DEFAULT;
+  }
+
+  bool should_quit = character ? SelectByChar(character) : !OnKeyDown(key_code);
+  if (should_quit || exit_type() != MenuController::EXIT_NONE)
+    TerminateNestedMessageLoop();
+
+  return ui::POST_DISPATCH_NONE;
+}
+
 void MenuController::UpdateSubmenuSelection(SubmenuView* submenu) {
   if (submenu->IsShowing()) {
     gfx::Point point = GetScreen()->GetCursorScreenPoint();
@@ -910,13 +930,10 @@ void MenuController::SetSelectionOnPointerDown(SubmenuView* source,
   if (part.type == MenuPart::NONE ||
       (part.type == MenuPart::MENU_ITEM && part.menu &&
        part.menu->GetRootMenuItem() != state_.item->GetRootMenuItem())) {
-    // Remember the time when we repost the event. The owner can then use this
-    // to figure out if this menu was finished with the same click which is
-    // sent to it thereafter. Note that the time stamp front he event cannot be
-    // used since the reposting will set a new timestamp when the event gets
-    // processed. As such it is better to take the current time which will be
-    // closer to the time when it arrives again in the menu handler.
-    closing_event_time_ = ui::EventTimeForNow();
+    // Remember the time stamp of the current (press down) event. The owner can
+    // then use this to figure out if this menu was finished with the same click
+    // which is sent to it thereafter.
+    closing_event_time_ = event.time_stamp();
 
     // Mouse wasn't pressed over any menu, or the active menu, cancel.
 
@@ -1027,16 +1044,22 @@ bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
         CloseSubmenu();
       break;
 
+// On Mac, treat space the same as return.
+#if !defined(OS_MACOSX)
     case ui::VKEY_SPACE:
       if (SendAcceleratorToHotTrackedView() == ACCELERATOR_PROCESSED_EXIT)
         return false;
       break;
+#endif
 
     case ui::VKEY_F4:
       if (!is_combobox_)
         break;
     // Fallthrough to accept or dismiss combobox menus on F4, like windows.
     case ui::VKEY_RETURN:
+#if defined(OS_MACOSX)
+    case ui::VKEY_SPACE:
+#endif
       if (pending_state_.item) {
         if (pending_state_.item->HasSubmenu()) {
           if (key_code == ui::VKEY_F4 &&
@@ -1492,6 +1515,7 @@ void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
     item->GetDelegate()->WillShowMenu(item);
     if (old_count != item->GetSubmenu()->child_count()) {
       // If the number of children changed then we may need to add empty items.
+      item->RemoveEmptyMenus();
       item->AddEmptyMenus();
     }
   }
@@ -2189,15 +2213,14 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
       gfx::Point target_point(target_menu_loc);
       View::ConvertPointToTarget(
           target_menu, active_mouse_view, &target_point);
-      ui::MouseEvent mouse_entered_event(ui::ET_MOUSE_ENTERED,
-                                         target_point, target_point,
-                                         0, 0);
+      ui::MouseEvent mouse_entered_event(ui::ET_MOUSE_ENTERED, target_point,
+                                         target_point, ui::EventTimeForNow(), 0,
+                                         0);
       active_mouse_view->OnMouseEntered(mouse_entered_event);
 
-      ui::MouseEvent mouse_pressed_event(ui::ET_MOUSE_PRESSED,
-                                         target_point, target_point,
-                                         event.flags(),
-                                         event.changed_button_flags());
+      ui::MouseEvent mouse_pressed_event(
+          ui::ET_MOUSE_PRESSED, target_point, target_point,
+          ui::EventTimeForNow(), event.flags(), event.changed_button_flags());
       active_mouse_view->OnMousePressed(mouse_pressed_event);
     }
   }
@@ -2205,10 +2228,9 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
   if (active_mouse_view) {
     gfx::Point target_point(target_menu_loc);
     View::ConvertPointToTarget(target_menu, active_mouse_view, &target_point);
-    ui::MouseEvent mouse_dragged_event(ui::ET_MOUSE_DRAGGED,
-                                       target_point, target_point,
-                                       event.flags(),
-                                       event.changed_button_flags());
+    ui::MouseEvent mouse_dragged_event(
+        ui::ET_MOUSE_DRAGGED, target_point, target_point, ui::EventTimeForNow(),
+        event.flags(), event.changed_button_flags());
     active_mouse_view->OnMouseDragged(mouse_dragged_event);
   }
 }
@@ -2224,7 +2246,8 @@ void MenuController::SendMouseReleaseToActiveView(SubmenuView* event_source,
                              &target_loc);
   View::ConvertPointFromScreen(active_mouse_view, &target_loc);
   ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, target_loc, target_loc,
-                               event.flags(), event.changed_button_flags());
+                               ui::EventTimeForNow(), event.flags(),
+                               event.changed_button_flags());
   // Reset active mouse view before sending mouse released. That way if it calls
   // back to us, we aren't in a weird state.
   SetActiveMouseView(NULL);
@@ -2264,8 +2287,7 @@ void MenuController::SetExitType(ExitType type) {
   //
   // It's safe to invoke QuitNestedMessageLoop() multiple times, it only effects
   // the current loop.
-  bool quit_now = message_loop_->ShouldQuitNow() && exit_type_ != EXIT_NONE &&
-      message_loop_depth_;
+  bool quit_now = exit_type_ != EXIT_NONE && message_loop_depth_;
   if (quit_now)
     TerminateNestedMessageLoop();
 }

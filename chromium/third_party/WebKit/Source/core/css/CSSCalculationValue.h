@@ -31,6 +31,7 @@
 #ifndef CSSCalculationValue_h
 #define CSSCalculationValue_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValue.h"
 #include "core/css/parser/CSSParserValues.h"
@@ -76,7 +77,7 @@ public:
     virtual bool isZero() const = 0;
     virtual double doubleValue() const = 0;
     virtual double computeLengthPx(const CSSToLengthConversionData&) const = 0;
-    virtual void accumulateLengthArray(CSSLengthArray&, double multiplier) const = 0;
+    virtual void accumulateLengthArray(CSSLengthArray&, CSSLengthTypeArray&, double multiplier) const = 0;
     virtual void accumulatePixelsAndPercent(const CSSToLengthConversionData&, PixelsAndPercent&, float multiplier = 1) const = 0;
     virtual String customCSSText() const = 0;
     virtual bool equals(const CSSCalcExpressionNode& other) const { return m_category == other.m_category && m_isInteger == other.m_isInteger; }
@@ -86,7 +87,7 @@ public:
     virtual CSSPrimitiveValue::UnitType primitiveType() const = 0;
     bool isInteger() const { return m_isInteger; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     CSSCalcExpressionNode(CalculationCategory category, bool isInteger)
@@ -100,7 +101,7 @@ protected:
     bool m_isInteger;
 };
 
-class CSSCalcValue : public CSSValue {
+class CORE_EXPORT CSSCalcValue : public CSSValue {
 public:
     static PassRefPtrWillBeRawPtr<CSSCalcValue> create(CSSParserValueList*, ValueRange);
     static PassRefPtrWillBeRawPtr<CSSCalcValue> create(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode>, ValueRange = ValueRangeAll);
@@ -121,13 +122,13 @@ public:
     bool isNegative() const { return m_expression->doubleValue() < 0; }
     ValueRange permittedValueRange() { return m_nonNegative ? ValueRangeNonNegative : ValueRangeAll; }
     double computeLengthPx(const CSSToLengthConversionData&) const;
-    void accumulateLengthArray(CSSLengthArray& lengthArray, double multiplier) const { m_expression->accumulateLengthArray(lengthArray, multiplier); }
+    void accumulateLengthArray(CSSLengthArray& lengthArray, CSSLengthTypeArray& lengthTypeArray, double multiplier) const { m_expression->accumulateLengthArray(lengthArray, lengthTypeArray, multiplier); }
     CSSCalcExpressionNode* expressionNode() const { return m_expression.get(); }
 
     String customCSSText() const;
     bool equals(const CSSCalcValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     CSSCalcValue(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> expression, ValueRange range)

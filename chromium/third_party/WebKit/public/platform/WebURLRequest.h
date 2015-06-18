@@ -38,9 +38,9 @@
 namespace blink {
 
 class ResourceRequest;
-class WebCString;
 class WebHTTPBody;
 class WebHTTPHeaderVisitor;
+class WebSecurityOrigin;
 class WebString;
 class WebURL;
 class WebURLRequestPrivate;
@@ -123,6 +123,15 @@ public:
         FetchCredentialsModeInclude
     };
 
+    // Used to report performance metrics timed from the UI action that
+    // triggered them (as opposed to navigation start time used in the
+    // Navigation Timing API).
+    enum InputToLoadPerfMetricReportPolicy {
+        NoReport, // Don't report metrics for this WebURLRequest.
+        ReportLink, // Report metrics with UI action link clicked.
+        ReportIntent, // Report metrics with UI action displayed intent.
+    };
+
     class ExtraData {
     public:
         virtual ~ExtraData() { }
@@ -156,6 +165,11 @@ public:
     // Used to implement third-party cookie blocking.
     BLINK_PLATFORM_EXPORT WebURL firstPartyForCookies() const;
     BLINK_PLATFORM_EXPORT void setFirstPartyForCookies(const WebURL&);
+
+    // The origin of the execution context which originated the request. Used to
+    // implement First-Party-Only cookie restrictions.
+    BLINK_PLATFORM_EXPORT WebSecurityOrigin requestorOrigin() const;
+    BLINK_PLATFORM_EXPORT void setRequestorOrigin(const WebSecurityOrigin&);
 
     // Controls whether user name, password, and cookies may be sent with the
     // request. (If false, this overrides allowCookies.)
@@ -224,9 +238,17 @@ public:
     BLINK_PLATFORM_EXPORT bool downloadToFile() const;
     BLINK_PLATFORM_EXPORT void setDownloadToFile(bool);
 
+    // True if the requestor wants to receive the response body as a stream.
+    BLINK_PLATFORM_EXPORT bool useStreamOnResponse() const;
+    BLINK_PLATFORM_EXPORT void setUseStreamOnResponse(bool);
+
     // True if the request should not be handled by the ServiceWorker.
     BLINK_PLATFORM_EXPORT bool skipServiceWorker() const;
     BLINK_PLATFORM_EXPORT void setSkipServiceWorker(bool);
+
+    // True if corresponding AppCache group should be resetted.
+    BLINK_PLATFORM_EXPORT bool shouldResetAppCache() const;
+    BLINK_PLATFORM_EXPORT void setShouldResetAppCache(bool);
 
     // The request mode which will be passed to the ServiceWorker.
     BLINK_PLATFORM_EXPORT FetchRequestMode fetchRequestMode() const;
@@ -247,6 +269,26 @@ public:
 
     BLINK_PLATFORM_EXPORT Priority priority() const;
     BLINK_PLATFORM_EXPORT void setPriority(Priority);
+
+    // PlzNavigate: whether the FrameLoader should try to send the request to
+    // the browser (if browser-side navigations are enabled).
+    // Note: WebURLRequests created by RenderFrameImpl::OnCommitNavigation must
+    // not be sent to the browser.
+    BLINK_PLATFORM_EXPORT bool checkForBrowserSideNavigation() const;
+    BLINK_PLATFORM_EXPORT void setCheckForBrowserSideNavigation(bool);
+
+    // This is used to report navigation metrics starting from the UI action
+    // that triggered the navigation (which can be different from the navigation
+    // start time used in the Navigation Timing API).
+    BLINK_PLATFORM_EXPORT double uiStartTime() const;
+    BLINK_PLATFORM_EXPORT void setUiStartTime(double);
+    BLINK_PLATFORM_EXPORT WebURLRequest::InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy() const;
+    BLINK_PLATFORM_EXPORT void setInputPerfMetricReportPolicy(WebURLRequest::InputToLoadPerfMetricReportPolicy);
+
+    // Does the request originate from a SecurityContext hosted in a reserved
+    // (RFC1918) IP range?
+    BLINK_PLATFORM_EXPORT bool originatesFromReservedIPRange() const;
+    BLINK_PLATFORM_EXPORT void setOriginatesFromReservedIPRange(bool);
 
 #if INSIDE_BLINK
     BLINK_PLATFORM_EXPORT ResourceRequest& toMutableResourceRequest();

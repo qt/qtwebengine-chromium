@@ -19,11 +19,11 @@ class SystemMonitorTest : public testing::Test {
   SystemMonitorTest() {
     system_monitor_.reset(new SystemMonitor);
   }
-  virtual ~SystemMonitorTest() {}
 
   MessageLoop message_loop_;
   scoped_ptr<SystemMonitor> system_monitor_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(SystemMonitorTest);
 };
 

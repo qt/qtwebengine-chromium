@@ -103,6 +103,14 @@ WebInspector.HeapSnapshotGridNode.ChildrenProvider.prototype = {
 
 WebInspector.HeapSnapshotGridNode.prototype = {
     /**
+     * @return {!WebInspector.HeapSnapshotSortableDataGrid}
+     */
+    heapSnapshotDataGrid: function()
+    {
+        return this._dataGrid;
+    },
+
+    /**
      * @return {!WebInspector.HeapSnapshotGridNode.ChildrenProvider}
      */
     createProvider: function()
@@ -129,6 +137,7 @@ WebInspector.HeapSnapshotGridNode.prototype = {
     },
 
     /**
+     * @override
      * @param {string} columnIdentifier
      * @return {!Element}
      */
@@ -158,9 +167,6 @@ WebInspector.HeapSnapshotGridNode.prototype = {
         this._dataGrid.updateVisibleNodes(true);
     },
 
-    /**
-     * @override
-     */
     dispose: function()
     {
         if (this._providerObject)
@@ -532,6 +538,7 @@ WebInspector.HeapSnapshotGenericObjectNode = function(dataGrid, node)
 
 WebInspector.HeapSnapshotGenericObjectNode.prototype = {
     /**
+     * @override
      * @return {?{snapshot:!WebInspector.HeapSnapshotProxy, snapshotNodeIndex:number}}
      */
     retainersDataSource: function()
@@ -540,6 +547,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
     },
 
     /**
+     * @override
      * @param {string} columnIdentifier
      * @return {!Element}
      */
@@ -569,7 +577,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
             valueStyle = "string";
             break;
         case "closure":
-            value = "function" + (value ? " " : "") + value + "()";
+            value = value + "()";
             valueStyle = "function";
             break;
         case "number":
@@ -579,10 +587,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
             valueStyle = "null";
             break;
         case "array":
-            if (!value)
-                value = "[]";
-            else
-                value += "[]";
+            value = (value || "") + "[]";
             break;
         };
         if (this._reachableFromWindow)
@@ -605,12 +610,12 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
         this._prefixObjectCell(div);
 
         var valueSpan = createElement("span");
-        valueSpan.className = "value console-formatted-" + valueStyle;
+        valueSpan.className = "value object-value-" + valueStyle;
         valueSpan.textContent = value;
         div.appendChild(valueSpan);
 
         var idSpan = createElement("span");
-        idSpan.className = "console-formatted-id";
+        idSpan.className = "object-value-id";
         idSpan.textContent = " @" + this.snapshotNodeId;
         div.appendChild(idSpan);
 
@@ -628,7 +633,7 @@ WebInspector.HeapSnapshotGenericObjectNode.prototype = {
 
     /**
      * @param {!WebInspector.Target} target
-     * @param {!function(!WebInspector.RemoteObject)} callback
+     * @param {function(!WebInspector.RemoteObject)} callback
      * @param {string} objectGroupName
      */
     queryObjectContent: function(target, callback, objectGroupName)
@@ -718,6 +723,7 @@ WebInspector.HeapSnapshotObjectNode = function(dataGrid, snapshot, edge, parentO
 
 WebInspector.HeapSnapshotObjectNode.prototype = {
     /**
+     * @override
      * @return {?{snapshot:!WebInspector.HeapSnapshotProxy, snapshotNodeIndex:number}}
      */
     retainersDataSource: function()
@@ -726,6 +732,7 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.HeapSnapshotProviderProxy}
      */
     createProvider: function()
@@ -790,17 +797,16 @@ WebInspector.HeapSnapshotObjectNode.prototype = {
 
     _prefixObjectCell: function(div)
     {
-        var name = this._referenceName;
-        if (name === "") name = "(empty)";
+        var name = this._referenceName || "(empty)";
         var nameClass = "name";
         switch (this._referenceType) {
         case "context":
-            nameClass = "console-formatted-number";
+            nameClass = "object-value-number";
             break;
         case "internal":
         case "hidden":
         case "weak":
-            nameClass = "console-formatted-null";
+            nameClass = "object-value-null";
             break;
         case "element":
             name = "[" + name + "]";
@@ -847,6 +853,7 @@ WebInspector.HeapSnapshotRetainingObjectNode = function(dataGrid, snapshot, edge
 
 WebInspector.HeapSnapshotRetainingObjectNode.prototype = {
     /**
+     * @override
      * @return {!WebInspector.HeapSnapshotProviderProxy}
      */
     createProvider: function()
@@ -855,6 +862,7 @@ WebInspector.HeapSnapshotRetainingObjectNode.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.HeapSnapshotCommon.Edge} item
      * @return {!WebInspector.HeapSnapshotRetainingObjectNode}
      */
@@ -864,6 +872,7 @@ WebInspector.HeapSnapshotRetainingObjectNode.prototype = {
     },
 
     /**
+     * @override
      * @return {string}
      */
     _edgeNodeSeparator: function()
@@ -943,6 +952,7 @@ WebInspector.HeapSnapshotInstanceNode = function(dataGrid, snapshot, node, isDel
 
 WebInspector.HeapSnapshotInstanceNode.prototype = {
     /**
+     * @override
      * @return {?{snapshot:!WebInspector.HeapSnapshotProxy, snapshotNodeIndex:number}}
      */
     retainersDataSource: function()
@@ -951,6 +961,7 @@ WebInspector.HeapSnapshotInstanceNode.prototype = {
     },
 
     /**
+     * @override
      * @return {!WebInspector.HeapSnapshotProviderProxy}
      */
     createProvider: function()
@@ -1054,9 +1065,9 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
 
     /**
      * @param {number} snapshotObjectId
-     * @param {function(boolean)} callback
+     * @param {function(?WebInspector.HeapSnapshotGridNode, ?WebInspector.HeapSnapshotGridNode)} callback
      */
-    revealNodeBySnapshotObjectId: function(snapshotObjectId, callback)
+    populateNodeBySnapshotObjectId: function(snapshotObjectId, callback)
     {
         /**
          * @this {WebInspector.HeapSnapshotConstructorNode}
@@ -1074,7 +1085,7 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
         {
             if (nodePosition === -1) {
                 this.collapse();
-                callback(false);
+                callback(null, null);
             } else {
                 this._populateChildren(nodePosition, null, didPopulateChildren.bind(this, nodePosition));
             }
@@ -1086,12 +1097,7 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
          */
         function didPopulateChildren(nodePosition)
         {
-            var child = this.childForPosition(nodePosition);
-            if (child) {
-                this._dataGrid.revealTreeNode([this, child]);
-                this._dataGrid.highlightNode(/** @type {!WebInspector.HeapSnapshotGridNode} */ (child));
-            }
-            callback(!!child);
+            callback(this, /** @type {?WebInspector.HeapSnapshotGridNode} */(this.childForPosition(nodePosition)));
         }
 
         this._dataGrid.resetNameFilter();
@@ -1108,6 +1114,7 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
     },
 
     /**
+     * @override
      * @param {string} columnIdentifier
      * @return {!Element}
      */
@@ -1136,9 +1143,9 @@ WebInspector.HeapSnapshotConstructorNode.prototype = {
         var sortAscending = this._dataGrid.isSortOrderAscending();
         var sortColumnIdentifier = this._dataGrid.sortColumnIdentifier();
         var sortFields = {
-            object: ["id", sortAscending, "retainedSize", false],
+            object: ["name", sortAscending, "id", true],
             distance: ["distance", sortAscending, "retainedSize", false],
-            count: ["id", true, "retainedSize", false],
+            count: ["name", true, "id", true],
             shallowSize: ["selfSize", sortAscending, "id", true],
             retainedSize: ["retainedSize", sortAscending, "id", true]
         }[sortColumnIdentifier];
@@ -1184,6 +1191,9 @@ WebInspector.HeapSnapshotDiffNodesProvider = function(addedNodesProvider, delete
 }
 
 WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
+    /**
+     * @override
+     */
     dispose: function()
     {
         this._addedNodesProvider.dispose();
@@ -1201,6 +1211,7 @@ WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
     },
 
     /**
+     * @override
      * @param {function(boolean)} callback
      */
     isEmpty: function(callback)
@@ -1209,9 +1220,10 @@ WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
     },
 
     /**
+     * @override
      * @param {number} beginPosition
      * @param {number} endPosition
-     * @param {!function(!WebInspector.HeapSnapshotCommon.ItemsRange)} callback
+     * @param {function(!WebInspector.HeapSnapshotCommon.ItemsRange)} callback
      */
     serializeItemsRange: function(beginPosition, endPosition, callback)
     {
@@ -1268,6 +1280,7 @@ WebInspector.HeapSnapshotDiffNodesProvider.prototype = {
     },
 
     /**
+     * @override
      * @param {!WebInspector.HeapSnapshotCommon.ComparatorConfig} comparator
      * @param {function()} callback
      */
@@ -1329,6 +1342,7 @@ WebInspector.HeapSnapshotDiffNode.prototype = {
     },
 
     /**
+     * @override
      * @param {string} columnIdentifier
      * @return {!Element}
      */
@@ -1378,10 +1392,10 @@ WebInspector.HeapSnapshotDiffNode.prototype = {
         var sortAscending = this._dataGrid.isSortOrderAscending();
         var sortColumnIdentifier = this._dataGrid.sortColumnIdentifier();
         var sortFields = {
-            object: ["id", sortAscending, "selfSize", false],
-            addedCount: ["selfSize", sortAscending, "id", true],
-            removedCount: ["selfSize", sortAscending, "id", true],
-            countDelta: ["selfSize", sortAscending, "id", true],
+            object: ["name", sortAscending, "id", true],
+            addedCount: ["name", true, "id", true],
+            removedCount: ["name", true, "id", true],
+            countDelta: ["name", true, "id", true],
             addedSize: ["selfSize", sortAscending, "id", true],
             removedSize: ["selfSize", sortAscending, "id", true],
             sizeDelta: ["selfSize", sortAscending, "id", true]

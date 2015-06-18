@@ -46,7 +46,7 @@ class TestService : public base::Thread {
   static const int kNumMethodsToExport;
 
   explicit TestService(const Options& options);
-  virtual ~TestService();
+  ~TestService() override;
 
   // Starts the service in a separate thread.
   // Returns true if the thread is started successfully.
@@ -106,7 +106,7 @@ class TestService : public base::Thread {
                   bool success);
 
   // base::Thread override.
-  virtual void Run(base::MessageLoop* message_loop) override;
+  void Run(base::MessageLoop* message_loop) override;
 
   //
   // Exported methods.
@@ -166,6 +166,12 @@ class TestService : public base::Thread {
 
   // Helper function for SendPropertyChangedSignal().
   void SendPropertyChangedSignalInternal(const std::string& name);
+
+  // Sends a property invalidated signal for the name property.
+  void SendPropertyInvalidatedSignal();
+
+  // Helper function for SendPropertyInvalidatedSignal().
+  void SendPropertyInvalidatedSignalInternal();
 
   // Helper function for RequestOwnership().
   void RequestOwnershipInternal(base::Callback<void(bool)> callback);

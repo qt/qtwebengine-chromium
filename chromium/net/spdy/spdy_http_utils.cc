@@ -115,14 +115,17 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
   static const char kHttpProtocolVersion[] = "HTTP/1.1";
 
   if (protocol_version < SPDY3) {
+    // TODO(bcn): Remove this code now that SPDY/2 is deprecated.
     (*headers)["version"] = kHttpProtocolVersion;
     (*headers)["method"] = info.method;
     (*headers)["host"] = GetHostAndOptionalPort(info.url);
-    (*headers)["scheme"] = info.url.scheme();
-    if (direct)
-      (*headers)["url"] = HttpUtil::PathForRequest(info.url);
-    else
-      (*headers)["url"] = HttpUtil::SpecForRequest(info.url);
+    if (info.method == "CONNECT") {
+      (*headers)["url"] = GetHostAndPort(info.url);
+    } else {
+      (*headers)["scheme"] = info.url.scheme();
+      (*headers)["url"] = direct ? HttpUtil::PathForRequest(info.url)
+                                 : HttpUtil::SpecForRequest(info.url);
+    }
   } else {
     if (protocol_version < SPDY4) {
       (*headers)[":version"] = kHttpProtocolVersion;
@@ -131,8 +134,13 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
       (*headers)[":authority"] = GetHostAndOptionalPort(info.url);
     }
     (*headers)[":method"] = info.method;
-    (*headers)[":scheme"] = info.url.scheme();
-    (*headers)[":path"] = HttpUtil::PathForRequest(info.url);
+    if (info.method == "CONNECT") {
+      // TODO(bnc): https://crbug.com/433784
+      (*headers)[":path"] = GetHostAndPort(info.url);
+    } else {
+      (*headers)[":scheme"] = info.url.scheme();
+      (*headers)[":path"] = HttpUtil::PathForRequest(info.url);
+    }
   }
 }
 
@@ -160,74 +168,45 @@ void CreateSpdyHeadersFromHttpResponse(
   }
 }
 
-
-COMPILE_ASSERT(HIGHEST - LOWEST < 4 &&
-               HIGHEST - MINIMUM_PRIORITY < 5,
-               request_priority_incompatible_with_spdy);
+static_assert(HIGHEST - LOWEST < 4 && HIGHEST - MINIMUM_PRIORITY < 5,
+              "request priority incompatible with spdy");
 
 SpdyPriority ConvertRequestPriorityToSpdyPriority(
     const RequestPriority priority,
     SpdyMajorVersion protocol_version) {
   DCHECK_GE(priority, MINIMUM_PRIORITY);
   DCHECK_LE(priority, MAXIMUM_PRIORITY);
-  if (protocol_version == SPDY2) {
-    // SPDY 2 only has 2 bits of priority, but we have 5 RequestPriorities.
-    // Map IDLE => 3, LOWEST => 2, LOW => 2, MEDIUM => 1, HIGHEST => 0.
-    if (priority > LOWEST) {
-      return static_cast<SpdyPriority>(HIGHEST - priority);
-    } else {
-      return static_cast<SpdyPriority>(HIGHEST - priority - 1);
-    }
-  } else {
-    return static_cast<SpdyPriority>(HIGHEST - priority);
-  }
+  return static_cast<SpdyPriority>(MAXIMUM_PRIORITY - priority);
 }
 
 NET_EXPORT_PRIVATE RequestPriority ConvertSpdyPriorityToRequestPriority(
     SpdyPriority priority,
     SpdyMajorVersion protocol_version) {
-  // Handle invalid values gracefully, and pick LOW to map 2 back
-  // to for SPDY/2.
-  SpdyPriority idle_cutoff = (protocol_version == SPDY2) ? 3 : 5;
-  return (priority >= idle_cutoff) ?
-      IDLE : static_cast<RequestPriority>(HIGHEST - priority);
+  // Handle invalid values gracefully.
+  // Note that SpdyPriority is not an enum, hence the magic constants.
+  return (priority >= 5) ?
+      IDLE : static_cast<RequestPriority>(4 - priority);
 }
 
 GURL GetUrlFromHeaderBlock(const SpdyHeaderBlock& headers,
                            SpdyMajorVersion protocol_version,
                            bool pushed) {
-  // SPDY 2 server push urls are specified in a single "url" header.
-  if (pushed && protocol_version == SPDY2) {
-      std::string url;
-      SpdyHeaderBlock::const_iterator it;
-      it = headers.find("url");
-      if (it != headers.end())
-        url = it->second;
-      return GURL(url);
-  }
+  DCHECK_LE(SPDY3, protocol_version);
+  SpdyHeaderBlock::const_iterator it = headers.find(":scheme");
+  if (it == headers.end())
+    return GURL();
+  std::string url = it->second;
+  url.append("://");
 
-  const char* scheme_header = protocol_version >= SPDY3 ? ":scheme" : "scheme";
-  const char* host_header = protocol_version >= SPDY4 ? ":authority" :
-      (protocol_version >= SPDY3 ? ":host" : "host");
-  const char* path_header = protocol_version >= SPDY3 ? ":path" : "url";
+  it = headers.find(protocol_version >= SPDY4 ? ":authority" : ":host");
+  if (it == headers.end())
+    return GURL();
+  url.append(it->second);
 
-  std::string scheme;
-  std::string host_port;
-  std::string path;
-  SpdyHeaderBlock::const_iterator it;
-  it = headers.find(scheme_header);
-  if (it != headers.end())
-    scheme = it->second;
-  it = headers.find(host_header);
-  if (it != headers.end())
-    host_port = it->second;
-  it = headers.find(path_header);
-  if (it != headers.end())
-    path = it->second;
-
-  std::string url = (scheme.empty() || host_port.empty() || path.empty())
-                        ? std::string()
-                        : scheme + "://" + host_port + path;
+  it = headers.find(":path");
+  if (it == headers.end())
+    return GURL();
+  url.append(it->second);
   return GURL(url);
 }
 

@@ -28,19 +28,20 @@ class PidState;
 class MEDIA_EXPORT Mp2tStreamParser : public StreamParser {
  public:
   explicit Mp2tStreamParser(bool sbr_in_mimetype);
-  virtual ~Mp2tStreamParser();
+  ~Mp2tStreamParser() override;
 
   // StreamParser implementation.
-  virtual void Init(const InitCB& init_cb,
-                    const NewConfigCB& config_cb,
-                    const NewBuffersCB& new_buffers_cb,
-                    bool ignore_text_tracks,
-                    const NeedKeyCB& need_key_cb,
-                    const NewMediaSegmentCB& new_segment_cb,
-                    const base::Closure& end_of_segment_cb,
-                    const LogCB& log_cb) override;
-  virtual void Flush() override;
-  virtual bool Parse(const uint8* buf, int size) override;
+  void Init(
+      const InitCB& init_cb,
+      const NewConfigCB& config_cb,
+      const NewBuffersCB& new_buffers_cb,
+      bool ignore_text_tracks,
+      const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
+      const NewMediaSegmentCB& new_segment_cb,
+      const base::Closure& end_of_segment_cb,
+      const LogCB& log_cb) override;
+  void Flush() override;
+  bool Parse(const uint8* buf, int size) override;
 
  private:
   typedef std::map<int, PidState*> PidMap;
@@ -97,7 +98,7 @@ class MEDIA_EXPORT Mp2tStreamParser : public StreamParser {
   InitCB init_cb_;
   NewConfigCB config_cb_;
   NewBuffersCB new_buffers_cb_;
-  NeedKeyCB need_key_cb_;
+  EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
   NewMediaSegmentCB new_segment_cb_;
   base::Closure end_of_segment_cb_;
   LogCB log_cb_;

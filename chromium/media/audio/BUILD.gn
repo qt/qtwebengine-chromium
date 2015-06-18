@@ -12,8 +12,12 @@ if (!link_pulseaudio) {
     extra_header = "pulse/pulse_stub_header.fragment"
 
     script = "../../tools/generate_stubs/generate_stubs.py"
-    sources = [ "pulse/pulse.sigs" ]
-    source_prereqs = [ extra_header ]
+    sources = [
+      "pulse/pulse.sigs",
+    ]
+    inputs = [
+      extra_header,
+    ]
     stubs_filename_root = "pulse_stubs"
 
     # TODO(ajwong): these need to be included in the pulse build.
@@ -22,12 +26,18 @@ if (!link_pulseaudio) {
       "$target_gen_dir/pulse/$stubs_filename_root.h",
     ]
     args = [
-      "-i", rebase_path("$target_gen_dir/pulse", root_build_dir),
-      "-o", rebase_path("$target_gen_dir/pulse", root_build_dir),
-      "-t", "posix_stubs",
-      "-e", rebase_path(extra_header, root_build_dir),
-      "-s", stubs_filename_root,
-      "-p", "media/audio/pulse",
+      "-i",
+      rebase_path("$target_gen_dir/pulse", root_build_dir),
+      "-o",
+      rebase_path("$target_gen_dir/pulse", root_build_dir),
+      "-t",
+      "posix_stubs",
+      "-e",
+      rebase_path(extra_header, root_build_dir),
+      "-s",
+      stubs_filename_root,
+      "-p",
+      "media/audio/pulse",
     ]
 
     args += rebase_path(sources, root_build_dir)
@@ -72,16 +82,18 @@ source_set("audio") {
     "audio_power_monitor.cc",
     "audio_power_monitor.h",
     "audio_source_diverter.h",
-    "fake_audio_consumer.cc",
-    "fake_audio_consumer.h",
+    "clockless_audio_sink.cc",
+    "clockless_audio_sink.h",
     "fake_audio_input_stream.cc",
     "fake_audio_input_stream.h",
-    "fake_audio_log_factory.h",
     "fake_audio_log_factory.cc",
+    "fake_audio_log_factory.h",
     "fake_audio_manager.cc",
     "fake_audio_manager.h",
     "fake_audio_output_stream.cc",
     "fake_audio_output_stream.h",
+    "fake_audio_worker.cc",
+    "fake_audio_worker.h",
     "null_audio_sink.cc",
     "null_audio_sink.h",
     "sample_rates.cc",
@@ -103,7 +115,10 @@ source_set("audio") {
   ]
   deps = []
   libs = []
-  configs += [ "//media:media_config" ]
+  configs += [
+    "//media:media_config",
+    "//media:media_implementation",
+  ]
 
   if (is_mac) {
     sources += [
@@ -160,9 +175,7 @@ source_set("audio") {
       "android/opensles_output.h",
       "android/opensles_wrapper.cc",
     ]
-    deps += [
-      "//media/base/android:media_jni_headers",
-    ]
+    deps += [ "//media/base/android:media_jni_headers" ]
   }
 
   if (is_openbsd) {
@@ -173,9 +186,7 @@ source_set("audio") {
   }
 
   if (is_linux) {
-    sources += [
-      "linux/audio_manager_linux.cc",
-    ]
+    sources += [ "linux/audio_manager_linux.cc" ]
   }
 
   if (use_alsa) {
@@ -235,13 +246,15 @@ source_set("audio") {
       sources += get_target_outputs(":pulse_generate_stubs")
     }
   }
+
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 }
 
 source_set("test_support") {
   testonly = true
   sources = [
-    "clockless_audio_sink.cc",
-    "clockless_audio_sink.h",
+    "audio_unittest_util.cc",
+    "audio_unittest_util.h",
     "mock_audio_manager.cc",
     "mock_audio_manager.h",
     "mock_audio_source_callback.cc",
@@ -249,7 +262,9 @@ source_set("test_support") {
     "test_audio_input_controller_factory.cc",
     "test_audio_input_controller_factory.h",
   ]
-  deps = [ "//testing/gmock" ]
+  deps = [
+    "//testing/gmock",
+  ]
   configs += [ "//media:media_config" ]
 }
 
@@ -258,33 +273,34 @@ source_set("unittests") {
   sources = [
     "audio_input_controller_unittest.cc",
     "audio_input_unittest.cc",
-    "audio_low_latency_input_output_unittest.cc",
+    "audio_manager_factory_unittest.cc",
     "audio_manager_unittest.cc",
     "audio_output_controller_unittest.cc",
     "audio_output_device_unittest.cc",
     "audio_output_proxy_unittest.cc",
     "audio_parameters_unittest.cc",
     "audio_power_monitor_unittest.cc",
-    "fake_audio_consumer_unittest.cc",
+    "fake_audio_worker_unittest.cc",
     "simple_sources_unittest.cc",
     "virtual_audio_input_stream_unittest.cc",
     "virtual_audio_output_stream_unittest.cc",
   ]
   deps = [
     ":test_support",
+    "//media/base:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
-  configs += [ "//media:media_config" ]
+
+  configs += [
+    "//build/config/compiler:no_size_t_to_int_warning",
+    "//media:media_config",
+  ]
 
   if (is_android) {
-    sources += [
-      "android/audio_android_unittest.cc",
-    ]
+    sources += [ "android/audio_android_unittest.cc" ]
   } else {
-    sources += [
-      "audio_input_volume_unittest.cc",
-    ]
+    sources += [ "audio_input_volume_unittest.cc" ]
   }
 
   if (is_mac) {
@@ -325,6 +341,7 @@ source_set("unittests") {
   if (use_alsa) {
     sources += [
       "alsa/alsa_output_unittest.cc",
+      "audio_low_latency_input_output_unittest.cc",
     ]
   }
 }

@@ -32,15 +32,15 @@
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/ImageResource.h"
+#include "core/frame/Settings.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/frame/Settings.h"
+#include "core/layout/LayoutEmbeddedObject.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderEmbeddedObject.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/Widget.h"
 
@@ -69,15 +69,15 @@ PassRefPtrWillBeRawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& do
     return element.release();
 }
 
-void HTMLObjectElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLObjectElement)
 {
     FormAssociatedElement::trace(visitor);
     HTMLPlugInElement::trace(visitor);
 }
 
-RenderPart* HTMLObjectElement::existingRenderPart() const
+LayoutPart* HTMLObjectElement::existingLayoutPart() const
 {
-    return renderPart(); // This will return 0 if the renderer is not a RenderPart.
+    return layoutPart(); // This will return 0 if the layoutObject is not a LayoutPart.
 }
 
 bool HTMLObjectElement::isPresentationAttribute(const QualifiedName& name) const
@@ -107,11 +107,11 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         // FIXME: What is the right thing to do here? Should we supress the
         // reload stuff when a persistable widget-type is specified?
         reloadPluginOnAttributeChange(name);
-        if (!renderer())
-            requestPluginCreationWithoutRendererIfPossible();
+        if (!layoutObject())
+            requestPluginCreationWithoutLayoutObjectIfPossible();
     } else if (name == dataAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (renderer() && isImageType()) {
+        if (layoutObject() && isImageType()) {
             setNeedsWidgetUpdate(true);
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
@@ -200,7 +200,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
     // HTML5 says that an object resource's URL is specified by the object's data
     // attribute, not by a param element. However, for compatibility, allow the
     // resource's URL to be given by a param named "src", "movie", "code" or "url"
-    // if we know that resource points to a plug-in.
+    // if we know that resource points to a plugin.
     if (url.isEmpty() && !urlParameter.isEmpty()) {
         KURL completedURL = document().completeURL(urlParameter);
         bool useFallback;
@@ -226,11 +226,11 @@ bool HTMLObjectElement::hasFallbackContent() const
 
 bool HTMLObjectElement::hasValidClassId()
 {
-    if (MIMETypeRegistry::isJavaAppletMIMEType(m_serviceType) && classId().startsWith("java:", false))
+    if (MIMETypeRegistry::isJavaAppletMIMEType(m_serviceType) && classId().startsWith("java:", TextCaseInsensitive))
         return true;
 
     // HTML5 says that fallback content should be rendered if a non-empty
-    // classid is specified for which the UA can't find a suitable plug-in.
+    // classid is specified for which the UA can't find a suitable plugin.
     return classId().isEmpty();
 }
 
@@ -262,7 +262,7 @@ void HTMLObjectElement::reloadPluginOnAttributeChange(const QualifiedName& name)
 // moved down into HTMLPluginElement.cpp
 void HTMLObjectElement::updateWidgetInternal()
 {
-    ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
+    ASSERT(!layoutEmbeddedObject()->showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
     // FIXME: This should ASSERT isFinishedParsingChildren() instead.
@@ -293,8 +293,8 @@ void HTMLObjectElement::updateWidgetInternal()
         return;
     }
 
-    // FIXME: Is it possible to get here without a renderer now that we don't have beforeload events?
-    if (!renderer())
+    // FIXME: Is it possible to get here without a layoutObject now that we don't have beforeload events?
+    if (!layoutObject())
         return;
 
     if (!hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
@@ -303,14 +303,6 @@ void HTMLObjectElement::updateWidgetInternal()
         if (hasFallbackContent())
             renderFallbackContent();
     }
-}
-
-bool HTMLObjectElement::rendererIsNeeded(const RenderStyle& style)
-{
-    // FIXME: This check should not be needed, detached documents never render!
-    if (!document().frame())
-        return false;
-    return HTMLPlugInElement::rendererIsNeeded(style);
 }
 
 Node::InsertionNotificationRequest HTMLObjectElement::insertedInto(ContainerNode* insertionPoint)
@@ -437,7 +429,9 @@ bool HTMLObjectElement::appendFormData(FormDataList& encoding, bool)
     if (name().isEmpty())
         return false;
 
-    Widget* widget = pluginWidget();
+    // Widget is needed immediately to satisfy cases like
+    // LayoutTests/plugins/form-value.html.
+    Widget* widget = pluginWidgetForJSBindings();
     if (!widget || !widget->isPluginView())
         return false;
     String value;

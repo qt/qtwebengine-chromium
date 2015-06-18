@@ -49,6 +49,7 @@ config("mesa_internal_config") {
     "HAVE_LIBXCB_DRI2=1",
     "FEATURE_GL=1",
     "MAPI_MODE_GLAPI",
+
     #"USE_X86_64_ASM",
     "IN_DRI_DRIVER",
     "USE_XCB",
@@ -89,9 +90,7 @@ config("mesa_internal_config") {
   }
 
   if (is_linux) {
-    defines += [
-      "_GNU_SOURCE",
-    ]
+    defines += [ "_GNU_SOURCE" ]
   }
 
   if (is_posix) {
@@ -150,19 +149,19 @@ static_library("mesa_libglslcommon") {
     "src/src/glsl/glsl_types.cpp",
     "src/src/glsl/glsl_types.h",
     "src/src/glsl/hir_field_selection.cpp",
+    "src/src/glsl/ir.cpp",
+    "src/src/glsl/ir.h",
     "src/src/glsl/ir_basic_block.cpp",
     "src/src/glsl/ir_basic_block.h",
     "src/src/glsl/ir_builder.cpp",
     "src/src/glsl/ir_builder.h",
     "src/src/glsl/ir_clone.cpp",
     "src/src/glsl/ir_constant_expression.cpp",
-    "src/src/glsl/ir.cpp",
     "src/src/glsl/ir_expression_flattening.cpp",
     "src/src/glsl/ir_expression_flattening.h",
-    "src/src/glsl/ir_function_can_inline.cpp",
     "src/src/glsl/ir_function.cpp",
+    "src/src/glsl/ir_function_can_inline.cpp",
     "src/src/glsl/ir_function_detect_recursion.cpp",
-    "src/src/glsl/ir.h",
     "src/src/glsl/ir_hierarchical_visitor.cpp",
     "src/src/glsl/ir_hierarchical_visitor.h",
     "src/src/glsl/ir_hv_accept.cpp",
@@ -177,11 +176,11 @@ static_library("mesa_libglslcommon") {
     "src/src/glsl/ir_validate.cpp",
     "src/src/glsl/ir_variable_refcount.cpp",
     "src/src/glsl/ir_variable_refcount.h",
-    "src/src/glsl/linker.cpp",
-    "src/src/glsl/linker.h",
     "src/src/glsl/link_functions.cpp",
     "src/src/glsl/link_uniform_initializers.cpp",
     "src/src/glsl/link_uniforms.cpp",
+    "src/src/glsl/linker.cpp",
+    "src/src/glsl/linker.h",
     "src/src/glsl/loop_analysis.cpp",
     "src/src/glsl/loop_analysis.h",
     "src/src/glsl/loop_controls.cpp",
@@ -223,6 +222,7 @@ static_library("mesa_libglslcommon") {
     "src/src/glsl/ralloc.h",
     "src/src/glsl/s_expression.cpp",
     "src/src/glsl/s_expression.h",
+
     # Skipped in the GN build. This file duplicates symbols from errors.c and
     # happens to link in GYP due to static library link ordering.
     #"src/src/glsl/standalone_scaffolding.cpp",
@@ -231,12 +231,8 @@ static_library("mesa_libglslcommon") {
     "src/src/glsl/strtod.h",
   ]
 
-  configs -= [
-    "//build/config/compiler:chromium_code",
-  ]
-  configs += [
-    "//build/config/compiler:no_chromium_code",
-  ]
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
   previous_configs = configs
   configs = []
   configs = [ ":mesa_internal_config" ] + previous_configs
@@ -254,7 +250,11 @@ static_library("mesa_libglslcommon") {
 static_library("mesa") {
   sources = [
     "$generated_src_dir/mesa/builtin_function.cpp",
+    "$generated_src_dir/mesa/enums.c",
     "$generated_src_dir/mesa/glapi_mapi_tmp_shared.h",
+    "$generated_src_dir/mesa/lex.yy.c",
+    "$generated_src_dir/mesa/program/program_parse.tab.c",
+    "$generated_src_dir/mesa/program/program_parse.tab.h",
     "src/src/mapi/mapi/entry.c",
     "src/src/mapi/mapi/entry.h",
     "src/src/mapi/mapi/mapi_glapi.c",
@@ -316,7 +316,6 @@ static_library("mesa") {
     "src/src/mesa/main/drawtex.h",
     "src/src/mesa/main/enable.c",
     "src/src/mesa/main/enable.h",
-    "$generated_src_dir/mesa/enums.c",
     "src/src/mesa/main/enums.h",
     "src/src/mesa/main/errors.c",
     "src/src/mesa/main/errors.h",
@@ -478,7 +477,6 @@ static_library("mesa") {
     "src/src/mesa/program/hash_table.h",
     "src/src/mesa/program/ir_to_mesa.cpp",
     "src/src/mesa/program/ir_to_mesa.h",
-    "$generated_src_dir/mesa/lex.yy.c",
     "src/src/mesa/program/nvfragparse.c",
     "src/src/mesa/program/nvfragparse.h",
     "src/src/mesa/program/nvvertparse.c",
@@ -504,8 +502,6 @@ static_library("mesa") {
     "src/src/mesa/program/prog_statevars.h",
     "src/src/mesa/program/program.c",
     "src/src/mesa/program/program.h",
-    "$generated_src_dir/mesa/program/program_parse.tab.c",
-    "$generated_src_dir/mesa/program/program_parse.tab.h",
     "src/src/mesa/program/program_parse_extra.c",
     "src/src/mesa/program/programopt.c",
     "src/src/mesa/program/programopt.h",
@@ -617,21 +613,18 @@ static_library("mesa") {
     "src/src/mesa/x86-64/x86-64.h",
   ]
 
-  configs -= [
-    "//build/config/compiler:chromium_code",
-  ]
-  configs += [
-    "//build/config/compiler:no_chromium_code",
-  ]
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
   previous_configs = configs
   configs = []
   configs = [ ":mesa_internal_config" ] + previous_configs
 
-  cflags = []
-
   if (is_clang) {
-    cflags += [ "-Wno-absolute-value" ]
+    # Mesa triggers some of these Clang warnings.
+    configs -= [ "//build/config/clang:extra_warnings" ]
   }
+
+  cflags = []
 
   if (is_android && !is_clang) {
     # Disable sincos() optimization to avoid a linker error
@@ -651,49 +644,53 @@ static_library("mesa") {
 }
 
 if (!is_android) {  # TODO(GYP) enable for Android.
-
-# Building this target will hide the native OpenGL shared library and
-# replace it with a slow software renderer.
-# TODO(GYP) http://crbug.com/380327 need support for loadable_module.
-#loadable_module("osmesa") {
-shared_library("osmesa") {
-  sources = [
-    "src/src/mesa/drivers/common/driverfuncs.c",
-    "src/src/mesa/drivers/common/driverfuncs.h",
-    "src/src/mesa/drivers/common/meta.c",
-    "src/src/mesa/drivers/common/meta.h",
-    "src/src/mesa/drivers/osmesa/osmesa.c",
-    "src/src/mesa/drivers/osmesa/osmesa.def",
-  ]
-
-  configs -= [
-    "//build/config/compiler:chromium_code",
-  ]
-  configs += [
-    ":mesa_headers_config",
-    "//build/config/compiler:no_chromium_code",
-  ]
-  previous_configs = configs
-  configs = []
-  configs = [ ":mesa_internal_config" ] + previous_configs
-
-  include_dirs = [ "src/src/mesa/drivers" ]
-
-  deps = [
-    ":mesa_headers",
-    ":mesa",
-    ":mesa_libglslcommon",
-  ]
-
-  if (is_win) {
-    defines = [
-      "BUILD_GL32",
-      "KEYWORD1=GLAPI",
-      "KEYWORD2=GLAPIENTRY",
+  # Building this target will hide the native OpenGL shared library and
+  # replace it with a slow software renderer.
+  # TODO(GYP) http://crbug.com/380327 need support for loadable_module.
+  #loadable_module("osmesa") {
+  shared_library("osmesa") {
+    sources = [
+      "src/src/mesa/drivers/common/driverfuncs.c",
+      "src/src/mesa/drivers/common/driverfuncs.h",
+      "src/src/mesa/drivers/common/meta.c",
+      "src/src/mesa/drivers/common/meta.h",
+      "src/src/mesa/drivers/osmesa/osmesa.c",
+      "src/src/mesa/drivers/osmesa/osmesa.def",
     ]
+
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":mesa_headers_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
+    previous_configs = configs
+    configs = []
+    configs = [ ":mesa_internal_config" ] + previous_configs
+
+    include_dirs = [ "src/src/mesa/drivers" ]
+
+    if (is_clang) {
+      # Mesa triggers some of these Clang warnings.
+      configs -= [ "//build/config/clang:extra_warnings" ]
+    }
+
+    deps = [
+      ":mesa_headers",
+      ":mesa",
+      ":mesa_libglslcommon",
+    ]
+
+    if (is_win) {
+      defines = [
+        "BUILD_GL32",
+        "KEYWORD1=GLAPI",
+        "KEYWORD2=GLAPIENTRY",
+      ]
+    }
   }
-}
-
+} else {
+  #  Placeholder to allow targets to unconditionally depend on this.
+  group("osmesa") {
+  }
 }  # !is_android
-
 # TODO(GYP) Android osmesa_in_lib_dir target.

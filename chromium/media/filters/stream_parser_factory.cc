@@ -8,7 +8,6 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/formats/mpeg/adts_stream_parser.h"
 #include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
@@ -102,31 +101,42 @@ static StreamParser* BuildWebMParser(
 // AAC Object Type IDs that Chrome supports.
 static const int kAACLCObjectType = 2;
 static const int kAACSBRObjectType = 5;
+static const int kAACPSObjectType = 29;
 
 static int GetMP4AudioObjectType(const std::string& codec_id,
                                  const LogCB& log_cb) {
+  // From RFC 6381 section 3.3 (ISO Base Media File Format Name Space):
+  // When the first element of a ['codecs' parameter value] is 'mp4a' ...,
+  // the second element is a hexadecimal representation of the MP4 Registration
+  // Authority ObjectTypeIndication (OTI). Note that MP4RA uses a leading "0x"
+  // with these values, which is omitted here and hence implied.
   std::vector<std::string> tokens;
   if (Tokenize(codec_id, ".", &tokens) == 3 &&
       tokens[0] == "mp4a" && tokens[1] == "40") {
+    // From RFC 6381 section 3.3:
+    // One of the OTI values for 'mp4a' is 40 (identifying MPEG-4 audio). For
+    // this value, the third element identifies the audio ObjectTypeIndication
+    // (OTI) ... expressed as a decimal number.
     int audio_object_type;
-    if (base::HexStringToInt(tokens[2], &audio_object_type))
+    if (base::StringToInt(tokens[2], &audio_object_type))
       return audio_object_type;
   }
 
-  MEDIA_LOG(log_cb) << "Malformed mimetype codec '" << codec_id << "'";
+  MEDIA_LOG(DEBUG, log_cb) << "Malformed mimetype codec '" << codec_id << "'";
   return -1;
 }
 
 bool ValidateMP4ACodecID(const std::string& codec_id, const LogCB& log_cb) {
   int audio_object_type = GetMP4AudioObjectType(codec_id, log_cb);
   if (audio_object_type == kAACLCObjectType ||
-      audio_object_type == kAACSBRObjectType) {
+      audio_object_type == kAACSBRObjectType ||
+      audio_object_type == kAACPSObjectType) {
     return true;
   }
 
-  MEDIA_LOG(log_cb) << "Unsupported audio object type "
-                    << "0x" << std::hex << audio_object_type
-                    << " in codec '" << codec_id << "'";
+  MEDIA_LOG(DEBUG, log_cb) << "Unsupported audio object type "
+                           << audio_object_type << " in codec '" << codec_id
+                           << "'";
   return false;
 }
 
@@ -170,7 +180,8 @@ static StreamParser* BuildMP4Parser(
 
       audio_object_types.insert(mp4::kISO_14496_3);
 
-      if (audio_object_type == kAACSBRObjectType) {
+      if (audio_object_type == kAACSBRObjectType ||
+          audio_object_type == kAACPSObjectType) {
         has_sbr = true;
         break;
       }
@@ -219,9 +230,12 @@ static StreamParser* BuildMP2TParser(
   bool has_sbr = false;
   for (size_t i = 0; i < codecs.size(); ++i) {
     std::string codec_id = codecs[i];
-    if (MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern) &&
-        GetMP4AudioObjectType(codec_id, log_cb) == kAACSBRObjectType) {
-      has_sbr = true;
+    if (MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern)) {
+      int audio_object_type = GetMP4AudioObjectType(codec_id, log_cb);
+      if (audio_object_type == kAACSBRObjectType ||
+          audio_object_type == kAACPSObjectType) {
+        has_sbr = true;
+      }
     }
   }
 
@@ -260,13 +274,6 @@ static bool VerifyCodec(
     std::vector<CodecInfo::HistogramTag>* video_codecs) {
   switch (codec_info->type) {
     case CodecInfo::AUDIO:
-#if defined(ENABLE_EAC3_PLAYBACK)
-      if (codec_info->tag == CodecInfo::HISTOGRAM_EAC3) {
-        const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-        if (!cmd_line->HasSwitch(switches::kEnableEac3Playback))
-          return false;
-      }
-#endif
       if (audio_codecs)
         audio_codecs->push_back(codec_info->tag);
       return true;
@@ -275,6 +282,11 @@ static bool VerifyCodec(
       // VP9 is only supported on KitKat+ (API Level 19).
       if (codec_info->tag == CodecInfo::HISTOGRAM_VP9 &&
           base::android::BuildInfo::GetInstance()->sdk_int() < 19) {
+        return false;
+      }
+      // Opus is only supported on Lollipop+ (API Level 21).
+      if (codec_info->tag == CodecInfo::HISTOGRAM_OPUS &&
+          base::android::BuildInfo::GetInstance()->sdk_int() < 21) {
         return false;
       }
 #endif
@@ -325,8 +337,8 @@ static bool CheckTypeAndCodecs(
           return true;
         }
 
-        MEDIA_LOG(log_cb) << "A codecs parameter must be provided for '"
-                          << type << "'";
+        MEDIA_LOG(DEBUG, log_cb) << "A codecs parameter must be provided for '"
+                                 << type << "'";
         return false;
       }
 
@@ -347,8 +359,8 @@ static bool CheckTypeAndCodecs(
         }
 
         if (!found_codec) {
-          MEDIA_LOG(log_cb) << "Codec '" << codec_id
-                            << "' is not supported for '" << type << "'";
+          MEDIA_LOG(DEBUG, log_cb) << "Codec '" << codec_id
+                                   << "' is not supported for '" << type << "'";
           return false;
         }
       }

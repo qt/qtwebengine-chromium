@@ -16,8 +16,6 @@ class ThrobAnimation;
 
 namespace views {
 
-class CustomButtonStateChangedDelegate;
-
 // A button with custom rendering. The base of ImageButton and LabelButton.
 // Note that this type of button is not focusable by default and will not be
 // part of the focus chain.  Call SetFocusable(true) to make it part of the
@@ -25,6 +23,12 @@ class CustomButtonStateChangedDelegate;
 class VIEWS_EXPORT CustomButton : public Button,
                                   public gfx::AnimationDelegate {
  public:
+  // An enum describing the events on which a button should notify its listener.
+  enum NotifyAction {
+    NOTIFY_ON_PRESS,
+    NOTIFY_ON_RELEASE,
+  };
+
   // The menu button's class name.
   static const char kViewClassName[];
 
@@ -63,6 +67,11 @@ class VIEWS_EXPORT CustomButton : public Button,
     animate_on_state_change_ = value;
   }
 
+  // Sets the event on which the button should notify its listener.
+  void set_notify_action(NotifyAction notify_action) {
+    notify_action_ = notify_action;
+  }
+
   void SetHotTracked(bool is_hot_tracked);
   bool IsHotTracked() const;
 
@@ -88,11 +97,6 @@ class VIEWS_EXPORT CustomButton : public Button,
 
   // Overridden from gfx::AnimationDelegate:
   void AnimationProgressed(const gfx::Animation* animation) override;
-
-  // Takes ownership of the delegate.
-  void set_state_changed_delegate(CustomButtonStateChangedDelegate* delegate) {
-    state_changed_delegate_.reset(delegate);
-  }
 
  protected:
   // Construct the Button with a Listener. See comment for Button's ctor.
@@ -137,22 +141,10 @@ class VIEWS_EXPORT CustomButton : public Button,
   // See description above setter.
   bool request_focus_on_press_;
 
-  scoped_ptr<CustomButtonStateChangedDelegate> state_changed_delegate_;
+  // The event on which the button should notify its listener.
+  NotifyAction notify_action_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomButton);
-};
-
-// Delegate for actions taken on state changes by CustomButton.
-class VIEWS_EXPORT CustomButtonStateChangedDelegate {
-public:
-  virtual ~CustomButtonStateChangedDelegate() {}
-  virtual void StateChanged(Button::ButtonState state) = 0;
-
-protected:
-  CustomButtonStateChangedDelegate() {}
-
-private:
-  DISALLOW_COPY_AND_ASSIGN(CustomButtonStateChangedDelegate);
 };
 
 }  // namespace views

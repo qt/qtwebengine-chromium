@@ -35,12 +35,7 @@ class SK_API BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice
   // is not initialized.
   static BitmapPlatformDevice* Create(CGContextRef context,
                                       int width, int height,
-                                      bool is_opaque);
-
-  // Creates a BitmapPlatformDevice instance.  If |is_opaque| is false,
-  // then the bitmap is initialzed to 0.
-  static BitmapPlatformDevice* CreateAndClear(int width, int height,
-                                              bool is_opaque);
+                                      bool is_opaque, bool do_clear = false);
 
   // Creates a context for |data| and calls Create.
   // If |data| is NULL, then the bitmap backing store is not initialized.
@@ -52,10 +47,6 @@ class SK_API BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice
 
   // PlatformDevice overrides
   CGContextRef GetBitmapContext() override;
-  void DrawToNativeContext(CGContextRef context,
-                           int x,
-                           int y,
-                           const CGRect* src_rect) override;
 
   // SkBaseDevice overrides
   void setMatrixClip(const SkMatrix& transform,
@@ -66,7 +57,7 @@ class SK_API BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice
   BitmapPlatformDevice(CGContextRef context,
                        const SkBitmap& bitmap);
 
-  SkBaseDevice* onCreateDevice(const SkImageInfo& info, Usage usage) override;
+  SkBaseDevice* onCreateDevice(const CreateInfo&, const SkPaint*) override;
 
  private:
   void ReleaseBitmapContext();

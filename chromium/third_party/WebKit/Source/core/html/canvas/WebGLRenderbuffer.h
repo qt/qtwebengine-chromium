@@ -26,16 +26,15 @@
 #ifndef WebGLRenderbuffer_h
 #define WebGLRenderbuffer_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
-#include "core/html/canvas/WebGLSharedObject.h"
+#include "core/html/canvas/WebGLSharedPlatform3DObject.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class WebGLRenderbuffer final : public WebGLSharedObject, public ScriptWrappable {
+class WebGLRenderbuffer final : public WebGLSharedPlatform3DObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~WebGLRenderbuffer();
+    ~WebGLRenderbuffer() override;
 
     static PassRefPtrWillBeRawPtr<WebGLRenderbuffer> create(WebGLRenderingContextBase*);
 
@@ -59,17 +58,17 @@ public:
 
     void setEmulatedStencilBuffer(PassRefPtrWillBeRawPtr<WebGLRenderbuffer> buffer) { m_emulatedStencilBuffer = buffer; }
     WebGLRenderbuffer* emulatedStencilBuffer() const { return m_emulatedStencilBuffer.get(); }
-    void deleteEmulatedStencilBuffer(blink::WebGraphicsContext3D* context3d);
+    void deleteEmulatedStencilBuffer(WebGraphicsContext3D* context3d);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     explicit WebGLRenderbuffer(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
+    void deleteObjectImpl(WebGraphicsContext3D*) override;
 
 private:
-    virtual bool isRenderbuffer() const override { return true; }
+    bool isRenderbuffer() const override { return true; }
 
     GLenum m_internalFormat;
     GLsizei m_width, m_height;

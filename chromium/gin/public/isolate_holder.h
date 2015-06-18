@@ -14,6 +14,7 @@ namespace gin {
 
 class PerIsolateData;
 class RunMicrotasksObserver;
+class V8IsolateMemoryDumpProvider;
 
 // To embed Gin, first initialize gin using IsolateHolder::Initialize and then
 // create an instance of IsolateHolder to hold the v8::Isolate in which you
@@ -27,13 +28,21 @@ class GIN_EXPORT IsolateHolder {
     kStrictMode
   };
 
+  // Stores whether the client uses v8::Locker to access the isolate.
+  enum AccessMode {
+    kSingleThread,
+    kUseLocker
+  };
+
   IsolateHolder();
+  explicit IsolateHolder(AccessMode access_mode);
   ~IsolateHolder();
 
   // Should be invoked once before creating IsolateHolder instances to
-  // initialize V8 and Gin. In case V8_USE_EXTERNAL_STARTUP_DATA is defined,
-  // V8's initial snapshot should be loaded (by calling LoadV8Snapshot or
-  // LoadV8SnapshotFD) before calling Initialize.
+  // initialize V8 and Gin. In case V8_USE_EXTERNAL_STARTUP_DATA is
+  // defined, V8's initial snapshot should be loaded (by calling
+  // V8Initializer::LoadV8SnapshotFromFD or
+  // V8Initializer::LoadV8Snapshot) before calling this method.
   static void Initialize(ScriptMode mode,
                          v8::ArrayBuffer::Allocator* allocator);
 
@@ -51,17 +60,15 @@ class GIN_EXPORT IsolateHolder {
   // thread.
   void RemoveRunMicrotasksObserver();
 
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-#ifdef OS_ANDROID
-  static bool LoadV8SnapshotFD(int natives_fd, int snapshot_fd);
-#endif
-  static bool LoadV8Snapshot();
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+  // This method returns if v8::Locker is needed to access isolate.
+  AccessMode access_mode() const { return access_mode_; }
 
  private:
   v8::Isolate* isolate_;
   scoped_ptr<PerIsolateData> isolate_data_;
   scoped_ptr<RunMicrotasksObserver> task_observer_;
+  scoped_ptr<V8IsolateMemoryDumpProvider> isolate_memory_dump_provider_;
+  AccessMode access_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(IsolateHolder);
 };

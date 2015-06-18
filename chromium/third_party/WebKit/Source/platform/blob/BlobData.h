@@ -159,7 +159,7 @@ private:
 typedef Vector<BlobDataItem> BlobDataItemList;
 
 class PLATFORM_EXPORT BlobData {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(BlobData);
 public:
     static PassOwnPtr<BlobData> create();
 
@@ -167,10 +167,9 @@ public:
     void detachFromCurrentThread();
 
     const String& contentType() const { return m_contentType; }
-    void setContentType(const String& contentType) { m_contentType = contentType; }
+    void setContentType(const String&);
 
     const BlobDataItemList& items() const { return m_items; }
-    void swapItems(BlobDataItemList&);
 
     void appendBytes(const void*, size_t length);
     void appendData(PassRefPtr<RawData>, long long offset, long long length);
@@ -179,8 +178,6 @@ public:
     void appendBlob(PassRefPtr<BlobDataHandle>, long long offset, long long length);
     void appendFileSystemURL(const KURL&, long long offset, long long length, double expectedModificationTime);
     void appendText(const String&, bool normalizeLineEndingsToNative);
-    void appendArrayBuffer(const ArrayBuffer*);
-    void appendArrayBufferView(const ArrayBufferView*);
 
     // The value of the size property for a Blob who has this data.
     // BlobDataItem::toEndOfFile if the Blob has a file whose size was not yet determined.

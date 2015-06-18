@@ -95,6 +95,17 @@ var DEFAULT_OPTIN_CHECK_PERIOD_SECONDS = 60 * 60 * 24 * 7; // 1 week
 var SETTINGS_URL = 'https://support.google.com/chrome/?p=ib_google_now_welcome';
 
 /**
+ * GCM registration URL.
+ */
+var GCM_REGISTRATION_URL =
+    'https://android.googleapis.com/gcm/googlenotification';
+
+/**
+ * DevConsole project ID for GCM API use.
+ */
+var GCM_PROJECT_ID = '437902709571';
+
+/**
  * Number of cards that need an explanatory link.
  */
 var EXPLANATORY_CARDS_LINK_THRESHOLD = 4;
@@ -125,8 +136,8 @@ var ReceivedGroup;
  *
  * @typedef {{
  *   googleNowDisabled: (boolean|undefined),
- *   groups: Object.<string, ReceivedGroup>,
- *   notifications: Array.<ReceivedNotification>
+ *   groups: Object<string, ReceivedGroup>,
+ *   notifications: Array<ReceivedNotification>
  * }}
  */
 var ServerResponse;
@@ -139,7 +150,7 @@ var ServerResponse;
  *     cards update and all the times after that.
  *
  * @typedef {{
- *   cards: Array.<ReceivedNotification>,
+ *   cards: Array<ReceivedNotification>,
  *   cardsTimestamp: (number|undefined),
  *   nextPollTime: (number|undefined),
  *   rank: (number|undefined)
@@ -189,6 +200,9 @@ function areTasksConflicting(newTaskName, scheduledTaskName) {
 var tasks = buildTaskManager(areTasksConflicting);
 
 // Add error processing to API calls.
+wrapper.instrumentChromeApiFunction('gcm.onMessage.addListener', 0);
+wrapper.instrumentChromeApiFunction('gcm.register', 1);
+wrapper.instrumentChromeApiFunction('gcm.unregister', 0);
 wrapper.instrumentChromeApiFunction('metricsPrivate.getVariationParams', 1);
 wrapper.instrumentChromeApiFunction('notifications.clear', 1);
 wrapper.instrumentChromeApiFunction('notifications.create', 2);
@@ -204,10 +218,9 @@ wrapper.instrumentChromeApiFunction(
 wrapper.instrumentChromeApiFunction(
     'notifications.onShowSettings.addListener', 0);
 wrapper.instrumentChromeApiFunction('permissions.contains', 1);
-wrapper.instrumentChromeApiFunction('pushMessaging.onMessage.addListener', 0);
-wrapper.instrumentChromeApiFunction('storage.onChanged.addListener', 0);
 wrapper.instrumentChromeApiFunction('runtime.onInstalled.addListener', 0);
 wrapper.instrumentChromeApiFunction('runtime.onStartup.addListener', 0);
+wrapper.instrumentChromeApiFunction('storage.onChanged.addListener', 0);
 wrapper.instrumentChromeApiFunction('tabs.create', 1);
 
 var updateCardsAttempts = buildAttemptManager(
@@ -342,14 +355,14 @@ function requestFromServer(method, handlerName, opt_contentType) {
 
 /**
  * Shows the notification groups as notification cards.
- * @param {Object.<string, StoredNotificationGroup>} notificationGroups Map from
+ * @param {Object<string, StoredNotificationGroup>} notificationGroups Map from
  *     group name to group information.
  * @param {function(ReceivedNotification)=} opt_onCardShown Optional parameter
  *     called when each card is shown.
  * @return {Promise} A promise to show the notification groups as cards.
  */
 function showNotificationGroups(notificationGroups, opt_onCardShown) {
-  /** @type {Object.<ChromeNotificationId, CombinedCard>} */
+  /** @type {Object<ChromeNotificationId, CombinedCard>} */
   var cards = combineCardsFromGroups(notificationGroups);
   console.log('showNotificationGroups ' + JSON.stringify(cards));
 
@@ -365,7 +378,7 @@ function showNotificationGroups(notificationGroups, opt_onCardShown) {
         cards[chromeNotificationId] = cards[chromeNotificationId] || [];
       }
 
-      /** @type {Object.<ChromeNotificationId, NotificationDataEntry>} */
+      /** @type {Object<ChromeNotificationId, NotificationDataEntry>} */
       var notificationsData = {};
 
       // Create/update/delete notifications.
@@ -402,7 +415,7 @@ function removeAllCards() {
 
 /**
  * Adds a card group into a set of combined cards.
- * @param {Object.<ChromeNotificationId, CombinedCard>} combinedCards Map from
+ * @param {Object<ChromeNotificationId, CombinedCard>} combinedCards Map from
  *     chromeNotificationId to a combined card.
  *     This is an input/output parameter.
  * @param {StoredNotificationGroup} storedGroup Group to combine into the
@@ -432,7 +445,7 @@ function combineGroup(combinedCards, storedGroup) {
 
 /**
  * Calculates the soonest poll time from a map of groups as an absolute time.
- * @param {Object.<string, StoredNotificationGroup>} groups Map from group name
+ * @param {Object<string, StoredNotificationGroup>} groups Map from group name
  *     to group information.
  * @return {number} The next poll time based off of the groups.
  */
@@ -454,7 +467,7 @@ function calculateNextPollTimeMilliseconds(groups) {
 
 /**
  * Schedules next cards poll.
- * @param {Object.<string, StoredNotificationGroup>} groups Map from group name
+ * @param {Object<string, StoredNotificationGroup>} groups Map from group name
  *     to group information.
  */
 function scheduleNextCardsPoll(groups) {
@@ -481,13 +494,13 @@ function scheduleOptInCheckPoll() {
 
 /**
  * Combines notification groups into a set of Chrome notifications.
- * @param {Object.<string, StoredNotificationGroup>} notificationGroups Map from
+ * @param {Object<string, StoredNotificationGroup>} notificationGroups Map from
  *     group name to group information.
- * @return {Object.<ChromeNotificationId, CombinedCard>} Cards to show.
+ * @return {Object<ChromeNotificationId, CombinedCard>} Cards to show.
  */
 function combineCardsFromGroups(notificationGroups) {
   console.log('combineCardsFromGroups ' + JSON.stringify(notificationGroups));
-  /** @type {Object.<ChromeNotificationId, CombinedCard>} */
+  /** @type {Object<ChromeNotificationId, CombinedCard>} */
   var combinedCards = {};
 
   for (var groupName in notificationGroups)
@@ -514,16 +527,16 @@ function processServerResponse(response) {
   var receivedGroups = response.groups;
 
   return fillFromChromeLocalStorage({
-    /** @type {Object.<string, StoredNotificationGroup>} */
+    /** @type {Object<string, StoredNotificationGroup>} */
     notificationGroups: {},
-    /** @type {Object.<ServerNotificationId, number>} */
+    /** @type {Object<ServerNotificationId, number>} */
     recentDismissals: {}
   }).then(function(items) {
     console.log('processServerResponse-get ' + JSON.stringify(items));
 
     // Build a set of non-expired recent dismissals. It will be used for
     // client-side filtering of cards.
-    /** @type {Object.<ServerNotificationId, number>} */
+    /** @type {Object<ServerNotificationId, number>} */
     var updatedRecentDismissals = {};
     var now = Date.now();
     for (var serverNotificationId in items.recentDismissals) {
@@ -612,7 +625,7 @@ function shouldShowExplanatoryCard() {
 
 /**
  * Requests notification cards from the server for specified groups.
- * @param {Array.<string>} groupNames Names of groups that need to be refreshed.
+ * @param {Array<string>} groupNames Names of groups that need to be refreshed.
  * @return {Promise} A promise to request the specified notification groups.
  */
 function requestNotificationGroupsFromServer(groupNames) {
@@ -694,7 +707,7 @@ function requestAndUpdateOptedIn() {
  */
 function getGroupsToRequest() {
   return fillFromChromeLocalStorage({
-    /** @type {Object.<string, StoredNotificationGroup>} */
+    /** @type {Object<string, StoredNotificationGroup>} */
     notificationGroups: {}
   }).then(function(items) {
     console.log('getGroupsToRequest-storage-get ' + JSON.stringify(items));
@@ -739,7 +752,7 @@ function requestNotificationCards() {
  * Determines if an immediate retry should occur based off of the given groups.
  * The NOR group is expected most often and less latency sensitive, so we will
  * simply wait MAXIMUM_POLLING_PERIOD_SECONDS before trying again.
- * @param {Array.<string>} groupNames Names of groups that need to be refreshed.
+ * @param {Array<string>} groupNames Names of groups that need to be refreshed.
  * @return {boolean} Whether a retry should occur.
  */
 function shouldScheduleRetryFromGroupList(groupNames) {
@@ -833,9 +846,9 @@ function requestCardDismissal(
  */
 function processPendingDismissals() {
   return fillFromChromeLocalStorage({
-    /** @type {Array.<PendingDismissal>} */
+    /** @type {Array<PendingDismissal>} */
     pendingDismissals: [],
-    /** @type {Object.<ServerNotificationId, number>} */
+    /** @type {Object<ServerNotificationId, number>} */
     recentDismissals: {}
   }).then(function(items) {
     console.log(
@@ -913,7 +926,7 @@ function openUrl(url) {
  */
 function onNotificationClicked(chromeNotificationId, selector) {
   fillFromChromeLocalStorage({
-    /** @type {Object.<ChromeNotificationId, NotificationDataEntry>} */
+    /** @type {Object<ChromeNotificationId, NotificationDataEntry>} */
     notificationsData: {}
   }).then(function(items) {
     /** @type {(NotificationDataEntry|undefined)} */
@@ -946,11 +959,11 @@ function onNotificationClosed(chromeNotificationId, byUser) {
     dismissalAttempts.start();
 
     fillFromChromeLocalStorage({
-      /** @type {Array.<PendingDismissal>} */
+      /** @type {Array<PendingDismissal>} */
       pendingDismissals: [],
-      /** @type {Object.<ChromeNotificationId, NotificationDataEntry>} */
+      /** @type {Object<ChromeNotificationId, NotificationDataEntry>} */
       notificationsData: {},
-      /** @type {Object.<string, StoredNotificationGroup>} */
+      /** @type {Object<string, StoredNotificationGroup>} */
       notificationGroups: {}
     }).then(function(items) {
       /** @type {NotificationDataEntry} */
@@ -1015,6 +1028,8 @@ function stopPollingCards() {
  */
 function initialize() {
   recordEvent(GoogleNowEvent.EXTENSION_START);
+  // TODO(skare): Reenable, after signin.
+  unregisterFromGcm();
   onStateChange();
 }
 
@@ -1204,6 +1219,118 @@ function isGoogleNowEnabled() {
 }
 
 /**
+ * Ensures the extension is ready to listen for GCM messages.
+ */
+function registerForGcm() {
+  // We don't need to use the key yet, just ensure the channel is set up.
+  getGcmNotificationKey();
+}
+
+/**
+ * Returns a Promise resolving to either a cached or new GCM notification key.
+ * Rejects if registration fails.
+ * @return {Promise} A Promise that resolves to a potentially-cached GCM key.
+ */
+function getGcmNotificationKey() {
+  return fillFromChromeLocalStorage({gcmNotificationKey: undefined})
+      .then(function(items) {
+        if (items.gcmNotificationKey) {
+          console.log('Reused gcm key from storage.');
+          return Promise.resolve(items.gcmNotificationKey);
+        }
+        return requestNewGcmNotificationKey();
+      });
+}
+
+/**
+ * Returns a promise resolving to a GCM Notificaiton Key. May call
+ * chrome.gcm.register() first if required. Rejects on registration failure.
+ * @return {Promise} A Promise that resolves to a fresh GCM Notification key.
+ */
+function requestNewGcmNotificationKey() {
+  return getGcmRegistrationId().then(function(gcmId) {
+    authenticationManager.getAuthToken().then(function(token) {
+      authenticationManager.getLogin().then(function(username) {
+        return new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.responseType = 'application/json';
+          xhr.open('POST', GCM_REGISTRATION_URL, true);
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+          xhr.setRequestHeader('project_id', GCM_PROJECT_ID);
+          var payload = {
+            'operation': 'add',
+            'notification_key_name': username,
+            'registration_ids': [gcmId]
+          };
+          xhr.onloadend = function() {
+            if (xhr.status != 200) {
+              reject();
+            }
+            var obj = JSON.parse(xhr.responseText);
+            var key = obj && obj.notification_key;
+            if (!key) {
+              reject();
+            }
+            console.log('gcm notification key POST: ' + key);
+            chrome.storage.local.set({gcmNotificationKey: key});
+            resolve(key);
+          };
+          xhr.send(JSON.stringify(payload));
+        });
+      });
+    }).catch(function() {
+      // Couldn't obtain a GCM ID. Ignore and fallback to polling.
+    });
+  });
+}
+
+/**
+ * Returns a promise resolving to either a cached or new GCM registration ID.
+ * Rejects if registration fails.
+ * @return {Promise} A Promise that resolves to a GCM registration ID.
+ */
+function getGcmRegistrationId() {
+  return fillFromChromeLocalStorage({gcmRegistrationId: undefined})
+      .then(function(items) {
+        if (items.gcmRegistrationId) {
+          console.log('Reused gcm registration id from storage.');
+          return Promise.resolve(items.gcmRegistrationId);
+        }
+
+        return new Promise(function(resolve, reject) {
+          instrumented.gcm.register([GCM_PROJECT_ID], function(registrationId) {
+            console.log('gcm.register(): ' + registrationId);
+            if (registrationId) {
+              chrome.storage.local.set({gcmRegistrationId: registrationId});
+              resolve(registrationId);
+            } else {
+              reject();
+            }
+          });
+        });
+      });
+}
+
+/**
+ * Unregisters from GCM if previously registered.
+ */
+function unregisterFromGcm() {
+  fillFromChromeLocalStorage({gcmRegistrationId: undefined})
+      .then(function(items) {
+        if (items.gcmRegistrationId) {
+          console.log('Unregistering from gcm.');
+          instrumented.gcm.unregister(function() {
+            if (!chrome.runtime.lastError) {
+              chrome.storage.local.remove(
+                ['gcmNotificationKey', 'gcmRegistrationId']);
+            }
+          });
+        }
+      });
+}
+
+/**
  * Polls the optin state.
  * Sometimes we get the response to the opted in result too soon during
  * push messaging. We'll recheck the optin state a few times before giving up.
@@ -1258,7 +1385,7 @@ instrumented.runtime.onStartup.addListener(function() {
   // persistent notifications will work.
   tasks.add(SHOW_ON_START_TASK_NAME, function() {
     fillFromChromeLocalStorage({
-      /** @type {Object.<string, StoredNotificationGroup>} */
+      /** @type {Object<string, StoredNotificationGroup>} */
       notificationGroups: {}
     }).then(function(items) {
       console.log('onStartup-get ' + JSON.stringify(items));
@@ -1334,26 +1461,27 @@ instrumented.storage.onChanged.addListener(function(changes, areaName) {
   }
 });
 
-instrumented.pushMessaging.onMessage.addListener(function(message) {
-  // message.payload will be '' when the extension first starts.
-  // Each time after signing in, we'll get latest payload for all channels.
-  // So, we need to poll the server only when the payload is non-empty and has
-  // changed.
-  console.log('pushMessaging.onMessage ' + JSON.stringify(message));
-  if (message.payload.indexOf('REQUEST_CARDS') == 0) {
+instrumented.gcm.onMessage.addListener(function(message) {
+  console.log('gcm.onMessage ' + JSON.stringify(message));
+  if (!message || !message.data) {
+    return;
+  }
+
+  var payload = message.data.payload;
+  var tag = message.data.tag;
+  if (payload.indexOf('REQUEST_CARDS') == 0) {
     tasks.add(ON_PUSH_MESSAGE_START_TASK_NAME, function() {
       // Accept promise rejection on failure since it's safer to do nothing,
       // preventing polling the server when the payload really didn't change.
       fillFromChromeLocalStorage({
         lastPollNowPayloads: {},
-        /** @type {Object.<string, StoredNotificationGroup>} */
+        /** @type {Object<string, StoredNotificationGroup>} */
         notificationGroups: {}
       }, PromiseRejection.ALLOW).then(function(items) {
-        if (items.lastPollNowPayloads[message.subchannelId] !=
-            message.payload) {
-          items.lastPollNowPayloads[message.subchannelId] = message.payload;
+        if (items.lastPollNowPayloads[tag] != payload) {
+          items.lastPollNowPayloads[tag] = payload;
 
-          items.notificationGroups['PUSH' + message.subchannelId] = {
+          items.notificationGroups['PUSH' + tag] = {
             cards: [],
             nextPollTime: Date.now()
           };

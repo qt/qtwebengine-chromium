@@ -7,6 +7,7 @@
 
 #include "gm.h"
 
+#include "sk_tool_utils.h"
 #include "Resources.h"
 #include "SampleCode.h"
 #include "SkBlurMask.h"
@@ -24,9 +25,6 @@
 #include "SkView.h"
 
 __SK_FORCE_IMAGE_DECODER_LINKING;
-
-// Defined in SampleColorFilter.cpp
-extern SkShader* createChecker();
 
 /**
  *  Interprets c as an unpremultiplied color, and returns the
@@ -51,7 +49,7 @@ public:
 
 protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt) SK_OVERRIDE {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "unpremul");
             return true;
@@ -77,14 +75,11 @@ protected:
         return this->INHERITED::onQuery(evt);
     }
 
-    virtual void onDrawBackground(SkCanvas* canvas) SK_OVERRIDE {
-        SkPaint paint;
-        SkAutoTUnref<SkShader> shader(createChecker());
-        paint.setShader(shader.get());
-        canvas->drawPaint(paint);
+    void onDrawBackground(SkCanvas* canvas) override {
+        sk_tool_utils::draw_checkerboard(canvas, 0xFFCCCCCC, 0xFFFFFFFF, 12);
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) SK_OVERRIDE {
+    void onDrawContent(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setTextSize(SkIntToScalar(24));

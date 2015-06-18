@@ -41,10 +41,18 @@ public:
 
     bool isRendered() const { return invalidMarkerRect() != m_renderedRect; }
     bool contains(const LayoutPoint& point) const { return isRendered() && m_renderedRect.contains(point); }
-    void setRenderedRect(const LayoutRect& r) { m_renderedRect = r; }
+    bool setRenderedRect(const LayoutRect& r)
+    {
+        const LayoutRect& rect = r.isEmpty() ? invalidMarkerRect() : r;
+        if (rect == m_renderedRect)
+            return false;
+        m_renderedRect = rect;
+        return true;
+    }
+
     const LayoutRect& renderedRect() const { return m_renderedRect; }
-    void invalidate(const LayoutRect&);
-    void invalidate() { m_renderedRect = invalidMarkerRect(); }
+
+    bool invalidateRenderedRect() { return setRenderedRect(invalidMarkerRect()); }
 
 private:
     explicit RenderedDocumentMarker(const DocumentMarker& marker)
@@ -61,12 +69,6 @@ private:
 
     LayoutRect m_renderedRect;
 };
-
-inline void RenderedDocumentMarker::invalidate(const LayoutRect& r)
-{
-    if (m_renderedRect.intersects(r))
-        invalidate();
-}
 
 DEFINE_TYPE_CASTS(RenderedDocumentMarker, DocumentMarker, marker, true, true);
 

@@ -5,20 +5,12 @@
 #include "ui/events/gesture_detection/motion_event_generic.h"
 
 #include "base/logging.h"
+#include "ui/events/base_event_utils.h"
 
 namespace ui {
 
 PointerProperties::PointerProperties()
-    : id(0),
-      tool_type(MotionEvent::TOOL_TYPE_UNKNOWN),
-      x(0),
-      y(0),
-      raw_x(0),
-      raw_y(0),
-      pressure(0),
-      touch_major(0),
-      touch_minor(0),
-      orientation(0) {
+    : PointerProperties(0, 0, 0) {
 }
 
 PointerProperties::PointerProperties(float x, float y, float touch_major)
@@ -31,7 +23,8 @@ PointerProperties::PointerProperties(float x, float y, float touch_major)
       pressure(0),
       touch_major(touch_major),
       touch_minor(0),
-      orientation(0) {
+      orientation(0),
+      source_device_id(0) {
 }
 
 PointerProperties::PointerProperties(const MotionEvent& event,
@@ -45,7 +38,8 @@ PointerProperties::PointerProperties(const MotionEvent& event,
       pressure(event.GetPressure(pointer_index)),
       touch_major(event.GetTouchMajor(pointer_index)),
       touch_minor(event.GetTouchMinor(pointer_index)),
-      orientation(event.GetOrientation(pointer_index)) {
+      orientation(event.GetOrientation(pointer_index)),
+      source_device_id(0) {
 }
 
 MotionEventGeneric::MotionEventGeneric(Action action,
@@ -53,7 +47,7 @@ MotionEventGeneric::MotionEventGeneric(Action action,
                                        const PointerProperties& pointer)
     : action_(action),
       event_time_(event_time),
-      id_(0),
+      unique_event_id_(ui::GetNextTouchEventId()),
       action_index_(0),
       button_state_(0),
       flags_(0) {
@@ -63,7 +57,7 @@ MotionEventGeneric::MotionEventGeneric(Action action,
 MotionEventGeneric::MotionEventGeneric(const MotionEventGeneric& other)
     : action_(other.action_),
       event_time_(other.event_time_),
-      id_(other.id_),
+      unique_event_id_(other.unique_event_id_),
       action_index_(other.action_index_),
       button_state_(other.button_state_),
       flags_(other.flags_),
@@ -76,8 +70,8 @@ MotionEventGeneric::MotionEventGeneric(const MotionEventGeneric& other)
 MotionEventGeneric::~MotionEventGeneric() {
 }
 
-int MotionEventGeneric::GetId() const {
-  return id_;
+uint32 MotionEventGeneric::GetUniqueEventId() const {
+  return unique_event_id_;
 }
 
 MotionEvent::Action MotionEventGeneric::GetAction() const {
@@ -85,6 +79,9 @@ MotionEvent::Action MotionEventGeneric::GetAction() const {
 }
 
 int MotionEventGeneric::GetActionIndex() const {
+  DCHECK(action_ == ACTION_POINTER_DOWN || action_ == ACTION_POINTER_UP);
+  DCHECK_GE(action_index_, 0);
+  DCHECK_LT(action_index_, static_cast<int>(pointers_->size()));
   return action_index_;
 }
 
@@ -198,12 +195,19 @@ scoped_ptr<MotionEventGeneric> MotionEventGeneric::CancelEvent(
   scoped_ptr<MotionEventGeneric> cancel_event(
       new MotionEventGeneric(event, with_history));
   cancel_event->set_action(ACTION_CANCEL);
+  cancel_event->set_unique_event_id(ui::GetNextTouchEventId());
   return cancel_event.Pass();
 }
 
-void MotionEventGeneric::PushPointer(const PointerProperties& pointer) {
+size_t MotionEventGeneric::PushPointer(const PointerProperties& pointer) {
   DCHECK_EQ(0U, GetHistorySize());
   pointers_->push_back(pointer);
+  return pointers_->size() - 1;
+}
+
+void MotionEventGeneric::RemovePointerAt(size_t index) {
+  DCHECK_LT(index, pointers_->size());
+  pointers_->erase(pointers_->begin() + index);
 }
 
 void MotionEventGeneric::PushHistoricalEvent(scoped_ptr<MotionEvent> event) {
@@ -217,14 +221,17 @@ void MotionEventGeneric::PushHistoricalEvent(scoped_ptr<MotionEvent> event) {
 }
 
 MotionEventGeneric::MotionEventGeneric()
-    : action_(ACTION_CANCEL), id_(0), action_index_(0), button_state_(0) {
+    : action_(ACTION_CANCEL),
+      unique_event_id_(ui::GetNextTouchEventId()),
+      action_index_(0),
+      button_state_(0) {
 }
 
 MotionEventGeneric::MotionEventGeneric(const MotionEvent& event,
                                        bool with_history)
     : action_(event.GetAction()),
       event_time_(event.GetEventTime()),
-      id_(event.GetId()),
+      unique_event_id_(event.GetUniqueEventId()),
       action_index_(
           (action_ == ACTION_POINTER_UP || action_ == ACTION_POINTER_DOWN)
               ? event.GetActionIndex()
@@ -257,7 +264,7 @@ MotionEventGeneric& MotionEventGeneric::operator=(
     const MotionEventGeneric& other) {
   action_ = other.action_;
   event_time_ = other.event_time_;
-  id_ = other.id_;
+  unique_event_id_ = other.unique_event_id_;
   action_index_ = other.action_index_;
   button_state_ = other.button_state_;
   flags_ = other.flags_;

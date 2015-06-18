@@ -81,7 +81,9 @@ class CONTENT_EXPORT BrowserThread {
     // This is the thread to handle slow HTTP cache operations.
     CACHE,
 
-    // This is the thread that processes IPC and network messages.
+    // This is the thread that processes non-blocking IO, i.e. IPC and network.
+    // Blocking IO should happen on other threads like DB, FILE,
+    // FILE_USER_BLOCKING and CACHE depending on the usage.
     IO,
 
     // NOTE: do not add new threads here that are only used by a small number of
@@ -182,6 +184,16 @@ class CONTENT_EXPORT BrowserThread {
       const tracked_objects::Location& from_here,
       const base::Closure& task);
 
+  // For use with scheduling non-critical tasks for execution after startup.
+  // The order or execution of tasks posted here is unspecified even when
+  // posting to a SequencedTaskRunner and tasks are not guaranteed to be run
+  // prior to browser shutdown.
+  // Note: see related ContentBrowserClient::PostAfterStartupTask.
+  static void PostAfterStartupTask(
+      const tracked_objects::Location& from_here,
+      const scoped_refptr<base::TaskRunner>& task_runner,
+      const base::Closure& task);
+
   // Returns the thread pool used for blocking file I/O. Use this object to
   // perform random blocking operations such as file writes or querying the
   // Windows registry.
@@ -222,7 +234,7 @@ class CONTENT_EXPORT BrowserThread {
   // Sets the delegate for the specified BrowserThread.
   //
   // Only one delegate may be registered at a time.  Delegates may be
-  // unregistered by providing a NULL pointer.
+  // unregistered by providing a nullptr pointer.
   //
   // If the caller unregisters a delegate before CleanUp has been
   // called, it must perform its own locking to ensure the delegate is

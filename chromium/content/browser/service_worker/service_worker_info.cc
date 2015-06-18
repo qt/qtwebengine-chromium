@@ -12,6 +12,7 @@ namespace content {
 ServiceWorkerVersionInfo::ServiceWorkerVersionInfo()
     : running_status(ServiceWorkerVersion::STOPPED),
       status(ServiceWorkerVersion::NEW),
+      registration_id(kInvalidServiceWorkerRegistrationId),
       version_id(kInvalidServiceWorkerVersionId),
       process_id(-1),
       thread_id(-1),
@@ -22,6 +23,7 @@ ServiceWorkerVersionInfo::ServiceWorkerVersionInfo(
     ServiceWorkerVersion::RunningStatus running_status,
     ServiceWorkerVersion::Status status,
     const GURL& script_url,
+    int64 registration_id,
     int64 version_id,
     int process_id,
     int thread_id,
@@ -29,6 +31,7 @@ ServiceWorkerVersionInfo::ServiceWorkerVersionInfo(
     : running_status(running_status),
       status(status),
       script_url(script_url),
+      registration_id(registration_id),
       version_id(version_id),
       process_id(process_id),
       thread_id(thread_id),
@@ -39,18 +42,31 @@ ServiceWorkerVersionInfo::~ServiceWorkerVersionInfo() {}
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo()
     : registration_id(kInvalidServiceWorkerRegistrationId),
+      delete_flag(IS_NOT_DELETED),
       stored_version_size_bytes(0) {
 }
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
     const GURL& pattern,
     int64 registration_id,
+    DeleteFlag delete_flag)
+    : pattern(pattern),
+      registration_id(registration_id),
+      delete_flag(delete_flag),
+      stored_version_size_bytes(0) {
+}
+
+ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
+    const GURL& pattern,
+    int64 registration_id,
+    DeleteFlag delete_flag,
     const ServiceWorkerVersionInfo& active_version,
     const ServiceWorkerVersionInfo& waiting_version,
     const ServiceWorkerVersionInfo& installing_version,
     int64_t stored_version_size_bytes)
     : pattern(pattern),
       registration_id(registration_id),
+      delete_flag(delete_flag),
       active_version(active_version),
       waiting_version(waiting_version),
       installing_version(installing_version),

@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
+#include "content/browser/frame_host/navigator_delegate.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
 #include "ui/base/window_open_disposition.h"
@@ -26,9 +27,10 @@ class FrameTreeNode;
 class NavigationControllerImpl;
 class NavigationEntryImpl;
 class NavigationRequest;
-class NavigatorDelegate;
 class RenderFrameHostImpl;
+class ResourceRequestBody;
 class StreamHandle;
+struct BeginNavigationParams;
 struct CommonNavigationParams;
 struct ResourceResponse;
 
@@ -41,6 +43,9 @@ struct ResourceResponse;
 // from WebContentsImpl to this interface.
 class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
  public:
+  // Returns the delegate of this Navigator.
+  virtual NavigatorDelegate* GetDelegate();
+
   // Returns the NavigationController associated with this Navigator.
   virtual NavigationController* GetController();
 
@@ -83,9 +88,8 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // NavigationController know about each other. This will be possible once
   // initialization of Navigator and NavigationController is properly done.
   virtual bool NavigateToPendingEntry(
-      RenderFrameHostImpl* render_frame_host,
+      FrameTreeNode* frame_tree_node,
       NavigationController::ReloadType reload_type);
-
 
   // Navigation requests -------------------------------------------------------
 
@@ -95,6 +99,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // specified |disposition|.
   virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
                               const GURL& url,
+                              SiteInstance* source_site_instance,
                               const Referrer& referrer,
                               WindowOpenDisposition disposition,
                               bool should_replace_current_entry,
@@ -106,6 +111,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   virtual void RequestTransferURL(
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
+      SiteInstance* source_site_instance,
       const std::vector<GURL>& redirect_chain,
       const Referrer& referrer,
       ui::PageTransition page_transition,
@@ -114,15 +120,22 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       bool should_replace_current_entry,
       bool user_gesture) {}
 
-  // PlzNavigate: Used to start a navigation. OnBeginNavigation is called
-  // directly by RequestNavigation when there is no live renderer. Otherwise, it
-  // is called following a BeginNavigation IPC from the renderer (which in
-  // browser-initiated navigation also happens after RequestNavigation has been
-  // called).
+  // PlzNavigate
+  // Called after receiving a BeforeUnloadACK IPC from the renderer. If
+  // |frame_tree_node| has a NavigationRequest waiting for the renderer
+  // response, then the request is either started or canceled, depending on the
+  // value of |proceed|.
+  virtual void OnBeforeUnloadACK(FrameTreeNode* frame_tree_node,
+                                 bool proceed) {}
+
+  // PlzNavigate
+  // Used to start a new renderer-initiated navigation, following a
+  // BeginNavigation IPC from the renderer.
   virtual void OnBeginNavigation(
       FrameTreeNode* frame_tree_node,
-      const FrameHostMsg_BeginNavigation_Params& params,
-      const CommonNavigationParams& common_params) {}
+      const CommonNavigationParams& common_params,
+      const BeginNavigationParams& begin_params,
+      scoped_refptr<ResourceRequestBody> body);
 
   // PlzNavigate
   // Signal |render_frame_host| that a navigation is ready to commit (the
@@ -132,12 +145,25 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
                                 scoped_ptr<StreamHandle> body);
 
   // PlzNavigate
+  // Called when a NavigationRequest for |frame_tree_node| failed. An
+  // appropriate RenderFrameHost should be selected and asked to show an error
+  // page. |has_stale_copy_in_cache| is true if there is a stale copy of the
+  // unreachable page in cache.
+  virtual void FailedNavigation(FrameTreeNode* frame_tree_node,
+                                bool has_stale_copy_in_cache,
+                                int error_code) {}
+
+  // PlzNavigate
   // Cancel a NavigationRequest for |frame_tree_node|. Called when
   // |frame_tree_node| is destroyed.
   virtual void CancelNavigation(FrameTreeNode* frame_tree_node) {}
 
-  // Called when the first resource request for a given navigation is executed
-  // so that it can be tracked into an histogram.
+  // Called when the network stack started handling the navigation request
+  // so that the |timestamp| when it happened can be recorded into an histogram.
+  // The |url| is used to verify we're tracking the correct navigation.
+  // TODO(carlosk): once PlzNavigate is the only navigation implementation
+  // remove the URL parameter and rename this method to better suit its naming
+  // conventions.
   virtual void LogResourceRequestTime(
     base::TimeTicks timestamp, const GURL& url) {};
 
@@ -146,6 +172,11 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   virtual void LogBeforeUnloadTime(
       const base::TimeTicks& renderer_before_unload_start_time,
       const base::TimeTicks& renderer_before_unload_end_time) {}
+
+  // PlzNavigate
+  // Returns whether there is an ongoing navigation waiting for the BeforeUnload
+  // event to execute in the renderer process.
+  virtual bool IsWaitingForBeforeUnloadACK(FrameTreeNode* frame_tree_node);
 
  protected:
   friend class base::RefCounted<Navigator>;

@@ -31,8 +31,10 @@
 #ifndef ScriptValue_h
 #define ScriptValue_h
 
+#include "bindings/core/v8/NativeValueTraits.h"
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/SharedPersistent.h"
+#include "core/CoreExport.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -42,13 +44,39 @@ namespace blink {
 
 class JSONValue;
 
-class ScriptValue final {
+class CORE_EXPORT ScriptValue final {
 public:
+    template<typename T>
+    static ScriptValue from(ScriptState* scriptState, T value)
+    {
+        return ScriptValue(scriptState, toV8(value, scriptState->context()->Global(), scriptState->isolate()));
+    }
+
+    template<typename T, typename... Arguments>
+    static inline T to(v8::Isolate* isolate, v8::Local<v8::Value> value, ExceptionState& exceptionState, Arguments const&... arguments)
+    {
+        return NativeValueTraits<T>::nativeValue(isolate, value, exceptionState, arguments...);
+    }
+
+    template<typename T, typename... Arguments>
+    static inline T to(v8::Isolate* isolate, const ScriptValue& value, ExceptionState& exceptionState, Arguments const&... arguments)
+    {
+        return to<T>(isolate, value.v8Value(), exceptionState, arguments...);
+    }
+
     ScriptValue() { }
 
-    ScriptValue(ScriptState* scriptState, v8::Handle<v8::Value> value)
+    ScriptValue(ScriptState* scriptState, v8::Local<v8::Value> value)
         : m_scriptState(scriptState)
         , m_value(value.IsEmpty() ? nullptr : SharedPersistent<v8::Value>::create(value, scriptState->isolate()))
+    {
+        ASSERT(isEmpty() || m_scriptState);
+    }
+
+    template <typename T>
+    ScriptValue(ScriptState* scriptState, v8::MaybeLocal<T> value)
+        : m_scriptState(scriptState)
+        , m_value(value.IsEmpty() ? nullptr : SharedPersistent<v8::Value>::create(value.ToLocalChecked(), scriptState->isolate()))
     {
         ASSERT(isEmpty() || m_scriptState);
     }
@@ -68,6 +96,12 @@ public:
     v8::Isolate* isolate() const
     {
         return m_scriptState ? m_scriptState->isolate() : v8::Isolate::GetCurrent();
+    }
+
+    v8::Local<v8::Context> context() const
+    {
+        ASSERT(m_scriptState.get());
+        return m_scriptState->context();
     }
 
     ScriptValue& operator=(const ScriptValue& value)
@@ -97,7 +131,7 @@ public:
     bool isFunction() const
     {
         ASSERT(!isEmpty());
-        v8::Handle<v8::Value> value = v8Value();
+        v8::Local<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsFunction();
     }
 
@@ -105,7 +139,7 @@ public:
     bool isNull() const
     {
         ASSERT(!isEmpty());
-        v8::Handle<v8::Value> value = v8Value();
+        v8::Local<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsNull();
     }
 
@@ -113,7 +147,7 @@ public:
     bool isUndefined() const
     {
         ASSERT(!isEmpty());
-        v8::Handle<v8::Value> value = v8Value();
+        v8::Local<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsUndefined();
     }
 
@@ -121,7 +155,7 @@ public:
     bool isObject() const
     {
         ASSERT(!isEmpty());
-        v8::Handle<v8::Value> value = v8Value();
+        v8::Local<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsObject();
     }
 
@@ -135,15 +169,16 @@ public:
         m_value = nullptr;
     }
 
-    v8::Handle<v8::Value> v8Value() const;
-    v8::Handle<v8::Value> v8ValueUnsafe() const;
+    v8::Local<v8::Value> v8Value() const;
+    v8::Local<v8::Value> v8ValueUnsafe() const;
 
     bool toString(String&) const;
-    PassRefPtr<JSONValue> toJSONValue(ScriptState*) const;
+
+    static ScriptValue createNull(ScriptState*);
 
 private:
     RefPtr<ScriptState> m_scriptState;
-    RefPtr<SharedPersistent<v8::Value> > m_value;
+    RefPtr<SharedPersistent<v8::Value>> m_value;
 };
 
 } // namespace blink

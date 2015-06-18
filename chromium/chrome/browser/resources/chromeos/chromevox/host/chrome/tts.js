@@ -32,7 +32,7 @@ cvox.ChromeTts.callId = 1;
 
 /**
  * Maps call ids to callback functions.
- * @type {Object.<number, Function>}
+ * @type {Object<number, Function>}
  */
 cvox.ChromeTts.functionMap = new Object();
 
@@ -97,7 +97,9 @@ cvox.ChromeTts.prototype.addBridgeListener = function() {
           var id = msg['id'];
           var func = cvox.ChromeTts.functionMap[id];
           if (func != undefined) {
-            func();
+            if (!msg['cleanupOnly']) {
+              func();
+            }
             delete cvox.ChromeTts.functionMap[id];
           }
         }

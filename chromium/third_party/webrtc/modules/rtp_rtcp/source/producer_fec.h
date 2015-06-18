@@ -12,6 +12,7 @@
 #define WEBRTC_MODULES_RTP_RTCP_SOURCE_PRODUCER_FEC_H_
 
 #include <list>
+#include <vector>
 
 #include "webrtc/modules/rtp_rtcp/source/forward_error_correction.h"
 
@@ -21,20 +22,20 @@ struct RtpPacket;
 
 class RedPacket {
  public:
-  explicit RedPacket(int length);
+  explicit RedPacket(size_t length);
   ~RedPacket();
-  void CreateHeader(const uint8_t* rtp_header, int header_length,
+  void CreateHeader(const uint8_t* rtp_header, size_t header_length,
                     int red_pl_type, int pl_type);
   void SetSeqNum(int seq_num);
-  void AssignPayload(const uint8_t* payload, int length);
+  void AssignPayload(const uint8_t* payload, size_t length);
   void ClearMarkerBit();
   uint8_t* data() const;
-  int length() const;
+  size_t length() const;
 
  private:
   uint8_t* data_;
-  int length_;
-  int header_length_;
+  size_t length_;
+  size_t header_length_;
 };
 
 class ProducerFec {
@@ -45,25 +46,29 @@ class ProducerFec {
   void SetFecParameters(const FecProtectionParams* params,
                         int max_fec_frames);
 
+  // The caller is expected to delete the memory when done.
   RedPacket* BuildRedPacket(const uint8_t* data_buffer,
-                            int payload_length,
-                            int rtp_header_length,
+                            size_t payload_length,
+                            size_t rtp_header_length,
                             int red_pl_type);
 
   int AddRtpPacketAndGenerateFec(const uint8_t* data_buffer,
-                                 int payload_length,
-                                 int rtp_header_length);
+                                 size_t payload_length,
+                                 size_t rtp_header_length);
 
   bool ExcessOverheadBelowMax();
 
   bool MinimumMediaPacketsReached();
 
   bool FecAvailable() const;
+  size_t NumAvailableFecPackets() const;
 
-  RedPacket* GetFecPacket(int red_pl_type,
-                          int fec_pl_type,
-                          uint16_t seq_num,
-                          int rtp_header_length);
+  // GetFecPackets allocates memory and creates FEC packets, but the caller is
+  // assumed to delete the memory when done with the packets.
+  std::vector<RedPacket*> GetFecPackets(int red_pl_type,
+                                        int fec_pl_type,
+                                        uint16_t first_seq_num,
+                                        size_t rtp_header_length);
 
  private:
   void DeletePackets();
@@ -72,7 +77,6 @@ class ProducerFec {
   std::list<ForwardErrorCorrection::Packet*> media_packets_fec_;
   std::list<ForwardErrorCorrection::Packet*> fec_packets_;
   int num_frames_;
-  bool incomplete_frame_;
   int num_first_partition_;
   int minimum_media_packets_fec_;
   FecProtectionParams params_;

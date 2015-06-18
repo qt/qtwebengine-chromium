@@ -89,7 +89,8 @@ class BASE_EXPORT Timer {
   virtual TimeDelta GetCurrentDelay() const;
 
   // Set the task runner on which the task should be scheduled. This method can
-  // only be called before any tasks have been scheduled.
+  // only be called before any tasks have been scheduled. The task runner must
+  // run tasks on the same thread the timer is used on.
   virtual void SetTaskRunner(scoped_refptr<SingleThreadTaskRunner> task_runner);
 
   // Start the timer to run at the given |delay| from now. If the timer is
@@ -259,7 +260,7 @@ class DelayTimer : protected Timer {
               base::Bind(method, base::Unretained(receiver)),
               false) {}
 
-  void Reset() { Timer::Reset(); }
+  void Reset() override { Timer::Reset(); }
 };
 
 }  // namespace base

@@ -7,9 +7,10 @@
 
 #include <string>
 
+#include "base/gtest_prod_util.h"
 #include "base/time/time.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_list.h"
 #include "net/proxy/proxy_retry_info.h"
@@ -28,26 +29,45 @@ class NET_EXPORT ProxyInfo {
   void Use(const ProxyInfo& proxy_info);
 
   // Uses a direct connection.
+  //
+  // Note that this method resets this instance unlike Fallback(), etc. which
+  // only modify |proxy_list_|. For example, since |config_id_| is cleared, the
+  // ProxyService may recognize this instance as a new config after UseDirect()
+  // call.
   void UseDirect();
 
   // Uses a direct connection. did_bypass_proxy() will return true to indicate
   // that the direct connection is the result of configured proxy bypass rules.
+  //
+  // See also the note for UseDirect().
   void UseDirectWithBypassedProxy();
 
   // Uses a specific proxy server, of the form:
   //   proxy-uri = [<scheme> "://"] <hostname> [":" <port>]
   // This may optionally be a semi-colon delimited list of <proxy-uri>.
   // It is OK to have LWS between entries.
+  //
+  // See also the note for UseDirect().
   void UseNamedProxy(const std::string& proxy_uri_list);
 
   // Sets the proxy list to a single entry, |proxy_server|.
+  //
+  // See also the note for UseDirect().
   void UseProxyServer(const ProxyServer& proxy_server);
 
   // Parses from the given PAC result.
+  //
+  // See also the note for UseDirect().
   void UsePacString(const std::string& pac_string);
 
-  // Use the proxies from the given list.
+  // Uses the proxies from the given list.
+  //
+  // See also the note for UseDirect().
   void UseProxyList(const ProxyList& proxy_list);
+
+  // Uses the proxies from the given list, but does not otherwise reset the
+  // proxy configuration.
+  void OverrideProxyList(const ProxyList& proxy_list);
 
   // Returns true if this proxy info specifies a direct connection.
   bool is_direct() const {
@@ -146,6 +166,7 @@ class NET_EXPORT ProxyInfo {
 
  private:
   friend class ProxyService;
+  FRIEND_TEST_ALL_PREFIXES(ProxyInfoTest, UseVsOverrideProxyList);
 
   const ProxyRetryInfoMap& proxy_retry_info() const {
     return proxy_retry_info_;

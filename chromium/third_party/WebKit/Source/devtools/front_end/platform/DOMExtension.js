@@ -133,27 +133,11 @@ Node.prototype.traverseNextTextNode = function(stayWithin)
     var node = this.traverseNextNode(stayWithin);
     if (!node)
         return null;
-
-    while (node && node.nodeType !== Node.TEXT_NODE)
+    var nonTextTags = { "STYLE": 1, "SCRIPT": 1 };
+    while (node && (node.nodeType !== Node.TEXT_NODE || nonTextTags[node.parentElement.nodeName]))
         node = node.traverseNextNode(stayWithin);
 
     return node;
-}
-
-/**
- * @param {number} offset
- * @return {!{container: !Node, offset: number}}
- */
-Node.prototype.rangeBoundaryForOffset = function(offset)
-{
-    var node = this.traverseNextTextNode(this);
-    while (node && offset > node.nodeValue.length) {
-        offset -= node.nodeValue.length;
-        node = node.traverseNextTextNode(this);
-    }
-    if (!node)
-        return { container: this, offset: 0 };
-    return { container: node, offset: offset };
 }
 
 /**
@@ -244,9 +228,26 @@ Node.prototype.enclosingNodeOrSelfWithNodeName = function(nodeName)
  */
 Node.prototype.enclosingNodeOrSelfWithClass = function(className, stayWithin)
 {
+    return this.enclosingNodeOrSelfWithClassList([className], stayWithin);
+}
+
+/**
+ * @param {!Array.<string>} classNames
+ * @param {!Element=} stayWithin
+ * @return {?Element}
+ */
+Node.prototype.enclosingNodeOrSelfWithClassList = function(classNames, stayWithin)
+{
     for (var node = this; node && node !== stayWithin && node !== this.ownerDocument; node = node.parentNodeOrShadowHost()) {
-        if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains(className))
-            return /** @type {!Element} */ (node);
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            var containsAll = true;
+            for (var i = 0; i < classNames.length && containsAll; ++i) {
+                if (!node.classList.contains(classNames[i]))
+                    containsAll = false;
+            }
+            if (containsAll)
+                return /** @type {!Element} */ (node);
+        }
     }
     return null;
 }
@@ -275,6 +276,51 @@ Node.prototype.parentNodeOrShadowHost = function()
 }
 
 /**
+ * @return {?Selection}
+ */
+Node.prototype.getComponentSelection = function()
+{
+    var parent = this.parentNode;
+    while (parent && parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE)
+        parent = parent.parentNode;
+    return parent instanceof ShadowRoot ? parent.getSelection() : this.window().getSelection();
+}
+
+
+/**
+ * @return {boolean}
+ */
+Node.prototype.isComponentSelectionCollapsed = function()
+{
+    // FIXME: crbug.com/447523, use selection.isCollapsed when it is fixed for shadow dom.
+    var selection = this.getComponentSelection();
+    return selection && selection.rangeCount ? selection.getRangeAt(0).collapsed : true;
+}
+
+/**
+ * @return {!Selection}
+ */
+Node.prototype.getDeepSelection = function()
+{
+    var activeElement = this.ownerDocument.activeElement;
+    var shadowRoot = null;
+    while (activeElement && activeElement.shadowRoot) {
+        shadowRoot = activeElement.shadowRoot;
+        activeElement = shadowRoot.activeElement;
+    }
+
+    return shadowRoot ? shadowRoot.getSelection() : this.window().getSelection();
+}
+
+/**
+ * @return {!Window}
+ */
+Node.prototype.window = function()
+{
+    return this.ownerDocument.defaultView;
+}
+
+/**
  * @param {string} query
  * @return {?Node}
  */
@@ -294,7 +340,7 @@ Element.prototype.removeChildren = function()
  */
 Element.prototype.isInsertionCaretInside = function()
 {
-    var selection = window.getSelection();
+    var selection = this.getComponentSelection();
     if (!selection.rangeCount || !selection.isCollapsed)
         return false;
     var selectionRange = selection.getRangeAt(0);
@@ -303,12 +349,27 @@ Element.prototype.isInsertionCaretInside = function()
 
 /**
  * @param {string} tagName
+ * @param {string=} customElementType
  * @return {!Element}
  * @suppressGlobalPropertiesCheck
  */
-function createElement(tagName)
+function createElement(tagName, customElementType)
 {
-    return document.createElement(tagName);
+    return document.createElement(tagName, customElementType || "");
+}
+
+/**
+ * @param {string} type
+ * @param {boolean} bubbles
+ * @param {boolean} cancelable
+ * @return {!Event}
+ * @suppressGlobalPropertiesCheck
+ */
+function createEvent(type, bubbles, cancelable)
+{
+    var event = document.createEvent("Event");
+    event.initEvent(type, bubbles, cancelable);
+    return event;
 }
 
 /**
@@ -324,11 +385,12 @@ function createTextNode(data)
 /**
  * @param {string} elementName
  * @param {string=} className
+ * @param {string=} customElementType
  * @return {!Element}
  */
-Document.prototype.createElementWithClass = function(elementName, className)
+Document.prototype.createElementWithClass = function(elementName, className, customElementType)
 {
-    var element = this.createElement(elementName);
+    var element = this.createElement(elementName, customElementType || "");
     if (className)
         element.className = className;
     return element;
@@ -337,12 +399,37 @@ Document.prototype.createElementWithClass = function(elementName, className)
 /**
  * @param {string} elementName
  * @param {string=} className
+ * @param {string=} customElementType
  * @return {!Element}
  * @suppressGlobalPropertiesCheck
  */
-function createElementWithClass(elementName, className)
+function createElementWithClass(elementName, className, customElementType)
 {
-    return document.createElementWithClass(elementName, className);
+    return document.createElementWithClass(elementName, className, customElementType);
+}
+
+/**
+ * @param {string} childType
+ * @param {string=} className
+ * @return {!Element}
+ */
+Document.prototype.createSVGElement = function(childType, className)
+{
+    var element = this.createElementNS("http://www.w3.org/2000/svg", childType);
+    if (className)
+        element.setAttribute("class", className);
+    return element;
+}
+
+/**
+ * @param {string} childType
+ * @param {string=} className
+ * @return {!Element}
+ * @suppressGlobalPropertiesCheck
+ */
+function createSVGElement(childType, className)
+{
+    return document.createSVGElement(childType, className);
 }
 
 /**
@@ -357,11 +444,12 @@ function createDocumentFragment()
 /**
  * @param {string} elementName
  * @param {string=} className
+ * @param {string=} customElementType
  * @return {!Element}
  */
-Element.prototype.createChild = function(elementName, className)
+Element.prototype.createChild = function(elementName, className, customElementType)
 {
-    var element = this.ownerDocument.createElementWithClass(elementName, className);
+    var element = this.ownerDocument.createElementWithClass(elementName, className, customElementType);
     this.appendChild(element);
     return element;
 }
@@ -438,6 +526,18 @@ Element.prototype.scrollOffset = function()
         curTop += element.scrollTop;
     }
     return { left: curLeft, top: curTop };
+}
+
+/**
+ * @param {string} childType
+ * @param {string=} className
+ * @return {!Element}
+ */
+Element.prototype.createSVGChild = function(childType, className)
+{
+    var child = this.ownerDocument.createSVGElement(childType, className);
+    this.appendChild(child);
+    return child;
 }
 
 /**
@@ -572,7 +672,7 @@ Text.prototype.select = function(start, end)
     if (start < 0)
         start = end + start;
 
-    var selection = this.ownerDocument.defaultView.getSelection();
+    var selection = this.getComponentSelection();
     selection.removeAllRanges();
     var range = this.ownerDocument.createRange();
     range.setStart(this, start);
@@ -588,7 +688,7 @@ Element.prototype.selectionLeftOffset = function()
 {
     // Calculate selection offset relative to the current element.
 
-    var selection = window.getSelection();
+    var selection = this.getComponentSelection();
     if (!selection.containsNode(this, true))
         return null;
 
@@ -611,15 +711,23 @@ Element.prototype.selectionLeftOffset = function()
  */
 Node.prototype.deepTextContent = function()
 {
+    return this.childTextNodes().map(function (node) { return node.textContent; }).join("");
+}
+
+/**
+ * @return {!Array.<!Node>}
+ */
+Node.prototype.childTextNodes = function()
+{
     var node = this.traverseNextTextNode(this);
     var result = [];
     var nonTextTags = { "STYLE": 1, "SCRIPT": 1 };
     while (node) {
         if (!nonTextTags[node.parentElement.nodeName])
-            result.push(node.textContent);
+            result.push(node);
         node = node.traverseNextTextNode(this);
     }
-    return result.join("");
+    return result;
 }
 
 /**
@@ -673,26 +781,57 @@ Node.prototype.isSelfOrDescendant = function(node)
  */
 Node.prototype.traverseNextNode = function(stayWithin)
 {
-    if (this.firstChild)
-        return this.firstChild;
-
     if (this.shadowRoot)
         return this.shadowRoot;
 
-    if (stayWithin && this === stayWithin)
+    var distributedNodes = this.getDistributedNodes ? this.getDistributedNodes() : [];
+
+    if (distributedNodes.length)
+        return distributedNodes[0];
+
+    if (this.firstChild)
+        return this.firstChild;
+
+    var node = this;
+    while (node) {
+        if (stayWithin && node === stayWithin)
+            return null;
+
+        var sibling = nextSibling(node);
+        if (sibling)
+            return sibling;
+
+        node = insertionPoint(node) || node.parentNodeOrShadowHost();
+    }
+
+    /**
+     * @param {!Node} node
+     * @return {?Node}
+     */
+    function nextSibling(node)
+    {
+        var parent = insertionPoint(node);
+        if (!parent)
+            return node.nextSibling;
+        var distributedNodes = parent.getDistributedNodes ? parent.getDistributedNodes() : [];
+
+        var position = Array.prototype.indexOf.call(distributedNodes, node);
+        if (position + 1 < distributedNodes.length)
+            return distributedNodes[position + 1];
         return null;
+    }
 
-    var node = this.nextSibling;
-    if (node)
-        return node;
+    /**
+     * @param {!Node} node
+     * @return {?Node}
+     */
+    function insertionPoint(node)
+    {
+        var insertionPoints =  node.getDestinationInsertionPoints  ? node.getDestinationInsertionPoints() : [];
+        return insertionPoints.length > 0 ? insertionPoints[insertionPoints.length - 1] : null;
+    }
 
-    node = this;
-    while (node && !node.nextSibling && (!stayWithin || !node.parentNodeOrShadowHost() || node.parentNodeOrShadowHost() !== stayWithin))
-        node = node.parentNodeOrShadowHost();
-    if (!node)
-        return null;
-
-    return node.nextSibling;
+    return null;
 }
 
 /**
@@ -721,10 +860,10 @@ Node.prototype.setTextContentTruncatedIfNeeded = function(text, placeholder)
     // Huge texts in the UI reduce rendering performance drastically.
     // Moreover, Blink/WebKit uses <unsigned short> internally for storing text content
     // length, so texts longer than 65535 are inherently displayed incorrectly.
-    const maxTextContentLength = 65535;
+    const maxTextContentLength = 10000;
 
     if (typeof text === "string" && text.length > maxTextContentLength) {
-        this.textContent = typeof placeholder === "string" ? placeholder : text.trimEnd(maxTextContentLength);
+        this.textContent = typeof placeholder === "string" ? placeholder : text.trimMiddle(maxTextContentLength);
         return true;
     }
 
@@ -766,14 +905,46 @@ Document.prototype.deepElementFromPoint = function(x, y)
 }
 
 /**
+ * @param {!Event} event
  * @return {boolean}
  */
-function isEnterKey(event) {
+function isEnterKey(event)
+{
     // Check if in IME.
     return event.keyCode !== 229 && event.keyIdentifier === "Enter";
+}
+
+/**
+ * @param {!Event} event
+ * @return {boolean}
+ */
+function isEscKey(event)
+{
+    return event.keyCode === 27;
 }
 
 function consumeEvent(e)
 {
     e.consume();
+}
+
+/**
+ * @param {function()} callback
+ * @suppressGlobalPropertiesCheck
+ */
+function runOnWindowLoad(callback)
+{
+    /**
+     * @suppressGlobalPropertiesCheck
+     */
+    function windowLoaded()
+    {
+        window.removeEventListener("DOMContentLoaded", windowLoaded, false);
+        callback();
+    }
+
+    if (document.readyState === "complete" || document.readyState === "interactive")
+        callback();
+    else
+        window.addEventListener("DOMContentLoaded", windowLoaded, false);
 }

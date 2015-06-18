@@ -60,7 +60,7 @@
 #include <openssl/base.h>
 
 #include <openssl/asn1.h>
-#include <openssl/thread.h>
+
 
 #if defined(__cplusplus)
 extern "C" {
@@ -81,7 +81,6 @@ int BN_BLINDING_convert(BIGNUM *n, BN_BLINDING *b, BN_CTX *ctx);
 int BN_BLINDING_invert(BIGNUM *n, BN_BLINDING *b, BN_CTX *ctx);
 int BN_BLINDING_convert_ex(BIGNUM *n, BIGNUM *r, BN_BLINDING *b, BN_CTX *);
 int BN_BLINDING_invert_ex(BIGNUM *n, const BIGNUM *r, BN_BLINDING *b, BN_CTX *);
-CRYPTO_THREADID *BN_BLINDING_thread_id(BN_BLINDING *);
 unsigned long BN_BLINDING_get_flags(const BN_BLINDING *);
 void BN_BLINDING_set_flags(BN_BLINDING *, unsigned long);
 BN_BLINDING *BN_BLINDING_create_param(
@@ -112,15 +111,6 @@ int RSA_padding_add_none(uint8_t *to, unsigned to_len, const uint8_t *from,
                          unsigned from_len);
 int RSA_padding_check_none(uint8_t *to, unsigned to_len, const uint8_t *from,
                            unsigned from_len);
-
-/* RSA_verify_PKCS1_PSS_mgf1 */
-int RSA_verify_PKCS1_PSS_mgf1(RSA *rsa, const uint8_t *mHash,
-                              const EVP_MD *Hash, const EVP_MD *mgf1Hash,
-                              const uint8_t *EM, int sLen);
-
-int RSA_padding_add_PKCS1_PSS_mgf1(RSA *rsa, uint8_t *EM, const uint8_t *mHash,
-                                   const EVP_MD *Hash, const EVP_MD *mgf1Hash,
-                                   int sLen);
 
 /* RSA_private_transform calls either the method-specific |private_transform|
  * function (if given) or the generic one. See the comment for

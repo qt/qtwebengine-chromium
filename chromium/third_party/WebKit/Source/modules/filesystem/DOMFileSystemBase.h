@@ -31,6 +31,7 @@
 #ifndef DOMFileSystemBase_h
 #define DOMFileSystemBase_h
 
+#include "modules/ModulesExport.h"
 #include "modules/filesystem/FileSystemFlags.h"
 #include "platform/FileSystemType.h"
 #include "platform/heap/Handle.h"
@@ -50,14 +51,14 @@ class EntryCallback;
 class ErrorCallback;
 class File;
 class FileError;
-struct FileMetadata;
+class FileMetadata;
 class MetadataCallback;
 class ExecutionContext;
 class SecurityOrigin;
 class VoidCallback;
 
 // A common base class for DOMFileSystem and DOMFileSystemSync.
-class DOMFileSystemBase : public GarbageCollectedFinalized<DOMFileSystemBase> {
+class MODULES_EXPORT DOMFileSystemBase : public GarbageCollectedFinalized<DOMFileSystemBase> {
 public:
     enum SynchronousType {
         Synchronous,
@@ -85,7 +86,7 @@ public:
     const String& name() const { return m_name; }
     FileSystemType type() const { return m_type; }
     KURL rootURL() const { return m_filesystemRootURL; }
-    blink::WebFileSystem* fileSystem() const;
+    WebFileSystem* fileSystem() const;
     SecurityOrigin* securityOrigin() const;
 
     // The clonable flag is used in the structured clone algorithm to test
@@ -116,17 +117,25 @@ public:
     int readDirectory(DirectoryReaderBase*, const String& path, EntriesCallback*, ErrorCallback*, SynchronousType = Asynchronous);
     bool waitForAdditionalResult(int callbacksId);
 
-    virtual void trace(Visitor*) { }
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     DOMFileSystemBase(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
+
+    friend class DOMFileSystemBaseTest;
     friend class DOMFileSystemSync;
 
-    ExecutionContext* m_context;
+    RawPtrWillBeMember<ExecutionContext> m_context;
     String m_name;
     FileSystemType m_type;
     KURL m_filesystemRootURL;
     bool m_clonable;
+
+private:
+    // This does the same thing with encodeWithURLEscapeSequences defined in
+    // KURL.h other than the unicode normalization (NFC).
+    // See http://crbug.com/252551 for more details.
+    static String encodeFilePathAsURIComponent(const String& fullPath);
 };
 
 inline bool operator==(const DOMFileSystemBase& a, const DOMFileSystemBase& b) { return a.name() == b.name() && a.type() == b.type() && a.rootURL() == b.rootURL(); }

@@ -27,31 +27,22 @@
 #include "config.h"
 #include "core/page/PageLifecycleNotifier.h"
 
+#include "core/page/PageLifecycleObserver.h"
+
 namespace blink {
 
-PageLifecycleNotifier::PageLifecycleNotifier(Page* context)
-    : LifecycleNotifier<Page>(context)
+void PageLifecycleNotifier::notifyPageVisibilityChanged()
 {
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    for (PageLifecycleObserver* observer : m_observers)
+        observer->pageVisibilityChanged();
 }
 
-void PageLifecycleNotifier::addObserver(PageLifecycleNotifier::Observer* observer)
+void PageLifecycleNotifier::notifyDidCommitLoad(LocalFrame* frame)
 {
-    if (observer->observerType() == Observer::PageLifecycleObserverType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverPageObservers);
-        m_pageObservers.add(static_cast<PageLifecycleObserver*>(observer));
-    }
-
-    LifecycleNotifier<Page>::addObserver(observer);
-}
-
-void PageLifecycleNotifier::removeObserver(PageLifecycleNotifier::Observer* observer)
-{
-    if (observer->observerType() == Observer::PageLifecycleObserverType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverPageObservers);
-        m_pageObservers.remove(static_cast<PageLifecycleObserver*>(observer));
-    }
-
-    LifecycleNotifier<Page>::removeObserver(observer);
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    for (PageLifecycleObserver* observer : m_observers)
+        observer->didCommitLoad(frame);
 }
 
 } // namespace blink

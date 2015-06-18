@@ -32,9 +32,9 @@ class IPCTestBase : public base::MultiProcessTest {
 
  protected:
   IPCTestBase();
-  virtual ~IPCTestBase();
+  ~IPCTestBase() override;
 
-  virtual void TearDown() override;
+  void TearDown() override;
 
   // Initializes the test to use the given client and creates an IO message loop
   // on the current thread.
@@ -100,11 +100,11 @@ class IPCTestBase : public base::MultiProcessTest {
   IPC::Channel* channel() { return channel_.get(); }
   IPC::ChannelProxy* channel_proxy() { return channel_proxy_.get(); }
 
-  const base::ProcessHandle& client_process() const { return client_process_; }
-  scoped_refptr<base::TaskRunner> task_runner();
+  const base::Process& client_process() const { return client_process_; }
+  scoped_refptr<base::SequencedTaskRunner> task_runner();
 
   virtual scoped_ptr<IPC::ChannelFactory> CreateChannelFactory(
-      const IPC::ChannelHandle& handle, base::TaskRunner* runner);
+      const IPC::ChannelHandle& handle, base::SequencedTaskRunner* runner);
 
   virtual bool DidStartClient();
 
@@ -117,7 +117,7 @@ class IPCTestBase : public base::MultiProcessTest {
   scoped_ptr<IPC::Channel> channel_;
   scoped_ptr<IPC::ChannelProxy> channel_proxy_;
 
-  base::ProcessHandle client_process_;
+  base::Process client_process_;
 
   DISALLOW_COPY_AND_ASSIGN(IPCTestBase);
 };

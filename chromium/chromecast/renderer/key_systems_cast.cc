@@ -14,29 +14,58 @@
 
 #include "widevine_cdm_version.h" // In SHARED_INTERMEDIATE_DIR.
 
+using ::media::EmeFeatureSupport;
+using ::media::EmeRobustness;
+using ::media::EmeSessionTypeSupport;
+
 namespace chromecast {
 namespace shell {
 
 void AddKeySystemWithCodecs(
     const std::string& key_system_name,
-    std::vector< ::media::KeySystemInfo>* concrete_key_systems) {
-  ::media::KeySystemInfo info(key_system_name);
-  info.supported_codecs = ::media::EME_CODEC_MP4_ALL;
-  concrete_key_systems->push_back(info);
+    std::vector<::media::KeySystemInfo>* key_systems_info) {
+  ::media::KeySystemInfo info;
+  info.key_system = key_system_name;
+  info.supported_init_data_types = ::media::kInitDataTypeMaskCenc;
+  info.supported_codecs =
+      ::media::EME_CODEC_MP4_AAC | ::media::EME_CODEC_MP4_AVC1;
+  info.max_audio_robustness = ::media::EmeRobustness::EMPTY;
+  info.max_video_robustness = ::media::EmeRobustness::EMPTY;
+  info.persistent_license_support =
+      ::media::EmeSessionTypeSupport::NOT_SUPPORTED;
+  info.persistent_release_message_support =
+      ::media::EmeSessionTypeSupport::NOT_SUPPORTED;
+  info.persistent_state_support = ::media::EmeFeatureSupport::ALWAYS_ENABLED;
+  info.distinctive_identifier_support =
+      ::media::EmeFeatureSupport::ALWAYS_ENABLED;
+  key_systems_info->push_back(info);
 }
 
 void AddChromecastKeySystems(
-    std::vector< ::media::KeySystemInfo>* key_systems_info) {
+    std::vector<::media::KeySystemInfo>* key_systems_info) {
 #if defined(WIDEVINE_CDM_AVAILABLE)
-  AddWidevineWithCodecs(cdm::WIDEVINE,
-                        ::media::EME_CODEC_MP4_ALL,
-                        key_systems_info);
-#endif
+  ::media::SupportedCodecs codecs =
+      ::media::EME_CODEC_MP4_AAC | ::media::EME_CODEC_MP4_AVC1;
+  AddWidevineWithCodecs(
+      cdm::WIDEVINE,
+      codecs,                                // Regular codecs.
+#if defined(OS_ANDROID)
+      codecs,                                // Hardware-secure codecs.
+#endif  // defined(OS_ANDROID)
+      EmeRobustness::HW_SECURE_ALL,          // Max audio robustness.
+      EmeRobustness::HW_SECURE_ALL,          // Max video robustness.
+      EmeSessionTypeSupport::NOT_SUPPORTED,  // persistent-license.
+      EmeSessionTypeSupport::NOT_SUPPORTED,  // persistent-release-message.
+      // Note: On Chromecast, all CDMs may have persistent state.
+      EmeFeatureSupport::ALWAYS_ENABLED,     // Persistent state.
+      EmeFeatureSupport::ALWAYS_ENABLED,     // Distinctive identifier.
+      key_systems_info);
+#endif  // defined(WIDEVINE_CDM_AVAILABLE)
 
 #if defined(PLAYREADY_CDM_AVAILABLE)
   AddKeySystemWithCodecs(media::kChromecastPlayreadyKeySystem,
                          key_systems_info);
-#endif
+#endif  // defined(PLAYREADY_CDM_AVAILABLE)
 }
 
 }  // namespace shell

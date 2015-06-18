@@ -82,6 +82,10 @@ class TestBufferedSpdyVisitor : public BufferedSpdyFramerVisitorInterface {
     LOG(FATAL) << "Unexpected OnStreamFrameData call.";
   }
 
+  void OnStreamPadding(SpdyStreamId stream_id, size_t len) override {
+    LOG(FATAL) << "Unexpected OnStreamPadding call.";
+  }
+
   void OnSettings(bool clear_persisted) override {}
 
   void OnSetting(SpdySettingsIds id, uint8 flags, uint32 value) override {
@@ -205,11 +209,11 @@ class BufferedSpdyFramerTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(
-    NextProto,
-    BufferedSpdyFramerTest,
-    testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
+INSTANTIATE_TEST_CASE_P(NextProto,
+                        BufferedSpdyFramerTest,
+                        testing::Values(kProtoSPDY31,
+                                        kProtoSPDY4_14,
+                                        kProtoSPDY4));
 
 TEST_P(BufferedSpdyFramerTest, OnSetting) {
   SpdyFramer framer(spdy_version());

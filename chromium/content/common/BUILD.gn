@@ -5,15 +5,25 @@
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//content/common/common.gni")
-import("//mojo/public/tools/bindings/mojom.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
-if (is_chromeos && use_x11 && cpu_arch != "arm") {
+if (is_chromeos && current_cpu != "arm") {
   action("libva_generate_stubs") {
     extra_header = "gpu/media/va_stub_header.fragment"
 
     script = "../../tools/generate_stubs/generate_stubs.py"
-    sources = [ "gpu/media/va.sigs" ]
-    source_prereqs = [ extra_header ]
+    sources = [
+      "gpu/media/va.sigs",
+    ]
+    inputs = [
+      extra_header,
+    ]
+    if (use_x11) {
+      sources += [ "gpu/media/va_x11.sigs" ]
+    }
+    if (use_ozone) {
+      sources += [ "gpu/media/va_drm.sigs" ]
+    }
     stubs_filename_root = "va_stubs"
 
     outputs = [
@@ -21,12 +31,90 @@ if (is_chromeos && use_x11 && cpu_arch != "arm") {
       "$target_gen_dir/gpu/media/$stubs_filename_root.h",
     ]
     args = [
-      "-i", rebase_path("$target_gen_dir/gpu/media", root_build_dir),
-      "-o", rebase_path("$target_gen_dir/gpu/media", root_build_dir),
-      "-t", "posix_stubs",
-      "-e", rebase_path(extra_header, root_build_dir),
-      "-s", stubs_filename_root,
-      "-p", "content/common/gpu/media",
+      "-i",
+      rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-o",
+      rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-t",
+      "posix_stubs",
+      "-e",
+      rebase_path(extra_header, root_build_dir),
+      "-s",
+      stubs_filename_root,
+      "-p",
+      "content/common/gpu/media",
+    ]
+
+    args += rebase_path(sources, root_build_dir)
+  }
+}
+
+if (is_chromeos && use_v4lplugin) {
+  action("libv4l2_generate_stubs") {
+    extra_header = "gpu/media/v4l2_stub_header.fragment"
+
+    script = "../../tools/generate_stubs/generate_stubs.py"
+    sources = [
+      "gpu/media/v4l2.sig",
+    ]
+    inputs = [
+      extra_header,
+    ]
+    stubs_filename_root = "v4l2_stubs"
+
+    outputs = [
+      "$target_gen_dir/gpu/media/$stubs_filename_root.cc",
+      "$target_gen_dir/gpu/media/$stubs_filename_root.h",
+    ]
+    args = [
+      "-i",
+      rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-o",
+      rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-t",
+      "posix_stubs",
+      "-e",
+      rebase_path(extra_header, root_build_dir),
+      "-s",
+      stubs_filename_root,
+      "-p",
+      "content/common/gpu/media",
+    ]
+
+    args += rebase_path(sources, root_build_dir)
+  }
+}
+
+if (is_mac) {
+  action("libvt_generate_stubs") {
+    extra_header = "gpu/media/vt_stubs_header.fragment"
+
+    script = "../../tools/generate_stubs/generate_stubs.py"
+    sources = [
+      "gpu/media/vt.sig",
+    ]
+    inputs = [
+      extra_header,
+    ]
+    stubs_filename_root = "vt_stubs"
+
+    outputs = [
+      "$target_gen_dir/gpu/media/$stubs_filename_root.cc",
+      "$target_gen_dir/gpu/media/$stubs_filename_root.h",
+    ]
+    args = [
+      "-i",
+      rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-o",
+      rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-t",
+      "posix_stubs",
+      "-e",
+      rebase_path(extra_header, root_build_dir),
+      "-s",
+      stubs_filename_root,
+      "-p",
+      "content/common/gpu/media",
     ]
 
     args += rebase_path(sources, root_build_dir)
@@ -39,10 +127,12 @@ source_set("common") {
   visibility = [ "//content/public/common:common_sources" ]
 
   sources = rebase_path(content_common_gypi_values.private_common_sources,
-                        ".", "//content")
+                        ".",
+                        "//content")
 
   configs += [
     "//content:content_implementation",
+    "//build/config/compiler:no_size_t_to_int_warning",
   ]
 
   public_deps = [
@@ -54,12 +144,13 @@ source_set("common") {
     "//build/util:webkit_version",
     "//components/tracing",
     "//gpu/command_buffer/client:gles2_interface",
-    "//gpu/command_buffer/client:gpu_memory_buffer_manager",
+    "//gpu/command_buffer/common:gles2_utils",
     "//net",
     "//skia",
     "//third_party/icu",
     "//ui/accessibility",
     "//ui/base",
+    "//ui/base/ime",
     "//ui/events/ipc",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -74,8 +165,10 @@ source_set("common") {
       "//cc",
       "//ipc",
       "//ipc/mojo",
+
       # TODO: the dependency on gl_in_process_context should be decoupled from
       # content and moved to android_webview. See crbug.com/365797.
+      "//gpu/blink",
       "//gpu/command_buffer/client:gl_in_process_context",
       "//gpu/command_buffer/client:gles2_c_lib",
       "//gpu/command_buffer/client:gles2_cmd_helper",
@@ -84,16 +177,15 @@ source_set("common") {
       "//gpu/ipc",
       "//gpu/skia_bindings",
       "//media",
+      "//media/midi",
       "//media:shared_memory_support",
-      "//mojo/edk/system",
+      "//mojo/application/public/interfaces",
       "//mojo/environment:chromium",
-      "//mojo/public/interfaces/application",
       "//sandbox",
-      "//storage/browser",
       "//storage/common",
       "//third_party/WebKit/public:blink",
+      "//third_party/mojo/src/mojo/edk/system",
       "//ui/gl",
-      "//webkit/common/gpu",
     ]
   }
 
@@ -113,19 +205,30 @@ source_set("common") {
 
   if (is_mac) {
     sources += [
-      "gpu/client/gpu_memory_buffer_impl_io_surface.cc",
-      "gpu/client/gpu_memory_buffer_impl_io_surface.h",
-    ]
-    sources -= [
-      "plugin_list_posix.cc",
-    ]
+                 "gpu/client/gpu_memory_buffer_impl_io_surface.cc",
+                 "gpu/client/gpu_memory_buffer_impl_io_surface.h",
+                 "gpu/gpu_memory_buffer_factory_io_surface.cc",
+                 "gpu/gpu_memory_buffer_factory_io_surface.h",
+                 "gpu/media/vt.h",
+                 "gpu/media/vt_video_decode_accelerator.cc",
+                 "gpu/media/vt_video_decode_accelerator.h",
+               ] + get_target_outputs(":libvt_generate_stubs")
+
+    sources -= [ "plugin_list_posix.cc" ]
 
     deps += [
+      ":libvt_generate_stubs",
       "//content/app/resources",
       "//content:resources",
+      "//third_party/WebKit/public:image_resources",
       "//third_party/WebKit/public:resources",
+      "//ui/accelerated_widget_mac",
     ]
-    libs += [ "QuartzCore.framework" ]
+    libs += [
+      "IOSurface.framework",
+      "OpenGL.framework",
+      "QuartzCore.framework",
+    ]
   }
 
   if (is_android) {
@@ -144,23 +247,32 @@ source_set("common") {
     libs += [ "android" ]
   }
 
+  if (is_debug && !is_component_build) {
+    # Content depends on the PPAPI message logging stuff; if this isn't here,
+    # some unit test binaries won't compile. This only worked in release mode
+    # because logging is disabled there.
+    deps += [ "//ppapi/proxy:ipc_sources" ]
+  }
+
   if (is_ios) {
     sources -= [ "user_agent.cc" ]
     assert(false, "Need to add lots of conditions here")
   }
 
-  if (!use_ozone) {
-    sources -= [
-      "cursors/webcursor_ozone.cc",
-      "font_list_ozone.cc",
-      "gpu/gpu_memory_buffer_factory_ozone.cc",
+  if (use_ozone) {
+    deps += [
+      "//ui/ozone:ozone",
+      "//ui/ozone:ozone_base",
+      "//ui/ozone/gpu",
     ]
   } else {
     sources -= [
-      "gpu/gpu_memory_buffer_factory_linux.cc",
-    ]
-    deps += [
-      "//ui/ozone/gpu",
+      "cursors/webcursor_ozone.cc",
+      "font_list_ozone.cc",
+      "gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.cc",
+      "gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.h",
+      "gpu/gpu_memory_buffer_factory_ozone_native_buffer.cc",
+      "gpu/gpu_memory_buffer_factory_ozone_native_buffer.h",
     ]
   }
 
@@ -180,27 +292,22 @@ source_set("common") {
       sources -= [ "font_list_ozone.cc" ]
     }
   } else {
-    sources -= [
-      "font_list_pango.cc",
-    ]
+    sources -= [ "font_list_pango.cc" ]
   }
 
   if (use_x11) {
-    include_dirs += [ "//third_party/khronos" ]
-    configs += [ "//build/config/linux:xcomposite" ]
+    configs += [
+      "//build/config/linux:xcomposite",
+      "//third_party/khronos:khronos_headers",
+    ]
 
-    if (cpu_arch != "arm" || !is_chromeos) {
-      sources +=[
-        "gpu/x_util.cc",
-        "gpu/x_util.h",
-      ]
+    if (current_cpu != "arm" || !is_chromeos) {
+      sources += [ "gpu/x_util.h" ]
     }
   }
 
   if (enable_plugins) {
-    deps += [
-      "//ppapi:ppapi_shared",
-    ]
+    deps += [ "//ppapi/shared_impl" ]
   } else {
     sources -= [
       "pepper_file_util.cc",
@@ -228,37 +335,62 @@ source_set("common") {
     }
   }
 
-  if (is_chromeos && use_x11) {
-    if (cpu_arch == "arm") {
+  if (is_chromeos) {
+    sources += [
+      "gpu/media/accelerated_video_decoder.h",
+      "gpu/media/h264_decoder.cc",
+      "gpu/media/h264_decoder.h",
+      "gpu/media/h264_dpb.cc",
+      "gpu/media/h264_dpb.h",
+      "gpu/media/vp8_decoder.cc",
+      "gpu/media/vp8_decoder.h",
+      "gpu/media/vp8_picture.cc",
+      "gpu/media/vp8_picture.h",
+    ]
+    if (use_v4lplugin) {
+      defines += [ "USE_LIBV4L2" ]
+      sources += get_target_outputs(":libv4l2_generate_stubs")
+      deps += [ ":libv4l2_generate_stubs" ]
+    }
+    if (use_v4l2_codec) {
+      defines += [ "USE_V4L2_CODEC" ]
       sources += [
-        "gpu/media/exynos_v4l2_video_device.cc",
-        "gpu/media/exynos_v4l2_video_device.h",
-        "gpu/media/tegra_v4l2_video_device.cc",
-        "gpu/media/tegra_v4l2_video_device.h",
+        "gpu/media/generic_v4l2_device.cc",
+        "gpu/media/generic_v4l2_device.h",
+        "gpu/media/v4l2_device.cc",
+        "gpu/media/v4l2_device.h",
         "gpu/media/v4l2_image_processor.cc",
         "gpu/media/v4l2_image_processor.h",
+        "gpu/media/v4l2_slice_video_decode_accelerator.cc",
+        "gpu/media/v4l2_slice_video_decode_accelerator.h",
         "gpu/media/v4l2_video_decode_accelerator.cc",
         "gpu/media/v4l2_video_decode_accelerator.h",
-        "gpu/media/v4l2_video_device.cc",
-        "gpu/media/v4l2_video_device.h",
         "gpu/media/v4l2_video_encode_accelerator.cc",
         "gpu/media/v4l2_video_encode_accelerator.h",
       ]
-      libs = [ "EGL", "GLESv2" ]
-    } else {  # !arm
+      libs = [
+        "EGL",
+        "GLESv2",
+      ]
+    }
+    if (current_cpu == "arm") {
       sources += [
-        "gpu/media/h264_dpb.cc",
-        "gpu/media/h264_dpb.h",
-        "gpu/media/va_surface.h",
-        "gpu/media/vaapi_h264_decoder.cc",
-        "gpu/media/vaapi_h264_decoder.h",
-        "gpu/media/vaapi_video_decode_accelerator.cc",
-        "gpu/media/vaapi_video_decode_accelerator.h",
-        "gpu/media/vaapi_video_encode_accelerator.cc",
-        "gpu/media/vaapi_video_encode_accelerator.h",
-        "gpu/media/vaapi_wrapper.cc",
-        "gpu/media/vaapi_wrapper.h",
-      ] + get_target_outputs(":libva_generate_stubs")
+        "gpu/media/tegra_v4l2_device.cc",
+        "gpu/media/tegra_v4l2_device.h",
+      ]
+    }
+    if (current_cpu != "arm") {
+      sources += [
+                   "gpu/media/va_surface.h",
+                   "gpu/media/vaapi_picture.cc",
+                   "gpu/media/vaapi_picture.h",
+                   "gpu/media/vaapi_video_decode_accelerator.cc",
+                   "gpu/media/vaapi_video_decode_accelerator.h",
+                   "gpu/media/vaapi_video_encode_accelerator.cc",
+                   "gpu/media/vaapi_video_encode_accelerator.h",
+                   "gpu/media/vaapi_wrapper.cc",
+                   "gpu/media/vaapi_wrapper.h",
+                 ] + get_target_outputs(":libva_generate_stubs")
       configs += [
         "//third_party/libva:libva_config",
         "//third_party/libyuv:libyuv_config",
@@ -268,6 +400,18 @@ source_set("common") {
         "//media",
         "//third_party/libyuv",
       ]
+      if (use_x11) {
+        sources += [
+          "gpu/media/vaapi_tfp_picture.cc",
+          "gpu/media/vaapi_tfp_picture.h",
+        ]
+      }
+      if (use_ozone) {
+        sources += [
+          "gpu/media/vaapi_drm_picture.cc",
+          "gpu/media/vaapi_drm_picture.h",
+        ]
+      }
     }
   }
 
@@ -276,9 +420,23 @@ source_set("common") {
       "gpu/media/dxva_video_decode_accelerator.cc",
       "gpu/media/dxva_video_decode_accelerator.h",
     ]
-    include_dirs += [ "//third_party/khronos" ]
-    deps += [
-      "//ui/gl",
+    configs += [ "//third_party/khronos:khronos_headers" ]
+    deps += [ "//ui/gl" ]
+    libs += [
+      "d3d9.lib",
+      "d3d11.lib",
+      "dxva2.lib",
+      "strmiids.lib",
+      "mf.lib",
+      "mfplat.lib",
+      "mfuuid.lib",
+    ]
+    ldflags += [
+      "/DELAYLOAD:d3d9.dll",
+      "/DELAYLOAD:d3d11.dll",
+      "/DELAYLOAD:dxva2.dll",
+      "/DELAYLOAD:mf.dll",
+      "/DELAYLOAD:mfplat.dll",
     ]
 
     # TODO(GYP): extract_xinput action.
@@ -314,16 +472,25 @@ source_set("common") {
       ]
     }
   }
+
+  if (is_win && current_cpu == "x64") {
+    # TODO(jschuh): Remove this after crbug.com/173851 gets fixed.
+    cflags = [ "/bigobj" ]
+  }
 }
 
 mojom("mojo_bindings") {
   sources = [
+    "application_setup.mojom",
+    "background_sync_service.mojom",
     "geolocation_service.mojom",
+    "permission_service.mojom",
+    "presentation/presentation_service.mojom",
     "render_frame_setup.mojom",
   ]
 
   deps = [
     "//content/public/common:mojo_bindings",
-    "//mojo/public/interfaces/application:application",
+    "//mojo/application/public/interfaces",
   ]
 }

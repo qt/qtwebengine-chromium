@@ -28,8 +28,8 @@
 #include "core/dom/ChildListMutationScope.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/StyleInheritedData.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
@@ -85,7 +85,7 @@ void HTMLTitleElement::setText(const String &value)
 
     // Avoid calling Document::setTitleElement() during intermediate steps.
     m_ignoreTitleUpdatesWhenChildrenChange = !value.isEmpty();
-    removeChildren();
+    removeChildren(OmitSubtreeModifiedEvent);
     m_ignoreTitleUpdatesWhenChildrenChange = false;
 
     if (!value.isEmpty())

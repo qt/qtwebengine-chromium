@@ -32,10 +32,14 @@
 #define ScriptController_h
 
 #include "bindings/core/v8/SharedPersistent.h"
-
+#include "bindings/core/v8/WindowProxyManager.h"
+#include "core/CoreExport.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "core/fetch/CrossOriginAccessControl.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 #include "wtf/text/TextPosition.h"
 #include <v8.h>
@@ -49,7 +53,6 @@ class ExecutionContext;
 class HTMLDocument;
 class HTMLPlugInElement;
 class KURL;
-class LocalFrame;
 class ScriptState;
 class ScriptSourceCode;
 class SecurityOrigin;
@@ -63,7 +66,8 @@ enum ReasonForCallingCanExecuteScripts {
     NotAboutToExecuteScript
 };
 
-class ScriptController final : public NoBaseWillBeGarbageCollectedFinalized<ScriptController> {
+class CORE_EXPORT ScriptController final : public NoBaseWillBeGarbageCollectedFinalized<ScriptController> {
+    WTF_MAKE_NONCOPYABLE(ScriptController);
 public:
     enum ExecuteScriptPolicy {
         ExecuteScriptWhenScriptsDisabled,
@@ -76,7 +80,7 @@ public:
     }
 
     ~ScriptController();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     bool initializeMainWorld();
     WindowProxy* windowProxy(DOMWrapperWorld&);
@@ -86,7 +90,7 @@ public:
     void executeScriptInMainWorld(const String&, ExecuteScriptPolicy = DoNotExecuteScriptWhenScriptsDisabled);
     void executeScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin, double* compilationFinishTime = 0);
     v8::Local<v8::Value> executeScriptInMainWorldAndReturnValue(const ScriptSourceCode&);
-    v8::Local<v8::Value> executeScriptAndReturnValue(v8::Handle<v8::Context>, const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin, double* compilationFinishTime = 0);
+    v8::Local<v8::Value> executeScriptAndReturnValue(v8::Local<v8::Context>, const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin, double* compilationFinishTime = 0);
 
     // Executes JavaScript in an isolated world. The script gets its own global scope,
     // its own prototypes for intrinsic JavaScript objects (String, Array, and so-on),
@@ -96,13 +100,14 @@ public:
     // Otherwise, a new world is created.
     //
     // FIXME: Get rid of extensionGroup here.
-    void executeScriptInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<v8::Local<v8::Value> >* results);
+    // FIXME: We don't want to support multiple scripts.
+    void executeScriptInIsolatedWorld(int worldID, const WillBeHeapVector<ScriptSourceCode>& sources, int extensionGroup, Vector<v8::Local<v8::Value>>* results);
 
     // Returns true if argument is a JavaScript URL.
     bool executeScriptIfJavaScriptURL(const KURL&);
 
-    v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Value>, int argc, v8::Handle<v8::Value> argv[]);
-    static v8::Local<v8::Value> callFunction(ExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate*);
+    v8::MaybeLocal<v8::Value> callFunction(v8::Local<v8::Function>, v8::Local<v8::Value>, int argc, v8::Local<v8::Value> argv[]);
+    static v8::MaybeLocal<v8::Value> callFunction(ExecutionContext*, v8::Local<v8::Function>, v8::Local<v8::Value> receiver, int argc, v8::Local<v8::Value> info[], v8::Isolate*);
 
     // Returns true if the current world is isolated, and has its own Content
     // Security Policy. In this case, the policy of the main world should be
@@ -110,9 +115,9 @@ public:
     bool shouldBypassMainWorldCSP();
 
     // Creates a property of the global object of a frame.
-    void bindToWindowObject(LocalFrame*, const String& key, NPObject*);
+    bool bindToWindowObject(LocalFrame*, const String& key, NPObject*);
 
-    PassRefPtr<SharedPersistent<v8::Object> > createPluginWrapper(Widget*);
+    PassRefPtr<SharedPersistent<v8::Object>> createPluginWrapper(Widget*);
 
     void enableEval();
     void disableEval(const String& errorMessage);
@@ -120,7 +125,7 @@ public:
     static bool canAccessFromCurrentOrigin(LocalFrame*);
 
     static void setCaptureCallStackForUncaughtExceptions(bool);
-    void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*> >&);
+    void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*>>&);
 
     bool canExecuteScripts(ReasonForCallingCanExecuteScripts);
 
@@ -147,24 +152,21 @@ public:
     static void registerExtensionIfNeeded(v8::Extension*);
     static V8Extensions& registeredExtensions();
 
-    void setWorldDebugId(int worldId, int debuggerId);
+    v8::Isolate* isolate() const { return m_windowProxyManager->isolate(); }
 
-    v8::Isolate* isolate() const { return m_isolate; }
+    WindowProxyManager* windowProxyManager() const { return m_windowProxyManager.get(); }
 
 private:
     explicit ScriptController(LocalFrame*);
 
-    typedef WillBeHeapHashMap<int, OwnPtrWillBeMember<WindowProxy> > IsolatedWorldMap;
+    LocalFrame* frame() const { return toLocalFrame(m_windowProxyManager->frame()); }
+
     typedef HashMap<Widget*, NPObject*> PluginObjectMap;
 
     v8::Local<v8::Value> evaluateScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus, ExecuteScriptPolicy, double* compilationFinishTime = 0);
 
-    RawPtrWillBeMember<LocalFrame> m_frame;
+    OwnPtrWillBeMember<WindowProxyManager> m_windowProxyManager;
     const String* m_sourceURL;
-    v8::Isolate* m_isolate;
-
-    OwnPtrWillBeMember<WindowProxy> m_windowProxy;
-    IsolatedWorldMap m_isolatedWorlds;
 
     // A mapping between Widgets and their corresponding script object.
     // This list is used so that when the plugin dies, we can immediately

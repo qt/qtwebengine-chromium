@@ -17,34 +17,33 @@
 namespace ui {
 
 // A common InputMethod implementation based on IMM32.
-class UI_BASE_EXPORT InputMethodWin : public InputMethodBase {
+class UI_BASE_IME_EXPORT InputMethodWin : public InputMethodBase {
  public:
   InputMethodWin(internal::InputMethodDelegate* delegate,
                  HWND toplevel_window_handle);
 
   // Overridden from InputMethod:
-  virtual void Init(bool focused) override;
-  virtual void OnFocus() override;
-  virtual void OnBlur() override;
-  virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
-                                        NativeEventResult* result) override;
-  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) override;
-  virtual void OnTextInputTypeChanged(const TextInputClient* client) override;
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) override;
-  virtual void CancelComposition(const TextInputClient* client) override;
-  virtual void OnInputLocaleChanged() override;
-  virtual std::string GetInputLocale() override;
-  virtual bool IsActive() override;
-  virtual bool IsCandidatePopupOpen() const override;
+  void OnFocus() override;
+  void OnBlur() override;
+  bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                NativeEventResult* result) override;
+  bool DispatchKeyEvent(const ui::KeyEvent& event) override;
+  void OnTextInputTypeChanged(const TextInputClient* client) override;
+  void OnCaretBoundsChanged(const TextInputClient* client) override;
+  void CancelComposition(const TextInputClient* client) override;
+  void OnInputLocaleChanged() override;
+  std::string GetInputLocale() override;
+  bool IsActive() override;
+  bool IsCandidatePopupOpen() const override;
 
  protected:
   // Overridden from InputMethodBase:
   // If a derived class overrides this method, it should call parent's
   // implementation.
-  virtual void OnWillChangeFocusedClient(TextInputClient* focused_before,
-                                         TextInputClient* focused) override;
-  virtual void OnDidChangeFocusedClient(TextInputClient* focused_before,
-                                        TextInputClient* focused) override;
+  void OnWillChangeFocusedClient(TextInputClient* focused_before,
+                                 TextInputClient* focused) override;
+  void OnDidChangeFocusedClient(TextInputClient* focused_before,
+                                TextInputClient* focused) override;
 
  private:
   // For both WM_CHAR and WM_SYSCHAR
@@ -89,10 +88,6 @@ class UI_BASE_EXPORT InputMethodWin : public InputMethodBase {
   LRESULT OnDocumentFeed(RECONVERTSTRING* reconv);
   LRESULT OnReconvertString(RECONVERTSTRING* reconv);
   LRESULT OnQueryCharPosition(IMECHARPOSITION* char_positon);
-
-  // Returns the window handle to which |text_input_client| is bound.
-  // On Aura environment, |toplevel_window_handle_| is always returned.
-  HWND GetAttachedWindowHandle(const TextInputClient* text_input_client) const;
 
   // Returns true if the Win32 native window bound to |client| is considered
   // to be ready for receiving keyboard input.
@@ -140,6 +135,10 @@ class UI_BASE_EXPORT InputMethodWin : public InputMethodBase {
   // Window handle where composition is on-going. NULL when there is no
   // composition.
   HWND composing_window_handle_;
+
+  // Set to false initially. Tracks whether the IME has been initialized with
+  // the current input language.
+  bool default_input_language_initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodWin);
 };

@@ -43,22 +43,24 @@ public:
     virtual ~SkDashPathEffect();
 
     virtual bool filterPath(SkPath* dst, const SkPath& src,
-                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
+                            SkStrokeRec*, const SkRect*) const override;
 
     virtual bool asPoints(PointData* results, const SkPath& src,
                           const SkStrokeRec&, const SkMatrix&,
-                          const SkRect*) const SK_OVERRIDE;
+                          const SkRect*) const override;
 
-    virtual DashType asADash(DashInfo* info) const SK_OVERRIDE;
+    DashType asADash(DashInfo* info) const override;
 
+    SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDashPathEffect)
+
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    bool exposedInAndroidJavaAPI() const override { return true; }
+#endif
 
 protected:
     SkDashPathEffect(const SkScalar intervals[], int count, SkScalar phase);
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    explicit SkDashPathEffect(SkReadBuffer&);
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
 
 private:
     SkScalar*   fIntervals;

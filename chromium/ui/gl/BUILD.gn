@@ -3,21 +3,17 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//testing/test.gni")
+
 if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
 }
 
-gl_binding_output_dir = target_gen_dir
-
 config("gl_config") {
   if (use_x11) {
     defines = [ "GL_GLEXT_PROTOTYPES" ]
   }
-
-  # TODO(brettw) this should be removed and the the files using the generated
-  # GL bindings should use the path inside the gen directory.
-  include_dirs = [ gl_binding_output_dir ]
 }
 
 component("gl") {
@@ -32,7 +28,12 @@ component("gl") {
     "android/surface_texture.h",
     "android/surface_texture_listener.cc",
     "android/surface_texture_listener.h",
+    "gl_bindings.cc",
     "gl_bindings.h",
+    "gl_bindings_autogen_gl.cc",
+    "gl_bindings_autogen_gl.h",
+    "gl_bindings_autogen_osmesa.cc",
+    "gl_bindings_autogen_osmesa.h",
     "gl_bindings_skia_in_process.cc",
     "gl_bindings_skia_in_process.h",
     "gl_context.cc",
@@ -46,6 +47,9 @@ component("gl") {
     "gl_context_stub_with_extensions.cc",
     "gl_context_stub_with_extensions.h",
     "gl_context_win.cc",
+    "gl_enums.cc",
+    "gl_enums.h",
+    "gl_enums_implementation_autogen.h",
     "gl_export.h",
     "gl_fence.cc",
     "gl_fence.h",
@@ -79,44 +83,40 @@ component("gl") {
     "gl_surface.h",
     "gl_surface_android.cc",
     "gl_surface_mac.cc",
+    "gl_surface_osmesa.cc",
+    "gl_surface_osmesa.h",
     "gl_surface_stub.cc",
     "gl_surface_stub.h",
     "gl_surface_win.cc",
-    "gl_surface_osmesa.cc",
-    "gl_surface_osmesa.h",
     "gl_switches.cc",
     "gl_switches.h",
     "gl_version_info.cc",
     "gl_version_info.h",
     "gpu_switching_manager.cc",
     "gpu_switching_manager.h",
+    "gpu_timing.cc",
+    "gpu_timing.h",
     "scoped_binders.cc",
     "scoped_binders.h",
     "scoped_make_current.cc",
     "scoped_make_current.h",
     "sync_control_vsync_provider.cc",
     "sync_control_vsync_provider.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_gl.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_gl.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_osmesa.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_osmesa.h",
   ]
 
   defines = [ "GL_IMPLEMENTATION" ]
 
   include_dirs = [
     "//third_party/switfshader/include",
-    "//third_party/khronos",
     "//third_party/mesa/src/include",
-    gl_binding_output_dir,
   ]
 
   all_dependent_configs = [ ":gl_config" ]
 
+  public_configs = [ "//third_party/khronos:khronos_headers" ]
+
   deps = [
-    ":generate_gl_bindings",
     "//base/third_party/dynamic_annotations",
-    "//gpu/command_buffer/common",
     "//skia",
   ]
   public_deps = [
@@ -131,6 +131,8 @@ component("gl") {
     sources += [
       "egl_util.cc",
       "egl_util.h",
+      "gl_bindings_autogen_egl.cc",
+      "gl_bindings_autogen_egl.h",
       "gl_context_egl.cc",
       "gl_context_egl.h",
       "gl_fence_egl.cc",
@@ -139,8 +141,6 @@ component("gl") {
       "gl_image_egl.h",
       "gl_surface_egl.cc",
       "gl_surface_egl.h",
-      "$gl_binding_output_dir/gl_bindings_autogen_egl.cc",
-      "$gl_binding_output_dir/gl_bindings_autogen_egl.h",
     ]
   }
   if (is_android || is_linux) {
@@ -158,19 +158,21 @@ component("gl") {
   }
   if (use_x11) {
     sources += [
+      "gl_bindings_autogen_glx.cc",
+      "gl_bindings_autogen_glx.h",
       "gl_context_glx.cc",
       "gl_context_glx.h",
       "gl_context_x11.cc",
+      "gl_egl_api_implementation.cc",
+      "gl_egl_api_implementation.h",
       "gl_glx_api_implementation.cc",
       "gl_glx_api_implementation.h",
+      "gl_image_glx.cc",
+      "gl_image_glx.h",
       "gl_implementation_x11.cc",
       "gl_surface_glx.cc",
       "gl_surface_glx.h",
       "gl_surface_x11.cc",
-      "gl_egl_api_implementation.cc",
-      "gl_egl_api_implementation.h",
-      "$gl_binding_output_dir/gl_bindings_autogen_glx.cc",
-      "$gl_binding_output_dir/gl_bindings_autogen_glx.h",
     ]
 
     configs += [
@@ -179,12 +181,14 @@ component("gl") {
       "//build/config/linux:xext",
     ]
 
-    deps += [
-      "//ui/gfx/x",
-    ]
+    deps += [ "//ui/gfx/x" ]
   }
   if (is_win) {
     sources += [
+      "angle_platform_impl.cc",
+      "angle_platform_impl.h",
+      "gl_bindings_autogen_wgl.cc",
+      "gl_bindings_autogen_wgl.h",
       "gl_context_wgl.cc",
       "gl_context_wgl.h",
       "gl_egl_api_implementation.cc",
@@ -193,17 +197,23 @@ component("gl") {
       "gl_surface_wgl.h",
       "gl_wgl_api_implementation.cc",
       "gl_wgl_api_implementation.h",
-      "$gl_binding_output_dir/gl_bindings_autogen_wgl.cc",
-      "$gl_binding_output_dir/gl_bindings_autogen_wgl.h",
     ]
 
     libs = [ "dwmapi.lib" ]
     ldflags = [ "/DELAYLOAD:dwmapi.dll" ]
+
+    data_deps = [
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+      "//third_party/mesa:osmesa",
+    ]
   }
   if (is_mac) {
     sources += [
       "gl_context_cgl.cc",
       "gl_context_cgl.h",
+      "gl_fence_apple.cc",
+      "gl_fence_apple.h",
       "gl_image_io_surface.cc",
       "gl_image_io_surface.h",
       "scoped_cgl.cc",
@@ -232,6 +242,7 @@ component("gl") {
 
     deps += [
       ":gl_jni_headers",
+      "//ui/android:ui_java",
     ]
   }
   if (use_ozone) {
@@ -247,86 +258,37 @@ component("gl") {
       "//ui/ozone:ozone_base",
     ]
   }
-
-  if (is_android && !is_android_webview_build) {
-    deps += [ "//ui/android:ui_java" ]
-  }
-}
-
-action("generate_gl_bindings") {
-  visibility = [ ":*" ]  # Only targets in this file can see this.
-
-  script = "generate_bindings.py"
-
-  # TODO(brettw) make this dynamic. The GYP version calls "generate_bindings.py
-  # --inputs" to get the list here. What should happen is that the script
-  # should generate a .d file, which we should declare here. That will
-  # eliminate the need bot both hardcoding the list here or calling the script
-  # during GN-time.
-  inputs = [
-    "EGL/eglextchromium.h",
-    "GL/glextchromium.h",
-    "//third_party/mesa/src/include/GL/glext.h",
-    "//third_party/khronos/GLES2/gl2ext.h",
-    "//gpu/GLES2/gl2chromium.h",
-    "//gpu/GLES2/gl2extchromium.h",
-    "//third_party/khronos/EGL/eglext.h",
-    "//third_party/mesa/src/include/GL/wglext.h",
-    "//third_party/mesa/src/include/GL/glx.h",
-    "//third_party/mesa/src/include/GL/glxext.h",
-  ]
-
-  outputs = [
-    "$gl_binding_output_dir/gl_bindings_autogen_egl.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_egl.h",
-    "$gl_binding_output_dir/gl_bindings_api_autogen_egl.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_gl.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_gl.h",
-    "$gl_binding_output_dir/gl_bindings_api_autogen_gl.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_glx.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_glx.h",
-    "$gl_binding_output_dir/gl_bindings_api_autogen_glx.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_mock.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_mock.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_osmesa.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_osmesa.h",
-    "$gl_binding_output_dir/gl_bindings_api_autogen_osmesa.h",
-    "$gl_binding_output_dir/gl_bindings_autogen_wgl.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_wgl.h",
-    "$gl_binding_output_dir/gl_bindings_api_autogen_wgl.h",
-    "$gl_binding_output_dir/gl_mock_autogen_gl.h",
-  ]
-
-  args = [
-    "--header-paths=" +
-        rebase_path("//third_party/khronos", root_build_dir) + ":" +
-        rebase_path("//third_party/mesa/src/include", root_build_dir) + ":" +
-        rebase_path("//ui/gl", root_build_dir) + ":" +
-        rebase_path("//gpu", root_build_dir),
-    rebase_path(gl_binding_output_dir, root_build_dir),
-  ]
-}
-
-config("gl_unittest_utils_config") {
-  include_dirs = [ gl_binding_output_dir ]
 }
 
 source_set("gl_unittest_utils") {
   testonly = true
   sources = [
-    "gl_mock.h",
+    "gl_bindings_autogen_mock.cc",
+    "gl_bindings_autogen_mock.h",
     "gl_mock.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_mock.cc",
-    "$gl_binding_output_dir/gl_bindings_autogen_mock.h",
-    "$gl_binding_output_dir/gl_mock_autogen_gl.h",
+    "gl_mock.h",
+    "gl_mock_autogen_gl.h",
   ]
 
   configs += [ "//third_party/khronos:khronos_headers" ]
-  public_configs = [ ":gl_unittest_utils_config" ]
 
   deps = [
     ":gl",
     "//testing/gmock",
+  ]
+}
+
+test("gl_unittests") {
+  sources = [
+    "gl_api_unittest.cc",
+    "test/run_all_unittests.cc",
+  ]
+
+  deps = [
+    ":gl",
+    "//base",
+    "//base/test:test_support",
+    "//testing/gtest",
   ]
 }
 
@@ -337,7 +299,9 @@ if (is_android) {
   }
 
   generate_jni("gl_jni_headers") {
-    deps = [ ":surface_jni_headers" ]
+    deps = [
+      ":surface_jni_headers",
+    ]
     sources = [
       "../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java",
       "../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java",

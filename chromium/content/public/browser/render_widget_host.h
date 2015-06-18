@@ -8,12 +8,13 @@
 #include "base/callback.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/readback_types.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
@@ -70,7 +71,7 @@ class RenderWidgetHostView;
 //
 // The lifetime of the RenderWidgetHostView is tied to the render process. If
 // the render process dies, the RenderWidgetHostView goes away and all
-// references to it must become NULL.
+// references to it must become nullptr.
 //
 // RenderViewHost (a RenderWidgetHost subclass) is the conduit used to
 // communicate with the RenderView and is owned by the WebContents. If the
@@ -107,7 +108,7 @@ class RenderWidgetHostView;
 class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
  public:
   // Returns the RenderWidgetHost given its ID and the ID of its render process.
-  // Returns NULL if the IDs do not correspond to a live RenderWidgetHost.
+  // Returns nullptr if the IDs do not correspond to a live RenderWidgetHost.
   static RenderWidgetHost* FromID(int32 process_id, int32 routing_id);
 
   // Returns an iterator to iterate over the global list of active render widget
@@ -177,11 +178,10 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // NOTE: |callback| is called synchronously if the backing store is available.
   // When accelerated compositing is active, |callback| may be called
   // asynchronously.
-  virtual void CopyFromBackingStore(
-      const gfx::Rect& src_rect,
-      const gfx::Size& accelerated_dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkColorType color_type) = 0;
+  virtual void CopyFromBackingStore(const gfx::Rect& src_rect,
+                                    const gfx::Size& accelerated_dst_size,
+                                    ReadbackRequestCallback& callback,
+                                    const SkColorType color_type) = 0;
   // Ensures that the view does not drop the backing store even when hidden.
   virtual bool CanCopyFromBackingStore() = 0;
 #if defined(OS_ANDROID)
@@ -202,10 +202,10 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   virtual int GetRoutingID() const = 0;
 
-  // Gets the View of this RenderWidgetHost. Can be NULL, e.g. if the
+  // Gets the View of this RenderWidgetHost. Can be nullptr, e.g. if the
   // RenderWidget is being destroyed or the render process crashed. You should
-  // never cache this pointer since it can become NULL if the renderer crashes,
-  // instead you should always ask for it using the accessor.
+  // never cache this pointer since it can become nullptr if the renderer
+  // crashes, instead you should always ask for it using the accessor.
   virtual RenderWidgetHostView* GetView() const = 0;
 
   // Returns true if the renderer is loading, false if not.
@@ -248,8 +248,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Get the screen info corresponding to this render widget.
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) = 0;
-
-  virtual SkColorType PreferredReadbackFormat() = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

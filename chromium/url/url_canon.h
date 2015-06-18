@@ -154,7 +154,7 @@ class RawCanonOutputT : public CanonOutputT<T> {
       delete[] this->buffer_;
   }
 
-  virtual void Resize(int sz) {
+  void Resize(int sz) override {
     T* new_buf = new T[sz];
     memcpy(new_buf, this->buffer_,
            sizeof(T) * (this->cur_len_ < sz ? this->cur_len_ : sz));
@@ -734,8 +734,8 @@ class Replacements {
   // Returns a pointer to a static empty string that is used as a placeholder
   // to indicate a component should be deleted (see below).
   const CHAR* Placeholder() {
-    static const CHAR empty_string = 0;
-    return &empty_string;
+    static const CHAR empty_cstr = 0;
+    return &empty_cstr;
   }
 
   // We support three states:

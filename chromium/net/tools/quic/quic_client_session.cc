@@ -15,9 +15,8 @@ namespace net {
 namespace tools {
 
 QuicClientSession::QuicClientSession(const QuicConfig& config,
-                                     QuicConnection* connection,
-                                     bool is_secure)
-    : QuicClientSessionBase(connection, config, is_secure) {
+                                     QuicConnection* connection)
+    : QuicClientSessionBase(connection, config), respect_goaway_(true) {
 }
 
 QuicClientSession::~QuicClientSession() {
@@ -26,18 +25,16 @@ QuicClientSession::~QuicClientSession() {
 void QuicClientSession::InitializeSession(
     const QuicServerId& server_id,
     QuicCryptoClientConfig* crypto_config) {
-  QuicClientSessionBase::InitializeSession();
   crypto_stream_.reset(
       new QuicCryptoClientStream(server_id, this, nullptr, crypto_config));
+  QuicClientSessionBase::InitializeSession();
 }
 
 void QuicClientSession::OnProofValid(
-    const QuicCryptoClientConfig::CachedState& /*cached*/) {
-}
+    const QuicCryptoClientConfig::CachedState& /*cached*/) {}
 
 void QuicClientSession::OnProofVerifyDetailsAvailable(
-    const ProofVerifyDetails& /*verify_details*/) {
-}
+    const ProofVerifyDetails& /*verify_details*/) {}
 
 QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
   if (!crypto_stream_->encryption_established()) {
@@ -49,7 +46,7 @@ QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
              << "Already " << GetNumOpenStreams() << " open.";
     return nullptr;
   }
-  if (goaway_received()) {
+  if (goaway_received() && respect_goaway_) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
              << "Already received goaway.";
     return nullptr;
@@ -64,9 +61,9 @@ QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
   return crypto_stream_.get();
 }
 
-bool QuicClientSession::CryptoConnect() {
+void QuicClientSession::CryptoConnect() {
   DCHECK(flow_controller());
-  return crypto_stream_->CryptoConnect();
+  crypto_stream_->CryptoConnect();
 }
 
 int QuicClientSession::GetNumSentClientHellos() const {

@@ -90,12 +90,13 @@ void RTCSessionDescriptionRequestImpl::clear()
     m_requester.clear();
 }
 
-void RTCSessionDescriptionRequestImpl::trace(Visitor* visitor)
+DEFINE_TRACE(RTCSessionDescriptionRequestImpl)
 {
     visitor->trace(m_successCallback);
     visitor->trace(m_errorCallback);
     visitor->trace(m_requester);
     RTCSessionDescriptionRequest::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

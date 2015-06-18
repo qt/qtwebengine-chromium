@@ -14,6 +14,7 @@ goog.require('cvox.ApiImplementation');
 goog.require('cvox.ChromeVox');
 goog.require('cvox.CursorSelection');
 goog.require('cvox.NavigationManager');
+goog.require('cvox.SpokenMessages');
 goog.require('cvox.Widget');
 
 
@@ -230,7 +231,7 @@ cvox.SearchWidget.prototype.onNavigate = function() {
 
 /**
  * Gets the predicate to apply to every search.
- * @return {?function(Array.<Node>)} A predicate; if null, no predicate applies.
+ * @return {?function(Array<Node>)} A predicate; if null, no predicate applies.
  */
 cvox.SearchWidget.prototype.getPredicate = function() {
   return null;
@@ -240,7 +241,7 @@ cvox.SearchWidget.prototype.getPredicate = function() {
 /**
  * Goes to the next or previous result. For use in AndroidVox.
  * @param {boolean=} opt_reverse Whether to find the next result in reverse.
- * @return {Array.<cvox.NavDescription>} The next result.
+ * @return {Array<cvox.NavDescription>} The next result.
  */
 cvox.SearchWidget.prototype.nextResult = function(opt_reverse) {
   if (!this.isActive()) {
@@ -337,7 +338,7 @@ cvox.SearchWidget.prototype.toggleCaseSensitivity_ = function() {
  * Gets the next result.
  *
  * @param {string} searchStr The text to search for.
- * @return {Array.<cvox.NavDescription>} The next result, in the form of
+ * @return {Array<cvox.NavDescription>} The next result, in the form of
  * NavDescriptions.
  * @private
  */
@@ -403,7 +404,7 @@ cvox.SearchWidget.prototype.beginSearch_ = function(searchStr) {
  *
  * @param {string} searchStr The text to search for.
  * @param {boolean=} opt_reversed The direction.
- * @return {Array.<cvox.NavDescription>} The next result.
+ * @return {Array<cvox.NavDescription>} The next result.
  * @private
  */
 cvox.SearchWidget.prototype.next_ = function(searchStr, opt_reversed) {
@@ -412,7 +413,7 @@ cvox.SearchWidget.prototype.next_ = function(searchStr, opt_reversed) {
   var success = false;
   if (this.getPredicate()) {
     success = cvox.ChromeVox.navigationManager.findNext(
-        /** @type {function(Array.<Node>)} */ (this.getPredicate()));
+        /** @type {function(Array<Node>)} */ (this.getPredicate()));
     // TODO(dtseng): findNext always seems to point direction forward!
     cvox.ChromeVox.navigationManager.setReversed(!!opt_reversed);
     if (!success) {
@@ -435,7 +436,7 @@ cvox.SearchWidget.prototype.next_ = function(searchStr, opt_reversed) {
  * speak it, focus the node if applicable, and speak some instructions
  * at the end.
  *
- * @param {Array.<cvox.NavDescription>} result The description of the next
+ * @param {Array<cvox.NavDescription>} result The description of the next
  * result. If null, no more results were found and an error will be presented.
  * @param {string} searchStr The text to search for.
  * @private

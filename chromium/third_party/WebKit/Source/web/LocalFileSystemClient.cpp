@@ -33,12 +33,12 @@
 
 #include "core/dom/Document.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "platform/PermissionCallbacks.h"
+#include "platform/ContentSettingCallbacks.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "public/platform/WebPermissionCallbacks.h"
-#include "public/web/WebPermissionClient.h"
+#include "public/platform/WebContentSettingCallbacks.h"
+#include "public/web/WebContentSettingsClient.h"
 #include "web/WebLocalFrameImpl.h"
-#include "web/WorkerPermissionClient.h"
+#include "web/WorkerContentSettingsClient.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -61,10 +61,10 @@ bool LocalFileSystemClient::requestFileSystemAccessSync(ExecutionContext* contex
     }
 
     ASSERT(context->isWorkerGlobalScope());
-    return WorkerPermissionClient::from(*toWorkerGlobalScope(context))->requestFileSystemAccessSync();
+    return WorkerContentSettingsClient::from(*toWorkerGlobalScope(context))->requestFileSystemAccessSync();
 }
 
-void LocalFileSystemClient::requestFileSystemAccessAsync(ExecutionContext* context, PassOwnPtr<PermissionCallbacks> callbacks)
+void LocalFileSystemClient::requestFileSystemAccessAsync(ExecutionContext* context, PassOwnPtr<ContentSettingCallbacks> callbacks)
 {
     ASSERT(context);
     if (!context->isDocument()) {
@@ -74,11 +74,11 @@ void LocalFileSystemClient::requestFileSystemAccessAsync(ExecutionContext* conte
 
     Document* document = toDocument(context);
     WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
-    if (!webFrame->permissionClient()) {
+    if (!webFrame->contentSettingsClient()) {
         callbacks->onAllowed();
         return;
     }
-    webFrame->permissionClient()->requestFileSystemAccessAsync(callbacks);
+    webFrame->contentSettingsClient()->requestFileSystemAccessAsync(callbacks);
 }
 
 LocalFileSystemClient::LocalFileSystemClient()

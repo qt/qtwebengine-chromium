@@ -35,6 +35,7 @@
 #include "platform/FileSystemType.h"
 #include "wtf/Forward.h"
 #include "wtf/Functional.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
@@ -62,7 +63,7 @@ public:
     static const char* supplementName();
     static LocalFileSystem* from(ExecutionContext&);
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         WillBeHeapSupplement<LocalFrame>::trace(visitor);
         WillBeHeapSupplement<WorkerClients>::trace(visitor);
@@ -73,7 +74,7 @@ protected:
 
 private:
     WebFileSystem* fileSystem() const;
-    void requestFileSystemAccessInternal(ExecutionContext*, const Closure& allowed, const Closure& denied);
+    void requestFileSystemAccessInternal(ExecutionContext*, PassOwnPtr<Closure> allowed, PassOwnPtr<Closure> denied);
     void fileSystemNotAvailable(PassRefPtrWillBeRawPtr<ExecutionContext>, CallbackWrapper*);
     void fileSystemNotAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, CallbackWrapper*);
     void fileSystemAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, CallbackWrapper*);

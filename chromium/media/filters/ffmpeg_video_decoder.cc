@@ -18,7 +18,6 @@
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
-#include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/ffmpeg/ffmpeg_common.h"
@@ -44,7 +43,7 @@ static int GetThreadCount(AVCodecID codec_id) {
   // Refer to http://crbug.com/93932 for tsan suppressions on decoding.
   int decode_threads = kDecodeThreads;
 
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   std::string threads(cmd_line->GetSwitchValueASCII(switches::kVideoThreads));
   if (threads.empty() || !base::StringToInt(threads, &decode_threads))
     return decode_threads;
@@ -86,10 +85,16 @@ int FFmpegVideoDecoder::GetVideoBuffer(struct AVCodecContext* codec_context,
   // updated width/height/pix_fmt, which can change for adaptive
   // content.
   VideoFrame::Format format = PixelFormatToVideoFormat(codec_context->pix_fmt);
+  if (format == VideoFrame::YV12 &&
+      codec_context->colorspace == AVCOL_SPC_BT709) {
+    format = VideoFrame::YV12HD;
+  }
+
   if (format == VideoFrame::UNKNOWN)
     return AVERROR(EINVAL);
   DCHECK(format == VideoFrame::YV12 || format == VideoFrame::YV16 ||
-         format == VideoFrame::YV12J || format == VideoFrame::YV24);
+         format == VideoFrame::YV12J || format == VideoFrame::YV24 ||
+         format == VideoFrame::YV12HD);
 
   gfx::Size size(codec_context->width, codec_context->height);
   const int ret = av_image_check_size(size.width(), size.height(), 0, NULL);
@@ -234,6 +239,8 @@ void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   if (buffer->end_of_stream())
     state_ = kDecodeFinished;
 
+  // VideoDecoderShim expects that |decode_cb| is called only after
+  // |output_cb_|.
   decode_cb_bound.Run(kOk);
 }
 

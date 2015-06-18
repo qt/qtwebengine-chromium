@@ -12,6 +12,7 @@ usage() {
   echo "Usage: $0 [--options]"
   echo "Options:"
   echo "--[no-]syms: enable or disable installation of debugging symbols"
+  echo "--lib32: enable installation of 32-bit libraries, e.g. for V8 snapshot"
   echo "--[no-]arm: enable or disable installation of arm cross toolchain"
   echo "--[no-]chromeos-fonts: enable or disable installation of Chrome OS"\
        "fonts"
@@ -44,9 +45,7 @@ do
   case "$1" in
   --syms)                   do_inst_syms=1;;
   --no-syms)                do_inst_syms=0;;
-  # TODO(phajdan.jr): Remove the lib32 flags when nothing else refers to them.
   --lib32)                  do_inst_lib32=1;;
-  --no-lib32)               do_inst_lib32=0;;
   --arm)                    do_inst_arm=1;;
   --no-arm)                 do_inst_arm=0;;
   --chromeos-fonts)         do_inst_chromeos_fonts=1;;
@@ -63,6 +62,10 @@ do
   shift
 done
 
+if test "$do_inst_arm" = "1"; then
+  do_inst_lib32=1
+fi
+
 # Check for lsb_release command in $PATH
 if ! which lsb_release > /dev/null; then
   echo "ERROR: lsb_release not found in \$PATH" >&2
@@ -70,11 +73,11 @@ if ! which lsb_release > /dev/null; then
 fi
 
 lsb_release=$(lsb_release --codename --short)
-ubuntu_codenames="(precise|quantal|raring|saucy|trusty)"
+ubuntu_codenames="(precise|trusty|utopic|vivid)"
 if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
   if [[ ! $lsb_release =~ $ubuntu_codenames ]]; then
-    echo "ERROR: Only Ubuntu 12.04 (precise) through 14.04 (trusty) are"\
-        "currently supported" >&2
+    echo "ERROR: Only Ubuntu 12.04 (precise), 14.04 (trusty), " \
+      "14.10 (utopic) and 15.04 (vivid) are currently supported" >&2
     exit 1
   fi
 
@@ -99,16 +102,15 @@ dev_list="apache2.2-bin bison cdbs curl dpkg-dev elfutils devscripts fakeroot
           language-pack-fr language-pack-he language-pack-zh-hant
           libapache2-mod-php5 libasound2-dev libbrlapi-dev libav-tools
           libbz2-dev libcairo2-dev libcap-dev libcups2-dev libcurl4-gnutls-dev
-          libdrm-dev libelf-dev libexif-dev libgconf2-dev libgl1-mesa-dev
-          libglib2.0-dev libglu1-mesa-dev libgnome-keyring-dev libgtk2.0-dev
-          libkrb5-dev libnspr4-dev libnss3-dev libpam0g-dev libpci-dev
-          libpulse-dev libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev
-          libudev-dev libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev
-          mesa-common-dev openbox patch perl php5-cgi pkg-config python
-          python-cherrypy3 python-crypto python-dev python-opencv python-openssl
-          python-psutil rpm ruby subversion ttf-dejavu-core ttf-indic-fonts
-          ttf-kochi-gothic ttf-kochi-mincho wdiff xfonts-mathml zip
-          $chromeos_dev_list"
+          libdrm-dev libelf-dev libexif-dev libgconf2-dev libglib2.0-dev
+          libglu1-mesa-dev libgnome-keyring-dev libgtk2.0-dev libkrb5-dev
+          libnspr4-dev libnss3-dev libpam0g-dev libpci-dev libpulse-dev
+          libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev libudev-dev
+          libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev openbox
+          patch perl php5-cgi pkg-config python python-cherrypy3 python-crypto
+          python-dev python-numpy python-opencv python-openssl python-psutil
+          rpm ruby subversion ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic
+          ttf-kochi-mincho wdiff xfonts-mathml zip $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries.
@@ -134,14 +136,30 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
           libpixman-1-0-dbg libsqlite3-0-dbg libx11-6-dbg libxau6-dbg
           libxcb1-dbg libxcomposite1-dbg libxcursor1-dbg libxdamage1-dbg
           libxdmcp6-dbg libxext6-dbg libxfixes3-dbg libxi6-dbg libxinerama1-dbg
-          libxrandr2-dbg libxrender1-dbg libxtst6-dbg zlib1g-dbg
-          libstdc++6-4.6-dbg"
+          libxrandr2-dbg libxrender1-dbg libxtst6-dbg zlib1g-dbg"
+
+# Find the proper version of libstdc++6-4.x-dbg.
+if [ "x$lsb_release" = "xprecise" ]; then
+  dbg_list="${dbg_list} libstdc++6-4.6-dbg"
+elif [ "x$lsb_release" = "xtrusty" ]; then
+  dbg_list="${dbg_list} libstdc++6-4.8-dbg"
+else
+  dbg_list="${dbg_list} libstdc++6-4.9-dbg"
+fi
+
+# 32-bit libraries needed e.g. to compile V8 snapshot for Android or armhf
+lib32_list="linux-libc-dev:i386"
 
 # arm cross toolchain packages needed to build chrome on armhf
 arm_list="libc6-dev-armhf-cross
           linux-libc-dev-armhf-cross
-          g++-arm-linux-gnueabihf
-          linux-libc-dev:i386"
+          g++-arm-linux-gnueabihf"
+
+# Work around for dependency issue Ubuntu/Trusty: http://crbug.com/435056
+if [ "x$lsb_release" = "xtrusty" ]; then
+  arm_list+=" g++-4.8-multilib-arm-linux-gnueabihf
+              gcc-4.8-multilib-arm-linux-gnueabihf"
+fi
 
 # Packages to build NaCl, its toolchains, and its ports.
 naclports_list="ant autoconf bison cmake gawk intltool xutils-dev xsltproc"
@@ -150,7 +168,7 @@ nacl_list="g++-mingw-w64-i686 lib32z1-dev
            libfontconfig1:i386 libgconf-2-4:i386 libglib2.0-0:i386 libgpm2:i386
            libgtk2.0-0:i386 libncurses5:i386 lib32ncurses5-dev
            libnss3:i386 libpango1.0-0:i386
-           libssl0.9.8:i386 libtinfo-dev libtinfo-dev:i386 libtool
+           libssl1.0.0:i386 libtinfo-dev libtinfo-dev:i386 libtool
            libxcomposite1:i386 libxcursor1:i386 libxdamage1:i386 libxi6:i386
            libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb
            ${naclports_list}"
@@ -159,14 +177,15 @@ nacl_list="g++-mingw-w64-i686 lib32z1-dev
 # it depends on mesa, and only one version of mesa can exists on the system.
 # Hence we must match the same version or this entire script will fail.
 mesa_variant=""
-for variant in "-lts-quantal" "-lts-raring" "-lts-saucy" "-lts-trusty"; do
+for variant in "-lts-trusty" "-lts-utopic"; do
   if $(dpkg-query -Wf'${Status}' libgl1-mesa-glx${variant} 2>/dev/null | \
        grep -q " ok installed"); then
     mesa_variant="${variant}"
   fi
 done
 dev_list="${dev_list} libgbm-dev${mesa_variant}
-          libgles2-mesa-dev${mesa_variant}"
+          libgles2-mesa-dev${mesa_variant} libgl1-mesa-dev${mesa_variant}
+          mesa-common-dev${mesa_variant}"
 nacl_list="${nacl_list} libgl1-mesa-glx${mesa_variant}:i386"
 
 # Some package names have changed over time
@@ -205,6 +224,19 @@ fi
 # installing them.
 if package_exists appmenu-gtk; then
   lib_list="$lib_list appmenu-gtk"
+fi
+
+# When cross building for arm/Android on 64-bit systems the host binaries
+# that are part of v8 need to be compiled with -m32 which means
+# that basic multilib support is needed.
+if file /sbin/init | grep -q 'ELF 64-bit'; then
+  # gcc-multilib conflicts with the arm cross compiler (at least in trusty) but
+  # g++-X.Y-multilib gives us the 32-bit support that we need. Find out the
+  # appropriate value of X and Y by seeing what version the current
+  # distribution's g++-multilib package depends on.
+  multilib_package=$(apt-cache depends g++-multilib --important | \
+      grep -E --color=never --only-matching '\bg\+\+-[0-9.]+-multilib\b')
+  lib32_list="$lib32_list $multilib_package"
 fi
 
 # Waits for the user to press 'Y' or 'N'. Either uppercase of lowercase is
@@ -265,17 +297,11 @@ else
   dbg_list=
 fi
 
-# When cross building for arm on 64-bit systems the host binaries
-# that are part of v8 need to be compiled with -m32 which means
-# that basic multilib support is needed.
-if file /sbin/init | grep -q 'ELF 64-bit'; then
-  if [ "$lsb_release" = "trusty" ]; then
-    # gcc-multilib conflicts with the arm cross compiler in trusty but
-    # g++-4.8-multilib gives us the 32-bit support that we need.
-    arm_list="$arm_list g++-4.8-multilib"
-  else
-    arm_list="$arm_list g++-multilib"
-  fi
+if test "$do_inst_lib32" = "1" ; then
+  echo "Including 32-bit libraries for ARM/Android."
+else
+  echo "Skipping 32-bit libraries for ARM/Android."
+  lib32_list=
 fi
 
 if test "$do_inst_arm" = "1" ; then
@@ -292,9 +318,11 @@ else
   nacl_list=
 fi
 
+# The `sort -r -s -t: -k2` sorts all the :i386 packages to the front, to avoid
+# confusing dpkg-query (crbug.com/446172).
 packages="$(
-  echo "${dev_list} ${lib_list} ${dbg_list} ${arm_list} ${nacl_list}" |
-  tr " " "\n" | sort -u | tr "\n" " "
+  echo "${dev_list} ${lib_list} ${dbg_list} ${lib32_list} ${arm_list}"\
+       "${nacl_list}" | tr " " "\n" | sort -u | sort -r -s -t: -k2 | tr "\n" " "
 )"
 
 if [ 1 -eq "${do_quick_check-0}" ] ; then
@@ -333,6 +361,11 @@ if [ 1 -eq "${do_quick_check-0}" ] ; then
   exit 0
 fi
 
+if test "$do_inst_lib32" = "1" || test "$do_inst_nacl" = "1"; then
+  if [[ ! $lsb_release =~ (precise) ]]; then
+    sudo dpkg --add-architecture i386
+  fi
+fi
 sudo apt-get update
 
 # We initially run "apt-get" with the --reinstall option and parse its output.
@@ -397,14 +430,32 @@ else
   echo "Skipping installation of Chrome OS fonts."
 fi
 
+# $1 - target name
+# $2 - link name
+create_library_symlink() {
+  target=$1
+  linkname=$2
+  if [ -L $linkname ]; then
+    if [ "$(basename $(readlink $linkname))" != "$(basename $target)" ]; then
+      sudo rm $linkname
+    fi
+  fi
+  if [ ! -r $linkname ]; then
+    echo "Creating link: $linkname"
+    sudo ln -fs $target $linkname
+  fi
+}
+
 if test "$do_inst_nacl" = "1"; then
   echo "Installing symbolic links for NaCl."
-  if [ ! -r /usr/lib/i386-linux-gnu/libcrypto.so ]; then
-    sudo ln -fs libcrypto.so.0.9.8 /usr/lib/i386-linux-gnu/libcrypto.so
-  fi
-  if [ ! -r /usr/lib/i386-linux-gnu/libssl.so ]; then
-    sudo ln -fs libssl.so.0.9.8 /usr/lib/i386-linux-gnu/libssl.so
-  fi
+  # naclports needs to cross build python for i386, but libssl1.0.0:i386
+  # only contains libcrypto.so.1.0.0 and not the symlink needed for
+  # linking (libcrypto.so).
+  create_library_symlink /lib/i386-linux-gnu/libcrypto.so.1.0.0 \
+      /usr/lib/i386-linux-gnu/libcrypto.so
+
+  create_library_symlink /lib/i386-linux-gnu/libssl.so.1.0.0 \
+      /usr/lib/i386-linux-gnu/libssl.so
 else
   echo "Skipping symbolic links for NaCl."
 fi

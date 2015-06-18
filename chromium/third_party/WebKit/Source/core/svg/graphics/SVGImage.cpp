@@ -31,14 +31,17 @@
 
 #include "core/animation/AnimationTimeline.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/shadow/ComposedTreeWalker.h"
+#include "core/dom/shadow/ComposedTreeTraversal.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/style/ComputedStyle.h"
+#include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
+#include "core/paint/CompositingRecorder.h"
+#include "core/paint/FloatClipRecorder.h"
+#include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGFEImageElement.h"
 #include "core/svg/SVGImageElement.h"
@@ -49,10 +52,14 @@
 #include "platform/LengthFunctions.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
-#include "platform/graphics/DisplayList.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageObserver.h"
+#include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/graphics/paint/SkPictureBuilder.h"
+#include "third_party/skia/include/core/SkPicture.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
@@ -101,8 +108,7 @@ bool SVGImage::currentFrameHasSingleSecurityOrigin() const
 
     // Don't allow foreignObject elements or images that are not known to be
     // single-origin since these can leak cross-origin information.
-    ComposedTreeWalker walker(rootElement);
-    while (Node* node = walker.get()) {
+    for (Node* node = rootElement; node; node = ComposedTreeTraversal::next(*node)) {
         if (isSVGForeignObjectElement(*node))
             return false;
         if (isSVGImageElement(*node)) {
@@ -112,7 +118,6 @@ bool SVGImage::currentFrameHasSingleSecurityOrigin() const
             if (!toSVGFEImageElement(*node).currentFrameHasSingleSecurityOrigin())
                 return false;
         }
-        walker.next();
     }
 
     // Because SVG image rendering disallows external resources and links, these
@@ -123,7 +128,7 @@ bool SVGImage::currentFrameHasSingleSecurityOrigin() const
 static SVGSVGElement* svgRootElement(Page* page)
 {
     if (!page)
-        return 0;
+        return nullptr;
     LocalFrame* frame = toLocalFrame(page->mainFrame());
     return frame->document()->accessSVGExtensions().rootElement();
 }
@@ -140,10 +145,10 @@ void SVGImage::setContainerSize(const IntSize& size)
     FrameView* view = frameView();
     view->resize(this->containerSize());
 
-    RenderSVGRoot* renderer = toRenderSVGRoot(rootElement->renderer());
-    if (!renderer)
+    LayoutSVGRoot* layoutObject = toLayoutSVGRoot(rootElement->layoutObject());
+    if (!layoutObject)
         return;
-    renderer->setContainerSize(size);
+    layoutObject->setContainerSize(size);
 }
 
 IntSize SVGImage::containerSize() const
@@ -152,21 +157,21 @@ IntSize SVGImage::containerSize() const
     if (!rootElement)
         return IntSize();
 
-    RenderSVGRoot* renderer = toRenderSVGRoot(rootElement->renderer());
-    if (!renderer)
+    LayoutSVGRoot* layoutObject = toLayoutSVGRoot(rootElement->layoutObject());
+    if (!layoutObject)
         return IntSize();
 
     // If a container size is available it has precedence.
-    IntSize containerSize = renderer->containerSize();
+    IntSize containerSize = layoutObject->containerSize();
     if (!containerSize.isEmpty())
         return containerSize;
 
     // Assure that a container size is always given for a non-identity zoom level.
-    ASSERT(renderer->style()->effectiveZoom() == 1);
+    ASSERT(layoutObject->style()->effectiveZoom() == 1);
 
     FloatSize intrinsicSize;
     double intrinsicRatio = 0;
-    renderer->computeIntrinsicRatioInformation(intrinsicSize, intrinsicRatio);
+    layoutObject->computeIntrinsicRatioInformation(intrinsicSize, intrinsicRatio);
 
     if (intrinsicSize.isEmpty() && intrinsicRatio) {
         if (!intrinsicSize.width() && intrinsicSize.height())
@@ -174,6 +179,13 @@ IntSize SVGImage::containerSize() const
         else if (intrinsicSize.width() && !intrinsicSize.height())
             intrinsicSize.setHeight(intrinsicSize.width() / intrinsicRatio);
     }
+
+    // TODO(davve): In order to maintain aspect ratio the intrinsic
+    // size is faked from the viewBox as a last resort. This may cause
+    // unwanted side effects. Preferably we should be able to signal
+    // the intrinsic ratio in another way.
+    if (intrinsicSize.isEmpty())
+        intrinsicSize = rootElement->currentViewBoxRect().size();
 
     if (!intrinsicSize.isEmpty())
         return expandedIntSize(intrinsicSize);
@@ -183,7 +195,7 @@ IntSize SVGImage::containerSize() const
 }
 
 void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& dstRect,
-    const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+    const FloatRect& srcRect, SkXfermode::Mode compositeOp)
 {
     if (!m_page)
         return;
@@ -202,27 +214,27 @@ void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize contai
     adjustedSrcSize.scale(roundedContainerSize.width() / containerSize.width(), roundedContainerSize.height() / containerSize.height());
     scaledSrc.setSize(adjustedSrcSize);
 
-    draw(context, dstRect, scaledSrc, compositeOp, blendMode);
+    draw(context, dstRect, scaledSrc, compositeOp, DoNotRespectImageOrientation);
 }
 
-PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
+bool SVGImage::bitmapForCurrentFrame(SkBitmap* bitmap)
 {
     if (!m_page)
-        return nullptr;
+        return false;
 
     OwnPtr<ImageBuffer> buffer = ImageBuffer::create(size());
     if (!buffer)
-        return nullptr;
+        return false;
 
-    drawForContainer(buffer->context(), size(), 1, rect(), rect(), CompositeSourceOver, blink::WebBlendModeNormal);
+    drawForContainer(buffer->context(), size(), 1, rect(), rect(), SkXfermode::kSrcOver_Mode);
 
-    // FIXME: WK(Bug 113657): We should use DontCopyBackingStore here.
-    return buffer->copyImage(CopyBackingStore)->nativeImageForCurrentFrame();
+    *bitmap = buffer->bitmap();
+    return true;
 }
 
 void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize,
     float zoom, const FloatRect& srcRect, const FloatSize& tileScale, const FloatPoint& phase,
-    CompositeOperator compositeOp, const FloatRect& dstRect, blink::WebBlendMode blendMode,
+    SkXfermode::Mode compositeOp, const FloatRect& dstRect,
     const IntSize& repeatSpacing)
 {
     // Tile adjusted for scaling/stretch.
@@ -233,73 +245,76 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     FloatRect spacedTile(tile);
     spacedTile.expand(repeatSpacing);
 
-    // Record using a dedicated GC, to avoid inheriting unwanted state (pending color filters
-    // for example must be applied atomically during the final fill/composite phase).
-    GraphicsContext recordingContext(0);
-    recordingContext.beginRecording(spacedTile);
-    // When generating an expanded tile, make sure we don't draw into the spacing area.
-    if (tile != spacedTile)
-        recordingContext.clipRect(tile);
-    drawForContainer(&recordingContext, containerSize, zoom, tile, srcRect, CompositeSourceOver,
-        blink::WebBlendModeNormal);
-    RefPtr<DisplayList> tileDisplayList = recordingContext.endRecording();
+    SkPictureBuilder patternPicture(spacedTile);
+    {
+        DrawingRecorder patternPictureRecorder(patternPicture.context(), *this, DisplayItem::Type::SVGImage, spacedTile);
+        if (!patternPictureRecorder.canUseCachedDrawing()) {
+            // When generating an expanded tile, make sure we don't draw into the spacing area.
+            if (tile != spacedTile)
+                patternPicture.context().clip(tile);
+            drawForContainer(&patternPicture.context(), containerSize, zoom, tile, srcRect, SkXfermode::kSrcOver_Mode);
+        }
+    }
+    RefPtr<const SkPicture> tilePicture = patternPicture.endRecording();
 
     SkMatrix patternTransform;
-    patternTransform.setTranslate(phase.x() + tile.x(), phase.y() + tile.y());
-    SkRect tileRect = SkRect::MakeWH(spacedTile.width(), spacedTile.height());
+    patternTransform.setTranslate(phase.x() + spacedTile.x(), phase.y() + spacedTile.y());
     RefPtr<SkShader> patternShader = adoptRef(SkShader::CreatePictureShader(
-        tileDisplayList->picture().get(), SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode,
-        &patternTransform, &tileRect));
+        tilePicture.get(), SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode,
+        &patternTransform, nullptr));
 
     SkPaint paint;
     paint.setShader(patternShader.get());
-    paint.setXfermodeMode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    paint.setXfermodeMode(compositeOp);
     paint.setColorFilter(context->colorFilter());
     context->drawRect(dstRect, paint);
 }
 
-void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, SkXfermode::Mode compositeOp, RespectImageOrientationEnum)
 {
     if (!m_page)
         return;
 
-    GraphicsContextStateSaver stateSaver(*context);
-    context->setCompositeOperation(compositeOp, blendMode);
-    context->clip(enclosingIntRect(dstRect));
-
-    bool compositingRequiresTransparencyLayer = compositeOp != CompositeSourceOver || blendMode != blink::WebBlendModeNormal;
     float opacity = context->getNormalizedAlpha() / 255.f;
-    bool requiresTransparencyLayer = compositingRequiresTransparencyLayer || opacity < 1;
-    if (requiresTransparencyLayer) {
-        context->beginTransparencyLayer(opacity);
-        if (compositingRequiresTransparencyLayer)
-            context->setCompositeOperation(CompositeSourceOver, blink::WebBlendModeNormal);
-    }
 
-    FloatSize scale(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height());
-
-    // We can only draw the entire frame, clipped to the rect we want. So compute where the top left
-    // of the image would be if we were drawing without clipping, and translate accordingly.
-    FloatSize topLeftOffset(srcRect.location().x() * scale.width(), srcRect.location().y() * scale.height());
-    FloatPoint destOffset = dstRect.location() - topLeftOffset;
-
-    context->translate(destOffset.x(), destOffset.y());
-    context->scale(scale.width(), scale.height());
+    // TODO(fmalita): this recorder is only needed because CompositingRecorder below appears to be
+    // dropping the current color filter on the floor. Find a proper fix and get rid of it.
+    OwnPtr<GraphicsContext> recordingContext = GraphicsContext::deprecatedCreateWithCanvas(nullptr);
+    recordingContext->beginRecording(dstRect);
 
     FrameView* view = frameView();
     view->resize(containerSize());
 
-    if (!m_url.isEmpty())
-        view->scrollToFragment(m_url);
+    // Always call scrollToFragment, even if the url is empty, because
+    // there may have been a previous url/fragment that needs to be reset.
+    view->scrollToFragment(m_url);
 
-    view->updateLayoutAndStyleForPainting();
-    view->paint(context, enclosingIntRect(srcRect));
-    ASSERT(!view->needsLayout());
+    {
+        DisplayItemListContextRecorder contextRecorder(*recordingContext);
+        GraphicsContext& paintContext = contextRecorder.context();
 
-    if (requiresTransparencyLayer)
-        context->endLayer();
+        ClipRecorder clipRecorder(paintContext, *this, DisplayItem::ClipNodeImage, LayoutRect(enclosingIntRect(dstRect)));
 
-    stateSaver.restore();
+        bool hasCompositing = compositeOp != SkXfermode::kSrcOver_Mode;
+        OwnPtr<CompositingRecorder> compositingRecorder;
+        if (hasCompositing || opacity < 1)
+            compositingRecorder = adoptPtr(new CompositingRecorder(paintContext, *this, compositeOp, opacity));
+
+        // We can only draw the entire frame, clipped to the rect we want. So compute where the top left
+        // of the image would be if we were drawing without clipping, and translate accordingly.
+        FloatSize scale(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height());
+        FloatSize topLeftOffset(srcRect.location().x() * scale.width(), srcRect.location().y() * scale.height());
+        FloatPoint destOffset = dstRect.location() - topLeftOffset;
+        AffineTransform transform = AffineTransform::translation(destOffset.x(), destOffset.y());
+        transform.scale(scale.width(), scale.height());
+        TransformRecorder transformRecorder(paintContext, *this, transform);
+
+        view->updateLayoutAndStyleForPainting();
+        view->paint(&paintContext, enclosingIntRect(srcRect));
+        ASSERT(!view->needsLayout());
+    }
+    RefPtr<const SkPicture> recording = recordingContext->endRecording();
+    context->drawPicture(recording.get());
 
     if (imageObserver())
         imageObserver()->didDraw(this);
@@ -310,18 +325,18 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     startAnimation();
 }
 
-RenderBox* SVGImage::embeddedContentBox() const
+LayoutBox* SVGImage::embeddedContentBox() const
 {
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
     if (!rootElement)
-        return 0;
-    return toRenderBox(rootElement->renderer());
+        return nullptr;
+    return toLayoutBox(rootElement->layoutObject());
 }
 
 FrameView* SVGImage::frameView() const
 {
     if (!m_page)
-        return 0;
+        return nullptr;
 
     return toLocalFrame(m_page->mainFrame())->view();
 }
@@ -374,6 +389,14 @@ bool SVGImage::hasAnimations() const
     if (!rootElement)
         return false;
     return rootElement->timeContainer()->hasAnimations() || toLocalFrame(m_page->mainFrame())->document()->timeline().hasPendingUpdates();
+}
+
+void SVGImage::updateUseCounters(Document& document) const
+{
+    if (SVGSVGElement* rootElement = svgRootElement(m_page.get())) {
+        if (rootElement->timeContainer()->hasAnimations())
+            UseCounter::count(document, UseCounter::SVGSMILAnimationInImageRegardlessOfCache);
+    }
 }
 
 bool SVGImage::dataChanged(bool allDataReceived)
@@ -433,6 +456,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
         TRACE_EVENT0("blink", "SVGImage::dataChanged::load");
         loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data(), AtomicString("image/svg+xml", AtomicString::ConstructFromLiteral),
             AtomicString("UTF-8", AtomicString::ConstructFromLiteral), KURL(), ForceSynchronousLoad)));
+
         // Set the intrinsic size before a container size is available.
         m_intrinsicSize = containerSize();
     }

@@ -30,6 +30,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValueFactory.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -60,6 +61,8 @@ MessagePort::MessagePort(ExecutionContext& executionContext)
 MessagePort::~MessagePort()
 {
     close();
+    if (m_scriptStateForConversion)
+        m_scriptStateForConversion->disposePerContextData();
 }
 
 void MessagePort::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
@@ -126,7 +129,7 @@ PassOwnPtr<WebMessagePortChannel> MessagePort::disentangle()
 void MessagePort::messageAvailable()
 {
     ASSERT(executionContext());
-    executionContext()->postTask(createCrossThreadTask(&MessagePort::dispatchMessages, m_weakFactory.createWeakPtr()));
+    executionContext()->postTask(FROM_HERE, createCrossThreadTask(&MessagePort::dispatchMessages, m_weakFactory.createWeakPtr()));
 }
 
 void MessagePort::start()
@@ -177,12 +180,16 @@ static bool tryGetMessageFrom(WebMessagePortChannel& webChannel, RefPtr<Serializ
         for (size_t i = 0; i < webChannels.size(); ++i)
             (*channels)[i] = adoptPtr(webChannels[i]);
     }
-    message = SerializedScriptValue::createFromWire(messageString);
+    message = SerializedScriptValueFactory::instance().createFromWire(messageString);
     return true;
 }
 
 void MessagePort::dispatchMessages()
 {
+    // Because close() doesn't cancel any in flight calls to dispatchMessages() we need to check if the port is still open before dispatch.
+    if (m_closed)
+        return;
+
     // Messages for contexts that are not fully active get dispatched too, but JSAbstractEventListener::handleEvent() doesn't call handlers for these.
     // The HTML5 spec specifies that any messages sent to a document that is not fully active should be dropped, so this behavior is OK.
     if (!started())
@@ -253,6 +260,28 @@ PassOwnPtrWillBeRawPtr<MessagePortArray> MessagePort::entanglePorts(ExecutionCon
         (*portArray)[i] = port.release();
     }
     return portArray.release();
+}
+
+DEFINE_TRACE(MessagePort)
+{
+    ActiveDOMObject::trace(visitor);
+    EventTargetWithInlineData::trace(visitor);
+}
+
+v8::Isolate* MessagePort::scriptIsolate()
+{
+    ASSERT(executionContext());
+    return toIsolate(executionContext());
+}
+
+v8::Local<v8::Context> MessagePort::scriptContextForMessageConversion()
+{
+    ASSERT(executionContext());
+    if (!m_scriptStateForConversion) {
+        v8::Isolate* isolate = scriptIsolate();
+        m_scriptStateForConversion = ScriptState::create(v8::Context::New(isolate), DOMWrapperWorld::create(isolate));
+    }
+    return m_scriptStateForConversion->context();
 }
 
 } // namespace blink

@@ -6,12 +6,13 @@
 #define GeofencingRegion_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class GeofencingRegion : public GarbageCollectedFinalized<GeofencingRegion>, public ScriptWrappable {
+class MODULES_EXPORT GeofencingRegion : public GarbageCollectedFinalized<GeofencingRegion>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_NONCOPYABLE(GeofencingRegion);
 public:
@@ -19,7 +20,7 @@ public:
 
     String id() const { return m_id; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     // For SpecialWrapFor
     virtual bool isCircularGeofencingRegion() const { return false; }

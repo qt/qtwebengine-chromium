@@ -14,23 +14,32 @@
 
 namespace blink {
 
-class InspectorClient;
+class InspectorPageAgent;
 class InspectorWorkerAgent;
 
 class InspectorTracingAgent final
-    : public InspectorBaseAgent<InspectorTracingAgent>
+    : public InspectorBaseAgent<InspectorTracingAgent, InspectorFrontend::Tracing>
     , public InspectorBackendDispatcher::TracingCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorTracingAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorTracingAgent> create(InspectorClient* client, InspectorWorkerAgent* workerAgent)
+    class Client {
+    public:
+        virtual ~Client() { }
+
+        virtual void enableTracing(const String& categoryFilter) { }
+        virtual void disableTracing() { }
+    };
+
+    static PassOwnPtrWillBeRawPtr<InspectorTracingAgent> create(Client* client, InspectorWorkerAgent* workerAgent, InspectorPageAgent* pageAgent)
     {
-        return adoptPtrWillBeNoop(new InspectorTracingAgent(client, workerAgent));
+        return adoptPtrWillBeNoop(new InspectorTracingAgent(client, workerAgent, pageAgent));
     }
 
+    DECLARE_VIRTUAL_TRACE();
+
     // Base agent methods.
-    virtual void restore() override;
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void clearFrontend() override;
+    void restore() override;
+    void disable(ErrorString*) override;
 
     // Protocol method implementations.
     virtual void start(ErrorString*, const String* categoryFilter, const String*, const double*, PassRefPtrWillBeRawPtr<StartCallback>) override;
@@ -40,18 +49,18 @@ public:
     void setLayerTreeId(int);
 
 private:
-    InspectorTracingAgent(InspectorClient*, InspectorWorkerAgent*);
+    InspectorTracingAgent(Client*, InspectorWorkerAgent*, InspectorPageAgent*);
 
     void emitMetadataEvents();
     void resetSessionId();
     String sessionId();
 
     int m_layerTreeId;
-    InspectorClient* m_client;
-    InspectorFrontend::Tracing* m_frontend;
-    InspectorWorkerAgent* m_workerAgent;
+    Client* m_client;
+    RawPtrWillBeMember<InspectorWorkerAgent> m_workerAgent;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
 };
 
-}
+} // namespace blink
 
 #endif // InspectorTracingAgent_h

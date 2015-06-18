@@ -6,6 +6,8 @@
 #include "bindings/core/v8/V8ScriptRunner.h"
 
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
+#include "core/fetch/CachedMetadataHandler.h"
 #include "core/fetch/ScriptResource.h"
 #include "platform/heap/Handle.h"
 #include <gtest/gtest.h>
@@ -52,33 +54,38 @@ public:
     {
         return WTF::String::format("http://bla.com/bla%d", counter);
     }
-    unsigned tagForParserCache() const
+    unsigned tagForParserCache(CachedMetadataHandler* cacheHandler) const
     {
-        return StringHash::hash(v8::V8::GetVersion()) * 2;
+        return V8ScriptRunner::tagForParserCache(cacheHandler);
     }
-    unsigned tagForCodeCache() const
+    unsigned tagForCodeCache(CachedMetadataHandler* cacheHandler) const
     {
-        return tagForParserCache() + 1;
+        return V8ScriptRunner::tagForCodeCache(cacheHandler);
     }
 
     bool compileScript(V8CacheOptions cacheOptions)
     {
         return !V8ScriptRunner::compileScript(
-            v8String(isolate(), code()), filename(), WTF::TextPosition(),
-            m_resource.get(), 0, isolate(), NotSharableCrossOrigin, cacheOptions)
+            v8String(isolate(), code()), filename(), String(), WTF::TextPosition(),
+            isolate(), m_resource.get(), nullptr, m_resource.get() ? m_resource->cacheHandler(): nullptr, NotSharableCrossOrigin, cacheOptions)
             .IsEmpty();
     }
 
     void setEmptyResource()
     {
         m_resourceRequest = WTF::adoptPtr(new ResourceRequest);
-        m_resource = adoptPtrWillBeNoop(new ScriptResource(*m_resourceRequest.get(), "text/utf-8"));
+        m_resource = ScriptResource::create(*m_resourceRequest.get(), "UTF-8");
     }
 
     void setResource()
     {
         m_resourceRequest = WTF::adoptPtr(new ResourceRequest(url()));
-        m_resource = adoptPtrWillBeNoop(new ScriptResource(*m_resourceRequest.get(), "text/utf-8"));
+        m_resource = ScriptResource::create(*m_resourceRequest.get(), "UTF-8");
+    }
+
+    CachedMetadataHandler* cacheHandler()
+    {
+        return m_resource->cacheHandler();
     }
 
 protected:
@@ -93,52 +100,60 @@ int V8ScriptRunnerTest::counter = 0;
 
 TEST_F(V8ScriptRunnerTest, resourcelessShouldPass)
 {
-    EXPECT_TRUE(compileScript(V8CacheOptionsOff));
+    EXPECT_TRUE(compileScript(V8CacheOptionsNone));
+    EXPECT_TRUE(compileScript(V8CacheOptionsParseMemory));
     EXPECT_TRUE(compileScript(V8CacheOptionsParse));
     EXPECT_TRUE(compileScript(V8CacheOptionsCode));
 }
 
-TEST_F(V8ScriptRunnerTest, emptyResourceDoesNothing)
+TEST_F(V8ScriptRunnerTest, emptyResourceDoesNotHaveCacheHandler)
 {
     setEmptyResource();
-    EXPECT_TRUE(compileScript(V8CacheOptionsOff));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForParserCache()));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForCodeCache()));
-
-    EXPECT_TRUE(compileScript(V8CacheOptionsParse));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForParserCache()));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForCodeCache()));
-
-    EXPECT_TRUE(compileScript(V8CacheOptionsCode));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForParserCache()));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForCodeCache()));
+    EXPECT_FALSE(cacheHandler());
 }
 
-TEST_F(V8ScriptRunnerTest, defaultOptions)
+TEST_F(V8ScriptRunnerTest, parseMemoryOption)
 {
     setResource();
-    EXPECT_TRUE(compileScript(V8CacheOptionsOff));
-    EXPECT_TRUE(m_resource->cachedMetadata(tagForParserCache()));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForCodeCache()));
+    EXPECT_TRUE(compileScript(V8CacheOptionsParseMemory));
+    EXPECT_TRUE(cacheHandler()->cachedMetadata(tagForParserCache(cacheHandler())));
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForCodeCache(cacheHandler())));
+    // The cached data is associated with the encoding.
+    ResourceRequest request(url());
+    OwnPtrWillBeRawPtr<ScriptResource> anotherResource = ScriptResource::create(request, "UTF-16");
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForParserCache(anotherResource->cacheHandler())));
 }
 
-TEST_F(V8ScriptRunnerTest, parseOptions)
+TEST_F(V8ScriptRunnerTest, parseOption)
 {
     setResource();
     EXPECT_TRUE(compileScript(V8CacheOptionsParse));
-    EXPECT_TRUE(m_resource->cachedMetadata(tagForParserCache()));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForCodeCache()));
+    EXPECT_TRUE(cacheHandler()->cachedMetadata(tagForParserCache(cacheHandler())));
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForCodeCache(cacheHandler())));
+    // The cached data is associated with the encoding.
+    ResourceRequest request(url());
+    OwnPtrWillBeRawPtr<ScriptResource> anotherResource = ScriptResource::create(request, "UTF-16");
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForParserCache(anotherResource->cacheHandler())));
 }
 
-TEST_F(V8ScriptRunnerTest, codeOptions)
+TEST_F(V8ScriptRunnerTest, codeOption)
 {
     setResource();
     EXPECT_TRUE(compileScript(V8CacheOptionsCode));
-    EXPECT_FALSE(m_resource->cachedMetadata(tagForParserCache()));
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForParserCache(cacheHandler())));
+    EXPECT_TRUE(cacheHandler()->cachedMetadata(tagForCodeCache(cacheHandler())));
+    // The cached data is associated with the encoding.
+    ResourceRequest request(url());
+    OwnPtrWillBeRawPtr<ScriptResource> anotherResource = ScriptResource::create(request, "UTF-16");
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForCodeCache(anotherResource->cacheHandler())));
+}
 
-    // FIXME: Code caching is presently still disabled.
-    //        Enable EXPECT when code caching lands.
-    // EXPECT_TRUE(m_resource->cachedMetadata(tagForCodeCache()));
+TEST_F(V8ScriptRunnerTest, codeCompressedOptions)
+{
+    setResource();
+    EXPECT_TRUE(compileScript(V8CacheOptionsCodeCompressed));
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForParserCache(cacheHandler())));
+    EXPECT_FALSE(cacheHandler()->cachedMetadata(tagForCodeCache(cacheHandler())));
 }
 
 } // namespace

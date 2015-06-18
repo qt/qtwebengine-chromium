@@ -60,7 +60,7 @@ TEST(SecurityOriginTest, ValidPortsCreateNonUniqueOrigins)
     }
 }
 
-TEST(SecurityOriginTest, CanAccessFeatureRequringSecureOrigin)
+TEST(SecurityOriginTest, IsPotentiallyTrustworthy)
 {
     struct TestCase {
         bool accessGranted;
@@ -128,16 +128,42 @@ TEST(SecurityOriginTest, CanAccessFeatureRequringSecureOrigin)
         SCOPED_TRACE(i);
         RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString(inputs[i].url);
         String errorMessage;
-        EXPECT_EQ(inputs[i].accessGranted, origin->canAccessFeatureRequiringSecureOrigin(errorMessage));
+        EXPECT_EQ(inputs[i].accessGranted, origin->isPotentiallyTrustworthy(errorMessage));
         EXPECT_EQ(inputs[i].accessGranted, errorMessage.isEmpty());
     }
 
     // Unique origins are not considered secure.
     RefPtr<SecurityOrigin> uniqueOrigin = SecurityOrigin::createUnique();
     String errorMessage;
-    EXPECT_FALSE(uniqueOrigin->canAccessFeatureRequiringSecureOrigin(errorMessage));
-    EXPECT_EQ("Only secure origins are allowed. http://goo.gl/lq4gCo", errorMessage);
+    EXPECT_FALSE(uniqueOrigin->isPotentiallyTrustworthy(errorMessage));
+    EXPECT_EQ("Only secure origins are allowed (see: https://goo.gl/Y0ZkNV).", errorMessage);
+}
+
+TEST(SecurityOriginTest, IsSecure)
+{
+    struct TestCase {
+        bool isSecure;
+        const char* url;
+    } inputs[] = {
+        { false, "blob:ftp://evil:99/578223a1-8c13-17b3-84d5-eca045ae384a" },
+        { false, "blob:http://example.com/578223a1-8c13-17b3-84d5-eca045ae384a" },
+        { false, "file:///etc/passwd" },
+        { false, "ftp://example.com/" },
+        { false, "http://example.com/" },
+        { false, "ws://example.com/" },
+        { true, "blob:https://example.com/578223a1-8c13-17b3-84d5-eca045ae384a" },
+        { true, "https://example.com/" },
+        { true, "wss://example.com/" },
+
+        { true, "about:blank" },
+        { false, "" },
+        { false, "\0" },
+    };
+
+    for (auto test : inputs)
+        EXPECT_EQ(test.isSecure, SecurityOrigin::isSecure(blink::KURL(blink::ParsedURLString, test.url))) << "URL: '" << test.url << "'";
+
+    EXPECT_FALSE(SecurityOrigin::isSecure(blink::KURL()));
 }
 
 } // namespace
-

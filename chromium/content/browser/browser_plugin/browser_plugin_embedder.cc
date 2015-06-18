@@ -4,24 +4,15 @@
 
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 
-#include "base/values.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/drag_messages.h"
-#include "content/common/gpu/gpu_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/user_metrics.h"
-#include "content/public/common/content_switches.h"
-#include "content/public/common/result_codes.h"
-#include "content/public/common/url_constants.h"
-#include "net/base/escape.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
@@ -42,8 +33,9 @@ BrowserPluginEmbedder* BrowserPluginEmbedder::Create(
   return new BrowserPluginEmbedder(web_contents);
 }
 
-void BrowserPluginEmbedder::DragEnteredGuest(BrowserPluginGuest* guest) {
+bool BrowserPluginEmbedder::DragEnteredGuest(BrowserPluginGuest* guest) {
   guest_dragging_over_ = guest->AsWeakPtr();
+  return guest_started_drag_.get() == guest;
 }
 
 void BrowserPluginEmbedder::DragLeftGuest(BrowserPluginGuest* guest) {
@@ -54,18 +46,46 @@ void BrowserPluginEmbedder::DragLeftGuest(BrowserPluginGuest* guest) {
   }
 }
 
+// static
+bool BrowserPluginEmbedder::NotifyScreenInfoChanged(
+    WebContents* guest_web_contents) {
+  if (guest_web_contents->GetRenderViewHost()) {
+    auto render_widget_host =
+        RenderWidgetHostImpl::From(guest_web_contents->GetRenderViewHost());
+    render_widget_host->NotifyScreenInfoChanged();
+  }
+
+  // Returns false to iterate over all guests.
+  return false;
+}
+
+void BrowserPluginEmbedder::ScreenInfoChanged() {
+  GetBrowserPluginGuestManager()->ForEachGuest(web_contents(), base::Bind(
+      &BrowserPluginEmbedder::NotifyScreenInfoChanged));
+}
+
+// static
+bool BrowserPluginEmbedder::CancelDialogs(WebContents* guest_web_contents) {
+  static_cast<WebContentsImpl*>(guest_web_contents)
+      ->CancelActiveAndPendingDialogs();
+
+  // Returns false to iterate over all guests.
+  return false;
+}
+
+void BrowserPluginEmbedder::CancelGuestDialogs() {
+  GetBrowserPluginGuestManager()->ForEachGuest(
+      web_contents(), base::Bind(&BrowserPluginEmbedder::CancelDialogs));
+}
+
 void BrowserPluginEmbedder::StartDrag(BrowserPluginGuest* guest) {
   guest_started_drag_ = guest->AsWeakPtr();
   guest_drag_ending_ = false;
 }
 
-WebContentsImpl* BrowserPluginEmbedder::GetWebContents() const {
-  return static_cast<WebContentsImpl*>(web_contents());
-}
-
 BrowserPluginGuestManager*
 BrowserPluginEmbedder::GetBrowserPluginGuestManager() const {
-  return GetWebContents()->GetBrowserContext()->GetGuestManager();
+  return web_contents()->GetBrowserContext()->GetGuestManager();
 }
 
 void BrowserPluginEmbedder::ClearGuestDragStateIfApplicable() {
@@ -82,6 +102,7 @@ void BrowserPluginEmbedder::ClearGuestDragStateIfApplicable() {
   }
 }
 
+// static
 bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
    WebContents* guest_web_contents) {
   static_cast<RenderViewHostImpl*>(
@@ -92,14 +113,20 @@ bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
 
 void BrowserPluginEmbedder::DidSendScreenRects() {
   GetBrowserPluginGuestManager()->ForEachGuest(
-          GetWebContents(), base::Bind(
-              &BrowserPluginEmbedder::DidSendScreenRectsCallback,
-              base::Unretained(this)));
+      web_contents(),
+      base::Bind(&BrowserPluginEmbedder::DidSendScreenRectsCallback));
 }
 
 bool BrowserPluginEmbedder::OnMessageReceived(const IPC::Message& message) {
+  return OnMessageReceived(message, nullptr);
+}
+
+bool BrowserPluginEmbedder::OnMessageReceived(
+    const IPC::Message& message,
+    RenderFrameHost* render_frame_host) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(BrowserPluginEmbedder, message)
+  IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(BrowserPluginEmbedder, message,
+                                   render_frame_host)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_Attach, OnAttach)
     IPC_MESSAGE_HANDLER_GENERIC(DragHostMsg_UpdateDragCursor,
                                 OnUpdateDragCursor(&handled));
@@ -124,26 +151,31 @@ void BrowserPluginEmbedder::SystemDragEnded() {
   // to the guest that initiated the drag/drop operation. This will ensure that
   // the guest's RVH state is reset properly.
   if (guest_started_drag_)
-    guest_started_drag_->EndSystemDrag();
+    guest_started_drag_->EmbedderSystemDragEnded();
+
   guest_dragging_over_.reset();
   ClearGuestDragStateIfApplicable();
 }
 
 void BrowserPluginEmbedder::OnUpdateDragCursor(bool* handled) {
-  *handled = (guest_dragging_over_.get() != NULL);
+  *handled = !!guest_dragging_over_;
 }
 
 void BrowserPluginEmbedder::OnAttach(
+    RenderFrameHost* render_frame_host,
     int browser_plugin_instance_id,
     const BrowserPluginHostMsg_Attach_Params& params) {
   WebContents* guest_web_contents =
       GetBrowserPluginGuestManager()->GetGuestByInstanceID(
-          GetWebContents(), browser_plugin_instance_id);
+          render_frame_host->GetProcess()->GetID(),
+          browser_plugin_instance_id);
   if (!guest_web_contents)
     return;
   BrowserPluginGuest* guest = static_cast<WebContentsImpl*>(guest_web_contents)
                                   ->GetBrowserPluginGuest();
-  guest->Attach(browser_plugin_instance_id, GetWebContents(), params);
+  guest->Attach(browser_plugin_instance_id,
+                static_cast<WebContentsImpl*>(web_contents()),
+                params);
 }
 
 bool BrowserPluginEmbedder::HandleKeyboardEvent(
@@ -155,26 +187,22 @@ bool BrowserPluginEmbedder::HandleKeyboardEvent(
 
   bool event_consumed = false;
   GetBrowserPluginGuestManager()->ForEachGuest(
-      GetWebContents(),
+      web_contents(),
       base::Bind(&BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
-                 base::Unretained(this),
                  &event_consumed));
 
   return event_consumed;
 }
 
-bool BrowserPluginEmbedder::Find(int request_id,
-                                 const base::string16& search_text,
-                                 const blink::WebFindOptions& options) {
-  return GetBrowserPluginGuestManager()->ForEachGuest(
-      GetWebContents(),
-      base::Bind(&BrowserPluginEmbedder::FindInGuest,
-                 base::Unretained(this),
-                 request_id,
-                 search_text,
-                 options));
+BrowserPluginGuest* BrowserPluginEmbedder::GetFullPageGuest() {
+  WebContentsImpl* guest_contents = static_cast<WebContentsImpl*>(
+      GetBrowserPluginGuestManager()->GetFullPageGuest(web_contents()));
+  if (!guest_contents)
+    return nullptr;
+  return guest_contents->GetBrowserPluginGuest();
 }
 
+// static
 bool BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback(bool* mouse_unlocked,
                                                            WebContents* guest) {
   *mouse_unlocked |= static_cast<WebContentsImpl*>(guest)
@@ -183,19 +211,6 @@ bool BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback(bool* mouse_unlocked,
   guest->GotResponseToLockMouseRequest(false);
 
   // Returns false to iterate over all guests.
-  return false;
-}
-
-bool BrowserPluginEmbedder::FindInGuest(int request_id,
-                                        const base::string16& search_text,
-                                        const blink::WebFindOptions& options,
-                                        WebContents* guest) {
-  if (static_cast<WebContentsImpl*>(guest)->GetBrowserPluginGuest()->Find(
-          request_id, search_text, options)) {
-    // There can only ever currently be one browser plugin that handles find so
-    // we can break the iteration at this point.
-    return true;
-  }
   return false;
 }
 

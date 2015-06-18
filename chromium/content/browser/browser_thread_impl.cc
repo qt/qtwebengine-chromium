@@ -15,6 +15,7 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread_delegate.h"
+#include "content/public/browser/content_browser_client.h"
 #include "net/disk_cache/simple/simple_backend_impl.h"
 
 #if defined(OS_ANDROID)
@@ -365,6 +366,15 @@ bool BrowserThread::PostBlockingPoolSequencedTask(
 }
 
 // static
+void BrowserThread::PostAfterStartupTask(
+    const tracked_objects::Location& from_here,
+    const scoped_refptr<base::TaskRunner>& task_runner,
+    const base::Closure& task) {
+  GetContentClient()->browser()->PostAfterStartupTask(from_here, task_runner,
+                                                      task);
+}
+
+// static
 base::SequencedWorkerPool* BrowserThread::GetBlockingPool() {
   return g_globals.Get().blocking_pool.get();
 }
@@ -405,12 +415,11 @@ static const char* GetThreadName(BrowserThread::ID thread) {
 
 // static
 std::string BrowserThread::GetDCheckCurrentlyOnErrorMessage(ID expected) {
-  const std::string& message_loop_name =
-      base::MessageLoop::current()->thread_name();
+  const base::MessageLoop* message_loop = base::MessageLoop::current();
   ID actual_browser_thread;
   const char* actual_name = "Unknown Thread";
-  if (!message_loop_name.empty()) {
-    actual_name = message_loop_name.c_str();
+  if (message_loop && !message_loop->thread_name().empty()) {
+    actual_name = message_loop->thread_name().c_str();
   } else if (GetCurrentThreadIdentifier(&actual_browser_thread)) {
     actual_name = GetThreadName(actual_browser_thread);
   }

@@ -15,6 +15,7 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "net/base/net_export.h"
+#include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
@@ -165,6 +166,7 @@ class NET_EXPORT HostResolverImpl
   // incompatible, ERR_DNS_CACHE_MISS if entry was not found in cache and HOSTS.
   int ResolveHelper(const Key& key,
                     const RequestInfo& info,
+                    const IPAddressNumber* ip_address,
                     AddressList* addresses,
                     const BoundNetLog& request_net_log);
 
@@ -172,6 +174,7 @@ class NET_EXPORT HostResolverImpl
   // succeeds, returns false otherwise.
   bool ResolveAsIP(const Key& key,
                    const RequestInfo& info,
+                   const IPAddressNumber* ip_address,
                    int* net_error,
                    AddressList* addresses);
 
@@ -196,7 +199,13 @@ class NET_EXPORT HostResolverImpl
   // "effective" address family by inheriting the resolver's default address
   // family when the request leaves it unspecified.
   Key GetEffectiveKeyForRequest(const RequestInfo& info,
-                                const BoundNetLog& net_log) const;
+                                const IPAddressNumber* ip_number,
+                                const BoundNetLog& net_log);
+
+  // Probes IPv6 support and returns true if IPv6 support is enabled.
+  // Results are cached, i.e. when called repeatedly this method returns result
+  // from the first probe for some time before probing again.
+  bool IsIPv6Reachable(const BoundNetLog& net_log);
 
   // Records the result in cache if cache is present.
   void CacheResult(const Key& key,
@@ -224,6 +233,9 @@ class NET_EXPORT HostResolverImpl
 
   // NetworkChangeNotifier::DNSObserver:
   void OnDNSChanged() override;
+  void OnInitialDNSConfigRead() override;
+
+  void UpdateDNSConfig(bool config_changed);
 
   // True if have a DnsClient with a valid DnsConfig.
   bool HaveDnsConfig() const;
@@ -276,6 +288,9 @@ class NET_EXPORT HostResolverImpl
   // True if DnsConfigService detected that system configuration depends on
   // local IPv6 connectivity. Disables probing.
   bool use_local_ipv6_;
+
+  base::TimeTicks last_ipv6_probe_time_;
+  bool last_ipv6_probe_result_;
 
   // True iff ProcTask has successfully resolved a hostname known to have IPv6
   // addresses using ADDRESS_FAMILY_UNSPECIFIED. Reset on IP address change.

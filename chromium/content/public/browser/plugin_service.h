@@ -41,8 +41,8 @@ class PluginService {
 
   // Tells all the renderer processes associated with the given browser context
   // to throw away their cache of the plugin list, and optionally also reload
-  // all the pages with plugins. If |browser_context| is NULL, purges the cache
-  // in all renderers.
+  // all the pages with plugins. If |browser_context| is nullptr, purges the
+  // cache in all renderers.
   // NOTE: can only be called on the UI thread.
   CONTENT_EXPORT static void PurgePluginListCache(
       BrowserContext* browser_context,
@@ -53,7 +53,7 @@ class PluginService {
   // Must be called on the instance to finish initialization.
   virtual void Init() = 0;
 
-  // Starts watching for changes in the list of installed plug-ins.
+  // Starts watching for changes in the list of installed plugins.
   virtual void StartWatchingPlugins() = 0;
 
   // Gets the plugin in the list of plugins that matches the given url and mime
@@ -96,7 +96,7 @@ class PluginService {
   // provided function on the calling MessageLoop on completion.
   virtual void GetPlugins(const GetPluginsCallback& callback) = 0;
 
-  // Returns information about a pepper plugin if it exists, otherwise NULL.
+  // Returns information about a pepper plugin if it exists, otherwise nullptr.
   // The caller does not own the pointer, and it's not guaranteed to live past
   // the call stack.
   virtual PepperPluginInfo* GetRegisteredPpapiPluginInfo(
@@ -108,7 +108,7 @@ class PluginService {
   // If the plugin with the given path is running, cleanly shuts it down.
   virtual void ForcePluginShutdown(const base::FilePath& plugin_path) = 0;
 
-  // Used to monitor plug-in stability. An unstable plug-in is one that has
+  // Used to monitor plugin stability. An unstable plugin is one that has
   // crashed more than a set number of times in a set time period.
   virtual bool IsPluginUnstable(const base::FilePath& plugin_path) = 0;
 
@@ -142,6 +142,9 @@ class PluginService {
   // Returns true iff NPAPI plugins are supported on the current platform.
   // This can be called from any thread.
   virtual bool NPAPIPluginsSupported() = 0;
+
+  // This is equivalent to specifying kEnableNpapi.
+  virtual void EnableNpapiPlugins() = 0;
 
   // This is equivalent to specifying kDisablePluginsDiscovery, but is useful
   // for unittests.

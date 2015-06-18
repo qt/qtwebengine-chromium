@@ -4,8 +4,8 @@
 
 #include "cc/quads/io_surface_draw_quad.h"
 
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 
@@ -57,10 +57,9 @@ const IOSurfaceDrawQuad* IOSurfaceDrawQuad::MaterialCast(
   return static_cast<const IOSurfaceDrawQuad*>(quad);
 }
 
-void IOSurfaceDrawQuad::ExtendValue(base::debug::TracedValue* value) const {
-  value->BeginDictionary("io_surface_size");
-  MathUtil::AddToTracedValue(io_surface_size, value);
-  value->EndDictionary();
+void IOSurfaceDrawQuad::ExtendValue(
+    base::trace_event::TracedValue* value) const {
+  MathUtil::AddToTracedValue("io_surface_size", io_surface_size, value);
 
   value->SetInteger("io_surface_resource_id", io_surface_resource_id);
   const char* orientation_string = NULL;

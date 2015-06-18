@@ -37,7 +37,7 @@
 namespace blink {
 
 class HRTFDatabaseLoader;
-class PannerNode;
+class PannerHandler;
 
 // AudioListener maintains the state of the listener in the audio scene as defined in the OpenAL specification.
 
@@ -76,8 +76,8 @@ public:
     double speedOfSound() const { return m_speedOfSound; }
 
     Mutex& listenerLock() { return m_listenerLock; }
-    void addPanner(PannerNode*);
-    void removePanner(PannerNode*);
+    void addPanner(PannerHandler&);
+    void removePanner(PannerHandler&);
 
     // HRTF DB loader
     HRTFDatabaseLoader* hrtfDatabaseLoader() { return m_hrtfDatabaseLoader.get(); }
@@ -85,7 +85,7 @@ public:
     bool isHRTFDatabaseLoaded();
     void waitForHRTFDatabaseLoaderThreadCompletion();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     AudioListener();
@@ -108,9 +108,11 @@ private:
     mutable Mutex m_listenerLock;
     // List for pannerNodes in context. This is updated only in the main thread,
     // and can be referred in audio thread.
-    HeapVector<Member<PannerNode> > m_panners;
+    // These raw pointers are safe because PannerHandler::uninitialize()
+    // unregisters it from m_panners.
+    HashSet<PannerHandler*> m_panners;
     // HRTF DB loader for panner node.
-    Member<HRTFDatabaseLoader> m_hrtfDatabaseLoader;
+    RefPtr<HRTFDatabaseLoader> m_hrtfDatabaseLoader;
 };
 
 } // namespace blink

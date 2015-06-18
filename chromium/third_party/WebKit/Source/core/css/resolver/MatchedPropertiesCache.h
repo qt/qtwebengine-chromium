@@ -33,7 +33,7 @@
 
 namespace blink {
 
-class RenderStyle;
+class ComputedStyle;
 class StyleResolverState;
 
 class CachedMatchedProperties final : public NoBaseWillBeGarbageCollectedFinalized<CachedMatchedProperties> {
@@ -41,20 +41,52 @@ class CachedMatchedProperties final : public NoBaseWillBeGarbageCollectedFinaliz
 public:
     WillBeHeapVector<MatchedProperties> matchedProperties;
     MatchRanges ranges;
-    RefPtr<RenderStyle> renderStyle;
-    RefPtr<RenderStyle> parentRenderStyle;
+    RefPtr<ComputedStyle> computedStyle;
+    RefPtr<ComputedStyle> parentComputedStyle;
 
-    void set(const RenderStyle*, const RenderStyle* parentStyle, const MatchResult&);
+    void set(const ComputedStyle&, const ComputedStyle& parentStyle, const MatchResult&);
     void clear();
-    void trace(Visitor* visitor) { visitor->trace(matchedProperties); }
+    DEFINE_INLINE_TRACE()
+    {
+#if ENABLE(OILPAN)
+        visitor->trace(matchedProperties);
+#endif
+    }
 };
 
 // Specialize the HashTraits for CachedMatchedProperties to check for dead
 // entries in the MatchedPropertiesCache.
 #if ENABLE(OILPAN)
-struct CachedMatchedPropertiesHashTraits : HashTraits<Member<CachedMatchedProperties> > {
+struct CachedMatchedPropertiesHashTraits : HashTraits<Member<CachedMatchedProperties>> {
     static const WTF::WeakHandlingFlag weakHandlingFlag = WTF::WeakHandlingInCollections;
-    static bool traceInCollection(Visitor*, Member<CachedMatchedProperties>&, WTF::ShouldWeakPointersBeMarkedStrongly);
+
+    template<typename VisitorDispatcher>
+    static bool traceInCollection(VisitorDispatcher visitor, Member<CachedMatchedProperties>& cachedProperties, WTF::ShouldWeakPointersBeMarkedStrongly strongify)
+    {
+        // Only honor the cache's weakness semantics if the collection is traced
+        // with WeakPointersActWeak. Otherwise just trace the cachedProperties
+        // strongly, ie. call trace on it.
+        if (cachedProperties && strongify == WTF::WeakPointersActWeak) {
+            // A given cache entry is only kept alive if none of the MatchedProperties
+            // in the CachedMatchedProperties value contain a dead "properties" field.
+            // If there is a dead field the entire cache entry is removed.
+            for (const auto& matchedProperties : cachedProperties->matchedProperties) {
+                if (!visitor->isHeapObjectAlive(matchedProperties.properties)) {
+                    // For now report the cache entry as dead. This might not
+                    // be the final result if in a subsequent call for this entry,
+                    // the "properties" field has been marked via another path.
+                    return true;
+                }
+            }
+        }
+        // At this point none of the entries in the matchedProperties vector
+        // had a dead "properties" field so trace CachedMatchedProperties strongly.
+        // FIXME: traceInCollection is also called from WeakProcessing to check if the entry is dead.
+        // Avoid calling trace in that case by only calling trace when cachedProperties is not yet marked.
+        if (!visitor->isHeapObjectAlive(cachedProperties))
+            visitor->trace(cachedProperties);
+        return false;
+    }
 };
 #endif
 
@@ -65,14 +97,14 @@ public:
     MatchedPropertiesCache();
 
     const CachedMatchedProperties* find(unsigned hash, const StyleResolverState&, const MatchResult&);
-    void add(const RenderStyle*, const RenderStyle* parentStyle, unsigned hash, const MatchResult&);
+    void add(const ComputedStyle&, const ComputedStyle& parentStyle, unsigned hash, const MatchResult&);
 
     void clear();
     void clearViewportDependent();
 
-    static bool isCacheable(const Element*, const RenderStyle*, const RenderStyle* parentStyle);
+    static bool isCacheable(const Element*, const ComputedStyle&, const ComputedStyle& parentStyle);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
 #if ENABLE(OILPAN)
@@ -84,7 +116,7 @@ private:
 
     unsigned m_additionsSinceLastSweep;
 
-    typedef HashMap<unsigned, OwnPtr<CachedMatchedProperties> > Cache;
+    typedef HashMap<unsigned, OwnPtr<CachedMatchedProperties>> Cache;
     Timer<MatchedPropertiesCache> m_sweepTimer;
 #endif
     Cache m_cache;

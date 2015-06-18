@@ -24,12 +24,13 @@
 
 #include <stdint.h>
 #include "avformat.h"
+#include "libavutil/opt.h"
 
 #if HAVE_GLOB
 #include <glob.h>
 #endif
 
-typedef struct {
+typedef struct VideoDemuxData {
     const AVClass *class;  /**< Class for private options. */
     int img_first;
     int img_last;
@@ -54,8 +55,9 @@ typedef struct {
     int ts_from_file;
 } VideoDemuxData;
 
+extern const AVOption ff_img_options[];
+
 int ff_img_read_header(AVFormatContext *s1);
 
 int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt);
-
 #endif

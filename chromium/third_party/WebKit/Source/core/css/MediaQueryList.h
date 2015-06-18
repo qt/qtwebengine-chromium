@@ -21,6 +21,7 @@
 #define MediaQueryList_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "platform/heap/Handle.h"
@@ -40,7 +41,7 @@ class MediaQuerySet;
 // retrieve the current value of the given media query and to add/remove listeners that
 // will be called whenever the value of the query changes.
 
-class MediaQueryList final : public RefCountedWillBeGarbageCollectedFinalized<MediaQueryList>, public EventTargetWithInlineData, public ActiveDOMObject {
+class CORE_EXPORT MediaQueryList final : public EventTargetWithInlineData, public RefCountedWillBeNoBase<MediaQueryList>, public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCounted<MediaQueryList>);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaQueryList);
@@ -63,9 +64,9 @@ public:
     void removeListener(PassRefPtrWillBeRawPtr<MediaQueryListListener>);
 
     // Will return true if a DOM event should be scheduled.
-    bool mediaFeaturesChanged(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >* listenersToNotify);
+    bool mediaFeaturesChanged(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener>>* listenersToNotify);
 
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     // From ActiveDOMObject
     virtual bool hasPendingActivity() const override;
@@ -81,7 +82,7 @@ private:
 
     RefPtrWillBeMember<MediaQueryMatcher> m_matcher;
     RefPtrWillBeMember<MediaQuerySet> m_media;
-    typedef WillBeHeapListHashSet<RefPtrWillBeMember<MediaQueryListListener> > ListenerList;
+    typedef WillBeHeapListHashSet<RefPtrWillBeMember<MediaQueryListListener>> ListenerList;
     ListenerList m_listeners;
     bool m_matchesDirty;
     bool m_matches;

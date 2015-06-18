@@ -31,40 +31,37 @@
 #include "config.h"
 #include "core/clipboard/DataObject.h"
 
+#include "core/clipboard/DraggedIsolatedFileSystem.h"
 #include "core/clipboard/Pasteboard.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
 #include "platform/clipboard/ClipboardUtilities.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
+#include "public/platform/WebDragData.h"
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<DataObject> DataObject::createFromPasteboard(PasteMode pasteMode)
+DataObject* DataObject::createFromPasteboard(PasteMode pasteMode)
 {
-    RefPtrWillBeRawPtr<DataObject> dataObject = create();
-    blink::WebClipboard::Buffer buffer = Pasteboard::generalPasteboard()->buffer();
-    uint64_t sequenceNumber = blink::Platform::current()->clipboard()->sequenceNumber(buffer);
+    DataObject* dataObject = create();
+    WebClipboard::Buffer buffer = Pasteboard::generalPasteboard()->buffer();
+    uint64_t sequenceNumber = Platform::current()->clipboard()->sequenceNumber(buffer);
     bool ignored;
-    blink::WebVector<blink::WebString> webTypes = blink::Platform::current()->clipboard()->readAvailableTypes(buffer, &ignored);
+    WebVector<WebString> webTypes = Platform::current()->clipboard()->readAvailableTypes(buffer, &ignored);
     ListHashSet<String> types;
     for (size_t i = 0; i < webTypes.size(); ++i)
         types.add(webTypes[i]);
-    for (ListHashSet<String>::const_iterator it = types.begin(); it != types.end(); ++it) {
-        if (pasteMode == PlainTextOnly && *it != mimeTypeTextPlain)
+    for (const String& type : types) {
+        if (pasteMode == PlainTextOnly && type != mimeTypeTextPlain)
             continue;
-        dataObject->m_itemList.append(DataObjectItem::createFromPasteboard(*it, sequenceNumber));
+        dataObject->m_itemList.append(DataObjectItem::createFromPasteboard(type, sequenceNumber));
     }
-    return dataObject.release();
+    return dataObject;
 }
 
-PassRefPtrWillBeRawPtr<DataObject> DataObject::create()
+DataObject* DataObject::create()
 {
-    return adoptRefWillBeNoop(new DataObject());
-}
-
-PassRefPtrWillBeRawPtr<DataObject> DataObject::copy() const
-{
-    return adoptRefWillBeNoop(new DataObject(*this));
+    return new DataObject;
 }
 
 DataObject::~DataObject()
@@ -76,7 +73,7 @@ size_t DataObject::length() const
     return m_itemList.size();
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::item(unsigned long index)
+DataObjectItem* DataObject::item(unsigned long index)
 {
     if (index >= length())
         return nullptr;
@@ -95,20 +92,20 @@ void DataObject::clearAll()
     m_itemList.clear();
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::add(const String& data, const String& type)
+DataObjectItem* DataObject::add(const String& data, const String& type)
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = DataObjectItem::createFromString(type, data);
+    DataObjectItem* item = DataObjectItem::createFromString(type, data);
     if (!internalAddStringItem(item))
         return nullptr;
     return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::add(File* file)
+DataObjectItem* DataObject::add(File* file)
 {
     if (!file)
         return nullptr;
 
-    RefPtrWillBeRawPtr<DataObjectItem> item = DataObjectItem::createFromFile(file);
+    DataObjectItem* item = DataObjectItem::createFromFile(file);
     m_itemList.append(item);
     return item;
 }
@@ -161,7 +158,7 @@ void DataObject::setData(const String& type, const String& data)
 
 void DataObject::urlAndTitle(String& url, String* title) const
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = findStringItem(mimeTypeTextURIList);
+    DataObjectItem* item = findStringItem(mimeTypeTextURIList);
     if (!item)
         return;
     url = convertURIListToURL(item->getAsString());
@@ -177,7 +174,7 @@ void DataObject::setURLAndTitle(const String& url, const String& title)
 
 void DataObject::htmlAndBaseURL(String& html, KURL& baseURL) const
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = findStringItem(mimeTypeTextHTML);
+    DataObjectItem* item = findStringItem(mimeTypeTextHTML);
     if (!item)
         return;
     html = item->getAsString();
@@ -220,17 +217,11 @@ void DataObject::addSharedBuffer(const String& name, PassRefPtr<SharedBuffer> bu
 }
 
 DataObject::DataObject()
-    : m_modifierKeyState(0)
+    : m_modifiers(0)
 {
 }
 
-DataObject::DataObject(const DataObject& other)
-    : m_itemList(other.m_itemList)
-    , m_modifierKeyState(0)
-{
-}
-
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::findStringItem(const String& type) const
+DataObjectItem* DataObject::findStringItem(const String& type) const
 {
     for (size_t i = 0; i < m_itemList.size(); ++i) {
         if (m_itemList[i]->kind() == DataObjectItem::StringKind && m_itemList[i]->type() == type)
@@ -239,7 +230,7 @@ PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::findStringItem(const String& 
     return nullptr;
 }
 
-bool DataObject::internalAddStringItem(PassRefPtrWillBeRawPtr<DataObjectItem> item)
+bool DataObject::internalAddStringItem(DataObjectItem* item)
 {
     ASSERT(item->kind() == DataObjectItem::StringKind);
     for (size_t i = 0; i < m_itemList.size(); ++i) {
@@ -251,18 +242,107 @@ bool DataObject::internalAddStringItem(PassRefPtrWillBeRawPtr<DataObjectItem> it
     return true;
 }
 
-void DataObject::internalAddFileItem(PassRefPtrWillBeRawPtr<DataObjectItem> item)
+void DataObject::internalAddFileItem(DataObjectItem* item)
 {
     ASSERT(item->kind() == DataObjectItem::FileKind);
     m_itemList.append(item);
 }
 
-void DataObject::trace(Visitor* visitor)
+DEFINE_TRACE(DataObject)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_itemList);
     HeapSupplementable<DataObject>::trace(visitor);
-#endif
+}
+
+DataObject* DataObject::create(WebDragData data)
+{
+    DataObject* dataObject = create();
+
+    WebVector<WebDragData::Item> items = data.items();
+    for (unsigned i = 0; i < items.size(); ++i) {
+        WebDragData::Item item = items[i];
+
+        switch (item.storageType) {
+        case WebDragData::Item::StorageTypeString:
+            if (String(item.stringType) == mimeTypeTextURIList)
+                dataObject->setURLAndTitle(item.stringData, item.title);
+            else if (String(item.stringType) == mimeTypeTextHTML)
+                dataObject->setHTMLAndBaseURL(item.stringData, item.baseURL);
+            else
+                dataObject->setData(item.stringType, item.stringData);
+            break;
+        case WebDragData::Item::StorageTypeFilename:
+            dataObject->addFilename(item.filenameData, item.displayNameData);
+            break;
+        case WebDragData::Item::StorageTypeBinaryData:
+            // This should never happen when dragging in.
+            break;
+        case WebDragData::Item::StorageTypeFileSystemFile:
+            {
+                // FIXME: The file system URL may refer a user visible file, see http://crbug.com/429077
+                FileMetadata fileMetadata;
+                fileMetadata.length = item.fileSystemFileSize;
+                dataObject->add(File::createForFileSystemFile(item.fileSystemURL, fileMetadata, File::IsNotUserVisible));
+            }
+            break;
+        }
+    }
+
+    if (!data.filesystemId().isNull())
+        DraggedIsolatedFileSystem::prepareForDataObject(dataObject, data.filesystemId());
+    return dataObject;
+}
+
+WebDragData DataObject::toWebDragData()
+{
+    WebDragData data;
+    data.initialize();
+    WebVector<WebDragData::Item> itemList(length());
+
+    for (size_t i = 0; i < length(); ++i) {
+        DataObjectItem* originalItem = item(i);
+        WebDragData::Item item;
+        if (originalItem->kind() == DataObjectItem::StringKind) {
+            item.storageType = WebDragData::Item::StorageTypeString;
+            item.stringType = originalItem->type();
+            item.stringData = originalItem->getAsString();
+        } else if (originalItem->kind() == DataObjectItem::FileKind) {
+            if (originalItem->sharedBuffer()) {
+                item.storageType = WebDragData::Item::StorageTypeBinaryData;
+                item.binaryData = originalItem->sharedBuffer();
+            } else if (originalItem->isFilename()) {
+                Blob* blob = originalItem->getAsFile();
+                if (blob->isFile()) {
+                    File* file = toFile(blob);
+                    if (file->hasBackingFile()) {
+                        item.storageType = WebDragData::Item::StorageTypeFilename;
+                        item.filenameData = file->path();
+                        item.displayNameData = file->name();
+                    } else if (!file->fileSystemURL().isEmpty()) {
+                        item.storageType = WebDragData::Item::StorageTypeFileSystemFile;
+                        item.fileSystemURL = file->fileSystemURL();
+                        item.fileSystemFileSize = file->size();
+                    } else {
+                        // FIXME: support dragging constructed Files across renderers, see http://crbug.com/394955
+                        item.storageType = WebDragData::Item::StorageTypeString;
+                        item.stringType = "text/plain";
+                        item.stringData = file->name();
+                    }
+                } else {
+                    ASSERT_NOT_REACHED();
+                }
+            } else {
+                ASSERT_NOT_REACHED();
+            }
+        } else {
+            ASSERT_NOT_REACHED();
+        }
+        item.title = originalItem->title();
+        item.baseURL = originalItem->baseURL();
+        itemList[i] = item;
+    }
+    data.swapItems(itemList);
+    return data;
 }
 
 } // namespace blink

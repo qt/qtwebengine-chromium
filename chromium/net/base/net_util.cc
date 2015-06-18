@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <set>
 
 #include "build/build_config.h"
@@ -257,27 +258,20 @@ bool IsCanonicalizedHostCompliant(const std::string& host) {
 
   bool in_component = false;
   bool most_recent_component_started_alphanumeric = false;
-  bool last_char_was_underscore = false;
 
   for (std::string::const_iterator i(host.begin()); i != host.end(); ++i) {
     const char c = *i;
     if (!in_component) {
       most_recent_component_started_alphanumeric = IsHostCharAlphanumeric(c);
-      if (!most_recent_component_started_alphanumeric && (c != '-'))
-        return false;
-      in_component = true;
-    } else {
-      if (c == '.') {
-        if (last_char_was_underscore)
-          return false;
-        in_component = false;
-      } else if (IsHostCharAlphanumeric(c) || (c == '-')) {
-        last_char_was_underscore = false;
-      } else if (c == '_') {
-        last_char_was_underscore = true;
-      } else {
+      if (!most_recent_component_started_alphanumeric && (c != '-') &&
+          (c != '_')) {
         return false;
       }
+      in_component = true;
+    } else if (c == '.') {
+      in_component = false;
+    } else if (!IsHostCharAlphanumeric(c) && (c != '-') && (c != '_')) {
+      return false;
     }
   }
 
@@ -294,6 +288,10 @@ base::string16 StripWWWFromHost(const GURL& url) {
   return StripWWW(base::ASCIIToUTF16(url.host()));
 }
 
+bool IsPortValid(int port) {
+  return port >= 0 && port <= std::numeric_limits<uint16>::max();
+}
+
 bool IsPortAllowedByDefault(int port) {
   int array_size = arraysize(kRestrictedPorts);
   for (int i = 0; i < array_size; i++) {
@@ -301,7 +299,7 @@ bool IsPortAllowedByDefault(int port) {
       return false;
     }
   }
-  return true;
+  return IsPortValid(port);
 }
 
 bool IsPortAllowedByFtp(int port) {
@@ -568,7 +566,7 @@ bool GetIPAddressFromSockAddr(const struct sockaddr* sock_addr,
     *address = reinterpret_cast<const uint8*>(&addr->btAddr);
     *address_len = kBluetoothAddressSize;
     if (port)
-      *port = addr->port;
+      *port = static_cast<uint16>(addr->port);
     return true;
   }
 #endif
@@ -976,10 +974,9 @@ int GetPortFromSockaddr(const struct sockaddr* address, socklen_t address_len) {
 }
 
 bool IsLocalhost(const std::string& host) {
-  if (host == "localhost" ||
-      host == "localhost.localdomain" ||
-      host == "localhost6" ||
-      host == "localhost6.localdomain6")
+  if (host == "localhost" || host == "localhost.localdomain" ||
+      host == "localhost6" || host == "localhost6.localdomain6" ||
+      IsLocalhostTLD(host))
     return true;
 
   IPAddressNumber ip_number;
@@ -1009,9 +1006,49 @@ bool IsLocalhost(const std::string& host) {
   return false;
 }
 
+bool IsLocalhostTLD(const std::string& host) {
+  const char kLocalhostTLD[] = ".localhost";
+  const size_t kLocalhostTLDLength = arraysize(kLocalhostTLD) - 1;
+
+  if (host.empty())
+    return false;
+
+  size_t host_len = host.size();
+  if (*host.rbegin() == '.')
+    --host_len;
+  if (host_len < kLocalhostTLDLength)
+    return false;
+
+  const char* host_suffix = host.data() + host_len - kLocalhostTLDLength;
+  return base::strncasecmp(host_suffix, kLocalhostTLD, kLocalhostTLDLength) ==
+         0;
+}
+
+bool HasGoogleHost(const GURL& url) {
+  static const char* kGoogleHostSuffixes[] = {
+      ".google.com",
+      ".youtube.com",
+      ".gmail.com",
+      ".doubleclick.net",
+      ".gstatic.com",
+      ".googlevideo.com",
+      ".googleusercontent.com",
+      ".googlesyndication.com",
+      ".google-analytics.com",
+      ".googleadservices.com",
+      ".googleapis.com",
+      ".ytimg.com",
+  };
+  const std::string& host = url.host();
+  for (const char* suffix : kGoogleHostSuffixes) {
+    if (EndsWith(host, suffix, false))
+      return true;
+  }
+  return false;
+}
+
 NetworkInterface::NetworkInterface()
-    : type(NetworkChangeNotifier::CONNECTION_UNKNOWN),
-      network_prefix(0) {
+    : type(NetworkChangeNotifier::CONNECTION_UNKNOWN), prefix_length(0) {
 }
 
 NetworkInterface::NetworkInterface(const std::string& name,
@@ -1019,14 +1056,14 @@ NetworkInterface::NetworkInterface(const std::string& name,
                                    uint32 interface_index,
                                    NetworkChangeNotifier::ConnectionType type,
                                    const IPAddressNumber& address,
-                                   uint32 network_prefix,
+                                   uint32 prefix_length,
                                    int ip_address_attributes)
     : name(name),
       friendly_name(friendly_name),
       interface_index(interface_index),
       type(type),
       address(address),
-      network_prefix(network_prefix),
+      prefix_length(prefix_length),
       ip_address_attributes(ip_address_attributes) {
 }
 

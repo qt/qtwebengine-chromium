@@ -29,14 +29,21 @@ struct TextureSignature {
   GLint level_;
   GLenum min_filter_;
   GLenum mag_filter_;
+  GLenum wrap_r_;
   GLenum wrap_s_;
   GLenum wrap_t_;
   GLenum usage_;
   GLenum internal_format_;
+  GLenum compare_func_;
+  GLenum compare_mode_;
   GLsizei width_;
   GLsizei height_;
   GLsizei depth_;
+  GLfloat max_lod_;
+  GLfloat min_lod_;
+  GLint base_level_;
   GLint border_;
+  GLint max_level_;
   GLenum format_;
   GLenum type_;
   bool has_image_;
@@ -52,14 +59,21 @@ struct TextureSignature {
                    GLint level,
                    GLenum min_filter,
                    GLenum mag_filter,
+                   GLenum wrap_r,
                    GLenum wrap_s,
                    GLenum wrap_t,
                    GLenum usage,
                    GLenum internal_format,
+                   GLenum compare_func,
+                   GLenum compare_mode,
                    GLsizei width,
                    GLsizei height,
                    GLsizei depth,
+                   GLfloat max_lod,
+                   GLfloat min_lod,
+                   GLint base_level,
                    GLint border,
+                   GLint max_level,
                    GLenum format,
                    GLenum type,
                    bool has_image,
@@ -71,14 +85,21 @@ struct TextureSignature {
     level_ = level;
     min_filter_ = min_filter;
     mag_filter_ = mag_filter;
+    wrap_r_ = wrap_r;
     wrap_s_ = wrap_s;
     wrap_t_ = wrap_t;
     usage_ = usage;
     internal_format_ = internal_format;
+    compare_func_ = compare_func;
+    compare_mode_ = compare_mode;
     width_ = width;
     height_ = height;
     depth_ = depth;
+    max_lod_ = max_lod;
+    min_lod_ = min_lod;
+    base_level_ = base_level;
     border_ = border;
+    max_level_ = max_level;
     format_ = format;
     type_ = type;
     has_image_ = has_image;
@@ -133,10 +154,17 @@ Texture::Texture(GLuint service_id)
       target_(0),
       min_filter_(GL_NEAREST_MIPMAP_LINEAR),
       mag_filter_(GL_LINEAR),
+      wrap_r_(GL_REPEAT),
       wrap_s_(GL_REPEAT),
       wrap_t_(GL_REPEAT),
       usage_(GL_NONE),
       pool_(GL_TEXTURE_POOL_UNMANAGED_CHROMIUM),
+      compare_func_(GL_LEQUAL),
+      compare_mode_(GL_NONE),
+      max_lod_(1000.0f),
+      min_lod_(-1000.0f),
+      base_level_(0),
+      max_level_(1000),
       max_level_set_(-1),
       texture_complete_(false),
       texture_mips_dirty_(false),
@@ -305,14 +333,21 @@ void Texture::AddToSignature(
                                   level,
                                   min_filter_,
                                   mag_filter_,
+                                  wrap_r_,
                                   wrap_s_,
                                   wrap_t_,
                                   usage_,
                                   info.internal_format,
+                                  compare_func_,
+                                  compare_mode_,
                                   info.width,
                                   info.height,
                                   info.depth,
+                                  max_lod_,
+                                  min_lod_,
+                                  base_level_,
                                   info.border,
+                                  max_level_,
                                   info.format,
                                   info.type,
                                   info.image.get() != NULL,
@@ -626,7 +661,7 @@ void Texture::SetLevelInfo(
 
   estimated_size_ -= info.estimated_size;
   GLES2Util::ComputeImageDataSizes(
-      width, height, format, type, 4, &info.estimated_size, NULL, NULL);
+      width, height, 1, format, type, 4, &info.estimated_size, NULL, NULL);
   estimated_size_ += info.estimated_size;
 
   UpdateMipCleared(&info, cleared);
@@ -647,28 +682,35 @@ bool Texture::ValidForTexture(
     GLint level,
     GLint xoffset,
     GLint yoffset,
+    GLint zoffset,
     GLsizei width,
     GLsizei height,
+    GLsizei depth,
     GLenum type) const {
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
   if (level >= 0 && face_index < face_infos_.size() &&
       static_cast<size_t>(level) < face_infos_[face_index].level_infos.size()) {
     const LevelInfo& info = face_infos_[face_index].level_infos[level];
-    int32 right;
-    int32 top;
-    return SafeAddInt32(xoffset, width, &right) &&
-           SafeAddInt32(yoffset, height, &top) &&
+    int32 max_x;
+    int32 max_y;
+    int32 max_z;
+    return SafeAddInt32(xoffset, width, &max_x) &&
+           SafeAddInt32(yoffset, height, &max_y) &&
+           SafeAddInt32(zoffset, depth, &max_z) &&
            xoffset >= 0 &&
            yoffset >= 0 &&
-           right <= info.width &&
-           top <= info.height &&
+           zoffset >= 0 &&
+           max_x <= info.width &&
+           max_y <= info.height &&
+           max_z <= info.depth &&
            type == info.type;
   }
   return false;
 }
 
 bool Texture::GetLevelSize(
-    GLint target, GLint level, GLsizei* width, GLsizei* height) const {
+    GLint target, GLint level,
+    GLsizei* width, GLsizei* height, GLsizei* depth) const {
   DCHECK(width);
   DCHECK(height);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
@@ -678,6 +720,8 @@ bool Texture::GetLevelSize(
     if (info.target != 0) {
       *width = info.width;
       *height = info.height;
+      if (depth)
+        *depth = info.depth;
       return true;
     }
   }
@@ -736,6 +780,12 @@ GLenum Texture::SetParameteri(
       pool_ = param;
       GetMemTracker()->TrackMemAlloc(estimated_size());
       break;
+    case GL_TEXTURE_WRAP_R:
+      if (!feature_info->validators()->texture_wrap_mode.IsValid(param)) {
+        return GL_INVALID_ENUM;
+      }
+      wrap_r_ = param;
+      break;
     case GL_TEXTURE_WRAP_S:
       if (!feature_info->validators()->texture_wrap_mode.IsValid(param)) {
         return GL_INVALID_ENUM;
@@ -747,6 +797,30 @@ GLenum Texture::SetParameteri(
         return GL_INVALID_ENUM;
       }
       wrap_t_ = param;
+      break;
+    case GL_TEXTURE_COMPARE_FUNC:
+      if (!feature_info->validators()->texture_compare_func.IsValid(param)) {
+        return GL_INVALID_ENUM;
+      }
+      compare_func_ = param;
+      break;
+    case GL_TEXTURE_COMPARE_MODE:
+      if (!feature_info->validators()->texture_compare_mode.IsValid(param)) {
+        return GL_INVALID_ENUM;
+      }
+      compare_mode_ = param;
+      break;
+    case GL_TEXTURE_BASE_LEVEL:
+      if (param < 0) {
+        return GL_INVALID_VALUE;
+      }
+      base_level_ = param;
+      break;
+    case GL_TEXTURE_MAX_LEVEL:
+      if (param < 0) {
+        return GL_INVALID_VALUE;
+      }
+      max_level_ = param;
       break;
     case GL_TEXTURE_MAX_ANISOTROPY_EXT:
       if (param < 1) {
@@ -782,6 +856,12 @@ GLenum Texture::SetParameterf(
         GLint iparam = static_cast<GLint>(param);
         return SetParameteri(feature_info, pname, iparam);
       }
+    case GL_TEXTURE_MIN_LOD:
+      min_lod_ = param;
+      break;
+    case GL_TEXTURE_MAX_LOD:
+      max_lod_ = param;
+      break;
     case GL_TEXTURE_MAX_ANISOTROPY_EXT:
       if (param < 1.f) {
         return GL_INVALID_VALUE;
@@ -944,8 +1024,8 @@ bool Texture::ClearLevel(
   // but only the decoder knows all the state (like unpack_alignment_) that's
   // needed to be able to call GL correctly.
   bool cleared = decoder->ClearLevel(
-      service_id_, target_, info.target, info.level, info.internal_format,
-      info.format, info.type, info.width, info.height, immutable_);
+      this, info.target, info.level, info.internal_format, info.format,
+      info.type, info.width, info.height, immutable_);
   UpdateMipCleared(&info, cleared);
   return info.cleared;
 }
@@ -1028,6 +1108,8 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
                                FeatureInfo* feature_info,
                                GLint max_texture_size,
                                GLint max_cube_map_texture_size,
+                               GLint max_rectangle_texture_size,
+                               GLint max_3d_texture_size,
                                bool use_default_textures)
     : memory_tracker_managed_(
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
@@ -1037,6 +1119,8 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
       framebuffer_manager_(NULL),
       max_texture_size_(max_texture_size),
       max_cube_map_texture_size_(max_cube_map_texture_size),
+      max_rectangle_texture_size_(max_rectangle_texture_size),
+      max_3d_texture_size_(max_3d_texture_size),
       max_levels_(ComputeMipMapCount(GL_TEXTURE_2D,
                                      max_texture_size,
                                      max_texture_size,
@@ -1045,6 +1129,11 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
                                               max_cube_map_texture_size,
                                               max_cube_map_texture_size,
                                               max_cube_map_texture_size)),
+      max_3d_levels_(ComputeMipMapCount(GL_TEXTURE_3D,
+                                        // Same as GL_TEXTURE_2D_ARRAY
+                                        max_3d_texture_size,
+                                        max_3d_texture_size,
+                                        max_3d_texture_size)),
       use_default_textures_(use_default_textures),
       num_unrenderable_textures_(0),
       num_unsafe_textures_(0),
@@ -1547,6 +1636,12 @@ TextureRef* TextureManager::GetTextureInfoForTarget(
     case GL_TEXTURE_RECTANGLE_ARB:
       texture = unit.bound_texture_rectangle_arb.get();
       break;
+    case GL_TEXTURE_3D:
+      texture = unit.bound_texture_3d.get();
+      break;
+    case GL_TEXTURE_2D_ARRAY:
+      texture = unit.bound_texture_2d_array.get();
+      break;
     default:
       NOTREACHED();
       return NULL;
@@ -1642,8 +1737,8 @@ void TextureManager::ValidateAndDoTexImage2D(
 }
 
 GLenum TextureManager::AdjustTexFormat(GLenum format) const {
-  // TODO: GLES 3 allows for internal format and format to differ. This logic
-  // may need to change as a result.
+  // TODO(bajones): GLES 3 allows for internal format and format to differ.
+  // This logic may need to change as a result.
   if (gfx::GetGLImplementation() == gfx::kGLImplementationDesktopGL) {
     if (format == GL_SRGB_EXT)
       return GL_RGB;
@@ -1665,7 +1760,8 @@ void TextureManager::DoTexImage2D(
   GLenum tex_type = 0;
   GLenum tex_format = 0;
   bool level_is_same =
-      texture->GetLevelSize(args.target, args.level, &tex_width, &tex_height) &&
+      texture->GetLevelSize(
+          args.target, args.level, &tex_width, &tex_height, nullptr) &&
       texture->GetLevelType(args.target, args.level, &tex_type, &tex_format) &&
       args.width == tex_width && args.height == tex_height &&
       args.type == tex_type && args.format == tex_format;
@@ -1716,13 +1812,13 @@ void TextureManager::DoTexImage2D(
 ScopedTextureUploadTimer::ScopedTextureUploadTimer(
     DecoderTextureState* texture_state)
     : texture_state_(texture_state),
-      begin_time_(base::TimeTicks::HighResNow()) {
+      begin_time_(base::TimeTicks::Now()) {
 }
 
 ScopedTextureUploadTimer::~ScopedTextureUploadTimer() {
   texture_state_->texture_upload_count++;
   texture_state_->total_texture_upload_time +=
-      base::TimeTicks::HighResNow() - begin_time_;
+      base::TimeTicks::Now() - begin_time_;
 }
 
 }  // namespace gles2

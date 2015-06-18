@@ -38,8 +38,17 @@ class WebTransformAnimationCurveImpl
                    double y1,
                    double x2,
                    double y2);
-  virtual void setTimingFunction(TimingFunctionType type);
-  virtual void setTimingFunction(double x1, double y1, double x2, double y2);
+  virtual void add(const blink::WebTransformKeyframe& keyframe,
+                   int steps,
+                   float stepsStartOffset);
+  virtual void setLinearTimingFunction();
+  virtual void setCubicBezierTimingFunction(TimingFunctionType);
+  virtual void setCubicBezierTimingFunction(double x1,
+                                            double y1,
+                                            double x2,
+                                            double y2);
+  virtual void setStepsTimingFunction(int number_of_steps,
+                                      float steps_start_offset);
 
   scoped_ptr<cc::AnimationCurve> CloneToAnimationCurve() const;
 

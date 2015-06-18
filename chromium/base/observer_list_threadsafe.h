@@ -14,9 +14,10 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/platform_thread.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -111,7 +112,7 @@ class ObserverListThreadSafe
     if (!base::MessageLoop::current())
       return;
 
-    ObserverList<ObserverType>* list = NULL;
+    ObserverList<ObserverType>* list = nullptr;
     base::PlatformThreadId thread_id = base::PlatformThread::CurrentId();
     {
       base::AutoLock lock(list_lock_);
@@ -128,8 +129,8 @@ class ObserverListThreadSafe
   // If the observer to be removed is in the list, RemoveObserver MUST
   // be called from the same thread which called AddObserver.
   void RemoveObserver(ObserverType* obs) {
-    ObserverListContext* context = NULL;
-    ObserverList<ObserverType>* list = NULL;
+    ObserverListContext* context = nullptr;
+    ObserverList<ObserverType>* list = nullptr;
     base::PlatformThreadId thread_id = base::PlatformThread::CurrentId();
     {
       base::AutoLock lock(list_lock_);
@@ -167,40 +168,24 @@ class ObserverListThreadSafe
   // Note, these calls are effectively asynchronous.  You cannot assume
   // that at the completion of the Notify call that all Observers have
   // been Notified.  The notification may still be pending delivery.
-  template <class Method>
-  void Notify(Method m) {
-    UnboundMethod<ObserverType, Method, Tuple0> method(m, MakeTuple());
-    Notify<Method, Tuple0>(method);
-  }
+  template <class Method, class... Params>
+  void Notify(const tracked_objects::Location& from_here,
+              Method m,
+              const Params&... params) {
+    UnboundMethod<ObserverType, Method, Tuple<Params...>> method(
+        m, MakeTuple(params...));
 
-  template <class Method, class A>
-  void Notify(Method m, const A& a) {
-    UnboundMethod<ObserverType, Method, Tuple1<A> > method(m, MakeTuple(a));
-    Notify<Method, Tuple1<A> >(method);
+    base::AutoLock lock(list_lock_);
+    for (const auto& entry : observer_lists_) {
+      ObserverListContext* context = entry.second;
+      context->task_runner->PostTask(
+          from_here,
+          base::Bind(
+              &ObserverListThreadSafe<ObserverType>::template NotifyWrapper<
+                  Method, Tuple<Params...>>,
+              this, context, method));
+    }
   }
-
-  template <class Method, class A, class B>
-  void Notify(Method m, const A& a, const B& b) {
-    UnboundMethod<ObserverType, Method, Tuple2<A, B> > method(
-        m, MakeTuple(a, b));
-    Notify<Method, Tuple2<A, B> >(method);
-  }
-
-  template <class Method, class A, class B, class C>
-  void Notify(Method m, const A& a, const B& b, const C& c) {
-    UnboundMethod<ObserverType, Method, Tuple3<A, B, C> > method(
-        m, MakeTuple(a, b, c));
-    Notify<Method, Tuple3<A, B, C> >(method);
-  }
-
-  template <class Method, class A, class B, class C, class D>
-  void Notify(Method m, const A& a, const B& b, const C& c, const D& d) {
-    UnboundMethod<ObserverType, Method, Tuple4<A, B, C, D> > method(
-        m, MakeTuple(a, b, c, d));
-    Notify<Method, Tuple4<A, B, C, D> >(method);
-  }
-
-  // TODO(mbelshe):  Add more wrappers for Notify() with more arguments.
 
  private:
   // See comment above ObserverListThreadSafeTraits' definition.
@@ -208,31 +193,17 @@ class ObserverListThreadSafe
 
   struct ObserverListContext {
     explicit ObserverListContext(NotificationType type)
-        : loop(base::MessageLoopProxy::current()),
-          list(type) {
-    }
+        : task_runner(base::ThreadTaskRunnerHandle::Get()), list(type) {}
 
-    scoped_refptr<base::MessageLoopProxy> loop;
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner;
     ObserverList<ObserverType> list;
 
+   private:
     DISALLOW_COPY_AND_ASSIGN(ObserverListContext);
   };
 
   ~ObserverListThreadSafe() {
     STLDeleteValues(&observer_lists_);
-  }
-
-  template <class Method, class Params>
-  void Notify(const UnboundMethod<ObserverType, Method, Params>& method) {
-    base::AutoLock lock(list_lock_);
-    typename ObserversListMap::iterator it;
-    for (it = observer_lists_.begin(); it != observer_lists_.end(); ++it) {
-      ObserverListContext* context = (*it).second;
-      context->loop->PostTask(
-          FROM_HERE,
-          base::Bind(&ObserverListThreadSafe<ObserverType>::
-              template NotifyWrapper<Method, Params>, this, context, method));
-    }
   }
 
   // Wrapper which is called to fire the notifications for each thread's
@@ -241,7 +212,6 @@ class ObserverListThreadSafe
   template <class Method, class Params>
   void NotifyWrapper(ObserverListContext* context,
       const UnboundMethod<ObserverType, Method, Params>& method) {
-
     // Check that this list still needs notifications.
     {
       base::AutoLock lock(list_lock_);
@@ -257,9 +227,9 @@ class ObserverListThreadSafe
     }
 
     {
-      typename ObserverList<ObserverType>::Iterator it(context->list);
+      typename ObserverList<ObserverType>::Iterator it(&context->list);
       ObserverType* obs;
-      while ((obs = it.GetNext()) != NULL)
+      while ((obs = it.GetNext()) != nullptr)
         method.Run(obs);
     }
 

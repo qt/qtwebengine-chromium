@@ -8,12 +8,13 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "device/bluetooth/bluetooth_adapter.h"
+#include "device/bluetooth/bluetooth_export.h"
 
 namespace device {
 
 // A factory class for building a Bluetooth adapter on platforms where Bluetooth
 // is available.
-class BluetoothAdapterFactory {
+class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterFactory {
  public:
   typedef base::Callback<void(scoped_refptr<BluetoothAdapter> adapter)>
       AdapterCallback;
@@ -27,6 +28,12 @@ class BluetoothAdapterFactory {
   // instance passed only once the adapter is fully initialized and ready to
   // use.
   static void GetAdapter(const AdapterCallback& callback);
+
+#if defined(OS_CHROMEOS)
+  // Calls |BluetoothAdapter::Shutdown| on the adapter if
+  // present.
+  static void Shutdown();
+#endif
 
   // Sets the shared instance of the default adapter for testing purposes only,
   // no reference is retained after completion of the call, removing the last

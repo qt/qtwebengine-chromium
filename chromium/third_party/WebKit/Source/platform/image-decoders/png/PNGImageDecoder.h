@@ -34,41 +34,34 @@ namespace blink {
 
 class PNGImageReader;
 
-// This class decodes the PNG image format.
 class PLATFORM_EXPORT PNGImageDecoder : public ImageDecoder {
     WTF_MAKE_NONCOPYABLE(PNGImageDecoder);
 public:
     PNGImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
     virtual ~PNGImageDecoder();
 
-    // ImageDecoder
+    // ImageDecoder:
     virtual String filenameExtension() const override { return "png"; }
-    virtual bool isSizeAvailable() override;
     virtual bool hasColorProfile() const override { return m_hasColorProfile; }
-    virtual ImageFrame* frameBufferAtIndex(size_t) override;
-    // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
-    // accessing deleted memory, especially when calling this from inside
-    // PNGImageReader!
-    virtual bool setFailed() override;
 
     // Callbacks from libpng
     void headerAvailable();
-    void rowAvailable(unsigned char* rowBuffer, unsigned rowIndex, int interlacePass);
-    void pngComplete();
+    void rowAvailable(unsigned char* row, unsigned rowIndex, int);
+    void complete();
 
-    bool isComplete() const
-    {
-        return !m_frameBufferCache.isEmpty() && (m_frameBufferCache.first().status() == ImageFrame::FrameComplete);
-    }
+    bool isComplete() const;
 
 private:
+    // ImageDecoder:
+    virtual void decodeSize() override { decode(true); }
+    virtual void decode(size_t) override { decode(false); }
+
     // Decodes the image.  If |onlySize| is true, stops decoding after
     // calculating the image size.  If decoding fails but there is no more
     // data coming, sets the "decode failure" flag.
     void decode(bool onlySize);
 
     OwnPtr<PNGImageReader> m_reader;
-    bool m_doNothingOnFailure;
     bool m_hasColorProfile;
 };
 

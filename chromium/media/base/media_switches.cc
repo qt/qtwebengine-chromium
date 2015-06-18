@@ -9,22 +9,20 @@ namespace switches {
 // Allow users to specify a custom buffer size for debugging purpose.
 const char kAudioBufferSize[] = "audio-buffer-size";
 
+// Disables the new vsync driven video renderering path.
+const char kDisableNewVideoRenderer[] = "disable-new-video-renderer";
+
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
-
-// Bypass autodetection of the upper limit on resolution of streams that can
-// be hardware decoded.
-const char kIgnoreResolutionLimitsForAcceleratedVideoDecode[] =
-    "ignore-resolution-limits-for-accelerated-video-decode";
 
 #if defined(OS_ANDROID)
 // Disables the infobar popup for accessing protected media identifier.
 const char kDisableInfobarForProtectedMediaIdentifier[] =
     "disable-infobar-for-protected-media-identifier";
 
-// Enables use of non-compositing MediaDrm decoding by default for Encrypted
-// Media Extensions implementation.
-const char kMediaDrmEnableNonCompositing[] = "mediadrm-enable-non-compositing";
+// Sets the MediaSource player that uses the separate media thread
+const char kEnableMediaThreadForMediaPlayback[] =
+    "enable-media-thread-for-media-playback";
 #endif
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
@@ -88,13 +86,36 @@ const char kWaveOutBuffers[] = "waveout-buffers";
 const char kUseCras[] = "use-cras";
 #endif
 
+// Enables the audio thread hang monitor.  Allows us to find users in the field
+// who have stuck audio threads.  See crbug.com/422522 and crbug.com/478932.
+// TODO(dalecurtis): This should be removed once those issues are resolved.
+const char kEnableAudioHangMonitor[] = "enable-audio-hang-monitor";
+
 // Use fake device for Media Stream to replace actual camera and microphone.
 const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
 
-// Use a raw video file as fake video capture device.
+// Use an .y4m file to play as the webcam. See the comments in
+// media/video/capture/file_video_capture_device.h for more details.
 const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";
+
+// Play a .wav file as the microphone. Note that for WebRTC calls we'll treat
+// the bits as if they came from the microphone, which means you should disable
+// audio processing (lest your audio file will play back distorted). The input
+// file is converted to suit Chrome's audio buses if necessary, so most sane
+// .wav files should work.
+const char kUseFileForFakeAudioCapture[] = "use-file-for-fake-audio-capture";
 
 // Enables support for inband text tracks in media content.
 const char kEnableInbandTextTracks[] = "enable-inband-text-tracks";
+
+// When running tests on a system without the required hardware or libraries,
+// this flag will cause the tests to fail. Otherwise, they silently succeed.
+const char kRequireAudioHardwareForTesting[] =
+    "require-audio-hardware-for-testing";
+
+// Allows clients to override the threshold for when the media renderer will
+// declare the underflow state for the video stream when audio is present.
+// TODO(dalecurtis): Remove once experiments for http://crbug.com/470940 finish.
+const char kVideoUnderflowThresholdMs[] = "video-underflow-threshold-ms";
 
 }  // namespace switches

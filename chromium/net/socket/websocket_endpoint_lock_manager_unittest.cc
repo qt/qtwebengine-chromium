@@ -4,6 +4,9 @@
 
 #include "net/socket/websocket_endpoint_lock_manager.h"
 
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/time/time.h"
 #include "net/base/net_errors.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_test_util.h"
@@ -51,6 +54,14 @@ class FakeStreamSocket : public StreamSocket {
 
   bool GetSSLInfo(SSLInfo* ssl_info) override { return false; }
 
+  void GetConnectionAttempts(ConnectionAttempts* out) const override {
+    out->clear();
+  }
+
+  void ClearConnectionAttempts() override {}
+
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
+
   // Socket implementation
   int Read(IOBuffer* buf,
            int buf_len,
@@ -89,11 +100,30 @@ class FakeWaiter : public WebSocketEndpointLockManager::Waiter {
   bool called_;
 };
 
+class BlockingWaiter : public FakeWaiter {
+ public:
+  void WaitForLock() {
+    while (!called()) {
+      run_loop_.Run();
+    }
+  }
+
+  void GotEndpointLock() override {
+    FakeWaiter::GotEndpointLock();
+    run_loop_.Quit();
+  }
+
+ private:
+  base::RunLoop run_loop_;
+};
+
 class WebSocketEndpointLockManagerTest : public ::testing::Test {
  protected:
   WebSocketEndpointLockManagerTest()
       : instance_(WebSocketEndpointLockManager::GetInstance()) {}
   ~WebSocketEndpointLockManagerTest() override {
+    // Permit any pending asynchronous unlock operations to complete.
+    RunUntilIdle();
     // If this check fails then subsequent tests may fail.
     CHECK(instance_->IsEmpty());
   }
@@ -109,10 +139,14 @@ class WebSocketEndpointLockManagerTest : public ::testing::Test {
   void UnlockDummyEndpoint(int times) {
     for (int i = 0; i < times; ++i) {
       instance()->UnlockEndpoint(DummyEndpoint());
+      RunUntilIdle();
     }
   }
 
+  static void RunUntilIdle() { base::RunLoop().RunUntilIdle(); }
+
   WebSocketEndpointLockManager* const instance_;
+  ScopedWebSocketEndpointZeroUnlockDelay zero_unlock_delay_;
 };
 
 TEST_F(WebSocketEndpointLockManagerTest, GetInstanceWorks) {
@@ -131,6 +165,7 @@ TEST_F(WebSocketEndpointLockManagerTest, LockEndpointReturnsOkOnce) {
 TEST_F(WebSocketEndpointLockManagerTest, GotEndpointLockNotCalledOnOk) {
   FakeWaiter waiter;
   EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &waiter));
+  RunUntilIdle();
   EXPECT_FALSE(waiter.called());
 
   UnlockDummyEndpoint(1);
@@ -141,6 +176,7 @@ TEST_F(WebSocketEndpointLockManagerTest, GotEndpointLockNotCalledImmediately) {
   EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &waiters[0]));
   EXPECT_EQ(ERR_IO_PENDING,
             instance()->LockEndpoint(DummyEndpoint(), &waiters[1]));
+  RunUntilIdle();
   EXPECT_FALSE(waiters[1].called());
 
   UnlockDummyEndpoint(2);
@@ -152,6 +188,7 @@ TEST_F(WebSocketEndpointLockManagerTest, GotEndpointLockCalledWhenUnlocked) {
   EXPECT_EQ(ERR_IO_PENDING,
             instance()->LockEndpoint(DummyEndpoint(), &waiters[1]));
   instance()->UnlockEndpoint(DummyEndpoint());
+  RunUntilIdle();
   EXPECT_TRUE(waiters[1].called());
 
   UnlockDummyEndpoint(1);
@@ -169,6 +206,7 @@ TEST_F(WebSocketEndpointLockManagerTest,
   }
 
   instance()->UnlockEndpoint(DummyEndpoint());
+  RunUntilIdle();
 
   FakeWaiter second_lock_holder;
   EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &second_lock_holder));
@@ -185,6 +223,7 @@ TEST_F(WebSocketEndpointLockManagerTest, RememberSocketWorks) {
 
   instance()->RememberSocket(&dummy_socket, DummyEndpoint());
   instance()->UnlockSocket(&dummy_socket);
+  RunUntilIdle();
   EXPECT_TRUE(waiters[1].called());
 
   UnlockDummyEndpoint(1);
@@ -199,6 +238,7 @@ TEST_F(WebSocketEndpointLockManagerTest, SocketAssociationForgottenOnUnlock) {
   EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &waiter));
   instance()->RememberSocket(&dummy_socket, DummyEndpoint());
   instance()->UnlockEndpoint(DummyEndpoint());
+  RunUntilIdle();
   EXPECT_TRUE(instance()->IsEmpty());
 }
 
@@ -213,9 +253,74 @@ TEST_F(WebSocketEndpointLockManagerTest, NextWaiterCanCallRememberSocketAgain) {
 
   instance()->RememberSocket(&dummy_sockets[0], DummyEndpoint());
   instance()->UnlockEndpoint(DummyEndpoint());
+  RunUntilIdle();
   EXPECT_TRUE(waiters[1].called());
   instance()->RememberSocket(&dummy_sockets[1], DummyEndpoint());
 
+  UnlockDummyEndpoint(1);
+}
+
+// Calling UnlockSocket() after UnlockEndpoint() does nothing.
+TEST_F(WebSocketEndpointLockManagerTest,
+       UnlockSocketAfterUnlockEndpointDoesNothing) {
+  FakeWaiter waiters[3];
+  FakeStreamSocket dummy_socket;
+
+  EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &waiters[0]));
+  EXPECT_EQ(ERR_IO_PENDING,
+            instance()->LockEndpoint(DummyEndpoint(), &waiters[1]));
+  EXPECT_EQ(ERR_IO_PENDING,
+            instance()->LockEndpoint(DummyEndpoint(), &waiters[2]));
+  instance()->RememberSocket(&dummy_socket, DummyEndpoint());
+  instance()->UnlockEndpoint(DummyEndpoint());
+  instance()->UnlockSocket(&dummy_socket);
+  RunUntilIdle();
+  EXPECT_TRUE(waiters[1].called());
+  EXPECT_FALSE(waiters[2].called());
+
+  UnlockDummyEndpoint(2);
+}
+
+// UnlockEndpoint() should always be asynchronous.
+TEST_F(WebSocketEndpointLockManagerTest, UnlockEndpointIsAsynchronous) {
+  FakeWaiter waiters[2];
+  EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &waiters[0]));
+  EXPECT_EQ(ERR_IO_PENDING,
+            instance()->LockEndpoint(DummyEndpoint(), &waiters[1]));
+
+  instance()->UnlockEndpoint(DummyEndpoint());
+  EXPECT_FALSE(waiters[1].called());
+  RunUntilIdle();
+  EXPECT_TRUE(waiters[1].called());
+
+  UnlockDummyEndpoint(1);
+}
+
+// UnlockEndpoint() should normally have a delay.
+TEST_F(WebSocketEndpointLockManagerTest, UnlockEndpointIsDelayed) {
+  using base::TimeTicks;
+
+  // This 1ms delay is too short for very slow environments (usually those
+  // running memory checkers). In those environments, the code takes >1ms to run
+  // and no delay is needed. Rather than increase the delay and slow down the
+  // test everywhere, the test doesn't explicitly verify that a delay has been
+  // applied. Instead it just verifies that the whole thing took >=1ms. 1ms is
+  // easily enough for normal compiles even on Android, so the fact that there
+  // is a delay is still checked on every platform.
+  const base::TimeDelta unlock_delay = base::TimeDelta::FromMilliseconds(1);
+  instance()->SetUnlockDelayForTesting(unlock_delay);
+  FakeWaiter fake_waiter;
+  BlockingWaiter blocking_waiter;
+  EXPECT_EQ(OK, instance()->LockEndpoint(DummyEndpoint(), &fake_waiter));
+  EXPECT_EQ(ERR_IO_PENDING,
+            instance()->LockEndpoint(DummyEndpoint(), &blocking_waiter));
+
+  TimeTicks before_unlock = TimeTicks::Now();
+  instance()->UnlockEndpoint(DummyEndpoint());
+  blocking_waiter.WaitForLock();
+  TimeTicks after_unlock = TimeTicks::Now();
+  EXPECT_GE(after_unlock - before_unlock, unlock_delay);
+  instance()->SetUnlockDelayForTesting(base::TimeDelta());
   UnlockDummyEndpoint(1);
 }
 

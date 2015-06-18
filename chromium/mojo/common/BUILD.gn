@@ -2,13 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//testing/test.gni")
+
+group("common") {
+  deps = [
+    ":common_base",
+    ":url_type_converters",
+  ]
+}
+
 # GYP version: mojo/mojo_base.gyp:mojo_common_lib
-component("common") {
+component("common_base") {
   output_name = "mojo_common_lib"
 
   sources = [
     "common_type_converters.cc",
     "common_type_converters.h",
+    "data_pipe_file_utils.cc",
     "data_pipe_utils.cc",
     "data_pipe_utils.h",
     "handle_watcher.cc",
@@ -18,6 +28,8 @@ component("common") {
     "message_pump_mojo_handler.h",
     "time_helper.cc",
     "time_helper.h",
+    "weak_binding_set.h",
+    "weak_interface_ptr_set.h",
   ]
 
   defines = [ "MOJO_COMMON_IMPLEMENTATION" ]
@@ -25,7 +37,23 @@ component("common") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//mojo/public/c/system:for_component",
+    "//third_party/mojo/src/mojo/public/c/system:for_component",
+  ]
+}
+
+# GYP version: mojo/mojo_base.gyp:mojo_url_type_converters
+source_set("url_type_converters") {
+  sources = [
+    "url_type_converters.cc",
+    "url_type_converters.h",
+  ]
+
+  include_dirs = [ "//third_party/mojo/src/" ]
+
+  deps = [
+    ":common_base",
+    "//base",
+    "//base/third_party/dynamic_annotations",
     "//url",
   ]
 }
@@ -36,12 +64,12 @@ test("mojo_common_unittests") {
     ":common",
     "//base",
     "//base:message_loop_tests",
-    "//mojo/edk/test:run_all_unittests",
-    "//mojo/edk/test:test_support",
     "//mojo/environment:chromium",
-    "//mojo/public/cpp/bindings",
-    "//mojo/public/cpp/test_support:test_utils",
     "//testing/gtest",
+    "//third_party/mojo/src/mojo/edk/test:run_all_unittests",
+    "//third_party/mojo/src/mojo/edk/test:test_support",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/public/cpp/test_support:test_utils",
     "//url",
   ]
 
@@ -50,4 +78,22 @@ test("mojo_common_unittests") {
     "handle_watcher_unittest.cc",
     "message_pump_mojo_unittest.cc",
   ]
+}
+
+if (!is_component_build) {
+  source_set("tracing_impl") {
+    sources = [
+      "trace_controller_impl.cc",
+      "trace_controller_impl.h",
+      "tracing_impl.cc",
+      "tracing_impl.h",
+    ]
+
+    deps = [
+      "//base",
+      "//mojo/application/public/cpp",
+      "//mojo/services/tracing:bindings",
+      "//third_party/mojo/src/mojo/public/cpp/bindings",
+    ]
+  }
 }

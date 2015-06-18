@@ -13,7 +13,7 @@ var MockTts = function() {
 MockTts.prototype = {
   /**
    * A list of predicate, start, and end callbacks for a pending expectation.
-   * @type {!Array.<{{predicate: function(string) : boolean,
+   * @type {!Array<{{predicate: function(string) : boolean,
    *     startCallback: function() : void,
    *     endCallback: function() : void}>}
    * @private
@@ -22,14 +22,14 @@ MockTts.prototype = {
 
   /**
    * A list of strings stored whenever there are no expectations.
-   * @type {!Array.<string}
+   * @type {!Array<string}
    * @private
    */
   idleUtterances_: [],
 
   /** @override */
   speak: function(textString, queueMode, properties) {
-    this.process_(textString);
+    this.process_(textString, false, properties);
   },
 
   /**
@@ -37,11 +37,12 @@ MockTts.prototype = {
    * |opt_callback| is called.
    * @param {string} expectedText
    * @param {function() : void=} opt_callback
+   * @param {boolean=} opt_exact Expect an exact match; defaults to false.
    */
-  expectSpeech: function(expectedText, opt_callback) {
+  expectSpeech: function(expectedText, opt_callback, opt_exact) {
     var expectation = {};
     expectation.endCallback = opt_callback;
-    this.addExpectation_(expectedText, expectation);
+    this.addExpectation_(expectedText, expectation, opt_exact);
   },
 
   /**
@@ -61,10 +62,11 @@ MockTts.prototype = {
   },
 
   /**
-   * Finishes expectations and calls testDone.
+   * Finishes expectations and calls {@code callback} afterwards.
+   * @param {Function} callback
    */
-  finishExpectations: function() {
-    this.expectSpeechAfter('', testDone);
+  finishExpectations: function(callback) {
+    this.expectSpeechAfter('', callback);
   },
 
   /**
@@ -87,28 +89,38 @@ MockTts.prototype = {
 
     // Process any idleUtterances.
     this.idleUtterances_.forEach(function(utterance) {
-      this.process_(utterance, true);
-    });
+      this.process_(utterance.text, true, utterance.properties);
+    }.bind(this));
   },
 
   /**
    * @param {string} textString Utterance to match against callbacks.
    * @param {boolean=} opt_manual True if called outside of tts.speak.
+   * @param {!Object=} opt_properties
    * @private
    */
-  process_: function(textString, opt_manual) {
+  process_: function(textString, opt_manual, opt_properties) {
+    var utterance = {text: textString, properties: opt_properties};
     if (this.expectations_.length == 0) {
-      if (!opt_manual)
-        this.idleUtterances_.push(textString);
+      if (!opt_manual) {
+        this.idleUtterances_.push(utterance);
+      }
       return;
     }
 
-    var allUtterances = this.idleUtterances_.concat([textString]);
+    var allUtterances = this.idleUtterances_.concat([utterance]);
     var targetExpectation = this.expectations_.shift();
-    if (allUtterances.some(targetExpectation.predicate)) {
+    allUtterances = allUtterances.filter(function(u) {
+      return targetExpectation.predicate(u.text);
+    });
+    if (allUtterances.length > 0) {
+      var matchingProperties = allUtterances[0].properties;
       this.idleUtterances_.length = 0;
       if (targetExpectation.endCallback)
         targetExpectation.endCallback();
+      if (matchingProperties && matchingProperties.endCallback) {
+        matchingProperties.endCallback();
+      }
       var nextExpectation = this.expectations_[0];
       if (nextExpectation && nextExpectation.startCallback)
         nextExpectation.startCallback();

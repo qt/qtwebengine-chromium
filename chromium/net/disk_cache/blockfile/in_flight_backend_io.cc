@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/blockfile/backend_impl.h"
@@ -65,14 +64,8 @@ void BackendIO::OnDone(bool cancel) {
 
   if (result() == net::OK) {
     static_cast<EntryImpl*>(*entry_ptr_)->OnEntryCreated(backend_);
-    if (cancel) {
-      // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is
-      // fixed.
-      tracked_objects::ScopedTracker tracking_profile(
-          FROM_HERE_WITH_EXPLICIT_FUNCTION("422516 BackendIO::OnDone"));
-
+    if (cancel)
       (*entry_ptr_)->Close();
-    }
   }
 }
 
@@ -503,14 +496,8 @@ void InFlightBackendIO::OnOperationComplete(BackgroundIO* operation,
   BackendIO* op = static_cast<BackendIO*>(operation);
   op->OnDone(cancel);
 
-  if (!op->callback().is_null() && (!cancel || op->IsEntryOperation())) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "422516 InFlightBackendIO::OnOperationComplete"));
-
+  if (!op->callback().is_null() && (!cancel || op->IsEntryOperation()))
     op->callback().Run(op->result());
-  }
 }
 
 void InFlightBackendIO::PostOperation(BackendIO* operation) {

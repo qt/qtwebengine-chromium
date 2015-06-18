@@ -26,7 +26,6 @@
 #ifndef WebGLVertexArrayObjectOES_h
 #define WebGLVertexArrayObjectOES_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLBuffer.h"
 #include "core/html/canvas/WebGLContextObject.h"
 #include "platform/heap/Handle.h"
@@ -34,7 +33,7 @@
 
 namespace blink {
 
-class WebGLVertexArrayObjectOES final : public WebGLContextObject, public ScriptWrappable {
+class WebGLVertexArrayObjectOES final : public WebGLContextObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum VaoType {
@@ -42,13 +41,14 @@ public:
         VaoTypeUser,
     };
 
-    virtual ~WebGLVertexArrayObjectOES();
+    ~WebGLVertexArrayObjectOES() override;
 
     static PassRefPtrWillBeRawPtr<WebGLVertexArrayObjectOES> create(WebGLRenderingContextBase*, VaoType);
 
+    Platform3DObject object() const { return m_object; }
+
     // Cached values for vertex attrib range checks
-    class VertexAttribState final {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+    class VertexAttribState final : public NoBaseWillBeGarbageCollected<VertexAttribState> {
     public:
         VertexAttribState()
             : enabled(false)
@@ -63,7 +63,7 @@ public:
         {
         }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
         bool enabled;
         RefPtrWillBeMember<WebGLBuffer> bufferBinding;
@@ -85,18 +85,21 @@ public:
     PassRefPtrWillBeRawPtr<WebGLBuffer> boundElementArrayBuffer() const { return m_boundElementArrayBuffer; }
     void setElementArrayBuffer(PassRefPtrWillBeRawPtr<WebGLBuffer>);
 
-    VertexAttribState& getVertexAttribState(int index) { return m_vertexAttribState[index]; }
+    VertexAttribState* getVertexAttribState(size_t);
     void setVertexAttribState(GLuint, GLsizei, GLint, GLenum, GLboolean, GLsizei, GLintptr, PassRefPtrWillBeRawPtr<WebGLBuffer>);
     void unbindBuffer(PassRefPtrWillBeRawPtr<WebGLBuffer>);
     void setVertexAttribDivisor(GLuint index, GLuint divisor);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     WebGLVertexArrayObjectOES(WebGLRenderingContextBase*, VaoType);
 
-    void dispatchDetached(blink::WebGraphicsContext3D*);
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
+    void dispatchDetached(WebGraphicsContext3D*);
+    bool hasObject() const override { return m_object != 0; }
+    void deleteObjectImpl(WebGraphicsContext3D*) override;
+
+    Platform3DObject m_object;
 
     VaoType m_type;
     bool m_hasEverBeenBound;
@@ -104,20 +107,9 @@ private:
     bool m_destructionInProgress;
 #endif
     RefPtrWillBeMember<WebGLBuffer> m_boundElementArrayBuffer;
-    WillBeHeapVector<VertexAttribState> m_vertexAttribState;
+    WillBeHeapVector<OwnPtrWillBeMember<VertexAttribState>> m_vertexAttribState;
 };
 
 } // namespace blink
-
-namespace WTF {
-
-template<>
-struct VectorTraits<blink::WebGLVertexArrayObjectOES::VertexAttribState> : SimpleClassVectorTraits<blink::WebGLVertexArrayObjectOES::VertexAttribState> {
-    // Must use the constructor.
-    static const bool canInitializeWithMemset = false;
-    static const bool canCopyWithMemcpy = true;
-};
-
-} // namespace WTF
 
 #endif // WebGLVertexArrayObjectOES_h

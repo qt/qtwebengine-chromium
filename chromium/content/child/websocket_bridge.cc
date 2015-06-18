@@ -11,7 +11,7 @@
 
 #include "base/logging.h"
 #include "base/strings/string_util.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/websocket_dispatcher.h"
 #include "content/common/websocket.h"
 #include "content/common/websocket_messages.h"
@@ -52,7 +52,7 @@ WebSocketBridge::~WebSocketBridge() {
   if (channel_id_ != kInvalidChannelId) {
     // The connection is abruptly disconnected by the renderer without
     // closing handshake.
-    ChildThread::current()->Send(
+    ChildThreadImpl::current()->Send(
         new WebSocketMsg_DropChannel(channel_id_,
                                      false,
                                      kAbnormalShutdownOpCode,
@@ -80,22 +80,18 @@ bool WebSocketBridge::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void WebSocketBridge::DidConnect(bool fail,
-                                 const std::string& selected_protocol,
+void WebSocketBridge::DidConnect(const std::string& selected_protocol,
                                  const std::string& extensions) {
   WebSocketHandleClient* client = client_;
   DVLOG(1) << "WebSocketBridge::DidConnect("
-           << fail << ", "
            << selected_protocol << ", "
            << extensions << ")";
-  if (fail)
-    Disconnect();
   if (!client)
     return;
 
   WebString protocol_to_pass = WebString::fromUTF8(selected_protocol);
   WebString extensions_to_pass = WebString::fromUTF8(extensions);
-  client->didConnect(this, fail, protocol_to_pass, extensions_to_pass);
+  client->didConnect(this, protocol_to_pass, extensions_to_pass);
   // |this| can be deleted here.
 }
 
@@ -214,7 +210,7 @@ void WebSocketBridge::connect(
     WebSocketHandleClient* client) {
   DCHECK_EQ(kInvalidChannelId, channel_id_);
   WebSocketDispatcher* dispatcher =
-      ChildThread::current()->websocket_dispatcher();
+      ChildThreadImpl::current()->websocket_dispatcher();
   channel_id_ = dispatcher->AddBridge(this);
   client_ = client;
 
@@ -227,7 +223,7 @@ void WebSocketBridge::connect(
            << JoinString(protocols_to_pass, ", ") << "), "
            << origin_to_pass.string() << ")";
 
-  ChildThread::current()->Send(new WebSocketHostMsg_AddChannelRequest(
+  ChildThreadImpl::current()->Send(new WebSocketHostMsg_AddChannelRequest(
       channel_id_, url, protocols_to_pass, origin_to_pass, render_frame_id_));
 }
 
@@ -255,7 +251,7 @@ void WebSocketBridge::send(bool fin,
            << fin << ", " << type_to_pass << ", "
            << "(data size = "  << size << "))";
 
-  ChildThread::current()->Send(
+  ChildThreadImpl::current()->Send(
       new WebSocketMsg_SendFrame(channel_id_,
                                  fin,
                                  type_to_pass,
@@ -268,7 +264,7 @@ void WebSocketBridge::flowControl(int64_t quota) {
 
   DVLOG(1) << "Bridge #" << channel_id_ << " FlowControl(" << quota << ")";
 
-  ChildThread::current()->Send(
+  ChildThreadImpl::current()->Send(
       new WebSocketMsg_FlowControl(channel_id_, quota));
 }
 
@@ -281,7 +277,7 @@ void WebSocketBridge::close(unsigned short code,
   DVLOG(1) << "Bridge #" << channel_id_ << " Close("
            << code << ", " << reason_to_pass << ")";
   // This method is for closing handshake and hence |was_clean| shall be true.
-  ChildThread::current()->Send(
+  ChildThreadImpl::current()->Send(
       new WebSocketMsg_DropChannel(channel_id_, true, code, reason_to_pass));
 }
 
@@ -289,7 +285,7 @@ void WebSocketBridge::Disconnect() {
   if (channel_id_ == kInvalidChannelId)
     return;
   WebSocketDispatcher* dispatcher =
-      ChildThread::current()->websocket_dispatcher();
+      ChildThreadImpl::current()->websocket_dispatcher();
   dispatcher->RemoveBridge(channel_id_);
 
   channel_id_ = kInvalidChannelId;

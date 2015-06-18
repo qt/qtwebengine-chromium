@@ -18,18 +18,14 @@
 #include "content/renderer/render_thread_impl.h"
 #include "sandbox/win/src/sandbox.h"
 #include "skia/ext/fontmgr_default_win.h"
-#include "skia/ext/vector_platform_device_emf_win.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/win/WebFontRendering.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "third_party/skia/include/ports/SkFontMgr.h"
 #include "third_party/skia/include/ports/SkTypeface_win.h"
+#include "ui/gfx/hud_font.h"
 #include "ui/gfx/win/direct_write.h"
 #include "ui/gfx/win/dpi.h"
-
-#ifdef ENABLE_VTUNE_JIT_INTERFACE
-#include "v8/src/third_party/vtune/v8-vtune.h"
-#endif
 
 #include <dwrite.h>
 
@@ -59,10 +55,16 @@ void SkiaPreCacheFontCharacters(const LOGFONT& logfont,
 void WarmupDirectWrite() {
   // The objects used here are intentionally not freed as we want the Skia
   // code to use these objects after warmup.
-  SkTypeface* typeface =
-      GetPreSandboxWarmupFontMgr()->legacyCreateTypeface("Times New Roman", 0);
-  DoPreSandboxWarmupForTypeface(typeface);
   SetDefaultSkiaFactory(GetPreSandboxWarmupFontMgr());
+
+  // We need to warm up *some* font for DirectWrite. We also need to pass one
+  // down for the CC HUD code, so use the same one here. Note that we don't use
+  // a monospace as would be nice in an attempt to avoid a small startup time
+  // regression, see http://crbug.com/463613.
+  skia::RefPtr<SkTypeface> hud_typeface = skia::AdoptRef(
+      GetPreSandboxWarmupFontMgr()->legacyCreateTypeface("Times New Roman", 0));
+  DoPreSandboxWarmupForTypeface(hud_typeface.get());
+  gfx::SetHudTypeface(hud_typeface);
 }
 
 }  // namespace
@@ -77,12 +79,7 @@ RendererMainPlatformDelegate::~RendererMainPlatformDelegate() {
 }
 
 void RendererMainPlatformDelegate::PlatformInitialize() {
-  const CommandLine& command_line = parameters_.command_line;
-
-#ifdef ENABLE_VTUNE_JIT_INTERFACE
-  if (command_line.HasSwitch(switches::kEnableVtune))
-    vTune::InitializeVtuneForV8();
-#endif
+  const base::CommandLine& command_line = parameters_.command_line;
 
   // Be mindful of what resources you acquire here. They can be used by
   // malicious code if the renderer gets compromised.
@@ -102,15 +99,10 @@ void RendererMainPlatformDelegate::PlatformInitialize() {
       WarmupDirectWrite();
     } else {
       SkTypeface_SetEnsureLOGFONTAccessibleProc(SkiaPreCacheFont);
-      skia::SetSkiaEnsureTypefaceCharactersAccessible(
-          SkiaPreCacheFontCharacters);
     }
   }
   blink::WebFontRendering::setUseDirectWrite(use_direct_write);
   blink::WebFontRendering::setDeviceScaleFactor(gfx::GetDPIScale());
-  if (use_direct_write) {
-    blink::WebRuntimeFeatures::enableSubpixelFontScaling(true);
-  }
 }
 
 void RendererMainPlatformDelegate::PlatformUninitialize() {
@@ -127,6 +119,13 @@ bool RendererMainPlatformDelegate::EnableSandbox() {
     // Warm up language subsystems before the sandbox is turned on.
     ::GetUserDefaultLangID();
     ::GetUserDefaultLCID();
+
+#if defined(ADDRESS_SANITIZER)
+    // Bind and leak dbghelp.dll before the token is lowered, otherwise
+    // AddressSanitizer will crash when trying to symbolize a report.
+    if (!LoadLibraryA("dbghelp.dll"))
+      return false;
+#endif
 
     target_services->LowerToken();
     return true;

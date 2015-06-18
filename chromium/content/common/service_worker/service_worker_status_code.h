@@ -10,6 +10,8 @@
 namespace content {
 
 // Generic service worker operation statuses.
+// This enum is used in UMA histograms, so don't change the order or remove
+// entries.
 enum ServiceWorkerStatusCode {
   // Operation succeeded.
   SERVICE_WORKER_OK,
@@ -48,6 +50,23 @@ enum ServiceWorkerStatusCode {
 
   // Operation is failed by security issue.
   SERVICE_WORKER_ERROR_SECURITY,
+
+  // Event handling failed (event.waitUntil Promise rejected).
+  SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED,
+
+  // An error triggered by invalid worker state.
+  SERVICE_WORKER_ERROR_STATE,
+
+  // The Service Worker took too long to finish a task.
+  SERVICE_WORKER_ERROR_TIMEOUT,
+
+  // An error occurred during initial script evaluation.
+  SERVICE_WORKER_ERROR_SCRIPT_EVALUATE_FAILED,
+
+  // Generic error to indicate failure to read/write the disk cache.
+  SERVICE_WORKER_ERROR_DISK_CACHE,
+
+  SERVICE_WORKER_ERROR_MAX_VALUE
 };
 
 CONTENT_EXPORT const char* ServiceWorkerStatusToString(

@@ -10,12 +10,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "storage/browser/blob/scoped_file.h"
 #include "storage/browser/fileapi/file_system_operation.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/fileapi/file_writer_delegate.h"
 #include "storage/browser/storage_browser_export.h"
-#include "storage/common/blob/scoped_file.h"
 #include "storage/common/quota/quota_types.h"
 
 namespace storage {
@@ -175,9 +175,6 @@ class STORAGE_EXPORT FileSystemOperationImpl
                 base::File::Error rv,
                 int64 bytes,
                 FileWriterDelegate::WriteProgressStatus write_status);
-  void DidOpenFile(const OpenFileCallback& callback,
-                   base::File file,
-                   const base::Closure& on_close_callback);
 
   // Used only for internal assertions.
   // Returns false if there's another inflight pending operation.

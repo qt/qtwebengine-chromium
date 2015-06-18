@@ -36,8 +36,11 @@ ScriptableDocumentParser::ScriptableDocumentParser(Document& document, ParserCon
     , m_wasCreatedByScript(false)
     , m_parserContentPolicy(parserContentPolicy)
 {
-    if (!pluginContentIsAllowed(m_parserContentPolicy) && (!document.settings() || document.settings()->unsafePluginPastingEnabled()))
-        m_parserContentPolicy = allowPluginContent(m_parserContentPolicy);
+}
+
+bool ScriptableDocumentParser::isParsingAtLineNumber() const
+{
+    return isParsing() && !isWaitingForScripts() && !isExecutingScript();
 }
 
 };

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "content/renderer/media/mock_data_channel_impl.h"
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 
 using testing::_;
@@ -74,66 +75,6 @@ class MockStreamCollection : public webrtc::StreamCollectionInterface {
   typedef std::vector<rtc::scoped_refptr<MediaStreamInterface> >
       StreamVector;
   StreamVector streams_;
-};
-
-class MockDataChannel : public webrtc::DataChannelInterface {
- public:
-  MockDataChannel(const std::string& label,
-                  const webrtc::DataChannelInit* config)
-      : label_(label),
-        reliable_(config->reliable),
-        state_(webrtc::DataChannelInterface::kConnecting),
-        config_(*config) {
-  }
-
-  void RegisterObserver(webrtc::DataChannelObserver* observer) override {}
-
-  void UnregisterObserver() override {}
-
-  std::string label() const override { return label_; }
-
-  bool reliable() const override { return reliable_; }
-
-  bool ordered() const override { return config_.ordered; }
-
-  unsigned short maxRetransmitTime() const override {
-    return config_.maxRetransmitTime;
-  }
-
-  unsigned short maxRetransmits() const override {
-    return config_.maxRetransmits;
-  }
-
-  std::string protocol() const override { return config_.protocol; }
-
-  bool negotiated() const override { return config_.negotiated; }
-
-  int id() const override {
-    NOTIMPLEMENTED();
-    return 0;
-  }
-
-  DataState state() const override { return state_; }
-
-  uint64 buffered_amount() const override {
-    NOTIMPLEMENTED();
-    return 0;
-  }
-
-  void Close() override { state_ = webrtc::DataChannelInterface::kClosing; }
-
-  bool Send(const webrtc::DataBuffer& buffer) override {
-    return state_ == webrtc::DataChannelInterface::kOpen;
-  }
-
- protected:
-  ~MockDataChannel() override {}
-
- private:
-  std::string label_;
-  bool reliable_;
-  webrtc::DataChannelInterface::DataState state_;
-  webrtc::DataChannelInit config_;
 };
 
 class MockDtmfSender : public DtmfSenderInterface {
@@ -240,14 +181,13 @@ bool MockPeerConnectionImpl::GetStats(
     return false;
 
   DCHECK_EQ(kStatsOutputLevelStandard, level);
-  webrtc::StatsReport report1, report2;
-  report1.id = "1234";
-  report1.type = "ssrc";
-  report1.timestamp = 42;
-  report1.values.push_back(
-      webrtc::StatsReport::Value(
-          webrtc::StatsReport::kStatsValueNameFingerprint,
-          "trackvalue"));
+  webrtc::StatsReport report1(webrtc::StatsReport::NewTypedId(
+      webrtc::StatsReport::kStatsReportTypeSsrc, "1234"));
+  webrtc::StatsReport report2(webrtc::StatsReport::NewTypedId(
+      webrtc::StatsReport::kStatsReportTypeSession, "nontrack"));
+  report1.set_timestamp(42);
+  report1.AddString(webrtc::StatsReport::kStatsValueNameFingerprint,
+                    "trackvalue");
 
   webrtc::StatsReports reports;
   reports.push_back(&report1);
@@ -255,13 +195,9 @@ bool MockPeerConnectionImpl::GetStats(
   // If selector is given, we pass back one report.
   // If selector is not given, we pass back two.
   if (!track) {
-    report2.id = "nontrack";
-    report2.type = "generic";
-    report2.timestamp = 44;
-    report2.values.push_back(
-        webrtc::StatsReport::Value(
-            webrtc::StatsReport::kStatsValueNameFingerprintAlgorithm,
-            "somevalue"));
+    report2.set_timestamp(44);
+    report2.AddString(webrtc::StatsReport::kStatsValueNameFingerprintAlgorithm,
+                      "somevalue");
     reports.push_back(&report2);
   }
 

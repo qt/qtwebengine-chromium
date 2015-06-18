@@ -24,7 +24,8 @@ class Model(object):
   Properties:
   - |namespaces| a map of a namespace name to its model.Namespace
   """
-  def __init__(self):
+  def __init__(self, allow_inline_enums=True):
+    self._allow_inline_enums = allow_inline_enums
     self.namespaces = {}
 
   def AddNamespace(self,
@@ -37,7 +38,8 @@ class Model(object):
     namespace = Namespace(json,
                           source_file,
                           include_compiler_options=include_compiler_options,
-                          environment=environment)
+                          environment=environment,
+                          allow_inline_enums=self._allow_inline_enums)
     self.namespaces[namespace.name] = namespace
     return namespace
 
@@ -104,7 +106,8 @@ class Namespace(object):
                json,
                source_file,
                include_compiler_options=False,
-               environment=None):
+               environment=None,
+               allow_inline_enums=True):
     self.name = json['namespace']
     if 'description' not in json:
       # TODO(kalman): Go back to throwing an error here.
@@ -118,6 +121,7 @@ class Namespace(object):
     self.source_file_dir, self.source_file_filename = os.path.split(source_file)
     self.short_filename = os.path.basename(source_file).split('.')[0]
     self.parent = None
+    self.allow_inline_enums = allow_inline_enums
     self.platforms = _GetPlatforms(json)
     toplevel_origin = Origin(from_client=True, from_json=True)
     self.types = _GetTypes(self, json, self, toplevel_origin)
@@ -198,6 +202,11 @@ class Type(object):
       self.property_type = PropertyType.REF
       self.ref_type = json['$ref']
     elif 'enum' in json and json_type == 'string':
+      if not namespace.allow_inline_enums and not isinstance(parent, Namespace):
+        raise ParseException(
+            self,
+            'Inline enum "%s" found in namespace "%s". These are not allowed. '
+                'See crbug.com/472279' % (name, namespace.name))
       self.property_type = PropertyType.ENUM
       self.enum_values = [EnumValue(value) for value in json['enum']]
       self.cpp_enum_prefix_override = json.get('cpp_enum_prefix_override', None)
@@ -304,8 +313,8 @@ class Function(object):
     def GeneratePropertyFromParam(p):
       return Property(self, p['name'], p, namespace, origin)
 
-    self.filters = [GeneratePropertyFromParam(filter)
-                    for filter in json.get('filters', [])]
+    self.filters = [GeneratePropertyFromParam(filter_instance)
+                    for filter_instance in json.get('filters', [])]
     callback_param = None
     for param in json.get('parameters', []):
       if param.get('type') == 'function':
@@ -456,6 +465,8 @@ class _PropertyTypeInfo(_Enum):
     _Enum.__init__(self, name)
     self.is_fundamental = is_fundamental
 
+  def __repr__(self):
+    return self.name
 
 class PropertyType(object):
   """Enum of different types of properties/parameters.

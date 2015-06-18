@@ -22,8 +22,8 @@
 #include "build/build_config.h"
 #include "crypto/nss_util.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/nss_memio.h"
+#include "net/log/net_log.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -81,7 +81,7 @@ size_t CiphersCopy(const uint16* in, uint16* out) {
 
 base::Value* NetLogSSLErrorCallback(int net_error,
                                     int ssl_lib_error,
-                                    NetLog::LogLevel /* log_level */) {
+                                    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("net_error", net_error);
   if (ssl_lib_error)
@@ -108,7 +108,7 @@ class NSSSSLInitSingleton {
       disableECDSA = true;
 #endif
 
-    // Explicitly enable exactly those ciphers with keys of at least 80 bits
+    // Explicitly enable exactly those ciphers with keys of at least 80 bits.
     for (int i = 0; i < num_ciphers; i++) {
       SSLCipherSuiteInfo info;
       if (SSL_GetCipherSuiteInfo(ssl_ciphers[i], &info,
@@ -130,10 +130,6 @@ class NSSSSLInitSingleton {
           enabled = false;
         }
 
-        if (ssl_ciphers[i] == TLS_DHE_DSS_WITH_AES_128_CBC_SHA) {
-          // Enabled to allow servers with only a DSA certificate to function.
-          enabled = true;
-        }
         SSL_CipherPrefSetDefault(ssl_ciphers[i], enabled);
       }
     }
@@ -389,7 +385,7 @@ base::Value* NetLogSSLFailedNSSFunctionCallback(
     const char* function,
     const char* param,
     int ssl_lib_error,
-    NetLog::LogLevel /* log_level */) {
+    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("function", function);
   if (param[0] != '\0')

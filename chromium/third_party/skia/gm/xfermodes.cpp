@@ -84,13 +84,17 @@ class XfermodesGM : public GM {
         bool restoreNeeded = false;
         m.setTranslate(x, y);
 
-        canvas->drawBitmapMatrix(fSrcB, m, &p);
+        canvas->drawBitmap(fSrcB, x, y, &p);
         p.setXfermode(mode);
         switch (srcType) {
-            case kSmallTransparentImage_SrcType:
+            case kSmallTransparentImage_SrcType: {
                 m.postScale(SK_ScalarHalf, SK_ScalarHalf, x, y);
-                canvas->drawBitmapMatrix(fTransparent, m, &p);
+
+                SkAutoCanvasRestore acr(canvas, true);
+                canvas->concat(m);
+                canvas->drawBitmap(fTransparent, 0, 0, &p);
                 break;
+            }
             case kQuarterClearInLayer_SrcType: {
                 SkRect bounds = SkRect::MakeXYWH(x, y, SkIntToScalar(W),
                                                  SkIntToScalar(H));
@@ -135,9 +139,12 @@ class XfermodesGM : public GM {
             case kRectangleImageWithAlpha_SrcType:
                 p.setAlpha(0x88);
                 // Fall through.
-            case kRectangleImage_SrcType:
-                canvas->drawBitmapMatrix(fDstB, m, &p);
+            case kRectangleImage_SrcType: {
+                SkAutoCanvasRestore acr(canvas, true);
+                canvas->concat(m);
+                canvas->drawBitmap(fDstB, 0, 0, &p);
                 break;
+            }
             default:
                 break;
         }
@@ -147,7 +154,7 @@ class XfermodesGM : public GM {
         }
     }
 
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         fBG.installPixels(SkImageInfo::Make(2, 2, kARGB_4444_SkColorType,
                                             kOpaque_SkAlphaType),
                           gData, 4);
@@ -161,15 +168,15 @@ public:
     XfermodesGM() {}
 
 protected:
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("xfermodes");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(1990, 640);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         canvas->translate(SkIntToScalar(10), SkIntToScalar(20));
 
         const struct {

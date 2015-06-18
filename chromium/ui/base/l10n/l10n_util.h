@@ -20,10 +20,6 @@
 
 namespace l10n_util {
 
-// The same as base::i18n::GetCanonicalLocale(const char*), but takes
-// std::string as an argument.
-UI_BASE_EXPORT std::string GetCanonicalLocale(const std::string& locale);
-
 // Takes normalized locale as |locale|. Returns language part (before '-').
 UI_BASE_EXPORT std::string GetLanguage(const std::string& locale);
 
@@ -166,15 +162,12 @@ UI_BASE_EXPORT base::string16 GetStringFUTF16(int message_id,
 UI_BASE_EXPORT base::string16 GetStringFUTF16Int(int message_id, int a);
 base::string16 GetStringFUTF16Int(int message_id, int64 a);
 
-// Get a resource string using |number| to decide which of |message_ids| should
-// be used. |message_ids| must be size 6 and in order: default, singular, zero,
-// two, few, many.
-UI_BASE_EXPORT base::string16 GetPluralStringFUTF16(
-    const std::vector<int>& message_ids,
-    int number);
-UI_BASE_EXPORT std::string GetPluralStringFUTF8(
-    const std::vector<int>& message_ids,
-    int number);
+// Get a resource string using |number| with a locale-specific plural rule.
+// |message_id| points to a message in the ICU syntax.
+// See http://userguide.icu-project.org/formatparse/messages and
+// go/plurals (Google internal).
+UI_BASE_EXPORT base::string16 GetPluralStringFUTF16(int message_id, int number);
+UI_BASE_EXPORT std::string GetPluralStringFUTF8(int message_id, int number);
 
 // In place sorting of base::string16 strings using collation rules for
 // |locale|.

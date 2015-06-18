@@ -29,15 +29,33 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
     kGL,  // GL or GLES
   };
 
-  void DoCompile(ShaderTranslatorInterface* translator,
-                 TranslatedShaderSourceType type);
+  enum ShaderState {
+    kShaderStateWaiting,
+    kShaderStateCompileRequested,
+    kShaderStateCompiled, // Signifies compile happened, not valid compile.
+  };
+
+  static const int kUndefinedShaderVersion = -1;
+
+  void RequestCompile(scoped_refptr<ShaderTranslatorInterface> translator,
+                      TranslatedShaderSourceType type);
+
+  void DoCompile();
+
+  ShaderState shader_state() const {
+    return shader_state_;
+  }
 
   GLuint service_id() const {
-    return service_id_;
+    return marked_for_deletion_ ? 0 : service_id_;
   }
 
   GLenum shader_type() const {
     return shader_type_;
+  }
+
+  int shader_version() const {
+    return shader_version_;
   }
 
   const std::string& source() const {
@@ -52,8 +70,16 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
     return translated_source_;
   }
 
-  const std::string& signature_source() const {
-    return signature_source_;
+  std::string last_compiled_source() const {
+    return last_compiled_source_;
+  }
+
+  std::string last_compiled_signature() const {
+    if (translator_.get()) {
+      return last_compiled_source_ +
+             translator_->GetStringForOptionsThatWouldAffectCompilation();
+    }
+    return last_compiled_source_;
   }
 
   const sh::Attribute* GetAttribInfo(const std::string& name) const;
@@ -73,11 +99,11 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   }
 
   bool valid() const {
-    return valid_;
+    return shader_state_ == kShaderStateCompiled && valid_;
   }
 
   bool IsDeleted() const {
-    return service_id_ == 0;
+    return marked_for_deletion_;
   }
 
   bool InUse() const {
@@ -125,16 +151,38 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   Shader(GLuint service_id, GLenum shader_type);
   ~Shader();
 
+  // Must be called only if we currently own the context. Forces the deletion
+  // of the underlying shader service id.
+  void Destroy();
+
   void IncUseCount();
   void DecUseCount();
-  void MarkAsDeleted();
+  void MarkForDeletion();
+  void DeleteServiceID();
 
   int use_count_;
 
+  // The current state of the shader.
+  ShaderState shader_state_;
+
+  // The shader has been marked for deletion.
+  bool marked_for_deletion_;
+
   // The shader this Shader is tracking.
   GLuint service_id_;
+
   // Type of shader - GL_VERTEX_SHADER or GL_FRAGMENT_SHADER.
   GLenum shader_type_;
+
+  // Version of the shader. Can be kUndefinedShaderVersion or version returned
+  // by ANGLE.
+  int shader_version_;
+
+  // Translated source type when shader was last requested to be compiled.
+  TranslatedShaderSourceType source_type_;
+
+  // Translator to use, set when shader was last requested to be compiled.
+  scoped_refptr<ShaderTranslatorInterface> translator_;
 
   // True if compilation succeeded.
   bool valid_;
@@ -143,7 +191,7 @@ class GPU_EXPORT Shader : public base::RefCounted<Shader> {
   std::string source_;
 
   // The source the last compile used.
-  std::string signature_source_;
+  std::string last_compiled_source_;
 
   // The translated shader source.
   std::string translated_source_;
@@ -185,7 +233,7 @@ class GPU_EXPORT ShaderManager {
   // Gets a client id for a given service id.
   bool GetClientId(GLuint service_id, GLuint* client_id) const;
 
-  void MarkAsDeleted(Shader* shader);
+  void Delete(Shader* shader);
 
   // Mark a shader as used
   void UseShader(Shader* shader);

@@ -29,7 +29,7 @@
 
 namespace blink {
 
-class GlyphPageTreeNode;
+class GlyphPageTreeNodeBase;
 class FontDescription;
 
 const int cAllFamiliesScanned = -1;
@@ -37,7 +37,7 @@ const int cAllFamiliesScanned = -1;
 class PLATFORM_EXPORT FontFallbackList : public RefCounted<FontFallbackList> {
     WTF_MAKE_NONCOPYABLE(FontFallbackList);
 public:
-    typedef HashMap<int, GlyphPageTreeNode*, DefaultHash<int>::Hash> GlyphPages;
+    typedef HashMap<int, GlyphPageTreeNodeBase*, DefaultHash<int>::Hash> GlyphPages;
 
     class GlyphPagesStateSaver {
     public:
@@ -57,21 +57,14 @@ public:
     private:
         FontFallbackList& m_fallbackList;
         GlyphPages& m_pages;
-        GlyphPageTreeNode* m_pageZero;
+        GlyphPageTreeNodeBase* m_pageZero;
     };
 
     static PassRefPtr<FontFallbackList> create() { return adoptRef(new FontFallbackList()); }
 
     ~FontFallbackList() { releaseFontData(); }
+    bool isValid() const;
     void invalidate(PassRefPtrWillBeRawPtr<FontSelector>);
-
-    bool isFixedPitch(const FontDescription& fontDescription) const
-    {
-        if (m_pitch == UnknownPitch)
-            determinePitch(fontDescription);
-        return m_pitch == FixedPitch;
-    }
-    void determinePitch(const FontDescription&) const;
 
     bool loadingCustomFonts() const;
     bool shouldSkipDrawing() const;
@@ -92,12 +85,12 @@ public:
     }
     const FontData* fontDataAt(const FontDescription&, unsigned index) const;
 
-    GlyphPageTreeNode* getPageNode(unsigned pageNumber) const
+    GlyphPageTreeNodeBase* getPageNode(unsigned pageNumber) const
     {
         return pageNumber ? m_pages.get(pageNumber) : m_pageZero;
     }
 
-    void setPageNode(unsigned pageNumber, GlyphPageTreeNode* node)
+    void setPageNode(unsigned pageNumber, GlyphPageTreeNodeBase* node)
     {
         if (pageNumber)
             m_pages.set(pageNumber, node);
@@ -116,14 +109,13 @@ private:
 
     mutable Vector<RefPtr<FontData>, 1> m_fontList;
     GlyphPages m_pages;
-    GlyphPageTreeNode* m_pageZero;
+    GlyphPageTreeNodeBase* m_pageZero;
     mutable const SimpleFontData* m_cachedPrimarySimpleFontData;
     RefPtrWillBePersistent<FontSelector> m_fontSelector;
     mutable WidthCache m_widthCache;
     unsigned m_fontSelectorVersion;
     mutable int m_familyIndex;
     unsigned short m_generation;
-    mutable unsigned m_pitch : 3; // Pitch
     mutable bool m_hasLoadingFallback : 1;
 };
 

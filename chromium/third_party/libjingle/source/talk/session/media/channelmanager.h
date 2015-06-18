@@ -60,11 +60,6 @@ class VoiceProcessor;
 class ChannelManager : public rtc::MessageHandler,
                        public sigslot::has_slots<> {
  public:
-#if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
-  // Creates the channel manager, and specifies the worker thread to use.
-  explicit ChannelManager(rtc::Thread* worker);
-#endif
-
   // For testing purposes. Allows the media engine and data media
   // engine and dev manager to be mocks.  The ChannelManager takes
   // ownership of these objects.
@@ -112,7 +107,8 @@ class ChannelManager : public rtc::MessageHandler,
   VoiceChannel* CreateVoiceChannel(
       BaseSession* session, const std::string& content_name, bool rtcp);
   // Destroys a voice channel created with the Create API.
-  void DestroyVoiceChannel(VoiceChannel* voice_channel);
+  void DestroyVoiceChannel(VoiceChannel* voice_channel,
+                           VideoChannel* video_channel);
   // TODO(pbos): Remove as soon as all call sites specify VideoOptions.
   VideoChannel* CreateVideoChannel(BaseSession* session,
                                    const std::string& content_name,
@@ -183,6 +179,9 @@ class ChannelManager : public rtc::MessageHandler,
   void SetVoiceLogging(int level, const char* filter);
   void SetVideoLogging(int level, const char* filter);
 
+  // Gets capturer's supported formats in a thread safe manner
+  std::vector<cricket::VideoFormat> GetSupportedFormats(
+      VideoCapturer* capturer) const;
   // The channel manager handles the Tx side for Video processing,
   // as well as Tx and Rx side for Voice processing.
   // (The Rx Video processing will go throug the simplerenderingmanager,
@@ -237,9 +236,6 @@ class ChannelManager : public rtc::MessageHandler,
   // This API is mainly a hook used by unittests.
   const std::string& video_device_name() const { return video_device_name_; }
 
-  // TODO(hellner): Remove this function once the engine capturer has been
-  // removed.
-  VideoFormat GetStartCaptureFormat();
 
  protected:
   // Adds non-transient parameters which can only be changed through the
@@ -264,10 +260,13 @@ class ChannelManager : public rtc::MessageHandler,
                  DeviceManagerInterface* dm,
                  CaptureManager* cm,
                  rtc::Thread* worker_thread);
+  bool InitMediaEngine_w();
+  void DestructorDeletes_w();
   void Terminate_w();
   VoiceChannel* CreateVoiceChannel_w(
       BaseSession* session, const std::string& content_name, bool rtcp);
-  void DestroyVoiceChannel_w(VoiceChannel* voice_channel);
+  void DestroyVoiceChannel_w(VoiceChannel* voice_channel,
+                             VideoChannel* video_channel);
   VideoChannel* CreateVideoChannel_w(BaseSession* session,
                                      const std::string& content_name,
                                      bool rtcp,
@@ -286,6 +285,9 @@ class ChannelManager : public rtc::MessageHandler,
   bool SetCaptureDevice_w(const Device* cam_device);
   void OnVideoCaptureStateChange(VideoCapturer* capturer,
                                  CaptureState result);
+  void GetSupportedFormats_w(
+      VideoCapturer* capturer,
+      std::vector<cricket::VideoFormat>* out_formats) const;
   bool RegisterVideoProcessor_w(VideoCapturer* capturer,
                                 VideoProcessor* processor);
   bool UnregisterVideoProcessor_w(VideoCapturer* capturer,

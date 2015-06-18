@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 import("//third_party/WebKit/Source/bindings/bindings.gni")
 import("//third_party/WebKit/Source/config.gni")
 import("//third_party/WebKit/Source/core/core.gni")
@@ -34,9 +35,7 @@ component("web") {
     "//third_party/skia/include/utils",
   ]
 
-  configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
-    "//build/config/compiler:no_chromium_code",
     "//third_party/WebKit/Source:config",
     "//third_party/WebKit/Source:inside_blink",
     "//third_party/WebKit/Source:non_test_config",
@@ -66,6 +65,7 @@ component("web") {
     sources += bindings_unittest_files
     sources += core_unittest_files
     sources += modules_unittest_files
+    sources += platform_unittest_support_files
     sources += platform_web_unittest_files
 
     sources += [ "WebTestingSupport.cpp" ]
@@ -92,9 +92,7 @@ source_set("test_support") {
 
     sources = [ "WebTestingSupport.cpp" ]
 
-    configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
-      "//build/config/compiler:no_chromium_code",
       "//third_party/WebKit/Source:config",
     ]
 
@@ -105,36 +103,43 @@ source_set("test_support") {
 }
 
 # GYP version: WebKit/Source/web/web_tests.gyp:webkit_unit_tests
-test("webkit_unit_tests") {
-  deps = [
-    ":test_support",
-    ":web",
-    "//base",
-    "//base/test:test_support",
-    "//base:i18n",
-    "//content/test:test_support",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/WebKit/Source/wtf:test_support",
-    "//third_party/libwebp",
-    "//third_party/zlib",
-    "//url",
-    "//v8",
-  ]
+if (!is_mac) {
+  # TODO(GYP): Can't link Blink binaries yet on mac.
+  test("webkit_unit_tests") {
+    visibility = []  # Allow re-assignment of list.
+    visibility = [ "*" ]
 
-  sources = [ "tests/RunAllTests.cpp" ]
+    deps = [
+      ":test_support",
+      ":web",
+      "//base",
+      "//base/test:test_support",
+      "//base:i18n",
+      "//content/test:test_support",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/WebKit/Source/wtf:test_support",
+      "//third_party/libwebp",
+      "//third_party/zlib",
+      "//url",
+      "//v8",
+    ]
 
-  configs += [ "//third_party/WebKit/Source:config" ]
+    sources = [ "tests/RunAllTests.cpp" ]
 
-  if (!is_component_build) {
-    deps += [ "//third_party/WebKit/Source/core" ]
+    configs += [ "//third_party/WebKit/Source:config" ]
 
-    configs += [ "//third_party/WebKit/Source:inside_blink" ]
+    if (!is_component_build) {
+      deps += [ "//third_party/WebKit/Source/core" ]
 
-    sources += web_gypi.web_unittest_files
-    sources += bindings_unittest_files
-    sources += core_unittest_files
-    sources += modules_unittest_files
-    sources += platform_web_unittest_files
+      configs += [ "//third_party/WebKit/Source:inside_blink" ]
+
+      sources += web_gypi.web_unittest_files
+      sources += bindings_unittest_files
+      sources += core_unittest_files
+      sources += modules_unittest_files
+      sources += platform_unittest_support_files
+      sources += platform_web_unittest_files
+    }
   }
 }

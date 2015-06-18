@@ -20,10 +20,11 @@
         'cc_blink.gyp:cc_blink',
       ],
       'sources': [
+        'test/cc_blink_test_suite.cc',
+        'test/run_all_unittests.cc',
         'web_animation_unittest.cc',
         'web_float_animation_curve_unittest.cc',
         'web_layer_impl_fixed_bounds_unittest.cc',
-        '../../base/test/run_all_unittests.cc',
       ],
     }
   ],

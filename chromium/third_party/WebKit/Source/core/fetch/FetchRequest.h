@@ -26,7 +26,8 @@
 #ifndef FetchRequest_h
 #define FetchRequest_h
 
-#include "core/dom/Element.h"
+#include "core/CoreExport.h"
+#include "core/fetch/ClientHintsPreferences.h"
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/network/ResourceLoadPriority.h"
@@ -36,10 +37,21 @@
 namespace blink {
 class SecurityOrigin;
 
-class FetchRequest {
+class CORE_EXPORT FetchRequest {
 public:
     enum DeferOption { NoDefer, LazyLoad, DeferredByClient };
     enum OriginRestriction { UseDefaultOriginRestrictionForType, RestrictToSameOrigin, NoOriginRestriction };
+
+    struct ResourceWidth {
+        float width;
+        bool isSet;
+
+        ResourceWidth()
+            : width(0)
+            , isSet(false)
+        {
+        }
+    };
 
     explicit FetchRequest(const ResourceRequest&, const AtomicString& initiator, const String& charset = String(), ResourceLoadPriority = ResourceLoadPriorityUnresolved);
     FetchRequest(const ResourceRequest&, const AtomicString& initiator, const ResourceLoaderOptions&);
@@ -57,13 +69,17 @@ public:
     bool forPreload() const { return m_forPreload; }
     void setForPreload(bool forPreload) { m_forPreload = forPreload; }
     DeferOption defer() const { return m_defer; }
+    ResourceWidth resourceWidth() const { return m_resourceWidth; }
+    const ClientHintsPreferences& clientHintsPreferences() const { return m_clientHintPreferences; }
     void setDefer(DeferOption defer) { m_defer = defer; }
-    void setContentSecurityCheck(ContentSecurityPolicyCheck contentSecurityPolicyOption) { m_options.contentSecurityPolicyOption = contentSecurityPolicyOption; }
+    void setContentSecurityCheck(ContentSecurityPolicyDisposition contentSecurityPolicyOption) { m_options.contentSecurityPolicyOption = contentSecurityPolicyOption; }
     void setCrossOriginAccessControl(SecurityOrigin*, StoredCredentials, CredentialRequest);
     void setCrossOriginAccessControl(SecurityOrigin*, StoredCredentials);
     void setCrossOriginAccessControl(SecurityOrigin*, const AtomicString& crossOriginMode);
     OriginRestriction originRestriction() const { return m_originRestriction; }
     void setOriginRestriction(OriginRestriction restriction) { m_originRestriction = restriction; }
+    void setResourceWidth(ResourceWidth);
+    void setClientHintsPreferences(ClientHintsPreferences& preferences) { m_clientHintPreferences.set(preferences); }
 
 private:
     ResourceRequest m_resourceRequest;
@@ -73,6 +89,8 @@ private:
     bool m_forPreload;
     DeferOption m_defer;
     OriginRestriction m_originRestriction;
+    ResourceWidth m_resourceWidth;
+    ClientHintsPreferences m_clientHintPreferences;
 };
 
 } // namespace blink

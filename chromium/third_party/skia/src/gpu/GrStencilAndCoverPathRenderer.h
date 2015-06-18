@@ -25,24 +25,32 @@ public:
 
     virtual ~GrStencilAndCoverPathRenderer();
 
-    virtual bool canDrawPath(const SkPath&,
-                             const SkStrokeRec&,
-                             const GrDrawTarget*,
-                             bool antiAlias) const SK_OVERRIDE;
+    virtual bool canDrawPath(const GrDrawTarget*,
+                             const GrPipelineBuilder*,
+                             const SkMatrix& viewMatrix,
+                             const SkPath&,
+                             const GrStrokeInfo&,
+                             bool antiAlias) const override;
 
 protected:
-    virtual StencilSupport onGetStencilSupport(const SkPath&,
-                                               const SkStrokeRec&,
-                                               const GrDrawTarget*) const SK_OVERRIDE;
+    virtual StencilSupport onGetStencilSupport(const GrDrawTarget*,
+                                               const GrPipelineBuilder*,
+                                               const SkPath&,
+                                               const GrStrokeInfo&) const override;
 
-    virtual bool onDrawPath(const SkPath&,
-                            const SkStrokeRec&,
-                            GrDrawTarget*,
-                            bool antiAlias) SK_OVERRIDE;
+    virtual bool onDrawPath(GrDrawTarget*,
+                            GrPipelineBuilder*,
+                            GrColor,
+                            const SkMatrix& viewMatrix,
+                            const SkPath&,
+                            const GrStrokeInfo&,
+                            bool antiAlias) override;
 
-    virtual void onStencilPath(const SkPath&,
-                               const SkStrokeRec&,
-                               GrDrawTarget*) SK_OVERRIDE;
+    virtual void onStencilPath(GrDrawTarget*,
+                               GrPipelineBuilder*,
+                               const SkMatrix& viewMatrix,
+                               const SkPath&,
+                               const GrStrokeInfo&) override;
 
 private:
     GrStencilAndCoverPathRenderer(GrGpu*);

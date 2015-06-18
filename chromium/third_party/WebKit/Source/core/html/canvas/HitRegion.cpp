@@ -5,8 +5,8 @@
 #include "config.h"
 #include "core/html/canvas/HitRegion.h"
 
-#include "core/accessibility/AXObjectCache.h"
-#include "core/rendering/RenderBoxModelObject.h"
+#include "core/dom/AXObjectCache.h"
+#include "core/layout/LayoutBoxModelObject.h"
 
 namespace blink {
 
@@ -23,7 +23,7 @@ HitRegion::HitRegion(const Path& path, const HitRegionOptions& options)
 
 void HitRegion::updateAccessibility(Element* canvas)
 {
-    if (!m_control || !canvas || !canvas->renderer() || !m_control->isDescendantOf(canvas))
+    if (!m_control || !canvas || !canvas->layoutObject() || !m_control->isDescendantOf(canvas))
         return;
 
     AXObjectCache* axObjectCache = m_control->document().existingAXObjectCache();
@@ -33,8 +33,8 @@ void HitRegion::updateAccessibility(Element* canvas)
     FloatRect boundingRect = m_path.boundingRect();
 
     // Offset by the canvas rect, taking border and padding into account.
-    RenderBoxModelObject* rbmo = canvas->renderBoxModelObject();
-    IntRect canvasRect = canvas->renderer()->absoluteBoundingBoxRect();
+    LayoutBoxModelObject* rbmo = canvas->layoutBoxModelObject();
+    IntRect canvasRect = canvas->layoutObject()->absoluteBoundingBoxRect();
     canvasRect.move(rbmo->borderLeft() + rbmo->paddingLeft(),
         rbmo->borderTop() + rbmo->paddingTop());
     LayoutRect elementRect = enclosingLayoutRect(boundingRect);
@@ -45,6 +45,11 @@ void HitRegion::updateAccessibility(Element* canvas)
 
 bool HitRegion::contains(const LayoutPoint& point) const
 {
+    return m_path.contains(FloatPoint(point), m_fillRule);
+}
+
+bool HitRegion::contains(const FloatPoint& point) const
+{
     return m_path.contains(point, m_fillRule);
 }
 
@@ -53,7 +58,7 @@ void HitRegion::removePixels(const Path& clearArea)
     m_path.subtractPath(clearArea);
 }
 
-void HitRegion::trace(Visitor* visitor)
+DEFINE_TRACE(HitRegion)
 {
     visitor->trace(m_control);
 }
@@ -155,7 +160,7 @@ unsigned HitRegionManager::getHitRegionsCount() const
     return m_hitRegionList.size();
 }
 
-void HitRegionManager::trace(Visitor* visitor)
+DEFINE_TRACE(HitRegionManager)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_hitRegionList);

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/simple_thread.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
@@ -13,6 +13,7 @@
 #include "cc/output/output_surface.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/resources/resource_provider.h"
+#include "cc/scheduler/begin_frame_source.h"
 #include "cc/test/fake_delegated_renderer_layer.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/trees/layer_tree_host.h"
@@ -50,31 +51,35 @@ class LayerTreeHostNoMessageLoopTest
         did_commit_and_draw_frame_(false),
         size_(100, 100),
         no_loop_thread_(this, "LayerTreeHostNoMessageLoopTest") {}
-  virtual ~LayerTreeHostNoMessageLoopTest() {}
+  ~LayerTreeHostNoMessageLoopTest() override {}
 
   // LayerTreeHostClient overrides.
-  void WillBeginMainFrame(int frame_id) override {}
+  void WillBeginMainFrame() override {}
   void BeginMainFrame(const BeginFrameArgs& args) override {}
+  void BeginMainFrameNotExpectedSoon() override {}
   void DidBeginMainFrame() override {}
   void Layout() override {}
-  void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
-                           const gfx::Vector2d& outer_delta,
+  void ApplyViewportDeltas(const gfx::Vector2dF& inner_delta,
+                           const gfx::Vector2dF& outer_delta,
+                           const gfx::Vector2dF& elastic_overscroll_delta,
                            float page_scale,
                            float top_controls_delta) override {}
   void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
                            float page_scale,
                            float top_controls_delta) override {}
-  void RequestNewOutputSurface(bool fallback) override {
+  void RequestNewOutputSurface() override {
     layer_tree_host_->SetOutputSurface(
         make_scoped_ptr<OutputSurface>(new NoMessageLoopOutputSurface));
   }
   void DidInitializeOutputSurface() override {
     did_initialize_output_surface_ = true;
   }
+  void DidFailToInitializeOutputSurface() override {}
   void WillCommit() override {}
   void DidCommit() override { did_commit_ = true; }
   void DidCommitAndDrawFrame() override { did_commit_and_draw_frame_ = true; }
   void DidCompleteSwapBuffers() override {}
+  void DidCompletePageScaleAnimation() override {}
 
   // LayerTreeHostSingleThreadClient overrides.
   void DidPostSwapBuffers() override {}
@@ -87,9 +92,9 @@ class LayerTreeHostNoMessageLoopTest
 
   // base::DelegateSimpleThread::Delegate override.
   void Run() override {
-    ASSERT_FALSE(base::MessageLoopProxy::current().get());
+    ASSERT_FALSE(base::ThreadTaskRunnerHandle::IsSet());
     RunTestWithoutMessageLoop();
-    EXPECT_FALSE(base::MessageLoopProxy::current().get());
+    EXPECT_FALSE(base::ThreadTaskRunnerHandle::IsSet());
   }
 
  protected:
@@ -98,8 +103,13 @@ class LayerTreeHostNoMessageLoopTest
   void SetupLayerTreeHost() {
     LayerTreeSettings settings;
     settings.single_thread_proxy_scheduler = false;
-    layer_tree_host_ = LayerTreeHost::CreateSingleThreaded(
-        this, this, NULL, NULL, settings, NULL);
+    settings.verify_property_trees = true;
+    settings.raster_enabled = false;
+
+    LayerTreeHost::InitParams params;
+    params.client = this;
+    params.settings = &settings;
+    layer_tree_host_ = LayerTreeHost::CreateSingleThreaded(this, &params);
     layer_tree_host_->SetViewportSize(size_);
     layer_tree_host_->SetRootLayer(root_layer_);
   }

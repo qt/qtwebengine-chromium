@@ -48,10 +48,9 @@ class GenericEventQueue;
 class WebSourceBuffer;
 
 class MediaSource final
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaSource>
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaSource>
     , public HTMLMediaSource
-    , public ActiveDOMObject
-    , public EventTargetWithInlineData {
+    , public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MediaSource>);
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaSource);
@@ -81,6 +80,7 @@ public:
     virtual bool isClosed() const override;
     virtual double duration() const override;
     virtual PassRefPtrWillBeRawPtr<TimeRanges> buffered() const override;
+    virtual PassRefPtrWillBeRawPtr<TimeRanges> seekable() const override;
 #if !ENABLE(OILPAN)
     virtual void refHTMLMediaSource() override { ref(); }
     virtual void derefHTMLMediaSource() override { deref(); }
@@ -106,7 +106,7 @@ public:
     void addedToRegistry();
     void removedFromRegistry();
 
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
     void clearWeakMembers(Visitor*);
 
 private:

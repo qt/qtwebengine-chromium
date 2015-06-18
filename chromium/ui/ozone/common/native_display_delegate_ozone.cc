@@ -5,6 +5,8 @@
 #include "ui/ozone/common/native_display_delegate_ozone.h"
 
 #include "base/logging.h"
+#include "ui/ozone/common/display_snapshot_proxy.h"
+#include "ui/ozone/common/display_util.h"
 
 namespace ui {
 
@@ -15,7 +17,11 @@ NativeDisplayDelegateOzone::~NativeDisplayDelegateOzone() {
 }
 
 void NativeDisplayDelegateOzone::Initialize() {
-  NOTIMPLEMENTED();
+  DisplaySnapshot_Params params;
+  if (CreateSnapshotFromCommandLine(&params)) {
+    DCHECK_NE(DISPLAY_CONNECTION_TYPE_NONE, params.type);
+    displays_.push_back(new DisplaySnapshotProxy(params));
+  }
 }
 
 void NativeDisplayDelegateOzone::GrabServer() {
@@ -48,9 +54,9 @@ void NativeDisplayDelegateOzone::ForceDPMSOn() {
   NOTIMPLEMENTED();
 }
 
-std::vector<ui::DisplaySnapshot*> NativeDisplayDelegateOzone::GetDisplays() {
-  NOTIMPLEMENTED();
-  return std::vector<ui::DisplaySnapshot*>();
+void NativeDisplayDelegateOzone::GetDisplays(
+    const GetDisplaysCallback& callback) {
+  callback.Run(displays_.get());
 }
 
 void NativeDisplayDelegateOzone::AddMode(const ui::DisplaySnapshot& output,
@@ -58,27 +64,31 @@ void NativeDisplayDelegateOzone::AddMode(const ui::DisplaySnapshot& output,
   NOTIMPLEMENTED();
 }
 
-bool NativeDisplayDelegateOzone::Configure(const ui::DisplaySnapshot& output,
+void NativeDisplayDelegateOzone::Configure(const ui::DisplaySnapshot& output,
                                            const ui::DisplayMode* mode,
-                                           const gfx::Point& origin) {
+                                           const gfx::Point& origin,
+                                           const ConfigureCallback& callback) {
   NOTIMPLEMENTED();
-  return false;
+  callback.Run(true);
 }
 
 void NativeDisplayDelegateOzone::CreateFrameBuffer(const gfx::Size& size) {
   NOTIMPLEMENTED();
 }
 
-bool NativeDisplayDelegateOzone::GetHDCPState(const ui::DisplaySnapshot& output,
-                                              ui::HDCPState* state) {
+void NativeDisplayDelegateOzone::GetHDCPState(
+    const ui::DisplaySnapshot& output,
+    const GetHDCPStateCallback& callback) {
   NOTIMPLEMENTED();
-  return false;
+  callback.Run(false, HDCP_STATE_UNDESIRED);
 }
 
-bool NativeDisplayDelegateOzone::SetHDCPState(const ui::DisplaySnapshot& output,
-                                              ui::HDCPState state) {
+void NativeDisplayDelegateOzone::SetHDCPState(
+    const ui::DisplaySnapshot& output,
+    ui::HDCPState state,
+    const SetHDCPStateCallback& callback) {
   NOTIMPLEMENTED();
-  return false;
+  callback.Run(false);
 }
 
 std::vector<ui::ColorCalibrationProfile>
@@ -91,6 +101,13 @@ NativeDisplayDelegateOzone::GetAvailableColorCalibrationProfiles(
 bool NativeDisplayDelegateOzone::SetColorCalibrationProfile(
     const ui::DisplaySnapshot& output,
     ui::ColorCalibrationProfile new_profile) {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool NativeDisplayDelegateOzone::SetGammaRamp(
+    const ui::DisplaySnapshot& output,
+    const std::vector<GammaRampRGBEntry>& lut) {
   NOTIMPLEMENTED();
   return false;
 }

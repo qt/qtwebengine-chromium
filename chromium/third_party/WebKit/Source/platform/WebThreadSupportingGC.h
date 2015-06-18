@@ -16,9 +16,9 @@
 namespace blink {
 
 // WebThreadSupportingGC wraps a WebThread and adds support for attaching
-// to and detaching from the Blink GC infrastructure. The attachGC method
+// to and detaching from the Blink GC infrastructure. The initialize method
 // must be called during initialization on the WebThread and before the
-// thread allocates any objects managed by the Blink GC. The detach GC
+// thread allocates any objects managed by the Blink GC. The shutdown
 // method must be called on the WebThread during shutdown when the thread
 // no longer needs to access objects managed by the Blink GC.
 class PLATFORM_EXPORT WebThreadSupportingGC final {
@@ -27,14 +27,14 @@ public:
     static PassOwnPtr<WebThreadSupportingGC> create(const char*);
     ~WebThreadSupportingGC();
 
-    void postTask(WebThread::Task* task)
+    void postTask(const WebTraceLocation& location, WebThread::Task* task)
     {
-        m_thread->postTask(task);
+        m_thread->postTask(location, task);
     }
 
-    void postDelayedTask(WebThread::Task* task, long long delayMs)
+    void postDelayedTask(const WebTraceLocation& location, WebThread::Task* task, long long delayMs)
     {
-        m_thread->postDelayedTask(task, delayMs);
+        m_thread->postDelayedTask(location, task, delayMs);
     }
 
     bool isCurrentThread() const
@@ -52,18 +52,8 @@ public:
         m_thread->removeTaskObserver(observer);
     }
 
-    void enterRunLoop()
-    {
-        m_thread->enterRunLoop();
-    }
-
-    void exitRunLoop()
-    {
-        m_thread->exitRunLoop();
-    }
-
-    void attachGC();
-    void detachGC();
+    void initialize();
+    void shutdown();
 
     WebThread& platformThread() const
     {

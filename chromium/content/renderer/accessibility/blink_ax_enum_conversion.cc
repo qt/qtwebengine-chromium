@@ -43,6 +43,9 @@ uint32 AXStateFromBlink(const blink::WebAXObject& o) {
   if (o.isLinked())
     state |= (1 << ui::AX_STATE_LINKED);
 
+  if (o.isMultiline())
+    state |= (1 << ui::AX_STATE_MULTILINE);
+
   if (o.isMultiSelectable())
     state |= (1 << ui::AX_STATE_MULTISELECTABLE);
 
@@ -73,8 +76,10 @@ uint32 AXStateFromBlink(const blink::WebAXObject& o) {
   if (o.isEnabled())
     state |= (1 << ui::AX_STATE_ENABLED);
 
-  if (o.isVertical())
+  if (o.orientation() == blink::WebAXOrientationVertical)
     state |= (1 << ui::AX_STATE_VERTICAL);
+  else if (o.orientation() == blink::WebAXOrientationHorizontal)
+    state |= (1 << ui::AX_STATE_HORIZONTAL);
 
   if (o.isVisited())
     state |= (1 << ui::AX_STATE_VISITED);
@@ -98,14 +103,14 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_BANNER;
     case blink::WebAXRoleBlockquote:
       return ui::AX_ROLE_BLOCKQUOTE;
-    case blink::WebAXRoleBrowser:
-      return ui::AX_ROLE_BROWSER;
     case blink::WebAXRoleBusyIndicator:
       return ui::AX_ROLE_BUSY_INDICATOR;
     case blink::WebAXRoleButton:
       return ui::AX_ROLE_BUTTON;
     case blink::WebAXRoleCanvas:
       return ui::AX_ROLE_CANVAS;
+    case blink::WebAXRoleCaption:
+      return ui::AX_ROLE_CAPTION;
     case blink::WebAXRoleCell:
       return ui::AX_ROLE_CELL;
     case blink::WebAXRoleCheckBox:
@@ -146,10 +151,6 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_DIV;
     case blink::WebAXRoleDocument:
       return ui::AX_ROLE_DOCUMENT;
-    case blink::WebAXRoleDrawer:
-      return ui::AX_ROLE_DRAWER;
-    case blink::WebAXRoleEditableText:
-      return ui::AX_ROLE_EDITABLE_TEXT;
     case blink::WebAXRoleEmbeddedObject:
       return ui::AX_ROLE_EMBEDDED_OBJECT;
     case blink::WebAXRoleFigcaption:
@@ -164,16 +165,12 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_GRID;
     case blink::WebAXRoleGroup:
       return ui::AX_ROLE_GROUP;
-    case blink::WebAXRoleGrowArea:
-      return ui::AX_ROLE_GROW_AREA;
     case blink::WebAXRoleHeading:
       return ui::AX_ROLE_HEADING;
-    case blink::WebAXRoleHelpTag:
-      return ui::AX_ROLE_HELP_TAG;
-    case blink::WebAXRoleHorizontalRule:
-      return ui::AX_ROLE_HORIZONTAL_RULE;
     case blink::WebAXRoleIframe:
       return ui::AX_ROLE_IFRAME;
+    case blink::WebAXRoleIframePresentational:
+      return ui::AX_ROLE_IFRAME_PRESENTATIONAL;
     case blink::WebAXRoleIgnored:
       return ui::AX_ROLE_IGNORED;
     case blink::WebAXRoleImage:
@@ -182,8 +179,6 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_IMAGE_MAP;
     case blink::WebAXRoleImageMapLink:
       return ui::AX_ROLE_IMAGE_MAP_LINK;
-    case blink::WebAXRoleIncrementor:
-      return ui::AX_ROLE_INCREMENTOR;
     case blink::WebAXRoleInlineTextBox:
       return ui::AX_ROLE_INLINE_TEXT_BOX;
     case blink::WebAXRoleLabel:
@@ -210,8 +205,6 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_MARQUEE;
     case blink::WebAXRoleMath:
       return ui::AX_ROLE_MATH;
-    case blink::WebAXRoleMatte:
-      return ui::AX_ROLE_MATTE;
     case blink::WebAXRoleMenu:
       return ui::AX_ROLE_MENU;
     case blink::WebAXRoleMenuBar:
@@ -258,12 +251,12 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_ROOT_WEB_AREA;
     case blink::WebAXRoleRow:
       return ui::AX_ROLE_ROW;
+    case blink::WebAXRoleRuby:
+      return ui::AX_ROLE_RUBY;
     case blink::WebAXRoleRowHeader:
       return ui::AX_ROLE_ROW_HEADER;
     case blink::WebAXRoleRuler:
       return ui::AX_ROLE_RULER;
-    case blink::WebAXRoleRulerMarker:
-      return ui::AX_ROLE_RULER_MARKER;
     case blink::WebAXRoleSVGRoot:
       return ui::AX_ROLE_SVG_ROOT;
     case blink::WebAXRoleScrollArea:
@@ -274,8 +267,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_SEAMLESS_WEB_AREA;
     case blink::WebAXRoleSearch:
       return ui::AX_ROLE_SEARCH;
-    case blink::WebAXRoleSheet:
-      return ui::AX_ROLE_SHEET;
+    case blink::WebAXRoleSearchBox:
+      return ui::AX_ROLE_SEARCH_BOX;
     case blink::WebAXRoleSlider:
       return ui::AX_ROLE_SLIDER;
     case blink::WebAXRoleSliderThumb:
@@ -284,16 +277,14 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_SPIN_BUTTON;
     case blink::WebAXRoleSpinButtonPart:
       return ui::AX_ROLE_SPIN_BUTTON_PART;
-    case blink::WebAXRoleSplitGroup:
-      return ui::AX_ROLE_SPLIT_GROUP;
     case blink::WebAXRoleSplitter:
       return ui::AX_ROLE_SPLITTER;
     case blink::WebAXRoleStaticText:
       return ui::AX_ROLE_STATIC_TEXT;
     case blink::WebAXRoleStatus:
       return ui::AX_ROLE_STATUS;
-    case blink::WebAXRoleSystemWide:
-      return ui::AX_ROLE_SYSTEM_WIDE;
+    case blink::WebAXRoleSwitch:
+      return ui::AX_ROLE_SWITCH;
     case blink::WebAXRoleTab:
       return ui::AX_ROLE_TAB;
     case blink::WebAXRoleTabGroup:
@@ -306,8 +297,6 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_TABLE;
     case blink::WebAXRoleTableHeaderContainer:
       return ui::AX_ROLE_TABLE_HEADER_CONTAINER;
-    case blink::WebAXRoleTextArea:
-      return ui::AX_ROLE_TEXT_AREA;
     case blink::WebAXRoleTextField:
       return ui::AX_ROLE_TEXT_FIELD;
     case blink::WebAXRoleTime:
@@ -328,10 +317,10 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_UNKNOWN;
     case blink::WebAXRoleUserInterfaceTooltip:
       return ui::AX_ROLE_TOOLTIP;
-    case blink::WebAXRoleValueIndicator:
-      return ui::AX_ROLE_VALUE_INDICATOR;
     case blink::WebAXRoleWebArea:
       return ui::AX_ROLE_WEB_AREA;
+    case blink::WebAXRoleLineBreak:
+      return ui::AX_ROLE_LINE_BREAK;
     case blink::WebAXRoleWindow:
       return ui::AX_ROLE_WINDOW;
     default:
@@ -371,8 +360,10 @@ ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
       return ui::AX_EVENT_LOCATION_CHANGED;
     case blink::WebAXEventMenuListItemSelected:
       return ui::AX_EVENT_MENU_LIST_ITEM_SELECTED;
+    case blink::WebAXEventMenuListItemUnselected:
+      return ui::AX_EVENT_MENU_LIST_ITEM_SELECTED;
     case blink::WebAXEventMenuListValueChanged:
-        return ui::AX_EVENT_MENU_LIST_VALUE_CHANGED;
+      return ui::AX_EVENT_MENU_LIST_VALUE_CHANGED;
     case blink::WebAXEventRowCollapsed:
       return ui::AX_EVENT_ROW_COLLAPSED;
     case blink::WebAXEventRowCountChanged:
@@ -402,13 +393,13 @@ ui::AXTextDirection AXTextDirectionFromBlink(
     blink::WebAXTextDirection text_direction) {
   switch (text_direction) {
     case blink::WebAXTextDirectionLR:
-      return ui::AX_TEXT_DIRECTION_LR;
+      return ui::AX_TEXT_DIRECTION_LTR;
     case blink::WebAXTextDirectionRL:
-      return ui::AX_TEXT_DIRECTION_RL;
+      return ui::AX_TEXT_DIRECTION_RTL;
     case blink::WebAXTextDirectionTB:
-      return ui::AX_TEXT_DIRECTION_TB;
+      return ui::AX_TEXT_DIRECTION_TTB;
     case blink::WebAXTextDirectionBT:
-      return ui::AX_TEXT_DIRECTION_BT;
+      return ui::AX_TEXT_DIRECTION_BTT;
     default:
       NOTREACHED();
   }
@@ -416,4 +407,59 @@ ui::AXTextDirection AXTextDirectionFromBlink(
   return ui::AX_TEXT_DIRECTION_NONE;
 }
 
-}  // namespace content
+ui::AXTextStyle AXTextStyleFromBlink(blink::WebAXTextStyle text_style) {
+  unsigned int browser_text_style = ui::AX_TEXT_STYLE_NONE;
+  if (text_style & blink::WebAXTextStyleBold)
+    browser_text_style |= ui::AX_TEXT_STYLE_BOLD;
+  if (text_style & blink::WebAXTextStyleItalic)
+    browser_text_style |= ui::AX_TEXT_STYLE_ITALIC;
+  if (text_style & blink::WebAXTextStyleUnderline)
+    browser_text_style |= ui::AX_TEXT_STYLE_UNDERLINE;
+  if (text_style & blink::WebAXTextStyleLineThrough)
+    browser_text_style |= ui::AX_TEXT_STYLE_LINE_THROUGH;
+  return static_cast<ui::AXTextStyle>(browser_text_style);
+}
+
+ui::AXInvalidState AXInvalidStateFromBlink(
+    blink::WebAXInvalidState invalid_state) {
+  switch (invalid_state) {
+    case blink::WebAXInvalidStateUndefined:
+      return ui::AX_INVALID_STATE_NONE;
+    case blink::WebAXInvalidStateFalse:
+      return ui::AX_INVALID_STATE_FALSE;
+    case blink::WebAXInvalidStateTrue:
+      return ui::AX_INVALID_STATE_TRUE;
+    case blink::WebAXInvalidStateSpelling:
+      return ui::AX_INVALID_STATE_SPELLING;
+    case blink::WebAXInvalidStateGrammar:
+      return ui::AX_INVALID_STATE_GRAMMAR;
+    case blink::WebAXInvalidStateOther:
+      return ui::AX_INVALID_STATE_OTHER;
+    default:
+      NOTREACHED();
+  }
+
+  return ui::AX_INVALID_STATE_NONE;
+}
+
+ui::AXSortDirection AXSortDirectionFromBlink(
+    blink::WebAXSortDirection sort_direction) {
+  switch (sort_direction) {
+    case blink::WebAXSortDirectionUndefined:
+      return ui::AX_SORT_DIRECTION_NONE;
+    case blink::WebAXSortDirectionNone:
+      return ui::AX_SORT_DIRECTION_UNSORTED;
+    case blink::WebAXSortDirectionAscending:
+      return ui::AX_SORT_DIRECTION_ASCENDING;
+    case blink::WebAXSortDirectionDescending:
+      return ui::AX_SORT_DIRECTION_DESCENDING;
+    case blink::WebAXSortDirectionOther:
+      return ui::AX_SORT_DIRECTION_OTHER;
+    default:
+      NOTREACHED();
+  }
+
+  return ui::AX_SORT_DIRECTION_NONE;
+}
+
+}  // Namespace content.

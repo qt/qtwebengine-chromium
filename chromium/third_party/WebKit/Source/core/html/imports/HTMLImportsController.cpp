@@ -44,20 +44,22 @@ namespace blink {
 
 const char* HTMLImportsController::supplementName()
 {
-    DEFINE_STATIC_LOCAL(const char*, name, ("HTMLImportsController"));
-    return name;
+    return "HTMLImportsController";
 }
 
 void HTMLImportsController::provideTo(Document& master)
 {
     OwnPtrWillBeRawPtr<HTMLImportsController> controller = adoptPtrWillBeNoop(new HTMLImportsController(master));
     master.setImportsController(controller.get());
-    DocumentSupplement::provideTo(master, supplementName(), controller.release());
+    WillBeHeapSupplement<Document>::provideTo(master, supplementName(), controller.release());
 }
 
 void HTMLImportsController::removeFrom(Document& master)
 {
-    static_cast<DocumentSupplementable&>(master).removeSupplement(supplementName());
+    HTMLImportsController* controller = master.importsController();
+    ASSERT(controller);
+    controller->dispose();
+    static_cast<WillBeHeapSupplementable<Document>&>(master).removeSupplement(supplementName());
     master.setImportsController(nullptr);
 }
 
@@ -70,12 +72,21 @@ HTMLImportsController::HTMLImportsController(Document& master)
 HTMLImportsController::~HTMLImportsController()
 {
 #if !ENABLE(OILPAN)
-    m_root.clear();
+    // Verify that dispose() has been called.
+    ASSERT(!m_root);
+#endif
+}
+
+void HTMLImportsController::dispose()
+{
+    if (m_root) {
+        m_root->dispose();
+        m_root.clear();
+    }
 
     for (size_t i = 0; i < m_loaders.size(); ++i)
-        m_loaders[i]->importDestroyed();
+        m_loaders[i]->dispose();
     m_loaders.clear();
-#endif
 }
 
 static bool makesCycle(HTMLImport* parent, const KURL& url)
@@ -165,11 +176,11 @@ Document* HTMLImportsController::loaderDocumentAt(size_t i) const
     return loaderAt(i)->document();
 }
 
-void HTMLImportsController::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLImportsController)
 {
     visitor->trace(m_root);
     visitor->trace(m_loaders);
-    DocumentSupplement::trace(visitor);
+    WillBeHeapSupplement<Document>::trace(visitor);
 }
 
 } // namespace blink

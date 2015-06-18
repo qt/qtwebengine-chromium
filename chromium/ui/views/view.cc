@@ -9,26 +9,29 @@
 #include <algorithm>
 #include <cmath>
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/compositor/clip_transform_recorder.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/paint_context.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/events/event_target_iterator.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
@@ -51,6 +54,8 @@
 #include "base/win/scoped_gdi_object.h"
 #endif
 
+namespace views {
+
 namespace {
 
 #if defined(OS_WIN)
@@ -68,20 +73,14 @@ const int kDefaultHorizontalDragThreshold = 8;
 const int kDefaultVerticalDragThreshold = 8;
 
 // Returns the top view in |view|'s hierarchy.
-const views::View* GetHierarchyRoot(const views::View* view) {
-  const views::View* root = view;
+const View* GetHierarchyRoot(const View* view) {
+  const View* root = view;
   while (root && root->parent())
     root = root->parent();
   return root;
 }
 
 }  // namespace
-
-namespace views {
-
-namespace internal {
-
-}  // namespace internal
 
 // static
 ViewsDelegate* ViewsDelegate::views_delegate = NULL;
@@ -103,7 +102,6 @@ View::View()
       enabled_(true),
       notify_enter_exit_on_child_(false),
       registered_for_visible_bounds_notification_(false),
-      root_bounds_dirty_(true),
       clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
       snap_layer_to_pixel_boundary_(false),
@@ -178,9 +176,6 @@ void View::AddChildViewAt(View* view, int index) {
   // Let's insert the view.
   view->parent_ = this;
   children_.insert(children_.begin() + index, view);
-
-  // Instruct the view to recompute its root bounds on next Paint().
-  view->SetRootBoundsDirty(true);
 
   views::Widget* widget = GetWidget();
   if (widget) {
@@ -417,14 +412,8 @@ void View::SetVisible(bool visible) {
     UpdateLayerVisibility();
 
     // If we are newly visible, schedule paint.
-    if (visible_) {
+    if (visible_)
       SchedulePaint();
-    } else {
-      // We're never painted when hidden, so no need to be in the BoundsTree.
-      BoundsTree* bounds_tree = GetBoundsTreeFromPaintRoot();
-      if (bounds_tree)
-        RemoveRootBounds(bounds_tree);
-    }
   }
 }
 
@@ -470,28 +459,6 @@ void View::SetTransform(const gfx::Transform& transform) {
 void View::SetPaintToLayer(bool paint_to_layer) {
   if (paint_to_layer_ == paint_to_layer)
     return;
-
-  // If this is a change in state we will also need to update bounds trees.
-  if (paint_to_layer) {
-    // Gaining a layer means becoming a paint root. We must remove ourselves
-    // from our old paint root, if we had one. Traverse up view tree to find old
-    // paint root.
-    View* old_paint_root = parent_;
-    while (old_paint_root && !old_paint_root->IsPaintRoot())
-      old_paint_root = old_paint_root->parent_;
-
-    // Remove our and our children's bounds from the old tree. This will also
-    // mark all of our bounds as dirty.
-    if (old_paint_root && old_paint_root->bounds_tree_)
-      RemoveRootBounds(old_paint_root->bounds_tree_.get());
-
-  } else {
-    // Losing a layer means we are no longer a paint root, so delete our
-    // bounds tree and mark ourselves as dirty for future insertion into our
-    // new paint root's bounds tree.
-    bounds_tree_.reset();
-    SetRootBoundsDirty(true);
-  }
 
   paint_to_layer_ = paint_to_layer;
   if (paint_to_layer_ && !layer()) {
@@ -548,6 +515,7 @@ void View::Layout() {
   for (int i = 0, count = child_count(); i < count; ++i) {
     View* child = child_at(i);
     if (child->needs_layout_ || !layout_manager_.get()) {
+      TRACE_EVENT1("views", "View::Layout", "class", child->GetClassName());
       child->needs_layout_ = false;
       child->Layout();
     }
@@ -766,66 +734,97 @@ void View::SchedulePaintInRect(const gfx::Rect& rect) {
   }
 }
 
-void View::Paint(gfx::Canvas* canvas, const CullSet& cull_set) {
-  // The cull_set may allow us to skip painting without canvas construction or
-  // even canvas rect intersection.
-  if (cull_set.ShouldPaint(this)) {
-    TRACE_EVENT1("views", "View::Paint", "class", GetClassName());
+void View::Paint(const ui::PaintContext& parent_context) {
+  if (!visible_)
+    return;
 
+  gfx::Vector2d offset_to_parent;
+  if (!layer()) {
+    // If the View has a layer() then it is a paint root. Otherwise, we need to
+    // add the offset from the parent into the total offset from the paint root.
+    DCHECK_IMPLIES(!parent(), bounds().origin() == gfx::Point());
+    offset_to_parent = GetMirroredPosition().OffsetFromOrigin();
+  }
+  ui::PaintContext context(parent_context, offset_to_parent);
+
+  bool is_invalidated = true;
+  if (context.CanCheckInvalid()) {
+#if DCHECK_IS_ON()
+    gfx::Vector2d offset;
+    context.Visited(this);
+    View* view = this;
+    while (view->parent() && !view->layer()) {
+      DCHECK(view->GetTransform().IsIdentity());
+      offset += view->GetMirroredPosition().OffsetFromOrigin();
+      view = view->parent();
+    }
+    // The offset in the PaintContext should be the offset up to the paint root,
+    // which we compute and verify here.
+    DCHECK_EQ(context.PaintOffset().x(), offset.x());
+    DCHECK_EQ(context.PaintOffset().y(), offset.y());
+    // The above loop will stop when |view| is the paint root, which should be
+    // the root of the current paint walk, as verified by storing the root in
+    // the PaintContext.
+    DCHECK_EQ(context.RootVisited(), view);
+#endif
+
+    // If the View wasn't invalidated, don't waste time painting it, the output
+    // would be culled.
+    is_invalidated = context.IsRectInvalid(GetLocalBounds());
+  }
+
+  if (!is_invalidated && context.ShouldEarlyOutOfPaintingWhenValid())
+    return;
+
+  TRACE_EVENT1("views", "View::Paint", "class", GetClassName());
+
+  // If the view is backed by a layer, it should paint with itself as the origin
+  // rather than relative to its parent.
+  ui::ClipTransformRecorder clip_transform_recorder(context);
+  if (!layer()) {
+    // Set the clip rect to the bounds of this View. Note that the X (or left)
+    // position we pass to ClipRect takes into consideration whether or not the
+    // View uses a right-to-left layout so that we paint the View in its
+    // mirrored position if need be.
+    gfx::Rect clip_rect_in_parent = bounds();
+    clip_rect_in_parent.Inset(clip_insets_);
+    if (parent_)
+      clip_rect_in_parent.set_x(
+          parent_->GetMirroredXForRect(clip_rect_in_parent));
+    clip_transform_recorder.ClipRect(clip_rect_in_parent);
+
+    // Translate the graphics such that 0,0 corresponds to where
+    // this View is located relative to its parent.
+    gfx::Transform transform_from_parent;
+    gfx::Vector2d offset_from_parent = GetMirroredPosition().OffsetFromOrigin();
+    transform_from_parent.Translate(offset_from_parent.x(),
+                                    offset_from_parent.y());
+    transform_from_parent.PreconcatTransform(GetTransform());
+    clip_transform_recorder.Transform(transform_from_parent);
+  }
+
+  if (is_invalidated || !paint_cache_.UseCache(context)) {
+    ui::PaintRecorder recorder(context, &paint_cache_);
+    gfx::Canvas* canvas = recorder.canvas();
+    // TODO(danakj): This is not needed with impl-side/slimming paint.
     gfx::ScopedCanvas scoped_canvas(canvas);
 
-    // Paint this View and its children, setting the clip rect to the bounds
-    // of this View and translating the origin to the local bounds' top left
-    // point.
-    //
-    // Note that the X (or left) position we pass to ClipRectInt takes into
-    // consideration whether or not the view uses a right-to-left layout so that
-    // we paint our view in its mirrored position if need be.
-    gfx::Rect clip_rect = bounds();
-    clip_rect.Inset(clip_insets_);
-    if (parent_)
-      clip_rect.set_x(parent_->GetMirroredXForRect(clip_rect));
-    canvas->ClipRect(clip_rect);
-    if (canvas->IsClipEmpty())
-      return;
-
-    // Non-empty clip, translate the graphics such that 0,0 corresponds to where
-    // this view is located (related to its parent).
-    canvas->Translate(GetMirroredPosition().OffsetFromOrigin());
-    canvas->Transform(GetTransform());
-
-    // If we are a paint root, we need to construct our own CullSet object for
-    // propagation to our children.
-    if (IsPaintRoot()) {
-      if (!bounds_tree_)
-        bounds_tree_.reset(new BoundsTree(2, 5));
-
-      // Recompute our bounds tree as needed.
-      UpdateRootBounds(bounds_tree_.get(), gfx::Vector2d());
-
-      // Grab the clip rect from the supplied canvas to use as the query rect.
-      gfx::Rect canvas_bounds;
-      if (!canvas->GetClipBounds(&canvas_bounds)) {
-        NOTREACHED() << "Failed to get clip bounds from the canvas!";
-        return;
-      }
-
-      // Now query our bounds_tree_ for a set of damaged views that intersect
-      // our canvas bounds.
-      scoped_ptr<base::hash_set<intptr_t> > damaged_views(
-          new base::hash_set<intptr_t>());
-      bounds_tree_->AppendIntersectingRecords(
-          canvas_bounds, damaged_views.get());
-      // Construct a CullSet to wrap the damaged views set, it will delete it
-      // for us on scope exit.
-      CullSet paint_root_cull_set(damaged_views.Pass());
-      // Paint all descendents using our new cull set.
-      PaintCommon(canvas, paint_root_cull_set);
-    } else {
-      // Not a paint root, so we can proceed as normal.
-      PaintCommon(canvas, cull_set);
+    // If the View we are about to paint requested the canvas to be flipped, we
+    // should change the transform appropriately.
+    // The canvas mirroring is undone once the View is done painting so that we
+    // don't pass the canvas with the mirrored transform to Views that didn't
+    // request the canvas to be flipped.
+    if (FlipCanvasOnPaintForRTLUI()) {
+      canvas->Translate(gfx::Vector2d(width(), 0));
+      canvas->Scale(-1, 1);
     }
+
+    // Delegate painting the contents of the View to the virtual OnPaint method.
+    OnPaint(canvas);
   }
+
+  // View::Paint() recursion over the subtree.
+  PaintChildren(context);
 }
 
 void View::set_background(Background* b) {
@@ -1056,8 +1055,7 @@ ui::EventTarget* View::GetParentTarget() {
 }
 
 scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
-  return scoped_ptr<ui::EventTargetIterator>(
-      new ui::EventTargetIteratorImpl<View>(children_));
+  return make_scoped_ptr(new ui::EventTargetIteratorImpl<View>(children_));
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
@@ -1351,11 +1349,11 @@ void View::NativeViewHierarchyChanged() {
 
 // Painting --------------------------------------------------------------------
 
-void View::PaintChildren(gfx::Canvas* canvas, const CullSet& cull_set) {
+void View::PaintChildren(const ui::PaintContext& context) {
   TRACE_EVENT1("views", "View::PaintChildren", "class", GetClassName());
   for (int i = 0, count = child_count(); i < count; ++i)
     if (!child_at(i)->layer())
-      child_at(i)->Paint(canvas, cull_set);
+      child_at(i)->Paint(context);
 }
 
 void View::OnPaint(gfx::Canvas* canvas) {
@@ -1380,10 +1378,6 @@ void View::OnPaintBorder(gfx::Canvas* canvas) {
                  "height", canvas->sk_canvas()->getDevice()->height());
     border_->Paint(*this, canvas);
   }
-}
-
-bool View::IsPaintRoot() {
-  return paint_to_layer_ || !parent_;
 }
 
 // Accelerated Painting --------------------------------------------------------
@@ -1465,10 +1459,14 @@ void View::UpdateChildLayerBounds(const gfx::Vector2d& offset) {
   }
 }
 
-void View::OnPaintLayer(gfx::Canvas* canvas) {
-  if (!layer() || !layer()->fills_bounds_opaquely())
-    canvas->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
-  PaintCommon(canvas, CullSet());
+void View::OnPaintLayer(const ui::PaintContext& context) {
+  if (!layer()->fills_bounds_opaquely()) {
+    ui::PaintRecorder recorder(context);
+    recorder.canvas()->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
+  }
+  if (!visible_)
+    return;
+  Paint(context);
 }
 
 void View::OnDelegatedFrameDamage(
@@ -1751,28 +1749,6 @@ void View::SchedulePaintBoundsChanged(SchedulePaintType type) {
   }
 }
 
-void View::PaintCommon(gfx::Canvas* canvas, const CullSet& cull_set) {
-  if (!visible_)
-    return;
-
-  {
-    // If the View we are about to paint requested the canvas to be flipped, we
-    // should change the transform appropriately.
-    // The canvas mirroring is undone once the View is done painting so that we
-    // don't pass the canvas with the mirrored transform to Views that didn't
-    // request the canvas to be flipped.
-    gfx::ScopedCanvas scoped(canvas);
-    if (FlipCanvasOnPaintForRTLUI()) {
-      canvas->Translate(gfx::Vector2d(width(), 0));
-      canvas->Scale(-1, 1);
-    }
-
-    OnPaint(canvas);
-  }
-
-  PaintChildren(canvas, cull_set);
-}
-
 // Tree operations -------------------------------------------------------------
 
 void View::DoRemoveChildView(View* view,
@@ -1801,12 +1777,6 @@ void View::DoRemoveChildView(View* view,
         view->SchedulePaint();
       GetWidget()->NotifyWillRemoveView(view);
     }
-
-    // Remove the bounds of this child and any of its descendants from our
-    // paint root bounds tree.
-    BoundsTree* bounds_tree = GetBoundsTreeFromPaintRoot();
-    if (bounds_tree)
-      view->RemoveRootBounds(bounds_tree);
 
     view->PropagateRemoveNotifications(this, new_parent);
     view->parent_ = NULL;
@@ -1899,12 +1869,6 @@ void View::VisibilityChangedImpl(View* starting_from, bool is_visible) {
 }
 
 void View::BoundsChanged(const gfx::Rect& previous_bounds) {
-  // Mark our bounds as dirty for the paint root, also see if we need to
-  // recompute our children's bounds due to origin change.
-  bool origin_changed =
-      previous_bounds.OffsetFromOrigin() != bounds_.OffsetFromOrigin();
-  SetRootBoundsDirty(origin_changed);
-
   if (visible_) {
     // Paint the new bounds.
     SchedulePaintBoundsChanged(
@@ -1919,6 +1883,17 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
                      parent_->CalculateOffsetToAncestorWithLayer(NULL));
     } else {
       SetLayerBounds(bounds_);
+    }
+
+    // In RTL mode, if our width has changed, our children's mirrored bounds
+    // will have changed. Update the child's layer bounds, or if it is not a
+    // layer, the bounds of any layers inside the child.
+    if (base::i18n::IsRTL() && bounds_.width() != previous_bounds.width()) {
+      for (int i = 0; i < child_count(); ++i) {
+        View* child = child_at(i);
+        child->UpdateChildLayerBounds(
+            gfx::Vector2d(child->GetMirroredX(), child->y()));
+      }
     }
   } else {
     // If our bounds have changed, then any descendant layer bounds may have
@@ -2000,77 +1975,6 @@ void View::RemoveDescendantToNotify(View* view) {
 void View::SetLayerBounds(const gfx::Rect& bounds) {
   layer()->SetBounds(bounds);
   SnapLayerToPixelBoundary();
-}
-
-void View::SetRootBoundsDirty(bool origin_changed) {
-  root_bounds_dirty_ = true;
-
-  if (origin_changed) {
-    // Inform our children that their root bounds are dirty, as their relative
-    // coordinates in paint root space have changed since ours have changed.
-    for (Views::const_iterator i(children_.begin()); i != children_.end();
-         ++i) {
-      if (!(*i)->IsPaintRoot())
-        (*i)->SetRootBoundsDirty(origin_changed);
-    }
-  }
-}
-
-void View::UpdateRootBounds(BoundsTree* tree, const gfx::Vector2d& offset) {
-  // If we're not visible no need to update BoundsTree. When we are made visible
-  // the BoundsTree will be updated appropriately.
-  if (!visible_)
-    return;
-
-  if (!root_bounds_dirty_ && children_.empty())
-    return;
-
-  // No need to recompute bounds if we haven't flagged ours as dirty.
-  TRACE_EVENT1("views", "View::UpdateRootBounds", "class", GetClassName());
-
-  // Add our own offset to the provided offset, for our own bounds update and
-  // for propagation to our children if needed.
-  gfx::Vector2d view_offset = offset + GetMirroredBounds().OffsetFromOrigin();
-
-  // If our bounds have changed we must re-insert our new bounds to the tree.
-  if (root_bounds_dirty_) {
-    root_bounds_dirty_ = false;
-    gfx::Rect bounds(
-        view_offset.x(), view_offset.y(), bounds_.width(), bounds_.height());
-    tree->Insert(bounds, reinterpret_cast<intptr_t>(this));
-  }
-
-  // Update our children's bounds if needed.
-  for (Views::const_iterator i(children_.begin()); i != children_.end(); ++i) {
-    // We don't descend in to layer views for bounds recomputation, as they
-    // manage their own RTree as paint roots.
-    if (!(*i)->IsPaintRoot())
-      (*i)->UpdateRootBounds(tree, view_offset);
-  }
-}
-
-void View::RemoveRootBounds(BoundsTree* tree) {
-  tree->Remove(reinterpret_cast<intptr_t>(this));
-
-  root_bounds_dirty_ = true;
-
-  for (Views::const_iterator i(children_.begin()); i != children_.end(); ++i) {
-    if (!(*i)->IsPaintRoot())
-      (*i)->RemoveRootBounds(tree);
-  }
-}
-
-View::BoundsTree* View::GetBoundsTreeFromPaintRoot() {
-  BoundsTree* bounds_tree = bounds_tree_.get();
-  View* paint_root = this;
-  while (!bounds_tree && !paint_root->IsPaintRoot()) {
-    // Assumption is that if IsPaintRoot() is false then parent_ is valid.
-    DCHECK(paint_root);
-    paint_root = paint_root->parent_;
-    bounds_tree = paint_root->bounds_tree_.get();
-  }
-
-  return bounds_tree;
 }
 
 // Transformations -------------------------------------------------------------
@@ -2418,6 +2322,16 @@ void View::PropagateLocaleChanged() {
   for (int i = child_count() - 1; i >= 0; --i)
     child_at(i)->PropagateLocaleChanged();
   OnLocaleChanged();
+}
+
+void View::PropagateDeviceScaleFactorChanged(float device_scale_factor) {
+  for (int i = child_count() - 1; i >= 0; --i)
+    child_at(i)->PropagateDeviceScaleFactorChanged(device_scale_factor);
+
+  // If the view is drawing to the layer, OnDeviceScaleFactorChanged() is called
+  // through LayerDelegate callback.
+  if (!layer())
+    OnDeviceScaleFactorChanged(device_scale_factor);
 }
 
 // Tooltips --------------------------------------------------------------------

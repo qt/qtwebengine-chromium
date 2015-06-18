@@ -13,6 +13,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
+namespace midi {
 
 namespace {
 
@@ -26,7 +27,10 @@ class MockUsbMidiDevice : public UsbMidiDevice {
   MockUsbMidiDevice() {}
   ~MockUsbMidiDevice() override {}
 
-  std::vector<uint8> GetDescriptor() override { return std::vector<uint8>(); }
+  std::vector<uint8> GetDescriptors() override { return std::vector<uint8>(); }
+  std::string GetManufacturer() override { return std::string(); }
+  std::string GetProductName() override { return std::string(); }
+  std::string GetDeviceVersion() override { return std::string(); }
 
   void Send(int endpoint_number, const std::vector<uint8>& data) override {
     for (size_t i = 0; i < data.size(); ++i) {
@@ -270,4 +274,5 @@ TEST_F(UsbMidiOutputStreamTest, SendRealTimeInSysExMessage) {
 
 }  // namespace
 
+}  // namespace midi
 }  // namespace media

@@ -65,7 +65,8 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       return InitializeStaticGLBindingsOSMesaGL();
     case kGLImplementationDesktopGL: {
       base::NativeLibrary library = NULL;
-      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+      const base::CommandLine* command_line =
+          base::CommandLine::ForCurrentProcess();
 
       if (command_line->HasSwitch(switches::kTestGLLib))
         library = LoadLibraryAndPrintError(
@@ -150,16 +151,9 @@ bool InitializeDynamicGLBindings(GLImplementation implementation,
     GLContext* context) {
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      InitializeDynamicGLBindingsGL(context);
-      InitializeDynamicGLBindingsOSMESA(context);
-      break;
-    case kGLImplementationDesktopGL:
-      InitializeDynamicGLBindingsGL(context);
-      InitializeDynamicGLBindingsGLX(context);
-      break;
+   case kGLImplementationDesktopGL:
     case kGLImplementationEGLGLES2:
       InitializeDynamicGLBindingsGL(context);
-      InitializeDynamicGLBindingsEGL(context);
       break;
     case kGLImplementationMockGL:
       if (!context) {

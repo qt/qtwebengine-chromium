@@ -29,8 +29,6 @@ void DebugRectHistory::SaveDebugRectsForCurrentFrame(
     LayerImpl* root_layer,
     LayerImpl* hud_layer,
     const LayerImplList& render_surface_layer_list,
-    const std::vector<gfx::Rect>& occluding_screen_space_rects,
-    const std::vector<gfx::Rect>& non_occluding_screen_space_rects,
     const LayerTreeDebugState& debug_state) {
   // For now, clear all rects from previous frames. In the future we may want to
   // store all debug rects for a history of many frames.
@@ -60,12 +58,6 @@ void DebugRectHistory::SaveDebugRectsForCurrentFrame(
   if (debug_state.show_screen_space_rects)
     SaveScreenSpaceRects(render_surface_layer_list);
 
-  if (debug_state.show_occluding_rects)
-    SaveOccludingRects(occluding_screen_space_rects);
-
-  if (debug_state.show_non_occluding_rects)
-    SaveNonOccludingRects(non_occluding_screen_space_rects);
-
   if (debug_state.show_layer_animation_bounds_rects)
     SaveLayerAnimationBoundsRects(render_surface_layer_list);
 }
@@ -76,17 +68,21 @@ void DebugRectHistory::SavePaintRects(LayerImpl* layer) {
   // not. Therefore we traverse recursively over all layers, not just the render
   // surface list.
 
-  if (!layer->update_rect().IsEmpty() && layer->DrawsContent()) {
+  Region invalidation_region = layer->GetInvalidationRegion();
+  if (!invalidation_region.IsEmpty() && layer->DrawsContent()) {
     float width_scale = layer->content_bounds().width() /
                         static_cast<float>(layer->bounds().width());
     float height_scale = layer->content_bounds().height() /
                          static_cast<float>(layer->bounds().height());
-    gfx::Rect update_content_rect = gfx::ScaleToEnclosingRect(
-        layer->update_rect(), width_scale, height_scale);
-    debug_rects_.push_back(
-        DebugRect(PAINT_RECT_TYPE,
-                  MathUtil::MapEnclosingClippedRect(
-                      layer->screen_space_transform(), update_content_rect)));
+
+    for (Region::Iterator it(invalidation_region); it.has_rect(); it.next()) {
+      gfx::Rect update_content_rect =
+          gfx::ScaleToEnclosingRect(it.rect(), width_scale, height_scale);
+      debug_rects_.push_back(
+          DebugRect(PAINT_RECT_TYPE,
+                    MathUtil::MapEnclosingClippedRect(
+                        layer->screen_space_transform(), update_content_rect)));
+    }
   }
 
   for (unsigned i = 0; i < layer->children().size(); ++i)
@@ -170,25 +166,10 @@ void DebugRectHistory::SaveScreenSpaceRects(
   }
 }
 
-void DebugRectHistory::SaveOccludingRects(
-    const std::vector<gfx::Rect>& occluding_rects) {
-  for (size_t i = 0; i < occluding_rects.size(); ++i)
-    debug_rects_.push_back(DebugRect(OCCLUDING_RECT_TYPE, occluding_rects[i]));
-}
-
-void DebugRectHistory::SaveNonOccludingRects(
-    const std::vector<gfx::Rect>& non_occluding_rects) {
-  for (size_t i = 0; i < non_occluding_rects.size(); ++i) {
-    debug_rects_.push_back(
-        DebugRect(NONOCCLUDING_RECT_TYPE, non_occluding_rects[i]));
-  }
-}
-
 void DebugRectHistory::SaveTouchEventHandlerRects(LayerImpl* layer) {
-  LayerTreeHostCommon::CallFunctionForSubtree<LayerImpl>(
-      layer,
-      base::Bind(&DebugRectHistory::SaveTouchEventHandlerRectsCallback,
-                 base::Unretained(this)));
+  LayerTreeHostCommon::CallFunctionForSubtree(layer, [this](LayerImpl* layer) {
+    SaveTouchEventHandlerRectsCallback(layer);
+  });
 }
 
 void DebugRectHistory::SaveTouchEventHandlerRectsCallback(LayerImpl* layer) {
@@ -205,10 +186,9 @@ void DebugRectHistory::SaveTouchEventHandlerRectsCallback(LayerImpl* layer) {
 }
 
 void DebugRectHistory::SaveWheelEventHandlerRects(LayerImpl* layer) {
-  LayerTreeHostCommon::CallFunctionForSubtree<LayerImpl>(
-      layer,
-      base::Bind(&DebugRectHistory::SaveWheelEventHandlerRectsCallback,
-                 base::Unretained(this)));
+  LayerTreeHostCommon::CallFunctionForSubtree(layer, [this](LayerImpl* layer) {
+    SaveWheelEventHandlerRectsCallback(layer);
+  });
 }
 
 void DebugRectHistory::SaveWheelEventHandlerRectsCallback(LayerImpl* layer) {
@@ -226,10 +206,9 @@ void DebugRectHistory::SaveWheelEventHandlerRectsCallback(LayerImpl* layer) {
 }
 
 void DebugRectHistory::SaveScrollEventHandlerRects(LayerImpl* layer) {
-  LayerTreeHostCommon::CallFunctionForSubtree<LayerImpl>(
-      layer,
-      base::Bind(&DebugRectHistory::SaveScrollEventHandlerRectsCallback,
-                 base::Unretained(this)));
+  LayerTreeHostCommon::CallFunctionForSubtree(layer, [this](LayerImpl* layer) {
+    SaveScrollEventHandlerRectsCallback(layer);
+  });
 }
 
 void DebugRectHistory::SaveScrollEventHandlerRectsCallback(LayerImpl* layer) {
@@ -247,10 +226,9 @@ void DebugRectHistory::SaveScrollEventHandlerRectsCallback(LayerImpl* layer) {
 }
 
 void DebugRectHistory::SaveNonFastScrollableRects(LayerImpl* layer) {
-  LayerTreeHostCommon::CallFunctionForSubtree<LayerImpl>(
-      layer,
-      base::Bind(&DebugRectHistory::SaveNonFastScrollableRectsCallback,
-                 base::Unretained(this)));
+  LayerTreeHostCommon::CallFunctionForSubtree(layer, [this](LayerImpl* layer) {
+    SaveNonFastScrollableRectsCallback(layer);
+  });
 }
 
 void DebugRectHistory::SaveNonFastScrollableRectsCallback(LayerImpl* layer) {

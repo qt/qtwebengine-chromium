@@ -16,8 +16,8 @@
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/events/latency_info.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 
 using blink::WebCanvas;
 
@@ -67,7 +67,7 @@ class PepperGraphics2DHostTest : public testing::Test {
         ppapi::proxy::ResourceMessageCallParams(host_->pp_resource(), 0));
     std::vector<ui::LatencyInfo> latency;
     host_->OnHostMsgFlush(&context, latency);
-    host_->ViewFlushedPaint();
+    host_->ViewInitiatedPaint();
     host_->SendOffscreenFlushAck();
   }
 

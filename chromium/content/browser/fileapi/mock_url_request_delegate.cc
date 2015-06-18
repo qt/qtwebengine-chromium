@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mock_url_request_delegate.h"
+#include "content/browser/fileapi/mock_url_request_delegate.h"
 
 #include "base/run_loop.h"
 #include "net/base/io_buffer.h"

@@ -34,22 +34,24 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<StaticNodeList> TreeScopeEventContext::ensureEventPath(EventPath& path)
+WillBeHeapVector<RefPtrWillBeMember<EventTarget>>& TreeScopeEventContext::ensureEventPath(EventPath& path)
 {
     if (m_eventPath)
-        return m_eventPath;
+        return *m_eventPath;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node>> nodes;
-    nodes.reserveInitialCapacity(path.size());
+    m_eventPath = adoptPtrWillBeNoop(new WillBeHeapVector<RefPtrWillBeMember<EventTarget>>());
+    LocalDOMWindow* window = path.windowEventContext().window();
+    m_eventPath->reserveCapacity(path.size() + (window ? 1 : 0));
     for (size_t i = 0; i < path.size(); ++i) {
-        TreeScope& treeScope = path[i].treeScopeEventContext().treeScope();
-        if (treeScope.rootNode().isShadowRoot() && toShadowRoot(treeScope).type() == ShadowRoot::AuthorShadowRoot)
-            nodes.append(path[i].node());
+        Node& rootNode = path[i].treeScopeEventContext().rootNode();
+        if (rootNode.isShadowRoot() && toShadowRoot(rootNode).type() == ShadowRoot::OpenShadowRoot)
+            m_eventPath->append(path[i].node());
         else if (path[i].treeScopeEventContext().isInclusiveAncestorOf(*this))
-            nodes.append(path[i].node());
+            m_eventPath->append(path[i].node());
     }
-    m_eventPath = StaticNodeList::adopt(nodes);
-    return m_eventPath;
+    if (window)
+        m_eventPath->append(window);
+    return *m_eventPath;
 }
 
 TouchEventContext* TreeScopeEventContext::ensureTouchEventContext()
@@ -66,6 +68,7 @@ PassRefPtrWillBeRawPtr<TreeScopeEventContext> TreeScopeEventContext::create(Tree
 
 TreeScopeEventContext::TreeScopeEventContext(TreeScope& treeScope)
     : m_treeScope(treeScope)
+    , m_rootNode(treeScope.rootNode())
     , m_preOrder(-1)
     , m_postOrder(-1)
 {
@@ -73,9 +76,10 @@ TreeScopeEventContext::TreeScopeEventContext(TreeScope& treeScope)
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(TreeScopeEventContext)
 
-void TreeScopeEventContext::trace(Visitor* visitor)
+DEFINE_TRACE(TreeScopeEventContext)
 {
     visitor->trace(m_treeScope);
+    visitor->trace(m_rootNode);
     visitor->trace(m_target);
     visitor->trace(m_relatedTarget);
     visitor->trace(m_eventPath);

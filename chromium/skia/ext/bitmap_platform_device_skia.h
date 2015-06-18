@@ -25,11 +25,6 @@ class BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice {
   // The bitmap is not initialized.
   static BitmapPlatformDevice* Create(int width, int height, bool is_opaque);
 
-  // Construct a BitmapPlatformDevice, as above.
-  // If |is_opaque| is false, the bitmap is initialized to 0.
-  static BitmapPlatformDevice* CreateAndClear(int width, int height,
-                                              bool is_opaque);
-
   // This doesn't take ownership of |data|. If |data| is null, the bitmap
   // is not initialized to 0.
   static BitmapPlatformDevice* Create(int width, int height, bool is_opaque,
@@ -40,15 +35,12 @@ class BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice {
   // we ever have to share state between some native drawing UI and Skia, like
   // the Windows and Mac versions of this class do.
   explicit BitmapPlatformDevice(const SkBitmap& other);
-  virtual ~BitmapPlatformDevice();
+  ~BitmapPlatformDevice() override;
 
-  virtual PlatformSurface BeginPlatformPaint() override;
-  virtual void DrawToNativeContext(PlatformSurface surface, int x, int y,
-                                   const PlatformRect* src_rect) override;
+  PlatformSurface BeginPlatformPaint() override;
 
  protected:
-  virtual SkBaseDevice* onCreateDevice(const SkImageInfo& info,
-                                       Usage usage) override;
+  SkBaseDevice* onCreateDevice(const CreateInfo&, const SkPaint*) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BitmapPlatformDevice);

@@ -7,9 +7,11 @@
 #include <cstring>
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/profiler/scoped_tracker.h"
 #include "build/build_config.h"
-#include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
 #include "content/browser/renderer_host/pepper/content_browser_pepper_host_factory.h"
 #include "content/browser/renderer_host/pepper/pepper_socket_utils.h"
 #include "content/public/browser/browser_context.h"
@@ -57,18 +59,24 @@ PepperTCPSocketMessageFilter::PepperTCPSocketMessageFilter(
       external_plugin_(host->external_plugin()),
       render_process_id_(0),
       render_frame_id_(0),
-      ppapi_host_(host->GetPpapiHost()),
+      host_(host),
       factory_(factory),
       instance_(instance),
       state_(TCPSocketState::INITIAL),
       end_of_file_reached_(false),
       bind_input_addr_(NetAddressPrivateImpl::kInvalidNetAddress),
+      socket_options_(SOCKET_OPTION_NODELAY),
+      rcvbuf_size_(0),
+      sndbuf_size_(0),
       address_index_(0),
       socket_(new net::TCPSocket(NULL, net::NetLog::Source())),
       ssl_context_helper_(host->ssl_context_helper()),
-      pending_accept_(false) {
+      pending_accept_(false),
+      pending_read_on_unthrottle_(false),
+      pending_read_net_result_(0) {
   DCHECK(host);
   ++g_num_instances;
+  host_->AddInstanceObserver(instance_, this);
   if (!host->GetRenderFrameIDsForInstance(
           instance, &render_process_id_, &render_frame_id_)) {
     NOTREACHED();
@@ -84,20 +92,26 @@ PepperTCPSocketMessageFilter::PepperTCPSocketMessageFilter(
       external_plugin_(host->external_plugin()),
       render_process_id_(0),
       render_frame_id_(0),
-      ppapi_host_(host->GetPpapiHost()),
+      host_(host),
       factory_(NULL),
       instance_(instance),
       state_(TCPSocketState::CONNECTED),
       end_of_file_reached_(false),
       bind_input_addr_(NetAddressPrivateImpl::kInvalidNetAddress),
+      socket_options_(SOCKET_OPTION_NODELAY),
+      rcvbuf_size_(0),
+      sndbuf_size_(0),
       address_index_(0),
       socket_(socket.Pass()),
       ssl_context_helper_(host->ssl_context_helper()),
-      pending_accept_(false) {
+      pending_accept_(false),
+      pending_read_on_unthrottle_(false),
+      pending_read_net_result_(0) {
   DCHECK(host);
   DCHECK_NE(version, ppapi::TCP_SOCKET_VERSION_1_0);
 
   ++g_num_instances;
+  host_->AddInstanceObserver(instance_, this);
   if (!host->GetRenderFrameIDsForInstance(
           instance, &render_process_id_, &render_frame_id_)) {
     NOTREACHED();
@@ -105,6 +119,8 @@ PepperTCPSocketMessageFilter::PepperTCPSocketMessageFilter(
 }
 
 PepperTCPSocketMessageFilter::~PepperTCPSocketMessageFilter() {
+  if (host_)
+    host_->RemoveInstanceObserver(instance_, this);
   if (socket_)
     socket_->Close();
   if (ssl_socket_)
@@ -161,6 +177,21 @@ int32_t PepperTCPSocketMessageFilter::OnResourceMessageReceived(
                                       OnMsgSetOption)
   PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
+}
+
+void PepperTCPSocketMessageFilter::OnThrottleStateChanged(bool is_throttled) {
+  if (pending_read_on_unthrottle_ && !is_throttled) {
+    DCHECK(read_buffer_);
+    OnReadCompleted(pending_read_reply_message_context_,
+                    pending_read_net_result_);
+    DCHECK(!read_buffer_);
+    pending_read_on_unthrottle_ = false;
+  }
+}
+
+void PepperTCPSocketMessageFilter::OnHostDestroyed() {
+  host_->RemoveInstanceObserver(instance_, this);
+  host_ = nullptr;
 }
 
 int32_t PepperTCPSocketMessageFilter::OnMsgBind(
@@ -456,35 +487,57 @@ int32_t PepperTCPSocketMessageFilter::OnMsgSetOption(
 
   switch (name) {
     case PP_TCPSOCKET_OPTION_NO_DELAY: {
-      if (state_.state() != TCPSocketState::CONNECTED)
-        return PP_ERROR_FAILED;
-
       bool boolean_value = false;
       if (!value.GetBool(&boolean_value))
         return PP_ERROR_BADARGUMENT;
-      return socket_->SetNoDelay(boolean_value) ? PP_OK : PP_ERROR_FAILED;
-    }
-    case PP_TCPSOCKET_OPTION_SEND_BUFFER_SIZE:
-    case PP_TCPSOCKET_OPTION_RECV_BUFFER_SIZE: {
-      if (state_.state() != TCPSocketState::CONNECTED)
-        return PP_ERROR_FAILED;
 
+      // If the socket is already connected, proxy the value to TCPSocket.
+      if (state_.state() == TCPSocketState::CONNECTED)
+        return socket_->SetNoDelay(boolean_value) ? PP_OK : PP_ERROR_FAILED;
+
+      // TCPSocket instance is not yet created. So remember the value here.
+      if (boolean_value) {
+        socket_options_ |= SOCKET_OPTION_NODELAY;
+      } else {
+        socket_options_ &= ~SOCKET_OPTION_NODELAY;
+      }
+      return PP_OK;
+    }
+    case PP_TCPSOCKET_OPTION_SEND_BUFFER_SIZE: {
       int32_t integer_value = 0;
-      if (!value.GetInt32(&integer_value) || integer_value <= 0)
+      if (!value.GetInt32(&integer_value) ||
+          integer_value <= 0 ||
+          integer_value > TCPSocketResourceBase::kMaxSendBufferSize)
         return PP_ERROR_BADARGUMENT;
 
-      int net_result = net::ERR_UNEXPECTED;
-      if (name == PP_TCPSOCKET_OPTION_SEND_BUFFER_SIZE) {
-        if (integer_value > TCPSocketResourceBase::kMaxSendBufferSize)
-          return PP_ERROR_BADARGUMENT;
-        net_result = socket_->SetSendBufferSize(integer_value);
-      } else {
-        if (integer_value > TCPSocketResourceBase::kMaxReceiveBufferSize)
-          return PP_ERROR_BADARGUMENT;
-        net_result = socket_->SetReceiveBufferSize(integer_value);
+      // If the socket is already connected, proxy the value to TCPSocket.
+      if (state_.state() == TCPSocketState::CONNECTED) {
+        return NetErrorToPepperError(
+            socket_->SetSendBufferSize(integer_value));
       }
-      // TODO(wtc): Add error mapping code.
-      return (net_result == net::OK) ? PP_OK : PP_ERROR_FAILED;
+
+      // TCPSocket instance is not yet created. So remember the value here.
+      socket_options_ |= SOCKET_OPTION_SNDBUF_SIZE;
+      sndbuf_size_ = integer_value;
+      return PP_OK;
+    }
+    case PP_TCPSOCKET_OPTION_RECV_BUFFER_SIZE: {
+      int32_t integer_value = 0;
+      if (!value.GetInt32(&integer_value) ||
+          integer_value <= 0 ||
+          integer_value > TCPSocketResourceBase::kMaxReceiveBufferSize)
+        return PP_ERROR_BADARGUMENT;
+
+      // If the socket is already connected, proxy the value to TCPSocket.
+      if (state_.state() == TCPSocketState::CONNECTED) {
+        return NetErrorToPepperError(
+            socket_->SetReceiveBufferSize(integer_value));
+      }
+
+      // TCPSocket instance is not yet created. So remember the value here.
+      socket_options_ |= SOCKET_OPTION_RCVBUF_SIZE;
+      rcvbuf_size_ = integer_value;
+      return PP_OK;
     }
     default: {
       NOTREACHED();
@@ -510,7 +563,7 @@ void PepperTCPSocketMessageFilter::DoBind(
   int pp_result = PP_OK;
   do {
     net::IPAddressNumber address;
-    int port;
+    uint16 port;
     if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(
             net_addr, &address, &port)) {
       pp_result = PP_ERROR_ADDRESS_INVALID;
@@ -600,7 +653,7 @@ void PepperTCPSocketMessageFilter::DoConnectWithNetAddress(
   state_.SetPendingTransition(TCPSocketState::CONNECT);
 
   net::IPAddressNumber address;
-  int port;
+  uint16 port;
   if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(
           net_addr, &address, &port)) {
     state_.CompletePendingTransition(false);
@@ -690,17 +743,42 @@ void PepperTCPSocketMessageFilter::StartConnect(
   DCHECK(state_.IsPending(TCPSocketState::CONNECT));
   DCHECK_LT(address_index_, address_list_.size());
 
-  int net_result = net::OK;
-  if (!socket_->IsValid())
-    net_result = socket_->Open(address_list_[address_index_].GetFamily());
-
-  if (net_result == net::OK) {
-    net_result = socket_->Connect(
-        address_list_[address_index_],
-        base::Bind(&PepperTCPSocketMessageFilter::OnConnectCompleted,
-                   base::Unretained(this),
-                   context));
+  if (!socket_->IsValid()) {
+    int net_result = socket_->Open(address_list_[address_index_].GetFamily());
+    if (net_result != net::OK) {
+      OnConnectCompleted(context, net_result);
+      return;
+    }
   }
+
+  socket_->SetDefaultOptionsForClient();
+
+  if (!(socket_options_ & SOCKET_OPTION_NODELAY)) {
+    if (!socket_->SetNoDelay(false)) {
+      OnConnectCompleted(context, net::ERR_FAILED);
+      return;
+    }
+  }
+  if (socket_options_ & SOCKET_OPTION_RCVBUF_SIZE) {
+    int net_result = socket_->SetReceiveBufferSize(rcvbuf_size_);
+    if (net_result != net::OK) {
+      OnConnectCompleted(context, net_result);
+      return;
+    }
+  }
+  if (socket_options_ & SOCKET_OPTION_SNDBUF_SIZE) {
+    int net_result = socket_->SetSendBufferSize(sndbuf_size_);
+    if (net_result != net::OK) {
+      OnConnectCompleted(context, net_result);
+      return;
+    }
+  }
+
+  int net_result = socket_->Connect(
+      address_list_[address_index_],
+      base::Bind(&PepperTCPSocketMessageFilter::OnConnectCompleted,
+                 base::Unretained(this),
+                 context));
   if (net_result != net::ERR_IO_PENDING)
     OnConnectCompleted(context, net_result);
 }
@@ -709,6 +787,11 @@ void PepperTCPSocketMessageFilter::OnConnectCompleted(
     const ppapi::host::ReplyMessageContext& context,
     int net_result) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // TODO(rvargas): Remove ScopedTracker below once crbug.com/462784 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "462784 PepperTCPSocketMessageFilter::OnConnectCompleted"));
 
   if (!state_.IsPending(TCPSocketState::CONNECT)) {
     DCHECK(state_.state() == TCPSocketState::CLOSED);
@@ -748,7 +831,6 @@ void PepperTCPSocketMessageFilter::OnConnectCompleted(
       break;
     }
 
-    socket_->SetDefaultOptionsForClient();
     SendConnectReply(context, PP_OK, local_addr, remote_addr);
     state_.CompletePendingTransition(true);
     return;
@@ -798,6 +880,13 @@ void PepperTCPSocketMessageFilter::OnReadCompleted(
     int net_result) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(read_buffer_.get());
+
+  if (host_ && host_->IsThrottled(instance_)) {
+    pending_read_on_unthrottle_ = true;
+    pending_read_reply_message_context_ = context;
+    pending_read_net_result_ = net_result;
+    return;
+  }
 
   if (net_result > 0) {
     SendReadReply(
@@ -884,7 +973,8 @@ void PepperTCPSocketMessageFilter::OnAcceptCompleted(
     SendAcceptError(context, PP_ERROR_NOSPACE);
     return;
   }
-  int pending_host_id = ppapi_host_->AddPendingResourceHost(host.Pass());
+  int pending_host_id =
+      host_->GetPpapiHost()->AddPendingResourceHost(host.Pass());
   if (pending_host_id)
     SendAcceptReply(context, PP_OK, pending_host_id, local_addr, remote_addr);
   else
@@ -911,6 +1001,9 @@ void PepperTCPSocketMessageFilter::SendConnectReply(
     int32_t pp_result,
     const PP_NetAddress_Private& local_addr,
     const PP_NetAddress_Private& remote_addr) {
+  UMA_HISTOGRAM_BOOLEAN("Pepper.PluginContextSecurity.TCPConnect",
+                        host_->IsPotentiallySecurePluginContext(instance_));
+
   ppapi::host::ReplyMessageContext reply_context(context);
   reply_context.params.set_result(pp_result);
   SendReply(reply_context,

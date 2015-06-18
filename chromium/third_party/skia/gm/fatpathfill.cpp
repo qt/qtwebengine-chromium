@@ -16,7 +16,7 @@
 #define REPEAT_LOOP 5
 
 static SkSurface* new_surface(int width, int height) {
-    return SkSurface::NewRasterPMColor(width, height);
+    return SkSurface::NewRasterN32Premul(width, height);
 }
 
 static void draw_pixel_centers(SkCanvas* canvas) {
@@ -56,9 +56,6 @@ public:
     FatPathFillGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     virtual SkString onShortName() {
         return SkString("fatpathfill");

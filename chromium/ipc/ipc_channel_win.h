@@ -29,26 +29,24 @@ class ChannelWin : public Channel,
   // Mirror methods of Channel, see ipc_channel.h for description.
   ChannelWin(const IPC::ChannelHandle &channel_handle, Mode mode,
              Listener* listener);
-  ~ChannelWin();
+  ~ChannelWin() override;
 
   // Channel implementation
-  virtual bool Connect() override;
-  virtual void Close() override;
-  virtual bool Send(Message* message) override;
-  virtual base::ProcessId GetPeerPID() const override;
-  virtual base::ProcessId GetSelfPID() const override;
+  bool Connect() override;
+  void Close() override;
+  bool Send(Message* message) override;
+  base::ProcessId GetPeerPID() const override;
+  base::ProcessId GetSelfPID() const override;
 
   static bool IsNamedServerInitialized(const std::string& channel_id);
 
 
  private:
   // ChannelReader implementation.
-  virtual ReadState ReadData(char* buffer,
-                             int buffer_len,
-                             int* bytes_read) override;
-  virtual bool WillDispatchInputMessage(Message* msg) override;
+  ReadState ReadData(char* buffer, int buffer_len, int* bytes_read) override;
+  bool WillDispatchInputMessage(Message* msg) override;
   bool DidEmptyInputBuffers() override;
-  virtual void HandleInternalMessage(const Message& msg) override;
+  void HandleInternalMessage(const Message& msg) override;
 
   static const base::string16 PipeName(const std::string& channel_id,
                                        int32* secret);
@@ -59,9 +57,9 @@ class ChannelWin : public Channel,
                                DWORD bytes_written);
 
   // MessageLoop::IOHandler implementation.
-  virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
-                             DWORD bytes_transfered,
-                             DWORD error) override;
+  void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                     DWORD bytes_transfered,
+                     DWORD error) override;
 
  private:
   struct State {
@@ -94,20 +92,8 @@ class ChannelWin : public Channel,
   // Determines if we should validate a client's secret on connection.
   bool validate_client_;
 
-  // True if there is a write in progress. TODO(rvargas): remove this.
-  bool writing_;
-
   // Tracks the lifetime of this object, for debugging purposes.
   uint32 debug_flags_;
-
-  // OS result for the current write. TODO(rvargas): remove this.
-  uint32 write_error_;
-
-  // OS result for a previous failed write. TODO(rvargas): remove this.
-  uint32 last_write_error_;
-
-  // Size of the current write. TODO(rvargas): remove this.
-  uint32 write_size_;
 
   // This is a unique per-channel value used to authenticate the client end of
   // a connection. If the value is non-zero, the client passes it in the hello

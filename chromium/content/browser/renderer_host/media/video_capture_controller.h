@@ -19,13 +19,6 @@
 //     it possible for the Manager to delete the Controller and its Device when
 //     there are no clients left.
 //
-// A helper class, VCC::VideoCaptureDeviceClient, is responsible for:
-//
-//   * Conveying events from the device thread (where VideoCaptureDevices live)
-//     the IO thread (where the VideoCaptureController lives).
-//   * Performing some image transformations on the output of the Device;
-//     specifically, colorspace conversion and rotation.
-//
 // Interactions between VideoCaptureController and other classes:
 //
 //   * VideoCaptureController indirectly observes a VideoCaptureDevice
@@ -54,12 +47,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
-#include "content/browser/renderer_host/media/video_capture_buffer_pool.h"
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
+#include "media/base/video_capture_types.h"
 #include "media/video/capture/video_capture_device.h"
-#include "media/video/capture/video_capture_types.h"
 
 namespace content {
 class VideoCaptureBufferPool;
@@ -74,16 +66,18 @@ class CONTENT_EXPORT VideoCaptureController {
   explicit VideoCaptureController(int max_buffers);
   virtual ~VideoCaptureController();
 
-  base::WeakPtr<VideoCaptureController> GetWeakPtr();
+  base::WeakPtr<VideoCaptureController> GetWeakPtrForIOThread();
 
   // Return a new VideoCaptureDeviceClient to forward capture events to this
-  // instance.
-  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient();
+  // instance. Some device clients need to allocate resources for the given
+  // capture |format| and/or work on Capture Thread (|capture_task_runner|).
+  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient(
+      const scoped_refptr<base::SingleThreadTaskRunner>& capture_task_runner);
 
   // Start video capturing and try to use the resolution specified in |params|.
   // Buffers will be shared to the client as necessary. The client will continue
   // to receive frames from the device until RemoveClient() is called.
-  void AddClient(const VideoCaptureControllerID& id,
+  void AddClient(VideoCaptureControllerID id,
                  VideoCaptureControllerEventHandler* event_handler,
                  base::ProcessHandle render_process,
                  media::VideoCaptureSessionId session_id,
@@ -93,11 +87,11 @@ class CONTENT_EXPORT VideoCaptureController {
   // |event_handler|, and |event_handler| shouldn't use those buffers any more.
   // Returns the session_id of the stopped client, or
   // kInvalidMediaCaptureSessionId if the indicated client was not registered.
-  int RemoveClient(const VideoCaptureControllerID& id,
+  int RemoveClient(VideoCaptureControllerID id,
                    VideoCaptureControllerEventHandler* event_handler);
 
   // Pause or resume the video capture for specified client.
-  void PauseOrResumeClient(const VideoCaptureControllerID& id,
+  void PauseOrResumeClient(VideoCaptureControllerID id,
                            VideoCaptureControllerEventHandler* event_handler,
                            bool pause);
 
@@ -115,7 +109,7 @@ class CONTENT_EXPORT VideoCaptureController {
   // buffer was backed by a texture, |sync_point| will be waited on before
   // destroying or recycling the texture, to synchronize with texture users in
   // the renderer process.
-  void ReturnBuffer(const VideoCaptureControllerID& id,
+  void ReturnBuffer(VideoCaptureControllerID id,
                     VideoCaptureControllerEventHandler* event_handler,
                     int buffer_id,
                     uint32 sync_point);
@@ -124,32 +118,27 @@ class CONTENT_EXPORT VideoCaptureController {
 
   bool has_received_frames() const { return has_received_frames_; }
 
- private:
-  class VideoCaptureDeviceClient;
+  // Worker functions on IO thread. Called by the VideoCaptureDeviceClient.
+  void DoIncomingCapturedVideoFrameOnIOThread(
+      scoped_ptr<media::VideoCaptureDevice::Client::Buffer> buffer,
+      const scoped_refptr<media::VideoFrame>& frame,
+      const base::TimeTicks& timestamp);
+  void DoErrorOnIOThread();
+  void DoLogOnIOThread(const std::string& message);
+  void DoBufferDestroyedOnIOThread(int buffer_id_to_drop);
 
+ private:
   struct ControllerClient;
   typedef std::list<ControllerClient*> ControllerClients;
 
-  // Worker functions on IO thread. Called by the VideoCaptureDeviceClient.
-  void DoIncomingCapturedVideoFrameOnIOThread(
-      const scoped_refptr<media::VideoCaptureDevice::Client::Buffer>& buffer,
-      const media::VideoCaptureFormat& format,
-      const scoped_refptr<media::VideoFrame>& frame,
-      base::TimeTicks timestamp);
-  void DoErrorOnIOThread();
-  void DoDeviceStoppedOnIOThread();
-  void DoBufferDestroyedOnIOThread(int buffer_id_to_drop);
-
   // Find a client of |id| and |handler| in |clients|.
-  ControllerClient* FindClient(
-      const VideoCaptureControllerID& id,
-      VideoCaptureControllerEventHandler* handler,
-      const ControllerClients& clients);
+  ControllerClient* FindClient(VideoCaptureControllerID id,
+                               VideoCaptureControllerEventHandler* handler,
+                               const ControllerClients& clients);
 
   // Find a client of |session_id| in |clients|.
-  ControllerClient* FindClient(
-      int session_id,
-      const ControllerClients& clients);
+  ControllerClient* FindClient(int session_id,
+                               const ControllerClients& clients);
 
   // The pool of shared-memory buffers used for capturing.
   const scoped_refptr<VideoCaptureBufferPool> buffer_pool_;

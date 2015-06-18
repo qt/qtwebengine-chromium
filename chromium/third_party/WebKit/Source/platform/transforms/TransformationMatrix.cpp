@@ -162,7 +162,7 @@ static double determinant4x4(const TransformationMatrix::Matrix4& m)
 //  The matrix B = (b  ) is the adjoint of A
 //                   ij
 
-static void adjoint(const TransformationMatrix::Matrix4& matrix, TransformationMatrix::Matrix4& result)
+static inline void adjoint(const TransformationMatrix::Matrix4& matrix, TransformationMatrix::Matrix4& result)
 {
     // Assign to individual variable names to aid
     // selecting correct values
@@ -211,9 +211,6 @@ static void adjoint(const TransformationMatrix::Matrix4& matrix, TransformationM
 // Returns false if the matrix is not invertible
 static bool inverse(const TransformationMatrix::Matrix4& matrix, TransformationMatrix::Matrix4& result)
 {
-    // Calculate the adjoint matrix
-    adjoint(matrix, result);
-
     // Calculate the 4x4 determinant
     // If the determinant is zero,
     // then the inverse matrix is not unique.
@@ -222,12 +219,129 @@ static bool inverse(const TransformationMatrix::Matrix4& matrix, TransformationM
     if (fabs(det) < SMALL_NUMBER)
         return false;
 
-    // Scale the adjoint matrix to get the inverse
+#if CPU(ARM64)
+    double rdet = 1 / det;
+    const double* mat = &(matrix[0][0]);
+    double* pr = &(result[0][0]);
+    asm volatile(
+        // mat: v16 - v23
+        // m11, m12, m13, m14
+        // m21, m22, m23, m24
+        // m31, m32, m33, m34
+        // m41, m42, m43, m44
+        "ld1 {v16.2d - v19.2d}, [%[mat]], 64  \n\t"
+        "ld1 {v20.2d - v23.2d}, [%[mat]]      \n\t"
+        "ins v30.d[0], %[rdet]         \n\t"
+        // Determinant: right mat2x2
+        "trn1 v0.2d, v17.2d, v21.2d    \n\t"
+        "trn2 v1.2d, v19.2d, v23.2d    \n\t"
+        "trn2 v2.2d, v17.2d, v21.2d    \n\t"
+        "trn1 v3.2d, v19.2d, v23.2d    \n\t"
+        "trn2 v5.2d, v21.2d, v23.2d    \n\t"
+        "trn1 v4.2d, v17.2d, v19.2d    \n\t"
+        "trn2 v6.2d, v17.2d, v19.2d    \n\t"
+        "trn1 v7.2d, v21.2d, v23.2d    \n\t"
+        "trn2 v25.2d, v23.2d, v21.2d   \n\t"
+        "trn1 v27.2d, v23.2d, v21.2d   \n\t"
+        "fmul v0.2d, v0.2d, v1.2d      \n\t"
+        "fmul v1.2d, v4.2d, v5.2d      \n\t"
+        "fmls v0.2d, v2.2d, v3.2d      \n\t"
+        "fmul v2.2d, v4.2d, v25.2d     \n\t"
+        "fmls v1.2d, v6.2d, v7.2d      \n\t"
+        "fmls v2.2d, v6.2d, v27.2d     \n\t"
+        // Adjoint:
+        // v24: A11A12, v25: A13A14
+        // v26: A21A22, v27: A23A24
+        "fmul v3.2d, v18.2d, v0.d[1]   \n\t"
+        "fmul v4.2d, v16.2d, v0.d[1]   \n\t"
+        "fmul v5.2d, v16.2d, v1.d[1]   \n\t"
+        "fmul v6.2d, v16.2d, v2.d[1]   \n\t"
+        "fmls v3.2d, v20.2d, v1.d[1]   \n\t"
+        "fmls v4.2d, v20.2d, v2.d[0]   \n\t"
+        "fmls v5.2d, v18.2d, v2.d[0]   \n\t"
+        "fmls v6.2d, v18.2d, v1.d[0]   \n\t"
+        "fmla v3.2d, v22.2d, v2.d[1]   \n\t"
+        "fmla v4.2d, v22.2d, v1.d[0]   \n\t"
+        "fmla v5.2d, v22.2d, v0.d[0]   \n\t"
+        "fmla v6.2d, v20.2d, v0.d[0]   \n\t"
+        "fneg v3.2d, v3.2d             \n\t"
+        "fneg v5.2d, v5.2d             \n\t"
+        "trn1 v26.2d, v3.2d, v4.2d     \n\t"
+        "trn1 v27.2d, v5.2d, v6.2d     \n\t"
+        "trn2 v24.2d, v3.2d, v4.2d     \n\t"
+        "trn2 v25.2d, v5.2d, v6.2d     \n\t"
+        "fneg v24.2d, v24.2d           \n\t"
+        "fneg v25.2d, v25.2d           \n\t"
+        // Inverse
+        // v24: I11I12, v25: I13I14
+        // v26: I21I22, v27: I23I24
+        "fmul v24.2d, v24.2d, v30.d[0] \n\t"
+        "fmul v25.2d, v25.2d, v30.d[0] \n\t"
+        "fmul v26.2d, v26.2d, v30.d[0] \n\t"
+        "fmul v27.2d, v27.2d, v30.d[0] \n\t"
+        "st1 {v24.2d - v27.2d}, [%[pr]], 64 \n\t"
+        // Determinant: left mat2x2
+        "trn1 v0.2d, v16.2d, v20.2d    \n\t"
+        "trn2 v1.2d, v18.2d, v22.2d    \n\t"
+        "trn2 v2.2d, v16.2d, v20.2d    \n\t"
+        "trn1 v3.2d, v18.2d, v22.2d    \n\t"
+        "trn2 v5.2d, v20.2d, v22.2d    \n\t"
+        "trn1 v4.2d, v16.2d, v18.2d    \n\t"
+        "trn2 v6.2d, v16.2d, v18.2d    \n\t"
+        "trn1 v7.2d, v20.2d, v22.2d    \n\t"
+        "trn2 v25.2d, v22.2d, v20.2d   \n\t"
+        "trn1 v27.2d, v22.2d, v20.2d   \n\t"
+        "fmul v0.2d, v0.2d, v1.2d      \n\t"
+        "fmul v1.2d, v4.2d, v5.2d      \n\t"
+        "fmls v0.2d, v2.2d, v3.2d      \n\t"
+        "fmul v2.2d, v4.2d, v25.2d     \n\t"
+        "fmls v1.2d, v6.2d, v7.2d      \n\t"
+        "fmls v2.2d, v6.2d, v27.2d     \n\t"
+        // Adjoint:
+        // v24: A31A32, v25: A33A34
+        // v26: A41A42, v27: A43A44
+        "fmul v3.2d, v19.2d, v0.d[1]   \n\t"
+        "fmul v4.2d, v17.2d, v0.d[1]   \n\t"
+        "fmul v5.2d, v17.2d, v1.d[1]   \n\t"
+        "fmul v6.2d, v17.2d, v2.d[1]   \n\t"
+        "fmls v3.2d, v21.2d, v1.d[1]   \n\t"
+        "fmls v4.2d, v21.2d, v2.d[0]   \n\t"
+        "fmls v5.2d, v19.2d, v2.d[0]   \n\t"
+        "fmls v6.2d, v19.2d, v1.d[0]   \n\t"
+        "fmla v3.2d, v23.2d, v2.d[1]   \n\t"
+        "fmla v4.2d, v23.2d, v1.d[0]   \n\t"
+        "fmla v5.2d, v23.2d, v0.d[0]   \n\t"
+        "fmla v6.2d, v21.2d, v0.d[0]   \n\t"
+        "fneg v3.2d, v3.2d             \n\t"
+        "fneg v5.2d, v5.2d             \n\t"
+        "trn1 v26.2d, v3.2d, v4.2d     \n\t"
+        "trn1 v27.2d, v5.2d, v6.2d     \n\t"
+        "trn2 v24.2d, v3.2d, v4.2d     \n\t"
+        "trn2 v25.2d, v5.2d, v6.2d     \n\t"
+        "fneg v24.2d, v24.2d           \n\t"
+        "fneg v25.2d, v25.2d           \n\t"
+        // Inverse
+        // v24: I31I32, v25: I33I34
+        // v26: I41I42, v27: I43I44
+        "fmul v24.2d, v24.2d, v30.d[0] \n\t"
+        "fmul v25.2d, v25.2d, v30.d[0] \n\t"
+        "fmul v26.2d, v26.2d, v30.d[0] \n\t"
+        "fmul v27.2d, v27.2d, v30.d[0] \n\t"
+        "st1 {v24.2d - v27.2d}, [%[pr]] \n\t"
+        : [mat]"+r"(mat), [pr]"+r"(pr)
+        : [rdet]"r"(rdet)
+        : "memory", "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v16", "v17", "v18",
+            "v19", "v20", "v21", "v22", "v23", "24", "25", "v26", "v27", "v28", "v29", "v30"
+    );
+#else
+    // Calculate the adjoint matrix
+    adjoint(matrix, result);
 
+    // Scale the adjoint matrix to get the inverse
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++)
             result[i][j] = result[i][j] / det;
-
+#endif
     return true;
 }
 
@@ -475,43 +589,33 @@ static void slerp(double qa[4], const double qb[4], double t)
     double ax, ay, az, aw;
     double bx, by, bz, bw;
     double cx, cy, cz, cw;
-    double angle;
-    double th, invth, scale, invscale;
+    double product;
 
     ax = qa[0]; ay = qa[1]; az = qa[2]; aw = qa[3];
     bx = qb[0]; by = qb[1]; bz = qb[2]; bw = qb[3];
 
-    angle = ax * bx + ay * by + az * bz + aw * bw;
+    product = ax * bx + ay * by + az * bz + aw * bw;
 
-    if (angle < 0.0) {
-        ax = -ax; ay = -ay;
-        az = -az; aw = -aw;
-        angle = -angle;
+    // Clamp product to -1.0 <= product <= 1.0.
+    product = std::min(std::max(product, -1.0), 1.0);
+
+    const double epsilon = 1e-5;
+    if (std::abs(product - 1.0) < epsilon) {
+        // Result is qa, so just return
+        return;
     }
 
-    if (angle + 1.0 > .05) {
-        if (1.0 - angle >= .05) {
-            th = std::acos(angle);
-            invth = 1.0 / std::sin(th);
-            scale = std::sin(th * (1.0 - t)) * invth;
-            invscale = std::sin(th * t) * invth;
-        } else {
-            scale = 1.0 - t;
-            invscale = t;
-        }
-    } else {
-        bx = -ay;
-        by = ax;
-        bz = -aw;
-        bw = az;
-        scale = std::sin(piDouble * (.5 - t));
-        invscale = std::sin(piDouble * t);
-    }
+    double denom = std::sqrt(1.0 - product * product);
+    double theta = std::acos(product);
+    double w = std::sin(t * theta) * (1.0 / denom);
 
-    cx = ax * scale + bx * invscale;
-    cy = ay * scale + by * invscale;
-    cz = az * scale + bz * invscale;
-    cw = aw * scale + bw * invscale;
+    double scale1 = std::cos(t * theta) - product * w;
+    double scale2 = w;
+
+    cx = ax * scale1 + bx * scale2;
+    cy = ay * scale1 + by * scale2;
+    cz = az * scale1 + bz * scale2;
+    cw = aw * scale1 + bw * scale2;
 
     qa[0] = cx; qa[1] = cy; qa[2] = cz; qa[3] = cw;
 }
@@ -1542,6 +1646,12 @@ TransformationMatrix TransformationMatrix::to2dTransform() const
                                 m_matrix[1][0], m_matrix[1][1], 0, m_matrix[1][3],
                                 0, 0, 1, 0,
                                 m_matrix[3][0], m_matrix[3][1], 0, m_matrix[3][3]);
+}
+
+FloatSize TransformationMatrix::to2DTranslation() const
+{
+    ASSERT(isIdentityOr2DTranslation());
+    return FloatSize(m_matrix[3][0], m_matrix[3][1]);
 }
 
 void TransformationMatrix::toColumnMajorFloatArray(FloatMatrix4& result) const

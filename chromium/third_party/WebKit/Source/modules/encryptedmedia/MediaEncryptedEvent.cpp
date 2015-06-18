@@ -30,18 +30,14 @@
 
 namespace blink {
 
-MediaEncryptedEventInit::MediaEncryptedEventInit()
-{
-}
-
 MediaEncryptedEvent::MediaEncryptedEvent()
 {
 }
 
 MediaEncryptedEvent::MediaEncryptedEvent(const AtomicString& type, const MediaEncryptedEventInit& initializer)
     : Event(type, initializer)
-    , m_initDataType(initializer.initDataType)
-    , m_initData(initializer.initData)
+    , m_initDataType(initializer.initDataType())
+    , m_initData(initializer.initData())
 {
 }
 
@@ -54,7 +50,7 @@ const AtomicString& MediaEncryptedEvent::interfaceName() const
     return EventNames::MediaEncryptedEvent;
 }
 
-void MediaEncryptedEvent::trace(Visitor* visitor)
+DEFINE_TRACE(MediaEncryptedEvent)
 {
     Event::trace(visitor);
 }

@@ -193,7 +193,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
     empty_context_.set_job_factory(job_factory_.get());
 
     request_ = empty_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, delegate_.get(), NULL);
+        url, net::DEFAULT_PRIORITY, delegate_.get());
     if (headers)
       request_->SetExtraRequestHeaders(*headers);
 
@@ -251,7 +251,6 @@ class FileSystemURLRequestJobTest : public testing::Test {
 
   base::ScopedTempDir temp_dir_;
   scoped_refptr<storage::FileSystemContext> file_system_context_;
-  base::WeakPtrFactory<FileSystemURLRequestJobTest> weak_factory_;
 
   net::URLRequestContext empty_context_;
   scoped_ptr<FileSystemURLRequestJobFactory> job_factory_;
@@ -259,6 +258,8 @@ class FileSystemURLRequestJobTest : public testing::Test {
   // NOTE: order matters, request must die before delegate
   scoped_ptr<net::TestDelegate> delegate_;
   scoped_ptr<net::URLRequest> request_;
+
+  base::WeakPtrFactory<FileSystemURLRequestJobTest> weak_factory_;
 };
 
 namespace {

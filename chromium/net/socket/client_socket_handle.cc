@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "net/base/net_errors.h"
 #include "net/socket/client_socket_pool.h"
-#include "net/socket/client_socket_pool_histograms.h"
 
 namespace net {
 
@@ -22,7 +21,9 @@ ClientSocketHandle::ClientSocketHandle()
       reuse_type_(ClientSocketHandle::UNUSED),
       callback_(base::Bind(&ClientSocketHandle::OnIOComplete,
                            base::Unretained(this))),
-      is_ssl_error_(false) {}
+      is_ssl_error_(false),
+      ssl_failure_state_(SSL_FAILURE_NONE) {
+}
 
 ClientSocketHandle::~ClientSocketHandle() {
   Reset();
@@ -73,6 +74,7 @@ void ClientSocketHandle::ResetInternal(bool cancel) {
 void ClientSocketHandle::ResetErrorState() {
   is_ssl_error_ = false;
   ssl_error_response_info_ = HttpResponseInfo();
+  ssl_failure_state_ = SSL_FAILURE_NONE;
   pending_http_proxy_connection_.reset();
 }
 
@@ -149,8 +151,6 @@ scoped_ptr<StreamSocket> ClientSocketHandle::PassSocket() {
 
 void ClientSocketHandle::HandleInitCompletion(int result) {
   CHECK_NE(ERR_IO_PENDING, result);
-  ClientSocketPoolHistograms* histograms = pool_->histograms();
-  histograms->AddErrorCode(result);
   if (result != OK) {
     if (!socket_.get())
       ResetInternal(false);  // Nothing to cancel since the request failed.
@@ -161,22 +161,6 @@ void ClientSocketHandle::HandleInitCompletion(int result) {
   is_initialized_ = true;
   CHECK_NE(-1, pool_id_) << "Pool should have set |pool_id_| to a valid value.";
   setup_time_ = base::TimeTicks::Now() - init_time_;
-
-  histograms->AddSocketType(reuse_type());
-  switch (reuse_type()) {
-    case ClientSocketHandle::UNUSED:
-      histograms->AddRequestTime(setup_time());
-      break;
-    case ClientSocketHandle::UNUSED_IDLE:
-      histograms->AddUnusedIdleTime(idle_time());
-      break;
-    case ClientSocketHandle::REUSED_IDLE:
-      histograms->AddReusedIdleTime(idle_time());
-      break;
-    default:
-      NOTREACHED();
-      break;
-  }
 
   // Broadcast that the socket has been acquired.
   // TODO(eroman): This logging is not complete, in particular set_socket() and

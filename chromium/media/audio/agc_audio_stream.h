@@ -138,14 +138,15 @@ class MEDIA_EXPORT AgcAudioStream : public AudioInterface {
   // be read in each AudioInputCallback::OnData() callback and fed to the
   // render-side AGC. User must call StartAgc() as well to start measuring
   // the microphone level.
-  virtual void SetAutomaticGainControl(bool enabled) override {
+  bool SetAutomaticGainControl(bool enabled) override {
     DVLOG(1) << "SetAutomaticGainControl(enabled=" << enabled << ")";
     DCHECK(thread_checker_.CalledOnValidThread());
     agc_is_enabled_ = enabled;
+    return true;
   }
 
   // Gets the current automatic gain control state.
-  virtual bool GetAutomaticGainControl() override {
+  bool GetAutomaticGainControl() override {
     DCHECK(thread_checker_.CalledOnValidThread());
     return agc_is_enabled_;
   }

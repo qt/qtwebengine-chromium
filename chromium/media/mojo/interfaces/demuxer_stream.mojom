@@ -9,7 +9,6 @@ import "media/mojo/interfaces/media_types.mojom";
 // DemuxerStream is modeled after media::DemuxerStream using mojo in order to
 // enable proxying between a media::Pipeline and media::Renderer living in two
 // different applications.
-[Client=DemuxerStreamClient]
 interface DemuxerStream {
   // See media::DemuxerStream for descriptions.
   enum Type {
@@ -26,33 +25,32 @@ interface DemuxerStream {
     CONFIG_CHANGED,
   };
 
-  // Request a MediaDecoderBuffer from this stream for decoding and rendering.
-  // When available, the callback will be invoked with a Status and |response|
-  // buffer.  See media::DemuxerStream::ReadCB for explanation of fields.
-  //
-  // TODO(tim): Remove this method in favor of initializing the
-  // DemuxerStreamClient with a DataPipeConsumerHandle once we have a framed
-  // DataPipe that we can serialize [|status| | response|]* over directly.
-  Read() => (Status status, MediaDecoderBuffer response);
-};
+  // Initializes the DemuxerStream. Read() can only be called after the callback
+  // is received. The returned |pipe| will be used to fill out the data section
+  // of the media::DecoderBuffer returned via DemuxerStream::Read(). Only the
+  // config for |type| should be non-null, which is the initial config of the
+  // stream.
+  Initialize() => (Type type,
+                   handle<data_pipe_consumer> pipe,
+                   AudioDecoderConfig? audio_config,
+                   VideoDecoderConfig? video_config);
 
-interface DemuxerStreamClient {
-  // Informs the client that the stream is ready for reading.  If |pipe| is
-  // present, it means the client should read
+  // Requests a MediaDecoderBuffer from this stream for decoding and rendering.
+  // See media::DemuxerStream::ReadCB for a general explanation of the fields.
   //
-  //     [ |DemuxerStream::Status| |MediaDecoderBuffer| ]
+  // Notes on the callback:
+  // - If |status| is OK, |buffer| should be non-null and clients must fill out
+  //   the data section of the returned media::DecoderBuffer by reading from
+  //   the |pipe| provided during Initialize().
+  // - If |status| is ABORTED, all other fields should be null.
+  // - If |status| is CONFIG_CHANGED, the config for the stream type should be
+  //   non-null.
   //
-  // payloads from the DataPipe directly.  If |pipe| is NULL, it means the
-  // client needs to use DemuxerStream::Read() directly to obtain buffers.
-  OnStreamReady(handle<data_pipe_consumer>? pipe);
-
-  // A new AudioDecoderConfig is available. Will be sent by the DemuxerStream
-  // whenever a DemuxerStream::STATUS_CONFIG_CHANGED is observed (either
-  // in a Read() callback or over the DataPipe).
-  OnAudioDecoderConfigChanged(AudioDecoderConfig config);
-
-  // A new VideoDecoderConfig is available. Will be sent by the DemuxerStream
-  // whenever a DemuxerStream::STATUS_CONFIG_CHANGED is observed (either
-  // in a Read() callback or over the DataPipe).
-  OnVideoDecoderConfigChanged(VideoDecoderConfig config);
+  // TODO(dalecurtis): Remove this method in favor of serializing everything
+  // into the DataPipe given to Initialize() once DataPipe supports framed data
+  // in a nicer fashion.
+  Read() => (Status status,
+             MediaDecoderBuffer? buffer,
+             AudioDecoderConfig? audio_config,
+             VideoDecoderConfig? video_config);
 };

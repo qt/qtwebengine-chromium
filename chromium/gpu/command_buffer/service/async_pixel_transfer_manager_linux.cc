@@ -5,7 +5,7 @@
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_idle.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_share_group.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_stub.h"
@@ -17,7 +17,7 @@ namespace gpu {
 AsyncPixelTransferManager* AsyncPixelTransferManager::Create(
     gfx::GLContext* context) {
   TRACE_EVENT0("gpu", "AsyncPixelTransferManager::Create");
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableShareGroupAsyncTextureUpload)) {
     DCHECK(context);
     return static_cast<AsyncPixelTransferManager*> (
@@ -28,7 +28,7 @@ AsyncPixelTransferManager* AsyncPixelTransferManager::Create(
     case gfx::kGLImplementationOSMesaGL:
     case gfx::kGLImplementationDesktopGL:
     case gfx::kGLImplementationEGLGLES2:
-      return new AsyncPixelTransferManagerIdle;
+      return new AsyncPixelTransferManagerIdle(true);
     case gfx::kGLImplementationMockGL:
       return new AsyncPixelTransferManagerStub;
     default:

@@ -21,12 +21,12 @@ source_set("caca") {
   deps = [
     "//base",
     "//skia",
+    "//ui/events/ozone:events_ozone_layout",
+    "//ui/events/platform",
     "//ui/gfx/geometry",
   ]
 
-  configs += [
-    ":libcaca",
-  ]
+  configs += [ ":libcaca" ]
 }
 
 pkg_config("libcaca") {

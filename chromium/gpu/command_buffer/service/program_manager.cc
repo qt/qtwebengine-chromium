@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -23,7 +24,6 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/program_cache.h"
 #include "gpu/command_buffer/service/shader_manager.h"
-#include "gpu/command_buffer/service/shader_translator.h"
 #include "third_party/re2/re2/re2.h"
 
 using base::TimeDelta;
@@ -66,7 +66,7 @@ bool GetUniformNameSansElement(
     return false;
   }
 
-  GLint index = 0;
+  base::CheckedNumeric<GLint> index = 0;
   size_t last = name.size() - 1;
   for (size_t pos = open_pos + 1; pos < last; ++pos) {
     int8 digit = name[pos] - '0';
@@ -75,8 +75,11 @@ bool GetUniformNameSansElement(
     }
     index = index * 10 + digit;
   }
+  if (!index.IsValid()) {
+    return false;
+  }
 
-  *element_index = index;
+  *element_index = index.ValueOrDie();
   *new_name = name.substr(0, open_pos);
   return true;
 }
@@ -101,6 +104,11 @@ bool IsBuiltInInvariant(
   if (hit == varyings.end())
     return false;
   return hit->second.isInvariant;
+}
+
+uint32 ComputeOffset(const void* start, const void* position) {
+  return static_cast<const uint8*>(position) -
+         static_cast<const uint8*>(start);
 }
 
 }  // anonymous namespace.
@@ -203,7 +211,8 @@ Program::Program(ProgramManager* manager, GLuint service_id)
       valid_(false),
       link_status_(false),
       uniforms_cleared_(false),
-      num_uniforms_(0) {
+      num_uniforms_(0),
+      transform_feedback_buffer_mode_(GL_NONE) {
   manager_->StartTracking(this);
 }
 
@@ -272,8 +281,10 @@ void Program::ClearUniforms(
     }
     GLint location = uniform_info.element_locations[0];
     GLsizei size = uniform_info.size;
-    uint32 unit_size =  GLES2Util::GetGLDataTypeSizeForUniforms(
-        uniform_info.type);
+    uint32 unit_size =
+        GLES2Util::GetElementCountForUniformType(uniform_info.type) *
+        GLES2Util::GetElementSizeForUniformType(uniform_info.type);
+    DCHECK_LT(0u, unit_size);
     uint32 size_needed = size * unit_size;
     if (size_needed > zero_buffer->size()) {
       zero_buffer->resize(size_needed, 0u);
@@ -296,9 +307,8 @@ void Program::ClearUniforms(
     case GL_BOOL:
     case GL_SAMPLER_2D:
     case GL_SAMPLER_CUBE:
-    case GL_SAMPLER_EXTERNAL_OES:
-    case GL_SAMPLER_3D_OES:
-    case GL_SAMPLER_2D_RECT_ARB:
+    case GL_SAMPLER_EXTERNAL_OES:  // extension.
+    case GL_SAMPLER_2D_RECT_ARB:  // extension.
       glUniform1iv(location, size, reinterpret_cast<const GLint*>(zero));
       break;
     case GL_INT_VEC2:
@@ -325,6 +335,60 @@ void Program::ClearUniforms(
       glUniformMatrix4fv(
           location, size, false, reinterpret_cast<const GLfloat*>(zero));
       break;
+
+    // ES3 types.
+    case GL_UNSIGNED_INT:
+      glUniform1uiv(location, size, reinterpret_cast<const GLuint*>(zero));
+      break;
+    case GL_SAMPLER_3D:
+    case GL_SAMPLER_2D_SHADOW:
+    case GL_SAMPLER_2D_ARRAY:
+    case GL_SAMPLER_2D_ARRAY_SHADOW:
+    case GL_SAMPLER_CUBE_SHADOW:
+    case GL_INT_SAMPLER_2D:
+    case GL_INT_SAMPLER_3D:
+    case GL_INT_SAMPLER_CUBE:
+    case GL_INT_SAMPLER_2D_ARRAY:
+    case GL_UNSIGNED_INT_SAMPLER_2D:
+    case GL_UNSIGNED_INT_SAMPLER_3D:
+    case GL_UNSIGNED_INT_SAMPLER_CUBE:
+    case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
+      glUniform1iv(location, size, reinterpret_cast<const GLint*>(zero));
+      break;
+    case GL_UNSIGNED_INT_VEC2:
+      glUniform2uiv(location, size, reinterpret_cast<const GLuint*>(zero));
+      break;
+    case GL_UNSIGNED_INT_VEC3:
+      glUniform3uiv(location, size, reinterpret_cast<const GLuint*>(zero));
+      break;
+    case GL_UNSIGNED_INT_VEC4:
+      glUniform4uiv(location, size, reinterpret_cast<const GLuint*>(zero));
+      break;
+    case GL_FLOAT_MAT2x3:
+      glUniformMatrix2x3fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT3x2:
+      glUniformMatrix3x2fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT2x4:
+      glUniformMatrix2x4fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT4x2:
+      glUniformMatrix4x2fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT3x4:
+      glUniformMatrix3x4fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+    case GL_FLOAT_MAT4x3:
+      glUniformMatrix4x3fv(
+          location, size, false, reinterpret_cast<const GLfloat*>(zero));
+      break;
+
     default:
       NOTREACHED();
       break;
@@ -374,19 +438,16 @@ void Program::Update() {
         service_id_, ii, max_len, &length, &size, &type, name_buffer.get());
     DCHECK(max_len == 0 || length < max_len);
     DCHECK(length == 0 || name_buffer[length] == '\0');
-    if (!ProgramManager::IsInvalidPrefix(name_buffer.get(), length)) {
-      std::string original_name;
-      GetVertexAttribData(name_buffer.get(), &original_name, &type);
-      // TODO(gman): Should we check for error?
-      GLint location = glGetAttribLocation(service_id_, name_buffer.get());
-      if (location > max_location) {
-        max_location = location;
-      }
-      attrib_infos_.push_back(
-          VertexAttrib(1, type, original_name, location));
-      max_attrib_name_length_ = std::max(
-          max_attrib_name_length_, static_cast<GLsizei>(original_name.size()));
+    std::string original_name;
+    GetVertexAttribData(name_buffer.get(), &original_name, &type);
+    // TODO(gman): Should we check for error?
+    GLint location = glGetAttribLocation(service_id_, name_buffer.get());
+    if (location > max_location) {
+      max_location = location;
     }
+    attrib_infos_.push_back(VertexAttrib(1, type, original_name, location));
+    max_attrib_name_length_ = std::max(
+        max_attrib_name_length_, static_cast<GLsizei>(original_name.size()));
   }
 
   // Create attrib location to index map.
@@ -400,8 +461,8 @@ void Program::Update() {
   }
 
 #if !defined(NDEBUG)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableGPUServiceLoggingGPU)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGPUServiceLoggingGPU)) {
     DVLOG(1) << "----: attribs for service_id: " << service_id();
     for (size_t ii = 0; ii < attrib_infos_.size(); ++ii) {
       const VertexAttrib& info = attrib_infos_[ii];
@@ -429,13 +490,10 @@ void Program::Update() {
         &data.size, &data.type, name_buffer.get());
     DCHECK(max_len == 0 || length < max_len);
     DCHECK(length == 0 || name_buffer[length] == '\0');
-    if (!ProgramManager::IsInvalidPrefix(name_buffer.get(), length)) {
-      data.queried_name = std::string(name_buffer.get());
-      GetCorrectedUniformData(
-          data.queried_name,
-          &data.corrected_name, &data.original_name, &data.size, &data.type);
-      uniform_data.push_back(data);
-    }
+    data.queried_name = std::string(name_buffer.get());
+    GetCorrectedUniformData(data.queried_name, &data.corrected_name,
+                            &data.original_name, &data.size, &data.type);
+    uniform_data.push_back(data);
   }
 
   // NOTE: We don't care if 2 uniforms are bound to the same location.
@@ -450,8 +508,14 @@ void Program::Update() {
   size_t next_available_index = 0;
   for (size_t ii = 0; ii < uniform_data.size(); ++ii) {
     UniformData& data = uniform_data[ii];
-    data.location = glGetUniformLocation(
-        service_id_, data.queried_name.c_str());
+    // Force builtin uniforms (gl_DepthRange) to have invalid location.
+    if (ProgramManager::IsInvalidPrefix(data.queried_name.c_str(),
+                                        data.queried_name.size())) {
+      data.location = -1;
+    } else {
+      data.location =
+          glGetUniformLocation(service_id_, data.queried_name.c_str());
+    }
     // remove "[0]"
     std::string short_name;
     int element_index = 0;
@@ -478,8 +542,8 @@ void Program::Update() {
   }
 
 #if !defined(NDEBUG)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableGPUServiceLoggingGPU)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGPUServiceLoggingGPU)) {
     DVLOG(1) << "----: uniforms for service_id: " << service_id();
     for (size_t ii = 0; ii < uniform_infos_.size(); ++ii) {
       const UniformInfo& info = uniform_infos_[ii];
@@ -506,70 +570,36 @@ void Program::ExecuteBindAttribLocationCalls() {
 }
 
 bool Program::Link(ShaderManager* manager,
-                   ShaderTranslator* vertex_translator,
-                   ShaderTranslator* fragment_translator,
                    Program::VaryingsPackingOption varyings_packing_option,
                    const ShaderCacheCallback& shader_callback) {
   ClearLinkStatus();
-  if (!CanLink()) {
+
+  if (!AttachedShadersExist()) {
     set_log_info("missing shaders");
     return false;
   }
-  if (DetectAttribLocationBindingConflicts()) {
-    set_log_info("glBindAttribLocation() conflicts");
-    return false;
-  }
-  std::string conflicting_name;
-  if (DetectUniformsMismatch(&conflicting_name)) {
-    std::string info_log = "Uniforms with the same name but different "
-                           "type/precision: " + conflicting_name;
-    set_log_info(ProcessLogInfo(info_log).c_str());
-    return false;
-  }
-  if (DetectVaryingsMismatch(&conflicting_name)) {
-    std::string info_log = "Varyings with the same name but different type, "
-                           "or statically used varyings in fragment shader are "
-                           "not declared in vertex shader: " + conflicting_name;
-    set_log_info(ProcessLogInfo(info_log).c_str());
-    return false;
-  }
-  if (DetectBuiltInInvariantConflicts()) {
-    set_log_info("Invariant settings for certain built-in varyings "
-                 "have to match");
-    return false;
-  }
-  if (DetectGlobalNameConflicts(&conflicting_name)) {
-    std::string info_log = "Name conflicts between an uniform and an "
-                           "attribute: " + conflicting_name;
-    set_log_info(ProcessLogInfo(info_log).c_str());
-    return false;
-  }
-  if (!CheckVaryingsPacking(varyings_packing_option)) {
-    set_log_info("Varyings over maximum register limit");
-    return false;
-  }
 
-  TimeTicks before_time = TimeTicks::HighResNow();
+  TimeTicks before_time = TimeTicks::Now();
   bool link = true;
   ProgramCache* cache = manager_->program_cache_;
   if (cache) {
-    DCHECK(!attached_shaders_[0]->signature_source().empty() &&
-           !attached_shaders_[1]->signature_source().empty());
+    DCHECK(!attached_shaders_[0]->last_compiled_source().empty() &&
+           !attached_shaders_[1]->last_compiled_source().empty());
     ProgramCache::LinkedProgramStatus status = cache->GetLinkedProgramStatus(
-        attached_shaders_[0]->signature_source(),
-        vertex_translator,
-        attached_shaders_[1]->signature_source(),
-        fragment_translator,
-        &bind_attrib_location_map_);
+        attached_shaders_[0]->last_compiled_signature(),
+        attached_shaders_[1]->last_compiled_signature(),
+        &bind_attrib_location_map_,
+        transform_feedback_varyings_,
+        transform_feedback_buffer_mode_);
 
     if (status == ProgramCache::LINK_SUCCEEDED) {
       ProgramCache::ProgramLoadResult success =
           cache->LoadLinkedProgram(service_id(),
                                    attached_shaders_[0].get(),
-                                   vertex_translator,
                                    attached_shaders_[1].get(),
-                                   fragment_translator,
                                    &bind_attrib_location_map_,
+                                   transform_feedback_varyings_,
+                                   transform_feedback_buffer_mode_,
                                    shader_callback);
       link = success != ProgramCache::PROGRAM_LOAD_SUCCESS;
       UMA_HISTOGRAM_BOOLEAN("GPU.ProgramCache.LoadBinarySuccess", !link);
@@ -577,8 +607,53 @@ bool Program::Link(ShaderManager* manager,
   }
 
   if (link) {
+    CompileAttachedShaders();
+
+    if (!CanLink()) {
+      set_log_info("invalid shaders");
+      return false;
+    }
+    if (DetectShaderVersionMismatch()) {
+      set_log_info("Versions of linked shaders have to match.");
+      return false;
+    }
+    if (DetectAttribLocationBindingConflicts()) {
+      set_log_info("glBindAttribLocation() conflicts");
+      return false;
+    }
+    std::string conflicting_name;
+    if (DetectUniformsMismatch(&conflicting_name)) {
+      std::string info_log = "Uniforms with the same name but different "
+                             "type/precision: " + conflicting_name;
+      set_log_info(ProcessLogInfo(info_log).c_str());
+      return false;
+    }
+    if (DetectVaryingsMismatch(&conflicting_name)) {
+      std::string info_log = "Varyings with the same name but different type, "
+                             "or statically used varyings in fragment shader "
+                             "are not declared in vertex shader: " +
+                             conflicting_name;
+      set_log_info(ProcessLogInfo(info_log).c_str());
+      return false;
+    }
+    if (DetectBuiltInInvariantConflicts()) {
+      set_log_info("Invariant settings for certain built-in varyings "
+                   "have to match");
+      return false;
+    }
+    if (DetectGlobalNameConflicts(&conflicting_name)) {
+      std::string info_log = "Name conflicts between an uniform and an "
+                             "attribute: " + conflicting_name;
+      set_log_info(ProcessLogInfo(info_log).c_str());
+      return false;
+    }
+    if (!CheckVaryingsPacking(varyings_packing_option)) {
+      set_log_info("Varyings over maximum register limit");
+      return false;
+    }
+
     ExecuteBindAttribLocationCalls();
-    before_time = TimeTicks::HighResNow();
+    before_time = TimeTicks::Now();
     if (cache && gfx::g_driver_gl.ext.b_GL_ARB_get_program_binary) {
       glProgramParameteri(service_id(),
                           PROGRAM_BINARY_RETRIEVABLE_HINT,
@@ -595,16 +670,16 @@ bool Program::Link(ShaderManager* manager,
       if (cache) {
         cache->SaveLinkedProgram(service_id(),
                                  attached_shaders_[0].get(),
-                                 vertex_translator,
                                  attached_shaders_[1].get(),
-                                 fragment_translator,
                                  &bind_attrib_location_map_,
+                                 transform_feedback_varyings_,
+                                 transform_feedback_buffer_mode_,
                                  shader_callback);
       }
       UMA_HISTOGRAM_CUSTOM_COUNTS(
           "GPU.ProgramCache.BinaryCacheMissTime",
           static_cast<base::HistogramBase::Sample>(
-              (TimeTicks::HighResNow() - before_time).InMicroseconds()),
+              (TimeTicks::Now() - before_time).InMicroseconds()),
           0,
           static_cast<base::HistogramBase::Sample>(
               TimeDelta::FromSeconds(10).InMicroseconds()),
@@ -613,7 +688,7 @@ bool Program::Link(ShaderManager* manager,
       UMA_HISTOGRAM_CUSTOM_COUNTS(
           "GPU.ProgramCache.BinaryCacheHitTime",
           static_cast<base::HistogramBase::Sample>(
-              (TimeTicks::HighResNow() - before_time).InMicroseconds()),
+              (TimeTicks::Now() - before_time).InMicroseconds()),
           0,
           static_cast<base::HistogramBase::Sample>(
               TimeDelta::FromSeconds(1).InMicroseconds()),
@@ -992,6 +1067,23 @@ void Program::DetachShaders(ShaderManager* shader_manager) {
   }
 }
 
+void Program::CompileAttachedShaders() {
+  for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
+    Shader* shader = attached_shaders_[ii].get();
+    if (shader) {
+      shader->DoCompile();
+    }
+  }
+}
+
+bool Program::AttachedShadersExist() const {
+  for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
+    if (!attached_shaders_[ii].get())
+      return false;
+  }
+  return true;
+}
+
 bool Program::CanLink() const {
   for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
     if (!attached_shaders_[ii].get() || !attached_shaders_[ii]->valid()) {
@@ -999,6 +1091,22 @@ bool Program::CanLink() const {
     }
   }
   return true;
+}
+
+bool Program::DetectShaderVersionMismatch() const {
+  int version = Shader::kUndefinedShaderVersion;
+  for (int ii = 0; ii < kMaxAttachedShaders; ++ii) {
+    Shader* shader = attached_shaders_[ii].get();
+    if (shader) {
+      if (version != Shader::kUndefinedShaderVersion &&
+          shader->shader_version() != version) {
+        return true;
+      }
+      version = shader->shader_version();
+      DCHECK(version != Shader::kUndefinedShaderVersion);
+    }
+  }
+  return false;
 }
 
 bool Program::DetectAttribLocationBindingConflicts() const {
@@ -1197,11 +1305,6 @@ bool Program::CheckVaryingsPacking(
       combined_map.size());
 }
 
-static uint32 ComputeOffset(const void* start, const void* position) {
-  return static_cast<const uint8*>(position) -
-         static_cast<const uint8*>(start);
-}
-
 void Program::GetProgramInfo(
     ProgramManager* manager, CommonDecoder::Bucket* bucket) const {
   // NOTE: It seems to me the math in here does not need check for overflow
@@ -1284,6 +1387,312 @@ void Program::GetProgramInfo(
   }
 
   DCHECK_EQ(ComputeOffset(header, strings), size);
+}
+
+bool Program::GetUniformBlocks(CommonDecoder::Bucket* bucket) const {
+  // The data is packed into the bucket in the following order
+  //   1) header
+  //   2) N entries of block data (except for name and indices)
+  //   3) name1, indices1, name2, indices2, ..., nameN, indicesN
+  //
+  // We query all the data directly through GL calls, assuming they are
+  // cheap through MANGLE.
+
+  DCHECK(bucket);
+  GLuint program = service_id();
+
+  uint32_t header_size = sizeof(UniformBlocksHeader);
+  bucket->SetSize(header_size);  // In case we fail.
+
+  uint32_t num_uniform_blocks = 0;
+  GLint param = GL_FALSE;
+  // We assume program is a valid program service id.
+  glGetProgramiv(program, GL_LINK_STATUS, &param);
+  if (param == GL_TRUE) {
+    param = 0;
+    glGetProgramiv(program, GL_ACTIVE_UNIFORM_BLOCKS, &param);
+    num_uniform_blocks = static_cast<uint32_t>(param);
+  }
+  if (num_uniform_blocks == 0) {
+    // Although spec allows an implementation to return uniform block info
+    // even if a link fails, for consistency, we disallow that.
+    return true;
+  }
+
+  std::vector<UniformBlockInfo> blocks(num_uniform_blocks);
+  base::CheckedNumeric<uint32_t> size = sizeof(UniformBlockInfo);
+  size *= num_uniform_blocks;
+  uint32_t entry_size = size.ValueOrDefault(0);
+  size += header_size;
+  std::vector<std::string> names(num_uniform_blocks);
+  GLint max_name_length = 0;
+  glGetProgramiv(
+      program, GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH, &max_name_length);
+  std::vector<GLchar> buffer(max_name_length);
+  GLsizei length;
+  for (uint32_t ii = 0; ii < num_uniform_blocks; ++ii) {
+    param = 0;
+    glGetActiveUniformBlockiv(program, ii, GL_UNIFORM_BLOCK_BINDING, &param);
+    blocks[ii].binding = static_cast<uint32_t>(param);
+
+    param = 0;
+    glGetActiveUniformBlockiv(program, ii, GL_UNIFORM_BLOCK_DATA_SIZE, &param);
+    blocks[ii].data_size = static_cast<uint32_t>(param);
+
+    blocks[ii].name_offset = size.ValueOrDefault(0);
+    param = 0;
+    glGetActiveUniformBlockiv(
+        program, ii, GL_UNIFORM_BLOCK_NAME_LENGTH, &param);
+    DCHECK_GE(max_name_length, param);
+    memset(&buffer[0], 0, param);
+    length = 0;
+    glGetActiveUniformBlockName(
+        program, ii, static_cast<GLsizei>(param), &length, &buffer[0]);
+    DCHECK_EQ(param, length + 1);
+    names[ii] = std::string(&buffer[0], length);
+    // TODO(zmo): optimize the name mapping lookup.
+    const std::string* original_name = GetOriginalNameFromHashedName(names[ii]);
+    if (original_name)
+      names[ii] = *original_name;
+    blocks[ii].name_length = names[ii].size() + 1;
+    size += blocks[ii].name_length;
+
+    param = 0;
+    glGetActiveUniformBlockiv(
+        program, ii, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &param);
+    blocks[ii].active_uniforms = static_cast<uint32_t>(param);
+    blocks[ii].active_uniform_offset = size.ValueOrDefault(0);
+    base::CheckedNumeric<uint32_t> indices_size = blocks[ii].active_uniforms;
+    indices_size *= sizeof(uint32_t);
+    if (!indices_size.IsValid())
+      return false;
+    size += indices_size.ValueOrDefault(0);
+
+    param = 0;
+    glGetActiveUniformBlockiv(
+        program, ii, GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER, &param);
+    blocks[ii].referenced_by_vertex_shader = static_cast<uint32_t>(param);
+
+    param = 0;
+    glGetActiveUniformBlockiv(
+        program, ii, GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER, &param);
+    blocks[ii].referenced_by_fragment_shader = static_cast<uint32_t>(param);
+  }
+  if (!size.IsValid())
+    return false;
+  uint32_t total_size = size.ValueOrDefault(0);
+  DCHECK_LE(header_size + entry_size, total_size);
+  uint32_t data_size = total_size - header_size - entry_size;
+
+  bucket->SetSize(total_size);
+  UniformBlocksHeader* header =
+      bucket->GetDataAs<UniformBlocksHeader*>(0, header_size);
+  UniformBlockInfo* entries = bucket->GetDataAs<UniformBlockInfo*>(
+      header_size, entry_size);
+  char* data = bucket->GetDataAs<char*>(header_size + entry_size, data_size);
+  DCHECK(header);
+  DCHECK(entries);
+  DCHECK(data);
+
+  // Copy over data for the header and entries.
+  header->num_uniform_blocks = num_uniform_blocks;
+  memcpy(entries, &blocks[0], entry_size);
+
+  std::vector<GLint> params;
+  for (uint32_t ii = 0; ii < num_uniform_blocks; ++ii) {
+    // Get active uniform name.
+    memcpy(data, names[ii].c_str(), names[ii].length() + 1);
+    data += names[ii].length() + 1;
+
+    // Get active uniform indices.
+    if (params.size() < blocks[ii].active_uniforms)
+      params.resize(blocks[ii].active_uniforms);
+    uint32_t num_bytes = blocks[ii].active_uniforms * sizeof(GLint);
+    memset(&params[0], 0, num_bytes);
+    glGetActiveUniformBlockiv(
+        program, ii, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES, &params[0]);
+    uint32_t* indices = reinterpret_cast<uint32_t*>(data);
+    for (uint32_t uu = 0; uu < blocks[ii].active_uniforms; ++uu) {
+      indices[uu] = static_cast<uint32_t>(params[uu]);
+    }
+    data += num_bytes;
+  }
+  DCHECK_EQ(ComputeOffset(header, data), total_size);
+  return true;
+}
+
+bool Program::GetTransformFeedbackVaryings(
+    CommonDecoder::Bucket* bucket) const {
+  // The data is packed into the bucket in the following order
+  //   1) header
+  //   2) N entries of varying data (except for name)
+  //   3) name1, name2, ..., nameN
+  //
+  // We query all the data directly through GL calls, assuming they are
+  // cheap through MANGLE.
+
+  DCHECK(bucket);
+  GLuint program = service_id();
+
+  uint32_t header_size = sizeof(TransformFeedbackVaryingsHeader);
+  bucket->SetSize(header_size);  // In case we fail.
+
+  uint32_t num_transform_feedback_varyings = 0;
+  GLint param = GL_FALSE;
+  // We assume program is a valid program service id.
+  glGetProgramiv(program, GL_LINK_STATUS, &param);
+  if (param == GL_TRUE) {
+    param = 0;
+    glGetProgramiv(program, GL_TRANSFORM_FEEDBACK_VARYINGS, &param);
+    num_transform_feedback_varyings = static_cast<uint32_t>(param);
+  }
+  if (num_transform_feedback_varyings == 0) {
+    return true;
+  }
+
+  std::vector<TransformFeedbackVaryingInfo> varyings(
+      num_transform_feedback_varyings);
+  base::CheckedNumeric<uint32_t> size = sizeof(TransformFeedbackVaryingInfo);
+  size *= num_transform_feedback_varyings;
+  uint32_t entry_size = size.ValueOrDefault(0);
+  size += header_size;
+  std::vector<std::string> names(num_transform_feedback_varyings);
+  GLint max_name_length = 0;
+  glGetProgramiv(
+      program, GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH, &max_name_length);
+  if (max_name_length < 1)
+    max_name_length = 1;
+  std::vector<char> buffer(max_name_length);
+  for (uint32_t ii = 0; ii < num_transform_feedback_varyings; ++ii) {
+    GLsizei var_size = 0;
+    GLsizei var_name_length = 0;
+    GLenum var_type = 0;
+    glGetTransformFeedbackVarying(
+        program, ii, max_name_length,
+        &var_name_length, &var_size, &var_type, &buffer[0]);
+    varyings[ii].size = static_cast<uint32_t>(var_size);
+    varyings[ii].type = static_cast<uint32_t>(var_type);
+    varyings[ii].name_offset = static_cast<uint32_t>(size.ValueOrDefault(0));
+    DCHECK_GT(max_name_length, var_name_length);
+    names[ii] = std::string(&buffer[0], var_name_length);
+    // TODO(zmo): optimize the name mapping lookup.
+    const std::string* original_name = GetOriginalNameFromHashedName(names[ii]);
+    if (original_name)
+      names[ii] = *original_name;
+    varyings[ii].name_length = names[ii].size() + 1;
+    size += names[ii].size();
+    size += 1;
+  }
+  if (!size.IsValid())
+    return false;
+  uint32_t total_size = size.ValueOrDefault(0);
+  DCHECK_LE(header_size + entry_size, total_size);
+  uint32_t data_size = total_size - header_size - entry_size;
+
+  bucket->SetSize(total_size);
+  TransformFeedbackVaryingsHeader* header =
+      bucket->GetDataAs<TransformFeedbackVaryingsHeader*>(0, header_size);
+  TransformFeedbackVaryingInfo* entries =
+      bucket->GetDataAs<TransformFeedbackVaryingInfo*>(header_size, entry_size);
+  char* data = bucket->GetDataAs<char*>(header_size + entry_size, data_size);
+  DCHECK(header);
+  DCHECK(entries);
+  DCHECK(data);
+
+  // Copy over data for the header and entries.
+  header->num_transform_feedback_varyings = num_transform_feedback_varyings;
+  memcpy(entries, &varyings[0], entry_size);
+
+  for (uint32_t ii = 0; ii < num_transform_feedback_varyings; ++ii) {
+    memcpy(data, names[ii].c_str(), names[ii].length() + 1);
+    data += names[ii].length() + 1;
+  }
+  DCHECK_EQ(ComputeOffset(header, data), total_size);
+  return true;
+}
+
+bool Program::GetUniformsES3(CommonDecoder::Bucket* bucket) const {
+  // The data is packed into the bucket in the following order
+  //   1) header
+  //   2) N entries of UniformES3Info
+  //
+  // We query all the data directly through GL calls, assuming they are
+  // cheap through MANGLE.
+
+  DCHECK(bucket);
+  GLuint program = service_id();
+
+  uint32_t header_size = sizeof(UniformsES3Header);
+  bucket->SetSize(header_size);  // In case we fail.
+
+  GLsizei count = 0;
+  GLint param = GL_FALSE;
+  // We assume program is a valid program service id.
+  glGetProgramiv(program, GL_LINK_STATUS, &param);
+  if (param == GL_TRUE) {
+    param = 0;
+    glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &count);
+  }
+  if (count == 0) {
+    return true;
+  }
+
+  base::CheckedNumeric<uint32_t> size = sizeof(UniformES3Info);
+  size *= count;
+  uint32_t entry_size = size.ValueOrDefault(0);
+  size += header_size;
+  if (!size.IsValid())
+    return false;
+  uint32_t total_size = size.ValueOrDefault(0);
+  bucket->SetSize(total_size);
+  UniformsES3Header* header =
+      bucket->GetDataAs<UniformsES3Header*>(0, header_size);
+  DCHECK(header);
+  header->num_uniforms = static_cast<uint32_t>(count);
+
+  // Instead of GetDataAs<UniformES3Info*>, we do GetDataAs<int32_t>. This is
+  // because struct UniformES3Info is defined as five int32_t.
+  // By doing this, we can fill the structs through loops.
+  int32_t* entries =
+      bucket->GetDataAs<int32_t*>(header_size, entry_size);
+  DCHECK(entries);
+  const size_t kStride = sizeof(UniformES3Info) / sizeof(int32_t);
+
+  const GLenum kPname[] = {
+    GL_UNIFORM_BLOCK_INDEX,
+    GL_UNIFORM_OFFSET,
+    GL_UNIFORM_ARRAY_STRIDE,
+    GL_UNIFORM_MATRIX_STRIDE,
+    GL_UNIFORM_IS_ROW_MAJOR,
+  };
+  const GLint kDefaultValue[] = { -1, -1, -1, -1, 0 };
+  const size_t kNumPnames = arraysize(kPname);
+  std::vector<GLuint> indices(count);
+  for (GLsizei ii = 0; ii < count; ++ii) {
+    indices[ii] = ii;
+  }
+  std::vector<GLint> params(count);
+  for (size_t pname_index = 0; pname_index < kNumPnames; ++pname_index) {
+    for (GLsizei ii = 0; ii < count; ++ii) {
+      params[ii] = kDefaultValue[pname_index];
+    }
+    glGetActiveUniformsiv(
+        program, count, &indices[0], kPname[pname_index], &params[0]);
+    for (GLsizei ii = 0; ii < count; ++ii) {
+      entries[kStride * ii + pname_index] = params[ii];
+    }
+  }
+  return true;
+}
+
+void Program::TransformFeedbackVaryings(GLsizei count,
+                                        const char* const* varyings,
+                                        GLenum buffer_mode) {
+  transform_feedback_varyings_.clear();
+  for (GLsizei i = 0; i < count; ++i) {
+    transform_feedback_varyings_.push_back(std::string(varyings[i]));
+  }
+  transform_feedback_buffer_mode_ = buffer_mode;
 }
 
 Program::~Program() {

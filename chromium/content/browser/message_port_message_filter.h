@@ -8,12 +8,23 @@
 #include "base/callback.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/message_port_delegate.h"
+
+// Windows headers will redefine SendMessage.
+#ifdef SendMessage
+#undef SendMessage
+#endif
+
+struct FrameMsg_PostMessage_Params;
 
 namespace content {
+struct TransferredMessagePort;
 
 // Filter for MessagePort related IPC messages (creating and destroying a
 // MessagePort, sending a message via a MessagePort etc).
-class CONTENT_EXPORT MessagePortMessageFilter : public BrowserMessageFilter {
+class CONTENT_EXPORT MessagePortMessageFilter
+    : public MessagePortDelegate,
+      public BrowserMessageFilter {
  public:
   typedef base::Callback<int(void)> NextRoutingIDCallback;
 
@@ -28,11 +39,22 @@ class CONTENT_EXPORT MessagePortMessageFilter : public BrowserMessageFilter {
 
   int GetNextRoutingID();
 
-  // Updates message ports registered for |message_port_ids| and returns
+  // MessagePortDelegate implementation.
+  void SendMessage(
+      int route_id,
+      const MessagePortMessage& message,
+      const std::vector<TransferredMessagePort>& sent_message_ports) override;
+  void SendMessagesAreQueued(int route_id) override;
+
+  // Updates message ports registered for |message_ports| and returns
   // new routing IDs for the updated ports via |new_routing_ids|.
   void UpdateMessagePortsWithNewRoutes(
-      const std::vector<int>& message_port_ids,
+      const std::vector<TransferredMessagePort>& message_ports,
       std::vector<int>* new_routing_ids);
+
+  void RouteMessageEventWithMessagePorts(
+      int routing_id,
+      const FrameMsg_PostMessage_Params& params);
 
  protected:
   // This is protected, so we can define sub classes for testing.
@@ -54,4 +76,4 @@ class CONTENT_EXPORT MessagePortMessageFilter : public BrowserMessageFilter {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_WORKER_MESSAGE_FILTER_H_
+#endif  // CONTENT_BROWSER_MESSAGE_PORT_MESSAGE_FILTER_H_

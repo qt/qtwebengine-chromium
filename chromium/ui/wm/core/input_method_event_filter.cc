@@ -19,9 +19,9 @@ namespace wm {
 
 InputMethodEventFilter::InputMethodEventFilter(gfx::AcceleratedWidget widget)
     : input_method_(ui::CreateInputMethod(this, widget)) {
-  // TODO(yusukes): Check if the root window is currently focused and pass the
-  // result to Init().
-  input_method_->Init(true);
+  // TODO(shuchen): Check if the root window is currently focused and determine
+  // whether to call OnFocus.
+  input_method_->OnFocus();
 }
 
 InputMethodEventFilter::~InputMethodEventFilter() {
@@ -74,7 +74,7 @@ void InputMethodEventFilter::OnKeyEvent(ui::KeyEvent* event) {
 bool InputMethodEventFilter::DispatchKeyEventPostIME(
     const ui::KeyEvent& event) {
 #if defined(OS_WIN)
-  DCHECK(!event.HasNativeEvent() || event.native_event().message != WM_CHAR);
+  DCHECK(!event.HasNativeEvent() || !event.is_char());
 #endif
   // Since the underlying IME didn't consume the key event, we're going to
   // dispatch the event again from the beginning of the tree of event targets.

@@ -17,8 +17,8 @@
 #include "content/child/npapi/webplugin_delegate.h"
 #include "content/common/cursors/webcursor.h"
 #include "third_party/npapi/bindings/npapi.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 
 namespace base {
 class FilePath;
@@ -121,7 +121,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
                 const std::string& method,
                 const char* buf,
                 unsigned int len,
-                const GURL& referrer,
+                const Referrer& referrer,
                 bool notify_redirects,
                 bool is_plugin_src_load,
                 int origin_pid,
@@ -145,7 +145,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   void SetContentAreaHasFocus(bool has_focus);
 
 #if defined(OS_WIN)
-  // Informs the plug-in that an IME has changed its status.
+  // Informs the plugin that an IME has changed its status.
   void ImeCompositionUpdated(const base::string16& text,
                              const std::vector<int>& clauses,
                              const std::vector<int>& target,
@@ -155,7 +155,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // IME was cancelled.
   void ImeCompositionCompleted(const base::string16& text);
 
-  // Returns the IME status retrieved from a plug-in.
+  // Returns the IME status retrieved from a plugin.
   bool GetIMEStatus(int* input_type, gfx::Rect* caret_rect);
 #endif
 
@@ -304,7 +304,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   uint32 last_message_;
   bool is_calling_wndproc;
 
-  // An IME emulator used by a windowless plug-in to retrieve IME data through
+  // An IME emulator used by a windowless plugin to retrieve IME data through
   // IMM32 functions.
   scoped_ptr<WebPluginIMEWin> plugin_ime_;
 #endif  // defined(OS_WIN)
@@ -386,13 +386,13 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // Informs the browser about the updated accelerated drawing surface.
   void UpdateAcceleratedSurface();
 
-  // Uses a CARenderer to draw the plug-in's layer in our OpenGL surface.
+  // Uses a CARenderer to draw the plugin's layer in our OpenGL surface.
   void DrawLayerInSurface();
 
   bool use_buffer_context_;
   CGContextRef buffer_context_;  // Weak ref.
 
-  CALayer* layer_;  // Used for CA drawing mode. Weak, retained by plug-in.
+  CALayer* layer_;  // Used for CA drawing mode. Weak, retained by plugin.
   WebPluginAcceleratedSurface* surface_;  // Weak ref.
   CARenderer* renderer_;  // Renders layer_ to surface_.
   scoped_ptr<base::RepeatingTimer<WebPluginDelegateImpl> > redraw_timer_;
@@ -437,10 +437,6 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // This flag indicates whether we started tracking a user gesture message.
   bool user_gesture_message_posted_;
 
-  // Runnable Method Factory used to invoke the OnUserGestureEnd method
-  // asynchronously.
-  base::WeakPtrFactory<WebPluginDelegateImpl> user_gesture_msg_factory_;
-
   // Handle to the mouse hook installed for certain windowed plugins like
   // flash.
   HHOOK mouse_hook_;
@@ -469,6 +465,12 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
 
   // True if NPP_New did not return an error.
   bool creation_succeeded_;
+
+#if defined(OS_WIN)
+  // Runnable Method Factory used to invoke the OnUserGestureEnd method
+  // asynchronously.
+  base::WeakPtrFactory<WebPluginDelegateImpl> user_gesture_msg_factory_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(WebPluginDelegateImpl);
 };

@@ -77,11 +77,11 @@ using namespace HTMLNames;
     // The content of the three below HeapVectors are guaranteed to be kept alive by
     // the corresponding m_parsedRules, m_floatingMediaQueryExpList, and m_parsedKeyFrames
     // lists in BisonCSSParser.h.
-    WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >* ruleList;
-    WillBeHeapVector<OwnPtrWillBeMember<MediaQueryExp> >* mediaQueryExpList;
-    WillBeHeapVector<RefPtrWillBeMember<StyleKeyframe> >* keyframeRuleList;
+    WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>* ruleList;
+    WillBeHeapVector<OwnPtrWillBeMember<MediaQueryExp>>* mediaQueryExpList;
+    WillBeHeapVector<RefPtrWillBeMember<StyleRuleKeyframe>>* keyframeRuleList;
     CSSParserSelector* selector;
-    Vector<OwnPtr<CSSParserSelector> >* selectorList;
+    Vector<OwnPtr<CSSParserSelector>>* selectorList;
     CSSSelector::MarginBoxType marginBox;
     CSSSelector::Relation relation;
     CSSSelector::AttributeMatchType attributeMatchType;
@@ -91,7 +91,7 @@ using namespace HTMLNames;
     MediaQueryExp* mediaQueryExp;
     CSSParserValue value;
     CSSParserValueList* valueList;
-    StyleKeyframe* keyframe;
+    StyleRuleKeyframe* keyframe;
     float val;
     CSSPropertyID id;
     CSSParserLocation location;
@@ -289,7 +289,6 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %type <rule> block_valid_rule
 %type <rule> supports
 %type <rule> viewport
-%type <boolean> keyframes_rule_start
 
 %type <string> maybe_ns_prefix
 
@@ -318,7 +317,7 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %type <boolean> supports_disjunction
 %type <boolean> supports_declaration_condition
 
-%type <string> keyframe_name
+%type <string> webkit_keyframe_name
 %type <keyframe> keyframe_rule
 %type <keyframeRuleList> keyframes_rule
 %type <keyframeRuleList> keyframe_rule_list
@@ -350,6 +349,7 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %type <integer> unary_operator
 %type <integer> maybe_unary_operator
 %type <character> operator
+%type <character> slash_operator
 
 %type <valueList> expr
 %type <value> term
@@ -466,24 +466,10 @@ semi_or_eof:
   | TOKEN_EOF
   ;
 
-before_charset_rule:
-  /* empty */ {
-      parser->startRule();
-      parser->startRuleHeader(CSSRuleSourceData::CHARSET_RULE);
-  }
-
 maybe_charset:
     /* empty */
-  | before_charset_rule CHARSET_SYM maybe_space STRING maybe_space semi_or_eof {
-       if (parser->m_styleSheet)
-           parser->m_styleSheet->parserSetEncodingFromCharsetRule($4);
-       parser->endRuleHeader();
-       parser->startRuleBody();
-       parser->endRule(true);
-    }
-  | before_charset_rule CHARSET_SYM at_rule_recovery {
-       parser->endRule(false);
-  }
+  | CHARSET_SYM maybe_space STRING maybe_space semi_or_eof
+  | CHARSET_SYM at_rule_recovery
   ;
 
 rule_list:
@@ -566,7 +552,7 @@ block_rule:
 
 before_import_rule:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::IMPORT_RULE);
+        parser->startRuleHeader(StyleRule::Import);
     }
     ;
 
@@ -732,7 +718,7 @@ at_rule_body_start:
 
 before_media_rule:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::MEDIA_RULE);
+        parser->startRuleHeader(StyleRule::Media);
     }
     ;
 
@@ -743,7 +729,7 @@ at_rule_header_end_maybe_space:
     ;
 
 media_rule_start:
-    before_media_rule MEDIA_SYM maybe_space;
+    MEDIA_SYM maybe_space before_media_rule;
 
 media:
     media_rule_start maybe_media_list '{' at_rule_header_end at_rule_body_start maybe_space block_rule_body closing_brace {
@@ -763,7 +749,7 @@ supports:
 
 before_supports_rule:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::SUPPORTS_RULE);
+        parser->startRuleHeader(StyleRule::Supports);
         parser->markSupportsRuleHeaderStart();
     }
     ;
@@ -840,26 +826,30 @@ supports_declaration_condition:
 
 before_keyframes_rule:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::KEYFRAMES_RULE);
+        parser->startRuleHeader(StyleRule::Keyframes);
     }
     ;
 
 keyframes_rule_start:
-    before_keyframes_rule KEYFRAMES_SYM maybe_space {
-        $$ = false;
-    }
-  | before_keyframes_rule WEBKIT_KEYFRAMES_SYM maybe_space {
-        $$ = true;
-    }
+    before_keyframes_rule KEYFRAMES_SYM maybe_space
+    ;
+
+webkit_keyframes_rule_start:
+    before_keyframes_rule WEBKIT_KEYFRAMES_SYM maybe_space
     ;
 
 keyframes:
-    keyframes_rule_start keyframe_name at_rule_header_end_maybe_space '{' at_rule_body_start maybe_space location_label keyframes_rule closing_brace {
-        $$ = parser->createKeyframesRule($2, parser->sinkFloatingKeyframeVector($8), $1 /* isPrefixed */);
+    keyframes_rule_start IDENT at_rule_header_end_maybe_space
+    '{' at_rule_body_start maybe_space location_label keyframes_rule closing_brace {
+        $$ = parser->createKeyframesRule($2, parser->sinkFloatingKeyframeVector($8), false /* not prefixed */);
+    }
+    | webkit_keyframes_rule_start webkit_keyframe_name at_rule_header_end_maybe_space
+    '{' at_rule_body_start maybe_space location_label keyframes_rule closing_brace {
+        $$ = parser->createKeyframesRule($2, parser->sinkFloatingKeyframeVector($8), true /* prefixed */);
     }
     ;
 
-keyframe_name:
+webkit_keyframe_name:
     IDENT
     | STRING {
         if (parser->m_context.useCounter())
@@ -928,7 +918,7 @@ keyframes_error_recovery:
 
 before_page_rule:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::PAGE_RULE);
+        parser->startRuleHeader(StyleRule::Page);
     }
     ;
 
@@ -1032,7 +1022,7 @@ margin_sym :
 
 before_font_face_rule:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::FONT_FACE_RULE);
+        parser->startRuleHeader(StyleRule::FontFace);
     }
     ;
 
@@ -1046,7 +1036,7 @@ font_face:
 before_viewport_rule:
     /* empty */ {
         parser->markViewportRuleBodyStart();
-        parser->startRuleHeader(CSSRuleSourceData::VIEWPORT_RULE);
+        parser->startRuleHeader(StyleRule::Viewport);
     }
     ;
 
@@ -1088,7 +1078,7 @@ maybe_space_before_declaration:
 
 before_selector_list:
     /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::STYLE_RULE);
+        parser->startRuleHeader(StyleRule::Style);
         parser->startSelector();
     }
   ;
@@ -1452,7 +1442,7 @@ pseudo:
             $$ = parser->createFloatingSelector();
             $$->setMatch(CSSSelector::PseudoClass);
 
-            Vector<OwnPtr<CSSParserSelector> > selectorVector;
+            Vector<OwnPtr<CSSParserSelector>> selectorVector;
             selectorVector.append(parser->sinkFloatingSelector($4));
             $$->adoptSelectorVector(selectorVector);
 
@@ -1607,6 +1597,12 @@ expr:
         $$ = $1;
         $$->addValue(parser->sinkFloatingValue($2));
     }
+     | expr slash_operator slash_operator term {
+         $$ = $1;
+         $$->addValue(makeOperatorValue($2));
+         $$->addValue(makeOperatorValue($3));
+         $$->addValue(parser->sinkFloatingValue($4));
+     }
   ;
 
 expr_recovery:
@@ -1615,10 +1611,14 @@ expr_recovery:
     }
   ;
 
+slash_operator:
+      '/' maybe_space {
+          $$ = '/';
+      }
+   ;
+ 
 operator:
-    '/' maybe_space {
-        $$ = '/';
-    }
+    slash_operator
   | ',' maybe_space {
         $$ = ',';
     }
@@ -1630,12 +1630,12 @@ term:
   | STRING maybe_space { $$.id = CSSValueInvalid; $$.isInt = false; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_STRING; }
   | IDENT maybe_space { $$ = makeIdentValue($1); }
   /* We might need to actually parse the number from a dimension, but we can't just put something that uses $$.string into unary_term. */
-  | DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
-  | unary_operator DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $2; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
+  | DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSParserValue::Dimension; }
+  | unary_operator DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $2; $$.isInt = false; $$.unit = CSSParserValue::Dimension; }
   | URI maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_URI; }
   | UNICODERANGE maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_UNICODE_RANGE; }
-  | HEX maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; }
-  | '#' maybe_space { $$.id = CSSValueInvalid; $$.string = CSSParserString(); $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; } /* Handle error case: "color: #;" */
+  | HEX maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSParserValue::HexColor; }
+  | '#' maybe_space { $$.id = CSSValueInvalid; $$.string = CSSParserString(); $$.isInt = false; $$.unit = CSSParserValue::HexColor; } /* Handle error case: "color: #;" */
   /* FIXME: according to the specs a function can have a unary_operator in front. I know no case where this makes sense */
   | function maybe_space
   | calc_function maybe_space
@@ -1780,6 +1780,7 @@ at_rule_end:
 
 regular_invalid_at_rule_header:
     keyframes_rule_start at_rule_header_recovery
+  | webkit_keyframes_rule_start at_rule_header_recovery
   | before_page_rule PAGE_SYM at_rule_header_recovery
   | before_font_face_rule FONT_FACE_SYM at_rule_header_recovery
   | before_supports_rule SUPPORTS_SYM error error_location rule_error_recovery {

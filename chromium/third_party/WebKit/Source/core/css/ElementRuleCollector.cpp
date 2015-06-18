@@ -37,16 +37,15 @@
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
-#include "core/css/SiblingTraversalStrategies.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/style/StyleInheritedData.h"
 
 namespace blink {
 
 ElementRuleCollector::ElementRuleCollector(const ElementResolveContext& context,
-    const SelectorFilter& filter, RenderStyle* style)
+    const SelectorFilter& filter, ComputedStyle* style)
     : m_context(context)
     , m_selectorFilter(filter)
     , m_style(style)
@@ -79,18 +78,14 @@ PassRefPtrWillBeRawPtr<CSSRuleList> ElementRuleCollector::matchedCSSRuleList()
     return m_cssRuleList.release();
 }
 
-inline void ElementRuleCollector::addMatchedRule(const RuleData* rule, unsigned specificity, CascadeScope cascadeScope, CascadeOrder cascadeOrder, unsigned styleSheetIndex, const CSSStyleSheet* parentStyleSheet)
+inline void ElementRuleCollector::addMatchedRule(const RuleData* rule, unsigned specificity, CascadeOrder cascadeOrder, unsigned styleSheetIndex, const CSSStyleSheet* parentStyleSheet)
 {
-    if (!m_matchedRules)
-        m_matchedRules = adoptPtrWillBeNoop(new WillBeHeapVector<MatchedRule, 32>);
-    m_matchedRules->append(MatchedRule(rule, specificity, cascadeScope, cascadeOrder, styleSheetIndex, parentStyleSheet));
+    m_matchedRules.append(MatchedRule(rule, specificity, cascadeOrder, styleSheetIndex, parentStyleSheet));
 }
 
 void ElementRuleCollector::clearMatchedRules()
 {
-    if (!m_matchedRules)
-        return;
-    m_matchedRules->clear();
+    m_matchedRules.clear();
 }
 
 inline StyleRuleList* ElementRuleCollector::ensureStyleRuleList()
@@ -129,12 +124,12 @@ static bool rulesApplicableInCurrentTreeScope(const Element* element, const Cont
     if (!scopingNode || element->treeScope() == scopingNode->treeScope())
         return true;
     // d) the rules comes from a scoped style sheet within an active shadow root whose host is the given element
-    if (SelectorChecker::isHostInItsShadowTree(*element, scopingNode))
+    if (element == scopingNode->shadowHost())
         return true;
     return false;
 }
 
-void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest, RuleRange& ruleRange, CascadeScope cascadeScope, CascadeOrder cascadeOrder, bool matchingTreeBoundaryRules)
+void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest, RuleRange& ruleRange, CascadeOrder cascadeOrder, bool matchingTreeBoundaryRules)
 {
     ASSERT(matchRequest.ruleSet);
     ASSERT(m_context.element());
@@ -143,11 +138,11 @@ void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest
     const AtomicString& pseudoId = element.shadowPseudoId();
     if (!pseudoId.isEmpty()) {
         ASSERT(element.isStyledElement());
-        collectMatchingRulesForList(matchRequest.ruleSet->shadowPseudoElementRules(pseudoId), ignoreCascadeScope, cascadeOrder, matchRequest, ruleRange);
+        collectMatchingRulesForList(matchRequest.ruleSet->shadowPseudoElementRules(pseudoId), cascadeOrder, matchRequest, ruleRange);
     }
 
     if (element.isVTTElement())
-        collectMatchingRulesForList(matchRequest.ruleSet->cuePseudoRules(), cascadeScope, cascadeOrder, matchRequest, ruleRange);
+        collectMatchingRulesForList(matchRequest.ruleSet->cuePseudoRules(), cascadeOrder, matchRequest, ruleRange);
     // Check whether other types of rules are applicable in the current tree scope. Criteria for this:
     // a) it's a UA rule
     // b) the rules comes from a scoped style sheet within the same tree scope
@@ -160,18 +155,23 @@ void ElementRuleCollector::collectMatchingRules(const MatchRequest& matchRequest
     // We need to collect the rules for id, class, tag, and everything else into a buffer and
     // then sort the buffer.
     if (element.hasID())
-        collectMatchingRulesForList(matchRequest.ruleSet->idRules(element.idForStyleResolution()), cascadeScope, cascadeOrder, matchRequest, ruleRange);
+        collectMatchingRulesForList(matchRequest.ruleSet->idRules(element.idForStyleResolution()), cascadeOrder, matchRequest, ruleRange);
     if (element.isStyledElement() && element.hasClass()) {
         for (size_t i = 0; i < element.classNames().size(); ++i)
-            collectMatchingRulesForList(matchRequest.ruleSet->classRules(element.classNames()[i]), cascadeScope, cascadeOrder, matchRequest, ruleRange);
+            collectMatchingRulesForList(matchRequest.ruleSet->classRules(element.classNames()[i]), cascadeOrder, matchRequest, ruleRange);
     }
 
     if (element.isLink())
-        collectMatchingRulesForList(matchRequest.ruleSet->linkPseudoClassRules(), cascadeScope, cascadeOrder, matchRequest, ruleRange);
+        collectMatchingRulesForList(matchRequest.ruleSet->linkPseudoClassRules(), cascadeOrder, matchRequest, ruleRange);
     if (SelectorChecker::matchesFocusPseudoClass(element))
-        collectMatchingRulesForList(matchRequest.ruleSet->focusPseudoClassRules(), cascadeScope, cascadeOrder, matchRequest, ruleRange);
-    collectMatchingRulesForList(matchRequest.ruleSet->tagRules(element.localName()), cascadeScope, cascadeOrder, matchRequest, ruleRange);
-    collectMatchingRulesForList(matchRequest.ruleSet->universalRules(), cascadeScope, cascadeOrder, matchRequest, ruleRange);
+        collectMatchingRulesForList(matchRequest.ruleSet->focusPseudoClassRules(), cascadeOrder, matchRequest, ruleRange);
+    collectMatchingRulesForList(matchRequest.ruleSet->tagRules(element.localNameForSelectorMatching()), cascadeOrder, matchRequest, ruleRange);
+    collectMatchingRulesForList(matchRequest.ruleSet->universalRules(), cascadeOrder, matchRequest, ruleRange);
+}
+
+void ElementRuleCollector::collectMatchingShadowHostRules(const MatchRequest& matchRequest, RuleRange& ruleRange, CascadeOrder cascadeOrder, bool matchingTreeBoundaryRules)
+{
+    collectMatchingRulesForList(matchRequest.ruleSet->shadowHostRules(), cascadeOrder, matchRequest, ruleRange);
 }
 
 CSSRuleList* ElementRuleCollector::nestedRuleList(CSSRule* rule)
@@ -227,28 +227,27 @@ void ElementRuleCollector::appendCSSOMWrapperForRule(CSSStyleSheet* parentStyleS
 
 void ElementRuleCollector::sortAndTransferMatchedRules()
 {
-    if (!m_matchedRules || m_matchedRules->isEmpty())
+    if (m_matchedRules.isEmpty())
         return;
 
     sortMatchedRules();
 
-    WillBeHeapVector<MatchedRule, 32>& matchedRules = *m_matchedRules;
     if (m_mode == SelectorChecker::CollectingStyleRules) {
-        for (unsigned i = 0; i < matchedRules.size(); ++i)
-            ensureStyleRuleList()->m_list.append(matchedRules[i].ruleData()->rule());
+        for (unsigned i = 0; i < m_matchedRules.size(); ++i)
+            ensureStyleRuleList()->m_list.append(m_matchedRules[i].ruleData()->rule());
         return;
     }
 
     if (m_mode == SelectorChecker::CollectingCSSRules) {
-        for (unsigned i = 0; i < matchedRules.size(); ++i)
-            appendCSSOMWrapperForRule(const_cast<CSSStyleSheet*>(matchedRules[i].parentStyleSheet()), matchedRules[i].ruleData()->rule());
+        for (unsigned i = 0; i < m_matchedRules.size(); ++i)
+            appendCSSOMWrapperForRule(const_cast<CSSStyleSheet*>(m_matchedRules[i].parentStyleSheet()), m_matchedRules[i].ruleData()->rule());
         return;
     }
 
     // Now transfer the set of matched rules over to our list of declarations.
-    for (unsigned i = 0; i < matchedRules.size(); i++) {
+    for (unsigned i = 0; i < m_matchedRules.size(); i++) {
         // FIXME: Matching should not modify the style directly.
-        const RuleData* ruleData = matchedRules[i].ruleData();
+        const RuleData* ruleData = m_matchedRules[i].ruleData();
         if (m_style && ruleData->containsUncommonAttributeSelector())
             m_style->setUnique();
         m_result.addMatchedProperties(&ruleData->rule()->properties(), ruleData->linkMatchType(), ruleData->propertyWhitelistType(m_matchingUARules));
@@ -257,7 +256,7 @@ void ElementRuleCollector::sortAndTransferMatchedRules()
 
 inline bool ElementRuleCollector::ruleMatches(const RuleData& ruleData, const ContainerNode* scope, SelectorChecker::MatchResult* result)
 {
-    SelectorChecker selectorChecker(m_context.element()->document(), m_mode);
+    SelectorChecker selectorChecker(m_mode);
     SelectorChecker::SelectorCheckingContext context(ruleData.selector(), m_context.element(), SelectorChecker::VisitedMatchEnabled);
     context.elementStyle = m_style.get();
     context.scope = scope;
@@ -266,26 +265,27 @@ inline bool ElementRuleCollector::ruleMatches(const RuleData& ruleData, const Co
     context.scrollbarPart = m_pseudoStyleRequest.scrollbarPart;
     context.isUARule = m_matchingUARules;
     context.scopeContainsLastMatchedElement = m_scopeContainsLastMatchedElement;
-    SelectorChecker::Match match = selectorChecker.match(context, DOMSiblingTraversalStrategy(), result);
-    if (match != SelectorChecker::SelectorMatches)
+    if (!selectorChecker.match(context, result))
         return false;
     if (m_pseudoStyleRequest.pseudoId != NOPSEUDO && m_pseudoStyleRequest.pseudoId != result->dynamicPseudo)
         return false;
     return true;
 }
 
-void ElementRuleCollector::collectRuleIfMatches(const RuleData& ruleData, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
+void ElementRuleCollector::collectRuleIfMatches(const RuleData& ruleData, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
 {
     if (m_canUseFastReject && m_selectorFilter.fastRejectSelector<RuleData::maximumIdentifierCount>(ruleData.descendantSelectorIdentifierHashes()))
         return;
 
     StyleRule* rule = ruleData.rule();
+
+    // If the rule has no properties to apply, then ignore it in the non-debug mode.
+    const StylePropertySet& properties = rule->properties();
+    if (properties.isEmpty() && !matchRequest.includeEmptyRules)
+        return;
+
     SelectorChecker::MatchResult result;
     if (ruleMatches(ruleData, matchRequest.scope, &result)) {
-        // If the rule has no properties to apply, then ignore it in the non-debug mode.
-        const StylePropertySet& properties = rule->properties();
-        if (properties.isEmpty() && !matchRequest.includeEmptyRules)
-            return;
         // FIXME: Exposing the non-standard getMatchedCSSRules API to web is the only reason this is needed.
         if (m_sameOriginOnly && !ruleData.hasDocumentSecurityOrigin())
             return;
@@ -309,7 +309,7 @@ void ElementRuleCollector::collectRuleIfMatches(const RuleData& ruleData, Cascad
                 ruleRange.firstRuleIndex = ruleRange.lastRuleIndex;
 
             // Add this rule to our list of matched rules.
-            addMatchedRule(&ruleData, result.specificity, cascadeScope, cascadeOrder, matchRequest.styleSheetIndex, matchRequest.styleSheet);
+            addMatchedRule(&ruleData, result.specificity, cascadeOrder, matchRequest.styleSheetIndex, matchRequest.styleSheet);
             return;
         }
     }
@@ -317,9 +317,6 @@ void ElementRuleCollector::collectRuleIfMatches(const RuleData& ruleData, Cascad
 
 static inline bool compareRules(const MatchedRule& matchedRule1, const MatchedRule& matchedRule2)
 {
-    if (matchedRule1.cascadeScope() != matchedRule2.cascadeScope())
-        return matchedRule1.cascadeScope() > matchedRule2.cascadeScope();
-
     unsigned specificity1 = matchedRule1.specificity();
     unsigned specificity2 = matchedRule2.specificity();
     if (specificity1 != specificity2)
@@ -330,8 +327,7 @@ static inline bool compareRules(const MatchedRule& matchedRule1, const MatchedRu
 
 void ElementRuleCollector::sortMatchedRules()
 {
-    ASSERT(m_matchedRules);
-    std::sort(m_matchedRules->begin(), m_matchedRules->end(), compareRules);
+    std::sort(m_matchedRules.begin(), m_matchedRules.end(), compareRules);
 }
 
 bool ElementRuleCollector::hasAnyMatchingRules(RuleSet* ruleSet)
@@ -344,10 +340,11 @@ bool ElementRuleCollector::hasAnyMatchingRules(RuleSet* ruleSet)
     // information about "scope".
     int firstRuleIndex = -1, lastRuleIndex = -1;
     RuleRange ruleRange(firstRuleIndex, lastRuleIndex);
-    // FIXME: Verify whether it's ok to ignore CascadeScope here.
-    collectMatchingRules(MatchRequest(ruleSet), ruleRange);
+    MatchRequest matchRequest(ruleSet);
+    collectMatchingRules(matchRequest, ruleRange);
+    collectMatchingShadowHostRules(matchRequest, ruleRange);
 
-    return m_matchedRules && !m_matchedRules->isEmpty();
+    return !m_matchedRules.isEmpty();
 }
 
 } // namespace blink

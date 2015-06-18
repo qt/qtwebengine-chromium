@@ -79,7 +79,7 @@ extern "C" {
 #endif
 
 
-/* ec_key.h conatins functions that handle elliptic-curve points that are
+/* ec_key.h contains functions that handle elliptic-curve points that are
  * public/private keys. */
 
 
@@ -271,6 +271,12 @@ struct ecdsa_method_st {
 
   int flags;
 };
+
+
+/* Deprecated functions. */
+
+/* EC_KEY_set_asn1_flag does nothing. */
+OPENSSL_EXPORT void EC_KEY_set_asn1_flag(EC_KEY *key, int flag);
 
 
 #if defined(__cplusplus)

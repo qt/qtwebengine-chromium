@@ -248,7 +248,7 @@ void MoveAllCharsToSets(PairVector* pairs) {
   for (int i = 0; i < 4; ++i) {
     MoveRightMostCharToSet(pairs);
   }
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   for (PairVector::const_iterator it = pairs->begin(); it != pairs->end();
        ++it) {
     DCHECK(it->character.empty());
@@ -425,16 +425,16 @@ void PrintStates(const std::vector<State>& states, FILE* stream) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
   logging::InitLogging(settings);
-  if (CommandLine::ForCurrentProcess()->HasSwitch("help")) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("help")) {
     fwrite(kHelpText, 1, arraysize(kHelpText), stdout);
     exit(EXIT_SUCCESS);
   }
   base::FilePath filename =
-      CommandLine::ForCurrentProcess()->GetSwitchValuePath("output");
+      base::CommandLine::ForCurrentProcess()->GetSwitchValuePath("output");
 
   FILE* output = stdout;
   if (!filename.empty()) {

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SAFE_MATH_IMPL_H_
-#define SAFE_MATH_IMPL_H_
+#ifndef BASE_NUMERICS_SAFE_MATH_IMPL_H_
+#define BASE_NUMERICS_SAFE_MATH_IMPL_H_
 
 #include <stdint.h>
 
@@ -176,8 +176,8 @@ typename enable_if<std::numeric_limits<T>::is_integer&& std::numeric_limits<
                        T>::is_signed&&(sizeof(T) * 2 > sizeof(uintmax_t)),
                    T>::type
 CheckedMul(T x, T y, RangeConstraint* validity) {
-  // if either side is zero then the result will be zero.
-  if (!(x || y)) {
+  // If either side is zero then the result will be zero.
+  if (!x || !y) {
     return RANGE_VALID;
 
   } else if (x > 0) {
@@ -498,4 +498,4 @@ struct IsIntegerArithmeticSafe {
 }  // namespace internal
 }  // namespace base
 
-#endif  // SAFE_MATH_IMPL_H_
+#endif  // BASE_NUMERICS_SAFE_MATH_IMPL_H_

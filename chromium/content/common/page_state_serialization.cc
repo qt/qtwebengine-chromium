@@ -193,13 +193,14 @@ struct SerializeObject {
 //         which is no longer used.
 // 20: Add pinch viewport scroll offset, the offset of the pinched zoomed
 //     viewport within the unzoomed main frame.
-// 21: Add frame sequence number
+// 21: Add frame sequence number.
+// 22: Add scroll restoration type.
 //
 // NOTE: If the version is -1, then the pickle contains only a URL string.
 // See ReadPageState.
 //
 const int kMinVersion = 11;
-const int kCurrentVersion = 21;
+const int kCurrentVersion = 22;
 
 // A bunch of convenience functions to read/write to SerializeObjects.  The
 // de-serializers assume the input data will be in the correct format and fall
@@ -211,7 +212,7 @@ void WriteData(const void* data, int length, SerializeObject* obj) {
 
 void ReadData(SerializeObject* obj, const void** data, int* length) {
   const char* tmp;
-  if (obj->pickle.ReadData(&obj->iter, &tmp, length)) {
+  if (obj->iter.ReadData(&tmp, length)) {
     *data = tmp;
   } else {
     obj->parse_error = true;
@@ -226,7 +227,7 @@ void WriteInteger(int data, SerializeObject* obj) {
 
 int ReadInteger(SerializeObject* obj) {
   int tmp;
-  if (obj->pickle.ReadInt(&obj->iter, &tmp))
+  if (obj->iter.ReadInt(&tmp))
     return tmp;
   obj->parse_error = true;
   return 0;
@@ -238,7 +239,7 @@ void WriteInteger64(int64 data, SerializeObject* obj) {
 
 int64 ReadInteger64(SerializeObject* obj) {
   int64 tmp = 0;
-  if (obj->pickle.ReadInt64(&obj->iter, &tmp))
+  if (obj->iter.ReadInt64(&tmp))
     return tmp;
   obj->parse_error = true;
   return 0;
@@ -268,7 +269,7 @@ void WriteBoolean(bool data, SerializeObject* obj) {
 
 bool ReadBoolean(SerializeObject* obj) {
   bool tmp;
-  if (obj->pickle.ReadBool(&obj->iter, &tmp))
+  if (obj->iter.ReadBool(&tmp))
     return tmp;
   obj->parse_error = true;
   return false;
@@ -280,7 +281,7 @@ void WriteGURL(const GURL& url, SerializeObject* obj) {
 
 GURL ReadGURL(SerializeObject* obj) {
   std::string spec;
-  if (obj->pickle.ReadString(&obj->iter, &spec))
+  if (obj->iter.ReadString(&spec))
     return GURL(spec);
   obj->parse_error = true;
   return GURL();
@@ -292,7 +293,7 @@ void WriteStdString(const std::string& s, SerializeObject* obj) {
 
 std::string ReadStdString(SerializeObject* obj) {
   std::string s;
-  if (obj->pickle.ReadString(&obj->iter, &s))
+  if (obj->iter.ReadString(&s))
     return s;
   obj->parse_error = true;
   return std::string();
@@ -319,7 +320,7 @@ void WriteString(const base::NullableString16& str, SerializeObject* obj) {
 // read, NULL is returned.
 const base::char16* ReadStringNoCopy(SerializeObject* obj, int* num_chars) {
   int length_in_bytes;
-  if (!obj->pickle.ReadInt(&obj->iter, &length_in_bytes)) {
+  if (!obj->iter.ReadInt(&length_in_bytes)) {
     obj->parse_error = true;
     return NULL;
   }
@@ -328,7 +329,7 @@ const base::char16* ReadStringNoCopy(SerializeObject* obj, int* num_chars) {
     return NULL;
 
   const char* data;
-  if (!obj->pickle.ReadBytes(&obj->iter, &data, length_in_bytes)) {
+  if (!obj->iter.ReadBytes(&data, length_in_bytes)) {
     obj->parse_error = true;
     return NULL;
   }
@@ -497,6 +498,8 @@ void WriteFrameState(
   WriteReal(state.pinch_viewport_scroll_offset.x(), obj);
   WriteReal(state.pinch_viewport_scroll_offset.y(), obj);
 
+  WriteInteger(state.scroll_restoration_type, obj);
+
   bool has_state_object = !state.state_object.is_null();
   WriteBoolean(has_state_object, obj);
   if (has_state_object)
@@ -566,6 +569,11 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
     state->pinch_viewport_scroll_offset = gfx::PointF(x, y);
   } else {
     state->pinch_viewport_scroll_offset = gfx::PointF(-1, -1);
+  }
+
+  if (obj->version >= 22) {
+    state->scroll_restoration_type =
+        static_cast<blink::WebHistoryScrollRestorationType>(ReadInteger(obj));
   }
 
   bool has_state_object = ReadBoolean(obj);
@@ -674,7 +682,8 @@ ExplodedHttpBody::~ExplodedHttpBody() {
 }
 
 ExplodedFrameState::ExplodedFrameState()
-    : item_sequence_number(0),
+    : scroll_restoration_type(blink::WebHistoryScrollRestorationAuto),
+      item_sequence_number(0),
       document_sequence_number(0),
       frame_sequence_number(0),
       page_scale_factor(0.0),
@@ -699,6 +708,7 @@ void ExplodedFrameState::assign(const ExplodedFrameState& other) {
   target = other.target;
   state_object = other.state_object;
   document_state = other.document_state;
+  scroll_restoration_type = other.scroll_restoration_type;
   pinch_viewport_scroll_offset = other.pinch_viewport_scroll_offset;
   scroll_offset = other.scroll_offset;
   item_sequence_number = other.item_sequence_number;

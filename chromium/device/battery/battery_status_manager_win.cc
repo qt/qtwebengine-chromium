@@ -83,10 +83,14 @@ class BatteryStatusObserver {
   }
 
   void Stop() {
-    if (power_handle_)
+    if (power_handle_) {
       UnregisterNotification(power_handle_);
-    if (battery_change_handle_)
+      power_handle_ = NULL;
+    }
+    if (battery_change_handle_) {
       UnregisterNotification(battery_change_handle_);
+      battery_change_handle_ = NULL;
+    }
     window_.reset();
   }
 
@@ -156,18 +160,16 @@ class BatteryStatusManagerWin : public BatteryStatusManager {
  public:
   explicit BatteryStatusManagerWin(const BatteryCallback& callback)
       : battery_observer_(new BatteryStatusObserver(callback)) {}
-  virtual ~BatteryStatusManagerWin() { battery_observer_->Stop(); }
+  ~BatteryStatusManagerWin() override { battery_observer_->Stop(); }
 
  public:
   // BatteryStatusManager:
-  virtual bool StartListeningBatteryChange() override {
+  bool StartListeningBatteryChange() override {
     battery_observer_->Start();
     return true;
   }
 
-  virtual void StopListeningBatteryChange() override {
-    battery_observer_->Stop();
-  }
+  void StopListeningBatteryChange() override { battery_observer_->Stop(); }
 
  private:
   scoped_ptr<BatteryStatusObserver> battery_observer_;

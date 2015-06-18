@@ -25,6 +25,7 @@
 #ifndef LiveNodeListBase_h
 #define LiveNodeListBase_h
 
+#include "core/CoreExport.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
@@ -38,7 +39,7 @@ enum NodeListRootType {
     NodeListIsRootedAtDocument
 };
 
-class LiveNodeListBase : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT LiveNodeListBase : public WillBeGarbageCollectedMixin {
 public:
     LiveNodeListBase(ContainerNode& ownerNode, NodeListRootType rootType, NodeListInvalidationType invalidationType,
         CollectionType collectionType)
@@ -84,7 +85,7 @@ protected:
     template <typename MatchFunc>
     static Element* traverseMatchingElementsBackwardToOffset(Element& currentElement, const ContainerNode* stayWithin, unsigned offset, unsigned& currentOffset, MatchFunc);
 
-    virtual void trace(Visitor* visitor) { visitor->trace(m_ownerNode); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { visitor->trace(m_ownerNode); }
 
 private:
     RefPtrWillBeMember<ContainerNode> m_ownerNode; // Cannot be null.

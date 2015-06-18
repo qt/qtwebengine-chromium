@@ -53,7 +53,6 @@ std::pair<uint64, uint64> GetReceiverEventKey(
 
 }  // namespace
 
-
 Rtcp::Rtcp(const RtcpCastMessageCallback& cast_callback,
            const RtcpRttCallback& rtt_callback,
            const RtcpLogMessageCallback& log_callback,
@@ -72,7 +71,9 @@ Rtcp::Rtcp(const RtcpCastMessageCallback& cast_callback,
       last_report_truncated_ntp_(0),
       local_clock_ahead_by_(ClockDriftSmoother::GetDefaultTimeConstant()),
       lip_sync_rtp_timestamp_(0),
-      lip_sync_ntp_timestamp_(0) {
+      lip_sync_ntp_timestamp_(0),
+      largest_seen_timestamp_(
+          base::TimeTicks::FromInternalValue(kint64min)) {
 }
 
 Rtcp::~Rtcp() {}
@@ -192,32 +193,41 @@ bool Rtcp::DedupeReceiverLog(RtcpReceiverLogMessage* receiver_log) {
   return !receiver_log->empty();
 }
 
-void Rtcp::SendRtcpFromRtpReceiver(
-    const RtcpCastMessage* cast_message,
-    base::TimeDelta target_delay,
-    const ReceiverRtcpEventSubscriber::RtcpEventMultiMap* rtcp_events,
-    RtpReceiverStatistics* rtp_receiver_statistics) {
-  base::TimeTicks now = clock_->NowTicks();
-  RtcpReportBlock report_block;
-  RtcpReceiverReferenceTimeReport rrtr;
+RtcpTimeData Rtcp::ConvertToNTPAndSave(base::TimeTicks now) {
+  RtcpTimeData ret;
+  ret.timestamp = now;
 
   // Attach our NTP to all RTCP packets; with this information a "smart" sender
   // can make decisions based on how old the RTCP message is.
-  ConvertTimeTicksToNtp(now, &rrtr.ntp_seconds, &rrtr.ntp_fraction);
-  SaveLastSentNtpTime(now, rrtr.ntp_seconds, rrtr.ntp_fraction);
+  ConvertTimeTicksToNtp(now, &ret.ntp_seconds, &ret.ntp_fraction);
+  SaveLastSentNtpTime(now, ret.ntp_seconds, ret.ntp_fraction);
+  return ret;
+}
+
+void Rtcp::SendRtcpFromRtpReceiver(
+    RtcpTimeData time_data,
+    const RtcpCastMessage* cast_message,
+    base::TimeDelta target_delay,
+    const ReceiverRtcpEventSubscriber::RtcpEvents* rtcp_events,
+    const RtpReceiverStatistics* rtp_receiver_statistics) const {
+  RtcpReportBlock report_block;
+  RtcpReceiverReferenceTimeReport rrtr;
+  rrtr.ntp_seconds = time_data.ntp_seconds;
+  rrtr.ntp_fraction = time_data.ntp_fraction;
 
   if (rtp_receiver_statistics) {
     report_block.remote_ssrc = 0;            // Not needed to set send side.
     report_block.media_ssrc = remote_ssrc_;  // SSRC of the RTP packet sender.
-    rtp_receiver_statistics->GetStatistics(
-        &report_block.fraction_lost, &report_block.cumulative_lost,
-        &report_block.extended_high_sequence_number, &report_block.jitter);
-
+    report_block.fraction_lost = rtp_receiver_statistics->fraction_lost;
+    report_block.cumulative_lost = rtp_receiver_statistics->cumulative_lost;
+    report_block.extended_high_sequence_number =
+        rtp_receiver_statistics->extended_high_sequence_number;
+    report_block.jitter = rtp_receiver_statistics->jitter;
     report_block.last_sr = last_report_truncated_ntp_;
     if (!time_last_report_received_.is_null()) {
       uint32 delay_seconds = 0;
       uint32 delay_fraction = 0;
-      base::TimeDelta delta = now - time_last_report_received_;
+      base::TimeDelta delta = time_data.timestamp - time_last_report_received_;
       ConvertTimeToFractions(delta.InMicroseconds(), &delay_seconds,
                              &delay_fraction);
       report_block.delay_since_last_sr =
@@ -226,9 +236,10 @@ void Rtcp::SendRtcpFromRtpReceiver(
       report_block.delay_since_last_sr = 0;
     }
   }
+  RtcpBuilder rtcp_builder(local_ssrc_);
   packet_sender_->SendRtcpPacket(
       local_ssrc_,
-      rtcp_builder_.BuildRtcpFromReceiver(
+      rtcp_builder.BuildRtcpFromReceiver(
           rtp_receiver_statistics ? &report_block : NULL,
           &rrtr,
           cast_message,
@@ -350,8 +361,9 @@ void Rtcp::SaveLastSentNtpTime(const base::TimeTicks& now,
                                uint32 last_ntp_fraction) {
   // Make sure |now| is always greater than the last element in
   // |last_reports_sent_queue_|.
-  if (!last_reports_sent_queue_.empty())
+  if (!last_reports_sent_queue_.empty()) {
     DCHECK(now >= last_reports_sent_queue_.back().second);
+  }
 
   uint32 last_report = ConvertToNtpDiff(last_ntp_seconds, last_ntp_fraction);
   last_reports_sent_map_[last_report] = now;

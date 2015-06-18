@@ -40,46 +40,11 @@ BASE_EXPORT ProcessId GetCurrentProcId();
 // Returns the ProcessHandle of the current process.
 BASE_EXPORT ProcessHandle GetCurrentProcessHandle();
 
-// Converts a PID to a process handle. This handle must be closed by
-// CloseProcessHandle when you are done with it. Returns true on success.
-BASE_EXPORT bool OpenProcessHandle(ProcessId pid, ProcessHandle* handle);
-
-// Converts a PID to a process handle. On Windows the handle is opened
-// with more access rights and must only be used by trusted code.
-// You have to close returned handle using CloseProcessHandle. Returns true
-// on success.
-// TODO(sanjeevr): Replace all calls to OpenPrivilegedProcessHandle with the
-// more specific OpenProcessHandleWithAccess method and delete this.
-BASE_EXPORT bool OpenPrivilegedProcessHandle(ProcessId pid,
-                                             ProcessHandle* handle);
-
-// Converts a PID to a process handle using the desired access flags. Use a
-// combination of the kProcessAccess* flags defined above for |access_flags|.
-BASE_EXPORT bool OpenProcessHandleWithAccess(ProcessId pid,
-                                             uint32 access_flags,
-                                             ProcessHandle* handle);
-
-// Closes the process handle opened by OpenProcessHandle.
-BASE_EXPORT void CloseProcessHandle(ProcessHandle process);
-
 // Returns the unique ID for the specified process. This is functionally the
 // same as Windows' GetProcessId(), but works on versions of Windows before
 // Win XP SP1 as well.
+// DEPRECATED. New code should be using Process::Pid() instead.
 BASE_EXPORT ProcessId GetProcId(ProcessHandle process);
-
-#if defined(OS_WIN)
-enum IntegrityLevel {
-  INTEGRITY_UNKNOWN,
-  LOW_INTEGRITY,
-  MEDIUM_INTEGRITY,
-  HIGH_INTEGRITY,
-};
-// Determine the integrity level of the specified process. Returns false
-// if the system does not support integrity levels (pre-Vista) or in the case
-// of an underlying system failure.
-BASE_EXPORT bool GetProcessIntegrityLevel(ProcessHandle process,
-                                          IntegrityLevel* level);
-#endif
 
 #if defined(OS_POSIX)
 // Returns the path to the executable of the given process.

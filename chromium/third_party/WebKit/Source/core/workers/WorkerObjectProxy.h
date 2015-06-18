@@ -31,6 +31,7 @@
 #ifndef WorkerObjectProxy_h
 #define WorkerObjectProxy_h
 
+#include "core/CoreExport.h"
 #include "core/dom/MessagePort.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "wtf/PassOwnPtr.h"
@@ -49,7 +50,7 @@ class WorkerMessagingProxy;
 // WorkerMessagingProxy on the worker object thread.
 //
 // Used only by Dedicated Worker.
-class WorkerObjectProxy final : public WorkerReportingProxy {
+class CORE_EXPORT WorkerObjectProxy final : public WorkerReportingProxy {
 public:
     static PassOwnPtr<WorkerObjectProxy> create(ExecutionContext*, WorkerMessagingProxy*);
     virtual ~WorkerObjectProxy() { }
@@ -60,9 +61,10 @@ public:
     void reportPendingActivity(bool hasPendingActivity);
 
     // WorkerReportingProxy overrides.
-    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) override;
+    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId) override;
     virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
     virtual void postMessageToPageInspector(const String&) override;
+    virtual void postWorkerConsoleAgentEnabled() override;
     virtual void didEvaluateWorkerScript(bool success) override { };
     virtual void workerGlobalScopeStarted(WorkerGlobalScope*) override { }
     virtual void workerGlobalScopeClosed() override;

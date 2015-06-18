@@ -29,7 +29,6 @@ using ::testing::NotNull;
 
 namespace {
 const int kRenderProcessId = 1;
-const int kRenderViewId = 4;
 const int kRenderFrameId = 5;
 const int kStreamId = 50;
 }  // namespace
@@ -154,7 +153,7 @@ class AudioRendererHostTest : public testing::Test {
                                       media_stream_manager_.get());
 
     // Simulate IPC channel connected.
-    host_->set_peer_pid_for_testing(base::GetCurrentProcId());
+    host_->set_peer_process_for_testing(base::Process::Current());
   }
 
   ~AudioRendererHostTest() override {
@@ -198,8 +197,7 @@ class AudioRendererHostTest : public testing::Test {
           media::AudioParameters::kAudioCDSampleRate, 16,
           media::AudioParameters::kAudioCDSampleRate / 10);
     }
-    host_->OnCreateStream(kStreamId, kRenderViewId, kRenderFrameId, session_id,
-                          params);
+    host_->OnCreateStream(kStreamId, kRenderFrameId, session_id, params);
 
     // At some point in the future, a corresponding RemoveDiverter() call must
     // be made.

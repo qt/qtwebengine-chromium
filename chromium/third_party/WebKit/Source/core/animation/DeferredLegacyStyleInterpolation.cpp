@@ -5,7 +5,9 @@
 #include "config.h"
 #include "core/animation/DeferredLegacyStyleInterpolation.h"
 
-#include "core/animation/LegacyStyleInterpolation.h"
+#include "core/animation/ElementAnimations.h"
+#include "core/animation/css/CSSAnimatableValueFactory.h"
+#include "core/css/CSSBasicShapes.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
@@ -20,39 +22,44 @@ namespace blink {
 
 void DeferredLegacyStyleInterpolation::apply(StyleResolverState& state) const
 {
-    RefPtrWillBeRawPtr<LegacyStyleInterpolation> innerInterpolation = LegacyStyleInterpolation::create(
-        StyleResolver::createAnimatableValueSnapshot(state, m_id, *m_startCSSValue),
-        StyleResolver::createAnimatableValueSnapshot(state, m_id, *m_endCSSValue),
-        m_id);
-    innerInterpolation->interpolate(m_cachedIteration, m_cachedFraction);
-    innerInterpolation->apply(state);
+    if (m_outdated || !state.element()->elementAnimations() || !state.element()->elementAnimations()->isAnimationStyleChange()) {
+        RefPtrWillBeRawPtr<AnimatableValue> startAnimatableValue;
+        RefPtrWillBeRawPtr<AnimatableValue> endAnimatableValue;
+
+        // Snapshot underlying values for neutral keyframes first because non-neutral keyframes will mutate the StyleResolverState.
+        if (!m_endCSSValue) {
+            endAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_endCSSValue.get());
+            startAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_startCSSValue.get());
+        } else {
+            startAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_startCSSValue.get());
+            endAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_endCSSValue.get());
+        }
+
+        m_innerInterpolation = LegacyStyleInterpolation::create(startAnimatableValue, endAnimatableValue, m_id);
+        m_outdated = false;
+    }
+
+    m_innerInterpolation->interpolate(m_cachedIteration, m_cachedFraction);
+    m_innerInterpolation->apply(state);
 }
 
 bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSValue& value)
 {
-    switch (value.cssValueType()) {
-    case CSSValue::CSS_INHERIT:
+    // FIXME: should not require resolving styles for inherit/initial/unset.
+    if (value.isCSSWideKeyword())
         return true;
-    case CSSValue::CSS_PRIMITIVE_VALUE:
+    if (value.isPrimitiveValue())
         return interpolationRequiresStyleResolve(toCSSPrimitiveValue(value));
-    case CSSValue::CSS_VALUE_LIST:
+    if (value.isValueList())
         return interpolationRequiresStyleResolve(toCSSValueList(value));
-    case CSSValue::CSS_CUSTOM:
-        if (value.isImageValue())
-            return interpolationRequiresStyleResolve(toCSSImageValue(value));
-        if (value.isShadowValue())
-            return interpolationRequiresStyleResolve(toCSSShadowValue(value));
-        if (value.isSVGDocumentValue())
-            return interpolationRequiresStyleResolve(toCSSSVGDocumentValue(value));
-        // FIXME: consider other custom types.
-        return true;
-    case CSSValue::CSS_INITIAL:
-        // FIXME: should not require resolving styles for initial.
-        return true;
-    default:
-        ASSERT_NOT_REACHED();
-        return true;
-    }
+    if (value.isImageValue())
+        return interpolationRequiresStyleResolve(toCSSImageValue(value));
+    if (value.isShadowValue())
+        return interpolationRequiresStyleResolve(toCSSShadowValue(value));
+    if (value.isSVGDocumentValue())
+        return interpolationRequiresStyleResolve(toCSSSVGDocumentValue(value));
+    // FIXME: consider other custom types.
+    return true;
 }
 
 bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const CSSPrimitiveValue& primitiveValue)
@@ -142,10 +149,11 @@ bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const C
     return false;
 }
 
-void DeferredLegacyStyleInterpolation::trace(Visitor* visitor)
+DEFINE_TRACE(DeferredLegacyStyleInterpolation)
 {
     visitor->trace(m_startCSSValue);
     visitor->trace(m_endCSSValue);
+    visitor->trace(m_innerInterpolation);
     StyleInterpolation::trace(visitor);
 }
 

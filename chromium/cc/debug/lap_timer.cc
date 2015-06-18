@@ -11,10 +11,14 @@ namespace cc {
 namespace {
 
 base::TimeTicks Now() {
-  return base::TimeTicks::IsThreadNowSupported()
-             ? base::TimeTicks::ThreadNow()
-             : base::TimeTicks::HighResNow();
+  return base::TimeTicks::IsThreadNowSupported() ? base::TimeTicks::ThreadNow()
+                                                 : base::TimeTicks::Now();
 }
+
+// Default values.
+static const int kTimeLimitMillis = 3000;
+static const int kWarmupRuns = 5;
+static const int kTimeCheckInterval = 10;
 
 }  // namespace
 
@@ -28,6 +32,12 @@ LapTimer::LapTimer(int warmup_laps,
       check_interval_(check_interval) {
   DCHECK_GT(check_interval, 0);
   Reset();
+}
+
+LapTimer::LapTimer()
+    : LapTimer(kWarmupRuns,
+               base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
+               kTimeCheckInterval) {
 }
 
 void LapTimer::Reset() {

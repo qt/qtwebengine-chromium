@@ -25,7 +25,9 @@
 #define DataTransfer_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/clipboard/DataTransferAccessPolicy.h"
+#include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/page/DragActions.h"
 #include "platform/geometry/IntPoint.h"
@@ -44,14 +46,13 @@ class Element;
 class ExceptionState;
 class FileList;
 class LocalFrame;
-class ImageResource;
 class Node;
 class Range;
 
 // Used for drag and drop and copy/paste.
 // Drag and Drop: http://www.whatwg.org/specs/web-apps/current-work/multipage/dnd.html
 // Clipboard API (copy/paste): http://dev.w3.org/2006/webapi/clipops/clipops.html
-class DataTransfer : public RefCountedWillBeGarbageCollectedFinalized<DataTransfer>, public ScriptWrappable {
+class CORE_EXPORT DataTransfer : public GarbageCollectedFinalized<DataTransfer>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // Whether this transfer is serving a drag-drop or copy-paste request.
@@ -60,7 +61,7 @@ public:
         DragAndDrop,
     };
 
-    static PassRefPtrWillBeRawPtr<DataTransfer> create(DataTransferType, DataTransferAccessPolicy, PassRefPtrWillBeRawPtr<DataObject>);
+    static DataTransfer* create(DataTransferType, DataTransferAccessPolicy, DataObject*);
     ~DataTransfer();
 
     bool isForCopyAndPaste() const { return m_transferType == CopyAndPaste; }
@@ -83,9 +84,7 @@ public:
     IntPoint dragLocation() const { return m_dragLoc; }
     void setDragImage(Element*, int x, int y, ExceptionState&);
     void clearDragImage();
-    ImageResource* dragImageResource() const { return m_dragImage.get(); }
     void setDragImageResource(ImageResource*, const IntPoint&);
-    Node* dragImageElement() const { return m_dragImageElement.get(); }
     void setDragImageElement(Node*, const IntPoint&);
 
     PassOwnPtr<DragImage> createDragImage(IntPoint& dragLocation, LocalFrame*) const;
@@ -93,8 +92,6 @@ public:
     void writeURL(const KURL&, const String&);
     void writeRange(Range*, LocalFrame*);
     void writePlainText(const String&);
-
-    bool hasData();
 
     void setAccessPolicy(DataTransferAccessPolicy);
     bool canReadTypes() const;
@@ -113,14 +110,14 @@ public:
 
     bool hasDropZoneType(const String&);
 
-    PassRefPtrWillBeRawPtr<DataTransferItemList> items();
+    DataTransferItemList* items();
 
-    PassRefPtrWillBeRawPtr<DataObject> dataObject() const;
+    DataObject* dataObject() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    DataTransfer(DataTransferType, DataTransferAccessPolicy, PassRefPtrWillBeRawPtr<DataObject>);
+    DataTransfer(DataTransferType, DataTransferAccessPolicy, DataObject*);
 
     void setDragImage(ImageResource*, Node*, const IntPoint&);
 
@@ -132,7 +129,7 @@ private:
     String m_dropEffect;
     String m_effectAllowed;
     DataTransferType m_transferType;
-    RefPtrWillBeMember<DataObject> m_dataObject;
+    Member<DataObject> m_dataObject;
 
     IntPoint m_dragLoc;
     ResourcePtr<ImageResource> m_dragImage;

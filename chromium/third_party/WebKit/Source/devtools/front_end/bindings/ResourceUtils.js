@@ -66,7 +66,7 @@ WebInspector.displayNameForURL = function(url)
     if (resource)
         return resource.displayName;
 
-    var uiSourceCode = WebInspector.workspace.uiSourceCodeForURL(url);
+    var uiSourceCode = WebInspector.networkMapping.uiSourceCodeForURLForAnyTarget(url);
     if (uiSourceCode)
         return uiSourceCode.displayName();
 
@@ -111,13 +111,11 @@ WebInspector.linkifyStringAsFragmentWithCustomLinkifier = function(string, linki
 
         var title = linkString;
         var realURL = (linkString.startsWith("www.") ? "http://" + linkString : linkString);
-        var parsedURL = new WebInspector.ParsedURL(realURL);
-        var splitResult = WebInspector.ParsedURL.splitLineAndColumn(parsedURL.lastPathComponent);
+        var splitResult = WebInspector.ParsedURL.splitLineAndColumn(realURL);
         var linkNode;
-        if (splitResult) {
-            var link = realURL.substring(0, realURL.length - parsedURL.lastPathComponent.length + splitResult.url.length);
-            linkNode = linkifier(title, link, splitResult.lineNumber, splitResult.columnNumber);
-        } else
+        if (splitResult)
+            linkNode = linkifier(title, splitResult.url, splitResult.lineNumber, splitResult.columnNumber);
+        else
             linkNode = linkifier(title, realURL);
 
         container.appendChild(linkNode);
@@ -145,7 +143,7 @@ WebInspector.linkifyStringAsFragment = function(string)
      */
     function linkifier(title, url, lineNumber, columnNumber)
     {
-        var isExternal = !WebInspector.resourceForURL(url) && !WebInspector.workspace.uiSourceCodeForURL(url);
+        var isExternal = !WebInspector.resourceForURL(url) && !WebInspector.networkMapping.uiSourceCodeForURLForAnyTarget(url);
         var urlNode = WebInspector.linkifyURLAsNode(url, title, undefined, isExternal);
         if (typeof lineNumber !== "undefined") {
             urlNode.lineNumber = lineNumber;
@@ -191,16 +189,13 @@ WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal, too
 }
 
 /**
- * @param {string} url
- * @param {number=} lineNumber
- * @return {string}
+ * @param {string} article
+ * @param {string} title
+ * @return {!Element}
  */
-WebInspector.formatLinkText = function(url, lineNumber)
+WebInspector.linkifyDocumentationURLAsNode = function(article, title)
 {
-    var text = url ? WebInspector.displayNameForURL(url) : WebInspector.UIString("(program)");
-    if (typeof lineNumber === "number")
-        text += ":" + (lineNumber + 1);
-    return text;
+    return WebInspector.linkifyURLAsNode("https://developer.chrome.com/devtools/docs/" + article, title, undefined, true);
 }
 
 /**
@@ -208,11 +203,14 @@ WebInspector.formatLinkText = function(url, lineNumber)
  * @param {number=} lineNumber
  * @param {string=} classes
  * @param {string=} tooltipText
+ * @param {string=} urlDisplayName
  * @return {!Element}
  */
-WebInspector.linkifyResourceAsNode = function(url, lineNumber, classes, tooltipText)
+WebInspector.linkifyResourceAsNode = function(url, lineNumber, classes, tooltipText, urlDisplayName)
 {
-    var linkText = WebInspector.formatLinkText(url, lineNumber);
+    var linkText = urlDisplayName ? urlDisplayName : url ? WebInspector.displayNameForURL(url) : WebInspector.UIString("(program)");
+    if (typeof lineNumber === "number")
+        linkText += ":" + (lineNumber + 1);
     var anchor = WebInspector.linkifyURLAsNode(url, linkText, classes, false, tooltipText);
     anchor.lineNumber = lineNumber;
     return anchor;

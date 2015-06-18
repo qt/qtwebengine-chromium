@@ -15,6 +15,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
@@ -50,32 +51,34 @@ namespace {
 
 // Maximum number of concurrent worker pool threads, which also is the limit
 // on concurrent IO (as we use one thread per IO request).
-const int kDefaultMaxWorkerThreads = 50;
+const size_t kMaxWorkerThreads = 5U;
 
 const char kThreadNamePrefix[] = "SimpleCache";
 
 // Maximum fraction of the cache that one entry can consume.
 const int kMaxFileRatio = 8;
 
-// A global sequenced worker pool to use for launching all tasks.
-SequencedWorkerPool* g_sequenced_worker_pool = NULL;
+class LeakySequencedWorkerPool {
+ public:
+  LeakySequencedWorkerPool()
+      : sequenced_worker_pool_(
+            new SequencedWorkerPool(kMaxWorkerThreads, kThreadNamePrefix)) {}
 
-void MaybeCreateSequencedWorkerPool() {
-  if (!g_sequenced_worker_pool) {
-    int max_worker_threads = kDefaultMaxWorkerThreads;
+  void FlushForTesting() { sequenced_worker_pool_->FlushForTesting(); }
 
-    const std::string thread_count_field_trial =
-        base::FieldTrialList::FindFullName("SimpleCacheMaxThreads");
-    if (!thread_count_field_trial.empty()) {
-      max_worker_threads =
-          std::max(1, std::atoi(thread_count_field_trial.c_str()));
-    }
-
-    g_sequenced_worker_pool = new SequencedWorkerPool(max_worker_threads,
-                                                      kThreadNamePrefix);
-    g_sequenced_worker_pool->AddRef();  // Leak it.
+  scoped_refptr<base::TaskRunner> GetTaskRunner() {
+    return sequenced_worker_pool_->GetTaskRunnerWithShutdownBehavior(
+        SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
   }
-}
+
+ private:
+  scoped_refptr<SequencedWorkerPool> sequenced_worker_pool_;
+
+  DISALLOW_COPY_AND_ASSIGN(LeakySequencedWorkerPool);
+};
+
+base::LazyInstance<LeakySequencedWorkerPool>::Leaky g_sequenced_worker_pool =
+    LAZY_INSTANCE_INITIALIZER;
 
 bool g_fd_limit_histogram_has_been_populated = false;
 
@@ -245,10 +248,7 @@ SimpleBackendImpl::~SimpleBackendImpl() {
 }
 
 int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
-  MaybeCreateSequencedWorkerPool();
-
-  worker_pool_ = g_sequenced_worker_pool->GetTaskRunnerWithShutdownBehavior(
-      SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
+  worker_pool_ = g_sequenced_worker_pool.Get().GetTaskRunner();
 
   index_.reset(new SimpleIndex(
       base::ThreadTaskRunnerHandle::Get(),
@@ -271,12 +271,15 @@ int SimpleBackendImpl::Init(const CompletionCallback& completion_callback) {
 }
 
 bool SimpleBackendImpl::SetMaxSize(int max_bytes) {
+  if (max_bytes < 0)
+    return false;
   orig_max_size_ = max_bytes;
-  return index_->SetMaxSize(max_bytes);
+  index_->SetMaxSize(max_bytes);
+  return true;
 }
 
 int SimpleBackendImpl::GetMaxFileSize() const {
-  return index_->max_size() / kMaxFileRatio;
+  return static_cast<int>(index_->max_size() / kMaxFileRatio);
 }
 
 void SimpleBackendImpl::OnDoomStart(uint64 entry_hash) {
@@ -541,8 +544,7 @@ scoped_ptr<Backend::Iterator> SimpleBackendImpl::CreateIterator() {
   return scoped_ptr<Iterator>(new SimpleIterator(AsWeakPtr()));
 }
 
-void SimpleBackendImpl::GetStats(
-    std::vector<std::pair<std::string, std::string> >* stats) {
+void SimpleBackendImpl::GetStats(base::StringPairs* stats) {
   std::pair<std::string, std::string> item;
   item.first = "Cache type";
   item.second = "Simple Cache";
@@ -730,9 +732,11 @@ void SimpleBackendImpl::DoomEntriesComplete(
   callback.Run(result);
 }
 
+// static
 void SimpleBackendImpl::FlushWorkerPoolForTesting() {
-  if (g_sequenced_worker_pool)
-    g_sequenced_worker_pool->FlushForTesting();
+  // We only need to do this if we there is an active task runner.
+  if (base::ThreadTaskRunnerHandle::IsSet())
+    g_sequenced_worker_pool.Get().FlushForTesting();
 }
 
 }  // namespace disk_cache

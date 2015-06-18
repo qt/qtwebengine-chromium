@@ -25,6 +25,7 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedPointList.h"
 #include "core/svg/SVGGeometryElement.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -32,18 +33,19 @@ class SVGPolyElement : public SVGGeometryElement {
 public:
     SVGAnimatedPointList* points() { return m_points.get(); }
 
-    PassRefPtr<SVGPointListTearOff> pointsFromJavascript() { return m_points->baseVal(); }
-    PassRefPtr<SVGPointListTearOff> animatedPoints() { return m_points->animVal(); }
+    PassRefPtrWillBeRawPtr<SVGPointListTearOff> pointsFromJavascript() { return m_points->baseVal(); }
+    PassRefPtrWillBeRawPtr<SVGPointListTearOff> animatedPoints() { return m_points->animVal(); }
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     SVGPolyElement(const QualifiedName&, Document&);
 
 private:
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
     virtual void svgAttributeChanged(const QualifiedName&) override final;
 
 private:
-    RefPtr<SVGAnimatedPointList> m_points;
+    RefPtrWillBeMember<SVGAnimatedPointList> m_points;
 
 };
 

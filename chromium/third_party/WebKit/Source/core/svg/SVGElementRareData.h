@@ -21,6 +21,7 @@
 #define SVGElementRareData_h
 
 #include "core/svg/SVGElement.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/StdLibExtras.h"
@@ -31,7 +32,7 @@ class CSSCursorImageValue;
 class SVGCursorElement;
 
 class SVGElementRareData : public NoBaseWillBeGarbageCollectedFinalized<SVGElementRareData> {
-    WTF_MAKE_NONCOPYABLE(SVGElementRareData); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(SVGElementRareData); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SVGElementRareData);
 public:
     SVGElementRareData(SVGElement* owner)
 #if ENABLE(OILPAN)
@@ -53,8 +54,8 @@ public:
     SVGElementSet& incomingReferences() { return m_incomingReferences; }
     const SVGElementSet& incomingReferences() const { return m_incomingReferences; }
 
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& elementInstances() { return m_elementInstances; }
-    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& elementInstances() const { return m_elementInstances; }
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& elementInstances() { return m_elementInstances; }
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& elementInstances() const { return m_elementInstances; }
 
     bool instanceUpdatesBlocked() const { return m_instancesUpdatesBlocked; }
     void setInstanceUpdatesBlocked(bool value) { m_instancesUpdatesBlocked = value; }
@@ -71,7 +72,7 @@ public:
     MutableStylePropertySet* animatedSMILStyleProperties() const { return m_animatedSMILStyleProperties.get(); }
     MutableStylePropertySet* ensureAnimatedSMILStyleProperties();
 
-    RenderStyle* overrideComputedStyle(Element*, RenderStyle*);
+    ComputedStyle* overrideComputedStyle(Element*, const ComputedStyle*);
 
     bool useOverrideComputedStyle() const { return m_useOverrideComputedStyle; }
     void setUseOverrideComputedStyle(bool value) { m_useOverrideComputedStyle = value; }
@@ -79,7 +80,7 @@ public:
 
     AffineTransform* animateMotionTransform();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void processWeakMembers(Visitor*);
 
 private:
@@ -88,7 +89,7 @@ private:
 #endif
     SVGElementSet m_outgoingReferences;
     SVGElementSet m_incomingReferences;
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> > m_elementInstances;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>> m_elementInstances;
     RawPtrWillBeWeakMember<SVGCursorElement> m_cursorElement;
     RawPtrWillBeWeakMember<CSSCursorImageValue> m_cursorImageValue;
     RefPtrWillBeMember<SVGElement> m_correspondingElement;
@@ -96,7 +97,7 @@ private:
     bool m_useOverrideComputedStyle : 1;
     bool m_needsOverrideComputedStyleUpdate : 1;
     RefPtrWillBeMember<MutableStylePropertySet> m_animatedSMILStyleProperties;
-    RefPtr<RenderStyle> m_overrideComputedStyle;
+    RefPtr<ComputedStyle> m_overrideComputedStyle;
     // Used by <animateMotion>
     OwnPtr<AffineTransform> m_animateMotionTransform;
 };

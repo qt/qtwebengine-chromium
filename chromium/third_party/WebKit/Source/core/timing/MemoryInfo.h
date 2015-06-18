@@ -31,27 +31,38 @@
 #ifndef MemoryInfo_h
 #define MemoryInfo_h
 
-#include "bindings/core/v8/ScriptGCEvent.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
-class MemoryInfo final : public RefCountedWillBeGarbageCollected<MemoryInfo>, public ScriptWrappable {
+struct HeapInfo {
+    HeapInfo()
+        : usedJSHeapSize(0)
+        , totalJSHeapSize(0)
+        , jsHeapSizeLimit(0)
+    {
+    }
+
+    size_t usedJSHeapSize;
+    size_t totalJSHeapSize;
+    size_t jsHeapSizeLimit;
+};
+
+class CORE_EXPORT MemoryInfo final : public GarbageCollected<MemoryInfo>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<MemoryInfo> create()
+    static MemoryInfo* create()
     {
-        return adoptRefWillBeNoop(new MemoryInfo());
+        return new MemoryInfo();
     }
 
     size_t totalJSHeapSize() const { return m_info.totalJSHeapSize; }
     size_t usedJSHeapSize() const { return m_info.usedJSHeapSize; }
     size_t jsHeapSizeLimit() const { return m_info.jsHeapSizeLimit; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     MemoryInfo();
@@ -59,7 +70,7 @@ private:
     HeapInfo m_info;
 };
 
-size_t quantizeMemorySize(size_t);
+CORE_EXPORT size_t quantizeMemorySize(size_t);
 
 } // namespace blink
 

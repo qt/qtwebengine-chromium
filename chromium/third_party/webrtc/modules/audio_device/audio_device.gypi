@@ -13,8 +13,10 @@
       'type': 'static_library',
       'dependencies': [
         'webrtc_utility',
+        '<(webrtc_root)/base/base.gyp:rtc_base_approved',
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'include_dirs': [
         '.',
@@ -122,6 +124,8 @@
             'android/audio_device_template.h',
             'android/audio_device_utility_android.cc',
             'android/audio_device_utility_android.h',
+            'android/audio_manager.cc',
+            'android/audio_manager.h',
             'android/audio_manager_jni.cc',
             'android/audio_manager_jni.h',
             'android/audio_record_jni.cc',
@@ -192,6 +196,7 @@
                   'OTHER_LDFLAGS': [
                     '-framework AudioToolbox',
                     '-framework AVFoundation',
+                    '-framework Foundation',
                   ],
                 },
               },
@@ -223,7 +228,7 @@
             'webrtc_utility',
             '<(webrtc_root)/test/test.gyp:test_support_main',
             '<(DEPTH)/testing/gtest.gyp:gtest',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
           ],
           'sources': [
             'test/audio_device_test_api.cc',
@@ -237,7 +242,7 @@
             'audio_device',
             'webrtc_utility',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
@@ -267,7 +272,7 @@
             },
           ],
         }],
-        ['OS=="android" and enable_android_opensl==1', {
+        ['OS=="android"', {
           'targets': [
             {
               'target_name': 'audio_device_unittest',
@@ -277,7 +282,7 @@
                 'webrtc_utility',
                 '<(DEPTH)/testing/gmock.gyp:gmock',
                 '<(DEPTH)/testing/gtest.gyp:gtest',
-                '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+                '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
                 '<(webrtc_root)/test/test.gyp:test_support_main',
               ],
               'sources': [

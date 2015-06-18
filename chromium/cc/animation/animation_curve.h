@@ -6,6 +6,7 @@
 #define CC_ANIMATION_ANIMATION_CURVE_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/filter_operations.h"
 #include "ui/gfx/transform.h"
@@ -26,11 +27,11 @@ class TransformOperations;
 // An animation curve is a function that returns a value given a time.
 class CC_EXPORT AnimationCurve {
  public:
-  enum CurveType { Color, Float, Transform, Filter, ScrollOffset };
+  enum CurveType { COLOR, FLOAT, TRANSFORM, FILTER, SCROLL_OFFSET };
 
   virtual ~AnimationCurve() {}
 
-  virtual double Duration() const = 0;
+  virtual base::TimeDelta Duration() const = 0;
   virtual CurveType Type() const = 0;
   virtual scoped_ptr<AnimationCurve> Clone() const = 0;
 
@@ -47,7 +48,7 @@ class CC_EXPORT ColorAnimationCurve : public AnimationCurve {
  public:
   ~ColorAnimationCurve() override {}
 
-  virtual SkColor GetValue(double t) const = 0;
+  virtual SkColor GetValue(base::TimeDelta t) const = 0;
 
   // Partial Animation implementation.
   CurveType Type() const override;
@@ -57,7 +58,7 @@ class CC_EXPORT FloatAnimationCurve : public AnimationCurve {
  public:
   ~FloatAnimationCurve() override {}
 
-  virtual float GetValue(double t) const = 0;
+  virtual float GetValue(base::TimeDelta t) const = 0;
 
   // Partial Animation implementation.
   CurveType Type() const override;
@@ -67,7 +68,7 @@ class CC_EXPORT TransformAnimationCurve : public AnimationCurve {
  public:
   ~TransformAnimationCurve() override {}
 
-  virtual gfx::Transform GetValue(double t) const = 0;
+  virtual gfx::Transform GetValue(base::TimeDelta t) const = 0;
 
   // Sets |bounds| to be the bounding box for the region within which |box|
   // will move during this animation. If this region cannot be computed,
@@ -80,6 +81,13 @@ class CC_EXPORT TransformAnimationCurve : public AnimationCurve {
 
   // Returns true if this animation is a translation.
   virtual bool IsTranslation() const = 0;
+
+  // Returns true if this animation preserves axis alignment.
+  virtual bool PreservesAxisAlignment() const = 0;
+
+  // Animation start scale
+  virtual bool AnimationStartScale(bool forward_direction,
+                                   float* start_scale) const = 0;
 
   // Set |max_scale| to the maximum scale along any dimension at the end of
   // intermediate animation target points (eg keyframe end points). When
@@ -97,7 +105,7 @@ class CC_EXPORT FilterAnimationCurve : public AnimationCurve {
  public:
   ~FilterAnimationCurve() override {}
 
-  virtual FilterOperations GetValue(double t) const = 0;
+  virtual FilterOperations GetValue(base::TimeDelta t) const = 0;
   virtual bool HasFilterThatMovesPixels() const = 0;
 
   // Partial Animation implementation.

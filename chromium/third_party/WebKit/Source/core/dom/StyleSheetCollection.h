@@ -28,6 +28,7 @@
 #ifndef StyleSheetCollection_h
 #define StyleSheetCollection_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/RefPtr.h"
@@ -38,35 +39,34 @@ namespace blink {
 class CSSStyleSheet;
 class StyleSheet;
 
-class StyleSheetCollection : public NoBaseWillBeGarbageCollectedFinalized<StyleSheetCollection> {
+class CORE_EXPORT StyleSheetCollection : public NoBaseWillBeGarbageCollected<StyleSheetCollection> {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(StyleSheetCollection);
     WTF_MAKE_NONCOPYABLE(StyleSheetCollection);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleSheetCollection);
 public:
     friend class ActiveDocumentStyleSheetCollector;
     friend class ImportedDocumentStyleSheetCollector;
 
     StyleSheetCollection();
-    virtual ~StyleSheetCollection();
 
-    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() { return m_activeAuthorStyleSheets; }
-    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList() { return m_styleSheetsForStyleSheetList; }
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() const { return m_activeAuthorStyleSheets; }
-    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList() const { return m_styleSheetsForStyleSheetList; }
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& activeAuthorStyleSheets() { return m_activeAuthorStyleSheets; }
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& styleSheetsForStyleSheetList() { return m_styleSheetsForStyleSheetList; }
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& activeAuthorStyleSheets() const { return m_activeAuthorStyleSheets; }
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& styleSheetsForStyleSheetList() const { return m_styleSheetsForStyleSheetList; }
 
     void swap(StyleSheetCollection&);
-    void swapSheetsForSheetList(WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >&);
-    void appendActiveStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
+    void swapSheetsForSheetList(WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>&);
+    void appendActiveStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>&);
     void appendActiveStyleSheet(CSSStyleSheet*);
     void appendSheetForList(StyleSheet*);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
-    WillBeHeapVector<RefPtrWillBeMember<StyleSheet> > m_styleSheetsForStyleSheetList;
-    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_activeAuthorStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<StyleSheet>> m_styleSheetsForStyleSheetList;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> m_activeAuthorStyleSheets;
 };
 
-}
+} // namespace blink
 
-#endif
-
+#endif // StyleSheetCollection_h

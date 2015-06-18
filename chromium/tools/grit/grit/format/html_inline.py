@@ -184,6 +184,8 @@ def DoInline(
     while True:
       begin_if = _BEGIN_IF_BLOCK.search(str)
       if begin_if is None:
+        if _END_IF_BLOCK.search(str) is not None:
+          raise Exception('Unmatched </if>')
         return str
 
       condition_satisfied = IsConditionSatisfied(begin_if)

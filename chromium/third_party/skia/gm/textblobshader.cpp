@@ -27,7 +27,7 @@ public:
 
 protected:
 
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         SkPaint p;
         p.setAntiAlias(true);
         p.setSubpixelText(true);
@@ -73,19 +73,15 @@ protected:
                                                      SkShader::kRepeat_TileMode));
     }
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkip565_Flag;
-    }
-
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("textblobshader");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(640, 480);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint p;
         p.setStyle(SkPaint::kFill_Style);
         p.setShader(fShader);

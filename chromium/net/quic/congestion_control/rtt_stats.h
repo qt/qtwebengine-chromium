@@ -23,9 +23,6 @@ class NET_EXPORT_PRIVATE RttStats {
  public:
   RttStats();
 
-  // Returns true if any RTT measurements have been made.
-  bool HasUpdates() const;
-
   // Updates the RTT from an incoming ack which is received |send_delta| after
   // the packet is sent and the peer reports the ack being delayed |ack_delay|.
   void UpdateRtt(QuicTime::Delta send_delta,
@@ -53,6 +50,10 @@ class NET_EXPORT_PRIVATE RttStats {
 
   // Sets an initial RTT to be used for SmoothedRtt before any RTT updates.
   void set_initial_rtt_us(int64 initial_rtt_us) {
+    if (initial_rtt_us <= 0) {
+      LOG(DFATAL) << "Attempt to set initial rtt to <= 0.";
+      return;
+    }
     initial_rtt_us_ = initial_rtt_us;
   }
 

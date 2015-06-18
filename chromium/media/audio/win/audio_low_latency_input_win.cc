@@ -168,7 +168,7 @@ void WASAPIAudioInputStream::Start(AudioInputCallback* callback) {
   HRESULT hr = audio_client_->Start();
   DLOG_IF(ERROR, FAILED(hr)) << "Failed to start input streaming.";
 
-  if (SUCCEEDED(hr) && audio_render_client_for_loopback_)
+  if (SUCCEEDED(hr) && audio_render_client_for_loopback_.get())
     hr = audio_render_client_for_loopback_->Start();
 
   started_ = SUCCEEDED(hr);
@@ -240,9 +240,10 @@ void WASAPIAudioInputStream::SetVolume(double volume) {
 
   // Set a new master volume level. Valid volume levels are in the range
   // 0.0 to 1.0. Ignore volume-change events.
-  HRESULT hr = simple_audio_volume_->SetMasterVolume(static_cast<float>(volume),
-      NULL);
-  DLOG_IF(WARNING, FAILED(hr)) << "Failed to set new input master volume.";
+  HRESULT hr =
+      simple_audio_volume_->SetMasterVolume(static_cast<float>(volume), NULL);
+  if (FAILED(hr))
+    DLOG(WARNING) << "Failed to set new input master volume.";
 
   // Update the AGC volume level based on the last setting above. Note that,
   // the volume-level resolution is not infinite and it is therefore not
@@ -260,7 +261,8 @@ double WASAPIAudioInputStream::GetVolume() {
   // Retrieve the current volume level. The value is in the range 0.0 to 1.0.
   float level = 0.0f;
   HRESULT hr = simple_audio_volume_->GetMasterVolume(&level);
-  DLOG_IF(WARNING, FAILED(hr)) << "Failed to get input master volume.";
+  if (FAILED(hr))
+    DLOG(WARNING) << "Failed to get input master volume.";
 
   return static_cast<double>(level);
 }
@@ -274,7 +276,8 @@ bool WASAPIAudioInputStream::IsMuted() {
   // Retrieves the current muting state for the audio session.
   BOOL is_muted = FALSE;
   HRESULT hr = simple_audio_volume_->GetMute(&is_muted);
-  DLOG_IF(WARNING, FAILED(hr)) << "Failed to get input master volume.";
+  if (FAILED(hr))
+    DLOG(WARNING) << "Failed to get input master volume.";
 
   return is_muted != FALSE;
 }
@@ -333,8 +336,10 @@ HRESULT WASAPIAudioInputStream::GetMixFormat(const std::string& device_id,
   if (FAILED(hr))
     return hr;
 
-  *effects = IsDefaultCommunicationDevice(enumerator, endpoint_device) ?
-      AudioParameters::DUCKING : AudioParameters::NO_EFFECTS;
+  *effects =
+      IsDefaultCommunicationDevice(enumerator.get(), endpoint_device.get())
+          ? AudioParameters::DUCKING
+          : AudioParameters::NO_EFFECTS;
 
   ScopedComPtr<IAudioClient> audio_client;
   hr = endpoint_device->Activate(__uuidof(IAudioClient),
@@ -348,7 +353,7 @@ void WASAPIAudioInputStream::Run() {
   ScopedCOMInitializer com_init(ScopedCOMInitializer::kMTA);
 
   // Increase the thread priority.
-  capture_thread_->SetThreadPriority(base::kThreadPriority_RealtimeAudio);
+  capture_thread_->SetThreadPriority(base::ThreadPriority::REALTIME_AUDIO);
 
   // Enable MMCSS to ensure that this thread receives prioritized access to
   // CPU resources.
@@ -504,7 +509,7 @@ void WASAPIAudioInputStream::HandleError(HRESULT err) {
 }
 
 HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
-  DCHECK(!endpoint_device_);
+  DCHECK(!endpoint_device_.get());
 
   ScopedComPtr<IMMDeviceEnumerator> enumerator;
   HRESULT hr = enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
@@ -523,7 +528,8 @@ HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
     // to be valid matches.
     hr = enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications,
                                              endpoint_device_.Receive());
-    if (endpoint_device_ && device_id_ != AudioManagerBase::kDefaultDeviceId) {
+    if (endpoint_device_.get() &&
+        device_id_ != AudioManagerBase::kDefaultDeviceId) {
       base::win::ScopedCoMem<WCHAR> communications_id;
       endpoint_device_->GetId(&communications_id);
       if (device_id_ !=
@@ -540,7 +546,7 @@ HRESULT WASAPIAudioInputStream::SetCaptureDevice() {
     }
   }
 
-  if (!endpoint_device_) {
+  if (!endpoint_device_.get()) {
     if (device_id_ == AudioManagerBase::kDefaultDeviceId) {
       // Retrieve the default capture audio endpoint for the specified role.
       // Note that, in Windows Vista, the MMDevice API supports device roles

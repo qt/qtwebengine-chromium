@@ -26,7 +26,7 @@
 #ifndef WidthCache_h
 #define WidthCache_h
 
-#include "platform/geometry/IntRectExtent.h"
+#include "platform/geometry/IntRectOutsets.h"
 #include "platform/text/TextRun.h"
 #include "wtf/Forward.h"
 #include "wtf/HashFunctions.h"
@@ -43,7 +43,7 @@ struct WidthCacheEntry {
     }
     bool isValid() const { return !std::isnan(width); }
     float width;
-    IntRectExtent glyphBounds;
+    IntRectOutsets glyphBounds;
 };
 
 class WidthCache {
@@ -115,7 +115,6 @@ private:
     struct SmallStringKeyHashTraits : WTF::SimpleClassHashTraits<SmallStringKey> {
         static const bool hasIsEmptyValueFunction = true;
         static bool isEmptyValue(const SmallStringKey& key) { return key.isHashTableEmptyValue(); }
-        static const bool needsDestruction = false;
         static const unsigned minimumTableSize = 16;
     };
 
@@ -190,7 +189,7 @@ private:
     }
 
     typedef HashMap<SmallStringKey, WidthCacheEntry, SmallStringKeyHash, SmallStringKeyHashTraits> Map;
-    typedef HashMap<uint32_t, WidthCacheEntry, DefaultHash<uint32_t>::Hash, WTF::UnsignedWithZeroKeyHashTraits<uint32_t> > SingleCharMap;
+    typedef HashMap<uint32_t, WidthCacheEntry, DefaultHash<uint32_t>::Hash, WTF::UnsignedWithZeroKeyHashTraits<uint32_t>> SingleCharMap;
     static const int s_minInterval = -3; // A cache hit pays for about 3 cache misses.
     static const int s_maxInterval = 20; // Sampling at this interval has almost no overhead.
     static const unsigned s_maxSize = 500000; // Just enough to guard against pathological growth.

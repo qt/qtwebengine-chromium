@@ -15,12 +15,12 @@ class SkICOImageDecoder : public SkImageDecoder {
 public:
     SkICOImageDecoder();
 
-    virtual Format getFormat() const SK_OVERRIDE {
+    Format getFormat() const override {
         return kICO_Format;
     }
 
 protected:
-    virtual Result onDecode(SkStream* stream, SkBitmap* bm, Mode) SK_OVERRIDE;
+    Result onDecode(SkStream* stream, SkBitmap* bm, Mode) override;
 
 private:
     typedef SkImageDecoder INHERITED;
@@ -76,7 +76,8 @@ SkImageDecoder::Result SkICOImageDecoder::onDecode(SkStream* stream, SkBitmap* b
 {
     SkAutoMalloc autoMal;
     const size_t length = SkCopyStreamToStorage(&autoMal, stream);
-    if (0 == length) {
+    // Check that the buffer is large enough to read the directory header
+    if (length < 6) {
         return kFailure;
     }
 
@@ -91,75 +92,34 @@ SkImageDecoder::Result SkICOImageDecoder::onDecode(SkStream* stream, SkBitmap* b
     }
 
     int count = read2Bytes(buf, 4);
+    // Check that there are directory entries
+    if (count < 1) {
+        return kFailure;
+    }
 
-    //need to at least have enough space to hold the initial table of info
+    // Check that buffer is large enough to read directory entries.
+    // We are guaranteed that count is at least 1.  We might as well assume
+    // count is 1 because this deprecated decoder only looks at the first
+    // directory entry.
     if (length < (size_t)(6 + count*16)) {
         return kFailure;
     }
 
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-    int choice;
-    Chooser* chooser = this->getChooser();
-    //FIXME:if no chooser, consider providing the largest color image
-    //what are the odds that the largest image would be monochrome?
-    if (NULL == chooser) {
-        choice = 0;
-    } else {
-        chooser->begin(count);
-        for (int i = 0; i < count; i++)
-        {
-            //need to find out the config, width, and height from the stream
-            int width = readByte(buf, 6 + i*16);
-            int height = readByte(buf, 7 + i*16);
-            int offset = read4Bytes(buf, 18 + i*16);
-            int bitCount = read2Bytes(buf, offset+14);
-            SkBitmap::Config c;
-            //currently only provide ARGB_8888_, but maybe we want kIndex8_Config for 1 and 4, and possibly 8?
-            //or maybe we'll determine this based on the provided config
-            switch (bitCount)
-            {
-                case 1:
-                case 4:
-                    // In reality, at least for the moment, these will be decoded into kARGB_8888 bitmaps.
-                    // However, this will be used to distinguish between the lower quality 1bpp and 4 bpp
-                    // images and the higher quality images.
-                    c = SkBitmap::kIndex8_Config;
-                    break;
-                case 8:
-                case 24:
-                case 32:
-                    c = SkBitmap::kARGB_8888_Config;
-                    break;
-                default:
-                    SkDEBUGF(("Image with %ibpp not supported\n", bitCount));
-                    continue;
-            }
-            chooser->inspect(i, c, width, height);
-        }
-        choice = chooser->choose();
-    }
-
-    //you never know what the chooser is going to supply
-    if (choice >= count || choice < 0) {
-        return kFailure;
-    }
-#else
-    const int choice = 0;   // TODO: fold this value into the expressions below
-#endif
-
     //skip ahead to the correct header
     //commented out lines are not used, but if i switch to other read method, need to know how many to skip
     //otherwise, they could be used for error checking
-    int w = readByte(buf, 6 + choice*16);
-    int h = readByte(buf, 7 + choice*16);
-    int colorCount = readByte(buf, 8 + choice*16);
+    int w = readByte(buf, 6);
+    int h = readByte(buf, 7);
+    SkASSERT(w >= 0 && h >= 0);
+    int colorCount = readByte(buf, 8);
     //int reservedToo = readByte(buf, 9 + choice*16);   //0
     //int planes = read2Bytes(buf, 10 + choice*16);       //1 - but often 0
     //int fakeBitCount = read2Bytes(buf, 12 + choice*16); //should be real - usually 0
-    const size_t size = read4Bytes(buf, 14 + choice*16);           //matters?
-    const size_t offset = read4Bytes(buf, 18 + choice*16);
+    const size_t size = read4Bytes(buf, 14);           //matters?
+    const size_t offset = read4Bytes(buf, 18);
     // promote the sum to 64-bits to avoid overflow
-    if (((uint64_t)offset + size) > length) {
+    // Check that buffer is large enough to read image data
+    if (offset > length || size > length || ((uint64_t)offset + size) > length) {
         return kFailure;
     }
 
@@ -189,6 +149,20 @@ SkImageDecoder::Result SkICOImageDecoder::onDecode(SkStream* stream, SkBitmap* b
     //int width = read4Bytes(buf, offset+4);              //should == w
     //int height = read4Bytes(buf, offset+8);             //should == 2*h
     //int planesToo = read2Bytes(buf, offset+12);         //should == 1 (does it?)
+    
+    // For ico images, only a byte is used to store each dimension
+    // 0 is used to represent 256
+    if (w == 0) {
+        w = 256;
+    }
+    if (h == 0) {
+        h = 256;
+    }
+
+    // Check that buffer is large enough to read the bit depth
+    if (length < offset + 16) {
+        return kFailure;
+    }
     int bitCount = read2Bytes(buf, offset+14);
 
     void (*placePixel)(const int pixelNo, const unsigned char* buf,
@@ -229,7 +203,13 @@ SkImageDecoder::Result SkICOImageDecoder::onDecode(SkStream* stream, SkBitmap* b
     //int colorsUsed = read4Bytes(buf, offset+32)         //0 - might have an actual value though
     //int colorsImportant = read4Bytes(buf, offset+36);   //0
 
-    int begin = offset + 40;
+    int begin = SkToInt(offset + 40);
+    // Check that the buffer is large enough to read the color table
+    // For bmp-in-icos, there should be 4 bytes per color
+    if (length < (size_t) (begin + 4*colorCount)) {
+        return kFailure;
+    }
+
     //this array represents the colortable
     //if i allow other types of bitmaps, it may actually be used as a part of the bitmap
     SkPMColor* colors = NULL;
@@ -277,6 +257,45 @@ SkImageDecoder::Result SkICOImageDecoder::onDecode(SkStream* stream, SkBitmap* b
         delete[] colors;
         return kFailure;
     }
+
+    // The AND mask is a 1-bit alpha mask for each pixel that comes after the
+    // XOR mask in the bmp.  If we check that the largest AND offset is safe,
+    // it should mean all other buffer accesses will be at smaller indices and
+    // will therefore be safe.
+    size_t maxAndOffset = andOffset + ((andLineWidth*(h-1)+(w-1)) >> 3);
+    if (length <= maxAndOffset) {
+        return kFailure;
+    }
+
+    // Here we assert that all reads from the buffer using the XOR offset are
+    // less than the AND offset.  This should be guaranteed based on the above
+    // calculations.
+#ifdef SK_DEBUG
+    int maxPixelNum = lineWidth*(h-1)+w-1;
+    int maxByte;
+    switch (bitCount) {
+        case 1:
+            maxByte = maxPixelNum >> 3;
+            break;
+        case 4:
+            maxByte = maxPixelNum >> 1;
+            break;
+        case 8:
+            maxByte = maxPixelNum;
+            break;
+        case 24:
+            maxByte = maxPixelNum * 3 + 2;
+            break;
+        case 32:
+            maxByte = maxPixelNum * 4 + 3;
+            break;
+        default:
+            SkASSERT(false);
+            return kFailure;
+    }
+    int maxXOROffset = xorOffset + maxByte;
+    SkASSERT(maxXOROffset < andOffset);
+#endif
 
     SkAutoLockPixels alp(*bm);
 

@@ -34,6 +34,10 @@
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/V8ArrayBuffer.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8ObjectBuilder.h"
+#include "bindings/modules/v8/V8CryptoKey.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMError.h"
@@ -42,32 +46,43 @@
 #include "modules/crypto/CryptoKey.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebArrayBuffer.h"
 #include "public/platform/WebCryptoAlgorithm.h"
 
 namespace blink {
 
-class CryptoResultImpl::WeakResolver : public ScriptPromiseResolver {
+static void rejectWithTypeError(const String& errorDetails, ScriptPromiseResolver* resolver)
+{
+    // Duplicate some of the checks done by ScriptPromiseResolver.
+    if (!resolver->executionContext() || resolver->executionContext()->activeDOMObjectsAreStopped())
+        return;
+
+    ScriptState::Scope scope(resolver->scriptState());
+    v8::Isolate* isolate = resolver->scriptState()->isolate();
+    resolver->reject(v8::Exception::TypeError(v8String(isolate, errorDetails)));
+}
+
+class CryptoResultImpl::Resolver final : public ScriptPromiseResolver {
 public:
-    static WeakPtr<ScriptPromiseResolver> create(ScriptState* scriptState, CryptoResultImpl* result)
+    static PassRefPtrWillBeRawPtr<ScriptPromiseResolver> create(ScriptState* scriptState, CryptoResultImpl* result)
     {
-        RefPtr<WeakResolver> p = adoptRef(new WeakResolver(scriptState, result));
-        p->suspendIfNeeded();
-        p->keepAliveWhilePending();
-        return p->m_weakPtrFactory.createWeakPtr();
+        RefPtrWillBeRawPtr<Resolver> resolver = adoptRefWillBeNoop(new Resolver(scriptState, result));
+        resolver->suspendIfNeeded();
+        resolver->keepAliveWhilePending();
+        return resolver.release();
     }
 
-    virtual ~WeakResolver()
+    virtual void stop() override
     {
         m_result->cancel();
+        m_result->clearResolver();
+        m_result = nullptr;
+        ScriptPromiseResolver::stop();
     }
 
 private:
-    WeakResolver(ScriptState* scriptState, CryptoResultImpl* result)
+    Resolver(ScriptState* scriptState, CryptoResultImpl* result)
         : ScriptPromiseResolver(scriptState)
-        , m_weakPtrFactory(this)
         , m_result(result) { }
-    WeakPtrFactory<ScriptPromiseResolver> m_weakPtrFactory;
     RefPtr<CryptoResultImpl> m_result;
 };
 
@@ -78,21 +93,14 @@ ExceptionCode webCryptoErrorToExceptionCode(WebCryptoErrorType errorType)
         return NotSupportedError;
     case WebCryptoErrorTypeSyntax:
         return SyntaxError;
-    case WebCryptoErrorTypeInvalidState:
-        return InvalidStateError;
     case WebCryptoErrorTypeInvalidAccess:
         return InvalidAccessError;
-    case WebCryptoErrorTypeUnknown:
-        return UnknownError;
     case WebCryptoErrorTypeData:
         return DataError;
     case WebCryptoErrorTypeOperation:
         return OperationError;
     case WebCryptoErrorTypeType:
-        // FIXME: This should construct a TypeError instead. For now do
-        //        something to facilitate refactor, but this will need to be
-        //        revisited.
-        return DataError;
+        return V8TypeError;
     }
 
     ASSERT_NOT_REACHED();
@@ -101,55 +109,72 @@ ExceptionCode webCryptoErrorToExceptionCode(WebCryptoErrorType errorType)
 
 CryptoResultImpl::~CryptoResultImpl()
 {
+    ASSERT(!m_resolver);
 }
 
-PassRefPtr<CryptoResultImpl> CryptoResultImpl::create(ScriptState* scriptState)
+void CryptoResultImpl::clearResolver()
 {
-    return adoptRef(new CryptoResultImpl(scriptState));
+    m_resolver = nullptr;
+}
+
+PassRefPtrWillBeRawPtr<CryptoResultImpl> CryptoResultImpl::create(ScriptState* scriptState)
+{
+    return adoptRefWillBeNoop(new CryptoResultImpl(scriptState));
 }
 
 void CryptoResultImpl::completeWithError(WebCryptoErrorType errorType, const WebString& errorDetails)
 {
-    if (m_resolver)
-        m_resolver->reject(DOMException::create(webCryptoErrorToExceptionCode(errorType), errorDetails));
+    if (m_resolver) {
+        ExceptionCode ec = webCryptoErrorToExceptionCode(errorType);
+
+        // Handle TypeError separately, as it cannot be created using
+        // DOMException.
+        if (ec == V8TypeError)
+            rejectWithTypeError(errorDetails, m_resolver);
+        else
+            m_resolver->reject(DOMException::create(ec, errorDetails));
+    }
+    clearResolver();
 }
 
-void CryptoResultImpl::completeWithBuffer(const WebArrayBuffer& buffer)
+void CryptoResultImpl::completeWithBuffer(const void* bytes, unsigned bytesSize)
 {
     if (m_resolver)
-        m_resolver->resolve(DOMArrayBuffer::create(buffer));
+        m_resolver->resolve(DOMArrayBuffer::create(bytes, bytesSize));
+    clearResolver();
 }
 
 void CryptoResultImpl::completeWithJson(const char* utf8Data, unsigned length)
 {
     if (m_resolver) {
-        ScriptPromiseResolver* resolver = m_resolver.get();
+        ScriptPromiseResolver* resolver = m_resolver;
         ScriptState* scriptState = resolver->scriptState();
         ScriptState::Scope scope(scriptState);
 
-        v8::Handle<v8::String> jsonString = v8::String::NewFromUtf8(scriptState->isolate(), utf8Data, v8::String::kInternalizedString, length);
+        v8::Local<v8::String> jsonString = v8AtomicString(scriptState->isolate(), utf8Data, length);
 
         v8::TryCatch exceptionCatcher;
-        v8::Handle<v8::Value> jsonDictionary = v8::JSON::Parse(jsonString);
-        if (exceptionCatcher.HasCaught() || jsonDictionary.IsEmpty()) {
-            ASSERT_NOT_REACHED();
-            resolver->reject(DOMException::create(OperationError, "Failed inflating JWK JSON to object"));
-        } else {
+        v8::Local<v8::Value> jsonDictionary;
+        if (v8Call(v8::JSON::Parse(scriptState->isolate(), jsonString), jsonDictionary, exceptionCatcher))
             resolver->resolve(jsonDictionary);
-        }
+        else
+            resolver->reject(exceptionCatcher.Exception());
     }
+    clearResolver();
 }
 
 void CryptoResultImpl::completeWithBoolean(bool b)
 {
     if (m_resolver)
         m_resolver->resolve(b);
+    clearResolver();
 }
 
 void CryptoResultImpl::completeWithKey(const WebCryptoKey& key)
 {
     if (m_resolver)
         m_resolver->resolve(CryptoKey::create(key));
+    clearResolver();
 }
 
 void CryptoResultImpl::completeWithKeyPair(const WebCryptoKey& publicKey, const WebCryptoKey& privateKey)
@@ -158,16 +183,14 @@ void CryptoResultImpl::completeWithKeyPair(const WebCryptoKey& publicKey, const 
         ScriptState* scriptState = m_resolver->scriptState();
         ScriptState::Scope scope(scriptState);
 
-        Dictionary keyPair = Dictionary::createEmpty(scriptState->isolate());
+        V8ObjectBuilder keyPair(scriptState);
 
-        v8::Handle<v8::Value> publicKeyValue = toV8NoInline(CryptoKey::create(publicKey), scriptState->context()->Global(), scriptState->isolate());
-        v8::Handle<v8::Value> privateKeyValue = toV8NoInline(CryptoKey::create(privateKey), scriptState->context()->Global(), scriptState->isolate());
-
-        keyPair.set("publicKey", publicKeyValue);
-        keyPair.set("privateKey", privateKeyValue);
+        keyPair.add("publicKey", ScriptValue::from(scriptState, CryptoKey::create(publicKey)));
+        keyPair.add("privateKey", ScriptValue::from(scriptState, CryptoKey::create(privateKey)));
 
         m_resolver->resolve(keyPair.v8Value());
     }
+    clearResolver();
 }
 
 bool CryptoResultImpl::cancelled() const
@@ -183,9 +206,14 @@ void CryptoResultImpl::cancel()
 CryptoResultImpl::CryptoResultImpl(ScriptState* scriptState)
     : m_cancelled(0)
 {
-    // Creating the WeakResolver may return nullptr if active dom objects have
-    // been stopped. And in the process set m_cancelled to 1.
-    m_resolver = WeakResolver::create(scriptState, this);
+    ASSERT(scriptState->contextIsValid());
+    if (scriptState->executionContext()->activeDOMObjectsAreStopped()) {
+        // If active dom objects have been stopped, avoid creating
+        // CryptoResultResolver.
+        m_resolver = nullptr;
+    } else {
+        m_resolver = Resolver::create(scriptState, this).get();
+    }
 }
 
 ScriptPromise CryptoResultImpl::promise()

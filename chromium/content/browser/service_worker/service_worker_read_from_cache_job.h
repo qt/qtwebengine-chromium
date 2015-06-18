@@ -18,6 +18,7 @@ namespace content {
 
 class ServiceWorkerContextCore;
 class ServiceWorkerResponseReader;
+class ServiceWorkerVersion;
 
 // A URLRequestJob derivative used to retrieve script resources
 // from the service workers script cache. It uses a response reader
@@ -29,6 +30,7 @@ class CONTENT_EXPORT ServiceWorkerReadFromCacheJob
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
       base::WeakPtr<ServiceWorkerContextCore> context,
+      const scoped_refptr<ServiceWorkerVersion>& version,
       int64 response_id);
 
  private:
@@ -53,8 +55,10 @@ class CONTENT_EXPORT ServiceWorkerReadFromCacheJob
   const net::HttpResponseInfo* http_info() const;
   bool is_range_request() const { return range_requested_.IsValid(); }
   void SetupRangeResponse(int response_data_size);
+  void Done(const net::URLRequestStatus& status);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
+  scoped_refptr<ServiceWorkerVersion> version_;
   int64 response_id_;
   scoped_ptr<ServiceWorkerResponseReader> reader_;
   scoped_refptr<HttpResponseInfoIOBuffer> http_info_io_buffer_;

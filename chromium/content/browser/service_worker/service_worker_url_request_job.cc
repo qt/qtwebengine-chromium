@@ -10,20 +10,27 @@
 
 #include "base/bind.h"
 #include "base/guid.h"
+#include "base/memory/scoped_vector.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "content/browser/resource_context_impl.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
+#include "content/browser/streams/stream.h"
+#include "content/browser/streams/stream_context.h"
+#include "content/browser/streams/stream_registry.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/service_worker_context.h"
+#include "content/public/common/referrer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_util.h"
+#include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
@@ -36,8 +43,10 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
     net::NetworkDelegate* network_delegate,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
+    const ResourceContext* resource_context,
     FetchRequestMode request_mode,
     FetchCredentialsMode credentials_mode,
+    bool is_main_resource_load,
     RequestContextType request_context_type,
     RequestContextFrameType frame_type,
     scoped_refptr<ResourceRequestBody> body)
@@ -47,8 +56,11 @@ ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
       is_started_(false),
       service_worker_response_type_(blink::WebServiceWorkerResponseTypeDefault),
       blob_storage_context_(blob_storage_context),
+      resource_context_(resource_context),
+      stream_pending_buffer_size_(0),
       request_mode_(request_mode),
       credentials_mode_(credentials_mode),
+      is_main_resource_load_(is_main_resource_load),
       request_context_type_(request_context_type),
       frame_type_(frame_type),
       fall_back_required_(false),
@@ -75,6 +87,7 @@ void ServiceWorkerURLRequestJob::Start() {
 
 void ServiceWorkerURLRequestJob::Kill() {
   net::URLRequestJob::Kill();
+  ClearStream();
   fetch_dispatcher_.reset();
   blob_request_.reset();
   weak_factory_.InvalidateWeakPtrs();
@@ -100,7 +113,9 @@ bool ServiceWorkerURLRequestJob::GetMimeType(std::string* mime_type) const {
 void ServiceWorkerURLRequestJob::GetResponseInfo(net::HttpResponseInfo* info) {
   if (!http_info())
     return;
+  const base::Time request_time = info->request_time;
   *info = *http_info();
+  info->request_time = request_time;
   info->response_time = response_time_;
 }
 
@@ -131,11 +146,37 @@ void ServiceWorkerURLRequestJob::SetExtraRequestHeaders(
 
 bool ServiceWorkerURLRequestJob::ReadRawData(
     net::IOBuffer* buf, int buf_size, int *bytes_read) {
+  DCHECK(buf);
+  DCHECK_GE(buf_size, 0);
+  DCHECK(bytes_read);
+  DCHECK(waiting_stream_url_.is_empty());
+  if (stream_.get()) {
+    switch (stream_->ReadRawData(buf, buf_size, bytes_read)) {
+      case Stream::STREAM_HAS_DATA:
+        DCHECK_GT(*bytes_read, 0);
+        return true;
+      case Stream::STREAM_COMPLETE:
+        DCHECK(!*bytes_read);
+        return true;
+      case Stream::STREAM_EMPTY:
+        stream_pending_buffer_ = buf;
+        stream_pending_buffer_size_ = buf_size;
+        SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
+        return false;
+      case Stream::STREAM_ABORTED:
+        // Handle this as connection reset.
+        NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
+                                         net::ERR_CONNECTION_RESET));
+        return false;
+    }
+    NOTREACHED();
+    return false;
+  }
+
   if (!blob_request_) {
     *bytes_read = 0;
     return true;
   }
-
   blob_request_->Read(buf, buf_size, bytes_read);
   net::URLRequestStatus status = blob_request_->status();
   SetStatus(status);
@@ -194,9 +235,57 @@ void ServiceWorkerURLRequestJob::OnReadCompleted(net::URLRequest* request,
     NotifyDone(request->status());
 }
 
+void ServiceWorkerURLRequestJob::OnDataAvailable(Stream* stream) {
+  // Clear the IO_PENDING status.
+  SetStatus(net::URLRequestStatus());
+  // Do nothing if stream_pending_buffer_ is empty, i.e. there's no ReadRawData
+  // operation waiting for IO completion.
+  if (!stream_pending_buffer_.get())
+    return;
+
+  // stream_pending_buffer_ is set to the IOBuffer instance provided to
+  // ReadRawData() by URLRequestJob.
+
+  int bytes_read = 0;
+  switch (stream_->ReadRawData(
+      stream_pending_buffer_.get(), stream_pending_buffer_size_, &bytes_read)) {
+    case Stream::STREAM_HAS_DATA:
+      DCHECK_GT(bytes_read, 0);
+      break;
+    case Stream::STREAM_COMPLETE:
+      // Calling NotifyReadComplete with 0 signals completion.
+      DCHECK(!bytes_read);
+      break;
+    case Stream::STREAM_EMPTY:
+      NOTREACHED();
+      break;
+    case Stream::STREAM_ABORTED:
+      // Handle this as connection reset.
+      NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
+                                       net::ERR_CONNECTION_RESET));
+      break;
+  }
+
+  // Clear the buffers before notifying the read is complete, so that it is
+  // safe for the observer to read.
+  stream_pending_buffer_ = nullptr;
+  stream_pending_buffer_size_ = 0;
+  NotifyReadComplete(bytes_read);
+}
+
+void ServiceWorkerURLRequestJob::OnStreamRegistered(Stream* stream) {
+  StreamContext* stream_context =
+      GetStreamContextForResourceContext(resource_context_);
+  stream_context->registry()->RemoveRegisterObserver(waiting_stream_url_);
+  waiting_stream_url_ = GURL();
+  stream_ = stream;
+  stream_->SetReadObserver(this);
+  CommitResponseHeader();
+}
+
 const net::HttpResponseInfo* ServiceWorkerURLRequestJob::http_info() const {
   if (!http_response_info_)
-    return NULL;
+    return nullptr;
   if (range_response_info_)
     return range_response_info_.get();
   return http_response_info_.get();
@@ -229,6 +318,7 @@ void ServiceWorkerURLRequestJob::GetExtraResponseInfo(
 
 
 ServiceWorkerURLRequestJob::~ServiceWorkerURLRequestJob() {
+  ClearStream();
 }
 
 void ServiceWorkerURLRequestJob::MaybeStartRequest() {
@@ -249,13 +339,16 @@ void ServiceWorkerURLRequestJob::StartRequest() {
 
     case FALLBACK_TO_NETWORK:
       // Restart the request to create a new job. Our request handler will
-      // return NULL, and the default job (which will hit network) should be
+      // return nullptr, and the default job (which will hit network) should be
       // created.
       NotifyRestartRequired();
       return;
 
     case FORWARD_TO_SERVICE_WORKER:
-      DCHECK(provider_host_ && provider_host_->active_version());
+      if (!provider_host_ || !provider_host_->active_version()) {
+        DeliverErrorResponse();
+        return;
+      }
       DCHECK(!fetch_dispatcher_);
       // Send a fetch event to the ServiceWorker associated to the
       // provider_host.
@@ -295,12 +388,19 @@ ServiceWorkerURLRequestJob::CreateFetchRequest() {
   }
   request->blob_uuid = blob_uuid;
   request->blob_size = blob_size;
-  request->referrer = GURL(request_->referrer());
   request->credentials_mode = credentials_mode_;
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request_);
   if (info) {
     request->is_reload = ui::PageTransitionCoreTypeIs(
         info->GetPageTransition(), ui::PAGE_TRANSITION_RELOAD);
+    request->referrer =
+        Referrer(GURL(request_->referrer()), info->GetReferrerPolicy());
+  } else {
+    CHECK(
+        request_->referrer_policy() ==
+        net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE);
+    request->referrer =
+        Referrer(GURL(request_->referrer()), blink::WebReferrerPolicyDefault);
   }
   return request.Pass();
 }
@@ -310,27 +410,35 @@ bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
   if (!body_.get() || !blob_storage_context_)
     return false;
 
+  // To ensure the blobs stick around until the end of the reading.
+  ScopedVector<storage::BlobDataHandle> handles;
+  ScopedVector<storage::BlobDataSnapshot> snapshots;
+  // TODO(dmurph): Allow blobs to be added below, so that the context can
+  // efficiently re-use blob items for the new blob.
   std::vector<const ResourceRequestBody::Element*> resolved_elements;
-  for (size_t i = 0; i < body_->elements()->size(); ++i) {
-    const ResourceRequestBody::Element& element = (*body_->elements())[i];
+  for (const ResourceRequestBody::Element& element : (*body_->elements())) {
     if (element.type() != ResourceRequestBody::Element::TYPE_BLOB) {
       resolved_elements.push_back(&element);
       continue;
     }
     scoped_ptr<storage::BlobDataHandle> handle =
         blob_storage_context_->GetBlobDataFromUUID(element.blob_uuid());
-    if (handle->data()->items().empty())
+    scoped_ptr<storage::BlobDataSnapshot> snapshot = handle->CreateSnapshot();
+    if (snapshot->items().empty())
       continue;
-    for (size_t i = 0; i < handle->data()->items().size(); ++i) {
-      const storage::BlobData::Item& item = handle->data()->items().at(i);
-      DCHECK_NE(storage::BlobData::Item::TYPE_BLOB, item.type());
-      resolved_elements.push_back(&item);
+    const auto& items = snapshot->items();
+    for (const auto& item : items) {
+      DCHECK_NE(storage::DataElement::TYPE_BLOB, item->type());
+      resolved_elements.push_back(item->data_element_ptr());
     }
+    handles.push_back(handle.release());
+    snapshots.push_back(snapshot.release());
   }
 
   const std::string uuid(base::GenerateGUID());
   uint64 total_size = 0;
-  scoped_refptr<storage::BlobData> blob_data = new storage::BlobData(uuid);
+
+  storage::BlobDataBuilder blob_builder(uuid);
   for (size_t i = 0; i < resolved_elements.size(); ++i) {
     const ResourceRequestBody::Element& element = *resolved_elements[i];
     if (total_size != kuint64max && element.length() != kuint64max)
@@ -339,23 +447,21 @@ bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
       total_size = kuint64max;
     switch (element.type()) {
       case ResourceRequestBody::Element::TYPE_BYTES:
-        blob_data->AppendData(element.bytes(), element.length());
+        blob_builder.AppendData(element.bytes(), element.length());
         break;
       case ResourceRequestBody::Element::TYPE_FILE:
-        blob_data->AppendFile(element.path(),
-                              element.offset(),
-                              element.length(),
-                              element.expected_modification_time());
+        blob_builder.AppendFile(element.path(), element.offset(),
+                                element.length(),
+                                element.expected_modification_time());
         break;
       case ResourceRequestBody::Element::TYPE_BLOB:
         // Blob elements should be resolved beforehand.
         NOTREACHED();
         break;
       case ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM:
-        blob_data->AppendFileSystemFile(element.filesystem_url(),
-                                        element.offset(),
-                                        element.length(),
-                                        element.expected_modification_time());
+        blob_builder.AppendFileSystemFile(element.filesystem_url(),
+                                          element.offset(), element.length(),
+                                          element.expected_modification_time());
         break;
       default:
         NOTIMPLEMENTED();
@@ -363,7 +469,7 @@ bool ServiceWorkerURLRequestJob::CreateRequestBodyBlob(std::string* blob_uuid,
   }
 
   request_body_blob_data_handle_ =
-      blob_storage_context_->AddFinishedBlob(blob_data.get());
+      blob_storage_context_->AddFinishedBlob(&blob_builder);
   *blob_uuid = uuid;
   *blob_size = total_size;
   return true;
@@ -376,7 +482,8 @@ void ServiceWorkerURLRequestJob::DidPrepareFetchEvent() {
 void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     ServiceWorkerStatusCode status,
     ServiceWorkerFetchEventResult fetch_result,
-    const ServiceWorkerResponse& response) {
+    const ServiceWorkerResponse& response,
+    scoped_refptr<ServiceWorkerVersion> version) {
   fetch_dispatcher_.reset();
 
   // Check if we're not orphaned.
@@ -384,13 +491,13 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
     return;
 
   if (status != SERVICE_WORKER_OK) {
-    // Dispatching event has been failed, falling back to the network.
-    // (Tentative behavior described on github)
-    // TODO(kinuko): consider returning error if we've come here because
-    // unexpected worker termination etc (so that we could fix bugs).
-    // TODO(kinuko): Would be nice to log the error case.
-    response_type_ = FALLBACK_TO_NETWORK;
-    NotifyRestartRequired();
+    // TODO(falken): Add UMA and the report error to the version.
+    if (is_main_resource_load_) {
+      response_type_ = FALLBACK_TO_NETWORK;
+      NotifyRestartRequired();
+    } else {
+      DeliverErrorResponse();
+    }
     return;
   }
 
@@ -427,6 +534,48 @@ void ServiceWorkerURLRequestJob::DidDispatchFetchEvent(
   fetch_end_time_ = base::TimeTicks::Now();
   load_timing_info_.send_end = fetch_end_time_;
 
+  // Creates a new HttpResponseInfo using the the ServiceWorker script's
+  // HttpResponseInfo to show HTTPS padlock.
+  // TODO(horo): When we support mixed-content (HTTP) no-cors requests from a
+  // ServiceWorker, we have to check the security level of the responses.
+  DCHECK(!http_response_info_);
+  DCHECK(version);
+  const net::HttpResponseInfo* main_script_http_info =
+      version->GetMainScriptHttpResponseInfo();
+  if (main_script_http_info) {
+    // In normal case |main_script_http_info| must be set while starting the
+    // ServiceWorker. But when the ServiceWorker registration database was not
+    // written correctly, it may be null.
+    // TODO(horo): Change this line to DCHECK when crbug.com/485900 is fixed.
+    http_response_info_.reset(
+        new net::HttpResponseInfo(*main_script_http_info));
+  }
+
+  // Set up a request for reading the stream.
+  if (response.stream_url.is_valid()) {
+    DCHECK(response.blob_uuid.empty());
+    streaming_version_ = version;
+    streaming_version_->AddStreamingURLRequestJob(this);
+    response_url_ = response.url;
+    service_worker_response_type_ = response.response_type;
+    CreateResponseHeader(
+        response.status_code, response.status_text, response.headers);
+    load_timing_info_.receive_headers_end = base::TimeTicks::Now();
+    StreamContext* stream_context =
+        GetStreamContextForResourceContext(resource_context_);
+    stream_ =
+        stream_context->registry()->GetStream(response.stream_url);
+    if (!stream_.get()) {
+      waiting_stream_url_ = response.stream_url;
+      // Wait for StreamHostMsg_StartBuilding message from the ServiceWorker.
+      stream_context->registry()->SetRegisterObserver(waiting_stream_url_,
+                                                      this);
+      return;
+    }
+    stream_->SetReadObserver(this);
+    CommitResponseHeader();
+    return;
+  }
   // Set up a request for reading the blob.
   if (!response.blob_uuid.empty() && blob_storage_context_) {
     scoped_ptr<storage::BlobDataHandle> blob_data_handle =
@@ -473,8 +622,11 @@ void ServiceWorkerURLRequestJob::CreateResponseHeader(
 }
 
 void ServiceWorkerURLRequestJob::CommitResponseHeader() {
-  http_response_info_.reset(new net::HttpResponseInfo());
+  if (!http_response_info_)
+    http_response_info_.reset(new net::HttpResponseInfo());
   http_response_info_->headers.swap(http_response_headers_);
+  http_response_info_->vary_data = net::HttpVaryData();
+  http_response_info_->metadata = nullptr;
   NotifyHeadersComplete();
 }
 
@@ -484,6 +636,24 @@ void ServiceWorkerURLRequestJob::DeliverErrorResponse() {
   CreateResponseHeader(
       500, "Service Worker Response Error", ServiceWorkerHeaderMap());
   CommitResponseHeader();
+}
+
+void ServiceWorkerURLRequestJob::ClearStream() {
+  if (streaming_version_) {
+    streaming_version_->RemoveStreamingURLRequestJob(this);
+    streaming_version_ = nullptr;
+  }
+  if (stream_) {
+    stream_->RemoveReadObserver(this);
+    stream_->Abort();
+    stream_ = nullptr;
+  }
+  if (!waiting_stream_url_.is_empty()) {
+    StreamRegistry* stream_registry =
+        GetStreamContextForResourceContext(resource_context_)->registry();
+    stream_registry->RemoveRegisterObserver(waiting_stream_url_);
+    stream_registry->AbortPendingStream(waiting_stream_url_);
+  }
 }
 
 }  // namespace content

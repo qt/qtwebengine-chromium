@@ -25,7 +25,7 @@
 
 #include "config.h"
 #include "modules/device_orientation/DeviceMotionData.h"
-#include "public/platform/WebDeviceMotionData.h"
+#include "public/platform/modules/device_orientation/WebDeviceMotionData.h"
 
 namespace blink {
 
@@ -115,7 +115,7 @@ DeviceMotionData::DeviceMotionData(
 {
 }
 
-void DeviceMotionData::trace(Visitor* visitor)
+DEFINE_TRACE(DeviceMotionData)
 {
     visitor->trace(m_acceleration);
     visitor->trace(m_accelerationIncludingGravity);

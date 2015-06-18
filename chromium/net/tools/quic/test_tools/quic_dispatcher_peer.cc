@@ -38,20 +38,9 @@ void QuicDispatcherPeer::SetPacketWriterFactory(
 }
 
 // static
-QuicEpollConnectionHelper* QuicDispatcherPeer::GetHelper(
+QuicConnectionHelperInterface* QuicDispatcherPeer::GetHelper(
     QuicDispatcher* dispatcher) {
   return dispatcher->helper_.get();
-}
-
-// static
-QuicConnection* QuicDispatcherPeer::CreateQuicConnection(
-    QuicDispatcher* dispatcher,
-    QuicConnectionId connection_id,
-    const IPEndPoint& server,
-    const IPEndPoint& client) {
-  return dispatcher->CreateQuicConnection(connection_id,
-                                          server,
-                                          client);
 }
 
 // static

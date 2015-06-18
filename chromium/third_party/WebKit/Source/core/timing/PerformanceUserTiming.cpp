@@ -31,7 +31,9 @@
 #include "core/timing/Performance.h"
 #include "core/timing/PerformanceMark.h"
 #include "core/timing/PerformanceMeasure.h"
+#include "platform/TraceEvent.h"
 #include "public/platform/Platform.h"
+#include "wtf/text/StringHash.h"
 
 namespace blink {
 
@@ -74,9 +76,8 @@ UserTiming::UserTiming(Performance* performance)
 {
 }
 
-static void insertPerformanceEntry(PerformanceEntryMap& performanceEntryMap, PassRefPtrWillBeRawPtr<PerformanceEntry> performanceEntry)
+static void insertPerformanceEntry(PerformanceEntryMap& performanceEntryMap, PerformanceEntry* entry)
 {
-    RefPtrWillBeRawPtr<PerformanceEntry> entry = performanceEntry;
     PerformanceEntryMap::iterator it = performanceEntryMap.find(entry->name());
     if (it != performanceEntryMap.end())
         it->value.append(entry);
@@ -105,9 +106,10 @@ void UserTiming::mark(const String& markName, ExceptionState& exceptionState)
         return;
     }
 
+    TRACE_EVENT_COPY_MARK("blink.user_timing", markName.utf8().data());
     double startTime = m_performance->now();
     insertPerformanceEntry(m_marksMap, PerformanceMark::create(markName, startTime));
-    blink::Platform::current()->histogramCustomCounts("PLT.UserTiming_Mark", static_cast<int>(startTime), 0, 600000, 100);
+    Platform::current()->histogramCustomCounts("PLT.UserTiming_Mark", static_cast<int>(startTime), 0, 600000, 100);
 }
 
 void UserTiming::clearMarks(const String& markName)
@@ -154,9 +156,18 @@ void UserTiming::measure(const String& measureName, const String& startMark, con
             return;
     }
 
+    // User timing events are stored as integer milliseconds from the start of
+    // navigation, whereas trace events accept double seconds based off of
+    // CurrentTime::monotonicallyIncreasingTime().
+    double startTimeMonotonic = m_performance->timing()->integerMillisecondsToMonotonicTime(startTime + m_performance->timing()->navigationStart());
+    double endTimeMonotonic = m_performance->timing()->integerMillisecondsToMonotonicTime(endTime + m_performance->timing()->navigationStart());
+
+    TRACE_EVENT_COPY_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0("blink.user_timing", measureName.utf8().data(), WTF::StringHash::hash(measureName), startTimeMonotonic);
+    TRACE_EVENT_COPY_NESTABLE_ASYNC_END_WITH_TIMESTAMP0("blink.user_timing", measureName.utf8().data(), WTF::StringHash::hash(measureName), endTimeMonotonic);
+
     insertPerformanceEntry(m_measuresMap, PerformanceMeasure::create(measureName, startTime, endTime));
     if (endTime >= startTime)
-        blink::Platform::current()->histogramCustomCounts("PLT.UserTiming_MeasureDuration", static_cast<int>(endTime - startTime), 0, 600000, 100);
+        Platform::current()->histogramCustomCounts("PLT.UserTiming_MeasureDuration", static_cast<int>(endTime - startTime), 0, 600000, 100);
 }
 
 void UserTiming::clearMeasures(const String& measureName)
@@ -205,13 +216,11 @@ PerformanceEntryVector UserTiming::getMeasures(const String& name) const
     return getEntrySequenceByName(m_measuresMap, name);
 }
 
-void UserTiming::trace(Visitor* visitor)
+DEFINE_TRACE(UserTiming)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_performance);
     visitor->trace(m_marksMap);
     visitor->trace(m_measuresMap);
-#endif
 }
 
 } // namespace blink

@@ -1,27 +1,29 @@
-// libjingle
-// Copyright 2009 Google Inc.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. The name of the author may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
-// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * libjingle
+ * Copyright 2009 Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include "talk/media/base/fakemediaengine.h"
 #include "talk/media/base/fakertp.h"
@@ -33,9 +35,7 @@
 #include "talk/media/base/testutils.h"
 #include "webrtc/p2p/base/fakesession.h"
 #include "talk/session/media/channel.h"
-#include "talk/session/media/mediamessages.h"
 #include "talk/session/media/mediarecorder.h"
-#include "talk/session/media/mediasessionclient.h"
 #include "talk/session/media/typingmonitor.h"
 #include "webrtc/base/fileutils.h"
 #include "webrtc/base/gunit.h"
@@ -423,7 +423,8 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     rtc::SetBE32(const_cast<char*>(data.c_str()) + 8, ssrc);
     rtc::SetBE16(const_cast<char*>(data.c_str()) + 2, sequence_number);
     if (pl_type >= 0) {
-      rtc::Set8(const_cast<char*>(data.c_str()), 1, pl_type);
+      rtc::Set8(const_cast<char*>(data.c_str()), 1,
+                static_cast<uint8_t>(pl_type));
     }
     return data;
   }
@@ -1557,21 +1558,21 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     // Test failures in SetLocalContent.
     media_channel1_->set_fail_set_recv_codecs(true);
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_SENTINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_SENTINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_CONTENT, session1_.error());
     media_channel1_->set_fail_set_recv_codecs(true);
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_SENTACCEPT);
+    session1_.SetState(cricket::BaseSession::STATE_SENTACCEPT);
     EXPECT_EQ(cricket::BaseSession::ERROR_CONTENT, session1_.error());
 
     // Test failures in SetRemoteContent.
     media_channel1_->set_fail_set_send_codecs(true);
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_RECEIVEDINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_CONTENT, session1_.error());
     media_channel1_->set_fail_set_send_codecs(true);
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_RECEIVEDACCEPT);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDACCEPT);
     EXPECT_EQ(cricket::BaseSession::ERROR_CONTENT, session1_.error());
   }
 
@@ -1583,7 +1584,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     session1_.set_local_description(sdesc);
 
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_SENTINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_SENTINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasSendStream(1));
 
@@ -1591,7 +1592,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     sdesc = CreateSessionDescriptionWithStream(2);
     session1_.set_local_description(sdesc);
 
-    session1_.SetState(cricket::Session::STATE_SENTINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_SENTINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_FALSE(media_channel1_->HasSendStream(1));
     EXPECT_TRUE(media_channel1_->HasSendStream(2));
@@ -1605,13 +1606,13 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     session1_.set_remote_description(sdesc);
 
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_RECEIVEDINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasRecvStream(1));
 
     sdesc = CreateSessionDescriptionWithStream(2);
     session1_.set_remote_description(sdesc);
-    session1_.SetState(cricket::Session::STATE_RECEIVEDINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_FALSE(media_channel1_->HasRecvStream(1));
     EXPECT_TRUE(media_channel1_->HasRecvStream(2));
@@ -1625,7 +1626,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     session1_.set_remote_description(sdesc);
 
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_RECEIVEDINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasRecvStream(1));
 
@@ -1633,7 +1634,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     sdesc = CreateSessionDescriptionWithStream(2);
     session1_.set_local_description(sdesc);
 
-    session1_.SetState(cricket::Session::STATE_SENTPRACCEPT);
+    session1_.SetState(cricket::BaseSession::STATE_SENTPRACCEPT);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasRecvStream(1));
     EXPECT_TRUE(media_channel1_->HasSendStream(2));
@@ -1642,7 +1643,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     sdesc = CreateSessionDescriptionWithStream(3);
     session1_.set_local_description(sdesc);
 
-    session1_.SetState(cricket::Session::STATE_SENTACCEPT);
+    session1_.SetState(cricket::BaseSession::STATE_SENTACCEPT);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasRecvStream(1));
     EXPECT_FALSE(media_channel1_->HasSendStream(2));
@@ -1657,7 +1658,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     session1_.set_local_description(sdesc);
 
     session1_.SetError(cricket::BaseSession::ERROR_NONE, "");
-    session1_.SetState(cricket::Session::STATE_SENTINITIATE);
+    session1_.SetState(cricket::BaseSession::STATE_SENTINITIATE);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasSendStream(1));
 
@@ -1665,7 +1666,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     sdesc = CreateSessionDescriptionWithStream(2);
     session1_.set_remote_description(sdesc);
 
-    session1_.SetState(cricket::Session::STATE_RECEIVEDPRACCEPT);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDPRACCEPT);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasSendStream(1));
     EXPECT_TRUE(media_channel1_->HasRecvStream(2));
@@ -1674,7 +1675,7 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     sdesc = CreateSessionDescriptionWithStream(3);
     session1_.set_remote_description(sdesc);
 
-    session1_.SetState(cricket::Session::STATE_RECEIVEDACCEPT);
+    session1_.SetState(cricket::BaseSession::STATE_RECEIVEDACCEPT);
     EXPECT_EQ(cricket::BaseSession::ERROR_NONE, session1_.error());
     EXPECT_TRUE(media_channel1_->HasSendStream(1));
     EXPECT_FALSE(media_channel1_->HasRecvStream(2));
@@ -1910,7 +1911,7 @@ cricket::VideoChannel* ChannelTest<VideoTraits>::CreateChannel(
     cricket::FakeVideoMediaChannel* ch, cricket::BaseSession* session,
     bool rtcp) {
   cricket::VideoChannel* channel = new cricket::VideoChannel(
-      thread, engine, ch, session, cricket::CN_VIDEO, rtcp, NULL);
+      thread, engine, ch, session, cricket::CN_VIDEO, rtcp);
   if (!channel->Init()) {
     delete channel;
     channel = NULL;

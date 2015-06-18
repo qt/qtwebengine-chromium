@@ -46,9 +46,12 @@ class NET_EXPORT_PRIVATE AeadBaseEncrypter : public QuicEncrypter {
                base::StringPiece associated_data,
                base::StringPiece plaintext,
                unsigned char* output) override;
-  QuicData* EncryptPacket(QuicPacketSequenceNumber sequence_number,
-                          base::StringPiece associated_data,
-                          base::StringPiece plaintext) override;
+  bool EncryptPacket(QuicPacketSequenceNumber sequence_number,
+                     base::StringPiece associated_data,
+                     base::StringPiece plaintext,
+                     char* output,
+                     size_t* output_length,
+                     size_t max_output_length) override;
   size_t GetKeySize() const override;
   size_t GetNoncePrefixSize() const override;
   size_t GetMaxPlaintextSize(size_t ciphertext_size) const override;
@@ -68,9 +71,9 @@ class NET_EXPORT_PRIVATE AeadBaseEncrypter : public QuicEncrypter {
     unsigned int len;
     union {
       CK_GCM_PARAMS gcm_params;
-#if !defined(USE_NSS)
-      // USE_NSS means we are using system NSS rather than our copy of NSS.
-      // The system NSS <pkcs11n.h> header doesn't define this type yet.
+#if !defined(USE_NSS_CERTS)
+      // USE_NSS_CERTS implies we are using system NSS rather than our copy of
+      // NSS. The system NSS <pkcs11n.h> header doesn't define this type yet.
       CK_NSS_AEAD_PARAMS nss_aead_params;
 #endif
     } data;

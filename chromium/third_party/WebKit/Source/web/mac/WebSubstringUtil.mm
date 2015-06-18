@@ -41,13 +41,13 @@
 #include "core/dom/Range.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/PlainTextRange.h"
-#include "core/editing/TextIterator.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutObject.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/fonts/Font.h"
 #include "platform/mac/ColorMac.h"
 #include "public/platform/WebRect.h"
@@ -66,19 +66,20 @@ static NSAttributedString* attributedSubstringFromRange(const Range* range)
     size_t length = range->endOffset() - range->startOffset();
 
     unsigned position = 0;
-    for (TextIterator it(range); !it.atEnd() && [string length] < length; it.advance()) {
+    for (TextIterator it(range->startPosition(), range->endPosition()); !it.atEnd() && [string length] < length; it.advance()) {
         unsigned numCharacters = it.length();
         if (!numCharacters)
             continue;
 
-        Node* container = it.startContainer();
-        RenderObject* renderer = container->renderer();
-        ASSERT(renderer);
-        if (!renderer)
+        Node* container = it.currentContainer();
+        LayoutObject* layoutObject = container->layoutObject();
+        ASSERT(layoutObject);
+        if (!layoutObject)
             continue;
 
-        RenderStyle* style = renderer->style();
-        NSFont* font = style->font().primaryFont()->getNSFont();
+        const ComputedStyle* style = layoutObject->style();
+        const FontPlatformData& fontPlatformData = style->font().primaryFont()->platformData();
+        NSFont* font = toNSFont(fontPlatformData.ctFont());
         // If the platform font can't be loaded, it's likely that the site is
         // using a web font. For now, just use the default font instead.
         // TODO(rsesek): Change the font activation flags to allow other processes
@@ -97,7 +98,7 @@ static NSAttributedString* attributedSubstringFromRange(const Range* range)
             [attrs removeObjectForKey:NSBackgroundColorAttributeName];
 
         Vector<UChar> characters;
-        it.appendTextTo(characters);
+        it.text().appendTextTo(characters);
         NSString* substring =
             [[[NSString alloc] initWithCharacters:characters.data()
                                            length:characters.size()] autorelease];

@@ -10,6 +10,8 @@
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -27,21 +29,26 @@
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
 
 #if defined(OS_LINUX)
 #include <malloc.h>
 #include <sched.h>
+#include <sys/syscall.h>
 #endif
 #if defined(OS_POSIX)
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #endif
 #if defined(OS_WIN)
 #include <windows.h>
@@ -142,11 +149,11 @@ MULTIPROCESS_TEST_MAIN(SimpleChildProcess) {
 
 // TODO(viettrungluu): This should be in a "MultiProcessTestTest".
 TEST_F(ProcessUtilTest, SpawnChild) {
-  base::ProcessHandle handle = SpawnChild("SimpleChildProcess");
-  ASSERT_NE(base::kNullProcessHandle, handle);
-  EXPECT_TRUE(base::WaitForSingleProcess(
-                  handle, TestTimeouts::action_max_timeout()));
-  base::CloseProcessHandle(handle);
+  base::Process process = SpawnChild("SimpleChildProcess");
+  ASSERT_TRUE(process.IsValid());
+  int exit_code;
+  EXPECT_TRUE(process.WaitForExitWithTimeout(
+                  TestTimeouts::action_max_timeout(), &exit_code));
 }
 
 MULTIPROCESS_TEST_MAIN(SlowChildProcess) {
@@ -158,12 +165,12 @@ TEST_F(ProcessUtilTest, KillSlowChild) {
   const std::string signal_file =
       ProcessUtilTest::GetSignalFilePath(kSignalFileSlow);
   remove(signal_file.c_str());
-  base::ProcessHandle handle = SpawnChild("SlowChildProcess");
-  ASSERT_NE(base::kNullProcessHandle, handle);
+  base::Process process = SpawnChild("SlowChildProcess");
+  ASSERT_TRUE(process.IsValid());
   SignalChildren(signal_file.c_str());
-  EXPECT_TRUE(base::WaitForSingleProcess(
-                  handle, TestTimeouts::action_max_timeout()));
-  base::CloseProcessHandle(handle);
+  int exit_code;
+  EXPECT_TRUE(process.WaitForExitWithTimeout(
+                  TestTimeouts::action_max_timeout(), &exit_code));
   remove(signal_file.c_str());
 }
 
@@ -172,21 +179,20 @@ TEST_F(ProcessUtilTest, DISABLED_GetTerminationStatusExit) {
   const std::string signal_file =
       ProcessUtilTest::GetSignalFilePath(kSignalFileSlow);
   remove(signal_file.c_str());
-  base::ProcessHandle handle = SpawnChild("SlowChildProcess");
-  ASSERT_NE(base::kNullProcessHandle, handle);
+  base::Process process = SpawnChild("SlowChildProcess");
+  ASSERT_TRUE(process.IsValid());
 
   int exit_code = 42;
   EXPECT_EQ(base::TERMINATION_STATUS_STILL_RUNNING,
-            base::GetTerminationStatus(handle, &exit_code));
+            base::GetTerminationStatus(process.Handle(), &exit_code));
   EXPECT_EQ(kExpectedStillRunningExitCode, exit_code);
 
   SignalChildren(signal_file.c_str());
   exit_code = 42;
   base::TerminationStatus status =
-      WaitForChildTermination(handle, &exit_code);
+      WaitForChildTermination(process.Handle(), &exit_code);
   EXPECT_EQ(base::TERMINATION_STATUS_NORMAL_TERMINATION, status);
   EXPECT_EQ(0, exit_code);
-  base::CloseProcessHandle(handle);
   remove(signal_file.c_str());
 }
 
@@ -195,12 +201,11 @@ TEST_F(ProcessUtilTest, DISABLED_GetTerminationStatusExit) {
 TEST_F(ProcessUtilTest, GetProcId) {
   base::ProcessId id1 = base::GetProcId(GetCurrentProcess());
   EXPECT_NE(0ul, id1);
-  base::ProcessHandle handle = SpawnChild("SimpleChildProcess");
-  ASSERT_NE(base::kNullProcessHandle, handle);
-  base::ProcessId id2 = base::GetProcId(handle);
+  base::Process process = SpawnChild("SimpleChildProcess");
+  ASSERT_TRUE(process.IsValid());
+  base::ProcessId id2 = process.Pid();
   EXPECT_NE(0ul, id2);
   EXPECT_NE(id1, id2);
-  base::CloseProcessHandle(handle);
 }
 #endif
 
@@ -239,18 +244,18 @@ TEST_F(ProcessUtilTest, MAYBE_GetTerminationStatusCrash) {
   const std::string signal_file =
     ProcessUtilTest::GetSignalFilePath(kSignalFileCrash);
   remove(signal_file.c_str());
-  base::ProcessHandle handle = SpawnChild("CrashingChildProcess");
-  ASSERT_NE(base::kNullProcessHandle, handle);
+  base::Process process = SpawnChild("CrashingChildProcess");
+  ASSERT_TRUE(process.IsValid());
 
   int exit_code = 42;
   EXPECT_EQ(base::TERMINATION_STATUS_STILL_RUNNING,
-            base::GetTerminationStatus(handle, &exit_code));
+            base::GetTerminationStatus(process.Handle(), &exit_code));
   EXPECT_EQ(kExpectedStillRunningExitCode, exit_code);
 
   SignalChildren(signal_file.c_str());
   exit_code = 42;
   base::TerminationStatus status =
-      WaitForChildTermination(handle, &exit_code);
+      WaitForChildTermination(process.Handle(), &exit_code);
   EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_CRASHED, status);
 
 #if defined(OS_WIN)
@@ -261,7 +266,6 @@ TEST_F(ProcessUtilTest, MAYBE_GetTerminationStatusCrash) {
   int signal = WTERMSIG(exit_code);
   EXPECT_EQ(SIGSEGV, signal);
 #endif
-  base::CloseProcessHandle(handle);
 
   // Reset signal handlers back to "normal".
   base::debug::EnableInProcessStackDumping();
@@ -286,18 +290,18 @@ TEST_F(ProcessUtilTest, GetTerminationStatusKill) {
   const std::string signal_file =
     ProcessUtilTest::GetSignalFilePath(kSignalFileKill);
   remove(signal_file.c_str());
-  base::ProcessHandle handle = SpawnChild("KilledChildProcess");
-  ASSERT_NE(base::kNullProcessHandle, handle);
+  base::Process process = SpawnChild("KilledChildProcess");
+  ASSERT_TRUE(process.IsValid());
 
   int exit_code = 42;
   EXPECT_EQ(base::TERMINATION_STATUS_STILL_RUNNING,
-            base::GetTerminationStatus(handle, &exit_code));
+            base::GetTerminationStatus(process.Handle(), &exit_code));
   EXPECT_EQ(kExpectedStillRunningExitCode, exit_code);
 
   SignalChildren(signal_file.c_str());
   exit_code = 42;
   base::TerminationStatus status =
-      WaitForChildTermination(handle, &exit_code);
+      WaitForChildTermination(process.Handle(), &exit_code);
   EXPECT_EQ(base::TERMINATION_STATUS_PROCESS_WAS_KILLED, status);
 #if defined(OS_WIN)
   EXPECT_EQ(kExpectedKilledExitCode, exit_code);
@@ -307,7 +311,6 @@ TEST_F(ProcessUtilTest, GetTerminationStatusKill) {
   int signal = WTERMSIG(exit_code);
   EXPECT_EQ(SIGKILL, signal);
 #endif
-  base::CloseProcessHandle(handle);
   remove(signal_file.c_str());
 }
 
@@ -325,7 +328,7 @@ TEST_F(ProcessUtilTest, GetAppOutput) {
   expected += "\r\n";
 
   FilePath cmd(L"cmd.exe");
-  CommandLine cmd_line(cmd);
+  base::CommandLine cmd_line(cmd);
   cmd_line.AppendArg("/c");
   cmd_line.AppendArg("echo " + message + "");
   std::string output;
@@ -333,7 +336,7 @@ TEST_F(ProcessUtilTest, GetAppOutput) {
   EXPECT_EQ(expected, output);
 
   // Let's make sure stderr is ignored.
-  CommandLine other_cmd_line(cmd);
+  base::CommandLine other_cmd_line(cmd);
   other_cmd_line.AppendArg("/c");
   // http://msdn.microsoft.com/library/cc772622.aspx
   cmd_line.AppendArg("echo " + message + " >&2");
@@ -348,22 +351,23 @@ TEST_F(ProcessUtilTest, LaunchAsUser) {
   ASSERT_TRUE(OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &token));
   base::LaunchOptions options;
   options.as_user = token;
-  EXPECT_TRUE(base::LaunchProcess(MakeCmdLine("SimpleChildProcess"), options,
-                                  NULL));
+  EXPECT_TRUE(base::LaunchProcess(MakeCmdLine("SimpleChildProcess"),
+                                  options).IsValid());
 }
 
 static const char kEventToTriggerHandleSwitch[] = "event-to-trigger-handle";
 
 MULTIPROCESS_TEST_MAIN(TriggerEventChildProcess) {
   std::string handle_value_string =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           kEventToTriggerHandleSwitch);
   CHECK(!handle_value_string.empty());
 
   uint64 handle_value_uint64;
   CHECK(base::StringToUint64(handle_value_string, &handle_value_uint64));
   // Give ownership of the handle to |event|.
-  base::WaitableEvent event(reinterpret_cast<HANDLE>(handle_value_uint64));
+  base::WaitableEvent event(base::win::ScopedHandle(
+      reinterpret_cast<HANDLE>(handle_value_uint64)));
 
   event.Signal();
 
@@ -378,26 +382,26 @@ TEST_F(ProcessUtilTest, InheritSpecifiedHandles) {
   security_attributes.bInheritHandle = true;
 
   // Takes ownership of the event handle.
-  base::WaitableEvent event(
-      CreateEvent(&security_attributes, true, false, NULL));
+  base::WaitableEvent event(base::win::ScopedHandle(
+      CreateEvent(&security_attributes, true, false, NULL)));
   base::HandlesToInheritVector handles_to_inherit;
   handles_to_inherit.push_back(event.handle());
   base::LaunchOptions options;
   options.handles_to_inherit = &handles_to_inherit;
 
-  CommandLine cmd_line = MakeCmdLine("TriggerEventChildProcess");
+  base::CommandLine cmd_line = MakeCmdLine("TriggerEventChildProcess");
   cmd_line.AppendSwitchASCII(kEventToTriggerHandleSwitch,
       base::Uint64ToString(reinterpret_cast<uint64>(event.handle())));
 
   // This functionality actually requires Vista or later. Make sure that it
   // fails properly on XP.
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    EXPECT_FALSE(base::LaunchProcess(cmd_line, options, NULL));
+    EXPECT_FALSE(base::LaunchProcess(cmd_line, options).IsValid());
     return;
   }
 
   // Launch the process and wait for it to trigger the event.
-  ASSERT_TRUE(base::LaunchProcess(cmd_line, options, NULL));
+  ASSERT_TRUE(base::LaunchProcess(cmd_line, options).IsValid());
   EXPECT_TRUE(event.TimedWait(TestTimeouts::action_max_timeout()));
 }
 #endif  // defined(OS_WIN)
@@ -534,9 +538,9 @@ int ProcessUtilTest::CountOpenFDsInChild() {
   fd_mapping_vec.push_back(std::pair<int, int>(fds[1], kChildPipe));
   base::LaunchOptions options;
   options.fds_to_remap = &fd_mapping_vec;
-  base::ProcessHandle handle =
+  base::Process process =
       SpawnChildWithOptions("ProcessUtilsLeakFDChildProcess", options);
-  CHECK(handle);
+  CHECK(process.IsValid());
   int ret = IGNORE_EINTR(close(fds[1]));
   DPCHECK(ret == 0);
 
@@ -548,11 +552,12 @@ int ProcessUtilTest::CountOpenFDsInChild() {
 
 #if defined(THREAD_SANITIZER)
   // Compiler-based ThreadSanitizer makes this test slow.
-  CHECK(base::WaitForSingleProcess(handle, base::TimeDelta::FromSeconds(3)));
+  base::TimeDelta timeout = base::TimeDelta::FromSeconds(3);
 #else
-  CHECK(base::WaitForSingleProcess(handle, base::TimeDelta::FromSeconds(1)));
+  base::TimeDelta timeout = base::TimeDelta::FromSeconds(1);
 #endif
-  base::CloseProcessHandle(handle);
+  int exit_code;
+  CHECK(process.WaitForExitWithTimeout(timeout, &exit_code));
   ret = IGNORE_EINTR(close(fds[0]));
   DPCHECK(ret == 0);
 
@@ -611,7 +616,7 @@ std::string TestLaunchProcess(const std::vector<std::string>& args,
 #else
   CHECK_EQ(0, clone_flags);
 #endif  // OS_LINUX
-  EXPECT_TRUE(base::LaunchProcess(args, options, NULL));
+  EXPECT_TRUE(base::LaunchProcess(args, options).IsValid());
   PCHECK(IGNORE_EINTR(close(fds[1])) == 0);
 
   char buf[512];
@@ -683,10 +688,8 @@ TEST_F(ProcessUtilTest, LaunchProcess) {
   // Test a non-trival value for clone_flags.
   // Don't test on Valgrind as it has limited support for clone().
   if (!RunningOnValgrind()) {
-    EXPECT_EQ(
-        "wibble\n",
-        TestLaunchProcess(
-            echo_base_test, env_changes, no_clear_environ, CLONE_FS | SIGCHLD));
+    EXPECT_EQ("wibble\n", TestLaunchProcess(echo_base_test, env_changes,
+                                            no_clear_environ, CLONE_FS));
   }
 
   EXPECT_EQ(
@@ -710,27 +713,29 @@ TEST_F(ProcessUtilTest, GetAppOutput) {
   argv.push_back("-c");
 
   argv.push_back("exit 0");
-  EXPECT_TRUE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_TRUE(base::GetAppOutput(base::CommandLine(argv), &output));
   EXPECT_STREQ("", output.c_str());
 
   argv[2] = "exit 1";
-  EXPECT_FALSE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_FALSE(base::GetAppOutput(base::CommandLine(argv), &output));
   EXPECT_STREQ("", output.c_str());
 
   argv[2] = "echo foobar42";
-  EXPECT_TRUE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_TRUE(base::GetAppOutput(base::CommandLine(argv), &output));
   EXPECT_STREQ("foobar42\n", output.c_str());
 #else
-  EXPECT_TRUE(base::GetAppOutput(CommandLine(FilePath("true")), &output));
+  EXPECT_TRUE(base::GetAppOutput(base::CommandLine(FilePath("true")),
+                                 &output));
   EXPECT_STREQ("", output.c_str());
 
-  EXPECT_FALSE(base::GetAppOutput(CommandLine(FilePath("false")), &output));
+  EXPECT_FALSE(base::GetAppOutput(base::CommandLine(FilePath("false")),
+                                  &output));
 
   std::vector<std::string> argv;
   argv.push_back("/bin/echo");
   argv.push_back("-n");
   argv.push_back("foobar42");
-  EXPECT_TRUE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_TRUE(base::GetAppOutput(base::CommandLine(argv), &output));
   EXPECT_STREQ("foobar42", output.c_str());
 #endif  // defined(OS_ANDROID)
 }
@@ -754,34 +759,39 @@ TEST_F(ProcessUtilTest, MAYBE_GetAppOutputRestricted) {
   // need absolute paths).
   argv.push_back("exit 0");   // argv[2]; equivalent to "true"
   std::string output = "abc";
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 100));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           100));
   EXPECT_STREQ("", output.c_str());
 
   argv[2] = "exit 1";  // equivalent to "false"
   output = "before";
-  EXPECT_FALSE(base::GetAppOutputRestricted(CommandLine(argv),
-                                            &output, 100));
+  EXPECT_FALSE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                            100));
   EXPECT_STREQ("", output.c_str());
 
   // Amount of output exactly equal to space allowed.
   argv[2] = "echo 123456789";  // (the sh built-in doesn't take "-n")
   output.clear();
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 10));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           10));
   EXPECT_STREQ("123456789\n", output.c_str());
 
   // Amount of output greater than space allowed.
   output.clear();
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 5));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           5));
   EXPECT_STREQ("12345", output.c_str());
 
   // Amount of output less than space allowed.
   output.clear();
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 15));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           15));
   EXPECT_STREQ("123456789\n", output.c_str());
 
   // Zero space allowed.
   output = "abc";
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 0));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           0));
   EXPECT_STREQ("", output.c_str());
 }
 
@@ -796,11 +806,13 @@ TEST_F(ProcessUtilTest, GetAppOutputRestrictedSIGPIPE) {
   argv.push_back("-c");
 #if defined(OS_ANDROID)
   argv.push_back("while echo 12345678901234567890; do :; done");
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 10));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           10));
   EXPECT_STREQ("1234567890", output.c_str());
 #else
   argv.push_back("yes");
-  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 10));
+  EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                           10));
   EXPECT_STREQ("y\ny\ny\ny\ny\n", output.c_str());
 #endif
 }
@@ -826,14 +838,16 @@ TEST_F(ProcessUtilTest, MAYBE_GetAppOutputRestrictedNoZombies) {
   // 10.5) times with an output buffer big enough to capture all output.
   for (int i = 0; i < 300; i++) {
     std::string output;
-    EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 100));
+    EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                             100));
     EXPECT_STREQ("123456789012345678901234567890\n", output.c_str());
   }
 
   // Ditto, but with an output buffer too small to capture all output.
   for (int i = 0; i < 300; i++) {
     std::string output;
-    EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 10));
+    EXPECT_TRUE(base::GetAppOutputRestricted(base::CommandLine(argv), &output,
+                                             10));
     EXPECT_STREQ("1234567890", output.c_str());
   }
 }
@@ -846,7 +860,7 @@ TEST_F(ProcessUtilTest, GetAppOutputWithExitCode) {
   argv.push_back(std::string(kShellPath));  // argv[0]
   argv.push_back("-c");  // argv[1]
   argv.push_back("echo foo");  // argv[2];
-  EXPECT_TRUE(base::GetAppOutputWithExitCode(CommandLine(argv), &output,
+  EXPECT_TRUE(base::GetAppOutputWithExitCode(base::CommandLine(argv), &output,
                                              &exit_code));
   EXPECT_STREQ("foo\n", output.c_str());
   EXPECT_EQ(exit_code, 0);
@@ -855,7 +869,7 @@ TEST_F(ProcessUtilTest, GetAppOutputWithExitCode) {
   // code.
   output.clear();
   argv[2] = "echo foo; exit 2";
-  EXPECT_TRUE(base::GetAppOutputWithExitCode(CommandLine(argv), &output,
+  EXPECT_TRUE(base::GetAppOutputWithExitCode(base::CommandLine(argv), &output,
                                              &exit_code));
   EXPECT_STREQ("foo\n", output.c_str());
   EXPECT_EQ(exit_code, 2);
@@ -876,14 +890,15 @@ bool IsProcessDead(base::ProcessHandle child) {
 }
 
 TEST_F(ProcessUtilTest, DelayedTermination) {
-  base::ProcessHandle child_process = SpawnChild("process_util_test_never_die");
-  ASSERT_TRUE(child_process);
-  base::EnsureProcessTerminated(child_process);
-  base::WaitForSingleProcess(child_process, base::TimeDelta::FromSeconds(5));
+  base::Process child_process = SpawnChild("process_util_test_never_die");
+  ASSERT_TRUE(child_process.IsValid());
+  base::EnsureProcessTerminated(child_process.Duplicate());
+  int exit_code;
+  child_process.WaitForExitWithTimeout(base::TimeDelta::FromSeconds(5),
+                                       &exit_code);
 
   // Check that process was really killed.
-  EXPECT_TRUE(IsProcessDead(child_process));
-  base::CloseProcessHandle(child_process);
+  EXPECT_TRUE(IsProcessDead(child_process.Handle()));
 }
 
 MULTIPROCESS_TEST_MAIN(process_util_test_never_die) {
@@ -894,20 +909,159 @@ MULTIPROCESS_TEST_MAIN(process_util_test_never_die) {
 }
 
 TEST_F(ProcessUtilTest, ImmediateTermination) {
-  base::ProcessHandle child_process =
-      SpawnChild("process_util_test_die_immediately");
-  ASSERT_TRUE(child_process);
+  base::Process child_process = SpawnChild("process_util_test_die_immediately");
+  ASSERT_TRUE(child_process.IsValid());
   // Give it time to die.
   sleep(2);
-  base::EnsureProcessTerminated(child_process);
+  base::EnsureProcessTerminated(child_process.Duplicate());
 
   // Check that process was really killed.
-  EXPECT_TRUE(IsProcessDead(child_process));
-  base::CloseProcessHandle(child_process);
+  EXPECT_TRUE(IsProcessDead(child_process.Handle()));
 }
 
 MULTIPROCESS_TEST_MAIN(process_util_test_die_immediately) {
   return 0;
 }
 
+#if !defined(OS_ANDROID)
+const char kPipeValue = '\xcc';
+
+class ReadFromPipeDelegate : public base::LaunchOptions::PreExecDelegate {
+ public:
+  explicit ReadFromPipeDelegate(int fd) : fd_(fd) {}
+  ~ReadFromPipeDelegate() override {}
+  void RunAsyncSafe() override {
+    char c;
+    RAW_CHECK(HANDLE_EINTR(read(fd_, &c, 1)) == 1);
+    RAW_CHECK(IGNORE_EINTR(close(fd_)) == 0);
+    RAW_CHECK(c == kPipeValue);
+  }
+
+ private:
+  int fd_;
+  DISALLOW_COPY_AND_ASSIGN(ReadFromPipeDelegate);
+};
+
+TEST_F(ProcessUtilTest, PreExecHook) {
+  int pipe_fds[2];
+  ASSERT_EQ(0, pipe(pipe_fds));
+
+  base::ScopedFD read_fd(pipe_fds[0]);
+  base::ScopedFD write_fd(pipe_fds[1]);
+  base::FileHandleMappingVector fds_to_remap;
+  fds_to_remap.push_back(std::make_pair(read_fd.get(), read_fd.get()));
+
+  ReadFromPipeDelegate read_from_pipe_delegate(read_fd.get());
+  base::LaunchOptions options;
+  options.fds_to_remap = &fds_to_remap;
+  options.pre_exec_delegate = &read_from_pipe_delegate;
+  base::Process process(SpawnChildWithOptions("SimpleChildProcess", options));
+  ASSERT_TRUE(process.IsValid());
+
+  read_fd.reset();
+  ASSERT_EQ(1, HANDLE_EINTR(write(write_fd.get(), &kPipeValue, 1)));
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(0, exit_code);
+}
+#endif  // !defined(OS_ANDROID)
+
 #endif  // defined(OS_POSIX)
+
+#if defined(OS_LINUX)
+const int kSuccess = 0;
+
+MULTIPROCESS_TEST_MAIN(CheckPidProcess) {
+  const pid_t kInitPid = 1;
+  const pid_t pid = syscall(__NR_getpid);
+  CHECK(pid == kInitPid);
+  CHECK(getpid() == pid);
+  return kSuccess;
+}
+
+TEST_F(ProcessUtilTest, CloneFlags) {
+  if (RunningOnValgrind() ||
+      !base::PathExists(FilePath("/proc/self/ns/user")) ||
+      !base::PathExists(FilePath("/proc/self/ns/pid"))) {
+    // User or PID namespaces are not supported.
+    return;
+  }
+
+  base::LaunchOptions options;
+  options.clone_flags = CLONE_NEWUSER | CLONE_NEWPID;
+
+  base::Process process(SpawnChildWithOptions("CheckPidProcess", options));
+  ASSERT_TRUE(process.IsValid());
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(kSuccess, exit_code);
+}
+
+TEST(ForkWithFlagsTest, UpdatesPidCache) {
+  // The libc clone function, which allows ForkWithFlags to keep the pid cache
+  // up to date, does not work on Valgrind.
+  if (RunningOnValgrind()) {
+    return;
+  }
+
+  // Warm up the libc pid cache, if there is one.
+  ASSERT_EQ(syscall(__NR_getpid), getpid());
+
+  pid_t ctid = 0;
+  const pid_t pid =
+      base::ForkWithFlags(SIGCHLD | CLONE_CHILD_SETTID, nullptr, &ctid);
+  if (pid == 0) {
+    // In child.  Check both the raw getpid syscall and the libc getpid wrapper
+    // (which may rely on a pid cache).
+    RAW_CHECK(syscall(__NR_getpid) == ctid);
+    RAW_CHECK(getpid() == ctid);
+    _exit(kSuccess);
+  }
+
+  ASSERT_NE(-1, pid);
+  int status = 42;
+  ASSERT_EQ(pid, HANDLE_EINTR(waitpid(pid, &status, 0)));
+  ASSERT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(kSuccess, WEXITSTATUS(status));
+}
+
+MULTIPROCESS_TEST_MAIN(CheckCwdProcess) {
+  base::FilePath expected;
+  CHECK(base::GetTempDir(&expected));
+  base::FilePath actual;
+  CHECK(base::GetCurrentDirectory(&actual));
+  CHECK(actual == expected);
+  return kSuccess;
+}
+
+TEST_F(ProcessUtilTest, CurrentDirectory) {
+  // TODO(rickyz): Add support for passing arguments to multiprocess children,
+  // then create a special directory for this test.
+  base::FilePath tmp_dir;
+  ASSERT_TRUE(base::GetTempDir(&tmp_dir));
+
+  base::LaunchOptions options;
+  options.current_directory = tmp_dir;
+
+  base::Process process(SpawnChildWithOptions("CheckCwdProcess", options));
+  ASSERT_TRUE(process.IsValid());
+
+  int exit_code = 42;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_EQ(kSuccess, exit_code);
+}
+
+TEST_F(ProcessUtilTest, InvalidCurrentDirectory) {
+  base::LaunchOptions options;
+  options.current_directory = base::FilePath("/dev/null");
+
+  base::Process process(SpawnChildWithOptions("SimpleChildProcess", options));
+  ASSERT_TRUE(process.IsValid());
+
+  int exit_code = kSuccess;
+  EXPECT_TRUE(process.WaitForExit(&exit_code));
+  EXPECT_NE(kSuccess, exit_code);
+}
+#endif

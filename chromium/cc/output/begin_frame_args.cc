@@ -4,10 +4,25 @@
 
 #include "cc/output/begin_frame_args.h"
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "ui/gfx/frame_time.h"
 
 namespace cc {
+
+const char* BeginFrameArgs::TypeToString(BeginFrameArgsType type) {
+  switch (type) {
+    case BeginFrameArgs::INVALID:
+      return "INVALID";
+    case BeginFrameArgs::NORMAL:
+      return "NORMAL";
+    case BeginFrameArgs::MISSED:
+      return "MISSED";
+    case BeginFrameArgs::BEGIN_FRAME_ARGS_TYPE_MAX:
+      return "BEGIN_FRAME_ARGS_TYPE_MAX";
+  }
+  NOTREACHED();
+  return "???";
+}
 
 BeginFrameArgs::BeginFrameArgs()
     : frame_time(base::TimeTicks()),
@@ -26,58 +41,39 @@ BeginFrameArgs::BeginFrameArgs(base::TimeTicks frame_time,
       type(type) {
 }
 
-BeginFrameArgs BeginFrameArgs::CreateTyped(
-    base::TimeTicks frame_time,
-    base::TimeTicks deadline,
-    base::TimeDelta interval,
-    BeginFrameArgs::BeginFrameArgsType type) {
-  DCHECK_NE(type, BeginFrameArgs::INVALID);
-  return BeginFrameArgs(frame_time, deadline, interval, type);
-}
-
-BeginFrameArgs BeginFrameArgs::Create(base::TimeTicks frame_time,
+BeginFrameArgs BeginFrameArgs::Create(BeginFrameArgs::CreationLocation location,
+                                      base::TimeTicks frame_time,
                                       base::TimeTicks deadline,
-                                      base::TimeDelta interval) {
-  return CreateTyped(frame_time, deadline, interval, BeginFrameArgs::NORMAL);
+                                      base::TimeDelta interval,
+                                      BeginFrameArgs::BeginFrameArgsType type) {
+  DCHECK_NE(type, BeginFrameArgs::INVALID);
+  DCHECK_NE(type, BeginFrameArgs::BEGIN_FRAME_ARGS_TYPE_MAX);
+#ifdef NDEBUG
+  return BeginFrameArgs(frame_time, deadline, interval, type);
+#else
+  BeginFrameArgs args = BeginFrameArgs(frame_time, deadline, interval, type);
+  args.created_from = location;
+  return args;
+#endif
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat> BeginFrameArgs::AsValue()
-    const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+BeginFrameArgs::AsValue() const {
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
   AsValueInto(state.get());
   return state;
 }
 
-void BeginFrameArgs::AsValueInto(base::debug::TracedValue* state) const {
+void BeginFrameArgs::AsValueInto(base::trace_event::TracedValue* state) const {
   state->SetString("type", "BeginFrameArgs");
-  switch (type) {
-    case BeginFrameArgs::INVALID:
-      state->SetString("subtype", "INVALID");
-      break;
-    case BeginFrameArgs::NORMAL:
-      state->SetString("subtype", "NORMAL");
-      break;
-    case BeginFrameArgs::SYNCHRONOUS:
-      state->SetString("subtype", "SYNCHRONOUS");
-      break;
-    case BeginFrameArgs::MISSED:
-      state->SetString("subtype", "MISSED");
-      break;
-  }
+  state->SetString("subtype", TypeToString(type));
   state->SetDouble("frame_time_us", frame_time.ToInternalValue());
   state->SetDouble("deadline_us", deadline.ToInternalValue());
   state->SetDouble("interval_us", interval.InMicroseconds());
-}
-
-BeginFrameArgs BeginFrameArgs::CreateForSynchronousCompositor(
-    base::TimeTicks now) {
-  // For WebView/SynchronousCompositor, we always want to draw immediately,
-  // so we set the deadline to 0 and guess that the interval is 16 milliseconds.
-  if (now.is_null())
-    now = gfx::FrameTime::Now();
-  return CreateTyped(
-      now, base::TimeTicks(), DefaultInterval(), BeginFrameArgs::SYNCHRONOUS);
+#ifndef NDEBUG
+  state->SetString("created_from", created_from.ToString());
+#endif
 }
 
 // This is a hard-coded deadline adjustment that assumes 60Hz, to be used in
@@ -92,10 +88,6 @@ base::TimeDelta BeginFrameArgs::DefaultEstimatedParentDrawTime() {
 
 base::TimeDelta BeginFrameArgs::DefaultInterval() {
   return base::TimeDelta::FromMicroseconds(16666);
-}
-
-base::TimeDelta BeginFrameArgs::DefaultRetroactiveBeginFramePeriod() {
-  return base::TimeDelta::FromMicroseconds(4444);
 }
 
 }  // namespace cc

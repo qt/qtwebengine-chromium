@@ -5,20 +5,21 @@
 #include "content/renderer/pepper/content_decryptor_delegate.h"
 
 #include "base/callback_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/numerics/safe_conversions.h"
-#include "content/renderer/media/crypto/key_systems.h"
+#include "base/stl_util.h"
+#include "base/trace_event/trace_event.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_current_loop.h"
-#include "media/base/cdm_promise.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/channel_layout.h"
 #include "media/base/data_buffer.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
+#include "media/base/key_systems.h"
 #include "media/base/limits.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
@@ -30,11 +31,9 @@
 #include "ppapi/shared_impl/var_tracker.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
-using media::CdmPromise;
 using media::Decryptor;
-using media::KeyIdsPromise;
 using media::MediaKeys;
 using media::NewSessionCdmPromise;
 using media::SimpleCdmPromise;
@@ -55,7 +54,7 @@ namespace {
 // reference-count of 0. If |data| is NULL, sets |*resource| to NULL. Returns
 // true upon success and false if any error happened.
 bool MakeBufferResource(PP_Instance instance,
-                        const uint8* data,
+                        const uint8_t* data,
                         uint32_t size,
                         scoped_refptr<PPB_Buffer_Impl>* resource) {
   TRACE_EVENT0("media", "ContentDecryptorDelegate - MakeBufferResource");
@@ -85,7 +84,7 @@ bool MakeBufferResource(PP_Instance instance,
 // Returns true if copy succeeded. Returns false if copy failed, e.g. if the
 // |array_size| is smaller than the |str| length.
 template <uint32_t array_size>
-bool CopyStringToArray(const std::string& str, uint8 (&array)[array_size]) {
+bool CopyStringToArray(const std::string& str, uint8_t(&array)[array_size]) {
   if (array_size < str.size())
     return false;
 
@@ -260,12 +259,30 @@ PP_SessionType MediaSessionTypeToPpSessionType(
   switch (session_type) {
     case MediaKeys::TEMPORARY_SESSION:
       return PP_SESSIONTYPE_TEMPORARY;
-    case MediaKeys::PERSISTENT_SESSION:
-      return PP_SESSIONTYPE_PERSISTENT;
+    case MediaKeys::PERSISTENT_LICENSE_SESSION:
+      return PP_SESSIONTYPE_PERSISTENT_LICENSE;
+    case MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION:
+      return PP_SESSIONTYPE_PERSISTENT_RELEASE;
     default:
       NOTREACHED();
       return PP_SESSIONTYPE_TEMPORARY;
   }
+}
+
+PP_InitDataType MediaInitDataTypeToPpInitDataType(
+    media::EmeInitDataType init_data_type) {
+  switch (init_data_type) {
+    case media::EmeInitDataType::CENC:
+      return PP_INITDATATYPE_CENC;
+    case media::EmeInitDataType::KEYIDS:
+      return PP_INITDATATYPE_KEYIDS;
+    case media::EmeInitDataType::WEBM:
+      return PP_INITDATATYPE_WEBM;
+    case media::EmeInitDataType::UNKNOWN:
+      break;
+  }
+  NOTREACHED();
+  return PP_INITDATATYPE_KEYIDS;
 }
 
 MediaKeys::Exception PpExceptionTypeToMediaException(
@@ -291,13 +308,49 @@ MediaKeys::Exception PpExceptionTypeToMediaException(
   }
 }
 
+media::CdmKeyInformation::KeyStatus PpCdmKeyStatusToCdmKeyInformationKeyStatus(
+    PP_CdmKeyStatus status) {
+  switch (status) {
+    case PP_CDMKEYSTATUS_USABLE:
+      return media::CdmKeyInformation::USABLE;
+    case PP_CDMKEYSTATUS_INVALID:
+      return media::CdmKeyInformation::INTERNAL_ERROR;
+    case PP_CDMKEYSTATUS_EXPIRED:
+      return media::CdmKeyInformation::EXPIRED;
+    case PP_CDMKEYSTATUS_OUTPUTNOTALLOWED:
+      return media::CdmKeyInformation::OUTPUT_NOT_ALLOWED;
+    case PP_CDMKEYSTATUS_OUTPUTDOWNSCALED:
+      return media::CdmKeyInformation::OUTPUT_DOWNSCALED;
+    case PP_CDMKEYSTATUS_STATUSPENDING:
+      return media::CdmKeyInformation::KEY_STATUS_PENDING;
+    default:
+      NOTREACHED();
+      return media::CdmKeyInformation::INTERNAL_ERROR;
+  }
+}
+
+MediaKeys::MessageType PpCdmMessageTypeToMediaMessageType(
+    PP_CdmMessageType message_type) {
+  switch (message_type) {
+    case PP_CDMMESSAGETYPE_LICENSE_REQUEST:
+      return MediaKeys::LICENSE_REQUEST;
+    case PP_CDMMESSAGETYPE_LICENSE_RENEWAL:
+      return MediaKeys::LICENSE_RENEWAL;
+    case PP_CDMMESSAGETYPE_LICENSE_RELEASE:
+      return MediaKeys::LICENSE_RELEASE;
+    default:
+      NOTREACHED();
+      return MediaKeys::LICENSE_REQUEST;
+  }
+}
+
 // TODO(xhwang): Unify EME UMA reporting code when prefixed EME is deprecated.
 // See http://crbug.com/412987 for details.
-void ReportSystemCodeUMA(const std::string& key_system, uint32 system_code) {
+void ReportSystemCodeUMA(const std::string& key_system, uint32_t system_code) {
   // Sparse histogram macro does not cache the histogram, so it's safe to use
   // macro with non-static histogram name here.
   UMA_HISTOGRAM_SPARSE_SLOWLY(
-      "Media.EME." + KeySystemNameForUMA(key_system) + ".SystemCode",
+      "Media.EME." + media::GetKeySystemNameForUMA(key_system) + ".SystemCode",
       system_code);
 }
 
@@ -312,7 +365,6 @@ ContentDecryptorDelegate::ContentDecryptorDelegate(
       audio_samples_per_second_(0),
       audio_channel_count_(0),
       audio_channel_layout_(media::CHANNEL_LAYOUT_NONE),
-      next_promise_id_(1),
       weak_ptr_factory_(this) {
   weak_this_ = weak_ptr_factory_.GetWeakPtr();
 }
@@ -323,27 +375,31 @@ ContentDecryptorDelegate::~ContentDecryptorDelegate() {
 
 void ContentDecryptorDelegate::Initialize(
     const std::string& key_system,
+    bool allow_distinctive_identifier,
+    bool allow_persistent_state,
     const media::SessionMessageCB& session_message_cb,
-    const media::SessionReadyCB& session_ready_cb,
     const media::SessionClosedCB& session_closed_cb,
-    const media::SessionErrorCB& session_error_cb,
+    const media::LegacySessionErrorCB& legacy_session_error_cb,
     const media::SessionKeysChangeCB& session_keys_change_cb,
     const media::SessionExpirationUpdateCB& session_expiration_update_cb,
-    const base::Closure& fatal_plugin_error_cb) {
+    const base::Closure& fatal_plugin_error_cb,
+    scoped_ptr<media::SimpleCdmPromise> promise) {
   DCHECK(!key_system.empty());
   DCHECK(key_system_.empty());
   key_system_ = key_system;
 
   session_message_cb_ = session_message_cb;
-  session_ready_cb_ = session_ready_cb;
   session_closed_cb_ = session_closed_cb;
-  session_error_cb_ = session_error_cb;
+  legacy_session_error_cb_ = legacy_session_error_cb;
   session_keys_change_cb_ = session_keys_change_cb;
   session_expiration_update_cb_ = session_expiration_update_cb;
   fatal_plugin_error_cb_ = fatal_plugin_error_cb;
 
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   plugin_decryption_interface_->Initialize(
-      pp_instance_, StringVar::StringToPPVar(key_system_));
+      pp_instance_, promise_id, StringVar::StringToPPVar(key_system_),
+      PP_FromBool(allow_distinctive_identifier),
+      PP_FromBool(allow_persistent_state));
 }
 
 void ContentDecryptorDelegate::InstanceCrashed() {
@@ -352,107 +408,89 @@ void ContentDecryptorDelegate::InstanceCrashed() {
 }
 
 void ContentDecryptorDelegate::SetServerCertificate(
-    const uint8_t* certificate,
-    uint32_t certificate_length,
+    const std::vector<uint8_t>& certificate,
     scoped_ptr<media::SimpleCdmPromise> promise) {
-  if (!certificate ||
-      certificate_length < media::limits::kMinCertificateLength ||
-      certificate_length > media::limits::kMaxCertificateLength) {
+  if (certificate.size() < media::limits::kMinCertificateLength ||
+      certificate.size() > media::limits::kMaxCertificateLength) {
     promise->reject(
         media::MediaKeys::INVALID_ACCESS_ERROR, 0, "Incorrect certificate.");
     return;
   }
 
-  uint32_t promise_id = SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   PP_Var certificate_array =
       PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          certificate_length, certificate);
+          base::checked_cast<uint32>(certificate.size()),
+          vector_as_array(&certificate));
   plugin_decryption_interface_->SetServerCertificate(
       pp_instance_, promise_id, certificate_array);
 }
 
-void ContentDecryptorDelegate::CreateSession(
-    const std::string& init_data_type,
-    const uint8* init_data,
-    int init_data_length,
+void ContentDecryptorDelegate::CreateSessionAndGenerateRequest(
     MediaKeys::SessionType session_type,
+    media::EmeInitDataType init_data_type,
+    const std::vector<uint8_t>& init_data,
     scoped_ptr<NewSessionCdmPromise> promise) {
-  uint32_t promise_id = SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   PP_Var init_data_array =
       PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          init_data_length, init_data);
-  plugin_decryption_interface_->CreateSession(
-      pp_instance_,
-      promise_id,
-      StringVar::StringToPPVar(init_data_type),
-      init_data_array,
-      MediaSessionTypeToPpSessionType(session_type));
+          base::checked_cast<uint32>(init_data.size()),
+          vector_as_array(&init_data));
+  plugin_decryption_interface_->CreateSessionAndGenerateRequest(
+      pp_instance_, promise_id, MediaSessionTypeToPpSessionType(session_type),
+      MediaInitDataTypeToPpInitDataType(init_data_type), init_data_array);
 }
 
 void ContentDecryptorDelegate::LoadSession(
-    const std::string& web_session_id,
+    media::MediaKeys::SessionType session_type,
+    const std::string& session_id,
     scoped_ptr<NewSessionCdmPromise> promise) {
-  uint32_t promise_id = SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   plugin_decryption_interface_->LoadSession(
-      pp_instance_, promise_id, StringVar::StringToPPVar(web_session_id));
+      pp_instance_, promise_id, MediaSessionTypeToPpSessionType(session_type),
+      StringVar::StringToPPVar(session_id));
 }
 
 void ContentDecryptorDelegate::UpdateSession(
-    const std::string& web_session_id,
-    const uint8* response,
-    int response_length,
+    const std::string& session_id,
+    const std::vector<uint8_t>& response,
     scoped_ptr<SimpleCdmPromise> promise) {
-  uint32_t promise_id = SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   PP_Var response_array =
       PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(
-          response_length, response);
+          base::checked_cast<uint32>(response.size()),
+          vector_as_array(&response));
   plugin_decryption_interface_->UpdateSession(
-      pp_instance_,
-      promise_id,
-      StringVar::StringToPPVar(web_session_id),
+      pp_instance_, promise_id, StringVar::StringToPPVar(session_id),
       response_array);
 }
 
 void ContentDecryptorDelegate::CloseSession(
-    const std::string& web_session_id,
+    const std::string& session_id,
     scoped_ptr<SimpleCdmPromise> promise) {
-  if (web_session_id.length() > media::limits::kMaxWebSessionIdLength) {
+  if (session_id.length() > media::limits::kMaxSessionIdLength) {
     promise->reject(
         media::MediaKeys::INVALID_ACCESS_ERROR, 0, "Incorrect session.");
     return;
   }
 
-  uint32_t promise_id = SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   plugin_decryption_interface_->CloseSession(
-      pp_instance_, promise_id, StringVar::StringToPPVar(web_session_id));
+      pp_instance_, promise_id, StringVar::StringToPPVar(session_id));
 }
 
 void ContentDecryptorDelegate::RemoveSession(
-    const std::string& web_session_id,
+    const std::string& session_id,
     scoped_ptr<SimpleCdmPromise> promise) {
-  if (web_session_id.length() > media::limits::kMaxWebSessionIdLength) {
+  if (session_id.length() > media::limits::kMaxSessionIdLength) {
     promise->reject(
         media::MediaKeys::INVALID_ACCESS_ERROR, 0, "Incorrect session.");
     return;
   }
 
-  uint32_t promise_id = SavePromise(promise.Pass());
+  uint32_t promise_id = cdm_promise_adapter_.SavePromise(promise.Pass());
   plugin_decryption_interface_->RemoveSession(
-      pp_instance_, promise_id, StringVar::StringToPPVar(web_session_id));
-}
-
-void ContentDecryptorDelegate::GetUsableKeyIds(
-    const std::string& web_session_id,
-    scoped_ptr<media::KeyIdsPromise> promise) {
-  if (web_session_id.length() > media::limits::kMaxWebSessionIdLength) {
-    promise->reject(
-        media::MediaKeys::INVALID_ACCESS_ERROR, 0, "Incorrect session.");
-    return;
-  }
-
-  uint32_t promise_id = SavePromise(promise.Pass());
-  plugin_decryption_interface_->GetUsableKeyIds(
-      pp_instance_, promise_id, StringVar::StringToPPVar(web_session_id));
+      pp_instance_, promise_id, StringVar::StringToPPVar(session_id));
 }
 
 // TODO(xhwang): Remove duplication of code in Decrypt(),
@@ -698,189 +736,138 @@ bool ContentDecryptorDelegate::DecryptAndDecodeVideo(
   return true;
 }
 
-void ContentDecryptorDelegate::OnPromiseResolved(uint32 promise_id) {
-  scoped_ptr<CdmPromise> promise = TakePromise(promise_id);
-  if (!promise ||
-      promise->GetResolveParameterType() != media::CdmPromise::VOID_TYPE) {
-    NOTREACHED();
-    return;
-  }
-
-  SimpleCdmPromise* simple_promise =
-      static_cast<SimpleCdmPromise*>(promise.get());
-  simple_promise->resolve();
+void ContentDecryptorDelegate::OnPromiseResolved(uint32_t promise_id) {
+  cdm_promise_adapter_.ResolvePromise(promise_id);
 }
 
-void ContentDecryptorDelegate::OnPromiseResolvedWithSession(
-    uint32 promise_id,
-    PP_Var web_session_id) {
-  scoped_ptr<CdmPromise> promise = TakePromise(promise_id);
-  if (!promise ||
-      promise->GetResolveParameterType() != media::CdmPromise::STRING_TYPE) {
-    NOTREACHED();
-    return;
-  }
-
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
-
-  NewSessionCdmPromise* session_promise =
-      static_cast<NewSessionCdmPromise*>(promise.get());
-  session_promise->resolve(web_session_id_string->value());
-}
-
-void ContentDecryptorDelegate::OnPromiseResolvedWithKeyIds(
-    uint32 promise_id,
-    PP_Var key_ids_array) {
-  scoped_ptr<CdmPromise> promise = TakePromise(promise_id);
-
-  ArrayVar* key_ids = ArrayVar::FromPPVar(key_ids_array);
-  DCHECK(key_ids && key_ids->GetLength() <= media::limits::kMaxKeyIds);
-  media::KeyIdsVector key_ids_vector;
-  if (key_ids && key_ids->GetLength() <= media::limits::kMaxKeyIds) {
-    for (size_t i = 0; i < key_ids->GetLength(); ++i) {
-      ArrayBufferVar* array_buffer = ArrayBufferVar::FromPPVar(key_ids->Get(i));
-
-      if (!array_buffer ||
-          array_buffer->ByteLength() < media::limits::kMinKeyIdLength ||
-          array_buffer->ByteLength() > media::limits::kMaxKeyIdLength) {
-        NOTREACHED();
-        continue;
-      }
-
-      std::vector<uint8> key_id;
-      const uint8* data = static_cast<const uint8*>(array_buffer->Map());
-      key_id.assign(data, data + array_buffer->ByteLength());
-      key_ids_vector.push_back(key_id);
-    }
-  }
-
-  if (!promise ||
-      promise->GetResolveParameterType() !=
-          media::CdmPromise::KEY_IDS_VECTOR_TYPE) {
-    NOTREACHED();
-    return;
-  }
-
-  KeyIdsPromise* key_ids_promise(static_cast<KeyIdsPromise*>(promise.get()));
-  key_ids_promise->resolve(key_ids_vector);
+void ContentDecryptorDelegate::OnPromiseResolvedWithSession(uint32_t promise_id,
+                                                            PP_Var session_id) {
+  StringVar* session_id_string = StringVar::FromPPVar(session_id);
+  DCHECK(session_id_string);
+  cdm_promise_adapter_.ResolvePromise(promise_id, session_id_string->value());
 }
 
 void ContentDecryptorDelegate::OnPromiseRejected(
-    uint32 promise_id,
+    uint32_t promise_id,
     PP_CdmExceptionCode exception_code,
-    uint32 system_code,
+    uint32_t system_code,
     PP_Var error_description) {
   ReportSystemCodeUMA(key_system_, system_code);
 
   StringVar* error_description_string = StringVar::FromPPVar(error_description);
   DCHECK(error_description_string);
-
-  scoped_ptr<CdmPromise> promise = TakePromise(promise_id);
-  DCHECK(promise);
-  if (promise) {
-    promise->reject(PpExceptionTypeToMediaException(exception_code),
-                    system_code,
-                    error_description_string->value());
-  }
+  cdm_promise_adapter_.RejectPromise(
+      promise_id, PpExceptionTypeToMediaException(exception_code), system_code,
+      error_description_string->value());
 }
 
-void ContentDecryptorDelegate::OnSessionMessage(PP_Var web_session_id,
+void ContentDecryptorDelegate::OnSessionMessage(PP_Var session_id,
+                                                PP_CdmMessageType message_type,
                                                 PP_Var message,
-                                                PP_Var destination_url) {
+                                                PP_Var legacy_destination_url) {
   if (session_message_cb_.is_null())
     return;
 
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
+  StringVar* session_id_string = StringVar::FromPPVar(session_id);
+  DCHECK(session_id_string);
 
   ArrayBufferVar* message_array_buffer = ArrayBufferVar::FromPPVar(message);
-  std::vector<uint8> message_vector;
+  std::vector<uint8_t> message_vector;
   if (message_array_buffer) {
-    const uint8* data = static_cast<const uint8*>(message_array_buffer->Map());
+    const uint8_t* data =
+        static_cast<const uint8_t*>(message_array_buffer->Map());
     message_vector.assign(data, data + message_array_buffer->ByteLength());
   }
 
-  StringVar* destination_url_string = StringVar::FromPPVar(destination_url);
-  DCHECK(destination_url_string);
+  StringVar* destination_url_string =
+      StringVar::FromPPVar(legacy_destination_url);
+  if (!destination_url_string) {
+    NOTREACHED();
+    return;
+  }
 
   GURL verified_gurl = GURL(destination_url_string->value());
-  if (!verified_gurl.is_valid() && !verified_gurl.is_empty()) {
-    DLOG(WARNING) << "SessionMessage default_url is invalid : "
+  if (!verified_gurl.is_valid()) {
+    DLOG(WARNING) << "SessionMessage legacy_destination_url is invalid : "
                   << verified_gurl.possibly_invalid_spec();
     verified_gurl = GURL::EmptyGURL();  // Replace invalid destination_url.
   }
 
-  session_message_cb_.Run(
-      web_session_id_string->value(), message_vector, verified_gurl);
+  session_message_cb_.Run(session_id_string->value(),
+                          PpCdmMessageTypeToMediaMessageType(message_type),
+                          message_vector, verified_gurl);
 }
 
 void ContentDecryptorDelegate::OnSessionKeysChange(
-    PP_Var web_session_id,
-    PP_Bool has_additional_usable_key) {
+    PP_Var session_id,
+    PP_Bool has_additional_usable_key,
+    uint32_t key_count,
+    const struct PP_KeyInformation key_information[]) {
   if (session_keys_change_cb_.is_null())
     return;
 
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
+  StringVar* session_id_string = StringVar::FromPPVar(session_id);
+  DCHECK(session_id_string);
 
-  session_keys_change_cb_.Run(web_session_id_string->value(),
-                              PP_ToBool(has_additional_usable_key));
+  media::CdmKeysInfo keys_info;
+  keys_info.reserve(key_count);
+  for (uint32_t i = 0; i < key_count; ++i) {
+    scoped_ptr<media::CdmKeyInformation> key_info(new media::CdmKeyInformation);
+    const auto& info = key_information[i];
+    key_info->key_id.assign(info.key_id, info.key_id + info.key_id_size);
+    key_info->status =
+        PpCdmKeyStatusToCdmKeyInformationKeyStatus(info.key_status);
+    key_info->system_code = info.system_code;
+    keys_info.push_back(key_info.release());
+  }
+
+  session_keys_change_cb_.Run(session_id_string->value(),
+                              PP_ToBool(has_additional_usable_key),
+                              keys_info.Pass());
 }
 
 void ContentDecryptorDelegate::OnSessionExpirationChange(
-    PP_Var web_session_id,
+    PP_Var session_id,
     PP_Time new_expiry_time) {
   if (session_expiration_update_cb_.is_null())
     return;
 
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
+  StringVar* session_id_string = StringVar::FromPPVar(session_id);
+  DCHECK(session_id_string);
 
-  session_expiration_update_cb_.Run(web_session_id_string->value(),
+  session_expiration_update_cb_.Run(session_id_string->value(),
                                     ppapi::PPTimeToTime(new_expiry_time));
 }
 
-void ContentDecryptorDelegate::OnSessionReady(PP_Var web_session_id) {
-  if (session_ready_cb_.is_null())
-    return;
-
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
-
-  session_ready_cb_.Run(web_session_id_string->value());
-}
-
-void ContentDecryptorDelegate::OnSessionClosed(PP_Var web_session_id) {
+void ContentDecryptorDelegate::OnSessionClosed(PP_Var session_id) {
   if (session_closed_cb_.is_null())
     return;
 
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
+  StringVar* session_id_string = StringVar::FromPPVar(session_id);
+  DCHECK(session_id_string);
 
-  session_closed_cb_.Run(web_session_id_string->value());
+  session_closed_cb_.Run(session_id_string->value());
 }
 
-void ContentDecryptorDelegate::OnSessionError(
-    PP_Var web_session_id,
+void ContentDecryptorDelegate::OnLegacySessionError(
+    PP_Var session_id,
     PP_CdmExceptionCode exception_code,
-    uint32 system_code,
+    uint32_t system_code,
     PP_Var error_description) {
   ReportSystemCodeUMA(key_system_, system_code);
 
-  if (session_error_cb_.is_null())
+  if (legacy_session_error_cb_.is_null())
     return;
 
-  StringVar* web_session_id_string = StringVar::FromPPVar(web_session_id);
-  DCHECK(web_session_id_string);
+  StringVar* session_id_string = StringVar::FromPPVar(session_id);
+  DCHECK(session_id_string);
 
   StringVar* error_description_string = StringVar::FromPPVar(error_description);
   DCHECK(error_description_string);
 
-  session_error_cb_.Run(web_session_id_string->value(),
-                        PpExceptionTypeToMediaException(exception_code),
-                        system_code,
-                        error_description_string->value());
+  legacy_session_error_cb_.Run(session_id_string->value(),
+                               PpExceptionTypeToMediaException(exception_code),
+                               system_code, error_description_string->value());
 }
 
 void ContentDecryptorDelegate::DecoderInitializeDone(
@@ -965,7 +952,7 @@ void ContentDecryptorDelegate::DeliverBlock(
   // TODO(tomfinegan): Find a way to take ownership of the shared memory
   // managed by the PPB_Buffer_Dev, and avoid the extra copy.
   scoped_refptr<media::DecoderBuffer> decrypted_buffer(
-      media::DecoderBuffer::CopyFrom(static_cast<uint8*>(mapper.data()),
+      media::DecoderBuffer::CopyFrom(static_cast<uint8_t*>(mapper.data()),
                                      block_info->data_size));
   decrypted_buffer->set_timestamp(
       base::TimeDelta::FromMicroseconds(block_info->tracking_info.timestamp));
@@ -984,13 +971,13 @@ static void BufferNoLongerNeeded(
 
 // Enters |resource|, maps shared memory and returns pointer of mapped data.
 // Returns NULL if any error occurs.
-static uint8* GetMappedBuffer(PP_Resource resource,
-                              scoped_refptr<PPB_Buffer_Impl>* ppb_buffer) {
+static uint8_t* GetMappedBuffer(PP_Resource resource,
+                                scoped_refptr<PPB_Buffer_Impl>* ppb_buffer) {
   EnterResourceNoLock<PPB_Buffer_API> enter(resource, true);
   if (!enter.succeeded())
     return NULL;
 
-  uint8* mapped_data = static_cast<uint8*>(enter.object()->Map());
+  uint8_t* mapped_data = static_cast<uint8_t*>(enter.object()->Map());
   if (!enter.object()->IsMapped() || !mapped_data)
     return NULL;
 
@@ -1034,7 +1021,7 @@ void ContentDecryptorDelegate::DeliverFrame(
   }
 
   scoped_refptr<PPB_Buffer_Impl> ppb_buffer;
-  uint8* frame_data = GetMappedBuffer(decrypted_frame, &ppb_buffer);
+  uint8_t* frame_data = GetMappedBuffer(decrypted_frame, &ppb_buffer);
   if (!frame_data) {
     FreeBuffer(frame_info->tracking_info.buffer_id);
     video_decode_cb.Run(Decryptor::kError, NULL);
@@ -1086,7 +1073,7 @@ void ContentDecryptorDelegate::DeliverSamples(
 
   Decryptor::AudioDecodeCB audio_decode_cb = audio_decode_cb_.ResetAndReturn();
 
-  const Decryptor::AudioBuffers empty_frames;
+  const Decryptor::AudioFrames empty_frames;
 
   Decryptor::Status status =
       PpDecryptResultToMediaDecryptorStatus(sample_info->result);
@@ -1098,7 +1085,7 @@ void ContentDecryptorDelegate::DeliverSamples(
   media::SampleFormat sample_format =
       PpDecryptedSampleFormatToMediaSampleFormat(sample_info->format);
 
-  Decryptor::AudioBuffers audio_frame_list;
+  Decryptor::AudioFrames audio_frame_list;
   if (!DeserializeAudioFrames(audio_frames,
                               sample_info->data_size,
                               sample_format,
@@ -1121,7 +1108,7 @@ void ContentDecryptorDelegate::CancelDecode(Decryptor::StreamType stream_type) {
       audio_input_resource_ = NULL;
       if (!audio_decode_cb_.is_null())
         audio_decode_cb_.ResetAndReturn().Run(Decryptor::kSuccess,
-                                              Decryptor::AudioBuffers());
+                                              Decryptor::AudioFrames());
       break;
     case Decryptor::kVideo:
       // Release the shared memory as it can still be in use by the plugin.
@@ -1210,7 +1197,7 @@ bool ContentDecryptorDelegate::DeserializeAudioFrames(
     PP_Resource audio_frames,
     size_t data_size,
     media::SampleFormat sample_format,
-    Decryptor::AudioBuffers* frames) {
+    Decryptor::AudioFrames* frames) {
   DCHECK(frames);
   EnterResourceNoLock<PPB_Buffer_API> enter(audio_frames, true);
   if (!enter.succeeded())
@@ -1224,7 +1211,7 @@ bool ContentDecryptorDelegate::DeserializeAudioFrames(
   // TODO(jrummell): Pass ownership of data() directly to AudioBuffer to avoid
   // the copy. Since it is possible to get multiple buffers, it would need to be
   // sliced and ref counted appropriately. http://crbug.com/255576.
-  const uint8* cur = static_cast<uint8*>(mapper.data());
+  const uint8_t* cur = static_cast<uint8_t*>(mapper.data());
   size_t bytes_left = data_size;
 
   const int audio_bytes_per_frame =
@@ -1234,8 +1221,7 @@ bool ContentDecryptorDelegate::DeserializeAudioFrames(
     return false;
 
   // Allocate space for the channel pointers given to AudioBuffer.
-  std::vector<const uint8*> channel_ptrs(audio_channel_count_,
-                                         static_cast<const uint8*>(NULL));
+  std::vector<const uint8_t*> channel_ptrs(audio_channel_count_, nullptr);
   do {
     int64 timestamp = 0;
     int64 frame_size = -1;
@@ -1299,7 +1285,7 @@ void ContentDecryptorDelegate::SatisfyAllPendingCallbacksOnError() {
     video_decrypt_cb_.ResetAndReturn().Run(media::Decryptor::kError, NULL);
 
   if (!audio_decode_cb_.is_null()) {
-    const media::Decryptor::AudioBuffers empty_frames;
+    const media::Decryptor::AudioFrames empty_frames;
     audio_decode_cb_.ResetAndReturn().Run(media::Decryptor::kError,
                                           empty_frames);
   }
@@ -1307,27 +1293,7 @@ void ContentDecryptorDelegate::SatisfyAllPendingCallbacksOnError() {
   if (!video_decode_cb_.is_null())
     video_decode_cb_.ResetAndReturn().Run(media::Decryptor::kError, NULL);
 
-  // Reject all outstanding promises.
-  for (PromiseMap::iterator it = promises_.begin(); it != promises_.end();
-       ++it) {
-    it->second->reject(
-        media::MediaKeys::UNKNOWN_ERROR, 0, "Failure calling plugin.");
-  }
-  promises_.clear();
-}
-
-uint32_t ContentDecryptorDelegate::SavePromise(scoped_ptr<CdmPromise> promise) {
-  uint32_t promise_id = next_promise_id_++;
-  promises_.add(promise_id, promise.Pass());
-  return promise_id;
-}
-
-scoped_ptr<CdmPromise> ContentDecryptorDelegate::TakePromise(
-    uint32_t promise_id) {
-  PromiseMap::iterator it = promises_.find(promise_id);
-  if (it == promises_.end())
-    return scoped_ptr<CdmPromise>();
-  return promises_.take_and_erase(it);
+  cdm_promise_adapter_.Clear();
 }
 
 }  // namespace content

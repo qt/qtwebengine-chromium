@@ -8,7 +8,7 @@
 #ifndef GrGLGeometryProcessor_DEFINED
 #define GrGLGeometryProcessor_DEFINED
 
-#include "GrGLProcessor.h"
+#include "GrGLPrimitiveProcessor.h"
 
 class GrGLGPBuilder;
 
@@ -17,34 +17,88 @@ class GrGLGPBuilder;
  * from this class. Since paths don't have vertices, this class is only meant to be used internally
  * by skia, for special cases.
  */
-class GrGLGeometryProcessor : public GrGLProcessor {
+class GrGLGeometryProcessor : public GrGLPrimitiveProcessor {
 public:
-    GrGLGeometryProcessor(const GrBackendProcessorFactory& factory)
-        : INHERITED(factory) {}
+    /* Any general emit code goes in the base class emitCode.  Subclasses override onEmitCode */
+    void emitCode(EmitArgs&) override;
 
-    struct EmitArgs {
-        EmitArgs(GrGLGPBuilder* pb,
-                 const GrGeometryProcessor& gp,
-                 const GrProcessorKey& key,
-                 const char* output,
-                 const char* input,
-                 const TextureSamplerArray& samplers)
-            : fPB(pb), fGP(gp), fKey(key), fOutput(output), fInput(input), fSamplers(samplers) {}
-        GrGLGPBuilder* fPB;
-        const GrGeometryProcessor& fGP;
-        const GrProcessorKey& fKey;
-        const char* fOutput;
-        const char* fInput;
-        const TextureSamplerArray& fSamplers;
+    // By default we use the identity matrix
+    virtual void setTransformData(const GrPrimitiveProcessor&,
+                                  const GrGLProgramDataManager& pdman,
+                                  int index,
+                                  const SkTArray<const GrCoordTransform*, true>& transforms) {
+        this->setTransformDataMatrix(SkMatrix::I(), pdman, index, transforms);
+    }
+
+    // A helper which subclasses can use if needed
+    template <class GeometryProcessor>
+    void setTransformDataHelper(const GrPrimitiveProcessor& primProc,
+                                const GrGLProgramDataManager& pdman,
+                                int index,
+                                const SkTArray<const GrCoordTransform*, true>& transforms) {
+        const GeometryProcessor& gp = primProc.cast<GeometryProcessor>();
+        this->setTransformDataMatrix(gp.localMatrix(), pdman, index, transforms);
+    }
+
+protected:
+    // A helper for subclasses which don't have an explicit local matrix
+    void emitTransforms(GrGLGPBuilder* gp,
+                        const GrShaderVar& posVar,
+                        const char* localCoords,
+                        const TransformsIn& tin,
+                        TransformsOut* tout) {
+        this->emitTransforms(gp, posVar, localCoords, SkMatrix::I(), tin, tout);
+    }
+
+    void emitTransforms(GrGLGPBuilder*,
+                        const GrShaderVar& posVar,
+                        const char* localCoords,
+                        const SkMatrix& localMatrix,
+                        const TransformsIn&,
+                        TransformsOut*);
+
+    struct GrGPArgs {
+        // The variable used by a GP to store its position. It can be
+        // either a vec2 or a vec3 depending on the presence of perspective.
+        GrShaderVar fPositionVar;
     };
-    /**
-     * This is similar to emitCode() in the base class, except it takes a full shader builder.
-     * This allows the effect subclass to emit vertex code.
-     */
-    virtual void emitCode(const EmitArgs&) = 0;
+
+    // Create the correct type of position variable given the CTM
+    void setupPosition(GrGLGPBuilder* pb,
+                       GrGPArgs* gpArgs,
+                       const char* posName,
+                       const SkMatrix& mat = SkMatrix::I());
+
+    static uint32_t ComputePosKey(const SkMatrix& mat) {
+        if (mat.isIdentity()) {
+            return 0x0;
+        } else if (!mat.hasPerspective()) {
+            return 0x01;
+        } else {
+            return 0x02;
+        }
+    }
 
 private:
-    typedef GrGLProcessor INHERITED;
+    void setTransformDataMatrix(const SkMatrix& localMatrix,
+                                const GrGLProgramDataManager& pdman,
+                                int index,
+                                const SkTArray<const GrCoordTransform*, true>& transforms) {
+        SkSTArray<2, Transform, true>& procTransforms = fInstalledTransforms[index];
+        int numTransforms = transforms.count();
+        for (int t = 0; t < numTransforms; ++t) {
+            SkASSERT(procTransforms[t].fHandle.isValid());
+            const SkMatrix& transform = GetTransformMatrix(localMatrix, *transforms[t]);
+            if (!procTransforms[t].fCurrentValue.cheapEqualTo(transform)) {
+                pdman.setSkMatrix(procTransforms[t].fHandle.convertToUniformHandle(), transform);
+                procTransforms[t].fCurrentValue = transform;
+            }
+        }
+    }
+
+    virtual void onEmitCode(EmitArgs&, GrGPArgs*) = 0;
+
+    typedef GrGLPrimitiveProcessor INHERITED;
 };
 
 #endif

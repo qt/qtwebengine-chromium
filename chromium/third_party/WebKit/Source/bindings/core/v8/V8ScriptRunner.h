@@ -27,7 +27,8 @@
 #define V8ScriptRunner_h
 
 #include "bindings/core/v8/V8CacheOptions.h"
-#include "core/fetch/CrossOriginAccessControl.h"
+#include "core/CoreExport.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/TextPosition.h"
 #include "wtf/text/WTFString.h"
@@ -35,29 +36,35 @@
 
 namespace blink {
 
+class CachedMetadataHandler;
+class Resource;
 class ScriptResource;
 class ScriptSourceCode;
 class ExecutionContext;
 class ScriptStreamer;
 
-class V8ScriptRunner {
+class CORE_EXPORT V8ScriptRunner final {
 public:
     // For the following methods, the caller sites have to hold
     // a HandleScope and a ContextScope.
-    static v8::Local<v8::Script> compileScript(const ScriptSourceCode&, v8::Isolate*, AccessControlStatus = SharableCrossOrigin, V8CacheOptions = V8CacheOptionsOff);
-    static v8::Local<v8::Script> compileScript(v8::Handle<v8::String>, const String& fileName, const TextPosition&, ScriptResource*, ScriptStreamer*, v8::Isolate*, AccessControlStatus = SharableCrossOrigin, V8CacheOptions = V8CacheOptionsOff);
-    static v8::Local<v8::Value> runCompiledScript(v8::Isolate*, v8::Handle<v8::Script>, ExecutionContext*);
-    static v8::Local<v8::Value> compileAndRunInternalScript(v8::Handle<v8::String>, v8::Isolate*, const String& = String(), const TextPosition& = TextPosition());
-    static v8::Local<v8::Value> runCompiledInternalScript(v8::Isolate*, v8::Handle<v8::Script>);
-    static v8::Local<v8::Value> callInternalFunction(v8::Handle<v8::Function>, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate*);
-    static v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, ExecutionContext*, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate*);
-    static v8::Local<v8::Value> callAsFunction(v8::Isolate*, v8::Handle<v8::Object>, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[]);
-    static v8::Local<v8::Object> instantiateObject(v8::Isolate*, v8::Handle<v8::ObjectTemplate>);
-    static v8::Local<v8::Object> instantiateObject(v8::Isolate*, v8::Handle<v8::Function>, int argc = 0, v8::Handle<v8::Value> argv[] = 0);
-    static v8::Local<v8::Object> instantiateObjectInDocument(v8::Isolate*, v8::Handle<v8::Function>, ExecutionContext*, int argc = 0, v8::Handle<v8::Value> argv[] = 0);
+    static v8::MaybeLocal<v8::Script> compileScript(const ScriptSourceCode&, v8::Isolate*, AccessControlStatus = SharableCrossOrigin, V8CacheOptions = V8CacheOptionsDefault);
+    static v8::MaybeLocal<v8::Script> compileScript(const String&, const String& fileName, const String& sourceMapUrl, const TextPosition&, v8::Isolate*, CachedMetadataHandler* = nullptr, AccessControlStatus = SharableCrossOrigin, V8CacheOptions = V8CacheOptionsDefault);
+    // CachedMetadataHandler is set when metadata caching is supported. For
+    // normal scripe resources, CachedMetadataHandler is from ScriptResource.
+    // For worker script, ScriptResource is null but CachedMetadataHandler may be
+    // set. When ScriptStreamer is set, ScriptResource must be set.
+    static v8::MaybeLocal<v8::Script> compileScript(v8::Local<v8::String>, const String& fileName, const String& sourceMapUrl, const TextPosition&, v8::Isolate*, ScriptResource* = nullptr, ScriptStreamer* = nullptr, CachedMetadataHandler* = nullptr, AccessControlStatus = SharableCrossOrigin, V8CacheOptions = V8CacheOptionsDefault, bool isInternalScript = false);
+    static v8::MaybeLocal<v8::Value> runCompiledScript(v8::Isolate*, v8::Local<v8::Script>, ExecutionContext*);
+    static v8::MaybeLocal<v8::Value> compileAndRunInternalScript(v8::Local<v8::String>, v8::Isolate*, const String& = String(), const TextPosition& = TextPosition());
+    static v8::MaybeLocal<v8::Value> runCompiledInternalScript(v8::Isolate*, v8::Local<v8::Script>);
+    static v8::MaybeLocal<v8::Value> callInternalFunction(v8::Local<v8::Function>, v8::Local<v8::Value> receiver, int argc, v8::Local<v8::Value> info[], v8::Isolate*);
+    static v8::MaybeLocal<v8::Value> callFunction(v8::Local<v8::Function>, ExecutionContext*, v8::Local<v8::Value> receiver, int argc, v8::Local<v8::Value> info[], v8::Isolate*);
+    static v8::MaybeLocal<v8::Object> instantiateObject(v8::Isolate*, v8::Local<v8::ObjectTemplate>);
+    static v8::MaybeLocal<v8::Object> instantiateObject(v8::Isolate*, v8::Local<v8::Function>, int argc = 0, v8::Local<v8::Value> argv[] = 0);
+    static v8::MaybeLocal<v8::Object> instantiateObjectInDocument(v8::Isolate*, v8::Local<v8::Function>, ExecutionContext*, int argc = 0, v8::Local<v8::Value> argv[] = 0);
 
-    static unsigned tagForParserCache();
-    static unsigned tagForCodeCache();
+    static unsigned tagForParserCache(CachedMetadataHandler*);
+    static unsigned tagForCodeCache(CachedMetadataHandler*);
 };
 
 } // namespace blink

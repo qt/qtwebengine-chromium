@@ -296,7 +296,7 @@ void vp8_setup_key_frame(VP8_COMP *cpi)
 
     vp8_default_coef_probs(& cpi->common);
 
-    vpx_memcpy(cpi->common.fc.mvc, vp8_default_mv_context, sizeof(vp8_default_mv_context));
+    memcpy(cpi->common.fc.mvc, vp8_default_mv_context, sizeof(vp8_default_mv_context));
     {
         int flag[2] = {1, 1};
         vp8_build_component_cost_table(cpi->mb.mvcost, (const MV_CONTEXT *) cpi->common.fc.mvc, flag);
@@ -305,9 +305,9 @@ void vp8_setup_key_frame(VP8_COMP *cpi)
     /* Make sure we initialize separate contexts for altref,gold, and normal.
      * TODO shouldn't need 3 different copies of structure to do this!
      */
-    vpx_memcpy(&cpi->lfc_a, &cpi->common.fc, sizeof(cpi->common.fc));
-    vpx_memcpy(&cpi->lfc_g, &cpi->common.fc, sizeof(cpi->common.fc));
-    vpx_memcpy(&cpi->lfc_n, &cpi->common.fc, sizeof(cpi->common.fc));
+    memcpy(&cpi->lfc_a, &cpi->common.fc, sizeof(cpi->common.fc));
+    memcpy(&cpi->lfc_g, &cpi->common.fc, sizeof(cpi->common.fc));
+    memcpy(&cpi->lfc_n, &cpi->common.fc, sizeof(cpi->common.fc));
 
     cpi->common.filter_level = cpi->common.base_qindex * 3 / 8 ;
 
@@ -708,7 +708,13 @@ static void calc_pframe_target_size(VP8_COMP *cpi)
                     Adjustment = (cpi->this_frame_target - min_frame_target);
 
                 if (cpi->frames_since_golden == (cpi->current_gf_interval >> 1))
-                    cpi->this_frame_target += ((cpi->current_gf_interval - 1) * Adjustment);
+                {
+                    Adjustment = (cpi->current_gf_interval - 1) * Adjustment;
+                    // Limit adjustment to 10% of current target.
+                    if (Adjustment > (10 * cpi->this_frame_target) / 100)
+                        Adjustment = (10 * cpi->this_frame_target) / 100;
+                    cpi->this_frame_target += Adjustment;
+                }
                 else
                     cpi->this_frame_target -= Adjustment;
             }

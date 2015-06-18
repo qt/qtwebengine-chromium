@@ -32,13 +32,7 @@ class QuicDispatcherPeer {
       QuicDispatcher* dispatcher,
       QuicDispatcher::PacketWriterFactory* packet_writer_factory);
 
-  static QuicEpollConnectionHelper* GetHelper(QuicDispatcher* dispatcher);
-
-  static QuicConnection* CreateQuicConnection(
-      QuicDispatcher* dispatcher,
-      QuicConnectionId connection_id,
-      const IPEndPoint& server,
-      const IPEndPoint& client);
+  static QuicConnectionHelperInterface* GetHelper(QuicDispatcher* dispatcher);
 
   static QuicDispatcher::WriteBlockedList* GetWriteBlockedList(
       QuicDispatcher* dispatcher);

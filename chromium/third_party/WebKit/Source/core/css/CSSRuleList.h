@@ -35,7 +35,7 @@ class CSSStyleSheet;
 
 class CSSRuleList : public NoBaseWillBeGarbageCollectedFinalized<CSSRuleList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CSSRuleList);
     WTF_MAKE_NONCOPYABLE(CSSRuleList);
 public:
     virtual ~CSSRuleList();
@@ -50,7 +50,7 @@ public:
 
     virtual CSSStyleSheet* styleSheet() const = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     CSSRuleList() { }
@@ -68,11 +68,11 @@ public:
     virtual void deref() override;
 #endif
 
-    WillBeHeapVector<RefPtrWillBeMember<CSSRule> >& rules() { return m_rules; }
+    WillBeHeapVector<RefPtrWillBeMember<CSSRule>>& rules() { return m_rules; }
 
     virtual CSSStyleSheet* styleSheet() const override { return 0; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     StaticCSSRuleList();
@@ -81,7 +81,7 @@ private:
     virtual unsigned length() const override { return m_rules.size(); }
     virtual CSSRule* item(unsigned index) const override { return index < m_rules.size() ? m_rules[index].get() : 0; }
 
-    WillBeHeapVector<RefPtrWillBeMember<CSSRule> > m_rules;
+    WillBeHeapVector<RefPtrWillBeMember<CSSRule>> m_rules;
 #if !ENABLE(OILPAN)
     unsigned m_refCount;
 #endif
@@ -100,7 +100,7 @@ public:
     virtual void deref() override { m_rule->deref(); }
 #endif
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_rule);
         CSSRuleList::trace(visitor);

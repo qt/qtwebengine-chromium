@@ -24,11 +24,11 @@
  */
 
 #include "config.h"
-#include "public/platform/WebIDBKeyRange.h"
+#include "public/platform/modules/indexeddb/WebIDBKeyRange.h"
 
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyRange.h"
-#include "public/platform/WebIDBKey.h"
+#include "public/platform/modules/indexeddb/WebIDBKey.h"
 
 namespace blink {
 
@@ -72,22 +72,6 @@ bool WebIDBKeyRange::lowerOpen() const
 bool WebIDBKeyRange::upperOpen() const
 {
     return m_private.get() && m_private->upperOpen();
-}
-
-WebIDBKeyRange::WebIDBKeyRange(IDBKeyRange* value)
-    : m_private(value)
-{
-}
-
-WebIDBKeyRange& WebIDBKeyRange::operator=(IDBKeyRange* value)
-{
-    m_private = value;
-    return *this;
-}
-
-WebIDBKeyRange::operator IDBKeyRange*() const
-{
-    return m_private.get();
 }
 
 } // namespace blink

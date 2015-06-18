@@ -11,7 +11,7 @@
 #include "base/win/win_util.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_win.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/win/dpi.h"
 
 namespace ui {
@@ -156,6 +156,10 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
     // sequences.
     case WM_DEADCHAR:
     case WM_KEYUP:
+    // The WM_SYSDEADCHAR message is posted to a window with keyboard focus
+    // when the WM_SYSKEYDOWN message is translated by the TranslateMessage
+    // function. It specifies the character code of the system dead key.
+    case WM_SYSDEADCHAR:
     case WM_SYSKEYUP:
       return ET_KEY_RELEASED;
     case WM_LBUTTONDBLCLK:
@@ -255,7 +259,7 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return KeyboardCodeForWindowsKeyCode(static_cast<WORD>(native_event.wParam));
 }
 
-const char* CodeFromNative(const base::NativeEvent& native_event) {
+DomCode CodeFromNative(const base::NativeEvent& native_event) {
   const uint16 scan_code = GetScanCodeFromLParam(native_event.lParam);
   return CodeForWindowsScanCode(scan_code);
 }
@@ -297,10 +301,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
-}
-
-void IncrementTouchIdRefCount(const base::NativeEvent& event) {
-  NOTIMPLEMENTED();
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -389,7 +389,7 @@ bool IsMouseEventFromTouch(UINT message) {
 
 // Conversion scan_code and LParam each other.
 // uint16 scan_code:
-//     ui/events/keycodes/dom4/keycode_converter_data.h
+//     ui/events/keycodes/dom/keycode_converter_data.inc
 // 0 - 15bits: represetns the scan code.
 // 28 - 30 bits (0xE000): represents whether this is an extended key or not.
 //

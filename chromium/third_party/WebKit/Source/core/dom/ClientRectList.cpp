@@ -27,11 +27,7 @@
 #include "config.h"
 #include "core/dom/ClientRectList.h"
 
-#include "core/dom/ClientRect.h"
-
 namespace blink {
-
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ClientRectList);
 
 ClientRectList::ClientRectList()
 {
@@ -41,7 +37,7 @@ ClientRectList::ClientRectList(const Vector<FloatQuad>& quads)
 {
     m_list.reserveInitialCapacity(quads.size());
     for (size_t i = 0; i < quads.size(); ++i)
-        m_list.append(ClientRect::create(quads[i].enclosingBoundingBox()));
+        m_list.append(ClientRect::create(quads[i].boundingBox()));
 }
 
 unsigned ClientRectList::length() const
@@ -51,16 +47,13 @@ unsigned ClientRectList::length() const
 
 ClientRect* ClientRectList::item(unsigned index)
 {
-    if (index >= m_list.size()) {
-        // FIXME: this should throw an exception.
-        // ec = IndexSizeError;
+    if (index >= m_list.size())
         return 0;
-    }
 
     return m_list[index].get();
 }
 
-void ClientRectList::trace(Visitor* visitor)
+DEFINE_TRACE(ClientRectList)
 {
     visitor->trace(m_list);
 }

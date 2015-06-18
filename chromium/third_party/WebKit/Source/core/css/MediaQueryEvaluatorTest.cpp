@@ -41,12 +41,30 @@ TestCase screenTestCases[] = {
     {"(resolution: 1dppx)", 0},
     {"(orientation: portrait)", 1},
     {"(orientation: landscape)", 0},
+    {"(orientation: url(portrait))", 0},
+    {"(orientation: #portrait)", 0},
+    {"(orientation: @portrait)", 0},
+    {"(orientation: 'portrait')", 0},
+    {"(orientation: @junk portrait)", 0},
+    {"screen and (orientation: @portrait) and (max-width: 1000px)", 0},
+    {"screen and (orientation: @portrait), (max-width: 1000px)", 1},
     {"tv and (scan: progressive)", 0},
     {"(pointer: coarse)", 0},
     {"(pointer: fine)", 1},
     {"(hover: hover)", 1},
     {"(hover: on-demand)", 0},
     {"(hover: none)", 0},
+    {"(display-mode)", 0},
+    {"(display-mode: fullscreen)", 0},
+    {"(display-mode: standalone)", 0},
+    {"(display-mode: minimal-ui)", 0},
+    {"(display-mode: browser)", 1},
+    {"(display-mode: min-browser)", 0},
+    {"(display-mode: url(browser))", 0},
+    {"(display-mode: #browser)", 0},
+    {"(display-mode: @browser)", 0},
+    {"(display-mode: 'browser')", 0},
+    {"(display-mode: @junk browser)", 0},
     {0, 0} // Do not remove the terminator line.
 };
 
@@ -107,6 +125,7 @@ TEST(MediaQueryEvaluatorTest, Cached)
     data.threeDEnabled = true;
     data.mediaType = MediaTypeNames::screen;
     data.strictMode = true;
+    data.displayMode = WebDisplayModeBrowser;
     RefPtr<MediaValues> mediaValues = MediaValuesCached::create(data);
 
     MediaQueryEvaluator mediaQueryEvaluator(*mediaValues);
@@ -133,13 +152,12 @@ TEST(MediaQueryEvaluatorTest, Dynamic)
 TEST(MediaQueryEvaluatorTest, DynamicNoView)
 {
     OwnPtr<DummyPageHolder> pageHolder = DummyPageHolder::create(IntSize(500, 500));
-    RefPtrWillBePersistent<FrameView> view = pageHolder->frame().view();
-    pageHolder->frame().setView(nullptr);
-    MediaQueryEvaluator mediaQueryEvaluator(&pageHolder->frame());
-    RefPtrWillBePersistent<MediaQuerySet> querySet = MediaQuerySet::create("foobar");
-    bool output = false;
-    ASSERT_EQ(output, mediaQueryEvaluator.eval(querySet.get()));
-    pageHolder->frame().setView(view);
+    RefPtrWillBeRawPtr<LocalFrame> frame = &pageHolder->frame();
+    pageHolder.clear();
+    ASSERT_EQ(nullptr, frame->view());
+    MediaQueryEvaluator mediaQueryEvaluator(frame.get());
+    RefPtrWillBeRawPtr<MediaQuerySet> querySet = MediaQuerySet::create("foobar");
+    EXPECT_FALSE(mediaQueryEvaluator.eval(querySet.get()));
 }
 
 } // namespace

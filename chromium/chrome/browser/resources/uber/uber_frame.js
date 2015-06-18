@@ -22,12 +22,13 @@ cr.define('uber_frame', function() {
       navigationItems[i].addEventListener('click', onNavItemClicked);
     }
 
+    cr.ui.FocusOutlineManager.forDocument(this);
+
     window.addEventListener('message', handleWindowMessage);
     uber.invokeMethodOnParent('navigationControlsLoaded');
 
     document.documentElement.addEventListener('mousewheel', onMouseWheel);
     document.documentElement.addEventListener('mousedown', onMouseDown);
-    cr.ui.FocusManager.disableMouseFocusOnButtons();
   }
 
   /**
@@ -93,11 +94,10 @@ cr.define('uber_frame', function() {
    * @param {Element} newSelection The item to be selected.
    */
   function setSelection(newSelection) {
-    var lastSelectedNavItem = getSelectedNavItem();
-    if (lastSelectedNavItem !== newSelection) {
-      newSelection.classList.add('selected');
-      if (lastSelectedNavItem)
-        lastSelectedNavItem.classList.remove('selected');
+    var items = document.querySelectorAll('li');
+    for (var i = 0; i < items.length; ++i) {
+      items[i].classList.toggle('selected', items[i] == newSelection);
+      items[i].setAttribute('aria-selected', items[i] == newSelection);
     }
   }
 
@@ -133,8 +133,7 @@ cr.define('uber_frame', function() {
    */
   function setContentChanging(enabled) {
     assert(isRTL());
-    document.documentElement.classList[enabled ? 'add' : 'remove'](
-        'changing-content');
+    document.documentElement.classList.toggle('changing-content', enabled);
   }
 
   /**

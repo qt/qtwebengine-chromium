@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/speech_recognition_session_preamble.h"
 #include "content/public/common/speech_recognition_grammar.h"
 #include "content/public/common/speech_recognition_result.h"
 
@@ -59,6 +60,9 @@ class SpeechRecognitionEngine {
     std::string origin_url;
     int audio_sample_rate;
     int audio_num_bits_per_sample;
+    std::string auth_token;
+    std::string auth_scope;
+    scoped_refptr<SpeechRecognitionSessionPreamble> preamble;
   };
 
   virtual ~SpeechRecognitionEngine() {}

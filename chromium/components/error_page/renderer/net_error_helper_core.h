@@ -45,8 +45,9 @@ class NetErrorHelperCore {
   enum Button {
     NO_BUTTON,
     RELOAD_BUTTON,
-    LOAD_STALE_BUTTON,
+    SHOW_SAVED_COPY_BUTTON,
     MORE_BUTTON,
+    EASTER_EGG,
   };
 
   // The Delegate handles all interaction with the RenderView, WebFrame, and
@@ -59,7 +60,7 @@ class NetErrorHelperCore {
         bool is_failed_post,
         scoped_ptr<error_page::ErrorPageParams> params,
         bool* reload_button_shown,
-        bool* load_stale_button_shown,
+        bool* show_saved_copy_button_shown,
         std::string* html) const = 0;
 
     // Loads the given HTML in the main frame for use as an error page.
@@ -242,6 +243,9 @@ class NetErrorHelperCore {
   // True if the auto-reload timer would be running but is waiting for an
   // offline->online network transition.
   bool auto_reload_paused_;
+
+  // Whether an auto-reload-initiated Reload() attempt is in flight.
+  bool auto_reload_in_flight_;
 
   // True if there is an uncommitted-but-started load, error page or not. This
   // is used to inhibit starting auto-reload when an error page finishes, in

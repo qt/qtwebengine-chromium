@@ -17,6 +17,7 @@
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_text_utils.h"
 
 #if defined(OS_MACOSX) && __OBJC__
 @class BrowserAccessibilityCocoa;
@@ -56,15 +57,9 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   // Called after the object is first initialized and again every time
   // its data changes.
-  virtual void OnDataChanged();
+  virtual void OnDataChanged() {}
 
-  // Called after an atomic update to the tree finished and this object
-  // was created or changed in this update.
-  virtual void OnUpdateFinished() {}
-
-  // Returns true if this is a native platform-specific object, vs a
-  // cross-platform generic object.
-  virtual bool IsNative() const;
+  virtual void OnSubtreeWillBeDeleted() {}
 
   // Called when the location changed.
   virtual void OnLocationChanged() {}
@@ -87,6 +82,11 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Return a pointer to the child at the given index, or NULL for an
   // invalid index. Returns NULL if PlatformIsLeaf() returns true.
   BrowserAccessibility* PlatformGetChild(uint32 child_index) const;
+
+  // Returns true if an ancestor of this node (not including itself) is a
+  // leaf node, meaning that this node is not actually exposed to the
+  // platform.
+  bool PlatformIsChildOfLeaf() const;
 
   // Return the previous sibling of this object, or NULL if it's the first
   // child of its parent.
@@ -111,6 +111,19 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Same as GetLocalBoundsForRange, in screen coordinates. Only valid when
   // the role is WebAXRoleStaticText.
   gfx::Rect GetGlobalBoundsForRange(int start, int len) const;
+
+  // Searches in the given text and from the given offset until the start of
+  // the next or previous word is found and returns its position.
+  // In case there is no word boundary before or after the given offset, it
+  // returns one past the last character, i.e. the text's length.
+  // If the given offset is already at the start of a word, returns the start
+  // of the next word if the search is forwards and the given offset if it is
+  // backwards.
+  // If the start offset is equal to -1 and the search is in the forwards
+  // direction, returns the start boundary of the first word.
+  // Start offsets that are not in the range -1 to text length are invalid.
+  int GetWordStartBoundary(
+      int start, ui::TextBoundaryDirection direction) const;
 
   // Returns the deepest descendant that contains the specified point
   // (in global screen coordinates).
@@ -140,10 +153,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   BrowserAccessibilityManager* manager() const { return manager_; }
   bool instance_active() const { return node_ != NULL; }
   ui::AXNode* node() const { return node_; }
-  const std::string& name() const { return name_; }
-  const std::string& value() const { return value_; }
-  void set_name(const std::string& name) { name_ = name; }
-  void set_value(const std::string& value) { value_ = value; }
 
   // These access the internal accessibility tree, which doesn't necessarily
   // reflect the accessibility tree that should be exposed on each platform.
@@ -163,6 +172,11 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   typedef base::StringPairs HtmlAttributes;
   const HtmlAttributes& GetHtmlAttributes() const;
+
+  // Returns true if this is a native platform-specific object, vs a
+  // cross-platform generic object. Don't call ToBrowserAccessibilityXXX if
+  // IsNative returns false.
+  virtual bool IsNative() const;
 
 #if defined(OS_MACOSX) && __OBJC__
   BrowserAccessibilityCocoa* ToBrowserAccessibilityCocoa();
@@ -214,9 +228,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   bool GetIntListAttribute(ui::AXIntListAttribute attribute,
                            std::vector<int32>* value) const;
 
-  void SetStringAttribute(ui::AXStringAttribute attribute,
-                          const std::string& value);
-
   // Retrieve the value of a html attribute from the attribute map and
   // returns true if found.
   bool GetHtmlAttribute(const char* attr, base::string16* value) const;
@@ -241,11 +252,17 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Returns true if the bit corresponding to the given state enum is 1.
   bool HasState(ui::AXState state_enum) const;
 
+  // Returns true if this node is an cell or an table header.
+  bool IsCellOrTableHeaderRole() const;
+
   // Returns true if this node is an editable text field of any kind.
   bool IsEditableText() const;
 
-  // Append the text from this node and its children.
-  std::string GetTextRecursive() const;
+  // True if this is a web area, and its grandparent is a presentational iframe.
+  bool IsWebAreaForPresentationalIframe() const;
+
+  // Is any control, like a button, text field, etc.
+  bool IsControl() const;
 
  protected:
   BrowserAccessibility();
@@ -261,8 +278,15 @@ class CONTENT_EXPORT BrowserAccessibility {
   // including this object if it's static text.
   int GetStaticTextLenRecursive() const;
 
-  std::string name_;
-  std::string value_;
+  // Similar to GetParent(), but includes nodes that are the host of a
+  // subtree rather than skipping over them - because they contain important
+  // bounds offsets.
+  BrowserAccessibility* GetParentForBoundsCalculation() const;
+
+  // Convert the bounding rectangle of an element (which is relative to
+  // its nearest scrollable ancestor) to local bounds (which are relative
+  // to the top of the web accessibility tree).
+  gfx::Rect ElementBoundsToLocalBounds(gfx::Rect bounds) const;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibility);
 };

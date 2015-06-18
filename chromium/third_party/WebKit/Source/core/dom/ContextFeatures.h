@@ -27,6 +27,8 @@
 #ifndef ContextFeatures_h
 #define ContextFeatures_h
 
+#include "core/CoreExport.h"
+#include "core/page/Page.h"
 #include "platform/RefCountedSupplement.h"
 
 namespace blink {
@@ -48,7 +50,6 @@ public:
     enum FeatureType {
         PagePopup = 0,
         MutationEvents,
-        PushState,
         FeatureTypeSize // Should be the last entry.
     };
 
@@ -58,13 +59,12 @@ public:
 
     static bool pagePopupEnabled(Document*);
     static bool mutationEventsEnabled(Document*);
-    static bool pushStateEnabled(Document*);
 
     bool isEnabled(Document*, FeatureType, bool) const;
     void urlDidChange(Document*);
 
 #if ENABLE(OILPAN)
-    virtual void trace(Visitor* visitor) override { HeapSupplement<Page>::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { HeapSupplement<Page>::trace(visitor); }
 #endif
 
 private:
@@ -76,7 +76,7 @@ private:
 };
 
 class ContextFeaturesClient {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ContextFeaturesClient);
 public:
     static PassOwnPtr<ContextFeaturesClient> empty();
 
@@ -85,7 +85,7 @@ public:
     virtual void urlDidChange(Document*) { }
 };
 
-void provideContextFeaturesTo(Page&, PassOwnPtr<ContextFeaturesClient>);
+CORE_EXPORT void provideContextFeaturesTo(Page&, PassOwnPtr<ContextFeaturesClient>);
 void provideContextFeaturesToDocumentFrom(Document&, Page&);
 
 inline PassRefPtrWillBeRawPtr<ContextFeatures> ContextFeatures::create(PassOwnPtr<ContextFeaturesClient> client)

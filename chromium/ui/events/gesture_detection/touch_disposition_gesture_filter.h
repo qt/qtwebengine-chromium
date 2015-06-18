@@ -42,8 +42,10 @@ class GESTURE_DETECTION_EXPORT TouchDispositionGestureFilter {
   };
   PacketResult OnGesturePacket(const GestureEventDataPacket& packet);
 
-  // To be called upon receipt of *all* touch event acks.
-  void OnTouchEventAck(bool event_consumed);
+  // One of |OnTouchEventAckForQueue*| must be called upon receipt of
+  // every touch event ack.
+  void OnTouchEventAckForQueueFront(bool event_consumed);
+  void OnTouchEventAckForQueueBack(bool event_consumed);
 
   // Whether there are any active gesture sequences still queued in the filter.
   bool IsEmpty() const;
@@ -66,14 +68,18 @@ class GESTURE_DETECTION_EXPORT TouchDispositionGestureFilter {
     // Returns true iff the gesture should be dropped.
     bool Filter(EventType type);
 
+    // Whether an event of |type| has been filtered from the current sequence.
+    bool HasFilteredGestureType(EventType type) const;
+
    private:
     // True iff the sequence has had any touch down event consumed.
     bool start_touch_consumed_;
     // True iff the most recently ack'ed touch event was consumed.
     bool current_touch_consumed_;
-    // If the previous gesture of a given type was dropped instead of being
-    // dispatched, its type will occur in this set.
+    // Indicates whether the previous gesture of a given type was dropped.
     BitSet32 last_gesture_of_type_dropped_;
+    // Indicates whether *any* previous gesture of a given type was dropped.
+    BitSet32 any_gesture_of_type_dropped_;
   };
 
   void FilterAndSendPacket(const GestureEventDataPacket& packet);
@@ -83,6 +89,7 @@ class GESTURE_DETECTION_EXPORT TouchDispositionGestureFilter {
   void CancelFlingIfNecessary(const GestureEventDataPacket& packet);
   void EndScrollIfNecessary(const GestureEventDataPacket& packet);
   void PopGestureSequence();
+  void SendAckedEvents();
   GestureSequence& Head();
   GestureSequence& Tail();
 

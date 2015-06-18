@@ -24,7 +24,7 @@ void callback(const v8::FunctionCallbackInfo<v8::Value>& info) { }
 
 class Function : public ScriptFunction {
 public:
-    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, String* value)
+    static v8::Local<v8::Function> createFunction(ScriptState* scriptState, String* value)
     {
         Function* self = new Function(scriptState, value);
         return self->bindToV8Function();
@@ -40,7 +40,7 @@ private:
     virtual ScriptValue call(ScriptValue value) override
     {
         ASSERT(!value.isEmpty());
-        *m_value = toCoreString(value.v8Value()->ToString());
+        *m_value = toCoreString(value.v8Value()->ToString(scriptState()->context()).ToLocalChecked());
         return value;
     }
 
@@ -75,12 +75,12 @@ TEST_F(ScriptPromiseResolverTest, construct)
 {
     ASSERT_FALSE(executionContext()->activeDOMObjectsAreStopped());
     ScriptState::Scope scope(scriptState());
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState());
+    ScriptPromiseResolver::create(scriptState());
 }
 
 TEST_F(ScriptPromiseResolverTest, resolve)
 {
-    RefPtr<ScriptPromiseResolver> resolver;
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = nullptr;
     ScriptPromise promise;
     {
         ScriptState::Scope scope(scriptState());
@@ -128,7 +128,7 @@ TEST_F(ScriptPromiseResolverTest, resolve)
 
 TEST_F(ScriptPromiseResolverTest, reject)
 {
-    RefPtr<ScriptPromiseResolver> resolver;
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = nullptr;
     ScriptPromise promise;
     {
         ScriptState::Scope scope(scriptState());
@@ -176,7 +176,7 @@ TEST_F(ScriptPromiseResolverTest, reject)
 
 TEST_F(ScriptPromiseResolverTest, stop)
 {
-    RefPtr<ScriptPromiseResolver> resolver;
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = nullptr;
     ScriptPromise promise;
     {
         ScriptState::Scope scope(scriptState());
@@ -204,6 +204,7 @@ TEST_F(ScriptPromiseResolverTest, stop)
     EXPECT_EQ(String(), onRejected);
 }
 
+#if !ENABLE(OILPAN)
 TEST_F(ScriptPromiseResolverTest, keepAliveUntilResolved)
 {
     RefPtr<ScriptPromiseResolver> resolver;
@@ -266,10 +267,11 @@ TEST_F(ScriptPromiseResolverTest, suspend)
     executionContext()->stopActiveDOMObjects();
     EXPECT_EQ(1, resolver->refCount());
 }
+#endif
 
 TEST_F(ScriptPromiseResolverTest, resolveVoid)
 {
-    RefPtr<ScriptPromiseResolver> resolver;
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = nullptr;
     ScriptPromise promise;
     {
         ScriptState::Scope scope(scriptState());
@@ -293,7 +295,7 @@ TEST_F(ScriptPromiseResolverTest, resolveVoid)
 
 TEST_F(ScriptPromiseResolverTest, rejectVoid)
 {
-    RefPtr<ScriptPromiseResolver> resolver;
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = nullptr;
     ScriptPromise promise;
     {
         ScriptState::Scope scope(scriptState());

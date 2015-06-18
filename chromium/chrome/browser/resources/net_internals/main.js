@@ -12,7 +12,6 @@ var EventTypeNames = null;
 var EventPhase = null;
 var EventSourceType = null;
 var EventSourceTypeNames = null;
-var LogLevelType = null;
 var ClientInfo = null;
 var NetError = null;
 var QuicError = null;
@@ -21,6 +20,8 @@ var LoadFlag = null;
 var CertStatusFlag = null;
 var LoadState = null;
 var AddressFamily = null;
+var SdchProblemCode = null;
+var DataReductionProxyBypassEventType = null;
 
 /**
  * Dictionary of all constants, used for saving log files.
@@ -192,20 +193,15 @@ var MainView = (function() {
       addTab(SocketsView);
       addTab(SpdyView);
       addTab(QuicView);
+      addTab(SdchView);
       addTab(HttpCacheView);
       addTab(ModulesView);
-      addTab(TestView);
-      addTab(CrosLogVisualizerView);
       addTab(HSTSView);
-      addTab(LogsView);
       addTab(BandwidthView);
       addTab(PrerenderView);
       addTab(CrosView);
 
-      this.tabSwitcher_.showMenuItem(LogsView.TAB_ID, cr.isChromeOS);
       this.tabSwitcher_.showMenuItem(CrosView.TAB_ID, cr.isChromeOS);
-      this.tabSwitcher_.showMenuItem(CrosLogVisualizerView.TAB_ID,
-                                     cr.isChromeOS);
     },
 
     /**
@@ -303,7 +299,6 @@ ConstantsObserver.prototype.onReceivedConstants = function(receivedConstants) {
   EventPhase = Constants.logEventPhase;
   EventSourceType = Constants.logSourceType;
   EventSourceTypeNames = makeInverseMap(EventSourceType);
-  LogLevelType = Constants.logLevelType;
   ClientInfo = Constants.clientInfo;
   LoadFlag = Constants.loadFlag;
   NetError = Constants.netError;
@@ -311,6 +306,11 @@ ConstantsObserver.prototype.onReceivedConstants = function(receivedConstants) {
   QuicRstStreamError = Constants.quicRstStreamError;
   AddressFamily = Constants.addressFamily;
   LoadState = Constants.loadState;
+  SdchProblemCode = Constants.sdchProblemCode;
+  DataReductionProxyBypassEventType =
+      Constants.dataReductionProxyBypassEventType;
+  DataReductionProxyBypassActionType =
+      Constants.dataReductionProxyBypassActionType;
   // certStatusFlag may not be present when loading old log Files
   if (typeof(Constants.certStatusFlag) == 'object')
     CertStatusFlag = Constants.certStatusFlag;
@@ -331,7 +331,6 @@ function areValidConstants(receivedConstants) {
          typeof(receivedConstants.clientInfo) == 'object' &&
          typeof(receivedConstants.logEventPhase) == 'object' &&
          typeof(receivedConstants.logSourceType) == 'object' &&
-         typeof(receivedConstants.logLevelType) == 'object' &&
          typeof(receivedConstants.loadFlag) == 'object' &&
          typeof(receivedConstants.netError) == 'object' &&
          typeof(receivedConstants.addressFamily) == 'object' &&
@@ -385,4 +384,16 @@ function addressFamilyToString(family) {
   // All the address family start with ADDRESS_FAMILY_*.
   // Strip that prefix since it is redundant and only clutters the output.
   return str.replace(/^ADDRESS_FAMILY_/, '');
+}
+
+/**
+ * Returns the name for sdchProblemCode.
+ *
+ * Example: sdchProblemCodeToString(5) should return
+ * "DECODE_BODY_ERROR".
+ * @param {number} sdchProblemCode The SDCH problem code.
+ * @return {string} The name of the given problem code.
+ */
+function sdchProblemCodeToString(sdchProblemCode) {
+  return getKeyWithValue(SdchProblemCode, sdchProblemCode);
 }

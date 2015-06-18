@@ -9,9 +9,21 @@
 #include "base/debug/stack_trace.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "mojo/application/public/cpp/application_delegate.h"
+#include "mojo/application/public/cpp/application_impl.h"
 #include "mojo/common/message_pump_mojo.h"
-#include "mojo/public/cpp/application/application_delegate.h"
-#include "mojo/public/cpp/application/application_impl.h"
+
+int g_argc;
+const char* const* g_argv;
+#if !defined(OS_WIN)
+extern "C" {
+__attribute__((visibility("default"))) void InitCommandLineArgs(
+    int argc, const char* const* argv) {
+  g_argc = argc;
+  g_argv = argv;
+}
+}
+#endif
 
 namespace mojo {
 
@@ -29,6 +41,10 @@ ApplicationRunnerChromium::ApplicationRunnerChromium(
 
 ApplicationRunnerChromium::~ApplicationRunnerChromium() {}
 
+void ApplicationRunnerChromium::InitBaseCommandLine() {
+  base::CommandLine::Init(g_argc, g_argv);
+}
+
 void ApplicationRunnerChromium::set_message_loop_type(
     base::MessageLoop::Type type) {
   DCHECK_NE(base::MessageLoop::TYPE_CUSTOM, type);
@@ -37,14 +53,13 @@ void ApplicationRunnerChromium::set_message_loop_type(
   message_loop_type_ = type;
 }
 
-MojoResult ApplicationRunnerChromium::Run(MojoHandle shell_handle) {
+MojoResult ApplicationRunnerChromium::Run(
+    MojoHandle application_request_handle) {
   DCHECK(!has_run_);
   has_run_ = true;
 
-  base::CommandLine::Init(0, NULL);
-#if !defined(COMPONENT_BUILD)
+  InitBaseCommandLine();
   base::AtExitManager at_exit;
-#endif
 
 #ifndef NDEBUG
   base::debug::EnableInProcessStackDumping();
@@ -58,7 +73,8 @@ MojoResult ApplicationRunnerChromium::Run(MojoHandle shell_handle) {
       loop.reset(new base::MessageLoop(message_loop_type_));
 
     ApplicationImpl impl(delegate_.get(),
-                         MakeScopedHandle(MessagePipeHandle(shell_handle)));
+                         MakeRequest<Application>(MakeScopedHandle(
+                             MessagePipeHandle(application_request_handle))));
     loop->Run();
   }
   delegate_.reset();

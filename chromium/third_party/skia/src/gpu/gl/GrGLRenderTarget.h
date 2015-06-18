@@ -13,7 +13,7 @@
 #include "GrRenderTarget.h"
 #include "SkScalar.h"
 
-class GrGpuGL;
+class GrGLGpu;
 
 class GrGLRenderTarget : public GrRenderTarget {
 public:
@@ -22,15 +22,13 @@ public:
     enum { kUnresolvableFBOID = 0 };
 
     struct IDDesc {
-        GrGLuint         fRTFBOID;
-        GrGLuint         fTexFBOID;
-        GrGLuint         fMSColorRenderbufferID;
-        bool             fIsWrapped;
+        GrGLuint                    fRTFBOID;
+        GrGLuint                    fTexFBOID;
+        GrGLuint                    fMSColorRenderbufferID;
+        GrGpuResource::LifeCycle    fLifeCycle;
     };
 
-    GrGLRenderTarget(GrGpuGL*, const GrSurfaceDesc&, const IDDesc&);
-
-    virtual ~GrGLRenderTarget() { this->release(); }
+    GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&);
 
     void setViewport(const GrGLIRect& rect) { fViewport = rect; }
     const GrGLIRect& getViewport() const { return fViewport; }
@@ -44,9 +42,7 @@ public:
     GrGLuint textureFBOID() const { return fTexFBOID; }
 
     // override of GrRenderTarget
-    virtual GrBackendObject getRenderTargetHandle() const { return this->renderFBOID(); }
-    virtual GrBackendObject getRenderTargetResolvedHandle() const { return this->textureFBOID(); }
-    virtual ResolveType getResolveType() const {
+    ResolveType getResolveType() const override {
         if (!this->isMultisampled() ||
             fRTFBOID == fTexFBOID) {
             // catches FBO 0 and non MSAA case
@@ -58,34 +54,41 @@ public:
         }
     }
 
-    virtual size_t gpuMemorySize() const SK_OVERRIDE;
+    /** When we don't own the FBO ID we don't attempt to modify its attachments. */
+    bool canAttemptStencilAttachment() const override { return !fIsWrapped; }
 
 protected:
     // The public constructor registers this object with the cache. However, only the most derived
     // class should register with the cache. This constructor does not do the registration and
     // rather moves that burden onto the derived class.
     enum Derived { kDerived };
-    GrGLRenderTarget(GrGpuGL*, const GrSurfaceDesc&, const IDDesc&, Derived);
+    GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, Derived);
 
     void init(const GrSurfaceDesc&, const IDDesc&);
 
-    virtual void onAbandon() SK_OVERRIDE;
-    virtual void onRelease() SK_OVERRIDE;
+    void onAbandon() override;
+    void onRelease() override;
+
+    // In protected because subclass GrGLTextureRenderTarget calls this version.
+    size_t onGpuMemorySize() const override;
 
 private:
     GrGLuint      fRTFBOID;
     GrGLuint      fTexFBOID;
     GrGLuint      fMSColorRenderbufferID;
 
+    // We track this separately from GrGpuResource because this may be both a texture and a render
+    // target, and the texture may be wrapped while the render target is not.
+    bool fIsWrapped;
+
     // when we switch to this render target we want to set the viewport to
     // only render to content area (as opposed to the whole allocation) and
     // we want the rendering to be at top left (GL has origin in bottom left)
     GrGLIRect fViewport;
 
-    // gpuMemorySize() needs to know what how many color values are owned per pixel. However,
-    // abandon and release zero out the IDs and the cache needs to know the size even after those
-    // actions.
-    uint8_t fColorValuesPerPixel;
+    // onGpuMemorySize() needs to know the VRAM footprint of the FBO(s). However, abandon and
+    // release zero out the IDs and the cache needs to know the size even after those actions.
+    size_t fGpuMemorySize;
 
     typedef GrRenderTarget INHERITED;
 };

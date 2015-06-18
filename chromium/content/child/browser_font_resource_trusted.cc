@@ -135,7 +135,7 @@ bool PPTextRunToWebTextRun(const PP_BrowserFont_Trusted_TextRun& text,
 // The PP_* version lacks "None", so is just one value shifted from the
 // WebFontDescription version. These values are checked in
 // PPFontDescToWebFontDesc to make sure the conversion is correct. This is a
-// macro so it can also be used in the COMPILE_ASSERTS.
+// macro so it can also be used in the static_asserts.
 #define PP_FAMILY_TO_WEB_FAMILY(f) \
   static_cast<WebFontDescription::GenericFamily>(f + 1)
 
@@ -144,24 +144,24 @@ WebFontDescription PPFontDescToWebFontDesc(
     const PP_BrowserFont_Trusted_Description& font,
     const ppapi::Preferences& prefs) {
   // Verify that the enums match so we can just static cast.
-  COMPILE_ASSERT(static_cast<int>(WebFontDescription::Weight100) ==
-                 static_cast<int>(PP_BROWSERFONT_TRUSTED_WEIGHT_100),
-                 FontWeight100);
-  COMPILE_ASSERT(static_cast<int>(WebFontDescription::Weight900) ==
-                 static_cast<int>(PP_BROWSERFONT_TRUSTED_WEIGHT_900),
-                 FontWeight900);
-  COMPILE_ASSERT(WebFontDescription::GenericFamilyStandard ==
-                 PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_DEFAULT),
-                 StandardFamily);
-  COMPILE_ASSERT(WebFontDescription::GenericFamilySerif ==
-                 PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_SERIF),
-                 SerifFamily);
-  COMPILE_ASSERT(WebFontDescription::GenericFamilySansSerif ==
-                 PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_SANSSERIF),
-                 SansSerifFamily);
-  COMPILE_ASSERT(WebFontDescription::GenericFamilyMonospace ==
-                 PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_MONOSPACE),
-                 MonospaceFamily);
+  static_assert(static_cast<int>(WebFontDescription::Weight100) ==
+                static_cast<int>(PP_BROWSERFONT_TRUSTED_WEIGHT_100),
+                "font Weight100");
+  static_assert(static_cast<int>(WebFontDescription::Weight900) ==
+                static_cast<int>(PP_BROWSERFONT_TRUSTED_WEIGHT_900),
+                "font Weight900");
+  static_assert(WebFontDescription::GenericFamilyStandard ==
+                PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_DEFAULT),
+                "FamilyStandard");
+  static_assert(WebFontDescription::GenericFamilySerif ==
+                PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_SERIF),
+                "FamilySerif");
+  static_assert(WebFontDescription::GenericFamilySansSerif ==
+                PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_SANSSERIF),
+                "FamilySansSerif");
+  static_assert(WebFontDescription::GenericFamilyMonospace ==
+                PP_FAMILY_TO_WEB_FAMILY(PP_FONTFAMILY_MONOSPACE),
+                "FamilyMonospace");
 
   StringVar* face_name = StringVar::FromPPVar(font.face);  // Possibly null.
 
@@ -319,7 +319,28 @@ PP_Bool BrowserFontResource_Trusted::DrawTextAt(
       return result;  // Failure mapping.
   }
 
-  DrawTextToCanvas(canvas, *text, position, color, clip, image_data_is_opaque);
+  if (!PP_ToBool(image_data_is_opaque)) {
+    // Ideally, LCD text should be configured at canvas creation time using
+    // SkSurfaceProps. But because the API exposes image_data_is_opaque per
+    // draw text call (allowing clients to essentially change their mind),
+    // we have to handle it here.
+    SkImageInfo info;
+    size_t row_bytes;
+    void* pixels = canvas->accessTopLayerPixels(&info, &row_bytes);
+    if (!pixels)
+      return result;
+
+    SkBitmap bm;
+    if (!bm.installPixels(info, pixels, row_bytes))
+      return result;
+
+    SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
+    SkCanvas temp_canvas(bm, props);
+
+    DrawTextToCanvas(&temp_canvas, *text, position, color, clip);
+  } else {
+    DrawTextToCanvas(canvas, *text, position, color, clip);
+  }
 
   if (needs_unmapping)
     image->Unmap();
@@ -391,8 +412,7 @@ void BrowserFontResource_Trusted::DrawTextToCanvas(
     const PP_BrowserFont_Trusted_TextRun& text,
     const PP_Point* position,
     uint32_t color,
-    const PP_Rect* clip,
-    PP_Bool image_data_is_opaque) {
+    const PP_Rect* clip) {
   // Convert position and clip.
   WebFloatPoint web_position(static_cast<float>(position->x),
                              static_cast<float>(position->y));
@@ -414,8 +434,7 @@ void BrowserFontResource_Trusted::DrawTextToCanvas(
     int32_t run_begin = 0;
     int32_t run_len = 0;
     WebTextRun run = runs.GetRunAt(i, &run_begin, &run_len);
-    font_->drawText(destination, run, web_position, color, web_clip,
-                    PP_ToBool(image_data_is_opaque));
+    font_->drawText(destination, run, web_position, color, web_clip);
 
     // Advance to the next run. Note that we avoid doing this for the last run
     // since it's unnecessary, measuring text is slow, and most of the time

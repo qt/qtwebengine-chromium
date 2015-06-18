@@ -52,6 +52,7 @@
         'sql',
         '../base/base.gyp:base',
         '../testing/gtest.gyp:gtest',
+        '../third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'export_dependent_settings': [
         'sql',
@@ -113,11 +114,6 @@
         ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
-          ],
-        }],
-        ['sqlite_enable_fts2', {
-          'defines': [
-            'SQLITE_ENABLE_FTS2',
           ],
         }],
       ],

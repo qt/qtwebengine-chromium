@@ -1,6 +1,7 @@
 # Authors: 
 #   Trevor Perrin
 #   Dave Baggett (Arcode Corporation) - cleanup handling of constants
+#   Yngve Pettersen (ported by Paul Sokolovsky) - TLS 1.2
 #
 # See the LICENSE file for legal information regarding use of this file.
 
@@ -10,12 +11,10 @@ from .constants import CertificateType
 from .utils import cryptomath
 from .utils import cipherfactory
 
-# RC4 is preferred as faster in Python, works in SSL3, and immune to CBC
-# issues such as timing attacks
-CIPHER_NAMES = ["rc4", "aes256", "aes128", "3des"]
-MAC_NAMES = ["sha"] # Don't allow "md5" by default.
-ALL_MAC_NAMES = ["sha", "md5"]
-KEY_EXCHANGE_NAMES = ["rsa", "dhe_rsa", "srp_sha", "srp_sha_rsa", "dh_anon"]
+CIPHER_NAMES = ["aes128gcm", "rc4", "aes256", "aes128", "3des"]
+MAC_NAMES = ["sha", "sha256", "aead"] # Don't allow "md5" by default.
+ALL_MAC_NAMES = MAC_NAMES + ["md5"]
+KEY_EXCHANGE_NAMES = ["rsa", "dhe_rsa", "ecdhe_rsa", "srp_sha", "srp_sha_rsa", "dh_anon"]
 CIPHER_IMPLEMENTATIONS = ["openssl", "pycrypto", "python"]
 CERTIFICATE_TYPES = ["x509"]
 TLS_INTOLERANCE_TYPES = ["alert", "close", "reset"]
@@ -41,7 +40,7 @@ class HandshakeSettings(object):
     The default is 8193.
 
     @type cipherNames: list
-    @ivar cipherNames: The allowed ciphers, in order of preference.
+    @ivar cipherNames: The allowed ciphers.
 
     The allowed values in this list are 'aes256', 'aes128', '3des', and
     'rc4'.  If these settings are used with a client handshake, they
@@ -67,8 +66,7 @@ class HandshakeSettings(object):
 
 
     @type certificateTypes: list
-    @ivar certificateTypes: The allowed certificate types, in order of
-    preference.
+    @ivar certificateTypes: The allowed certificate types.
 
     The only allowed certificate type is 'x509'.  This list is only used with a
     client handshake.  The client will advertise to the server which certificate
@@ -79,20 +77,18 @@ class HandshakeSettings(object):
     @type minVersion: tuple
     @ivar minVersion: The minimum allowed SSL/TLS version.
 
-    This variable can be set to (3,0) for SSL 3.0, (3,1) for
-    TLS 1.0, or (3,2) for TLS 1.1.  If the other party wishes to
-    use a lower version, a protocol_version alert will be signalled.
-    The default is (3,0).
+    This variable can be set to (3,0) for SSL 3.0, (3,1) for TLS 1.0, (3,2) for
+    TLS 1.1, or (3,3) for TLS 1.2.  If the other party wishes to use a lower
+    version, a protocol_version alert will be signalled.  The default is (3,1).
 
     @type maxVersion: tuple
     @ivar maxVersion: The maximum allowed SSL/TLS version.
 
-    This variable can be set to (3,0) for SSL 3.0, (3,1) for
-    TLS 1.0, or (3,2) for TLS 1.1.  If the other party wishes to
-    use a higher version, a protocol_version alert will be signalled.
-    The default is (3,2).  (WARNING: Some servers may (improperly)
-    reject clients which offer support for TLS 1.1.  In this case,
-    try lowering maxVersion to (3,1)).
+    This variable can be set to (3,0) for SSL 3.0, (3,1) for TLS 1.0, (3,2) for
+    TLS 1.1, or (3,3) for TLS 1.2.  If the other party wishes to use a higher
+    version, a protocol_version alert will be signalled.  The default is (3,3).
+    (WARNING: Some servers may (improperly) reject clients which offer support
+    for TLS 1.1.  In this case, try lowering maxVersion to (3,1)).
 
     @type tlsIntolerant: tuple
     @ivar tlsIntolerant: The TLS ClientHello version which the server
@@ -111,6 +107,10 @@ class HandshakeSettings(object):
     
     @type useExperimentalTackExtension: bool
     @ivar useExperimentalTackExtension: Whether to enabled TACK support.
+
+    @type alertAfterHandshake: bool
+    @ivar alertAfterHandshake: If true, the server will send a fatal
+    alert immediately after the handshake completes.
     
     Note that TACK support is not standardized by IETF and uses a temporary
     TLS Extension number, so should NOT be used in production software.
@@ -123,11 +123,12 @@ class HandshakeSettings(object):
         self.keyExchangeNames = KEY_EXCHANGE_NAMES
         self.cipherImplementations = CIPHER_IMPLEMENTATIONS
         self.certificateTypes = CERTIFICATE_TYPES
-        self.minVersion = (3,0)
-        self.maxVersion = (3,2)
+        self.minVersion = (3,1)
+        self.maxVersion = (3,3)
         self.tlsIntolerant = None
         self.tlsIntoleranceType = 'alert'
         self.useExperimentalTackExtension = False
+        self.alertAfterHandshake = False
 
     # Validates the min/max fields, and certificateTypes
     # Filters out unsupported cipherNames and cipherImplementations
@@ -144,6 +145,7 @@ class HandshakeSettings(object):
         other.maxVersion = self.maxVersion
         other.tlsIntolerant = self.tlsIntolerant
         other.tlsIntoleranceType = self.tlsIntoleranceType
+        other.alertAfterHandshake = self.alertAfterHandshake
 
         if not cipherfactory.tripleDESPresent:
             other.cipherNames = [e for e in self.cipherNames if e != "3des"]
@@ -192,10 +194,10 @@ class HandshakeSettings(object):
         if other.minVersion > other.maxVersion:
             raise ValueError("Versions set incorrectly")
 
-        if not other.minVersion in ((3,0), (3,1), (3,2)):
+        if not other.minVersion in ((3,0), (3,1), (3,2), (3,3)):
             raise ValueError("minVersion set incorrectly")
 
-        if not other.maxVersion in ((3,0), (3,1), (3,2)):
+        if not other.maxVersion in ((3,0), (3,1), (3,2), (3,3)):
             raise ValueError("maxVersion set incorrectly")
 
         return other

@@ -5,6 +5,7 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 
 #include "base/files/file_path.h"
+#include "base/profiler/scoped_tracker.h"
 #include "content/browser/appcache/appcache_storage_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -25,7 +26,11 @@ void ChromeAppCacheService::InitializeOnIOThread(
     ResourceContext* resource_context,
     net::URLRequestContextGetter* request_context_getter,
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "477117 ChromeAppCacheService::InitializeOnIOThread"));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   cache_path_ = cache_path;
   resource_context_ = resource_context;
@@ -51,7 +56,7 @@ void ChromeAppCacheService::InitializeOnIOThread(
 
 bool ChromeAppCacheService::CanLoadAppCache(const GURL& manifest_url,
                                             const GURL& first_party) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // We don't prompt for read access.
   return GetContentClient()->browser()->AllowAppCache(
       manifest_url, first_party, resource_context_);
@@ -59,7 +64,7 @@ bool ChromeAppCacheService::CanLoadAppCache(const GURL& manifest_url,
 
 bool ChromeAppCacheService::CanCreateAppCache(
     const GURL& manifest_url, const GURL& first_party) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return GetContentClient()->browser()->AllowAppCache(
       manifest_url, first_party, resource_context_);
 }

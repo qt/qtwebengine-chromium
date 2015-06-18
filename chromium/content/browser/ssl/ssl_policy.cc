@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -25,6 +26,16 @@
 
 
 namespace content {
+
+namespace {
+
+// Events for UMA. Do not reorder or change!
+enum SSLGoodCertSeenEvent {
+  NO_PREVIOUS_EXCEPTION = 0,
+  HAD_PREVIOUS_EXCEPTION = 1,
+  SSL_GOOD_CERT_SEEN_EVENT_MAX = 2
+};
+}
 
 SSLPolicy::SSLPolicy(SSLPolicyBackend* backend)
     : backend_(backend) {
@@ -56,6 +67,7 @@ void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
     case net::ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
     case net::ERR_CERT_WEAK_KEY:
     case net::ERR_CERT_NAME_CONSTRAINT_VIOLATION:
+    case net::ERR_CERT_VALIDITY_TOO_LONG:
       if (!handler->fatal())
         options_mask |= OVERRIDABLE;
       else
@@ -109,8 +121,20 @@ void SSLPolicy::OnRequestStarted(SSLRequestInfo* info) {
   // this information back through WebKit and out some FrameLoaderClient
   // methods.
 
-  if (net::IsCertStatusError(info->ssl_cert_status()))
+  if (net::IsCertStatusError(info->ssl_cert_status())) {
     backend_->HostRanInsecureContent(info->url().host(), info->child_id());
+  } else {
+    SSLGoodCertSeenEvent event = NO_PREVIOUS_EXCEPTION;
+    if (backend_->HasAllowException(info->url().host())) {
+      // If there's no certificate error, a good certificate has been seen, so
+      // clear out any exceptions that were made by the user for bad
+      // certificates.
+      backend_->RevokeUserAllowExceptions(info->url().host());
+      event = HAD_PREVIOUS_EXCEPTION;
+    }
+    UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.good_cert_seen", event,
+                              SSL_GOOD_CERT_SEEN_EVENT_MAX);
+  }
 }
 
 void SSLPolicy::UpdateEntry(NavigationEntryImpl* entry,
@@ -119,7 +143,7 @@ void SSLPolicy::UpdateEntry(NavigationEntryImpl* entry,
 
   InitializeEntryIfNeeded(entry);
 
-  if (!entry->GetURL().SchemeIsSecure())
+  if (!entry->GetURL().SchemeIsCryptographic())
     return;
 
   if (!web_contents->DisplayedInsecureContent())
@@ -227,13 +251,14 @@ void SSLPolicy::InitializeEntryIfNeeded(NavigationEntryImpl* entry) {
   if (entry->GetSSL().security_style != SECURITY_STYLE_UNKNOWN)
     return;
 
-  entry->GetSSL().security_style = entry->GetURL().SchemeIsSecure() ?
-      SECURITY_STYLE_AUTHENTICATED : SECURITY_STYLE_UNAUTHENTICATED;
+  entry->GetSSL().security_style = entry->GetURL().SchemeIsCryptographic()
+                                       ? SECURITY_STYLE_AUTHENTICATED
+                                       : SECURITY_STYLE_UNAUTHENTICATED;
 }
 
 void SSLPolicy::OriginRanInsecureContent(const std::string& origin, int pid) {
   GURL parsed_origin(origin);
-  if (parsed_origin.SchemeIsSecure())
+  if (parsed_origin.SchemeIsCryptographic())
     backend_->HostRanInsecureContent(parsed_origin.host(), pid);
 }
 

@@ -146,9 +146,11 @@ MULTIPROCESS_TEST_MAIN(MismatchedMallocChildProcess) {
 // and e.g. mismatched new[]/delete would cause a hang because
 // of re-entering malloc.
 TEST_F(StackTraceTest, AsyncSignalUnsafeSignalHandlerHang) {
-  ProcessHandle child = SpawnChild("MismatchedMallocChildProcess");
-  ASSERT_NE(kNullProcessHandle, child);
-  ASSERT_TRUE(WaitForSingleProcess(child, TestTimeouts::action_timeout()));
+  Process child = SpawnChild("MismatchedMallocChildProcess");
+  ASSERT_TRUE(child.IsValid());
+  int exit_code;
+  ASSERT_TRUE(child.WaitForExitWithTimeout(TestTimeouts::action_timeout(),
+                                           &exit_code));
 }
 #endif  // !defined(OS_IOS)
 

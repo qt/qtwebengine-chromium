@@ -34,12 +34,19 @@ inline SVGViewElement::SVGViewElement(Document& document)
 
 DEFINE_NODE_FACTORY(SVGViewElement)
 
+DEFINE_TRACE(SVGViewElement)
+{
+    visitor->trace(m_viewTarget);
+    SVGElement::trace(visitor);
+    SVGFitToViewBox::trace(visitor);
+}
+
 void SVGViewElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (SVGZoomAndPan::parseAttribute(name, value))
         return;
 
-    parseAttributeNew(name, value);
+    SVGElement::parseAttribute(name, value);
 }
 
 } // namespace blink

@@ -4,9 +4,15 @@
 
 import("//tools/grit/grit_rule.gni")
 
+if (is_android) {
+  import("//build/config/android/rules.gni")  # For generate_jni().
+}
+
 config("bluetooth_config") {
   if (is_win) {
     ldflags = [
+      "/DELAYLOAD:BluetoothApis.dll",
+
       # Despite MSDN stating that Bthprops.dll contains the
       # symbols declared by bthprops.lib, they actually reside here:
       "/DELAYLOAD:Bthprops.cpl",
@@ -15,20 +21,34 @@ config("bluetooth_config") {
   }
 }
 
-static_library("bluetooth") {
+component("bluetooth") {
   sources = [
+    "android/bluetooth_jni_registrar.cc",
+    "android/bluetooth_jni_registrar.h",
     "bluetooth_adapter.cc",
     "bluetooth_adapter.h",
+    "bluetooth_adapter_android.cc",
+    "bluetooth_adapter_android.h",
     "bluetooth_adapter_chromeos.cc",
     "bluetooth_adapter_chromeos.h",
     "bluetooth_adapter_factory.cc",
     "bluetooth_adapter_factory.h",
     "bluetooth_adapter_mac.h",
     "bluetooth_adapter_mac.mm",
+    "bluetooth_adapter_profile_chromeos.cc",
+    "bluetooth_adapter_profile_chromeos.h",
     "bluetooth_adapter_win.cc",
     "bluetooth_adapter_win.h",
-    "bluetooth_channel_mac.mm",
+    "bluetooth_advertisement.cc",
+    "bluetooth_advertisement.h",
+    "bluetooth_advertisement_chromeos.cc",
+    "bluetooth_advertisement_chromeos.h",
+    "bluetooth_audio_sink.cc",
+    "bluetooth_audio_sink.h",
+    "bluetooth_audio_sink_chromeos.cc",
+    "bluetooth_audio_sink_chromeos.h",
     "bluetooth_channel_mac.h",
+    "bluetooth_channel_mac.mm",
     "bluetooth_device.cc",
     "bluetooth_device.h",
     "bluetooth_device_chromeos.cc",
@@ -37,8 +57,8 @@ static_library("bluetooth") {
     "bluetooth_device_mac.mm",
     "bluetooth_device_win.cc",
     "bluetooth_device_win.h",
-    "bluetooth_discovery_manager_mac.mm",
     "bluetooth_discovery_manager_mac.h",
+    "bluetooth_discovery_manager_mac.mm",
     "bluetooth_discovery_session.cc",
     "bluetooth_discovery_session.h",
     "bluetooth_gatt_characteristic.cc",
@@ -57,8 +77,14 @@ static_library("bluetooth") {
     "bluetooth_gatt_service.h",
     "bluetooth_init_win.cc",
     "bluetooth_init_win.h",
-    "bluetooth_l2cap_channel_mac.mm",
     "bluetooth_l2cap_channel_mac.h",
+    "bluetooth_l2cap_channel_mac.mm",
+    "bluetooth_low_energy_defs_win.cc",
+    "bluetooth_low_energy_defs_win.h",
+    "bluetooth_low_energy_device_mac.h",
+    "bluetooth_low_energy_device_mac.mm",
+    "bluetooth_low_energy_discovery_manager_mac.h",
+    "bluetooth_low_energy_discovery_manager_mac.mm",
     "bluetooth_low_energy_win.cc",
     "bluetooth_low_energy_win.h",
     "bluetooth_pairing_chromeos.cc",
@@ -69,8 +95,8 @@ static_library("bluetooth") {
     "bluetooth_remote_gatt_descriptor_chromeos.h",
     "bluetooth_remote_gatt_service_chromeos.cc",
     "bluetooth_remote_gatt_service_chromeos.h",
-    "bluetooth_rfcomm_channel_mac.mm",
     "bluetooth_rfcomm_channel_mac.h",
+    "bluetooth_rfcomm_channel_mac.mm",
     "bluetooth_service_record_win.cc",
     "bluetooth_service_record_win.h",
     "bluetooth_socket.cc",
@@ -91,14 +117,21 @@ static_library("bluetooth") {
     "bluetooth_uuid.h",
   ]
 
+  defines = [ "DEVICE_BLUETOOTH_IMPLEMENTATION" ]
+
   all_dependent_configs = [ ":bluetooth_config" ]
 
   deps = [
     ":strings",
+    "uribeacon",
     "//base",
     "//net",
     "//ui/base",
   ]
+
+  if (is_android) {
+    deps += [ ":bluetooth_jni" ]
+  }
 
   if (is_chromeos) {
     deps += [
@@ -109,6 +142,10 @@ static_library("bluetooth") {
 
   if (is_mac) {
     libs = [ "IOBluetooth.framework" ]
+  }
+
+  if (is_win) {
+    libs = [ "setupapi.lib" ]
   }
 }
 
@@ -178,6 +215,8 @@ static_library("mocks") {
   sources = [
     "test/mock_bluetooth_adapter.cc",
     "test/mock_bluetooth_adapter.h",
+    "test/mock_bluetooth_advertisement.cc",
+    "test/mock_bluetooth_advertisement.h",
     "test/mock_bluetooth_device.cc",
     "test/mock_bluetooth_device.h",
     "test/mock_bluetooth_discovery_session.cc",
@@ -198,6 +237,17 @@ static_library("mocks") {
 
   deps = [
     ":bluetooth",
+    "//base",
+    "//net",
     "//testing/gmock",
   ]
+}
+
+if (is_android) {
+  generate_jni("bluetooth_jni") {
+    sources = [
+      "android/java/src/org/chromium/device/bluetooth/BluetoothAdapter.java",
+    ]
+    jni_package = "bluetooth"
+  }
 }

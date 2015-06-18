@@ -1,6 +1,6 @@
 Name: libsrtp
-URL: http://srtp.sourceforge.net/srtp.html
-Version: 1.4.4
+URL: https://github.com/cisco/libsrtp
+Version: 1.5.2
 License: 3-clause BSD
 License File: srtp/LICENSE
 Security Critical: Yes
@@ -15,10 +15,7 @@ Description:
 
 Local Modifications:
 
-Replace 'inline' with 'INLINE' and #define to either 'inline' or '__inline'.
-This is required because VS2012 does not allow redefinition of keywords via
-macros, but also does not support 'inline' in C files.
-
-Adding additional RTP header check
-
 Added gyp support to __arm64__
+
+Use '_byteswap_*' functions to convert between host and network byte order on
+Windows.

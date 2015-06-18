@@ -26,7 +26,7 @@
     'jni_generator_includes%': (
         'base/android/jni_generator/jni_generator_helper.h'
     ),
-    'native_exports%': '',
+    'native_exports%': '--native_exports_optional',
   },
   'actions': [
     {
@@ -64,14 +64,4 @@
   # This target exports a hard dependency because it generates header
   # files.
   'hard_dependency': 1,
-  'conditions': [
-    ['android_webview_build==1', {
-      'variables': {
-        'native_exports%': '--native_exports',
-      },
-      'dependencies': [
-        '<(DEPTH)/build/android/android_exports.gyp:android_exports',
-      ],
-    }],
-  ],
 }

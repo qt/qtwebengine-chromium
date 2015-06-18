@@ -23,7 +23,7 @@
 #include "ui/events/event_utils.h"
 #include "ui/events/test/events_test_utils.h"
 #include "ui/events/test/events_test_utils_x11.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace ui {
 
@@ -47,6 +47,7 @@ void InitButtonEvent(XEvent* event,
   button_event->state = state;
 }
 
+#if !defined(OS_CHROMEOS)
 // Initializes the passed-in Xlib event.
 void InitKeyEvent(Display* display,
                   XEvent* event,
@@ -63,20 +64,7 @@ void InitKeyEvent(Display* display,
   key_event->keycode = keycode;
   key_event->state = state;
 }
-
-// Returns true if the keysym maps to a KeyEvent with the EF_FUNCTION_KEY
-// flag set, or the keysym maps to a zero key code.
-bool HasFunctionKeyFlagSetIfSupported(Display* display, int x_keysym) {
-  XEvent event;
-  int x_keycode = XKeysymToKeycode(display, x_keysym);
-  // Exclude keysyms for which the server has no corresponding keycode.
-  if (x_keycode) {
-    InitKeyEvent(display, &event, true, x_keycode, 0);
-    ui::KeyEvent ui_key_event(&event);
-    return (ui_key_event.flags() & ui::EF_FUNCTION_KEY);
-  }
-  return true;
-}
+#endif
 
 }  // namespace
 
@@ -101,6 +89,8 @@ TEST_F(EventsXTest, ButtonEvents) {
   InitButtonEvent(&event, true, location, 1, 0);
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, ui::EventTypeFromNative(&event));
   EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON,
+            ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
 
   InitButtonEvent(&event, true, location, 2, Button1Mask | ShiftMask);
@@ -108,17 +98,22 @@ TEST_F(EventsXTest, ButtonEvents) {
   EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON | ui::EF_MIDDLE_MOUSE_BUTTON |
                 ui::EF_SHIFT_DOWN,
             ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_MIDDLE_MOUSE_BUTTON,
+            ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
 
   InitButtonEvent(&event, false, location, 3, 0);
   EXPECT_EQ(ui::ET_MOUSE_RELEASED, ui::EventTypeFromNative(&event));
   EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON, ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON,
+            ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
 
   // Scroll up.
   InitButtonEvent(&event, true, location, 4, 0);
   EXPECT_EQ(ui::ET_MOUSEWHEEL, ui::EventTypeFromNative(&event));
   EXPECT_EQ(0, ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_NONE, ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
   offset = ui::GetMouseWheelOffset(&event);
   EXPECT_GT(offset.y(), 0);
@@ -128,6 +123,7 @@ TEST_F(EventsXTest, ButtonEvents) {
   InitButtonEvent(&event, true, location, 5, 0);
   EXPECT_EQ(ui::ET_MOUSEWHEEL, ui::EventTypeFromNative(&event));
   EXPECT_EQ(0, ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_NONE, ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
   offset = ui::GetMouseWheelOffset(&event);
   EXPECT_LT(offset.y(), 0);
@@ -137,6 +133,7 @@ TEST_F(EventsXTest, ButtonEvents) {
   InitButtonEvent(&event, true, location, 6, 0);
   EXPECT_EQ(ui::ET_MOUSEWHEEL, ui::EventTypeFromNative(&event));
   EXPECT_EQ(0, ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_NONE, ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
   offset = ui::GetMouseWheelOffset(&event);
   EXPECT_EQ(0, offset.y());
@@ -146,6 +143,7 @@ TEST_F(EventsXTest, ButtonEvents) {
   InitButtonEvent(&event, true, location, 7, 0);
   EXPECT_EQ(ui::ET_MOUSEWHEEL, ui::EventTypeFromNative(&event));
   EXPECT_EQ(0, ui::EventFlagsFromNative(&event));
+  EXPECT_EQ(ui::EF_NONE, ui::GetChangedMouseButtonFlagsFromNative(&event));
   EXPECT_EQ(location, ui::EventLocationFromNative(&event));
   offset = ui::GetMouseWheelOffset(&event);
   EXPECT_EQ(0, offset.y());
@@ -198,9 +196,11 @@ TEST_F(EventsXTest, ClickCount) {
   XEvent event;
   gfx::Point location(5, 10);
 
+  base::TimeDelta time_stamp = base::TimeDelta::FromMilliseconds(1);
   for (int i = 1; i <= 3; ++i) {
     InitButtonEvent(&event, true, location, 1, 0);
     {
+      event.xbutton.time = time_stamp.InMilliseconds();
       MouseEvent mouseev(&event);
       EXPECT_EQ(ui::ET_MOUSE_PRESSED, mouseev.type());
       EXPECT_EQ(i, mouseev.GetClickCount());
@@ -208,16 +208,17 @@ TEST_F(EventsXTest, ClickCount) {
 
     InitButtonEvent(&event, false, location, 1, 0);
     {
+      event.xbutton.time = time_stamp.InMilliseconds();
       MouseEvent mouseev(&event);
       EXPECT_EQ(ui::ET_MOUSE_RELEASED, mouseev.type());
       EXPECT_EQ(i, mouseev.GetClickCount());
     }
+    time_stamp += base::TimeDelta::FromMilliseconds(1);
   }
 }
 
-#if defined(USE_XI2_MT)
 TEST_F(EventsXTest, TouchEventBasic) {
-  std::vector<unsigned int> devices;
+  std::vector<int> devices;
   devices.push_back(0);
   ui::SetUpTouchDevicesForTest(devices);
   std::vector<Valuator> valuators;
@@ -301,223 +302,78 @@ int GetTouchIdForTrackingId(uint32 tracking_id) {
   return -1;
 }
 
-TEST_F(EventsXTest, TouchEventIdRefcounting) {
-  std::vector<unsigned int> devices;
+TEST_F(EventsXTest, TouchEventNotRemovingFromNativeMapping) {
+  std::vector<int> devices;
   devices.push_back(0);
   ui::SetUpTouchDevicesForTest(devices);
   std::vector<Valuator> valuators;
 
-  const int kTrackingId0 = 5;
-  const int kTrackingId1 = 7;
+  const int kTrackingId = 5;
 
-  // Increment ref count once for first touch.
+  // Two touch presses with the same tracking id.
   ui::ScopedXI2Event xpress0;
   xpress0.InitTouchEvent(
-      0, XI_TouchBegin, kTrackingId0, gfx::Point(10, 10), valuators);
+      0, XI_TouchBegin, kTrackingId, gfx::Point(10, 10), valuators);
   scoped_ptr<ui::TouchEvent> upress0(new ui::TouchEvent(xpress0));
-  EXPECT_EQ(0, GetTouchIdForTrackingId(kTrackingId0));
+  EXPECT_EQ(0, GetTouchIdForTrackingId(kTrackingId));
 
-  // Increment ref count 4 times for second touch.
   ui::ScopedXI2Event xpress1;
   xpress1.InitTouchEvent(
-      0, XI_TouchBegin, kTrackingId1, gfx::Point(20, 20), valuators);
+      0, XI_TouchBegin, kTrackingId, gfx::Point(20, 20), valuators);
+  ui::TouchEvent upress1(xpress1);
+  EXPECT_EQ(0, GetTouchIdForTrackingId(kTrackingId));
 
-  for (int i = 0; i < 4; ++i) {
-    ui::TouchEvent upress1(xpress1);
-    EXPECT_EQ(1, GetTouchIdForTrackingId(kTrackingId1));
-  }
-
-  ui::ScopedXI2Event xrelease1;
-  xrelease1.InitTouchEvent(
-      0, XI_TouchEnd, kTrackingId1, gfx::Point(10, 10), valuators);
-
-  // Decrement ref count 3 times for second touch.
-  for (int i = 0; i < 3; ++i) {
-    ui::TouchEvent urelease1(xrelease1);
-    EXPECT_EQ(1, GetTouchIdForTrackingId(kTrackingId1));
-  }
-
-  // This should clear the touch id of the second touch.
-  scoped_ptr<ui::TouchEvent> urelease1(new ui::TouchEvent(xrelease1));
-  urelease1.reset();
-  EXPECT_EQ(-1, GetTouchIdForTrackingId(kTrackingId1));
-
-  // This should clear the touch id of the first touch.
+  // The first touch release shouldn't clear the mapping from the
+  // tracking id.
   ui::ScopedXI2Event xrelease0;
   xrelease0.InitTouchEvent(
-      0, XI_TouchEnd, kTrackingId0, gfx::Point(10, 10), valuators);
-  scoped_ptr<ui::TouchEvent> urelease0(new ui::TouchEvent(xrelease0));
-  urelease0.reset();
-  EXPECT_EQ(-1, GetTouchIdForTrackingId(kTrackingId0));
+      0, XI_TouchEnd, kTrackingId, gfx::Point(10, 10), valuators);
+  {
+    ui::TouchEvent urelease0(xrelease0);
+    urelease0.set_should_remove_native_touch_id_mapping(false);
+  }
+  EXPECT_EQ(0, GetTouchIdForTrackingId(kTrackingId));
+
+  // The second touch release should clear the mapping from the
+  // tracking id.
+  ui::ScopedXI2Event xrelease1;
+  xrelease1.InitTouchEvent(
+      0, XI_TouchEnd, kTrackingId, gfx::Point(10, 10), valuators);
+  {
+    ui::TouchEvent urelease1(xrelease1);
+  }
+  EXPECT_EQ(-1, GetTouchIdForTrackingId(kTrackingId));
 }
-#endif
 
-TEST_F(EventsXTest, NumpadKeyEvents) {
-  XEvent event;
-  Display* display = gfx::GetXDisplay();
+// Copied events should not remove native touch id mappings, as this causes a
+// crash (crbug.com/467102). Copied events do not contain a proper
+// base::NativeEvent and should not attempt to access it.
+TEST_F(EventsXTest, CopiedTouchEventNotRemovingFromNativeMapping) {
+  std::vector<int> devices;
+  devices.push_back(0);
+  ui::SetUpTouchDevicesForTest(devices);
+  std::vector<Valuator> valuators;
 
-  struct {
-    bool is_numpad_key;
-    int x_keysym;
-  } keys[] = {
-    // XK_KP_Space and XK_KP_Equal are the extrema in the conventional
-    // keysymdef.h numbering.
-    { true,  XK_KP_Space },
-    { true,  XK_KP_Equal },
-    // Other numpad keysyms. (This is actually exhaustive in the current list.)
-    { true,  XK_KP_Tab },
-    { true,  XK_KP_Enter },
-    { true,  XK_KP_F1 },
-    { true,  XK_KP_F2 },
-    { true,  XK_KP_F3 },
-    { true,  XK_KP_F4 },
-    { true,  XK_KP_Home },
-    { true,  XK_KP_Left },
-    { true,  XK_KP_Up },
-    { true,  XK_KP_Right },
-    { true,  XK_KP_Down },
-    { true,  XK_KP_Prior },
-    { true,  XK_KP_Page_Up },
-    { true,  XK_KP_Next },
-    { true,  XK_KP_Page_Down },
-    { true,  XK_KP_End },
-    { true,  XK_KP_Begin },
-    { true,  XK_KP_Insert },
-    { true,  XK_KP_Delete },
-    { true,  XK_KP_Multiply },
-    { true,  XK_KP_Add },
-    { true,  XK_KP_Separator },
-    { true,  XK_KP_Subtract },
-    { true,  XK_KP_Decimal },
-    { true,  XK_KP_Divide },
-    { true,  XK_KP_0 },
-    { true,  XK_KP_1 },
-    { true,  XK_KP_2 },
-    { true,  XK_KP_3 },
-    { true,  XK_KP_4 },
-    { true,  XK_KP_5 },
-    { true,  XK_KP_6 },
-    { true,  XK_KP_7 },
-    { true,  XK_KP_8 },
-    { true,  XK_KP_9 },
-    // Largest keysym preceding XK_KP_Space.
-    { false, XK_Num_Lock },
-    // Smallest keysym following XK_KP_Equal.
-    { false, XK_F1 },
-    // Non-numpad analogues of numpad keysyms.
-    { false, XK_Tab },
-    { false, XK_Return },
-    { false, XK_F1 },
-    { false, XK_F2 },
-    { false, XK_F3 },
-    { false, XK_F4 },
-    { false, XK_Home },
-    { false, XK_Left },
-    { false, XK_Up },
-    { false, XK_Right },
-    { false, XK_Down },
-    { false, XK_Prior },
-    { false, XK_Page_Up },
-    { false, XK_Next },
-    { false, XK_Page_Down },
-    { false, XK_End },
-    { false, XK_Insert },
-    { false, XK_Delete },
-    { false, XK_multiply },
-    { false, XK_plus },
-    { false, XK_minus },
-    { false, XK_period },
-    { false, XK_slash },
-    { false, XK_0 },
-    { false, XK_1 },
-    { false, XK_2 },
-    { false, XK_3 },
-    { false, XK_4 },
-    { false, XK_5 },
-    { false, XK_6 },
-    { false, XK_7 },
-    { false, XK_8 },
-    { false, XK_9 },
-    // Miscellaneous other keysyms.
-    { false, XK_BackSpace },
-    { false, XK_Scroll_Lock },
-    { false, XK_Multi_key },
-    { false, XK_Select },
-    { false, XK_Num_Lock },
-    { false, XK_Shift_L },
-    { false, XK_space },
-    { false, XK_A },
-  };
-
-  for (size_t k = 0; k < arraysize(keys); ++k) {
-    int x_keycode = XKeysymToKeycode(display, keys[k].x_keysym);
-    // Exclude keysyms for which the server has no corresponding keycode.
-    if (x_keycode) {
-      InitKeyEvent(display, &event, true, x_keycode, 0);
-      // int keysym = XLookupKeysym(&event.xkey, 0);
-      // if (keysym) {
-      ui::KeyEvent ui_key_event(&event);
-      EXPECT_EQ(keys[k].is_numpad_key ? ui::EF_NUMPAD_KEY : 0,
-                ui_key_event.flags() & ui::EF_NUMPAD_KEY);
-    }
+  // Create a release event which has a native touch id mapping.
+  ui::ScopedXI2Event xrelease0;
+  xrelease0.InitTouchEvent(0, XI_TouchEnd, 0, gfx::Point(10, 10), valuators);
+  ui::TouchEvent urelease0(xrelease0);
+  {
+    // When the copy is destructed it should not attempt to remove the mapping.
+    // Exiting this scope should not cause a crash.
+    ui::TouchEvent copy = urelease0;
   }
 }
 
-TEST_F(EventsXTest, FunctionKeyEvents) {
-  Display* display = gfx::GetXDisplay();
-
-  // Min  function key code minus 1.
-  EXPECT_FALSE(HasFunctionKeyFlagSetIfSupported(display, XK_F1 - 1));
-  // All function keys.
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F1));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F2));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F3));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F4));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F5));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F6));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F7));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F8));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F9));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F10));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F11));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F12));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F13));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F14));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F15));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F16));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F17));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F18));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F19));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F20));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F21));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F22));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F23));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F24));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F25));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F26));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F27));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F28));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F29));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F30));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F31));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F32));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F33));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F34));
-  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F35));
-  // Max function key code plus 1.
-  EXPECT_FALSE(HasFunctionKeyFlagSetIfSupported(display, XK_F35 + 1));
-}
-
-#if defined(USE_XI2_MT)
 // Verifies that the type of events from a disabled keyboard is ET_UNKNOWN, but
 // that an exception list of keys can still be processed.
 TEST_F(EventsXTest, DisableKeyboard) {
   DeviceDataManagerX11* device_data_manager =
       static_cast<DeviceDataManagerX11*>(
           DeviceDataManager::GetInstance());
-  unsigned int blocked_device_id = 1;
-  unsigned int other_device_id = 2;
-  unsigned int master_device_id = 3;
+  int blocked_device_id = 1;
+  int other_device_id = 2;
+  int master_device_id = 3;
   device_data_manager->DisableDevice(blocked_device_id);
 
   scoped_ptr<std::set<KeyboardCode> > excepted_keys(new std::set<KeyboardCode>);
@@ -556,8 +412,7 @@ TEST_F(EventsXTest, DisableKeyboard) {
   EXPECT_EQ(ui::ET_KEY_PRESSED, ui::EventTypeFromNative(xev));
 
   device_data_manager->EnableDevice(blocked_device_id);
-  device_data_manager->SetDisabledKeyboardAllowedKeys(
-      scoped_ptr<std::set<KeyboardCode> >());
+  device_data_manager->SetDisabledKeyboardAllowedKeys(nullptr);
 
   // A key returns KEY_PRESSED as per usual now that keyboard was re-enabled.
   xev.InitGenericKeyEvent(master_device_id,
@@ -573,9 +428,9 @@ TEST_F(EventsXTest, DisableMouse) {
   DeviceDataManagerX11* device_data_manager =
       static_cast<DeviceDataManagerX11*>(
           DeviceDataManager::GetInstance());
-  unsigned int blocked_device_id = 1;
-  unsigned int other_device_id = 2;
-  std::vector<unsigned int> device_list;
+  int blocked_device_id = 1;
+  int other_device_id = 2;
+  std::vector<int> device_list;
   device_list.push_back(blocked_device_id);
   device_list.push_back(other_device_id);
   TouchFactory::GetInstance()->SetPointerDeviceForTest(device_list);
@@ -597,7 +452,6 @@ TEST_F(EventsXTest, DisableMouse) {
       EF_LEFT_MOUSE_BUTTON);
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, ui::EventTypeFromNative(xev));
 }
-#endif  // defined(USE_XI2_MT)
 
 #if !defined(OS_CHROMEOS)
 TEST_F(EventsXTest, ImeFabricatedKeyEvents) {

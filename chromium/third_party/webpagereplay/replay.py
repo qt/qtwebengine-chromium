@@ -47,7 +47,6 @@ import socket
 import sys
 import traceback
 
-import cachemissarchive
 import customhandlers
 import dnsproxy
 import httparchive
@@ -55,7 +54,6 @@ import httpclient
 import httpproxy
 import net_configs
 import platformsettings
-import replayspdyserver
 import script_injector
 import servermanager
 import trafficshaper
@@ -111,57 +109,42 @@ def AddDnsProxy(server_manager, options, host, port, real_dns_lookup,
                         dns_lookup=dnsproxy.ReplayDnsLookup(host, dns_filters))
 
 
-def AddWebProxy(server_manager, options, host, real_dns_lookup, http_archive,
-                cache_misses):
+def AddWebProxy(server_manager, options, host, real_dns_lookup, http_archive):
   inject_script = script_injector.GetInjectScript(options.inject_scripts)
   custom_handlers = customhandlers.CustomHandlers(options, http_archive)
-  if options.spdy:
-    assert not options.record, 'spdy cannot be used with --record.'
-    archive_fetch = httpclient.ReplayHttpArchiveFetch(
-        http_archive, real_dns_lookup,
-        inject_script,
-        options.diff_unknown_requests,
-        cache_misses=cache_misses,
-        use_closest_match=options.use_closest_match,
-        scramble_images=options.scramble_images)
-    server_manager.Append(
-        replayspdyserver.ReplaySpdyServer, archive_fetch,
-        custom_handlers, host=host, port=options.port,
-        certfile=options.https_root_ca_cert_path)
-  else:
-    custom_handlers.add_server_manager_handler(server_manager)
-    archive_fetch = httpclient.ControllableHttpArchiveFetch(
-        http_archive, real_dns_lookup,
-        inject_script,
-        options.diff_unknown_requests, options.record,
-        cache_misses=cache_misses, use_closest_match=options.use_closest_match,
-        scramble_images=options.scramble_images)
-    server_manager.AppendRecordCallback(archive_fetch.SetRecordMode)
-    server_manager.AppendReplayCallback(archive_fetch.SetReplayMode)
-    server_manager.Append(
-        httpproxy.HttpProxyServer,
-        archive_fetch, custom_handlers,
-        host=host, port=options.port, use_delays=options.use_server_delay,
-        **options.shaping_http)
-    if options.ssl:
-      if options.should_generate_certs:
-        server_manager.Append(
-            httpproxy.HttpsProxyServer, archive_fetch, custom_handlers,
-            options.https_root_ca_cert_path, host=host, port=options.ssl_port,
-            use_delays=options.use_server_delay, **options.shaping_http)
-      else:
-        server_manager.Append(
-            httpproxy.SingleCertHttpsProxyServer, archive_fetch,
-            custom_handlers, options.https_root_ca_cert_path, host=host,
-            port=options.ssl_port, use_delays=options.use_server_delay,
-            **options.shaping_http)
-    if options.http_to_https_port:
+  custom_handlers.add_server_manager_handler(server_manager)
+  archive_fetch = httpclient.ControllableHttpArchiveFetch(
+      http_archive, real_dns_lookup,
+      inject_script,
+      options.diff_unknown_requests, options.record,
+      use_closest_match=options.use_closest_match,
+      scramble_images=options.scramble_images)
+  server_manager.AppendRecordCallback(archive_fetch.SetRecordMode)
+  server_manager.AppendReplayCallback(archive_fetch.SetReplayMode)
+  server_manager.Append(
+      httpproxy.HttpProxyServer,
+      archive_fetch, custom_handlers,
+      host=host, port=options.port, use_delays=options.use_server_delay,
+      **options.shaping_http)
+  if options.ssl:
+    if options.should_generate_certs:
       server_manager.Append(
-          httpproxy.HttpToHttpsProxyServer,
-          archive_fetch, custom_handlers,
-          host=host, port=options.http_to_https_port,
-          use_delays=options.use_server_delay,
+          httpproxy.HttpsProxyServer, archive_fetch, custom_handlers,
+          options.https_root_ca_cert_path, host=host, port=options.ssl_port,
+          use_delays=options.use_server_delay, **options.shaping_http)
+    else:
+      server_manager.Append(
+          httpproxy.SingleCertHttpsProxyServer, archive_fetch,
+          custom_handlers, options.https_root_ca_cert_path, host=host,
+          port=options.ssl_port, use_delays=options.use_server_delay,
           **options.shaping_http)
+  if options.http_to_https_port:
+    server_manager.Append(
+        httpproxy.HttpToHttpsProxyServer,
+        archive_fetch, custom_handlers,
+        host=host, port=options.http_to_https_port,
+        use_delays=options.use_server_delay,
+        **options.shaping_http)
 
 
 def AddTrafficShaper(server_manager, options, host):
@@ -181,13 +164,13 @@ class OptionsWrapper(object):
     if options.record and options.HasTrafficShaping():
        [...]
   """
-  _TRAFFICSHAPING_OPTIONS = set(
-      ['down', 'up', 'delay_ms', 'packet_loss_rate', 'init_cwnd', 'net'])
+  _TRAFFICSHAPING_OPTIONS = {
+      'down', 'up', 'delay_ms', 'packet_loss_rate', 'init_cwnd', 'net'}
   _CONFLICTING_OPTIONS = (
       ('record', ('down', 'up', 'delay_ms', 'packet_loss_rate', 'net',
                   'spdy', 'use_server_delay')),
       ('append', ('down', 'up', 'delay_ms', 'packet_loss_rate', 'net',
-                  'spdy', 'use_server_delay')),  # same as --record
+                  'use_server_delay')),  # same as --record
       ('net', ('down', 'up', 'delay_ms')),
       ('server', ('server_mode',)),
   )
@@ -200,6 +183,7 @@ class OptionsWrapper(object):
         if getattr(options, name) != value])
     self._CheckConflicts()
     self._CheckValidIp('host')
+    self._CheckFeatureSupport()
     self._MassageValues()
 
   def _CheckConflicts(self):
@@ -217,8 +201,14 @@ class OptionsWrapper(object):
     if value:
       try:
         socket.inet_aton(value)
-      except:
+      except Exception:
         self._parser.error('Option --%s must be a valid IPv4 address.' % name)
+
+  def _CheckFeatureSupport(self):
+    if (self._options.should_generate_certs and
+        not platformsettings.HasSniSupport()):
+      self._parser.error('Option --should_generate_certs requires pyOpenSSL '
+                         '0.13 or greater for SNI support.')
 
   def _ShapingKeywordArgs(self, shaping_key):
     """Return the shaping keyword args for |shaping_key|.
@@ -300,17 +290,6 @@ def replay(options, replay_filename):
     platformsettings.rerun_as_administrator()
   configure_logging(options.log_level, options.log_file)
   server_manager = servermanager.ServerManager(options.record)
-  cache_misses = None
-  if options.cache_miss_file:
-    if os.path.exists(options.cache_miss_file):
-      logging.warning('Cache Miss Archive file %s already exists; '
-                      'replay will load and append entries to archive file',
-                      options.cache_miss_file)
-      cache_misses = cachemissarchive.CacheMissArchive.Load(
-          options.cache_miss_file)
-    else:
-      cache_misses = cachemissarchive.CacheMissArchive(
-          options.cache_miss_file)
   if options.server:
     AddDnsForward(server_manager, options.server)
   else:
@@ -352,7 +331,7 @@ def replay(options, replay_filename):
       http_proxy_address = platformsettings.get_httpproxy_ip_address(
           options.server_mode)
     AddWebProxy(server_manager, options, http_proxy_address, real_dns_lookup,
-                http_archive, cache_misses)
+                http_archive)
     AddTrafficShaper(server_manager, options, ipfw_dns_host)
 
   exit_status = 0
@@ -366,19 +345,13 @@ def replay(options, replay_filename):
           platformsettings.DnsUpdateError) as e:
     logging.critical('%s: %s', e.__class__.__name__, e)
     exit_status = 1
-  except:
+  except Exception:
     logging.critical(traceback.format_exc())
     exit_status = 2
 
   if options.record:
     http_archive.Persist(replay_filename)
     logging.info('Saved %d responses to %s', len(http_archive), replay_filename)
-  if cache_misses:
-    cache_misses.Persist()
-    logging.info('Saved %d cache misses and %d requests to %s',
-                 cache_misses.get_total_cache_misses(),
-                 len(cache_misses.request_counts.keys()),
-                 options.cache_miss_file)
   return exit_status
 
 
@@ -395,9 +368,6 @@ def GetOptionParser():
       description=__doc__,
       epilog='http://code.google.com/p/web-page-replay/')
 
-  option_parser.add_option('--spdy', default=False,
-      action='store_true',
-      help='Replay via SPDY. (Can be combined with --no-ssl).')
   option_parser.add_option('-r', '--record', default=False,
       action='store_true',
       help='Download real responses and record them to replay_file')
@@ -413,12 +383,6 @@ def GetOptionParser():
       action='store',
       type='string',
       help='Log file to use in addition to writting logs to stderr.')
-  option_parser.add_option('-e', '--cache_miss_file', default=None,
-      action='store',
-      dest='cache_miss_file',
-      type='string',
-      help='Archive file to record cache misses as pickled objects.'
-           'Cache misses occur when a request cannot be served in replay mode.')
 
   network_group = optparse.OptionGroup(option_parser,
       'Network Simulation Options',

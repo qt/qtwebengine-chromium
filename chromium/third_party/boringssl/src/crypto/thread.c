@@ -56,40 +56,34 @@
 
 #include <openssl/thread.h>
 
-#include <errno.h>
+#include <string.h>
 
-#if defined(OPENSSL_WINDOWS)
-#include <Windows.h>
+#if !defined(OPENSSL_WINDOWS)
+#include <errno.h>
+#else
+#pragma warning(push, 3)
+#include <windows.h>
+#pragma warning(pop)
 #endif
 
 #include <openssl/mem.h>
-#include <openssl/type_check.h>
+
+
+#define CRYPTO_LOCK_ITEM(x) #x
 
 /* lock_names contains the names of all the locks defined in thread.h. */
 static const char *const lock_names[] = {
-    "<<ERROR>>",    "err",          "ex_data",       "x509",
-    "x509_info",    "x509_pkey",    "x509_crl",      "x509_req",
-    "dsa",          "rsa",          "evp_pkey",      "x509_store",
-    "ssl_ctx",      "ssl_cert",     "ssl_session",   "ssl_sess_cert",
-    "ssl",          "ssl_method",   "rand",          "rand2",
-    "debug_malloc", "BIO",          "gethostbyname", "getservbyname",
-    "readdir",      "RSA_blinding", "dh",            "debug_malloc2",
-    "dso",          "dynlock",      "engine",        "ui",
-    "ecdsa",        "ec",           "ecdh",          "bn",
-    "ec_pre_comp",  "store",        "comp",          "fips",
-    "fips2",        "obj",
+  CRYPTO_LOCK_LIST
 };
 
-OPENSSL_COMPILE_ASSERT(CRYPTO_NUM_LOCKS ==
-                           sizeof(lock_names) / sizeof(lock_names[0]),
-                       CRYPTO_NUM_LOCKS_inconsistent);
+#undef CRYPTO_LOCK_ITEM
+
+#define CRYPTO_NUM_LOCKS (sizeof(lock_names) / sizeof(lock_names[0]))
 
 static void (*locking_callback)(int mode, int lock_num, const char *file,
                                 int line) = 0;
 static int (*add_lock_callback)(int *pointer, int amount, int lock_num,
                                 const char *file, int line) = 0;
-static void (*threadid_callback)(CRYPTO_THREADID *) = 0;
-
 
 int CRYPTO_num_locks(void) { return CRYPTO_NUM_LOCKS; }
 
@@ -111,23 +105,13 @@ const char *CRYPTO_get_lock_name(int lock_num) {
   }
 }
 
-int CRYPTO_THREADID_set_callback(void (*func)(CRYPTO_THREADID *)) {
-  if (threadid_callback) {
-    return 0;
-  }
-  threadid_callback = func;
-  return 1;
-}
+int CRYPTO_THREADID_set_callback(void (*func)(CRYPTO_THREADID *)) { return 1; }
 
-void CRYPTO_THREADID_set_numeric(CRYPTO_THREADID *id, unsigned long val) {
-  memset(id, 0, sizeof(*id));
-  id->val = val;
-}
+void CRYPTO_THREADID_set_numeric(CRYPTO_THREADID *id, unsigned long val) {}
 
-void CRYPTO_THREADID_set_pointer(CRYPTO_THREADID *id, void *ptr) {
-  memset(id, 0, sizeof(*id));
-  id->ptr = ptr;
-}
+void CRYPTO_THREADID_set_pointer(CRYPTO_THREADID *id, void *ptr) {}
+
+void CRYPTO_THREADID_current(CRYPTO_THREADID *id) {}
 
 void (*CRYPTO_get_locking_callback(void))(int mode, int lock_num,
                                           const char *file, int line) {
@@ -159,32 +143,6 @@ int CRYPTO_add_lock(int *pointer, int amount, int lock_num, const char *file,
   }
 
   return ret;
-}
-
-void CRYPTO_THREADID_current(CRYPTO_THREADID *id) {
-  if (threadid_callback) {
-    threadid_callback(id);
-    return;
-  }
-
-#if defined(OPENSSL_WINDOWS)
-  CRYPTO_THREADID_set_numeric(id, (unsigned long)GetCurrentThreadId());
-#else
-  /* For everything else, default to using the address of 'errno' */
-  CRYPTO_THREADID_set_pointer(id, (void *)&errno);
-#endif
-}
-
-int CRYPTO_THREADID_cmp(const CRYPTO_THREADID *a, const CRYPTO_THREADID *b) {
-  return memcmp(a, b, sizeof(*a));
-}
-
-void CRYPTO_THREADID_cpy(CRYPTO_THREADID *dest, const CRYPTO_THREADID *src) {
-  memcpy(dest, src, sizeof(*src));
-}
-
-uint32_t CRYPTO_THREADID_hash(const CRYPTO_THREADID *id) {
-  return OPENSSL_hash32(id, sizeof(CRYPTO_THREADID));
 }
 
 void CRYPTO_set_id_callback(unsigned long (*func)(void)) {}

@@ -4,11 +4,11 @@
 
 #include "cc/scheduler/scheduler_state_machine.h"
 
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "ui/gfx/frame_time.h"
 
@@ -26,30 +26,37 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       last_frame_number_swap_performed_(-1),
       last_frame_number_swap_requested_(-1),
       last_frame_number_begin_main_frame_sent_(-1),
-      last_frame_number_update_visible_tiles_was_called_(-1),
-      manage_tiles_funnel_(0),
+      last_frame_number_invalidate_output_surface_performed_(-1),
+      animate_funnel_(false),
+      request_swap_funnel_(false),
+      send_begin_main_frame_funnel_(false),
+      invalidate_output_surface_funnel_(false),
+      prepare_tiles_funnel_(0),
       consecutive_checkerboard_animations_(0),
       max_pending_swaps_(1),
       pending_swaps_(0),
       needs_redraw_(false),
       needs_animate_(false),
-      needs_manage_tiles_(false),
-      swap_used_incomplete_tile_(false),
+      needs_prepare_tiles_(false),
       needs_commit_(false),
-      inside_poll_for_anticipated_draw_triggers_(false),
       visible_(false),
       can_start_(false),
       can_draw_(false),
       has_pending_tree_(false),
       pending_tree_is_ready_for_activation_(false),
       active_tree_needs_first_draw_(false),
-      did_commit_after_animating_(false),
       did_create_and_initialize_first_output_surface_(false),
       impl_latency_takes_priority_(false),
       skip_next_begin_main_frame_to_reduce_latency_(false),
       skip_begin_main_frame_to_reduce_latency_(false),
       continuous_painting_(false),
-      impl_latency_takes_priority_on_battery_(false) {
+      children_need_begin_frames_(false),
+      defer_commits_(false),
+      video_needs_begin_frames_(false),
+      last_commit_had_no_updates_(false),
+      wait_for_active_tree_ready_to_draw_(false),
+      did_request_swap_in_last_frame_(false),
+      did_perform_swap_in_last_draw_(false) {
 }
 
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
@@ -86,6 +93,24 @@ const char* SchedulerStateMachine::BeginImplFrameStateToString(
   return "???";
 }
 
+const char* SchedulerStateMachine::BeginImplFrameDeadlineModeToString(
+    BeginImplFrameDeadlineMode mode) {
+  switch (mode) {
+    case BEGIN_IMPL_FRAME_DEADLINE_MODE_NONE:
+      return "BEGIN_IMPL_FRAME_DEADLINE_MODE_NONE";
+    case BEGIN_IMPL_FRAME_DEADLINE_MODE_IMMEDIATE:
+      return "BEGIN_IMPL_FRAME_DEADLINE_MODE_IMMEDIATE";
+    case BEGIN_IMPL_FRAME_DEADLINE_MODE_REGULAR:
+      return "BEGIN_IMPL_FRAME_DEADLINE_MODE_REGULAR";
+    case BEGIN_IMPL_FRAME_DEADLINE_MODE_LATE:
+      return "BEGIN_IMPL_FRAME_DEADLINE_MODE_LATE";
+    case BEGIN_IMPL_FRAME_DEADLINE_MODE_BLOCKED_ON_READY_TO_DRAW:
+      return "BEGIN_IMPL_FRAME_DEADLINE_MODE_BLOCKED_ON_READY_TO_DRAW";
+  }
+  NOTREACHED();
+  return "???";
+}
+
 const char* SchedulerStateMachine::CommitStateToString(CommitState state) {
   switch (state) {
     case COMMIT_STATE_IDLE:
@@ -98,6 +123,8 @@ const char* SchedulerStateMachine::CommitStateToString(CommitState state) {
       return "COMMIT_STATE_READY_TO_COMMIT";
     case COMMIT_STATE_WAITING_FOR_ACTIVATION:
       return "COMMIT_STATE_WAITING_FOR_ACTIVATION";
+    case COMMIT_STATE_WAITING_FOR_DRAW:
+      return "COMMIT_STATE_WAITING_FOR_DRAW";
   }
   NOTREACHED();
   return "???";
@@ -129,8 +156,6 @@ const char* SchedulerStateMachine::ActionToString(Action action) {
       return "ACTION_SEND_BEGIN_MAIN_FRAME";
     case ACTION_COMMIT:
       return "ACTION_COMMIT";
-    case ACTION_UPDATE_VISIBLE_TILES:
-      return "ACTION_UPDATE_VISIBLE_TILES";
     case ACTION_ACTIVATE_SYNC_TREE:
       return "ACTION_ACTIVATE_SYNC_TREE";
     case ACTION_DRAW_AND_SWAP_IF_POSSIBLE:
@@ -141,23 +166,25 @@ const char* SchedulerStateMachine::ActionToString(Action action) {
       return "ACTION_DRAW_AND_SWAP_ABORT";
     case ACTION_BEGIN_OUTPUT_SURFACE_CREATION:
       return "ACTION_BEGIN_OUTPUT_SURFACE_CREATION";
-    case ACTION_MANAGE_TILES:
-      return "ACTION_MANAGE_TILES";
+    case ACTION_PREPARE_TILES:
+      return "ACTION_PREPARE_TILES";
+    case ACTION_INVALIDATE_OUTPUT_SURFACE:
+      return "ACTION_INVALIDATE_OUTPUT_SURFACE";
   }
   NOTREACHED();
   return "???";
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 SchedulerStateMachine::AsValue() const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
-  AsValueInto(state.get(), gfx::FrameTime::Now());
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
+  AsValueInto(state.get());
   return state;
 }
 
-void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
-                                        base::TimeTicks now) const {
+void SchedulerStateMachine::AsValueInto(
+    base::trace_event::TracedValue* state) const {
   state->BeginDictionary("major_state");
   state->SetString("next_action", ActionToString(NextAction()));
   state->SetString("begin_impl_frame_state",
@@ -169,35 +196,9 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
                    ForcedRedrawOnTimeoutStateToString(forced_redraw_state_));
   state->EndDictionary();
 
-  state->BeginDictionary("major_timestamps_in_ms");
-  state->SetDouble("0_interval",
-                   begin_impl_frame_args_.interval.InMicroseconds() / 1000.0L);
-  state->SetDouble(
-      "1_now_to_deadline",
-      (begin_impl_frame_args_.deadline - now).InMicroseconds() / 1000.0L);
-  state->SetDouble(
-      "2_frame_time_to_now",
-      (now - begin_impl_frame_args_.frame_time).InMicroseconds() / 1000.0L);
-  state->SetDouble("3_frame_time_to_deadline",
-                   (begin_impl_frame_args_.deadline -
-                    begin_impl_frame_args_.frame_time).InMicroseconds() /
-                       1000.0L);
-  state->SetDouble("4_now",
-                   (now - base::TimeTicks()).InMicroseconds() / 1000.0L);
-  state->SetDouble(
-      "5_frame_time",
-      (begin_impl_frame_args_.frame_time - base::TimeTicks()).InMicroseconds() /
-          1000.0L);
-  state->SetDouble(
-      "6_deadline",
-      (begin_impl_frame_args_.deadline - base::TimeTicks()).InMicroseconds() /
-          1000.0L);
-  state->EndDictionary();
-
   state->BeginDictionary("minor_state");
   state->SetInteger("commit_count", commit_count_);
   state->SetInteger("current_frame_number", current_frame_number_);
-
   state->SetInteger("last_frame_number_animate_performed",
                     last_frame_number_animate_performed_);
   state->SetInteger("last_frame_number_swap_performed",
@@ -206,18 +207,20 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
                     last_frame_number_swap_requested_);
   state->SetInteger("last_frame_number_begin_main_frame_sent",
                     last_frame_number_begin_main_frame_sent_);
-  state->SetInteger("last_frame_number_update_visible_tiles_was_called",
-                    last_frame_number_update_visible_tiles_was_called_);
-
-  state->SetInteger("manage_tiles_funnel", manage_tiles_funnel_);
+  state->SetBoolean("funnel: animate_funnel", animate_funnel_);
+  state->SetBoolean("funnel: request_swap_funnel", request_swap_funnel_);
+  state->SetBoolean("funnel: send_begin_main_frame_funnel",
+                    send_begin_main_frame_funnel_);
+  state->SetInteger("funnel: prepare_tiles_funnel", prepare_tiles_funnel_);
+  state->SetBoolean("funnel: invalidate_output_surface_funnel",
+                    invalidate_output_surface_funnel_);
   state->SetInteger("consecutive_checkerboard_animations",
                     consecutive_checkerboard_animations_);
   state->SetInteger("max_pending_swaps_", max_pending_swaps_);
   state->SetInteger("pending_swaps_", pending_swaps_);
   state->SetBoolean("needs_redraw", needs_redraw_);
   state->SetBoolean("needs_animate_", needs_animate_);
-  state->SetBoolean("needs_manage_tiles", needs_manage_tiles_);
-  state->SetBoolean("swap_used_incomplete_tile", swap_used_incomplete_tile_);
+  state->SetBoolean("needs_prepare_tiles", needs_prepare_tiles_);
   state->SetBoolean("needs_commit", needs_commit_);
   state->SetBoolean("visible", visible_);
   state->SetBoolean("can_start", can_start_);
@@ -227,7 +230,8 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
                     pending_tree_is_ready_for_activation_);
   state->SetBoolean("active_tree_needs_first_draw",
                     active_tree_needs_first_draw_);
-  state->SetBoolean("did_commit_after_animating", did_commit_after_animating_);
+  state->SetBoolean("wait_for_active_tree_ready_to_draw",
+                    wait_for_active_tree_ready_to_draw_);
   state->SetBoolean("did_create_and_initialize_first_output_surface",
                     did_create_and_initialize_first_output_surface_);
   state->SetBoolean("impl_latency_takes_priority",
@@ -239,43 +243,15 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
   state->SetBoolean("skip_next_begin_main_frame_to_reduce_latency",
                     skip_next_begin_main_frame_to_reduce_latency_);
   state->SetBoolean("continuous_painting", continuous_painting_);
-  state->SetBoolean("impl_latency_takes_priority_on_battery",
-                    impl_latency_takes_priority_on_battery_);
+  state->SetBoolean("children_need_begin_frames", children_need_begin_frames_);
+  state->SetBoolean("video_needs_begin_frames", video_needs_begin_frames_);
+  state->SetBoolean("defer_commits", defer_commits_);
+  state->SetBoolean("last_commit_had_no_updates", last_commit_had_no_updates_);
+  state->SetBoolean("did_request_swap_in_last_frame",
+                    did_request_swap_in_last_frame_);
+  state->SetBoolean("did_perform_swap_in_last_draw",
+                    did_perform_swap_in_last_draw_);
   state->EndDictionary();
-}
-
-void SchedulerStateMachine::AdvanceCurrentFrameNumber() {
-  current_frame_number_++;
-
-  // "Drain" the ManageTiles funnel.
-  if (manage_tiles_funnel_ > 0)
-    manage_tiles_funnel_--;
-
-  skip_begin_main_frame_to_reduce_latency_ =
-      skip_next_begin_main_frame_to_reduce_latency_;
-  skip_next_begin_main_frame_to_reduce_latency_ = false;
-}
-
-bool SchedulerStateMachine::HasAnimatedThisFrame() const {
-  return last_frame_number_animate_performed_ == current_frame_number_;
-}
-
-bool SchedulerStateMachine::HasSentBeginMainFrameThisFrame() const {
-  return current_frame_number_ ==
-         last_frame_number_begin_main_frame_sent_;
-}
-
-bool SchedulerStateMachine::HasUpdatedVisibleTilesThisFrame() const {
-  return current_frame_number_ ==
-         last_frame_number_update_visible_tiles_was_called_;
-}
-
-bool SchedulerStateMachine::HasSwappedThisFrame() const {
-  return current_frame_number_ == last_frame_number_swap_performed_;
-}
-
-bool SchedulerStateMachine::HasRequestedSwapThisFrame() const {
-  return current_frame_number_ == last_frame_number_swap_requested_;
 }
 
 bool SchedulerStateMachine::PendingDrawsShouldBeAborted() const {
@@ -329,7 +305,7 @@ bool SchedulerStateMachine::ShouldBeginOutputSurfaceCreation() const {
   if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_IDLE)
     return false;
 
-  // We want to clear the pipline of any pending draws and activations
+  // We want to clear the pipeline of any pending draws and activations
   // before starting output surface initialization. This allows us to avoid
   // weird corner cases where we abort draws or force activation while we
   // are initializing the output surface.
@@ -344,19 +320,20 @@ bool SchedulerStateMachine::ShouldBeginOutputSurfaceCreation() const {
 bool SchedulerStateMachine::ShouldDraw() const {
   // If we need to abort draws, we should do so ASAP since the draw could
   // be blocking other important actions (like output surface initialization),
-  // from occuring. If we are waiting for the first draw, then perfom the
+  // from occurring. If we are waiting for the first draw, then perform the
   // aborted draw to keep things moving. If we are not waiting for the first
   // draw however, we don't want to abort for no reason.
   if (PendingDrawsShouldBeAborted())
     return active_tree_needs_first_draw_;
 
-  // If a commit has occurred after the animate call, we need to call animate
-  // again before we should draw.
-  if (did_commit_after_animating_)
+  // Do not draw too many times in a single frame. It's okay that we don't check
+  // this before checking for aborted draws because aborted draws do not request
+  // a swap.
+  if (request_swap_funnel_)
     return false;
 
-  // After this line, we only want to send a swap request once per frame.
-  if (HasRequestedSwapThisFrame())
+  // Don't draw if we are waiting on the first commit after a surface.
+  if (output_surface_state_ != OUTPUT_SURFACE_ACTIVE)
     return false;
 
   // Do not queue too many swaps.
@@ -394,40 +371,13 @@ bool SchedulerStateMachine::ShouldActivatePendingTree() const {
   return pending_tree_is_ready_for_activation_;
 }
 
-bool SchedulerStateMachine::ShouldUpdateVisibleTiles() const {
-  if (!settings_.impl_side_painting)
-    return false;
-  if (HasUpdatedVisibleTilesThisFrame())
-    return false;
-
-  // We don't want to update visible tiles right after drawing.
-  if (HasRequestedSwapThisFrame())
-    return false;
-
-  // There's no reason to check for tiles if we don't have an output surface.
-  if (!HasInitializedOutputSurface())
-    return false;
-
-  // We should not check for visible tiles until we've entered the deadline so
-  // we check as late as possible and give the tiles more time to initialize.
-  if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE)
-    return false;
-
-  // If the last swap drew with checkerboard or missing tiles, we should
-  // poll for any new visible tiles so we can be notified to draw again
-  // when there are.
-  if (swap_used_incomplete_tile_)
-    return true;
-
-  return false;
-}
-
 bool SchedulerStateMachine::ShouldAnimate() const {
-  if (!can_draw_)
+  // Do not animate too many times in a single frame.
+  if (animate_funnel_)
     return false;
 
-  // If a commit occurred after our last call, we need to do animation again.
-  if (HasAnimatedThisFrame() && !did_commit_after_animating_)
+  // Don't animate if we are waiting on the first commit after a surface.
+  if (output_surface_state_ != OUTPUT_SURFACE_ACTIVE)
     return false;
 
   if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING &&
@@ -445,11 +395,19 @@ bool SchedulerStateMachine::CouldSendBeginMainFrame() const {
   if (!visible_)
     return false;
 
+  // Do not make a new commits when it is deferred.
+  if (defer_commits_)
+    return false;
+
   return true;
 }
 
 bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   if (!CouldSendBeginMainFrame())
+    return false;
+
+  // Do not send begin main frame too many times in a single frame.
+  if (send_begin_main_frame_funnel_)
     return false;
 
   // Only send BeginMainFrame when there isn't another commit pending already.
@@ -462,10 +420,6 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
       (has_pending_tree_ || active_tree_needs_first_draw_)) {
     return false;
   }
-
-  // We want to start the first commit after we get a new output surface ASAP.
-  if (output_surface_state_ == OUTPUT_SURFACE_WAITING_FOR_FIRST_COMMIT)
-    return true;
 
   // We should not send BeginMainFrame while we are in
   // BEGIN_IMPL_FRAME_STATE_IDLE since we might have new
@@ -481,10 +435,6 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_COMMIT)
     return true;
 
-  // After this point, we only start a commit once per frame.
-  if (HasSentBeginMainFrameThisFrame())
-    return false;
-
   // We shouldn't normally accept commits if there isn't an OutputSurface.
   if (!HasInitializedOutputSurface())
     return false;
@@ -493,7 +443,7 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
   // TODO(brianderson): Remove this restriction to improve throughput.
   bool just_swapped_in_deadline =
       begin_impl_frame_state_ == BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE &&
-      HasSwappedThisFrame();
+      did_perform_swap_in_last_draw_;
   if (pending_swaps_ >= max_pending_swaps_ && !just_swapped_in_deadline)
     return false;
 
@@ -520,25 +470,41 @@ bool SchedulerStateMachine::ShouldCommit() const {
   return true;
 }
 
-bool SchedulerStateMachine::ShouldManageTiles() const {
-  // ManageTiles only really needs to be called immediately after commit
+bool SchedulerStateMachine::ShouldPrepareTiles() const {
+  // PrepareTiles only really needs to be called immediately after commit
   // and then periodically after that. Use a funnel to make sure we average
-  // one ManageTiles per BeginImplFrame in the long run.
-  if (manage_tiles_funnel_ > 0)
+  // one PrepareTiles per BeginImplFrame in the long run.
+  if (prepare_tiles_funnel_ > 0)
     return false;
 
   // Limiting to once per-frame is not enough, since we only want to
-  // manage tiles _after_ draws. Polling for draw triggers and
-  // begin-frame are mutually exclusive, so we limit to these two cases.
-  if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE &&
-      !inside_poll_for_anticipated_draw_triggers_)
+  // prepare tiles _after_ draws.
+  if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE)
     return false;
-  return needs_manage_tiles_;
+
+  return needs_prepare_tiles_;
+}
+
+bool SchedulerStateMachine::ShouldInvalidateOutputSurface() const {
+  // Do not invalidate too many times in a frame.
+  if (invalidate_output_surface_funnel_)
+    return false;
+
+  // Only the synchronous compositor requires invalidations.
+  if (!settings_.using_synchronous_renderer_compositor)
+    return false;
+
+  // Invalidations are only performed inside a BeginFrame.
+  if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING)
+    return false;
+
+  // TODO(sunnyps): needs_prepare_tiles_ is needed here because PrepareTiles is
+  // called only inside the deadline / draw phase. We could remove this if we
+  // allowed PrepareTiles to happen in OnBeginImplFrame.
+  return needs_redraw_ || needs_prepare_tiles_;
 }
 
 SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
-  if (ShouldUpdateVisibleTiles())
-    return ACTION_UPDATE_VISIBLE_TILES;
   if (ShouldActivatePendingTree())
     return ACTION_ACTIVATE_SYNC_TREE;
   if (ShouldCommit())
@@ -553,10 +519,12 @@ SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
     else
       return ACTION_DRAW_AND_SWAP_IF_POSSIBLE;
   }
-  if (ShouldManageTiles())
-    return ACTION_MANAGE_TILES;
+  if (ShouldPrepareTiles())
+    return ACTION_PREPARE_TILES;
   if (ShouldSendBeginMainFrame())
     return ACTION_SEND_BEGIN_MAIN_FRAME;
+  if (ShouldInvalidateOutputSurface())
+    return ACTION_INVALIDATE_OUTPUT_SURFACE;
   if (ShouldBeginOutputSurfaceCreation())
     return ACTION_BEGIN_OUTPUT_SURFACE_CREATION;
   return ACTION_NONE;
@@ -567,37 +535,21 @@ void SchedulerStateMachine::UpdateState(Action action) {
     case ACTION_NONE:
       return;
 
-    case ACTION_UPDATE_VISIBLE_TILES:
-      last_frame_number_update_visible_tiles_was_called_ =
-          current_frame_number_;
-      return;
-
     case ACTION_ACTIVATE_SYNC_TREE:
       UpdateStateOnActivation();
       return;
 
     case ACTION_ANIMATE:
-      last_frame_number_animate_performed_ = current_frame_number_;
-      needs_animate_ = false;
-      did_commit_after_animating_ = false;
-      // TODO(skyostil): Instead of assuming this, require the client to tell
-      // us.
-      SetNeedsRedraw();
+      UpdateStateOnAnimate();
       return;
 
     case ACTION_SEND_BEGIN_MAIN_FRAME:
-      DCHECK(!has_pending_tree_ ||
-             settings_.main_frame_before_activation_enabled);
-      DCHECK(visible_);
-      commit_state_ = COMMIT_STATE_BEGIN_MAIN_FRAME_SENT;
-      needs_commit_ = false;
-      last_frame_number_begin_main_frame_sent_ =
-          current_frame_number_;
+      UpdateStateOnSendBeginMainFrame();
       return;
 
     case ACTION_COMMIT: {
-      bool commit_was_aborted = false;
-      UpdateStateOnCommit(commit_was_aborted);
+      bool commit_has_no_updates = false;
+      UpdateStateOnCommit(commit_has_no_updates);
       return;
     }
 
@@ -615,40 +567,58 @@ void SchedulerStateMachine::UpdateState(Action action) {
     }
 
     case ACTION_BEGIN_OUTPUT_SURFACE_CREATION:
-      DCHECK_EQ(output_surface_state_, OUTPUT_SURFACE_LOST);
-      output_surface_state_ = OUTPUT_SURFACE_CREATING;
-
-      // The following DCHECKs make sure we are in the proper quiescent state.
-      // The pipeline should be flushed entirely before we start output
-      // surface creation to avoid complicated corner cases.
-      DCHECK_EQ(commit_state_, COMMIT_STATE_IDLE);
-      DCHECK(!has_pending_tree_);
-      DCHECK(!active_tree_needs_first_draw_);
+      UpdateStateOnBeginOutputSurfaceCreation();
       return;
 
-    case ACTION_MANAGE_TILES:
-      UpdateStateOnManageTiles();
+    case ACTION_PREPARE_TILES:
+      UpdateStateOnPrepareTiles();
+      return;
+
+    case ACTION_INVALIDATE_OUTPUT_SURFACE:
+      UpdateStateOnInvalidateOutputSurface();
       return;
   }
 }
 
-void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
+void SchedulerStateMachine::UpdateStateOnAnimate() {
+  DCHECK(!animate_funnel_);
+  last_frame_number_animate_performed_ = current_frame_number_;
+  animate_funnel_ = true;
+  needs_animate_ = false;
+  // TODO(skyostil): Instead of assuming this, require the client to tell us.
+  SetNeedsRedraw();
+}
+
+void SchedulerStateMachine::UpdateStateOnSendBeginMainFrame() {
+  DCHECK(!has_pending_tree_ || settings_.main_frame_before_activation_enabled);
+  DCHECK(visible_);
+  DCHECK(!send_begin_main_frame_funnel_);
+  commit_state_ = COMMIT_STATE_BEGIN_MAIN_FRAME_SENT;
+  needs_commit_ = false;
+  send_begin_main_frame_funnel_ = true;
+  last_frame_number_begin_main_frame_sent_ = current_frame_number_;
+}
+
+void SchedulerStateMachine::UpdateStateOnCommit(bool commit_has_no_updates) {
   commit_count_++;
 
-  if (!commit_was_aborted && HasAnimatedThisFrame())
-    did_commit_after_animating_ = true;
+  // Animate after commit even if we've already animated.
+  if (!commit_has_no_updates)
+    animate_funnel_ = false;
 
-  if (commit_was_aborted || settings_.main_frame_before_activation_enabled) {
+  if (commit_has_no_updates || settings_.main_frame_before_activation_enabled) {
     commit_state_ = COMMIT_STATE_IDLE;
+  } else if (settings_.impl_side_painting) {
+    commit_state_ = COMMIT_STATE_WAITING_FOR_ACTIVATION;
   } else {
-    commit_state_ = settings_.impl_side_painting
-                        ? COMMIT_STATE_WAITING_FOR_ACTIVATION
+    commit_state_ = settings_.main_thread_should_always_be_low_latency
+                        ? COMMIT_STATE_WAITING_FOR_DRAW
                         : COMMIT_STATE_IDLE;
   }
 
   // If we are impl-side-painting but the commit was aborted, then we behave
   // mostly as if we are not impl-side-painting since there is no pending tree.
-  has_pending_tree_ = settings_.impl_side_painting && !commit_was_aborted;
+  has_pending_tree_ = settings_.impl_side_painting && !commit_has_no_updates;
 
   // Update state related to forced draws.
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_COMMIT) {
@@ -671,7 +641,7 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
   // Update state if we have a new active tree to draw, or if the active tree
   // was unchanged but we need to do a forced draw.
   if (!has_pending_tree_ &&
-      (!commit_was_aborted ||
+      (!commit_has_no_updates ||
        forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)) {
     needs_redraw_ = true;
     active_tree_needs_first_draw_ = true;
@@ -682,11 +652,15 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
 
   if (continuous_painting_)
     needs_commit_ = true;
+  last_commit_had_no_updates_ = commit_has_no_updates;
 }
 
 void SchedulerStateMachine::UpdateStateOnActivation() {
-  if (commit_state_ == COMMIT_STATE_WAITING_FOR_ACTIVATION)
-    commit_state_ = COMMIT_STATE_IDLE;
+  if (commit_state_ == COMMIT_STATE_WAITING_FOR_ACTIVATION) {
+    commit_state_ = settings_.main_thread_should_always_be_low_latency
+                        ? COMMIT_STATE_WAITING_FOR_DRAW
+                        : COMMIT_STATE_IDLE;
+  }
 
   if (output_surface_state_ == OUTPUT_SURFACE_WAITING_FOR_FIRST_ACTIVATION)
     output_surface_state_ = OUTPUT_SURFACE_ACTIVE;
@@ -704,15 +678,46 @@ void SchedulerStateMachine::UpdateStateOnDraw(bool did_request_swap) {
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)
     forced_redraw_state_ = FORCED_REDRAW_STATE_IDLE;
 
+  if (commit_state_ == COMMIT_STATE_WAITING_FOR_DRAW)
+    commit_state_ = COMMIT_STATE_IDLE;
+
   needs_redraw_ = false;
   active_tree_needs_first_draw_ = false;
 
-  if (did_request_swap)
+  if (did_request_swap) {
+    DCHECK(!request_swap_funnel_);
+    request_swap_funnel_ = true;
+    did_request_swap_in_last_frame_ = true;
     last_frame_number_swap_requested_ = current_frame_number_;
+  }
 }
 
-void SchedulerStateMachine::UpdateStateOnManageTiles() {
-  needs_manage_tiles_ = false;
+void SchedulerStateMachine::UpdateStateOnPrepareTiles() {
+  needs_prepare_tiles_ = false;
+}
+
+void SchedulerStateMachine::UpdateStateOnBeginOutputSurfaceCreation() {
+  DCHECK_EQ(output_surface_state_, OUTPUT_SURFACE_LOST);
+  output_surface_state_ = OUTPUT_SURFACE_CREATING;
+
+  // The following DCHECKs make sure we are in the proper quiescent state.
+  // The pipeline should be flushed entirely before we start output
+  // surface creation to avoid complicated corner cases.
+  DCHECK_EQ(commit_state_, COMMIT_STATE_IDLE);
+  DCHECK(!has_pending_tree_);
+  DCHECK(!active_tree_needs_first_draw_);
+}
+
+void SchedulerStateMachine::UpdateStateOnInvalidateOutputSurface() {
+  DCHECK(!invalidate_output_surface_funnel_);
+  invalidate_output_surface_funnel_ = true;
+  last_frame_number_invalidate_output_surface_performed_ =
+      current_frame_number_;
+
+  // The synchronous compositor makes no guarantees about a draw coming in after
+  // an invalidate so clear any flags that would cause the compositor's pipeline
+  // to stall.
+  active_tree_needs_first_draw_ = false;  // blocks commit if true
 }
 
 void SchedulerStateMachine::SetSkipNextBeginMainFrameToReduceLatency() {
@@ -722,91 +727,69 @@ void SchedulerStateMachine::SetSkipNextBeginMainFrameToReduceLatency() {
   skip_next_begin_main_frame_to_reduce_latency_ = true;
 }
 
+bool SchedulerStateMachine::BeginFrameRequiredForChildren() const {
+  return children_need_begin_frames_;
+}
+bool SchedulerStateMachine::BeginFrameNeededForVideo() const {
+  return video_needs_begin_frames_;
+}
+
 bool SchedulerStateMachine::BeginFrameNeeded() const {
-  // Proactive BeginFrames are bad for the synchronous compositor because we
-  // have to draw when we get the BeginFrame and could end up drawing many
-  // duplicate frames if our new frame isn't ready in time.
-  // To poll for state with the synchronous compositor without having to draw,
-  // we rely on ShouldPollForAnticipatedDrawTriggers instead.
-  if (!SupportsProactiveBeginFrame())
-    return BeginFrameNeededToAnimateOrDraw();
-
-  return BeginFrameNeededToAnimateOrDraw() || ProactiveBeginFrameWanted();
-}
-
-bool SchedulerStateMachine::ShouldPollForAnticipatedDrawTriggers() const {
-  // ShouldPollForAnticipatedDrawTriggers is what we use in place of
-  // ProactiveBeginFrameWanted when we are using the synchronous
-  // compositor.
-  if (!SupportsProactiveBeginFrame()) {
-    return !BeginFrameNeededToAnimateOrDraw() && ProactiveBeginFrameWanted();
-  }
-
-  // Non synchronous compositors should rely on
-  // ProactiveBeginFrameWanted to poll for state instead.
-  return false;
-}
-
-// Note: If SupportsProactiveBeginFrame is false, the scheduler should poll
-// for changes in it's draw state so it can request a BeginFrame when it's
-// actually ready.
-bool SchedulerStateMachine::SupportsProactiveBeginFrame() const {
-  // It is undesirable to proactively request BeginFrames if we are
-  // using a synchronous compositor because we *must* draw for every
-  // BeginFrame, which could cause duplicate draws.
-  return !settings_.using_synchronous_renderer_compositor;
-}
-
-// These are the cases where we definitely (or almost definitely) have a
-// new frame to animate and/or draw and can draw.
-bool SchedulerStateMachine::BeginFrameNeededToAnimateOrDraw() const {
-  // The output surface is the provider of BeginImplFrames, so we are not going
-  // to get them even if we ask for them.
+  // We can't handle BeginFrames when output surface isn't initialized.
+  // TODO(brianderson): Support output surface creation inside a BeginFrame.
   if (!HasInitializedOutputSurface())
     return false;
 
-  // If we can't draw, don't tick until we are notified that we can draw again.
-  if (!can_draw_)
+  // If we are not visible, we don't need BeginFrame messages.
+  if (!visible_)
     return false;
 
+  return (BeginFrameRequiredForAction() || BeginFrameRequiredForChildren() ||
+          BeginFrameNeededForVideo() || ProactiveBeginFrameWanted());
+}
+
+void SchedulerStateMachine::SetChildrenNeedBeginFrames(
+    bool children_need_begin_frames) {
+  children_need_begin_frames_ = children_need_begin_frames;
+}
+
+void SchedulerStateMachine::SetVideoNeedsBeginFrames(
+    bool video_needs_begin_frames) {
+  video_needs_begin_frames_ = video_needs_begin_frames;
+}
+
+void SchedulerStateMachine::SetDeferCommits(bool defer_commits) {
+  defer_commits_ = defer_commits;
+}
+
+// These are the cases where we require a BeginFrame message to make progress
+// on requested actions.
+bool SchedulerStateMachine::BeginFrameRequiredForAction() const {
   // The forced draw respects our normal draw scheduling, so we need to
   // request a BeginImplFrame for it.
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)
     return true;
 
-  // There's no need to produce frames if we are not visible.
-  if (!visible_)
-    return false;
-
-  // We need to draw a more complete frame than we did the last BeginImplFrame,
-  // so request another BeginImplFrame in anticipation that we will have
-  // additional visible tiles.
-  if (swap_used_incomplete_tile_)
-    return true;
-
-  if (needs_animate_)
-    return true;
-
-  return needs_redraw_;
+  return needs_animate_ || needs_redraw_ || (needs_commit_ && !defer_commits_);
 }
 
-// These are cases where we are very likely to draw soon, but might not
-// actually have a new frame to draw when we receive the next BeginImplFrame.
-// Proactively requesting the BeginImplFrame helps hide the round trip latency
-// of the SetNeedsBeginFrame request that has to go to the Browser.
+// These are cases where we are very likely want a BeginFrame message in the
+// near future. Proactively requesting the BeginImplFrame helps hide the round
+// trip latency of the SetNeedsBeginFrame request that has to go to the
+// Browser.
+// This includes things like drawing soon, but might not actually have a new
+// frame to draw when we receive the next BeginImplFrame.
 bool SchedulerStateMachine::ProactiveBeginFrameWanted() const {
-  // The output surface is the provider of BeginImplFrames,
-  // so we are not going to get them even if we ask for them.
-  if (!HasInitializedOutputSurface())
-    return false;
-
   // Do not be proactive when invisible.
   if (!visible_)
     return false;
 
   // We should proactively request a BeginImplFrame if a commit is pending
-  // because we will want to draw if the commit completes quickly.
-  if (needs_commit_ || commit_state_ != COMMIT_STATE_IDLE)
+  // because we will want to draw if the commit completes quickly. Do not
+  // request frames when commits are disabled, because the frame requests will
+  // not provide the needed commit (and will wake up the process when it could
+  // stay idle).
+  if ((commit_state_ != COMMIT_STATE_IDLE) && !defer_commits_)
     return true;
 
   // If the pending tree activates quickly, we'll want a BeginImplFrame soon
@@ -816,7 +799,7 @@ bool SchedulerStateMachine::ProactiveBeginFrameWanted() const {
 
   // Changing priorities may allow us to activate (given the new priorities),
   // which may result in a new frame.
-  if (needs_manage_tiles_)
+  if (needs_prepare_tiles_)
     return true;
 
   // If we just sent a swap request, it's likely that we are going to produce
@@ -824,48 +807,93 @@ bool SchedulerStateMachine::ProactiveBeginFrameWanted() const {
   // SetNeedsBeginFrame requests, which may propagate to the BeginImplFrame
   // provider and get sampled at an inopportune time, delaying the next
   // BeginImplFrame.
-  if (HasRequestedSwapThisFrame())
+  if (did_request_swap_in_last_frame_)
+    return true;
+
+  // If the last commit was aborted because of early out (no updates), we should
+  // still want a begin frame in case there is a commit coming again.
+  if (last_commit_had_no_updates_)
     return true;
 
   return false;
 }
 
-void SchedulerStateMachine::OnBeginImplFrame(const BeginFrameArgs& args) {
-  AdvanceCurrentFrameNumber();
-  begin_impl_frame_args_ = args;
-  DCHECK_EQ(begin_impl_frame_state_, BEGIN_IMPL_FRAME_STATE_IDLE)
-      << AsValue()->ToString();
+void SchedulerStateMachine::OnBeginImplFrame() {
   begin_impl_frame_state_ = BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING;
+  current_frame_number_++;
+
+  last_commit_had_no_updates_ = false;
+  did_request_swap_in_last_frame_ = false;
+
+  // Clear funnels for any actions we perform during the frame.
+  animate_funnel_ = false;
+  send_begin_main_frame_funnel_ = false;
+  invalidate_output_surface_funnel_ = false;
+
+  // "Drain" the PrepareTiles funnel.
+  if (prepare_tiles_funnel_ > 0)
+    prepare_tiles_funnel_--;
+
+  skip_begin_main_frame_to_reduce_latency_ =
+      skip_next_begin_main_frame_to_reduce_latency_;
+  skip_next_begin_main_frame_to_reduce_latency_ = false;
 }
 
 void SchedulerStateMachine::OnBeginImplFrameDeadlinePending() {
-  DCHECK_EQ(begin_impl_frame_state_,
-            BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING)
-      << AsValue()->ToString();
   begin_impl_frame_state_ = BEGIN_IMPL_FRAME_STATE_INSIDE_BEGIN_FRAME;
 }
 
 void SchedulerStateMachine::OnBeginImplFrameDeadline() {
-  DCHECK_EQ(begin_impl_frame_state_, BEGIN_IMPL_FRAME_STATE_INSIDE_BEGIN_FRAME)
-      << AsValue()->ToString();
   begin_impl_frame_state_ = BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE;
+
+  did_perform_swap_in_last_draw_ = false;
+
+  // Clear funnels for any actions we perform during the deadline.
+  request_swap_funnel_ = false;
+
+  // Allow one PrepareTiles per draw for synchronous compositor.
+  if (settings_.using_synchronous_renderer_compositor) {
+    if (prepare_tiles_funnel_ > 0)
+      prepare_tiles_funnel_--;
+  }
 }
 
 void SchedulerStateMachine::OnBeginImplFrameIdle() {
-  DCHECK_EQ(begin_impl_frame_state_, BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE)
-      << AsValue()->ToString();
   begin_impl_frame_state_ = BEGIN_IMPL_FRAME_STATE_IDLE;
 }
 
-bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineEarly() const {
-  // TODO(brianderson): This should take into account multiple commit sources.
+SchedulerStateMachine::BeginImplFrameDeadlineMode
+SchedulerStateMachine::CurrentBeginImplFrameDeadlineMode() const {
+  if (settings_.using_synchronous_renderer_compositor) {
+    // No deadline for synchronous compositor.
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_NONE;
+  } else if (wait_for_active_tree_ready_to_draw_) {
+    // When we are waiting for ready to draw signal, we do not wait to post a
+    // deadline yet.
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_BLOCKED_ON_READY_TO_DRAW;
+  } else if (ShouldTriggerBeginImplFrameDeadlineImmediately()) {
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_IMMEDIATE;
+  } else if (needs_redraw_ && pending_swaps_ < max_pending_swaps_) {
+    // We have an animation or fast input path on the impl thread that wants
+    // to draw, so don't wait too long for a new active tree.
+    // If we are swap throttled we should wait until we are unblocked.
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_REGULAR;
+  } else {
+    // The impl thread doesn't have anything it wants to draw and we are just
+    // waiting for a new active tree or we are swap throttled. In short we are
+    // blocked.
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_LATE;
+  }
+}
 
+bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineImmediately()
+    const {
+  // TODO(brianderson): This should take into account multiple commit sources.
   if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_BEGIN_FRAME)
     return false;
 
-  // If we've lost the output surface, end the current BeginImplFrame ASAP
-  // so we can start creating the next output surface.
-  if (output_surface_state_ == OUTPUT_SURFACE_LOST)
+  // If we just forced activation, we should end the deadline right now.
+  if (PendingActivationsShouldBeForced() && !has_pending_tree_)
     return true;
 
   // SwapAck throttle the deadline since we wont draw and swap anyway.
@@ -890,11 +918,6 @@ bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineEarly() const {
   if (impl_latency_takes_priority_)
     return true;
 
-  // If we are on battery power and want to prioritize impl latency because
-  // we don't trust deadline tasks to execute at the right time.
-  if (impl_latency_takes_priority_on_battery_)
-    return true;
-
   return false;
 }
 
@@ -906,7 +929,7 @@ bool SchedulerStateMachine::MainThreadIsInHighLatencyMode() const {
 
   // If we just sent a BeginMainFrame and haven't hit the deadline yet, the main
   // thread is in a low latency mode.
-  if (HasSentBeginMainFrameThisFrame() &&
+  if (send_begin_main_frame_funnel_ &&
       (begin_impl_frame_state_ == BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING ||
        begin_impl_frame_state_ == BEGIN_IMPL_FRAME_STATE_INSIDE_BEGIN_FRAME))
     return false;
@@ -930,22 +953,13 @@ bool SchedulerStateMachine::MainThreadIsInHighLatencyMode() const {
     // Even if there's a new active tree to draw at the deadline or we've just
     // swapped it, it may have been triggered by a previous BeginImplFrame, in
     // which case the main thread is in a high latency mode.
-    return (active_tree_needs_first_draw_ || HasSwappedThisFrame()) &&
-           !HasSentBeginMainFrameThisFrame();
+    return (active_tree_needs_first_draw_ || did_perform_swap_in_last_draw_) &&
+           !send_begin_main_frame_funnel_;
   }
 
   // If the active tree needs its first draw in any other state, we know the
   // main thread is in a high latency mode.
   return active_tree_needs_first_draw_;
-}
-
-void SchedulerStateMachine::DidEnterPollForAnticipatedDrawTriggers() {
-  AdvanceCurrentFrameNumber();
-  inside_poll_for_anticipated_draw_triggers_ = true;
-}
-
-void SchedulerStateMachine::DidLeavePollForAnticipatedDrawTriggers() {
-  inside_poll_for_anticipated_draw_triggers_ = false;
 }
 
 void SchedulerStateMachine::SetVisible(bool visible) { visible_ = visible; }
@@ -958,11 +972,15 @@ void SchedulerStateMachine::SetNeedsAnimate() {
   needs_animate_ = true;
 }
 
-void SchedulerStateMachine::SetNeedsManageTiles() {
-  if (!needs_manage_tiles_) {
-    TRACE_EVENT0("cc",
-                 "SchedulerStateMachine::SetNeedsManageTiles");
-    needs_manage_tiles_ = true;
+void SchedulerStateMachine::SetWaitForReadyToDraw() {
+  DCHECK(settings_.impl_side_painting);
+  wait_for_active_tree_ready_to_draw_ = true;
+}
+
+void SchedulerStateMachine::SetNeedsPrepareTiles() {
+  if (!needs_prepare_tiles_) {
+    TRACE_EVENT0("cc", "SchedulerStateMachine::SetNeedsPrepareTiles");
+    needs_prepare_tiles_ = true;
   }
 }
 
@@ -974,12 +992,8 @@ void SchedulerStateMachine::DidSwapBuffers() {
   pending_swaps_++;
   DCHECK_LE(pending_swaps_, max_pending_swaps_);
 
+  did_perform_swap_in_last_draw_ = true;
   last_frame_number_swap_performed_ = current_frame_number_;
-}
-
-void SchedulerStateMachine::SetSwapUsedIncompleteTile(
-    bool used_incomplete_tile) {
-  swap_used_incomplete_tile_ = used_incomplete_tile;
 }
 
 void SchedulerStateMachine::DidSwapBuffersComplete() {
@@ -1043,23 +1057,33 @@ void SchedulerStateMachine::NotifyReadyToCommit() {
   DCHECK(commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED)
       << AsValue()->ToString();
   commit_state_ = COMMIT_STATE_READY_TO_COMMIT;
+  // In main thread low latency mode, commit should happen right after
+  // BeginFrame, meaning when this function is called, next action should be
+  // commit.
+  if (settings_.main_thread_should_always_be_low_latency)
+    DCHECK(ShouldCommit());
 }
 
-void SchedulerStateMachine::BeginMainFrameAborted(bool did_handle) {
+void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
   DCHECK_EQ(commit_state_, COMMIT_STATE_BEGIN_MAIN_FRAME_SENT);
-  if (did_handle) {
-    bool commit_was_aborted = true;
-    UpdateStateOnCommit(commit_was_aborted);
-  } else {
-    commit_state_ = COMMIT_STATE_IDLE;
-    SetNeedsCommit();
+  switch (reason) {
+    case CommitEarlyOutReason::ABORTED_OUTPUT_SURFACE_LOST:
+    case CommitEarlyOutReason::ABORTED_NOT_VISIBLE:
+    case CommitEarlyOutReason::ABORTED_DEFERRED_COMMIT:
+      commit_state_ = COMMIT_STATE_IDLE;
+      SetNeedsCommit();
+      return;
+    case CommitEarlyOutReason::FINISHED_NO_UPDATES:
+      bool commit_has_no_updates = true;
+      UpdateStateOnCommit(commit_has_no_updates);
+      return;
   }
 }
 
-void SchedulerStateMachine::DidManageTiles() {
-  needs_manage_tiles_ = false;
-  // "Fill" the ManageTiles funnel.
-  manage_tiles_funnel_++;
+void SchedulerStateMachine::DidPrepareTiles() {
+  needs_prepare_tiles_ = false;
+  // "Fill" the PrepareTiles funnel.
+  prepare_tiles_funnel_++;
 }
 
 void SchedulerStateMachine::DidLoseOutputSurface() {
@@ -1068,11 +1092,16 @@ void SchedulerStateMachine::DidLoseOutputSurface() {
     return;
   output_surface_state_ = OUTPUT_SURFACE_LOST;
   needs_redraw_ = false;
+  wait_for_active_tree_ready_to_draw_ = false;
 }
 
 void SchedulerStateMachine::NotifyReadyToActivate() {
   if (has_pending_tree_)
     pending_tree_is_ready_for_activation_ = true;
+}
+
+void SchedulerStateMachine::NotifyReadyToDraw() {
+  wait_for_active_tree_ready_to_draw_ = false;
 }
 
 void SchedulerStateMachine::DidCreateAndInitializeOutputSurface() {

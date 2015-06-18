@@ -23,8 +23,8 @@
 #ifndef ImageResource_h
 #define ImageResource_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/svg/graphics/SVGImageCache.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/IntSizeHash.h"
 #include "platform/geometry/LayoutSize.h"
@@ -38,10 +38,11 @@ class ResourceFetcher;
 class FloatSize;
 class Length;
 class MemoryCache;
-class RenderObject;
+class LayoutObject;
 class SecurityOrigin;
+class SVGImageForContainer;
 
-class ImageResource final : public Resource, public ImageObserver {
+class CORE_EXPORT ImageResource final : public Resource, public ImageObserver {
     friend class MemoryCache;
 
 public:
@@ -56,16 +57,19 @@ public:
     virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) override;
 
     blink::Image* image(); // Returns the nullImage() if the image is not available yet.
-    blink::Image* imageForRenderer(const RenderObject*); // Returns the nullImage() if the image is not available yet.
+    blink::Image* imageForLayoutObject(const LayoutObject*); // Returns the nullImage() if the image is not available yet.
     bool hasImage() const { return m_image.get(); }
-    bool currentFrameKnownToBeOpaque(const RenderObject*); // Side effect: ensures decoded image is in cache, therefore should only be called when about to draw the image.
+    // Side effect: ensures decoded image is in cache, therefore should only be called when about to draw the image.
+    // FIXME: Decoding image on the main thread is expensive, so rather than forcing decode, consider returning false
+    // when image is not decoded yet, as we do in case of deferred decoding.
+    bool currentFrameKnownToBeOpaque(const LayoutObject*);
 
     static std::pair<blink::Image*, float> brokenImage(float deviceScaleFactor); // Returns an image and the image's resolution scale factor.
     bool willPaintBrokenImage() const;
 
-    bool canRender(const RenderObject& renderer, float multiplier) { return !errorOccurred() && !imageSizeForRenderer(&renderer, multiplier).isEmpty(); }
+    bool canRender(const LayoutObject& layoutObject, float multiplier) { return !errorOccurred() && !imageSizeForLayoutObject(&layoutObject, multiplier).isEmpty(); }
 
-    void setContainerSizeForRenderer(const ImageResourceClient*, const IntSize&, float);
+    void setContainerSizeForLayoutObject(const ImageResourceClient*, const IntSize&, float);
     bool usesImageContainerSize() const;
     bool imageHasRelativeWidth() const;
     bool imageHasRelativeHeight() const;
@@ -74,16 +78,16 @@ public:
     bool hasDevicePixelRatioHeaderValue() const { return m_hasDevicePixelRatioHeaderValue; }
 
     enum SizeType {
-        NormalSize, // Report the size of the image associated with a certain renderer
+        NormalSize, // Report the size of the image associated with a certain layoutObject
         IntrinsicSize // Report the intrinsic size, i.e. ignore whatever has been set extrinsically.
     };
     // This method takes a zoom multiplier that can be used to increase the natural size of the image by the zoom.
-    LayoutSize imageSizeForRenderer(const RenderObject*, float multiplier, SizeType = NormalSize); // returns the size of the complete image.
+    LayoutSize imageSizeForLayoutObject(const LayoutObject*, float multiplier, SizeType = NormalSize); // returns the size of the complete image.
     void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
 
-    static void updateBitmapImages(HashSet<ImageResource*>&, bool redecodeImages = false);
-
     bool isAccessAllowed(SecurityOrigin*);
+
+    void updateImageAnimationPolicy();
 
     virtual void didAddClient(ResourceClient*) override;
     virtual void didRemoveClient(ResourceClient*) override;
@@ -122,16 +126,15 @@ private:
     void clearImage();
     // If not null, changeRect is the changed part of the image.
     void notifyObservers(const IntRect* changeRect = nullptr);
+    IntSize svgImageSizeForLayoutObject(const LayoutObject*) const;
+    blink::Image* svgImageForLayoutObject(const LayoutObject*);
 
-    virtual void switchClientsToRevalidatedResource() override;
-
-    typedef pair<IntSize, float> SizeAndZoom;
-    typedef HashMap<const ImageResourceClient*, SizeAndZoom> ContainerSizeRequests;
-    ContainerSizeRequests m_pendingContainerSizeRequests;
     float m_devicePixelRatioHeaderValue;
 
+    typedef HashMap<const ImageResourceClient*, RefPtr<SVGImageForContainer>> ImageForContainerMap;
+    OwnPtr<ImageForContainerMap> m_imageForContainerMap;
+
     RefPtr<blink::Image> m_image;
-    OwnPtr<SVGImageCache> m_svgImageCache;
     bool m_loadingMultipartContent;
     bool m_hasDevicePixelRatioHeaderValue;
 };

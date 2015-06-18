@@ -9,6 +9,7 @@
 #define BASE_PROCESS_KILL_H_
 
 #include "base/files/file_path.h"
+#include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "base/time/time.h"
 
@@ -44,23 +45,11 @@ BASE_EXPORT bool KillProcesses(const FilePath::StringType& executable_name,
                                int exit_code,
                                const ProcessFilter* filter);
 
-// Attempts to kill the process identified by the given process
-// entry structure, giving it the specified exit code. If |wait| is true, wait
-// for the process to be actually terminated before returning.
-// Returns true if this is successful, false otherwise.
-BASE_EXPORT bool KillProcess(ProcessHandle process, int exit_code, bool wait);
-
 #if defined(OS_POSIX)
 // Attempts to kill the process group identified by |process_group_id|. Returns
 // true on success.
 BASE_EXPORT bool KillProcessGroup(ProcessHandle process_group_id);
 #endif  // defined(OS_POSIX)
-
-#if defined(OS_WIN)
-BASE_EXPORT bool KillProcessById(ProcessId process_id,
-                                 int exit_code,
-                                 bool wait);
-#endif  // defined(OS_WIN)
 
 // Get the termination status of the process by interpreting the
 // circumstances of the child process' death. |exit_code| is set to
@@ -93,22 +82,6 @@ BASE_EXPORT TerminationStatus GetKnownDeadTerminationStatus(
     ProcessHandle handle, int* exit_code);
 #endif  // defined(OS_POSIX)
 
-// Waits for process to exit. On POSIX systems, if the process hasn't been
-// signaled then puts the exit code in |exit_code|; otherwise it's considered
-// a failure. On Windows |exit_code| is always filled. Returns true on success,
-// and closes |handle| in any case.
-BASE_EXPORT bool WaitForExitCode(ProcessHandle handle, int* exit_code);
-
-// Waits for process to exit. If it did exit within |timeout_milliseconds|,
-// then puts the exit code in |exit_code|, and returns true.
-// In POSIX systems, if the process has been signaled then |exit_code| is set
-// to -1. Returns false on failure (the caller is then responsible for closing
-// |handle|).
-// The caller is always responsible for closing the |handle|.
-BASE_EXPORT bool WaitForExitCodeWithTimeout(ProcessHandle handle,
-                                            int* exit_code,
-                                            base::TimeDelta timeout);
-
 // Wait for all the processes based on the named executable to exit.  If filter
 // is non-null, then only processes selected by the filter are waited on.
 // Returns after all processes have exited or wait_milliseconds have expired.
@@ -117,12 +90,6 @@ BASE_EXPORT bool WaitForProcessesToExit(
     const FilePath::StringType& executable_name,
     base::TimeDelta wait,
     const ProcessFilter* filter);
-
-// Wait for a single process to exit. Return true if it exited cleanly within
-// the given time limit. On Linux |handle| must be a child process, however
-// on Mac and Windows it can be any process.
-BASE_EXPORT bool WaitForSingleProcess(ProcessHandle handle,
-                                      base::TimeDelta wait);
 
 // Waits a certain amount of time (can be 0) for all the processes with a given
 // executable name to exit, then kills off any of them that are still around.
@@ -146,15 +113,15 @@ BASE_EXPORT bool CleanupProcesses(const FilePath::StringType& executable_name,
 // On Linux this method does not block the calling thread.
 // On OS X this method may block for up to 2 seconds.
 //
-// NOTE: The process handle must have been opened with the PROCESS_TERMINATE
-// and SYNCHRONIZE permissions.
+// NOTE: The process must have been opened with the PROCESS_TERMINATE and
+// SYNCHRONIZE permissions.
 //
-BASE_EXPORT void EnsureProcessTerminated(ProcessHandle process_handle);
+BASE_EXPORT void EnsureProcessTerminated(Process process);
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 // The nicer version of EnsureProcessTerminated() that is patient and will
-// wait for |process_handle| to finish and then reap it.
-BASE_EXPORT void EnsureProcessGetsReaped(ProcessHandle process_handle);
+// wait for |pid| to finish and then reap it.
+BASE_EXPORT void EnsureProcessGetsReaped(ProcessId pid);
 #endif
 
 }  // namespace base

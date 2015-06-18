@@ -17,9 +17,8 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
-#include "ui/surface/transport_dib.h"
 #include "url/gurl.h"
 
 #if defined(OS_MACOSX)
@@ -35,11 +34,13 @@ namespace base {
 class WaitableEvent;
 }
 
+
 namespace content {
 class NPObjectStub;
 class PluginChannelHost;
 class RenderFrameImpl;
 class RenderViewImpl;
+class SharedMemoryBitmap;
 class WebPluginImpl;
 
 // An implementation of WebPluginDelegate that proxies all calls to
@@ -137,7 +138,7 @@ class WebPluginDelegateProxy
                 const std::string& method,
                 const char* buf,
                 unsigned int len,
-                const GURL& referrer,
+                const Referrer& referrer,
                 bool notify_redirects,
                 bool is_plugin_src_load,
                 int origin_pid,
@@ -155,7 +156,7 @@ class WebPluginDelegateProxy
     SharedBitmap();
     ~SharedBitmap();
 
-    scoped_ptr<TransportDIB> dib;
+    scoped_ptr<SharedMemoryBitmap> bitmap;
     scoped_ptr<SkCanvas> canvas;
   };
 
@@ -195,7 +196,7 @@ class WebPluginDelegateProxy
   void OnAcceleratedPluginSwappedIOSurface();
 #endif
 #if defined(OS_WIN)
-  void OnSetWindowlessData(HANDLE modal_loop_pump_messages_event,
+  void OnSetWindowlessData(HANDLE modal_loop_pump_messages_event_handle,
                            gfx::NativeViewId dummy_activation_window);
   void OnNotifyIMEStatus(const int input_mode, const gfx::Rect& caret_rect);
 #endif
@@ -229,12 +230,12 @@ class WebPluginDelegateProxy
     return transport_stores_[back_buffer_index()].canvas.get();
   }
 
-  TransportDIB* front_buffer_dib() const {
-    return transport_stores_[front_buffer_index()].dib.get();
+  SharedMemoryBitmap* front_buffer_bitmap() const {
+    return transport_stores_[front_buffer_index()].bitmap.get();
   }
 
-  TransportDIB* back_buffer_dib() const {
-    return transport_stores_[back_buffer_index()].dib.get();
+  SharedMemoryBitmap* back_buffer_bitmap() const {
+    return transport_stores_[back_buffer_index()].bitmap.get();
   }
 
 #if !defined(OS_WIN)
@@ -245,7 +246,7 @@ class WebPluginDelegateProxy
 #endif
 
   // Creates a shared memory section and canvas.
-  bool CreateSharedBitmap(scoped_ptr<TransportDIB>* memory,
+  bool CreateSharedBitmap(scoped_ptr<SharedMemoryBitmap>* memory,
                           scoped_ptr<SkCanvas>* canvas);
 
   // Called for cleanup during plugin destruction. Normally right before the

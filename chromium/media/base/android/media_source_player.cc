@@ -12,11 +12,10 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/android/audio_decoder_job.h"
-#include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/video_decoder_job.h"
 
@@ -121,15 +120,6 @@ void MediaSourcePlayer::Start() {
 
   playing_ = true;
 
-  bool request_fullscreen = IsProtectedSurfaceRequired();
-#if defined(VIDEO_HOLE)
-  // Skip to request fullscreen when hole-punching is used.
-  request_fullscreen = request_fullscreen &&
-      !manager()->ShouldUseVideoOverlayForEmbeddedEncryptedVideo();
-#endif  // defined(VIDEO_HOLE)
-  if (request_fullscreen)
-    manager()->RequestFullScreen(player_id());
-
   StartInternal();
 }
 
@@ -143,6 +133,8 @@ void MediaSourcePlayer::Pause(bool is_media_related_action) {
   // MediaDecoderCallback() is called.
   playing_ = false;
   start_time_ticks_ = base::TimeTicks();
+
+  SetAudible(false);
 }
 
 bool MediaSourcePlayer::IsPlaying() {
@@ -194,6 +186,8 @@ void MediaSourcePlayer::Release() {
   playing_ = false;
 
   decoder_starvation_callback_.Cancel();
+
+  SetAudible(false);
   DetachListener();
 }
 
@@ -238,6 +232,7 @@ void MediaSourcePlayer::OnDemuxerConfigsAvailable(
     const DemuxerConfigs& configs) {
   DVLOG(1) << __FUNCTION__;
   DCHECK(!HasAudio() && !HasVideo());
+
   duration_ = configs.duration;
 
   audio_decoder_job_->SetDemuxerConfigs(configs);
@@ -399,6 +394,7 @@ void MediaSourcePlayer::ProcessPendingEvents() {
 
   if (IsEventPending(PREFETCH_REQUEST_EVENT_PENDING)) {
     DVLOG(1) << __FUNCTION__ << " : Handling PREFETCH_REQUEST_EVENT.";
+
     int count = (AudioFinished() ? 0 : 1) + (VideoFinished() ? 0 : 1);
 
     // It is possible that all streams have finished decode, yet starvation
@@ -493,12 +489,18 @@ void MediaSourcePlayer::MediaDecoderCallback(
     return;
   }
 
-  if (status == MEDIA_CODEC_OUTPUT_END_OF_STREAM)
+  if (status == MEDIA_CODEC_OUTPUT_END_OF_STREAM) {
+    if (is_audio)
+      SetAudible(false);
     return;
+  }
 
   if (!playing_) {
     if (is_clock_manager)
       interpolator_.StopInterpolating();
+
+    if (is_audio)
+      SetAudible(false);
     return;
   }
 
@@ -507,7 +509,11 @@ void MediaSourcePlayer::MediaDecoderCallback(
       DVLOG(2) << __FUNCTION__ << ": Key was added during decoding.";
       ResumePlaybackAfterKeyAdded();
     } else {
+      if (is_audio)
+        SetAudible(false);
+
       is_waiting_for_key_ = true;
+      manager()->OnWaitingForDecryptionKey(player_id());
     }
     return;
   }
@@ -522,11 +528,14 @@ void MediaSourcePlayer::MediaDecoderCallback(
   // and video in one file. If we separate them, we should be able to remove a
   // lot of duplication.
 
-  // If the status is MEDIA_CODEC_STOPPED, stop decoding new data. The player is
+  // If the status is MEDIA_CODEC_ABORT, stop decoding new data. The player is
   // in the middle of a seek or stop event and needs to wait for the IPCs to
   // come.
-  if (status == MEDIA_CODEC_STOPPED)
+  if (status == MEDIA_CODEC_ABORT) {
+    if (is_audio)
+      SetAudible(false);
     return;
+  }
 
   if (prerolling_ && IsPrerollFinished(is_audio)) {
     if (IsPrerollFinished(!is_audio)) {
@@ -534,6 +543,13 @@ void MediaSourcePlayer::MediaDecoderCallback(
       StartInternal();
     }
     return;
+  }
+
+  // We successfully decoded a frame and going to the next one.
+  // Set the audible state.
+  if (is_audio) {
+    bool is_audible = !prerolling_ && audio_decoder_job_->volume() > 0;
+    SetAudible(is_audible);
   }
 
   if (is_clock_manager) {
@@ -564,18 +580,25 @@ void MediaSourcePlayer::DecodeMoreAudio() {
   DCHECK(!audio_decoder_job_->is_decoding());
   DCHECK(!AudioFinished());
 
-  if (audio_decoder_job_->Decode(
+  MediaDecoderJob::MediaDecoderJobStatus status = audio_decoder_job_->Decode(
       start_time_ticks_,
       start_presentation_timestamp_,
-      base::Bind(&MediaSourcePlayer::MediaDecoderCallback, weak_this_, true))) {
-    TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourcePlayer::DecodeMoreAudio",
-                             audio_decoder_job_.get());
-    return;
-  }
+      base::Bind(&MediaSourcePlayer::MediaDecoderCallback, weak_this_, true));
 
-  is_waiting_for_audio_decoder_ = true;
-  if (!IsEventPending(DECODER_CREATION_EVENT_PENDING))
-    SetPendingEvent(DECODER_CREATION_EVENT_PENDING);
+  switch (status) {
+    case MediaDecoderJob::STATUS_SUCCESS:
+      TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourcePlayer::DecodeMoreAudio",
+                               audio_decoder_job_.get());
+      break;
+    case MediaDecoderJob::STATUS_KEY_FRAME_REQUIRED:
+      NOTREACHED();
+      break;
+    case MediaDecoderJob::STATUS_FAILURE:
+      is_waiting_for_audio_decoder_ = true;
+      if (!IsEventPending(DECODER_CREATION_EVENT_PENDING))
+        SetPendingEvent(DECODER_CREATION_EVENT_PENDING);
+      break;
+  }
 }
 
 void MediaSourcePlayer::DecodeMoreVideo() {
@@ -583,25 +606,26 @@ void MediaSourcePlayer::DecodeMoreVideo() {
   DCHECK(!video_decoder_job_->is_decoding());
   DCHECK(!VideoFinished());
 
-  if (video_decoder_job_->Decode(
+  MediaDecoderJob::MediaDecoderJobStatus status = video_decoder_job_->Decode(
       start_time_ticks_,
       start_presentation_timestamp_,
       base::Bind(&MediaSourcePlayer::MediaDecoderCallback, weak_this_,
-                 false))) {
-    TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourcePlayer::DecodeMoreVideo",
-                             video_decoder_job_.get());
-    return;
-  }
+                 false));
 
-  // If the decoder is waiting for iframe, trigger a browser seek.
-  if (!video_decoder_job_->next_video_data_is_iframe()) {
-    BrowserSeekToCurrentTime();
-    return;
+  switch (status) {
+    case MediaDecoderJob::STATUS_SUCCESS:
+      TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourcePlayer::DecodeMoreVideo",
+                               video_decoder_job_.get());
+      break;
+    case MediaDecoderJob::STATUS_KEY_FRAME_REQUIRED:
+      BrowserSeekToCurrentTime();
+      break;
+    case MediaDecoderJob::STATUS_FAILURE:
+      is_waiting_for_video_decoder_ = true;
+      if (!IsEventPending(DECODER_CREATION_EVENT_PENDING))
+        SetPendingEvent(DECODER_CREATION_EVENT_PENDING);
+      break;
   }
-
-  is_waiting_for_video_decoder_ = true;
-  if (!IsEventPending(DECODER_CREATION_EVENT_PENDING))
-    SetPendingEvent(DECODER_CREATION_EVENT_PENDING);
 }
 
 void MediaSourcePlayer::PlaybackCompleted(bool is_audio) {
@@ -639,6 +663,14 @@ bool MediaSourcePlayer::VideoFinished() {
 
 void MediaSourcePlayer::OnDecoderStarved() {
   DVLOG(1) << __FUNCTION__;
+
+  if (HasAudio()) {
+    // If the starvation timer fired but there are no encoded frames
+    // in the queue we believe the demuxer (i.e. renderer process) froze.
+    if (!audio_decoder_job_->HasData())
+      SetAudible(false);
+  }
+
   SetPendingEvent(PREFETCH_REQUEST_EVENT_PENDING);
   ProcessPendingEvents();
 }
@@ -673,11 +705,6 @@ void MediaSourcePlayer::StartStarvationCallback(
       base::Bind(&MediaSourcePlayer::OnDecoderStarved, weak_this_));
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE, decoder_starvation_callback_.callback(), timeout);
-}
-
-bool MediaSourcePlayer::IsProtectedSurfaceRequired() {
-  return video_decoder_job_->is_content_encrypted() &&
-      drm_bridge_ && drm_bridge_->IsProtectedSurfaceRequired();
 }
 
 void MediaSourcePlayer::OnPrefetchDone() {

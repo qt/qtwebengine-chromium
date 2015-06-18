@@ -37,34 +37,21 @@ WebInspector.InspectorView = function()
     WebInspector.VBox.call(this);
     WebInspector.Dialog.setModalHostView(this);
     WebInspector.GlassPane.DefaultFocusedViewStack.push(this);
-    this.setMinimumSize(180, 72);
+    this.setMinimumSize(210, 72);
 
     // DevTools sidebar is a vertical split of panels tabbed pane and a drawer.
-    this._drawerSplitView = new WebInspector.SplitView(false, true, "Inspector.drawerSplitViewState", 200, 200);
-    this._drawerSplitView.hideSidebar();
-    this._drawerSplitView.enableShowModeSaving();
-    this._drawerSplitView.show(this.element);
+    this._drawerSplitWidget = new WebInspector.SplitWidget(false, true, "Inspector.drawerSplitViewState", 200, 200);
+    this._drawerSplitWidget.hideSidebar();
+    this._drawerSplitWidget.enableShowModeSaving();
+    this._drawerSplitWidget.show(this.element);
 
     this._tabbedPane = new WebInspector.TabbedPane();
+    this._tabbedPane.element.classList.add("inspector-view-tabbed-pane");
     this._tabbedPane.setRetainTabOrder(true);
-    this._tabbedPane.show(this._drawerSplitView.mainElement());
-    this._drawer = new WebInspector.Drawer(this._drawerSplitView);
-
-    // Patch tabbed pane header with toolbar actions.
-    this._toolbarElement = createElement("div");
-    this._toolbarElement.className = "toolbar toolbar-background toolbar-colors";
-    var headerElement = this._tabbedPane.headerElement();
-    headerElement.parentElement.insertBefore(this._toolbarElement, headerElement);
-
-    this._leftToolbarElement = this._toolbarElement.createChild("div", "toolbar-controls-left");
-    this._toolbarElement.appendChild(headerElement);
-    this._rightToolbarElement = this._toolbarElement.createChild("div", "toolbar-controls-right");
-    this._toolbarItems = [];
-
-    this._closeButtonToolbarItem = createElementWithClass("div", "toolbar-close-button-item");
-    var closeButtonElement = this._closeButtonToolbarItem.createChild("div", "close-button");
-    closeButtonElement.addEventListener("click", InspectorFrontendHost.closeWindow.bind(InspectorFrontendHost), true);
-    this._rightToolbarElement.appendChild(this._closeButtonToolbarItem);
+    if (Runtime.experiments.isEnabled("materialDesign"))
+        this._tabbedPane.setTabSlider(true);
+    this._drawerSplitWidget.setMainWidget(this._tabbedPane);
+    this._drawer = new WebInspector.Drawer(this._drawerSplitWidget);
 
     this._panels = {};
     // Used by tests.
@@ -92,7 +79,7 @@ WebInspector.InspectorView = function()
      */
     function showConsole()
     {
-        this.showPanel("console").done();
+        this.showPanel("console");
     }
 
     WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged, this._onSuspendStateChanged.bind(this));
@@ -126,22 +113,22 @@ WebInspector.InspectorView.prototype = {
         WebInspector.endBatchUpdate();
     },
 
-    /**
-     * @param {!WebInspector.StatusBarItem} item
-     */
-    appendToLeftToolbar: function(item)
+    createToolbars: function()
     {
-        this._toolbarItems.push(item);
-        this._leftToolbarElement.appendChild(item.element);
-    },
+        this._leftToolbar = new WebInspector.ExtensibleToolbar("main-toolbar-left");
+        this._leftToolbar.element.classList.add("inspector-view-toolbar", "inspector-view-toolbar-left");
+        this._leftToolbar.makeNarrow();
+        this._tabbedPane.insertBeforeTabStrip(this._leftToolbar.element);
 
-    /**
-     * @param {!WebInspector.StatusBarItem} item
-     */
-    appendToRightToolbar: function(item)
-    {
-        this._toolbarItems.push(item);
-        this._rightToolbarElement.insertBefore(item.element, this._closeButtonToolbarItem);
+        var rightToolbarContainer = createElementWithClass("div", "hbox flex-none flex-centered");
+        this._tabbedPane.appendAfterTabStrip(rightToolbarContainer);
+
+        this._rightToolbar = new WebInspector.ExtensibleToolbar("main-toolbar-right");
+        this._rightToolbar.element.classList.add("inspector-view-toolbar", "flex-none");
+        rightToolbarContainer.appendChild(this._rightToolbar.element);
+
+        var closeButtonElement = rightToolbarContainer.createChild("div", "inspector-view-close-button flex-none", "dt-close-button");
+        closeButtonElement.addEventListener("click", InspectorFrontendHost.closeWindow.bind(InspectorFrontendHost), true);
     },
 
     /**
@@ -151,7 +138,7 @@ WebInspector.InspectorView.prototype = {
     {
         var panelName = panelDescriptor.name();
         this._panelDescriptors[panelName] = panelDescriptor;
-        this._tabbedPane.appendTab(panelName, panelDescriptor.title(), new WebInspector.View());
+        this._tabbedPane.appendTab(panelName, panelDescriptor.title(), new WebInspector.Widget());
         if (this._lastActivePanelSetting.get() === panelName)
             this._tabbedPane.selectTab(panelName);
     },
@@ -173,7 +160,7 @@ WebInspector.InspectorView.prototype = {
     {
         var panelDescriptor = this._panelDescriptors[panelName];
         if (!panelDescriptor)
-            return Promise.rejectWithError("Can't load panel without the descriptor: " + panelName);
+            return Promise.reject(new Error("Can't load panel without the descriptor: " + panelName));
 
         var promise = this._panelPromises[panelName];
         if (promise)
@@ -205,8 +192,10 @@ WebInspector.InspectorView.prototype = {
     {
         this._currentPanelLocked = WebInspector.targetManager.allTargetsSuspended();
         this._tabbedPane.setCurrentTabLocked(this._currentPanelLocked);
-        for (var i = 0; i < this._toolbarItems.length; ++i)
-            this._toolbarItems[i].setEnabled(!this._currentPanelLocked);
+        if (this._leftToolbar)
+            this._leftToolbar.setEnabled(!this._currentPanelLocked);
+        if (this._rightToolbar)
+            this._rightToolbar.setEnabled(!this._currentPanelLocked);
     },
 
     /**
@@ -218,8 +207,11 @@ WebInspector.InspectorView.prototype = {
      */
     showPanel: function(panelName)
     {
-        if (this._currentPanelLocked)
-            return this._currentPanel === this._panels[panelName] ? Promise.resolve(this._currentPanel) : Promise.rejectWithError("Current panel locked");
+        if (this._currentPanelLocked) {
+            if (this._currentPanel !== this._panels[panelName])
+                return Promise.reject(new Error("Current panel locked"));
+            return Promise.resolve(this._currentPanel);
+        }
 
         this._panelForShowPromise = this.panel(panelName);
         return this._panelForShowPromise.then(setCurrentPanelIfNecessary.bind(this, this._panelForShowPromise));
@@ -278,7 +270,7 @@ WebInspector.InspectorView.prototype = {
         if (!panelName)
             return;
 
-        this.showPanel(panelName).done();
+        this.showPanel(panelName);
     },
 
     /**
@@ -324,7 +316,7 @@ WebInspector.InspectorView.prototype = {
     /**
      * @param {string} id
      * @param {string} title
-     * @param {!WebInspector.View} view
+     * @param {!WebInspector.Widget} view
      */
     showCloseableViewInDrawer: function(id, title, view)
     {
@@ -367,6 +359,7 @@ WebInspector.InspectorView.prototype = {
     },
 
     /**
+     * @override
      * @return {!Element}
      */
     defaultFocusedElement: function()
@@ -391,7 +384,7 @@ WebInspector.InspectorView.prototype = {
 
         var keyboardEvent = /** @type {!KeyboardEvent} */ (event);
         // Ctrl/Cmd + 1-9 should show corresponding panel.
-        var panelShortcutEnabled = WebInspector.settings.shortcutPanelSwitch.get();
+        var panelShortcutEnabled = WebInspector.moduleSetting("shortcutPanelSwitch").get();
         if (panelShortcutEnabled && !event.shiftKey && !event.altKey) {
             var panelIndex = -1;
             if (event.keyCode > 0x30 && event.keyCode < 0x3A)
@@ -402,7 +395,7 @@ WebInspector.InspectorView.prototype = {
                 var panelName = this._tabbedPane.allTabs()[panelIndex];
                 if (panelName) {
                     if (!WebInspector.Dialog.currentInstance() && !this._currentPanelLocked)
-                        this.showPanel(panelName).done();
+                        this.showPanel(panelName);
                     event.consume(true);
                 }
                 return;
@@ -444,7 +437,7 @@ WebInspector.InspectorView.prototype = {
         }
 
         if (event.altKey && this._moveInHistory(direction))
-            event.consume(true)
+            event.consume(true);
     },
 
     /**
@@ -455,7 +448,7 @@ WebInspector.InspectorView.prototype = {
         var panelOrder = this._tabbedPane.allTabs();
         var index = panelOrder.indexOf(this.currentPanel().name);
         index = (index + panelOrder.length + direction) % panelOrder.length;
-        this.showPanel(panelOrder[index]).done();
+        this.showPanel(panelOrder[index]);
     },
 
     /**
@@ -523,22 +516,22 @@ WebInspector.InspectorView.DrawerToggleActionDelegate = function()
 
 WebInspector.InspectorView.DrawerToggleActionDelegate.prototype = {
     /**
-     * @return {boolean}
+     * @override
+     * @param {!WebInspector.Context} context
+     * @param {string} actionId
      */
-    handleAction: function()
+    handleAction: function(context, actionId)
     {
-        if (WebInspector.inspectorView.drawerVisible()) {
+        if (WebInspector.inspectorView.drawerVisible())
             WebInspector.inspectorView.closeDrawer();
-            return true;
-        }
-        WebInspector.inspectorView.showDrawer();
-        return true;
+        else
+            WebInspector.inspectorView.showDrawer();
     }
 }
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarItem.Provider}
+ * @implements {WebInspector.ToolbarItem.Provider}
  */
 WebInspector.InspectorView.ToggleDrawerButtonProvider = function()
 {
@@ -546,7 +539,8 @@ WebInspector.InspectorView.ToggleDrawerButtonProvider = function()
 
 WebInspector.InspectorView.ToggleDrawerButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarItem}
+     * @override
+     * @return {?WebInspector.ToolbarItem}
      */
     item: function()
     {

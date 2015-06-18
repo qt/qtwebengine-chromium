@@ -10,7 +10,7 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_observer_tracker.h"
-#include "mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
 
 namespace gin {
 class PerContextData;
@@ -37,9 +37,14 @@ class WebUIMojo
     ~MainFrameObserver() override;
 
     // RenderFrameObserver overrides:
-    void WillReleaseScriptContext(v8::Handle<v8::Context> context,
+    void WillReleaseScriptContext(v8::Local<v8::Context> context,
                                   int world_id) override;
     void DidFinishDocumentLoad() override;
+    // MainFrameObserver is inline owned by WebUIMojo and should not be
+    // destroyed when the main RenderFrame is deleted. Overriding the
+    // OnDestruct method allows this object to remain alive and be cleaned
+    // up as part of WebUIMojo deletion.
+    void OnDestruct() override;
 
    private:
     WebUIMojo* web_ui_mojo_;
@@ -50,7 +55,7 @@ class WebUIMojo
   ~WebUIMojo() override;
 
   void CreateContextState();
-  void DestroyContextState(v8::Handle<v8::Context> context);
+  void DestroyContextState(v8::Local<v8::Context> context);
 
   // Invoked when the frame finishes loading. Invokes Run() on the
   // WebUIMojoContextState.

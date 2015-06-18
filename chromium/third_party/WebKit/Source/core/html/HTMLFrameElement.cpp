@@ -27,7 +27,7 @@
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLFrameSetElement.h"
-#include "core/rendering/RenderFrame.h"
+#include "core/layout/LayoutFrame.h"
 
 namespace blink {
 
@@ -42,15 +42,15 @@ inline HTMLFrameElement::HTMLFrameElement(Document& document)
 
 DEFINE_NODE_FACTORY(HTMLFrameElement)
 
-bool HTMLFrameElement::rendererIsNeeded(const RenderStyle&)
+bool HTMLFrameElement::layoutObjectIsNeeded(const ComputedStyle&)
 {
     // For compatibility, frames render even when display: none is set.
     return isURLAllowed();
 }
 
-RenderObject* HTMLFrameElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLFrameElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderFrame(this);
+    return new LayoutFrame(this);
 }
 
 bool HTMLFrameElement::noResize() const
@@ -75,8 +75,8 @@ void HTMLFrameElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_frameBorderSet = !value.isNull();
         // FIXME: If we are already attached, this has no effect.
     } else if (name == noresizeAttr) {
-        if (renderer())
-            renderer()->updateFromElement();
+        if (layoutObject())
+            layoutObject()->updateFromElement();
     } else
         HTMLFrameElementBase::parseAttribute(name, value);
 }

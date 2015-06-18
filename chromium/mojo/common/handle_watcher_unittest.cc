@@ -15,9 +15,9 @@
 #include "base/threading/thread.h"
 #include "mojo/common/message_pump_mojo.h"
 #include "mojo/common/time_helper.h"
-#include "mojo/public/cpp/system/core.h"
-#include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/public/cpp/system/core.h"
+#include "third_party/mojo/src/mojo/public/cpp/test_support/test_utils.h"
 
 namespace mojo {
 namespace common {
@@ -278,6 +278,22 @@ TEST_P(HandleWatcherTest, Restart) {
   callback_helper1.RunUntilGotCallback();
   EXPECT_TRUE(callback_helper1.got_callback());
   EXPECT_FALSE(callback_helper2.got_callback());
+}
+
+// Verifies Start() invoked a second time on the same handle works.
+TEST_P(HandleWatcherTest, RestartOnSameHandle) {
+  MessagePipe test_pipe;
+  CallbackHelper callback_helper;
+  ASSERT_TRUE(test_pipe.handle0.is_valid());
+
+  HandleWatcher watcher;
+  callback_helper.Start(&watcher, test_pipe.handle0.get());
+  RunUntilIdle();
+  EXPECT_FALSE(callback_helper.got_callback());
+
+  callback_helper.Start(&watcher, test_pipe.handle0.get());
+  RunUntilIdle();
+  EXPECT_FALSE(callback_helper.got_callback());
 }
 
 // Verifies deadline is honored.

@@ -89,32 +89,12 @@ WallpaperUtil.deleteWallpaperFromSyncFS = function(wallpaperFilename) {
 };
 
 /**
- * Executes callback if experimental flag is set to true.
- * @param {function} callback The callback will be executed if 'isExperimental'
- *     flag is set to true.
- */
-WallpaperUtil.enabledExperimentalFeatureCallback = function(callback) {
-  if (WallpaperUtil.strings) {
-    if (WallpaperUtil.strings.isExperimental)
-      callback();
-  } else {
-    chrome.wallpaperPrivate.getStrings(function(strings) {
-      WallpaperUtil.strings = strings;
-      if (WallpaperUtil.strings.isExperimental)
-        callback();
-    });
-  }
-};
-
-/**
- * Executes callback if sync theme is enabled.
- * @param {function} callback The callback will be executed if sync themes is
- *     enabled.
+ * Executes callback after requesting the sync settings.
+ * @param {function} callback The callback will be executed.
  */
 WallpaperUtil.enabledSyncThemesCallback = function(callback) {
   chrome.wallpaperPrivate.getSyncSetting(function(setting) {
-    if (setting.syncThemes)
-      callback();
+    callback(setting.syncThemes);
   });
 };
 
@@ -124,7 +104,9 @@ WallpaperUtil.enabledSyncThemesCallback = function(callback) {
  *     handler is available.
  */
 WallpaperUtil.requestSyncFS = function(callback) {
-  WallpaperUtil.enabledSyncThemesCallback(function() {
+  WallpaperUtil.enabledSyncThemesCallback(function(syncEnabled) {
+    if (!syncEnabled)
+      return;
     if (WallpaperUtil.syncFs) {
       callback(WallpaperUtil.syncFs);
     } else {
@@ -282,18 +264,28 @@ WallpaperUtil.setCustomWallpaperFromSyncFS = function(
  * Saves value to local storage that associates with key.
  * @param {string} key The key that associates with value.
  * @param {string} value The value to save to local storage.
- * @param {boolen} sync True if the value is saved to sync storage.
- * @param {function=} opt_callback The callback on success, or on failure.
+ * @param {function=} opt_callback The callback on success.
  */
-WallpaperUtil.saveToStorage = function(key, value, sync, opt_callback) {
+WallpaperUtil.saveToLocalStorage = function(key, value, opt_callback) {
   var items = {};
   items[key] = value;
-  if (sync)
-    WallpaperUtil.enabledSyncThemesCallback(function() {
+  Constants.WallpaperLocalStorage.set(items, opt_callback);
+};
+
+/**
+ * Saves value to sync storage that associates with key if sync theme is
+ * enabled.
+ * @param {string} key The key that associates with value.
+ * @param {string} value The value to save to sync storage.
+ * @param {function=} opt_callback The callback on success.
+ */
+WallpaperUtil.saveToSyncStorage = function(key, value, opt_callback) {
+  var items = {};
+  items[key] = value;
+  WallpaperUtil.enabledSyncThemesCallback(function(syncEnabled) {
+    if (syncEnabled)
       Constants.WallpaperSyncStorage.set(items, opt_callback);
-    });
-  else
-    Constants.WallpaperLocalStorage.set(items, opt_callback);
+  });
 };
 
 /**
@@ -310,10 +302,10 @@ WallpaperUtil.saveWallpaperInfo = function(url, layout, source) {
       layout: layout,
       source: source
   };
-  WallpaperUtil.saveToStorage(Constants.AccessLocalWallpaperInfoKey,
-                              wallpaperInfo, false, function() {
-    WallpaperUtil.saveToStorage(Constants.AccessSyncWallpaperInfoKey,
-                                wallpaperInfo, true);
+  WallpaperUtil.saveToLocalStorage(Constants.AccessLocalWallpaperInfoKey,
+                              wallpaperInfo, function() {
+    WallpaperUtil.saveToSyncStorage(Constants.AccessSyncWallpaperInfoKey,
+                                wallpaperInfo);
   });
 };
 
@@ -341,7 +333,7 @@ WallpaperUtil.fetchURL = function(url, type, onSuccess, onFailure, opt_xhr) {
       if (this.status == 200) {
         onSuccess(this);
       } else {
-        onFailure();
+        onFailure(this.status);
       }
     });
     xhr.addEventListener('error', onFailure);

@@ -20,12 +20,12 @@ namespace cc {
 template <typename LayerType>
 OcclusionTracker<LayerType>::OcclusionTracker(
     const gfx::Rect& screen_space_clip_rect)
-    : screen_space_clip_rect_(screen_space_clip_rect),
-      occluding_screen_space_rects_(NULL),
-      non_occluding_screen_space_rects_(NULL) {}
+    : screen_space_clip_rect_(screen_space_clip_rect) {
+}
 
 template <typename LayerType>
-OcclusionTracker<LayerType>::~OcclusionTracker() {}
+OcclusionTracker<LayerType>::~OcclusionTracker() {
+}
 
 template <typename LayerType>
 Occlusion OcclusionTracker<LayerType>::GetCurrentOcclusionForLayer(
@@ -35,6 +35,21 @@ Occlusion OcclusionTracker<LayerType>::GetCurrentOcclusionForLayer(
   return Occlusion(draw_transform,
                    back.occlusion_from_outside_target,
                    back.occlusion_from_inside_target);
+}
+
+template <typename LayerType>
+Occlusion
+OcclusionTracker<LayerType>::GetCurrentOcclusionForContributingSurface(
+    const gfx::Transform& draw_transform) const {
+  DCHECK(!stack_.empty());
+  if (stack_.size() < 2)
+    return Occlusion();
+  // A contributing surface doesn't get occluded by things inside its own
+  // surface, so only things outside the surface can occlude it. That occlusion
+  // is found just below the top of the stack (if it exists).
+  const StackObject& second_last = stack_[stack_.size() - 2];
+  return Occlusion(draw_transform, second_last.occlusion_from_outside_target,
+                   second_last.occlusion_from_inside_target);
 }
 
 template <typename LayerType>
@@ -140,7 +155,7 @@ static inline bool LayerIsInUnsorted3dRenderingContext(const Layer* layer) {
   return layer->Is3dSorted();
 }
 static inline bool LayerIsInUnsorted3dRenderingContext(const LayerImpl* layer) {
-  return false;
+  return layer->Is3dSorted();
 }
 
 template <typename LayerType>
@@ -340,12 +355,15 @@ void OcclusionTracker<LayerType>::LeaveToRenderTarget(
   gfx::Rect unoccluded_surface_rect;
   gfx::Rect unoccluded_replica_rect;
   if (old_target->background_filters().HasFilterThatMovesPixels()) {
-    unoccluded_surface_rect = UnoccludedContributingSurfaceContentRect(
-        old_surface->content_rect(), old_surface->draw_transform());
+    Occlusion surface_occlusion = GetCurrentOcclusionForContributingSurface(
+        old_surface->draw_transform());
+    unoccluded_surface_rect =
+        surface_occlusion.GetUnoccludedContentRect(old_surface->content_rect());
     if (old_target->has_replica()) {
-      unoccluded_replica_rect = UnoccludedContributingSurfaceContentRect(
-          old_surface->content_rect(),
+      Occlusion replica_occlusion = GetCurrentOcclusionForContributingSurface(
           old_surface->replica_draw_transform());
+      unoccluded_replica_rect = replica_occlusion.GetUnoccludedContentRect(
+          old_surface->content_rect());
     }
   }
 
@@ -447,96 +465,7 @@ void OcclusionTracker<LayerType>::MarkOccludedBehindLayer(
         transformed_rect.height() < minimum_tracking_size_.height())
       continue;
     stack_.back().occlusion_from_inside_target.Union(transformed_rect);
-
-    if (!occluding_screen_space_rects_)
-      continue;
-
-    // Save the occluding area in screen space for debug visualization.
-    bool clipped;
-    gfx::QuadF screen_space_quad = MathUtil::MapQuad(
-        layer->render_target()->render_surface()->screen_space_transform(),
-        gfx::QuadF(transformed_rect), &clipped);
-    // TODO(danakj): Store the quad in the debug info instead of the bounding
-    // box.
-    gfx::Rect screen_space_rect =
-        gfx::ToEnclosedRect(screen_space_quad.BoundingBox());
-    occluding_screen_space_rects_->push_back(screen_space_rect);
   }
-
-  if (!non_occluding_screen_space_rects_)
-    return;
-
-  Region non_opaque_contents(gfx::Rect(layer->content_bounds()));
-  non_opaque_contents.Subtract(opaque_contents);
-
-  for (Region::Iterator non_opaque_content_rects(non_opaque_contents);
-       non_opaque_content_rects.has_rect();
-       non_opaque_content_rects.next()) {
-    gfx::Rect transformed_rect =
-        MathUtil::MapEnclosedRectWith2dAxisAlignedTransform(
-            layer->draw_transform(), non_opaque_content_rects.rect());
-    transformed_rect.Intersect(clip_rect_in_target);
-    if (transformed_rect.IsEmpty())
-      continue;
-
-    bool clipped;
-    gfx::QuadF screen_space_quad = MathUtil::MapQuad(
-        layer->render_target()->render_surface()->screen_space_transform(),
-        gfx::QuadF(transformed_rect),
-        &clipped);
-    // TODO(danakj): Store the quad in the debug info instead of the bounding
-    // box.
-    gfx::Rect screen_space_rect =
-        gfx::ToEnclosedRect(screen_space_quad.BoundingBox());
-    non_occluding_screen_space_rects_->push_back(screen_space_rect);
-  }
-}
-
-template <typename LayerType>
-gfx::Rect OcclusionTracker<LayerType>::UnoccludedContributingSurfaceContentRect(
-    const gfx::Rect& content_rect,
-    const gfx::Transform& draw_transform) const {
-  if (content_rect.IsEmpty())
-    return content_rect;
-
-  // A contributing surface doesn't get occluded by things inside its own
-  // surface, so only things outside the surface can occlude it. That occlusion
-  // is found just below the top of the stack (if it exists).
-  bool has_occlusion = stack_.size() > 1;
-  if (!has_occlusion)
-    return content_rect;
-
-  const StackObject& second_last = stack_[stack_.size() - 2];
-  if (second_last.occlusion_from_inside_target.IsEmpty() &&
-      second_last.occlusion_from_outside_target.IsEmpty())
-    return content_rect;
-
-  gfx::Transform inverse_draw_transform(gfx::Transform::kSkipInitialization);
-  bool ok = draw_transform.GetInverse(&inverse_draw_transform);
-  DCHECK(ok);
-
-  // Take the ToEnclosingRect at each step, as we want to contain any unoccluded
-  // partial pixels in the resulting Rect.
-  gfx::Rect unoccluded_rect_in_target_surface =
-      MathUtil::MapEnclosingClippedRect(draw_transform, content_rect);
-  DCHECK_LE(second_last.occlusion_from_inside_target.GetRegionComplexity(), 1u);
-  DCHECK_LE(second_last.occlusion_from_outside_target.GetRegionComplexity(),
-            1u);
-  // These subtract operations are more lossy than if we did both operations at
-  // once.
-  unoccluded_rect_in_target_surface.Subtract(
-      second_last.occlusion_from_inside_target.bounds());
-  unoccluded_rect_in_target_surface.Subtract(
-      second_last.occlusion_from_outside_target.bounds());
-
-  if (unoccluded_rect_in_target_surface.IsEmpty())
-    return gfx::Rect();
-
-  gfx::Rect unoccluded_rect = MathUtil::ProjectEnclosingClippedRect(
-      inverse_draw_transform, unoccluded_rect_in_target_surface);
-  unoccluded_rect.Intersect(content_rect);
-
-  return unoccluded_rect;
 }
 
 template <typename LayerType>

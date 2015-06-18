@@ -8,9 +8,11 @@
 
 #include "core/inspector/InspectorTracingAgent.h"
 
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorClient.h"
+#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/InspectorWorkerAgent.h"
 #include "platform/TraceEvent.h"
 
@@ -24,13 +26,20 @@ namespace {
 const char devtoolsMetadataEventCategory[] = TRACE_DISABLED_BY_DEFAULT("devtools.timeline");
 }
 
-InspectorTracingAgent::InspectorTracingAgent(InspectorClient* client, InspectorWorkerAgent* workerAgent)
-    : InspectorBaseAgent<InspectorTracingAgent>("Tracing")
+InspectorTracingAgent::InspectorTracingAgent(Client* client, InspectorWorkerAgent* workerAgent, InspectorPageAgent* pageAgent)
+    : InspectorBaseAgent<InspectorTracingAgent, InspectorFrontend::Tracing>("Tracing")
     , m_layerTreeId(0)
     , m_client(client)
-    , m_frontend(0)
     , m_workerAgent(workerAgent)
+    , m_pageAgent(pageAgent)
 {
+}
+
+DEFINE_TRACE(InspectorTracingAgent)
+{
+    visitor->trace(m_workerAgent);
+    visitor->trace(m_pageAgent);
+    InspectorBaseAgent::trace(visitor);
 }
 
 void InspectorTracingAgent::restore()
@@ -61,7 +70,7 @@ String InspectorTracingAgent::sessionId()
 
 void InspectorTracingAgent::emitMetadataEvents()
 {
-    TRACE_EVENT_INSTANT1(devtoolsMetadataEventCategory, "TracingStartedInPage", "sessionId", sessionId().utf8());
+    TRACE_EVENT_INSTANT1(devtoolsMetadataEventCategory, "TracingStartedInPage", TRACE_EVENT_SCOPE_THREAD, "data", InspectorTracingStartedInFrame::data(sessionId(), m_pageAgent->inspectedFrame()));
     if (m_layerTreeId)
         setLayerTreeId(m_layerTreeId);
     m_workerAgent->setTracingSessionId(sessionId());
@@ -70,15 +79,10 @@ void InspectorTracingAgent::emitMetadataEvents()
 void InspectorTracingAgent::setLayerTreeId(int layerTreeId)
 {
     m_layerTreeId = layerTreeId;
-    TRACE_EVENT_INSTANT2(devtoolsMetadataEventCategory, "SetLayerTreeId", "sessionId", sessionId().utf8(), "layerTreeId", m_layerTreeId);
+    TRACE_EVENT_INSTANT1(devtoolsMetadataEventCategory, "SetLayerTreeId", TRACE_EVENT_SCOPE_THREAD, "data", InspectorSetLayerTreeId::data(sessionId(), m_layerTreeId));
 }
 
-void InspectorTracingAgent::setFrontend(InspectorFrontend* frontend)
-{
-    m_frontend = frontend->tracing();
-}
-
-void InspectorTracingAgent::clearFrontend()
+void InspectorTracingAgent::disable(ErrorString*)
 {
     resetSessionId();
 }

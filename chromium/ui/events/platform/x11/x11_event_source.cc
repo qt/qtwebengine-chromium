@@ -35,23 +35,16 @@ bool InitializeXInput2(XDisplay* display) {
   }
   g_xinput_opcode = xiopcode;
 
-#if defined(USE_XI2_MT)
-  // USE_XI2_MT also defines the required XI2 minor minimum version.
-  int major = 2, minor = USE_XI2_MT;
-#else
-  int major = 2, minor = 0;
-#endif
+  int major = 2, minor = 2;
   if (XIQueryVersion(display, &major, &minor) == BadRequest) {
     DVLOG(1) << "XInput2 not supported in the server.";
     return false;
   }
-#if defined(USE_XI2_MT)
-  if (major < 2 || (major == 2 && minor < USE_XI2_MT)) {
+  if (major < 2 || (major == 2 && minor < 2)) {
     DVLOG(1) << "XI version on server is " << major << "." << minor << ". "
-            << "But 2." << USE_XI2_MT << " is required.";
+            << "But 2.2 is required.";
     return false;
   }
-#endif
 
   return true;
 }
@@ -86,13 +79,8 @@ X11EventSource::X11EventSource(XDisplay* display)
       continue_stream_(true) {
   CHECK(display_);
   DeviceDataManagerX11::CreateInstance();
-  hotplug_event_handler_.reset(
-      new X11HotplugEventHandler(DeviceDataManager::GetInstance()));
   InitializeXInput2(display_);
   InitializeXkb(display_);
-
-  // Force the initial device query to have an update list of active devices.
-  hotplug_event_handler_->OnHotplugEvent();
 }
 
 X11EventSource::~X11EventSource() {
@@ -153,6 +141,14 @@ uint32_t X11EventSource::DispatchEvent(XEvent* xevent) {
 
 void X11EventSource::StopCurrentEventStream() {
   continue_stream_ = false;
+}
+
+void X11EventSource::OnDispatcherListChanged() {
+  if (!hotplug_event_handler_) {
+    hotplug_event_handler_.reset(new X11HotplugEventHandler());
+    // Force the initial device query to have an update list of active devices.
+    hotplug_event_handler_->OnHotplugEvent();
+  }
 }
 
 }  // namespace ui

@@ -37,8 +37,8 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
 
 namespace blink {
 
@@ -59,9 +59,9 @@ bool InsertLineBreakCommand::shouldUseBreakElement(const Position& insertionPos)
 {
     // An editing position like [input, 0] actually refers to the position before
     // the input element, and in that case we need to check the input element's
-    // parent's renderer.
+    // parent's layoutObject.
     Position p(insertionPos.parentAnchoredEquivalent());
-    return p.deprecatedNode()->renderer() && !p.deprecatedNode()->renderer()->style()->preserveNewline();
+    return p.deprecatedNode()->layoutObject() && !p.deprecatedNode()->layoutObject()->style()->preserveNewline();
 }
 
 void InsertLineBreakCommand::doApply()
@@ -127,7 +127,7 @@ void InsertLineBreakCommand::doApply()
             Position positionBeforeTextNode(positionInParentBeforeNode(*textNode));
             // Clear out all whitespace and insert one non-breaking space
             deleteInsignificantTextDownstream(endingPosition);
-            ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
+            ASSERT(!textNode->layoutObject() || textNode->layoutObject()->style()->collapseWhiteSpace());
             // Deleting insignificant whitespace will remove textNode if it contains nothing but insignificant whitespace.
             if (textNode->inDocument())
                 insertTextIntoNode(textNode, 0, nonBreakingSpaceString());

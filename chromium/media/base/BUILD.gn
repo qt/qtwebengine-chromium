@@ -4,22 +4,24 @@
 
 import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
+import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//media/media_options.gni")
 
 source_set("base") {
-  visibility = [ "//media/*" ]
+  # This is part of the media component.
+  visibility = [ "//media" ]
   sources = [
     "audio_block_fifo.cc",
     "audio_block_fifo.h",
     "audio_buffer.cc",
     "audio_buffer.h",
+    "audio_buffer_converter.cc",
+    "audio_buffer_converter.h",
     "audio_buffer_queue.cc",
     "audio_buffer_queue.h",
     "audio_capturer_source.h",
-    "audio_buffer_converter.cc",
-    "audio_buffer_converter.h",
     "audio_converter.cc",
     "audio_converter.h",
     "audio_decoder.cc",
@@ -43,6 +45,8 @@ source_set("base") {
     "audio_renderer_mixer_input.cc",
     "audio_renderer_mixer_input.h",
     "audio_renderer_sink.h",
+    "audio_shifter.cc",
+    "audio_shifter.h",
     "audio_splicer.cc",
     "audio_splicer.h",
     "audio_timestamp_helper.cc",
@@ -59,10 +63,16 @@ source_set("base") {
     "byte_queue.h",
     "cdm_callback_promise.cc",
     "cdm_callback_promise.h",
+    "cdm_context.cc",
+    "cdm_context.h",
     "cdm_factory.cc",
     "cdm_factory.h",
+    "cdm_key_information.cc",
+    "cdm_key_information.h",
     "cdm_promise.cc",
     "cdm_promise.h",
+    "cdm_promise_adapter.cc",
+    "cdm_promise_adapter.h",
     "channel_mixer.cc",
     "channel_mixer.h",
     "channel_mixing_matrix.cc",
@@ -91,15 +101,26 @@ source_set("base") {
     "eme_constants.h",
     "key_system_info.cc",
     "key_system_info.h",
+    "key_systems.cc",
+    "key_systems.h",
+    "key_systems.h",
+    "key_systems_support_uma.cc",
+    "key_systems_support_uma.h",
     "media.cc",
     "media.h",
+    "media_client.cc",
+    "media_client.h",
     "media_keys.cc",
     "media_keys.h",
     "media_log.cc",
     "media_log.h",
     "media_log_event.h",
+    "media_permission.cc",
+    "media_permission.h",
     "media_switches.cc",
     "media_switches.h",
+    "moving_average.cc",
+    "moving_average.h",
     "multi_channel_resampler.cc",
     "multi_channel_resampler.h",
     "pipeline.cc",
@@ -111,9 +132,10 @@ source_set("base") {
     "ranges.h",
     "renderer.cc",
     "renderer.h",
+    "renderer_factory.cc",
+    "renderer_factory.h",
     "sample_format.cc",
     "sample_format.h",
-    "scoped_histogram_timer.h",
     "seekable_buffer.cc",
     "seekable_buffer.h",
     "serial_runner.cc",
@@ -124,8 +146,6 @@ source_set("base") {
     "simd/convert_yuv_to_rgb_c.cc",
     "simd/filter_yuv.h",
     "simd/filter_yuv_c.cc",
-    "simd/yuv_to_rgb_table.cc",
-    "simd/yuv_to_rgb_table.h",
     "sinc_resampler.cc",
     "sinc_resampler.h",
     "stream_parser.cc",
@@ -146,12 +166,18 @@ source_set("base") {
     "time_source.h",
     "user_input_monitor.cc",
     "user_input_monitor.h",
+    "video_capture_types.cc",
+    "video_capture_types.h",
+    "video_capturer_source.cc",
+    "video_capturer_source.h",
     "video_decoder.cc",
     "video_decoder.h",
     "video_decoder_config.cc",
     "video_decoder_config.h",
     "video_frame.cc",
     "video_frame.h",
+    "video_frame_metadata.cc",
+    "video_frame_metadata.h",
     "video_frame_pool.cc",
     "video_frame_pool.h",
     "video_renderer.cc",
@@ -164,10 +190,19 @@ source_set("base") {
     "yuv_convert.cc",
     "yuv_convert.h",
   ]
+
+  allow_circular_includes_from = []
   defines = []
-  deps = [ "//skia" ]
+  public_deps = []
+  deps = [
+    "//ui/events:events_base",
+    "//skia",
+  ]
   libs = []
-  configs += [ "//media:media_config" ]
+  configs += [
+    "//media:media_config",
+    "//media:media_implementation",
+  ]
 
   if (media_use_ffmpeg) {
     sources += [
@@ -178,6 +213,12 @@ source_set("base") {
       "media_file_checker.cc",
       "media_file_checker.h",
     ]
+    if (is_win) {
+      sources += [ "media_win.cc" ]
+    } else if (is_posix) {
+      sources += [ "media_posix.cc" ]
+    }
+
     deps += [ "//third_party/ffmpeg" ]
   }
 
@@ -185,26 +226,31 @@ source_set("base") {
     sources += [
       "browser_cdm.cc",
       "browser_cdm.h",
+      "browser_cdm_factory.cc",
       "browser_cdm_factory.h",
     ]
   }
 
   if (is_android) {
     sources += [ "media_stub.cc" ]
-  } else if (is_win) {
-    sources += [ "media_win.cc" ]
-  } else if (is_posix) {
-    sources += [ "media_posix.cc" ]
+    public_deps = [
+      "//media/base/android",
+      "//media/base/android:media_java",
+      "//media/base/android:media_jni_headers",
+      "//media/base/android:video_capture_jni_headers",
+    ]
+    allow_circular_includes_from += [ "//media/base/android" ]
   }
 
   if (is_linux && use_x11) {
     configs += [
       "//build/config/linux:x11",
       "//build/config/linux:xext",
-  # TODO(ajwong): Why does xent get a separate thing in //build/config/linux:BUILD.gn
-  #         "//build/config/linux:xdamage",
-  #         "//build/config/linux:xfixes",
-  #         "//build/config/linux:xtst",
+
+      # TODO(ajwong): Why does xent get a separate thing in //build/config/linux:BUILD.gn
+      #         "//build/config/linux:xdamage",
+      #         "//build/config/linux:xfixes",
+      #         "//build/config/linux:xtst",
     ]
     sources += [ "user_input_monitor_linux.cc" ]
     deps += [
@@ -213,19 +259,24 @@ source_set("base") {
     ]
   } else if (is_mac) {
     sources += [ "user_input_monitor_mac.cc" ]
+
+    # Required by video_frame.cc.
+    libs = [ "CoreVideo.framework" ]
   } else if (is_win) {
     sources += [ "user_input_monitor_win.cc" ]
   } else {
     defines += [ "DISABLE_USER_INPUT_MONITOR" ]
   }
 
-  if (cpu_arch == "x86" || cpu_arch == "x64") {
+  if (current_cpu == "x86" || current_cpu == "x64") {
     sources += [ "simd/convert_yuv_to_rgb_x86.cc" ]
     deps += [
       ":media_yasm",
       ":media_sse2",
     ]
   }
+
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   if (is_linux || is_win) {
     sources += [
@@ -240,13 +291,30 @@ config("base_for_cast_ios_dependent_config") {
   defines = [ "MEDIA_FOR_CAST_IOS" ]
 }
 
-source_set("base_for_cast_ios") {
-  sources = [
-    "video_frame.cc",
-    "video_frame.h",
-  ]
-  configs += [ "//media:media_config" ]
-  all_dependent_configs = [ ":base_for_cast_ios_dependent_config" ]
+if (is_ios) {
+  source_set("base_for_cast_ios") {
+    sources = [
+      "simd/convert_rgb_to_yuv.h",
+      "simd/convert_rgb_to_yuv_c.cc",
+      "simd/convert_yuv_to_rgb.h",
+      "simd/convert_yuv_to_rgb_c.cc",
+      "simd/filter_yuv.h",
+      "simd/filter_yuv_c.cc",
+      "video_frame.cc",
+      "video_frame.h",
+      "video_frame_metadata.cc",
+      "video_frame_metadata.h",
+      "video_util.cc",
+      "video_util.h",
+      "yuv_convert.cc",
+      "yuv_convert.h",
+    ]
+    configs += [
+      "//build/config/compiler:no_size_t_to_int_warning",
+      "//media:media_config",
+    ]
+    all_dependent_configs = [ ":base_for_cast_ios_dependent_config" ]
+  }
 }
 
 source_set("test_support") {
@@ -256,6 +324,8 @@ source_set("test_support") {
     "fake_audio_render_callback.h",
     "fake_audio_renderer_sink.cc",
     "fake_audio_renderer_sink.h",
+    "fake_demuxer_stream.cc",
+    "fake_demuxer_stream.h",
     "fake_text_track_stream.cc",
     "fake_text_track_stream.h",
     "gmock_callback_support.h",
@@ -265,13 +335,17 @@ source_set("test_support") {
     "mock_demuxer_host.h",
     "mock_filters.cc",
     "mock_filters.h",
+    "null_video_sink.cc",
+    "null_video_sink.h",
     "test_data_util.cc",
     "test_data_util.h",
     "test_helpers.cc",
     "test_helpers.h",
   ]
   configs += [ "//media:media_config" ]
-  deps = [ "//testing/gmock" ]
+  deps = [
+    "//testing/gmock",
+  ]
 }
 
 source_set("unittests") {
@@ -279,8 +353,8 @@ source_set("unittests") {
   sources = [
     "audio_block_fifo_unittest.cc",
     "audio_buffer_converter_unittest.cc",
-    "audio_buffer_unittest.cc",
     "audio_buffer_queue_unittest.cc",
+    "audio_buffer_unittest.cc",
     "audio_bus_unittest.cc",
     "audio_converter_unittest.cc",
     "audio_discard_helper_unittest.cc",
@@ -290,6 +364,7 @@ source_set("unittests") {
     "audio_pull_fifo_unittest.cc",
     "audio_renderer_mixer_input_unittest.cc",
     "audio_renderer_mixer_unittest.cc",
+    "audio_shifter_unittest.cc",
     "audio_splicer_unittest.cc",
     "audio_timestamp_helper_unittest.cc",
     "bind_to_current_loop_unittest.cc",
@@ -302,14 +377,17 @@ source_set("unittests") {
     "decoder_buffer_queue_unittest.cc",
     "decoder_buffer_unittest.cc",
     "djb2_unittest.cc",
+    "fake_demuxer_stream_unittest.cc",
     "gmock_callback_support_unittest.cc",
+    "key_systems_unittest.cc",
+    "moving_average_unittest.cc",
     "multi_channel_resampler_unittest.cc",
+    "null_video_sink_unittest.cc",
     "pipeline_unittest.cc",
     "ranges_unittest.cc",
     "run_all_unittests.cc",
-    "scoped_histogram_timer_unittest.cc",
-    "serial_runner_unittest.cc",
     "seekable_buffer_unittest.cc",
+    "serial_runner_unittest.cc",
     "sinc_resampler_unittest.cc",
     "stream_parser_unittest.cc",
     "text_ranges_unittest.cc",
@@ -317,16 +395,20 @@ source_set("unittests") {
     "user_input_monitor_unittest.cc",
     "vector_math_testing.h",
     "vector_math_unittest.cc",
-    "video_frame_unittest.cc",
     "video_frame_pool_unittest.cc",
+    "video_frame_unittest.cc",
     "video_util_unittest.cc",
     "wall_clock_time_source_unittest.cc",
     "yuv_convert_unittest.cc",
   ]
-  configs += [ "//media:media_config" ]
+  configs += [
+    "//build/config/compiler:no_size_t_to_int_warning",
+    "//media:media_config",
+  ]
   deps = [
-    ":base",
     ":test_support",
+    "//gpu/command_buffer/common",
+    "//media",
     "//skia",
     "//testing/gmock",
     "//testing/gtest",
@@ -340,14 +422,12 @@ source_set("unittests") {
   }
 
   if (!is_android) {
-    sources += [
-      "container_names_unittest.cc",
-    ]
+    sources += [ "container_names_unittest.cc" ]
   } else {
     deps += [ "//ui/gl" ]
   }
 
-  if (cpu_arch == "x86" || cpu_arch == "x64") {
+  if (current_cpu == "x86" || current_cpu == "x64") {
     sources += [ "simd/convert_rgb_to_yuv_unittest.cc" ]
   }
 }
@@ -364,31 +444,32 @@ source_set("perftests") {
   ]
   configs += [ "//media:media_config" ]
   deps = [
-    ":base",
     ":test_support",
+    "//media",
     "//testing/gmock",
     "//testing/gtest",
   ]
 
   if (media_use_ffmpeg) {
-    sources += [
-      "demuxer_perftest.cc",
-    ]
+    sources += [ "demuxer_perftest.cc" ]
   }
 
   if (is_android) {
-    deps += [ "//ui/gl"]
+    deps += [ "//ui/gl" ]
   }
 }
 
-if (cpu_arch == "x86" || cpu_arch == "x64") {
+if (current_cpu == "x86" || current_cpu == "x64") {
   source_set("media_sse2") {
     sources = [
       "simd/convert_rgb_to_yuv_sse2.cc",
       "simd/convert_rgb_to_yuv_ssse3.cc",
       "simd/filter_yuv_sse2.cc",
     ]
-    configs += [ "//media:media_config" ]
+    configs += [
+      "//media:media_config",
+      "//media:media_implementation",
+    ]
     if (!is_win) {
       cflags = [ "-msse2" ]
     }
@@ -411,9 +492,11 @@ if (cpu_arch == "x86" || cpu_arch == "x64") {
     yasm_flags = [
       "-DCHROMIUM",
       "-DEXPORT_SYMBOLS",
+
       # In addition to the same path as source asm, let yasm %include
       # search path be relative to src/ per Chromium policy.
-      "-I", rebase_path("..", root_build_dir),
+      "-I",
+      rebase_path("..", root_build_dir),
     ]
 
     inputs = [
@@ -426,9 +509,9 @@ if (cpu_arch == "x86" || cpu_arch == "x64") {
       "simd/scale_yuv_to_rgb_mmx.inc",
     ]
 
-    if (cpu_arch == "x86") {
+    if (current_cpu == "x86") {
       yasm_flags += [ "-DARCH_X86_32" ]
-    } else if (cpu_arch == "x64") {
+    } else if (current_cpu == "x64") {
       yasm_flags += [ "-DARCH_X86_64" ]
       sources += [
         "simd/linear_scale_yuv_to_rgb_mmx_x64.asm",
@@ -444,8 +527,8 @@ if (cpu_arch == "x86" || cpu_arch == "x64") {
     } else {
       if (is_posix) {
         yasm_flags += [ "-DELF" ]
-        if (cpu_arch == "x64") {
-        # TODO(ajwong): Why isn't this true in mac?
+        if (current_cpu == "x64") {
+          # TODO(ajwong): Why isn't this true in mac?
           yasm_flags += [ "-DPIC" ]
         }
       }

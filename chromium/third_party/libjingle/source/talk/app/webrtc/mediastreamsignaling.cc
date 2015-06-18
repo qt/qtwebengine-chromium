@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -54,7 +54,7 @@ using rtc::scoped_refptr;
 static bool ParseConstraintsForAnswer(
     const MediaConstraintsInterface* constraints,
     cricket::MediaSessionOptions* options) {
-  bool value;
+  bool value = false;
   size_t mandatory_constraints_satisfied = 0;
 
   // kOfferToReceiveAudio defaults to true according to spec.
@@ -67,6 +67,7 @@ static bool ParseConstraintsForAnswer(
   // kOfferToReceiveVideo defaults to false according to spec. But
   // if it is an answer and video is offered, we should still accept video
   // per default.
+  value = false;
   if (!FindConstraint(constraints,
                       MediaConstraintsInterface::kOfferToReceiveVideo,
                       &value, &mandatory_constraints_satisfied) || value) {
@@ -594,9 +595,9 @@ void MediaStreamSignaling::UpdateRemoteStreamsList(
   TrackInfos::iterator track_it = current_tracks->begin();
   while (track_it != current_tracks->end()) {
     const TrackInfo& info = *track_it;
-    cricket::StreamParams params;
-    if (!cricket::GetStreamBySsrc(streams, info.ssrc, &params) ||
-        params.id != info.track_id) {
+    const cricket::StreamParams* params =
+        cricket::GetStreamBySsrc(streams, info.ssrc);
+    if (!params || params->id != info.track_id) {
       OnRemoteTrackRemoved(info.stream_label, info.track_id, media_type);
       track_it = current_tracks->erase(track_it);
     } else {
@@ -781,9 +782,10 @@ void MediaStreamSignaling::UpdateLocalTracks(
   TrackInfos::iterator track_it = current_tracks->begin();
   while (track_it != current_tracks->end()) {
     const TrackInfo& info = *track_it;
-    cricket::StreamParams params;
-    if (!cricket::GetStreamBySsrc(streams, info.ssrc, &params) ||
-        params.id != info.track_id || params.sync_label != info.stream_label) {
+    const cricket::StreamParams* params =
+        cricket::GetStreamBySsrc(streams, info.ssrc);
+    if (!params || params->id != info.track_id ||
+        params->sync_label != info.stream_label) {
       OnLocalTrackRemoved(info.stream_label, info.track_id, info.ssrc,
                           media_type);
       track_it = current_tracks->erase(track_it);

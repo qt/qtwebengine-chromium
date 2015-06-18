@@ -67,7 +67,7 @@ class PowerSaveBlockerImpl::Delegate
     : public base::RefCountedThreadSafe<PowerSaveBlockerImpl::Delegate> {
  public:
   // Picks an appropriate D-Bus API to use based on the desktop environment.
-  Delegate(PowerSaveBlockerType type, const std::string& reason);
+  Delegate(PowerSaveBlockerType type, const std::string& description);
 
   // Post a task to initialize the delegate on the UI thread, which will itself
   // then post a task to apply the power save block on the FILE thread.
@@ -93,6 +93,11 @@ class PowerSaveBlockerImpl::Delegate
   void ApplyBlock(DBusAPI api);
   void RemoveBlock(DBusAPI api);
 
+  // Asynchronous callback functions for ApplyBlock and RemoveBlock.
+  // Functions do not receive ownership of |response|.
+  void ApplyBlockFinished(DBusAPI api, dbus::Response* response);
+  void RemoveBlockFinished(dbus::Response* response);
+
   // If DPMS (the power saving system in X11) is not enabled, then we don't want
   // to try to disable power saving, since on some desktop environments that may
   // enable DPMS with very poor default settings (e.g. turning off the display
@@ -104,7 +109,7 @@ class PowerSaveBlockerImpl::Delegate
   static DBusAPI SelectAPI();
 
   const PowerSaveBlockerType type_;
-  const std::string reason_;
+  const std::string description_;
 
   // Initially, we post a message to the UI thread to select an API. When it
   // finishes, it will post a message to the FILE thread to perform the actual
@@ -114,6 +119,15 @@ class PowerSaveBlockerImpl::Delegate
   DBusAPI api_;
   bool enqueue_apply_;
   base::Lock lock_;
+
+  // Indicates that a D-Bus power save blocking request is in flight.
+  bool block_inflight_;
+  // Used to detect erronous redundant calls to RemoveBlock().
+  bool unblock_inflight_;
+  // Indicates that RemoveBlock() is called before ApplyBlock() has finished.
+  // If it's true, then the RemoveBlock() call will be processed immediately
+  // after ApplyBlock() has finished.
+  bool enqueue_unblock_;
 
   scoped_refptr<dbus::Bus> bus_;
 
@@ -125,9 +139,9 @@ class PowerSaveBlockerImpl::Delegate
 };
 
 PowerSaveBlockerImpl::Delegate::Delegate(PowerSaveBlockerType type,
-                                         const std::string& reason)
+                                         const std::string& description)
     : type_(type),
-      reason_(reason),
+      description_(description),
       api_(NO_API),
       enqueue_apply_(false),
       inhibit_cookie_(0) {
@@ -139,6 +153,9 @@ void PowerSaveBlockerImpl::Delegate::Init() {
   base::AutoLock lock(lock_);
   DCHECK(!enqueue_apply_);
   enqueue_apply_ = true;
+  block_inflight_ = false;
+  unblock_inflight_ = false;
+  enqueue_unblock_ = false;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&Delegate::InitOnUIThread, this));
 }
@@ -157,7 +174,7 @@ void PowerSaveBlockerImpl::Delegate::CleanUp() {
 }
 
 void PowerSaveBlockerImpl::Delegate::InitOnUIThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::AutoLock lock(lock_);
   api_ = SelectAPI();
   if (enqueue_apply_ && api_ != NO_API) {
@@ -171,8 +188,9 @@ void PowerSaveBlockerImpl::Delegate::InitOnUIThread() {
 }
 
 void PowerSaveBlockerImpl::Delegate::ApplyBlock(DBusAPI api) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  DCHECK(!bus_.get());  // ApplyBlock() should only be called once.
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  DCHECK(!bus_);  // ApplyBlock() should only be called once.
+  DCHECK(!block_inflight_);
 
   dbus::Bus::Options options;
   options.bus_type = dbus::Bus::SESSION;
@@ -202,7 +220,7 @@ void PowerSaveBlockerImpl::Delegate::ApplyBlock(DBusAPI api) {
       message_writer->AppendString(
           base::CommandLine::ForCurrentProcess()->GetProgram().value());
       message_writer->AppendUint32(0);  // should be toplevel_xid
-      message_writer->AppendString(reason_);
+      message_writer->AppendString(description_);
       {
         uint32 flags = 0;
         switch (type_) {
@@ -229,30 +247,57 @@ void PowerSaveBlockerImpl::Delegate::ApplyBlock(DBusAPI api) {
       //     reason:        The reason for the inhibit
       message_writer->AppendString(
           base::CommandLine::ForCurrentProcess()->GetProgram().value());
-      message_writer->AppendString(reason_);
+      message_writer->AppendString(description_);
       break;
   }
 
-  // We could do this method call asynchronously, but if we did, we'd need to
-  // handle the case where we want to cancel the block before we get a reply.
-  // We're on the FILE thread so it should be OK to block briefly here.
-  scoped_ptr<dbus::Response> response(object_proxy->CallMethodAndBlock(
-      method_call.get(), dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
+  block_inflight_ = true;
+  object_proxy->CallMethod(
+      method_call.get(), dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+      base::Bind(&PowerSaveBlockerImpl::Delegate::ApplyBlockFinished, this,
+                 api));
+}
+
+void PowerSaveBlockerImpl::Delegate::ApplyBlockFinished(
+    DBusAPI api,
+    dbus::Response* response) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  DCHECK(bus_);
+  DCHECK(block_inflight_);
+  block_inflight_ = false;
+
   if (response) {
     // The method returns an inhibit_cookie, used to uniquely identify
     // this request. It should be used as an argument to Uninhibit()
     // in order to remove the request.
-    dbus::MessageReader message_reader(response.get());
+    dbus::MessageReader message_reader(response);
     if (!message_reader.PopUint32(&inhibit_cookie_))
       LOG(ERROR) << "Invalid Inhibit() response: " << response->ToString();
   } else {
     LOG(ERROR) << "No response to Inhibit() request!";
   }
+
+  if (enqueue_unblock_) {
+    enqueue_unblock_ = false;
+    // RemoveBlock() was called while the Inhibit operation was in flight,
+    // so go ahead and remove the block now.
+    BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+                            base::Bind(&Delegate::RemoveBlock, this, api_));
+  }
 }
 
 void PowerSaveBlockerImpl::Delegate::RemoveBlock(DBusAPI api) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  DCHECK(bus_.get());  // RemoveBlock() should only be called once.
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  DCHECK(bus_);  // RemoveBlock() should only be called once.
+  DCHECK(!unblock_inflight_);
+
+  if (block_inflight_) {
+    DCHECK(!enqueue_unblock_);
+    // Can't call RemoveBlock until ApplyBlock's async operation has
+    // finished. Enqueue it for execution once ApplyBlock is done.
+    enqueue_unblock_ = true;
+    return;
+  }
 
   scoped_refptr<dbus::ObjectProxy> object_proxy;
   scoped_ptr<dbus::MethodCall> method_call;
@@ -279,8 +324,18 @@ void PowerSaveBlockerImpl::Delegate::RemoveBlock(DBusAPI api) {
 
   dbus::MessageWriter message_writer(method_call.get());
   message_writer.AppendUint32(inhibit_cookie_);
-  scoped_ptr<dbus::Response> response(object_proxy->CallMethodAndBlock(
-      method_call.get(), dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
+  unblock_inflight_ = true;
+  object_proxy->CallMethod(
+      method_call.get(), dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+      base::Bind(&PowerSaveBlockerImpl::Delegate::RemoveBlockFinished, this));
+}
+
+void PowerSaveBlockerImpl::Delegate::RemoveBlockFinished(
+    dbus::Response* response) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  DCHECK(bus_);
+  unblock_inflight_ = false;
+
   if (!response)
     LOG(ERROR) << "No response to Uninhibit() request!";
   // We don't care about checking the result. We assume it works; we can't
@@ -325,9 +380,10 @@ DBusAPI PowerSaveBlockerImpl::Delegate::SelectAPI() {
   return NO_API;
 }
 
-PowerSaveBlockerImpl::PowerSaveBlockerImpl(
-    PowerSaveBlockerType type, const std::string& reason)
-    : delegate_(new Delegate(type, reason)) {
+PowerSaveBlockerImpl::PowerSaveBlockerImpl(PowerSaveBlockerType type,
+                                           Reason reason,
+                                           const std::string& description)
+    : delegate_(new Delegate(type, description)) {
   delegate_->Init();
 }
 

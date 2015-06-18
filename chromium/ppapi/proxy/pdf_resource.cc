@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "gin/v8_initializer.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -27,7 +28,8 @@ namespace {
 std::string GetLocale() {
   // The browser process should have passed the locale to the plugin via the
   // --lang command line flag.
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& parsed_command_line =
+      *base::CommandLine::ForCurrentProcess();
   const std::string& lang = parsed_command_line.GetSwitchValueASCII("lang");
   DCHECK(!lang.empty());
   return lang;
@@ -87,7 +89,7 @@ void PDFResource::SearchString(const unsigned short* input_string,
 
   std::vector<PP_PrivateFindResult> pp_results;
   while (match_start != USEARCH_DONE) {
-    size_t matched_length = usearch_getMatchedLength(searcher);
+    int32_t matched_length = usearch_getMatchedLength(searcher);
     PP_PrivateFindResult result;
     result.start_index = match_start;
     result.length = matched_length;
@@ -96,7 +98,7 @@ void PDFResource::SearchString(const unsigned short* input_string,
     DCHECK(status == U_ZERO_ERROR);
   }
 
-  *count = pp_results.size();
+  *count = static_cast<uint32_t>(pp_results.size());
   if (*count) {
     *results = reinterpret_cast<PP_PrivateFindResult*>(malloc(
         *count * sizeof(PP_PrivateFindResult)));
@@ -202,6 +204,14 @@ void PDFResource::SetSelectedText(const char* selected_text) {
 
 void PDFResource::SetLinkUnderCursor(const char* url) {
   Post(RENDERER, PpapiHostMsg_PDF_SetLinkUnderCursor(url));
+}
+
+void PDFResource::GetV8ExternalSnapshotData(const char** natives_data_out,
+                                            int* natives_size_out,
+                                            const char** snapshot_data_out,
+                                            int* snapshot_size_out) {
+  gin::V8Initializer::GetV8ExternalSnapshotData(
+      natives_data_out, natives_size_out, snapshot_data_out, snapshot_size_out);
 }
 
 }  // namespace proxy

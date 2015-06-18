@@ -36,31 +36,40 @@
 
 namespace blink {
 
-struct MIDIConnectionEventInit : public EventInit {
-    MIDIConnectionEventInit()
-        : port(nullptr)
-    {
-    }
-
-    Member<MIDIPort> port;
-};
+class MIDIConnectionEventInit;
 
 class MIDIConnectionEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create();
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, MIDIPort*);
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, const MIDIConnectionEventInit&);
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create()
+    {
+        return adoptRefWillBeNoop(new MIDIConnectionEvent());
+    }
+
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(MIDIPort* port)
+    {
+        return adoptRefWillBeNoop(new MIDIConnectionEvent(port));
+    }
+
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString& type, const MIDIConnectionEventInit& initializer)
+    {
+        return adoptRefWillBeNoop(new MIDIConnectionEvent(type, initializer));
+    }
 
     MIDIPort* port() { return m_port; }
 
     virtual const AtomicString& interfaceName() const override { return EventNames::MIDIConnectionEvent; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    MIDIConnectionEvent();
-    MIDIConnectionEvent(const AtomicString&, MIDIPort*);
+    MIDIConnectionEvent()
+        : Event(EventTypeNames::statechange, false, false) { }
+
+    MIDIConnectionEvent(MIDIPort* port)
+        : Event(EventTypeNames::statechange, false, false)
+        , m_port(port) { }
+
     MIDIConnectionEvent(const AtomicString&, const MIDIConnectionEventInit&);
 
     PersistentWillBeMember<MIDIPort> m_port;

@@ -158,10 +158,7 @@ private:
             FcPatternAddString(pattern, FC_LANG, reinterpret_cast<const FcChar8*>(locale));
         }
 
-        FcValue fcvalue;
-        fcvalue.type = FcTypeBool;
-        fcvalue.u.b = FcTrue;
-        FcPatternAdd(pattern, FC_SCALABLE, fcvalue, FcFalse);
+        FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
 
         FcConfigSubstitute(0, pattern, FcMatchPattern);
         FcDefaultSubstitute(pattern);
@@ -255,7 +252,7 @@ private:
     // FIXME: This shouldn't need to be AtomicString, but
     // currently HashTraits<const char*> isn't smart enough
     // to hash the string (only does pointer compares).
-    typedef HashMap<AtomicString, OwnPtr<CachedFontSet> > LocaleToCachedFont;
+    typedef HashMap<AtomicString, OwnPtr<CachedFontSet>> LocaleToCachedFont;
     LocaleToCachedFont m_setsByLocale;
 };
 

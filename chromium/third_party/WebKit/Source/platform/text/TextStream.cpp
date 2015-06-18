@@ -41,8 +41,9 @@ static const size_t printBufferSize = 100; // large enough for any integer or fl
 
 static inline bool hasFractions(double val)
 {
-    static const double s_epsilon = 0.0001;
-    int ival = static_cast<int>(val);
+    // We use 0.011 to more than match the number of significant digits we print out when dumping the render tree.
+    static const double s_epsilon = 0.011;
+    int ival = static_cast<int>(round(val));
     double dval = static_cast<double>(ival);
     return fabs(val - dval) > s_epsilon;
 }
@@ -124,7 +125,7 @@ TextStream& TextStream::operator<<(const FormatNumberRespectingIntegers& numberT
     if (hasFractions(numberToFormat.value))
         return *this << numberToFormat.value;
 
-    m_text.appendNumber(static_cast<int>(numberToFormat.value));
+    m_text.appendNumber(static_cast<int>(round(numberToFormat.value)));
     return *this;
 }
 

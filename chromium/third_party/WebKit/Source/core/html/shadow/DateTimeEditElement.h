@@ -82,7 +82,7 @@ public:
     static PassRefPtrWillBeRawPtr<DateTimeEditElement> create(Document&, EditControlOwner&);
 
     virtual ~DateTimeEditElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void addField(PassRefPtrWillBeRawPtr<DateTimeFieldElement>);
     bool anyEditableFieldsHaveValues() const;
@@ -134,7 +134,7 @@ private:
     void updateUIState();
 
     // Element function.
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
     virtual bool isDateTimeEditElement() const override;
 
     // DateTimeFieldElement::FieldOwner functions.

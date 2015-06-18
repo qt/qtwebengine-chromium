@@ -6,11 +6,13 @@
 #define DOMRectReadOnly_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-class DOMRectReadOnly : public GarbageCollected<DOMRectReadOnly>, public ScriptWrappableBase {
+class CORE_EXPORT DOMRectReadOnly : public GarbageCollected<DOMRectReadOnly>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static DOMRectReadOnly* create(double x, double y, double width, double height);
 
@@ -24,7 +26,7 @@ public:
     double bottom() const { return std::max(m_y, m_y + m_height); }
     double left() const { return std::min(m_x, m_x + m_width); }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 protected:
     DOMRectReadOnly(double x, double y, double width, double height);

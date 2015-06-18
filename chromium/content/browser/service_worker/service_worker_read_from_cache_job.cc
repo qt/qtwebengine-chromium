@@ -7,10 +7,11 @@
 #include <string>
 #include <vector>
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -25,9 +26,11 @@ ServiceWorkerReadFromCacheJob::ServiceWorkerReadFromCacheJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
     base::WeakPtr<ServiceWorkerContextCore> context,
+    const scoped_refptr<ServiceWorkerVersion>& version,
     int64 response_id)
     : net::URLRequestJob(request, network_delegate),
       context_(context),
+      version_(version),
       response_id_(response_id),
       has_been_killed_(false),
       weak_factory_(this) {
@@ -149,7 +152,7 @@ void ServiceWorkerReadFromCacheJob::OnReadInfoComplete(int result) {
     DCHECK_LT(result, 0);
     ServiceWorkerMetrics::CountReadResponseResult(
         ServiceWorkerMetrics::READ_HEADERS_ERROR);
-    NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
+    Done(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
     return;
   }
   DCHECK_GE(result, 0);
@@ -158,6 +161,8 @@ void ServiceWorkerReadFromCacheJob::OnReadInfoComplete(int result) {
   if (is_range_request())
     SetupRangeResponse(http_info_io_buffer_->response_data_size);
   http_info_io_buffer_ = NULL;
+  if (request_->url() == version_->script_url())
+    version_->SetMainScriptHttpResponseInfo(*http_info_);
   TRACE_EVENT_ASYNC_END1("ServiceWorker",
                          "ServiceWorkerReadFromCacheJob::ReadInfo",
                          this,
@@ -188,14 +193,28 @@ void ServiceWorkerReadFromCacheJob::SetupRangeResponse(int resource_size) {
       range_requested_, resource_size, true /* replace status line */);
 }
 
+void ServiceWorkerReadFromCacheJob::Done(const net::URLRequestStatus& status) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!status.is_success()) {
+    version_->SetStartWorkerStatusCode(SERVICE_WORKER_ERROR_DISK_CACHE);
+    // TODO(falken): Retry before evicting.
+    if (context_) {
+      ServiceWorkerRegistration* registration =
+          context_->GetLiveRegistration(version_->registration_id());
+      registration->DeleteVersion(version_);
+    }
+  }
+  NotifyDone(status);
+}
+
 void ServiceWorkerReadFromCacheJob::OnReadComplete(int result) {
   ServiceWorkerMetrics::ReadResponseResult check_result;
   if (result == 0) {
     check_result = ServiceWorkerMetrics::READ_OK;
-    NotifyDone(net::URLRequestStatus());
+    Done(net::URLRequestStatus());
   } else if (result < 0) {
     check_result = ServiceWorkerMetrics::READ_DATA_ERROR;
-    NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
+    Done(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
   } else {
     check_result = ServiceWorkerMetrics::READ_OK;
     SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status

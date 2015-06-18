@@ -13,6 +13,7 @@ TEST(DecoderBufferTest, Constructors) {
   EXPECT_TRUE(buffer->data());
   EXPECT_EQ(0, buffer->data_size());
   EXPECT_FALSE(buffer->end_of_stream());
+  EXPECT_FALSE(buffer->is_key_frame());
 
   const int kTestSize = 10;
   scoped_refptr<DecoderBuffer> buffer3(new DecoderBuffer(kTestSize));
@@ -28,6 +29,7 @@ TEST(DecoderBufferTest, CreateEOSBuffer) {
 TEST(DecoderBufferTest, CopyFrom) {
   const uint8 kData[] = "hello";
   const int kDataSize = arraysize(kData);
+
   scoped_refptr<DecoderBuffer> buffer2(DecoderBuffer::CopyFrom(
       reinterpret_cast<const uint8*>(&kData), kDataSize));
   ASSERT_TRUE(buffer2.get());
@@ -35,6 +37,8 @@ TEST(DecoderBufferTest, CopyFrom) {
   EXPECT_EQ(buffer2->data_size(), kDataSize);
   EXPECT_EQ(0, memcmp(buffer2->data(), kData, kDataSize));
   EXPECT_FALSE(buffer2->end_of_stream());
+  EXPECT_FALSE(buffer2->is_key_frame());
+
   scoped_refptr<DecoderBuffer> buffer3(DecoderBuffer::CopyFrom(
       reinterpret_cast<const uint8*>(&kData), kDataSize,
       reinterpret_cast<const uint8*>(&kData), kDataSize));
@@ -46,6 +50,7 @@ TEST(DecoderBufferTest, CopyFrom) {
   EXPECT_EQ(buffer3->side_data_size(), kDataSize);
   EXPECT_EQ(0, memcmp(buffer3->side_data(), kData, kDataSize));
   EXPECT_FALSE(buffer3->end_of_stream());
+  EXPECT_FALSE(buffer3->is_key_frame());
 }
 
 #if !defined(OS_ANDROID)
@@ -72,6 +77,8 @@ TEST(DecoderBufferTest, PaddingAlignment) {
 
   EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(
       buffer2->data()) & (DecoderBuffer::kAlignmentSize - 1));
+
+  EXPECT_FALSE(buffer2->is_key_frame());
 }
 #endif
 
@@ -92,9 +99,34 @@ TEST(DecoderBufferTest, ReadingWriting) {
   EXPECT_FALSE(buffer->end_of_stream());
 }
 
-TEST(DecoderBufferTest, GetDecryptConfig) {
+TEST(DecoderBufferTest, DecryptConfig) {
   scoped_refptr<DecoderBuffer> buffer(new DecoderBuffer(0));
   EXPECT_FALSE(buffer->decrypt_config());
+
+  const char kKeyId[] = "key id";
+  const char kIv[] = "0123456789abcdef";
+  std::vector<SubsampleEntry> subsamples;
+  subsamples.push_back(SubsampleEntry(10, 5));
+  subsamples.push_back(SubsampleEntry(15, 7));
+
+  DecryptConfig decrypt_config(kKeyId, kIv, subsamples);
+
+  buffer->set_decrypt_config(
+      make_scoped_ptr(new DecryptConfig(kKeyId, kIv, subsamples)));
+
+  EXPECT_TRUE(buffer->decrypt_config());
+  EXPECT_TRUE(buffer->decrypt_config()->Matches(decrypt_config));
+}
+
+TEST(DecoderBufferTest, IsKeyFrame) {
+  scoped_refptr<DecoderBuffer> buffer(new DecoderBuffer(0));
+  EXPECT_FALSE(buffer->is_key_frame());
+
+  buffer->set_is_key_frame(false);
+  EXPECT_FALSE(buffer->is_key_frame());
+
+  buffer->set_is_key_frame(true);
+  EXPECT_TRUE(buffer->is_key_frame());
 }
 
 }  // namespace media

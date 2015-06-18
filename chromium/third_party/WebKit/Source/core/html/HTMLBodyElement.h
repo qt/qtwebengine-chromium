@@ -24,6 +24,7 @@
 #ifndef HTMLBodyElement_h
 #define HTMLBodyElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLElement.h"
 
@@ -31,7 +32,7 @@ namespace blink {
 
 class Document;
 
-class HTMLBodyElement final : public HTMLElement {
+class CORE_EXPORT HTMLBodyElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLBodyElement);
@@ -60,15 +61,6 @@ private:
     virtual const QualifiedName& subResourceAttributeName() const override;
 
     virtual bool supportsFocus() const override;
-
-    virtual double scrollLeft() override;
-    virtual void setScrollLeft(double) override;
-
-    virtual double scrollTop() override;
-    virtual void setScrollTop(double) override;
-
-    virtual int scrollHeight() override;
-    virtual int scrollWidth() override;
 };
 
 } // namespace blink

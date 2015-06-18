@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <cmath>
+
 #include "base/basictypes.h"
-#include "base/float_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "content/common/android/gin_java_bridge_value.h"
@@ -20,15 +21,13 @@ class GinJavaBridgeValueConverterTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     v8::HandleScope handle_scope(isolate_);
-    v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate_);
+    v8::Local<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate_);
     context_.Reset(isolate_, v8::Context::New(isolate_, NULL, global));
   }
 
-  virtual void TearDown() {
-    context_.Reset();
-  }
+  void TearDown() override { context_.Reset(); }
 
   v8::Isolate* isolate_;
 
@@ -45,7 +44,7 @@ TEST_F(GinJavaBridgeValueConverterTest, BasicValues) {
   scoped_ptr<GinJavaBridgeValueConverter> converter(
       new GinJavaBridgeValueConverter());
 
-  v8::Handle<v8::Primitive> v8_undefined(v8::Undefined(isolate_));
+  v8::Local<v8::Primitive> v8_undefined(v8::Undefined(isolate_));
   scoped_ptr<base::Value> undefined(
       converter->FromV8Value(v8_undefined, context));
   ASSERT_TRUE(undefined.get());
@@ -55,7 +54,7 @@ TEST_F(GinJavaBridgeValueConverterTest, BasicValues) {
   ASSERT_TRUE(undefined_value.get());
   EXPECT_TRUE(undefined_value->IsType(GinJavaBridgeValue::TYPE_UNDEFINED));
 
-  v8::Handle<v8::Number> v8_infinity(
+  v8::Local<v8::Number> v8_infinity(
       v8::Number::New(isolate_, std::numeric_limits<double>::infinity()));
   scoped_ptr<base::Value> infinity(
       converter->FromV8Value(v8_infinity, context));
@@ -69,8 +68,7 @@ TEST_F(GinJavaBridgeValueConverterTest, BasicValues) {
   EXPECT_TRUE(
       infinity_value->IsType(GinJavaBridgeValue::TYPE_NONFINITE));
   EXPECT_TRUE(infinity_value->GetAsNonFinite(&native_float));
-  EXPECT_FALSE(base::IsFinite(native_float));
-  EXPECT_FALSE(base::IsNaN(native_float));
+  EXPECT_TRUE(std::isinf(native_float));
 }
 
 TEST_F(GinJavaBridgeValueConverterTest, ArrayBuffer) {
@@ -82,7 +80,7 @@ TEST_F(GinJavaBridgeValueConverterTest, ArrayBuffer) {
   scoped_ptr<GinJavaBridgeValueConverter> converter(
       new GinJavaBridgeValueConverter());
 
-  v8::Handle<v8::ArrayBuffer> v8_array_buffer(
+  v8::Local<v8::ArrayBuffer> v8_array_buffer(
       v8::ArrayBuffer::New(isolate_, 0));
   scoped_ptr<base::Value> undefined(
       converter->FromV8Value(v8_array_buffer, context));
@@ -117,11 +115,11 @@ TEST_F(GinJavaBridgeValueConverterTest, TypedArrays) {
   };
   for (size_t i = 0; i < arraysize(array_types); i += 2) {
     const char* typed_array_type = array_types[i + 1];
-    v8::Handle<v8::Script> script(v8::Script::Compile(v8::String::NewFromUtf8(
+    v8::Local<v8::Script> script(v8::Script::Compile(v8::String::NewFromUtf8(
         isolate_,
         base::StringPrintf(
             source_template, array_types[i], typed_array_type).c_str())));
-    v8::Handle<v8::Value> v8_typed_array = script->Run();
+    v8::Local<v8::Value> v8_typed_array = script->Run();
     scoped_ptr<base::Value> list_value(
         converter->FromV8Value(v8_typed_array, context));
     ASSERT_TRUE(list_value.get()) << typed_array_type;

@@ -13,8 +13,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/http/http_version.h"
+#include "net/log/net_log.h"
 
 class Pickle;
 class PickleIterator;
@@ -72,7 +72,7 @@ class NET_EXPORT HttpResponseHeaders
   // Initializes from the representation stored in the given pickle.  The data
   // for this object is found relative to the given pickle_iter, which should
   // be passed to the pickle's various Read* methods.
-  HttpResponseHeaders(const Pickle& pickle, PickleIterator* pickle_iter);
+  explicit HttpResponseHeaders(PickleIterator* pickle_iter);
 
   // Appends a representation of this object to the given pickle.
   // The options argument can be a combination of PersistOptions.
@@ -286,7 +286,7 @@ class NET_EXPORT HttpResponseHeaders
   bool IsChunkEncoded() const;
 
   // Creates a Value for use with the NetLog containing the response headers.
-  base::Value* NetLogCallback(NetLog::LogLevel log_level) const;
+  base::Value* NetLogCallback(NetLogCaptureMode capture_mode) const;
 
   // Takes in a Value created by the above function, and attempts to create a
   // copy of the original headers.  Returns true on success.  On failure,

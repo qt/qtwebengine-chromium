@@ -9,11 +9,18 @@
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_MACOSX)
+#include <OpenGL/OpenGL.h>
 #include "base/mac/mac_util.h"
 #include "ui/gl/gl_context_cgl.h"
 #endif  // OS_MACOSX
 
 namespace ui {
+
+struct GpuSwitchingManager::PlatformSpecific {
+#if defined(OS_MACOSX)
+  CGLPixelFormatObj discrete_pixel_format;
+#endif  // OS_MACOSX
+};
 
 // static
 GpuSwitchingManager* GpuSwitchingManager::GetInstance() {
@@ -25,16 +32,16 @@ GpuSwitchingManager::GpuSwitchingManager()
       gpu_switching_option_set_(false),
       supports_dual_gpus_(false),
       supports_dual_gpus_set_(false),
-      gpu_count_(0) {
+      platform_specific_(new PlatformSpecific) {
 #if defined(OS_MACOSX)
-  discrete_pixel_format_ = NULL;
+  platform_specific_->discrete_pixel_format = nullptr;
 #endif  // OS_MACOSX
 }
 
 GpuSwitchingManager::~GpuSwitchingManager() {
 #if defined(OS_MACOSX)
-  if (discrete_pixel_format_)
-    CGLReleasePixelFormat(discrete_pixel_format_);
+  if (platform_specific_->discrete_pixel_format)
+    CGLReleasePixelFormat(platform_specific_->discrete_pixel_format);
 #endif  // OS_MACOSX
 }
 
@@ -65,7 +72,8 @@ void GpuSwitchingManager::ForceUseOfDiscreteGpu() {
 
 bool GpuSwitchingManager::SupportsDualGpus() {
   if (!supports_dual_gpus_set_) {
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     bool flag = false;
     if (command_line.HasSwitch(switches::kSupportsDualGpus)) {
       // GPU process, flag is passed down from browser process.
@@ -82,7 +90,7 @@ bool GpuSwitchingManager::SupportsDualGpus() {
       // Browser process.
       // We only compute this flag in the browser process.
 #if defined(OS_MACOSX)
-      flag = (gpu_count_ == 2);
+      flag = (vendor_ids_.size() == 2);
       if (flag && command_line.HasSwitch(switches::kUseGL) &&
           command_line.GetSwitchValueASCII(switches::kUseGL) !=
             gfx::kGLImplementationDesktopName)
@@ -90,6 +98,17 @@ bool GpuSwitchingManager::SupportsDualGpus() {
 
       if (flag && !base::mac::IsOSLionOrLater())
         flag = false;
+
+      if (flag) {
+        // Only advertise that we have two GPUs to the rest of
+        // Chrome's code if we find an Intel GPU and some other
+        // vendor's GPU. Otherwise we don't understand the
+        // configuration and don't deal well with it (an example being
+        // the dual AMD GPUs in recent Mac Pros).
+        const uint32 intel = 0x8086;
+        flag = ((vendor_ids_[0] == intel && vendor_ids_[1] != intel) ||
+                (vendor_ids_[0] != intel && vendor_ids_[1] == intel));
+      }
 #endif  // OS_MACOSX
     }
     supports_dual_gpus_ = flag;
@@ -98,8 +117,9 @@ bool GpuSwitchingManager::SupportsDualGpus() {
   return supports_dual_gpus_;
 }
 
-void GpuSwitchingManager::SetGpuCount(size_t gpu_count) {
-  gpu_count_ = gpu_count;
+void GpuSwitchingManager::SetGpuVendorIds(
+    const std::vector<uint32>& vendor_ids) {
+  vendor_ids_ = vendor_ids;
 }
 
 void GpuSwitchingManager::AddObserver(GpuSwitchingObserver* observer) {
@@ -123,12 +143,13 @@ gfx::GpuPreference GpuSwitchingManager::AdjustGpuPreference(
 
 #if defined(OS_MACOSX)
 void GpuSwitchingManager::SwitchToDiscreteGpuMac() {
-  if (discrete_pixel_format_)
+  if (platform_specific_->discrete_pixel_format)
     return;
   CGLPixelFormatAttribute attribs[1];
   attribs[0] = static_cast<CGLPixelFormatAttribute>(0);
   GLint num_pixel_formats = 0;
-  CGLChoosePixelFormat(attribs, &discrete_pixel_format_, &num_pixel_formats);
+  CGLChoosePixelFormat(attribs, &platform_specific_->discrete_pixel_format,
+                       &num_pixel_formats);
 }
 #endif  // OS_MACOSX
 

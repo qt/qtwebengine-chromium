@@ -399,7 +399,7 @@ static int process_input(const char* input, const SkString* writePath,
     } else {
         SkString warning;
         warning.printf("Warning: skipping %s\n", input);
-        SkDebugf(warning.c_str());
+        SkDebugf("%s", warning.c_str());
     }
     return failures;
 }
@@ -478,17 +478,12 @@ int tool_main(int argc, char** argv) {
     if (renderer->isUsingGpuDevice()) {
         GrContext* ctx = renderer->getGrContext();
         ctx->printCacheStats();
-#ifdef SK_DEVELOPER
-        ctx->dumpFontCache();
-#endif
     }
 #endif
 
 #if GR_GPU_STATS && SK_SUPPORT_GPU
     if (FLAGS_gpuStats && renderer->isUsingGpuDevice()) {
-        GrContext* ctx = renderer->getGrContext();
-        SkDebugf("RenderTarget Binds: %d\n", ctx->gpuStats()->renderTargetBinds());
-        SkDebugf("Shader Compilations: %d\n", ctx->gpuStats()->shaderCompilations());
+        renderer->getGrContext()->printGpuStats();
     }
 #endif
 

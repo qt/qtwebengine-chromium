@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/aligned_memory.h"
 #include "base/path_service.h"
 #include "base/time/time.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/renderer/media/media_stream_audio_processor.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
@@ -94,9 +92,14 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
       data_bus_playout_to_use = data_bus_playout.get();
     }
 
+    const base::TimeDelta input_capture_delay =
+        base::TimeDelta::FromMilliseconds(20);
+    const base::TimeDelta output_buffer_duration =
+        expected_output_buffer_size * base::TimeDelta::FromSeconds(1) /
+            expected_output_sample_rate;
     for (int i = 0; i < kNumberOfPacketsForTest; ++i) {
       data_bus->FromInterleaved(data_ptr, data_bus->frames(), 2);
-      audio_processor->PushCaptureData(data_bus.get());
+      audio_processor->PushCaptureData(*data_bus, input_capture_delay);
 
       // |audio_processor| does nothing when the audio processing is off in
       // the processor.
@@ -119,12 +122,15 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
                                        params.sample_rate(), 10);
       }
 
-      int16* output = NULL;
+      media::AudioBus* processed_data = nullptr;
+      base::TimeDelta capture_delay;
       int new_volume = 0;
-      while(audio_processor->ProcessAndConsumeData(
-          base::TimeDelta::FromMilliseconds(10), 255, false, &new_volume,
-          &output)) {
-        EXPECT_TRUE(output != NULL);
+      while (audio_processor->ProcessAndConsumeData(
+                 255, false, &processed_data, &capture_delay, &new_volume)) {
+        EXPECT_TRUE(processed_data);
+        EXPECT_NEAR(input_capture_delay.InMillisecondsF(),
+                    capture_delay.InMillisecondsF(),
+                    output_buffer_duration.InMillisecondsF());
         EXPECT_EQ(audio_processor->OutputFormat().sample_rate(),
                   expected_output_sample_rate);
         EXPECT_EQ(audio_processor->OutputFormat().channels(),
@@ -175,30 +181,13 @@ class MediaStreamAudioProcessorTest : public ::testing::Test {
   media::AudioParameters params_;
 };
 
-TEST_F(MediaStreamAudioProcessorTest, WithoutAudioProcessing) {
-  // Setup the audio processor with disabled flag on.
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kDisableAudioTrackProcessing);
-  MockMediaConstraintFactory constraint_factory;
-  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
-      new WebRtcAudioDeviceImpl());
-  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
-          constraint_factory.CreateWebMediaConstraints(), 0,
-          webrtc_audio_device.get()));
-  EXPECT_FALSE(audio_processor->has_audio_processing());
-  audio_processor->OnCaptureFormatChanged(params_);
-
-  ProcessDataAndVerifyFormat(audio_processor.get(),
-                             params_.sample_rate(),
-                             params_.channels(),
-                             params_.sample_rate() / 100);
-  // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
-  // |audio_processor|.
-  audio_processor = NULL;
-}
-
-TEST_F(MediaStreamAudioProcessorTest, WithAudioProcessing) {
+// Test crashing with ASAN on Android. crbug.com/468762
+#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+#define MAYBE_WithAudioProcessing DISABLED_WithAudioProcessing
+#else
+#define MAYBE_WithAudioProcessing WithAudioProcessing
+#endif
+TEST_F(MediaStreamAudioProcessorTest, MAYBE_WithAudioProcessing) {
   MockMediaConstraintFactory constraint_factory;
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
@@ -288,7 +277,8 @@ TEST_F(MediaStreamAudioProcessorTest, VerifyConstraints) {
     MediaAudioConstraints::kGoogExperimentalNoiseSuppression,
     MediaAudioConstraints::kGoogHighpassFilter,
     MediaAudioConstraints::kGoogNoiseSuppression,
-    MediaAudioConstraints::kGoogTypingNoiseDetection
+    MediaAudioConstraints::kGoogTypingNoiseDetection,
+    kMediaStreamAudioHotword
   };
 
   // Verify mandatory constraints.
@@ -355,12 +345,19 @@ TEST_F(MediaStreamAudioProcessorTest, VerifyConstraints) {
     for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
       EXPECT_FALSE(audio_constraints.GetProperty(kDefaultAudioConstraints[i]));
     }
-    EXPECT_FALSE(audio_constraints.NeedsAudioProcessing());
 #if defined(OS_WIN)
     EXPECT_TRUE(audio_constraints.GetProperty(kMediaStreamAudioDucking));
 #else
     EXPECT_FALSE(audio_constraints.GetProperty(kMediaStreamAudioDucking));
 #endif
+  }
+
+  {
+    // |kMediaStreamAudioHotword| is always off by default.
+    MockMediaConstraintFactory constraint_factory;
+    MediaAudioConstraints audio_constraints(
+        constraint_factory.CreateWebMediaConstraints(), 0);
+    EXPECT_FALSE(audio_constraints.GetProperty(kMediaStreamAudioHotword));
   }
 }
 
@@ -373,7 +370,13 @@ TEST_F(MediaStreamAudioProcessorTest, ValidateConstraints) {
   EXPECT_FALSE(audio_constraints.IsValid());
 }
 
-TEST_F(MediaStreamAudioProcessorTest, TestAllSampleRates) {
+// Test crashing with ASAN on Android. crbug.com/468762
+#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+#define MAYBE_TestAllSampleRates DISABLED_TestAllSampleRates
+#else
+#define MAYBE_TestAllSampleRates TestAllSampleRates
+#endif
+TEST_F(MediaStreamAudioProcessorTest, MAYBE_TestAllSampleRates) {
   MockMediaConstraintFactory constraint_factory;
   scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
       new WebRtcAudioDeviceImpl());
@@ -465,24 +468,23 @@ TEST_F(MediaStreamAudioProcessorTest, TestStereoAudio) {
   float* left_channel_ptr = left_channel.get();
   left_channel_ptr[0] = 1.0f;
 
-  // A audio bus used for verifying the output data values.
-  scoped_ptr<media::AudioBus> output_bus = media::AudioBus::Create(
-      audio_processor->OutputFormat());
-
   // Run the test consecutively to make sure the stereo channels are not
   // flipped back and forth.
   static const int kNumberOfPacketsForTest = 100;
+  const base::TimeDelta pushed_capture_delay =
+      base::TimeDelta::FromMilliseconds(42);
   for (int i = 0; i < kNumberOfPacketsForTest; ++i) {
-    audio_processor->PushCaptureData(wrapper.get());
+    audio_processor->PushCaptureData(*wrapper, pushed_capture_delay);
 
-    int16* output = NULL;
+    media::AudioBus* processed_data = nullptr;
+    base::TimeDelta capture_delay;
     int new_volume = 0;
     EXPECT_TRUE(audio_processor->ProcessAndConsumeData(
-        base::TimeDelta::FromMilliseconds(0), 0, false, &new_volume, &output));
-    output_bus->FromInterleaved(output, output_bus->frames(), 2);
-    EXPECT_TRUE(output != NULL);
-    EXPECT_EQ(output_bus->channel(0)[0], 0);
-    EXPECT_NE(output_bus->channel(1)[0], 0);
+        0, false, &processed_data, &capture_delay, &new_volume));
+    EXPECT_TRUE(processed_data);
+    EXPECT_EQ(processed_data->channel(0)[0], 0);
+    EXPECT_NE(processed_data->channel(1)[0], 0);
+    EXPECT_EQ(pushed_capture_delay, capture_delay);
   }
 
   // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
@@ -490,7 +492,14 @@ TEST_F(MediaStreamAudioProcessorTest, TestStereoAudio) {
   audio_processor = NULL;
 }
 
-TEST_F(MediaStreamAudioProcessorTest, TestWithKeyboardMicChannel) {
+// Disabled on android clang builds due to crbug.com/470499
+#if defined(__clang__) && defined(OS_ANDROID)
+#define MAYBE_TestWithKeyboardMicChannel DISABLED_TestWithKeyboardMicChannel
+#else
+#define MAYBE_TestWithKeyboardMicChannel TestWithKeyboardMicChannel
+#endif
+
+TEST_F(MediaStreamAudioProcessorTest, MAYBE_TestWithKeyboardMicChannel) {
   MockMediaConstraintFactory constraint_factory;
   constraint_factory.AddMandatory(
       MediaAudioConstraints::kGoogExperimentalNoiseSuppression, true);
@@ -511,35 +520,6 @@ TEST_F(MediaStreamAudioProcessorTest, TestWithKeyboardMicChannel) {
                              kAudioProcessingSampleRate,
                              kAudioProcessingNumberOfChannel,
                              kAudioProcessingSampleRate / 100);
-  // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
-  // |audio_processor|.
-  audio_processor = NULL;
-}
-
-TEST_F(MediaStreamAudioProcessorTest,
-       TestWithKeyboardMicChannelWithoutProcessing) {
-  // Setup the audio processor with disabled flag on.
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kDisableAudioTrackProcessing);
-  MockMediaConstraintFactory constraint_factory;
-  scoped_refptr<WebRtcAudioDeviceImpl> webrtc_audio_device(
-      new WebRtcAudioDeviceImpl());
-  scoped_refptr<MediaStreamAudioProcessor> audio_processor(
-      new rtc::RefCountedObject<MediaStreamAudioProcessor>(
-          constraint_factory.CreateWebMediaConstraints(), 0,
-          webrtc_audio_device.get()));
-  EXPECT_FALSE(audio_processor->has_audio_processing());
-
-  media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC,
-                                48000, 16, 512);
-  audio_processor->OnCaptureFormatChanged(params);
-
-  ProcessDataAndVerifyFormat(
-      audio_processor.get(),
-      params.sample_rate(),
-      media::ChannelLayoutToChannelCount(media::CHANNEL_LAYOUT_STEREO),
-      params.sample_rate() / 100);
   // Set |audio_processor| to NULL to make sure |webrtc_audio_device| outlives
   // |audio_processor|.
   audio_processor = NULL;

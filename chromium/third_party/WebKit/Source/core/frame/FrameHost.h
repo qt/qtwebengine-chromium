@@ -31,7 +31,9 @@
 #ifndef FrameHost_h
 #define FrameHost_h
 
+#include "core/CoreExport.h"
 #include "core/frame/PinchViewport.h"
+#include "core/frame/TopControls.h"
 #include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
@@ -58,8 +60,8 @@ class Visitor;
 // browser-level concept and Blink core/ only knows about its LocalFrame (and FrameHost).
 // Separating Page from the rest of core/ through this indirection
 // allows us to slowly refactor Page without breaking the rest of core.
-class FrameHost final : public NoBaseWillBeGarbageCollectedFinalized<FrameHost> {
-    WTF_MAKE_NONCOPYABLE(FrameHost); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT FrameHost final : public NoBaseWillBeGarbageCollectedFinalized<FrameHost> {
+    WTF_MAKE_NONCOPYABLE(FrameHost); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FrameHost);
 public:
     static PassOwnPtrWillBeRawPtr<FrameHost> create(Page&);
     ~FrameHost();
@@ -75,6 +77,7 @@ public:
     // This value does not account for Page zoom, use LocalFrame::devicePixelRatio instead.
     float deviceScaleFactor() const;
 
+    TopControls& topControls() const;
     PinchViewport& pinchViewport() const;
     EventHandlerRegistry& eventHandlerRegistry() const;
 
@@ -83,7 +86,7 @@ public:
 
     ConsoleMessageStorage& consoleMessageStorage() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // Don't allow more than a certain number of frames in a page.
     // This seems like a reasonable upper bound, and otherwise mutually
@@ -98,7 +101,8 @@ private:
     explicit FrameHost(Page&);
 
     RawPtrWillBeMember<Page> m_page;
-    const OwnPtrWillBeMember<PinchViewport> m_pinchViewport;
+    const OwnPtrWillBeMember<TopControls> m_topControls;
+    const OwnPtr<PinchViewport> m_pinchViewport;
     const OwnPtrWillBeMember<EventHandlerRegistry> m_eventHandlerRegistry;
     const OwnPtrWillBeMember<ConsoleMessageStorage> m_consoleMessageStorage;
 

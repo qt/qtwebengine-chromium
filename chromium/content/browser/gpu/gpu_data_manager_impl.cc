@@ -132,6 +132,12 @@ bool GpuDataManagerImpl::CanUseGpuBrowserCompositor() const {
   return private_->CanUseGpuBrowserCompositor();
 }
 
+void GpuDataManagerImpl::GetDisabledExtensions(
+    std::string* disabled_extensions) const {
+  base::AutoLock auto_lock(lock_);
+  private_->GetDisabledExtensions(disabled_extensions);
+}
+
 void GpuDataManagerImpl::Initialize() {
   base::AutoLock auto_lock(lock_);
   private_->Initialize();
@@ -187,10 +193,9 @@ void GpuDataManagerImpl::GetBlacklistReasons(base::ListValue* reasons) const {
   private_->GetBlacklistReasons(reasons);
 }
 
-void GpuDataManagerImpl::GetDriverBugWorkarounds(
-    base::ListValue* workarounds) const {
+std::vector<std::string> GpuDataManagerImpl::GetDriverBugWorkarounds() const {
   base::AutoLock auto_lock(lock_);
-  private_->GetDriverBugWorkarounds(workarounds);
+  return private_->GetDriverBugWorkarounds();
 }
 
 void GpuDataManagerImpl::AddLogMessage(int level,

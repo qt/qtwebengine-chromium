@@ -43,42 +43,21 @@
 
 namespace blink {
 
-void V8HTMLOptionsCollection::addMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    ExceptionState exceptionState(ExceptionState::ExecutionContext, "add", "HTMLOptionsCollection", info.Holder(), info.GetIsolate());
-    if (!V8HTMLOptionElement::hasInstance(info[0], info.GetIsolate())) {
-        exceptionState.throwTypeError("The element provided was not an HTMLOptionElement.");
-    } else {
-        HTMLOptionsCollection* impl = V8HTMLOptionsCollection::toImpl(info.Holder());
-        HTMLOptionElement* option = V8HTMLOptionElement::toImpl(v8::Handle<v8::Object>(v8::Handle<v8::Object>::Cast(info[0])));
-
-        if (info.Length() < 2) {
-            impl->add(option, exceptionState);
-        } else {
-            int index = toInt32(info[1], exceptionState);
-            if (exceptionState.throwIfNeeded())
-                return;
-
-            impl->add(option, index, exceptionState);
-        }
-    }
-
-    exceptionState.throwIfNeeded();
-}
-
 void V8HTMLOptionsCollection::lengthAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     HTMLOptionsCollection* impl = V8HTMLOptionsCollection::toImpl(info.Holder());
-    double v = value->NumberValue();
     unsigned newLength = 0;
+    double currentLength;
+    if (!v8Call(value->NumberValue(info.GetIsolate()->GetCurrentContext()), currentLength))
+        return;
     ExceptionState exceptionState(ExceptionState::SetterContext, "length", "HTMLOptionsCollection", info.Holder(), info.GetIsolate());
-    if (!std::isnan(v) && !std::isinf(v)) {
-        if (v < 0.0)
-            exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(v) + ") is negative. Lengths must be greater than or equal to 0.");
-        else if (v > static_cast<double>(UINT_MAX))
+    if (!std::isnan(currentLength) && !std::isinf(currentLength)) {
+        if (currentLength < 0.0)
+            exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(currentLength) + ") is negative. Lengths must be greater than or equal to 0.");
+        else if (currentLength > static_cast<double>(UINT_MAX))
             newLength = UINT_MAX;
         else
-            newLength = static_cast<unsigned>(v);
+            newLength = static_cast<unsigned>(currentLength);
     }
 
     if (exceptionState.throwIfNeeded())

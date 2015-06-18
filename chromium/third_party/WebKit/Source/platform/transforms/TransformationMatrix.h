@@ -47,7 +47,7 @@ class FloatBox;
 #endif
 
 class PLATFORM_EXPORT TransformationMatrix {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(TransformationMatrix);
 public:
 
 #if CPU(APPLE_ARMV7S) || defined(TRANSFORMATION_MATRIX_USE_X86_64_SSE2)
@@ -254,8 +254,8 @@ public:
         double perspectiveX, perspectiveY, perspectiveZ, perspectiveW;
     } DecomposedType;
 
-    bool decompose(DecomposedType& decomp) const;
-    void recompose(const DecomposedType& decomp);
+    bool decompose(DecomposedType&) const WARN_UNUSED_RETURN;
+    void recompose(const DecomposedType&);
 
     void blend(const TransformationMatrix& from, double progress);
 
@@ -314,10 +314,19 @@ public:
             && m_matrix[3][3] == 1;
     }
 
+    bool isIdentityOr2DTranslation() const
+    {
+        return isIdentityOrTranslation() && m_matrix[3][2] == 0;
+    }
+
     bool isIntegerTranslation() const;
 
     // This method returns the matrix without 3D components.
     TransformationMatrix to2dTransform() const;
+
+    // If this transformation is identity or 2D translation, returns the
+    // translation.
+    FloatSize to2DTranslation() const;
 
     typedef float FloatMatrix4[16];
     void toColumnMajorFloatArray(FloatMatrix4& result) const;

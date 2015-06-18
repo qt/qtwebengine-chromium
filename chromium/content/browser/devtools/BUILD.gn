@@ -8,8 +8,6 @@ import("//tools/grit/grit_rule.gni")
 group("resources") {
   deps = [
     ":devtools_resources",
-    ":devtools_protocol_constants",
-    ":devtools_protocol_handler",
   ]
 }
 
@@ -19,7 +17,7 @@ grit("devtools_resources") {
 
   # TOOD(brettw) remove this so the output file goes into the target_gen_dir,
   # but keep this for not for GYP compat.
-  output_dir = "$root_gen_dir/webkit"
+  output_dir = "$root_gen_dir/blink"
   outputs = [
     "grit/devtools_resources.h",
     "devtools_resources.pak",
@@ -27,9 +25,8 @@ grit("devtools_resources") {
     "grit/devtools_resources_map.h",
   ]
 
-  defines = [
-    "SHARED_INTERMEDIATE_DIR=" + rebase_path(root_gen_dir, root_build_dir),
-  ]
+  defines =
+      [ "SHARED_INTERMEDIATE_DIR=" + rebase_path(root_gen_dir, root_build_dir) ]
 
   deps = [
     # This is the action that generates out .grd input file.
@@ -37,51 +34,24 @@ grit("devtools_resources") {
   ]
 }
 
-action("gen_devtools_protocol_constants") {
-  visibility = [ ":devtools_protocol_constants" ]
+action("gen_devtools_protocol_handler") {
+  visibility = [ "//content/browser" ]
 
-  script = "//content/public/browser/devtools_protocol_constants_generator.py"
+  script = "//content/browser/devtools/protocol/" +
+           "devtools_protocol_handler_generator.py"
 
   blink_protocol = "//third_party/WebKit/Source/devtools/protocol.json"
   browser_protocol = "browser_protocol.json"
-  inputs = [ blink_protocol, browser_protocol ]
+  inputs = [
+    blink_protocol,
+    browser_protocol,
+  ]
 
   outputs = [
-    "$target_gen_dir/devtools_protocol_constants.cc",
-    "$target_gen_dir/devtools_protocol_constants.h",
+    "$target_gen_dir/protocol/devtools_protocol_dispatcher.cc",
+    "$target_gen_dir/protocol/devtools_protocol_dispatcher.h",
   ]
 
-  args = [ "content" ] + rebase_path(outputs, root_build_dir) + [
-    rebase_path(blink_protocol, root_build_dir),
-    rebase_path(browser_protocol, root_build_dir),
-  ]
-}
-
-action("gen_devtools_protocol_handler") {
-  visibility = [ ":devtools_protocol_handler" ]
-
-  script = "//content/browser/devtools/protocol/" +
-      "devtools_protocol_handler_generator.py"
-
-  blink_protocol = "//third_party/WebKit/Source/devtools/protocol.json"
-  inputs = [ blink_protocol ]
-
-  outputs = [
-    "$target_gen_dir/protocol/devtools_protocol_handler_impl.cc",
-    "$target_gen_dir/protocol/devtools_protocol_handler_impl.h",
-  ]
-
-  args = [
-    rebase_path(blink_protocol, root_build_dir),
-  ] + rebase_path(outputs, root_build_dir)
-}
-
-source_set("devtools_protocol_constants") {
-  visibility = [ ":resources" ]
-  sources = get_target_outputs(":gen_devtools_protocol_constants")
-}
-
-source_set("devtools_protocol_handler") {
-  visibility = [ ":resources" ]
-  sources = get_target_outputs(":gen_devtools_protocol_handler")
+  args =
+      rebase_path(inputs, root_build_dir) + rebase_path(outputs, root_build_dir)
 }

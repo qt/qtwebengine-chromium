@@ -10,14 +10,7 @@
 namespace base {
 namespace win {
 
-#if defined(_WIN64) && !defined(NACL_WIN64)
-// TODO(jschuh): crbug.com/167707 Make sure this is ok.
-#pragma message ("Warning: \
- This code is not tested on x64. Please make sure all the base unit tests\
- pass before doing any real work. The current unit tests don't test the\
- differences between 32- and 64-bits implementations. Bugs may slip through.\
- You need to improve the coverage before continuing.")
-#endif
+// TODO(jschuh): crbug.com/167707 Make sure this code works on 64-bit.
 
 // Structure to perform imports enumerations.
 struct EnumAllImportsStorage {
@@ -26,6 +19,9 @@ struct EnumAllImportsStorage {
 };
 
 namespace {
+
+  // PdbInfo Signature
+  const DWORD kPdbInfoSignature = 'SDSR';
 
   // Compare two strings byte by byte on an unsigned basis.
   //   if s1 == s2, return 0
@@ -42,6 +38,12 @@ namespace {
             *reinterpret_cast<const unsigned char*>(s2));
   }
 
+  struct PdbInfo {
+    DWORD Signature;
+    GUID Guid;
+    DWORD Age;
+    char PdbFileName[1];
+  };
 }  // namespace
 
 // Callback used to enumerate imports. See EnumImportChunksFunction.
@@ -147,6 +149,36 @@ PIMAGE_SECTION_HEADER PEImage::GetImageSectionHeaderByName(
   }
 
   return ret;
+}
+
+bool PEImage::GetDebugId(LPGUID guid, LPDWORD age) const {
+  if (NULL == guid || NULL == age) {
+    return false;
+  }
+
+  DWORD debug_directory_size =
+      GetImageDirectoryEntrySize(IMAGE_DIRECTORY_ENTRY_DEBUG);
+  PIMAGE_DEBUG_DIRECTORY debug_directory =
+      reinterpret_cast<PIMAGE_DEBUG_DIRECTORY>(
+      GetImageDirectoryEntryAddr(IMAGE_DIRECTORY_ENTRY_DEBUG));
+
+  size_t directory_count =
+      debug_directory_size / sizeof(IMAGE_DEBUG_DIRECTORY);
+
+  for (size_t index = 0; index < directory_count; ++index) {
+    if (debug_directory[index].Type == IMAGE_DEBUG_TYPE_CODEVIEW) {
+      PdbInfo* pdb_info = reinterpret_cast<PdbInfo*>(
+          RVAToAddr(debug_directory[index].AddressOfRawData));
+      if (pdb_info->Signature != kPdbInfoSignature) {
+        // Unsupported PdbInfo signature
+        return false;
+      }
+      *guid = pdb_info->Guid;
+      *age = pdb_info->Age;
+      return true;
+    }
+  }
+  return false;
 }
 
 PDWORD PEImage::GetExportEntry(LPCSTR name) const {
@@ -536,14 +568,11 @@ bool PEImage::ImageAddrToOnDiskOffset(LPVOID address,
   if (NULL == section_header)
     return false;
 
-#pragma warning(push)
-#pragma warning(disable: 4311)
-  // These casts generate warnings because they are 32 bit specific.
   // Don't follow the virtual RVAToAddr, use the one on the base.
-  DWORD offset_within_section = reinterpret_cast<DWORD>(address) -
-                                    reinterpret_cast<DWORD>(PEImage::RVAToAddr(
-                                        section_header->VirtualAddress));
-#pragma warning(pop)
+  DWORD offset_within_section =
+      static_cast<DWORD>(reinterpret_cast<uintptr_t>(address)) -
+      static_cast<DWORD>(reinterpret_cast<uintptr_t>(
+          PEImage::RVAToAddr(section_header->VirtualAddress)));
 
   *on_disk_offset = section_header->PointerToRawData + offset_within_section;
   return true;

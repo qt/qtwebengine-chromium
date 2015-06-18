@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,11 @@
 #include "platform/geometry/DoubleSize.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntPoint.h"
+#include <algorithm>
 
 namespace blink {
+
+class LayoutPoint;
 
 class PLATFORM_EXPORT DoublePoint {
 public:
@@ -33,24 +36,65 @@ public:
         , m_y(p.y())
     {
     }
+    explicit DoublePoint(const LayoutPoint&);
+
+    explicit DoublePoint(const IntSize& size)
+        : m_x(size.width()), m_y(size.height())
+    {
+    }
+
+    explicit DoublePoint(const FloatSize&);
 
     explicit DoublePoint(const DoubleSize& size)
         : m_x(size.width()), m_y(size.height())
     {
     }
 
-    DoublePoint expandedTo(int x, int y) const
+    static DoublePoint zero() { return DoublePoint(); }
+
+    DoublePoint expandedTo(const DoublePoint& other) const
     {
-        return DoublePoint(m_x > x ? m_x : x, m_y > y ? m_y : y);
+        return DoublePoint(std::max(m_x, other.m_x), std::max(m_y, other.m_y));
     }
 
-    DoublePoint shrunkTo(int x, int y) const
+    DoublePoint shrunkTo(const DoublePoint& other) const
     {
-        return DoublePoint(m_x < x ? m_x : x, m_y < y ? m_y : y);
+        return DoublePoint(std::min(m_x, other.m_x), std::min(m_y, other.m_y));
     }
 
     double x() const { return m_x; }
     double y() const { return m_y; }
+    void setX(double x) { m_x = x; }
+    void setY(double y) { m_y = y; }
+
+    void move(const DoubleSize& s)
+    {
+        m_x += s.width();
+        m_y += s.height();
+    }
+
+    void move(double x, double y)
+    {
+        m_x += x;
+        m_y += y;
+    }
+
+    void moveBy(const DoublePoint& p)
+    {
+        m_x += p.x();
+        m_y += p.y();
+    }
+
+    void scale(float sx, float sy)
+    {
+        m_x *= sx;
+        m_y *= sy;
+    }
+
+    DoublePoint scaledBy(float scale) const
+    {
+        return DoublePoint(m_x * scale, m_y * scale);
+    }
 
 private:
     double m_x, m_y;
@@ -66,6 +110,20 @@ inline bool operator!=(const DoublePoint& a, const DoublePoint& b)
     return a.x() != b.x() || a.y() != b.y();
 }
 
+inline DoublePoint& operator+=(DoublePoint& a, const DoubleSize& b)
+{
+    a.setX(a.x() + b.width());
+    a.setY(a.y() + b.height());
+    return a;
+}
+
+inline DoublePoint& operator-=(DoublePoint& a, const DoubleSize& b)
+{
+    a.setX(a.x() - b.width());
+    a.setY(a.y() - b.height());
+    return a;
+}
+
 inline DoublePoint operator+(const DoublePoint& a, const DoubleSize& b)
 {
     return DoublePoint(a.x() + b.width(), a.y() + b.height());
@@ -79,6 +137,21 @@ inline DoubleSize operator-(const DoublePoint& a, const DoublePoint& b)
 inline DoublePoint operator-(const DoublePoint& a)
 {
     return DoublePoint(-a.x(), -a.y());
+}
+
+inline DoublePoint operator-(const DoublePoint& a, const DoubleSize& b)
+{
+    return DoublePoint(a.x() - b.width(), a.y() - b.height());
+}
+
+inline IntPoint roundedIntPoint(const DoublePoint& p)
+{
+    return IntPoint(clampTo<int>(roundf(p.x())), clampTo<int>(roundf(p.y())));
+}
+
+inline IntPoint ceiledIntPoint(const DoublePoint& p)
+{
+    return IntPoint(clampTo<int>(ceil(p.x())), clampTo<int>(ceil(p.y())));
 }
 
 inline IntPoint flooredIntPoint(const DoublePoint& p)

@@ -19,10 +19,13 @@ namespace crypto {
 
 namespace {
 
+using ScopedPKCS8_PRIV_KEY_INFO =
+    ScopedOpenSSL<PKCS8_PRIV_KEY_INFO, PKCS8_PRIV_KEY_INFO_free>;
+
 // Function pointer definition, for injecting the required key export function
 // into ExportKey, below. The supplied function should export EVP_PKEY into
 // the supplied BIO, returning 1 on success or 0 on failure.
-typedef int (ExportFunction)(BIO*, EVP_PKEY*);
+using ExportFunction = int (*)(BIO*, EVP_PKEY*);
 
 // Helper to export |key| into |output| via the specified ExportFunction.
 bool ExportKey(EVP_PKEY* key,
@@ -76,23 +79,19 @@ RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfo(
     return NULL;
 
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  // BIO_new_mem_buf is not const aware, but it does not modify the buffer.
-  char* data = reinterpret_cast<char*>(const_cast<uint8*>(&input[0]));
-  ScopedBIO bio(BIO_new_mem_buf(data, input.size()));
-  if (!bio.get())
-    return NULL;
 
   // Importing is a little more involved than exporting, as we must first
   // PKCS#8 decode the input, and then import the EVP_PKEY from Private Key
   // Info structure returned.
-  ScopedOpenSSL<PKCS8_PRIV_KEY_INFO, PKCS8_PRIV_KEY_INFO_free>::Type p8inf(
-      d2i_PKCS8_PRIV_KEY_INFO_bio(bio.get(), NULL));
-  if (!p8inf.get())
+  const uint8_t* ptr = &input[0];
+  ScopedPKCS8_PRIV_KEY_INFO p8inf(
+      d2i_PKCS8_PRIV_KEY_INFO(nullptr, &ptr, input.size()));
+  if (!p8inf.get() || ptr != &input[0] + input.size())
     return NULL;
 
   scoped_ptr<RSAPrivateKey> result(new RSAPrivateKey);
   result->key_ = EVP_PKCS82PKEY(p8inf.get());
-  if (!result->key_)
+  if (!result->key_ || EVP_PKEY_id(result->key_) != EVP_PKEY_RSA)
     return NULL;
 
   return result.release();
@@ -104,7 +103,7 @@ RSAPrivateKey* RSAPrivateKey::CreateFromKey(EVP_PKEY* key) {
   if (EVP_PKEY_type(key->type) != EVP_PKEY_RSA)
     return NULL;
   RSAPrivateKey* copy = new RSAPrivateKey();
-  copy->key_ = EVP_PKEY_dup(key);
+  copy->key_ = EVP_PKEY_up_ref(key);
   return copy;
 }
 

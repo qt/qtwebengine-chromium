@@ -6,6 +6,15 @@
 
 namespace content {
 
+const char kServiceWorkerRegisterErrorPrefix[] =
+    "Failed to register a ServiceWorker: ";
+const char kServiceWorkerUnregisterErrorPrefix[] =
+    "Failed to unregister a ServiceWorkerRegistration: ";
+const char kServiceWorkerGetRegistrationErrorPrefix[] =
+    "Failed to get a ServiceWorkerRegistration: ";
+const char kFetchScriptError[] =
+    "An unknown error occurred when fetching the script.";
+
 ServiceWorkerFetchRequest::ServiceWorkerFetchRequest()
     : mode(FETCH_REQUEST_MODE_NO_CORS),
       request_context_type(REQUEST_CONTEXT_TYPE_UNSPECIFIED),
@@ -19,7 +28,7 @@ ServiceWorkerFetchRequest::ServiceWorkerFetchRequest(
     const GURL& url,
     const std::string& method,
     const ServiceWorkerHeaderMap& headers,
-    const GURL& referrer,
+    const Referrer& referrer,
     bool is_reload)
     : mode(FETCH_REQUEST_MODE_NO_CORS),
       request_context_type(REQUEST_CONTEXT_TYPE_UNSPECIFIED),
@@ -48,25 +57,19 @@ ServiceWorkerResponse::ServiceWorkerResponse(
     blink::WebServiceWorkerResponseType response_type,
     const ServiceWorkerHeaderMap& headers,
     const std::string& blob_uuid,
-    uint64 blob_size)
+    uint64 blob_size,
+    const GURL& stream_url)
     : url(url),
       status_code(status_code),
       status_text(status_text),
       response_type(response_type),
       headers(headers),
       blob_uuid(blob_uuid),
-      blob_size(blob_size) {
+      blob_size(blob_size),
+      stream_url(stream_url) {
 }
 
 ServiceWorkerResponse::~ServiceWorkerResponse() {}
-
-ServiceWorkerCacheQueryParams::ServiceWorkerCacheQueryParams()
-    : ignore_search(false),
-      ignore_method(false),
-      ignore_vary(false),
-      prefix_match(false) {}
-
-ServiceWorkerBatchOperation::ServiceWorkerBatchOperation() {}
 
 ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
     : handle_id(kInvalidServiceWorkerHandleId),
@@ -76,6 +79,11 @@ ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
 ServiceWorkerRegistrationObjectInfo::ServiceWorkerRegistrationObjectInfo()
     : handle_id(kInvalidServiceWorkerRegistrationHandleId),
       registration_id(kInvalidServiceWorkerRegistrationId) {
+}
+
+ServiceWorkerClientQueryOptions::ServiceWorkerClientQueryOptions()
+    : client_type(blink::WebServiceWorkerClientTypeWindow),
+      include_uncontrolled(false) {
 }
 
 }  // namespace content

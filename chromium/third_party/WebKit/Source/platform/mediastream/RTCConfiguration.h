@@ -50,7 +50,7 @@ public:
     const String& username() { return m_username; }
     const String& credential() { return m_credential; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     RTCIceServer(const KURL& uri, const String& username, const String& credential)
@@ -71,6 +71,12 @@ enum RTCIceTransports {
     RTCIceTransportsAll
 };
 
+enum RTCBundlePolicy {
+    RTCBundlePolicyBalanced,
+    RTCBundlePolicyMaxCompat,
+    RTCBundlePolicyMaxBundle
+};
+
 class RTCConfiguration final : public GarbageCollected<RTCConfiguration> {
 public:
     static RTCConfiguration* create() { return new RTCConfiguration(); }
@@ -80,14 +86,17 @@ public:
     RTCIceServer* server(size_t index) { return m_servers[index].get(); }
     void setIceTransports(RTCIceTransports iceTransports) { m_iceTransports = iceTransports; }
     RTCIceTransports iceTransports() { return m_iceTransports; }
+    void setBundlePolicy(RTCBundlePolicy bundlePolicy) { m_bundlePolicy = bundlePolicy; }
+    RTCBundlePolicy bundlePolicy() { return m_bundlePolicy; }
 
-    void trace(Visitor* visitor) { visitor->trace(m_servers); }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_servers); }
 
 private:
-    RTCConfiguration() : m_iceTransports(RTCIceTransportsAll) { }
+    RTCConfiguration() : m_iceTransports(RTCIceTransportsAll), m_bundlePolicy(RTCBundlePolicyBalanced) { }
 
-    HeapVector<Member<RTCIceServer> > m_servers;
+    HeapVector<Member<RTCIceServer>> m_servers;
     RTCIceTransports m_iceTransports;
+    RTCBundlePolicy m_bundlePolicy;
 };
 
 } // namespace blink

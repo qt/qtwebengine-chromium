@@ -1,6 +1,6 @@
 #
 # libjingle
-# Copyright 2012, Google Inc.
+# Copyright 2012 Google Inc.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -23,7 +23,6 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
 {
   'includes': ['build/common.gypi'],
@@ -32,17 +31,21 @@
       'target_name': 'libjingle_unittest_main',
       'type': 'static_library',
       'dependencies': [
-        '<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',
         '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
         '<@(libjingle_tests_additional_deps)',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          '<(DEPTH)/third_party/libyuv/include',
+          '<(libyuv_dir)/include',
           '<(DEPTH)/testing/gtest/include',
           '<(DEPTH)/testing/gtest',
         ],
       },
+      'conditions': [
+        ['build_libyuv==1', {
+          'dependencies': ['<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',],
+        }],
+      ],
       'include_dirs': [
          '<(DEPTH)/testing/gtest/include',
          '<(DEPTH)/testing/gtest',
@@ -56,11 +59,12 @@
         'media/base/fakevideocapturer.h',
         'media/base/fakevideorenderer.h',
         'media/base/nullvideoframe.h',
-        'media/base/nullvideorenderer.h',
         'media/base/testutils.cc',
         'media/base/testutils.h',
         'media/devices/fakedevicemanager.h',
         'media/webrtc/dummyinstantiation.cc',
+        'media/webrtc/fakewebrtccall.cc',
+        'media/webrtc/fakewebrtccall.h',
         'media/webrtc/fakewebrtccommon.h',
         'media/webrtc/fakewebrtcdeviceinfo.h',
         'media/webrtc/fakewebrtcvcmfactory.h',
@@ -70,21 +74,6 @@
       ],
     },  # target libjingle_unittest_main
     {
-      'target_name': 'libjingle_unittest',
-      'type': 'executable',
-      'includes': [ 'build/ios_tests.gypi', ],
-      'dependencies': [
-        '<(webrtc_root)/base/base.gyp:rtc_base',
-        '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
-        '<(webrtc_root)/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
-        'libjingle.gyp:libjingle',
-        'libjingle_unittest_main',
-      ],
-      'sources': [
-        '<(DEPTH)/webrtc/test/testsupport/always_passing_unittest.cc',
-      ],  # sources
-    },  # target libjingle_unittest
-    {
       'target_name': 'libjingle_media_unittest',
       'type': 'executable',
       'dependencies': [
@@ -92,23 +81,8 @@
         'libjingle.gyp:libjingle_media',
         'libjingle_unittest_main',
       ],
-      # TODO(ronghuawu): Avoid the copies.
-      # https://code.google.com/p/libjingle/issues/detail?id=398
-      'copies': [
-        {
-          'destination': '<(DEPTH)/../talk/media/testdata',
-          'files': [
-            'media/testdata/1.frame_plus_1.byte',
-            'media/testdata/captured-320x240-2s-48.frames',
-            'media/testdata/h264-svc-99-640x360.rtpdump',
-            'media/testdata/video.rtpdump',
-            'media/testdata/voice.rtpdump',
-          ],
-        },
-      ],
       'sources': [
-        # TODO(ronghuawu): Reenable this test.
-        # 'media/base/capturemanager_unittest.cc',
+        'media/base/capturemanager_unittest.cc',
         'media/base/codec_unittest.cc',
         'media/base/filemediaengine_unittest.cc',
         'media/base/rtpdataengine_unittest.cc',
@@ -124,6 +98,7 @@
         'media/devices/dummydevicemanager_unittest.cc',
         'media/devices/filevideocapturer_unittest.cc',
         'media/sctp/sctpdataengine_unittest.cc',
+        'media/webrtc/simulcast_unittest.cc',
         'media/webrtc/webrtcpassthroughrender_unittest.cc',
         'media/webrtc/webrtcvideocapturer_unittest.cc',
         'media/base/videoframe_unittest.h',
@@ -132,17 +107,19 @@
         # Disabled because some tests fail.
         # TODO(ronghuawu): Reenable these tests.
         # 'media/devices/devicemanager_unittest.cc',
-        'media/webrtc/webrtcvideoengine_unittest.cc',
         'media/webrtc/webrtcvideoengine2_unittest.cc',
-        'media/webrtc/webrtcvideoengine2_unittest.h',
         'media/webrtc/webrtcvoiceengine_unittest.cc',
       ],
       'conditions': [
         ['OS=="win"', {
-          'dependencies': [
-            '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
-            '<(DEPTH)/third_party/nss/nss.gyp:nspr',
-            '<(DEPTH)/third_party/nss/nss.gyp:nss',
+          'conditions': [
+            ['use_openssl==0', {
+              'dependencies': [
+                '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
+                '<(DEPTH)/third_party/nss/nss.gyp:nspr',
+                '<(DEPTH)/third_party/nss/nss.gyp:nss',
+              ],
+            }],
           ],
           'msvs_settings': {
             'VCLinkerTool': {
@@ -166,7 +143,6 @@
       'target_name': 'libjingle_p2p_unittest',
       'type': 'executable',
       'dependencies': [
-        '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
         '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
         'libjingle.gyp:libjingle',
         'libjingle.gyp:libjingle_p2p',
@@ -181,13 +157,16 @@
         'session/media/channelmanager_unittest.cc',
         'session/media/currentspeakermonitor_unittest.cc',
         'session/media/mediarecorder_unittest.cc',
-        'session/media/mediamessages_unittest.cc',
         'session/media/mediasession_unittest.cc',
-        'session/media/mediasessionclient_unittest.cc',
         'session/media/rtcpmuxfilter_unittest.cc',
         'session/media/srtpfilter_unittest.cc',
       ],
       'conditions': [
+        ['build_libsrtp==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
+          ],
+        }],
         ['OS=="win"', {
           'msvs_settings': {
             'VCLinkerTool': {
@@ -205,6 +184,7 @@
       'dependencies': [
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
+        '<(webrtc_root)/common.gyp:webrtc_common',
         'libjingle.gyp:libjingle',
         'libjingle.gyp:libjingle_p2p',
         'libjingle.gyp:libjingle_peerconnection',
@@ -217,6 +197,7 @@
       },
       'sources': [
         'app/webrtc/datachannel_unittest.cc',
+        'app/webrtc/dtlsidentitystore_unittest.cc',
         'app/webrtc/dtmfsender_unittest.cc',
         'app/webrtc/jsepsessiondescription_unittest.cc',
         'app/webrtc/localaudiosource_unittest.cc',
@@ -268,16 +249,23 @@
   ],
   'conditions': [
     ['OS=="linux"', {
+      'variables': {
+        'junit_jar': '<(DEPTH)/third_party/junit-jar/junit-4.11.jar',
+      },
       'targets': [
         {
           'target_name': 'libjingle_peerconnection_test_jar',
           'type': 'none',
+          'dependencies': [
+            'libjingle.gyp:libjingle_peerconnection_jar',
+          ],
           'actions': [
             {
               'variables': {
                 'java_src_dir': 'app/webrtc/javatests/src',
                 'java_files': [
-                  'app/webrtc/javatests/src/org/webrtc/PeerConnectionTest.java',
+                  'app/webrtc/java/testcommon/src/org/webrtc/PeerConnectionTest.java',
+                  'app/webrtc/javatests/src/org/webrtc/PeerConnectionTestJava.java',
                 ],
               },
               'action_name': 'create_jar',
@@ -285,7 +273,8 @@
                 'build/build_jar.sh',
                 '<@(java_files)',
                 '<(PRODUCT_DIR)/libjingle_peerconnection.jar',
-                '<(DEPTH)/third_party/junit/junit-4.11.jar',
+                '<(PRODUCT_DIR)/lib/libjingle_peerconnection_so.so',
+                '<(junit_jar)',
               ],
               'outputs': [
                 '<(PRODUCT_DIR)/libjingle_peerconnection_test.jar',
@@ -293,7 +282,7 @@
               'action': [
                 'build/build_jar.sh', '<(java_home)', '<@(_outputs)',
                 '<(INTERMEDIATE_DIR)',
-                '<(java_src_dir):<(PRODUCT_DIR)/libjingle_peerconnection.jar:<(DEPTH)/third_party/junit/junit-4.11.jar',
+                '<(java_src_dir):<(PRODUCT_DIR)/libjingle_peerconnection.jar:<(junit_jar)',
                 '<@(java_files)'
               ],
             },
@@ -308,7 +297,7 @@
               'inputs': [
                 'app/webrtc/javatests/libjingle_peerconnection_java_unittest.sh',
                 '<(PRODUCT_DIR)/libjingle_peerconnection_test_jar',
-                '<(DEPTH)/third_party/junit/junit-4.11.jar',
+                '<(junit_jar)',
               ],
               'outputs': [
                 '<(PRODUCT_DIR)/libjingle_peerconnection_java_unittest',
@@ -319,7 +308,7 @@
                 'sed -e "s@GYP_JAVA_HOME@<(java_home)@" '
                 '< app/webrtc/javatests/libjingle_peerconnection_java_unittest.sh '
                 '> <(PRODUCT_DIR)/libjingle_peerconnection_java_unittest && '
-                'cp <(DEPTH)/third_party/junit/junit-4.11.jar <(PRODUCT_DIR) && '
+                'cp <(junit_jar) <(PRODUCT_DIR) && '
                 'chmod u+x <(PRODUCT_DIR)/libjingle_peerconnection_java_unittest'
               ],
             },
@@ -327,6 +316,26 @@
         },
       ],
     }],
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'libjingle_peerconnection_android_unittest',
+          'type': 'none',
+          'dependencies': [
+            'libjingle.gyp:libjingle_peerconnection_java',
+          ],
+          'variables': {
+            'apk_name': 'libjingle_peerconnection_android_unittest',
+            'java_in_dir': 'app/webrtc/androidtests',
+            'resource_dir': 'app/webrtc/androidtests/res',
+            'additional_src_dirs': ['app/webrtc/java/testcommon'],
+            'native_lib_target': 'libjingle_peerconnection_so',
+            'is_test_apk': 1,
+          },
+          'includes': [ '../build/java_apk.gypi' ],
+        },
+      ],  # targets
+    }],  # OS=="android"
     ['OS=="ios" or (OS=="mac" and target_arch!="ia32" and mac_sdk>="10.7")', {
       # The >=10.7 above is required to make ARC link cleanly (e.g. as
       # opposed to _compile_ cleanly, which the library under test
@@ -335,7 +344,7 @@
         {
           'target_name': 'libjingle_peerconnection_objc_test',
           'type': 'executable',
-          'includes': [ 'build/ios_tests.gypi', ],
+          'includes': [ 'build/objc_app.gypi' ],
           'dependencies': [
             '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
             'libjingle.gyp:libjingle_peerconnection_objc',
@@ -350,46 +359,40 @@
             # needs a GUI driver.
             'app/webrtc/objctests/mac/main.mm',
           ],
-          'FRAMEWORK_SEARCH_PATHS': [
-            '$(inherited)',
-            '$(SDKROOT)/Developer/Library/Frameworks',
-            '$(DEVELOPER_LIBRARY_DIR)/Frameworks',
-          ],
-
-          # TODO(fischman): there is duplication here with
-          # build/ios_tests.gypi, because for historical reasons the
-          # mac x64 bots expect this unittest to be in a bundle
-          # directory (.app).  Once the bots don't expect this
-          # anymore, remove this duplication.
-          'variables': {
-            'infoplist_file': 'build/ios_test.plist',
-          },
-          'mac_bundle': 1,
-          'mac_bundle_resources': [
-            '<(infoplist_file)',
-          ],
-          # The plist is listed above so that it appears in XCode's file list,
-          # but we don't actually want to bundle it.
-          'mac_bundle_resources!': [
-            '<(infoplist_file)',
-          ],
-          'xcode_settings': {
-            'CLANG_ENABLE_OBJC_ARC': 'YES',
-            # common.gypi enables this for mac but we want this to be disabled
-            # like it is for ios.
-            'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'NO',
-            'INFOPLIST_FILE': '<(infoplist_file)',
-          },
           'conditions': [
             ['OS=="mac"', {
               'xcode_settings': {
                 # Need to build against 10.7 framework for full ARC support
                 # on OSX.
                 'MACOSX_DEPLOYMENT_TARGET' : '10.7',
+                # common.gypi enables this for mac but we want this to be
+                # disabled like it is for ios.
+                'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'NO',
               },
             }],
           ],
         },  # target libjingle_peerconnection_objc_test
+        {
+          'target_name': 'apprtc_signaling_gunit_test',
+          'type': 'executable',
+          'includes': [ 'build/objc_app.gypi' ],
+          'dependencies': [
+            '<(webrtc_root)/base/base_tests.gyp:rtc_base_tests_utils',
+            '<(DEPTH)/third_party/ocmock/ocmock.gyp:ocmock',
+            'libjingle_examples.gyp:apprtc_signaling',
+          ],
+          'sources': [
+            'app/webrtc/objctests/mac/main.mm',
+            'examples/objc/AppRTCDemo/tests/ARDAppClientTest.mm',
+          ],
+          'conditions': [
+            ['OS=="mac"', {
+              'xcode_settings': {
+                'MACOSX_DEPLOYMENT_TARGET' : '10.8',
+              },
+            }],
+          ],
+        },  # target apprtc_signaling_gunit_test
       ],
     }],
     ['test_isolation_mode != "noop"', {

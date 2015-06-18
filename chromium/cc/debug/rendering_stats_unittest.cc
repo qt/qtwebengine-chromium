@@ -13,11 +13,9 @@ namespace cc {
 namespace {
 
 static std::string ToString(const RenderingStats::TimeDeltaList& list) {
-  scoped_refptr<base::debug::TracedValue> value =
-      new base::debug::TracedValue();
-  value->BeginArray("list_value");
-  list.AddToTracedValue(value.get());
-  value->EndArray();
+  scoped_refptr<base::trace_event::TracedValue> value =
+      new base::trace_event::TracedValue();
+  list.AddToTracedValue("list_value", value.get());
   return value->ToString();
 }
 

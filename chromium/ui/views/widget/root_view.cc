@@ -14,6 +14,7 @@
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/drag_controller.h"
@@ -225,6 +226,10 @@ void RootView::ThemeChanged() {
 
 void RootView::LocaleChanged() {
   View::PropagateLocaleChanged();
+}
+
+void RootView::DeviceScaleFactorChanged(float device_scale_factor) {
+  View::PropagateDeviceScaleFactorChanged(device_scale_factor);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -450,10 +455,9 @@ void RootView::OnMouseCaptureLost() {
     // Synthesize a release event for UpdateCursor.
     if (mouse_pressed_handler_) {
       gfx::Point last_point(last_mouse_event_x_, last_mouse_event_y_);
-      ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED,
-                                   last_point, last_point,
-                                   last_mouse_event_flags_,
-                                   0);
+      ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, last_point,
+                                   last_point, ui::EventTimeForNow(),
+                                   last_mouse_event_flags_, 0);
       UpdateCursor(release_event);
     }
     // We allow the view to delete us from OnMouseCaptureLost. As such,
@@ -489,8 +493,13 @@ void RootView::OnMouseMoved(const ui::MouseEvent& event) {
             DispatchEvent(mouse_move_handler_, &exit);
         if (dispatch_details.dispatcher_destroyed)
           return;
-        NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
-            mouse_move_handler_, v);
+        // The mouse_move_handler_ could have been destroyed in the context of
+        // the mouse exit event.
+        if (!dispatch_details.target_destroyed) {
+          CHECK(mouse_move_handler_);
+          NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
+              mouse_move_handler_, v);
+        }
       }
       View* old_handler = mouse_move_handler_;
       mouse_move_handler_ = v;
@@ -503,8 +512,13 @@ void RootView::OnMouseMoved(const ui::MouseEvent& event) {
             DispatchEvent(mouse_move_handler_, &entered);
         if (dispatch_details.dispatcher_destroyed)
           return;
-        NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_ENTERED,
-            mouse_move_handler_, old_handler);
+        // The mouse_move_handler_ could have been destroyed in the context of
+        // the mouse exit event.
+        if (!dispatch_details.target_destroyed) {
+          CHECK(mouse_move_handler_);
+          NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_ENTERED,
+              mouse_move_handler_, old_handler);
+        }
       }
     }
     ui::MouseEvent moved_event(event, static_cast<View*>(this),
@@ -521,8 +535,13 @@ void RootView::OnMouseMoved(const ui::MouseEvent& event) {
         DispatchEvent(mouse_move_handler_, &exited);
     if (dispatch_details.dispatcher_destroyed)
       return;
-    NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
-        mouse_move_handler_, v);
+    // The mouse_move_handler_ could have been destroyed in the context of the
+    // mouse exit event.
+    if (!dispatch_details.target_destroyed) {
+      CHECK(mouse_move_handler_);
+      NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
+          mouse_move_handler_, v);
+    }
     // On Aura the non-client area extends slightly outside the root view for
     // some windows.  Let the non-client cursor handling code set the cursor
     // as we do above.
@@ -539,8 +558,13 @@ void RootView::OnMouseExited(const ui::MouseEvent& event) {
         DispatchEvent(mouse_move_handler_, &exited);
     if (dispatch_details.dispatcher_destroyed)
       return;
-    NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
-        mouse_move_handler_, NULL);
+    // The mouse_move_handler_ could have been destroyed in the context of the
+    // mouse exit event.
+    if (!dispatch_details.target_destroyed) {
+      CHECK(mouse_move_handler_);
+      NotifyEnterExitOfDescendant(event, ui::ET_MOUSE_EXITED,
+          mouse_move_handler_, NULL);
+    }
     mouse_move_handler_ = NULL;
   }
 }

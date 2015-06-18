@@ -44,8 +44,8 @@ public:
     static PassRefPtrWillBeRawPtr<DetailsMarkerControl> create(Document&);
 
 private:
-    virtual RenderObject* createRenderer(RenderStyle*) override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
     HTMLSummaryElement* summaryElement();
 };

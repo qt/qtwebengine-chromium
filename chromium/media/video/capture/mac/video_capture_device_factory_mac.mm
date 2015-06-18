@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #import "media/base/mac/avfoundation_glue.h"
@@ -44,6 +45,12 @@ static bool IsDeviceBlacklisted(const VideoCaptureDevice::Name& name) {
 
 static scoped_ptr<media::VideoCaptureDevice::Names>
 EnumerateDevicesUsingQTKit() {
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/458397 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "458397 media::EnumerateDevicesUsingQTKit"));
+
   scoped_ptr<VideoCaptureDevice::Names> device_names(
         new VideoCaptureDevice::Names());
   NSMutableDictionary* capture_devices =
@@ -64,6 +71,11 @@ static void RunDevicesEnumeratedCallback(
     const base::Callback<void(scoped_ptr<media::VideoCaptureDevice::Names>)>&
         callback,
     scoped_ptr<media::VideoCaptureDevice::Names> device_names) {
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/458397 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "458397 media::RunDevicesEnumeratedCallback"));
   callback.Run(device_names.Pass());
 }
 
@@ -86,23 +98,6 @@ scoped_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryMac::Create(
   DCHECK_NE(device_name.capture_api_type(),
             VideoCaptureDevice::Name::API_TYPE_UNKNOWN);
 
-  // Check device presence only for AVFoundation API, since it is too expensive
-  // and brittle for QTKit. The actual initialization at device level will fail
-  // subsequently if the device is not present.
-  if (AVFoundationGlue::IsAVFoundationSupported()) {
-    scoped_ptr<VideoCaptureDevice::Names> device_names(
-        new VideoCaptureDevice::Names());
-    GetDeviceNames(device_names.get());
-
-    VideoCaptureDevice::Names::iterator it = device_names->begin();
-    for (; it != device_names->end(); ++it) {
-      if (it->id() == device_name.id())
-        break;
-    }
-    if (it == device_names->end())
-      return scoped_ptr<VideoCaptureDevice>();
-  }
-
   scoped_ptr<VideoCaptureDevice> capture_device;
   if (device_name.capture_api_type() == VideoCaptureDevice::Name::DECKLINK) {
     capture_device.reset(new VideoCaptureDeviceDeckLinkMac(device_name));
@@ -119,6 +114,11 @@ scoped_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryMac::Create(
 
 void VideoCaptureDeviceFactoryMac::GetDeviceNames(
     VideoCaptureDevice::Names* device_names) {
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/458397 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "458397 VideoCaptureDeviceFactoryMac::GetDeviceNames"));
   DCHECK(thread_checker_.CalledOnValidThread());
   // Loop through all available devices and add to |device_names|.
   NSDictionary* capture_devices;
@@ -202,6 +202,13 @@ void VideoCaptureDeviceFactoryMac::GetDeviceSupportedFormats(
   default:
     NOTREACHED();
   }
+}
+
+// static
+VideoCaptureDeviceFactory*
+VideoCaptureDeviceFactory::CreateVideoCaptureDeviceFactory(
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) {
+  return new VideoCaptureDeviceFactoryMac(ui_task_runner);
 }
 
 }  // namespace media

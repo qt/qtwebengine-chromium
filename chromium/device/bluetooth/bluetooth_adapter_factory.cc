@@ -12,6 +12,10 @@
 #include "base/memory/weak_ptr.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 
+#if defined(OS_CHROMEOS)
+#include "device/bluetooth/bluetooth_adapter_chromeos.h"
+#endif
+
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #endif
@@ -58,7 +62,7 @@ bool BluetoothAdapterFactory::IsBluetoothAdapterAvailable() {
   // instance even on platforms that would otherwise not support it.
   if (default_adapter.Get())
     return true;
-#if defined(OS_CHROMEOS) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(OS_WIN)
   return true;
 #elif defined(OS_MACOSX)
   return base::mac::IsOSLionOrLater();
@@ -93,6 +97,14 @@ void BluetoothAdapterFactory::GetAdapter(const AdapterCallback& callback) {
     callback.Run(scoped_refptr<BluetoothAdapter>(default_adapter.Get().get()));
 
 }
+
+#if defined(OS_CHROMEOS)
+// static
+void BluetoothAdapterFactory::Shutdown() {
+  if (default_adapter.Get())
+    default_adapter.Get().get()->Shutdown();
+}
+#endif
 
 // static
 void BluetoothAdapterFactory::SetAdapterForTesting(

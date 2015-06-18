@@ -42,11 +42,10 @@ namespace blink {
 
 namespace {
 
-void copyToActiveInterpolationMap(const WillBeHeapVector<RefPtrWillBeMember<blink::Interpolation> >& source, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<blink::Interpolation> >& target)
+void copyToActiveInterpolationMap(const WillBeHeapVector<RefPtrWillBeMember<Interpolation>>& source, ActiveInterpolationMap& target)
 {
-    for (size_t i = 0; i < source.size(); ++i) {
-        Interpolation* interpolation = source[i].get();
-        target.set(toStyleInterpolation(interpolation)->id(), interpolation);
+    for (const auto& interpolation : source) {
+        target.set(interpolation->property(), interpolation.get());
     }
 }
 
@@ -56,13 +55,13 @@ bool compareEffects(const OwnPtrWillBeMember<SampledEffect>& effect1, const OwnP
     return effect1->sequenceNumber() < effect2->sequenceNumber();
 }
 
-void copyNewAnimationsToActiveInterpolationMap(const WillBeHeapVector<RawPtrWillBeMember<InertAnimation> >& newAnimations, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> >& result)
+void copyNewAnimationsToActiveInterpolationMap(const WillBeHeapVector<RawPtrWillBeMember<InertEffect>>& newAnimations, ActiveInterpolationMap& result)
 {
-    for (size_t i = 0; i < newAnimations.size(); ++i) {
-        OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample = newAnimations[i]->sample(0);
-        if (sample) {
+    for (const auto& newAnimation : newAnimations) {
+        OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>> sample = nullptr;
+        newAnimation->sample(sample);
+        if (sample)
             copyToActiveInterpolationMap(*sample, result);
-        }
     }
 }
 
@@ -72,40 +71,30 @@ AnimationStack::AnimationStack()
 {
 }
 
-bool AnimationStack::affects(CSSPropertyID property) const
-{
-    for (size_t i = 0; i < m_effects.size(); ++i) {
-        if (m_effects[i]->animation() && m_effects[i]->animation()->affects(property))
-            return true;
-    }
-    return false;
-}
-
 bool AnimationStack::hasActiveAnimationsOnCompositor(CSSPropertyID property) const
 {
-    for (size_t i = 0; i < m_effects.size(); ++i) {
-        if (m_effects[i]->animation() && m_effects[i]->animation()->hasActiveAnimationsOnCompositor(property))
+    for (const auto& effect : m_effects) {
+        if (effect->effect() && effect->effect()->hasActiveAnimationsOnCompositor(property))
             return true;
     }
     return false;
 }
 
-WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > AnimationStack::activeInterpolations(AnimationStack* animationStack, const WillBeHeapVector<RawPtrWillBeMember<InertAnimation> >* newAnimations, const WillBeHeapHashSet<RawPtrWillBeMember<const AnimationPlayer> >* cancelledAnimationPlayers, Animation::Priority priority, double timelineCurrentTime)
+ActiveInterpolationMap AnimationStack::activeInterpolations(AnimationStack* animationStack, const WillBeHeapVector<RawPtrWillBeMember<InertEffect>>* newAnimations, const WillBeHeapHashSet<RawPtrWillBeMember<const Animation>>* suppressedAnimations, KeyframeEffect::Priority priority, double timelineCurrentTime)
 {
     // We don't exactly know when new animations will start, but timelineCurrentTime is a good estimate.
 
-    WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > result;
+    ActiveInterpolationMap result;
 
     if (animationStack) {
-        WillBeHeapVector<OwnPtrWillBeMember<SampledEffect> >& effects = animationStack->m_effects;
+        WillBeHeapVector<OwnPtrWillBeMember<SampledEffect>>& effects = animationStack->m_effects;
         // std::sort doesn't work with OwnPtrs
         nonCopyingSort(effects.begin(), effects.end(), compareEffects);
-        animationStack->simplifyEffects();
-        for (size_t i = 0; i < effects.size(); ++i) {
-            const SampledEffect& effect = *effects[i];
-            if (effect.priority() != priority || (cancelledAnimationPlayers && effect.animation() && cancelledAnimationPlayers->contains(effect.animation()->player())))
+        animationStack->removeClearedEffects();
+        for (const auto& effect : effects) {
+            if (effect->priority() != priority || (suppressedAnimations && effect->effect() && suppressedAnimations->contains(effect->effect()->animation())))
                 continue;
-            copyToActiveInterpolationMap(effect.interpolations(), result);
+            copyToActiveInterpolationMap(effect->interpolations(), result);
         }
     }
 
@@ -115,33 +104,17 @@ WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > AnimationSt
     return result;
 }
 
-void AnimationStack::simplifyEffects()
+void AnimationStack::removeClearedEffects()
 {
-    // FIXME: This will need to be updated when we have 'add' keyframes.
-
-    BitArray<numCSSProperties> replacedProperties;
-    for (size_t i = m_effects.size(); i--; ) {
-        SampledEffect& effect = *m_effects[i];
-        effect.removeReplacedInterpolationsIfNeeded(replacedProperties);
-        if (!effect.canChange()) {
-            for (size_t i = 0; i < effect.interpolations().size(); ++i)
-                replacedProperties.set(toStyleInterpolation(effect.interpolations()[i].get())->id());
-        }
-    }
-
     size_t dest = 0;
-    for (size_t i = 0; i < m_effects.size(); ++i) {
-        if (!m_effects[i]->interpolations().isEmpty()) {
-            m_effects[dest++].swap(m_effects[i]);
-            continue;
-        }
-        if (m_effects[i]->animation())
-            m_effects[i]->animation()->notifySampledEffectRemovedFromAnimationStack();
+    for (auto& effect : m_effects) {
+        if (effect->effect())
+            m_effects[dest++].swap(effect);
     }
     m_effects.shrink(dest);
 }
 
-void AnimationStack::trace(Visitor* visitor)
+DEFINE_TRACE(AnimationStack)
 {
     visitor->trace(m_effects);
 }
@@ -149,17 +122,15 @@ void AnimationStack::trace(Visitor* visitor)
 bool AnimationStack::getAnimatedBoundingBox(FloatBox& box, CSSPropertyID property) const
 {
     FloatBox originalBox(box);
-    for (size_t i = 0; i < m_effects.size(); ++i) {
-        if (m_effects[i]->animation() && m_effects[i]->animation()->affects(property)) {
-            Animation* anim = m_effects[i]->animation();
-            if (!anim)
-                continue;
-            const Timing& timing = anim->specifiedTiming();
+    for (const auto& sampledEffect : m_effects) {
+        if (sampledEffect->effect() && sampledEffect->effect()->affects(PropertyHandle(property))) {
+            KeyframeEffect* effect = sampledEffect->effect();
+            const Timing& timing = effect->specifiedTiming();
             double startRange = 0;
             double endRange = 1;
             timing.timingFunction->range(&startRange, &endRange);
             FloatBox expandingBox(originalBox);
-            if (!CompositorAnimations::instance()->getAnimatedBoundingBox(expandingBox, *anim->effect(), startRange, endRange))
+            if (!CompositorAnimations::instance()->getAnimatedBoundingBox(expandingBox, *effect->model(), startRange, endRange))
                 return false;
             box.expandTo(expandingBox);
         }

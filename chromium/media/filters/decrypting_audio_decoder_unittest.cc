@@ -63,7 +63,9 @@ class DecryptingAudioDecoderTest : public testing::Test {
             message_loop_.message_loop_proxy(),
             base::Bind(
                 &DecryptingAudioDecoderTest::RequestDecryptorNotification,
-                base::Unretained(this)))),
+                base::Unretained(this)),
+            base::Bind(&DecryptingAudioDecoderTest::OnWaitingForDecryptionKey,
+                       base::Unretained(this)))),
         decryptor_(new StrictMock<MockDecryptor>()),
         num_decrypt_and_decode_calls_(0),
         num_frames_in_decryptor_(0),
@@ -155,13 +157,13 @@ class DecryptingAudioDecoderTest : public testing::Test {
 
     if (num_decrypt_and_decode_calls_ <= kDecodingDelay ||
         num_frames_in_decryptor_ == 0) {
-      audio_decode_cb.Run(Decryptor::kNeedMoreData, Decryptor::AudioBuffers());
+      audio_decode_cb.Run(Decryptor::kNeedMoreData, Decryptor::AudioFrames());
       return;
     }
 
     num_frames_in_decryptor_--;
     audio_decode_cb.Run(Decryptor::kSuccess,
-                        Decryptor::AudioBuffers(1, decoded_frame_));
+                        Decryptor::AudioFrames(1, decoded_frame_));
   }
 
   // Sets up expectations and actions to put DecryptingAudioDecoder in an
@@ -203,7 +205,8 @@ class DecryptingAudioDecoderTest : public testing::Test {
   void EnterWaitingForKeyState() {
     EXPECT_CALL(*decryptor_, DecryptAndDecodeAudio(encrypted_buffer_, _))
         .WillRepeatedly(RunCallback<1>(Decryptor::kNoKey,
-                                       Decryptor::AudioBuffers()));
+                                       Decryptor::AudioFrames()));
+    EXPECT_CALL(*this, OnWaitingForDecryptionKey());
     decoder_->Decode(encrypted_buffer_,
                      base::Bind(&DecryptingAudioDecoderTest::DecodeDone,
                                 base::Unretained(this)));
@@ -213,7 +216,7 @@ class DecryptingAudioDecoderTest : public testing::Test {
   void AbortPendingAudioDecodeCB() {
     if (!pending_audio_decode_cb_.is_null()) {
       base::ResetAndReturn(&pending_audio_decode_cb_).Run(
-          Decryptor::kSuccess, Decryptor::AudioBuffers());
+          Decryptor::kSuccess, Decryptor::AudioFrames());
     }
   }
 
@@ -252,6 +255,8 @@ class DecryptingAudioDecoderTest : public testing::Test {
 
   MOCK_METHOD1(DecryptorSet, void(bool));
 
+  MOCK_METHOD0(OnWaitingForDecryptionKey, void(void));
+
   base::MessageLoop message_loop_;
   scoped_ptr<DecryptingAudioDecoder> decoder_;
   scoped_ptr<StrictMock<MockDecryptor> > decryptor_;
@@ -268,7 +273,7 @@ class DecryptingAudioDecoderTest : public testing::Test {
   // Constant buffer/frames, to be used/returned by |decoder_| and |decryptor_|.
   scoped_refptr<DecoderBuffer> encrypted_buffer_;
   scoped_refptr<AudioBuffer> decoded_frame_;
-  Decryptor::AudioBuffers decoded_frame_list_;
+  Decryptor::AudioFrames decoded_frame_list_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DecryptingAudioDecoderTest);
@@ -325,7 +330,7 @@ TEST_F(DecryptingAudioDecoderTest, DecryptAndDecode_DecodeError) {
 
   EXPECT_CALL(*decryptor_, DecryptAndDecodeAudio(_, _))
       .WillRepeatedly(RunCallback<1>(Decryptor::kError,
-                                     Decryptor::AudioBuffers()));
+                                     Decryptor::AudioFrames()));
 
   DecodeAndExpect(encrypted_buffer_, AudioDecoder::kDecodeError);
 }
@@ -413,7 +418,7 @@ TEST_F(DecryptingAudioDecoderTest, KeyAdded_DruingPendingDecode) {
   // added.
   key_added_cb_.Run();
   base::ResetAndReturn(&pending_audio_decode_cb_).Run(
-      Decryptor::kNoKey, Decryptor::AudioBuffers());
+      Decryptor::kNoKey, Decryptor::AudioFrames());
   message_loop_.RunUntilIdle();
 }
 

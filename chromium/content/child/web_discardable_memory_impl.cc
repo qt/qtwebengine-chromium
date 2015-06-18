@@ -4,6 +4,9 @@
 
 #include "content/child/web_discardable_memory_impl.h"
 
+#include "base/memory/discardable_memory.h"
+#include "base/memory/discardable_memory_allocator.h"
+
 namespace content {
 
 WebDiscardableMemoryImpl::~WebDiscardableMemoryImpl() {}
@@ -11,25 +14,13 @@ WebDiscardableMemoryImpl::~WebDiscardableMemoryImpl() {}
 // static
 scoped_ptr<WebDiscardableMemoryImpl>
 WebDiscardableMemoryImpl::CreateLockedMemory(size_t size) {
-  scoped_ptr<base::DiscardableMemory> memory(
-      base::DiscardableMemory::CreateLockedMemory(size));
-  if (!memory)
-    return scoped_ptr<WebDiscardableMemoryImpl>();
-  return make_scoped_ptr(new WebDiscardableMemoryImpl(memory.Pass()));
+  return make_scoped_ptr(new WebDiscardableMemoryImpl(
+      base::DiscardableMemoryAllocator::GetInstance()
+          ->AllocateLockedDiscardableMemory(size)));
 }
 
 bool WebDiscardableMemoryImpl::lock() {
-  base::DiscardableMemoryLockStatus status = discardable_->Lock();
-  switch (status) {
-    case base::DISCARDABLE_MEMORY_LOCK_STATUS_SUCCESS:
-      return true;
-    case base::DISCARDABLE_MEMORY_LOCK_STATUS_PURGED:
-      discardable_->Unlock();
-      return false;
-    default:
-      discardable_.reset();
-      return false;
-  }
+  return discardable_->Lock();
 }
 
 void WebDiscardableMemoryImpl::unlock() {
@@ -37,7 +28,7 @@ void WebDiscardableMemoryImpl::unlock() {
 }
 
 void* WebDiscardableMemoryImpl::data() {
-  return discardable_->Memory();
+  return discardable_->data();
 }
 
 WebDiscardableMemoryImpl::WebDiscardableMemoryImpl(

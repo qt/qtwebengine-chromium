@@ -33,12 +33,13 @@
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
 #include "platform/graphics/ImageFrameGenerator.h"
+#include "platform/image-decoders/ImageDecoder.h"
 
 namespace blink {
 
 DecodingImageGenerator::DecodingImageGenerator(PassRefPtr<ImageFrameGenerator> frameGenerator, const SkImageInfo& info, size_t index)
-    : m_frameGenerator(frameGenerator)
-    , m_imageInfo(info)
+    : SkImageGenerator(info)
+    , m_frameGenerator(frameGenerator)
     , m_frameIndex(index)
     , m_generationId(0)
 {
@@ -61,27 +62,25 @@ SkData* DecodingImageGenerator::onRefEncodedData()
     return 0;
 }
 
-bool DecodingImageGenerator::onGetInfo(SkImageInfo* info)
-{
-    *info = m_imageInfo;
-    return true;
-}
-
-bool DecodingImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount)
+SkImageGenerator::Result DecodingImageGenerator::onGetPixels(const SkImageInfo& info,
+    void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount)
 {
     TRACE_EVENT1("blink", "DecodingImageGenerator::getPixels", "index", static_cast<int>(m_frameIndex));
 
     // Implementation doesn't support scaling yet so make sure we're not given a different size.
-    if (info.width() != m_imageInfo.width() || info.height() != m_imageInfo.height() || info.colorType() != m_imageInfo.colorType()) {
+    if (info.width() != getInfo().width() || info.height() != getInfo().height()) {
+        return kInvalidScale;
+    }
+    if (info.colorType() != getInfo().colorType()) {
         // ImageFrame may have changed the owning SkBitmap to kOpaque_SkAlphaType after sniffing the encoded data, so if we see a request
         // for opaque, that is ok even if our initial alphatype was not opaque.
-        return false;
+        return kInvalidConversion;
     }
 
     PlatformInstrumentation::willDecodeLazyPixelRef(m_generationId);
-    bool decoded = m_frameGenerator->decodeAndScale(m_imageInfo, m_frameIndex, pixels, rowBytes);
+    bool decoded = m_frameGenerator->decodeAndScale(getInfo(), m_frameIndex, pixels, rowBytes);
     PlatformInstrumentation::didDecodeLazyPixelRef();
-    return decoded;
+    return decoded ? kSuccess : kInvalidInput;
 }
 
 bool DecodingImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3], SkYUVColorSpace* colorSpace)
@@ -101,4 +100,29 @@ bool DecodingImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3], 
     return decoded;
 }
 
+SkImageGenerator* DecodingImageGenerator::create(SkData* data)
+{
+    RefPtr<SharedBuffer> buffer = SharedBuffer::create(data->bytes(), data->size());
+
+    // We just need the size of the image, so we have to temporarily create an ImageDecoder. Since
+    // we only need the size, it doesn't really matter about premul or not, or gamma settings.
+    OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*buffer.get(), ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileApplied);
+    if (!decoder)
+        return 0;
+
+    decoder->setData(buffer.get(), true);
+    if (!decoder->isSizeAvailable())
+        return 0;
+
+    const IntSize size = decoder->size();
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(size.width(), size.height());
+
+    RefPtr<ImageFrameGenerator> frame = ImageFrameGenerator::create(SkISize::Make(size.width(), size.height()), buffer, true, false);
+    if (!frame)
+        return 0;
+
+    return new DecodingImageGenerator(frame, info, 0);
+}
+
 } // namespace blink
+

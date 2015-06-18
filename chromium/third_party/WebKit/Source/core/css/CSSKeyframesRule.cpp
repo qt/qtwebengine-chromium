@@ -37,6 +37,7 @@ namespace blink {
 
 StyleRuleKeyframes::StyleRuleKeyframes()
     : StyleRuleBase(Keyframes)
+    , m_version(0)
 {
 }
 
@@ -44,6 +45,7 @@ StyleRuleKeyframes::StyleRuleKeyframes(const StyleRuleKeyframes& o)
     : StyleRuleBase(o)
     , m_keyframes(o.m_keyframes)
     , m_name(o.m_name)
+    , m_version(o.m_version)
     , m_isPrefixed(o.m_isPrefixed)
 {
 }
@@ -52,41 +54,38 @@ StyleRuleKeyframes::~StyleRuleKeyframes()
 {
 }
 
-void StyleRuleKeyframes::parserAppendKeyframe(PassRefPtrWillBeRawPtr<StyleKeyframe> keyframe)
+void StyleRuleKeyframes::parserAppendKeyframe(PassRefPtrWillBeRawPtr<StyleRuleKeyframe> keyframe)
 {
     if (!keyframe)
         return;
     m_keyframes.append(keyframe);
 }
 
-void StyleRuleKeyframes::wrapperAppendKeyframe(PassRefPtrWillBeRawPtr<StyleKeyframe> keyframe)
+void StyleRuleKeyframes::wrapperAppendKeyframe(PassRefPtrWillBeRawPtr<StyleRuleKeyframe> keyframe)
 {
     m_keyframes.append(keyframe);
+    styleChanged();
 }
 
 void StyleRuleKeyframes::wrapperRemoveKeyframe(unsigned index)
 {
     m_keyframes.remove(index);
+    styleChanged();
 }
 
 int StyleRuleKeyframes::findKeyframeIndex(const String& key) const
 {
-    String percentageString;
-    if (equalIgnoringCase(key, "from"))
-        percentageString = "0%";
-    else if (equalIgnoringCase(key, "to"))
-        percentageString = "100%";
-    else
-        percentageString = key;
-
-    for (unsigned i = 0; i < m_keyframes.size(); ++i) {
-        if (m_keyframes[i]->keyText() == percentageString)
+    OwnPtr<Vector<double>> keys = CSSParser::parseKeyframeKeyList(key);
+    if (!keys)
+        return -1;
+    for (size_t i = m_keyframes.size(); i--; ) {
+        if (m_keyframes[i]->keys() == *keys)
             return i;
     }
     return -1;
 }
 
-void StyleRuleKeyframes::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRuleKeyframes)
 {
     visitor->trace(m_keyframes);
     StyleRuleBase::traceAfterDispatch(visitor);
@@ -118,13 +117,13 @@ void CSSKeyframesRule::setName(const String& name)
     m_keyframesRule->setName(name);
 }
 
-void CSSKeyframesRule::insertRule(const String& ruleText)
+void CSSKeyframesRule::appendRule(const String& ruleText)
 {
     ASSERT(m_childRuleCSSOMWrappers.size() == m_keyframesRule->keyframes().size());
 
     CSSStyleSheet* styleSheet = parentStyleSheet();
     CSSParserContext context(parserContext(), UseCounter::getFrom(styleSheet));
-    RefPtrWillBeRawPtr<StyleKeyframe> keyframe = CSSParser::parseKeyframeRule(context, styleSheet ? styleSheet->contents() : 0, ruleText);
+    RefPtrWillBeRawPtr<StyleRuleKeyframe> keyframe = CSSParser::parseKeyframeRule(context, styleSheet ? styleSheet->contents() : 0, ruleText);
     if (!keyframe)
         return;
 
@@ -209,7 +208,7 @@ void CSSKeyframesRule::reattach(StyleRuleBase* rule)
     m_keyframesRule = toStyleRuleKeyframes(rule);
 }
 
-void CSSKeyframesRule::trace(Visitor* visitor)
+DEFINE_TRACE(CSSKeyframesRule)
 {
     CSSRule::trace(visitor);
 #if ENABLE(OILPAN)

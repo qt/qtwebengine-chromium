@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -145,7 +145,7 @@ TEST_F(SctpDataChannelTest, BufferedAmountWhenBlocked) {
   for (int i = 0; i < number_of_packets; ++i) {
     EXPECT_TRUE(webrtc_data_channel_->Send(buffer));
   }
-  EXPECT_EQ(buffer.data.length() * number_of_packets,
+  EXPECT_EQ(buffer.data.size() * number_of_packets,
             webrtc_data_channel_->buffered_amount());
 }
 
@@ -157,6 +157,24 @@ TEST_F(SctpDataChannelTest, QueuedDataSentWhenUnblocked) {
   provider_.set_send_blocked(true);
   EXPECT_TRUE(webrtc_data_channel_->Send(buffer));
 
+  provider_.set_send_blocked(false);
+  SetChannelReady();
+  EXPECT_EQ(0U, webrtc_data_channel_->buffered_amount());
+}
+
+// Tests that no crash when the channel is blocked right away while trying to
+// send queued data.
+TEST_F(SctpDataChannelTest, BlockedWhenSendQueuedDataNoCrash) {
+  SetChannelReady();
+  webrtc::DataBuffer buffer("abcd");
+  provider_.set_send_blocked(true);
+  EXPECT_TRUE(webrtc_data_channel_->Send(buffer));
+
+  // Set channel ready while it is still blocked.
+  SetChannelReady();
+  EXPECT_EQ(buffer.size(), webrtc_data_channel_->buffered_amount());
+
+  // Unblock the channel to send queued data again, there should be no crash.
   provider_.set_send_blocked(false);
   SetChannelReady();
   EXPECT_EQ(0U, webrtc_data_channel_->buffered_amount());
@@ -341,10 +359,8 @@ TEST_F(SctpDataChannelTest, OpenAckRoleInitialization) {
 TEST_F(SctpDataChannelTest, ClosedWhenSendBufferFull) {
   SetChannelReady();
 
-  const size_t buffer_size = 1024;
-  rtc::Buffer buffer;
-  buffer.SetLength(buffer_size);
-  memset(buffer.data(), 0, buffer_size);
+  rtc::Buffer buffer(1024);
+  memset(buffer.data(), 0, buffer.size());
 
   webrtc::DataBuffer packet(buffer, true);
   provider_.set_send_blocked(true);
@@ -395,10 +411,8 @@ TEST_F(SctpDataChannelTest, RemotePeerRequestClose) {
 // Tests that the DataChannel is closed if the received buffer is full.
 TEST_F(SctpDataChannelTest, ClosedWhenReceivedBufferFull) {
   SetChannelReady();
-  const size_t buffer_size = 1024;
-  rtc::Buffer buffer;
-  buffer.SetLength(buffer_size);
-  memset(buffer.data(), 0, buffer_size);
+  rtc::Buffer buffer(1024);
+  memset(buffer.data(), 0, buffer.size());
 
   cricket::ReceiveDataParams params;
   params.ssrc = 0;
@@ -422,4 +436,11 @@ TEST_F(SctpDataChannelTest, SendEmptyData) {
   EXPECT_TRUE(webrtc_data_channel_->Send(buffer));
   EXPECT_EQ(webrtc::DataChannelInterface::kOpen,
             webrtc_data_channel_->state());
+}
+
+// Tests that a channel can be closed without being opened or assigned an sid.
+TEST_F(SctpDataChannelTest, NeverOpened) {
+  provider_.set_transport_available(true);
+  webrtc_data_channel_->OnTransportChannelCreated();
+  webrtc_data_channel_->Close();
 }

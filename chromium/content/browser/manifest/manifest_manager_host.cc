@@ -4,6 +4,7 @@
 
 #include "content/browser/manifest/manifest_manager_host.h"
 
+#include "base/stl_util.h"
 #include "content/common/manifest_manager_messages.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -19,7 +20,8 @@ void KillRenderer(RenderFrameHost* render_frame_host) {
       render_frame_host->GetProcess()->GetHandle();
   if (process_handle == base::kNullProcessHandle)
     return;
-  base::KillProcess(process_handle, RESULT_CODE_KILLED_BAD_MESSAGE, false);
+  render_frame_host->GetProcess()->Shutdown(RESULT_CODE_KILLED_BAD_MESSAGE,
+                                            false);
 }
 
 } // anonymous namespace
@@ -29,6 +31,7 @@ ManifestManagerHost::ManifestManagerHost(WebContents* web_contents)
 }
 
 ManifestManagerHost::~ManifestManagerHost() {
+  STLDeleteValues(&pending_callbacks_);
 }
 
 ManifestManagerHost::CallbackMap* ManifestManagerHost::GetCallbackMapForFrame(
@@ -114,18 +117,25 @@ void ManifestManagerHost::OnRequestManifestResponse(
         manifest.short_name.is_null());
   if (!manifest.start_url.is_valid())
     manifest.start_url = GURL();
-  for (size_t i = 0; i < manifest.icons.size(); ++i) {
-    if (!manifest.icons[i].src.is_valid())
-      manifest.icons[i].src = GURL();
-    manifest.icons[i].type = base::NullableString16(
-        manifest.icons[i].type.string().substr(0,
-                                               Manifest::kMaxIPCStringLength),
-        manifest.icons[i].type.is_null());
+  for (auto& icon : manifest.icons) {
+    if (!icon.src.is_valid())
+      icon.src = GURL();
+    icon.type = base::NullableString16(
+        icon.type.string().substr(0, Manifest::kMaxIPCStringLength),
+        icon.type.is_null());
   }
   manifest.gcm_sender_id = base::NullableString16(
         manifest.gcm_sender_id.string().substr(
             0, Manifest::kMaxIPCStringLength),
         manifest.gcm_sender_id.is_null());
+  for (auto& related_application : manifest.related_applications) {
+    if (!related_application.url.is_valid())
+      related_application.url = GURL();
+    related_application.id =
+        base::NullableString16(related_application.id.string().substr(
+                                   0, Manifest::kMaxIPCStringLength),
+                               related_application.id.is_null());
+  }
 
   callback->Run(manifest);
   callbacks->Remove(request_id);

@@ -16,7 +16,9 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
+#include "cc/surfaces/surface_id_allocator.h"
 #include "mojo/converters/geometry/geometry_type_converters.h"
+#include "mojo/converters/transform/transform_type_converters.h"
 
 namespace mojo {
 
@@ -41,10 +43,8 @@ COMPILE_ASSERT(
     cc::YUVVideoDrawQuad::REC_601 ==
         static_cast<cc::YUVVideoDrawQuad::ColorSpace>(YUV_COLOR_SPACE_REC_601),
     rec_601_enum_matches);
-COMPILE_ASSERT(cc::YUVVideoDrawQuad::REC_601_JPEG ==
-                   static_cast<cc::YUVVideoDrawQuad::ColorSpace>(
-                       YUV_COLOR_SPACE_REC_601_JPEG),
-               rec_601_jpeg_enum_matches);
+// TODO(jamesr): Add REC_709 and JPEG to the YUVColorSpace enum upstream in
+// mojo.
 
 namespace {
 
@@ -140,7 +140,8 @@ bool ConvertDrawQuad(const QuadPtr& input,
           texture_quad_state->uv_bottom_right.To<gfx::PointF>(),
           texture_quad_state->background_color.To<SkColor>(),
           &texture_quad_state->vertex_opacity.storage()[0],
-          texture_quad_state->flipped);
+          texture_quad_state->y_flipped,
+          texture_quad_state->nearest_neighbor);
       break;
     }
     case MATERIAL_TILED_CONTENT: {
@@ -157,7 +158,8 @@ bool ConvertDrawQuad(const QuadPtr& input,
                         tile_state->resource_id,
                         tile_state->tex_coord_rect.To<gfx::RectF>(),
                         tile_state->texture_size.To<gfx::Size>(),
-                        tile_state->swizzle_contents);
+                        tile_state->swizzle_contents,
+                        tile_state->nearest_neighbor);
       break;
     }
     case MATERIAL_YUV_VIDEO_CONTENT: {
@@ -166,18 +168,17 @@ bool ConvertDrawQuad(const QuadPtr& input,
         return false;
       cc::YUVVideoDrawQuad* yuv_quad =
           render_pass->CreateAndAppendDrawQuad<cc::YUVVideoDrawQuad>();
-      yuv_quad->SetAll(sqs,
-                       input->rect.To<gfx::Rect>(),
-                       input->opaque_rect.To<gfx::Rect>(),
-                       input->visible_rect.To<gfx::Rect>(),
-                       input->needs_blending,
-                       yuv_state->tex_coord_rect.To<gfx::RectF>(),
-                       yuv_state->y_plane_resource_id,
-                       yuv_state->u_plane_resource_id,
-                       yuv_state->v_plane_resource_id,
-                       yuv_state->a_plane_resource_id,
-                       static_cast<cc::YUVVideoDrawQuad::ColorSpace>(
-                           yuv_state->color_space));
+      yuv_quad->SetAll(
+          sqs, input->rect.To<gfx::Rect>(), input->opaque_rect.To<gfx::Rect>(),
+          input->visible_rect.To<gfx::Rect>(), input->needs_blending,
+          gfx::RectF(),  // TODO(sky): ya tex coord rect
+          gfx::RectF(),  // TODO(sky): uv tex coord rect
+          gfx::Size(),   // TODO(sky): ya texture size
+          gfx::Size(),   // TODO(sky): uv texture size
+          yuv_state->y_plane_resource_id, yuv_state->u_plane_resource_id,
+          yuv_state->v_plane_resource_id, yuv_state->a_plane_resource_id,
+          static_cast<cc::YUVVideoDrawQuad::ColorSpace>(
+              yuv_state->color_space));
       break;
     }
     default:
@@ -193,14 +194,18 @@ bool ConvertDrawQuad(const QuadPtr& input,
 SurfaceIdPtr TypeConverter<SurfaceIdPtr, cc::SurfaceId>::Convert(
     const cc::SurfaceId& input) {
   SurfaceIdPtr id(SurfaceId::New());
-  id->id = input.id;
+  id->local = static_cast<uint32_t>(input.id);
+  id->id_namespace = cc::SurfaceIdAllocator::NamespaceForId(input);
   return id.Pass();
 }
 
 // static
 cc::SurfaceId TypeConverter<cc::SurfaceId, SurfaceIdPtr>::Convert(
     const SurfaceIdPtr& input) {
-  return cc::SurfaceId(input->id);
+  uint64_t packed_id = input->id_namespace;
+  packed_id <<= 32ull;
+  packed_id |= input->local;
+  return cc::SurfaceId(packed_id);
 }
 
 // static
@@ -297,7 +302,7 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
         vertex_opacity[i] = texture_quad->vertex_opacity[i];
       }
       texture_state->vertex_opacity = vertex_opacity.Pass();
-      texture_state->flipped = texture_quad->flipped;
+      texture_state->y_flipped = texture_quad->y_flipped;
       quad->texture_quad_state = texture_state.Pass();
       break;
     }
@@ -308,6 +313,7 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
       tile_state->tex_coord_rect = RectF::From(tile_quad->tex_coord_rect);
       tile_state->texture_size = Size::From(tile_quad->texture_size);
       tile_state->swizzle_contents = tile_quad->swizzle_contents;
+      tile_state->nearest_neighbor = tile_quad->nearest_neighbor;
       tile_state->resource_id = tile_quad->resource_id;
       quad->tile_quad_state = tile_state.Pass();
       break;
@@ -316,7 +322,10 @@ QuadPtr TypeConverter<QuadPtr, cc::DrawQuad>::Convert(
       const cc::YUVVideoDrawQuad* yuv_quad =
           cc::YUVVideoDrawQuad::MaterialCast(&input);
       YUVVideoQuadStatePtr yuv_state = YUVVideoQuadState::New();
-      yuv_state->tex_coord_rect = RectF::From(yuv_quad->tex_coord_rect);
+      // TODO(sky): ya_tex_coord_rect
+      // TODO(sky): uv_tex_coord_rect
+      // TODO(sky): ya_texture_size
+      // TODO(sky): uv_texture_size
       yuv_state->y_plane_resource_id = yuv_quad->y_plane_resource_id;
       yuv_state->u_plane_resource_id = yuv_quad->u_plane_resource_id;
       yuv_state->v_plane_resource_id = yuv_quad->v_plane_resource_id;
@@ -354,7 +363,7 @@ TypeConverter<SharedQuadStatePtr, cc::SharedQuadState>::Convert(
 PassPtr TypeConverter<PassPtr, cc::RenderPass>::Convert(
     const cc::RenderPass& input) {
   PassPtr pass = Pass::New();
-  pass->id = input.id.index;
+  pass->id = RenderPassId::From(input.id);
   pass->output_rect = Rect::From(input.output_rect);
   pass->damage_rect = Rect::From(input.damage_rect);
   pass->transform_to_root_target =
@@ -393,7 +402,7 @@ TypeConverter<scoped_ptr<cc::RenderPass>, PassPtr>::Convert(
     const PassPtr& input) {
   scoped_ptr<cc::RenderPass> pass = cc::RenderPass::Create(
       input->shared_quad_states.size(), input->quads.size());
-  pass->SetAll(cc::RenderPassId(1, input->id),
+  pass->SetAll(input->id.To<cc::RenderPassId>(),
                input->output_rect.To<gfx::Rect>(),
                input->damage_rect.To<gfx::Rect>(),
                input->transform_to_root_target.To<gfx::Transform>(),

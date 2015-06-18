@@ -46,6 +46,7 @@ class MockTransportChannel : public cricket::TransportChannel {
   MOCK_CONST_METHOD1(GetSslRole, bool(rtc::SSLRole* role));
   MOCK_METHOD1(SetSrtpCiphers, bool(const std::vector<std::string>& ciphers));
   MOCK_METHOD1(GetSrtpCipher, bool(std::string* cipher));
+  MOCK_METHOD1(GetSslCipher, bool(std::string* cipher));
   MOCK_CONST_METHOD1(GetLocalIdentity, bool(rtc::SSLIdentity** identity));
   MOCK_CONST_METHOD1(GetRemoteCertificate,
                      bool(rtc::SSLCertificate** cert));
@@ -66,7 +67,7 @@ class TransportChannelSocketAdapterTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     target_.reset(new TransportChannelSocketAdapter(&channel_));
   }
 

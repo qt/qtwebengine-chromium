@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
-#include "media/audio/audio_io.h"
 #include "media/audio/audio_output_proxy.h"
 
 namespace media {
@@ -128,6 +127,10 @@ void AudioOutputDispatcherImpl::Shutdown() {
   // No AudioOutputProxy objects should hold a reference to us when we get
   // to this stage.
   DCHECK(HasOneRef()) << "Only the AudioManager should hold a reference";
+}
+
+bool AudioOutputDispatcherImpl::HasOutputProxies() const {
+  return idle_proxies_ || !proxy_to_physical_map_.empty();
 }
 
 bool AudioOutputDispatcherImpl::CreateAndOpenStream() {

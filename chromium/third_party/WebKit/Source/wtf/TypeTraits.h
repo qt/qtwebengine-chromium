@@ -43,7 +43,7 @@ namespace WTF {
     //   RemoveConstVolatile<T>::Type
     //   RemoveExtent<T>::Type
     //
-    //   COMPILE_ASSERT's in TypeTraits.cpp illustrate their usage and what they do.
+    //   static_assert's in TypeTraits.cpp illustrate their usage and what they do.
 
     template<bool Predicate, class T = void> struct EnableIf;
     template<class T> struct EnableIf<true, T> { typedef T Type; };
@@ -302,20 +302,11 @@ namespace WTF {
 
 namespace blink {
 
-class JSONValue;
+class Visitor;
 
 } // namespace blink
 
 namespace WTF {
-
-    // FIXME: Disable pointer conversion checking against JSONValue.
-    // The current CodeGeneratorInspector.py generates code which upcasts to JSONValue from undefined types.
-    template<typename From> class IsPointerConvertible<From, blink::JSONValue> {
-    public:
-        enum {
-            Value = true
-        };
-    };
 
 template<typename T>
 class NeedsTracing {
@@ -323,18 +314,15 @@ class NeedsTracing {
     typedef struct NoType {
         char padding[8];
     } NoType;
-#if COMPILER(MSVC)
-    template<typename V> static YesType checkHasTraceMethod(char[&V::trace != 0]);
-#else
-    template<size_t> struct HasMethod;
-    template<typename V> static YesType checkHasTraceMethod(HasMethod<sizeof(&V::trace)>*);
-#endif // COMPILER(MSVC)
+
+    // Note that this also checks if a superclass of V has a trace method.
+    template<typename V> static YesType checkHasTraceMethod(V* v, blink::Visitor* p = 0, typename EnableIf<IsSameType<decltype(v->trace(p)), void>::value>::Type* g = 0);
     template<typename V> static NoType checkHasTraceMethod(...);
 public:
     // We add sizeof(T) to both sides here, because we want it to fail for
     // incomplete types. Otherwise it just assumes that incomplete types do not
     // have a trace method, which may not be true.
-    static const bool value = sizeof(YesType) + sizeof(T) == sizeof(checkHasTraceMethod<T>(0)) + sizeof(T);
+    static const bool value = sizeof(YesType) + sizeof(T) == sizeof(checkHasTraceMethod<T>(nullptr)) + sizeof(T);
 };
 
 // Convenience template wrapping the NeedsTracingLazily template in
@@ -346,7 +334,7 @@ public:
 };
 
 template<typename T, typename U>
-struct NeedsTracing<std::pair<T, U> > {
+struct NeedsTracing<std::pair<T, U>> {
     static const bool value = NeedsTracing<T>::value || NeedsTracing<U>::value || IsWeak<T>::value || IsWeak<U>::value;
 };
 

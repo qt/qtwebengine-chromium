@@ -42,9 +42,17 @@ namespace blink {
 inline double invalidFileTime() { return std::numeric_limits<double>::quiet_NaN(); }
 inline bool isValidFileTime(double time) { return std::isfinite(time); }
 
-struct FileMetadata {
-    // The last modification time of the file, in seconds.
-    // The value 0.0 means that the time is not set.
+class FileMetadata {
+public:
+    FileMetadata()
+        : modificationTime(invalidFileTime())
+        , length(-1)
+        , type(TypeUnknown)
+    {
+    }
+
+    // The last modification time of the file, in milliseconds.
+    // The value NaN means that the time is not known.
     double modificationTime;
 
     // The length of the file in bytes.
@@ -59,12 +67,10 @@ struct FileMetadata {
 
     Type type;
     String platformPath;
-
-    FileMetadata() : modificationTime(invalidFileTime()), length(-1), type(TypeUnknown) { }
 };
 
 PLATFORM_EXPORT bool getFileSize(const String&, long long& result);
-PLATFORM_EXPORT bool getFileModificationTime(const String&, time_t& result);
+PLATFORM_EXPORT bool getFileModificationTime(const String&, double& result);
 PLATFORM_EXPORT bool getFileMetadata(const String&, FileMetadata&);
 PLATFORM_EXPORT String directoryName(const String&);
 PLATFORM_EXPORT KURL filePathToURL(const String&);

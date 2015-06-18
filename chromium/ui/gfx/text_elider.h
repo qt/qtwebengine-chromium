@@ -28,20 +28,27 @@ GFX_EXPORT extern const char kEllipsis[];
 GFX_EXPORT extern const base::char16 kEllipsisUTF16[];
 GFX_EXPORT extern const base::char16 kForwardSlash;
 
-// Helper class to split + elide text, while respecting UTF16 surrogate pairs.
-class StringSlicer {
+// Helper class to split + elide text, while respecting UTF-16 surrogate pairs
+// and combining character sequences.
+class GFX_EXPORT StringSlicer {
  public:
+  // Warning: Retains a reference to |text| and |ellipsis|. They must have a
+  // longer lifetime than the StringSlicer.
   StringSlicer(const base::string16& text,
                const base::string16& ellipsis,
                bool elide_in_middle,
                bool elide_at_beginning);
 
-  // Cuts |text_| to be |length| characters long. If |elide_in_middle_| is true,
-  // the middle of the string is removed to leave equal-length pieces from the
-  // beginning and end of the string; otherwise, the end of the string is
-  // removed and only the beginning remains. If |insert_ellipsis| is true,
-  // then an ellipsis character will be inserted at the cut point.
-  base::string16 CutString(size_t length, bool insert_ellipsis);
+  // Cuts |text_| to be at most |length| UTF-16 code units long. If
+  // |elide_in_middle_| is true, the middle of the string is removed to leave
+  // equal-length pieces from the beginning and end of the string; otherwise,
+  // the end of the string is removed and only the beginning remains. If
+  // |insert_ellipsis| is true, then an ellipsis character will be inserted at
+  // the cut point (note that the ellipsis will does not count towards the
+  // |length| limit).
+  // Note: Characters may still be omitted even if |length| is the full string
+  // length, if surrogate pairs fall on the split boundary.
+  base::string16 CutString(size_t length, bool insert_ellipsis) const;
 
  private:
   // Returns a valid cut boundary at or before/after |index|.
@@ -108,26 +115,6 @@ GFX_EXPORT bool ElideRectangleString(const base::string16& input,
                                      size_t max_cols,
                                      bool strict,
                                      base::string16* output);
-
-// Specifies the word wrapping behavior of |ElideRectangleText()| when a word
-// would exceed the available width.
-enum WordWrapBehavior {
-  // Words that are too wide will be put on a new line, but will not be
-  // truncated or elided.
-  IGNORE_LONG_WORDS,
-
-  // Words that are too wide will be put on a new line and will be truncated to
-  // the available width.
-  TRUNCATE_LONG_WORDS,
-
-  // Words that are too wide will be put on a new line and will be elided to the
-  // available width.
-  ELIDE_LONG_WORDS,
-
-  // Words that are too wide will be put on a new line and will be wrapped over
-  // multiple lines.
-  WRAP_LONG_WORDS,
-};
 
 // Indicates whether the |available_pixel_width| by |available_pixel_height|
 // rectangle passed to |ElideRectangleText()| had insufficient space to

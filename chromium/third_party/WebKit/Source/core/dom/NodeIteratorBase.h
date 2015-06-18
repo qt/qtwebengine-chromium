@@ -40,12 +40,8 @@ public:
     Node* root() const { return m_root.get(); }
     unsigned whatToShow() const { return m_whatToShow; }
     NodeFilter* filter() const { return m_filter.get(); }
-    // |expandEntityReferences| first appeared in "DOM Level 2 Traversal and Range". However, this argument was
-    // never implemented, and, in DOM4, the function argument |expandEntityReferences| is removed from
-    // Document.createNodeIterator() and Document.createTreeWalker().
-    bool expandEntityReferences() const { return false; }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     NodeIteratorBase(PassRefPtrWillBeRawPtr<Node>, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>);

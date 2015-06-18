@@ -6,11 +6,7 @@
 
 namespace media {
 
-KeySystemInfo::KeySystemInfo(const std::string& key_system)
-    : key_system(key_system),
-      supported_init_data_types(EME_INIT_DATA_TYPE_NONE),
-      supported_codecs(EME_CODEC_NONE),
-      use_aes_decryptor(false) {
+KeySystemInfo::KeySystemInfo() {
 }
 
 KeySystemInfo::~KeySystemInfo() {

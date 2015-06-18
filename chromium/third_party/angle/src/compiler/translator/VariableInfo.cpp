@@ -139,11 +139,14 @@ CollectVariables::CollectVariables(std::vector<sh::Attribute> *attribs,
       mUniforms(uniforms),
       mVaryings(varyings),
       mInterfaceBlocks(interfaceBlocks),
+      mDepthRangeAdded(false),
       mPointCoordAdded(false),
       mFrontFacingAdded(false),
       mFragCoordAdded(false),
+      mInstanceIDAdded(false),
       mPositionAdded(false),
       mPointSizeAdded(false),
+      mLastFragDataAdded(false),
       mHashFunction(hashFunction),
       mSymbolTable(symbolTable)
 {
@@ -168,6 +171,56 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
     {
         UNREACHABLE();
     }
+    else if (symbolName == "gl_DepthRange")
+    {
+        ASSERT(symbol->getQualifier() == EvqUniform);
+
+        if (!mDepthRangeAdded)
+        {
+            Uniform info;
+            const char kName[] = "gl_DepthRange";
+            info.name = kName;
+            info.mappedName = kName;
+            info.type = GL_STRUCT_ANGLEX;
+            info.arraySize = 0;
+            info.precision = GL_NONE;
+            info.staticUse = true;
+
+            ShaderVariable nearInfo;
+            const char kNearName[] = "near";
+            nearInfo.name = kNearName;
+            nearInfo.mappedName = kNearName;
+            nearInfo.type = GL_FLOAT;
+            nearInfo.arraySize = 0;
+            nearInfo.precision = GL_HIGH_FLOAT;
+            nearInfo.staticUse = true;
+
+            ShaderVariable farInfo;
+            const char kFarName[] = "far";
+            farInfo.name = kFarName;
+            farInfo.mappedName = kFarName;
+            farInfo.type = GL_FLOAT;
+            farInfo.arraySize = 0;
+            farInfo.precision = GL_HIGH_FLOAT;
+            farInfo.staticUse = true;
+
+            ShaderVariable diffInfo;
+            const char kDiffName[] = "diff";
+            diffInfo.name = kDiffName;
+            diffInfo.mappedName = kDiffName;
+            diffInfo.type = GL_FLOAT;
+            diffInfo.arraySize = 0;
+            diffInfo.precision = GL_HIGH_FLOAT;
+            diffInfo.staticUse = true;
+
+            info.fields.push_back(nearInfo);
+            info.fields.push_back(farInfo);
+            info.fields.push_back(diffInfo);
+
+            mUniforms->push_back(info);
+            mDepthRangeAdded = true;
+        }
+    }
     else
     {
         switch (symbol->getQualifier())
@@ -190,7 +243,6 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
 
                     // Set static use on the parent interface block here
                     namedBlock->staticUse = true;
-
                 }
                 else
                 {
@@ -198,7 +250,7 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
                 }
 
                 // It's an internal error to reference an undefined user uniform
-                ASSERT(symbolName.compare(0, 3, "gl_") == 0 || var);
+                ASSERT(symbolName.compare(0, 3, "gl_") != 0 || var);
             }
             break;
           case EvqFragCoord:
@@ -249,6 +301,22 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
                 mPointCoordAdded = true;
             }
             return;
+          case EvqInstanceID:
+            if (!mInstanceIDAdded)
+            {
+                Attribute info;
+                const char kName[] = "gl_InstanceID";
+                info.name = kName;
+                info.mappedName = kName;
+                info.type = GL_INT;
+                info.arraySize = 0;
+                info.precision = GL_HIGH_INT;  // Defined by spec.
+                info.staticUse = true;
+                info.location = -1;
+                mAttribs->push_back(info);
+                mInstanceIDAdded = true;
+            }
+            return;
           case EvqPosition:
             if (!mPositionAdded)
             {
@@ -281,6 +349,22 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
                 mPointSizeAdded = true;
             }
             return;
+          case EvqLastFragData:
+            if (!mLastFragDataAdded)
+            {
+                Varying info;
+                const char kName[] = "gl_LastFragData";
+                info.name = kName;
+                info.mappedName = kName;
+                info.type = GL_FLOAT_VEC4;
+                info.arraySize = static_cast<const TVariable*>(mSymbolTable.findBuiltIn("gl_MaxDrawBuffers", 100))->getConstPointer()->getIConst();
+                info.precision = GL_MEDIUM_FLOAT;  // Defined by spec.
+                info.staticUse = true;
+                info.isInvariant = mSymbolTable.isVaryingInvariant(kName);
+                mVaryings->push_back(info);
+                mLastFragDataAdded = true;
+            }
+            return;
           default:
             break;
         }
@@ -301,8 +385,6 @@ class NameHashingTraverser : public GetVariableTraverser
     {}
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(NameHashingTraverser);
-
     virtual void visitVariable(ShaderVariable *variable)
     {
         TString stringName = TString(variable->name.c_str());

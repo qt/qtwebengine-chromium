@@ -22,6 +22,7 @@
 namespace gpu {
 
 class TransferBufferManagerInterface;
+class ValueStateMap;
 
 namespace gles2 {
 
@@ -34,6 +35,7 @@ class RenderbufferManager;
 class ProgramManager;
 class ShaderManager;
 class TextureManager;
+class SubscriptionRefSet;
 class ValuebufferManager;
 class MemoryTracker;
 struct DisallowedFeatures;
@@ -47,6 +49,8 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
       const scoped_refptr<MemoryTracker>& memory_tracker,
       const scoped_refptr<ShaderTranslatorCache>& shader_translator_cache,
       const scoped_refptr<FeatureInfo>& feature_info,
+      const scoped_refptr<SubscriptionRefSet>& subscription_ref_set,
+      const scoped_refptr<ValueStateMap>& pending_valuebuffer_state,
       bool bind_generates_resource);
 
   // This should only be called by GLES2Decoder. This must be paired with a
@@ -131,6 +135,10 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
     return valuebuffer_manager_.get();
   }
 
+  ValueStateMap* pending_valuebuffer_state() const {
+    return pending_valuebuffer_state_.get();
+  }
+
   TextureManager* texture_manager() const {
     return texture_manager_.get();
   }
@@ -158,7 +166,7 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   uint32 GetMemRepresented() const;
 
   // Loses all the context associated with this group.
-  void LoseContexts(GLenum reset_status);
+  void LoseContexts(error::ContextLostReason reason);
 
   // EXT_draw_buffer related states for backbuffer.
   GLenum draw_buffer() const {
@@ -166,6 +174,63 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   }
   void set_draw_buffer(GLenum buf) {
     draw_buffer_ = buf;
+  }
+
+  bool GetBufferServiceId(GLuint client_id, GLuint* service_id) const;
+
+  void AddSamplerId(GLuint client_id, GLuint service_id) {
+    samplers_id_map_[client_id] = service_id;
+  }
+
+  bool GetSamplerServiceId(GLuint client_id, GLuint* service_id) const {
+    base::hash_map<GLuint, GLuint>::const_iterator iter =
+        samplers_id_map_.find(client_id);
+    if (iter == samplers_id_map_.end())
+      return false;
+    if (service_id)
+      *service_id = iter->second;
+    return true;
+  }
+
+  void RemoveSamplerId(GLuint client_id) {
+    samplers_id_map_.erase(client_id);
+  }
+
+  void AddTransformFeedbackId(GLuint client_id, GLuint service_id) {
+    transformfeedbacks_id_map_[client_id] = service_id;
+  }
+
+  bool GetTransformFeedbackServiceId(
+      GLuint client_id, GLuint* service_id) const {
+    base::hash_map<GLuint, GLuint>::const_iterator iter =
+        transformfeedbacks_id_map_.find(client_id);
+    if (iter == transformfeedbacks_id_map_.end())
+      return false;
+    if (service_id)
+      *service_id = iter->second;
+    return true;
+  }
+
+  void RemoveTransformFeedbackId(GLuint client_id) {
+    transformfeedbacks_id_map_.erase(client_id);
+  }
+
+  void AddSyncId(GLuint client_id, GLsync service_id) {
+    syncs_id_map_[client_id] = service_id;
+  }
+
+  bool GetSyncServiceId(GLuint client_id, GLsync* service_id) const {
+    base::hash_map<GLuint, GLsync>::const_iterator iter =
+        syncs_id_map_.find(client_id);
+    if (iter == syncs_id_map_.end())
+      return false;
+    if (service_id)
+      *service_id = iter->second;
+    return true;
+  }
+
+  void RemoveSyncId(GLuint client_id) {
+    syncs_id_map_.erase(client_id);
   }
 
  private:
@@ -182,6 +247,8 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
   scoped_refptr<MemoryTracker> memory_tracker_;
   scoped_refptr<ShaderTranslatorCache> shader_translator_cache_;
   scoped_ptr<TransferBufferManagerInterface> transfer_buffer_manager_;
+  scoped_refptr<SubscriptionRefSet> subscription_ref_set_;
+  scoped_refptr<ValueStateMap> pending_valuebuffer_state_;
 
   bool enforce_gl_minimums_;
   bool bind_generates_resource_;
@@ -204,17 +271,22 @@ class GPU_EXPORT ContextGroup : public base::RefCounted<ContextGroup> {
 
   scoped_ptr<RenderbufferManager> renderbuffer_manager_;
 
-  scoped_ptr<ValuebufferManager> valuebuffer_manager_;
-
   scoped_ptr<TextureManager> texture_manager_;
 
   scoped_ptr<ProgramManager> program_manager_;
 
   scoped_ptr<ShaderManager> shader_manager_;
 
+  scoped_ptr<ValuebufferManager> valuebuffer_manager_;
+
   scoped_refptr<FeatureInfo> feature_info_;
 
   std::vector<base::WeakPtr<gles2::GLES2Decoder> > decoders_;
+
+  // Mappings from client side IDs to service side IDs.
+  base::hash_map<GLuint, GLuint> samplers_id_map_;
+  base::hash_map<GLuint, GLuint> transformfeedbacks_id_map_;
+  base::hash_map<GLuint, GLsync> syncs_id_map_;
 
   GLenum draw_buffer_;
 

@@ -139,7 +139,7 @@ bool IsComponentCoveredByLang(const icu::UnicodeSet& component_characters,
                               const std::string& lang) {
   CR_DEFINE_STATIC_LOCAL(
       const icu::UnicodeSet, kASCIILetters, ('a', 'z'));
-  icu::UnicodeSet* lang_set = NULL;
+  icu::UnicodeSet* lang_set = nullptr;
   // We're called from both the UI thread and the history thread.
   {
     base::AutoLock lock(g_lang_set_lock.Get());
@@ -154,15 +154,17 @@ bool IsComponentCoveredByLang(const icu::UnicodeSet& component_characters,
       // (issue 2078)
       // DCHECK(U_SUCCESS(status) && status != U_USING_DEFAULT_WARNING);
       if (U_SUCCESS(status) && status != U_USING_DEFAULT_WARNING) {
-        lang_set = reinterpret_cast<icu::UnicodeSet *>(
-            ulocdata_getExemplarSet(uld, NULL, 0,
-                                    ULOCDATA_ES_STANDARD, &status));
-        // If |lang| is compatible with ASCII Latin letters, add them.
-        if (IsCompatibleWithASCIILetters(lang))
+        lang_set = reinterpret_cast<icu::UnicodeSet*>(ulocdata_getExemplarSet(
+            uld, nullptr, 0, ULOCDATA_ES_STANDARD, &status));
+        // On success, if |lang| is compatible with ASCII Latin letters, add
+        // them.
+        if (lang_set && IsCompatibleWithASCIILetters(lang))
           lang_set->addAll(kASCIILetters);
-      } else {
-        lang_set = new icu::UnicodeSet(1, 0);
       }
+
+      if (!lang_set)
+        lang_set = new icu::UnicodeSet(1, 0);
+
       lang_set->freeze();
       SetExemplarSetForLang(lang, lang_set);
       ulocdata_close(uld);
@@ -221,7 +223,7 @@ bool IsIDNComponentSafe(const base::char16* str,
   DCHECK(U_SUCCESS(status));
   icu::RegexMatcher dangerous_patterns(icu::UnicodeString(
       // Lone katakana no, so, or n
-      "[^\\p{Katakana}][\\u30ce\\u30f3\u30bd][^\\p{Katakana}]"
+      "[^\\p{Katakana}][\\u30ce\\u30f3\\u30bd][^\\p{Katakana}]"
       // Repeating Japanese accent characters
       "|[\\u3099\\u309a\\u309b\\u309c][\\u3099\\u309a\\u309b\\u309c]"),
       0, status);
@@ -670,9 +672,9 @@ base::string16 FormatUrlWithAdjustments(
 
   // Special handling for view-source:.  Don't use content::kViewSourceScheme
   // because this library shouldn't depend on chrome.
-  const char* const kViewSource = "view-source";
+  const char kViewSource[] = "view-source";
   // Reject "view-source:view-source:..." to avoid deep recursion.
-  const char* const kViewSourceTwice = "view-source:view-source:";
+  const char kViewSourceTwice[] = "view-source:view-source:";
   if (url.SchemeIs(kViewSource) &&
       !StartsWithASCII(url.possibly_invalid_spec(), kViewSourceTwice, false)) {
     return FormatViewSourceUrl(url, languages, format_types,

@@ -5,11 +5,12 @@
 #include "media/midi/midi_manager.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/trace_event/trace_event.h"
 
 namespace media {
+namespace midi {
 
 MidiManager::MidiManager()
     : initialized_(false),
@@ -19,8 +20,8 @@ MidiManager::MidiManager()
 MidiManager::~MidiManager() {
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(USE_ALSA) && \
-    !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && \
+    !(defined(USE_ALSA) && defined(USE_UDEV)) && !defined(OS_ANDROID)
 MidiManager* MidiManager::Create() {
   return new MidiManager;
 }
@@ -94,6 +95,15 @@ void MidiManager::EndSession(MidiManagerClient* client) {
   pending_clients_.erase(client);
 }
 
+void MidiManager::AccumulateMidiBytesSent(MidiManagerClient* client, size_t n) {
+  {
+    base::AutoLock auto_lock(lock_);
+    if (clients_.find(client) == clients_.end())
+      return;
+  }
+  client->AccumulateMidiBytesSent(n);
+}
+
 void MidiManager::DispatchSendMidiData(MidiManagerClient* client,
                                        uint32 port_index,
                                        const std::vector<uint8>& data,
@@ -128,6 +138,22 @@ void MidiManager::AddOutputPort(const MidiPortInfo& info) {
   output_ports_.push_back(info);
   for (auto client : clients_)
     client->AddOutputPort(info);
+}
+
+void MidiManager::SetInputPortState(uint32 port_index, MidiPortState state) {
+  base::AutoLock auto_lock(lock_);
+  DCHECK_LT(port_index, input_ports_.size());
+  input_ports_[port_index].state = state;
+  for (auto client : clients_)
+    client->SetInputPortState(port_index, state);
+}
+
+void MidiManager::SetOutputPortState(uint32 port_index, MidiPortState state) {
+  base::AutoLock auto_lock(lock_);
+  DCHECK_LT(port_index, output_ports_.size());
+  output_ports_[port_index].state = state;
+  for (auto client : clients_)
+    client->SetOutputPortState(port_index, state);
 }
 
 void MidiManager::ReceiveMidiData(
@@ -169,4 +195,5 @@ void MidiManager::AddInitialPorts(MidiManagerClient* client) {
     client->AddOutputPort(info);
 }
 
+}  // namespace midi
 }  // namespace media

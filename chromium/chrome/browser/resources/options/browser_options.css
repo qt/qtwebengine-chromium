@@ -182,21 +182,24 @@ input[type='range'] {
   padding-bottom: 0;
 }
 
+.setting-extra-description {
+  -webkit-margin-start: 1.8em;
+  color: #999;
+}
+
 .hotword-settings {
   -webkit-margin-start: 22px;
 }
 
-.hotword-description {
+.hotword-audio-history {
   -webkit-margin-start: 1.8em;
-  color: gray;
 }
 
-.hotword-learn-more-link {
-  -webkit-padding-start: 8px;
+#audio-history {
+  margin-top: 1.5em;
 }
 
 #hotword-retrain-link {
-  -webkit-padding-start: 8px;
   text-decoration: none;
 }
 
@@ -236,17 +239,19 @@ list:not([disabled]) > .network-group[selected] {
   padding-top: 3px;
 }
 
-.network-icon,
-.network-menu-item-icon {
+.network-icon {
   -webkit-margin-end: 8px;
   background-position: left top;
   background-size: 25px;
   height: 25px;
+  line-height: normal;
+  white-space: normal;
   width: 25px;
 }
 
-.other-cellulars > .network-menu-item-icon {
-  background-position: left top;
+.network-icon cr-network-icon {
+  height: 100%;
+  width: 100%;
 }
 
 @-webkit-keyframes connecting-animation {
@@ -284,7 +289,7 @@ list:not([disabled]) > .network-group[selected] {
 }
 
 .network-add-connection {
-  background-image: url('chrome://theme/IDR_NETWORK_ADD_CONNECTION');
+  background-image: url(chrome://theme/IDR_NETWORK_ADD_CONNECTION);
   background-size: 16px;
 }
 
@@ -293,7 +298,7 @@ list:not([disabled]) > .network-group[selected] {
 }
 
 .network-control-active {
-  background-image: url('chrome://theme/IDR_PROFILE_SELECTED');
+  background-image: url(chrome://theme/IDR_PROFILE_SELECTED);
   background-size: 16px;
 }
 
@@ -353,17 +358,17 @@ list:not([disabled]) > .network-group[selected] {
 
 .network-selector {
   background: right center no-repeat;
-  background-image: url('../../../../ui/webui/resources/images/select.png');
+  background-image: url(../../../../ui/webui/resources/images/select.png);
   padding-right: 20px;
 }
 
 .network-menu {
-  -webkit-box-shadow:
+  background: #fff;
+  box-shadow:
       0 0 0 1px rgba(0,0,0,0.1),
       0 5px 1px 1px rgba(0,0,0,0.1),
       0 5px 2px 1px rgba(0,0,0,0.1),
       0 5px 12px 1px rgba(0,0,0,0.5);
-  background: #fff;
   display: block;
   position: absolute;
   width: 320px;
@@ -406,7 +411,8 @@ list:not([disabled]) > .network-group[selected] {
     text-overflow: ellipsis;
 }
 
-.network-menu-item:hover {
+.network-menu-item:hover,
+.network-menu-item[selected] {
   background-color: #eee;
 }
 
@@ -431,6 +437,11 @@ list:not([disabled]) > .network-group[selected] {
 #timezone-value {
   display: inline-block;
   vertical-align: baseline;
+}
+
+.loading #timezone-value select {
+  color: transparent;
+  text-shadow: none;
 }
 
 #privacy-explanation {

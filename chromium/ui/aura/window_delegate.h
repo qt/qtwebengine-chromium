@@ -25,6 +25,8 @@ class GestureEvent;
 class KeyEvent;
 class Layer;
 class MouseEvent;
+class PaintContext;
+class TextInputClient;
 class Texture;
 class TouchEvent;
 }
@@ -43,6 +45,10 @@ class AURA_EXPORT WindowDelegate : public ui::EventHandler {
   // Called when the Window's position and/or size changes.
   virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
                                const gfx::Rect& new_bounds) = 0;
+
+  // Returns the focused text input client within this window.
+  // This function does not look at child windows.
+  virtual ui::TextInputClient* GetFocusedTextInputClient() = 0;
 
   // Returns the native cursor for the specified point, in window coordinates,
   // or NULL for the default cursor.
@@ -64,8 +70,8 @@ class AURA_EXPORT WindowDelegate : public ui::EventHandler {
   // Invoked when mouse capture is lost on the window.
   virtual void OnCaptureLost() = 0;
 
-  // Asks the delegate to paint window contents into the supplied canvas.
-  virtual void OnPaint(gfx::Canvas* canvas) = 0;
+  // Asks the delegate to paint window contents into the supplied context.
+  virtual void OnPaint(const ui::PaintContext& context) = 0;
 
   // Called when the window's device scale factor has changed.
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) = 0;

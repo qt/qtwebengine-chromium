@@ -6,6 +6,7 @@
 
 #include "cc/output/output_surface.h"
 #include "cc/output/overlay_strategy_single_on_top.h"
+#include "cc/output/overlay_strategy_underlay.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
@@ -21,10 +22,12 @@ void OverlayProcessor::Initialize() {
     return;
 
   OverlayCandidateValidator* candidates =
-      surface_->overlay_candidate_validator();
+      surface_->GetOverlayCandidateValidator();
   if (candidates) {
     strategies_.push_back(scoped_ptr<Strategy>(
         new OverlayStrategySingleOnTop(candidates, resource_provider_)));
+    strategies_.push_back(scoped_ptr<Strategy>(
+        new OverlayStrategyUnderlay(candidates, resource_provider_)));
   }
 }
 

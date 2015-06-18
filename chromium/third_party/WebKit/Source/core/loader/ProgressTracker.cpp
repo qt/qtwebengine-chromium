@@ -52,7 +52,7 @@ static const double finalProgressValue = 0.9; // 1.0 - initialProgressValue
 static const int progressItemDefaultEstimatedLength = 1024 * 16;
 
 struct ProgressItem {
-    WTF_MAKE_NONCOPYABLE(ProgressItem); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ProgressItem); WTF_MAKE_FAST_ALLOCATED(ProgressItem);
 public:
     ProgressItem(long long length)
         : bytesReceived(0)
@@ -69,7 +69,6 @@ PassOwnPtrWillBeRawPtr<ProgressTracker> ProgressTracker::create(LocalFrame* fram
 
 ProgressTracker::ProgressTracker(LocalFrame* frame)
     : m_frame(frame)
-    , m_inProgress(false)
     , m_totalPageAndResourceBytesToLoad(0)
     , m_totalBytesReceived(0)
     , m_lastNotifiedProgressValue(0)
@@ -83,18 +82,18 @@ ProgressTracker::ProgressTracker(LocalFrame* frame)
 
 ProgressTracker::~ProgressTracker()
 {
-    ASSERT(!m_inProgress);
 }
 
-void ProgressTracker::trace(Visitor* visitor)
+DEFINE_TRACE(ProgressTracker)
 {
     visitor->trace(m_frame);
 }
 
 void ProgressTracker::dispose()
 {
-    if (m_inProgress)
+    if (m_frame->isLoading())
         progressCompleted();
+    ASSERT(!m_frame->isLoading());
 }
 
 double ProgressTracker::estimatedProgress() const
@@ -116,19 +115,19 @@ void ProgressTracker::reset()
 
 void ProgressTracker::progressStarted()
 {
-    if (!m_inProgress) {
+    if (!m_frame->isLoading()) {
         reset();
         m_progressValue = initialProgressValue;
         m_frame->loader().client()->didStartLoading(NavigationToDifferentDocument);
     }
-    m_inProgress = true;
+    m_frame->setIsLoading(true);
     InspectorInstrumentation::frameStartedLoading(m_frame);
 }
 
 void ProgressTracker::progressCompleted()
 {
-    ASSERT(m_inProgress);
-    m_inProgress = false;
+    ASSERT(m_frame->isLoading());
+    m_frame->setIsLoading(false);
     if (!m_finalProgressChangedSent) {
         m_progressValue = 1;
         m_frame->loader().client()->progressEstimateChanged(m_progressValue);
@@ -140,7 +139,7 @@ void ProgressTracker::progressCompleted()
 
 void ProgressTracker::incrementProgress(unsigned long identifier, const ResourceResponse& response)
 {
-    if (!m_inProgress)
+    if (!m_frame->isLoading())
         return;
 
     long long estimatedLength = response.expectedContentLength();
@@ -156,7 +155,7 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const Resource
         m_progressItems.set(identifier, adoptPtr(new ProgressItem(estimatedLength)));
 }
 
-void ProgressTracker::incrementProgress(unsigned long identifier, const char*, int length)
+void ProgressTracker::incrementProgress(unsigned long identifier, int length)
 {
     ProgressItem* item = m_progressItems.get(identifier);
 

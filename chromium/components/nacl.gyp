@@ -6,9 +6,6 @@
   'variables': {
     'chromium_code': 1,
   },
-  'includes': [
-    'nacl/nacl_defines.gypi',
-  ],
   'target_defaults': {
     'variables': {
       'nacl_target': 0,
@@ -20,22 +17,19 @@
         'include_dirs': [
           '<(INTERMEDIATE_DIR)',
         ],
-        'defines': [
-          '<@(nacl_defines)',
-        ],
         'sources': [
           # .cc, .h, and .mm files under nacl that are used on all
           # platforms, including both 32-bit and 64-bit Windows.
           # Test files are also not included.
           'nacl/loader/nacl_ipc_adapter.cc',
           'nacl/loader/nacl_ipc_adapter.h',
+          'nacl/loader/nacl_listener.cc',
+          'nacl/loader/nacl_listener.h',
           'nacl/loader/nacl_main.cc',
           'nacl/loader/nacl_main_platform_delegate.h',
           'nacl/loader/nacl_main_platform_delegate_linux.cc',
           'nacl/loader/nacl_main_platform_delegate_mac.mm',
           'nacl/loader/nacl_main_platform_delegate_win.cc',
-          'nacl/loader/nacl_listener.cc',
-          'nacl/loader/nacl_listener.h',
           'nacl/loader/nacl_trusted_listener.cc',
           'nacl/loader/nacl_trusted_listener.h',
           'nacl/loader/nacl_validation_db.h',
@@ -77,10 +71,11 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:base_static',
+            '../crypto/crypto.gyp:crypto',
             '../ipc/ipc.gyp:ipc',
-            '../ppapi/ppapi_internal.gyp:ppapi_shared',
-            '../ppapi/ppapi_internal.gyp:ppapi_ipc',
             '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel_main_chrome',
+            '../ppapi/ppapi_internal.gyp:ppapi_ipc',
+            '../ppapi/ppapi_internal.gyp:ppapi_shared',
           ],
           'conditions': [
             ['disable_nacl_untrusted==0', {
@@ -90,11 +85,6 @@
               ],
             }],
           ],
-          'direct_dependent_settings': {
-            'defines': [
-              '<@(nacl_defines)',
-            ],
-          },
         },
         {
           'target_name': 'nacl_browser',
@@ -130,9 +120,6 @@
             '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel',
             '../content/content.gyp:content_browser',
           ],
-          'defines': [
-            '<@(nacl_defines)',
-          ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
           'conditions': [
@@ -144,6 +131,7 @@
               'dependencies': [
                 # Required by nacl_fork_delegate_linux.cc.
                 '../sandbox/sandbox.gyp:suid_sandbox_client',
+                '../sandbox/sandbox.gyp:sandbox_services',
               ]
             }],
           ],
@@ -156,14 +144,14 @@
             'nacl/renderer/file_downloader.h',
             'nacl/renderer/histogram.cc',
             'nacl/renderer/histogram.h',
+            'nacl/renderer/json_manifest.cc',
+            'nacl/renderer/json_manifest.h',
             'nacl/renderer/manifest_downloader.cc',
             'nacl/renderer/manifest_downloader.h',
             'nacl/renderer/manifest_service_channel.cc',
             'nacl/renderer/manifest_service_channel.h',
             'nacl/renderer/nacl_helper.cc',
             'nacl/renderer/nacl_helper.h',
-            'nacl/renderer/json_manifest.cc',
-            'nacl/renderer/json_manifest.h',
             'nacl/renderer/nexe_load_manager.cc',
             'nacl/renderer/nexe_load_manager.h',
             'nacl/renderer/platform_info.cc',
@@ -183,28 +171,23 @@
           'dependencies': [
             'nacl_common',
             '../content/content.gyp:content_renderer',
-            '../ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
+            '../components/nacl/renderer/plugin/plugin.gyp:nacl_trusted_plugin',
             '../third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
             '../third_party/WebKit/public/blink.gyp:blink',
           ],
-          'defines': [
-            '<@(nacl_defines)',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              '<@(nacl_defines)',
-            ],
-          },
         },
         {
           'target_name': 'nacl_loader_unittests',
           'type': '<(gtest_target_type)',
           'sources': [
+            'nacl/loader/nacl_ipc_adapter_unittest.cc',
+            'nacl/loader/nacl_validation_query_unittest.cc',
             'nacl/loader/run_all_unittests.cc',
           ],
           'dependencies': [
             'nacl',
             '../base/base.gyp:test_support_base',
+            '../ipc/ipc.gyp:test_support_ipc',
             '../testing/gtest.gyp:gtest',
           ],
           'conditions': [
@@ -216,8 +199,8 @@
                 'nacl/loader/nonsfi/irt_icache_unittest.cc',
                 # TODO(hamaji): Currently, we build them twice. Stop building
                 # them for components_unittests. See crbug.com/364751
-                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
                 'nacl/loader/nonsfi/nonsfi_sandbox_sigsys_unittest.cc',
+                'nacl/loader/nonsfi/nonsfi_sandbox_unittest.cc',
               ],
               'dependencies': [
                 'nacl_linux',
@@ -260,12 +243,20 @@
                 '..',
               ],
               'defines': [
-                '<@(nacl_defines)',
                 # Allow .cc files to know if they're being compiled as part
                 # of nacl_helper.
                 'IN_NACL_HELPER=1',
               ],
               'sources': [
+                '../ppapi/nacl_irt/irt_manifest.h',
+                '../ppapi/nacl_irt/manifest_service.cc',
+                '../ppapi/nacl_irt/manifest_service.h',
+                '../ppapi/nacl_irt/plugin_main.cc',
+                '../ppapi/nacl_irt/plugin_main.h',
+                '../ppapi/nacl_irt/plugin_startup.cc',
+                '../ppapi/nacl_irt/plugin_startup.h',
+                '../ppapi/nacl_irt/ppapi_dispatcher.cc',
+                '../ppapi/nacl_irt/ppapi_dispatcher.h',
                 'nacl/loader/nonsfi/abi_conversion.cc',
                 'nacl/loader/nonsfi/abi_conversion.h',
                 'nacl/loader/nonsfi/elf_loader.cc',
@@ -292,15 +283,6 @@
                 'nacl/loader/nonsfi/nonsfi_sandbox.h',
                 'nacl/loader/sandbox_linux/nacl_bpf_sandbox_linux.cc',
                 'nacl/loader/sandbox_linux/nacl_sandbox_linux.cc',
-                '../ppapi/nacl_irt/irt_manifest.h',
-                '../ppapi/nacl_irt/manifest_service.cc',
-                '../ppapi/nacl_irt/manifest_service.h',
-                '../ppapi/nacl_irt/plugin_main.cc',
-                '../ppapi/nacl_irt/plugin_main.h',
-                '../ppapi/nacl_irt/plugin_startup.cc',
-                '../ppapi/nacl_irt/plugin_startup.h',
-                '../ppapi/nacl_irt/ppapi_dispatcher.cc',
-                '../ppapi/nacl_irt/ppapi_dispatcher.h',
               ],
               'dependencies': [
                 'nacl',
@@ -376,11 +358,6 @@
                   'msvs_target_platform': 'x64',
                 },
               },
-              'direct_dependent_settings': {
-                'defines': [
-                  '<@(nacl_defines)',
-                ],
-              },
             },
             {
               'target_name': 'nacl_switches_win64',
@@ -411,8 +388,8 @@
                 'nacl/common/nacl_constants.h',
                 'nacl/common/nacl_messages.cc',
                 'nacl/common/nacl_messages.h',
-                'nacl/common/nacl_renderer_messages.h',
                 'nacl/common/nacl_renderer_messages.cc',
+                'nacl/common/nacl_renderer_messages.h',
                 'nacl/common/nacl_types.cc',
                 'nacl/common/nacl_types.h',
                 'nacl/common/nacl_types_param_traits.cc',
@@ -493,15 +470,15 @@
         'nacl/common/nacl_cmd_line.h',
         'nacl/common/nacl_constants.cc',
         'nacl/common/nacl_constants.h',
-        'nacl/common/nacl_host_messages.h',
         'nacl/common/nacl_host_messages.cc',
+        'nacl/common/nacl_host_messages.h',
         'nacl/common/nacl_messages.cc',
         'nacl/common/nacl_messages.h',
         'nacl/common/nacl_nonsfi_util.cc',
         'nacl/common/nacl_nonsfi_util.h',
         'nacl/common/nacl_process_type.h',
-        'nacl/common/nacl_renderer_messages.h',
         'nacl/common/nacl_renderer_messages.cc',
+        'nacl/common/nacl_renderer_messages.h',
         'nacl/common/nacl_sandbox_type_mac.h',
         'nacl/common/nacl_types.cc',
         'nacl/common/nacl_types.h',

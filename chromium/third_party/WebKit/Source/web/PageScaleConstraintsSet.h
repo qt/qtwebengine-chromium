@@ -44,24 +44,29 @@ class PageScaleConstraintsSet {
 public:
     PageScaleConstraintsSet();
 
-    PageScaleConstraints defaultConstraints() const;
+    void setDefaultConstraints(const PageScaleConstraints&);
+    const PageScaleConstraints& defaultConstraints() const;
 
     // Settings defined in the website's viewport tag, if viewport tag support
     // is enabled.
     const PageScaleConstraints& pageDefinedConstraints() const { return m_pageDefinedConstraints; }
     void updatePageDefinedConstraints(const ViewportDescription&, Length legacyFallbackWidth);
     void adjustForAndroidWebViewQuirks(const ViewportDescription&, int layoutFallbackWidth, float deviceScaleFactor, bool supportTargetDensityDPI, bool wideViewportQuirkEnabled, bool useWideViewport, bool loadWithOverviewMode, bool nonUserScalableQuirkEnabled);
+    void clearPageDefinedConstraints();
 
     // Constraints may also be set from Chromium -- this overrides any
     // page-defined values.
     const PageScaleConstraints& userAgentConstraints() const { return m_userAgentConstraints; }
     void setUserAgentConstraints(const PageScaleConstraints&);
 
+    const PageScaleConstraints& fullscreenConstraints() const { return m_fullscreenConstraints; }
+    void setFullscreenConstraints(const PageScaleConstraints&);
+
     // Actual computed values, taking into account the above plus the current
     // viewport size and document width.
     const PageScaleConstraints& finalConstraints() const { return m_finalConstraints; }
     void computeFinalConstraints();
-    void adjustFinalConstraintsToContentsSize(IntSize contentsSize, int nonOverlayScrollbarWidth);
+    void adjustFinalConstraintsToContentsSize(IntSize contentsSize, int nonOverlayScrollbarWidth, bool shrinksViewportContentToFit);
 
     void didChangeContentsSize(IntSize contentsSize, float pageScaleFactor);
 
@@ -75,13 +80,17 @@ public:
 
     void didChangeViewSize(const IntSize&);
 
-    IntSize mainFrameSize(int contentWidthIncludingScrollbar) const;
+    IntSize mainFrameSize() const;
+
+    IntSize layoutSize() const;
 
 private:
     PageScaleConstraints computeConstraintsStack() const;
 
+    PageScaleConstraints m_defaultConstraints;
     PageScaleConstraints m_pageDefinedConstraints;
     PageScaleConstraints m_userAgentConstraints;
+    PageScaleConstraints m_fullscreenConstraints;
     PageScaleConstraints m_finalConstraints;
 
     int m_lastContentsWidth;

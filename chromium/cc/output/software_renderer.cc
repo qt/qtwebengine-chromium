@@ -4,7 +4,7 @@
 
 #include "cc/output/software_renderer.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
@@ -25,6 +25,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
+#include "third_party/skia/include/core/SkPoint.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -63,7 +64,7 @@ static SkShader::TileMode WrapModeToTileMode(GLint wrap_mode) {
 
 scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
     RendererClient* client,
-    const LayerTreeSettings* settings,
+    const RendererSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
   return make_scoped_ptr(new SoftwareRenderer(
@@ -71,7 +72,7 @@ scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
 }
 
 SoftwareRenderer::SoftwareRenderer(RendererClient* client,
-                                   const LayerTreeSettings* settings,
+                                   const RendererSettings* settings,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
     : DirectRenderer(client, settings, output_surface, resource_provider),
@@ -108,6 +109,7 @@ void SoftwareRenderer::BeginDrawingFrame(DrawingFrame* frame) {
 void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
   TRACE_EVENT0("cc", "SoftwareRenderer::FinishDrawingFrame");
   current_framebuffer_lock_ = nullptr;
+  current_framebuffer_canvas_.clear();
   current_canvas_ = NULL;
   root_canvas_ = NULL;
 
@@ -151,6 +153,7 @@ void SoftwareRenderer::Finish() {}
 void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
   DCHECK(!output_surface_->HasExternalStencilTest());
   current_framebuffer_lock_ = nullptr;
+  current_framebuffer_canvas_.clear();
   current_canvas_ = root_canvas_;
 }
 
@@ -158,14 +161,17 @@ bool SoftwareRenderer::BindFramebufferToTexture(
     DrawingFrame* frame,
     const ScopedResource* texture,
     const gfx::Rect& target_rect) {
+  DCHECK(texture->id());
+
+  // Explicitly release lock, otherwise we can crash when try to lock
+  // same texture again.
+  current_framebuffer_lock_ = nullptr;
   current_framebuffer_lock_ = make_scoped_ptr(
       new ResourceProvider::ScopedWriteLockSoftware(
           resource_provider_, texture->id()));
-  current_canvas_ = current_framebuffer_lock_->sk_canvas();
-  InitializeViewport(frame,
-                     target_rect,
-                     gfx::Rect(target_rect.size()),
-                     target_rect.size());
+  current_framebuffer_canvas_ =
+      skia::AdoptRef(new SkCanvas(current_framebuffer_lock_->sk_bitmap()));
+  current_canvas_ = current_framebuffer_canvas_.get();
   return true;
 }
 
@@ -192,11 +198,7 @@ void SoftwareRenderer::ClearCanvas(SkColor color) {
     current_canvas_->clear(color);
 }
 
-void SoftwareRenderer::DiscardPixels(bool has_external_stencil_test,
-                                     bool draw_rect_covers_full_surface) {}
-
-void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame,
-                                        bool has_external_stencil_test) {
+void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame) {
   if (frame->current_render_pass->has_transparent_background) {
     ClearCanvas(SkColorSetARGB(0, 0, 0, 0));
   } else {
@@ -208,25 +210,45 @@ void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame,
   }
 }
 
-void SoftwareRenderer::SetDrawViewport(
-    const gfx::Rect& window_space_viewport) {}
+void SoftwareRenderer::PrepareSurfaceForPass(
+    DrawingFrame* frame,
+    SurfaceInitializationMode initialization_mode,
+    const gfx::Rect& render_pass_scissor) {
+  switch (initialization_mode) {
+    case SURFACE_INITIALIZATION_MODE_PRESERVE:
+      EnsureScissorTestDisabled();
+      return;
+    case SURFACE_INITIALIZATION_MODE_FULL_SURFACE_CLEAR:
+      EnsureScissorTestDisabled();
+      ClearFramebuffer(frame);
+      break;
+    case SURFACE_INITIALIZATION_MODE_SCISSORED_CLEAR:
+      SetScissorTestRect(render_pass_scissor);
+      ClearFramebuffer(frame);
+      break;
+  }
+}
 
 bool SoftwareRenderer::IsSoftwareResource(
     ResourceProvider::ResourceId resource_id) const {
   switch (resource_provider_->GetResourceType(resource_id)) {
-    case ResourceProvider::GLTexture:
+    case ResourceProvider::RESOURCE_TYPE_GL_TEXTURE:
       return false;
-    case ResourceProvider::Bitmap:
+    case ResourceProvider::RESOURCE_TYPE_BITMAP:
       return true;
-    case ResourceProvider::InvalidType:
-      break;
   }
 
   LOG(FATAL) << "Invalid resource type.";
   return false;
 }
 
-void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
+void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame,
+                                  const DrawQuad* quad,
+                                  const gfx::QuadF* draw_region) {
+  if (draw_region) {
+    current_canvas_->save();
+  }
+
   TRACE_EVENT0("cc", "SoftwareRenderer::DoDrawQuad");
   gfx::Transform quad_rect_matrix;
   QuadRectTransform(&quad_rect_matrix, quad->quadTransform(), quad->rect);
@@ -250,7 +272,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     if (settings_->allow_antialiasing &&
         (settings_->force_antialiasing || all_four_edges_are_exterior))
       current_paint_.setAntiAlias(true);
-    current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
+    current_paint_.setFilterQuality(kLow_SkFilterQuality);
   }
 
   if (quad->ShouldDrawWithBlending() ||
@@ -261,9 +283,31 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
     current_paint_.setXfermodeMode(SkXfermode::kSrc_Mode);
   }
 
+  if (draw_region) {
+    gfx::QuadF local_draw_region(*draw_region);
+    SkPath draw_region_clip_path;
+    local_draw_region -=
+        gfx::Vector2dF(quad->visible_rect.x(), quad->visible_rect.y());
+    local_draw_region.Scale(1.0f / quad->visible_rect.width(),
+                            1.0f / quad->visible_rect.height());
+    local_draw_region -= gfx::Vector2dF(0.5f, 0.5f);
+
+    SkPoint clip_points[4];
+    QuadFToSkPoints(local_draw_region, clip_points);
+    draw_region_clip_path.addPoly(clip_points, 4, true);
+
+    current_canvas_->clipPath(draw_region_clip_path, SkRegion::kIntersect_Op,
+                              false);
+  }
+
   switch (quad->material) {
     case DrawQuad::CHECKERBOARD:
-      DrawCheckerboardQuad(frame, CheckerboardDrawQuad::MaterialCast(quad));
+      // TODO(enne) For now since checkerboards shouldn't be part of a 3D
+      // context, clipping regions aren't supported so we skip drawing them
+      // if this becomes the case.
+      if (!draw_region) {
+        DrawCheckerboardQuad(frame, CheckerboardDrawQuad::MaterialCast(quad));
+      }
       break;
     case DrawQuad::DEBUG_BORDER:
       DrawDebugBorderQuad(frame, DebugBorderDrawQuad::MaterialCast(quad));
@@ -298,6 +342,9 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
   }
 
   current_canvas_->resetMatrix();
+  if (draw_region) {
+    current_canvas_->restore();
+  }
 }
 
 void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
@@ -305,7 +352,7 @@ void SoftwareRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
   gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
       QuadVertexRect(), quad->rect, quad->visible_rect);
   current_paint_.setColor(quad->color);
-  current_paint_.setAlpha(quad->opacity() * SkColorGetA(quad->color));
+  current_paint_.setAlpha(quad->opacity());
   current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
                             current_paint_);
 }
@@ -343,15 +390,16 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
   // (http://crbug.com/280374).
   skia::RefPtr<SkDrawFilter> opacity_filter =
       skia::AdoptRef(new skia::OpacityDrawFilter(
-          quad->opacity(), frame->disable_picture_quad_image_filtering));
+          quad->opacity(), frame->disable_picture_quad_image_filtering ||
+                               quad->nearest_neighbor));
   DCHECK(!current_canvas_->getDrawFilter());
   current_canvas_->setDrawFilter(opacity_filter.get());
 
   TRACE_EVENT0("cc",
                "SoftwareRenderer::DrawPictureQuad");
 
-  quad->picture_pile->RasterDirect(current_canvas_, quad->content_rect,
-                                   quad->contents_scale);
+  quad->raster_source->PlaybackToSharedCanvas(
+      current_canvas_, quad->content_rect, quad->contents_scale);
 
   current_canvas_->setDrawFilter(NULL);
 }
@@ -390,7 +438,7 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
       QuadVertexRect(), quad->rect, quad->visible_rect);
   SkRect quad_rect = gfx::RectFToSkRect(visible_quad_vertex_rect);
 
-  if (quad->flipped)
+  if (quad->y_flipped)
     current_canvas_->scale(1, -1);
 
   bool blend_background = quad->background_color != SK_ColorTRANSPARENT &&
@@ -405,6 +453,8 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
     background_paint.setColor(quad->background_color);
     current_canvas_->drawRect(quad_rect, background_paint);
   }
+  current_paint_.setFilterQuality(
+      quad->nearest_neighbor ? kNone_SkFilterQuality : kLow_SkFilterQuality);
   SkShader::TileMode tile_mode = WrapModeToTileMode(lock.wrap_mode());
   if (tile_mode != SkShader::kClamp_TileMode) {
     SkMatrix matrix;
@@ -445,7 +495,8 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
       QuadVertexRect(), quad->rect, quad->visible_rect);
 
   SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
-  current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
+  current_paint_.setFilterQuality(
+      quad->nearest_neighbor ? kNone_SkFilterQuality : kLow_SkFilterQuality);
   current_canvas_->drawBitmapRectToRect(
       *lock.sk_bitmap(),
       &uv_rect,
@@ -457,10 +508,10 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
                                           const RenderPassDrawQuad* quad) {
   ScopedResource* content_texture =
       render_pass_textures_.get(quad->render_pass_id);
-  if (!content_texture || !content_texture->id())
-    return;
-
+  DCHECK(content_texture);
+  DCHECK(content_texture->id());
   DCHECK(IsSoftwareResource(content_texture->id()));
+
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
                                                 content_texture->id());
   if (!lock.valid())

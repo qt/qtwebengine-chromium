@@ -12,40 +12,50 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/win/object_watcher.h"
+#include "base/win/scoped_handle.h"
+#include "net/base/address_family.h"
 #include "net/base/completion_callback.h"
+#include "net/base/io_buffer.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
 #include "net/base/rand_callback.h"
-#include "net/base/ip_endpoint.h"
-#include "net/base/io_buffer.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/udp/datagram_socket.h"
 
 namespace net {
 
-class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+class NET_EXPORT UDPSocketWin
+    : NON_EXPORTED_BASE(public base::NonThreadSafe),
+      NON_EXPORTED_BASE(public base::win::ObjectWatcher::Delegate) {
  public:
   UDPSocketWin(DatagramSocket::BindType bind_type,
                const RandIntCallback& rand_int_cb,
                net::NetLog* net_log,
                const net::NetLog::Source& source);
-  virtual ~UDPSocketWin();
+  ~UDPSocketWin() override;
 
-  // Connect the socket to connect with a certain |address|.
+  // Opens the socket.
+  // Returns a net error code.
+  int Open(AddressFamily address_family);
+
+  // Connects the socket to connect with a certain |address|.
+  // Should be called after Open().
   // Returns a net error code.
   int Connect(const IPEndPoint& address);
 
-  // Bind the address/port for this socket to |address|.  This is generally
-  // only used on a server.
+  // Binds the address/port for this socket to |address|.  This is generally
+  // only used on a server. Should be called after Open().
   // Returns a net error code.
   int Bind(const IPEndPoint& address);
 
-  // Close the socket.
+  // Closes the socket.
+  // TODO(rvargas, hidehiko): Disallow re-Open() after Close().
   void Close();
 
-  // Copy the remote udp address into |address| and return a network error code.
+  // Copies the remote udp address into |address| and returns a net error code.
   int GetPeerAddress(IPEndPoint* address) const;
 
-  // Copy the local udp address into |address| and return a network error code.
+  // Copies the local udp address into |address| and returns a net error code.
   // (similar to getsockname)
   int GetLocalAddress(IPEndPoint* address) const;
 
@@ -53,17 +63,17 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Multiple outstanding read requests are not supported.
   // Full duplex mode (reading and writing at the same time) is supported
 
-  // Read from the socket.
+  // Reads from the socket.
   // Only usable from the client-side of a UDP socket, after the socket
   // has been connected.
   int Read(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
 
-  // Write to the socket.
+  // Writes to the socket.
   // Only usable from the client-side of a UDP socket, after the socket
   // has been connected.
   int Write(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
 
-  // Read from a socket and receive sender address information.
+  // Reads from a socket and receive sender address information.
   // |buf| is the buffer to read data into.
   // |buf_len| is the maximum amount of data to read.
   // |address| is a buffer provided by the caller for receiving the sender
@@ -81,7 +91,7 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
                IPEndPoint* address,
                const CompletionCallback& callback);
 
-  // Send to a socket with a particular destination.
+  // Sends to a socket with a particular destination.
   // |buf| is the buffer to send
   // |buf_len| is the number of bytes to send
   // |address| is the recipient address.
@@ -95,57 +105,57 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
              const IPEndPoint& address,
              const CompletionCallback& callback);
 
-  // Set the receive buffer size (in bytes) for the socket.
+  // Sets the receive buffer size (in bytes) for the socket.
   // Returns a net error code.
   int SetReceiveBufferSize(int32 size);
 
-  // Set the send buffer size (in bytes) for the socket.
+  // Sets the send buffer size (in bytes) for the socket.
   // Returns a net error code.
   int SetSendBufferSize(int32 size);
 
   // Returns true if the socket is already connected or bound.
-  bool is_connected() const { return socket_ != INVALID_SOCKET; }
+  bool is_connected() const { return is_connected_; }
 
   const BoundNetLog& NetLog() const { return net_log_; }
 
   // Sets corresponding flags in |socket_options_| to allow the socket
   // to share the local address to which the socket will be bound with
-  // other processes. Should be called before Bind().
-  void AllowAddressReuse();
+  // other processes. Should be called between Open() and Bind().
+  // Returns a net error code.
+  int AllowAddressReuse();
 
   // Sets corresponding flags in |socket_options_| to allow sending
-  // and receiving packets to and from broadcast addresses. Should be
-  // called before Bind().
-  void AllowBroadcast();
+  // and receiving packets to and from broadcast addresses.
+  int SetBroadcast(bool broadcast);
 
-  // Join the multicast group.
+  // Joins the multicast group.
   // |group_address| is the group address to join, could be either
   // an IPv4 or IPv6 address.
-  // Return a network error code.
+  // Returns a net error code.
   int JoinGroup(const IPAddressNumber& group_address) const;
 
-  // Leave the multicast group.
+  // Leaves the multicast group.
   // |group_address| is the group address to leave, could be either
   // an IPv4 or IPv6 address. If the socket hasn't joined the group,
   // it will be ignored.
   // It's optional to leave the multicast group before destroying
   // the socket. It will be done by the OS.
-  // Return a network error code.
+  // Return a net error code.
   int LeaveGroup(const IPAddressNumber& group_address) const;
 
-  // Set interface to use for multicast. If |interface_index| set to 0, default
-  // interface is used.
+  // Sets interface to use for multicast. If |interface_index| set to 0,
+  // default interface is used.
   // Should be called before Bind().
-  // Returns a network error code.
+  // Returns a net error code.
   int SetMulticastInterface(uint32 interface_index);
 
-  // Set the time-to-live option for UDP packets sent to the multicast
+  // Sets the time-to-live option for UDP packets sent to the multicast
   // group address. The default value of this option is 1.
   // Cannot be negative or more than 255.
   // Should be called before Bind().
   int SetMulticastTimeToLive(int time_to_live);
 
-  // Set the loopback flag for UDP socket. If this flag is true, the host
+  // Sets the loopback flag for UDP socket. If this flag is true, the host
   // will receive packets sent to the joined group from itself.
   // The default value of this option is true.
   // Should be called before Bind().
@@ -160,35 +170,41 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // other applications on the same host. See MSDN: http://goo.gl/6vqbj
   int SetMulticastLoopbackMode(bool loopback);
 
-  // Set the differentiated services flags on outgoing packets. May not
+  // Sets the differentiated services flags on outgoing packets. May not
   // do anything on some platforms.
   int SetDiffServCodePoint(DiffServCodePoint dscp);
 
   // Resets the thread to be used for thread-safety checks.
   void DetachFromThread();
 
+  // This class by default uses overlapped IO. Call this method before Open()
+  // to switch to non-blocking IO.
+  void UseNonBlockingIO();
+
  private:
   enum SocketOptions {
-    SOCKET_OPTION_REUSE_ADDRESS  = 1 << 0,
-    SOCKET_OPTION_BROADCAST      = 1 << 1,
-    SOCKET_OPTION_MULTICAST_LOOP = 1 << 2
+    SOCKET_OPTION_MULTICAST_LOOP = 1 << 0
   };
 
   class Core;
 
   void DoReadCallback(int rv);
   void DoWriteCallback(int rv);
+
   void DidCompleteRead();
   void DidCompleteWrite();
 
-  // Handles stats and logging. |result| is the number of bytes transferred, on
-  // success, or the net error code on failure. LogRead retrieves the address
-  // from |recv_addr_storage_|, while LogWrite takes it as an optional argument.
-  void LogRead(int result, const char* bytes) const;
-  void LogWrite(int result, const char* bytes, const IPEndPoint* address) const;
+  // base::ObjectWatcher::Delegate implementation.
+  void OnObjectSignaled(HANDLE object) override;
+  void OnReadSignaled();
+  void OnWriteSignaled();
 
-  // Returns the OS error code (or 0 on success).
-  int CreateSocket(int addr_family);
+  void WatchForReadWrite();
+
+  // Handles stats and logging. |result| is the number of bytes transferred, on
+  // success, or the net error code on failure.
+  void LogRead(int result, const char* bytes, const IPEndPoint* address) const;
+  void LogWrite(int result, const char* bytes, const IPEndPoint* address) const;
 
   // Same as SendTo(), except that address is passed by pointer
   // instead of by reference. It is called from Write() with |address|
@@ -199,22 +215,33 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
                     const CompletionCallback& callback);
 
   int InternalConnect(const IPEndPoint& address);
-  int InternalRecvFrom(IOBuffer* buf, int buf_len, IPEndPoint* address);
-  int InternalSendTo(IOBuffer* buf, int buf_len, const IPEndPoint* address);
+
+  // Version for using overlapped IO.
+  int InternalRecvFromOverlapped(IOBuffer* buf,
+                                 int buf_len,
+                                 IPEndPoint* address);
+  int InternalSendToOverlapped(IOBuffer* buf,
+                               int buf_len,
+                               const IPEndPoint* address);
+
+  // Version for using non-blocking IO.
+  int InternalRecvFromNonBlocking(IOBuffer* buf,
+                                  int buf_len,
+                                  IPEndPoint* address);
+  int InternalSendToNonBlocking(IOBuffer* buf,
+                                int buf_len,
+                                const IPEndPoint* address);
 
   // Applies |socket_options_| to |socket_|. Should be called before
   // Bind().
-  int SetSocketOptions();
+  int SetMulticastOptions();
   int DoBind(const IPEndPoint& address);
   // Binds to a random port on |address|.
   int RandomBind(const IPAddressNumber& address);
 
-  // Attempts to convert the data in |recv_addr_storage_| and |recv_addr_len_|
-  // to an IPEndPoint and writes it to |address|. Returns true on success.
-  bool ReceiveAddressToIPEndpoint(IPEndPoint* address) const;
-
   SOCKET socket_;
   int addr_family_;
+  bool is_connected_;
 
   // Bitwise-or'd combination of SocketOptions. Specifies the set of
   // options that should be applied to |socket_| before Bind().
@@ -223,7 +250,7 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Multicast interface.
   uint32 multicast_interface_;
 
-  // Multicast socket options cached for SetSocketOption.
+  // Multicast socket options cached for SetMulticastOption.
   // Cannot be used after Bind().
   int multicast_time_to_live_;
 
@@ -243,6 +270,22 @@ class NET_EXPORT UDPSocketWin : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // resources to the Windows async IO functions and we have to make sure that
   // they are not destroyed while the OS still references them.
   scoped_refptr<Core> core_;
+
+  // True if non-blocking IO is used.
+  bool use_non_blocking_io_;
+
+  // Watches |read_write_event_|.
+  base::win::ObjectWatcher read_write_watcher_;
+
+  // Events for read and write.
+  base::win::ScopedHandle read_write_event_;
+
+  // The buffers used in Read() and Write().
+  scoped_refptr<IOBuffer> read_iobuffer_;
+  scoped_refptr<IOBuffer> write_iobuffer_;
+
+  int read_iobuffer_len_;
+  int write_iobuffer_len_;
 
   IPEndPoint* recv_from_address_;
 

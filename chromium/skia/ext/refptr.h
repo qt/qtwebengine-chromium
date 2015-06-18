@@ -5,6 +5,9 @@
 #ifndef SKIA_EXT_REFPTR_H_
 #define SKIA_EXT_REFPTR_H_
 
+#include <algorithm>
+
+#include "base/move.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
 namespace skia {
@@ -37,14 +40,23 @@ namespace skia {
 //
 //   skia::RefPtr<SkShader> shader = skia::SharePtr(paint.getShader());
 //
+// To pass a reference while clearing the pointer (without changing the ref
+// count):
+//
+//   skia::RefPtr<SkShader> shader = ...;
+//   UseThisShader(shader.Pass());
+//
 // Never call ref() or unref() on the underlying ref-counted pointer. If you
 // AdoptRef() the raw pointer immediately into a skia::RefPtr and always work
 // with skia::RefPtr instances instead, the ref-counting will be taken care of
 // for you.
 template<typename T>
 class RefPtr {
+  TYPE_WITH_MOVE_CONSTRUCTOR_FOR_CPP_03(RefPtr)
  public:
-  RefPtr() : ptr_(NULL) {}
+  RefPtr() : ptr_(nullptr) {}
+
+  RefPtr(decltype(nullptr)) : ptr_(nullptr) {}
 
   RefPtr(const RefPtr& other)
       : ptr_(other.get()) {
@@ -57,8 +69,19 @@ class RefPtr {
     SkSafeRef(ptr_);
   }
 
+  template <typename U>
+  RefPtr(RefPtr<U>&& other)
+      : ptr_(other.get()) {
+    other.ptr_ = nullptr;
+  }
+
   ~RefPtr() {
     clear();
+  }
+
+  RefPtr& operator=(decltype(nullptr)) {
+    clear();
+    return *this;
   }
 
   RefPtr& operator=(const RefPtr& other) {
@@ -72,9 +95,16 @@ class RefPtr {
     return *this;
   }
 
+  template <typename U>
+  RefPtr& operator=(RefPtr<U>&& other) {
+    RefPtr<T> temp(other.Pass());
+    std::swap(ptr_, temp.ptr_);
+    return *this;
+  }
+
   void clear() {
     T* to_unref = ptr_;
-    ptr_ = NULL;
+    ptr_ = nullptr;
     SkSafeUnref(to_unref);
   }
 
@@ -84,7 +114,7 @@ class RefPtr {
 
   typedef T* RefPtr::*unspecified_bool_type;
   operator unspecified_bool_type() const {
-    return ptr_ ? &RefPtr::ptr_ : NULL;
+    return ptr_ ? &RefPtr::ptr_ : nullptr;
   }
 
  private:
@@ -102,6 +132,9 @@ class RefPtr {
 
   template<typename U>
   friend RefPtr<U> SharePtr(U* ptr);
+
+  template <typename U>
+  friend class RefPtr;
 };
 
 // For objects that have an unowned reference (such as newly created objects).

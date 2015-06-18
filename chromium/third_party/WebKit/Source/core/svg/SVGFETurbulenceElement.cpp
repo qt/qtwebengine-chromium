@@ -62,25 +62,17 @@ inline SVGFETurbulenceElement::SVGFETurbulenceElement(Document& document)
     addToPropertyMap(m_numOctaves);
 }
 
+DEFINE_TRACE(SVGFETurbulenceElement)
+{
+    visitor->trace(m_baseFrequency);
+    visitor->trace(m_seed);
+    visitor->trace(m_stitchTiles);
+    visitor->trace(m_type);
+    visitor->trace(m_numOctaves);
+    SVGFilterPrimitiveStandardAttributes::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGFETurbulenceElement)
-
-bool SVGFETurbulenceElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::baseFrequencyAttr);
-        supportedAttributes.add(SVGNames::numOctavesAttr);
-        supportedAttributes.add(SVGNames::seedAttr);
-        supportedAttributes.add(SVGNames::stitchTilesAttr);
-        supportedAttributes.add(SVGNames::typeAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGFETurbulenceElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
 
 bool SVGFETurbulenceElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
@@ -105,26 +97,20 @@ bool SVGFETurbulenceElement::setFilterEffectAttribute(FilterEffect* effect, cons
 
 void SVGFETurbulenceElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (attrName == SVGNames::baseFrequencyAttr
         || attrName == SVGNames::numOctavesAttr
         || attrName == SVGNames::seedAttr
         || attrName == SVGNames::stitchTilesAttr
         || attrName == SVGNames::typeAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         primitiveAttributeChanged(attrName);
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
-PassRefPtr<FilterEffect> SVGFETurbulenceElement::build(SVGFilterBuilder*, Filter* filter)
+PassRefPtrWillBeRawPtr<FilterEffect> SVGFETurbulenceElement::build(SVGFilterBuilder*, Filter* filter)
 {
     if (baseFrequencyX()->currentValue()->value() < 0 || baseFrequencyY()->currentValue()->value() < 0)
         return nullptr;

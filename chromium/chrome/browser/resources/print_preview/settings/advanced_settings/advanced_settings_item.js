@@ -151,12 +151,26 @@ cr.define('print_preview', function() {
       if (this.query_) {
         var optionMatches = (this.selectedValue_ || '').match(this.query_);
         // Even if there's no match anymore, keep the item visible to do not
-        // surprise user.
-        if (optionMatches)
-          this.showSearchBubble_(optionMatches[0]);
-        else
+        // surprise user. Even if there's a match, do not show the bubble, user
+        // is already aware that this option is visible and matches the search.
+        // Showing the bubble will only create a distraction by moving UI
+        // elements around.
+        if (!optionMatches)
           this.hideSearchBubble_();
       }
+    },
+
+    /**
+     * @param {!Object} entity Entity to get the display name for. Entity in
+     *     is either a vendor capability or vendor capability option.
+     * @return {string} The entity display name.
+     * @private
+     */
+    getEntityDisplayName_: function(entity) {
+      var displayName = entity.display_name;
+      if (!displayName && entity.display_name_localized)
+        displayName = getStringForCurrentLocale(entity.display_name_localized);
+      return displayName || '';
     },
 
     /**
@@ -164,22 +178,23 @@ cr.define('print_preview', function() {
      * @private
      */
     renderCapability_: function() {
-      var textContent = this.capability_.display_name;
+      var textContent = this.getEntityDisplayName_(this.capability_);
+      // Whether capability name matches the query.
       var nameMatches = this.query_ ? !!textContent.match(this.query_) : true;
+      // An array of text segments of the capability value matching the query.
       var optionMatches = null;
       if (this.query_) {
         if (this.capability_.type == 'SELECT') {
-          this.capability_.select_cap.option.some(function(option) {
-            optionMatches = (option.display_name || '').match(this.query_);
-            return !!optionMatches;
-          }.bind(this));
+          // Look for the first option that matches the query.
+          for (var i = 0; i < this.select_.length && !optionMatches; i++)
+            optionMatches = this.select_.options[i].text.match(this.query_);
         } else {
           optionMatches = (this.text_.value || '').match(this.query_);
         }
       }
-      var matches = nameMatches || optionMatches;
+      var matches = nameMatches || !!optionMatches;
 
-      if (!matches || !optionMatches)
+      if (!optionMatches)
         this.hideSearchBubble_();
 
       setIsVisible(this.getElement(), matches);
@@ -246,17 +261,17 @@ cr.define('print_preview', function() {
      */
     initializeSelectValue_: function() {
       setIsVisible(
-        this.getChildElement('.advanced-settings-item-value-select'), true);
+          this.getChildElement('.advanced-settings-item-value-select'), true);
       var selectEl = this.select_;
       var indexToSelect = 0;
       this.capability_.select_cap.option.forEach(function(option, index) {
         var item = document.createElement('option');
-        item.text = option.display_name;
+        item.text = this.getEntityDisplayName_(option);
         item.value = option.value;
         if (option.is_default)
           indexToSelect = index;
         selectEl.appendChild(item);
-      });
+      }, this);
       for (var i = 0, option; option = selectEl.options[i]; i++) {
         if (option.value == this.selectedValue_) {
           indexToSelect = i;

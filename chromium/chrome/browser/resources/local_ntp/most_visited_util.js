@@ -42,7 +42,9 @@ var NTP_LOGGING_EVENT_TYPE = {
   // The visuals of that tile's fallback are handled externally.
   NTP_EXTERNAL_TILE_FALLBACK: 8,
   // The user moused over an NTP tile or title.
-  NTP_MOUSEOVER: 9
+  NTP_MOUSEOVER: 9,
+  // A NTP Tile has finished loading (successfully or failing).
+  NTP_TILE_LOADED: 10,
 };
 
 /**
@@ -119,6 +121,9 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
     link.style.textOverflow = 'clip';
     link.style.webkitMask = mask;
   }
+  if (styles.numTitleLines && styles.numTitleLines > 1) {
+    link.classList.add('multiline');
+  }
 
   link.href = href;
   link.title = title;
@@ -126,8 +131,12 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
   // Include links in the tab order.  The tabIndex is necessary for
   // accessibility.
   link.tabIndex = '0';
-  if (text)
-    link.textContent = text;
+  if (text) {
+    // Wrap text with span so ellipsis will appear at the end of multiline.
+    var spanWrap = document.createElement('span');
+    spanWrap.textContent = text;
+    link.appendChild(spanWrap);
+  }
   link.addEventListener('mouseover', function() {
     var ntpApiHandle = chrome.embeddedSearch.newTabPage;
     ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_MOUSEOVER);
@@ -171,7 +180,10 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
       window.parent.postMessage('tileBlacklisted,' + params.pos, DOMAIN_ORIGIN);
     } else if (event.keyCode == 13 /* ENTER */ ||
                event.keyCode == 32 /* SPACE */) {
-      navigateFunction(event);
+      // Event target is the <a> tag. Send a click event on it, which will
+      // trigger the 'click' event registered above.
+      event.preventDefault();
+      event.target.click();
     }
   });
 
@@ -182,7 +194,7 @@ function createMostVisitedLink(params, href, title, text, direction, provider) {
 /**
  * Returns the color to display string with, depending on whether title is
  * displayed, the current theme, and URL parameters.
- * @param {Object.<string, string>} params URL parameters specifying style.
+ * @param {Object<string, string>} params URL parameters specifying style.
  * @param {boolean} isTitle if the style is for the Most Visited Title.
  * @return {string} The color to use, in "rgba(#,#,#,#)" format.
  */
@@ -217,8 +229,9 @@ function getTextColor(params, isTitle) {
  * - f: font-family.
  * - fs: font-size as a number in pixels.
  * - ta: text-align property, as a string.
- * - tf: specifying a text fade starting position, in pixels.
- * @param {Object.<string, string>} params URL parameters specifying style.
+ * - tf: text fade starting position, in pixels.
+ * - ntl: number of lines in the title.
+ * @param {Object<string, string>} params URL parameters specifying style.
  * @param {boolean} isTitle if the style is for the Most Visited Title.
  * @return {Object} Styles suitable for CSS interpolation.
  */
@@ -238,6 +251,11 @@ function getMostVisitedStyles(params, isTitle) {
     var tf = parseInt(params.tf, 10);
     if (isFinite(tf))
       styles.textFadePos = tf;
+  }
+  if ('ntl' in params) {
+    var ntl = parseInt(params.ntl, 10);
+    if (isFinite(ntl))
+      styles.numTitleLines = ntl;
   }
   return styles;
 }
@@ -262,15 +280,13 @@ function fillMostVisited(location, fill) {
     // Means that the suggestion data comes from the server. Create data object.
     data = {
       url: params.url,
+      largeIconUrl: params.liu || '',
       thumbnailUrl: params.tu || '',
       title: params.ti || '',
       direction: params.di || '',
       domain: params.dom || '',
       provider: params.pr || SERVER_PROVIDER_NAME
     };
-    // Log the fact that suggestion was obtained from the server.
-    var ntpApiHandle = chrome.embeddedSearch.newTabPage;
-    ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_SERVER_SIDE_SUGGESTION);
   } else {
     var apiHandle = chrome.embeddedSearch.searchBox;
     data = apiHandle.getMostVisitedItemData(params.rid);
@@ -279,6 +295,7 @@ function fillMostVisited(location, fill) {
     // Allow server-side provider override.
     data.provider = params.pr || CLIENT_PROVIDER_NAME;
   }
+
   if (isFinite(params.dummy) && parseInt(params.dummy, 10)) {
     data.dummy = true;
   }

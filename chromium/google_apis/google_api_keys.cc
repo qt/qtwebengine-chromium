@@ -26,6 +26,10 @@
 #define GOOGLE_API_KEY DUMMY_API_TOKEN
 #endif
 
+#if !defined(GOOGLE_API_KEY_SAFESITES)
+#define GOOGLE_API_KEY_SAFESITES DUMMY_API_TOKEN
+#endif
+
 #if !defined(GOOGLE_CLIENT_ID_MAIN)
 #define GOOGLE_CLIENT_ID_MAIN DUMMY_API_TOKEN
 #endif
@@ -77,7 +81,7 @@ class APIKeyCache {
  public:
   APIKeyCache() {
     scoped_ptr<base::Environment> environment(base::Environment::Create());
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
     api_key_ = CalculateKeyValue(GOOGLE_API_KEY,
                                  STRINGIZE_NO_EXPANSION(GOOGLE_API_KEY),
@@ -85,6 +89,14 @@ class APIKeyCache {
                                  std::string(),
                                  environment.get(),
                                  command_line);
+
+    api_key_safesites_ =
+        CalculateKeyValue(GOOGLE_API_KEY_SAFESITES,
+                          STRINGIZE_NO_EXPANSION(GOOGLE_API_KEY_SAFESITES),
+                          NULL,
+                          std::string(),
+                          environment.get(),
+                          command_line);
 
     std::string default_client_id =
         CalculateKeyValue(GOOGLE_DEFAULT_CLIENT_ID,
@@ -169,6 +181,7 @@ class APIKeyCache {
   }
 
   std::string api_key() const { return api_key_; }
+  std::string api_key_safesites() const { return api_key_safesites_; }
 
   std::string GetClientID(OAuth2Client client) const {
     DCHECK_LT(client, CLIENT_NUM_ITEMS);
@@ -198,7 +211,7 @@ class APIKeyCache {
                                        const char* command_line_switch,
                                        const std::string& default_if_unset,
                                        base::Environment* environment,
-                                       CommandLine* command_line) {
+                                       base::CommandLine* command_line) {
     std::string key_value = baked_in_value;
     std::string temp;
     if (environment->GetVar(environment_variable_name, &temp)) {
@@ -234,6 +247,7 @@ class APIKeyCache {
   }
 
   std::string api_key_;
+  std::string api_key_safesites_;
   std::string client_ids_[CLIENT_NUM_ITEMS];
   std::string client_secrets_[CLIENT_NUM_ITEMS];
 };
@@ -258,6 +272,10 @@ bool HasKeysConfigured() {
 
 std::string GetAPIKey() {
   return g_api_key_cache.Get().api_key();
+}
+
+std::string GetSafeSitesAPIKey() {
+  return g_api_key_cache.Get().api_key_safesites();
 }
 
 std::string GetOAuth2ClientID(OAuth2Client client) {

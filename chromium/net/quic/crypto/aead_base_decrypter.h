@@ -42,14 +42,12 @@ class NET_EXPORT_PRIVATE AeadBaseDecrypter : public QuicDecrypter {
   // QuicDecrypter implementation
   bool SetKey(base::StringPiece key) override;
   bool SetNoncePrefix(base::StringPiece nonce_prefix) override;
-  bool Decrypt(base::StringPiece nonce,
-               base::StringPiece associated_data,
-               base::StringPiece ciphertext,
-               unsigned char* output,
-               size_t* output_length) override;
-  QuicData* DecryptPacket(QuicPacketSequenceNumber sequence_number,
-                          base::StringPiece associated_data,
-                          base::StringPiece ciphertext) override;
+  bool DecryptPacket(QuicPacketSequenceNumber sequence_number,
+                     const base::StringPiece& associated_data,
+                     const base::StringPiece& ciphertext,
+                     char* output,
+                     size_t* output_length,
+                     size_t max_output_length) override;
   base::StringPiece GetKey() const override;
   base::StringPiece GetNoncePrefix() const override;
 
@@ -65,21 +63,28 @@ class NET_EXPORT_PRIVATE AeadBaseDecrypter : public QuicDecrypter {
     unsigned int len;
     union {
       CK_GCM_PARAMS gcm_params;
-#if !defined(USE_NSS)
-      // USE_NSS means we are using system NSS rather than our copy of NSS.
-      // The system NSS <pkcs11n.h> header doesn't define this type yet.
+#if !defined(USE_NSS_CERTS)
+      // USE_NSS_CERTS implies we are using system NSS rather than our copy of
+      // NSS. The system NSS <pkcs11n.h> header doesn't define this type yet.
       CK_NSS_AEAD_PARAMS nss_aead_params;
 #endif
     } data;
   };
 
   virtual void FillAeadParams(base::StringPiece nonce,
-                              base::StringPiece associated_data,
+                              const base::StringPiece& associated_data,
                               size_t auth_tag_size,
                               AeadParams* aead_params) const = 0;
 #endif  // !defined(USE_OPENSSL)
 
  private:
+  bool Decrypt(base::StringPiece nonce,
+               const base::StringPiece& associated_data,
+               const base::StringPiece& ciphertext,
+               uint8* output,
+               size_t* output_length,
+               size_t max_output_length);
+
 #if defined(USE_OPENSSL)
   const EVP_AEAD* const aead_alg_;
 #else

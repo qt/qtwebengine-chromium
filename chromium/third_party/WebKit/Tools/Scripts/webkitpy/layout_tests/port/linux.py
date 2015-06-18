@@ -75,14 +75,14 @@ class LinuxPort(base.Port):
             # The --dereference flag tells file to follow symlinks
             file_output = executive.run_command(['file', '--brief', '--dereference', driver_path], return_stderr=True)
 
-        if re.match(r'ELF 32-bit LSB\s+executable', file_output):
+        if re.match(r'ELF 32-bit LSB\s+(executable|shared object)', file_output):
             return 'x86'
-        if re.match(r'ELF 64-bit LSB\s+executable', file_output):
+        if re.match(r'ELF 64-bit LSB\s+(executable|shared object)', file_output):
             return 'x86_64'
         if file_output:
             _log.warning('Could not determine architecture from "file" output: %s' % file_output)
 
-        # We don't know what the architecture is; default to 'x86' because
+        # We don't know what the architecture is; default to 'x86_64' because
         # maybe we're rebaselining and the binary doesn't actually exist,
         # or something else weird is going on. It's okay to do this because
         # if we actually try to use the binary, check_build() should fail.
@@ -105,8 +105,8 @@ class LinuxPort(base.Port):
         if not self.get_option('disable_breakpad'):
             self._dump_reader = DumpReaderLinux(host, self._build_path())
 
-    def additional_drt_flag(self):
-        flags = super(LinuxPort, self).additional_drt_flag()
+    def additional_driver_flag(self):
+        flags = super(LinuxPort, self).additional_driver_flag()
         if not self.get_option('disable_breakpad'):
             flags += ['--enable-crash-reporter', '--crash-dumps-dir=%s' % self._dump_reader.crash_dumps_directory()]
         return flags

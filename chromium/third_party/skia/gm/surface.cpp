@@ -33,7 +33,7 @@ static SkSurface* make_surface(GrContext* ctx, const SkImageInfo& info, SkPixelG
 
     SkSurfaceProps props(flags, geo);
     if (ctx) {
-        return SkSurface::NewRenderTarget(ctx, info, 0, &props);
+        return SkSurface::NewRenderTarget(ctx, SkSurface::kNo_Budgeted, info, 0, &props);
     } else {
         return SkSurface::NewRaster(info, &props);
     }
@@ -61,15 +61,15 @@ public:
     SurfacePropsGM() {}
 
 protected:
-    SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("surfaceprops");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(W * 4, H * 5);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         GrContext* ctx = canvas->getGrContext();
 
         // must be opaque to have a hope of testing LCD text
@@ -105,5 +105,55 @@ protected:
 private:
     typedef GM INHERITED;
 };
-
 DEF_GM( return new SurfacePropsGM )
+
+#ifdef SK_DEBUG
+static bool equal(const SkSurfaceProps& a, const SkSurfaceProps& b) {
+    return a.flags() == b.flags() && a.pixelGeometry() == b.pixelGeometry();
+}
+#endif
+
+class NewSurfaceGM : public skiagm::GM {
+public:
+    NewSurfaceGM() {}
+
+protected:
+    SkString onShortName() override {
+        return SkString("surfacenew");
+    }
+
+    SkISize onISize() override {
+        return SkISize::Make(300, 140);
+    }
+
+    static void drawInto(SkCanvas* canvas) {
+        canvas->drawColor(SK_ColorRED);
+    }
+
+    void onDraw(SkCanvas* canvas) override {
+        SkImageInfo info = SkImageInfo::MakeN32Premul(100, 100);
+
+        SkAutoTUnref<SkSurface> surf(canvas->newSurface(info, NULL));
+        if (!surf.get()) {
+            surf.reset(SkSurface::NewRaster(info));
+        }
+        drawInto(surf->getCanvas());
+
+        SkAutoTUnref<SkImage> image(surf->newImageSnapshot());
+        canvas->drawImage(image, 10, 10, NULL);
+
+        SkAutoTUnref<SkSurface> surf2(image->newSurface(info, NULL));
+        drawInto(surf2->getCanvas());
+
+        // Assert that the props were communicated transitively through the first image
+        SkASSERT(equal(surf->props(), surf2->props()));
+
+        SkAutoTUnref<SkImage> image2(surf2->newImageSnapshot());
+        canvas->drawImage(image2, 10 + SkIntToScalar(image->width()) + 10, 10, NULL);
+    }
+
+private:
+    typedef GM INHERITED;
+};
+DEF_GM( return new NewSurfaceGM )
+

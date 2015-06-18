@@ -5,15 +5,15 @@
 #include "init_webrtc.h"
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
-#include "webrtc/base/basictypes.h"
-#include "webrtc/base/logging.h"
+#include "base/trace_event/trace_event.h"
+#include "third_party/webrtc/overrides/webrtc/base/basictypes.h"
+#include "third_party/webrtc/overrides/webrtc/base/logging.h"
 
 const unsigned char* GetCategoryGroupEnabled(const char* category_group) {
   return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group);
@@ -151,7 +151,7 @@ bool InitializeWebRtcModule() {
   // PS: This function is actually implemented in allocator_proxy.cc with the
   // new/delete overrides.
   InitDiagnosticLoggingDelegateFunctionFunction init_diagnostic_logging = NULL;
-  bool init_ok = initialize_module(*CommandLine::ForCurrentProcess(),
+  bool init_ok = initialize_module(*base::CommandLine::ForCurrentProcess(),
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
       &Allocate,
       &Dellocate,

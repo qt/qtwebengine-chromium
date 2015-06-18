@@ -31,17 +31,19 @@
 #ifndef WebSharedWorkerClient_h
 #define WebSharedWorkerClient_h
 
-#include "../platform/WebMessagePortChannel.h"
+#include "public/platform/WebMessagePortChannel.h"
 
 namespace blink {
 
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
+class WebDataSource;
 class WebNotificationPresenter;
 class WebSecurityOrigin;
+class WebServiceWorkerNetworkProvider;
 class WebString;
 class WebWorker;
-class WebWorkerPermissionClientProxy;
+class WebWorkerContentSettingsClientProxy;
 
 // Provides an interface back to the in-page script object for a worker.
 // All functions are expected to be called back on the thread that created
@@ -63,15 +65,17 @@ public:
     // initialization.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebApplicationCacheHostClient*) = 0;
 
-    // Called on the main webkit thread in the worker process during
-    // initialization.
-    // WebWorkerPermissionClientProxy should not retain the given
+    // Called on the main thread during initialization.
+    // WebWorkerContentSettingsClientProxy should not retain the given
     // WebSecurityOrigin, as the proxy instance is passed to worker thread
     // while WebSecurityOrigin is not thread safe.
-    virtual WebWorkerPermissionClientProxy* createWorkerPermissionClientProxy(const WebSecurityOrigin&) { return 0; }
+    virtual WebWorkerContentSettingsClientProxy* createWorkerContentSettingsClientProxy(const WebSecurityOrigin& origin) { return nullptr; }
 
-    virtual void dispatchDevToolsMessage(const WebString&) { }
-    virtual void saveDevToolsAgentState(const WebString&) { }
+    // Called on the main thread during initialization.
+    // Ownership of the returned object is transferred to the caller.
+    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(WebDataSource*) { return nullptr; }
+
+    virtual void sendDevToolsMessage(int callId, const WebString& message, const WebString& state) { }
 };
 
 } // namespace blink

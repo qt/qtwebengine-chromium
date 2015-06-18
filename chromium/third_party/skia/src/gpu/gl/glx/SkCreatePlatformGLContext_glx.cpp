@@ -47,9 +47,9 @@ static int ctxErrorHandler(Display *dpy, XErrorEvent *ev) {
 class GLXGLContext : public SkGLContext {
 public:
     GLXGLContext(GrGLStandard forcedGpuAPI);
-    virtual ~GLXGLContext() SK_OVERRIDE;
-    virtual void makeCurrent() const SK_OVERRIDE;
-    virtual void swapBuffers() const SK_OVERRIDE;
+    ~GLXGLContext() override;
+    void makeCurrent() const override;
+    void swapBuffers() const override;
 
 private:
     void destroyGLContext();

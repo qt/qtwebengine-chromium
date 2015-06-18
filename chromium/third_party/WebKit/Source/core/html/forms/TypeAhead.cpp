@@ -50,7 +50,7 @@ static String stripLeadingWhiteSpace(const String& string)
 
     unsigned i;
     for (i = 0; i < length; ++i) {
-        if (string[i] != noBreakSpace && !isSpaceOrNewline(string[i]))
+        if (string[i] != noBreakSpaceCharacter && !isSpaceOrNewline(string[i]))
             break;
     }
 
@@ -70,6 +70,7 @@ int TypeAhead::handleEvent(KeyboardEvent* event, MatchModeFlags matchMode)
 
     if (delta > typeAheadTimeout)
         m_buffer.clear();
+
     m_buffer.append(c);
 
     if (optionCount < 1)
@@ -117,6 +118,12 @@ int TypeAhead::handleEvent(KeyboardEvent* event, MatchModeFlags matchMode)
             return index - 1;
     }
     return -1;
+}
+
+bool TypeAhead::hasActiveSession(KeyboardEvent* event)
+{
+    DOMTimeStamp delta = event->timeStamp() - m_lastTypeTime;
+    return delta <= typeAheadTimeout;
 }
 
 } // namespace blink

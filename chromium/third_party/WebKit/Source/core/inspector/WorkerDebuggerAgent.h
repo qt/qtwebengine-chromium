@@ -31,7 +31,7 @@
 #ifndef WorkerDebuggerAgent_h
 #define WorkerDebuggerAgent_h
 
-#include "bindings/core/v8/WorkerScriptDebugServer.h"
+#include "bindings/core/v8/WorkerThreadDebugger.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 
 namespace blink {
@@ -41,26 +41,27 @@ class WorkerDebuggerAgent;
 
 class WorkerDebuggerAgent final : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WorkerDebuggerAgent);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> create(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
-    virtual ~WorkerDebuggerAgent();
-    virtual void trace(Visitor*) override;
+    static PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> create(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
+    ~WorkerDebuggerAgent() override;
+    DECLARE_VIRTUAL_TRACE();
 
     void interruptAndDispatchInspectorCommands();
 
 private:
 
-    WorkerDebuggerAgent(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
+    WorkerDebuggerAgent(WorkerThreadDebugger*, WorkerGlobalScope*, InjectedScriptManager*);
 
-    virtual void startListeningScriptDebugServer() override;
-    virtual void stopListeningScriptDebugServer() override;
-    virtual WorkerScriptDebugServer& scriptDebugServer() override;
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
-    virtual void muteConsole() override;
-    virtual void unmuteConsole() override;
+    void startListeningScriptDebugServer() override;
+    void stopListeningScriptDebugServer() override;
+    ScriptDebugServer& scriptDebugServer() override;
+    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    void muteConsole() override;
+    void unmuteConsole() override;
 
-    WorkerScriptDebugServer* m_scriptDebugServer;
+    WorkerThreadDebugger* m_workerThreadDebugger;
     RawPtrWillBeMember<WorkerGlobalScope> m_inspectedWorkerGlobalScope;
 };
 

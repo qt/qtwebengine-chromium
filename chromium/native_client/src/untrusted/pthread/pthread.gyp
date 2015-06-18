@@ -11,6 +11,7 @@
       'nc_thread.c',
       'nc_mutex.c',
       'nc_condvar.c',
+      'nc_rwlock.c',
       'nc_semaphore.c',
       'nc_init_irt.c',
       'stack_end.c',
@@ -28,9 +29,6 @@
         'build_pnacl_newlib': 1,
       },
       'sources': ['<@(common_sources)'],
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-      ],
     },
   ],
 }

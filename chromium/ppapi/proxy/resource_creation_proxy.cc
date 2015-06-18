@@ -7,6 +7,7 @@
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_size.h"
 #include "ppapi/proxy/audio_input_resource.h"
+#include "ppapi/proxy/camera_device_resource.h"
 #include "ppapi/proxy/compositor_resource.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/file_chooser_resource.h"
@@ -37,7 +38,6 @@
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/proxy/ppb_x509_certificate_private_proxy.h"
 #include "ppapi/proxy/printing_resource.h"
-#include "ppapi/proxy/talk_resource.h"
 #include "ppapi/proxy/tcp_server_socket_private_resource.h"
 #include "ppapi/proxy/tcp_socket_private_resource.h"
 #include "ppapi/proxy/tcp_socket_resource.h"
@@ -50,6 +50,7 @@
 #include "ppapi/proxy/video_capture_resource.h"
 #include "ppapi/proxy/video_decoder_resource.h"
 #include "ppapi/proxy/video_destination_resource.h"
+#include "ppapi/proxy/video_encoder_resource.h"
 #include "ppapi/proxy/video_source_resource.h"
 #include "ppapi/proxy/websocket_resource.h"
 #include "ppapi/shared_impl/api_id.h"
@@ -220,6 +221,11 @@ PP_Resource ResourceCreationProxy::CreateAudioConfig(
       OBJECT_IS_PROXY, instance, sample_rate, sample_frame_count);
 }
 
+PP_Resource ResourceCreationProxy::CreateCameraDevicePrivate(
+    PP_Instance instance) {
+  return (new CameraDeviceResource(GetConnection(), instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateCompositor(PP_Instance instance) {
   return (new CompositorResource(GetConnection(), instance))->GetReference();
 }
@@ -387,6 +393,10 @@ PP_Resource ResourceCreationProxy::CreateVideoDestination(
                                        instance))->GetReference();
 }
 
+PP_Resource ResourceCreationProxy::CreateVideoEncoder(PP_Instance instance) {
+  return (new VideoEncoderResource(GetConnection(), instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateVideoSource(
     PP_Instance instance) {
   return (new VideoSourceResource(GetConnection(), instance))->GetReference();
@@ -463,10 +473,6 @@ PP_Resource ResourceCreationProxy::CreateScrollbar(PP_Instance instance,
                                                    PP_Bool vertical) {
   NOTIMPLEMENTED();  // Not proxied yet.
   return 0;
-}
-
-PP_Resource ResourceCreationProxy::CreateTalk(PP_Instance instance) {
-  return (new TalkResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateVideoCapture(PP_Instance instance) {

@@ -24,12 +24,13 @@
  *
  */
 
+// https://html.spec.whatwg.org/#message-channels
+
 [
     CustomConstructor,
     Exposed=(Window,Worker),
-    WillBeGarbageCollected
+    GarbageCollected
 ] interface MessageChannel {
     readonly attribute MessagePort port1;
     readonly attribute MessagePort port2;
 };
-

@@ -32,6 +32,7 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorPageAgent.h"
+#include "platform/blob/BlobData.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Deque.h"
@@ -49,9 +50,10 @@ class ResourceResponse;
 class SharedBuffer;
 class TextResourceDecoder;
 
-class XHRReplayData
+class XHRReplayData final
     : public RefCountedWillBeGarbageCollectedFinalized<XHRReplayData>
     , public ContextLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(XHRReplayData);
 public:
     static PassRefPtrWillBeRawPtr<XHRReplayData> create(ExecutionContext*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
 
@@ -63,7 +65,7 @@ public:
     const HTTPHeaderMap& headers() const { return m_headers; }
     bool includeCredentials() const { return m_includeCredentials; }
 
-    void trace(Visitor*) { }
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     XHRReplayData(ExecutionContext*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
@@ -77,10 +79,10 @@ private:
 };
 
 class NetworkResourcesData {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(NetworkResourcesData);
 public:
     class ResourceData {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_FAST_ALLOCATED(ResourceData);
         friend class NetworkResourcesData;
     public:
         ResourceData(const String& requestId, const String& loaderId);
@@ -110,6 +112,9 @@ public:
         int httpStatusCode() const { return m_httpStatusCode; }
         void setHTTPStatusCode(int httpStatusCode) { m_httpStatusCode = httpStatusCode; }
 
+        String mimeType() const { return m_mimeType; }
+        void setMimeType(const String& mimeType) { m_mimeType = mimeType; }
+
         String textEncodingName() const { return m_textEncodingName; }
         void setTextEncodingName(const String& textEncodingName) { m_textEncodingName = textEncodingName; }
 
@@ -124,6 +129,9 @@ public:
 
         XHRReplayData* xhrReplayData() const { return m_xhrReplayData.get(); }
         void setXHRReplayData(XHRReplayData* xhrReplayData) { m_xhrReplayData = xhrReplayData; }
+
+        BlobDataHandle* downloadedFileBlob() const { return m_downloadedFileBlob.get(); }
+        void setDownloadedFileBlob(PassRefPtr<BlobDataHandle> blob) { m_downloadedFileBlob = blob; }
 
     private:
         bool hasData() const { return m_dataBuffer; }
@@ -143,11 +151,13 @@ public:
         InspectorPageAgent::ResourceType m_type;
         int m_httpStatusCode;
 
+        String m_mimeType;
         String m_textEncodingName;
         OwnPtr<TextResourceDecoder> m_decoder;
 
         RefPtr<SharedBuffer> m_buffer;
         Resource* m_cachedResource;
+        RefPtr<BlobDataHandle> m_downloadedFileBlob;
     };
 
     NetworkResourcesData();

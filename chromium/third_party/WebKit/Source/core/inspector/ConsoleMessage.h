@@ -6,6 +6,7 @@
 #define ConsoleMessage_h
 
 #include "bindings/core/v8/ScriptState.h"
+#include "core/CoreExport.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -22,7 +23,7 @@ class ScriptCallStack;
 class ScriptState;
 class WorkerGlobalScopeProxy;
 
-class ConsoleMessage final: public RefCountedWillBeGarbageCollectedFinalized<ConsoleMessage> {
+class CORE_EXPORT ConsoleMessage final: public RefCountedWillBeGarbageCollectedFinalized<ConsoleMessage> {
 public:
     static PassRefPtrWillBeRawPtr<ConsoleMessage> create(MessageSource source, MessageLevel level, const String& message, const String& url = String(), unsigned lineNumber = 0, unsigned columnNumber = 0)
     {
@@ -50,6 +51,10 @@ public:
     void setTimestamp(double);
     WorkerGlobalScopeProxy* workerGlobalScopeProxy() { return m_workerProxy; }
     void setWorkerGlobalScopeProxy(WorkerGlobalScopeProxy* proxy) { m_workerProxy = proxy; }
+    unsigned assignMessageId();
+    unsigned messageId() const { return m_messageId; }
+    unsigned relatedMessageId() const { return m_relatedMessageId; }
+    void setRelatedMessageId(unsigned relatedMessageId) { m_relatedMessageId = relatedMessageId; }
 
     MessageSource source() const;
     MessageLevel level() const;
@@ -61,7 +66,7 @@ public:
 
     void collectCallStack();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     ConsoleMessage(MessageSource, MessageLevel, const String& message, const String& url = String(), unsigned lineNumber = 0, unsigned columnNumber = 0);
@@ -80,6 +85,8 @@ private:
     unsigned long m_requestIdentifier;
     double m_timestamp;
     WorkerGlobalScopeProxy* m_workerProxy;
+    unsigned m_messageId;
+    unsigned m_relatedMessageId;
 };
 
 } // namespace blink

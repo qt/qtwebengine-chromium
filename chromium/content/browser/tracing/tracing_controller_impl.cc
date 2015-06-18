@@ -4,11 +4,12 @@
 #include "content/browser/tracing/tracing_controller_impl.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_util.h"
 #include "base/json/string_escape.h"
 #include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
+#include "content/browser/tracing/file_tracing_provider_impl.h"
 #include "content/browser/tracing/trace_message_filter.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/common/child_process_messages.h"
@@ -24,9 +25,9 @@
 #include "content/browser/tracing/etw_system_event_consumer_win.h"
 #endif
 
-using base::debug::TraceLog;
-using base::debug::TraceOptions;
-using base::debug::CategoryFilter;
+using base::trace_event::TraceLog;
+using base::trace_event::TraceOptions;
+using base::trace_event::CategoryFilter;
 
 namespace content {
 
@@ -35,145 +36,31 @@ namespace {
 base::LazyInstance<TracingControllerImpl>::Leaky g_controller =
     LAZY_INSTANCE_INITIALIZER;
 
-class FileTraceDataSink : public TracingController::TraceDataSink {
- public:
-  explicit FileTraceDataSink(const base::FilePath& trace_file_path,
-                             const base::Closure& callback)
-      : file_path_(trace_file_path),
-        completion_callback_(callback),
-        file_(NULL) {}
-
-  void AddTraceChunk(const std::string& chunk) override {
-    std::string tmp = chunk;
-    scoped_refptr<base::RefCountedString> chunk_ptr =
-        base::RefCountedString::TakeString(&tmp);
-    BrowserThread::PostTask(
-        BrowserThread::FILE,
-        FROM_HERE,
-        base::Bind(
-            &FileTraceDataSink::AddTraceChunkOnFileThread, this, chunk_ptr));
-  }
-  void SetSystemTrace(const std::string& data) override {
-    system_trace_ = data;
-  }
-  void Close() override {
-    BrowserThread::PostTask(
-        BrowserThread::FILE,
-        FROM_HERE,
-        base::Bind(&FileTraceDataSink::CloseOnFileThread, this));
-  }
-
- private:
-  ~FileTraceDataSink() override { DCHECK(file_ == NULL); }
-
-  void AddTraceChunkOnFileThread(
-      const scoped_refptr<base::RefCountedString> chunk) {
-    if (file_ != NULL)
-      fputc(',', file_);
-    else if (!OpenFileIfNeededOnFileThread())
-      return;
-    ignore_result(fwrite(chunk->data().c_str(), strlen(chunk->data().c_str()),
-        1, file_));
-  }
-
-  bool OpenFileIfNeededOnFileThread() {
-    if (file_ != NULL)
-      return true;
-    file_ = base::OpenFile(file_path_, "w");
-    if (file_ == NULL) {
-      LOG(ERROR) << "Failed to open " << file_path_.value();
-      return false;
-    }
-    const char preamble[] = "{\"traceEvents\": [";
-    ignore_result(fwrite(preamble, strlen(preamble), 1, file_));
-    return true;
-  }
-
-  void CloseOnFileThread() {
-    if (OpenFileIfNeededOnFileThread()) {
-      fputc(']', file_);
-      if (!system_trace_.empty()) {
-        const char systemTraceEvents[] = ",\"systemTraceEvents\": ";
-        ignore_result(fwrite(systemTraceEvents, strlen(systemTraceEvents),
-            1, file_));
-        ignore_result(fwrite(system_trace_.c_str(),
-            strlen(system_trace_.c_str()), 1, file_));
-      }
-      fputc('}', file_);
-      base::CloseFile(file_);
-      file_ = NULL;
-    }
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&FileTraceDataSink::FinalizeOnUIThread, this));
-  }
-
-  void FinalizeOnUIThread() { completion_callback_.Run(); }
-
-  base::FilePath file_path_;
-  base::Closure completion_callback_;
-  FILE* file_;
-  std::string system_trace_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileTraceDataSink);
-};
-
-class StringTraceDataSink : public TracingController::TraceDataSink {
- public:
-  typedef base::Callback<void(base::RefCountedString*)> CompletionCallback;
-
-  explicit StringTraceDataSink(CompletionCallback callback)
-      : completion_callback_(callback) {}
-
-  // TracingController::TraceDataSink implementation
-  void AddTraceChunk(const std::string& chunk) override {
-    if (!trace_.empty())
-      trace_ += ",";
-    trace_ += chunk;
-  }
-  void SetSystemTrace(const std::string& data) override {
-    system_trace_ = data;
-  }
-  void Close() override {
-    std::string result = "{\"traceEvents\":[" + trace_ + "]";
-    if (!system_trace_.empty())
-      result += ",\"systemTraceEvents\": " + system_trace_;
-    result += "}";
-
-    scoped_refptr<base::RefCountedString> str =
-        base::RefCountedString::TakeString(&result);
-    completion_callback_.Run(str.get());
-  }
-
- private:
-  ~StringTraceDataSink() override {}
-
-  std::string trace_;
-  std::string system_trace_;
-  CompletionCallback completion_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(StringTraceDataSink);
-};
-
 }  // namespace
 
 TracingController* TracingController::GetInstance() {
   return TracingControllerImpl::GetInstance();
 }
 
-TracingControllerImpl::TracingControllerImpl() :
-    pending_disable_recording_ack_count_(0),
-    pending_capture_monitoring_snapshot_ack_count_(0),
-    pending_trace_buffer_percent_full_ack_count_(0),
-    maximum_trace_buffer_percent_full_(0),
+TracingControllerImpl::TracingControllerImpl()
+    : pending_disable_recording_ack_count_(0),
+      pending_capture_monitoring_snapshot_ack_count_(0),
+      pending_trace_log_status_ack_count_(0),
+      maximum_trace_buffer_usage_(0),
+      approximate_event_count_(0),
+      pending_memory_dump_ack_count_(0),
+      failed_memory_dump_count_(0),
     // Tracing may have been enabled by ContentMainRunner if kTraceStartup
     // is specified in command line.
 #if defined(OS_CHROMEOS) || defined(OS_WIN)
-    is_system_tracing_(false),
+      is_system_tracing_(false),
 #endif
-    is_recording_(TraceLog::GetInstance()->IsEnabled()),
-    is_monitoring_(false) {
+      is_recording_(TraceLog::GetInstance()->IsEnabled()),
+      is_monitoring_(false) {
+  base::trace_event::MemoryDumpManager::GetInstance()->SetDelegate(this);
+
+  // Deliberately leaked, like this class.
+  base::FileTracing::SetProvider(new FileTracingProviderImpl);
 }
 
 TracingControllerImpl::~TracingControllerImpl() {
@@ -187,7 +74,7 @@ TracingControllerImpl* TracingControllerImpl::GetInstance() {
 
 bool TracingControllerImpl::GetCategories(
     const GetCategoriesDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Known categories come back from child processes with the EndTracingAck
   // message. So to get known categories, just begin and end tracing immediately
@@ -209,7 +96,7 @@ void TracingControllerImpl::SetEnabledOnFileThread(
     int mode,
     const TraceOptions& trace_options,
     const base::Closure& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   TraceLog::GetInstance()->SetEnabled(
       category_filter, static_cast<TraceLog::Mode>(mode), trace_options);
@@ -218,7 +105,7 @@ void TracingControllerImpl::SetEnabledOnFileThread(
 
 void TracingControllerImpl::SetDisabledOnFileThread(
     const base::Closure& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   TraceLog::GetInstance()->SetDisabled();
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback);
@@ -228,7 +115,7 @@ bool TracingControllerImpl::EnableRecording(
     const CategoryFilter& category_filter,
     const TraceOptions& trace_options,
     const EnableRecordingDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!can_enable_recording())
     return false;
@@ -263,7 +150,7 @@ bool TracingControllerImpl::EnableRecording(
       base::Bind(&TracingControllerImpl::SetEnabledOnFileThread,
                  base::Unretained(this),
                  category_filter,
-                 base::debug::TraceLog::RECORDING_MODE,
+                 base::trace_event::TraceLog::RECORDING_MODE,
                  trace_options,
                  on_enable_recording_done_callback));
   return true;
@@ -273,7 +160,7 @@ void TracingControllerImpl::OnEnableRecordingDone(
     const CategoryFilter& category_filter,
     const TraceOptions& trace_options,
     const EnableRecordingDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Notify all child processes.
   for (TraceMessageFilterSet::iterator it = trace_message_filters_.begin();
@@ -287,7 +174,7 @@ void TracingControllerImpl::OnEnableRecordingDone(
 
 bool TracingControllerImpl::DisableRecording(
     const scoped_refptr<TraceDataSink>& trace_data_sink) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!can_disable_recording())
     return false;
@@ -306,7 +193,7 @@ bool TracingControllerImpl::DisableRecording(
 }
 
 void TracingControllerImpl::OnDisableRecordingDone() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
 #if defined(OS_ANDROID)
   if (pending_get_categories_done_callback_.is_null())
@@ -348,7 +235,8 @@ void TracingControllerImpl::OnDisableRecordingDone() {
     // Flush asynchronously now, because we don't have any children to wait for.
     TraceLog::GetInstance()->Flush(
         base::Bind(&TracingControllerImpl::OnLocalTraceDataCollected,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        true);
   }
 
   // Notify all child processes.
@@ -362,7 +250,7 @@ bool TracingControllerImpl::EnableMonitoring(
     const CategoryFilter& category_filter,
     const TraceOptions& trace_options,
     const EnableMonitoringDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!can_enable_monitoring())
     return false;
@@ -382,7 +270,7 @@ bool TracingControllerImpl::EnableMonitoring(
       base::Bind(&TracingControllerImpl::SetEnabledOnFileThread,
                  base::Unretained(this),
                  category_filter,
-                 base::debug::TraceLog::MONITORING_MODE,
+                 base::trace_event::TraceLog::MONITORING_MODE,
                  trace_options,
                  on_enable_monitoring_done_callback));
   return true;
@@ -392,7 +280,7 @@ void TracingControllerImpl::OnEnableMonitoringDone(
     const CategoryFilter& category_filter,
     const TraceOptions& trace_options,
     const EnableMonitoringDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Notify all child processes.
   for (TraceMessageFilterSet::iterator it = trace_message_filters_.begin();
@@ -406,7 +294,7 @@ void TracingControllerImpl::OnEnableMonitoringDone(
 
 bool TracingControllerImpl::DisableMonitoring(
     const DisableMonitoringDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!can_disable_monitoring())
     return false;
@@ -422,21 +310,9 @@ bool TracingControllerImpl::DisableMonitoring(
   return true;
 }
 
-scoped_refptr<TracingController::TraceDataSink>
-TracingController::CreateStringSink(
-    const base::Callback<void(base::RefCountedString*)>& callback) {
-  return new StringTraceDataSink(callback);
-}
-
-scoped_refptr<TracingController::TraceDataSink>
-TracingController::CreateFileSink(const base::FilePath& file_path,
-                                  const base::Closure& callback) {
-  return new FileTraceDataSink(file_path, callback);
-}
-
 void TracingControllerImpl::OnDisableMonitoringDone(
     const DisableMonitoringDoneCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   OnMonitoringStateChanged(false);
 
@@ -460,7 +336,7 @@ void TracingControllerImpl::GetMonitoringStatus(
 
 bool TracingControllerImpl::CaptureMonitoringSnapshot(
     const scoped_refptr<TraceDataSink>& monitoring_data_sink) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!can_disable_monitoring())
     return false;
@@ -499,34 +375,36 @@ bool TracingControllerImpl::CaptureMonitoringSnapshot(
   return true;
 }
 
-bool TracingControllerImpl::GetTraceBufferPercentFull(
-    const GetTraceBufferPercentFullCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+bool TracingControllerImpl::GetTraceBufferUsage(
+    const GetTraceBufferUsageCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (!can_get_trace_buffer_percent_full() || callback.is_null())
+  if (!can_get_trace_buffer_usage() || callback.is_null())
     return false;
 
-  pending_trace_buffer_percent_full_callback_ = callback;
+  pending_trace_buffer_usage_callback_ = callback;
 
-  // Count myself in pending_trace_buffer_percent_full_ack_count_, acked below.
-  pending_trace_buffer_percent_full_ack_count_ =
-      trace_message_filters_.size() + 1;
-  pending_trace_buffer_percent_full_filters_ = trace_message_filters_;
-  maximum_trace_buffer_percent_full_ = 0;
+  // Count myself in pending_trace_log_status_ack_count_, acked below.
+  pending_trace_log_status_ack_count_ = trace_message_filters_.size() + 1;
+  pending_trace_log_status_filters_ = trace_message_filters_;
+  maximum_trace_buffer_usage_ = 0;
+  approximate_event_count_ = 0;
 
-  // Call OnTraceBufferPercentFullReply unconditionally for the browser process.
+  base::trace_event::TraceLogStatus status =
+      TraceLog::GetInstance()->GetStatus();
+  // Call OnTraceLogStatusReply unconditionally for the browser process.
   // This will result in immediate execution of the callback if there are no
   // child processes.
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&TracingControllerImpl::OnTraceBufferPercentFullReply,
-                  base::Unretained(this),
-                  scoped_refptr<TraceMessageFilter>(),
-                  TraceLog::GetInstance()->GetBufferPercentFull()));
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&TracingControllerImpl::OnTraceLogStatusReply,
+                 base::Unretained(this), scoped_refptr<TraceMessageFilter>(),
+                 status));
 
   // Notify all child processes.
   for (TraceMessageFilterSet::iterator it = trace_message_filters_.begin();
       it != trace_message_filters_.end(); ++it) {
-    it->get()->SendGetTraceBufferPercentFull();
+    it->get()->SendGetTraceLogStatus();
   }
   return true;
 }
@@ -535,7 +413,7 @@ bool TracingControllerImpl::SetWatchEvent(
     const std::string& category_name,
     const std::string& event_name,
     const WatchEventCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (callback.is_null())
     return false;
@@ -557,7 +435,7 @@ bool TracingControllerImpl::SetWatchEvent(
 }
 
 bool TracingControllerImpl::CancelWatchEvent() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!can_cancel_watch_event())
     return false;
@@ -632,18 +510,30 @@ void TracingControllerImpl::RemoveTraceMessageFilter(
                      make_scoped_refptr(trace_message_filter)));
     }
   }
-  if (pending_trace_buffer_percent_full_ack_count_ > 0) {
+  if (pending_trace_log_status_ack_count_ > 0) {
     TraceMessageFilterSet::const_iterator it =
-        pending_trace_buffer_percent_full_filters_.find(trace_message_filter);
-    if (it != pending_trace_buffer_percent_full_filters_.end()) {
-      BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-          base::Bind(&TracingControllerImpl::OnTraceBufferPercentFullReply,
+        pending_trace_log_status_filters_.find(trace_message_filter);
+    if (it != pending_trace_log_status_filters_.end()) {
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&TracingControllerImpl::OnTraceLogStatusReply,
                      base::Unretained(this),
                      make_scoped_refptr(trace_message_filter),
-                     0));
+                     base::trace_event::TraceLogStatus()));
     }
   }
-
+  if (pending_memory_dump_ack_count_ > 0) {
+    TraceMessageFilterSet::const_iterator it =
+        pending_memory_dump_filters_.find(trace_message_filter);
+    if (it != pending_memory_dump_filters_.end()) {
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&TracingControllerImpl::OnProcessMemoryDumpResponse,
+                     base::Unretained(this),
+                     make_scoped_refptr(trace_message_filter),
+                     pending_memory_dump_guid_, false /* success */));
+    }
+  }
   trace_message_filters_.erase(trace_message_filter);
 }
 
@@ -678,7 +568,8 @@ void TracingControllerImpl::OnDisableRecordingAcked(
     // called with the last of the local trace data.
     TraceLog::GetInstance()->Flush(
         base::Bind(&TracingControllerImpl::OnLocalTraceDataCollected,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        true);
     return;
   }
 
@@ -702,7 +593,7 @@ void TracingControllerImpl::OnDisableRecordingAcked(
 #if defined(OS_CHROMEOS) || defined(OS_WIN)
 void TracingControllerImpl::OnEndSystemTracingAcked(
     const scoped_refptr<base::RefCountedString>& events_str_ptr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (trace_data_sink_.get()) {
 #if defined(OS_WIN)
@@ -815,35 +706,38 @@ void TracingControllerImpl::OnLocalMonitoringTraceDataCollected(
   OnCaptureMonitoringSnapshotAcked(NULL);
 }
 
-void TracingControllerImpl::OnTraceBufferPercentFullReply(
+void TracingControllerImpl::OnTraceLogStatusReply(
     TraceMessageFilter* trace_message_filter,
-    float percent_full) {
+    const base::trace_event::TraceLogStatus& status) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        base::Bind(&TracingControllerImpl::OnTraceBufferPercentFullReply,
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&TracingControllerImpl::OnTraceLogStatusReply,
                    base::Unretained(this),
-                   make_scoped_refptr(trace_message_filter),
-                   percent_full));
+                   make_scoped_refptr(trace_message_filter), status));
     return;
   }
 
-  if (pending_trace_buffer_percent_full_ack_count_ == 0)
+  if (pending_trace_log_status_ack_count_ == 0)
     return;
 
   if (trace_message_filter &&
-      !pending_trace_buffer_percent_full_filters_.erase(trace_message_filter)) {
+      !pending_trace_log_status_filters_.erase(trace_message_filter)) {
     // The response from the specified message filter has already been received.
     return;
   }
 
-  maximum_trace_buffer_percent_full_ =
-      std::max(maximum_trace_buffer_percent_full_, percent_full);
+  float percent_full = static_cast<float>(
+      static_cast<double>(status.event_count) / status.event_capacity);
+  maximum_trace_buffer_usage_ =
+      std::max(maximum_trace_buffer_usage_, percent_full);
+  approximate_event_count_ += status.event_count;
 
-  if (--pending_trace_buffer_percent_full_ack_count_ == 0) {
+  if (--pending_trace_log_status_ack_count_ == 0) {
     // Trigger callback if one is set.
-    pending_trace_buffer_percent_full_callback_.Run(
-        maximum_trace_buffer_percent_full_);
-    pending_trace_buffer_percent_full_callback_.Reset();
+    pending_trace_buffer_usage_callback_.Run(maximum_trace_buffer_usage_,
+                                             approximate_event_count_);
+    pending_trace_buffer_usage_callback_.Reset();
   }
 }
 
@@ -868,6 +762,109 @@ void TracingControllerImpl::UnregisterTracingUI(TracingUI* tracing_ui) {
   std::set<TracingUI*>::iterator it = tracing_uis_.find(tracing_ui);
   DCHECK(it != tracing_uis_.end());
   tracing_uis_.erase(it);
+}
+
+void TracingControllerImpl::RequestGlobalMemoryDump(
+    const base::trace_event::MemoryDumpRequestArgs& args,
+    const base::trace_event::MemoryDumpCallback& callback) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&TracingControllerImpl::RequestGlobalMemoryDump,
+                   base::Unretained(this), args, callback));
+    return;
+  }
+  // Abort if another dump is already in progress.
+  if (pending_memory_dump_guid_) {
+    DVLOG(1) << "Requested memory dump " << args.dump_guid
+             << " while waiting for " << pending_memory_dump_guid_;
+    if (!callback.is_null())
+      callback.Run(args.dump_guid, false /* success */);
+    return;
+  }
+
+  // Count myself (local trace) in pending_memory_dump_ack_count_, acked by
+  // OnBrowserProcessMemoryDumpDone().
+  pending_memory_dump_ack_count_ = trace_message_filters_.size() + 1;
+  pending_memory_dump_filters_.clear();
+  failed_memory_dump_count_ = 0;
+
+  MemoryDumpManagerDelegate::CreateProcessDump(
+      args, base::Bind(&TracingControllerImpl::OnBrowserProcessMemoryDumpDone,
+                       base::Unretained(this)));
+
+  // If there are no child processes we are just done.
+  if (pending_memory_dump_ack_count_ == 1) {
+    if (!callback.is_null())
+      callback.Run(args.dump_guid, true /* success */);
+    return;
+  }
+
+  pending_memory_dump_guid_ = args.dump_guid;
+  pending_memory_dump_callback_ = callback;
+  pending_memory_dump_filters_ = trace_message_filters_;
+
+  for (const scoped_refptr<TraceMessageFilter>& tmf : trace_message_filters_)
+    tmf->SendProcessMemoryDumpRequest(args);
+}
+
+bool TracingControllerImpl::IsCoordinatorProcess() const {
+  return true;
+}
+
+void TracingControllerImpl::OnProcessMemoryDumpResponse(
+    TraceMessageFilter* trace_message_filter,
+    uint64 dump_guid,
+    bool success) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&TracingControllerImpl::OnProcessMemoryDumpResponse,
+                   base::Unretained(this),
+                   make_scoped_refptr(trace_message_filter), dump_guid,
+                   success));
+    return;
+  }
+
+  TraceMessageFilterSet::iterator it =
+      pending_memory_dump_filters_.find(trace_message_filter);
+
+  if (pending_memory_dump_guid_ != dump_guid ||
+      it == pending_memory_dump_filters_.end()) {
+    DLOG(WARNING) << "Received unexpected memory dump response: " << dump_guid;
+    return;
+  }
+
+  DCHECK_GT(pending_memory_dump_ack_count_, 0);
+  --pending_memory_dump_ack_count_;
+  pending_memory_dump_filters_.erase(it);
+  if (!success) {
+    ++failed_memory_dump_count_;
+    DLOG(WARNING) << "Global memory dump failed because of NACK from child "
+                  << trace_message_filter->peer_pid();
+  }
+  FinalizeGlobalMemoryDumpIfAllProcessesReplied();
+}
+
+void TracingControllerImpl::OnBrowserProcessMemoryDumpDone(uint64 dump_guid,
+                                                           bool success) {
+  DCHECK_GT(pending_memory_dump_ack_count_, 0);
+  --pending_memory_dump_ack_count_;
+  FinalizeGlobalMemoryDumpIfAllProcessesReplied();
+}
+
+void TracingControllerImpl::FinalizeGlobalMemoryDumpIfAllProcessesReplied() {
+  if (pending_memory_dump_ack_count_ > 0)
+    return;
+
+  DCHECK_NE(0u, pending_memory_dump_guid_);
+  const bool global_success = failed_memory_dump_count_ == 0;
+  if (!pending_memory_dump_callback_.is_null()) {
+    pending_memory_dump_callback_.Run(pending_memory_dump_guid_,
+                                      global_success);
+    pending_memory_dump_callback_.Reset();
+  }
+  pending_memory_dump_guid_ = 0;
 }
 
 void TracingControllerImpl::OnMonitoringStateChanged(bool is_monitoring) {

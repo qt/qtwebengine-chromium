@@ -94,22 +94,6 @@
 # endif
 #endif
 
-#if (defined(__WIN32__) && !defined(__WINE__)) || defined(_MSC_VER)
-#define snprintf _snprintf
-/* Windows CE only has _strdup, while rest of Windows has both. */
-#define strdup _strdup
-#endif
-
-#ifdef _MSC_VER
-#undef inline
-#define inline __inline
-#endif
-
-#ifdef __STRICT_ANSI__
-#undef inline
-#define inline __inline__
-#endif
-
 #if __GNUC__ >= 3
 #define HB_FUNC __PRETTY_FUNCTION__
 #elif defined(_MSC_VER)
@@ -134,14 +118,20 @@
 #  ifndef STRICT
 #    define STRICT 1
 #  endif
-#endif
 
-#ifdef _WIN32_WCE
-/* Some things not defined on Windows CE. */
-#define MemoryBarrier()
-#define getenv(Name) NULL
-#define setlocale(Category, Locale) "C"
+#  if defined(_WIN32_WCE)
+     /* Some things not defined on Windows CE. */
+#    define getenv(Name) NULL
+#    define setlocale(Category, Locale) "C"
 static int errno = 0; /* Use something better? */
+#  elif defined(WINAPI_FAMILY) && (WINAPI_FAMILY==WINAPI_FAMILY_PC_APP || WINAPI_FAMILY==WINAPI_FAMILY_PHONE_APP)
+#    define getenv(Name) NULL
+#  endif
+#  if (defined(__WIN32__) && !defined(__WINE__)) || defined(_MSC_VER)
+#    define snprintf _snprintf
+     /* Windows CE only has _strdup, while rest of Windows has both. */
+#    define strdup _strdup
+#  endif
 #endif
 
 #if HAVE_ATEXIT
@@ -539,47 +529,6 @@ struct hb_lockable_set_t
 };
 
 
-
-
-/* Big-endian handling */
-
-static inline uint16_t hb_be_uint16 (const uint16_t v)
-{
-  const uint8_t *V = (const uint8_t *) &v;
-  return (V[0] << 8) | V[1];
-}
-
-static inline uint16_t hb_uint16_swap (const uint16_t v)
-{
-  return (v >> 8) | (v << 8);
-}
-
-static inline uint32_t hb_uint32_swap (const uint32_t v)
-{
-  return (hb_uint16_swap (v) << 16) | hb_uint16_swap (v >> 16);
-}
-
-/* Note, of the following macros, uint16_get is the one called many many times.
- * If there is any optimizations to be done, it's in that macro.  However, I
- * already confirmed that on my T400 ThinkPad at least, using bswap_16(), which
- * results in a single ror instruction, does NOT speed this up.  In fact, it
- * resulted in a minor slowdown.  At any rate, note that v may not be correctly
- * aligned, so I think the current implementation is optimal.
- */
-
-#define hb_be_uint16_put(v,V)	HB_STMT_START { v[0] = (V>>8); v[1] = (V); } HB_STMT_END
-#define hb_be_uint16_get(v)	(uint16_t) ((v[0] << 8) + v[1])
-#define hb_be_uint16_eq(a,b)	(a[0] == b[0] && a[1] == b[1])
-
-#define hb_be_uint32_put(v,V)	HB_STMT_START { v[0] = (V>>24); v[1] = (V>>16); v[2] = (V>>8); v[3] = (V); } HB_STMT_END
-#define hb_be_uint32_get(v)	(uint32_t) ((v[0] << 24) + (v[1] << 16) + (v[2] << 8) + v[3])
-#define hb_be_uint32_eq(a,b)	(a[0] == b[0] && a[1] == b[1] && a[2] == b[2] && a[3] == b[3])
-
-#define hb_be_uint24_put(v,V)	HB_STMT_START { v[0] = (V>>16); v[1] = (V>>8); v[2] = (V); } HB_STMT_END
-#define hb_be_uint24_get(v)	(uint32_t) ((v[0] << 16) + (v[1] << 8) + v[2])
-#define hb_be_uint24_eq(a,b)	(a[0] == b[0] && a[1] == b[1] && a[2] == b[2])
-
-
 /* ASCII tag/character handling */
 
 static inline bool ISALPHA (unsigned char c)
@@ -623,6 +572,30 @@ _hb_debug (unsigned int level,
 
 #define DEBUG_LEVEL_ENABLED(WHAT, LEVEL) (_hb_debug ((LEVEL), HB_DEBUG_##WHAT))
 #define DEBUG_ENABLED(WHAT) (DEBUG_LEVEL_ENABLED (WHAT, 0))
+
+static inline void
+_hb_print_func (const char *func)
+{
+  if (func)
+  {
+    unsigned int func_len = strlen (func);
+    /* Skip "static" */
+    if (0 == strncmp (func, "static ", 7))
+      func += 7;
+    /* Skip "typename" */
+    if (0 == strncmp (func, "typename ", 9))
+      func += 9;
+    /* Skip return type */
+    const char *space = strchr (func, ' ');
+    if (space)
+      func = space + 1;
+    /* Skip parameter list */
+    const char *paren = strchr (func, '(');
+    if (paren)
+      func_len = paren - func;
+    fprintf (stderr, "%.*s", func_len, func);
+  }
+}
 
 template <int max_level> static inline void
 _hb_debug_msg_va (const char *what,
@@ -669,27 +642,13 @@ _hb_debug_msg_va (const char *what,
   } else
     fprintf (stderr, "   " VRBAR LBAR);
 
-  if (func)
-  {
-    unsigned int func_len = strlen (func);
-#ifndef HB_DEBUG_VERBOSE
-    /* Skip "typename" */
-    if (0 == strncmp (func, "typename ", 9))
-      func += 9;
-    /* Skip return type */
-    const char *space = strchr (func, ' ');
-    if (space)
-      func = space + 1;
-    /* Skip parameter list */
-    const char *paren = strchr (func, '(');
-    if (paren)
-      func_len = paren - func;
-#endif
-    fprintf (stderr, "%.*s: ", func_len, func);
-  }
+  _hb_print_func (func);
 
   if (message)
+  {
+    fprintf (stderr, ": ");
     vfprintf (stderr, message, ap);
+  }
 
   fprintf (stderr, "\n");
 }
@@ -756,7 +715,9 @@ _hb_debug_msg<0> (const char *what HB_UNUSED,
  */
 
 template <typename T>
-struct hb_printer_t {};
+struct hb_printer_t {
+  const char *print (const T&) { return "something"; }
+};
 
 template <>
 struct hb_printer_t<bool> {
@@ -859,7 +820,7 @@ hb_in_range (T u, T lo, T hi)
   /* The sizeof() is here to force template instantiation.
    * I'm sure there are better ways to do this but can't think of
    * one right now.  Declaring a variable won't work as HB_UNUSED
-   * is unsable on some platforms and unused types are less likely
+   * is unusable on some platforms and unused types are less likely
    * to generate a warning than unused variables. */
   ASSERT_STATIC (sizeof (hb_assert_unsigned_t<T>) >= 0);
 
@@ -889,7 +850,7 @@ hb_in_ranges (T u, T lo1, T hi1, T lo2, T hi2, T lo3, T hi3)
 #define FLAG_RANGE(x,y) (ASSERT_STATIC_EXPR_ZERO ((x) < (y)) + FLAG(y+1) - FLAG(x))
 
 
-template <typename T, typename T2> inline void
+template <typename T, typename T2> static inline void
 hb_bubble_sort (T *array, unsigned int len, int(*compar)(const T *, const T *), T2 *array2)
 {
   if (unlikely (!len))
@@ -922,7 +883,7 @@ hb_bubble_sort (T *array, unsigned int len, int(*compar)(const T *, const T *), 
   } while (k);
 }
 
-template <typename T> inline void
+template <typename T> static inline void
 hb_bubble_sort (T *array, unsigned int len, int(*compar)(const T *, const T *))
 {
   hb_bubble_sort (array, len, compar, (int *) NULL);
@@ -951,12 +912,12 @@ hb_codepoint_parse (const char *s, unsigned int len, int base, hb_codepoint_t *o
 
 struct hb_options_t
 {
-  int initialized : 1;
-  int uniscribe_bug_compatible : 1;
+  unsigned int initialized : 1;
+  unsigned int uniscribe_bug_compatible : 1;
 };
 
 union hb_options_union_t {
-  int i;
+  unsigned int i;
   hb_options_t opts;
 };
 ASSERT_STATIC (sizeof (int) == sizeof (hb_options_union_t));

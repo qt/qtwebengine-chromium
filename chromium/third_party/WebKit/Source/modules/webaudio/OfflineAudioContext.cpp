@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/OfflineAudioContext.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
@@ -44,14 +42,14 @@ OfflineAudioContext* OfflineAudioContext::create(ExecutionContext* context, unsi
         exceptionState.throwDOMException(
             NotSupportedError,
             "Workers are not supported.");
-        return 0;
+        return nullptr;
     }
 
     Document* document = toDocument(context);
 
     if (!numberOfFrames) {
         exceptionState.throwDOMException(SyntaxError, "number of frames cannot be zero.");
-        return 0;
+        return nullptr;
     }
 
     if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
@@ -64,7 +62,7 @@ OfflineAudioContext* OfflineAudioContext::create(ExecutionContext* context, unsi
                 ExceptionMessages::InclusiveBound,
                 AudioContext::maxNumberOfChannels(),
                 ExceptionMessages::InclusiveBound));
-        return 0;
+        return nullptr;
     }
 
     if (!AudioUtilities::isValidAudioBufferSampleRate(sampleRate)) {
@@ -99,6 +97,32 @@ OfflineAudioContext::OfflineAudioContext(Document* document, unsigned numberOfCh
 
 OfflineAudioContext::~OfflineAudioContext()
 {
+}
+
+ScriptPromise OfflineAudioContext::startOfflineRendering(ScriptState* scriptState)
+{
+    // Calling close() on an OfflineAudioContext is not supported/allowed,
+    // but it might well have been stopped by its execution context.
+    if (isContextClosed()) {
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(
+                InvalidStateError,
+                "cannot call startRendering on an OfflineAudioContext in a stopped state."));
+    }
+
+    if (m_offlineResolver) {
+        // Can't call startRendering more than once.  Return a rejected promise now.
+        return ScriptPromise::rejectWithDOMException(
+            scriptState,
+            DOMException::create(
+                InvalidStateError,
+                "cannot call startRendering more than once"));
+    }
+
+    m_offlineResolver = ScriptPromiseResolver::create(scriptState);
+    startRendering();
+    return m_offlineResolver->promise();
 }
 
 } // namespace blink

@@ -25,8 +25,8 @@
 #ifndef DefaultAudioDestinationNode_h
 #define DefaultAudioDestinationNode_h
 
-#include "platform/audio/AudioDestination.h"
 #include "modules/webaudio/AudioDestinationNode.h"
+#include "platform/audio/AudioDestination.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -34,32 +34,37 @@ namespace blink {
 class AudioContext;
 class ExceptionState;
 
-class DefaultAudioDestinationNode final : public AudioDestinationNode {
+class DefaultAudioDestinationHandler final : public AudioDestinationHandler {
 public:
-    static DefaultAudioDestinationNode* create(AudioContext* context)
-    {
-        return new DefaultAudioDestinationNode(context);
-    }
+    static PassRefPtr<DefaultAudioDestinationHandler> create(AudioNode&);
+    virtual ~DefaultAudioDestinationHandler();
 
-    virtual ~DefaultAudioDestinationNode();
-
-    // AudioNode
+    // AudioHandler
     virtual void dispose() override;
     virtual void initialize() override;
     virtual void uninitialize() override;
     virtual void setChannelCount(unsigned long, ExceptionState&) override;
 
-    // AudioDestinationNode
+    // AudioDestinationHandler
     virtual void startRendering() override;
+    virtual void stopRendering() override;
     virtual unsigned long maxChannelCount() const override;
 
 private:
-    explicit DefaultAudioDestinationNode(AudioContext*);
+    explicit DefaultAudioDestinationHandler(AudioNode&);
     void createDestination();
 
     OwnPtr<AudioDestination> m_destination;
     String m_inputDeviceId;
     unsigned m_numberOfInputChannels;
+};
+
+class DefaultAudioDestinationNode final : public AudioDestinationNode {
+public:
+    static DefaultAudioDestinationNode* create(AudioContext*);
+
+private:
+    explicit DefaultAudioDestinationNode(AudioContext&);
 };
 
 } // namespace blink

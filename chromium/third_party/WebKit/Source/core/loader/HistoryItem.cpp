@@ -29,6 +29,8 @@
 #include "core/dom/Document.h"
 #include "core/html/forms/FormController.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/SecurityPolicy.h"
+#include "wtf/Assertions.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/CString.h"
 
@@ -47,6 +49,7 @@ HistoryItem::HistoryItem()
     , m_itemSequenceNumber(generateSequenceNumber())
     , m_documentSequenceNumber(generateSequenceNumber())
     , m_frameSequenceNumber(generateSequenceNumber())
+    , m_scrollRestorationType(ScrollRestorationAuto)
 {
 }
 
@@ -97,7 +100,8 @@ void HistoryItem::setURL(const KURL& url)
 
 void HistoryItem::setReferrer(const Referrer& referrer)
 {
-    m_referrer = referrer;
+    // This should be a RELEASE_ASSERT.
+    m_referrer = SecurityPolicy::generateReferrer(referrer.referrerPolicy, url(), referrer.referrer);
 }
 
 void HistoryItem::setTarget(const String& target)
@@ -214,7 +218,7 @@ bool HistoryItem::isCurrentDocument(Document* doc) const
     return equalIgnoringFragmentIdentifier(url(), doc->url());
 }
 
-void HistoryItem::trace(Visitor* visitor)
+DEFINE_TRACE(HistoryItem)
 {
     visitor->trace(m_documentState);
 }

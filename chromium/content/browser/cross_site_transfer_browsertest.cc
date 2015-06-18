@@ -19,6 +19,7 @@
 #include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
 #include "net/base/escape.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
@@ -177,6 +178,9 @@ class CrossSiteTransferTest : public ContentBrowserTest {
         base::Bind(
             &CrossSiteTransferTest::InjectResourceDisptcherHostDelegate,
             base::Unretained(this)));
+    host_resolver()->AddRule("*", "127.0.0.1");
+    ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+    content::SetupCrossSiteRedirector(embedded_test_server());
   }
 
   void TearDownOnMainThread() override {
@@ -204,19 +208,19 @@ class CrossSiteTransferTest : public ContentBrowserTest {
       load_observer.Wait();
   }
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // Use --site-per-process to force process swaps for cross-site transfers.
     command_line->AppendSwitch(switches::kSitePerProcess);
   }
 
   void InjectResourceDisptcherHostDelegate() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     old_delegate_ = ResourceDispatcherHostImpl::Get()->delegate();
     ResourceDispatcherHostImpl::Get()->SetDelegate(&tracking_delegate_);
   }
 
   void RestoreResourceDisptcherHostDelegate() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     ResourceDispatcherHostImpl::Get()->SetDelegate(old_delegate_);
     old_delegate_ = NULL;
   }
@@ -248,16 +252,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
                        MAYBE_ReplaceEntryCrossProcessThenTransfer) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
-
-  // These must all stay in scope with replace_host.
-  GURL::Replacements replace_host;
-  std::string a_com("A.com");
-  std::string b_com("B.com");
 
   // Navigate to a starting URL, so there is a history entry to replace.
-  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
+  GURL url1 = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
   NavigateToURL(shell(), url1);
 
   // Force all future navigations to transfer. Note that this includes same-site
@@ -269,9 +266,8 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
   // cross-site, so the renderer will send it to the browser via OpenURL to give
   // to a new process. It will then be transferred into yet another process due
   // to the call above.
-  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
-  replace_host.SetHostStr(a_com);
-  url2 = url2.ReplaceComponents(replace_host);
+  GURL url2 =
+      embedded_test_server()->GetURL("A.com", "/site_isolation/blank.html?2");
   // Used to make sure the request for url2 succeeds, and there was only one of
   // them.
   tracking_delegate().SetTrackedURL(url2);
@@ -288,9 +284,8 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
   // Now navigate as before to a page on B.com, but normally (without
   // replacement). This will still perform a double process-swap as above, via
   // OpenURL and then transfer.
-  GURL url3 = test_server()->GetURL("files/site_isolation/blank.html?3");
-  replace_host.SetHostStr(b_com);
-  url3 = url3.ReplaceComponents(replace_host);
+  GURL url3 =
+      embedded_test_server()->GetURL("B.com", "/site_isolation/blank.html?3");
   // Used to make sure the request for url3 succeeds, and there was only one of
   // them.
   tracking_delegate().SetTrackedURL(url3);
@@ -316,10 +311,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
                        ReplaceEntryInProcessThenTranfers) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
-  ASSERT_TRUE(test_server()->Start());
 
   // Navigate to a starting URL, so there is a history entry to replace.
-  GURL url = test_server()->GetURL("files/site_isolation/blank.html?1");
+  GURL url = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
   NavigateToURL(shell(), url);
 
   // Force all future navigations to transfer. Note that this includes same-site
@@ -330,7 +324,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
 
   // Navigate in-process with entry replacement. It will then be transferred
   // into a new one due to the call above.
-  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
+  GURL url2 = embedded_test_server()->GetURL("/site_isolation/blank.html?2");
   NavigateToURLContentInitiated(shell(), url2, true, true);
 
   // There should be one history entry. url2 should have replaced url1.
@@ -340,7 +334,7 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
   EXPECT_EQ(url2, controller.GetEntryAtIndex(0)->GetURL());
 
   // Now navigate as before, but without replacement.
-  GURL url3 = test_server()->GetURL("files/site_isolation/blank.html?3");
+  GURL url3 = embedded_test_server()->GetURL("/site_isolation/blank.html?3");
   NavigateToURLContentInitiated(shell(), url3, false, true);
 
   // There should be two history entries. url2 should have replaced url1. url2
@@ -358,16 +352,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
                        MAYBE_ReplaceEntryCrossProcessTwice) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
-
-  // These must all stay in scope with replace_host.
-  GURL::Replacements replace_host;
-  std::string a_com("A.com");
-  std::string b_com("B.com");
 
   // Navigate to a starting URL, so there is a history entry to replace.
-  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
+  GURL url1 = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
   NavigateToURL(shell(), url1);
 
   // Navigate to a page on A.com which redirects to B.com with entry
@@ -375,13 +362,11 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
   // and second in response to the server redirect to B.com. The second swap is
   // also renderer-initiated via OpenURL because decidePolicyForNavigation is
   // currently applied on redirects.
-  GURL url2b = test_server()->GetURL("files/site_isolation/blank.html?2");
-  replace_host.SetHostStr(b_com);
-  url2b = url2b.ReplaceComponents(replace_host);
-  GURL url2a = test_server()->GetURL(
-      "server-redirect?" + net::EscapeQueryParamValue(url2b.spec(), false));
-  replace_host.SetHostStr(a_com);
-  url2a = url2a.ReplaceComponents(replace_host);
+  GURL::Replacements replace_host;
+  GURL url2b =
+      embedded_test_server()->GetURL("B.com", "/site_isolation/blank.html?2");
+  GURL url2a = embedded_test_server()->GetURL(
+      "A.com", "/cross-site/" + url2b.host() + url2b.PathForRequest());
   NavigateToURLContentInitiated(shell(), url2a, true, true);
 
   // There should be one history entry. url2b should have replaced url1.
@@ -391,13 +376,10 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
   EXPECT_EQ(url2b, controller.GetEntryAtIndex(0)->GetURL());
 
   // Now repeat without replacement.
-  GURL url3b = test_server()->GetURL("files/site_isolation/blank.html?3");
-  replace_host.SetHostStr(b_com);
-  url3b = url3b.ReplaceComponents(replace_host);
-  GURL url3a = test_server()->GetURL(
-      "server-redirect?" + net::EscapeQueryParamValue(url3b.spec(), false));
-  replace_host.SetHostStr(a_com);
-  url3a = url3a.ReplaceComponents(replace_host);
+  GURL url3b =
+      embedded_test_server()->GetURL("B.com", "/site_isolation/blank.html?3");
+  GURL url3a = embedded_test_server()->GetURL(
+      "A.com", "/cross-site/" + url3b.host() + url3b.PathForRequest());
   NavigateToURLContentInitiated(shell(), url3a, false, true);
 
   // There should be two history entries. url2b should have replaced url1. url2b
@@ -414,16 +396,9 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest,
 IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest, NoLeakOnCrossSiteCancel) {
   const NavigationController& controller =
       shell()->web_contents()->GetController();
-  host_resolver()->AddRule("*", "127.0.0.1");
-  ASSERT_TRUE(test_server()->Start());
-
-  // These must all stay in scope with replace_host.
-  GURL::Replacements replace_host;
-  std::string a_com("A.com");
-  std::string b_com("B.com");
 
   // Navigate to a starting URL, so there is a history entry to replace.
-  GURL url1 = test_server()->GetURL("files/site_isolation/blank.html?1");
+  GURL url1 = embedded_test_server()->GetURL("/site_isolation/blank.html?1");
   NavigateToURL(shell(), url1);
 
   // Force all future navigations to transfer.
@@ -437,9 +412,8 @@ IN_PROC_BROWSER_TEST_F(CrossSiteTransferTest, NoLeakOnCrossSiteCancel) {
   // cross-site, so the renderer will send it to the browser via OpenURL to give
   // to a new process. It will then be transferred into yet another process due
   // to the call above.
-  GURL url2 = test_server()->GetURL("files/site_isolation/blank.html?2");
-  replace_host.SetHostStr(a_com);
-  url2 = url2.ReplaceComponents(replace_host);
+  GURL url2 =
+      embedded_test_server()->GetURL("A.com", "/site_isolation/blank.html?2");
   // Used to make sure the second request is cancelled, and there is only one
   // request for url2.
   tracking_delegate().SetTrackedURL(url2);

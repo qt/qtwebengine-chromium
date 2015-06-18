@@ -22,6 +22,8 @@
 #define SVGPathSeg_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "platform/geometry/FloatPoint.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -58,11 +60,42 @@ enum SVGPathSegType {
     PathSegCurveToQuadraticSmoothRel = 19
 };
 
+static inline SVGPathSegType toAbsolutePathSegType(const SVGPathSegType type)
+{
+    // Clear the LSB to get the absolute command.
+    return type >= PathSegMoveToAbs ? static_cast<SVGPathSegType>(type & ~1u) : type;
+}
+
+static inline bool isAbsolutePathSegType(const SVGPathSegType type)
+{
+    // For commands with an ordinal >= PathSegMoveToAbs, and odd number => relative command.
+    return type < PathSegMoveToAbs || type % 2 == 0;
+}
+
+struct PathSegmentData {
+    PathSegmentData()
+        : command(PathSegUnknown)
+        , arcSweep(false)
+        , arcLarge(false)
+    {
+    }
+
+    const FloatPoint& arcRadii() const { return point1; }
+    float arcAngle() const { return point2.x(); }
+
+    SVGPathSegType command;
+    FloatPoint targetPoint;
+    FloatPoint point1;
+    FloatPoint point2;
+    bool arcSweep;
+    bool arcLarge;
+};
+
 class SVGPropertyBase;
 class SVGPathElement;
 class SVGElement;
 
-class SVGPathSeg : public RefCounted<SVGPathSeg>, public ScriptWrappable {
+class SVGPathSeg : public RefCountedWillBeGarbageCollectedFinalized<SVGPathSeg>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     // SVGPathSeg itself is used as a tear-off type.
@@ -118,16 +151,46 @@ public:
         m_contextElement = contextElement;
     }
 
-    static PassRefPtr<SVGPathSeg> create() { ASSERT_NOT_REACHED(); return nullptr; }
-    PassRefPtr<SVGPathSeg> clone() { ASSERT_NOT_REACHED(); return nullptr; }
+    static PassRefPtrWillBeRawPtr<SVGPathSeg> create() { ASSERT_NOT_REACHED(); return nullptr; }
+    PassRefPtrWillBeRawPtr<SVGPathSeg> clone() { ASSERT_NOT_REACHED(); return nullptr; }
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     void commitChange();
 
 private:
-    // FIXME: oilpan: These are kept as raw ptrs to break reference cycle. Should be Member in oilpan.
-    SVGPropertyBase* m_ownerList;
-    SVGElement* m_contextElement;
+    RawPtrWillBeMember<SVGPropertyBase> m_ownerList;
+    RawPtrWillBeMember<SVGElement> m_contextElement;
+};
+
+class SVGPathSegSingleCoordinate : public SVGPathSeg {
+public:
+    float x() const { return m_x; }
+    void setX(float x)
+    {
+        m_x = x;
+        commitChange();
+    }
+
+    float y() const { return m_y; }
+    void setY(float y)
+    {
+        m_y = y;
+        commitChange();
+    }
+
+protected:
+    SVGPathSegSingleCoordinate(SVGPathElement* element, float x, float y)
+        : SVGPathSeg(element)
+        , m_x(x)
+        , m_y(y)
+    {
+    }
+
+private:
+    float m_x;
+    float m_y;
 };
 
 } // namespace blink

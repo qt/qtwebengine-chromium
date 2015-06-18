@@ -47,7 +47,7 @@ static base::LazyInstance<base::internal::LazySysInfoValue<
 // from Chrome we work around this by defining a weak stub here, which uses
 // dlsym to but ensures that Chrome uses the real system
 // implementatation when loaded.  http://crbug.com/392191.
-int __system_property_get(const char* name, char* value) {
+BASE_EXPORT int __system_property_get(const char* name, char* value) {
   return g_lazy_real_system_property_get.Get().value()(name, value);
 }
 
@@ -59,8 +59,8 @@ namespace {
 // cannot be acquired. Use the latest Android release with a higher bug fix
 // version to avoid unnecessarily comparison errors with the latest release.
 // This should be manually kept up-to-date on each Android release.
-const int kDefaultAndroidMajorVersion = 4;
-const int kDefaultAndroidMinorVersion = 4;
+const int kDefaultAndroidMajorVersion = 5;
+const int kDefaultAndroidMinorVersion = 1;
 const int kDefaultAndroidBugfixVersion = 99;
 
 // Parse out the OS version numbers from the system properties.

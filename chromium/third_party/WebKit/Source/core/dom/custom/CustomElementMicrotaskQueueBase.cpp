@@ -11,13 +11,13 @@ namespace blink {
 
 void CustomElementMicrotaskQueueBase::dispatch()
 {
-    ASSERT(!m_inDispatch);
+    RELEASE_ASSERT(!m_inDispatch);
     m_inDispatch = true;
     doDispatch();
     m_inDispatch = false;
 }
 
-void CustomElementMicrotaskQueueBase::trace(Visitor* visitor)
+DEFINE_TRACE(CustomElementMicrotaskQueueBase)
 {
     visitor->trace(m_queue);
 }

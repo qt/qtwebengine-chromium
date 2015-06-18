@@ -47,7 +47,7 @@ import bindings.scripts.compute_interfaces_info_overall
 from bindings.scripts.compute_interfaces_info_overall import compute_interfaces_info_overall, interfaces_info
 from bindings.scripts.idl_compiler import IdlCompilerDictionaryImpl, IdlCompilerV8
 from bindings.scripts.idl_reader import IdlReader
-from bindings.scripts.utilities import idl_filename_to_component, write_file
+from bindings.scripts.utilities import ComponentInfoProviderCore, ComponentInfoProviderModules, idl_filename_to_component, write_file
 
 
 PASS_MESSAGE = 'All tests PASS!'
@@ -69,6 +69,7 @@ DEPENDENCY_IDL_FILES = frozenset([
     'TestPartialInterface.idl',
     'TestPartialInterface2.idl',
     'TestPartialInterface3.idl',
+    'TestPartialInterface4.idl',
 ])
 
 # core/inspector/InspectorInstrumentation.idl is not a valid Blink IDL.
@@ -81,8 +82,10 @@ COMPONENT_DIRECTORY = frozenset(['core', 'modules'])
 test_input_directory = os.path.join(source_path, 'bindings', 'tests', 'idls')
 reference_directory = os.path.join(source_path, 'bindings', 'tests', 'results')
 
-# component -> set of union types
-union_types = {}
+# component -> ComponentInfoProvider.
+# Note that this dict contains information about testing idl files, which live
+# in Source/bindings/tests/idls/{core,modules}, not in Source/{core,modules}.
+component_info_providers = {}
 
 @contextmanager
 def TemporaryDirectory():
@@ -133,10 +136,8 @@ def generate_interface_dependencies(output_directory):
         # To avoid this issue, we need to clear relative_dir here.
         for value in info['interfaces_info'].itervalues():
             value['relative_dir'] = ''
-        # Merge component-wide information.
         component_info = info_collector.get_component_info_as_dict()
-        info.update(component_info)
-        return info
+        return info, component_info
 
     # We compute interfaces info for *all* IDL files, not just test IDL
     # files, as code generator output depends on inheritance (both ancestor
@@ -161,21 +162,25 @@ def generate_interface_dependencies(output_directory):
     # includes are invalid), but that's brittle (would need to update this file
     # for each new component) and doesn't test the code generator any better
     # than using a single component.
-    non_test_interfaces_info = collect_interfaces_info(non_test_idl_paths)
+    non_test_interfaces_info, non_test_component_info = collect_interfaces_info(non_test_idl_paths)
     test_interfaces_info = {}
+    test_component_info = {}
     for component, paths in test_idl_paths.iteritems():
-        test_interfaces_info[component] = collect_interfaces_info(paths)
+        test_interfaces_info[component], test_component_info[component] = collect_interfaces_info(paths)
     # In order to allow test IDL files to override the production IDL files if
     # they have the same interface name, process the test IDL files after the
     # non-test IDL files.
     info_individuals = [non_test_interfaces_info] + test_interfaces_info.values()
     compute_interfaces_info_overall(info_individuals)
-    # 3rd-stage: union types
-    # We only process union types which are defined under
-    # Source/bindings/tests/idls. Otherwise, the result of union type
-    # container classes will be affected by non-test IDL files.
-    for component, interfaces_info in test_interfaces_info.iteritems():
-        union_types[component] = interfaces_info['union_types']
+    # Add typedefs which are specified in the actual IDL files to the testing
+    # component info.
+    test_component_info['core']['typedefs'].update(
+        non_test_component_info['typedefs'])
+    component_info_providers['core'] = ComponentInfoProviderCore(
+        interfaces_info, test_component_info['core'])
+    component_info_providers['modules'] = ComponentInfoProviderModules(
+        interfaces_info, test_component_info['core'],
+        test_component_info['modules'])
 
 
 def bindings_tests(output_directory, verbose):
@@ -262,9 +267,9 @@ def bindings_tests(output_directory, verbose):
 
     def generate_union_type_containers(output_directory, component):
         generator = CodeGeneratorUnionType(
-            interfaces_info, cache_dir=None, output_dir=output_directory,
-            target_component=component)
-        outputs = generator.generate_code(union_types[component])
+            component_info_providers[component], cache_dir=None,
+            output_dir=output_directory, target_component=component)
+        outputs = generator.generate_code()
         for output_path, output_code in outputs:
             write_file(output_code, output_path, only_if_changed=True)
 
@@ -277,9 +282,10 @@ def bindings_tests(output_directory, verbose):
 
             generate_union_type_containers(output_dir, component)
 
-            idl_compiler = IdlCompilerV8(output_dir,
-                                         interfaces_info=interfaces_info,
-                                         only_if_changed=True)
+            idl_compiler = IdlCompilerV8(
+                output_dir,
+                info_provider=component_info_providers[component],
+                only_if_changed=True)
             if component == 'core':
                 partial_interface_output_dir = os.path.join(output_directory,
                                                             'modules')
@@ -287,14 +293,14 @@ def bindings_tests(output_directory, verbose):
                     os.makedirs(partial_interface_output_dir)
                 idl_partial_interface_compiler = IdlCompilerV8(
                     partial_interface_output_dir,
-                    interfaces_info=interfaces_info,
+                    info_provider=component_info_providers['modules'],
                     only_if_changed=True,
                     target_component='modules')
             else:
                 idl_partial_interface_compiler = None
 
             dictionary_impl_compiler = IdlCompilerDictionaryImpl(
-                output_dir, interfaces_info=interfaces_info,
+                output_dir, info_provider=component_info_providers[component],
                 only_if_changed=True)
 
             idl_filenames = []

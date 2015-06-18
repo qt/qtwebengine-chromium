@@ -80,8 +80,8 @@ html[dir='rtl'] #notification-container {
   background-color: transparent;
   /* TODO(estade): this should animate between states. */
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_2.png') 1x,
-      url('../../../../ui/resources/default_200_percent/close_2.png') 2x);
+      url(../../../../ui/resources/default_100_percent/close_2.png) 1x,
+      url(../../../../ui/resources/default_200_percent/close_2.png) 2x);
   border: 0;
   cursor: default;
   display: inline-block;
@@ -93,15 +93,15 @@ html[dir='rtl'] #notification-container {
 .close-button:hover,
 .close-button:focus {
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_2_hover.png') 1x,
-      url('../../../../ui/resources/default_200_percent/close_2_hover.png') 2x);
+      url(../../../../ui/resources/default_100_percent/close_2_hover.png) 1x,
+      url(../../../../ui/resources/default_200_percent/close_2_hover.png) 2x);
 }
 
 .close-button:active {
   background-image: -webkit-image-set(
-      url('../../../../ui/resources/default_100_percent/close_2_pressed.png')
+      url(../../../../ui/resources/default_100_percent/close_2_pressed.png)
           1x,
-      url('../../../../ui/resources/default_200_percent/close_2_pressed.png')
+      url(../../../../ui/resources/default_200_percent/close_2_pressed.png)
           2x);
 }
 
@@ -143,8 +143,7 @@ body.bare-minimum #card-slider-frame {
 }
 
 /* For themes that right-align their images, we flip the attribution to the
- * left to avoid conflicts. We also do this for bare-minimum mode since there
- * can be conflicts with the recently closed menu. */
+ * left to avoid conflicts. */
 html[themegravity='right'] #attribution,
 body.bare-minimum #attribution,
 html[dir='rtl'] #attribution {
@@ -230,9 +229,9 @@ body.bare-minimum #dot-list {
 /* Login Status. **************************************************************/
 
 #login-container {
-  -webkit-box-shadow: none;
   background: transparent none;
   border: none;
+  box-shadow: none;
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -253,6 +252,10 @@ html[dir='rtl'] #login-container {
   right: auto;
 }
 
+#login-container [is='action-link'] {
+  -webkit-margin-start: 0;
+}
+
 .login-status-icon {
   -webkit-padding-end: 37px;
   background-position: right center;
@@ -262,11 +265,6 @@ html[dir='rtl'] #login-container {
 
 html[dir='rtl'] .login-status-icon {
   background-position-x: left;
-}
-
-.profile-name:hover,
-.link-span {
-  text-decoration: underline;
 }
 
 #login-status-bubble-contents {
@@ -300,8 +298,8 @@ html[dir='rtl'] .login-status-icon {
 
 #trash {
   -webkit-padding-start: 10px;
-  -webkit-transition: top 200ms, opacity 0;
-  -webkit-transition-delay: 0, 200ms;
+  -webkit-transition: top 200ms, opacity 0ms;
+  -webkit-transition-delay: 0ms, 200ms;
   color: #222;
   height: 100%;
   opacity: 0;
@@ -317,8 +315,8 @@ html[dir='rtl'] #trash {
 }
 
 #footer.showing-trash-mode #trash {
-  -webkit-transition-delay: 0, 0;
-  -webkit-transition-duration: 0, 200ms;
+  -webkit-transition-delay: 0ms, 0ms;
+  -webkit-transition-duration: 0ms, 200ms;
   opacity: 0.75;
   top: 0;
 }
@@ -390,7 +388,6 @@ html[dir='rtl'] #footer.showing-trash-mode #trash.drag-target .lid {
 #chrome-web-store-link {
   -webkit-order: 3;
   -webkit-padding-end: 12px;
-  /* Match transition delay of recently closed button. */
   -webkit-transition-delay: 100ms;
   color: inherit;
   cursor: pointer;
@@ -403,7 +400,7 @@ html[dir='rtl'] #footer.showing-trash-mode #trash.drag-target .lid {
 #chrome-web-store-title {
   -webkit-padding-end: 36px;
   -webkit-padding-start: 15px;
-  background: url('chrome://theme/IDR_WEBSTORE_ICON_24') right 50% no-repeat;
+  background: url(chrome://theme/IDR_WEBSTORE_ICON_24) right 50% no-repeat;
   display: inline-block;
   line-height: 49px;
 }
@@ -434,7 +431,7 @@ html[dir='rtl'] #chrome-web-store-title {
 
 /* In trash mode, hide the menus and web store link. */
 #footer.showing-trash-mode .menu-container {
-  -webkit-transition-delay: 0;
+  -webkit-transition-delay: 0ms;
   opacity: 0;
   visibility: hidden;
 }
@@ -448,10 +445,6 @@ html[dir='rtl'] #chrome-web-store-title {
   height: 100%;
   margin: 0;
   min-width: -webkit-min-content;
-}
-
-#recently-closed-menu-button {
-  -webkit-order: 1;
 }
 
 #other-sessions-menu-button {

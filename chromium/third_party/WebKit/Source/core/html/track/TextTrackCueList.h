@@ -44,28 +44,28 @@ public:
     }
 
     unsigned long length() const;
-    unsigned long getCueIndex(TextTrackCue*) const;
 
     TextTrackCue* item(unsigned index) const;
     TextTrackCue* getCueById(const AtomicString&) const;
-    TextTrackCueList* activeCues();
 
     bool add(PassRefPtrWillBeRawPtr<TextTrackCue>);
     bool remove(TextTrackCue*);
-    bool contains(TextTrackCue*) const;
 
-    bool updateCueIndex(TextTrackCue*);
+    void collectActiveCues(TextTrackCueList&) const;
+    void updateCueIndex(TextTrackCue*);
+    bool isCueIndexValid(unsigned probeIndex) const { return probeIndex < m_firstInvalidIndex; }
+    void validateCueIndexes();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     TextTrackCueList();
-    bool add(PassRefPtrWillBeRawPtr<TextTrackCue>, size_t, size_t);
+    size_t findInsertionIndex(const TextTrackCue*) const;
+    void invalidateCueIndex(size_t index);
     void clear();
-    void invalidateCueIndexes(size_t);
 
     WillBeHeapVector<RefPtrWillBeMember<TextTrackCue>> m_list;
-    RefPtrWillBeMember<TextTrackCueList> m_activeCues;
+    size_t m_firstInvalidIndex;
 };
 
 } // namespace blink

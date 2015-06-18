@@ -2,14 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_COCOA_PROTOCOLS_MAC_H_
-#define BASE_COCOA_PROTOCOLS_MAC_H_
+#ifndef BASE_MAC_COCOA_PROTOCOLS_H_
+#define BASE_MAC_COCOA_PROTOCOLS_H_
 
 #import <Cocoa/Cocoa.h>
-
-// GTM also maintains a list of empty protocols, but only the ones the library
-// requires. Augment that below.
-#import "third_party/google_toolbox_for_mac/src/GTMDefines.h"
 
 // New Mac OS X SDKs introduce new protocols used for delegates.  These
 // protocol defintions aren't not present in earlier releases of the Mac OS X
@@ -32,4 +28,4 @@ DEFINE_EMPTY_PROTOCOL(ICCameraDeviceDownloadDelegate)
 
 #undef DEFINE_EMPTY_PROTOCOL
 
-#endif  // BASE_COCOA_PROTOCOLS_MAC_H_
+#endif  // BASE_MAC_COCOA_PROTOCOLS_H_

@@ -25,6 +25,8 @@ static const char gDrawName[] = "onDrawContent";
 static const char gClickName[] = "onClickHandler";
 static const char gUnicharName[] = "onCharHandler";
 
+static const char gLuaClickHandlerName[] = "lua-click-handler";
+
 static const char gMissingCode[] = ""
     "local paint = Sk.newPaint()"
     "paint:setAntiAlias(true)"
@@ -73,7 +75,7 @@ public:
     }
 
 protected:
-    virtual bool onQuery(SkEvent* evt) SK_OVERRIDE {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "Lua");
             return true;
@@ -99,7 +101,7 @@ protected:
         return this->INHERITED::onQuery(evt);
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) SK_OVERRIDE {
+    void onDrawContent(SkCanvas* canvas) override {
         lua_State* L = this->ensureLua();
 
         lua_getglobal(L, gDrawName);
@@ -124,25 +126,54 @@ protected:
     }
 
     virtual SkView::Click* onFindClickHandler(SkScalar x, SkScalar y,
-                                              unsigned modi) SK_OVERRIDE {
+                                              unsigned modi) override {
         lua_State* L = this->ensureLua();
         lua_getglobal(L, gClickName);
         if (lua_isfunction(L, -1)) {
             fLua->pushScalar(x);
             fLua->pushScalar(y);
-            if (lua_pcall(L, 2, 1, 0) != LUA_OK) {
+            fLua->pushString("down");
+            if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
                 SkDebugf("lua err: %s\n", lua_tostring(L, -1));
             } else {
                 if (lua_isboolean(L, -1) && lua_toboolean(L, -1)) {
                     this->inval(NULL);
+                    Click* c = new Click(this);
+                    c->setType(gLuaClickHandlerName);
+                    return c;
                 }
             }
         }
         return this->INHERITED::onFindClickHandler(x, y, modi);
     }
 
-    virtual bool onClick(Click* click) SK_OVERRIDE {
-        return this->INHERITED::onClick(click);
+    bool onClick(Click* click) override {
+        if (click->getType() != gLuaClickHandlerName) {
+            return this->INHERITED::onClick(click);
+        }
+
+        const char* state = NULL;
+        switch (click->fState) {
+            case Click::kMoved_State:
+                state = "moved";
+                break;
+            case Click::kUp_State:
+                state = "up";
+                break;
+            default:
+                break;
+        }
+        if (state) {
+            this->inval(NULL);
+            lua_State* L = fLua->get();
+            lua_getglobal(L, gClickName);
+            fLua->pushScalar(click->fCurr.x());
+            fLua->pushScalar(click->fCurr.y());
+            fLua->pushString(state);
+            lua_pcall(L, 3, 1, 0);
+            return lua_isboolean(L, -1) && lua_toboolean(L, -1);
+        }
+        return true;
     }
 
 private:

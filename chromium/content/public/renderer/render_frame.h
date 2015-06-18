@@ -5,13 +5,18 @@
 #ifndef CONTENT_PUBLIC_RENDERER_RENDER_FRAME_H_
 #define CONTENT_PUBLIC_RENDERER_RENDER_FRAME_H_
 
+#include "base/callback_forward.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 
+class GURL;
+
 namespace blink {
+class WebElement;
 class WebFrame;
 class WebLocalFrame;
 class WebNode;
@@ -26,13 +31,14 @@ class Range;
 }
 
 namespace v8 {
-template <typename T> class Handle;
+template <typename T> class Local;
 class Context;
 class Isolate;
 }
 
 namespace content {
 class ContextMenuClient;
+class PluginInstanceThrottler;
 class RenderView;
 class ServiceRegistry;
 struct ContextMenuParams;
@@ -56,6 +62,10 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
 
   // Returns the associated WebFrame.
   virtual blink::WebLocalFrame* GetWebFrame() = 0;
+
+  // Gets the focused element. If no such element exists then
+  // the element will be Null.
+  virtual blink::WebElement GetFocusedElement() const = 0;
 
    // Gets WebKit related preferences associated with this frame.
   virtual WebPreferences& GetWebkitPreferences() = 0;
@@ -82,11 +92,12 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   virtual blink::WebNode GetContextMenuNode() const = 0;
 
   // Create a new NPAPI/Pepper plugin depending on |info|. Returns NULL if no
-  // plugin was found.
+  // plugin was found. |throttler| may be empty.
   virtual blink::WebPlugin* CreatePlugin(
       blink::WebFrame* frame,
       const WebPluginInfo& info,
-      const blink::WebPluginParams& params) = 0;
+      const blink::WebPluginParams& params,
+      scoped_ptr<PluginInstanceThrottler> throttler) = 0;
 
   // The client should handle the navigation externally.
   virtual void LoadURLExternally(blink::WebLocalFrame* frame,
@@ -102,12 +113,25 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Returns the ServiceRegistry for this frame.
   virtual ServiceRegistry* GetServiceRegistry() = 0;
 
+#if defined(ENABLE_PLUGINS)
+  // Registers a plugin that has been marked peripheral. If the origin
+  // whitelist is later updated and includes |content_origin|, then
+  // |unthrottle_callback| will be called.
+  virtual void RegisterPeripheralPlugin(
+      const GURL& content_origin,
+      const base::Closure& unthrottle_callback) = 0;
+#endif
+
   // Returns true if this frame is a FTP directory listing.
   virtual bool IsFTPDirectoryListing() = 0;
 
   // Attaches the browser plugin identified by |element_instance_id| to guest
   // content created by the embedder.
   virtual void AttachGuest(int element_instance_id) = 0;
+
+  // Detaches the browser plugin identified by |element_instance_id| from guest
+  // content created by the embedder.
+  virtual void DetachGuest(int element_instance_id) = 0;
 
   // Notifies the browser of text selection changes made.
   virtual void SetSelectedText(const base::string16& selection_text,
@@ -117,7 +141,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Ensures that builtin mojo bindings modules are available in |context|.
   virtual void EnsureMojoBuiltinsAreAvailable(
       v8::Isolate* isolate,
-      v8::Handle<v8::Context> context) = 0;
+      v8::Local<v8::Context> context) = 0;
 
  protected:
   ~RenderFrame() override {}

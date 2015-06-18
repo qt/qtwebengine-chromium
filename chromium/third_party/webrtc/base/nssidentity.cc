@@ -117,6 +117,10 @@ NSSCertificate::NSSCertificate(CERTCertificate* cert, SSLCertChain* chain)
     chain_.reset(chain->Copy());
 }
 
+NSSCertificate::~NSSCertificate() {
+  if (certificate_)
+    CERT_DestroyCertificate(certificate_);
+}
 
 NSSCertificate *NSSCertificate::FromPEMString(const std::string &pem_string) {
   std::string der;
@@ -329,6 +333,9 @@ bool NSSCertificate::GetDigestObject(const std::string &algorithm,
   return true;
 }
 
+NSSIdentity::NSSIdentity(NSSKeyPair* keypair, NSSCertificate* cert)
+    : keypair_(keypair), certificate_(cert) {
+}
 
 NSSIdentity* NSSIdentity::GenerateInternal(const SSLIdentityParams& params) {
   std::string subject_name_string = "CN=" + params.common_name;
@@ -399,7 +406,7 @@ NSSIdentity* NSSIdentity::GenerateInternal(const SSLIdentityParams& params) {
   arena = certificate->arena;
 
   rv = SECOID_SetAlgorithmID(arena, &certificate->signature,
-                             SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION, NULL);
+                             SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION, NULL);
   if (rv != SECSuccess)
     goto fail;
 
@@ -413,7 +420,7 @@ NSSIdentity* NSSIdentity::GenerateInternal(const SSLIdentityParams& params) {
 
   rv = SEC_DerSignData(arena, &signed_cert, inner_der.data, inner_der.len,
                        keypair->privkey(),
-                       SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION);
+                       SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION);
   if (rv != SECSuccess) {
     LOG(LS_ERROR) << "Couldn't sign certificate";
     goto fail;
@@ -493,6 +500,10 @@ SSLIdentity* NSSIdentity::FromPEMStrings(const std::string& private_key,
   // TODO(ekr@rtfm.com): Check the public key against the certificate.
 
   return new NSSIdentity(keypair.release(), cert.release());
+}
+
+NSSIdentity::~NSSIdentity() {
+  LOG(LS_INFO) << "Destroying NSS identity";
 }
 
 NSSIdentity *NSSIdentity::GetReference() const {

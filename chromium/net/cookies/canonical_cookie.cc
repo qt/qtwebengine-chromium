@@ -102,6 +102,20 @@ std::string CanonPathWithString(const GURL& url,
   return url_path.substr(0, idx);
 }
 
+// Compares cookies using name, domain and path, so that "equivalent" cookies
+// (per RFC 2965) are equal to each other.
+int PartialCookieOrdering(const CanonicalCookie& a, const CanonicalCookie& b) {
+  int diff = a.Name().compare(b.Name());
+  if (diff != 0)
+    return diff;
+
+  diff = a.Domain().compare(b.Domain());
+  if (diff != 0)
+    return diff;
+
+  return a.Path().compare(b.Path());
+}
+
 }  // namespace
 
 CanonicalCookie::CanonicalCookie()
@@ -109,12 +123,18 @@ CanonicalCookie::CanonicalCookie()
       httponly_(false) {
 }
 
-CanonicalCookie::CanonicalCookie(
-    const GURL& url, const std::string& name, const std::string& value,
-    const std::string& domain, const std::string& path,
-    const base::Time& creation, const base::Time& expiration,
-    const base::Time& last_access, bool secure, bool httponly,
-    CookiePriority priority)
+CanonicalCookie::CanonicalCookie(const GURL& url,
+                                 const std::string& name,
+                                 const std::string& value,
+                                 const std::string& domain,
+                                 const std::string& path,
+                                 const base::Time& creation,
+                                 const base::Time& expiration,
+                                 const base::Time& last_access,
+                                 bool secure,
+                                 bool httponly,
+                                 bool firstpartyonly,
+                                 CookiePriority priority)
     : source_(GetCookieSourceFromURL(url)),
       name_(name),
       value_(value),
@@ -125,6 +145,7 @@ CanonicalCookie::CanonicalCookie(
       last_access_date_(last_access),
       secure_(secure),
       httponly_(httponly),
+      first_party_only_(firstpartyonly),
       priority_(priority) {
 }
 
@@ -137,6 +158,7 @@ CanonicalCookie::CanonicalCookie(const GURL& url, const ParsedCookie& pc)
       last_access_date_(Time()),
       secure_(pc.IsSecure()),
       httponly_(pc.IsHttpOnly()),
+      first_party_only_(pc.IsFirstPartyOnly()),
       priority_(pc.Priority()) {
   if (pc.HasExpires())
     expiry_date_ = CanonExpiration(pc, creation_date_, creation_date_);
@@ -164,7 +186,7 @@ std::string CanonicalCookie::GetCookieSourceFromURL(const GURL& url) {
 
   url::Replacements<char> replacements;
   replacements.ClearPort();
-  if (url.SchemeIsSecure())
+  if (url.SchemeIsCryptographic())
     replacements.SetScheme("http", url::Component(0, 4));
 
   return url.GetOrigin().ReplaceComponents(replacements).spec();
@@ -238,12 +260,11 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
                                                          creation_time,
                                                          server_time);
 
-  return new CanonicalCookie(url, parsed_cookie.Name(), parsed_cookie.Value(),
-                             cookie_domain, cookie_path, creation_time,
-                             cookie_expires, creation_time,
-                             parsed_cookie.IsSecure(),
-                             parsed_cookie.IsHttpOnly(),
-                             parsed_cookie.Priority());
+  return new CanonicalCookie(
+      url, parsed_cookie.Name(), parsed_cookie.Value(), cookie_domain,
+      cookie_path, creation_time, cookie_expires, creation_time,
+      parsed_cookie.IsSecure(), parsed_cookie.IsHttpOnly(),
+      parsed_cookie.IsFirstPartyOnly(), parsed_cookie.Priority());
 }
 
 CanonicalCookie* CanonicalCookie::Create(const GURL& url,
@@ -255,6 +276,7 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
                                          const base::Time& expiration,
                                          bool secure,
                                          bool http_only,
+                                         bool first_party_only,
                                          CookiePriority priority) {
   // Expect valid attribute tokens and values, as defined by the ParsedCookie
   // logic, otherwise don't create the cookie.
@@ -293,7 +315,7 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
 
   return new CanonicalCookie(url, parsed_name, parsed_value, cookie_domain,
                              cookie_path, creation, expiration, creation,
-                             secure, http_only, priority);
+                             secure, http_only, first_party_only, priority);
 }
 
 bool CanonicalCookie::IsOnPath(const std::string& url_path) const {
@@ -372,7 +394,7 @@ bool CanonicalCookie::IncludeForRequestURL(const GURL& url,
     return false;
   // Secure cookies should not be included in requests for URLs with an
   // insecure scheme.
-  if (IsSecure() && !url.SchemeIsSecure())
+  if (IsSecure() && !url.SchemeIsCryptographic())
     return false;
   // Don't include cookies for requests that don't apply to the cookie domain.
   if (!IsDomainMatch(url.host()))
@@ -381,6 +403,14 @@ bool CanonicalCookie::IncludeForRequestURL(const GURL& url,
   // match the cookie-path.
   if (!IsOnPath(url.path()))
     return false;
+
+  // Include first-party-only cookies iff |options| tells us to include all of
+  // them, or if a first-party URL is set and its origin matches the origin of
+  // |url|.
+  if (IsFirstPartyOnly() && !options.include_first_party_only() &&
+      options.first_party_url().GetOrigin() != url.GetOrigin()) {
+    return false;
+  }
 
   return true;
 }
@@ -394,20 +424,39 @@ std::string CanonicalCookie::DebugString() const {
       static_cast<int64>(creation_date_.ToTimeT()));
 }
 
-CanonicalCookie* CanonicalCookie::Duplicate() const {
-  CanonicalCookie* cc = new CanonicalCookie();
-  cc->source_ = source_;
-  cc->name_ = name_;
-  cc->value_ = value_;
-  cc->domain_ = domain_;
-  cc->path_ = path_;
-  cc->creation_date_ = creation_date_;
-  cc->expiry_date_ = expiry_date_;
-  cc->last_access_date_ = last_access_date_;
-  cc->secure_ = secure_;
-  cc->httponly_ = httponly_;
-  cc->priority_ = priority_;
-  return cc;
+bool CanonicalCookie::PartialCompare(const CanonicalCookie& other) const {
+  return PartialCookieOrdering(*this, other) < 0;
+}
+
+bool CanonicalCookie::FullCompare(const CanonicalCookie& other) const {
+  // Do the partial comparison first.
+  int diff = PartialCookieOrdering(*this, other);
+  if (diff != 0)
+    return diff < 0;
+
+  DCHECK(IsEquivalent(other));
+
+  // Compare other fields.
+  diff = Value().compare(other.Value());
+  if (diff != 0)
+    return diff < 0;
+
+  if (CreationDate() != other.CreationDate())
+    return CreationDate() < other.CreationDate();
+
+  if (ExpiryDate() != other.ExpiryDate())
+    return ExpiryDate() < other.ExpiryDate();
+
+  if (LastAccessDate() != other.LastAccessDate())
+    return LastAccessDate() < other.LastAccessDate();
+
+  if (IsSecure() != other.IsSecure())
+    return IsSecure();
+
+  if (IsHttpOnly() != other.IsHttpOnly())
+    return IsHttpOnly();
+
+  return Priority() < other.Priority();
 }
 
 }  // namespace net

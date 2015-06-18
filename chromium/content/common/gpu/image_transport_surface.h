@@ -16,9 +16,9 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
 #include "ui/events/latency_info.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 #include "ui/gl/gl_surface.h"
 
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
@@ -29,7 +29,6 @@ class GLSurface;
 }
 
 namespace gpu {
-class GpuScheduler;
 class PreemptionFlag;
 namespace gles2 {
 class GLES2Decoder;
@@ -124,15 +123,6 @@ class ImageTransportHelper
   // like size and surface id. The helper fills in the rest.
   void SendAcceleratedSurfaceBuffersSwapped(
       GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params);
-  void SendUpdateVSyncParameters(
-      base::TimeTicks timebase, base::TimeDelta interval);
-
-  void SwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info);
-
-  // Whether or not we should execute more commands.
-  void SetScheduled(bool is_scheduled);
-
-  void DeferToFence(base::Closure task);
 
   void SetPreemptByFlag(
       scoped_refptr<gpu::PreemptionFlag> preemption_flag);
@@ -147,7 +137,6 @@ class ImageTransportHelper
   GpuCommandBufferStub* stub() const { return stub_.get(); }
 
  private:
-  gpu::GpuScheduler* Scheduler();
   gpu::gles2::GLES2Decoder* Decoder();
 
   // IPC::Message handlers.
@@ -207,6 +196,7 @@ class PassThroughImageTransportSurface
   // If updated vsync parameters can be determined, send this information to
   // the browser.
   virtual void SendVSyncUpdateIfAvailable();
+  void SwapBuffersCallBack(std::vector<ui::LatencyInfo>* latency_info_ptr);
 
   ImageTransportHelper* GetHelper() { return helper_.get(); }
 
@@ -214,6 +204,7 @@ class PassThroughImageTransportSurface
   scoped_ptr<ImageTransportHelper> helper_;
   bool did_set_swap_interval_;
   std::vector<ui::LatencyInfo> latency_info_;
+  base::WeakPtrFactory<PassThroughImageTransportSurface> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PassThroughImageTransportSurface);
 };

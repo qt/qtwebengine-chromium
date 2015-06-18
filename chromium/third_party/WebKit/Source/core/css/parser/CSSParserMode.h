@@ -14,7 +14,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -31,6 +31,8 @@
 #ifndef CSSParserMode_h
 #define CSSParserMode_h
 
+#include "core/CoreExport.h"
+#include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
 
@@ -63,14 +65,9 @@ inline bool isUASheetBehavior(CSSParserMode mode)
     return mode == UASheetMode;
 }
 
-inline bool isInternalPropertyAndValueParsingEnabledForMode(CSSParserMode mode)
-{
-    return mode == HTMLAttributeMode || mode == UASheetMode;
-}
-
 inline bool isUnitLessLengthParsingEnabledForMode(CSSParserMode mode)
 {
-    return mode == HTMLQuirksMode || mode == HTMLAttributeMode || mode == SVGAttributeMode;
+    return mode == HTMLAttributeMode || mode == SVGAttributeMode;
 }
 
 inline bool isCSSViewportParsingEnabledForMode(CSSParserMode mode)
@@ -86,8 +83,8 @@ inline bool isUseCounterEnabledForMode(CSSParserMode mode)
 
 class UseCounter;
 
-class CSSParserContext {
-    WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT CSSParserContext {
+    WTF_MAKE_FAST_ALLOCATED(CSSParserContext);
 public:
     CSSParserContext(CSSParserMode, UseCounter*);
     // FIXME: We shouldn't need the UseCounter argument as we could infer it from the Document
@@ -122,6 +119,8 @@ public:
 
     UseCounter* useCounter() const { return m_useCounter; }
 
+    ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy() const { return m_shouldCheckContentSecurityPolicy; }
+
 private:
     KURL m_baseURL;
     String m_charset;
@@ -129,11 +128,12 @@ private:
     Referrer m_referrer;
     bool m_isHTMLDocument;
     bool m_useLegacyBackgroundSizeShorthandBehavior;
+    ContentSecurityPolicyDisposition m_shouldCheckContentSecurityPolicy;
 
     UseCounter* m_useCounter;
 };
 
-const CSSParserContext& strictCSSParserContext();
+CORE_EXPORT const CSSParserContext& strictCSSParserContext();
 
 };
 

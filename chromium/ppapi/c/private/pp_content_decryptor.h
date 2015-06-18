@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/pp_content_decryptor.idl modified Thu Jun  5 13:39:15 2014. */
+/* From private/pp_content_decryptor.idl modified Thu Mar 19 16:04:42 2015. */
 
 #ifndef PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
 #define PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
@@ -455,9 +455,20 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptorStreamType, 4);
  */
 typedef enum {
   PP_SESSIONTYPE_TEMPORARY = 0,
-  PP_SESSIONTYPE_PERSISTENT = 1
+  PP_SESSIONTYPE_PERSISTENT_LICENSE = 1,
+  PP_SESSIONTYPE_PERSISTENT_RELEASE = 2
 } PP_SessionType;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_SessionType, 4);
+
+/**
+ * <code>PP_InitDataType</code> contains Initialization Data Type constants.
+ */
+typedef enum {
+  PP_INITDATATYPE_CENC = 0,
+  PP_INITDATATYPE_KEYIDS = 1,
+  PP_INITDATATYPE_WEBM = 2
+} PP_InitDataType;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_InitDataType, 4);
 
 /**
  * <code>PP_CdmExceptionCode</code> contains exception code constants.
@@ -472,6 +483,57 @@ typedef enum {
   PP_CDMEXCEPTIONCODE_OUTPUTERROR = 7
 } PP_CdmExceptionCode;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CdmExceptionCode, 4);
+
+/**
+ * <code>PP_CdmMessageType</code> contains message type constants.
+ */
+typedef enum {
+  PP_CDMMESSAGETYPE_LICENSE_REQUEST = 0,
+  PP_CDMMESSAGETYPE_LICENSE_RENEWAL = 1,
+  PP_CDMMESSAGETYPE_LICENSE_RELEASE = 2
+} PP_CdmMessageType;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CdmMessageType, 4);
+
+/**
+ * <code>PP_CdmKeyStatus</code> contains key status constants.
+ */
+typedef enum {
+  PP_CDMKEYSTATUS_USABLE = 0,
+  PP_CDMKEYSTATUS_INVALID = 1,
+  PP_CDMKEYSTATUS_EXPIRED = 2,
+  PP_CDMKEYSTATUS_OUTPUTNOTALLOWED = 3,
+  PP_CDMKEYSTATUS_OUTPUTDOWNSCALED = 4,
+  PP_CDMKEYSTATUS_STATUSPENDING = 5
+} PP_CdmKeyStatus;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CdmKeyStatus, 4);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Structs
+ * @{
+ */
+/**
+ * The <code>PP_KeyInformation</code> struct contains information about a
+ * key used for decryption.
+ */
+struct PP_KeyInformation {
+  /**
+   * Key ID.
+   */
+  uint8_t key_id[512];
+  uint32_t key_id_size;
+  /**
+   * Status of this key.
+   */
+  PP_CdmKeyStatus key_status;
+  /**
+   * Optional error code for keys that are not usable.
+   */
+  uint32_t system_code;
+};
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_KeyInformation, 524);
 /**
  * @}
  */

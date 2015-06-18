@@ -14,10 +14,24 @@ void SkTime::GetDateTime(DateTime* dt)
     if (dt)
     {
         SYSTEMTIME      st;
-        GetSystemTime(&st);
-
+        TIME_ZONE_INFORMATION timeZoneInfo;
+        int tz_bias;
+        GetLocalTime(&st);
+        // https://gist.github.com/wrl/8924636
+        switch (GetTimeZoneInformation(&timeZoneInfo)) {
+            case TIME_ZONE_ID_STANDARD:
+                tz_bias = -timeZoneInfo.Bias - timeZoneInfo.StandardBias;
+                break;
+            case TIME_ZONE_ID_DAYLIGHT:
+                tz_bias = -timeZoneInfo.Bias - timeZoneInfo.DaylightBias;
+                break;
+            default:
+                tz_bias = -timeZoneInfo.Bias;
+                break;
+        }
+        dt->fTimeZoneMinutes = SkToS16(tz_bias);
         dt->fYear       = st.wYear;
-        dt->fMonth      = SkToU8(st.wMonth + 1);
+        dt->fMonth      = SkToU8(st.wMonth);
         dt->fDayOfWeek  = SkToU8(st.wDayOfWeek);
         dt->fDay        = SkToU8(st.wDay);
         dt->fHour       = SkToU8(st.wHour);

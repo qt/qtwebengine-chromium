@@ -38,7 +38,7 @@ inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
                        "2:\n"
                        ".set pop\n"
                        : "=&r" (prev), "=m" (*ptr), "=&r" (tmp)
-                       : "Ir" (old_value), "r" (new_value), "m" (*ptr)
+                       : "r" (old_value), "r" (new_value), "m" (*ptr)
                        : "memory");
   return prev;
 }
@@ -167,7 +167,7 @@ inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64* ptr,
                        "2:\n"
                        ".set pop\n"
                        : "=&r" (prev), "=m" (*ptr), "=&r" (tmp)
-                       : "Ir" (old_value), "r" (new_value), "m" (*ptr)
+                       : "r" (old_value), "r" (new_value), "m" (*ptr)
                        : "memory");
   return prev;
 }
@@ -274,7 +274,7 @@ inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
 }
 #endif
 
-} // namespace base::subtle
-} // namespace base
+}  // namespace subtle
+}  // namespace base
 
 #endif  // BASE_ATOMICOPS_INTERNALS_MIPS_GCC_H_

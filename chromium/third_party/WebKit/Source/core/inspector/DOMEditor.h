@@ -36,6 +36,7 @@
 
 namespace blink {
 
+class ContainerNode;
 class Element;
 class ExceptionState;
 class InspectorHistory;
@@ -46,23 +47,23 @@ typedef String ErrorString;
 
 class DOMEditor final : public NoBaseWillBeGarbageCollected<DOMEditor> {
     WTF_MAKE_NONCOPYABLE(DOMEditor);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DOMEditor);
 public:
     explicit DOMEditor(InspectorHistory*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
-    bool insertBefore(Node* parentNode, PassRefPtrWillBeRawPtr<Node>, Node* anchorNode, ExceptionState&);
-    bool removeChild(Node* parentNode, Node*, ExceptionState&);
+    bool insertBefore(ContainerNode* parentNode, PassRefPtrWillBeRawPtr<Node>, Node* anchorNode, ExceptionState&);
+    bool removeChild(ContainerNode* parentNode, Node*, ExceptionState&);
     bool setAttribute(Element*, const String& name, const String& value, ExceptionState&);
     bool removeAttribute(Element*, const String& name, ExceptionState&);
     bool setOuterHTML(Node*, const String& html, Node** newNode, ExceptionState&);
     bool replaceWholeText(Text*, const String& text, ExceptionState&);
-    bool replaceChild(Node* parentNode, PassRefPtrWillBeRawPtr<Node> newNode, Node* oldNode, ExceptionState&);
+    bool replaceChild(ContainerNode* parentNode, PassRefPtrWillBeRawPtr<Node> newNode, Node* oldNode, ExceptionState&);
     bool setNodeValue(Node* parentNode, const String& value, ExceptionState&);
 
-    bool insertBefore(Node* parentNode, PassRefPtrWillBeRawPtr<Node>, Node* anchorNode, ErrorString*);
-    bool removeChild(Node* parentNode, Node*, ErrorString*);
+    bool insertBefore(ContainerNode* parentNode, PassRefPtrWillBeRawPtr<Node>, Node* anchorNode, ErrorString*);
+    bool removeChild(ContainerNode* parentNode, Node*, ErrorString*);
     bool setAttribute(Element*, const String& name, const String& value, ErrorString*);
     bool removeAttribute(Element*, const String& name, ErrorString*);
     bool setOuterHTML(Node*, const String& html, Node** newNode, ErrorString*);

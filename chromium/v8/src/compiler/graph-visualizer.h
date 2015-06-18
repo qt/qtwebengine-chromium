@@ -5,6 +5,7 @@
 #ifndef V8_COMPILER_GRAPH_VISUALIZER_H_
 #define V8_COMPILER_GRAPH_VISUALIZER_H_
 
+#include <stdio.h>
 #include <iosfwd>
 
 namespace v8 {
@@ -16,10 +17,12 @@ namespace compiler {
 
 class Graph;
 class InstructionSequence;
-class RegisterAllocator;
+class RegisterAllocationData;
 class Schedule;
 class SourcePositionTable;
 
+FILE* OpenVisualizerLogFile(CompilationInfo* info, const char* phase,
+                            const char* suffix, const char* mode);
 
 struct AsDOT {
   explicit AsDOT(const Graph& g) : graph(g) {}
@@ -30,11 +33,20 @@ std::ostream& operator<<(std::ostream& os, const AsDOT& ad);
 
 
 struct AsJSON {
-  explicit AsJSON(const Graph& g) : graph(g) {}
+  AsJSON(const Graph& g, SourcePositionTable* p) : graph(g), positions(p) {}
   const Graph& graph;
+  const SourcePositionTable* positions;
 };
 
 std::ostream& operator<<(std::ostream& os, const AsJSON& ad);
+
+struct AsRPO {
+  explicit AsRPO(const Graph& g) : graph(g) {}
+  const Graph& graph;
+};
+
+std::ostream& operator<<(std::ostream& os, const AsRPO& ad);
+
 
 struct AsC1VCompilation {
   explicit AsC1VCompilation(const CompilationInfo* info) : info_(info) {}
@@ -56,18 +68,19 @@ struct AsC1V {
   const char* phase_;
 };
 
-struct AsC1VAllocator {
-  explicit AsC1VAllocator(const char* phase,
-                          const RegisterAllocator* allocator = NULL)
-      : phase_(phase), allocator_(allocator) {}
+struct AsC1VRegisterAllocationData {
+  explicit AsC1VRegisterAllocationData(
+      const char* phase, const RegisterAllocationData* data = nullptr)
+      : phase_(phase), data_(data) {}
   const char* phase_;
-  const RegisterAllocator* allocator_;
+  const RegisterAllocationData* data_;
 };
 
 std::ostream& operator<<(std::ostream& os, const AsDOT& ad);
 std::ostream& operator<<(std::ostream& os, const AsC1VCompilation& ac);
 std::ostream& operator<<(std::ostream& os, const AsC1V& ac);
-std::ostream& operator<<(std::ostream& os, const AsC1VAllocator& ac);
+std::ostream& operator<<(std::ostream& os,
+                         const AsC1VRegisterAllocationData& ac);
 
 }  // namespace compiler
 }  // namespace internal

@@ -2,6 +2,14 @@
   <div class="close-button"></div>
   <h1 i18n-content="autofillOptionsPage"></h1>
   <div class="content-area">
+    <!-- TODO(estade): This checkbox shouldn't show if you're not signed into
+         sync. Or perhaps it should show with a link to go sign in with sync?
+      -->
+    <div id="autofill-wallet-setting-area" class="checkbox">
+      <label>
+        <input pref="autofill.wallet_import_enabled" type="checkbox">
+        <span i18n-content="autofillWalletOption"></span>
+    </div>
 <if expr="is_macosx">
     <div class="checkbox">
       <label>
@@ -20,6 +28,7 @@
         </button>
       </div>
     </div>
+
     <h3 i18n-content="autofillCreditCards"></h3>
     <div class="settings-list">
       <list id="creditcard-list"></list>
@@ -29,6 +38,7 @@
       </div>
     </div>
   </div>
+
   <div class="action-area">
     <a id="autofill-help" target="_blank" i18n-values="href:helpUrl"
         i18n-content="helpButton">

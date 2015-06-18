@@ -9,15 +9,19 @@ action("grit_sources") {
   depfile = "$target_out_dir/grit_sources.d"
   script = "//build/secondary/tools/grit/stamp_grit_sources.py"
 
-  inputs = [ "grit.py" ]
+  inputs = [
+    "grit.py",
+  ]
 
   # Note that we can't call this "grit_sources.stamp" because that file is
   # implicitly created by GN for script actions.
-  outputs = [ "$target_out_dir/grit_sources.script.stamp" ]
+  outputs = [
+    "$target_out_dir/grit_sources.script.stamp",
+  ]
 
   args = [
     rebase_path("//tools/grit", root_build_dir),
     rebase_path(outputs[0], root_build_dir),
-    rebase_path(depfile, root_build_dir)
+    rebase_path(depfile, root_build_dir),
   ]
 }

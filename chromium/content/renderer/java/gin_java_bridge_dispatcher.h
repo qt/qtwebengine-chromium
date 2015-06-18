@@ -41,11 +41,11 @@ class GinJavaBridgeDispatcher
   typedef ObjectMap::KeyType ObjectID;
 
   explicit GinJavaBridgeDispatcher(RenderFrame* render_frame);
-  virtual ~GinJavaBridgeDispatcher();
+  ~GinJavaBridgeDispatcher() override;
 
   // RenderFrameObserver override:
-  virtual bool OnMessageReceived(const IPC::Message& message) override;
-  virtual void DidClearWindowObject() override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void DidClearWindowObject() override;
 
   void GetJavaMethods(ObjectID object_id, std::set<std::string>* methods);
   bool HasJavaMethod(ObjectID object_id, const std::string& method_name);
@@ -54,7 +54,7 @@ class GinJavaBridgeDispatcher
                                            const base::ListValue& arguments,
                                            GinJavaBridgeError* error);
   GinJavaBridgeObject* GetObject(ObjectID object_id);
-  void OnGinJavaBridgeObjectDeleted(ObjectID object_id);
+  void OnGinJavaBridgeObjectDeleted(GinJavaBridgeObject* object);
 
  private:
   void OnAddNamedObject(const std::string& name,

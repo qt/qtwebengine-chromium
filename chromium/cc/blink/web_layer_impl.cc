@@ -4,11 +4,14 @@
 
 #include "cc/blink/web_layer_impl.h"
 
+#include <utility>
+#include <vector>
+
 #include "base/bind.h"
-#include "base/debug/trace_event_impl.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_checker.h"
+#include "base/trace_event/trace_event_impl.h"
 #include "cc/animation/animation.h"
 #include "cc/base/region.h"
 #include "cc/base/switches.h"
@@ -253,7 +256,7 @@ void WebLayerImpl::removeAnimation(int animation_id) {
 void WebLayerImpl::removeAnimation(
     int animation_id,
     blink::WebCompositorAnimation::TargetProperty target_property) {
-  layer_->layer_animation_controller()->RemoveAnimation(
+  layer_->RemoveAnimation(
       animation_id, static_cast<Animation::TargetProperty>(target_property));
 }
 
@@ -271,6 +274,12 @@ void WebLayerImpl::setForceRenderSurface(bool force_render_surface) {
 
 void WebLayerImpl::setScrollPositionDouble(blink::WebDoublePoint position) {
   layer_->SetScrollOffset(gfx::ScrollOffset(position.x, position.y));
+}
+
+void WebLayerImpl::setScrollCompensationAdjustment(
+    blink::WebDoublePoint position) {
+  layer_->SetScrollCompensationAdjustment(
+      gfx::Vector2dF(position.x, position.y));
 }
 
 blink::WebDoublePoint WebLayerImpl::scrollPositionDouble() const {
@@ -352,6 +361,31 @@ WebVector<WebRect> WebLayerImpl::nonFastScrollableRegion() const {
   return result;
 }
 
+void WebLayerImpl::setFrameTimingRequests(
+    const WebVector<std::pair<int64_t, WebRect>>& requests) {
+  std::vector<cc::FrameTimingRequest> frame_timing_requests(requests.size());
+  for (size_t i = 0; i < requests.size(); ++i) {
+    frame_timing_requests[i] = cc::FrameTimingRequest(
+        requests[i].first, gfx::Rect(requests[i].second));
+  }
+  layer_->SetFrameTimingRequests(frame_timing_requests);
+}
+
+WebVector<std::pair<int64_t, WebRect>> WebLayerImpl::frameTimingRequests()
+    const {
+  const std::vector<cc::FrameTimingRequest>& frame_timing_requests =
+      layer_->FrameTimingRequests();
+
+  size_t num_requests = frame_timing_requests.size();
+
+  WebVector<std::pair<int64_t, WebRect>> result(num_requests);
+  for (size_t i = 0; i < num_requests; ++i) {
+    result[i] = std::make_pair(frame_timing_requests[i].id(),
+                               frame_timing_requests[i].rect());
+  }
+  return result;
+}
+
 void WebLayerImpl::setTouchEventHandlerRegion(const WebVector<WebRect>& rects) {
   cc::Region region;
   for (size_t i = 0; i < rects.size(); ++i)
@@ -375,6 +409,28 @@ WebVector<WebRect> WebLayerImpl::touchEventHandlerRegion() const {
     ++i;
   }
   return result;
+}
+
+static_assert(static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnNone) ==
+                  SCROLL_BLOCKS_ON_NONE,
+              "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+static_assert(static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnStartTouch) ==
+                  SCROLL_BLOCKS_ON_START_TOUCH,
+              "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+static_assert(static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnWheelEvent) ==
+                  SCROLL_BLOCKS_ON_WHEEL_EVENT,
+              "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+static_assert(
+    static_cast<ScrollBlocksOn>(blink::WebScrollBlocksOnScrollEvent) ==
+        SCROLL_BLOCKS_ON_SCROLL_EVENT,
+    "ScrollBlocksOn and WebScrollBlocksOn enums must match");
+
+void WebLayerImpl::setScrollBlocksOn(blink::WebScrollBlocksOn blocks) {
+  layer_->SetScrollBlocksOn(static_cast<ScrollBlocksOn>(blocks));
+}
+
+blink::WebScrollBlocksOn WebLayerImpl::scrollBlocksOn() const {
+  return static_cast<blink::WebScrollBlocksOn>(layer_->scroll_blocks_on());
 }
 
 void WebLayerImpl::setIsContainerForFixedPositionLayers(bool enable) {
@@ -430,7 +486,7 @@ void WebLayerImpl::setWebLayerClient(blink::WebLayerClient* client) {
   web_layer_client_ = client;
 }
 
-class TracedDebugInfo : public base::debug::ConvertableToTraceFormat {
+class TracedDebugInfo : public base::trace_event::ConvertableToTraceFormat {
  public:
   // This object takes ownership of the debug_info object.
   explicit TracedDebugInfo(blink::WebGraphicsLayerDebugInfo* debug_info)
@@ -448,7 +504,7 @@ class TracedDebugInfo : public base::debug::ConvertableToTraceFormat {
   base::ThreadChecker thread_checker_;
 };
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 WebLayerImpl::TakeDebugInfo() {
   if (!web_layer_client_)
     return nullptr;

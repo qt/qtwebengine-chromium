@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -122,8 +123,7 @@ class FieldConverter : public FieldConverterBase<StructType> {
         value_converter_(converter) {
   }
 
-  virtual bool ConvertField(
-      const base::Value& value, StructType* dst) const override {
+  bool ConvertField(const base::Value& value, StructType* dst) const override {
     return value_converter_->Convert(value, &(dst->*field_pointer_));
   }
 
@@ -137,67 +137,57 @@ template <typename FieldType>
 class BasicValueConverter;
 
 template <>
-class BasicValueConverter<int> : public ValueConverter<int> {
+class BASE_EXPORT BasicValueConverter<int> : public ValueConverter<int> {
  public:
   BasicValueConverter() {}
 
-  virtual bool Convert(const base::Value& value, int* field) const override {
-    return value.GetAsInteger(field);
-  }
+  bool Convert(const base::Value& value, int* field) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BasicValueConverter);
 };
 
 template <>
-class BasicValueConverter<std::string> : public ValueConverter<std::string> {
+class BASE_EXPORT BasicValueConverter<std::string>
+    : public ValueConverter<std::string> {
  public:
   BasicValueConverter() {}
 
-  virtual bool Convert(
-      const base::Value& value, std::string* field) const override {
-    return value.GetAsString(field);
-  }
+  bool Convert(const base::Value& value, std::string* field) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BasicValueConverter);
 };
 
 template <>
-class BasicValueConverter<string16> : public ValueConverter<string16> {
+class BASE_EXPORT BasicValueConverter<string16>
+    : public ValueConverter<string16> {
  public:
   BasicValueConverter() {}
 
-  virtual bool Convert(
-      const base::Value& value, string16* field) const override {
-    return value.GetAsString(field);
-  }
+  bool Convert(const base::Value& value, string16* field) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BasicValueConverter);
 };
 
 template <>
-class BasicValueConverter<double> : public ValueConverter<double> {
+class BASE_EXPORT BasicValueConverter<double> : public ValueConverter<double> {
  public:
   BasicValueConverter() {}
 
-  virtual bool Convert(const base::Value& value, double* field) const override {
-    return value.GetAsDouble(field);
-  }
+  bool Convert(const base::Value& value, double* field) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BasicValueConverter);
 };
 
 template <>
-class BasicValueConverter<bool> : public ValueConverter<bool> {
+class BASE_EXPORT BasicValueConverter<bool> : public ValueConverter<bool> {
  public:
   BasicValueConverter() {}
 
-  virtual bool Convert(const base::Value& value, bool* field) const override {
-    return value.GetAsBoolean(field);
-  }
+  bool Convert(const base::Value& value, bool* field) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BasicValueConverter);
@@ -211,8 +201,7 @@ class ValueFieldConverter : public ValueConverter<FieldType> {
   ValueFieldConverter(ConvertFunc convert_func)
       : convert_func_(convert_func) {}
 
-  virtual bool Convert(const base::Value& value,
-                       FieldType* field) const override {
+  bool Convert(const base::Value& value, FieldType* field) const override {
     return convert_func_(&value, field);
   }
 
@@ -230,8 +219,7 @@ class CustomFieldConverter : public ValueConverter<FieldType> {
   CustomFieldConverter(ConvertFunc convert_func)
       : convert_func_(convert_func) {}
 
-  virtual bool Convert(const base::Value& value,
-                       FieldType* field) const override {
+  bool Convert(const base::Value& value, FieldType* field) const override {
     std::string string_value;
     return value.GetAsString(&string_value) &&
         convert_func_(string_value, field);
@@ -248,8 +236,7 @@ class NestedValueConverter : public ValueConverter<NestedType> {
  public:
   NestedValueConverter() {}
 
-  virtual bool Convert(
-      const base::Value& value, NestedType* field) const override {
+  bool Convert(const base::Value& value, NestedType* field) const override {
     return converter_.Convert(value, field);
   }
 
@@ -263,8 +250,8 @@ class RepeatedValueConverter : public ValueConverter<ScopedVector<Element> > {
  public:
   RepeatedValueConverter() {}
 
-  virtual bool Convert(
-      const base::Value& value, ScopedVector<Element>* field) const override {
+  bool Convert(const base::Value& value,
+               ScopedVector<Element>* field) const override {
     const base::ListValue* list = NULL;
     if (!value.GetAsList(&list)) {
       // The field is not a list.
@@ -299,8 +286,8 @@ class RepeatedMessageConverter
  public:
   RepeatedMessageConverter() {}
 
-  virtual bool Convert(const base::Value& value,
-                       ScopedVector<NestedType>* field) const override {
+  bool Convert(const base::Value& value,
+               ScopedVector<NestedType>* field) const override {
     const base::ListValue* list = NULL;
     if (!value.GetAsList(&list))
       return false;
@@ -336,8 +323,8 @@ class RepeatedCustomValueConverter
   RepeatedCustomValueConverter(ConvertFunc convert_func)
       : convert_func_(convert_func) {}
 
-  virtual bool Convert(const base::Value& value,
-                       ScopedVector<NestedType>* field) const override {
+  bool Convert(const base::Value& value,
+               ScopedVector<NestedType>* field) const override {
     const base::ListValue* list = NULL;
     if (!value.GetAsList(&list))
       return false;

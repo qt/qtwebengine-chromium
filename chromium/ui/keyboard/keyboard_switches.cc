@@ -13,9 +13,22 @@ const char kDisableInputView[] = "disable-input-view";
 const char kEnableInputView[] = "enable-input-view";
 const char kEnableExperimentalInputViewFeatures[] =
     "enable-experimental-input-view-features";
+const char kDisableVoiceInput[] = "disable-voice-input";
+const char kDisableNewMDInputView[] = "disable-new-md-input-view";
+
+const char kGestureTyping[] = "gesture-typing";
+const char kGestureTypingEnabled[] = "enabled";
+const char kGestureTypingDisabled[] = "disabled";
+
+const char kGestureEditing[] = "gesture-editing";
+const char kGestureEditingEnabled[] = "enabled";
+const char kGestureEditingDisabled[] = "disabled";
 
 const char kEnableVirtualKeyboard[] = "enable-virtual-keyboard";
-const char kAutoVirtualKeyboard[] = "auto-virtual-keyboard";
+const char kFloatingVirtualKeyboard[] = "floating-virtual-keyboard";
+const char kFloatingVirtualKeyboardDisabled[] ="disabled";
+const char kFloatingVirtualKeyboardEnabled[] ="enabled";
+const char kDisableSmartVirtualKeyboard[] = "disable-smart-virtual-keyboard";
 
 const char kDisableVirtualKeyboardOverscroll[] =
     "disable-virtual-keyboard-overscroll";

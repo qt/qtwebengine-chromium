@@ -7,6 +7,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/common/common_type_converters.h"
+#include "mojo/common/url_type_converters.h"
 #include "mojo/services/network/net_adapters.h"
 #include "mojo/services/network/network_context.h"
 #include "net/base/elements_upload_data_stream.h"
@@ -30,13 +31,16 @@ URLResponsePtr MakeURLResponse(const net::URLRequest* url_request) {
     response->status_code = headers->response_code();
     response->status_line = headers->GetStatusLine();
 
+    response->headers = Array<HTTPHeaderPtr>::New(0);
     std::vector<String> header_lines;
-    void* iter = NULL;
+    void* iter = nullptr;
     std::string name, value;
-    while (headers->EnumerateHeaderLines(&iter, &name, &value))
-      header_lines.push_back(name + ": " + value);
-    if (!header_lines.empty())
-      response->headers.Swap(&header_lines);
+    while (headers->EnumerateHeaderLines(&iter, &name, &value)) {
+      HTTPHeaderPtr header = HTTPHeader::New();
+      header->name = name;
+      header->value = value;
+      response->headers.push_back(header.Pass());
+    }
   }
 
   std::string mime_type;
@@ -60,7 +64,7 @@ class UploadDataPipeElementReader : public net::UploadElementReader {
   // UploadElementReader overrides:
   int Init(const net::CompletionCallback& callback) override {
     offset_ = 0;
-    ReadDataRaw(pipe_.get(), NULL, &num_bytes_, MOJO_READ_DATA_FLAG_QUERY);
+    ReadDataRaw(pipe_.get(), nullptr, &num_bytes_, MOJO_READ_DATA_FLAG_QUERY);
     return net::OK;
   }
   uint64 GetContentLength() const override { return num_bytes_; }
@@ -91,14 +95,26 @@ class UploadDataPipeElementReader : public net::UploadElementReader {
 
 }  // namespace
 
-URLLoaderImpl::URLLoaderImpl(NetworkContext* context)
+URLLoaderImpl::URLLoaderImpl(NetworkContext* context,
+                             InterfaceRequest<URLLoader> request)
     : context_(context),
       response_body_buffer_size_(0),
       auto_follow_redirects_(true),
+      connected_(true),
+      binding_(this, request.Pass()),
       weak_ptr_factory_(this) {
+  binding_.set_error_handler(this);
+  context_->RegisterURLLoader(this);
 }
 
 URLLoaderImpl::~URLLoaderImpl() {
+  context_->DeregisterURLLoader(this);
+}
+
+void URLLoaderImpl::Cleanup() {
+  // The associated network context is going away and we have to destroy
+  // net::URLRequest hold by this loader.
+  delete this;
 }
 
 void URLLoaderImpl::Start(URLRequestPtr request,
@@ -114,15 +130,24 @@ void URLLoaderImpl::Start(URLRequestPtr request,
   }
 
   url_request_ = context_->url_request_context()->CreateRequest(
-      GURL(request->url),
-      net::DEFAULT_PRIORITY,
-      this,
-      NULL);
+      GURL(request->url), net::DEFAULT_PRIORITY, this);
   url_request_->set_method(request->method);
+  // TODO(jam): need to specify this policy.
+  url_request_->set_referrer_policy(
+      net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE);
   if (request->headers) {
     net::HttpRequestHeaders headers;
-    for (size_t i = 0; i < request->headers.size(); ++i)
-      headers.AddHeaderFromString(request->headers[i].To<base::StringPiece>());
+    for (size_t i = 0; i < request->headers.size(); ++i) {
+      base::StringPiece header =
+          request->headers[i]->name.To<base::StringPiece>();
+      base::StringPiece value =
+          request->headers[i]->value.To<base::StringPiece>();
+      if (header == net::HttpRequestHeaders::kReferer) {
+        url_request_->SetReferrer(value.as_string());
+      } else {
+        headers.SetHeader(header, value);
+      }
+    }
     url_request_->SetExtraRequestHeaders(headers);
   }
   if (request->body) {
@@ -159,6 +184,7 @@ void URLLoaderImpl::FollowRedirect(
 
   // TODO(darin): Verify that it makes sense to call FollowDeferredRedirect.
   url_request_->FollowDeferredRedirect();
+  callback_ = callback;
 }
 
 void URLLoaderImpl::QueryStatus(
@@ -173,6 +199,11 @@ void URLLoaderImpl::QueryStatus(
   }
   // TODO(darin): Populate more status fields.
   callback.Run(status.Pass());
+}
+
+void URLLoaderImpl::OnConnectionError() {
+  connected_ = false;
+  DeleteIfNeeded();
 }
 
 void URLLoaderImpl::OnReceivedRedirect(net::URLRequest* url_request,
@@ -191,8 +222,11 @@ void URLLoaderImpl::OnReceivedRedirect(net::URLRequest* url_request,
   URLResponsePtr response = MakeURLResponse(url_request);
   response->redirect_method = redirect_info.new_method;
   response->redirect_url = String::From(redirect_info.new_url);
+  response->redirect_referrer = redirect_info.new_referrer;
 
   SendResponse(response.Pass());
+
+  DeleteIfNeeded();
 }
 
 void URLLoaderImpl::OnResponseStarted(net::URLRequest* url_request) {
@@ -201,6 +235,7 @@ void URLLoaderImpl::OnResponseStarted(net::URLRequest* url_request) {
   if (!url_request->status().is_success()) {
     SendError(url_request->status().error(), callback_);
     callback_ = Callback<void(URLResponsePtr)>();
+    DeleteIfNeeded();
     return;
   }
 
@@ -212,6 +247,7 @@ void URLLoaderImpl::OnResponseStarted(net::URLRequest* url_request) {
   URLResponsePtr response = MakeURLResponse(url_request);
   response->body = data_pipe.consumer_handle.Pass();
   response_body_stream_ = data_pipe.producer_handle.Pass();
+  ListenForPeerClosed();
 
   SendResponse(response.Pass());
 
@@ -226,7 +262,10 @@ void URLLoaderImpl::OnReadCompleted(net::URLRequest* url_request,
   if (url_request->status().is_success()) {
     DidRead(static_cast<uint32_t>(bytes_read), false);
   } else {
-    pending_write_ = NULL;  // This closes the data pipe.
+    handle_watcher_.Stop();
+    pending_write_ = nullptr;  // This closes the data pipe.
+    DeleteIfNeeded();
+    return;
   }
 }
 
@@ -248,7 +287,17 @@ void URLLoaderImpl::SendResponse(URLResponsePtr response) {
 
 void URLLoaderImpl::OnResponseBodyStreamReady(MojoResult result) {
   // TODO(darin): Handle a bad |result| value.
+
+  // Continue watching the handle in case the peer is closed.
+  ListenForPeerClosed();
   ReadMore();
+}
+
+void URLLoaderImpl::OnResponseBodyStreamClosed(MojoResult result) {
+  url_request_.reset();
+  response_body_stream_.reset();
+  pending_write_ = nullptr;
+  DeleteIfNeeded();
 }
 
 void URLLoaderImpl::ReadMore() {
@@ -261,14 +310,16 @@ void URLLoaderImpl::ReadMore() {
   if (result == MOJO_RESULT_SHOULD_WAIT) {
     // The pipe is full. We need to wait for it to have more space.
     handle_watcher_.Start(response_body_stream_.get(),
-                          MOJO_HANDLE_SIGNAL_WRITABLE,
-                          MOJO_DEADLINE_INDEFINITE,
+                          MOJO_HANDLE_SIGNAL_WRITABLE, MOJO_DEADLINE_INDEFINITE,
                           base::Bind(&URLLoaderImpl::OnResponseBodyStreamReady,
-                                     weak_ptr_factory_.GetWeakPtr()));
+                                     base::Unretained(this)));
     return;
   } else if (result != MOJO_RESULT_OK) {
     // The response body stream is in a bad state. Bail.
     // TODO(darin): How should this be communicated to our client?
+    handle_watcher_.Stop();
+    response_body_stream_.reset();
+    DeleteIfNeeded();
     return;
   }
   CHECK_GT(static_cast<uint32_t>(std::numeric_limits<int>::max()), num_bytes);
@@ -282,8 +333,11 @@ void URLLoaderImpl::ReadMore() {
   } else if (url_request_->status().is_success() && bytes_read > 0) {
     DidRead(static_cast<uint32_t>(bytes_read), true);
   } else {
+    handle_watcher_.Stop();
     pending_write_->Complete(0);
-    pending_write_ = NULL;  // This closes the data pipe.
+    pending_write_ = nullptr;  // This closes the data pipe.
+    DeleteIfNeeded();
+    return;
   }
 }
 
@@ -291,7 +345,7 @@ void URLLoaderImpl::DidRead(uint32_t num_bytes, bool completed_synchronously) {
   DCHECK(url_request_->status().is_success());
 
   response_body_stream_ = pending_write_->Complete(num_bytes);
-  pending_write_ = NULL;
+  pending_write_ = nullptr;
 
   if (completed_synchronously) {
     base::MessageLoop::current()->PostTask(
@@ -300,6 +354,20 @@ void URLLoaderImpl::DidRead(uint32_t num_bytes, bool completed_synchronously) {
   } else {
     ReadMore();
   }
+}
+
+void URLLoaderImpl::DeleteIfNeeded() {
+  bool has_data_pipe = pending_write_.get() || response_body_stream_.is_valid();
+  if (!connected_ && !has_data_pipe)
+    delete this;
+}
+
+void URLLoaderImpl::ListenForPeerClosed() {
+  handle_watcher_.Start(response_body_stream_.get(),
+                        MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+                        MOJO_DEADLINE_INDEFINITE,
+                        base::Bind(&URLLoaderImpl::OnResponseBodyStreamClosed,
+                                   base::Unretained(this)));
 }
 
 }  // namespace mojo

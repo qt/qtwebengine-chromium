@@ -33,6 +33,7 @@
 #include "modules/encoding/TextEncoder.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "modules/encoding/Encoding.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/TextEncodingRegistry.h"
 
@@ -40,15 +41,15 @@ namespace blink {
 
 TextEncoder* TextEncoder::create(const String& utfLabel, ExceptionState& exceptionState)
 {
-    WTF::TextEncoding encoding(utfLabel);
+    WTF::TextEncoding encoding(utfLabel.stripWhiteSpace(&Encoding::isASCIIWhiteSpace));
     if (!encoding.isValid()) {
-        exceptionState.throwTypeError("The encoding label provided ('" + utfLabel + "') is invalid.");
+        exceptionState.throwRangeError("The encoding label provided ('" + utfLabel + "') is invalid.");
         return 0;
     }
 
     String name(encoding.name());
     if (name != "UTF-8" && name != "UTF-16LE" && name != "UTF-16BE") {
-        exceptionState.throwTypeError("The encoding provided ('" + utfLabel + "') is not one of 'utf-8', 'utf-16', or 'utf-16be'.");
+        exceptionState.throwRangeError("The encoding provided ('" + utfLabel + "') is not one of 'utf-8', 'utf-16', or 'utf-16be'.");
         return 0;
     }
 

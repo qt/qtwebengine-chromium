@@ -33,27 +33,31 @@
 
 #include "bindings/core/v8/ScriptValue.h"
 #include "modules/EventModules.h"
+#include "modules/ModulesExport.h"
+#include "modules/serviceworkers/ExtendableEventInit.h"
 
 namespace blink {
 
 class WaitUntilObserver;
 
-class ExtendableEvent : public Event {
+class MODULES_EXPORT ExtendableEvent : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ExtendableEvent> create();
-    static PassRefPtrWillBeRawPtr<ExtendableEvent> create(const AtomicString& type, const EventInit&, WaitUntilObserver*);
+    static PassRefPtrWillBeRawPtr<ExtendableEvent> create(const AtomicString& type, const ExtendableEventInit&);
+    static PassRefPtrWillBeRawPtr<ExtendableEvent> create(const AtomicString& type, const ExtendableEventInit&, WaitUntilObserver*);
 
     virtual ~ExtendableEvent();
 
-    void waitUntil(ScriptState*, const ScriptValue&);
+    void waitUntil(ScriptState*, const ScriptValue&, ExceptionState&);
 
     virtual const AtomicString& interfaceName() const override;
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     ExtendableEvent();
-    ExtendableEvent(const AtomicString& type, const EventInit&, WaitUntilObserver*);
+    ExtendableEvent(const AtomicString& type, const ExtendableEventInit&);
+    ExtendableEvent(const AtomicString& type, const ExtendableEventInit&, WaitUntilObserver*);
 
     PersistentWillBeMember<WaitUntilObserver> m_observer;
 };

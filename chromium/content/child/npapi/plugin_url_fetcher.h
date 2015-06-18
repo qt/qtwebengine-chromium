@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_NPAPI_URL_FETCHER_H_
-#define CONTENT_CHILD_NPAPI_URL_FETCHER_H_
+#ifndef CONTENT_CHILD_NPAPI_PLUGIN_URL_FETCHER_H_
+#define CONTENT_CHILD_NPAPI_PLUGIN_URL_FETCHER_H_
 
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
 #include "content/public/child/request_peer.h"
+#include "content/public/common/referrer.h"
 #include "url/gurl.h"
 
 namespace content {
 class MultipartResponseDelegate;
 class PluginStreamUrl;
-class ResourceLoaderBridge;
 
 // Fetches URLS for a plugin using ResourceDispatcher.
 class PluginURLFetcher : public RequestPeer {
@@ -25,7 +25,7 @@ class PluginURLFetcher : public RequestPeer {
                    const std::string& method,
                    const char* buf,
                    unsigned int len,
-                   const GURL& referrer,
+                   const Referrer& referrer,
                    const std::string& range,
                    bool notify_redirects,
                    bool is_plugin_src_load,
@@ -43,7 +43,7 @@ class PluginURLFetcher : public RequestPeer {
   void URLRedirectResponse(bool allow);
 
   GURL first_party_for_cookies() { return first_party_for_cookies_; }
-  GURL referrer() { return referrer_; }
+  Referrer referrer() { return referrer_; }
   int origin_pid() { return origin_pid_; }
   int render_frame_id() { return render_frame_id_; }
   int render_view_id() { return render_view_id_; }
@@ -72,7 +72,7 @@ class PluginURLFetcher : public RequestPeer {
   PluginStreamUrl* plugin_stream_;
   GURL url_;
   GURL first_party_for_cookies_;
-  GURL referrer_;
+  Referrer referrer_;
   bool notify_redirects_;
   bool is_plugin_src_load_;
   int origin_pid_;
@@ -82,14 +82,13 @@ class PluginURLFetcher : public RequestPeer {
   bool copy_stream_data_;
   int64 data_offset_;
   bool pending_failure_notification_;
+  int request_id_;
 
   scoped_ptr<MultipartResponseDelegate> multipart_delegate_;
-
-  scoped_ptr<ResourceLoaderBridge> bridge_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginURLFetcher);
 };
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_NPAPI_URL_FETCHER_H_
+#endif  // CONTENT_CHILD_NPAPI_PLUGIN_URL_FETCHER_H_

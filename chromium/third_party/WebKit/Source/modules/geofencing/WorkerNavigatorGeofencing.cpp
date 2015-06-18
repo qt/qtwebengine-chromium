@@ -25,10 +25,10 @@ const char* WorkerNavigatorGeofencing::supplementName()
 
 WorkerNavigatorGeofencing& WorkerNavigatorGeofencing::from(WorkerNavigator& navigator)
 {
-    WorkerNavigatorGeofencing* supplement = static_cast<WorkerNavigatorGeofencing*>(WillBeHeapSupplement<WorkerNavigator>::from(navigator, supplementName()));
+    WorkerNavigatorGeofencing* supplement = static_cast<WorkerNavigatorGeofencing*>(HeapSupplement<WorkerNavigator>::from(navigator, supplementName()));
     if (!supplement) {
         supplement = new WorkerNavigatorGeofencing();
-        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
+        provideTo(navigator, supplementName(), supplement);
     }
     return *supplement;
 }
@@ -45,10 +45,10 @@ Geofencing* WorkerNavigatorGeofencing::geofencing()
     return m_geofencing.get();
 }
 
-void WorkerNavigatorGeofencing::trace(Visitor* visitor)
+DEFINE_TRACE(WorkerNavigatorGeofencing)
 {
     visitor->trace(m_geofencing);
-    WillBeHeapSupplement<WorkerNavigator>::trace(visitor);
+    HeapSupplement<WorkerNavigator>::trace(visitor);
 }
 
 } // namespace blink

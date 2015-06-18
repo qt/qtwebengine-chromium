@@ -39,25 +39,24 @@ class InspectorPageAgent;
 
 typedef String ErrorString;
 
-class InspectorApplicationCacheAgent final : public InspectorBaseAgent<InspectorApplicationCacheAgent>, public InspectorBackendDispatcher::ApplicationCacheCommandHandler {
+class InspectorApplicationCacheAgent final : public InspectorBaseAgent<InspectorApplicationCacheAgent, InspectorFrontend::ApplicationCache>, public InspectorBackendDispatcher::ApplicationCacheCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorApplicationCacheAgent);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorApplicationCacheAgent);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorApplicationCacheAgent> create(InspectorPageAgent* pageAgent)
     {
         return adoptPtrWillBeNoop(new InspectorApplicationCacheAgent(pageAgent));
     }
     virtual ~InspectorApplicationCacheAgent() { }
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // InspectorBaseAgent
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void clearFrontend() override;
-    virtual void restore() override;
+    void restore() override;
+    void disable(ErrorString*) override;
 
     // InspectorInstrumentation API
     void updateApplicationCacheStatus(LocalFrame*);
-    void networkStateChanged(bool online);
+    void networkStateChanged(LocalFrame*, bool online);
 
     // ApplicationCache API for InspectorFrontend
     virtual void enable(ErrorString*) override;
@@ -74,7 +73,6 @@ private:
     DocumentLoader* assertFrameWithDocumentLoader(ErrorString*, String frameId);
 
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    InspectorFrontend::ApplicationCache* m_frontend;
 };
 
 } // namespace blink

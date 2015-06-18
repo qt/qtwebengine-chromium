@@ -8,18 +8,18 @@
 #include <GLES2/gl2ext.h>
 
 #include "base/bind.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_gpu_memory_buffer_manager.h"
+#include "content/child/child_thread_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
-#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
+#include "content/common/gpu/media/gpu_video_accelerator_util.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
+#include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkPixelRef.h"
 
 namespace content {
 
@@ -48,7 +48,10 @@ RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
     : task_runner_(task_runner),
       gpu_channel_host_(gpu_channel_host),
       context_provider_(context_provider),
-      thread_safe_sender_(ChildThread::current()->thread_safe_sender()) {}
+      gpu_memory_buffer_manager_(
+          ChildThreadImpl::current()->gpu_memory_buffer_manager()),
+      thread_safe_sender_(ChildThreadImpl::current()->thread_safe_sender()) {
+}
 
 RendererGpuVideoAcceleratorFactories::~RendererGpuVideoAcceleratorFactories() {}
 
@@ -187,58 +190,45 @@ void RendererGpuVideoAcceleratorFactories::WaitSyncPoint(uint32 sync_point) {
   gles2->ShallowFlushCHROMIUM();
 }
 
-void RendererGpuVideoAcceleratorFactories::ReadPixels(
-    uint32 texture_id,
-    const gfx::Rect& visible_rect,
-    const SkBitmap& pixels) {
+scoped_ptr<gfx::GpuMemoryBuffer>
+RendererGpuVideoAcceleratorFactories::AllocateGpuMemoryBuffer(
+    const gfx::Size& size,
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage) {
   DCHECK(task_runner_->BelongsToCurrentThread());
-
-  GLHelper* gl_helper = GetGLHelper();
-  WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
-
-  if (!gl_helper || !context)
-    return;
-
-  // Copy texture from texture_id to tmp_texture as texture might be external
-  // (GL_TEXTURE_EXTERNAL_OES)
-  GLuint tmp_texture;
-  tmp_texture = gl_helper->CreateTexture();
-  context->copyTextureCHROMIUM(
-      GL_TEXTURE_2D, texture_id, tmp_texture, 0, GL_RGBA, GL_UNSIGNED_BYTE);
-
-  unsigned char* pixel_data =
-      static_cast<unsigned char*>(pixels.pixelRef()->pixels());
-
-  if (gl_helper->IsReadbackConfigSupported(pixels.colorType())) {
-    gl_helper->ReadbackTextureSync(
-        tmp_texture, visible_rect, pixel_data, pixels.colorType());
-  } else if (pixels.colorType() == kN32_SkColorType) {
-    gl_helper->ReadbackTextureSync(
-        tmp_texture, visible_rect, pixel_data, kRGBA_8888_SkColorType);
-
-    int pixel_count = visible_rect.width() * visible_rect.height();
-    uint32_t* pixels_ptr = static_cast<uint32_t*>(pixels.pixelRef()->pixels());
-    for (int i = 0; i < pixel_count; ++i) {
-        uint32_t r = pixels_ptr[i] & 0xFF;
-        uint32_t g = (pixels_ptr[i] >> 8) & 0xFF;
-        uint32_t b = (pixels_ptr[i] >> 16) & 0xFF;
-        uint32_t a = (pixels_ptr[i] >> 24) & 0xFF;
-        pixels_ptr[i] = (r << SK_R32_SHIFT) |
-                        (g << SK_G32_SHIFT) |
-                        (b << SK_B32_SHIFT) |
-                        (a << SK_A32_SHIFT);
-    }
-  } else {
-    NOTREACHED();
-  }
-
-  gl_helper->DeleteTexture(tmp_texture);
+  scoped_ptr<gfx::GpuMemoryBuffer> buffer =
+      gpu_memory_buffer_manager_->AllocateGpuMemoryBuffer(size, format, usage);
+  return buffer.Pass();
 }
 
-base::SharedMemory* RendererGpuVideoAcceleratorFactories::CreateSharedMemory(
-    size_t size) {
+bool RendererGpuVideoAcceleratorFactories::IsTextureRGSupported() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  return ChildThread::AllocateSharedMemory(size, thread_safe_sender_.get());
+
+  WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
+  if (!context)
+    return false;
+  return context->GetImplementation()->capabilities().texture_rg;
+}
+
+gpu::gles2::GLES2Interface*
+RendererGpuVideoAcceleratorFactories::GetGLES2Interface() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
+  if (!context)
+    return nullptr;
+  gpu::gles2::GLES2Implementation* gles2 = context->GetImplementation();
+  return gles2;
+}
+
+scoped_ptr<base::SharedMemory>
+RendererGpuVideoAcceleratorFactories::CreateSharedMemory(size_t size) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  scoped_ptr<base::SharedMemory> mem(
+      ChildThreadImpl::AllocateSharedMemory(size, thread_safe_sender_.get()));
+  if (mem && !mem->Map(size))
+    return nullptr;
+  return mem;
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>
@@ -246,10 +236,18 @@ RendererGpuVideoAcceleratorFactories::GetTaskRunner() {
   return task_runner_;
 }
 
-std::vector<media::VideoEncodeAccelerator::SupportedProfile>
+media::VideoDecodeAccelerator::SupportedProfiles
+RendererGpuVideoAcceleratorFactories::
+    GetVideoDecodeAcceleratorSupportedProfiles() {
+  return GpuVideoAcceleratorUtil::ConvertGpuToMediaDecodeProfiles(
+      gpu_channel_host_->gpu_info()
+          .video_decode_accelerator_supported_profiles);
+}
+
+media::VideoEncodeAccelerator::SupportedProfiles
 RendererGpuVideoAcceleratorFactories::
     GetVideoEncodeAcceleratorSupportedProfiles() {
-  return GpuVideoEncodeAcceleratorHost::ConvertGpuToMediaProfiles(
+  return GpuVideoAcceleratorUtil::ConvertGpuToMediaEncodeProfiles(
       gpu_channel_host_->gpu_info()
           .video_encode_accelerator_supported_profiles);
 }

@@ -164,6 +164,12 @@
       </message>
 
       <!-- The default value for |WebPreference::fixed_font_family_map| for
+           Arabic script. -->
+      <message name="IDS_FIXED_FONT_FAMILY_ARABIC" use_name_for_id="true">
+        Courier New
+      </message>
+
+      <!-- The default value for |WebPreference::fixed_font_family_map| for
            Cyrillic script. -->
       <message name="IDS_FIXED_FONT_FAMILY_CYRILLIC" use_name_for_id="true">
         Courier New
@@ -214,7 +220,7 @@
       <!-- The default value for |WebPreference::standard_font_family_map| for
            Japanese script. -->
       <message name="IDS_STANDARD_FONT_FAMILY_JAPANESE" use_name_for_id="true">
-        MS PGothic
+        Meiryo
       </message>
 
       <!-- The default value for |WebPreference::fixed_font_family_map| for
@@ -232,13 +238,13 @@
       <!-- The default value for |WebPreference::sans_serif_font_family_map| for
            Japanese script.  -->
       <message name="IDS_SANS_SERIF_FONT_FAMILY_JAPANESE" use_name_for_id="true">
-        MS PGothic
+        Meiryo
       </message>
 
      <!-- The default value for |WebPreference::standard_font_family_map| for
            Korean script. -->
       <message name="IDS_STANDARD_FONT_FAMILY_KOREAN" use_name_for_id="true">
-        Gulim
+        Malgun Gothic
       </message>
 
       <!-- The default value for |WebPreference::fixed_font_family_map| for
@@ -256,7 +262,7 @@
       <!-- The default value for |WebPreference::sans_serif_font_family_map| for
            Korean script.  -->
       <message name="IDS_SANS_SERIF_FONT_FAMILY_KOREAN" use_name_for_id="true">
-        Gulim
+        Malgun Gothic
       </message>
 
       <!-- The default value for |WebPreference::cursive_font_family_map| for
@@ -268,7 +274,7 @@
       <!-- The default value for |WebPreference::standard_font_family_map| for
            Simplified Chinese script. -->
       <message name="IDS_STANDARD_FONT_FAMILY_SIMPLIFIED_HAN" use_name_for_id="true">
-        Simsun
+        Microsoft YaHei
       </message>
 
       <!-- The default value for |WebPreference::fixed_font_family_map| for
@@ -286,13 +292,13 @@
       <!-- The default value for |WebPreference::sans_serif_font_family_map| for
            Simplified Chinese script.  -->
       <message name="IDS_SANS_SERIF_FONT_FAMILY_SIMPLIFIED_HAN" use_name_for_id="true">
-        Simsun
+        Microsoft YaHei
       </message>
 
       <!-- The default value for |WebPreference::standard_font_family_map| for
            Traditional Chinese script. -->
       <message name="IDS_STANDARD_FONT_FAMILY_TRADITIONAL_HAN" use_name_for_id="true">
-        PMingLiU
+        Microsoft JhengHei
       </message>
 
       <!-- The default value for |WebPreference::fixed_font_family_map| for
@@ -310,7 +316,7 @@
       <!-- The default value for |WebPreference::sans_serif_font_family_map| for
            Traditional Chinese script.  -->
       <message name="IDS_SANS_SERIF_FONT_FAMILY_TRADITIONAL_HAN" use_name_for_id="true">
-        PMingLiU
+        Microsoft JhengHei
       </message>
 
       <!-- The default value for |WebPreference::default_font_size| -->

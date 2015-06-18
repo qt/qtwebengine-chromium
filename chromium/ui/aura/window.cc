@@ -10,6 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -38,21 +39,6 @@
 namespace aura {
 
 namespace {
-
-ui::LayerType WindowLayerTypeToUILayerType(WindowLayerType window_layer_type) {
-  switch (window_layer_type) {
-    case WINDOW_LAYER_NONE:
-      break;
-    case WINDOW_LAYER_NOT_DRAWN:
-      return ui::LAYER_NOT_DRAWN;
-    case WINDOW_LAYER_TEXTURED:
-      return ui::LAYER_TEXTURED;
-    case WINDOW_LAYER_SOLID_COLOR:
-      return ui::LAYER_SOLID_COLOR;
-  }
-  NOTREACHED();
-  return ui::LAYER_NOT_DRAWN;
-}
 
 // Used when searching for a Window to stack relative to.
 template <class T>
@@ -216,17 +202,19 @@ Window::Window(WindowDelegate* delegate)
 }
 
 Window::~Window() {
-  // |layer()| can be NULL during tests, or if this Window is layerless.
-  if (layer()) {
-    if (layer()->owner() == this)
-      layer()->CompleteAllAnimations();
-    layer()->SuppressPaint();
-  }
+  if (layer()->owner() == this)
+    layer()->CompleteAllAnimations();
+  layer()->SuppressPaint();
 
   // Let the delegate know we're in the processing of destroying.
   if (delegate_)
     delegate_->OnWindowDestroying(this);
   FOR_EACH_OBSERVER(WindowObserver, observers_, OnWindowDestroying(this));
+
+  // While we are being destroyed, our target handler may also be in the
+  // process of destruction or already destroyed, so do not forward any
+  // input events at the ui::EP_TARGET phase.
+  set_target_handler(nullptr);
 
   // TODO(beng): See comment in window_event_dispatcher.h. This shouldn't be
   //             necessary but unfortunately is right now due to ordering
@@ -256,7 +244,7 @@ Window::~Window() {
 
   if (delegate_)
     delegate_->OnWindowDestroyed(this);
-  ObserverListBase<WindowObserver>::Iterator iter(observers_);
+  ObserverListBase<WindowObserver>::Iterator iter(&observers_);
   for (WindowObserver* observer = iter.GetNext(); observer;
        observer = iter.GetNext()) {
     RemoveObserver(observer);
@@ -272,23 +260,18 @@ Window::~Window() {
   }
   prop_map_.clear();
 
-  // If we have layer it will either be destroyed by |layer_owner_|'s dtor, or
-  // by whoever acquired it. We don't have a layer if Init() wasn't invoked or
-  // we are layerless.
-  if (layer())
-    layer()->set_delegate(NULL);
+  // The layer will either be destroyed by |layer_owner_|'s dtor, or by whoever
+  // acquired it.
+  layer()->set_delegate(NULL);
   DestroyLayer();
 }
 
-void Window::Init(WindowLayerType window_layer_type) {
-  if (window_layer_type != WINDOW_LAYER_NONE) {
-    SetLayer(new ui::Layer(WindowLayerTypeToUILayerType(window_layer_type)));
-    layer()->SetVisible(false);
-    layer()->set_delegate(this);
-    UpdateLayerName();
-    layer()->SetFillsBoundsOpaquely(!transparent_);
-  }
-
+void Window::Init(ui::LayerType layer_type) {
+  SetLayer(new ui::Layer(layer_type));
+  layer()->SetVisible(false);
+  layer()->set_delegate(this);
+  UpdateLayerName();
+  layer()->SetFillsBoundsOpaquely(!transparent_);
   Env::GetInstance()->NotifyWindowInitialized(this);
 }
 
@@ -300,7 +283,6 @@ void Window::SetType(ui::wm::WindowType type) {
 
 void Window::SetName(const std::string& name) {
   name_ = name;
-
   if (layer())
     UpdateLayerName();
 }
@@ -319,8 +301,7 @@ void Window::SetTransparent(bool transparent) {
 }
 
 void Window::SetFillsBoundsCompletely(bool fills_bounds) {
-  if (layer())
-    layer()->SetFillsBoundsCompletely(fills_bounds);
+  layer()->SetFillsBoundsCompletely(fills_bounds);
 }
 
 Window* Window::GetRootWindow() {
@@ -343,13 +324,11 @@ const WindowTreeHost* Window::GetHost() const {
 }
 
 void Window::Show() {
-  if (layer()) {
-    DCHECK_EQ(visible_, layer()->GetTargetVisibility());
-    // It is not allowed that a window is visible but the layers alpha is fully
-    // transparent since the window would still be considered to be active but
-    // could not be seen.
-    DCHECK(!(visible_ && layer()->GetTargetOpacity() == 0.0f));
-  }
+  DCHECK_EQ(visible_, layer()->GetTargetVisibility());
+  // It is not allowed that a window is visible but the layers alpha is fully
+  // transparent since the window would still be considered to be active but
+  // could not be seen.
+  DCHECK_IMPLIES(visible_, layer()->GetTargetOpacity() > 0.0f);
   SetVisible(true);
 }
 
@@ -378,9 +357,9 @@ gfx::Rect Window::GetBoundsInRootWindow() const {
   //             do for now.
   if (!GetRootWindow())
     return bounds();
-  gfx::Point origin = bounds().origin();
-  ConvertPointToTarget(parent_, GetRootWindow(), &origin);
-  return gfx::Rect(origin, bounds().size());
+  gfx::Rect bounds_in_root(bounds().size());
+  ConvertRectToTarget(this, GetRootWindow(), &bounds_in_root);
+  return bounds_in_root;
 }
 
 gfx::Rect Window::GetBoundsInScreen() const {
@@ -453,7 +432,6 @@ void Window::SetBoundsInScreen(const gfx::Rect& new_bounds_in_screen,
                                const gfx::Display& dst_display) {
   Window* root = GetRootWindow();
   if (root) {
-    gfx::Point origin = new_bounds_in_screen.origin();
     aura::client::ScreenPositionClient* screen_position_client =
         aura::client::GetScreenPositionClient(root);
     screen_position_client->SetBounds(this, new_bounds_in_screen, dst_display);
@@ -484,17 +462,7 @@ gfx::Rect Window::GetTargetBounds() const {
 }
 
 void Window::SchedulePaintInRect(const gfx::Rect& rect) {
-  if (!layer() && parent_) {
-    // Notification of paint scheduled happens for the window with a layer.
-    gfx::Rect parent_rect(bounds().size());
-    parent_rect.Intersect(rect);
-    if (!parent_rect.IsEmpty()) {
-      parent_rect.Offset(bounds().origin().OffsetFromOrigin());
-      parent_->SchedulePaintInRect(parent_rect);
-    }
-  } else if (layer()) {
-    layer()->SchedulePaint(rect);
-  }
+  layer()->SchedulePaint(rect);
 }
 
 void Window::StackChildAtTop(Window* child) {
@@ -641,6 +609,10 @@ void Window::ConvertRectToTarget(const Window* source,
   rect->set_origin(origin);
 }
 
+ui::TextInputClient* Window::GetFocusedTextInputClient() {
+  return delegate_ ? delegate_->GetFocusedTextInputClient() : nullptr;
+}
+
 void Window::MoveCursorTo(const gfx::Point& point_in_window) {
   Window* root_window = GetRootWindow();
   DCHECK(root_window);
@@ -663,7 +635,7 @@ void Window::RemoveObserver(WindowObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-bool Window::HasObserver(WindowObserver* observer) {
+bool Window::HasObserver(const WindowObserver* observer) const {
   return observers_.HasObserver(observer);
 }
 
@@ -701,12 +673,6 @@ void Window::Focus() {
   client::FocusClient* client = client::GetFocusClient(this);
   DCHECK(client);
   client->FocusWindow(this);
-}
-
-void Window::Blur() {
-  client::FocusClient* client = client::GetFocusClient(this);
-  DCHECK(client);
-  client->FocusWindow(NULL);
 }
 
 bool Window::HasFocus() const {
@@ -778,8 +744,7 @@ bool Window::HasCapture() {
 }
 
 void Window::SuppressPaint() {
-  if (layer())
-    layer()->SuppressPaint();
+  layer()->SuppressPaint();
 }
 
 // {Set,Get,Clear}Property are implemented in window_property.h.
@@ -917,6 +882,10 @@ void Window::SetBoundsInternal(const gfx::Rect& new_bounds) {
 }
 
 void Window::SetVisible(bool visible) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 Window::SetVisible"));
+
   if ((layer() && visible == layer()->GetTargetVisibility()) ||
       (!layer() && visible == visible_))
     return;  // No change.
@@ -928,7 +897,7 @@ void Window::SetVisible(bool visible) {
       client::GetVisibilityClient(this);
   if (visibility_client)
     visibility_client->UpdateLayerVisibility(this, visible);
-  else if (layer())
+  else
     layer()->SetVisible(visible);
   visible_ = visible;
   SchedulePaint();
@@ -945,24 +914,9 @@ void Window::SchedulePaint() {
   SchedulePaintInRect(gfx::Rect(0, 0, bounds().width(), bounds().height()));
 }
 
-void Window::Paint(gfx::Canvas* canvas) {
+void Window::Paint(const ui::PaintContext& context) {
   if (delegate_)
-    delegate_->OnPaint(canvas);
-  PaintLayerlessChildren(canvas);
-}
-
-void Window::PaintLayerlessChildren(gfx::Canvas* canvas) {
-  for (size_t i = 0, count = children_.size(); i < count; ++i) {
-    Window* child = children_[i];
-    if (!child->layer() && child->visible_) {
-      gfx::ScopedCanvas scoped_canvas(canvas);
-      canvas->ClipRect(child->bounds());
-      if (!canvas->IsClipEmpty()) {
-        canvas->Translate(child->bounds().OffsetFromOrigin());
-        child->Paint(canvas);
-      }
-    }
-  }
+    delegate_->OnPaint(context);
 }
 
 Window* Window::GetWindowForPoint(const gfx::Point& local_point,
@@ -1330,15 +1284,12 @@ void Window::NotifyAncestorWindowTransformed(Window* source) {
 }
 
 void Window::OnWindowBoundsChanged(const gfx::Rect& old_bounds) {
-  if (layer()) {
-    bounds_ = layer()->bounds();
-    if (parent_ && !parent_->layer()) {
-      gfx::Vector2d offset;
-      aura::Window* ancestor_with_layer =
-          parent_->GetAncestorWithLayer(&offset);
-      if (ancestor_with_layer)
-        bounds_.Offset(-offset);
-    }
+  bounds_ = layer()->bounds();
+  if (parent_ && !parent_->layer()) {
+    gfx::Vector2d offset;
+    aura::Window* ancestor_with_layer = parent_->GetAncestorWithLayer(&offset);
+    if (ancestor_with_layer)
+      bounds_.Offset(-offset);
   }
 
   if (layout_manager_)
@@ -1363,8 +1314,8 @@ bool Window::CleanupGestureState() {
   return state_modified;
 }
 
-void Window::OnPaintLayer(gfx::Canvas* canvas) {
-  Paint(canvas);
+void Window::OnPaintLayer(const ui::PaintContext& context) {
+  Paint(context);
 }
 
 void Window::OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) {
@@ -1416,8 +1367,7 @@ ui::EventTarget* Window::GetParentTarget() {
 }
 
 scoped_ptr<ui::EventTargetIterator> Window::GetChildIterator() const {
-  return scoped_ptr<ui::EventTargetIterator>(
-      new ui::EventTargetIteratorImpl<Window>(children()));
+  return make_scoped_ptr(new ui::EventTargetIteratorImpl<Window>(children()));
 }
 
 ui::EventTargeter* Window::GetEventTargeter() {

@@ -46,7 +46,8 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
 
   virtual ~MotionEvent() {}
 
-  virtual int GetId() const = 0;
+  // An unique identifier this motion event.
+  virtual uint32 GetUniqueEventId() const = 0;
   virtual Action GetAction() const = 0;
   // Only valid if |GetAction()| returns ACTION_POINTER_UP or
   // ACTION_POINTER_DOWN.
@@ -76,7 +77,11 @@ class GESTURE_DETECTION_EXPORT MotionEvent {
   virtual float GetHistoricalY(size_t pointer_index,
                                size_t historical_index) const;
 
+  // Get the id of the device which created the event. Currently Aura only.
+  virtual int GetSourceDeviceId(size_t pointer_index) const;
+
   // Utility accessor methods for convenience.
+  int GetPointerId() const { return GetPointerId(0); }
   float GetX() const { return GetX(0); }
   float GetY() const { return GetY(0); }
   float GetRawX() const { return GetRawX(0); }

@@ -8,7 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "device/serial/serial.mojom.h"
-#include "mojo/public/cpp/bindings/interface_impl.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
 
 namespace device {
 
@@ -22,7 +22,8 @@ class SerialConnection : public mojo::InterfaceImpl<serial::Connection> {
  public:
   SerialConnection(scoped_refptr<SerialIoHandler> io_handler,
                    mojo::InterfaceRequest<serial::DataSink> sink,
-                   mojo::InterfaceRequest<serial::DataSource> source);
+                   mojo::InterfaceRequest<serial::DataSource> source,
+                   mojo::InterfacePtr<serial::DataSourceClient> source_client);
   ~SerialConnection() override;
 
   // mojo::InterfaceImpl<serial::Connection> overrides.

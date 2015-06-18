@@ -76,13 +76,15 @@ class WinPort(base.Port):
         super(WinPort, self).__init__(host, port_name, **kwargs)
         self._version = port_name[port_name.index('win-') + len('win-'):]
         assert self._version in self.SUPPORTED_VERSIONS, "%s is not in %s" % (self._version, self.SUPPORTED_VERSIONS)
-        if not self.get_option('disable_breakpad'):
+        if self.get_option('disable_breakpad'):
+            self._dump_reader = None
+        else:
             self._dump_reader = DumpReaderWin(host, self._build_path())
-            self._crash_service = None
-            self._crash_service_available = None
+        self._crash_service = None
+        self._crash_service_available = None
 
-    def additional_drt_flag(self):
-        flags = super(WinPort, self).additional_drt_flag()
+    def additional_driver_flag(self):
+        flags = super(WinPort, self).additional_driver_flag()
         flags += ['--enable-direct-write']
         if not self.get_option('disable_breakpad'):
             flags += ['--enable-crash-reporter', '--crash-dumps-dir=%s' % self._dump_reader.crash_dumps_directory()]

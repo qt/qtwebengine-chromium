@@ -1,33 +1,36 @@
-// libjingle
-// Copyright 2010 Google Inc.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. The name of the author may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
-// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+/*
+ * libjingle
+ * Copyright 2010 Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 // Declaration of abstract class VideoCapturer
 
 #ifndef TALK_MEDIA_BASE_VIDEOCAPTURER_H_
 #define TALK_MEDIA_BASE_VIDEOCAPTURER_H_
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -77,6 +80,10 @@ struct CapturedFrame {
   // fourcc. Return true if succeeded.
   bool GetDataSize(uint32* size) const;
 
+  // TODO(guoweis): Change the type of |rotation| from int to
+  // webrtc::VideoRotation once chromium gets the code.
+  webrtc::VideoRotation GetRotation() const;
+
   // The width and height of the captured frame could be different from those
   // of VideoFormat. Once the first frame is captured, the width, height,
   // fourcc, pixel_width, and pixel_height should keep the same over frames.
@@ -90,7 +97,11 @@ struct CapturedFrame {
   int64  time_stamp;    // timestamp of when the frame was captured, in unix
                         // time with nanosecond units.
   uint32 data_size;     // number of bytes of the frame data
+
+  // TODO(guoweis): This can't be converted to VideoRotation yet as it's
+  // used by chrome now.
   int    rotation;      // rotation in degrees of the frame (0, 90, 180, 270)
+
   void*  data;          // pointer to the frame data. This object allocates the
                         // memory or points to an existing memory.
 
@@ -215,6 +226,13 @@ class VideoCapturer
     return capture_state_;
   }
 
+  // Tells videocapturer whether to apply the pending rotation. By default, the
+  // rotation is applied and the generated frame is up right. When set to false,
+  // generated frames will carry the rotation information from
+  // SetCaptureRotation. Return value indicates whether this operation succeeds.
+  virtual bool SetApplyRotation(bool enable);
+  virtual bool GetApplyRotation() { return apply_rotation_; }
+
   // Adds a video processor that will be applied on VideoFrames returned by
   // |SignalVideoFrame|. Multiple video processors can be added. The video
   // processors will be applied in the order they were added.
@@ -274,7 +292,7 @@ class VideoCapturer
   // resolution of 2048 x 1280.
   int screencast_max_pixels() const { return screencast_max_pixels_; }
   void set_screencast_max_pixels(int p) {
-    screencast_max_pixels_ = rtc::_max(0, p);
+    screencast_max_pixels_ = std::max(0, p);
   }
 
   // If true, run video adaptation. By default, video adaptation is enabled
@@ -291,9 +309,7 @@ class VideoCapturer
   }
 
   // Takes ownership.
-  void set_frame_factory(VideoFrameFactory* frame_factory) {
-    frame_factory_.reset(frame_factory);
-  }
+  void set_frame_factory(VideoFrameFactory* frame_factory);
 
   // Gets statistics for tracked variables recorded since the last call to
   // GetStats.  Note that calling GetStats resets any gathered data so it
@@ -401,6 +417,9 @@ class VideoCapturer
 
   rtc::CriticalSection crit_;
   VideoProcessors video_processors_;
+
+  // Whether capturer should apply rotation to the frame before signaling it.
+  bool apply_rotation_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoCapturer);
 };

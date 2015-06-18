@@ -25,7 +25,6 @@ namespace content {
 
 class StoragePartition;
 class ServiceWorkerContextWrapper;
-class ServiceWorkerRegistration;
 class ServiceWorkerVersion;
 
 class ServiceWorkerInternalsUI
@@ -65,7 +64,11 @@ class ServiceWorkerInternalsUI
                    StoragePartition** result_partition,
                    StoragePartition* storage_partition) const;
 
-  base::ScopedPtrHashMap<uintptr_t, PartitionObserver> observers_;
+  void UnregisterWithScope(scoped_refptr<ServiceWorkerContextWrapper> context,
+                           const GURL& scope,
+                           const StatusCallback& callback) const;
+
+  base::ScopedPtrHashMap<uintptr_t, scoped_ptr<PartitionObserver>> observers_;
   int next_partition_id_;
 };
 

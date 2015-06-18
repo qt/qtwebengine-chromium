@@ -8,15 +8,15 @@
 namespace blink {
 
 struct PaintInfo;
-class RenderSVGForeignObject;
+class LayoutSVGForeignObject;
 
 class SVGForeignObjectPainter {
 public:
-    SVGForeignObjectPainter(RenderSVGForeignObject& renderSVGForeignObject) : m_renderSVGForeignObject(renderSVGForeignObject) { }
-    void paint(PaintInfo&);
+    SVGForeignObjectPainter(LayoutSVGForeignObject& layoutSVGForeignObject) : m_layoutSVGForeignObject(layoutSVGForeignObject) { }
+    void paint(const PaintInfo&);
 
 private:
-    RenderSVGForeignObject& m_renderSVGForeignObject;
+    LayoutSVGForeignObject& m_layoutSVGForeignObject;
 };
 
 } // namespace blink

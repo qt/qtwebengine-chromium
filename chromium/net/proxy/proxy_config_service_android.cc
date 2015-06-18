@@ -98,6 +98,12 @@ void AddBypassRules(const std::string& scheme,
   // by | and that use * as a wildcard. For example, setting the
   // http.nonProxyHosts property to *.android.com|*.kernel.org will cause
   // requests to http://developer.android.com to be made without a proxy.
+
+  // Force localhost to be on the proxy exclusion list;
+  // otherwise all localhost traffic is routed through
+  // the proxy which is not desired.
+  bypass_rules->AddRuleToBypassLocal();
+
   std::string non_proxy_hosts =
       get_property.Run(scheme + ".nonProxyHosts");
   if (non_proxy_hosts.empty())
@@ -296,12 +302,12 @@ class ProxyConfigServiceAndroid::Delegate
     explicit JNIDelegateImpl(Delegate* delegate) : delegate_(delegate) {}
 
     // ProxyConfigServiceAndroid::JNIDelegate overrides.
-    virtual void ProxySettingsChangedTo(JNIEnv* env,
-                                        jobject jself,
-                                        jstring jhost,
-                                        jint jport,
-                                        jstring jpac_url,
-                                        jobjectArray jexclusion_list) override {
+    void ProxySettingsChangedTo(JNIEnv* env,
+                                jobject jself,
+                                jstring jhost,
+                                jint jport,
+                                jstring jpac_url,
+                                jobjectArray jexclusion_list) override {
       std::string host = ConvertJavaStringToUTF8(env, jhost);
       std::string pac_url;
       if (jpac_url)
@@ -312,7 +318,7 @@ class ProxyConfigServiceAndroid::Delegate
       delegate_->ProxySettingsChangedTo(host, jport, pac_url, exclusion_list);
     }
 
-    virtual void ProxySettingsChanged(JNIEnv* env, jobject self) override {
+    void ProxySettingsChanged(JNIEnv* env, jobject self) override {
       delegate_->ProxySettingsChanged();
     }
 

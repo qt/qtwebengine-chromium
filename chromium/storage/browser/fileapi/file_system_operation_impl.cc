@@ -10,6 +10,7 @@
 #include "base/time/time.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/async_file_util.h"
 #include "storage/browser/fileapi/copy_or_move_operation_delegate.h"
 #include "storage/browser/fileapi/file_observers.h"
@@ -22,7 +23,6 @@
 #include "storage/browser/fileapi/remove_operation_delegate.h"
 #include "storage/browser/fileapi/sandbox_file_system_backend.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_types.h"
 #include "storage/common/fileapi/file_system_util.h"
 #include "storage/common/quota/quota_types.h"
@@ -30,6 +30,28 @@
 using storage::ScopedFile;
 
 namespace storage {
+
+namespace {
+
+// Takes ownership and destruct on the target thread.
+void Destruct(base::File file) {}
+
+void DidOpenFile(
+    scoped_refptr<FileSystemContext> context,
+    base::WeakPtr<FileSystemOperationImpl> operation,
+    const FileSystemOperationImpl::OpenFileCallback& callback,
+    base::File file,
+    const base::Closure& on_close_callback) {
+  if (!operation) {
+    context->default_file_task_runner()->PostTask(
+        FROM_HERE,
+        base::Bind(&Destruct, base::Passed(&file)));
+    return;
+  }
+  callback.Run(file.Pass(), on_close_callback);
+}
+
+}  // namespace
 
 FileSystemOperation* FileSystemOperation::Create(
     const FileSystemURL& url,
@@ -449,8 +471,8 @@ void FileSystemOperationImpl::DoOpenFile(const FileSystemURL& url,
                                          int file_flags) {
   async_file_util_->CreateOrOpen(
       operation_context_.Pass(), url, file_flags,
-      base::Bind(&FileSystemOperationImpl::DidOpenFile,
-                 weak_factory_.GetWeakPtr(), callback));
+      base::Bind(&DidOpenFile,
+                 file_system_context_, weak_factory_.GetWeakPtr(), callback));
 }
 
 void FileSystemOperationImpl::DidEnsureFileExistsExclusive(
@@ -540,13 +562,6 @@ void FileSystemOperationImpl::DidWrite(
   write_callback.Run(rv, bytes, complete);
   if (!cancel_callback.is_null())
     cancel_callback.Run(base::File::FILE_OK);
-}
-
-void FileSystemOperationImpl::DidOpenFile(
-    const OpenFileCallback& callback,
-    base::File file,
-    const base::Closure& on_close_callback) {
-  callback.Run(file.Pass(), on_close_callback);
 }
 
 bool FileSystemOperationImpl::SetPendingOperationType(OperationType type) {

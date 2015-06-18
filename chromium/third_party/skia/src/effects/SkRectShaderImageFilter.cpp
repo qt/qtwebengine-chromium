@@ -23,28 +23,20 @@ SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const SkRe
     return s ? SkNEW_ARGS(SkRectShaderImageFilter, (s, &cropRect)) : NULL;
 }
 
-SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const CropRect* cropRect, uint32_t uniqueID) {
+SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const CropRect* cropRect) {
     SkASSERT(s);
-    return s ? SkNEW_ARGS(SkRectShaderImageFilter, (s, cropRect, uniqueID)) : NULL;
+    return s ? SkNEW_ARGS(SkRectShaderImageFilter, (s, cropRect)) : NULL;
 }
 
-SkRectShaderImageFilter::SkRectShaderImageFilter(SkShader* s, const CropRect* cropRect,
-                                                 uint32_t uniqueID)
-  : INHERITED(0, NULL, cropRect, uniqueID)
+SkRectShaderImageFilter::SkRectShaderImageFilter(SkShader* s, const CropRect* cropRect)
+  : INHERITED(0, NULL, cropRect)
   , fShader(SkRef(s)) {
 }
-
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkRectShaderImageFilter::SkRectShaderImageFilter(SkReadBuffer& buffer)
-  : INHERITED(0, buffer) {
-    fShader = buffer.readShader();
-}
-#endif
 
 SkFlattenable* SkRectShaderImageFilter::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 0);
     SkAutoTUnref<SkShader> shader(buffer.readShader());
-    return Create(shader.get(), &common.cropRect(), common.uniqueID());
+    return Create(shader.get(), &common.cropRect());
 }
 
 void SkRectShaderImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -86,3 +78,10 @@ bool SkRectShaderImageFilter::onFilterImage(Proxy* proxy,
     offset->fY = bounds.fTop;
     return true;
 }
+
+#ifndef SK_IGNORE_TO_STRING
+void SkRectShaderImageFilter::toString(SkString* str) const {
+    str->appendf("SkRectShaderImageFilter: (");
+    str->append(")");
+}
+#endif

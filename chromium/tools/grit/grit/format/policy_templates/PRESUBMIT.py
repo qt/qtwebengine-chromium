@@ -8,6 +8,7 @@ UNIT_TESTS = [
   'writers.adm_writer_unittest',
   'writers.adml_writer_unittest',
   'writers.admx_writer_unittest',
+  'writers.android_policy_writer_unittest',
   'writers.doc_writer_unittest',
   'writers.json_writer_unittest',
   'writers.plist_strings_writer_unittest',

@@ -19,9 +19,8 @@ class CONTENT_EXPORT BrowserPluginGuestManager {
   virtual ~BrowserPluginGuestManager() {}
 
   // Requests a guest WebContents associated with the provided
-  // |browser_plugin_instance_id|.
-  // Returns the guest associated with the provided ID if one exists.
-  virtual WebContents* GetGuestByInstanceID(WebContents* embedder_web_contents,
+  // <owner_process_id, browser_plugin_instance_id> tuple.
+  virtual WebContents* GetGuestByInstanceID(int owner_process_id,
                                             int browser_plugin_instance_id);
 
   // Iterates over all WebContents belonging to a given |embedder_web_contents|,
@@ -30,6 +29,11 @@ class CONTENT_EXPORT BrowserPluginGuestManager {
   typedef base::Callback<bool(WebContents*)> GuestCallback;
   virtual bool ForEachGuest(WebContents* embedder_web_contents,
                             const GuestCallback& callback);
+
+  // Returns the "full page" guest if there is one. That is, if there is a
+  // single BrowserPlugin in the given embedder which takes up the full page,
+  // then it is returned.
+  virtual WebContents* GetFullPageGuest(WebContents* embedder_web_contents);
 };
 
 }  // namespace content

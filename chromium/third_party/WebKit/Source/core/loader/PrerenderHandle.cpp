@@ -42,12 +42,12 @@
 namespace blink {
 
 // static
-PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, PrerenderClient* client, const KURL& url, const unsigned prerenderRelTypes)
+PassOwnPtrWillBeRawPtr<PrerenderHandle> PrerenderHandle::create(Document& document, PrerenderClient* client, const KURL& url, const unsigned prerenderRelTypes)
 {
     // Prerenders are unlike requests in most ways (for instance, they pass down fragments, and they don't return data),
     // but they do have referrers.
     if (!document.frame())
-        return PassOwnPtr<PrerenderHandle>();
+        return nullptr;
 
     RefPtr<Prerender> prerender = Prerender::create(client, url, prerenderRelTypes, SecurityPolicy::generateReferrer(document.referrerPolicy(), url, document.outgoingReferrer()));
 
@@ -56,7 +56,7 @@ PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, Prerende
         prerendererClient->willAddPrerender(prerender.get());
     prerender->add();
 
-    return adoptPtr(new PrerenderHandle(document, prerender.release()));
+    return adoptPtrWillBeNoop(new PrerenderHandle(document, prerender.release()));
 }
 
 PrerenderHandle::PrerenderHandle(Document& document, PassRefPtr<Prerender> prerender)
@@ -89,16 +89,30 @@ const KURL& PrerenderHandle::url() const
 
 void PrerenderHandle::documentWasDetached()
 {
+#if ENABLE(OILPAN)
+    // In Oilpan, a PrerenderHandle is not removed from
+    // LifecycleNotifier::m_observers until a next GC is triggered.
+    // Thus documentWasDetached() can be called for a PrerenderHandle
+    // that is already canceled (and thus detached). In that case,
+    // we should not detach the PrerenderHandle again, so we need this check.
+    if (!m_prerender)
+        return;
+#else
     ASSERT(m_prerender);
+#endif
     m_prerender->abandon();
     detach();
 }
-
 
 void PrerenderHandle::detach()
 {
     m_prerender->removeClient();
     m_prerender.clear();
+}
+
+DEFINE_TRACE(PrerenderHandle)
+{
+    DocumentLifecycleObserver::trace(visitor);
 }
 
 }

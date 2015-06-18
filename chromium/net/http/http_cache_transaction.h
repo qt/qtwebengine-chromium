@@ -12,13 +12,14 @@
 
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
-#include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_transaction.h"
+#include "net/log/net_log.h"
+#include "net/socket/connection_attempts.h"
 
 namespace net {
 
@@ -109,6 +110,11 @@ class HttpCache::Transaction : public HttpTransaction {
     bypass_lock_for_test_ = true;
   }
 
+  // Generates a failure when attempting to conditionalize a network request.
+  void FailConditionalizationForTest() {
+    fail_conditionalization_for_test_ = true;
+  }
+
   // HttpTransaction methods:
   int Start(const HttpRequestInfo* request_info,
             const CompletionCallback& callback,
@@ -133,12 +139,13 @@ class HttpCache::Transaction : public HttpTransaction {
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
-      net::WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
+      WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
   void SetBeforeNetworkStartCallback(
       const BeforeNetworkStartCallback& callback) override;
   void SetBeforeProxyHeadersSentCallback(
       const BeforeProxyHeadersSentCallback& callback) override;
   int ResumeNetworkStart() override;
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -181,6 +188,9 @@ class HttpCache::Transaction : public HttpTransaction {
     STATE_PARTIAL_HEADERS_RECEIVED,
     STATE_CACHE_READ_RESPONSE,
     STATE_CACHE_READ_RESPONSE_COMPLETE,
+    STATE_CACHE_DISPATCH_VALIDATION,
+    STATE_TOGGLE_UNUSED_SINCE_PREFETCH,
+    STATE_TOGGLE_UNUSED_SINCE_PREFETCH_COMPLETE,
     STATE_CACHE_WRITE_RESPONSE,
     STATE_CACHE_WRITE_TRUNCATED_RESPONSE,
     STATE_CACHE_WRITE_RESPONSE_COMPLETE,
@@ -252,6 +262,9 @@ class HttpCache::Transaction : public HttpTransaction {
   int DoPartialHeadersReceived();
   int DoCacheReadResponse();
   int DoCacheReadResponseComplete(int result);
+  int DoCacheDispatchValidation();
+  int DoCacheToggleUnusedSincePrefetch();
+  int DoCacheToggleUnusedSincePrefetchComplete(int result);
   int DoCacheWriteResponse();
   int DoCacheWriteTruncatedResponse();
   int DoCacheWriteResponseComplete(int result);
@@ -324,7 +337,7 @@ class HttpCache::Transaction : public HttpTransaction {
   // Handles a response validation error by bypassing the cache.
   void IgnoreRangeRequest();
 
-  // Removes content-length and byte range related info if needed.
+  // Fixes the response headers to match expectations for a HEAD request.
   void FixHeadersForHead();
 
   // Launches an asynchronous revalidation based on this transaction.
@@ -386,6 +399,10 @@ class HttpCache::Transaction : public HttpTransaction {
   // between the byte range request and the cached entry.
   int DoRestartPartialRequest();
 
+  // Resets the relavant internal state to remove traces of internal processing
+  // related to range requests. Deletes |partial_| if |delete_object| is true.
+  void ResetPartialState(bool delete_object);
+
   // Resets |network_trans_|, which must be non-NULL.  Also updates
   // |old_network_trans_load_timing_|, which must be NULL when this is called.
   void ResetNetworkTransaction();
@@ -432,6 +449,7 @@ class HttpCache::Transaction : public HttpTransaction {
   bool vary_mismatch_;  // The request doesn't match the stored vary data.
   bool couldnt_conditionalize_request_;
   bool bypass_lock_for_test_;  // A test is exercising the cache lock.
+  bool fail_conditionalization_for_test_;  // Fail ConditionalizeRequest.
   scoped_refptr<IOBuffer> read_buf_;
   int io_buf_len_;
   int read_offset_;
@@ -453,6 +471,8 @@ class HttpCache::Transaction : public HttpTransaction {
   // 304 and 206 response cases, as the network transaction may be destroyed
   // before the caller requests load timing information.
   scoped_ptr<LoadTimingInfo> old_network_trans_load_timing_;
+
+  ConnectionAttempts old_connection_attempts_;
 
   // The helper object to use to create WebSocketHandshakeStreamBase
   // objects. Only relevant when establishing a WebSocket connection.

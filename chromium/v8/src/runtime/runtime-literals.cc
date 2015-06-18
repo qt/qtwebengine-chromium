@@ -17,52 +17,21 @@ namespace internal {
 static Handle<Map> ComputeObjectLiteralMap(
     Handle<Context> context, Handle<FixedArray> constant_properties,
     bool* is_result_from_cache) {
-  Isolate* isolate = context->GetIsolate();
   int properties_length = constant_properties->length();
   int number_of_properties = properties_length / 2;
-  // Check that there are only internal strings and array indices among keys.
-  int number_of_string_keys = 0;
+
   for (int p = 0; p != properties_length; p += 2) {
     Object* key = constant_properties->get(p);
     uint32_t element_index = 0;
-    if (key->IsInternalizedString()) {
-      number_of_string_keys++;
-    } else if (key->ToArrayIndex(&element_index)) {
+    if (key->ToArrayIndex(&element_index)) {
       // An index key does not require space in the property backing store.
       number_of_properties--;
-    } else {
-      // Bail out as a non-internalized-string non-index key makes caching
-      // impossible.
-      // DCHECK to make sure that the if condition after the loop is false.
-      DCHECK(number_of_string_keys != number_of_properties);
-      break;
     }
   }
-  // If we only have internalized strings and array indices among keys then we
-  // can use the map cache in the native context.
-  const int kMaxKeys = 10;
-  if ((number_of_string_keys == number_of_properties) &&
-      (number_of_string_keys < kMaxKeys)) {
-    // Create the fixed array with the key.
-    Handle<FixedArray> keys =
-        isolate->factory()->NewFixedArray(number_of_string_keys);
-    if (number_of_string_keys > 0) {
-      int index = 0;
-      for (int p = 0; p < properties_length; p += 2) {
-        Object* key = constant_properties->get(p);
-        if (key->IsInternalizedString()) {
-          keys->set(index++, key);
-        }
-      }
-      DCHECK(index == number_of_string_keys);
-    }
-    *is_result_from_cache = true;
-    return isolate->factory()->ObjectLiteralMapFromCache(context, keys);
-  }
-  *is_result_from_cache = false;
-  return Map::Create(isolate, number_of_properties);
+  Isolate* isolate = context->GetIsolate();
+  return isolate->factory()->ObjectLiteralMapFromCache(
+      context, number_of_properties, is_result_from_cache);
 }
-
 
 MUST_USE_RESULT static MaybeHandle<Object> CreateLiteralBoilerplate(
     Isolate* isolate, Handle<FixedArray> literals,
@@ -73,14 +42,7 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
     Isolate* isolate, Handle<FixedArray> literals,
     Handle<FixedArray> constant_properties, bool should_have_fast_elements,
     bool has_function_literal) {
-  // Get the native context from the literals array.  This is the
-  // context in which the function was created and we use the object
-  // function from this context to create the object literal.  We do
-  // not use the object function from the current native context
-  // because this might be the object function from another context
-  // which we should not have access to.
-  Handle<Context> context =
-      Handle<Context>(JSFunction::NativeContextFromLiterals(*literals));
+  Handle<Context> context = isolate->native_context();
 
   // In case we have function literals, we want the object to be in
   // slow properties mode for now. We don't go in the map cache because
@@ -109,7 +71,7 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
   if (should_normalize) {
     // TODO(verwaest): We might not want to ever normalize here.
     JSObject::NormalizeProperties(boilerplate, KEEP_INOBJECT_PROPERTIES,
-                                  length / 2);
+                                  length / 2, "Boilerplate");
   }
   // TODO(verwaest): Support tracking representations in the boilerplate.
   for (int index = 0; index < length; index += 2) {
@@ -166,9 +128,9 @@ MUST_USE_RESULT static MaybeHandle<Object> CreateObjectLiteralBoilerplate(
   // constant function properties.
   if (should_transform && !has_function_literal) {
     JSObject::MigrateSlowToFast(boilerplate,
-                                boilerplate->map()->unused_property_fields());
+                                boilerplate->map()->unused_property_fields(),
+                                "FastLiteral");
   }
-
   return boilerplate;
 }
 
@@ -177,8 +139,7 @@ MaybeHandle<Object> Runtime::CreateArrayLiteralBoilerplate(
     Isolate* isolate, Handle<FixedArray> literals,
     Handle<FixedArray> elements) {
   // Create the JSArray.
-  Handle<JSFunction> constructor(
-      JSFunction::NativeContextFromLiterals(*literals)->array_function());
+  Handle<JSFunction> constructor = isolate->array_function();
 
   PretenureFlag pretenure_flag =
       isolate->heap()->InNewSpace(*literals) ? NOT_TENURED : TENURED;
@@ -276,6 +237,7 @@ RUNTIME_FUNCTION(Runtime_CreateObjectLiteral) {
   CONVERT_SMI_ARG_CHECKED(flags, 3);
   bool should_have_fast_elements = (flags & ObjectLiteral::kFastElements) != 0;
   bool has_function_literal = (flags & ObjectLiteral::kHasFunction) != 0;
+  bool enable_mementos = (flags & ObjectLiteral::kDisableMementos) == 0;
 
   RUNTIME_ASSERT(literals_index >= 0 && literals_index < literals->length());
 
@@ -306,7 +268,7 @@ RUNTIME_FUNCTION(Runtime_CreateObjectLiteral) {
         Handle<JSObject>(JSObject::cast(site->transition_info()), isolate);
   }
 
-  AllocationSiteUsageContext usage_context(isolate, site, true);
+  AllocationSiteUsageContext usage_context(isolate, site, enable_mementos);
   usage_context.EnterNewScope();
   MaybeHandle<Object> maybe_copy =
       JSObject::DeepCopy(boilerplate, &usage_context);

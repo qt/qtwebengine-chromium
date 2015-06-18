@@ -29,20 +29,21 @@
 #include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/DateTimeChooser.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/HitTestResult.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
 #include "core/page/PopupOpeningObserver.h"
 #include "core/page/ScopedPageLoadDeferrer.h"
 #include "core/page/WindowFeatures.h"
-#include "core/rendering/HitTestResult.h"
 #include "platform/FileChooser.h"
 #include "platform/Logging.h"
-#include "platform/geometry/FloatRect.h"
-#include "platform/network/DNS.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/network/NetworkHints.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -64,22 +65,17 @@ PassOwnPtr<Chrome> Chrome::create(Page* page, ChromeClient* client)
     return adoptPtr(new Chrome(page, client));
 }
 
-void Chrome::invalidateContentsAndRootView(const IntRect& updateRect)
+void Chrome::invalidateRect(const IntRect& updateRect)
 {
-    m_client->invalidateContentsAndRootView(updateRect);
+    m_client->invalidateRect(updateRect);
 }
 
-void Chrome::invalidateContentsForSlowScroll(const IntRect& updateRect)
+IntRect Chrome::viewportToScreen(const IntRect& rect) const
 {
-    m_client->invalidateContentsForSlowScroll(updateRect);
+    return m_client->viewportToScreen(rect);
 }
 
-IntRect Chrome::rootViewToScreen(const IntRect& rect) const
-{
-    return m_client->rootViewToScreen(rect);
-}
-
-blink::WebScreenInfo Chrome::screenInfo() const
+WebScreenInfo Chrome::screenInfo() const
 {
     return m_client->screenInfo();
 }
@@ -89,17 +85,30 @@ void Chrome::contentsSizeChanged(LocalFrame* frame, const IntSize& size) const
     m_client->contentsSizeChanged(frame, size);
 }
 
-void Chrome::setWindowRect(const FloatRect& rect) const
+void Chrome::setWindowRect(const IntRect& pendingRect) const
 {
-    m_client->setWindowRect(rect);
+    IntRect screen = screenInfo().availableRect;
+    IntRect window = pendingRect;
+
+    IntSize minimumSize = m_client->minimumWindowSize();
+    // Let size 0 pass through, since that indicates default size, not minimum size.
+    if (window.width())
+        window.setWidth(std::min(std::max(minimumSize.width(), window.width()), screen.width()));
+    if (window.height())
+        window.setHeight(std::min(std::max(minimumSize.height(), window.height()), screen.height()));
+
+    // Constrain the window position within the valid screen area.
+    window.setX(std::max(screen.x(), std::min(window.x(), screen.maxX() - window.width())));
+    window.setY(std::max(screen.y(), std::min(window.y(), screen.maxY() - window.height())));
+    m_client->setWindowRect(window);
 }
 
-FloatRect Chrome::windowRect() const
+IntRect Chrome::windowRect() const
 {
     return m_client->windowRect();
 }
 
-FloatRect Chrome::pageRect() const
+IntRect Chrome::pageRect() const
 {
     return m_client->pageRect();
 }
@@ -109,29 +118,24 @@ void Chrome::focus() const
     m_client->focus();
 }
 
-bool Chrome::canTakeFocus(FocusType type) const
+bool Chrome::canTakeFocus(WebFocusType type) const
 {
     return m_client->canTakeFocus(type);
 }
 
-void Chrome::takeFocus(FocusType type) const
+void Chrome::takeFocus(WebFocusType type) const
 {
     m_client->takeFocus(type);
 }
 
-void Chrome::focusedNodeChanged(Node* node) const
+void Chrome::focusedNodeChanged(Node* fromNode, Node* toNode) const
 {
-    m_client->focusedNodeChanged(node);
+    m_client->focusedNodeChanged(fromNode, toNode);
 }
 
 void Chrome::show(NavigationPolicy policy) const
 {
     m_client->show(policy);
-}
-
-bool Chrome::canRunModal() const
-{
-    return m_client->canRunModal();
 }
 
 static bool canRunModalIfDuringPageDismissal(Page* page, ChromeClient::DialogType dialog, const String& message)
@@ -144,21 +148,6 @@ static bool canRunModalIfDuringPageDismissal(Page* page, ChromeClient::DialogTyp
             return page->chrome().client().shouldRunModalDialogDuringPageDismissal(dialog, message, dismissal);
     }
     return true;
-}
-
-bool Chrome::canRunModalNow() const
-{
-    return canRunModal() && canRunModalIfDuringPageDismissal(m_page, ChromeClient::HTMLDialog, String());
-}
-
-void Chrome::runModal() const
-{
-    // Defer callbacks in all the other pages, so we don't try to run JavaScript
-    // in a way that could interact with this view.
-    ScopedPageLoadDeferrer deferrer(m_page);
-
-    TimerBase::fireTimersInNestedEventLoop();
-    m_client->runModal();
 }
 
 void Chrome::setWindowFeatures(const WindowFeatures& features) const
@@ -201,7 +190,7 @@ bool Chrome::runBeforeUnloadConfirmPanel(const String& message, LocalFrame* fram
     // otherwise cause the load to continue while we're in the middle of executing JavaScript.
     ScopedPageLoadDeferrer deferrer;
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, message);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message);
     bool ok = m_client->runBeforeUnloadConfirmPanel(message, frame);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
     return ok;
@@ -224,7 +213,7 @@ void Chrome::runJavaScriptAlert(LocalFrame* frame, const String& message)
     ASSERT(frame);
     notifyPopupOpeningObservers();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, message);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message);
     m_client->runJavaScriptAlert(frame, message);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
 }
@@ -241,7 +230,7 @@ bool Chrome::runJavaScriptConfirm(LocalFrame* frame, const String& message)
     ASSERT(frame);
     notifyPopupOpeningObservers();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, message);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message);
     bool ok = m_client->runJavaScriptConfirm(frame, message);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
     return ok;
@@ -259,7 +248,7 @@ bool Chrome::runJavaScriptPrompt(LocalFrame* frame, const String& prompt, const 
     ASSERT(frame);
     notifyPopupOpeningObservers();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, prompt);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, prompt);
     bool ok = m_client->runJavaScriptPrompt(frame, prompt, defaultValue, result);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
 
@@ -277,13 +266,13 @@ IntRect Chrome::windowResizerRect() const
     return m_client->windowResizerRect();
 }
 
-void Chrome::mouseDidMoveOverElement(const HitTestResult& result, unsigned modifierFlags)
+void Chrome::mouseDidMoveOverElement(const HitTestResult& result)
 {
     if (result.innerNode()) {
         if (result.innerNode()->document().isDNSPrefetchEnabled())
             prefetchDNS(result.absoluteLinkURL().host());
     }
-    m_client->mouseDidMoveOverElement(result, modifierFlags);
+    m_client->mouseDidMoveOverElement(result);
 }
 
 void Chrome::setToolTip(const HitTestResult& result)
@@ -298,7 +287,7 @@ void Chrome::setToolTip(const HitTestResult& result)
 
     // Lastly, for <input type="file"> that allow multiple files, we'll consider a tooltip for the selected filenames
     if (toolTip.isEmpty()) {
-        if (Node* node = result.innerNonSharedNode()) {
+        if (Node* node = result.innerNode()) {
             if (isHTMLInputElement(*node)) {
                 HTMLInputElement* input = toHTMLInputElement(node);
                 toolTip = input->defaultToolTip();
@@ -361,7 +350,13 @@ void Chrome::dispatchViewportPropertiesDidChange(const ViewportDescription& desc
 
 void Chrome::setCursor(const Cursor& cursor)
 {
+    m_lastSetMouseCursorForTesting = cursor;
     m_client->setCursor(cursor);
+}
+
+Cursor Chrome::getLastSetCursorForTesting() const
+{
+    return m_lastSetMouseCursorForTesting;
 }
 
 void Chrome::scheduleAnimation()
@@ -372,12 +367,18 @@ void Chrome::scheduleAnimation()
 
 // --------
 
+void Chrome::scheduleAnimationForFrame(LocalFrame* localRoot)
+{
+    m_page->animator().setAnimationFramePending();
+    m_client->scheduleAnimationForFrame(localRoot);
+}
+
 bool Chrome::hasOpenedPopup() const
 {
     return m_client->hasOpenedPopup();
 }
 
-PassRefPtrWillBeRawPtr<PopupMenu> Chrome::createPopupMenu(LocalFrame& frame, PopupMenuClient* client) const
+PassRefPtrWillBeRawPtr<PopupMenu> Chrome::createPopupMenu(LocalFrame& frame, PopupMenuClient* client)
 {
     notifyPopupOpeningObservers();
     return m_client->createPopupMenu(frame, client);
@@ -401,6 +402,11 @@ void Chrome::notifyPopupOpeningObservers() const
     const Vector<PopupOpeningObserver*> observers(m_popupOpeningObservers);
     for (size_t i = 0; i < observers.size(); ++i)
         observers[i]->willOpenPopup();
+}
+
+void Chrome::registerViewportLayers() const
+{
+    m_client->registerViewportLayers();
 }
 
 void Chrome::willBeDestroyed()

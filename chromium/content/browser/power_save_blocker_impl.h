@@ -5,22 +5,27 @@
 #ifndef CONTENT_BROWSER_POWER_SAVE_BLOCKER_IMPL_H_
 #define CONTENT_BROWSER_POWER_SAVE_BLOCKER_IMPL_H_
 
+#include <string>
+
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/power_save_blocker.h"
-#include "ui/gfx/native_widget_types.h"
 
 namespace content {
 
+class WebContents;
+
 class PowerSaveBlockerImpl : public PowerSaveBlocker {
  public:
-  PowerSaveBlockerImpl(PowerSaveBlockerType type, const std::string& reason);
+  PowerSaveBlockerImpl(PowerSaveBlockerType type,
+                       Reason reason,
+                       const std::string& description);
   ~PowerSaveBlockerImpl() override;
 
 #if defined(OS_ANDROID)
   // In Android platform, the kPowerSaveBlockPreventDisplaySleep type of
-  // PowerSaveBlocker should associated with the ViewAndroid,
-  // so the blocker could be removed by platform if the view isn't visble
-  void InitDisplaySleepBlocker(gfx::NativeView view_android);
+  // PowerSaveBlocker should associated with a WebContents, so the blocker
+  // could be removed by platform if the WebContents is hidden.
+  void InitDisplaySleepBlocker(WebContents* web_contents);
 #endif
 
  private:

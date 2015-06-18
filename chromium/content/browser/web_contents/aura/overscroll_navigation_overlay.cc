@@ -4,9 +4,13 @@
 
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
 
+#include <vector>
+
+#include "base/i18n/rtl.h"
+#include "base/metrics/histogram_macros.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/web_contents/aura/image_window_delegate.h"
+#include "content/browser/web_contents/aura/overscroll_window_delegate.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -15,10 +19,10 @@
 #include "ui/base/layout.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_png_rep.h"
-#include "ui/gfx/image/image_skia.h"
 
 namespace content {
 namespace {
@@ -26,6 +30,8 @@ namespace {
 // Returns true if the entry's URL or any of the URLs in entry's redirect chain
 // match |url|.
 bool DoesEntryMatchURL(NavigationEntry* entry, const GURL& url) {
+  if (!entry)
+    return false;
   if (entry->GetURL() == url)
     return true;
   const std::vector<GURL>& redirect_chain = entry->GetRedirectChain();
@@ -39,51 +45,6 @@ bool DoesEntryMatchURL(NavigationEntry* entry, const GURL& url) {
 }
 
 }  // namespace
-
-// A LayerDelegate that paints an image for the layer.
-class ImageLayerDelegate : public ui::LayerDelegate {
- public:
-  ImageLayerDelegate() {}
-
-  ~ImageLayerDelegate() override {}
-
-  void SetImage(const gfx::Image& image) {
-    image_ = image;
-    image_size_ = image.AsImageSkia().size();
-  }
-  const gfx::Image& image() const { return image_; }
-
- private:
-  // Overridden from ui::LayerDelegate:
-  void OnPaintLayer(gfx::Canvas* canvas) override {
-    if (image_.IsEmpty()) {
-      canvas->DrawColor(SK_ColorWHITE);
-    } else {
-      SkISize size = canvas->sk_canvas()->getDeviceSize();
-      if (size.width() != image_size_.width() ||
-          size.height() != image_size_.height()) {
-        canvas->DrawColor(SK_ColorWHITE);
-      }
-      canvas->DrawImageInt(image_.AsImageSkia(), 0, 0);
-    }
-  }
-
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
-
-  // Called when the layer's device scale factor has changed.
-  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
-
-  // Invoked prior to the bounds changing. The returned closured is run after
-  // the bounds change.
-  base::Closure PrepareForLayerBoundsChange() override {
-    return base::Closure();
-  }
-
-  gfx::Image image_;
-  gfx::Size image_size_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageLayerDelegate);
-};
 
 // Responsible for fading out and deleting the layer of the overlay window.
 class OverlayDismissAnimator
@@ -128,26 +89,26 @@ class OverlayDismissAnimator
 };
 
 OverscrollNavigationOverlay::OverscrollNavigationOverlay(
-    WebContentsImpl* web_contents)
-    : web_contents_(web_contents),
-      image_delegate_(NULL),
+    WebContentsImpl* web_contents,
+    aura::Window* web_contents_window)
+    : direction_(NONE),
+      web_contents_(web_contents),
       loading_complete_(false),
       received_paint_update_(false),
-      slide_direction_(SLIDE_UNKNOWN) {
+      owa_(new OverscrollWindowAnimation(this)),
+      web_contents_window_(web_contents_window) {
 }
 
 OverscrollNavigationOverlay::~OverscrollNavigationOverlay() {
+  aura::Window* event_window = GetMainWindow();
+  if (owa_->is_active() && event_window)
+    event_window->ReleaseCapture();
 }
 
 void OverscrollNavigationOverlay::StartObserving() {
   loading_complete_ = false;
   received_paint_update_ = false;
-  overlay_dismiss_layer_.reset();
   Observe(web_contents_);
-
-  // Make sure the overlay window is on top.
-  if (window_.get() && window_->parent())
-    window_->parent()->StackChildAtTop(window_.get());
 
   // Assumes the navigation has been initiated.
   NavigationEntry* pending_entry =
@@ -158,139 +119,152 @@ void OverscrollNavigationOverlay::StartObserving() {
   pending_entry_url_ = pending_entry ? pending_entry->GetURL() : GURL();
 }
 
-void OverscrollNavigationOverlay::SetOverlayWindow(
-    scoped_ptr<aura::Window> window,
-    ImageWindowDelegate* delegate) {
-  window_ = window.Pass();
-  if (window_.get() && window_->parent())
-    window_->parent()->StackChildAtTop(window_.get());
-  image_delegate_ = delegate;
-
-  if (window_.get() && delegate->has_image()) {
-    window_slider_.reset(new WindowSlider(this,
-                                          window_->parent(),
-                                          window_.get()));
-    slide_direction_ = SLIDE_UNKNOWN;
-  } else {
-    window_slider_.reset();
-  }
-}
-
 void OverscrollNavigationOverlay::StopObservingIfDone() {
   // Normally we dismiss the overlay once we receive a paint update, however
   // for in-page navigations DidFirstVisuallyNonEmptyPaint() does not get
   // called, and we rely on loading_complete_ for those cases.
-  if (!received_paint_update_ && !loading_complete_)
+  // If an overscroll gesture is in progress, then do not destroy the window.
+  if (!window_ || !(loading_complete_ || received_paint_update_) ||
+      owa_->is_active()) {
     return;
-
-  // If a slide is in progress, then do not destroy the window or the slide.
-  if (window_slider_.get() && window_slider_->IsSlideInProgress())
-    return;
-
-  // The layer to be animated by OverlayDismissAnimator
-  scoped_ptr<ui::Layer> overlay_dismiss_layer;
-  if (overlay_dismiss_layer_)
-    overlay_dismiss_layer = overlay_dismiss_layer_.Pass();
-  else if (window_.get())
-    overlay_dismiss_layer = window_->AcquireLayer();
-  Observe(NULL);
-  window_slider_.reset();
-  window_.reset();
-  image_delegate_ = NULL;
-  if (overlay_dismiss_layer.get()) {
-    // OverlayDismissAnimator deletes overlay_dismiss_layer and itself when the
-    // animation completes.
-    (new OverlayDismissAnimator(overlay_dismiss_layer.Pass()))->Animate();
   }
+
+  // OverlayDismissAnimator deletes the dismiss layer and itself when the
+  // animation completes.
+  scoped_ptr<ui::Layer> dismiss_layer = window_->AcquireLayer();
+  window_.reset();
+  (new OverlayDismissAnimator(dismiss_layer.Pass()))->Animate();
+  Observe(nullptr);
+  received_paint_update_ = false;
+  loading_complete_ = false;
 }
 
-ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
+scoped_ptr<aura::Window> OverscrollNavigationOverlay::CreateOverlayWindow(
+    const gfx::Rect& bounds) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Overscroll.Started2", direction_, NAVIGATION_COUNT);
+  OverscrollWindowDelegate* overscroll_delegate = new OverscrollWindowDelegate(
+      owa_.get(), GetImageForDirection(direction_));
+  scoped_ptr<aura::Window> window(new aura::Window(overscroll_delegate));
+  window->set_owned_by_parent(false);
+  window->SetTransparent(true);
+  window->Init(ui::LAYER_TEXTURED);
+  window->layer()->SetMasksToBounds(false);
+  window->SetName("OverscrollOverlay");
+  web_contents_window_->AddChild(window.get());
+  aura::Window* event_window = GetMainWindow();
+  if (direction_ == FORWARD)
+    web_contents_window_->StackChildAbove(window.get(), event_window);
+  else
+    web_contents_window_->StackChildBelow(window.get(), event_window);
+  window->SetBounds(bounds);
+  // Set capture on the window that is receiving the overscroll events so that
+  // trackpad scroll gestures keep targetting it even if the mouse pointer moves
+  // off its bounds.
+  event_window->SetCapture();
+  window->Show();
+  return window.Pass();
+}
+
+const gfx::Image OverscrollNavigationOverlay::GetImageForDirection(
+    NavigationDirection direction) const {
   const NavigationControllerImpl& controller = web_contents_->GetController();
   const NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
-      controller.GetEntryAtOffset(offset));
+      controller.GetEntryAtOffset(direction == FORWARD ? 1 : -1));
 
-  gfx::Image image;
   if (entry && entry->screenshot().get()) {
     std::vector<gfx::ImagePNGRep> image_reps;
     image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(), 1.0f));
-    image = gfx::Image(image_reps);
+    return gfx::Image(image_reps);
   }
-  if (!layer_delegate_)
-    layer_delegate_.reset(new ImageLayerDelegate());
-  layer_delegate_->SetImage(image);
-
-  ui::Layer* layer = new ui::Layer(ui::LAYER_TEXTURED);
-  layer->set_delegate(layer_delegate_.get());
-  return layer;
+  return gfx::Image();
 }
 
-ui::Layer* OverscrollNavigationOverlay::CreateBackLayer() {
-  if (!web_contents_->GetController().CanGoBack())
-    return NULL;
-  slide_direction_ = SLIDE_BACK;
-  return CreateSlideLayer(-1);
-}
-
-ui::Layer* OverscrollNavigationOverlay::CreateFrontLayer() {
+scoped_ptr<aura::Window> OverscrollNavigationOverlay::CreateFrontWindow(
+    const gfx::Rect& bounds) {
   if (!web_contents_->GetController().CanGoForward())
-    return NULL;
-  slide_direction_ = SLIDE_FRONT;
-  return CreateSlideLayer(1);
+    return nullptr;
+  direction_ = FORWARD;
+  return CreateOverlayWindow(bounds);
 }
 
-void OverscrollNavigationOverlay::OnWindowSlideCompleting() {
-  if (slide_direction_ == SLIDE_UNKNOWN)
-    return;
+scoped_ptr<aura::Window> OverscrollNavigationOverlay::CreateBackWindow(
+    const gfx::Rect& bounds) {
+  if (!web_contents_->GetController().CanGoBack())
+    return nullptr;
+  direction_ = BACK;
+  return CreateOverlayWindow(bounds);
+}
 
-  // Perform the navigation.
-  if (slide_direction_ == SLIDE_BACK)
-    web_contents_->GetController().GoBack();
-  else if (slide_direction_ == SLIDE_FRONT)
+aura::Window* OverscrollNavigationOverlay::GetMainWindow() const {
+  if (window_)
+    return window_.get();
+  return web_contents_->IsBeingDestroyed()
+             ? nullptr
+             : web_contents_->GetContentNativeView();
+}
+
+void OverscrollNavigationOverlay::OnOverscrollCompleting() {
+  aura::Window* main_window = GetMainWindow();
+  if (!main_window)
+    return;
+  main_window->ReleaseCapture();
+}
+
+void OverscrollNavigationOverlay::OnOverscrollCompleted(
+    scoped_ptr<aura::Window> window) {
+  DCHECK(direction_ != NONE);
+  aura::Window* main_window = GetMainWindow();
+  if (!main_window) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Overscroll.Cancelled", direction_, NAVIGATION_COUNT);
+    return;
+  }
+
+  // Make sure we can navigate first, as other factors can trigger a navigation
+  // during an overscroll gesture and navigating without history produces a
+  // crash.
+  bool navigated = false;
+  if (direction_ == FORWARD && web_contents_->GetController().CanGoForward()) {
     web_contents_->GetController().GoForward();
-  else
-    NOTREACHED();
+    navigated = true;
+  } else if (direction_ == BACK && web_contents_->GetController().CanGoBack()) {
+    web_contents_->GetController().GoBack();
+    navigated = true;
+  } else {
+    // We need to dismiss the overlay without navigating as soon as the
+    // overscroll finishes.
+    UMA_HISTOGRAM_ENUMERATION(
+        "Overscroll.Cancelled", direction_, NAVIGATION_COUNT);
+    loading_complete_ = true;
+  }
 
-  // Reset state and wait for the new navigation page to complete
-  // loading/painting.
-  StartObserving();
+  if (navigated) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Overscroll.Navigated2", direction_, NAVIGATION_COUNT);
+    StartObserving();
+  }
+
+  main_window->SetTransform(gfx::Transform());
+  window_ = window.Pass();
+  // Make sure the window is in its default position.
+  window_->SetBounds(gfx::Rect(web_contents_window_->bounds().size()));
+  window_->SetTransform(gfx::Transform());
+  // Make sure the overlay window is on top.
+  web_contents_window_->StackChildAtTop(window_.get());
+  direction_ = NONE;
+  StopObservingIfDone();
 }
 
-void OverscrollNavigationOverlay::OnWindowSlideCompleted(
-    scoped_ptr<ui::Layer> layer) {
-  if (slide_direction_ == SLIDE_UNKNOWN) {
-    window_slider_.reset();
-    StopObservingIfDone();
+void OverscrollNavigationOverlay::OnOverscrollCancelled() {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Overscroll.Cancelled", direction_, NAVIGATION_COUNT);
+  aura::Window* main_window = GetMainWindow();
+  if (!main_window)
     return;
-  }
-
-  // Change the image used for the overlay window.
-  image_delegate_->SetImage(layer_delegate_->image());
-  window_->layer()->SetTransform(gfx::Transform());
-  window_->SchedulePaintInRect(gfx::Rect(window_->bounds().size()));
-  slide_direction_ = SLIDE_UNKNOWN;
-  // We may end up dismissing the overlay before it has a chance to repaint, so
-  // set the slider layer to be the one animated by OverlayDismissAnimator.
-  if (layer.get())
-    overlay_dismiss_layer_ = layer.Pass();
+  main_window->ReleaseCapture();
+  direction_ = NONE;
   StopObservingIfDone();
-}
-
-void OverscrollNavigationOverlay::OnWindowSlideAborted() {
-  StopObservingIfDone();
-}
-
-void OverscrollNavigationOverlay::OnWindowSliderDestroyed() {
-  // We only want to take an action here if WindowSlider is being destroyed
-  // outside of OverscrollNavigationOverlay. If window_slider_.get() is NULL,
-  // then OverscrollNavigationOverlay is the one destroying WindowSlider, and
-  // we don't need to do anything.
-  // This check prevents StopObservingIfDone() being called multiple times
-  // (including recursively) for a single event.
-  if (window_slider_.get()) {
-    // The slider has just been destroyed. Release the ownership.
-    ignore_result(window_slider_.release());
-    StopObservingIfDone();
-  }
 }
 
 void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint() {
@@ -303,10 +277,10 @@ void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint() {
   }
 }
 
-void OverscrollNavigationOverlay::DidStopLoading(RenderViewHost* host) {
+void OverscrollNavigationOverlay::DidStopLoading() {
   // Don't compare URLs in this case - it's possible they won't match if
   // a gesture-nav initiated navigation was interrupted by some other in-site
-  // navigation ((e.g., from a script, or from a bookmark).
+  // navigation (e.g., from a script, or from a bookmark).
   loading_complete_ = true;
   StopObservingIfDone();
 }

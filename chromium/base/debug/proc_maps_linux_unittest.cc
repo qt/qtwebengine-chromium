@@ -7,6 +7,7 @@
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/threading/platform_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -180,23 +181,23 @@ TEST(ProcMapsTest, Permissions) {
   }
 }
 
-TEST(ProcMapsTest, ReadProcMaps) {
-  std::string proc_maps;
-  ASSERT_TRUE(ReadProcMaps(&proc_maps));
-
-  std::vector<MappedMemoryRegion> regions;
-  ASSERT_TRUE(ParseProcMaps(proc_maps, &regions));
-  ASSERT_FALSE(regions.empty());
-
+#if defined(ADDRESS_SANITIZER)
+// AddressSanitizer may move local variables to a dedicated "fake stack" which
+// is outside the stack region listed in /proc/self/maps. We disable ASan
+// instrumentation for this function to force the variable to be local.
+__attribute__((no_sanitize_address))
+#endif
+void CheckProcMapsRegions(const std::vector<MappedMemoryRegion> &regions) {
   // We should be able to find both the current executable as well as the stack
-  // mapped into memory. Use the address of |proc_maps| as a way of finding the
+  // mapped into memory. Use the address of |exe_path| as a way of finding the
   // stack.
   FilePath exe_path;
   EXPECT_TRUE(PathService::Get(FILE_EXE, &exe_path));
-  uintptr_t address = reinterpret_cast<uintptr_t>(&proc_maps);
+  uintptr_t address = reinterpret_cast<uintptr_t>(&exe_path);
   bool found_exe = false;
   bool found_stack = false;
   bool found_address = false;
+
   for (size_t i = 0; i < regions.size(); ++i) {
     if (regions[i].path == exe_path.value()) {
       // It's OK to find the executable mapped multiple times as there'll be
@@ -204,14 +205,25 @@ TEST(ProcMapsTest, ReadProcMaps) {
       found_exe = true;
     }
 
-    if (regions[i].path == "[stack]") {
-      // Only check if |address| lies within the real stack when not running
-      // Valgrind, otherwise |address| will be on a stack that Valgrind creates.
-      if (!RunningOnValgrind()) {
-        EXPECT_GE(address, regions[i].start);
-        EXPECT_LT(address, regions[i].end);
-      }
-
+    // Valgrind uses its own allocated stacks instead of the kernel-provided
+    // stack without letting the kernel know via prctl(PR_SET_MM_START_STACK).
+    // Depending on which kernel you're running it'll impact the output of
+    // /proc/self/maps.
+    //
+    // Prior to version 3.4, the kernel completely ignores other stacks and
+    // always prints out the vma lying within mm->start_stack as [stack] even
+    // if the program was currently executing on a different stack.
+    //
+    // Starting in 3.4, the kernel will print out the vma containing the current
+    // stack pointer as [stack:TID] as long as that vma does not lie within
+    // mm->start_stack.
+    //
+    // Because this has gotten too complicated and brittle of a test, completely
+    // ignore checking for the stack and address when running under Valgrind.
+    // See http://crbug.com/431702 for more details.
+    if (!RunningOnValgrind() && regions[i].path == "[stack]") {
+      EXPECT_GE(address, regions[i].start);
+      EXPECT_LT(address, regions[i].end);
       EXPECT_TRUE(regions[i].permissions & MappedMemoryRegion::READ);
       EXPECT_TRUE(regions[i].permissions & MappedMemoryRegion::WRITE);
       EXPECT_FALSE(regions[i].permissions & MappedMemoryRegion::EXECUTE);
@@ -227,8 +239,21 @@ TEST(ProcMapsTest, ReadProcMaps) {
   }
 
   EXPECT_TRUE(found_exe);
-  EXPECT_TRUE(found_stack);
-  EXPECT_TRUE(found_address);
+  if (!RunningOnValgrind()) {
+    EXPECT_TRUE(found_stack);
+    EXPECT_TRUE(found_address);
+  }
+}
+
+TEST(ProcMapsTest, ReadProcMaps) {
+  std::string proc_maps;
+  ASSERT_TRUE(ReadProcMaps(&proc_maps));
+
+  std::vector<MappedMemoryRegion> regions;
+  ASSERT_TRUE(ParseProcMaps(proc_maps, &regions));
+  ASSERT_FALSE(regions.empty());
+
+  CheckProcMapsRegions(regions);
 }
 
 TEST(ProcMapsTest, ReadProcMapsNonEmptyString) {

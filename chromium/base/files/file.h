@@ -18,6 +18,8 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/files/file_path.h"
+#include "base/files/file_tracing.h"
 #include "base/files/scoped_file.h"
 #include "base/gtest_prod_util.h"
 #include "base/move.h"
@@ -30,8 +32,6 @@
 FORWARD_DECLARE_TEST(FileTest, MemoryCorruption);
 
 namespace base {
-
-class FilePath;
 
 #if defined(OS_WIN)
 typedef HANDLE PlatformFile;
@@ -128,9 +128,9 @@ class BASE_EXPORT File {
 
   // Used to hold information about a given file.
   // If you add more fields to this structure (platform-specific fields are OK),
-  // make sure to update all functions that use it in file_util_{win|posix}.cc
-  // too, and the ParamTraits<base::PlatformFileInfo> implementation in
-  // chrome/common/common_param_traits.cc.
+  // make sure to update all functions that use it in file_util_{win|posix}.cc,
+  // too, and the ParamTraits<base::File::Info> implementation in
+  // ipc/ipc_message_utils.cc.
   struct BASE_EXPORT Info {
     Info();
     ~Info();
@@ -145,24 +145,25 @@ class BASE_EXPORT File {
     // True if the file corresponds to a directory.
     bool is_directory;
 
-    // True if the file corresponds to a symbolic link.
+    // True if the file corresponds to a symbolic link.  For Windows currently
+    // not supported and thus always false.
     bool is_symbolic_link;
 
     // The last modified time of a file.
-    base::Time last_modified;
+    Time last_modified;
 
     // The last accessed time of a file.
-    base::Time last_accessed;
+    Time last_accessed;
 
     // The creation time of a file.
-    base::Time creation_time;
+    Time creation_time;
   };
 
   File();
 
   // Creates or opens the given file. This will fail with 'access denied' if the
-  // |name| contains path traversal ('..') components.
-  File(const FilePath& name, uint32 flags);
+  // |path| contains path traversal ('..') components.
+  File(const FilePath& path, uint32 flags);
 
   // Takes ownership of |platform_file|.
   explicit File(PlatformFile platform_file);
@@ -179,11 +180,7 @@ class BASE_EXPORT File {
   File& operator=(RValue other);
 
   // Creates or opens the given file.
-  void Initialize(const FilePath& name, uint32 flags);
-
-  // Creates or opens the given file, allowing paths with traversal ('..')
-  // components. Use only with extreme care.
-  void InitializeUnsafe(const FilePath& name, uint32 flags);
+  void Initialize(const FilePath& path, uint32 flags);
 
   bool IsValid() const;
 
@@ -194,7 +191,7 @@ class BASE_EXPORT File {
 
   // Returns the OS result of opening this file. Note that the way to verify
   // the success of the operation is to use IsValid(), not this method:
-  //   File file(name, flags);
+  //   File file(path, flags);
   //   if (!file.IsValid())
   //     return;
   Error error_details() const { return error_details_; }
@@ -287,6 +284,13 @@ class BASE_EXPORT File {
   // Unlock a file previously locked.
   Error Unlock();
 
+  // Returns a new object referencing this file for use within the current
+  // process. Handling of FLAG_DELETE_ON_CLOSE varies by OS. On POSIX, the File
+  // object that was created or initialized with this flag will have unlinked
+  // the underlying file when it was created or opened. On Windows, the
+  // underlying file is deleted when the last handle to it is closed.
+  File Duplicate();
+
   bool async() const { return async_; }
 
 #if defined(OS_WIN)
@@ -300,6 +304,8 @@ class BASE_EXPORT File {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(::FileTest, MemoryCorruption);
+
+  friend class FileTracing::ScopedTrace;
 
 #if defined(OS_POSIX)
   // Encloses a single ScopedFD, saving a cheap tamper resistent memory checksum
@@ -346,6 +352,14 @@ class BASE_EXPORT File {
   };
 #endif
 
+  // Creates or opens the given file. Only called if |path_| has no
+  // traversal ('..') components.
+  void DoInitialize(uint32 flags);
+
+  // TODO(tnagel): Reintegrate into Flush() once histogram isn't needed anymore,
+  // cf. issue 473337.
+  bool DoFlush();
+
   void SetPlatformFile(PlatformFile file);
 
 #if defined(OS_WIN)
@@ -353,6 +367,12 @@ class BASE_EXPORT File {
 #elif defined(OS_POSIX)
   MemoryCheckingScopedFD file_;
 #endif
+
+  // Path that |Initialize()| was called with. Only set if safe (i.e. no '..').
+  FilePath path_;
+
+  // Object tied to the lifetime of |this| that enables/disables tracing.
+  FileTracing::ScopedEnabler trace_enabler_;
 
   Error error_details_;
   bool created_;

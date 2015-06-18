@@ -10,8 +10,7 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "base/profiler/scoped_tracker.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/win/object_watcher.h"
 
@@ -28,21 +27,21 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate,
         recursive_watch_(false) {}
 
   // FilePathWatcher::PlatformDelegate overrides.
-  virtual bool Watch(const FilePath& path,
-                     bool recursive,
-                     const FilePathWatcher::Callback& callback) override;
-  virtual void Cancel() override;
+  bool Watch(const FilePath& path,
+             bool recursive,
+             const FilePathWatcher::Callback& callback) override;
+  void Cancel() override;
 
   // Deletion of the FilePathWatcher will call Cancel() to dispose of this
   // object in the right thread. This also observes destruction of the required
   // cleanup thread, in case it quits before Cancel() is called.
-  virtual void WillDestroyCurrentMessageLoop() override;
+  void WillDestroyCurrentMessageLoop() override;
 
   // Callback from MessageLoopForIO.
-  virtual void OnObjectSignaled(HANDLE object) override;
+  void OnObjectSignaled(HANDLE object) override;
 
  private:
-  virtual ~FilePathWatcherImpl() {}
+  ~FilePathWatcherImpl() override {}
 
   // Setup a watch handle for directory |dir|. Set |recursive| to true to watch
   // the directory sub trees. Returns true if no fatal error occurs. |handle|
@@ -58,7 +57,7 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate,
   // Destroy the watch handle.
   void DestroyWatch();
 
-  // Cleans up and stops observing the |message_loop_| thread.
+  // Cleans up and stops observing the |task_runner_| thread.
   void CancelOnMessageLoopThread() override;
 
   // Callback to notify upon changes.
@@ -92,7 +91,7 @@ bool FilePathWatcherImpl::Watch(const FilePath& path,
                                 const FilePathWatcher::Callback& callback) {
   DCHECK(target_.value().empty());  // Can only watch one path.
 
-  set_message_loop(MessageLoopProxy::current());
+  set_task_runner(ThreadTaskRunnerHandle::Get());
   callback_ = callback;
   target_ = path;
   recursive_watch_ = recursive;
@@ -114,23 +113,22 @@ bool FilePathWatcherImpl::Watch(const FilePath& path,
 
 void FilePathWatcherImpl::Cancel() {
   if (callback_.is_null()) {
-    // Watch was never called, or the |message_loop_| has already quit.
+    // Watch was never called, or the |task_runner_| has already quit.
     set_cancelled();
     return;
   }
 
   // Switch to the file thread if necessary so we can stop |watcher_|.
-  if (!message_loop()->BelongsToCurrentThread()) {
-    message_loop()->PostTask(FROM_HERE,
-                             Bind(&FilePathWatcher::CancelWatch,
-                                  make_scoped_refptr(this)));
+  if (!task_runner()->BelongsToCurrentThread()) {
+    task_runner()->PostTask(FROM_HERE, Bind(&FilePathWatcher::CancelWatch,
+                                            make_scoped_refptr(this)));
   } else {
     CancelOnMessageLoopThread();
   }
 }
 
 void FilePathWatcherImpl::CancelOnMessageLoopThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   set_cancelled();
 
   if (handle_ != INVALID_HANDLE_VALUE)
@@ -147,10 +145,6 @@ void FilePathWatcherImpl::WillDestroyCurrentMessageLoop() {
 }
 
 void FilePathWatcherImpl::OnObjectSignaled(HANDLE object) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("FilePathWatcherImpl_OnObjectSignaled"));
-
   DCHECK(object == handle_);
   // Make sure we stay alive through the body of this function.
   scoped_refptr<FilePathWatcherImpl> keep_alive(this);

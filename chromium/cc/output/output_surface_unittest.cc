@@ -25,6 +25,10 @@ class TestOutputSurface : public OutputSurface {
   explicit TestOutputSurface(scoped_refptr<ContextProvider> context_provider)
       : OutputSurface(context_provider) {}
 
+  TestOutputSurface(scoped_refptr<ContextProvider> context_provider,
+                    scoped_refptr<ContextProvider> worker_context_provider)
+      : OutputSurface(worker_context_provider) {}
+
   explicit TestOutputSurface(scoped_ptr<SoftwareOutputDevice> software_device)
       : OutputSurface(software_device.Pass()) {}
 
@@ -37,20 +41,9 @@ class TestOutputSurface : public OutputSurface {
     client_->DidSwapBuffersComplete();
   }
 
-  bool InitializeNewContext3d(
-      scoped_refptr<ContextProvider> new_context_provider) {
-    return InitializeAndSetContext3d(new_context_provider);
-  }
-
-  using OutputSurface::ReleaseGL;
-
   void CommitVSyncParametersForTesting(base::TimeTicks timebase,
                                        base::TimeDelta interval) {
     CommitVSyncParameters(timebase, interval);
-  }
-
-  void BeginFrameForTesting() {
-    client_->BeginFrame(CreateExpiredBeginFrameArgsForTesting());
   }
 
   void DidSwapBuffersForTesting() { client_->DidSwapBuffers(); }
@@ -100,7 +93,25 @@ TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientSuccess) {
   FakeOutputSurfaceClient client;
   EXPECT_TRUE(output_surface.BindToClient(&client));
   EXPECT_TRUE(output_surface.HasClient());
-  EXPECT_FALSE(client.deferred_initialize_called());
+
+  // Verify DidLoseOutputSurface callback is hooked up correctly.
+  EXPECT_FALSE(client.did_lose_output_surface_called());
+  output_surface.context_provider()->ContextGL()->LoseContextCHROMIUM(
+      GL_GUILTY_CONTEXT_RESET_ARB, GL_INNOCENT_CONTEXT_RESET_ARB);
+  output_surface.context_provider()->ContextGL()->Flush();
+  EXPECT_TRUE(client.did_lose_output_surface_called());
+}
+
+TEST(OutputSurfaceTest, ClientPointerIndicatesWorkerBindToClientSuccess) {
+  scoped_refptr<TestContextProvider> provider = TestContextProvider::Create();
+  scoped_refptr<TestContextProvider> worker_provider =
+      TestContextProvider::Create();
+  TestOutputSurface output_surface(provider, worker_provider);
+  EXPECT_FALSE(output_surface.HasClient());
+
+  FakeOutputSurfaceClient client;
+  EXPECT_TRUE(output_surface.BindToClient(&client));
+  EXPECT_TRUE(output_surface.HasClient());
 
   // Verify DidLoseOutputSurface callback is hooked up correctly.
   EXPECT_FALSE(client.did_lose_output_surface_called());
@@ -125,56 +136,21 @@ TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientFailure) {
   EXPECT_FALSE(output_surface.HasClient());
 }
 
-class OutputSurfaceTestInitializeNewContext3d : public ::testing::Test {
- public:
-  OutputSurfaceTestInitializeNewContext3d()
-      : context_provider_(TestContextProvider::Create()),
-        output_surface_(
-            scoped_ptr<SoftwareOutputDevice>(new SoftwareOutputDevice)),
-        client_(&output_surface_) {}
+TEST(OutputSurfaceTest, ClientPointerIndicatesWorkerBindToClientFailure) {
+  scoped_refptr<TestContextProvider> context_provider =
+      TestContextProvider::Create();
+  scoped_refptr<TestContextProvider> worker_context_provider =
+      TestContextProvider::Create();
 
- protected:
-  void BindOutputSurface() {
-    EXPECT_TRUE(output_surface_.BindToClient(&client_));
-    EXPECT_TRUE(output_surface_.HasClient());
-  }
+  // Lose the context so BindToClient fails.
+  worker_context_provider->UnboundTestContext3d()->set_context_lost(true);
 
-  void InitializeNewContextExpectFail() {
-    EXPECT_FALSE(output_surface_.InitializeNewContext3d(context_provider_));
-    EXPECT_TRUE(output_surface_.HasClient());
+  TestOutputSurface output_surface(context_provider, worker_context_provider);
+  EXPECT_FALSE(output_surface.HasClient());
 
-    EXPECT_FALSE(output_surface_.context_provider());
-    EXPECT_TRUE(output_surface_.software_device());
-  }
-
-  scoped_refptr<TestContextProvider> context_provider_;
-  TestOutputSurface output_surface_;
-  FakeOutputSurfaceClient client_;
-};
-
-TEST_F(OutputSurfaceTestInitializeNewContext3d, Success) {
-  BindOutputSurface();
-  EXPECT_FALSE(client_.deferred_initialize_called());
-
-  EXPECT_TRUE(output_surface_.InitializeNewContext3d(context_provider_));
-  EXPECT_TRUE(client_.deferred_initialize_called());
-  EXPECT_EQ(context_provider_.get(), output_surface_.context_provider());
-
-  EXPECT_FALSE(client_.did_lose_output_surface_called());
-  context_provider_->ContextGL()->LoseContextCHROMIUM(
-      GL_GUILTY_CONTEXT_RESET_ARB, GL_INNOCENT_CONTEXT_RESET_ARB);
-  context_provider_->ContextGL()->Flush();
-  EXPECT_TRUE(client_.did_lose_output_surface_called());
-
-  output_surface_.ReleaseGL();
-  EXPECT_FALSE(output_surface_.context_provider());
-}
-
-TEST_F(OutputSurfaceTestInitializeNewContext3d, Context3dMakeCurrentFails) {
-  BindOutputSurface();
-
-  context_provider_->UnboundTestContext3d()->set_context_lost(true);
-  InitializeNewContextExpectFail();
+  FakeOutputSurfaceClient client;
+  EXPECT_FALSE(output_surface.BindToClient(&client));
+  EXPECT_FALSE(output_surface.HasClient());
 }
 
 TEST(OutputSurfaceTest, MemoryAllocation) {

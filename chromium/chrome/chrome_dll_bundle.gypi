@@ -76,11 +76,11 @@
     # Bring in pdfsqueeze and run it on all pdfs
     '../build/temp_gyp/pdfsqueeze.gyp:pdfsqueeze',
     '../crypto/crypto.gyp:crypto',
-    '../pdf/pdf.gyp:pdf',
     # On Mac, Flash gets put into the framework, so we need this
     # dependency here. flash_player.gyp will copy the Flash bundle
     # into PRODUCT_DIR.
     '../third_party/adobe/flash/flash_player.gyp:flapper_binaries',
+    '../third_party/crashpad/crashpad/handler/handler.gyp:crashpad_handler',
     '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
     'chrome_resources.gyp:packed_extra_resources',
     'chrome_resources.gyp:packed_resources',
@@ -101,14 +101,8 @@
     },
   ],
   'variables': {
-    'conditions': [
-      ['branding=="Chrome"', {
-        'theme_dir_name': 'google_chrome',
-      }, {  # else: 'branding!="Chrome"
-        'theme_dir_name': 'chromium',
-      }],
-    ],
     'libpeer_target_type%': 'static_library',
+    'theme_dir_name': '<(branding_path_component)',
   },
   'postbuilds': [
     {
@@ -146,10 +140,14 @@
       ],
     },
     {
-      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Internet Plug-Ins',
+      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers',
       'files': [
-        '<(PRODUCT_DIR)/PDF.plugin',
+        '<(PRODUCT_DIR)/crashpad_handler',
       ],
+    },
+    {
+      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Internet Plug-Ins',
+      'files': [],
       'conditions': [
         ['disable_nacl!=1', {
           'conditions': [
@@ -179,7 +177,7 @@
     },
     {
       # This file is used by the component installer.
-      # It is not a complete plug-in on its own.
+      # It is not a complete plugin on its own.
       'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Internet Plug-Ins/',
       'files': [],
       'conditions': [
@@ -232,21 +230,6 @@
         'mac_real_dsym': 1,
       },
     }],
-    ['mac_breakpad_compiled_in==1', {
-      'dependencies': [
-        '../breakpad/breakpad.gyp:breakpad',
-        '../components/components.gyp:policy',
-      ],
-      'copies': [
-        {
-          'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Resources',
-          'files': [
-            '<(PRODUCT_DIR)/crash_inspector',
-            '<(PRODUCT_DIR)/crash_report_sender.app'
-          ],
-        },
-      ],
-    }],  # mac_breakpad_compiled_in
     ['mac_keystone==1', {
       'mac_bundle_resources': [
         'browser/mac/keystone_promote_preflight.sh',
@@ -300,6 +283,12 @@
     ['icu_use_data_file_flag==1', {
       'mac_bundle_resources': [
         '<(PRODUCT_DIR)/icudtl.dat',
+      ],
+    }],
+    ['v8_use_external_startup_data==1', {
+      'mac_bundle_resources': [
+        '<(PRODUCT_DIR)/natives_blob.bin',
+        '<(PRODUCT_DIR)/snapshot_blob.bin',
       ],
     }],
   ],  # conditions

@@ -14,18 +14,32 @@
 # limitations under the License.
 
 import BaseHTTPServer
+import certutils
 import errno
 import logging
 import socket
 import SocketServer
 import ssl
+import sys
 import time
 import urlparse
 
 import daemonserver
 import httparchive
+import platformsettings
 import proxyshaper
 import sslproxy
+
+def _HandleSSLCertificateError():
+  """
+  This method is intended to be called from
+  BaseHTTPServer.HTTPServer.handle_error().
+  """
+  exc_type, exc_value, exc_traceback = sys.exc_info()
+  if isinstance(exc_value, ssl.SSLError):
+    return
+
+  raise
 
 
 class HttpProxyError(Exception):
@@ -55,17 +69,16 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       self.wfile = proxyshaper.RateLimitedFile(
           self.server.get_active_request_count, self.wfile,
           self.server.traffic_shaping_down_bps)
-    self.has_handled_request = False
-
-  def finish(self):
-    BaseHTTPServer.BaseHTTPRequestHandler.finish(self)
-    if not self.has_handled_request:
-      logging.error('Client failed to make request')
 
   # Make request handler logging match our logging format.
-  def log_request(self, code='-', size='-'): pass
-  def log_error(self, format, *args): logging.error(format, *args)
-  def log_message(self, format, *args): logging.info(format, *args)
+  def log_request(self, code='-', size='-'):
+    pass
+
+  def log_error(self, format, *args):  # pylint:disable=redefined-builtin
+    logging.error(format, *args)
+
+  def log_message(self, format, *args):  # pylint:disable=redefined-builtin
+    logging.info(format, *args)
 
   def read_request_body(self):
     request_body = None
@@ -156,7 +169,13 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     self.headers['host'], self.path, e)
 
   def handle_one_request(self):
-    """Handle a single HTTP request."""
+    """Handle a single HTTP request.
+
+    This method overrides a method from BaseHTTPRequestHandler. When this
+    method returns, it must leave self.close_connection in the correct state.
+    If this method raises an exception, the state of self.close_connection
+    doesn't matter.
+    """
     try:
       self.raw_requestline = self.rfile.readline(65537)
       self.do_parse_and_handle_one_request()
@@ -165,12 +184,22 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       self.log_error('Request timed out: %r', e)
       self.close_connection = 1
       return
+    except ssl.SSLError:
+      # There is insufficient information passed up the stack from OpenSSL to
+      # determine the true cause of the SSL error. This almost always happens
+      # because the client refuses to accept the self-signed certs of
+      # WebPageReplay.
+      self.close_connection = 1
+      return
     except socket.error, e:
       # Connection reset errors happen all the time due to the browser closing
       # without terminating the connection properly.  They can be safely
       # ignored.
-      if e[0] != errno.ECONNRESET:
-        raise
+      if e[0] == errno.ECONNRESET:
+        self.close_connection = 1
+        return
+      raise
+
 
   def do_parse_and_handle_one_request(self):
     start_time = time.time()
@@ -182,15 +211,22 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.request_version = ''
         self.command = ''
         self.send_error(414)
+        self.close_connection = 0
         return
       if not self.raw_requestline:
+        # This indicates that the socket has been closed by the client.
         self.close_connection = 1
         return
+
+      # self.parse_request() sets self.close_connection. There is no need to
+      # set the property after the method is executed, unless custom behavior
+      # is desired.
       if not self.parse_request():
-        # An error code has been sent, just exit
+        # An error code has been sent, just exit.
         return
 
       try:
+        response = None
         request = self.get_archived_http_request()
 
         if request is None:
@@ -207,10 +243,13 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.flush()  # Actually send the response if not already done.
     finally:
       request_time_ms = (time.time() - start_time) * 1000.0
-      if request:
-        self.has_handled_request = True
-        logging.debug('Served: %s (%dms)', request, request_time_ms)
       self.server.total_request_time += request_time_ms
+      if request:
+        if response:
+          logging.debug('Served: %s (%dms)', request, request_time_ms)
+        else:
+          logging.warning('Failed to find response for: %s (%dms)',
+                          request, request_time_ms)
       self.server.num_active_requests -= 1
 
   def send_error(self, status, body=None):
@@ -230,7 +269,16 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
   # SocketServer.TCPServer (the parent of BaseHTTPServer.HTTPServer).
   # Since we're intercepting many domains through this single server,
   # it is quite possible to get more than 5 concurrent requests.
-  request_queue_size = 128
+  request_queue_size = 256
+
+  # The number of simultaneous connections that the HTTP server supports. This
+  # is primarily limited by system limits such as RLIMIT_NOFILE.
+  connection_limit = 500
+
+  # Allow sockets to be reused. See
+  # http://svn.python.org/projects/python/trunk/Lib/SocketServer.py for more
+  # details.
+  allow_reuse_address = True
 
   # Don't prevent python from exiting when there is thread activity.
   daemon_threads = True
@@ -251,6 +299,21 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
            Bandwidths measured in [K|M]{bit/s|Byte/s}. '0' means unlimited.
       delay_ms: Propagation delay in milliseconds. '0' means no delay.
     """
+    if platformsettings.SupportsFdLimitControl():
+      # BaseHTTPServer opens a new thread and two fds for each connection.
+      # Check that the process can open at least 1000 fds.
+      soft_limit, hard_limit = platformsettings.GetFdLimit()
+      # Add some wiggle room since there are probably fds not associated with
+      # connections.
+      wiggle_room = 100
+      desired_limit = 2 * HttpProxyServer.connection_limit + wiggle_room
+      if soft_limit < desired_limit:
+        assert desired_limit <= hard_limit, (
+            'The hard limit for number of open files per process is %s which '
+            'is lower than the desired limit of %s.' %
+            (hard_limit, desired_limit))
+        platformsettings.AdjustFdLimit(desired_limit, hard_limit)
+
     try:
       BaseHTTPServer.HTTPServer.__init__(self, (host, port), self.HANDLER)
     except Exception, e:
@@ -264,6 +327,7 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
     self.traffic_shaping_up_bps = proxyshaper.GetBitsPerSecond(up_bandwidth)
     self.traffic_shaping_delay_ms = int(delay_ms)
     self.num_active_requests = 0
+    self.num_active_connections = 0
     self.total_request_time = 0
     self.protocol = protocol
 
@@ -275,6 +339,7 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
   def cleanup(self):
     try:
       self.shutdown()
+      self.server_close()
     except KeyboardInterrupt:
       pass
     logging.info('Stopped %s server. Total time processing requests: %dms',
@@ -282,6 +347,19 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
 
   def get_active_request_count(self):
     return self.num_active_requests
+
+  def get_request(self):
+    self.num_active_connections += 1
+    if self.num_active_connections >= HttpProxyServer.connection_limit:
+      logging.error(
+          'Number of active connections (%s) surpasses the '
+          'supported limit of %s.' %
+          (self.num_active_connections, HttpProxyServer.connection_limit))
+    return BaseHTTPServer.HTTPServer.get_request(self)
+
+  def close_request(self, request):
+    BaseHTTPServer.HTTPServer.close_request(self, request)
+    self.num_active_connections -= 1
 
 
 class HttpsProxyServer(HttpProxyServer):
@@ -293,13 +371,35 @@ class HttpsProxyServer(HttpProxyServer):
     self.HANDLER = sslproxy.wrap_handler(HttpArchiveHandler)
     HttpProxyServer.__init__(self, http_archive_fetch, custom_handlers,
                              is_ssl=True, protocol='HTTPS', **kwargs)
-    self.http_archive_fetch.http_archive.set_root_cert(https_root_ca_cert_path)
+    with open(self.ca_cert_path, 'r') as cert_file:
+      self._ca_cert_str = cert_file.read()
+    self._host_to_cert_map = {}
+    self._server_cert_to_cert_map = {}
 
   def cleanup(self):
     try:
       self.shutdown()
+      self.server_close()
     except KeyboardInterrupt:
       pass
+
+  def get_certificate(self, host):
+    if host in self._host_to_cert_map:
+      return self._host_to_cert_map[host]
+
+    server_cert = self.http_archive_fetch.http_archive.get_server_cert(host)
+    if server_cert in self._server_cert_to_cert_map:
+      cert = self._server_cert_to_cert_map[server_cert]
+      self._host_to_cert_map[host] = cert
+      return cert
+
+    cert = certutils.generate_cert(self._ca_cert_str, server_cert, host)
+    self._server_cert_to_cert_map[server_cert] = cert
+    self._host_to_cert_map[host] = cert
+    return cert
+
+  def handle_error(self, request, client_address):
+    _HandleSSLCertificateError()
 
 
 class SingleCertHttpsProxyServer(HttpProxyServer):
@@ -314,6 +414,9 @@ class SingleCertHttpsProxyServer(HttpProxyServer):
         do_handshake_on_connect=False)
     # Ancestor class, DaemonServer, calls serve_forever() during its __init__.
 
+  def handle_error(self, request, client_address):
+    _HandleSSLCertificateError()
+
 
 class HttpToHttpsProxyServer(HttpProxyServer):
   """Listens for HTTP requests but sends them to the target as HTTPS requests"""
@@ -321,3 +424,6 @@ class HttpToHttpsProxyServer(HttpProxyServer):
   def __init__(self, http_archive_fetch, custom_handlers, **kwargs):
     HttpProxyServer.__init__(self, http_archive_fetch, custom_handlers,
                              is_ssl=True, protocol='HTTP-to-HTTPS', **kwargs)
+
+  def handle_error(self, request, client_address):
+    _HandleSSLCertificateError()

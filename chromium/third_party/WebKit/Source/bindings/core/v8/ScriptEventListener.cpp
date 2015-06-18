@@ -88,55 +88,33 @@ PassRefPtr<V8LazyEventListener> createAttributeEventListener(LocalFrame* frame, 
     return V8LazyEventListener::create(name.localName(), eventParameterName, value, sourceURL, position, 0, toIsolate(frame));
 }
 
-static v8::Handle<v8::Function> eventListenerEffectiveFunction(v8::Isolate* isolate, v8::Handle<v8::Object> listenerObject)
+static v8::MaybeLocal<v8::Function> eventListenerEffectiveFunction(v8::Isolate* isolate, v8::Local<v8::Context> context, v8::Local<v8::Object> listenerObject)
 {
-    v8::Handle<v8::Function> function;
     if (listenerObject->IsFunction()) {
-        function = v8::Handle<v8::Function>::Cast(listenerObject);
+        return v8::MaybeLocal<v8::Function>(listenerObject.As<v8::Function>());
     } else if (listenerObject->IsObject()) {
         // Try the "handleEvent" method (EventListener interface).
-        v8::Handle<v8::Value> property = listenerObject->Get(v8AtomicString(isolate, "handleEvent"));
-        if (property.IsEmpty() || !property->IsFunction()) {
-            // Fall back to the "constructor" property.
-            property = listenerObject->Get(v8AtomicString(isolate, "constructor"));
-        }
-        if (!property.IsEmpty() && property->IsFunction())
-            function = v8::Handle<v8::Function>::Cast(property);
+        v8::Local<v8::Value> property;
+        if (listenerObject->Get(context, v8AtomicString(isolate, "handleEvent")).ToLocal(&property) && property->IsFunction())
+            return v8::MaybeLocal<v8::Function>(property.As<v8::Function>());
+        // Fall back to the "constructor" property.
+        if (listenerObject->Get(context, v8AtomicString(isolate, "constructor")).ToLocal(&property) && property->IsFunction())
+            return v8::MaybeLocal<v8::Function>(property.As<v8::Function>());
     }
-    return function;
+    return v8::MaybeLocal<v8::Function>();
 }
 
-String eventListenerHandlerBody(Document* document, EventListener* listener)
-{
-    if (listener->type() != EventListener::JSEventListenerType)
-        return "";
-
-    v8::HandleScope scope(toIsolate(document));
-    V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
-    v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
-    v8::Context::Scope contextScope(context);
-    v8::Handle<v8::Object> object = v8Listener->getListenerObject(document);
-    if (object.IsEmpty())
-        return "";
-    v8::Handle<v8::Function> function = eventListenerEffectiveFunction(scope.GetIsolate(), object);
-    if (function.IsEmpty())
-        return "";
-
-    TOSTRING_DEFAULT(V8StringResource<TreatNullAsNullString>, functionString, function, "");
-    return functionString;
-}
-
-ScriptValue eventListenerHandler(Document* document, EventListener* listener)
+ScriptValue eventListenerHandler(ExecutionContext* executionContext, EventListener* listener)
 {
     if (listener->type() != EventListener::JSEventListenerType)
         return ScriptValue();
 
-    v8::Isolate* isolate = toIsolate(document);
+    v8::Isolate* isolate = toIsolate(executionContext);
     v8::HandleScope scope(isolate);
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
-    v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
+    v8::Local<v8::Context> context = toV8Context(executionContext, v8Listener->world());
     v8::Context::Scope contextScope(context);
-    v8::Handle<v8::Object> function = v8Listener->getListenerObject(document);
+    v8::Local<v8::Object> function = v8Listener->getListenerObject(executionContext);
     if (function.IsEmpty())
         return ScriptValue();
     return ScriptValue(ScriptState::from(context), function);
@@ -148,33 +126,28 @@ ScriptState* eventListenerHandlerScriptState(LocalFrame* frame, EventListener* l
         return 0;
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::HandleScope scope(toIsolate(frame));
-    v8::Handle<v8::Context> v8Context = frame->script().windowProxy(v8Listener->world())->context();
+    v8::Local<v8::Context> v8Context = frame->script().windowProxy(v8Listener->world())->context();
     return ScriptState::from(v8Context);
 }
 
-bool eventListenerHandlerLocation(Document* document, EventListener* listener, String& sourceName, String& scriptId, int& lineNumber, int& columnNumber)
+bool eventListenerHandlerLocation(ExecutionContext* executionContext, EventListener* listener, String& scriptId, int& lineNumber, int& columnNumber)
 {
     if (listener->type() != EventListener::JSEventListenerType)
         return false;
 
-    v8::HandleScope scope(toIsolate(document));
+    v8::HandleScope scope(toIsolate(executionContext));
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
-    v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
+    v8::Local<v8::Context> context = toV8Context(executionContext, v8Listener->world());
     v8::Context::Scope contextScope(context);
-    v8::Local<v8::Object> object = v8Listener->getListenerObject(document);
+    v8::Local<v8::Object> object = v8Listener->getListenerObject(executionContext);
     if (object.IsEmpty())
         return false;
-    v8::Handle<v8::Function> function = eventListenerEffectiveFunction(scope.GetIsolate(), object);
-    if (function.IsEmpty())
+    v8::Local<v8::Function> function;
+    if (!eventListenerEffectiveFunction(scope.GetIsolate(), context, object).ToLocal(&function))
         return false;
-    v8::Handle<v8::Function> originalFunction = getBoundFunction(function);
+    v8::Local<v8::Function> originalFunction = getBoundFunction(function);
     int scriptIdValue = originalFunction->ScriptId();
     scriptId = String::number(scriptIdValue);
-    v8::ScriptOrigin origin = originalFunction->GetScriptOrigin();
-    if (!origin.ResourceName().IsEmpty() && origin.ResourceName()->IsString())
-        sourceName = toCoreString(origin.ResourceName().As<v8::String>());
-    else
-        sourceName = "";
     lineNumber = originalFunction->GetScriptLineNumber();
     columnNumber = originalFunction->GetScriptColumnNumber();
     return true;

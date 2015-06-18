@@ -14,6 +14,7 @@ class SequencedTaskRunner;
 }
 
 namespace net {
+class CookieCryptoDelegate;
 class CookieMonsterDelegate;
 class CookieStore;
 }
@@ -23,7 +24,6 @@ class SpecialStoragePolicy;
 }
 
 namespace content {
-class CookieCryptoDelegate;
 
 struct CONTENT_EXPORT CookieStoreConfig {
   // Specifies how session cookies are persisted in the backing data store.
@@ -52,7 +52,7 @@ struct CONTENT_EXPORT CookieStoreConfig {
   // With in-memory cookie stores, |session_cookie_mode| must be
   // EPHEMERAL_SESSION_COOKIES.
   //
-  // Note: If |crypto_delegate| is non-NULL, it must outlive any CookieStores
+  // Note: If |crypto_delegate| is non-nullptr, it must outlive any CookieStores
   // created using this config.
   CookieStoreConfig(const base::FilePath& path,
                     SessionCookieMode session_cookie_mode,
@@ -73,16 +73,16 @@ struct CONTENT_EXPORT CookieStoreConfig {
   // Used to provide encryption hooks for the cookie store. The
   // CookieCryptoDelegate must outlive any cookie store created with this
   // config.
-  content::CookieCryptoDelegate* crypto_delegate;
+  net::CookieCryptoDelegate* crypto_delegate;
 
   // Callbacks for data load events will be performed on |client_task_runner|.
-  // If NULL, uses the task runner for BrowserThread::IO.
+  // If nullptr, uses the task runner for BrowserThread::IO.
   //
   // Only used for persistent cookie stores.
   scoped_refptr<base::SequencedTaskRunner> client_task_runner;
 
   // All blocking database accesses will be performed on
-  // |background_task_runner|.  If NULL, uses a SequencedTaskRunner from the
+  // |background_task_runner|.  If nullptr, uses a SequencedTaskRunner from the
   // BrowserThread blocking pool.
   //
   // Only used for persistent cookie stores.

@@ -42,7 +42,7 @@ struct SameSizeAsElementData : public RefCountedWillBeGarbageCollectedFinalized<
     void* pointers[3];
 };
 
-COMPILE_ASSERT(sizeof(ElementData) == sizeof(SameSizeAsElementData), element_attribute_data_should_stay_small);
+static_assert(sizeof(ElementData) == sizeof(SameSizeAsElementData), "ElementData should stay small");
 
 static size_t sizeForShareableElementDataWithAttributeCount(unsigned count)
 {
@@ -114,16 +114,15 @@ bool ElementData::isEquivalent(const ElementData* other) const
     if (attributes.size() != otherAttributes.size())
         return false;
 
-    AttributeCollection::iterator end = attributes.end();
-    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
-        const Attribute* otherAttr = otherAttributes.find(it->name());
-        if (!otherAttr || it->value() != otherAttr->value())
+    for (const Attribute& attribute : attributes) {
+        const Attribute* otherAttr = otherAttributes.find(attribute.name());
+        if (!otherAttr || attribute.value() != otherAttr->value())
             return false;
     }
     return true;
 }
 
-void ElementData::trace(Visitor* visitor)
+DEFINE_TRACE(ElementData)
 {
     if (m_isUnique)
         toUniqueElementData(this)->traceAfterDispatch(visitor);
@@ -131,7 +130,7 @@ void ElementData::trace(Visitor* visitor)
         toShareableElementData(this)->traceAfterDispatch(visitor);
 }
 
-void ElementData::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(ElementData)
 {
     visitor->trace(m_inlineStyle);
 }
@@ -212,7 +211,7 @@ PassRefPtrWillBeRawPtr<ShareableElementData> UniqueElementData::makeShareableCop
     return adoptRefWillBeNoop(new (slot) ShareableElementData(*this));
 }
 
-void UniqueElementData::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(UniqueElementData)
 {
     visitor->trace(m_presentationAttributeStyle);
     ElementData::traceAfterDispatch(visitor);

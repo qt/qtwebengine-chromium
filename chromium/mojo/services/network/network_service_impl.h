@@ -6,8 +6,8 @@
 #define MOJO_SERVICES_NETWORK_NETWORK_SERVICE_IMPL_H_
 
 #include "base/compiler_specific.h"
-#include "mojo/public/cpp/bindings/interface_impl.h"
-#include "mojo/services/public/interfaces/network/network_service.mojom.h"
+#include "mojo/services/network/public/interfaces/network_service.mojom.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
 #include "url/gurl.h"
 
 namespace mojo {
@@ -27,14 +27,17 @@ class NetworkServiceImpl : public InterfaceImpl<NetworkService> {
   void CreateTCPBoundSocket(
       NetAddressPtr local_address,
       InterfaceRequest<TCPBoundSocket> bound_socket,
-      const Callback<void(NetworkErrorPtr, NetAddressPtr)>& callback) override;
+      const CreateTCPBoundSocketCallback& callback) override;
   void CreateTCPConnectedSocket(
       NetAddressPtr remote_address,
       ScopedDataPipeConsumerHandle send_stream,
       ScopedDataPipeProducerHandle receive_stream,
       InterfaceRequest<TCPConnectedSocket> client_socket,
-      const Callback<void(NetworkErrorPtr, NetAddressPtr)>& callback) override;
+      const CreateTCPConnectedSocketCallback& callback) override;
   void CreateUDPSocket(InterfaceRequest<UDPSocket> socket) override;
+  void CreateHttpServer(NetAddressPtr local_address,
+                        HttpServerDelegatePtr delegate,
+                        const CreateHttpServerCallback& callback) override;
 
  private:
   NetworkContext* context_;

@@ -9,6 +9,7 @@
 #include "cc/resources/ui_resource_client.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
+#include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_ui_resource_layer_tree_host_impl.h"
 #include "cc/test/layer_test_common.h"
 #include "cc/test/test_shared_bitmap_manager.h"
@@ -32,7 +33,7 @@ scoped_ptr<UIResourceLayerImpl> GenerateUIResourceLayer(
   layer->draw_properties().visible_content_rect = visible_content_rect;
   layer->SetBounds(layer_size);
   layer->SetContentBounds(layer_size);
-  layer->CreateRenderSurface();
+  layer->SetHasRenderSurface(true);
   layer->draw_properties().render_target = layer.get();
 
   UIResourceBitmap bitmap(bitmap_size, opaque);
@@ -48,7 +49,7 @@ void QuadSizeTest(scoped_ptr<UIResourceLayerImpl> layer,
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
   AppendQuadsData data;
-  layer->AppendQuads(render_pass.get(), Occlusion(), &data);
+  layer->AppendQuads(render_pass.get(), &data);
 
   // Verify quad rects
   const QuadList& quads = render_pass->quad_list;
@@ -59,6 +60,8 @@ TEST(UIResourceLayerImplTest, VerifyDrawQuads) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
   FakeUIResourceLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
+
   // Make sure we're appending quads when there are valid values.
   gfx::Size bitmap_size(100, 100);
   gfx::Size layer_size(100, 100);;
@@ -88,7 +91,7 @@ void OpaqueBoundsTest(scoped_ptr<UIResourceLayerImpl> layer,
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
 
   AppendQuadsData data;
-  layer->AppendQuads(render_pass.get(), Occlusion(), &data);
+  layer->AppendQuads(render_pass.get(), &data);
 
   // Verify quad rects
   const QuadList& quads = render_pass->quad_list;
@@ -101,6 +104,7 @@ TEST(UIResourceLayerImplTest, VerifySetOpaqueOnSkBitmap) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
   FakeUIResourceLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
 
   gfx::Size bitmap_size(100, 100);
   gfx::Size layer_size(100, 100);;
@@ -128,6 +132,7 @@ TEST(UIResourceLayerImplTest, VerifySetOpaqueOnLayer) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
   FakeUIResourceLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  host_impl.InitializeRenderer(FakeOutputSurface::Create3d());
 
   gfx::Size bitmap_size(100, 100);
   gfx::Size layer_size(100, 100);

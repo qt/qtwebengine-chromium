@@ -9,6 +9,7 @@
 #define DMJsonWriter_DEFINED
 
 #include "SkString.h"
+#include "Test.h"
 
 namespace DM {
 
@@ -22,11 +23,12 @@ public:
      *  Info describing a single run.
      */
     struct BitmapResult {
-        SkString name;            // E.g. "ninepatch-stretch", "desk-gws_skp"
-        SkString config;          //      "gpu", "8888"
-        SkString mode;            //      "direct", "default-tilegrid", "pipe"
-        SkString sourceType;      //      "GM", "SKP"
+        SkString name;            // E.g. "ninepatch-stretch", "desk_gws.skp"
+        SkString config;          //      "gpu", "8888", "serialize", "pipe"
+        SkString sourceType;      //      "gm", "skp", "image"
+        SkString sourceOptions;   //      "image", "codec", "subset", "scanline"
         SkString md5;             // In ASCII, so 32 bytes long.
+        SkString ext;             // Extension of file we wrote: "png", "pdf", ...
     };
 
     /**
@@ -35,10 +37,22 @@ public:
     static void AddBitmapResult(const BitmapResult&);
 
     /**
+     *  Add a Failure from a Test.
+     */
+    static void AddTestFailure(const skiatest::Failure&);
+
+    /**
      *  Write all collected results to the file FLAGS_writePath[0]/dm.json.
      */
     static void DumpJson();
+
+    /**
+     * Read JSON file at path written by DumpJson, calling callback for each
+     * BitmapResult recorded in the file.  Return success.
+     */
+    static bool ReadJson(const char* path, void(*callback)(BitmapResult));
 };
+
 
 } // namespace DM
 #endif // DMJsonWriter_DEFINED

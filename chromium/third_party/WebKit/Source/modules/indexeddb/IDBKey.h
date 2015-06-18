@@ -26,6 +26,7 @@
 #ifndef IDBKey_h
 #define IDBKey_h
 
+#include "modules/ModulesExport.h"
 #include "platform/SharedBuffer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -34,9 +35,9 @@
 
 namespace blink {
 
-class IDBKey : public GarbageCollectedFinalized<IDBKey> {
+class MODULES_EXPORT IDBKey : public GarbageCollectedFinalized<IDBKey> {
 public:
-    typedef HeapVector<Member<IDBKey> > KeyArray;
+    typedef HeapVector<Member<IDBKey>> KeyArray;
 
     static IDBKey* createInvalid()
     {
@@ -93,7 +94,7 @@ public:
     }
 
     ~IDBKey();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // In order of the least to the highest precedent in terms of sort order.
     enum Type {
@@ -144,17 +145,17 @@ public:
     bool isEqual(const IDBKey* other) const;
 
 private:
-    IDBKey() : m_type(InvalidType), m_number(0) { }
+    IDBKey() : m_type(InvalidType) { }
     IDBKey(Type type, double number) : m_type(type), m_number(number) { }
-    explicit IDBKey(const String& value) : m_type(StringType), m_string(value), m_number(0) { }
-    explicit IDBKey(PassRefPtr<SharedBuffer> value) : m_type(BinaryType), m_binary(value), m_number(0) { }
-    explicit IDBKey(const KeyArray& keyArray) : m_type(ArrayType), m_array(keyArray), m_number(0) { }
+    explicit IDBKey(const String& value) : m_type(StringType), m_string(value) { }
+    explicit IDBKey(PassRefPtr<SharedBuffer> value) : m_type(BinaryType), m_binary(value) { }
+    explicit IDBKey(const KeyArray& keyArray) : m_type(ArrayType), m_array(keyArray) { }
 
     const Type m_type;
     const KeyArray m_array;
     RefPtr<SharedBuffer> m_binary;
     const String m_string;
-    const double m_number;
+    const double m_number = 0;
 };
 
 } // namespace blink

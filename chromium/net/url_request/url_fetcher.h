@@ -37,9 +37,10 @@ typedef std::vector<std::string> ResponseCookies;
 
 // To use this class, create an instance with the desired URL and a pointer to
 // the object to be notified when the URL has been loaded:
-//   scoped_ptr<URLFetcher> fetcher(URLFetcher::Create("http://www.google.com",
+//   scoped_ptr<URLFetcher> fetcher =
+//   URLFetcher::Create("http://www.google.com",
 //                                                     URLFetcher::GET,
-//                                                     this));
+//                                                     this);
 //
 // You must also set a request context getter:
 //
@@ -92,24 +93,27 @@ class NET_EXPORT URLFetcher {
   // base::SupportsUserData::Data object every time it's called.
   typedef base::Callback<base::SupportsUserData::Data*()> CreateDataCallback;
 
+  // Used by SetUploadStreamFactory. The callback should assign a fresh upload
+  // data stream every time it's called.
+  typedef base::Callback<scoped_ptr<UploadDataStream>()>
+      CreateUploadStreamCallback;
+
   virtual ~URLFetcher();
 
   // |url| is the URL to send the request to.
   // |request_type| is the type of request to make.
   // |d| the object that will receive the callback on fetch completion.
-  // Caller is responsible for destroying the returned URLFetcher.
-  static URLFetcher* Create(const GURL& url,
-                            URLFetcher::RequestType request_type,
-                            URLFetcherDelegate* d);
+  static scoped_ptr<URLFetcher> Create(const GURL& url,
+                                       URLFetcher::RequestType request_type,
+                                       URLFetcherDelegate* d);
 
   // Like above, but if there's a URLFetcherFactory registered with the
   // implementation it will be used. |id| may be used during testing to identify
   // who is creating the URLFetcher.
-  // Caller is responsible for destroying the returned URLFetcher.
-  static URLFetcher* Create(int id,
-                            const GURL& url,
-                            URLFetcher::RequestType request_type,
-                            URLFetcherDelegate* d);
+  static scoped_ptr<URLFetcher> Create(int id,
+                                       const GURL& url,
+                                       URLFetcher::RequestType request_type,
+                                       URLFetcherDelegate* d);
 
   // Cancels all existing URLFetchers.  Will notify the URLFetcherDelegates.
   // Note that any new URLFetchers created while this is running will not be
@@ -118,11 +122,6 @@ class NET_EXPORT URLFetcher {
   // anyway.  This doesn't prevent new URLFetchers from trying to post to the IO
   // thread though, even though the task won't ever run.
   static void CancelAll();
-
-  // Normally interception is disabled for URLFetcher, but you can use this
-  // to enable it for tests. Also see ScopedURLFetcherFactory for another way
-  // of testing code that uses an URLFetcher.
-  static void SetEnableInterceptionForTests(bool enabled);
 
   // Normally, URLFetcher will abort loads that request SSL client certificate
   // authentication, but this method may be used to cause URLFetchers to ignore
@@ -153,6 +152,16 @@ class NET_EXPORT URLFetcher {
       uint64 range_offset,
       uint64 range_length,
       scoped_refptr<base::TaskRunner> file_task_runner) = 0;
+
+  // Sets data only needed by POSTs.  All callers making POST requests should
+  // call one of the SetUpload* methods before the request is started.
+  // |upload_content_type| is the MIME type of the content, while |callback| is
+  // the callback to create the upload data stream (the Content-Length header
+  // value will be set to the length of this data). |callback| may be called
+  // mutliple times if the request is retried.
+  virtual void SetUploadStreamFactory(
+      const std::string& upload_content_type,
+      const CreateUploadStreamCallback& callback) = 0;
 
   // Indicates that the POST data is sent via chunked transfer encoding.
   // This may only be called before calling Start().

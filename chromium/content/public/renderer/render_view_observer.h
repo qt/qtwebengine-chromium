@@ -11,6 +11,7 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "v8/include/v8.h"
 
 class GURL;
 
@@ -61,6 +62,7 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                       const blink::WebURLError& error) {}
   virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) {}
+  virtual void DidCreateNewDocument(blink::WebLocalFrame* frame) {}
   virtual void DidClearWindowObject(blink::WebLocalFrame* frame) {}
   virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) {}
   virtual void FrameCreated(blink::WebLocalFrame* parent,
@@ -71,29 +73,24 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
       blink::WebLocalFrame* frame,
       const blink::WebVector<blink::WebString>& newly_matching_selectors,
       const blink::WebVector<blink::WebString>& stopped_matching_selectors) {}
-  virtual void WillSendSubmitEvent(blink::WebLocalFrame* frame,
-                                   const blink::WebFormElement& form) {}
-  virtual void WillSubmitForm(blink::WebLocalFrame* frame,
-                              const blink::WebFormElement& form) {}
-  virtual void DidCreateDataSource(blink::WebLocalFrame* frame,
-                                   blink::WebDataSource* ds) {}
   virtual void PrintPage(blink::WebLocalFrame* frame, bool user_initiated) {}
   virtual void FocusedNodeChanged(const blink::WebNode& node) {}
-  virtual void DidChangeScrollOffset(blink::WebLocalFrame* frame) {}
   virtual void DraggableRegionsChanged(blink::WebFrame* frame) {}
   virtual void DidCommitCompositorFrame() {}
   virtual void DidUpdateLayout() {}
 
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) {}
-  virtual void DidHandleTouchEvent(const blink::WebTouchEvent& event) {}
   virtual void DidHandleGestureEvent(const blink::WebGestureEvent& event) {}
 
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
-  virtual void OrientationChangeEvent() {}
-  virtual void Resized() {}
+
+  // This indicates that animations to scroll the focused element into view (if
+  // any) have completed. May be called more than once for a single focus. Can
+  // be called from browser, renderer, or compositor.
+  virtual void FocusChangeComplete() {}
 
   virtual void OnStop() {}
 

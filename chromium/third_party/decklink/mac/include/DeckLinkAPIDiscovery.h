@@ -57,7 +57,7 @@ public:
     virtual HRESULT GetDisplayName (/* out */ CFStringRef *displayName) = 0;
 
 protected:
-    virtual ~IDeckLink () {}; // call Release method to drop reference count
+    virtual ~IDeckLink () {} // call Release method to drop reference count
 };
 
 /* Functions */
@@ -65,7 +65,7 @@ protected:
 extern "C" {
 
 
-};
+}
 
 
 #endif /* defined(BMD_DECKLINKAPIDISCOVERY_H) */

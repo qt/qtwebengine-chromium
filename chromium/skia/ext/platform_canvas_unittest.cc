@@ -4,7 +4,17 @@
 
 // TODO(awalker): clean up the const/non-const reference handling in this test
 
+#include "skia/ext/platform_canvas.h"
+
+#include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
+#include "skia/ext/platform_device.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkColorPriv.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
 
 #if defined(OS_MACOSX)
 #import <ApplicationServices/ApplicationServices.h>
@@ -13,15 +23,6 @@
 #if !defined(OS_WIN)
 #include <unistd.h>
 #endif
-
-#include "base/memory/scoped_ptr.h"
-#include "skia/ext/platform_canvas.h"
-#include "skia/ext/platform_device.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkColorPriv.h"
-#include "third_party/skia/include/core/SkPixelRef.h"
 
 namespace skia {
 
@@ -67,8 +68,12 @@ bool VerifyRect(const PlatformCanvas& canvas,
 // rectangle. Basically, we're just checking to make sure that the pixels in the
 // middle are of rect_color and pixels in the corners are of canvas_color.
 bool VerifyRoundedRect(const PlatformCanvas& canvas,
-                       uint32_t canvas_color, uint32_t rect_color,
-                       int x, int y, int w, int h) {
+                       uint32_t canvas_color,
+                       uint32_t rect_color,
+                       int x,
+                       int y,
+                       int w,
+                       int h) {
   SkBaseDevice* device = skia::GetTopDevice(canvas);
   const SkBitmap& bitmap = device->accessBitmap(false);
   SkAutoLockPixels lock(bitmap);
@@ -126,7 +131,7 @@ void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
 }
 #else
 void DrawNativeRect(PlatformCanvas& canvas, int x, int y, int w, int h) {
-  notImplemented();
+  NOTIMPLEMENTED();
 }
 #endif
 
@@ -413,8 +418,10 @@ TEST(PlatformBitmapTest, PlatformBitmap) {
   EXPECT_EQ(kN32_SkColorType,  // Same for all platforms.
             platform_bitmap->GetBitmap().colorType());
   EXPECT_TRUE(platform_bitmap->GetBitmap().lockPixelsAreWritable());
+#if defined(SK_DEBUG)
   EXPECT_TRUE(platform_bitmap->GetBitmap().pixelRef()->isLocked());
-  EXPECT_EQ(1, platform_bitmap->GetBitmap().pixelRef()->getRefCnt());
+#endif
+  EXPECT_TRUE(platform_bitmap->GetBitmap().pixelRef()->unique());
 
   *(platform_bitmap->GetBitmap().getAddr32(10, 20)) = 0xDEED1020;
   *(platform_bitmap->GetBitmap().getAddr32(20, 30)) = 0xDEED2030;
@@ -422,8 +429,8 @@ TEST(PlatformBitmapTest, PlatformBitmap) {
   SkBitmap sk_bitmap = platform_bitmap->GetBitmap();
   sk_bitmap.lockPixels();
 
-  EXPECT_EQ(2, platform_bitmap->GetBitmap().pixelRef()->getRefCnt());
-  EXPECT_EQ(2, sk_bitmap.pixelRef()->getRefCnt());
+  EXPECT_FALSE(platform_bitmap->GetBitmap().pixelRef()->unique());
+  EXPECT_FALSE(sk_bitmap.pixelRef()->unique());
 
   EXPECT_EQ(0xDEED1020, *sk_bitmap.getAddr32(10, 20));
   EXPECT_EQ(0xDEED2030, *sk_bitmap.getAddr32(20, 30));
@@ -434,7 +441,7 @@ TEST(PlatformBitmapTest, PlatformBitmap) {
   // the PlatformBitmap.
   platform_bitmap.reset();
 
-  EXPECT_EQ(1, sk_bitmap.pixelRef()->getRefCnt());
+  EXPECT_TRUE(sk_bitmap.pixelRef()->unique());
 
   EXPECT_EQ(0xDEED1020, *sk_bitmap.getAddr32(10, 20));
   EXPECT_EQ(0xDEED2030, *sk_bitmap.getAddr32(20, 30));

@@ -80,7 +80,9 @@ namespace WTF {
         // Clears the whole set.
         void clear() { m_impl.clear(); }
 
-        void trace(typename Allocator::Visitor* visitor) { m_impl.trace(visitor); }
+        using HasInlinedTraceMethodMarker = int;
+        template<typename VisitorDispatcher>
+        void trace(VisitorDispatcher visitor) { m_impl.trace(visitor); }
 
     private:
         ImplType m_impl;
@@ -149,7 +151,7 @@ namespace WTF {
 
 #if !ENABLE(OILPAN)
     template<typename T, typename U, typename V>
-    struct NeedsTracing<HashCountedSet<T, U, V> > {
+    struct NeedsTracing<HashCountedSet<T, U, V>> {
         static const bool value = false;
     };
 #endif

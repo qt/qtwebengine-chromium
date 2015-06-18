@@ -35,8 +35,8 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/PinchViewport.h"
+#include "core/html/forms/PopupMenuClient.h"
 #include "core/page/Page.h"
-#include "platform/PopupMenuClient.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/text/TextDirection.h"
@@ -63,7 +63,7 @@ ExternalPopupMenu::~ExternalPopupMenu()
 {
 }
 
-void ExternalPopupMenu::trace(Visitor* visitor)
+DEFINE_TRACE(ExternalPopupMenu)
 {
     visitor->trace(m_localFrame);
     PopupMenu::trace(visitor);
@@ -86,10 +86,7 @@ void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, i
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(m_localFrame.get());
     m_webExternalPopupMenu = webframe->client()->createExternalPopupMenu(info, this);
     if (m_webExternalPopupMenu) {
-        // FIXME: Standardize viewport coordinate conversions. crbug.com/371902.
-        IntRect rectInViewport = m_localFrame->view()->contentsToWindow(rect);
-        if (m_webView.pinchVirtualViewportEnabled())
-            rectInViewport.moveBy(-flooredIntPoint(m_webView.page()->frameHost().pinchViewport().location()));
+        IntRect rectInViewport = m_localFrame->view()->soonToBeRemovedContentsToUnscaledViewport(rect);
         m_webExternalPopupMenu->show(rectInViewport);
 #if OS(MACOSX)
         const WebInputEvent* currentEvent = WebViewImpl::currentInputEvent();

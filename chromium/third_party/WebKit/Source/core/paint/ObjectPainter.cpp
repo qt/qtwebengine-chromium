@@ -5,59 +5,61 @@
 #include "config.h"
 #include "core/paint/ObjectPainter.h"
 
-#include "core/paint/DrawingRecorder.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderTheme.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/style/ComputedStyle.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintInfo.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
 namespace blink {
 
-void ObjectPainter::paintFocusRing(PaintInfo& paintInfo, const LayoutPoint& paintOffset, RenderStyle* style)
+void ObjectPainter::paintFocusRing(const PaintInfo& paintInfo, const ComputedStyle& style, const Vector<LayoutRect>& focusRingRects)
 {
-    Vector<LayoutRect> focusRingRects;
-    m_renderObject.addFocusRingRects(focusRingRects, paintOffset, paintInfo.paintContainer());
-    ASSERT(style->outlineStyleIsAuto());
+    ASSERT(style.outlineStyleIsAuto());
     Vector<IntRect> focusRingIntRects;
     for (size_t i = 0; i < focusRingRects.size(); ++i)
         focusRingIntRects.append(pixelSnappedIntRect(focusRingRects[i]));
-    paintInfo.context->drawFocusRing(focusRingIntRects, style->outlineWidth(), style->outlineOffset(), m_renderObject.resolveColor(style, CSSPropertyOutlineColor));
+    paintInfo.context->drawFocusRing(focusRingIntRects, style.outlineWidth(), style.outlineOffset(), m_layoutObject.resolveColor(style, CSSPropertyOutlineColor));
 }
 
-void ObjectPainter::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRect)
+void ObjectPainter::paintOutline(const PaintInfo& paintInfo, const LayoutRect& objectBounds, const LayoutRect& visualOverflowBounds)
 {
-    RenderStyle* styleToUse = m_renderObject.style();
-    if (!styleToUse->hasOutline())
+    const ComputedStyle& styleToUse = m_layoutObject.styleRef();
+    if (!styleToUse.hasOutline())
         return;
 
-    DrawingRecorder recorder(paintInfo.context, &m_renderObject, paintInfo.phase, paintRect);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutObject, paintInfo.phase, visualOverflowBounds);
+    if (recorder.canUseCachedDrawing())
+        return;
 
-    if (styleToUse->outlineStyleIsAuto()) {
-        if (RenderTheme::theme().shouldDrawDefaultFocusRing(&m_renderObject)) {
+    if (styleToUse.outlineStyleIsAuto()) {
+        if (LayoutTheme::theme().shouldDrawDefaultFocusRing(&m_layoutObject)) {
             // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
-            paintFocusRing(paintInfo, paintRect.location(), styleToUse);
+            Vector<LayoutRect> focusRingRects;
+            m_layoutObject.addFocusRingRects(focusRingRects, objectBounds.location());
+            paintFocusRing(paintInfo, styleToUse, focusRingRects);
         }
         return;
     }
 
-    if (styleToUse->outlineStyle() == BNONE)
+    if (styleToUse.outlineStyle() == BNONE)
         return;
 
-    IntRect inner = pixelSnappedIntRect(paintRect);
-    inner.inflate(styleToUse->outlineOffset());
+    IntRect inner = pixelSnappedIntRect(objectBounds);
+    inner.inflate(styleToUse.outlineOffset());
 
-    IntRect outer = pixelSnappedIntRect(inner);
-    LayoutUnit outlineWidth = styleToUse->outlineWidth();
+    IntRect outer = inner;
+    LayoutUnit outlineWidth = styleToUse.outlineWidth();
     outer.inflate(outlineWidth);
 
     // FIXME: This prevents outlines from painting inside the object. See bug 12042
     if (outer.isEmpty())
         return;
 
-    EBorderStyle outlineStyle = styleToUse->outlineStyle();
-    Color outlineColor = m_renderObject.resolveColor(styleToUse, CSSPropertyOutlineColor);
+    EBorderStyle outlineStyle = styleToUse.outlineStyle();
+    Color outlineColor = m_layoutObject.resolveColor(styleToUse, CSSPropertyOutlineColor);
 
     GraphicsContext* graphicsContext = paintInfo.context;
     bool useTransparencyLayer = outlineColor.hasAlpha();
@@ -71,7 +73,7 @@ void ObjectPainter::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRe
             graphicsContext->fillPath(path);
             return;
         }
-        graphicsContext->beginTransparencyLayer(static_cast<float>(outlineColor.alpha()) / 255);
+        graphicsContext->beginLayer(static_cast<float>(outlineColor.alpha()) / 255);
         outlineColor = Color(outlineColor.red(), outlineColor.green(), outlineColor.blue());
     }
 

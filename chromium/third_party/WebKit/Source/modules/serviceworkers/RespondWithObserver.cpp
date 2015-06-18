@@ -11,6 +11,9 @@
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/modules/v8/V8Response.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/streams/Stream.h"
+#include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebServiceWorkerResponse.h"
@@ -19,6 +22,67 @@
 #include <v8.h>
 
 namespace blink {
+namespace {
+
+class StreamUploader : public BodyStreamBuffer::Observer {
+public:
+    StreamUploader(BodyStreamBuffer* buffer, Stream* outStream)
+        : m_buffer(buffer), m_outStream(outStream)
+    {
+    }
+    ~StreamUploader() override { }
+    void onWrite() override
+    {
+        bool needToFlush = false;
+        while (RefPtr<DOMArrayBuffer> buf = m_buffer->read()) {
+            needToFlush = true;
+            m_outStream->addData(static_cast<const char*>(buf->data()), buf->byteLength());
+        }
+        if (needToFlush)
+            m_outStream->flush();
+    }
+    void onClose() override
+    {
+        m_outStream->finalize();
+        cleanup();
+    }
+    void onError() override
+    {
+        // If the stream is aborted soon after the stream is registered to the
+        // StreamRegistry, ServiceWorkerURLRequestJob may not notice the error
+        // and continue waiting forever.
+        // FIXME: Add new message to report the error to the browser process.
+        m_outStream->abort();
+        cleanup();
+    }
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_buffer);
+        visitor->trace(m_outStream);
+        BodyStreamBuffer::Observer::trace(visitor);
+    }
+    void start()
+    {
+        m_buffer->registerObserver(this);
+        onWrite();
+        if (m_buffer->hasError())
+            return onError();
+        if (m_buffer->isClosed())
+            return onClose();
+    }
+
+private:
+    void cleanup()
+    {
+        m_buffer->unregisterObserver();
+        m_buffer.clear();
+        m_outStream.clear();
+    }
+    Member<BodyStreamBuffer> m_buffer;
+    Member<Stream> m_outStream;
+};
+
+} // namespace
 
 class RespondWithObserver::ThenFunction final : public ScriptFunction {
 public:
@@ -27,13 +91,13 @@ public:
         Rejected,
     };
 
-    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, RespondWithObserver* observer, ResolveType type)
+    static v8::Local<v8::Function> createFunction(ScriptState* scriptState, RespondWithObserver* observer, ResolveType type)
     {
         ThenFunction* self = new ThenFunction(scriptState, observer, type);
         return self->bindToV8Function();
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_observer);
         ScriptFunction::trace(visitor);
@@ -51,10 +115,12 @@ private:
     {
         ASSERT(m_observer);
         ASSERT(m_resolveType == Fulfilled || m_resolveType == Rejected);
-        if (m_resolveType == Rejected)
+        if (m_resolveType == Rejected) {
             m_observer->responseWasRejected();
-        else
+            value = ScriptPromise::reject(value.scriptState(), value).scriptValue();
+        } else {
             m_observer->responseWasFulfilled(value);
+        }
         m_observer = nullptr;
         return value;
     }
@@ -74,11 +140,17 @@ void RespondWithObserver::contextDestroyed()
     m_state = Done;
 }
 
-void RespondWithObserver::didDispatchEvent()
+void RespondWithObserver::didDispatchEvent(bool defaultPrevented)
 {
     ASSERT(executionContext());
     if (m_state != Initial)
         return;
+
+    if (defaultPrevented) {
+        responseWasRejected();
+        return;
+    }
+
     ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID);
     m_state = Done;
 }
@@ -87,7 +159,7 @@ void RespondWithObserver::respondWith(ScriptState* scriptState, const ScriptValu
 {
     ASSERT(RuntimeEnabledFeatures::serviceWorkerOnFetchEnabled());
     if (m_state != Initial) {
-        exceptionState.throwDOMException(InvalidStateError, "respondWith is already called.");
+        exceptionState.throwDOMException(InvalidStateError, "The fetch event has already been responded to.");
         return;
     }
 
@@ -115,16 +187,34 @@ void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
         return;
     }
     Response* response = V8Response::toImplWithTypeCheck(toIsolate(executionContext()), value.v8Value());
-    // "If either |response|'s type is |opaque| and |request|'s mode is not
-    // |no CORS| or |response|'s type is |error|, return a network error."
+    // "If one of the following conditions is true, return a network error:
+    //   - |response|'s type is |error|.
+    //   - |request|'s mode is not |no-cors| and response's type is |opaque|.
+    //   - |request| is a client request and |response|'s type is neither
+    //     |basic| nor |default|."
     const FetchResponseData::Type responseType = response->response()->type();
-    if ((responseType == FetchResponseData::OpaqueType && m_requestMode != WebURLRequest::FetchRequestModeNoCORS) || responseType == FetchResponseData::ErrorType) {
+    if (responseType == FetchResponseData::ErrorType
+        || (m_requestMode != WebURLRequest::FetchRequestModeNoCORS && responseType == FetchResponseData::OpaqueType)
+        || (m_frameType != WebURLRequest::FrameTypeNone && responseType != FetchResponseData::BasicType && responseType != FetchResponseData::DefaultType)) {
         responseWasRejected();
         return;
     }
-    // Treat the opaque response as a network error for frame loading.
-    if (responseType == FetchResponseData::OpaqueType && m_frameType != WebURLRequest::FrameTypeNone) {
+    if (response->bodyUsed()) {
         responseWasRejected();
+        return;
+    }
+    response->lockBody(Body::PassBody);
+    if (BodyStreamBuffer* buffer = response->internalBuffer()) {
+        if (buffer == response->buffer() && response->isBodyConsumed())
+            buffer = response->createDrainingStream();
+        WebServiceWorkerResponse webResponse;
+        response->populateWebServiceWorkerResponse(webResponse);
+        Stream* outStream = Stream::create(executionContext(), "");
+        webResponse.setStreamURL(outStream->url());
+        ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
+        StreamUploader* uploader = new StreamUploader(buffer, outStream);
+        uploader->start();
+        m_state = Done;
         return;
     }
     WebServiceWorkerResponse webResponse;
@@ -140,6 +230,11 @@ RespondWithObserver::RespondWithObserver(ExecutionContext* context, int eventID,
     , m_frameType(frameType)
     , m_state(Initial)
 {
+}
+
+DEFINE_TRACE(RespondWithObserver)
+{
+    ContextLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

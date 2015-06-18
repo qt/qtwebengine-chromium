@@ -40,8 +40,8 @@ const int kTimerPeriodMs = 1000;
 // sent by the selection owner before aborting an incremental data transfer.
 const int kIncrementalTransferTimeoutMs = 10000;
 
-COMPILE_ASSERT(kTimerPeriodMs <= kIncrementalTransferTimeoutMs,
-               timer_period_must_be_less_or_equal_to_transfer_timeout);
+static_assert(kTimerPeriodMs <= kIncrementalTransferTimeoutMs,
+              "timer period must be <= transfer timeout");
 
 // Returns a conservative max size of the data we can pass into
 // XChangeProperty(). Copied from GTK.
@@ -77,21 +77,19 @@ bool GetAtomPairArrayProperty(XID window,
                                   &num_items,
                                   &remaining_bytes,
                                   &properties);
+  gfx::XScopedPtr<unsigned char> scoped_properties(properties);
 
   if (result != Success)
     return false;
 
   // GTK does not require |type| to be kAtomPair.
-  if (format != 32 || num_items % 2 != 0) {
-    XFree(properties);
+  if (format != 32 || num_items % 2 != 0)
     return false;
-  }
 
   XAtom* atom_properties = reinterpret_cast<XAtom*>(properties);
   value->clear();
   for (size_t i = 0; i < num_items; i+=2)
     value->push_back(std::make_pair(atom_properties[i], atom_properties[i+1]));
-  XFree(properties);
   return true;
 }
 

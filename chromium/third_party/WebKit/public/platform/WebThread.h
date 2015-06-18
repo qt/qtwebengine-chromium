@@ -28,7 +28,13 @@
 #include "WebCommon.h"
 #include <stdint.h>
 
+#ifdef INSIDE_BLINK
+#include "wtf/Functional.h"
+#endif
+
 namespace blink {
+class WebScheduler;
+class WebTraceLocation;
 
 // Always an integer value.
 typedef uintptr_t PlatformThreadId;
@@ -39,7 +45,15 @@ typedef uintptr_t PlatformThreadId;
 // run.
 class BLINK_PLATFORM_EXPORT WebThread {
 public:
-    class Task {
+    // An IdleTask is passed a deadline in CLOCK_MONOTONIC seconds and is
+    // expected to complete before this deadline.
+    class IdleTask {
+    public:
+        virtual ~IdleTask() { }
+        virtual void run(double deadlineSeconds) = 0;
+    };
+
+    class BLINK_PLATFORM_EXPORT Task {
     public:
         virtual ~Task() { }
         virtual void run() = 0;
@@ -55,8 +69,8 @@ public:
     // postTask() and postDelayedTask() take ownership of the passed Task
     // object. It is safe to invoke postTask() and postDelayedTask() from any
     // thread.
-    virtual void postTask(Task*) = 0;
-    virtual void postDelayedTask(Task*, long long delayMs) = 0;
+    virtual void postTask(const WebTraceLocation&, Task*) = 0;
+    virtual void postDelayedTask(const WebTraceLocation&, Task*, long long delayMs) = 0;
 
     virtual bool isCurrentThread() const = 0;
     virtual PlatformThreadId threadId() const { return 0; }
@@ -64,16 +78,16 @@ public:
     virtual void addTaskObserver(TaskObserver*) { }
     virtual void removeTaskObserver(TaskObserver*) { }
 
-    // enterRunLoop() processes tasks posted to this WebThread. This call does not return until some task calls exitRunLoop().
-    // WebThread does not support nesting, meaning that once the run loop is entered for a given WebThread it is not valid to
-    // call enterRunLoop() again.
-    virtual void enterRunLoop() = 0;
-
-    // exitRunLoop() runs tasks until there are no tasks available to run, then returns control to the caller of enterRunLoop().
-    // Must be called when the WebThread is running.
-    virtual void exitRunLoop() = 0;
+    // Returns the scheduler associated with the thread.
+    virtual WebScheduler* scheduler() const = 0;
 
     virtual ~WebThread() { }
+
+#ifdef INSIDE_BLINK
+    // Helpers for posting bound functions as tasks.
+    void postTask(const WebTraceLocation&, PassOwnPtr<Function<void()>>);
+    void postDelayedTask(const WebTraceLocation&, PassOwnPtr<Function<void()>>, long long delayMs);
+#endif
 };
 
 } // namespace blink

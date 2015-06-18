@@ -5,8 +5,10 @@
 #ifndef CC_LAYERS_LAYER_IMPL_H_
 #define CC_LAYERS_LAYER_IMPL_H_
 
+#include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,15 +20,19 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/base/synced_property.h"
+#include "cc/debug/frame_timing_request.h"
 #include "cc/input/input_handler.h"
 #include "cc/input/scrollbar.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/render_surface_impl.h"
+#include "cc/layers/scroll_blocks_on.h"
 #include "cc/output/filter_operations.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/resources/resource_provider.h"
+#include "cc/tiles/tile_priority.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -38,11 +44,10 @@
 #include "ui/gfx/transform.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 class TracedValue;
 }
-
 class DictionaryValue;
 }
 
@@ -54,6 +59,8 @@ class MicroBenchmarkImpl;
 class Occlusion;
 template <typename LayerType>
 class OcclusionTracker;
+class OpacityTree;
+class PrioritizedTile;
 class RenderPass;
 class RenderPassId;
 class Renderer;
@@ -61,6 +68,7 @@ class ScrollbarAnimationController;
 class ScrollbarLayerImplBase;
 class SimpleEnclosedRegion;
 class Tile;
+class TransformTree;
 
 struct AppendQuadsData;
 
@@ -75,21 +83,19 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
                             public LayerAnimationValueProvider,
                             public AnimationDelegate {
  public:
-  // Allows for the ownership of the total scroll offset to be delegated outside
-  // of the layer.
-  class ScrollOffsetDelegate {
-   public:
-    virtual void SetTotalScrollOffset(const gfx::ScrollOffset& new_value) = 0;
-    virtual gfx::ScrollOffset GetTotalScrollOffset() = 0;
-    virtual bool IsExternalFlingActive() const = 0;
-    virtual void Update() const = 0;
-  };
-
+  typedef SyncedProperty<AdditionGroup<gfx::ScrollOffset>> SyncedScrollOffset;
   typedef LayerImplList RenderSurfaceListType;
   typedef LayerImplList LayerListType;
   typedef RenderSurfaceImpl RenderSurfaceType;
 
   enum RenderingContextConstants { NO_RENDERING_CONTEXT = 0 };
+
+  static scoped_ptr<LayerImpl> Create(
+      LayerTreeImpl* tree_impl,
+      int id,
+      scoped_refptr<SyncedScrollOffset> scroll_offset) {
+    return make_scoped_ptr(new LayerImpl(tree_impl, id, scroll_offset));
+  }
 
   static scoped_ptr<LayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
     return make_scoped_ptr(new LayerImpl(tree_impl, id));
@@ -145,6 +151,43 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return scroll_children_.get();
   }
 
+  void set_property_tree_sequence_number(int sequence_number) {}
+
+  void SetTransformTreeIndex(int index);
+  int transform_tree_index() const { return transform_tree_index_; }
+
+  void SetClipTreeIndex(int index);
+  int clip_tree_index() const { return clip_tree_index_; }
+
+  void SetOpacityTreeIndex(int index);
+  int opacity_tree_index() const { return opacity_tree_index_; }
+
+  void set_offset_to_transform_parent(const gfx::Vector2dF& offset) {
+    offset_to_transform_parent_ = offset;
+    SetNeedsPushProperties();
+  }
+  gfx::Vector2dF offset_to_transform_parent() const {
+    return offset_to_transform_parent_;
+  }
+
+  const gfx::Rect& visible_rect_from_property_trees() const {
+    return visible_rect_from_property_trees_;
+  }
+  void set_visible_rect_from_property_trees(const gfx::Rect& rect) {
+    visible_rect_from_property_trees_ = rect;
+  }
+
+  void set_should_flatten_transform_from_property_tree(bool should_flatten) {
+    should_flatten_transform_from_property_tree_ = should_flatten;
+    SetNeedsPushProperties();
+  }
+  bool should_flatten_transform_from_property_tree() const {
+    return should_flatten_transform_from_property_tree_;
+  }
+
+  // For compatibility with Layer.
+  bool has_render_surface() const { return !!render_surface(); }
+
   void SetNumDescendantsThatDrawContent(int num_descendants);
   void SetClipParent(LayerImpl* ancestor);
 
@@ -187,6 +230,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   LayerTreeImpl* layer_tree_impl() const { return layer_tree_impl_; }
 
   void PopulateSharedQuadState(SharedQuadState* state) const;
+  void PopulateScaledSharedQuadState(SharedQuadState* state, float scale) const;
   // WillDraw must be called before AppendQuads. If WillDraw returns false,
   // AppendQuads and DidDraw will not be called. If WillDraw returns true,
   // DidDraw is guaranteed to be called before another WillDraw or before
@@ -196,9 +240,15 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual bool WillDraw(DrawMode draw_mode,
                         ResourceProvider* resource_provider);
   virtual void AppendQuads(RenderPass* render_pass,
-                           const Occlusion& occlusion_in_content_space,
                            AppendQuadsData* append_quads_data) {}
   virtual void DidDraw(ResourceProvider* resource_provider);
+
+  // Verify that the resource ids in the quad are valid.
+  void ValidateQuadResources(DrawQuad* quad) const {
+#if DCHECK_IS_ON()
+    ValidateQuadResourcesInternal(quad);
+#endif
+  }
 
   virtual void GetContentsResourceId(ResourceProvider::ResourceId* resource_id,
                                      gfx::Size* resource_size) const;
@@ -208,8 +258,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual RenderPassId FirstContributingRenderPassId() const;
   virtual RenderPassId NextContributingRenderPassId(RenderPassId id) const;
 
-  virtual void UpdateTiles(const Occlusion& occlusion_in_layer_space,
-                           bool resourceless_software_draw) {}
   virtual void NotifyTileStateChanged(const Tile* tile) {}
 
   virtual ScrollbarLayerImplBase* ToScrollbarLayer();
@@ -221,9 +269,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   int NumDescendantsThatDrawContent() const;
   void SetHideLayerAndSubtree(bool hide);
   bool hide_layer_and_subtree() const { return hide_layer_and_subtree_; }
-
-  bool force_render_surface() const { return force_render_surface_; }
-  void SetForceRenderSurface(bool force) { force_render_surface_ = force; }
 
   void SetTransformOrigin(const gfx::Point3F& transform_origin);
   gfx::Point3F transform_origin() const { return transform_origin_; }
@@ -303,9 +348,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // These invalidate the host's render surface layer list.  The caller
   // is responsible for calling set_needs_update_draw_properties on the tree
   // so that its list can be recreated.
-  void CreateRenderSurface();
-  void ClearRenderSurface();
   void ClearRenderSurfaceLayerList();
+  void SetHasRenderSurface(bool has_render_surface);
+
+  RenderSurfaceImpl* render_surface() const { return render_surface_.get(); }
 
   DrawProperties<LayerImpl>& draw_properties() {
     return draw_properties_;
@@ -323,6 +369,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return draw_properties_.screen_space_transform;
   }
   float draw_opacity() const { return draw_properties_.opacity; }
+  SkXfermode::Mode draw_blend_mode() const {
+    return draw_properties_.blend_mode;
+  }
   bool draw_opacity_is_animating() const {
     return draw_properties_.opacity_is_animating;
   }
@@ -354,9 +403,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
            draw_properties_.render_target->render_surface());
     return draw_properties_.render_target;
   }
-  RenderSurfaceImpl* render_surface() const {
-    return draw_properties_.render_surface.get();
-  }
+
   int num_unclipped_descendants() const {
     return draw_properties_.num_unclipped_descendants;
   }
@@ -380,27 +427,35 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   float contents_scale_y() const { return draw_properties_.contents_scale_y; }
   void SetContentsScale(float contents_scale_x, float contents_scale_y);
 
-  void SetScrollOffsetDelegate(ScrollOffsetDelegate* scroll_offset_delegate);
-  void DidScroll();
   bool IsExternalFlingActive() const;
 
-  void SetScrollOffset(const gfx::ScrollOffset& scroll_offset);
-  void SetScrollOffsetAndDelta(const gfx::ScrollOffset& scroll_offset,
-                               const gfx::Vector2dF& scroll_delta);
-  gfx::ScrollOffset scroll_offset() const { return scroll_offset_; }
+  void SetCurrentScrollOffset(const gfx::ScrollOffset& scroll_offset);
+  void SetCurrentScrollOffsetFromDelegate(
+      const gfx::ScrollOffset& scroll_offset);
+  void PushScrollOffsetFromMainThread(const gfx::ScrollOffset& scroll_offset);
+  // This method is similar to PushScrollOffsetFromMainThread but will cause the
+  // scroll offset given to clobber any scroll changes on the active tree in the
+  // time until this value is pushed to the active tree.
+  void PushScrollOffsetFromMainThreadAndClobberActiveValue(
+      const gfx::ScrollOffset& scroll_offset);
+  gfx::ScrollOffset PullDeltaForMainThread();
+  gfx::ScrollOffset CurrentScrollOffset() const;
+  gfx::ScrollOffset BaseScrollOffset() const;
+  gfx::Vector2dF ScrollDelta() const;
+  void SetScrollDelta(const gfx::Vector2dF& delta);
 
   gfx::ScrollOffset MaxScrollOffset() const;
+  gfx::ScrollOffset ClampScrollOffsetToLimits(gfx::ScrollOffset offset) const;
   gfx::Vector2dF ClampScrollToMaxScrollOffset();
   void SetScrollbarPosition(ScrollbarLayerImplBase* scrollbar_layer,
                             LayerImpl* scrollbar_clip_layer,
                             bool on_resize) const;
-  void SetScrollDelta(const gfx::Vector2dF& scroll_delta);
-  gfx::Vector2dF ScrollDelta() const;
-
-  gfx::ScrollOffset TotalScrollOffset() const;
-
-  void SetSentScrollDelta(const gfx::Vector2dF& sent_scroll_delta);
-  gfx::Vector2dF sent_scroll_delta() const { return sent_scroll_delta_; }
+  void SetScrollCompensationAdjustment(const gfx::Vector2dF& scroll_offset) {
+    scroll_compensation_adjustment_ = scroll_offset;
+  }
+  gfx::Vector2dF ScrollCompensationAdjustment() const {
+    return scroll_compensation_adjustment_;
+  }
 
   // Returns the delta of the scroll that was outside of the bounds of the
   // initial scroll
@@ -424,7 +479,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool user_scrollable(ScrollbarOrientation orientation) const;
 
   void ApplySentScrollDeltasFromAbortedCommit();
-  void ApplyScrollDeltasSinceBeginMainFrame();
 
   void SetShouldScrollOnMainThread(bool should_scroll_on_main_thread) {
     should_scroll_on_main_thread_ = should_scroll_on_main_thread;
@@ -459,6 +513,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return touch_event_handler_region_;
   }
 
+  void SetScrollBlocksOn(ScrollBlocksOn scroll_blocks_on) {
+    scroll_blocks_on_ = scroll_blocks_on;
+  }
+  ScrollBlocksOn scroll_blocks_on() const { return scroll_blocks_on_; }
   void SetDrawCheckerboardForMissingTiles(bool checkerboard) {
     draw_checkerboard_for_missing_tiles_ = checkerboard;
   }
@@ -468,7 +526,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   InputHandler::ScrollStatus TryScroll(
       const gfx::PointF& screen_space_point,
-      InputHandler::ScrollInputType type) const;
+      InputHandler::ScrollInputType type,
+      ScrollBlocksOn effective_block_mode) const;
 
   void SetDoubleSided(bool double_sided);
   bool double_sided() const { return double_sided_; }
@@ -515,6 +574,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // that rendered this layer was lost or a rendering mode switch has occured.
   virtual void ReleaseResources();
 
+  // Recreate resources that are required after they were released by a
+  // ReleaseResources call.
+  virtual void RecreateResources();
+
   ScrollbarAnimationController* scrollbar_animation_controller() const {
     return scrollbar_animation_controller_.get();
   }
@@ -537,8 +600,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
   virtual void PushPropertiesTo(LayerImpl* layer);
 
-  virtual void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
-  virtual void AsValueInto(base::debug::TracedValue* dict) const;
+  virtual void GetAllPrioritizedTilesForTracing(
+      std::vector<PrioritizedTile>* prioritized_tiles) const;
+  virtual void AsValueInto(base::trace_event::TracedValue* dict) const;
 
   virtual size_t GPUMemoryUsageInBytes() const;
 
@@ -557,14 +621,32 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark);
 
   virtual void SetDebugInfo(
-      scoped_refptr<base::debug::ConvertableToTraceFormat> other);
+      scoped_refptr<base::trace_event::ConvertableToTraceFormat> other);
 
   bool IsDrawnRenderSurfaceLayerListMember() const;
 
   void Set3dSortingContextId(int id);
   int sorting_context_id() { return sorting_context_id_; }
 
+  void PassFrameTimingRequests(
+      std::vector<FrameTimingRequest>* frame_timing_requests);
+  const std::vector<FrameTimingRequest>& frame_timing_requests() const {
+    return frame_timing_requests_;
+  }
+  void GatherFrameTimingRequestIds(std::vector<int64_t>* request_ids);
+
+  SyncedScrollOffset* synced_scroll_offset() { return scroll_offset_.get(); }
+
+  // Get the correct invalidation region instead of conservative Rect
+  // for layers that provide it.
+  virtual Region GetInvalidationRegion();
+
+  virtual gfx::Rect GetEnclosingRectInTargetSpace() const;
+
  protected:
+  LayerImpl(LayerTreeImpl* layer_impl,
+            int id,
+            scoped_refptr<SyncedScrollOffset> scroll_offset);
   LayerImpl(LayerTreeImpl* layer_impl, int id);
 
   // Get the color and size of the layer's debug border.
@@ -587,7 +669,16 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // Note carefully this does not affect the current layer.
   void NoteLayerPropertyChangedForDescendants();
 
+  gfx::Rect GetScaledEnclosingRectInTargetSpace(float scale) const;
+
  private:
+  void ValidateQuadResourcesInternal(DrawQuad* quad) const;
+
+  void PushScrollOffset(const gfx::ScrollOffset* scroll_offset);
+  // If the new scroll offset is assigned from the root scroll offset delegate,
+  // LayerImpl won't inform the root scroll offset delegate about the scroll
+  // change to avoid feedback.
+  void DidUpdateScrollOffset(bool is_from_root_delegate);
   void NoteLayerPropertyChangedForDescendantsInternal();
 
   virtual const char* LayerTypeAsString() const;
@@ -616,23 +707,32 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   int layer_id_;
   LayerTreeImpl* layer_tree_impl_;
 
+  // Properties dynamically changeable on active tree.
+  scoped_refptr<SyncedScrollOffset> scroll_offset_;
+  gfx::Vector2dF bounds_delta_;
+
   // Properties synchronized from the associated Layer.
   gfx::Point3F transform_origin_;
   gfx::Size bounds_;
-  gfx::Vector2dF bounds_delta_;
-  gfx::ScrollOffset scroll_offset_;
-  ScrollOffsetDelegate* scroll_offset_delegate_;
   LayerImpl* scroll_clip_layer_;
+
+  gfx::Vector2dF offset_to_transform_parent_;
+
   bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;
+
+  static_assert(SCROLL_BLOCKS_ON_MAX < (1 << 3), "ScrollBlocksOn too big");
+  ScrollBlocksOn scroll_blocks_on_ : 3;
+
   bool user_scrollable_horizontal_ : 1;
   bool user_scrollable_vertical_ : 1;
   bool stacking_order_changed_ : 1;
   // Whether the "back" of this layer should draw.
   bool double_sided_ : 1;
   bool should_flatten_transform_ : 1;
+  bool should_flatten_transform_from_property_tree_ : 1;
 
   // Tracks if drawing-related properties have changed since last redraw.
   bool layer_property_changed_ : 1;
@@ -644,13 +744,13 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool draw_checkerboard_for_missing_tiles_ : 1;
   bool draws_content_ : 1;
   bool hide_layer_and_subtree_ : 1;
-  bool force_render_surface_ : 1;
 
   // Cache transform_'s invertibility.
   bool transform_is_invertible_ : 1;
 
   // Set for the layer that other layers are fixed to.
   bool is_container_for_fixed_position_layers_ : 1;
+
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   SkColor background_color_;
@@ -662,11 +762,14 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   LayerPositionConstraint position_constraint_;
 
-  gfx::Vector2dF scroll_delta_;
-  gfx::Vector2dF sent_scroll_delta_;
-  gfx::ScrollOffset last_scroll_offset_;
+  gfx::Vector2dF scroll_compensation_adjustment_;
 
   int num_descendants_that_draw_content_;
+
+  gfx::Rect visible_rect_from_property_trees_;
+  int transform_tree_index_;
+  int opacity_tree_index_;
+  int clip_tree_index_;
 
   // The global depth value of the center of the layer. This value is used
   // to sort layers from back to front.
@@ -717,7 +820,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // hierarchy before layers can be drawn.
   DrawProperties<LayerImpl> draw_properties_;
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat> debug_info_;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> debug_info_;
+  scoped_ptr<RenderSurfaceImpl> render_surface_;
+
+  std::vector<FrameTimingRequest> frame_timing_requests_;
+  bool frame_timing_requests_dirty_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerImpl);
 };

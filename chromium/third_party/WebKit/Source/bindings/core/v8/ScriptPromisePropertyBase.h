@@ -8,6 +8,7 @@
 #include "bindings/core/v8/ScopedPersistent.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseProperties.h"
+#include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -20,7 +21,8 @@ class DOMWrapperWorld;
 class ExecutionContext;
 class ScriptState;
 
-class ScriptPromisePropertyBase : public GarbageCollectedFinalized<ScriptPromisePropertyBase>, public ContextLifecycleObserver {
+class CORE_EXPORT ScriptPromisePropertyBase : public GarbageCollectedFinalized<ScriptPromisePropertyBase>, public ContextLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScriptPromisePropertyBase);
 public:
     virtual ~ScriptPromisePropertyBase();
 
@@ -39,7 +41,7 @@ public:
 
     ScriptPromise promise(DOMWrapperWorld&);
 
-    virtual void trace(Visitor*) { }
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     ScriptPromisePropertyBase(ExecutionContext*, Name);
@@ -52,21 +54,21 @@ protected:
     // the property's execution context and the world it is
     // creating/settling promises in; the implementation should use
     // this context.
-    virtual v8::Handle<v8::Object> holder(v8::Handle<v8::Object> creationContext, v8::Isolate*) = 0;
-    virtual v8::Handle<v8::Value> resolvedValue(v8::Isolate*, v8::Handle<v8::Object> creationContext) = 0;
-    virtual v8::Handle<v8::Value> rejectedValue(v8::Isolate*, v8::Handle<v8::Object> creationContext) = 0;
+    virtual v8::Local<v8::Object> holder(v8::Isolate*, v8::Local<v8::Object> creationContext) = 0;
+    virtual v8::Local<v8::Value> resolvedValue(v8::Isolate*, v8::Local<v8::Object> creationContext) = 0;
+    virtual v8::Local<v8::Value> rejectedValue(v8::Isolate*, v8::Local<v8::Object> creationContext) = 0;
 
     void resetBase();
 
 private:
-    typedef Vector<OwnPtr<ScopedPersistent<v8::Object> > > WeakPersistentSet;
+    typedef Vector<OwnPtr<ScopedPersistent<v8::Object>>> WeakPersistentSet;
 
-    void resolveOrRejectInternal(v8::Handle<v8::Promise::Resolver>);
+    void resolveOrRejectInternal(v8::Local<v8::Promise::Resolver>);
     v8::Local<v8::Object> ensureHolderWrapper(ScriptState*);
     void clearWrappers();
 
-    v8::Handle<v8::String> promiseName();
-    v8::Handle<v8::String> resolverName();
+    v8::Local<v8::String> promiseName();
+    v8::Local<v8::String> resolverName();
 
     v8::Isolate* m_isolate;
     Name m_name;

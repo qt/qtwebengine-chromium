@@ -27,7 +27,6 @@
 #include "platform/scroll/Scrollbar.h"
 
 #include <algorithm>
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/scroll/ScrollAnimator.h"
@@ -67,6 +66,7 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     , m_overlapsResizer(false)
     , m_suppressInvalidation(false)
     , m_isAlphaLocked(false)
+    , m_elasticOverscroll(0)
 {
     if (!m_theme)
         m_theme = ScrollbarTheme::theme();
@@ -103,6 +103,16 @@ Scrollbar::~Scrollbar()
     else
         m_animator->willRemoveHorizontalScrollbar(this);
 #endif
+}
+
+void Scrollbar::setFrameRect(const IntRect& frameRect)
+{
+    if (frameRect == this->frameRect())
+        return;
+
+    invalidate();
+    Widget::setFrameRect(frameRect);
+    invalidate();
 }
 
 ScrollbarOverlayStyle Scrollbar::scrollbarOverlayStyle() const
@@ -353,7 +363,6 @@ bool Scrollbar::gestureEvent(const PlatformGestureEvent& evt)
         m_scrollPos = m_pressedPos;
         return true;
     case PlatformEvent::GestureScrollUpdate:
-    case PlatformEvent::GestureScrollUpdateWithoutPropagation:
         if (m_pressedPart != ThumbPart)
             return false;
         m_scrollPos += orientation() == HorizontalScrollbar ? evt.deltaX() : evt.deltaY();

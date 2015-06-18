@@ -12,11 +12,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/switches.h"
 
@@ -320,7 +320,7 @@ ImageSkia ImageSkia::CreateFrom1xBitmap(const SkBitmap& bitmap) {
 scoped_ptr<ImageSkia> ImageSkia::DeepCopy() const {
   ImageSkia* copy = new ImageSkia;
   if (isNull())
-    return scoped_ptr<ImageSkia>(copy);
+    return make_scoped_ptr(copy);
 
   CHECK(CanRead());
 
@@ -333,7 +333,7 @@ scoped_ptr<ImageSkia> ImageSkia::DeepCopy() const {
   // thread so that other thread can use this.
   if (!copy->isNull())
     copy->storage_->DetachFromThread();
-  return scoped_ptr<ImageSkia>(copy);
+  return make_scoped_ptr(copy);
 }
 
 bool ImageSkia::BackedBySameObjectAs(const gfx::ImageSkia& other) const {
@@ -466,11 +466,11 @@ void ImageSkia::Init(const ImageSkiaRep& image_rep) {
   storage_->image_reps().push_back(image_rep);
 }
 
-SkBitmap& ImageSkia::GetBitmap() const {
+const SkBitmap& ImageSkia::GetBitmap() const {
   if (isNull()) {
     // Callers expect a ImageSkiaRep even if it is |isNull()|.
     // TODO(pkotwicz): Fix this.
-    return NullImageRep().mutable_sk_bitmap();
+    return NullImageRep().sk_bitmap();
   }
 
   // TODO(oshima): This made a few tests flaky on Windows.
@@ -481,8 +481,8 @@ SkBitmap& ImageSkia::GetBitmap() const {
 
   ImageSkiaReps::iterator it = storage_->FindRepresentation(1.0f, true);
   if (it != storage_->image_reps().end())
-    return it->mutable_sk_bitmap();
-  return NullImageRep().mutable_sk_bitmap();
+    return it->sk_bitmap();
+  return NullImageRep().sk_bitmap();
 }
 
 bool ImageSkia::CanRead() const {

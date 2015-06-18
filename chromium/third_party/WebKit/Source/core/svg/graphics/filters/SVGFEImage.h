@@ -31,34 +31,41 @@
 namespace blink {
 
 class Image;
-class RenderObject;
+class LayoutObject;
 
 class FEImage final : public FilterEffect {
 public:
-    static PassRefPtr<FEImage> createWithImage(Filter*, PassRefPtr<Image>, PassRefPtr<SVGPreserveAspectRatio>);
-    static PassRefPtr<FEImage> createWithIRIReference(Filter*, TreeScope&, const String&, PassRefPtr<SVGPreserveAspectRatio>);
+    static PassRefPtrWillBeRawPtr<FEImage> createWithImage(Filter*, PassRefPtr<Image>, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
+    static PassRefPtrWillBeRawPtr<FEImage> createWithIRIReference(Filter*, TreeScope&, const String&, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
 
     virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) override;
 
     virtual FilterEffectType filterEffectType() const override { return FilterEffectTypeImage; }
 
+    // feImage does not perform color interpolation of any kind, so doesn't
+    // depend on the value of color-interpolation-filters.
+    virtual void setOperatingColorSpace(ColorSpace) override { }
+
     virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     virtual ~FEImage() { }
-    FEImage(Filter*, PassRefPtr<Image>, PassRefPtr<SVGPreserveAspectRatio>);
-    FEImage(Filter*, TreeScope&, const String&, PassRefPtr<SVGPreserveAspectRatio>);
-    RenderObject* referencedRenderer() const;
+    FEImage(Filter*, PassRefPtr<Image>, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
+    FEImage(Filter*, TreeScope&, const String&, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
+    LayoutObject* referencedLayoutObject() const;
 
-    PassRefPtr<SkImageFilter> createImageFilterForRenderer(RenderObject* rendererer, SkiaImageFilterBuilder*);
+    PassRefPtr<SkImageFilter> createImageFilterForLayoutObject(LayoutObject&, SkiaImageFilterBuilder*);
 
     RefPtr<Image> m_image;
 
     // m_treeScope will never be a dangling reference. See https://bugs.webkit.org/show_bug.cgi?id=99243
+    // FIXME: Oilpan: turn into a (weak) member?
     TreeScope* m_treeScope;
     String m_href;
-    PassRefPtr<SVGPreserveAspectRatio> m_preserveAspectRatio;
+    RefPtrWillBeMember<SVGPreserveAspectRatio> m_preserveAspectRatio;
 };
 
 } // namespace blink

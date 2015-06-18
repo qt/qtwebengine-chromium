@@ -11,22 +11,27 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "media/base/media_export.h"
 #include "media/midi/midi_manager.h"
 #include "media/midi/usb_midi_device.h"
+#include "media/midi/usb_midi_export.h"
 #include "media/midi/usb_midi_input_stream.h"
 #include "media/midi/usb_midi_jack.h"
 #include "media/midi/usb_midi_output_stream.h"
 
 namespace media {
+namespace midi {
+
+class MidiScheduler;
 
 // MidiManager for USB-MIDI.
-class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
-                                    public UsbMidiDeviceDelegate,
-                                    public UsbMidiInputStream::Delegate {
+class USB_MIDI_EXPORT MidiManagerUsb
+    : public MidiManager,
+      public UsbMidiDeviceDelegate,
+      NON_EXPORTED_BASE(public UsbMidiInputStream::Delegate) {
  public:
   explicit MidiManagerUsb(scoped_ptr<UsbMidiDevice::Factory> device_factory);
   ~MidiManagerUsb() override;
@@ -44,6 +49,8 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
                           const uint8* data,
                           size_t size,
                           base::TimeTicks time) override;
+  void OnDeviceAttached(scoped_ptr<UsbMidiDevice> device) override;
+  void OnDeviceDetached(size_t index) override;
 
   // UsbMidiInputStream::Delegate implementation.
   void OnReceivedData(size_t jack_index,
@@ -67,6 +74,7 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
 
  private:
   void OnEnumerateDevicesDone(bool result, UsbMidiDevice::Devices* devices);
+  bool AddPorts(UsbMidiDevice* device, int device_id);
 
   scoped_ptr<UsbMidiDevice::Factory> device_factory_;
   ScopedVector<UsbMidiDevice> devices_;
@@ -78,9 +86,12 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
   // A map from <endpoint_number, cable_number> to the index of input jacks.
   base::hash_map<std::pair<int, int>, size_t> input_jack_dictionary_;
 
+  scoped_ptr<MidiScheduler> scheduler_;
+
   DISALLOW_COPY_AND_ASSIGN(MidiManagerUsb);
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_MIDI_MANAGER_USB_H_

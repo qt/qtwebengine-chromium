@@ -4,27 +4,16 @@
 
 #include "content/renderer/media/webrtc_audio_device_not_impl.h"
 
-namespace {
-
-const int64 kMillisecondsBetweenProcessCalls = 5000;
-
-}  // namespace
-
 namespace content {
 
 WebRtcAudioDeviceNotImpl::WebRtcAudioDeviceNotImpl()
     : last_process_time_(base::TimeTicks::Now()) {
 }
 
-int32_t WebRtcAudioDeviceNotImpl::ChangeUniqueId(const int32_t id) {
-  return 0;
-}
-
-int32_t WebRtcAudioDeviceNotImpl::TimeUntilNextProcess() {
+int64_t WebRtcAudioDeviceNotImpl::TimeUntilNextProcess() {
+  const int64_t kMillisecondsBetweenProcessCalls = 5000;
   base::TimeDelta delta_time = (base::TimeTicks::Now() - last_process_time_);
-  int64 time_until_next =
-      kMillisecondsBetweenProcessCalls - delta_time.InMilliseconds();
-  return static_cast<int32_t>(time_until_next);
+  return kMillisecondsBetweenProcessCalls - delta_time.InMilliseconds();
 }
 
 int32_t WebRtcAudioDeviceNotImpl::Process() {
@@ -272,6 +261,14 @@ int32_t WebRtcAudioDeviceNotImpl::SetAGC(bool enable) {
 
 bool WebRtcAudioDeviceNotImpl::AGC() const {
   return true;
+}
+
+bool WebRtcAudioDeviceNotImpl::BuiltInAECIsAvailable() const {
+  return false;
+}
+
+int32_t WebRtcAudioDeviceNotImpl::EnableBuiltInAEC(bool enable) {
+  return 0;
 }
 
 }  // namespace content

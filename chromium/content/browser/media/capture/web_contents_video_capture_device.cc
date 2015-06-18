@@ -69,42 +69,22 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/web_contents.h"
+#include "media/base/video_capture_types.h"
 #include "media/base/video_util.h"
-#include "media/video/capture/video_capture_types.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/screen.h"
 
 namespace content {
 
 namespace {
-
-// Compute a letterbox region, aligned to even coordinates.
-gfx::Rect ComputeYV12LetterboxRegion(const gfx::Size& frame_size,
-                                     const gfx::Size& content_size) {
-
-  gfx::Rect result = media::ComputeLetterboxRegion(gfx::Rect(frame_size),
-                                                   content_size);
-
-  result.set_x(MakeEven(result.x()));
-  result.set_y(MakeEven(result.y()));
-  result.set_width(std::max(kMinFrameWidth, MakeEven(result.width())));
-  result.set_height(std::max(kMinFrameHeight, MakeEven(result.height())));
-
-  return result;
-}
 
 void DeleteOnWorkerThread(scoped_ptr<base::Thread> render_thread,
                           const base::Closure& callback) {
@@ -161,16 +141,14 @@ class FrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
 // knows how to do the capture and prepare the result for delivery.
 //
 // In practice, this means (a) installing a RenderWidgetHostFrameSubscriber in
-// the RenderWidgetHostView, to process updates that occur via accelerated
-// compositing, (b) installing itself as an observer of updates to the
-// RenderWidgetHost's backing store, to hook updates that occur via software
-// rendering, and (c) running a timer to possibly initiate non-event-driven
-// captures that the subscriber might request.
+// the RenderWidgetHostView, to process compositor updates, and (b) running a
+// timer to possibly initiate forced, non-event-driven captures needed by
+// downstream consumers that require frame repeats of unchanged content.
 //
 // All of this happens on the UI thread, although the
 // RenderWidgetHostViewFrameSubscriber we install may be dispatching updates
 // autonomously on some other thread.
-class ContentCaptureSubscription : public content::NotificationObserver {
+class ContentCaptureSubscription {
  public:
   typedef base::Callback<
       void(const base::TimeTicks&,
@@ -185,12 +163,7 @@ class ContentCaptureSubscription : public content::NotificationObserver {
       const RenderWidgetHost& source,
       const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
       const CaptureCallback& capture_callback);
-  ~ContentCaptureSubscription() override;
-
-  // content::NotificationObserver implementation.
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) override;
+  ~ContentCaptureSubscription();
 
  private:
   void OnTimer();
@@ -202,9 +175,7 @@ class ContentCaptureSubscription : public content::NotificationObserver {
   const int render_widget_id_;
 
   VideoFrameDeliveryLog delivery_log_;
-  FrameSubscriber paint_subscriber_;
   FrameSubscriber timer_subscriber_;
-  content::NotificationRegistrar registrar_;
   CaptureCallback capture_callback_;
   base::Timer timer_;
 
@@ -258,8 +229,8 @@ class WebContentsCaptureMachine : public VideoCaptureMachine {
       const scoped_refptr<media::VideoFrame>& target,
       const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
           deliver_frame_cb,
-      bool success,
-      const SkBitmap& bitmap);
+      const SkBitmap& bitmap,
+      ReadbackResponse response);
 
   // Response callback for RWHVP::CopyFromCompositingSurfaceToVideoFrame().
   void DidCopyFromCompositingSurfaceToVideoFrame(
@@ -268,8 +239,12 @@ class WebContentsCaptureMachine : public VideoCaptureMachine {
           deliver_frame_cb,
       bool success);
 
-  // Remove the old subscription, and start a new one if |rwh| is not NULL.
-  void RenewFrameSubscription(RenderWidgetHost* rwh);
+  // Remove the old subscription, and attempt to start a new one if |had_target|
+  // is true.
+  void RenewFrameSubscription(bool had_target);
+
+  // Called whenever the render widget is resized.
+  void UpdateCaptureSize();
 
   // Parameters saved in constructor.
   const int initial_render_process_id_;
@@ -308,7 +283,7 @@ bool FrameSubscriber::ShouldCaptureFrame(
     base::TimeTicks present_time,
     scoped_refptr<media::VideoFrame>* storage,
     DeliverFrameCallback* deliver_frame_cb) {
-  TRACE_EVENT1("mirroring", "FrameSubscriber::ShouldCaptureFrame",
+  TRACE_EVENT1("gpu.capture", "FrameSubscriber::ShouldCaptureFrame",
                "instance", this);
 
   ThreadSafeCaptureOracle::CaptureFrameCallback capture_frame_cb;
@@ -329,8 +304,6 @@ ContentCaptureSubscription::ContentCaptureSubscription(
     : render_process_id_(source.GetProcess()->GetID()),
       render_widget_id_(source.GetRoutingID()),
       delivery_log_(),
-      paint_subscriber_(VideoCaptureOracle::kSoftwarePaint, oracle_proxy,
-                        &delivery_log_),
       timer_subscriber_(VideoCaptureOracle::kTimerPoll, oracle_proxy,
                         &delivery_log_),
       capture_callback_(capture_callback),
@@ -339,21 +312,14 @@ ContentCaptureSubscription::ContentCaptureSubscription(
 
   RenderWidgetHostView* const view = source.GetView();
 
-  // Subscribe to accelerated presents. These will be serviced directly by the
+  // Subscribe to compositor updates. These will be serviced directly by the
   // oracle.
-  if (view && kAcceleratedSubscriberIsSupported) {
+  if (view) {
     scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber(
         new FrameSubscriber(VideoCaptureOracle::kCompositorUpdate,
             oracle_proxy, &delivery_log_));
     view->BeginFrameSubscription(subscriber.Pass());
   }
-
-  // Subscribe to software paint events. This instance will service these by
-  // reflecting them back to the WebContentsCaptureMachine via
-  // |capture_callback|.
-  registrar_.Add(
-      this, content::NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
-      Source<RenderWidgetHost>(&source));
 
   // Subscribe to timer events. This instance will service these as well.
   timer_.Start(FROM_HERE, oracle_proxy->min_capture_period(),
@@ -369,60 +335,16 @@ ContentCaptureSubscription::~ContentCaptureSubscription() {
     return;
 
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (kAcceleratedSubscriberIsSupported) {
-    RenderWidgetHost* const source =
-        RenderWidgetHost::FromID(render_process_id_, render_widget_id_);
-    RenderWidgetHostView* const view = source ? source->GetView() : NULL;
-    if (view)
-      view->EndFrameSubscription();
-  }
-}
-
-void ContentCaptureSubscription::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK_EQ(NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE, type);
-
-  RenderWidgetHostImpl* rwh =
-      RenderWidgetHostImpl::From(Source<RenderWidgetHost>(source).ptr());
-
-  // This message occurs on window resizes and visibility changes even when
-  // accelerated compositing is active, so we need to filter out these cases.
-  if (!rwh || !rwh->GetView())
-    return;
-  // Mac sends DID_UPDATE_BACKING_STORE messages to inform the capture system
-  // of new software compositor frames, so always treat these messages as
-  // signals of a new frame on Mac.
-  // http://crbug.com/333986
-#if !defined(OS_MACOSX)
-  if (rwh->GetView()->IsSurfaceAvailableForCopy())
-    return;
-#endif
-
-  TRACE_EVENT1("mirroring", "ContentCaptureSubscription::Observe",
-               "instance", this);
-
-  base::Closure copy_done_callback;
-  scoped_refptr<media::VideoFrame> frame;
-  RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback deliver_frame_cb;
-  const base::TimeTicks start_time = base::TimeTicks::Now();
-  if (paint_subscriber_.ShouldCaptureFrame(gfx::Rect(),
-                                           start_time,
-                                           &frame,
-                                           &deliver_frame_cb)) {
-    // This message happens just before paint. If we post a task to do the copy,
-    // it should run soon after the paint.
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(capture_callback_, start_time, frame, deliver_frame_cb));
-  }
+  RenderWidgetHost* const source =
+      RenderWidgetHost::FromID(render_process_id_, render_widget_id_);
+  RenderWidgetHostView* const view = source ? source->GetView() : NULL;
+  if (view)
+    view->EndFrameSubscription();
 }
 
 void ContentCaptureSubscription::OnTimer() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  TRACE_EVENT0("mirroring", "ContentCaptureSubscription::OnTimer");
+  TRACE_EVENT0("gpu.capture", "ContentCaptureSubscription::OnTimer");
 
   scoped_refptr<media::VideoFrame> frame;
   RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback deliver_frame_cb;
@@ -463,8 +385,8 @@ void RenderVideoFrame(const SkBitmap& input,
 
   // Calculate the width and height of the content region in the |output|, based
   // on the aspect ratio of |input|.
-  gfx::Rect region_in_frame = ComputeYV12LetterboxRegion(
-      output->coded_size(), gfx::Size(input.width(), input.height()));
+  const gfx::Rect region_in_frame = media::ComputeLetterboxRegion(
+      output->visible_rect(), gfx::Size(input.width(), input.height()));
 
   // Scale the bitmap to the required size, if necessary.
   SkBitmap scaled_bitmap;
@@ -481,7 +403,8 @@ void RenderVideoFrame(const SkBitmap& input,
       method = skia::ImageOperations::RESIZE_BOX;
     }
 
-    TRACE_EVENT_ASYNC_STEP_INTO0("mirroring", "Capture", output.get(), "Scale");
+    TRACE_EVENT_ASYNC_STEP_INTO0("gpu.capture",
+                                 "Capture", output.get(), "Scale");
     scaled_bitmap = skia::ImageOperations::Resize(input, method,
                                                   region_in_frame.width(),
                                                   region_in_frame.height());
@@ -489,14 +412,22 @@ void RenderVideoFrame(const SkBitmap& input,
     scaled_bitmap = input;
   }
 
-  TRACE_EVENT_ASYNC_STEP_INTO0("mirroring", "Capture", output.get(), "YUV");
+  TRACE_EVENT_ASYNC_STEP_INTO0("gpu.capture", "Capture", output.get(), "YUV");
   {
-    SkAutoLockPixels scaled_bitmap_locker(scaled_bitmap);
+    // Align to 2x2 pixel boundaries, as required by
+    // media::CopyRGBToVideoFrame().
+    const gfx::Rect region_in_yv12_frame(region_in_frame.x() & ~1,
+                                         region_in_frame.y() & ~1,
+                                         region_in_frame.width() & ~1,
+                                         region_in_frame.height() & ~1);
+    if (region_in_yv12_frame.IsEmpty())
+      return;
 
+    SkAutoLockPixels scaled_bitmap_locker(scaled_bitmap);
     media::CopyRGBToVideoFrame(
         reinterpret_cast<uint8*>(scaled_bitmap.getPixels()),
         scaled_bitmap.rowBytes(),
-        region_in_frame,
+        region_in_yv12_frame,
         output.get());
   }
 
@@ -567,6 +498,9 @@ bool WebContentsCaptureMachine::Start(
 
   // Note: Creation of the first WeakPtr in the following statement will cause
   // IsStarted() to return true from now on.
+  tracker_->SetResizeChangeCallback(
+      base::Bind(&WebContentsCaptureMachine::UpdateCaptureSize,
+                 weak_ptr_factory_.GetWeakPtr()));
   tracker_->Start(initial_render_process_id_, initial_main_render_frame_id_,
                   base::Bind(&WebContentsCaptureMachine::RenewFrameSubscription,
                              weak_ptr_factory_.GetWeakPtr()));
@@ -588,7 +522,7 @@ void WebContentsCaptureMachine::Stop(const base::Closure& callback) {
 
   // Note: RenewFrameSubscription() must be called before stopping |tracker_| so
   // the web_contents() can be notified that the capturing is ending.
-  RenewFrameSubscription(NULL);
+  RenewFrameSubscription(false);
   tracker_->Stop();
 
   // The render thread cannot be stopped on the UI thread, so post a message
@@ -616,12 +550,7 @@ void WebContentsCaptureMachine::Capture(
     return;
   }
 
-  gfx::Size video_size = target->coded_size();
   gfx::Size view_size = view->GetViewBounds().size();
-  gfx::Size fitted_size;
-  if (!view_size.IsEmpty()) {
-    fitted_size = ComputeYV12LetterboxRegion(video_size, view_size).size();
-  }
   if (view_size != last_view_size_) {
     last_view_size_ = view_size;
 
@@ -640,6 +569,8 @@ void WebContentsCaptureMachine::Capture(
                    weak_ptr_factory_.GetWeakPtr(),
                    start_time, deliver_frame_cb));
   } else {
+    const gfx::Size fitted_size = view_size.IsEmpty() ? gfx::Size() :
+        media::ComputeLetterboxRegion(target->visible_rect(), view_size).size();
     rwh->CopyFromBackingStore(
         gfx::Rect(),
         fitted_size,  // Size here is a request not always honored.
@@ -655,7 +586,10 @@ void WebContentsCaptureMachine::Capture(
 gfx::Size WebContentsCaptureMachine::ComputeOptimalTargetSize() const {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  gfx::Size optimal_size = oracle_proxy_->GetCaptureSize();
+  // TODO(miu): Propagate capture frame size changes as new "preferred size"
+  // updates, rather than just using the max frame size.
+  // http://crbug.com/350491
+  gfx::Size optimal_size = oracle_proxy_->max_frame_size();
 
   // If the ratio between physical and logical pixels is greater than 1:1,
   // shrink |optimal_size| by that amount.  Then, when external code resizes the
@@ -686,15 +620,15 @@ void WebContentsCaptureMachine::DidCopyFromBackingStore(
     const scoped_refptr<media::VideoFrame>& target,
     const RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback&
         deliver_frame_cb,
-    bool success,
-    const SkBitmap& bitmap) {
+    const SkBitmap& bitmap,
+    ReadbackResponse response) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::TimeTicks now = base::TimeTicks::Now();
   DCHECK(render_thread_.get());
-  if (success) {
+  if (response == READBACK_SUCCESS) {
     UMA_HISTOGRAM_TIMES("TabCapture.CopyTimeBitmap", now - start_time);
-    TRACE_EVENT_ASYNC_STEP_INTO0("mirroring", "Capture", target.get(),
+    TRACE_EVENT_ASYNC_STEP_INTO0("gpu.capture", "Capture", target.get(),
                                  "Render");
     render_thread_->message_loop_proxy()->PostTask(FROM_HERE, base::Bind(
         &RenderVideoFrame, bitmap, target,
@@ -723,8 +657,11 @@ void WebContentsCaptureMachine::DidCopyFromCompositingSurfaceToVideoFrame(
   deliver_frame_cb.Run(start_time, success);
 }
 
-void WebContentsCaptureMachine::RenewFrameSubscription(RenderWidgetHost* rwh) {
+void WebContentsCaptureMachine::RenewFrameSubscription(bool had_target) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  RenderWidgetHost* const rwh =
+      had_target ? tracker_->GetTargetRenderWidgetHost() : nullptr;
 
   // Always destroy the old subscription before creating a new one.
   const bool had_subscription = !!subscription_;
@@ -752,6 +689,18 @@ void WebContentsCaptureMachine::RenewFrameSubscription(RenderWidgetHost* rwh) {
   subscription_.reset(new ContentCaptureSubscription(*rwh, oracle_proxy_,
       base::Bind(&WebContentsCaptureMachine::Capture,
                  weak_ptr_factory_.GetWeakPtr())));
+}
+
+void WebContentsCaptureMachine::UpdateCaptureSize() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  if (!oracle_proxy_)
+    return;
+  RenderWidgetHost* const rwh = tracker_->GetTargetRenderWidgetHost();
+  RenderWidgetHostView* const view = rwh ? rwh->GetView() : nullptr;
+  if (!view)
+    return;
+  oracle_proxy_->UpdateCaptureSize(view->GetViewBounds().size());
 }
 
 }  // namespace

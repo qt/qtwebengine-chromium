@@ -5,7 +5,9 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/location.h"
 #include "base/memory/scoped_vector.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
@@ -54,12 +56,9 @@ class ThreadPerfTest : public testing::Test {
   base::TimeTicks ThreadNow(base::Thread* thread) {
     base::WaitableEvent done(false, false);
     base::TimeTicks ticks;
-    thread->message_loop_proxy()->PostTask(
-        FROM_HERE,
-        base::Bind(&ThreadPerfTest::TimeOnThread,
-                   base::Unretained(this),
-                   &ticks,
-                   &done));
+    thread->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&ThreadPerfTest::TimeOnThread,
+                              base::Unretained(this), &ticks, &done));
     done.Wait();
     return ticks;
   }
@@ -76,10 +75,10 @@ class ThreadPerfTest : public testing::Test {
 
     Init();
 
-    base::TimeTicks start = base::TimeTicks::HighResNow();
+    base::TimeTicks start = base::TimeTicks::Now();
     PingPong(kNumRuns);
     done_.Wait();
-    base::TimeTicks end = base::TimeTicks::HighResNow();
+    base::TimeTicks end = base::TimeTicks::Now();
 
     // Gather the cpu-time spent on each thread. This does one extra tasks,
     // but that should be in the noise given enough runs.
@@ -128,10 +127,9 @@ class TaskPerfTest : public ThreadPerfTest {
       FinishMeasurement();
       return;
     }
-    NextThread(hops)->message_loop_proxy()->PostTask(
-        FROM_HERE,
-        base::Bind(
-            &ThreadPerfTest::PingPong, base::Unretained(this), hops - 1));
+    NextThread(hops)->task_runner()->PostTask(
+        FROM_HERE, base::Bind(&ThreadPerfTest::PingPong, base::Unretained(this),
+                              hops - 1));
   }
 };
 
@@ -174,12 +172,12 @@ TEST_F(TaskObserverPerfTest, TaskPingPong) {
 template <typename WaitableEventType>
 class EventPerfTest : public ThreadPerfTest {
  public:
-  virtual void Init() override {
+  void Init() override {
     for (size_t i = 0; i < threads_.size(); i++)
       events_.push_back(new WaitableEventType(false, false));
   }
 
-  virtual void Reset() override { events_.clear(); }
+  void Reset() override { events_.clear(); }
 
   void WaitAndSignalOnThread(size_t event) {
     size_t next_event = (event + 1) % events_.size();
@@ -195,14 +193,12 @@ class EventPerfTest : public ThreadPerfTest {
       FinishMeasurement();
   }
 
-  virtual void PingPong(int hops) override {
+  void PingPong(int hops) override {
     remaining_hops_ = hops;
     for (size_t i = 0; i < threads_.size(); i++) {
-      threads_[i]->message_loop_proxy()->PostTask(
-          FROM_HERE,
-          base::Bind(&EventPerfTest::WaitAndSignalOnThread,
-                     base::Unretained(this),
-                     i));
+      threads_[i]->task_runner()->PostTask(
+          FROM_HERE, base::Bind(&EventPerfTest::WaitAndSignalOnThread,
+                                base::Unretained(this), i));
     }
 
     // Kick off the Signal ping-ponging.

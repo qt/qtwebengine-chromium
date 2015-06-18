@@ -44,7 +44,7 @@ namespace blink {
 // if available.
 const float kMaxSizeForEmbeddedBitmap = 24.0f;
 
-void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const Font*) const
+void FontPlatformData::setupPaint(SkPaint* paint, float, const Font*) const
 {
     const float ts = m_textSize >= 0 ? m_textSize : 12;
     paint->setTextSize(SkFloatToScalar(m_textSize));
@@ -80,16 +80,6 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
                 || LayoutTestSupport::isRunningLayoutTest()))
             flags |= SkPaint::kSubpixelText_Flag;
 
-        // Only set painting flags when we're actually painting.
-        if (context && !context->couldUseLCDRenderedText()) {
-            textFlags &= ~SkPaint::kLCDRenderText_Flag;
-            // If we *just* clear our request for LCD, then GDI seems to
-            // sometimes give us AA text, and sometimes give us BW text. Since the
-            // original intent was LCD, we want to force AA (rather than BW), so we
-            // add a special bit to tell Skia to do its best to avoid the BW: by
-            // drawing LCD offscreen and downsampling that to AA.
-            textFlags |= SkPaint::kGenA8FromLCD_Flag;
-        }
         SkASSERT(!(textFlags & ~textFlagsMask));
         flags |= textFlags;
     }

@@ -60,6 +60,11 @@ const Register MathPowTaggedDescriptor::exponent() { return x11; }
 const Register MathPowIntegerDescriptor::exponent() { return x12; }
 
 
+const Register GrowArrayElementsDescriptor::ObjectRegister() { return x0; }
+const Register GrowArrayElementsDescriptor::KeyRegister() { return x3; }
+const Register GrowArrayElementsDescriptor::CapacityRegister() { return x2; }
+
+
 void FastNewClosureDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   // cp: context
   // x2: function info
@@ -88,6 +93,12 @@ void NumberToStringDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   // cp: context
   // x0: value
   Register registers[] = {cp, x0};
+  data->Initialize(arraysize(registers), registers, NULL);
+}
+
+
+void TypeofDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  Register registers[] = {cp, x3};
   data->Initialize(arraysize(registers), registers, NULL);
 }
 
@@ -124,7 +135,23 @@ void CreateAllocationSiteDescriptor::Initialize(
   // x2: feedback vector
   // x3: call feedback slot
   Register registers[] = {cp, x2, x3};
-  data->Initialize(arraysize(registers), registers, NULL);
+  Representation representations[] = {Representation::Tagged(),
+                                      Representation::Tagged(),
+                                      Representation::Smi()};
+  data->Initialize(arraysize(registers), registers, representations);
+}
+
+
+void CreateWeakCellDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  // cp: context
+  // x2: feedback vector
+  // x3: call feedback slot
+  // x1: tagged value to put in the weak cell
+  Register registers[] = {cp, x2, x3, x1};
+  Representation representations[] = {
+      Representation::Tagged(), Representation::Tagged(), Representation::Smi(),
+      Representation::Tagged()};
+  data->Initialize(arraysize(registers), registers, representations);
 }
 
 
@@ -148,6 +175,16 @@ void CallFunctionWithFeedbackDescriptor::Initialize(
   Representation representations[] = {Representation::Tagged(),
                                       Representation::Tagged(),
                                       Representation::Smi()};
+  data->Initialize(arraysize(registers), registers, representations);
+}
+
+
+void CallFunctionWithFeedbackAndVectorDescriptor::Initialize(
+    CallInterfaceDescriptorData* data) {
+  Register registers[] = {cp, x1, x3, x2};
+  Representation representations[] = {
+      Representation::Tagged(), Representation::Tagged(), Representation::Smi(),
+      Representation::Tagged()};
   data->Initialize(arraysize(registers), registers, representations);
 }
 
@@ -232,6 +269,15 @@ void InternalArrayConstructorDescriptor::Initialize(
                                       Representation::Tagged(),
                                       Representation::Integer32()};
   data->Initialize(arraysize(registers), registers, representations);
+}
+
+
+void CompareDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  // cp: context
+  // x1: left operand
+  // x0: right operand
+  Register registers[] = {cp, x1, x0};
+  data->Initialize(arraysize(registers), registers, NULL);
 }
 
 
@@ -353,6 +399,31 @@ void ArgumentAdaptorDescriptor::Initialize(CallInterfaceDescriptorData* data) {
 
 
 void ApiFunctionDescriptor::Initialize(CallInterfaceDescriptorData* data) {
+  static PlatformInterfaceDescriptor default_descriptor =
+      PlatformInterfaceDescriptor(CAN_INLINE_TARGET_ADDRESS);
+
+  Register registers[] = {
+      cp,  // context
+      x0,  // callee
+      x4,  // call_data
+      x2,  // holder
+      x1,  // api_function_address
+      x3,  // actual number of arguments
+  };
+  Representation representations[] = {
+      Representation::Tagged(),     // context
+      Representation::Tagged(),     // callee
+      Representation::Tagged(),     // call_data
+      Representation::Tagged(),     // holder
+      Representation::External(),   // api_function_address
+      Representation::Integer32(),  // actual number of arguments
+  };
+  data->Initialize(arraysize(registers), registers, representations,
+                   &default_descriptor);
+}
+
+
+void ApiAccessorDescriptor::Initialize(CallInterfaceDescriptorData* data) {
   static PlatformInterfaceDescriptor default_descriptor =
       PlatformInterfaceDescriptor(CAN_INLINE_TARGET_ADDRESS);
 

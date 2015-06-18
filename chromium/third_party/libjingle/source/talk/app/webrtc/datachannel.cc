@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,6 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #include "talk/app/webrtc/datachannel.h"
 
 #include <string>
@@ -215,7 +216,7 @@ bool DataChannel::Send(const DataBuffer& buffer) {
     return true;
   }
 
-  bool success = SendDataMessage(buffer);
+  bool success = SendDataMessage(buffer, true);
   if (data_channel_type_ == cricket::DCT_RTP) {
     return success;
   }
@@ -329,8 +330,8 @@ void DataChannel::OnDataReceived(cricket::DataChannel* channel,
   if (was_ever_writable_ && observer_) {
     observer_->OnMessage(*buffer.get());
   } else {
-    if (queued_received_data_.byte_count() + payload.length() >
-            kMaxQueuedReceivedDataBytes) {
+    if (queued_received_data_.byte_count() + payload.size() >
+        kMaxQueuedReceivedDataBytes) {
       LOG(LS_ERROR) << "Queued received data exceeds the max buffer size.";
 
       queued_received_data_.Clear();
@@ -441,7 +442,7 @@ void DataChannel::DisconnectFromTransport() {
   provider_->DisconnectDataChannel(this);
   connected_to_provider_ = false;
 
-  if (data_channel_type_ == cricket::DCT_SCTP) {
+  if (data_channel_type_ == cricket::DCT_SCTP && config_.id >= 0) {
     provider_->RemoveSctpDataStream(config_.id);
   }
 }
@@ -461,17 +462,19 @@ void DataChannel::DeliverQueuedReceivedData() {
 void DataChannel::SendQueuedDataMessages() {
   ASSERT(was_ever_writable_ && state_ == kOpen);
 
-  PacketQueue packet_buffer;
-  packet_buffer.Swap(&queued_send_data_);
-
-  while (!packet_buffer.Empty()) {
-    rtc::scoped_ptr<DataBuffer> buffer(packet_buffer.Front());
-    SendDataMessage(*buffer);
-    packet_buffer.Pop();
+  while (!queued_send_data_.Empty()) {
+    DataBuffer* buffer = queued_send_data_.Front();
+    if (!SendDataMessage(*buffer, false)) {
+      // Leave the message in the queue if sending is aborted.
+      break;
+    }
+    queued_send_data_.Pop();
+    delete buffer;
   }
 }
 
-bool DataChannel::SendDataMessage(const DataBuffer& buffer) {
+bool DataChannel::SendDataMessage(const DataBuffer& buffer,
+                                  bool queue_if_blocked) {
   cricket::SendDataParams send_params;
 
   if (data_channel_type_ == cricket::DCT_SCTP) {
@@ -494,14 +497,26 @@ bool DataChannel::SendDataMessage(const DataBuffer& buffer) {
   cricket::SendDataResult send_result = cricket::SDR_SUCCESS;
   bool success = provider_->SendData(send_params, buffer.data, &send_result);
 
-  if (!success && data_channel_type_ == cricket::DCT_SCTP) {
-    if (send_result != cricket::SDR_BLOCK || !QueueSendDataMessage(buffer)) {
-      LOG(LS_ERROR) << "Closing the DataChannel due to a failure to send data, "
-                    << "send_result = " << send_result;
-      Close();
+  if (success) {
+    return true;
+  }
+
+  if (data_channel_type_ != cricket::DCT_SCTP) {
+    return false;
+  }
+
+  if (send_result == cricket::SDR_BLOCK) {
+    if (!queue_if_blocked || QueueSendDataMessage(buffer)) {
+      return false;
     }
   }
-  return success;
+  // Close the channel if the error is not SDR_BLOCK, or if queuing the
+  // message failed.
+  LOG(LS_ERROR) << "Closing the DataChannel due to a failure to send data, "
+                << "send_result = " << send_result;
+  Close();
+
+  return false;
 }
 
 bool DataChannel::QueueSendDataMessage(const DataBuffer& buffer) {

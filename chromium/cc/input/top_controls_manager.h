@@ -34,14 +34,14 @@ class CC_EXPORT TopControlsManager
 
   static scoped_ptr<TopControlsManager> Create(
       TopControlsManagerClient* client,
-      float top_controls_height,
       float top_controls_show_threshold,
       float top_controls_hide_threshold);
   virtual ~TopControlsManager();
 
-  float controls_height() { return top_controls_height_; }
-  float ControlsTopOffset();
-  float ContentTopOffset();
+  float ControlsTopOffset() const;
+  float ContentTopOffset() const;
+  float TopControlsShownRatio() const;
+  float TopControlsHeight() const;
 
   KeyframedFloatAnimationCurve* animation() {
     return top_controls_animation_.get();
@@ -61,13 +61,12 @@ class CC_EXPORT TopControlsManager
   void PinchBegin();
   void PinchEnd();
 
+  void MainThreadHasStoppedFlinging();
+
   gfx::Vector2dF Animate(base::TimeTicks monotonic_time);
-  void SetControlsTopOffset(float offset);
-  float top_controls_height() { return top_controls_height_; }
 
  protected:
   TopControlsManager(TopControlsManagerClient* client,
-                     float top_controls_height,
                      float top_controls_show_threshold,
                      float top_controls_hide_threshold);
 
@@ -76,6 +75,7 @@ class CC_EXPORT TopControlsManager
   void SetupAnimation(AnimationDirection direction);
   void StartAnimationIfNecessary();
   bool IsAnimationCompleteAtTime(base::TimeTicks time);
+  void ResetBaseline();
 
   TopControlsManagerClient* client_;  // The client manages the lifecycle of
                                       // this.
@@ -83,18 +83,20 @@ class CC_EXPORT TopControlsManager
   scoped_ptr<KeyframedFloatAnimationCurve> top_controls_animation_;
   AnimationDirection animation_direction_;
   TopControlsState permitted_state_;
-  float top_controls_height_;
 
-  float current_scroll_delta_;
-  float controls_scroll_begin_offset_;
+  // Accumulated scroll delta since last baseline reset
+  float accumulated_scroll_delta_;
 
-  // The height of the visible top control such that it must be shown when
-  // the user stops the scroll.
-  float top_controls_show_height_;
+  // Content offset when last baseline reset occurred
+  float baseline_content_offset_;
 
-  // The height of the visible top control such that it must be hidden when
-  // the user stops the scroll.
-  float top_controls_hide_height_;
+  // The percent height of the visible top control such that it must be shown
+  // when the user stops the scroll.
+  float top_controls_show_threshold_;
+
+  // The percent height of the visible top control such that it must be hidden
+  // when the user stops the scroll.
+  float top_controls_hide_threshold_;
 
   bool pinch_gesture_active_;
 

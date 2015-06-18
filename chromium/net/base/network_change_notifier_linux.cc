@@ -14,7 +14,7 @@ namespace net {
 
 class NetworkChangeNotifierLinux::Thread : public base::Thread {
  public:
-  Thread();
+  explicit Thread(const base::hash_set<std::string>& ignored_interfaces);
   ~Thread() override;
 
   // Plumbing for NetworkChangeNotifier::GetCurrentConnectionType.
@@ -33,21 +33,27 @@ class NetworkChangeNotifierLinux::Thread : public base::Thread {
   void CleanUp() override;
 
  private:
+  void OnIPAddressChanged();
+  void OnLinkChanged();
   scoped_ptr<DnsConfigService> dns_config_service_;
   // Used to detect online/offline state and IP address changes.
   internal::AddressTrackerLinux address_tracker_;
+  NetworkChangeNotifier::ConnectionType last_type_;
 
   DISALLOW_COPY_AND_ASSIGN(Thread);
 };
 
-NetworkChangeNotifierLinux::Thread::Thread()
+NetworkChangeNotifierLinux::Thread::Thread(
+    const base::hash_set<std::string>& ignored_interfaces)
     : base::Thread("NetworkChangeNotifier"),
       address_tracker_(
-          base::Bind(&NetworkChangeNotifier::
-                     NotifyObserversOfIPAddressChange),
-          base::Bind(&NetworkChangeNotifier::
-                     NotifyObserversOfConnectionTypeChange),
-          base::Bind(base::DoNothing)) {
+          base::Bind(&NetworkChangeNotifierLinux::Thread::OnIPAddressChanged,
+                     base::Unretained(this)),
+          base::Bind(&NetworkChangeNotifierLinux::Thread::OnLinkChanged,
+                     base::Unretained(this)),
+          base::Bind(base::DoNothing),
+          ignored_interfaces),
+      last_type_(NetworkChangeNotifier::CONNECTION_NONE) {
 }
 
 NetworkChangeNotifierLinux::Thread::~Thread() {
@@ -65,13 +71,24 @@ void NetworkChangeNotifierLinux::Thread::CleanUp() {
   dns_config_service_.reset();
 }
 
-NetworkChangeNotifierLinux* NetworkChangeNotifierLinux::Create() {
-  return new NetworkChangeNotifierLinux();
+void NetworkChangeNotifierLinux::Thread::OnIPAddressChanged() {
+  NetworkChangeNotifier::NotifyObserversOfIPAddressChange();
+  // When the IP address of a network interface is added/deleted, the
+  // connection type may have changed.
+  OnLinkChanged();
 }
 
-NetworkChangeNotifierLinux::NetworkChangeNotifierLinux()
+void NetworkChangeNotifierLinux::Thread::OnLinkChanged() {
+  if (last_type_ != GetCurrentConnectionType()) {
+    NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange();
+    last_type_ = GetCurrentConnectionType();
+  }
+}
+
+NetworkChangeNotifierLinux::NetworkChangeNotifierLinux(
+    const base::hash_set<std::string>& ignored_interfaces)
     : NetworkChangeNotifier(NetworkChangeCalculatorParamsLinux()),
-      notifier_thread_(new Thread()) {
+      notifier_thread_(new Thread(ignored_interfaces)) {
   // We create this notifier thread because the notification implementation
   // needs a MessageLoopForIO, and there's no guarantee that
   // MessageLoop::current() meets that criterion.

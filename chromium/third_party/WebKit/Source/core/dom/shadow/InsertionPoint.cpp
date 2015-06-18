@@ -53,7 +53,7 @@ InsertionPoint::~InsertionPoint()
 {
 }
 
-void InsertionPoint::setDistribution(ContentDistribution& distribution)
+void InsertionPoint::setDistributedNodes(DistributedNodes& distributedNodes)
 {
     if (shouldUseFallbackElements()) {
         for (Node* child = firstChild(); child; child = child->nextSibling())
@@ -66,45 +66,50 @@ void InsertionPoint::setDistribution(ContentDistribution& distribution)
     size_t i = 0;
     size_t j = 0;
 
-    for ( ; i < m_distribution.size() && j < distribution.size(); ++i, ++j) {
-        if (m_distribution.size() < distribution.size()) {
+    for ( ; i < m_distributedNodes.size() && j < distributedNodes.size(); ++i, ++j) {
+        if (m_distributedNodes.size() < distributedNodes.size()) {
             // If the new distribution is larger than the old one, reattach all nodes in
             // the new distribution that were inserted.
-            for ( ; j < distribution.size() && m_distribution.at(i) != distribution.at(j); ++j)
-                distribution.at(j)->lazyReattachIfAttached();
-        } else if (m_distribution.size() > distribution.size()) {
+            for ( ; j < distributedNodes.size() && m_distributedNodes.at(i) != distributedNodes.at(j); ++j)
+                distributedNodes.at(j)->lazyReattachIfAttached();
+        } else if (m_distributedNodes.size() > distributedNodes.size()) {
             // If the old distribution is larger than the new one, reattach all nodes in
             // the old distribution that were removed.
-            for ( ; i < m_distribution.size() && m_distribution.at(i) != distribution.at(j); ++i)
-                m_distribution.at(i)->lazyReattachIfAttached();
-        } else if (m_distribution.at(i) != distribution.at(j)) {
+            for ( ; i < m_distributedNodes.size() && m_distributedNodes.at(i) != distributedNodes.at(j); ++i)
+                m_distributedNodes.at(i)->lazyReattachIfAttached();
+        } else if (m_distributedNodes.at(i) != distributedNodes.at(j)) {
             // If both distributions are the same length reattach both old and new.
-            m_distribution.at(i)->lazyReattachIfAttached();
-            distribution.at(j)->lazyReattachIfAttached();
+            m_distributedNodes.at(i)->lazyReattachIfAttached();
+            distributedNodes.at(j)->lazyReattachIfAttached();
         }
     }
 
     // If we hit the end of either list above we need to reattach all remaining nodes.
 
-    for ( ; i < m_distribution.size(); ++i)
-        m_distribution.at(i)->lazyReattachIfAttached();
+    for ( ; i < m_distributedNodes.size(); ++i)
+        m_distributedNodes.at(i)->lazyReattachIfAttached();
 
-    for ( ; j < distribution.size(); ++j)
-        distribution.at(j)->lazyReattachIfAttached();
+    for ( ; j < distributedNodes.size(); ++j)
+        distributedNodes.at(j)->lazyReattachIfAttached();
 
-    m_distribution.swap(distribution);
-    m_distribution.shrinkToFit();
+    m_distributedNodes.swap(distributedNodes);
+#if ENABLE(OILPAN)
+    // Deallocate a Vector and a HashMap explicitly in order that Oilpan can
+    // recycle them without GC.
+    distributedNodes.clear();
+#endif
+    m_distributedNodes.shrinkToFit();
 }
 
 void InsertionPoint::attach(const AttachContext& context)
 {
     // We need to attach the distribution here so that they're inserted in the right order
-    // otherwise the n^2 protection inside RenderTreeBuilder will cause them to be
+    // otherwise the n^2 protection inside LayoutTreeBuilder will cause them to be
     // inserted in the wrong place later. This also lets distributed nodes benefit from
     // the n^2 protection.
-    for (size_t i = 0; i < m_distribution.size(); ++i) {
-        if (m_distribution.at(i)->needsAttach())
-            m_distribution.at(i)->attach(context);
+    for (size_t i = 0; i < m_distributedNodes.size(); ++i) {
+        if (m_distributedNodes.at(i)->needsAttach())
+            m_distributedNodes.at(i)->attach(context);
     }
 
     HTMLElement::attach(context);
@@ -112,8 +117,8 @@ void InsertionPoint::attach(const AttachContext& context)
 
 void InsertionPoint::detach(const AttachContext& context)
 {
-    for (size_t i = 0; i < m_distribution.size(); ++i)
-        m_distribution.at(i)->lazyReattachIfAttached();
+    for (size_t i = 0; i < m_distributedNodes.size(); ++i)
+        m_distributedNodes.at(i)->lazyReattachIfAttached();
 
     HTMLElement::detach(context);
 }
@@ -122,8 +127,8 @@ void InsertionPoint::willRecalcStyle(StyleRecalcChange change)
 {
     if (change < Inherit && styleChangeType() < SubtreeStyleChange)
         return;
-    for (size_t i = 0; i < m_distribution.size(); ++i)
-        m_distribution.at(i)->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::PropagateInheritChangeToDistributedNodes));
+    for (size_t i = 0; i < m_distributedNodes.size(); ++i)
+        m_distributedNodes.at(i)->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::PropagateInheritChangeToDistributedNodes));
 }
 
 bool InsertionPoint::shouldUseFallbackElements() const
@@ -149,7 +154,7 @@ bool InsertionPoint::isActive() const
         return true;
 
     // Slow path only when there are more than one shadow elements in a shadow tree. That should be a rare case.
-    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& insertionPoints = shadowRoot->descendantInsertionPoints();
+    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>>& insertionPoints = shadowRoot->descendantInsertionPoints();
     for (size_t i = 0; i < insertionPoints.size(); ++i) {
         InsertionPoint* point = insertionPoints[i].get();
         if (isHTMLShadowElement(*point))
@@ -170,19 +175,19 @@ bool InsertionPoint::isContentInsertionPoint() const
 
 PassRefPtrWillBeRawPtr<StaticNodeList> InsertionPoint::getDistributedNodes()
 {
-    document().updateDistributionForNodeIfNeeded(this);
+    updateDistribution();
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > nodes;
-    nodes.reserveInitialCapacity(m_distribution.size());
-    for (size_t i = 0; i < m_distribution.size(); ++i)
-        nodes.uncheckedAppend(m_distribution.at(i));
+    WillBeHeapVector<RefPtrWillBeMember<Node>> nodes;
+    nodes.reserveInitialCapacity(m_distributedNodes.size());
+    for (size_t i = 0; i < m_distributedNodes.size(); ++i)
+        nodes.uncheckedAppend(m_distributedNodes.at(i));
 
     return StaticNodeList::adopt(nodes);
 }
 
-bool InsertionPoint::rendererIsNeeded(const RenderStyle& style)
+bool InsertionPoint::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    return !isActive() && HTMLElement::rendererIsNeeded(style);
+    return !isActive() && HTMLElement::layoutObjectIsNeeded(style);
 }
 
 void InsertionPoint::childrenChanged(const ChildrenChange& change)
@@ -242,9 +247,9 @@ void InsertionPoint::removedFrom(ContainerNode* insertionPoint)
     HTMLElement::removedFrom(insertionPoint);
 }
 
-void InsertionPoint::trace(Visitor* visitor)
+DEFINE_TRACE(InsertionPoint)
 {
-    visitor->trace(m_distribution);
+    visitor->trace(m_distributedNodes);
     HTMLElement::trace(visitor);
 }
 

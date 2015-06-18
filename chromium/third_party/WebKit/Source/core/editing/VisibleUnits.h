@@ -26,39 +26,43 @@
 #ifndef VisibleUnits_h
 #define VisibleUnits_h
 
+#include "core/CoreExport.h"
 #include "core/editing/EditingBoundary.h"
 #include "platform/text/TextDirection.h"
 
 namespace blink {
 
 class LayoutRect;
+class LayoutUnit;
 class PositionWithAffinity;
-class RenderObject;
+class LayoutObject;
 class Node;
 class VisiblePosition;
+class IntPoint;
+class LocalFrame;
 
 enum EWordSide { RightWordIfOnBoundary = false, LeftWordIfOnBoundary = true };
 
 // words
-VisiblePosition startOfWord(const VisiblePosition &, EWordSide = RightWordIfOnBoundary);
-VisiblePosition endOfWord(const VisiblePosition &, EWordSide = RightWordIfOnBoundary);
+CORE_EXPORT VisiblePosition startOfWord(const VisiblePosition &, EWordSide = RightWordIfOnBoundary);
+CORE_EXPORT VisiblePosition endOfWord(const VisiblePosition &, EWordSide = RightWordIfOnBoundary);
 VisiblePosition previousWordPosition(const VisiblePosition &);
 VisiblePosition nextWordPosition(const VisiblePosition &);
 VisiblePosition rightWordPosition(const VisiblePosition&, bool skipsSpaceWhenMovingRight);
 VisiblePosition leftWordPosition(const VisiblePosition&, bool skipsSpaceWhenMovingRight);
 
 // sentences
-VisiblePosition startOfSentence(const VisiblePosition &);
-VisiblePosition endOfSentence(const VisiblePosition &);
+CORE_EXPORT VisiblePosition startOfSentence(const VisiblePosition &);
+CORE_EXPORT VisiblePosition endOfSentence(const VisiblePosition &);
 VisiblePosition previousSentencePosition(const VisiblePosition &);
 VisiblePosition nextSentencePosition(const VisiblePosition &);
 
 // lines
 VisiblePosition startOfLine(const VisiblePosition &);
 VisiblePosition endOfLine(const VisiblePosition &);
-VisiblePosition previousLinePosition(const VisiblePosition&, int lineDirectionPoint, EditableType = ContentIsEditable);
-VisiblePosition nextLinePosition(const VisiblePosition&, int lineDirectionPoint, EditableType = ContentIsEditable);
-bool inSameLine(const VisiblePosition &, const VisiblePosition &);
+CORE_EXPORT VisiblePosition previousLinePosition(const VisiblePosition&, LayoutUnit lineDirectionPoint, EditableType = ContentIsEditable);
+CORE_EXPORT VisiblePosition nextLinePosition(const VisiblePosition&, LayoutUnit lineDirectionPoint, EditableType = ContentIsEditable);
+CORE_EXPORT bool inSameLine(const VisiblePosition &, const VisiblePosition &);
 bool isStartOfLine(const VisiblePosition &);
 bool isEndOfLine(const VisiblePosition &);
 VisiblePosition logicalStartOfLine(const VisiblePosition &);
@@ -71,8 +75,8 @@ VisiblePosition rightBoundaryOfLine(const VisiblePosition&, TextDirection);
 VisiblePosition startOfParagraph(const VisiblePosition&, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 VisiblePosition endOfParagraph(const VisiblePosition&, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 VisiblePosition startOfNextParagraph(const VisiblePosition&);
-VisiblePosition previousParagraphPosition(const VisiblePosition &, int x);
-VisiblePosition nextParagraphPosition(const VisiblePosition &, int x);
+VisiblePosition previousParagraphPosition(const VisiblePosition &, LayoutUnit x);
+VisiblePosition nextParagraphPosition(const VisiblePosition &, LayoutUnit x);
 bool isStartOfParagraph(const VisiblePosition &, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 bool isEndOfParagraph(const VisiblePosition &, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 bool inSameParagraph(const VisiblePosition &, const VisiblePosition &, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
@@ -97,8 +101,12 @@ VisiblePosition startOfEditableContent(const VisiblePosition&);
 VisiblePosition endOfEditableContent(const VisiblePosition&);
 bool isEndOfEditableOrNonEditableContent(const VisiblePosition&);
 
-// Rect is local to the returned renderer
-LayoutRect localCaretRectOfPosition(const PositionWithAffinity&, RenderObject*&);
+// Rect is local to the returned layoutObject
+LayoutRect localCaretRectOfPosition(const PositionWithAffinity&, LayoutObject*&);
+
+// Returns a hit-tested VisiblePosition for the given point in contents-space
+// coordinates.
+CORE_EXPORT VisiblePosition visiblePositionForContentsPoint(const IntPoint&, LocalFrame*);
 
 } // namespace blink
 

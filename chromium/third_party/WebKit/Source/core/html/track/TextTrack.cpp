@@ -36,6 +36,7 @@
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/track/CueTimeline.h"
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/TextTrackList.h"
 #include "core/html/track/vtt/VTTRegion.h"
@@ -125,7 +126,7 @@ TextTrack::~TextTrack()
 #endif
 }
 
-bool TextTrack::isValidKindKeyword(const AtomicString& value)
+bool TextTrack::isValidKindKeyword(const String& value)
 {
     if (value == subtitlesKeyword())
         return true;
@@ -143,8 +144,8 @@ bool TextTrack::isValidKindKeyword(const AtomicString& value)
 
 void TextTrack::setTrackList(TextTrackList* trackList)
 {
-    if (!trackList && mediaElement() && m_cues)
-        mediaElement()->textTrackRemoveCues(this, m_cues.get());
+    if (!trackList && cueTimeline() && m_cues)
+        cueTimeline()->removeCues(this, m_cues.get());
 
     m_trackList = trackList;
     invalidateTrackIndex();
@@ -155,8 +156,12 @@ void TextTrack::setKind(const AtomicString& newKind)
     AtomicString oldKind = kind();
     TrackBase::setKind(newKind);
 
-    if (mediaElement() && oldKind != kind())
-        mediaElement()->textTrackKindChanged(this);
+    // If kind changes from visual to non-visual and mode is 'showing', then force mode to 'hidden'.
+    // FIXME: This is not per spec. crbug.com/460923
+    if (oldKind != kind() && mode() == showingKeyword()) {
+        if (kind() != captionsKeyword() && kind() != subtitlesKeyword())
+            setMode(hiddenKeyword());
+    }
 }
 
 void TextTrack::setMode(const AtomicString& mode)
@@ -168,16 +173,21 @@ void TextTrack::setMode(const AtomicString& mode)
     if (m_mode == mode)
         return;
 
-    // If mode changes to disabled, remove this track's cues from the client
-    // because they will no longer be accessible from the cues() function.
-    if (mode == disabledKeyword() && mediaElement() && m_cues)
-        mediaElement()->textTrackRemoveCues(this, m_cues.get());
-
-    if (mode != showingKeyword() && m_cues)
-        for (size_t i = 0; i < m_cues->length(); ++i)
-            m_cues->item(i)->removeDisplayTree();
+    if (m_cues && cueTimeline()) {
+        // If mode changes to disabled, remove this track's cues from the client
+        // because they will no longer be accessible from the cues() function.
+        if (mode == disabledKeyword())
+            cueTimeline()->removeCues(this, m_cues.get());
+        else if (mode != showingKeyword())
+            cueTimeline()->hideCues(this, m_cues.get());
+    }
 
     m_mode = mode;
+
+    if (mode != disabledKeyword() && readinessState() == Loaded) {
+        if (m_cues && cueTimeline())
+            cueTimeline()->addCues(this, m_cues.get());
+    }
 
     if (mediaElement())
         mediaElement()->textTrackModeChanged(this);
@@ -200,8 +210,8 @@ void TextTrack::removeAllCues()
     if (!m_cues)
         return;
 
-    if (mediaElement())
-        mediaElement()->textTrackRemoveCues(this, m_cues.get());
+    if (cueTimeline())
+        cueTimeline()->removeCues(this, m_cues.get());
 
     for (size_t i = 0; i < m_cues->length(); ++i)
         m_cues->item(i)->setTrack(0);
@@ -209,7 +219,20 @@ void TextTrack::removeAllCues()
     m_cues = nullptr;
 }
 
-TextTrackCueList* TextTrack::activeCues() const
+void TextTrack::addListOfCues(WillBeHeapVector<RefPtrWillBeMember<TextTrackCue>>& listOfNewCues)
+{
+    TextTrackCueList* cues = ensureTextTrackCueList();
+
+    for (auto& newCue : listOfNewCues) {
+        newCue->setTrack(this);
+        cues->add(newCue.release());
+    }
+
+    if (cueTimeline() && mode() != disabledKeyword())
+        cueTimeline()->addCues(this, cues);
+}
+
+TextTrackCueList* TextTrack::activeCues()
 {
     // 4.8.10.12.5 If the text track mode ... is not the text track disabled mode,
     // then the activeCues attribute must return a live TextTrackCueList object ...
@@ -217,46 +240,49 @@ TextTrackCueList* TextTrack::activeCues() const
     // order. Otherwise, it must return null. When an object is returned, the
     // same object must be returned each time.
     // http://www.whatwg.org/specs/web-apps/current-work/#dom-texttrack-activecues
-    if (m_cues && m_mode != disabledKeyword())
-        return m_cues->activeCues();
-    return nullptr;
+    if (!m_cues || m_mode == disabledKeyword())
+        return nullptr;
+
+    if (!m_activeCues)
+        m_activeCues = TextTrackCueList::create();
+
+    m_cues->collectActiveCues(*m_activeCues);
+    return m_activeCues.get();
 }
 
 void TextTrack::addCue(PassRefPtrWillBeRawPtr<TextTrackCue> prpCue)
 {
-    if (!prpCue)
-        return;
-
+    ASSERT(prpCue);
     RefPtrWillBeRawPtr<TextTrackCue> cue = prpCue;
 
     // TODO(93143): Add spec-compliant behavior for negative time values.
     if (std::isnan(cue->startTime()) || std::isnan(cue->endTime()) || cue->startTime() < 0 || cue->endTime() < 0)
         return;
 
-    // 4.8.10.12.5 Text track API
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-texttrack-addcue
 
     // The addCue(cue) method of TextTrack objects, when invoked, must run the following steps:
 
-    // 1. If the given cue is in a text track list of cues, then remove cue from that text track
-    // list of cues.
-    TextTrack* cueTrack = cue->track();
-    if (cueTrack && cueTrack != this)
+    // (Steps 1 and 2 - pertaining to association of rendering rules - are not implemented.)
+
+    // 3. If the given cue is in a text track list of cues, then remove cue
+    // from that text track list of cues.
+    if (TextTrack* cueTrack = cue->track())
         cueTrack->removeCue(cue.get(), ASSERT_NO_EXCEPTION);
 
-    // 2. Add cue to the method's TextTrack object's text track's text track list of cues.
+    // 4. Add cue to the method's TextTrack object's text track's text track list of cues.
     cue->setTrack(this);
     ensureTextTrackCueList()->add(cue);
 
-    if (mediaElement())
-        mediaElement()->textTrackAddCue(this, cue.get());
+    if (cueTimeline() && m_mode != disabledKeyword())
+        cueTimeline()->addCue(this, cue.get());
 }
 
 void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& exceptionState)
 {
-    if (!cue)
-        return;
+    ASSERT(cue);
 
-    // 4.8.10.12.5 Text track API
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-texttrack-removecue
 
     // The removeCue(cue) method of TextTrack objects, when invoked, must run the following steps:
 
@@ -267,15 +293,22 @@ void TextTrack::removeCue(TextTrackCue* cue, ExceptionState& exceptionState)
         return;
     }
 
+    // cue->track() == this implies that cue is in this track's list of cues,
+    // so this track should have a list of cues and the cue being removed
+    // should be in it.
+    ASSERT(m_cues);
+
     // 2. Remove cue from the method's TextTrack object's text track's text track list of cues.
-    if (!m_cues || !m_cues->remove(cue)) {
-        exceptionState.throwDOMException(InvalidStateError, "Failed to remove the specified cue.");
-        return;
-    }
+    bool wasRemoved = m_cues->remove(cue);
+    ASSERT_UNUSED(wasRemoved, wasRemoved);
+
+    // If the cue is active, a timeline needs to be available.
+    ASSERT(!cue->isActive() || cueTimeline());
 
     cue->setTrack(0);
-    if (mediaElement())
-        mediaElement()->textTrackRemoveCue(this, cue);
+
+    if (cueTimeline())
+        cueTimeline()->removeCue(this, cue);
 }
 
 VTTRegionList* TextTrack::ensureVTTRegionList()
@@ -351,24 +384,33 @@ void TextTrack::removeRegion(VTTRegion* region, ExceptionState &exceptionState)
 
 void TextTrack::cueWillChange(TextTrackCue* cue)
 {
-    if (!mediaElement())
-        return;
-
     // The cue may need to be repositioned in the media element's interval tree, may need to
     // be re-rendered, etc, so remove it before the modification...
-    mediaElement()->textTrackRemoveCue(this, cue);
+    if (cueTimeline())
+        cueTimeline()->removeCue(this, cue);
 }
 
 void TextTrack::cueDidChange(TextTrackCue* cue)
 {
-    if (!mediaElement())
-        return;
+    // This method is called through cue->track(), which should imply that this
+    // track has a list of cues.
+    ASSERT(m_cues && cue->track() == this);
 
     // Make sure the TextTrackCueList order is up-to-date.
-    ensureTextTrackCueList()->updateCueIndex(cue);
+    // FIXME: Only need to do this if the change was to any of the timestamps.
+    m_cues->updateCueIndex(cue);
 
-    // ... and add it back again.
-    mediaElement()->textTrackAddCue(this, cue);
+    // Since a call to cueDidChange is always preceded by a call to
+    // cueWillChange, the cue should no longer be active when we reach this
+    // point (since it was removed from the timeline in cueWillChange).
+    ASSERT(!cue->isActive());
+
+    if (m_mode == disabledKeyword())
+        return;
+
+    // ... and add it back again if the track is enabled.
+    if (cueTimeline())
+        cueTimeline()->addCue(this, cue);
 }
 
 int TextTrack::trackIndex()
@@ -432,14 +474,20 @@ HTMLMediaElement* TextTrack::mediaElement() const
     return m_trackList ? m_trackList->owner() : 0;
 }
 
+CueTimeline* TextTrack::cueTimeline() const
+{
+    return mediaElement() ? &mediaElement()->cueTimeline() : nullptr;
+}
+
 Node* TextTrack::owner() const
 {
     return mediaElement();
 }
 
-void TextTrack::trace(Visitor* visitor)
+DEFINE_TRACE(TextTrack)
 {
     visitor->trace(m_cues);
+    visitor->trace(m_activeCues);
     visitor->trace(m_regions);
     visitor->trace(m_trackList);
     TrackBase::trace(visitor);

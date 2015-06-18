@@ -12,7 +12,8 @@
 #include "media/cast/cast_defines.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/logging/simple_event_subscriber.h"
-#include "media/cast/net/pacing/mock_paced_packet_sender.h"
+#include "media/cast/net/cast_transport_sender_impl.h"
+#include "media/cast/net/mock_cast_transport_sender.h"
 #include "media/cast/net/rtcp/test_rtcp_packet_builder.h"
 #include "media/cast/receiver/frame_receiver.h"
 #include "media/cast/test/fake_single_thread_task_runner.h"
@@ -43,7 +44,7 @@ class FakeFrameClient {
 
   void DeliverEncodedFrame(scoped_ptr<EncodedFrame> frame) {
     SCOPED_TRACE(::testing::Message() << "num_called_ is " << num_called_);
-    ASSERT_FALSE(!frame)
+    ASSERT_TRUE(frame)
         << "If at shutdown: There were unsatisfied requests enqueued.";
     ASSERT_FALSE(expected_results_.empty());
     EXPECT_EQ(expected_results_.front().first, frame->frame_id);
@@ -79,7 +80,7 @@ class FrameReceiverTest : public ::testing::Test {
 
   ~FrameReceiverTest() override {}
 
-  void SetUp() override {
+  void SetUp() final {
     payload_.assign(kPacketSize, 0);
 
     // Always start with a key frame.
@@ -104,7 +105,7 @@ class FrameReceiverTest : public ::testing::Test {
     config_.rtp_max_delay_ms = kPlayoutDelayMillis;
     // Note: Frame rate must divide 1000 without remainder so the test code
     // doesn't have to account for rounding errors.
-    config_.max_frame_rate = 25;
+    config_.target_frame_rate = 25;
 
     receiver_.reset(new FrameReceiver(
         cast_environment_, config_, VIDEO_EVENT, &mock_transport_));
@@ -119,13 +120,13 @@ class FrameReceiverTest : public ::testing::Test {
   void FeedLipSyncInfoIntoReceiver() {
     const base::TimeTicks now = testing_clock_->NowTicks();
     const int64 rtp_timestamp = (now - start_time_) *
-        config_.frequency / base::TimeDelta::FromSeconds(1);
+        config_.rtp_timebase / base::TimeDelta::FromSeconds(1);
     CHECK_LE(0, rtp_timestamp);
     uint32 ntp_seconds;
     uint32 ntp_fraction;
     ConvertTimeTicksToNtp(now, &ntp_seconds, &ntp_fraction);
     TestRtcpPacketBuilder rtcp_packet;
-    rtcp_packet.AddSrWithNtp(config_.incoming_ssrc,
+    rtcp_packet.AddSrWithNtp(config_.sender_ssrc,
                              ntp_seconds, ntp_fraction,
                              static_cast<uint32>(rtp_timestamp));
     ASSERT_TRUE(receiver_->ProcessPacket(rtcp_packet.GetPacket().Pass()));
@@ -136,7 +137,7 @@ class FrameReceiverTest : public ::testing::Test {
   RtpCastHeader rtp_header_;
   base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
   base::TimeTicks start_time_;
-  MockPacedPacketSender mock_transport_;
+  MockCastTransportSender mock_transport_;
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   scoped_refptr<CastEnvironment> cast_environment_;
   FakeFrameClient frame_client_;
@@ -145,6 +146,7 @@ class FrameReceiverTest : public ::testing::Test {
   // must remain alive until after its destruction.
   scoped_ptr<FrameReceiver> receiver_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(FrameReceiverTest);
 };
 
@@ -171,8 +173,8 @@ TEST_F(FrameReceiverTest, ReceivesOneFrame) {
   SimpleEventSubscriber event_subscriber;
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber);
 
-  EXPECT_CALL(mock_transport_, SendRtcpPacket(_, _))
-      .WillRepeatedly(testing::Return(true));
+  EXPECT_CALL(mock_transport_, SendRtcpFromRtpReceiver(_, _, _, _, _, _, _))
+      .WillRepeatedly(testing::Return());
 
   FeedLipSyncInfoIntoReceiver();
   task_runner_->RunTasks();
@@ -212,13 +214,13 @@ TEST_F(FrameReceiverTest, ReceivesFramesSkippingWhenAppropriate) {
   SimpleEventSubscriber event_subscriber;
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber);
 
-  EXPECT_CALL(mock_transport_, SendRtcpPacket(_, _))
-      .WillRepeatedly(testing::Return(true));
+  EXPECT_CALL(mock_transport_, SendRtcpFromRtpReceiver(_, _, _, _, _, _, _))
+      .WillRepeatedly(testing::Return());
 
   const uint32 rtp_advance_per_frame =
-      config_.frequency / config_.max_frame_rate;
+      config_.rtp_timebase / config_.target_frame_rate;
   const base::TimeDelta time_advance_per_frame =
-      base::TimeDelta::FromSeconds(1) / config_.max_frame_rate;
+      base::TimeDelta::FromSeconds(1) / config_.target_frame_rate;
 
   // Feed and process lip sync in receiver.
   FeedLipSyncInfoIntoReceiver();
@@ -315,13 +317,13 @@ TEST_F(FrameReceiverTest, ReceivesFramesRefusingToSkipAny) {
   SimpleEventSubscriber event_subscriber;
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber);
 
-  EXPECT_CALL(mock_transport_, SendRtcpPacket(_, _))
-      .WillRepeatedly(testing::Return(true));
+  EXPECT_CALL(mock_transport_, SendRtcpFromRtpReceiver(_, _, _, _, _, _, _))
+      .WillRepeatedly(testing::Return());
 
   const uint32 rtp_advance_per_frame =
-      config_.frequency / config_.max_frame_rate;
+      config_.rtp_timebase / config_.target_frame_rate;
   const base::TimeDelta time_advance_per_frame =
-      base::TimeDelta::FromSeconds(1) / config_.max_frame_rate;
+      base::TimeDelta::FromSeconds(1) / config_.target_frame_rate;
 
   // Feed and process lip sync in receiver.
   FeedLipSyncInfoIntoReceiver();

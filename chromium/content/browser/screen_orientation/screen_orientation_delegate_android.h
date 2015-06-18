@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DELEGATE_H_
-#define CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DELEGATE_H_
+#ifndef CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DELEGATE_ANDROID_H_
+#define CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DELEGATE_ANDROID_H_
 
 #include <jni.h>
 
@@ -20,7 +20,7 @@ class WebContents;
 class ScreenOrientationDelegateAndroid : public ScreenOrientationDelegate {
  public:
   ScreenOrientationDelegateAndroid();
-  virtual ~ScreenOrientationDelegateAndroid();
+  ~ScreenOrientationDelegateAndroid() override;
 
   static bool Register(JNIEnv* env);
 
@@ -35,11 +35,11 @@ class ScreenOrientationDelegateAndroid : public ScreenOrientationDelegate {
   static void StopAccurateListening();
 
   // ScreenOrientationDelegate:
-  virtual bool FullScreenRequired(WebContents* web_contents) override;
-  virtual void Lock(
-      blink::WebScreenOrientationLockType lock_orientation) override;
-  virtual bool ScreenOrientationProviderSupported() override;
-  virtual void Unlock() override;
+  bool FullScreenRequired(WebContents* web_contents) override;
+  void Lock(WebContents* web_contents,
+            blink::WebScreenOrientationLockType lock_orientation) override;
+  bool ScreenOrientationProviderSupported() override;
+  void Unlock(WebContents* web_contents) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScreenOrientationDelegateAndroid);
@@ -47,4 +47,4 @@ class ScreenOrientationDelegateAndroid : public ScreenOrientationDelegate {
 
 } // namespace content
 
-#endif // CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DELEGATE_H_
+#endif  // CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DELEGATE_ANDROID_H_

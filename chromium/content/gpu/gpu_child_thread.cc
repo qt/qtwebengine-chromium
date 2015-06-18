@@ -44,13 +44,28 @@ bool GpuProcessLogMessageHandler(int severity,
   return false;
 }
 
+ChildThreadImpl::Options GetOptions() {
+  ChildThreadImpl::Options::Builder builder;
+
+#if defined(USE_OZONE)
+  IPC::MessageFilter* message_filter = ui::OzonePlatform::GetInstance()
+                                           ->GetGpuPlatformSupport()
+                                           ->GetMessageFilter();
+  if (message_filter)
+    builder.AddStartupFilter(message_filter);
+#endif
+
+  return builder.Build();
+}
+
 }  // namespace
 
 GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
                                bool dead_on_arrival,
                                const gpu::GPUInfo& gpu_info,
                                const DeferredMessages& deferred_messages)
-    : dead_on_arrival_(dead_on_arrival),
+    : ChildThreadImpl(GetOptions()),
+      dead_on_arrival_(dead_on_arrival),
       gpu_info_(gpu_info),
       deferred_messages_(deferred_messages),
       in_browser_process_(false) {
@@ -61,16 +76,19 @@ GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
   g_thread_safe_sender.Get() = thread_safe_sender();
 }
 
-GpuChildThread::GpuChildThread(const std::string& channel_id)
-    : ChildThread(Options(channel_id, false)),
+GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params)
+    : ChildThreadImpl(ChildThreadImpl::Options::Builder()
+                          .InBrowserProcess(params)
+                          .Build()),
       dead_on_arrival_(false),
       in_browser_process_(true) {
 #if defined(OS_WIN)
   target_services_ = NULL;
 #endif
-  DCHECK(
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU));
+  DCHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kSingleProcess) ||
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kInProcessGPU));
 #if !defined(OS_ANDROID)
   // For single process and in-process GPU mode, we need to load and
   // initialize the GL implementation and locate the GL entry points here.
@@ -86,7 +104,7 @@ GpuChildThread::~GpuChildThread() {
 }
 
 void GpuChildThread::Shutdown() {
-  ChildThread::Shutdown();
+  ChildThreadImpl::Shutdown();
   logging::SetLogMessageHandler(NULL);
 }
 
@@ -99,7 +117,7 @@ bool GpuChildThread::Send(IPC::Message* msg) {
   // process. This could result in deadlock.
   DCHECK(!msg->is_sync());
 
-  return ChildThread::Send(msg);
+  return ChildThreadImpl::Send(msg);
 }
 
 bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
@@ -148,9 +166,8 @@ void GpuChildThread::OnInitialize() {
   }
 
 #if defined(OS_ANDROID)
-  base::PlatformThread::SetThreadPriority(
-      base::PlatformThread::CurrentHandle(),
-      base::kThreadPriority_Display);
+  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
+                                          base::ThreadPriority::DISPLAY);
 #endif
 
   // We don't need to pipe log messages if we are running the GPU thread in
@@ -185,7 +202,7 @@ void GpuChildThread::OnCollectGraphicsInfo() {
 #if defined(OS_WIN)
   // GPU full info collection should only happen on un-sandboxed GPU process
   // or single process/in-process gpu mode on Windows.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   DCHECK(command_line->HasSwitch(switches::kDisableGpuSandbox) ||
          in_browser_process_);
 #endif  // OS_WIN
@@ -198,7 +215,7 @@ void GpuChildThread::OnCollectGraphicsInfo() {
       // TODO(piman): can we signal overall failure?
       break;
     case gpu::kCollectInfoNonFatalFailure:
-      VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+      DVLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
       break;
     case gpu::kCollectInfoNone:
       NOTREACHED();
@@ -235,20 +252,20 @@ void GpuChildThread::OnGetVideoMemoryUsageStats() {
 }
 
 void GpuChildThread::OnClean() {
-  VLOG(1) << "GPU: Removing all contexts";
+  DVLOG(1) << "GPU: Removing all contexts";
   if (gpu_channel_manager_)
     gpu_channel_manager_->LoseAllContexts();
 }
 
 void GpuChildThread::OnCrash() {
-  VLOG(1) << "GPU: Simulating GPU crash";
+  DVLOG(1) << "GPU: Simulating GPU crash";
   // Good bye, cruel world.
   volatile int* it_s_the_end_of_the_world_as_we_know_it = NULL;
   *it_s_the_end_of_the_world_as_we_know_it = 0xdead;
 }
 
 void GpuChildThread::OnHang() {
-  VLOG(1) << "GPU: Simulating GPU hang";
+  DVLOG(1) << "GPU: Simulating GPU hang";
   for (;;) {
     // Do not sleep here. The GPU watchdog timer tracks the amount of user
     // time this thread is using and it doesn't use much while calling Sleep.
@@ -256,7 +273,7 @@ void GpuChildThread::OnHang() {
 }
 
 void GpuChildThread::OnDisableWatchdog() {
-  VLOG(1) << "GPU: Disabling watchdog thread";
+  DVLOG(1) << "GPU: Disabling watchdog thread";
   if (watchdog_thread_.get()) {
     // Disarm the watchdog before shutting down the message loop. This prevents
     // the future posting of tasks to the message loop.
@@ -268,7 +285,7 @@ void GpuChildThread::OnDisableWatchdog() {
 }
 
 void GpuChildThread::OnGpuSwitched() {
-  VLOG(1) << "GPU: GPU has switched";
+  DVLOG(1) << "GPU: GPU has switched";
   // Notify observers in the GPU process.
   ui::GpuSwitchingManager::GetInstance()->NotifyGpuSwitched();
 }

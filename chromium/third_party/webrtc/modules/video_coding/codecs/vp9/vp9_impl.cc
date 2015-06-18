@@ -21,11 +21,24 @@
 #include "vpx/vp8cx.h"
 #include "vpx/vp8dx.h"
 
+#include "webrtc/base/bind.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/common.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
+
+namespace {
+
+// VP9DecoderImpl::ReturnFrame helper function used with WrappedI420Buffer.
+static void WrappedI420BufferNoLongerUsedCb(
+    webrtc::Vp9FrameBufferPool::Vp9FrameBuffer* img_buffer) {
+  img_buffer->Release();
+}
+
+}  // anonymous namespace
 
 namespace webrtc {
 
@@ -103,7 +116,7 @@ int VP9EncoderImpl::SetRates(uint32_t new_bitrate_kbit,
 
 int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
                                int number_of_cores,
-                               uint32_t /*max_payload_size*/) {
+                               size_t /*max_payload_size*/) {
   if (inst == NULL) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
@@ -167,7 +180,7 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   config_->rc_end_usage = VPX_CBR;
   config_->g_pass = VPX_RC_ONE_PASS;
   config_->rc_min_quantizer = 2;
-  config_->rc_max_quantizer = 56;
+  config_->rc_max_quantizer = 52;
   config_->rc_undershoot_pct = 50;
   config_->rc_overshoot_pct = 50;
   config_->rc_buf_initial_sz = 500;
@@ -181,16 +194,36 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   } else {
     config_->kf_mode = VPX_KF_DISABLED;
   }
+
+  // Determine number of threads based on the image size and #cores.
+  config_->g_threads = NumberOfThreads(config_->g_w,
+                                       config_->g_h,
+                                       number_of_cores);
   return InitAndSetControlSettings(inst);
+}
+
+int VP9EncoderImpl::NumberOfThreads(int width,
+                                    int height,
+                                    int number_of_cores) {
+  // Keep the number of encoder threads equal to the possible number of column
+  // tiles, which is (1, 2, 4, 8). See comments below for VP9E_SET_TILE_COLUMNS.
+  if (width * height >= 1280 * 720 && number_of_cores > 4) {
+    return 4;
+  } else if (width * height >= 640 * 480 && number_of_cores > 2) {
+    return 2;
+  } else {
+    // 1 thread less than VGA.
+    return 1;
+  }
 }
 
 int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   if (vpx_codec_enc_init(encoder_, vpx_codec_vp9_cx(), config_, 0)) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
-  // Only positive speeds, currently: 0 - 7.
-  // O means slowest/best quality, 7 means fastest/lower quality.
-  cpu_speed_ = 6;
+  // Only positive speeds, currently: 0 - 8.
+  // O means slowest/best quality, 8 means fastest/lower quality.
+  cpu_speed_ = 7;
   // Note: some of these codec controls still use "VP8" in the control name.
   // TODO(marpan): Update this in the next/future libvpx version.
   vpx_codec_control(encoder_, VP8E_SET_CPUUSED, cpu_speed_);
@@ -198,11 +231,17 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
                     rc_max_intra_target_);
   vpx_codec_control(encoder_, VP9E_SET_AQ_MODE,
                     inst->codecSpecific.VP9.adaptiveQpMode ? 3 : 0);
-  // TODO(marpan): Enable in future libvpx roll: waiting for SSE2 optimization.
-// #if !defined(WEBRTC_ARCH_ARM)
-  // vpx_codec_control(encoder_, VP9E_SET_NOISE_SENSITIVITY,
-  //                   inst->codecSpecific.VP9.denoisingOn ? 1 : 0);
-// #endif
+  // Control function to set the number of column tiles in encoding a frame, in
+  // log2 unit: e.g., 0 = 1 tile column, 1 = 2 tile columns, 2 = 4 tile columns.
+  // The number tile columns will be capped by the encoder based on image size
+  // (minimum width of tile column is 256 pixels, maximum is 4096).
+  vpx_codec_control(encoder_, VP9E_SET_TILE_COLUMNS, (config_->g_threads >> 1));
+#if !defined(WEBRTC_ARCH_ARM)
+  // Note denoiser is still off by default until further testing/optimization,
+  // i.e., codecSpecific.VP9.denoisingOn == 0.
+  vpx_codec_control(encoder_, VP9E_SET_NOISE_SENSITIVITY,
+                    inst->codecSpecific.VP9.denoisingOn ? 1 : 0);
+#endif
   inited_ = true;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -239,6 +278,8 @@ int VP9EncoderImpl::Encode(const I420VideoFrame& input_image,
   if (frame_types && frame_types->size() > 0) {
     frame_type = (*frame_types)[0];
   }
+  DCHECK_EQ(input_image.width(), static_cast<int>(raw_->d_w));
+  DCHECK_EQ(input_image.height(), static_cast<int>(raw_->d_h));
   // Image in vpx_image_t format.
   // Input image is const. VPX's raw image is not defined as const.
   raw_->planes[VPX_PLANE_Y] = const_cast<uint8_t*>(input_image.buffer(kYPlane));
@@ -334,7 +375,7 @@ int VP9EncoderImpl::GetEncodedPartitions(const I420VideoFrame& input_image) {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int VP9EncoderImpl::SetChannelParameters(uint32_t packet_loss, int rtt) {
+int VP9EncoderImpl::SetChannelParameters(uint32_t packet_loss, int64_t rtt) {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
@@ -359,6 +400,14 @@ VP9DecoderImpl::VP9DecoderImpl()
 VP9DecoderImpl::~VP9DecoderImpl() {
   inited_ = true;  // in order to do the actual release
   Release();
+  int num_buffers_in_use = frame_buffer_pool_.GetNumBuffersInUse();
+  if (num_buffers_in_use > 0) {
+    // The frame buffers are reference counted and frames are exposed after
+    // decoding. There may be valid usage cases where previous frames are still
+    // referenced after ~VP9DecoderImpl that is not a leak.
+    LOG(LS_INFO) << num_buffers_in_use << " Vp9FrameBuffers are still "
+                 << "referenced during ~VP9DecoderImpl.";
+  }
 }
 
 int VP9DecoderImpl::Reset() {
@@ -378,7 +427,7 @@ int VP9DecoderImpl::InitDecode(const VideoCodec* inst, int number_of_cores) {
     return ret_val;
   }
   if (decoder_ == NULL) {
-    decoder_ = new vpx_dec_ctx_t;
+    decoder_ = new vpx_codec_ctx_t;
   }
   vpx_codec_dec_cfg_t  cfg;
   // Setting number of threads to a constant value (1)
@@ -392,6 +441,11 @@ int VP9DecoderImpl::InitDecode(const VideoCodec* inst, int number_of_cores) {
     // Save VideoCodec instance for later; mainly for duplicating the decoder.
     codec_ = *inst;
   }
+
+  if (!frame_buffer_pool_.InitializeVpxUsePool(decoder_)) {
+    return WEBRTC_VIDEO_CODEC_MEMORY;
+  }
+
   inited_ = true;
   // Always start with a complete key frame.
   key_frame_required_ = true;
@@ -426,13 +480,18 @@ int VP9DecoderImpl::Decode(const EncodedImage& input_image,
   if (input_image._length == 0) {
     buffer = NULL;  // Triggers full frame concealment.
   }
+  // During decode libvpx may get and release buffers from |frame_buffer_pool_|.
+  // In practice libvpx keeps a few (~3-4) buffers alive at a time.
   if (vpx_codec_decode(decoder_,
                        buffer,
-                       input_image._length,
+                       static_cast<unsigned int>(input_image._length),
                        0,
                        VPX_DL_REALTIME)) {
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
+  // |img->fb_priv| contains the image data, a reference counted Vp9FrameBuffer.
+  // It may be released by libvpx during future vpx_codec_decode or
+  // vpx_codec_destroy calls.
   img = vpx_codec_get_frame(decoder_, &iter);
   int ret = ReturnFrame(img, input_image._timeStamp);
   if (ret != 0) {
@@ -446,19 +505,32 @@ int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
     // Decoder OK and NULL image => No show frame.
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
   }
-  int half_height = (img->d_h + 1) / 2;
-  int size_y = img->stride[VPX_PLANE_Y] * img->d_h;
-  int size_u = img->stride[VPX_PLANE_U] * half_height;
-  int size_v = img->stride[VPX_PLANE_V] * half_height;
-  decoded_image_.CreateFrame(size_y, img->planes[VPX_PLANE_Y],
-                             size_u, img->planes[VPX_PLANE_U],
-                             size_v, img->planes[VPX_PLANE_V],
-                             img->d_w, img->d_h,
-                             img->stride[VPX_PLANE_Y],
-                             img->stride[VPX_PLANE_U],
-                             img->stride[VPX_PLANE_V]);
-  decoded_image_.set_timestamp(timestamp);
-  int ret = decode_complete_callback_->Decoded(decoded_image_);
+
+  // This buffer contains all of |img|'s image data, a reference counted
+  // Vp9FrameBuffer. Performing AddRef/Release ensures it is not released and
+  // recycled during use (libvpx is done with the buffers after a few
+  // vpx_codec_decode calls or vpx_codec_destroy).
+  Vp9FrameBufferPool::Vp9FrameBuffer* img_buffer =
+      static_cast<Vp9FrameBufferPool::Vp9FrameBuffer*>(img->fb_priv);
+  img_buffer->AddRef();
+  // The buffer can be used directly by the I420VideoFrame (without copy) by
+  // using a WrappedI420Buffer.
+  rtc::scoped_refptr<WrappedI420Buffer> img_wrapped_buffer(
+      new rtc::RefCountedObject<webrtc::WrappedI420Buffer>(
+          img->d_w, img->d_h,
+          img->d_w, img->d_h,
+          img->planes[VPX_PLANE_Y], img->stride[VPX_PLANE_Y],
+          img->planes[VPX_PLANE_U], img->stride[VPX_PLANE_U],
+          img->planes[VPX_PLANE_V], img->stride[VPX_PLANE_V],
+          // WrappedI420Buffer's mechanism for allowing the release of its frame
+          // buffer is through a callback function. This is where we should
+          // release |img_buffer|.
+          rtc::Bind(&WrappedI420BufferNoLongerUsedCb, img_buffer)));
+
+  I420VideoFrame decoded_image;
+  decoded_image.set_video_frame_buffer(img_wrapped_buffer);
+  decoded_image.set_timestamp(timestamp);
+  int ret = decode_complete_callback_->Decoded(decoded_image);
   if (ret != 0)
     return ret;
   return WEBRTC_VIDEO_CODEC_OK;
@@ -472,12 +544,18 @@ int VP9DecoderImpl::RegisterDecodeCompleteCallback(
 
 int VP9DecoderImpl::Release() {
   if (decoder_ != NULL) {
+    // When a codec is destroyed libvpx will release any buffers of
+    // |frame_buffer_pool_| it is currently using.
     if (vpx_codec_destroy(decoder_)) {
       return WEBRTC_VIDEO_CODEC_MEMORY;
     }
     delete decoder_;
     decoder_ = NULL;
   }
+  // Releases buffers from the pool. Any buffers not in use are deleted. Buffers
+  // still referenced externally are deleted once fully released, not returning
+  // to the pool.
+  frame_buffer_pool_.ClearPool();
   inited_ = false;
   return WEBRTC_VIDEO_CODEC_OK;
 }

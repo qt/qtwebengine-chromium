@@ -49,9 +49,6 @@ public:
     DashingGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     SkString onShortName() {
         return SkString("dashing");
@@ -136,9 +133,6 @@ public:
     Dashing2GM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     SkString onShortName() {
         return SkString("dashing2");
@@ -198,9 +192,6 @@ public:
     Dashing3GM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     SkString onShortName() {
         return SkString("dashing3");
@@ -331,9 +322,6 @@ public:
     Dashing4GM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
     SkString onShortName() {
         return SkString("dashing4");
@@ -414,9 +402,10 @@ public:
     Dashing5GM(bool doAA) : fDoAA(doAA) {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE { return kAsBench_Flag | kSkipTiled_Flag; }
 
-    virtual SkString onShortName() SK_OVERRIDE { 
+    bool runAsBench() const override { return true; }
+
+    SkString onShortName() override {
         if (fDoAA) {
             return SkString("dashing5_aa");
         } else {
@@ -424,9 +413,9 @@ protected:
         }
     }
 
-    virtual SkISize onISize() SK_OVERRIDE { return SkISize::Make(400, 200); }
+    SkISize onISize() override { return SkISize::Make(400, 200); }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         static const int kOn = 4;
         static const int kOff = 4;
         static const int kIntervalLength = kOn + kOff;

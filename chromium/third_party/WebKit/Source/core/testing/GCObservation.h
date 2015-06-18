@@ -43,7 +43,7 @@ namespace blink {
 class GCObservation final : public GarbageCollectedFinalized<GCObservation>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static GCObservation* create(v8::Handle<v8::Value> observedValue)
+    static GCObservation* create(v8::Local<v8::Value> observedValue)
     {
         return new GCObservation(observedValue);
     }
@@ -55,10 +55,10 @@ public:
     bool wasCollected() const { return m_collected; }
     void setWasCollected();
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
-    explicit GCObservation(v8::Handle<v8::Value>);
+    explicit GCObservation(v8::Local<v8::Value>);
 
     ScopedPersistent<v8::Value> m_observed;
     bool m_collected;

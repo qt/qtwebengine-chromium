@@ -5,29 +5,31 @@
 #include "config.h"
 #include "core/paint/SVGTextPainter.h"
 
+#include "core/layout/svg/LayoutSVGText.h"
 #include "core/paint/BlockPainter.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/svg/RenderSVGText.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "core/paint/PaintInfo.h"
+#include "core/paint/TransformRecorder.h"
 
 namespace blink {
 
-void SVGTextPainter::paint(PaintInfo& paintInfo)
+void SVGTextPainter::paint(const PaintInfo& paintInfo)
 {
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection)
         return;
 
     PaintInfo blockInfo(paintInfo);
-    GraphicsContextStateSaver stateSaver(*blockInfo.context, false);
+    TransformRecorder transformRecorder(*blockInfo.context, m_layoutSVGText, m_layoutSVGText.localToParentTransform());
 
-    blockInfo.applyTransform(m_renderSVGText.localToParentTransform(), &stateSaver);
+    // When transitioning from SVG to block painters we need to keep the PaintInfo rect up-to-date
+    // because it can be used for clipping.
+    m_layoutSVGText.updatePaintInfoRect(blockInfo.rect);
 
-    BlockPainter(m_renderSVGText).paint(blockInfo, LayoutPoint());
+    BlockPainter(m_layoutSVGText).paint(blockInfo, LayoutPoint());
 
     // Paint the outlines, if any
     if (paintInfo.phase == PaintPhaseForeground) {
         blockInfo.phase = PaintPhaseSelfOutline;
-        BlockPainter(m_renderSVGText).paint(blockInfo, LayoutPoint());
+        BlockPainter(m_layoutSVGText).paint(blockInfo, LayoutPoint());
     }
 }
 

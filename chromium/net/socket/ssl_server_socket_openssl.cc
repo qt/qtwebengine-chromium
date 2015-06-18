@@ -9,11 +9,13 @@
 
 #include "base/callback_helpers.h"
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "crypto/openssl_util.h"
 #include "crypto/rsa_private_key.h"
 #include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
 #include "net/ssl/openssl_ssl_util.h"
+#include "net/ssl/scoped_openssl_types.h"
 
 #define GotoState(s) next_handshake_state_ = s
 
@@ -244,6 +246,11 @@ NextProto SSLServerSocketOpenSSL::GetNegotiatedProtocol() const {
 bool SSLServerSocketOpenSSL::GetSSLInfo(SSLInfo* ssl_info) {
   NOTIMPLEMENTED();
   return false;
+}
+
+void SSLServerSocketOpenSSL::GetConnectionAttempts(
+    ConnectionAttempts* out) const {
+  out->clear();
 }
 
 void SSLServerSocketOpenSSL::OnSendComplete(int result) {
@@ -606,9 +613,7 @@ int SSLServerSocketOpenSSL::Init() {
 
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
-  crypto::ScopedOpenSSL<SSL_CTX, SSL_CTX_free>::Type ssl_ctx(
-      // It support SSLv2, SSLv3, and TLSv1.
-      SSL_CTX_new(SSLv23_server_method()));
+  ScopedSSL_CTX ssl_ctx(SSL_CTX_new(SSLv23_server_method()));
   ssl_ = SSL_new(ssl_ctx.get());
   if (!ssl_)
     return ERR_UNEXPECTED;
@@ -638,8 +643,7 @@ int SSLServerSocketOpenSSL::Init() {
   const unsigned char* der_string_array =
       reinterpret_cast<const unsigned char*>(der_string.data());
 
-  crypto::ScopedOpenSSL<X509, X509_free>::Type x509(
-      d2i_X509(NULL, &der_string_array, der_string.length()));
+  ScopedX509 x509(d2i_X509(NULL, &der_string_array, der_string.length()));
   if (!x509.get())
     return ERR_UNEXPECTED;
 
@@ -656,24 +660,14 @@ int SSLServerSocketOpenSSL::Init() {
     return ERR_UNEXPECTED;
   }
 
+  DCHECK_LT(SSL3_VERSION, ssl_config_.version_min);
+  DCHECK_LT(SSL3_VERSION, ssl_config_.version_max);
+  SSL_set_min_version(ssl_, ssl_config_.version_min);
+  SSL_set_max_version(ssl_, ssl_config_.version_max);
+
   // OpenSSL defaults some options to on, others to off. To avoid ambiguity,
   // set everything we care about to an absolute value.
   SslSetClearMask options;
-  options.ConfigureFlag(SSL_OP_NO_SSLv2, true);
-  bool ssl3_enabled = (ssl_config_.version_min == SSL_PROTOCOL_VERSION_SSL3);
-  options.ConfigureFlag(SSL_OP_NO_SSLv3, !ssl3_enabled);
-  bool tls1_enabled = (ssl_config_.version_min <= SSL_PROTOCOL_VERSION_TLS1 &&
-                       ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1);
-  options.ConfigureFlag(SSL_OP_NO_TLSv1, !tls1_enabled);
-  bool tls1_1_enabled =
-      (ssl_config_.version_min <= SSL_PROTOCOL_VERSION_TLS1_1 &&
-       ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1_1);
-  options.ConfigureFlag(SSL_OP_NO_TLSv1_1, !tls1_1_enabled);
-  bool tls1_2_enabled =
-      (ssl_config_.version_min <= SSL_PROTOCOL_VERSION_TLS1_2 &&
-       ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1_2);
-  options.ConfigureFlag(SSL_OP_NO_TLSv1_2, !tls1_2_enabled);
-
   options.ConfigureFlag(SSL_OP_NO_COMPRESSION, true);
 
   SSL_set_options(ssl_, options.set_mask);
@@ -686,6 +680,48 @@ int SSLServerSocketOpenSSL::Init() {
 
   SSL_set_mode(ssl_, mode.set_mask);
   SSL_clear_mode(ssl_, mode.clear_mask);
+
+  // Removing ciphers by ID from OpenSSL is a bit involved as we must use the
+  // textual name with SSL_set_cipher_list because there is no public API to
+  // directly remove a cipher by ID.
+  STACK_OF(SSL_CIPHER)* ciphers = SSL_get_ciphers(ssl_);
+  DCHECK(ciphers);
+  // See SSLConfig::disabled_cipher_suites for description of the suites
+  // disabled by default. Note that !SHA256 and !SHA384 only remove HMAC-SHA256
+  // and HMAC-SHA384 cipher suites, not GCM cipher suites with SHA256 or SHA384
+  // as the handshake hash.
+  std::string command("DEFAULT:!SHA256:!SHA384:!AESGCM+AES256:!aPSK");
+  // Walk through all the installed ciphers, seeing if any need to be
+  // appended to the cipher removal |command|.
+  for (size_t i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i) {
+    const SSL_CIPHER* cipher = sk_SSL_CIPHER_value(ciphers, i);
+    const uint16_t id = static_cast<uint16_t>(SSL_CIPHER_get_id(cipher));
+
+    bool disable = false;
+    if (ssl_config_.require_ecdhe) {
+      base::StringPiece kx_name(SSL_CIPHER_get_kx_name(cipher));
+      disable = kx_name != "ECDHE_RSA" && kx_name != "ECDHE_ECDSA";
+    }
+    if (!disable) {
+      disable = std::find(ssl_config_.disabled_cipher_suites.begin(),
+                          ssl_config_.disabled_cipher_suites.end(),
+                          id) != ssl_config_.disabled_cipher_suites.end();
+    }
+    if (disable) {
+      const char* name = SSL_CIPHER_get_name(cipher);
+      DVLOG(3) << "Found cipher to remove: '" << name << "', ID: " << id
+               << " strength: " << SSL_CIPHER_get_bits(cipher, NULL);
+      command.append(":!");
+      command.append(name);
+    }
+  }
+
+  int rv = SSL_set_cipher_list(ssl_, command.c_str());
+  // If this fails (rv = 0) it means there are no ciphers enabled on this SSL.
+  // This will almost certainly result in the socket failing to complete the
+  // handshake at which point the appropriate error is bubbled up to the client.
+  LOG_IF(WARNING, rv != 1) << "SSL_set_cipher_list('" << command
+                           << "') returned " << rv;
 
   return OK;
 }

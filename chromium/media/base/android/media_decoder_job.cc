@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/debug/trace_event.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "media/base/android/media_codec_bridge.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/buffers.h"
@@ -25,7 +25,7 @@ MediaDecoderJob::MediaDecoderJob(
     const base::Closure& request_data_cb,
     const base::Closure& config_changed_cb)
     : need_to_reconfig_decoder_job_(false),
-      ui_task_runner_(base::MessageLoopProxy::current()),
+      ui_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       decoder_task_runner_(decoder_task_runner),
       needs_flush_(false),
       input_eos_encountered_(false),
@@ -45,7 +45,7 @@ MediaDecoderJob::MediaDecoderJob(
       drm_bridge_(NULL),
       drain_decoder_(false) {
   InitializeReceivedData();
-  eos_unit_.end_of_stream = true;
+  eos_unit_.is_end_of_stream = true;
 }
 
 MediaDecoderJob::~MediaDecoderJob() {
@@ -88,7 +88,7 @@ void MediaDecoderJob::OnDataReceived(const DemuxerData& data) {
 
   if (stop_decode_pending_) {
     DCHECK(is_decoding());
-    OnDecodeCompleted(MEDIA_CODEC_STOPPED, kNoTimestamp(), kNoTimestamp());
+    OnDecodeCompleted(MEDIA_CODEC_ABORT, kNoTimestamp(), kNoTimestamp());
     return;
   }
 
@@ -110,7 +110,7 @@ void MediaDecoderJob::Prefetch(const base::Closure& prefetch_cb) {
   RequestData(prefetch_cb);
 }
 
-bool MediaDecoderJob::Decode(
+MediaDecoderJob::MediaDecoderJobStatus MediaDecoderJob::Decode(
     base::TimeTicks start_time_ticks,
     base::TimeDelta start_presentation_timestamp,
     const DecoderCallback& callback) {
@@ -120,10 +120,11 @@ bool MediaDecoderJob::Decode(
   if (!media_codec_bridge_ || need_to_reconfig_decoder_job_) {
     if (drain_decoder_)
       OnDecoderDrained();
-    need_to_reconfig_decoder_job_ = !CreateMediaCodecBridge();
+    MediaDecoderJobStatus status = CreateMediaCodecBridge();
+    need_to_reconfig_decoder_job_ = (status != STATUS_SUCCESS);
     skip_eos_enqueue_ = true;
     if (need_to_reconfig_decoder_job_)
-      return false;
+      return status;
   }
 
   decode_cb_ = callback;
@@ -133,11 +134,11 @@ bool MediaDecoderJob::Decode(
                            base::Unretained(this),
                            start_time_ticks,
                            start_presentation_timestamp));
-    return true;
+    return STATUS_SUCCESS;
   }
 
   DecodeCurrentAccessUnit(start_time_ticks, start_presentation_timestamp);
-  return true;
+  return STATUS_SUCCESS;
 }
 
 void MediaDecoderJob::StopDecode() {
@@ -205,6 +206,32 @@ base::android::ScopedJavaLocalRef<jobject> MediaDecoderJob::GetMediaCrypto() {
   return media_crypto;
 }
 
+bool MediaDecoderJob::SetCurrentFrameToPreviouslyCachedKeyFrame() {
+  const std::vector<AccessUnit>& access_units =
+      received_data_[current_demuxer_data_index_].access_units;
+  // If the current data chunk is empty, the player must be in an initial or
+  // seek state. The next access unit will always be a key frame.
+  if (access_units.size() == 0)
+    return true;
+
+  // Find key frame in all the access units the decoder have decoded,
+  // or is about to decode.
+  int i = std::min(access_unit_index_[current_demuxer_data_index_],
+                   access_units.size() - 1);
+  for (; i >= 0; --i) {
+    // Config change is always the last access unit, and it always come with
+    // a key frame afterwards.
+    if (access_units[i].status == DemuxerStream::kConfigChanged)
+      return true;
+    if (access_units[i].is_key_frame) {
+      access_unit_index_[current_demuxer_data_index_] = i;
+      return true;
+    }
+  }
+  return false;
+}
+
+
 void MediaDecoderJob::Release() {
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__;
@@ -246,7 +273,7 @@ MediaCodecStatus MediaDecoderJob::QueueInputBuffer(const AccessUnit& unit) {
 
   // TODO(qinmin): skip frames if video is falling far behind.
   DCHECK_GE(input_buf_index, 0);
-  if (unit.end_of_stream || unit.data.empty()) {
+  if (unit.is_end_of_stream || unit.data.empty()) {
     media_codec_bridge_->QueueEOS(input_buf_index);
     return MEDIA_CODEC_INPUT_END_OF_STREAM;
   }
@@ -381,13 +408,12 @@ void MediaDecoderJob::DecodeInternal(
 
   // For aborted access unit, just skip it and inform the player.
   if (unit.status == DemuxerStream::kAborted) {
-    // TODO(qinmin): use a new enum instead of MEDIA_CODEC_STOPPED.
-    callback.Run(MEDIA_CODEC_STOPPED, kNoTimestamp(), kNoTimestamp());
+    callback.Run(MEDIA_CODEC_ABORT, kNoTimestamp(), kNoTimestamp());
     return;
   }
 
   if (skip_eos_enqueue_) {
-    if (unit.end_of_stream || unit.data.empty()) {
+    if (unit.is_end_of_stream || unit.data.empty()) {
       input_eos_encountered_ = true;
       output_eos_encountered_ = true;
       callback.Run(MEDIA_CODEC_OUTPUT_END_OF_STREAM, kNoTimestamp(),
@@ -430,12 +456,10 @@ void MediaDecoderJob::DecodeInternal(
         &presentation_timestamp,
         &output_eos_encountered_,
         NULL);
-    if (status == MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED &&
-        !media_codec_bridge_->GetOutputBuffers()) {
-      status = MEDIA_CODEC_ERROR;
-    } else if (status == MEDIA_CODEC_OUTPUT_FORMAT_CHANGED) {
+    if (status == MEDIA_CODEC_OUTPUT_FORMAT_CHANGED) {
       // TODO(qinmin): instead of waiting for the next output buffer to be
       // dequeued, post a task on the UI thread to signal the format change.
+      OnOutputFormatChanged();
       has_format_change = true;
     }
   } while (status != MEDIA_CODEC_OK && status != MEDIA_CODEC_ERROR &&
@@ -521,17 +545,14 @@ void MediaDecoderJob::OnDecodeCompleted(
     case MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER:
     case MEDIA_CODEC_OUTPUT_FORMAT_CHANGED:
     case MEDIA_CODEC_OUTPUT_END_OF_STREAM:
-      if (!input_eos_encountered_) {
-        CurrentDataConsumed(
-            CurrentAccessUnit().status == DemuxerStream::kConfigChanged);
+      if (!input_eos_encountered_)
         access_unit_index_[current_demuxer_data_index_]++;
-      }
       break;
 
     case MEDIA_CODEC_DEQUEUE_INPUT_AGAIN_LATER:
     case MEDIA_CODEC_INPUT_END_OF_STREAM:
     case MEDIA_CODEC_NO_KEY:
-    case MEDIA_CODEC_STOPPED:
+    case MEDIA_CODEC_ABORT:
     case MEDIA_CODEC_ERROR:
       // Do nothing.
       break;
@@ -592,9 +613,9 @@ void MediaDecoderJob::RequestCurrentChunkIfEmpty() {
 
   // Requests new data if the the last access unit of the next chunk is not EOS.
   current_demuxer_data_index_ = inactive_demuxer_data_index();
-  const AccessUnit last_access_unit =
+  const AccessUnit& last_access_unit =
       received_data_[current_demuxer_data_index_].access_units.back();
-  if (!last_access_unit.end_of_stream &&
+  if (!last_access_unit.is_end_of_stream &&
       last_access_unit.status != DemuxerStream::kAborted) {
     RequestData(base::Closure());
   }
@@ -619,26 +640,26 @@ void MediaDecoderJob::OnDecoderDrained() {
   // Increase the access unit index so that the new decoder will not handle
   // the config change again.
   access_unit_index_[current_demuxer_data_index_]++;
-  CurrentDataConsumed(true);
 }
 
-bool MediaDecoderJob::CreateMediaCodecBridge() {
+MediaDecoderJob::MediaDecoderJobStatus
+    MediaDecoderJob::CreateMediaCodecBridge() {
   DVLOG(1) << __FUNCTION__;
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
   DCHECK(decode_cb_.is_null());
 
   if (!HasStream()) {
     ReleaseMediaCodecBridge();
-    return false;
+    return STATUS_FAILURE;
   }
 
   // Create |media_codec_bridge_| only if config changes.
   if (media_codec_bridge_ && !need_to_reconfig_decoder_job_)
-    return true;
+    return STATUS_SUCCESS;
 
   base::android::ScopedJavaLocalRef<jobject> media_crypto = GetMediaCrypto();
   if (is_content_encrypted_ && media_crypto.is_null())
-    return false;
+    return STATUS_FAILURE;
 
   ReleaseMediaCodecBridge();
   DVLOG(1) << __FUNCTION__ << " : creating new media codec bridge";
@@ -652,6 +673,8 @@ bool MediaDecoderJob::IsCodecReconfigureNeeded(
     return false;
   return true;
 }
+
+void MediaDecoderJob::OnOutputFormatChanged() {}
 
 bool MediaDecoderJob::UpdateOutputFormat() {
   return false;

@@ -29,8 +29,8 @@
 #include "core/events/MouseEvent.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/layout/LayoutView.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderView.h"
 
 namespace blink {
 
@@ -70,7 +70,7 @@ void ClearButtonElement::defaultEventHandler(Event* event)
     }
 
     if (event->type() == EventTypeNames::click) {
-        if (renderer() && renderer()->visibleToHitTesting()) {
+        if (layoutObject() && layoutObject()->visibleToHitTesting()) {
             m_clearButtonOwner->focusAndSelectClearButtonOwner();
             m_clearButtonOwner->clearValue();
             event->setDefaultHandled();
@@ -86,7 +86,7 @@ bool ClearButtonElement::isClearButtonElement() const
     return true;
 }
 
-void ClearButtonElement::trace(Visitor* visitor)
+DEFINE_TRACE(ClearButtonElement)
 {
     visitor->trace(m_clearButtonOwner);
     HTMLDivElement::trace(visitor);

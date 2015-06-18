@@ -12,15 +12,10 @@
           'message': 'building native pieces of native test package',
           'type': 'static_library',
           'sources': [
-            'native_test_launcher.cc',
+            'native_test/native_test_jni_onload.cc',
+            'native_test/native_test_launcher.cc',
+            'native_test/native_test_launcher.h',
           ],
-          'direct_dependent_settings': {
-            'ldflags!': [
-              # JNI_OnLoad is implemented in a .a and we need to
-              # re-export in the .so.
-              '-Wl,--exclude-libs=ALL',
-            ],
-          },
           'dependencies': [
             '../../base/base.gyp:base',
             '../../base/base.gyp:test_support_base',
@@ -35,7 +30,7 @@
           'target_name': 'native_test_jni_headers',
           'type': 'none',
           'sources': [
-            'java/src/org/chromium/native_test/ChromeNativeTestActivity.java'
+            'native_test/java/src/org/chromium/native_test/NativeTestActivity.java'
           ],
           'variables': {
             'jni_gen_package': 'testing',
@@ -47,8 +42,8 @@
           'target_name': 'native_test_util',
           'type': 'static_library',
           'sources': [
-            'native_test_util.cc',
-            'native_test_util.h',
+            'native_test/native_test_util.cc',
+            'native_test/native_test_util.h',
           ],
           'dependencies': [
             '../../base/base.gyp:base',

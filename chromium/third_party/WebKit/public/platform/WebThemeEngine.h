@@ -44,13 +44,11 @@ public:
     // The current state of the associated Part.
     enum State {
         StateDisabled,
-        StateHover, // non-Apple
-        StateNormal, // non-Apple
+        StateHover,
+        StateNormal,
         StatePressed,
-        StateFocused, // non-Apple
-        StateReadonly, // non-Apple
-        StateInactive, // Apple-specific
-        StateActive, // Apple-specific
+        StateFocused,
+        StateReadonly,
     };
 
     // The UI part which is being accessed.
@@ -66,7 +64,7 @@ public:
         PartScrollbarVerticalTrack,
         PartScrollbarCorner,
 
-        // RenderTheme parts
+        // LayoutTheme parts
         PartCheckbox,
         PartRadio,
         PartButton,

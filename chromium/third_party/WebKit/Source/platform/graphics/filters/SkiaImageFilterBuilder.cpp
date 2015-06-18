@@ -22,16 +22,14 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "config.h"
 
+#include "config.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 
 #include "SkBlurImageFilter.h"
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
-#include "SkMatrixImageFilter.h"
 #include "SkTableColorFilter.h"
-#include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "platform/graphics/filters/FilterOperations.h"
 #include "platform/graphics/filters/SourceGraphic.h"
@@ -39,18 +37,6 @@
 #include "public/platform/WebPoint.h"
 
 namespace blink {
-
-SkiaImageFilterBuilder::SkiaImageFilterBuilder()
-    : m_context(0)
-    , m_sourceGraphic(0)
-{
-}
-
-SkiaImageFilterBuilder::SkiaImageFilterBuilder(GraphicsContext* context)
-    : m_context(context)
-    , m_sourceGraphic(0)
-{
-}
 
 SkiaImageFilterBuilder::~SkiaImageFilterBuilder()
 {
@@ -78,7 +64,7 @@ PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::build(FilterEffect* effect, Co
 PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::transformColorSpace(
     SkImageFilter* input, ColorSpace srcColorSpace, ColorSpace dstColorSpace) {
 
-    RefPtr<SkColorFilter> colorFilter = ImageBuffer::createColorSpaceFilter(srcColorSpace, dstColorSpace);
+    RefPtr<SkColorFilter> colorFilter = ColorSpaceUtilities::createColorSpaceFilter(srcColorSpace, dstColorSpace);
     if (!colorFilter)
         return input;
 
@@ -187,7 +173,7 @@ void SkiaImageFilterBuilder::buildFilterOperations(const FilterOperations& opera
 
 PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::buildTransform(const AffineTransform& transform, SkImageFilter* input)
 {
-    return adoptRef(SkMatrixImageFilter::Create(affineTransformToSkMatrix(transform), SkPaint::kHigh_FilterLevel, input));
+    return adoptRef(SkImageFilter::CreateMatrixFilter(affineTransformToSkMatrix(transform), kHigh_SkFilterQuality, input));
 }
 
 } // namespace blink

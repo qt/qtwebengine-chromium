@@ -31,11 +31,12 @@
 #include "config.h"
 #include "core/inspector/InjectedScriptHost.h"
 
+#include "bindings/core/v8/ScriptDebugServer.h"
+#include "core/inspector/EventListenerInfo.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorInspectorAgent.h"
-#include "core/inspector/InstrumentingAgents.h"
 #include "platform/JSONValues.h"
 
 #include "wtf/RefPtr.h"
@@ -49,8 +50,10 @@ PassRefPtrWillBeRawPtr<InjectedScriptHost> InjectedScriptHost::create()
 }
 
 InjectedScriptHost::InjectedScriptHost()
-    : m_instrumentingAgents(nullptr)
-    , m_scriptDebugServer(0)
+    : m_consoleAgent(nullptr)
+    , m_debuggerAgent(nullptr)
+    , m_inspectCallback(nullptr)
+    , m_scriptDebugServer(nullptr)
 {
     m_defaultInspectableObject = adoptPtr(new InspectableObject());
 }
@@ -59,35 +62,39 @@ InjectedScriptHost::~InjectedScriptHost()
 {
 }
 
-void InjectedScriptHost::trace(Visitor* visitor)
+DEFINE_TRACE(InjectedScriptHost)
 {
-    visitor->trace(m_instrumentingAgents);
+    visitor->trace(m_consoleAgent);
+    visitor->trace(m_debuggerAgent);
+    visitor->trace(m_scriptDebugServer);
 }
 
 void InjectedScriptHost::disconnect()
 {
-    m_instrumentingAgents = nullptr;
-    m_scriptDebugServer = 0;
+    m_consoleAgent = nullptr;
+    m_debuggerAgent = nullptr;
+    m_inspectCallback = nullptr;
+    m_scriptDebugServer = nullptr;
 }
 
 void InjectedScriptHost::inspectImpl(PassRefPtr<JSONValue> object, PassRefPtr<JSONValue> hints)
 {
-    if (InspectorInspectorAgent* inspectorAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorInspectorAgent() : 0) {
+    if (m_inspectCallback) {
         RefPtr<TypeBuilder::Runtime::RemoteObject> remoteObject = TypeBuilder::Runtime::RemoteObject::runtimeCast(object);
-        inspectorAgent->inspect(remoteObject, hints->asObject());
+        (*m_inspectCallback)(remoteObject, hints->asObject());
     }
 }
 
 void InjectedScriptHost::getEventListenersImpl(EventTarget* target, Vector<EventListenerInfo>& listenersArray)
 {
-    InspectorDOMAgent::getEventListeners(target, listenersArray, false);
+    EventListenerInfo::getEventListeners(target, listenersArray, false);
 }
 
 void InjectedScriptHost::clearConsoleMessages()
 {
-    if (InspectorConsoleAgent* consoleAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorConsoleAgent() : 0) {
+    if (m_consoleAgent) {
         ErrorString error;
-        consoleAgent->clearMessages(&error);
+        m_consoleAgent->clearMessages(&error);
     }
 }
 
@@ -117,14 +124,14 @@ InjectedScriptHost::InspectableObject* InjectedScriptHost::inspectedObject(unsig
 
 void InjectedScriptHost::debugFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
-    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
-        debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
+    if (m_debuggerAgent)
+        m_debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
 }
 
 void InjectedScriptHost::undebugFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
-    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
-        debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
+    if (m_debuggerAgent)
+        m_debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
 }
 
 void InjectedScriptHost::monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName)
@@ -136,15 +143,14 @@ void InjectedScriptHost::monitorFunction(const String& scriptId, int lineNumber,
     else
         builder.append(functionName);
     builder.appendLiteral(" called\" + (arguments.length > 0 ? \" with arguments: \" + Array.prototype.join.call(arguments, \", \") : \"\")) && false");
-    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
-        debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource, builder.toString());
+    if (m_debuggerAgent)
+        m_debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource, builder.toString());
 }
 
 void InjectedScriptHost::unmonitorFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
-    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDebuggerAgent() : 0)
-        debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource);
+    if (m_debuggerAgent)
+        m_debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource);
 }
 
 } // namespace blink
-

@@ -21,21 +21,49 @@ class SingleThreadTaskRunner;
 namespace media {
 
 class AudioInputStream;
+class AudioManagerFactory;
 class AudioOutputStream;
 
 // Manages all audio resources.  Provides some convenience functions that avoid
 // the need to provide iterators over the existing streams.
 class MEDIA_EXPORT AudioManager {
-  public:
-   virtual ~AudioManager();
+ public:
+  virtual ~AudioManager();
+
+  // This provides an alternative to the statically linked factory method used
+  // to create AudioManager. This is useful for dynamically-linked third
+  // party clients seeking to provide a platform-specific implementation of
+  // AudioManager. After this is called, all static AudioManager::Create*
+  // methods will return an instance of AudioManager provided by |factory|. This
+  // call may be made at most once per process, and before any calls to static
+  // AudioManager::Create* methods. This method takes ownership of |factory|,
+  // which must not be NULL.
+  static void SetFactory(AudioManagerFactory* factory);
 
   // Construct the audio manager; only one instance is allowed.  The manager
   // will forward CreateAudioLog() calls to the provided AudioLogFactory; as
   // such |audio_log_factory| must outlive the AudioManager.
   static AudioManager* Create(AudioLogFactory* audio_log_factory);
 
+  // Similar to Create() except also schedules a monitor on the given task
+  // runner to ensure the audio thread is not stuck for more than 60 seconds; if
+  // a hang is detected, the process will be crashed.  See EnableHangMonitor().
+  static AudioManager* CreateWithHangTimer(
+      AudioLogFactory* audio_log_factory,
+      const scoped_refptr<base::SingleThreadTaskRunner>& monitor_task_runner);
+
   // Similar to Create() except uses a FakeAudioLogFactory for testing.
   static AudioManager* CreateForTesting();
+
+  // Enables the hang monitor for the AudioManager once it's created.  Must be
+  // called before the AudioManager is created.  CreateWithHangTimer() requires
+  // either switches::kEnableAudioHangMonitor to be present or this to have been
+  // called previously to start the hang monitor.  Does nothing on OSX.
+  static void EnableHangMonitor();
+
+  // Should only be used for testing. Resets a previously-set
+  // AudioManagerFactory. The instance of AudioManager is not affected.
+  static void ResetFactoryForTesting();
 
   // Returns the pointer to the last created instance, or NULL if not yet
   // created. This is a utility method for the code outside of media directory,
@@ -123,7 +151,8 @@ class MEDIA_EXPORT AudioManager {
   // Do not free the returned AudioInputStream. It is owned by AudioManager.
   // When you are done with it, call |Stop()| and |Close()| to release it.
   virtual AudioInputStream* MakeAudioInputStream(
-      const AudioParameters& params, const std::string& device_id) = 0;
+      const AudioParameters& params,
+      const std::string& device_id) = 0;
 
   // Returns the task runner used for audio IO.
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() = 0;

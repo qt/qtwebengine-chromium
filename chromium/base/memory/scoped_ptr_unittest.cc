@@ -4,6 +4,8 @@
 
 #include "base/memory/scoped_ptr.h"
 
+#include <sstream>
+
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -669,10 +671,25 @@ TEST(ScopedPtrTest, SelfResetAbortsWithCustomDeleter) {
 TEST(ScopedPtrTest, SelfResetWithCustomDeleterOptOut) {
   // A custom deleter should be able to opt out of self-reset abort behavior.
   struct NoOpDeleter {
+#if !defined(NDEBUG)
     typedef void AllowSelfReset;
+#endif
     inline void operator()(int*) {}
   };
   scoped_ptr<int> owner(new int);
   scoped_ptr<int, NoOpDeleter> x(owner.get());
   x.reset(x.get());
+}
+
+// Logging a scoped_ptr<T> to an ostream shouldn't convert it to a boolean
+// value first.
+TEST(ScopedPtrTest, LoggingDoesntConvertToBoolean) {
+  scoped_ptr<int> x(new int);
+  std::stringstream s1;
+  s1 << x;
+
+  std::stringstream s2;
+  s2 << x.get();
+
+  EXPECT_EQ(s2.str(), s1.str());
 }

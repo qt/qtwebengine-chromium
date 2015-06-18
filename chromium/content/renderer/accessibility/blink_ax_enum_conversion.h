@@ -27,6 +27,18 @@ uint32 AXStateFromBlink(const blink::WebAXObject& o);
 ui::AXTextDirection AXTextDirectionFromBlink(
     blink::WebAXTextDirection text_direction);
 
+ui::AXTextStyle AXTextStyleFromBlink(blink::WebAXTextStyle text_style);
+
+// Convert a Blink WebAXInvalidState to an AXInvalidState defined in
+// ui/accessibility.
+ui::AXInvalidState AXInvalidStateFromBlink(
+    blink::WebAXInvalidState invalid_state);
+
+// Convert a Blink WebAXSortDirection to an AXSortDirection defined in
+// ui/accessibility.
+ui::AXSortDirection AXSortDirectionFromBlink(
+    blink::WebAXSortDirection sort_direction);
+
 }  // namespace content
 
 #endif  // CONTENT_RENDERER_ACCESSIBILITY_BLINK_AX_ENUM_CONVERSION_H_

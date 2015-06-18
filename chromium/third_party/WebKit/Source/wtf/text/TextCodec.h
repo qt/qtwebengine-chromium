@@ -66,13 +66,13 @@ enum FlushBehavior {
     DataEOF
 };
 
-COMPILE_ASSERT(!DoNotFlush, DoNotFlush_is_falsy);
-COMPILE_ASSERT(FetchEOF, FetchEOF_is_truthy);
-COMPILE_ASSERT(DataEOF, DataEOF_is_truthy);
+static_assert(!DoNotFlush, "DoNotFlush should be falsy");
+static_assert(FetchEOF, "FetchEOF should be truthy");
+static_assert(DataEOF, "DataEOF should be truthy");
 
 
 class TextCodec {
-    WTF_MAKE_NONCOPYABLE(TextCodec); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(TextCodec); WTF_MAKE_FAST_ALLOCATED(TextCodec);
 public:
     TextCodec() { }
     virtual ~TextCodec();

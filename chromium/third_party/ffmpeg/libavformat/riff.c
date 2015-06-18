@@ -42,6 +42,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_H264,         MKTAG('V', '2', '6', '4') }, /* CCTV recordings */
     { AV_CODEC_ID_H264,         MKTAG('G', 'A', 'V', 'C') }, /* GeoVision camera */
     { AV_CODEC_ID_H264,         MKTAG('U', 'M', 'S', 'V') },
+    { AV_CODEC_ID_H264,         MKTAG('t', 's', 'h', 'd') },
     { AV_CODEC_ID_H264,         MKTAG('I', 'N', 'M', 'C') },
     { AV_CODEC_ID_H263,         MKTAG('H', '2', '6', '3') },
     { AV_CODEC_ID_H263,         MKTAG('X', '2', '6', '3') },
@@ -341,6 +342,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     /* Ut Video version 13.0.1 BT.709 codecs */
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'H', '0') },
     { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'H', '2') },
+    { AV_CODEC_ID_UTVIDEO,      MKTAG('U', 'Q', 'Y', '2') },
     { AV_CODEC_ID_VBLE,         MKTAG('V', 'B', 'L', 'E') },
     { AV_CODEC_ID_ESCAPE130,    MKTAG('E', '1', '3', '0') },
     { AV_CODEC_ID_DXTORY,       MKTAG('x', 't', 'o', 'r') },
@@ -359,7 +361,10 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '2') },
     { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '3') },
     { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '4') },
+    { AV_CODEC_ID_G2M,          MKTAG('G', '2', 'M', '5') },
     { AV_CODEC_ID_FIC,          MKTAG('F', 'I', 'C', 'V') },
+    { AV_CODEC_ID_HQX,          MKTAG('C', 'H', 'Q', 'X') },
+    { AV_CODEC_ID_TDSC,         MKTAG('T', 'D', 'S', 'C') },
     { AV_CODEC_ID_NONE,         0 }
 };
 

@@ -32,6 +32,7 @@
 #define ScriptFunction_h
 
 #include "bindings/core/v8/ScriptValue.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include <v8.h>
 
@@ -43,17 +44,17 @@ namespace blink {
 //     // This returns a V8 function which the DerivedFunction is bound to.
 //     // The DerivedFunction is destructed when the V8 function is
 //     // garbage-collected.
-//     static v8::Handle<v8::Function> createFunction(ScriptState* scriptState)
+//     static v8::Local<v8::Function> createFunction(ScriptState* scriptState)
 //     {
 //         DerivedFunction* self = new DerivedFunction(scriptState);
 //         return self->bindToV8Function();
 //     }
 // };
-class ScriptFunction : public GarbageCollectedFinalized<ScriptFunction> {
+class CORE_EXPORT ScriptFunction : public GarbageCollectedFinalized<ScriptFunction> {
 public:
     virtual ~ScriptFunction() { }
     ScriptState* scriptState() const { return m_scriptState.get(); }
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     explicit ScriptFunction(ScriptState* scriptState)
@@ -61,7 +62,7 @@ protected:
     {
     }
 
-    v8::Handle<v8::Function> bindToV8Function();
+    v8::Local<v8::Function> bindToV8Function();
 
 private:
     virtual ScriptValue call(ScriptValue) = 0;

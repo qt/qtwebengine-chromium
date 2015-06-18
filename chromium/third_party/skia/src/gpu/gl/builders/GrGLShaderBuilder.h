@@ -8,6 +8,7 @@
 #ifndef GrGLShaderBuilder_DEFINED
 #define GrGLShaderBuilder_DEFINED
 
+#include "SkTArray.h"
 #include "gl/GrGLProcessor.h"
 #include "gl/GrGLProgramDesc.h"
 #include "gl/GrGLProgramDataManager.h"
@@ -73,16 +74,16 @@ public:
     void codeAppendf(const char format[], ...) SK_PRINTF_LIKE(2, 3) {
        va_list args;
        va_start(args, format);
-       fCode.appendVAList(format, args);
+       this->code().appendVAList(format, args);
        va_end(args);
     }
 
-    void codeAppend(const char* str) { fCode.append(str); }
+    void codeAppend(const char* str) { this->code().append(str); }
 
     void codePrependf(const char format[], ...) SK_PRINTF_LIKE(2, 3) {
        va_list args;
        va_start(args, format);
-       fCode.prependVAList(format, args);
+       this->code().prependVAList(format, args);
        va_end(args);
     }
 
@@ -138,8 +139,58 @@ protected:
      */
     void addFeature(uint32_t featureBit, const char* extensionName);
 
-    GrGLProgramBuilder* fProgramBuilder;
+    enum InterfaceQualifier {
+        kOut_InterfaceQualifier,
+        kLastInterfaceQualifier = kOut_InterfaceQualifier
+    };
 
+    /*
+     * A low level function to build default layout qualifiers.
+     *
+     *   e.g. layout(param1, param2, ...) out;
+     *
+     * GLSL allows default layout qualifiers for in, out, and uniform.
+     */
+    void addLayoutQualifier(const char* param, InterfaceQualifier);
+
+    void compileAndAppendLayoutQualifiers();
+
+    void nextStage() {
+        fShaderStrings.push_back();
+        fCompilerStrings.push_back(this->code().c_str());
+        fCompilerStringLengths.push_back((int)this->code().size());
+        fCodeIndex++;
+    }
+
+    SkString& versionDecl() { return fShaderStrings[kVersionDecl]; }
+    SkString& extensions() { return fShaderStrings[kExtensions]; }
+    SkString& precisionQualifier() { return fShaderStrings[kPrecisionQualifier]; }
+    SkString& layoutQualifiers() { return fShaderStrings[kLayoutQualifiers]; }
+    SkString& uniforms() { return fShaderStrings[kUniforms]; }
+    SkString& inputs() { return fShaderStrings[kInputs]; }
+    SkString& outputs() { return fShaderStrings[kOutputs]; }
+    SkString& functions() { return fShaderStrings[kFunctions]; }
+    SkString& main() { return fShaderStrings[kMain]; }
+    SkString& code() { return fShaderStrings[fCodeIndex]; }
+    bool finalize(GrGLuint programId, GrGLenum type, SkTDArray<GrGLuint>* shaderIds);
+
+    enum {
+        kVersionDecl,
+        kExtensions,
+        kPrecisionQualifier,
+        kLayoutQualifiers,
+        kUniforms,
+        kInputs,
+        kOutputs,
+        kFunctions,
+        kMain,
+        kCode,
+    };
+
+    GrGLProgramBuilder* fProgramBuilder;
+    SkSTArray<kCode, const char*, true> fCompilerStrings;
+    SkSTArray<kCode, int, true> fCompilerStringLengths;
+    SkSTArray<kCode, SkString> fShaderStrings;
     SkString fCode;
     SkString fFunctions;
     SkString fExtensions;
@@ -147,5 +198,10 @@ protected:
     VarArray fInputs;
     VarArray fOutputs;
     uint32_t fFeaturesAddedMask;
+    SkSTArray<1, SkString> fLayoutParams[kLastInterfaceQualifier + 1];
+    int fCodeIndex;
+    bool fFinalized;
+
+    friend class GrGLProgramBuilder;
 };
 #endif

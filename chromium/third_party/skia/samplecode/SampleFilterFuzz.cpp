@@ -19,7 +19,6 @@
 #include "SkFlattenableSerialization.h"
 #include "SkLightingImageFilter.h"
 #include "SkMagnifierImageFilter.h"
-#include "SkMatrixImageFilter.h"
 #include "SkMatrixConvolutionImageFilter.h"
 #include "SkMergeImageFilter.h"
 #include "SkMorphologyImageFilter.h"
@@ -248,15 +247,10 @@ static void drawSomething(SkCanvas* canvas) {
     canvas->drawBitmap(make_bitmap(), 0, 0, NULL);
     canvas->restore();
 
-    const char beforeStr[] = "before circle";
-    const char afterStr[] = "after circle";
-
     paint.setAntiAlias(true);
 
     paint.setColor(SK_ColorRED);
-    canvas->drawData(beforeStr, sizeof(beforeStr));
     canvas->drawCircle(SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/3), paint);
-    canvas->drawData(afterStr, sizeof(afterStr));
     paint.setColor(SK_ColorBLACK);
     paint.setTextSize(SkIntToScalar(kBitmapSize/3));
     canvas->drawText("Picture", 7, SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/4), paint);
@@ -315,9 +309,9 @@ static SkImageFilter* make_image_filter(bool canBeNull = true) {
         filter = SkOffsetImageFilter::Create(make_scalar(), make_scalar(), make_image_filter());
         break;
     case MATRIX:
-        filter = SkMatrixImageFilter::Create(make_matrix(),
-                                             (SkPaint::FilterLevel)R(4),
-                                             make_image_filter());
+        filter = SkImageFilter::CreateMatrixFilter(make_matrix(),
+                                                   (SkFilterQuality)R(4),
+                                                   make_image_filter());
         break;
     case MATRIX_CONVOLUTION:
     {
@@ -385,7 +379,7 @@ static SkImageFilter* make_image_filter(bool canBeNull = true) {
     case DROP_SHADOW:
         filter = SkDropShadowImageFilter::Create(make_scalar(), make_scalar(), make_scalar(true),
                     make_scalar(true), make_color(), make_shadow_mode(), make_image_filter(),
-                    NULL, 0);
+                    NULL);
         break;
     case MORPHOLOGY:
         if (R(2) == 1) {

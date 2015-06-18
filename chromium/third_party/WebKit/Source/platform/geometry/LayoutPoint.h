@@ -35,6 +35,7 @@
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/LayoutSize.h"
 #include "wtf/MathExtras.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -43,8 +44,8 @@ public:
     LayoutPoint() { }
     LayoutPoint(LayoutUnit x, LayoutUnit y) : m_x(x), m_y(y) { }
     LayoutPoint(const IntPoint& point) : m_x(point.x()), m_y(point.y()) { }
-    explicit LayoutPoint(const FloatPoint& size) : m_x(size.x()), m_y(size.y()) { }
-    explicit LayoutPoint(const DoublePoint& size) : m_x(size.x()), m_y(size.y()) { }
+    explicit LayoutPoint(const FloatPoint& point) : m_x(point.x()), m_y(point.y()) { }
+    explicit LayoutPoint(const DoublePoint& point) : m_x(point.x()), m_y(point.y()) { }
     explicit LayoutPoint(const LayoutSize& size) : m_x(size.width()), m_y(size.height()) { }
 
     static LayoutPoint zero() { return LayoutPoint(); }
@@ -56,6 +57,7 @@ public:
     void setY(LayoutUnit y) { m_y = y; }
 
     void move(const LayoutSize& s) { move(s.width(), s.height()); }
+    void move(const IntSize& s) { move(s.width(), s.height()); }
     void moveBy(const LayoutPoint& offset) { move(offset.x(), offset.y()); }
     void move(LayoutUnit dx, LayoutUnit dy) { m_x += dx; m_y += dy; }
     void scale(float sx, float sy)
@@ -94,7 +96,25 @@ ALWAYS_INLINE LayoutPoint& operator+=(LayoutPoint& a, const LayoutSize& b)
     return a;
 }
 
+ALWAYS_INLINE LayoutPoint& operator+=(LayoutPoint& a, const LayoutPoint& b)
+{
+    a.move(b.x(), b.y());
+    return a;
+}
+
+inline LayoutPoint& operator+=(LayoutPoint& a, const IntSize& b)
+{
+    a.move(b.width(), b.height());
+    return a;
+}
+
 ALWAYS_INLINE LayoutPoint& operator-=(LayoutPoint& a, const LayoutSize& b)
+{
+    a.move(-b.width(), -b.height());
+    return a;
+}
+
+inline LayoutPoint& operator-=(LayoutPoint& a, const IntSize& b)
 {
     a.move(-b.width(), -b.height());
     return a;
@@ -115,7 +135,17 @@ ALWAYS_INLINE LayoutSize operator-(const LayoutPoint& a, const LayoutPoint& b)
     return LayoutSize(a.x() - b.x(), a.y() - b.y());
 }
 
+ALWAYS_INLINE LayoutSize operator-(const LayoutPoint& a, const IntPoint& b)
+{
+    return LayoutSize(a.x() - b.x(), a.y() - b.y());
+}
+
 inline LayoutPoint operator-(const LayoutPoint& a, const LayoutSize& b)
+{
+    return LayoutPoint(a.x() - b.width(), a.y() - b.height());
+}
+
+inline LayoutPoint operator-(const LayoutPoint& a, const IntSize& b)
 {
     return LayoutPoint(a.x() - b.width(), a.y() - b.height());
 }
@@ -188,6 +218,11 @@ inline IntSize pixelSnappedIntSize(const LayoutSize& s, const LayoutPoint& p)
 inline LayoutPoint roundedLayoutPoint(const FloatPoint& p)
 {
     return LayoutPoint(p);
+}
+
+inline IntSize roundedIntSize(const LayoutPoint& p)
+{
+    return IntSize(p.x().round(), p.y().round());
 }
 
 inline LayoutSize toLayoutSize(const LayoutPoint& p)

@@ -5,11 +5,14 @@
 #ifndef CONTENT_PUBLIC_BROWSER_SPEECH_RECOGNITION_SESSION_CONFIG_H_
 #define CONTENT_PUBLIC_BROWSER_SPEECH_RECOGNITION_SESSION_CONFIG_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/speech_recognition_session_context.h"
+#include "content/public/browser/speech_recognition_session_preamble.h"
 #include "content/public/common/speech_recognition_grammar.h"
 #include "net/url_request/url_request_context_getter.h"
 
@@ -32,6 +35,9 @@ struct CONTENT_EXPORT SpeechRecognitionSessionConfig {
   bool continuous;
   bool interim_results;
   uint32 max_hypotheses;
+  std::string auth_token;
+  std::string auth_scope;
+  scoped_refptr<SpeechRecognitionSessionPreamble> preamble;
   SpeechRecognitionSessionContext initial_context;
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter;
   base::WeakPtr<SpeechRecognitionEventListener> event_listener;

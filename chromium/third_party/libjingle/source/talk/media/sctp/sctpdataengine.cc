@@ -1,6 +1,6 @@
 /*
- * libjingle SCTP
- * Copyright 2012 Google Inc, and Robin Seggelmann
+ * libjingle
+ * Copyright 2012 Google Inc. and Robin Seggelmann
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -176,6 +176,18 @@ static bool GetDataMediaType(
   }
 }
 
+// Log the packet in text2pcap format, if log level is at LS_VERBOSE.
+static void VerboseLogPacket(void *addr, size_t length, int direction) {
+  if (LOG_CHECK_LEVEL(LS_VERBOSE) && length > 0) {
+    char *dump_buf;
+    if ((dump_buf = usrsctp_dumppacket(
+             addr, length, direction)) != NULL) {
+      LOG(LS_VERBOSE) << dump_buf;
+      usrsctp_freedumpbuffer(dump_buf);
+    }
+  }
+}
+
 // This is the callback usrsctp uses when there's data to send on the network
 // that has been wrapped appropriatly for the SCTP protocol.
 static int OnSctpOutboundPacket(void* addr, void* data, size_t length,
@@ -185,9 +197,11 @@ static int OnSctpOutboundPacket(void* addr, void* data, size_t length,
                   << "addr: " << addr << "; length: " << length
                   << "; tos: " << std::hex << static_cast<int>(tos)
                   << "; set_df: " << std::hex << static_cast<int>(set_df);
+
+  VerboseLogPacket(addr, length, SCTP_DUMP_OUTBOUND);
   // Note: We have to copy the data; the caller will delete it.
-  OutboundPacketMessage* msg =
-      new OutboundPacketMessage(new rtc::Buffer(data, length));
+  auto* msg = new OutboundPacketMessage(
+      new rtc::Buffer(reinterpret_cast<uint8_t*>(data), length));
   channel->worker_thread()->Post(channel, MSG_SCTPOUTBOUNDPACKET, msg);
   return 0;
 }
@@ -214,7 +228,7 @@ static int OnSctpInboundPacket(struct socket* sock, union sctp_sockstore addr,
                   << " on an SCTP packet.  Dropping.";
   } else {
     SctpInboundPacket* packet = new SctpInboundPacket;
-    packet->buffer.SetData(data, length);
+    packet->buffer.SetData(reinterpret_cast<uint8_t*>(data), length);
     packet->params.ssrc = rcv.rcv_sid;
     packet->params.seq_num = rcv.rcv_ssn;
     packet->params.timestamp = rcv.rcv_tsn;
@@ -379,7 +393,7 @@ bool SctpDataMediaChannel::OpenSctpSocket() {
   }
 
   // Disable MTU discovery
-  struct sctp_paddrparams params = {0};
+  struct sctp_paddrparams params = {{0}};
   params.spp_assoc_id = 0;
   params.spp_flags = SPP_PMTUD_DISABLE;
   params.spp_pathmtu = kSctpMtu;
@@ -524,7 +538,7 @@ bool SctpDataMediaChannel::SendData(
   if (!sending_) {
     LOG(LS_WARNING) << debug_name_ << "->SendData(...): "
                     << "Not sending packet with ssrc=" << params.ssrc
-                    << " len=" << payload.length() << " before SetSend(true).";
+                    << " len=" << payload.size() << " before SetSend(true).";
     return false;
   }
 
@@ -560,11 +574,9 @@ bool SctpDataMediaChannel::SendData(
   }
 
   // We don't fragment.
-  send_res = usrsctp_sendv(sock_, payload.data(),
-                           static_cast<size_t>(payload.length()),
-                           NULL, 0, &spa,
-                           rtc::checked_cast<socklen_t>(sizeof(spa)),
-                           SCTP_SENDV_SPA, 0);
+  send_res = usrsctp_sendv(
+      sock_, payload.data(), static_cast<size_t>(payload.size()), NULL, 0, &spa,
+      rtc::checked_cast<socklen_t>(sizeof(spa)), SCTP_SENDV_SPA, 0);
   if (send_res < 0) {
     if (errno == SCTP_EWOULDBLOCK) {
       *result = SDR_BLOCK;
@@ -586,8 +598,8 @@ bool SctpDataMediaChannel::SendData(
 // Called by network interface when a packet has been received.
 void SctpDataMediaChannel::OnPacketReceived(
     rtc::Buffer* packet, const rtc::PacketTime& packet_time) {
-  LOG(LS_VERBOSE) << debug_name_ << "->OnPacketReceived(...): " << " length="
-                  << packet->length() << ", sending: " << sending_;
+  LOG(LS_VERBOSE) << debug_name_ << "->OnPacketReceived(...): "
+                  << " length=" << packet->size() << ", sending: " << sending_;
   // Only give receiving packets to usrsctp after if connected. This enables two
   // peers to each make a connect call, but for them not to receive an INIT
   // packet before they have called connect; least the last receiver of the INIT
@@ -596,7 +608,9 @@ void SctpDataMediaChannel::OnPacketReceived(
     // Pass received packet to SCTP stack. Once processed by usrsctp, the data
     // will be will be given to the global OnSctpInboundData, and then,
     // marshalled by a Post and handled with OnMessage.
-    usrsctp_conninput(this, packet->data(), packet->length(), 0);
+
+    VerboseLogPacket(packet->data(), packet->size(), SCTP_DUMP_INBOUND);
+    usrsctp_conninput(this, packet->data(), packet->size(), 0);
   } else {
     // TODO(ldixon): Consider caching the packet for very slightly better
     // reliability.
@@ -609,10 +623,10 @@ void SctpDataMediaChannel::OnInboundPacketFromSctpToChannel(
                   << "Received SCTP data:"
                   << " ssrc=" << packet->params.ssrc
                   << " notification: " << (packet->flags & MSG_NOTIFICATION)
-                  << " length=" << packet->buffer.length();
+                  << " length=" << packet->buffer.size();
   // Sending a packet with data == NULL (no data) is SCTPs "close the
   // connection" message. This sets sock_ = NULL;
-  if (!packet->buffer.length() || !packet->buffer.data()) {
+  if (!packet->buffer.size() || !packet->buffer.data()) {
     LOG(LS_INFO) << debug_name_ << "->OnInboundPacketFromSctpToChannel(...): "
                                    "No data, closing.";
     return;
@@ -628,16 +642,15 @@ void SctpDataMediaChannel::OnDataFromSctpToChannel(
     const ReceiveDataParams& params, rtc::Buffer* buffer) {
   if (receiving_) {
     LOG(LS_VERBOSE) << debug_name_ << "->OnDataFromSctpToChannel(...): "
-                    << "Posting with length: " << buffer->length()
+                    << "Posting with length: " << buffer->size()
                     << " on stream " << params.ssrc;
     // Reports all received messages to upper layers, no matter whether the sid
     // is known.
-    SignalDataReceived(params, buffer->data(), buffer->length());
+    SignalDataReceived(params, buffer->data<char>(), buffer->size());
   } else {
     LOG(LS_WARNING) << debug_name_ << "->OnDataFromSctpToChannel(...): "
                     << "Not receiving packet with sid=" << params.ssrc
-                    << " len=" <<  buffer->length()
-                    << " before SetReceive(true).";
+                    << " len=" << buffer->size() << " before SetReceive(true).";
   }
 }
 
@@ -697,7 +710,7 @@ bool SctpDataMediaChannel::ResetStream(uint32 ssrc) {
 void SctpDataMediaChannel::OnNotificationFromSctp(rtc::Buffer* buffer) {
   const sctp_notification& notification =
       reinterpret_cast<const sctp_notification&>(*buffer->data());
-  ASSERT(notification.sn_header.sn_length == buffer->length());
+  ASSERT(notification.sn_header.sn_length == buffer->size());
 
   // TODO(ldixon): handle notifications appropriately.
   switch (notification.sn_header.sn_type) {
@@ -891,7 +904,7 @@ bool SctpDataMediaChannel::SetRecvCodecs(const std::vector<DataCodec>& codecs) {
 
 void SctpDataMediaChannel::OnPacketFromSctpToNetwork(
     rtc::Buffer* buffer) {
-  if (buffer->length() > kSctpMtu) {
+  if (buffer->size() > kSctpMtu) {
     LOG(LS_ERROR) << debug_name_ << "->OnPacketFromSctpToNetwork(...): "
                   << "SCTP seems to have made a packet that is bigger "
                      "than its official MTU.";

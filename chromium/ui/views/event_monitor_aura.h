@@ -8,15 +8,21 @@
 #include "base/macros.h"
 #include "ui/views/event_monitor.h"
 
+namespace ui {
+class EventTarget;
+}
+
 namespace views {
 
 class EventMonitorAura : public EventMonitor {
  public:
-  explicit EventMonitorAura(ui::EventHandler* event_handler);
-  virtual ~EventMonitorAura();
+  EventMonitorAura(ui::EventHandler* event_handler,
+                   ui::EventTarget* event_target);
+  ~EventMonitorAura() override;
 
  private:
   ui::EventHandler* event_handler_;  // Weak. Owned by our owner.
+  ui::EventTarget* event_target_;    // Weak.
 
   DISALLOW_COPY_AND_ASSIGN(EventMonitorAura);
 };

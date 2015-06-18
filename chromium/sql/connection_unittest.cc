@@ -90,15 +90,13 @@ class ScopedUmaskSetter {
 
 class SQLConnectionTest : public testing::Test {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     db_path_ = temp_dir_.path().AppendASCII("SQLConnectionTest.db");
     ASSERT_TRUE(db_.Open(db_path_));
   }
 
-  virtual void TearDown() {
-    db_.Close();
-  }
+  void TearDown() override { db_.Close(); }
 
   sql::Connection& db() { return db_; }
   const base::FilePath& db_path() { return db_path_; }
@@ -178,10 +176,9 @@ TEST_F(SQLConnectionTest, DoesStuffExist) {
   // Test DoesTableExist.
   EXPECT_FALSE(db().DoesTableExist("foo"));
   ASSERT_TRUE(db().Execute("CREATE TABLE foo (a, b)"));
+  ASSERT_TRUE(db().Execute("CREATE INDEX foo_a ON foo (a)"));
   EXPECT_TRUE(db().DoesTableExist("foo"));
-
-  // Should be case sensitive.
-  EXPECT_FALSE(db().DoesTableExist("FOO"));
+  EXPECT_TRUE(db().DoesIndexExist("foo_a"));
 
   // Test DoesColumnExist.
   EXPECT_FALSE(db().DoesColumnExist("foo", "bar"));
@@ -189,6 +186,10 @@ TEST_F(SQLConnectionTest, DoesStuffExist) {
 
   // Testing for a column on a nonexistent table.
   EXPECT_FALSE(db().DoesColumnExist("bar", "b"));
+
+  // Names are not case sensitive.
+  EXPECT_TRUE(db().DoesTableExist("FOO"));
+  EXPECT_TRUE(db().DoesColumnExist("FOO", "A"));
 }
 
 TEST_F(SQLConnectionTest, GetLastInsertRowId) {
@@ -197,7 +198,7 @@ TEST_F(SQLConnectionTest, GetLastInsertRowId) {
   ASSERT_TRUE(db().Execute("INSERT INTO foo (value) VALUES (12)"));
 
   // Last insert row ID should be valid.
-  int64 row = db().GetLastInsertRowId();
+  int64_t row = db().GetLastInsertRowId();
   EXPECT_LT(0, row);
 
   // It should be the primary key of the row we just inserted.
@@ -223,10 +224,36 @@ TEST_F(SQLConnectionTest, ScopedIgnoreError) {
   ASSERT_TRUE(db().Execute(kCreateSql));
   ASSERT_TRUE(db().Execute("INSERT INTO foo (id) VALUES (12)"));
 
-  sql::ScopedErrorIgnorer ignore_errors;
-  ignore_errors.IgnoreError(SQLITE_CONSTRAINT);
-  ASSERT_FALSE(db().Execute("INSERT INTO foo (id) VALUES (12)"));
-  ASSERT_TRUE(ignore_errors.CheckIgnoredErrors());
+  {
+    sql::ScopedErrorIgnorer ignore_errors;
+    ignore_errors.IgnoreError(SQLITE_CONSTRAINT);
+    ASSERT_FALSE(db().Execute("INSERT INTO foo (id) VALUES (12)"));
+    ASSERT_TRUE(ignore_errors.CheckIgnoredErrors());
+  }
+}
+
+// Test that clients of GetUntrackedStatement() can test corruption-handling
+// with ScopedErrorIgnorer.
+TEST_F(SQLConnectionTest, ScopedIgnoreUntracked) {
+  const char* kCreateSql = "CREATE TABLE foo (id INTEGER UNIQUE)";
+  ASSERT_TRUE(db().Execute(kCreateSql));
+  ASSERT_FALSE(db().DoesTableExist("bar"));
+  ASSERT_TRUE(db().DoesTableExist("foo"));
+  ASSERT_TRUE(db().DoesColumnExist("foo", "id"));
+  db().Close();
+
+  // Corrupt the database so that nothing works, including PRAGMAs.
+  ASSERT_TRUE(sql::test::CorruptSizeInHeader(db_path()));
+
+  {
+    sql::ScopedErrorIgnorer ignore_errors;
+    ignore_errors.IgnoreError(SQLITE_CORRUPT);
+    ASSERT_TRUE(db().Open(db_path()));
+    ASSERT_FALSE(db().DoesTableExist("bar"));
+    ASSERT_FALSE(db().DoesTableExist("foo"));
+    ASSERT_FALSE(db().DoesColumnExist("foo", "id"));
+    ASSERT_TRUE(ignore_errors.CheckIgnoredErrors());
+  }
 }
 
 TEST_F(SQLConnectionTest, ErrorCallback) {
@@ -239,7 +266,10 @@ TEST_F(SQLConnectionTest, ErrorCallback) {
     sql::ScopedErrorCallback sec(
         &db(), base::Bind(&sql::CaptureErrorCallback, &error));
     EXPECT_FALSE(db().Execute("INSERT INTO foo (id) VALUES (12)"));
-    EXPECT_EQ(SQLITE_CONSTRAINT, error);
+
+    // Later versions of SQLite throw SQLITE_CONSTRAINT_UNIQUE.  The specific
+    // sub-error isn't really important.
+    EXPECT_EQ(SQLITE_CONSTRAINT, (error&0xff));
   }
 
   // Callback is no longer in force due to reset.
@@ -450,12 +480,20 @@ TEST_F(SQLConnectionTest, RazeNOTADB) {
   }
   ASSERT_TRUE(base::PathExists(db_path()));
 
-  // SQLite will successfully open the handle, but will fail with
-  // SQLITE_IOERR_SHORT_READ on pragma statemenets which read the
-  // header.
+  // SQLite will successfully open the handle, but fail when running PRAGMA
+  // statements that access the database.
   {
     sql::ScopedErrorIgnorer ignore_errors;
-    ignore_errors.IgnoreError(SQLITE_IOERR_SHORT_READ);
+
+    // Earlier versions of Chromium compiled against SQLite 3.6.7.3, which
+    // returned SQLITE_IOERR_SHORT_READ in this case.  Some platforms may still
+    // compile against an earlier SQLite via USE_SYSTEM_SQLITE.
+    if (ignore_errors.SQLiteLibVersionNumber() < 3008005) {
+      ignore_errors.IgnoreError(SQLITE_IOERR_SHORT_READ);
+    } else {
+      ignore_errors.IgnoreError(SQLITE_NOTADB);
+    }
+
     EXPECT_TRUE(db().Open(db_path()));
     ASSERT_TRUE(ignore_errors.CheckIgnoredErrors());
   }

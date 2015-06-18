@@ -50,8 +50,8 @@ void ContentMainDelegate::ZygoteStarting(
 
 #endif
 
-bool ContentMainDelegate::ShouldEnableTerminationOnHeapCorruption() {
-  return true;
+bool ContentMainDelegate::ShouldEnableProfilerRecording() {
+  return false;
 }
 
 ContentBrowserClient* ContentMainDelegate::CreateContentBrowserClient() {

@@ -50,7 +50,7 @@ class HTMLVideoElement final : public HTMLMediaElement, public CanvasImageSource
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLVideoElement> create(Document&);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     unsigned videoWidth() const;
     unsigned videoHeight() const;
@@ -69,12 +69,13 @@ public:
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&) const;
 
     // Used by WebGL to do GPU-GPU textures copy if possible.
-    // See more details at MediaPlayer::copyVideoTextureToPlatformTexture() defined in Source/WebCore/platform/graphics/MediaPlayer.h.
     bool copyVideoTextureToPlatformTexture(WebGraphicsContext3D*, Platform3DObject texture, GC3Dint level, GLenum internalFormat, GLenum type, bool premultiplyAlpha, bool flipY);
 
-    bool shouldDisplayPosterImage() const { return displayMode() == Poster || displayMode() == PosterWaitingForVideo; }
+    bool shouldDisplayPosterImage() const { return displayMode() == Poster; }
 
     KURL posterImageURL() const;
+
+    bool hasAvailableVideoFrame() const;
 
     // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
     virtual KURL mediaPlayerPosterURL() override;
@@ -83,7 +84,7 @@ public:
     virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
     virtual bool isVideoElement() const override { return true; }
     virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
-    virtual FloatSize sourceSize() const override;
+    virtual FloatSize elementSize() const override;
     virtual const KURL& sourceURL() const override { return currentSrc(); }
 
     virtual bool isHTMLVideoElement() const override { return true; }
@@ -91,8 +92,8 @@ public:
 private:
     HTMLVideoElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual void attach(const AttachContext& = AttachContext()) override;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool isPresentationAttribute(const QualifiedName&) const override;
@@ -102,7 +103,6 @@ private:
     virtual bool isURLAttribute(const Attribute&) const override;
     virtual const AtomicString imageSourceURL() const override;
 
-    bool hasAvailableVideoFrame() const;
     virtual void updateDisplayState() override;
     virtual void didMoveToNewDocument(Document& oldDocument) override;
     virtual void setDisplayMode(DisplayMode) override;

@@ -131,7 +131,7 @@ cr.define('options', function() {
 
   /**
    * Sets the values for all the content settings radios and labels.
-   * @param {Object.<string, {managedBy: string, value: string}>} dict A mapping
+   * @param {Object<string, {managedBy: string, value: string}>} dict A mapping
    *     from radio groups to the checked value for that group.
    */
   ContentSettings.setContentFilterSettingsValue = function(dict) {
@@ -218,7 +218,7 @@ cr.define('options', function() {
   /**
    * Initializes an exceptions list.
    * @param {string} type The content type that we are setting exceptions for.
-   * @param {Array.<options.Exception>} exceptions An array of pairs, where the
+   * @param {Array<options.Exception>} exceptions An array of pairs, where the
    *     first element of each pair is the filter string, and the second is the
    *     setting (allow/block).
    */
@@ -290,14 +290,6 @@ cr.define('options', function() {
    */
   ContentSettings.showMediaPepperFlashExceptionsLink = function(show) {
     $('media-pepper-flash-exceptions').hidden = !show;
-  };
-
-  /**
-   * Shows/hides the whole Web MIDI settings.
-   * @param {boolean} show Wether to show the whole Web MIDI settings.
-   */
-  ContentSettings.showExperimentalWebMIDISettings = function(show) {
-    $('experimental-web-midi-settings').hidden = !show;
   };
 
   /**

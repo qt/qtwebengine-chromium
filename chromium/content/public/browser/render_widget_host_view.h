@@ -48,8 +48,8 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual ~RenderWidgetHostView() {}
 
   // Initialize this object for use as a drawing area.  |parent_view| may be
-  // left as NULL on platforms where a parent view is not required to initialize
-  // a child window.
+  // left as nullptr on platforms where a parent view is not required to
+  // initialize a child window.
   virtual void InitAsChild(gfx::NativeView parent_view) = 0;
 
   // Returns the associated RenderWidgetHost.
@@ -71,7 +71,7 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual gfx::NativeViewId GetNativeViewId() const = 0;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() = 0;
 
-  // Returns a ui::TextInputClient to support text input or NULL if this RWHV
+  // Returns a ui::TextInputClient to support text input or nullptr if this RWHV
   // doesn't support text input.
   // Note: Not all the platforms use ui::InputMethod and ui::TextInputClient for
   // text input.  Some platforms (Mac and Android for example) use their own
@@ -92,6 +92,14 @@ class CONTENT_EXPORT RenderWidgetHostView {
 
   // Whether the view is showing.
   virtual bool IsShowing() = 0;
+
+  // Indicates if the view is currently occluded (e.g, not visible because it's
+  // covered up by other windows), and as a result the view's renderer may be
+  // suspended. If Show() is called on a view then its state should be re-set to
+  // being un-occluded (an explicit WasUnOccluded call will not be made for
+  // that). These calls are not necessarily made in pairs.
+  virtual void WasUnOccluded() = 0;
+  virtual void WasOccluded() = 0;
 
   // Retrieve the bounds of the View, in screen coordinates.
   virtual gfx::Rect GetViewBounds() const = 0;

@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,10 +28,12 @@
 #include "talk/examples/peerconnection/client/conductor.h"
 
 #include <utility>
+#include <vector>
 
 #include "talk/app/webrtc/videosourceinterface.h"
 #include "talk/examples/peerconnection/client/defaults.h"
 #include "talk/media/devices/devicemanager.h"
+#include "talk/app/webrtc/test/fakeconstraints.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/json.h"
 #include "webrtc/base/logging.h"
@@ -44,6 +46,9 @@ const char kCandidateSdpName[] = "candidate";
 // Names used for a SessionDescription JSON object.
 const char kSessionDescriptionTypeName[] = "type";
 const char kSessionDescriptionSdpName[] = "sdp";
+
+#define DTLS_ON  true
+#define DTLS_OFF false
 
 class DummySetSessionDescriptionObserver
     : public webrtc::SetSessionDescriptionObserver {
@@ -66,6 +71,7 @@ class DummySetSessionDescriptionObserver
 
 Conductor::Conductor(PeerConnectionClient* client, MainWindow* main_wnd)
   : peer_id_(-1),
+    loopback_(false),
     client_(client),
     main_wnd_(main_wnd) {
   client_->RegisterObserver(this);
@@ -98,21 +104,54 @@ bool Conductor::InitializePeerConnection() {
     return false;
   }
 
-  webrtc::PeerConnectionInterface::IceServers servers;
-  webrtc::PeerConnectionInterface::IceServer server;
-  server.uri = GetPeerConnectionString();
-  servers.push_back(server);
-  peer_connection_ = peer_connection_factory_->CreatePeerConnection(servers,
-                                                                    NULL,
-                                                                    NULL,
-                                                                    NULL,
-                                                                    this);
-  if (!peer_connection_.get()) {
+  if (!CreatePeerConnection(DTLS_ON)) {
     main_wnd_->MessageBox("Error",
         "CreatePeerConnection failed", true);
     DeletePeerConnection();
   }
   AddStreams();
+  return peer_connection_.get() != NULL;
+}
+
+bool Conductor::ReinitializePeerConnectionForLoopback() {
+  loopback_ = true;
+  rtc::scoped_refptr<webrtc::StreamCollectionInterface> streams(
+      peer_connection_->local_streams());
+  peer_connection_ = NULL;
+  if (CreatePeerConnection(DTLS_OFF)) {
+    for (size_t i = 0; i < streams->count(); ++i)
+      peer_connection_->AddStream(streams->at(i));
+    peer_connection_->CreateOffer(this, NULL);
+  }
+  return peer_connection_.get() != NULL;
+}
+
+bool Conductor::CreatePeerConnection(bool dtls) {
+  ASSERT(peer_connection_factory_.get() != NULL);
+  ASSERT(peer_connection_.get() == NULL);
+
+  webrtc::PeerConnectionInterface::IceServers servers;
+  webrtc::PeerConnectionInterface::IceServer server;
+  server.uri = GetPeerConnectionString();
+  servers.push_back(server);
+
+  webrtc::FakeConstraints constraints;
+  if (dtls) {
+    constraints.AddOptional(webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
+                            "true");
+  }
+  else
+  {
+    constraints.AddOptional(webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
+                            "false");
+  }
+
+  peer_connection_ =
+      peer_connection_factory_->CreatePeerConnection(servers,
+                                                     &constraints,
+                                                     NULL,
+                                                     NULL,
+                                                     this);
   return peer_connection_.get() != NULL;
 }
 
@@ -123,6 +162,7 @@ void Conductor::DeletePeerConnection() {
   main_wnd_->StopRemoteRenderer();
   peer_connection_factory_ = NULL;
   peer_id_ = -1;
+  loopback_ = false;
 }
 
 void Conductor::EnsureStreamingUI() {
@@ -155,6 +195,14 @@ void Conductor::OnRemoveStream(webrtc::MediaStreamInterface* stream) {
 
 void Conductor::OnIceCandidate(const webrtc::IceCandidateInterface* candidate) {
   LOG(INFO) << __FUNCTION__ << " " << candidate->sdp_mline_index();
+  // For loopback test. To save some connecting delay.
+  if (loopback_) {
+    if (!peer_connection_->AddIceCandidate(candidate)) {
+      LOG(WARNING) << "Failed to apply the received candidate";
+    }
+    return;
+  }
+
   Json::StyledWriter writer;
   Json::Value jmessage;
 
@@ -235,10 +283,22 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
   std::string type;
   std::string json_object;
 
-  GetStringFromJsonObject(jmessage, kSessionDescriptionTypeName, &type);
+  rtc::GetStringFromJsonObject(jmessage, kSessionDescriptionTypeName, &type);
   if (!type.empty()) {
+    if (type == "offer-loopback") {
+      // This is a loopback call.
+      // Recreate the peerconnection with DTLS disabled.
+      if (!ReinitializePeerConnectionForLoopback()) {
+        LOG(LS_ERROR) << "Failed to initialize our PeerConnection instance";
+        DeletePeerConnection();
+        client_->SignOut();
+      }
+      return;
+    }
+
     std::string sdp;
-    if (!GetStringFromJsonObject(jmessage, kSessionDescriptionSdpName, &sdp)) {
+    if (!rtc::GetStringFromJsonObject(jmessage, kSessionDescriptionSdpName,
+                                      &sdp)) {
       LOG(WARNING) << "Can't parse received session description message.";
       return;
     }
@@ -260,10 +320,11 @@ void Conductor::OnMessageFromPeer(int peer_id, const std::string& message) {
     std::string sdp_mid;
     int sdp_mlineindex = 0;
     std::string sdp;
-    if (!GetStringFromJsonObject(jmessage, kCandidateSdpMidName, &sdp_mid) ||
-        !GetIntFromJsonObject(jmessage, kCandidateSdpMlineIndexName,
-                              &sdp_mlineindex) ||
-        !GetStringFromJsonObject(jmessage, kCandidateSdpName, &sdp)) {
+    if (!rtc::GetStringFromJsonObject(jmessage, kCandidateSdpMidName,
+                                      &sdp_mid) ||
+        !rtc::GetIntFromJsonObject(jmessage, kCandidateSdpMlineIndexName,
+                                   &sdp_mlineindex) ||
+        !rtc::GetStringFromJsonObject(jmessage, kCandidateSdpName, &sdp)) {
       LOG(WARNING) << "Can't parse received message.";
       return;
     }
@@ -467,11 +528,23 @@ void Conductor::UIThreadCallback(int msg_id, void* data) {
 void Conductor::OnSuccess(webrtc::SessionDescriptionInterface* desc) {
   peer_connection_->SetLocalDescription(
       DummySetSessionDescriptionObserver::Create(), desc);
+
+  std::string sdp;
+  desc->ToString(&sdp);
+
+  // For loopback test. To save some connecting delay.
+  if (loopback_) {
+    // Replace message type from "offer" to "answer"
+    webrtc::SessionDescriptionInterface* session_description(
+        webrtc::CreateSessionDescription("answer", sdp));
+    peer_connection_->SetRemoteDescription(
+        DummySetSessionDescriptionObserver::Create(), session_description);
+    return;
+  }
+
   Json::StyledWriter writer;
   Json::Value jmessage;
   jmessage[kSessionDescriptionTypeName] = desc->type();
-  std::string sdp;
-  desc->ToString(&sdp);
   jmessage[kSessionDescriptionSdpName] = sdp;
   SendMessage(writer.write(jmessage));
 }

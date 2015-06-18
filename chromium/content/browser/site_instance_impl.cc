@@ -236,8 +236,7 @@ SiteInstance* SiteInstance::Create(BrowserContext* browser_context) {
 /*static*/
 SiteInstance* SiteInstance::CreateForURL(BrowserContext* browser_context,
                                          const GURL& url) {
-  // This BrowsingInstance may be deleted if it returns an existing
-  // SiteInstance.
+  // This will create a new SiteInstance and BrowsingInstance.
   scoped_refptr<BrowsingInstance> instance(
       new BrowsingInstance(browser_context));
   return instance->GetSiteInstanceForURL(url);
@@ -292,17 +291,11 @@ GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
 
   GURL url = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url);
 
-  // URLs with no host should have an empty site.
-  GURL site;
-
-  // TODO(creis): For many protocols, we should just treat the scheme as the
-  // site, since there is no host.  e.g., file:, about:, chrome:
-
   // If the url has a host, then determine the site.
   if (url.has_host()) {
     // Only keep the scheme and registered domain as given by GetOrigin.  This
     // may also include a port, which we need to drop.
-    site = url.GetOrigin();
+    GURL site = url.GetOrigin();
 
     // Remove port, if any.
     if (site.has_port()) {
@@ -321,8 +314,17 @@ GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
       rep.SetHostStr(domain);
       site = site.ReplaceComponents(rep);
     }
+    return site;
   }
-  return site;
+
+  // If there is no host but there is a scheme, return the scheme.
+  // This is useful for cases like file URLs.
+  if (url.has_scheme())
+    return GURL(url.scheme() + ":");
+
+  // Otherwise the URL should be invalid; return an empty site.
+  DCHECK(!url.is_valid());
+  return GURL();
 }
 
 /*static*/

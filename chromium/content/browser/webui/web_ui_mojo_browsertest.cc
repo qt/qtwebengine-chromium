@@ -25,10 +25,10 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/data/web_ui_test_mojo_bindings.mojom.h"
-#include "mojo/edk/test/test_utils.h"
-#include "mojo/public/cpp/bindings/interface_impl.h"
-#include "mojo/public/cpp/bindings/interface_request.h"
-#include "mojo/public/js/constants.h"
+#include "third_party/mojo/src/mojo/edk/test/test_utils.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_impl.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
+#include "third_party/mojo/src/mojo/public/js/constants.h"
 
 namespace content {
 namespace {
@@ -40,7 +40,8 @@ bool got_message = false;
 bool GetResource(const std::string& id,
                  const WebUIDataSource::GotDataCallback& callback) {
   // These are handled by the WebUIDataSource that AddMojoDataSource() creates.
-  if (id == mojo::kBufferModuleName ||
+  if (id == mojo::kBindingsModuleName ||
+      id == mojo::kBufferModuleName ||
       id == mojo::kCodecModuleName ||
       id == mojo::kConnectionModuleName ||
       id == mojo::kConnectorModuleName ||
@@ -66,33 +67,19 @@ class BrowserTargetImpl : public mojo::InterfaceImpl<BrowserTarget> {
   ~BrowserTargetImpl() override {}
 
   // mojo::InterfaceImpl<BrowserTarget> overrides:
-  void PingResponse() override { NOTREACHED(); }
+  void Start(const mojo::Closure& closure) override {
+    closure.Run();
+  }
+  void Stop() override {
+    got_message = true;
+    run_loop_->Quit();
+  }
 
  protected:
   base::RunLoop* run_loop_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserTargetImpl);
-};
-
-class PingBrowserTargetImpl : public BrowserTargetImpl {
- public:
-  explicit PingBrowserTargetImpl(base::RunLoop* run_loop)
-      : BrowserTargetImpl(run_loop) {}
-
-  ~PingBrowserTargetImpl() override {}
-
-  // mojo::InterfaceImpl<BrowserTarget> overrides:
-  void OnConnectionEstablished() override { client()->Ping(); }
-
-  // Quit the RunLoop when called.
-  void PingResponse() override {
-    got_message = true;
-    run_loop_->Quit();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(PingBrowserTargetImpl);
 };
 
 // WebUIController that sets up mojo bindings.
@@ -125,7 +112,7 @@ class PingTestWebUIController : public TestWebUIController {
    ~PingTestWebUIController() override {}
 
   // WebUIController overrides:
-   void RenderViewCreated(RenderViewHost* render_view_host) override {
+  void RenderViewCreated(RenderViewHost* render_view_host) override {
     render_view_host->GetMainFrame()->GetServiceRegistry()->
         AddService<BrowserTarget>(base::Bind(
             &PingTestWebUIController::CreateHandler, base::Unretained(this)));
@@ -133,7 +120,7 @@ class PingTestWebUIController : public TestWebUIController {
 
   void CreateHandler(mojo::InterfaceRequest<BrowserTarget> request) {
     browser_target_.reset(mojo::WeakBindToRequest(
-        new PingBrowserTargetImpl(run_loop_), &request));
+        new BrowserTargetImpl(run_loop_), &request));
   }
 
  private:

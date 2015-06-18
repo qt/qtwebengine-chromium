@@ -30,7 +30,7 @@
 #include "core/css/StyleSheetList.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/shadow/ContentDistribution.h"
+#include "core/dom/shadow/DistributedNodes.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLShadowElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
@@ -72,8 +72,8 @@ inline void DistributionPool::populateChildren(const ContainerNode& parent)
     for (Node* child = parent.firstChild(); child; child = child->nextSibling()) {
         if (isActiveInsertionPoint(*child)) {
             InsertionPoint* insertionPoint = toInsertionPoint(child);
-            for (size_t i = 0; i < insertionPoint->size(); ++i)
-                m_nodes.append(insertionPoint->at(i));
+            for (size_t i = 0; i < insertionPoint->distributedNodesSize(); ++i)
+                m_nodes.append(insertionPoint->distributedNodeAt(i));
         } else {
             m_nodes.append(child);
         }
@@ -84,7 +84,7 @@ inline void DistributionPool::populateChildren(const ContainerNode& parent)
 
 void DistributionPool::distributeTo(InsertionPoint* insertionPoint, ElementShadow* elementShadow)
 {
-    ContentDistribution distribution;
+    DistributedNodes distributedNodes;
 
     for (size_t i = 0; i < m_nodes.size(); ++i) {
         if (m_distributed[i])
@@ -94,19 +94,19 @@ void DistributionPool::distributeTo(InsertionPoint* insertionPoint, ElementShado
             continue;
 
         Node* node = m_nodes[i];
-        distribution.append(node);
+        distributedNodes.append(node);
         elementShadow->didDistributeNode(node, insertionPoint);
         m_distributed[i] = true;
     }
 
     // Distributes fallback elements
-    if (insertionPoint->isContentInsertionPoint() && distribution.isEmpty()) {
+    if (insertionPoint->isContentInsertionPoint() && distributedNodes.isEmpty()) {
         for (Node* fallbackNode = insertionPoint->firstChild(); fallbackNode; fallbackNode = fallbackNode->nextSibling()) {
-            distribution.append(fallbackNode);
+            distributedNodes.append(fallbackNode);
             elementShadow->didDistributeNode(fallbackNode, insertionPoint);
         }
     }
-    insertionPoint->setDistribution(distribution);
+    insertionPoint->setDistributedNodes(distributedNodes);
 }
 
 inline DistributionPool::~DistributionPool()
@@ -119,7 +119,7 @@ inline void DistributionPool::detachNonDistributedNodes()
     for (size_t i = 0; i < m_nodes.size(); ++i) {
         if (m_distributed[i])
             continue;
-        if (m_nodes[i]->renderer())
+        if (m_nodes[i]->layoutObject())
             m_nodes[i]->lazyReattachIfAttached();
     }
 }
@@ -147,8 +147,8 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRoot::Shadow
     EventDispatchForbiddenScope assertNoEventDispatch;
     ScriptForbiddenScope forbidScript;
 
-    if (type == ShadowRoot::AuthorShadowRoot && (!youngestShadowRoot() || youngestShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot))
-        shadowHost.willAddFirstAuthorShadowRoot();
+    if (type == ShadowRoot::OpenShadowRoot && (!youngestShadowRoot() || youngestShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot))
+        shadowHost.willAddFirstOpenShadowRoot();
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
         root->lazyReattachIfAttached();
@@ -240,16 +240,24 @@ bool ElementShadow::hasSameStyles(const ElementShadow* other) const
 
 const InsertionPoint* ElementShadow::finalDestinationInsertionPointFor(const Node* key) const
 {
-    ASSERT(key && !key->document().childNeedsDistributionRecalc());
+    ASSERT(key && !key->needsDistributionRecalc());
     NodeToDestinationInsertionPoints::const_iterator it = m_nodeToInsertionPoints.find(key);
-    return it == m_nodeToInsertionPoints.end() ? 0: it->value.last().get();
+#if ENABLE(OILPAN)
+    return it == m_nodeToInsertionPoints.end() ? nullptr : it->value->last().get();
+#else
+    return it == m_nodeToInsertionPoints.end() ? nullptr : it->value.last().get();
+#endif
 }
 
 const DestinationInsertionPoints* ElementShadow::destinationInsertionPointsFor(const Node* key) const
 {
-    ASSERT(key && !key->document().childNeedsDistributionRecalc());
+    ASSERT(key && !key->needsDistributionRecalc());
     NodeToDestinationInsertionPoints::const_iterator it = m_nodeToInsertionPoints.find(key);
-    return it == m_nodeToInsertionPoints.end() ? 0: &it->value;
+#if ENABLE(OILPAN)
+    return it == m_nodeToInsertionPoints.end() ? nullptr : it->value.get();
+#else
+    return it == m_nodeToInsertionPoints.end() ? nullptr : &it->value;
+#endif
 }
 
 void ElementShadow::distribute()
@@ -260,7 +268,7 @@ void ElementShadow::distribute()
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
         HTMLShadowElement* shadowInsertionPoint = 0;
-        const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& insertionPoints = root->descendantInsertionPoints();
+        const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>>& insertionPoints = root->descendantInsertionPoints();
         for (size_t i = 0; i < insertionPoints.size(); ++i) {
             InsertionPoint* point = insertionPoints[i].get();
             if (!point->isActive())
@@ -293,12 +301,20 @@ void ElementShadow::distribute()
         if (ElementShadow* shadow = shadowWhereNodeCanBeDistributed(*shadowInsertionPoint))
             shadow->setNeedsDistributionRecalc();
     }
+    InspectorInstrumentation::didPerformElementShadowDistribution(host());
 }
 
 void ElementShadow::didDistributeNode(const Node* node, InsertionPoint* insertionPoint)
 {
+#if ENABLE(OILPAN)
+    NodeToDestinationInsertionPoints::AddResult result = m_nodeToInsertionPoints.add(node, nullptr);
+    if (result.isNewEntry)
+        result.storedValue->value = adoptPtrWillBeNoop(new DestinationInsertionPoints());
+    result.storedValue->value->append(insertionPoint);
+#else
     NodeToDestinationInsertionPoints::AddResult result = m_nodeToInsertionPoints.add(node, DestinationInsertionPoints());
     result.storedValue->value.append(insertionPoint);
+#endif
 }
 
 const SelectRuleFeatureSet& ElementShadow::ensureSelectFeatureSet()
@@ -331,12 +347,6 @@ void ElementShadow::collectSelectFeatureSetFrom(ShadowRoot& root)
     }
 }
 
-void ElementShadow::distributedNodePseudoStateChanged(CSSSelector::PseudoType pseudo)
-{
-    if (ensureSelectFeatureSet().hasSelectorForPseudoType(pseudo))
-        setNeedsDistributionRecalc();
-}
-
 void ElementShadow::willAffectSelector()
 {
     for (ElementShadow* shadow = this; shadow; shadow = shadow->containingShadow()) {
@@ -355,7 +365,7 @@ void ElementShadow::clearDistribution()
         root->setShadowInsertionPointOfYoungerShadowRoot(nullptr);
 }
 
-void ElementShadow::trace(Visitor* visitor)
+DEFINE_TRACE(ElementShadow)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_nodeToInsertionPoints);

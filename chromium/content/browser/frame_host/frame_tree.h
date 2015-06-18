@@ -50,17 +50,20 @@ class CONTENT_EXPORT FrameTree {
             RenderFrameHostManager::Delegate* manager_delegate);
   ~FrameTree();
 
-  // Returns the FrameTreeNode with the given |frame_tree_node_id|.
-  static FrameTreeNode* GloballyFindByID(int64 frame_tree_node_id);
-
   FrameTreeNode* root() const { return root_.get(); }
 
   // Returns the FrameTreeNode with the given |frame_tree_node_id| if it is part
   // of this FrameTree.
-  FrameTreeNode* FindByID(int64 frame_tree_node_id);
+  FrameTreeNode* FindByID(int frame_tree_node_id);
 
   // Returns the FrameTreeNode with the given renderer-specific |routing_id|.
-  FrameTreeNode* FindByRoutingID(int routing_id, int process_id);
+  FrameTreeNode* FindByRoutingID(int process_id, int routing_id);
+
+  // Returns the first frame in this tree with the given |name|, or the main
+  // frame if |name| is empty.
+  // Note that this does NOT support pseudo-names like _self, _top, and _blank,
+  // nor searching other FrameTrees (unlike blink::WebView::findFrameByName).
+  FrameTreeNode* FindByName(const std::string& name);
 
   // Executes |on_node| on each node in the frame tree.  If |on_node| returns
   // false, terminates the iteration immediately. Returning false is useful
@@ -70,10 +73,15 @@ class CONTENT_EXPORT FrameTree {
   void ForEach(const base::Callback<bool(FrameTreeNode*)>& on_node) const;
 
   // Frame tree manipulation routines.
+  // |process_id| is required to disambiguate |new_routing_id|, and it must
+  // match the process of the |parent| node.  Otherwise this method returns
+  // nullptr.  Passing MSG_ROUTING_NONE for |new_routing_id| will allocate a new
+  // routing ID for the new frame.
   RenderFrameHostImpl* AddFrame(FrameTreeNode* parent,
                                 int process_id,
                                 int new_routing_id,
-                                const std::string& frame_name);
+                                const std::string& frame_name,
+                                SandboxFlags sandbox_flags);
   void RemoveFrame(FrameTreeNode* child);
 
   // This method walks the entire frame tree and creates a RenderFrameProxyHost
@@ -83,20 +91,6 @@ class CONTENT_EXPORT FrameTree {
   void CreateProxiesForSiteInstance(
       FrameTreeNode* source,
       SiteInstance* site_instance);
-
-  // Clears process specific-state after a main frame process swap.
-  // This destroys most of the frame tree but retains the root node so that
-  // navigation state may be kept on it between process swaps. Used to
-  // support bookkeeping for top-level navigations.
-  // TODO(creis): Look into how we can remove the need for this method.
-  void ResetForMainFrameSwap();
-
-  // Update the frame tree after a process exits.  Any nodes currently using the
-  // given |render_view_host| will lose all their children.
-  // TODO(creis): This should take a RenderProcessHost once RenderFrameHost
-  // knows its process.  Until then, we would just be asking the RenderViewHost
-  // for its process, so we'll skip that step.
-  void RenderProcessGone(RenderViewHost* render_view_host);
 
   // Convenience accessor for the main frame's RenderFrameHostImpl.
   RenderFrameHostImpl* GetMainFrame() const;
@@ -132,7 +126,24 @@ class CONTENT_EXPORT FrameTree {
   void RegisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
   void UnregisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
 
+  // This is only meant to be called by FrameTreeNode. Triggers calling
+  // the listener installed by SetFrameRemoveListener.
+  void FrameRemoved(FrameTreeNode* frame);
+
+  // Updates the overall load progress and notifies the WebContents.
+  void UpdateLoadProgress();
+
+  // Returns this FrameTree's total load progress.
+  double load_progress() { return load_progress_; }
+
+  // Resets the load progress on all nodes in this FrameTree.
+  void ResetLoadProgress();
+
+  // Returns true if at least one of the nodes in this FrameTree is loading.
+  bool IsLoading();
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBrowserTest, RemoveFocusedFrame);
   typedef base::hash_map<int, RenderViewHostImpl*> RenderViewHostMap;
   typedef std::multimap<int, RenderViewHostImpl*> RenderViewHostMultiMap;
 
@@ -167,9 +178,12 @@ class CONTENT_EXPORT FrameTree {
 
   scoped_ptr<FrameTreeNode> root_;
 
-  int64 focused_frame_tree_node_id_;
+  int focused_frame_tree_node_id_;
 
   base::Callback<void(RenderFrameHost*)> on_frame_removed_;
+
+  // Overall load progress.
+  double load_progress_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameTree);
 };

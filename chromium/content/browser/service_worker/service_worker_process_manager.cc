@@ -50,8 +50,8 @@ ServiceWorkerProcessManager::ServiceWorkerProcessManager(
     BrowserContext* browser_context)
     : browser_context_(browser_context),
       process_id_for_test_(-1),
-      weak_this_factory_(this),
-      weak_this_(weak_this_factory_.GetWeakPtr()) {
+      weak_this_factory_(this) {
+  weak_this_ = weak_this_factory_.GetWeakPtr();
 }
 
 ServiceWorkerProcessManager::~ServiceWorkerProcessManager() {
@@ -180,9 +180,8 @@ void ServiceWorkerProcessManager::AllocateWorkerProcess(
   if (!browser_context_) {
     // Shutdown has started.
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(callback, SERVICE_WORKER_ERROR_START_WORKER_FAILED, -1));
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(callback, SERVICE_WORKER_ERROR_ABORT, -1));
     return;
   }
   // No existing processes available; start a new one.
@@ -195,9 +194,8 @@ void ServiceWorkerProcessManager::AllocateWorkerProcess(
   if (!rph->Init()) {
     LOG(ERROR) << "Couldn't start a new process!";
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(callback, SERVICE_WORKER_ERROR_START_WORKER_FAILED, -1));
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(callback, SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND, -1));
     return;
   }
 

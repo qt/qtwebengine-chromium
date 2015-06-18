@@ -34,6 +34,7 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/svg/SVGElement.h"
 
 namespace blink {
 
@@ -45,11 +46,16 @@ inline SVGLengthType toSVGLengthType(unsigned short type)
     return static_cast<SVGLengthType>(type);
 }
 
+inline bool canResolveRelativeUnits(const SVGElement* contextElement)
+{
+    return contextElement && contextElement->inDocument();
+}
+
 } // namespace
 
 SVGLengthType SVGLengthTearOff::unitType()
 {
-    return target()->unitType();
+    return hasExposedLengthUnit() ? target()->unitType() : LengthTypeUnknown;
 }
 
 SVGLengthMode SVGLengthTearOff::unitMode()
@@ -57,21 +63,31 @@ SVGLengthMode SVGLengthTearOff::unitMode()
     return target()->unitMode();
 }
 
-float SVGLengthTearOff::value(ExceptionState& es)
+float SVGLengthTearOff::value(ExceptionState& exceptionState)
 {
+    if (target()->isRelative() && !canResolveRelativeUnits(contextElement())) {
+        exceptionState.throwDOMException(NotSupportedError, "Could not resolve relative length.");
+        return 0;
+    }
+
     SVGLengthContext lengthContext(contextElement());
-    return target()->value(lengthContext, es);
+    return target()->value(lengthContext);
 }
 
-void SVGLengthTearOff::setValue(float value, ExceptionState& es)
+void SVGLengthTearOff::setValue(float value, ExceptionState& exceptionState)
 {
     if (isImmutable()) {
-        es.throwDOMException(NoModificationAllowedError, "The attribute is read-only.");
+        exceptionState.throwDOMException(NoModificationAllowedError, "The attribute is read-only.");
+        return;
+    }
+
+    if (target()->isRelative() && !canResolveRelativeUnits(contextElement())) {
+        exceptionState.throwDOMException(NotSupportedError, "Could not resolve relative length.");
         return;
     }
 
     SVGLengthContext lengthContext(contextElement());
-    target()->setValue(value, lengthContext, es);
+    target()->setValue(value, lengthContext);
     commitChange();
 }
 
@@ -92,7 +108,8 @@ void SVGLengthTearOff::setValueInSpecifiedUnits(float value, ExceptionState& es)
 
 String SVGLengthTearOff::valueAsString()
 {
-    return target()->valueAsString();
+    // TODO(shanmuga.m@samsung.com): Not all <length> properties have 0 (with no unit) as the default (lacuna) value, Need to return default value instead of 0
+    return hasExposedLengthUnit() ? target()->valueAsString() : String::number(0);
 }
 
 void SVGLengthTearOff::setValueAsString(const String& str, ExceptionState& es)
@@ -102,7 +119,16 @@ void SVGLengthTearOff::setValueAsString(const String& str, ExceptionState& es)
         return;
     }
 
+    String oldValue = target()->valueAsString();
+
     target()->setValueAsString(str, es);
+
+    if (!es.hadException() && !hasExposedLengthUnit()) {
+        target()->setValueAsString(oldValue, ASSERT_NO_EXCEPTION); // rollback to old value
+        es.throwDOMException(SyntaxError, "The value provided ('" + str + "') is invalid.");
+        return;
+    }
+
     commitChange();
 }
 
@@ -134,12 +160,18 @@ void SVGLengthTearOff::convertToSpecifiedUnits(unsigned short unitType, Exceptio
         return;
     }
 
+    if ((target()->isRelative() || SVGLength::isRelativeUnit(toSVGLengthType(unitType)))
+        && !canResolveRelativeUnits(contextElement())) {
+        exceptionState.throwDOMException(NotSupportedError, "Could not resolve relative length.");
+        return;
+    }
+
     SVGLengthContext lengthContext(contextElement());
-    target()->convertToSpecifiedUnits(toSVGLengthType(unitType), lengthContext, exceptionState);
+    target()->convertToSpecifiedUnits(toSVGLengthType(unitType), lengthContext);
     commitChange();
 }
 
-SVGLengthTearOff::SVGLengthTearOff(PassRefPtr<SVGLength> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
+SVGLengthTearOff::SVGLengthTearOff(PassRefPtrWillBeRawPtr<SVGLength> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGLength>(target, contextElement, propertyIsAnimVal, attributeName)
 {
 }

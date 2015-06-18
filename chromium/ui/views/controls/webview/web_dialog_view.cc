@@ -247,6 +247,7 @@ void WebDialogView::OnDialogCloseFromWebUI(const std::string& json_retval) {
 
 void WebDialogView::OnCloseContents(WebContents* source,
                                     bool* out_close_dialog) {
+  DCHECK(out_close_dialog);
   if (delegate_)
     delegate_->OnCloseContents(source, out_close_dialog);
 }
@@ -306,15 +307,15 @@ content::WebContents* WebDialogView::OpenURLFromTab(
 void WebDialogView::AddNewContents(content::WebContents* source,
                                    content::WebContents* new_contents,
                                    WindowOpenDisposition disposition,
-                                   const gfx::Rect& initial_pos,
+                                   const gfx::Rect& initial_rect,
                                    bool user_gesture,
                                    bool* was_blocked) {
   if (delegate_ && delegate_->HandleAddNewContents(
-          source, new_contents, disposition, initial_pos, user_gesture)) {
+          source, new_contents, disposition, initial_rect, user_gesture)) {
     return;
   }
   WebDialogWebContentsDelegate::AddNewContents(
-      source, new_contents, disposition, initial_pos, user_gesture,
+      source, new_contents, disposition, initial_rect, user_gesture,
       was_blocked);
 }
 
@@ -329,6 +330,20 @@ void WebDialogView::BeforeUnloadFired(content::WebContents* tab,
                                       bool* proceed_to_fire_unload) {
   before_unload_fired_ = true;
   *proceed_to_fire_unload = proceed;
+}
+
+bool WebDialogView::ShouldCreateWebContents(
+    content::WebContents* web_contents,
+    int route_id,
+    int main_frame_route_id,
+    WindowContainerType window_container_type,
+    const base::string16& frame_name,
+    const GURL& target_url,
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace) {
+  if (delegate_)
+    return delegate_->HandleShouldCreateWebContents();
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

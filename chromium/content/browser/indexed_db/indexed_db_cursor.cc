@@ -68,7 +68,7 @@ void IndexedDBCursor::CursorAdvanceOperation(
   //                 will be ignored.
   if (!cursor_ || !cursor_->Advance(count, &s)) {
     cursor_.reset();
-    callbacks->OnSuccess(static_cast<IndexedDBValue*>(NULL));
+    callbacks->OnSuccess(nullptr);
     return;
   }
 
@@ -90,7 +90,7 @@ void IndexedDBCursor::CursorIterationOperation(
                                      IndexedDBBackingStore::Cursor::SEEK,
                                      &s) || !s.ok()) {
     cursor_.reset();
-    callbacks->OnSuccess(static_cast<IndexedDBValue*>(NULL));
+    callbacks->OnSuccess(nullptr);
     return;
   }
 
@@ -121,6 +121,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
   std::vector<IndexedDBValue> found_values;
 
   saved_cursor_.reset();
+  // TODO(cmumford): Use IPC::Channel::kMaximumMessageSize
   const size_t max_size_estimate = 10 * 1024 * 1024;
   size_t size_estimate = 0;
   leveldb::Status s;
@@ -165,7 +166,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
   }
 
   if (!found_keys.size()) {
-    callbacks->OnSuccess(static_cast<IndexedDBValue*>(NULL));
+    callbacks->OnSuccess(nullptr);
     return;
   }
 

@@ -10,10 +10,11 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/gtest_prod_util.h"
+#include "base/lazy_instance.h"
 #include "base/memory/shared_memory.h"
 #include "base/process/process.h"
 #include "base/strings/string16.h"
+#include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_checker.h"
 #include "ui/base/clipboard/clipboard_types.h"
@@ -31,11 +32,6 @@ class MessageWindow;
 }  // namespace win
 }  // namespace base
 
-// TODO(dcheng): Temporary until the IPC layer doesn't use WriteObjects().
-namespace content {
-class ClipboardMessageFilter;
-}
-
 namespace gfx {
 class Size;
 }
@@ -49,7 +45,9 @@ class NSString;
 #endif
 
 namespace ui {
+template <typename T>
 class ClipboardTest;
+class TestClipboard;
 class ScopedClipboardWriter;
 
 class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
@@ -71,10 +69,8 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     std::string Serialize() const;
     static FormatType Deserialize(const std::string& serialization);
 
-#if !defined(OS_ANDROID)
     // FormatType can be used in a set on some platforms.
     bool operator<(const FormatType& other) const;
-#endif
 
 #if defined(OS_WIN)
     const FORMATETC& ToFormatEtc() const { return data_; }
@@ -117,48 +113,6 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     // Copyable and assignable, since this is essentially an opaque value type.
   };
 
-  // TODO(dcheng): Make this private once the IPC layer no longer needs to
-  // serialize this information.
-  // ObjectType designates the type of data to be stored in the clipboard. This
-  // designation is shared across all OSes. The system-specific designation
-  // is defined by FormatType. A single ObjectType might be represented by
-  // several system-specific FormatTypes. For example, on Linux the CBF_TEXT
-  // ObjectType maps to "text/plain", "STRING", and several other formats. On
-  // windows it maps to CF_UNICODETEXT.
-  enum ObjectType {
-    CBF_TEXT,
-    CBF_HTML,
-    CBF_RTF,
-    CBF_BOOKMARK,
-    CBF_WEBKIT,
-    CBF_SMBITMAP,  // Bitmap from shared memory.
-    CBF_DATA,  // Arbitrary block of bytes.
-  };
-
-  // ObjectMap is a map from ObjectType to associated data.
-  // The data is organized differently for each ObjectType. The following
-  // table summarizes what kind of data is stored for each key.
-  // * indicates an optional argument.
-  //
-  // Key           Arguments    Type
-  // -------------------------------------
-  // CBF_TEXT      text         char array
-  // CBF_HTML      html         char array
-  //               url*         char array
-  // CBF_RTF       data         byte array
-  // CBF_BOOKMARK  html         char array
-  //               url          char array
-  // CBF_WEBKIT    none         empty vector
-  // CBF_SMBITMAP  shared_mem   A pointer to an unmapped base::SharedMemory
-  //                            object containing the bitmap data. The bitmap
-  //                            data should be premultiplied.
-  //               size         gfx::Size struct
-  // CBF_DATA      format       char array
-  //               data         byte array
-  typedef std::vector<char> ObjectMapParam;
-  typedef std::vector<ObjectMapParam> ObjectMapParams;
-  typedef std::map<int /* ObjectType */, ObjectMapParams> ObjectMap;
-
   static bool IsSupportedClipboardType(int32 type) {
     switch (type) {
       case CLIPBOARD_TYPE_COPY_PASTE:
@@ -195,7 +149,7 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // Returns a sequence number which uniquely identifies clipboard state.
   // This can be used to version the data on the clipboard and determine
   // whether it has changed.
-  virtual uint64 GetSequenceNumber(ClipboardType type) = 0;
+  virtual uint64 GetSequenceNumber(ClipboardType type) const = 0;
 
   // Tests whether the clipboard contains a certain format
   virtual bool IsFormatAvailable(const FormatType& format,
@@ -266,15 +220,6 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   static const FormatType& GetWebCustomDataFormatType();
   static const FormatType& GetPepperCustomDataFormatType();
 
-  // Embeds a pointer to a SharedMemory object pointed to by |bitmap_handle|
-  // belonging to |process| into a shared bitmap [CBF_SMBITMAP] slot in
-  // |objects|.  The pointer is deleted by DispatchObjects().
-  //
-  // On non-Windows platforms, |process| is ignored.
-  static bool ReplaceSharedMemHandle(ObjectMap* objects,
-                                     base::SharedMemoryHandle bitmap_handle,
-                                     base::ProcessHandle process)
-      WARN_UNUSED_RESULT;
 #if defined(OS_WIN)
   // Firefox text/html
   static const FormatType& GetTextHtmlFormatType();
@@ -289,6 +234,45 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
 
   Clipboard() {}
   virtual ~Clipboard() {}
+
+  // ObjectType designates the type of data to be stored in the clipboard. This
+  // designation is shared across all OSes. The system-specific designation
+  // is defined by FormatType. A single ObjectType might be represented by
+  // several system-specific FormatTypes. For example, on Linux the CBF_TEXT
+  // ObjectType maps to "text/plain", "STRING", and several other formats. On
+  // windows it maps to CF_UNICODETEXT.
+  enum ObjectType {
+    CBF_TEXT,
+    CBF_HTML,
+    CBF_RTF,
+    CBF_BOOKMARK,
+    CBF_WEBKIT,
+    CBF_SMBITMAP,  // Bitmap from shared memory.
+    CBF_DATA,      // Arbitrary block of bytes.
+  };
+
+  // ObjectMap is a map from ObjectType to associated data.
+  // The data is organized differently for each ObjectType. The following
+  // table summarizes what kind of data is stored for each key.
+  // * indicates an optional argument.
+  //
+  // Key           Arguments    Type
+  // -------------------------------------
+  // CBF_TEXT      text         char array
+  // CBF_HTML      html         char array
+  //               url*         char array
+  // CBF_RTF       data         byte array
+  // CBF_BOOKMARK  html         char array
+  //               url          char array
+  // CBF_WEBKIT    none         empty vector
+  // CBF_SMBITMAP  bitmap       A pointer to a SkBitmap. The caller must ensure
+  //                            the SkBitmap remains live for the duration of
+  //                            the WriteObjects call.
+  // CBF_DATA      format       char array
+  //               data         byte array
+  typedef std::vector<char> ObjectMapParam;
+  typedef std::vector<ObjectMapParam> ObjectMapParams;
+  typedef std::map<int /* ObjectType */, ObjectMapParams> ObjectMap;
 
   // Write a bunch of objects to the system clipboard. Copies are made of the
   // contents of |objects|.
@@ -319,13 +303,22 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
                          size_t data_len) = 0;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ClipboardTest, SharedBitmapTest);
-  FRIEND_TEST_ALL_PREFIXES(ClipboardTest, EmptyHTMLTest);
-  friend class ClipboardTest;
   // For access to WriteObjects().
-  // TODO(dcheng): Remove the temporary exception for content.
-  friend class content::ClipboardMessageFilter;
   friend class ScopedClipboardWriter;
+  friend class TestClipboard;
+
+  // A list of allowed threads. By default, this is empty and no thread checking
+  // is done (in the unit test case), but a user (like content) can set which
+  // threads are allowed to call this method.
+  typedef std::vector<base::PlatformThreadId> AllowedThreadsVector;
+  static base::LazyInstance<AllowedThreadsVector> allowed_threads_;
+
+  // Mapping from threads to clipboard objects.
+  typedef std::map<base::PlatformThreadId, Clipboard*> ClipboardMap;
+  static base::LazyInstance<ClipboardMap> clipboard_map_;
+
+  // Mutex that controls access to |g_clipboard_map|.
+  static base::LazyInstance<base::Lock>::Leaky clipboard_map_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Clipboard);
 };

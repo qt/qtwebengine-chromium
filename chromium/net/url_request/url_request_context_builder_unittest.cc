@@ -24,21 +24,6 @@ namespace net {
 
 namespace {
 
-// A subclass of SpawnedTestServer that uses a statically-configured hostname.
-// This is to work around mysterious failures in chrome_frame_net_tests. See:
-// http://crbug.com/114369
-class LocalHttpTestServer : public SpawnedTestServer {
- public:
-  explicit LocalHttpTestServer(const base::FilePath& document_root)
-      : SpawnedTestServer(SpawnedTestServer::TYPE_HTTP,
-                          ScopedCustomUrlRequestTestHttpHost::value(),
-                          document_root) {}
-  LocalHttpTestServer()
-      : SpawnedTestServer(SpawnedTestServer::TYPE_HTTP,
-                          ScopedCustomUrlRequestTestHttpHost::value(),
-                          base::FilePath()) {}
-};
-
 class MockHttpAuthHandlerFactory : public HttpAuthHandlerFactory {
  public:
   explicit MockHttpAuthHandlerFactory(int return_code) :
@@ -63,15 +48,17 @@ class MockHttpAuthHandlerFactory : public HttpAuthHandlerFactory {
 class URLRequestContextBuilderTest : public PlatformTest {
  protected:
   URLRequestContextBuilderTest()
-      : test_server_(
-          base::FilePath(FILE_PATH_LITERAL("net/data/url_request_unittest"))) {
+      : test_server_(SpawnedTestServer::TYPE_HTTP,
+                     SpawnedTestServer::kLocalhost,
+                     base::FilePath(
+                         FILE_PATH_LITERAL("net/data/url_request_unittest"))) {
 #if defined(OS_LINUX) || defined(OS_ANDROID)
     builder_.set_proxy_config_service(
         new ProxyConfigServiceFixed(ProxyConfig::CreateDirect()));
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
   }
 
-  LocalHttpTestServer test_server_;
+  SpawnedTestServer test_server_;
   URLRequestContextBuilder builder_;
 };
 
@@ -80,11 +67,8 @@ TEST_F(URLRequestContextBuilderTest, DefaultSettings) {
 
   scoped_ptr<URLRequestContext> context(builder_.Build());
   TestDelegate delegate;
-  scoped_ptr<URLRequest> request(
-      context->CreateRequest(test_server_.GetURL("echoheader?Foo"),
-                             DEFAULT_PRIORITY,
-                             &delegate,
-                             context->cookie_store()));
+  scoped_ptr<URLRequest> request(context->CreateRequest(
+      test_server_.GetURL("echoheader?Foo"), DEFAULT_PRIORITY, &delegate));
   request->set_method("GET");
   request->SetExtraRequestHeaderByName("Foo", "Bar", false);
   request->Start();
@@ -100,9 +84,7 @@ TEST_F(URLRequestContextBuilderTest, UserAgent) {
   TestDelegate delegate;
   scoped_ptr<URLRequest> request(
       context->CreateRequest(test_server_.GetURL("echoheader?User-Agent"),
-                             DEFAULT_PRIORITY,
-                             &delegate,
-                             NULL));
+                             DEFAULT_PRIORITY, &delegate));
   request->set_method("GET");
   request->Start();
   base::MessageLoop::current()->Run();
@@ -111,7 +93,7 @@ TEST_F(URLRequestContextBuilderTest, UserAgent) {
 
 TEST_F(URLRequestContextBuilderTest, ExtraHttpAuthHandlerFactory) {
   GURL gurl("www.google.com");
-  const int kBasicReturnCode = net::OK;
+  const int kBasicReturnCode = OK;
   MockHttpAuthHandlerFactory* mock_factory_basic =
       new MockHttpAuthHandlerFactory(kBasicReturnCode);
   scoped_ptr<HttpAuthHandler> handler;

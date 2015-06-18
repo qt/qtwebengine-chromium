@@ -31,7 +31,6 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/V8Document.h"
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/HTMLNames.h"
 #include "core/XMLNSNames.h"
 #include "core/dom/CDATASection.h"
@@ -42,17 +41,21 @@
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/TransformSource.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/frame/ConsoleTypes.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLEntityParser.h"
 #include "core/html/parser/TextResourceDecoder.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "core/xml/DocumentXSLT.h"
 #include "core/xml/parser/SharedBufferReader.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
@@ -102,7 +105,7 @@ static inline AtomicString toAtomicString(const xmlChar* string)
 
 static inline bool hasNoStyleInformation(Document* document)
 {
-    if (document->sawElementsInKnownNamespaces() || document->transformSourceDocument())
+    if (document->sawElementsInKnownNamespaces() || DocumentXSLT::hasTransformSourceDocument(*document))
         return false;
 
     if (!document->frame() || !document->frame()->page())
@@ -346,9 +349,9 @@ void XMLDocumentParser::insert(const SegmentedString&)
     ASSERT_NOT_REACHED();
 }
 
-void XMLDocumentParser::append(PassRefPtr<StringImpl> inputSource)
+void XMLDocumentParser::append(const String& inputSource)
 {
-    SegmentedString source(inputSource);
+    const SegmentedString source(inputSource);
     if (m_sawXSLTransform || !m_sawFirstElement)
         m_originalSourceForTransform.append(source);
 
@@ -482,8 +485,10 @@ void XMLDocumentParser::notifyFinished(Resource* unusedResource)
     if (errorOccurred) {
         scriptLoader->dispatchErrorEvent();
     } else if (!wasCanceled) {
-        scriptLoader->executeScript(sourceCode);
-        scriptLoader->dispatchLoadEvent();
+        if (!scriptLoader->executeScript(sourceCode))
+            scriptLoader->dispatchErrorEvent();
+        else
+            scriptLoader->dispatchLoadEvent();
     }
 
     m_scriptElement = nullptr;
@@ -536,7 +541,7 @@ static int matchFunc(const char*)
     // Only match loads initiated due to uses of libxml2 from within
     // XMLDocumentParser to avoid interfering with client applications that also
     // use libxml2. http://bugs.webkit.org/show_bug.cgi?id=17353
-    return XMLDocumentParserScope::currentFetcher && currentThread() == libxmlLoaderThread;
+    return XMLDocumentParserScope::currentDocument && currentThread() == libxmlLoaderThread;
 }
 
 static inline void setAttributes(Element* element, Vector<Attribute>& attributeVector, ParserContentPolicy parserContentPolicy)
@@ -587,7 +592,7 @@ static bool isLibxmlDefaultCatalogFile(const String& urlString)
         return true;
 
     // On Windows, libxml computes a URL relative to where its DLL resides.
-    if (urlString.startsWith("file:///", false) && urlString.endsWith("/etc/catalog", false))
+    if (urlString.startsWith("file:///", TextCaseInsensitive) && urlString.endsWith("/etc/catalog", TextCaseInsensitive))
         return true;
     return false;
 }
@@ -603,11 +608,11 @@ static bool shouldAllowExternalLoad(const KURL& url)
 
     // The most common DTD. There isn't much point in hammering www.w3c.org by
     // requesting this URL for every XHTML document.
-    if (urlString.startsWith("http://www.w3.org/TR/xhtml", false))
+    if (urlString.startsWith("http://www.w3.org/TR/xhtml", TextCaseInsensitive))
         return false;
 
     // Similarly, there isn't much point in requesting the SVG DTD.
-    if (urlString.startsWith("http://www.w3.org/Graphics/SVG", false))
+    if (urlString.startsWith("http://www.w3.org/Graphics/SVG", TextCaseInsensitive))
         return false;
 
     // The libxml doesn't give us a lot of context for deciding whether to allow
@@ -616,8 +621,14 @@ static bool shouldAllowExternalLoad(const KURL& url)
     // content. If we had more context, we could potentially allow the parser to
     // load a DTD. As things stand, we take the conservative route and allow
     // same-origin requests only.
-    if (!XMLDocumentParserScope::currentFetcher->document()->securityOrigin()->canRequest(url)) {
-        XMLDocumentParserScope::currentFetcher->printAccessDeniedMessage(url);
+    if (!XMLDocumentParserScope::currentDocument->securityOrigin()->canRequest(url)) {
+        // FIXME: This is copy/pasted. We should probably build console logging into canRequest().
+        if (!url.isNull()) {
+            String message = "Unsafe attempt to load URL " + url.elidedString() +
+                " from frame with URL " + XMLDocumentParserScope::currentDocument->url().elidedString() +
+                ". Domains, protocols and ports must match.\n";
+            XMLDocumentParserScope::currentDocument->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message));
+        }
         return false;
     }
 
@@ -626,7 +637,7 @@ static bool shouldAllowExternalLoad(const KURL& url)
 
 static void* openFunc(const char* uri)
 {
-    ASSERT(XMLDocumentParserScope::currentFetcher);
+    ASSERT(XMLDocumentParserScope::currentDocument);
     ASSERT(currentThread() == libxmlLoaderThread);
 
     KURL url(KURL(), uri);
@@ -638,17 +649,14 @@ static void* openFunc(const char* uri)
     RefPtr<SharedBuffer> data;
 
     {
-        ResourceFetcher* fetcher = XMLDocumentParserScope::currentFetcher;
+        Document* document = XMLDocumentParserScope::currentDocument;
         XMLDocumentParserScope scope(0);
         // FIXME: We should restore the original global error handler as well.
-
-        if (fetcher->frame()) {
-            FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, ResourceFetcher::defaultResourceOptions());
-            ResourcePtr<Resource> resource = fetcher->fetchSynchronously(request);
-            if (resource && !resource->errorOccurred()) {
-                data = resource->resourceBuffer();
-                finalURL = resource->response().url();
-            }
+        FetchRequest request(ResourceRequest(url), FetchInitiatorTypeNames::xml, ResourceFetcher::defaultResourceOptions());
+        ResourcePtr<Resource> resource = document->fetcher()->fetchSynchronously(request);
+        if (resource && !resource->errorOccurred()) {
+            data = resource->resourceBuffer();
+            finalURL = resource->response().url();
         }
     }
 
@@ -657,7 +665,7 @@ static void* openFunc(const char* uri)
     if (!shouldAllowExternalLoad(finalURL))
         return &globalDescriptor;
 
-    UseCounter::count(XMLDocumentParserScope::currentFetcher->document(), UseCounter::XMLExternalResourceLoad);
+    UseCounter::count(XMLDocumentParserScope::currentDocument, UseCounter::XMLExternalResourceLoad);
 
     return new SharedBufferReader(data);
 }
@@ -805,7 +813,7 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
 #endif
 
     // Add namespaces based on the parent node
-    WillBeHeapVector<RawPtrWillBeMember<Element> > elemStack;
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elemStack;
     while (parentElement) {
         elemStack.append(parentElement);
 
@@ -821,12 +829,11 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
     for (; !elemStack.isEmpty(); elemStack.removeLast()) {
         Element* element = elemStack.last();
         AttributeCollection attributes = element->attributes();
-        AttributeCollection::iterator end = attributes.end();
-        for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
-            if (it->localName() == xmlnsAtom)
-                m_defaultNamespaceURI = it->value();
-            else if (it->prefix() == xmlnsAtom)
-                m_prefixToNamespaceMap.set(it->localName(), it->value());
+        for (auto& attribute : attributes) {
+            if (attribute.localName() == xmlnsAtom)
+                m_defaultNamespaceURI = attribute.value();
+            else if (attribute.prefix() == xmlnsAtom)
+                m_prefixToNamespaceMap.set(attribute.localName(), attribute.value());
         }
     }
 
@@ -855,7 +862,7 @@ XMLDocumentParser::~XMLDocumentParser()
         m_pendingScript->removeClient(this);
 }
 
-void XMLDocumentParser::trace(Visitor* visitor)
+DEFINE_TRACE(XMLDocumentParser)
 {
     visitor->trace(m_currentNode);
 #if ENABLE(OILPAN)
@@ -884,7 +891,7 @@ void XMLDocumentParser::doWrite(const String& parseString)
         // keep this alive until this function is done.
         RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
 
-        XMLDocumentParserScope scope(document()->fetcher());
+        XMLDocumentParserScope scope(document());
         TemporaryChange<bool> encodingScope(m_isCurrentlyParsing8BitChunk, parseString.is8Bit());
         parseChunk(context->context(), parseString);
 
@@ -915,7 +922,7 @@ static inline void handleNamespaceAttributes(Vector<Attribute>& prefixedAttribut
         AtomicString namespaceQName = xmlnsAtom;
         AtomicString namespaceURI = toAtomicString(namespaces[i].uri);
         if (namespaces[i].prefix)
-            namespaceQName = WTF::xmlnsWithColon + namespaces[i].prefix;
+            namespaceQName = WTF::xmlnsWithColon + toAtomicString(namespaces[i].prefix);
 
         QualifiedName parsedName = anyName;
         if (!Element::parseAttributeName(parsedName, XMLNSNames::xmlnsNamespaceURI, namespaceQName, exceptionState))
@@ -933,14 +940,31 @@ struct xmlSAX2Attributes {
     const xmlChar* end;
 };
 
-static inline void handleElementAttributes(Vector<Attribute>& prefixedAttributes, const xmlChar** libxmlAttributes, int nbAttributes, ExceptionState& exceptionState)
+static inline void handleElementAttributes(Vector<Attribute>& prefixedAttributes, const xmlChar** libxmlAttributes, int nbAttributes,
+    const HashMap<AtomicString, AtomicString>& initialPrefixToNamespaceMap, ExceptionState& exceptionState)
 {
     xmlSAX2Attributes* attributes = reinterpret_cast<xmlSAX2Attributes*>(libxmlAttributes);
     for (int i = 0; i < nbAttributes; ++i) {
         int valueLength = static_cast<int>(attributes[i].end - attributes[i].value);
         AtomicString attrValue = toAtomicString(attributes[i].value, valueLength);
-        String attrPrefix = toString(attributes[i].prefix);
-        AtomicString attrURI = attrPrefix.isEmpty() ? AtomicString() : toAtomicString(attributes[i].uri);
+        AtomicString attrPrefix = toAtomicString(attributes[i].prefix);
+        AtomicString attrURI;
+        if (!attrPrefix.isEmpty()) {
+            // If provided, use the namespace URI from libxml2 because libxml2
+            // updates its namespace table as it parses whereas the
+            // initialPrefixToNamespaceMap is the initial map from namespace
+            // prefixes to namespace URIs created by the XMLDocumentParser
+            // constructor (in the case where we are parsing an XML fragment).
+            if (attributes[i].uri) {
+                attrURI = toAtomicString(attributes[i].uri);
+            } else {
+                const HashMap<AtomicString, AtomicString>::const_iterator it = initialPrefixToNamespaceMap.find(attrPrefix);
+                if (it != initialPrefixToNamespaceMap.end())
+                    attrURI = it->value;
+                else
+                    attrURI = AtomicString();
+            }
+        }
         AtomicString attrQName = attrPrefix.isEmpty() ? toAtomicString(attributes[i].localname) : attrPrefix + ":" + toString(attributes[i].localname);
 
         QualifiedName parsedName = anyName;
@@ -992,7 +1016,7 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
         return;
     }
 
-    handleElementAttributes(prefixedAttributes, libxmlAttributes, nbAttributes, exceptionState);
+    handleElementAttributes(prefixedAttributes, libxmlAttributes, nbAttributes, m_prefixToNamespaceMap, exceptionState);
     setAttributes(newElement.get(), prefixedAttributes, parserContentPolicy());
     if (exceptionState.hadException()) {
         stopParsing();
@@ -1080,13 +1104,16 @@ void XMLDocumentParser::endElementNs()
         // FIXME: Script execution should be shared between
         // the libxml2 and Qt XMLDocumentParser implementations.
 
+
         if (scriptLoader->readyToBeParserExecuted()) {
-            scriptLoader->executeScript(ScriptSourceCode(scriptLoader->scriptContent(), document()->url(), m_scriptStartPosition));
+            if (!scriptLoader->executeScript(ScriptSourceCode(scriptLoader->scriptContent(), document()->url(), m_scriptStartPosition))) {
+                scriptLoader->dispatchErrorEvent();
+                return;
+            }
         } else if (scriptLoader->willBeParserExecuted()) {
             m_pendingScript = scriptLoader->resource();
             m_scriptElement = element;
             m_pendingScript->addClient(this);
-
             // m_pendingScript will be 0 if script was already loaded and
             // addClient() executed it.
             if (m_pendingScript)
@@ -1165,7 +1192,7 @@ void XMLDocumentParser::processingInstruction(const String& target, const String
         return;
 
     m_sawXSLTransform = !m_sawFirstElement && pi->isXSL();
-    if (m_sawXSLTransform && !document()->transformSourceDocument()) {
+    if (m_sawXSLTransform && !DocumentXSLT::hasTransformSourceDocument(*document())) {
         // This behavior is very tricky. We call stopParsing() here because we
         // want to stop processing the document until we're ready to apply the
         // transform, but we actually still want to be fed decoded string pieces
@@ -1291,15 +1318,6 @@ static void warningHandler(void* closure, const char* message, ...)
     va_list args;
     va_start(args, message);
     getParser(closure)->error(XMLErrors::ErrorTypeWarning, message, args);
-    va_end(args);
-}
-
-WTF_ATTRIBUTE_PRINTF(2, 3)
-static void fatalErrorHandler(void* closure, const char* message, ...)
-{
-    va_list args;
-    va_start(args, message);
-    getParser(closure)->error(XMLErrors::ErrorTypeFatal, message, args);
     va_end(args);
 }
 
@@ -1432,8 +1450,12 @@ void XMLDocumentParser::initializeParserContext(const CString& chunk)
     xmlSAXHandler sax;
     memset(&sax, 0, sizeof(sax));
 
+    // According to http://xmlsoft.org/html/libxml-tree.html#xmlSAXHandler and
+    // http://xmlsoft.org/html/libxml-parser.html#fatalErrorSAXFunc the SAX
+    // fatalError callback is unused; error gets all the errors. Use normalErrorHandler
+    // for both the error and fatalError callbacks.
     sax.error = normalErrorHandler;
-    sax.fatalError = fatalErrorHandler;
+    sax.fatalError = normalErrorHandler;
     sax.characters = charactersHandler;
     sax.processingInstruction = processingInstructionHandler;
     sax.cdataBlock = cdataBlockHandler;
@@ -1454,7 +1476,7 @@ void XMLDocumentParser::initializeParserContext(const CString& chunk)
     m_sawXSLTransform = false;
     m_sawFirstElement = false;
 
-    XMLDocumentParserScope scope(document()->fetcher());
+    XMLDocumentParserScope scope(document());
     if (m_parsingFragment) {
         m_context = XMLParserContext::createMemoryParser(&sax, this, chunk);
     } else {
@@ -1469,7 +1491,7 @@ void XMLDocumentParser::doEnd()
         if (m_context) {
             // Tell libxml we're done.
             {
-                XMLDocumentParserScope scope(document()->fetcher());
+                XMLDocumentParserScope scope(document());
                 finishParsing(context());
             }
 
@@ -1483,10 +1505,10 @@ void XMLDocumentParser::doEnd()
         document()->setIsViewSource(true);
         V8Document::PrivateScript::transformDocumentToTreeViewMethod(document()->frame(), document(), noStyleMessage);
     } else if (m_sawXSLTransform) {
-        xmlDocPtr doc = xmlDocPtrForString(document()->fetcher(), m_originalSourceForTransform.toString(), document()->url().string());
+        xmlDocPtr doc = xmlDocPtrForString(document(), m_originalSourceForTransform.toString(), document()->url().string());
         document()->setTransformSource(adoptPtr(new TransformSource(doc)));
         // Make the document think it's done, so it will apply XSL stylesheets.
-        document()->setParsing(false);
+        document()->setParsingState(Document::FinishedParsing);
         document()->styleResolverChanged();
 
         // styleResolverChanged() call can detach the parser and null out its
@@ -1494,19 +1516,19 @@ void XMLDocumentParser::doEnd()
         if (isDetached())
             return;
 
-        document()->setParsing(true);
+        document()->setParsingState(Document::Parsing);
         DocumentParser::stopParsing();
     }
 }
 
-xmlDocPtr xmlDocPtrForString(ResourceFetcher* fetcher, const String& source, const String& url)
+xmlDocPtr xmlDocPtrForString(Document* document, const String& source, const String& url)
 {
     if (source.isEmpty())
         return 0;
     // Parse in a single chunk into an xmlDocPtr
     // FIXME: Hook up error handlers so that a failure to parse the main
     // document results in good error messages.
-    XMLDocumentParserScope scope(fetcher, errorFunc, 0);
+    XMLDocumentParserScope scope(document, errorFunc, 0);
     XMLParserInput input(source);
     return xmlReadMemory(input.data(), input.size(), url.latin1().data(), input.encoding(), XSLT_PARSE_OPTIONS);
 }

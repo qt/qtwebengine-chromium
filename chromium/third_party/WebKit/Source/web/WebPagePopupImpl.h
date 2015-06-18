@@ -55,18 +55,21 @@ class WebPagePopupImpl final
     , public PagePopup
     , public RefCounted<WebPagePopupImpl> {
     WTF_MAKE_NONCOPYABLE(WebPagePopupImpl);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(WebPagePopupImpl);
 
 public:
     virtual ~WebPagePopupImpl();
-    bool initialize(WebViewImpl*, PagePopupClient*, const IntRect& originBoundsInRootView);
+    bool initialize(WebViewImpl*, PagePopupClient*);
     bool handleKeyEvent(const PlatformKeyboardEvent&);
     void closePopup();
     WebWidgetClient* widgetClient() const { return m_widgetClient; }
     bool hasSamePopupClient(WebPagePopupImpl* other) { return other && m_popupClient == other->m_popupClient; }
     LocalDOMWindow* window();
+    virtual void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
     virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) override;
     virtual WebPoint positionRelativeToOwner() override;
+    virtual void postMessage(const String& message) override;
+    void cancel();
 
 private:
     // WebWidget functions
@@ -86,9 +89,14 @@ private:
     virtual bool handleKeyEvent(const WebKeyboardEvent&) override;
     virtual bool handleCharEvent(const WebKeyboardEvent&) override;
     virtual bool handleGestureEvent(const WebGestureEvent&) override;
+    virtual void handleMouseDown(LocalFrame& mainFrame, const WebMouseEvent&) override;
+    virtual bool handleMouseWheel(LocalFrame& mainFrame, const WebMouseWheelEvent&) override;
+
+    bool isMouseEventInWindow(const WebMouseEvent&);
 
     // PagePopup function
     virtual AXObject* rootAXObject() override;
+    virtual void setWindowRect(const IntRect&) override;
 
     explicit WebPagePopupImpl(WebWidgetClient*);
     bool initializePage();

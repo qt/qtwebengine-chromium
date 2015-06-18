@@ -5,16 +5,20 @@
 #include "content/browser/web_contents/web_contents_android.h"
 
 #include "base/android/jni_android.h"
+#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "content/browser/accessibility/browser_accessibility_android.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/devtools_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -23,12 +27,18 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "jni/WebContentsImpl_jni.h"
+#include "net/android/network_library.h"
+#include "ui/accessibility/ax_node_data.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertUTF8ToJavaString;
+using base::android::ConvertUTF16ToJavaString;
 using base::android::ScopedJavaGlobalRef;
+using base::android::ToJavaIntArray;
+
+namespace content {
 
 namespace {
 
@@ -38,18 +48,81 @@ void JavaScriptResultCallback(const ScopedJavaGlobalRef<jobject>& callback,
   std::string json;
   base::JSONWriter::Write(result, &json);
   ScopedJavaLocalRef<jstring> j_json = ConvertUTF8ToJavaString(env, json);
-  content::Java_WebContentsImpl_onEvaluateJavaScriptResult(
+  Java_WebContentsImpl_onEvaluateJavaScriptResult(
       env, j_json.obj(), callback.obj());
+}
+
+ScopedJavaLocalRef<jobject> WalkAXTreeDepthFirst(JNIEnv* env,
+      BrowserAccessibilityAndroid* node) {
+
+  ScopedJavaLocalRef<jstring> j_text =
+      ConvertUTF16ToJavaString(env, node->GetText());
+  ScopedJavaLocalRef<jstring> j_class =
+      ConvertUTF8ToJavaString(env, node->GetClassName());
+  const gfx::Rect& location = node->GetLocation();
+  // The style attributes exists and valid if size attribute exists. Otherwise,
+  // they are not. Use a negative size information to indicate the existence
+  // of style information.
+  float size = -1.0;
+  int color = 0;
+  int bgcolor = 0;
+  int text_style = 0;
+  if (node->HasFloatAttribute(ui::AX_ATTR_FONT_SIZE)) {
+    color = node->GetIntAttribute(ui::AX_ATTR_COLOR);
+    bgcolor = node->GetIntAttribute(ui::AX_ATTR_BACKGROUND_COLOR);
+    size =  node->GetFloatAttribute(ui::AX_ATTR_FONT_SIZE);
+    text_style = node->GetIntAttribute(ui::AX_ATTR_TEXT_STYLE);
+  }
+
+  ScopedJavaLocalRef<jobject> j_node =
+      Java_WebContentsImpl_createAccessibilitySnapshotNode(env,
+          location.x(), location.y(), node->GetScrollX(),
+          node->GetScrollY(), location.width(), location.height(),
+          j_text.obj(), color, bgcolor, size, text_style, j_class.obj());
+
+  for(uint32 i = 0; i < node->PlatformChildCount(); i++) {
+    BrowserAccessibilityAndroid* child =
+        static_cast<BrowserAccessibilityAndroid*>(
+            node->PlatformGetChild(i));
+    Java_WebContentsImpl_addAccessibilityNodeAsChild(env,
+        j_node.obj(), WalkAXTreeDepthFirst(env, child).obj());
+  }
+  return j_node;
+}
+
+// Walks over the AXTreeUpdate and creates a light weight snapshot.
+void AXTreeSnapshotCallback(const ScopedJavaGlobalRef<jobject>& callback,
+                            const ui::AXTreeUpdate& result) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  if (result.nodes.empty()) {
+    Java_WebContentsImpl_onAccessibilitySnapshot(env, nullptr, callback.obj());
+    return;
+  }
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(result, nullptr));
+  BrowserAccessibilityAndroid* root =
+      static_cast<BrowserAccessibilityAndroid*>(manager->GetRoot());
+  ScopedJavaLocalRef<jobject> j_root = WalkAXTreeDepthFirst(env, root);
+  Java_WebContentsImpl_onAccessibilitySnapshot(
+      env, j_root.obj(), callback.obj());
+}
+
+void ReleaseAllMediaPlayers(WebContents* web_contents,
+                            RenderFrameHost* render_frame_host) {
+  BrowserMediaPlayerManager* manager =
+      static_cast<WebContentsImpl*>(web_contents)->
+          media_web_contents_observer()->GetMediaPlayerManager(
+              render_frame_host);
+  if (manager)
+    manager->ReleaseAllMediaPlayers();
 }
 
 }  // namespace
 
-namespace content {
-
 // static
 WebContents* WebContents::FromJavaWebContents(
     jobject jweb_contents_android) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!jweb_contents_android)
     return NULL;
 
@@ -63,23 +136,46 @@ WebContents* WebContents::FromJavaWebContents(
 }
 
 // static
+static void DestroyWebContents(JNIEnv* env,
+                               jclass clazz,
+                               jlong jweb_contents_android_ptr) {
+  WebContentsAndroid* web_contents_android =
+      reinterpret_cast<WebContentsAndroid*>(jweb_contents_android_ptr);
+  if (!web_contents_android)
+    return;
+
+  WebContents* web_contents = web_contents_android->web_contents();
+  if (!web_contents)
+    return;
+
+  delete web_contents;
+}
+
+// static
 bool WebContentsAndroid::Register(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
 WebContentsAndroid::WebContentsAndroid(WebContents* web_contents)
     : web_contents_(web_contents),
-      navigation_controller_(&(web_contents->GetController())) {
+      navigation_controller_(&(web_contents->GetController())),
+      weak_factory_(this) {
   JNIEnv* env = AttachCurrentThread();
   obj_.Reset(env,
              Java_WebContentsImpl_create(
                  env,
                  reinterpret_cast<intptr_t>(this),
                  navigation_controller_.GetJavaObject().obj()).obj());
+  RendererPreferences* prefs = web_contents_->GetMutableRendererPrefs();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  prefs->network_contry_iso =
+      command_line->HasSwitch(switches::kNetworkCountryIso) ?
+          command_line->GetSwitchValueASCII(switches::kNetworkCountryIso)
+          : net::android::GetTelephonyNetworkCountryIso();
 }
 
 WebContentsAndroid::~WebContentsAndroid() {
-  Java_WebContentsImpl_destroy(AttachCurrentThread(), obj_.obj());
+  Java_WebContentsImpl_clearNativePtr(AttachCurrentThread(), obj_.obj());
 }
 
 base::android::ScopedJavaLocalRef<jobject>
@@ -122,9 +218,10 @@ RenderWidgetHostViewAndroid*
   RenderWidgetHostView* rwhv = NULL;
   rwhv = web_contents_->GetRenderWidgetHostView();
   if (web_contents_->ShowingInterstitialPage()) {
-    rwhv = static_cast<InterstitialPageImpl*>(
-        web_contents_->GetInterstitialPage())->
-            GetRenderViewHost()->GetView();
+    rwhv = web_contents_->GetInterstitialPage()
+               ->GetMainFrame()
+               ->GetRenderViewHost()
+               ->GetView();
   }
   return static_cast<RenderWidgetHostViewAndroid*>(rwhv);
 }
@@ -141,6 +238,14 @@ ScopedJavaLocalRef<jstring> WebContentsAndroid::GetURL(JNIEnv* env,
   return ConvertUTF8ToJavaString(env, web_contents_->GetURL().spec());
 }
 
+ScopedJavaLocalRef<jstring> WebContentsAndroid::GetLastCommittedURL(
+    JNIEnv* env,
+    jobject) const {
+  return ConvertUTF8ToJavaString(env,
+                                 web_contents_->GetLastCommittedURL().spec());
+}
+
+
 jboolean WebContentsAndroid::IsIncognito(JNIEnv* env, jobject obj) {
   return web_contents_->GetBrowserContext()->IsOffTheRecord();
 }
@@ -150,10 +255,15 @@ void WebContentsAndroid::ResumeResponseDeferredAtStart(JNIEnv* env,
   static_cast<WebContentsImpl*>(web_contents_)->ResumeResponseDeferredAtStart();
 }
 
+void WebContentsAndroid::ResumeLoadingCreatedWebContents(JNIEnv* env,
+                                                         jobject obj) {
+  web_contents_->ResumeLoadingCreatedWebContents();
+}
+
 void WebContentsAndroid::SetHasPendingNavigationTransitionForTesting(
     JNIEnv* env,
     jobject obj) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableExperimentalWebPlatformFeatures);
   RenderFrameHost* frame =
       static_cast<WebContentsImpl*>(web_contents_)->GetMainFrame();
@@ -177,15 +287,87 @@ void WebContentsAndroid::SetupTransitionView(JNIEnv* env,
 
 void WebContentsAndroid::BeginExitTransition(JNIEnv* env,
                                              jobject jobj,
-                                             jstring css_selector) {
+                                             jstring css_selector,
+                                             jboolean exit_to_native_app) {
   web_contents_->GetMainFrame()->Send(new FrameMsg_BeginExitTransition(
       web_contents_->GetMainFrame()->GetRoutingID(),
-      ConvertJavaStringToUTF8(env, css_selector)));
+      ConvertJavaStringToUTF8(env, css_selector),
+      exit_to_native_app));
 }
+
+void WebContentsAndroid::RevertExitTransition(JNIEnv* env,
+                                              jobject jobj) {
+  web_contents_->GetMainFrame()->Send(new FrameMsg_RevertExitTransition(
+      web_contents_->GetMainFrame()->GetRoutingID()));
+}
+
+void WebContentsAndroid::HideTransitionElements(JNIEnv* env,
+                                                jobject jobj,
+                                                jstring css_selector) {
+  web_contents_->GetMainFrame()->Send(
+      new FrameMsg_HideTransitionElements(
+          web_contents_->GetMainFrame()->GetRoutingID(),
+          ConvertJavaStringToUTF8(env, css_selector)));
+}
+
+void WebContentsAndroid::ShowTransitionElements(JNIEnv* env,
+                                                jobject jobj,
+                                                jstring css_selector) {
+  web_contents_->GetMainFrame()->Send(
+      new FrameMsg_ShowTransitionElements(
+          web_contents_->GetMainFrame()->GetRoutingID(),
+          ConvertJavaStringToUTF8(env, css_selector)));
+}
+
 
 void WebContentsAndroid::ClearNavigationTransitionData(JNIEnv* env,
                                                        jobject jobj) {
   static_cast<WebContentsImpl*>(web_contents_)->ClearNavigationTransitionData();
+}
+
+void WebContentsAndroid::FetchTransitionElements(JNIEnv* env,
+                                                 jobject jobj,
+                                                 jstring jurl) {
+  GURL url(base::android::ConvertJavaStringToUTF8(env, jurl));
+  RenderFrameHost* frame = web_contents_->GetMainFrame();
+
+  scoped_ptr<TransitionLayerData> transition_data(new TransitionLayerData());
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&TransitionRequestManager::GetPendingTransitionRequest,
+                 base::Unretained(TransitionRequestManager::GetInstance()),
+                 frame->GetProcess()->GetID(),
+                 frame->GetRoutingID(),
+                 url,
+                 transition_data.get()),
+      base::Bind(&WebContentsAndroid::OnTransitionElementsFetched,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(&transition_data)));
+}
+
+void WebContentsAndroid::OnTransitionElementsFetched(
+    scoped_ptr<const TransitionLayerData> transition_data,
+    bool has_transition_data) {
+  // FetchTransitionElements is called after the navigation transition state
+  // machine starts, which means there must be transition data.
+  DCHECK(has_transition_data);
+  JNIEnv* env = AttachCurrentThread();
+
+  std::vector<TransitionElement>::const_iterator it =
+      transition_data->elements.begin();
+  for (; it != transition_data->elements.end(); ++it) {
+    ScopedJavaLocalRef<jstring> jstring_name(ConvertUTF8ToJavaString(env,
+                                                                     it->id));
+    Java_WebContentsImpl_addNavigationTransitionElements(
+        env, obj_.obj(), jstring_name.obj(),
+        it->rect.x(), it->rect.y(), it->rect.width(), it->rect.height());
+  }
+
+  ScopedJavaLocalRef<jstring> jstring_css_selector(
+      ConvertUTF8ToJavaString(env, transition_data->css_selector));
+  Java_WebContentsImpl_onTransitionElementsFetched(
+      env, obj_.obj(), jstring_css_selector.obj());
 }
 
 void WebContentsAndroid::OnHide(JNIEnv* env, jobject obj) {
@@ -198,16 +380,8 @@ void WebContentsAndroid::OnShow(JNIEnv* env, jobject obj) {
 
 void WebContentsAndroid::ReleaseMediaPlayers(JNIEnv* env, jobject jobj) {
 #if defined(ENABLE_BROWSER_CDMS)
-  RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
-      web_contents_->GetRenderViewHost());
-  if (!rvhi || !rvhi->GetMainFrame())
-    return;
-
-  BrowserMediaPlayerManager* manager =
-      rvhi->media_web_contents_observer()->GetMediaPlayerManager(
-          rvhi->GetMainFrame());
-  if (manager)
-    manager->ReleaseAllMediaPlayers();
+  web_contents_->ForEachFrame(
+      base::Bind(&ReleaseAllMediaPlayers, base::Unretained(web_contents_)));
 #endif // defined(ENABLE_BROWSER_CDMS)
 }
 
@@ -247,10 +421,7 @@ jboolean WebContentsAndroid::IsRenderWidgetHostViewReady(
 }
 
 void WebContentsAndroid::ExitFullscreen(JNIEnv* env, jobject obj) {
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  host->ExitFullscreen();
+  web_contents_->ExitFullscreen();
 }
 
 void WebContentsAndroid::UpdateTopControlsState(
@@ -370,30 +541,49 @@ void WebContentsAndroid::EvaluateJavaScript(JNIEnv* env,
   // base::Callback.
   ScopedJavaGlobalRef<jobject> j_callback;
   j_callback.Reset(env, callback);
-  content::RenderFrameHost::JavaScriptResultCallback js_callback =
+  RenderFrameHost::JavaScriptResultCallback js_callback =
       base::Bind(&JavaScriptResultCallback, j_callback);
 
   web_contents_->GetMainFrame()->ExecuteJavaScript(
       ConvertJavaStringToUTF16(env, script), js_callback);
 }
 
-// TODO(sgurun) add support for posting a frame whose name is known (only
-//               main frame is supported at this time, see crbug.com/389721)
-// TODO(sgurun) add support for passing message ports
-void WebContentsAndroid::PostMessageToFrame(JNIEnv* env, jobject obj,
-    jstring frame_name, jstring message, jstring source_origin,
-    jstring target_origin) {
+void WebContentsAndroid::AddMessageToDevToolsConsole(JNIEnv* env,
+                                                     jobject jobj,
+                                                     jint level,
+                                                     jstring message) {
+  DCHECK_GE(level, 0);
+  DCHECK_LE(level, CONSOLE_MESSAGE_LEVEL_LAST);
 
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  ViewMsg_PostMessage_Params params;
-  params.source_origin = ConvertJavaStringToUTF16(env, source_origin);
-  params.target_origin = ConvertJavaStringToUTF16(env, target_origin);
-  params.data = ConvertJavaStringToUTF16(env, message);
-  params.is_data_raw_string = true;
-  params.source_routing_id = MSG_ROUTING_NONE;
-  host->Send(new ViewMsg_PostMessageEvent(host->GetRoutingID(), params));
+  web_contents_->GetMainFrame()->Send(new DevToolsAgentMsg_AddMessageToConsole(
+      web_contents_->GetMainFrame()->GetRoutingID(),
+      static_cast<ConsoleMessageLevel>(level),
+      ConvertJavaStringToUTF8(env, message)));
+}
+
+jboolean WebContentsAndroid::HasAccessedInitialDocument(
+    JNIEnv* env,
+    jobject jobj) {
+  return static_cast<WebContentsImpl*>(web_contents_)->
+      HasAccessedInitialDocument();
+}
+
+jint WebContentsAndroid::GetThemeColor(JNIEnv* env, jobject obj) {
+  return web_contents_->GetThemeColor();
+}
+
+void WebContentsAndroid::RequestAccessibilitySnapshot(JNIEnv* env,
+                                                      jobject obj,
+                                                      jobject callback) {
+  // Secure the Java callback in a scoped object and give ownership of it to the
+  // base::Callback.
+  ScopedJavaGlobalRef<jobject> j_callback;
+  j_callback.Reset(env, callback);
+  WebContentsImpl::AXTreeSnapshotCallback snapshot_callback =
+      base::Bind(&AXTreeSnapshotCallback, j_callback);
+
+  static_cast<WebContentsImpl*>(web_contents_)->RequestAXTreeSnapshot(
+      snapshot_callback);
 }
 
 }  // namespace content

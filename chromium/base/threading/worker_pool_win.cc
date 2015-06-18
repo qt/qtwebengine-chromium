@@ -6,10 +6,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/pending_task.h"
 #include "base/threading/thread_local.h"
+#include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
 
 namespace base {
@@ -25,8 +25,6 @@ DWORD CALLBACK WorkItemCallback(void* param) {
                "src_file", pending_task->posted_from.file_name(),
                "src_func", pending_task->posted_from.function_name());
 
-  tracked_objects::ThreadData::PrepareForStartOfRun(pending_task->birth_tally);
-
   g_worker_pool_running_on_this_thread.Get().Set(true);
 
   tracked_objects::TaskStopwatch stopwatch;
@@ -37,9 +35,7 @@ DWORD CALLBACK WorkItemCallback(void* param) {
   g_worker_pool_running_on_this_thread.Get().Set(false);
 
   tracked_objects::ThreadData::TallyRunOnWorkerThreadIfTracking(
-      pending_task->birth_tally,
-      tracked_objects::TrackedTime(pending_task->time_posted),
-      stopwatch);
+      pending_task->birth_tally, pending_task->time_posted, stopwatch);
 
   delete pending_task;
   return 0;

@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -58,7 +58,7 @@ static const char kTurnIceServerUri[] = "turn:user@turn.example.org";
 static const char kTurnUsername[] = "user";
 static const char kTurnPassword[] = "password";
 static const char kTurnHostname[] = "turn.example.org";
-static const uint32 kTimeout = 5000U;
+static const uint32 kTimeout = 10000U;
 
 #define MAYBE_SKIP_TEST(feature)                    \
   if (!(feature())) {                               \
@@ -256,6 +256,14 @@ class PeerConnectionInterfaceTest : public testing::Test {
     // DTLS does not work in a loopback call, so is disabled for most of the
     // tests in this file. We only create a FakeIdentityService if the test
     // explicitly sets the constraint.
+    FakeConstraints default_constraints;
+    if (!constraints) {
+      constraints = &default_constraints;
+
+      default_constraints.AddMandatory(
+          webrtc::MediaConstraintsInterface::kEnableDtlsSrtp, false);
+    }
+
     FakeIdentityService* dtls_service = NULL;
     bool dtls;
     if (FindConstraint(constraints,
@@ -433,7 +441,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
 
   void CreateOfferAsRemoteDescription() {
     rtc::scoped_ptr<SessionDescriptionInterface> offer;
-    EXPECT_TRUE(DoCreateOffer(offer.use()));
+    ASSERT_TRUE(DoCreateOffer(offer.use()));
     std::string sdp;
     EXPECT_TRUE(offer->ToString(&sdp));
     SessionDescriptionInterface* remote_offer =
@@ -445,7 +453,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
 
   void CreateAnswerAsLocalDescription() {
     scoped_ptr<SessionDescriptionInterface> answer;
-    EXPECT_TRUE(DoCreateAnswer(answer.use()));
+    ASSERT_TRUE(DoCreateAnswer(answer.use()));
 
     // TODO(perkj): Currently SetLocalDescription fails if any parameters in an
     // audio codec change, even if the parameter has nothing to do with
@@ -465,7 +473,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
 
   void CreatePrAnswerAsLocalDescription() {
     scoped_ptr<SessionDescriptionInterface> answer;
-    EXPECT_TRUE(DoCreateAnswer(answer.use()));
+    ASSERT_TRUE(DoCreateAnswer(answer.use()));
 
     std::string sdp;
     EXPECT_TRUE(answer->ToString(&sdp));
@@ -711,7 +719,7 @@ TEST_F(PeerConnectionInterfaceTest, SsrcInOfferAnswer) {
 
   // Test CreateOffer
   scoped_ptr<SessionDescriptionInterface> offer;
-  EXPECT_TRUE(DoCreateOffer(offer.use()));
+  ASSERT_TRUE(DoCreateOffer(offer.use()));
   int audio_ssrc = 0;
   int video_ssrc = 0;
   EXPECT_TRUE(GetFirstSsrc(GetFirstAudioContent(offer->description()),
@@ -723,7 +731,7 @@ TEST_F(PeerConnectionInterfaceTest, SsrcInOfferAnswer) {
   // Test CreateAnswer
   EXPECT_TRUE(DoSetRemoteDescription(offer.release()));
   scoped_ptr<SessionDescriptionInterface> answer;
-  EXPECT_TRUE(DoCreateAnswer(answer.use()));
+  ASSERT_TRUE(DoCreateAnswer(answer.use()));
   audio_ssrc = 0;
   video_ssrc = 0;
   EXPECT_TRUE(GetFirstSsrc(GetFirstAudioContent(answer->description()),

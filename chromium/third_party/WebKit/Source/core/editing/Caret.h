@@ -26,6 +26,7 @@
 #ifndef Caret_h
 #define Caret_h
 
+#include "core/CoreExport.h"
 #include "core/editing/VisiblePosition.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
@@ -36,12 +37,12 @@ namespace blink {
 class LocalFrame;
 class GraphicsContext;
 class PositionWithAffinity;
-class RenderBlock;
-class RenderView;
+class LayoutBlock;
+class LayoutView;
 
-class CaretBase {
+class CORE_EXPORT CaretBase {
     WTF_MAKE_NONCOPYABLE(CaretBase);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CaretBase);
 protected:
     enum CaretVisibility { Visible, Hidden };
     explicit CaretBase(CaretVisibility = Hidden);
@@ -54,35 +55,32 @@ protected:
     bool updateCaretRect(Document*, const PositionWithAffinity& caretPosition);
     bool updateCaretRect(Document*, const VisiblePosition& caretPosition);
     IntRect absoluteBoundsForLocalRect(Node*, const LayoutRect&) const;
-    bool shouldRepaintCaret(const RenderView*, bool isContentEditable) const;
+    bool shouldRepaintCaret(Node&) const;
+    bool shouldRepaintCaret(const LayoutView*) const;
     void paintCaret(Node*, GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
 
     const LayoutRect& localCaretRectWithoutUpdate() const { return m_caretLocalRect; }
-
-    bool shouldUpdateCaretRect() const { return m_caretRectNeedsUpdate; }
-    void setCaretRectNeedsUpdate() { m_caretRectNeedsUpdate = true; }
 
     void setCaretVisibility(CaretVisibility visibility) { m_caretVisibility = visibility; }
     bool caretIsVisible() const { return m_caretVisibility == Visible; }
     CaretVisibility caretVisibility() const { return m_caretVisibility; }
 
 protected:
-    static RenderBlock* caretRenderer(Node*);
+    static LayoutBlock* caretLayoutObject(Node*);
     static void invalidateLocalCaretRect(Node*, const LayoutRect&);
 
 private:
-    LayoutRect m_caretLocalRect; // caret rect in coords local to the renderer responsible for painting the caret
-    bool m_caretRectNeedsUpdate; // true if m_caretRect (and m_absCaretBounds in FrameSelection) need to be calculated
+    LayoutRect m_caretLocalRect; // caret rect in coords local to the layoutObject responsible for painting the caret
     CaretVisibility m_caretVisibility;
 };
 
 class DragCaretController final : public NoBaseWillBeGarbageCollected<DragCaretController>, private CaretBase {
     WTF_MAKE_NONCOPYABLE(DragCaretController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DragCaretController);
 public:
     static PassOwnPtrWillBeRawPtr<DragCaretController> create();
 
-    RenderBlock* caretRenderer() const;
+    LayoutBlock* caretLayoutObject() const;
     void paintDragCaret(LocalFrame*, GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
 
     bool isContentEditable() const { return m_position.rootEditableElement(); }
@@ -95,7 +93,7 @@ public:
 
     void nodeWillBeRemoved(Node&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     DragCaretController();

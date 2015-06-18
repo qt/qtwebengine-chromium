@@ -6,18 +6,22 @@
 #define VideoTrack_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/html/track/TrackBase.h"
 
 namespace blink {
 
-class VideoTrack final : public TrackBase, public ScriptWrappable {
+class CORE_EXPORT VideoTrack final : public NoBaseWillBeGarbageCollectedFinalized<VideoTrack>, public TrackBase, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(VideoTrack);
 public:
     static PassRefPtrWillBeRawPtr<VideoTrack> create(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool selected)
     {
         return adoptRefWillBeNoop(new VideoTrack(id, kind, label, language, selected));
     }
+
     virtual ~VideoTrack();
+    DECLARE_VIRTUAL_TRACE();
 
     bool selected() const { return m_selected; }
     void setSelected(bool);
@@ -34,11 +38,13 @@ public:
     static const AtomicString& subtitlesKeyword();
     static const AtomicString& commentaryKeyword();
 
+    static bool isValidKindKeyword(const String&);
+
 private:
     VideoTrack(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool selected);
 
     // TrackBase
-    virtual bool isValidKind(const AtomicString&) const override;
+    virtual bool isValidKind(const AtomicString& kind) const override { return isValidKindKeyword(kind); }
     virtual AtomicString defaultKind() const override;
 
     bool m_selected;

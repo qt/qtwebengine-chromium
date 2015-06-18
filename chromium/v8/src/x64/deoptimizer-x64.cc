@@ -23,6 +23,12 @@ int Deoptimizer::patch_size() {
 }
 
 
+void Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(Handle<Code> code) {
+  // Empty because there is no need for relocation information for the code
+  // patching in Deoptimizer::PatchCodeForDeoptimization below.
+}
+
+
 void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   // Invalidate the relocation information, as it will become invalid by the
   // code patching below, and is not needed any more.
@@ -128,7 +134,7 @@ bool Deoptimizer::HasAlignmentPadding(JSFunction* function) {
 
 #define __ masm()->
 
-void Deoptimizer::EntryGenerator::Generate() {
+void Deoptimizer::TableEntryGenerator::Generate() {
   GeneratePrologue();
 
   // Save all general purpose registers before messing with them.
@@ -153,6 +159,8 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   const int kSavedRegistersAreaSize = kNumberOfRegisters * kRegisterSize +
                                       kDoubleRegsSize;
+
+  __ Store(ExternalReference(Isolate::kCEntryFPAddress, isolate()), rbp);
 
   // We use this to keep the value of the fifth argument temporarily.
   // Unfortunately we can't store it directly in r8 (used for passing
@@ -299,7 +307,6 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   // Set up the roots register.
   __ InitializeRootRegister();
-  __ InitializeSmiConstantRegister();
 
   // Return to the continuation point.
   __ ret(0);

@@ -8,11 +8,16 @@ source_set("cc") {
     "//base",
     "//cc",
     "//cc/surfaces",
-    "//skia",
+    "//cc/surfaces:surface_id",
+    "//components/surfaces/public/interfaces",
     "//gpu/command_buffer/client:gles2_implementation",
+    "//gpu/command_buffer/client:gles2_interface",
     "//mojo/converters/surfaces",
-    "//mojo/public/gles2:for_shared_library",
-    "//mojo/services/public/interfaces/surfaces",
+    "//mojo/gpu:mojo_gles2_implementation",
+    "//skia",
+    "//third_party/mojo/src/mojo/public/c/gles2",
+    "//third_party/mojo/src/mojo/public/cpp/environment",
+    "//third_party/mojo/src/mojo/public/cpp/system",
   ]
 
   sources = [

@@ -36,12 +36,12 @@ class SkKTXImageDecoder : public SkImageDecoder {
 public:
     SkKTXImageDecoder() { }
 
-    virtual Format getFormat() const SK_OVERRIDE {
+    Format getFormat() const override {
         return kKTX_Format;
     }
 
 protected:
-    virtual Result onDecode(SkStream* stream, SkBitmap* bm, Mode) SK_OVERRIDE;
+    Result onDecode(SkStream* stream, SkBitmap* bm, Mode) override;
 
 private:
     typedef SkImageDecoder INHERITED;
@@ -61,13 +61,6 @@ SkImageDecoder::Result SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* b
 
     const unsigned short width = ktxFile.width();
     const unsigned short height = ktxFile.height();
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-    // should we allow the Chooser (if present) to pick a config for us???
-    if (!this->chooseFromOneChoice(kN32_SkColorType, width, height)) {
-        return kFailure;
-    }
-#endif
 
     // Set a flag if our source is premultiplied alpha
     const SkString premulKey("KTXPremultipliedAlpha");
@@ -258,7 +251,7 @@ SkImageDecoder::Result SkKTXImageDecoder::onDecode(SkStream* stream, SkBitmap* b
 
 class SkKTXImageEncoder : public SkImageEncoder {
 protected:
-    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality) SK_OVERRIDE;
+    bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality) override;
 
 private:
     virtual bool encodePKM(SkWStream* stream, const SkData *data);

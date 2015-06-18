@@ -4,33 +4,8 @@
 
 {
   'variables': {
-    'chromium_code': 1,
-
-    # Set this to run the jscompile checks after building the webapp.
-    'run_jscompile%': 0,
-
-    # Set this to enable cast mode on the android client.
-    'enable_cast%': 0,
-
-    'variables': {
-      'conditions': [
-        # Enable the multi-process host on Windows by default.
-        ['OS=="win"', {
-          'remoting_multi_process%': 1,
-        }, {
-          'remoting_multi_process%': 0,
-        }],
-      ],
-    },
-
-    'remoting_multi_process%': '<(remoting_multi_process)',
-    'remoting_rdp_session%': 1,
-
-    'remoting_localize_path': 'tools/build/remoting_localize.py',
 
     'branding_path': '../remoting/branding_<(branding)',
-
-    'webapp_locale_dir': '<(SHARED_INTERMEDIATE_DIR)/remoting/webapp/_locales',
 
     'conditions': [
       ['OS=="mac"', {
@@ -45,29 +20,10 @@
         # The IDs are not random to avoid rebuilding host when it's not
         # necessary.
         'daemon_controller_clsid':
-            '<!(python -c "import uuid; print uuid.uuid5(uuid.UUID(\'655bd819-c08c-4b04-80c2-f160739ff6ef\'), \'<(version_full)\')")',
+            '<!(python -c "import uuid; print uuid.uuid5(uuid.UUID(\'<(daemon_controller_guid)\'), \'<(version_full)\')")',
         'rdp_desktop_session_clsid':
-            '<!(python -c "import uuid; print uuid.uuid5(uuid.UUID(\'6a7699f0-ee43-43e7-aa30-a6738f9bd470\'), \'<(version_full)\')")',
+            '<!(python -c "import uuid; print uuid.uuid5(uuid.UUID(\'<(rdp_desktop_session_guid)\'), \'<(version_full)\')")',
       }],
-    ],
-    'remoting_locales': [
-      # Note: list duplicated in GN build. See //remoting/resources/BUILD.gn
-      'ar', 'bg', 'ca', 'cs', 'da', 'de', 'el', 'en', 'en-GB', 'es',
-      'es-419', 'et', 'fi', 'fil', 'fr', 'he', 'hi', 'hr', 'hu', 'id',
-      'it', 'ja', 'ko', 'lt', 'lv', 'nb', 'nl', 'pl', 'pt-BR', 'pt-PT',
-      'ro', 'ru', 'sk', 'sl', 'sr', 'sv', 'th', 'tr', 'uk', 'vi',
-      'zh-CN', 'zh-TW',
-    ],
-    'remoting_host_locale_files': [
-      # Build the list of .pak files generated from remoting_strings.grd.
-      '<!@pymod_do_main(remoting_copy_locales -o -p <(OS) -x '
-          '<(PRODUCT_DIR) <(remoting_locales))',
-    ],
-    'remoting_webapp_locale_files': [
-      # Build the list of .json files generated from remoting_strings.grd.
-      '<!@pymod_do_main(remoting_localize --locale_output '
-          '"<(webapp_locale_dir)/@{json_suffix}/messages.json" '
-          '--print_only <(remoting_locales))',
     ],
   },
 
@@ -76,10 +32,15 @@
     'remoting_android.gypi',
     'remoting_client.gypi',
     'remoting_host.gypi',
+    'remoting_host_srcs.gypi',
+    'remoting_key_tester.gypi',
+    'remoting_locales.gypi',
+    'remoting_options.gypi',
     'remoting_srcs.gypi',
     'remoting_test.gypi',
     'remoting_version.gypi',
     'remoting_webapp_files.gypi',
+    'app_remoting_webapp_files.gypi',
   ],
 
   'target_defaults': {
@@ -123,6 +84,7 @@
 
   'targets': [
     {
+      # GN version: //remoting/base:breakpad
       'target_name': 'remoting_breakpad',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -159,18 +121,18 @@
       'variables': {
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)',
         'sources': [
-          '<(SHARED_INTERMEDIATE_DIR)/main.html',
           'base/resources_unittest.cc',
           'host/continue_window_mac.mm',
           'host/disconnect_window_mac.mm',
           'host/installer/mac/uninstaller/remoting_uninstaller-InfoPlist.strings.jinja2',
+          'host/it2me/it2me_confirmation_dialog_chromeos.cc',
           'host/mac/me2me_preference_pane-InfoPlist.strings.jinja2',
           'host/win/core.rc.jinja2',
           'host/win/host_messages.mc.jinja2',
           'host/win/version.rc.jinja2',
           'resources/play_store_resources.cc',
-          'webapp/crd/manifest.json.jinja2',
-          '<@(remoting_webapp_all_js_files)',
+          '<@(desktop_remoting_webapp_localizable_files)',
+          '<@(app_remoting_webapp_localizable_files)',
         ],
       },
       'actions': [
@@ -227,7 +189,7 @@
     },  # end of target 'remoting_resources'
 
     {
-      # GN version: //remoting/base
+      # GN version: //remoting/base and //remoting/codec
       'target_name': 'remoting_base',
       'type': 'static_library',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -259,6 +221,7 @@
       'hard_dependency': 1,
       'sources': [
         '<@(remoting_base_sources)',
+        '<@(remoting_codec_sources)',
       ],
     },  # end of target 'remoting_base'
 
@@ -273,6 +236,7 @@
         '../jingle/jingle.gyp:jingle_glue',
         '../jingle/jingle.gyp:notifier',
         '../net/net.gyp:net',
+        '../third_party/expat/expat.gyp:expat',
         '../third_party/libjingle/libjingle.gyp:libjingle',
         'remoting_base',
       ],

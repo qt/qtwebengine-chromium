@@ -20,12 +20,100 @@
     'linux_link_libpci%': 0,
     'linux_link_libspeechd%': 0,
     'linux_link_libbrlapi%': 0,
+
+    # Used below for the various libraries. In this scope for sharing with GN.
+    'libbrlapi_functions': [
+      'brlapi_getHandleSize',
+      'brlapi_error_location',
+      'brlapi_strerror',
+      'brlapi__acceptKeys',
+      'brlapi__openConnection',
+      'brlapi__closeConnection',
+      'brlapi__getDisplaySize',
+      'brlapi__enterTtyModeWithPath',
+      'brlapi__leaveTtyMode',
+      'brlapi__writeDots',
+      'brlapi__readKey',
+    ],
+    'libgio_functions': [
+      'g_settings_new',
+      'g_settings_get_child',
+      'g_settings_get_string',
+      'g_settings_get_boolean',
+      'g_settings_get_int',
+      'g_settings_get_strv',
+      'g_settings_list_schemas',
+    ],
+    'libpci_functions': [
+      'pci_alloc',
+      'pci_init',
+      'pci_cleanup',
+      'pci_scan_bus',
+      'pci_fill_info',
+      'pci_lookup_name',
+    ],
+    'libudev_functions': [
+      'udev_device_get_action',
+      'udev_device_get_devnode',
+      'udev_device_get_parent',
+      'udev_device_get_parent_with_subsystem_devtype',
+      'udev_device_get_property_value',
+      'udev_device_get_subsystem',
+      'udev_device_get_sysattr_value',
+      'udev_device_get_sysname',
+      'udev_device_get_syspath',
+      'udev_device_new_from_devnum',
+      'udev_device_new_from_subsystem_sysname',
+      'udev_device_new_from_syspath',
+      'udev_device_unref',
+      'udev_enumerate_add_match_subsystem',
+      'udev_enumerate_get_list_entry',
+      'udev_enumerate_new',
+      'udev_enumerate_scan_devices',
+      'udev_enumerate_unref',
+      'udev_list_entry_get_next',
+      'udev_list_entry_get_name',
+      'udev_monitor_enable_receiving',
+      'udev_monitor_filter_add_match_subsystem_devtype',
+      'udev_monitor_get_fd',
+      'udev_monitor_new_from_netlink',
+      'udev_monitor_receive_device',
+      'udev_monitor_unref',
+      'udev_new',
+      'udev_set_log_fn',
+      'udev_set_log_priority',
+      'udev_unref',
+    ],
   },
   'conditions': [
     [ 'chromeos==0 and use_ozone==0', {
       # Hide GTK and related dependencies for Chrome OS and Ozone, so they won't get
       # added back to Chrome OS and Ozone. Don't try to use GTK on Chrome OS and Ozone.
       'targets': [
+        {
+          'target_name': 'atk',
+          'type': 'none',
+          'conditions': [
+            ['_toolset=="target"', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags atk)',
+                ],
+                'defines': [
+                  'ATK_LIB_DIR="<!@(<(pkg-config) --variable=libdir atk)"',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other atk)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l atk)',
+                ],
+              },
+            }],
+          ],
+        },
         {
           'target_name': 'gdk',
           'type': 'none',
@@ -402,6 +490,27 @@
         },
       ],
     }],
+    ['use_xkbcommon==1', {
+      'targets': [
+        {
+          'target_name': 'xkbcommon',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xkbcommon)'
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xkbcommon)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xkbcommon)',
+            ],
+          },
+        },
+      ],
+    }],
     ['ozone_platform_gbm==1', {
       'targets': [
         {
@@ -423,7 +532,7 @@
         },
       ],
     }],
-    ['ozone_platform_dri==1 or ozone_platform_gbm==1', {
+    ['ozone_platform_dri==1 or ozone_platform_drm==1 or ozone_platform_gbm==1', {
       'targets': [
         {
           'target_name': 'libdrm',
@@ -445,22 +554,67 @@
       'targets': [
         {
           'target_name': 'udev',
-          'type': 'none',
+          'type': 'static_library',
           'conditions': [
             ['_toolset=="target"', {
-              'direct_dependent_settings': {
-                'cflags': [
-                  '<!@(<(pkg-config) --cflags libudev)'
-                ],
-              },
-              'link_settings': {
-                'ldflags': [
-                  '<!@(<(pkg-config) --libs-only-L --libs-only-other libudev)',
-                ],
-                'libraries': [
-                  '<!@(<(pkg-config) --libs-only-l libudev)',
-                ],
-              },
+              'include_dirs': [
+                '../..',
+              ],
+              'hard_dependency': 1,
+              'actions': [
+                {
+                  'variables': {
+                    'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libudev0.h',
+                    'output_cc': '<(INTERMEDIATE_DIR)/libudev0_loader.cc',
+                    'generator': '../../tools/generate_library_loader/generate_library_loader.py',
+                  },
+                  'action_name': 'generate_libudev0_loader',
+                  'inputs': [
+                    '<(generator)',
+                  ],
+                  'outputs': [
+                    '<(output_h)',
+                    '<(output_cc)',
+                  ],
+                  'action': ['python',
+                             '<(generator)',
+                             '--name', 'LibUdev0Loader',
+                             '--output-h', '<(output_h)',
+                             '--output-cc', '<(output_cc)',
+                             '--header', '"third_party/libudev/libudev0.h"',
+                             '--link-directly=0',
+                             '<@(libudev_functions)',
+                  ],
+                  'message': 'Generating libudev0 library loader',
+                  'process_outputs_as_sources': 1,
+                },
+                {
+                  'variables': {
+                    'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libudev1.h',
+                    'output_cc': '<(INTERMEDIATE_DIR)/libudev1_loader.cc',
+                    'generator': '../../tools/generate_library_loader/generate_library_loader.py',
+                  },
+                  'action_name': 'generate_libudev1_loader',
+                  'inputs': [
+                    '<(generator)',
+                  ],
+                  'outputs': [
+                    '<(output_h)',
+                    '<(output_cc)',
+                  ],
+                  'action': ['python',
+                             '<(generator)',
+                             '--name', 'LibUdev1Loader',
+                             '--output-h', '<(output_h)',
+                             '--output-cc', '<(output_cc)',
+                             '--header', '"third_party/libudev/libudev1.h"',
+                             '--link-directly=0',
+                             '<@(libudev_functions)',
+                  ],
+                  'message': 'Generating libudev1 library loader',
+                  'process_outputs_as_sources': 1,
+                },
+              ],
             }],
           ],
         },
@@ -520,12 +674,7 @@
                          # and get it fixed so that we don't need --use-extern-c.
                          '--use-extern-c',
                          '--link-directly=<(linux_link_libpci)',
-                         'pci_alloc',
-                         'pci_init',
-                         'pci_cleanup',
-                         'pci_scan_bus',
-                         'pci_fill_info',
-                         'pci_lookup_name',
+                         '<@(libpci_functions)',
               ],
               'message': 'Generating libpci library loader',
               'process_outputs_as_sources': 1,
@@ -706,13 +855,7 @@
                          '--output-cc', '<(output_cc)',
                          '--header', '<gio/gio.h>',
                          '--link-directly=<(linux_link_gsettings)',
-                         'g_settings_new',
-                         'g_settings_get_child',
-                         'g_settings_get_string',
-                         'g_settings_get_boolean',
-                         'g_settings_get_int',
-                         'g_settings_get_strv',
-                         'g_settings_list_schemas',
+                         '<@(libgio_functions)',
               ],
               'message': 'Generating libgio library loader',
               'process_outputs_as_sources': 1,
@@ -882,17 +1025,7 @@
                      '--output-cc', '<(output_cc)',
                      '--header', '<brlapi.h>',
                      '--link-directly=<(linux_link_libbrlapi)',
-                     'brlapi_getHandleSize',
-                     'brlapi_error_location',
-                     'brlapi_strerror',
-                     'brlapi__acceptKeys',
-                     'brlapi__openConnection',
-                     'brlapi__closeConnection',
-                     'brlapi__getDisplaySize',
-                     'brlapi__enterTtyModeWithPath',
-                     'brlapi__leaveTtyMode',
-                     'brlapi__writeDots',
-                     'brlapi__readKey',
+                     '<@(libbrlapi_functions)',
           ],
           'message': 'Generating libbrlapi library loader',
           'process_outputs_as_sources': 1,
@@ -991,6 +1124,7 @@
                      'spd_set_synthesis_voice',
                      'spd_list_modules',
                      'spd_set_output_module',
+                     'spd_set_language',
           ],
           'message': 'Generating libspeechd library loader',
           'process_outputs_as_sources': 1,
@@ -1002,34 +1136,38 @@
       'type': 'none',
       'toolsets': ['host', 'target'],
       'conditions': [
-        ['_toolset=="target"', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags pangocairo pangoft2)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo pangoft2)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l pangocairo pangoft2)',
-            ],
-          },
-        }, {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(pkg-config --cflags pangocairo pangoft2)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(pkg-config --libs-only-L --libs-only-other pangocairo pangoft2)',
-            ],
-            'libraries': [
-              '<!@(pkg-config --libs-only-l pangocairo pangoft2)',
-            ],
-          },
+        ['use_pango==1 and use_cairo==1', {
+          'conditions': [
+            ['_toolset=="target"', {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(<(pkg-config) --cflags pangocairo pangoft2)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo pangoft2)',
+                ],
+                'libraries': [
+                  '<!@(<(pkg-config) --libs-only-l pangocairo pangoft2)',
+                ],
+              },
+            }, {
+              'direct_dependent_settings': {
+                'cflags': [
+                  '<!@(pkg-config --cflags pangocairo pangoft2)',
+                ],
+              },
+              'link_settings': {
+                'ldflags': [
+                  '<!@(pkg-config --libs-only-L --libs-only-other pangocairo pangoft2)',
+                ],
+                'libraries': [
+                  '<!@(pkg-config --libs-only-l pangocairo pangoft2)',
+                ],
+              },
+            }],
+          ],
         }],
       ],
     },
@@ -1043,8 +1181,7 @@
               'dependencies': [
                 '../../third_party/boringssl/boringssl.gyp:boringssl',
               ],
-            }],
-            ['use_openssl==0', {
+            }, {
               'dependencies': [
                 '../../net/third_party/nss/ssl.gyp:libssl',
               ],
@@ -1054,6 +1191,13 @@
                   # before other includes, as we are shadowing system headers.
                   '<(DEPTH)/net/third_party/nss/ssl',
                 ],
+              },
+            }],
+            # Link in the system NSS if it is used for either the internal
+            # crypto library (use_openssl==0) or platform certificate
+            # library (use_nss_certs==1).
+            ['use_openssl==0 or use_nss_certs==1', {
+              'direct_dependent_settings': {
                 'cflags': [
                   '<!@(<(pkg-config) --cflags nss)',
                 ],
@@ -1066,15 +1210,17 @@
                   '<!@(<(pkg-config) --libs-only-l nss | sed -e "s/-lssl3//")',
                 ],
               },
-            }],
-            ['use_openssl==0 and clang==1', {
-              'direct_dependent_settings': {
-                'cflags': [
-                  # There is a broken header guard in /usr/include/nss/secmod.h:
-                  # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
-                  '-Wno-header-guard',
-                ],
-              },
+              'conditions': [
+                ['clang==1', {
+                  'direct_dependent_settings': {
+                    'cflags': [
+                      # There is a broken header guard in /usr/include/nss/secmod.h:
+                      # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
+                      '-Wno-header-guard',
+                    ],
+                  },
+                }],
+              ],
             }],
           ]
         }],

@@ -31,6 +31,7 @@
 #ifndef FileEntry_h
 #define FileEntry_h
 
+#include "modules/ModulesExport.h"
 #include "modules/filesystem/Entry.h"
 #include "platform/heap/Handle.h"
 
@@ -40,7 +41,7 @@ class DOMFileSystemBase;
 class FileCallback;
 class FileWriterCallback;
 
-class FileEntry final : public Entry {
+class MODULES_EXPORT FileEntry final : public Entry {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static FileEntry* create(DOMFileSystemBase* fileSystem, const String& fullPath)
@@ -53,7 +54,7 @@ public:
 
     virtual bool isFile() const override { return true; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     FileEntry(DOMFileSystemBase*, const String& fullPath);

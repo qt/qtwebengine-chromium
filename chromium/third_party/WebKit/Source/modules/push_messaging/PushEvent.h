@@ -6,28 +6,26 @@
 #define PushEvent_h
 
 #include "modules/EventModules.h"
+#include "modules/ModulesExport.h"
+#include "modules/push_messaging/PushEventInit.h"
+#include "modules/push_messaging/PushMessageData.h"
+#include "modules/serviceworkers/ExtendableEvent.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-struct PushEventInit : public EventInit {
-    PushEventInit();
-
-    String data;
-};
-
-class PushEvent final : public Event {
+class MODULES_EXPORT PushEvent final : public ExtendableEvent {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<PushEvent> create()
     {
         return adoptRefWillBeNoop(new PushEvent);
     }
-    static PassRefPtrWillBeRawPtr<PushEvent> create(const AtomicString& type, const String& data)
+    static PassRefPtrWillBeRawPtr<PushEvent> create(const AtomicString& type, PushMessageData* data, WaitUntilObserver* observer)
     {
-        return adoptRefWillBeNoop(new PushEvent(type, data));
+        return adoptRefWillBeNoop(new PushEvent(type, data, observer));
     }
     static PassRefPtrWillBeRawPtr<PushEvent> create(const AtomicString& type, const PushEventInit& initializer)
     {
@@ -38,13 +36,16 @@ public:
 
     virtual const AtomicString& interfaceName() const override;
 
-    String data() const { return m_data; }
+    PushMessageData* data();
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     PushEvent();
-    PushEvent(const AtomicString& type, const String& data);
+    PushEvent(const AtomicString& type, PushMessageData*, WaitUntilObserver*);
     PushEvent(const AtomicString& type, const PushEventInit&);
-    String m_data;
+
+    PersistentWillBeMember<PushMessageData> m_data;
 };
 
 } // namespace blink

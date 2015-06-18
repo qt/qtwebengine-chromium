@@ -38,13 +38,12 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/workers/DedicatedWorkerGlobalScope.h"
-#include "core/workers/DedicatedWorkerThread.h"
-#include "core/workers/Worker.h"
+#include "core/workers/InProcessWorkerBase.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerInspectorProxy.h"
 #include "core/workers/WorkerObjectProxy.h"
@@ -55,35 +54,19 @@
 
 namespace blink {
 
-class MessageWorkerGlobalScopeTask : public ExecutionContextTask {
-public:
-    static PassOwnPtr<MessageWorkerGlobalScopeTask> create(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels)
-    {
-        return adoptPtr(new MessageWorkerGlobalScopeTask(message, channels));
-    }
+namespace {
 
-private:
-    MessageWorkerGlobalScopeTask(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels)
-        : m_message(message)
-        , m_channels(channels)
-    {
-    }
+void processMessageOnWorkerGlobalScope(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels, WorkerObjectProxy* workerObjectProxy, ExecutionContext* scriptContext)
+{
+    WorkerGlobalScope* globalScope = toWorkerGlobalScope(scriptContext);
+    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::entanglePorts(*scriptContext, channels);
+    globalScope->dispatchEvent(MessageEvent::create(ports.release(), message));
+    workerObjectProxy->confirmMessageFromWorkerObject(scriptContext->hasPendingActivity());
+}
 
-    virtual void performTask(ExecutionContext* scriptContext)
-    {
-        ASSERT_WITH_SECURITY_IMPLICATION(scriptContext->isWorkerGlobalScope());
-        DedicatedWorkerGlobalScope* context = static_cast<DedicatedWorkerGlobalScope*>(scriptContext);
-        OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::entanglePorts(*scriptContext, m_channels.release());
-        context->dispatchEvent(MessageEvent::create(ports.release(), m_message));
-        context->thread()->workerObjectProxy().confirmMessageFromWorkerObject(context->hasPendingActivity());
-    }
+} // namespace
 
-private:
-    RefPtr<SerializedScriptValue> m_message;
-    OwnPtr<MessagePortChannelArray> m_channels;
-};
-
-WorkerMessagingProxy::WorkerMessagingProxy(Worker* workerObject, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
+WorkerMessagingProxy::WorkerMessagingProxy(InProcessWorkerBase* workerObject, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_executionContext(workerObject->executionContext())
     , m_workerObjectProxy(WorkerObjectProxy::create(m_executionContext.get(), this))
     , m_workerObject(workerObject)
@@ -97,6 +80,7 @@ WorkerMessagingProxy::WorkerMessagingProxy(Worker* workerObject, PassOwnPtrWillB
     ASSERT(m_workerObject);
     ASSERT((m_executionContext->isDocument() && isMainThread())
         || (m_executionContext->isWorkerGlobalScope() && toWorkerGlobalScope(m_executionContext.get())->thread()->isCurrentThread()));
+    m_workerInspectorProxy->setWorkerGlobalScopeProxy(this);
 }
 
 WorkerMessagingProxy::~WorkerMessagingProxy()
@@ -104,6 +88,8 @@ WorkerMessagingProxy::~WorkerMessagingProxy()
     ASSERT(!m_workerObject);
     ASSERT((m_executionContext->isDocument() && isMainThread())
         || (m_executionContext->isWorkerGlobalScope() && toWorkerGlobalScope(m_executionContext.get())->thread()->isCurrentThread()));
+    if (m_loaderProxy)
+        m_loaderProxy->detachProvider(this);
 }
 
 void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode startMode)
@@ -117,11 +103,15 @@ void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const S
     Document* document = toDocument(m_executionContext.get());
     SecurityOrigin* starterOrigin = document->securityOrigin();
 
-    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, startMode, document->contentSecurityPolicy()->deprecatedHeader(), document->contentSecurityPolicy()->deprecatedHeaderType(), starterOrigin, m_workerClients.release());
-    double originTime = document->loader() ? document->loader()->timing()->referenceMonotonicTime() : monotonicallyIncreasingTime();
+    RefPtr<ContentSecurityPolicy> csp = m_workerObject->contentSecurityPolicy() ? m_workerObject->contentSecurityPolicy() : document->contentSecurityPolicy();
+    ASSERT(csp);
 
-    RefPtr<DedicatedWorkerThread> thread = DedicatedWorkerThread::create(*this, *m_workerObjectProxy.get(), originTime, startupData.release());
-    thread->start();
+    OwnPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, nullptr, startMode, csp->deprecatedHeader(), csp->deprecatedHeaderType(), starterOrigin, m_workerClients.release());
+    double originTime = document->loader() ? document->loader()->timing().referenceMonotonicTime() : monotonicallyIncreasingTime();
+
+    m_loaderProxy = WorkerLoaderProxy::create(this);
+    RefPtr<WorkerThread> thread = createWorkerThread(originTime);
+    thread->start(startupData.release());
     workerThreadCreated(thread);
     m_workerInspectorProxy->workerThreadCreated(m_executionContext.get(), m_workerThread.get(), scriptURL);
 }
@@ -140,11 +130,13 @@ void WorkerMessagingProxy::postMessageToWorkerGlobalScope(PassRefPtr<SerializedS
     if (m_askedToTerminate)
         return;
 
+    OwnPtr<ExecutionContextTask> task = createCrossThreadTask(&processMessageOnWorkerGlobalScope, message, channels, AllowCrossThreadAccess(&workerObjectProxy()));
     if (m_workerThread) {
         ++m_unconfirmedMessageCount;
-        m_workerThread->postTask(MessageWorkerGlobalScopeTask::create(message, channels));
-    } else
-        m_queuedEarlyTasks.append(MessageWorkerGlobalScopeTask::create(message, channels));
+        m_workerThread->postTask(FROM_HERE, task.release());
+    } else {
+        m_queuedEarlyTasks.append(task.release());
+    }
 }
 
 bool WorkerMessagingProxy::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
@@ -153,7 +145,7 @@ bool WorkerMessagingProxy::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionConte
         return false;
 
     ASSERT(m_workerThread);
-    m_workerThread->postTask(task);
+    m_workerThread->postTask(FROM_HERE, task);
     return true;
 }
 
@@ -161,10 +153,10 @@ void WorkerMessagingProxy::postTaskToLoader(PassOwnPtr<ExecutionContextTask> tas
 {
     // FIXME: In case of nested workers, this should go directly to the root Document context.
     ASSERT(m_executionContext->isDocument());
-    m_executionContext->postTask(task);
+    m_executionContext->postTask(FROM_HERE, task);
 }
 
-void WorkerMessagingProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL)
+void WorkerMessagingProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId)
 {
     if (!m_workerObject)
         return;
@@ -174,8 +166,8 @@ void WorkerMessagingProxy::reportException(const String& errorMessage, int lineN
 
     RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, sourceURL, lineNumber, columnNumber, nullptr);
     bool errorHandled = !m_workerObject->dispatchEvent(event);
-    if (!errorHandled)
-        m_executionContext->reportException(event, 0, nullptr, NotSharableCrossOrigin);
+
+    postTaskToWorkerGlobalScope(createCrossThreadTask(&WorkerGlobalScope::exceptionHandled, m_workerThread->workerGlobalScope(), exceptionId, errorHandled));
 }
 
 void WorkerMessagingProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
@@ -194,7 +186,7 @@ void WorkerMessagingProxy::reportConsoleMessage(MessageSource source, MessageLev
     frame->console().addMessage(consoleMessage.release());
 }
 
-void WorkerMessagingProxy::workerThreadCreated(PassRefPtr<DedicatedWorkerThread> workerThread)
+void WorkerMessagingProxy::workerThreadCreated(PassRefPtr<WorkerThread> workerThread)
 {
     ASSERT(!m_askedToTerminate);
     m_workerThread = workerThread;
@@ -204,23 +196,23 @@ void WorkerMessagingProxy::workerThreadCreated(PassRefPtr<DedicatedWorkerThread>
     m_workerThreadHadPendingActivity = true; // Worker initialization means a pending activity.
 
     for (auto& earlyTasks : m_queuedEarlyTasks)
-        m_workerThread->postTask(earlyTasks.release());
+        m_workerThread->postTask(FROM_HERE, earlyTasks.release());
     m_queuedEarlyTasks.clear();
 }
 
 void WorkerMessagingProxy::workerObjectDestroyed()
 {
     m_workerObject = nullptr;
-    m_executionContext->postTask(createCrossThreadTask(&workerObjectDestroyedInternal, AllowCrossThreadAccess(this)));
+    m_executionContext->postTask(FROM_HERE, createCrossThreadTask(&WorkerMessagingProxy::workerObjectDestroyedInternal, this));
 }
 
-void WorkerMessagingProxy::workerObjectDestroyedInternal(ExecutionContext*, WorkerMessagingProxy* proxy)
+void WorkerMessagingProxy::workerObjectDestroyedInternal()
 {
-    proxy->m_mayBeDestroyed = true;
-    if (proxy->m_workerThread)
-        proxy->terminateWorkerGlobalScope();
+    m_mayBeDestroyed = true;
+    if (m_workerThread)
+        terminateWorkerGlobalScope();
     else
-        proxy->workerThreadTerminated();
+        workerThreadTerminated();
 }
 
 void WorkerMessagingProxy::workerThreadTerminated()
@@ -253,6 +245,15 @@ void WorkerMessagingProxy::postMessageToPageInspector(const String& message)
     WorkerInspectorProxy::PageInspector* pageInspector = m_workerInspectorProxy->pageInspector();
     if (pageInspector)
         pageInspector->dispatchMessageFromWorker(message);
+}
+
+void WorkerMessagingProxy::postWorkerConsoleAgentEnabled()
+{
+    if (!m_workerInspectorProxy)
+        return;
+    WorkerInspectorProxy::PageInspector* pageInspector = m_workerInspectorProxy->pageInspector();
+    if (pageInspector)
+        pageInspector->workerConsoleAgentEnabled(this);
 }
 
 WorkerInspectorProxy* WorkerMessagingProxy::workerInspectorProxy()

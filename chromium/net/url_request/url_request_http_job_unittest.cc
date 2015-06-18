@@ -51,8 +51,7 @@ class URLRequestHttpJobTest : public ::testing::Test {
   URLRequestHttpJobTest()
       : req_(context_.CreateRequest(GURL("http://www.example.com"),
                                     DEFAULT_PRIORITY,
-                                    &delegate_,
-                                    nullptr)) {
+                                    &delegate_)) {
     context_.set_http_transaction_factory(&network_layer_);
   }
 
@@ -211,8 +210,7 @@ class URLRequestHttpJobWebSocketTest
   URLRequestHttpJobWebSocketTest()
       : req_(context_.CreateRequest(GURL("ws://www.example.com"),
                                     DEFAULT_PRIORITY,
-                                    &delegate_,
-                                    nullptr)) {
+                                    &delegate_)) {
     // The TestNetworkDelegate expects a call to NotifyBeforeURLRequest before
     // anything else happens.
     GURL url("ws://localhost/");
@@ -229,7 +227,7 @@ class MockCreateHelper : public WebSocketHandshakeStreamBase::CreateHelper {
  public:
   // GoogleMock does not appear to play nicely with move-only types like
   // scoped_ptr, so this forwarding method acts as a workaround.
-  virtual WebSocketHandshakeStreamBase* CreateBasicStream(
+  WebSocketHandshakeStreamBase* CreateBasicStream(
       scoped_ptr<ClientSocketHandle> connection,
       bool using_proxy) override {
     // Discard the arguments since we don't need them anyway.

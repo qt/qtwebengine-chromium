@@ -4,7 +4,7 @@
 
 #include "cc/quads/render_pass_draw_quad.h"
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
@@ -95,25 +95,17 @@ const RenderPassDrawQuad* RenderPassDrawQuad::MaterialCast(
   return static_cast<const RenderPassDrawQuad*>(quad);
 }
 
-void RenderPassDrawQuad::ExtendValue(base::debug::TracedValue* value) const {
+void RenderPassDrawQuad::ExtendValue(
+    base::trace_event::TracedValue* value) const {
   TracedValue::SetIDRef(render_pass_id.AsTracingId(), value, "render_pass_id");
   value->SetInteger("mask_resource_id", mask_resource_id);
-
-  value->BeginArray("mask_texture_size");
-  MathUtil::AddToTracedValue(mask_texture_size, value);
-  value->EndArray();
-
-  value->BeginArray("mask_uv_scale");
-  MathUtil::AddToTracedValue(mask_uv_scale, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("mask_texture_size", mask_texture_size, value);
+  MathUtil::AddToTracedValue("mask_uv_scale", mask_uv_scale, value);
 
   value->BeginDictionary("filters");
   filters.AsValueInto(value);
   value->EndDictionary();
-
-  value->BeginArray("filters_scale");
-  MathUtil::AddToTracedValue(filters_scale, value);
-  value->EndArray();
+  MathUtil::AddToTracedValue("filters_scale", filters_scale, value);
 
   value->BeginDictionary("background_filters");
   background_filters.AsValueInto(value);

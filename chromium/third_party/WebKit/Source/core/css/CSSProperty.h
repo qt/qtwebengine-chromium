@@ -76,90 +76,19 @@ public:
 
     CSSValue* value() const { return m_value.get(); }
 
-    void wrapValueInCommaSeparatedList();
-
     static CSSPropertyID resolveDirectionAwareProperty(CSSPropertyID, TextDirection, WritingMode);
     static bool isAffectedByAllProperty(CSSPropertyID);
 
     const StylePropertyMetadata& metadata() const { return m_metadata; }
 
-    void trace(Visitor* visitor) { visitor->trace(m_value); }
+    bool operator==(const CSSProperty& other) const;
+
+    DEFINE_INLINE_TRACE() { visitor->trace(m_value); }
 
 private:
     StylePropertyMetadata m_metadata;
     RefPtrWillBeMember<CSSValue> m_value;
 };
-
-inline CSSPropertyID prefixingVariantForPropertyId(CSSPropertyID propId)
-{
-    if (RuntimeEnabledFeatures::cssAnimationUnprefixedEnabled()) {
-        switch (propId) {
-        case CSSPropertyAnimation:
-            return CSSPropertyWebkitAnimation;
-        case CSSPropertyAnimationDelay:
-            return CSSPropertyWebkitAnimationDelay;
-        case CSSPropertyAnimationDirection:
-            return CSSPropertyWebkitAnimationDirection;
-        case CSSPropertyAnimationDuration:
-            return CSSPropertyWebkitAnimationDuration;
-        case CSSPropertyAnimationFillMode:
-            return CSSPropertyWebkitAnimationFillMode;
-        case CSSPropertyAnimationIterationCount:
-            return CSSPropertyWebkitAnimationIterationCount;
-        case CSSPropertyAnimationName:
-            return CSSPropertyWebkitAnimationName;
-        case CSSPropertyAnimationPlayState:
-            return CSSPropertyWebkitAnimationPlayState;
-        case CSSPropertyAnimationTimingFunction:
-            return CSSPropertyWebkitAnimationTimingFunction;
-        case CSSPropertyWebkitAnimation:
-            return CSSPropertyAnimation;
-        case CSSPropertyWebkitAnimationDelay:
-            return CSSPropertyAnimationDelay;
-        case CSSPropertyWebkitAnimationDirection:
-            return CSSPropertyAnimationDirection;
-        case CSSPropertyWebkitAnimationDuration:
-            return CSSPropertyAnimationDuration;
-        case CSSPropertyWebkitAnimationFillMode:
-            return CSSPropertyAnimationFillMode;
-        case CSSPropertyWebkitAnimationIterationCount:
-            return CSSPropertyAnimationIterationCount;
-        case CSSPropertyWebkitAnimationName:
-            return CSSPropertyAnimationName;
-        case CSSPropertyWebkitAnimationPlayState:
-            return CSSPropertyAnimationPlayState;
-        case CSSPropertyWebkitAnimationTimingFunction:
-            return CSSPropertyAnimationTimingFunction;
-        default:
-            break;
-        }
-    }
-
-    switch (propId) {
-    case CSSPropertyTransitionDelay:
-        return CSSPropertyWebkitTransitionDelay;
-    case CSSPropertyTransitionDuration:
-        return CSSPropertyWebkitTransitionDuration;
-    case CSSPropertyTransitionProperty:
-        return CSSPropertyWebkitTransitionProperty;
-    case CSSPropertyTransitionTimingFunction:
-        return CSSPropertyWebkitTransitionTimingFunction;
-    case CSSPropertyTransition:
-        return CSSPropertyWebkitTransition;
-    case CSSPropertyWebkitTransitionDelay:
-        return CSSPropertyTransitionDelay;
-    case CSSPropertyWebkitTransitionDuration:
-        return CSSPropertyTransitionDuration;
-    case CSSPropertyWebkitTransitionProperty:
-        return CSSPropertyTransitionProperty;
-    case CSSPropertyWebkitTransitionTimingFunction:
-        return CSSPropertyTransitionTimingFunction;
-    case CSSPropertyWebkitTransition:
-        return CSSPropertyTransition;
-    default:
-        return propId;
-    }
-}
 
 } // namespace blink
 

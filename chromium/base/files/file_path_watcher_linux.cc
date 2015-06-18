@@ -19,7 +19,6 @@
 
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -27,11 +26,12 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
+#include "base/trace_event/trace_event.h"
 
 namespace base {
 
@@ -125,10 +125,13 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate,
   // cleanup thread, in case it quits before Cancel() is called.
   void WillDestroyCurrentMessageLoop() override;
 
-  // Inotify watches are installed for all directory components of |target_|. A
-  // WatchEntry instance holds the watch descriptor for a component and the
-  // subdirectory for that identifies the next component. If a symbolic link
-  // is being watched, the target of the link is also kept.
+  // Inotify watches are installed for all directory components of |target_|.
+  // A WatchEntry instance holds:
+  // - |watch|: the watch descriptor for a component.
+  // - |subdir|: the subdirectory that identifies the next component.
+  //   - For the last component, there is no next component, so it is empty.
+  // - |linkname|: the target of the symlink.
+  //   - Only if the target being watched is a symbolic link.
   struct WatchEntry {
     explicit WatchEntry(const FilePath::StringType& dirname)
         : watch(InotifyReader::kInvalidWatch),
@@ -197,7 +200,7 @@ void InotifyReaderCallback(InotifyReader* reader, int inotify_fd,
   CHECK_LE(0, shutdown_fd);
   CHECK_GT(FD_SETSIZE, shutdown_fd);
 
-  debug::TraceLog::GetInstance()->SetCurrentThreadBlocksMessageLoop();
+  trace_event::TraceLog::GetInstance()->SetCurrentThreadBlocksMessageLoop();
 
   while (true) {
     fd_set rfds;
@@ -261,7 +264,7 @@ InotifyReader::InotifyReader()
   shutdown_pipe_[0] = -1;
   shutdown_pipe_[1] = -1;
   if (inotify_fd_ >= 0 && pipe(shutdown_pipe_) == 0 && thread_.Start()) {
-    thread_.message_loop()->PostTask(
+    thread_.task_runner()->PostTask(
         FROM_HERE,
         Bind(&InotifyReaderCallback, this, inotify_fd_, shutdown_pipe_[0]));
     valid_ = true;
@@ -346,12 +349,11 @@ void FilePathWatcherImpl::OnFilePathChanged(InotifyReader::Watch fired_watch,
                                             bool created,
                                             bool deleted,
                                             bool is_dir) {
-  if (!message_loop()->BelongsToCurrentThread()) {
-    // Switch to message_loop() to access |watches_| safely.
-    message_loop()->PostTask(
-        FROM_HERE,
-        Bind(&FilePathWatcherImpl::OnFilePathChanged, this,
-             fired_watch, child, created, deleted, is_dir));
+  if (!task_runner()->BelongsToCurrentThread()) {
+    // Switch to task_runner() to access |watches_| safely.
+    task_runner()->PostTask(FROM_HERE,
+                            Bind(&FilePathWatcherImpl::OnFilePathChanged, this,
+                                 fired_watch, child, created, deleted, is_dir));
     return;
   }
 
@@ -381,11 +383,31 @@ void FilePathWatcherImpl::OnFilePathChanged(InotifyReader::Watch fired_watch,
         (child == watch_entry.subdir);
 
     // Check if the change references |target_| or a direct child of |target_|.
-    bool is_watch_for_target = watch_entry.subdir.empty();
-    bool target_changed =
-        (is_watch_for_target && (child == watch_entry.linkname)) ||
-        (is_watch_for_target && watch_entry.linkname.empty()) ||
-        (watch_entry.subdir == child && watches_[i + 1].subdir.empty());
+    bool target_changed;
+    if (watch_entry.subdir.empty()) {
+      // The fired watch is for a WatchEntry without a subdir. Thus for a given
+      // |target_| = "/path/to/foo", this is for "foo". Here, check either:
+      // - the target has no symlink: it is the target and it changed.
+      // - the target has a symlink, and it matches |child|.
+      target_changed = (watch_entry.linkname.empty() ||
+                        child == watch_entry.linkname);
+    } else {
+      // The fired watch is for a WatchEntry with a subdir. Thus for a given
+      // |target_| = "/path/to/foo", this is for {"/", "/path", "/path/to"}.
+      // So we can safely access the next WatchEntry since we have not reached
+      // the end yet. Check |watch_entry| is for "/path/to", i.e. the next
+      // element is "foo".
+      bool next_watch_may_be_for_target = watches_[i + 1].subdir.empty();
+      if (next_watch_may_be_for_target) {
+        // The current |watch_entry| is for "/path/to", so check if the |child|
+        // that changed is "foo".
+        target_changed = watch_entry.subdir == child;
+      } else {
+        // The current |watch_entry| is not for "/path/to", so the next entry
+        // cannot be "foo". Thus |target_| has not changed.
+        target_changed = false;
+      }
+    }
 
     // Update watches if a directory component of the |target_| path
     // (dis)appears. Note that we don't add the additional restriction of
@@ -429,7 +451,7 @@ bool FilePathWatcherImpl::Watch(const FilePath& path,
   DCHECK(target_.empty());
   DCHECK(MessageLoopForIO::current());
 
-  set_message_loop(MessageLoopProxy::current());
+  set_task_runner(ThreadTaskRunnerHandle::Get());
   callback_ = callback;
   target_ = path;
   recursive_ = recursive;
@@ -453,17 +475,16 @@ void FilePathWatcherImpl::Cancel() {
   }
 
   // Switch to the message_loop() if necessary so we can access |watches_|.
-  if (!message_loop()->BelongsToCurrentThread()) {
-    message_loop()->PostTask(FROM_HERE,
-                             Bind(&FilePathWatcher::CancelWatch,
-                                  make_scoped_refptr(this)));
+  if (!task_runner()->BelongsToCurrentThread()) {
+    task_runner()->PostTask(FROM_HERE, Bind(&FilePathWatcher::CancelWatch,
+                                            make_scoped_refptr(this)));
   } else {
     CancelOnMessageLoopThread();
   }
 }
 
 void FilePathWatcherImpl::CancelOnMessageLoopThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   set_cancelled();
 
   if (!callback_.is_null()) {
@@ -487,7 +508,7 @@ void FilePathWatcherImpl::WillDestroyCurrentMessageLoop() {
 void FilePathWatcherImpl::UpdateWatches() {
   // Ensure this runs on the message_loop() exclusively in order to avoid
   // concurrency issues.
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   DCHECK(HasValidWatchVector());
 
   // Walk the list of watches and update them as we go.

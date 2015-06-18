@@ -13,7 +13,6 @@
 #include "SkRefCnt.h"
 #include "SkTDArray.h"
 #include "SkThread.h"
-#include "SkTRefArray.h"
 
 /**
  * SkBitmapHeapEntry provides users of SkBitmapHeap (using internal storage) with a means to...
@@ -114,19 +113,11 @@ public:
     virtual ~SkBitmapHeap();
 
     /**
-     * Makes a shallow copy of all bitmaps currently in the heap and returns them as an array. The
-     * array indices match their position in the heap.
-     *
-     * @return  a ptr to an array of bitmaps or NULL if external storage is being used.
-     */
-    SkTRefArray<SkBitmap>* extractBitmaps() const;
-
-    /**
      * Retrieves the bitmap from the specified slot in the heap
      *
      * @return  The bitmap located at that slot or NULL if external storage is being used.
      */
-    virtual SkBitmap* getBitmap(int32_t slot) const SK_OVERRIDE {
+    SkBitmap* getBitmap(int32_t slot) const override {
         SkASSERT(fExternalStorage == NULL);
         SkBitmapHeapEntry* entry = getEntry(slot);
         if (entry) {
@@ -140,7 +131,7 @@ public:
      *
      * @return  The bitmap located at that slot or NULL if external storage is being used.
      */
-    virtual void releaseRef(int32_t slot) SK_OVERRIDE {
+    void releaseRef(int32_t slot) override {
         SkASSERT(fExternalStorage == NULL);
         if (fOwnerCount != IGNORE_OWNERS) {
             SkBitmapHeapEntry* entry = getEntry(slot);

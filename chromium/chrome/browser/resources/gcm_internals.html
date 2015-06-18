@@ -1,8 +1,9 @@
-﻿<!DOCTYPE HTML>
-<html i18n-values="dir:textdirection">
+﻿<!doctype html>
+<html i18n-values="dir:textdirection;lang:language">
 <head>
   <meta charset="utf-8">
   <title>GCM Internals</title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
   <link rel="stylesheet" href="gcm_internals.css">
   <script src="chrome://resources/js/cr.js"></script>
   <script src="chrome://resources/js/load_time_data.js"></script>
@@ -11,7 +12,7 @@
   <script src="strings.js"></script>
   <script src="gcm_internals.js"></script>
 </head>
-<body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
+<body>
 <h1>GCM Internals</h1>
 <div class="flexbar">
   <button id="refresh">Refresh</button>
@@ -41,13 +42,6 @@
         GCM Enabled
       </td>
       <td id="gcm-enabled">
-      </td>
-    </tr>
-    <tr>
-      <td>
-        Signed In Username
-      </td>
-      <td id="signed-in-username">
       </td>
     </tr>
     <tr>
@@ -175,6 +169,6 @@
   </tbody>
 </table>
 
-<script src="chrome://resources/js/i18n_template2.js"></script>
+<script src="chrome://resources/js/i18n_template.js"></script>
 </body>
 </html>

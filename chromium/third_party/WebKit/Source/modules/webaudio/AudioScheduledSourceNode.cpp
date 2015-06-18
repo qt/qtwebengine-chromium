@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioScheduledSourceNode.h"
 
 #include "bindings/core/v8/ExceptionState.h"
@@ -39,10 +37,10 @@
 
 namespace blink {
 
-const double AudioScheduledSourceNode::UnknownTime = -1;
+const double AudioScheduledSourceHandler::UnknownTime = -1;
 
-AudioScheduledSourceNode::AudioScheduledSourceNode(AudioContext* context, float sampleRate)
-    : AudioSourceNode(context, sampleRate)
+AudioScheduledSourceHandler::AudioScheduledSourceHandler(NodeType nodeType, AudioNode& node, float sampleRate)
+    : AudioHandler(nodeType, node, sampleRate)
     , m_playbackState(UNSCHEDULED_STATE)
     , m_startTime(0)
     , m_endTime(UnknownTime)
@@ -50,17 +48,15 @@ AudioScheduledSourceNode::AudioScheduledSourceNode(AudioContext* context, float 
 {
 }
 
-void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize,
-                                                    AudioBus* outputBus,
-                                                    size_t& quantumFrameOffset,
-                                                    size_t& nonSilentFramesToProcess)
+void AudioScheduledSourceHandler::updateSchedulingInfo(
+    size_t quantumFrameSize, AudioBus* outputBus, size_t& quantumFrameOffset, size_t& nonSilentFramesToProcess)
 {
     ASSERT(outputBus);
     if (!outputBus)
         return;
 
-    ASSERT(quantumFrameSize == AudioNode::ProcessingSizeInFrames);
-    if (quantumFrameSize != AudioNode::ProcessingSizeInFrames)
+    ASSERT(quantumFrameSize == ProcessingSizeInFrames);
+    if (quantumFrameSize != ProcessingSizeInFrames)
         return;
 
     double sampleRate = this->sampleRate();
@@ -134,7 +130,7 @@ void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize,
     return;
 }
 
-void AudioScheduledSourceNode::start(double when, ExceptionState& exceptionState)
+void AudioScheduledSourceHandler::start(double when, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
@@ -145,18 +141,29 @@ void AudioScheduledSourceNode::start(double when, ExceptionState& exceptionState
         return;
     }
 
-    if (!std::isfinite(when) || (when < 0)) {
+    if (when < 0) {
         exceptionState.throwDOMException(
             InvalidAccessError,
-            "Start time must be a finite non-negative number: " + String::number(when));
+            ExceptionMessages::indexExceedsMinimumBound(
+                "start time",
+                when,
+                0.0));
         return;
     }
 
-    m_startTime = when;
+    // The node is started. Add a reference to keep us alive so that audio will eventually get
+    // played even if Javascript should drop all references to this node. The reference will get
+    // dropped when the source has finished playing.
+    context()->notifySourceNodeStartedProcessing(node());
+
+    // If |when| < currentTime, the source must start now according to the spec.
+    // So just set startTime to currentTime in this case to start the source now.
+    m_startTime = std::max(when, context()->currentTime());
+
     m_playbackState = SCHEDULED_STATE;
 }
 
-void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
+void AudioScheduledSourceHandler::stop(double when, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
@@ -167,10 +174,13 @@ void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
         return;
     }
 
-    if (!std::isfinite(when) || (when < 0)) {
+    if (when < 0) {
         exceptionState.throwDOMException(
             InvalidAccessError,
-            "Stop time must be a finite non-negative number: " + String::number(when));
+            ExceptionMessages::indexExceedsMinimumBound(
+                "stop time",
+                when,
+                0.0));
         return;
     }
 
@@ -181,28 +191,71 @@ void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
     m_endTime = when;
 }
 
-void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener)
-{
-    m_hasEndedListener = listener;
-    setAttributeEventListener(EventTypeNames::ended, listener);
-}
-
-void AudioScheduledSourceNode::finish()
+void AudioScheduledSourceHandler::finishWithoutOnEnded()
 {
     if (m_playbackState != FINISHED_STATE) {
         // Let the context dereference this AudioNode.
-        context()->notifyNodeFinishedProcessing(this);
+        context()->notifySourceNodeFinishedProcessing(this);
         m_playbackState = FINISHED_STATE;
     }
+}
+void AudioScheduledSourceHandler::finish()
+{
+    finishWithoutOnEnded();
 
     if (m_hasEndedListener && context()->executionContext()) {
-        context()->executionContext()->postTask(createCrossThreadTask(&AudioScheduledSourceNode::notifyEnded, this));
+        context()->executionContext()->postTask(FROM_HERE, createCrossThreadTask(&AudioScheduledSourceHandler::notifyEnded, PassRefPtr<AudioScheduledSourceHandler>(this)));
     }
 }
 
-void AudioScheduledSourceNode::notifyEnded()
+void AudioScheduledSourceHandler::notifyEnded()
 {
-    dispatchEvent(Event::create(EventTypeNames::ended));
+    ASSERT(isMainThread());
+    if (node())
+        node()->dispatchEvent(Event::create(EventTypeNames::ended));
+}
+
+// ----------------------------------------------------------------
+
+AudioScheduledSourceNode::AudioScheduledSourceNode(AudioContext& context)
+    : AudioSourceNode(context)
+{
+}
+
+AudioScheduledSourceHandler& AudioScheduledSourceNode::audioScheduledSourceHandler() const
+{
+    return static_cast<AudioScheduledSourceHandler&>(handler());
+}
+
+void AudioScheduledSourceNode::start(ExceptionState& exceptionState)
+{
+    start(0, exceptionState);
+}
+
+void AudioScheduledSourceNode::start(double when, ExceptionState& exceptionState)
+{
+    audioScheduledSourceHandler().start(when, exceptionState);
+}
+
+void AudioScheduledSourceNode::stop(ExceptionState& exceptionState)
+{
+    stop(0, exceptionState);
+}
+
+void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
+{
+    audioScheduledSourceHandler().stop(when, exceptionState);
+}
+
+EventListener* AudioScheduledSourceNode::onended()
+{
+    return getAttributeEventListener(EventTypeNames::ended);
+}
+
+void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener)
+{
+    audioScheduledSourceHandler().setHasEndedListener();
+    setAttributeEventListener(EventTypeNames::ended, listener);
 }
 
 } // namespace blink

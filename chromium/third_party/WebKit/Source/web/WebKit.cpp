@@ -31,6 +31,7 @@
 #include "config.h"
 #include "public/web/WebKit.h"
 
+#include "bindings/core/v8/ScriptStreamerThread.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8GCController.h"
 #include "bindings/core/v8/V8Initializer.h"
@@ -50,7 +51,6 @@
 #include "platform/heap/Heap.h"
 #include "platform/heap/glue/MessageLoopInterruptor.h"
 #include "platform/heap/glue/PendingGCRunner.h"
-#include "platform/scheduler/Scheduler.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
@@ -78,8 +78,24 @@ public:
     {
         Microtask::performCheckpoint();
         V8GCController::reportDOMMemoryUsageToV8(mainThreadIsolate());
-        V8Initializer::reportRejectedPromises();
+        V8Initializer::reportRejectedPromisesOnMainThread();
     }
+};
+
+class MainThreadTaskRunner: public WebThread::Task {
+    WTF_MAKE_NONCOPYABLE(MainThreadTaskRunner);
+public:
+    MainThreadTaskRunner(WTF::MainThreadFunction* function, void* context)
+        : m_function(function)
+        , m_context(context) { }
+
+    void run() override
+    {
+        m_function(m_context);
+    }
+private:
+    WTF::MainThreadFunction* m_function;
+    void* m_context;
 };
 
 } // namespace
@@ -103,7 +119,7 @@ void initialize(Platform* platform)
     ThreadState::current()->addInterruptor(s_isolateInterruptor);
     ThreadState::current()->registerTraceDOMWrappers(V8PerIsolateData::mainThreadIsolate(), V8GCController::traceDOMWrappers);
 
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread is null if we are running on a thread without a message loop.
     if (WebThread* currentThread = platform->currentThread()) {
         ASSERT(!s_endOfTaskRunner);
         s_endOfTaskRunner = new EndOfTaskRunner;
@@ -126,6 +142,16 @@ static double monotonicallyIncreasingTimeFunction()
     return Platform::current()->monotonicallyIncreasingTime();
 }
 
+static double systemTraceTimeFunction()
+{
+    return Platform::current()->systemTraceTime();
+}
+
+static void histogramEnumerationFunction(const char* name, int sample, int boundaryValue)
+{
+    Platform::current()->histogramEnumeration(name, sample, boundaryValue);
+}
+
 static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 {
     Platform::current()->cryptographicallyRandomValues(buffer, length);
@@ -133,7 +159,7 @@ static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 
 static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* context)
 {
-    Platform::current()->callOnMainThread(function, context);
+    Platform::current()->mainThread()->postTask(FROM_HERE, new MainThreadTaskRunner(function, context));
 }
 
 void initializeWithoutV8(Platform* platform)
@@ -145,12 +171,12 @@ void initializeWithoutV8(Platform* platform)
     Platform::initialize(platform);
 
     WTF::setRandomSource(cryptographicallyRandomValues);
-    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction);
+    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction, histogramEnumerationFunction);
     WTF::initializeMainThread(callOnMainThreadFunction);
     Heap::init();
 
     ThreadState::attachMainThread();
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread() is null if we are running on a thread without a message loop.
     if (WebThread* currentThread = platform->currentThread()) {
         ASSERT(!s_pendingGCRunner);
         s_pendingGCRunner = new PendingGCRunner;
@@ -164,15 +190,6 @@ void initializeWithoutV8(Platform* platform)
     DEFINE_STATIC_LOCAL(ModulesInitializer, initializer, ());
     initializer.init();
 
-    // There are some code paths (for example, running WebKit in the browser
-    // process and calling into LocalStorage before anything else) where the
-    // UTF8 string encoding tables are used on a background thread before
-    // they're set up.  This is a problem because their set up routines assert
-    // they're running on the main WebKitThread.  It might be possible to make
-    // the initialization thread-safe, but given that so many code paths use
-    // this, initializing this lazily probably doesn't buy us much.
-    WTF::UTF8Encoding();
-
     setIndexedDBClientCreateFunction(IndexedDBClientImpl::create);
 
     MediaPlayer::setMediaEngineCreateFunction(WebMediaPlayerClientImpl::create);
@@ -180,7 +197,7 @@ void initializeWithoutV8(Platform* platform)
 
 void shutdown()
 {
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread() is null if we are running on a thread without a message loop.
     if (Platform::current()->currentThread()) {
         // We don't need to (cannot) remove s_endOfTaskRunner from the current
         // message loop, because the message loop is already destructed before
@@ -192,7 +209,7 @@ void shutdown()
     ASSERT(s_isolateInterruptor);
     ThreadState::current()->removeInterruptor(s_isolateInterruptor);
 
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread() is null if we are running on a thread without a message loop.
     if (Platform::current()->currentThread()) {
         ASSERT(s_pendingGCRunner);
         delete s_pendingGCRunner;
@@ -204,6 +221,10 @@ void shutdown()
         s_messageLoopInterruptor = 0;
     }
 
+    // Shutdown V8-related background threads before V8 is ramped down. Note
+    // that this will wait the thread to stop its operations.
+    ScriptStreamerThread::shutdown();
+
     v8::Isolate* isolate = V8PerIsolateData::mainThreadIsolate();
     V8PerIsolateData::willBeDestroyed(isolate);
 
@@ -211,6 +232,8 @@ void shutdown()
     // and later shutdown steps starts freeing up resources needed during
     // worker termination.
     WorkerThread::terminateAndWaitForAllWorkers();
+
+    ModulesInitializer::terminateThreads();
 
     // Detach the main thread before starting the shutdown sequence
     // so that the main thread won't get involved in a GC during the shutdown.
@@ -225,7 +248,6 @@ void shutdownWithoutV8()
 {
     ASSERT(!s_endOfTaskRunner);
     CoreInitializer::shutdown();
-    Scheduler::shutdown();
     Heap::shutdown();
     WTF::shutdown();
     Platform::shutdown();
@@ -263,7 +285,8 @@ void enableLogChannel(const char* name)
 
 void resetPluginCache(bool reloadPages)
 {
-    Page::refreshPlugins(reloadPages);
+    ASSERT(!reloadPages);
+    Page::refreshPlugins();
 }
 
 } // namespace blink

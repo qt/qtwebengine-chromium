@@ -96,6 +96,33 @@
   top: 14px;
 }
 
+.image-loading.user-image .new-gaia-flow #user-image {
+  height: 528px; /* Should be the same as #gaia-signin height. */
+  padding: 0 0 0;
+  width: 448px; /* Should be the same as #gaia-signin width. */
+}
+
+.new-gaia-flow #user-image.loading {
+  min-height: 528px; /* Should be the same as #gaia-signin height. */
+  width: 448px; /* Should be the same as #gaia-signin width. */
+}
+
+.new-gaia-flow #old-flow-throbber {
+  display: none;
+}
+
+#new-flow-throbber {
+  display: none;
+}
+
+.new-gaia-flow #new-flow-throbber {
+  display: block;
+}
+
+.image-loading.user-image .new-gaia-flow #step-logo {
+  display: none;
+}
+
 html[dir=rtl] #user-image-preview {
   float: left;
 }
@@ -173,7 +200,7 @@ html[dir=rtl] #user-image-preview {
 
 #flip-photo {
   -webkit-transition: opacity 75ms linear;
-  background: url('chrome://theme/IDR_MIRROR_FLIP') no-repeat;
+  background: url(chrome://theme/IDR_MIRROR_FLIP) no-repeat;
   border: none;
   bottom: 44px;  /* 8px + image bottom. */
   display: block;
@@ -211,13 +238,13 @@ html[dir=rtl] #flip-photo {
 }
 
 .camera:not(.live) #discard-photo {
-  background: url('chrome://theme/IDR_USER_IMAGE_RECYCLE')
+  background: url(chrome://theme/IDR_USER_IMAGE_RECYCLE)
       no-repeat center center;
   display: block;
 }
 
 .camera.live.online #take-photo {
-  background: url('chrome://theme/IDR_USER_IMAGE_CAPTURE')
+  background: url(chrome://theme/IDR_USER_IMAGE_CAPTURE)
       no-repeat center -1px;
   display: block;
 }

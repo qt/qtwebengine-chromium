@@ -5,20 +5,22 @@
 #include "config.h"
 #include "core/paint/SVGRootPainter.h"
 
+#include "core/layout/svg/LayoutSVGRoot.h"
+#include "core/layout/svg/SVGResources.h"
+#include "core/layout/svg/SVGResourcesCache.h"
 #include "core/paint/BoxPainter.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
-#include "core/rendering/svg/SVGRenderingContext.h"
-#include "core/rendering/svg/SVGResources.h"
-#include "core/rendering/svg/SVGResourcesCache.h"
+#include "core/paint/PaintInfo.h"
+#include "core/paint/SVGPaintContext.h"
+#include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGSVGElement.h"
+#include "platform/graphics/paint/ClipRecorder.h"
 
 namespace blink {
 
-void SVGRootPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void SVGRootPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     // An empty viewport disables rendering.
-    if (m_renderSVGRoot.pixelSnappedBorderBoxRect().isEmpty())
+    if (m_layoutSVGRoot.pixelSnappedBorderBoxRect().isEmpty())
         return;
 
     // SVG outlines are painted during PaintPhaseForeground.
@@ -27,39 +29,38 @@ void SVGRootPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 
     // An empty viewBox also disables rendering.
     // (http://www.w3.org/TR/SVG/coords.html#ViewBoxAttribute)
-    SVGSVGElement* svg = toSVGSVGElement(m_renderSVGRoot.node());
+    SVGSVGElement* svg = toSVGSVGElement(m_layoutSVGRoot.node());
     ASSERT(svg);
     if (svg->hasEmptyViewBox())
         return;
 
     // Don't paint if we don't have kids, except if we have filters we should paint those.
-    if (!m_renderSVGRoot.firstChild()) {
-        SVGResources* resources = SVGResourcesCache::cachedResourcesForRenderObject(&m_renderSVGRoot);
+    if (!m_layoutSVGRoot.firstChild()) {
+        SVGResources* resources = SVGResourcesCache::cachedResourcesForLayoutObject(&m_layoutSVGRoot);
         if (!resources || !resources->filter())
             return;
     }
 
-    // Make a copy of the PaintInfo because applyTransform will modify the damage rect.
-    PaintInfo childPaintInfo(paintInfo);
-    GraphicsContextStateSaver stateSaver(*childPaintInfo.context);
+    PaintInfo paintInfoBeforeFiltering(paintInfo);
 
     // Apply initial viewport clip.
-    if (m_renderSVGRoot.shouldApplyViewportClip())
-        childPaintInfo.context->clip(pixelSnappedIntRect(m_renderSVGRoot.overflowClipRect(paintOffset)));
+    OwnPtr<ClipRecorder> clipRecorder;
+    if (m_layoutSVGRoot.shouldApplyViewportClip())
+        clipRecorder = adoptPtr(new ClipRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGRoot, paintInfoBeforeFiltering.displayItemTypeForClipping(), LayoutRect(pixelSnappedIntRect(m_layoutSVGRoot.overflowClipRect(paintOffset)))));
 
-    // Convert from container offsets (html renderers) to a relative transform (svg renderers).
+    // Convert from container offsets (html layoutObjects) to a relative transform (svg layoutObjects).
     // Transform from our paint container's coordinate system to our local coords.
     IntPoint adjustedPaintOffset = roundedIntPoint(paintOffset);
-    childPaintInfo.applyTransform(AffineTransform::translation(adjustedPaintOffset.x(), adjustedPaintOffset.y()) * m_renderSVGRoot.localToBorderBoxTransform());
+    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_layoutSVGRoot, AffineTransform::translation(adjustedPaintOffset.x(), adjustedPaintOffset.y()) * m_layoutSVGRoot.localToBorderBoxTransform());
 
-    SVGRenderingContext renderingContext;
-    if (childPaintInfo.phase == PaintPhaseForeground) {
-        renderingContext.prepareToRenderSVGContent(&m_renderSVGRoot, childPaintInfo);
-        if (!renderingContext.isRenderingPrepared())
-            return;
-    }
+    // SVG doesn't use paintOffset internally but we need to bake it into the paint rect.
+    paintInfoBeforeFiltering.rect.move(-adjustedPaintOffset.x(), -adjustedPaintOffset.y());
 
-    BoxPainter(m_renderSVGRoot).paint(childPaintInfo, LayoutPoint());
+    SVGPaintContext paintContext(m_layoutSVGRoot, paintInfoBeforeFiltering);
+    if (paintContext.paintInfo().phase == PaintPhaseForeground && !paintContext.applyClipMaskAndFilterIfNecessary())
+        return;
+
+    BoxPainter(m_layoutSVGRoot).paint(paintContext.paintInfo(), LayoutPoint());
 }
 
 } // namespace blink

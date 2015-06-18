@@ -6,6 +6,8 @@
 
 #include <algorithm>
 
+#include "components/device_event_log/device_event_log.h"
+
 namespace device {
 
 namespace {
@@ -38,14 +40,12 @@ struct CollectionIsProtected {
   }
 };
 
-bool FindCollectionByReportId(const HidDeviceInfo& device_info,
+bool FindCollectionByReportId(const std::vector<HidCollectionInfo>& collections,
                               uint8_t report_id,
                               HidCollectionInfo* collection_info) {
-  std::vector<HidCollectionInfo>::const_iterator collection_iter =
-      std::find_if(device_info.collections.begin(),
-                   device_info.collections.end(),
-                   CollectionHasReportId(report_id));
-  if (collection_iter != device_info.collections.end()) {
+  std::vector<HidCollectionInfo>::const_iterator collection_iter = std::find_if(
+      collections.begin(), collections.end(), CollectionHasReportId(report_id));
+  if (collection_iter != collections.end()) {
     if (collection_info) {
       *collection_info = *collection_iter;
     }
@@ -55,17 +55,17 @@ bool FindCollectionByReportId(const HidDeviceInfo& device_info,
   return false;
 }
 
-bool HasProtectedCollection(const HidDeviceInfo& device_info) {
-  return std::find_if(device_info.collections.begin(),
-                      device_info.collections.end(),
-                      CollectionIsProtected()) != device_info.collections.end();
+bool HasProtectedCollection(const std::vector<HidCollectionInfo>& collections) {
+  return std::find_if(collections.begin(), collections.end(),
+                      CollectionIsProtected()) != collections.end();
 }
 
 }  // namespace
 
-HidConnection::HidConnection(const HidDeviceInfo& device_info)
+HidConnection::HidConnection(scoped_refptr<HidDeviceInfo> device_info)
     : device_info_(device_info), closed_(false) {
-  has_protected_collection_ = HasProtectedCollection(device_info);
+  has_protected_collection_ =
+      HasProtectedCollection(device_info->collections());
 }
 
 HidConnection::~HidConnection() {
@@ -83,8 +83,8 @@ void HidConnection::Close() {
 
 void HidConnection::Read(const ReadCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (device_info_.max_input_report_size == 0) {
-    VLOG(1) << "This device does not support input reports.";
+  if (device_info_->max_input_report_size() == 0) {
+    HID_LOG(USER) << "This device does not support input reports.";
     callback.Run(false, NULL, 0);
     return;
   }
@@ -96,20 +96,26 @@ void HidConnection::Write(scoped_refptr<net::IOBuffer> buffer,
                           size_t size,
                           const WriteCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (device_info_.max_output_report_size == 0) {
-    VLOG(1) << "This device does not support output reports.";
+  if (device_info_->max_output_report_size() == 0) {
+    HID_LOG(USER) << "This device does not support output reports.";
+    callback.Run(false);
+    return;
+  }
+  if (size > device_info_->max_output_report_size() + 1) {
+    HID_LOG(USER) << "Output report buffer too long (" << size << " > "
+                  << (device_info_->max_output_report_size() + 1) << ").";
     callback.Run(false);
     return;
   }
   DCHECK_GE(size, 1u);
   uint8_t report_id = buffer->data()[0];
-  if (device_info().has_report_id != (report_id != 0)) {
-    VLOG(1) << "Invalid output report ID.";
+  if (device_info_->has_report_id() != (report_id != 0)) {
+    HID_LOG(USER) << "Invalid output report ID.";
     callback.Run(false);
     return;
   }
   if (IsReportIdProtected(report_id)) {
-    VLOG(1) << "Attempt to set a protected output report.";
+    HID_LOG(USER) << "Attempt to set a protected output report.";
     callback.Run(false);
     return;
   }
@@ -120,18 +126,18 @@ void HidConnection::Write(scoped_refptr<net::IOBuffer> buffer,
 void HidConnection::GetFeatureReport(uint8_t report_id,
                                      const ReadCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (device_info_.max_feature_report_size == 0) {
-    VLOG(1) << "This device does not support feature reports.";
+  if (device_info_->max_feature_report_size() == 0) {
+    HID_LOG(USER) << "This device does not support feature reports.";
     callback.Run(false, NULL, 0);
     return;
   }
-  if (device_info().has_report_id != (report_id != 0)) {
-    VLOG(1) << "Invalid feature report ID.";
+  if (device_info_->has_report_id() != (report_id != 0)) {
+    HID_LOG(USER) << "Invalid feature report ID.";
     callback.Run(false, NULL, 0);
     return;
   }
   if (IsReportIdProtected(report_id)) {
-    VLOG(1) << "Attempt to get a protected feature report.";
+    HID_LOG(USER) << "Attempt to get a protected feature report.";
     callback.Run(false, NULL, 0);
     return;
   }
@@ -143,20 +149,20 @@ void HidConnection::SendFeatureReport(scoped_refptr<net::IOBuffer> buffer,
                                       size_t size,
                                       const WriteCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (device_info_.max_feature_report_size == 0) {
-    VLOG(1) << "This device does not support feature reports.";
+  if (device_info_->max_feature_report_size() == 0) {
+    HID_LOG(USER) << "This device does not support feature reports.";
     callback.Run(false);
     return;
   }
   DCHECK_GE(size, 1u);
   uint8_t report_id = buffer->data()[0];
-  if (device_info().has_report_id != (report_id != 0)) {
-    VLOG(1) << "Invalid feature report ID.";
+  if (device_info_->has_report_id() != (report_id != 0)) {
+    HID_LOG(USER) << "Invalid feature report ID.";
     callback.Run(false);
     return;
   }
   if (IsReportIdProtected(report_id)) {
-    VLOG(1) << "Attempt to set a protected feature report.";
+    HID_LOG(USER) << "Attempt to set a protected feature report.";
     callback.Run(false);
     return;
   }
@@ -170,7 +176,7 @@ bool HidConnection::CompleteRead(scoped_refptr<net::IOBuffer> buffer,
   DCHECK_GE(size, 1u);
   uint8_t report_id = buffer->data()[0];
   if (IsReportIdProtected(report_id)) {
-    VLOG(1) << "Filtered a protected input report.";
+    HID_LOG(EVENT) << "Filtered a protected input report.";
     return false;
   }
 
@@ -180,7 +186,8 @@ bool HidConnection::CompleteRead(scoped_refptr<net::IOBuffer> buffer,
 
 bool HidConnection::IsReportIdProtected(uint8_t report_id) {
   HidCollectionInfo collection_info;
-  if (FindCollectionByReportId(device_info_, report_id, &collection_info)) {
+  if (FindCollectionByReportId(device_info_->collections(), report_id,
+                               &collection_info)) {
     return collection_info.usage.IsProtected();
   }
 

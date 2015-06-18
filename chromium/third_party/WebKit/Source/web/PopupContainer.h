@@ -34,6 +34,7 @@
 
 #include "platform/PopupMenuStyle.h"
 #include "platform/geometry/FloatQuad.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/heap/Handle.h"
 #include "web/PopupListBox.h"
 
@@ -51,9 +52,6 @@ struct WebPopupMenuInfo;
 class PopupContainer final : public Widget {
 public:
     static PassRefPtrWillBeRawPtr<PopupContainer> create(PopupMenuClient*, bool deviceSupportsTouch);
-
-    // Whether a key event should be sent to this popup.
-    bool isInterestedInEventForKey(int keyCode);
 
     // Widget
     virtual void paint(GraphicsContext*, const IntRect&) override;
@@ -100,12 +98,6 @@ public:
     // has selected with the keyboard up/down arrows.
     int selectedIndex() const;
 
-    // Refresh the popup values from the PopupMenuClient.
-    IntRect refresh(const IntRect& targetControlRect);
-
-    // The menu per-item data.
-    const Vector<PopupItem*>& popupData() const;
-
     // The height of a row in the menu.
     int menuItemHeight() const;
 
@@ -119,13 +111,16 @@ public:
     String getSelectedItemToolTip();
 
     // This is public for testing.
-    static IntRect layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const FloatRect& windowRect, const FloatRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent*, bool& needToResizeView);
+    static IntRect layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const IntRect& windowRect, const IntRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent*, bool& needToResizeView);
 
     void disconnectClient() { m_listBox->disconnectClient(); }
 
     void updateFromElement() { m_listBox->updateFromElement(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "PopupContainer"; }
 
 private:
     friend class WTF::RefCounted<PopupContainer>;
@@ -142,7 +137,6 @@ private:
     void fitToListBox();
 
     void popupOpened(const IntRect& bounds);
-    void getPopupMenuInfo(WebPopupMenuInfo*);
 
     // Returns the ChromeClient of the page this popup is associated with.
     ChromeClient& chromeClient();

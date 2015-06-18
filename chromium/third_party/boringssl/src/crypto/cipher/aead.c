@@ -33,12 +33,40 @@ size_t EVP_AEAD_max_tag_len(const EVP_AEAD *aead) { return aead->max_tag_len; }
 int EVP_AEAD_CTX_init(EVP_AEAD_CTX *ctx, const EVP_AEAD *aead,
                       const uint8_t *key, size_t key_len, size_t tag_len,
                       ENGINE *impl) {
-  ctx->aead = aead;
-  if (key_len != aead->key_len) {
-    OPENSSL_PUT_ERROR(CIPHER, EVP_AEAD_CTX_init, CIPHER_R_UNSUPPORTED_KEY_SIZE);
+  if (!aead->init) {
+    OPENSSL_PUT_ERROR(CIPHER, EVP_AEAD_CTX_init, CIPHER_R_NO_DIRECTION_SET);
+    ctx->aead = NULL;
     return 0;
   }
-  return aead->init(ctx, key, key_len, tag_len);
+  return EVP_AEAD_CTX_init_with_direction(ctx, aead, key, key_len, tag_len,
+                                          evp_aead_open);
+}
+
+int EVP_AEAD_CTX_init_with_direction(EVP_AEAD_CTX *ctx, const EVP_AEAD *aead,
+                                     const uint8_t *key, size_t key_len,
+                                     size_t tag_len,
+                                     enum evp_aead_direction_t dir) {
+  if (key_len != aead->key_len) {
+    OPENSSL_PUT_ERROR(CIPHER, EVP_AEAD_CTX_init_with_direction,
+                      CIPHER_R_UNSUPPORTED_KEY_SIZE);
+    ctx->aead = NULL;
+    return 0;
+  }
+
+  ctx->aead = aead;
+
+  int ok;
+  if (aead->init) {
+    ok = aead->init(ctx, key, key_len, tag_len);
+  } else {
+    ok = aead->init_with_direction(ctx, key, key_len, tag_len, dir);
+  }
+
+  if (!ok) {
+    ctx->aead = NULL;
+  }
+
+  return ok;
 }
 
 void EVP_AEAD_CTX_cleanup(EVP_AEAD_CTX *ctx) {
@@ -116,4 +144,12 @@ error:
   memset(out, 0, max_out_len);
   *out_len = 0;
   return 0;
+}
+
+int EVP_AEAD_CTX_get_rc4_state(const EVP_AEAD_CTX *ctx, const RC4_KEY **out_key) {
+  if (ctx->aead->get_rc4_state == NULL) {
+    return 0;
+  }
+
+  return ctx->aead->get_rc4_state(ctx, out_key);
 }

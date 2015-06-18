@@ -12,6 +12,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
 #include "content/browser/renderer_host/pepper/ssl_context_helper.h"
 #include "content/common/content_export.h"
 #include "net/base/address_list.h"
@@ -47,7 +48,8 @@ class ContentBrowserPepperHostFactory;
 class ResourceContext;
 
 class CONTENT_EXPORT PepperTCPSocketMessageFilter
-    : public ppapi::host::ResourceMessageFilter {
+    : public ppapi::host::ResourceMessageFilter,
+      public BrowserPpapiHostImpl::InstanceObserver {
  public:
   PepperTCPSocketMessageFilter(ContentBrowserPepperHostFactory* factory,
                                BrowserPpapiHostImpl* host,
@@ -63,6 +65,12 @@ class CONTENT_EXPORT PepperTCPSocketMessageFilter
   static size_t GetNumInstances();
 
  private:
+  enum SocketOption {
+    SOCKET_OPTION_NODELAY = 1 << 0,
+    SOCKET_OPTION_RCVBUF_SIZE = 1 << 1,
+    SOCKET_OPTION_SNDBUF_SIZE = 1 << 2
+  };
+
   ~PepperTCPSocketMessageFilter() override;
 
   // ppapi::host::ResourceMessageFilter overrides.
@@ -71,6 +79,10 @@ class CONTENT_EXPORT PepperTCPSocketMessageFilter
   int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) override;
+
+  // BrowserPpapiHostImpl::InstanceObserver overrides.
+  void OnThrottleStateChanged(bool is_throttled) override;
+  void OnHostDestroyed() override;
 
   int32_t OnMsgBind(const ppapi::host::HostMessageContext* context,
                     const PP_NetAddress_Private& net_addr);
@@ -170,7 +182,7 @@ class CONTENT_EXPORT PepperTCPSocketMessageFilter
 
   // The following fields are used only on the IO thread.
   // Non-owning ptr.
-  ppapi::host::PpapiHost* ppapi_host_;
+  BrowserPpapiHostImpl* host_;
   // Non-owning ptr.
   ContentBrowserPepperHostFactory* factory_;
   PP_Instance instance_;
@@ -184,6 +196,14 @@ class CONTENT_EXPORT PepperTCPSocketMessageFilter
   PP_NetAddress_Private bind_input_addr_;
 
   scoped_ptr<net::SingleRequestHostResolver> resolver_;
+
+  // Bitwise-or of SocketOption flags. This stores the state about whether
+  // each option is set before Connect() is called.
+  int socket_options_;
+
+  // Locally cached value of buffer size.
+  int32_t rcvbuf_size_;
+  int32_t sndbuf_size_;
 
   // |address_list_| may store multiple addresses when
   // PPB_TCPSocket_Private.Connect() is used, which involves name resolution.
@@ -211,6 +231,12 @@ class CONTENT_EXPORT PepperTCPSocketMessageFilter
   bool pending_accept_;
   scoped_ptr<net::TCPSocket> accepted_socket_;
   net::IPEndPoint accepted_address_;
+
+  // If the plugin is throttled, we defer completing socket reads until
+  // the plugin is unthrottled.
+  bool pending_read_on_unthrottle_;
+  ppapi::host::ReplyMessageContext pending_read_reply_message_context_;
+  int pending_read_net_result_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperTCPSocketMessageFilter);
 };

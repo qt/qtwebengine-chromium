@@ -6,6 +6,7 @@
 #define CC_LAYERS_CONTENT_LAYER_CLIENT_H_
 
 #include "cc/base/cc_export.h"
+#include "cc/playback/display_item_list.h"
 
 class SkCanvas;
 
@@ -18,18 +19,21 @@ namespace cc {
 
 class CC_EXPORT ContentLayerClient {
  public:
-  enum GraphicsContextStatus {
-    GRAPHICS_CONTEXT_DISABLED,
-    GRAPHICS_CONTEXT_ENABLED
+  enum PaintingControlSetting {
+    PAINTING_BEHAVIOR_NORMAL,
+    DISPLAY_LIST_CONSTRUCTION_DISABLED,
+    DISPLAY_LIST_CACHING_DISABLED,
+    DISPLAY_LIST_PAINTING_DISABLED
   };
 
   virtual void PaintContents(SkCanvas* canvas,
                              const gfx::Rect& clip,
-                             GraphicsContextStatus gc_status) = 0;
+                             PaintingControlSetting painting_status) = 0;
 
-  // Called by the content layer during the update phase.
-  // If the client paints LCD text, it may want to invalidate the layer.
-  virtual void DidChangeLayerCanUseLCDText() = 0;
+  virtual void PaintContentsToDisplayList(
+      DisplayItemList* display_list,
+      const gfx::Rect& clip,
+      PaintingControlSetting painting_status) = 0;
 
   // If true the layer may skip clearing the background before rasterizing,
   // because it will cover any uncleared data with content.

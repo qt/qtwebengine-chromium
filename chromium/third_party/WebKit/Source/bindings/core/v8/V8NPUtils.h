@@ -30,26 +30,27 @@
 #ifndef V8NPUtils_h
 #define V8NPUtils_h
 
+#include "core/CoreExport.h"
 #include <bindings/npruntime.h>
 #include <v8.h>
 
 namespace blink {
 
 // Convert a V8 Value of any type (string, bool, object, etc) to a NPVariant.
-void convertV8ObjectToNPVariant(v8::Isolate*, v8::Local<v8::Value>, NPObject*, NPVariant*);
+CORE_EXPORT void convertV8ObjectToNPVariant(v8::Isolate*, v8::Local<v8::Value>, NPObject*, NPVariant*);
 
 // Convert a NPVariant (string, bool, object, etc) back to a V8 Value. The owner object is the NPObject which relates to the
 // object, if the object is an Object. The created NPObject will be tied to the lifetime of the owner.
-v8::Handle<v8::Value> convertNPVariantToV8Object(v8::Isolate*, const NPVariant*, NPObject*);
+CORE_EXPORT v8::Local<v8::Value> convertNPVariantToV8Object(v8::Isolate*, const NPVariant*, NPObject*);
 
 // Helper function to create an NPN String Identifier from a v8 string.
-NPIdentifier getStringIdentifier(v8::Handle<v8::String>);
+NPIdentifier getStringIdentifier(v8::Local<v8::String>);
 
 // The ExceptionHandler will be notified of any exceptions thrown while
 // operating on a NPObject.
 typedef void (*ExceptionHandler)(void* data, const NPUTF8* message);
-void pushExceptionHandler(ExceptionHandler, void* data);
-void popExceptionHandler();
+CORE_EXPORT void pushExceptionHandler(ExceptionHandler, void* data);
+CORE_EXPORT void popExceptionHandler();
 
 // Upon destruction, an ExceptionCatcher will pass a caught exception to the
 // current ExceptionHandler.

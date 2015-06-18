@@ -11,7 +11,6 @@
 #include "SkView.h"
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
-#include "SkAvoidXfermode.h"
 #include "SkBlurMaskFilter.h"
 #include "SkColorFilter.h"
 #include "SkColorPriv.h"
@@ -54,7 +53,7 @@ static inline SkPMColor rgb2gray(SkPMColor c) {
 class SkGrayScaleColorFilter : public SkColorFilter {
 public:
     virtual void filterSpan(const SkPMColor src[], int count,
-                            SkPMColor result[]) const SK_OVERRIDE {
+                            SkPMColor result[]) const override {
         for (int i = 0; i < count; i++)
             result[i] = rgb2gray(src[i]);
     }
@@ -67,7 +66,7 @@ public:
     }
 
     virtual void filterSpan(const SkPMColor src[], int count,
-                            SkPMColor result[]) const SK_OVERRIDE {
+                            SkPMColor result[]) const override {
         SkPMColor mask = fMask;
         for (int i = 0; i < count; i++) {
             result[i] = src[i] & mask;
@@ -168,16 +167,11 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Dot2DPathEffect)
 
 protected:
-    virtual void next(const SkPoint& loc, int u, int v, SkPath* dst) const SK_OVERRIDE {
+    void next(const SkPoint& loc, int u, int v, SkPath* dst) const override {
         dst->addCircle(loc.fX, loc.fY, fRadius);
     }
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    Dot2DPathEffect(SkReadBuffer& buffer) : INHERITED(buffer) {
-        fRadius = buffer.readScalar();
-    }
-#endif
-    virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE {
+    void flatten(SkWriteBuffer& buffer) const override {
         this->INHERITED::flatten(buffer);
         buffer.writeScalar(fRadius);
     }
@@ -399,7 +393,7 @@ protected:
         canvas->save();
         canvas->translate(SkIntToScalar(0), SkIntToScalar(5));
         paint.setAntiAlias(true);
-        paint.setFilterLevel(SkPaint::kLow_FilterLevel);
+        paint.setFilterQuality(kLow_SkFilterQuality);
         // !!! draw through a clip
         paint.setColor(SK_ColorLTGRAY);
         paint.setStyle(SkPaint::kFill_Style);
@@ -578,18 +572,6 @@ protected:
         }
 
         canvas->restore();
-
-        if (1) {
-            SkAutoTUnref<SkAvoidXfermode> mode(SkAvoidXfermode::Create(SK_ColorWHITE, 0xFF,
-                                   SkAvoidXfermode::kTargetColor_Mode));
-            SkPaint paint;
-            x += SkIntToScalar(20);
-            SkRect  r = { x, 0, x + SkIntToScalar(360), SkIntToScalar(700) };
-            paint.setXfermode(mode);
-            paint.setColor(SK_ColorGREEN);
-            paint.setAntiAlias(true);
-            canvas->drawOval(r, paint);
-        }
     }
 
 private:

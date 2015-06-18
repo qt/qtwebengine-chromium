@@ -10,7 +10,10 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/user_metrics.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "chromecast/base/metrics/cast_histograms.h"
+#include "chromecast/base/metrics/grouped_histogram.h"
 
 namespace chromecast {
 namespace metrics {
@@ -35,8 +38,55 @@ const int kDisplayedFramesPerSecondPeriod = 1000000;
 // Sample every 5 seconds, represented in microseconds.
 const int kNominalVideoSamplePeriod = 5000000;
 
+const char kMetricsNameAppInfoDelimiter = '#';
+
 }  // namespace
 
+// static
+
+// NOTE(gfhuang): This is a hacky way to encode/decode app infos into a
+// string. Mainly because it's hard to add another metrics serialization type
+// into components/metrics/serialization/.
+// static
+bool CastMetricsHelper::DecodeAppInfoFromMetricsName(
+    const std::string& metrics_name,
+    std::string* action_name,
+    std::string* app_id,
+    std::string* session_id,
+    std::string* sdk_version) {
+  DCHECK(action_name);
+  DCHECK(app_id);
+  DCHECK(session_id);
+  DCHECK(sdk_version);
+  if (metrics_name.find(kMetricsNameAppInfoDelimiter) == std::string::npos)
+    return false;
+
+  std::vector<std::string> tokens;
+  base::SplitString(metrics_name, kMetricsNameAppInfoDelimiter, &tokens);
+  DCHECK_EQ(tokens.size(), 4u);
+  // The order of tokens should match EncodeAppInfoIntoMetricsName().
+  *action_name = tokens[0];
+  *app_id = tokens[1];
+  *session_id = tokens[2];
+  *sdk_version = tokens[3];
+  return true;
+}
+
+// static
+std::string CastMetricsHelper::EncodeAppInfoIntoMetricsName(
+    const std::string& action_name,
+    const std::string& app_id,
+    const std::string& session_id,
+    const std::string& sdk_version) {
+  std::vector<std::string> parts;
+  parts.push_back(action_name);
+  parts.push_back(app_id);
+  parts.push_back(session_id);
+  parts.push_back(sdk_version);
+  return JoinString(parts, kMetricsNameAppInfoDelimiter);
+}
+
+// static
 CastMetricsHelper* CastMetricsHelper::GetInstance() {
   DCHECK(g_instance);
   return g_instance;
@@ -45,7 +95,8 @@ CastMetricsHelper* CastMetricsHelper::GetInstance() {
 CastMetricsHelper::CastMetricsHelper(
     scoped_refptr<base::MessageLoopProxy> message_loop_proxy)
     : message_loop_proxy_(message_loop_proxy),
-      metrics_sink_(NULL) {
+      metrics_sink_(NULL),
+      record_action_callback_(base::Bind(&base::RecordComputedAction)) {
   DCHECK(message_loop_proxy_.get());
   DCHECK(!g_instance);
   g_instance = this;
@@ -62,21 +113,49 @@ CastMetricsHelper::~CastMetricsHelper() {
   g_instance = NULL;
 }
 
-void CastMetricsHelper::TagAppStart(const std::string& arg_app_name) {
-  MAKE_SURE_THREAD(TagAppStart, arg_app_name);
-  app_name_ = arg_app_name;
+void CastMetricsHelper::UpdateCurrentAppInfo(const std::string& app_id,
+                                             const std::string& session_id) {
+  MAKE_SURE_THREAD(UpdateCurrentAppInfo, app_id, session_id);
+  app_id_ = app_id;
+  session_id_ = session_id;
   app_start_time_ = base::TimeTicks::Now();
   new_startup_time_ = true;
+  TagAppStartForGroupedHistograms(app_id_);
+  sdk_version_.clear();
+}
+
+void CastMetricsHelper::UpdateSDKInfo(const std::string& sdk_version) {
+  MAKE_SURE_THREAD(UpdateSDKInfo, sdk_version);
+  sdk_version_ = sdk_version;
 }
 
 void CastMetricsHelper::LogMediaPlay() {
   MAKE_SURE_THREAD(LogMediaPlay);
-  base::RecordComputedAction(GetMetricsNameWithAppName("MediaPlay", ""));
+  RecordSimpleAction(EncodeAppInfoIntoMetricsName(
+      "MediaPlay",
+      app_id_,
+      session_id_,
+      sdk_version_));
 }
 
 void CastMetricsHelper::LogMediaPause() {
   MAKE_SURE_THREAD(LogMediaPause);
-  base::RecordComputedAction(GetMetricsNameWithAppName("MediaPause", ""));
+  RecordSimpleAction(EncodeAppInfoIntoMetricsName(
+      "MediaPause",
+      app_id_,
+      session_id_,
+      sdk_version_));
+}
+
+void CastMetricsHelper::LogTimeToFirstPaint() {
+  MAKE_SURE_THREAD(LogTimeToFirstPaint);
+  if (app_id_.empty())
+    return;
+  base::TimeDelta launch_time = base::TimeTicks::Now() - app_start_time_;
+  const std::string uma_name(GetMetricsNameWithAppName("Startup",
+                                                       "TimeToFirstPaint"));
+  LogMediumTimeHistogramEvent(uma_name, launch_time);
+  LOG(INFO) << uma_name << " is " << launch_time.InSecondsF() << " seconds.";
 }
 
 void CastMetricsHelper::LogTimeToDisplayVideo() {
@@ -174,10 +253,10 @@ std::string CastMetricsHelper::GetMetricsNameWithAppName(
     const std::string& suffix) const {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   std::string metrics_name(prefix);
-  if (!app_name_.empty()) {
+  if (!app_id_.empty()) {
     if (!metrics_name.empty())
       metrics_name.push_back('.');
-    metrics_name.append(app_name_);
+    metrics_name.append(app_id_);
   }
   if (!suffix.empty()) {
     if (!metrics_name.empty())
@@ -190,6 +269,22 @@ std::string CastMetricsHelper::GetMetricsNameWithAppName(
 void CastMetricsHelper::SetMetricsSink(MetricsSink* delegate) {
   MAKE_SURE_THREAD(SetMetricsSink, delegate);
   metrics_sink_ = delegate;
+}
+
+void CastMetricsHelper::SetRecordActionCallback(
+      const RecordActionCallback& callback) {
+  DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  record_action_callback_ = callback;
+}
+
+void CastMetricsHelper::RecordSimpleAction(const std::string& action) {
+  MAKE_SURE_THREAD(RecordSimpleAction, action);
+
+  if (metrics_sink_) {
+    metrics_sink_->OnAction(action);
+  } else {
+    record_action_callback_.Run(action);
+  }
 }
 
 void CastMetricsHelper::LogEnumerationHistogramEvent(

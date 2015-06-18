@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_REGISTRATION_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
@@ -17,8 +19,8 @@
 
 namespace content {
 
-class ServiceWorkerRegistrationInfo;
 class ServiceWorkerVersion;
+struct ServiceWorkerRegistrationInfo;
 
 // This class represents a Service Worker registration. The scope is constant
 // for the life of the persistent registration. It's refcounted to facilitate
@@ -28,6 +30,9 @@ class CONTENT_EXPORT ServiceWorkerRegistration
       public ServiceWorkerVersion::Listener {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode status)> StatusCallback;
+  typedef base::Callback<void(
+      const std::string& data,
+      ServiceWorkerStatusCode status)> GetUserDataCallback;
 
   class Listener {
    public:
@@ -41,6 +46,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
         ServiceWorkerRegistration* registration) {}
     virtual void OnUpdateFound(
         ServiceWorkerRegistration* registration) {}
+    virtual void OnSkippedWaiting(ServiceWorkerRegistration* registation) {}
   };
 
   ServiceWorkerRegistration(const GURL& pattern,
@@ -54,6 +60,8 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   void set_is_deleted(bool deleted) { is_deleted_ = deleted; }
 
   bool is_uninstalling() const { return is_uninstalling_; }
+
+  void set_is_uninstalled(bool uninstalled) { is_uninstalled_ = uninstalled; }
   bool is_uninstalled() const { return is_uninstalled_; }
 
   int64_t resources_total_size_bytes() const {
@@ -88,9 +96,9 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   // Sets the corresposding version attribute and resets the position
   // (if any) left vacant (ie. by a waiting version being promoted).
   // Also notifies listeners via OnVersionAttributesChanged.
-  void SetActiveVersion(ServiceWorkerVersion* version);
-  void SetWaitingVersion(ServiceWorkerVersion* version);
-  void SetInstallingVersion(ServiceWorkerVersion* version);
+  void SetActiveVersion(const scoped_refptr<ServiceWorkerVersion>& version);
+  void SetWaitingVersion(const scoped_refptr<ServiceWorkerVersion>& version);
+  void SetInstallingVersion(const scoped_refptr<ServiceWorkerVersion>& version);
 
   // If version is the installing, waiting, active version of this
   // registation, the method will reset that field to NULL, and notify
@@ -99,8 +107,13 @@ class CONTENT_EXPORT ServiceWorkerRegistration
 
   // Triggers the [[Activate]] algorithm when the currently active version
   // has no controllees. If there are no controllees at the time the method
-  // is called, activation is initiated immediately.
+  // is called or when version's skip waiting flag is set, activation is
+  // initiated immediately.
   void ActivateWaitingVersionWhenReady();
+
+  // Takes over control of provider hosts which are currently not controlled or
+  // controlled by other registrations.
+  void ClaimClients();
 
   // Triggers the [[ClearRegistration]] algorithm when the currently
   // active version has no controllees. Deletes this registration
@@ -115,15 +128,26 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   base::Time last_update_check() const { return last_update_check_; }
   void set_last_update_check(base::Time last) { last_update_check_ = last; }
 
+  // Provide a storage mechanism to read/write arbitrary data associated with
+  // this registration in the storage. Stored data is deleted when this
+  // registration is deleted from the storage.
+  void GetUserData(const std::string& key,
+                   const GetUserDataCallback& callback);
+  void StoreUserData(const std::string& key,
+                     const std::string& data,
+                     const StatusCallback& callback);
+  void ClearUserData(const std::string& key,
+                     const StatusCallback& callback);
+
+  // Unsets the version and deletes its resources. Also deletes this
+  // registration from storage if there is no longer a stored version.
+  void DeleteVersion(const scoped_refptr<ServiceWorkerVersion>& version);
+
  private:
   friend class base::RefCounted<ServiceWorkerRegistration>;
 
   ~ServiceWorkerRegistration() override;
 
-  void SetVersionInternal(
-      ServiceWorkerVersion* version,
-      scoped_refptr<ServiceWorkerVersion>* data_member,
-      int change_flag);
   void UnsetVersionInternal(
       ServiceWorkerVersion* version,
       ChangedVersionAttributesMask* mask);

@@ -31,11 +31,30 @@
 #include "config.h"
 #include "platform/fonts/opentype/OpenTypeSanitizer.h"
 
-#include "platform/SharedBuffer.h"
-#include "opentype-sanitiser.h"
 #include "ots-memory-stream.h"
+#include "platform/SharedBuffer.h"
+#include "public/platform/Platform.h"
+#include "wtf/CurrentTime.h"
 
 namespace blink {
+
+static void recordDecodeSpeedHistogram(SharedBuffer* buffer, double decodeTime, size_t decodedSize)
+{
+    if (decodeTime <= 0)
+        return;
+
+    const char* histogramName = "WebFont.DecodeSpeed.SFNT";
+    if (buffer->size() >= 4) {
+        const char* data = buffer->data();
+        if (data[0] == 'w' && data[1] == 'O' && data[2] == 'F' && data[3] == 'F')
+            histogramName = "WebFont.DecodeSpeed.WOFF";
+        else if (data[0] == 'w' && data[1] == 'O' && data[2] == 'F' && data[3] == '2')
+            histogramName = "WebFont.DecodeSpeed.WOFF2";
+    }
+
+    double kbPerSecond = decodedSize / (1000 * decodeTime);
+    Platform::current()->histogramCustomCounts(histogramName, kbPerSecond, 1000, 300000, 50);
+}
 
 PassRefPtr<SharedBuffer> OpenTypeSanitizer::sanitize()
 {
@@ -47,8 +66,6 @@ PassRefPtr<SharedBuffer> OpenTypeSanitizer::sanitize()
     if (m_buffer->size() > maxWebFontSize)
         return nullptr;
 
-    ots::EnableWOFF2();
-
     // A transcoded font is usually smaller than an original font.
     // However, it can be slightly bigger than the original one due to
     // name table replacement and/or padding for glyf table.
@@ -57,10 +74,14 @@ PassRefPtr<SharedBuffer> OpenTypeSanitizer::sanitize()
     // much larger than the original.
 
     ots::ExpandingMemoryStream output(m_buffer->size(), maxWebFontSize);
-    if (!ots::Process(&output, reinterpret_cast<const uint8_t*>(m_buffer->data()), m_buffer->size()))
+    double start = currentTime();
+    BlinkOTSContext otsContext;
+
+    if (!otsContext.Process(&output, reinterpret_cast<const uint8_t*>(m_buffer->data()), m_buffer->size()))
         return nullptr;
 
     const size_t transcodeLen = output.Tell();
+    recordDecodeSpeedHistogram(m_buffer, currentTime() - start, transcodeLen);
     return SharedBuffer::create(static_cast<unsigned char*>(output.get()), transcodeLen);
 }
 

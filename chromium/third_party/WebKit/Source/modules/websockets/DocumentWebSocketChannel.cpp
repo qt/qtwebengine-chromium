@@ -31,8 +31,10 @@
 #include "config.h"
 #include "modules/websockets/DocumentWebSocketChannel.h"
 
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/fetch/UniqueIdentifier.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/frame/LocalFrame.h"
@@ -42,7 +44,6 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
-#include "core/loader/UniqueIdentifier.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "modules/websockets/WebSocketFrame.h"
 #include "platform/Logging.h"
@@ -73,7 +74,7 @@ public:
     virtual void didFinishLoading() override;
     virtual void didFail(FileError::ErrorCode) override;
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_channel);
     }
@@ -120,7 +121,7 @@ DocumentWebSocketChannel::DocumentWebSocketChannel(ExecutionContext* context, We
     , m_sourceURLAtConstruction(sourceURL)
     , m_lineNumberAtConstruction(lineNumber)
 {
-    if (context->isDocument() && toDocument(context)->page())
+    if (context->isDocument())
         m_identifier = createUniqueIdentifier();
 }
 
@@ -136,7 +137,7 @@ bool DocumentWebSocketChannel::connect(const KURL& url, const String& protocol)
         return false;
 
     if (executionContext()->isDocument() && document()->frame()) {
-        if (!document()->frame()->loader().mixedContentChecker()->canConnectInsecureWebSocket(document()->securityOrigin(), url))
+        if (MixedContentChecker::shouldBlockWebSocket(document()->frame(), url))
             return false;
     }
     if (MixedContentChecker::isMixedContent(document()->securityOrigin(), url)) {
@@ -164,25 +165,22 @@ bool DocumentWebSocketChannel::connect(const KURL& url, const String& protocol)
 
     flowControlIfNecessary();
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketCreate", "data", InspectorWebSocketCreateEvent::data(document(), m_identifier, url, protocol));
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketCreate", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketCreateEvent::data(document(), m_identifier, url, protocol));
         InspectorInstrumentation::didCreateWebSocket(document(), m_identifier, url, protocol);
     }
     return true;
 }
 
-void DocumentWebSocketChannel::send(const String& message)
+void DocumentWebSocketChannel::send(const CString& message)
 {
-    WTF_LOG(Network, "DocumentWebSocketChannel %p sendText(%s)", this, message.utf8().data());
+    WTF_LOG(Network, "DocumentWebSocketChannel %p sendText(%s)", this, message.data());
     if (m_identifier) {
         // FIXME: Change the inspector API to show the entire message instead
         // of individual frames.
-        CString data = message.utf8();
-        InspectorInstrumentation::didSendWebSocketFrame(document(), m_identifier, WebSocketFrame::OpCodeText, true, data.data(), data.length());
+        InspectorInstrumentation::didSendWebSocketFrame(document(), m_identifier, WebSocketFrame::OpCodeText, true, message.data(), message.length());
     }
     m_messages.append(adoptPtr(new Message(message)));
-    sendInternal();
+    processSendQueue();
 }
 
 void DocumentWebSocketChannel::send(PassRefPtr<BlobDataHandle> blobDataHandle)
@@ -197,10 +195,10 @@ void DocumentWebSocketChannel::send(PassRefPtr<BlobDataHandle> blobDataHandle)
         InspectorInstrumentation::didSendWebSocketFrame(document(), m_identifier, WebSocketFrame::OpCodeBinary, true, "", 0);
     }
     m_messages.append(adoptPtr(new Message(blobDataHandle)));
-    sendInternal();
+    processSendQueue();
 }
 
-void DocumentWebSocketChannel::send(const ArrayBuffer& buffer, unsigned byteOffset, unsigned byteLength)
+void DocumentWebSocketChannel::send(const DOMArrayBuffer& buffer, unsigned byteOffset, unsigned byteLength)
 {
     WTF_LOG(Network, "DocumentWebSocketChannel %p sendArrayBuffer(%p, %u, %u)", this, buffer.data(), byteOffset, byteLength);
     if (m_identifier) {
@@ -212,19 +210,31 @@ void DocumentWebSocketChannel::send(const ArrayBuffer& buffer, unsigned byteOffs
     // FIXME: Reduce copy by sending the data immediately when we don't need to
     // queue the data.
     m_messages.append(adoptPtr(new Message(buffer.slice(byteOffset, byteOffset + byteLength))));
-    sendInternal();
+    processSendQueue();
 }
 
-void DocumentWebSocketChannel::send(PassOwnPtr<Vector<char> > data)
+void DocumentWebSocketChannel::sendTextAsCharVector(PassOwnPtr<Vector<char>> data)
 {
-    WTF_LOG(Network, "DocumentWebSocketChannel %p sendVector(%p, %llu)", this, data.get(), static_cast<unsigned long long>(data->size()));
+    WTF_LOG(Network, "DocumentWebSocketChannel %p sendTextAsCharVector(%p, %llu)", this, data.get(), static_cast<unsigned long long>(data->size()));
+    if (m_identifier) {
+        // FIXME: Change the inspector API to show the entire message instead
+        // of individual frames.
+        InspectorInstrumentation::didSendWebSocketFrame(document(), m_identifier, WebSocketFrame::OpCodeText, true, data->data(), data->size());
+    }
+    m_messages.append(adoptPtr(new Message(data, MessageTypeTextAsCharVector)));
+    processSendQueue();
+}
+
+void DocumentWebSocketChannel::sendBinaryAsCharVector(PassOwnPtr<Vector<char>> data)
+{
+    WTF_LOG(Network, "DocumentWebSocketChannel %p sendBinaryAsCharVector(%p, %llu)", this, data.get(), static_cast<unsigned long long>(data->size()));
     if (m_identifier) {
         // FIXME: Change the inspector API to show the entire message instead
         // of individual frames.
         InspectorInstrumentation::didSendWebSocketFrame(document(), m_identifier, WebSocketFrame::OpCodeBinary, true, data->data(), data->size());
     }
-    m_messages.append(adoptPtr(new Message(data)));
-    sendInternal();
+    m_messages.append(adoptPtr(new Message(data, MessageTypeBinaryAsCharVector)));
+    processSendQueue();
 }
 
 void DocumentWebSocketChannel::close(int code, const String& reason)
@@ -233,7 +243,7 @@ void DocumentWebSocketChannel::close(int code, const String& reason)
     ASSERT(m_handle);
     unsigned short codeToSend = static_cast<unsigned short>(code == CloseEventCodeNotSpecified ? CloseEventCodeNoStatusRcvd : code);
     m_messages.append(adoptPtr(new Message(codeToSend, reason)));
-    sendInternal();
+    processSendQueue();
 }
 
 void DocumentWebSocketChannel::fail(const String& reason, MessageLevel level, const String& sourceURL, unsigned lineNumber)
@@ -258,9 +268,7 @@ void DocumentWebSocketChannel::disconnect()
 {
     WTF_LOG(Network, "DocumentWebSocketChannel %p disconnect()", this);
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketDestroy", "data", InspectorWebSocketEvent::data(document(), m_identifier));
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::didCloseWebSocket(document(), m_identifier);
     }
     abortAsyncOperations();
@@ -269,95 +277,86 @@ void DocumentWebSocketChannel::disconnect()
     m_identifier = 0;
 }
 
-void DocumentWebSocketChannel::suspend()
-{
-    WTF_LOG(Network, "DocumentWebSocketChannel %p suspend()", this);
-}
-
-void DocumentWebSocketChannel::resume()
-{
-    WTF_LOG(Network, "DocumentWebSocketChannel %p resume()", this);
-}
-
-DocumentWebSocketChannel::Message::Message(const String& text)
+DocumentWebSocketChannel::Message::Message(const CString& text)
     : type(MessageTypeText)
-    , text(text.utf8(StrictUTF8ConversionReplacingUnpairedSurrogatesWithFFFD)) { }
+    , text(text) { }
 
 DocumentWebSocketChannel::Message::Message(PassRefPtr<BlobDataHandle> blobDataHandle)
     : type(MessageTypeBlob)
     , blobDataHandle(blobDataHandle) { }
 
-DocumentWebSocketChannel::Message::Message(PassRefPtr<ArrayBuffer> arrayBuffer)
+DocumentWebSocketChannel::Message::Message(PassRefPtr<DOMArrayBuffer> arrayBuffer)
     : type(MessageTypeArrayBuffer)
     , arrayBuffer(arrayBuffer) { }
 
-DocumentWebSocketChannel::Message::Message(PassOwnPtr<Vector<char> > vectorData)
-    : type(MessageTypeVector)
-    , vectorData(vectorData) { }
+DocumentWebSocketChannel::Message::Message(PassOwnPtr<Vector<char>> vectorData, MessageType type)
+    : type(type)
+    , vectorData(vectorData)
+{
+    ASSERT(type == MessageTypeTextAsCharVector || type == MessageTypeBinaryAsCharVector);
+}
 
 DocumentWebSocketChannel::Message::Message(unsigned short code, const String& reason)
     : type(MessageTypeClose)
     , code(code)
     , reason(reason) { }
 
-void DocumentWebSocketChannel::sendInternal()
+void DocumentWebSocketChannel::sendInternal(WebSocketHandle::MessageType messageType, const char* data, size_t totalSize, uint64_t* consumedBufferedAmount)
+{
+    WebSocketHandle::MessageType frameType =
+        m_sentSizeOfTopMessage ? WebSocketHandle::MessageTypeContinuation : messageType;
+    ASSERT(totalSize >= m_sentSizeOfTopMessage);
+    // The first cast is safe since the result of min() never exceeds
+    // the range of size_t. The second cast is necessary to compile
+    // min() on ILP32.
+    size_t size = static_cast<size_t>(std::min(m_sendingQuota, static_cast<uint64_t>(totalSize - m_sentSizeOfTopMessage)));
+    bool final = (m_sentSizeOfTopMessage + size == totalSize);
+
+    m_handle->send(final, frameType, data + m_sentSizeOfTopMessage, size);
+
+    m_sentSizeOfTopMessage += size;
+    m_sendingQuota -= size;
+    *consumedBufferedAmount += size;
+
+    if (final) {
+        m_messages.removeFirst();
+        m_sentSizeOfTopMessage = 0;
+    }
+}
+
+void DocumentWebSocketChannel::processSendQueue()
 {
     ASSERT(m_handle);
-    unsigned long consumedBufferedAmount = 0;
+    uint64_t consumedBufferedAmount = 0;
     while (!m_messages.isEmpty() && !m_blobLoader) {
-        bool final = false;
         Message* message = m_messages.first().get();
-        if (m_sendingQuota <= 0 && message->type != MessageTypeClose)
+        if (m_sendingQuota == 0 && message->type != MessageTypeClose)
             break;
         switch (message->type) {
-        case MessageTypeText: {
-            WebSocketHandle::MessageType type =
-                m_sentSizeOfTopMessage ? WebSocketHandle::MessageTypeContinuation : WebSocketHandle::MessageTypeText;
-            size_t size = std::min(static_cast<size_t>(m_sendingQuota), message->text.length() - m_sentSizeOfTopMessage);
-            final = (m_sentSizeOfTopMessage + size == message->text.length());
-            m_handle->send(final, type, message->text.data() + m_sentSizeOfTopMessage, size);
-            m_sentSizeOfTopMessage += size;
-            m_sendingQuota -= size;
-            consumedBufferedAmount += size;
+        case MessageTypeText:
+            sendInternal(WebSocketHandle::MessageTypeText, message->text.data(), message->text.length(), &consumedBufferedAmount);
             break;
-        }
         case MessageTypeBlob:
             ASSERT(!m_blobLoader);
             m_blobLoader = new BlobLoader(message->blobDataHandle, this);
             break;
-        case MessageTypeArrayBuffer: {
-            WebSocketHandle::MessageType type =
-                m_sentSizeOfTopMessage ? WebSocketHandle::MessageTypeContinuation : WebSocketHandle::MessageTypeBinary;
-            size_t size = std::min(static_cast<size_t>(m_sendingQuota), message->arrayBuffer->byteLength() - m_sentSizeOfTopMessage);
-            final = (m_sentSizeOfTopMessage + size == message->arrayBuffer->byteLength());
-            m_handle->send(final, type, static_cast<const char*>(message->arrayBuffer->data()) + m_sentSizeOfTopMessage, size);
-            m_sentSizeOfTopMessage += size;
-            m_sendingQuota -= size;
-            consumedBufferedAmount += size;
+        case MessageTypeArrayBuffer:
+            sendInternal(WebSocketHandle::MessageTypeBinary, static_cast<const char*>(message->arrayBuffer->data()), message->arrayBuffer->byteLength(), &consumedBufferedAmount);
             break;
-        }
-        case MessageTypeVector: {
-            WebSocketHandle::MessageType type =
-                m_sentSizeOfTopMessage ? WebSocketHandle::MessageTypeContinuation : WebSocketHandle::MessageTypeBinary;
-            size_t size = std::min(static_cast<size_t>(m_sendingQuota), message->vectorData->size() - m_sentSizeOfTopMessage);
-            final = (m_sentSizeOfTopMessage + size == message->vectorData->size());
-            m_handle->send(final, type, message->vectorData->data() + m_sentSizeOfTopMessage, size);
-            m_sentSizeOfTopMessage += size;
-            m_sendingQuota -= size;
-            consumedBufferedAmount += size;
+        case MessageTypeTextAsCharVector:
+            sendInternal(WebSocketHandle::MessageTypeText, message->vectorData->data(), message->vectorData->size(), &consumedBufferedAmount);
             break;
-        }
+        case MessageTypeBinaryAsCharVector:
+            sendInternal(WebSocketHandle::MessageTypeBinary, message->vectorData->data(), message->vectorData->size(), &consumedBufferedAmount);
+            break;
         case MessageTypeClose: {
             // No message should be sent from now on.
             ASSERT(m_messages.size() == 1);
+            ASSERT(m_sentSizeOfTopMessage == 0);
             m_handle->close(message->code, message->reason);
-            final = true;
+            m_messages.removeFirst();
             break;
         }
-        }
-        if (final) {
-            m_messages.removeFirst();
-            m_sentSizeOfTopMessage = 0;
         }
     }
     if (m_client && consumedBufferedAmount > 0)
@@ -404,19 +403,14 @@ Document* DocumentWebSocketChannel::document()
     return toDocument(context);
 }
 
-void DocumentWebSocketChannel::didConnect(WebSocketHandle* handle, bool fail, const WebString& selectedProtocol, const WebString& extensions)
+void DocumentWebSocketChannel::didConnect(WebSocketHandle* handle, const WebString& selectedProtocol, const WebString& extensions)
 {
-    WTF_LOG(Network, "DocumentWebSocketChannel %p didConnect(%p, %d, %s, %s)", this, handle, fail, selectedProtocol.utf8().data(), extensions.utf8().data());
+    WTF_LOG(Network, "DocumentWebSocketChannel %p didConnect(%p, %s, %s)", this, handle, selectedProtocol.utf8().c_str(), extensions.utf8().c_str());
 
     ASSERT(m_handle);
     ASSERT(handle == m_handle);
     ASSERT(m_client);
 
-    if (fail) {
-        failAsError("Cannot connect to " + m_url.string() + ".");
-        // failAsError may delete this object.
-        return;
-    }
     m_client->didConnect(selectedProtocol, extensions);
 }
 
@@ -428,9 +422,7 @@ void DocumentWebSocketChannel::didStartOpeningHandshake(WebSocketHandle* handle,
     ASSERT(handle == m_handle);
 
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketSendHandshakeRequest", "data", InspectorWebSocketEvent::data(document(), m_identifier));
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketSendHandshakeRequest", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::willSendWebSocketHandshakeRequest(document(), m_identifier, &request.toCoreRequest());
         m_handshakeRequest = WebSocketHandshakeRequest::create(request.toCoreRequest());
     }
@@ -444,8 +436,7 @@ void DocumentWebSocketChannel::didFinishOpeningHandshake(WebSocketHandle* handle
     ASSERT(handle == m_handle);
 
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketReceiveHandshakeResponse", "data", InspectorWebSocketEvent::data(document(), m_identifier));
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketReceiveHandshakeResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(document(), m_identifier, m_handshakeRequest.get(), &response.toCoreResponse());
     }
     m_handshakeRequest.clear();
@@ -512,7 +503,7 @@ void DocumentWebSocketChannel::didReceiveData(WebSocketHandle* handle, bool fin,
             m_client->didReceiveTextMessage(message);
         }
     } else {
-        OwnPtr<Vector<char> > binaryData = adoptPtr(new Vector<char>);
+        OwnPtr<Vector<char>> binaryData = adoptPtr(new Vector<char>);
         binaryData->swap(m_receivingMessageData);
         m_client->didReceiveBinaryMessage(binaryData.release());
     }
@@ -528,9 +519,7 @@ void DocumentWebSocketChannel::didClose(WebSocketHandle* handle, bool wasClean, 
     m_handle.clear();
 
     if (m_identifier) {
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketDestroy", "data", InspectorWebSocketEvent::data(document(), m_identifier));
-        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+        TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "WebSocketDestroy", TRACE_EVENT_SCOPE_THREAD, "data", InspectorWebSocketEvent::data(document(), m_identifier));
         InspectorInstrumentation::didCloseWebSocket(document(), m_identifier);
         m_identifier = 0;
     }
@@ -545,9 +534,10 @@ void DocumentWebSocketChannel::didReceiveFlowControl(WebSocketHandle* handle, in
 
     ASSERT(m_handle);
     ASSERT(handle == m_handle);
+    ASSERT(quota >= 0);
 
     m_sendingQuota += quota;
-    sendInternal();
+    processSendQueue();
 }
 
 void DocumentWebSocketChannel::didStartClosingHandshake(WebSocketHandle* handle)
@@ -561,7 +551,7 @@ void DocumentWebSocketChannel::didStartClosingHandshake(WebSocketHandle* handle)
         m_client->didStartClosingHandshake();
 }
 
-void DocumentWebSocketChannel::didFinishLoadingBlob(PassRefPtr<ArrayBuffer> buffer)
+void DocumentWebSocketChannel::didFinishLoadingBlob(PassRefPtr<DOMArrayBuffer> buffer)
 {
     m_blobLoader.clear();
     ASSERT(m_handle);
@@ -569,7 +559,7 @@ void DocumentWebSocketChannel::didFinishLoadingBlob(PassRefPtr<ArrayBuffer> buff
     ASSERT(m_messages.size() > 0 && m_messages.first()->type == MessageTypeBlob);
     // We replace it with the loaded blob.
     m_messages.first() = adoptPtr(new Message(buffer));
-    sendInternal();
+    processSendQueue();
 }
 
 void DocumentWebSocketChannel::didFailLoadingBlob(FileError::ErrorCode errorCode)
@@ -584,11 +574,12 @@ void DocumentWebSocketChannel::didFailLoadingBlob(FileError::ErrorCode errorCode
     // |this| can be deleted here.
 }
 
-void DocumentWebSocketChannel::trace(Visitor* visitor)
+DEFINE_TRACE(DocumentWebSocketChannel)
 {
     visitor->trace(m_blobLoader);
     visitor->trace(m_client);
     WebSocketChannel::trace(visitor);
+    ContextLifecycleObserver::trace(visitor);
 }
 
 } // namespace blink

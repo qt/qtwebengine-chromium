@@ -42,7 +42,7 @@ class PlatformSpeechSynthesisUtterance;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClientImpl;
 
-class PlatformSpeechSynthesizerClient : public GarbageCollectedMixin {
+class PLATFORM_EXPORT PlatformSpeechSynthesizerClient : public GarbageCollectedMixin {
 public:
     virtual void didStartSpeaking(PlatformSpeechSynthesisUtterance*) = 0;
     virtual void didFinishSpeaking(PlatformSpeechSynthesisUtterance*) = 0;
@@ -63,7 +63,7 @@ public:
 
     virtual ~PlatformSpeechSynthesizer();
 
-    const HeapVector<Member<PlatformSpeechSynthesisVoice> >& voiceList() const { return m_voiceList; }
+    const HeapVector<Member<PlatformSpeechSynthesisVoice>>& voiceList() const { return m_voiceList; }
     virtual void speak(PlatformSpeechSynthesisUtterance*);
     virtual void pause();
     virtual void resume();
@@ -71,16 +71,16 @@ public:
 
     PlatformSpeechSynthesizerClient* client() const { return m_speechSynthesizerClient; }
 
-    void setVoiceList(HeapVector<Member<PlatformSpeechSynthesisVoice> >&);
+    void setVoiceList(HeapVector<Member<PlatformSpeechSynthesisVoice>>&);
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     explicit PlatformSpeechSynthesizer(PlatformSpeechSynthesizerClient*);
 
     virtual void initializeVoiceList();
 
-    HeapVector<Member<PlatformSpeechSynthesisVoice> > m_voiceList;
+    HeapVector<Member<PlatformSpeechSynthesisVoice>> m_voiceList;
 
 private:
     Member<PlatformSpeechSynthesizerClient> m_speechSynthesizerClient;

@@ -20,18 +20,16 @@ CC_EXPORT extern const char kDisableThreadedAnimation[];
 CC_EXPORT extern const char kDisableCompositedAntialiasing[];
 CC_EXPORT extern const char kDisableMainFrameBeforeActivation[];
 CC_EXPORT extern const char kEnableMainFrameBeforeActivation[];
-CC_EXPORT extern const char kEnableTopControlsPositionCalculation[];
 CC_EXPORT extern const char kJankInsteadOfCheckerboard[];
-CC_EXPORT extern const char kTopControlsHeight[];
 CC_EXPORT extern const char kTopControlsHideThreshold[];
 CC_EXPORT extern const char kTopControlsShowThreshold[];
 CC_EXPORT extern const char kSlowDownRasterScaleFactor[];
 CC_EXPORT extern const char kCompositeToMailbox[];
-CC_EXPORT extern const char kMaxTilesForInterestArea[];
 CC_EXPORT extern const char kMaxUnusedResourceMemoryUsagePercentage[];
 CC_EXPORT extern const char kEnablePinchVirtualViewport[];
 CC_EXPORT extern const char kDisablePinchVirtualViewport[];
 CC_EXPORT extern const char kStrictLayerPropertyChangeChecking[];
+CC_EXPORT extern const char kEnablePropertyTreeVerification[];
 
 // Switches for both the renderer and ui compositors.
 CC_EXPORT extern const char kUIDisablePartialSwap[];
@@ -52,10 +50,6 @@ CC_EXPORT extern const char kShowScreenSpaceRects[];
 CC_EXPORT extern const char kUIShowScreenSpaceRects[];
 CC_EXPORT extern const char kShowReplicaScreenSpaceRects[];
 CC_EXPORT extern const char kUIShowReplicaScreenSpaceRects[];
-CC_EXPORT extern const char kShowOccludingRects[];
-CC_EXPORT extern const char kUIShowOccludingRects[];
-CC_EXPORT extern const char kShowNonOccludingRects[];
-CC_EXPORT extern const char kUIShowNonOccludingRects[];
 
 // Unit test related.
 CC_EXPORT extern const char kCCLayerTreeTestNoTimeout[];

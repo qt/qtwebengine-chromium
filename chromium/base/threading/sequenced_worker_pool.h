@@ -13,6 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/task_runner.h"
 
 namespace tracked_objects {
@@ -21,7 +22,7 @@ class Location;
 
 namespace base {
 
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 
 template <class T> class DeleteHelper;
 
@@ -320,12 +321,10 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   // Must be called from the same thread this object was constructed on.
   void Shutdown() { Shutdown(0); }
 
-  // A variant that allows an arbitrary number of new blocking tasks to
-  // be posted during shutdown from within tasks that execute during shutdown.
-  // Only tasks designated as BLOCKING_SHUTDOWN will be allowed, and only if
-  // posted by tasks that are not designated as CONTINUE_ON_SHUTDOWN. Once
+  // A variant that allows an arbitrary number of new blocking tasks to be
+  // posted during shutdown. The tasks cannot be posted within the execution
+  // context of tasks whose shutdown behavior is not BLOCKING_SHUTDOWN. Once
   // the limit is reached, subsequent calls to post task fail in all cases.
-  //
   // Must be called from the same thread this object was constructed on.
   void Shutdown(int max_new_blocking_tasks_after_shutdown);
 
@@ -347,7 +346,7 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   class Inner;
   class Worker;
 
-  const scoped_refptr<MessageLoopProxy> constructor_message_loop_;
+  const scoped_refptr<SingleThreadTaskRunner> constructor_task_runner_;
 
   // Avoid pulling in too many headers by putting (almost) everything
   // into |inner_|.

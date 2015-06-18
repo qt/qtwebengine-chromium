@@ -7,6 +7,7 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/command_line.h"
 #include "content/browser/android/content_view_core_impl.h"
+#include "content/browser/android/media_players_observer.h"
 #include "content/browser/media/android/browser_demuxer_android.h"
 #include "content/browser/media/android/media_resource_getter_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -24,11 +25,13 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "media/base/android/media_codec_player.h"
 #include "media/base/android/media_player_bridge.h"
 #include "media/base/android/media_source_player.h"
 #include "media/base/android/media_url_interceptor.h"
 #include "media/base/media_switches.h"
 
+using media::MediaCodecPlayer;
 using media::MediaPlayerAndroid;
 using media::MediaPlayerBridge;
 using media::MediaPlayerManager;
@@ -39,13 +42,19 @@ namespace content {
 // Threshold on the number of media players per renderer before we start
 // attempting to release inactive media players.
 const int kMediaPlayerThreshold = 1;
+const int kInvalidMediaPlayerId = -1;
 
 static BrowserMediaPlayerManager::Factory g_factory = NULL;
 static media::MediaUrlInterceptor* media_url_interceptor_ = NULL;
 
 // static
 void BrowserMediaPlayerManager::RegisterFactory(Factory factory) {
-  g_factory = factory;
+  // TODO(aberent) nullptr test is a temporary fix to simplify upstreaming Cast.
+  // Until Cast is fully upstreamed we want the downstream factory to take
+  // priority over the upstream factory. The downstream call happens first,
+  // so this will ensure that it does.
+  if (g_factory == nullptr)
+    g_factory = factory;
 }
 
 // static
@@ -56,13 +65,14 @@ void BrowserMediaPlayerManager::RegisterMediaUrlInterceptor(
 
 // static
 BrowserMediaPlayerManager* BrowserMediaPlayerManager::Create(
-    RenderFrameHost* rfh) {
+    RenderFrameHost* rfh,
+    MediaPlayersObserver* audio_monitor) {
   if (g_factory)
-    return g_factory(rfh);
-  return new BrowserMediaPlayerManager(rfh);
+    return g_factory(rfh, audio_monitor);
+  return new BrowserMediaPlayerManager(rfh, audio_monitor);
 }
 
-ContentViewCoreImpl* BrowserMediaPlayerManager::GetContentViewCore() const {
+ContentViewCore* BrowserMediaPlayerManager::GetContentViewCore() const {
   return ContentViewCoreImpl::FromWebContents(web_contents());
 }
 
@@ -105,13 +115,24 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
     }
 
     case MEDIA_PLAYER_TYPE_MEDIA_SOURCE: {
-      return new MediaSourcePlayer(
-          media_player_params.player_id,
-          manager,
-          base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesRequested,
-                     weak_ptr_factory_.GetWeakPtr()),
-          demuxer->CreateDemuxer(media_player_params.demuxer_client_id),
-          media_player_params.frame_url);
+      if (base::CommandLine::ForCurrentProcess()->
+          HasSwitch(switches::kEnableMediaThreadForMediaPlayback)) {
+        return new MediaCodecPlayer(
+            media_player_params.player_id,
+            manager,
+            base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesRequested,
+                       weak_ptr_factory_.GetWeakPtr()),
+            demuxer->CreateDemuxer(media_player_params.demuxer_client_id),
+            media_player_params.frame_url);
+      } else {
+        return new MediaSourcePlayer(
+            media_player_params.player_id,
+            manager,
+            base::Bind(&BrowserMediaPlayerManager::OnMediaResourcesRequested,
+                       weak_ptr_factory_.GetWeakPtr()),
+            demuxer->CreateDemuxer(media_player_params.demuxer_client_id),
+            media_player_params.frame_url);
+      }
     }
   }
 
@@ -120,9 +141,11 @@ MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
 }
 
 BrowserMediaPlayerManager::BrowserMediaPlayerManager(
-    RenderFrameHost* render_frame_host)
+    RenderFrameHost* render_frame_host,
+    MediaPlayersObserver* audio_monitor)
     : render_frame_host_(render_frame_host),
-      fullscreen_player_id_(-1),
+      audio_monitor_(audio_monitor),
+      fullscreen_player_id_(kInvalidMediaPlayerId),
       fullscreen_player_is_released_(false),
       web_contents_(WebContents::FromRenderFrameHost(render_frame_host)),
       weak_ptr_factory_(this) {
@@ -133,44 +156,16 @@ BrowserMediaPlayerManager::~BrowserMediaPlayerManager() {
   // (e.g. the WebContents may be destroyed before the render process). So
   // we cannot DCHECK(players_.empty()) here. Instead, all media players in
   // |players_| will be destroyed here because |player_| is a ScopedVector.
-}
 
-void BrowserMediaPlayerManager::FullscreenPlayerPlay() {
-  MediaPlayerAndroid* player = GetFullscreenPlayer();
-  if (player) {
-    if (fullscreen_player_is_released_) {
-      video_view_->OpenVideo();
-      fullscreen_player_is_released_ = false;
-    }
-    player->Start();
-    Send(new MediaPlayerMsg_DidMediaPlayerPlay(RoutingID(),
-                                               fullscreen_player_id_));
-  }
-}
+  for (MediaPlayerAndroid* player : players_)
+    player->DeleteOnCorrectThread();
 
-void BrowserMediaPlayerManager::FullscreenPlayerPause() {
-  MediaPlayerAndroid* player = GetFullscreenPlayer();
-  if (player) {
-    player->Pause(true);
-    Send(new MediaPlayerMsg_DidMediaPlayerPause(RoutingID(),
-                                                fullscreen_player_id_));
-  }
-}
-
-void BrowserMediaPlayerManager::FullscreenPlayerSeek(int msec) {
-  MediaPlayerAndroid* player = GetFullscreenPlayer();
-  if (player) {
-    // TODO(kbalazs): if |fullscreen_player_is_released_| is true
-    // at this point, player->GetCurrentTime() will be wrong until
-    // FullscreenPlayerPlay (http://crbug.com/322798).
-    OnSeekRequest(fullscreen_player_id_,
-                  base::TimeDelta::FromMilliseconds(msec));
-  }
+  players_.weak_clear();
 }
 
 void BrowserMediaPlayerManager::ExitFullscreen(bool release_media_player) {
   if (WebContentsDelegate* delegate = web_contents_->GetDelegate())
-    delegate->ToggleFullscreenModeForTab(web_contents_, false);
+    delegate->ExitFullscreenModeForTab(web_contents_);
   if (RenderWidgetHostViewAndroid* view_android =
       static_cast<RenderWidgetHostViewAndroid*>(
           web_contents_->GetRenderWidgetHostView())) {
@@ -181,9 +176,15 @@ void BrowserMediaPlayerManager::ExitFullscreen(bool release_media_player) {
       new MediaPlayerMsg_DidExitFullscreen(RoutingID(), fullscreen_player_id_));
   video_view_.reset();
   MediaPlayerAndroid* player = GetFullscreenPlayer();
-  fullscreen_player_id_ = -1;
+  fullscreen_player_id_ = kInvalidMediaPlayerId;
   if (!player)
     return;
+
+#if defined(VIDEO_HOLE)
+  if (external_video_surface_container_)
+    external_video_surface_container_->OnFrameInfoUpdated();
+#endif  // defined(VIDEO_HOLE)
+
   if (release_media_player)
     ReleaseFullscreenPlayer(player);
   else
@@ -209,7 +210,6 @@ void BrowserMediaPlayerManager::SetVideoSurface(
   if (empty_surface)
     return;
 
-  Send(new MediaPlayerMsg_DidEnterFullscreen(RoutingID(), player->player_id()));
   if (RenderWidgetHostViewAndroid* view_android =
       static_cast<RenderWidgetHostViewAndroid*>(
           web_contents_->GetRenderWidgetHostView())) {
@@ -281,6 +281,16 @@ void BrowserMediaPlayerManager::OnVideoSizeChanged(
     video_view_->OnVideoSizeChanged(width, height);
 }
 
+void BrowserMediaPlayerManager::OnAudibleStateChanged(
+    int player_id, bool is_audible) {
+  audio_monitor_->OnAudibleStateChanged(
+      render_frame_host_, player_id, is_audible);
+}
+
+void BrowserMediaPlayerManager::OnWaitingForDecryptionKey(int player_id) {
+  Send(new MediaPlayerMsg_WaitingForDecryptionKey(RoutingID(), player_id));
+}
+
 media::MediaResourceGetter*
 BrowserMediaPlayerManager::GetMediaResourceGetter() {
   if (!media_resource_getter_.get()) {
@@ -322,7 +332,7 @@ void BrowserMediaPlayerManager::RequestFullScreen(int player_id) {
   if (fullscreen_player_id_ == player_id)
     return;
 
-  if (fullscreen_player_id_ != -1) {
+  if (fullscreen_player_id_ != kInvalidMediaPlayerId) {
     // TODO(qinmin): Determine the correct error code we should report to WMPA.
     OnError(player_id, MediaPlayerAndroid::MEDIA_ERROR_DECODE);
     return;
@@ -332,12 +342,6 @@ void BrowserMediaPlayerManager::RequestFullScreen(int player_id) {
 }
 
 #if defined(VIDEO_HOLE)
-bool
-BrowserMediaPlayerManager::ShouldUseVideoOverlayForEmbeddedEncryptedVideo() {
-  RendererPreferences* prefs = web_contents_->GetMutableRendererPrefs();
-  return prefs->use_video_overlay_for_embedded_encrypted_video;
-}
-
 void BrowserMediaPlayerManager::AttachExternalVideoSurface(int player_id,
                                                            jobject surface) {
   MediaPlayerAndroid* player = GetPlayer(player_id);
@@ -354,6 +358,9 @@ void BrowserMediaPlayerManager::DetachExternalVideoSurface(int player_id) {
 }
 
 void BrowserMediaPlayerManager::OnFrameInfoUpdated() {
+  if (fullscreen_player_id_ != kInvalidMediaPlayerId)
+    return;
+
   if (external_video_surface_container_)
     external_video_surface_container_->OnFrameInfoUpdated();
 }
@@ -372,6 +379,20 @@ void BrowserMediaPlayerManager::OnNotifyExternalSurface(
   }
 }
 
+void BrowserMediaPlayerManager::ReleasePlayerOfExternalVideoSurfaceIfNeeded(
+    int future_player) {
+  int current_player = ExternalVideoSurfaceContainer::kInvalidPlayerId;
+
+  if (external_video_surface_container_)
+    current_player = external_video_surface_container_->GetCurrentPlayerId();
+
+  if (current_player == ExternalVideoSurfaceContainer::kInvalidPlayerId)
+    return;
+
+  if (current_player != future_player)
+    OnMediaInterrupted(current_player);
+}
+
 void BrowserMediaPlayerManager::OnRequestExternalSurface(
     int player_id, const gfx::RectF& rect) {
   if (!external_video_surface_container_) {
@@ -382,6 +403,8 @@ void BrowserMediaPlayerManager::OnRequestExternalSurface(
   // It's safe to use base::Unretained(this), because the callbacks will not
   // be called after running ReleaseExternalVideoSurface().
   if (external_video_surface_container_) {
+    // In case we're stealing the external surface from another player.
+    ReleasePlayerOfExternalVideoSurfaceIfNeeded(player_id);
     external_video_surface_container_->RequestExternalVideoSurface(
         player_id,
         base::Bind(&BrowserMediaPlayerManager::AttachExternalVideoSurface,
@@ -393,8 +416,11 @@ void BrowserMediaPlayerManager::OnRequestExternalSurface(
 #endif  // defined(VIDEO_HOLE)
 
 void BrowserMediaPlayerManager::OnEnterFullscreen(int player_id) {
-  DCHECK_EQ(fullscreen_player_id_, -1);
+  DCHECK_EQ(fullscreen_player_id_, kInvalidMediaPlayerId);
 #if defined(VIDEO_HOLE)
+  // If this fullscreen player is started when another player
+  // uses the external surface, release that other player.
+  ReleasePlayerOfExternalVideoSurfaceIfNeeded(player_id);
   if (external_video_surface_container_)
     external_video_surface_container_->ReleaseExternalVideoSurface(player_id);
 #endif  // defined(VIDEO_HOLE)
@@ -415,10 +441,6 @@ void BrowserMediaPlayerManager::OnEnterFullscreen(int player_id) {
   }
 
   // Force the second video to exit fullscreen.
-  // TODO(qinmin): There is no need to send DidEnterFullscreen message.
-  // However, if we don't send the message, page layers will not be
-  // correctly restored. http:crbug.com/367346.
-  Send(new MediaPlayerMsg_DidEnterFullscreen(RoutingID(), player_id));
   Send(new MediaPlayerMsg_DidExitFullscreen(RoutingID(), player_id));
   video_view_.reset();
 }
@@ -504,7 +526,7 @@ void BrowserMediaPlayerManager::OnReleaseResources(int player_id) {
 void BrowserMediaPlayerManager::OnDestroyPlayer(int player_id) {
   RemovePlayer(player_id);
   if (fullscreen_player_id_ == player_id)
-    fullscreen_player_id_ = -1;
+    fullscreen_player_id_ = kInvalidMediaPlayerId;
 }
 
 void BrowserMediaPlayerManager::OnRequestRemotePlayback(int /* player_id */) {
@@ -526,7 +548,9 @@ void BrowserMediaPlayerManager::RemovePlayer(int player_id) {
       it != players_.end(); ++it) {
     if ((*it)->player_id() == player_id) {
       ReleaseMediaResources(player_id);
-      players_.erase(it);
+      (*it)->DeleteOnCorrectThread();
+      players_.weak_erase(it);
+      audio_monitor_->RemovePlayer(render_frame_host_, player_id);
       break;
     }
   }

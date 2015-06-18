@@ -22,6 +22,8 @@
 
 using std::string;
 using webrtc::MediaConstraintsInterface;
+using webrtc::StatsReport;
+using webrtc::StatsReports;
 using blink::WebRTCPeerConnectionHandlerClient;
 
 namespace content {
@@ -145,6 +147,25 @@ static std::string SerializeIceTransportType(
   return transport_type;
 }
 
+static std::string SerializeBundlePolicy(
+    webrtc::PeerConnectionInterface::BundlePolicy policy) {
+  string policy_str;
+  switch (policy) {
+  case webrtc::PeerConnectionInterface::kBundlePolicyBalanced:
+    policy_str = "balanced";
+    break;
+  case webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle:
+    policy_str = "max-bundle";
+    break;
+  case webrtc::PeerConnectionInterface::kBundlePolicyMaxCompat:
+    policy_str = "max-compat";
+    break;
+  default:
+    NOTREACHED();
+  };
+  return policy_str;
+}
+
 #define GET_STRING_OF_STATE(state)                \
   case WebRTCPeerConnectionHandlerClient::state:  \
     result = #state;                              \
@@ -204,27 +225,49 @@ static string GetIceGatheringStateString(
 // Note:
 // The format must be consistent with what webrtc_internals.js expects.
 // If you change it here, you must change webrtc_internals.js as well.
-static base::DictionaryValue* GetDictValueStats(
-    const webrtc::StatsReport& report) {
-  if (report.values.empty())
+static base::DictionaryValue* GetDictValueStats(const StatsReport& report) {
+  if (report.values().empty())
     return NULL;
 
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetDouble("timestamp", report.timestamp);
+  dict->SetDouble("timestamp", report.timestamp());
 
   base::ListValue* values = new base::ListValue();
   dict->Set("values", values);
 
-  for (size_t i = 0; i < report.values.size(); ++i) {
-    values->AppendString(report.values[i].display_name());
-    values->AppendString(report.values[i].value);
+  for (const auto& v : report.values()) {
+    const StatsReport::ValuePtr& value = v.second;
+    values->AppendString(value->display_name());
+    switch (value->type()) {
+      case StatsReport::Value::kInt:
+        values->AppendInteger(value->int_val());
+        break;
+      case StatsReport::Value::kFloat:
+        values->AppendDouble(value->float_val());
+        break;
+      case StatsReport::Value::kString:
+        values->AppendString(value->string_val());
+        break;
+      case StatsReport::Value::kStaticString:
+        values->AppendString(value->static_string_val());
+        break;
+      case StatsReport::Value::kBool:
+        values->AppendBoolean(value->bool_val());
+        break;
+      case StatsReport::Value::kInt64:  // int64 isn't supported, so use string.
+      case StatsReport::Value::kId:
+      default:
+        values->AppendString(value->ToString());
+        break;
+    }
   }
+
   return dict;
 }
 
 // Builds a DictionaryValue from the StatsReport.
 // The caller takes the ownership of the returned value.
-static base::DictionaryValue* GetDictValue(const webrtc::StatsReport& report) {
+static base::DictionaryValue* GetDictValue(const StatsReport& report) {
   scoped_ptr<base::DictionaryValue> stats, result;
 
   stats.reset(GetDictValueStats(report));
@@ -236,8 +279,8 @@ static base::DictionaryValue* GetDictValue(const webrtc::StatsReport& report) {
   // The format must be consistent with what webrtc_internals.js expects.
   // If you change it here, you must change webrtc_internals.js as well.
   result->Set("stats", stats.release());
-  result->SetString("id", report.id);
-  result->SetString("type", report.type);
+  result->SetString("id", report.id()->ToString());
+  result->SetString("type", report.TypeToString());
 
   return result.release();
 }
@@ -247,11 +290,11 @@ class InternalStatsObserver : public webrtc::StatsObserver {
   InternalStatsObserver(int lid)
       : lid_(lid), main_thread_(base::ThreadTaskRunnerHandle::Get()) {}
 
-  void OnComplete(const std::vector<webrtc::StatsReport>& reports) override {
+  void OnComplete(const StatsReports& reports) override {
     scoped_ptr<base::ListValue> list(new base::ListValue());
 
-    for (size_t i = 0; i < reports.size(); ++i) {
-      base::DictionaryValue* report = GetDictValue(reports[i]);
+    for (const auto* r : reports) {
+      base::DictionaryValue* report = GetDictValue(*r);
       if (report)
         list->Append(report);
     }
@@ -338,7 +381,8 @@ void PeerConnectionTracker::RegisterPeerConnection(
   info.lid = GetNextLocalID();
   info.rtc_configuration =
       "{ servers: " +  SerializeServers(config.servers) + ", " +
-      "iceTransportType: " + SerializeIceTransportType(config.type) + " }";
+      "iceTransportType: " + SerializeIceTransportType(config.type) + ", " +
+      "bundlePolicy: " + SerializeBundlePolicy(config.bundle_policy) + " }";
 
   info.constraints = SerializeMediaConstraints(constraints);
   info.url = frame->document().url().spec();
@@ -409,13 +453,17 @@ void PeerConnectionTracker::TrackUpdateIce(
   string transport_type =
       "iceTransportType: " + SerializeIceTransportType(config.type);
 
+  string bundle_policy =
+      "bundlePolicy: " + SerializeBundlePolicy(config.bundle_policy);
+
   string constraints =
       "constraints: {" + SerializeMediaConstraints(options) + "}";
 
   SendPeerConnectionUpdate(
       pc_handler,
       "updateIce",
-      servers_string + ", " + transport_type + ", " + constraints);
+      servers_string + ", " + transport_type + ", " +
+      bundle_policy + ", " + constraints);
 }
 
 void PeerConnectionTracker::TrackAddIceCandidate(

@@ -32,25 +32,25 @@
 #define Stream_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 class ExecutionContext;
 
-class Stream final : public RefCountedWillBeGarbageCollectedFinalized<Stream>, public ScriptWrappable, public ActiveDOMObject {
+class CORE_EXPORT Stream final : public GarbageCollectedFinalized<Stream>, public ScriptWrappable, public ActiveDOMObject {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Stream);
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<Stream> create(ExecutionContext* context, const String& mediaType)
+    static Stream* create(ExecutionContext* context, const String& mediaType)
     {
-        RefPtrWillBeRawPtr<Stream> stream = adoptRefWillBeNoop(new Stream(context, mediaType));
+        Stream* stream = new Stream(context, mediaType);
         stream->suspendIfNeeded();
-        return stream.release();
+        return stream;
     }
 
     virtual ~Stream();
@@ -62,6 +62,8 @@ public:
 
     // Appends data to this stream.
     void addData(const char* data, size_t len);
+    // Flushes contents buffered in the stream.
+    void flush();
     // Mark this stream finalized so that a reader of this stream is notified
     // of EOF.
     void finalize();
@@ -82,7 +84,7 @@ public:
     virtual void resume() override;
     virtual void stop() override;
 
-    void trace(Visitor*) { }
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     Stream(ExecutionContext*, const String& mediaType);

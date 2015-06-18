@@ -26,6 +26,8 @@
 #include "config.h"
 #include "platform/text/TextRun.h"
 
+#include "platform/fonts/Character.h"
+
 namespace blink {
 
 struct ExpectedTextRunSize {
@@ -35,12 +37,12 @@ struct ExpectedTextRunSize {
     float float2;
     float float3;
     uint32_t bitfields : 10;
-    unsigned anUnsigned;
     bool b;
     RefPtr<TextRun::RenderingContext> renderingContext;
+    TabSize tabSize;
 };
 
-COMPILE_ASSERT(sizeof(TextRun) == sizeof(ExpectedTextRunSize), TextRun_is_not_of_expected_size);
+static_assert(sizeof(TextRun) == sizeof(ExpectedTextRunSize), "TextRun should have expected size");
 
 void TextRun::setText(const String& string)
 {
@@ -56,5 +58,16 @@ void TextRun::setText(const String& string)
     else
         m_data.characters16 = string.characters16();
 }
+
+#if ENABLE(ASSERT)
+void TextRun::setCodePath(TextCodePath codePath)
+{
+    // ASSERT that the string does not contain any codepoints requiring the
+    // complex text path when set to ForceSimple.
+    ASSERT(codePath != ForceSimple || is8Bit() || Character::
+        characterRangeCodePath(characters16(), length()) == SimplePath);
+    m_codePath = codePath;
+}
+#endif // ENABLE(ASSERT)
 
 }

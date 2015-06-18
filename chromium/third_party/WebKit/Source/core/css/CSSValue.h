@@ -21,8 +21,7 @@
 #ifndef CSSValue_h
 #define CSSValue_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
-#include "core/dom/ExceptionCode.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/HashMap.h"
@@ -32,31 +31,24 @@
 
 namespace blink {
 
-class ExceptionState;
-
-enum CSSTextFormattingFlags { QuoteCSSStringIfNeeded, AlwaysQuoteCSSString };
-
-// FIXME: The current CSSValue and subclasses should be turned into internal types (StyleValue).
-// The few subtypes that are actually exposed in CSSOM can be seen in the cloneForCSSOM() function.
-// They should be handled by separate wrapper classes.
-
-// Please don't expose more CSSValue types to the web.
-class CSSValue : public RefCountedWillBeGarbageCollectedFinalized<CSSValue>, public ScriptWrappableBase {
+class CORE_EXPORT CSSValue : public RefCountedWillBeGarbageCollectedFinalized<CSSValue> {
 public:
-    enum Type {
-        CSS_INHERIT = 0,
-        CSS_PRIMITIVE_VALUE = 1,
-        CSS_VALUE_LIST = 2,
-        CSS_CUSTOM = 3,
-        CSS_INITIAL = 4
-
-    };
-
+#if ENABLE(OILPAN)
+    // Override operator new to allocate CSSValue subtype objects onto
+    // a dedicated heap.
+    GC_PLUGIN_IGNORE("crbug.com/443854")
+    void* operator new(size_t size)
+    {
+        return allocateObject(size);
+    }
+    static void* allocateObject(size_t size)
+    {
+        ThreadState* state = ThreadStateFor<ThreadingTrait<CSSValue>::Affinity>::state();
+        return Heap::allocateOnHeapIndex(state, size, CSSValueHeapIndex, GCInfoTrait<CSSValue>::index());
+    }
+#else
     // Override RefCounted's deref() to ensure operator delete is called on
     // the appropriate subclass type.
-    // When oilpan is enabled the finalize method is called by the garbage
-    // collector and not immediately when deref reached zero.
-#if !ENABLE(OILPAN)
     void deref()
     {
         if (derefBase())
@@ -64,10 +56,7 @@ public:
     }
 #endif // !ENABLE(OILPAN)
 
-    Type cssValueType() const;
-
     String cssText() const;
-    void setCSSText(const String&, ExceptionState&) { } // FIXME: Not implemented.
 
     bool isPrimitiveValue() const { return m_classType == PrimitiveClass; }
     bool isValueList() const { return m_classType >= ValueListClass; }
@@ -89,38 +78,36 @@ public:
     bool isImplicitInitialValue() const;
     bool isInheritedValue() const { return m_classType == InheritedClass; }
     bool isInitialValue() const { return m_classType == InitialClass; }
+    bool isUnsetValue() const { return m_classType == UnsetClass; }
+    bool isCSSWideKeyword() const { return m_classType >= InheritedClass && m_classType <= UnsetClass; }
     bool isLinearGradientValue() const { return m_classType == LinearGradientClass; }
+    bool isPathValue() const { return m_classType == PathClass; }
     bool isRadialGradientValue() const { return m_classType == RadialGradientClass; }
     bool isReflectValue() const { return m_classType == ReflectClass; }
     bool isShadowValue() const { return m_classType == ShadowClass; }
-    bool isTextCloneCSSValue() const { return m_isTextClone; }
     bool isCubicBezierTimingFunctionValue() const { return m_classType == CubicBezierTimingFunctionClass; }
     bool isStepsTimingFunctionValue() const { return m_classType == StepsTimingFunctionClass; }
-    bool isTransformValue() const { return m_classType == CSSTransformClass; }
     bool isLineBoxContainValue() const { return m_classType == LineBoxContainClass; }
     bool isCalcValue() const {return m_classType == CalculationClass; }
-    bool isFilterValue() const { return m_classType == CSSFilterClass; }
     bool isGridTemplateAreasValue() const { return m_classType == GridTemplateAreasClass; }
     bool isSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
     bool isContentDistributionValue() const { return m_classType == CSSContentDistributionClass; }
     bool isUnicodeRangeValue() const { return m_classType == UnicodeRangeClass; }
     bool isGridLineNamesValue() const { return m_classType == GridLineNamesClass; }
 
-    bool isCSSOMSafe() const { return m_isCSSOMSafe; }
-    bool isSubtypeExposedToCSSOM() const
-    {
-        return isPrimitiveValue() || isValueList();
-    }
-
-    PassRefPtrWillBeRawPtr<CSSValue> cloneForCSSOM() const;
-
     bool hasFailedOrCanceledSubresources() const;
 
     bool equals(const CSSValue&) const;
 
     void finalizeGarbageCollectedObject();
-    void traceAfterDispatch(Visitor*) { }
-    void trace(Visitor*);
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { }
+    DECLARE_TRACE();
+
+    // ~CSSValue should be public, because non-public ~CSSValue causes C2248
+    // error: 'blink::CSSValue::~CSSValue' : cannot access protected member
+    // declared in class 'blink::CSSValue' when compiling
+    // 'source\wtf\refcounted.h' by using msvc.
+    ~CSSValue() { }
 
 protected:
 
@@ -147,10 +134,10 @@ protected:
         FontFeatureClass,
         FontClass,
         FontFaceSrcClass,
-        FunctionClass,
 
         InheritedClass,
         InitialClass,
+        UnsetClass,
 
         ReflectClass,
         ShadowClass,
@@ -158,6 +145,7 @@ protected:
         LineBoxContainClass,
         CalculationClass,
         GridTemplateAreasClass,
+        PathClass,
 
         // SVG classes.
         CSSSVGDocumentClass,
@@ -166,9 +154,8 @@ protected:
 
         // List class types must appear after ValueListClass.
         ValueListClass,
+        FunctionClass,
         ImageSetClass,
-        CSSFilterClass,
-        CSSTransformClass,
         GridLineNamesClass,
         // Do not append non-list class types here.
     };
@@ -182,10 +169,8 @@ protected:
 
     ClassType classType() const { return static_cast<ClassType>(m_classType); }
 
-    explicit CSSValue(ClassType classType, bool isCSSOMSafe = false)
-        : m_isCSSOMSafe(isCSSOMSafe)
-        , m_isTextClone(false)
-        , m_primitiveUnitType(0)
+    explicit CSSValue(ClassType classType)
+        : m_primitiveUnitType(0)
         , m_hasCachedCSSText(false)
         , m_isQuirkValue(false)
         , m_valueListSeparator(SpaceSeparator)
@@ -196,14 +181,10 @@ protected:
     // NOTE: This class is non-virtual for memory and performance reasons.
     // Don't go making it virtual again unless you know exactly what you're doing!
 
-    ~CSSValue() { }
-
 private:
     void destroy();
 
 protected:
-    unsigned m_isCSSOMSafe : 1;
-    unsigned m_isTextClone : 1;
     // The bits in this section are only used by specific subclasses but kept here
     // to maximize struct packing.
 

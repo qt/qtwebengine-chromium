@@ -33,7 +33,7 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "public/web/WebPermissionClient.h"
+#include "public/web/WebContentSettingsClient.h"
 #include "web/WebLocalFrameImpl.h"
 
 namespace blink {
@@ -47,6 +47,11 @@ DatabaseClientImpl::~DatabaseClientImpl()
 {
 }
 
+DEFINE_TRACE(DatabaseClientImpl)
+{
+    DatabaseClient::trace(visitor);
+}
+
 bool DatabaseClientImpl::allowDatabase(ExecutionContext* executionContext, const String& name, const String& displayName, unsigned long estimatedSize)
 {
     ASSERT(executionContext->isContextThread());
@@ -54,8 +59,8 @@ bool DatabaseClientImpl::allowDatabase(ExecutionContext* executionContext, const
     WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
     if (!webFrame)
         return false;
-    if (webFrame->permissionClient())
-        return webFrame->permissionClient()->allowDatabase(name, displayName, estimatedSize);
+    if (webFrame->contentSettingsClient())
+        return webFrame->contentSettingsClient()->allowDatabase(name, displayName, estimatedSize);
     return true;
 }
 

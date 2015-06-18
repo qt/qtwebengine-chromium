@@ -25,6 +25,7 @@
 #ifndef MemoryCache_h
 #define MemoryCache_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourcePtr.h"
 #include "public/platform/WebThread.h"
@@ -78,7 +79,7 @@ public:
     {
         return adoptPtrWillBeNoop(new MemoryCacheEntry(resource));
     }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 #if ENABLE(OILPAN)
     void dispose();
 #endif
@@ -109,6 +110,8 @@ private:
     }
 };
 
+WILL_NOT_BE_EAGERLY_TRACED_CLASS(MemoryCacheEntry);
+
 // MemoryCacheLRUList is used only in MemoryCache class, but we don't make
 // MemoryCacheLRUList an inner struct of MemoryCache because we can't define
 // VectorTraits for inner structs.
@@ -119,7 +122,7 @@ public:
     RawPtrWillBeMember<MemoryCacheEntry> m_tail;
 
     MemoryCacheLRUList() : m_head(nullptr), m_tail(nullptr) { }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 };
 
 }
@@ -128,12 +131,12 @@ WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::MemoryCacheLRUList);
 
 namespace blink {
 
-class MemoryCache final : public NoBaseWillBeGarbageCollectedFinalized<MemoryCache>, public WebThread::TaskObserver {
-    WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT MemoryCache final : public NoBaseWillBeGarbageCollectedFinalized<MemoryCache>, public WebThread::TaskObserver {
+    WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(MemoryCache);
 public:
     static PassOwnPtrWillBeRawPtr<MemoryCache> create();
     ~MemoryCache();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     struct TypeStatistic {
         int count;
@@ -171,7 +174,7 @@ public:
 
     Resource* resourceForURL(const KURL&);
     Resource* resourceForURL(const KURL&, const String& cacheIdentifier);
-    WillBeHeapVector<Member<Resource>> resourcesForURL(const KURL&);
+    WillBeHeapVector<RawPtrWillBeMember<Resource>> resourcesForURL(const KURL&);
 
     void add(Resource*);
     void replace(Resource* newResource, Resource* oldResource);
@@ -208,7 +211,7 @@ public:
     // This should be called when a Resource object becomes unnecesarry.
     void unregisterLiveResource(Resource&);
 
-    static void removeURLFromCache(ExecutionContext*, const KURL&);
+    void removeURLFromCache(const KURL&);
 
     Statistics getStatistics();
 
@@ -225,7 +228,18 @@ public:
     virtual void willProcessTask() override;
     virtual void didProcessTask() override;
 
+    void pruneAll();
+
+    void updateFramePaintTimestamp();
+
 private:
+    enum PruneStrategy {
+        // Automatically decide how much to prune.
+        AutomaticPrune,
+        // Maximally prune resources.
+        MaximalPrune
+    };
+
     MemoryCache();
 
     MemoryCacheLRUList* lruListFor(unsigned accessCount, size_t);
@@ -250,9 +264,9 @@ private:
 
     // pruneDeadResources() - Flush decoded and encoded data from resources not referenced by Web pages.
     // pruneLiveResources() - Flush decoded data from resources still referenced by Web pages.
-    void pruneDeadResources(); // Automatically decide how much to prune.
-    void pruneLiveResources();
-    void pruneNow(double currentTime);
+    void pruneDeadResources(PruneStrategy);
+    void pruneLiveResources(PruneStrategy);
+    void pruneNow(double currentTime, PruneStrategy);
 
     bool evict(MemoryCacheEntry*);
 
@@ -265,6 +279,7 @@ private:
     double m_maxPruneDeferralDelay;
     double m_pruneTimeStamp;
     double m_pruneFrameTimeStamp;
+    double m_lastFramePaintTimeStamp; // used for detecting decoded resource thrash in the cache
 
     size_t m_capacity;
     size_t m_minDeadCapacity;
@@ -297,7 +312,7 @@ private:
     // objects.
     // FIXME: Can we remove manual lifetime management of Resource and this?
     HeapHashSet<Member<Resource>> m_liveResources;
-    friend RawPtr<MemoryCache> replaceMemoryCacheForTesting(RawPtr<MemoryCache>);
+    friend CORE_EXPORT RawPtr<MemoryCache> replaceMemoryCacheForTesting(RawPtr<MemoryCache>);
 #endif
 
     friend class MemoryCacheTest;
@@ -307,11 +322,11 @@ private:
 };
 
 // Returns the global cache.
-MemoryCache* memoryCache();
+CORE_EXPORT MemoryCache* memoryCache();
 
 // Sets the global cache, used to swap in a test instance. Returns the old
 // MemoryCache object.
-PassOwnPtrWillBeRawPtr<MemoryCache> replaceMemoryCacheForTesting(PassOwnPtrWillBeRawPtr<MemoryCache>);
+CORE_EXPORT PassOwnPtrWillBeRawPtr<MemoryCache> replaceMemoryCacheForTesting(PassOwnPtrWillBeRawPtr<MemoryCache>);
 
 }
 

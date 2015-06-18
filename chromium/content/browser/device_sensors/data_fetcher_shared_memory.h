@@ -22,12 +22,22 @@ class SuddenMotionSensor;
 
 namespace content {
 
+#if defined(OS_CHROMEOS)
+class SensorManagerChromeOS;
+#elif defined(OS_MACOSX)
+class AmbientLightSensor;
+#endif
+
 class CONTENT_EXPORT DataFetcherSharedMemory
     : public DataFetcherSharedMemoryBase {
 
  public:
   DataFetcherSharedMemory();
   ~DataFetcherSharedMemory() override;
+
+#if defined(OS_ANDROID)
+  void Shutdown() override;
+#endif
 
  private:
   bool Start(ConsumerType consumer_type, void* buffer) override;
@@ -38,17 +48,22 @@ class CONTENT_EXPORT DataFetcherSharedMemory
   DeviceOrientationHardwareBuffer* orientation_buffer_;
   DeviceLightHardwareBuffer* light_buffer_;
 #endif
-#if defined(OS_MACOSX)
+
+#if defined(OS_CHROMEOS)
+  scoped_ptr<SensorManagerChromeOS> sensor_manager_;
+#elif defined(OS_MACOSX)
   void Fetch(unsigned consumer_bitmask) override;
   FetcherType GetType() const override;
 
+  scoped_ptr<AmbientLightSensor> ambient_light_sensor_;
   scoped_ptr<SuddenMotionSensor> sudden_motion_sensor_;
 #elif defined(OS_WIN)
   class SensorEventSink;
   class SensorEventSinkMotion;
   class SensorEventSinkOrientation;
+  class SensorEventSinkLight;
 
-  virtual FetcherType GetType() const override;
+  FetcherType GetType() const override;
 
   bool RegisterForSensor(REFSENSOR_TYPE_ID sensor_type, ISensor** sensor,
       scoped_refptr<SensorEventSink> event_sink);
@@ -58,6 +73,7 @@ class CONTENT_EXPORT DataFetcherSharedMemory
   base::win::ScopedComPtr<ISensor> sensor_inclinometer_;
   base::win::ScopedComPtr<ISensor> sensor_accelerometer_;
   base::win::ScopedComPtr<ISensor> sensor_gyrometer_;
+  base::win::ScopedComPtr<ISensor> sensor_light_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(DataFetcherSharedMemory);

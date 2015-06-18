@@ -37,6 +37,8 @@ public:
 
     virtual bool willValidate() const override { return false; }
 
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+
 private:
     HTMLKeygenElement(Document&, HTMLFormElement*);
 

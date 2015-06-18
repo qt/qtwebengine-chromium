@@ -4,8 +4,8 @@
 
 #include "ui/ozone/public/gpu_platform_support_host.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/ozone/ozone_export.h"
 
 namespace ui {
@@ -16,7 +16,11 @@ namespace {
 class StubGpuPlatformSupportHost : public GpuPlatformSupportHost {
  public:
   // GpuPlatformSupportHost:
-  void OnChannelEstablished(int host_id, IPC::Sender* sender) override {}
+  void OnChannelEstablished(
+      int host_id,
+      scoped_refptr<base::SingleThreadTaskRunner> send_runner,
+      const base::Callback<void(IPC::Message*)>& send_callback) override {}
+
   void OnChannelDestroyed(int host_id) override {}
   bool OnMessageReceived(const IPC::Message&) override { return false; }
 };

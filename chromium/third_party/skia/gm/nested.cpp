@@ -19,11 +19,8 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         SkString name("nested");
         if (fDoAA) {
             name.append("_aa");
@@ -33,7 +30,7 @@ protected:
         return name;
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(kImageWidth, kImageHeight);
     }
 
@@ -63,7 +60,7 @@ protected:
         }
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
 
         SkPaint shapePaint;
         shapePaint.setColor(SK_ColorBLACK);

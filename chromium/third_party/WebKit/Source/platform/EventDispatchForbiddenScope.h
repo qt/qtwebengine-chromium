@@ -5,6 +5,8 @@
 #ifndef EventDispatchForbiddenScope_h
 #define EventDispatchForbiddenScope_h
 
+#include "platform/PlatformExport.h"
+#include "wtf/Assertions.h"
 #include "wtf/MainThread.h"
 #include "wtf/TemporaryChange.h"
 
@@ -16,15 +18,13 @@ class EventDispatchForbiddenScope {
 public:
     EventDispatchForbiddenScope()
     {
-        if (!isMainThread())
-            return;
+        ASSERT(isMainThread());
         ++s_count;
     }
 
     ~EventDispatchForbiddenScope()
     {
-        if (!isMainThread())
-            return;
+        ASSERT(isMainThread());
         ASSERT(s_count);
         --s_count;
     }
@@ -41,6 +41,7 @@ public:
         AllowUserAgentEvents()
             : m_change(s_count, 0)
         {
+            ASSERT(isMainThread());
         }
 
         ~AllowUserAgentEvents()
@@ -52,7 +53,7 @@ public:
     };
 
 private:
-    static unsigned s_count;
+    PLATFORM_EXPORT static unsigned s_count;
 };
 
 #else

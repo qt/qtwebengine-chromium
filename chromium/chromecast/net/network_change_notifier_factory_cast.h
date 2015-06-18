@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,12 +17,10 @@ class NetworkChangeNotifierFactoryCast
     : public net::NetworkChangeNotifierFactory {
  public:
   NetworkChangeNotifierFactoryCast() {}
-  virtual ~NetworkChangeNotifierFactoryCast();
+  ~NetworkChangeNotifierFactoryCast() override;
 
   // net::NetworkChangeNotifierFactory implementation:
-  virtual net::NetworkChangeNotifier* CreateInstance() override;
-
-  static NetworkChangeNotifierCast* GetInstance();
+  net::NetworkChangeNotifier* CreateInstance() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NetworkChangeNotifierFactoryCast);

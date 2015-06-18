@@ -42,7 +42,7 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
   // Worker at |script_url|. Posts |callback| to the IO thread to indicate
   // whether creation succeeded and the process ID that has a new reference.
   //
-  // Allocation can fail with SERVICE_WORKER_ERROR_START_WORKER_FAILED if
+  // Allocation can fail with SERVICE_WORKER_PROCESS_NOT_FOUND if
   // RenderProcessHost::Init fails.
   void AllocateWorkerProcess(
       int embedded_worker_id,
@@ -123,8 +123,8 @@ class CONTENT_EXPORT ServiceWorkerProcessManager {
   PatternProcessRefMap pattern_processes_;
 
   // Used to double-check that we don't access *this after it's destroyed.
+  base::WeakPtr<ServiceWorkerProcessManager> weak_this_;
   base::WeakPtrFactory<ServiceWorkerProcessManager> weak_this_factory_;
-  const base::WeakPtr<ServiceWorkerProcessManager> weak_this_;
 };
 
 }  // namespace content

@@ -394,7 +394,7 @@ ScrollAnimatorNone::Parameters ScrollAnimatorNone::parametersForScrollGranularit
     return Parameters();
 }
 
-bool ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
+ScrollResultOneDimensional ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranularity granularity, float step, float delta)
 {
     if (!m_scrollableArea->scrollAnimatorEnabled())
         return ScrollAnimator::scroll(orientation, granularity, step, delta);
@@ -428,8 +428,9 @@ bool ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranular
         m_startTime = data.m_startTime;
         animationWillStart();
         animationTimerFired();
+        scrollableArea()->registerForAnimation();
     }
-    return needToScroll;
+    return ScrollResultOneDimensional(needToScroll);
 }
 
 void ScrollAnimatorNone::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
@@ -458,6 +459,16 @@ void ScrollAnimatorNone::serviceScrollAnimations()
 {
     if (m_animationActive)
         animationTimerFired();
+}
+
+bool ScrollAnimatorNone::hasRunningAnimation() const
+{
+    return m_animationActive;
+}
+
+void ScrollAnimatorNone::updateAfterLayout()
+{
+    updateVisibleLengths();
 }
 
 void ScrollAnimatorNone::willEndLiveResize()

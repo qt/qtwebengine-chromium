@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN: //components/session_manager/core
       'target_name': 'session_manager_component',
       'type': '<(component)',
       'dependencies': [
@@ -17,8 +18,8 @@
         'SESSION_IMPLEMENTATION',
       ],
       'sources': [
-        'session_manager/core/session_manager.h',
         'session_manager/core/session_manager.cc',
+        'session_manager/core/session_manager.h',
         'session_manager/session_manager_export.h',
       ],
       'conditions': [

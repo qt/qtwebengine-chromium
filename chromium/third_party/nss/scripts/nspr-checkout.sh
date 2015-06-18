@@ -3,14 +3,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This shell script checks out the NSPR source tree from CVS and prepares
+# This shell script checks out the NSPR source tree from HG and prepares
 # it for Chromium.
 
 # Make the script exit as soon as something fails.
 set -ex
 
 rm -rf nspr
-hg clone -u NSPR_4_10_7_RTM https://hg.mozilla.org/projects/nspr
+hg clone -u NSPR_4_10_8_RTM https://hg.mozilla.org/projects/nspr
 
 rm -r nspr/.hg
 rm -r nspr/admin

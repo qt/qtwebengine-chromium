@@ -6,11 +6,10 @@
 
 #include "base/auto_reset.h"
 #include "base/bind.h"
-#include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/single_thread_task_runner.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/input/input_handler.h"
 #include "content/common/input/did_overscroll_params.h"
 #include "content/common/input/web_input_event_traits.h"
@@ -19,7 +18,7 @@
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "ui/gfx/vector2d_f.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 using blink::WebInputEvent;
 
@@ -41,19 +40,15 @@ const char* GetInputMessageTypeName(const IPC::Message& message) {
 namespace content {
 
 InputEventFilter::InputEventFilter(
-    IPC::Listener* main_listener,
+    const base::Callback<void(const IPC::Message&)>& main_listener,
     const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner,
     const scoped_refptr<base::MessageLoopProxy>& target_loop)
     : main_task_runner_(main_task_runner),
       main_listener_(main_listener),
       sender_(NULL),
       target_loop_(target_loop),
-      overscroll_notifications_enabled_(false),
       current_overscroll_params_(NULL) {
   DCHECK(target_loop_.get());
-  overscroll_notifications_enabled_ =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableOverscrollNotifications);
 }
 
 void InputEventFilter::SetBoundHandler(const Handler& handler) {
@@ -74,9 +69,6 @@ void InputEventFilter::DidRemoveInputHandler(int routing_id) {
 
 void InputEventFilter::DidOverscroll(int routing_id,
                                      const DidOverscrollParams& params) {
-  if (!overscroll_notifications_enabled_)
-    return;
-
   if (current_overscroll_params_) {
     current_overscroll_params_->reset(new DidOverscrollParams(params));
     return;
@@ -87,8 +79,7 @@ void InputEventFilter::DidOverscroll(int routing_id,
 }
 
 void InputEventFilter::DidStopFlinging(int routing_id) {
-  SendMessage(
-      scoped_ptr<IPC::Message>(new ViewHostMsg_DidStopFlinging(routing_id)));
+  SendMessage(make_scoped_ptr(new InputHostMsg_DidStopFlinging(routing_id)));
 }
 
 void InputEventFilter::OnFilterAdded(IPC::Sender* sender) {
@@ -135,10 +126,6 @@ InputEventFilter::~InputEventFilter() {
   DCHECK(!current_overscroll_params_);
 }
 
-void InputEventFilter::ForwardToMainListener(const IPC::Message& message) {
-  main_listener_->OnMessageReceived(message);
-}
-
 void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
   DCHECK(!handler_.is_null());
   DCHECK(target_loop_->BelongsToCurrentThread());
@@ -150,9 +137,7 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
         "input",
         "InputEventFilter::ForwardToHandler::ForwardToMainListener",
         TRACE_EVENT_SCOPE_THREAD);
-    main_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&InputEventFilter::ForwardToMainListener, this, message));
+    main_task_runner_->PostTask(FROM_HERE, base::Bind(main_listener_, message));
     return;
   }
 
@@ -160,9 +145,9 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
   InputMsg_HandleInputEvent::Param params;
   if (!InputMsg_HandleInputEvent::Read(&message, &params))
     return;
-  const WebInputEvent* event = params.a;
-  ui::LatencyInfo latency_info = params.b;
-  bool is_keyboard_shortcut = params.c;
+  const WebInputEvent* event = get<0>(params);
+  ui::LatencyInfo latency_info = get<1>(params);
+  bool is_keyboard_shortcut = get<2>(params);
   DCHECK(event);
 
   const bool send_ack = !WebInputEventTraits::IgnoresAckDisposition(*event);
@@ -184,9 +169,7 @@ void InputEventFilter::ForwardToHandler(const IPC::Message& message) {
         TRACE_EVENT_SCOPE_THREAD);
     IPC::Message new_msg = InputMsg_HandleInputEvent(
         routing_id, event, latency_info, is_keyboard_shortcut);
-    main_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&InputEventFilter::ForwardToMainListener, this, new_msg));
+    main_task_runner_->PostTask(FROM_HERE, base::Bind(main_listener_, new_msg));
     return;
   }
 

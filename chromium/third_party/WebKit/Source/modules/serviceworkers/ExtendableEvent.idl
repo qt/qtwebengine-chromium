@@ -30,9 +30,10 @@
 
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/#extendable-event-interface
 [
-    RuntimeEnabled=ServiceWorker,
+    Constructor(DOMString type, optional ExtendableEventInit eventInitDict),
     Exposed=ServiceWorker,
+    RuntimeEnabled=ServiceWorker,
     TypeChecking=Interface,
 ] interface ExtendableEvent : Event {
-    [CallWith=ScriptState] void waitUntil(any value);
+    [CallWith=ScriptState, RaisesException] void waitUntil(any value);
 };

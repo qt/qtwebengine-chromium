@@ -60,6 +60,7 @@
         # computing dependencies file-by-file in the build.
         # This data is generally stable.
         '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
         # Further, if any dependency (partial interface or implemented
         # interface) changes, rebuild everything, since every IDL potentially
         # depends on them, because we're not computing dependencies
@@ -84,8 +85,10 @@
         '<(bindings_scripts_output_dir)',
         '--output-dir',
         '<(bindings_core_v8_output_dir)',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '--info-dir',
+        '<(bindings_output_dir)',
+        '--target-component',
+        'core',
         '--write-file-only-if-changed',
         '<(write_file_only_if_changed)',
         '<(RULE_INPUT_PATH)',
@@ -165,10 +168,8 @@
         '<(bindings_core_v8_output_dir)',
         '--impl-output-dir',
         '<(SHARED_INTERMEDIATE_DIR)/blink/',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
-        '--component-info',
-        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
+        '--info-dir',
+        '<(bindings_output_dir)',
         '--target-component',
         'core',
         '--write-file-only-if-changed',

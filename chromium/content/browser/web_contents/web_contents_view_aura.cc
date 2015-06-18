@@ -7,7 +7,6 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
-#include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/download/drag_download_util.h"
@@ -21,10 +20,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/renderer_host/web_input_event_aura.h"
 #include "content/browser/web_contents/aura/gesture_nav_simple.h"
-#include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
-#include "content/browser/web_contents/aura/shadow_layer_delegate.h"
-#include "content/browser/web_contents/aura/window_slider.h"
 #include "content/browser/web_contents/touch_editable_impl_aura.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/content_browser_client.h"
@@ -60,23 +56,15 @@
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/layer.h"
-#include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/screen.h"
 #include "ui/wm/public/drag_drop_client.h"
 #include "ui/wm/public/drag_drop_delegate.h"
-
-#if defined(OS_WIN)
-#include "content/browser/accessibility/browser_accessibility_manager.h"
-#include "content/browser/accessibility/browser_accessibility_win.h"
-#include "ui/base/win/hidden_window.h"
-#endif
 
 namespace content {
 WebContentsView* CreateWebContentsView(
@@ -95,18 +83,6 @@ bool IsScrollEndEffectEnabled() {
       switches::kScrollEndEffect) == "1";
 }
 
-bool ShouldNavigateForward(const NavigationController& controller,
-                           OverscrollMode mode) {
-  return mode == (base::i18n::IsRTL() ? OVERSCROLL_EAST : OVERSCROLL_WEST) &&
-         controller.CanGoForward();
-}
-
-bool ShouldNavigateBack(const NavigationController& controller,
-                        OverscrollMode mode) {
-  return mode == (base::i18n::IsRTL() ? OVERSCROLL_WEST : OVERSCROLL_EAST) &&
-         controller.CanGoBack();
-}
-
 RenderWidgetHostViewAura* ToRenderWidgetHostViewAura(
     RenderWidgetHostView* view) {
   if (!view || RenderViewHostFactory::has_factory())
@@ -119,67 +95,6 @@ RenderWidgetHostViewAura* ToRenderWidgetHostViewAura(
     return NULL;
   return static_cast<RenderWidgetHostViewAura*>(view);
 }
-
-// The window delegate for the overscroll window. This redirects trackpad events
-// to the web-contents window. The delegate destroys itself when the window is
-// destroyed.
-class OverscrollWindowDelegate : public ImageWindowDelegate {
- public:
-  OverscrollWindowDelegate(WebContentsImpl* web_contents,
-                           OverscrollMode overscroll_mode)
-      : web_contents_(web_contents),
-        forward_events_(true) {
-    const NavigationControllerImpl& controller = web_contents->GetController();
-    const NavigationEntryImpl* entry = NULL;
-    if (ShouldNavigateForward(controller, overscroll_mode)) {
-      entry = NavigationEntryImpl::FromNavigationEntry(
-          controller.GetEntryAtOffset(1));
-    } else if (ShouldNavigateBack(controller, overscroll_mode)) {
-      entry = NavigationEntryImpl::FromNavigationEntry(
-          controller.GetEntryAtOffset(-1));
-    }
-
-    gfx::Image image;
-    if (entry && entry->screenshot().get()) {
-      std::vector<gfx::ImagePNGRep> image_reps;
-      image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(), 1.0f));
-      image = gfx::Image(image_reps);
-    }
-    SetImage(image);
-  }
-
-  void stop_forwarding_events() { forward_events_ = false; }
-
- private:
-  ~OverscrollWindowDelegate() override {}
-
-  aura::Window* web_contents_window() {
-    return web_contents_->GetView()->GetContentNativeView();
-  }
-
-  // Overridden from ui::EventHandler.
-  void OnScrollEvent(ui::ScrollEvent* event) override {
-    if (forward_events_ && web_contents_window())
-      web_contents_window()->delegate()->OnScrollEvent(event);
-  }
-
-  void OnGestureEvent(ui::GestureEvent* event) override {
-    if (forward_events_ && web_contents_window())
-      web_contents_window()->delegate()->OnGestureEvent(event);
-  }
-
-  WebContentsImpl* web_contents_;
-
-  // The window is displayed both during the gesture, and after the gesture
-  // while the navigation is in progress. During the gesture, it is necessary to
-  // forward input events to the content page (e.g. when the overscroll window
-  // slides under the cursor and starts receiving scroll events). However, once
-  // the gesture is complete, and the window is being displayed as an overlay
-  // window during navigation, events should not be forwarded anymore.
-  bool forward_events_;
-
-  DISALLOW_COPY_AND_ASSIGN(OverscrollWindowDelegate);
-};
 
 // Listens to all mouse drag events during a drag and drop and sends them to
 // the renderer.
@@ -329,15 +244,14 @@ bool ReadFileSystemFilesFromPickle(
   PickleIterator iter(pickle);
 
   size_t num_files = 0;
-  if (!pickle.ReadSizeT(&iter, &num_files))
+  if (!iter.ReadSizeT(&num_files))
     return false;
   file_system_files->resize(num_files);
 
   for (size_t i = 0; i < num_files; ++i) {
     std::string url_string;
     int64 size = 0;
-    if (!pickle.ReadString(&iter, &url_string) ||
-        !pickle.ReadInt64(&iter, &size))
+    if (!iter.ReadString(&url_string) || !iter.ReadInt64(&size))
       return false;
 
     GURL url(url_string);
@@ -466,6 +380,12 @@ int ConvertAuraEventFlagsToWebInputEventModifiers(int aura_event_flags) {
     web_input_event_modifiers |= blink::WebInputEvent::AltKey;
   if (aura_event_flags & ui::EF_COMMAND_DOWN)
     web_input_event_modifiers |= blink::WebInputEvent::MetaKey;
+  if (aura_event_flags & ui::EF_LEFT_MOUSE_BUTTON)
+    web_input_event_modifiers |= blink::WebInputEvent::LeftButtonDown;
+  if (aura_event_flags & ui::EF_MIDDLE_MOUSE_BUTTON)
+    web_input_event_modifiers |= blink::WebInputEvent::MiddleButtonDown;
+  if (aura_event_flags & ui::EF_RIGHT_MOUSE_BUTTON)
+    web_input_event_modifiers |= blink::WebInputEvent::RightButtonDown;
   return web_input_event_modifiers;
 }
 
@@ -508,21 +428,6 @@ class WebContentsViewAura::WindowObserver
 #endif
   }
 
-  // Overridden from aura::WindowObserver:
-  void OnWindowHierarchyChanged(
-      const aura::WindowObserver::HierarchyChangeParams& params) override {
-    if (params.receiver != view_->window_.get() ||
-        !params.target->Contains(view_->window_.get())) {
-      return;
-    }
-
-    // Use the new parent's root window for calculating HiDPI subpixel offset.
-    RenderWidgetHostViewAura* rwhv = ToRenderWidgetHostViewAura(
-        view_->web_contents_->GetRenderWidgetHostView());
-    if (rwhv)
-      rwhv->SnapToPhysicalPixelBoundary();
-  }
-
 #if defined(OS_WIN)
   // Constrained windows are added as children of the parent's parent's view
   // which may overlap with windowed NPAPI plugins. In that case, tell the RWHV
@@ -530,7 +435,7 @@ class WebContentsViewAura::WindowObserver
   // Note: this is hard coding how Chrome layer adds its dialogs. Since NPAPI is
   // going to be deprecated in a year, this is ok for now. The test for this is
   // PrintPreviewTest.WindowedNPAPIPluginHidden.
-  virtual void OnWindowAdded(aura::Window* new_window) override {
+  void OnWindowAdded(aura::Window* new_window) override {
     if (!new_window->Contains(view_->window_.get())) {
       // Skip the case when the parent moves to the root window.
       if (new_window != host_window_) {
@@ -548,7 +453,7 @@ class WebContentsViewAura::WindowObserver
     }
   }
 
-  virtual void OnWillRemoveWindow(aura::Window* window) override {
+  void OnWillRemoveWindow(aura::Window* window) override {
     if (window == view_->window_)
       return;
 
@@ -556,8 +461,7 @@ class WebContentsViewAura::WindowObserver
     UpdateConstrainedWindows(window);
   }
 
-  virtual void OnWindowVisibilityChanged(aura::Window* window,
-                                         bool visible) override {
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override {
     if (window == view_->window_ ||
         window->parent() == host_window_ ||
         window->parent() == view_->window_->GetRootWindow()) {
@@ -648,10 +552,6 @@ class WebContentsViewAura::WindowObserver
 #if defined(OS_WIN)
       if (!window->GetRootWindow()->HasObserver(this))
         window->GetRootWindow()->AddObserver(this);
-      if (view_->legacy_hwnd_) {
-        view_->legacy_hwnd_->UpdateParent(
-            window->GetHost()->GetAcceleratedWidget());
-      }
 #endif
     }
   }
@@ -671,9 +571,6 @@ class WebContentsViewAura::WindowObserver
           root_children[i]->RemoveObserver(this);
         }
       }
-
-      if (view_->legacy_hwnd_)
-        view_->legacy_hwnd_->UpdateParent(ui::GetHiddenWindow());
 #endif
     }
   }
@@ -742,17 +639,16 @@ class WebContentsViewAura::WindowObserver
 ////////////////////////////////////////////////////////////////////////////////
 // WebContentsViewAura, public:
 
-WebContentsViewAura::WebContentsViewAura(
-    WebContentsImpl* web_contents,
-    WebContentsViewDelegate* delegate)
+WebContentsViewAura::WebContentsViewAura(WebContentsImpl* web_contents,
+                                         WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       delegate_(delegate),
       current_drag_op_(blink::WebDragOperationNone),
       drag_dest_delegate_(NULL),
       current_rvh_for_drag_(NULL),
-      overscroll_change_brightness_(false),
       current_overscroll_gesture_(OVERSCROLL_NONE),
       completed_overscroll_gesture_(OVERSCROLL_NONE),
+      navigation_overlay_(nullptr),
       touch_editable_(TouchEditableImplAura::Create()),
       is_or_was_visible_(false) {
 }
@@ -817,178 +713,18 @@ void WebContentsViewAura::InstallOverscrollControllerDelegate(
     return;
   }
   view->overscroll_controller()->set_delegate(this);
-  if (!navigation_overlay_)
-    navigation_overlay_.reset(new OverscrollNavigationOverlay(web_contents_));
-}
-
-void WebContentsViewAura::PrepareOverscrollWindow() {
-  // If there is an existing |overscroll_window_| which is in the middle of an
-  // animation, then destroying the window here causes the animation to be
-  // completed immediately, which triggers |OnImplicitAnimationsCompleted()|
-  // callback, and that tries to reset |overscroll_window_| again, causing a
-  // double-free. So use a temporary variable here.
-  if (overscroll_window_) {
-    base::AutoReset<OverscrollMode> reset_state(&current_overscroll_gesture_,
-                                                current_overscroll_gesture_);
-    scoped_ptr<aura::Window> reset_window(overscroll_window_.release());
-  }
-
-  OverscrollWindowDelegate* overscroll_delegate = new OverscrollWindowDelegate(
-      web_contents_,
-      current_overscroll_gesture_);
-  overscroll_window_.reset(new aura::Window(overscroll_delegate));
-  overscroll_window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
-  overscroll_window_->SetTransparent(true);
-  overscroll_window_->Init(aura::WINDOW_LAYER_TEXTURED);
-  overscroll_window_->layer()->SetMasksToBounds(false);
-  overscroll_window_->SetName("OverscrollOverlay");
-
-  overscroll_change_brightness_ = overscroll_delegate->has_image();
-  window_->AddChild(overscroll_window_.get());
-
-  gfx::Rect bounds = gfx::Rect(window_->bounds().size());
-  if (ShouldNavigateForward(web_contents_->GetController(),
-                            current_overscroll_gesture_)) {
-    // The overlay will be sliding in from the right edge towards the left in
-    // non-RTL, or sliding in from the left edge towards the right in RTL.
-    // So position the overlay window accordingly.
-    bounds.Offset(base::i18n::IsRTL() ? -bounds.width() : bounds.width(), 0);
-  }
-
-  aura::Window* animate_window = GetWindowToAnimateForOverscroll();
-  if (animate_window == overscroll_window_)
-    window_->StackChildAbove(overscroll_window_.get(), GetContentNativeView());
-  else
-    window_->StackChildBelow(overscroll_window_.get(), GetContentNativeView());
-
-  UpdateOverscrollWindowBrightness(0.f);
-
-  overscroll_window_->SetBounds(bounds);
-  overscroll_window_->Show();
-
-  overscroll_shadow_.reset(new ShadowLayerDelegate(animate_window->layer()));
-}
-
-void WebContentsViewAura::PrepareContentWindowForOverscroll() {
-  StopObservingImplicitAnimations();
-  aura::Window* content = GetContentNativeView();
-  content->layer()->GetAnimator()->AbortAllAnimations();
-  content->SetTransform(gfx::Transform());
-  content->layer()->SetLayerBrightness(0.f);
-}
-
-void WebContentsViewAura::ResetOverscrollTransform() {
-  if (!web_contents_->GetRenderWidgetHostView())
-    return;
-  aura::Window* target = GetWindowToAnimateForOverscroll();
-  if (!target)
-    return;
-  {
-    ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
-    settings.SetPreemptionStrategy(
-        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.SetTweenType(gfx::Tween::EASE_OUT);
-    settings.AddObserver(this);
-    target->SetTransform(gfx::Transform());
-  }
-  {
-    ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
-    settings.SetPreemptionStrategy(
-        ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.SetTweenType(gfx::Tween::EASE_OUT);
-    UpdateOverscrollWindowBrightness(0.f);
+  if (!navigation_overlay_) {
+    navigation_overlay_.reset(
+        new OverscrollNavigationOverlay(web_contents_, window_.get()));
   }
 }
 
 void WebContentsViewAura::CompleteOverscrollNavigation(OverscrollMode mode) {
   if (!web_contents_->GetRenderWidgetHostView())
     return;
-
-  // Animate out the current view first. Navigate to the requested history at
-  // the end of the animation.
-  if (current_overscroll_gesture_ == OVERSCROLL_NONE)
-    return;
-
-  UMA_HISTOGRAM_ENUMERATION("Overscroll.Navigated",
-                            current_overscroll_gesture_, OVERSCROLL_COUNT);
-  OverscrollWindowDelegate* delegate = static_cast<OverscrollWindowDelegate*>(
-      overscroll_window_->delegate());
-  delegate->stop_forwarding_events();
-
-  completed_overscroll_gesture_ = mode;
-  aura::Window* target = GetWindowToAnimateForOverscroll();
-  ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
-  settings.SetPreemptionStrategy(
-      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  settings.SetTweenType(gfx::Tween::EASE_OUT);
-  settings.AddObserver(this);
-  gfx::Transform transform;
-  int content_width =
-      web_contents_->GetRenderWidgetHostView()->GetViewBounds().width();
-  float translate_x = static_cast<float>(mode == OVERSCROLL_WEST ?
-      -content_width : content_width);
-  transform.Translate(translate_x, 0);
-  target->SetTransform(transform);
-  UpdateOverscrollWindowBrightness(translate_x);
-}
-
-aura::Window* WebContentsViewAura::GetWindowToAnimateForOverscroll() {
-  if (current_overscroll_gesture_ == OVERSCROLL_NONE)
-    return NULL;
-
-  return ShouldNavigateForward(web_contents_->GetController(),
-                               current_overscroll_gesture_) ?
-      overscroll_window_.get() : GetContentNativeView();
-}
-
-gfx::Vector2dF WebContentsViewAura::GetTranslationForOverscroll(float delta_x,
-                                                                float delta_y) {
-  if (current_overscroll_gesture_ == OVERSCROLL_NORTH ||
-      current_overscroll_gesture_ == OVERSCROLL_SOUTH) {
-    return gfx::Vector2dF(0, delta_y);
-  }
-  // For horizontal overscroll, scroll freely if a navigation is possible. Do a
-  // resistive scroll otherwise.
-  const NavigationControllerImpl& controller = web_contents_->GetController();
-  const gfx::Rect& bounds = GetViewBounds();
-  const float bounds_width = static_cast<float>(bounds.width());
-  if (ShouldNavigateForward(controller, current_overscroll_gesture_))
-    return gfx::Vector2dF(std::max(-bounds_width, delta_x), 0);
-  else if (ShouldNavigateBack(controller, current_overscroll_gesture_))
-    return gfx::Vector2dF(std::min(bounds_width, delta_x), 0);
-  return gfx::Vector2dF();
-}
-
-void WebContentsViewAura::PrepareOverscrollNavigationOverlay() {
-  OverscrollWindowDelegate* delegate = static_cast<OverscrollWindowDelegate*>(
-      overscroll_window_->delegate());
-  overscroll_window_->SchedulePaintInRect(
-      gfx::Rect(overscroll_window_->bounds().size()));
-  overscroll_window_->SetBounds(gfx::Rect(window_->bounds().size()));
-  overscroll_window_->SetTransform(gfx::Transform());
-  navigation_overlay_->SetOverlayWindow(overscroll_window_.Pass(),
-                                        delegate);
-  navigation_overlay_->StartObserving();
-}
-
-void WebContentsViewAura::UpdateOverscrollWindowBrightness(float delta_x) {
-  if (!overscroll_change_brightness_)
-    return;
-
-  const float kBrightnessMin = -.1f;
-  const float kBrightnessMax = -.01f;
-
-  float ratio = fabs(delta_x) / GetViewBounds().width();
-  ratio = std::min(1.f, ratio);
-  if (base::i18n::IsRTL())
-    ratio = 1.f - ratio;
-  float brightness = current_overscroll_gesture_ == OVERSCROLL_WEST ?
-      kBrightnessMin + ratio * (kBrightnessMax - kBrightnessMin) :
-      kBrightnessMax - ratio * (kBrightnessMax - kBrightnessMin);
-  brightness = std::max(kBrightnessMin, brightness);
-  brightness = std::min(kBrightnessMax, brightness);
-  aura::Window* window = GetWindowToAnimateForOverscroll();
-  window->layer()->SetLayerBrightness(brightness);
+  navigation_overlay_->relay_delegate()->OnOverscrollComplete(mode);
+  if (touch_editable_)
+    touch_editable_->OverscrollCompleted();
 }
 
 void WebContentsViewAura::AttachTouchEditableToRenderView() {
@@ -1018,7 +754,8 @@ gfx::NativeView WebContentsViewAura::GetContentNativeView() const {
 }
 
 gfx::NativeWindow WebContentsViewAura::GetTopLevelNativeWindow() const {
-  return window_->GetToplevelWindow();
+  gfx::NativeWindow window = window_->GetToplevelWindow();
+  return window ? window : delegate_->GetNativeWindow();
 }
 
 void WebContentsViewAura::GetContainerBounds(gfx::Rect *out) const {
@@ -1030,10 +767,6 @@ void WebContentsViewAura::SizeContents(const gfx::Size& size) {
   if (bounds.size() != size) {
     bounds.set_size(size);
     window_->SetBounds(bounds);
-#if defined(OS_WIN)
-    if (legacy_hwnd_)
-      legacy_hwnd_->SetBounds(window_->GetBoundsInRootWindow());
-#endif
   } else {
     // Our size matches what we want but the renderers size may not match.
     // Pretend we were resized so that the renderers size is updated too.
@@ -1097,7 +830,7 @@ void WebContentsViewAura::CreateView(
   window_->set_owned_by_parent(false);
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
   window_->SetTransparent(false);
-  window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  window_->Init(ui::LAYER_NOT_DRAWN);
   window_->AddObserver(this);
   aura::Window* root_window = context ? context->GetRootWindow() : NULL;
   if (root_window) {
@@ -1130,14 +863,6 @@ void WebContentsViewAura::CreateView(
   // platforms as well.
   if (delegate_)
     drag_dest_delegate_ = delegate_->GetDragDestDelegate();
-
-#if defined(OS_WIN)
-  if (context && context->GetHost()) {
-    HWND parent_hwnd = context->GetHost()->GetAcceleratedWidget();
-    CHECK(parent_hwnd);
-    legacy_hwnd_.reset(LegacyRenderWidgetHostHWND::Create(parent_hwnd, this));
-  }
-#endif
 }
 
 RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
@@ -1158,10 +883,6 @@ RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
   view->InitAsChild(NULL);
   GetNativeView()->AddChild(view->GetNativeView());
 
-  if (navigation_overlay_.get() && navigation_overlay_->has_window()) {
-    navigation_overlay_->StartObserving();
-  }
-
   RenderWidgetHostImpl* host_impl =
       RenderWidgetHostImpl::From(render_widget_host);
 
@@ -1178,24 +899,12 @@ RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
   }
 
   AttachTouchEditableToRenderView();
-
-#if defined(OS_WIN)
-  if (legacy_hwnd_)
-    view->SetLegacyRenderWidgetHostHWND(legacy_hwnd_.get());
-#endif
-
   return view;
 }
 
 RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  RenderWidgetHostViewAura* view =
-      new RenderWidgetHostViewAura(render_widget_host, false);
-#if defined(OS_WIN)
-  if (legacy_hwnd_)
-    view->SetLegacyRenderWidgetHostHWND(legacy_hwnd_.get());
-#endif
-  return view;
+  return new RenderWidgetHostViewAura(render_widget_host, false);
 }
 
 void WebContentsViewAura::SetPageTitle(const base::string16& title) {
@@ -1206,8 +915,6 @@ void WebContentsViewAura::RenderViewCreated(RenderViewHost* host) {
 }
 
 void WebContentsViewAura::RenderViewSwappedIn(RenderViewHost* host) {
-  if (navigation_overlay_.get() && navigation_overlay_->has_window())
-    navigation_overlay_->StartObserving();
   AttachTouchEditableToRenderView();
 }
 
@@ -1220,10 +927,12 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
       InstallOverscrollControllerDelegate(view);
   }
 
-  if (!enabled)
+  if (!enabled) {
     navigation_overlay_.reset();
-  else if (!navigation_overlay_)
-    navigation_overlay_.reset(new OverscrollNavigationOverlay(web_contents_));
+  } else if (!navigation_overlay_) {
+    navigation_overlay_.reset(
+        new OverscrollNavigationOverlay(web_contents_, window_.get()));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1235,6 +944,11 @@ void WebContentsViewAura::ShowContextMenu(RenderFrameHost* render_frame_host,
     touch_editable_->EndTouchEditing(false);
   }
   if (delegate_) {
+    RenderWidgetHostViewAura* view = ToRenderWidgetHostViewAura(
+        web_contents_->GetRenderWidgetHostView());
+    if (view)
+      view->OnShowContextMenu();
+
     delegate_->ShowContextMenu(render_frame_host, params);
     // WARNING: we may have been deleted during the call to ShowContextMenu().
   }
@@ -1301,8 +1015,7 @@ void WebContentsViewAura::UpdateDragCursor(blink::WebDragOperation operation) {
 }
 
 void WebContentsViewAura::GotFocus() {
-  if (web_contents_->GetDelegate())
-    web_contents_->GetDelegate()->WebContentsFocused(web_contents_);
+  web_contents_->NotifyWebContentsFocused();
 }
 
 void WebContentsViewAura::TakeFocus(bool reverse) {
@@ -1344,103 +1057,40 @@ bool WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
   if (current_overscroll_gesture_ == OVERSCROLL_NONE)
     return false;
 
-  aura::Window* target = GetWindowToAnimateForOverscroll();
-  gfx::Vector2dF translate = GetTranslationForOverscroll(delta_x, delta_y);
-  gfx::Transform transform;
-
   if (current_overscroll_gesture_ == OVERSCROLL_NORTH ||
       current_overscroll_gesture_ == OVERSCROLL_SOUTH) {
-    OverscrollUpdateForWebContentsDelegate(translate.y());
-  } else {
-    // Only horizontal overscrolls participate in the navigation gesture.
-    transform.Translate(translate.x(), translate.y());
-    target->SetTransform(transform);
-    UpdateOverscrollWindowBrightness(delta_x);
+    OverscrollUpdateForWebContentsDelegate(delta_y);
+    return delta_y != 0;
   }
-
-  return !translate.IsZero();
+  return navigation_overlay_->relay_delegate()->OnOverscrollUpdate(delta_x,
+                                                                   delta_y);
 }
 
 void WebContentsViewAura::OnOverscrollComplete(OverscrollMode mode) {
-  UMA_HISTOGRAM_ENUMERATION("Overscroll.Completed", mode, OVERSCROLL_COUNT);
   if (web_contents_->GetDelegate() &&
       IsScrollEndEffectEnabled() &&
       (mode == OVERSCROLL_NORTH || mode == OVERSCROLL_SOUTH)) {
     web_contents_->GetDelegate()->OverscrollComplete();
   }
-  NavigationControllerImpl& controller = web_contents_->GetController();
-  if (ShouldNavigateForward(controller, mode) ||
-      ShouldNavigateBack(controller, mode)) {
-    CompleteOverscrollNavigation(mode);
-    return;
-  }
-
-  ResetOverscrollTransform();
+  CompleteOverscrollNavigation(mode);
 }
 
 void WebContentsViewAura::OnOverscrollModeChange(OverscrollMode old_mode,
                                                  OverscrollMode new_mode) {
-  // Reset any in-progress overscroll animation first.
-  ResetOverscrollTransform();
-
   if (old_mode == OVERSCROLL_NORTH || old_mode == OVERSCROLL_SOUTH)
     OverscrollUpdateForWebContentsDelegate(0);
 
-  if (new_mode != OVERSCROLL_NONE && touch_editable_)
-    touch_editable_->OverscrollStarted();
-
-  if (new_mode == OVERSCROLL_NONE ||
-      !GetContentNativeView() ||
-      ((new_mode == OVERSCROLL_EAST || new_mode == OVERSCROLL_WEST) &&
-       navigation_overlay_.get() && navigation_overlay_->has_window())) {
-    current_overscroll_gesture_ = OVERSCROLL_NONE;
-  } else {
-    aura::Window* target = GetWindowToAnimateForOverscroll();
-    if (target) {
-      StopObservingImplicitAnimations();
-      target->layer()->GetAnimator()->AbortAllAnimations();
-    }
-    // Cleanup state of the content window first, because that can reset the
-    // value of |current_overscroll_gesture_|.
-    PrepareContentWindowForOverscroll();
-
-    current_overscroll_gesture_ = new_mode;
-    if (current_overscroll_gesture_ == OVERSCROLL_EAST ||
-        current_overscroll_gesture_ == OVERSCROLL_WEST)
-      PrepareOverscrollWindow();
-
-    UMA_HISTOGRAM_ENUMERATION("Overscroll.Started", new_mode, OVERSCROLL_COUNT);
-  }
-  completed_overscroll_gesture_ = OVERSCROLL_NONE;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// WebContentsViewAura, ui::ImplicitAnimationObserver implementation:
-
-void WebContentsViewAura::OnImplicitAnimationsCompleted() {
-  overscroll_shadow_.reset();
-
-  if (ShouldNavigateForward(web_contents_->GetController(),
-                            completed_overscroll_gesture_)) {
-    web_contents_->GetController().GoForward();
-    PrepareOverscrollNavigationOverlay();
-  } else if (ShouldNavigateBack(web_contents_->GetController(),
-                                completed_overscroll_gesture_)) {
-    web_contents_->GetController().GoBack();
-    PrepareOverscrollNavigationOverlay();
-  } else {
-    if (touch_editable_)
+  if (touch_editable_) {
+    if (new_mode == OVERSCROLL_NONE)
       touch_editable_->OverscrollCompleted();
+    else
+      touch_editable_->OverscrollStarted();
   }
 
-  aura::Window* content = GetContentNativeView();
-  if (content) {
-    content->SetTransform(gfx::Transform());
-    content->layer()->SetLayerBrightness(0.f);
-  }
-  current_overscroll_gesture_ = OVERSCROLL_NONE;
+  current_overscroll_gesture_ = new_mode;
+  navigation_overlay_->relay_delegate()->OnOverscrollModeChange(old_mode,
+                                                                new_mode);
   completed_overscroll_gesture_ = OVERSCROLL_NONE;
-  overscroll_window_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1473,6 +1123,10 @@ void WebContentsViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
   }
 }
 
+ui::TextInputClient* WebContentsViewAura::GetFocusedTextInputClient() {
+  return nullptr;
+}
+
 gfx::NativeCursor WebContentsViewAura::GetCursor(const gfx::Point& point) {
   return gfx::kNullCursor;
 }
@@ -1502,7 +1156,7 @@ bool WebContentsViewAura::CanFocus() {
 void WebContentsViewAura::OnCaptureLost() {
 }
 
-void WebContentsViewAura::OnPaint(gfx::Canvas* canvas) {
+void WebContentsViewAura::OnPaint(const ui::PaintContext& context) {
 }
 
 void WebContentsViewAura::OnDeviceScaleFactorChanged(
@@ -1516,7 +1170,6 @@ void WebContentsViewAura::OnWindowDestroying(aura::Window* window) {
   // virtual functions to be called (e.g. OnImplicitAnimationsCompleted()). So
   // destroy the overscroll window here.
   navigation_overlay_.reset();
-  overscroll_window_.reset();
 }
 
 void WebContentsViewAura::OnWindowDestroyed(aura::Window* window) {
@@ -1675,35 +1328,6 @@ void WebContentsViewAura::UpdateWebContentsVisibility(bool visible) {
     if (web_contents_->should_normally_be_visible())
       web_contents_->WasHidden();
   }
-
-#if defined(OS_WIN)
-  if (!legacy_hwnd_)
-    return;
-
-  if (visible && GetNativeView() && GetNativeView()->GetHost()) {
-    legacy_hwnd_->UpdateParent(
-        GetNativeView()->GetHost()->GetAcceleratedWidget());
-    legacy_hwnd_->SetBounds(window_->GetBoundsInRootWindow());
-    legacy_hwnd_->Show();
-  } else {
-    // We reparent the legacy Chrome_RenderWidgetHostHWND window to the global
-    // hidden window on the same lines as Windowed plugin windows.
-    legacy_hwnd_->UpdateParent(ui::GetHiddenWindow());
-    legacy_hwnd_->Hide();
-  }
-#endif
 }
-
-#if defined(OS_WIN)
-gfx::NativeViewAccessible
-WebContentsViewAura::GetNativeViewAccessible() {
-  BrowserAccessibilityManager* manager =
-      web_contents_->GetRootBrowserAccessibilityManager();
-  if (!manager)
-    return nullptr;
-
-  return manager->GetRoot()->ToBrowserAccessibilityWin();
-}
-#endif
 
 }  // namespace content

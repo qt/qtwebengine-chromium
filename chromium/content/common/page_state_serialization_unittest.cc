@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <math.h>
+#include <cmath>
 
 #include "base/base64.h"
 #include "base/files/file_util.h"
@@ -17,10 +17,6 @@
 
 namespace content {
 namespace {
-
-#if defined(OS_WIN)
-inline bool isnan(double num) { return !!_isnan(num); }
-#endif
 
 base::NullableString16 NS16(const char* s) {
   return s ? base::NullableString16(base::ASCIIToUTF16(s), false) :
@@ -50,8 +46,10 @@ void ExpectEquality(const ExplodedHttpBodyElement& a,
   EXPECT_EQ(a.filesystem_url, b.filesystem_url);
   EXPECT_EQ(a.file_start, b.file_start);
   EXPECT_EQ(a.file_length, b.file_length);
-  if (!(isnan(a.file_modification_time) && isnan(b.file_modification_time)))
+  if (!(std::isnan(a.file_modification_time) &&
+        std::isnan(b.file_modification_time))) {
     EXPECT_DOUBLE_EQ(a.file_modification_time, b.file_modification_time);
+  }
   EXPECT_EQ(a.blob_uuid, b.blob_uuid);
 }
 
@@ -72,6 +70,7 @@ void ExpectEquality(const ExplodedFrameState& a, const ExplodedFrameState& b) {
   EXPECT_EQ(a.target, b.target);
   EXPECT_EQ(a.state_object, b.state_object);
   ExpectEquality(a.document_state, b.document_state);
+  EXPECT_EQ(a.scroll_restoration_type, b.scroll_restoration_type);
   EXPECT_EQ(a.pinch_viewport_scroll_offset, b.pinch_viewport_scroll_offset);
   EXPECT_EQ(a.scroll_offset, b.scroll_offset);
   EXPECT_EQ(a.item_sequence_number, b.item_sequence_number);
@@ -101,6 +100,8 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->document_state.push_back(NS16("q"));
     frame_state->document_state.push_back(NS16("text"));
     frame_state->document_state.push_back(NS16("dev.chromium.org"));
+    frame_state->scroll_restoration_type =
+        blink::WebHistoryScrollRestorationManual;
     frame_state->pinch_viewport_scroll_offset = gfx::PointF(10, 15);
     frame_state->scroll_offset = gfx::Point(0, 100);
     frame_state->item_sequence_number = 1;
@@ -140,6 +141,8 @@ class PageStateSerializationTest : public testing::Test {
     frame_state->referrer_policy = blink::WebReferrerPolicyDefault;
     if (!is_child)
       frame_state->target = NS16("target");
+    frame_state->scroll_restoration_type =
+        blink::WebHistoryScrollRestorationAuto;
     frame_state->pinch_viewport_scroll_offset = gfx::PointF(-1, -1);
     frame_state->scroll_offset = gfx::Point(42, -42);
     frame_state->item_sequence_number = 123;
@@ -428,6 +431,10 @@ TEST_F(PageStateSerializationTest, BackwardsCompat_v18) {
 
 TEST_F(PageStateSerializationTest, BackwardsCompat_v20) {
   TestBackwardsCompat(20);
+}
+
+TEST_F(PageStateSerializationTest, BackwardsCompat_v21) {
+  TestBackwardsCompat(21);
 }
 
 }  // namespace

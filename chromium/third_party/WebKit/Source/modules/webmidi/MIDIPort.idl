@@ -28,20 +28,37 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+enum MIDIPortConnectionState {
+    "open",
+    "closed",
+    "pending"
+};
+
+enum MIDIPortDeviceState {
+    "disconnected",
+    "connected"
+};
+
 enum MIDIPortType {
     "input",
     "output"
 };
 
 [
-    NoInterfaceObject,
-    GarbageCollected
+    ActiveDOMObject,
+    GarbageCollected,
+    RuntimeEnabled=WebMIDI,
 ] interface MIDIPort : EventTarget {
+    readonly attribute MIDIPortConnectionState connection;
     readonly attribute DOMString id;
     readonly attribute DOMString manufacturer;
     readonly attribute DOMString name;
+    readonly attribute MIDIPortDeviceState state;
     readonly attribute MIDIPortType type;
     readonly attribute DOMString version;
 
-    attribute EventHandler ondisconnect;
+    attribute EventHandler onstatechange;
+
+    [CallWith=ScriptState] Promise open();
+    [CallWith=ScriptState] Promise close();
 };

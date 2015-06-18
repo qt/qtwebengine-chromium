@@ -7,11 +7,15 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "media/base/cdm_context.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/cdm_promise.h"
+#include "media/base/cdm_promise_adapter.h"
 #include "media/base/media_keys.h"
 
 class GURL;
@@ -21,114 +25,95 @@ namespace content {
 class RendererCdmManager;
 
 // A MediaKeys proxy that wraps the EME part of RendererCdmManager.
-class ProxyMediaKeys : public media::MediaKeys {
+class ProxyMediaKeys : public media::MediaKeys, public media::CdmContext {
  public:
-  static scoped_ptr<ProxyMediaKeys> Create(
+  static void Create(
       const std::string& key_system,
       const GURL& security_origin,
+      bool use_hw_secure_codecs,
       RendererCdmManager* manager,
       const media::SessionMessageCB& session_message_cb,
-      const media::SessionReadyCB& session_ready_cb,
       const media::SessionClosedCB& session_closed_cb,
-      const media::SessionErrorCB& session_error_cb,
+      const media::LegacySessionErrorCB& legacy_session_error_cb,
+      const media::SessionKeysChangeCB& session_keys_change_cb,
+      const media::SessionExpirationUpdateCB& session_expiration_update_cb,
+      const media::CdmCreatedCB& cdm_created_cb);
+
+  ~ProxyMediaKeys() override;
+
+  // MediaKeys implementation.
+  void SetServerCertificate(
+      const std::vector<uint8_t>& certificate,
+      scoped_ptr<media::SimpleCdmPromise> promise) override;
+  void CreateSessionAndGenerateRequest(
+      SessionType session_type,
+      media::EmeInitDataType init_data_type,
+      const std::vector<uint8_t>& init_data,
+      scoped_ptr<media::NewSessionCdmPromise> promise) override;
+  void LoadSession(SessionType session_type,
+                   const std::string& session_id,
+                   scoped_ptr<media::NewSessionCdmPromise> promise) override;
+  void UpdateSession(const std::string& session_id,
+                     const std::vector<uint8_t>& response,
+                     scoped_ptr<media::SimpleCdmPromise> promise) override;
+  void CloseSession(const std::string& session_id,
+                    scoped_ptr<media::SimpleCdmPromise> promise) override;
+  void RemoveSession(const std::string& session_id,
+                     scoped_ptr<media::SimpleCdmPromise> promise) override;
+  media::CdmContext* GetCdmContext() override;
+
+  // media::CdmContext implementation.
+  media::Decryptor* GetDecryptor() override;
+  int GetCdmId() const override;
+
+  // Callbacks.
+  void OnSessionMessage(const std::string& session_id,
+                        media::MediaKeys::MessageType message_type,
+                        const std::vector<uint8_t>& message,
+                        const GURL& legacy_destination_url);
+  void OnSessionClosed(const std::string& session_id);
+  void OnLegacySessionError(const std::string& session_id,
+                            media::MediaKeys::Exception exception,
+                            uint32_t system_code,
+                            const std::string& error_message);
+  void OnSessionKeysChange(const std::string& session_id,
+                           bool has_additional_usable_key,
+                           media::CdmKeysInfo keys_info);
+  void OnSessionExpirationUpdate(const std::string& session_id,
+                                 const base::Time& new_expiry_time);
+
+  void OnPromiseResolved(uint32_t promise_id);
+  void OnPromiseResolvedWithSession(uint32_t promise_id,
+                                    const std::string& session_id);
+  void OnPromiseRejected(uint32_t promise_id,
+                         media::MediaKeys::Exception exception,
+                         uint32_t system_code,
+                         const std::string& error_message);
+
+ private:
+  ProxyMediaKeys(
+      RendererCdmManager* manager,
+      const media::SessionMessageCB& session_message_cb,
+      const media::SessionClosedCB& session_closed_cb,
+      const media::LegacySessionErrorCB& legacy_session_error_cb,
       const media::SessionKeysChangeCB& session_keys_change_cb,
       const media::SessionExpirationUpdateCB& session_expiration_update_cb);
 
-  virtual ~ProxyMediaKeys();
-
-  // MediaKeys implementation.
-  virtual void SetServerCertificate(
-      const uint8* certificate_data,
-      int certificate_data_length,
-      scoped_ptr<media::SimpleCdmPromise> promise) override;
-  virtual void CreateSession(
-      const std::string& init_data_type,
-      const uint8* init_data,
-      int init_data_length,
-      SessionType session_type,
-      scoped_ptr<media::NewSessionCdmPromise> promise) override;
-  virtual void LoadSession(
-      const std::string& web_session_id,
-      scoped_ptr<media::NewSessionCdmPromise> promise) override;
-  virtual void UpdateSession(
-      const std::string& web_session_id,
-      const uint8* response,
-      int response_length,
-      scoped_ptr<media::SimpleCdmPromise> promise) override;
-  virtual void CloseSession(
-      const std::string& web_session_id,
-      scoped_ptr<media::SimpleCdmPromise> promise) override;
-  virtual void RemoveSession(
-      const std::string& web_session_id,
-      scoped_ptr<media::SimpleCdmPromise> promise) override;
-  virtual void GetUsableKeyIds(
-      const std::string& web_session_id,
-      scoped_ptr<media::KeyIdsPromise> promise) override;
-  virtual int GetCdmId() const override;
-
-  // Callbacks.
-  void OnSessionCreated(uint32 session_id, const std::string& web_session_id);
-  void OnSessionMessage(uint32 session_id,
-                        const std::vector<uint8>& message,
-                        const GURL& destination_url);
-  void OnSessionReady(uint32 session_id);
-  void OnSessionClosed(uint32 session_id);
-  void OnSessionError(uint32 session_id,
-                      media::MediaKeys::KeyError error_code,
-                      uint32 system_code);
-
- private:
-  // The Android-specific code that handles sessions uses integer session ids
-  // (basically a reference id), but media::MediaKeys bases everything on
-  // web_session_id (a string representing the actual session id as generated
-  // by the CDM). SessionIdMap is used to map between the web_session_id and
-  // the session_id used by the Android-specific code.
-  typedef base::hash_map<std::string, uint32_t> SessionIdMap;
-
-  // The following types keep track of Promises. The index is the
-  // Android-specific session_id, so that returning results can be matched to
-  // the corresponding promise.
-  typedef base::ScopedPtrHashMap<uint32_t, media::CdmPromise> PromiseMap;
-
-  ProxyMediaKeys(RendererCdmManager* manager,
-                 const media::SessionMessageCB& session_message_cb,
-                 const media::SessionReadyCB& session_ready_cb,
-                 const media::SessionClosedCB& session_closed_cb,
-                 const media::SessionErrorCB& session_error_cb);
-
   void InitializeCdm(const std::string& key_system,
-                     const GURL& security_origin);
-
-  // These functions keep track of Android-specific session_ids <->
-  // web_session_ids mappings.
-  // TODO(jrummell): Remove this once the Android-specific code changes to
-  // support string web session ids.
-  uint32_t CreateSessionId();
-  void AssignWebSessionId(uint32_t session_id,
-                          const std::string& web_session_id);
-  uint32_t LookupSessionId(const std::string& web_session_id) const;
-  std::string LookupWebSessionId(uint32_t session_id) const;
-  void DropWebSessionId(const std::string& web_session_id);
-
-  // Helper function to keep track of promises. Adding takes ownership of the
-  // promise, transferred back to caller on take.
-  void SavePromise(uint32_t session_id, scoped_ptr<media::CdmPromise> promise);
-  scoped_ptr<media::CdmPromise> TakePromise(uint32_t session_id);
+                     const GURL& security_origin,
+                     bool use_hw_secure_codecs,
+                     scoped_ptr<media::SimpleCdmPromise> promise);
 
   RendererCdmManager* manager_;
   int cdm_id_;
 
   media::SessionMessageCB session_message_cb_;
-  media::SessionReadyCB session_ready_cb_;
   media::SessionClosedCB session_closed_cb_;
-  media::SessionErrorCB session_error_cb_;
+  media::LegacySessionErrorCB legacy_session_error_cb_;
+  media::SessionKeysChangeCB session_keys_change_cb_;
+  media::SessionExpirationUpdateCB session_expiration_update_cb_;
 
-  // Android-specific. See comment above CreateSessionId().
-  uint32_t next_session_id_;
-  SessionIdMap web_session_to_session_id_map_;
-
-  // Keep track of outstanding promises. This map owns the promise object.
-  PromiseMap session_id_to_promise_map_;
+  media::CdmPromiseAdapter cdm_promise_adapter_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyMediaKeys);
 };

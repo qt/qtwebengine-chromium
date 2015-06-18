@@ -48,25 +48,22 @@ public:
 
     // API for CustomElementRegistrationContext to save and take candidates
 
-    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<Element> > ElementSet;
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<Element>> ElementSet;
 
     void add(const CustomElementDescriptor&, Element*);
     PassOwnPtrWillBeRawPtr<ElementSet> takeUpgradeCandidatesFor(const CustomElementDescriptor&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     CustomElementUpgradeCandidateMap() { }
 
     virtual void elementWasDestroyed(Element*) override;
 
-    virtual void elementDidFinishParsingChildren(Element*) override;
-    void moveToEnd(Element*);
-
     typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<Element>, CustomElementDescriptor> UpgradeCandidateMap;
     UpgradeCandidateMap m_upgradeCandidates;
 
-    typedef WillBeHeapHashMap<CustomElementDescriptor, OwnPtrWillBeMember<ElementSet> > UnresolvedDefinitionMap;
+    typedef WillBeHeapHashMap<CustomElementDescriptor, OwnPtrWillBeMember<ElementSet>> UnresolvedDefinitionMap;
     UnresolvedDefinitionMap m_unresolvedDefinitions;
 };
 

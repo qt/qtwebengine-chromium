@@ -93,9 +93,8 @@ String CSSStyleRule::selectorText() const
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
     CSSParserContext context(parserContext(), 0);
-    CSSParser p(context);
     CSSSelectorList selectorList;
-    p.parseSelector(selectorText, selectorList);
+    CSSParser::parseSelector(context, selectorText, selectorList);
     if (!selectorList.isValid())
         return;
 
@@ -130,7 +129,7 @@ void CSSStyleRule::reattach(StyleRuleBase* rule)
         m_propertiesCSSOMWrapper->reattach(m_styleRule->mutableProperties());
 }
 
-void CSSStyleRule::trace(Visitor* visitor)
+DEFINE_TRACE(CSSStyleRule)
 {
     visitor->trace(m_styleRule);
     visitor->trace(m_propertiesCSSOMWrapper);

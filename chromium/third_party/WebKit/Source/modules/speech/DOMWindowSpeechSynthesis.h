@@ -27,22 +27,23 @@
 #define DOMWindowSpeechSynthesis_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "modules/ModulesExport.h"
 #include "modules/speech/SpeechSynthesis.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-class LocalDOMWindow;
+class DOMWindow;
 
-class DOMWindowSpeechSynthesis final : public NoBaseWillBeGarbageCollected<DOMWindowSpeechSynthesis>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
+class MODULES_EXPORT DOMWindowSpeechSynthesis final : public NoBaseWillBeGarbageCollected<DOMWindowSpeechSynthesis>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowSpeechSynthesis);
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowSpeechSynthesis);
 public:
-    static SpeechSynthesis* speechSynthesis(LocalDOMWindow&);
+    static SpeechSynthesis* speechSynthesis(DOMWindow&);
     static DOMWindowSpeechSynthesis& from(LocalDOMWindow&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit DOMWindowSpeechSynthesis(LocalDOMWindow&);

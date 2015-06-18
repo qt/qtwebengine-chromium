@@ -65,14 +65,12 @@ class CC_EXPORT LayerAnimationController
   // are deleted.
   void ActivateAnimations();
 
-  // Returns the active animation in the given group, animating the given
-  // property, if such an animation exists.
-  Animation* GetAnimation(int group_id,
-                          Animation::TargetProperty target_property) const;
-
   // Returns the active animation animating the given property that is either
   // running, or is next to run, if such an animation exists.
   Animation* GetAnimation(Animation::TargetProperty target_property) const;
+
+  // Returns the active animation for the given unique animation id.
+  Animation* GetAnimationById(int animation_id) const;
 
   // Returns true if there are any animations that have neither finished nor
   // aborted.
@@ -134,10 +132,28 @@ class CC_EXPORT LayerAnimationController
 
   bool HasOnlyTranslationTransforms() const;
 
+  bool AnimationsPreserveAxisAlignment() const;
+
+  // Sets |start_scale| to the maximum of starting animation scale along any
+  // dimension at any destination in active animations. Returns false if the
+  // starting scale cannot be computed.
+  bool AnimationStartScale(float* start_scale) const;
+
   // Sets |max_scale| to the maximum scale along any dimension at any
   // destination in active animations. Returns false if the maximum scale cannot
   // be computed.
   bool MaximumTargetScale(float* max_scale) const;
+
+  // When a scroll animation is removed on the main thread, its compositor
+  // thread counterpart continues producing scroll deltas until activation.
+  // These scroll deltas need to be cleared at activation, so that the active
+  // layer's scroll offset matches the offset provided by the main thread
+  // rather than a combination of this offset and scroll deltas produced by
+  // the removed animation. This is to provide the illusion of synchronicity to
+  // JS that simultaneously removes an animation and sets the scroll offset.
+  bool scroll_offset_animation_was_interrupted() const {
+    return scroll_offset_animation_was_interrupted_;
+  }
 
   bool needs_to_start_animations_for_testing() {
     return needs_to_start_animations_;
@@ -156,8 +172,7 @@ class CC_EXPORT LayerAnimationController
       LayerAnimationController* controller_impl) const;
   void RemoveAnimationsCompletedOnMainThread(
       LayerAnimationController* controller_impl) const;
-  void PushPropertiesToImplThread(
-      LayerAnimationController* controller_impl) const;
+  void PushPropertiesToImplThread(LayerAnimationController* controller_impl);
 
   void StartAnimations(base::TimeTicks monotonic_time);
   void PromoteStartedAnimations(base::TimeTicks monotonic_time,
@@ -169,10 +184,7 @@ class CC_EXPORT LayerAnimationController
 
   void TickAnimations(base::TimeTicks monotonic_time);
 
-  enum UpdateActivationType {
-    NormalActivation,
-    ForceActivation
-  };
+  enum UpdateActivationType { NORMAL_ACTIVATION, FORCE_ACTIVATION };
   void UpdateActivation(UpdateActivationType type);
 
   void NotifyObserversOpacityAnimated(float opacity,
@@ -213,6 +225,8 @@ class CC_EXPORT LayerAnimationController
   // Only try to start animations when new animations are added or when the
   // previous attempt at starting animations failed to start all animations.
   bool needs_to_start_animations_;
+
+  bool scroll_offset_animation_was_interrupted_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerAnimationController);
 };

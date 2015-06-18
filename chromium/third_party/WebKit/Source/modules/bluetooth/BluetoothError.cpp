@@ -5,16 +5,19 @@
 #include "config.h"
 #include "modules/bluetooth/BluetoothError.h"
 
+#include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
-#include "public/platform/WebBluetoothError.h"
+#include "public/platform/modules/bluetooth/WebBluetoothError.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<DOMException> BluetoothError::take(ScriptPromiseResolver*, WebBluetoothError* webErrorRawPointer)
+DOMException* BluetoothError::take(ScriptPromiseResolver*, WebBluetoothError* webErrorRawPointer)
 {
     OwnPtr<WebBluetoothError> webError = adoptPtr(webErrorRawPointer);
     switch (webError->errorType) {
+    case WebBluetoothError::NetworkError:
+        return DOMException::create(NetworkError, webError->message);
     case WebBluetoothError::SecurityError:
         return DOMException::create(SecurityError, webError->message);
     case WebBluetoothError::NotFoundError:

@@ -18,7 +18,7 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
    This code is based on the java implementation in HTTPClient
-   package by Ronald Tschalär Copyright (C) 1996-1999.
+   package by Ronald Tschalaer Copyright (C) 1996-1999.
 */
 
 #include "config.h"
@@ -235,6 +235,16 @@ bool base64Decode(const String& in, Vector<char>& out, CharacterMatchFunctionPtr
     if (in.is8Bit())
         return base64DecodeInternal<LChar>(in.characters8(), in.length(), out, shouldIgnoreCharacter, policy);
     return base64DecodeInternal<UChar>(in.characters16(), in.length(), out, shouldIgnoreCharacter, policy);
+}
+
+String base64URLEncode(const char* data, unsigned length, Base64EncodePolicy policy)
+{
+    return base64Encode(data, length, policy).replace('+', '-').replace('/', '_');
+}
+
+String normalizeToBase64(const String& encoding)
+{
+    return String(encoding).replace('-', '+').replace('_', '/');
 }
 
 } // namespace WTF

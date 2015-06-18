@@ -6,13 +6,12 @@
 
 #include "content/browser/device_monitor_udev.h"
 
-#include <libudev.h>
-
 #include <string>
 
 #include "base/system_monitor/system_monitor.h"
 #include "content/browser/udev_linux.h"
 #include "content/public/browser/browser_thread.h"
+#include "device/udev_linux/udev.h"
 
 namespace {
 
@@ -46,7 +45,7 @@ DeviceMonitorLinux::~DeviceMonitorLinux() {
 }
 
 void DeviceMonitorLinux::Initialize() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // We want to be notified of IO message loop destruction to delete |udev_|.
   base::MessageLoop::current()->AddDestructionObserver(this);
@@ -67,12 +66,12 @@ void DeviceMonitorLinux::WillDestroyCurrentMessageLoop() {
 }
 
 void DeviceMonitorLinux::OnDevicesChanged(udev_device* device) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(device);
 
   base::SystemMonitor::DeviceType device_type =
       base::SystemMonitor::DEVTYPE_UNKNOWN;
-  std::string subsystem(udev_device_get_subsystem(device));
+  std::string subsystem(device::udev_device_get_subsystem(device));
   for (size_t i = 0; i < arraysize(kSubsystemMap); ++i) {
     if (subsystem == kSubsystemMap[i].subsystem) {
       device_type = kSubsystemMap[i].device_type;

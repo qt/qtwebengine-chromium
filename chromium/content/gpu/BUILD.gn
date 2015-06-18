@@ -5,15 +5,30 @@
 import("//build/config/ui.gni")
 import("//content/content.gni")
 
-source_set("gpu") {
+# See //content/BUILD.gn for how this works.
+group("gpu") {
+  visibility = [ "//content/*" ]
+
+  if (is_component_build) {
+    public_deps = [
+      "//content",
+    ]
+  } else {
+    public_deps = [
+      ":gpu_sources",
+    ]
+  }
+}
+
+source_set("gpu_sources") {
   visibility = [ "//content/*" ]
 
   sources = [
+    "gpu_child_thread.cc",
+    "gpu_child_thread.h",
     "gpu_main.cc",
     "gpu_process.cc",
     "gpu_process.h",
-    "gpu_child_thread.cc",
-    "gpu_child_thread.h",
     "gpu_watchdog_thread.cc",
     "gpu_watchdog_thread.h",
     "in_process_gpu_thread.cc",
@@ -25,7 +40,8 @@ source_set("gpu") {
   deps = [
     "//base",
     "//content:export",
-    "//mojo/public/interfaces/application",
+    "//content/public/child:child_sources",
+    "//mojo/application/public/interfaces",
     "//skia",
     "//ui/gl",
   ]
@@ -42,7 +58,7 @@ source_set("gpu") {
     ]
   }
 
-  if (is_chromeos && cpu_arch != "arm") {
+  if (is_chromeos && current_cpu != "arm") {
     configs += [ "//third_party/libva:libva_config" ]
   }
 

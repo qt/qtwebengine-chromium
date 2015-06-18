@@ -1,7 +1,11 @@
 # Do NOT add net/ or ui/base without a great reason, they're huge!
 include_rules = [
+  "+crypto",
+  "+device/udev_linux",
+  "+device/usb",
   "+gpu",
   "+jni",
+  "+skia/ext",
   "+third_party/ffmpeg",
   "+third_party/libvpx",
   "+third_party/libyuv",
@@ -11,5 +15,6 @@ include_rules = [
   "+ui/gfx",
   "+ui/gl",
   "+ui/ozone",
+  "+third_party/widevine/cdm/widevine_cdm_common.h",
   "-media/blink",
 ]

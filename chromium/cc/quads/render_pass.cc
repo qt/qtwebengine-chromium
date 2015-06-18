@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/traced_value.h"
@@ -180,14 +180,9 @@ void RenderPass::SetAll(RenderPassId id,
   DCHECK(shared_quad_state_list.empty());
 }
 
-void RenderPass::AsValueInto(base::debug::TracedValue* value) const {
-  value->BeginArray("output_rect");
-  MathUtil::AddToTracedValue(output_rect, value);
-  value->EndArray();
-
-  value->BeginArray("damage_rect");
-  MathUtil::AddToTracedValue(damage_rect, value);
-  value->EndArray();
+void RenderPass::AsValueInto(base::trace_event::TracedValue* value) const {
+  MathUtil::AddToTracedValue("output_rect", output_rect, value);
+  MathUtil::AddToTracedValue("damage_rect", damage_rect, value);
 
   value->SetBoolean("has_transparent_background", has_transparent_background);
   value->SetInteger("copy_requests", copy_requests.size());

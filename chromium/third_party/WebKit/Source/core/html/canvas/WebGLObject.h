@@ -26,6 +26,7 @@
 #ifndef WebGLObject_h
 #define WebGLObject_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
@@ -39,19 +40,23 @@ namespace blink {
 class WebGLContextGroup;
 class WebGLRenderingContextBase;
 
-class WebGLObject : public RefCountedWillBeGarbageCollectedFinalized<WebGLObject> {
+template <typename T>
+Platform3DObject objectOrZero(const T* object)
+{
+    return object ? object->object() : 0;
+}
+
+class WebGLObject : public RefCountedWillBeGarbageCollectedFinalized<WebGLObject>, public ScriptWrappable {
 public:
     virtual ~WebGLObject();
-
-    Platform3DObject object() const { return m_object; }
 
     // deleteObject may not always delete the OpenGL resource.  For programs and
     // shaders, deletion is delayed until they are no longer attached.
     // FIXME: revisit this when resource sharing between contexts are implemented.
-    void deleteObject(blink::WebGraphicsContext3D*);
+    void deleteObject(WebGraphicsContext3D*);
 
     void onAttached() { ++m_attachmentCount; }
-    void onDetached(blink::WebGraphicsContext3D*);
+    void onDetached(WebGraphicsContext3D*);
 
     // This indicates whether the client side issue a delete call already, not
     // whether the OpenGL resource is deleted.
@@ -60,27 +65,25 @@ public:
 
     // True if this object belongs to the group or context.
     virtual bool validate(const WebGLContextGroup*, const WebGLRenderingContextBase*) const = 0;
+    virtual bool hasObject() const = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     explicit WebGLObject(WebGLRenderingContextBase*);
 
-    // setObject should be only called once right after creating a WebGLObject.
-    void setObject(Platform3DObject);
-
     // deleteObjectImpl should be only called once to delete the OpenGL resource.
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) = 0;
+    // After calling deleteObjectImpl, hasObject() should return false.
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*) = 0;
 
     virtual bool hasGroupOrContext() const = 0;
 
     void detach();
     void detachAndDeleteObject();
 
-    virtual blink::WebGraphicsContext3D* getAWebGraphicsContext3D() const = 0;
+    virtual WebGraphicsContext3D* getAWebGraphicsContext3D() const = 0;
 
 private:
-    Platform3DObject m_object;
     unsigned m_attachmentCount;
     bool m_deleted;
 };

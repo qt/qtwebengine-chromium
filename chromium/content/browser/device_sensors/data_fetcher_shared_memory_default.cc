@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "data_fetcher_shared_memory.h"
+#include "content/browser/device_sensors/data_fetcher_shared_memory.h"
 
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 
 namespace {
 
-static bool SetMotionBuffer(content::DeviceMotionHardwareBuffer* buffer,
+bool SetMotionBuffer(content::DeviceMotionHardwareBuffer* buffer,
     bool enabled) {
   if (!buffer)
     return false;
@@ -19,7 +19,7 @@ static bool SetMotionBuffer(content::DeviceMotionHardwareBuffer* buffer,
   return true;
 }
 
-static bool SetOrientationBuffer(
+bool SetOrientationBuffer(
     content::DeviceOrientationHardwareBuffer* buffer, bool enabled) {
   if (!buffer)
     return false;
@@ -29,7 +29,7 @@ static bool SetOrientationBuffer(
   return true;
 }
 
-static bool SetLightBuffer(content::DeviceLightHardwareBuffer* buffer,
+bool SetLightBuffer(content::DeviceLightHardwareBuffer* buffer,
                            double lux) {
   if (!buffer)
     return false;
@@ -44,7 +44,9 @@ static bool SetLightBuffer(content::DeviceLightHardwareBuffer* buffer,
 namespace content {
 
 DataFetcherSharedMemory::DataFetcherSharedMemory()
-    : motion_buffer_(NULL), orientation_buffer_(NULL), light_buffer_(NULL) {
+    : motion_buffer_(nullptr),
+      orientation_buffer_(nullptr),
+      light_buffer_(nullptr) {
 }
 
 DataFetcherSharedMemory::~DataFetcherSharedMemory() {

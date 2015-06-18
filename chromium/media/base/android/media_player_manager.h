@@ -63,6 +63,13 @@ class MEDIA_EXPORT MediaPlayerManager {
   // Called when video size has changed. Args: player ID, width, height.
   virtual void OnVideoSizeChanged(int player_id, int width, int height) = 0;
 
+  // Called when the player thinks it stopped or started making sound.
+  virtual void OnAudibleStateChanged(int player_id, bool is_audible_now) = 0;
+
+  // Called when the player pauses as a new key is required to decrypt
+  // encrypted content.
+  virtual void OnWaitingForDecryptionKey(int player_id) = 0;
+
   // Returns the player that's in the fullscreen mode currently.
   virtual MediaPlayerAndroid* GetFullscreenPlayer() = 0;
 
@@ -71,12 +78,6 @@ class MEDIA_EXPORT MediaPlayerManager {
 
   // Called by the player to get a hardware protected surface.
   virtual void RequestFullScreen(int player_id) = 0;
-
-#if defined(VIDEO_HOLE)
-  // Returns true if a media player should use video-overlay for the embedded
-  // encrypted video.
-  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() = 0;
-#endif  // defined(VIDEO_HOLE)
 };
 
 }  // namespace media

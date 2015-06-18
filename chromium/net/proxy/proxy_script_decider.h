@@ -15,9 +15,9 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/single_request_host_resolver.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_resolver.h"
 #include "url/gurl.h"
@@ -72,7 +72,7 @@ class NET_EXPORT_PRIVATE ProxyScriptDecider {
   int Start(const ProxyConfig& config,
             const base::TimeDelta wait_delay,
             bool fetch_pac_bytes,
-            const net::CompletionCallback& callback);
+            const CompletionCallback& callback);
 
   const ProxyConfig& effective_config() const;
 
@@ -102,7 +102,7 @@ class NET_EXPORT_PRIVATE ProxyScriptDecider {
     // be non-NULL and point to the URL derived from information contained in
     // |this|, if Type is not WPAD_DHCP.
     base::Value* NetLogCallback(const GURL* effective_pac_url,
-                                NetLog::LogLevel log_level) const;
+                                NetLogCaptureMode capture_mode) const;
 
     Type type;
     GURL url;  // Empty unless |type == PAC_SOURCE_CUSTOM|.
@@ -160,11 +160,10 @@ class NET_EXPORT_PRIVATE ProxyScriptDecider {
   void DidComplete();
   void Cancel();
 
-  ProxyResolver* resolver_;
   ProxyScriptFetcher* proxy_script_fetcher_;
   DhcpProxyScriptFetcher* dhcp_proxy_script_fetcher_;
 
-  net::CompletionCallback callback_;
+  CompletionCallback callback_;
 
   size_t current_pac_source_index_;
 

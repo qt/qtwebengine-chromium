@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2011, Google Inc.
+ * Copyright 2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -31,7 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if defined(POSIX)
+#if defined(WEBRTC_POSIX)
 #include <unistd.h>
 #endif
 
@@ -301,7 +301,8 @@ DataSocket* ListeningSocket::Accept() const {
   assert(valid());
   struct sockaddr_in addr = {0};
   socklen_t size = sizeof(addr);
-  int client = accept(socket_, reinterpret_cast<sockaddr*>(&addr), &size);
+  NativeSocket client =
+      accept(socket_, reinterpret_cast<sockaddr*>(&addr), &size);
   if (client == INVALID_SOCKET)
     return NULL;
 

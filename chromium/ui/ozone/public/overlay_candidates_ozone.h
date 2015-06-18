@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/ozone/ozone_base_export.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
@@ -27,8 +27,10 @@ class OZONE_BASE_EXPORT OverlayCandidatesOzone {
     gfx::OverlayTransform transform;
     // Format of the buffer to composite.
     SurfaceFactoryOzone::BufferFormat format;
-    // Rect on the display to position the overlay to.
-    gfx::Rect display_rect;
+    // Rect on the display to position the overlay to. Input rectangle may
+    // not have integer coordinates, but when accepting for overlay, must
+    // be modified by CheckOverlaySupport to output integer values.
+    gfx::RectF display_rect;
     // Crop within the buffer to be placed inside |display_rect|.
     gfx::RectF crop_rect;
     // Stacking order of the overlay plane relative to the main surface,
@@ -45,7 +47,9 @@ class OZONE_BASE_EXPORT OverlayCandidatesOzone {
   // A list of possible overlay candidates is presented to this function.
   // The expected result is that those candidates that can be in a separate
   // plane are marked with |overlay_handled| set to true, otherwise they are
-  // to be tranditionally composited.
+  // to be traditionally composited. When setting |overlay_handled| to true,
+  // the implementation must also snap |display_rect| to integer coordinates
+  // if necessary.
   virtual void CheckOverlaySupport(OverlaySurfaceCandidateList* surfaces);
 
   virtual ~OverlayCandidatesOzone();

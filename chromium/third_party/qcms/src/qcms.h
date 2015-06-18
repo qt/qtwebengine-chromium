@@ -149,18 +149,26 @@ qcms_intent qcms_profile_get_rendering_intent(qcms_profile *profile);
 icColorSpaceSignature qcms_profile_get_color_space(qcms_profile *profile);
 
 qcms_bool qcms_profile_match(qcms_profile *p1, qcms_profile *p2);
+const char* qcms_profile_get_description(qcms_profile *profile);
 
 void qcms_profile_precache_output_transform(qcms_profile *profile);
+
+size_t qcms_profile_get_vcgt_channel_length(qcms_profile *profile);
+qcms_bool qcms_profile_get_vcgt_rgb_channels(qcms_profile *profile, unsigned short *data);
 
 qcms_transform* qcms_transform_create(
 		qcms_profile *in, qcms_data_type in_type,
 		qcms_profile* out, qcms_data_type out_type,
 		qcms_intent intent);
 
-void qcms_transform_release(qcms_transform *);
+qcms_bool qcms_transform_create_LUT_zyx_bgra(
+		qcms_profile *in, qcms_profile* out, qcms_intent intent,
+		int samples, unsigned char* lut);
 
 void qcms_transform_data(qcms_transform *transform, void *src, void *dest, size_t length);
 void qcms_transform_data_type(qcms_transform *transform, void *src, void *dest, size_t length, qcms_output_type type);
+
+void qcms_transform_release(qcms_transform *);
 
 void qcms_enable_iccv4();
 

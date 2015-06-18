@@ -32,14 +32,14 @@ namespace blink {
 
 class ValidityState : public NoBaseWillBeGarbageCollectedFinalized<ValidityState>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ValidityState);
     WTF_MAKE_NONCOPYABLE(ValidityState);
 public:
     static PassOwnPtrWillBeRawPtr<ValidityState> create(FormAssociatedElement* control)
     {
         return adoptPtrWillBeNoop(new ValidityState(control));
     }
-    void trace(Visitor* visitor) { visitor->trace(m_control); }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_control); }
 
 #if !ENABLE(OILPAN)
     void ref() { m_control->ref(); }

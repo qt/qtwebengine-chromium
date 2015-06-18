@@ -1,11 +1,12 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 #include "SampleCode.h"
+#include "SkAnimTimer.h"
 #include "SkView.h"
 #include "SkCanvas.h"
 #include "SkGradientShader.h"
@@ -221,13 +222,14 @@ const SkScalar DX = 20;
 const SkScalar DY = 0;
 
 class PatchView : public SampleView {
+    SkScalar    fAngle;
     SkShader*   fShader0;
     SkShader*   fShader1;
     SkIPoint    fSize0, fSize1;
     SkPoint     fPts[12];
 
 public:
-    PatchView() {
+    PatchView() : fAngle(0) {
         fShader0 = make_shader0(&fSize0);
         fSize1 = fSize0;
         if (fSize0.fX == 0 || fSize0.fY == 0) {
@@ -274,7 +276,7 @@ protected:
 
         SkPaint paint;
         paint.setDither(true);
-        paint.setFilterLevel(SkPaint::kLow_FilterLevel);
+        paint.setFilterQuality(kLow_SkFilterQuality);
 
         canvas->translate(DX, DY);
 
@@ -308,16 +310,18 @@ protected:
             paint.setShader(s)->unref();
         }
         if (true) {
-            static int gAngle;
             SkMatrix m;
-            m.setRotate(SkIntToScalar(gAngle++));
+            m.setRotate(fAngle);
             SkShader* s = SkShader::CreateLocalMatrixShader(paint.getShader(), m);
             paint.setShader(s)->unref();
         }
         patch.setBounds(fSize1.fX, fSize1.fY);
         drawpatches(canvas, paint, nu, nv, &patch);
+    }
 
-        this->inval(NULL);
+    bool onAnimate(const SkAnimTimer& timer) override {
+        fAngle = timer.scaled(60, 360);
+        return true;
     }
 
     class PtClick : public Click {
@@ -331,7 +335,7 @@ protected:
     }
 
     virtual SkView::Click* onFindClickHandler(SkScalar x, SkScalar y,
-                                              unsigned modi) SK_OVERRIDE {
+                                              unsigned modi) override {
         x -= DX;
         y -= DY;
         for (size_t i = 0; i < SK_ARRAY_COUNT(fPts); i++) {

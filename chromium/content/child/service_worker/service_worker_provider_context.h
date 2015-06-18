@@ -28,13 +28,12 @@ class ServiceWorkerRegistrationHandleReference;
 struct ServiceWorkerProviderContextDeleter;
 class ThreadSafeSender;
 
-// An instance of this class holds document-related information (e.g.
-// .controller). Created and destructed on the main thread.
-// TODO(kinuko): To support navigator.serviceWorker in dedicated workers
-// this needs to be RefCountedThreadSafe and .controller info needs to be
-// handled in a thread-safe manner (e.g. by a lock etc).
+// An instance of this class holds information related to Document/Worker.
+// Created and destructed on the main thread. Some functions can be called
+// on the worker thread (eg. GetVersionAttributes).
 class ServiceWorkerProviderContext
-    : public base::RefCounted<ServiceWorkerProviderContext> {
+    : public base::RefCountedThreadSafe<ServiceWorkerProviderContext,
+                                        ServiceWorkerProviderContextDeleter> {
  public:
   explicit ServiceWorkerProviderContext(int provider_id);
 
@@ -44,24 +43,17 @@ class ServiceWorkerProviderContext
   void OnDisassociateRegistration();
   void OnServiceWorkerStateChanged(int handle_id,
                                    blink::WebServiceWorkerState state);
-  void OnSetInstallingServiceWorker(int registration_handle_id,
-                                    const ServiceWorkerObjectInfo& info);
-  void OnSetWaitingServiceWorker(int registration_handle_id,
-                                 const ServiceWorkerObjectInfo& info);
-  void OnSetActiveServiceWorker(int registration_handle_id,
-                                const ServiceWorkerObjectInfo& info);
-  void OnSetControllerServiceWorker(int registration_handle_id,
-                                    const ServiceWorkerObjectInfo& info);
+  void OnSetControllerServiceWorker(const ServiceWorkerObjectInfo& info);
 
   int provider_id() const { return provider_id_; }
 
-  ServiceWorkerHandleReference* installing();
-  ServiceWorkerHandleReference* waiting();
-  ServiceWorkerHandleReference* active();
   ServiceWorkerHandleReference* controller();
-  ServiceWorkerRegistrationHandleReference* registration();
 
-  ServiceWorkerVersionAttributes GetVersionAttributes();
+  bool GetRegistrationInfoAndVersionAttributes(
+      ServiceWorkerRegistrationObjectInfo* info,
+      ServiceWorkerVersionAttributes* attrs);
+  void SetVersionAttributes(ChangedVersionAttributesMask mask,
+                            const ServiceWorkerVersionAttributes& attrs);
 
   // Gets the handle ID of the installing Service Worker, or
   // kInvalidServiceWorkerHandleId if the provider does not have a
@@ -89,21 +81,37 @@ class ServiceWorkerProviderContext
   int registration_handle_id() const;
 
  private:
-  friend class base::RefCounted<ServiceWorkerProviderContext>;
-  ~ServiceWorkerProviderContext();
+  friend class base::DeleteHelper<ServiceWorkerProviderContext>;
+  friend class base::RefCountedThreadSafe<ServiceWorkerProviderContext,
+                                          ServiceWorkerProviderContextDeleter>;
+  friend struct ServiceWorkerProviderContextDeleter;
 
-  bool IsAssociatedWithRegistration(int registration_handle_id) const;
+  ~ServiceWorkerProviderContext();
+  void DestructOnMainThread() const;
 
   const int provider_id_;
   scoped_refptr<base::MessageLoopProxy> main_thread_loop_proxy_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+
+  // Protects (installing, waiting, active) worker and registration references.
+  base::Lock lock_;
+
+  // Used on both the main thread and the worker thread.
   scoped_ptr<ServiceWorkerHandleReference> installing_;
   scoped_ptr<ServiceWorkerHandleReference> waiting_;
   scoped_ptr<ServiceWorkerHandleReference> active_;
-  scoped_ptr<ServiceWorkerHandleReference> controller_;
   scoped_ptr<ServiceWorkerRegistrationHandleReference> registration_;
 
+  // Used only on the main thread.
+  scoped_ptr<ServiceWorkerHandleReference> controller_;
+
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerProviderContext);
+};
+
+struct ServiceWorkerProviderContextDeleter {
+  static void Destruct(const ServiceWorkerProviderContext* context) {
+    context->DestructOnMainThread();
+  }
 };
 
 }  // namespace content

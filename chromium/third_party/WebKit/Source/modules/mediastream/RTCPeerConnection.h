@@ -56,9 +56,8 @@ class RTCStatsCallback;
 class VoidCallback;
 
 class RTCPeerConnection final
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<RTCPeerConnection>
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<RTCPeerConnection>
     , public WebRTCPeerConnectionHandlerClient
-    , public EventTargetWithInlineData
     , public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<RTCPeerConnection>);
     DEFINE_WRAPPERTYPEINFO();
@@ -146,7 +145,7 @@ public:
         return !m_closed && !m_stopped;
     }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     RTCPeerConnection(ExecutionContext*, RTCConfiguration*, WebMediaConstraints, ExceptionState&);
@@ -172,12 +171,12 @@ private:
     MediaStreamVector m_localStreams;
     MediaStreamVector m_remoteStreams;
 
-    HeapVector<Member<RTCDataChannel> > m_dataChannels;
+    HeapVector<Member<RTCDataChannel>> m_dataChannels;
 
     OwnPtr<WebRTCPeerConnectionHandler> m_peerHandler;
 
     AsyncMethodRunner<RTCPeerConnection> m_dispatchScheduledEventRunner;
-    WillBeHeapVector<RefPtrWillBeMember<Event> > m_scheduledEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> m_scheduledEvents;
 
     bool m_stopped;
     bool m_closed;

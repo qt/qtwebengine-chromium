@@ -32,6 +32,7 @@
 #include "core/frame/FrameHost.h"
 
 #include "core/frame/EventHandlerRegistry.h"
+#include "core/frame/TopControls.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
@@ -46,9 +47,10 @@ PassOwnPtrWillBeRawPtr<FrameHost> FrameHost::create(Page& page)
 
 FrameHost::FrameHost(Page& page)
     : m_page(&page)
+    , m_topControls(TopControls::create(*this))
     , m_pinchViewport(PinchViewport::create(*this))
     , m_eventHandlerRegistry(adoptPtrWillBeNoop(new EventHandlerRegistry(*this)))
-    , m_consoleMessageStorage(ConsoleMessageStorage::createForFrameHost(this))
+    , m_consoleMessageStorage(ConsoleMessageStorage::create())
     , m_subframeCount(0)
 {
 }
@@ -78,6 +80,11 @@ float FrameHost::deviceScaleFactor() const
     return m_page->deviceScaleFactor();
 }
 
+TopControls& FrameHost::topControls() const
+{
+    return *m_topControls;
+}
+
 PinchViewport& FrameHost::pinchViewport() const
 {
     return *m_pinchViewport;
@@ -93,10 +100,10 @@ ConsoleMessageStorage& FrameHost::consoleMessageStorage() const
     return *m_consoleMessageStorage;
 }
 
-void FrameHost::trace(Visitor* visitor)
+DEFINE_TRACE(FrameHost)
 {
     visitor->trace(m_page);
-    visitor->trace(m_pinchViewport);
+    visitor->trace(m_topControls);
     visitor->trace(m_eventHandlerRegistry);
     visitor->trace(m_consoleMessageStorage);
 }

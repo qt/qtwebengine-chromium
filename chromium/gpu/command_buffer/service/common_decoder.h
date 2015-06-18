@@ -14,6 +14,10 @@
 #include "gpu/command_buffer/service/cmd_parser.h"
 #include "gpu/gpu_export.h"
 
+// Forwardly declare a few GL types to avoid including GL header files.
+typedef int GLsizei;
+typedef int GLint;
+
 namespace gpu {
 
 class CommandBufferEngine;
@@ -81,6 +85,13 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
     // distrinquish between empty string and no string. Returns False if there
     // is no string.
     bool GetAsString(std::string* str);
+
+    // Gets the bucket data as strings.
+    // On success, the number of strings are in |_count|, the string data are
+    // in |_string|, and string sizes are in |_length|..
+    bool GetAsStrings(GLsizei* _count,
+                      std::vector<char*>* _string,
+                      std::vector<GLint>* _length);
 
    private:
     bool OffsetSizeValid(size_t offset, size_t size) const {
@@ -155,9 +166,7 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
   // Generate a member function prototype for each command in an automated and
   // typesafe way.
   #define COMMON_COMMAND_BUFFER_CMD_OP(name)             \
-     error::Error Handle##name(                          \
-       uint32 immediate_data_size,                       \
-       const cmd::name& args);                           \
+     error::Error Handle##name(uint32 immediate_data_size, const void* data);
 
   COMMON_COMMAND_BUFFER_CMDS(COMMON_COMMAND_BUFFER_CMD_OP)
 
@@ -167,6 +176,22 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
 
   typedef std::map<uint32, linked_ptr<Bucket> > BucketMap;
   BucketMap buckets_;
+
+  typedef Error (CommonDecoder::*CmdHandler)(
+      uint32 immediate_data_size,
+      const void* data);
+
+  // A struct to hold info about each command.
+  struct CommandInfo {
+    CmdHandler cmd_handler;
+    uint8 arg_flags;   // How to handle the arguments for this command
+    uint8 cmd_flags;   // How to handle this command
+    uint16 arg_count;  // How many arguments are expected for this command.
+  };
+
+  // A table of CommandInfo for all the commands.
+  static const CommandInfo command_info[];
+
 };
 
 }  // namespace gpu

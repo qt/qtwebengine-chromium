@@ -76,7 +76,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void GetBlacklistReasons(base::ListValue* reasons) const;
 
-  void GetDriverBugWorkarounds(base::ListValue* workarounds) const;
+  std::vector<std::string> GetDriverBugWorkarounds() const;
 
   void AddLogMessage(int level,
                      const std::string& header,
@@ -89,6 +89,10 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void HandleGpuSwitch();
 
   bool CanUseGpuBrowserCompositor() const;
+  bool ShouldDisableAcceleratedVideoDecode(
+      const base::CommandLine* command_line) const;
+
+  void GetDisabledExtensions(std::string* disabled_extensions) const;
 
   void BlockDomainFrom3DAPIs(
       const GURL& url, GpuDataManagerImpl::DomainGuilt guilt);
@@ -270,10 +274,11 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   // True if all future Initialize calls should be ignored.
   bool finalized_;
 
+  std::string disabled_extensions_;
+
   DISALLOW_COPY_AND_ASSIGN(GpuDataManagerImplPrivate);
 };
 
 }  // namespace content
 
 #endif  // CONTENT_BROWSER_GPU_GPU_DATA_MANAGER_IMPL_PRIVATE_H_
-

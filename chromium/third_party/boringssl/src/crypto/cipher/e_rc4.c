@@ -57,8 +57,10 @@
 #include <openssl/aead.h>
 
 #include <assert.h>
+#include <string.h>
 
 #include <openssl/cipher.h>
+#include <openssl/cpu.h>
 #include <openssl/err.h>
 #include <openssl/md5.h>
 #include <openssl/mem.h>
@@ -176,7 +178,6 @@ static int aead_rc4_md5_tls_seal(const EVP_AEAD_CTX *ctx, uint8_t *out,
   MD5_CTX md;
 #if defined(STITCHED_CALL)
   size_t rc4_off, md5_off, blocks;
-  extern unsigned int OPENSSL_ia32cap_P[];
 #else
   const size_t rc4_off = 0;
   const size_t md5_off = 0;
@@ -207,6 +208,13 @@ static int aead_rc4_md5_tls_seal(const EVP_AEAD_CTX *ctx, uint8_t *out,
   /* The MAC's payload begins with the additional data. See
    * https://tools.ietf.org/html/rfc5246#section-6.2.3.1 */
   MD5_Update(&md, ad, ad_len);
+
+  /* To allow for CBC mode which changes cipher length, |ad| doesn't include the
+   * length for legacy ciphers. */
+  uint8_t ad_extra[2];
+  ad_extra[0] = (uint8_t)(in_len >> 8);
+  ad_extra[1] = (uint8_t)(in_len & 0xff);
+  MD5_Update(&md, ad_extra, sizeof(ad_extra));
 
 #if defined(STITCHED_CALL)
   /* 32 is $MOD from rc4_md5-x86_64.pl. */
@@ -287,11 +295,13 @@ static int aead_rc4_md5_tls_open(const EVP_AEAD_CTX *ctx, uint8_t *out,
   plaintext_len = in_len - rc4_ctx->tag_len;
 
   if (nonce_len != 0) {
-    OPENSSL_PUT_ERROR(CIPHER, aead_rc4_md5_tls_seal, CIPHER_R_TOO_LARGE);
+    OPENSSL_PUT_ERROR(CIPHER, aead_rc4_md5_tls_open, CIPHER_R_TOO_LARGE);
     return 0;
   }
 
-  if (max_out_len < plaintext_len) {
+  if (max_out_len < in_len) {
+    /* This requires that the caller provide space for the MAC, even though it
+     * will always be removed on return. */
     OPENSSL_PUT_ERROR(CIPHER, aead_rc4_md5_tls_open, CIPHER_R_BUFFER_TOO_SMALL);
     return 0;
   }
@@ -300,6 +310,13 @@ static int aead_rc4_md5_tls_open(const EVP_AEAD_CTX *ctx, uint8_t *out,
   /* The MAC's payload begins with the additional data. See
    * https://tools.ietf.org/html/rfc5246#section-6.2.3.1 */
   MD5_Update(&md, ad, ad_len);
+
+  /* To allow for CBC mode which changes cipher length, |ad| doesn't include the
+   * length for legacy ciphers. */
+  uint8_t ad_extra[2];
+  ad_extra[0] = (uint8_t)(plaintext_len >> 8);
+  ad_extra[1] = (uint8_t)(plaintext_len & 0xff);
+  MD5_Update(&md, ad_extra, sizeof(ad_extra));
 
 #if defined(STITCHED_CALL)
   rc4_off = 32 - 1 - (rc4_ctx->rc4.x & (32 - 1));
@@ -357,13 +374,24 @@ static int aead_rc4_md5_tls_open(const EVP_AEAD_CTX *ctx, uint8_t *out,
   return 1;
 }
 
+static int aead_rc4_md5_tls_get_rc4_state(const EVP_AEAD_CTX *ctx,
+                                          const RC4_KEY **out_key) {
+  struct aead_rc4_md5_tls_ctx *rc4_ctx = ctx->aead_state;
+  *out_key = &rc4_ctx->rc4;
+  return 1;
+}
+
 static const EVP_AEAD aead_rc4_md5_tls = {
     16 + MD5_DIGEST_LENGTH, /* key len (RC4 + MD5) */
     0,                      /* nonce len */
     MD5_DIGEST_LENGTH,      /* overhead */
     MD5_DIGEST_LENGTH,      /* max tag length */
-    aead_rc4_md5_tls_init,  aead_rc4_md5_tls_cleanup,
-    aead_rc4_md5_tls_seal,  aead_rc4_md5_tls_open,
+    aead_rc4_md5_tls_init,
+    NULL, /* init_with_direction */
+    aead_rc4_md5_tls_cleanup,
+    aead_rc4_md5_tls_seal,
+    aead_rc4_md5_tls_open,
+    aead_rc4_md5_tls_get_rc4_state,
 };
 
 const EVP_AEAD *EVP_aead_rc4_md5_tls(void) { return &aead_rc4_md5_tls; }

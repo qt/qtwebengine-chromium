@@ -86,6 +86,8 @@ extern const char kMediaProtocolRtpPrefix[];
 
 extern const char kMediaProtocolSctp[];
 extern const char kMediaProtocolDtlsSctp[];
+extern const char kMediaProtocolUdpDtlsSctp[];
+extern const char kMediaProtocolTcpDtlsSctp[];
 
 // Options to control how session descriptions are generated.
 const int kAutoBandwidth = -1;
@@ -544,13 +546,6 @@ const VideoContentDescription* GetFirstVideoContentDescription(
     const SessionDescription* sdesc);
 const DataContentDescription* GetFirstDataContentDescription(
     const SessionDescription* sdesc);
-bool GetStreamBySsrc(
-    const SessionDescription* sdesc, MediaType media_type,
-    uint32 ssrc, StreamParams* stream_out);
-bool GetStreamByIds(
-    const SessionDescription* sdesc, MediaType media_type,
-    const std::string& groupid, const std::string& id,
-    StreamParams* stream_out);
 
 // Functions for translating media candidate names.
 

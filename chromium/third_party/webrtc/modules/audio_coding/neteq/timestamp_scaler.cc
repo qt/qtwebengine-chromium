@@ -16,6 +16,10 @@
 
 namespace webrtc {
 
+void TimestampScaler::Reset() {
+  first_packet_received_ = false;
+}
+
 void TimestampScaler::ToInternal(Packet* packet) {
   if (!packet) {
     return;
@@ -56,6 +60,7 @@ uint32_t TimestampScaler::ToInternal(uint32_t external_timestamp,
       // full 48 kHz support.
       numerator_ = 2;
       denominator_ = 3;
+      break;
     }
     case kDecoderAVT:
     case kDecoderCNGnb:

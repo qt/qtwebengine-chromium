@@ -112,10 +112,6 @@ L$004nocacheinfo:
 	cmp	ebp,0
 	jne	NEAR L$005notintel
 	or	edx,1073741824
-	and	ah,15
-	cmp	ah,15
-	jne	NEAR L$005notintel
-	or	edx,1048576
 L$005notintel:
 	bt	edx,28
 	jnc	NEAR L$002generic
@@ -232,6 +228,18 @@ L$_OPENSSL_wipe_cpu_begin:
 	mov	ecx,DWORD [ecx]
 	bt	DWORD [ecx],1
 	jnc	NEAR L$013no_x87
+	and	ecx,83886080
+	cmp	ecx,83886080
+	jne	NEAR L$014no_sse2
+	pxor	xmm0,xmm0
+	pxor	xmm1,xmm1
+	pxor	xmm2,xmm2
+	pxor	xmm3,xmm3
+	pxor	xmm4,xmm4
+	pxor	xmm5,xmm5
+	pxor	xmm6,xmm6
+	pxor	xmm7,xmm7
+L$014no_sse2:
 dd	4007259865,4007259865,4007259865,4007259865,2430851995
 L$013no_x87:
 	lea	eax,[4+esp]
@@ -245,11 +253,11 @@ L$_OPENSSL_atomic_add_begin:
 	push	ebx
 	nop
 	mov	eax,DWORD [edx]
-L$014spin:
+L$015spin:
 	lea	ebx,[ecx*1+eax]
 	nop
 dd	447811568
-	jne	NEAR L$014spin
+	jne	NEAR L$015spin
 	mov	eax,ebx
 	pop	ebx
 	ret
@@ -283,11 +291,11 @@ align	16
 _OPENSSL_ia32_rdrand:
 L$_OPENSSL_ia32_rdrand_begin:
 	mov	ecx,8
-L$015loop:
+L$016loop:
 db	15,199,240
-	jc	NEAR L$016break
-	loop	L$015loop
-L$016break:
+	jc	NEAR L$017break
+	loop	L$016loop
+L$017break:
 	cmp	eax,0
 	cmove	eax,ecx
 	ret

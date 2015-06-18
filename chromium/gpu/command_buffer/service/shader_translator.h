@@ -27,8 +27,10 @@ typedef base::hash_map<std::string, std::string> NameMap;
 
 // Translates a GLSL ES 2.0 shader to desktop GLSL shader, or just
 // validates GLSL ES 2.0 shaders on a true GLSL ES implementation.
-class ShaderTranslatorInterface {
+class ShaderTranslatorInterface
+    : public base::RefCounted<ShaderTranslatorInterface> {
  public:
+  ShaderTranslatorInterface() {}
   enum GlslImplementationType {
     kGlsl,
     kGlslES
@@ -51,6 +53,7 @@ class ShaderTranslatorInterface {
   virtual bool Translate(const std::string& shader_source,
                          std::string* info_log,
                          std::string* translated_shader,
+                         int* shader_version,
                          AttributeMap* attrib_map,
                          UniformMap* uniform_map,
                          VaryingMap* varying_map,
@@ -62,12 +65,15 @@ class ShaderTranslatorInterface {
 
  protected:
   virtual ~ShaderTranslatorInterface() {}
+
+ private:
+  friend class base::RefCounted<ShaderTranslatorInterface>;
+  DISALLOW_COPY_AND_ASSIGN(ShaderTranslatorInterface);
 };
 
 // Implementation of ShaderTranslatorInterface
 class GPU_EXPORT ShaderTranslator
-    : public base::RefCounted<ShaderTranslator>,
-      NON_EXPORTED_BASE(public ShaderTranslatorInterface) {
+    : NON_EXPORTED_BASE(public ShaderTranslatorInterface) {
  public:
   class DestructionObserver {
    public:
@@ -93,6 +99,7 @@ class GPU_EXPORT ShaderTranslator
   bool Translate(const std::string& shader_source,
                  std::string* info_log,
                  std::string* translated_source,
+                 int* shader_version,
                  AttributeMap* attrib_map,
                  UniformMap* uniform_map,
                  VaryingMap* varying_map,
@@ -104,18 +111,14 @@ class GPU_EXPORT ShaderTranslator
   void RemoveDestructionObserver(DestructionObserver* observer);
 
  private:
-  friend class base::RefCounted<ShaderTranslator>;
-
   ~ShaderTranslator() override;
+
   int GetCompileOptions() const;
 
   ShHandle compiler_;
-  ShBuiltInResources compiler_options_;
   bool implementation_is_glsl_es_;
   ShCompileOptions driver_bug_workarounds_;
   ObserverList<DestructionObserver> destruction_observers_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShaderTranslator);
 };
 
 }  // namespace gles2

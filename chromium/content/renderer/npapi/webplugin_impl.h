@@ -36,6 +36,7 @@ class WebPluginContainer;
 class WebURLResponse;
 class WebURLLoader;
 class WebURLRequest;
+struct WebPluginParams;
 }
 
 namespace content {
@@ -72,12 +73,16 @@ class WebPluginImpl : public WebPlugin,
   virtual NPObject* scriptableObject();
   virtual struct _NPP* pluginNPP();
   virtual bool getFormValue(blink::WebString& value);
+  virtual void layoutIfNeeded() override;
   virtual void paint(
       blink::WebCanvas* canvas, const blink::WebRect& paint_rect);
   virtual void updateGeometry(
-      const blink::WebRect& frame_rect, const blink::WebRect& clip_rect,
-      const blink::WebVector<blink::WebRect>& cut_outs, bool is_visible);
-  virtual void updateFocus(bool focused);
+      const blink::WebRect& window_rect,
+      const blink::WebRect& clip_rect,
+      const blink::WebRect& unobscured_rect,
+      const blink::WebVector<blink::WebRect>& cut_outs_rects,
+      bool is_visible);
+  virtual void updateFocus(bool focused, blink::WebFocusType focus_type);
   virtual void updateVisibility(bool visible);
   virtual bool acceptsInputEvents();
   virtual bool handleInputEvent(
@@ -128,7 +133,7 @@ class WebPluginImpl : public WebPlugin,
   bool CheckIfRunInsecureContent(const GURL& url) override;
 #if defined(OS_WIN)
   void SetWindowlessData(HANDLE pump_messages_event,
-                         gfx::NativeViewId dummy_activation_window) { }
+                         gfx::NativeViewId dummy_activation_window) override {}
   void ReparentPluginWindow(HWND window, HWND parent) { }
   void ReportExecutableMemory(size_t size) { }
 #endif
@@ -155,7 +160,7 @@ class WebPluginImpl : public WebPlugin,
 
   // Determines the referrer value sent along with outgoing HTTP requests
   // issued by plugins.
-  enum Referrer {
+  enum ReferrerValue {
     PLUGIN_SRC,
     DOCUMENT_URL,
     NO_REFERRER
@@ -172,7 +177,7 @@ class WebPluginImpl : public WebPlugin,
                              const char* buf,
                              unsigned int len,
                              int notify_id,
-                             Referrer referrer_flag);
+                             ReferrerValue referrer_flag);
 
   // Returns the next avaiable resource id. Returns 0 if the operation fails.
   // It may fail if the page has already been closed.
@@ -187,7 +192,7 @@ class WebPluginImpl : public WebPlugin,
                            const char* buf,
                            int len,
                            const char* range_info,
-                           Referrer referrer_flag,
+                           ReferrerValue referrer_flag,
                            bool notify_redirects,
                            bool check_mixed_scripting);
 
@@ -242,7 +247,7 @@ class WebPluginImpl : public WebPlugin,
                                 unsigned int len,
                                 int notify_id,
                                 bool popups_allowed,
-                                Referrer referrer_flag,
+                                ReferrerValue referrer_flag,
                                 bool notify_redirects,
                                 bool check_mixed_scripting);
 
@@ -260,10 +265,10 @@ class WebPluginImpl : public WebPlugin,
   ClientInfo* GetClientInfoFromLoader(blink::WebURLLoader* loader);
 
   // Helper function to set the referrer on the request passed in.
-  void SetReferrer(blink::WebURLRequest* request, Referrer referrer_flag);
+  void SetReferrer(blink::WebURLRequest* request, ReferrerValue referrer_flag);
 
   // Check for invalid chars like @, ;, \ before the first / (in path).
-  bool IsValidUrl(const GURL& url, Referrer referrer_flag);
+  bool IsValidUrl(const GURL& url, ReferrerValue referrer_flag);
 
   std::vector<ClientInfo> clients_;
 

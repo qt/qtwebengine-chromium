@@ -35,9 +35,8 @@
 #include "core/fileapi/FileList.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/DragImage.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
@@ -106,9 +105,9 @@ static String normalizeType(const String& type, bool* convertToURL = 0)
     return cleanType;
 }
 
-PassRefPtrWillBeRawPtr<DataTransfer> DataTransfer::create(DataTransferType type, DataTransferAccessPolicy policy, PassRefPtrWillBeRawPtr<DataObject> dataObject)
+DataTransfer* DataTransfer::create(DataTransferType type, DataTransferAccessPolicy policy, DataObject* dataObject)
 {
-    return adoptRefWillBeNoop(new DataTransfer(type, policy, dataObject));
+    return new DataTransfer(type, policy, dataObject);
 }
 
 DataTransfer::~DataTransfer()
@@ -264,11 +263,11 @@ static ImageResource* getImageResource(Element* element)
 {
     // Attempt to pull ImageResource from element
     ASSERT(element);
-    RenderObject* renderer = element->renderer();
-    if (!renderer || !renderer->isImage())
+    LayoutObject* layoutObject = element->layoutObject();
+    if (!layoutObject || !layoutObject->isImage())
         return 0;
 
-    RenderImage* image = toRenderImage(renderer);
+    LayoutImage* image = toLayoutImage(layoutObject);
     if (image->cachedImage() && !image->cachedImage()->errorOccurred())
         return image->cachedImage();
 
@@ -279,10 +278,10 @@ static void writeImageToDataObject(DataObject* dataObject, Element* element, con
 {
     // Shove image data into a DataObject for use as a file
     ImageResource* cachedImage = getImageResource(element);
-    if (!cachedImage || !cachedImage->imageForRenderer(element->renderer()) || !cachedImage->isLoaded())
+    if (!cachedImage || !cachedImage->imageForLayoutObject(element->layoutObject()) || !cachedImage->isLoaded())
         return;
 
-    SharedBuffer* imageBuffer = cachedImage->imageForRenderer(element->renderer())->data();
+    SharedBuffer* imageBuffer = cachedImage->imageForLayoutObject(element->layoutObject())->data();
     if (!imageBuffer || !imageBuffer->size())
         return;
 
@@ -331,7 +330,7 @@ void DataTransfer::declareAndWriteDragImage(Element* element, const KURL& url, c
     writeImageToDataObject(m_dataObject.get(), element, url);
 
     // Put img tag on the clipboard referencing the image
-    m_dataObject->setData(mimeTypeTextHTML, createMarkup(element, IncludeNode, 0, ResolveAllURLs));
+    m_dataObject->setData(mimeTypeTextHTML, createMarkup(element, IncludeNode, ResolveAllURLs));
 }
 
 void DataTransfer::writeURL(const KURL& url, const String& title)
@@ -355,7 +354,7 @@ void DataTransfer::writeRange(Range* selectedRange, LocalFrame* frame)
     if (!m_dataObject)
         return;
 
-    m_dataObject->setHTMLAndBaseURL(createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs), frame->document()->url());
+    m_dataObject->setHTMLAndBaseURL(createMarkup(selectedRange, AnnotateForInterchange, false, ResolveNonLocalURLs), frame->document()->url());
 
     String str = frame->selectedTextForClipboard();
 #if OS(WIN)
@@ -377,13 +376,6 @@ void DataTransfer::writePlainText(const String& text)
     replaceNBSPWithSpace(str);
 
     m_dataObject->setData(mimeTypeTextPlain, str);
-}
-
-bool DataTransfer::hasData()
-{
-    ASSERT(isForDragAndDrop());
-
-    return m_dataObject->length() > 0;
 }
 
 void DataTransfer::setAccessPolicy(DataTransferAccessPolicy policy)
@@ -450,7 +442,7 @@ bool DataTransfer::hasDropZoneType(const String& keyword)
     return false;
 }
 
-PassRefPtrWillBeRawPtr<DataTransferItemList> DataTransfer::items()
+DataTransferItemList* DataTransfer::items()
 {
     // FIXME: According to the spec, we are supposed to return the same collection of items each
     // time. We now return a wrapper that always wraps the *same* set of items, so JS shouldn't be
@@ -458,12 +450,12 @@ PassRefPtrWillBeRawPtr<DataTransferItemList> DataTransfer::items()
     return DataTransferItemList::create(this, m_dataObject);
 }
 
-PassRefPtrWillBeRawPtr<DataObject> DataTransfer::dataObject() const
+DataObject* DataTransfer::dataObject() const
 {
     return m_dataObject;
 }
 
-DataTransfer::DataTransfer(DataTransferType type, DataTransferAccessPolicy policy, PassRefPtrWillBeRawPtr<DataObject> dataObject)
+DataTransfer::DataTransfer(DataTransferType type, DataTransferAccessPolicy policy, DataObject* dataObject)
     : m_policy(policy)
     , m_dropEffect("uninitialized")
     , m_effectAllowed("uninitialized")
@@ -531,10 +523,12 @@ String convertDragOperationToDropZoneOperation(DragOperation operation)
     }
 }
 
-void DataTransfer::trace(Visitor* visitor)
+DEFINE_TRACE(DataTransfer)
 {
     visitor->trace(m_dataObject);
+#if ENABLE(OILPAN)
     visitor->trace(m_dragImageElement);
+#endif
 }
 
 } // namespace blink

@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -106,8 +106,8 @@ struct GetStatsMsg : public rtc::MessageData {
 bool GetServiceTypeAndHostnameFromUri(const std::string& in_str,
                                       ServiceType* service_type,
                                       std::string* hostname) {
-  std::string::size_type colonpos = in_str.find(':');
-  if (colonpos == std::string::npos) {
+  const std::string::size_type colonpos = in_str.find(':');
+  if (colonpos == std::string::npos || (colonpos + 1) == in_str.length()) {
     return false;
   }
   std::string type = in_str.substr(0, colonpos);
@@ -218,13 +218,19 @@ bool ParseIceServers(const PeerConnectionInterface::IceServers& configuration,
       continue;
     }
 
+    ASSERT(!hoststring.empty());
+
     // Let's break hostname.
     tokens.clear();
     rtc::tokenize(hoststring, '@', &tokens);
-    hoststring = tokens[0];
-    if (tokens.size() == kTurnHostTokensNum) {
+    ASSERT(!tokens.empty());
+    // TODO(pthatcher): What's the right thing to do if tokens.size() is >2?
+    // E.g. a string like "foo@bar@bat".
+    if (tokens.size() >= kTurnHostTokensNum) {
       server.username = rtc::s_url_decode(tokens[0]);
       hoststring = tokens[1];
+    } else {
+      hoststring = tokens[0];
     }
 
     int port = kDefaultStunPort;
@@ -238,7 +244,6 @@ bool ParseIceServers(const PeerConnectionInterface::IceServers& configuration,
       LOG(WARNING) << "Invalid Hostname format: " << uri_without_transport;
       continue;
     }
-
 
     if (port <= 0 || port > 0xffff) {
       LOG(WARNING) << "Invalid port: " << port;
@@ -323,47 +328,40 @@ bool PeerConnection::Initialize(
     PortAllocatorFactoryInterface* allocator_factory,
     DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
+  ASSERT(observer != NULL);
+  if (!observer)
+    return false;
+  observer_ = observer;
+
   std::vector<PortAllocatorFactoryInterface::StunConfiguration> stun_config;
   std::vector<PortAllocatorFactoryInterface::TurnConfiguration> turn_config;
   if (!ParseIceServers(configuration.servers, &stun_config, &turn_config)) {
     return false;
   }
-
-  return DoInitialize(configuration.type, stun_config, turn_config, constraints,
-                      allocator_factory, dtls_identity_service, observer);
-}
-
-bool PeerConnection::DoInitialize(
-    IceTransportsType type,
-    const StunConfigurations& stun_config,
-    const TurnConfigurations& turn_config,
-    const MediaConstraintsInterface* constraints,
-    webrtc::PortAllocatorFactoryInterface* allocator_factory,
-    DTLSIdentityServiceInterface* dtls_identity_service,
-    PeerConnectionObserver* observer) {
-  ASSERT(observer != NULL);
-  if (!observer)
-    return false;
-  observer_ = observer;
   port_allocator_.reset(
       allocator_factory->CreatePortAllocator(stun_config, turn_config));
 
   // To handle both internal and externally created port allocator, we will
   // enable BUNDLE here.
   int portallocator_flags = port_allocator_->flags();
-  portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_BUNDLE |
-                         cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG |
-                         cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET;
+  portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG |
+                         cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET |
+                         cricket::PORTALLOCATOR_ENABLE_IPV6;
   bool value;
   // If IPv6 flag was specified, we'll not override it by experiment.
   if (FindConstraint(
           constraints, MediaConstraintsInterface::kEnableIPv6, &value, NULL)) {
-    if (value) {
-      portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
+    if (!value) {
+      portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
     }
   } else if (webrtc::field_trial::FindFullName("WebRTC-IPv6Default") ==
-             "Enabled") {
-    portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
+             "Disabled") {
+    portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
+  }
+
+  if (configuration.tcp_candidate_policy == kTcpCandidatePolicyDisabled) {
+    portallocator_flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
+    LOG(LS_INFO) << "TCP candidates are disabled.";
   }
 
   port_allocator_->set_flags(portallocator_flags);
@@ -384,7 +382,7 @@ bool PeerConnection::DoInitialize(
 
   // Initialize the WebRtcSession. It creates transport channels etc.
   if (!session_->Initialize(factory_->options(), constraints,
-                            dtls_identity_service, type))
+                            dtls_identity_service, configuration))
     return false;
 
   // Register PeerConnection as receiver of local ice candidates.
@@ -682,6 +680,11 @@ bool PeerConnection::AddIceCandidate(
 
 void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
   uma_observer_ = observer;
+
+  if (session_) {
+    session_->set_metrics_observer(uma_observer_);
+  }
+
   // Send information about IPv4/IPv6 status.
   if (uma_observer_ && port_allocator_) {
     if (port_allocator_->flags() & cricket::PORTALLOCATOR_ENABLE_IPV6) {

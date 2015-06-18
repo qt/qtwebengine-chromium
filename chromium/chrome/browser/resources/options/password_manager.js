@@ -59,12 +59,21 @@ cr.define('options', function() {
     initializePage: function() {
       Page.prototype.initializePage.call(this);
 
+      $('auto-signin-block').hidden =
+          !loadTimeData.getBoolean('enableCredentialManagerAPI');
+
       $('password-manager-confirm').onclick = function() {
         PageManager.closeOverlay();
       };
 
       $('password-search-box').addEventListener('search',
           this.handleSearchQueryChange_.bind(this));
+
+      $('exceptions-learn-more').onclick = function() {
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_PasswordManagerExceptionsLearnMore']);
+        return true;  // Always follow the href
+      };
 
       this.createSavedPasswordsList_();
       this.createPasswordExceptionsList_();
@@ -122,6 +131,9 @@ cr.define('options', function() {
       // snappier since users will expect that it's "less work."
       this.queryDelayTimerId_ = window.setTimeout(
           this.searchPasswords_.bind(this), 250);
+
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_PasswordManagerSearch']);
     },
 
     /**
@@ -168,7 +180,7 @@ cr.define('options', function() {
               entry[1].toLowerCase().indexOf(query.toLowerCase()) >= 0) {
             // Keep the original index so we can delete correctly. See also
             // deleteItemAtIndex() in password_manager_list.js that uses this.
-            entry[3] = index;
+            entry[4] = index;
             return true;
           }
           return false;
@@ -202,7 +214,7 @@ cr.define('options', function() {
         // index in the model, but each entry stores its original index, so
         // we can find the item using a linear search.
         for (var i = 0; i < model.length; ++i) {
-          if (model.item(i)[3] == index) {
+          if (model.item(i)[4] == index) {
             index = i;
             break;
           }
@@ -229,6 +241,8 @@ cr.define('options', function() {
    */
   PasswordManager.removeSavedPassword = function(rowIndex) {
       chrome.send('removeSavedPassword', [String(rowIndex)]);
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_PasswordManagerDeletePassword']);
   };
 
   /**

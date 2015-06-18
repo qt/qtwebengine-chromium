@@ -6,6 +6,7 @@
 #define StyleInvalidator_h
 
 #include "platform/heap/Handle.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
@@ -15,6 +16,7 @@ class Element;
 
 class StyleInvalidator {
     DISALLOW_ALLOCATION();
+    WTF_MAKE_NONCOPYABLE(StyleInvalidator);
 public:
     StyleInvalidator();
     ~StyleInvalidator();
@@ -26,7 +28,7 @@ public:
 
     void clearPendingInvalidations();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     struct RecursionData {
@@ -47,7 +49,7 @@ private:
         bool treeBoundaryCrossing() const { return m_treeBoundaryCrossing; }
         bool insertionPointCrossing() const { return m_insertionPointCrossing; }
 
-        typedef Vector<const DescendantInvalidationSet*, 16> InvalidationSets;
+        using InvalidationSets = Vector<const DescendantInvalidationSet*, 16>;
         InvalidationSets m_invalidationSets;
         bool m_invalidateCustomPseudo;
         bool m_wholeSubtreeInvalid;
@@ -87,8 +89,8 @@ private:
         RecursionData* m_data;
     };
 
-    typedef WillBeHeapVector<RefPtrWillBeMember<DescendantInvalidationSet> > InvalidationList;
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<Element>, OwnPtrWillBeMember<InvalidationList> > PendingInvalidationMap;
+    using InvalidationList = WillBeHeapVector<RefPtrWillBeMember<DescendantInvalidationSet>>;
+    using PendingInvalidationMap = WillBeHeapHashMap<RawPtrWillBeMember<Element>, OwnPtrWillBeMember<InvalidationList>>;
 
     InvalidationList& ensurePendingInvalidationList(Element&);
 

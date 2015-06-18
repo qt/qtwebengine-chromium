@@ -30,12 +30,24 @@
 #include "core/dom/Element.h"
 #include "core/dom/ScriptLoader.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebScheduler.h"
+#include "public/platform/WebThread.h"
+#include "wtf/Functional.h"
+
+// This bit of magic is needed by oilpan to prevent the ScriptRunner from leaking.
+namespace WTF {
+template<>
+struct ParamStorageTraits<blink::ScriptRunner*> : public PointerParamStorageTraits<blink::ScriptRunner*, false> {
+};
+}
 
 namespace blink {
 
+
 ScriptRunner::ScriptRunner(Document* document)
     : m_document(document)
-    , m_timer(this, &ScriptRunner::timerFired)
+    , m_executeScriptsTaskFactory(WTF::bind(&ScriptRunner::executeScripts, this))
 {
     ASSERT(document);
 }
@@ -77,45 +89,80 @@ void ScriptRunner::queueScriptForExecution(ScriptLoader* scriptLoader, Execution
 
 void ScriptRunner::suspend()
 {
-    m_timer.stop();
+    m_executeScriptsTaskFactory.cancel();
 }
 
 void ScriptRunner::resume()
 {
     if (hasPendingScripts())
-        m_timer.startOneShot(0, FROM_HERE);
+        postTaskIfOneIsNotAlreadyInFlight();
 }
 
 void ScriptRunner::notifyScriptReady(ScriptLoader* scriptLoader, ExecutionType executionType)
 {
+    RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(scriptLoader);
     switch (executionType) {
     case ASYNC_EXECUTION:
-        ASSERT(m_pendingAsyncScripts.contains(scriptLoader));
+        // RELEASE_ASSERT makes us crash in a controlled way in error cases
+        // where the ScriptLoader is associated with the wrong ScriptRunner
+        // (otherwise we'd cause a use-after-free in ~ScriptRunner when it tries
+        // to detach).
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(m_pendingAsyncScripts.contains(scriptLoader));
         m_scriptsToExecuteSoon.append(scriptLoader);
         m_pendingAsyncScripts.remove(scriptLoader);
         break;
 
     case IN_ORDER_EXECUTION:
-        ASSERT(!m_scriptsToExecuteInOrder.isEmpty());
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(!m_scriptsToExecuteInOrder.isEmpty());
         break;
     }
-    m_timer.startOneShot(0, FROM_HERE);
+    postTaskIfOneIsNotAlreadyInFlight();
 }
 
 void ScriptRunner::notifyScriptLoadError(ScriptLoader* scriptLoader, ExecutionType executionType)
 {
     switch (executionType) {
     case ASYNC_EXECUTION:
-        ASSERT(m_pendingAsyncScripts.contains(scriptLoader));
+        // RELEASE_ASSERT makes us crash in a controlled way in error cases
+        // where the ScriptLoader is associated with the wrong ScriptRunner
+        // (otherwise we'd cause a use-after-free in ~ScriptRunner when it tries
+        // to detach).
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(m_pendingAsyncScripts.contains(scriptLoader));
         m_pendingAsyncScripts.remove(scriptLoader);
         scriptLoader->detach();
         m_document->decrementLoadEventDelayCount();
         break;
 
     case IN_ORDER_EXECUTION:
-        ASSERT(!m_scriptsToExecuteInOrder.isEmpty());
+        RELEASE_ASSERT_WITH_SECURITY_IMPLICATION(!m_scriptsToExecuteInOrder.isEmpty());
         break;
     }
+}
+
+void ScriptRunner::movePendingAsyncScript(Document& oldDocument, Document& newDocument, ScriptLoader* scriptLoader)
+{
+    RefPtrWillBeRawPtr<Document> newContextDocument = newDocument.contextDocument().get();
+    if (!newContextDocument) {
+        // Document's contextDocument() method will return no Document if the
+        // following conditions both hold:
+        //
+        //   - The Document wasn't created with an explicit context document
+        //     and that document is otherwise kept alive.
+        //   - The Document itself is detached from its frame.
+        //
+        // The script element's loader is in that case moved to document() and
+        // its script runner, which is the non-null Document that contextDocument()
+        // would return if not detached.
+        ASSERT(!newDocument.frame());
+        newContextDocument = &newDocument;
+    }
+    RefPtrWillBeRawPtr<Document> oldContextDocument = oldDocument.contextDocument().get();
+    if (!oldContextDocument) {
+        ASSERT(!oldDocument.frame());
+        oldContextDocument = &oldDocument;
+    }
+    if (oldContextDocument != newContextDocument)
+        oldContextDocument->scriptRunner()->movePendingAsyncScript(newContextDocument->scriptRunner(), scriptLoader);
 }
 
 void ScriptRunner::movePendingAsyncScript(ScriptRunner* newRunner, ScriptLoader* scriptLoader)
@@ -127,29 +174,61 @@ void ScriptRunner::movePendingAsyncScript(ScriptRunner* newRunner, ScriptLoader*
     }
 }
 
-void ScriptRunner::timerFired(Timer<ScriptRunner>* timer)
+void ScriptRunner::executeScripts()
 {
-    ASSERT_UNUSED(timer, timer == &m_timer);
-
     RefPtrWillBeRawPtr<Document> protect(m_document.get());
 
-    WillBeHeapVector<RawPtrWillBeMember<ScriptLoader> > scriptLoaders;
+    WillBeHeapDeque<RawPtrWillBeMember<ScriptLoader>> scriptLoaders;
     scriptLoaders.swap(m_scriptsToExecuteSoon);
 
-    size_t numInOrderScriptsToExecute = 0;
-    for (; numInOrderScriptsToExecute < m_scriptsToExecuteInOrder.size() && m_scriptsToExecuteInOrder[numInOrderScriptsToExecute]->isReady(); ++numInOrderScriptsToExecute)
-        scriptLoaders.append(m_scriptsToExecuteInOrder[numInOrderScriptsToExecute]);
-    if (numInOrderScriptsToExecute)
-        m_scriptsToExecuteInOrder.remove(0, numInOrderScriptsToExecute);
+    WillBeHeapHashSet<RawPtrWillBeMember<ScriptLoader>> inorderSet;
+    while (!m_scriptsToExecuteInOrder.isEmpty() && m_scriptsToExecuteInOrder.first()->isReady()) {
+        ScriptLoader* script = m_scriptsToExecuteInOrder.takeFirst();
+        inorderSet.add(script);
+        scriptLoaders.append(script);
+    }
 
-    size_t size = scriptLoaders.size();
-    for (size_t i = 0; i < size; ++i) {
-        scriptLoaders[i]->execute();
+    while (!scriptLoaders.isEmpty()) {
+        scriptLoaders.takeFirst()->execute();
         m_document->decrementLoadEventDelayCount();
+
+        if (yieldForHighPriorityWork())
+            break;
+    }
+
+    // If we have to yield, we must re-enqueue any scriptLoaders back onto the front of
+    // m_scriptsToExecuteInOrder or m_scriptsToExecuteSoon depending on where the script
+    // came from.
+    // NOTE a yield followed by a notifyScriptReady(... ASYNC_EXECUTION) will result in that script executing
+    // before any pre-existing ScriptsToExecuteInOrder.
+    while (!scriptLoaders.isEmpty()) {
+        ScriptLoader* script = scriptLoaders.takeLast();
+        if (inorderSet.contains(script))
+            m_scriptsToExecuteInOrder.prepend(script);
+        else
+            m_scriptsToExecuteSoon.prepend(script);
     }
 }
 
-void ScriptRunner::trace(Visitor* visitor)
+bool ScriptRunner::yieldForHighPriorityWork()
+{
+    if (!Platform::current()->currentThread()->scheduler()->shouldYieldForHighPriorityWork())
+        return false;
+
+    postTaskIfOneIsNotAlreadyInFlight();
+    return true;
+}
+
+void ScriptRunner::postTaskIfOneIsNotAlreadyInFlight()
+{
+    if (m_executeScriptsTaskFactory.isPending())
+        return;
+
+    // FIXME: Rename task() so that it's obvious it cancels any pending task.
+    Platform::current()->currentThread()->scheduler()->postLoadingTask(FROM_HERE, m_executeScriptsTaskFactory.task());
+}
+
+DEFINE_TRACE(ScriptRunner)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);

@@ -11,8 +11,6 @@
 #include "SkFixed.h"
 #include "SkFloatingPoint.h"
 
-//#define SK_SUPPORT_DEPRECATED_SCALARROUND
-
 // TODO: move this sort of check into SkPostConfig.h
 #define SK_SCALAR_IS_DOUBLE 0
 #undef SK_SCALAR_IS_FLOAT
@@ -60,6 +58,7 @@ typedef float SkScalar;
 #define SkScalarATan2(y, x)         (float)sk_float_atan2(y,x)
 #define SkScalarExp(x)              (float)sk_float_exp(x)
 #define SkScalarLog(x)              (float)sk_float_log(x)
+#define SkScalarLog2(x)             (float)sk_float_log2(x)
 
 #else   // SK_SCALAR_IS_DOUBLE
 
@@ -102,6 +101,7 @@ typedef double SkScalar;
 #define SkScalarATan2(y, x)         atan2(y,x)
 #define SkScalarExp(x)              exp(x)
 #define SkScalarLog(x)              log(x)
+#define SkScalarLog2(x)             log2(x)
 
 #endif
 
@@ -128,8 +128,24 @@ static inline bool SkScalarIsFinite(SkScalar x) {
     // 0 * NaN --> NaN
     SkScalar prod = x * 0;
     // At this point, prod will either be NaN or 0
-    // Therefore we can return (prod == prod) or (0 == prod).
-    return prod == prod;
+    return !SkScalarIsNaN(prod);
+}
+
+static inline bool SkScalarsAreFinite(SkScalar a, SkScalar b) {
+    SkScalar prod = 0;
+    prod *= a;
+    prod *= b;
+    // At this point, prod will either be NaN or 0
+    return !SkScalarIsNaN(prod);
+}
+
+static inline bool SkScalarsAreFinite(const SkScalar array[], int count) {
+    SkScalar prod = 0;
+    for (int i = 0; i < count; ++i) {
+        prod *= array[i];
+    }
+    // At this point, prod will either be NaN or 0
+    return !SkScalarIsNaN(prod);
 }
 
 /**
@@ -153,11 +169,13 @@ static inline int SkDScalarRoundToInt(SkScalar x) {
 }
 
 static inline SkScalar SkScalarClampMax(SkScalar x, SkScalar max) {
-    return x < 0 ? 0 : x > max ? max : x;
+    x = SkTMin(x, max);
+    x = SkTMax<SkScalar>(x, 0);
+    return x;
 }
 
 static inline SkScalar SkScalarPin(SkScalar x, SkScalar min, SkScalar max) {
-    return x < min ? min : x > max ? max : x;
+    return SkTPin(x, min, max);
 }
 
 SkScalar SkScalarSinCos(SkScalar radians, SkScalar* cosValue);
@@ -166,7 +184,9 @@ static inline SkScalar SkScalarSquare(SkScalar x) { return x * x; }
 
 #define SkScalarMul(a, b)       ((SkScalar)(a) * (b))
 #define SkScalarMulAdd(a, b, c) ((SkScalar)(a) * (b) + (c))
-#define SkScalarDiv(a, b)       ((SkScalar)(a) / (b))
+#ifdef SK_SUPPORT_LEGACY_SCALAR_DIV
+    #define SkScalarDiv(a, b)       ((SkScalar)(a) / (b))
+#endif
 #define SkScalarMulDiv(a, b, c) ((SkScalar)(a) * (b) / (c))
 #define SkScalarInvert(x)       (SK_Scalar1 / (x))
 #define SkScalarFastInvert(x)   (SK_Scalar1 / (x))
@@ -182,13 +202,6 @@ static inline SkScalar SkMinScalar(SkScalar a, SkScalar b) { return a < b ? a : 
 static inline bool SkScalarIsInt(SkScalar x) {
     return x == (SkScalar)(int)x;
 }
-
-// DEPRECATED : use ToInt or ToScalar variant
-#ifdef SK_SUPPORT_DEPRECATED_SCALARROUND
-#   define SkScalarFloor(x)    SkScalarFloorToInt(x)
-#   define SkScalarCeil(x)     SkScalarCeilToInt(x)
-#   define SkScalarRound(x)    SkScalarRoundToInt(x)
-#endif
 
 /**
  *  Returns -1 || 0 || 1 depending on the sign of value:

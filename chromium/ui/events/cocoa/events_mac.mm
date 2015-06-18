@@ -6,16 +6,16 @@
 
 #include <Cocoa/Cocoa.h>
 
+#include "base/logging.h"
 #import "base/mac/mac_util.h"
 #import "base/mac/sdk_forward_declarations.h"
-#include "base/logging.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "ui/events/cocoa/cocoa_event_utils.h"
 #include "ui/events/event_utils.h"
 #import "ui/events/keycodes/keyboard_code_conversion_mac.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 namespace ui {
 
@@ -52,9 +52,10 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
       return ET_MOUSE_EXITED;
     case NSEventTypeSwipe:
       return ET_SCROLL_FLING_START;
-    case NSFlagsChanged:
     case NSAppKitDefined:
     case NSSystemDefined:
+      return ET_UNKNOWN;
+    case NSFlagsChanged:
     case NSApplicationDefined:
     case NSPeriodic:
     case NSCursorUpdate:
@@ -127,6 +128,8 @@ int GetChangedMouseButtonFlagsFromNative(
     case NSOtherMouseUp:
     case NSOtherMouseDragged:
       return EF_MIDDLE_MOUSE_BUTTON;
+    default:
+      break;
   }
   return 0;
 }
@@ -158,10 +161,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
   [event release];
-}
-
-void IncrementTouchIdRefCount(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
@@ -217,7 +216,7 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return KeyboardCodeFromNSEvent(native_event);
 }
 
-const char* CodeFromNative(const base::NativeEvent& native_event) {
+DomCode CodeFromNative(const base::NativeEvent& native_event) {
   return CodeFromNSEvent(native_event);
 }
 

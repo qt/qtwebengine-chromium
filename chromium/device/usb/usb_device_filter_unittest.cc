@@ -5,10 +5,9 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "device/usb/mock_usb_device.h"
 #include "device/usb/usb_descriptors.h"
-#include "device/usb/usb_device.h"
 #include "device/usb/usb_device_filter.h"
-#include "device/usb/usb_device_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -16,27 +15,7 @@ namespace device {
 
 namespace {
 
-using testing::NiceMock;
-using testing::ReturnRef;
-
-class MockUsbDevice : public UsbDevice {
- public:
-  MockUsbDevice(uint16 vendor_id, uint16 product_id, uint32 unique_id)
-      : UsbDevice(vendor_id, product_id, unique_id) {}
-
-  MOCK_METHOD0(Open, scoped_refptr<UsbDeviceHandle>());
-  MOCK_METHOD1(Close, bool(scoped_refptr<UsbDeviceHandle>));
-#if defined(OS_CHROMEOS)
-  MOCK_METHOD2(RequestUsbAccess, void(int, const base::Callback<void(bool)>&));
-#endif
-  MOCK_METHOD0(GetConfiguration, const UsbConfigDescriptor&());
-  MOCK_METHOD1(GetManufacturer, bool(base::string16*));
-  MOCK_METHOD1(GetProduct, bool(base::string16*));
-  MOCK_METHOD1(GetSerialNumber, bool(base::string16*));
-
- private:
-  virtual ~MockUsbDevice() {}
-};
+using testing::Return;
 
 class UsbFilterTest : public testing::Test {
  public:
@@ -49,9 +28,7 @@ class UsbFilterTest : public testing::Test {
     interface.interface_protocol = 0x01;
     config_.interfaces.push_back(interface);
 
-    android_phone_ = new MockUsbDevice(0x18d1, 0x4ee2, 0);
-    ON_CALL(*android_phone_.get(), GetConfiguration())
-        .WillByDefault(ReturnRef(config_));
+    android_phone_ = new MockUsbDevice(0x18d1, 0x4ee2);
   }
 
  protected:
@@ -93,12 +70,16 @@ TEST_F(UsbFilterTest, MatchProductIdNegative) {
 TEST_F(UsbFilterTest, MatchInterfaceClass) {
   UsbDeviceFilter filter;
   filter.SetInterfaceClass(0xff);
+  EXPECT_CALL(*android_phone_.get(), GetConfiguration())
+      .WillOnce(Return(&config_));
   ASSERT_TRUE(filter.Matches(android_phone_));
 }
 
 TEST_F(UsbFilterTest, MatchInterfaceClassNegative) {
   UsbDeviceFilter filter;
   filter.SetInterfaceClass(0xe0);
+  EXPECT_CALL(*android_phone_.get(), GetConfiguration())
+      .WillOnce(Return(&config_));
   ASSERT_FALSE(filter.Matches(android_phone_));
 }
 
@@ -106,6 +87,8 @@ TEST_F(UsbFilterTest, MatchInterfaceSubclass) {
   UsbDeviceFilter filter;
   filter.SetInterfaceClass(0xff);
   filter.SetInterfaceSubclass(0x42);
+  EXPECT_CALL(*android_phone_.get(), GetConfiguration())
+      .WillOnce(Return(&config_));
   ASSERT_TRUE(filter.Matches(android_phone_));
 }
 
@@ -113,6 +96,8 @@ TEST_F(UsbFilterTest, MatchInterfaceSubclassNegative) {
   UsbDeviceFilter filter;
   filter.SetInterfaceClass(0xff);
   filter.SetInterfaceSubclass(0x01);
+  EXPECT_CALL(*android_phone_.get(), GetConfiguration())
+      .WillOnce(Return(&config_));
   ASSERT_FALSE(filter.Matches(android_phone_));
 }
 
@@ -121,6 +106,8 @@ TEST_F(UsbFilterTest, MatchInterfaceProtocol) {
   filter.SetInterfaceClass(0xff);
   filter.SetInterfaceSubclass(0x42);
   filter.SetInterfaceProtocol(0x01);
+  EXPECT_CALL(*android_phone_.get(), GetConfiguration())
+      .WillOnce(Return(&config_));
   ASSERT_TRUE(filter.Matches(android_phone_));
 }
 
@@ -129,6 +116,8 @@ TEST_F(UsbFilterTest, MatchInterfaceProtocolNegative) {
   filter.SetInterfaceClass(0xff);
   filter.SetInterfaceSubclass(0x42);
   filter.SetInterfaceProtocol(0x02);
+  EXPECT_CALL(*android_phone_.get(), GetConfiguration())
+      .WillOnce(Return(&config_));
   ASSERT_FALSE(filter.Matches(android_phone_));
 }
 

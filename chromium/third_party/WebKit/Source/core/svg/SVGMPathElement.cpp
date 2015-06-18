@@ -35,6 +35,12 @@ inline SVGMPathElement::SVGMPathElement(Document& document)
 {
 }
 
+DEFINE_TRACE(SVGMPathElement)
+{
+    SVGElement::trace(visitor);
+    SVGURIReference::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGMPathElement)
 
 SVGMPathElement::~SVGMPathElement()
@@ -89,11 +95,6 @@ void SVGMPathElement::removedFrom(ContainerNode* rootParent)
     notifyParentOfPathChange(rootParent);
     if (rootParent->inDocument())
         clearResourceReferences();
-}
-
-void SVGMPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
 }
 
 void SVGMPathElement::svgAttributeChanged(const QualifiedName& attrName)

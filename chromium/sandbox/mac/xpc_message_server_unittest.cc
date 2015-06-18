@@ -18,11 +18,32 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
 
+#if defined(MAC_OS_X_VERSION_10_7) && \
+    MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_7
+// Redeclare methods that only exist on 10.7+ to suppress
+// -Wpartial-availability warnings.
+extern "C" {
+XPC_EXPORT XPC_WARN_RESULT XPC_NONNULL_ALL int64_t
+xpc_dictionary_get_int64(xpc_object_t xdict, const char* key);
+
+XPC_EXPORT XPC_WARN_RESULT XPC_NONNULL_ALL uint64_t
+xpc_dictionary_get_uint64(xpc_object_t xdict, const char* key);
+
+XPC_EXPORT XPC_NONNULL1 XPC_NONNULL2 void
+xpc_dictionary_set_uint64(xpc_object_t xdict, const char* key, uint64_t value);
+
+XPC_EXPORT XPC_MALLOC XPC_RETURNS_RETAINED XPC_WARN_RESULT xpc_object_t
+xpc_dictionary_create(const char* const* keys,
+                      const xpc_object_t* values,
+                      size_t count);
+}  // extern "C"
+#endif
+
 namespace sandbox {
 
 class XPCMessageServerTest : public testing::Test {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     if (!RunXPCTest())
       return;
     ASSERT_TRUE(InitializeXPC());
@@ -149,21 +170,19 @@ XPC_TEST_F(GetSenderPID)  // {
 #pragma GCC diagnostic pop
   ASSERT_EQ(KERN_SUCCESS, kr);
 
-  base::ProcessHandle child_handle = base::SpawnMultiProcessTestChild(
+  base::Process child = base::SpawnMultiProcessTestChild(
       "GetSenderPID",
       base::GetMultiProcessTestChildBaseCommandLine(),
       base::LaunchOptions());
-  ASSERT_NE(base::kNullProcessHandle, child_handle);
+  ASSERT_TRUE(child.IsValid());
 
   int exit_code = -1;
-  ASSERT_TRUE(base::WaitForExitCode(child_handle, &exit_code));
+  ASSERT_TRUE(child.WaitForExit(&exit_code));
   EXPECT_EQ(0, exit_code);
 
-  EXPECT_EQ(base::GetProcId(child_handle), sender_pid);
-  EXPECT_EQ(base::GetProcId(child_handle), child_pid);
+  EXPECT_EQ(child.Pid(), sender_pid);
+  EXPECT_EQ(child.Pid(), child_pid);
   EXPECT_EQ(sender_pid, child_pid);
-
-  base::CloseProcessHandle(child_handle);
 }
 
 MULTIPROCESS_TEST_MAIN(GetSenderPID) {

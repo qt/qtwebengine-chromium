@@ -23,7 +23,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
-#include "net/base/network_delegate.h"
+#include "net/base/network_delegate_impl.h"
 #include "net/base/request_priority.h"
 #include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
@@ -70,7 +70,8 @@ class TestURLRequestContext : public URLRequestContext {
   }
 
   void set_http_network_session_params(
-      const HttpNetworkSession::Params& params) {
+      scoped_ptr<HttpNetworkSession::Params> params) {
+    http_network_session_params_ = params.Pass();
   }
 
   void SetSdchManager(scoped_ptr<SdchManager> sdch_manager) {
@@ -220,7 +221,7 @@ class TestDelegate : public URLRequest::Delegate {
 
 //-----------------------------------------------------------------------------
 
-class TestNetworkDelegate : public NetworkDelegate {
+class TestNetworkDelegate : public NetworkDelegateImpl {
  public:
   enum Options {
     NO_GET_COOKIES = 1 << 0,
@@ -265,6 +266,10 @@ class TestNetworkDelegate : public NetworkDelegate {
   void set_can_access_files(bool val) { can_access_files_ = val; }
   bool can_access_files() const { return can_access_files_; }
 
+  void set_first_party_only_cookies_enabled(bool val) {
+    first_party_only_cookies_enabled_ = val;
+  }
+
   void set_can_throttle_requests(bool val) { can_throttle_requests_ = val; }
   bool can_throttle_requests() const { return can_throttle_requests_; }
 
@@ -295,9 +300,9 @@ class TestNetworkDelegate : public NetworkDelegate {
   int OnBeforeSendHeaders(URLRequest* request,
                           const CompletionCallback& callback,
                           HttpRequestHeaders* headers) override;
-  void OnBeforeSendProxyHeaders(net::URLRequest* request,
-                                const net::ProxyInfo& proxy_info,
-                                net::HttpRequestHeaders* headers) override;
+  void OnBeforeSendProxyHeaders(URLRequest* request,
+                                const ProxyInfo& proxy_info,
+                                HttpRequestHeaders* headers) override;
   void OnSendHeaders(URLRequest* request,
                      const HttpRequestHeaders& headers) override;
   int OnHeadersReceived(
@@ -325,8 +330,7 @@ class TestNetworkDelegate : public NetworkDelegate {
   bool OnCanAccessFile(const URLRequest& request,
                        const base::FilePath& path) const override;
   bool OnCanThrottleRequest(const URLRequest& request) const override;
-  int OnBeforeSocketStreamConnect(SocketStream* stream,
-                                  const CompletionCallback& callback) override;
+  bool OnFirstPartyOnlyCookieExperimentEnabled() const override;
   bool OnCancelURLRequestWithPolicyViolatingReferrerHeader(
       const URLRequest& request,
       const GURL& target_url,
@@ -372,33 +376,9 @@ class TestNetworkDelegate : public NetworkDelegate {
 
   bool can_access_files_;  // true by default
   bool can_throttle_requests_;  // true by default
+  bool first_party_only_cookies_enabled_;               // false by default
   bool cancel_request_with_policy_violating_referrer_;  // false by default
   bool will_be_intercepted_on_next_error_;
-};
-
-// Overrides the host used by the LocalHttpTestServer in
-// url_request_unittest.cc . This is used by the chrome_frame_net_tests due to
-// a mysterious bug when tests execute over the loopback adapter. See
-// http://crbug.com/114369 .
-class ScopedCustomUrlRequestTestHttpHost {
- public:
-  // Sets the host name to be used. The previous hostname will be stored and
-  // restored upon destruction. Note that if the lifetimes of two or more
-  // instances of this class overlap, they must be strictly nested.
-  explicit ScopedCustomUrlRequestTestHttpHost(const std::string& new_value);
-
-  ~ScopedCustomUrlRequestTestHttpHost();
-
-  // Returns the current value to be used by HTTP tests in
-  // url_request_unittest.cc .
-  static const std::string& value();
-
- private:
-  static std::string value_;
-  const std::string old_value_;
-  const std::string new_value_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedCustomUrlRequestTestHttpHost);
 };
 
 //-----------------------------------------------------------------------------

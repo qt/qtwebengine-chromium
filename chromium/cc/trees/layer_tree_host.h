@@ -6,7 +6,6 @@
 #define CC_TREES_LAYER_TREE_HOST_H_
 
 #include <limits>
-#include <list>
 #include <set>
 #include <string>
 #include <vector>
@@ -22,8 +21,6 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
-#include "cc/base/swap_promise.h"
-#include "cc/base/swap_promise_monitor.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/input/input_handler.h"
@@ -32,6 +29,8 @@
 #include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/output/output_surface.h"
+#include "cc/output/renderer_capabilities.h"
+#include "cc/output/swap_promise.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/scoped_ui_resource.h"
 #include "cc/surfaces/surface_sequence.h"
@@ -39,6 +38,7 @@
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/proxy.h"
+#include "cc/trees/swap_promise_monitor.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -48,6 +48,7 @@ class GpuMemoryBufferManager;
 
 namespace cc {
 class AnimationRegistrar;
+class BeginFrameSource;
 class HeadsUpDisplayLayer;
 class Layer;
 class LayerTreeHostImpl;
@@ -55,62 +56,53 @@ class LayerTreeHostImplClient;
 class LayerTreeHostSingleThreadClient;
 class PrioritizedResource;
 class PrioritizedResourceManager;
+class PropertyTrees;
 class Region;
 class RenderingStatsInstrumentation;
 class ResourceProvider;
 class ResourceUpdateQueue;
 class SharedBitmapManager;
+class TaskGraphRunner;
 class TopControlsManager;
 class UIResourceRequest;
+struct PendingPageScaleAnimation;
 struct RenderingStats;
 struct ScrollAndScaleSet;
 
-// Provides information on an Impl's rendering capabilities back to the
-// LayerTreeHost.
-struct CC_EXPORT RendererCapabilities {
-  RendererCapabilities(ResourceFormat best_texture_format,
-                       bool allow_partial_texture_updates,
-                       int max_texture_size,
-                       bool using_shared_memory_resources);
-
-  RendererCapabilities();
-  ~RendererCapabilities();
-
-  // Duplicate any modification to this list to RendererCapabilitiesImpl.
-  ResourceFormat best_texture_format;
-  bool allow_partial_texture_updates;
-  int max_texture_size;
-  bool using_shared_memory_resources;
-};
-
 class CC_EXPORT LayerTreeHost {
  public:
+  // TODO(sad): InitParams should be a movable type so that it can be
+  // std::move()d to the Create* functions.
+  struct CC_EXPORT InitParams {
+    LayerTreeHostClient* client = nullptr;
+    SharedBitmapManager* shared_bitmap_manager = nullptr;
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager = nullptr;
+    TaskGraphRunner* task_graph_runner = nullptr;
+    LayerTreeSettings const* settings = nullptr;
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner;
+    scoped_ptr<BeginFrameSource> external_begin_frame_source;
+
+    InitParams();
+    ~InitParams();
+  };
+
   // The SharedBitmapManager will be used on the compositor thread.
   static scoped_ptr<LayerTreeHost> CreateThreaded(
-      LayerTreeHostClient* client,
-      SharedBitmapManager* shared_bitmap_manager,
-      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-      const LayerTreeSettings& settings,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      InitParams* params);
 
   static scoped_ptr<LayerTreeHost> CreateSingleThreaded(
-      LayerTreeHostClient* client,
       LayerTreeHostSingleThreadClient* single_thread_client,
-      SharedBitmapManager* shared_bitmap_manager,
-      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-      const LayerTreeSettings& settings,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      InitParams* params);
   virtual ~LayerTreeHost();
 
   void SetLayerTreeHostClientReady();
 
   // LayerTreeHost interface to Proxy.
-  void WillBeginMainFrame() {
-    client_->WillBeginMainFrame(source_frame_number_);
-  }
+  void WillBeginMainFrame();
   void DidBeginMainFrame();
   void BeginMainFrame(const BeginFrameArgs& args);
+  void BeginMainFrameNotExpectedSoon();
   void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
   void Layout();
@@ -120,15 +112,19 @@ class CC_EXPORT LayerTreeHost {
   void CommitComplete();
   void SetOutputSurface(scoped_ptr<OutputSurface> output_surface);
   void RequestNewOutputSurface();
+  void DidInitializeOutputSurface();
+  void DidFailToInitializeOutputSurface();
   virtual scoped_ptr<LayerTreeHostImpl> CreateLayerTreeHostImpl(
       LayerTreeHostImplClient* client);
   void DidLoseOutputSurface();
   bool output_surface_lost() const { return output_surface_lost_; }
-  virtual void OnCreateAndInitializeOutputSurfaceAttempted(bool success);
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
   bool UpdateLayers(ResourceUpdateQueue* queue);
+
+  // Called when the compositor completed page scale animation.
+  void DidCompletePageScaleAnimation();
 
   LayerTreeHostClient* client() { return client_; }
   const base::WeakPtr<InputHandler>& GetInputHandler() {
@@ -142,9 +138,6 @@ class CC_EXPORT LayerTreeHost {
   void FinishAllRendering();
 
   void SetDeferCommits(bool defer_commits);
-
-  // Test only hook
-  virtual void DidDeferCommit();
 
   int source_frame_number() const { return source_frame_number_; }
 
@@ -162,6 +155,8 @@ class CC_EXPORT LayerTreeHost {
   virtual void SetNeedsUpdateLayers();
   virtual void SetNeedsCommit();
   virtual void SetNeedsFullTreeSync();
+  virtual void SetNeedsMetaInfoRecomputation(
+      bool needs_meta_info_recomputation);
   void SetNeedsRedraw();
   void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
   bool CommitRequested() const;
@@ -176,11 +171,14 @@ class CC_EXPORT LayerTreeHost {
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
   const Layer* root_layer() const { return root_layer_.get(); }
+  const Layer* overscroll_elasticity_layer() const {
+    return overscroll_elasticity_layer_.get();
+  }
   const Layer* page_scale_layer() const { return page_scale_layer_.get(); }
-  void RegisterViewportLayers(
-      scoped_refptr<Layer> page_scale_layer,
-      scoped_refptr<Layer> inner_viewport_scroll_layer,
-      scoped_refptr<Layer> outer_viewport_scroll_layer);
+  void RegisterViewportLayers(scoped_refptr<Layer> overscroll_elasticity_layer,
+                              scoped_refptr<Layer> page_scale_layer,
+                              scoped_refptr<Layer> inner_viewport_scroll_layer,
+                              scoped_refptr<Layer> outer_viewport_scroll_layer);
   Layer* inner_viewport_scroll_layer() const {
     return inner_viewport_scroll_layer_.get();
   }
@@ -188,8 +186,7 @@ class CC_EXPORT LayerTreeHost {
     return outer_viewport_scroll_layer_.get();
   }
 
-  void RegisterSelection(const LayerSelectionBound& start,
-                         const LayerSelectionBound& end);
+  void RegisterSelection(const LayerSelection& selection);
 
   const LayerTreeSettings& settings() const { return settings_; }
 
@@ -200,11 +197,10 @@ class CC_EXPORT LayerTreeHost {
     return has_gpu_rasterization_trigger_;
   }
   void SetHasGpuRasterizationTrigger(bool has_trigger);
-  bool UseGpuRasterization() const;
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
-  void SetTopControlsLayoutHeight(float height);
-  void SetTopControlsContentOffset(float offset);
+  void SetTopControlsHeight(float height, bool shrink);
+  void SetTopControlsShownRatio(float ratio);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
@@ -213,6 +209,7 @@ class CC_EXPORT LayerTreeHost {
                                    float min_page_scale_factor,
                                    float max_page_scale_factor);
   float page_scale_factor() const { return page_scale_factor_; }
+  gfx::Vector2dF elastic_overscroll() const { return elastic_overscroll_; }
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -221,14 +218,14 @@ class CC_EXPORT LayerTreeHost {
     has_transparent_background_ = transparent;
   }
 
-  void SetOverhangBitmap(const SkBitmap& bitmap);
-
   PrioritizedResourceManager* contents_texture_manager() const {
     return contents_texture_manager_.get();
   }
 
   void SetVisible(bool visible);
   bool visible() const { return visible_; }
+
+  void SetThrottleFrameProduction(bool throttle);
 
   void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                bool use_anchor,
@@ -262,9 +259,6 @@ class CC_EXPORT LayerTreeHost {
   AnimationRegistrar* animation_registrar() const {
     return animation_registrar_.get();
   }
-
-  // Obtains a thorough dump of the LayerTreeHost as a value.
-  void AsValueInto(base::debug::TracedValue* value) const;
 
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
 
@@ -311,21 +305,47 @@ class CC_EXPORT LayerTreeHost {
   void set_surface_id_namespace(uint32_t id_namespace);
   SurfaceSequence CreateSurfaceSequence();
 
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames) const;
+  void SendBeginFramesToChildren(const BeginFrameArgs& args) const;
+
+  void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval);
+
+  PropertyTrees* property_trees() { return &property_trees_; }
+  bool needs_meta_info_recomputation() {
+    return needs_meta_info_recomputation_;
+  }
+
+  // If this is true, only property trees will be used for main thread CDP.
+  // CDP will not be run, and verify_property_trees will be ignored.
+  bool using_only_property_trees() const {
+    return settings().impl_side_painting;
+  }
+
  protected:
-  LayerTreeHost(LayerTreeHostClient* client,
-                SharedBitmapManager* shared_bitmap_manager,
-                gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
-                const LayerTreeSettings& settings);
+  explicit LayerTreeHost(InitParams* params);
   void InitializeThreaded(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
   void InitializeSingleThreaded(
       LayerTreeHostSingleThreadClient* single_thread_client,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
   void InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
   void SetOutputSurfaceLostForTesting(bool is_lost) {
     output_surface_lost_ = is_lost;
   }
+
+  // shared_bitmap_manager(), gpu_memory_buffer_manager(), and
+  // task_graph_runner() return valid values only until the LayerTreeHostImpl is
+  // created in CreateLayerTreeHostImpl().
+  SharedBitmapManager* shared_bitmap_manager() const {
+    return shared_bitmap_manager_;
+  }
+  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager() const {
+    return gpu_memory_buffer_manager_;
+  }
+  TaskGraphRunner* task_graph_runner() const { return task_graph_runner_; }
 
   MicroBenchmarkController micro_benchmark_controller_;
 
@@ -366,7 +386,7 @@ class CC_EXPORT LayerTreeHost {
   UIResourceClientMap ui_resource_client_map_;
   int next_ui_resource_id_;
 
-  typedef std::list<UIResourceRequest> UIResourceRequestQueue;
+  typedef std::vector<UIResourceRequest> UIResourceRequestQueue;
   UIResourceRequestQueue ui_resource_request_queue_;
 
   void RecordGpuRasterizationHistogram();
@@ -376,6 +396,7 @@ class CC_EXPORT LayerTreeHost {
 
   bool inside_begin_main_frame_;
   bool needs_full_tree_sync_;
+  bool needs_meta_info_recomputation_;
 
   base::CancelableClosure prepaint_callback_;
 
@@ -386,7 +407,6 @@ class CC_EXPORT LayerTreeHost {
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
   bool output_surface_lost_;
-  int num_failed_recreate_attempts_;
 
   scoped_refptr<Layer> root_layer_;
   scoped_refptr<HeadsUpDisplayLayer> hud_layer_;
@@ -401,8 +421,9 @@ class CC_EXPORT LayerTreeHost {
   LayerTreeDebugState debug_state_;
 
   gfx::Size device_viewport_size_;
-  float top_controls_layout_height_;
-  float top_controls_content_offset_;
+  bool top_controls_shrink_blink_size_;
+  float top_controls_height_;
+  float top_controls_shown_ratio_;
   float device_scale_factor_;
 
   bool visible_;
@@ -412,6 +433,7 @@ class CC_EXPORT LayerTreeHost {
   float page_scale_factor_;
   float min_page_scale_factor_;
   float max_page_scale_factor_;
+  gfx::Vector2dF elastic_overscroll_;
   bool has_gpu_rasterization_trigger_;
   bool content_is_suitable_for_gpu_rasterization_;
   bool gpu_rasterization_histogram_recorded_;
@@ -419,54 +441,37 @@ class CC_EXPORT LayerTreeHost {
   SkColor background_color_;
   bool has_transparent_background_;
 
-  // If set, this texture is used to fill in the parts of the screen not
-  // covered by layers.
-  scoped_ptr<ScopedUIResource> overhang_ui_resource_;
-
   typedef ScopedPtrVector<PrioritizedResource> TextureList;
   size_t partial_texture_update_requests_;
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 
-  struct PendingPageScaleAnimation {
-    gfx::Vector2d target_offset;
-    bool use_anchor;
-    float scale;
-    base::TimeDelta duration;
-  };
   scoped_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
+
+  // If set, then page scale animation has completed, but the client hasn't been
+  // notified about it yet.
+  bool did_complete_scale_animation_;
 
   bool in_paint_layer_contents_;
 
-  static const int kTotalFramesToUseForLCDTextMetrics = 50;
-  int total_frames_used_for_lcd_text_metrics_;
-
-  struct LCDTextMetrics {
-    LCDTextMetrics()
-        : total_num_cc_layers(0),
-          total_num_cc_layers_can_use_lcd_text(0),
-          total_num_cc_layers_will_use_lcd_text(0) {}
-
-    int64 total_num_cc_layers;
-    int64 total_num_cc_layers_can_use_lcd_text;
-    int64 total_num_cc_layers_will_use_lcd_text;
-  };
-  LCDTextMetrics lcd_text_metrics_;
   int id_;
   bool next_commit_forces_redraw_;
 
+  scoped_refptr<Layer> overscroll_elasticity_layer_;
   scoped_refptr<Layer> page_scale_layer_;
   scoped_refptr<Layer> inner_viewport_scroll_layer_;
   scoped_refptr<Layer> outer_viewport_scroll_layer_;
 
-  LayerSelectionBound selection_start_;
-  LayerSelectionBound selection_end_;
+  LayerSelection selection_;
 
   SharedBitmapManager* shared_bitmap_manager_;
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
+  TaskGraphRunner* task_graph_runner_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
+
+  PropertyTrees property_trees_;
 
   uint32_t surface_id_namespace_;
   uint32_t next_surface_sequence_;

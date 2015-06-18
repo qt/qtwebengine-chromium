@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
@@ -27,6 +26,9 @@ namespace sandbox {
 
 namespace {
 
+// These tests fail under ThreadSanitizer, see http://crbug.com/342305
+#if !defined(THREAD_SANITIZER)
+
 int GetRaceTestIterations() {
   if (IsRunningOnValgrind()) {
     return 2;
@@ -35,76 +37,110 @@ int GetRaceTestIterations() {
   }
 }
 
-class ScopedProcSelfTask {
+class ScopedProc {
  public:
-  ScopedProcSelfTask() : fd_(-1) {
-    fd_ = open("/proc/self/task/", O_RDONLY | O_DIRECTORY);
+  ScopedProc() : fd_(-1) {
+    fd_ = open("/proc/", O_RDONLY | O_DIRECTORY);
     CHECK_LE(0, fd_);
   }
 
-  ~ScopedProcSelfTask() { PCHECK(0 == IGNORE_EINTR(close(fd_))); }
+  ~ScopedProc() { PCHECK(0 == IGNORE_EINTR(close(fd_))); }
 
   int fd() { return fd_; }
 
  private:
   int fd_;
-  DISALLOW_COPY_AND_ASSIGN(ScopedProcSelfTask);
+  DISALLOW_COPY_AND_ASSIGN(ScopedProc);
 };
 
-#if defined(THREAD_SANITIZER)
-// These tests fail under ThreadSanitizer, see http://crbug.com/342305
-#define MAYBE_IsSingleThreadedBasic DISABLED_IsSingleThreadedBasic
-#define MAYBE_IsSingleThreadedIterated DISABLED_IsSingleThreadedIterated
-#define MAYBE_IsSingleThreadedStartAndStop DISABLED_IsSingleThreadedStartAndStop
-#else
-#define MAYBE_IsSingleThreadedBasic IsSingleThreadedBasic
-#define MAYBE_IsSingleThreadedIterated IsSingleThreadedIterated
-#define MAYBE_IsSingleThreadedStartAndStop IsSingleThreadedStartAndStop
-#endif
-
-TEST(ThreadHelpers, MAYBE_IsSingleThreadedBasic) {
-  ScopedProcSelfTask task;
-  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
-  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(-1));
+TEST(ThreadHelpers, IsSingleThreadedBasic) {
+  ScopedProc proc_fd;
+  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
+  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded());
 
   base::Thread thread("sandbox_tests");
   ASSERT_TRUE(thread.Start());
-  ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(task.fd()));
-  ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(-1));
+  ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
+  ASSERT_FALSE(ThreadHelpers::IsSingleThreaded());
   // Explicitly stop the thread here to not pollute the next test.
-  ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(task.fd(), &thread));
+  ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(proc_fd.fd(), &thread));
 }
 
-TEST(ThreadHelpers, MAYBE_IsSingleThreadedIterated) {
-  ScopedProcSelfTask task;
-  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
+SANDBOX_TEST(ThreadHelpers, AssertSingleThreaded) {
+  ScopedProc proc_fd;
+  SANDBOX_ASSERT(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
+  SANDBOX_ASSERT(ThreadHelpers::IsSingleThreaded());
+
+  ThreadHelpers::AssertSingleThreaded(proc_fd.fd());
+  ThreadHelpers::AssertSingleThreaded();
+}
+
+TEST(ThreadHelpers, IsSingleThreadedIterated) {
+  ScopedProc proc_fd;
+  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
 
   // Iterate to check for race conditions.
   for (int i = 0; i < GetRaceTestIterations(); ++i) {
     base::Thread thread("sandbox_tests");
     ASSERT_TRUE(thread.Start());
-    ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(task.fd()));
+    ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
     // Explicitly stop the thread here to not pollute the next test.
-    ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(task.fd(), &thread));
+    ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(proc_fd.fd(), &thread));
   }
 }
 
-TEST(ThreadHelpers, MAYBE_IsSingleThreadedStartAndStop) {
-  ScopedProcSelfTask task;
-  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
+TEST(ThreadHelpers, IsSingleThreadedStartAndStop) {
+  ScopedProc proc_fd;
+  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
 
   base::Thread thread("sandbox_tests");
   // This is testing for a race condition, so iterate.
   // Manually, this has been tested with more that 1M iterations.
   for (int i = 0; i < GetRaceTestIterations(); ++i) {
     ASSERT_TRUE(thread.Start());
-    ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(task.fd()));
+    ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
 
-    ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(task.fd(), &thread));
-    ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
+    ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(proc_fd.fd(), &thread));
+    ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(proc_fd.fd()));
     ASSERT_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
   }
 }
+
+SANDBOX_TEST(ThreadHelpers, AssertSingleThreadedAfterThreadStopped) {
+  SANDBOX_ASSERT(ThreadHelpers::IsSingleThreaded());
+
+  base::Thread thread1("sandbox_tests");
+  base::Thread thread2("sandbox_tests");
+
+  for (int i = 0; i < GetRaceTestIterations(); ++i) {
+    SANDBOX_ASSERT(thread1.Start());
+    SANDBOX_ASSERT(thread2.Start());
+    SANDBOX_ASSERT(!ThreadHelpers::IsSingleThreaded());
+
+    thread1.Stop();
+    thread2.Stop();
+    // This will wait on /proc/ to reflect the state of threads in the
+    // process.
+    ThreadHelpers::AssertSingleThreaded();
+    SANDBOX_ASSERT(ThreadHelpers::IsSingleThreaded());
+  }
+}
+
+// Only run this test in Debug mode, where AssertSingleThreaded() will return
+// in less than 64ms.
+#if !defined(NDEBUG)
+SANDBOX_DEATH_TEST(
+    ThreadHelpers,
+    AssertSingleThreadedDies,
+    DEATH_MESSAGE(
+        ThreadHelpers::GetAssertSingleThreadedErrorMessageForTests())) {
+  base::Thread thread1("sandbox_tests");
+  SANDBOX_ASSERT(thread1.Start());
+  ThreadHelpers::AssertSingleThreaded();
+}
+#endif  // !defined(NDEBUG)
+
+#endif  // !defined(THREAD_SANITIZER)
 
 }  // namespace
 

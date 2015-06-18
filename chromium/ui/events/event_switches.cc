@@ -34,7 +34,11 @@ const char kCompensateForUnstablePinchZoom[] =
 const char kTouchDevices[] = "touch-devices";
 #endif
 
-#if defined(USE_XI2_MT) || defined(USE_OZONE)
+#if defined(USE_X11) || defined(USE_OZONE)
+// Tells Chrome to do additional touch noise filtering. Should only be used if
+// the driver level filtering is insufficient.
+const char kExtraTouchNoiseFiltering[] = "touch-noise-filtering";
+
 // The calibration factors given as "<left>,<right>,<top>,<bottom>".
 const char kTouchCalibration[] = "touch-calibration";
 #endif

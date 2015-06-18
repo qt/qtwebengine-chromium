@@ -133,7 +133,6 @@
  */
 
 #define OT_LOOKUP_TYPE_SUBST_SINGLE	1u
-#define OT_LOOKUP_TYPE_SUBST_MULTIPLE	2u
 #define OT_LOOKUP_TYPE_SUBST_LIGATURE	4u
 
 #define OT_SUBLOOKUP_SINGLE_SUBST_FORMAT2(Name, FromGlyphs, ToGlyphs) \
@@ -313,6 +312,9 @@ OT_TABLE_END
 /*
  * Include a second time to get the table data...
  */
+#if 0
+#include "hb-private.hh" /* Make check-includes.sh happy. */
+#endif
 #ifdef OT_MEASURE
 #include "hb-ot-shape-complex-arabic-win1256.hh"
 #endif

@@ -3,7 +3,19 @@
 # found in the LICENSE file.
 {
   'conditions': [
-    ['OS=="linux"', {
+    ['use_x11==0', {
+      'variables': {
+        'command': [
+          '../testing/test_env.py',
+          '<(PRODUCT_DIR)/interactive_ui_tests<(EXECUTABLE_SUFFIX)',
+          '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--msan=<(msan)',
+          '--tsan=<(tsan)',
+        ],
+      },
+    }],
+    ['use_x11==1', {
       'variables': {
         'command': [
           '../testing/xvfb.py',
@@ -11,21 +23,22 @@
           '<(PRODUCT_DIR)/interactive_ui_tests<(EXECUTABLE_SUFFIX)',
           '--test-launcher-bot-mode',
           '--asan=<(asan)',
-          '--lsan=<(lsan)',
+          '--msan=<(msan)',
+          '--tsan=<(tsan)',
         ],
         'files': [
           '../testing/xvfb.py',
-          '<(PRODUCT_DIR)/libffmpegsumo.so',
-          '<(PRODUCT_DIR)/libosmesa.so',
-          '<(PRODUCT_DIR)/libppapi_tests.so',
-          '<(PRODUCT_DIR)/pyproto/',
+          '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
       },
     }],
-    ['OS=="linux" and use_ozone==0', {
+    ['OS=="linux"', {
       'variables': {
         'files': [
-          '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
+          '<(PRODUCT_DIR)/libffmpegsumo.so',
+          '<(PRODUCT_DIR)/libosmesa.so',
+          '<(PRODUCT_DIR)/libppapi_tests.so',
+          '<(PRODUCT_DIR)/pyproto/google/',
         ],
       },
     }],
@@ -35,13 +48,16 @@
           '../net/data/ssl/certificates/',
           '../net/tools/testserver/',
           '../ppapi/tests/test_case.html',
+          '../ppapi/tests/test_case.html.mock-http-headers',
           '../ppapi/tests/test_page.css',
+          '../ppapi/tests/test_page.css.mock-http-headers',
           '../testing/test_env.py',
           '../third_party/pyftpdlib/',
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
           '<(PRODUCT_DIR)/interactive_ui_tests<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/resources.pak',
+          '<(PRODUCT_DIR)/ui_test.pak',
           'test/data/',
         ],
         'read_only': 1,
@@ -53,7 +69,6 @@
           '<(PRODUCT_DIR)/chrome_100_percent.pak',
           '<(PRODUCT_DIR)/locales/en-US.pak',
           '<(PRODUCT_DIR)/locales/fr.pak',
-          '<(PRODUCT_DIR)/ui_test.pak',
         ],
       },
     }],
@@ -68,14 +83,15 @@
         ],
       },
     }],
-    ['OS=="mac" or OS=="win"', {
+    ['OS=="mac" and asan==1 and fastbuild==0', {
       'variables': {
-        'command': [
-          '../testing/test_env.py',
-          '<(PRODUCT_DIR)/interactive_ui_tests<(EXECUTABLE_SUFFIX)',
-          '--test-launcher-bot-mode',
-          '--asan=<(asan)',
-          '--lsan=<(lsan)',
+        'files': [
+          '<(PRODUCT_DIR)/<(mac_product_name) Framework.framework/',
+          '<(PRODUCT_DIR)/<(mac_product_name).app.dSYM/',
+          '<(PRODUCT_DIR)/ffmpegsumo.so.dSYM/',
+          '<(PRODUCT_DIR)/interactive_ui_tests.dSYM/',
+          '<(PRODUCT_DIR)/osmesa.so.dSYM/',
+          '<(PRODUCT_DIR)/ppapi_tests.plugin.dSYM/',
         ],
       },
     }],
@@ -83,7 +99,7 @@
       'variables': {
         'files': [
           '<(PRODUCT_DIR)/chrome_elf.dll',
-          '<(PRODUCT_DIR)/d3dcompiler_46.dll',
+          '<(PRODUCT_DIR)/d3dcompiler_47.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
           '<(PRODUCT_DIR)/libEGL.dll',
           '<(PRODUCT_DIR)/libGLESv2.dll',
@@ -107,6 +123,13 @@
         ],
       },
     }],
+    ['OS=="win" and kasko==1', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/kasko.dll',
+        ],
+      },
+    }],
     ['chromeos==1', {
       'variables': {
         'files': [
@@ -116,6 +139,7 @@
           '<(PRODUCT_DIR)/nacl_helper',
           '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
           '<(PRODUCT_DIR)/resources/chromeos/',
+          'browser/chromeos/login/test/https_forwarder.py',
         ],
       },
     }],

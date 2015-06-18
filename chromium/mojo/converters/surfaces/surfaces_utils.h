@@ -5,8 +5,8 @@
 #ifndef MOJO_CONVERTERS_SURFACES_SURFACES_UTILS_H_
 #define MOJO_CONVERTERS_SURFACES_SURFACES_UTILS_H_
 
+#include "components/surfaces/public/interfaces/quads.mojom.h"
 #include "mojo/converters/surfaces/mojo_surfaces_export.h"
-#include "mojo/services/public/interfaces/surfaces/quads.mojom.h"
 
 namespace gfx {
 class Rect;

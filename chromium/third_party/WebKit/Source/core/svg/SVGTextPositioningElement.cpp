@@ -23,7 +23,7 @@
 #include "core/svg/SVGTextPositioningElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGText.h"
+#include "core/layout/svg/LayoutSVGText.h"
 #include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGNumberList.h"
 
@@ -31,10 +31,10 @@ namespace blink {
 
 SVGTextPositioningElement::SVGTextPositioningElement(const QualifiedName& tagName, Document& document)
     : SVGTextContentElement(tagName, document)
-    , m_x(SVGAnimatedLengthList::create(this, SVGNames::xAttr, SVGLengthList::create(LengthModeWidth)))
-    , m_y(SVGAnimatedLengthList::create(this, SVGNames::yAttr, SVGLengthList::create(LengthModeHeight)))
-    , m_dx(SVGAnimatedLengthList::create(this, SVGNames::dxAttr, SVGLengthList::create(LengthModeWidth)))
-    , m_dy(SVGAnimatedLengthList::create(this, SVGNames::dyAttr, SVGLengthList::create(LengthModeHeight)))
+    , m_x(SVGAnimatedLengthList::create(this, SVGNames::xAttr, SVGLengthList::create(SVGLengthMode::Width)))
+    , m_y(SVGAnimatedLengthList::create(this, SVGNames::yAttr, SVGLengthList::create(SVGLengthMode::Height)))
+    , m_dx(SVGAnimatedLengthList::create(this, SVGNames::dxAttr, SVGLengthList::create(SVGLengthMode::Width)))
+    , m_dy(SVGAnimatedLengthList::create(this, SVGNames::dyAttr, SVGLengthList::create(SVGLengthMode::Height)))
     , m_rotate(SVGAnimatedNumberList::create(this, SVGNames::rotateAttr, SVGNumberList::create()))
 {
     addToPropertyMap(m_x);
@@ -44,33 +44,18 @@ SVGTextPositioningElement::SVGTextPositioningElement(const QualifiedName& tagNam
     addToPropertyMap(m_rotate);
 }
 
-bool SVGTextPositioningElement::isSupportedAttribute(const QualifiedName& attrName)
+DEFINE_TRACE(SVGTextPositioningElement)
 {
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::xAttr);
-        supportedAttributes.add(SVGNames::yAttr);
-        supportedAttributes.add(SVGNames::dxAttr);
-        supportedAttributes.add(SVGNames::dyAttr);
-        supportedAttributes.add(SVGNames::rotateAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGTextPositioningElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
+    visitor->trace(m_x);
+    visitor->trace(m_y);
+    visitor->trace(m_dx);
+    visitor->trace(m_dy);
+    visitor->trace(m_rotate);
+    SVGTextContentElement::trace(visitor);
 }
 
 void SVGTextPositioningElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGTextContentElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     bool updateRelativeLengths = attrName == SVGNames::xAttr
                               || attrName == SVGNames::yAttr
                               || attrName == SVGNames::dxAttr
@@ -79,26 +64,28 @@ void SVGTextPositioningElement::svgAttributeChanged(const QualifiedName& attrNam
     if (updateRelativeLengths)
         updateRelativeLengthsInformation();
 
-    RenderObject* renderer = this->renderer();
-    if (!renderer)
+    if (updateRelativeLengths || attrName == SVGNames::rotateAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
+        LayoutObject* layoutObject = this->layoutObject();
+        if (!layoutObject)
+            return;
+
+        if (LayoutSVGText* textLayoutObject = LayoutSVGText::locateLayoutSVGTextAncestor(layoutObject))
+            textLayoutObject->setNeedsPositioningValuesUpdate();
+        markForLayoutAndParentResourceInvalidation(layoutObject);
         return;
+    }
 
-    ASSERT(updateRelativeLengths || attrName == SVGNames::rotateAttr);
-
-    if (RenderSVGText* textRenderer = RenderSVGText::locateRenderSVGTextAncestor(renderer))
-        textRenderer->setNeedsPositioningValuesUpdate();
-    markForLayoutAndParentResourceInvalidation(renderer);
+    SVGTextContentElement::svgAttributeChanged(attrName);
 }
 
-SVGTextPositioningElement* SVGTextPositioningElement::elementFromRenderer(RenderObject* renderer)
+SVGTextPositioningElement* SVGTextPositioningElement::elementFromLayoutObject(LayoutObject& layoutObject)
 {
-    if (!renderer)
-        return 0;
+    if (!layoutObject.isSVGText() && !layoutObject.isSVGInline())
+        return nullptr;
 
-    if (!renderer->isSVGText() && !renderer->isSVGInline())
-        return 0;
-
-    Node* node = renderer->node();
+    Node* node = layoutObject.node();
     ASSERT(node);
     ASSERT(node->isSVGElement());
 

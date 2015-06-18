@@ -17,6 +17,7 @@
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/input/synthetic_gesture_params.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
+#include "content/common/input/synthetic_smooth_drag_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/synthetic_tap_gesture_params.h"
 #include "content/common/input/touch_action.h"
@@ -24,11 +25,11 @@
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/ipc/latency_info_param_traits.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
-#include "ui/gfx/point.h"
 #include "ui/gfx/range/range.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/vector2d_f.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -75,6 +76,13 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyntheticGestureParams)
   IPC_STRUCT_TRAITS_MEMBER(gesture_source_type)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothDragGestureParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(start_point)
+  IPC_STRUCT_TRAITS_MEMBER(distances)
+  IPC_STRUCT_TRAITS_MEMBER(speed_in_pixels_s)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothScrollGestureParams)
@@ -162,6 +170,9 @@ IPC_MESSAGE_ROUTED2(InputMsg_ExecuteEditCommand,
                     std::string, /* name */
                     std::string /* value */)
 
+// Message payload is the name of a WebCore edit command to execute.
+IPC_MESSAGE_ROUTED1(InputMsg_ExecuteNoValueEditCommand, std::string /* name */)
+
 IPC_MESSAGE_ROUTED0(InputMsg_MouseCaptureLost)
 
 // TODO(darin): figure out how this meshes with RestoreFocus
@@ -242,6 +253,9 @@ IPC_MESSAGE_ROUTED1(InputHostMsg_SetTouchAction,
 IPC_MESSAGE_ROUTED1(InputHostMsg_DidOverscroll,
                     content::DidOverscrollParams /* params */)
 
+// Sent by the compositor when a fling animation is stopped.
+IPC_MESSAGE_ROUTED0(InputHostMsg_DidStopFlinging)
+
 // Acknowledges receipt of a InputMsg_MoveCaret message.
 IPC_MESSAGE_ROUTED0(InputHostMsg_MoveCaret_ACK)
 
@@ -254,15 +268,11 @@ IPC_MESSAGE_ROUTED0(InputHostMsg_SelectRange_ACK)
 // Required for cancelling an ongoing input method composition.
 IPC_MESSAGE_ROUTED0(InputHostMsg_ImeCancelComposition)
 
-#if defined(OS_MACOSX) || defined(USE_AURA) || defined(OS_ANDROID)
-// On Mac and Aura IME can request composition character bounds
-// synchronously (see crbug.com/120597). This IPC message sends the character
-// bounds after every composition change to always have correct bound info.
-// This IPC message is also used on Android 5.0 and above.
+// This IPC message sends the character bounds after every composition change
+// to always have correct bound info.
 IPC_MESSAGE_ROUTED2(InputHostMsg_ImeCompositionRangeChanged,
                     gfx::Range /* composition range */,
                     std::vector<gfx::Rect> /* character bounds */)
-#endif
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent InputMsg, then ifdefs for platform specific InputMsg, then

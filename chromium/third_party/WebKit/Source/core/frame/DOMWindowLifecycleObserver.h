@@ -27,26 +27,26 @@
 #ifndef DOMWindowLifecycleObserver_h
 #define DOMWindowLifecycleObserver_h
 
+#include "core/CoreExport.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "platform/LifecycleObserver.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class LocalDOMWindow;
+class DOMWindowLifecycleNotifier;
 
-template<> void observerContext(LocalDOMWindow*, LifecycleObserver<LocalDOMWindow>*);
-template<> void unobserverContext(LocalDOMWindow*, LifecycleObserver<LocalDOMWindow>*);
-
-class DOMWindowLifecycleObserver : public LifecycleObserver<LocalDOMWindow> {
+class CORE_EXPORT DOMWindowLifecycleObserver : public LifecycleObserver<LocalDOMWindow, DOMWindowLifecycleObserver, DOMWindowLifecycleNotifier> {
 public:
-    explicit DOMWindowLifecycleObserver(LocalDOMWindow*);
-    virtual ~DOMWindowLifecycleObserver();
-
-    LocalDOMWindow* window() const;
-
     virtual void didAddEventListener(LocalDOMWindow*, const AtomicString&) { }
     virtual void didRemoveEventListener(LocalDOMWindow*, const AtomicString&) { }
     virtual void didRemoveAllEventListeners(LocalDOMWindow*) { }
+
+protected:
+    explicit DOMWindowLifecycleObserver(LocalDOMWindow* window)
+        : LifecycleObserver(window)
+    {
+    }
 };
 
 } // namespace blink

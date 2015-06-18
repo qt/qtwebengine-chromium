@@ -5,13 +5,15 @@
 #include "ui/views/controls/webview/webview.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/web_contents_tester.h"
 #include "content/test/test_content_browser_client.h"
 #include "ui/aura/window.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/test/test_views_delegate.h"
 #include "ui/views/test/widget_test.h"
@@ -43,7 +45,7 @@ class WebViewTestViewsDelegate : public views::TestViewsDelegate {
 class WebViewTestWebContentsObserver : public content::WebContentsObserver {
  public:
   WebViewTestWebContentsObserver(content::WebContents* web_contents)
-      : web_contents_(static_cast<content::WebContentsImpl*>(web_contents)),
+      : web_contents_(web_contents),
         was_shown_(false),
         shown_count_(0),
         hidden_count_(0) {
@@ -82,7 +84,7 @@ class WebViewTestWebContentsObserver : public content::WebContentsObserver {
   bool valid_root_while_shown() const { return valid_root_while_shown_; }
 
  private:
-  content::WebContentsImpl* web_contents_;
+  content::WebContents* web_contents_;
   bool was_shown_;
   int32 shown_count_;
   int32 hidden_count_;
@@ -362,6 +364,76 @@ TEST_F(WebViewUnitTest, EmbeddedFullscreenDuringScreenCapture_Switching) {
   web_view()->SetWebContents(web_contents1.get());
   EXPECT_EQ(web_contents1->GetNativeView(), holder()->native_view());
   EXPECT_EQ(gfx::Rect(18, 26, 64, 48), holder()->bounds());
+}
+
+// Tests that clicking anywhere within the bounds of WebView, and either outside
+// or inside the bounds of its child NativeViewHost, causes WebView to gain
+// focus.
+TEST_F(WebViewUnitTest, EmbeddedFullscreenDuringScreenCapture_ClickToFocus) {
+  // For this test, add another View that can take focus away from WebView.
+  web_view()->SetBoundsRect(gfx::Rect(0, 0, 100, 90));
+  views::View* const something_to_focus = new views::View();
+  something_to_focus->SetBoundsRect(gfx::Rect(0, 90, 100, 10));
+  something_to_focus->SetFocusable(true);
+  top_level_widget()->GetContentsView()->AddChildView(something_to_focus);
+
+  web_view()->SetEmbedFullscreenWidgetMode(true);
+  ASSERT_EQ(1, web_view()->child_count());
+
+  const scoped_ptr<content::WebContents> web_contents(CreateWebContents());
+  WebViewTestWebContentsDelegate delegate;
+  web_contents->SetDelegate(&delegate);
+  web_view()->SetWebContents(web_contents.get());
+
+  // Begin screen capture of the WebContents and then enter fullscreen mode.
+  // The holder should be centered within WebView and sized to match the capture
+  // size.
+  const gfx::Size capture_size(64, 48);
+  web_contents->IncrementCapturerCount(capture_size);
+  delegate.set_is_fullscreened(true);
+  static_cast<content::WebContentsObserver*>(web_view())->
+      DidToggleFullscreenModeForTab(true);
+  EXPECT_EQ(gfx::Rect(18, 21, 64, 48), holder()->bounds());
+
+  // Focus the other widget.
+  something_to_focus->RequestFocus();
+  EXPECT_FALSE(web_view()->HasFocus());
+  EXPECT_FALSE(holder()->HasFocus());
+  EXPECT_TRUE(something_to_focus->HasFocus());
+
+  // Send mouse press event to WebView outside the bounds of the holder, and
+  // confirm WebView took focus.
+  const ui::MouseEvent click_outside_holder(
+      ui::ET_MOUSE_PRESSED, gfx::Point(1, 1),
+      gfx::Point(),  // Immaterial.
+      ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON, 0);
+  EXPECT_TRUE(static_cast<views::View*>(web_view())->
+                  OnMousePressed(click_outside_holder));
+  EXPECT_TRUE(web_view()->HasFocus());
+  EXPECT_FALSE(holder()->HasFocus());
+  EXPECT_FALSE(something_to_focus->HasFocus());
+
+  // Focus the other widget again.
+  something_to_focus->RequestFocus();
+  EXPECT_FALSE(web_view()->HasFocus());
+  EXPECT_FALSE(holder()->HasFocus());
+  EXPECT_TRUE(something_to_focus->HasFocus());
+
+  // Send a mouse press event within the bounds of the holder and expect no
+  // focus change.  The reason is that WebView is not supposed to handle mouse
+  // events within the bounds of the holder, and it would be up to the
+  // WebContents native view to grab the focus instead.  In this test
+  // environment, the WebContents native view doesn't include the implementation
+  // needed to grab focus, so no focus change will occur.
+  const ui::MouseEvent click_inside_holder(
+      ui::ET_MOUSE_PRESSED, web_view()->bounds().CenterPoint(),
+      gfx::Point(),  // Immaterial.
+      ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON, 0);
+  EXPECT_FALSE(static_cast<views::View*>(web_view())->
+                  OnMousePressed(click_inside_holder));
+  EXPECT_FALSE(web_view()->HasFocus());
+  EXPECT_FALSE(holder()->HasFocus());
+  EXPECT_TRUE(something_to_focus->HasFocus());
 }
 
 }  // namespace views

@@ -31,8 +31,10 @@
 #ifndef WorkerScriptController_h
 #define WorkerScriptController_h
 
+#include "bindings/core/v8/RejectedPromises.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8CacheOptions.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/TextPosition.h"
@@ -40,6 +42,7 @@
 
 namespace blink {
 
+class CachedMetadataHandler;
 class ErrorEvent;
 class ExceptionState;
 class ScriptSourceCode;
@@ -47,17 +50,17 @@ class WorkerGlobalScope;
 
 class WorkerScriptController {
 public:
-    explicit WorkerScriptController(WorkerGlobalScope&);
+    WorkerScriptController(WorkerGlobalScope&, v8::Isolate*);
     ~WorkerScriptController();
 
     bool isExecutionForbidden() const;
     bool isExecutionTerminating() const;
 
     // Returns true if the evaluation completed with no uncaught exception.
-    bool evaluate(const ScriptSourceCode&, RefPtrWillBeRawPtr<ErrorEvent>* = 0);
+    bool evaluate(const ScriptSourceCode&, RefPtrWillBeRawPtr<ErrorEvent>* = nullptr, CachedMetadataHandler* = nullptr, V8CacheOptions = V8CacheOptionsDefault);
 
     // Prevents future JavaScript execution. See
-    // scheduleExecutionTermination, isExecutionForbidden.
+    // willScheduleExecutionTermination, isExecutionForbidden.
     void forbidExecution();
 
     // Used by WorkerThread:
@@ -68,15 +71,11 @@ public:
     // forbidExecution to prevent further JavaScript execution. Use
     // forbidExecution()/isExecutionForbidden() to guard against
     // reentry into JavaScript.
-    void scheduleExecutionTermination();
+    void willScheduleExecutionTermination();
 
     // Used by WorkerGlobalScope:
     void rethrowExceptionFromImportedScript(PassRefPtrWillBeRawPtr<ErrorEvent>, ExceptionState&);
     void disableEval(const String&);
-    // Send a notification about current thread is going to be idle.
-    // Returns true if the embedder should stop calling idleNotification
-    // until real work has been done.
-    bool idleNotification() { return m_isolate->IdleNotification(1000); }
 
     // Used by Inspector agents:
     ScriptState* scriptState() { return m_scriptState.get(); }
@@ -84,15 +83,17 @@ public:
     // Used by V8 bindings:
     v8::Local<v8::Context> context() { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
 
+    RejectedPromises* rejectedPromises() const { return m_rejectedPromises.get(); }
+
 private:
     class WorkerGlobalScopeExecutionState;
 
     bool isContextInitialized() { return m_scriptState && !!m_scriptState->perContextData(); }
+    v8::Isolate* isolate() const;
 
     // Evaluate a script file in the current execution environment.
-    ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition);
+    ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, CachedMetadataHandler*, V8CacheOptions);
 
-    v8::Isolate* m_isolate;
     WorkerGlobalScope& m_workerGlobalScope;
     RefPtr<ScriptState> m_scriptState;
     RefPtr<DOMWrapperWorld> m_world;
@@ -100,6 +101,8 @@ private:
     bool m_executionForbidden;
     bool m_executionScheduledToTerminate;
     mutable Mutex m_scheduledTerminationMutex;
+
+    OwnPtrWillBePersistent<RejectedPromises> m_rejectedPromises;
 
     // |m_globalScopeExecutionState| refers to a stack object
     // that evaluate() allocates; evaluate() ensuring that the
@@ -109,7 +112,6 @@ private:
     // trace its on-heap fields.
     GC_PLUGIN_IGNORE("394615")
     WorkerGlobalScopeExecutionState* m_globalScopeExecutionState;
-    OwnPtr<V8IsolateInterruptor> m_interruptor;
 };
 
 } // namespace blink

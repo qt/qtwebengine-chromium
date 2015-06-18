@@ -11,6 +11,7 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "media/base/audio_decoder_config.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
 #include "media/base/stream_parser.h"
@@ -26,14 +27,22 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
   typedef std::map<TrackId, const BufferQueue> TextBufferQueueMap;
 
-  // Arbitrarily-chosen numbers to estimate the duration of a buffer if none is
-  // set and there is not enough information to get a better estimate.
-  // TODO(wolenetz/acolwell): Parse audio codebook to determine missing audio
-  // frame durations. See http://crbug.com/351166.
+  // Numbers chosen to estimate the duration of a buffer if none is set and
+  // there is not enough information to get a better estimate.
   enum {
-    kDefaultAudioBufferDurationInMs = 23,  // Common 1k samples @44.1kHz
-    kDefaultVideoBufferDurationInMs = 42  // Low 24fps to reduce stalls
+    // Common 1k samples @44.1kHz
+    kDefaultAudioBufferDurationInMs = 23,
+
+    // Chosen to represent 16fps duration, which will prevent MSE stalls in
+    // videos with frame-rates as low as 8fps.
+    kDefaultVideoBufferDurationInMs = 63
   };
+
+  // Opus packets encode the duration and other parameters in the 5 most
+  // significant bits of the first byte. The index in this array corresponds
+  // to the duration of each frame of the packet in microseconds. See
+  // https://tools.ietf.org/html/rfc6716#page-14
+  static const uint16_t kOpusFrameDurationsMu[];
 
  private:
   // Helper class that manages per-track state.
@@ -67,8 +76,8 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
     bool AddBuffer(const scoped_refptr<StreamParserBuffer>& buffer);
 
     // If |last_added_buffer_missing_duration_| is set, updates its duration to
-    // be non-kNoTimestamp() value of |estimated_next_frame_duration_| or an
-    // arbitrary default, then adds it to |buffers_| and unsets
+    // be non-kNoTimestamp() value of |estimated_next_frame_duration_| or a
+    // hard-coded default, then adds it to |buffers_| and unsets
     // |last_added_buffer_missing_duration_|. (This method helps stream parser
     // emit all buffers in a media segment before signaling end of segment.)
     void ApplyDurationEstimateIfNeeded();
@@ -87,7 +96,7 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
     // block is a keyframe.
     // |data| contains the bytes in the block.
     // |size| indicates the number of bytes in |data|.
-    bool IsKeyframe(const uint8* data, int size) const;
+    bool IsKeyframe(const uint8_t* data, int size) const;
 
     base::TimeDelta default_duration() const { return default_duration_; }
 
@@ -101,6 +110,10 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
     // Helper that calculates the buffer duration to use in
     // ApplyDurationEstimateIfNeeded().
     base::TimeDelta GetDurationEstimate();
+
+    // Counts the number of estimated durations used in this track. Used to
+    // prevent log spam for MEDIA_LOG()s about estimated duration.
+    int num_duration_estimates_;
 
     int track_num_;
     bool is_video_;
@@ -124,8 +137,10 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
     base::TimeDelta default_duration_;
 
     // If kNoTimestamp(), then a default value will be used. This estimate is
-    // the maximum duration seen or derived so far for this track, and is valid
-    // only if |default_duration_| is kNoTimestamp().
+    // the maximum (for video), or minimum (for audio) duration seen so far for
+    // this track, and is used only if |default_duration_| is kNoTimestamp().
+    // TODO(chcunningham): Use maximum for audio too, adding checks to disable
+    // splicing when these estimates are observed in SourceBufferStream.
     base::TimeDelta estimated_next_frame_duration_;
 
     LogCB log_cb_;
@@ -143,6 +158,7 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
                     const std::set<int64>& ignored_tracks,
                     const std::string& audio_encryption_key_id,
                     const std::string& video_encryption_key_id,
+                    const AudioCodec audio_codec_,
                     const LogCB& log_cb);
   ~WebMClusterParser() override;
 
@@ -154,7 +170,7 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   // Returns -1 if the parse fails.
   // Returns 0 if more data is needed.
   // Returns the number of bytes parsed on success.
-  int Parse(const uint8* buf, int size);
+  int Parse(const uint8_t* buf, int size);
 
   base::TimeDelta cluster_start_time() const { return cluster_start_time_; }
 
@@ -194,14 +210,24 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   WebMParserClient* OnListStart(int id) override;
   bool OnListEnd(int id) override;
   bool OnUInt(int id, int64 val) override;
-  bool OnBinary(int id, const uint8* data, int size) override;
+  bool OnBinary(int id, const uint8_t* data, int size) override;
 
-  bool ParseBlock(bool is_simple_block, const uint8* buf, int size,
-                  const uint8* additional, int additional_size, int duration,
+  bool ParseBlock(bool is_simple_block,
+                  const uint8_t* buf,
+                  int size,
+                  const uint8_t* additional,
+                  int additional_size,
+                  int duration,
                   int64 discard_padding);
-  bool OnBlock(bool is_simple_block, int track_num, int timecode, int duration,
-               int flags, const uint8* data, int size,
-               const uint8* additional, int additional_size,
+  bool OnBlock(bool is_simple_block,
+               int track_num,
+               int timecode,
+               int duration,
+               int flags,
+               const uint8_t* data,
+               int size,
+               const uint8_t* additional,
+               int additional_size,
                int64 discard_padding);
 
   // Resets the Track objects associated with each text track.
@@ -227,21 +253,44 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   // if that track num is not a text track.
   Track* FindTextTrack(int track_num);
 
+  // Attempts to read the duration from the encoded audio data, returning as
+  // TimeDelta or kNoTimestamp() if duration cannot be retrieved. This obviously
+  // violates layering rules, but is useful for MSE to know duration in cases
+  // where it isn't explicitly given and cannot be calculated for Blocks at the
+  // end of a Cluster (the next Cluster in playback-order may not be the next
+  // Cluster we parse, so we can't simply use the delta of the first Block in
+  // the next Cluster). Avoid calling if encrypted; may produce unexpected
+  // output. See implementation for supported codecs.
+  base::TimeDelta TryGetEncodedAudioDuration(const uint8_t* data, int size);
+
+  // Reads Opus packet header to determine packet duration. Duration returned
+  // as TimeDelta or kNoTimestamp() upon failure to read duration from packet.
+  base::TimeDelta ReadOpusDuration(const uint8_t* data, int size);
+
+  // Tracks the number of MEDIA_LOGs made in process of reading encoded
+  // duration. Useful to prevent log spam.
+  int num_duration_errors_;
+
   double timecode_multiplier_;  // Multiplier used to convert timecodes into
                                 // microseconds.
   std::set<int64> ignored_tracks_;
   std::string audio_encryption_key_id_;
   std::string video_encryption_key_id_;
+  const AudioCodec audio_codec_;
 
   WebMListParser parser_;
 
   int64 last_block_timecode_;
-  scoped_ptr<uint8[]> block_data_;
+  scoped_ptr<uint8_t[]> block_data_;
   int block_data_size_;
   int64 block_duration_;
   int64 block_add_id_;
-  scoped_ptr<uint8[]> block_additional_data_;
+
+  scoped_ptr<uint8_t[]> block_additional_data_;
+  // Must be 0 if |block_additional_data_| is null. Must be > 0 if
+  // |block_additional_data_| is NOT null.
   int block_additional_data_size_;
+
   int64 discard_padding_;
   bool discard_padding_set_;
 

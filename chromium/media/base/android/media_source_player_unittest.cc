@@ -46,46 +46,45 @@ class MockMediaPlayerManager : public MediaPlayerManager {
         playback_completed_(false),
         num_resources_requested_(0),
         num_metadata_changes_(0),
-        timestamp_updated_(false) {}
-  virtual ~MockMediaPlayerManager() {}
+        timestamp_updated_(false),
+        is_audible_(false),
+        is_delay_expired_(false) {}
+  ~MockMediaPlayerManager() override {}
 
   // MediaPlayerManager implementation.
-  virtual MediaResourceGetter* GetMediaResourceGetter() override {
-    return NULL;
-  }
-  virtual MediaUrlInterceptor* GetMediaUrlInterceptor() override {
-    return NULL;
-  }
-  virtual void OnTimeUpdate(int player_id,
-                            base::TimeDelta current_time,
-                            base::TimeTicks current_time_ticks) override {
+  MediaResourceGetter* GetMediaResourceGetter() override { return NULL; }
+  MediaUrlInterceptor* GetMediaUrlInterceptor() override { return NULL; }
+  void OnTimeUpdate(int player_id,
+                    base::TimeDelta current_time,
+                    base::TimeTicks current_time_ticks) override {
     timestamp_updated_ = true;
   }
-  virtual void OnMediaMetadataChanged(
-      int player_id, base::TimeDelta duration, int width, int height,
-      bool success) override {
+  void OnMediaMetadataChanged(int player_id,
+                              base::TimeDelta duration,
+                              int width,
+                              int height,
+                              bool success) override {
     num_metadata_changes_++;
   }
-  virtual void OnPlaybackComplete(int player_id) override {
+  void OnPlaybackComplete(int player_id) override {
     playback_completed_ = true;
     if (message_loop_->is_running())
       message_loop_->Quit();
   }
-  virtual void OnMediaInterrupted(int player_id) override {}
-  virtual void OnBufferingUpdate(int player_id, int percentage) override {}
-  virtual void OnSeekComplete(int player_id,
-                              const base::TimeDelta& current_time) override {}
-  virtual void OnError(int player_id, int error) override {}
-  virtual void OnVideoSizeChanged(int player_id, int width,
-                                  int height) override {}
-  virtual MediaPlayerAndroid* GetFullscreenPlayer() override { return NULL; }
-  virtual MediaPlayerAndroid* GetPlayer(int player_id) override { return NULL; }
-  virtual void RequestFullScreen(int player_id) override {}
-#if defined(VIDEO_HOLE)
-  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() override {
-    return false;
+  void OnMediaInterrupted(int player_id) override {}
+  void OnBufferingUpdate(int player_id, int percentage) override {}
+  void OnSeekComplete(int player_id,
+                      const base::TimeDelta& current_time) override {}
+  void OnError(int player_id, int error) override {}
+  void OnVideoSizeChanged(int player_id, int width, int height) override {}
+  void OnWaitingForDecryptionKey(int player_id) override {}
+  MediaPlayerAndroid* GetFullscreenPlayer() override { return NULL; }
+  MediaPlayerAndroid* GetPlayer(int player_id) override { return NULL; }
+  void RequestFullScreen(int player_id) override {}
+
+  void OnAudibleStateChanged(int player_id, bool is_audible_now) override {
+    is_audible_ = is_audible_now;
   }
-#endif  // defined(VIDEO_HOLE)
 
   bool playback_completed() const {
     return playback_completed_;
@@ -111,6 +110,18 @@ class MockMediaPlayerManager : public MediaPlayerManager {
     timestamp_updated_ = false;
   }
 
+  bool is_audible() const {
+    return is_audible_;
+  }
+
+  bool is_delay_expired() const {
+    return is_delay_expired_;
+  }
+
+  void SetDelayExpired(bool value) {
+    is_delay_expired_ = value;
+  }
+
  private:
   base::MessageLoop* message_loop_;
   bool playback_completed_;
@@ -120,6 +131,10 @@ class MockMediaPlayerManager : public MediaPlayerManager {
   int num_metadata_changes_;
   // Playback timestamp was updated.
   bool timestamp_updated_;
+  // Audible state of the pipeline
+  bool is_audible_;
+  // Helper flag to ensure delay for WaitForDelay().
+  bool is_delay_expired_;
 
   DISALLOW_COPY_AND_ASSIGN(MockMediaPlayerManager);
 };
@@ -131,16 +146,16 @@ class MockDemuxerAndroid : public DemuxerAndroid {
         num_data_requests_(0),
         num_seek_requests_(0),
         num_browser_seek_requests_(0) {}
-  virtual ~MockDemuxerAndroid() {}
+  ~MockDemuxerAndroid() override {}
 
-  virtual void Initialize(DemuxerAndroidClient* client) override {}
-  virtual void RequestDemuxerData(DemuxerStream::Type type) override {
+  void Initialize(DemuxerAndroidClient* client) override {}
+  void RequestDemuxerData(DemuxerStream::Type type) override {
     num_data_requests_++;
     if (message_loop_->is_running())
       message_loop_->Quit();
   }
-  virtual void RequestDemuxerSeek(const base::TimeDelta& time_to_seek,
-                                  bool is_browser_seek) override {
+  void RequestDemuxerSeek(const base::TimeDelta& time_to_seek,
+                          bool is_browser_seek) override {
     num_seek_requests_++;
     if (is_browser_seek)
       num_browser_seek_requests_++;
@@ -177,7 +192,8 @@ class MediaSourcePlayerTest : public testing::Test {
                 GURL()),
         decoder_callback_hook_executed_(false),
         surface_texture_a_is_next_(true) {}
-  virtual ~MediaSourcePlayerTest() {}
+
+  ~MediaSourcePlayerTest() override {}
 
  protected:
   // Get the decoder job from the MediaSourcePlayer. The return value must not
@@ -423,7 +439,7 @@ class MediaSourcePlayerTest : public testing::Test {
     data.type = is_audio ? DemuxerStream::AUDIO : DemuxerStream::VIDEO;
     data.access_units.resize(1);
     data.access_units[0].status = DemuxerStream::kOk;
-    data.access_units[0].end_of_stream = true;
+    data.access_units[0].is_end_of_stream = true;
     return data;
   }
 
@@ -433,6 +449,10 @@ class MediaSourcePlayerTest : public testing::Test {
     data.access_units.resize(1);
     data.access_units[0].status = DemuxerStream::kAborted;
     return data;
+  }
+
+  bool HasData(bool is_audio) {
+    return GetMediaDecoderJob(is_audio)->HasData();
   }
 
   // Helper method for use at test start. It starts an audio decoder job and
@@ -534,6 +554,37 @@ class MediaSourcePlayerTest : public testing::Test {
       WaitForDecodeDone(is_audio, !is_audio);
     }
     EXPECT_LE(target_timestamp, player_.GetCurrentTime());
+  }
+
+  void PlayAudioForTimeInterval(const base::TimeDelta& start_timestamp,
+                                const base::TimeDelta& target_timestamp ) {
+
+    DemuxerData data = CreateReadFromDemuxerAckForAudio(1);
+    int current_timestamp = start_timestamp.InMilliseconds();
+    int stop_timestamp = target_timestamp.InMilliseconds();
+    while (current_timestamp < stop_timestamp) {
+      data.access_units[0].timestamp =
+          base::TimeDelta::FromMilliseconds(current_timestamp);
+      player_.OnDemuxerDataAvailable(data);
+      current_timestamp += 30;
+      WaitForAudioDecodeDone();
+    }
+  }
+
+  void WaitForDelay(const base::TimeDelta& delay) {
+    // Let the message_loop_ process events.
+    // We post delayed task and RunUnitilIdle() until it signals.
+
+    manager_.SetDelayExpired(false);
+    message_loop_.PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&MockMediaPlayerManager::SetDelayExpired,
+                   base::Unretained(&manager_),
+                   true),
+        delay);
+
+    while (!manager_.is_delay_expired())
+      message_loop_.RunUntilIdle();
   }
 
   DemuxerData CreateReadFromDemuxerAckWithConfigChanged(
@@ -839,6 +890,7 @@ class MediaSourcePlayerTest : public testing::Test {
     return GetMediaDecoderJob(is_audio)->drain_decoder_;
   }
 
+ protected:
   base::MessageLoop message_loop_;
   MockMediaPlayerManager manager_;
   MockDemuxerAndroid* demuxer_;  // Owned by |player_|.
@@ -858,6 +910,8 @@ class MediaSourcePlayerTest : public testing::Test {
   scoped_refptr<gfx::SurfaceTexture> surface_texture_b_;
   bool surface_texture_a_is_next_;
   int next_texture_id_;
+
+  bool verify_not_audible_is_called_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaSourcePlayerTest);
 };
@@ -888,6 +942,107 @@ TEST_F(MediaSourcePlayerTest, StartAudioDecoderWithInvalidConfig) {
   // Decoder is not created after data is received.
   player_.OnDemuxerDataAvailable(CreateReadFromDemuxerAckForAudio(0));
   EXPECT_FALSE(GetMediaCodecBridge(true));
+}
+
+// timav
+TEST_F(MediaSourcePlayerTest, AudioDecoderSetsAudibleState) {
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
+
+  // No data arrived yet
+  EXPECT_FALSE(manager_.is_audible());
+
+  // Initialize decoder
+  StartAudioDecoderJob();
+  player_.SetVolume(1.0);
+
+  // Process frames until prerolling is done.
+  SeekPlayerWithAbort(true, base::TimeDelta::FromMilliseconds(100));
+  EXPECT_TRUE(IsPrerolling(true));
+  PrerollDecoderToTime(
+      true, base::TimeDelta(), base::TimeDelta::FromMilliseconds(100), false);
+  EXPECT_TRUE(IsPrerolling(false));
+
+  // Send more packets
+  PlayAudioForTimeInterval(base::TimeDelta::FromMilliseconds(150),
+                           base::TimeDelta::FromMilliseconds(220));
+
+  // The player should trigger audible status
+  EXPECT_TRUE(manager_.is_audible());
+
+  // The player release should report a non-audible state.
+  ReleasePlayer();
+  EXPECT_FALSE(manager_.is_audible());
+}
+
+TEST_F(MediaSourcePlayerTest, AudioDecoderRemovesAudibleStateWhenPaused) {
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
+
+  // No data arrived yet
+  EXPECT_FALSE(manager_.is_audible());
+
+  // Initialize decoder
+  StartAudioDecoderJob();
+  player_.SetVolume(1.0);
+
+  // Process frames until prerolling is done.
+  SeekPlayerWithAbort(true, base::TimeDelta::FromMilliseconds(100));
+  EXPECT_TRUE(IsPrerolling(true));
+  PrerollDecoderToTime(
+      true, base::TimeDelta(), base::TimeDelta::FromMilliseconds(100), false);
+  EXPECT_TRUE(IsPrerolling(false));
+
+  // Send more packets
+  PlayAudioForTimeInterval(base::TimeDelta::FromMilliseconds(150),
+                           base::TimeDelta::FromMilliseconds(220));
+
+  // The player should trigger audible status
+  EXPECT_TRUE(manager_.is_audible());
+
+  // Pause the player
+  player_.Pause(true);
+
+  // Send more packets
+  PlayAudioForTimeInterval(base::TimeDelta::FromMilliseconds(240),
+                           base::TimeDelta::FromMilliseconds(280));
+
+  // The player should trigger audible status again
+  EXPECT_FALSE(manager_.is_audible());
+
+  player_.Release();
+}
+
+TEST_F(MediaSourcePlayerTest, AudioDecoderRemovesAudibleStateWhenIdle) {
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
+
+  // No data arrived yet
+  EXPECT_FALSE(manager_.is_audible());
+
+  // Initialize decoder
+  StartAudioDecoderJob();
+  player_.SetVolume(1.0);
+
+  // Process frames until prerolling is done.
+  SeekPlayerWithAbort(true, base::TimeDelta::FromMilliseconds(100));
+  EXPECT_TRUE(IsPrerolling(true));
+  PrerollDecoderToTime(
+      true, base::TimeDelta(), base::TimeDelta::FromMilliseconds(100), false);
+  EXPECT_TRUE(IsPrerolling(false));
+
+  // Send more packets
+  PlayAudioForTimeInterval(base::TimeDelta::FromMilliseconds(150),
+                           base::TimeDelta::FromMilliseconds(220));
+
+  // The player should trigger audible status
+  EXPECT_TRUE(manager_.is_audible());
+
+  // Simulate the freeze on demuxer: wait for 300 ms
+  WaitForDelay(base::TimeDelta::FromMilliseconds(300));
+
+  // By this time the player should have reported
+  // that there is no audio.
+  EXPECT_FALSE(manager_.is_audible());
+
+  ReleasePlayer();
 }
 
 TEST_F(MediaSourcePlayerTest, StartVideoCodecWithValidSurface) {
@@ -1043,7 +1198,9 @@ TEST_F(MediaSourcePlayerTest, SetEmptySurfaceAndStarveWhileDecoding) {
 
   // Playback resumes once a non-empty surface is passed.
   CreateNextTextureAndSetVideoSurface();
-  EXPECT_EQ(1, demuxer_->num_browser_seek_requests());
+  EXPECT_EQ(0, demuxer_->num_browser_seek_requests());
+  while(demuxer_->num_browser_seek_requests() != 1)
+    message_loop_.RunUntilIdle();
   WaitForVideoDecodeDone();
 }
 
@@ -1532,6 +1689,34 @@ TEST_F(MediaSourcePlayerTest, BrowserSeek_MidStreamReleaseAndStart) {
   player_.OnDemuxerSeekDone(base::TimeDelta());
   EXPECT_EQ(3, demuxer_->num_data_requests());
   EXPECT_EQ(1, demuxer_->num_seek_requests());
+}
+
+TEST_F(MediaSourcePlayerTest, NoBrowserSeekWithKeyFrameInCache) {
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
+
+  // Test that browser seek is not needed if a key frame is found in data
+  // cache.
+  CreateNextTextureAndSetVideoSurface();
+  StartVideoDecoderJob();
+  DemuxerData data = CreateReadFromDemuxerAckForVideo(false);
+  data.access_units[0].is_key_frame = true;
+
+  // Simulate demuxer's response to the video data request.
+  player_.OnDemuxerDataAvailable(data);
+
+  // Trigger decoder recreation later by changing surfaces.
+  CreateNextTextureAndSetVideoSurface();
+
+  // Wait for the media codec bridge to finish decoding and be reset.
+  WaitForVideoDecodeDone();
+  EXPECT_FALSE(HasData(false));
+
+  // Send a non key frame to decoder so that decoder can continue. This will
+  // not trigger any browser seeks as the previous key frame is still in the
+  // buffer.
+  player_.OnDemuxerDataAvailable(CreateReadFromDemuxerAckForVideo(false));
+  WaitForVideoDecodeDone();
+  EXPECT_EQ(0, demuxer_->num_browser_seek_requests());
 }
 
 TEST_F(MediaSourcePlayerTest, PrerollAudioAfterSeek) {

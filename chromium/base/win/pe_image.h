@@ -132,6 +132,9 @@ class PEImage {
   // Returns the exports directory.
   PIMAGE_EXPORT_DIRECTORY GetExportDirectory() const;
 
+  // Returns the debug id (guid+age).
+  bool GetDebugId(LPGUID guid, LPDWORD age) const;
+
   // Returns a given export entry.
   // Use: e = image.GetExportEntry(f);
   // Pre: 'f' is either a zero terminated string or ordinal
@@ -235,19 +238,15 @@ class PEImageAsData : public PEImage {
  public:
   explicit PEImageAsData(HMODULE hModule) : PEImage(hModule) {}
 
-  virtual PVOID RVAToAddr(DWORD rva) const;
+  PVOID RVAToAddr(DWORD rva) const override;
 };
 
 inline bool PEImage::IsOrdinal(LPCSTR name) {
-#pragma warning(push)
-#pragma warning(disable: 4311)
-  // This cast generates a warning because it is 32 bit specific.
-  return reinterpret_cast<DWORD>(name) <= 0xFFFF;
-#pragma warning(pop)
+  return reinterpret_cast<uintptr_t>(name) <= 0xFFFF;
 }
 
 inline WORD PEImage::ToOrdinal(LPCSTR name) {
-  return reinterpret_cast<WORD>(name);
+  return static_cast<WORD>(reinterpret_cast<intptr_t>(name));
 }
 
 inline HMODULE PEImage::module() const {

@@ -45,7 +45,7 @@ PopStateEvent::PopStateEvent(const AtomicString& type, const PopStateEventInit& 
 {
 }
 
-PopStateEvent::PopStateEvent(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtrWillBeRawPtr<History> history)
+PopStateEvent::PopStateEvent(PassRefPtr<SerializedScriptValue> serializedState, History* history)
     : Event(EventTypeNames::popstate, false, true)
     , m_serializedState(serializedState)
     , m_history(history)
@@ -61,7 +61,7 @@ PassRefPtrWillBeRawPtr<PopStateEvent> PopStateEvent::create()
     return adoptRefWillBeNoop(new PopStateEvent);
 }
 
-PassRefPtrWillBeRawPtr<PopStateEvent> PopStateEvent::create(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtrWillBeRawPtr<History> history)
+PassRefPtrWillBeRawPtr<PopStateEvent> PopStateEvent::create(PassRefPtr<SerializedScriptValue> serializedState, History* history)
 {
     return adoptRefWillBeNoop(new PopStateEvent(serializedState, history));
 }
@@ -76,7 +76,7 @@ const AtomicString& PopStateEvent::interfaceName() const
     return EventNames::PopStateEvent;
 }
 
-void PopStateEvent::trace(Visitor* visitor)
+DEFINE_TRACE(PopStateEvent)
 {
     visitor->trace(m_history);
     Event::trace(visitor);

@@ -13,10 +13,14 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "ipc/ipc_channel_handle.h"
+#include "ipc/ipc_message_attachment.h"
+#include "ipc/ipc_message_attachment_set.h"
 
 #if defined(OS_POSIX)
-#include "ipc/file_descriptor_set_posix.h"
-#elif defined(OS_WIN)
+#include "ipc/ipc_platform_file_attachment_posix.h"
+#endif
+
+#if defined(OS_WIN)
 #include <tchar.h>
 #endif
 
@@ -175,7 +179,7 @@ bool ReadValue(const Message* m, PickleIterator* iter, base::Value** value,
 
   switch (type) {
     case base::Value::TYPE_NULL:
-    *value = base::Value::CreateNullValue();
+      *value = base::Value::CreateNullValue().release();
     break;
     case base::Value::TYPE_BOOLEAN: {
       bool val;
@@ -208,7 +212,7 @@ bool ReadValue(const Message* m, PickleIterator* iter, base::Value** value,
     case base::Value::TYPE_BINARY: {
       const char* data;
       int length;
-      if (!m->ReadData(iter, &data, &length))
+      if (!iter->ReadData(&data, &length))
         return false;
       *value = base::BinaryValue::CreateWithCopiedBuffer(data, length);
       break;
@@ -260,7 +264,7 @@ void ParamTraits<unsigned char>::Write(Message* m, const param_type& p) {
 bool ParamTraits<unsigned char>::Read(const Message* m, PickleIterator* iter,
                                        param_type* r) {
   const char* data;
-  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
+  if (!iter->ReadBytes(&data, sizeof(param_type)))
     return false;
   memcpy(r, data, sizeof(param_type));
   return true;
@@ -277,7 +281,7 @@ void ParamTraits<unsigned short>::Write(Message* m, const param_type& p) {
 bool ParamTraits<unsigned short>::Read(const Message* m, PickleIterator* iter,
                                        param_type* r) {
   const char* data;
-  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
+  if (!iter->ReadBytes(&data, sizeof(param_type)))
     return false;
   memcpy(r, data, sizeof(param_type));
   return true;
@@ -322,7 +326,7 @@ void ParamTraits<double>::Write(Message* m, const param_type& p) {
 bool ParamTraits<double>::Read(const Message* m, PickleIterator* iter,
                                param_type* r) {
   const char *data;
-  if (!m->ReadBytes(iter, &data, sizeof(*r))) {
+  if (!iter->ReadBytes(&data, sizeof(*r))) {
     NOTREACHED();
     return false;
   }
@@ -339,15 +343,9 @@ void ParamTraits<std::string>::Log(const param_type& p, std::string* l) {
   l->append(p);
 }
 
-void ParamTraits<std::wstring>::Log(const param_type& p, std::string* l) {
-  l->append(base::WideToUTF8(p));
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
 void ParamTraits<base::string16>::Log(const param_type& p, std::string* l) {
   l->append(base::UTF16ToUTF8(p));
 }
-#endif
 
 void ParamTraits<std::vector<char> >::Write(Message* m, const param_type& p) {
   if (p.empty()) {
@@ -362,7 +360,7 @@ bool ParamTraits<std::vector<char> >::Read(const Message* m,
                                            param_type* r) {
   const char *data;
   int data_size = 0;
-  if (!m->ReadData(iter, &data, &data_size) || data_size < 0)
+  if (!iter->ReadData(&data, &data_size) || data_size < 0)
     return false;
   r->resize(data_size);
   if (data_size)
@@ -389,7 +387,7 @@ bool ParamTraits<std::vector<unsigned char> >::Read(const Message* m,
                                                     param_type* r) {
   const char *data;
   int data_size = 0;
-  if (!m->ReadData(iter, &data, &data_size) || data_size < 0)
+  if (!iter->ReadData(&data, &data_size) || data_size < 0)
     return false;
   r->resize(data_size);
   if (data_size)
@@ -416,7 +414,7 @@ bool ParamTraits<std::vector<bool> >::Read(const Message* m,
                                            param_type* r) {
   int size;
   // ReadLength() checks for < 0 itself.
-  if (!m->ReadLength(iter, &size))
+  if (!iter->ReadLength(&size))
     return false;
   r->resize(size);
   for (int i = 0; i < size; i++) {
@@ -466,10 +464,11 @@ void ParamTraits<base::FileDescriptor>::Write(Message* m, const param_type& p) {
     return;
 
   if (p.auto_close) {
-    if (!m->WriteFile(base::ScopedFD(p.fd)))
+    if (!m->WriteAttachment(
+            new internal::PlatformFileAttachment(base::ScopedFD(p.fd))))
       NOTREACHED();
   } else {
-    if (!m->WriteBorrowingFile(p.fd))
+    if (!m->WriteAttachment(new internal::PlatformFileAttachment(p.fd)))
       NOTREACHED();
   }
 }
@@ -487,11 +486,11 @@ bool ParamTraits<base::FileDescriptor>::Read(const Message* m,
   if (!valid)
     return true;
 
-  base::ScopedFD fd;
-  if (!m->ReadFile(iter, &fd))
+  scoped_refptr<MessageAttachment> attachment;
+  if (!m->ReadAttachment(iter, &attachment))
     return false;
 
-  *r = base::FileDescriptor(fd.release(), true);
+  *r = base::FileDescriptor(attachment->TakePlatformFile(), true);
   return true;
 }
 
@@ -727,7 +726,7 @@ void ParamTraits<Message>::Write(Message* m, const Message& p) {
 #if defined(OS_POSIX)
   // We don't serialize the file descriptors in the nested message, so there
   // better not be any.
-  DCHECK(!p.HasFileDescriptors());
+  DCHECK(!p.HasAttachments());
 #endif
 
   // Don't just write out the message. This is used to send messages between
@@ -749,14 +748,14 @@ void ParamTraits<Message>::Write(Message* m, const Message& p) {
 bool ParamTraits<Message>::Read(const Message* m, PickleIterator* iter,
                                 Message* r) {
   uint32 routing_id, type, flags;
-  if (!m->ReadUInt32(iter, &routing_id) ||
-      !m->ReadUInt32(iter, &type) ||
-      !m->ReadUInt32(iter, &flags))
+  if (!iter->ReadUInt32(&routing_id) ||
+      !iter->ReadUInt32(&type) ||
+      !iter->ReadUInt32(&flags))
     return false;
 
   int payload_size;
   const char* payload;
-  if (!m->ReadData(iter, &payload, &payload_size))
+  if (!iter->ReadData(&payload, &payload_size))
     return false;
 
   r->SetHeaderValues(static_cast<int32>(routing_id), type, flags);
@@ -777,7 +776,7 @@ void ParamTraits<HANDLE>::Write(Message* m, const param_type& p) {
 bool ParamTraits<HANDLE>::Read(const Message* m, PickleIterator* iter,
                                param_type* r) {
   int32 temp;
-  if (!m->ReadInt(iter, &temp))
+  if (!iter->ReadInt(&temp))
     return false;
   *r = LongToHandle(temp);
   return true;
@@ -795,7 +794,7 @@ bool ParamTraits<LOGFONT>::Read(const Message* m, PickleIterator* iter,
                                 param_type* r) {
   const char *data;
   int data_size = 0;
-  if (m->ReadData(iter, &data, &data_size) && data_size == sizeof(LOGFONT)) {
+  if (iter->ReadData(&data, &data_size) && data_size == sizeof(LOGFONT)) {
     const LOGFONT *font = reinterpret_cast<LOGFONT*>(const_cast<char*>(data));
     if (_tcsnlen(font->lfFaceName, LF_FACESIZE) < LF_FACESIZE) {
       memcpy(r, data, sizeof(LOGFONT));
@@ -819,7 +818,7 @@ bool ParamTraits<MSG>::Read(const Message* m, PickleIterator* iter,
                             param_type* r) {
   const char *data;
   int data_size = 0;
-  bool result = m->ReadData(iter, &data, &data_size);
+  bool result = iter->ReadData(&data, &data_size);
   if (result && data_size == sizeof(MSG)) {
     memcpy(r, data, sizeof(MSG));
   } else {

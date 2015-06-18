@@ -46,7 +46,7 @@ void DevToolsNetLogObserver::OnAddEntry(const net::NetLog::Entry& entry) {
 
 void DevToolsNetLogObserver::OnAddURLRequestEntry(
     const net::NetLog::Entry& entry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   bool is_begin = entry.phase() == net::NetLog::PHASE_BEGIN;
   bool is_end = entry.phase() == net::NetLog::PHASE_END;
@@ -106,7 +106,7 @@ void DevToolsNetLogObserver::OnAddURLRequestEntry(
       info->request_headers_text = request_line + request_headers.ToString();
       break;
     }
-    case net::NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS: {
+    case net::NetLog::TYPE_HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS: {
       scoped_ptr<base::Value> event_params(entry.ParametersToValue());
       net::SpdyHeaderBlock request_headers;
 
@@ -169,24 +169,25 @@ void DevToolsNetLogObserver::Attach() {
   net::NetLog* net_log = GetContentClient()->browser()->GetNetLog();
   if (net_log) {
     instance_ = new DevToolsNetLogObserver();
-    net_log->AddThreadSafeObserver(instance_, net::NetLog::LOG_ALL_BUT_BYTES);
+    net_log->DeprecatedAddObserver(
+        instance_, net::NetLogCaptureMode::IncludeCookiesAndCredentials());
   }
 }
 
 void DevToolsNetLogObserver::Detach() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (instance_) {
     // Safest not to do this in the destructor to maintain thread safety across
     // refactorings.
-    instance_->net_log()->RemoveThreadSafeObserver(instance_);
+    instance_->net_log()->DeprecatedRemoveObserver(instance_);
     delete instance_;
     instance_ = NULL;
   }
 }
 
 DevToolsNetLogObserver* DevToolsNetLogObserver::GetInstance() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   return instance_;
 }

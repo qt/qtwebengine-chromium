@@ -167,41 +167,9 @@ void ContentVideoView::UpdateMediaMetadata() {
   }
 }
 
-int ContentVideoView::GetVideoWidth(JNIEnv*, jobject obj) const {
-  media::MediaPlayerAndroid* player = manager_->GetFullscreenPlayer();
-  return player ? player->GetVideoWidth() : 0;
-}
-
-int ContentVideoView::GetVideoHeight(JNIEnv*, jobject obj) const {
-  media::MediaPlayerAndroid* player = manager_->GetFullscreenPlayer();
-  return player ? player->GetVideoHeight() : 0;
-}
-
-int ContentVideoView::GetDurationInMilliSeconds(JNIEnv*, jobject obj) const {
-  media::MediaPlayerAndroid* player = manager_->GetFullscreenPlayer();
-  return player ? player->GetDuration().InMilliseconds() : -1;
-}
-
-int ContentVideoView::GetCurrentPosition(JNIEnv*, jobject obj) const {
-  media::MediaPlayerAndroid* player = manager_->GetFullscreenPlayer();
-  return player ? player->GetCurrentTime().InMilliseconds() : 0;
-}
-
 bool ContentVideoView::IsPlaying(JNIEnv*, jobject obj) {
   media::MediaPlayerAndroid* player = manager_->GetFullscreenPlayer();
   return player ? player->IsPlaying() : false;
-}
-
-void ContentVideoView::SeekTo(JNIEnv*, jobject obj, jint msec) {
-  manager_->FullscreenPlayerSeek(msec);
-}
-
-void ContentVideoView::Play(JNIEnv*, jobject obj) {
-  manager_->FullscreenPlayerPlay();
-}
-
-void ContentVideoView::Pause(JNIEnv*, jobject obj) {
-  manager_->FullscreenPlayerPause();
 }
 
 void ContentVideoView::ExitFullscreen(
@@ -228,13 +196,19 @@ ScopedJavaLocalRef<jobject> ContentVideoView::GetJavaObject(JNIEnv* env) {
 }
 
 JavaObjectWeakGlobalRef ContentVideoView::CreateJavaObject() {
-  ContentViewCoreImpl* content_view_core = manager_->GetContentViewCore();
+  ContentViewCore* content_view_core = manager_->GetContentViewCore();
   JNIEnv* env = AttachCurrentThread();
+
+  base::android::ScopedJavaLocalRef<jobject> j_content_view_core =
+      content_view_core->GetJavaObject();
+  if (j_content_view_core.is_null())
+    return JavaObjectWeakGlobalRef(env, nullptr);
+
   return JavaObjectWeakGlobalRef(
       env,
       Java_ContentVideoView_createContentVideoView(
           env,
-          content_view_core->GetJavaObject().obj(),
+          j_content_view_core.obj(),
           reinterpret_cast<intptr_t>(this)).obj());
 }
 }  // namespace content

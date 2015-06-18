@@ -38,17 +38,17 @@ class TreeScope;
 
 class DocumentStyleSheetCollection final : public TreeScopeStyleSheetCollection {
     WTF_MAKE_NONCOPYABLE(DocumentStyleSheetCollection);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DocumentStyleSheetCollection);
 public:
     static PassOwnPtrWillBeRawPtr<DocumentStyleSheetCollection> create(TreeScope& treeScope)
     {
         return adoptPtrWillBeNoop(new DocumentStyleSheetCollection(treeScope));
     }
 
-    void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
-    void collectStyleSheets(StyleEngine*, DocumentStyleSheetCollector&);
+    void updateActiveStyleSheets(StyleEngine&, StyleResolverUpdateMode);
+    void collectStyleSheets(StyleEngine&, DocumentStyleSheetCollector&);
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         TreeScopeStyleSheetCollection::trace(visitor);
     }
@@ -56,7 +56,7 @@ public:
 private:
     explicit DocumentStyleSheetCollection(TreeScope&);
 
-    void collectStyleSheetsFromCandidates(StyleEngine*, DocumentStyleSheetCollector&);
+    void collectStyleSheetsFromCandidates(StyleEngine&, DocumentStyleSheetCollector&);
 };
 
 }

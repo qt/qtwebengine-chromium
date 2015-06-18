@@ -32,47 +32,15 @@
 #include "ServiceWorker.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "bindings/core/v8/ScriptState.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/MessagePort.h"
 #include "core/events/Event.h"
 #include "modules/EventTargetModules.h"
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebServiceWorkerState.h"
 #include "public/platform/WebString.h"
-#include <v8.h>
 
 namespace blink {
-
-class ServiceWorker::ThenFunction final : public ScriptFunction {
-public:
-    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ServiceWorker> observer)
-    {
-        ThenFunction* self = new ThenFunction(scriptState, observer);
-        return self->bindToV8Function();
-    }
-
-    virtual void trace(Visitor* visitor) override
-    {
-        visitor->trace(m_observer);
-        ScriptFunction::trace(visitor);
-    }
-
-private:
-    ThenFunction(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ServiceWorker> observer)
-        : ScriptFunction(scriptState)
-        , m_observer(observer)
-    {
-    }
-
-    virtual ScriptValue call(ScriptValue value) override
-    {
-        m_observer->onPromiseResolved();
-        return value;
-    }
-
-    RefPtrWillBeMember<ServiceWorker> m_observer;
-};
 
 const AtomicString& ServiceWorker::interfaceName() const
 {
@@ -100,14 +68,13 @@ void ServiceWorker::terminate(ExceptionState& exceptionState)
     exceptionState.throwDOMException(InvalidAccessError, "Not supported.");
 }
 
-bool ServiceWorker::isReady()
+void ServiceWorker::internalsTerminate()
 {
-    return m_proxyState == Ready;
+    m_outerWorker->terminate();
 }
 
 void ServiceWorker::dispatchStateChangeEvent()
 {
-    ASSERT(isReady());
     this->dispatchEvent(Event::create(EventTypeNames::statechange));
 }
 
@@ -116,30 +83,23 @@ String ServiceWorker::scriptURL() const
     return m_outerWorker->url().string();
 }
 
-const AtomicString& ServiceWorker::state() const
+String ServiceWorker::state() const
 {
-    DEFINE_STATIC_LOCAL(AtomicString, unknown, ("unknown", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, installing, ("installing", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, installed, ("installed", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, activating, ("activating", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, activated, ("activated", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, redundant, ("redundant", AtomicString::ConstructFromLiteral));
-
     switch (m_outerWorker->state()) {
     case WebServiceWorkerStateUnknown:
         // The web platform should never see this internal state
         ASSERT_NOT_REACHED();
-        return unknown;
+        return "unknown";
     case WebServiceWorkerStateInstalling:
-        return installing;
+        return "installing";
     case WebServiceWorkerStateInstalled:
-        return installed;
+        return "installed";
     case WebServiceWorkerStateActivating:
-        return activating;
+        return "activating";
     case WebServiceWorkerStateActivated:
-        return activated;
+        return "activated";
     case WebServiceWorkerStateRedundant:
-        return redundant;
+        return "redundant";
     default:
         ASSERT_NOT_REACHED();
         return nullAtom;
@@ -152,85 +112,21 @@ PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::from(ExecutionContext* exec
         return nullptr;
 
     RefPtrWillBeRawPtr<ServiceWorker> serviceWorker = getOrCreate(executionContext, worker);
-    if (serviceWorker->m_proxyState == Initial)
-        serviceWorker->setProxyState(Ready);
     return serviceWorker.release();
-}
-
-PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::take(ScriptPromiseResolver* resolver, WebType* worker)
-{
-    if (!worker)
-        return nullptr;
-
-    RefPtrWillBeRawPtr<ServiceWorker> serviceWorker = getOrCreate(resolver->scriptState()->executionContext(), worker);
-    ScriptState::Scope scope(resolver->scriptState());
-    if (serviceWorker->m_proxyState == Initial)
-        serviceWorker->waitOnPromise(resolver);
-    return serviceWorker;
-}
-
-void ServiceWorker::dispose(WebType* worker)
-{
-    if (worker && !worker->proxy())
-        delete worker;
-}
-
-void ServiceWorker::setProxyState(ProxyState state)
-{
-    if (m_proxyState == state)
-        return;
-    switch (m_proxyState) {
-    case Initial:
-        ASSERT(state == RegisterPromisePending || state == Ready || state == ContextStopped);
-        break;
-    case RegisterPromisePending:
-        ASSERT(state == Ready || state == ContextStopped);
-        break;
-    case Ready:
-        ASSERT(state == ContextStopped);
-        break;
-    case ContextStopped:
-        ASSERT_NOT_REACHED();
-        break;
-    }
-
-    ProxyState oldState = m_proxyState;
-    m_proxyState = state;
-    if (oldState == Ready || state == Ready)
-        m_outerWorker->proxyReadyChanged();
-}
-
-void ServiceWorker::onPromiseResolved()
-{
-    if (m_proxyState == ContextStopped)
-        return;
-    setProxyState(Ready);
-}
-
-void ServiceWorker::waitOnPromise(ScriptPromiseResolver* resolver)
-{
-    if (resolver->promise().isEmpty()) {
-        // The document was detached during registration. The state doesn't really
-        // matter since this ServiceWorker will immediately die.
-        setProxyState(ContextStopped);
-        return;
-    }
-    setProxyState(RegisterPromisePending);
-    resolver->promise().then(ThenFunction::createFunction(resolver->scriptState(), this));
 }
 
 bool ServiceWorker::hasPendingActivity() const
 {
     if (AbstractWorker::hasPendingActivity())
         return true;
-    if (m_proxyState == ContextStopped)
+    if (m_wasStopped)
         return false;
     return m_outerWorker->state() != WebServiceWorkerStateRedundant;
 }
 
 void ServiceWorker::stop()
 {
-    setProxyState(ContextStopped);
+    m_wasStopped = true;
 }
 
 PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::getOrCreate(ExecutionContext* executionContext, WebType* outerWorker)
@@ -252,10 +148,35 @@ PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::getOrCreate(ExecutionContex
 ServiceWorker::ServiceWorker(ExecutionContext* executionContext, PassOwnPtr<WebServiceWorker> worker)
     : AbstractWorker(executionContext)
     , m_outerWorker(worker)
-    , m_proxyState(Initial)
+    , m_wasStopped(false)
 {
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(*this);
+#endif
     ASSERT(m_outerWorker);
     m_outerWorker->setProxy(this);
+}
+
+ServiceWorker::~ServiceWorker()
+{
+#if ENABLE(OILPAN)
+    ASSERT(!m_outerWorker);
+#endif
+}
+
+void ServiceWorker::dispose()
+{
+    // With Oilpan enabled, the observable lifetime of a ServiceWorker
+    // must not extend beyond when it has been deemed to be unreachable
+    // by the garbage collector. The embedder must be detached before
+    // it is eventually (lazily) swept, so as to prevent that. Otherwise
+    // the embedder might risk accessing a to-be-finalized object that
+    // is not in a valid state.
+    //
+    // The dispose() method is hooked up to the garbage collector by
+    // way of a "pre finalizer", a method that is run after marking
+    // has completed, but before any sweeping takes place.
+    m_outerWorker.clear();
 }
 
 } // namespace blink

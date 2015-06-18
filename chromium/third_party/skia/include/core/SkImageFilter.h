@@ -8,6 +8,7 @@
 #ifndef SkImageFilter_DEFINED
 #define SkImageFilter_DEFINED
 
+#include "SkFilterQuality.h"
 #include "SkFlattenable.h"
 #include "SkMatrix.h"
 #include "SkRect.h"
@@ -16,6 +17,7 @@
 class SkBitmap;
 class SkColorFilter;
 class SkBaseDevice;
+class SkSurfaceProps;
 struct SkIPoint;
 class GrFragmentProcessor;
 class GrTexture;
@@ -87,6 +89,7 @@ public:
         virtual bool filterImage(const SkImageFilter*, const SkBitmap& src,
                                  const Context&,
                                  SkBitmap* result, SkIPoint* offset) = 0;
+        virtual const SkSurfaceProps* surfaceProps() const = 0;
     };
 
     /**
@@ -140,7 +143,25 @@ public:
      *  If this returns true, then if filterPtr is not null, it must be set to a ref'd colorfitler
      *  (i.e. it may not be set to NULL).
      */
-    virtual bool asColorFilter(SkColorFilter** filterPtr) const;
+    bool isColorFilterNode(SkColorFilter** filterPtr) const {
+        return this->onIsColorFilterNode(filterPtr);
+    }
+
+    // DEPRECATED : use isColorFilterNode() instead
+    bool asColorFilter(SkColorFilter** filterPtr) const {
+        return this->isColorFilterNode(filterPtr);
+    }
+
+    /**
+     *  Returns true (and optionally returns a ref'd filter) if this imagefilter can be completely
+     *  replaced by the returned colorfilter. i.e. the two effects will affect drawing in the
+     *  same way.
+     */
+    bool asAColorFilter(SkColorFilter** filterPtr) const {
+        return this->countInputs() > 0 &&
+               NULL == this->getInput(0) &&
+               this->isColorFilterNode(filterPtr);
+    }
 
     /**
      *  Returns the number of inputs this filter will accept (some inputs can
@@ -172,6 +193,13 @@ public:
     // Default impl returns union of all input bounds.
     virtual void computeFastBounds(const SkRect&, SkRect*) const;
 
+    /**
+     * Create an SkMatrixImageFilter, which transforms its input by the given matrix.
+     */
+    static SkImageFilter* CreateMatrixFilter(const SkMatrix& matrix,
+                                             SkFilterQuality,
+                                             SkImageFilter* input = NULL);
+
 #if SK_SUPPORT_GPU
     /**
      * Wrap the given texture in a texture-backed SkBitmap.
@@ -186,6 +214,7 @@ public:
                            SkBitmap* result, SkIPoint* offset) const;
 #endif
 
+    SK_TO_STRING_PUREVIRT()
     SK_DEFINE_FLATTENABLE_TYPE(SkImageFilter)
 
 protected:
@@ -207,7 +236,6 @@ protected:
         const CropRect& cropRect() const { return fCropRect; }
         int             inputCount() const { return fInputs.count(); }
         SkImageFilter** inputs() const { return fInputs.get(); }
-        uint32_t        uniqueID() const { return fUniqueID; }
 
         SkImageFilter*  getInput(int index) const { return fInputs[index]; }
 
@@ -221,12 +249,11 @@ protected:
         CropRect fCropRect;
         // most filters accept at most 2 input-filters
         SkAutoSTArray<2, SkImageFilter*> fInputs;
-        uint32_t fUniqueID;
 
         void allocInputs(int count);
     };
 
-    SkImageFilter(int inputCount, SkImageFilter** inputs, const CropRect* cropRect = NULL, uint32_t uniqueID = 0);
+    SkImageFilter(int inputCount, SkImageFilter** inputs, const CropRect* cropRect = NULL);
 
     virtual ~SkImageFilter();
 
@@ -239,7 +266,7 @@ protected:
      */
     explicit SkImageFilter(int inputCount, SkReadBuffer& rb);
 
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
 
     /**
      *  This is the virtual which should be overridden by the derived class
@@ -267,6 +294,14 @@ protected:
     // implementation recursively unions all input bounds, or returns false if
     // no inputs.
     virtual bool onFilterBounds(const SkIRect&, const SkMatrix&, SkIRect*) const;
+
+    /**
+     *  Return true (and return a ref'd colorfilter) if this node in the DAG is just a
+     *  colorfilter w/o CropRect constraints.
+     */
+    virtual bool onIsColorFilterNode(SkColorFilter** /*filterPtr*/) const {
+        return false;
+    }
 
     /** Computes source bounds as the src bitmap bounds offset by srcOffset.
      *  Apply the transformed crop rect to the bounds if any of the

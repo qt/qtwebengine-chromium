@@ -91,6 +91,8 @@ enum {
   // This bit is set if ssl_info has SCTs.
   RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS = 1 << 20,
 
+  RESPONSE_INFO_UNUSED_SINCE_PREFETCH = 1 << 21,
+
   // TODO(darin): Add other bits to indicate alternate request methods.
   // For now, we don't support storing those.
 };
@@ -103,6 +105,7 @@ HttpResponseInfo::HttpResponseInfo()
       was_npn_negotiated(false),
       was_fetched_via_proxy(false),
       did_use_http_auth(false),
+      unused_since_prefetch(false),
       connection_info(CONNECTION_INFO_UNKNOWN) {
 }
 
@@ -115,6 +118,7 @@ HttpResponseInfo::HttpResponseInfo(const HttpResponseInfo& rhs)
       was_fetched_via_proxy(rhs.was_fetched_via_proxy),
       proxy_server(rhs.proxy_server),
       did_use_http_auth(rhs.did_use_http_auth),
+      unused_since_prefetch(rhs.unused_since_prefetch),
       socket_address(rhs.socket_address),
       npn_negotiated_protocol(rhs.npn_negotiated_protocol),
       connection_info(rhs.connection_info),
@@ -140,6 +144,7 @@ HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   was_npn_negotiated = rhs.was_npn_negotiated;
   was_fetched_via_proxy = rhs.was_fetched_via_proxy;
   did_use_http_auth = rhs.did_use_http_auth;
+  unused_since_prefetch = rhs.unused_since_prefetch;
   socket_address = rhs.socket_address;
   npn_negotiated_protocol = rhs.npn_negotiated_protocol;
   connection_info = rhs.connection_info;
@@ -160,7 +165,7 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
 
   // Read flags and verify version
   int flags;
-  if (!pickle.ReadInt(&iter, &flags))
+  if (!iter.ReadInt(&flags))
     return false;
   int version = flags & RESPONSE_INFO_VERSION_MASK;
   if (version < RESPONSE_INFO_MINIMUM_VERSION ||
@@ -171,57 +176,57 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
 
   // Read request-time
   int64 time_val;
-  if (!pickle.ReadInt64(&iter, &time_val))
+  if (!iter.ReadInt64(&time_val))
     return false;
   request_time = Time::FromInternalValue(time_val);
   was_cached = true;  // Set status to show cache resurrection.
 
   // Read response-time
-  if (!pickle.ReadInt64(&iter, &time_val))
+  if (!iter.ReadInt64(&time_val))
     return false;
   response_time = Time::FromInternalValue(time_val);
 
   // Read response-headers
-  headers = new HttpResponseHeaders(pickle, &iter);
+  headers = new HttpResponseHeaders(&iter);
   if (headers->response_code() == -1)
     return false;
 
   // Read ssl-info
   if (flags & RESPONSE_INFO_HAS_CERT) {
     X509Certificate::PickleType type = GetPickleTypeForVersion(version);
-    ssl_info.cert = X509Certificate::CreateFromPickle(pickle, &iter, type);
+    ssl_info.cert = X509Certificate::CreateFromPickle(&iter, type);
     if (!ssl_info.cert.get())
       return false;
   }
   if (flags & RESPONSE_INFO_HAS_CERT_STATUS) {
     CertStatus cert_status;
-    if (!pickle.ReadUInt32(&iter, &cert_status))
+    if (!iter.ReadUInt32(&cert_status))
       return false;
     ssl_info.cert_status = cert_status;
   }
   if (flags & RESPONSE_INFO_HAS_SECURITY_BITS) {
     int security_bits;
-    if (!pickle.ReadInt(&iter, &security_bits))
+    if (!iter.ReadInt(&security_bits))
       return false;
     ssl_info.security_bits = security_bits;
   }
 
   if (flags & RESPONSE_INFO_HAS_SSL_CONNECTION_STATUS) {
     int connection_status;
-    if (!pickle.ReadInt(&iter, &connection_status))
+    if (!iter.ReadInt(&connection_status))
       return false;
     ssl_info.connection_status = connection_status;
   }
 
   if (flags & RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS) {
     int num_scts;
-    if (!pickle.ReadInt(&iter, &num_scts))
+    if (!iter.ReadInt(&num_scts))
       return false;
     for (int i = 0; i < num_scts; ++i) {
       scoped_refptr<ct::SignedCertificateTimestamp> sct(
           ct::SignedCertificateTimestamp::CreateFromPickle(&iter));
       uint16 status;
-      if (!sct.get() || !pickle.ReadUInt16(&iter, &status))
+      if (!sct.get() || !iter.ReadUInt16(&status))
         return false;
       ssl_info.signed_certificate_timestamps.push_back(
           SignedCertificateTimestampAndStatus(
@@ -231,16 +236,16 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
 
   // Read vary-data
   if (flags & RESPONSE_INFO_HAS_VARY_DATA) {
-    if (!vary_data.InitFromPickle(pickle, &iter))
+    if (!vary_data.InitFromPickle(&iter))
       return false;
   }
 
   // Read socket_address.
   std::string socket_address_host;
-  if (pickle.ReadString(&iter, &socket_address_host)) {
+  if (iter.ReadString(&socket_address_host)) {
     // If the host was written, we always expect the port to follow.
     uint16 socket_address_port;
-    if (!pickle.ReadUInt16(&iter, &socket_address_port))
+    if (!iter.ReadUInt16(&socket_address_port))
       return false;
     socket_address = HostPortPair(socket_address_host, socket_address_port);
   } else if (version > 1) {
@@ -251,14 +256,14 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
 
   // Read protocol-version.
   if (flags & RESPONSE_INFO_HAS_NPN_NEGOTIATED_PROTOCOL) {
-    if (!pickle.ReadString(&iter, &npn_negotiated_protocol))
+    if (!iter.ReadString(&npn_negotiated_protocol))
       return false;
   }
 
   // Read connection info.
   if (flags & RESPONSE_INFO_HAS_CONNECTION_INFO) {
     int value;
-    if (!pickle.ReadInt(&iter, &value))
+    if (!iter.ReadInt(&value))
       return false;
 
     if (value > static_cast<int>(CONNECTION_INFO_UNKNOWN) &&
@@ -276,6 +281,8 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
   *response_truncated = (flags & RESPONSE_INFO_TRUNCATED) != 0;
 
   did_use_http_auth = (flags & RESPONSE_INFO_USE_HTTP_AUTHENTICATION) != 0;
+
+  unused_since_prefetch = (flags & RESPONSE_INFO_UNUSED_SINCE_PREFETCH) != 0;
 
   return true;
 }
@@ -308,6 +315,8 @@ void HttpResponseInfo::Persist(Pickle* pickle,
     flags |= RESPONSE_INFO_HAS_CONNECTION_INFO;
   if (did_use_http_auth)
     flags |= RESPONSE_INFO_USE_HTTP_AUTHENTICATION;
+  if (unused_since_prefetch)
+    flags |= RESPONSE_INFO_UNUSED_SINCE_PREFETCH;
   if (!ssl_info.signed_certificate_timestamps.empty())
     flags |= RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS;
 
@@ -315,17 +324,16 @@ void HttpResponseInfo::Persist(Pickle* pickle,
   pickle->WriteInt64(request_time.ToInternalValue());
   pickle->WriteInt64(response_time.ToInternalValue());
 
-  net::HttpResponseHeaders::PersistOptions persist_options =
-      net::HttpResponseHeaders::PERSIST_RAW;
+  HttpResponseHeaders::PersistOptions persist_options =
+      HttpResponseHeaders::PERSIST_RAW;
 
   if (skip_transient_headers) {
-    persist_options =
-        net::HttpResponseHeaders::PERSIST_SANS_COOKIES |
-        net::HttpResponseHeaders::PERSIST_SANS_CHALLENGES |
-        net::HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP |
-        net::HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE |
-        net::HttpResponseHeaders::PERSIST_SANS_RANGES |
-        net::HttpResponseHeaders::PERSIST_SANS_SECURITY_STATE;
+    persist_options = HttpResponseHeaders::PERSIST_SANS_COOKIES |
+                      HttpResponseHeaders::PERSIST_SANS_CHALLENGES |
+                      HttpResponseHeaders::PERSIST_SANS_HOP_BY_HOP |
+                      HttpResponseHeaders::PERSIST_SANS_NON_CACHEABLE |
+                      HttpResponseHeaders::PERSIST_SANS_RANGES |
+                      HttpResponseHeaders::PERSIST_SANS_SECURITY_STATE;
   }
 
   headers->Persist(pickle, persist_options);
@@ -343,7 +351,7 @@ void HttpResponseInfo::Persist(Pickle* pickle,
            ssl_info.signed_certificate_timestamps.begin(); it !=
            ssl_info.signed_certificate_timestamps.end(); ++it) {
         it->sct->Persist(pickle);
-        pickle->WriteUInt16(it->status);
+        pickle->WriteUInt16(static_cast<uint16>(it->status));
       }
     }
   }
@@ -369,8 +377,10 @@ HttpResponseInfo::ConnectionInfo HttpResponseInfo::ConnectionInfoFromNextProto(
     case kProtoSPDY3:
     case kProtoSPDY31:
       return CONNECTION_INFO_SPDY3;
+    case kProtoSPDY4_14:
+      return CONNECTION_INFO_HTTP2_14;
     case kProtoSPDY4:
-      return CONNECTION_INFO_SPDY4;
+      return CONNECTION_INFO_HTTP2;
     case kProtoQUIC1SPDY3:
       return CONNECTION_INFO_QUIC1_SPDY3;
 
@@ -395,10 +405,17 @@ std::string HttpResponseInfo::ConnectionInfoToString(
       return "spdy/2";
     case CONNECTION_INFO_SPDY3:
       return "spdy/3";
-    case CONNECTION_INFO_SPDY4:
-      // This is the HTTP/2 draft 14 identifier. For internal
-      // consistency, HTTP/2 is named SPDY4 within Chromium.
+    case CONNECTION_INFO_HTTP2_14:
+      // For internal consistency, HTTP/2 is named SPDY4 within Chromium.
+      // This is the HTTP/2 draft-14 identifier.
       return "h2-14";
+    case CONNECTION_INFO_HTTP2_15:
+      // Since ConnectionInfo is persisted to disk, this value has to be
+      // handled, but h2-15 is removed.  Note that h2-14 and h2-15 are wire
+      // compatible for all practical purposes.
+      return "h2-14";
+    case CONNECTION_INFO_HTTP2:
+      return "h2";
     case CONNECTION_INFO_QUIC1_SPDY3:
       return "quic/1+spdy/3";
     case NUM_OF_CONNECTION_INFOS:

@@ -55,41 +55,83 @@
  * (eay@cryptsoft.com).  This product includes software written by Tim
  * Hudson (tjh@cryptsoft.com). */
 
-#include <stdio.h>
-
-#include <openssl/obj.h>
-
-#include "ssl_locl.h"
+#include "internal.h"
 
 
-static const SSL_METHOD *dtls1_get_method(int ver);
-static const SSL_METHOD *dtls1_get_method(int ver)
-	{
-	if (ver == DTLS1_VERSION)
-		return(DTLSv1_method());
-	else if (ver == DTLS1_2_VERSION)
-		return(DTLSv1_2_method());
-	else
-		return(NULL);
-	}
+static const SSL_PROTOCOL_METHOD DTLS_protocol_method = {
+    1 /* is_dtls */,
+    dtls1_new,
+    dtls1_free,
+    dtls1_accept,
+    dtls1_connect,
+    ssl3_read,
+    ssl3_peek,
+    ssl3_write,
+    dtls1_shutdown,
+    ssl3_renegotiate,
+    ssl3_renegotiate_check,
+    dtls1_get_message,
+    dtls1_read_bytes,
+    dtls1_write_app_data_bytes,
+    dtls1_dispatch_alert,
+    ssl3_ctrl,
+    ssl3_ctx_ctrl,
+    ssl3_pending,
+    ssl3_num_ciphers,
+    dtls1_get_cipher,
+    DTLS1_HM_HEADER_LENGTH,
+    dtls1_set_handshake_header,
+    dtls1_handshake_write,
+};
 
-IMPLEMENT_dtls1_meth_func(DTLS1_VERSION,
-			DTLSv1_method,
-			dtls1_accept,
-			dtls1_connect,
-			dtls1_get_method,
-			DTLSv1_enc_data)
+const SSL_METHOD *DTLS_method(void) {
+  static const SSL_METHOD method = {
+      0,
+      &DTLS_protocol_method,
+  };
+  return &method;
+}
 
-IMPLEMENT_dtls1_meth_func(DTLS1_2_VERSION,
-			DTLSv1_2_method,
-			dtls1_accept,
-			dtls1_connect,
-			dtls1_get_method,
-			DTLSv1_2_enc_data)
+/* Legacy version-locked methods. */
 
-IMPLEMENT_dtls1_meth_func(DTLS_ANY_VERSION,
-			DTLS_method,
-			dtls1_accept,
-			dtls1_connect,
-			dtls1_get_method,
-			DTLSv1_2_enc_data)
+const SSL_METHOD *DTLSv1_2_method(void) {
+  static const SSL_METHOD method = {
+      DTLS1_2_VERSION,
+      &DTLS_protocol_method,
+  };
+  return &method;
+}
+
+const SSL_METHOD *DTLSv1_method(void) {
+  static const SSL_METHOD method = {
+      DTLS1_VERSION,
+      &DTLS_protocol_method,
+  };
+  return &method;
+}
+
+/* Legacy side-specific methods. */
+
+const SSL_METHOD *DTLSv1_2_server_method(void) {
+  return DTLSv1_2_method();
+}
+
+const SSL_METHOD *DTLSv1_server_method(void) {
+  return DTLSv1_method();
+}
+
+const SSL_METHOD *DTLSv1_2_client_method(void) {
+  return DTLSv1_2_method();
+}
+
+const SSL_METHOD *DTLSv1_client_method(void) {
+  return DTLSv1_method();
+}
+
+const SSL_METHOD *DTLS_server_method(void) {
+  return DTLS_method();
+}
+
+const SSL_METHOD *DTLS_client_method(void) {
+  return DTLS_method();
+}

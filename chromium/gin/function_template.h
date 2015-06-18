@@ -44,17 +44,19 @@ struct CallbackParamTraits<const T*> {
 // among every CallbackHolder instance.
 class GIN_EXPORT CallbackHolderBase {
  public:
-  v8::Handle<v8::External> GetHandle(v8::Isolate* isolate);
+  v8::Local<v8::External> GetHandle(v8::Isolate* isolate);
 
  protected:
   explicit CallbackHolderBase(v8::Isolate* isolate);
   virtual ~CallbackHolderBase();
 
  private:
-  static void WeakCallback(
-      const v8::WeakCallbackData<v8::External, CallbackHolderBase>& data);
+  static void FirstWeakCallback(
+      const v8::WeakCallbackInfo<CallbackHolderBase>& data);
+  static void SecondWeakCallback(
+      const v8::WeakCallbackInfo<CallbackHolderBase>& data);
 
-  v8::Persistent<v8::External> v8_ref_;
+  v8::Global<v8::External> v8_ref_;
 
   DISALLOW_COPY_AND_ASSIGN(CallbackHolderBase);
 };
@@ -131,8 +133,12 @@ struct ArgumentHolder {
 
   ArgumentHolder(Arguments* args, int create_flags)
       : ok(GetNextArgument(args, create_flags, index == 0, &value)) {
-    if (!ok)
+    if (!ok) {
+      // Ideally we would include the expected c++ type in the error
+      // message which we can access via typeid(ArgType).name()
+      // however we compile with no-rtti, which disables typeid.
       args->ThrowError();
+    }
   }
 };
 
@@ -194,7 +200,7 @@ struct Dispatcher<ReturnType(ArgTypes...)> {
   static void DispatchToCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     Arguments args(info);
-    v8::Handle<v8::External> v8_holder;
+    v8::Local<v8::External> v8_holder;
     CHECK(args.GetData(&v8_holder));
     CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
         v8_holder->Value());
@@ -216,6 +222,11 @@ struct Dispatcher<ReturnType(ArgTypes...)> {
 // JavaScript functions that execute a provided C++ function or base::Callback.
 // JavaScript arguments are automatically converted via gin::Converter, as is
 // the return value of the C++ function, if any.
+//
+// NOTE: V8 caches FunctionTemplates for a lifetime of a web page for its own
+// internal reasons, thus it is generally a good idea to cache the template
+// returned by this function.  Otherwise, repeated method invocations from JS
+// will create substantial memory leaks. See http://crbug.com/463487.
 template<typename Sig>
 v8::Local<v8::FunctionTemplate> CreateFunctionTemplate(
     v8::Isolate* isolate, const base::Callback<Sig> callback,
@@ -226,7 +237,7 @@ v8::Local<v8::FunctionTemplate> CreateFunctionTemplate(
   return v8::FunctionTemplate::New(
       isolate,
       &internal::Dispatcher<Sig>::DispatchToCallback,
-      ConvertToV8<v8::Handle<v8::External> >(isolate,
+      ConvertToV8<v8::Local<v8::External> >(isolate,
                                              holder->GetHandle(isolate)));
 }
 
@@ -240,7 +251,7 @@ void CreateFunctionHandler(v8::Isolate* isolate,
   typedef internal::CallbackHolder<Sig> HolderT;
   HolderT* holder = new HolderT(isolate, callback, callback_flags);
   tmpl->SetCallAsFunctionHandler(&internal::Dispatcher<Sig>::DispatchToCallback,
-                                 ConvertToV8<v8::Handle<v8::External> >(
+                                 ConvertToV8<v8::Local<v8::External> >(
                                      isolate, holder->GetHandle(isolate)));
 }
 

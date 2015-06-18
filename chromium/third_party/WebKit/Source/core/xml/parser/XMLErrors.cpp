@@ -34,6 +34,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
+#include "core/xml/DocumentXSLT.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -49,7 +50,7 @@ XMLErrors::XMLErrors(Document* document)
 {
 }
 
-void XMLErrors::trace(Visitor* visitor)
+DEFINE_TRACE(XMLErrors)
 {
     visitor->trace(m_document);
 }
@@ -151,7 +152,7 @@ void XMLErrors::insertErrorMessageBlock()
     String errorMessages = m_errorMessages.toString();
     RefPtrWillBeRawPtr<Element> reportElement = createXHTMLParserErrorHeader(m_document, errorMessages);
 
-    if (m_document->transformSourceDocument()) {
+    if (DocumentXSLT::hasTransformSourceDocument(*m_document)) {
         Vector<Attribute> attributes;
         attributes.append(Attribute(styleAttr, "white-space: normal"));
         RefPtrWillBeRawPtr<Element> paragraph = m_document->createElement(pTag, true);
@@ -167,7 +168,7 @@ void XMLErrors::insertErrorMessageBlock()
         documentElement->parserAppendChild(reportElement);
 
     // FIXME: Why do we need to call this manually?
-    m_document->updateRenderTreeIfNeeded();
+    m_document->updateLayoutTreeIfNeeded();
 }
 
 } // namespace blink

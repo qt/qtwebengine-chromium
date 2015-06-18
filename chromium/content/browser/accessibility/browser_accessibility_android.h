@@ -13,11 +13,11 @@ namespace content {
 class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
  public:
   // Overrides from BrowserAccessibility.
-  virtual void OnDataChanged() override;
-  virtual bool IsNative() const override;
-  virtual void OnLocationChanged() override;
+  void OnDataChanged() override;
+  bool IsNative() const override;
+  void OnLocationChanged() override;
 
-  virtual bool PlatformIsLeaf() const override;
+  bool PlatformIsLeaf() const override;
 
   bool CanScrollForward() const;
   bool CanScrollBackward() const;
@@ -127,4 +127,4 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
 
 }  // namespace content
 
-#endif // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_ANDROID_H_
+#endif  // CONTENT_BROWSER_ACCESSIBILITY_BROWSER_ACCESSIBILITY_ANDROID_H_

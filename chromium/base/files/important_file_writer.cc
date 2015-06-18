@@ -10,12 +10,14 @@
 
 #include "base/bind.h"
 #include "base/critical_closure.h"
+#include "base/debug/alias.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread.h"
@@ -27,10 +29,14 @@ namespace {
 
 const int kDefaultCommitIntervalMs = 10000;
 
+// This enum is used to define the buckets for an enumerated UMA histogram.
+// Hence,
+//   (a) existing enumerated constants should never be deleted or reordered, and
+//   (b) new constants should only be appended at the end of the enumeration.
 enum TempFileFailure {
   FAILED_CREATING,
   FAILED_OPENING,
-  FAILED_CLOSING,
+  FAILED_CLOSING,  // Unused.
   FAILED_WRITING,
   FAILED_RENAMING,
   FAILED_FLUSHING,
@@ -45,11 +51,31 @@ void LogFailure(const FilePath& path, TempFileFailure failure_code,
                  << " : " << message;
 }
 
+// Helper function to call WriteFileAtomically() with a scoped_ptr<std::string>.
+bool WriteScopedStringToFileAtomically(const FilePath& path,
+                                       scoped_ptr<std::string> data) {
+  return ImportantFileWriter::WriteFileAtomically(path, *data);
+}
+
 }  // namespace
 
 // static
 bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
                                               const std::string& data) {
+#if defined(OS_CHROMEOS)
+  // On Chrome OS, chrome gets killed when it cannot finish shutdown quickly,
+  // and this function seems to be one of the slowest shutdown steps.
+  // Include some info to the report for investigation. crbug.com/418627
+  // TODO(hashimoto): Remove this.
+  struct {
+    size_t data_size;
+    char path[128];
+  } file_info;
+  file_info.data_size = data.size();
+  base::strlcpy(file_info.path, path.value().c_str(),
+                arraysize(file_info.path));
+  base::debug::Alias(&file_info);
+#endif
   // Write the data to a temp file then rename to avoid data loss if we crash
   // while writing the file. Ensure that the temp file is on the same volume
   // as target file, so it can be moved in one step, and that the temp file
@@ -104,7 +130,7 @@ ImportantFileWriter::ImportantFileWriter(
       commit_interval_(TimeDelta::FromMilliseconds(kDefaultCommitIntervalMs)),
       weak_factory_(this) {
   DCHECK(CalledOnValidThread());
-  DCHECK(task_runner_.get());
+  DCHECK(task_runner_);
 }
 
 ImportantFileWriter::~ImportantFileWriter() {
@@ -119,9 +145,9 @@ bool ImportantFileWriter::HasPendingWrite() const {
   return timer_.IsRunning();
 }
 
-void ImportantFileWriter::WriteNow(const std::string& data) {
+void ImportantFileWriter::WriteNow(scoped_ptr<std::string> data) {
   DCHECK(CalledOnValidThread());
-  if (data.length() > static_cast<size_t>(kint32max)) {
+  if (data->length() > static_cast<size_t>(kint32max)) {
     NOTREACHED();
     return;
   }
@@ -129,13 +155,14 @@ void ImportantFileWriter::WriteNow(const std::string& data) {
   if (HasPendingWrite())
     timer_.Stop();
 
-  if (!PostWriteTask(data)) {
+  auto task = Bind(&WriteScopedStringToFileAtomically, path_, Passed(&data));
+  if (!PostWriteTask(task)) {
     // Posting the task to background message loop is not expected
     // to fail, but if it does, avoid losing data and just hit the disk
     // on the current thread.
     NOTREACHED();
 
-    WriteFileAtomically(path_, data);
+    task.Run();
   }
 }
 
@@ -153,9 +180,9 @@ void ImportantFileWriter::ScheduleWrite(DataSerializer* serializer) {
 
 void ImportantFileWriter::DoScheduledWrite() {
   DCHECK(serializer_);
-  std::string data;
-  if (serializer_->SerializeData(&data)) {
-    WriteNow(data);
+  scoped_ptr<std::string> data(new std::string);
+  if (serializer_->SerializeData(data.get())) {
+    WriteNow(data.Pass());
   } else {
     DLOG(WARNING) << "failed to serialize data to be saved in "
                   << path_.value().c_str();
@@ -169,7 +196,7 @@ void ImportantFileWriter::RegisterOnNextSuccessfulWriteCallback(
   on_next_successful_write_ = on_next_successful_write;
 }
 
-bool ImportantFileWriter::PostWriteTask(const std::string& data) {
+bool ImportantFileWriter::PostWriteTask(const Callback<bool()>& task) {
   // TODO(gab): This code could always use PostTaskAndReplyWithResult and let
   // ForwardSuccessfulWrite() no-op if |on_next_successful_write_| is null, but
   // PostTaskAndReply causes memory leaks in tests (crbug.com/371974) and
@@ -179,16 +206,13 @@ bool ImportantFileWriter::PostWriteTask(const std::string& data) {
     return base::PostTaskAndReplyWithResult(
         task_runner_.get(),
         FROM_HERE,
-        MakeCriticalClosure(
-            Bind(&ImportantFileWriter::WriteFileAtomically, path_, data)),
+        MakeCriticalClosure(task),
         Bind(&ImportantFileWriter::ForwardSuccessfulWrite,
              weak_factory_.GetWeakPtr()));
   }
   return task_runner_->PostTask(
       FROM_HERE,
-      MakeCriticalClosure(
-          Bind(IgnoreResult(&ImportantFileWriter::WriteFileAtomically),
-               path_, data)));
+      MakeCriticalClosure(base::Bind(IgnoreResult(task))));
 }
 
 void ImportantFileWriter::ForwardSuccessfulWrite(bool result) {

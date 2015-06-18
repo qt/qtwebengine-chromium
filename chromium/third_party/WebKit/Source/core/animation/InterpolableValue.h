@@ -5,14 +5,16 @@
 #ifndef InterpolableValue_h
 #define InterpolableValue_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
-class InterpolableValue : public NoBaseWillBeGarbageCollected<InterpolableValue> {
+class CORE_EXPORT InterpolableValue : public NoBaseWillBeGarbageCollected<InterpolableValue> {
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(InterpolableValue);
 public:
     virtual bool isNumber() const { return false; }
@@ -22,10 +24,12 @@ public:
 
     virtual PassOwnPtrWillBeRawPtr<InterpolableValue> clone() const = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 private:
-    virtual PassOwnPtrWillBeRawPtr<InterpolableValue> interpolate(const InterpolableValue &to, const double progress) const = 0;
+    virtual void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const = 0;
+    virtual void add(const InterpolableValue& rhs, InterpolableValue& result) const = 0;
+    virtual void multiply(double scalar, InterpolableValue& result) const = 0;
 
     friend class Interpolation;
 
@@ -35,9 +39,11 @@ private:
     friend class InterpolableNumber;
     friend class InterpolableBool;
     friend class InterpolableList;
+
+    friend class AnimationInterpolableValueTest;
 };
 
-class InterpolableNumber : public InterpolableValue {
+class CORE_EXPORT InterpolableNumber final : public InterpolableValue {
 public:
     static PassOwnPtrWillBeRawPtr<InterpolableNumber> create(double value)
     {
@@ -48,10 +54,10 @@ public:
     double value() const { return m_value; }
     virtual PassOwnPtrWillBeRawPtr<InterpolableValue> clone() const override final { return create(m_value); }
 
-    virtual void trace(Visitor* visitor) override { InterpolableValue::trace(visitor); }
-
 private:
-    virtual PassOwnPtrWillBeRawPtr<InterpolableValue> interpolate(const InterpolableValue &to, const double progress) const override final;
+    virtual void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const override final;
+    virtual void add(const InterpolableValue& rhs, InterpolableValue& result) const override final;
+    virtual void multiply(double scalar, InterpolableValue& result) const override final;
     double m_value;
 
     explicit InterpolableNumber(double value)
@@ -61,7 +67,7 @@ private:
 
 };
 
-class InterpolableBool : public InterpolableValue {
+class CORE_EXPORT InterpolableBool final : public InterpolableValue {
 public:
     static PassOwnPtrWillBeRawPtr<InterpolableBool> create(bool value)
     {
@@ -72,10 +78,10 @@ public:
     bool value() const { return m_value; }
     virtual PassOwnPtrWillBeRawPtr<InterpolableValue> clone() const override final { return create(m_value); }
 
-    virtual void trace(Visitor* visitor) override { InterpolableValue::trace(visitor); }
-
 private:
-    virtual PassOwnPtrWillBeRawPtr<InterpolableValue> interpolate(const InterpolableValue &to, const double progress) const override final;
+    virtual void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const override final;
+    virtual void add(const InterpolableValue& rhs, InterpolableValue& result) const override final;
+    virtual void multiply(double scalar, InterpolableValue& result) const override final { ASSERT_NOT_REACHED(); }
     bool m_value;
 
     explicit InterpolableBool(bool value)
@@ -85,8 +91,16 @@ private:
 
 };
 
-class InterpolableList : public InterpolableValue {
+class CORE_EXPORT InterpolableList : public InterpolableValue {
 public:
+    // Explicitly delete operator= because MSVC automatically generate
+    // copy constructors and operator= for dll-exported classes.
+    // Since InterpolableList is not copyable, automatically generated
+    // operator= causes MSVC compiler error.
+    // However, we cannot use WTF_MAKE_NONCOPYABLE because InterpolableList
+    // has its own copy constructor. So just delete operator= here.
+    InterpolableList& operator=(const InterpolableList&) = delete;
+
     static PassOwnPtrWillBeRawPtr<InterpolableList> create(const InterpolableList &other)
     {
         return adoptPtrWillBeNoop(new InterpolableList(other));
@@ -111,10 +125,12 @@ public:
     size_t length() const { return m_size; }
     virtual PassOwnPtrWillBeRawPtr<InterpolableValue> clone() const override final { return create(*this); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    virtual PassOwnPtrWillBeRawPtr<InterpolableValue> interpolate(const InterpolableValue &other, const double progress) const override final;
+    virtual void interpolate(const InterpolableValue& to, const double progress, InterpolableValue& result) const override final;
+    virtual void add(const InterpolableValue& rhs, InterpolableValue& result) const override final;
+    virtual void multiply(double scalar, InterpolableValue& result) const override final;
     explicit InterpolableList(size_t size)
         : m_size(size)
         , m_values(m_size)
@@ -130,7 +146,7 @@ private:
     }
 
     size_t m_size;
-    WillBeHeapVector<OwnPtrWillBeMember<InterpolableValue> > m_values;
+    WillBeHeapVector<OwnPtrWillBeMember<InterpolableValue>> m_values;
 };
 
 // FIXME: Remove this when we can.
@@ -145,10 +161,12 @@ public:
     AnimatableValue* value() const { return m_value.get(); }
     virtual PassOwnPtrWillBeRawPtr<InterpolableValue> clone() const override final { return create(m_value); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    virtual PassOwnPtrWillBeRawPtr<InterpolableValue> interpolate(const InterpolableValue &other, const double progress) const override final;
+    virtual void interpolate(const InterpolableValue &to, const double progress, InterpolableValue& result) const override final;
+    virtual void add(const InterpolableValue& rhs, InterpolableValue& result) const override final { ASSERT_NOT_REACHED(); }
+    virtual void multiply(double scalar, InterpolableValue& result) const override final { ASSERT_NOT_REACHED(); }
     RefPtrWillBeMember<AnimatableValue> m_value;
 
     InterpolableAnimatableValue(PassRefPtrWillBeRawPtr<AnimatableValue> value)

@@ -70,10 +70,12 @@ std::string GetEquivalentAriaRoleString(const ui::AXRole role) {
       return "button";
     case ui::AX_ROLE_COMPLEMENTARY:
       return "complementary";
+    case ui::AX_ROLE_FIGURE:
+      return "figure";
     case ui::AX_ROLE_FOOTER:
       return "contentinfo";
-    case ui::AX_ROLE_HORIZONTAL_RULE:
-      return "separator";
+    case ui::AX_ROLE_HEADING:
+      return "heading";
     case ui::AX_ROLE_IMAGE:
       return "img";
     case ui::AX_ROLE_MAIN:
@@ -115,6 +117,10 @@ BlinkAXTreeSource::BlinkAXTreeSource(RenderFrameImpl* render_frame)
 BlinkAXTreeSource::~BlinkAXTreeSource() {
 }
 
+void BlinkAXTreeSource::SetRoot(blink::WebAXObject root) {
+  root_ = root;
+}
+
 bool BlinkAXTreeSource::IsInTree(blink::WebAXObject node) const {
   const blink::WebAXObject& root = GetRoot();
   while (IsValid(node)) {
@@ -134,6 +140,8 @@ void BlinkAXTreeSource::CollectChildFrameIdMapping(
 }
 
 blink::WebAXObject BlinkAXTreeSource::GetRoot() const {
+  if (!root_.isNull())
+    return root_;
   return GetMainDocument().accessibilityObject();
 }
 
@@ -216,7 +224,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   dst->state = AXStateFromBlink(src);
   dst->location = src.boundingBoxRect();
   dst->id = src.axID();
-  std::string name = UTF16ToUTF8(src.title());
+  std::string name = UTF16ToUTF8(src.deprecatedTitle());
 
   std::string value;
   if (src.valueDescription().length()) {
@@ -226,18 +234,42 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     dst->AddStringAttribute(ui::AX_ATTR_VALUE, UTF16ToUTF8(src.stringValue()));
   }
 
-  if (dst->role == ui::AX_ROLE_COLOR_WELL) {
-    int r, g, b;
-    src.colorValue(r, g, b);
-    dst->AddIntAttribute(ui::AX_ATTR_COLOR_VALUE_RED, r);
-    dst->AddIntAttribute(ui::AX_ATTR_COLOR_VALUE_GREEN, g);
-    dst->AddIntAttribute(ui::AX_ATTR_COLOR_VALUE_BLUE, b);
+  if (dst->role == ui::AX_ROLE_COLOR_WELL)
+    dst->AddIntAttribute(ui::AX_ATTR_COLOR_VALUE, src.colorValue());
+
+
+  // Text attributes.
+  if (src.backgroundColor())
+    dst->AddIntAttribute(ui::AX_ATTR_BACKGROUND_COLOR, src.backgroundColor());
+
+  if (src.color())
+    dst->AddIntAttribute(ui::AX_ATTR_COLOR, src.color());
+
+  // Font size is in pixels.
+  if (src.fontSize())
+    dst->AddFloatAttribute(ui::AX_ATTR_FONT_SIZE, src.fontSize());
+
+  if (src.invalidState()) {
+    dst->AddIntAttribute(ui::AX_ATTR_INVALID_STATE,
+                         AXInvalidStateFromBlink(src.invalidState()));
+  }
+  if (src.invalidState() == blink::WebAXInvalidStateOther) {
+    dst->AddStringAttribute(ui::AX_ATTR_ARIA_INVALID_VALUE,
+                            UTF16ToUTF8(src.ariaInvalidValue()));
   }
 
-  if (dst->role == ui::AX_ROLE_INLINE_TEXT_BOX) {
+  if (src.textDirection()) {
     dst->AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
                          AXTextDirectionFromBlink(src.textDirection()));
+  }
 
+  if (src.textStyle()) {
+    dst->AddIntAttribute(ui::AX_ATTR_TEXT_STYLE,
+                         AXTextStyleFromBlink(src.textStyle()));
+  }
+
+
+  if (dst->role == ui::AX_ROLE_INLINE_TEXT_BOX) {
     WebVector<int> src_character_offsets;
     src.characterOffsets(src_character_offsets);
     std::vector<int32> character_offsets;
@@ -265,31 +297,41 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     dst->AddStringAttribute(ui::AX_ATTR_ACCESS_KEY,
     UTF16ToUTF8(src.accessKey()));
   }
+
   if (src.actionVerb().length())
     dst->AddStringAttribute(ui::AX_ATTR_ACTION, UTF16ToUTF8(src.actionVerb()));
+  if (src.ariaAutoComplete().length())
+    dst->AddStringAttribute(ui::AX_ATTR_AUTO_COMPLETE,
+                            UTF16ToUTF8(src.ariaAutoComplete()));
   if (src.isAriaReadOnly())
     dst->AddBoolAttribute(ui::AX_ATTR_ARIA_READONLY, true);
   if (src.isButtonStateMixed())
     dst->AddBoolAttribute(ui::AX_ATTR_BUTTON_MIXED, true);
   if (src.canSetValueAttribute())
     dst->AddBoolAttribute(ui::AX_ATTR_CAN_SET_VALUE, true);
-  if (src.accessibilityDescription().length()) {
-    dst->AddStringAttribute(ui::AX_ATTR_DESCRIPTION,
-                            UTF16ToUTF8(src.accessibilityDescription()));
+  if (src.deprecatedAccessibilityDescription().length()) {
+    dst->AddStringAttribute(
+        ui::AX_ATTR_DESCRIPTION,
+        UTF16ToUTF8(src.deprecatedAccessibilityDescription()));
   }
   if (src.hasComputedStyle()) {
     dst->AddStringAttribute(ui::AX_ATTR_DISPLAY,
                             UTF16ToUTF8(src.computedStyleDisplay()));
   }
-  if (src.helpText().length())
-    dst->AddStringAttribute(ui::AX_ATTR_HELP, UTF16ToUTF8(src.helpText()));
+  if (src.deprecatedHelpText().length())
+    dst->AddStringAttribute(ui::AX_ATTR_HELP,
+                            UTF16ToUTF8(src.deprecatedHelpText()));
+  if (src.deprecatedPlaceholder().length()) {
+    dst->AddStringAttribute(ui::AX_ATTR_PLACEHOLDER,
+                            UTF16ToUTF8(src.deprecatedPlaceholder()));
+  }
   if (src.keyboardShortcut().length()) {
     dst->AddStringAttribute(ui::AX_ATTR_SHORTCUT,
                             UTF16ToUTF8(src.keyboardShortcut()));
   }
-  if (!src.titleUIElement().isDetached()) {
+  if (!src.deprecatedTitleUIElement().isDetached()) {
     dst->AddIntAttribute(ui::AX_ATTR_TITLE_UI_ELEMENT,
-                         src.titleUIElement().axID());
+                         src.deprecatedTitleUIElement().axID());
   }
   if (!src.ariaActiveDescendant().isDetached()) {
     dst->AddIntAttribute(ui::AX_ATTR_ACTIVEDESCENDANT_ID,
@@ -307,6 +349,12 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     dst->AddIntAttribute(ui::AX_ATTR_HIERARCHICAL_LEVEL,
                          src.hierarchicalLevel());
   }
+
+  if (src.setSize())
+    dst->AddIntAttribute(ui::AX_ATTR_SET_SIZE, src.setSize());
+
+  if (src.posInSet())
+    dst->AddIntAttribute(ui::AX_ATTR_POS_IN_SET, src.posInSet());
 
   // Treat the active list box item as focused.
   if (dst->role == ui::AX_ROLE_LIST_BOX_OPTION &&
@@ -337,9 +385,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
       dst->html_attributes.push_back(std::make_pair(name, value));
     }
 
-    if (dst->role == ui::AX_ROLE_EDITABLE_TEXT ||
-        dst->role == ui::AX_ROLE_TEXT_AREA ||
-        dst->role == ui::AX_ROLE_TEXT_FIELD) {
+    if (!src.isReadOnly() || dst->role == ui::AX_ROLE_TEXT_FIELD) {
       dst->AddIntAttribute(ui::AX_ATTR_TEXT_SEL_START, src.selectionStart());
       dst->AddIntAttribute(ui::AX_ATTR_TEXT_SEL_END, src.selectionEnd());
 
@@ -359,6 +405,12 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
                                 UTF16ToUTF8(src.textInputType()));
       }
     }
+
+    blink::WebAXOptionalBool optionalBool = src.isAriaGrabbed();
+    if (optionalBool == blink::WebAXOptionalBoolFalse)
+      dst->AddBoolAttribute(ui::AX_ATTR_GRABBED, false);
+    else if (optionalBool == blink::WebAXOptionalBoolTrue)
+      dst->AddBoolAttribute(ui::AX_ATTR_GRABBED, true);
 
     // ARIA role.
     if (element.hasAttribute("role")) {
@@ -384,8 +436,12 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   if (src.isInLiveRegion()) {
     dst->AddBoolAttribute(ui::AX_ATTR_LIVE_ATOMIC, src.liveRegionAtomic());
     dst->AddBoolAttribute(ui::AX_ATTR_LIVE_BUSY, src.liveRegionBusy());
-    dst->AddStringAttribute(ui::AX_ATTR_LIVE_STATUS,
-                            UTF16ToUTF8(src.liveRegionStatus()));
+    if (src.liveRegionBusy())
+      dst->state |= (1 << ui::AX_STATE_BUSY);
+    if (!src.liveRegionStatus().isEmpty()) {
+      dst->AddStringAttribute(ui::AX_ATTR_LIVE_STATUS,
+                              UTF16ToUTF8(src.liveRegionStatus()));
+    }
     dst->AddStringAttribute(ui::AX_ATTR_LIVE_RELEVANT,
                             UTF16ToUTF8(src.liveRegionRelevant()));
     dst->AddBoolAttribute(ui::AX_ATTR_CONTAINER_LIVE_ATOMIC,
@@ -399,6 +455,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   }
 
   if (dst->role == ui::AX_ROLE_PROGRESS_INDICATOR ||
+      dst->role == ui::AX_ROLE_METER ||
       dst->role == ui::AX_ROLE_SCROLL_BAR ||
       dst->role == ui::AX_ROLE_SLIDER ||
       dst->role == ui::AX_ROLE_SPIN_BUTTON) {
@@ -409,8 +466,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
                            src.minValueForRange());
   }
 
-  if (dst->role == ui::AX_ROLE_DOCUMENT ||
-      dst->role == ui::AX_ROLE_WEB_AREA) {
+  if (dst->role == ui::AX_ROLE_WEB_AREA) {
     dst->AddStringAttribute(ui::AX_ATTR_HTML_TAG, "#document");
     const WebDocument& document = src.document();
     if (name.empty())
@@ -517,6 +573,12 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     dst->AddIntAttribute(ui::AX_ATTR_TABLE_CELL_ROW_SPAN, src.cellRowSpan());
   }
 
+  if ((dst->role == ui::AX_ROLE_ROW_HEADER ||
+      dst->role == ui::AX_ROLE_COLUMN_HEADER) && src.sortDirection()) {
+    dst->AddIntAttribute(ui::AX_ATTR_SORT_DIRECTION,
+                         AXSortDirectionFromBlink(src.sortDirection()));
+  }
+
   dst->AddStringAttribute(ui::AX_ATTR_NAME, name);
 
   // Add the ids of *indirect* children - those who are children of this node,
@@ -541,9 +603,14 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     AddIntListAttributeFromWebObjects(ui::AX_ATTR_CONTROLS_IDS, controls, dst);
 
   WebVector<WebAXObject> describedby;
-  if (src.ariaDescribedby(describedby)) {
+  if (src.deprecatedAriaDescribedby(describedby)) {
     AddIntListAttributeFromWebObjects(
         ui::AX_ATTR_DESCRIBEDBY_IDS, describedby, dst);
+  }
+
+  if (src.ariaDropEffect().length()) {
+    dst->AddStringAttribute(ui::AX_ATTR_DROPEFFECT,
+        UTF16ToUTF8(src.ariaDropEffect()));
   }
 
   WebVector<WebAXObject> flowTo;
@@ -551,7 +618,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     AddIntListAttributeFromWebObjects(ui::AX_ATTR_FLOWTO_IDS, flowTo, dst);
 
   WebVector<WebAXObject> labelledby;
-  if (src.ariaLabelledby(labelledby)) {
+  if (src.deprecatedAriaLabelledby(labelledby)) {
     AddIntListAttributeFromWebObjects(
         ui::AX_ATTR_LABELLEDBY_IDS, labelledby, dst);
   }

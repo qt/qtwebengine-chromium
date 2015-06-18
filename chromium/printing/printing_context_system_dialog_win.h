@@ -19,14 +19,14 @@ class PRINTING_EXPORT PrintingContextSytemDialogWin
     : public PrintingContextWin {
  public:
   explicit PrintingContextSytemDialogWin(Delegate* delegate);
-  virtual ~PrintingContextSytemDialogWin();
+  ~PrintingContextSytemDialogWin() override;
 
   // PrintingContext implementation.
-  virtual void AskUserForSettings(
+  void AskUserForSettings(
       int max_pages,
       bool has_selection,
+      bool is_scripted,
       const PrintSettingsCallback& callback) override;
-  virtual void Cancel() override;
 
  private:
   friend class MockPrintingContextWin;
@@ -44,9 +44,6 @@ class PRINTING_EXPORT PrintingContextSytemDialogWin
   // Parses the result of a PRINTDLGEX result.
   Result ParseDialogResultEx(const PRINTDLGEX& dialog_options);
   Result ParseDialogResult(const PRINTDLG& dialog_options);
-
-  // The dialog box for the time it is shown.
-  volatile HWND dialog_box_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintingContextSytemDialogWin);
 };

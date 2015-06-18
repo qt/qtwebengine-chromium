@@ -15,7 +15,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "content/common/media/video_capture.h"
-#include "media/video/capture/video_capture_types.h"
+#include "media/base/video_capture_types.h"
 
 class GURL;
 
@@ -42,7 +42,6 @@ class PepperPlatformVideoCapture {
   void OnDeviceOpened(int request_id, bool succeeded, const std::string& label);
   void OnStateUpdate(VideoCaptureState state);
   void OnFrameReady(const scoped_refptr<media::VideoFrame>& frame,
-                    const media::VideoCaptureFormat& format,
                     const base::TimeTicks& estimated_capture_time);
 
   // Can return NULL if the RenderFrame referenced by |render_frame_id_| has

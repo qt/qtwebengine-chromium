@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// FIXME: This stub is invoked from the backend and should be removed
-// once we migrate to the "pull" model for extensions retrieval.
-WebInspector = {};
-WebInspector.addExtensions = function() {};
-
 (function()
 {
 
@@ -17,28 +12,10 @@ function toolboxLoaded()
 {
     if (!window.opener)
         return;
-    window.opener.WebInspector["app"]["toolboxLoaded"](document);
+    var app = window.opener.WebInspector["AdvancedApp"]["_instance"]();
+    app["toolboxLoaded"](document);
 }
 
-/**
- * @suppressGlobalPropertiesCheck
- */
-function windowLoaded()
-{
-    window.removeEventListener("DOMContentLoaded", windowLoaded, false);
-    toolboxLoaded();
-}
-
-/**
- * @suppressGlobalPropertiesCheck
- */
-function initToolbox()
-{
-    if (document.readyState === "complete")
-        toolboxLoaded();
-    else
-        window.addEventListener("DOMContentLoaded", windowLoaded, false);
-}
-initToolbox();
+runOnWindowLoad(toolboxLoaded);
 
 })();

@@ -36,11 +36,7 @@ TEST(DhcpProxyScriptFetcherWin, AdapterNamesAndPacURLFromDhcp) {
        it != adapter_names.end();
        ++it) {
     const std::string& adapter_name = *it;
-    std::string pac_url =
-        DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(adapter_name);
-    printf("Adapter '%s' has PAC URL '%s' configured in DHCP.\n",
-           adapter_name.c_str(),
-           pac_url.c_str());
+    DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(adapter_name);
   }
 }
 
@@ -84,11 +80,9 @@ class RealFetchTester {
       FAIL() << "Received completion for test in which this is error.";
     }
     finished_ = true;
-    printf("Result code %d PAC data length %d\n", result, pac_text_.size());
   }
 
   void OnTimeout() {
-    printf("Timeout!");
     OnCompletion(0);
   }
 
@@ -134,8 +128,7 @@ TEST(DhcpProxyScriptFetcherWin, RealFetch) {
   fetcher.RunTest();
 
   fetcher.WaitUntilDone();
-  printf("PAC URL was %s\n",
-      fetcher.fetcher_->GetPacURL().possibly_invalid_spec().c_str());
+  fetcher.fetcher_->GetPacURL().possibly_invalid_spec();
 
   fetcher.FinishTestAllowCleanup();
 }
@@ -164,15 +157,16 @@ class DelayingDhcpProxyScriptAdapterFetcher
 
   class DelayingDhcpQuery : public DhcpQuery {
    public:
-    explicit DelayingDhcpQuery()
-        : DhcpQuery() {
-    }
+    explicit DelayingDhcpQuery() : DhcpQuery() {}
 
     std::string ImplGetPacURLFromDhcp(
         const std::string& adapter_name) override {
       base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(20));
       return DhcpQuery::ImplGetPacURLFromDhcp(adapter_name);
     }
+
+   private:
+    ~DelayingDhcpQuery() override {}
   };
 
   DhcpQuery* ImplCreateDhcpQuery() override {
@@ -276,10 +270,7 @@ class MockDhcpProxyScriptFetcherWin : public DhcpProxyScriptFetcherWin {
     MockAdapterQuery() {
     }
 
-    virtual ~MockAdapterQuery() {
-    }
-
-    virtual bool ImplGetCandidateAdapterNames(
+    bool ImplGetCandidateAdapterNames(
         std::set<std::string>* adapter_names) override {
       adapter_names->insert(
           mock_adapter_names_.begin(), mock_adapter_names_.end());
@@ -287,6 +278,9 @@ class MockDhcpProxyScriptFetcherWin : public DhcpProxyScriptFetcherWin {
     }
 
     std::vector<std::string> mock_adapter_names_;
+
+   private:
+    ~MockAdapterQuery() override {}
   };
 
   MockDhcpProxyScriptFetcherWin(URLRequestContext* context)
@@ -296,9 +290,7 @@ class MockDhcpProxyScriptFetcherWin : public DhcpProxyScriptFetcherWin {
     ResetTestState();
   }
 
-  virtual ~MockDhcpProxyScriptFetcherWin() {
-    ResetTestState();
-  }
+  ~MockDhcpProxyScriptFetcherWin() override { ResetTestState(); }
 
   using DhcpProxyScriptFetcherWin::GetTaskRunner;
 
@@ -329,8 +321,8 @@ class MockDhcpProxyScriptFetcherWin : public DhcpProxyScriptFetcherWin {
     return adapter_fetchers_[next_adapter_fetcher_index_++];
   }
 
-  virtual AdapterQuery* ImplCreateAdapterQuery() override {
-    DCHECK(adapter_query_);
+  AdapterQuery* ImplCreateAdapterQuery() override {
+    DCHECK(adapter_query_.get());
     return adapter_query_.get();
   }
 

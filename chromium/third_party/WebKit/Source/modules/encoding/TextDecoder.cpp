@@ -32,8 +32,10 @@
 #include "modules/encoding/TextDecoder.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/encoding/Encoding.h"
 #include "wtf/StringExtras.h"
 #include "wtf/text/TextEncodingRegistry.h"
 
@@ -41,11 +43,11 @@ namespace blink {
 
 TextDecoder* TextDecoder::create(const String& label, const TextDecoderOptions& options, ExceptionState& exceptionState)
 {
-    WTF::TextEncoding encoding(label);
+    WTF::TextEncoding encoding(label.stripWhiteSpace(&Encoding::isASCIIWhiteSpace));
     // The replacement encoding is not valid, but the Encoding API also
     // rejects aliases of the replacement encoding.
     if (!encoding.isValid() || !strcasecmp(encoding.name(), "replacement")) {
-        exceptionState.throwTypeError("The encoding label provided ('" + label + "') is invalid.");
+        exceptionState.throwRangeError("The encoding label provided ('" + label + "') is invalid.");
         return 0;
     }
 
@@ -76,18 +78,29 @@ String TextDecoder::encoding() const
     return name;
 }
 
-String TextDecoder::decode(DOMArrayBufferView* input, const TextDecodeOptions& options, ExceptionState& exceptionState)
+String TextDecoder::decode(const BufferSource& input, const TextDecodeOptions& options, ExceptionState& exceptionState)
 {
-    const char* start = input ? static_cast<const char*>(input->baseAddress()) : 0;
-    size_t length = input ? input->byteLength() : 0;
+    ASSERT(!input.isNull());
+    if (input.isArrayBufferView()) {
+        const char* start = static_cast<const char*>(input.getAsArrayBufferView()->baseAddress());
+        size_t length = input.getAsArrayBufferView()->byteLength();
+        return decode(start, length, options, exceptionState);
+    }
+    ASSERT(input.isArrayBuffer());
+    const char* start = static_cast<const char*>(input.getAsArrayBuffer()->data());
+    size_t length = input.getAsArrayBuffer()->byteLength();
+    return decode(start, length, options, exceptionState);
+}
 
+String TextDecoder::decode(const char* start, size_t length, const TextDecodeOptions& options, ExceptionState& exceptionState)
+{
     WTF::FlushBehavior flush = options.stream() ? WTF::DoNotFlush : WTF::DataEOF;
 
     bool sawError = false;
     String s = m_codec->decode(start, length, flush, m_fatal, sawError);
 
     if (m_fatal && sawError) {
-        exceptionState.throwDOMException(EncodingError, "The encoded data was not valid.");
+        exceptionState.throwTypeError("The encoded data was not valid.");
         return String();
     }
 
@@ -107,7 +120,7 @@ String TextDecoder::decode(DOMArrayBufferView* input, const TextDecodeOptions& o
 String TextDecoder::decode(ExceptionState& exceptionState)
 {
     TextDecodeOptions options;
-    return decode(0, options, exceptionState);
+    return decode(nullptr, 0, options, exceptionState);
 }
 
 } // namespace blink

@@ -6,7 +6,7 @@
 #define ServiceWorkerClients_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
-#include "modules/serviceworkers/ServiceWorkerClientQueryOptions.h"
+#include "modules/serviceworkers/ClientQueryOptions.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
 
@@ -20,10 +20,12 @@ class ServiceWorkerClients final : public GarbageCollected<ServiceWorkerClients>
 public:
     static ServiceWorkerClients* create();
 
-    // ServiceWorkerClients.idl
-    ScriptPromise getAll(ScriptState*, const ServiceWorkerClientQueryOptions&);
+    // Clients.idl
+    ScriptPromise matchAll(ScriptState*, const ClientQueryOptions&);
+    ScriptPromise openWindow(ScriptState*, const String& url);
+    ScriptPromise claim(ScriptState*);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     ServiceWorkerClients();

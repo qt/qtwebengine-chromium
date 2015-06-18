@@ -21,14 +21,15 @@
 #ifndef HTMLMeterElement_h
 #define HTMLMeterElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/LabelableElement.h"
 
 namespace blink {
 
 class MeterValueElement;
-class RenderMeter;
+class LayoutMeter;
 
-class HTMLMeterElement final : public LabelableElement {
+class CORE_EXPORT HTMLMeterElement final : public LabelableElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLMeterElement> create(Document&);
@@ -62,18 +63,19 @@ public:
 
     virtual bool canContainRangeEndPoint() const override { return false; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit HTMLMeterElement(Document&);
     virtual ~HTMLMeterElement();
 
     virtual bool areAuthorShadowsAllowed() const override { return false; }
-    RenderMeter* renderMeter() const;
+    virtual void willAddFirstOpenShadowRoot() override;
+    LayoutMeter* layoutMeter() const;
 
     virtual bool supportLabels() const override { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     void didElementStateChange();

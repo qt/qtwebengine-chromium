@@ -141,11 +141,6 @@ class MediaEngineInterface {
   virtual bool UnregisterVoiceProcessor(uint32 ssrc,
                                         VoiceProcessor* video_processor,
                                         MediaProcessorDirection direction) = 0;
-
-  virtual VideoFormat GetStartCaptureFormat() const = 0;
-
-  virtual sigslot::repeater2<VideoCapturer*, CaptureState>&
-      SignalVideoCaptureStateChange() = 0;
 };
 
 
@@ -172,7 +167,7 @@ class MediaEngineFactory {
 template<class VOICE, class VIDEO>
 class CompositeMediaEngine : public MediaEngineInterface {
  public:
-  CompositeMediaEngine() {}
+  CompositeMediaEngine() : video_(&voice_) {}
   virtual ~CompositeMediaEngine() {}
   virtual bool Init(rtc::Thread* worker_thread) {
     if (!voice_.Init(worker_thread))
@@ -181,7 +176,6 @@ class CompositeMediaEngine : public MediaEngineInterface {
       voice_.Terminate();
       return false;
     }
-    SignalVideoCaptureStateChange().repeat(video_.SignalCaptureStateChange);
     return true;
   }
   virtual void Terminate() {
@@ -268,18 +262,10 @@ class CompositeMediaEngine : public MediaEngineInterface {
                                         MediaProcessorDirection direction) {
     return voice_.UnregisterProcessor(ssrc, processor, direction);
   }
-  virtual VideoFormat GetStartCaptureFormat() const {
-    return video_.GetStartCaptureFormat();
-  }
-  virtual sigslot::repeater2<VideoCapturer*, CaptureState>&
-      SignalVideoCaptureStateChange() {
-    return signal_state_change_;
-  }
 
  protected:
   VOICE voice_;
   VIDEO video_;
-  sigslot::repeater2<VideoCapturer*, CaptureState> signal_state_change_;
 };
 
 // NullVoiceEngine can be used with CompositeMediaEngine in the case where only
@@ -336,6 +322,7 @@ class NullVideoEngine {
   int GetCapabilities() { return 0; }
   // If you need this to return an actual channel, use FakeMediaEngine instead.
   VideoMediaChannel* CreateChannel(
+      const VideoOptions& options,
       VoiceMediaChannel* voice_media_channel) {
     return NULL;
   }
@@ -348,9 +335,7 @@ class NullVideoEngine {
     return rtp_header_extensions_;
   }
   void SetLogging(int min_sev, const char* filter) {}
-  VideoFormat GetStartCaptureFormat() const { return VideoFormat(); }
 
-  sigslot::signal2<VideoCapturer*, CaptureState> SignalCaptureStateChange;
  private:
   std::vector<VideoCodec> codecs_;
   std::vector<RtpHeaderExtension> rtp_header_extensions_;

@@ -48,7 +48,6 @@ namespace blink {
 class FontDescription;
 
 enum FontDataVariant { AutoVariant, NormalVariant, SmallCapsVariant, EmphasisMarkVariant, BrokenIdeographVariant };
-enum Pitch { UnknownPitch, FixedPitch, VariablePitch };
 
 class PLATFORM_EXPORT SimpleFontData : public FontData {
 public:
@@ -61,9 +60,7 @@ public:
     virtual ~SimpleFontData();
 
     const FontPlatformData& platformData() const { return m_platformData; }
-#if ENABLE(OPENTYPE_VERTICAL)
     const OpenTypeVerticalData* verticalData() const { return m_verticalData.get(); }
-#endif
 
     PassRefPtr<SimpleFontData> smallCapsFontData(const FontDescription&) const;
     PassRefPtr<SimpleFontData> emphasisMarkFontData(const FontDescription&) const;
@@ -122,9 +119,6 @@ public:
 
     Glyph glyphForCharacter(UChar32) const;
 
-    void determinePitch();
-    Pitch pitch() const { return m_treatAsFixedPitch ? FixedPitch : VariablePitch; }
-
     virtual bool isCustomFont() const override { return m_customFontData; }
     virtual bool isLoading() const override { return m_customFontData ? m_customFontData->isLoading() : false; }
     virtual bool isLoadingFallback() const override { return m_customFontData ? m_customFontData->isLoadingFallback() : false; }
@@ -133,10 +127,6 @@ public:
 
     const GlyphData& missingGlyphData() const { return m_missingGlyphData; }
     void setMissingGlyphData(const GlyphData& glyphData) { m_missingGlyphData = glyphData; }
-
-#if OS(MACOSX)
-    NSFont* getNSFont() const { return m_platformData.font(); }
-#endif
 
     bool canRenderCombiningCharacterSequence(const UChar*, size_t) const;
 
@@ -163,16 +153,12 @@ private:
 
     FontPlatformData m_platformData;
 
-    mutable OwnPtr<GlyphMetricsMap<FloatRect> > m_glyphToBoundsMap;
+    mutable OwnPtr<GlyphMetricsMap<FloatRect>> m_glyphToBoundsMap;
     mutable GlyphMetricsMap<float> m_glyphToWidthMap;
-
-    bool m_treatAsFixedPitch;
 
     bool m_isTextOrientationFallback;
     bool m_isBrokenIdeographFallback;
-#if ENABLE(OPENTYPE_VERTICAL)
     RefPtr<OpenTypeVerticalData> m_verticalData;
-#endif
     bool m_hasVerticalGlyphs;
 
     Glyph m_spaceGlyph;
@@ -204,7 +190,7 @@ private:
     mutable OwnPtr<DerivedFontData> m_derivedFontData;
 
     RefPtr<CustomFontData> m_customFontData;
-    mutable OwnPtr<HashMap<String, bool> > m_combiningCharacterSequenceSupport;
+    mutable OwnPtr<HashMap<String, bool>> m_combiningCharacterSequenceSupport;
 };
 
 ALWAYS_INLINE FloatRect SimpleFontData::boundsForGlyph(Glyph glyph) const
@@ -235,12 +221,7 @@ ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
     if (width != cGlyphSizeUnknown)
         return width;
 
-#if ENABLE(OPENTYPE_VERTICAL)
-    if (m_verticalData)
-        width = m_verticalData->advanceHeight(this, glyph);
-    else
-#endif
-        width = platformWidthForGlyph(glyph);
+    width = platformWidthForGlyph(glyph);
 
     m_glyphToWidthMap.setMetricsForGlyph(glyph, width);
     return width;

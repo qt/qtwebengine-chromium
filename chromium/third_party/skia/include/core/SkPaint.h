@@ -10,17 +10,20 @@
 
 #include "SkColor.h"
 #include "SkDrawLooper.h"
+#include "SkFilterQuality.h"
 #include "SkMatrix.h"
 #include "SkXfermode.h"
 
 class SkAnnotation;
+class SkAutoDescriptor;
 class SkAutoGlyphCache;
 class SkColorFilter;
+class SkData;
 class SkDescriptor;
 struct SkDeviceProperties;
 class SkReadBuffer;
 class SkWriteBuffer;
-struct SkGlyph;
+class SkGlyph;
 struct SkRect;
 class SkGlyphCache;
 class SkImageFilter;
@@ -294,11 +297,12 @@ public:
      */
     void setDistanceFieldTextTEMP(bool distanceFieldText);
 
+#ifdef SK_SUPPORT_LEGACY_FILTERLEVEL_ENUM
     enum FilterLevel {
-        kNone_FilterLevel,
-        kLow_FilterLevel,
-        kMedium_FilterLevel,
-        kHigh_FilterLevel
+        kNone_FilterLevel   = kNone_SkFilterQuality,
+        kLow_FilterLevel    = kLow_SkFilterQuality,
+        kMedium_FilterLevel = kMedium_SkFilterQuality,
+        kHigh_FilterLevel   = kHigh_SkFilterQuality
     };
 
     /**
@@ -306,31 +310,31 @@ public:
      *  drawing scaled images.
      */
     FilterLevel getFilterLevel() const {
-      return (FilterLevel)fBitfields.fFilterLevel;
+        return (FilterLevel)this->getFilterQuality();
     }
 
     /**
      *  Set the filter level. This affects the quality (and performance) of
      *  drawing scaled images.
      */
-    void setFilterLevel(FilterLevel);
+    void setFilterLevel(FilterLevel level) {
+        this->setFilterQuality((SkFilterQuality)level);
+    }
+#endif
 
     /**
-     *  If the predicate is true, set the filterLevel to Low, else set it to
-     *  None.
+     *  Return the filter level. This affects the quality (and performance) of
+     *  drawing scaled images.
      */
-    SK_ATTR_DEPRECATED("use setFilterLevel")
-    void setFilterBitmap(bool doFilter) {
-        this->setFilterLevel(doFilter ? kLow_FilterLevel : kNone_FilterLevel);
+    SkFilterQuality getFilterQuality() const {
+        return (SkFilterQuality)fBitfields.fFilterQuality;
     }
-
+    
     /**
-     *  Returns true if getFilterLevel() returns anything other than None.
+     *  Set the filter quality. This affects the quality (and performance) of
+     *  drawing scaled images.
      */
-    SK_ATTR_DEPRECATED("use getFilterLevel")
-    bool isFilterBitmap() const {
-        return kNone_FilterLevel != this->getFilterLevel();
-    }
+    void setFilterQuality(SkFilterQuality quality);
 
     /** Styles apply to rect, oval, path, and text.
         Bitmaps are always drawn in "fill", and lines are always drawn in
@@ -490,11 +494,17 @@ public:
      *  @param src  input path
      *  @param dst  output path (may be the same as src)
      *  @param cullRect If not null, the dst path may be culled to this rect.
+     *  @param resScale If > 1, increase precision, else if (0 < res < 1) reduce precision
+     *              in favor of speed/size.
      *  @return     true if the path should be filled, or false if it should be
      *              drawn with a hairline (width == 0)
      */
-    bool getFillPath(const SkPath& src, SkPath* dst,
-                     const SkRect* cullRect = NULL) const;
+    bool getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect,
+                     SkScalar resScale = 1) const;
+
+    bool getFillPath(const SkPath& src, SkPath* dst) const {
+        return this->getFillPath(src, dst, NULL, 1);
+    }
 
     /** Get the paint's shader object.
         <p />
@@ -921,6 +931,14 @@ public:
     void getPosTextPath(const void* text, size_t length,
                         const SkPoint pos[], SkPath* path) const;
 
+    /**
+     *  Return a rectangle that represents the union of the bounds of all
+     *  of the glyphs, but each one positioned at (0,0). This may be conservatively large, and
+     *  will not take into account any hinting, but will respect any text-scale-x or text-skew-x
+     *  on this paint.
+     */
+    SkRect getFontBounds() const;
+
     // returns true if the paint's settings (e.g. xfermode + alpha) resolve to
     // mean that we need not draw at all (e.g. SrcOver + 0-alpha)
     bool nothingToDraw() const;
@@ -1032,7 +1050,7 @@ private:
             unsigned        fStyle : 2;
             unsigned        fTextEncoding : 2;  // 3 values
             unsigned        fHinting : 2;
-            unsigned        fFilterLevel : 2;
+            unsigned        fFilterQuality : 2;
             //unsigned      fFreeBits : 2;
         } fBitfields;
         uint32_t fBitfieldsUInt;
@@ -1044,12 +1062,26 @@ private:
     SkScalar measure_text(SkGlyphCache*, const char* text, size_t length,
                           int* count, SkRect* bounds) const;
 
+    /*
+     * Allocs an SkDescriptor on the heap and return it to the caller as a refcnted
+     * SkData.  Caller is responsible for managing the lifetime of this object.
+     */
+    void getScalerContextDescriptor(SkAutoDescriptor*, const SkDeviceProperties* deviceProperties,
+                                    const SkMatrix*, bool ignoreGamma) const;
+
     SkGlyphCache* detachCache(const SkDeviceProperties* deviceProperties, const SkMatrix*,
                               bool ignoreGamma) const;
 
     void descriptorProc(const SkDeviceProperties* deviceProperties, const SkMatrix* deviceMatrix,
                         void (*proc)(SkTypeface*, const SkDescriptor*, void*),
                         void* context, bool ignoreGamma = false) const;
+
+    /*
+     * The luminance color is used to determine which Gamma Canonical color to map to.  This is
+     * really only used by backends which want to cache glyph masks, and need some way to know if
+     * they need to generate new masks based off a given color.
+     */
+    SkColor computeLuminanceColor() const;
 
     static void Term();
 
@@ -1098,10 +1130,13 @@ private:
     friend class SkGraphics; // So Term() can be called.
     friend class SkPDFDevice;
     friend class GrBitmapTextContext;
+    friend class GrAtlasTextContext;
     friend class GrDistanceFieldTextContext;
     friend class GrStencilAndCoverTextContext;
     friend class GrPathRendering;
+    friend class GrTextContext;
     friend class GrGLPathRendering;
+    friend class SkScalerContext;
     friend class SkTextToPathIter;
     friend class SkCanonicalizePaint;
 };

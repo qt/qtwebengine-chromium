@@ -59,14 +59,14 @@ class ChromeAppViewAsh
       public metro_driver::TextServiceDelegate {
  public:
   ChromeAppViewAsh();
-  ~ChromeAppViewAsh();
+  ~ChromeAppViewAsh() override;
 
   // IViewProvider overrides.
-  IFACEMETHOD(Initialize)(winapp::Core::ICoreApplicationView* view);
-  IFACEMETHOD(SetWindow)(winui::Core::ICoreWindow* window);
-  IFACEMETHOD(Load)(HSTRING entryPoint);
-  IFACEMETHOD(Run)();
-  IFACEMETHOD(Uninitialize)();
+  IFACEMETHOD(Initialize)(winapp::Core::ICoreApplicationView* view) override;
+  IFACEMETHOD(SetWindow)(winui::Core::ICoreWindow* window) override;
+  IFACEMETHOD(Load)(HSTRING entryPoint) override;
+  IFACEMETHOD(Run)() override;
+  IFACEMETHOD(Uninitialize)() override;
 
   // Helper function to unsnap the chrome metro app if it is snapped.
   // Returns S_OK on success.
@@ -120,18 +120,18 @@ class ChromeAppViewAsh
   class PointerInfoHandler;
 
   // ImePopupObserver overrides.
-  virtual void OnImePopupChanged(ImePopupObserver::EventType event) override;
+  void OnImePopupChanged(ImePopupObserver::EventType event) override;
 
   // InputSourceObserver overrides.
-  virtual void OnInputSourceChanged() override;
+  void OnInputSourceChanged() override;
 
   // TextServiceDelegate overrides.
-  virtual void OnCompositionChanged(
+  void OnCompositionChanged(
       const base::string16& text,
       int32 selection_start,
       int32 selection_end,
       const std::vector<metro_viewer::UnderlineInfo>& underlines) override;
-  virtual void OnTextCommitted(const base::string16& text) override;
+  void OnTextCommitted(const base::string16& text) override;
 
   // Convenience for sending a MetroViewerHostMsg_MouseButton with the specified
   // parameters.

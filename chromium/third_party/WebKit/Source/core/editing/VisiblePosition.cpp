@@ -35,8 +35,8 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RootInlineBox.h"
+#include "core/layout/LayoutBlock.h"
+#include "core/layout/line/RootInlineBox.h"
 #include "platform/geometry/FloatQuad.h"
 #include "wtf/text/CString.h"
 
@@ -135,22 +135,22 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
         if (!box)
             return primaryDirection == LTR ? previousVisuallyDistinctCandidate(m_deepPosition) : nextVisuallyDistinctCandidate(m_deepPosition);
 
-        RenderObject* renderer = &box->renderer();
+        LayoutObject* layoutObject = &box->layoutObject();
 
         while (true) {
-            if ((renderer->isReplaced() || renderer->isBR()) && offset == box->caretRightmostOffset())
+            if ((layoutObject->isReplaced() || layoutObject->isBR()) && offset == box->caretRightmostOffset())
                 return box->isLeftToRightDirection() ? previousVisuallyDistinctCandidate(m_deepPosition) : nextVisuallyDistinctCandidate(m_deepPosition);
 
-            if (!renderer->node()) {
+            if (!layoutObject->node()) {
                 box = box->prevLeafChild();
                 if (!box)
                     return primaryDirection == LTR ? previousVisuallyDistinctCandidate(m_deepPosition) : nextVisuallyDistinctCandidate(m_deepPosition);
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = box->caretRightmostOffset();
                 continue;
             }
 
-            offset = box->isLeftToRightDirection() ? renderer->previousOffset(offset) : renderer->nextOffset(offset);
+            offset = box->isLeftToRightDirection() ? layoutObject->previousOffset(offset) : layoutObject->nextOffset(offset);
 
             int caretMinOffset = box->caretMinOffset();
             int caretMaxOffset = box->caretMaxOffset();
@@ -176,7 +176,7 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
 
                 // Reposition at the other logical position corresponding to our edge's visual position and go for another round.
                 box = prevBox;
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = prevBox->caretRightmostOffset();
                 continue;
             }
@@ -191,7 +191,7 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
                     InlineBox* logicalStart = 0;
                     if (primaryDirection == LTR ? box->root().getLogicalStartBoxWithNode(logicalStart) : box->root().getLogicalEndBoxWithNode(logicalStart)) {
                         box = logicalStart;
-                        renderer = &box->renderer();
+                        layoutObject = &box->layoutObject();
                         offset = primaryDirection == LTR ? box->caretMinOffset() : box->caretMaxOffset();
                     }
                     break;
@@ -210,19 +210,19 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
                     break;
 
                 box = prevBox;
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = box->caretRightmostOffset();
                 if (box->direction() == primaryDirection)
                     break;
                 continue;
             }
 
-            while (prevBox && !prevBox->renderer().node())
+            while (prevBox && !prevBox->layoutObject().node())
                 prevBox = prevBox->prevLeafChild();
 
             if (prevBox) {
                 box = prevBox;
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = box->caretRightmostOffset();
                 if (box->bidiLevel() > level) {
                     do {
@@ -252,13 +252,13 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
                         break;
                     level = box->bidiLevel();
                 }
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = primaryDirection == LTR ? box->caretMinOffset() : box->caretMaxOffset();
             }
             break;
         }
 
-        p = createLegacyEditingPosition(renderer->node(), offset);
+        p = createLegacyEditingPosition(layoutObject->node(), offset);
 
         if ((p.isCandidate() && p.downstream() != downstreamStart) || p.atStartOfTree() || p.atEndOfTree())
             return p;
@@ -299,22 +299,22 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
         if (!box)
             return primaryDirection == LTR ? nextVisuallyDistinctCandidate(m_deepPosition) : previousVisuallyDistinctCandidate(m_deepPosition);
 
-        RenderObject* renderer = &box->renderer();
+        LayoutObject* layoutObject = &box->layoutObject();
 
         while (true) {
-            if ((renderer->isReplaced() || renderer->isBR()) && offset == box->caretLeftmostOffset())
+            if ((layoutObject->isReplaced() || layoutObject->isBR()) && offset == box->caretLeftmostOffset())
                 return box->isLeftToRightDirection() ? nextVisuallyDistinctCandidate(m_deepPosition) : previousVisuallyDistinctCandidate(m_deepPosition);
 
-            if (!renderer->node()) {
+            if (!layoutObject->node()) {
                 box = box->nextLeafChild();
                 if (!box)
                     return primaryDirection == LTR ? nextVisuallyDistinctCandidate(m_deepPosition) : previousVisuallyDistinctCandidate(m_deepPosition);
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = box->caretLeftmostOffset();
                 continue;
             }
 
-            offset = box->isLeftToRightDirection() ? renderer->nextOffset(offset) : renderer->previousOffset(offset);
+            offset = box->isLeftToRightDirection() ? layoutObject->nextOffset(offset) : layoutObject->previousOffset(offset);
 
             int caretMinOffset = box->caretMinOffset();
             int caretMaxOffset = box->caretMaxOffset();
@@ -340,7 +340,7 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
 
                 // Reposition at the other logical position corresponding to our edge's visual position and go for another round.
                 box = nextBox;
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = nextBox->caretLeftmostOffset();
                 continue;
             }
@@ -355,7 +355,7 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
                     InlineBox* logicalEnd = 0;
                     if (primaryDirection == LTR ? box->root().getLogicalEndBoxWithNode(logicalEnd) : box->root().getLogicalStartBoxWithNode(logicalEnd)) {
                         box = logicalEnd;
-                        renderer = &box->renderer();
+                        layoutObject = &box->layoutObject();
                         offset = primaryDirection == LTR ? box->caretMaxOffset() : box->caretMinOffset();
                     }
                     break;
@@ -376,19 +376,19 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
 
                 // For example, abc 123 ^ CBA or 123 ^ CBA abc
                 box = nextBox;
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = box->caretLeftmostOffset();
                 if (box->direction() == primaryDirection)
                     break;
                 continue;
             }
 
-            while (nextBox && !nextBox->renderer().node())
+            while (nextBox && !nextBox->layoutObject().node())
                 nextBox = nextBox->nextLeafChild();
 
             if (nextBox) {
                 box = nextBox;
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = box->caretLeftmostOffset();
 
                 if (box->bidiLevel() > level) {
@@ -419,13 +419,13 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
                         break;
                     level = box->bidiLevel();
                 }
-                renderer = &box->renderer();
+                layoutObject = &box->layoutObject();
                 offset = primaryDirection == LTR ? box->caretMaxOffset() : box->caretMinOffset();
             }
             break;
         }
 
-        p = createLegacyEditingPosition(renderer->node(), offset);
+        p = createLegacyEditingPosition(layoutObject->node(), offset);
 
         if ((p.isCandidate() && p.downstream() != downstreamStart) || p.atStartOfTree() || p.atEndOfTree())
             return p;
@@ -514,8 +514,8 @@ VisiblePosition VisiblePosition::skipToStartOfEditingBoundary(const VisiblePosit
     if (highestRootOfPos == highestRoot)
         return pos;
 
-    // If |pos| has an editable root, skip to the start
-    if (highestRootOfPos)
+    // If this is not editable but |pos| has an editable root, skip to the start
+    if (!highestRoot && highestRootOfPos)
         return VisiblePosition(previousVisuallyDistinctCandidate(Position(highestRootOfPos, Position::PositionIsBeforeAnchor).parentAnchoredEquivalent()));
 
     // That must mean that |pos| is not editable. Return the last position before pos that is in the same editable region as this position
@@ -534,8 +534,8 @@ VisiblePosition VisiblePosition::skipToEndOfEditingBoundary(const VisiblePositio
     if (highestRootOfPos == highestRoot)
         return pos;
 
-    // If |pos| has an editable root, skip to the end
-    if (highestRootOfPos)
+    // If this is not editable but |pos| has an editable root, skip to the end
+    if (!highestRoot && highestRootOfPos)
         return VisiblePosition(Position(highestRootOfPos, Position::PositionIsAfterAnchor).parentAnchoredEquivalent());
 
     // That must mean that |pos| is not editable. Return the next position after pos that is in the same editable region as this position
@@ -555,15 +555,20 @@ static Position canonicalizeCandidate(const Position& candidate)
 
 Position VisiblePosition::canonicalPosition(const Position& passedPosition)
 {
+    // Sometimes updating selection positions can be extremely expensive and occur
+    // frequently.  Often calling preventDefault on mousedown events can avoid
+    // doing unnecessary text selection work.  http://crbug.com/472258.
+    TRACE_EVENT0("blink", "VisiblePosition::canonicalPosition");
+
     // The updateLayout call below can do so much that even the position passed
     // in to us might get changed as a side effect. Specifically, there are code
     // paths that pass selection endpoints, and updateLayout can change the selection.
     Position position = passedPosition;
 
     // FIXME (9535):  Canonicalizing to the leftmost candidate means that if we're at a line wrap, we will
-    // ask renderers to paint downstream carets for other renderers.
+    // ask layoutObjects to paint downstream carets for other layoutObjects.
     // To fix this, we need to either a) add code to all paintCarets to pass the responsibility off to
-    // the appropriate renderer for VisiblePosition's like these, or b) canonicalize to the rightmost candidate
+    // the appropriate layoutObject for VisiblePosition's like these, or b) canonicalize to the rightmost candidate
     // unless the affinity is upstream.
     if (position.isNull())
         return Position();
@@ -645,36 +650,36 @@ UChar32 VisiblePosition::characterAfter() const
     return textNode->data().characterStartingAt(offset);
 }
 
-LayoutRect VisiblePosition::localCaretRect(RenderObject*& renderer) const
+LayoutRect VisiblePosition::localCaretRect(LayoutObject*& layoutObject) const
 {
     PositionWithAffinity positionWithAffinity(m_deepPosition, m_affinity);
-    return localCaretRectOfPosition(positionWithAffinity, renderer);
+    return localCaretRectOfPosition(positionWithAffinity, layoutObject);
 }
 
 IntRect VisiblePosition::absoluteCaretBounds() const
 {
-    RenderObject* renderer;
-    LayoutRect localRect = localCaretRect(renderer);
-    if (localRect.isEmpty() || !renderer)
+    LayoutObject* layoutObject;
+    LayoutRect localRect = localCaretRect(layoutObject);
+    if (localRect.isEmpty() || !layoutObject)
         return IntRect();
 
-    return renderer->localToAbsoluteQuad(FloatRect(localRect)).enclosingBoundingBox();
+    return layoutObject->localToAbsoluteQuad(FloatRect(localRect)).enclosingBoundingBox();
 }
 
 int VisiblePosition::lineDirectionPointForBlockDirectionNavigation() const
 {
-    RenderObject* renderer;
-    LayoutRect localRect = localCaretRect(renderer);
-    if (localRect.isEmpty() || !renderer)
+    LayoutObject* layoutObject;
+    LayoutRect localRect = localCaretRect(layoutObject);
+    if (localRect.isEmpty() || !layoutObject)
         return 0;
 
     // This ignores transforms on purpose, for now. Vertical navigation is done
     // without consulting transforms, so that 'up' in transformed text is 'up'
     // relative to the text, not absolute 'up'.
-    FloatPoint caretPoint = renderer->localToAbsolute(localRect.location());
-    RenderObject* containingBlock = renderer->containingBlock();
+    FloatPoint caretPoint = layoutObject->localToAbsolute(FloatPoint(localRect.location()));
+    LayoutObject* containingBlock = layoutObject->containingBlock();
     if (!containingBlock)
-        containingBlock = renderer; // Just use ourselves to determine the writing mode if we have no containing block.
+        containingBlock = layoutObject; // Just use ourselves to determine the writing mode if we have no containing block.
     return containingBlock->isHorizontalWritingMode() ? caretPoint.x() : caretPoint.y();
 }
 
@@ -682,12 +687,11 @@ int VisiblePosition::lineDirectionPointForBlockDirectionNavigation() const
 
 void VisiblePosition::debugPosition(const char* msg) const
 {
-    if (isNull())
+    if (isNull()) {
         fprintf(stderr, "Position [%s]: null\n", msg);
-    else {
-        fprintf(stderr, "Position [%s]: %s, ", msg, m_deepPosition.deprecatedNode()->nodeName().utf8().data());
-        m_deepPosition.showAnchorTypeAndOffset();
+        return;
     }
+    m_deepPosition.debugPosition(msg);
 }
 
 void VisiblePosition::formatForDebugger(char* buffer, unsigned length) const
@@ -772,7 +776,7 @@ bool isLastVisiblePositionInNode(const VisiblePosition& visiblePosition, const C
     return next.isNull() || !next.deepEquivalent().deprecatedNode()->isDescendantOf(node);
 }
 
-void VisiblePosition::trace(Visitor* visitor)
+DEFINE_TRACE(VisiblePosition)
 {
     visitor->trace(m_deepPosition);
 }
@@ -785,6 +789,8 @@ void showTree(const blink::VisiblePosition* vpos)
 {
     if (vpos)
         vpos->showTreeForThis();
+    else
+        fprintf(stderr, "Cannot showTree for (nil) VisiblePosition.\n");
 }
 
 void showTree(const blink::VisiblePosition& vpos)

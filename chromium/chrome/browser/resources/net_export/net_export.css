@@ -4,7 +4,6 @@
  */
 
 body {
-  font-family: sans-serif;
   font-size: 80%;
 }
 
@@ -15,6 +14,10 @@ button {
   margin: 10px auto;
   min-height: 48px;
   width: 200px;
+}
+
+.radio-button-div {
+  margin: 7px auto;
 }
 
 .warning {

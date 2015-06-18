@@ -11,21 +11,20 @@ class GraphicsContext;
 struct PaintInfo;
 class LayoutPoint;
 class LayoutRect;
-class RenderImage;
+class LayoutImage;
 
 class ImagePainter {
 public:
-    ImagePainter(RenderImage& renderImage) : m_renderImage(renderImage) { }
+    ImagePainter(LayoutImage& layoutImage) : m_layoutImage(layoutImage) { }
 
-    void paint(PaintInfo&, const LayoutPoint& paintOffset);
-    void paintReplaced(PaintInfo&, const LayoutPoint& paintOffset);
+    void paint(const PaintInfo&, const LayoutPoint& paintOffset);
+    void paintReplaced(const PaintInfo&, const LayoutPoint& paintOffset);
     void paintIntoRect(GraphicsContext*, const LayoutRect& paintOffset);
-    void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint& paintOffset);
 
 private:
-    void paintAreaElementFocusRing(PaintInfo&);
+    void paintAreaElementFocusRing(const PaintInfo&);
 
-    RenderImage& m_renderImage;
+    LayoutImage& m_layoutImage;
 };
 
 } // namespace blink

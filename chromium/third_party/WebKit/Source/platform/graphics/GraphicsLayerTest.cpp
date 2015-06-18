@@ -64,8 +64,10 @@ public:
     GraphicsLayerTest()
     {
         m_clipLayer = adoptPtr(new GraphicsLayerForTesting(&m_client));
+        m_scrollElasticityLayer = adoptPtr(new GraphicsLayerForTesting(&m_client));
         m_graphicsLayer = adoptPtr(new GraphicsLayerForTesting(&m_client));
-        m_clipLayer->addChild(m_graphicsLayer.get());
+        m_clipLayer->addChild(m_scrollElasticityLayer.get());
+        m_scrollElasticityLayer->addChild(m_graphicsLayer.get());
         m_graphicsLayer->platformLayer()->setScrollClipLayer(
             m_clipLayer->platformLayer());
         m_platformLayer = m_graphicsLayer->platformLayer();
@@ -73,7 +75,7 @@ public:
         ASSERT(m_layerTreeView);
         m_layerTreeView->setRootLayer(*m_clipLayer->platformLayer());
         m_layerTreeView->registerViewportLayers(
-            m_clipLayer->platformLayer(), m_graphicsLayer->platformLayer(), 0);
+            m_scrollElasticityLayer->platformLayer(), m_clipLayer->platformLayer(), m_graphicsLayer->platformLayer(), 0);
         m_layerTreeView->setViewportSize(WebSize(1, 1));
     }
 
@@ -86,6 +88,7 @@ public:
 protected:
     WebLayer* m_platformLayer;
     OwnPtr<GraphicsLayerForTesting> m_graphicsLayer;
+    OwnPtr<GraphicsLayerForTesting> m_scrollElasticityLayer;
     OwnPtr<GraphicsLayerForTesting> m_clipLayer;
 
 private:

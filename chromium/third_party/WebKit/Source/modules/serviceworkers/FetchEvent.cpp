@@ -5,7 +5,7 @@
 #include "config.h"
 #include "FetchEvent.h"
 
-#include "modules/serviceworkers/Request.h"
+#include "modules/fetch/Request.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
 #include "wtf/RefPtr.h"
 
@@ -16,9 +16,16 @@ PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create()
     return adoptRefWillBeNoop(new FetchEvent());
 }
 
-PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create(RespondWithObserver* observer, Request* request)
+PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create(const AtomicString& type, FetchEventInit& initializer)
 {
-    return adoptRefWillBeNoop(new FetchEvent(observer, request));
+    initializer.setCancelable(true);
+    return adoptRefWillBeNoop(new FetchEvent(type, initializer, nullptr));
+}
+
+PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create(const AtomicString& type, FetchEventInit& initializer, RespondWithObserver* observer)
+{
+    initializer.setCancelable(true);
+    return adoptRefWillBeNoop(new FetchEvent(type, initializer, observer));
 }
 
 Request* FetchEvent::request() const
@@ -33,6 +40,7 @@ bool FetchEvent::isReload() const
 
 void FetchEvent::respondWith(ScriptState* scriptState, const ScriptValue& value, ExceptionState& exceptionState)
 {
+    stopImmediatePropagation();
     m_observer->respondWith(scriptState, value, exceptionState);
 }
 
@@ -41,29 +49,25 @@ const AtomicString& FetchEvent::interfaceName() const
     return EventNames::FetchEvent;
 }
 
-void FetchEvent::setIsReload(bool isReload)
-{
-    m_isReload = isReload;
-}
-
 FetchEvent::FetchEvent()
     : m_isReload(false)
 {
 }
 
-FetchEvent::FetchEvent(RespondWithObserver* observer, Request* request)
-    : Event(EventTypeNames::fetch, /*canBubble=*/false, /*cancelable=*/true)
+FetchEvent::FetchEvent(const AtomicString& type, const FetchEventInit& initializer, RespondWithObserver* observer)
+    : ExtendableEvent(type, initializer)
     , m_observer(observer)
-    , m_request(request)
-    , m_isReload(false)
 {
+    if (initializer.hasRequest())
+        m_request = initializer.request();
+    m_isReload = initializer.isReload();
 }
 
-void FetchEvent::trace(Visitor* visitor)
+DEFINE_TRACE(FetchEvent)
 {
-    visitor->trace(m_request);
     visitor->trace(m_observer);
-    Event::trace(visitor);
+    visitor->trace(m_request);
+    ExtendableEvent::trace(visitor);
 }
 
 } // namespace blink

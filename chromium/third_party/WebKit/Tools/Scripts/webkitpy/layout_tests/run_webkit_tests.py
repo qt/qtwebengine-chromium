@@ -58,10 +58,6 @@ def main(argv, stdout, stderr):
     else:
         host = Host()
 
-    if options.lint_test_files:
-        from webkitpy.layout_tests.lint_test_expectations import run_checks
-        return run_checks(host, options, stderr)
-
     try:
         port = host.port_factory.get(options.platform, options)
     except NotImplementedError, e:
@@ -115,7 +111,7 @@ def parse_args(args):
     option_group_definitions.append(("Results Options", [
         optparse.make_option("--add-platform-exceptions", action="store_true", default=False,
             help="Save generated results into the *most-specific-platform* directory rather than the *generic-platform* directory"),
-        optparse.make_option("--additional-drt-flag", action="append",
+        optparse.make_option("--additional-driver-flag", "--additional-drt-flag", action="append", dest="additional_driver_flag",
             default=[], help="Additional command line flag to pass to the driver "
                  "Specify multiple times to add multiple flags."),
         optparse.make_option("--additional-expectations", action="append", default=[],
@@ -263,12 +259,6 @@ def parse_args(args):
             help="Do everything but actually run the tests or upload results."),
     ]))
 
-    option_group_definitions.append(("Miscellaneous Options", [
-        optparse.make_option("--lint-test-files", action="store_true",
-        default=False, help=("Makes sure the test files parse for all "
-                            "configurations. Does not run any tests.")),
-    ]))
-
     # FIXME: Move these into json_results_generator.py
     option_group_definitions.append(("Result JSON Options", [
         optparse.make_option("--build-name", default="DUMMY_BUILD_NAME",
@@ -300,6 +290,9 @@ def parse_args(args):
 
 def _set_up_derived_options(port, options, args):
     """Sets the options values that depend on other options values."""
+    if options.batch_size is None:
+        options.batch_size = port.default_batch_size()
+
     if not options.child_processes:
         options.child_processes = os.environ.get("WEBKIT_TEST_CHILD_PROCESSES",
                                                  str(port.default_child_processes()))

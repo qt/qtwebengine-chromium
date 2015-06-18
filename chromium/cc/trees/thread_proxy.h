@@ -14,6 +14,7 @@
 #include "cc/base/completion_event.h"
 #include "cc/base/delayed_unique_notifier.h"
 #include "cc/resources/resource_update_controller.h"
+#include "cc/scheduler/commit_earlyout_reason.h"
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/proxy.h"
@@ -25,9 +26,11 @@ class SingleThreadTaskRunner;
 
 namespace cc {
 
+class BeginFrameSource;
 class ContextProvider;
 class InputHandlerClient;
 class LayerTreeHost;
+class PrioritizedResourceManager;
 class ResourceUpdateQueue;
 class Scheduler;
 class ScopedThreadProxy;
@@ -40,7 +43,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
   ~ThreadProxy() override;
 
@@ -70,13 +74,12 @@ class CC_EXPORT ThreadProxy : public Proxy,
     bool commit_request_sent_to_impl_thread;
 
     bool started;
-    bool manage_tiles_pending;
+    bool prepare_tiles_pending;
     bool can_cancel_commit;
     bool defer_commits;
 
     RendererCapabilities renderer_capabilities_main_thread_copy;
 
-    scoped_ptr<BeginMainFrameAndCommitState> pending_deferred_commit;
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
 
@@ -96,7 +99,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
     CompositorThreadOnly(
         ThreadProxy* proxy,
         int layer_tree_host_id,
-        RenderingStatsInstrumentation* rendering_stats_instrumentation);
+        RenderingStatsInstrumentation* rendering_stats_instrumentation,
+        scoped_ptr<BeginFrameSource> external_begin_frame_source);
     ~CompositorThreadOnly();
 
     const int layer_tree_host_id;
@@ -137,6 +141,12 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     ProxyTimingHistory timing_history;
 
+    scoped_ptr<BeginFrameSource> external_begin_frame_source;
+
+    // Values used to keep track of frame durations. Used only in frame timing.
+    BeginFrameArgs last_begin_main_frame_args;
+    BeginFrameArgs last_processed_begin_main_frame_args;
+
     scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl;
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
@@ -148,9 +158,11 @@ class CC_EXPORT ThreadProxy : public Proxy,
   // Proxy implementation
   void FinishAllRendering() override;
   bool IsStarted() const override;
+  bool CommitToActiveTree() const override;
   void SetOutputSurface(scoped_ptr<OutputSurface>) override;
   void SetLayerTreeHostClientReady() override;
   void SetVisible(bool visible) override;
+  void SetThrottleFrameProduction(bool throttle) override;
   const RendererCapabilities& GetRendererCapabilities() const override;
   void SetNeedsAnimate() override;
   void SetNeedsUpdateLayers() override;
@@ -168,8 +180,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
   void SetDebugState(const LayerTreeDebugState& debug_state) override;
-  void AsValueInto(base::debug::TracedValue* value) const override;
   bool MainFrameWillHappenForTesting() override;
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
+  void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval) override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -182,51 +195,57 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void DidSwapBuffersCompleteOnImplThread() override;
   void OnCanDrawStateChanged(bool can_draw) override;
   void NotifyReadyToActivate() override;
+  void NotifyReadyToDraw() override;
   // Please call these 3 functions through
   // LayerTreeHostImpl's SetNeedsRedraw(), SetNeedsRedrawRect() and
   // SetNeedsAnimate().
   void SetNeedsRedrawOnImplThread() override;
   void SetNeedsRedrawRectOnImplThread(const gfx::Rect& dirty_rect) override;
   void SetNeedsAnimateOnImplThread() override;
-  void SetNeedsManageTilesOnImplThread() override;
-  void DidInitializeVisibleTileOnImplThread() override;
+  void SetNeedsPrepareTilesOnImplThread() override;
   void SetNeedsCommitOnImplThread() override;
+  void SetVideoNeedsBeginFrames(bool needs_begin_frames) override;
   void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> queue) override;
   bool ReduceContentsTextureMemoryOnImplThread(size_t limit_bytes,
                                                int priority_cutoff) override;
   bool IsInsideDraw() override;
   void RenewTreePriority() override;
-  void PostDelayedScrollbarFadeOnImplThread(const base::Closure& start_fade,
+  void PostDelayedAnimationTaskOnImplThread(const base::Closure& task,
                                             base::TimeDelta delay) override;
   void DidActivateSyncTree() override;
-  void DidManageTiles() override;
+  void DidPrepareTiles() override;
+  void DidCompletePageScaleAnimationOnImplThread() override;
+  void OnDrawForOutputSurface() override;
 
   // SchedulerClient implementation
-  BeginFrameSource* ExternalBeginFrameSource() override;
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
+  void DidFinishImplFrame() override;
   void ScheduledActionSendBeginMainFrame() override;
   DrawResult ScheduledActionDrawAndSwapIfPossible() override;
   DrawResult ScheduledActionDrawAndSwapForced() override;
   void ScheduledActionAnimate() override;
   void ScheduledActionCommit() override;
-  void ScheduledActionUpdateVisibleTiles() override;
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginOutputSurfaceCreation() override;
-  void ScheduledActionManageTiles() override;
+  void ScheduledActionPrepareTiles() override;
+  void ScheduledActionInvalidateOutputSurface() override;
   void DidAnticipatedDrawTimeChange(base::TimeTicks time) override;
   base::TimeDelta DrawDurationEstimate() override;
   base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
   base::TimeDelta CommitToActivateDurationEstimate() override;
-  void DidBeginImplFrameDeadline() override;
+  void SendBeginFramesToChildren(const BeginFrameArgs& args) override;
+  void SendBeginMainFrameNotExpectedSoon() override;
 
   // ResourceUpdateControllerClient implementation
   void ReadyToFinalizeTextureUpdates() override;
 
  protected:
-  ThreadProxy(LayerTreeHost* layer_tree_host,
-              scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-              scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+  ThreadProxy(
+      LayerTreeHost* layer_tree_host,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
  private:
   // Called on main thread.
@@ -234,6 +253,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
       const RendererCapabilities& capabilities);
   void BeginMainFrame(
       scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state);
+  void BeginMainFrameNotExpectedSoon();
   void DidCommitAndDrawFrame();
   void DidCompleteSwapBuffers();
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue);
@@ -242,18 +262,19 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void DidInitializeOutputSurface(bool success,
                                   const RendererCapabilities& capabilities);
   void SendCommitRequestToImplThreadIfNeeded();
+  void DidCompletePageScaleAnimation();
 
   // Called on impl thread.
   struct SchedulerStateRequest;
 
   void StartCommitOnImplThread(CompletionEvent* completion,
                                ResourceUpdateQueue* queue);
-  void BeginMainFrameAbortedOnImplThread(bool did_handle);
+  void BeginMainFrameAbortedOnImplThread(CommitEarlyOutReason reason);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
   void InitializeImplOnImplThread(CompletionEvent* completion);
   void SetLayerTreeHostClientReadyOnImplThread();
   void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
-  void UpdateBackgroundAnimateTicking();
+  void SetThrottleFrameProductionOnImplThread(bool throttle);
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       bool* has_initialized_output_surface);
@@ -266,12 +287,11 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void MainFrameWillHappenOnImplThreadForTesting(CompletionEvent* completion,
                                                  bool* main_frame_will_happen);
-  void AsValueOnImplThread(CompletionEvent* completion,
-                           base::debug::TracedValue* state) const;
   void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
   void SetDebugStateOnImplThread(const LayerTreeDebugState& debug_state);
+  void SetDeferCommitsOnImplThread(bool defer_commits) const;
 
   LayerTreeHost* layer_tree_host();
   const LayerTreeHost* layer_tree_host() const;

@@ -14,7 +14,7 @@ namespace net {
 
 namespace {
 
-COMPILE_ASSERT(kMaxHSTSAgeSecs <= kuint32max, kMaxHSTSAgeSecsTooLarge);
+static_assert(kMaxHSTSAgeSecs <= kuint32max, "kMaxHSTSAgeSecs too large");
 
 // MaxAgeToInt converts a string representation of a "whole number" of
 // seconds into a uint32. The string may contain an arbitrarily large number,
@@ -118,12 +118,15 @@ StringPair Split(const std::string& source, char delimiter) {
 bool ParseAndAppendPin(const std::string& value,
                        HashValueTag tag,
                        HashValueVector* hashes) {
-  std::string unquoted = HttpUtil::Unquote(value);
-  std::string decoded;
+  // Pins are always quoted.
+  if (value.empty() || !HttpUtil::IsQuote(value[0]))
+    return false;
 
+  std::string unquoted = HttpUtil::Unquote(value);
   if (unquoted.empty())
       return false;
 
+  std::string decoded;
   if (!base::Base64Decode(unquoted, &decoded))
     return false;
 
@@ -323,21 +326,7 @@ bool ParseHPKPHeader(const std::string& value,
 
   *max_age = base::TimeDelta::FromSeconds(max_age_candidate);
   *include_subdomains = include_subdomains_candidate;
-  for (HashValueVector::const_iterator i = pins.begin();
-       i != pins.end(); ++i) {
-    bool found = false;
-
-    for (HashValueVector::const_iterator j = hashes->begin();
-         j != hashes->end(); ++j) {
-      if (j->Equals(*i)) {
-        found = true;
-        break;
-      }
-    }
-
-    if (!found)
-      hashes->push_back(*i);
-  }
+  hashes->swap(pins);
 
   return true;
 }

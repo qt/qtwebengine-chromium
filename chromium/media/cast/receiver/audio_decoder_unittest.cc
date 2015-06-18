@@ -41,12 +41,12 @@ class AudioDecoderTest : public ::testing::TestWithParam<TestScenario> {
   }
 
  protected:
-  void SetUp() override {
+  void SetUp() final {
     audio_decoder_.reset(new AudioDecoder(cast_environment_,
                                           GetParam().num_channels,
                                           GetParam().sampling_rate,
                                           GetParam().codec));
-    CHECK_EQ(STATUS_AUDIO_INITIALIZED, audio_decoder_->InitializationResult());
+    CHECK_EQ(STATUS_INITIALIZED, audio_decoder_->InitializationResult());
 
     audio_bus_factory_.reset(
         new TestAudioBusFactory(GetParam().num_channels,
@@ -150,7 +150,7 @@ class AudioDecoderTest : public ::testing::TestWithParam<TestScenario> {
     DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
 
     // A NULL |audio_bus| indicates a decode error, which we don't expect.
-    ASSERT_FALSE(!audio_bus);
+    ASSERT_TRUE(audio_bus);
 
     // Did the decoder detect whether frames were dropped?
     EXPECT_EQ(should_be_continuous, is_continuous);

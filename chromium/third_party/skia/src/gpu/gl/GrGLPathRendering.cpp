@@ -8,7 +8,7 @@
 #include "gl/GrGLPathRendering.h"
 #include "gl/GrGLNameAllocator.h"
 #include "gl/GrGLUtil.h"
-#include "gl/GrGpuGL.h"
+#include "gl/GrGLGpu.h"
 
 #include "GrGLPath.h"
 #include "GrGLPathRange.h"
@@ -20,6 +20,17 @@
 #define GL_CALL(X) GR_GL_CALL(fGpu->glInterface(), X)
 #define GL_CALL_RET(RET, X) GR_GL_CALL_RET(fGpu->glInterface(), RET, X)
 
+
+static const GrGLenum gIndexType2GLType[] = {
+    GR_GL_UNSIGNED_BYTE,
+    GR_GL_UNSIGNED_SHORT,
+    GR_GL_UNSIGNED_INT
+};
+
+GR_STATIC_ASSERT(0 == GrPathRange::kU8_PathIndexType);
+GR_STATIC_ASSERT(1 == GrPathRange::kU16_PathIndexType);
+GR_STATIC_ASSERT(2 == GrPathRange::kU32_PathIndexType);
+GR_STATIC_ASSERT(GrPathRange::kU32_PathIndexType == GrPathRange::kLast_PathIndexType);
 
 static const GrGLenum gXformType2GLType[] = {
     GR_GL_NONE,
@@ -48,7 +59,7 @@ static GrGLenum gr_stencil_op_to_gl_path_rendering_fill_mode(GrStencilOp op) {
     }
 }
 
-GrGLPathRendering::GrGLPathRendering(GrGpuGL* gpu)
+GrGLPathRendering::GrGLPathRendering(GrGLGpu* gpu)
     : fGpu(gpu) {
     const GrGLInterface* glInterface = gpu->glInterface();
     fCaps.stencilThenCoverSupport =
@@ -57,14 +68,11 @@ GrGLPathRendering::GrGLPathRendering(GrGpuGL* gpu)
         NULL != glInterface->fFunctions.fStencilThenCoverFillPathInstanced &&
         NULL != glInterface->fFunctions.fStencilThenCoverStrokePathInstanced;
     fCaps.fragmentInputGenSupport =
-        kGLES_GrGLStandard == glInterface->fStandard &&
         NULL != glInterface->fFunctions.fProgramPathFragmentInputGen;
     fCaps.glyphLoadingSupport =
         NULL != glInterface->fFunctions.fPathMemoryGlyphIndexArray;
 
-    if (!fCaps.fragmentInputGenSupport) {
-        fHWPathTexGenSettings.reset(fGpu->glCaps().maxFixedFunctionTextureCoords());
-    }
+    SkASSERT(fCaps.fragmentInputGenSupport);
 }
 
 GrGLPathRendering::~GrGLPathRendering() {
@@ -77,18 +85,9 @@ void GrGLPathRendering::abandonGpuResources() {
 void GrGLPathRendering::resetContext() {
     fHWProjectionMatrixState.invalidate();
     // we don't use the model view matrix.
-    GrGLenum matrixMode =
-        fGpu->glStandard() == kGLES_GrGLStandard ? GR_GL_PATH_MODELVIEW : GR_GL_MODELVIEW;
-    GL_CALL(MatrixLoadIdentity(matrixMode));
+    GL_CALL(MatrixLoadIdentity(GR_GL_PATH_MODELVIEW));
 
-    if (!caps().fragmentInputGenSupport) {
-        for (int i = 0; i < fGpu->glCaps().maxFixedFunctionTextureCoords(); ++i) {
-            GL_CALL(PathTexGen(GR_GL_TEXTURE0 + i, GR_GL_NONE, 0, NULL));
-            fHWPathTexGenSettings[i].fMode = GR_GL_NONE;
-            fHWPathTexGenSettings[i].fNumComponents = 0;
-        }
-        fHWActivePathTexGenSets = 0;
-    }
+    SkASSERT(fCaps.fragmentInputGenSupport);
     fHWPathStencilSettings.invalidate();
 }
 
@@ -114,7 +113,7 @@ GrPathRange* GrGLPathRendering::createGlyphs(const SkTypeface* typeface,
     }
 
     int faceIndex;
-    SkAutoTUnref<SkStream> fontStream(typeface->openStream(&faceIndex));
+    SkAutoTDelete<SkStream> fontStream(typeface->openStream(&faceIndex));
 
     const size_t fontDataLength = fontStream->getLength();
     if (0 == fontDataLength) {
@@ -125,12 +124,12 @@ GrPathRange* GrGLPathRendering::createGlyphs(const SkTypeface* typeface,
     const void* fontData = fontStream->getMemoryBase();
     if (NULL == fontData) {
         // TODO: Find a more efficient way to pass the font data (e.g. open file descriptor).
-        fontTempBuffer.reset(fontDataLength);
+        fontTempBuffer.reset(SkToInt(fontDataLength));
         fontStream->read(&fontTempBuffer.front(), fontDataLength);
         fontData = &fontTempBuffer.front();
     }
 
-    const size_t numPaths = typeface->countGlyphs();
+    const int numPaths = typeface->countGlyphs();
     const GrGLuint basePathID = this->genPaths(numPaths);
     SkAutoTUnref<GrGLPath> templatePath(SkNEW_ARGS(GrGLPath, (fGpu, SkPath(), stroke)));
 
@@ -154,8 +153,6 @@ GrPathRange* GrGLPathRendering::createGlyphs(const SkTypeface* typeface,
 
 void GrGLPathRendering::stencilPath(const GrPath* path, const GrStencilSettings& stencilSettings) {
     GrGLuint id = static_cast<const GrGLPath*>(path)->pathID();
-    SkASSERT(fGpu->drawState()->getRenderTarget());
-    SkASSERT(fGpu->drawState()->getRenderTarget()->getStencilBuffer());
 
     this->flushPathStencilSettings(stencilSettings);
     SkASSERT(!fHWPathStencilSettings.isTwoSided());
@@ -176,8 +173,6 @@ void GrGLPathRendering::stencilPath(const GrPath* path, const GrStencilSettings&
 
 void GrGLPathRendering::drawPath(const GrPath* path, const GrStencilSettings& stencilSettings) {
     GrGLuint id = static_cast<const GrGLPath*>(path)->pathID();
-    SkASSERT(fGpu->drawState()->getRenderTarget());
-    SkASSERT(fGpu->drawState()->getRenderTarget()->getStencilBuffer());
 
     this->flushPathStencilSettings(stencilSettings);
     SkASSERT(!fHWPathStencilSettings.isTwoSided());
@@ -198,12 +193,11 @@ void GrGLPathRendering::drawPath(const GrPath* path, const GrStencilSettings& st
     }
 }
 
-void GrGLPathRendering::drawPaths(const GrPathRange* pathRange, const uint32_t indices[], int count,
-                                  const float transforms[], PathTransformType transformsType,
-                                  const GrStencilSettings& stencilSettings) {
-    SkASSERT(fGpu->caps()->pathRenderingSupport());
-    SkASSERT(fGpu->drawState()->getRenderTarget());
-    SkASSERT(fGpu->drawState()->getRenderTarget()->getStencilBuffer());
+void GrGLPathRendering::drawPaths(const GrPathRange* pathRange,
+                                  const void* indices, PathIndexType indexType,
+                                  const float transformValues[], PathTransformType transformType,
+                                  int count, const GrStencilSettings& stencilSettings) {
+    SkASSERT(fGpu->caps()->shaderCaps()->pathRenderingSupport());
 
     GrGLuint baseID = static_cast<const GrGLPathRange*>(pathRange)->basePathID();
 
@@ -221,90 +215,19 @@ void GrGLPathRendering::drawPaths(const GrPathRange* pathRange, const uint32_t i
     if (stroke.needToApply()) {
         if (SkStrokeRec::kStrokeAndFill_Style == stroke.getStyle()) {
             GL_CALL(StencilFillPathInstanced(
-                            count, GR_GL_UNSIGNED_INT, indices, baseID, fillMode,
-                            writeMask, gXformType2GLType[transformsType],
-                            transforms));
+                            count, gIndexType2GLType[indexType], indices, baseID, fillMode,
+                            writeMask, gXformType2GLType[transformType], transformValues));
         }
         this->stencilThenCoverStrokePathInstanced(
-                            count, GR_GL_UNSIGNED_INT, indices, baseID, 0xffff, writeMask,
-                            GR_GL_BOUNDING_BOX_OF_BOUNDING_BOXES,
-                            gXformType2GLType[transformsType], transforms);
+                            count, gIndexType2GLType[indexType], indices, baseID,
+                            0xffff, writeMask, GR_GL_BOUNDING_BOX_OF_BOUNDING_BOXES,
+                            gXformType2GLType[transformType], transformValues);
     } else {
         this->stencilThenCoverFillPathInstanced(
-                            count, GR_GL_UNSIGNED_INT, indices, baseID, fillMode, writeMask,
-                            GR_GL_BOUNDING_BOX_OF_BOUNDING_BOXES,
-                            gXformType2GLType[transformsType], transforms);
+                            count, gIndexType2GLType[indexType], indices, baseID,
+                            fillMode, writeMask, GR_GL_BOUNDING_BOX_OF_BOUNDING_BOXES,
+                            gXformType2GLType[transformType], transformValues);
     }
-}
-
-void GrGLPathRendering::enablePathTexGen(int unitIdx, PathTexGenComponents components,
-                                         const GrGLfloat* coefficients) {
-    SkASSERT(components >= kS_PathTexGenComponents &&
-             components <= kSTR_PathTexGenComponents);
-    SkASSERT(fGpu->glCaps().maxFixedFunctionTextureCoords() >= unitIdx);
-
-    if (GR_GL_OBJECT_LINEAR == fHWPathTexGenSettings[unitIdx].fMode &&
-        components == fHWPathTexGenSettings[unitIdx].fNumComponents &&
-        !memcmp(coefficients, fHWPathTexGenSettings[unitIdx].fCoefficients,
-                3 * components * sizeof(GrGLfloat))) {
-        return;
-    }
-
-    fGpu->setTextureUnit(unitIdx);
-
-    fHWPathTexGenSettings[unitIdx].fNumComponents = components;
-    GL_CALL(PathTexGen(GR_GL_TEXTURE0 + unitIdx, GR_GL_OBJECT_LINEAR, components, coefficients));
-
-    memcpy(fHWPathTexGenSettings[unitIdx].fCoefficients, coefficients,
-           3 * components * sizeof(GrGLfloat));
-}
-
-void GrGLPathRendering::enablePathTexGen(int unitIdx, PathTexGenComponents components,
-                                         const SkMatrix& matrix) {
-    GrGLfloat coefficients[3 * 3];
-    SkASSERT(components >= kS_PathTexGenComponents &&
-             components <= kSTR_PathTexGenComponents);
-
-    coefficients[0] = SkScalarToFloat(matrix[SkMatrix::kMScaleX]);
-    coefficients[1] = SkScalarToFloat(matrix[SkMatrix::kMSkewX]);
-    coefficients[2] = SkScalarToFloat(matrix[SkMatrix::kMTransX]);
-
-    if (components >= kST_PathTexGenComponents) {
-        coefficients[3] = SkScalarToFloat(matrix[SkMatrix::kMSkewY]);
-        coefficients[4] = SkScalarToFloat(matrix[SkMatrix::kMScaleY]);
-        coefficients[5] = SkScalarToFloat(matrix[SkMatrix::kMTransY]);
-    }
-
-    if (components >= kSTR_PathTexGenComponents) {
-        coefficients[6] = SkScalarToFloat(matrix[SkMatrix::kMPersp0]);
-        coefficients[7] = SkScalarToFloat(matrix[SkMatrix::kMPersp1]);
-        coefficients[8] = SkScalarToFloat(matrix[SkMatrix::kMPersp2]);
-    }
-
-    this->enablePathTexGen(unitIdx, components, coefficients);
-}
-
-void GrGLPathRendering::flushPathTexGenSettings(int numUsedTexCoordSets) {
-    SkASSERT(fGpu->glCaps().maxFixedFunctionTextureCoords() >= numUsedTexCoordSets);
-
-    // Only write the inactive path tex gens, since active path tex gens were
-    // written when they were enabled.
-
-    SkDEBUGCODE(
-        for (int i = 0; i < numUsedTexCoordSets; i++) {
-            SkASSERT(0 != fHWPathTexGenSettings[i].fNumComponents);
-        }
-    );
-
-    for (int i = numUsedTexCoordSets; i < fHWActivePathTexGenSets; i++) {
-        SkASSERT(0 != fHWPathTexGenSettings[i].fNumComponents);
-
-        fGpu->setTextureUnit(i);
-        GL_CALL(PathTexGen(GR_GL_TEXTURE0 + i, GR_GL_NONE, 0, NULL));
-        fHWPathTexGenSettings[i].fNumComponents = 0;
-    }
-
-    fHWActivePathTexGenSets = numUsedTexCoordSets;
 }
 
 void GrGLPathRendering::setProgramPathFragmentInputTransform(GrGLuint program, GrGLint location,
@@ -334,10 +257,10 @@ void GrGLPathRendering::setProgramPathFragmentInputTransform(GrGLuint program, G
 }
 
 void GrGLPathRendering::setProjectionMatrix(const SkMatrix& matrix,
-                                  const SkISize& renderTargetSize,
-                                  GrSurfaceOrigin renderTargetOrigin) {
+                                            const SkISize& renderTargetSize,
+                                            GrSurfaceOrigin renderTargetOrigin) {
 
-    SkASSERT(fGpu->glCaps().pathRenderingSupport());
+    SkASSERT(fGpu->glCaps().shaderCaps()->pathRenderingSupport());
 
     if (renderTargetOrigin == fHWProjectionMatrixState.fRenderTargetOrigin &&
         renderTargetSize == fHWProjectionMatrixState.fRenderTargetSize &&
@@ -351,9 +274,7 @@ void GrGLPathRendering::setProjectionMatrix(const SkMatrix& matrix,
 
     GrGLfloat glMatrix[4 * 4];
     fHWProjectionMatrixState.getRTAdjustedGLMatrix<4>(glMatrix);
-     GrGLenum matrixMode =
-         fGpu->glStandard() == kGLES_GrGLStandard ? GR_GL_PATH_PROJECTION : GR_GL_PROJECTION;
-     GL_CALL(MatrixLoadf(matrixMode, glMatrix));
+    GL_CALL(MatrixLoadf(GR_GL_PATH_PROJECTION, glMatrix));
 }
 
 GrGLuint GrGLPathRendering::genPaths(GrGLsizei range) {

@@ -24,14 +24,19 @@
   var launcherManager = new hotword.LauncherManager(stateManager);
   var trainingManager = new hotword.TrainingManager(stateManager);
 
-  // Detect Chrome startup and make sure we get a chance to run.
-  chrome.runtime.onStartup.addListener(function() {
-    stateManager.updateStatus();
-  });
-
   // Detect when hotword settings have changed.
   chrome.hotwordPrivate.onEnabledChanged.addListener(function() {
     stateManager.updateStatus();
+  });
+
+  // Detect a request to delete the speaker model.
+  chrome.hotwordPrivate.onDeleteSpeakerModel.addListener(function() {
+    hotword.TrainingManager.handleDeleteSpeakerModel();
+  });
+
+  // Detect a request for the speaker model existence.
+  chrome.hotwordPrivate.onSpeakerModelExists.addListener(function() {
+    hotword.TrainingManager.handleSpeakerModelExists();
   });
 
   // Detect when the shared module containing the NaCL module and language model

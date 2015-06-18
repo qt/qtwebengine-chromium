@@ -4,6 +4,7 @@
 
 {
   'variables': {
+    'branding_dir': '../app/theme/<(branding_path_component)',
     'version_py': '<(DEPTH)/build/util/version.py',
     'version_path': '../../chrome/VERSION',
     'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
@@ -18,6 +19,7 @@
     ['OS=="win"', {
       'targets': [
         {
+          # GN version: //chrome/installer/test:alternate_version_generator_lib
           'target_name': 'alternate_version_generator_lib',
           'type': 'static_library',
           'dependencies': [
@@ -42,6 +44,7 @@
           'msvs_disabled_warnings': [4267, ],
         },
         {
+          # GN version: //chrome/installer/test:upgrade_test
           'target_name': 'upgrade_test',
           'type': 'executable',
           'dependencies': [
@@ -67,6 +70,7 @@
           ],
         },
         {
+          # GN version: //chrome/installer/test:alternate_version_generator
           'target_name': 'alternate_version_generator',
           'type': 'executable',
           'dependencies': [
@@ -86,15 +90,6 @@
           'msvs_disabled_warnings': [ 4267, ],
         },
       ],
-    }],
-    [ 'branding == "Chrome"', {
-      'variables': {
-         'branding_dir': '../app/theme/google_chrome',
-      },
-    }, { # else branding!="Chrome"
-      'variables': {
-         'branding_dir': '../app/theme/chromium',
-      },
     }],
   ],
 }

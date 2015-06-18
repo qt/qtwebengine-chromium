@@ -39,14 +39,14 @@
 namespace blink {
 
 V8EventListener::V8EventListener(v8::Local<v8::Object> listener, bool isAttribute, ScriptState* scriptState)
-    : V8AbstractEventListener(isAttribute, scriptState)
+    : V8AbstractEventListener(isAttribute, scriptState->world(), scriptState->isolate())
 {
     setListenerObject(listener);
 }
 
-v8::Local<v8::Function> V8EventListener::getListenerFunction(ExecutionContext*)
+v8::Local<v8::Function> V8EventListener::getListenerFunction(ScriptState* scriptState)
 {
-    v8::Local<v8::Object> listener = getListenerObject(scriptState()->executionContext());
+    v8::Local<v8::Object> listener = getListenerObject(scriptState->executionContext());
 
     // Has the listener been disposed?
     if (listener.IsEmpty())
@@ -55,37 +55,47 @@ v8::Local<v8::Function> V8EventListener::getListenerFunction(ExecutionContext*)
     if (listener->IsFunction())
         return v8::Local<v8::Function>::Cast(listener);
 
+    // The EventHandler callback function type (used for event handler
+    // attributes in HTML) has [TreatNonObjectAsNull], which implies that
+    // non-function objects should be treated as no-op functions that return
+    // undefined.
+    if (isAttribute())
+        return v8::Local<v8::Function>();
+
     if (listener->IsObject()) {
-        ASSERT_WITH_MESSAGE(!isAttribute(), "EventHandler attributes should only accept JS Functions as input.");
-        v8::Local<v8::Value> property = listener->Get(v8AtomicString(isolate(), "handleEvent"));
         // Check that no exceptions were thrown when getting the
         // handleEvent property and that the value is a function.
-        if (!property.IsEmpty() && property->IsFunction())
+        v8::Local<v8::Value> property;
+        if (listener->Get(scriptState->context(), v8AtomicString(isolate(), "handleEvent")).ToLocal(&property) && property->IsFunction())
             return v8::Local<v8::Function>::Cast(property);
     }
 
     return v8::Local<v8::Function>();
 }
 
-v8::Local<v8::Value> V8EventListener::callListenerFunction(v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8EventListener::callListenerFunction(ScriptState* scriptState, v8::Local<v8::Value> jsEvent, Event* event)
 {
-    v8::Local<v8::Function> handlerFunction = getListenerFunction(scriptState()->executionContext());
-    v8::Local<v8::Object> receiver = getReceiverObject(event);
+    ASSERT(!jsEvent.IsEmpty());
+    v8::Local<v8::Function> handlerFunction = getListenerFunction(scriptState);
+    v8::Local<v8::Object> receiver = getReceiverObject(scriptState, event);
     if (handlerFunction.IsEmpty() || receiver.IsEmpty())
         return v8::Local<v8::Value>();
 
-    if (!scriptState()->executionContext()->isDocument())
+    if (!scriptState->executionContext()->isDocument())
         return v8::Local<v8::Value>();
 
-    LocalFrame* frame = toDocument(scriptState()->executionContext())->frame();
+    LocalFrame* frame = toDocument(scriptState->executionContext())->frame();
     if (!frame)
         return v8::Local<v8::Value>();
 
     if (!frame->script().canExecuteScripts(AboutToExecuteScript))
         return v8::Local<v8::Value>();
 
-    v8::Handle<v8::Value> parameters[1] = { jsEvent };
-    return frame->script().callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
+    v8::Local<v8::Value> parameters[1] = { jsEvent };
+    v8::Local<v8::Value> result;
+    if (!frame->script().callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters).ToLocal(&result))
+        return v8::Local<v8::Value>();
+    return result;
 }
 
 } // namespace blink

@@ -7,7 +7,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "ppapi/c/dev/ppb_messaging_deprecated.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
@@ -121,11 +120,6 @@ class PPB_Instance_API {
                                          void* user_data,
                                          const PPP_MessageHandler_0_2* handler,
                                          PP_Resource message_loop) = 0;
-  virtual int32_t RegisterMessageHandler_1_1_Deprecated(
-      PP_Instance instance,
-      void* user_data,
-      const PPP_MessageHandler_0_1_Deprecated* handler,
-      PP_Resource message_loop) = 0;
   virtual void UnregisterMessageHandler(PP_Instance instance) = 0;
 
   // Mouse cursor.
@@ -165,34 +159,32 @@ class PPB_Instance_API {
   virtual void PromiseResolved(PP_Instance instance, uint32 promise_id) = 0;
   virtual void PromiseResolvedWithSession(PP_Instance instance,
                                           uint32 promise_id,
-                                          PP_Var web_session_id_var) = 0;
-  virtual void PromiseResolvedWithKeyIds(PP_Instance instance,
-                                         uint32 promise_id,
-                                         PP_Var key_ids_var) = 0;
+                                          PP_Var session_id_var) = 0;
   virtual void PromiseRejected(PP_Instance instance,
                                uint32 promise_id,
                                PP_CdmExceptionCode exception_code,
                                uint32 system_code,
                                PP_Var error_description_var) = 0;
   virtual void SessionMessage(PP_Instance instance,
-                              PP_Var web_session_id_var,
+                              PP_Var session_id_var,
+                              PP_CdmMessageType message_type,
                               PP_Var message_var,
-                              PP_Var destination_url_var) = 0;
-  virtual void SessionKeysChange(PP_Instance instance,
-                                 PP_Var web_session_id_var,
-                                 PP_Bool has_additional_usable_key) = 0;
+                              PP_Var legacy_destination_url_var) = 0;
+  virtual void SessionKeysChange(
+      PP_Instance instance,
+      PP_Var session_id_var,
+      PP_Bool has_additional_usable_key,
+      uint32_t key_count,
+      const struct PP_KeyInformation key_information[]) = 0;
   virtual void SessionExpirationChange(PP_Instance instance,
-                                       PP_Var web_session_id_var,
+                                       PP_Var session_id_var,
                                        PP_Time new_expiry_time) = 0;
-  virtual void SessionReady(PP_Instance instance,
-                            PP_Var web_session_id_var) = 0;
-  virtual void SessionClosed(PP_Instance instance,
-                             PP_Var web_session_id_var) = 0;
-  virtual void SessionError(PP_Instance instance,
-                            PP_Var web_session_id_var,
-                            PP_CdmExceptionCode exception_code,
-                            uint32 system_code,
-                            PP_Var error_description_var) = 0;
+  virtual void SessionClosed(PP_Instance instance, PP_Var session_id_var) = 0;
+  virtual void LegacySessionError(PP_Instance instance,
+                                  PP_Var session_id_var,
+                                  PP_CdmExceptionCode exception_code,
+                                  uint32 system_code,
+                                  PP_Var error_description_var) = 0;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) = 0;

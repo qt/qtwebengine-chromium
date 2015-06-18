@@ -29,11 +29,28 @@
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace ui {
 
 namespace {
+
+// A scoper to impersonate the anonymous token and revert when leaving scope
+class AnonymousImpersonator {
+ public:
+  AnonymousImpersonator() {
+    must_revert_ = ::ImpersonateAnonymousToken(::GetCurrentThread());
+  }
+
+  ~AnonymousImpersonator() {
+    if (must_revert_)
+      ::RevertToSelf();
+  }
+
+ private:
+  BOOL must_revert_;
+  DISALLOW_COPY_AND_ASSIGN(AnonymousImpersonator);
+};
 
 // A scoper to manage acquiring and automatically releasing the clipboard.
 class ScopedClipboard {
@@ -84,6 +101,11 @@ class ScopedClipboard {
 
   void Release() {
     if (opened_) {
+      // Impersonate the anonymous token during the call to CloseClipboard
+      // This prevents Windows 8+ capturing the broker's access token which
+      // could be accessed by lower-privileges chrome processes leading to
+      // a risk of EoP
+      AnonymousImpersonator impersonator;
       ::CloseClipboard();
       opened_ = false;
     } else {
@@ -388,7 +410,7 @@ ClipboardWin::ClipboardWin() {
 ClipboardWin::~ClipboardWin() {
 }
 
-uint64 ClipboardWin::GetSequenceNumber(ClipboardType type) {
+uint64 ClipboardWin::GetSequenceNumber(ClipboardType type) const {
   DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   return ::GetClipboardSequenceNumber();
 }

@@ -25,14 +25,13 @@
 #ifndef AudioNodeInput_h
 #define AudioNodeInput_h
 
-#include "platform/audio/AudioBus.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioSummingJunction.h"
+#include "platform/audio/AudioBus.h"
 #include "wtf/HashSet.h"
 
 namespace blink {
 
-class AudioNode;
 class AudioNodeOutput;
 
 // An AudioNodeInput represents an input to an AudioNode and can be connected from one or more AudioNodeOutputs.
@@ -41,14 +40,13 @@ class AudioNodeOutput;
 
 class AudioNodeInput final : public AudioSummingJunction {
 public:
-    static AudioNodeInput* create(AudioNode&);
+    static PassOwnPtr<AudioNodeInput> create(AudioHandler&);
 
     // AudioSummingJunction
-    virtual void trace(Visitor*) override;
     virtual void didUpdate() override;
 
     // Can be called from any thread.
-    AudioNode& node() const { return *m_node; }
+    AudioHandler& handler() const { return m_handler; }
 
     // Must be called with the context's graph lock.
     void connect(AudioNodeOutput&);
@@ -79,16 +77,20 @@ public:
     unsigned numberOfChannels() const;
 
 private:
-    explicit AudioNodeInput(AudioNode&);
+    explicit AudioNodeInput(AudioHandler&);
 
-    Member<AudioNode> m_node;
+    // This reference is safe because the AudioHandler owns this AudioNodeInput
+    // object.
+    AudioHandler& m_handler;
 
-    // m_disabledOutputs contains the AudioNodeOutputs which are disabled (will not be processed) by the audio graph rendering.
-    // But, from JavaScript's perspective, these outputs are still connected to us.
-    // Generally, these represent disabled connections from "notes" which have finished playing but are not yet garbage collected.
-    // Oilpan: Since items are added to the hash set by the audio thread (not registered to Oilpan),
-    // we cannot use a HeapHashSet.
-    GC_PLUGIN_IGNORE("http://crbug.com/404527")
+    // m_disabledOutputs contains the AudioNodeOutputs which are disabled (will
+    // not be processed) by the audio graph rendering.  But, from JavaScript's
+    // perspective, these outputs are still connected to us.
+    // Generally, these represent disabled connections from "notes" which have
+    // finished playing but are not yet garbage collected.
+    // These raw pointers are safe. Owner AudioNodes of these AudioNodeOutputs
+    // manage their lifetime, and AudioNode::dispose() disconnects all of
+    // connections.
     HashSet<AudioNodeOutput*> m_disabledOutputs;
 
     // Called from context's audio thread.

@@ -5,12 +5,18 @@
 #include "content/child/mojo/mojo_application.h"
 
 #include "content/child/child_process.h"
+#include "content/common/application_setup.mojom.h"
+#include "content/common/mojo/channel_init.h"
 #include "content/common/mojo/mojo_messages.h"
 #include "ipc/ipc_message.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
 
 namespace content {
 
-MojoApplication::MojoApplication() {
+MojoApplication::MojoApplication(
+    scoped_refptr<base::SequencedTaskRunner> io_task_runner)
+    : io_task_runner_(io_task_runner) {
+  DCHECK(io_task_runner_);
 }
 
 MojoApplication::~MojoApplication() {
@@ -32,11 +38,21 @@ void MojoApplication::OnActivate(
 #elif defined(OS_WIN)
   base::PlatformFile handle = file;
 #endif
+
   mojo::ScopedMessagePipeHandle message_pipe =
-      channel_init_.Init(handle,
-                         ChildProcess::current()->io_message_loop_proxy());
+      channel_init_.Init(handle, io_task_runner_);
   DCHECK(message_pipe.is_valid());
-  service_registry_.BindRemoteServiceProvider(message_pipe.Pass());
+
+  ApplicationSetupPtr application_setup;
+  application_setup.Bind(
+      mojo::InterfacePtrInfo<ApplicationSetup>(message_pipe.Pass(), 0u));
+
+  mojo::ServiceProviderPtr services;
+  mojo::ServiceProviderPtr exposed_services;
+  service_registry_.Bind(GetProxy(&exposed_services));
+  application_setup->ExchangeServiceProviders(GetProxy(&services),
+                                              exposed_services.Pass());
+  service_registry_.BindRemoteServiceProvider(services.Pass());
 }
 
 }  // namespace content

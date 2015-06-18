@@ -27,10 +27,14 @@
 #ifndef WorkerGlobalScope_h
 #define WorkerGlobalScope_h
 
+#include "bindings/core/v8/V8CacheOptions.h"
 #include "bindings/core/v8/WorkerScriptController.h"
+#include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
+#include "core/fetch/CachedMetadataHandler.h"
+#include "core/frame/DOMTimerCoordinator.h"
 #include "core/frame/DOMWindowBase64.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
@@ -47,11 +51,9 @@
 
 namespace blink {
 
-class Blob;
 class ConsoleMessage;
 class ConsoleMessageStorage;
 class ExceptionState;
-class ScheduledAction;
 class WorkerClients;
 class WorkerConsole;
 class WorkerInspectorController;
@@ -59,16 +61,16 @@ class WorkerLocation;
 class WorkerNavigator;
 class WorkerThread;
 
-class WorkerGlobalScope : public RefCountedWillBeGarbageCollectedFinalized<WorkerGlobalScope>, public SecurityContext, public ExecutionContext, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData, public DOMWindowBase64 {
+class CORE_EXPORT WorkerGlobalScope : public EventTargetWithInlineData, public RefCountedWillBeNoBase<WorkerGlobalScope>, public SecurityContext, public ExecutionContext, public WillBeHeapSupplementable<WorkerGlobalScope>, public DOMWindowBase64 {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
 public:
     virtual ~WorkerGlobalScope();
 
-    virtual bool isWorkerGlobalScope() const override final { return true; }
+    bool isWorkerGlobalScope() const override final { return true; }
 
-    virtual ExecutionContext* executionContext() const override final;
+    ExecutionContext* executionContext() const override final;
 
     virtual void countFeature(UseCounter::Feature) const;
     virtual void countDeprecation(UseCounter::Feature) const;
@@ -76,19 +78,17 @@ public:
     const KURL& url() const { return m_url; }
     KURL completeURL(const String&) const;
 
-    virtual String userAgent(const KURL&) const override final;
-    virtual void disableEval(const String& errorMessage) override final;
+    String userAgent(const KURL&) const override final;
+    void disableEval(const String& errorMessage) override final;
 
     WorkerScriptController* script() { return m_script.get(); }
-    void clearScript() { m_script.clear(); }
-    void clearInspector();
 
     virtual void didEvaluateWorkerScript();
     void dispose();
 
     WorkerThread* thread() const { return m_thread; }
 
-    virtual void postTask(PassOwnPtr<ExecutionContextTask>) override final; // Executes the task on context's thread asynchronously.
+    void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override final; // Executes the task on context's thread asynchronously.
 
     // WorkerGlobalScope
     WorkerGlobalScope* self() { return this; }
@@ -100,24 +100,28 @@ public:
 
     // WorkerUtils
     virtual void importScripts(const Vector<String>& urls, ExceptionState&);
+    // Returns null if caching is not supported.
+    virtual PassOwnPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData) { return nullptr; }
+
     WorkerNavigator* navigator() const;
 
+    // ScriptWrappable
+    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override final;
+    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override final;
+
     // ExecutionContextClient
-    virtual WorkerEventQueue* eventQueue() const override final;
-    virtual SecurityContext& securityContext() override final { return *this; }
+    WorkerEventQueue* eventQueue() const override final;
+    const SecurityContext& securityContext() const override final { return *this; }
 
-    virtual bool isContextThread() const override final;
-    virtual bool isJSExecutionForbidden() const override final;
+    bool isContextThread() const override final;
+    bool isJSExecutionForbidden() const override final;
 
-    virtual double timerAlignmentInterval() const override final;
+    double timerAlignmentInterval() const override final;
+    DOMTimerCoordinator* timers() override final;
 
     WorkerInspectorController* workerInspectorController() { return m_workerInspectorController.get(); }
 
     bool isClosing() { return m_closing; }
-
-    virtual void stopFetch() { }
-
-    bool idleNotification();
 
     double timeOrigin() const { return m_timeOrigin; }
 
@@ -126,38 +130,55 @@ public:
     using SecurityContext::securityOrigin;
     using SecurityContext::contentSecurityPolicy;
 
-    virtual void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override final;
+    void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override final;
     ConsoleMessageStorage* messageStorage();
 
-    virtual void trace(Visitor*) override;
+    void exceptionHandled(int exceptionId, bool isHandled);
+
+    virtual void scriptLoaded(size_t scriptSize, size_t cachedMetadataSize) { }
+
+    bool isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck = StandardPrivilegeCheck) const override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
     void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType);
 
-    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
+    void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
     void addMessageToWorkerConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>);
+    void setV8CacheOptions(V8CacheOptions v8CacheOptions) { m_v8CacheOptions = v8CacheOptions; }
+
+    void removeURLFromMemoryCache(const KURL&) override;
 
 private:
 #if !ENABLE(OILPAN)
-    virtual void refExecutionContext() override final { ref(); }
-    virtual void derefExecutionContext() override final { deref(); }
+    void refExecutionContext() override final { ref(); }
+    void derefExecutionContext() override final { deref(); }
 #endif
 
-    virtual const KURL& virtualURL() const override final;
-    virtual KURL virtualCompleteURL(const String&) const override final;
+    const KURL& virtualURL() const override final;
+    KURL virtualCompleteURL(const String&) const override final;
 
-    virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) override final;
+    void reportBlockedScriptExecutionToInspector(const String& directiveText) override final;
 
-    virtual EventTarget* errorEventTarget() override final;
-    virtual void didUpdateSecurityOrigin() override final { }
+    EventTarget* errorEventTarget() override final;
+    void didUpdateSecurityOrigin() override final { }
+
+    void clearScript() { m_script.clear(); }
+    void clearInspector();
+
+    static void removeURLFromMemoryCacheInternal(const KURL&);
 
     KURL m_url;
     String m_userAgent;
+    V8CacheOptions m_v8CacheOptions;
 
-    mutable RefPtrWillBeMember<WorkerConsole> m_console;
-    mutable RefPtrWillBeMember<WorkerLocation> m_location;
-    mutable RefPtrWillBeMember<WorkerNavigator> m_navigator;
+    mutable PersistentWillBeMember<WorkerConsole> m_console;
+    mutable PersistentWillBeMember<WorkerLocation> m_location;
+    mutable PersistentWillBeMember<WorkerNavigator> m_navigator;
+
+    mutable UseCounter::CountBits m_deprecationWarningBits;
 
     OwnPtr<WorkerScriptController> m_script;
     WorkerThread* m_thread;
@@ -169,9 +190,14 @@ private:
 
     OwnPtrWillBeMember<WorkerClients> m_workerClients;
 
+    DOMTimerCoordinator m_timers;
+
     double m_timeOrigin;
 
     OwnPtrWillBeMember<ConsoleMessageStorage> m_messageStorage;
+
+    unsigned long m_workerExceptionUniqueIdentifier;
+    WillBeHeapHashMap<unsigned long, RefPtrWillBeMember<ConsoleMessage>> m_pendingMessages;
 };
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());

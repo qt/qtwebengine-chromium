@@ -14,8 +14,8 @@
    'conditions': [
      ['OS=="linux"', {
        'bootstrap_sources_native': [
-         'native/egl_native_aura.cc',
          'native/egl_native.cc',
+         'native/egl_native_aura.cc',
          'native/egl_native_x11.cc',
        ],
      }],
@@ -30,6 +30,7 @@
   },
   'targets': [
     {
+      # GN version: //gpu/gles2_conform_support/egl
       'target_name': 'egl_native',
       'type': 'static_library',
       'dependencies': [
@@ -60,6 +61,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //gpu/gles2_conform_support/native
       'target_name': 'egl_main_native',
       'type': 'static_library',
       'dependencies': [
@@ -77,6 +79,7 @@
       ],
     },
     {
+      # GN version: //gpu/gles2_conform_support/native:windowless
       'target_name': 'egl_main_windowless',
       'type': 'static_library',
       'dependencies': [
@@ -84,9 +87,9 @@
         '../../third_party/khronos/khronos.gyp:khronos_headers',
       ],
       'sources': [
-        'native/main.cc',
         'native/egl_native.cc',
         'native/egl_native_windowless.cc',
+        'native/main.cc',
         '<@(bootstrap_sources_native)',
       ],
       'defines': [
@@ -97,6 +100,7 @@
       ],
     },
     {
+      # GN version: //gpu/gles2_conform_support
       'target_name': 'gles2_conform_support',
       'type': 'executable',
       'dependencies': [

@@ -42,6 +42,7 @@
     'target_arch%': '<(target_arch)',
     'werror%': '-Werror',
     'v8_optimized_debug%': 0,
+    'v8_use_external_startup_data%': 0,
     'icu_gyp_path': '../v8/third_party/icu/icu.gyp',
     'conditions': [
       ['OS == "win"', {
@@ -57,7 +58,7 @@
       'Debug': {
         'cflags': [
           '-g',
-          '-O0',          
+          '-O0',
           '-fdata-sections',
           '-ffunction-sections',
         ],
@@ -140,19 +141,20 @@
         'msvs_configuration_platform': 'x64',
       },
     },
-    'defines!': [
-      'DEBUG',
-    ],
     'cflags': [
       '-Wall',
       '-W',
+      '-Wno-missing-field-initializers',
+      # Code might someday be made clean for -Wsign-compare, but for now
+      # this produces too much noise to be useful.
+      '-Wno-sign-compare',
       '-Wno-unused-parameter',
       '-pthread',
       '-fno-exceptions',
       '-fvisibility=hidden',
-      '-std=gnu++0x',
     ],
     'cflags_cc': [
+      '-std=gnu++0x',
       '-Wnon-virtual-dtor',
       '-fno-rtti',
     ],
@@ -165,6 +167,12 @@
       'IntermediateDirectory': '$(OutDir)\\obj\\$(ProjectName)',
       'CharacterSet': '1',
     },
+    'msvs_disabled_warnings': [4800, 4996, 4456, 4457, 4458, 4459, 4091],
+    # 4456, 4457, 4458, 4459 are variable shadowing warnings that are new in
+    # VS2015.
+    # C4091: 'typedef ': ignored on left of 'X' when no variable is
+    #                    declared.
+    # This happens in a number of Windows headers with VS 2015.
     'msvs_settings': {
       'VCCLCompilerTool': {
         'MinimalRebuild': 'false',
@@ -172,7 +180,6 @@
         'EnableFunctionLevelLinking': 'true',
         'RuntimeTypeInfo': 'false',
         'WarningLevel': '3',
-        'WarnAsError': 'false',
         'DebugInformationFormat': '3',
         'Detect64BitPortabilityProblems': 'false',
         'conditions': [
@@ -183,6 +190,13 @@
             'ExceptionHandling': '1',  # /EHsc
           }, {
             'ExceptionHandling': '0',
+          }],
+          ['target_arch=="x64"', {
+            # 64-bit warnings need to be resolved.
+            # https://code.google.com/p/pdfium/issues/detail?id=101
+            'WarnAsError': 'false',
+          }, {
+            'WarnAsError': 'true',
           }],
         ],
       },
@@ -257,6 +271,13 @@
         ],  # target_conditions
       },  # target_defaults
     }],  # OS=="mac"
+    ['v8_use_external_startup_data==1', {
+      'target_defaults': {
+        'defines': [
+          'V8_USE_EXTERNAL_STARTUP_DATA',
+        ],
+      },
+    }],  # v8_use_external_startup_data==1
   ],
   'xcode_settings': {
     # See comment in Chromium's common.gypi for why this is needed.

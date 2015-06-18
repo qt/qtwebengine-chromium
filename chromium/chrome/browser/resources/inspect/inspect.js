@@ -6,8 +6,11 @@ var MIN_VERSION_TAB_CLOSE = 25;
 var MIN_VERSION_TARGET_ID = 26;
 var MIN_VERSION_NEW_TAB = 29;
 var MIN_VERSION_TAB_ACTIVATE = 30;
+var WEBRTC_SERIAL = 'WEBRTC';
 
 var queryParamsObject = {};
+var browserInspector;
+var browserInspectorTitle;
 
 (function() {
 var queryParams = window.location.search;
@@ -19,6 +22,13 @@ for (var i = 0; i < params.length; ++i) {
     queryParamsObject[pair[0]] = pair[1];
 }
 
+if ('trace' in queryParamsObject || 'tracing' in queryParamsObject) {
+  browserInspector = 'chrome://tracing';
+  browserInspectorTitle = 'trace';
+} else {
+  browserInspector = queryParamsObject['browser-inspector'];
+  browserInspectorTitle = 'inspect';
+}
 })();
 
 function sendCommand(command, args) {
@@ -132,25 +142,60 @@ function alreadyDisplayed(element, data) {
   return false;
 }
 
+function updateBrowserVisibility(browserSection) {
+  var icon = browserSection.querySelector('.used-for-port-forwarding');
+  browserSection.hidden = !browserSection.querySelector('.open') &&
+                          !browserSection.querySelector('.row') &&
+                          !browserInspector &&
+                          (!icon || icon.hidden);
+}
+
+function updateUsernameVisibility(deviceSection) {
+  var users = new Set();
+  var browsers = deviceSection.querySelectorAll('.browser');
+
+  Array.prototype.forEach.call(browsers, function(browserSection) {
+    if (!browserSection.hidden) {
+      var browserUser = browserSection.querySelector('.browser-user');
+      if (browserUser)
+        users.add(browserUser.textContent);
+    }
+  });
+  var hasSingleUser = users.size <= 1;
+
+  Array.prototype.forEach.call(browsers, function(browserSection) {
+    var browserUser = browserSection.querySelector('.browser-user');
+    if (browserUser)
+      browserUser.hidden = hasSingleUser;
+  });
+}
+
 function populateRemoteTargets(devices) {
   if (!devices)
     return;
 
-  if (window.modal) {
+  if ($('port-forwarding-config').open) {
     window.holdDevices = devices;
     return;
   }
 
-  function insertChildSortedById(parent, child) {
-    for (var sibling = parent.firstElementChild;
-                     sibling;
-                     sibling = sibling.nextElementSibling) {
-      if (sibling.id > child.id) {
-        parent.insertBefore(child, sibling);
+  function browserCompare(a, b) {
+    if (a.adbBrowserName != b.adbBrowserName)
+      return a.adbBrowserName < b.adbBrowserName;
+    if (a.adbBrowserVersion != b.adbBrowserVersion)
+      return a.adbBrowserVersion < b.adbBrowserVersion;
+    return a.id < b.id;
+  }
+
+  function insertBrowser(browserList, browser) {
+    for (var sibling = browserList.firstElementChild; sibling;
+        sibling = sibling.nextElementSibling) {
+      if (browserCompare(browser, sibling)) {
+        browserList.insertBefore(browser, sibling);
         return;
       }
     }
-    parent.appendChild(child);
+    browserList.appendChild(browser);
   }
 
   var deviceList = $('devices-list');
@@ -189,8 +234,12 @@ function populateRemoteTargets(devices) {
 
       var deviceSerial = document.createElement('div');
       deviceSerial.className = 'device-serial';
-      deviceSerial.textContent = '#' + device.adbSerial.toUpperCase();
+      var serial = device.adbSerial.toUpperCase();
+      deviceSerial.textContent = '#' + serial;
       deviceHeader.appendChild(deviceSerial);
+
+      if (serial === WEBRTC_SERIAL)
+        deviceHeader.classList.add('hidden');
 
       var devicePorts = document.createElement('div');
       devicePorts.className = 'device-ports';
@@ -222,11 +271,7 @@ function populateRemoteTargets(devices) {
 
     for (var b = 0; b < device.browsers.length; b++) {
       var browser = device.browsers[b];
-
       var majorChromeVersion = browser.adbBrowserChromeVersion;
-
-      var incompatibleVersion = browser.hasOwnProperty('compatibleVersion') &&
-                                !browser.compatibleVersion;
       var pageList;
       var browserSection = $(browser.id);
       if (browserSection) {
@@ -235,7 +280,7 @@ function populateRemoteTargets(devices) {
         browserSection = document.createElement('div');
         browserSection.id = browser.id;
         browserSection.className = 'browser';
-        insertChildSortedById(browserList, browserSection);
+        insertBrowser(browserList, browserSection);
 
         var browserHeader = document.createElement('div');
         browserHeader.className = 'browser-header';
@@ -246,9 +291,15 @@ function populateRemoteTargets(devices) {
         browserName.textContent = browser.adbBrowserName;
         if (browser.adbBrowserVersion)
           browserName.textContent += ' (' + browser.adbBrowserVersion + ')';
+        if (browser.adbBrowserUser) {
+          var browserUser = document.createElement('div');
+          browserUser.className = 'browser-user';
+          browserUser.textContent = browser.adbBrowserUser;
+          browserHeader.appendChild(browserUser);
+        }
         browserSection.appendChild(browserHeader);
 
-        if (!incompatibleVersion && majorChromeVersion >= MIN_VERSION_NEW_TAB) {
+        if (majorChromeVersion >= MIN_VERSION_NEW_TAB) {
           var newPage = document.createElement('div');
           newPage.className = 'open';
 
@@ -282,24 +333,6 @@ function populateRemoteTargets(devices) {
             'forwarding. Closing it will drop current connections.';
         browserHeader.appendChild(portForwardingInfo);
 
-        if (incompatibleVersion) {
-          var warningSection = document.createElement('div');
-          warningSection.className = 'warning';
-          warningSection.textContent =
-            'You may need a newer version of desktop Chrome. ' +
-            'Please try Chrome ' + browser.adbBrowserVersion + ' or later.';
-          browserSection.appendChild(warningSection);
-        }
-
-        var browserInspector;
-        var browserInspectorTitle;
-        if ('trace' in queryParamsObject || 'tracing' in queryParamsObject) {
-          browserInspector = 'chrome://tracing';
-          browserInspectorTitle = 'trace';
-        } else {
-          browserInspector = queryParamsObject['browser-inspector'];
-          browserInspectorTitle = 'inspect';
-        }
         if (browserInspector) {
           var link = document.createElement('span');
           link.classList.add('action');
@@ -317,35 +350,36 @@ function populateRemoteTargets(devices) {
         browserSection.appendChild(pageList);
       }
 
-      if (incompatibleVersion || alreadyDisplayed(browserSection, browser))
-        continue;
-
-      pageList.textContent = '';
-      for (var p = 0; p < browser.pages.length; p++) {
-        var page = browser.pages[p];
-        // Attached targets have no unique id until Chrome 26. For such targets
-        // it is impossible to activate existing DevTools window.
-        page.hasNoUniqueId = page.attached &&
-            (majorChromeVersion && majorChromeVersion < MIN_VERSION_TARGET_ID);
-        var row = addTargetToList(page, pageList, ['name', 'url']);
-        if (page['description'])
-          addWebViewDetails(row, page);
-        else
-          addFavicon(row, page);
-        if (majorChromeVersion >= MIN_VERSION_TAB_ACTIVATE) {
-          addActionLink(row, 'focus tab',
-              sendTargetCommand.bind(null, 'activate', page), false);
-        }
-        if (majorChromeVersion) {
-          addActionLink(row, 'reload',
-              sendTargetCommand.bind(null, 'reload', page), page.attached);
-        }
-        if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
-          addActionLink(row, 'close',
-              sendTargetCommand.bind(null, 'close', page), false);
+      if (!alreadyDisplayed(browserSection, browser)) {
+        pageList.textContent = '';
+        for (var p = 0; p < browser.pages.length; p++) {
+          var page = browser.pages[p];
+          // Attached targets have no unique id until Chrome 26. For such
+          // targets it is impossible to activate existing DevTools window.
+          page.hasNoUniqueId = page.attached &&
+              majorChromeVersion && majorChromeVersion < MIN_VERSION_TARGET_ID;
+          var row = addTargetToList(page, pageList, ['name', 'url']);
+          if (page['description'])
+            addWebViewDetails(row, page);
+          else
+            addFavicon(row, page);
+          if (majorChromeVersion >= MIN_VERSION_TAB_ACTIVATE) {
+            addActionLink(row, 'focus tab',
+                sendTargetCommand.bind(null, 'activate', page), false);
+          }
+          if (majorChromeVersion) {
+            addActionLink(row, 'reload',
+                sendTargetCommand.bind(null, 'reload', page), page.attached);
+          }
+          if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
+            addActionLink(row, 'close',
+                sendTargetCommand.bind(null, 'close', page), false);
+          }
         }
       }
+      updateBrowserVisibility(browserSection);
     }
+    updateUsernameVisibility(deviceSection);
   }
 }
 
@@ -576,7 +610,7 @@ function initSettings() {
   $('port-forwarding-config-close').addEventListener(
       'click', closePortForwardingConfig);
   $('port-forwarding-config-done').addEventListener(
-      'click', commitPortForwardingConfig.bind(true));
+      'click', commitPortForwardingConfig.bind(null, true));
 }
 
 function enableDiscoverUsbDevices(event) {
@@ -603,68 +637,37 @@ function handleKey(event) {
         commitPortForwardingConfig(true);
       }
       break;
-
-    case 27:
-      commitPortForwardingConfig(true);
-      break;
   }
-}
-
-function setModal(dialog) {
-  dialog.deactivatedNodes = Array.prototype.filter.call(
-      document.querySelectorAll('*'),
-      function(n) {
-        return n != dialog && !dialog.contains(n) && n.tabIndex >= 0;
-      });
-
-  dialog.tabIndexes = dialog.deactivatedNodes.map(
-    function(n) { return n.getAttribute('tabindex'); });
-
-  dialog.deactivatedNodes.forEach(function(n) { n.tabIndex = -1; });
-  window.modal = dialog;
-}
-
-function unsetModal(dialog) {
-  for (var i = 0; i < dialog.deactivatedNodes.length; i++) {
-    var node = dialog.deactivatedNodes[i];
-    if (dialog.tabIndexes[i] === null)
-      node.removeAttribute('tabindex');
-    else
-      node.setAttribute('tabindex', dialog.tabIndexes[i]);
-  }
-
-  if (window.holdDevices) {
-    populateRemoteTargets(window.holdDevices);
-    delete window.holdDevices;
-  }
-
-  delete dialog.deactivatedNodes;
-  delete dialog.tabIndexes;
-  delete window.modal;
 }
 
 function openPortForwardingConfig() {
   loadPortForwardingConfig(window.portForwardingConfig);
 
-  $('port-forwarding-overlay').classList.add('open');
+  $('port-forwarding-config').showModal();
   document.addEventListener('keyup', handleKey);
+  $('port-forwarding-config').onclose = function() {
+    commitPortForwardingConfig(true);
+  };
 
   var freshPort = document.querySelector('.fresh .port');
   if (freshPort)
     freshPort.focus();
   else
     $('port-forwarding-config-done').focus();
-
-  setModal($('port-forwarding-overlay'));
 }
 
 function closePortForwardingConfig() {
-  if (!$('port-forwarding-overlay').classList.contains('open'))
+  if (!$('port-forwarding-config').open)
     return;
 
-  $('port-forwarding-overlay').classList.remove('open');
+  $('port-forwarding-config').onclose = null;
+  $('port-forwarding-config').close();
   document.removeEventListener('keyup', handleKey);
-  unsetModal($('port-forwarding-overlay'));
+
+  if (window.holdDevices) {
+    populateRemoteTargets(window.holdDevices);
+    delete window.holdDevices;
+  }
 }
 
 function loadPortForwardingConfig(config) {
@@ -883,11 +886,7 @@ function populatePortStatus(devicesStatusMap) {
       var portIcon = document.createElement('div');
       portIcon.className = 'port-icon';
       // status === 0 is the default (connected) state.
-      // Positive values correspond to the tunnelling connection count
-      // (in DEBUG_DEVTOOLS mode).
-      if (status > 0)
-        portIcon.classList.add('connected');
-      else if (status === -1 || status === -2)
+      if (status === -1 || status === -2)
         portIcon.classList.add('transient');
       else if (status < 0)
         portIcon.classList.add('error');
@@ -896,8 +895,6 @@ function populatePortStatus(devicesStatusMap) {
       var portNumber = document.createElement('div');
       portNumber.className = 'port-number';
       portNumber.textContent = ':' + port;
-      if (status > 0)
-        portNumber.textContent += '(' + status + ')';
       devicePorts.appendChild(portNumber);
     }
 
@@ -905,10 +902,13 @@ function populatePortStatus(devicesStatusMap) {
       var icon = browserSection.querySelector('.used-for-port-forwarding');
       if (icon)
         icon.hidden = (browserSection.id !== deviceStatus.browserId);
+      updateBrowserVisibility(browserSection);
     }
 
     Array.prototype.forEach.call(
         deviceSection.querySelectorAll('.browser'), updatePortForwardingInfo);
+
+    updateUsernameVisibility(deviceSection);
   }
 
   function clearPorts(deviceSection) {

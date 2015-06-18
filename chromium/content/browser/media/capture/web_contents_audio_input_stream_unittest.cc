@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "content/browser/media/capture/audio_mirroring_manager.h"
@@ -86,7 +87,7 @@ class MockWebContentsTracker : public WebContentsTracker {
 class MockVirtualAudioInputStream : public VirtualAudioInputStream {
  public:
   explicit MockVirtualAudioInputStream(
-      const scoped_refptr<base::MessageLoopProxy>& worker_loop)
+      const scoped_refptr<base::SingleThreadTaskRunner>& worker_loop)
       : VirtualAudioInputStream(TestAudioParameters(), worker_loop,
                                 VirtualAudioInputStream::AfterCloseCallback()),
         real_(TestAudioParameters(), worker_loop,
@@ -134,7 +135,7 @@ class MockVirtualAudioInputStream : public VirtualAudioInputStream {
   MOCK_METHOD0(GetMaxVolume, double());
   MOCK_METHOD1(SetVolume, void(double));
   MOCK_METHOD0(GetVolume, double());
-  MOCK_METHOD1(SetAutomaticGainControl, void(bool));
+  MOCK_METHOD1(SetAutomaticGainControl, bool(bool));
   MOCK_METHOD0(GetAutomaticGainControl, bool());
   MOCK_METHOD2(AddOutputStream, void(VirtualAudioOutputStream*,
                                      const AudioParameters&));
@@ -355,13 +356,7 @@ class WebContentsAudioInputStreamTest : public testing::Test {
  private:
   void SimulateChangeCallback(int render_process_id, int render_frame_id) {
     ASSERT_FALSE(change_callback_.is_null());
-    if (render_process_id == -1 || render_frame_id == -1) {
-      change_callback_.Run(NULL);
-    } else {
-      // For our tests, any non-NULL value will suffice since it will not be
-      // dereferenced.
-      change_callback_.Run(reinterpret_cast<RenderWidgetHost*>(0xdeadbee5));
-    }
+    change_callback_.Run(render_process_id != -1 && render_frame_id != -1);
   }
 
   scoped_ptr<TestBrowserThreadBundle> thread_bundle_;

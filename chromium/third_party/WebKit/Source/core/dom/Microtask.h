@@ -31,6 +31,7 @@
 #ifndef Microtask_h
 #define Microtask_h
 
+#include "core/CoreExport.h"
 #include "public/platform/WebThread.h"
 #include "wtf/Functional.h"
 #include "wtf/PassOwnPtr.h"
@@ -38,12 +39,16 @@
 
 namespace blink {
 
-class Microtask {
+class CORE_EXPORT Microtask {
 public:
     static void performCheckpoint();
     static bool performingCheckpoint(v8::Isolate*);
+
+    // TODO(jochen): Make all microtasks pass in the ScriptState they want to be
+    // executed in. Until then, all microtasks have to keep track of their
+    // ScriptState themselves.
     static void enqueueMicrotask(PassOwnPtr<WebThread::Task>);
-    static void enqueueMicrotask(const Closure&);
+    static void enqueueMicrotask(PassOwnPtr<Closure>);
 
 private:
     explicit Microtask();

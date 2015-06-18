@@ -17,21 +17,23 @@ NavigatorNetworkInformation::NavigatorNetworkInformation(Navigator& navigator)
 {
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorNetworkInformation);
+NavigatorNetworkInformation::~NavigatorNetworkInformation()
+{
+}
 
 NavigatorNetworkInformation& NavigatorNetworkInformation::from(Navigator& navigator)
 {
     NavigatorNetworkInformation* supplement = toNavigatorNetworkInformation(navigator);
     if (!supplement) {
         supplement = new NavigatorNetworkInformation(navigator);
-        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
+        provideTo(navigator, supplementName(), supplement);
     }
     return *supplement;
 }
 
 NavigatorNetworkInformation* NavigatorNetworkInformation::toNavigatorNetworkInformation(Navigator& navigator)
 {
-    return static_cast<NavigatorNetworkInformation*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
+    return static_cast<NavigatorNetworkInformation*>(HeapSupplement<Navigator>::from(navigator, supplementName()));
 }
 
 const char* NavigatorNetworkInformation::supplementName()
@@ -53,10 +55,10 @@ NetworkInformation* NavigatorNetworkInformation::connection()
     return m_connection.get();
 }
 
-void NavigatorNetworkInformation::trace(Visitor* visitor)
+DEFINE_TRACE(NavigatorNetworkInformation)
 {
     visitor->trace(m_connection);
-    WillBeHeapSupplement<Navigator>::trace(visitor);
+    HeapSupplement<Navigator>::trace(visitor);
     DOMWindowProperty::trace(visitor);
 }
 

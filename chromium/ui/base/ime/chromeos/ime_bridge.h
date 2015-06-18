@@ -6,12 +6,13 @@
 #define UI_BASE_IME_CHROMEOS_IME_BRIDGE_H_
 
 #include <string>
+#include <vector>
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/strings/string16.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/ui_base_export.h"
+#include "ui/base/ime/ui_base_ime_export.h"
 
 namespace gfx {
 class Rect;
@@ -26,7 +27,7 @@ namespace chromeos {
 
 class CompositionText;
 
-class UI_BASE_EXPORT IMEInputContextHandlerInterface {
+class UI_BASE_IME_EXPORT IMEInputContextHandlerInterface {
  public:
   // Called when the engine commit a text.
   virtual void CommitText(const std::string& text) = 0;
@@ -42,7 +43,7 @@ class UI_BASE_EXPORT IMEInputContextHandlerInterface {
 
 
 // A interface to handle the engine handler method call.
-class UI_BASE_EXPORT IMEEngineHandlerInterface {
+class UI_BASE_IME_EXPORT IMEEngineHandlerInterface {
  public:
   typedef base::Callback<void (bool consumed)> KeyEventDoneCallback;
 
@@ -103,14 +104,18 @@ class UI_BASE_EXPORT IMEEngineHandlerInterface {
                                   uint32 anchor_pos) = 0;
 
   // Called when the composition bounds changed.
-  virtual void SetCompositionBounds(const gfx::Rect& bounds) = 0;
+  virtual void SetCompositionBounds(const std::vector<gfx::Rect>& bounds) = 0;
+
+  // Returns whether the engine is interested in key events.
+  // If not, InputMethodChromeOS won't feed it with key events.
+  virtual bool IsInterestedInKeyEvent() const = 0;
 
  protected:
   IMEEngineHandlerInterface() {}
 };
 
 // A interface to handle the candidate window related method call.
-class UI_BASE_EXPORT IMECandidateWindowHandlerInterface {
+class UI_BASE_IME_EXPORT IMECandidateWindowHandlerInterface {
  public:
   virtual ~IMECandidateWindowHandlerInterface() {}
 
@@ -139,7 +144,7 @@ class UI_BASE_EXPORT IMECandidateWindowHandlerInterface {
 
 // IMEBridge provides access of each IME related handler. This class
 // is used for IME implementation.
-class UI_BASE_EXPORT IMEBridge {
+class UI_BASE_IME_EXPORT IMEBridge {
  public:
   virtual ~IMEBridge();
 
@@ -179,11 +184,15 @@ class UI_BASE_EXPORT IMEBridge {
   virtual void SetCandidateWindowHandler(
       IMECandidateWindowHandlerInterface* handler) = 0;
 
-  // Updates current text input type.
-  virtual void SetCurrentTextInputType(ui::TextInputType input_type) = 0;
+  // Updates the current input context.
+  // This is called from InputMethodChromeOS.
+  virtual void SetCurrentInputContext(
+      const IMEEngineHandlerInterface::InputContext& input_context) = 0;
 
-  // Returns the current text input type.
-  virtual ui::TextInputType GetCurrentTextInputType() const = 0;
+  // Returns the current input context.
+  // This is called from InputMethodEngine.
+  virtual const IMEEngineHandlerInterface::InputContext&
+  GetCurrentInputContext() const = 0;
 
  protected:
   IMEBridge();

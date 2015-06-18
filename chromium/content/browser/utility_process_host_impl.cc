@@ -4,19 +4,23 @@
 
 #include "content/browser/utility_process_host_impl.h"
 
+#include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
+#include "base/process/process_handle.h"
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/browser_child_process_host_impl.h"
+#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/child_process_host_impl.h"
+#include "content/common/in_process_child_thread_params.h"
 #include "content/common/utility_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -34,8 +38,9 @@ class UtilitySandboxedProcessLauncherDelegate
     : public SandboxedProcessLauncherDelegate {
  public:
   UtilitySandboxedProcessLauncherDelegate(const base::FilePath& exposed_dir,
-                                          bool launch_elevated, bool no_sandbox,
-                                          base::EnvironmentMap& env,
+                                          bool launch_elevated,
+                                          bool no_sandbox,
+                                          const base::EnvironmentMap& env,
                                           ChildProcessHost* host)
       : exposed_dir_(exposed_dir),
 #if defined(OS_WIN)
@@ -50,11 +55,9 @@ class UtilitySandboxedProcessLauncherDelegate
   ~UtilitySandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  virtual bool ShouldLaunchElevated() override {
-    return launch_elevated_;
-  }
-  virtual void PreSandbox(bool* disable_default_policy,
-                          base::FilePath* exposed_dir) override {
+  bool ShouldLaunchElevated() override { return launch_elevated_; }
+  void PreSandbox(bool* disable_default_policy,
+                  base::FilePath* exposed_dir) override {
     *exposed_dir = exposed_dir_;
   }
 #elif defined(OS_POSIX)
@@ -67,8 +70,7 @@ class UtilitySandboxedProcessLauncherDelegate
 #endif  // OS_WIN
 
  private:
-
- base::FilePath exposed_dir_;
+  base::FilePath exposed_dir_;
 
 #if defined(OS_WIN)
   bool launch_elevated_;
@@ -106,13 +108,21 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
 #else
       child_flags_(ChildProcessHost::CHILD_NORMAL),
 #endif
-      started_(false) {
+      started_(false),
+      name_(base::ASCIIToUTF16("utility process")) {
 }
 
 UtilityProcessHostImpl::~UtilityProcessHostImpl() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (is_batch_mode_)
     EndBatchMode();
+
+  // We could be destroyed as a result of Chrome shutdown. When that happens,
+  // the Mojo channel doesn't get the opportunity to shut down cleanly because
+  // it posts to the IO thread (the current thread) which is being destroyed.
+  // To guarantee proper shutdown of the Mojo channel, do it explicitly here.
+  if (mojo_application_host_)
+    mojo_application_host_->ShutdownOnIOThread();
 }
 
 bool UtilityProcessHostImpl::Send(IPC::Message* message) {
@@ -166,6 +176,26 @@ void UtilityProcessHostImpl::SetEnv(const base::EnvironmentMap& env) {
 
 #endif  // OS_POSIX
 
+bool UtilityProcessHostImpl::StartMojoMode() {
+  CHECK(!mojo_application_host_);
+  mojo_application_host_.reset(new MojoApplicationHost);
+
+  bool mojo_result = mojo_application_host_->Init();
+  if (!mojo_result)
+    return false;
+
+  return StartProcess();
+}
+
+ServiceRegistry* UtilityProcessHostImpl::GetServiceRegistry() {
+  DCHECK(mojo_application_host_);
+  return mojo_application_host_->service_registry();
+}
+
+void UtilityProcessHostImpl::SetName(const base::string16& name) {
+  name_ = name;
+}
+
 bool UtilityProcessHostImpl::StartProcess() {
   if (started_)
     return true;
@@ -177,7 +207,7 @@ bool UtilityProcessHostImpl::StartProcess() {
   // Name must be set or metrics_service will crash in any test which
   // launches a UtilityProcessHost.
   process_.reset(new BrowserChildProcessHostImpl(PROCESS_TYPE_UTILITY, this));
-  process_->SetName(base::ASCIIToUTF16("utility process"));
+  process_->SetName(name_);
 
   std::string channel_id = process_->GetHost()->CreateChannel();
   if (channel_id.empty())
@@ -187,14 +217,16 @@ bool UtilityProcessHostImpl::StartProcess() {
     DCHECK(g_utility_main_thread_factory);
     // See comment in RenderProcessHostImpl::Init() for the background on why we
     // support single process mode this way.
-    in_process_thread_.reset(g_utility_main_thread_factory(channel_id));
+    in_process_thread_.reset(
+        g_utility_main_thread_factory(InProcessChildThreadParams(
+            channel_id, BrowserThread::UnsafeGetMessageLoopForThread(
+                            BrowserThread::IO)->task_runner())));
     in_process_thread_->Start();
   } else {
     const base::CommandLine& browser_command_line =
         *base::CommandLine::ForCurrentProcess();
     int child_flags = child_flags_;
 
-#if defined(OS_POSIX)
     bool has_cmd_prefix = browser_command_line.HasSwitch(
         switches::kUtilityCmdPrefix);
 
@@ -205,7 +237,6 @@ bool UtilityProcessHostImpl::StartProcess() {
     // a similar case with Valgrind.
     if (has_cmd_prefix)
       child_flags = ChildProcessHost::CHILD_NORMAL;
-#endif
 
     base::FilePath exe_path = ChildProcessHost::GetChildPath(child_flags);
     if (exe_path.empty()) {
@@ -220,16 +251,21 @@ bool UtilityProcessHostImpl::StartProcess() {
     std::string locale = GetContentClient()->browser()->GetApplicationLocale();
     cmd_line->AppendSwitchASCII(switches::kLang, locale);
 
-    if (no_sandbox_ || browser_command_line.HasSwitch(switches::kNoSandbox))
+    if (no_sandbox_)
       cmd_line->AppendSwitch(switches::kNoSandbox);
-#if defined(OS_MACOSX)
-    if (browser_command_line.HasSwitch(switches::kEnableSandboxLogging))
-      cmd_line->AppendSwitch(switches::kEnableSandboxLogging);
-#endif
-    if (browser_command_line.HasSwitch(switches::kDebugPluginLoading))
-      cmd_line->AppendSwitch(switches::kDebugPluginLoading);
 
-#if defined(OS_POSIX)
+    // Browser command-line switches to propagate to the utility process.
+    static const char* const kSwitchNames[] = {
+      switches::kDebugPluginLoading,
+      switches::kNoSandbox,
+      switches::kProfilerTiming,
+#if defined(OS_MACOSX)
+      switches::kEnableSandboxLogging,
+#endif
+    };
+    cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
+                               arraysize(kSwitchNames));
+
     if (has_cmd_prefix) {
       // Launch the utility child process with some prefix
       // (usually "xterm -e gdb --args").
@@ -241,7 +277,6 @@ bool UtilityProcessHostImpl::StartProcess() {
       cmd_line->AppendSwitchPath(switches::kUtilityProcessAllowedDir,
                                  exposed_dir_);
     }
-#endif
 
     if (is_mdns_enabled_)
       cmd_line->AppendSwitch(switches::kUtilityProcessEnableMDns);
@@ -257,7 +292,8 @@ bool UtilityProcessHostImpl::StartProcess() {
                                                     run_elevated_,
                                                     no_sandbox_, env_,
                                                     process_->GetHost()),
-        cmd_line);
+        cmd_line,
+        true);
   }
 
   return true;
@@ -295,6 +331,18 @@ void UtilityProcessHostImpl::OnProcessCrashed(int exit_code) {
       FROM_HERE,
       base::Bind(&UtilityProcessHostClient::OnProcessCrashed, client_.get(),
             exit_code));
+}
+
+void UtilityProcessHostImpl::OnProcessLaunched() {
+  if (mojo_application_host_) {
+    base::ProcessHandle handle;
+    if (RenderProcessHost::run_renderer_in_process())
+      handle = base::GetCurrentProcessHandle();
+    else
+      handle = process_->GetData().handle;
+
+    mojo_application_host_->Activate(this, handle);
+  }
 }
 
 }  // namespace content

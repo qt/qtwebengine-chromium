@@ -34,7 +34,7 @@
         ],
       },
       'conditions': [
-        [ 'OS == "linux" or OS == "android" or OS == "mac"', {
+        ['OS=="linux" or OS=="mac"', {
           'sources': [
             'src/libusb/os/poll_posix.c',
             'src/libusb/os/poll_posix.h',
@@ -51,7 +51,7 @@
             'THREADS_POSIX=1',
           ],
         }],
-        [ 'OS == "linux" or OS == "android"', {
+        ['OS=="linux"', {
           'sources': [
             'src/libusb/os/linux_usbfs.c',
             'src/libusb/os/linux_usbfs.h',
@@ -61,16 +61,22 @@
             '_GNU_SOURCE=1',
           ],
         }],
-        [ 'use_udev == 1 or OS == "android"', {
+        ['use_udev==1', {
           'sources': [
-            'src/libusb/os/linux_udev.c',
+            'src/libusb/os/linux_udev.cc',
           ],
           'defines': [
             'HAVE_LIBUDEV=1',
             'USE_UDEV=1',
           ],
+          'dependencies': [
+            '../../device/udev_linux/udev.gyp:udev_linux',
+          ],
+          'include_dirs': [
+            '../..',
+          ],
         }],
-        [ 'OS == "linux" and use_udev == 0', {
+        ['OS=="linux" and use_udev==0', {
           'sources': [
             'src/libusb/os/linux_netlink.c',
           ],
@@ -85,7 +91,7 @@
             }]
           ],
         }],
-        [ 'OS == "mac"', {
+        ['OS=="mac"', {
           'sources': [
             'src/libusb/os/darwin_usb.c',
             'src/libusb/os/darwin_usb.h',
@@ -94,7 +100,7 @@
             'OS_DARWIN=1',
           ],
         }],
-        [ 'OS == "win"', {
+        ['OS=="win"', {
           'sources': [
             'src/libusb/os/poll_windows.c',
             'src/libusb/os/poll_windows.h',

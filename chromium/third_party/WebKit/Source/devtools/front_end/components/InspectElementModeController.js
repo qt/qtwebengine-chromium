@@ -32,10 +32,10 @@
  */
 WebInspector.InspectElementModeController = function()
 {
-    this._toggleSearchButton = new WebInspector.StatusBarButton(WebInspector.UIString("Select an element in the page to inspect it."), "node-search-status-bar-item");
-    this._shortcut = WebInspector.InspectElementModeController.createShortcut();
+    this._toggleSearchButton = new WebInspector.ToolbarButton(WebInspector.UIString("Select an element in the page to inspect it"), "node-search-toolbar-item");
     InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.EnterInspectElementMode, this._toggleSearch, this);
-    WebInspector.targetManager.observeTargets(this);
+    WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged, this._suspendStateChanged, this);
+    WebInspector.targetManager.observeTargets(this, WebInspector.Target.Type.Page);
 }
 
 /**
@@ -48,17 +48,21 @@ WebInspector.InspectElementModeController.createShortcut = function()
 
 WebInspector.InspectElementModeController.prototype = {
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetAdded: function(target)
     {
         // When DevTools are opening in the inspect element mode, the first target comes in
         // much later than the InspectorFrontendAPI.enterInspectElementMode event.
-        if (this.enabled())
-            target.domModel.setInspectModeEnabled(true, WebInspector.settings.showUAShadowDOM.get());
+        if (!this.enabled())
+            return;
+        var domModel = WebInspector.DOMModel.fromTarget(target);
+        domModel.setInspectModeEnabled(true, WebInspector.moduleSetting("showUAShadowDOM").get());
     },
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetRemoved: function(target)
@@ -70,7 +74,7 @@ WebInspector.InspectElementModeController.prototype = {
      */
     enabled: function()
     {
-        return this._toggleSearchButton.toggled;
+        return this._toggleSearchButton.toggled();
     },
 
     disable: function()
@@ -82,11 +86,16 @@ WebInspector.InspectElementModeController.prototype = {
     _toggleSearch: function()
     {
         var enabled = !this.enabled();
-        this._toggleSearchButton.toggled = enabled;
+        this._toggleSearchButton.setToggled(enabled);
 
-        var targets = WebInspector.targetManager.targets();
-        for (var i = 0; i < targets.length; ++i)
-            targets[i].domModel.setInspectModeEnabled(enabled, WebInspector.settings.showUAShadowDOM.get());
+        for (var domModel of WebInspector.DOMModel.instances())
+            domModel.setInspectModeEnabled(enabled, WebInspector.moduleSetting("showUAShadowDOM").get());
+    },
+
+    _suspendStateChanged: function()
+    {
+        if (WebInspector.targetManager.allTargetsSuspended())
+            this._toggleSearchButton.setToggled(false);
     }
 }
 
@@ -100,20 +109,21 @@ WebInspector.InspectElementModeController.ToggleSearchActionDelegate = function(
 
 WebInspector.InspectElementModeController.ToggleSearchActionDelegate.prototype = {
     /**
-     * @return {boolean}
+     * @override
+     * @param {!WebInspector.Context} context
+     * @param {string} actionId
      */
-    handleAction: function()
+    handleAction: function(context, actionId)
     {
         if (!WebInspector.inspectElementModeController)
-            return false;
+            return;
         WebInspector.inspectElementModeController._toggleSearch();
-        return true;
     }
 }
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarItem.Provider}
+ * @implements {WebInspector.ToolbarItem.Provider}
  */
 WebInspector.InspectElementModeController.ToggleButtonProvider = function()
 {
@@ -121,7 +131,8 @@ WebInspector.InspectElementModeController.ToggleButtonProvider = function()
 
 WebInspector.InspectElementModeController.ToggleButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarItem}
+     * @override
+     * @return {?WebInspector.ToolbarItem}
      */
     item: function()
     {

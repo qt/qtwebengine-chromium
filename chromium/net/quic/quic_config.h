@@ -118,10 +118,6 @@ class NET_EXPORT_PRIVATE QuicNegotiableTag : public QuicNegotiableValue {
   // msg doesn't contain tag |name_|.
   void set(const QuicTagVector& possible_values, QuicTag default_value);
 
-  // Returns the negotiated tag if |negotiated_| is true, otherwise returns
-  // |default_value_| (used to set default values before negotiation finishes).
-  QuicTag GetTag() const;
-
   // Serialises |name_| and vector (either possible or negotiated) to |out|. If
   // |negotiated_| is true then |negotiated_tag_| is serialised, otherwise
   // |possible_values_| is serialised.
@@ -182,39 +178,6 @@ class NET_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
 };
 
 // Stores tag from CHLO or SHLO messages that are not negotiated.
-class NET_EXPORT_PRIVATE QuicFixedTag : public QuicConfigValue {
- public:
-  QuicFixedTag(QuicTag name, QuicConfigPresence presence);
-  ~QuicFixedTag() override;
-
-  bool HasSendValue() const;
-
-  QuicTag GetSendValue() const;
-
-  void SetSendValue(QuicTag value);
-
-  bool HasReceivedValue() const;
-
-  QuicTag GetReceivedValue() const;
-
-  void SetReceivedValue(QuicTag value);
-
-  // If has_send_value is true, serialises |tag_| and |send_value_| to |out|.
-  void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
-
-  // Sets |value_| to the corresponding value from |client_hello_| if it exists.
-  QuicErrorCode ProcessPeerHello(const CryptoHandshakeMessage& peer_hello,
-                                 HelloType hello_type,
-                                 std::string* error_details) override;
-
- private:
-  QuicTag send_value_;
-  bool has_send_value_;
-  QuicTag receive_value_;
-  bool has_receive_value_;
-};
-
-// Stores tag from CHLO or SHLO messages that are not negotiated.
 class NET_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
  public:
   QuicFixedTagVector(QuicTag name, QuicConfigPresence presence);
@@ -256,11 +219,6 @@ class NET_EXPORT_PRIVATE QuicConfig {
   QuicConfig();
   ~QuicConfig();
 
-  void SetCongestionFeedback(const QuicTagVector& congestion_feedback,
-                             QuicTag default_congestion_feedback);
-
-  QuicTag CongestionFeedback() const;
-
   void SetConnectionOptionsToSend(const QuicTagVector& connection_options);
 
   bool HasReceivedConnectionOptions() const;
@@ -277,7 +235,9 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   QuicTime::Delta IdleConnectionStateLifetime() const;
 
-  QuicTime::Delta KeepaliveTimeout() const;
+  void SetSilentClose(bool silent_close);
+
+  bool SilentClose() const;
 
   void SetMaxStreamsPerConnection(size_t max_streams, size_t default_streams);
 
@@ -319,15 +279,8 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   uint32 ReceivedBytesForConnectionId() const;
 
-  // Sets the peer's default initial congestion window in packets.
-  void SetInitialCongestionWindowToSend(size_t initial_window);
-
-  bool HasReceivedInitialCongestionWindow() const;
-
-  uint32 ReceivedInitialCongestionWindow() const;
-
   // Sets an estimated initial round trip time in us.
-  void SetInitialRoundTripTimeUsToSend(size_t rtt_us);
+  void SetInitialRoundTripTimeUsToSend(uint32 rtt_us);
 
   bool HasReceivedInitialRoundTripTimeUs() const;
 
@@ -336,17 +289,6 @@ class NET_EXPORT_PRIVATE QuicConfig {
   bool HasInitialRoundTripTimeUsToSend() const;
 
   uint32 GetInitialRoundTripTimeUsToSend() const;
-
-  // TODO(rjshade): Remove all InitialFlowControlWindow methods when removing
-  // QUIC_VERSION_19.
-  // Sets an initial stream flow control window size to transmit to the peer.
-  void SetInitialFlowControlWindowToSend(uint32 window_bytes);
-
-  uint32 GetInitialFlowControlWindowToSend() const;
-
-  bool HasReceivedInitialFlowControlWindowBytes() const;
-
-  uint32 ReceivedInitialFlowControlWindowBytes() const;
 
   // Sets an initial stream flow control window size to transmit to the peer.
   void SetInitialStreamFlowControlWindowToSend(uint32 window_bytes);
@@ -368,8 +310,6 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   // Sets socket receive buffer to transmit to the peer.
   void SetSocketReceiveBufferToSend(uint32 window_bytes);
-
-  uint32 GetSocketReceiveBufferToSend() const;
 
   bool HasReceivedSocketReceiveBuffer() const;
 
@@ -401,26 +341,18 @@ class NET_EXPORT_PRIVATE QuicConfig {
   // Maximum number of undecryptable packets stored before CHLO/SHLO.
   size_t max_undecryptable_packets_;
 
-  // Congestion control feedback type.
-  QuicNegotiableTag congestion_feedback_;
   // Connection options.
   QuicFixedTagVector connection_options_;
   // Idle connection state lifetime
   QuicNegotiableUint32 idle_connection_state_lifetime_seconds_;
-  // Keepalive timeout, or 0 to turn off keepalive probes
-  QuicNegotiableUint32 keepalive_timeout_seconds_;
+  // Whether to use silent close.  Defaults to 0 (false) and is otherwise true.
+  QuicNegotiableUint32 silent_close_;
   // Maximum number of streams that the connection can support.
   QuicNegotiableUint32 max_streams_per_connection_;
   // The number of bytes required for the connection ID.
   QuicFixedUint32 bytes_for_connection_id_;
-  // Initial congestion window in packets.
-  QuicFixedUint32 initial_congestion_window_;
   // Initial round trip time estimate in microseconds.
   QuicFixedUint32 initial_round_trip_time_us_;
-
-  // TODO(rjshade): Remove when removing QUIC_VERSION_19.
-  // Initial flow control receive window in bytes.
-  QuicFixedUint32 initial_flow_control_window_bytes_;
 
   // Initial stream flow control receive window in bytes.
   QuicFixedUint32 initial_stream_flow_control_window_bytes_;

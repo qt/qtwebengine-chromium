@@ -46,8 +46,6 @@ namespace rtc {
 const char* win32_inet_ntop(int af, const void *src, char* dst, socklen_t size);
 int win32_inet_pton(int af, const char* src, void *dst);
 
-///////////////////////////////////////////////////////////////////////////////
-
 inline std::wstring ToUtf16(const char* utf8, size_t len) {
   int len16 = ::MultiByteToWideChar(CP_UTF8, 0, utf8, static_cast<int>(len),
                                     NULL, 0);
@@ -110,6 +108,13 @@ inline bool IsWindowsXpOrLater() {
           (major == kWindows2000 && minor >= 1)));
 }
 
+inline bool IsWindows8OrLater() {
+  int major, minor;
+  return (GetOsVersion(&major, &minor, NULL) &&
+          (major > kWindowsVista ||
+          (major == kWindowsVista && minor >= 2)));
+}
+
 // Determine the current integrity level of the process.
 bool GetCurrentProcessIntegrityLevel(int* level);
 
@@ -121,9 +126,10 @@ inline bool IsCurrentProcessLowIntegrity() {
 
 bool AdjustCurrentProcessPrivilege(const TCHAR* privilege, bool to_enable);
 
-///////////////////////////////////////////////////////////////////////////////
+// Sets the current thread name for the windows debugger.
+void SetCurrentThreadName(const char* name);
 
 }  // namespace rtc
 
-#endif  // WEBRTC_WIN 
+#endif  // WEBRTC_WIN
 #endif  // WEBRTC_BASE_WIN32_H_

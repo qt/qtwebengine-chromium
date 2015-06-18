@@ -7,7 +7,8 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "net/test/scoped_mock_log.h"
+#include "base/test/mock_log.h"
+#include "net/quic/test_tools/rtt_stats_peer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using logging::LOG_WARNING;
@@ -18,17 +19,6 @@ using testing::_;
 
 namespace net {
 namespace test {
-
-class RttStatsPeer {
- public:
-  static QuicTime::Delta GetHalfWindowRtt(const RttStats* rtt_stats) {
-    return rtt_stats->half_window_rtt_.rtt;
-  }
-
-  static QuicTime::Delta GetQuarterWindowRtt(const RttStats* rtt_stats) {
-    return rtt_stats->quarter_window_rtt_.rtt;
-  }
-};
 
 class RttStatsTest : public ::testing::Test {
  protected:
@@ -226,7 +216,7 @@ TEST_F(RttStatsTest, ExpireSmoothedMetrics) {
 
 TEST_F(RttStatsTest, UpdateRttWithBadSendDeltas) {
   // Make sure we ignore bad RTTs.
-  ScopedMockLog log;
+  base::test::MockLog log;
 
   QuicTime::Delta initial_rtt = QuicTime::Delta::FromMilliseconds(10);
   rtt_stats_.UpdateRtt(initial_rtt, QuicTime::Delta::Zero(), QuicTime::Zero());

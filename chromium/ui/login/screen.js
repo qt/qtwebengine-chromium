@@ -6,10 +6,12 @@
  * @fileoverview Base class for all login WebUI screens.
  */
 cr.define('login', function() {
-  /** @const */ var CALLBACK_USER_ACTED = 'userActed';
   /** @const */ var CALLBACK_CONTEXT_CHANGED = 'contextChanged';
+  /** @const */ var CALLBACK_USER_ACTED = 'userActed';
 
   function doNothing() {};
+
+  function alwaysTruePredicate() { return true; }
 
   var querySelectorAll = HTMLDivElement.prototype.querySelectorAll;
 
@@ -43,7 +45,7 @@ cr.define('login', function() {
     contextObservers_: null,
 
     /**
-     * Called during screen registration.
+     * Called during screen initialization.
      */
     decorate: doNothing,
 
@@ -97,6 +99,56 @@ cr.define('login', function() {
     },
 
     /**
+     * Creates and returns new button element with given identifier
+     * and on-click event listener, which sends notification about
+     * user action to the C++ side.
+     *
+     * @param {string} id Identifier of a button.
+     * @param {string} opt_action_id Identifier of user action.
+     * @final
+     */
+    declareButton: function(id, opt_action_id) {
+      var button = this.ownerDocument.createElement('button');
+      button.id = id;
+      this.declareUserAction(button,
+                             { action_id: opt_action_id,
+                               event: 'click'
+                             });
+      return button;
+    },
+
+    /**
+      * Adds event listener to an element which sends notification
+      * about event to the C++ side.
+      *
+      * @param {Element} element An DOM element
+      * @param {Object} options A dictionary of optional arguments:
+      *   {string} event: name of event that will be listened,
+      *            default: 'click'.
+      *   {string} action_id: name of an action which will be sent to
+      *                       the C++ side.
+      *   {function} condition: a one-argument function which takes
+      *              event as an argument, notification is sent to the
+      *              C++ side iff condition is true, default: constant
+      *              true function.
+      * @final
+      */
+    declareUserAction: function(element, options) {
+      var self = this;
+      options = options || {};
+
+      var event = options.event || 'click';
+      var action_id = options.action_id || element.id;
+      var condition = options.condition || alwaysTruePredicate;
+
+      element.addEventListener(event, function(e) {
+        if (condition(e))
+          self.sendImpl_(CALLBACK_USER_ACTED, action_id);
+        e.stopPropagation();
+      });
+    },
+
+    /**
      * @override
      * @final
      */
@@ -116,7 +168,11 @@ cr.define('login', function() {
      * @private
      */
     initializeImpl_: function() {
-      this.screenContext_ = new login.ScreenContext();
+      if (cr.isChromeOS)
+        this.screenContext_ = new login.ScreenContext();
+
+      this.decorate();
+
       this.querySelectorAllImpl_('[alias]').forEach(function(element) {
         var alias = element.getAttribute('alias');
         if (alias in this)
@@ -317,10 +373,14 @@ cr.define('login', function() {
         screen.contextChanged_.apply(screen, arguments);
       }
 
-      api.register = function() {
+      api.register = function(opt_lazy_init) {
         var screen = $(id);
         screen.__proto__ = new Constructor();
-        screen.decorate();
+
+        if (opt_lazy_init !== undefined && opt_lazy_init)
+          screen.deferredInitialization = function() { screen.initialize(); }
+        else
+          screen.initialize();
         Oobe.getInstance().registerScreen(screen);
       };
 
@@ -332,4 +392,3 @@ cr.define('login', function() {
     }
   };
 });
-

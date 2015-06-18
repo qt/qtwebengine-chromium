@@ -4,12 +4,17 @@
 
 /* This file contains styles specific to Android and iOS. */
 
+html:not(.focus-outline-visible) :focus {
+  outline: none;
+}
+
 html {
   height: 100%;
 }
 
 body {
   color: rgb(76, 76, 76);
+  font-size: initial;
   height: 100%;
   margin: 0;
 }
@@ -67,7 +72,7 @@ h3 {
 #search-field {
   -webkit-padding-start: 64px;
   background-image:
-      url('../../../../ui/webui/resources/images/2x/search.png');
+      url(../../../../ui/webui/resources/images/2x/search.png);
   background-position: 16px center;
   background-repeat: no-repeat;
   background-size: 32px;
@@ -80,16 +85,6 @@ h3 {
 
 html[dir='rtl'] #search-field {
   background-position: right 16px center;
-}
-
-.no-results-message {
-  margin-bottom: 1em;
-  padding-left: 16px;
-  padding-right: 16px;
-}
-
-.search-results .no-results-message {
-  margin-top: 1em;
 }
 
 #notification-bar.alone {
@@ -111,7 +106,7 @@ html[dir='rtl'] #search-field {
 }
 
 button.remove-entry {
-  background: url('../../../../ui/webui/resources/images/2x/x-thin.png')
+  background: url(../../../../ui/webui/resources/images/2x/x-thin.png)
       no-repeat center center;
   background-size: 13px;
   border: 0;
@@ -206,8 +201,27 @@ input {
   line-height: 1.3;
 }
 
+.entry .visit-entry.blocked-indicator {
+  line-height: 2;
+}
+
+.entry .visit-entry :-webkit-any(a, .domain) {
+  display: block;
+  margin-left: 0;
+  margin-right: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 0;
+  padding-right: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry .visit-entry.blocked-indicator a {
+  display: inline;
+}
+
 .entry .domain {
-  -webkit-padding-start: 0;
   font-size: 14px;
 }
 
@@ -297,8 +311,7 @@ input {
 
   h1,
   #notification-bar,
-  #loading-spinner,
-  .no-results-message {
+  #loading-spinner {
     padding-left: 0;
     padding-right: 0;
   }
@@ -313,5 +326,9 @@ input {
 .ios-keyboard-visible #scrolling-container {
   /* Should be 0, but that breaks scrolling -- see crbug.com/292715. */
   bottom: -1px;
+}
+
+#results-header:empty {
+  display: none;
 }
 </if> /* is_ios */

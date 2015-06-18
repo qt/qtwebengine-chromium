@@ -10,6 +10,14 @@
 
 namespace content {
 
+namespace {
+
+bool IsRegisterJob(const ServiceWorkerRegisterJobBase& job) {
+  return job.GetType() == ServiceWorkerRegisterJobBase::REGISTRATION_JOB;
+}
+
+}
+
 ServiceWorkerJobCoordinator::JobQueue::JobQueue() {}
 
 ServiceWorkerJobCoordinator::JobQueue::~JobQueue() {
@@ -21,10 +29,11 @@ ServiceWorkerJobCoordinator::JobQueue::~JobQueue() {
 ServiceWorkerRegisterJobBase* ServiceWorkerJobCoordinator::JobQueue::Push(
     scoped_ptr<ServiceWorkerRegisterJobBase> job) {
   if (jobs_.empty()) {
-    job->Start();
     jobs_.push_back(job.release());
+    StartOneJob();
   } else if (!job->Equals(jobs_.back())) {
     jobs_.push_back(job.release());
+    DoomInstallingWorkerIfNeeded();
   }
   // Note we are releasing 'job' here.
 
@@ -38,7 +47,28 @@ void ServiceWorkerJobCoordinator::JobQueue::Pop(
   jobs_.pop_front();
   delete job;
   if (!jobs_.empty())
-    jobs_.front()->Start();
+    StartOneJob();
+}
+
+void ServiceWorkerJobCoordinator::JobQueue::DoomInstallingWorkerIfNeeded() {
+  DCHECK(!jobs_.empty());
+  if (!IsRegisterJob(*jobs_.front()))
+    return;
+  ServiceWorkerRegisterJob* job =
+      static_cast<ServiceWorkerRegisterJob*>(jobs_.front());
+  std::deque<ServiceWorkerRegisterJobBase*>::iterator it = jobs_.begin();
+  for (++it; it != jobs_.end(); ++it) {
+    if (IsRegisterJob(**it)) {
+      job->DoomInstallingWorker();
+      return;
+    }
+  }
+}
+
+void ServiceWorkerJobCoordinator::JobQueue::StartOneJob() {
+  DCHECK(!jobs_.empty());
+  jobs_.front()->Start();
+  DoomInstallingWorkerIfNeeded();
 }
 
 void ServiceWorkerJobCoordinator::JobQueue::AbortAll() {
@@ -93,12 +123,14 @@ void ServiceWorkerJobCoordinator::Unregister(
 }
 
 void ServiceWorkerJobCoordinator::Update(
-    ServiceWorkerRegistration* registration) {
+    ServiceWorkerRegistration* registration,
+    bool force_bypass_cache) {
   DCHECK(registration);
   DCHECK(registration->GetNewestVersion());
   job_queues_[registration->pattern()].Push(
       make_scoped_ptr<ServiceWorkerRegisterJobBase>(
-          new ServiceWorkerRegisterJob(context_, registration)));
+          new ServiceWorkerRegisterJob(context_, registration,
+                                       force_bypass_cache)));
 }
 
 void ServiceWorkerJobCoordinator::AbortAll() {

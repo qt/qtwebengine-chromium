@@ -15,6 +15,7 @@
         '../base/base.gyp:base',
         '../google_apis/google_apis.gyp:google_apis',
         '../net/net.gyp:net',
+        '../skia/skia.gyp:skia',
         '../sql/sql.gyp:sql',
         '../ui/gfx/gfx.gyp:gfx',
         '../url/url.gyp:url_lib',
@@ -37,6 +38,8 @@
         'enhanced_bookmarks/enhanced_bookmark_model_observer.h',
         'enhanced_bookmarks/enhanced_bookmark_utils.cc',
         'enhanced_bookmarks/enhanced_bookmark_utils.h',
+        'enhanced_bookmarks/image_record.cc',
+        'enhanced_bookmarks/image_record.h',
         'enhanced_bookmarks/image_store.cc',
         'enhanced_bookmarks/image_store.h',
         'enhanced_bookmarks/image_store_util.cc',
@@ -89,5 +92,21 @@
       },
       'includes': [ '../build/protoc.gypi' ],
     },
+  ],
+  'conditions' : [
+    ['OS=="android"', {
+      'targets': [
+        {
+          # GN: //components/enhanced_bookmarks:enhanced_bookmarks_java_enums_srcjar
+          'target_name': 'enhanced_bookmarks_java_enums_srcjar',
+          'type': 'none',
+          'variables': {
+            'source_file': 'enhanced_bookmarks/enhanced_bookmark_utils.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+      ],
+     },
+   ],
   ],
 }

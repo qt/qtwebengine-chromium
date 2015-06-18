@@ -28,11 +28,12 @@
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
+#include "content/public/browser/zoom_level_delegate.h"
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/log/net_log.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gmock_mutant.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -109,9 +110,8 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD0(MarkAsComplete, void());
   MOCK_METHOD1(OnAllDataSaved, void(const std::string&));
   MOCK_METHOD0(OnDownloadedFileRemoved, void());
-  virtual void Start(
-      scoped_ptr<DownloadFile> download_file,
-      scoped_ptr<DownloadRequestHandleInterface> req_handle) override {
+  void Start(scoped_ptr<DownloadFile> download_file,
+             scoped_ptr<DownloadRequestHandleInterface> req_handle) override {
     MockStart(download_file.get(), req_handle.get());
   }
 
@@ -173,7 +173,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD1(SetDisplayName, void(const base::FilePath&));
   MOCK_METHOD0(NotifyRemoved, void());
   // May be called when vlog is on.
-  virtual std::string DebugString(bool verbose) const override {
+  std::string DebugString(bool verbose) const override {
     return std::string();
   }
 };
@@ -401,6 +401,8 @@ class MockBrowserContext : public BrowserContext {
   ~MockBrowserContext() {}
 
   MOCK_CONST_METHOD0(GetPath, base::FilePath());
+  MOCK_METHOD1(CreateZoomLevelDelegateMock,
+               ZoomLevelDelegate*(const base::FilePath&));
   MOCK_CONST_METHOD0(IsOffTheRecord, bool());
   MOCK_METHOD0(GetRequestContext, net::URLRequestContextGetter*());
   MOCK_METHOD1(GetRequestContextForRenderProcess,
@@ -418,6 +420,12 @@ class MockBrowserContext : public BrowserContext {
   MOCK_METHOD0(GetSpecialStoragePolicy, storage::SpecialStoragePolicy*());
   MOCK_METHOD0(GetPushMessagingService, PushMessagingService*());
   MOCK_METHOD0(GetSSLHostStateDelegate, SSLHostStateDelegate*());
+  MOCK_METHOD0(GetPermissionManager, PermissionManager*());
+
+  scoped_ptr<ZoomLevelDelegate> CreateZoomLevelDelegate(
+      const base::FilePath& path) override {
+    return scoped_ptr<ZoomLevelDelegate>(CreateZoomLevelDelegateMock(path));
+  }
 };
 
 class MockDownloadManagerObserver : public DownloadManager::Observer {

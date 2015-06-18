@@ -27,25 +27,26 @@
 #ifndef WindowEventContext_h
 #define WindowEventContext_h
 
+#include "core/frame/LocalDOMWindow.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class LocalDOMWindow;
 class EventTarget;
 class Event;
 class Node;
 class NodeEventContext;
 
-class WindowEventContext {
-    STACK_ALLOCATED();
+class WindowEventContext : public NoBaseWillBeGarbageCollected<WindowEventContext> {
 public:
-    WindowEventContext(Event*, PassRefPtrWillBeRawPtr<Node>, const NodeEventContext*);
+    WindowEventContext(Event&, const NodeEventContext& topNodeEventContext);
 
     LocalDOMWindow* window() const;
     EventTarget* target() const;
-    bool handleLocalEvents(Event* event);
+    bool handleLocalEvents(Event&);
+
+    DECLARE_TRACE();
 
 private:
     RefPtrWillBeMember<LocalDOMWindow> m_window;

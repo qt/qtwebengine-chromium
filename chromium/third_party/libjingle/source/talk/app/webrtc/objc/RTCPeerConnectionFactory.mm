@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,7 +29,7 @@
 #error "This file requires ARC support."
 #endif
 
-#import "RTCPeerConnectionFactory.h"
+#import "RTCPeerConnectionFactory+Internal.h"
 
 #include <vector>
 
@@ -47,21 +47,17 @@
 
 #include "talk/app/webrtc/audiotrack.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
-#include "talk/app/webrtc/peerconnectionfactory.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/videosourceinterface.h"
 #include "talk/app/webrtc/videotrack.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/ssladapter.h"
 
-@interface RTCPeerConnectionFactory ()
 
-@property(nonatomic, assign) rtc::scoped_refptr<
-    webrtc::PeerConnectionFactoryInterface> nativeFactory;
-
-@end
-
-@implementation RTCPeerConnectionFactory
+@implementation RTCPeerConnectionFactory {
+  rtc::scoped_ptr<rtc::Thread> _signalingThread;
+  rtc::scoped_ptr<rtc::Thread> _workerThread;
+}
 
 @synthesize nativeFactory = _nativeFactory;
 
@@ -77,7 +73,14 @@
 
 - (id)init {
   if ((self = [super init])) {
-    _nativeFactory = webrtc::CreatePeerConnectionFactory();
+    _signalingThread.reset(new rtc::Thread());
+    BOOL result = _signalingThread->Start();
+    NSAssert(result, @"Failed to start signaling thread.");
+    _workerThread.reset(new rtc::Thread());
+    result = _workerThread->Start();
+    NSAssert(result, @"Failed to start worker thread.");
+    _nativeFactory = webrtc::CreatePeerConnectionFactory(
+        _signalingThread.get(), _workerThread.get(), NULL, NULL, NULL);
     NSAssert(_nativeFactory, @"Failed to initialize PeerConnectionFactory!");
     // Uncomment to get sensitive logs emitted (to stderr or logcat).
     // rtc::LogMessage::LogToDebug(rtc::LS_SENSITIVE);

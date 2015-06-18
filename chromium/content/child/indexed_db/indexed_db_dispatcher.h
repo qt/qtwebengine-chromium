@@ -17,16 +17,16 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/public/platform/WebBlobInfo.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
-#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCallbacks.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBDatabaseCallbacks.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
 struct IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params;
 struct IndexedDBMsg_CallbacksSuccessIDBCursor_Params;
+struct IndexedDBMsg_CallbacksSuccessArray_Params;
 struct IndexedDBMsg_CallbacksSuccessValue_Params;
-struct IndexedDBMsg_CallbacksSuccessValueWithKey_Params;
 struct IndexedDBMsg_CallbacksUpgradeNeeded_Params;
 
 namespace blink {
@@ -129,6 +129,13 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
                              bool key_only,
                              blink::WebIDBCallbacks* callbacks);
 
+  void RequestIDBDatabaseGetAll(int32 ipc_database_id,
+                                int64 transaction_id,
+                                int64 object_store_id,
+                                const IndexedDBKeyRange& key_range,
+                                int64 max_count,
+                                blink::WebIDBCallbacks* callbacks);
+
   void RequestIDBDatabasePut(
       int32 ipc_database_id,
       int64 transaction_id,
@@ -210,8 +217,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
                            int32 ipc_callbacks_id,
                            const std::vector<base::string16>& value);
   void OnSuccessValue(const IndexedDBMsg_CallbacksSuccessValue_Params& p);
-  void OnSuccessValueWithKey(
-      const IndexedDBMsg_CallbacksSuccessValueWithKey_Params& p);
+  void OnSuccessArray(const IndexedDBMsg_CallbacksSuccessArray_Params& p);
   void OnSuccessInteger(int32 ipc_thread_id,
                         int32 ipc_callbacks_id,
                         int64 value);

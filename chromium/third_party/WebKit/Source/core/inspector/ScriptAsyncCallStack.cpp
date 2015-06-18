@@ -7,8 +7,6 @@
 
 namespace blink {
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptAsyncCallStack);
-
 PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> ScriptAsyncCallStack::create(const String& description, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncStackTrace)
 {
     return adoptRefWillBeNoop(new ScriptAsyncCallStack(description, callStack, asyncStackTrace));
@@ -22,6 +20,10 @@ ScriptAsyncCallStack::ScriptAsyncCallStack(const String& description, PassRefPtr
     ASSERT(m_callStack);
 }
 
+ScriptAsyncCallStack::~ScriptAsyncCallStack()
+{
+}
+
 PassRefPtr<TypeBuilder::Console::AsyncStackTrace> ScriptAsyncCallStack::buildInspectorObject() const
 {
     RefPtr<TypeBuilder::Console::AsyncStackTrace> result = TypeBuilder::Console::AsyncStackTrace::create()
@@ -33,7 +35,7 @@ PassRefPtr<TypeBuilder::Console::AsyncStackTrace> ScriptAsyncCallStack::buildIns
     return result.release();
 }
 
-void ScriptAsyncCallStack::trace(Visitor* visitor)
+DEFINE_TRACE(ScriptAsyncCallStack)
 {
     visitor->trace(m_callStack);
     visitor->trace(m_asyncStackTrace);

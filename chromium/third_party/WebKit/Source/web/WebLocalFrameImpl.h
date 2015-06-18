@@ -36,7 +36,6 @@
 #include "public/platform/WebFileSystemType.h"
 #include "public/web/WebLocalFrame.h"
 #include "web/FrameLoaderClientImpl.h"
-#include "web/NotificationPresenterImpl.h"
 #include "web/UserMediaClientImpl.h"
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
@@ -47,18 +46,24 @@ namespace blink {
 
 class ChromePrintContext;
 class GeolocationClientProxy;
+class InspectorOverlay;
 class IntSize;
 class KURL;
 class Range;
-class ScriptSourceCode;
 class SharedWorkerRepositoryClientImpl;
 class TextFinder;
+class WebAutofillClient;
 class WebDataSourceImpl;
+class WebDevToolsAgentImpl;
+class WebDevToolsFrontendImpl;
 class WebFrameClient;
+class WebFrameWidgetImpl;
+class WebNode;
 class WebPerformance;
 class WebPlugin;
 class WebPluginContainerImpl;
 class WebScriptExecutionCallback;
+class WebSuspendableTask;
 class WebView;
 class WebViewImpl;
 struct FrameLoadRequest;
@@ -80,7 +85,7 @@ public:
     virtual void setName(const WebString&) override;
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const override;
     virtual void setRemoteWebLayer(WebLayer*) override;
-    virtual void setPermissionClient(WebPermissionClient*) override;
+    virtual void setContentSettingsClient(WebContentSettingsClient*) override;
     virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) override;
     virtual WebSize scrollOffset() const override;
     virtual void setScrollOffset(const WebSize&) override;
@@ -110,24 +115,25 @@ public:
     virtual void addMessageToConsole(const WebConsoleMessage&) override;
     virtual void collectGarbage() override;
     virtual bool checkIfRunInsecureContent(const WebURL&) const override;
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
+    virtual v8::Local<v8::Value> executeScriptAndReturnValue(
         const WebScriptSource&) override;
     virtual void requestExecuteScriptAndReturnValue(
         const WebScriptSource&, bool userGesture, WebScriptExecutionCallback*) override;
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourcesIn, unsigned numSources,
-        int extensionGroup, WebVector<v8::Local<v8::Value> >* results) override;
+        int extensionGroup, WebVector<v8::Local<v8::Value>>* results) override;
     virtual void requestExecuteScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourceIn, unsigned numSources,
         int extensionGroup, bool userGesture, WebScriptExecutionCallback*) override;
-    virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
-        v8::Handle<v8::Function>,
-        v8::Handle<v8::Value>,
+    virtual v8::Local<v8::Value> callFunctionEvenIfScriptDisabled(
+        v8::Local<v8::Function>,
+        v8::Local<v8::Value>,
         int argc,
-        v8::Handle<v8::Value> argv[]) override;
+        v8::Local<v8::Value> argv[]) override;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const override;
     virtual void reload(bool ignoreCache) override;
     virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
+    virtual void reloadImage(const WebNode&) override;
     virtual void loadRequest(const WebURLRequest&) override;
     virtual void loadHistoryItem(const WebHistoryItem&, WebHistoryLoadType, WebURLRequest::CachePolicy) override;
     virtual void loadData(
@@ -169,7 +175,7 @@ public:
     virtual void selectRange(const WebPoint& base, const WebPoint& extent) override;
     virtual void selectRange(const WebRange&) override;
     virtual void moveRangeSelectionExtent(const WebPoint&) override;
-    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) override;
+    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity = CharacterGranularity) override;
     virtual void moveCaretSelection(const WebPoint&) override;
     virtual bool setEditableSelectionOffsets(int start, int end) override;
     virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) override;
@@ -180,7 +186,7 @@ public:
     virtual float getPrintPageShrink(int page) override;
     virtual void printEnd() override;
     virtual bool isPrintScalingDisabledForPlugin(const WebNode&) override;
-    virtual int getPrintCopiesForPlugin(const WebNode&) override;
+    virtual bool getPrintPresetOptionsForPlugin(const WebNode&, WebPrintPresetOptions*) override;
     virtual bool hasCustomPageSizeStyle(int pageIndex) override;
     virtual bool isPageBoxVisible(int pageIndex) override;
     virtual void pageSizeAndMarginsInPixels(
@@ -214,7 +220,8 @@ public:
 
     virtual WebString contentAsText(size_t maxChars) const override;
     virtual WebString contentAsMarkup() const override;
-    virtual WebString renderTreeAsText(RenderAsTextControls toShow = RenderAsTextNormal) const override;
+    virtual WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const override;
+
     virtual WebString markerTextForListItem(const WebElement&) const override;
     virtual WebRect selectionBoundsRect() const override;
 
@@ -222,16 +229,23 @@ public:
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const override;
 
     // WebLocalFrame methods:
-    virtual void initializeToReplaceRemoteFrame(WebRemoteFrame*) override;
+    virtual void initializeToReplaceRemoteFrame(WebRemoteFrame*, const WebString& name, WebSandboxFlags) override;
+    virtual void setAutofillClient(WebAutofillClient*) override;
+    virtual WebAutofillClient* autofillClient() override;
+    virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) override;
+    virtual WebDevToolsAgent* devToolsAgent() override;
     virtual void sendPings(const WebNode& linkNode, const WebURL& destinationURL) override;
     virtual bool isLoading() const override;
     virtual bool isResourceLoadInProgress() const override;
+    virtual void setCommittedFirstRealLoad() override;
     virtual void addStyleSheetByURL(const WebString& url) override;
     virtual void navigateToSandboxedMarkup(const WebData& markup) override;
     virtual void sendOrientationChangeEvent() override;
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValueForTests(
-        const WebScriptSource&) override;
+    virtual void willShowInstallBannerPrompt(int requestId, const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
+    virtual void willShowInstallBannerPrompt(const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
+    void requestRunTask(WebSuspendableTask*) const override;
 
+    void willBeDetached();
     void willDetachParent();
 
     static WebLocalFrameImpl* create(WebFrameClient*);
@@ -239,7 +253,7 @@ public:
 
     PassRefPtrWillBeRawPtr<LocalFrame> initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name, const AtomicString& fallbackName);
 
-    PassRefPtrWillBeRawPtr<LocalFrame> createChildFrame(const FrameLoadRequest&, HTMLFrameOwnerElement*);
+    PassRefPtrWillBeRawPtr<LocalFrame> createChildFrame(const FrameLoadRequest&, const AtomicString& name, HTMLFrameOwnerElement*);
 
     void didChangeContentsSize(const IntSize&);
 
@@ -261,6 +275,9 @@ public:
     WebViewImpl* viewImpl() const;
 
     FrameView* frameView() const { return frame() ? frame()->view() : 0; }
+
+    InspectorOverlay* inspectorOverlay();
+    WebDevToolsAgentImpl* devToolsAgentImpl() const { return m_devToolsAgent.get(); }
 
     // Getters for the impls corresponding to Get(Provisional)DataSource. They
     // may return 0 if there is no corresponding data source.
@@ -284,7 +301,7 @@ public:
     // allows us to navigate by pressing Enter after closing the Find box.
     void setFindEndstateFocusAndSelection();
 
-    void didFail(const ResourceError&, bool wasProvisional);
+    void didFail(const ResourceError&, bool wasProvisional, HistoryCommitType);
 
     // Sets whether the WebLocalFrameImpl allows its document to be scrolled.
     // If the parameter is true, allow the document to be scrolled.
@@ -295,7 +312,7 @@ public:
     WebFrameClient* client() const { return m_client; }
     void setClient(WebFrameClient* client) { m_client = client; }
 
-    WebPermissionClient* permissionClient() { return m_permissionClient; }
+    WebContentSettingsClient* contentSettingsClient() { return m_contentSettingsClient; }
     SharedWorkerRepositoryClientImpl* sharedWorkerRepositoryClient() const { return m_sharedWorkerRepositoryClient.get(); }
 
     void setInputEventsTransformForEmulation(const IntSize&, float);
@@ -306,17 +323,18 @@ public:
     // Otherwise creates it and then returns.
     TextFinder& ensureTextFinder();
 
-    // Invalidates vertical scrollbar only.
-    void invalidateScrollbar() const;
-
-    // Invalidates both content area and the scrollbar.
-    void invalidateAll() const;
-
     // Returns a hit-tested VisiblePosition for the given point
-    VisiblePosition visiblePositionForWindowPoint(const WebPoint&);
+    VisiblePosition visiblePositionForViewportPoint(const WebPoint&);
+
+    void setFrameWidget(WebFrameWidgetImpl*);
+    WebFrameWidgetImpl* frameWidget() const;
+
+    // DevTools front-end bindings.
+    void setDevToolsFrontend(WebDevToolsFrontendImpl* frontend) { m_webDevToolsFrontend = frontend; }
+    WebDevToolsFrontendImpl* devToolsFrontend() { return m_webDevToolsFrontend; }
 
 #if ENABLE(OILPAN)
-    void trace(Visitor*);
+    DECLARE_TRACE();
 #endif
 
 private:
@@ -338,8 +356,15 @@ private:
     // FIXME: These will need to change to WebFrame when we introduce WebFrameProxy.
     RefPtrWillBeMember<LocalFrame> m_frame;
 
+    OwnPtrWillBeMember<InspectorOverlay> m_inspectorOverlay;
+    OwnPtrWillBeMember<WebDevToolsAgentImpl> m_devToolsAgent;
+
+    // This is set if the frame is the root of a local frame tree, and requires a widget for layout.
+    WebFrameWidgetImpl* m_frameWidget;
+
     WebFrameClient* m_client;
-    WebPermissionClient* m_permissionClient;
+    WebAutofillClient* m_autofillClient;
+    WebContentSettingsClient* m_contentSettingsClient;
     OwnPtr<SharedWorkerRepositoryClientImpl> m_sharedWorkerRepositoryClient;
 
     // Will be initialized after first call to find() or scopeStringMatches().
@@ -356,6 +381,8 @@ private:
     UserMediaClientImpl m_userMediaClientImpl;
 
     OwnPtrWillBeMember<GeolocationClientProxy> m_geolocationClientProxy;
+
+    WebDevToolsFrontendImpl* m_webDevToolsFrontend;
 
 #if ENABLE(OILPAN)
     // Oilpan: to provide the guarantee of having the frame live until

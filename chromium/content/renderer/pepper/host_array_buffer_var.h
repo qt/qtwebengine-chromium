@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PPAPI_CONTENT_RENDERER_PEPPER_HOST_ARRAY_BUFFER_VAR_H_
-#define PPAPI_CONTENT_RENDERER_PEPPER_HOST_ARRAY_BUFFER_VAR_H_
+#ifndef CONTENT_RENDERER_PEPPER_HOST_ARRAY_BUFFER_VAR_H_
+#define CONTENT_RENDERER_PEPPER_HOST_ARRAY_BUFFER_VAR_H_
 
 #include "base/memory/shared_memory.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/var.h"
-#include "third_party/WebKit/public/platform/WebArrayBuffer.h"
+#include "third_party/WebKit/public/web/WebArrayBuffer.h"
 
 namespace content {
 
@@ -43,4 +43,4 @@ class HostArrayBufferVar : public ppapi::ArrayBufferVar {
 
 }  // namespace content
 
-#endif  // PPAPI_CONTENT_RENDERER_PEPPER_HOST_ARRAY_BUFFER_VAR_H_
+#endif  // CONTENT_RENDERER_PEPPER_HOST_ARRAY_BUFFER_VAR_H_

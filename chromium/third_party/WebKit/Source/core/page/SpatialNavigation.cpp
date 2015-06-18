@@ -36,30 +36,24 @@
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/layout/LayoutBox.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderLayer.h"
 #include "platform/geometry/IntRect.h"
 
 namespace blink {
 
 using namespace HTMLNames;
 
-static RectsAlignment alignmentForRects(FocusType, const LayoutRect&, const LayoutRect&, const LayoutSize& viewSize);
-static bool areRectsFullyAligned(FocusType, const LayoutRect&, const LayoutRect&);
-static bool areRectsPartiallyAligned(FocusType, const LayoutRect&, const LayoutRect&);
-static bool areRectsMoreThanFullScreenApart(FocusType, const LayoutRect& curRect, const LayoutRect& targetRect, const LayoutSize& viewSize);
-static bool isRectInDirection(FocusType, const LayoutRect&, const LayoutRect&);
 static void deflateIfOverlapped(LayoutRect&, LayoutRect&);
 static LayoutRect rectToAbsoluteCoordinates(LocalFrame* initialFrame, const LayoutRect&);
 static bool isScrollableNode(const Node*);
 
-FocusCandidate::FocusCandidate(Node* node, FocusType type)
+FocusCandidate::FocusCandidate(Node* node, WebFocusType type)
     : visibleNode(nullptr)
     , focusableNode(nullptr)
     , enclosingScrollableBox(nullptr)
     , distance(maxDistance())
-    , alignment(None)
     , isOffscreen(true)
     , isOffscreenAfterScrolling(true)
 {
@@ -69,13 +63,13 @@ FocusCandidate::FocusCandidate(Node* node, FocusType type)
     if (isHTMLAreaElement(*node)) {
         HTMLAreaElement& area = toHTMLAreaElement(*node);
         HTMLImageElement* image = area.imageElement();
-        if (!image || !image->renderer())
+        if (!image || !image->layoutObject())
             return;
 
         visibleNode = image;
         rect = virtualRectForAreaElementAndDirection(area, type);
     } else {
-        if (!node->renderer())
+        if (!node->layoutObject())
             return;
 
         visibleNode = node;
@@ -92,153 +86,23 @@ bool isSpatialNavigationEnabled(const LocalFrame* frame)
     return (frame && frame->settings() && frame->settings()->spatialNavigationEnabled());
 }
 
-static RectsAlignment alignmentForRects(FocusType type, const LayoutRect& curRect, const LayoutRect& targetRect, const LayoutSize& viewSize)
+bool spatialNavigationIgnoresEventHandlers(const LocalFrame* frame)
 {
-    // If we found a node in full alignment, but it is too far away, ignore it.
-    if (areRectsMoreThanFullScreenApart(type, curRect, targetRect, viewSize))
-        return None;
-
-    if (areRectsFullyAligned(type, curRect, targetRect))
-        return Full;
-
-    if (areRectsPartiallyAligned(type, curRect, targetRect))
-        return Partial;
-
-    return None;
+    return (frame && frame->settings() && frame->settings()->deviceSupportsTouch());
 }
 
-static inline bool isHorizontalMove(FocusType type)
+static bool rectsIntersectOnOrthogonalAxis(WebFocusType type, const LayoutRect& a, const LayoutRect& b)
 {
-    return type == FocusTypeLeft || type == FocusTypeRight;
-}
-
-static inline LayoutUnit start(FocusType type, const LayoutRect& rect)
-{
-    return isHorizontalMove(type) ? rect.y() : rect.x();
-}
-
-static inline LayoutUnit middle(FocusType type, const LayoutRect& rect)
-{
-    LayoutPoint center(rect.center());
-    return isHorizontalMove(type) ? center.y(): center.x();
-}
-
-static inline LayoutUnit end(FocusType type, const LayoutRect& rect)
-{
-    return isHorizontalMove(type) ? rect.maxY() : rect.maxX();
-}
-
-// This method checks if rects |a| and |b| are fully aligned either vertically or
-// horizontally. In general, rects whose central point falls between the top or
-// bottom of each other are considered fully aligned.
-// Rects that match this criteria are preferable target nodes in move focus changing
-// operations.
-// * a = Current focused node's rect.
-// * b = Focus candidate node's rect.
-static bool areRectsFullyAligned(FocusType type, const LayoutRect& a, const LayoutRect& b)
-{
-    LayoutUnit aStart, bStart, aEnd, bEnd;
-
     switch (type) {
-    case FocusTypeLeft:
-        aStart = a.x();
-        bEnd = b.x();
-        break;
-    case FocusTypeRight:
-        aStart = b.x();
-        bEnd = a.x();
-        break;
-    case FocusTypeUp:
-        aStart = a.y();
-        bEnd = b.y();
-        break;
-    case FocusTypeDown:
-        aStart = b.y();
-        bEnd = a.y();
-        break;
+    case WebFocusTypeLeft:
+    case WebFocusTypeRight:
+        return a.maxY() > b.y() && a.y() < b.maxY();
+    case WebFocusTypeUp:
+    case WebFocusTypeDown:
+        return a.maxX() > b.x() && a.x() < b.maxX();
     default:
         ASSERT_NOT_REACHED();
         return false;
-    }
-
-    if (aStart < bEnd)
-        return false;
-
-    aStart = start(type, a);
-    bStart = start(type, b);
-
-    LayoutUnit aMiddle = middle(type, a);
-    LayoutUnit bMiddle = middle(type, b);
-
-    aEnd = end(type, a);
-    bEnd = end(type, b);
-
-    // Picture of the totally aligned logic:
-    //
-    //     Horizontal    Vertical        Horizontal     Vertical
-    //  ****************************  *****************************
-    //  *  _          *   _ _ _ _  *  *         _   *      _ _    *
-    //  * |_|     _   *  |_|_|_|_| *  *  _     |_|  *     |_|_|   *
-    //  * |_|....|_|  *      .     *  * |_|....|_|  *       .     *
-    //  * |_|    |_| (1)     .     *  * |_|    |_| (2)      .     *
-    //  * |_|         *     _._    *  *        |_|  *    _ _._ _  *
-    //  *             *    |_|_|   *  *             *   |_|_|_|_| *
-    //  *             *            *  *             *             *
-    //  ****************************  *****************************
-
-    return (bMiddle >= aStart && bMiddle <= aEnd) // (1)
-        || (aMiddle >= bStart && aMiddle <= bEnd); // (2)
-}
-
-// This method checks if rects |a| and |b| are partially aligned either vertically or
-// horizontally. In general, rects whose either of edges falls between the top or
-// bottom of each other are considered partially-aligned.
-// This is a separate set of conditions from "fully-aligned" and do not include cases
-// that satisfy the former.
-// * a = Current focused node's rect.
-// * b = Focus candidate node's rect.
-static bool areRectsPartiallyAligned(FocusType type, const LayoutRect& a, const LayoutRect& b)
-{
-    LayoutUnit aStart  = start(type, a);
-    LayoutUnit bStart  = start(type, b);
-    LayoutUnit aEnd = end(type, a);
-    LayoutUnit bEnd = end(type, b);
-
-    // Picture of the partially aligned logic:
-    //
-    //    Horizontal       Vertical
-    // ********************************
-    // *  _            *   _ _ _      *
-    // * |_|           *  |_|_|_|     *
-    // * |_|.... _     *      . .     *
-    // * |_|    |_|    *      . .     *
-    // * |_|....|_|    *      ._._ _  *
-    // *        |_|    *      |_|_|_| *
-    // *        |_|    *              *
-    // *               *              *
-    // ********************************
-    //
-    // ... and variants of the above cases.
-    return (bStart >= aStart && bStart <= aEnd)
-        || (bEnd >= aStart && bEnd <= aEnd);
-}
-
-static bool areRectsMoreThanFullScreenApart(FocusType type, const LayoutRect& curRect, const LayoutRect& targetRect, const LayoutSize& viewSize)
-{
-    ASSERT(isRectInDirection(type, curRect, targetRect));
-
-    switch (type) {
-    case FocusTypeLeft:
-        return curRect.x() - targetRect.maxX() > viewSize.width();
-    case FocusTypeRight:
-        return targetRect.x() - curRect.maxX() > viewSize.width();
-    case FocusTypeUp:
-        return curRect.y() - targetRect.maxY() > viewSize.height();
-    case FocusTypeDown:
-        return targetRect.y() - curRect.maxY() > viewSize.height();
-    default:
-        ASSERT_NOT_REACHED();
-        return true;
     }
 }
 
@@ -248,7 +112,7 @@ static bool areRectsMoreThanFullScreenApart(FocusType type, const LayoutRect& cu
 static inline bool below(const LayoutRect& a, const LayoutRect& b)
 {
     return a.y() >= b.maxY()
-        || (a.y() >= b.y() && a.maxY() > b.maxY());
+        || (a.y() >= b.y() && a.maxY() > b.maxY() && a.x() < b.maxX() && a.maxX() > b.x());
 }
 
 // Return true if rect |a| is on the right of |b|. False otherwise.
@@ -257,19 +121,19 @@ static inline bool below(const LayoutRect& a, const LayoutRect& b)
 static inline bool rightOf(const LayoutRect& a, const LayoutRect& b)
 {
     return a.x() >= b.maxX()
-        || (a.x() >= b.x() && a.maxX() > b.maxX());
+        || (a.x() >= b.x() && a.maxX() > b.maxX() && a.y() < b.maxY() && a.maxY() > b.y());
 }
 
-static bool isRectInDirection(FocusType type, const LayoutRect& curRect, const LayoutRect& targetRect)
+static bool isRectInDirection(WebFocusType type, const LayoutRect& curRect, const LayoutRect& targetRect)
 {
     switch (type) {
-    case FocusTypeLeft:
+    case WebFocusTypeLeft:
         return rightOf(curRect, targetRect);
-    case FocusTypeRight:
+    case WebFocusTypeRight:
         return rightOf(targetRect, curRect);
-    case FocusTypeUp:
+    case WebFocusTypeUp:
         return below(curRect, targetRect);
-    case FocusTypeDown:
+    case WebFocusTypeDown:
         return below(targetRect, curRect);
     default:
         ASSERT_NOT_REACHED();
@@ -280,7 +144,7 @@ static bool isRectInDirection(FocusType type, const LayoutRect& curRect, const L
 // Checks if |node| is offscreen the visible area (viewport) of its container
 // document. In case it is, one can scroll in direction or take any different
 // desired action later on.
-bool hasOffscreenRect(Node* node, FocusType type)
+bool hasOffscreenRect(Node* node, WebFocusType type)
 {
     // Get the FrameView in which |node| is (which means the current viewport if |node|
     // is not in an inner document), so we can check if its content rect is visible
@@ -291,42 +155,42 @@ bool hasOffscreenRect(Node* node, FocusType type)
 
     ASSERT(!frameView->needsLayout());
 
-    LayoutRect containerViewportRect = frameView->visibleContentRect();
+    LayoutRect containerViewportRect(frameView->visibleContentRect());
     // We want to select a node if it is currently off screen, but will be
     // exposed after we scroll. Adjust the viewport to post-scrolling position.
     // If the container has overflow:hidden, we cannot scroll, so we do not pass direction
     // and we do not adjust for scrolling.
     switch (type) {
-    case FocusTypeLeft:
+    case WebFocusTypeLeft:
         containerViewportRect.setX(containerViewportRect.x() - ScrollableArea::pixelsPerLineStep());
         containerViewportRect.setWidth(containerViewportRect.width() + ScrollableArea::pixelsPerLineStep());
         break;
-    case FocusTypeRight:
+    case WebFocusTypeRight:
         containerViewportRect.setWidth(containerViewportRect.width() + ScrollableArea::pixelsPerLineStep());
         break;
-    case FocusTypeUp:
+    case WebFocusTypeUp:
         containerViewportRect.setY(containerViewportRect.y() - ScrollableArea::pixelsPerLineStep());
         containerViewportRect.setHeight(containerViewportRect.height() + ScrollableArea::pixelsPerLineStep());
         break;
-    case FocusTypeDown:
+    case WebFocusTypeDown:
         containerViewportRect.setHeight(containerViewportRect.height() + ScrollableArea::pixelsPerLineStep());
         break;
     default:
         break;
     }
 
-    RenderObject* render = node->renderer();
-    if (!render)
+    LayoutObject* layoutObject = node->layoutObject();
+    if (!layoutObject)
         return true;
 
-    LayoutRect rect(render->absoluteClippedOverflowRect());
+    LayoutRect rect(layoutObject->absoluteClippedOverflowRect());
     if (rect.isEmpty())
         return true;
 
     return !containerViewportRect.intersects(rect);
 }
 
-bool scrollInDirection(LocalFrame* frame, FocusType type)
+bool scrollInDirection(LocalFrame* frame, WebFocusType type)
 {
     ASSERT(frame);
 
@@ -334,16 +198,16 @@ bool scrollInDirection(LocalFrame* frame, FocusType type)
         LayoutUnit dx = 0;
         LayoutUnit dy = 0;
         switch (type) {
-        case FocusTypeLeft:
+        case WebFocusTypeLeft:
             dx = - ScrollableArea::pixelsPerLineStep();
             break;
-        case FocusTypeRight:
+        case WebFocusTypeRight:
             dx = ScrollableArea::pixelsPerLineStep();
             break;
-        case FocusTypeUp:
+        case WebFocusTypeUp:
             dy = - ScrollableArea::pixelsPerLineStep();
             break;
-        case FocusTypeDown:
+        case WebFocusTypeDown:
             dy = ScrollableArea::pixelsPerLineStep();
             break;
         default:
@@ -357,39 +221,39 @@ bool scrollInDirection(LocalFrame* frame, FocusType type)
     return false;
 }
 
-bool scrollInDirection(Node* container, FocusType type)
+bool scrollInDirection(Node* container, WebFocusType type)
 {
     ASSERT(container);
     if (container->isDocumentNode())
         return scrollInDirection(toDocument(container)->frame(), type);
 
-    if (!container->renderBox())
+    if (!container->layoutBox())
         return false;
 
     if (canScrollInDirection(container, type)) {
         LayoutUnit dx = 0;
         LayoutUnit dy = 0;
         switch (type) {
-        case FocusTypeLeft:
-            dx = - std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollLeft());
+        case WebFocusTypeLeft:
+            dx = - std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->layoutBox()->scrollLeft());
             break;
-        case FocusTypeRight:
-            ASSERT(container->renderBox()->scrollWidth() > (container->renderBox()->scrollLeft() + container->renderBox()->clientWidth()));
-            dx = std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollWidth() - (container->renderBox()->scrollLeft() + container->renderBox()->clientWidth()));
+        case WebFocusTypeRight:
+            ASSERT(container->layoutBox()->scrollWidth() > (container->layoutBox()->scrollLeft() + container->layoutBox()->clientWidth()));
+            dx = std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->layoutBox()->scrollWidth() - (container->layoutBox()->scrollLeft() + container->layoutBox()->clientWidth()));
             break;
-        case FocusTypeUp:
-            dy = - std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollTop());
+        case WebFocusTypeUp:
+            dy = - std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->layoutBox()->scrollTop());
             break;
-        case FocusTypeDown:
-            ASSERT(container->renderBox()->scrollHeight() - (container->renderBox()->scrollTop() + container->renderBox()->clientHeight()));
-            dy = std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->renderBox()->scrollHeight() - (container->renderBox()->scrollTop() + container->renderBox()->clientHeight()));
+        case WebFocusTypeDown:
+            ASSERT(container->layoutBox()->scrollHeight() - (container->layoutBox()->scrollTop() + container->layoutBox()->clientHeight()));
+            dy = std::min<LayoutUnit>(ScrollableArea::pixelsPerLineStep(), container->layoutBox()->scrollHeight() - (container->layoutBox()->scrollTop() + container->layoutBox()->clientHeight()));
             break;
         default:
             ASSERT_NOT_REACHED();
             return false;
         }
 
-        container->renderBox()->scrollByRecursively(IntSize(dx, dy));
+        container->layoutBox()->scrollByRecursively(IntSize(dx, dy));
         return true;
     }
 
@@ -418,13 +282,13 @@ bool isScrollableNode(const Node* node)
     if (!node)
         return false;
 
-    if (RenderObject* renderer = node->renderer())
-        return renderer->isBox() && toRenderBox(renderer)->canBeScrolledAndHasScrollableArea() && node->hasChildren();
+    if (LayoutObject* layoutObject = node->layoutObject())
+        return layoutObject->isBox() && toLayoutBox(layoutObject)->canBeScrolledAndHasScrollableArea() && node->hasChildren();
 
     return false;
 }
 
-Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(FocusType type, Node* node)
+Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(WebFocusType type, Node* node)
 {
     ASSERT(node);
     Node* parent = node;
@@ -439,7 +303,7 @@ Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(FocusType type, Node
     return parent;
 }
 
-bool canScrollInDirection(const Node* container, FocusType type)
+bool canScrollInDirection(const Node* container, WebFocusType type)
 {
     ASSERT(container);
     if (container->isDocumentNode())
@@ -449,43 +313,43 @@ bool canScrollInDirection(const Node* container, FocusType type)
         return false;
 
     switch (type) {
-    case FocusTypeLeft:
-        return (container->renderer()->style()->overflowX() != OHIDDEN && container->renderBox()->scrollLeft() > 0);
-    case FocusTypeUp:
-        return (container->renderer()->style()->overflowY() != OHIDDEN && container->renderBox()->scrollTop() > 0);
-    case FocusTypeRight:
-        return (container->renderer()->style()->overflowX() != OHIDDEN && container->renderBox()->scrollLeft() + container->renderBox()->clientWidth() < container->renderBox()->scrollWidth());
-    case FocusTypeDown:
-        return (container->renderer()->style()->overflowY() != OHIDDEN && container->renderBox()->scrollTop() + container->renderBox()->clientHeight() < container->renderBox()->scrollHeight());
+    case WebFocusTypeLeft:
+        return (container->layoutObject()->style()->overflowX() != OHIDDEN && container->layoutBox()->scrollLeft() > 0);
+    case WebFocusTypeUp:
+        return (container->layoutObject()->style()->overflowY() != OHIDDEN && container->layoutBox()->scrollTop() > 0);
+    case WebFocusTypeRight:
+        return (container->layoutObject()->style()->overflowX() != OHIDDEN && container->layoutBox()->scrollLeft() + container->layoutBox()->clientWidth() < container->layoutBox()->scrollWidth());
+    case WebFocusTypeDown:
+        return (container->layoutObject()->style()->overflowY() != OHIDDEN && container->layoutBox()->scrollTop() + container->layoutBox()->clientHeight() < container->layoutBox()->scrollHeight());
     default:
         ASSERT_NOT_REACHED();
         return false;
     }
 }
 
-bool canScrollInDirection(const LocalFrame* frame, FocusType type)
+bool canScrollInDirection(const LocalFrame* frame, WebFocusType type)
 {
     if (!frame->view())
         return false;
     ScrollbarMode verticalMode;
     ScrollbarMode horizontalMode;
-    frame->view()->calculateScrollbarModesForLayoutAndSetViewportRenderer(horizontalMode, verticalMode);
-    if ((type == FocusTypeLeft || type == FocusTypeRight) && ScrollbarAlwaysOff == horizontalMode)
+    frame->view()->calculateScrollbarModesForLayout(horizontalMode, verticalMode);
+    if ((type == WebFocusTypeLeft || type == WebFocusTypeRight) && ScrollbarAlwaysOff == horizontalMode)
         return false;
-    if ((type == FocusTypeUp || type == FocusTypeDown) &&  ScrollbarAlwaysOff == verticalMode)
+    if ((type == WebFocusTypeUp || type == WebFocusTypeDown) &&  ScrollbarAlwaysOff == verticalMode)
         return false;
-    LayoutSize size = frame->view()->contentsSize();
-    LayoutSize offset = frame->view()->scrollOffset();
-    LayoutRect rect = frame->view()->visibleContentRect(IncludeScrollbars);
+    LayoutSize size(frame->view()->contentsSize());
+    LayoutSize offset(frame->view()->scrollOffset());
+    LayoutRect rect(frame->view()->visibleContentRect(IncludeScrollbars));
 
     switch (type) {
-    case FocusTypeLeft:
+    case WebFocusTypeLeft:
         return offset.width() > 0;
-    case FocusTypeUp:
+    case WebFocusTypeUp:
         return offset.height() > 0;
-    case FocusTypeRight:
+    case WebFocusTypeRight:
         return rect.width() + offset.width() < size.width();
-    case FocusTypeDown:
+    case WebFocusTypeDown:
         return rect.height() + offset.height() < size.height();
     default:
         ASSERT_NOT_REACHED();
@@ -502,8 +366,11 @@ static LayoutRect rectToAbsoluteCoordinates(LocalFrame* initialFrame, const Layo
         // FIXME: Spatial navigation is broken for OOPI.
         Element* element = frame->deprecatedLocalOwner();
         if (element) {
-            for (; element; element = element->offsetParent())
+            do {
                 rect.move(element->offsetLeft(), element->offsetTop());
+                LayoutObject* layoutObject = element->layoutObject();
+                element = layoutObject ? layoutObject->offsetParent() : nullptr;
+            } while (element);
             rect.move((-toLocalFrame(frame)->view()->scrollOffset()));
         }
     }
@@ -512,7 +379,7 @@ static LayoutRect rectToAbsoluteCoordinates(LocalFrame* initialFrame, const Layo
 
 LayoutRect nodeRectInAbsoluteCoordinates(Node* node, bool ignoreBorder)
 {
-    ASSERT(node && node->renderer() && !node->document().view()->needsLayout());
+    ASSERT(node && node->layoutObject() && !node->document().view()->needsLayout());
 
     if (node->isDocumentNode())
         return frameRectInAbsoluteCoordinates(toDocument(node)->frame());
@@ -521,47 +388,47 @@ LayoutRect nodeRectInAbsoluteCoordinates(Node* node, bool ignoreBorder)
     // For authors that use border instead of outline in their CSS, we compensate by ignoring the border when calculating
     // the rect of the focused element.
     if (ignoreBorder) {
-        rect.move(node->renderer()->style()->borderLeftWidth(), node->renderer()->style()->borderTopWidth());
-        rect.setWidth(rect.width() - node->renderer()->style()->borderLeftWidth() - node->renderer()->style()->borderRightWidth());
-        rect.setHeight(rect.height() - node->renderer()->style()->borderTopWidth() - node->renderer()->style()->borderBottomWidth());
+        rect.move(node->layoutObject()->style()->borderLeftWidth(), node->layoutObject()->style()->borderTopWidth());
+        rect.setWidth(rect.width() - node->layoutObject()->style()->borderLeftWidth() - node->layoutObject()->style()->borderRightWidth());
+        rect.setHeight(rect.height() - node->layoutObject()->style()->borderTopWidth() - node->layoutObject()->style()->borderBottomWidth());
     }
     return rect;
 }
 
 LayoutRect frameRectInAbsoluteCoordinates(LocalFrame* frame)
 {
-    return rectToAbsoluteCoordinates(frame, frame->view()->visibleContentRect());
+    return rectToAbsoluteCoordinates(frame, LayoutRect(frame->view()->visibleContentRect()));
 }
 
 // This method calculates the exitPoint from the startingRect and the entryPoint into the candidate rect.
 // The line between those 2 points is the closest distance between the 2 rects.
 // Takes care of overlapping rects, defining points so that the distance between them
 // is zero where necessary
-void entryAndExitPointsForDirection(FocusType type, const LayoutRect& startingRect, const LayoutRect& potentialRect, LayoutPoint& exitPoint, LayoutPoint& entryPoint)
+void entryAndExitPointsForDirection(WebFocusType type, const LayoutRect& startingRect, const LayoutRect& potentialRect, LayoutPoint& exitPoint, LayoutPoint& entryPoint)
 {
     switch (type) {
-    case FocusTypeLeft:
+    case WebFocusTypeLeft:
         exitPoint.setX(startingRect.x());
         if (potentialRect.maxX() < startingRect.x())
             entryPoint.setX(potentialRect.maxX());
         else
             entryPoint.setX(startingRect.x());
         break;
-    case FocusTypeUp:
+    case WebFocusTypeUp:
         exitPoint.setY(startingRect.y());
         if (potentialRect.maxY() < startingRect.y())
             entryPoint.setY(potentialRect.maxY());
         else
             entryPoint.setY(startingRect.y());
         break;
-    case FocusTypeRight:
+    case WebFocusTypeRight:
         exitPoint.setX(startingRect.maxX());
         if (potentialRect.x() > startingRect.maxX())
             entryPoint.setX(potentialRect.x());
         else
             entryPoint.setX(startingRect.maxX());
         break;
-    case FocusTypeDown:
+    case WebFocusTypeDown:
         exitPoint.setY(startingRect.maxY());
         if (potentialRect.y() > startingRect.maxY())
             entryPoint.setY(potentialRect.y());
@@ -573,8 +440,8 @@ void entryAndExitPointsForDirection(FocusType type, const LayoutRect& startingRe
     }
 
     switch (type) {
-    case FocusTypeLeft:
-    case FocusTypeRight:
+    case WebFocusTypeLeft:
+    case WebFocusTypeRight:
         if (below(startingRect, potentialRect)) {
             exitPoint.setY(startingRect.y());
             if (potentialRect.maxY() < startingRect.y())
@@ -592,8 +459,8 @@ void entryAndExitPointsForDirection(FocusType type, const LayoutRect& startingRe
             entryPoint.setY(exitPoint.y());
         }
         break;
-    case FocusTypeUp:
-    case FocusTypeDown:
+    case WebFocusTypeUp:
+    case WebFocusTypeDown:
         if (rightOf(startingRect, potentialRect)) {
             exitPoint.setX(startingRect.x());
             if (potentialRect.maxX() < startingRect.x())
@@ -621,7 +488,7 @@ bool areElementsOnSameLine(const FocusCandidate& firstCandidate, const FocusCand
     if (firstCandidate.isNull() || secondCandidate.isNull())
         return false;
 
-    if (!firstCandidate.visibleNode->renderer() || !secondCandidate.visibleNode->renderer())
+    if (!firstCandidate.visibleNode->layoutObject() || !secondCandidate.visibleNode->layoutObject())
         return false;
 
     if (!firstCandidate.rect.intersects(secondCandidate.rect))
@@ -630,21 +497,23 @@ bool areElementsOnSameLine(const FocusCandidate& firstCandidate, const FocusCand
     if (isHTMLAreaElement(*firstCandidate.focusableNode) || isHTMLAreaElement(*secondCandidate.focusableNode))
         return false;
 
-    if (!firstCandidate.visibleNode->renderer()->isRenderInline() || !secondCandidate.visibleNode->renderer()->isRenderInline())
+    if (!firstCandidate.visibleNode->layoutObject()->isLayoutInline() || !secondCandidate.visibleNode->layoutObject()->isLayoutInline())
         return false;
 
-    if (firstCandidate.visibleNode->renderer()->containingBlock() != secondCandidate.visibleNode->renderer()->containingBlock())
+    if (firstCandidate.visibleNode->layoutObject()->containingBlock() != secondCandidate.visibleNode->layoutObject()->containingBlock())
         return false;
 
     return true;
 }
 
-void distanceDataForNode(FocusType type, const FocusCandidate& current, FocusCandidate& candidate)
+void distanceDataForNode(WebFocusType type, const FocusCandidate& current, FocusCandidate& candidate)
 {
+    if (!isRectInDirection(type, current.rect, candidate.rect))
+        return;
+
     if (areElementsOnSameLine(current, candidate)) {
-        if ((type == FocusTypeUp && current.rect.y() > candidate.rect.y()) || (type == FocusTypeDown && candidate.rect.y() > current.rect.y())) {
+        if ((type == WebFocusTypeUp && current.rect.y() > candidate.rect.y()) || (type == WebFocusTypeDown && candidate.rect.y() > current.rect.y())) {
             candidate.distance = 0;
-            candidate.alignment = Full;
             return;
         }
     }
@@ -653,29 +522,41 @@ void distanceDataForNode(FocusType type, const FocusCandidate& current, FocusCan
     LayoutRect currentRect = current.rect;
     deflateIfOverlapped(currentRect, nodeRect);
 
-    if (!isRectInDirection(type, currentRect, nodeRect))
-        return;
-
     LayoutPoint exitPoint;
     LayoutPoint entryPoint;
     entryAndExitPointsForDirection(type, currentRect, nodeRect, exitPoint, entryPoint);
 
-    LayoutUnit xAxis = exitPoint.x() - entryPoint.x();
-    LayoutUnit yAxis = exitPoint.y() - entryPoint.y();
+    LayoutUnit xAxis = (exitPoint.x() - entryPoint.x()).abs();
+    LayoutUnit yAxis = (exitPoint.y() - entryPoint.y()).abs();
 
     LayoutUnit navigationAxisDistance;
-    LayoutUnit orthogonalAxisDistance;
+    LayoutUnit weightedOrthogonalAxisDistance;
+
+    // Bias and weights are put to the orthogonal axis distance calculation
+    // so aligned candidates would have advantage over partially-aligned ones
+    // and then over not-aligned candidates. The bias is given to not-aligned
+    // candidates with respect to size of the current rect. The weight for
+    // left/right direction is given a higher value to allow navigation on
+    // common horizonally-aligned elements. The hardcoded values are based on
+    // tests and experiments.
+    const int orthogonalWeightForLeftRight = 30;
+    const int orthogonalWeightForUpDown = 2;
+    int orthogonalBias = 0;
 
     switch (type) {
-    case FocusTypeLeft:
-    case FocusTypeRight:
-        navigationAxisDistance = xAxis.abs();
-        orthogonalAxisDistance = yAxis.abs();
+    case WebFocusTypeLeft:
+    case WebFocusTypeRight:
+        navigationAxisDistance = xAxis;
+        if (!rectsIntersectOnOrthogonalAxis(type, currentRect, nodeRect))
+            orthogonalBias = currentRect.height() / 2;
+        weightedOrthogonalAxisDistance = (yAxis + orthogonalBias) * orthogonalWeightForLeftRight;
         break;
-    case FocusTypeUp:
-    case FocusTypeDown:
-        navigationAxisDistance = yAxis.abs();
-        orthogonalAxisDistance = xAxis.abs();
+    case WebFocusTypeUp:
+    case WebFocusTypeDown:
+        navigationAxisDistance = yAxis;
+        if (!rectsIntersectOnOrthogonalAxis(type, currentRect, nodeRect))
+            orthogonalBias = currentRect.width() / 2;
+        weightedOrthogonalAxisDistance = (xAxis + orthogonalBias) * orthogonalWeightForUpDown;
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -687,21 +568,18 @@ void distanceDataForNode(FocusType type, const FocusCandidate& current, FocusCan
     double overlap = (intersectionRect.width() * intersectionRect.height()).toDouble();
 
     // Distance calculation is based on http://www.w3.org/TR/WICD/#focus-handling
-    candidate.distance = sqrt(euclidianDistancePow2) + navigationAxisDistance+ orthogonalAxisDistance * 2 - sqrt(overlap);
-
-    LayoutSize viewSize = candidate.visibleNode->document().page()->deprecatedLocalMainFrame()->view()->visibleContentRect().size();
-    candidate.alignment = alignmentForRects(type, currentRect, nodeRect, viewSize);
+    candidate.distance = sqrt(euclidianDistancePow2) + navigationAxisDistance + weightedOrthogonalAxisDistance - sqrt(overlap);
 }
 
-bool canBeScrolledIntoView(FocusType type, const FocusCandidate& candidate)
+bool canBeScrolledIntoView(WebFocusType type, const FocusCandidate& candidate)
 {
     ASSERT(candidate.visibleNode && candidate.isOffscreen);
     LayoutRect candidateRect = candidate.rect;
     for (Node* parentNode = candidate.visibleNode->parentNode(); parentNode; parentNode = parentNode->parentNode()) {
         LayoutRect parentRect = nodeRectInAbsoluteCoordinates(parentNode);
         if (!candidateRect.intersects(parentRect)) {
-            if (((type == FocusTypeLeft || type == FocusTypeRight) && parentNode->renderer()->style()->overflowX() == OHIDDEN)
-                || ((type == FocusTypeUp || type == FocusTypeDown) && parentNode->renderer()->style()->overflowY() == OHIDDEN))
+            if (((type == WebFocusTypeLeft || type == WebFocusTypeRight) && parentNode->layoutObject()->style()->overflowX() == OHIDDEN)
+                || ((type == WebFocusTypeUp || type == WebFocusTypeDown) && parentNode->layoutObject()->style()->overflowY() == OHIDDEN))
                 return false;
         }
         if (parentNode == candidate.enclosingScrollableBox)
@@ -714,22 +592,22 @@ bool canBeScrolledIntoView(FocusType type, const FocusCandidate& candidate)
 // Compose a virtual starting rect if there is no focused node or if it is off screen.
 // The virtual rect is the edge of the container or frame. We select which
 // edge depending on the direction of the navigation.
-LayoutRect virtualRectForDirection(FocusType type, const LayoutRect& startingRect, LayoutUnit width)
+LayoutRect virtualRectForDirection(WebFocusType type, const LayoutRect& startingRect, LayoutUnit width)
 {
     LayoutRect virtualStartingRect = startingRect;
     switch (type) {
-    case FocusTypeLeft:
+    case WebFocusTypeLeft:
         virtualStartingRect.setX(virtualStartingRect.maxX() - width);
         virtualStartingRect.setWidth(width);
         break;
-    case FocusTypeUp:
+    case WebFocusTypeUp:
         virtualStartingRect.setY(virtualStartingRect.maxY() - width);
         virtualStartingRect.setHeight(width);
         break;
-    case FocusTypeRight:
+    case WebFocusTypeRight:
         virtualStartingRect.setWidth(width);
         break;
-    case FocusTypeDown:
+    case WebFocusTypeDown:
         virtualStartingRect.setHeight(width);
         break;
     default:
@@ -739,12 +617,12 @@ LayoutRect virtualRectForDirection(FocusType type, const LayoutRect& startingRec
     return virtualStartingRect;
 }
 
-LayoutRect virtualRectForAreaElementAndDirection(HTMLAreaElement& area, FocusType type)
+LayoutRect virtualRectForAreaElementAndDirection(HTMLAreaElement& area, WebFocusType type)
 {
     ASSERT(area.imageElement());
     // Area elements tend to overlap more than other focusable elements. We flatten the rect of the area elements
     // to minimize the effect of overlapping areas.
-    LayoutRect rect = virtualRectForDirection(type, rectToAbsoluteCoordinates(area.document().frame(), area.computeRect(area.imageElement()->renderer())), 1);
+    LayoutRect rect = virtualRectForDirection(type, rectToAbsoluteCoordinates(area.document().frame(), area.computeRect(area.imageElement()->layoutObject())), 1);
     return rect;
 }
 

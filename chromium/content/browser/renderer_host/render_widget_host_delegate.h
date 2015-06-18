@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_RENDER_WIDGET_HOST_DELEGATE_H_
-#define CONTENT_BROWSER_RENDER_WIDGET_HOST_DELEGATE_H_
+#ifndef CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_DELEGATE_H_
+#define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_DELEGATE_H_
 
 #include "base/basictypes.h"
 #include "build/build_config.h"
@@ -34,6 +34,13 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // The RenderWidgetHost got the focus.
   virtual void RenderWidgetGotFocus(RenderWidgetHostImpl* render_widget_host) {}
 
+  // The RenderWidget was resized.
+  virtual void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
+                                      bool width_changed) {}
+
+  // The screen info has changed.
+  virtual void ScreenInfoChanged() {}
+
   // Callback to give the browser a chance to handle the specified keyboard
   // event before sending it to the renderer.
   // Returns true if the |event| was handled. Otherwise, if the |event| would
@@ -57,10 +64,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns true if the |event| was handled.
   virtual bool PreHandleGestureEvent(const blink::WebGestureEvent& event);
 
-  // Callback to inform the browser that the renderer did not process the
-  // specified gesture event.  Returns true if the |event| was handled.
-  virtual bool HandleGestureEvent(const blink::WebGestureEvent& event);
-
   // Notifies that screen rects were sent to renderer process.
   virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}
 
@@ -82,4 +85,4 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_RENDER_WIDGET_HOST_DELEGATE_H_
+#endif  // CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_DELEGATE_H_

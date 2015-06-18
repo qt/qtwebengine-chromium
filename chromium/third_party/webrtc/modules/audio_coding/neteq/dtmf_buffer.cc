@@ -20,6 +20,16 @@
 
 namespace webrtc {
 
+DtmfBuffer::DtmfBuffer(int fs_hz) {
+  SetSampleRate(fs_hz);
+}
+
+DtmfBuffer::~DtmfBuffer() = default;
+
+void DtmfBuffer::Flush() {
+  buffer_.clear();
+}
+
 // The ParseEvent method parses 4 bytes from |payload| according to this format
 // from RFC 4733:
 //
@@ -55,7 +65,7 @@ namespace webrtc {
 //
 int DtmfBuffer::ParseEvent(uint32_t rtp_timestamp,
                            const uint8_t* payload,
-                           int payload_length_bytes,
+                           size_t payload_length_bytes,
                            DtmfEvent* event) {
   if (!payload || !event) {
     return kInvalidPointer;
@@ -171,6 +181,14 @@ bool DtmfBuffer::GetEvent(uint32_t current_timestamp, DtmfEvent* event) {
     }
   }
   return false;
+}
+
+size_t DtmfBuffer::Length() const {
+  return buffer_.size();
+}
+
+bool DtmfBuffer::Empty() const {
+  return buffer_.empty();
 }
 
 int DtmfBuffer::SetSampleRate(int fs_hz) {

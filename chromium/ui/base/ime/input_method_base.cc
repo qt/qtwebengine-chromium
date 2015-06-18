@@ -32,18 +32,11 @@ void InputMethodBase::SetDelegate(internal::InputMethodDelegate* delegate) {
   delegate_ = delegate;
 }
 
-void InputMethodBase::Init(bool focused) {
-  if (focused)
-    OnFocus();
-}
-
 void InputMethodBase::OnFocus() {
-  DCHECK(!system_toplevel_window_focused_);
   system_toplevel_window_focused_ = true;
 }
 
 void InputMethodBase::OnBlur() {
-  DCHECK(system_toplevel_window_focused_);
   system_toplevel_window_focused_ = false;
 }
 

@@ -31,21 +31,34 @@
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/x509_certificate.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/stream_socket.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "net/test/cert_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+#if !defined(USE_OPENSSL)
+#include <pk11pub.h>
+
+#if !defined(CKM_AES_GCM)
+#define CKM_AES_GCM 0x00001087
+#endif
+#if !defined(CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256)
+#define CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256 (CKM_NSS + 24)
+#endif
+#endif
 
 namespace net {
 
@@ -226,6 +239,14 @@ class FakeSocket : public StreamSocket {
 
   bool GetSSLInfo(SSLInfo* ssl_info) override { return false; }
 
+  void GetConnectionAttempts(ConnectionAttempts* out) const override {
+    out->clear();
+  }
+
+  void ClearConnectionAttempts() override {}
+
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
+
  private:
   BoundNetLog net_log_;
   FakeDataChannel* incoming_;
@@ -313,30 +334,30 @@ class SSLServerSocketTest : public PlatformTest {
     scoped_ptr<crypto::RSAPrivateKey> private_key(
         crypto::RSAPrivateKey::CreateFromPrivateKeyInfo(key_vector));
 
-    SSLConfig ssl_config;
-    ssl_config.false_start_enabled = false;
-    ssl_config.channel_id_enabled = false;
+    client_ssl_config_.false_start_enabled = false;
+    client_ssl_config_.channel_id_enabled = false;
 
     // Certificate provided by the host doesn't need authority.
     SSLConfig::CertAndStatus cert_and_status;
     cert_and_status.cert_status = CERT_STATUS_AUTHORITY_INVALID;
     cert_and_status.der_cert = cert_der;
-    ssl_config.allowed_bad_certs.push_back(cert_and_status);
+    client_ssl_config_.allowed_bad_certs.push_back(cert_and_status);
 
     HostPortPair host_and_pair("unittest", 0);
     SSLClientSocketContext context;
     context.cert_verifier = cert_verifier_.get();
     context.transport_security_state = transport_security_state_.get();
-    client_socket_ =
-        socket_factory_->CreateSSLClientSocket(
-            client_connection.Pass(), host_and_pair, ssl_config, context);
-    server_socket_ = CreateSSLServerSocket(
-        server_socket.Pass(),
-        cert.get(), private_key.get(), SSLConfig());
+    client_socket_ = socket_factory_->CreateSSLClientSocket(
+        client_connection.Pass(), host_and_pair, client_ssl_config_, context);
+    server_socket_ =
+        CreateSSLServerSocket(server_socket.Pass(), cert.get(),
+                              private_key.get(), server_ssl_config_);
   }
 
   FakeDataChannel channel_1_;
   FakeDataChannel channel_2_;
+  SSLConfig client_ssl_config_;
+  SSLConfig server_ssl_config_;
   scoped_ptr<SSLClientSocket> client_socket_;
   scoped_ptr<SSLServerSocket> server_socket_;
   ClientSocketFactory* socket_factory_;
@@ -375,8 +396,27 @@ TEST_F(SSLServerSocketTest, Handshake) {
 
   // Make sure the cert status is expected.
   SSLInfo ssl_info;
-  client_socket_->GetSSLInfo(&ssl_info);
+  ASSERT_TRUE(client_socket_->GetSSLInfo(&ssl_info));
   EXPECT_EQ(CERT_STATUS_AUTHORITY_INVALID, ssl_info.cert_status);
+
+  // The default cipher suite should be ECDHE and, unless on NSS and the
+  // platform doesn't support it, an AEAD.
+  uint16_t cipher_suite =
+      SSLConnectionStatusToCipherSuite(ssl_info.connection_status);
+  const char* key_exchange;
+  const char* cipher;
+  const char* mac;
+  bool is_aead;
+  SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, &is_aead, cipher_suite);
+  EXPECT_STREQ("ECDHE_RSA", key_exchange);
+#if defined(USE_OPENSSL)
+  bool supports_aead = true;
+#else
+  bool supports_aead =
+      PK11_TokenExists(CKM_AES_GCM) &&
+      PK11_TokenExists(CKM_NSS_TLS_MASTER_KEY_DERIVE_DH_SHA256);
+#endif
+  EXPECT_TRUE(!supports_aead || is_aead);
 }
 
 TEST_F(SSLServerSocketTest, DataTransfer) {
@@ -535,8 +575,8 @@ TEST_F(SSLServerSocketTest, ExportKeyingMaterial) {
   }
 
   const int kKeyingMaterialSize = 32;
-  const char* kKeyingLabel = "EXPERIMENTAL-server-socket-test";
-  const char* kKeyingContext = "";
+  const char kKeyingLabel[] = "EXPERIMENTAL-server-socket-test";
+  const char kKeyingContext[] = "";
   unsigned char server_out[kKeyingMaterialSize];
   int rv = server_socket_->ExportKeyingMaterial(kKeyingLabel,
                                                 false, kKeyingContext,
@@ -550,13 +590,49 @@ TEST_F(SSLServerSocketTest, ExportKeyingMaterial) {
   ASSERT_EQ(OK, rv);
   EXPECT_EQ(0, memcmp(server_out, client_out, sizeof(server_out)));
 
-  const char* kKeyingLabelBad = "EXPERIMENTAL-server-socket-test-bad";
+  const char kKeyingLabelBad[] = "EXPERIMENTAL-server-socket-test-bad";
   unsigned char client_bad[kKeyingMaterialSize];
   rv = client_socket_->ExportKeyingMaterial(kKeyingLabelBad,
                                             false, kKeyingContext,
                                             client_bad, sizeof(client_bad));
   ASSERT_EQ(rv, OK);
   EXPECT_NE(0, memcmp(server_out, client_bad, sizeof(server_out)));
+}
+
+// Verifies that SSLConfig::require_ecdhe flags works properly.
+TEST_F(SSLServerSocketTest, RequireEcdheFlag) {
+  // Disable all ECDHE suites on the client side.
+  uint16_t kEcdheCiphers[] = {
+      0xc007,  // ECDHE_ECDSA_WITH_RC4_128_SHA
+      0xc009,  // ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+      0xc00a,  // ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+      0xc011,  // ECDHE_RSA_WITH_RC4_128_SHA
+      0xc013,  // ECDHE_RSA_WITH_AES_128_CBC_SHA
+      0xc014,  // ECDHE_RSA_WITH_AES_256_CBC_SHA
+      0xc02b,  // ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      0xc02f,  // ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      0xcc13,  // ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      0xcc14,  // ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  };
+  client_ssl_config_.disabled_cipher_suites.assign(
+      kEcdheCiphers, kEcdheCiphers + arraysize(kEcdheCiphers));
+
+  // Require ECDHE on the server.
+  server_ssl_config_.require_ecdhe = true;
+
+  Initialize();
+
+  TestCompletionCallback connect_callback;
+  TestCompletionCallback handshake_callback;
+
+  int client_ret = client_socket_->Connect(connect_callback.callback());
+  int server_ret = server_socket_->Handshake(handshake_callback.callback());
+
+  client_ret = connect_callback.GetResult(client_ret);
+  server_ret = handshake_callback.GetResult(server_ret);
+
+  ASSERT_EQ(ERR_SSL_VERSION_OR_CIPHER_MISMATCH, client_ret);
+  ASSERT_EQ(ERR_SSL_VERSION_OR_CIPHER_MISMATCH, server_ret);
 }
 
 }  // namespace net

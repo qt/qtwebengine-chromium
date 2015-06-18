@@ -23,16 +23,16 @@
 
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderText.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/layout/LayoutBox.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntSize.h"
@@ -52,7 +52,7 @@ public:
         : m_node(node)
         , m_quad(quad)
     { }
-    void trace(Visitor* visitor) { visitor->trace(m_node); }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_node); }
 
     Node* node() const { return m_node; }
     FloatQuad quad() const { return m_quad; }
@@ -94,8 +94,8 @@ bool nodeRespondsToTapGesture(Node* node)
         if (element->childrenOrSiblingsAffectedByActive() || element->childrenOrSiblingsAffectedByHover())
             return true;
     }
-    if (RenderStyle* renderStyle = node->renderStyle()) {
-        if (renderStyle->affectedByActive() || renderStyle->affectedByHover())
+    if (const ComputedStyle* computedStyle = node->computedStyle()) {
+        if (computedStyle->affectedByActive() || computedStyle->affectedByHover())
             return true;
     }
     return false;
@@ -106,32 +106,32 @@ bool nodeIsZoomTarget(Node* node)
     if (node->isTextNode() || node->isShadowRoot())
         return false;
 
-    ASSERT(node->renderer());
-    return node->renderer()->isBox();
+    ASSERT(node->layoutObject());
+    return node->layoutObject()->isBox();
 }
 
 bool providesContextMenuItems(Node* node)
 {
     // This function tries to match the nodes that receive special context-menu items in
     // ContextMenuController::populate(), and should be kept uptodate with those.
-    ASSERT(node->renderer() || node->isShadowRoot());
-    if (!node->renderer())
+    ASSERT(node->layoutObject() || node->isShadowRoot());
+    if (!node->layoutObject())
         return false;
     if (node->isContentEditable())
         return true;
     if (node->isLink())
         return true;
-    if (node->renderer()->isImage())
+    if (node->layoutObject()->isImage())
         return true;
-    if (node->renderer()->isMedia())
+    if (node->layoutObject()->isMedia())
         return true;
-    if (node->renderer()->canBeSelectionLeaf()) {
+    if (node->layoutObject()->canBeSelectionLeaf()) {
         // If the context menu gesture will trigger a selection all selectable nodes are valid targets.
-        if (node->renderer()->frame()->editor().behavior().shouldSelectOnContextualMenuClick())
+        if (node->layoutObject()->frame()->editor().behavior().shouldSelectOnContextualMenuClick())
             return true;
-        // Only the selected part of the renderer is a valid target, but this will be corrected in
+        // Only the selected part of the layoutObject is a valid target, but this will be corrected in
         // appendContextSubtargetsForNode.
-        if (node->renderer()->selectionState() != RenderObject::SelectionNone)
+        if (node->layoutObject()->selectionState() != LayoutObject::SelectionNone)
             return true;
     }
     return false;
@@ -147,11 +147,11 @@ static inline void appendQuadsToSubtargetList(Vector<FloatQuad>& quads, Node* no
 
 static inline void appendBasicSubtargetsForNode(Node* node, SubtargetGeometryList& subtargets)
 {
-    // Node guaranteed to have renderer due to check in node filter.
-    ASSERT(node->renderer());
+    // Node guaranteed to have layoutObject due to check in node filter.
+    ASSERT(node->layoutObject());
 
     Vector<FloatQuad> quads;
-    node->renderer()->absoluteQuads(quads);
+    node->layoutObject()->absoluteQuads(quads);
 
     appendQuadsToSubtargetList(quads, node, subtargets);
 }
@@ -160,15 +160,15 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
 {
     // This is a variant of appendBasicSubtargetsForNode that adds special subtargets for
     // selected or auto-selectable parts of text nodes.
-    ASSERT(node->renderer());
+    ASSERT(node->layoutObject());
 
     if (!node->isTextNode())
         return appendBasicSubtargetsForNode(node, subtargets);
 
     Text* textNode = toText(node);
-    RenderText* textRenderer = textNode->renderer();
+    LayoutText* textLayoutObject = textNode->layoutObject();
 
-    if (textRenderer->frame()->editor().behavior().shouldSelectOnContextualMenuClick()) {
+    if (textLayoutObject->frame()->editor().behavior().shouldSelectOnContextualMenuClick()) {
         // Make subtargets out of every word.
         String textValue = textNode->data();
         TextBreakIterator* wordIterator = wordBreakIterator(textValue, 0, textValue.length());
@@ -179,54 +179,54 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
         while ((offset = wordIterator->next()) != -1) {
             if (isWordTextBreak(wordIterator)) {
                 Vector<FloatQuad> quads;
-                textRenderer->absoluteQuadsForRange(quads, lastOffset, offset);
+                textLayoutObject->absoluteQuadsForRange(quads, lastOffset, offset);
                 appendQuadsToSubtargetList(quads, textNode, subtargets);
             }
             lastOffset = offset;
         }
     } else {
-        if (textRenderer->selectionState() == RenderObject::SelectionNone)
+        if (textLayoutObject->selectionState() == LayoutObject::SelectionNone)
             return appendBasicSubtargetsForNode(node, subtargets);
         // If selected, make subtargets out of only the selected part of the text.
         int startPos, endPos;
-        switch (textRenderer->selectionState()) {
-        case RenderObject::SelectionInside:
+        switch (textLayoutObject->selectionState()) {
+        case LayoutObject::SelectionInside:
             startPos = 0;
-            endPos = textRenderer->textLength();
+            endPos = textLayoutObject->textLength();
             break;
-        case RenderObject::SelectionStart:
-            textRenderer->selectionStartEnd(startPos, endPos);
-            endPos = textRenderer->textLength();
+        case LayoutObject::SelectionStart:
+            textLayoutObject->selectionStartEnd(startPos, endPos);
+            endPos = textLayoutObject->textLength();
             break;
-        case RenderObject::SelectionEnd:
-            textRenderer->selectionStartEnd(startPos, endPos);
+        case LayoutObject::SelectionEnd:
+            textLayoutObject->selectionStartEnd(startPos, endPos);
             startPos = 0;
             break;
-        case RenderObject::SelectionBoth:
-            textRenderer->selectionStartEnd(startPos, endPos);
+        case LayoutObject::SelectionBoth:
+            textLayoutObject->selectionStartEnd(startPos, endPos);
             break;
         default:
             ASSERT_NOT_REACHED();
             return;
         }
         Vector<FloatQuad> quads;
-        textRenderer->absoluteQuadsForRange(quads, startPos, endPos);
+        textLayoutObject->absoluteQuadsForRange(quads, startPos, endPos);
         appendQuadsToSubtargetList(quads, textNode, subtargets);
     }
 }
 
 static inline void appendZoomableSubtargets(Node* node, SubtargetGeometryList& subtargets)
 {
-    RenderBox* renderer = toRenderBox(node->renderer());
-    ASSERT(renderer);
+    LayoutBox* layoutObject = toLayoutBox(node->layoutObject());
+    ASSERT(layoutObject);
 
     Vector<FloatQuad> quads;
-    FloatRect borderBoxRect = renderer->borderBoxRect();
-    FloatRect contentBoxRect = renderer->contentBoxRect();
-    quads.append(renderer->localToAbsoluteQuad(borderBoxRect));
+    FloatRect borderBoxRect = layoutObject->borderBoxRect();
+    FloatRect contentBoxRect = layoutObject->contentBoxRect();
+    quads.append(layoutObject->localToAbsoluteQuad(borderBoxRect));
     if (borderBoxRect != contentBoxRect)
-        quads.append(renderer->localToAbsoluteQuad(contentBoxRect));
-    // FIXME: For RenderBlocks, add column boxes and content boxes cleared for floats.
+        quads.append(layoutObject->localToAbsoluteQuad(contentBoxRect));
+    // FIXME: For LayoutBlocks, add column boxes and content boxes cleared for floats.
 
     Vector<FloatQuad>::const_iterator it = quads.begin();
     const Vector<FloatQuad>::const_iterator end = quads.end();
@@ -332,10 +332,7 @@ void compileZoomableSubtargets(const WillBeHeapVector<RefPtrWillBeMember<Node>>&
 // This will prioritize largest intersection and smallest area, while balancing the two against each other.
 float zoomableIntersectionQuotient(const IntPoint& touchHotspot, const IntRect& touchArea, const SubtargetGeometry& subtarget)
 {
-    IntRect rect = subtarget.boundingBox();
-
-    // Convert from frame coordinates to window coordinates.
-    rect = subtarget.node()->document().view()->contentsToWindow(rect);
+    IntRect rect = subtarget.node()->document().view()->contentsToRootFrame(subtarget.boundingBox());
 
     // Check the rectangle is meaningful zoom target. It should at least contain the hotspot.
     if (!rect.contains(touchHotspot))
@@ -355,10 +352,7 @@ float zoomableIntersectionQuotient(const IntPoint& touchHotspot, const IntRect& 
 // and works well for tightly packed controls.
 float hybridDistanceFunction(const IntPoint& touchHotspot, const IntRect& touchRect, const SubtargetGeometry& subtarget)
 {
-    IntRect rect = subtarget.boundingBox();
-
-    // Convert from frame coordinates to window coordinates.
-    rect = subtarget.node()->document().view()->contentsToWindow(rect);
+    IntRect rect = subtarget.node()->document().view()->contentsToRootFrame(subtarget.boundingBox());
 
     float radiusSquared = 0.25f * (touchRect.size().diagonalLengthSquared());
     float distanceToAdjustScore = rect.distanceSquaredToPoint(touchHotspot) / radiusSquared;
@@ -375,11 +369,11 @@ float hybridDistanceFunction(const IntPoint& touchHotspot, const IntRect& touchR
     return hybridScore;
 }
 
-FloatPoint contentsToWindow(FrameView *view, FloatPoint pt)
+FloatPoint contentsToRootFrame(FrameView *view, FloatPoint pt)
 {
     int x = static_cast<int>(pt.x() + 0.5f);
     int y = static_cast<int>(pt.y() + 0.5f);
-    IntPoint adjusted = view->contentsToWindow(IntPoint(x, y));
+    IntPoint adjusted = view->contentsToRootFrame(IntPoint(x, y));
     return FloatPoint(adjusted.x(), adjusted.y());
 }
 
@@ -403,9 +397,7 @@ bool snapTo(const SubtargetGeometry& geom, const IntPoint& touchPoint, const Int
     FloatQuad quad = geom.quad();
 
     if (quad.isRectilinear()) {
-        IntRect contentBounds = geom.boundingBox();
-        // Convert from frame coordinates to window coordinates.
-        IntRect bounds = view->contentsToWindow(contentBounds);
+        IntRect bounds = view->contentsToRootFrame(geom.boundingBox());
         if (bounds.contains(touchPoint)) {
             adjustedPoint = touchPoint;
             return true;
@@ -423,11 +415,10 @@ bool snapTo(const SubtargetGeometry& geom, const IntPoint& touchPoint, const Int
     // guarantee that the point will be inside the quad. Corner-cases exist where the quad will intersect but this
     // will fail to adjust the point to somewhere in the intersection.
 
-    // Convert quad from content to window coordinates.
-    FloatPoint p1 = contentsToWindow(view, quad.p1());
-    FloatPoint p2 = contentsToWindow(view, quad.p2());
-    FloatPoint p3 = contentsToWindow(view, quad.p3());
-    FloatPoint p4 = contentsToWindow(view, quad.p4());
+    FloatPoint p1 = contentsToRootFrame(view, quad.p1());
+    FloatPoint p2 = contentsToRootFrame(view, quad.p2());
+    FloatPoint p3 = contentsToRootFrame(view, quad.p3());
+    FloatPoint p4 = contentsToRootFrame(view, quad.p4());
     quad = FloatQuad(p1, p2, p3, p4);
 
     if (quad.containsPoint(touchPoint)) {
@@ -481,9 +472,9 @@ bool findNodeWithLowestDistanceMetric(Node*& targetNode, IntPoint& targetPoint, 
     if (targetNode && targetNode->isPseudoElement())
         targetNode = targetNode->parentOrShadowHostNode();
 
-    if (targetNode) {
-        targetArea = targetNode->document().view()->contentsToWindow(targetArea);
-    }
+    if (targetNode)
+        targetArea = targetNode->document().view()->contentsToRootFrame(targetArea);
+
     return (targetNode);
 }
 

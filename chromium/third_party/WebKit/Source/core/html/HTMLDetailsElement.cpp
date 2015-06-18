@@ -34,13 +34,43 @@
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLSummaryElement.h"
+#include "core/html/shadow/DetailsMarkerControl.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "platform/text/PlatformLocale.h"
 
 namespace blink {
 
 using namespace HTMLNames;
+
+class FirstSummarySelectFilter final : public HTMLContentSelectFilter {
+public:
+    virtual ~FirstSummarySelectFilter() { }
+
+    static PassOwnPtrWillBeRawPtr<FirstSummarySelectFilter> create()
+    {
+        return adoptPtrWillBeNoop(new FirstSummarySelectFilter());
+    }
+
+    bool canSelectNode(const WillBeHeapVector<RawPtrWillBeMember<Node>, 32>& siblings, int nth) const override
+    {
+        if (!siblings[nth]->hasTagName(HTMLNames::summaryTag))
+            return false;
+        for (int i = nth - 1; i >= 0; --i) {
+            if (siblings[i]->hasTagName(HTMLNames::summaryTag))
+                return false;
+        }
+        return true;
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        HTMLContentSelectFilter::trace(visitor);
+    }
+
+private:
+    FirstSummarySelectFilter() { }
+};
 
 static DetailsEventSender& detailsToggleEventSender()
 {
@@ -74,21 +104,18 @@ void HTMLDetailsElement::dispatchPendingEvent(DetailsEventSender* eventSender)
 }
 
 
-RenderObject* HTMLDetailsElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLDetailsElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderBlockFlow(this);
+    return new LayoutBlockFlow(this);
 }
 
 void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, summarySelector, ("summary:first-of-type", AtomicString::ConstructFromLiteral));
-
     RefPtrWillBeRawPtr<HTMLSummaryElement> defaultSummary = HTMLSummaryElement::create(document());
-    defaultSummary->appendChild(Text::create(document(), locale().queryString(blink::WebLocalizedString::DetailsLabel)));
+    defaultSummary->appendChild(Text::create(document(), locale().queryString(WebLocalizedString::DetailsLabel)));
 
-    RefPtrWillBeRawPtr<HTMLContentElement> summary = HTMLContentElement::create(document());
+    RefPtrWillBeRawPtr<HTMLContentElement> summary = HTMLContentElement::create(document(), FirstSummarySelectFilter::create());
     summary->setIdAttribute(ShadowElementNames::detailsSummary());
-    summary->setAttribute(selectAttr, summarySelector);
     summary->appendChild(defaultSummary);
     root.appendChild(summary.release());
 
@@ -127,12 +154,16 @@ void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicS
             content->removeInlineStyleProperty(CSSPropertyDisplay);
         else
             content->setInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);
-        Element* summary = ensureUserAgentShadowRoot().getElementById(ShadowElementNames::detailsSummary());
+
+        // Invalidate the LayoutDetailsMarker in order to turn the arrow signifying if the
+        // details element is open or closed.
+        Element* summary = findMainSummary();
         ASSERT(summary);
-        // FIXME: DetailsMarkerControl's RenderDetailsMarker has no concept of being updated
-        // without recreating it causing a repaint. Instead we should change it so we can tell
-        // it to toggle the open/closed triangle state and avoid reattaching the entire summary.
-        summary->lazyReattachIfAttached();
+
+        Element* control = toHTMLSummaryElement(summary)->markerControl();
+        if (control && control->layoutObject())
+            control->layoutObject()->setShouldDoFullPaintInvalidation();
+
         return;
     }
     HTMLElement::parseAttribute(name, value);

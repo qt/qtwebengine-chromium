@@ -31,9 +31,9 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
   // NOTE: In theory we could have unlimited number of plugins registered in
   // command line. But in practice, 64 plugins should be more than enough.
   static uint64 skip_file_check_flags = 0;
-  COMPILE_ASSERT(
+  static_assert(
       kMaxPluginsToRegisterFromCommandLine <= sizeof(skip_file_check_flags) * 8,
-      max_plugins_to_register_from_command_line_exceeds_limit);
+      "max plugins to register from command line exceeds limit");
 
   bool out_of_process = true;
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -57,9 +57,9 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
 
   size_t plugins_to_register = modules.size();
   if (plugins_to_register > kMaxPluginsToRegisterFromCommandLine) {
-    VLOG(1) << plugins_to_register << " pepper plugins registered from"
-        << " command line which exceeds the limit (maximum "
-        << kMaxPluginsToRegisterFromCommandLine << " plugins allowed)";
+    DVLOG(1) << plugins_to_register << " pepper plugins registered from"
+             << " command line which exceeds the limit (maximum "
+             << kMaxPluginsToRegisterFromCommandLine << " plugins allowed)";
     plugins_to_register = kMaxPluginsToRegisterFromCommandLine;
   }
 
@@ -67,7 +67,7 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
     std::vector<std::string> parts;
     base::SplitString(modules[i], ';', &parts);
     if (parts.size() < 2) {
-      VLOG(1) << "Required mime-type not found";
+      DVLOG(1) << "Required mime-type not found";
       continue;
     }
 
@@ -90,7 +90,7 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
       if (base::PathExists(plugin.path)) {
         skip_file_check_flags |= index_mask;
       } else {
-        VLOG(1) << "Plugin doesn't exist: " << plugin.path.MaybeAsASCII();
+        DVLOG(1) << "Plugin doesn't exist: " << plugin.path.MaybeAsASCII();
         continue;
       }
     }
@@ -129,10 +129,7 @@ bool MakePepperPluginInfo(const WebPluginInfo& webplugin_info,
     return false;
 
   pepper_info->is_out_of_process =
-      webplugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS ||
-      webplugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED;
-  pepper_info->is_sandboxed = webplugin_info.type !=
-      WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED;
+      webplugin_info.type == WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS;
 
   pepper_info->path = base::FilePath(webplugin_info.path);
   pepper_info->name = base::UTF16ToASCII(webplugin_info.name);

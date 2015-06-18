@@ -13,83 +13,96 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/frame/LocalDOMWindow.h"
 #include "modules/push_messaging/PushController.h"
 #include "modules/push_messaging/PushError.h"
-#include "modules/push_messaging/PushPermissionClient.h"
-#include "modules/push_messaging/PushPermissionRequestCallback.h"
-#include "modules/push_messaging/PushPermissionStatusCallback.h"
-#include "modules/push_messaging/PushRegistration.h"
-#include "modules/serviceworkers/NavigatorServiceWorker.h"
-#include "modules/serviceworkers/ServiceWorkerContainer.h"
-#include "public/platform/WebPushClient.h"
+#include "modules/push_messaging/PushPermissionStatusCallbacks.h"
+#include "modules/push_messaging/PushSubscription.h"
+#include "modules/push_messaging/PushSubscriptionCallbacks.h"
+#include "modules/push_messaging/PushSubscriptionOptions.h"
+#include "modules/serviceworkers/ServiceWorkerRegistration.h"
+#include "public/platform/Platform.h"
+#include "public/platform/modules/push_messaging/WebPushClient.h"
+#include "public/platform/modules/push_messaging/WebPushProvider.h"
+#include "public/platform/modules/push_messaging/WebPushSubscriptionOptions.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
+namespace {
 
-PushManager::PushManager()
+WebPushProvider* pushProvider()
 {
+    WebPushProvider* webPushProvider = Platform::current()->pushProvider();
+    ASSERT(webPushProvider);
+    return webPushProvider;
 }
 
-// FIXME: This call should be available from workers which will not have a Document object available.
-// See crbug.com/389194
-ScriptPromise PushManager::registerPushMessaging(ScriptState* scriptState)
+WebPushSubscriptionOptions toWebPushSubscriptionOptions(const PushSubscriptionOptions& options)
 {
-    ASSERT(scriptState->executionContext()->isDocument());
+    WebPushSubscriptionOptions webOptions;
+    webOptions.userVisibleOnly = options.userVisibleOnly();
+    return webOptions;
+}
 
-    Document* document = toDocument(scriptState->executionContext());
-    if (!document->domWindow() || !document->page())
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "Document is detached from window."));
+} // namespace
 
-    WebServiceWorkerProvider* serviceWorkerProvider = NavigatorServiceWorker::serviceWorker(*document->domWindow()->navigator())->provider();
-    if (!serviceWorkerProvider)
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "No Service Worker installed for this document."));
+PushManager::PushManager(ServiceWorkerRegistration* registration)
+    : m_registration(registration)
+{
+    ASSERT(registration);
+}
 
-    // FIXME: Once everything except permission request goes through platform,
-    // delete WebPushClient and usage such as this one.
-    // See crbug.com/389194
-    WebPushClient* client = PushController::clientFrom(document->page());
-    ASSERT(client);
+ScriptPromise PushManager::subscribe(ScriptState* scriptState, const PushSubscriptionOptions& options)
+{
+    if (!m_registration->active())
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "Subscription failed - no active Service Worker"));
 
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
-    PushPermissionClient* permissionClient = PushPermissionClient::from(scriptState->executionContext());
-    if (permissionClient)
-        permissionClient->requestPermission(scriptState->executionContext(), new PushPermissionRequestCallback(this, client, resolver, serviceWorkerProvider));
-    else
-        doRegister(client, resolver, serviceWorkerProvider);
+    // The document context is the only reasonable context from which to ask the user for permission
+    // to use the Push API. The embedder should persist the permission so that later calls in
+    // different contexts can succeed.
+    if (scriptState->executionContext()->isDocument()) {
+        Document* document = toDocument(scriptState->executionContext());
+        // FIXME: add test coverage for this condition - https://crbug.com/440431
+        if (!document->domWindow() || !document->frame())
+            return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "Document is detached from window."));
+        PushController::clientFrom(document->frame()).subscribe(m_registration->webRegistration(), toWebPushSubscriptionOptions(options), new PushSubscriptionCallbacks(resolver, m_registration));
+    } else {
+        pushProvider()->subscribe(m_registration->webRegistration(), toWebPushSubscriptionOptions(options), new PushSubscriptionCallbacks(resolver, m_registration));
+    }
 
     return promise;
 }
 
-// FIXME: This call should be available from workers which will not have a Document object available.
-// See crbug.com/389194
-ScriptPromise PushManager::hasPermission(ScriptState* scriptState)
+ScriptPromise PushManager::getSubscription(ScriptState* scriptState)
 {
-    ASSERT(scriptState->executionContext()->isDocument());
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
 
-    Document* document = toDocument(scriptState->executionContext());
-    if (!document->domWindow() || !document->page())
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "Document is detached from window."));
-    blink::WebPushClient* client = PushController::clientFrom(document->page());
-    ASSERT(client);
-
-    // The currently implemented specification does not require a Service Worker to be present for the
-    // hasPermission() call to work, but it will become a requirement soon.
-    WebServiceWorkerProvider* serviceWorkerProvider = NavigatorServiceWorker::serviceWorker(*document->domWindow()->navigator())->provider();
-    if (!serviceWorkerProvider)
-        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "No Service Worker installed for this document."));
-
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
-
-    client->getPermissionStatus(new PushPermissionStatusCallback(resolver), serviceWorkerProvider);
-    return resolver->promise();
+    pushProvider()->getSubscription(m_registration->webRegistration(), new PushSubscriptionCallbacks(resolver, m_registration));
+    return promise;
 }
 
-void PushManager::doRegister(WebPushClient* client, PassRefPtr<ScriptPromiseResolver> resolver, WebServiceWorkerProvider* serviceWorkerProvider)
+ScriptPromise PushManager::permissionState(ScriptState* scriptState, const PushSubscriptionOptions& options)
 {
-    client->registerPushMessaging(new CallbackPromiseAdapter<PushRegistration, PushError>(resolver), serviceWorkerProvider);
+    if (scriptState->executionContext()->isDocument()) {
+        Document* document = toDocument(scriptState->executionContext());
+        // FIXME: add test coverage for this condition - https://crbug.com/440431
+        if (!document->domWindow() || !document->frame())
+            return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(InvalidStateError, "Document is detached from window."));
+    }
+
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+
+    pushProvider()->getPermissionStatus(m_registration->webRegistration(), toWebPushSubscriptionOptions(options), new PushPermissionStatusCallbacks(resolver));
+    return promise;
+}
+
+DEFINE_TRACE(PushManager)
+{
+    visitor->trace(m_registration);
 }
 
 } // namespace blink

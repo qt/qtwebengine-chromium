@@ -257,8 +257,8 @@ my $files_count = @ARGV;
 push @find_args, qw(-not ( -path */LayoutTests/* -prune ) );
 push @find_args, qw(-not ( -path */out/Debug/* -prune ) );
 push @find_args, qw(-not ( -path */out/Release/* -prune ) );
-push @find_args, qw(-not ( -path *.git* -prune ) );
-push @find_args, qw(-not ( -path *.svn* -prune ) );
+push @find_args, qw(-not ( -path .git* -prune ) );
+push @find_args, qw(-not ( -path .svn* -prune ) );
 
 push @find_args, qw(-maxdepth 1) unless $opt_recursive;
 push @find_args, qw(-follow -type f -print);
@@ -342,10 +342,17 @@ sub remove_comments($) {
     $_ = $_[0];
     # Remove Fortran comments
     s/^[cC] //gm;
+    # Remove .ASM comments
+    s#^;\*?##gm;
+    # Remove .S comments
+    s#^@ ##gm;
+    # Remove new lines
     tr/\t\r\n/ /;
     # Remove C / C++ comments
     s#(\*/|/[/*])##g;
+    # Remove all characters not matching search
     tr% A-Za-z.,@;0-9\(\)/-%%cd;
+    # Collapse multiple spaces into single space
     tr/ //s;
     $_[0] = $_;
 }

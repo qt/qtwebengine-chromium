@@ -21,16 +21,19 @@
 #define RadialGradientAttributes_h
 
 #include "core/svg/GradientAttributes.h"
+#include "core/svg/SVGLength.h"
 
 namespace blink {
-struct RadialGradientAttributes : GradientAttributes {
+struct RadialGradientAttributes final : GradientAttributes {
+    DISALLOW_ALLOCATION();
+public:
     RadialGradientAttributes()
-        : m_cx(SVGLength::create(LengthModeWidth))
-        , m_cy(SVGLength::create(LengthModeHeight))
-        , m_r(SVGLength::create(LengthModeOther))
-        , m_fx(SVGLength::create(LengthModeWidth))
-        , m_fy(SVGLength::create(LengthModeHeight))
-        , m_fr(SVGLength::create(LengthModeOther))
+        : m_cx(SVGLength::create(SVGLengthMode::Width))
+        , m_cy(SVGLength::create(SVGLengthMode::Height))
+        , m_r(SVGLength::create(SVGLengthMode::Other))
+        , m_fx(SVGLength::create(SVGLengthMode::Width))
+        , m_fy(SVGLength::create(SVGLengthMode::Height))
+        , m_fr(SVGLength::create(SVGLengthMode::Other))
         , m_cxSet(false)
         , m_cySet(false)
         , m_rSet(false)
@@ -50,12 +53,12 @@ struct RadialGradientAttributes : GradientAttributes {
     SVGLength* fy() const { return m_fy.get(); }
     SVGLength* fr() const { return m_fr.get(); }
 
-    void setCx(PassRefPtr<SVGLength> value) { m_cx = value; m_cxSet = true; }
-    void setCy(PassRefPtr<SVGLength> value) { m_cy = value; m_cySet = true; }
-    void setR(PassRefPtr<SVGLength> value) { m_r = value; m_rSet = true; }
-    void setFx(PassRefPtr<SVGLength> value) { m_fx = value; m_fxSet = true; }
-    void setFy(PassRefPtr<SVGLength> value) { m_fy = value; m_fySet = true; }
-    void setFr(PassRefPtr<SVGLength> value) { m_fr = value; m_frSet = true; }
+    void setCx(PassRefPtrWillBeRawPtr<SVGLength> value) { m_cx = value; m_cxSet = true; }
+    void setCy(PassRefPtrWillBeRawPtr<SVGLength> value) { m_cy = value; m_cySet = true; }
+    void setR(PassRefPtrWillBeRawPtr<SVGLength> value) { m_r = value; m_rSet = true; }
+    void setFx(PassRefPtrWillBeRawPtr<SVGLength> value) { m_fx = value; m_fxSet = true; }
+    void setFy(PassRefPtrWillBeRawPtr<SVGLength> value) { m_fy = value; m_fySet = true; }
+    void setFr(PassRefPtrWillBeRawPtr<SVGLength> value) { m_fr = value; m_frSet = true; }
 
     bool hasCx() const { return m_cxSet; }
     bool hasCy() const { return m_cySet; }
@@ -64,14 +67,24 @@ struct RadialGradientAttributes : GradientAttributes {
     bool hasFy() const { return m_fySet; }
     bool hasFr() const { return m_frSet; }
 
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_cx);
+        visitor->trace(m_cy);
+        visitor->trace(m_r);
+        visitor->trace(m_fx);
+        visitor->trace(m_fy);
+        visitor->trace(m_fr);
+    }
+
 private:
     // Properties
-    RefPtr<SVGLength> m_cx;
-    RefPtr<SVGLength> m_cy;
-    RefPtr<SVGLength> m_r;
-    RefPtr<SVGLength> m_fx;
-    RefPtr<SVGLength> m_fy;
-    RefPtr<SVGLength> m_fr;
+    RefPtrWillBeMember<SVGLength> m_cx;
+    RefPtrWillBeMember<SVGLength> m_cy;
+    RefPtrWillBeMember<SVGLength> m_r;
+    RefPtrWillBeMember<SVGLength> m_fx;
+    RefPtrWillBeMember<SVGLength> m_fy;
+    RefPtrWillBeMember<SVGLength> m_fr;
 
     // Property states
     bool m_cxSet : 1;
@@ -81,6 +94,28 @@ private:
     bool m_fySet : 1;
     bool m_frSet : 1;
 };
+
+#if ENABLE(OILPAN)
+// Wrapper object for the RadialGradientAttributes part object.
+class RadialGradientAttributesWrapper : public GarbageCollectedFinalized<RadialGradientAttributesWrapper> {
+public:
+    static RadialGradientAttributesWrapper* create()
+    {
+        return new RadialGradientAttributesWrapper;
+    }
+
+    RadialGradientAttributes& attributes() { return m_attributes; }
+    void set(const RadialGradientAttributes& attributes) { m_attributes = attributes; }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_attributes); }
+
+private:
+    RadialGradientAttributesWrapper()
+    {
+    }
+
+    RadialGradientAttributes m_attributes;
+};
+#endif
 
 } // namespace blink
 

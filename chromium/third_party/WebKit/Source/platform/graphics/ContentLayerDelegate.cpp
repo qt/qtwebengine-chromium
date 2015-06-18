@@ -27,17 +27,23 @@
 #include "platform/graphics/ContentLayerDelegate.h"
 
 #include "platform/EventTracer.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/transforms/AffineTransform.h"
+#include "platform/transforms/TransformationMatrix.h"
+#include "public/platform/WebDisplayItemList.h"
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 
 namespace blink {
 
 ContentLayerDelegate::ContentLayerDelegate(GraphicsContextPainter* painter)
     : m_painter(painter)
-    , m_opaque(false)
 {
 }
 
@@ -46,20 +52,61 @@ ContentLayerDelegate::~ContentLayerDelegate()
 }
 
 void ContentLayerDelegate::paintContents(
-    SkCanvas* canvas, const WebRect& clip, bool canPaintLCDText,
-    WebContentLayerClient::GraphicsContextStatus contextStatus)
+    SkCanvas* canvas, const WebRect& clip,
+    WebContentLayerClient::PaintingControlSetting paintingControl)
 {
+    ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
+
     static const unsigned char* annotationsEnabled = 0;
     if (UNLIKELY(!annotationsEnabled))
         annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
 
-    GraphicsContext context(canvas, contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
-    context.setCertainlyOpaque(m_opaque);
-    context.setShouldSmoothFonts(canPaintLCDText);
+    GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
+    if (paintingControl == WebContentLayerClient::DisplayListPaintingDisabled
+        || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
+        disabledMode = GraphicsContext::FullyDisabled;
+    OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(canvas, disabledMode);
+    if (*annotationsEnabled)
+        context->setAnnotationMode(AnnotateAll);
+
+    m_painter->paint(*context, clip);
+}
+
+void ContentLayerDelegate::paintContents(
+    WebDisplayItemList* webDisplayItemList, const WebRect& clip,
+    WebContentLayerClient::PaintingControlSetting paintingControl)
+{
+    ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+
+    static const unsigned char* annotationsEnabled = 0;
+    if (UNLIKELY(!annotationsEnabled))
+        annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
+
+    DisplayItemList* displayItemList = m_painter->displayItemList();
+    ASSERT(displayItemList);
+    displayItemList->setDisplayItemConstructionIsDisabled(
+        paintingControl == WebContentLayerClient::DisplayListConstructionDisabled);
+
+    // We also disable caching when Painting or Construction are disabled. In both cases we would like
+    // to compare assuming the full cost of recording, not the cost of re-using cached content.
+    if (paintingControl != WebContentLayerClient::PaintDefaultBehavior)
+        displayItemList->invalidateAll();
+
+    GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
+    if (paintingControl == WebContentLayerClient::DisplayListPaintingDisabled
+        || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
+        disabledMode = GraphicsContext::FullyDisabled;
+    GraphicsContext context(displayItemList, disabledMode);
     if (*annotationsEnabled)
         context.setAnnotationMode(AnnotateAll);
 
     m_painter->paint(context, clip);
+
+    displayItemList->commitNewDisplayItems();
+
+    const DisplayItems& paintList = displayItemList->displayItems();
+    for (DisplayItems::const_iterator it = paintList.begin(); it != paintList.end(); ++it)
+        (*it)->appendToWebDisplayItemList(webDisplayItemList);
 }
 
 } // namespace blink

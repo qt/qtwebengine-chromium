@@ -39,49 +39,49 @@
 
 namespace blink {
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObjectItem::createFromString(const String& type, const String& data)
+DataObjectItem* DataObjectItem::createFromString(const String& type, const String& data)
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = adoptRefWillBeNoop(new DataObjectItem(StringKind, type));
+    DataObjectItem* item = new DataObjectItem(StringKind, type);
     item->m_data = data;
-    return item.release();
+    return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObjectItem::createFromFile(File* file)
+DataObjectItem* DataObjectItem::createFromFile(File* file)
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = adoptRefWillBeNoop(new DataObjectItem(FileKind, file->type()));
+    DataObjectItem* item = new DataObjectItem(FileKind, file->type());
     item->m_file = file;
-    return item.release();
+    return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObjectItem::createFromURL(const String& url, const String& title)
+DataObjectItem* DataObjectItem::createFromURL(const String& url, const String& title)
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = adoptRefWillBeNoop(new DataObjectItem(StringKind, mimeTypeTextURIList));
+    DataObjectItem* item = new DataObjectItem(StringKind, mimeTypeTextURIList);
     item->m_data = url;
     item->m_title = title;
-    return item.release();
+    return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObjectItem::createFromHTML(const String& html, const KURL& baseURL)
+DataObjectItem* DataObjectItem::createFromHTML(const String& html, const KURL& baseURL)
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = adoptRefWillBeNoop(new DataObjectItem(StringKind, mimeTypeTextHTML));
+    DataObjectItem* item = new DataObjectItem(StringKind, mimeTypeTextHTML);
     item->m_data = html;
     item->m_baseURL = baseURL;
-    return item.release();
+    return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObjectItem::createFromSharedBuffer(const String& name, PassRefPtr<SharedBuffer> buffer)
+DataObjectItem* DataObjectItem::createFromSharedBuffer(const String& name, PassRefPtr<SharedBuffer> buffer)
 {
-    RefPtrWillBeRawPtr<DataObjectItem> item = adoptRefWillBeNoop(new DataObjectItem(FileKind, String()));
+    DataObjectItem* item = new DataObjectItem(FileKind, String());
     item->m_sharedBuffer = buffer;
     item->m_title = name;
-    return item.release();
+    return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObjectItem::createFromPasteboard(const String& type, uint64_t sequenceNumber)
+DataObjectItem* DataObjectItem::createFromPasteboard(const String& type, uint64_t sequenceNumber)
 {
     if (type == mimeTypeImagePng)
-        return adoptRefWillBeNoop(new DataObjectItem(FileKind, type, sequenceNumber));
-    return adoptRefWillBeNoop(new DataObjectItem(StringKind, type, sequenceNumber));
+        return new DataObjectItem(FileKind, type, sequenceNumber);
+    return new DataObjectItem(StringKind, type, sequenceNumber);
 }
 
 DataObjectItem::DataObjectItem(Kind kind, const String& type)
@@ -126,7 +126,7 @@ Blob* DataObjectItem::getAsFile() const
         // method to the blob registry; that way the data is only copied over
         // into the renderer when it's actually read, not when the blob is
         // initially constructed).
-        RefPtr<SharedBuffer> data = static_cast<PassRefPtr<SharedBuffer> >(blink::Platform::current()->clipboard()->readImage(blink::WebClipboard::BufferStandard));
+        RefPtr<SharedBuffer> data = static_cast<PassRefPtr<SharedBuffer>>(Platform::current()->clipboard()->readImage(WebClipboard::BufferStandard));
         OwnPtr<BlobData> blobData = BlobData::create();
         blobData->appendBytes(data->data(), data->size());
         blobData->setContentType(mimeTypeImagePng);
@@ -145,20 +145,20 @@ String DataObjectItem::getAsString() const
 
     ASSERT(m_source == PasteboardSource);
 
-    blink::WebClipboard::Buffer buffer = Pasteboard::generalPasteboard()->buffer();
+    WebClipboard::Buffer buffer = Pasteboard::generalPasteboard()->buffer();
     String data;
     // This is ugly but there's no real alternative.
     if (m_type == mimeTypeTextPlain) {
-        data = blink::Platform::current()->clipboard()->readPlainText(buffer);
+        data = Platform::current()->clipboard()->readPlainText(buffer);
     } else if (m_type == mimeTypeTextHTML) {
-        blink::WebURL ignoredSourceURL;
+        WebURL ignoredSourceURL;
         unsigned ignored;
-        data = blink::Platform::current()->clipboard()->readHTML(buffer, &ignoredSourceURL, &ignored, &ignored);
+        data = Platform::current()->clipboard()->readHTML(buffer, &ignoredSourceURL, &ignored, &ignored);
     } else {
-        data = blink::Platform::current()->clipboard()->readCustomData(buffer, m_type);
+        data = Platform::current()->clipboard()->readCustomData(buffer, m_type);
     }
 
-    return blink::Platform::current()->clipboard()->sequenceNumber(buffer) == m_sequenceNumber ? data : String();
+    return Platform::current()->clipboard()->sequenceNumber(buffer) == m_sequenceNumber ? data : String();
 }
 
 bool DataObjectItem::isFilename() const
@@ -168,7 +168,7 @@ bool DataObjectItem::isFilename() const
     return m_kind == FileKind && m_file;
 }
 
-void DataObjectItem::trace(Visitor* visitor)
+DEFINE_TRACE(DataObjectItem)
 {
     visitor->trace(m_file);
 }

@@ -90,9 +90,8 @@ PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> InspectorProfilerAgent::create(In
 }
 
 InspectorProfilerAgent::InspectorProfilerAgent(InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
-    : InspectorBaseAgent<InspectorProfilerAgent>("Profiler")
+    : InspectorBaseAgent<InspectorProfilerAgent, InspectorFrontend::Profiler>("Profiler")
     , m_injectedScriptManager(injectedScriptManager)
-    , m_frontend(0)
     , m_recordingCPUProfile(false)
     , m_profileNameIdleTimeMap(ScriptProfiler::currentProfileNameIdleTimeMap())
     , m_idleStartTime(0.0)
@@ -107,16 +106,16 @@ InspectorProfilerAgent::~InspectorProfilerAgent()
 void InspectorProfilerAgent::consoleProfile(ExecutionContext* context, const String& title)
 {
     UseCounter::count(context, UseCounter::DevToolsConsoleProfile);
-    ASSERT(m_frontend && enabled());
+    ASSERT(frontend() && enabled());
     String id = nextProfileId();
     m_startedProfiles.append(ProfileDescriptor(id, title));
     ScriptProfiler::start(id);
-    m_frontend->consoleProfileStarted(id, currentDebugLocation(), title.isNull() ? 0 : &title);
+    frontend()->consoleProfileStarted(id, currentDebugLocation(), title.isNull() ? 0 : &title);
 }
 
 void InspectorProfilerAgent::consoleProfileEnd(const String& title)
 {
-    ASSERT(m_frontend && enabled());
+    ASSERT(frontend() && enabled());
     String id;
     String resolvedTitle;
     // Take last started profile if no title was passed.
@@ -142,7 +141,7 @@ void InspectorProfilerAgent::consoleProfileEnd(const String& title)
     if (!profile)
         return;
     RefPtr<TypeBuilder::Debugger::Location> location = currentDebugLocation();
-    m_frontend->consoleProfileFinished(id, location, createCPUProfile(*profile), resolvedTitle.isNull() ? 0 : &resolvedTitle);
+    frontend()->consoleProfileFinished(id, location, createCPUProfile(*profile), resolvedTitle.isNull() ? 0 : &resolvedTitle);
 }
 
 void InspectorProfilerAgent::enable(ErrorString*)
@@ -162,8 +161,7 @@ void InspectorProfilerAgent::disable(ErrorString*)
         ScriptProfiler::stop(it->m_id);
     m_startedProfiles.clear();
     stop(0, 0);
-
-    m_instrumentingAgents->setInspectorProfilerAgent(0);
+    m_instrumentingAgents->setInspectorProfilerAgent(nullptr);
     m_state->setBoolean(ProfilerAgentState::profilerEnabled, false);
 }
 
@@ -180,19 +178,6 @@ void InspectorProfilerAgent::setSamplingInterval(ErrorString* error, int interva
     }
     m_state->setLong(ProfilerAgentState::samplingInterval, interval);
     ScriptProfiler::setSamplingInterval(interval);
-}
-
-void InspectorProfilerAgent::setFrontend(InspectorFrontend* frontend)
-{
-    m_frontend = frontend->profiler();
-}
-
-void InspectorProfilerAgent::clearFrontend()
-{
-    m_frontend = 0;
-    ErrorString error;
-    disable(&error);
-    m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
 }
 
 void InspectorProfilerAgent::restore()
@@ -217,7 +202,7 @@ void InspectorProfilerAgent::start(ErrorString* error)
     }
     m_recordingCPUProfile = true;
     if (m_overlay)
-        m_overlay->startedRecordingProfile();
+        m_overlay->suspendUpdates();
     m_frontendInitiatedProfileId = nextProfileId();
     ScriptProfiler::start(m_frontendInitiatedProfileId);
     m_state->setBoolean(ProfilerAgentState::userInitiatedProfiling, true);
@@ -237,7 +222,7 @@ void InspectorProfilerAgent::stop(ErrorString* errorString, RefPtr<TypeBuilder::
     }
     m_recordingCPUProfile = false;
     if (m_overlay)
-        m_overlay->finishedRecordingProfile();
+        m_overlay->resumeUpdates();
     RefPtrWillBeRawPtr<ScriptProfile> scriptProfile = ScriptProfiler::stop(m_frontendInitiatedProfileId);
     m_frontendInitiatedProfileId = String();
     if (scriptProfile && profile)
@@ -264,9 +249,8 @@ void InspectorProfilerAgent::idleFinished()
 
     double idleTime = WTF::monotonicallyIncreasingTime() - m_idleStartTime;
     m_idleStartTime = 0.0;
-    ProfileNameIdleTimeMap::iterator end = m_profileNameIdleTimeMap->end();
-    for (ProfileNameIdleTimeMap::iterator it = m_profileNameIdleTimeMap->begin(); it != end; ++it)
-        it->value += idleTime;
+    for (auto& map : *m_profileNameIdleTimeMap)
+        map.value += idleTime;
 }
 
 void InspectorProfilerAgent::idleStarted()
@@ -297,11 +281,11 @@ void InspectorProfilerAgent::didLeaveNestedRunLoop()
     idleFinished();
 }
 
-void InspectorProfilerAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorProfilerAgent)
 {
     visitor->trace(m_injectedScriptManager);
+    visitor->trace(m_overlay);
     InspectorBaseAgent::trace(visitor);
 }
 
 } // namespace blink
-

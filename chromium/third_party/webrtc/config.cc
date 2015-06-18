@@ -29,6 +29,35 @@ std::string RtpExtension::ToString() const {
   return ss.str();
 }
 
+const char* RtpExtension::kTOffset = "urn:ietf:params:rtp-hdrext:toffset";
+const char* RtpExtension::kAbsSendTime =
+    "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
+const char* RtpExtension::kVideoRotation = "urn:3gpp:video-orientation";
+const char* RtpExtension::kAudioLevel =
+    "urn:ietf:params:rtp-hdrext:ssrc-audio-level";
+
+bool RtpExtension::IsSupportedForAudio(const std::string& name) {
+  return name == webrtc::RtpExtension::kAbsSendTime ||
+         name == webrtc::RtpExtension::kAudioLevel;
+}
+
+bool RtpExtension::IsSupportedForVideo(const std::string& name) {
+  return name == webrtc::RtpExtension::kTOffset ||
+         name == webrtc::RtpExtension::kAbsSendTime ||
+         name == webrtc::RtpExtension::kVideoRotation;
+}
+
+VideoStream::VideoStream()
+    : width(0),
+      height(0),
+      max_framerate(-1),
+      min_bitrate_bps(-1),
+      target_bitrate_bps(-1),
+      max_bitrate_bps(-1),
+      max_qp(-1) {}
+
+VideoStream::~VideoStream() = default;
+
 std::string VideoStream::ToString() const {
   std::stringstream ss;
   ss << "{width: " << width;
@@ -51,6 +80,14 @@ std::string VideoStream::ToString() const {
   return ss.str();
 }
 
+VideoEncoderConfig::VideoEncoderConfig()
+    : content_type(ContentType::kRealtimeVideo),
+      encoder_specific_settings(NULL),
+      min_transmit_bitrate_bps(0) {
+}
+
+VideoEncoderConfig::~VideoEncoderConfig() = default;
+
 std::string VideoEncoderConfig::ToString() const {
   std::stringstream ss;
 
@@ -63,10 +100,10 @@ std::string VideoEncoderConfig::ToString() const {
   ss << ']';
   ss << ", content_type: ";
   switch (content_type) {
-    case kRealtimeVideo:
+    case ContentType::kRealtimeVideo:
       ss << "kRealtimeVideo";
       break;
-    case kScreenshare:
+    case ContentType::kScreen:
       ss << "kScreenshare";
       break;
   }

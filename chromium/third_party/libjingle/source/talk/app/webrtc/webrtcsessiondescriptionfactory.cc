@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,6 +27,7 @@
 
 #include "talk/app/webrtc/webrtcsessiondescriptionfactory.h"
 
+#include "talk/app/webrtc/dtlsidentitystore.h"
 #include "talk/app/webrtc/jsep.h"
 #include "talk/app/webrtc/jsepsessiondescription.h"
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
@@ -39,10 +40,6 @@ namespace webrtc {
 namespace {
 static const char kFailedDueToIdentityFailed[] =
     " failed because DTLS identity request failed";
-
-// Arbitrary constant used as common name for the identity.
-// Chosen to make the certificates more readable.
-static const char kWebRTCIdentityName[] = "WebRTC";
 
 static const uint64 kInitSessionVersion = 2;
 
@@ -83,6 +80,30 @@ struct CreateSessionDescriptionMsg : public rtc::MessageData {
   rtc::scoped_ptr<webrtc::SessionDescriptionInterface> description;
 };
 }  // namespace
+
+void WebRtcIdentityRequestObserver::OnFailure(int error) {
+  SignalRequestFailed(error);
+}
+
+void WebRtcIdentityRequestObserver::OnSuccess(
+    const std::string& der_cert, const std::string& der_private_key) {
+  std::string pem_cert = rtc::SSLIdentity::DerToPem(
+      rtc::kPemTypeCertificate,
+      reinterpret_cast<const unsigned char*>(der_cert.data()),
+      der_cert.length());
+  std::string pem_key = rtc::SSLIdentity::DerToPem(
+      rtc::kPemTypeRsaPrivateKey,
+      reinterpret_cast<const unsigned char*>(der_private_key.data()),
+      der_private_key.length());
+  rtc::SSLIdentity* identity =
+      rtc::SSLIdentity::FromPEMStrings(pem_key, pem_cert);
+  SignalIdentityReady(identity);
+}
+
+void WebRtcIdentityRequestObserver::OnSuccessWithIdentityObj(
+    rtc::scoped_ptr<rtc::SSLIdentity> identity) {
+  SignalIdentityReady(identity.release());
+}
 
 // static
 void WebRtcSessionDescriptionFactory::CopyCandidatesFromSessionDescription(
@@ -125,7 +146,7 @@ WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
       session_id_(session_id),
       data_channel_type_(dct),
       identity_request_state_(IDENTITY_NOT_NEEDED) {
-  transport_desc_factory_.set_protocol(cricket::ICEPROTO_HYBRID);
+  transport_desc_factory_.set_protocol(cricket::ICEPROTO_RFC5245);
   session_desc_factory_.set_add_legacy_streams(false);
   // SRTP-SDES is disabled if DTLS is on.
   SetSdesPolicy(dtls_enabled ? cricket::SEC_DISABLED : cricket::SEC_REQUIRED);
@@ -141,11 +162,12 @@ WebRtcSessionDescriptionFactory::WebRtcSessionDescriptionFactory(
     identity_request_observer_->SignalRequestFailed.connect(
         this, &WebRtcSessionDescriptionFactory::OnIdentityRequestFailed);
     identity_request_observer_->SignalIdentityReady.connect(
-        this, &WebRtcSessionDescriptionFactory::OnIdentityReady);
+        this, &WebRtcSessionDescriptionFactory::SetIdentity);
 
-    if (identity_service_->RequestIdentity(kWebRTCIdentityName,
-                                           kWebRTCIdentityName,
-                                           identity_request_observer_)) {
+    if (identity_service_->RequestIdentity(
+            DtlsIdentityStore::kIdentityName,
+            DtlsIdentityStore::kIdentityName,
+            identity_request_observer_)) {
       LOG(LS_VERBOSE) << "DTLS-SRTP enabled; sent DTLS identity request.";
       identity_request_state_ = IDENTITY_WAITING;
     } else {
@@ -290,7 +312,7 @@ void WebRtcSessionDescriptionFactory::OnMessage(rtc::Message* msg) {
     }
     case MSG_GENERATE_IDENTITY: {
       LOG(LS_INFO) << "Generating identity.";
-      SetIdentity(rtc::SSLIdentity::Generate(kWebRTCIdentityName));
+      SetIdentity(rtc::SSLIdentity::Generate(DtlsIdentityStore::kIdentityName));
       break;
     }
     default:
@@ -412,28 +434,10 @@ void WebRtcSessionDescriptionFactory::OnIdentityRequestFailed(int error) {
   }
 }
 
-void WebRtcSessionDescriptionFactory::OnIdentityReady(
-    const std::string& der_cert,
-    const std::string& der_private_key) {
-  ASSERT(signaling_thread_->IsCurrent());
-  LOG(LS_VERBOSE) << "Identity is successfully generated.";
-
-  std::string pem_cert = rtc::SSLIdentity::DerToPem(
-      rtc::kPemTypeCertificate,
-      reinterpret_cast<const unsigned char*>(der_cert.data()),
-      der_cert.length());
-  std::string pem_key = rtc::SSLIdentity::DerToPem(
-      rtc::kPemTypeRsaPrivateKey,
-      reinterpret_cast<const unsigned char*>(der_private_key.data()),
-      der_private_key.length());
-
-  rtc::SSLIdentity* identity =
-      rtc::SSLIdentity::FromPEMStrings(pem_key, pem_cert);
-  SetIdentity(identity);
-}
-
 void WebRtcSessionDescriptionFactory::SetIdentity(
     rtc::SSLIdentity* identity) {
+  LOG(LS_VERBOSE) << "Setting new identity";
+
   identity_request_state_ = IDENTITY_SUCCEEDED;
   SignalIdentityReady(identity);
 

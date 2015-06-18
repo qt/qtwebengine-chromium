@@ -4,6 +4,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "media/base/media_log.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
@@ -17,7 +18,9 @@
 
 using ::testing::_;
 using ::testing::Assign;
+using ::testing::DoAll;
 using ::testing::Invoke;
+using ::testing::InvokeWithoutArgs;
 using ::testing::InSequence;
 using ::testing::NiceMock;
 using ::testing::StrictMock;
@@ -220,6 +223,7 @@ class BufferedDataSourceTest : public testing::Test {
   BufferedResourceLoader* loader() {
     return data_source_->loader_.get();
   }
+  ActiveLoader* active_loader() { return loader()->active_loader_.get(); }
   WebURLLoader* url_loader() {
     return loader()->active_loader_->loader_.get();
   }
@@ -230,9 +234,9 @@ class BufferedDataSourceTest : public testing::Test {
     return loader()->defer_strategy_;
   }
   int data_source_bitrate() { return data_source_->bitrate_; }
-  int data_source_playback_rate() { return data_source_->playback_rate_; }
+  double data_source_playback_rate() { return data_source_->playback_rate_; }
   int loader_bitrate() { return loader()->bitrate_; }
-  int loader_playback_rate() { return loader()->playback_rate_; }
+  double loader_playback_rate() { return loader()->playback_rate_; }
   bool is_local_source() { return data_source_->assume_fully_buffered(); }
   void set_might_be_reused_from_cache_in_future(bool value) {
     loader()->might_be_reused_from_cache_in_future_ = value;
@@ -410,6 +414,34 @@ TEST_F(BufferedDataSourceTest, Http_Retry) {
   Stop();
 }
 
+TEST_F(BufferedDataSourceTest, Http_RetryOnError) {
+  InitializeWith206Response();
+
+  // Read to advance our position.
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
+  ReadAt(0);
+  ReceiveData(kDataSize);
+
+  // Issue a pending read but trigger an error to force a retry.
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(kDataSize, (kDataSize * 2) - 1));
+  ReadAt(kDataSize);
+  base::RunLoop run_loop;
+  EXPECT_CALL(*data_source_, CreateResourceLoader(_, _))
+      .WillOnce(
+          DoAll(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit),
+                Invoke(data_source_.get(),
+                       &MockBufferedDataSource::CreateMockResourceLoader)));
+  loader()->didFail(url_loader(), response_generator_->GenerateError());
+  run_loop.Run();
+  Respond(response_generator_->Generate206(kDataSize));
+  ReceiveData(kDataSize);
+  FinishLoading();
+  EXPECT_FALSE(data_source_->loading());
+  Stop();
+}
+
 TEST_F(BufferedDataSourceTest, File_Retry) {
   InitializeWithFileResponse();
 
@@ -528,9 +560,9 @@ TEST_F(BufferedDataSourceTest, DefaultValues) {
   EXPECT_EQ(BufferedResourceLoader::kCapacityDefer, defer_strategy());
 
   EXPECT_EQ(0, data_source_bitrate());
-  EXPECT_EQ(0.0f, data_source_playback_rate());
+  EXPECT_EQ(0.0, data_source_playback_rate());
   EXPECT_EQ(0, loader_bitrate());
-  EXPECT_EQ(0.0f, loader_playback_rate());
+  EXPECT_EQ(0.0, loader_playback_rate());
 
   EXPECT_TRUE(data_source_->loading());
   Stop();
@@ -562,10 +594,10 @@ TEST_F(BufferedDataSourceTest, SetBitrate) {
 TEST_F(BufferedDataSourceTest, MediaPlaybackRateChanged) {
   InitializeWith206Response();
 
-  data_source_->MediaPlaybackRateChanged(2.0f);
+  data_source_->MediaPlaybackRateChanged(2.0);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(2.0f, data_source_playback_rate());
-  EXPECT_EQ(2.0f, loader_playback_rate());
+  EXPECT_EQ(2.0, data_source_playback_rate());
+  EXPECT_EQ(2.0, loader_playback_rate());
 
   // Read so far ahead to cause the loader to get recreated.
   BufferedResourceLoader* old_loader = loader();
@@ -774,6 +806,47 @@ TEST_F(BufferedDataSourceTest,
   EXPECT_EQ(BufferedResourceLoader::kCapacityDefer, defer_strategy());
 
   Stop();
+}
+
+TEST_F(BufferedDataSourceTest, ExternalResource_Response206_VerifyDefer) {
+  set_preload(BufferedDataSource::METADATA);
+  InitializeWith206Response();
+
+  EXPECT_EQ(BufferedDataSource::METADATA, preload());
+  EXPECT_FALSE(is_local_source());
+  EXPECT_TRUE(loader()->range_supported());
+  EXPECT_EQ(BufferedResourceLoader::kReadThenDefer, defer_strategy());
+
+  // Read a bit from the beginning.
+  ReadAt(0);
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
+  ReceiveData(kDataSize);
+
+  ASSERT_TRUE(active_loader());
+  EXPECT_TRUE(active_loader()->deferred());
+}
+
+TEST_F(BufferedDataSourceTest, ExternalResource_Response206_CancelAfterDefer) {
+  set_preload(BufferedDataSource::METADATA);
+  InitializeWith206Response();
+
+  EXPECT_EQ(BufferedDataSource::METADATA, preload());
+  EXPECT_FALSE(is_local_source());
+  EXPECT_TRUE(loader()->range_supported());
+  EXPECT_EQ(BufferedResourceLoader::kReadThenDefer, defer_strategy());
+
+  data_source_->OnBufferingHaveEnough();
+
+  ASSERT_TRUE(active_loader());
+
+  // Read a bit from the beginning.
+  ReadAt(0);
+  EXPECT_CALL(*this, ReadCallback(kDataSize));
+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize - 1));
+  ReceiveData(kDataSize);
+
+  EXPECT_FALSE(active_loader());
 }
 
 }  // namespace media

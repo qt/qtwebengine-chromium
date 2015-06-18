@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_BATTERY_STATUS_BATTERY_STATUS_DISPATCHER_H_
 #define CONTENT_RENDERER_BATTERY_STATUS_BATTERY_STATUS_DISPATCHER_H_
 
+#include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "content/common/content_export.h"
 #include "device/battery/battery_monitor.mojom.h"
@@ -15,18 +16,16 @@ class WebBatteryStatusListener;
 
 namespace content {
 
-class CONTENT_EXPORT BatteryStatusDispatcher
-    : public NON_EXPORTED_BASE(device::BatteryStatusObserver) {
+class CONTENT_EXPORT BatteryStatusDispatcher {
  public:
   explicit BatteryStatusDispatcher(blink::WebBatteryStatusListener* listener);
-  ~BatteryStatusDispatcher() override;
+  ~BatteryStatusDispatcher();
 
  private:
-  // BatteryStatusObserver method.
-  void DidChange(device::BatteryStatusPtr battery_status) override;
+  friend class BatteryStatusDispatcherTest;
 
-  void Start();
-  void Stop();
+  void QueryNextStatus();
+  void DidChange(device::BatteryStatusPtr battery_status);
 
   device::BatteryMonitorPtr monitor_;
   blink::WebBatteryStatusListener* listener_;

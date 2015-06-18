@@ -26,12 +26,6 @@
 
 namespace blink {
 
-UIEventInit::UIEventInit()
-    : view(nullptr)
-    , detail(0)
-{
-}
-
 UIEvent::UIEvent()
     : m_detail(0)
 {
@@ -46,8 +40,8 @@ UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelab
 
 UIEvent::UIEvent(const AtomicString& eventType, const UIEventInit& initializer)
     : Event(eventType, initializer)
-    , m_view(initializer.view)
-    , m_detail(initializer.detail)
+    , m_view(initializer.view())
+    , m_detail(initializer.detail())
 {
 }
 
@@ -111,7 +105,7 @@ int UIEvent::which() const
     return 0;
 }
 
-void UIEvent::trace(Visitor* visitor)
+DEFINE_TRACE(UIEvent)
 {
     visitor->trace(m_view);
     Event::trace(visitor);

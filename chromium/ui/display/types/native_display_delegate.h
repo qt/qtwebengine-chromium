@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "base/callback.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/types/display_types_export.h"
 
@@ -23,8 +24,20 @@ class DisplaySnapshot;
 
 class NativeDisplayObserver;
 
+struct GammaRampRGBEntry;
+
+typedef base::Callback<void(const std::vector<ui::DisplaySnapshot*>&)>
+    GetDisplaysCallback;
+typedef base::Callback<void(bool)> ConfigureCallback;
+typedef base::Callback<void(bool, ui::HDCPState)> GetHDCPStateCallback;
+typedef base::Callback<void(bool)> SetHDCPStateCallback;
+
 // Interface for classes that perform display configuration actions on behalf
 // of DisplayConfigurator.
+// Implementations may perform calls asynchronously. In the case of functions
+// taking callbacks, the callbacks may be called asynchronously when the results
+// are available. The implementations must provide a strong guarantee that the
+// callbacks are always called.
 class DISPLAY_TYPES_EXPORT NativeDisplayDelegate {
  public:
   virtual ~NativeDisplayDelegate() {}
@@ -53,11 +66,9 @@ class DISPLAY_TYPES_EXPORT NativeDisplayDelegate {
   // Enables DPMS and forces it to the "on" state.
   virtual void ForceDPMSOn() = 0;
 
-  // Returns information about the current outputs. This method may block for
-  // 60 milliseconds or more.
-  // NativeDisplayDelegate maintains ownership of the ui::DisplaySnapshot
-  // pointers.
-  virtual std::vector<ui::DisplaySnapshot*> GetDisplays() = 0;
+  // Queries for a list of fresh displays and returns them via |callback|.
+  // Note the query operation may be expensive and take over 60 milliseconds.
+  virtual void GetDisplays(const GetDisplaysCallback& callback) = 0;
 
   // Adds |mode| to |output|. |mode| must be a valid display mode pointer.
   virtual void AddMode(const ui::DisplaySnapshot& output,
@@ -65,21 +76,24 @@ class DISPLAY_TYPES_EXPORT NativeDisplayDelegate {
 
   // Configures the display represented by |output| to use |mode| and positions
   // the display to |origin| in the framebuffer. |mode| can be NULL, which
-  // represents disabling the display. Returns true on success.
-  virtual bool Configure(const ui::DisplaySnapshot& output,
+  // represents disabling the display. The callback will return the status of
+  // the operation.
+  virtual void Configure(const ui::DisplaySnapshot& output,
                          const ui::DisplayMode* mode,
-                         const gfx::Point& origin) = 0;
+                         const gfx::Point& origin,
+                         const ConfigureCallback& callback) = 0;
 
   // Called to set the frame buffer (underlying XRR "screen") size.
   virtual void CreateFrameBuffer(const gfx::Size& size) = 0;
 
   // Gets HDCP state of output.
-  virtual bool GetHDCPState(const ui::DisplaySnapshot& output,
-                            ui::HDCPState* state) = 0;
+  virtual void GetHDCPState(const ui::DisplaySnapshot& output,
+                            const GetHDCPStateCallback& callback) = 0;
 
   // Sets HDCP state of output.
-  virtual bool SetHDCPState(const ui::DisplaySnapshot& output,
-                            ui::HDCPState state) = 0;
+  virtual void SetHDCPState(const ui::DisplaySnapshot& output,
+                            ui::HDCPState state,
+                            const SetHDCPStateCallback& callback) = 0;
 
   // Gets the available list of color calibrations.
   virtual std::vector<ui::ColorCalibrationProfile>
@@ -90,6 +104,10 @@ class DISPLAY_TYPES_EXPORT NativeDisplayDelegate {
   virtual bool SetColorCalibrationProfile(
       const ui::DisplaySnapshot& output,
       ui::ColorCalibrationProfile new_profile) = 0;
+
+  // Set the gamma ramp for the display.
+  virtual bool SetGammaRamp(const ui::DisplaySnapshot& output,
+                            const std::vector<GammaRampRGBEntry>& lut) = 0;
 
   virtual void AddObserver(NativeDisplayObserver* observer) = 0;
 

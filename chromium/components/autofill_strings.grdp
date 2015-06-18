@@ -10,8 +10,11 @@
   <message name="IDS_AUTOFILL_WARNING_INSECURE_CONNECTION" desc="Warning text to show when credit card autofill is disabled because the website is not using a secure connection.">
     Automatic credit card filling is disabled because this form does not use a secure connection.
   </message>
-  <message name="IDS_AUTOFILL_CC_AMEX" desc="American Express credit card name.">
+  <message name="IDS_AUTOFILL_CC_AMEX" desc="Full American Express credit card name.">
     American Express
+  </message>
+  <message name="IDS_AUTOFILL_CC_AMEX_SHORT" desc="Shorter name for American Express credit card.">
+    Amex
   </message>
   <message name="IDS_AUTOFILL_CC_DINERS" desc="Diners Club credit card name.">
     Diners Club
@@ -31,16 +34,14 @@
   <message name="IDS_AUTOFILL_CC_VISA" desc="Visa credit card name.">
     Visa
   </message>
+  <message name="IDS_AUTOFILL_CC_GENERIC" desc="Generic credit card name.">
+    Card
+  </message>
   <message name="IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR" desc="The separator character used to join multi-line addresses.">
     , '''
   </message>
   <message name="IDS_AUTOFILL_ADDRESS_SUMMARY_SEPARATOR" desc="The separator character used in the summary of an address.">
     , '''
-  </message>
-  <message name="IDS_CREDIT_CARD_NUMBER_PREVIEW_FORMAT" desc="Credit card preview format">
-    <ph name="OBFUSCATED_CC_NUMBER">$1<ex>************1234</ex>
-    </ph>, Exp: <ph name="CC_EXPIRATION_DATE">$2<ex>03/2020</ex>
-    </ph>
   </message>
 
   <!-- These are all variants of the same logical field: The major subdivision below the "country" level. -->
@@ -110,11 +111,11 @@
     </message>
   </if>
 
-  <message name="IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET" desc="Message displayed to user when user entered a credit card number that is not supported by Google Wallet.">
-    This type of card is not supported by Google Wallet. Please select a different card.
+  <message name="IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET" desc="Message displayed to user when user entered a credit card number that is not supported by Google Payments.">
+    This type of card is not supported by Google Payments. Please select a different card.
   </message>
-  <message name="IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET_FOR_MERCHANT" desc="Message displayed to user when user entered a credit card number that is not supported by Google Wallet for the particular merchant site the user is on.">
-    This type of card is not supported by Google Wallet for this merchant. Please select a different card.
+  <message name="IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET_FOR_MERCHANT" desc="Message displayed to user when user entered a credit card number that is not supported by Google Payments for the particular merchant site the user is on.">
+    This type of card is not supported by Google Payments for this merchant. Please select a different card.
   </message>
 
   <!-- Autofill on OSX -->
@@ -123,5 +124,24 @@
       Enable Autofill using Contacts…
     </message>
   </if>
+
+  <message name="IDS_AUTOFILL_SCAN_CREDIT_CARD" desc="An item in the autofill popup that triggers a new credit card to be scanned using the camera on the device.">
+    Scan new card
+  </message>
+
+  <message name="IDS_AUTOFILL_PASSWORD_FIELD_SUGGESTIONS_TITLE" desc="Text shown as the title of the suggestion drop down when a password field is clicked.">
+    Use password for:
+  </message>
+
+  <!-- Autofill infobar -->
+  <message name="IDS_AUTOFILL_CC_INFOBAR_ACCEPT" desc="Text to show for the Autofill credit card request infobar accept button.">
+    Save
+  </message>
+  <message name="IDS_AUTOFILL_CC_INFOBAR_DENY" desc="Text to show for the Autofill credit card request infobar deny button.">
+    Don't save
+  </message>
+  <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
+    Do you want Chrome to save this credit card information for completing web forms?
+  </message>
 
 </grit-part>

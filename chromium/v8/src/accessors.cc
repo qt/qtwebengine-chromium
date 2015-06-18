@@ -6,7 +6,6 @@
 
 #include "src/accessors.h"
 #include "src/api.h"
-#include "src/compiler.h"
 #include "src/contexts.h"
 #include "src/deoptimizer.h"
 #include "src/execution.h"
@@ -14,6 +13,7 @@
 #include "src/frames-inl.h"
 #include "src/isolate.h"
 #include "src/list-inl.h"
+#include "src/messages.h"
 #include "src/property-details.h"
 #include "src/prototype.h"
 
@@ -70,59 +70,60 @@ static V8_INLINE bool CheckForName(Handle<Name> name,
 
 // Returns true for properties that are accessors to object fields.
 // If true, *object_offset contains offset of object field.
-template <class T>
-bool Accessors::IsJSObjectFieldAccessor(typename T::TypeHandle type,
-                                        Handle<Name> name,
+bool Accessors::IsJSObjectFieldAccessor(Handle<Map> map, Handle<Name> name,
                                         int* object_offset) {
   Isolate* isolate = name->GetIsolate();
-
-  if (type->Is(T::String())) {
-    return CheckForName(name, isolate->factory()->length_string(),
-                        String::kLengthOffset, object_offset);
-  }
-
-  if (!type->IsClass()) return false;
-  Handle<Map> map = type->AsClass()->Map();
 
   switch (map->instance_type()) {
     case JS_ARRAY_TYPE:
       return
         CheckForName(name, isolate->factory()->length_string(),
                      JSArray::kLengthOffset, object_offset);
-    case JS_TYPED_ARRAY_TYPE:
-      return
-        CheckForName(name, isolate->factory()->length_string(),
-                     JSTypedArray::kLengthOffset, object_offset) ||
-        CheckForName(name, isolate->factory()->byte_length_string(),
-                     JSTypedArray::kByteLengthOffset, object_offset) ||
-        CheckForName(name, isolate->factory()->byte_offset_string(),
-                     JSTypedArray::kByteOffsetOffset, object_offset);
     case JS_ARRAY_BUFFER_TYPE:
-      return
-        CheckForName(name, isolate->factory()->byte_length_string(),
-                     JSArrayBuffer::kByteLengthOffset, object_offset);
-    case JS_DATA_VIEW_TYPE:
-      return
-        CheckForName(name, isolate->factory()->byte_length_string(),
-                     JSDataView::kByteLengthOffset, object_offset) ||
-        CheckForName(name, isolate->factory()->byte_offset_string(),
-                     JSDataView::kByteOffsetOffset, object_offset);
+      return CheckForName(name, isolate->factory()->byte_length_string(),
+                          JSArrayBuffer::kByteLengthOffset, object_offset);
     default:
+      if (map->instance_type() < FIRST_NONSTRING_TYPE) {
+        return CheckForName(name, isolate->factory()->length_string(),
+                            String::kLengthOffset, object_offset);
+      }
+
       return false;
   }
 }
 
 
-template
-bool Accessors::IsJSObjectFieldAccessor<Type>(Type* type,
-                                              Handle<Name> name,
-                                              int* object_offset);
+bool Accessors::IsJSArrayBufferViewFieldAccessor(Handle<Map> map,
+                                                 Handle<Name> name,
+                                                 int* object_offset) {
+  Isolate* isolate = name->GetIsolate();
 
+  switch (map->instance_type()) {
+    case JS_TYPED_ARRAY_TYPE:
+      // %TypedArray%.prototype is non-configurable, and so are the following
+      // named properties on %TypedArray%.prototype, so we can directly inline
+      // the field-load for typed array maps that still use their
+      // %TypedArray%.prototype.
+      if (JSFunction::cast(map->GetConstructor())->prototype() !=
+          map->prototype()) {
+        return false;
+      }
+      return CheckForName(name, isolate->factory()->length_string(),
+                          JSTypedArray::kLengthOffset, object_offset) ||
+             CheckForName(name, isolate->factory()->byte_length_string(),
+                          JSTypedArray::kByteLengthOffset, object_offset) ||
+             CheckForName(name, isolate->factory()->byte_offset_string(),
+                          JSTypedArray::kByteOffsetOffset, object_offset);
 
-template
-bool Accessors::IsJSObjectFieldAccessor<HeapType>(Handle<HeapType> type,
-                                                  Handle<Name> name,
-                                                  int* object_offset);
+    case JS_DATA_VIEW_TYPE:
+      return CheckForName(name, isolate->factory()->byte_length_string(),
+                          JSDataView::kByteLengthOffset, object_offset) ||
+             CheckForName(name, isolate->factory()->byte_offset_string(),
+                          JSDataView::kByteOffsetOffset, object_offset);
+    default:
+      return false;
+  }
+}
 
 
 bool SetPropertyOnInstanceIfInherited(
@@ -136,6 +137,12 @@ bool SetPropertyOnInstanceIfInherited(
     // This behaves sloppy since we lost the actual strict-mode.
     // TODO(verwaest): Fix by making ExecutableAccessorInfo behave like data
     // properties.
+    if (object->IsJSGlobalProxy()) {
+      PrototypeIterator iter(isolate, object);
+      if (iter.IsAtEnd()) return true;
+      DCHECK(PrototypeIterator::GetCurrent(iter)->IsJSGlobalObject());
+      object = Handle<JSObject>::cast(PrototypeIterator::GetCurrent(iter));
+    }
     if (!object->map()->is_extensible()) return true;
     JSObject::SetOwnPropertyIgnoreAttributes(object, Utils::OpenHandle(*name),
                                              value, NONE).Check();
@@ -181,7 +188,7 @@ void Accessors::ArgumentsIteratorSetter(
 
 Handle<AccessorInfo> Accessors::ArgumentsIteratorInfo(
     Isolate* isolate, PropertyAttributes attributes) {
-  Handle<Name> name(isolate->native_context()->iterator_symbol(), isolate);
+  Handle<Name> name = isolate->factory()->iterator_symbol();
   return MakeAccessor(isolate, name, &ArgumentsIteratorGetter,
                       &ArgumentsIteratorSetter, attributes);
 }
@@ -254,14 +261,8 @@ void Accessors::ArrayLengthSetter(
     return;
   }
 
-  Handle<Object> exception;
-  maybe = isolate->factory()->NewRangeError("invalid_array_length",
-                                            HandleVector<Object>(NULL, 0));
-  if (!maybe.ToHandle(&exception)) {
-    isolate->OptionalRescheduleException(false);
-    return;
-  }
-
+  Handle<Object> exception =
+      isolate->factory()->NewRangeError(MessageTemplate::kInvalidArrayLength);
   isolate->ScheduleThrow(*exception);
 }
 
@@ -695,6 +696,40 @@ Handle<AccessorInfo> Accessors::ScriptSourceMappingUrlInfo(
 
 
 //
+// Accessors::ScriptIsEmbedderDebugScript
+//
+
+
+void Accessors::ScriptIsEmbedderDebugScriptGetter(
+    v8::Local<v8::Name> name, const v8::PropertyCallbackInfo<v8::Value>& info) {
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
+  DisallowHeapAllocation no_allocation;
+  HandleScope scope(isolate);
+  Object* object = *Utils::OpenHandle(*info.This());
+  bool is_embedder_debug_script =
+      Script::cast(JSValue::cast(object)->value())->is_embedder_debug_script();
+  Object* res = *isolate->factory()->ToBoolean(is_embedder_debug_script);
+  info.GetReturnValue().Set(Utils::ToLocal(Handle<Object>(res, isolate)));
+}
+
+
+void Accessors::ScriptIsEmbedderDebugScriptSetter(
+    v8::Local<v8::Name> name, v8::Local<v8::Value> value,
+    const v8::PropertyCallbackInfo<void>& info) {
+  UNREACHABLE();
+}
+
+
+Handle<AccessorInfo> Accessors::ScriptIsEmbedderDebugScriptInfo(
+    Isolate* isolate, PropertyAttributes attributes) {
+  Handle<String> name(isolate->factory()->InternalizeOneByteString(
+      STATIC_CHAR_VECTOR("is_debugger_script")));
+  return MakeAccessor(isolate, name, &ScriptIsEmbedderDebugScriptGetter,
+                      &ScriptIsEmbedderDebugScriptSetter, attributes);
+}
+
+
+//
 // Accessors::ScriptGetContextData
 //
 
@@ -987,12 +1022,52 @@ void Accessors::FunctionLengthGetter(
 }
 
 
+MUST_USE_RESULT static MaybeHandle<Object> ReplaceAccessorWithDataProperty(
+    Isolate* isolate, Handle<JSObject> object, Handle<Name> name,
+    Handle<Object> value, bool is_observed, Handle<Object> old_value) {
+  LookupIterator it(object, name);
+  CHECK_EQ(LookupIterator::ACCESSOR, it.state());
+  DCHECK(it.HolderIsReceiverOrHiddenPrototype());
+  it.ReconfigureDataProperty(value, it.property_details().attributes());
+  it.WriteDataValue(value);
+
+  if (is_observed && !old_value->SameValue(*value)) {
+    return JSObject::EnqueueChangeRecord(object, "update", name, old_value);
+  }
+
+  return value;
+}
+
+
+MUST_USE_RESULT static MaybeHandle<Object> SetFunctionLength(
+    Isolate* isolate, Handle<JSFunction> function, Handle<Object> value) {
+  Handle<Object> old_value;
+  bool is_observed = function->map()->is_observed();
+  if (is_observed) {
+    old_value = handle(Smi::FromInt(function->shared()->length()), isolate);
+  }
+
+  return ReplaceAccessorWithDataProperty(isolate, function,
+                                         isolate->factory()->length_string(),
+                                         value, is_observed, old_value);
+}
+
+
 void Accessors::FunctionLengthSetter(
     v8::Local<v8::Name> name,
     v8::Local<v8::Value> val,
     const v8::PropertyCallbackInfo<void>& info) {
-  // Function length is non writable, non configurable.
-  UNREACHABLE();
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
+  HandleScope scope(isolate);
+  Handle<Object> value = Utils::OpenHandle(*val);
+
+  if (SetPropertyOnInstanceIfInherited(isolate, info, name, value)) return;
+
+  Handle<JSFunction> object =
+      Handle<JSFunction>::cast(Utils::OpenHandle(*info.Holder()));
+  if (SetFunctionLength(isolate, object, value).is_null()) {
+    isolate->OptionalRescheduleException(false);
+  }
 }
 
 
@@ -1023,12 +1098,35 @@ void Accessors::FunctionNameGetter(
 }
 
 
+MUST_USE_RESULT static MaybeHandle<Object> SetFunctionName(
+    Isolate* isolate, Handle<JSFunction> function, Handle<Object> value) {
+  Handle<Object> old_value;
+  bool is_observed = function->map()->is_observed();
+  if (is_observed) {
+    old_value = handle(function->shared()->name(), isolate);
+  }
+
+  return ReplaceAccessorWithDataProperty(isolate, function,
+                                         isolate->factory()->name_string(),
+                                         value, is_observed, old_value);
+}
+
+
 void Accessors::FunctionNameSetter(
     v8::Local<v8::Name> name,
     v8::Local<v8::Value> val,
     const v8::PropertyCallbackInfo<void>& info) {
-  // Function name is non writable, non configurable.
-  UNREACHABLE();
+  i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
+  HandleScope scope(isolate);
+  Handle<Object> value = Utils::OpenHandle(*val);
+
+  if (SetPropertyOnInstanceIfInherited(isolate, info, name, value)) return;
+
+  Handle<JSFunction> object =
+      Handle<JSFunction>::cast(Utils::OpenHandle(*info.Holder()));
+  if (SetFunctionName(isolate, object, value).is_null()) {
+    isolate->OptionalRescheduleException(false);
+  }
 }
 
 
@@ -1054,9 +1152,8 @@ static Handle<Object> ArgumentsForInlinedFunction(
   Isolate* isolate = inlined_function->GetIsolate();
   Factory* factory = isolate->factory();
   SlotRefValueBuilder slot_refs(
-      frame,
-      inlined_frame_index,
-      inlined_function->shared()->formal_parameter_count());
+      frame, inlined_frame_index,
+      inlined_function->shared()->internal_formal_parameter_count());
 
   int args_count = slot_refs.args_length();
   Handle<JSObject> arguments =
@@ -1280,7 +1377,7 @@ MaybeHandle<JSFunction> FindCaller(Isolate* isolate,
   // Censor if the caller is not a sloppy mode function.
   // Change from ES5, which used to throw, see:
   // https://bugs.ecmascript.org/show_bug.cgi?id=310
-  if (caller->shared()->strict_mode() == STRICT) {
+  if (is_strict(caller->shared()->language_mode())) {
     return MaybeHandle<JSFunction>();
   }
   // Don't return caller from another security context.
@@ -1346,14 +1443,8 @@ static void ModuleGetExport(
   if (value->IsTheHole()) {
     Handle<String> name = v8::Utils::OpenHandle(*property);
 
-    Handle<Object> exception;
-    MaybeHandle<Object> maybe = isolate->factory()->NewReferenceError(
-        "not_defined", HandleVector(&name, 1));
-    if (!maybe.ToHandle(&exception)) {
-      isolate->OptionalRescheduleException(false);
-      return;
-    }
-
+    Handle<Object> exception = isolate->factory()->NewReferenceError(
+        MessageTemplate::kNotDefined, name);
     isolate->ScheduleThrow(*exception);
     return;
   }
@@ -1373,14 +1464,8 @@ static void ModuleSetExport(
   Isolate* isolate = context->GetIsolate();
   if (old_value->IsTheHole()) {
     Handle<String> name = v8::Utils::OpenHandle(*property);
-    Handle<Object> exception;
-    MaybeHandle<Object> maybe = isolate->factory()->NewReferenceError(
-        "not_defined", HandleVector(&name, 1));
-    if (!maybe.ToHandle(&exception)) {
-      isolate->OptionalRescheduleException(false);
-      return;
-    }
-
+    Handle<Object> exception = isolate->factory()->NewReferenceError(
+        MessageTemplate::kNotDefined, name);
     isolate->ScheduleThrow(*exception);
     return;
   }

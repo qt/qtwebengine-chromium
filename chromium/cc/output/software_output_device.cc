@@ -27,13 +27,13 @@ void SoftwareOutputDevice::Resize(const gfx::Size& viewport_pixel_size,
                                           viewport_pixel_size.height(),
                                           kOpaque_SkAlphaType);
   viewport_pixel_size_ = viewport_pixel_size;
-  canvas_ = skia::AdoptRef(SkCanvas::NewRaster(info));
+  surface_ = skia::AdoptRef(SkSurface::NewRaster(info));
 }
 
 SkCanvas* SoftwareOutputDevice::BeginPaint(const gfx::Rect& damage_rect) {
-  DCHECK(canvas_);
+  DCHECK(surface_);
   damage_rect_ = damage_rect;
-  return canvas_.get();
+  return surface_->getCanvas();
 }
 
 void SoftwareOutputDevice::EndPaint(SoftwareFrameData* frame_data) {
@@ -41,17 +41,6 @@ void SoftwareOutputDevice::EndPaint(SoftwareFrameData* frame_data) {
   frame_data->id = 0;
   frame_data->size = viewport_pixel_size_;
   frame_data->damage_rect = damage_rect_;
-}
-
-void SoftwareOutputDevice::CopyToPixels(const gfx::Rect& rect, void* pixels) {
-  DCHECK(canvas_);
-  SkImageInfo info = SkImageInfo::MakeN32Premul(rect.width(), rect.height());
-  canvas_->readPixels(info, pixels, info.minRowBytes(), rect.x(), rect.y());
-}
-
-void SoftwareOutputDevice::Scroll(const gfx::Vector2d& delta,
-                                  const gfx::Rect& clip_rect) {
-  NOTIMPLEMENTED();
 }
 
 void SoftwareOutputDevice::ReclaimSoftwareFrame(unsigned id) {

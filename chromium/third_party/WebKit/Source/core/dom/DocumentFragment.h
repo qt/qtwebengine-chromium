@@ -24,12 +24,13 @@
 #ifndef DocumentFragment_h
 #define DocumentFragment_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/ParserContentPolicy.h"
 
 namespace blink {
 
-class DocumentFragment : public ContainerNode {
+class CORE_EXPORT DocumentFragment : public ContainerNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<DocumentFragment> create(Document&);
@@ -49,7 +50,7 @@ private:
     virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override;
     virtual bool childTypeAllowed(NodeType) const override;
 
-    bool isDocumentFragment() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isDocumentFragment() const = delete; // This will catch anyone doing an unnecessary check.
 };
 
 DEFINE_NODE_TYPE_CASTS(DocumentFragment, isDocumentFragment());

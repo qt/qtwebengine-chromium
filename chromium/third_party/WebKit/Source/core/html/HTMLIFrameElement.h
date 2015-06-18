@@ -24,14 +24,19 @@
 #ifndef HTMLIFrameElement_h
 #define HTMLIFrameElement_h
 
+#include "core/dom/DOMSettableTokenList.h"
 #include "core/html/HTMLFrameElementBase.h"
 
 namespace blink {
 
-class HTMLIFrameElement final : public HTMLFrameElementBase {
+class HTMLIFrameElement final : public HTMLFrameElementBase, public DOMSettableTokenListObserver {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLIFrameElement);
 public:
     DECLARE_NODE_FACTORY(HTMLIFrameElement);
+    DECLARE_VIRTUAL_TRACE();
+    virtual ~HTMLIFrameElement();
+    DOMSettableTokenList* sandbox() const;
 
 private:
     explicit HTMLIFrameElement(Document&);
@@ -44,15 +49,18 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     virtual bool loadedNonEmptyDocument() const override { return m_didLoadNonEmptyDocument; }
     virtual void didLoadNonEmptyDocument() override { m_didLoadNonEmptyDocument = true; }
     virtual bool isInteractiveContent() const override;
 
+    virtual void valueChanged() override;
+
     AtomicString m_name;
     bool m_didLoadNonEmptyDocument;
+    RefPtrWillBeMember<DOMSettableTokenList> m_sandbox;
 };
 
 } // namespace blink

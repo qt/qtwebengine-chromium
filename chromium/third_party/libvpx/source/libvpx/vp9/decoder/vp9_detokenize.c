@@ -14,6 +14,9 @@
 #include "vp9/common/vp9_blockd.h"
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_entropy.h"
+#if CONFIG_COEFFICIENT_RANGE_CHECKING
+#include "vp9/common/vp9_idct.h"
+#endif
 
 #include "vp9/decoder/vp9_detokenize.h"
 
@@ -32,7 +35,7 @@
 #define INCREMENT_COUNT(token)                              \
   do {                                                      \
      if (!cm->frame_parallel_decoding_mode)                 \
-       ++coef_counts[band][ctx][token];                      \
+       ++coef_counts[band][ctx][token];                     \
   } while (0)
 
 static INLINE int read_coeff(const vp9_prob *probs, int n, vp9_reader *r) {
@@ -42,25 +45,14 @@ static INLINE int read_coeff(const vp9_prob *probs, int n, vp9_reader *r) {
   return val;
 }
 
-static const vp9_tree_index coeff_subtree_high[TREE_SIZE(ENTROPY_TOKENS)] = {
-  2, 6,                                         /* 0 = LOW_VAL */
-  -TWO_TOKEN, 4,                                /* 1 = TWO */
-  -THREE_TOKEN, -FOUR_TOKEN,                    /* 2 = THREE */
-  8, 10,                                        /* 3 = HIGH_LOW */
-  -CATEGORY1_TOKEN, -CATEGORY2_TOKEN,           /* 4 = CAT_ONE */
-  12, 14,                                       /* 5 = CAT_THREEFOUR */
-  -CATEGORY3_TOKEN, -CATEGORY4_TOKEN,           /* 6 = CAT_THREE */
-  -CATEGORY5_TOKEN, -CATEGORY6_TOKEN            /* 7 = CAT_FIVE */
-};
-
-static int decode_coefs(VP9_COMMON *cm, const MACROBLOCKD *xd, PLANE_TYPE type,
+static int decode_coefs(VP9_COMMON *cm, const MACROBLOCKD *xd,
+                        FRAME_COUNTS *counts, PLANE_TYPE type,
                         tran_low_t *dqcoeff, TX_SIZE tx_size, const int16_t *dq,
                         int ctx, const int16_t *scan, const int16_t *nb,
                         vp9_reader *r) {
   const int max_eob = 16 << (tx_size << 1);
-  const FRAME_CONTEXT *const fc = &cm->fc;
-  FRAME_COUNTS *const counts = &cm->counts;
-  const int ref = is_inter_block(&xd->mi[0].src_mi->mbmi);
+  const FRAME_CONTEXT *const fc = cm->fc;
+  const int ref = is_inter_block(&xd->mi[0]->mbmi);
   int band, c = 0;
   const vp9_prob (*coef_probs)[COEFF_CONTEXTS][UNCONSTRAINED_NODES] =
       fc->coef_probs[tx_size][type][ref];
@@ -144,7 +136,7 @@ static int decode_coefs(VP9_COMMON *cm, const MACROBLOCKD *xd, PLANE_TYPE type,
       val = 1;
     } else {
       INCREMENT_COUNT(TWO_TOKEN);
-      token = vp9_read_tree(r, coeff_subtree_high,
+      token = vp9_read_tree(r, vp9_coef_con_tree,
                             vp9_pareto8_full[prob[PIVOT_NODE] - 1]);
       switch (token) {
         case TWO_TOKEN:
@@ -191,10 +183,15 @@ static int decode_coefs(VP9_COMMON *cm, const MACROBLOCKD *xd, PLANE_TYPE type,
     }
     v = (val * dqv) >> dq_shift;
 #if CONFIG_COEFFICIENT_RANGE_CHECKING
+#if CONFIG_VP9_HIGHBITDEPTH
+    dqcoeff[scan[c]] = highbd_check_range((vp9_read_bit(r) ? -v : v),
+                                          cm->bit_depth);
+#else
     dqcoeff[scan[c]] = check_range(vp9_read_bit(r) ? -v : v);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 #else
     dqcoeff[scan[c]] = vp9_read_bit(r) ? -v : v;
-#endif
+#endif  // CONFIG_COEFFICIENT_RANGE_CHECKING
     token_cache[scan[c]] = vp9_pt_energy_class[token];
     ++c;
     ctx = get_coef_context(nb, token_cache, c);
@@ -205,15 +202,19 @@ static int decode_coefs(VP9_COMMON *cm, const MACROBLOCKD *xd, PLANE_TYPE type,
 }
 
 int vp9_decode_block_tokens(VP9_COMMON *cm, MACROBLOCKD *xd,
-                            int plane, int block, BLOCK_SIZE plane_bsize,
-                            int x, int y, TX_SIZE tx_size, vp9_reader *r) {
+                            FRAME_COUNTS *counts, int plane, int block,
+                            BLOCK_SIZE plane_bsize, int x, int y,
+                            TX_SIZE tx_size, vp9_reader *r,
+                            int seg_id) {
   struct macroblockd_plane *const pd = &xd->plane[plane];
+  const int16_t *const dequant = (plane == 0) ? cm->y_dequant[seg_id]
+                                              : cm->uv_dequant[seg_id];
   const int ctx = get_entropy_context(tx_size, pd->above_context + x,
                                                pd->left_context + y);
   const scan_order *so = get_scan(xd, tx_size, pd->plane_type, block);
-  const int eob = decode_coefs(cm, xd, pd->plane_type,
+  const int eob = decode_coefs(cm, xd, counts, pd->plane_type,
                                BLOCK_OFFSET(pd->dqcoeff, block), tx_size,
-                               pd->dequant, ctx, so->scan, so->neighbors, r);
+                               dequant, ctx, so->scan, so->neighbors, r);
   vp9_set_contexts(xd, pd, plane_bsize, tx_size, eob > 0, x, y);
   return eob;
 }

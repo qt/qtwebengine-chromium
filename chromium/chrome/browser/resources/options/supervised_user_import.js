@@ -45,11 +45,8 @@ cr.define('options', function() {
 
       supervisedUserList.addEventListener('change', function(event) {
         var supervisedUser = supervisedUserList.selectedItem;
-        if (!supervisedUser)
-          return;
-
         $('supervised-user-import-ok').disabled =
-          supervisedUserList.selectedItem.onCurrentDevice;
+            !supervisedUser || supervisedUser.onCurrentDevice;
       });
 
       var self = this;
@@ -175,7 +172,7 @@ cr.define('options', function() {
 
     /**
      * Sets the data model of the supervised user list to |supervisedUsers|.
-     * @param {Array.<{id: string, name: string, iconURL: string,
+     * @param {Array<{id: string, name: string, iconURL: string,
      *     onCurrentDevice: boolean, needAvatar: boolean}>} supervisedUsers
      *     Array of supervised user objects.
      * @private

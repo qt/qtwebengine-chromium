@@ -38,8 +38,10 @@
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/PlatformWheelEvent.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -54,7 +56,6 @@
 #include "web/PopupContainer.h"
 #include "web/PopupMenuChromium.h"
 #include "web/WebInputEventConversion.h"
-#include <skia/ext/platform_canvas.h>
 
 namespace blink {
 
@@ -105,6 +106,8 @@ void WebPopupMenuImpl::initialize(PopupContainer* widget, const WebRect& bounds)
         m_layerTreeView->setDeviceScaleFactor(m_client->deviceScaleFactor());
         m_rootLayer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(this));
         m_rootLayer->layer()->setBounds(m_size);
+        // FIXME: Legacy LCD behavior (http://crbug.com/436821), but are we always guaranteed to be opaque?
+        m_rootLayer->layer()->setOpaque(true);
         m_layerTreeView->setRootLayer(*m_rootLayer->layer());
     }
 }
@@ -209,16 +212,43 @@ void WebPopupMenuImpl::layout()
 {
 }
 
-void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebContentLayerClient::GraphicsContextStatus contextStatus)
+void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, WebContentLayerClient::PaintingControlSetting paintingControl)
 {
     if (!m_widget)
         return;
 
-    if (!rect.isEmpty()) {
-        GraphicsContext context(canvas,
-            contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
-        m_widget->paint(&context, rect);
+    OwnPtr<GraphicsContext> context;
+    GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
+    if (paintingControl == PaintingControlSetting::DisplayListPaintingDisabled
+        || paintingControl == PaintingControlSetting::DisplayListConstructionDisabled)
+        disabledMode = GraphicsContext::FullyDisabled;
+
+    DisplayItemList* itemList = displayItemList();
+    if (itemList) {
+        context = adoptPtr(new GraphicsContext(itemList, disabledMode));
+        itemList->setDisplayItemConstructionIsDisabled(paintingControl == PaintingControlSetting::DisplayListConstructionDisabled);
+    } else {
+        context = GraphicsContext::deprecatedCreateWithCanvas(canvas, disabledMode);
     }
+    m_widget->paint(context.get(), rect);
+
+    if (itemList)
+        itemList->commitNewDisplayItems();
+}
+
+void WebPopupMenuImpl::paintContents(WebDisplayItemList* webDisplayItemList, const WebRect& clip, WebContentLayerClient::PaintingControlSetting paintingControl)
+{
+    if (!m_widget)
+        return;
+
+    if (paintingControl != WebContentLayerClient::PaintDefaultBehavior && m_displayItemList)
+        m_displayItemList->invalidateAll();
+
+    paintContents(static_cast<WebCanvas*>(nullptr), clip, paintingControl);
+
+    RELEASE_ASSERT(m_displayItemList);
+    for (const auto& item : m_displayItemList->displayItems())
+        item->appendToWebDisplayItemList(webDisplayItemList);
 }
 
 void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect)
@@ -227,9 +257,10 @@ void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect)
         return;
 
     if (!rect.isEmpty()) {
-        GraphicsContext context(canvas);
-        context.applyDeviceScaleFactor(m_client->deviceScaleFactor());
-        m_widget->paint(&context, rect);
+        OwnPtr<GraphicsContext> context = GraphicsContext::deprecatedCreateWithCanvas(canvas);
+        float scaleFactor = m_client->deviceScaleFactor();
+        context->scale(scaleFactor, scaleFactor);
+        m_widget->paint(context.get(), rect);
     }
 }
 
@@ -290,7 +321,6 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::GestureScrollBegin:
     case WebInputEvent::GestureScrollEnd:
     case WebInputEvent::GestureScrollUpdate:
-    case WebInputEvent::GestureScrollUpdateWithoutPropagation:
     case WebInputEvent::GestureFlingStart:
     case WebInputEvent::GestureFlingCancel:
     case WebInputEvent::GestureTap:
@@ -365,7 +395,7 @@ void WebPopupMenuImpl::setTextDirection(WebTextDirection)
 //-----------------------------------------------------------------------------
 // HostWindow
 
-void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect)
+void WebPopupMenuImpl::invalidateRect(const IntRect& paintRect)
 {
     if (paintRect.isEmpty())
         return;
@@ -375,24 +405,14 @@ void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect)
         m_rootLayer->layer()->invalidateRect(paintRect);
 }
 
-void WebPopupMenuImpl::invalidateContentsForSlowScroll(const IntRect& updateRect)
-{
-    invalidateContentsAndRootView(updateRect);
-}
-
 void WebPopupMenuImpl::scheduleAnimation()
 {
 }
 
-IntRect WebPopupMenuImpl::rootViewToScreen(const IntRect& rect) const
+IntRect WebPopupMenuImpl::viewportToScreen(const IntRect& rect) const
 {
     notImplemented();
     return IntRect();
-}
-
-WebScreenInfo WebPopupMenuImpl::screenInfo() const
-{
-    return WebScreenInfo();
 }
 
 void WebPopupMenuImpl::popupClosed(PopupContainer* widget)
@@ -404,6 +424,31 @@ void WebPopupMenuImpl::popupClosed(PopupContainer* widget)
     }
     if (m_client)
         m_client->closeWidgetSoon();
+}
+
+void WebPopupMenuImpl::invalidateDisplayItemClient(DisplayItemClient client)
+{
+    if (m_displayItemList) {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+        m_displayItemList->invalidate(client);
+    }
+}
+
+void WebPopupMenuImpl::invalidateAllDisplayItems()
+{
+    if (m_displayItemList) {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+        m_displayItemList->invalidateAll();
+    }
+}
+
+DisplayItemList* WebPopupMenuImpl::displayItemList()
+{
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
+        return nullptr;
+    if (!m_displayItemList)
+        m_displayItemList = DisplayItemList::create();
+    return m_displayItemList.get();
 }
 
 } // namespace blink

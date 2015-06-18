@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,6 +16,7 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
+#include "base/trace_event/trace_event.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_track.h"
 #include "content/renderer/media/peer_connection_tracker.h"
@@ -46,7 +46,6 @@ using webrtc::MediaStreamInterface;
 using webrtc::PeerConnectionInterface;
 using webrtc::PeerConnectionObserver;
 using webrtc::StatsReport;
-using webrtc::StatsReportCopyable;
 using webrtc::StatsReports;
 
 namespace content {
@@ -170,32 +169,49 @@ void GetSdpAndTypeFromSessionDescription(
   }
 }
 
-// Converter functions from WebKit types to libjingle types.
+// Converter functions from WebKit types to WebRTC types.
 
 void GetNativeRtcConfiguration(
-    const blink::WebRTCConfiguration& server_configuration,
-    webrtc::PeerConnectionInterface::RTCConfiguration* config) {
-  if (server_configuration.isNull() || !config)
+    const blink::WebRTCConfiguration& blink_config,
+    webrtc::PeerConnectionInterface::RTCConfiguration* webrtc_config) {
+  if (blink_config.isNull() || !webrtc_config)
     return;
-  for (size_t i = 0; i < server_configuration.numberOfServers(); ++i) {
+  for (size_t i = 0; i < blink_config.numberOfServers(); ++i) {
     webrtc::PeerConnectionInterface::IceServer server;
     const blink::WebRTCICEServer& webkit_server =
-        server_configuration.server(i);
+        blink_config.server(i);
     server.username = base::UTF16ToUTF8(webkit_server.username());
     server.password = base::UTF16ToUTF8(webkit_server.credential());
     server.uri = webkit_server.uri().spec();
-    config->servers.push_back(server);
+    webrtc_config->servers.push_back(server);
   }
 
-  switch (server_configuration.iceTransports()) {
+  switch (blink_config.iceTransports()) {
   case blink::WebRTCIceTransportsNone:
-    config->type = webrtc::PeerConnectionInterface::kNone;
+    webrtc_config->type = webrtc::PeerConnectionInterface::kNone;
     break;
   case blink::WebRTCIceTransportsRelay:
-    config->type = webrtc::PeerConnectionInterface::kRelay;
+    webrtc_config->type = webrtc::PeerConnectionInterface::kRelay;
     break;
   case blink::WebRTCIceTransportsAll:
-    config->type = webrtc::PeerConnectionInterface::kAll;
+    webrtc_config->type = webrtc::PeerConnectionInterface::kAll;
+    break;
+  default:
+    NOTREACHED();
+  }
+
+  switch (blink_config.bundlePolicy()) {
+  case blink::WebRTCBundlePolicyBalanced:
+    webrtc_config->bundle_policy =
+        webrtc::PeerConnectionInterface::kBundlePolicyBalanced;
+    break;
+  case blink::WebRTCBundlePolicyMaxBundle:
+    webrtc_config->bundle_policy =
+        webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
+    break;
+  case blink::WebRTCBundlePolicyMaxCompat:
+    webrtc_config->bundle_policy =
+        webrtc::PeerConnectionInterface::kBundlePolicyMaxCompat;
     break;
   default:
     NOTREACHED();
@@ -263,6 +279,7 @@ class CreateSessionDescriptionRequest
 
     tracker_.TrackOnSuccess(desc);
     webkit_request_.requestSucceeded(CreateWebKitSessionDescription(desc));
+    webkit_request_.reset();
     delete desc;
   }
   void OnFailure(const std::string& error) override {
@@ -274,10 +291,13 @@ class CreateSessionDescriptionRequest
 
     tracker_.TrackOnFailure(error);
     webkit_request_.requestFailed(base::UTF8ToUTF16(error));
+    webkit_request_.reset();
   }
 
  protected:
-  ~CreateSessionDescriptionRequest() override {}
+  ~CreateSessionDescriptionRequest() override {
+    DCHECK(webkit_request_.isNull());
+  }
 
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
   blink::WebRTCSessionDescriptionRequest webkit_request_;
@@ -308,6 +328,7 @@ class SetSessionDescriptionRequest
     }
     tracker_.TrackOnSuccess(NULL);
     webkit_request_.requestSucceeded();
+    webkit_request_.reset();
   }
   void OnFailure(const std::string& error) override {
     if (!main_thread_->BelongsToCurrentThread()) {
@@ -317,10 +338,13 @@ class SetSessionDescriptionRequest
     }
     tracker_.TrackOnFailure(error);
     webkit_request_.requestFailed(base::UTF8ToUTF16(error));
+    webkit_request_.reset();
   }
 
  protected:
-  ~SetSessionDescriptionRequest() override {}
+  ~SetSessionDescriptionRequest() override {
+    DCHECK(webkit_request_.isNull());
+  }
 
  private:
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
@@ -343,33 +367,59 @@ class StatsResponse : public webrtc::StatsObserver {
   void OnComplete(const StatsReports& reports) override {
     DCHECK(signaling_thread_checker_.CalledOnValidThread());
     TRACE_EVENT0("webrtc", "StatsResponse::OnComplete");
-    // TODO(tommi): Get rid of these string copies somehow.
     // We can't use webkit objects directly since they use a single threaded
     // heap allocator.
-    scoped_ptr<std::vector<StatsReportCopyable>> report_copies(
-        new std::vector<StatsReportCopyable>());
+    std::vector<Report*>* report_copies = new std::vector<Report*>();
     report_copies->reserve(reports.size());
-    for (auto it : reports)
-      report_copies->push_back(StatsReportCopyable(*it));
+    for (auto* r : reports)
+      report_copies->push_back(new Report(r));
 
-    main_thread_->PostTask(FROM_HERE,
+    main_thread_->PostTaskAndReply(FROM_HERE,
         base::Bind(&StatsResponse::DeliverCallback, this,
-                   base::Passed(&report_copies)));
+                   base::Unretained(report_copies)),
+        base::Bind(&StatsResponse::DeleteReports,
+                   base::Unretained(report_copies)));
   }
 
  private:
-  void DeliverCallback(scoped_ptr<std::vector<StatsReportCopyable>> reports) {
+  struct Report {
+    Report(const StatsReport* report)
+        : thread_checker(), id(report->id()->ToString()),
+          type(report->TypeToString()),  timestamp(report->timestamp()),
+          values(report->values()) {
+    }
+
+    ~Report() {
+      // Since the values vector holds pointers to const objects that are bound
+      // to the signaling thread, they must be released on the same thread.
+      DCHECK(thread_checker.CalledOnValidThread());
+    }
+
+    const base::ThreadChecker thread_checker;
+    const std::string id, type;
+    const double timestamp;
+    const StatsReport::Values values;
+  };
+
+  static void DeleteReports(std::vector<Report*>* reports) {
+    TRACE_EVENT0("webrtc", "StatsResponse::DeleteReports");
+    for (auto* p : *reports)
+      delete p;
+    delete reports;
+  }
+
+  void DeliverCallback(const std::vector<Report*>* reports) {
     DCHECK(main_thread_->BelongsToCurrentThread());
     TRACE_EVENT0("webrtc", "StatsResponse::DeliverCallback");
 
     rtc::scoped_refptr<LocalRTCStatsResponse> response(
         request_->createResponse().get());
-    for (const auto& report : *reports.get()) {
-      if (report.values.size() > 0)
-        AddReport(response.get(), report);
+    for (const auto* report : *reports) {
+      if (report->values.size() > 0)
+        AddReport(response.get(), *report);
     }
 
-    // Record the getSync operation as done before calling into Blink so that
+    // Record the getStats operation as done before calling into Blink so that
     // we don't skew the perf measurements of the native code with whatever the
     // callback might be doing.
     TRACE_EVENT_ASYNC_END0("webrtc", "getStats_Native", this);
@@ -377,14 +427,23 @@ class StatsResponse : public webrtc::StatsObserver {
     request_ = nullptr;  // must be freed on the main thread.
   }
 
-  void AddReport(LocalRTCStatsResponse* response, const StatsReport& report) {
+  void AddReport(LocalRTCStatsResponse* response, const Report& report) {
     int idx = response->addReport(blink::WebString::fromUTF8(report.id),
                                   blink::WebString::fromUTF8(report.type),
                                   report.timestamp);
+    blink::WebString name, value_str;
     for (const auto& value : report.values) {
-      response->addStatistic(idx,
-          blink::WebString::fromUTF8(value.display_name()),
-          blink::WebString::fromUTF8(value.value));
+      const StatsReport::ValuePtr& v = value.second;
+      name = blink::WebString::fromUTF8(value.second->display_name());
+
+      if (v->type() == StatsReport::Value::kString)
+        value_str = blink::WebString::fromUTF8(v->string_val());
+      if (v->type() == StatsReport::Value::kStaticString)
+        value_str = blink::WebString::fromUTF8(v->static_string_val());
+      else
+        value_str = blink::WebString::fromUTF8(v->ToString());
+
+      response->addStatistic(idx, name, value_str);
     }
   }
 

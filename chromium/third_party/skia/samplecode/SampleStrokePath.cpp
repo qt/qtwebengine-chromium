@@ -98,8 +98,8 @@ static const struct {
 class StrokePathView : public SampleView {
     SkScalar    fWidth;
     SkPath      fPath;
-public:
-    StrokePathView() {
+protected:
+    void onOnceBeforeDraw() override {
 //        test_blur();
         fWidth = SkIntToScalar(120);
 
@@ -122,9 +122,8 @@ public:
         this->setBGColor(0xFFDDDDDD);
     }
 
-protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt) {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "StrokePath");
             return true;
@@ -146,7 +145,7 @@ protected:
         }
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) {
+    void onDrawContent(SkCanvas* canvas) override {
         test_huge_stroke(canvas); return;
         canvas->translate(SkIntToScalar(10), SkIntToScalar(10));
 
@@ -210,7 +209,7 @@ protected:
     }
 
     virtual SkView::Click* onFindClickHandler(SkScalar x, SkScalar y,
-                                              unsigned modi) SK_OVERRIDE {
+                                              unsigned modi) override {
         this->inval(NULL);
         return this->INHERITED::onFindClickHandler(x, y, modi);
     }

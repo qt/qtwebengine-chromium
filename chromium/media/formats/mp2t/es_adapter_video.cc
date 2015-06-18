@@ -5,7 +5,6 @@
 #include "media/formats/mp2t/es_adapter_video.h"
 
 #include "media/base/buffers.h"
-#include "media/base/stream_parser_buffer.h"
 #include "media/base/video_decoder_config.h"
 #include "media/formats/mp2t/mp2t_common.h"
 
@@ -112,7 +111,7 @@ bool EsAdapterVideo::OnNewBuffer(
   // - if it is not associated with any config,
   // - or if no valid key frame has been found so far.
   if (!has_valid_config_ ||
-      (!has_valid_frame_ && !stream_parser_buffer->IsKeyframe())) {
+      (!has_valid_frame_ && !stream_parser_buffer->is_key_frame())) {
     discarded_frame_count_++;
     return true;
   }
@@ -196,7 +195,7 @@ base::TimeDelta EsAdapterVideo::GetNextFramePts(base::TimeDelta current_pts) {
 void EsAdapterVideo::ReplaceDiscardedFrames(
     const scoped_refptr<StreamParserBuffer>& stream_parser_buffer) {
   DCHECK_GT(discarded_frame_count_, 0);
-  DCHECK(stream_parser_buffer->IsKeyframe());
+  DCHECK(stream_parser_buffer->is_key_frame());
 
   // PTS/DTS are interpolated between the min PTS/DTS of discarded frames
   // and the PTS/DTS of the first valid buffer.
@@ -219,7 +218,7 @@ void EsAdapterVideo::ReplaceDiscardedFrames(
         StreamParserBuffer::CopyFrom(
             stream_parser_buffer->data(),
             stream_parser_buffer->data_size(),
-            stream_parser_buffer->IsKeyframe(),
+            stream_parser_buffer->is_key_frame(),
             stream_parser_buffer->type(),
             stream_parser_buffer->track_id());
     frame->SetDecodeTimestamp(dts);

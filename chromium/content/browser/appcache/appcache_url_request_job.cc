@@ -20,10 +20,10 @@
 #include "content/browser/appcache/appcache_service_impl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
 
@@ -134,8 +134,8 @@ void AppCacheURLRequestJob::BeginDelivery() {
 }
 
 void AppCacheURLRequestJob::BeginExecutableHandlerDelivery() {
-  DCHECK(CommandLine::ForCurrentProcess()->
-            HasSwitch(kEnableExecutableHandlers));
+  DCHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
+      kEnableExecutableHandlers));
   if (!storage_->service()->handler_factory()) {
     BeginErrorDelivery("missing handler factory");
     return;

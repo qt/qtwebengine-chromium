@@ -19,7 +19,8 @@ class CTLogVerifierTest : public ::testing::Test {
   CTLogVerifierTest() {}
 
   void SetUp() override {
-    log_ = CTLogVerifier::Create(ct::GetTestPublicKey(), "testlog").Pass();
+    log_ = CTLogVerifier::Create(ct::GetTestPublicKey(), "testlog",
+                                 "https://ct.example.com").Pass();
 
     ASSERT_TRUE(log_);
     ASSERT_EQ(log_->key_id(), ct::GetTestPublicKeyId());
@@ -77,16 +78,26 @@ TEST_F(CTLogVerifierTest, FailsInvalidLogID) {
 }
 
 TEST_F(CTLogVerifierTest, SetsValidSTH) {
-  scoped_ptr<ct::SignedTreeHead> sth(new ct::SignedTreeHead());
-  ct::GetSignedTreeHead(sth.get());
-  ASSERT_TRUE(log_->SetSignedTreeHead(sth.Pass()));
+  ct::SignedTreeHead sth;
+  ct::GetSignedTreeHead(&sth);
+  ASSERT_TRUE(log_->VerifySignedTreeHead(sth));
 }
 
 TEST_F(CTLogVerifierTest, DoesNotSetInvalidSTH) {
-  scoped_ptr<ct::SignedTreeHead> sth(new ct::SignedTreeHead());
-  ct::GetSignedTreeHead(sth.get());
-  sth->sha256_root_hash[0] = '\x0';
-  ASSERT_FALSE(log_->SetSignedTreeHead(sth.Pass()));
+  ct::SignedTreeHead sth;
+  ct::GetSignedTreeHead(&sth);
+  sth.sha256_root_hash[0] = '\x0';
+  ASSERT_FALSE(log_->VerifySignedTreeHead(sth));
+}
+
+// Test that excess data after the public key is rejected.
+TEST_F(CTLogVerifierTest, ExcessDataInPublicKey) {
+  std::string key = ct::GetTestPublicKey();
+  key += "extra";
+
+  scoped_ptr<CTLogVerifier> log =
+      CTLogVerifier::Create(key, "testlog", "https://ct.example.com");
+  EXPECT_FALSE(log);
 }
 
 }  // namespace net

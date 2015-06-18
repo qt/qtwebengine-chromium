@@ -28,7 +28,7 @@ class TrafficShaperException(Exception):
 
 
 class BandwidthValueError(TrafficShaperException):
-  def __init__(self, value):
+  def __init__(self, value):  # pylint: disable=super-init-not-called
     self.value = value
 
   def __str__(self):
@@ -98,7 +98,7 @@ class TrafficShaper(object):
       if not ipfw_list.startswith('65535 '):
         logging.warn('ipfw has existing rules:\n%s', ipfw_list)
         self._delete_rules(ipfw_list)
-    except:
+    except Exception:
       pass
     if (self.up_bandwidth == '0' and self.down_bandwidth == '0' and
         self.delay_ms == '0' and self.packet_loss_rate == '0'):
@@ -169,8 +169,8 @@ class TrafficShaper(object):
   def __exit__(self, unused_exc_type, unused_exc_val, unused_exc_tb):
     if self.is_shaping:
       try:
-          self._delete_rules()
-          logging.info('Stopped shaping traffic')
+        self._delete_rules()
+        logging.info('Stopped shaping traffic')
       except Exception:
         logging.error('Unable to stop shaping traffic.')
         raise

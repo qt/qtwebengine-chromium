@@ -7,6 +7,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "base/mac/scoped_nsobject.h"
+
 namespace views {
 class NativeWidgetMac;
 class BridgedNativeWidget;
@@ -17,11 +19,16 @@ class BridgedNativeWidget;
 @interface ViewsNSWindowDelegate : NSObject<NSWindowDelegate> {
  @private
   views::BridgedNativeWidget* parent_;  // Weak. Owns this.
+  base::scoped_nsobject<NSCursor> cursor_;
 }
 
 // The NativeWidgetMac that created the window this is attached to. Returns
 // NULL if not created by NativeWidgetMac.
 @property(nonatomic, readonly) views::NativeWidgetMac* nativeWidgetMac;
+
+// If set, the cursor set in -[NSResponder updateCursor:] when the window is
+// reached along the responder chain.
+@property(retain, nonatomic) NSCursor* cursor;
 
 // Initialize with the given |parent|.
 - (id)initWithBridgedNativeWidget:(views::BridgedNativeWidget*)parent;
@@ -33,8 +40,17 @@ class BridgedNativeWidget;
 // Notify that the window has been reordered in (or removed from) the window
 // server's screen list. This is a substitute for -[NSWindowDelegate
 // windowDidExpose:], which is only sent for nonretained windows (those without
-// a backing store).
-- (void)onWindowOrderChanged;
+// a backing store). |notification| is optional and can be set when redirecting
+// a notification such as NSApplicationDidHideNotification.
+- (void)onWindowOrderChanged:(NSNotification*)notification;
+
+// Notify when -[NSWindow display] is being called on the window.
+- (void)onWindowWillDisplay;
+
+// Called on the delegate of a modal sheet when its modal session ends.
+- (void)sheetDidEnd:(NSWindow*)sheet
+         returnCode:(NSInteger)returnCode
+        contextInfo:(void*)contextInfo;
 
 @end
 

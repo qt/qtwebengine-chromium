@@ -5,7 +5,7 @@
 #ifndef NET_CERT_MULTI_THREADED_CERT_VERIFIER_H_
 #define NET_CERT_MULTI_THREADED_CERT_VERIFIER_H_
 
-#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -56,23 +56,25 @@ class NET_EXPORT_PRIVATE MultiThreadedCertVerifier
   // CertVerifier implementation
   int Verify(X509Certificate* cert,
              const std::string& hostname,
+             const std::string& ocsp_response,
              int flags,
              CRLSet* crl_set,
              CertVerifyResult* verify_result,
              const CompletionCallback& callback,
-             CertVerifier::RequestHandle* out_req,
+             scoped_ptr<Request>* out_req,
              const BoundNetLog& net_log) override;
 
-  void CancelRequest(CertVerifier::RequestHandle req) override;
+  bool SupportsOCSPStapling() override;
 
  private:
-  friend class CertVerifierWorker;  // Calls HandleResult.
+  struct JobToRequestParamsComparator;
   friend class CertVerifierRequest;
   friend class CertVerifierJob;
   friend class MultiThreadedCertVerifierTest;
   FRIEND_TEST_ALL_PREFIXES(MultiThreadedCertVerifierTest, CacheHit);
   FRIEND_TEST_ALL_PREFIXES(MultiThreadedCertVerifierTest, DifferentCACerts);
   FRIEND_TEST_ALL_PREFIXES(MultiThreadedCertVerifierTest, InflightJoin);
+  FRIEND_TEST_ALL_PREFIXES(MultiThreadedCertVerifierTest, MultipleInflightJoin);
   FRIEND_TEST_ALL_PREFIXES(MultiThreadedCertVerifierTest, CancelRequest);
   FRIEND_TEST_ALL_PREFIXES(MultiThreadedCertVerifierTest,
                            RequestParamsComparators);
@@ -84,6 +86,7 @@ class NET_EXPORT_PRIVATE MultiThreadedCertVerifier
     RequestParams(const SHA1HashValue& cert_fingerprint_arg,
                   const SHA1HashValue& ca_fingerprint_arg,
                   const std::string& hostname_arg,
+                  const std::string& ocsp_response_arg,
                   int flags_arg,
                   const CertificateList& additional_trust_anchors);
     ~RequestParams();
@@ -126,18 +129,29 @@ class NET_EXPORT_PRIVATE MultiThreadedCertVerifier
                     const CacheValidityPeriod& expiration) const;
   };
 
+  struct JobComparator {
+    bool operator()(const CertVerifierJob* job1,
+                    const CertVerifierJob* job2) const;
+  };
+
+  using JobSet = std::set<CertVerifierJob*, JobComparator>;
+
   typedef ExpiringCache<RequestParams, CachedResult, CacheValidityPeriod,
                         CacheExpirationFunctor> CertVerifierCache;
 
-  void HandleResult(X509Certificate* cert,
-                    const std::string& hostname,
-                    int flags,
-                    const CertificateList& additional_trust_anchors,
-                    int error,
-                    const CertVerifyResult& verify_result);
+  // Saves |result| into the cache, keyed by |key|.
+  void SaveResultToCache(const RequestParams& key, const CachedResult& result);
 
   // CertDatabase::Observer methods:
   void OnCACertChanged(const X509Certificate* cert) override;
+
+  // Returns an inflight job for |key|. If there is no such job then returns
+  // null.
+  CertVerifierJob* FindJob(const RequestParams& key);
+
+  // Removes |job| from the inflight set, and passes ownership back to the
+  // caller. |job| must already be |inflight_|.
+  scoped_ptr<CertVerifierJob> RemoveJob(CertVerifierJob* job);
 
   // For unit testing.
   void ClearCache() { cache_.Clear(); }
@@ -149,12 +163,8 @@ class NET_EXPORT_PRIVATE MultiThreadedCertVerifier
   // cache_ maps from a request to a cached result.
   CertVerifierCache cache_;
 
-  // inflight_ maps from a request to an active verification which is taking
-  // place.
-  std::map<RequestParams, CertVerifierJob*> inflight_;
-
-  // A non-owning pointer to the first job for histogramming.
-  CertVerifierJob* first_job_;
+  // inflight_ holds the jobs for which an active verification is taking place.
+  JobSet inflight_;
 
   uint64 requests_;
   uint64 cache_hits_;

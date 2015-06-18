@@ -13,6 +13,8 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 
+namespace net {
+
 namespace {
 
 const uint8 kFinalBit = 0x80;
@@ -26,20 +28,18 @@ const uint64 kPayloadLengthWithTwoByteExtendedLengthField = 126;
 const uint64 kPayloadLengthWithEightByteExtendedLengthField = 127;
 
 inline void MaskWebSocketFramePayloadByBytes(
-    const net::WebSocketMaskingKey& masking_key,
+    const WebSocketMaskingKey& masking_key,
     size_t masking_key_offset,
     char* const begin,
     char* const end) {
   for (char* masked = begin; masked != end; ++masked) {
     *masked ^= masking_key.key[masking_key_offset++];
-    if (masking_key_offset == net::WebSocketFrameHeader::kMaskingKeyLength)
+    if (masking_key_offset == WebSocketFrameHeader::kMaskingKeyLength)
       masking_key_offset = 0;
   }
 }
 
-}  // Unnamed namespace.
-
-namespace net {
+}  // namespace
 
 scoped_ptr<WebSocketFrameHeader> WebSocketFrameHeader::Clone() const {
   scoped_ptr<WebSocketFrameHeader> ret(new WebSocketFrameHeader(opcode));
@@ -178,9 +178,9 @@ void MaskWebSocketFramePayload(const WebSocketMaskingKey& masking_key,
   typedef size_t PackedMaskType;
   PackedMaskType packed_mask_key = 0;
   static const size_t kPackedMaskKeySize = sizeof(packed_mask_key);
-  COMPILE_ASSERT((kPackedMaskKeySize >= kMaskingKeyLength &&
-                  kPackedMaskKeySize % kMaskingKeyLength == 0),
-                 word_size_is_not_multiple_of_mask_length);
+  static_assert((kPackedMaskKeySize >= kMaskingKeyLength &&
+                 kPackedMaskKeySize % kMaskingKeyLength == 0),
+                "word size is not a multiple of mask length");
   char* const end = data + data_size;
   // If the buffer is too small for the vectorised version to be useful, revert
   // to the byte-at-a-time implementation early.

@@ -7,7 +7,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/desktop_media_id.h"
-#include "media/video/capture/video_capture_types.h"
+#include "media/base/video_capture_types.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/window_tree_client.h"
@@ -35,21 +35,44 @@ const int kFrameRate = 30;
 
 class MockDeviceClient : public media::VideoCaptureDevice::Client {
  public:
-  MOCK_METHOD2(ReserveOutputBuffer,
-               scoped_refptr<Buffer>(media::VideoFrame::Format format,
-                                     const gfx::Size& dimensions));
-  MOCK_METHOD1(OnError, void(const std::string& reason));
   MOCK_METHOD5(OnIncomingCapturedData,
                void(const uint8* data,
                     int length,
                     const media::VideoCaptureFormat& frame_format,
                     int rotation,
-                    base::TimeTicks timestamp));
-  MOCK_METHOD4(OnIncomingCapturedVideoFrame,
-               void(const scoped_refptr<Buffer>& buffer,
-                    const media::VideoCaptureFormat& buffer_format,
-                    const scoped_refptr<media::VideoFrame>& frame,
-                    base::TimeTicks timestamp));
+                    const base::TimeTicks& timestamp));
+  MOCK_METHOD9(OnIncomingCapturedYuvData,
+               void (const uint8* y_data,
+                     const uint8* u_data,
+                     const uint8* v_data,
+                     size_t y_stride,
+                     size_t u_stride,
+                     size_t v_stride,
+                     const media::VideoCaptureFormat& frame_format,
+                     int clockwise_rotation,
+                     const base::TimeTicks& timestamp));
+  MOCK_METHOD0(DoReserveOutputBuffer, void(void));
+  MOCK_METHOD0(DoOnIncomingCapturedBuffer, void(void));
+  MOCK_METHOD0(DoOnIncomingCapturedVideoFrame, void(void));
+  MOCK_METHOD1(OnError, void(const std::string& reason));
+
+  // Trampoline methods to workaround GMOCK problems with scoped_ptr<>.
+  scoped_ptr<Buffer> ReserveOutputBuffer(media::VideoPixelFormat format,
+                                         const gfx::Size& dimensions) override {
+    DoReserveOutputBuffer();
+    return scoped_ptr<Buffer>();
+  }
+  void OnIncomingCapturedBuffer(scoped_ptr<Buffer> buffer,
+                                const media::VideoCaptureFormat& frame_format,
+                                const base::TimeTicks& timestamp) override {
+    DoOnIncomingCapturedBuffer();
+  }
+  void OnIncomingCapturedVideoFrame(
+      scoped_ptr<Buffer> buffer,
+      const scoped_refptr<media::VideoFrame>& frame,
+      const base::TimeTicks& timestamp) override {
+    DoOnIncomingCapturedVideoFrame();
+  }
 };
 
 // Test harness that sets up a minimal environment with necessary stubs.
@@ -57,10 +80,10 @@ class DesktopCaptureDeviceAuraTest : public testing::Test {
  public:
   DesktopCaptureDeviceAuraTest()
       : browser_thread_for_ui_(BrowserThread::UI, &message_loop_) {}
-  virtual ~DesktopCaptureDeviceAuraTest() {}
+  ~DesktopCaptureDeviceAuraTest() override {}
 
  protected:
-  virtual void SetUp() override {
+  void SetUp() override {
     // The ContextFactory must exist before any Compositors are created.
     bool enable_pixel_output = false;
     ui::ContextFactory* context_factory =
@@ -75,14 +98,14 @@ class DesktopCaptureDeviceAuraTest : public testing::Test {
     gfx::Rect desktop_bounds = root_window()->bounds();
     window_delegate_.reset(new aura::test::TestWindowDelegate());
     desktop_window_.reset(new aura::Window(window_delegate_.get()));
-    desktop_window_->Init(aura::WINDOW_LAYER_TEXTURED);
+    desktop_window_->Init(ui::LAYER_TEXTURED);
     desktop_window_->SetBounds(desktop_bounds);
     aura::client::ParentWindowWithContext(
         desktop_window_.get(), root_window(), desktop_bounds);
     desktop_window_->Show();
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     helper_->RunAllPendingInMessageLoop();
     root_window()->RemoveChild(desktop_window_.get());
     desktop_window_.reset();

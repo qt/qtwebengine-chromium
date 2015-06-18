@@ -30,6 +30,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/navigator_connect_context.h"
+#include "content/public/browser/navigator_connect_service_factory.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
@@ -39,7 +41,6 @@
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
 #include "storage/browser/fileapi/file_system_url_request_job_factory.h"
-#include "storage/common/blob/blob_data.h"
 
 using storage::FileSystemContext;
 using storage::BlobStorageContext;
@@ -437,8 +438,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
   request_interceptors.push_back(
       ServiceWorkerRequestHandler::CreateInterceptor(
           browser_context_->GetResourceContext()).release());
-  request_interceptors.push_back(
-      AppCacheInterceptor::CreateStartInterceptor().release());
+  request_interceptors.push_back(new AppCacheInterceptor());
 
   // These calls must happen after StoragePartitionImpl::Create().
   if (partition_domain.empty()) {
@@ -461,6 +461,9 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
       browser_context_->GetMediaRequestContext() :
       browser_context_->GetMediaRequestContextForStoragePartition(
           partition->GetPath(), in_memory));
+
+  GetContentClient()->browser()->GetAdditionalNavigatorConnectServices(
+      partition->GetNavigatorConnectContext());
 
   PostCreateInitialization(partition, in_memory);
 
@@ -582,10 +585,9 @@ void StoragePartitionImplMap::PostCreateInitialization(
                        browser_context_->GetSpecialStoragePolicy())));
 
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&ServiceWorkerContextWrapper::SetBlobParametersForCache,
-                   partition->GetServiceWorkerContext(),
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&CacheStorageContextImpl::SetBlobParametersForCache,
+                   partition->GetCacheStorageContext(),
                    make_scoped_refptr(partition->GetURLRequestContext()),
                    make_scoped_refptr(
                        ChromeBlobStorageContext::GetFor(browser_context_))));

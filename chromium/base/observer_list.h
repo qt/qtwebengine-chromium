@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_OBSERVER_LIST_H__
-#define BASE_OBSERVER_LIST_H__
+#ifndef BASE_OBSERVER_LIST_H_
+#define BASE_OBSERVER_LIST_H_
 
 #include <algorithm>
 #include <limits>
@@ -79,7 +79,7 @@ class ObserverListBase
   // also the FOR_EACH_OBSERVER macro defined below.
   class Iterator {
    public:
-    Iterator(ObserverListBase<ObserverType>& list);
+    explicit Iterator(ObserverListBase<ObserverType>* list);
     ~Iterator();
     ObserverType* GetNext();
 
@@ -100,7 +100,8 @@ class ObserverListBase
   // Remove an observer from the list if it is in the list.
   void RemoveObserver(ObserverType* obs);
 
-  bool HasObserver(ObserverType* observer) const;
+  // Determine whether a particular observer is in the list.
+  bool HasObserver(const ObserverType* observer) const;
 
   void Clear();
 
@@ -125,12 +126,11 @@ class ObserverListBase
 
 template <class ObserverType>
 ObserverListBase<ObserverType>::Iterator::Iterator(
-  ObserverListBase<ObserverType>& list)
-    : list_(list.AsWeakPtr()),
+    ObserverListBase<ObserverType>* list)
+    : list_(list->AsWeakPtr()),
       index_(0),
-      max_index_(list.type_ == NOTIFY_ALL ?
-                 std::numeric_limits<size_t>::max() :
-                 list.observers_.size()) {
+      max_index_(list->type_ == NOTIFY_ALL ? std::numeric_limits<size_t>::max()
+                                           : list->observers_.size()) {
   ++list_->notify_depth_;
 }
 
@@ -143,17 +143,18 @@ ObserverListBase<ObserverType>::Iterator::~Iterator() {
 template <class ObserverType>
 ObserverType* ObserverListBase<ObserverType>::Iterator::GetNext() {
   if (!list_.get())
-    return NULL;
+    return nullptr;
   ListType& observers = list_->observers_;
   // Advance if the current element is null
   size_t max_index = std::min(max_index_, observers.size());
   while (index_ < max_index && !observers[index_])
     ++index_;
-  return index_ < max_index ? observers[index_++] : NULL;
+  return index_ < max_index ? observers[index_++] : nullptr;
 }
 
 template <class ObserverType>
 void ObserverListBase<ObserverType>::AddObserver(ObserverType* obs) {
+  DCHECK(obs);
   if (std::find(observers_.begin(), observers_.end(), obs)
       != observers_.end()) {
     NOTREACHED() << "Observers can only be added once!";
@@ -164,11 +165,12 @@ void ObserverListBase<ObserverType>::AddObserver(ObserverType* obs) {
 
 template <class ObserverType>
 void ObserverListBase<ObserverType>::RemoveObserver(ObserverType* obs) {
+  DCHECK(obs);
   typename ListType::iterator it =
     std::find(observers_.begin(), observers_.end(), obs);
   if (it != observers_.end()) {
     if (notify_depth_) {
-      *it = 0;
+      *it = nullptr;
     } else {
       observers_.erase(it);
     }
@@ -176,7 +178,8 @@ void ObserverListBase<ObserverType>::RemoveObserver(ObserverType* obs) {
 }
 
 template <class ObserverType>
-bool ObserverListBase<ObserverType>::HasObserver(ObserverType* observer) const {
+bool ObserverListBase<ObserverType>::HasObserver(
+    const ObserverType* observer) const {
   for (size_t i = 0; i < observers_.size(); ++i) {
     if (observers_[i] == observer)
       return true;
@@ -189,7 +192,7 @@ void ObserverListBase<ObserverType>::Clear() {
   if (notify_depth_) {
     for (typename ListType::iterator it = observers_.begin();
       it != observers_.end(); ++it) {
-      *it = 0;
+      *it = nullptr;
     }
   } else {
     observers_.clear();
@@ -199,8 +202,8 @@ void ObserverListBase<ObserverType>::Clear() {
 template <class ObserverType>
 void ObserverListBase<ObserverType>::Compact() {
   observers_.erase(
-      std::remove(observers_.begin(), observers_.end(),
-                  static_cast<ObserverType*>(NULL)), observers_.end());
+      std::remove(observers_.begin(), observers_.end(), nullptr),
+      observers_.end());
 }
 
 template <class ObserverType, bool check_empty = false>
@@ -226,15 +229,15 @@ class ObserverList : public ObserverListBase<ObserverType> {
   }
 };
 
-#define FOR_EACH_OBSERVER(ObserverType, observer_list, func)               \
-  do {                                                                     \
-    if ((observer_list).might_have_observers()) {                          \
-      ObserverListBase<ObserverType>::Iterator                             \
-          it_inside_observer_macro(observer_list);                         \
-      ObserverType* obs;                                                   \
-      while ((obs = it_inside_observer_macro.GetNext()) != NULL)           \
-        obs->func;                                                         \
-    }                                                                      \
+#define FOR_EACH_OBSERVER(ObserverType, observer_list, func)             \
+  do {                                                                   \
+    if ((observer_list).might_have_observers()) {                        \
+      ObserverListBase<ObserverType>::Iterator it_inside_observer_macro( \
+          &observer_list);                                               \
+      ObserverType* obs;                                                 \
+      while ((obs = it_inside_observer_macro.GetNext()) != nullptr)         \
+        obs->func;                                                       \
+    }                                                                    \
   } while (0)
 
-#endif  // BASE_OBSERVER_LIST_H__
+#endif  // BASE_OBSERVER_LIST_H_

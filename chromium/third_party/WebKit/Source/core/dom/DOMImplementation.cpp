@@ -55,128 +55,15 @@
 #include "platform/ContentType.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/graphics/Image.h"
-#include "platform/graphics/media/MediaPlayer.h"
 #include "platform/plugins/PluginData.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
 
-typedef HashSet<String, CaseFoldingHash> FeatureSet;
-
-static void addString(FeatureSet& set, const char* string)
-{
-    set.add(string);
-}
-
-static bool isSupportedSVG10Feature(const String& feature, const String& version)
-{
-    if (!version.isEmpty() && version != "1.0")
-        return false;
-
-    static bool initialized = false;
-    DEFINE_STATIC_LOCAL(FeatureSet, svgFeatures, ());
-    if (!initialized) {
-        addString(svgFeatures, "svg");
-        addString(svgFeatures, "svg.static");
-//      addString(svgFeatures, "svg.animation");
-//      addString(svgFeatures, "svg.dynamic");
-//      addString(svgFeatures, "svg.dom.animation");
-//      addString(svgFeatures, "svg.dom.dynamic");
-        addString(svgFeatures, "dom");
-        addString(svgFeatures, "dom.svg");
-        addString(svgFeatures, "dom.svg.static");
-//      addString(svgFeatures, "svg.all");
-//      addString(svgFeatures, "dom.svg.all");
-        initialized = true;
-    }
-    return feature.startsWith("org.w3c.", false)
-        && svgFeatures.contains(feature.right(feature.length() - 8));
-}
-
-static bool isSupportedSVG11Feature(const String& feature, const String& version)
-{
-    if (!version.isEmpty() && version != "1.1")
-        return false;
-
-    static bool initialized = false;
-    DEFINE_STATIC_LOCAL(FeatureSet, svgFeatures, ());
-    if (!initialized) {
-        // Sadly, we cannot claim to implement any of the SVG 1.1 generic feature sets
-        // lack of Font and Filter support.
-        // http://bugs.webkit.org/show_bug.cgi?id=15480
-        addString(svgFeatures, "SVG");
-        addString(svgFeatures, "SVGDOM");
-        addString(svgFeatures, "SVG-static");
-        addString(svgFeatures, "SVGDOM-static");
-        addString(svgFeatures, "SVG-animation");
-        addString(svgFeatures, "SVGDOM-animation");
-//      addString(svgFeatures, "SVG-dynamic);
-//      addString(svgFeatures, "SVGDOM-dynamic);
-        addString(svgFeatures, "CoreAttribute");
-        addString(svgFeatures, "Structure");
-        addString(svgFeatures, "BasicStructure");
-        addString(svgFeatures, "ContainerAttribute");
-        addString(svgFeatures, "ConditionalProcessing");
-        addString(svgFeatures, "Image");
-        addString(svgFeatures, "Style");
-        addString(svgFeatures, "ViewportAttribute");
-        addString(svgFeatures, "Shape");
-        addString(svgFeatures, "Text");
-        addString(svgFeatures, "BasicText");
-        addString(svgFeatures, "PaintAttribute");
-        addString(svgFeatures, "BasicPaintAttribute");
-        addString(svgFeatures, "OpacityAttribute");
-        addString(svgFeatures, "GraphicsAttribute");
-        addString(svgFeatures, "BaseGraphicsAttribute");
-        addString(svgFeatures, "Marker");
-//      addString(svgFeatures, "ColorProfile");
-        addString(svgFeatures, "Gradient");
-        addString(svgFeatures, "Pattern");
-        addString(svgFeatures, "Clip");
-        addString(svgFeatures, "BasicClip");
-        addString(svgFeatures, "Mask");
-        addString(svgFeatures, "Filter");
-        addString(svgFeatures, "BasicFilter");
-        addString(svgFeatures, "DocumentEventsAttribute");
-        addString(svgFeatures, "GraphicalEventsAttribute");
-//      addString(svgFeatures, "AnimationEventsAttribute");
-        addString(svgFeatures, "Cursor");
-        addString(svgFeatures, "Hyperlinking");
-        addString(svgFeatures, "XlinkAttribute");
-        addString(svgFeatures, "View");
-        addString(svgFeatures, "Script");
-        addString(svgFeatures, "Animation");
-        addString(svgFeatures, "Extensibility");
-        initialized = true;
-    }
-    return feature.startsWith("http://www.w3.org/tr/svg11/feature#", false)
-        && svgFeatures.contains(feature.right(feature.length() - 35));
-}
-
 DOMImplementation::DOMImplementation(Document& document)
     : m_document(document)
 {
-}
-
-bool DOMImplementation::hasFeature(const String& feature, const String& version)
-{
-    if (feature.startsWith("http://www.w3.org/TR/SVG", false)
-    || feature.startsWith("org.w3c.dom.svg", false)
-    || feature.startsWith("org.w3c.svg", false)) {
-        // FIXME: SVG 2.0 support?
-        return isSupportedSVG10Feature(feature, version) || isSupportedSVG11Feature(feature, version);
-    }
-    return true;
-}
-
-bool DOMImplementation::hasFeatureForBindings(const String& feature, const String& version)
-{
-    if (!hasFeature(feature, version)) {
-        UseCounter::count(m_document, UseCounter::DOMImplementationHasFeatureReturnFalse);
-        return false;
-    }
-    return true;
 }
 
 PassRefPtrWillBeRawPtr<DocumentType> DOMImplementation::createDocumentType(const AtomicString& qualifiedName,
@@ -234,7 +121,7 @@ bool DOMImplementation::isXMLMIMEType(const String& mimeType)
     if (length < 7)
         return false;
 
-    if (mimeType[0] == '/' || mimeType[length - 5] == '/' || !mimeType.endsWith("+xml", false))
+    if (mimeType[0] == '/' || mimeType[length - 5] == '/' || !mimeType.endsWith("+xml", TextCaseInsensitive))
         return false;
 
     bool hasSlash = false;
@@ -280,10 +167,10 @@ bool DOMImplementation::isXMLMIMEType(const String& mimeType)
 
 bool DOMImplementation::isJSONMIMEType(const String& mimeType)
 {
-    if (mimeType.startsWith("application/json", false))
+    if (mimeType.startsWith("application/json", TextCaseInsensitive))
         return true;
-    if (mimeType.startsWith("application/", false)) {
-        size_t subtype = mimeType.find("+json", 12, false);
+    if (mimeType.startsWith("application/", TextCaseInsensitive)) {
+        size_t subtype = mimeType.find("+json", 12, TextCaseInsensitive);
         if (subtype != kNotFound) {
             // Just check that a parameter wasn't matched.
             size_t parameterMarker = mimeType.find(";");
@@ -299,7 +186,7 @@ bool DOMImplementation::isJSONMIMEType(const String& mimeType)
 
 static bool isTextPlainType(const String& mimeType)
 {
-    return mimeType.startsWith("text/", false)
+    return mimeType.startsWith("text/", TextCaseInsensitive)
         && !(equalIgnoringCase(mimeType, "text/html")
             || equalIgnoringCase(mimeType, "text/xml")
             || equalIgnoringCase(mimeType, "text/xsl"));
@@ -329,11 +216,6 @@ PassRefPtrWillBeRawPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const
     return d.release();
 }
 
-PassRefPtrWillBeRawPtr<Document> DOMImplementation::createDocument(const String& type, LocalFrame* frame, const KURL& url, bool inViewSourceMode)
-{
-    return createDocument(type, DocumentInit(url, frame), inViewSourceMode);
-}
-
 PassRefPtrWillBeRawPtr<Document> DOMImplementation::createDocument(const String& type, const DocumentInit& init, bool inViewSourceMode)
 {
     if (inViewSourceMode)
@@ -356,13 +238,13 @@ PassRefPtrWillBeRawPtr<Document> DOMImplementation::createDocument(const String&
     if (Image::supportsType(type))
         return ImageDocument::create(init);
 
-    // Check to see if the type can be played by our MediaPlayer, if so create a MediaDocument
+    // Check to see if the type can be played by our media player, if so create a MediaDocument
     if (HTMLMediaElement::supportsType(ContentType(type)))
         return MediaDocument::create(init);
 
     // Everything else except text/plain can be overridden by plugins. In particular, Adobe SVG Viewer should be used for SVG, if installed.
-    // Disallowing plug-ins to use text/plain prevents plug-ins from hijacking a fundamental type that the browser is expected to handle,
-    // and also serves as an optimization to prevent loading the plug-in database in the common case.
+    // Disallowing plugins to use text/plain prevents plugins from hijacking a fundamental type that the browser is expected to handle,
+    // and also serves as an optimization to prevent loading the plugin database in the common case.
     if (type != "text/plain" && pluginData && pluginData->supportsMimeType(type))
         return PluginDocument::create(init);
     if (isTextMIMEType(type))
@@ -375,7 +257,7 @@ PassRefPtrWillBeRawPtr<Document> DOMImplementation::createDocument(const String&
     return HTMLDocument::create(init);
 }
 
-void DOMImplementation::trace(Visitor* visitor)
+DEFINE_TRACE(DOMImplementation)
 {
     visitor->trace(m_document);
 }

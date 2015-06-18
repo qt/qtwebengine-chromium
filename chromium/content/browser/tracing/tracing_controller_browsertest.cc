@@ -5,18 +5,50 @@
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/run_loop.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/tracing_controller.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 
-using base::debug::CategoryFilter;
-using base::debug::TraceOptions;
-using base::debug::RECORD_CONTINUOUSLY;
-using base::debug::RECORD_UNTIL_FULL;
+using base::trace_event::CategoryFilter;
+using base::trace_event::TraceOptions;
+using base::trace_event::RECORD_CONTINUOUSLY;
+using base::trace_event::RECORD_UNTIL_FULL;
 
 namespace content {
+
+class TracingControllerTestEndpoint
+    : public TracingController::TraceDataEndpoint {
+ public:
+  TracingControllerTestEndpoint(
+      base::Callback<void(base::RefCountedString*)> done_callback)
+      : done_callback_(done_callback) {}
+
+  void ReceiveTraceChunk(const std::string& chunk) override {
+    EXPECT_FALSE(chunk.empty());
+    trace_ += chunk;
+  }
+
+  void ReceiveTraceFinalContents(const std::string& contents) override {
+    EXPECT_EQ(trace_, contents);
+
+    std::string tmp = contents;
+    scoped_refptr<base::RefCountedString> chunk_ptr =
+        base::RefCountedString::TakeString(&tmp);
+
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(done_callback_, chunk_ptr));
+  }
+
+ protected:
+  ~TracingControllerTestEndpoint() override {}
+
+  std::string trace_;
+  base::Callback<void(base::RefCountedString*)> done_callback_;
+};
 
 class TracingControllerTest : public ContentBrowserTest {
  public:
@@ -147,6 +179,70 @@ class TracingControllerTest : public ContentBrowserTest {
           run_loop.QuitClosure());
       bool result = controller->DisableRecording(
           TracingController::CreateStringSink(callback));
+      ASSERT_TRUE(result);
+      run_loop.Run();
+      EXPECT_EQ(disable_recording_done_callback_count(), 1);
+    }
+  }
+
+  void TestEnableAndDisableRecordingCompressed() {
+    Navigate(shell());
+
+    TracingController* controller = TracingController::GetInstance();
+
+    {
+      base::RunLoop run_loop;
+      TracingController::EnableRecordingDoneCallback callback =
+          base::Bind(&TracingControllerTest::EnableRecordingDoneCallbackTest,
+                     base::Unretained(this), run_loop.QuitClosure());
+      bool result = controller->EnableRecording(CategoryFilter(),
+                                                TraceOptions(), callback);
+      ASSERT_TRUE(result);
+      run_loop.Run();
+      EXPECT_EQ(enable_recording_done_callback_count(), 1);
+    }
+
+    {
+      base::RunLoop run_loop;
+      base::Callback<void(base::RefCountedString*)> callback = base::Bind(
+          &TracingControllerTest::DisableRecordingStringDoneCallbackTest,
+          base::Unretained(this), run_loop.QuitClosure());
+      bool result = controller->DisableRecording(
+          TracingController::CreateCompressedStringSink(
+              new TracingControllerTestEndpoint(callback)));
+      ASSERT_TRUE(result);
+      run_loop.Run();
+      EXPECT_EQ(disable_recording_done_callback_count(), 1);
+    }
+  }
+
+  void TestEnableAndDisableRecordingCompressedFile(
+      const base::FilePath& result_file_path) {
+    Navigate(shell());
+
+    TracingController* controller = TracingController::GetInstance();
+
+    {
+      base::RunLoop run_loop;
+      TracingController::EnableRecordingDoneCallback callback =
+          base::Bind(&TracingControllerTest::EnableRecordingDoneCallbackTest,
+                     base::Unretained(this), run_loop.QuitClosure());
+      bool result = controller->EnableRecording(CategoryFilter(),
+                                                TraceOptions(), callback);
+      ASSERT_TRUE(result);
+      run_loop.Run();
+      EXPECT_EQ(enable_recording_done_callback_count(), 1);
+    }
+
+    {
+      base::RunLoop run_loop;
+      base::Closure callback = base::Bind(
+          &TracingControllerTest::DisableRecordingFileDoneCallbackTest,
+          base::Unretained(this), run_loop.QuitClosure(), result_file_path);
+      bool result = controller->DisableRecording(
+          TracingController::CreateCompressedStringSink(
+              TracingController::CreateFileEndpoint(result_file_path,
+                                                    callback)));
       ASSERT_TRUE(result);
       run_loop.Run();
       EXPECT_EQ(disable_recording_done_callback_count(), 1);
@@ -313,6 +409,19 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest,
   base::FilePath file_path;
   base::CreateTemporaryFile(&file_path);
   TestEnableAndDisableRecordingFile(file_path);
+  EXPECT_EQ(file_path.value(), last_actual_recording_file_path().value());
+}
+
+IN_PROC_BROWSER_TEST_F(TracingControllerTest,
+                       EnableAndDisableRecordingWithCompression) {
+  TestEnableAndDisableRecordingCompressed();
+}
+
+IN_PROC_BROWSER_TEST_F(TracingControllerTest,
+                       EnableAndDisableRecordingToFileWithCompression) {
+  base::FilePath file_path;
+  base::CreateTemporaryFile(&file_path);
+  TestEnableAndDisableRecordingCompressedFile(file_path);
   EXPECT_EQ(file_path.value(), last_actual_recording_file_path().value());
 }
 

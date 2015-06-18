@@ -49,16 +49,6 @@ DragData::DragData(DataObject* data, const IntPoint& clientPosition, const IntPo
 {
 }
 
-DragData::DragData(const String&, const IntPoint& clientPosition, const IntPoint& globalPosition,
-    DragOperation sourceOperationMask, DragApplicationFlags flags)
-    : m_clientPosition(clientPosition)
-    , m_globalPosition(globalPosition)
-    , m_platformDragData(nullptr)
-    , m_draggingSourceOperationMask(sourceOperationMask)
-    , m_applicationFlags(flags)
-{
-}
-
 static bool containsHTML(const DataObject* dropData)
 {
     return dropData->types().contains(mimeTypeTextHTML);
@@ -85,9 +75,9 @@ bool DragData::containsFiles() const
     return m_platformDragData->containsFilenames();
 }
 
-int DragData::modifierKeyState() const
+int DragData::modifiers() const
 {
-    return m_platformDragData->modifierKeyState();
+    return m_platformDragData->modifiers();
 }
 
 void DragData::asFilePaths(Vector<String>& result) const

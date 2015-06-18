@@ -32,11 +32,13 @@
 #define AnimationTimeline_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
-#include "core/animation/AnimationEffect.h"
-#include "core/animation/AnimationPlayer.h"
+#include "core/CoreExport.h"
+#include "core/animation/Animation.h"
+#include "core/animation/EffectModel.h"
 #include "core/dom/Element.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebCompositorAnimationTimeline.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -44,10 +46,10 @@
 namespace blink {
 
 class Document;
-class AnimationNode;
+class AnimationEffect;
 
 // AnimationTimeline is constructed and owned by Document, and tied to its lifecycle.
-class AnimationTimeline : public RefCountedWillBeGarbageCollectedFinalized<AnimationTimeline>, public ScriptWrappable {
+class CORE_EXPORT AnimationTimeline : public RefCountedWillBeGarbageCollectedFinalized<AnimationTimeline>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class PlatformTiming : public NoBaseWillBeGarbageCollectedFinalized<PlatformTiming> {
@@ -58,38 +60,46 @@ public:
         virtual void cancelWake() = 0;
         virtual void serviceOnNextFrame() = 0;
         virtual ~PlatformTiming() { }
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
     };
 
     static PassRefPtrWillBeRawPtr<AnimationTimeline> create(Document*, PassOwnPtrWillBeRawPtr<PlatformTiming> = nullptr);
     ~AnimationTimeline();
 
     void serviceAnimations(TimingUpdateReason);
+    void scheduleNextService();
 
-    // Creates a player attached to this timeline, but without a start time.
-    AnimationPlayer* createAnimationPlayer(AnimationNode*);
-    AnimationPlayer* play(AnimationNode*);
-    WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer>> getAnimationPlayers();
+    Animation* play(AnimationEffect*);
+    WillBeHeapVector<RefPtrWillBeMember<Animation>> getAnimations();
 
+    void animationAttached(Animation&);
 #if !ENABLE(OILPAN)
-    void playerDestroyed(AnimationPlayer* player)
+    void animationDestroyed(Animation* animation)
     {
-        ASSERT(m_players.contains(player));
-        m_players.remove(player);
+        ASSERT(m_animations.contains(animation));
+        m_animations.remove(animation);
     }
 #endif
 
-    bool hasPendingUpdates() const { return !m_playersNeedingUpdate.isEmpty(); }
+    bool hasPendingUpdates() const { return !m_animationsNeedingUpdate.isEmpty(); }
     double zeroTime();
     double currentTime(bool& isNull);
     double currentTime();
     double currentTimeInternal(bool& isNull);
     double currentTimeInternal();
+    void setCurrentTime(double);
+    void setCurrentTimeInternal(double);
     double effectiveTime();
     void pauseAnimationsForTesting(double);
 
-    void setOutdatedAnimationPlayer(AnimationPlayer*);
-    bool hasOutdatedAnimationPlayer() const;
+    void setOutdatedAnimation(Animation*);
+    bool hasOutdatedAnimation() const;
+    bool needsAnimationTimingUpdate();
+
+    void setPlaybackRate(double);
+    double playbackRate() const;
+
+    WebCompositorAnimationTimeline* compositorTimeline() const { return m_compositorTimeline.get(); }
 
     Document* document() { return m_document.get(); }
 #if !ENABLE(OILPAN)
@@ -97,7 +107,7 @@ public:
 #endif
     void wake();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 protected:
     AnimationTimeline(Document*, PassOwnPtrWillBeRawPtr<PlatformTiming>);
@@ -105,15 +115,21 @@ protected:
 private:
     RawPtrWillBeMember<Document> m_document;
     double m_zeroTime;
-    // AnimationPlayers which will be updated on the next frame
+    bool m_zeroTimeInitialized;
+    // Animations which will be updated on the next frame
     // i.e. current, in effect, or had timing changed
-    WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer>> m_playersNeedingUpdate;
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<AnimationPlayer>> m_players;
+    WillBeHeapHashSet<RefPtrWillBeMember<Animation>> m_animationsNeedingUpdate;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<Animation>> m_animations;
+
+    double m_playbackRate;
 
     friend class SMILTimeContainer;
     static const double s_minimumDelay;
 
     OwnPtrWillBeMember<PlatformTiming> m_timing;
+    double m_lastCurrentTimeInternal;
+
+    OwnPtr<WebCompositorAnimationTimeline> m_compositorTimeline;
 
     class AnimationTimelineTiming final : public PlatformTiming {
     public:
@@ -130,7 +146,7 @@ private:
 
         void timerFired(Timer<AnimationTimelineTiming>*) { m_timeline->wake(); }
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         RawPtrWillBeMember<AnimationTimeline> m_timeline;

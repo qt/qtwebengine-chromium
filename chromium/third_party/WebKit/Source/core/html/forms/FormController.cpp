@@ -174,7 +174,7 @@ struct FormElementKeyHashTraits : WTF::GenericHashTraits<FormElementKey> {
 
 class SavedFormState {
     WTF_MAKE_NONCOPYABLE(SavedFormState);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(SavedFormState);
 
 public:
     static PassOwnPtr<SavedFormState> create();
@@ -189,7 +189,7 @@ public:
 private:
     SavedFormState() : m_controlStateCount(0) { }
 
-    typedef HashMap<FormElementKey, Deque<FormControlState>, FormElementKeyHash, FormElementKeyHashTraits> FormElementStateMap;
+    using FormElementStateMap = HashMap<FormElementKey, Deque<FormControlState>, FormElementKeyHash, FormElementKeyHashTraits>;
     FormElementStateMap m_stateForNewFormElements;
     size_t m_controlStateCount;
 };
@@ -290,11 +290,11 @@ Vector<String> SavedFormState::getReferencedFilePaths() const
 
 class FormKeyGenerator final : public NoBaseWillBeGarbageCollectedFinalized<FormKeyGenerator> {
     WTF_MAKE_NONCOPYABLE(FormKeyGenerator);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FormKeyGenerator);
 
 public:
     static PassOwnPtrWillBeRawPtr<FormKeyGenerator> create() { return adoptPtrWillBeNoop(new FormKeyGenerator); }
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
 #if ENABLE(OILPAN)
         visitor->trace(m_formToKeyMap);
@@ -306,8 +306,8 @@ public:
 private:
     FormKeyGenerator() { }
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<HTMLFormElement>, AtomicString> FormToKeyMap;
-    typedef HashMap<String, unsigned> FormSignatureToNextIndexMap;
+    using FormToKeyMap = WillBeHeapHashMap<RawPtrWillBeMember<HTMLFormElement>, AtomicString>;
+    using FormSignatureToNextIndexMap = HashMap<String, unsigned>;
     FormToKeyMap m_formToKeyMap;
     FormSignatureToNextIndexMap m_formSignatureToNextIndexMap;
 };
@@ -389,7 +389,7 @@ PassRefPtrWillBeRawPtr<DocumentState> DocumentState::create()
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentState)
 
-void DocumentState::trace(Visitor* visitor)
+DEFINE_TRACE(DocumentState)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_formControls);
@@ -456,7 +456,7 @@ FormController::~FormController()
 {
 }
 
-void FormController::trace(Visitor* visitor)
+DEFINE_TRACE(FormController)
 {
     visitor->trace(m_radioButtonGroupScope);
     visitor->trace(m_documentState);

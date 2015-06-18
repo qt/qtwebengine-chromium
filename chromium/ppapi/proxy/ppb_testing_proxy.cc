@@ -80,6 +80,27 @@ PP_Bool IsOutOfProcess() {
   return PP_TRUE;
 }
 
+void PostPowerSaverStatus(PP_Instance instance_id) {
+  ProxyAutoLock lock;
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
+  if (!dispatcher)
+    return;
+
+  dispatcher->Send(new PpapiHostMsg_PPBTesting_PostPowerSaverStatus(
+      API_ID_PPB_TESTING, instance_id));
+}
+
+void SubscribeToPowerSaverNotifications(PP_Instance instance_id) {
+  ProxyAutoLock lock;
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
+  if (!dispatcher)
+    return;
+
+  dispatcher->Send(
+      new PpapiHostMsg_PPBTesting_SubscribeToPowerSaverNotifications(
+          API_ID_PPB_TESTING, instance_id));
+}
+
 void SimulateInputEvent(PP_Instance instance_id, PP_Resource input_event) {
   ProxyAutoLock lock;
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
@@ -112,7 +133,7 @@ uint32_t GetLiveVars(PP_Var live_vars[], uint32_t array_size) {
        i < std::min(static_cast<size_t>(array_size), vars.size());
        ++i)
     live_vars[i] = vars[i];
-  return vars.size();
+  return static_cast<uint32_t>(vars.size());
 }
 
 void SetMinimumArrayBufferSizeForShmem(PP_Instance instance,
@@ -133,17 +154,18 @@ void RunV8GC(PP_Instance instance) {
 }
 
 const PPB_Testing_Private testing_interface = {
-  &ReadImageData,
-  &RunMessageLoop,
-  &QuitMessageLoop,
-  &GetLiveObjectsForInstance,
-  &IsOutOfProcess,
-  &SimulateInputEvent,
-  &GetDocumentURL,
-  &GetLiveVars,
-  &SetMinimumArrayBufferSizeForShmem,
-  &RunV8GC
-};
+    &ReadImageData,
+    &RunMessageLoop,
+    &QuitMessageLoop,
+    &GetLiveObjectsForInstance,
+    &IsOutOfProcess,
+    &PostPowerSaverStatus,
+    &SubscribeToPowerSaverNotifications,
+    &SimulateInputEvent,
+    &GetDocumentURL,
+    &GetLiveVars,
+    &SetMinimumArrayBufferSizeForShmem,
+    &RunV8GC};
 
 }  // namespace
 
@@ -174,6 +196,11 @@ bool PPB_Testing_Proxy::OnMessageReceived(const IPC::Message& msg) {
                         OnMsgReadImageData)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBTesting_GetLiveObjectsForInstance,
                         OnMsgGetLiveObjectsForInstance)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBTesting_PostPowerSaverStatus,
+                        OnMsgPostPowerSaverStatus)
+    IPC_MESSAGE_HANDLER(
+        PpapiHostMsg_PPBTesting_SubscribeToPowerSaverNotifications,
+        OnMsgSubscribeToPowerSaverNotifications)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBTesting_SimulateInputEvent,
                         OnMsgSimulateInputEvent)
     IPC_MESSAGE_HANDLER(
@@ -204,6 +231,15 @@ void PPB_Testing_Proxy::OnMsgQuitMessageLoop(PP_Instance instance) {
 void PPB_Testing_Proxy::OnMsgGetLiveObjectsForInstance(PP_Instance instance,
                                                        uint32_t* result) {
   *result = ppb_testing_impl_->GetLiveObjectsForInstance(instance);
+}
+
+void PPB_Testing_Proxy::OnMsgPostPowerSaverStatus(PP_Instance instance) {
+  ppb_testing_impl_->PostPowerSaverStatus(instance);
+}
+
+void PPB_Testing_Proxy::OnMsgSubscribeToPowerSaverNotifications(
+    PP_Instance instance) {
+  ppb_testing_impl_->SubscribeToPowerSaverNotifications(instance);
 }
 
 void PPB_Testing_Proxy::OnMsgSimulateInputEvent(

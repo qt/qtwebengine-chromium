@@ -33,31 +33,26 @@ WebInspector.ApplicationCacheItemsView = function(model, frameId)
 
     this._model = model;
 
-    this.element.classList.add("storage-view");
-    this.element.classList.add("table");
+    this.element.classList.add("storage-view", "table");
 
     // FIXME: Needs better tooltip. (Localized)
-    this.deleteButton = new WebInspector.StatusBarButton(WebInspector.UIString("Delete"), "delete-storage-status-bar-item");
-    this.deleteButton.visible = false;
+    this.deleteButton = new WebInspector.ToolbarButton(WebInspector.UIString("Delete"), "delete-toolbar-item");
+    this.deleteButton.setVisible(false);
     this.deleteButton.addEventListener("click", this._deleteButtonClicked, this);
 
-    this.connectivityIcon = createElement("div");
+    this.connectivityIcon = createElement("label", "dt-icon-label");
     this.connectivityMessage = createElement("span");
     this.connectivityMessage.className = "storage-application-cache-connectivity";
     this.connectivityMessage.textContent = "";
 
-    this.divider = createElement("span");
-    this.divider.className = "status-bar-item status-bar-divider";
-
-    this.statusIcon = createElement("div");
+    this.statusIcon = createElement("label", "dt-icon-label");
     this.statusMessage = createElement("span");
-    this.statusMessage.className = "storage-application-cache-status";
     this.statusMessage.textContent = "";
 
     this._frameId = frameId;
 
-    this._emptyView = new WebInspector.EmptyView(WebInspector.UIString("No Application Cache information available."));
-    this._emptyView.show(this.element);
+    this._emptyWidget = new WebInspector.EmptyWidget(WebInspector.UIString("No Application Cache information available."));
+    this._emptyWidget.show(this.element);
 
     this._markDirty();
 
@@ -72,12 +67,17 @@ WebInspector.ApplicationCacheItemsView = function(model, frameId)
 }
 
 WebInspector.ApplicationCacheItemsView.prototype = {
-    get statusBarItems()
+    /**
+     * @return {!Array.<!WebInspector.ToolbarItem>}
+     */
+    toolbarItems: function()
     {
         return [
-            this.deleteButton.element,
-            this.connectivityIcon, this.connectivityMessage, this.divider,
-            this.statusIcon, this.statusMessage
+            this.deleteButton,
+            new WebInspector.ToolbarItem(this.connectivityIcon),
+            new WebInspector.ToolbarItem(this.connectivityMessage),
+            new WebInspector.ToolbarItem(this.statusIcon),
+            new WebInspector.ToolbarItem(this.statusMessage)
         ];
     },
 
@@ -88,7 +88,7 @@ WebInspector.ApplicationCacheItemsView.prototype = {
 
     willHide: function()
     {
-        this.deleteButton.visible = false;
+        this.deleteButton.setVisible(false);
     },
 
     _maybeUpdate: function()
@@ -115,16 +115,16 @@ WebInspector.ApplicationCacheItemsView.prototype = {
 
         var statusInformation = {};
         // We should never have UNCACHED status, since we remove frames with UNCACHED application cache status from the tree.
-        statusInformation[applicationCache.UNCACHED]    = { className: "red-ball", text: "UNCACHED" };
-        statusInformation[applicationCache.IDLE]        = { className: "green-ball", text: "IDLE" };
-        statusInformation[applicationCache.CHECKING]    = { className: "orange-ball",  text: "CHECKING" };
-        statusInformation[applicationCache.DOWNLOADING] = { className: "orange-ball",  text: "DOWNLOADING" };
-        statusInformation[applicationCache.UPDATEREADY] = { className: "green-ball",  text: "UPDATEREADY" };
-        statusInformation[applicationCache.OBSOLETE]    = { className: "red-ball",      text: "OBSOLETE" };
+        statusInformation[applicationCache.UNCACHED]    = { type: "red-ball", text: "UNCACHED" };
+        statusInformation[applicationCache.IDLE]        = { type: "green-ball", text: "IDLE" };
+        statusInformation[applicationCache.CHECKING]    = { type: "orange-ball",  text: "CHECKING" };
+        statusInformation[applicationCache.DOWNLOADING] = { type: "orange-ball",  text: "DOWNLOADING" };
+        statusInformation[applicationCache.UPDATEREADY] = { type: "green-ball",  text: "UPDATEREADY" };
+        statusInformation[applicationCache.OBSOLETE]    = { type: "red-ball",      text: "OBSOLETE" };
 
         var info = statusInformation[status] || statusInformation[applicationCache.UNCACHED];
 
-        this.statusIcon.className = "storage-application-cache-status-icon " + info.className;
+        this.statusIcon.type = info.type;
         this.statusMessage.textContent = info.text;
 
         if (this.isShowing() && this._status === applicationCache.IDLE && (oldStatus === applicationCache.UPDATEREADY || !this._resources))
@@ -138,10 +138,10 @@ WebInspector.ApplicationCacheItemsView.prototype = {
     updateNetworkState: function(isNowOnline)
     {
         if (isNowOnline) {
-            this.connectivityIcon.className = "storage-application-cache-connectivity-icon green-ball";
+            this.connectivityIcon.type = "green-ball";
             this.connectivityMessage.textContent = WebInspector.UIString("Online");
         } else {
-            this.connectivityIcon.className = "storage-application-cache-connectivity-icon red-ball";
+            this.connectivityIcon.type = "red-ball";
             this.connectivityMessage.textContent = WebInspector.UIString("Offline");
         }
     },
@@ -163,8 +163,8 @@ WebInspector.ApplicationCacheItemsView.prototype = {
             delete this._size;
             delete this._resources;
 
-            this._emptyView.show(this.element);
-            this.deleteButton.visible = false;
+            this._emptyWidget.show(this.element);
+            this.deleteButton.setVisible(false);
             if (this._dataGrid)
                 this._dataGrid.element.classList.add("hidden");
             return;
@@ -182,8 +182,8 @@ WebInspector.ApplicationCacheItemsView.prototype = {
         this._populateDataGrid();
         this._dataGrid.autoSizeColumns(20, 80);
         this._dataGrid.element.classList.remove("hidden");
-        this._emptyView.detach();
-        this.deleteButton.visible = true;
+        this._emptyWidget.detach();
+        this.deleteButton.setVisible(true);
 
         // FIXME: For Chrome, put creationTime and updateTime somewhere.
         // NOTE: localizedString has not yet been added.
@@ -213,7 +213,7 @@ WebInspector.ApplicationCacheItemsView.prototype = {
         }
         function localeCompare(field, resource1, resource2)
         {
-             return sortDirection * (resource1[field] + "").localeCompare(resource2[field] + "")
+             return sortDirection * (resource1[field] + "").localeCompare(resource2[field] + "");
         }
 
         var comparator;

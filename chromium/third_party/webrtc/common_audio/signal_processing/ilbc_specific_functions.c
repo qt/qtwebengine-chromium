@@ -32,8 +32,7 @@ void WebRtcSpl_ReverseOrderMultArrayElements(int16_t *out, const int16_t *in,
     const int16_t *winptr = win;
     for (i = 0; i < vector_length; i++)
     {
-        (*outptr++) = (int16_t)WEBRTC_SPL_MUL_16_16_RSFT(*inptr++,
-                                                               *winptr--, right_shifts);
+      *outptr++ = (int16_t)((*inptr++ * *winptr--) >> right_shifts);
     }
 }
 
@@ -47,8 +46,7 @@ void WebRtcSpl_ElementwiseVectorMult(int16_t *out, const int16_t *in,
     const int16_t *winptr = win;
     for (i = 0; i < vector_length; i++)
     {
-        (*outptr++) = (int16_t)WEBRTC_SPL_MUL_16_16_RSFT(*inptr++,
-                                                               *winptr++, right_shifts);
+      *outptr++ = (int16_t)((*inptr++ * *winptr++) >> right_shifts);
     }
 }
 
@@ -70,16 +68,11 @@ void WebRtcSpl_AddAffineVectorToVector(int16_t *out, int16_t *in,
                                        int16_t gain, int32_t add_constant,
                                        int16_t right_shifts, int vector_length)
 {
-    int16_t *inPtr;
-    int16_t *outPtr;
     int i;
 
-    inPtr = in;
-    outPtr = out;
     for (i = 0; i < vector_length; i++)
     {
-        (*outPtr++) += (int16_t)((WEBRTC_SPL_MUL_16_16((*inPtr++), gain)
-                + (int32_t)add_constant) >> right_shifts);
+      out[i] += (int16_t)((in[i] * gain + add_constant) >> right_shifts);
     }
 }
 
@@ -87,15 +80,10 @@ void WebRtcSpl_AffineTransformVector(int16_t *out, int16_t *in,
                                      int16_t gain, int32_t add_constant,
                                      int16_t right_shifts, int vector_length)
 {
-    int16_t *inPtr;
-    int16_t *outPtr;
     int i;
 
-    inPtr = in;
-    outPtr = out;
     for (i = 0; i < vector_length; i++)
     {
-        (*outPtr++) = (int16_t)((WEBRTC_SPL_MUL_16_16((*inPtr++), gain)
-                + (int32_t)add_constant) >> right_shifts);
+      out[i] = (int16_t)((in[i] * gain + add_constant) >> right_shifts);
     }
 }

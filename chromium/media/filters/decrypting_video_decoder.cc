@@ -6,32 +6,35 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/decryptor.h"
 #include "media/base/pipeline.h"
-#include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 
 namespace media {
 
+const char DecryptingVideoDecoder::kDecoderName[] = "DecryptingVideoDecoder";
+
 DecryptingVideoDecoder::DecryptingVideoDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    const SetDecryptorReadyCB& set_decryptor_ready_cb)
+    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+    const base::Closure& waiting_for_decryption_key_cb)
     : task_runner_(task_runner),
       state_(kUninitialized),
+      waiting_for_decryption_key_cb_(waiting_for_decryption_key_cb),
       set_decryptor_ready_cb_(set_decryptor_ready_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
       trace_id_(0),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+}
 
 std::string DecryptingVideoDecoder::GetDisplayName() const {
-  return "DecryptingVideoDecoder";
+  return kDecoderName;
 }
 
 void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
@@ -268,6 +271,7 @@ void DecryptingVideoDecoder::DeliverFrame(
     }
 
     state_ = kWaitingForKey;
+    waiting_for_decryption_key_cb_.Run();
     return;
   }
 

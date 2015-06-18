@@ -31,27 +31,24 @@
 #ifndef HTMLImportsController_h
 #define HTMLImportsController_h
 
-#include "core/dom/DocumentSupplementable.h"
-#include "core/fetch/RawResource.h"
-#include "core/html/LinkResource.h"
-#include "core/html/imports/HTMLImport.h"
-#include "platform/Supplementable.h"
-#include "platform/Timer.h"
+#include "core/dom/Document.h"
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
 class FetchRequest;
+class HTMLImport;
 class HTMLImportChild;
 class HTMLImportChildClient;
 class HTMLImportLoader;
 class HTMLImportTreeRoot;
+class KURL;
 
-class HTMLImportsController final : public NoBaseWillBeGarbageCollectedFinalized<HTMLImportsController>, public DocumentSupplement {
+class HTMLImportsController final : public NoBaseWillBeGarbageCollectedFinalized<HTMLImportsController>, public WillBeHeapSupplement<Document> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLImportsController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(HTMLImportsController);
 public:
     static const char* supplementName();
     static void provideTo(Document&);
@@ -74,13 +71,15 @@ public:
     Document* loaderDocumentAt(size_t) const;
     HTMLImportLoader* loaderFor(const Document&) const;
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     HTMLImportChild* createChild(const KURL&, HTMLImportLoader*, HTMLImport* parent, HTMLImportChildClient*);
 
+    void dispose();
+
     OwnPtrWillBeMember<HTMLImportTreeRoot> m_root;
-    typedef WillBeHeapVector<OwnPtrWillBeMember<HTMLImportLoader>> LoaderList;
+    using LoaderList = WillBeHeapVector<OwnPtrWillBeMember<HTMLImportLoader>>;
     LoaderList m_loaders;
 };
 

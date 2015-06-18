@@ -20,6 +20,7 @@
 #ifndef ScopedPageLoadDeferrer_h
 #define ScopedPageLoadDeferrer_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -29,7 +30,7 @@ namespace blink {
 class LocalFrame;
 class Page;
 
-class ScopedPageLoadDeferrer final : public NoBaseWillBeGarbageCollectedFinalized<ScopedPageLoadDeferrer> {
+class CORE_EXPORT ScopedPageLoadDeferrer final : public NoBaseWillBeGarbageCollectedFinalized<ScopedPageLoadDeferrer> {
     WTF_MAKE_NONCOPYABLE(ScopedPageLoadDeferrer);
 public:
     ScopedPageLoadDeferrer(Page* exclusion = nullptr);
@@ -39,7 +40,7 @@ public:
     void dispose();
 #endif
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     void detach();

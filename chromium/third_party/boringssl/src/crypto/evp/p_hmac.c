@@ -55,6 +55,8 @@
 
 #include <openssl/evp.h>
 
+#include <string.h>
+
 #include <openssl/asn1.h>
 #include <openssl/err.h>
 #include <openssl/hmac.h>
@@ -94,7 +96,7 @@ static int pkey_hmac_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src) {
   dctx = dst->data;
   dctx->md = sctx->md;
   HMAC_CTX_init(&dctx->ctx);
-  if (!HMAC_CTX_copy(&dctx->ctx, &sctx->ctx)) {
+  if (!HMAC_CTX_copy_ex(&dctx->ctx, &sctx->ctx)) {
     return 0;
   }
   if (sctx->ktmp.data) {
@@ -108,6 +110,10 @@ static int pkey_hmac_copy(EVP_PKEY_CTX *dst, EVP_PKEY_CTX *src) {
 
 static void pkey_hmac_cleanup(EVP_PKEY_CTX *ctx) {
   HMAC_PKEY_CTX *hctx = ctx->data;
+
+  if (hctx == NULL) {
+    return;
+  }
 
   HMAC_CTX_cleanup(&hctx->ctx);
   if (hctx->ktmp.data) {
@@ -198,7 +204,8 @@ static int pkey_hmac_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2) {
       break;
 
     default:
-      return -2;
+      OPENSSL_PUT_ERROR(EVP, pkey_hmac_ctrl, EVP_R_COMMAND_NOT_SUPPORTED);
+      return 0;
   }
   return 1;
 }

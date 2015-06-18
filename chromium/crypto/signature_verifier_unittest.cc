@@ -258,6 +258,26 @@ TEST(SignatureVerifierTest, BasicTest) {
     ok = verifier.VerifyFinal();
     EXPECT_FALSE(ok);
   }
+
+  // Test 5: import an invalid key.
+  uint8_t bad_public_key_info[sizeof(public_key_info)];
+  memcpy(bad_public_key_info, public_key_info, sizeof(public_key_info));
+  bad_public_key_info[0] += 1;  // Corrupt part of the SPKI syntax.
+  ok = verifier.VerifyInit(signature_algorithm,
+                           sizeof(signature_algorithm),
+                           signature, sizeof(signature),
+                           bad_public_key_info, sizeof(bad_public_key_info));
+  EXPECT_FALSE(ok);
+
+  // Test 6: import a key with extra data.
+  uint8_t long_public_key_info[sizeof(public_key_info) + 5];
+  memset(long_public_key_info, 0, sizeof(long_public_key_info));
+  memcpy(long_public_key_info, public_key_info, sizeof(public_key_info));
+  ok = verifier.VerifyInit(signature_algorithm,
+                           sizeof(signature_algorithm),
+                           signature, sizeof(signature),
+                           long_public_key_info, sizeof(long_public_key_info));
+  EXPECT_FALSE(ok);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -980,6 +1000,23 @@ static bool DecodeTestInput(const char* in, std::vector<uint8>* out) {
   return true;
 }
 
+// PrependASN1Length prepends an ASN.1 serialized length to the beginning of
+// |out|.
+static void PrependASN1Length(std::vector<uint8>* out, size_t len) {
+  if (len < 128) {
+    out->insert(out->begin(), static_cast<uint8>(len));
+  } else if (len < 256) {
+    out->insert(out->begin(), static_cast<uint8>(len));
+    out->insert(out->begin(), 0x81);
+  } else if (len < 0x10000) {
+    out->insert(out->begin(), static_cast<uint8>(len));
+    out->insert(out->begin(), static_cast<uint8>(len >> 8));
+    out->insert(out->begin(), 0x82);
+  } else {
+    CHECK(false) << "ASN.1 length not handled: " << len;
+  }
+}
+
 static bool EncodeRSAPublicKey(const std::vector<uint8>& modulus_n,
                                const std::vector<uint8>& public_exponent_e,
                                std::vector<uint8>* public_key_info) {
@@ -1007,37 +1044,28 @@ static bool EncodeRSAPublicKey(const std::vector<uint8>& modulus_n,
   public_key_info->insert(public_key_info->begin(),
                           public_exponent_e.begin(),
                           public_exponent_e.end());
-  uint8 exponent_size = base::checked_cast<uint8>(public_exponent_e.size());
-  public_key_info->insert(public_key_info->begin(), exponent_size);
+  PrependASN1Length(public_key_info, public_exponent_e.size());
   public_key_info->insert(public_key_info->begin(), kIntegerTag);
 
   // Encode the modulus n as an INTEGER.
   public_key_info->insert(public_key_info->begin(),
                           modulus_n.begin(), modulus_n.end());
-  uint16 modulus_size = base::checked_cast<uint16>(modulus_n.size());
+  size_t modulus_size = modulus_n.size();
   if (modulus_n[0] & 0x80) {
     public_key_info->insert(public_key_info->begin(), 0x00);
     modulus_size++;
   }
-  public_key_info->insert(public_key_info->begin(), modulus_size & 0xff);
-  public_key_info->insert(public_key_info->begin(), (modulus_size >> 8) & 0xff);
-  public_key_info->insert(public_key_info->begin(), 0x82);
+  PrependASN1Length(public_key_info, modulus_size);
   public_key_info->insert(public_key_info->begin(), kIntegerTag);
 
   // Encode the RSAPublicKey SEQUENCE.
-  uint16 info_size = base::checked_cast<uint16>(public_key_info->size());
-  public_key_info->insert(public_key_info->begin(), info_size & 0xff);
-  public_key_info->insert(public_key_info->begin(), (info_size >> 8) & 0xff);
-  public_key_info->insert(public_key_info->begin(), 0x82);
+  PrependASN1Length(public_key_info, public_key_info->size());
   public_key_info->insert(public_key_info->begin(), kSequenceTag);
 
   // Encode the BIT STRING.
   // Number of unused bits.
   public_key_info->insert(public_key_info->begin(), 0x00);
-  info_size = base::checked_cast<uint16>(public_key_info->size());
-  public_key_info->insert(public_key_info->begin(), info_size & 0xff);
-  public_key_info->insert(public_key_info->begin(), (info_size >> 8) & 0xff);
-  public_key_info->insert(public_key_info->begin(), 0x82);
+  PrependASN1Length(public_key_info, public_key_info->size());
   public_key_info->insert(public_key_info->begin(), kBitStringTag);
 
   // Encode the AlgorithmIdentifier.
@@ -1051,10 +1079,7 @@ static bool EncodeRSAPublicKey(const std::vector<uint8>& modulus_n,
                           algorithm, algorithm + sizeof(algorithm));
 
   // Encode the outermost SEQUENCE.
-  info_size = base::checked_cast<uint16>(public_key_info->size());
-  public_key_info->insert(public_key_info->begin(), info_size & 0xff);
-  public_key_info->insert(public_key_info->begin(), (info_size >> 8) & 0xff);
-  public_key_info->insert(public_key_info->begin(), 0x82);
+  PrependASN1Length(public_key_info, public_key_info->size());
   public_key_info->insert(public_key_info->begin(), kSequenceTag);
 
   return true;
@@ -1062,6 +1087,7 @@ static bool EncodeRSAPublicKey(const std::vector<uint8>& modulus_n,
 
 TEST(SignatureVerifierTest, VerifyRSAPSS) {
   for (unsigned int i = 0; i < arraysize(pss_test); i++) {
+    SCOPED_TRACE(i);
     std::vector<uint8> modulus_n;
     std::vector<uint8> public_exponent_e;
     ASSERT_TRUE(DecodeTestInput(pss_test[i].modulus_n, &modulus_n));
@@ -1072,6 +1098,7 @@ TEST(SignatureVerifierTest, VerifyRSAPSS) {
                                    &public_key_info));
 
     for (unsigned int j = 0; j < arraysize(pss_test[i].example); j++) {
+      SCOPED_TRACE(j);
       std::vector<uint8> message;
       std::vector<uint8> salt;
       std::vector<uint8> signature;

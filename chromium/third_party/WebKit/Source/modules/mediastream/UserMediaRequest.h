@@ -32,6 +32,7 @@
 #define UserMediaRequest_h
 
 #include "core/dom/ActiveDOMObject.h"
+#include "modules/ModulesExport.h"
 #include "modules/mediastream/NavigatorUserMediaErrorCallback.h"
 #include "modules/mediastream/NavigatorUserMediaSuccessCallback.h"
 #include "platform/mediastream/MediaStreamSource.h"
@@ -47,7 +48,8 @@ class ExceptionState;
 class MediaStreamDescriptor;
 class UserMediaController;
 
-class UserMediaRequest final : public GarbageCollectedFinalized<UserMediaRequest>, public ContextLifecycleObserver {
+class MODULES_EXPORT UserMediaRequest final : public GarbageCollectedFinalized<UserMediaRequest>, public ContextLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(UserMediaRequest);
 public:
     static UserMediaRequest* create(ExecutionContext*, UserMediaController*, const Dictionary& options, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*, ExceptionState&);
     virtual ~UserMediaRequest();
@@ -71,7 +73,7 @@ public:
     // ContextLifecycleObserver
     virtual void contextDestroyed() override;
 
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     UserMediaRequest(ExecutionContext*, UserMediaController*, WebMediaConstraints audio, WebMediaConstraints video, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*);
@@ -79,7 +81,7 @@ private:
     WebMediaConstraints m_audio;
     WebMediaConstraints m_video;
 
-    UserMediaController* m_controller;
+    RawPtrWillBeMember<UserMediaController> m_controller;
 
     Member<NavigatorUserMediaSuccessCallback> m_successCallback;
     Member<NavigatorUserMediaErrorCallback> m_errorCallback;

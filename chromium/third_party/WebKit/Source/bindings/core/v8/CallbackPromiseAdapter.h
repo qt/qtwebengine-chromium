@@ -76,9 +76,10 @@ namespace blink {
 // example that ownership of the WebCallbacks instance is being passed
 // in and it is up to the callee to free the WebCallbacks instace.
 template<typename S, typename T>
-class CallbackPromiseAdapter final : public blink::WebCallbacks<typename S::WebType, typename T::WebType> {
+class CallbackPromiseAdapter final : public WebCallbacks<typename S::WebType, typename T::WebType> {
+    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
 public:
-    explicit CallbackPromiseAdapter(PassRefPtr<ScriptPromiseResolver> resolver)
+    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
         : m_resolver(resolver)
     {
         ASSERT(m_resolver);
@@ -88,7 +89,12 @@ public:
     virtual void onSuccess(typename S::WebType* result) override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
-            S::dispose(result);
+            if (result)
+                S::dispose(result);
+            return;
+        }
+        if (!result) {
+            m_resolver->resolve(v8::Null(m_resolver->scriptState()->isolate()));
             return;
         }
         m_resolver->resolve(S::take(m_resolver.get(), result));
@@ -104,14 +110,14 @@ public:
     }
 
 private:
-    RefPtr<ScriptPromiseResolver> m_resolver;
-    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
+    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
 };
 
 template<typename T>
-class CallbackPromiseAdapter<void, T> final : public blink::WebCallbacks<void, typename T::WebType> {
+class CallbackPromiseAdapter<void, T> final : public WebCallbacks<void, typename T::WebType> {
+    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
 public:
-    explicit CallbackPromiseAdapter(PassRefPtr<ScriptPromiseResolver> resolver)
+    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
         : m_resolver(resolver)
     {
         ASSERT(m_resolver);
@@ -120,10 +126,9 @@ public:
 
     virtual void onSuccess() override
     {
-        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        }
-        m_resolver->resolve(V8UndefinedType());
+        m_resolver->resolve();
     }
 
     virtual void onError(typename T::WebType* error) override
@@ -136,8 +141,127 @@ public:
     }
 
 private:
-    RefPtr<ScriptPromiseResolver> m_resolver;
+    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+};
+
+template<typename S>
+class CallbackPromiseAdapter<S, void> final : public WebCallbacks<typename S::WebType, void> {
     WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
+public:
+    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+        : m_resolver(resolver)
+    {
+        ASSERT(m_resolver);
+    }
+    virtual ~CallbackPromiseAdapter() { }
+
+    virtual void onSuccess(typename S::WebType* result) override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+            S::dispose(result);
+            return;
+        }
+        m_resolver->resolve(S::take(m_resolver.get(), result));
+    }
+
+    virtual void onError() override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->reject();
+    }
+
+private:
+    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+};
+
+template<typename T>
+class CallbackPromiseAdapter<bool, T> final : public WebCallbacks<bool, typename T::WebType> {
+    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
+public:
+    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+        : m_resolver(resolver)
+    {
+        ASSERT(m_resolver);
+    }
+    virtual ~CallbackPromiseAdapter() { }
+
+    virtual void onSuccess(bool* result) override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->resolve(*result);
+    }
+
+    virtual void onError(typename T::WebType* error) override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+            T::dispose(error);
+            return;
+        }
+        m_resolver->reject(T::take(m_resolver.get(), error));
+    }
+
+private:
+    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+};
+
+template<>
+class CallbackPromiseAdapter<void, void> final : public WebCallbacks<void, void> {
+    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
+public:
+    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+        : m_resolver(resolver)
+    {
+        ASSERT(m_resolver);
+    }
+    virtual ~CallbackPromiseAdapter() { }
+
+    virtual void onSuccess() override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->resolve();
+    }
+
+    virtual void onError() override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->reject();
+    }
+
+private:
+    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+};
+
+template<>
+class CallbackPromiseAdapter<bool, void> final : public WebCallbacks<bool, void> {
+    WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
+public:
+    explicit CallbackPromiseAdapter(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+        : m_resolver(resolver)
+    {
+        ASSERT(m_resolver);
+    }
+    virtual ~CallbackPromiseAdapter() { }
+
+    virtual void onSuccess(bool* result) override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->resolve(*result);
+    }
+
+    virtual void onError() override
+    {
+        if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
+            return;
+        m_resolver->reject();
+    }
+
+private:
+    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
 };
 
 } // namespace blink

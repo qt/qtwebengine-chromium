@@ -12,17 +12,13 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/safe_integer_conversions.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/scoped_canvas.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
-
-#if defined(OS_WIN)
-#include "ui/gfx/canvas_skia_paint.h"
-#endif
 
 namespace gfx {
 
@@ -63,13 +59,12 @@ Canvas::Canvas()
       canvas_(owned_canvas_.get()) {
 }
 
-Canvas::~Canvas() {
+Canvas::Canvas(SkCanvas* canvas, float image_scale)
+    : image_scale_(image_scale), owned_canvas_(), canvas_(canvas) {
+  DCHECK(canvas);
 }
 
-// static
-Canvas* Canvas::CreateCanvasWithoutScaling(SkCanvas* canvas,
-                                           float image_scale) {
-  return new Canvas(canvas, image_scale);
+Canvas::~Canvas() {
 }
 
 void Canvas::RecreateBackingCanvas(const Size& size,
@@ -407,11 +402,11 @@ void Canvas::DrawImageIntInPixel(const ImageSkia& image,
   // 3. Round off the X and Y translation components in the matrix. This is to
   //    reduce floating point errors during rect transformation. This is needed
   //    for fractional scale factors like 1.25/1.5, etc.
-  // 4. Save the current state of the canvas.
+  // 4. Save the current state of the canvas and restore the state when going
+  //    out of scope with ScopedCanvas.
   // 5. Set the modified matrix in the canvas. This ensures that no scaling
   //    will be done for draw operations on the canvas.
   // 6. Draw the image.
-  // 7. Restore the state of the canvas and the SkCanvas matrix stack.
   SkMatrix matrix = canvas_->getTotalMatrix();
 
   // Ensure that the direction of the x and y scales is preserved. This is
@@ -548,13 +543,6 @@ void Canvas::Transform(const gfx::Transform& transform) {
   canvas_->concat(transform.matrix());
 }
 
-Canvas::Canvas(SkCanvas* canvas, float image_scale)
-    : image_scale_(image_scale),
-      owned_canvas_(),
-      canvas_(canvas) {
-  DCHECK(canvas);
-}
-
 bool Canvas::IntersectsClipRectInt(int x, int y, int w, int h) {
   SkRect clip;
   return canvas_->getClipBounds(&clip) &&
@@ -632,8 +620,7 @@ void Canvas::DrawImageIntHelper(const ImageSkia& image,
   // Set up our paint to use the shader & release our reference (now just owned
   // by the paint).
   SkPaint p(paint);
-  p.setFilterLevel(filter ? SkPaint::kLow_FilterLevel
-                          : SkPaint::kNone_FilterLevel);
+  p.setFilterQuality(filter ? kLow_SkFilterQuality : kNone_SkFilterQuality);
   p.setShader(shader.get());
 
   // The rect will be filled by the bitmap.

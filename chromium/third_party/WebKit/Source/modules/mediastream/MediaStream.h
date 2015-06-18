@@ -29,6 +29,7 @@
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/html/URLRegistry.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 #include "platform/Timer.h"
 #include "platform/mediastream/MediaStreamDescriptor.h"
@@ -37,15 +38,14 @@ namespace blink {
 
 class ExceptionState;
 
-class MediaStream final
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaStream>
+class MODULES_EXPORT MediaStream final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaStream>
     , public URLRegistrable
     , public MediaStreamDescriptorClient
-    , public EventTargetWithInlineData
     , public ContextLifecycleObserver {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaStream>);
-    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaStream);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static MediaStream* create(ExecutionContext*);
     static MediaStream* create(ExecutionContext*, MediaStream*);
@@ -67,9 +67,12 @@ public:
     MediaStreamTrackVector getVideoTracks() const { return m_videoTracks; }
     MediaStreamTrackVector getTracks();
 
+    bool active() const { return m_descriptor->active(); }
     bool ended() const;
     void stop();
 
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(active);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(inactive);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(ended);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(addtrack);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(removetrack);
@@ -88,7 +91,7 @@ public:
     // URLRegistrable
     virtual URLRegistry& registry() const override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaStream(ExecutionContext*, PassRefPtr<MediaStreamDescriptor>);
@@ -101,6 +104,8 @@ private:
     virtual void addRemoteTrack(MediaStreamComponent*) override;
     virtual void removeRemoteTrack(MediaStreamComponent*) override;
 
+    bool emptyOrOnlyEndedTracks();
+
     void scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event>);
     void scheduledEventTimerFired(Timer<MediaStream>*);
 
@@ -111,10 +116,10 @@ private:
     RefPtr<MediaStreamDescriptor> m_descriptor;
 
     Timer<MediaStream> m_scheduledEventTimer;
-    WillBeHeapVector<RefPtrWillBeMember<Event> > m_scheduledEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> m_scheduledEvents;
 };
 
-typedef HeapVector<Member<MediaStream> > MediaStreamVector;
+typedef HeapVector<Member<MediaStream>> MediaStreamVector;
 
 } // namespace blink
 

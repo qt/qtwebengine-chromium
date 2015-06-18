@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2012 Google, Inc. All rights reserved.
  *
@@ -31,7 +30,6 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
@@ -52,7 +50,7 @@ int UseCounter::m_muteCount = 0;
 //         https://code.google.com/p/chromium/issues/detail?id=234940
 int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
 {
-    CSSPropertyID cssPropertyID = convertToCSSPropertyID(id);
+    CSSPropertyID cssPropertyID = static_cast<CSSPropertyID>(id);
 
     switch (cssPropertyID) {
     // Begin at 2, because 1 is reserved for totalPagesMeasuredCSSSampleId.
@@ -208,22 +206,22 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWordSpacing: return 163;
     case CSSPropertyWordWrap: return 164;
     case CSSPropertyZIndex: return 165;
-    case CSSPropertyWebkitAnimation: return 166;
-    case CSSPropertyWebkitAnimationDelay: return 167;
-    case CSSPropertyWebkitAnimationDirection: return 168;
-    case CSSPropertyWebkitAnimationDuration: return 169;
-    case CSSPropertyWebkitAnimationFillMode: return 170;
-    case CSSPropertyWebkitAnimationIterationCount: return 171;
-    case CSSPropertyWebkitAnimationName: return 172;
-    case CSSPropertyWebkitAnimationPlayState: return 173;
-    case CSSPropertyWebkitAnimationTimingFunction: return 174;
+    case CSSPropertyAliasWebkitAnimation: return 166;
+    case CSSPropertyAliasWebkitAnimationDelay: return 167;
+    case CSSPropertyAliasWebkitAnimationDirection: return 168;
+    case CSSPropertyAliasWebkitAnimationDuration: return 169;
+    case CSSPropertyAliasWebkitAnimationFillMode: return 170;
+    case CSSPropertyAliasWebkitAnimationIterationCount: return 171;
+    case CSSPropertyAliasWebkitAnimationName: return 172;
+    case CSSPropertyAliasWebkitAnimationPlayState: return 173;
+    case CSSPropertyAliasWebkitAnimationTimingFunction: return 174;
     case CSSPropertyWebkitAppearance: return 175;
     // CSSPropertyWebkitAspectRatio was 176
-    case CSSPropertyWebkitBackfaceVisibility: return 177;
+    case CSSPropertyAliasWebkitBackfaceVisibility: return 177;
     case CSSPropertyWebkitBackgroundClip: return 178;
     case CSSPropertyWebkitBackgroundComposite: return 179;
     case CSSPropertyWebkitBackgroundOrigin: return 180;
-    case CSSPropertyWebkitBackgroundSize: return 181;
+    case CSSPropertyAliasWebkitBackgroundSize: return 181;
     case CSSPropertyWebkitBorderAfter: return 182;
     case CSSPropertyWebkitBorderAfterColor: return 183;
     case CSSPropertyWebkitBorderAfterStyle: return 184;
@@ -239,7 +237,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     // CSSPropertyWebkitBorderFit was 194
     case CSSPropertyWebkitBorderHorizontalSpacing: return 195;
     case CSSPropertyWebkitBorderImage: return 196;
-    case CSSPropertyWebkitBorderRadius: return 197;
+    case CSSPropertyAliasWebkitBorderRadius: return 197;
     case CSSPropertyWebkitBorderStart: return 198;
     case CSSPropertyWebkitBorderStartColor: return 199;
     case CSSPropertyWebkitBorderStartStyle: return 200;
@@ -254,7 +252,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitBoxOrient: return 209;
     case CSSPropertyWebkitBoxPack: return 210;
     case CSSPropertyWebkitBoxReflect: return 211;
-    case CSSPropertyWebkitBoxShadow: return 212;
+    case CSSPropertyAliasWebkitBoxShadow: return 212;
     // CSSPropertyWebkitColumnAxis was 214
     case CSSPropertyWebkitColumnBreakAfter: return 215;
     case CSSPropertyWebkitColumnBreakBefore: return 216;
@@ -269,12 +267,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitColumnSpan: return 225;
     case CSSPropertyWebkitColumnWidth: return 226;
     case CSSPropertyWebkitColumns: return 227;
-#if defined(ENABLE_CSS_BOX_DECORATION_BREAK) && ENABLE_CSS_BOX_DECORATION_BREAK
-    case CSSPropertyWebkitBoxDecorationBreak: return 228;
-#endif
-#if defined(ENABLE_CSS_FILTERS) && ENABLE_CSS_FILTERS
-    case CSSPropertyWebkitFilter: return 229;
-#endif
+    // 228 was CSSPropertyWebkitBoxDecorationBreak (duplicated due to #ifdef).
+    // 229 was CSSPropertyWebkitFilter (duplicated due to #ifdef).
     case CSSPropertyAlignContent: return 230;
     case CSSPropertyAlignItems: return 231;
     case CSSPropertyAlignSelf: return 232;
@@ -345,8 +339,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitPaddingBefore: return 305;
     case CSSPropertyWebkitPaddingEnd: return 306;
     case CSSPropertyWebkitPaddingStart: return 307;
-    case CSSPropertyWebkitPerspective: return 308;
-    case CSSPropertyWebkitPerspectiveOrigin: return 309;
+    case CSSPropertyAliasWebkitPerspective: return 308;
+    case CSSPropertyAliasWebkitPerspectiveOrigin: return 309;
     case CSSPropertyWebkitPerspectiveOriginX: return 310;
     case CSSPropertyWebkitPerspectiveOriginY: return 311;
     case CSSPropertyWebkitPrintColorAdjust: return 312;
@@ -363,17 +357,17 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyWebkitTextStroke: return 323;
     case CSSPropertyWebkitTextStrokeColor: return 324;
     case CSSPropertyWebkitTextStrokeWidth: return 325;
-    case CSSPropertyWebkitTransform: return 326;
-    case CSSPropertyWebkitTransformOrigin: return 327;
+    case CSSPropertyAliasWebkitTransform: return 326;
+    case CSSPropertyAliasWebkitTransformOrigin: return 327;
     case CSSPropertyWebkitTransformOriginX: return 328;
     case CSSPropertyWebkitTransformOriginY: return 329;
     case CSSPropertyWebkitTransformOriginZ: return 330;
-    case CSSPropertyWebkitTransformStyle: return 331;
-    case CSSPropertyWebkitTransition: return 332;
-    case CSSPropertyWebkitTransitionDelay: return 333;
-    case CSSPropertyWebkitTransitionDuration: return 334;
-    case CSSPropertyWebkitTransitionProperty: return 335;
-    case CSSPropertyWebkitTransitionTimingFunction: return 336;
+    case CSSPropertyAliasWebkitTransformStyle: return 331;
+    case CSSPropertyAliasWebkitTransition: return 332;
+    case CSSPropertyAliasWebkitTransitionDelay: return 333;
+    case CSSPropertyAliasWebkitTransitionDuration: return 334;
+    case CSSPropertyAliasWebkitTransitionProperty: return 335;
+    case CSSPropertyAliasWebkitTransitionTimingFunction: return 336;
     case CSSPropertyWebkitUserDrag: return 337;
     case CSSPropertyWebkitUserModify: return 338;
     case CSSPropertyWebkitUserSelect: return 339;
@@ -390,12 +384,8 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     // case CSSPropertyWebkitWrapFlow: return 350;
     // case CSSPropertyWebkitWrapThrough: return 351;
     // CSSPropertyWebkitWrap was 352.
-#if defined(ENABLE_TOUCH_EVENTS) && ENABLE_TOUCH_EVENTS
-    case CSSPropertyWebkitTapHighlightColor: return 353;
-#endif
-#if defined(ENABLE_DRAGGABLE_REGION) && ENABLE_DRAGGABLE_REGION
-    case CSSPropertyWebkitAppRegion: return 354;
-#endif
+    // 353 was CSSPropertyWebkitTapHighlightColor (duplicated due to #ifdef).
+    // 354 was CSSPropertyWebkitAppRegion (duplicated due to #ifdef).
     case CSSPropertyClipPath: return 355;
     case CSSPropertyClipRule: return 356;
     case CSSPropertyMask: return 357;
@@ -485,7 +475,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyShapeImageThreshold: return 439;
     case CSSPropertyColumnFill: return 440;
     case CSSPropertyTextJustify: return 441;
-    case CSSPropertyTouchActionDelay: return 442;
+    // CSSPropertyTouchActionDelay was 442
     case CSSPropertyJustifySelf: return 443;
     case CSSPropertyScrollBehavior: return 444;
     case CSSPropertyWillChange: return 445;
@@ -499,6 +489,49 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyGrid: return 453;
     case CSSPropertyAll: return 454;
     case CSSPropertyJustifyItems: return 455;
+    case CSSPropertyScrollBlocksOn: return 456;
+    case CSSPropertyMotionPath: return 457;
+    case CSSPropertyMotionOffset: return 458;
+    case CSSPropertyMotionRotation: return 459;
+    case CSSPropertyMotion: return 460;
+    case CSSPropertyX: return 461;
+    case CSSPropertyY: return 462;
+    case CSSPropertyRx: return 463;
+    case CSSPropertyRy: return 464;
+    case CSSPropertyFontSizeAdjust: return 465;
+    case CSSPropertyCx: return 466;
+    case CSSPropertyCy: return 467;
+    case CSSPropertyR: return 468;
+    case CSSPropertyAliasEpubCaptionSide: return 469;
+    case CSSPropertyAliasEpubTextCombine: return 470;
+    case CSSPropertyAliasEpubTextEmphasis: return 471;
+    case CSSPropertyAliasEpubTextEmphasisColor: return 472;
+    case CSSPropertyAliasEpubTextEmphasisStyle: return 473;
+    case CSSPropertyAliasEpubTextOrientation: return 474;
+    case CSSPropertyAliasEpubTextTransform: return 475;
+    case CSSPropertyAliasEpubWordBreak: return 476;
+    case CSSPropertyAliasEpubWritingMode: return 477;
+    case CSSPropertyAliasWebkitAlignContent: return 478;
+    case CSSPropertyAliasWebkitAlignItems: return 479;
+    case CSSPropertyAliasWebkitAlignSelf: return 480;
+    case CSSPropertyAliasWebkitBorderBottomLeftRadius: return 481;
+    case CSSPropertyAliasWebkitBorderBottomRightRadius: return 482;
+    case CSSPropertyAliasWebkitBorderTopLeftRadius: return 483;
+    case CSSPropertyAliasWebkitBorderTopRightRadius: return 484;
+    case CSSPropertyAliasWebkitBoxSizing: return 485;
+    case CSSPropertyAliasWebkitFlex: return 486;
+    case CSSPropertyAliasWebkitFlexBasis: return 487;
+    case CSSPropertyAliasWebkitFlexDirection: return 488;
+    case CSSPropertyAliasWebkitFlexFlow: return 489;
+    case CSSPropertyAliasWebkitFlexGrow: return 490;
+    case CSSPropertyAliasWebkitFlexShrink: return 491;
+    case CSSPropertyAliasWebkitFlexWrap: return 492;
+    case CSSPropertyAliasWebkitJustifyContent: return 493;
+    case CSSPropertyAliasWebkitOpacity: return 494;
+    case CSSPropertyAliasWebkitOrder: return 495;
+    case CSSPropertyAliasWebkitShapeImageThreshold: return 496;
+    case CSSPropertyAliasWebkitShapeMargin: return 497;
+    case CSSPropertyAliasWebkitShapeOutside: return 498;
 
     // 1. Add new features above this line (don't change the assigned numbers of the existing
     // items).
@@ -515,7 +548,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 455; }
+static int maximumCSSSampleId() { return 498; }
 
 void UseCounter::muteForInspector()
 {
@@ -529,45 +562,47 @@ void UseCounter::unmuteForInspector()
 
 UseCounter::UseCounter()
 {
-    m_CSSFeatureBits.ensureSize(lastCSSProperty + 1);
+    m_CSSFeatureBits.ensureSize(lastUnresolvedCSSProperty + 1);
     m_CSSFeatureBits.clearAll();
 }
 
 UseCounter::~UseCounter()
 {
     // We always log PageDestruction so that we have a scale for the rest of the features.
-    blink::Platform::current()->histogramEnumeration("WebCore.FeatureObserver", PageDestruction, NumberOfFeatures);
+    Platform::current()->histogramEnumeration("WebCore.FeatureObserver", PageDestruction, NumberOfFeatures);
 
     updateMeasurements();
 }
 
+void UseCounter::CountBits::updateMeasurements()
+{
+    for (unsigned i = 0; i < NumberOfFeatures; ++i) {
+        if (m_bits.quickGet(i))
+            Platform::current()->histogramEnumeration("WebCore.FeatureObserver", i, NumberOfFeatures);
+    }
+    // Clearing count bits is timing sensitive.
+    m_bits.clearAll();
+}
+
 void UseCounter::updateMeasurements()
 {
-    blink::Platform::current()->histogramEnumeration("WebCore.FeatureObserver", PageVisits, NumberOfFeatures);
-
-    if (m_countBits) {
-        for (unsigned i = 0; i < NumberOfFeatures; ++i) {
-            if (m_countBits->quickGet(i))
-                blink::Platform::current()->histogramEnumeration("WebCore.FeatureObserver", i, NumberOfFeatures);
-        }
-        // Clearing count bits is timing sensitive.
-        m_countBits->clearAll();
-    }
+    Platform::current()->histogramEnumeration("WebCore.FeatureObserver", PageVisits, NumberOfFeatures);
+    m_countBits.updateMeasurements();
 
     // FIXME: Sometimes this function is called more than once per page. The following
     //        bool guards against incrementing the page count when there are no CSS
     //        bits set. http://crbug.com/236262.
     bool needsPagesMeasuredUpdate = false;
-    for (int i = firstCSSProperty; i <= lastCSSProperty; ++i) {
+    for (int i = firstCSSProperty; i <= lastUnresolvedCSSProperty; ++i) {
         if (m_CSSFeatureBits.quickGet(i)) {
             int cssSampleId = mapCSSPropertyIdToCSSSampleIdForHistogram(i);
-            blink::Platform::current()->histogramEnumeration("WebCore.FeatureObserver.CSSProperties", cssSampleId, maximumCSSSampleId());
+            Platform::current()->histogramEnumeration("WebCore.FeatureObserver.CSSProperties", cssSampleId, maximumCSSSampleId());
             needsPagesMeasuredUpdate = true;
         }
     }
 
     if (needsPagesMeasuredUpdate)
-        blink::Platform::current()->histogramEnumeration("WebCore.FeatureObserver.CSSProperties", totalPagesMeasuredCSSSampleId(), maximumCSSSampleId());
+        Platform::current()->histogramEnumeration("WebCore.FeatureObserver.CSSProperties", totalPagesMeasuredCSSSampleId(), maximumCSSSampleId());
 
     m_CSSFeatureBits.clearAll();
 }
@@ -577,14 +612,32 @@ void UseCounter::didCommitLoad()
     updateMeasurements();
 }
 
-void UseCounter::count(const Document& document, Feature feature)
+void UseCounter::count(const Frame* frame, Feature feature)
 {
-    FrameHost* host = document.frameHost();
+    if (!frame)
+        return;
+    FrameHost* host = frame->host();
     if (!host)
         return;
 
-    ASSERT(host->useCounter().deprecationMessage(feature).isEmpty());
+    ASSERT(deprecationMessage(feature).isEmpty());
     host->useCounter().recordMeasurement(feature);
+}
+
+void UseCounter::count(const Document& document, Feature feature)
+{
+    count(document.frame(), feature);
+}
+
+bool UseCounter::isCounted(Document& document, Feature feature)
+{
+    Frame* frame = document.frame();
+    if (!frame)
+        return false;
+    FrameHost* host = frame->host();
+    if (!host)
+        return false;
+    return host->useCounter().hasRecordedMeasurement(feature);
 }
 
 void UseCounter::count(const ExecutionContext* context, Feature feature)
@@ -597,6 +650,13 @@ void UseCounter::count(const ExecutionContext* context, Feature feature)
     }
     if (context->isWorkerGlobalScope())
         toWorkerGlobalScope(context)->countFeature(feature);
+}
+
+void UseCounter::countIfNotPrivateScript(v8::Isolate* isolate, const Frame* frame, Feature feature)
+{
+    if (DOMWrapperWorld::current(isolate).isPrivateScriptIsolatedWorld())
+        return;
+    UseCounter::count(frame, feature);
 }
 
 void UseCounter::countIfNotPrivateScript(v8::Isolate* isolate, const Document& document, Feature feature)
@@ -613,6 +673,21 @@ void UseCounter::countIfNotPrivateScript(v8::Isolate* isolate, const ExecutionCo
     UseCounter::count(context, feature);
 }
 
+void UseCounter::countDeprecation(const LocalFrame* frame, Feature feature)
+{
+    if (!frame)
+        return;
+    FrameHost* host = frame->host();
+    if (!host)
+        return;
+
+    if (!host->useCounter().hasRecordedMeasurement(feature)) {
+        host->useCounter().recordMeasurement(feature);
+        ASSERT(!deprecationMessage(feature).isEmpty());
+        frame->console().addMessage(ConsoleMessage::create(DeprecationMessageSource, WarningMessageLevel, deprecationMessage(feature)));
+    }
+}
+
 void UseCounter::countDeprecation(ExecutionContext* context, Feature feature)
 {
     if (!context)
@@ -625,24 +700,9 @@ void UseCounter::countDeprecation(ExecutionContext* context, Feature feature)
         toWorkerGlobalScope(context)->countDeprecation(feature);
 }
 
-void UseCounter::countDeprecation(const LocalDOMWindow* window, Feature feature)
-{
-    if (!window || !window->document())
-        return;
-    UseCounter::countDeprecation(*window->document(), feature);
-}
-
 void UseCounter::countDeprecation(const Document& document, Feature feature)
 {
-    FrameHost* host = document.frameHost();
-    LocalFrame* frame = document.frame();
-    if (!host || !frame)
-        return;
-
-    if (host->useCounter().recordMeasurement(feature)) {
-        ASSERT(!host->useCounter().deprecationMessage(feature).isEmpty());
-        frame->console().addMessage(ConsoleMessage::create(DeprecationMessageSource, WarningMessageLevel, host->useCounter().deprecationMessage(feature)));
-    }
+    UseCounter::countDeprecation(document.frame(), feature);
 }
 
 void UseCounter::countDeprecationIfNotPrivateScript(v8::Isolate* isolate, ExecutionContext* context, Feature feature)
@@ -652,7 +712,6 @@ void UseCounter::countDeprecationIfNotPrivateScript(v8::Isolate* isolate, Execut
     UseCounter::countDeprecation(context, feature);
 }
 
-// FIXME: Update other UseCounter::deprecationMessage() cases to use this.
 static String replacedBy(const char* oldString, const char* newString)
 {
     return String::format("'%s' is deprecated. Please use '%s' instead.", oldString, newString);
@@ -670,13 +729,10 @@ String UseCounter::deprecationMessage(Feature feature)
         return replacedBy("KeyboardEvent.keyLocation", "KeyboardEvent.location");
 
     case ConsoleMarkTimeline:
-        return "console.markTimeline is deprecated. Please use the console.timeStamp instead.";
+        return replacedBy("console.markTimeline", "console.timeStamp");
 
     case FileError:
         return "FileError is deprecated. Please use the 'name' or 'message' attributes of DOMError rather than 'code'.";
-
-    case ShowModalDialog:
-        return "showModalDialog is deprecated. Please use window.open and postMessage instead.";
 
     case CSSStyleSheetInsertRuleOptionalArg:
         return "Calling CSSStyleSheet.insertRule() with one argument is deprecated. Please pass the index argument as well: insertRule(x, 0).";
@@ -685,25 +741,19 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'HTMLVideoElement.webkitSupportsFullscreen' is deprecated. Its value is true if the video is loaded.";
 
     case PrefixedVideoDisplayingFullscreen:
-        return "'HTMLVideoElement.webkitDisplayingFullscreen' is deprecated. Please use the 'fullscreenchange' and 'webkitfullscreenchange' events instead.";
+        return "'HTMLVideoElement.webkitDisplayingFullscreen' is deprecated. Please use the 'fullscreenchange' event instead.";
 
     case PrefixedVideoEnterFullscreen:
-        return "'HTMLVideoElement.webkitEnterFullscreen()' is deprecated. Please use 'Element.requestFullscreen()' and 'Element.webkitRequestFullscreen()' instead.";
+        return replacedBy("HTMLVideoElement.webkitEnterFullscreen()", "Element.requestFullscreen()");
 
     case PrefixedVideoExitFullscreen:
-        return "'HTMLVideoElement.webkitExitFullscreen()' is deprecated. Please use 'Document.exitFullscreen()' and 'Document.webkitExitFullscreen()' instead.";
+        return replacedBy("HTMLVideoElement.webkitExitFullscreen()", "Document.exitFullscreen()");
 
     case PrefixedVideoEnterFullScreen:
-        return "'HTMLVideoElement.webkitEnterFullScreen()' is deprecated. Please use 'Element.requestFullscreen()' and 'Element.webkitRequestFullscreen()' instead.";
+        return replacedBy("HTMLVideoElement.webkitEnterFullScreen()", "Element.requestFullscreen()");
 
     case PrefixedVideoExitFullScreen:
-        return "'HTMLVideoElement.webkitExitFullScreen()' is deprecated. Please use 'Document.exitFullscreen()' and 'Document.webkitExitFullscreen()' instead.";
-
-    case MediaErrorEncrypted:
-        return "'MediaError.MEDIA_ERR_ENCRYPTED' is deprecated. This error code is never used.";
-
-    case PrefixedGamepad:
-        return replacedBy("navigator.webkitGetGamepads", "navigator.getGamepads");
+        return replacedBy("HTMLVideoElement.webkitExitFullScreen()", "Document.exitFullscreen()");
 
     case PrefixedIndexedDB:
         return replacedBy("webkitIndexedDB", "indexedDB");
@@ -741,29 +791,8 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedCancelRequestAnimationFrame:
         return "'webkitCancelRequestAnimationFrame' is vendor-specific. Please use the standard 'cancelAnimationFrame' instead.";
 
-    case DocumentCreateAttributeNS:
-        return "'Document.createAttributeNS' is deprecated and has been removed from DOM4 (http://w3.org/tr/dom).";
-
-    case AttributeOwnerElement:
-        return "'Attr.ownerElement' is deprecated and has been removed from DOM4 (http://w3.org/tr/dom).";
-
-    case ElementSetAttributeNodeNS:
-        return "'Element.setAttributeNodeNS' is deprecated and has been removed from DOM4 (http://w3.org/tr/dom).";
-
     case NodeIteratorDetach:
         return "'NodeIterator.detach' is now a no-op, as per DOM (http://dom.spec.whatwg.org/#dom-nodeiterator-detach).";
-
-    case AttrNodeValue:
-        return replacedBy("Attr.nodeValue", "value");
-
-    case AttrTextContent:
-        return replacedBy("Attr.textContent", "value");
-
-    case NodeIteratorExpandEntityReferences:
-        return "'NodeIterator.expandEntityReferences' is deprecated and has been removed from DOM. It always returns false.";
-
-    case TreeWalkerExpandEntityReferences:
-        return "'TreeWalker.expandEntityReferences' is deprecated and has been removed from DOM. It always returns false.";
 
     case RangeDetach:
         return "'Range.detach' is now a no-op, as per DOM (http://dom.spec.whatwg.org/#dom-range-detach).";
@@ -771,23 +800,14 @@ String UseCounter::deprecationMessage(Feature feature)
     case OverflowChangedEvent:
         return "The 'overflowchanged' event is deprecated and may be removed. Please do not use it.";
 
-    case ElementSetPrefix:
-        return "Setting 'Element.prefix' is deprecated, as it is read-only per DOM (http://dom.spec.whatwg.org/#element).";
-
     case SyncXHRWithCredentials:
         return "Setting 'XMLHttpRequest.withCredentials' for synchronous requests is deprecated.";
 
-    case EventSourceURL:
-        return "'EventSource.URL' is deprecated. Please use 'EventSource.url' instead.";
-
-    case WebSocketURL:
-        return "'WebSocket.URL' is deprecated. Please use 'WebSocket.url' instead.";
-
     case HTMLTableElementVspace:
-        return "The 'vspace' attribute on table is deprecated. Please use CSS instead.";
+        return "The 'vspace' attribute on table is deprecated. Please use CSS margin-top and margin-bottom property instead.";
 
     case HTMLTableElementHspace:
-        return "The 'hspace' attribute on table is deprecated. Please use CSS instead.";
+        return "The 'hspace' attribute on table is deprecated. Please use CSS margin-left and margin-right property instead.";
 
     case PictureSourceSrc:
         return "<source src> with a <picture> parent is invalid and therefore ignored. Please use <source srcset> instead.";
@@ -799,16 +819,101 @@ String UseCounter::deprecationMessage(Feature feature)
         return "The XMLHttpRequest progress event property 'totalSize' is deprecated. Please use 'total' instead.";
 
     case ConsoleTimeline:
-        return "console.timeline is deprecated. Please use the console.time instead.";
+        return replacedBy("console.timeline", "console.time");
 
     case ConsoleTimelineEnd:
-        return "console.timelineEnd is deprecated. Please use the console.timeEnd instead.";
+        return replacedBy("console.timelineEnd", "console.timeEnd");
+
+    case CanvasRenderingContext2DCompositeOperationDarker:
+        return replacedBy("darker", "darken");
 
     case XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload:
         return "Synchronous XMLHttpRequest on the main thread is deprecated because of its detrimental effects to the end user's experience. For more help, check http://xhr.spec.whatwg.org/.";
 
-    case FontFaceSetReady:
-        return "document.fonts.ready() method is going to be replaced with document.fonts.ready attribute in future releases. Please be prepared. For more help, check https://code.google.com/p/chromium/issues/detail?id=392077#c3 .";
+    case GetMatchedCSSRules:
+        return "'getMatchedCSSRules()' is deprecated. For more help, check https://code.google.com/p/chromium/issues/detail?id=437569#c2";
+
+    case DocumentSetCharset:
+        return "Setting 'Document.charset' is deprecated. Please use '<meta charset=\"UTF-8\">' instead.";
+
+    case PrefixedImageSmoothingEnabled:
+        return replacedBy("CanvasRenderingContext2D.webkitImageSmoothingEnabled", "CanvasRenderingContext2D.imageSmoothingEnabled");
+
+    case AudioListenerDopplerFactor:
+        return "dopplerFactor is deprecated and will be removed in M45 when all doppler effects are removed";
+
+    case AudioListenerSpeedOfSound:
+        return "speedOfSound is deprecated and will be removed in M45 when all doppler effects are removed";
+
+    case AudioListenerSetVelocity:
+        return "setVelocity() is deprecated and will be removed in M45 when all doppler effects are removed";
+
+    case PrefixedWindowURL:
+        return replacedBy("webkitURL", "URL");
+
+    case PrefixedAudioContext:
+        return replacedBy("webkitAudioContext", "AudioContext");
+
+    case PrefixedOfflineAudioContext:
+        return replacedBy("webkitOfflineAudioContext", "OfflineAudioContext");
+
+    case RangeCompareNode:
+        return replacedBy("Range.compareNode()", "Range.compareBoundaryPoints()");
+
+    case RangeExpand:
+        return replacedBy("Range.expand()", "Selection.modify()");
+
+    case PrefixedMediaAddKey:
+    case PrefixedMediaGenerateKeyRequest:
+    case PrefixedMediaCancelKeyRequest:
+        return "The prefixed Encrypted Media Extensions APIs are deprecated and will be removed in M46 (beta around September 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
+
+    case CanPlayTypeKeySystem:
+        return "canPlayType()'s 'keySystem' parameter is deprecated and will be ignored in M46 (beta around September 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
+
+    case SVGSVGElementForceRedraw:
+        return "'SVGSVGElement.forceRedraw()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__forceRedraw).";
+
+    case SVGSVGElementSuspendRedraw:
+        return "'SVGSVGElement.suspendRedraw()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__suspendRedraw).";
+
+    case SVGSVGElementUnsuspendRedraw:
+        return "'SVGSVGElement.unsuspendRedraw()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__unsuspendRedraw).";
+
+    case SVGSVGElementUnsuspendRedrawAll:
+        return "'SVGSVGElement.unsuspendRedrawAll()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__unsuspendRedrawAll).";
+
+    case ServiceWorkerClientPostMessage:
+        return "'Client.postMessage()' is an experimental API and may change. See https://github.com/slightlyoff/ServiceWorker/issues/609.";
+
+    case AttrChildAccess:
+    case AttrChildChange:
+        return "Attr child nodes are deprecated and will be removed in M45, around August 2015. Please use 'Attr.value' instead.";
+
+    case CSSKeyframesRuleInsertRule:
+        return "'CSSKeyframesRule.insertRule()' is deprecated and will be removed in M45, around August 2015. Please use 'CSSKeyframesRule.appendRule()' instead.";
+
+    // Powerful features on insecure origins (https://goo.gl/rStTGz)
+    case GeolocationInsecureOrigin:
+        return "getCurrentPosition() and watchPosition() are deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
+    case GetUserMediaInsecureOrigin:
+        return "getUserMedia() is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
+    case FullscreenInsecureOrigin:
+        return "requestFullscreen() is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
+    case EncryptedMediaInsecureOrigin:
+        return "requestMediaKeySystemAccess() is deprecated on insecure origins in the specification. Support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
+    case PushSubscriptionId:
+        return "'PushSubscription.subscriptionId' is deprecated and is now included in 'PushSubscription.endpoint'. It will be removed in Chrome 45, around August 2015.";
+
+    case DocumentGetCSSCanvasContext:
+        return "The -webkit-canvas CSS feature is deprecated. Please use a positioned <canvas> element instead.";
+
+    case VideoFullscreenAllowedExemption:
+        return "Entering fullscreen in an <iframe> with no allowfullscreen attribute is deprecated and will stop working in M46, around October 2015. Please use the allowfullscreen attribute.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:
@@ -819,8 +924,7 @@ String UseCounter::deprecationMessage(Feature feature)
 void UseCounter::count(CSSParserContext context, CSSPropertyID feature)
 {
     ASSERT(feature >= firstCSSProperty);
-    ASSERT(feature <= lastCSSProperty);
-    ASSERT(!isInternalProperty(feature));
+    ASSERT(feature <= lastUnresolvedCSSProperty);
 
     if (!isUseCounterEnabledForMode(context.mode()))
         return;

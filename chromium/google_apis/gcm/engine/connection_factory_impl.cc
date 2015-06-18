@@ -7,6 +7,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "google_apis/gcm/engine/connection_handler_impl.h"
 #include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
@@ -84,19 +85,17 @@ void ConnectionFactoryImpl::Initialize(
     const ConnectionHandler::ProtoReceivedCallback& read_callback,
     const ConnectionHandler::ProtoSentCallback& write_callback) {
   DCHECK(!connection_handler_);
+  DCHECK(read_callback_.is_null());
+  DCHECK(write_callback_.is_null());
 
   previous_backoff_ = CreateBackoffEntry(&backoff_policy_);
   backoff_entry_ = CreateBackoffEntry(&backoff_policy_);
   request_builder_ = request_builder;
+  read_callback_ = read_callback;
+  write_callback_ = write_callback;
 
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   waiting_for_network_online_ = net::NetworkChangeNotifier::IsOffline();
-  connection_handler_ = CreateConnectionHandler(
-      base::TimeDelta::FromMilliseconds(kReadTimeoutMs),
-      read_callback,
-      write_callback,
-      base::Bind(&ConnectionFactoryImpl::ConnectionHandlerCallback,
-                 weak_ptr_factory_.GetWeakPtr())).Pass();
 }
 
 ConnectionHandler* ConnectionFactoryImpl::GetConnectionHandler() const {
@@ -104,7 +103,14 @@ ConnectionHandler* ConnectionFactoryImpl::GetConnectionHandler() const {
 }
 
 void ConnectionFactoryImpl::Connect() {
-  DCHECK(connection_handler_);
+  if (!connection_handler_) {
+    connection_handler_ = CreateConnectionHandler(
+        base::TimeDelta::FromMilliseconds(kReadTimeoutMs),
+        read_callback_,
+        write_callback_,
+        base::Bind(&ConnectionFactoryImpl::ConnectionHandlerCallback,
+                   weak_ptr_factory_.GetWeakPtr())).Pass();
+  }
 
   if (connecting_ || waiting_for_backoff_)
     return;  // Connection attempt already in progress or pending.
@@ -140,6 +146,10 @@ void ConnectionFactoryImpl::ConnectWithBackoff() {
 
   DVLOG(1) << "Attempting connection to MCS endpoint.";
   waiting_for_backoff_ = false;
+  // It's necessary to close the socket before attempting any new connection,
+  // otherwise it's possible to hit a use-after-free in the connection handler.
+  // crbug.com/462319
+  CloseSocket();
   ConnectImpl();
 }
 
@@ -163,6 +173,11 @@ std::string ConnectionFactoryImpl::GetConnectionStateString() const {
 
 void ConnectionFactoryImpl::SignalConnectionReset(
     ConnectionResetReason reason) {
+  if (!connection_handler_) {
+    // No initial connection has been made. No need to do anything.
+    return;
+  }
+
   // A failure can trigger multiple resets, so no need to do anything if a
   // connection is already in progress.
   if (connecting_) {
@@ -202,7 +217,12 @@ void ConnectionFactoryImpl::SignalConnectionReset(
     return;
   }
 
-  if (logging_in_) {
+  if (reason == NETWORK_CHANGE) {
+    // Canary attempts bypass backoff without resetting it. These will have no
+    // effect if we're already in the process of connecting.
+    ConnectImpl();
+    return;
+  } else if (logging_in_) {
     // Failures prior to login completion just reuse the existing backoff entry.
     logging_in_ = false;
     backoff_entry_->InformOfRequest(false);
@@ -212,9 +232,6 @@ void ConnectionFactoryImpl::SignalConnectionReset(
     // the backoff entry that was saved off at login completion time.
     backoff_entry_.swap(previous_backoff_);
     backoff_entry_->InformOfRequest(false);
-  } else if (reason == NETWORK_CHANGE) {
-    ConnectImpl();  // Canary attempts bypass backoff without resetting it.
-    return;
   } else {
     // We shouldn't be in backoff in thise case.
     DCHECK_EQ(0, backoff_entry_->failure_count());
@@ -277,7 +294,8 @@ net::IPEndPoint ConnectionFactoryImpl::GetPeerIP() {
 
 void ConnectionFactoryImpl::ConnectImpl() {
   DCHECK(!IsEndpointReachable());
-  DCHECK(!socket_handle_.socket());
+  // TODO(zea): Make this a dcheck again. crbug.com/462319
+  CHECK(!socket_handle_.socket());
 
   // TODO(zea): if the network is offline, don't attempt to connect.
   // See crbug.com/396687
@@ -332,6 +350,10 @@ base::TimeTicks ConnectionFactoryImpl::NowTicks() {
 }
 
 void ConnectionFactoryImpl::OnConnectDone(int result) {
+  // TODO(zea): Remove ScopedTracker below once crbug.com/455884 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455884 ConnectionFactoryImpl::OnConnectDone"));
   if (result != net::OK) {
     // If the connection fails, try another proxy.
     result = ReconsiderProxyAfterError(result);

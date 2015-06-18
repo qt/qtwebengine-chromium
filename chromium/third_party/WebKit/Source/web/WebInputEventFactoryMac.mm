@@ -48,11 +48,6 @@ enum {
 };
 typedef NSUInteger NSEventPhase;
 
-@interface NSEvent (LionSDKDeclarations)
-- (NSEventPhase)phase;
-- (NSEventPhase)momentumPhase;
-@end
-
 #endif  // __MAC_OS_X_VERSION_MAX_ALLOWED == 1060
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED < 1080
@@ -62,7 +57,22 @@ enum {
     NSEventPhaseMayBegin    = 0x1 << 5
 };
 
+enum {
+    NSEventTypeSmartMagnify = 32
+};
+
 #endif  // __MAC_OS_X_VERSION_MAX_ALLOWED < 1080
+
+// Redeclare methods only available on OSX 10.7+ to suppress -Wpartial-availability warnings.
+
+#if !defined(MAC_OS_X_VERSION_10_7) || MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_7
+
+@interface NSEvent (LionSDKDeclarations)
+- (NSEventPhase)phase;
+- (NSEventPhase)momentumPhase;
+@end
+
+#endif  // !defined(MAC_OS_X_VERSION_10_7) || MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_7
 
 namespace blink {
 
@@ -269,31 +279,73 @@ static int windowsKeyCodeForCharCode(unichar charCode)
     return 0;
 }
 
+// Return true if the target modifier key is up. OS X has an "official" flag
+// to test whether either left or right versions of a modifier key are held,
+// and "unofficial" flags for the left and right versions independently. This
+// function verifies that |targetKeyMask| and |otherKeyMask| (which should be
+// the left and right versions of a modifier) are consistent with with the
+// state of |eitherKeyMask| (which should be the corresponding ""official"
+// flag). If they are consistent, it tests |targetKeyMask|; otherwise it tests
+// |eitherKeyMask|.
+static inline bool isModifierKeyUp(
+    unsigned int flags, unsigned int targetKeyMask, unsigned int otherKeyMask,
+    unsigned int eitherKeyMask)
+{
+  bool eitherKeyDown = (flags & eitherKeyMask) != 0;
+  bool targetKeyDown = (flags & targetKeyMask) != 0;
+  bool otherKeyDown = (flags & otherKeyMask) != 0;
+  if (eitherKeyDown != (targetKeyDown || otherKeyDown))
+    return !eitherKeyDown;
+  return !targetKeyDown;
+}
+
 static inline bool isKeyUpEvent(NSEvent* event)
 {
     if ([event type] != NSFlagsChanged)
         return [event type] == NSKeyUp;
-    // FIXME: This logic fails if the user presses both Shift keys at once, for example:
-    // we treat releasing one of them as keyDown.
+
+    // Unofficial bit-masks for left- and right-hand versions of modifier keys.
+    // These values were determined empirically.
+    const unsigned int kLeftControlKeyMask = 1 << 0;
+    const unsigned int kLeftShiftKeyMask = 1 << 1;
+    const unsigned int kRightShiftKeyMask = 1 << 2;
+    const unsigned int kLeftCommandKeyMask = 1 << 3;
+    const unsigned int kRightCommandKeyMask = 1 << 4;
+    const unsigned int kLeftAlternateKeyMask = 1 << 5;
+    const unsigned int kRightAlternateKeyMask = 1 << 6;
+    const unsigned int kRightControlKeyMask = 1 << 13;
+
     switch ([event keyCode]) {
     case 54: // Right Command
+        return isModifierKeyUp([event modifierFlags], kRightCommandKeyMask,
+                               kLeftCommandKeyMask, NSCommandKeyMask);
     case 55: // Left Command
-        return ([event modifierFlags] & NSCommandKeyMask) == 0;
+        return isModifierKeyUp([event modifierFlags], kLeftCommandKeyMask,
+                               kRightCommandKeyMask, NSCommandKeyMask);
 
     case 57: // Capslock
         return ([event modifierFlags] & NSAlphaShiftKeyMask) == 0;
 
     case 56: // Left Shift
+        return isModifierKeyUp([event modifierFlags], kLeftShiftKeyMask,
+                               kRightShiftKeyMask, NSShiftKeyMask);
     case 60: // Right Shift
-        return ([event modifierFlags] & NSShiftKeyMask) == 0;
+        return isModifierKeyUp([event modifierFlags],kRightShiftKeyMask,
+                               kLeftShiftKeyMask, NSShiftKeyMask);
 
     case 58: // Left Alt
+        return isModifierKeyUp([event modifierFlags], kLeftAlternateKeyMask,
+                               kRightAlternateKeyMask, NSAlternateKeyMask);
     case 61: // Right Alt
-        return ([event modifierFlags] & NSAlternateKeyMask) == 0;
+        return isModifierKeyUp([event modifierFlags], kRightAlternateKeyMask,
+                               kLeftAlternateKeyMask, NSAlternateKeyMask);
 
     case 59: // Left Ctrl
+        return isModifierKeyUp([event modifierFlags], kLeftControlKeyMask,
+                               kRightControlKeyMask, NSControlKeyMask);
     case 62: // Right Ctrl
-        return ([event modifierFlags] & NSControlKeyMask) == 0;
+        return isModifierKeyUp([event modifierFlags], kRightControlKeyMask,
+                               kLeftControlKeyMask, NSControlKeyMask);
 
     case 63: // Function
         return ([event modifierFlags] & NSFunctionKeyMask) == 0;
@@ -722,7 +774,18 @@ static inline int modifiersFromEvent(NSEvent* event) {
         modifiers |= WebInputEvent::MetaKey;
     if ([event modifierFlags] & NSAlphaShiftKeyMask)
         modifiers |= WebInputEvent::CapsLockOn;
-    // TODO(port): Set mouse button states
+
+    // The return value of 1 << 0 corresponds to the left mouse button,
+    // 1 << 1 corresponds to the right mouse button,
+    // 1 << n, n >= 2 correspond to other mouse buttons.
+    NSUInteger pressedButtons = [NSEvent pressedMouseButtons];
+
+    if (pressedButtons & (1 << 0))
+        modifiers |= WebInputEvent::LeftButtonDown;
+    if (pressedButtons & (1 << 1))
+        modifiers |= WebInputEvent::RightButtonDown;
+    if (pressedButtons & (1 << 2))
+        modifiers |= WebInputEvent::MiddleButtonDown;
 
     return modifiers;
 }
@@ -786,7 +849,6 @@ WebKeyboardEvent WebInputEventFactory::keyboardEvent(NSEvent* event)
     result.windowsKeyCode = WebKeyboardEvent::windowsKeyCodeWithoutLocation(windowsKeyCode);
     result.modifiers |= WebKeyboardEvent::locationModifiersFromWindowsKeyCode(windowsKeyCode);
     result.nativeKeyCode = [event keyCode];
-
     NSString* textStr = textFromEvent(event);
     NSString* unmodifiedStr = unmodifiedTextFromEvent(event);
     NSString* identifierStr = keyIdentifierForKeyEvent(event);
@@ -829,27 +891,6 @@ WebKeyboardEvent WebInputEventFactory::keyboardEvent(NSEvent* event)
                      encoding:NSASCIIStringEncoding];
 
     result.timeStampSeconds = [event timestamp];
-    result.isSystemKey = isSystemKeyEvent(result);
-
-    return result;
-}
-
-WebKeyboardEvent WebInputEventFactory::keyboardEvent(wchar_t character,
-                                                     int modifiers,
-                                                     double timeStampSeconds)
-{
-    // keyboardEvent(NSEvent*) depends on the NSEvent object and
-    // it is hard to use it from methods of the NSTextInput protocol. For
-    // such methods, this function creates a WebInputEvent::Char event without
-    // using a NSEvent object.
-    WebKeyboardEvent result;
-    result.type = blink::WebInputEvent::Char;
-    result.timeStampSeconds = timeStampSeconds;
-    result.modifiers = modifiers;
-    result.windowsKeyCode = character;
-    result.nativeKeyCode = character;
-    result.text[0] = character;
-    result.unmodifiedText[0] = character;
     result.isSystemKey = isSystemKeyEvent(result);
 
     return result;
@@ -1131,12 +1172,26 @@ WebGestureEvent WebInputEventFactory::gestureEvent(NSEvent *event, NSView *view)
     result.modifiers = modifiersFromEvent(event);
     result.timeStampSeconds = [event timestamp];
 
-    // MacOS X gestures are used only for pinch support.
     result.sourceDevice = WebGestureDeviceTouchpad;
     switch ([event type]) {
     case NSEventTypeMagnify:
         result.type = WebInputEvent::GesturePinchUpdate;
         result.data.pinchUpdate.scale = [event magnification] + 1.0;
+        break;
+    case NSEventTypeSmartMagnify:
+        // Map the Cocoa "double-tap with two fingers" zoom gesture to regular
+        // GestureDoubleTap, because the effect is similar to single-finger
+        // double-tap zoom on mobile platforms. Note that tapCount is set to 1
+        // because the gesture type already encodes that information.
+        result.type = WebInputEvent::GestureDoubleTap;
+        result.data.tap.tapCount = 1;
+        break;
+    case NSEventTypeBeginGesture:
+    case NSEventTypeEndGesture:
+        // The specific type of a gesture is not defined when the gesture begin
+        // and end NSEvents come in. Leave them undefined. The caller will need
+        // to specify them when the gesture is differentiated.
+        result.type = WebInputEvent::Undefined;
         break;
     default:
         ASSERT_NOT_REACHED();

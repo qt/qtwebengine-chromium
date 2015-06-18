@@ -9,7 +9,7 @@
 
 namespace blink {
 
-void GeolocationWatchers::trace(Visitor* visitor)
+DEFINE_TRACE(GeolocationWatchers)
 {
     visitor->trace(m_idToNotifierMap);
     visitor->trace(m_notifierToIdMap);
@@ -68,7 +68,7 @@ bool GeolocationWatchers::isEmpty() const
     return m_idToNotifierMap.isEmpty();
 }
 
-void GeolocationWatchers::getNotifiersVector(HeapVector<Member<GeoNotifier> >& copy) const
+void GeolocationWatchers::getNotifiersVector(HeapVector<Member<GeoNotifier>>& copy) const
 {
     copyValuesToVector(m_idToNotifierMap, copy);
 }

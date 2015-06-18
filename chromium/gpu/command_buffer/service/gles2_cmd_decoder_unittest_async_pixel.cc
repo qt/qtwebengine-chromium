@@ -57,7 +57,6 @@ using namespace cmds;
 TEST_P(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
   InitState init;
   init.extensions = "GL_CHROMIUM_async_pixel_transfers";
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
 
@@ -135,7 +134,8 @@ TEST_P(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
     // The texture is safe but the level has not been defined yet.
     EXPECT_TRUE(texture->SafeToRenderFrom());
     GLsizei width, height;
-    EXPECT_FALSE(texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height));
+    EXPECT_FALSE(
+        texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr));
     EXPECT_EQ(texture_ref->num_observers(), 1);
   }
   {
@@ -164,7 +164,8 @@ TEST_P(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
     // and has the right size etc.
     EXPECT_TRUE(texture->SafeToRenderFrom());
     GLsizei width, height;
-    EXPECT_TRUE(texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height));
+    EXPECT_TRUE(
+        texture->GetLevelSize(GL_TEXTURE_2D, 0, &width, &height, nullptr));
     EXPECT_EQ(width, 8);
     EXPECT_EQ(height, 8);
   }
@@ -319,7 +320,6 @@ TEST_P(GLES2DecoderManualInitTest, AsyncPixelTransfers) {
 TEST_P(GLES2DecoderManualInitTest, AsyncPixelTransferManager) {
   InitState init;
   init.extensions = "GL_CHROMIUM_async_pixel_transfers";
-  init.gl_version = "3.0";
   init.bind_generates_resource = true;
   InitDecoder(init);
 

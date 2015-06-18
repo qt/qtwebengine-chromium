@@ -8,21 +8,15 @@ config("ssl_config") {
   if (is_mac || is_win) {
     defines = [ "NSS_PLATFORM_CLIENT_AUTH" ]
   }
-
-  if (is_clang) {
-    cflags = [
-      # There is a broken header guard in /usr/include/nss/secmod.h:
-      # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
-      "-Wno-header-guard",
-    ]
-  }
 }
 
 component("libssl") {
   output_name = "crssl"
 
   sources = [
+    "SSLerrs.h",
     "authcert.c",
+    "bodge/secitem_array.c",
     "cmpcert.c",
     "derive.c",
     "dtlscon.c",
@@ -40,7 +34,6 @@ component("libssl") {
     "sslenum.c",
     "sslerr.c",
     "sslerr.h",
-    "SSLerrs.h",
     "sslerrstrs.c",
     "sslgathr.c",
     "sslimpl.h",
@@ -62,7 +55,6 @@ component("libssl") {
     "unix_err.h",
     "win32err.c",
     "win32err.h",
-    "bodge/secitem_array.c",
   ]
 
   public_configs = [ ":ssl_config" ]
@@ -78,8 +70,6 @@ component("libssl") {
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
   if (is_win) {
-    cflags += [ "/wd4267" ]  # Disable warning: Conversion from size_t to 'type'.
-
     sources -= [
       "unix_err.c",
       "unix_err.h",
@@ -98,11 +88,18 @@ component("libssl") {
 
     # Must be after ssl_config since we want our SSL headers to take
     # precedence.
-    public_configs += [
-      "//third_party/nss:system_nss_no_ssl_config"
-    ]
+    public_configs += [ "//third_party/nss:system_nss_no_ssl_config" ]
   } else if (is_mac) {
     libs = [ "Security.framework" ]
+  }
+
+  if (is_clang) {
+    # SSL triggers some of these Clang warnings.
+    configs -= [ "//build/config/clang:extra_warnings" ]
+
+    # There is a broken header guard in /usr/include/nss/secmod.h:
+    # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
+    cflags = [ "-Wno-header-guard" ]
   }
 
   if (is_posix) {
@@ -121,9 +118,7 @@ component("libssl") {
   }
 
   if (is_mac || is_ios || is_win) {
-    sources -= [
-      "bodge/secitem_array.c",
-    ]
+    sources -= [ "bodge/secitem_array.c" ]
     public_deps = [
       "//third_party/nss:nspr",
       "//third_party/nss:nss",

@@ -31,7 +31,6 @@
 #include "core/css/PointerProperties.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/Settings.h"
-#include "core/inspector/InspectorController.h"
 #include "core/page/Page.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/Supplementable.h"
@@ -60,21 +59,22 @@ namespace blink {
 InternalSettings::Backup::Backup(Settings* settings)
     : m_originalAuthorShadowDOMForAnyElementEnabled(RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled())
     , m_originalCSP(RuntimeEnabledFeatures::experimentalContentSecurityPolicyFeaturesEnabled())
-    , m_originalLaxMixedContentCheckingEnabled(RuntimeEnabledFeatures::laxMixedContentCheckingEnabled())
     , m_originalOverlayScrollbarsEnabled(RuntimeEnabledFeatures::overlayScrollbarsEnabled())
     , m_originalEditingBehavior(settings->editingBehaviorType())
     , m_originalTextAutosizingEnabled(settings->textAutosizingEnabled())
     , m_originalTextAutosizingWindowSizeOverride(settings->textAutosizingWindowSizeOverride())
     , m_originalAccessibilityFontScaleFactor(settings->accessibilityFontScaleFactor())
     , m_originalMediaTypeOverride(settings->mediaTypeOverride())
+    , m_originalDisplayModeOverride(settings->displayModeOverride())
     , m_originalMockScrollbarsEnabled(settings->mockScrollbarsEnabled())
     , m_originalMockGestureTapHighlightsEnabled(settings->mockGestureTapHighlightsEnabled())
     , m_langAttributeAwareFormControlUIEnabled(RuntimeEnabledFeatures::langAttributeAwareFormControlUIEnabled())
     , m_imagesEnabled(settings->imagesEnabled())
     , m_defaultVideoPosterURL(settings->defaultVideoPosterURL())
     , m_originalLayerSquashingEnabled(settings->layerSquashingEnabled())
-    , m_originalPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(RuntimeEnabledFeatures::pseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled())
     , m_originalImageColorProfilesEnabled(RuntimeEnabledFeatures::imageColorProfilesEnabled())
+    , m_originalImageAnimationPolicy(settings->imageAnimationPolicy())
+    , m_originalScrollTopLeftInteropEnabled(RuntimeEnabledFeatures::scrollTopLeftInteropEnabled())
 {
 }
 
@@ -82,22 +82,22 @@ void InternalSettings::Backup::restoreTo(Settings* settings)
 {
     RuntimeEnabledFeatures::setAuthorShadowDOMForAnyElementEnabled(m_originalAuthorShadowDOMForAnyElementEnabled);
     RuntimeEnabledFeatures::setExperimentalContentSecurityPolicyFeaturesEnabled(m_originalCSP);
-    RuntimeEnabledFeatures::setLaxMixedContentCheckingEnabled(m_originalLaxMixedContentCheckingEnabled);
     RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(m_originalOverlayScrollbarsEnabled);
     settings->setEditingBehaviorType(m_originalEditingBehavior);
     settings->setTextAutosizingEnabled(m_originalTextAutosizingEnabled);
     settings->setTextAutosizingWindowSizeOverride(m_originalTextAutosizingWindowSizeOverride);
     settings->setAccessibilityFontScaleFactor(m_originalAccessibilityFontScaleFactor);
     settings->setMediaTypeOverride(m_originalMediaTypeOverride);
+    settings->setDisplayModeOverride(m_originalDisplayModeOverride);
     settings->setMockScrollbarsEnabled(m_originalMockScrollbarsEnabled);
     settings->setMockGestureTapHighlightsEnabled(m_originalMockGestureTapHighlightsEnabled);
     RuntimeEnabledFeatures::setLangAttributeAwareFormControlUIEnabled(m_langAttributeAwareFormControlUIEnabled);
     settings->setImagesEnabled(m_imagesEnabled);
     settings->setDefaultVideoPosterURL(m_defaultVideoPosterURL);
-    settings->setLayerSquashingEnabled(m_originalLayerSquashingEnabled);
     settings->genericFontFamilySettings().reset();
-    RuntimeEnabledFeatures::setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(m_originalPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled);
     RuntimeEnabledFeatures::setImageColorProfilesEnabled(m_originalImageColorProfilesEnabled);
+    settings->setImageAnimationPolicy(m_originalImageAnimationPolicy);
+    RuntimeEnabledFeatures::setScrollTopLeftInteropEnabled(m_originalScrollTopLeftInteropEnabled);
 }
 
 #if ENABLE(OILPAN)
@@ -151,8 +151,6 @@ InternalSettings::InternalSettings(Page& page)
 
 void InternalSettings::resetToConsistentState()
 {
-    page()->setPageScaleFactor(1, IntPoint(0, 0));
-
     m_backup.restoreTo(settings());
     m_backup = Backup(settings());
     m_backup.m_originalTextAutosizingEnabled = settings()->textAutosizingEnabled();
@@ -189,16 +187,6 @@ void InternalSettings::setExperimentalContentSecurityPolicyFeaturesEnabled(bool 
     RuntimeEnabledFeatures::setExperimentalContentSecurityPolicyFeaturesEnabled(enabled);
 }
 
-void InternalSettings::setLaxMixedContentCheckingEnabled(bool enabled)
-{
-    RuntimeEnabledFeatures::setLaxMixedContentCheckingEnabled(enabled);
-}
-
-void InternalSettings::setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(bool enabled)
-{
-    RuntimeEnabledFeatures::setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(enabled);
-}
-
 void InternalSettings::setImageColorProfilesEnabled(bool enabled)
 {
     RuntimeEnabledFeatures::setImageColorProfilesEnabled(enabled);
@@ -215,12 +203,10 @@ void InternalSettings::setViewportEnabled(bool enabled, ExceptionState& exceptio
     settings()->setViewportEnabled(enabled);
 }
 
-// FIXME: This is a temporary flag and should be removed once squashing is
-// ready (crbug.com/261605).
-void InternalSettings::setLayerSquashingEnabled(bool enabled, ExceptionState& exceptionState)
+void InternalSettings::setViewportMetaEnabled(bool enabled, ExceptionState& exceptionState)
 {
     InternalSettingsGuardForSettings();
-    settings()->setLayerSquashingEnabled(enabled);
+    settings()->setViewportMetaEnabled(enabled);
 }
 
 void InternalSettings::setStandardFontFamily(const AtomicString& family, const String& script, ExceptionState& exceptionState)
@@ -297,7 +283,6 @@ void InternalSettings::setTextAutosizingEnabled(bool enabled, ExceptionState& ex
 {
     InternalSettingsGuardForSettings();
     settings()->setTextAutosizingEnabled(enabled);
-    m_page->inspectorController().setTextAutosizingEnabled(enabled);
 }
 
 void InternalSettings::setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState& exceptionState)
@@ -350,7 +335,7 @@ void InternalSettings::setDefaultVideoPosterURL(const String& url, ExceptionStat
     settings()->setDefaultVideoPosterURL(url);
 }
 
-void InternalSettings::trace(Visitor* visitor)
+DEFINE_TRACE(InternalSettings)
 {
     visitor->trace(m_page);
     InternalSettingsGenerated::trace(visitor);
@@ -383,6 +368,26 @@ void InternalSettings::setAvailablePointerTypes(const String& pointers, Exceptio
     }
 
     settings()->setAvailablePointerTypes(pointerTypes);
+}
+
+void InternalSettings::setDisplayModeOverride(const String& displayMode, ExceptionState& exceptionState)
+{
+    InternalSettingsGuardForSettings();
+    String token = displayMode.stripWhiteSpace();
+
+    WebDisplayMode mode = WebDisplayModeBrowser;
+    if (token == "browser")
+        mode = WebDisplayModeBrowser;
+    else if (token == "minimal-ui")
+        mode = WebDisplayModeMinimalUi;
+    else if (token == "standalone")
+        mode = WebDisplayModeStandalone;
+    else if (token == "fullscreen")
+        mode = WebDisplayModeFullscreen;
+    else
+        exceptionState.throwDOMException(SyntaxError, "The display-mode token ('" + token + ")' is invalid.");
+
+    settings()->setDisplayModeOverride(mode);
 }
 
 void InternalSettings::setPrimaryPointerType(const String& pointer, ExceptionState& exceptionState)
@@ -445,6 +450,41 @@ void InternalSettings::setPrimaryHoverType(const String& type, ExceptionState& e
         exceptionState.throwDOMException(SyntaxError, "The hover type token ('" + token + ")' is invalid.");
 
     settings()->setPrimaryHoverType(hoverType);
+}
+
+void InternalSettings::setImageAnimationPolicy(const String& policy, ExceptionState& exceptionState)
+{
+    InternalSettingsGuardForSettings();
+    if (equalIgnoringCase(policy, "allowed"))
+        settings()->setImageAnimationPolicy(ImageAnimationPolicyAllowed);
+    else if (equalIgnoringCase(policy, "once"))
+        settings()->setImageAnimationPolicy(ImageAnimationPolicyAnimateOnce);
+    else if (equalIgnoringCase(policy, "none"))
+        settings()->setImageAnimationPolicy(ImageAnimationPolicyNoAnimation);
+    else
+        exceptionState.throwDOMException(SyntaxError, "The image animation policy provided ('" + policy + "') is invalid.");
+}
+
+void InternalSettings::setScrollTopLeftInteropEnabled(bool enabled)
+{
+    RuntimeEnabledFeatures::setScrollTopLeftInteropEnabled(enabled);
+}
+
+void InternalSettings::setLinkHeaderEnabled(bool enabled)
+{
+    RuntimeEnabledFeatures::setLinkHeaderEnabled(enabled);
+}
+
+void InternalSettings::setDnsPrefetchLogging(bool enabled, ExceptionState& exceptionState)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setLogDnsPrefetchAndPreconnect(enabled);
+}
+
+void InternalSettings::setPreloadLogging(bool enabled, ExceptionState& exceptionState)
+{
+    InternalSettingsGuardForSettings();
+    settings()->setLogPreload(enabled);
 }
 
 }

@@ -15,23 +15,21 @@ namespace blink {
 class BatteryManager;
 class Navigator;
 
-class NavigatorBattery final : public NoBaseWillBeGarbageCollectedFinalized<NavigatorBattery>, public WillBeHeapSupplement<Navigator> {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorBattery);
+class NavigatorBattery final : public GarbageCollected<NavigatorBattery>, public HeapSupplement<Navigator> {
+    USING_GARBAGE_COLLECTED_MIXIN(NavigatorBattery);
 public:
-    virtual ~NavigatorBattery();
-
     static NavigatorBattery& from(Navigator&);
 
     static ScriptPromise getBattery(ScriptState*, Navigator&);
     ScriptPromise getBattery(ScriptState*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     NavigatorBattery();
     static const char* supplementName();
 
-    PersistentWillBeMember<BatteryManager> m_batteryManager;
+    Member<BatteryManager> m_batteryManager;
 };
 
 } // namespace blink

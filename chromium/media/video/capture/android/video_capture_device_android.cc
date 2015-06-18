@@ -4,10 +4,8 @@
 
 #include "media/video/capture/android/video_capture_device_android.h"
 
-#include <string>
 
 #include "base/android/jni_android.h"
-#include "base/android/scoped_java_ref.h"
 #include "base/strings/string_number_conversions.h"
 #include "jni/VideoCapture_jni.h"
 #include "media/video/capture/android/video_capture_device_factory_android.h"
@@ -97,8 +95,8 @@ void VideoCaptureDeviceAndroid::AllocateAndStart(
            << capture_format_.frame_size.ToString()
            << ", frame_rate=" << capture_format_.frame_rate;
 
-  jint result = Java_VideoCapture_startCapture(env, j_capture_.obj());
-  if (result < 0) {
+  ret = Java_VideoCapture_startCapture(env, j_capture_.obj());
+  if (!ret) {
     SetErrorState("failed to start capture");
     return;
   }
@@ -119,8 +117,8 @@ void VideoCaptureDeviceAndroid::StopAndDeAllocate() {
 
   JNIEnv* env = AttachCurrentThread();
 
-  jint ret = Java_VideoCapture_stopCapture(env, j_capture_.obj());
-  if (ret < 0) {
+  jboolean ret = Java_VideoCapture_stopCapture(env, j_capture_.obj());
+  if (!ret) {
     SetErrorState("failed to stop capture");
     return;
   }
@@ -134,12 +132,11 @@ void VideoCaptureDeviceAndroid::StopAndDeAllocate() {
   Java_VideoCapture_deallocate(env, j_capture_.obj());
 }
 
-void VideoCaptureDeviceAndroid::OnFrameAvailable(
-    JNIEnv* env,
-    jobject obj,
-    jbyteArray data,
-    jint length,
-    jint rotation) {
+void VideoCaptureDeviceAndroid::OnFrameAvailable(JNIEnv* env,
+                                                 jobject obj,
+                                                 jbyteArray data,
+                                                 jint length,
+                                                 jint rotation) {
   DVLOG(3) << "VideoCaptureDeviceAndroid::OnFrameAvailable: length =" << length;
 
   base::AutoLock lock(lock_);
@@ -174,6 +171,14 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
   env->ReleaseByteArrayElements(data, buffer, JNI_ABORT);
 }
 
+void VideoCaptureDeviceAndroid::OnError(JNIEnv* env,
+                                        jobject obj,
+                                        jstring message) {
+  const char *native_string = env->GetStringUTFChars(message, JNI_FALSE);
+  SetErrorState(native_string);
+  env->ReleaseStringUTFChars(message, native_string);
+}
+
 VideoPixelFormat VideoCaptureDeviceAndroid::GetColorspace() {
   JNIEnv* env = AttachCurrentThread();
   int current_capture_colorspace =
@@ -181,6 +186,8 @@ VideoPixelFormat VideoCaptureDeviceAndroid::GetColorspace() {
   switch (current_capture_colorspace) {
     case ANDROID_IMAGE_FORMAT_YV12:
       return media::PIXEL_FORMAT_YV12;
+    case ANDROID_IMAGE_FORMAT_YUV_420_888:
+      return media::PIXEL_FORMAT_I420;
     case ANDROID_IMAGE_FORMAT_NV21:
       return media::PIXEL_FORMAT_NV21;
     case ANDROID_IMAGE_FORMAT_UNKNOWN:

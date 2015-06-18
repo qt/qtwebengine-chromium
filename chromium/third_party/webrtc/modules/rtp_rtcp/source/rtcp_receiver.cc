@@ -10,11 +10,12 @@
 
 #include "webrtc/modules/rtp_rtcp/source/rtcp_receiver.h"
 
-#include <assert.h> //assert
-#include <string.h> //memset
+#include <assert.h>
+#include <string.h>
 
 #include <algorithm>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
@@ -28,46 +29,55 @@ using namespace RTCPHelp;
 // The number of RTCP time intervals needed to trigger a timeout.
 const int kRrTimeoutIntervals = 3;
 
-RTCPReceiver::RTCPReceiver(const int32_t id, Clock* clock,
-                           ModuleRtpRtcpImpl* owner)
+RTCPReceiver::RTCPReceiver(
+    int32_t id,
+    Clock* clock,
+    bool receiver_only,
+    RtcpPacketTypeCounterObserver* packet_type_counter_observer,
+    RtcpBandwidthObserver* rtcp_bandwidth_observer,
+    RtcpIntraFrameObserver* rtcp_intra_frame_observer,
+    ModuleRtpRtcpImpl* owner)
     : TMMBRHelp(),
-    _id(id),
-    _clock(clock),
-    _method(kRtcpOff),
-    _lastReceived(0),
-    _rtpRtcp(*owner),
+      _clock(clock),
+      receiver_only_(receiver_only),
+      _method(kRtcpOff),
+      _lastReceived(0),
+      _rtpRtcp(*owner),
       _criticalSectionFeedbacks(
           CriticalSectionWrapper::CreateCriticalSection()),
-    _cbRtcpFeedback(NULL),
-    _cbRtcpBandwidthObserver(NULL),
-    _cbRtcpIntraFrameObserver(NULL),
-    _criticalSectionRTCPReceiver(
-        CriticalSectionWrapper::CreateCriticalSection()),
-    main_ssrc_(0),
-    _remoteSSRC(0),
-    _remoteSenderInfo(),
-    _lastReceivedSRNTPsecs(0),
-    _lastReceivedSRNTPfrac(0),
-    _lastReceivedXRNTPsecs(0),
-    _lastReceivedXRNTPfrac(0),
-    xr_rr_rtt_ms_(0),
-    _receivedInfoMap(),
-    _packetTimeOutMS(0),
-    _lastReceivedRrMs(0),
-    _lastIncreasedSequenceNumberMs(0),
-    stats_callback_(NULL) {
-    memset(&_remoteSenderInfo, 0, sizeof(_remoteSenderInfo));
+      _cbRtcpBandwidthObserver(rtcp_bandwidth_observer),
+      _cbRtcpIntraFrameObserver(rtcp_intra_frame_observer),
+      _criticalSectionRTCPReceiver(
+          CriticalSectionWrapper::CreateCriticalSection()),
+      main_ssrc_(0),
+      _remoteSSRC(0),
+      _remoteSenderInfo(),
+      _lastReceivedSRNTPsecs(0),
+      _lastReceivedSRNTPfrac(0),
+      _lastReceivedXRNTPsecs(0),
+      _lastReceivedXRNTPfrac(0),
+      xr_rr_rtt_ms_(0),
+      _receivedInfoMap(),
+      _packetTimeOutMS(0),
+      _lastReceivedRrMs(0),
+      _lastIncreasedSequenceNumberMs(0),
+      stats_callback_(NULL),
+      packet_type_counter_observer_(packet_type_counter_observer) {
+  memset(&_remoteSenderInfo, 0, sizeof(_remoteSenderInfo));
 }
 
 RTCPReceiver::~RTCPReceiver() {
   delete _criticalSectionRTCPReceiver;
   delete _criticalSectionFeedbacks;
 
-  while (!_receivedReportBlockMap.empty()) {
-    std::map<uint32_t, RTCPReportBlockInformation*>::iterator first =
-        _receivedReportBlockMap.begin();
-    delete first->second;
-    _receivedReportBlockMap.erase(first);
+  ReportBlockMap::iterator it = _receivedReportBlockMap.begin();
+  for (; it != _receivedReportBlockMap.end(); ++it) {
+    ReportBlockInfoMap* info_map = &(it->second);
+    while (!info_map->empty()) {
+      ReportBlockInfoMap::iterator it_info = info_map->begin();
+      delete it_info->second;
+      info_map->erase(it_info);
+    }
   }
   while (!_receivedInfoMap.empty()) {
     std::map<uint32_t, RTCPReceiveInformation*>::iterator first =
@@ -83,74 +93,47 @@ RTCPReceiver::~RTCPReceiver() {
   }
 }
 
-void
-RTCPReceiver::ChangeUniqueId(const int32_t id)
-{
-    _id = id;
+RTCPMethod RTCPReceiver::Status() const {
+  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
+  return _method;
 }
 
-RTCPMethod
-RTCPReceiver::Status() const
-{
-    CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-    return _method;
+void RTCPReceiver::SetRTCPStatus(RTCPMethod method) {
+  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
+  _method = method;
 }
 
-int32_t
-RTCPReceiver::SetRTCPStatus(const RTCPMethod method)
-{
-    CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-    _method = method;
-    return 0;
+int64_t RTCPReceiver::LastReceived() {
+  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
+  return _lastReceived;
 }
 
-int64_t
-RTCPReceiver::LastReceived()
-{
-    CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-    return _lastReceived;
-}
-
-int64_t
-RTCPReceiver::LastReceivedReceiverReport() const {
-    CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-    int64_t last_received_rr = -1;
-    for (ReceivedInfoMap::const_iterator it = _receivedInfoMap.begin();
-         it != _receivedInfoMap.end(); ++it) {
-      if (it->second->lastTimeReceived > last_received_rr) {
-        last_received_rr = it->second->lastTimeReceived;
-      }
+int64_t RTCPReceiver::LastReceivedReceiverReport() const {
+  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
+  int64_t last_received_rr = -1;
+  for (ReceivedInfoMap::const_iterator it = _receivedInfoMap.begin();
+       it != _receivedInfoMap.end(); ++it) {
+    if (it->second->lastTimeReceived > last_received_rr) {
+      last_received_rr = it->second->lastTimeReceived;
     }
-    return last_received_rr;
+  }
+  return last_received_rr;
 }
 
-int32_t
-RTCPReceiver::SetRemoteSSRC( const uint32_t ssrc)
-{
-    CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
+void RTCPReceiver::SetRemoteSSRC(uint32_t ssrc) {
+  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
 
-    // new SSRC reset old reports
-    memset(&_remoteSenderInfo, 0, sizeof(_remoteSenderInfo));
-    _lastReceivedSRNTPsecs = 0;
-    _lastReceivedSRNTPfrac = 0;
+  // new SSRC reset old reports
+  memset(&_remoteSenderInfo, 0, sizeof(_remoteSenderInfo));
+  _lastReceivedSRNTPsecs = 0;
+  _lastReceivedSRNTPfrac = 0;
 
-    _remoteSSRC = ssrc;
-    return 0;
+  _remoteSSRC = ssrc;
 }
 
 uint32_t RTCPReceiver::RemoteSSRC() const {
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
   return _remoteSSRC;
-}
-
-void RTCPReceiver::RegisterRtcpObservers(
-    RtcpIntraFrameObserver* intra_frame_callback,
-    RtcpBandwidthObserver* bandwidth_callback,
-    RtcpFeedback* feedback_callback) {
-  CriticalSectionScoped lock(_criticalSectionFeedbacks);
-  _cbRtcpIntraFrameObserver = intra_frame_callback;
-  _cbRtcpBandwidthObserver = bandwidth_callback;
-  _cbRtcpFeedback = feedback_callback;
 }
 
 void RTCPReceiver::SetSsrcs(uint32_t main_ssrc,
@@ -163,37 +146,21 @@ void RTCPReceiver::SetSsrcs(uint32_t main_ssrc,
     registered_ssrcs_ = registered_ssrcs;
   }
   {
-    CriticalSectionScoped lock(_criticalSectionFeedbacks);
     if (_cbRtcpIntraFrameObserver && old_ssrc != main_ssrc) {
       _cbRtcpIntraFrameObserver->OnLocalSsrcChanged(old_ssrc, main_ssrc);
     }
   }
 }
 
-int32_t RTCPReceiver::ResetRTT(const uint32_t remoteSSRC) {
-  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-  RTCPReportBlockInformation* reportBlock =
-      GetReportBlockInformation(remoteSSRC);
-  if (reportBlock == NULL) {
-    LOG(LS_WARNING) << "Failed to reset rtt for ssrc " << remoteSSRC;
-    return -1;
-  }
-  reportBlock->RTT = 0;
-  reportBlock->avgRTT = 0;
-  reportBlock->minRTT = 0;
-  reportBlock->maxRTT = 0;
-  return 0;
-}
-
 int32_t RTCPReceiver::RTT(uint32_t remoteSSRC,
-                          uint16_t* RTT,
-                          uint16_t* avgRTT,
-                          uint16_t* minRTT,
-                          uint16_t* maxRTT) const {
+                          int64_t* RTT,
+                          int64_t* avgRTT,
+                          int64_t* minRTT,
+                          int64_t* maxRTT) const {
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
 
   RTCPReportBlockInformation* reportBlock =
-      GetReportBlockInformation(remoteSSRC);
+      GetReportBlockInformation(remoteSSRC, main_ssrc_);
 
   if (reportBlock == NULL) {
     return -1;
@@ -213,7 +180,7 @@ int32_t RTCPReceiver::RTT(uint32_t remoteSSRC,
   return 0;
 }
 
-bool RTCPReceiver::GetAndResetXrRrRtt(uint16_t* rtt_ms) {
+bool RTCPReceiver::GetAndResetXrRrRtt(int64_t* rtt_ms) {
   assert(rtt_ms);
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
   if (xr_rr_rtt_ms_ == 0) {
@@ -294,21 +261,15 @@ int32_t RTCPReceiver::StatisticsReceived(
     std::vector<RTCPReportBlock>* receiveBlocks) const {
   assert(receiveBlocks);
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-
-  std::map<uint32_t, RTCPReportBlockInformation*>::const_iterator it =
-      _receivedReportBlockMap.begin();
-
-  while (it != _receivedReportBlockMap.end()) {
-    receiveBlocks->push_back(it->second->remoteReceiveBlock);
-    it++;
+  ReportBlockMap::const_iterator it = _receivedReportBlockMap.begin();
+  for (; it != _receivedReportBlockMap.end(); ++it) {
+    const ReportBlockInfoMap* info_map = &(it->second);
+    ReportBlockInfoMap::const_iterator it_info = info_map->begin();
+    for (; it_info != info_map->end(); ++it_info) {
+      receiveBlocks->push_back(it_info->second->remoteReceiveBlock);
+    }
   }
   return 0;
-}
-
-void RTCPReceiver::GetPacketTypeCounter(
-    RtcpPacketTypeCounter* packet_counter) const {
-  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-  *packet_counter = packet_type_counter_;
 }
 
 int32_t
@@ -319,70 +280,73 @@ RTCPReceiver::IncomingRTCPPacket(RTCPPacketInformation& rtcpPacketInformation,
 
     _lastReceived = _clock->TimeInMilliseconds();
 
+    if (packet_type_counter_.first_packet_time_ms == -1) {
+      packet_type_counter_.first_packet_time_ms = _lastReceived;
+    }
+
     RTCPUtility::RTCPPacketTypes pktType = rtcpParser->Begin();
-    while (pktType != RTCPUtility::kRtcpNotValidCode)
-    {
+    while (pktType != RTCPPacketTypes::kInvalid) {
         // Each "case" is responsible for iterate the parser to the
         // next top level packet.
         switch (pktType)
         {
-        case RTCPUtility::kRtcpSrCode:
-        case RTCPUtility::kRtcpRrCode:
+          case RTCPPacketTypes::kSr:
+          case RTCPPacketTypes::kRr:
             HandleSenderReceiverReport(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpSdesCode:
+          case RTCPPacketTypes::kSdes:
             HandleSDES(*rtcpParser);
             break;
-        case RTCPUtility::kRtcpXrHeaderCode:
+          case RTCPPacketTypes::kXrHeader:
             HandleXrHeader(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpXrReceiverReferenceTimeCode:
+          case RTCPPacketTypes::kXrReceiverReferenceTime:
             HandleXrReceiveReferenceTime(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpXrDlrrReportBlockCode:
+          case RTCPPacketTypes::kXrDlrrReportBlock:
             HandleXrDlrrReportBlock(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpXrVoipMetricCode:
+          case RTCPPacketTypes::kXrVoipMetric:
             HandleXRVOIPMetric(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpByeCode:
+          case RTCPPacketTypes::kBye:
             HandleBYE(*rtcpParser);
             break;
-        case RTCPUtility::kRtcpRtpfbNackCode:
+          case RTCPPacketTypes::kRtpfbNack:
             HandleNACK(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpRtpfbTmmbrCode:
+          case RTCPPacketTypes::kRtpfbTmmbr:
             HandleTMMBR(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpRtpfbTmmbnCode:
+          case RTCPPacketTypes::kRtpfbTmmbn:
             HandleTMMBN(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpRtpfbSrReqCode:
+          case RTCPPacketTypes::kRtpfbSrReq:
             HandleSR_REQ(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpPsfbPliCode:
+          case RTCPPacketTypes::kPsfbPli:
             HandlePLI(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpPsfbSliCode:
+          case RTCPPacketTypes::kPsfbSli:
             HandleSLI(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpPsfbRpsiCode:
+          case RTCPPacketTypes::kPsfbRpsi:
             HandleRPSI(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpExtendedIjCode:
+          case RTCPPacketTypes::kExtendedIj:
             HandleIJ(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpPsfbFirCode:
+          case RTCPPacketTypes::kPsfbFir:
             HandleFIR(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpPsfbAppCode:
+          case RTCPPacketTypes::kPsfbApp:
             HandlePsfbApp(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpAppCode:
+          case RTCPPacketTypes::kApp:
             // generic application messages
             HandleAPP(*rtcpParser, rtcpPacketInformation);
             break;
-        case RTCPUtility::kRtcpAppItemCode:
+          case RTCPPacketTypes::kAppItem:
             // generic application messages
             HandleAPPItem(*rtcpParser, rtcpPacketInformation);
             break;
@@ -392,6 +356,12 @@ RTCPReceiver::IncomingRTCPPacket(RTCPPacketInformation& rtcpPacketInformation,
         }
         pktType = rtcpParser->PacketType();
     }
+
+    if (packet_type_counter_observer_ != NULL) {
+      packet_type_counter_observer_->RtcpPacketTypesCounterUpdated(
+          main_ssrc_, packet_type_counter_);
+    }
+
     return 0;
 }
 
@@ -403,7 +373,8 @@ RTCPReceiver::HandleSenderReceiverReport(RTCPUtility::RTCPParserV2& rtcpParser,
     RTCPUtility::RTCPPacketTypes rtcpPacketType = rtcpParser.PacketType();
     const RTCPUtility::RTCPPacket& rtcpPacket   = rtcpParser.Packet();
 
-    assert((rtcpPacketType == RTCPUtility::kRtcpRrCode) || (rtcpPacketType == RTCPUtility::kRtcpSrCode));
+    assert((rtcpPacketType == RTCPPacketTypes::kRr) ||
+           (rtcpPacketType == RTCPPacketTypes::kSr));
 
     // SR.SenderSSRC
     // The synchronization source identifier for the originator of this SR packet
@@ -411,8 +382,9 @@ RTCPReceiver::HandleSenderReceiverReport(RTCPUtility::RTCPParserV2& rtcpParser,
     // rtcpPacket.RR.SenderSSRC
     // The source of the packet sender, same as of SR? or is this a CE?
 
-    const uint32_t remoteSSRC = (rtcpPacketType == RTCPUtility::kRtcpRrCode) ? rtcpPacket.RR.SenderSSRC:rtcpPacket.SR.SenderSSRC;
-    const uint8_t  numberOfReportBlocks = (rtcpPacketType == RTCPUtility::kRtcpRrCode) ? rtcpPacket.RR.NumberOfReportBlocks:rtcpPacket.SR.NumberOfReportBlocks;
+    const uint32_t remoteSSRC = (rtcpPacketType == RTCPPacketTypes::kRr)
+                                    ? rtcpPacket.RR.SenderSSRC
+                                    : rtcpPacket.SR.SenderSSRC;
 
     rtcpPacketInformation.remoteSSRC = remoteSSRC;
 
@@ -423,11 +395,9 @@ RTCPReceiver::HandleSenderReceiverReport(RTCPUtility::RTCPParserV2& rtcpParser,
         return;
     }
 
-    if (rtcpPacketType == RTCPUtility::kRtcpSrCode)
-    {
-        TRACE_EVENT_INSTANT2("webrtc_rtp", "SR",
-                             "remote_ssrc", remoteSSRC,
-                             "ssrc", main_ssrc_);
+    if (rtcpPacketType == RTCPPacketTypes::kSr) {
+      TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "SR",
+                           "remote_ssrc", remoteSSRC, "ssrc", main_ssrc_);
 
         if (_remoteSSRC == remoteSSRC) // have I received RTP packets from this party
         {
@@ -456,9 +426,8 @@ RTCPReceiver::HandleSenderReceiverReport(RTCPUtility::RTCPParserV2& rtcpParser,
         }
     } else
     {
-        TRACE_EVENT_INSTANT2("webrtc_rtp", "RR",
-                             "remote_ssrc", remoteSSRC,
-                             "ssrc", main_ssrc_);
+      TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "RR",
+                           "remote_ssrc", remoteSSRC, "ssrc", main_ssrc_);
 
         rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpRr;
     }
@@ -466,9 +435,8 @@ RTCPReceiver::HandleSenderReceiverReport(RTCPUtility::RTCPParserV2& rtcpParser,
 
     rtcpPacketType = rtcpParser.Iterate();
 
-    while (rtcpPacketType == RTCPUtility::kRtcpReportBlockItemCode)
-    {
-        HandleReportBlock(rtcpPacket, rtcpPacketInformation, remoteSSRC, numberOfReportBlocks);
+    while (rtcpPacketType == RTCPPacketTypes::kReportBlockItem) {
+        HandleReportBlock(rtcpPacket, rtcpPacketInformation, remoteSSRC);
         rtcpPacketType = rtcpParser.Iterate();
     }
 }
@@ -477,8 +445,7 @@ RTCPReceiver::HandleSenderReceiverReport(RTCPUtility::RTCPParserV2& rtcpParser,
 void RTCPReceiver::HandleReportBlock(
     const RTCPUtility::RTCPPacket& rtcpPacket,
     RTCPPacketInformation& rtcpPacketInformation,
-    const uint32_t remoteSSRC,
-    const uint8_t numberOfReportBlocks)
+    uint32_t remoteSSRC)
     EXCLUSIVE_LOCKS_REQUIRED(_criticalSectionRTCPReceiver) {
   // This will be called once per report block in the RTCP packet.
   // We filter out all report blocks that are not for us.
@@ -499,12 +466,13 @@ void RTCPReceiver::HandleReportBlock(
   // To avoid problem with acquiring _criticalSectionRTCPSender while holding
   // _criticalSectionRTCPReceiver.
   _criticalSectionRTCPReceiver->Leave();
-  uint32_t sendTimeMS =
+  int64_t sendTimeMS =
       _rtpRtcp.SendTimeOfSendReport(rtcpPacket.ReportBlockItem.LastSR);
   _criticalSectionRTCPReceiver->Enter();
 
   RTCPReportBlockInformation* reportBlock =
-      CreateReportBlockInformation(remoteSSRC);
+      CreateOrGetReportBlockInformation(remoteSSRC,
+                                        rtcpPacket.ReportBlockItem.SSRC);
   if (reportBlock == NULL) {
     LOG(LS_WARNING) << "Failed to CreateReportBlockInformation("
                     << remoteSSRC << ")";
@@ -544,15 +512,15 @@ void RTCPReceiver::HandleReportBlock(
   _clock->CurrentNtp(lastReceivedRRNTPsecs, lastReceivedRRNTPfrac);
 
   // time when we received this in MS
-  uint32_t receiveTimeMS = Clock::NtpToMs(lastReceivedRRNTPsecs,
-                                          lastReceivedRRNTPfrac);
+  int64_t receiveTimeMS = Clock::NtpToMs(lastReceivedRRNTPsecs,
+                                         lastReceivedRRNTPfrac);
 
   // Estimate RTT
   uint32_t d = (delaySinceLastSendReport & 0x0000ffff) * 1000;
   d /= 65536;
   d += ((delaySinceLastSendReport & 0xffff0000) >> 16) * 1000;
 
-  int32_t RTT = 0;
+  int64_t RTT = 0;
 
   if (sendTimeMS > 0) {
     RTT = receiveTimeMS - d - sendTimeMS;
@@ -561,64 +529,62 @@ void RTCPReceiver::HandleReportBlock(
     }
     if (RTT > reportBlock->maxRTT) {
       // store max RTT
-      reportBlock->maxRTT = (uint16_t) RTT;
+      reportBlock->maxRTT = RTT;
     }
     if (reportBlock->minRTT == 0) {
       // first RTT
-      reportBlock->minRTT = (uint16_t) RTT;
+      reportBlock->minRTT = RTT;
     } else if (RTT < reportBlock->minRTT) {
       // Store min RTT
-      reportBlock->minRTT = (uint16_t) RTT;
+      reportBlock->minRTT = RTT;
     }
     // store last RTT
-    reportBlock->RTT = (uint16_t) RTT;
+    reportBlock->RTT = RTT;
 
     // store average RTT
     if (reportBlock->numAverageCalcs != 0) {
-      float ac = static_cast<float> (reportBlock->numAverageCalcs);
-      float newAverage = ((ac / (ac + 1)) * reportBlock->avgRTT)
-          + ((1 / (ac + 1)) * RTT);
-      reportBlock->avgRTT = static_cast<int> (newAverage + 0.5f);
+      float ac = static_cast<float>(reportBlock->numAverageCalcs);
+      float newAverage =
+          ((ac / (ac + 1)) * reportBlock->avgRTT) + ((1 / (ac + 1)) * RTT);
+      reportBlock->avgRTT = static_cast<int64_t>(newAverage + 0.5f);
     } else {
       // first RTT
-      reportBlock->avgRTT = (uint16_t) RTT;
+      reportBlock->avgRTT = RTT;
     }
     reportBlock->numAverageCalcs++;
   }
 
-  TRACE_COUNTER_ID1("webrtc_rtp", "RR_RTT", rb.SSRC, RTT);
+  TRACE_COUNTER_ID1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "RR_RTT", rb.SSRC,
+                    RTT);
 
   rtcpPacketInformation.AddReportInfo(*reportBlock);
 }
 
-RTCPReportBlockInformation*
-RTCPReceiver::CreateReportBlockInformation(uint32_t remoteSSRC) {
-  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-
-  std::map<uint32_t, RTCPReportBlockInformation*>::iterator it =
-      _receivedReportBlockMap.find(remoteSSRC);
-
-  RTCPReportBlockInformation* ptrReportBlockInfo = NULL;
-  if (it != _receivedReportBlockMap.end()) {
-    ptrReportBlockInfo = it->second;
-  } else {
-    ptrReportBlockInfo = new RTCPReportBlockInformation;
-    _receivedReportBlockMap[remoteSSRC] = ptrReportBlockInfo;
+RTCPReportBlockInformation* RTCPReceiver::CreateOrGetReportBlockInformation(
+    uint32_t remote_ssrc,
+    uint32_t source_ssrc) {
+  RTCPReportBlockInformation* info =
+      GetReportBlockInformation(remote_ssrc, source_ssrc);
+  if (info == NULL) {
+    info = new RTCPReportBlockInformation;
+    _receivedReportBlockMap[source_ssrc][remote_ssrc] = info;
   }
-  return ptrReportBlockInfo;
+  return info;
 }
 
-RTCPReportBlockInformation*
-RTCPReceiver::GetReportBlockInformation(uint32_t remoteSSRC) const {
-  CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-
-  std::map<uint32_t, RTCPReportBlockInformation*>::const_iterator it =
-      _receivedReportBlockMap.find(remoteSSRC);
-
+RTCPReportBlockInformation* RTCPReceiver::GetReportBlockInformation(
+    uint32_t remote_ssrc,
+    uint32_t source_ssrc) const {
+  ReportBlockMap::const_iterator it = _receivedReportBlockMap.find(source_ssrc);
   if (it == _receivedReportBlockMap.end()) {
     return NULL;
   }
-  return it->second;
+  const ReportBlockInfoMap* info_map = &(it->second);
+  ReportBlockInfoMap::const_iterator it_info = info_map->find(remote_ssrc);
+  if (it_info == info_map->end()) {
+    return NULL;
+  }
+  return it_info->second;
 }
 
 RTCPCnameInformation*
@@ -788,15 +754,12 @@ int32_t RTCPReceiver::BoundingSet(bool &tmmbrOwner, TMMBRSet* boundingSetRec) {
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleSDES(RTCPUtility::RTCPParserV2& rtcpParser)
-{
-    RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    while (pktType == RTCPUtility::kRtcpSdesChunkCode)
-    {
-        HandleSDESChunk(rtcpParser);
-        pktType = rtcpParser.Iterate();
-    }
+void RTCPReceiver::HandleSDES(RTCPUtility::RTCPParserV2& rtcpParser) {
+  RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
+  while (pktType == RTCPPacketTypes::kSdesChunk) {
+    HandleSDESChunk(rtcpParser);
+    pktType = rtcpParser.Iterate();
+  }
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
@@ -808,59 +771,57 @@ void RTCPReceiver::HandleSDESChunk(RTCPUtility::RTCPParserV2& rtcpParser) {
 
   cnameInfo->name[RTCP_CNAME_SIZE - 1] = 0;
   strncpy(cnameInfo->name, rtcpPacket.CName.CName, RTCP_CNAME_SIZE - 1);
+  {
+    CriticalSectionScoped lock(_criticalSectionFeedbacks);
+    if (stats_callback_ != NULL) {
+      stats_callback_->CNameChanged(rtcpPacket.CName.CName,
+                                    rtcpPacket.CName.SenderSSRC);
+    }
+  }
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleNACK(RTCPUtility::RTCPParserV2& rtcpParser,
-                         RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
-    if (main_ssrc_ != rtcpPacket.NACK.MediaSSRC)
-    {
-        // Not to us.
-        rtcpParser.Iterate();
-        return;
-    }
-    rtcpPacketInformation.ResetNACKPacketIdArray();
+void RTCPReceiver::HandleNACK(RTCPUtility::RTCPParserV2& rtcpParser,
+                              RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+  if (receiver_only_ || main_ssrc_ != rtcpPacket.NACK.MediaSSRC) {
+    // Not to us.
+    rtcpParser.Iterate();
+    return;
+  }
+  rtcpPacketInformation.ResetNACKPacketIdArray();
 
-    RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    while (pktType == RTCPUtility::kRtcpRtpfbNackItemCode)
-    {
-        HandleNACKItem(rtcpPacket, rtcpPacketInformation);
-        pktType = rtcpParser.Iterate();
-    }
+  RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
+  while (pktType == RTCPPacketTypes::kRtpfbNackItem) {
+    HandleNACKItem(rtcpPacket, rtcpPacketInformation);
+    pktType = rtcpParser.Iterate();
+  }
 
-    if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack) {
-      ++packet_type_counter_.nack_packets;
-      packet_type_counter_.nack_requests = nack_stats_.requests();
-      packet_type_counter_.unique_nack_requests = nack_stats_.unique_requests();
-    }
+  if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack) {
+    ++packet_type_counter_.nack_packets;
+    packet_type_counter_.nack_requests = nack_stats_.requests();
+    packet_type_counter_.unique_nack_requests = nack_stats_.unique_requests();
+  }
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
 void
 RTCPReceiver::HandleNACKItem(const RTCPUtility::RTCPPacket& rtcpPacket,
-                             RTCPPacketInformation& rtcpPacketInformation)
-{
-    rtcpPacketInformation.AddNACKPacket(rtcpPacket.NACKItem.PacketID);
-    nack_stats_.ReportRequest(rtcpPacket.NACKItem.PacketID);
+                             RTCPPacketInformation& rtcpPacketInformation) {
+  rtcpPacketInformation.AddNACKPacket(rtcpPacket.NACKItem.PacketID);
+  nack_stats_.ReportRequest(rtcpPacket.NACKItem.PacketID);
 
-    uint16_t bitMask = rtcpPacket.NACKItem.BitMask;
-    if(bitMask)
-    {
-        for(int i=1; i <= 16; ++i)
-        {
-            if(bitMask & 0x01)
-            {
-                rtcpPacketInformation.AddNACKPacket(rtcpPacket.NACKItem.PacketID + i);
-                nack_stats_.ReportRequest(rtcpPacket.NACKItem.PacketID + i);
-            }
-            bitMask = bitMask >>1;
-        }
+  uint16_t bitMask = rtcpPacket.NACKItem.BitMask;
+  if (bitMask) {
+    for (int i=1; i <= 16; ++i) {
+      if (bitMask & 0x01) {
+        rtcpPacketInformation.AddNACKPacket(rtcpPacket.NACKItem.PacketID + i);
+        nack_stats_.ReportRequest(rtcpPacket.NACKItem.PacketID + i);
+      }
+      bitMask = bitMask >>1;
     }
-
-    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpNack;
+  }
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpNack;
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
@@ -869,14 +830,17 @@ void RTCPReceiver::HandleBYE(RTCPUtility::RTCPParserV2& rtcpParser) {
 
   // clear our lists
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
-  std::map<uint32_t, RTCPReportBlockInformation*>::iterator
-      reportBlockInfoIt = _receivedReportBlockMap.find(
-          rtcpPacket.BYE.SenderSSRC);
-
-  if (reportBlockInfoIt != _receivedReportBlockMap.end()) {
-    delete reportBlockInfoIt->second;
-    _receivedReportBlockMap.erase(reportBlockInfoIt);
+  ReportBlockMap::iterator it = _receivedReportBlockMap.begin();
+  for (; it != _receivedReportBlockMap.end(); ++it) {
+    ReportBlockInfoMap* info_map = &(it->second);
+    ReportBlockInfoMap::iterator it_info = info_map->find(
+        rtcpPacket.BYE.SenderSSRC);
+    if (it_info != info_map->end()) {
+      delete it_info->second;
+      info_map->erase(it_info);
+    }
   }
+
   //  we can't delete it due to TMMBR
   std::map<uint32_t, RTCPReceiveInformation*>::iterator receiveInfoIt =
       _receivedInfoMap.find(rtcpPacket.BYE.SenderSSRC);
@@ -932,7 +896,7 @@ void RTCPReceiver::HandleXrDlrrReportBlock(
   // Iterate through sub-block(s), if any.
   RTCPUtility::RTCPPacketTypes packet_type = parser.Iterate();
 
-  while (packet_type == RTCPUtility::kRtcpXrDlrrReportBlockItemCode) {
+  while (packet_type == RTCPPacketTypes::kXrDlrrReportBlockItem) {
     HandleXrDlrrReportBlockItem(packet, rtcpPacketInformation);
     packet_type = parser.Iterate();
   }
@@ -969,9 +933,9 @@ void RTCPReceiver::HandleXrDlrrReportBlockItem(
       (((packet.XRDLRRReportBlockItem.DelayLastRR & 0x0000ffff) * 1000) >> 16) +
       (((packet.XRDLRRReportBlockItem.DelayLastRR & 0xffff0000) >> 16) * 1000);
 
-  int32_t rtt = _clock->CurrentNtpInMilliseconds() - delay_rr_ms - send_time_ms;
+  int64_t rtt = _clock->CurrentNtpInMilliseconds() - delay_rr_ms - send_time_ms;
 
-  xr_rr_rtt_ms_ = static_cast<uint16_t>(std::max(rtt, 1));
+  xr_rr_rtt_ms_ = std::max<int64_t>(rtt, 1);
 
   rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpXrDlrrReportBlock;
 }
@@ -1025,7 +989,7 @@ void RTCPReceiver::HandlePLI(RTCPUtility::RTCPParserV2& rtcpParser,
                              RTCPPacketInformation& rtcpPacketInformation) {
   const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
   if (main_ssrc_ == rtcpPacket.PLI.MediaSSRC) {
-    TRACE_EVENT_INSTANT0("webrtc_rtp", "PLI");
+    TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "PLI");
 
     ++packet_type_counter_.pli_packets;
     // Received a signal that we need to send a new key frame.
@@ -1035,142 +999,120 @@ void RTCPReceiver::HandlePLI(RTCPUtility::RTCPParserV2& rtcpParser,
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleTMMBR(RTCPUtility::RTCPParserV2& rtcpParser,
-                          RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+void RTCPReceiver::HandleTMMBR(RTCPUtility::RTCPParserV2& rtcpParser,
+                               RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
 
-    uint32_t senderSSRC = rtcpPacket.TMMBR.SenderSSRC;
-    RTCPReceiveInformation* ptrReceiveInfo = GetReceiveInformation(senderSSRC);
-    if (ptrReceiveInfo == NULL)
-    {
-        // This remote SSRC must be saved before.
-        rtcpParser.Iterate();
-        return;
-    }
-    if(rtcpPacket.TMMBR.MediaSSRC)
-    {
-        // rtcpPacket.TMMBR.MediaSSRC SHOULD be 0 if same as SenderSSRC
-        // in relay mode this is a valid number
-        senderSSRC = rtcpPacket.TMMBR.MediaSSRC;
-    }
-
-    // Use packet length to calc max number of TMMBR blocks
-    // each TMMBR block is 8 bytes
-    ptrdiff_t maxNumOfTMMBRBlocks = rtcpParser.LengthLeft() / 8;
-
-    // sanity
-    if(maxNumOfTMMBRBlocks > 200) // we can't have more than what's in one packet
-    {
-        assert(false);
-        rtcpParser.Iterate();
-        return;
-    }
-    ptrReceiveInfo->VerifyAndAllocateTMMBRSet((uint32_t)maxNumOfTMMBRBlocks);
-
-    RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    while (pktType == RTCPUtility::kRtcpRtpfbTmmbrItemCode)
-    {
-        HandleTMMBRItem(*ptrReceiveInfo, rtcpPacket, rtcpPacketInformation, senderSSRC);
-        pktType = rtcpParser.Iterate();
-    }
-}
-
-// no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleTMMBRItem(RTCPReceiveInformation& receiveInfo,
-                              const RTCPUtility::RTCPPacket& rtcpPacket,
-                              RTCPPacketInformation& rtcpPacketInformation,
-                              const uint32_t senderSSRC)
-{
-    if (main_ssrc_ == rtcpPacket.TMMBRItem.SSRC &&
-        rtcpPacket.TMMBRItem.MaxTotalMediaBitRate > 0)
-    {
-        receiveInfo.InsertTMMBRItem(senderSSRC, rtcpPacket.TMMBRItem,
-                                    _clock->TimeInMilliseconds());
-        rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpTmmbr;
-    }
-}
-
-// no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleTMMBN(RTCPUtility::RTCPParserV2& rtcpParser,
-                          RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
-    RTCPReceiveInformation* ptrReceiveInfo = GetReceiveInformation(rtcpPacket.TMMBN.SenderSSRC);
-    if (ptrReceiveInfo == NULL)
-    {
-        // This remote SSRC must be saved before.
-        rtcpParser.Iterate();
-        return;
-    }
-    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpTmmbn;
-    // Use packet length to calc max number of TMMBN blocks
-    // each TMMBN block is 8 bytes
-    ptrdiff_t maxNumOfTMMBNBlocks = rtcpParser.LengthLeft() / 8;
-
-    // sanity
-    if(maxNumOfTMMBNBlocks > 200) // we cant have more than what's in one packet
-    {
-        assert(false);
-        rtcpParser.Iterate();
-        return;
-    }
-
-    ptrReceiveInfo->VerifyAndAllocateBoundingSet((uint32_t)maxNumOfTMMBNBlocks);
-
-    RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    while (pktType == RTCPUtility::kRtcpRtpfbTmmbnItemCode)
-    {
-        HandleTMMBNItem(*ptrReceiveInfo, rtcpPacket);
-        pktType = rtcpParser.Iterate();
-    }
-}
-
-// no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleSR_REQ(RTCPUtility::RTCPParserV2& rtcpParser,
-                           RTCPPacketInformation& rtcpPacketInformation)
-{
-    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpSrReq;
+  uint32_t senderSSRC = rtcpPacket.TMMBR.SenderSSRC;
+  RTCPReceiveInformation* ptrReceiveInfo = GetReceiveInformation(senderSSRC);
+  if (ptrReceiveInfo == NULL) {
+    // This remote SSRC must be saved before.
     rtcpParser.Iterate();
+    return;
+  }
+  if (rtcpPacket.TMMBR.MediaSSRC) {
+    // rtcpPacket.TMMBR.MediaSSRC SHOULD be 0 if same as SenderSSRC
+    // in relay mode this is a valid number
+    senderSSRC = rtcpPacket.TMMBR.MediaSSRC;
+  }
+
+  // Use packet length to calc max number of TMMBR blocks
+  // each TMMBR block is 8 bytes
+  ptrdiff_t maxNumOfTMMBRBlocks = rtcpParser.LengthLeft() / 8;
+
+  // sanity, we can't have more than what's in one packet
+  if (maxNumOfTMMBRBlocks > 200) {
+    assert(false);
+    rtcpParser.Iterate();
+    return;
+  }
+  ptrReceiveInfo->VerifyAndAllocateTMMBRSet((uint32_t)maxNumOfTMMBRBlocks);
+
+  RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
+  while (pktType == RTCPPacketTypes::kRtpfbTmmbrItem) {
+    HandleTMMBRItem(*ptrReceiveInfo, rtcpPacket, rtcpPacketInformation, senderSSRC);
+    pktType = rtcpParser.Iterate();
+  }
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleTMMBNItem(RTCPReceiveInformation& receiveInfo,
-                              const RTCPUtility::RTCPPacket& rtcpPacket)
-{
-    receiveInfo.TmmbnBoundingSet.AddEntry(
-        rtcpPacket.TMMBNItem.MaxTotalMediaBitRate,
-        rtcpPacket.TMMBNItem.MeasuredOverhead,
-        rtcpPacket.TMMBNItem.SSRC);
+void RTCPReceiver::HandleTMMBRItem(RTCPReceiveInformation& receiveInfo,
+                                   const RTCPUtility::RTCPPacket& rtcpPacket,
+                                   RTCPPacketInformation& rtcpPacketInformation,
+                                   uint32_t senderSSRC) {
+  if (main_ssrc_ == rtcpPacket.TMMBRItem.SSRC &&
+      rtcpPacket.TMMBRItem.MaxTotalMediaBitRate > 0) {
+    receiveInfo.InsertTMMBRItem(senderSSRC, rtcpPacket.TMMBRItem,
+                                _clock->TimeInMilliseconds());
+    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpTmmbr;
+  }
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleSLI(RTCPUtility::RTCPParserV2& rtcpParser,
-                        RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
-    RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    while (pktType == RTCPUtility::kRtcpPsfbSliItemCode)
-    {
-        HandleSLIItem(rtcpPacket, rtcpPacketInformation);
-        pktType = rtcpParser.Iterate();
-    }
+void RTCPReceiver::HandleTMMBN(RTCPUtility::RTCPParserV2& rtcpParser,
+                               RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+  RTCPReceiveInformation* ptrReceiveInfo = GetReceiveInformation(
+      rtcpPacket.TMMBN.SenderSSRC);
+  if (ptrReceiveInfo == NULL) {
+    // This remote SSRC must be saved before.
+    rtcpParser.Iterate();
+    return;
+  }
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpTmmbn;
+  // Use packet length to calc max number of TMMBN blocks
+  // each TMMBN block is 8 bytes
+  ptrdiff_t maxNumOfTMMBNBlocks = rtcpParser.LengthLeft() / 8;
+
+  // sanity, we cant have more than what's in one packet
+  if (maxNumOfTMMBNBlocks > 200) {
+    assert(false);
+    rtcpParser.Iterate();
+    return;
+  }
+
+  ptrReceiveInfo->VerifyAndAllocateBoundingSet((uint32_t)maxNumOfTMMBNBlocks);
+
+  RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
+  while (pktType == RTCPPacketTypes::kRtpfbTmmbnItem) {
+    HandleTMMBNItem(*ptrReceiveInfo, rtcpPacket);
+    pktType = rtcpParser.Iterate();
+  }
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleSLIItem(const RTCPUtility::RTCPPacket& rtcpPacket,
-                            RTCPPacketInformation& rtcpPacketInformation)
-{
-    // in theory there could be multiple slices lost
-    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpSli; // received signal that we need to refresh a slice
-    rtcpPacketInformation.sliPictureId = rtcpPacket.SLIItem.PictureId;
+void RTCPReceiver::HandleSR_REQ(RTCPUtility::RTCPParserV2& rtcpParser,
+                                RTCPPacketInformation& rtcpPacketInformation) {
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpSrReq;
+  rtcpParser.Iterate();
+}
+
+// no need for critsect we have _criticalSectionRTCPReceiver
+void RTCPReceiver::HandleTMMBNItem(RTCPReceiveInformation& receiveInfo,
+                                   const RTCPUtility::RTCPPacket& rtcpPacket) {
+  receiveInfo.TmmbnBoundingSet.AddEntry(
+      rtcpPacket.TMMBNItem.MaxTotalMediaBitRate,
+      rtcpPacket.TMMBNItem.MeasuredOverhead,
+      rtcpPacket.TMMBNItem.SSRC);
+}
+
+// no need for critsect we have _criticalSectionRTCPReceiver
+void RTCPReceiver::HandleSLI(RTCPUtility::RTCPParserV2& rtcpParser,
+                             RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+  RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
+  while (pktType == RTCPPacketTypes::kPsfbSliItem) {
+    HandleSLIItem(rtcpPacket, rtcpPacketInformation);
+    pktType = rtcpParser.Iterate();
+  }
+}
+
+// no need for critsect we have _criticalSectionRTCPReceiver
+void RTCPReceiver::HandleSLIItem(const RTCPUtility::RTCPPacket& rtcpPacket,
+                                 RTCPPacketInformation& rtcpPacketInformation) {
+  // in theory there could be multiple slices lost
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpSli; // received signal that we need to refresh a slice
+  rtcpPacketInformation.sliPictureId = rtcpPacket.SLIItem.PictureId;
 }
 
 void
@@ -1179,8 +1121,7 @@ RTCPReceiver::HandleRPSI(RTCPUtility::RTCPParserV2& rtcpParser,
 {
     const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
     RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    if(pktType == RTCPUtility::kRtcpPsfbRpsiCode)
-    {
+    if (pktType == RTCPPacketTypes::kPsfbRpsi) {
         rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpRpsi; // received signal that we have a confirmed reference picture
         if(rtcpPacket.RPSI.NumberOfValidBits%8 != 0)
         {
@@ -1206,9 +1147,9 @@ RTCPReceiver::HandleRPSI(RTCPUtility::RTCPParserV2& rtcpParser,
 void RTCPReceiver::HandlePsfbApp(RTCPUtility::RTCPParserV2& rtcpParser,
                                  RTCPPacketInformation& rtcpPacketInformation) {
   RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-  if (pktType == RTCPUtility::kRtcpPsfbRembCode) {
+  if (pktType == RTCPPacketTypes::kPsfbRemb) {
     pktType = rtcpParser.Iterate();
-    if (pktType == RTCPUtility::kRtcpPsfbRembItemCode) {
+    if (pktType == RTCPPacketTypes::kPsfbRembItem) {
       HandleREMBItem(rtcpParser, rtcpPacketInformation);
       rtcpParser.Iterate();
     }
@@ -1216,27 +1157,22 @@ void RTCPReceiver::HandlePsfbApp(RTCPUtility::RTCPParserV2& rtcpParser,
 }
 
 // no need for critsect we have _criticalSectionRTCPReceiver
-void
-RTCPReceiver::HandleIJ(RTCPUtility::RTCPParserV2& rtcpParser,
-                       RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+void RTCPReceiver::HandleIJ(RTCPUtility::RTCPParserV2& rtcpParser,
+                            RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
 
-    RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-    while (pktType == RTCPUtility::kRtcpExtendedIjItemCode)
-    {
-        HandleIJItem(rtcpPacket, rtcpPacketInformation);
-        pktType = rtcpParser.Iterate();
-    }
+  RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
+  while (pktType == RTCPPacketTypes::kExtendedIjItem) {
+    HandleIJItem(rtcpPacket, rtcpPacketInformation);
+    pktType = rtcpParser.Iterate();
+  }
 }
 
-void
-RTCPReceiver::HandleIJItem(const RTCPUtility::RTCPPacket& rtcpPacket,
-                           RTCPPacketInformation& rtcpPacketInformation)
-{
-    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpTransmissionTimeOffset;
-    rtcpPacketInformation.interArrivalJitter =
-    rtcpPacket.ExtendedJitterReportItem.Jitter;
+void RTCPReceiver::HandleIJItem(const RTCPUtility::RTCPPacket& rtcpPacket,
+                                RTCPPacketInformation& rtcpPacketInformation) {
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpTransmissionTimeOffset;
+  rtcpPacketInformation.interArrivalJitter =
+  rtcpPacket.ExtendedJitterReportItem.Jitter;
 }
 
 void RTCPReceiver::HandleREMBItem(
@@ -1256,7 +1192,7 @@ void RTCPReceiver::HandleFIR(RTCPUtility::RTCPParserV2& rtcpParser,
       GetReceiveInformation(rtcpPacket.FIR.SenderSSRC);
 
   RTCPUtility::RTCPPacketTypes pktType = rtcpParser.Iterate();
-  while (pktType == RTCPUtility::kRtcpPsfbFirItemCode) {
+  while (pktType == RTCPPacketTypes::kPsfbFirItem) {
     HandleFIRItem(ptrReceiveInfo, rtcpPacket, rtcpPacketInformation);
     pktType = rtcpParser.Iterate();
   }
@@ -1295,28 +1231,24 @@ void RTCPReceiver::HandleFIRItem(RTCPReceiveInformation* receiveInfo,
   }
 }
 
-void
-RTCPReceiver::HandleAPP(RTCPUtility::RTCPParserV2& rtcpParser,
-                        RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+void RTCPReceiver::HandleAPP(RTCPUtility::RTCPParserV2& rtcpParser,
+                             RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
 
-    rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpApp;
-    rtcpPacketInformation.applicationSubType = rtcpPacket.APP.SubType;
-    rtcpPacketInformation.applicationName = rtcpPacket.APP.Name;
+  rtcpPacketInformation.rtcpPacketTypeFlags |= kRtcpApp;
+  rtcpPacketInformation.applicationSubType = rtcpPacket.APP.SubType;
+  rtcpPacketInformation.applicationName = rtcpPacket.APP.Name;
 
-    rtcpParser.Iterate();
+  rtcpParser.Iterate();
 }
 
-void
-RTCPReceiver::HandleAPPItem(RTCPUtility::RTCPParserV2& rtcpParser,
-                           RTCPPacketInformation& rtcpPacketInformation)
-{
-    const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
+void RTCPReceiver::HandleAPPItem(RTCPUtility::RTCPParserV2& rtcpParser,
+                                 RTCPPacketInformation& rtcpPacketInformation) {
+  const RTCPUtility::RTCPPacket& rtcpPacket = rtcpParser.Packet();
 
-    rtcpPacketInformation.AddApplicationData(rtcpPacket.APP.Data, rtcpPacket.APP.Size);
+  rtcpPacketInformation.AddApplicationData(rtcpPacket.APP.Data, rtcpPacket.APP.Size);
 
-    rtcpParser.Iterate();
+  rtcpParser.Iterate();
 }
 
 int32_t RTCPReceiver::UpdateTMMBR() {
@@ -1354,7 +1286,6 @@ int32_t RTCPReceiver::UpdateTMMBR() {
   // Get net bitrate from bounding set depending on sent packet rate
   if (CalcMinBitRate(&bitrate)) {
     // we have a new bandwidth estimate on this channel
-    CriticalSectionScoped lock(_criticalSectionFeedbacks);
     if (_cbRtcpBandwidthObserver) {
         _cbRtcpBandwidthObserver->OnReceivedEstimatedBitrate(bitrate * 1000);
     }
@@ -1382,16 +1313,18 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
     // Might trigger a OnReceivedBandwidthEstimateUpdate.
     UpdateTMMBR();
   }
-  unsigned int local_ssrc = 0;
+  unsigned int local_ssrc;
   {
     // We don't want to hold this critsect when triggering the callbacks below.
     CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
     local_ssrc = main_ssrc_;
   }
-  if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSrReq) {
+  if (!receiver_only_ &&
+      rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSrReq) {
     _rtpRtcp.OnRequestSendReport();
   }
-  if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack) {
+  if (!receiver_only_ &&
+      rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack) {
     if (rtcpPacketInformation.nackSequenceNumbers.size() > 0) {
       LOG(LS_VERBOSE) << "Incoming NACK length: "
                    << rtcpPacketInformation.nackSequenceNumbers.size();
@@ -1399,21 +1332,20 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
     }
   }
   {
-    CriticalSectionScoped lock(_criticalSectionFeedbacks);
-
     // We need feedback that we have received a report block(s) so that we
     // can generate a new packet in a conference relay scenario, one received
     // report can generate several RTCP packets, based on number relayed/mixed
     // a send report block should go out to all receivers.
     if (_cbRtcpIntraFrameObserver) {
+      DCHECK(!receiver_only_);
       if ((rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpPli) ||
           (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpFir)) {
         if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpPli) {
           LOG(LS_VERBOSE) << "Incoming PLI from SSRC "
-                       << rtcpPacketInformation.remoteSSRC;
+                          << rtcpPacketInformation.remoteSSRC;
         } else {
           LOG(LS_VERBOSE) << "Incoming FIR from SSRC "
-                       << rtcpPacketInformation.remoteSSRC;
+                          << rtcpPacketInformation.remoteSSRC;
         }
         _cbRtcpIntraFrameObserver->OnReceivedIntraFrameRequest(local_ssrc);
       }
@@ -1427,14 +1359,15 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
       }
     }
     if (_cbRtcpBandwidthObserver) {
+      DCHECK(!receiver_only_);
       if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpRemb) {
         LOG(LS_VERBOSE) << "Incoming REMB: "
-                     << rtcpPacketInformation.receiverEstimatedMaxBitrate;
+                        << rtcpPacketInformation.receiverEstimatedMaxBitrate;
         _cbRtcpBandwidthObserver->OnReceivedEstimatedBitrate(
             rtcpPacketInformation.receiverEstimatedMaxBitrate);
       }
-      if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSr ||
-          rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpRr) {
+      if ((rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSr) ||
+          (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpRr)) {
         int64_t now = _clock->TimeInMilliseconds();
         _cbRtcpBandwidthObserver->OnReceivedRtcpReceiverReport(
             rtcpPacketInformation.report_blocks,
@@ -1442,26 +1375,9 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
             now);
       }
     }
-    if(_cbRtcpFeedback) {
-      if(!(rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpSr)) {
-        _cbRtcpFeedback->OnReceiveReportReceived(_id,
-            rtcpPacketInformation.remoteSSRC);
-      }
-      if(rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpXrVoipMetric) {
-        _cbRtcpFeedback->OnXRVoIPMetricReceived(_id,
-            rtcpPacketInformation.VoIPMetric);
-      }
-      if(rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpApp) {
-        _cbRtcpFeedback->OnApplicationDataReceived(_id,
-            rtcpPacketInformation.applicationSubType,
-            rtcpPacketInformation.applicationName,
-            rtcpPacketInformation.applicationLength,
-            rtcpPacketInformation.applicationData);
-      }
-    }
   }
 
-  {
+  if (!receiver_only_) {
     CriticalSectionScoped cs(_criticalSectionFeedbacks);
     if (stats_callback_) {
       for (ReportBlockList::const_iterator it =
@@ -1480,7 +1396,7 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
   }
 }
 
-int32_t RTCPReceiver::CNAME(const uint32_t remoteSSRC,
+int32_t RTCPReceiver::CNAME(uint32_t remoteSSRC,
                             char cName[RTCP_CNAME_SIZE]) const {
   assert(cName);
 
@@ -1495,8 +1411,8 @@ int32_t RTCPReceiver::CNAME(const uint32_t remoteSSRC,
 }
 
 // no callbacks allowed inside this function
-int32_t RTCPReceiver::TMMBRReceived(const uint32_t size,
-                                    const uint32_t accNumCandidates,
+int32_t RTCPReceiver::TMMBRReceived(uint32_t size,
+                                    uint32_t accNumCandidates,
                                     TMMBRSet* candidateSet) const {
   CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
 

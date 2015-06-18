@@ -3,6 +3,12 @@
 # found in the LICENSE file.
 
 source_set("perf") {
-  sources = [ "perf_test.cc" ]
-  deps = [ "//base" ]
+  testonly = true
+  sources = [
+    "perf_test.cc",
+    "perf_test.h",
+  ]
+  deps = [
+    "//base",
+  ]
 }

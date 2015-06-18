@@ -6,7 +6,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -18,8 +18,8 @@ TEST(SpdyHeaderBlockTest, ToNetLogParamAndBackAgain) {
   headers["A"] = "a";
   headers["B"] = "b";
 
-  scoped_ptr<base::Value> event_param(
-      SpdyHeaderBlockNetLogCallback(&headers, NetLog::LOG_ALL_BUT_BYTES));
+  scoped_ptr<base::Value> event_param(SpdyHeaderBlockNetLogCallback(
+      &headers, NetLogCaptureMode::IncludeCookiesAndCredentials()));
 
   SpdyHeaderBlock headers2;
   ASSERT_TRUE(SpdyHeaderBlockFromNetLogParam(event_param.get(), &headers2));

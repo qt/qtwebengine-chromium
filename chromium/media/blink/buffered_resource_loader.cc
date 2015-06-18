@@ -54,12 +54,12 @@ static const int kForwardWaitThreshold = 2 * kMegabyte;
 // Computes the suggested backward and forward capacity for the buffer
 // if one wants to play at |playback_rate| * the natural playback speed.
 // Use a value of 0 for |bitrate| if it is unknown.
-static void ComputeTargetBufferWindow(float playback_rate, int bitrate,
+static void ComputeTargetBufferWindow(double playback_rate, int bitrate,
                                       int* out_backward_capacity,
                                       int* out_forward_capacity) {
   static const int kDefaultBitrate = 200 * 1024 * 8;  // 200 Kbps.
   static const int kMaxBitrate = 20 * kMegabyte * 8;  // 20 Mbps.
-  static const float kMaxPlaybackRate = 25.0;
+  static const double kMaxPlaybackRate = 25.0;
   static const int kTargetSecondsBufferedAhead = 10;
   static const int kTargetSecondsBufferedBehind = 2;
 
@@ -71,12 +71,12 @@ static void ComputeTargetBufferWindow(float playback_rate, int bitrate,
   // Only scale the buffer window for playback rates greater than 1.0 in
   // magnitude and clamp to prevent overflow.
   bool backward_playback = false;
-  if (playback_rate < 0.0f) {
+  if (playback_rate < 0.0) {
     backward_playback = true;
-    playback_rate *= -1.0f;
+    playback_rate *= -1.0;
   }
 
-  playback_rate = std::max(playback_rate, 1.0f);
+  playback_rate = std::max(playback_rate, 1.0);
   playback_rate = std::min(playback_rate, kMaxPlaybackRate);
 
   int bytes_per_second = (bitrate / 8.0) * playback_rate;
@@ -101,7 +101,7 @@ BufferedResourceLoader::BufferedResourceLoader(
     int64 last_byte_position,
     DeferStrategy strategy,
     int bitrate,
-    float playback_rate,
+    double playback_rate,
     MediaLog* media_log)
     : buffer_(kMinBufferCapacity, kMinBufferCapacity),
       loader_failed_(false),
@@ -124,7 +124,8 @@ BufferedResourceLoader::BufferedResourceLoader(
       last_offset_(0),
       bitrate_(bitrate),
       playback_rate_(playback_rate),
-      media_log_(media_log) {
+      media_log_(media_log),
+      cancel_upon_deferral_(false) {
 
   // Set the initial capacity of |buffer_| based on |bitrate_| and
   // |playback_rate_|.
@@ -570,13 +571,17 @@ void BufferedResourceLoader::UpdateDeferStrategy(DeferStrategy strategy) {
   UpdateDeferBehavior();
 }
 
-void BufferedResourceLoader::SetPlaybackRate(float playback_rate) {
+void BufferedResourceLoader::SetPlaybackRate(double playback_rate) {
   playback_rate_ = playback_rate;
 
   // This is a pause so don't bother updating the buffer window as we'll likely
   // get unpaused in the future.
   if (playback_rate_ == 0.0)
     return;
+
+  // Abort any cancellations in progress if playback starts.
+  if (playback_rate_ > 0 && cancel_upon_deferral_)
+    cancel_upon_deferral_ = false;
 
   UpdateBufferWindow();
 }
@@ -616,6 +621,9 @@ void BufferedResourceLoader::SetDeferred(bool deferred) {
 
   active_loader_->SetDeferred(deferred);
   loading_cb_.Run(deferred ? kLoadingDeferred : kLoading);
+
+  if (deferred && cancel_upon_deferral_)
+    CancelUponDeferral();
 }
 
 bool BufferedResourceLoader::ShouldDefer() const {
@@ -730,6 +738,12 @@ bool BufferedResourceLoader::ParseContentRange(
   }
 
   return true;
+}
+
+void BufferedResourceLoader::CancelUponDeferral() {
+  cancel_upon_deferral_ = true;
+  if (active_loader_ && active_loader_->deferred())
+    active_loader_.reset();
 }
 
 bool BufferedResourceLoader::VerifyPartialResponse(

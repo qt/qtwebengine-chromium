@@ -7,6 +7,8 @@
 
 #include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -132,7 +134,7 @@ class PropertySet;
 // used by PropertySet.
 class PropertyBase {
  public:
-  PropertyBase() : property_set_(NULL) {}
+  PropertyBase() : property_set_(nullptr), is_valid_(false) {}
 
   // Initializes the |property_set| and property |name| so that method
   // calls may be made from this class. This method is called by
@@ -154,11 +156,17 @@ class PropertyBase {
   //   }
   const std::string& name() const { return name_; }
 
+  // Returns true if property is valid, false otherwise.
+  bool is_valid() const { return is_valid_; }
+
+  // Allows to mark Property as valid or invalid.
+  void set_valid(bool is_valid) { is_valid_ = is_valid; }
+
   // Method used by PropertySet to retrieve the value from a MessageReader,
   // no knowledge of the contained type is required, this method returns
   // true if its expected type was found, false if not.
   // Implementation provided by specialization.
-  virtual bool PopValueFromReader(MessageReader*) = 0;
+  virtual bool PopValueFromReader(MessageReader* reader) = 0;
 
   // Method used by PropertySet to append the set value to a MessageWriter,
   // no knowledge of the contained type is required.
@@ -178,6 +186,8 @@ class PropertyBase {
   // Pointer to the PropertySet instance that this instance is a member of,
   // no ownership is taken and |property_set_| must outlive this class.
   PropertySet* property_set_;
+
+  bool is_valid_;
 
   // Name of the property.
   std::string name_;
@@ -229,7 +239,7 @@ class CHROME_DBUS_EXPORT PropertySet {
   // Methods connected by ConnectSignals() and called by dbus:: when
   // a property is changed. Sub-classes may override if the property
   // changed signal provides different arguments.
-  virtual void ChangedReceived(Signal*);
+  virtual void ChangedReceived(Signal* signal);
   virtual void ChangedConnected(const std::string& interface_name,
                                 const std::string& signal_name,
                                 bool success);
@@ -300,6 +310,10 @@ class CHROME_DBUS_EXPORT PropertySet {
   }
 
  private:
+  // Invalidates properties by reading an array of names, from
+  // |message_reader|. Returns false if message is in incorrect format.
+  bool InvalidatePropertiesFromReader(MessageReader* reader);
+
   // Pointer to object proxy for making method calls, no ownership is taken
   // so this must outlive this class.
   ObjectProxy* object_proxy_;
@@ -376,17 +390,17 @@ class CHROME_DBUS_EXPORT Property : public PropertyBase {
   // Method used by PropertySet to retrieve the value from a MessageReader,
   // no knowledge of the contained type is required, this method returns
   // true if its expected type was found, false if not.
-  virtual bool PopValueFromReader(MessageReader*);
+  bool PopValueFromReader(MessageReader* reader) override;
 
   // Method used by PropertySet to append the set value to a MessageWriter,
   // no knowledge of the contained type is required.
   // Implementation provided by specialization.
-  virtual void AppendSetValueToWriter(MessageWriter* writer);
+  void AppendSetValueToWriter(MessageWriter* writer) override;
 
   // Method used by test and stub implementations of dbus::PropertySet::Set
   // to replace the property value with the set value without using a
   // dbus::MessageReader.
-  virtual void ReplaceValueWithSetValue() {
+  void ReplaceValueWithSetValue() override {
     value_ = set_value_;
     property_set()->NotifyPropertyChanged(name());
   }
@@ -397,6 +411,10 @@ class CHROME_DBUS_EXPORT Property : public PropertyBase {
     value_ = value;
     property_set()->NotifyPropertyChanged(name());
   }
+
+  // Method used by test and stub implementations to directly set the
+  // |set_value_| of a property.
+  void ReplaceSetValueForTesting(const T& value) { set_value_ = value; }
 
  private:
   // Current cached value of the property.
@@ -484,6 +502,23 @@ template <> bool Property<std::vector<uint8> >::PopValueFromReader(
 template <> void Property<std::vector<uint8> >::AppendSetValueToWriter(
   MessageWriter* writer);
 extern template class Property<std::vector<uint8> >;
+
+template <>
+bool Property<std::map<std::string, std::string>>::PopValueFromReader(
+    MessageReader* reader);
+template <>
+void Property<std::map<std::string, std::string>>::AppendSetValueToWriter(
+    MessageWriter* writer);
+extern template class Property<std::map<std::string, std::string>>;
+
+template <>
+bool Property<std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>::
+    PopValueFromReader(MessageReader* reader);
+template <>
+void Property<std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>::
+    AppendSetValueToWriter(MessageWriter* writer);
+extern template class Property<
+    std::vector<std::pair<std::vector<uint8_t>, uint16_t>>>;
 
 }  // namespace dbus
 

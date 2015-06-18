@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "cc/resources/shared_bitmap_manager.h"
 #include "content/common/content_export.h"
+#include "content/common/host_discardable_shared_memory_manager.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -46,14 +47,12 @@ IPC_STRUCT_TRAITS_BEGIN(tracked_objects::TaskSnapshot)
   IPC_STRUCT_TRAITS_MEMBER(death_thread_name)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(tracked_objects::ParentChildPairSnapshot)
-  IPC_STRUCT_TRAITS_MEMBER(parent)
-  IPC_STRUCT_TRAITS_MEMBER(child)
+IPC_STRUCT_TRAITS_BEGIN(tracked_objects::ProcessDataPhaseSnapshot)
+  IPC_STRUCT_TRAITS_MEMBER(tasks)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(tracked_objects::ProcessDataSnapshot)
-  IPC_STRUCT_TRAITS_MEMBER(tasks)
-  IPC_STRUCT_TRAITS_MEMBER(descendants)
+  IPC_STRUCT_TRAITS_MEMBER(phased_snapshots)
   IPC_STRUCT_TRAITS_MEMBER(process_id)
 IPC_STRUCT_TRAITS_END()
 
@@ -98,15 +97,18 @@ IPC_MESSAGE_CONTROL1(ChildProcessMsg_SetProfilerStatus,
 
 // Send to all the child processes to send back profiler data (ThreadData in
 // tracked_objects).
-IPC_MESSAGE_CONTROL1(ChildProcessMsg_GetChildProfilerData,
-                     int /* sequence_number */)
+IPC_MESSAGE_CONTROL2(ChildProcessMsg_GetChildProfilerData,
+                     int /* sequence_number */,
+                     int /* current_profiling_phase */)
+
+// Send to all the child processes to mark the current profiling phase as
+// finished and start a new phase.
+IPC_MESSAGE_CONTROL1(ChildProcessMsg_ProfilingPhaseCompleted,
+                     int /* profiling_phase */)
 
 // Send to all the child processes to send back histogram data.
 IPC_MESSAGE_CONTROL1(ChildProcessMsg_GetChildHistogramData,
                      int /* sequence_number */)
-
-// Sent to child processes to dump their handle table.
-IPC_MESSAGE_CONTROL0(ChildProcessMsg_DumpHandles)
 
 // Sent to child processes to tell them to enter or leave background mode.
 IPC_MESSAGE_CONTROL1(ChildProcessMsg_SetProcessBackgrounded,
@@ -123,9 +125,10 @@ IPC_MESSAGE_CONTROL0(ChildProcessMsg_GetTcmallocStats)
 IPC_MESSAGE_CONTROL0(ChildProcessHostMsg_ShutdownRequest)
 
 // Send back profiler data (ThreadData in tracked_objects).
-IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_ChildProfilerData,
-                     int, /* sequence_number */
-                     tracked_objects::ProcessDataSnapshot /* profiler_data */)
+IPC_MESSAGE_CONTROL2(
+    ChildProcessHostMsg_ChildProfilerData,
+    int, /* sequence_number */
+    tracked_objects::ProcessDataSnapshot /* process_data_snapshot */)
 
 // Send back histograms as vector of pickled-histogram strings.
 IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_ChildHistogramData,
@@ -138,9 +141,6 @@ IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_ChildHistogramData,
 IPC_SYNC_MESSAGE_CONTROL1_1(ChildProcessHostMsg_GetBrowserHistogram,
                             std::string, /* histogram_name */
                             std::string /* histogram_json */)
-
-// Reply to ChildProcessMsg_DumpHandles when handle table dump is complete.
-IPC_MESSAGE_CONTROL0(ChildProcessHostMsg_DumpHandlesDone)
 
 #if defined(OS_WIN)
 // Request that the given font be loaded by the host so it's cached by the
@@ -196,7 +196,13 @@ IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_DeletedGpuMemoryBuffer,
 
 // Asks the browser to create a block of discardable shared memory for the
 // child process.
-IPC_SYNC_MESSAGE_CONTROL1_1(
+IPC_SYNC_MESSAGE_CONTROL2_1(
     ChildProcessHostMsg_SyncAllocateLockedDiscardableSharedMemory,
     uint32 /* size */,
+    content::DiscardableSharedMemoryId,
     base::SharedMemoryHandle)
+
+// Informs the browser that the child deleted a block of discardable shared
+// memory.
+IPC_MESSAGE_CONTROL1(ChildProcessHostMsg_DeletedDiscardableSharedMemory,
+                     content::DiscardableSharedMemoryId)

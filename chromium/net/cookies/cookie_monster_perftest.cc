@@ -52,34 +52,36 @@ class BaseCallback {
     has_run_ = false;
   }
 
-  void Run() {
-    has_run_ = true;
-  }
+  void Run() { has_run_ = true; }
 
   bool has_run_;
 };
 
-class SetCookieCallback  : public BaseCallback {
+class SetCookieCallback : public BaseCallback {
  public:
-  void SetCookie(
-      CookieMonster* cm, const GURL& gurl, const std::string& cookie) {
-    cm->SetCookieWithOptionsAsync(gurl, cookie, options_, base::Bind(
-        &SetCookieCallback::Run, base::Unretained(this)));
+  void SetCookie(CookieMonster* cm,
+                 const GURL& gurl,
+                 const std::string& cookie) {
+    cm->SetCookieWithOptionsAsync(
+        gurl, cookie, options_,
+        base::Bind(&SetCookieCallback::Run, base::Unretained(this)));
     WaitForCallback();
   }
+
  private:
   void Run(bool success) {
     EXPECT_TRUE(success);
     BaseCallback::Run();
   }
-  net::CookieOptions options_;
+  CookieOptions options_;
 };
 
 class GetCookiesCallback : public BaseCallback {
  public:
   const std::string& GetCookies(CookieMonster* cm, const GURL& gurl) {
-    cm->GetCookiesWithOptionsAsync(gurl, options_, base::Bind(
-        &GetCookiesCallback::Run, base::Unretained(this)));
+    cm->GetCookiesWithOptionsAsync(
+        gurl, options_,
+        base::Bind(&GetCookiesCallback::Run, base::Unretained(this)));
     WaitForCallback();
     return cookies_;
   }
@@ -90,7 +92,7 @@ class GetCookiesCallback : public BaseCallback {
     BaseCallback::Run();
   }
   std::string cookies_;
-  net::CookieOptions options_;
+  CookieOptions options_;
 };
 
 }  // namespace
@@ -161,8 +163,8 @@ TEST_F(CookieMonsterTest, TestAddCookieOnManyHosts) {
 
   // Add a cookie on a bunch of host
   base::PerfTimeLogger timer("Cookie_monster_add_many_hosts");
-  for (std::vector<GURL>::const_iterator it = gurls.begin();
-       it != gurls.end(); ++it) {
+  for (std::vector<GURL>::const_iterator it = gurls.begin(); it != gurls.end();
+       ++it) {
     setCookieCallback.SetCookie(cm.get(), *it, cookie);
   }
   timer.Done();
@@ -170,8 +172,8 @@ TEST_F(CookieMonsterTest, TestAddCookieOnManyHosts) {
   GetCookiesCallback getCookiesCallback;
 
   base::PerfTimeLogger timer2("Cookie_monster_query_many_hosts");
-  for (std::vector<GURL>::const_iterator it = gurls.begin();
-       it != gurls.end(); ++it) {
+  for (std::vector<GURL>::const_iterator it = gurls.begin(); it != gurls.end();
+       ++it) {
     getCookiesCallback.GetCookies(cm.get(), *it);
   }
   timer2.Done();
@@ -186,7 +188,7 @@ TEST_F(CookieMonsterTest, TestDomainTree) {
   scoped_refptr<CookieMonster> cm(new CookieMonster(NULL, NULL));
   GetCookiesCallback getCookiesCallback;
   SetCookieCallback setCookieCallback;
-  const char* domain_cookie_format_tree = "a=b; domain=%s";
+  const char domain_cookie_format_tree[] = "a=b; domain=%s";
   const std::string domain_base("top.com");
 
   std::vector<std::string> domain_list;
@@ -214,13 +216,12 @@ TEST_F(CookieMonsterTest, TestDomainTree) {
     }
   }
 
-
   EXPECT_EQ(31u, domain_list.size());
   for (std::vector<std::string>::const_iterator it = domain_list.begin();
        it != domain_list.end(); it++) {
     GURL gurl("https://" + *it + "/");
-    const std::string cookie = base::StringPrintf(domain_cookie_format_tree,
-                                                  it->c_str());
+    const std::string cookie =
+        base::StringPrintf(domain_cookie_format_tree, it->c_str());
     setCookieCallback.SetCookie(cm.get(), gurl, cookie);
   }
   EXPECT_EQ(31u, cm->GetAllCookies().size());
@@ -256,13 +257,13 @@ TEST_F(CookieMonsterTest, TestDomainLine) {
   domain_list.push_back("b.a.b.a.top.com");
   EXPECT_EQ(4u, domain_list.size());
 
-  const char* domain_cookie_format_line = "a%03d=b; domain=%s";
+  const char domain_cookie_format_line[] = "a%03d=b; domain=%s";
   for (int i = 0; i < 8; i++) {
     for (std::vector<std::string>::const_iterator it = domain_list.begin();
          it != domain_list.end(); it++) {
       GURL gurl("https://" + *it + "/");
-      const std::string cookie = base::StringPrintf(domain_cookie_format_line,
-                                                    i, it->c_str());
+      const std::string cookie =
+          base::StringPrintf(domain_cookie_format_line, i, it->c_str());
       setCookieCallback.SetCookie(cm.get(), gurl, cookie);
     }
   }
@@ -289,8 +290,8 @@ TEST_F(CookieMonsterTest, TestImport) {
     std::string domain_name(base::StringPrintf(".Domain_%d.com", domain_num));
     std::string gurl("www" + domain_name);
     for (int cookie_num = 0; cookie_num < 50; cookie_num++) {
-      std::string cookie_line(base::StringPrintf("Cookie_%d=1; Path=/",
-                                                 cookie_num));
+      std::string cookie_line(
+          base::StringPrintf("Cookie_%d=1; Path=/", cookie_num));
       AddCookieToList(gurl, cookie_line,
                       base::Time::FromInternalValue(time_tick++),
                       &initial_cookies);
@@ -331,44 +332,47 @@ TEST_F(CookieMonsterTest, TestGCTimes) {
   SetCookieCallback setCookieCallback;
 
   const struct TestCase {
-    const char* name;
+    const char* const name;
     size_t num_cookies;
     size_t num_old_cookies;
   } test_cases[] = {
-    {
-      // A whole lot of recent cookies; gc shouldn't happen.
-      "all_recent",
-      CookieMonster::kMaxCookies * 2,
-      0,
-    }, {
-      // Some old cookies, but still overflowing max.
-      "mostly_recent",
-      CookieMonster::kMaxCookies * 2,
-      CookieMonster::kMaxCookies / 2,
-    }, {
-      // Old cookies enough to bring us right down to our purge line.
-      "balanced",
-      CookieMonster::kMaxCookies * 2,
-      CookieMonster::kMaxCookies + CookieMonster::kPurgeCookies + 1,
-    }, {
-      "mostly_old",
-      // Old cookies enough to bring below our purge line (which we
-      // shouldn't do).
-      CookieMonster::kMaxCookies * 2,
-      CookieMonster::kMaxCookies * 3 / 4,
-    }, {
-      "less_than_gc_thresh",
-      // Few enough cookies that gc shouldn't happen at all.
-      CookieMonster::kMaxCookies - 5,
-      0,
-    },
+      {
+       // A whole lot of recent cookies; gc shouldn't happen.
+       "all_recent",
+       CookieMonster::kMaxCookies * 2,
+       0,
+      },
+      {
+       // Some old cookies, but still overflowing max.
+       "mostly_recent",
+       CookieMonster::kMaxCookies * 2,
+       CookieMonster::kMaxCookies / 2,
+      },
+      {
+       // Old cookies enough to bring us right down to our purge line.
+       "balanced",
+       CookieMonster::kMaxCookies * 2,
+       CookieMonster::kMaxCookies + CookieMonster::kPurgeCookies + 1,
+      },
+      {
+       "mostly_old",
+       // Old cookies enough to bring below our purge line (which we
+       // shouldn't do).
+       CookieMonster::kMaxCookies * 2,
+       CookieMonster::kMaxCookies * 3 / 4,
+      },
+      {
+       "less_than_gc_thresh",
+       // Few enough cookies that gc shouldn't happen at all.
+       CookieMonster::kMaxCookies - 5,
+       0,
+      },
   };
   for (int ci = 0; ci < static_cast<int>(arraysize(test_cases)); ++ci) {
     const TestCase& test_case(test_cases[ci]);
-    scoped_refptr<CookieMonster> cm(
-        CreateMonsterFromStoreForGC(
-            test_case.num_cookies, test_case.num_old_cookies,
-            CookieMonster::kSafeFromGlobalPurgeDays * 2));
+    scoped_refptr<CookieMonster> cm(CreateMonsterFromStoreForGC(
+        test_case.num_cookies, test_case.num_old_cookies,
+        CookieMonster::kSafeFromGlobalPurgeDays * 2));
 
     GURL gurl("http://google.com");
     std::string cookie_line("z=3");

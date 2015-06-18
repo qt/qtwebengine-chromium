@@ -14,40 +14,32 @@
     {
       # GN: //chrome/android:chrome_shell_base
       'target_name': 'libchromeshell_base',
-      'type': 'static_library',
+      'type': 'none',
       'dependencies': [
         '../base/base.gyp:base',
         'chrome_android_core',
         'chrome.gyp:browser_ui',
-        '../content/content.gyp:content_app_browser',
+        '../content/content.gyp:content_app_both',
       ],
-      'sources': [
-        'android/shell/chrome_shell_google_location_settings_helper.cc',
-        'android/shell/chrome_shell_google_location_settings_helper.h',
-      ],
-      'include_dirs': [
-        '../skia/config',
-      ],
+      'direct_dependent_settings': {
+        'ldflags': [
+          # Some android targets still depend on --gc-sections to link.
+          # TODO: remove --gc-sections for Debug builds (crbug.com/159847).
+          '-Wl,--gc-sections',
+        ],
+      },
       'conditions': [
         [ 'order_profiling!=0', {
-          'conditions': [
-            [ 'OS=="android"', {
-              'dependencies': [ '../tools/cygprofile/cygprofile.gyp:cygprofile', ],
-            }],
-          ],
+          'dependencies': [ '../tools/cygprofile/cygprofile.gyp:cygprofile', ],
         }],
         [ 'use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator', ],
         }],
-        ['OS=="android"', {
-          'direct_dependent_settings': {
-            'ldflags': [
-              # Some android targets still depend on --gc-sections to link.
-              # TODO: remove --gc-sections for Debug builds (crbug.com/159847).
-              '-Wl,--gc-sections',
-            ],
-          },
+        [ 'cld_version==0 or cld_version==2', {
+          'dependencies': [
+            # Chrome shell should always use the statically-linked CLD data.
+            '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_static', ],
         }],
       ],
     },
@@ -56,9 +48,7 @@
       'target_name': 'libchromeshell',
       'type': 'shared_library',
       'sources': [
-        # This file must always be included in the shared_library step to ensure
-        # JNI_OnLoad is exported.
-        'app/android/chrome_jni_onload.cc',
+        'android/shell/chrome_shell_entry_point.cc',
         'android/shell/chrome_main_delegate_chrome_shell_android.cc',
         'android/shell/chrome_main_delegate_chrome_shell_android.h',
       ],
@@ -71,14 +61,13 @@
       'target_name': 'libchromesyncshell',
       'type': 'shared_library',
       'sources': [
-        # This file must always be included in the shared_library step to ensure
-        # JNI_OnLoad is exported.
-        'app/android/chrome_jni_onload.cc',
+        'android/shell/chrome_shell_entry_point.cc',
         'android/sync_shell/chrome_main_delegate_chrome_sync_shell_android.cc',
         'android/sync_shell/chrome_main_delegate_chrome_sync_shell_android.h',
       ],
       'dependencies': [
         'libchromeshell_base',
+        '../sync/sync.gyp:sync_core',
         '../sync/sync.gyp:test_support_sync_fake_server_android',
       ],
     },
@@ -87,7 +76,7 @@
       'target_name': 'chrome_shell_manifest',
       'type': 'none',
       'variables': {
-        'jinja_inputs': ['android/shell/java/AndroidManifest.xml'],
+        'jinja_inputs': ['android/shell/java/AndroidManifest.xml.jinja2'],
         'jinja_output': '<(SHARED_INTERMEDIATE_DIR)/chrome_shell_manifest/AndroidManifest.xml',
       },
       'includes': [ '../build/android/jinja_template.gypi' ],
@@ -98,7 +87,7 @@
       'type': 'none',
       'dependencies': [
         'chrome_java',
-        'chrome_shell_paks',
+        'chrome_android_paks_copy',
         'libchromeshell',
         '../media/media.gyp:media_java',
       ],
@@ -113,6 +102,8 @@
         'additional_input_paths': [
           '<@(chrome_android_pak_output_resources)',
         ],
+        'proguard_enabled': 'true',
+        'proguard_flags_paths': ['android/shell/java/proguard.flags'],
       },
       'includes': [ '../build/java_apk.gypi', ],
     },
@@ -132,20 +123,14 @@
       'includes': [ '../build/apk_fake_jar.gypi' ],
     },
     {
-      'target_name': 'chrome_shell_paks',
+      # GN: //chrome/android:chrome_sync_shell_manifest
+      'target_name': 'chrome_sync_shell_manifest',
       'type': 'none',
-      'dependencies': [
-        '<(DEPTH)/chrome/chrome_resources.gyp:packed_resources',
-        '<(DEPTH)/chrome/chrome_resources.gyp:packed_extra_resources',
-      ],
-      'copies': [
-        {
-          'destination': '<(chrome_android_pak_output_folder)',
-          'files': [
-            '<@(chrome_android_pak_input_resources)',
-          ],
-        }
-      ],
+      'variables': {
+        'jinja_inputs': ['android/sync_shell/java/AndroidManifest.xml.jinja2'],
+        'jinja_output': '<(SHARED_INTERMEDIATE_DIR)/chrome_sync_shell_manifest/AndroidManifest.xml',
+      },
+      'includes': [ '../build/android/jinja_template.gypi' ],
     },
     {
       # GN: //chrome/android:chrome_sync_shell_apk
@@ -153,14 +138,14 @@
       'type': 'none',
       'dependencies': [
         'chrome_java',
-        'chrome_shell_paks',
+        'chrome_android_paks_copy',
         'libchromesyncshell',
         '../media/media.gyp:media_java',
         '../sync/sync.gyp:sync_java_test_support',
       ],
       'variables': {
         'apk_name': 'ChromeSyncShell',
-        'android_manifest_path': 'android/sync_shell/java/AndroidManifest.xml',
+        'android_manifest_path': '<(SHARED_INTERMEDIATE_DIR)/chrome_sync_shell_manifest/AndroidManifest.xml',
         'R_package': 'org.chromium.chrome.shell',
         'native_lib_version_name': '<(version_full)',
         'java_in_dir': 'android/shell/java',

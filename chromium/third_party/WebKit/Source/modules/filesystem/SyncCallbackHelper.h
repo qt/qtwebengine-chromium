@@ -63,7 +63,7 @@ public:
 
 // A helper template for FileSystemSync implementation.
 template <typename SuccessCallback, typename CallbackArg, typename ResultType>
-class SyncCallbackHelper final : public GarbageCollected<SyncCallbackHelper<SuccessCallback, CallbackArg, ResultType> > {
+class SyncCallbackHelper final : public GarbageCollected<SyncCallbackHelper<SuccessCallback, CallbackArg, ResultType>> {
 public:
     typedef SyncCallbackHelper<SuccessCallback, CallbackArg, ResultType> HelperType;
     typedef HelperResultType<ResultType, CallbackArg> ResultTypeTrait;
@@ -86,7 +86,7 @@ public:
     SuccessCallback* successCallback() { return SuccessCallbackImpl::create(this); }
     ErrorCallback* errorCallback() { return ErrorCallbackImpl::create(this); }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_result);
     }
@@ -167,7 +167,7 @@ struct EmptyType : public GarbageCollected<EmptyType> {
         return 0;
     }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 };
 
 typedef SyncCallbackHelper<EntryCallback, Entry*, EntrySync> EntrySyncCallbackHelper;

@@ -10,7 +10,6 @@
 #include "base/thread_task_runner_handle.h"
 #include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
-#include "content/child/worker_thread_task_runner.h"
 #include "content/common/geofencing_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "third_party/WebKit/public/platform/WebCircularGeofencingRegion.h"
@@ -121,6 +120,20 @@ void GeofencingDispatcher::GetRegisteredRegions(
       CurrentWorkerId(), request_id, serviceworker_registration_id));
 }
 
+void GeofencingDispatcher::SetMockProvider(bool service_available) {
+  Send(new GeofencingHostMsg_SetMockProvider(
+      service_available ? GeofencingMockState::SERVICE_AVAILABLE
+                        : GeofencingMockState::SERVICE_UNAVAILABLE));
+}
+
+void GeofencingDispatcher::ClearMockProvider() {
+  Send(new GeofencingHostMsg_SetMockProvider(GeofencingMockState::NONE));
+}
+
+void GeofencingDispatcher::SetMockPosition(double latitude, double longitude) {
+  Send(new GeofencingHostMsg_SetMockPosition(latitude, longitude));
+}
+
 GeofencingDispatcher* GeofencingDispatcher::GetOrCreateThreadSpecificInstance(
     ThreadSafeSender* thread_safe_sender) {
   if (g_dispatcher_tls.Pointer()->Get() == kHasBeenDeleted) {
@@ -149,8 +162,6 @@ void GeofencingDispatcher::OnRegisterRegionComplete(int thread_id,
   blink::WebGeofencingCallbacks* callbacks =
       region_registration_requests_.Lookup(request_id);
   DCHECK(callbacks);
-  if (!callbacks)
-    return;
 
   if (status == GEOFENCING_STATUS_OK) {
     callbacks->onSuccess();
@@ -168,8 +179,6 @@ void GeofencingDispatcher::OnUnregisterRegionComplete(int thread_id,
   blink::WebGeofencingCallbacks* callbacks =
       region_unregistration_requests_.Lookup(request_id);
   DCHECK(callbacks);
-  if (!callbacks)
-    return;
 
   if (status == GEOFENCING_STATUS_OK) {
     callbacks->onSuccess();
@@ -189,8 +198,6 @@ void GeofencingDispatcher::OnGetRegisteredRegionsComplete(
   blink::WebGeofencingRegionsCallbacks* callbacks =
       get_registered_regions_requests_.Lookup(request_id);
   DCHECK(callbacks);
-  if (!callbacks)
-    return;
 
   if (status == GEOFENCING_STATUS_OK) {
     scoped_ptr<blink::WebVector<blink::WebGeofencingRegistration>> result(

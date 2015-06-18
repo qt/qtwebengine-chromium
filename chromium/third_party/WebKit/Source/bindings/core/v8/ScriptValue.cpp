@@ -37,10 +37,10 @@
 
 namespace blink {
 
-v8::Handle<v8::Value> ScriptValue::v8Value() const
+v8::Local<v8::Value> ScriptValue::v8Value() const
 {
     if (isEmpty())
-        return v8::Handle<v8::Value>();
+        return v8::Local<v8::Value>();
 
     ASSERT(isolate()->InContext());
 
@@ -48,16 +48,16 @@ v8::Handle<v8::Value> ScriptValue::v8Value() const
     // from the world that created the ScriptValue.
     // Probably this could be:
     //   if (&m_scriptState->world() == &DOMWrapperWorld::current(isolate()))
-    //       return v8::Handle<v8::Value>();
+    //       return v8::Local<v8::Value>();
     // instead of triggering RELEASE_ASSERT.
     RELEASE_ASSERT(&m_scriptState->world() == &DOMWrapperWorld::current(isolate()));
     return m_value->newLocal(isolate());
 }
 
-v8::Handle<v8::Value> ScriptValue::v8ValueUnsafe() const
+v8::Local<v8::Value> ScriptValue::v8ValueUnsafe() const
 {
     if (isEmpty())
-        return v8::Handle<v8::Value>();
+        return v8::Local<v8::Value>();
     return m_value->newLocal(isolate());
 }
 
@@ -67,18 +67,16 @@ bool ScriptValue::toString(String& result) const
         return false;
 
     ScriptState::Scope scope(m_scriptState.get());
-    v8::Handle<v8::Value> string = v8Value();
+    v8::Local<v8::Value> string = v8Value();
     if (string.IsEmpty() || !string->IsString())
         return false;
-    result = toCoreString(v8::Handle<v8::String>::Cast(string));
+    result = toCoreString(v8::Local<v8::String>::Cast(string));
     return true;
 }
 
-PassRefPtr<JSONValue> ScriptValue::toJSONValue(ScriptState* scriptState) const
+ScriptValue ScriptValue::createNull(ScriptState* scriptState)
 {
-    ASSERT(scriptState->contextIsValid());
-    ScriptState::Scope scope(scriptState);
-    return v8ToJSONValue(scriptState->isolate(), v8Value(), JSONValue::maxDepth);
+    return ScriptValue(scriptState, v8::Null(scriptState->isolate()));
 }
 
 } // namespace blink

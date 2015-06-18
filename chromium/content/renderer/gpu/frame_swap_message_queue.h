@@ -13,7 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/synchronization/lock.h"
-#include "cc/base/swap_promise.h"
+#include "cc/output/swap_promise.h"
 #include "content/common/content_export.h"
 #include "content/renderer/message_delivery_policy.h"
 
@@ -52,14 +52,19 @@ class CONTENT_EXPORT FrameSwapMessageQueue
   // Returns true if there are no messages in the queue.
   bool Empty() const;
 
-  // Should be called when a successful swap occurs. The messages for that swap
-  // can be obtained by calling DrainMessages.
+  // Should be called when a successful activation occurs. The messages for
+  // that activation can be obtained by calling DrainMessages.
+  //
+  // |source_frame_number| frame number for which the activate occurred.
+  void DidActivate(int source_frame_number);
+
+  // Should be called when a successful swap occurs. The messages for that
+  // swap can be obtained by calling DrainMessages.
   //
   // |source_frame_number| frame number for which the swap occurred.
   void DidSwap(int source_frame_number);
 
-  // Should be called when we know a swap will not occur. This also means we
-  // won't be expecting a DrainMessages call.
+  // Should be called when we know a swap will not occur.
   //
   // |source_frame_number| frame number for which the swap will not occur.
   // |reason| reason for the which the swap will not occur.

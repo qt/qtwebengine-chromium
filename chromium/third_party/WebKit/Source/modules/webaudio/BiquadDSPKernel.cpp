@@ -23,14 +23,12 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/BiquadDSPKernel.h"
 
 #include "platform/FloatConversion.h"
-#include <limits.h>
 #include "wtf/Vector.h"
+#include <limits.h>
 
 namespace blink {
 
@@ -49,15 +47,15 @@ void BiquadDSPKernel::updateCoefficientsIfNecessary()
         double detune; // in Cents
 
         if (biquadProcessor()->hasSampleAccurateValues()) {
-            cutoffFrequency = biquadProcessor()->parameter1()->finalValue();
-            Q = biquadProcessor()->parameter2()->finalValue();
-            gain = biquadProcessor()->parameter3()->finalValue();
-            detune = biquadProcessor()->parameter4()->finalValue();
+            cutoffFrequency = biquadProcessor()->parameter1().finalValue();
+            Q = biquadProcessor()->parameter2().finalValue();
+            gain = biquadProcessor()->parameter3().finalValue();
+            detune = biquadProcessor()->parameter4().finalValue();
         } else {
-            cutoffFrequency = biquadProcessor()->parameter1()->smoothedValue();
-            Q = biquadProcessor()->parameter2()->smoothedValue();
-            gain = biquadProcessor()->parameter3()->smoothedValue();
-            detune = biquadProcessor()->parameter4()->smoothedValue();
+            cutoffFrequency = biquadProcessor()->parameter1().smoothedValue();
+            Q = biquadProcessor()->parameter2().smoothedValue();
+            gain = biquadProcessor()->parameter3().smoothedValue();
+            detune = biquadProcessor()->parameter4().smoothedValue();
         }
 
         updateCoefficients(cutoffFrequency, Q, gain, detune);
@@ -112,7 +110,9 @@ void BiquadDSPKernel::updateCoefficients(double cutoffFrequency, double Q, doubl
 
 void BiquadDSPKernel::process(const float* source, float* destination, size_t framesToProcess)
 {
-    ASSERT(source && destination && biquadProcessor());
+    ASSERT(source);
+    ASSERT(destination);
+    ASSERT(biquadProcessor());
 
     // Recompute filter coefficients if any of the parameters have changed.
     // FIXME: as an optimization, implement a way that a Biquad object can simply copy its internal filter coefficients from another Biquad object.
@@ -130,10 +130,7 @@ void BiquadDSPKernel::process(const float* source, float* destination, size_t fr
     m_biquad.process(source, destination, framesToProcess);
 }
 
-void BiquadDSPKernel::getFrequencyResponse(int nFrequencies,
-                                           const float* frequencyHz,
-                                           float* magResponse,
-                                           float* phaseResponse)
+void BiquadDSPKernel::getFrequencyResponse(int nFrequencies, const float* frequencyHz, float* magResponse, float* phaseResponse)
 {
     bool isGood = nFrequencies > 0 && frequencyHz && magResponse && phaseResponse;
     ASSERT(isGood);
@@ -169,10 +166,10 @@ void BiquadDSPKernel::getFrequencyResponse(int nFrequencies,
         // FIXME: Simplify this: crbug.com/390266
         MutexLocker processLocker(m_processLock);
 
-        cutoffFrequency = biquadProcessor()->parameter1()->value();
-        Q = biquadProcessor()->parameter2()->value();
-        gain = biquadProcessor()->parameter3()->value();
-        detune = biquadProcessor()->parameter4()->value();
+        cutoffFrequency = biquadProcessor()->parameter1().value();
+        Q = biquadProcessor()->parameter2().value();
+        gain = biquadProcessor()->parameter3().value();
+        detune = biquadProcessor()->parameter4().value();
     }
 
     updateCoefficients(cutoffFrequency, Q, gain, detune);

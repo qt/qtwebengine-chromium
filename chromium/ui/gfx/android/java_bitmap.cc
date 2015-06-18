@@ -9,8 +9,7 @@
 #include "base/android/jni_string.h"
 #include "base/logging.h"
 #include "jni/BitmapHelper_jni.h"
-#include "skia/ext/image_operations.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
@@ -30,6 +29,7 @@ JavaBitmap::JavaBitmap(jobject bitmap)
   size_ = gfx::Size(info.width, info.height);
   format_ = info.format;
   stride_ = info.stride;
+  byte_count_ = Java_BitmapHelper_getByteCount(AttachCurrentThread(), bitmap_);
 }
 
 JavaBitmap::~JavaBitmap() {
@@ -86,40 +86,30 @@ ScopedJavaLocalRef<jobject> ConvertToJavaBitmap(const SkBitmap* skbitmap) {
   return jbitmap;
 }
 
-SkBitmap CreateSkBitmapFromAndroidResource(const char* name, gfx::Size size) {
-  DCHECK(name);
-  DCHECK(!size.IsEmpty());
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> jname(ConvertUTF8ToJavaString(env, name));
-  base::android::ScopedJavaLocalRef<jobject> jobj =
-      Java_BitmapHelper_decodeDrawableResource(
-          env, jname.obj(), size.width(), size.height());
-
-  if (jobj.is_null())
-    return SkBitmap();
-
-  SkBitmap bitmap = CreateSkBitmapFromJavaBitmap(gfx::JavaBitmap(jobj.obj()));
-  if (bitmap.isNull())
-    return bitmap;
-
-  return skia::ImageOperations::Resize(
-      bitmap, skia::ImageOperations::RESIZE_BOX, size.width(), size.height());
-}
-
 SkBitmap CreateSkBitmapFromJavaBitmap(const JavaBitmap& jbitmap) {
-  // TODO(jdduke): Convert to DCHECK's when sufficient data has been capture for
-  // crbug.com/341406.
-  CHECK_EQ(jbitmap.format(), ANDROID_BITMAP_FORMAT_RGBA_8888);
-  CHECK(!jbitmap.size().IsEmpty());
-  CHECK_GT(jbitmap.stride(), 0U);
-  CHECK(jbitmap.pixels());
+  DCHECK(!jbitmap.size().IsEmpty());
+  DCHECK_GT(jbitmap.stride(), 0U);
+  DCHECK(jbitmap.pixels());
 
   gfx::Size src_size = jbitmap.size();
 
   SkBitmap skbitmap;
-  skbitmap.allocPixels(SkImageInfo::MakeN32Premul(src_size.width(),
-                                                  src_size.height()),
-                       jbitmap.stride());
+  switch (jbitmap.format()) {
+    case ANDROID_BITMAP_FORMAT_RGBA_8888:
+      skbitmap.allocPixels(SkImageInfo::MakeN32Premul(src_size.width(),
+                                                      src_size.height()),
+                           jbitmap.stride());
+      break;
+    case ANDROID_BITMAP_FORMAT_A_8:
+      skbitmap.allocPixels(SkImageInfo::MakeA8(src_size.width(),
+                                               src_size.height()),
+                           jbitmap.stride());
+      break;
+    default:
+      CHECK(false) << "Invalid Java bitmap format: " << jbitmap.format();
+      break;
+  }
+  CHECK_EQ(jbitmap.byte_count(), static_cast<int>(skbitmap.getSize()));
   const void* src_pixels = jbitmap.pixels();
   void* dst_pixels = skbitmap.getPixels();
   memcpy(dst_pixels, src_pixels, skbitmap.getSize());

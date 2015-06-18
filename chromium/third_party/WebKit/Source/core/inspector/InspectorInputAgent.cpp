@@ -33,13 +33,11 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/inspector/InspectorClient.h"
+#include "core/inspector/InspectorPageAgent.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "platform/JSONValues.h"
-#include "platform/PlatformKeyboardEvent.h"
-#include "platform/PlatformMouseEvent.h"
 #include "platform/PlatformTouchEvent.h"
 #include "platform/PlatformTouchPoint.h"
 #include "platform/geometry/FloatSize.h"
@@ -79,106 +77,24 @@ public:
     }
 };
 
-void ConvertInspectorPoint(blink::Page* page, const blink::IntPoint& point, blink::IntPoint* convertedPoint, blink::IntPoint* globalPoint)
+void ConvertInspectorPoint(blink::LocalFrame* frame, const blink::IntPoint& point, blink::IntPoint* convertedPoint, blink::IntPoint* globalPoint)
 {
-    *convertedPoint = page->deprecatedLocalMainFrame()->view()->convertToContainingWindow(point);
-    *globalPoint = page->chrome().rootViewToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
+    *convertedPoint = frame->view()->convertToContainingWindow(point);
+    *globalPoint = frame->page()->chrome().viewportToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
 }
 
 } // namespace
 
 namespace blink {
 
-InspectorInputAgent::InspectorInputAgent(Page* page, InspectorClient* client)
-    : InspectorBaseAgent<InspectorInputAgent>("Input")
-    , m_page(page), m_client(client)
+InspectorInputAgent::InspectorInputAgent(InspectorPageAgent* pageAgent)
+    : InspectorBaseAgent<InspectorInputAgent, InspectorFrontend::Input>("Input")
+    , m_pageAgent(pageAgent)
 {
 }
 
 InspectorInputAgent::~InspectorInputAgent()
 {
-}
-
-void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey)
-{
-    PlatformEvent::Type convertedType;
-    if (type == "keyDown")
-        convertedType = PlatformEvent::KeyDown;
-    else if (type == "keyUp")
-        convertedType = PlatformEvent::KeyUp;
-    else if (type == "char")
-        convertedType = PlatformEvent::Char;
-    else if (type == "rawKeyDown")
-        convertedType = PlatformEvent::RawKeyDown;
-    else {
-        *error = "Unrecognized type: " + type;
-        return;
-    }
-
-    PlatformKeyboardEvent event(
-        convertedType,
-        text ? *text : "",
-        unmodifiedText ? *unmodifiedText : "",
-        keyIdentifier ? *keyIdentifier : "",
-        windowsVirtualKeyCode ? *windowsVirtualKeyCode : 0,
-        nativeVirtualKeyCode ? *nativeVirtualKeyCode : 0,
-        asBool(autoRepeat),
-        asBool(isKeypad),
-        asBool(isSystemKey),
-        static_cast<PlatformEvent::Modifiers>(modifiers ? *modifiers : 0),
-        timestamp ? *timestamp : currentTime());
-    m_client->dispatchKeyEvent(event);
-}
-
-void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount)
-{
-    PlatformEvent::Type convertedType;
-    if (type == "mousePressed")
-        convertedType = PlatformEvent::MousePressed;
-    else if (type == "mouseReleased")
-        convertedType = PlatformEvent::MouseReleased;
-    else if (type == "mouseMoved")
-        convertedType = PlatformEvent::MouseMoved;
-    else {
-        *error = "Unrecognized type: " + type;
-        return;
-    }
-
-    int convertedModifiers = modifiers ? *modifiers : 0;
-
-    MouseButton convertedButton = NoButton;
-    if (button) {
-        if (*button == "left")
-            convertedButton = LeftButton;
-        else if (*button == "middle")
-            convertedButton = MiddleButton;
-        else if (*button == "right")
-            convertedButton = RightButton;
-        else if (*button != "none") {
-            *error = "Unrecognized button: " + *button;
-            return;
-        }
-    }
-
-    // Some platforms may have flipped coordinate systems, but the given coordinates
-    // assume the origin is in the top-left of the window. Convert.
-    IntPoint convertedPoint, globalPoint;
-    ConvertInspectorPoint(m_page, IntPoint(x, y), &convertedPoint, &globalPoint);
-
-    PlatformMouseEvent event(
-        convertedPoint,
-        globalPoint,
-        convertedButton,
-        convertedType,
-        clickCount ? *clickCount : 0,
-        convertedModifiers & PlatformEvent::ShiftKey,
-        convertedModifiers & PlatformEvent::CtrlKey,
-        convertedModifiers & PlatformEvent::AltKey,
-        convertedModifiers & PlatformEvent::MetaKey,
-        PlatformMouseEvent::RealOrIndistinguishable,
-        timestamp ? *timestamp : currentTime());
-
-    m_client->dispatchMouseEvent(event);
 }
 
 void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp)
@@ -200,13 +116,12 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
     SyntheticInspectorTouchEvent event(convertedType, convertedModifiers, timestamp ? *timestamp : currentTime());
 
     int autoId = 0;
-    JSONArrayBase::iterator iter;
-    for (iter = touchPoints->begin(); iter != touchPoints->end(); ++iter) {
+    for (auto& touchPoint : *touchPoints) {
         RefPtr<JSONObject> pointObj;
         String state;
         int x, y, radiusX, radiusY, id;
         double rotationAngle, force;
-        (*iter)->asObject(&pointObj);
+        touchPoint->asObject(&pointObj);
         if (!pointObj->getString("state", &state)) {
             *error = "TouchPoint missing 'state'";
             return;
@@ -258,18 +173,18 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
         // Some platforms may have flipped coordinate systems, but the given coordinates
         // assume the origin is in the top-left of the window. Convert.
         IntPoint convertedPoint, globalPoint;
-        ConvertInspectorPoint(m_page, IntPoint(x, y), &convertedPoint, &globalPoint);
+        ConvertInspectorPoint(m_pageAgent->inspectedFrame(), IntPoint(x, y), &convertedPoint, &globalPoint);
 
         SyntheticInspectorTouchPoint point(id++, convertedState, globalPoint, convertedPoint, radiusX, radiusY, rotationAngle, force);
         event.append(point);
     }
 
-    m_page->deprecatedLocalMainFrame()->eventHandler().handleTouchEvent(event);
+    m_pageAgent->inspectedFrame()->eventHandler().handleTouchEvent(event);
 }
 
-void InspectorInputAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorInputAgent)
 {
-    visitor->trace(m_page);
+    visitor->trace(m_pageAgent);
     InspectorBaseAgent::trace(visitor);
 }
 

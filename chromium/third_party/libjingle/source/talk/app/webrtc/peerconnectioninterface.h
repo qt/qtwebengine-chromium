@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -78,9 +78,11 @@
 #include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/umametrics.h"
 #include "webrtc/base/fileutils.h"
+#include "webrtc/base/network.h"
 #include "webrtc/base/socketaddress.h"
 
 namespace rtc {
+class SSLIdentity;
 class Thread;
 }
 
@@ -113,32 +115,23 @@ class StreamCollectionInterface : public rtc::RefCountInterface {
 
 class StatsObserver : public rtc::RefCountInterface {
  public:
-  // TODO(tommi): Remove.
-  virtual void OnComplete(const std::vector<StatsReport>& reports) {}
-
-  // TODO(tommi): Make pure virtual and remove implementation.
-  virtual void OnComplete(const StatsReports& reports) {
-    std::vector<StatsReportCopyable> report_copies;
-    for (size_t i = 0; i < reports.size(); ++i)
-      report_copies.push_back(StatsReportCopyable(*reports[i]));
-    std::vector<StatsReport>* r =
-        reinterpret_cast<std::vector<StatsReport>*>(&report_copies);
-     OnComplete(*r);
-   }
+  virtual void OnComplete(const StatsReports& reports) = 0;
 
  protected:
   virtual ~StatsObserver() {}
 };
 
-class UMAObserver : public rtc::RefCountInterface {
+class MetricsObserverInterface : public rtc::RefCountInterface {
  public:
-  virtual void IncrementCounter(PeerConnectionUMAMetricsCounter type) = 0;
-  virtual void AddHistogramSample(PeerConnectionUMAMetricsName type,
+  virtual void IncrementCounter(PeerConnectionMetricsCounter type) = 0;
+  virtual void AddHistogramSample(PeerConnectionMetricsName type,
                                   int value) = 0;
 
  protected:
-  virtual ~UMAObserver() {}
+  virtual ~MetricsObserverInterface() {}
 };
+
+typedef MetricsObserverInterface UMAObserver;
 
 class PeerConnectionInterface : public rtc::RefCountInterface {
  public:
@@ -189,18 +182,42 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   typedef std::vector<IceServer> IceServers;
 
   enum IceTransportsType {
+    // TODO(pthatcher): Rename these kTransporTypeXXX, but update
+    // Chromium at the same time.
     kNone,
     kRelay,
     kNoHost,
     kAll
   };
 
-  struct RTCConfiguration {
-    IceTransportsType type;
-    IceServers servers;
+  // https://tools.ietf.org/html/draft-ietf-rtcweb-jsep-08#section-4.1.1
+  enum BundlePolicy {
+    kBundlePolicyBalanced,
+    kBundlePolicyMaxBundle,
+    kBundlePolicyMaxCompat
+  };
 
-    RTCConfiguration() : type(kAll) {}
-    explicit RTCConfiguration(IceTransportsType type) : type(type) {}
+  enum TcpCandidatePolicy {
+    kTcpCandidatePolicyEnabled,
+    kTcpCandidatePolicyDisabled
+  };
+
+  struct RTCConfiguration {
+    // TODO(pthatcher): Rename this ice_transport_type, but update
+    // Chromium at the same time.
+    IceTransportsType type;
+    // TODO(pthatcher): Rename this ice_servers, but update Chromium
+    // at the same time.
+    IceServers servers;
+    BundlePolicy bundle_policy;
+    TcpCandidatePolicy tcp_candidate_policy;
+    int audio_jitter_buffer_max_packets;
+
+    RTCConfiguration()
+        : type(kAll),
+          bundle_policy(kBundlePolicyBalanced),
+          tcp_candidate_policy(kTcpCandidatePolicyEnabled),
+          audio_jitter_buffer_max_packets(50) {}
   };
 
   struct RTCOfferAnswerOptions {
@@ -417,6 +434,12 @@ class PortAllocatorFactoryInterface : public rtc::RefCountInterface {
       const std::vector<StunConfiguration>& stun_servers,
       const std::vector<TurnConfiguration>& turn_configurations) = 0;
 
+  // TODO(phoglund): Make pure virtual when Chrome's factory implements this.
+  // After this method is called, the port allocator should consider loopback
+  // network interfaces as well.
+  virtual void SetNetworkIgnoreMask(int network_ignore_mask) {
+  }
+
  protected:
   PortAllocatorFactoryInterface() {}
   ~PortAllocatorFactoryInterface() {}
@@ -426,8 +449,14 @@ class PortAllocatorFactoryInterface : public rtc::RefCountInterface {
 class DTLSIdentityRequestObserver : public rtc::RefCountInterface {
  public:
   virtual void OnFailure(int error) = 0;
+  // TODO(jiayl): Unify the OnSuccess method once Chrome code is updated.
   virtual void OnSuccess(const std::string& der_cert,
                          const std::string& der_private_key) = 0;
+  // |identity| is a scoped_ptr because rtc::SSLIdentity is not copyable and the
+  // client has to get the ownership of the object to make use of it.
+  virtual void OnSuccessWithIdentityObj(
+      rtc::scoped_ptr<rtc::SSLIdentity> identity) = 0;
+
  protected:
   virtual ~DTLSIdentityRequestObserver() {}
 };
@@ -478,14 +507,21 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
    public:
     Options() :
       disable_encryption(false),
-      disable_sctp_data_channels(false) {
+      disable_sctp_data_channels(false),
+      network_ignore_mask(rtc::kDefaultNetworkIgnoreMask) {
     }
     bool disable_encryption;
     bool disable_sctp_data_channels;
+
+    // Sets the network types to ignore. For instance, calling this with
+    // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
+    // loopback interfaces.
+    int network_ignore_mask;
   };
 
   virtual void SetOptions(const Options& options) = 0;
 
+  // This method takes the ownership of |dtls_identity_service|.
   virtual rtc::scoped_refptr<PeerConnectionInterface>
       CreatePeerConnection(
           const PeerConnectionInterface::RTCConfiguration& configuration,
@@ -502,13 +538,13 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // http://dev.w3.org/2011/webrtc/editor/webrtc.html
   inline rtc::scoped_refptr<PeerConnectionInterface>
       CreatePeerConnection(
-          const PeerConnectionInterface::IceServers& configuration,
+          const PeerConnectionInterface::IceServers& servers,
           const MediaConstraintsInterface* constraints,
           PortAllocatorFactoryInterface* allocator_factory,
           DTLSIdentityServiceInterface* dtls_identity_service,
           PeerConnectionObserver* observer) {
       PeerConnectionInterface::RTCConfiguration rtc_config;
-      rtc_config.servers = configuration;
+      rtc_config.servers = servers;
       return CreatePeerConnection(rtc_config, constraints, allocator_factory,
                                   dtls_identity_service, observer);
   }

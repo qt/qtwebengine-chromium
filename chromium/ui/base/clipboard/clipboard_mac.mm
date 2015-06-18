@@ -21,8 +21,8 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
-#include "ui/gfx/size.h"
 
 namespace ui {
 
@@ -184,7 +184,7 @@ ClipboardMac::~ClipboardMac() {
   DCHECK(CalledOnValidThread());
 }
 
-uint64 ClipboardMac::GetSequenceNumber(ClipboardType type) {
+uint64 ClipboardMac::GetSequenceNumber(ClipboardType type) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
 

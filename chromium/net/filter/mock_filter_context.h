@@ -8,7 +8,9 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "net/base/sdch_manager.h"
 #include "net/filter/filter.h"
+#include "net/log/net_log.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -22,22 +24,18 @@ class MockFilterContext : public FilterContext {
 
   void SetMimeType(const std::string& mime_type) { mime_type_ = mime_type; }
   void SetURL(const GURL& gurl) { gurl_ = gurl; }
-  void SetContentDisposition(const std::string& disposition) {
-    content_disposition_ = disposition;
-  }
   void SetRequestTime(const base::Time time) { request_time_ = time; }
   void SetCached(bool is_cached) { is_cached_content_ = is_cached; }
-  void SetDownload(bool is_download) { is_download_ = is_download; }
   void SetResponseCode(int response_code) { response_code_ = response_code; }
-  void SetSdchResponse(bool is_sdch_response) {
-    is_sdch_response_ = is_sdch_response;
+  void SetSdchResponse(scoped_ptr<SdchManager::DictionarySet> handle) {
+    dictionaries_handle_ = handle.Pass();
   }
   URLRequestContext* GetModifiableURLRequestContext() const {
     return context_.get();
   }
 
   // After a URLRequest's destructor is called, some interfaces may become
-  // unstable.  This method is used to signal that state, so we can tag use
+  // unstable. This method is used to signal that state, so we can tag use
   // of those interfaces as coding errors.
   void NukeUnstableInterfaces();
 
@@ -47,21 +45,14 @@ class MockFilterContext : public FilterContext {
   // Return false if gurl is not present.
   bool GetURL(GURL* gurl) const override;
 
-  // What Content-Disposition did the server supply for this data?
-  // Return false if Content-Disposition was not present.
-  bool GetContentDisposition(std::string* disposition) const override;
-
   // What was this data requested from a server?
   base::Time GetRequestTime() const override;
 
   // Is data supplied from cache, or fresh across the net?
   bool IsCachedContent() const override;
 
-  // Is this a download?
-  bool IsDownload() const override;
-
-  // Was this data flagged as a response to a request with an SDCH dictionary?
-  bool SdchResponseExpected() const override;
+  // Handle to dictionaries advertised.
+  SdchManager::DictionarySet* SdchDictionariesAdvertised() const override;
 
   // How many bytes were fed to filter(s) so far?
   int64 GetByteReadCount() const override;
@@ -73,18 +64,18 @@ class MockFilterContext : public FilterContext {
 
   void RecordPacketStats(StatisticSelector statistic) const override {}
 
+  const BoundNetLog& GetNetLog() const override;
+
  private:
-  int buffer_size_;
   std::string mime_type_;
-  std::string content_disposition_;
   GURL gurl_;
   base::Time request_time_;
   bool is_cached_content_;
-  bool is_download_;
-  bool is_sdch_response_;
+  scoped_ptr<SdchManager::DictionarySet> dictionaries_handle_;
   bool ok_to_call_get_url_;
   int response_code_;
   scoped_ptr<URLRequestContext> context_;
+  BoundNetLog net_log_;
 
   DISALLOW_COPY_AND_ASSIGN(MockFilterContext);
 };

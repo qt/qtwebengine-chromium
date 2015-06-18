@@ -1,3 +1,8 @@
+[![Build
+Status](https://travis-ci.org/chromium/web-page-replay.png)](https://travis-ci.org/chromium/web-page-replay)
+[![Coverage
+Status](https://coveralls.io/repos/chromium/web-page-replay/badge.svg)](https://coveralls.io/r/chromium/web-page-replay)
+
 # Web Page Replay
 Record live Web pages and use them for local performance testing!
 
@@ -11,7 +16,7 @@ the origin servers, the network, etc.
 Check out the [getting
 started](documentation/GettingStarted.md) guide or take a
 look at the [architecture
-diagram](documentation/WebPageReplatDiagram.png).
+diagram](documentation/WebPageReplayDiagram.png).
 
 ## I want to help
 If you find issues with the project, you can file issues on this repo.

@@ -8,9 +8,9 @@
 #include <set>
 #include <string>
 
-#include "base/debug/trace_event.h"
 #include "base/memory/weak_ptr.h"
-#include "content/browser/devtools/protocol/devtools_protocol_handler_impl.h"
+#include "base/trace_event/trace_event.h"
+#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
 #include "content/public/browser/tracing_controller.h"
 
 namespace base {
@@ -36,25 +36,22 @@ class TracingHandler {
   void OnTraceDataCollected(const std::string& trace_fragment);
   void OnTraceComplete();
 
-  scoped_refptr<DevToolsProtocol::Response> Start(
-      const std::string* categories,
-      const std::string* options,
-      const double* buffer_usage_reporting_interval,
-      scoped_refptr<DevToolsProtocol::Command> command);
-
-  scoped_refptr<DevToolsProtocol::Response> End(
-      scoped_refptr<DevToolsProtocol::Command> command);
-  scoped_refptr<DevToolsProtocol::Response> GetCategories(
-      scoped_refptr<DevToolsProtocol::Command> command);
+  Response Start(DevToolsCommandId command_id,
+                 const std::string* categories,
+                 const std::string* options,
+                 const double* buffer_usage_reporting_interval);
+  Response End(DevToolsCommandId command_id);
+  Response GetCategories(DevToolsCommandId command);
 
  private:
-  void OnRecordingEnabled(scoped_refptr<DevToolsProtocol::Command> command);
-  void OnBufferUsage(float usage);
+  void OnRecordingEnabled(DevToolsCommandId command_id);
+  void OnBufferUsage(float percent_full, size_t approximate_event_count);
 
-  void OnCategoriesReceived(scoped_refptr<DevToolsProtocol::Command> command,
+  void OnCategoriesReceived(DevToolsCommandId command_id,
                             const std::set<std::string>& category_set);
 
-  base::debug::TraceOptions TraceOptionsFromString(const std::string* options);
+  base::trace_event::TraceOptions TraceOptionsFromString(
+      const std::string* options);
 
   void SetupTimer(double usage_reporting_interval);
 

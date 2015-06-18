@@ -3,9 +3,11 @@
 # found in the LICENSE file.
 
 import("//build/config/allocator.gni")
+import("//build/config/chrome_build.gni")
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//build/module_args/v8.gni")
 
 declare_args() {
   # When set, turns off the (normally-on) iterator debugging and related stuff
@@ -13,11 +15,22 @@ declare_args() {
   # catching bugs but in some cases may cause conflicts or excessive slowness.
   disable_iterator_debugging = false
 
-  # Set to true to not store any build metadata (this isn't working yet but
-  # this flag will help us to get there). See http://crbug.com/314403.
-  # TODO(sebmarchand): Update this comment once this flag guarantee that
-  #     there's no build metadata in the build artifacts.
-  dont_embed_build_metadata = false
+  # Set to true to not store any build metadata, e.g. ifdef out all __DATE__
+  # and __TIME__. Set to 0 to reenable the use of these macros in the code
+  # base. See http://crbug.com/314403.
+  #
+  # Continue to embed build meta data in Official builds, basically the
+  # time it was built.
+  # TODO(maruel): This decision should be revisited because having an
+  # official deterministic build has high value too but MSVC toolset can't
+  # generate anything deterministic with WPO enabled AFAIK.
+  dont_embed_build_metadata = !is_official_build
+
+  # Set to true to enable dcheck in Release builds.
+  dcheck_always_on = false
+
+  # Set to true to compile with the OpenGL ES 2.0 conformance tests.
+  internal_gles2_conform_tests = false
 }
 
 # TODO(brettw) Most of these should be removed. Instead of global feature
@@ -28,11 +41,8 @@ declare_args() {
 #
 # For now we define these globally to match the current GYP build.
 config("feature_flags") {
-  # TODO(brettw) most of these need to be parameterized.
-  defines = [
-      "CHROMIUM_BUILD",
-      "V8_DEPRECATION_WARNINGS",  # Don't use deprecated V8 APIs anywhere.
-  ]
+  # TODO(brettw) this probably needs to be parameterized.
+  defines = [ "V8_DEPRECATION_WARNINGS" ]  # Don't use deprecated V8 APIs anywhere.
 
   if (cld_version > 0) {
     defines += [ "CLD_VERSION=$cld_version" ]
@@ -73,6 +83,9 @@ config("feature_flags") {
   if (dont_embed_build_metadata) {
     defines += [ "DONT_EMBED_BUILD_METADATA" ]
   }
+  if (dcheck_always_on) {
+    defines += [ "DCHECK_ALWAYS_ON=1" ]
+  }
   if (use_udev) {
     # TODO(brettw) should probably be "=1".
     defines += [ "USE_UDEV" ]
@@ -107,23 +120,18 @@ config("feature_flags") {
   }
   if (use_openssl) {
     defines += [ "USE_OPENSSL=1" ]
-    if (use_openssl_certs) {
-      defines += [ "USE_OPENSSL_CERTS=1" ]
-    }
-  } else if (use_nss_certs) {
-    # USE_NSS really means "use nss for certificate validation and storage"
-    # (like USE_OPENSSL_CERTS) and not "we're linking to NSS." It might be nice
-    # to rename this but we're hoping to transition away from NSS.
-    defines += [ "USE_NSS=1" ]
+  }
+  if (use_openssl_certs) {
+    defines += [ "USE_OPENSSL_CERTS=1" ]
+  }
+  if (use_nss_certs) {
+    defines += [ "USE_NSS_CERTS=1" ]
   }
   if (use_ozone) {
     defines += [ "USE_OZONE=1" ]
   }
   if (use_x11) {
     defines += [ "USE_X11=1" ]
-    if (use_xi2_mt > 0) {
-      defines += [ "USE_XI2_MT=$use_xi2_mt" ]
-    }
   }
   if (use_allocator != "tcmalloc") {
     defines += [ "NO_TCMALLOC" ]
@@ -174,8 +182,8 @@ config("feature_flags") {
   if (enable_settings_app) {
     defines += [ "ENABLE_SETTINGS_APP=1" ]
   }
-  if (enable_managed_users) {
-    defines += [ "ENABLE_MANAGED_USERS=1" ]
+  if (enable_supervised_users) {
+    defines += [ "ENABLE_SUPERVISED_USERS=1" ]
   }
   if (enable_service_discovery) {
     defines += [ "ENABLE_SERVICE_DISCOVERY=1" ]
@@ -198,14 +206,50 @@ config("feature_flags") {
   if (enable_one_click_signin) {
     defines += [ "ENABLE_ONE_CLICK_SIGNIN" ]
   }
-  if (use_athena) {
-    defines += [ "USE_ATHENA=1" ]
-  }
   if (enable_hidpi) {
     defines += [ "ENABLE_HIDPI=1" ]
   }
   if (proprietary_codecs) {
     defines += [ "USE_PROPRIETARY_CODECS" ]
+  }
+  if (enable_hangout_services_extension) {
+    defines += [ "ENABLE_HANGOUT_SERVICES_EXTENSION=1" ]
+  }
+  if (v8_use_external_startup_data) {
+    defines += [ "V8_USE_EXTERNAL_STARTUP_DATA" ]
+  }
+  if (enable_background) {
+    defines += [ "ENABLE_BACKGROUND=1" ]
+  }
+  if (enable_pre_sync_backup) {
+    defines += [ "ENABLE_PRE_SYNC_BACKUP" ]
+  }
+  if (enable_video_hole) {
+    defines += [ "VIDEO_HOLE=1" ]
+  }
+  if (safe_browsing_mode == 1) {
+    defines += [ "FULL_SAFE_BROWSING" ]
+    defines += [ "SAFE_BROWSING_CSD" ]
+    defines += [ "SAFE_BROWSING_DB_LOCAL" ]
+    defines += [ "SAFE_BROWSING_SERVICE" ]
+  } else if (safe_browsing_mode == 2) {
+    defines += [ "MOBILE_SAFE_BROWSING" ]
+    defines += [ "SAFE_BROWSING_SERVICE" ]
+  } else if (safe_browsing_mode == 3) {
+    defines += [ "MOBILE_SAFE_BROWSING" ]
+    defines += [ "SAFE_BROWSING_DB_REMOTE" ]
+    defines += [ "SAFE_BROWSING_SERVICE" ]
+  }
+  if (is_official_build) {
+    defines += [ "OFFICIAL_BUILD" ]
+  }
+  if (is_chrome_branded) {
+    defines += [ "GOOGLE_CHROME_BUILD" ]
+  } else {
+    defines += [ "CHROMIUM_BUILD" ]
+  }
+  if (enable_media_router) {
+    defines += [ "ENABLE_MEDIA_ROUTER=1" ]
   }
 }
 
@@ -218,13 +262,17 @@ config("debug") {
     "WTF_USE_DYNAMIC_ANNOTATIONS=1",
   ]
 
+  if (is_nacl) {
+    defines += [ "DYNAMIC_ANNOTATIONS_PREFIX=NACL_" ]
+  }
+
   if (is_win) {
     if (disable_iterator_debugging) {
       # Iterator debugging is enabled by the compiler on debug builds, and we
       # have to tell it to turn it off.
       defines += [ "_HAS_ITERATOR_DEBUGGING=0" ]
     }
-  } else if (is_linux && !is_android && cpu_arch == "x64" &&
+  } else if (is_linux && !is_android && current_cpu == "x64" &&
              !disable_iterator_debugging) {
     # Enable libstdc++ debugging facilities to help catch problems early, see
     # http://crbug.com/65151 .
@@ -234,9 +282,19 @@ config("debug") {
 }
 
 config("release") {
-  defines = [
-    "NDEBUG",
-  ]
+  defines = [ "NDEBUG" ]
+
+  # Sanitizers.
+  # TODO(GYP) The GYP build has "release_valgrind_build == 0" for this
+  # condition. When Valgrind is set up, we need to do the same here.
+  if (!is_tsan) {
+    defines += [ "NVALGRIND" ]
+    if (!is_nacl) {
+      # NaCl always enables dynamic annotations. Currently this value is set to
+      # 1 for all .nexes.
+      defines += [ "DYNAMIC_ANNOTATIONS_ENABLED=0" ]
+    }
+  }
 }
 
 # Default libraries ------------------------------------------------------------
@@ -271,6 +329,7 @@ config("default_libs") {
       "winmm.lib",
       "winspool.lib",
       "ws2_32.lib",
+
       # Please don't add more stuff here. We should actually be making this
       # list smaller, since all common things should be covered. If you need
       # some extra libraries, please just add a libs = [ "foo.lib" ] to your
@@ -287,7 +346,7 @@ config("default_libs") {
       #   '<!(<(android_toolchain)/*-gcc -print-libgcc-file-name)',
       "c",
       "dl",
-      "m"
+      "m",
     ]
   } else if (is_mac) {
     libs = [
@@ -308,8 +367,6 @@ config("default_libs") {
       "UIKit.framework",
     ]
   } else if (is_linux) {
-    libs = [
-      "dl",
-    ]
+    libs = [ "dl" ]
   }
 }

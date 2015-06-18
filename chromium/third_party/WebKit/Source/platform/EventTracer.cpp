@@ -38,12 +38,14 @@
 
 namespace blink {
 
-COMPILE_ASSERT(sizeof(Platform::TraceEventHandle) == sizeof(TraceEvent::TraceEventHandle), TraceEventHandle_types_must_be_compatible);
+static_assert(sizeof(Platform::TraceEventHandle) == sizeof(TraceEvent::TraceEventHandle), "TraceEventHandle types must be compatible");
+static_assert(sizeof(Platform::TraceEventAPIAtomicWord) == sizeof(TraceEvent::TraceEventAPIAtomicWord), "TraceEventAPIAtomicWord types must be compatible");
+static_assert(sizeof(TraceEvent::TraceEventAPIAtomicWord) == sizeof(const char*), "TraceEventAPIAtomicWord must be pointer-sized.");
 
 // The dummy variable is needed to avoid a crash when someone updates the state variables
 // before EventTracer::initialize() is called.
-long dummyTraceSamplingState = 0;
-long* traceSamplingState[3] = {&dummyTraceSamplingState, &dummyTraceSamplingState, &dummyTraceSamplingState };
+TraceEvent::TraceEventAPIAtomicWord dummyTraceSamplingState = 0;
+TraceEvent::TraceEventAPIAtomicWord* traceSamplingState[3] = {&dummyTraceSamplingState, &dummyTraceSamplingState, &dummyTraceSamplingState };
 
 void EventTracer::initialize()
 {
@@ -74,29 +76,25 @@ const unsigned char* EventTracer::getTraceCategoryEnabledFlag(const char* catego
 }
 
 TraceEvent::TraceEventHandle EventTracer::addTraceEvent(char phase, const unsigned char* categoryEnabledFlag,
-    const char* name, unsigned long long id, int numArgs, const char* argNames[],
-    const unsigned char argTypes[], const unsigned long long argValues[],
-    TraceEvent::ConvertableToTraceFormat* convertableValues[],
+    const char* name, unsigned long long id, double timestamp,
+    int numArgs, const char* argNames[], const unsigned char argTypes[],
+    const unsigned long long argValues[],
+    PassRefPtr<TraceEvent::ConvertableToTraceFormat> convertableValue1,
+    PassRefPtr<TraceEvent::ConvertableToTraceFormat> convertableValue2,
     unsigned char flags)
 {
     WebConvertableToTraceFormat webConvertableValues[2];
-    if (numArgs <= static_cast<int>(WTF_ARRAY_LENGTH(webConvertableValues))) {
-        for (int i = 0; i < numArgs; ++i) {
-            if (convertableValues[i])
-                webConvertableValues[i] = WebConvertableToTraceFormat(convertableValues[i]);
-        }
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-    return Platform::current()->addTraceEvent(phase, categoryEnabledFlag, name, id, numArgs, argNames, argTypes, argValues, webConvertableValues, flags);
+    webConvertableValues[0] = WebConvertableToTraceFormat(convertableValue1);
+    webConvertableValues[1] = WebConvertableToTraceFormat(convertableValue2);
+    return Platform::current()->addTraceEvent(phase, categoryEnabledFlag, name, id, timestamp, numArgs, argNames, argTypes, argValues, webConvertableValues, flags);
 }
 
 TraceEvent::TraceEventHandle EventTracer::addTraceEvent(char phase, const unsigned char* categoryEnabledFlag,
-    const char* name, unsigned long long id, int numArgs, const char** argNames,
-    const unsigned char* argTypes, const unsigned long long* argValues,
-    unsigned char flags)
+    const char* name, unsigned long long id, double timestamp,
+    int numArgs, const char** argNames, const unsigned char* argTypes,
+    const unsigned long long* argValues, unsigned char flags)
 {
-    return Platform::current()->addTraceEvent(phase, categoryEnabledFlag, name, id, numArgs, argNames, argTypes, argValues, 0, flags);
+    return Platform::current()->addTraceEvent(phase, categoryEnabledFlag, name, id, timestamp, numArgs, argNames, argTypes, argValues, 0, flags);
 }
 
 void EventTracer::updateTraceEventDuration(const unsigned char* categoryEnabledFlag, const char* name, TraceEvent::TraceEventHandle handle)

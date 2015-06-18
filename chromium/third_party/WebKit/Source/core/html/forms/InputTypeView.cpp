@@ -31,7 +31,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
 
@@ -44,7 +44,7 @@ InputTypeView::~InputTypeView()
 {
 }
 
-void InputTypeView::trace(Visitor* visitor)
+DEFINE_TRACE(InputTypeView)
 {
     visitor->trace(m_element);
 }
@@ -97,12 +97,12 @@ PassRefPtrWillBeRawPtr<HTMLFormElement> InputTypeView::formForSubmission() const
     return element().form();
 }
 
-RenderObject* InputTypeView::createRenderer(RenderStyle* style) const
+LayoutObject* InputTypeView::createLayoutObject(const ComputedStyle& style) const
 {
-    return RenderObject::createObject(&element(), style);
+    return LayoutObject::createObject(&element(), style);
 }
 
-PassRefPtr<RenderStyle> InputTypeView::customStyleForRenderer(PassRefPtr<RenderStyle> originalStyle)
+PassRefPtr<ComputedStyle> InputTypeView::customStyleForLayoutObject(PassRefPtr<ComputedStyle> originalStyle)
 {
     return originalStyle;
 }
@@ -117,7 +117,7 @@ bool InputTypeView::hasCustomFocusLogic() const
     return false;
 }
 
-void InputTypeView::handleFocusEvent(Element*, FocusType)
+void InputTypeView::handleFocusEvent(Element*, WebFocusType)
 {
 }
 
@@ -125,7 +125,7 @@ void InputTypeView::handleBlurEvent()
 {
 }
 
-void InputTypeView::handleFocusInEvent(Element*, FocusType)
+void InputTypeView::handleFocusInEvent(Element*, WebFocusType)
 {
 }
 
@@ -224,10 +224,10 @@ void InputTypeView::updatePlaceholderText()
 
 AXObject* InputTypeView::popupRootAXObject()
 {
-    return 0;
+    return nullptr;
 }
 
-void ClickHandlingState::trace(Visitor* visitor)
+DEFINE_TRACE(ClickHandlingState)
 {
     visitor->trace(checkedRadioButton);
 }

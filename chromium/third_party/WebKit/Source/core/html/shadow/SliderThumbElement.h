@@ -34,7 +34,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/html/HTMLDivElement.h"
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "wtf/Forward.h"
 
 namespace blink {
@@ -60,7 +60,7 @@ public:
 
 private:
     SliderThumbElement(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() override;
     virtual bool isDisabledFormControl() const override;
     virtual bool matchesReadOnlyPseudoClass() const override;
@@ -85,7 +85,7 @@ public:
 
 private:
     explicit SliderContainerElement(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual const AtomicString& shadowPseudoId() const override;
 };
 

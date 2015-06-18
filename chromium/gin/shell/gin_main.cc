@@ -12,8 +12,8 @@
 #include "gin/modules/console.h"
 #include "gin/modules/module_runner_delegate.h"
 #include "gin/public/isolate_holder.h"
-#include "gin/test/file_runner.h"
 #include "gin/try_catch.h"
+#include "gin/v8_initializer.h"
 
 namespace gin {
 namespace {
@@ -58,10 +58,10 @@ class GinShellRunnerDelegate : public ModuleRunnerDelegate {
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   base::i18n::InitializeICU();
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  gin::IsolateHolder::LoadV8Snapshot();
+  gin::V8Initializer::LoadV8Snapshot();
 #endif
 
   gin::IsolateHolder::Initialize(gin::IsolateHolder::kStrictMode,
@@ -78,8 +78,9 @@ int main(int argc, char** argv) {
     v8::V8::SetCaptureStackTraceForUncaughtExceptions(true);
   }
 
-  CommandLine::StringVector args = CommandLine::ForCurrentProcess()->GetArgs();
-  for (CommandLine::StringVector::const_iterator it = args.begin();
+  base::CommandLine::StringVector args =
+      base::CommandLine::ForCurrentProcess()->GetArgs();
+  for (base::CommandLine::StringVector::const_iterator it = args.begin();
        it != args.end(); ++it) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         gin::Run, runner.GetWeakPtr(), base::FilePath(*it)));

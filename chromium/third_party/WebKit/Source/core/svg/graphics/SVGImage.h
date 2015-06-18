@@ -28,14 +28,16 @@
 #define SVGImage_h
 
 #include "platform/graphics/Image.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 
 namespace blink {
 
+class Document;
 class FrameView;
 class Page;
-class RenderBox;
+class LayoutBox;
 class SVGImageChromeClient;
 class SVGImageForContainer;
 
@@ -48,7 +50,7 @@ public:
 
     static bool isInSVGImage(const Node*);
 
-    RenderBox* embeddedContentBox() const;
+    LayoutBox* embeddedContentBox() const;
 
     virtual bool isSVGImage() const override { return true; }
     virtual IntSize size() const override { return m_intrinsicSize; }
@@ -60,7 +62,7 @@ public:
     virtual void stopAnimation() override;
     virtual void resetAnimation() override;
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() override;
+    virtual bool bitmapForCurrentFrame(SkBitmap*) override;
 
     // Returns the SVG image document's frame.
     FrameView* frameView() const;
@@ -68,8 +70,13 @@ public:
     // Does the SVG image/document contain any animations?
     bool hasAnimations() const;
 
+    void updateUseCounters(Document&) const;
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "SVGImage"; }
+
 private:
-    friend class AXRenderObject;
+    friend class AXLayoutObject;
     friend class SVGImageChromeClient;
     friend class SVGImageForContainer;
 
@@ -93,10 +100,10 @@ private:
     virtual bool currentFrameKnownToBeOpaque() override { return false; }
 
     SVGImage(ImageObserver*);
-    virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, CompositeOperator, blink::WebBlendMode) override;
-    void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, CompositeOperator, blink::WebBlendMode);
+    void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, SkXfermode::Mode, RespectImageOrientationEnum) override;
+    void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, SkXfermode::Mode);
     void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
-        CompositeOperator, const FloatRect&, blink::WebBlendMode, const IntSize& repeatSpacing);
+        SkXfermode::Mode, const FloatRect&, const IntSize& repeatSpacing);
 
     OwnPtr<SVGImageChromeClient> m_chromeClient;
     OwnPtrWillBePersistent<Page> m_page;

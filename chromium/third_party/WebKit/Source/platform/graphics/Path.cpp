@@ -388,7 +388,7 @@ void Path::addEllipse(const FloatRect& rect)
     m_path.addOval(rect);
 }
 
-void Path::addRoundedRect(const RoundedRect& r)
+void Path::addRoundedRect(const FloatRoundedRect& r)
 {
     addRoundedRect(r.rect(), r.radii().topLeft(), r.radii().topRight(), r.radii().bottomLeft(), r.radii().bottomRight());
 }
@@ -431,6 +431,10 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius,
             || rect.height() < topLeftRadius.height() + bottomLeftRadius.height()
             || rect.height() < topRightRadius.height() + bottomRightRadius.height()) {
         // If all the radii cannot be accommodated, return a rect.
+        // FIXME: is this an error scenario, given that it appears the code in FloatRoundedRect::constrainRadii()
+        // should be always called first? Should we assert that this code is not reached?
+        // This fallback is very bad, since it means that radii that are just barely too big due to rounding or snapping
+        // will get completely ignored.
         addRect(rect);
         return;
     }
@@ -487,17 +491,17 @@ void Path::translate(const FloatSize& size)
 
 bool Path::subtractPath(const Path& other)
 {
-    return Op(m_path, other.m_path, kDifference_PathOp, &m_path);
+    return Op(m_path, other.m_path, kDifference_SkPathOp, &m_path);
 }
 
 bool Path::intersectPath(const Path& other)
 {
-    return Op(m_path, other.m_path, kIntersect_PathOp, &m_path);
+    return Op(m_path, other.m_path, kIntersect_SkPathOp, &m_path);
 }
 
 bool Path::unionPath(const Path& other)
 {
-    return Op(m_path, other.m_path, kUnion_PathOp, &m_path);
+    return Op(m_path, other.m_path, kUnion_SkPathOp, &m_path);
 }
 
 #if ENABLE(ASSERT)

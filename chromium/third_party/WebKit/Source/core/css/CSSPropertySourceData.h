@@ -31,6 +31,7 @@
 #ifndef CSSPropertySourceData_h
 #define CSSPropertySourceData_h
 
+#include "core/css/StyleRule.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
@@ -46,7 +47,7 @@ public:
     SourceRange(unsigned start, unsigned end);
     unsigned length() const;
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
     unsigned start;
     unsigned end;
@@ -57,12 +58,8 @@ struct CSSPropertySourceData {
 public:
     CSSPropertySourceData(const String& name, const String& value, bool important, bool disabled, bool parsedOk, const SourceRange& range);
     CSSPropertySourceData(const CSSPropertySourceData& other);
-    CSSPropertySourceData();
 
-    String toString() const;
-    unsigned hash() const;
-
-    void trace(Visitor* visitor) { visitor->trace(range); }
+    DEFINE_INLINE_TRACE() { visitor->trace(range); }
 
     String name;
     String value;
@@ -78,7 +75,12 @@ struct CSSStyleSourceData : public RefCountedWillBeGarbageCollected<CSSStyleSour
         return adoptRefWillBeNoop(new CSSStyleSourceData());
     }
 
-    void trace(Visitor* visitor) { visitor->trace(propertyData); }
+    DEFINE_INLINE_TRACE()
+    {
+#if ENABLE(OILPAN)
+        visitor->trace(propertyData);
+#endif
+    }
 
     WillBeHeapVector<CSSPropertySourceData> propertyData;
 };
@@ -89,7 +91,7 @@ public:
     CSSMediaQueryExpSourceData(const SourceRange& valueRange)
         : valueRange(valueRange) { }
 
-    void trace(Visitor* visitor) { visitor->trace(valueRange); }
+    DEFINE_INLINE_TRACE() { visitor->trace(valueRange); }
 
     SourceRange valueRange;
 };
@@ -100,7 +102,12 @@ struct CSSMediaQuerySourceData : public RefCountedWillBeGarbageCollected<CSSMedi
         return adoptRefWillBeNoop(new CSSMediaQuerySourceData());
     }
 
-    void trace(Visitor* visitor) { visitor->trace(expData); }
+    DEFINE_INLINE_TRACE()
+    {
+#if ENABLE(OILPAN)
+        visitor->trace(expData);
+#endif
+    }
 
     WillBeHeapVector<CSSMediaQueryExpSourceData> expData;
 };
@@ -111,51 +118,38 @@ struct CSSMediaSourceData : public RefCountedWillBeGarbageCollected<CSSMediaSour
         return adoptRefWillBeNoop(new CSSMediaSourceData());
     }
 
-    void trace(Visitor* visitor) { visitor->trace(queryData); }
+    DEFINE_INLINE_TRACE()
+    {
+#if ENABLE(OILPAN)
+        visitor->trace(queryData);
+#endif
+    }
 
-    WillBeHeapVector<RefPtrWillBeMember<CSSMediaQuerySourceData> > queryData;
+    WillBeHeapVector<RefPtrWillBeMember<CSSMediaQuerySourceData>> queryData;
 };
 
 struct CSSRuleSourceData;
-typedef WillBeHeapVector<RefPtrWillBeMember<CSSRuleSourceData> > RuleSourceDataList;
+typedef WillBeHeapVector<RefPtrWillBeMember<CSSRuleSourceData>> RuleSourceDataList;
 typedef WillBeHeapVector<SourceRange> SelectorRangeList;
 
 struct CSSRuleSourceData : public RefCountedWillBeGarbageCollected<CSSRuleSourceData> {
-    enum Type {
-        UNKNOWN_RULE,
-        STYLE_RULE,
-        CHARSET_RULE,
-        IMPORT_RULE,
-        MEDIA_RULE,
-        FONT_FACE_RULE,
-        PAGE_RULE,
-        KEYFRAMES_RULE,
-        VIEWPORT_RULE,
-        SUPPORTS_RULE,
-    };
-
-    static PassRefPtrWillBeRawPtr<CSSRuleSourceData> create(Type type)
+    static PassRefPtrWillBeRawPtr<CSSRuleSourceData> create(StyleRule::Type type)
     {
         return adoptRefWillBeNoop(new CSSRuleSourceData(type));
     }
 
-    static PassRefPtrWillBeRawPtr<CSSRuleSourceData> createUnknown()
-    {
-        return adoptRefWillBeNoop(new CSSRuleSourceData(UNKNOWN_RULE));
-    }
-
-    CSSRuleSourceData(Type type)
+    CSSRuleSourceData(StyleRule::Type type)
         : type(type)
     {
-        if (type == STYLE_RULE || type == FONT_FACE_RULE || type == PAGE_RULE)
+        if (type == StyleRule::Style || type == StyleRule::FontFace || type == StyleRule::Page)
             styleSourceData = CSSStyleSourceData::create();
-        if (type == MEDIA_RULE || type == IMPORT_RULE)
+        if (type == StyleRule::Media || type == StyleRule::Import)
             mediaSourceData = CSSMediaSourceData::create();
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
-    Type type;
+    StyleRule::Type type;
 
     // Range of the selector list in the enclosing source.
     SourceRange ruleHeaderRange;

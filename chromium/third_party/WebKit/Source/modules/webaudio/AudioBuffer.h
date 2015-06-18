@@ -31,7 +31,7 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMTypedArray.h"
-#include "wtf/Float32Array.h"
+#include "modules/ModulesExport.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -41,7 +41,7 @@ namespace blink {
 class AudioBus;
 class ExceptionState;
 
-class AudioBuffer : public GarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
+class MODULES_EXPORT AudioBuffer : public GarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static AudioBuffer* create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
@@ -60,12 +60,20 @@ public:
     // Channel data access
     unsigned numberOfChannels() const { return m_channels.size(); }
     PassRefPtr<DOMFloat32Array> getChannelData(unsigned channelIndex, ExceptionState&);
-    Float32Array* getChannelData(unsigned channelIndex);
+    DOMFloat32Array* getChannelData(unsigned channelIndex);
+    void copyFromChannel(DOMFloat32Array*, long channelNumber, ExceptionState&);
+    void copyFromChannel(DOMFloat32Array*, long channelNumber, unsigned long startInChannel, ExceptionState&);
+    void copyToChannel(DOMFloat32Array*, long channelNumber, ExceptionState&);
+    void copyToChannel(DOMFloat32Array*, long channelNumber, unsigned long startInChannel, ExceptionState&);
+
     void zero();
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
-    virtual v8::Handle<v8::Object> associateWithWrapper(const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper, v8::Isolate*) override;
+    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override;
+
+private:
+    static PassRefPtr<DOMFloat32Array> createFloat32ArrayOrNull(size_t length);
 
 protected:
     AudioBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
@@ -75,7 +83,7 @@ protected:
     float m_sampleRate;
     size_t m_length;
 
-    Vector<RefPtr<Float32Array> > m_channels;
+    Vector<RefPtr<DOMFloat32Array>> m_channels;
 };
 
 } // namespace blink

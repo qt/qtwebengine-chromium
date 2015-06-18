@@ -40,12 +40,11 @@ enum DrawOps {
     kClipRRect_DrawOp,
     kConcat_DrawOp,
     kDrawBitmap_DrawOp,
-    kDrawBitmapMatrix_DrawOp,
     kDrawBitmapNine_DrawOp,
     kDrawBitmapRectToRect_DrawOp,
-    kDrawClear_DrawOp,
-    kDrawData_DrawOp,
     kDrawDRRect_DrawOp,
+    kDrawImage_DrawOp,
+    kDrawImageRect_DrawOp,
     kDrawOval_DrawOp,
     kDrawPaint_DrawOp,
     kDrawPatch_DrawOp,
@@ -82,6 +81,7 @@ enum DrawOps {
     // these are signals to playback, not drawing verbs
     kReportFlags_DrawOp,
     kShareBitmapHeap_DrawOp,
+    kShareImageHeap_DrawOp,
     kDone_DrawOp,
 };
 
@@ -136,9 +136,6 @@ enum {
     kSaveLayer_HasPaint_DrawOpFlag = 1 << 1,
 };
 enum {
-    kClear_HasColor_DrawOpFlag  = 1 << 0
-};
-enum {
     kDrawTextOnPath_HasMatrix_DrawOpFlag = 1 << 0
 };
 enum {
@@ -147,6 +144,7 @@ enum {
     kDrawVertices_HasIndices_DrawOpFlag  = 1 << 2,
     kDrawVertices_HasXfermode_DrawOpFlag = 1 << 3,
 };
+// These are shared between drawbitmap and drawimage
 enum {
     kDrawBitmap_HasPaint_DrawOpFlag   = 1 << 0,
     // Specific to drawBitmapRect, but needs to be different from HasPaint,
@@ -218,6 +216,22 @@ static inline bool shouldFlattenBitmaps(uint32_t flags) {
     return SkToBool(flags & SkGPipeWriter::kCrossProcess_Flag
             && !(flags & SkGPipeWriter::kSharedAddressSpace_Flag));
 }
+
+class SkImageHeap : public SkRefCnt {
+public:
+    SkImageHeap();
+    virtual ~SkImageHeap();
+
+    // slot must be "valid" -- 0 is never valid
+    const SkImage* get(int32_t slot) const;
+    // returns 0 if not found, else returns slot
+    int32_t find(const SkImage*) const;
+    // returns non-zero value for where the image was stored
+    int32_t insert(const SkImage*);
+
+private:
+    SkTDArray<const SkImage*> fArray;
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 

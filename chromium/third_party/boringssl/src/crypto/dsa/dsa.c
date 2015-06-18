@@ -59,16 +59,23 @@
 
 #include <openssl/dsa.h>
 
+#include <string.h>
+
 #include <openssl/asn1.h>
 #include <openssl/dh.h>
 #include <openssl/engine.h>
 #include <openssl/err.h>
 #include <openssl/ex_data.h>
 #include <openssl/mem.h>
+#include <openssl/thread.h>
 
 #include "internal.h"
+#include "../internal.h"
+
 
 extern const DSA_METHOD DSA_default_method;
+
+static CRYPTO_EX_DATA_CLASS g_ex_data_class = CRYPTO_EX_DATA_CLASS_INIT;
 
 DSA *DSA_new(void) { return DSA_new_method(NULL); }
 
@@ -93,14 +100,16 @@ DSA *DSA_new_method(const ENGINE *engine) {
   dsa->write_params = 1;
   dsa->references = 1;
 
-  if (!CRYPTO_new_ex_data(CRYPTO_EX_INDEX_DSA, dsa, &dsa->ex_data)) {
+  CRYPTO_MUTEX_init(&dsa->method_mont_p_lock);
+
+  if (!CRYPTO_new_ex_data(&g_ex_data_class, dsa, &dsa->ex_data)) {
     METHOD_unref(dsa->meth);
     OPENSSL_free(dsa);
     return NULL;
   }
 
   if (dsa->meth->init && !dsa->meth->init(dsa)) {
-    CRYPTO_free_ex_data(CRYPTO_EX_INDEX_DSA, dsa, &dsa->ex_data);
+    CRYPTO_free_ex_data(&g_ex_data_class, dsa, &dsa->ex_data);
     METHOD_unref(dsa->meth);
     OPENSSL_free(dsa);
     return NULL;
@@ -123,22 +132,16 @@ void DSA_free(DSA *dsa) {
   }
   METHOD_unref(dsa->meth);
 
-  CRYPTO_free_ex_data(CRYPTO_EX_INDEX_DSA, dsa, &dsa->ex_data);
+  CRYPTO_free_ex_data(&g_ex_data_class, dsa, &dsa->ex_data);
 
-  if (dsa->p != NULL)
-    BN_clear_free(dsa->p);
-  if (dsa->q != NULL)
-    BN_clear_free(dsa->q);
-  if (dsa->g != NULL)
-    BN_clear_free(dsa->g);
-  if (dsa->pub_key != NULL)
-    BN_clear_free(dsa->pub_key);
-  if (dsa->priv_key != NULL)
-    BN_clear_free(dsa->priv_key);
-  if (dsa->kinv != NULL)
-    BN_clear_free(dsa->kinv);
-  if (dsa->r != NULL)
-    BN_clear_free(dsa->r);
+  BN_clear_free(dsa->p);
+  BN_clear_free(dsa->q);
+  BN_clear_free(dsa->g);
+  BN_clear_free(dsa->pub_key);
+  BN_clear_free(dsa->priv_key);
+  BN_clear_free(dsa->kinv);
+  BN_clear_free(dsa->r);
+  CRYPTO_MUTEX_cleanup(&dsa->method_mont_p_lock);
   OPENSSL_free(dsa);
 }
 
@@ -181,12 +184,8 @@ void DSA_SIG_free(DSA_SIG *sig) {
     return;
   }
 
-  if (sig->r) {
-    BN_free(sig->r);
-  }
-  if (sig->s) {
-    BN_free(sig->s);
-  }
+  BN_free(sig->r);
+  BN_free(sig->s);
   OPENSSL_free(sig);
 }
 
@@ -199,20 +198,11 @@ DSA_SIG *DSA_do_sign(const uint8_t *digest, size_t digest_len, DSA *dsa) {
 
 int DSA_do_verify(const uint8_t *digest, size_t digest_len, DSA_SIG *sig,
                   const DSA *dsa) {
-  int valid, ret;
-
-  if (dsa->meth->verify) {
-    ret = dsa->meth->verify(&valid, digest, digest_len, sig, dsa);
-  } else {
-    ret = DSA_default_method.verify(&valid, digest, digest_len, sig, dsa);
-  }
-
-  if (!ret) {
+  int valid;
+  if (!DSA_do_check_signature(&valid, digest, digest_len, sig, dsa)) {
     return -1;
-  } else if (!valid) {
-    return 0;
   }
-  return 1;
+  return valid;
 }
 
 int DSA_do_check_signature(int *out_valid, const uint8_t *digest,
@@ -241,29 +231,11 @@ int DSA_sign(int type, const uint8_t *digest, size_t digest_len,
 
 int DSA_verify(int type, const uint8_t *digest, size_t digest_len,
                const uint8_t *sig, size_t sig_len, const DSA *dsa) {
-  DSA_SIG *s = NULL;
-  int ret = -1, valid;
-
-  s = DSA_SIG_new();
-  if (s == NULL) {
-    goto err;
+  int valid;
+  if (!DSA_check_signature(&valid, digest, digest_len, sig, sig_len, dsa)) {
+    return -1;
   }
-
-  if (d2i_DSA_SIG(&s, &sig, sig_len) == NULL) {
-    goto err;
-  }
-
-  if (!DSA_do_check_signature(&valid, digest, digest_len, s, dsa)) {
-    goto err;
-  }
-
-  ret = valid;
-
-err:
-  if (s) {
-    DSA_SIG_free(s);
-  }
-  return ret;
+  return valid;
 }
 
 int DSA_check_signature(int *out_valid, const uint8_t *digest,
@@ -271,22 +243,29 @@ int DSA_check_signature(int *out_valid, const uint8_t *digest,
                         const DSA *dsa) {
   DSA_SIG *s = NULL;
   int ret = 0;
+  uint8_t *der = NULL;
 
   s = DSA_SIG_new();
   if (s == NULL) {
     goto err;
   }
 
-  if (d2i_DSA_SIG(&s, &sig, sig_len) == NULL) {
+  const uint8_t *sigp = sig;
+  if (d2i_DSA_SIG(&s, &sigp, sig_len) == NULL || sigp != sig + sig_len) {
+    goto err;
+  }
+
+  /* Ensure that the signature uses DER and doesn't have trailing garbage. */
+  int der_len = i2d_DSA_SIG(s, &der);
+  if (der_len < 0 || (size_t)der_len != sig_len || memcmp(sig, der, sig_len)) {
     goto err;
   }
 
   ret = DSA_do_check_signature(out_valid, digest, digest_len, s, dsa);
 
 err:
-  if (s) {
-    DSA_SIG_free(s);
-  }
+  OPENSSL_free(der);
+  DSA_SIG_free(s);
   return ret;
 }
 
@@ -322,8 +301,12 @@ int DSA_sign_setup(const DSA *dsa, BN_CTX *ctx, BIGNUM **out_kinv,
 
 int DSA_get_ex_new_index(long argl, void *argp, CRYPTO_EX_new *new_func,
                          CRYPTO_EX_dup *dup_func, CRYPTO_EX_free *free_func) {
-  return CRYPTO_get_ex_new_index(CRYPTO_EX_INDEX_DSA, argl, argp, new_func,
-                                 dup_func, free_func);
+  int index;
+  if (!CRYPTO_get_ex_new_index(&g_ex_data_class, &index, argl, argp, new_func,
+                               dup_func, free_func)) {
+    return -1;
+  }
+  return index;
 }
 
 int DSA_set_ex_data(DSA *d, int idx, void *arg) {
@@ -360,8 +343,6 @@ DH *DSA_dup_DH(const DSA *r) {
   return ret;
 
 err:
-  if (ret != NULL) {
-    DH_free(ret);
-  }
+  DH_free(ret);
   return NULL;
 }

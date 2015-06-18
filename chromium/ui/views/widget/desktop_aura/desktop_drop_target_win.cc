@@ -4,6 +4,7 @@
 
 #include "ui/views/widget/desktop_aura/desktop_drop_target_win.h"
 
+#include "base/metrics/histogram.h"
 #include "base/win/win_util.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
@@ -14,9 +15,34 @@
 #include "ui/wm/public/drag_drop_client.h"
 #include "ui/wm/public/drag_drop_delegate.h"
 
+using aura::client::DragDropClient;
 using aura::client::DragDropDelegate;
 using ui::OSExchangeData;
 using ui::OSExchangeDataProviderWin;
+
+namespace {
+
+int ConvertKeyStateToAuraEventFlags(DWORD key_state)
+{
+  int flags = 0;
+
+  if (key_state & MK_CONTROL)
+    flags |= ui::EF_CONTROL_DOWN;
+  if (key_state & MK_ALT)
+    flags |= ui::EF_ALT_DOWN;
+  if (key_state & MK_SHIFT)
+    flags |= ui::EF_SHIFT_DOWN;
+  if (key_state & MK_LBUTTON)
+    flags |= ui::EF_LEFT_MOUSE_BUTTON;
+  if (key_state & MK_MBUTTON)
+    flags |= ui::EF_MIDDLE_MOUSE_BUTTON;
+  if (key_state & MK_RBUTTON)
+    flags |= ui::EF_RIGHT_MOUSE_BUTTON;
+
+  return flags;
+}
+
+}  // namespace
 
 namespace views {
 
@@ -72,8 +98,14 @@ DWORD DesktopDropTargetWin::OnDrop(IDataObject* data_object,
   scoped_ptr<ui::DropTargetEvent> event;
   DragDropDelegate* delegate;
   Translate(data_object, key_state, position, effect, &data, &event, &delegate);
-  if (delegate)
+  if (delegate) {
     drag_operation = delegate->OnPerformDrop(*event);
+    DragDropClient* client = aura::client::GetDragDropClient(root_window_);
+    if (client && !client->IsDragDropInProgress() &&
+        drag_operation != ui::DragDropTypes::DRAG_NONE) {
+      UMA_HISTOGRAM_COUNTS("Event.DragDrop.ExternalOriginDrop", 1);
+    }
+  }
   if (target_window_) {
     target_window_->RemoveObserver(this);
     target_window_ = NULL;
@@ -124,11 +156,7 @@ void DesktopDropTargetWin::Translate(
       location,
       root_location,
       ui::DragDropTypes::DropEffectToDragOperation(effect)));
-  int flags = 0;
-  flags |= base::win::IsAltPressed() ? ui::EF_ALT_DOWN : ui::EF_NONE;
-  flags |= base::win::IsShiftPressed() ? ui::EF_SHIFT_DOWN : ui::EF_NONE;
-  flags |= base::win::IsCtrlPressed() ? ui::EF_CONTROL_DOWN : ui::EF_NONE;
-  (*event)->set_flags(flags);
+  (*event)->set_flags(ConvertKeyStateToAuraEventFlags(key_state));
   if (target_window_changed)
     (*delegate)->OnDragEntered(*event->get());
 }

@@ -23,7 +23,7 @@
 
 #include "core/svg/SVGClipPathElement.h"
 
-#include "core/rendering/svg/RenderSVGResourceClipper.h"
+#include "core/layout/svg/LayoutSVGResourceClipper.h"
 
 namespace blink {
 
@@ -34,25 +34,26 @@ inline SVGClipPathElement::SVGClipPathElement(Document& document)
     addToPropertyMap(m_clipPathUnits);
 }
 
-DEFINE_NODE_FACTORY(SVGClipPathElement)
-
-void SVGClipPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+DEFINE_TRACE(SVGClipPathElement)
 {
-    parseAttributeNew(name, value);
+    visitor->trace(m_clipPathUnits);
+    SVGGraphicsElement::trace(visitor);
 }
+
+DEFINE_NODE_FACTORY(SVGClipPathElement)
 
 void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (attrName != SVGNames::clipPathUnitsAttr) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
+    if (attrName == SVGNames::clipPathUnitsAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
+        LayoutSVGResourceContainer* layoutObject = toLayoutSVGResourceContainer(this->layoutObject());
+        if (layoutObject)
+            layoutObject->invalidateCacheAndMarkForLayout();
         return;
     }
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
-    if (renderer)
-        renderer->invalidateCacheAndMarkForLayout();
+    SVGGraphicsElement::svgAttributeChanged(attrName);
 }
 
 void SVGClipPathElement::childrenChanged(const ChildrenChange& change)
@@ -62,13 +63,13 @@ void SVGClipPathElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
-        object->setNeedsLayoutAndFullPaintInvalidation();
+    if (LayoutObject* object = layoutObject())
+        object->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::ChildChanged);
 }
 
-RenderObject* SVGClipPathElement::createRenderer(RenderStyle*)
+LayoutObject* SVGClipPathElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGResourceClipper(this);
+    return new LayoutSVGResourceClipper(this);
 }
 
 }

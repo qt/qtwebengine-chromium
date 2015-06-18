@@ -11,7 +11,7 @@
 #include "ui/aura/aura_export.h"
 #include "ui/events/event_handler.h"
 #include "ui/events/event_target.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace ui {
 class ContextFactory;
@@ -37,6 +37,7 @@ class AURA_EXPORT Env : public ui::EventTarget, public base::SupportsUserData {
   // nativeviewportservice lives in the same process as the viewmanager.
   static void CreateInstance(bool create_event_source);
   static Env* GetInstance();
+  static Env* GetInstanceDontCreate();
   static void DeleteInstance();
 
   void AddObserver(EnvObserver* observer);

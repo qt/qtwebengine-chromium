@@ -49,7 +49,7 @@ class DeviceInfoSetTraits {
 };
 
 typedef base::win::GenericScopedHandle<DeviceInfoSetTraits,
-                                       base::win::VerifierTraits>
+                                       base::win::DummyVerifierTraits>
     ScopedDeviceInfoSetHandle;
 
 bool StringToBluetoothAddress(const std::string& value,
@@ -595,6 +595,9 @@ DevicePropertyValue::DevicePropertyValue(DEVPROPTYPE property_type,
     : property_type_(property_type),
       value_(value.Pass()),
       value_size_(value_size) {
+}
+
+DevicePropertyValue::~DevicePropertyValue() {
 }
 
 uint32_t DevicePropertyValue::AsUint32() const {

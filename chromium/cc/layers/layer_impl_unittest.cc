@@ -5,6 +5,7 @@
 #include "cc/layers/layer_impl.h"
 
 #include "cc/layers/painted_scrollbar_layer_impl.h"
+#include "cc/layers/solid_color_scrollbar_layer_impl.h"
 #include "cc/output/filter_operation.h"
 #include "cc/output/filter_operations.h"
 #include "cc/test/fake_impl_proxy.h"
@@ -12,8 +13,10 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
+#include "cc/trees/tree_synchronizer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
@@ -85,7 +88,7 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   // Create a simple LayerImpl tree:
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
   EXPECT_TRUE(host_impl.InitializeRenderer(FakeOutputSurface::Create3d()));
   scoped_ptr<LayerImpl> root_clip =
       LayerImpl::Create(host_impl.active_tree(), 1);
@@ -99,6 +102,7 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   std::set<LayerImpl*>* scroll_children = new std::set<LayerImpl*>();
   scroll_children->insert(scroll_child);
   scroll_children->insert(root);
+  root->SetHasRenderSurface(true);
 
   scoped_ptr<LayerImpl> clip_parent =
       LayerImpl::Create(host_impl.active_tree(), 5);
@@ -160,8 +164,8 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
       root->SetDoubleSided(false));  // constructor initializes it to "true".
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->ScrollBy(arbitrary_vector2d));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetScrollDelta(gfx::Vector2d()));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
-      root->SetScrollOffset(gfx::ScrollOffset(arbitrary_vector2d)));
+  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->PushScrollOffsetFromMainThread(
+      gfx::ScrollOffset(arbitrary_vector2d)));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetHideLayerAndSubtree(true));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetOpacity(arbitrary_number));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetBlendMode(arbitrary_blend_mode));
@@ -220,7 +224,8 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetScrollDelta(gfx::Vector2d()));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetScrollOffset(gfx::ScrollOffset(arbitrary_vector2d)));
+      root->PushScrollOffsetFromMainThread(
+          gfx::ScrollOffset(arbitrary_vector2d)));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetContentBounds(arbitrary_size));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
@@ -246,11 +251,12 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
 TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
   EXPECT_TRUE(host_impl.InitializeRenderer(FakeOutputSurface::Create3d()));
   host_impl.active_tree()->SetRootLayer(
       LayerImpl::Create(host_impl.active_tree(), 1));
   LayerImpl* root = host_impl.active_tree()->root_layer();
+  root->SetHasRenderSurface(true);
   scoped_ptr<LayerImpl> layer_ptr =
       LayerImpl::Create(host_impl.active_tree(), 2);
   LayerImpl* layer = layer_ptr.get();
@@ -274,6 +280,14 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   arbitrary_filters.Append(FilterOperation::CreateOpacityFilter(0.5f));
   SkXfermode::Mode arbitrary_blend_mode = SkXfermode::kMultiply_Mode;
 
+  // Render surface functions.
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetHasRenderSurface(true));
+  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetHasRenderSurface(true));
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetHasRenderSurface(false));
+  // Create a render surface, because we must have a render surface if we have
+  // filters.
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetHasRenderSurface(true));
+
   // Related filter functions.
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetFilters(arbitrary_filters));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetFilters(arbitrary_filters));
@@ -291,10 +305,10 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
       layer->SetScrollDelta(arbitrary_vector2d));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetScrollDelta(arbitrary_vector2d));
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetScrollOffset(gfx::ScrollOffset(arbitrary_vector2d)));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetScrollOffset(gfx::ScrollOffset(arbitrary_vector2d)));
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->PushScrollOffsetFromMainThread(
+      gfx::ScrollOffset(arbitrary_vector2d)));
+  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->PushScrollOffsetFromMainThread(
+      gfx::ScrollOffset(arbitrary_vector2d)));
 
   // Unrelated functions, always set to new values, always set needs update.
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
@@ -355,7 +369,7 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
 TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
   EXPECT_TRUE(host_impl.InitializeRenderer(FakeOutputSurface::Create3d()));
   scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
 
@@ -386,7 +400,7 @@ TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
 TEST(LayerImplTest, TransformInvertibility) {
   FakeImplProxy proxy;
   TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager, nullptr);
 
   scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
   EXPECT_TRUE(layer->transform().IsInvertible());
@@ -416,7 +430,11 @@ TEST(LayerImplTest, TransformInvertibility) {
 class LayerImplScrollTest : public testing::Test {
  public:
   LayerImplScrollTest()
-      : host_impl_(settings(), &proxy_, &shared_bitmap_manager_), root_id_(7) {
+      : host_impl_(settings(),
+                   &proxy_,
+                   &shared_bitmap_manager_,
+                   &task_graph_runner_),
+        root_id_(7) {
     host_impl_.active_tree()->SetRootLayer(
         LayerImpl::Create(host_impl_.active_tree(), root_id_));
     host_impl_.active_tree()->root_layer()->AddChild(
@@ -447,6 +465,7 @@ class LayerImplScrollTest : public testing::Test {
  private:
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
   int root_id_;
 };
@@ -455,223 +474,71 @@ TEST_F(LayerImplScrollTest, ScrollByWithZeroOffset) {
   // Test that LayerImpl::ScrollBy only affects ScrollDelta and total scroll
   // offset is bounded by the range [0, max scroll offset].
 
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->scroll_offset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->BaseScrollOffset());
   EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->ScrollDelta());
 
   layer()->ScrollBy(gfx::Vector2dF(-100, 100));
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 80), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 80), layer()->CurrentScrollOffset());
 
-  EXPECT_VECTOR_EQ(layer()->ScrollDelta(), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->scroll_offset());
+  EXPECT_VECTOR_EQ(layer()->ScrollDelta(), layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->BaseScrollOffset());
 
   layer()->ScrollBy(gfx::Vector2dF(100, -100));
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(50, 0), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(50, 0), layer()->CurrentScrollOffset());
 
-  EXPECT_VECTOR_EQ(layer()->ScrollDelta(), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->scroll_offset());
+  EXPECT_VECTOR_EQ(layer()->ScrollDelta(), layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->BaseScrollOffset());
 }
 
 TEST_F(LayerImplScrollTest, ScrollByWithNonZeroOffset) {
   gfx::ScrollOffset scroll_offset(10, 5);
-  layer()->SetScrollOffset(scroll_offset);
+  layer()->PushScrollOffsetFromMainThread(scroll_offset);
 
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
+  EXPECT_VECTOR_EQ(scroll_offset, layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(scroll_offset, layer()->BaseScrollOffset());
   EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->ScrollDelta());
 
   layer()->ScrollBy(gfx::Vector2dF(-100, 100));
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 80), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 80), layer()->CurrentScrollOffset());
 
-  EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset,
-                                              layer()->ScrollDelta()),
-                   layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
+  EXPECT_VECTOR_EQ(
+      gfx::ScrollOffsetWithDelta(scroll_offset, layer()->ScrollDelta()),
+      layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(scroll_offset, layer()->BaseScrollOffset());
 
   layer()->ScrollBy(gfx::Vector2dF(100, -100));
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(50, 0), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(50, 0), layer()->CurrentScrollOffset());
 
-  EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset,
-                                              layer()->ScrollDelta()),
-                   layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
+  EXPECT_VECTOR_EQ(
+      gfx::ScrollOffsetWithDelta(scroll_offset, layer()->ScrollDelta()),
+      layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(scroll_offset, layer()->BaseScrollOffset());
 }
 
-class ScrollDelegateIgnore : public LayerImpl::ScrollOffsetDelegate {
- public:
-  void SetTotalScrollOffset(const gfx::ScrollOffset& new_value) override {
-    last_attempted_set_offset_ = new_value;
-  }
-  gfx::ScrollOffset last_attempted_set_offset() const {
-    return last_attempted_set_offset_;
-  }
-
-  gfx::ScrollOffset GetTotalScrollOffset() override {
-    return gfx::ScrollOffset(fixed_offset_);
-  }
-  bool IsExternalFlingActive() const override { return false; }
-  void Update() const override { }
-
-  void set_fixed_offset(const gfx::Vector2dF& fixed_offset) {
-    fixed_offset_ = fixed_offset;
-  }
-
- private:
-  gfx::ScrollOffset last_attempted_set_offset_;
-  gfx::Vector2dF fixed_offset_;
-};
-
-TEST_F(LayerImplScrollTest, ScrollByWithIgnoringDelegate) {
-  gfx::ScrollOffset scroll_offset(10, 5);
-  layer()->SetScrollOffset(scroll_offset);
-
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->ScrollDelta());
-
-  ScrollDelegateIgnore delegate;
-  gfx::Vector2dF fixed_offset(32, 12);
-  delegate.set_fixed_offset(fixed_offset);
-  layer()->SetScrollOffsetDelegate(&delegate);
-
-  EXPECT_VECTOR_EQ(fixed_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-
-  layer()->ScrollBy(gfx::Vector2dF(-100, 100));
-
-  EXPECT_VECTOR_EQ(fixed_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-
-  layer()->SetScrollOffsetDelegate(nullptr);
-
-  EXPECT_VECTOR_EQ(fixed_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-
-  gfx::Vector2dF scroll_delta(1, 1);
-  layer()->ScrollBy(scroll_delta);
-
-  EXPECT_VECTOR_EQ(fixed_offset + scroll_delta, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-}
-
-class ScrollDelegateAccept : public LayerImpl::ScrollOffsetDelegate {
- public:
-  void SetTotalScrollOffset(const gfx::ScrollOffset& new_value) override {
-    current_offset_ = new_value;
-  }
-  gfx::ScrollOffset GetTotalScrollOffset() override { return current_offset_; }
-  bool IsExternalFlingActive() const override { return false; }
-  void Update() const override { }
-
- private:
-  gfx::ScrollOffset current_offset_;
-};
-
-TEST_F(LayerImplScrollTest, ScrollByWithAcceptingDelegate) {
-  gfx::ScrollOffset scroll_offset(10, 5);
-  layer()->SetScrollOffset(scroll_offset);
-
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->ScrollDelta());
-
-  ScrollDelegateAccept delegate;
-  layer()->SetScrollOffsetDelegate(&delegate);
-
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(), layer()->ScrollDelta());
-
-  layer()->ScrollBy(gfx::Vector2dF(-100, 100));
-
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 80), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-
-  layer()->SetScrollOffsetDelegate(nullptr);
-
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 80), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-
-  gfx::Vector2dF scroll_delta(1, 1);
-  layer()->ScrollBy(scroll_delta);
-
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(1, 80), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-}
-
-TEST_F(LayerImplScrollTest, ApplySentScrollsNoDelegate) {
+TEST_F(LayerImplScrollTest, ApplySentScrollsNoListener) {
   gfx::ScrollOffset scroll_offset(10, 5);
   gfx::Vector2dF scroll_delta(20.5f, 8.5f);
   gfx::Vector2d sent_scroll_delta(12, -3);
 
-  layer()->SetScrollOffset(scroll_offset);
-  layer()->ScrollBy(scroll_delta);
-  layer()->SetSentScrollDelta(sent_scroll_delta);
+  layer()->PushScrollOffsetFromMainThread(scroll_offset);
+  layer()->ScrollBy(sent_scroll_delta);
+  layer()->PullDeltaForMainThread();
+  layer()->SetCurrentScrollOffset(scroll_offset +
+                                  gfx::ScrollOffset(scroll_delta));
 
   EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, scroll_delta),
-                   layer()->TotalScrollOffset());
+                   layer()->CurrentScrollOffset());
   EXPECT_VECTOR_EQ(scroll_delta, layer()->ScrollDelta());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(sent_scroll_delta, layer()->sent_scroll_delta());
+  EXPECT_VECTOR_EQ(scroll_offset, layer()->BaseScrollOffset());
 
   layer()->ApplySentScrollDeltasFromAbortedCommit();
 
   EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, scroll_delta),
-                   layer()->TotalScrollOffset());
+                   layer()->CurrentScrollOffset());
   EXPECT_VECTOR_EQ(scroll_delta - sent_scroll_delta, layer()->ScrollDelta());
   EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, sent_scroll_delta),
-                   layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(gfx::Vector2d(), layer()->sent_scroll_delta());
-}
-
-TEST_F(LayerImplScrollTest, ApplySentScrollsWithIgnoringDelegate) {
-  gfx::ScrollOffset scroll_offset(10, 5);
-  gfx::Vector2d sent_scroll_delta(12, -3);
-  gfx::Vector2dF fixed_offset(32, 12);
-
-  layer()->SetScrollOffset(scroll_offset);
-  ScrollDelegateIgnore delegate;
-  delegate.set_fixed_offset(fixed_offset);
-  layer()->SetScrollOffsetDelegate(&delegate);
-  layer()->SetSentScrollDelta(sent_scroll_delta);
-
-  EXPECT_VECTOR_EQ(fixed_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(sent_scroll_delta, layer()->sent_scroll_delta());
-
-  layer()->ApplySentScrollDeltasFromAbortedCommit();
-
-  EXPECT_VECTOR_EQ(fixed_offset, delegate.last_attempted_set_offset());
-
-  EXPECT_VECTOR_EQ(fixed_offset, layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, sent_scroll_delta),
-                   layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(gfx::Vector2d(), layer()->sent_scroll_delta());
-}
-
-TEST_F(LayerImplScrollTest, ApplySentScrollsWithAcceptingDelegate) {
-  gfx::ScrollOffset scroll_offset(10, 5);
-  gfx::Vector2d sent_scroll_delta(12, -3);
-  gfx::Vector2dF scroll_delta(20.5f, 8.5f);
-
-  layer()->SetScrollOffset(scroll_offset);
-  ScrollDelegateAccept delegate;
-  layer()->SetScrollOffsetDelegate(&delegate);
-  layer()->ScrollBy(scroll_delta);
-  layer()->SetSentScrollDelta(sent_scroll_delta);
-
-  EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, scroll_delta),
-                   layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(sent_scroll_delta, layer()->sent_scroll_delta());
-
-  layer()->ApplySentScrollDeltasFromAbortedCommit();
-
-  EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, scroll_delta),
-                   layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, sent_scroll_delta),
-                   layer()->scroll_offset());
-  EXPECT_VECTOR_EQ(gfx::Vector2d(), layer()->sent_scroll_delta());
+                   layer()->BaseScrollOffset());
 }
 
 TEST_F(LayerImplScrollTest, ScrollUserUnscrollableLayer) {
@@ -679,41 +546,41 @@ TEST_F(LayerImplScrollTest, ScrollUserUnscrollableLayer) {
   gfx::Vector2dF scroll_delta(20.5f, 8.5f);
 
   layer()->set_user_scrollable_vertical(false);
-  layer()->SetScrollOffset(scroll_offset);
+  layer()->PushScrollOffsetFromMainThread(scroll_offset);
   gfx::Vector2dF unscrolled = layer()->ScrollBy(scroll_delta);
 
   EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 8.5f), unscrolled);
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(30.5f, 5), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(30.5f, 5), layer()->CurrentScrollOffset());
 }
 
-TEST_F(LayerImplScrollTest, PushPropertiesToMirrorsTotalScrollOffset) {
+TEST_F(LayerImplScrollTest, PushPropertiesToMirrorsCurrentScrollOffset) {
   gfx::ScrollOffset scroll_offset(10, 5);
   gfx::Vector2dF scroll_delta(12, 18);
 
   host_impl().CreatePendingTree();
 
-  layer()->SetScrollOffset(scroll_offset);
+  layer()->PushScrollOffsetFromMainThread(scroll_offset);
   gfx::Vector2dF unscrolled = layer()->ScrollBy(scroll_delta);
 
   EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 0), unscrolled);
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(22, 23), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(22, 23), layer()->CurrentScrollOffset());
 
-  layer()->SetSentScrollDelta(scroll_delta);
+  layer()->PullDeltaForMainThread();
 
-  scoped_ptr<LayerImpl> pending_layer =
-      LayerImpl::Create(host_impl().sync_tree(), layer()->id());
-  pending_layer->SetScrollOffset(layer()->TotalScrollOffset());
+  scoped_ptr<LayerImpl> pending_layer = LayerImpl::Create(
+      host_impl().sync_tree(), layer()->id(), layer()->synced_scroll_offset());
+  pending_layer->PushScrollOffsetFromMainThread(layer()->CurrentScrollOffset());
 
   pending_layer->PushPropertiesTo(layer());
 
-  EXPECT_VECTOR_EQ(gfx::Vector2dF(22, 23), layer()->TotalScrollOffset());
-  EXPECT_VECTOR_EQ(layer()->TotalScrollOffset(),
-                   pending_layer->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(22, 23), layer()->CurrentScrollOffset());
+  EXPECT_VECTOR_EQ(layer()->CurrentScrollOffset(),
+                   pending_layer->CurrentScrollOffset());
 }
 
 TEST_F(LayerImplScrollTest, SetNewScrollbarParameters) {
   gfx::ScrollOffset scroll_offset(10, 5);
-  layer()->SetScrollOffset(scroll_offset);
+  layer()->PushScrollOffsetFromMainThread(scroll_offset);
 
   scoped_ptr<PaintedScrollbarLayerImpl> vertical_scrollbar(
       PaintedScrollbarLayerImpl::Create(tree(), 100, VERTICAL));
@@ -734,6 +601,136 @@ TEST_F(LayerImplScrollTest, SetNewScrollbarParameters) {
       layer()->bounds().width() - tree()->root_layer()->bounds().width();
   EXPECT_EQ(expected_horizontal_maximum, horizontal_scrollbar->maximum());
   EXPECT_EQ(scroll_offset.x(), horizontal_scrollbar->current_pos());
+}
+
+class LayerImplScrollbarSyncTest : public testing::Test {
+ public:
+  enum {
+    ROOT = 1,
+    IV_CLIP = 2,
+    PAGE = 3,
+    IV_SCROLL = 4,
+    SCROLLBAR = 5,
+    OLD_ROOT = 6,
+    OV_CLIP = 7,
+    OV_SCROLL = 8,
+  };
+  enum TreeID {
+    PENDING,
+    ACTIVE
+  };
+
+  LayerImplScrollbarSyncTest()
+      : host_impl_(settings(),
+                   &proxy_,
+                   &shared_bitmap_manager_,
+                   &task_graph_runner_) {
+    host_impl_.CreatePendingTree();
+
+    CreateLayers(host_impl_.pending_tree());
+    CreateLayers(host_impl_.active_tree());
+  }
+
+  void CreateLayers(LayerTreeImpl * tree) {
+    tree->SetRootLayer(LayerImpl::Create(tree, ROOT));
+    LayerImpl * root = tree->root_layer();
+    ASSERT_TRUE(root != nullptr);
+
+    int hierarchy[] = {IV_CLIP, PAGE, IV_SCROLL, OLD_ROOT, OV_CLIP, OV_SCROLL};
+    LayerImpl * parent = root;
+    for (int child_id : hierarchy) {
+      parent->AddChild(LayerImpl::Create(tree, child_id));
+      parent = tree->LayerById(child_id);
+      ASSERT_TRUE(parent != nullptr);
+    }
+
+    root->AddChild(
+        SolidColorScrollbarLayerImpl::Create(tree, SCROLLBAR, HORIZONTAL,
+                                             5, 5, false, true));
+  }
+
+  LayerImpl* layer(int id, TreeID tree_id) {
+    LayerTreeImpl* tree =
+        ((tree_id == PENDING) ?
+         host_impl_.pending_tree() : host_impl_.active_tree());
+
+    assert(tree);
+    return tree->LayerById(id);
+  }
+
+  bool LayerHasScrollbar(int id, TreeID tree_id) {
+    return layer(id, tree_id)->HasScrollbar(HORIZONTAL);
+  }
+
+  ScrollbarLayerImplBase* pending_scrollbar() {
+    LayerImpl* layer_impl = layer(SCROLLBAR, PENDING);
+    assert(layer_impl);
+    return layer_impl->ToScrollbarLayer();
+  }
+
+  LayerImpl* pending_root() {
+    LayerImpl * result = layer(ROOT, PENDING);
+    assert(result);
+    return result;
+  }
+
+  LayerImpl* active_root() {
+    LayerImpl * result = layer(ROOT, ACTIVE);
+    assert(result);
+    return result;
+  }
+
+  LayerTreeSettings settings() {
+    LayerTreeSettings settings;
+    settings.use_pinch_virtual_viewport = true;
+    return settings;
+  }
+
+ private:
+  FakeImplProxy proxy_;
+  TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
+  FakeLayerTreeHostImpl host_impl_;
+};
+
+TEST_F(LayerImplScrollbarSyncTest, LayerImplBecomesScrollable) {
+  // In the beginning IV_SCROLL layer is not scrollable.
+  ASSERT_FALSE(layer(IV_SCROLL, PENDING)->scrollable());
+
+  // For pinch virtual viewport the clip layer is the inner viewport
+  // clip layer (IV_CLIP) and the scroll one is the outer viewport
+  // scroll layer (OV_SCROLL).
+  pending_scrollbar()->SetScrollLayerAndClipLayerByIds(OV_SCROLL, IV_CLIP);
+
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, PENDING));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, PENDING));
+
+  // Synchronize with the active tree.
+  TreeSynchronizer::PushProperties(pending_root(), active_root());
+
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, ACTIVE));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, ACTIVE));
+
+  // Make IV_SCROLL layer scrollable.
+  layer(IV_SCROLL, PENDING)->SetScrollClipLayer(IV_CLIP);
+  layer(IV_SCROLL, PENDING)->SetNeedsPushProperties();
+  ASSERT_TRUE(layer(IV_SCROLL, PENDING)->scrollable());
+
+  pending_scrollbar()->SetScrollLayerAndClipLayerByIds(OV_SCROLL, IV_CLIP);
+
+  // Now IV_CLIP layer should also receive the scrollbar.
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, PENDING));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, PENDING));
+  ASSERT_TRUE(LayerHasScrollbar(IV_SCROLL, PENDING));
+
+  // Synchronize with the active tree.
+  TreeSynchronizer::PushProperties(pending_root(), active_root());
+
+  ASSERT_TRUE(layer(IV_SCROLL, ACTIVE)->scrollable());
+
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, ACTIVE));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, ACTIVE));
+  ASSERT_TRUE(LayerHasScrollbar(IV_SCROLL, ACTIVE));
 }
 
 }  // namespace

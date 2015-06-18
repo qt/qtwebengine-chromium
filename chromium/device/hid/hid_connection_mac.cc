@@ -10,13 +10,22 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
+#include "components/device_event_log/device_event_log.h"
 #include "device/hid/hid_connection_mac.h"
 
 namespace device {
 
+namespace {
+
+std::string HexErrorCode(IOReturn error_code) {
+  return base::StringPrintf("0x%04x", error_code);
+}
+
+}  // namespace
+
 HidConnectionMac::HidConnectionMac(
     IOHIDDeviceRef device,
-    HidDeviceInfo device_info,
+    scoped_refptr<HidDeviceInfo> device_info,
     scoped_refptr<base::SingleThreadTaskRunner> file_task_runner)
     : HidConnection(device_info),
       device_(device, base::scoped_policy::RETAIN),
@@ -27,8 +36,8 @@ HidConnectionMac::HidConnectionMac(
   IOHIDDeviceScheduleWithRunLoop(
       device_.get(), CFRunLoopGetMain(), kCFRunLoopDefaultMode);
 
-  size_t expected_report_size = device_info.max_input_report_size;
-  if (device_info.has_report_id) {
+  size_t expected_report_size = device_info->max_input_report_size();
+  if (device_info->has_report_id()) {
     expected_report_size++;
   }
   inbound_buffer_.resize(expected_report_size);
@@ -59,8 +68,7 @@ void HidConnectionMac::PlatformClose() {
       device_.get(), CFRunLoopGetMain(), kCFRunLoopDefaultMode);
   IOReturn result = IOHIDDeviceClose(device_.get(), 0);
   if (result != kIOReturnSuccess) {
-    VLOG(1) << "Failed to close HID device: "
-            << base::StringPrintf("0x%04x", result);
+    HID_LOG(EVENT) << "Failed to close HID device: " << HexErrorCode(result);
   }
 
   while (!pending_reads_.empty()) {
@@ -120,13 +128,12 @@ void HidConnectionMac::InputReportCallback(void* context,
                                            CFIndex report_length) {
   HidConnectionMac* connection = static_cast<HidConnectionMac*>(context);
   if (result != kIOReturnSuccess) {
-    VLOG(1) << "Failed to read input report: "
-            << base::StringPrintf("0x%08x", result);
+    HID_LOG(EVENT) << "Failed to read input report: " << HexErrorCode(result);
     return;
   }
 
   scoped_refptr<net::IOBufferWithSize> buffer;
-  if (connection->device_info().has_report_id) {
+  if (connection->device_info()->has_report_id()) {
     // report_id is already contained in report_bytes
     buffer = new net::IOBufferWithSize(report_length);
     memcpy(buffer->data(), report_bytes, report_length);
@@ -165,7 +172,7 @@ void HidConnectionMac::ProcessReadQueue() {
 void HidConnectionMac::GetFeatureReportAsync(uint8_t report_id,
                                              const ReadCallback& callback) {
   scoped_refptr<net::IOBufferWithSize> buffer(
-      new net::IOBufferWithSize(device_info().max_feature_report_size + 1));
+      new net::IOBufferWithSize(device_info()->max_feature_report_size() + 1));
   CFIndex report_size = buffer->size();
 
   // The IOHIDDevice object is shared with the UI thread and so this function
@@ -186,8 +193,7 @@ void HidConnectionMac::GetFeatureReportAsync(uint8_t report_id,
                    this,
                    base::Bind(callback, true, buffer, report_size)));
   } else {
-    VLOG(1) << "Failed to get feature report: "
-            << base::StringPrintf("0x%08x", result);
+    HID_LOG(EVENT) << "Failed to get feature report: " << HexErrorCode(result);
     task_runner_->PostTask(FROM_HERE,
                            base::Bind(&HidConnectionMac::ReturnAsyncResult,
                                       this,
@@ -222,7 +228,7 @@ void HidConnectionMac::SetReportAsync(IOHIDReportType report_type,
                                       this,
                                       base::Bind(callback, true)));
   } else {
-    VLOG(1) << "Failed to set report: " << base::StringPrintf("0x%08x", result);
+    HID_LOG(EVENT) << "Failed to set report: " << HexErrorCode(result);
     task_runner_->PostTask(FROM_HERE,
                            base::Bind(&HidConnectionMac::ReturnAsyncResult,
                                       this,

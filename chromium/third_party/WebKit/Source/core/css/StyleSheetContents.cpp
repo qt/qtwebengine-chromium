@@ -22,16 +22,17 @@
 #include "core/css/StyleSheetContents.h"
 
 #include "core/css/CSSStyleSheet.h"
-#include "core/css/MediaList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
+#include "core/css/StyleRuleNamespace.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/frame/UseCounter.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "platform/TraceEvent.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Deque.h"
@@ -74,7 +75,6 @@ StyleSheetContents::StyleSheetContents(StyleRuleImport* ownerRule, const String&
 StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
     : m_ownerRule(nullptr)
     , m_originalURL(o.m_originalURL)
-    , m_encodingFromCharsetRule(o.m_encodingFromCharsetRule)
     , m_importRules(o.m_importRules.size())
     , m_childRules(o.m_childRules.size())
     , m_namespaces(o.m_namespaces)
@@ -145,9 +145,8 @@ bool StyleSheetContents::isCacheable() const
 
 void StyleSheetContents::parserAppendRule(PassRefPtrWillBeRawPtr<StyleRuleBase> rule)
 {
-    ASSERT(!rule->isCharsetRule());
     if (rule->isImportRule()) {
-        // Parser enforces that @import rules come before anything else except @charset.
+        // Parser enforces that @import rules come before anything else
         ASSERT(m_childRules.isEmpty());
         StyleRuleImport* importRule = toStyleRuleImport(rule.get());
         if (importRule->mediaQueries())
@@ -158,11 +157,17 @@ void StyleSheetContents::parserAppendRule(PassRefPtrWillBeRawPtr<StyleRuleBase> 
         return;
     }
 
-    // Add warning message to inspector if dpi/dpcm values are used for screen media.
-    if (rule->isMediaRule()) {
-        setHasMediaQueries();
-        reportMediaQueryWarningIfNeeded(singleOwnerDocument(), toStyleRuleMedia(rule.get())->mediaQueries());
+    if (rule->isNamespaceRule()) {
+        ASSERT(RuntimeEnabledFeatures::newCSSParserEnabled());
+        // Parser enforces that @namespace rules come before anything else
+        ASSERT(m_childRules.isEmpty());
+        StyleRuleNamespace& namespaceRule = toStyleRuleNamespace(*rule);
+        parserAddNamespace(namespaceRule.prefix(), namespaceRule.uri());
+        return;
     }
+
+    if (rule->isMediaRule())
+        setHasMediaQueries();
 
     m_childRules.append(rule);
 }
@@ -178,31 +183,16 @@ StyleRuleBase* StyleSheetContents::ruleAt(unsigned index) const
 {
     ASSERT_WITH_SECURITY_IMPLICATION(index < ruleCount());
 
-    unsigned childVectorIndex = index;
-    if (hasCharsetRule()) {
-        if (index == 0)
-            return 0;
-        --childVectorIndex;
-    }
-    if (childVectorIndex < m_importRules.size())
-        return m_importRules[childVectorIndex].get();
+    if (index < m_importRules.size())
+        return m_importRules[index].get();
 
-    childVectorIndex -= m_importRules.size();
-    return m_childRules[childVectorIndex].get();
+    index -= m_importRules.size();
+    return m_childRules[index].get();
 }
 
 unsigned StyleSheetContents::ruleCount() const
 {
-    unsigned result = 0;
-    result += hasCharsetRule() ? 1 : 0;
-    result += m_importRules.size();
-    result += m_childRules.size();
-    return result;
-}
-
-void StyleSheetContents::clearCharsetRule()
-{
-    m_encodingFromCharsetRule = String();
+    return m_importRules.size() + m_childRules.size();
 }
 
 void StyleSheetContents::clearRules()
@@ -213,34 +203,14 @@ void StyleSheetContents::clearRules()
     }
     m_importRules.clear();
     m_childRules.clear();
-    clearCharsetRule();
-}
-
-void StyleSheetContents::parserSetEncodingFromCharsetRule(const String& encoding)
-{
-    // Parser enforces that there is ever only one @charset.
-    ASSERT(m_encodingFromCharsetRule.isNull());
-    m_encodingFromCharsetRule = encoding;
 }
 
 bool StyleSheetContents::wrapperInsertRule(PassRefPtrWillBeRawPtr<StyleRuleBase> rule, unsigned index)
 {
     ASSERT(m_isMutable);
     ASSERT_WITH_SECURITY_IMPLICATION(index <= ruleCount());
-    // Parser::parseRule doesn't currently allow @charset so we don't need to deal with it.
-    ASSERT(!rule->isCharsetRule());
 
-    unsigned childVectorIndex = index;
-    // m_childRules does not contain @charset which is always in index 0 if it exists.
-    if (hasCharsetRule()) {
-        if (childVectorIndex == 0) {
-            // Nothing can be inserted before @charset.
-            return false;
-        }
-        --childVectorIndex;
-    }
-
-    if (childVectorIndex < m_importRules.size() || (childVectorIndex == m_importRules.size() && rule->isImportRule())) {
+    if (index < m_importRules.size() || (index == m_importRules.size() && rule->isImportRule())) {
         // Inserting non-import rule before @import is not allowed.
         if (!rule->isImportRule())
             return false;
@@ -249,9 +219,9 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtrWillBeRawPtr<StyleRuleBase>
         if (importRule->mediaQueries())
             setHasMediaQueries();
 
-        m_importRules.insert(childVectorIndex, importRule);
-        m_importRules[childVectorIndex]->setParentStyleSheet(this);
-        m_importRules[childVectorIndex]->requestStyleSheet();
+        m_importRules.insert(index, importRule);
+        m_importRules[index]->setParentStyleSheet(this);
+        m_importRules[index]->requestStyleSheet();
         // FIXME: Stylesheet doesn't actually change meaningfully before the imported sheets are loaded.
         return true;
     }
@@ -262,11 +232,11 @@ bool StyleSheetContents::wrapperInsertRule(PassRefPtrWillBeRawPtr<StyleRuleBase>
     if (rule->isMediaRule())
         setHasMediaQueries();
 
-    childVectorIndex -= m_importRules.size();
+    index -= m_importRules.size();
 
     if (rule->isFontFaceRule())
         setHasFontFaceRule(true);
-    m_childRules.insert(childVectorIndex, rule);
+    m_childRules.insert(index, rule);
     return true;
 }
 
@@ -275,26 +245,18 @@ void StyleSheetContents::wrapperDeleteRule(unsigned index)
     ASSERT(m_isMutable);
     ASSERT_WITH_SECURITY_IMPLICATION(index < ruleCount());
 
-    unsigned childVectorIndex = index;
-    if (hasCharsetRule()) {
-        if (childVectorIndex == 0) {
-            clearCharsetRule();
-            return;
-        }
-        --childVectorIndex;
-    }
-    if (childVectorIndex < m_importRules.size()) {
-        m_importRules[childVectorIndex]->clearParentStyleSheet();
-        if (m_importRules[childVectorIndex]->isFontFaceRule())
-            notifyRemoveFontFaceRule(toStyleRuleFontFace(m_importRules[childVectorIndex].get()));
-        m_importRules.remove(childVectorIndex);
+    if (index < m_importRules.size()) {
+        m_importRules[index]->clearParentStyleSheet();
+        if (m_importRules[index]->isFontFaceRule())
+            notifyRemoveFontFaceRule(toStyleRuleFontFace(m_importRules[index].get()));
+        m_importRules.remove(index);
         return;
     }
-    childVectorIndex -= m_importRules.size();
+    index -= m_importRules.size();
 
-    if (m_childRules[childVectorIndex]->isFontFaceRule())
-        notifyRemoveFontFaceRule(toStyleRuleFontFace(m_childRules[childVectorIndex].get()));
-    m_childRules.remove(childVectorIndex);
+    if (m_childRules[index]->isFontFaceRule())
+        notifyRemoveFontFaceRule(toStyleRuleFontFace(m_childRules[index].get()));
+    m_childRules.remove(index);
 }
 
 void StyleSheetContents::parserAddNamespace(const AtomicString& prefix, const AtomicString& uri)
@@ -319,39 +281,32 @@ const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& p
 void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cachedStyleSheet, const SecurityOrigin* securityOrigin)
 {
     TRACE_EVENT0("blink", "StyleSheetContents::parseAuthorStyleSheet");
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseAuthorStyleSheet", "data", InspectorParseAuthorStyleSheetEvent::data(cachedStyleSheet));
 
-    bool quirksMode = isQuirksModeBehavior(m_parserContext.mode());
+    bool isSameOriginRequest = securityOrigin && securityOrigin->canRequest(baseURL());
+    CSSStyleSheetResource::MIMETypeCheck mimeTypeCheck = isQuirksModeBehavior(m_parserContext.mode()) && isSameOriginRequest ? CSSStyleSheetResource::MIMETypeCheck::Lax : CSSStyleSheetResource::MIMETypeCheck::Strict;
+    String sheetText = cachedStyleSheet->sheetText(mimeTypeCheck);
 
-    bool enforceMIMEType = !quirksMode;
-    bool hasValidMIMEType = false;
-    String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
+    const ResourceResponse& response = cachedStyleSheet->response();
+    m_sourceMapURL = response.httpHeaderField("SourceMap");
+    if (m_sourceMapURL.isEmpty()) {
+        // Try to get deprecated header.
+        m_sourceMapURL = response.httpHeaderField("X-SourceMap");
+    }
 
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
     CSSParser::parseSheet(context, this, sheetText, TextPosition::minimumPosition(), 0, true);
-
-    // If we're loading a stylesheet cross-origin, and the MIME type is not standard, require the CSS
-    // to at least start with a syntactically valid CSS rule.
-    // This prevents an attacker playing games by injecting CSS strings into HTML, XML, JSON, etc. etc.
-    if (!hasValidMIMEType && !hasSyntacticallyValidCSSHeader()) {
-        bool isCrossOriginCSS = !securityOrigin || !securityOrigin->canRequest(baseURL());
-        if (isCrossOriginCSS) {
-            clearRules();
-            return;
-        }
-    }
 }
 
-bool StyleSheetContents::parseString(const String& sheetText)
+void StyleSheetContents::parseString(const String& sheetText)
 {
-    return parseStringAtPosition(sheetText, TextPosition::minimumPosition(), false);
+    parseStringAtPosition(sheetText, TextPosition::minimumPosition(), false);
 }
 
-bool StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
+void StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
 {
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
     CSSParser::parseSheet(context, this, sheetText, startPosition, 0, createdByParser);
-
-    return true;
 }
 
 bool StyleSheetContents::isLoading() const
@@ -401,7 +356,7 @@ void StyleSheetContents::checkLoaded()
     // When a sheet is loaded it is moved from the set of loading clients
     // to the set of completed clients. We therefore need the copy in order to
     // not modify the set while iterating it.
-    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > loadingClients;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> loadingClients;
     copyToVector(m_loadingClients, loadingClients);
 
     for (unsigned i = 0; i < loadingClients.size(); ++i) {
@@ -411,7 +366,7 @@ void StyleSheetContents::checkLoaded()
         // sheetLoaded might be invoked after its owner node is removed from document.
         if (RefPtrWillBeRawPtr<Node> ownerNode = loadingClients[i]->ownerNode()) {
             if (loadingClients[i]->sheetLoaded())
-                ownerNode->notifyLoadedSheetAndAllCriticalSubresources(m_didLoadErrorOccur);
+                ownerNode->notifyLoadedSheetAndAllCriticalSubresources(m_didLoadErrorOccur ? Node::ErrorOccurredLoadingSubresource : Node::NoErrorLoadingSubresource);
         }
     }
 }
@@ -436,7 +391,7 @@ void StyleSheetContents::startLoadingDynamicSheet()
     // completed state to the loading state which modifies the set of
     // completed clients. We therefore need the copy in order to not
     // modify the set of completed clients while iterating it.
-    WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> > completedClients;
+    WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet>> completedClients;
     copyToVector(root->m_completedClients, completedClients);
     for (unsigned i = 0; i < completedClients.size(); ++i)
         completedClients[i]->startLoadingDynamicSheet();
@@ -477,7 +432,7 @@ KURL StyleSheetContents::completeURL(const String& url) const
     return m_parserContext.completeURL(url);
 }
 
-static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules)
+static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         const StyleRuleBase* rule = rules[i].get();
@@ -494,16 +449,16 @@ static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<Re
             if (childRulesHaveFailedOrCanceledSubresources(toStyleRuleMedia(rule)->childRules()))
                 return true;
             break;
+        case StyleRuleBase::Charset:
         case StyleRuleBase::Import:
+        case StyleRuleBase::Namespace:
+        case StyleRuleBase::Unknown:
             ASSERT_NOT_REACHED();
         case StyleRuleBase::Page:
         case StyleRuleBase::Keyframes:
-        case StyleRuleBase::Unknown:
-        case StyleRuleBase::Charset:
         case StyleRuleBase::Keyframe:
         case StyleRuleBase::Supports:
         case StyleRuleBase::Viewport:
-        case StyleRuleBase::Filter:
             break;
         }
     }
@@ -581,7 +536,7 @@ void StyleSheetContents::clientLoadStarted(CSSStyleSheet* sheet)
 void StyleSheetContents::removeSheetFromCache(Document* document)
 {
     ASSERT(document);
-    document->styleEngine()->removeSheet(this);
+    document->styleEngine().removeSheet(this);
 }
 
 void StyleSheetContents::addedToMemoryCache()
@@ -613,11 +568,11 @@ RuleSet& StyleSheetContents::ensureRuleSet(const MediaQueryEvaluator& medium, Ad
     return *m_ruleSet.get();
 }
 
-static void clearResolvers(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >& clients)
+static void clearResolvers(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet>>& clients)
 {
     for (const auto& sheet : clients) {
         if (Document* document = sheet->ownerDocument())
-            document->styleEngine()->clearResolver();
+            document->styleEngine().clearResolver();
     }
 }
 
@@ -639,11 +594,11 @@ void StyleSheetContents::clearRuleSet()
     m_ruleSet.clear();
 }
 
-static void removeFontFaceRules(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >& clients, const StyleRuleFontFace* fontFaceRule)
+static void removeFontFaceRules(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet>>& clients, const StyleRuleFontFace* fontFaceRule)
 {
     for (const auto& sheet : clients) {
         if (Node* ownerNode = sheet->ownerNode())
-            ownerNode->document().styleEngine()->removeFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >(1, fontFaceRule));
+            ownerNode->document().styleEngine().removeFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>(1, fontFaceRule));
     }
 }
 
@@ -654,7 +609,7 @@ void StyleSheetContents::notifyRemoveFontFaceRule(const StyleRuleFontFace* fontF
     removeFontFaceRules(root->m_completedClients, fontFaceRule);
 }
 
-static void findFontFaceRulesFromRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules, WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >& fontFaceRules)
+static void findFontFaceRulesFromRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules, WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>& fontFaceRules)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRuleBase* rule = rules[i].get();
@@ -670,7 +625,7 @@ static void findFontFaceRulesFromRules(const WillBeHeapVector<RefPtrWillBeMember
     }
 }
 
-void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >& fontFaceRules)
+void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>& fontFaceRules)
 {
     for (unsigned i = 0; i < m_importRules.size(); ++i) {
         if (!m_importRules[i]->styleSheet())
@@ -681,7 +636,7 @@ void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<c
     findFontFaceRulesFromRules(childRules(), fontFaceRules);
 }
 
-void StyleSheetContents::trace(Visitor* visitor)
+DEFINE_TRACE(StyleSheetContents)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_ownerRule);

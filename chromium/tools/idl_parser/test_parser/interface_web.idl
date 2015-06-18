@@ -50,6 +50,45 @@ partial interface MyIFacePartial { };
 partial interface MyIFaceInherit : Foo {};
 
 /* TREE
+ *Interface(MyIFaceMissingArgument)
+ *  Operation(foo)
+ *    Arguments()
+ *      Argument(arg)
+ *        Type()
+ *          PrimitiveType(DOMString)
+ *      Error(Missing argument.)
+ *    Type()
+ *      PrimitiveType(void)
+ */
+interface MyIFaceMissingArgument {
+  void foo(DOMString arg, );
+};
+
+/* TREE
+ *Error(Unexpected keyword "double" after keyword "readonly".)
+ */
+interface MyIFaceMissingAttribute {
+  readonly double foo;
+};
+
+/* TREE
+ *Interface(MyIFaceContainsUnresolvedConflictDiff)
+ *  Operation(foo)
+ *    Arguments()
+ *    Type()
+ *      PrimitiveType(DOMString)
+ *  Error(Unexpected "<" after ";".)
+ */
+interface MyIFaceContainsUnresolvedConflictDiff {
+    DOMString foo();
+<<<<<< ours
+    DOMString bar();
+    iterable<long>;
+======
+>>>>>> theirs
+};
+
+/* TREE
  *Interface(MyIFaceBig)
  *  Const(setString)
  *    PrimitiveType(DOMString)
@@ -57,6 +96,23 @@ partial interface MyIFaceInherit : Foo {};
  */
 interface MyIFaceBig {
   const DOMString? setString = null;
+};
+
+/* TREE
+ *Interface(MyIfaceEmptySequenceDefalutValue)
+ *  Operation(foo)
+ *    Arguments()
+ *      Argument(arg)
+ *        Type()
+ *          Sequence()
+ *            Type()
+ *              PrimitiveType(DOMString)
+ *        Default()
+ *    Type()
+ *      PrimitiveType(void)
+ */
+interface MyIfaceEmptySequenceDefalutValue {
+  void foo(optional sequence<DOMString> arg = []);
 };
 
 /* TREE
@@ -214,4 +270,102 @@ interface MyIfacePromise {
   Promise<long> method2();
   Promise<any> method3();
   Promise method4();
+};
+
+/* TREE
+ *Interface(MyIfaceIterable)
+ *  Iterable()
+ *    Type()
+ *      PrimitiveType(long)
+ *  Iterable()
+ *    Type()
+ *      PrimitiveType(double)
+ *    Type()
+ *      PrimitiveType(DOMString)
+ *  LegacyIterable()
+ *    Type()
+ *      PrimitiveType(boolean)
+ */
+interface MyIfaceIterable {
+  iterable<long>;
+  iterable<double, DOMString>;
+  legacyiterable<boolean>;
+};
+
+/* TREE
+ *Interface(MyIfaceMaplike)
+ *  Maplike()
+ *    Type()
+ *      PrimitiveType(long)
+ *    Type()
+ *      PrimitiveType(DOMString)
+ *  Maplike()
+ *    Type()
+ *      PrimitiveType(double)
+ *    Type()
+ *      PrimitiveType(boolean)
+ */
+interface MyIfaceMaplike {
+  readonly maplike<long, DOMString>;
+  maplike<double, boolean>;
+};
+
+/* TREE
+ *Interface(MyIfaceSetlike)
+ *  Setlike()
+ *    Type()
+ *      PrimitiveType(long)
+ *  Setlike()
+ *    Type()
+ *      PrimitiveType(double)
+ */
+interface MyIfaceSetlike {
+  readonly setlike<long>;
+  setlike<double>;
+};
+
+/* TREE
+ *Interface(MyIfaceSerializer)
+ *  Serializer()
+ *  Serializer()
+ *    Operation(toJSON)
+ *      Arguments()
+ *      Type()
+ *        Any()
+ *  Serializer()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    Map()
+ *  Serializer()
+ *    List()
+ *  Serializer()
+ *    List()
+ *  Serializer()
+ *    List()
+ */
+interface MyIfaceSerializer {
+  serializer;
+  serializer any toJSON();
+  serializer = name;
+  serializer = {};
+  serializer = { getter };
+  serializer = { attribute };
+  serializer = { inherit, attribute };
+  serializer = { inherit };
+  serializer = { inherit, name1, name2 };
+  serializer = { name1, name2 };
+  serializer = [];
+  serializer = [getter];
+  serializer = [name1, name2];
 };

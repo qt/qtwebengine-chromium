@@ -8,8 +8,8 @@
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
 #include "content/public/common/resource_type.h"
+#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
-#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/base/page_transition_types.h"
 
 namespace net {
@@ -36,6 +36,9 @@ class ResourceRequestInfo {
                                                 int render_process_id,
                                                 int render_view_id,
                                                 int render_frame_id,
+                                                bool is_main_frame,
+                                                bool parent_is_main_frame,
+                                                bool allow_download,
                                                 bool is_async);
 
   // Returns the associated RenderFrame for a given process. Returns false, if

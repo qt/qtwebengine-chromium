@@ -6,6 +6,7 @@
  * @fileoverview Common OOBE controller methods.
  */
 
+<include src="test_util.js">
 <include src="../../../../../ui/login/screen.js">
 <include src="screen_context.js">
 <include src="../user_images_grid.js">
@@ -94,7 +95,7 @@ cr.define('cr.ui', function() {
 
       // Callback to animate the header bar in.
       var showHeaderBar = function() {
-        login.HeaderBar.animateIn(function() {
+        login.HeaderBar.animateIn(false, function() {
           chrome.send('headerBarVisible');
         });
       };
@@ -103,9 +104,22 @@ cr.define('cr.ui', function() {
     } else {
       document.body.classList.remove('oobe-display');
       Oobe.getInstance().prepareForLoginDisplay_();
+      // Ensure header bar is visible when switching to Login UI from oobe.
+      if (Oobe.getInstance().displayType == DISPLAY_TYPE.OOBE)
+        login.HeaderBar.animateIn(true);
     }
 
     Oobe.getInstance().headerHidden = false;
+  };
+
+  /**
+   * When |showShutdown| is set to "true", the shutdown button is shown and the
+   * reboot button hidden. If set to "false", the reboot button is visible and
+   * the shutdown button hidden.
+   */
+  Oobe.showShutdown = function(showShutdown) {
+    $('login-header-bar').showShutdownButton = showShutdown;
+    $('login-header-bar').showRebootButton = !showShutdown;
   };
 
   /**
@@ -155,8 +169,8 @@ cr.define('cr.ui', function() {
    * Shows password changed screen that offers migration.
    * @param {boolean} showError Whether to show the incorrect password error.
    */
-  Oobe.showPasswordChangedScreen = function(showError) {
-    DisplayManager.showPasswordChangedScreen(showError);
+  Oobe.showPasswordChangedScreen = function(showError, email) {
+    DisplayManager.showPasswordChangedScreen(showError, email);
   };
 
   /**
@@ -197,7 +211,9 @@ cr.define('cr.ui', function() {
    * Displays animations that have to happen once login UI is fully displayed.
    */
   Oobe.animateOnceFullyDisplayed = function() {
-    login.HeaderBar.animateIn();
+    login.HeaderBar.animateIn(true, function() {
+      chrome.send('headerBarVisible');
+    });
   };
 
   /**
@@ -214,8 +230,8 @@ cr.define('cr.ui', function() {
    * If the text is empty, the entire notification will be hidden.
    * @param {string} messageText The message text.
    */
-  Oobe.setEnterpriseInfo = function(messageText) {
-    DisplayManager.setEnterpriseInfo(messageText);
+  Oobe.setEnterpriseInfo = function(messageText, assetId) {
+    DisplayManager.setEnterpriseInfo(messageText, assetId);
   };
 
   /**
@@ -293,10 +309,24 @@ cr.define('cr.ui', function() {
   };
 
   /**
+   * Shows the add user dialog. Used in browser tests.
+   */
+  Oobe.showAddUserForTesting = function() {
+    chrome.send('showAddUser');
+  };
+
+  /**
    * Hotrod requisition for telemetry.
    */
   Oobe.remoraRequisitionForTesting = function() {
     chrome.send('setDeviceRequisition', ['remora']);
+  };
+
+  /**
+   * Begin enterprise enrollment for telemetry.
+   */
+  Oobe.switchToEnterpriseEnrollmentForTesting = function() {
+    chrome.send('toggleEnrollmentScreen');
   };
 
   /**
@@ -328,6 +358,13 @@ cr.define('cr.ui', function() {
    */
   Oobe.setClientAreaSize = function(width, height) {
     Oobe.getInstance().setClientAreaSize(width, height);
+  };
+
+  /**
+   * Checks whether the New Gaia flow is active.
+   */
+  Oobe.isNewGaiaFlow = function() {
+    return document.querySelector('.new-gaia-flow') != undefined;
   };
 
   // Export

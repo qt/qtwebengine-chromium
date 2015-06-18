@@ -269,6 +269,8 @@ Instruction::Type Instruction::InstructionType() const {
         case MOVZ:
         case MOVN:
         case MOVCI:
+        case SELEQZ_S:
+        case SELNEZ_S:
           return kRegisterType;
         default:
           return kUnsupported;
@@ -287,6 +289,7 @@ Instruction::Type Instruction::InstructionType() const {
       switch (FunctionFieldRaw()) {
         case INS:
         case EXT:
+        case DEXT:
           return kRegisterType;
         default:
           return kUnsupported;

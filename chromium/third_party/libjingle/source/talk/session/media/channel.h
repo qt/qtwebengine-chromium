@@ -73,14 +73,14 @@ enum SinkType {
 
 class BaseChannel
     : public rtc::MessageHandler, public sigslot::has_slots<>,
-      public MediaChannel::NetworkInterface {
+      public MediaChannel::NetworkInterface,
+      public ConnectionStatsGetter {
  public:
   BaseChannel(rtc::Thread* thread, MediaEngineInterface* media_engine,
               MediaChannel* channel, BaseSession* session,
               const std::string& content_name, bool rtcp);
   virtual ~BaseChannel();
-  bool Init(TransportChannel* transport_channel,
-            TransportChannel* rtcp_transport_channel);
+  bool Init();
   // Deinit may be called multiple times and is simply ignored if it's alreay
   // done.
   void Deinit();
@@ -108,6 +108,12 @@ class BaseChannel
   bool writable() const { return writable_; }
   bool IsStreamMuted(uint32 ssrc);
 
+  bool PushdownLocalDescription(const SessionDescription* local_desc,
+                                ContentAction action,
+                                std::string* error_desc);
+  bool PushdownRemoteDescription(const SessionDescription* remote_desc,
+                                ContentAction action,
+                                std::string* error_desc);
   // Channel control
   bool SetLocalContent(const MediaContentDescription* content,
                        ContentAction action,
@@ -130,20 +136,11 @@ class BaseChannel
   // Monitoring
   void StartConnectionMonitor(int cms);
   void StopConnectionMonitor();
+  // For ConnectionStatsGetter, used by ConnectionMonitor
+  virtual bool GetConnectionStats(ConnectionInfos* infos) override;
 
   void set_srtp_signal_silent_time(uint32 silent_time) {
     srtp_filter_.set_signal_silent_time(silent_time);
-  }
-
-  void set_content_name(const std::string& content_name) {
-    ASSERT(signaling_thread()->IsCurrent());
-    ASSERT(!writable_);
-    if (session_->state() != BaseSession::STATE_INIT) {
-      LOG(LS_ERROR) << "Content name for a channel can be changed only "
-                    << "when BaseSession is in STATE_INIT state.";
-      return;
-    }
-    content_name_ = content_name;
   }
 
   template <class T>
@@ -221,6 +218,10 @@ class BaseChannel
     return remote_streams_;
   }
 
+  sigslot::signal2<BaseChannel*, bool> SignalDtlsSetupFailure;
+  void SignalDtlsSetupFailure_w(bool rtcp);
+  void SignalDtlsSetupFailure_s(bool rtcp);
+
   // Used for latency measurements.
   sigslot::signal1<BaseChannel*> SignalFirstPacketReceived;
 
@@ -230,9 +231,19 @@ class BaseChannel
   // Made public for easier testing.
   void SetReadyToSend(TransportChannel* channel, bool ready);
 
+  // Only public for unit tests.  Otherwise, consider protected.
+  virtual int SetOption(SocketType type, rtc::Socket::Option o, int val);
+
  protected:
   MediaEngineInterface* media_engine() const { return media_engine_; }
   virtual MediaChannel* media_channel() const { return media_channel_; }
+  // Sets the transport_channel_ and rtcp_transport_channel_.  If
+  // |rtcp| is false, set rtcp_transport_channel_ is set to NULL.  Get
+  // the transport channels from |session|.
+  // TODO(pthatcher): Pass in a Transport instead of a BaseSession.
+  bool SetTransportChannels(BaseSession* session, bool rtcp);
+  bool SetTransportChannels_w(BaseSession* session, bool rtcp);
+  void set_transport_channel(TransportChannel* transport);
   void set_rtcp_transport_channel(TransportChannel* transport);
   bool was_ever_writable() const { return was_ever_writable_; }
   void set_local_content_direction(MediaContentDirection direction) {
@@ -247,6 +258,9 @@ class BaseChannel
   SrtpFilter* srtp_filter() { return &srtp_filter_; }
   bool rtcp() const { return rtcp_; }
 
+  void ConnectToTransportChannel(TransportChannel* tc);
+  void DisconnectFromTransportChannel(TransportChannel* tc);
+
   void FlushRtcpMessages();
 
   // NetworkInterface implementation, called by MediaEngine
@@ -254,7 +268,6 @@ class BaseChannel
                           rtc::DiffServCodePoint dscp);
   virtual bool SendRtcp(rtc::Buffer* packet,
                         rtc::DiffServCodePoint dscp);
-  virtual int SetOption(SocketType type, rtc::Socket::Option o, int val);
 
   // From TransportChannel
   void OnWritableState(TransportChannel* channel);
@@ -348,7 +361,7 @@ class BaseChannel
   // Handled in derived classes
   // Get the SRTP ciphers to use for RTP media
   virtual void GetSrtpCiphers(std::vector<std::string>* ciphers) const = 0;
-  virtual void OnConnectionMonitorUpdate(SocketMonitor* monitor,
+  virtual void OnConnectionMonitorUpdate(ConnectionMonitor* monitor,
       const std::vector<ConnectionInfo>& infos) = 0;
 
   // Helper function for invoking bool-returning methods on the worker thread.
@@ -372,14 +385,14 @@ class BaseChannel
   std::vector<StreamParams> local_streams_;
   std::vector<StreamParams> remote_streams_;
 
-  std::string content_name_;
+  const std::string content_name_;
   bool rtcp_;
   TransportChannel* transport_channel_;
   TransportChannel* rtcp_transport_channel_;
   SrtpFilter srtp_filter_;
   RtcpMuxFilter rtcp_mux_filter_;
   BundleFilter bundle_filter_;
-  rtc::scoped_ptr<SocketMonitor> socket_monitor_;
+  rtc::scoped_ptr<ConnectionMonitor> connection_monitor_;
   bool enabled_;
   bool writable_;
   bool rtp_ready_to_send_;
@@ -489,7 +502,7 @@ class VoiceChannel : public BaseChannel {
   virtual void OnMessage(rtc::Message* pmsg);
   virtual void GetSrtpCiphers(std::vector<std::string>* ciphers) const;
   virtual void OnConnectionMonitorUpdate(
-      SocketMonitor* monitor, const std::vector<ConnectionInfo>& infos);
+      ConnectionMonitor* monitor, const std::vector<ConnectionInfo>& infos);
   virtual void OnMediaMonitorUpdate(
       VoiceMediaChannel* media_channel, const VoiceMediaInfo& info);
   void OnAudioMonitorUpdate(AudioMonitor* monitor, const AudioInfo& info);
@@ -509,10 +522,14 @@ class VideoChannel : public BaseChannel {
  public:
   VideoChannel(rtc::Thread* thread, MediaEngineInterface* media_engine,
                VideoMediaChannel* channel, BaseSession* session,
-               const std::string& content_name, bool rtcp,
-               VoiceChannel* voice_channel);
+               const std::string& content_name, bool rtcp);
   ~VideoChannel();
   bool Init();
+
+  // downcasts a MediaChannel
+  virtual VideoMediaChannel* media_channel() const {
+    return static_cast<VideoMediaChannel*>(BaseChannel::media_channel());
+  }
 
   bool SetRenderer(uint32 ssrc, VideoRenderer* renderer);
   bool ApplyViewRequest(const ViewRequest& request);
@@ -529,7 +546,7 @@ class VideoChannel : public BaseChannel {
   int GetScreencastFps(uint32 ssrc);
   int GetScreencastMaxPixels(uint32 ssrc);
   // Get statistics about the current media session.
-  bool GetStats(const StatsOptions& options, VideoMediaInfo* stats);
+  bool GetStats(VideoMediaInfo* stats);
 
   sigslot::signal2<VideoChannel*, const std::vector<ConnectionInfo>&>
       SignalConnectionMonitor;
@@ -546,12 +563,6 @@ class VideoChannel : public BaseChannel {
 
   // Configuration and setting.
   bool SetChannelOptions(const VideoOptions& options);
-
- protected:
-  // downcasts a MediaChannel
-  virtual VideoMediaChannel* media_channel() const {
-    return static_cast<VideoMediaChannel*>(BaseChannel::media_channel());
-  }
 
  private:
   typedef std::map<uint32, VideoCapturer*> ScreencastMap;
@@ -578,7 +589,7 @@ class VideoChannel : public BaseChannel {
   virtual void OnMessage(rtc::Message* pmsg);
   virtual void GetSrtpCiphers(std::vector<std::string>* ciphers) const;
   virtual void OnConnectionMonitorUpdate(
-      SocketMonitor* monitor, const std::vector<ConnectionInfo>& infos);
+      ConnectionMonitor* monitor, const std::vector<ConnectionInfo>& infos);
   virtual void OnMediaMonitorUpdate(
       VideoMediaChannel* media_channel, const VideoMediaInfo& info);
   virtual void OnScreencastWindowEvent(uint32 ssrc,
@@ -589,7 +600,6 @@ class VideoChannel : public BaseChannel {
   void OnVideoChannelError(uint32 ssrc, VideoMediaChannel::Error error);
   void OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode, SrtpFilter::Error error);
 
-  VoiceChannel* voice_channel_;
   VideoRenderer* renderer_;
   ScreencastMap screencast_capturers_;
   rtc::scoped_ptr<VideoMediaMonitor> media_monitor_;
@@ -697,7 +707,7 @@ class DataChannel : public BaseChannel {
   virtual void OnMessage(rtc::Message* pmsg);
   virtual void GetSrtpCiphers(std::vector<std::string>* ciphers) const;
   virtual void OnConnectionMonitorUpdate(
-      SocketMonitor* monitor, const std::vector<ConnectionInfo>& infos);
+      ConnectionMonitor* monitor, const std::vector<ConnectionInfo>& infos);
   virtual void OnMediaMonitorUpdate(
       DataMediaChannel* media_channel, const DataMediaInfo& info);
   virtual bool ShouldSetupDtlsSrtp() const;

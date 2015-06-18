@@ -1,0 +1,46 @@
+<link rel="import" href="chrome://resources/polymer/polymer/polymer.html">
+<link rel="import" href="chrome://resources/polymer/paper-button/paper-button.html">
+<polymer-element name="issue-banner">
+<template>
+  <link rel="stylesheet" href="../../media_router_common.css">
+  <link rel="stylesheet" href="issue_banner.css">
+  <template if="{{issue.isBlocking}}">
+    <div class="blocking-issue-header">
+      <div class="sad-face"></div>
+      <div>
+        <div class="blocking-issue-title">{{issue.title}}</div>
+        <div class="blocking-issue-message">{{issue.message}}</div>
+      </div>
+    </div>
+    <div id="issue-buttons">
+      <template if="{{issue.optActionText}}">
+        <paper-button raised class="button" title="{{issue.optActionType}}"
+            on-click="{{onClickAction}}">
+          {{issue.optActionText}}
+        </paper-button>
+      </template>
+      <paper-button raised class="button action"
+          title="{{issue.defaultActionType}}"
+          on-click="{{onClickAction}}">
+        {{issue.defaultActionText}}
+      </paper-button>
+    </div>
+  </template>
+  <template if="{{!issue.isBlocking}}">
+    <div class="non-blocking-issue">
+      <div>{{issue.message}}</div>
+      <template if="{{issue.optActionText}}">
+        <span class="issue-action" title="{{issue.optActionType}}"
+            on-click="{{onClickAction}}">
+          {{issue.optActionText}}
+        </span>
+      </template>
+      <span class="issue-action" title="{{issue.defaultActionType}}"
+          on-click="{{onClickAction}}">
+        {{issue.defaultActionText}}
+      </span>
+    </div>
+  </template>
+</template>
+<script src="issue_banner.js"></script>
+</polymer-element>

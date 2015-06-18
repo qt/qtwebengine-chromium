@@ -76,6 +76,10 @@ public:
     virtual bool isOverlayScrollbar() const override;
     virtual bool isAlphaLocked() const override;
     virtual void setIsAlphaLocked(bool) override;
+    virtual float elasticOverscroll() const override;
+    virtual void setElasticOverscroll(float) override;
+    virtual DisplayItemClient displayItemClient() const override;
+    virtual String debugName() const override;
 
 private:
     WebScrollbar* m_scrollbar;

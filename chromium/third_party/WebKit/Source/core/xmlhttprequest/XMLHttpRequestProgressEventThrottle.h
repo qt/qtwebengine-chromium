@@ -29,16 +29,14 @@
 
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/Vector.h"
-#include "wtf/text/AtomicString.h"
 
 namespace blink {
 
 class Event;
 class EventTarget;
-class XMLHttpRequestProgressEvent;
 
 // This class implements the XHR2 ProgressEvent dispatching:
 //   "dispatch a progress event named progress about every 50ms or for every
@@ -79,7 +77,7 @@ public:
     void suspend();
     void resume();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     // The main purpose of this class is to throttle the "progress"

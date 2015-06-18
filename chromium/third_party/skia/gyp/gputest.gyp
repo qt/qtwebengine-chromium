@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 {
   'targets': [
     {
@@ -20,6 +24,8 @@
         ],
       },
       'sources': [
+        '<(skia_src_path)/gpu/GrContextFactory.cpp',
+        '<(skia_src_path)/gpu/GrContextFactory.h',
         '<(skia_src_path)/gpu/GrTest.cpp',
         '<(skia_src_path)/gpu/GrTest.h',
       ],

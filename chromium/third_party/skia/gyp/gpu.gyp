@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # GYP for building gpu
 {
   'target_defaults': {
@@ -22,11 +26,7 @@
         'sources/': [ ['exclude', '_android.(h|cpp)$'],
         ],
       }],
-      ['skia_os != "nacl"', {
-        'sources/': [ ['exclude', '_nacl.(h|cpp)$'],
-        ],
-      }],
-      ['skia_os == "nacl" or skia_egl == 0', {
+      ['skia_egl == 0', {
         'sources/': [ ['exclude', '_egl.(h|cpp)$'],
         ],
       }],
@@ -63,16 +63,6 @@
           ],
         },
       }],
-      [ 'skia_resource_cache_mb_limit != 0', {
-        'defines': [
-          'GR_DEFAULT_RESOURCE_CACHE_MB_LIMIT=<(skia_resource_cache_mb_limit)',
-        ],
-      }],
-      [ 'skia_resource_cache_count_limit != 0', {
-        'defines': [
-          'GR_DEFAULT_RESOURCE_CACHE_COUNT_LIMIT=<(skia_resource_cache_count_limit)',
-        ],
-      }],
     ],
     'direct_dependent_settings': {
       'conditions': [
@@ -95,7 +85,7 @@
       'standalone_static_library': 1,
       'dependencies': [
         'core.gyp:*',
-        'utils.gyp:*',
+        'utils.gyp:utils',
         'etc1.gyp:libetc1',
         'ktx.gyp:libSkKTX',
       ],
@@ -106,6 +96,7 @@
         '../include/gpu',
         '../src/core',
         '../src/gpu',
+        '../src/image/',
       ],
       'sources': [
         '<@(skgpu_sources)',
@@ -117,6 +108,11 @@
         'gpu.gypi', # Makes the gypi appear in IDEs (but does not modify the build).
       ],
       'conditions': [
+        [ 'skia_gpu_extra_dependency_path', {
+          'dependencies' : [
+              '<(skia_gpu_extra_dependency_path):*',
+          ]
+        }],
         [ 'skia_stroke_path_rendering', {
           'sources': [
             '../experimental/StrokePathRenderer/GrStrokePathRenderer.h',
@@ -167,13 +163,6 @@
               '-lGL',
               '-lGLU',
               '-lX11',
-            ],
-          },
-        }],
-        [ 'skia_os == "nacl"', {
-          'link_settings': {
-            'libraries': [
-              '-lppapi_gles2',
             ],
           },
         }],

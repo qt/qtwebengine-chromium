@@ -5,7 +5,8 @@
 #ifndef OTS_GLYF_H_
 #define OTS_GLYF_H_
 
-#include <utility>  // std::pair
+#include <new>
+#include <utility>
 #include <vector>
 
 #include "ots.h"

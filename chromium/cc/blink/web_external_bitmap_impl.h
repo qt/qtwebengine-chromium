@@ -10,17 +10,18 @@
 #include "cc/blink/cc_blink_export.h"
 #include "third_party/WebKit/public/platform/WebExternalBitmap.h"
 
-namespace base {
-class SharedMemory;
+namespace cc {
+class SharedBitmap;
 }
 
 namespace cc_blink {
 
-typedef scoped_ptr<base::SharedMemory>(*SharedMemoryAllocationFunction)(size_t);
+typedef scoped_ptr<cc::SharedBitmap>(*SharedBitmapAllocationFunction)(
+    const gfx::Size& size);
 
 // Sets the function that this will use to allocate shared memory.
-CC_BLINK_EXPORT void SetSharedMemoryAllocationFunction(
-    SharedMemoryAllocationFunction);
+CC_BLINK_EXPORT void SetSharedBitmapAllocationFunction(
+    SharedBitmapAllocationFunction);
 
 class WebExternalBitmapImpl : public blink::WebExternalBitmap {
  public:
@@ -28,14 +29,14 @@ class WebExternalBitmapImpl : public blink::WebExternalBitmap {
   virtual ~WebExternalBitmapImpl();
 
   // blink::WebExternalBitmap implementation.
-  virtual blink::WebSize size() override;
-  virtual void setSize(blink::WebSize size) override;
-  virtual uint8* pixels() override;
+  blink::WebSize size() override;
+  void setSize(blink::WebSize size) override;
+  uint8* pixels() override;
 
-  base::SharedMemory* shared_memory() { return shared_memory_.get(); }
+  cc::SharedBitmap* shared_bitmap() { return shared_bitmap_.get(); }
 
  private:
-  scoped_ptr<base::SharedMemory> shared_memory_;
+  scoped_ptr<cc::SharedBitmap> shared_bitmap_;
   blink::WebSize size_;
 
   DISALLOW_COPY_AND_ASSIGN(WebExternalBitmapImpl);

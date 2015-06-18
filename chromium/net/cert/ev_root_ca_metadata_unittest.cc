@@ -8,7 +8,8 @@
 #include "net/test/cert_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
+#include "crypto/nss_util.h"
 #include "crypto/scoped_nss_types.h"
 #endif
 
@@ -16,7 +17,7 @@ namespace net {
 
 namespace {
 
-#if defined(USE_NSS) || defined(OS_WIN)
+#if defined(USE_NSS_CERTS) || defined(OS_WIN)
 const char kVerisignPolicy[] = "2.16.840.1.113733.1.7.23.6";
 const char kThawtePolicy[] = "2.16.840.1.113733.1.7.48.1";
 const char kFakePolicy[] = "2.16.840.1.42";
@@ -37,9 +38,9 @@ class EVOidData {
   EVRootCAMetadata::PolicyOID fake_policy;
 };
 
-#endif  // defined(USE_NSS) || defined(OS_WIN)
+#endif  // defined(USE_NSS_CERTS) || defined(OS_WIN)
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 
 SECOidTag RegisterOID(PLArenaPool* arena, const char* oid_string) {
   SECOidData oid_data;
@@ -63,6 +64,7 @@ EVOidData::EVOidData()
 }
 
 bool EVOidData::Init() {
+  crypto::EnsureNSSInit();
   crypto::ScopedPLArenaPool pool(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   if (!pool.get())
     return false;
@@ -90,7 +92,7 @@ bool EVOidData::Init() {
 
 #endif
 
-#if defined(USE_NSS) || defined(OS_WIN)
+#if defined(USE_NSS_CERTS) || defined(OS_WIN)
 
 class EVRootCAMetadataTest : public testing::Test {
  protected:
@@ -135,7 +137,7 @@ TEST_F(EVRootCAMetadataTest, AddRemove) {
                                            ev_oid_data.fake_policy));
 }
 
-#endif  // defined(USE_NSS) || defined(OS_WIN)
+#endif  // defined(USE_NSS_CERTS) || defined(OS_WIN)
 
 }  // namespace
 

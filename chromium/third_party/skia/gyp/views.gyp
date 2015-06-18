@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # Views is the Skia windowing toolkit.
 # It provides:
 #  * A portable means of creating native windows.
@@ -13,11 +17,12 @@
       'standalone_static_library': 1,
       'dependencies': [
         'skia_lib.gyp:skia_lib',
-        'xml.gyp:*',
+        'xml.gyp:xml',
       ],
       'include_dirs': [
         '../include/views',
         '../include/views/unix',
+        '../src/gpu',
       ],
       'sources': [
         '../include/views/SkApplication.h',
@@ -27,7 +32,6 @@
         '../include/views/SkKey.h',
         '../include/views/SkOSMenu.h',
         '../include/views/SkOSWindow_Mac.h',
-        '../include/views/SkOSWindow_NaCl.h',
         '../include/views/SkOSWindow_SDL.h',
         '../include/views/SkOSWindow_Unix.h',
         '../include/views/SkOSWindow_Win.h',
@@ -77,6 +81,11 @@
         '../src/views/SDL/SkOSWindow_SDL.cpp',
       ],
       'conditions': [
+        [ 'skia_gpu == 1', {
+          'include_dirs' : [
+            '../src/gpu',
+          ],
+        }],
         [ 'skia_os == "mac"', {
           'link_settings': {
             'libraries': [
@@ -112,17 +121,6 @@
             '../src/views/win/skia_win.cpp',
           ],
         }],
-        [ 'skia_os == "nacl"', {
-          'sources!': [
-            '../src/views/unix/SkOSWindow_Unix.cpp',
-            '../src/views/unix/keysym2ucs.c',
-            '../src/views/unix/skia_unix.cpp',
-          ],
-        }, {
-          'sources!': [
-            '../src/views/nacl/SkOSWindow_NaCl.cpp',
-          ],
-        }],
         [ 'skia_gpu == 1', {
           'include_dirs': [
             '../include/gpu',
@@ -134,6 +132,9 @@
           '../include/views',
         ],
       },
+      'export_dependent_settings': [
+        'xml.gyp:xml',
+      ],
     },
   ],
 }

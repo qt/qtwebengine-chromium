@@ -10,9 +10,10 @@
 #include "base/strings/nullable_string16.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/public/platform/WebHistoryScrollRestorationType.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point_f.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point_f.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -48,6 +49,7 @@ struct CONTENT_EXPORT ExplodedFrameState {
   base::NullableString16 target;
   base::NullableString16 state_object;
   std::vector<base::NullableString16> document_state;
+  blink::WebHistoryScrollRestorationType scroll_restoration_type;
   gfx::PointF pinch_viewport_scroll_offset;
   gfx::Point scroll_offset;
   int64 item_sequence_number;
@@ -68,6 +70,9 @@ private:
 };
 
 struct CONTENT_EXPORT ExplodedPageState {
+  // TODO(creis): Move referenced_files to ExplodedFrameState.
+  // It currently contains a list from all frames, but cannot be deserialized
+  // into the files referenced by each frame.  See http://crbug.com/441966.
   std::vector<base::NullableString16> referenced_files;
   ExplodedFrameState top;
 

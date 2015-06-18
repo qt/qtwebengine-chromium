@@ -48,7 +48,7 @@ class CodeTest(unittest.TestCase):
         .Append('1')
       .Eblock('1')
     )
-    self.assertEquals(
+    self.assertMultiLineEqual(
       '1\n'
       '  2\n'
       '    2\n'
@@ -117,14 +117,14 @@ class CodeTest(unittest.TestCase):
     self.assertFalse(c.IsEmpty())
 
   def testComment(self):
-    long_comment = ('This comment is eighty nine characters in longness, '
-        'that is, to use another word, length')
+    long_comment = ('This comment is ninety one characters in longness, '
+        'that is, using a different word, length.')
     c = Code()
     c.Comment(long_comment)
     self.assertEquals(
-        '// This comment is eighty nine characters '
-        'in longness, that is, to use another\n'
-        '// word, length',
+        '// This comment is ninety one characters '
+        'in longness, that is, using a different\n'
+        '// word, length.',
         c.Render())
     c = Code()
     c.Sblock('sblock')
@@ -133,13 +133,13 @@ class CodeTest(unittest.TestCase):
     c.Comment(long_comment)
     self.assertEquals(
         'sblock\n'
-        '  // This comment is eighty nine characters '
-        'in longness, that is, to use\n'
-        '  // another word, length\n'
+        '  // This comment is ninety one characters '
+        'in longness, that is, using a\n'
+        '  // different word, length.\n'
         'eblock\n'
-        '// This comment is eighty nine characters in '
-        'longness, that is, to use another\n'
-        '// word, length',
+        '// This comment is ninety one characters in '
+        'longness, that is, using a different\n'
+        '// word, length.',
         c.Render())
     long_word = 'x' * 100
     c = Code()
@@ -147,6 +147,14 @@ class CodeTest(unittest.TestCase):
     self.assertEquals(
         '// ' + 'x' * 77 + '\n'
         '// ' + 'x' * 23,
+        c.Render())
+    c = Code(indent_size=2, comment_length=40)
+    c.Comment('Pretend this is a Closure Compiler style comment, which should '
+        'both wrap and indent', comment_prefix=' * ', wrap_indent=4)
+    self.assertEquals(
+        ' * Pretend this is a Closure Compiler\n'
+        ' *     style comment, which should both\n'
+        ' *     wrap and indent',
         c.Render())
 
   def testCommentWithSpecialCharacters(self):
@@ -160,6 +168,46 @@ class CodeTest(unittest.TestCase):
     self.assertEquals('90\n'
         '// 20% of 80%s',
         d.Render())
+
+  def testLinePrefixes(self):
+    c = Code()
+    c.Sblock(line='/**', line_prefix=' * ')
+    c.Sblock('@typedef {{')
+    c.Append('foo: bar,')
+    c.Sblock('baz: {')
+    c.Append('x: y')
+    c.Eblock('}')
+    c.Eblock('}}')
+    c.Eblock(line=' */')
+    output = c.Render()
+    self.assertMultiLineEqual(
+        '/**\n'
+        ' * @typedef {{\n'
+        ' *   foo: bar,\n'
+        ' *   baz: {\n'
+        ' *     x: y\n'
+        ' *   }\n'
+        ' * }}\n'
+        ' */',
+        output)
+
+  def testSameLineAppendConcatComment(self):
+    c = Code()
+    c.Append('This is a line.')
+    c.Append('This too.', new_line=False)
+    d = Code()
+    d.Append('And this.')
+    c.Concat(d, new_line=False)
+    self.assertEquals('This is a line.This too.And this.', c.Render())
+    c = Code()
+    c.Append('This is a')
+    c.Comment(' spectacular 80-character line thingy ' +
+                  'that fits wonderfully everywhere.',
+              comment_prefix='',
+              new_line=False)
+    self.assertEquals('This is a spectacular 80-character line thingy that ' +
+                          'fits wonderfully everywhere.',
+                      c.Render())
 
 if __name__ == '__main__':
   unittest.main()

@@ -63,7 +63,7 @@ cr.define('cr.ui', function() {
 
     /**
      * Function used to create grid items.
-     * @type {function(new:cr.ui.GridItem, Object)}
+     * @type {function(new:cr.ui.GridItem, *)}
      * @override
      */
     itemConstructor_: GridItem,
@@ -106,15 +106,22 @@ cr.define('cr.ui', function() {
       if (!itemCount)
         return 0;
 
-      var columns = Math.floor(this.clientWidthWithoutScrollbar_ / width);
+      var columns = Math.floor(
+          (this.clientWidthWithoutScrollbar_ - this.horizontalPadding_) /
+          width);
       if (!columns)
         return 0;
 
       var rows = Math.ceil(itemCount / columns);
-      if (rows * height <= this.clientHeight_)
+      if (rows * height <= this.clientHeight_) {
+        // Content fits within the client area (no scrollbar required).
         return columns;
+      }
 
-      return Math.floor(this.clientWidthWithScrollbar_ / width);
+      // If the content doesn't fit within the client area, the number of
+      // columns should be calculated with consideration for scrollbar's width.
+      return Math.floor(
+          (this.clientWidthWithScrollbar_ - this.horizontalPadding_) / width);
     },
 
     /**
@@ -125,10 +132,14 @@ cr.define('cr.ui', function() {
       // Check changings that may affect number of columns.
       var offsetWidth = this.offsetWidth;
       var offsetHeight = this.offsetHeight;
-      var overflowY = window.getComputedStyle(this).overflowY;
+      var style = window.getComputedStyle(this);
+      var overflowY = style.overflowY;
+      var horizontalPadding =
+          parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
 
       if (this.lastOffsetWidth_ == offsetWidth &&
-          this.lastOverflowY == overflowY) {
+          this.lastOverflowY == overflowY &&
+          this.horizontalPadding_ == horizontalPadding) {
         this.lastOffsetHeight_ = offsetHeight;
         return;
       }
@@ -136,6 +147,7 @@ cr.define('cr.ui', function() {
       this.lastOffsetWidth_ = offsetWidth;
       this.lastOffsetHeight_ = offsetHeight;
       this.lastOverflowY = overflowY;
+      this.horizontalPadding_ = horizontalPadding;
       this.columns_ = 0;
 
       if (overflowY == 'auto' && offsetWidth > 0) {
@@ -250,11 +262,9 @@ cr.define('cr.ui', function() {
      * puts spacers on the right places.
      * @param {number} firstIndex The index of first item, inclusively.
      * @param {number} lastIndex The index of last item, exclusively.
-     * @param {Object.<string, cr.ui.ListItem>} cachedItems Old items cache.
-     * @param {Object.<string, cr.ui.ListItem>} newCachedItems New items cache.
      * @override
      */
-    mergeItems: function(firstIndex, lastIndex, cachedItems, newCachedItems) {
+    mergeItems: function(firstIndex, lastIndex) {
       List.prototype.mergeItems.call(this, firstIndex, lastIndex);
 
       var afterFiller = this.afterFiller_;

@@ -1,14 +1,17 @@
+<link rel="import" href="chrome://oobe/custom_elements.html">
+
 <div class="step right hidden" id="gaia-signin" role="group"
     aria-live="polite" hidden>
   <div class="step-contents">
     <div id="gaia-signin-form-container">
-        <div id="login-box"><!-- Aligned with the login box in iframe --></div>
-        <iframe id="signin-frame" name="signin-frame" hidden
-          src="about:blank"
-          marginwidth="0"
-          marginheight="0"
-          frameborder="0"
-          scrolling="no"></iframe>
+      <div id="login-box"><!-- Aligned with the login box in iframe --></div>
+      <iframe id="signin-frame" name="signin-frame" hidden
+        src="about:blank"
+        marginwidth="0"
+        marginheight="0"
+        frameborder="0"
+        scrolling="no"></iframe>
+      <offline-gaia id="offline-gaia" hidden></offline-gaia>
     </div>
     <div id="gaia-signin-divider" class="signin-divider" hidden></div>
     <div id="signin-right" hidden>
@@ -18,7 +21,7 @@
       <div id="createSupervisedUserPane" class="signin-text">
         <div id="createSupervisedUserSeparator"></div>
         <div id="createSupervisedUserLogo">
-          <img src="chrome://theme/IDR_SUPERVISED_USER_ICON">
+          <img src="chrome://theme/IDR_LEGACY_SUPERVISED_USER_ICON">
           <span i18n-content="createSupervisedUserFeatureName"></span>
         </div>
         <div id="createSupervisedUserLinkPlaceholder"></div>
@@ -29,11 +32,20 @@
   </div>
   <div id="gaia-loading" class="step-loading">
     <div class="throbber"></div>
+    <throbber-notice i18n-values="text:gaiaLoadingNewGaia"></throbber-notice>
   </div>
+  <notification-card id="gaia-whitelist-error" type="fail"
+      i18n-values="buttonLabel:tryAgainButton;
+                   linkLabel:learnMoreButton">
+  </notification-card>
   <div id="enterprise-info-container" hidden>
     <include src="enterprise_info.html">
   </div>
   <div id="saml-notice-container" hidden>
     <span id="saml-notice-message"></span>
   </div>
+  <button id="back-button-item" is="gaia-icon-button" icon="arrow-back" hidden
+      i18n-values="aria-label:backButton" tabindex="0"></button>
+  <button id="close-button-item" is="gaia-icon-button" icon="close" hidden
+      i18n-values="aria-label:closeButton" tabindex="0"></button>
 </div>

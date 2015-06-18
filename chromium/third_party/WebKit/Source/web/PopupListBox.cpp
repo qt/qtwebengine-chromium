@@ -32,15 +32,16 @@
 #include "web/PopupListBox.h"
 
 #include "core/CSSValueKeywords.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/html/forms/PopupMenuClient.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/paint/ScrollRecorder.h"
+#include "core/paint/TransformRecorder.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/PlatformMouseEvent.h"
-#include "platform/PlatformScreen.h"
 #include "platform/PlatformTouchEvent.h"
 #include "platform/PlatformWheelEvent.h"
-#include "platform/PopupMenuClient.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
@@ -48,6 +49,8 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/text/StringTruncator.h"
 #include "platform/text/TextRun.h"
@@ -69,9 +72,7 @@ static const TimeStamp typeAheadTimeoutMs = 1000;
 
 PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch, PopupContainer* container)
     : m_deviceSupportsTouch(deviceSupportsTouch)
-    , m_originalIndex(0)
     , m_selectedIndex(0)
-    , m_acceptedIndexOnAbandon(-1)
     , m_visibleRows(0)
     , m_baseWidth(0)
     , m_maxHeight(defaultMaxHeight)
@@ -85,8 +86,6 @@ PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch, Po
 
 PopupListBox::~PopupListBox()
 {
-    clear();
-
     // Oilpan: the scrollbars of the ScrollView are self-sufficient,
     // capable of detaching themselves from their animator on
     // finalization.
@@ -95,7 +94,7 @@ PopupListBox::~PopupListBox()
 #endif
 }
 
-void PopupListBox::trace(Visitor* visitor)
+DEFINE_TRACE(PopupListBox)
 {
     visitor->trace(m_capturingScrollbar);
     visitor->trace(m_lastScrollbarUnderMouse);
@@ -107,7 +106,7 @@ void PopupListBox::trace(Visitor* visitor)
 
 bool PopupListBox::handleMouseDownEvent(const PlatformMouseEvent& event)
 {
-    Scrollbar* scrollbar = scrollbarAtWindowPoint(event.position());
+    Scrollbar* scrollbar = scrollbarAtRootFramePoint(event.position());
     if (scrollbar) {
         m_capturingScrollbar = scrollbar;
         m_capturingScrollbar->mouseDown(event);
@@ -115,7 +114,7 @@ bool PopupListBox::handleMouseDownEvent(const PlatformMouseEvent& event)
     }
 
     if (!isPointInBounds(event.position()))
-        abandon();
+        cancel();
 
     return true;
 }
@@ -127,7 +126,7 @@ bool PopupListBox::handleMouseMoveEvent(const PlatformMouseEvent& event)
         return true;
     }
 
-    Scrollbar* scrollbar = scrollbarAtWindowPoint(event.position());
+    Scrollbar* scrollbar = scrollbarAtRootFramePoint(event.position());
     if (m_lastScrollbarUnderMouse != scrollbar) {
         // Send mouse exited to the old scrollbar.
         if (m_lastScrollbarUnderMouse)
@@ -173,31 +172,12 @@ bool PopupListBox::handleMouseReleaseEvent(const PlatformMouseEvent& event)
 bool PopupListBox::handleWheelEvent(const PlatformWheelEvent& event)
 {
     if (!isPointInBounds(event.position())) {
-        abandon();
+        cancel();
         return true;
     }
 
-    ScrollableArea::handleWheelEvent(event);
+    ScrollableArea::handleWheel(event);
     return true;
-}
-
-// Should be kept in sync with handleKeyEvent().
-bool PopupListBox::isInterestedInEventForKey(int keyCode)
-{
-    switch (keyCode) {
-    case VKEY_ESCAPE:
-    case VKEY_RETURN:
-    case VKEY_UP:
-    case VKEY_DOWN:
-    case VKEY_PRIOR:
-    case VKEY_NEXT:
-    case VKEY_HOME:
-    case VKEY_END:
-    case VKEY_TAB:
-        return true;
-    default:
-        return false;
-    }
 }
 
 bool PopupListBox::handleTouchEvent(const PlatformTouchEvent&)
@@ -229,7 +209,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
 
     switch (event.windowsVirtualKeyCode()) {
     case VKEY_ESCAPE:
-        abandon(); // may delete this
+        cancel(); // may delete this
         return true;
     case VKEY_RETURN:
         if (m_selectedIndex == -1)  {
@@ -270,16 +250,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
         return true;
     }
 
-    if (m_originalIndex != m_selectedIndex) {
-        // Keyboard events should update the selection immediately (but we don't
-        // want to fire the onchange event until the popup is closed, to match
-        // IE). We change the original index so we revert to that when the
-        // popup is closed.
-        m_acceptedIndexOnAbandon = m_selectedIndex;
-
-        setOriginalIndex(m_selectedIndex);
-        m_popupClient->setTextFromItem(m_selectedIndex);
-    }
+    m_popupClient->provisionalSelectionChanged(m_selectedIndex);
     if (event.windowsVirtualKeyCode() == VKEY_TAB) {
         // TAB is a special case as it should select the current item if any and
         // advance focus.
@@ -288,8 +259,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
             // Return false so the TAB key event is propagated to the page.
             return false;
         }
-        // Call abandon() so we honor m_acceptedIndexOnAbandon if set.
-        abandon();
+        cancel();
         // Return false so the TAB key event is propagated to the page.
         return false;
     }
@@ -315,7 +285,7 @@ static String stripLeadingWhiteSpace(const String& string)
     int length = string.length();
     int i;
     for (i = 0; i < length; ++i)
-        if (string[i] != noBreakSpace
+        if (string[i] != noBreakSpaceCharacter
             && !isSpaceOrNewline(string[i]))
             break;
 
@@ -374,40 +344,36 @@ void PopupListBox::typeAheadFind(const PlatformKeyboardEvent& event)
 
 void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
 {
-    // Adjust coords for scrolled frame.
-    IntRect r = intersection(rect, frameRect());
-    int tx = x() - scrollX() + ((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar()) ? verticalScrollbar()->width() : 0);
-    int ty = y() - scrollY();
+    ClipRecorder frameClip(*gc, *this, DisplayItem::ClipPopupListBoxFrame, LayoutRect(frameRect()));
+    TransformRecorder transformRecorder(*gc, *this, AffineTransform::translation(x(), y()));
+    IntRect paintRect = intersection(rect, frameRect());
+    paintRect.moveBy(-location());
 
-    r.move(-tx, -ty);
+    if (numItems()) {
+        IntSize scrollOffset = toIntSize(m_scrollOffset);
+        // FIXME: Calling this part of the scroll might cause issues later on
+        // depending on how the compositor winds up using this information.
+        // We may need to use an additional TransformRecorder instead, if that
+        // happens.
+        if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
+            scrollOffset.expand(-verticalScrollbar()->width(), 0);
+        ScrollRecorder scroll(*gc, *this, PaintPhase::PaintPhaseForeground, scrollOffset);
+        IntRect scrolledPaintRect = paintRect;
+        scrolledPaintRect.move(scrollOffset);
 
-    // Set clip rect to match revised damage rect.
-    gc->save();
-    gc->translate(static_cast<float>(tx), static_cast<float>(ty));
-    gc->clip(r);
-
-    // FIXME: Can we optimize scrolling to not require repainting the entire
-    // window? Should we?
-    for (int i = 0; i < numItems(); ++i)
-        paintRow(gc, r, i);
-
-    // Special case for an empty popup.
-    if (!numItems())
-        gc->fillRect(r, Color::white);
-
-    gc->restore();
-
-    if (m_verticalScrollbar) {
-        GraphicsContextStateSaver stateSaver(*gc);
-        IntRect scrollbarDirtyRect = rect;
-        IntRect visibleAreaWithScrollbars(location(), visibleContentRect(IncludeScrollbars).size());
-        scrollbarDirtyRect.intersect(visibleAreaWithScrollbars);
-        gc->translate(x(), y());
-        scrollbarDirtyRect.moveBy(-location());
-        gc->clip(IntRect(IntPoint(), visibleAreaWithScrollbars.size()));
-
-        m_verticalScrollbar->paint(gc, scrollbarDirtyRect);
+        // FIXME: Can we optimize scrolling to not require repainting the entire
+        // window? Should we?
+        for (int i = 0; i < numItems(); ++i)
+            paintRow(gc, scrolledPaintRect, i);
+    } else {
+        // Special case for an empty popup.
+        DrawingRecorder drawingRecorder(*gc, *this, DisplayItem::PopupListBoxBackground, boundsRect());
+        if (!drawingRecorder.canUseCachedDrawing())
+            gc->fillRect(boundsRect(), Color::white);
     }
+
+    if (verticalScrollbar())
+        verticalScrollbar()->paint(gc, paintRect);
 }
 
 static const int separatorPadding = 4;
@@ -417,10 +383,14 @@ static const int optionRowHeightForTouch = 28;
 
 void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowIndex)
 {
-    // This code is based largely on RenderListBox::paint* methods.
+    // This code is based largely on LayoutListBox::paint* methods.
 
     IntRect rowRect = getRowBounds(rowIndex);
     if (!rowRect.intersects(rect))
+        return;
+
+    DrawingRecorder drawingRecorder(*gc, *m_items[rowIndex], DisplayItem::PopupListBoxRow, rowRect);
+    if (drawingRecorder.canUseCachedDrawing())
         return;
 
     PopupMenuStyle style = m_popupClient->itemStyle(rowIndex);
@@ -428,8 +398,8 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
     // Paint background
     Color backColor, textColor, labelColor;
     if (rowIndex == m_selectedIndex) {
-        backColor = RenderTheme::theme().activeListBoxSelectionBackgroundColor();
-        textColor = RenderTheme::theme().activeListBoxSelectionForegroundColor();
+        backColor = LayoutTheme::theme().activeListBoxSelectionBackgroundColor();
+        textColor = LayoutTheme::theme().activeListBoxSelectionForegroundColor();
         labelColor = textColor;
     } else {
         backColor = style.backgroundColor();
@@ -439,8 +409,8 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
         // <select> background color. On Linux, that makes the <option>
         // background color very dark, so by default, try to use a lighter
         // background color for <option>s.
-        if (style.backgroundColorType() == PopupMenuStyle::DefaultBackgroundColor && RenderTheme::theme().systemColor(CSSValueButtonface) == backColor)
-            backColor = RenderTheme::theme().systemColor(CSSValueMenu);
+        if (style.backgroundColorType() == PopupMenuStyle::DefaultBackgroundColor && LayoutTheme::theme().systemColor(CSSValueButtonface) == backColor)
+            backColor = LayoutTheme::theme().systemColor(CSSValueMenu);
 #endif
 
         // FIXME: for now the label color is hard-coded. It should be added to
@@ -515,19 +485,14 @@ Font PopupListBox::getRowFont(int rowIndex) const
     return itemFont;
 }
 
-void PopupListBox::abandon()
+void PopupListBox::cancel()
 {
     RefPtrWillBeRawPtr<PopupListBox> protect(this);
 
-    m_selectedIndex = m_originalIndex;
-
     hidePopup();
 
-    if (m_acceptedIndexOnAbandon >= 0) {
-        if (m_popupClient)
-            m_popupClient->valueChanged(m_acceptedIndexOnAbandon);
-        m_acceptedIndexOnAbandon = -1;
-    }
+    if (m_popupClient)
+        m_popupClient->popupDidCancel();
 }
 
 int PopupListBox::pointToRowIndex(const IntPoint& point)
@@ -549,10 +514,6 @@ int PopupListBox::pointToRowIndex(const IntPoint& point)
 
 bool PopupListBox::acceptIndex(int index)
 {
-    // Clear m_acceptedIndexOnAbandon once user accepts the selected index.
-    if (m_acceptedIndexOnAbandon >= 0)
-        m_acceptedIndexOnAbandon = -1;
-
     if (index >= numItems())
         return false;
 
@@ -596,11 +557,6 @@ void PopupListBox::selectIndex(int index)
         clearSelection();
 }
 
-void PopupListBox::setOriginalIndex(int index)
-{
-    m_originalIndex = m_selectedIndex = index;
-}
-
 int PopupListBox::getRowHeight(int index) const
 {
     int minimumHeight = m_deviceSupportsTouch ? optionRowHeightForTouch : minRowHeight;
@@ -634,6 +590,9 @@ void PopupListBox::invalidateRow(int index)
     if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
         clipRect.move(verticalScrollbar()->width(), 0);
     invalidateRect(clipRect);
+
+    if (HostWindow* host = hostWindow())
+        host->invalidateDisplayItemClient(m_items[index]->displayItemClient());
 }
 
 void PopupListBox::scrollToRevealRow(int index)
@@ -726,7 +685,9 @@ void PopupListBox::hidePopup()
 
 void PopupListBox::updateFromElement()
 {
-    clear();
+    // Clearing the items doesn't immediately invalidate display items, but the
+    // layout at the end of this method does.
+    m_items.clear();
 
     int size = m_popupClient->listSize();
     for (int i = 0; i < size; ++i) {
@@ -737,7 +698,7 @@ void PopupListBox::updateFromElement()
             type = PopupItem::TypeGroup;
         else
             type = PopupItem::TypeOption;
-        m_items.append(new PopupItem(m_popupClient->itemText(i), type));
+        m_items.append(adoptPtr(new PopupItem(m_popupClient->itemText(i), type)));
         m_items[i]->enabled = isSelectableItem(i);
         PopupMenuStyle style = m_popupClient->itemStyle(i);
         m_items[i]->textDirection = style.textDirection();
@@ -745,8 +706,8 @@ void PopupListBox::updateFromElement()
         m_items[i]->displayNone = style.isDisplayNone();
     }
 
-    m_selectedIndex = m_popupClient->selectedIndex();
-    setOriginalIndex(m_selectedIndex);
+    if (m_selectedIndex >= static_cast<int>(m_items.size()))
+        m_selectedIndex = m_popupClient->selectedIndex();
 
     layout();
 }
@@ -846,12 +807,12 @@ void PopupListBox::layout()
         scrollToRevealSelection();
 
     invalidate();
-}
 
-void PopupListBox::clear()
-{
-    deleteAllValues(m_items);
-    m_items.clear();
+    // It's slight overkill to invalidate /all/ display items, but in practice
+    // most of the display items in the host window belong to the rows of this
+    // list box.
+    if (HostWindow* host = hostWindow())
+        host->invalidateAllDisplayItems();
 }
 
 bool PopupListBox::isPointInBounds(const IntPoint& point)
@@ -867,7 +828,7 @@ int PopupListBox::popupContentHeight() const
 void PopupListBox::invalidateRect(const IntRect& rect)
 {
     if (HostWindow* h = hostWindow())
-        h->invalidateContentsAndRootView(rect);
+        h->invalidateRect(rect);
 }
 
 IntRect PopupListBox::windowClipRect() const
@@ -884,6 +845,9 @@ void PopupListBox::invalidateScrollbarRect(Scrollbar* scrollbar, const IntRect& 
     IntRect dirtyRect = rect;
     dirtyRect.move(scrollbar->x(), scrollbar->y());
     invalidateRect(dirtyRect);
+
+    if (HostWindow* host = hostWindow())
+        host->invalidateDisplayItemClient(scrollbar->displayItemClient());
 }
 
 bool PopupListBox::isActive() const
@@ -921,10 +885,10 @@ void PopupListBox::setHasVerticalScrollbar(bool hasBar)
     }
 }
 
-Scrollbar* PopupListBox::scrollbarAtWindowPoint(const IntPoint& windowPoint)
+Scrollbar* PopupListBox::scrollbarAtRootFramePoint(const IntPoint& pointInRootFrame)
 {
     return m_verticalScrollbar && m_verticalScrollbar->frameRect().contains(
-        convertFromContainingWindow(windowPoint)) ? m_verticalScrollbar.get() : 0;
+        convertFromContainingWindow(pointInRootFrame)) ? m_verticalScrollbar.get() : 0;
 }
 
 IntRect PopupListBox::contentsToWindow(const IntRect& contentsRect) const
@@ -1049,7 +1013,8 @@ void PopupListBox::setScrollOffset(const IntPoint& newOffset)
         IntRect clipRect = windowClipRect();
         IntRect updateRect = clipRect;
         updateRect.intersect(convertToContainingWindow(IntRect((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar()) ? verticalScrollbar()->width() : 0, 0, visibleWidth(), visibleHeight())));
-        window->invalidateContentsForSlowScroll(updateRect);
+        window->invalidateRect(updateRect);
+        window->invalidateDisplayItemClient(displayItemClient());
     }
 }
 

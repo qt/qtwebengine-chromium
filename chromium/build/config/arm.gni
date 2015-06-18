@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-if (cpu_arch == "arm") {
+if (current_cpu == "arm") {
   declare_args() {
     # Version of the ARM processor when compiling on ARM. Ignored on non-ARM
     # platforms.
@@ -20,17 +20,18 @@ if (cpu_arch == "arm") {
 
     # Whether to use the neon FPU instruction set or not.
     arm_use_neon = true
+
+    # Whether to enable optional NEON code paths.
+    arm_optionally_use_neon = false
+
+    if (is_android) {
+      arm_use_neon = false
+      arm_optionally_use_neon = true
+    }
   }
 
-  assert(arm_float_abi == "" ||
-         arm_float_abi == "hard" ||
-         arm_float_abi == "soft" ||
-         arm_float_abi == "softfp")
-
-  if (is_android) {
-    arm_use_neon = false
-  }
-  arm_optionally_use_neon = true
+  assert(arm_float_abi == "" || arm_float_abi == "hard" ||
+         arm_float_abi == "soft" || arm_float_abi == "softfp")
 
   if (arm_version == 6) {
     arm_arch = "armv6"
@@ -41,10 +42,10 @@ if (cpu_arch == "arm") {
       arm_float_abi = "softfp"
     }
     arm_fpu = "vfp"
+
     # Thumb is a reduced instruction set available on some ARM processors that
     # has increased code density.
     arm_use_thumb = false
-
   } else if (arm_version == 7) {
     arm_arch = "armv7-a"
     if (arm_tune == "") {

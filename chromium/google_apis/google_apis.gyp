@@ -11,6 +11,7 @@
   ],
   'targets': [
     {
+      # GN version: //google_apis
       'target_name': 'google_apis',
       'type': 'static_library',
       'includes': [
@@ -22,6 +23,7 @@
         '../crypto/crypto.gyp:crypto',
         '../net/net.gyp:net',
         '../third_party/libxml/libxml.gyp:libxml',
+        '../url/url.gyp:url_lib',
       ],
       'conditions': [
         ['google_api_key!=""', {
@@ -46,6 +48,8 @@
             'drive/auth_service_observer.h',
             'drive/base_requests.cc',
             'drive/base_requests.h',
+            'drive/drive_api_error_codes.cc',
+            'drive/drive_api_error_codes.h',
             'drive/drive_api_parser.cc',
             'drive/drive_api_parser.h',
             'drive/drive_api_requests.cc',
@@ -53,14 +57,6 @@
             'drive/drive_api_url_generator.cc',
             'drive/drive_api_url_generator.h',
             'drive/drive_common_callbacks.h',
-            'drive/gdata_errorcode.cc',
-            'drive/gdata_errorcode.h',
-            'drive/gdata_wapi_requests.cc',
-            'drive/gdata_wapi_requests.h',
-            'drive/gdata_wapi_parser.cc',
-            'drive/gdata_wapi_parser.h',
-            'drive/gdata_wapi_url_generator.cc',
-            'drive/gdata_wapi_url_generator.h',
             'drive/request_sender.cc',
             'drive/request_sender.h',
             'drive/request_util.cc',
@@ -94,15 +90,13 @@
         'gaia/google_service_auth_error.h',
         'gaia/identity_provider.cc',
         'gaia/identity_provider.h',
-        'gaia/merge_session_helper.cc',
-        'gaia/merge_session_helper.h',
-        'gaia/oauth_request_signer.cc',
-        'gaia/oauth_request_signer.h',
         'gaia/oauth2_access_token_consumer.h',
-        'gaia/oauth2_access_token_fetcher.h',
         'gaia/oauth2_access_token_fetcher.cc',
+        'gaia/oauth2_access_token_fetcher.h',
         'gaia/oauth2_access_token_fetcher_impl.cc',
         'gaia/oauth2_access_token_fetcher_impl.h',
+        'gaia/oauth2_access_token_fetcher_immediate_error.cc',
+        'gaia/oauth2_access_token_fetcher_immediate_error.h',
         'gaia/oauth2_api_call_flow.cc',
         'gaia/oauth2_api_call_flow.h',
         'gaia/oauth2_mint_token_flow.cc',
@@ -111,6 +105,8 @@
         'gaia/oauth2_token_service.h',
         'gaia/oauth2_token_service_request.cc',
         'gaia/oauth2_token_service_request.h',
+        'gaia/oauth_request_signer.cc',
+        'gaia/oauth_request_signer.h',
         'gaia/ubertoken_fetcher.cc',
         'gaia/ubertoken_fetcher.h',
         'google_api_keys.cc',
@@ -136,20 +132,19 @@
         '..',
       ],
       'sources': [
-        'google_api_keys_unittest.cc',
         'gaia/account_tracker_unittest.cc',
         'gaia/gaia_auth_fetcher_unittest.cc',
         'gaia/gaia_auth_util_unittest.cc',
         'gaia/gaia_oauth_client_unittest.cc',
         'gaia/google_service_auth_error_unittest.cc',
-        'gaia/merge_session_helper_unittest.cc',
-        'gaia/oauth_request_signer_unittest.cc',
         'gaia/oauth2_access_token_fetcher_impl_unittest.cc',
         'gaia/oauth2_api_call_flow_unittest.cc',
         'gaia/oauth2_mint_token_flow_unittest.cc',
         'gaia/oauth2_token_service_request_unittest.cc',
         'gaia/oauth2_token_service_unittest.cc',
+        'gaia/oauth_request_signer_unittest.cc',
         'gaia/ubertoken_fetcher_unittest.cc',
+        'google_api_keys_unittest.cc',
       ],
       'conditions': [
         ['enable_extensions==1', {
@@ -159,9 +154,6 @@
             'drive/drive_api_parser_unittest.cc',
             'drive/drive_api_requests_unittest.cc',
             'drive/drive_api_url_generator_unittest.cc',
-            'drive/gdata_wapi_parser_unittest.cc',
-            'drive/gdata_wapi_requests_unittest.cc',
-            'drive/gdata_wapi_url_generator_unittest.cc',
             'drive/request_sender_unittest.cc',
             'drive/request_util_unittest.cc',
             'drive/time_util_unittest.cc',
@@ -170,6 +162,7 @@
       ],
     },
     {
+      # GN version: //google_apis:test_support
       'target_name': 'google_apis_test_support',
       'type': 'static_library',
       'dependencies': [

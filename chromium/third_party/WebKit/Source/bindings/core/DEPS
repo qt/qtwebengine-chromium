@@ -1,0 +1,12 @@
+include_rules = [
+    "+bindings/core",
+    "-bindings/modules",
+    "+core",
+    "+heap",
+    "+gin/public",
+    "-modules",
+    "+platform",
+    "+public/platform",
+    "+third_party/snappy",
+    "-web",
+]

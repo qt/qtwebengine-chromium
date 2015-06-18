@@ -156,11 +156,10 @@ HttpResponseHeaders::HttpResponseHeaders(const std::string& raw_input)
                                    HttpUtil::GetStatusCodesForHistogram());
 }
 
-HttpResponseHeaders::HttpResponseHeaders(const Pickle& pickle,
-                                         PickleIterator* iter)
+HttpResponseHeaders::HttpResponseHeaders(PickleIterator* iter)
     : response_code_(-1) {
   std::string raw_input;
-  if (pickle.ReadString(iter, &raw_input))
+  if (iter->ReadString(&raw_input))
     Parse(raw_input);
 }
 
@@ -1215,9 +1214,10 @@ bool HttpResponseHeaders::IsKeepAlive() const {
   // NOTE: It is perhaps risky to assume that a Proxy-Connection header is
   // meaningful when we don't know that this response was from a proxy, but
   // Mozilla also does this, so we'll do the same.
-  static const char* kConnectionHeaders[] = {"connection", "proxy-connection"};
+  static const char* const kConnectionHeaders[] = {
+    "connection", "proxy-connection"};
   struct KeepAliveToken {
-    const char* token;
+    const char* const token;
     bool keep_alive;
   };
   static const KeepAliveToken kKeepAliveTokens[] = {{"keep-alive", true},
@@ -1392,7 +1392,7 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
 }
 
 base::Value* HttpResponseHeaders::NetLogCallback(
-    NetLog::LogLevel log_level) const {
+    NetLogCaptureMode capture_mode) const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   base::ListValue* headers = new base::ListValue();
   headers->Append(new base::StringValue(GetStatusLine()));
@@ -1400,7 +1400,8 @@ base::Value* HttpResponseHeaders::NetLogCallback(
   std::string name;
   std::string value;
   while (EnumerateHeaderLines(&iterator, &name, &value)) {
-    std::string log_value = ElideHeaderValueForNetLog(log_level, name, value);
+    std::string log_value =
+        ElideHeaderValueForNetLog(capture_mode, name, value);
     std::string escaped_name = EscapeNonASCII(name);
     std::string escaped_value = EscapeNonASCII(log_value);
     headers->Append(

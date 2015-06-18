@@ -22,8 +22,8 @@
 #include "base/win/scoped_comptr.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/ui_base_export.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/vector2d.h"
 
 namespace ui {
 
@@ -49,43 +49,48 @@ class DataObjectImpl : public DownloadFileObserver,
   size_t size() const { return contents_.size(); }
 
   // DownloadFileObserver implementation:
-  virtual void OnDownloadCompleted(const base::FilePath& file_path);
-  virtual void OnDownloadAborted();
+  void OnDownloadCompleted(const base::FilePath& file_path) override;
+  void OnDownloadAborted() override;
 
   // IDataObject implementation:
-  HRESULT __stdcall GetData(FORMATETC* format_etc, STGMEDIUM* medium);
-  HRESULT __stdcall GetDataHere(FORMATETC* format_etc, STGMEDIUM* medium);
-  HRESULT __stdcall QueryGetData(FORMATETC* format_etc);
-  HRESULT __stdcall GetCanonicalFormatEtc(
-      FORMATETC* format_etc, FORMATETC* result);
-  HRESULT __stdcall SetData(
-      FORMATETC* format_etc, STGMEDIUM* medium, BOOL should_release);
-  HRESULT __stdcall EnumFormatEtc(
-      DWORD direction, IEnumFORMATETC** enumerator);
-  HRESULT __stdcall DAdvise(FORMATETC* format_etc, DWORD advf,
-                            IAdviseSink* sink, DWORD* connection);
-  HRESULT __stdcall DUnadvise(DWORD connection);
-  HRESULT __stdcall EnumDAdvise(IEnumSTATDATA** enumerator);
+  HRESULT __stdcall GetData(FORMATETC* format_etc, STGMEDIUM* medium) override;
+  HRESULT __stdcall GetDataHere(FORMATETC* format_etc,
+                                STGMEDIUM* medium) override;
+  HRESULT __stdcall QueryGetData(FORMATETC* format_etc) override;
+  HRESULT __stdcall GetCanonicalFormatEtc(FORMATETC* format_etc,
+                                          FORMATETC* result) override;
+  HRESULT __stdcall SetData(FORMATETC* format_etc,
+                            STGMEDIUM* medium,
+                            BOOL should_release) override;
+  HRESULT __stdcall EnumFormatEtc(DWORD direction,
+                                  IEnumFORMATETC** enumerator) override;
+  HRESULT __stdcall DAdvise(FORMATETC* format_etc,
+                            DWORD advf,
+                            IAdviseSink* sink,
+                            DWORD* connection) override;
+  HRESULT __stdcall DUnadvise(DWORD connection) override;
+  HRESULT __stdcall EnumDAdvise(IEnumSTATDATA** enumerator) override;
 
   // IDataObjectAsyncCapability implementation:
-  HRESULT __stdcall EndOperation(
-      HRESULT result, IBindCtx* reserved, DWORD effects);
-  HRESULT __stdcall GetAsyncMode(BOOL* is_op_async);
-  HRESULT __stdcall InOperation(BOOL* in_async_op);
-  HRESULT __stdcall SetAsyncMode(BOOL do_op_async);
-  HRESULT __stdcall StartOperation(IBindCtx* reserved);
+  HRESULT __stdcall EndOperation(HRESULT result,
+                                 IBindCtx* reserved,
+                                 DWORD effects) override;
+  HRESULT __stdcall GetAsyncMode(BOOL* is_op_async) override;
+  HRESULT __stdcall InOperation(BOOL* in_async_op) override;
+  HRESULT __stdcall SetAsyncMode(BOOL do_op_async) override;
+  HRESULT __stdcall StartOperation(IBindCtx* reserved) override;
 
   // IUnknown implementation:
-  HRESULT __stdcall QueryInterface(const IID& iid, void** object);
-  ULONG __stdcall AddRef();
-  ULONG __stdcall Release();
+  HRESULT __stdcall QueryInterface(const IID& iid, void** object) override;
+  ULONG __stdcall AddRef() override;
+  ULONG __stdcall Release() override;
 
  private:
   // FormatEtcEnumerator only likes us for our StoredDataMap typedef.
   friend class FormatEtcEnumerator;
   friend class OSExchangeDataProviderWin;
 
-  virtual ~DataObjectImpl();
+  ~DataObjectImpl() override;
 
   void StopDownloads();
 
@@ -99,17 +104,8 @@ class DataObjectImpl : public DownloadFileObserver,
     bool owns_medium;
     scoped_refptr<DownloadFileProvider> downloader;
 
-    StoredDataInfo(const FORMATETC& format_etc, STGMEDIUM* medium)
-        : format_etc(format_etc), medium(medium), owns_medium(true) {}
-
-    ~StoredDataInfo() {
-      if (owns_medium) {
-        ReleaseStgMedium(medium);
-        delete medium;
-      }
-      if (downloader.get())
-        downloader->Stop();
-    }
+    StoredDataInfo(const FORMATETC& format_etc, STGMEDIUM* medium);
+    ~StoredDataInfo();
   };
 
   typedef ScopedVector<StoredDataInfo> StoredData;
@@ -142,7 +138,7 @@ class UI_BASE_EXPORT OSExchangeDataProviderWin
   explicit OSExchangeDataProviderWin(IDataObject* source);
   OSExchangeDataProviderWin();
 
-  virtual ~OSExchangeDataProviderWin();
+  ~OSExchangeDataProviderWin() override;
 
   IDataObject* data_object() const { return data_.get(); }
   IDataObjectAsyncCapability* async_operation() const { return data_.get(); }

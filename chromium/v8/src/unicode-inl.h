@@ -13,7 +13,7 @@ namespace unibrow {
 
 template <class T, int s> bool Predicate<T, s>::get(uchar code_point) {
   CacheEntry entry = entries_[code_point & kMask];
-  if (entry.code_point_ == code_point) return entry.value_;
+  if (entry.code_point() == code_point) return entry.value();
   return CalculateValue(code_point);
 }
 
@@ -110,7 +110,7 @@ unsigned Utf8::Encode(char* str,
 }
 
 
-uchar Utf8::ValueOf(const byte* bytes, unsigned length, unsigned* cursor) {
+uchar Utf8::ValueOf(const byte* bytes, size_t length, size_t* cursor) {
   if (length <= 0) return kBadChar;
   byte first = bytes[0];
   // Characters between 0000 and 0007F are encoded as a single character

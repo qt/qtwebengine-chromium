@@ -39,10 +39,9 @@ class ExceptionState;
 class ExecutionContext;
 class GenericEventQueue;
 
-class MediaController final : public RefCountedWillBeGarbageCollectedFinalized<MediaController>, public EventTargetWithInlineData {
+class MediaController final : public EventTargetWithInlineData, public RefCountedWillBeNoBase<MediaController> {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(MediaController);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaController);
 public:
     static PassRefPtrWillBeRawPtr<MediaController> create(ExecutionContext*);
     virtual ~MediaController();
@@ -88,7 +87,7 @@ public:
     void clearExecutionContext() { m_executionContext = nullptr; }
 #endif
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaController(ExecutionContext*);

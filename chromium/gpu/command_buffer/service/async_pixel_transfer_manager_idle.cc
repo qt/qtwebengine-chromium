@@ -5,10 +5,10 @@
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_idle.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_synthetic_delay.h"
 #include "base/lazy_instance.h"
 #include "base/memory/weak_ptr.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_synthetic_delay.h"
 #include "ui/gl/scoped_binders.h"
 
 namespace gpu {
@@ -32,9 +32,10 @@ class AsyncPixelTransferDelegateIdle
     : public AsyncPixelTransferDelegate,
       public base::SupportsWeakPtr<AsyncPixelTransferDelegateIdle> {
  public:
+  typedef base::Callback<GLuint()> TextureIdCallback;
   AsyncPixelTransferDelegateIdle(
       AsyncPixelTransferManagerIdle::SharedState* state,
-      GLuint texture_id,
+      const TextureIdCallback& texture_id_callback,
       const AsyncTexImage2DParams& define_params);
   ~AsyncPixelTransferDelegateIdle() override;
 
@@ -55,7 +56,7 @@ class AsyncPixelTransferDelegateIdle
                                  AsyncMemoryParams mem_params);
 
   uint64 id_;
-  GLuint texture_id_;
+  TextureIdCallback texture_id_callback_;
   bool transfer_in_progress_;
   AsyncTexImage2DParams define_params_;
 
@@ -68,10 +69,10 @@ class AsyncPixelTransferDelegateIdle
 
 AsyncPixelTransferDelegateIdle::AsyncPixelTransferDelegateIdle(
     AsyncPixelTransferManagerIdle::SharedState* shared_state,
-    GLuint texture_id,
+    const TextureIdCallback& texture_id_callback,
     const AsyncTexImage2DParams& define_params)
     : id_(g_next_pixel_transfer_state_id++),
-      texture_id_(texture_id),
+      texture_id_callback_(texture_id_callback),
       transfer_in_progress_(false),
       define_params_(define_params),
       shared_state_(shared_state) {}
@@ -144,8 +145,9 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexImage2D(
 
   void* data = mem_params.GetDataAddress();
 
-  base::TimeTicks begin_time(base::TimeTicks::HighResNow());
-  gfx::ScopedTextureBinder texture_binder(tex_params.target, texture_id_);
+  base::TimeTicks begin_time(base::TimeTicks::Now());
+  gfx::ScopedTextureBinder texture_binder(tex_params.target,
+                                          texture_id_callback_.Run());
 
   {
     TRACE_EVENT0("gpu", "glTexImage2D");
@@ -165,7 +167,7 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexImage2D(
   transfer_in_progress_ = false;
   shared_state_->texture_upload_count++;
   shared_state_->total_texture_upload_time +=
-      base::TimeTicks::HighResNow() - begin_time;
+      base::TimeTicks::Now() - begin_time;
 
   // The texture is already fully bound so just call it now.
   bind_callback.Run();
@@ -180,12 +182,12 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexSubImage2D(
 
   void* data = mem_params.GetDataAddress();
 
-  base::TimeTicks begin_time(base::TimeTicks::HighResNow());
-  gfx::ScopedTextureBinder texture_binder(tex_params.target, texture_id_);
+  base::TimeTicks begin_time(base::TimeTicks::Now());
+  gfx::ScopedTextureBinder texture_binder(tex_params.target,
+                                          texture_id_callback_.Run());
 
-  // If it's a full texture update, use glTexImage2D as it's faster.
-  // TODO(epenner): Make this configurable (http://crbug.com/259924)
-  if (tex_params.xoffset == 0 &&
+  if (shared_state_->use_teximage2d_over_texsubimage2d &&
+      tex_params.xoffset == 0 &&
       tex_params.yoffset == 0 &&
       tex_params.target == define_params_.target &&
       tex_params.level  == define_params_.level &&
@@ -220,7 +222,7 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexSubImage2D(
   transfer_in_progress_ = false;
   shared_state_->texture_upload_count++;
   shared_state_->total_texture_upload_time +=
-      base::TimeTicks::HighResNow() - begin_time;
+      base::TimeTicks::Now() - begin_time;
 }
 
 AsyncPixelTransferManagerIdle::Task::Task(
@@ -234,8 +236,11 @@ AsyncPixelTransferManagerIdle::Task::Task(
 
 AsyncPixelTransferManagerIdle::Task::~Task() {}
 
-AsyncPixelTransferManagerIdle::SharedState::SharedState()
-    : texture_upload_count(0) {}
+AsyncPixelTransferManagerIdle::SharedState::SharedState(
+    bool use_teximage2d_over_texsubimage2d)
+    : use_teximage2d_over_texsubimage2d(use_teximage2d_over_texsubimage2d),
+      texture_upload_count(0) {
+}
 
 AsyncPixelTransferManagerIdle::SharedState::~SharedState() {}
 
@@ -250,8 +255,9 @@ void AsyncPixelTransferManagerIdle::SharedState::ProcessNotificationTasks() {
   }
 }
 
-AsyncPixelTransferManagerIdle::AsyncPixelTransferManagerIdle()
-  : shared_state_() {
+AsyncPixelTransferManagerIdle::AsyncPixelTransferManagerIdle(
+    bool use_teximage2d_over_texsubimage2d)
+    : shared_state_(use_teximage2d_over_texsubimage2d) {
 }
 
 AsyncPixelTransferManagerIdle::~AsyncPixelTransferManagerIdle() {}
@@ -314,9 +320,15 @@ AsyncPixelTransferDelegate*
 AsyncPixelTransferManagerIdle::CreatePixelTransferDelegateImpl(
     gles2::TextureRef* ref,
     const AsyncTexImage2DParams& define_params) {
-  return new AsyncPixelTransferDelegateIdle(&shared_state_,
-                                            ref->service_id(),
-                                            define_params);
+  return new AsyncPixelTransferDelegateIdle(
+      &shared_state_,
+      // Not directly passing texture_ref->service_id here because it can change
+      // if avoid_egl_image_target_texture_reuse workaround is in effect.
+      // Unretained is safe because AsyncPixelTransferManager observes
+      // TextureRef destruction and destroys the delegate before TextureRef
+      // is destroyed.
+      base::Bind(&gles2::TextureRef::service_id, base::Unretained(ref)),
+      define_params);
 }
 
 }  // namespace gpu

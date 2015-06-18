@@ -20,9 +20,9 @@
 // corresponds to 'offsetof' (in stddef.h), except that it doesn't
 // use 0 or NULL, which causes a problem with the compiler warnings
 // we have enabled (which is also why 'offsetof' doesn't seem to work).
-// Here we simply use the non-zero value 4, which seems to work.
-#define OFFSET_OF(type, field)                                          \
-  (reinterpret_cast<intptr_t>(&(reinterpret_cast<type*>(4)->field)) - 4)
+// Here we simply use the aligned, non-zero value 16.
+#define OFFSET_OF(type, field) \
+  (reinterpret_cast<intptr_t>(&(reinterpret_cast<type*>(16)->field)) - 16)
 
 
 #if V8_OS_NACL
@@ -228,11 +228,15 @@ V8_INLINE Dest bit_cast(Source const& source) {
 }
 
 
+// Put this in the private: declarations for a class to be unassignable.
+#define DISALLOW_ASSIGN(TypeName) void operator=(const TypeName&)
+
+
 // A macro to disallow the evil copy constructor and operator= functions
 // This should be used in the private: declarations for a class
-#define DISALLOW_COPY_AND_ASSIGN(TypeName)  \
-  TypeName(const TypeName&) V8_DELETE;      \
-  void operator=(const TypeName&) V8_DELETE
+#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+  TypeName(const TypeName&) = delete;      \
+  void operator=(const TypeName&) = delete
 
 
 // A macro to disallow all the implicit constructors, namely the
@@ -241,8 +245,8 @@ V8_INLINE Dest bit_cast(Source const& source) {
 // This should be used in the private: declarations for a class
 // that wants to prevent anyone from instantiating it. This is
 // especially useful for classes containing only static methods.
-#define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName)  \
-  TypeName() V8_DELETE;                           \
+#define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName) \
+  TypeName() = delete;                           \
   DISALLOW_COPY_AND_ASSIGN(TypeName)
 
 
@@ -333,7 +337,7 @@ inline void USE(T) { }
 # define V8_INTPTR_C(x)   (x ## LL)
 # define V8_PTR_PREFIX    "I64"
 #elif V8_HOST_ARCH_64_BIT
-# if V8_OS_MACOSX
+# if V8_OS_MACOSX || V8_OS_OPENBSD
 #  define V8_UINT64_C(x)   (x ## ULL)
 #  define V8_INT64_C(x)    (x ## LL)
 # else
@@ -346,7 +350,11 @@ inline void USE(T) { }
 # define V8_UINT64_C(x)   (x ## ULL)
 # define V8_INT64_C(x)    (x ## LL)
 # define V8_INTPTR_C(x)   (x)
+#if V8_OS_AIX
+#define V8_PTR_PREFIX "l"
+#else
 # define V8_PTR_PREFIX    ""
+#endif
 #endif
 
 #define V8PRIxPTR V8_PTR_PREFIX "x"

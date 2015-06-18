@@ -26,14 +26,9 @@
 #include "config.h"
 #include "core/events/OverflowEvent.h"
 
-namespace blink {
+#include "platform/RuntimeEnabledFeatures.h"
 
-OverflowEventInit::OverflowEventInit()
-    : orient(0)
-    , horizontalOverflow(false)
-    , verticalOverflow(false)
-{
-}
+namespace blink {
 
 OverflowEvent::OverflowEvent()
     : Event(EventTypeNames::overflowchanged, false, false)
@@ -41,6 +36,7 @@ OverflowEvent::OverflowEvent()
     , m_horizontalOverflow(false)
     , m_verticalOverflow(false)
 {
+    ASSERT(RuntimeEnabledFeatures::overflowChangedEventEnabled());
 }
 
 OverflowEvent::OverflowEvent(bool horizontalOverflowChanged, bool horizontalOverflow, bool verticalOverflowChanged, bool verticalOverflow)
@@ -48,6 +44,7 @@ OverflowEvent::OverflowEvent(bool horizontalOverflowChanged, bool horizontalOver
     , m_horizontalOverflow(horizontalOverflow)
     , m_verticalOverflow(verticalOverflow)
 {
+    ASSERT(RuntimeEnabledFeatures::overflowChangedEventEnabled());
     ASSERT(horizontalOverflowChanged || verticalOverflowChanged);
 
     if (horizontalOverflowChanged && verticalOverflowChanged)
@@ -60,10 +57,18 @@ OverflowEvent::OverflowEvent(bool horizontalOverflowChanged, bool horizontalOver
 
 OverflowEvent::OverflowEvent(const AtomicString& type, const OverflowEventInit& initializer)
     : Event(type, initializer)
-    , m_orient(initializer.orient)
-    , m_horizontalOverflow(initializer.horizontalOverflow)
-    , m_verticalOverflow(initializer.verticalOverflow)
+    , m_orient(0)
+    , m_horizontalOverflow(false)
+    , m_verticalOverflow(false)
 {
+    ASSERT(RuntimeEnabledFeatures::overflowChangedEventEnabled());
+
+    if (initializer.hasOrient())
+        m_orient = initializer.orient();
+    if (initializer.hasHorizontalOverflow())
+        m_horizontalOverflow = initializer.horizontalOverflow();
+    if (initializer.hasVerticalOverflow())
+        m_verticalOverflow = initializer.verticalOverflow();
 }
 
 const AtomicString& OverflowEvent::interfaceName() const
@@ -71,7 +76,7 @@ const AtomicString& OverflowEvent::interfaceName() const
     return EventNames::OverflowEvent;
 }
 
-void OverflowEvent::trace(Visitor* visitor)
+DEFINE_TRACE(OverflowEvent)
 {
     Event::trace(visitor);
 }

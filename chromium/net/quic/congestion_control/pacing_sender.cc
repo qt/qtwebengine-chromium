@@ -14,18 +14,30 @@ PacingSender::PacingSender(SendAlgorithmInterface* sender,
       initial_packet_burst_(initial_packet_burst),
       burst_tokens_(initial_packet_burst),
       last_delayed_packet_sent_time_(QuicTime::Zero()),
-      next_packet_send_time_(QuicTime::Zero()),
+      ideal_next_packet_send_time_(QuicTime::Zero()),
       was_last_send_delayed_(false) {
 }
 
 PacingSender::~PacingSender() {}
 
-void PacingSender::SetFromConfig(const QuicConfig& config, bool is_server) {
-  sender_->SetFromConfig(config, is_server);
+void PacingSender::SetFromConfig(const QuicConfig& config,
+                                 Perspective perspective) {
+  sender_->SetFromConfig(config, perspective);
+}
+
+bool PacingSender::ResumeConnectionState(
+    const CachedNetworkParameters& cached_network_params,
+    bool max_bandwidth_resumption) {
+  return sender_->ResumeConnectionState(cached_network_params,
+                                        max_bandwidth_resumption);
 }
 
 void PacingSender::SetNumEmulatedConnections(int num_connections) {
   sender_->SetNumEmulatedConnections(num_connections);
+}
+
+void PacingSender::SetMaxCongestionWindow(QuicByteCount max_congestion_window) {
+  sender_->SetMaxCongestionWindow(max_congestion_window);
 }
 
 void PacingSender::OnCongestionEvent(bool rtt_updated,
@@ -48,11 +60,15 @@ bool PacingSender::OnPacketSent(
   if (has_retransmittable_data != HAS_RETRANSMITTABLE_DATA) {
     return in_flight;
   }
+  if (bytes_in_flight == 0) {
+    // Add more burst tokens anytime the connection is leaving quiescence.
+    burst_tokens_ = initial_packet_burst_;
+  }
   if (burst_tokens_ > 0) {
     --burst_tokens_;
     was_last_send_delayed_ = false;
     last_delayed_packet_sent_time_ = QuicTime::Zero();
-    next_packet_send_time_ = QuicTime::Zero();
+    ideal_next_packet_send_time_ = QuicTime::Zero();
     return in_flight;
   }
   // The next packet should be sent as soon as the current packets has been
@@ -61,13 +77,14 @@ bool PacingSender::OnPacketSent(
   // If the last send was delayed, and the alarm took a long time to get
   // invoked, allow the connection to make up for lost time.
   if (was_last_send_delayed_) {
-    next_packet_send_time_ = next_packet_send_time_.Add(delay);
+    ideal_next_packet_send_time_ = ideal_next_packet_send_time_.Add(delay);
     // The send was application limited if it takes longer than the
     // pacing delay between sent packets.
     const bool application_limited =
         last_delayed_packet_sent_time_.IsInitialized() &&
         sent_time > last_delayed_packet_sent_time_.Add(delay);
-    const bool making_up_for_lost_time = next_packet_send_time_ <= sent_time;
+    const bool making_up_for_lost_time =
+        ideal_next_packet_send_time_ <= sent_time;
     // As long as we're making up time and not application limited,
     // continue to consider the packets delayed, allowing the packets to be
     // sent immediately.
@@ -78,9 +95,8 @@ bool PacingSender::OnPacketSent(
       last_delayed_packet_sent_time_ = QuicTime::Zero();
     }
   } else {
-    next_packet_send_time_ =
-        QuicTime::Max(next_packet_send_time_.Add(delay),
-                      sent_time.Add(delay).Subtract(alarm_granularity_));
+    ideal_next_packet_send_time_ = QuicTime::Max(
+        ideal_next_packet_send_time_.Add(delay), sent_time.Add(delay));
   }
   return in_flight;
 }
@@ -89,22 +105,14 @@ void PacingSender::OnRetransmissionTimeout(bool packets_retransmitted) {
   sender_->OnRetransmissionTimeout(packets_retransmitted);
 }
 
-void PacingSender::RevertRetransmissionTimeout() {
-  sender_->RevertRetransmissionTimeout();
-}
-
 QuicTime::Delta PacingSender::TimeUntilSend(
       QuicTime now,
       QuicByteCount bytes_in_flight,
       HasRetransmittableData has_retransmittable_data) const {
   QuicTime::Delta time_until_send =
       sender_->TimeUntilSend(now, bytes_in_flight, has_retransmittable_data);
-  if (bytes_in_flight == 0) {
-    // Add more burst tokens anytime the connection is entering quiescence.
-    burst_tokens_ = initial_packet_burst_;
-  }
-  if (burst_tokens_ > 0) {
-    // Don't pace if we have burst tokens available.
+  if (burst_tokens_ > 0 || bytes_in_flight == 0) {
+    // Don't pace if we have burst tokens available or leaving quiescence.
     return time_until_send;
   }
 
@@ -121,13 +129,11 @@ QuicTime::Delta PacingSender::TimeUntilSend(
   }
 
   // If the next send time is within the alarm granularity, send immediately.
-  // TODO(ianswett): This granularity logic ends up sending more packets than
-  // intended in an effort to make up for lost time that wasn't lost.
-  if (next_packet_send_time_ > now.Add(alarm_granularity_)) {
+  if (ideal_next_packet_send_time_ > now.Add(alarm_granularity_)) {
     DVLOG(1) << "Delaying packet: "
-             << next_packet_send_time_.Subtract(now).ToMicroseconds();
+             << ideal_next_packet_send_time_.Subtract(now).ToMicroseconds();
     was_last_send_delayed_ = true;
-    return next_packet_send_time_.Subtract(now);
+    return ideal_next_packet_send_time_.Subtract(now);
   }
 
   DVLOG(1) << "Sending packet now";

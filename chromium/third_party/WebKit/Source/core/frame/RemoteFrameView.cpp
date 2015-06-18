@@ -6,7 +6,7 @@
 #include "core/frame/RemoteFrameView.h"
 
 #include "core/frame/RemoteFrame.h"
-#include "core/rendering/RenderPart.h"
+#include "core/layout/LayoutPart.h"
 
 namespace blink {
 
@@ -29,14 +29,14 @@ PassRefPtrWillBeRawPtr<RemoteFrameView> RemoteFrameView::create(RemoteFrame* rem
 
 void RemoteFrameView::invalidateRect(const IntRect& rect)
 {
-    RenderPart* renderer = m_remoteFrame->ownerRenderer();
-    if (!renderer)
+    LayoutPart* layoutObject = m_remoteFrame->ownerLayoutObject();
+    if (!layoutObject)
         return;
 
-    IntRect repaintRect = rect;
-    repaintRect.move(renderer->borderLeft() + renderer->paddingLeft(),
-        renderer->borderTop() + renderer->paddingTop());
-    renderer->invalidatePaintRectangle(repaintRect);
+    LayoutRect repaintRect(rect);
+    repaintRect.move(layoutObject->borderLeft() + layoutObject->paddingLeft(),
+        layoutObject->borderTop() + layoutObject->paddingTop());
+    layoutObject->invalidatePaintRectangle(repaintRect);
 }
 
 void RemoteFrameView::setFrameRect(const IntRect& newRect)
@@ -56,7 +56,7 @@ void RemoteFrameView::frameRectsChanged()
     // FIXME: Notify embedder via WebLocalFrameClient when that is possible.
 }
 
-void RemoteFrameView::trace(Visitor* visitor)
+DEFINE_TRACE(RemoteFrameView)
 {
     visitor->trace(m_remoteFrame);
     Widget::trace(visitor);

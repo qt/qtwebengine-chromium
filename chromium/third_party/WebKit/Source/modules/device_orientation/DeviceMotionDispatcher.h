@@ -33,7 +33,7 @@
 
 #include "core/frame/PlatformEventDispatcher.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/WebDeviceMotionListener.h"
+#include "public/platform/modules/device_orientation/WebDeviceMotionListener.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
@@ -55,7 +55,7 @@ public:
     // Inherited from WebDeviceMotionListener.
     virtual void didChangeDeviceMotion(const WebDeviceMotionData&) override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     DeviceMotionDispatcher();

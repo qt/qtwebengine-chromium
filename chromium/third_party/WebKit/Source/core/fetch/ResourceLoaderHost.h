@@ -31,6 +31,7 @@
 #ifndef ResourceLoaderHost_h
 #define ResourceLoaderHost_h
 
+#include "core/CoreExport.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceLoadPriority.h"
 
@@ -43,10 +44,8 @@ class ResourceResponse;
 
 struct FetchInitiatorInfo;
 
-class ResourceLoaderHost : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT ResourceLoaderHost : public WillBeGarbageCollectedMixin {
 public:
-    virtual void incrementRequestCount(const Resource*) = 0;
-    virtual void decrementRequestCount(const Resource*) = 0;
     virtual void didLoadResource() = 0;
     virtual void redirectReceived(Resource*, const ResourceResponse&) = 0;
 
@@ -61,17 +60,25 @@ public:
 
     virtual void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*) = 0;
     virtual void didInitializeResourceLoader(ResourceLoader*) = 0;
-    virtual void willTerminateResourceLoader(ResourceLoader*) = 0;
     virtual void willStartLoadingResource(Resource*, ResourceRequest&) = 0;
 
     virtual bool canAccessRedirect(Resource*, ResourceRequest&, const ResourceResponse&, ResourceLoaderOptions&) = 0;
-    virtual bool canAccessResource(Resource*, SecurityOrigin* sourceOrigin, const KURL&) const = 0;
+    enum AccessControlLoggingDecision {
+        ShouldLogAccessControlErrors,
+        ShouldNotLogAccessControlErrors
+    };
+    virtual bool canAccessResource(Resource*, SecurityOrigin* sourceOrigin, const KURL&, AccessControlLoggingDecision) const = 0;
     virtual bool isControlledByServiceWorker() const = 0;
     virtual bool defersLoading() const = 0;
     virtual bool isLoadedBy(ResourceLoaderHost*) const = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
+    enum LoaderHostType {
+        ResourceFetcherType
+    };
+
+    virtual LoaderHostType objectType() const = 0;
 #if !ENABLE(OILPAN)
     virtual void refResourceLoaderHost() = 0;
     virtual void derefResourceLoaderHost() = 0;

@@ -35,7 +35,7 @@
                             WPARAM wParam,                        \
                             LPARAM lParam,                        \
                             LRESULT& lResult,                     \
-                            DWORD dwMsgMapID = 0) {               \
+                            DWORD dwMsgMapID = 0) override {      \
     BOOL bOldMsgHandled = m_bMsgHandled;                          \
     BOOL bRet = _ProcessWindowMessage(                            \
         hWnd, uMsg, wParam, lParam, lResult, dwMsgMapID);         \
@@ -1748,17 +1748,6 @@
       lResult = (wParam == UNICODE_NOCHAR) ? TRUE : FALSE; \
       return TRUE;                                         \
     }                                                      \
-  }
-
-// void OnWTSSessionChange(WPARAM nStatusCode, PWTSSESSION_NOTIFICATION
-// nSessionID)
-#define CR_MSG_WM_WTSSESSION_CHANGE(func)           \
-  if (uMsg == WM_WTSSESSION_CHANGE) {               \
-    SetMsgHandled(TRUE);                            \
-    func(wParam, (PWTSSESSION_NOTIFICATION)lParam); \
-    lResult = 0;                                    \
-    if (IsMsgHandled())                             \
-      return TRUE;                                  \
   }
 
 // OnThemeChanged()

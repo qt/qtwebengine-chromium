@@ -200,6 +200,49 @@ cr.define('login', function() {
     {id: 'spinner', class: 'custom-icon-spinner'}
   ];
 
+  /**
+   * The hover state for the icon. When user hovers over the icon, a tooltip
+   * should be shown after a short delay. This enum is used to keep track of
+   * the tooltip status related to hover state.
+   * @enum {string}
+   */
+  UserPodCustomIcon.HoverState = {
+    /** The user is not hovering over the icon. */
+    NO_HOVER: 'no_hover',
+
+    /** The user is hovering over the icon but the tooltip is not activated. */
+    HOVER: 'hover',
+
+    /**
+     * User is hovering over the icon and the tooltip is activated due to the
+     * hover state (which happens with delay after user starts hovering).
+     */
+    HOVER_TOOLTIP: 'hover_tooltip'
+  };
+
+  /**
+   * If the icon has a tooltip that should be automatically shown, the tooltip
+   * is shown even when there is no user action (i.e. user is not hovering over
+   * the icon), after a short delay. The tooltip should be hidden after some
+   * time. Note that the icon will not be considered autoshown if it was
+   * previously shown as a result of the user action.
+   * This enum is used to keep track of this state.
+   * @enum {string}
+   */
+  UserPodCustomIcon.TooltipAutoshowState = {
+    /** The tooltip should not be or was not automatically shown. */
+    DISABLED: 'disabled',
+
+    /**
+     * The tooltip should be automatically shown, but the timeout for showing
+     * the tooltip has not yet passed.
+     */
+    ENABLED: 'enabled',
+
+    /** The tooltip was automatically shown. */
+    ACTIVE : 'active'
+  };
+
   UserPodCustomIcon.prototype = {
     __proto__: HTMLDivElement.prototype,
 
@@ -211,48 +254,20 @@ cr.define('login', function() {
     iconId_: '',
 
     /**
-     * Tooltip to be shown when the user hovers over the icon. The icon
-     * properties may be set so the tooltip is shown automatically when the icon
-     * is updated. The tooltip is shown in a bubble attached to the icon
-     * element.
-     * @type {string}
-     * @private
-     */
-    tooltip_: '',
-
-    /**
-     * Whether the tooltip is shown and the user is hovering over the icon.
-     * @type {boolean}
-     * @private
-     */
-    tooltipActive_: false,
-
-    /**
-     * Whether the icon has been shown as a result of |autoshow| parameter begin
-     * set rather than user hovering over the icon.
-     * If this is set, the tooltip will not be removed when the mouse leaves the
-     * icon.
-     * @type {boolean}
-     * @private
-     */
-    tooltipAutoshown_: false,
-
-    /**
-     * A reference to the timeout for showing tooltip after mouse enters the
-     * icon.
+     * A reference to the timeout for updating icon hover state. Non-null
+     * only if there is an active timeout.
      * @type {?number}
      * @private
      */
-    showTooltipTimeout_: null,
+    updateHoverStateTimeout_: null,
 
     /**
-     * When {@code fadeOut} is called, the element gets hidden using fadeout
-     * animation. This is reference to the listener for transition end added to
-     * the icon element while it's fading out.
-     * @type {?function(Event)}
+     * A reference to the timeout for updating icon tooltip autoshow state.
+     * Non-null only if there is an active timeout.
+     * @type {?number}
      * @private
      */
-    hideTransitionListener_: null,
+    updateTooltipAutoshowStateTimeout_: null,
 
     /**
      * Callback for click and 'Enter' key events that gets set if the icon is
@@ -262,12 +277,52 @@ cr.define('login', function() {
      */
     actionHandler_: null,
 
+    /**
+     * The current tooltip state.
+     * @type {{active: function(): boolean,
+     *         autoshow: !UserPodCustomIcon.TooltipAutoshowState,
+     *         hover: !UserPodCustomIcon.HoverState,
+     *         text: string}}
+     * @private
+     */
+    tooltipState_: {
+      /**
+       * Utility method for determining whether the tooltip is active, either as
+       * a result of hover state or being autoshown.
+       * @return {boolean}
+       */
+      active: function() {
+        return this.autoshow == UserPodCustomIcon.TooltipAutoshowState.ACTIVE ||
+               this.hover == UserPodCustomIcon.HoverState.HOVER_TOOLTIP;
+      },
+
+      /**
+       * @type {!UserPodCustomIcon.TooltipAutoshowState}
+       */
+      autoshow: UserPodCustomIcon.TooltipAutoshowState.DISABLED,
+
+      /**
+       * @type {!UserPodCustomIcon.HoverState}
+       */
+      hover: UserPodCustomIcon.HoverState.NO_HOVER,
+
+      /**
+       * The tooltip text.
+       * @type {string}
+       */
+      text: ''
+    },
+
     /** @override */
     decorate: function() {
-      this.iconElement.addEventListener('mouseover',
-                                        this.showTooltipSoon_.bind(this));
-      this.iconElement.addEventListener('mouseout',
-                                        this.hideTooltip_.bind(this, false));
+      this.iconElement.addEventListener(
+          'mouseover',
+          this.updateHoverState_.bind(this,
+                                      UserPodCustomIcon.HoverState.HOVER));
+      this.iconElement.addEventListener(
+          'mouseout',
+          this.updateHoverState_.bind(this,
+                                      UserPodCustomIcon.HoverState.NO_HOVER));
       this.iconElement.addEventListener('mousedown',
                                         this.handleMouseDown_.bind(this));
       this.iconElement.addEventListener('click',
@@ -315,24 +370,7 @@ cr.define('login', function() {
      * Shows the icon.
      */
     show: function() {
-      this.resetHideTransitionState_();
       this.hidden = false;
-    },
-
-    /**
-     * Hides the icon using a fade-out animation.
-     */
-    fadeOut: function() {
-      // The icon is already being hidden.
-      if (this.iconElement.classList.contains('faded'))
-        return;
-
-      this.hideTooltip_(true);
-      this.iconElement.classList.add('faded');
-      this.hideTransitionListener_ = this.hide.bind(this);
-      this.iconElement.addEventListener('webkitTransitionEnd',
-                                        this.hideTransitionListener_);
-      ensureTransitionEndEvent(this.iconElement, 200);
     },
 
     /**
@@ -344,34 +382,14 @@ cr.define('login', function() {
      *    parameters.
      */
     setTooltip: function(tooltip) {
-      this.iconElement.classList.toggle('icon-with-tooltip', !!tooltip);
+      this.iconElement.classList.toggle('icon-with-tooltip', !!tooltip.text);
 
-      if (this.tooltip_ == tooltip.text && !tooltip.autoshow)
-        return;
-      this.tooltip_ = tooltip.text;
-
-      // If tooltip is already shown, just update the text.
-      if (tooltip.text && this.tooltipActive_ && !$('bubble').hidden) {
-        // If both previous and the new tooltip are supposed to be shown
-        // automatically, keep the autoshown flag.
-        var markAutoshown = this.tooltipAutoshown_ && tooltip.autoshow;
-        this.hideTooltip_(true);
-        this.showTooltip_();
-        this.tooltipAutoshown_ = markAutoshown;
-        return;
-      }
-
-      // If autoshow flag is set, make sure the tooltip gets shown.
-      if (tooltip.text && tooltip.autoshow) {
-        this.hideTooltip_(true);
-        this.showTooltip_();
-        this.tooltipAutoshown_ = true;
-        // Reset the tooltip active flag, which gets set in |showTooltip_|.
-        this.tooltipActive_ = false;
-        return;
-      }
-
-      this.hideTooltip_(true);
+      this.updateTooltipAutoshowState_(
+          tooltip.autoshow ?
+              UserPodCustomIcon.TooltipAutoshowState.ENABLED :
+              UserPodCustomIcon.TooltipAutoshowState.DISABLED);
+      this.tooltipState_.text = tooltip.text;
+      this.updateTooltip_();
     },
 
     /**
@@ -402,24 +420,21 @@ cr.define('login', function() {
      * Hides the icon and cleans its state.
      */
     hide: function() {
-      this.hideTooltip_(true);
-      this.hidden = true;
+      this.hideTooltip_();
+      this.clearUpdateHoverStateTimeout_();
+      this.clearUpdateTooltipAutoshowStateTimeout_();
       this.setInteractive(null);
-      this.resetHideTransitionState_();
+      this.hidden = true;
     },
 
     /**
-     * Ensures the icon's transition state potentially set by a call to
-     * {@code fadeOut} is cleared.
-     * @private
+     * Clears timeout for showing a tooltip if one is set. Used to cancel
+     * showing the tooltip when the user starts typing the password.
      */
-    resetHideTransitionState_: function() {
-      if (this.hideTransitionListener_) {
-        this.iconElement.removeEventListener('webkitTransitionEnd',
-                                             this.hideTransitionListener_);
-        this.hideTransitionListener_ = null;
-      }
-      this.iconElement.classList.toggle('faded', false);
+    cancelDelayedTooltipShow: function() {
+      this.updateTooltipAutoshowState_(
+          UserPodCustomIcon.TooltipAutoshowState.DISABLED);
+      this.clearUpdateHoverStateTimeout_();
     },
 
     /**
@@ -428,7 +443,10 @@ cr.define('login', function() {
      * @private
      */
     handleMouseDown_: function(e) {
-      this.hideTooltip_(false);
+      this.updateHoverState_(UserPodCustomIcon.HoverState.NO_HOVER);
+      this.updateTooltipAutoshowState_(
+          UserPodCustomIcon.TooltipAutoshowState.DISABLED);
+
       // Stop the event propagation so in the case the click ends up on the
       // user pod (outside the custom icon) auth is not attempted.
       stopEventPropagation(e);
@@ -461,32 +479,187 @@ cr.define('login', function() {
     },
 
     /**
-     * Called when mouse enters the icon. It sets timeout for showing the
-     * tooltip.
+     * Changes the tooltip hover state and updates tooltip visibility if needed.
+     * @param {!UserPodCustomIcon.HoverState} state
      * @private
      */
-    showTooltipSoon_: function() {
-      if (this.showTooltipTimeout_ || this.tooltipActive_)
+    updateHoverState_: function(state) {
+      this.clearUpdateHoverStateTimeout_();
+      this.sanitizeTooltipStateIfBubbleHidden_();
+
+      if (state == UserPodCustomIcon.HoverState.HOVER) {
+        if (this.tooltipState_.active()) {
+          this.tooltipState_.hover = UserPodCustomIcon.HoverState.HOVER_TOOLTIP;
+        } else {
+          this.updateHoverStateSoon_(
+              UserPodCustomIcon.HoverState.HOVER_TOOLTIP);
+        }
         return;
-      this.showTooltipTimeout_ =
-          setTimeout(this.showTooltip_.bind(this), 1000);
+      }
+
+      if (state != UserPodCustomIcon.HoverState.NO_HOVER &&
+          state != UserPodCustomIcon.HoverState.HOVER_TOOLTIP) {
+        console.error('Invalid hover state ' + state);
+        return;
+      }
+
+      this.tooltipState_.hover = state;
+      this.updateTooltip_();
     },
 
     /**
-     * Shows the current tooltip if one is set.
+     * Sets up a timeout for updating icon hover state.
+     * @param {!UserPodCustomIcon.HoverState} state
      * @private
      */
-    showTooltip_: function() {
-      if (this.hidden || !this.tooltip_ || this.tooltipActive_)
+    updateHoverStateSoon_: function(state) {
+      if (this.updateHoverStateTimeout_)
+        clearTimeout(this.updateHoverStateTimeout_);
+      this.updateHoverStateTimeout_ =
+          setTimeout(this.updateHoverState_.bind(this, state), 1000);
+    },
+
+    /**
+     * Clears a timeout for updating icon hover state if there is one set.
+     * @private
+     */
+    clearUpdateHoverStateTimeout_: function() {
+      if (this.updateHoverStateTimeout_) {
+        clearTimeout(this.updateHoverStateTimeout_);
+        this.updateHoverStateTimeout_ = null;
+      }
+    },
+
+    /**
+     * Changes the tooltip autoshow state and changes tooltip visibility if
+     * needed.
+     * @param {!UserPodCustomIcon.TooltipAutoshowState} state
+     * @private
+     */
+    updateTooltipAutoshowState_: function(state) {
+      this.clearUpdateTooltipAutoshowStateTimeout_();
+      this.sanitizeTooltipStateIfBubbleHidden_();
+
+      if (state == UserPodCustomIcon.TooltipAutoshowState.DISABLED) {
+        if (this.tooltipState_.autoshow != state) {
+          this.tooltipState_.autoshow = state;
+          this.updateTooltip_();
+        }
+        return;
+      }
+
+      if (this.tooltipState_.active()) {
+        if (this.tooltipState_.autoshow !=
+                UserPodCustomIcon.TooltipAutoshowState.ACTIVE) {
+          this.tooltipState_.autoshow =
+              UserPodCustomIcon.TooltipAutoshowState.DISABLED;
+        } else {
+          // If the tooltip is already automatically shown, the timeout for
+          // removing it should be reset.
+          this.updateTooltipAutoshowStateSoon_(
+              UserPodCustomIcon.TooltipAutoshowState.DISABLED);
+        }
+        return;
+      }
+
+      if (state == UserPodCustomIcon.TooltipAutoshowState.ENABLED) {
+        this.updateTooltipAutoshowStateSoon_(
+            UserPodCustomIcon.TooltipAutoshowState.ACTIVE);
+      } else if (state == UserPodCustomIcon.TooltipAutoshowState.ACTIVE) {
+        this.updateTooltipAutoshowStateSoon_(
+            UserPodCustomIcon.TooltipAutoshowState.DISABLED);
+      }
+
+      this.tooltipState_.autoshow = state;
+      this.updateTooltip_();
+    },
+
+    /**
+     * Sets up a timeout for updating tooltip autoshow state.
+     * @param {!UserPodCustomIcon.TooltipAutoshowState} state
+     * @private
+     */
+    updateTooltipAutoshowStateSoon_: function(state) {
+      if (this.updateTooltipAutoshowStateTimeout_)
+        clearTimeout(this.updateTooltupAutoshowStateTimeout_);
+      var timeout =
+          state == UserPodCustomIcon.TooltipAutoshowState.DISABLED ?
+              5000 : 1000;
+      this.updateTooltipAutoshowStateTimeout_ =
+          setTimeout(this.updateTooltipAutoshowState_.bind(this, state),
+                     timeout);
+    },
+
+    /**
+     * Clears the timeout for updating tooltip autoshow state if one is set.
+     * @private
+     */
+    clearUpdateTooltipAutoshowStateTimeout_: function() {
+      if (this.updateTooltipAutoshowStateTimeout_) {
+        clearTimeout(this.updateTooltipAutoshowStateTimeout_);
+        this.updateTooltipAutoshowStateTimeout_ = null;
+      }
+    },
+
+    /**
+     * If tooltip bubble is hidden, this makes sure that hover and tooltip
+     * autoshow states are not the ones that imply an active tooltip.
+     * Used to handle a case where the tooltip bubble is hidden by an event that
+     * does not update one of the states (e.g. click outside the pod will not
+     * update tooltip autoshow state). Should be called before making
+     * tooltip state updates.
+     * @private
+     */
+    sanitizeTooltipStateIfBubbleHidden_: function() {
+      if (!$('bubble').hidden)
         return;
 
-      // If autoshown bubble got hidden, clear the autoshown flag.
-      if ($('bubble').hidden && this.tooltipAutoshown_)
-        this.tooltipAutoshown_ = false;
+      if (this.tooltipState_.hover ==
+              UserPodCustomIcon.HoverState.HOVER_TOOLTIP &&
+          this.tooltipState_.text) {
+        this.tooltipState_.hover = UserPodCustomIcon.HoverState.NO_HOVER;
+        this.clearUpdateHoverStateTimeout_();
+      }
+
+      if (this.tooltipState_.autoshow ==
+             UserPodCustomIcon.TooltipAutoshowState.ACTIVE) {
+        this.tooltipState_.autoshow =
+            UserPodCustomIcon.TooltipAutoshowState.DISABLED;
+        this.clearUpdateTooltipAutoshowStateTimeout_();
+      }
+    },
+
+    /**
+     * Returns whether the user pod to which the custom icon belongs is focused.
+     * @return {boolean}
+     * @private
+     */
+    isParentPodFocused_: function() {
+      if ($('account-picker').hidden)
+        return false;
+      var parentPod = this.parentNode;
+      while (parentPod && !parentPod.classList.contains('pod'))
+        parentPod = parentPod.parentNode;
+      return parentPod && parentPod.parentNode.isFocused(parentPod);
+    },
+
+    /**
+     * Depending on {@code this.tooltipState_}, it updates tooltip visibility
+     * and text.
+     * @private
+     */
+    updateTooltip_: function() {
+      if (this.hidden || !this.isParentPodFocused_())
+        return;
+
+      if (!this.tooltipState_.active() || !this.tooltipState_.text) {
+        this.hideTooltip_();
+        return;
+      }
 
       // Show the tooltip bubble.
       var bubbleContent = document.createElement('div');
-      bubbleContent.textContent = this.tooltip_;
+      bubbleContent.textContent = this.tooltipState_.text;
 
       /** @const */ var BUBBLE_OFFSET = CUSTOM_ICON_CONTAINER_SIZE / 2;
       // TODO(tengs): Introduce a special reauth state for the account picker,
@@ -497,36 +670,15 @@ cr.define('login', function() {
                                         bubbleContent,
                                         BUBBLE_OFFSET,
                                         BUBBLE_PADDING);
-      this.ensureTooltipTimeoutCleared_();
-      this.tooltipActive_ = true;
     },
 
     /**
-     * Hides the tooltip. If the current tooltip was automatically shown, it
-     * will be hidden only if |force| is set.
-     * @param {boolean} Whether the tooltip should be hidden if it got shown
-     *     because autoshow flag was set.
+     * Hides the tooltip.
      * @private
      */
-    hideTooltip_: function(force) {
-      this.tooltipActive_ = false;
-      this.ensureTooltipTimeoutCleared_();
-      if (!force && this.tooltipAutoshown_)
-        return;
+    hideTooltip_: function() {
       $('bubble').hideForElement(this);
-      this.tooltipAutoshown_ = false;
-    },
-
-    /**
-     * Clears timaout for showing the tooltip if it's set.
-     * @private
-     */
-    ensureTooltipTimeoutCleared_: function() {
-      if (this.showTooltipTimeout_) {
-        clearTimeout(this.showTooltipTimeout_);
-        this.showTooltipTimeout_ = null;
-      }
-    },
+    }
   };
 
   /**
@@ -624,6 +776,7 @@ cr.define('login', function() {
         e.preventDefault();
         return;
       }
+      this.customIconElement.cancelDelayedTooltipShow();
     },
 
     /**
@@ -801,12 +954,12 @@ cr.define('login', function() {
     },
 
     /**
-     * Gets action box menu, remove supervised user warning text div.
+     * Gets action box menu, remove legacy supervised user warning text div.
      * @type {!HTMLInputElement}
      */
-    get actionBoxRemoveSupervisedUserWarningTextElement() {
+    get actionBoxRemoveLegacySupervisedUserWarningTextElement() {
       return this.querySelector(
-          '.action-box-remove-supervised-user-warning-text');
+          '.action-box-remove-legacy-supervised-user-warning-text');
     },
 
     /**
@@ -873,15 +1026,19 @@ cr.define('login', function() {
           loadTimeData.getStringF('ownerUserPattern', this.user_.displayName) :
           this.user_.displayName;
       this.actionBoxMenuTitleEmailElement.textContent = this.user_.emailAddress;
-      this.actionBoxMenuTitleEmailElement.hidden = this.user_.supervisedUser;
+
+      this.actionBoxMenuTitleEmailElement.hidden =
+          this.user_.legacySupervisedUser;
 
       this.actionBoxMenuCommandElement.textContent =
           loadTimeData.getString('removeUser');
     },
 
     customizeUserPodPerUserType: function() {
-      if (this.user_.supervisedUser && !this.user_.isDesktopUser) {
-        this.setUserPodIconType('supervised');
+      if (this.user_.childUser && !this.user_.isDesktopUser) {
+        this.setUserPodIconType('child');
+      } else if (this.user_.legacySupervisedUser && !this.user_.isDesktopUser) {
+        this.setUserPodIconType('legacySupervised');
       } else if (this.multiProfilesPolicyApplied) {
         // Mark user pod as not focusable which in addition to the grayed out
         // filter makes it look in disabled state.
@@ -1093,6 +1250,7 @@ cr.define('login', function() {
         this.showSigninUI();
       } else if (this.isAuthTypeUserClick) {
         Oobe.disableSigninUI();
+        this.classList.toggle('signing-in', true);
         chrome.send('attemptUnlock', [this.user.username]);
       } else if (this.isAuthTypePassword) {
         if (!this.passwordElement.value)
@@ -1109,7 +1267,7 @@ cr.define('login', function() {
     },
 
     showSupervisedUserSigninWarning: function() {
-      // Supervised user token has been invalidated.
+      // Legacy supervised user token has been invalidated.
       // Make sure that pod is focused i.e. "Sign in" button is seen.
       this.parentNode.focusPod(this);
 
@@ -1143,7 +1301,7 @@ cr.define('login', function() {
      * Shows signin UI for this user.
      */
     showSigninUI: function() {
-      if (this.user.supervisedUser && !this.user.isDesktopUser) {
+      if (this.user.legacySupervisedUser && !this.user.isDesktopUser) {
         this.showSupervisedUserSigninWarning();
       } else {
         // Special case for multi-profiles sign in. We show users even if they
@@ -1161,6 +1319,7 @@ cr.define('login', function() {
      */
     reset: function(takeFocus) {
       this.passwordElement.value = '';
+      this.classList.toggle('signing-in', false);
       if (takeFocus) {
         if (!this.multiProfilesPolicyApplied)
           this.focusInput();  // This will set a custom tab order.
@@ -1230,7 +1389,7 @@ cr.define('login', function() {
      * @param {Event} e Click event.
      */
     handleRemoveCommandClick_: function(e) {
-      if (this.user.supervisedUser || this.user.isDesktopUser) {
+      if (this.user.legacySupervisedUser || this.user.isDesktopUser) {
         this.showRemoveWarning_();
         return;
       }
@@ -1239,8 +1398,8 @@ cr.define('login', function() {
     },
 
     /**
-     * Shows remove user warning. Used for supervised users on CrOS, and for all
-     * users on desktop.
+     * Shows remove user warning. Used for legacy supervised users on CrOS, and
+     * for all users on desktop.
      */
     showRemoveWarning_: function() {
       this.actionBoxMenuRemoveElement.hidden = true;
@@ -1256,6 +1415,7 @@ cr.define('login', function() {
         this.actionBoxMenu.classList.add('menu-moved-up');
         this.actionBoxAreaElement.classList.add('menu-moved-up');
       }
+      chrome.send('logRemoveUserWarningShown');
     },
 
     /**
@@ -1298,7 +1458,7 @@ cr.define('login', function() {
         return;
       switch (e.keyIdentifier) {
         case 'Enter':
-          if (this.user.supervisedUser || this.user.isDesktopUser) {
+          if (this.user.legacySupervisedUser || this.user.isDesktopUser) {
             // Prevent default so that we don't trigger a 'click' event on the
             // remove button that will be focused.
             e.preventDefault();
@@ -1774,16 +1934,19 @@ cr.define('login', function() {
       this.nameElement.textContent = this.user.displayName;
 
       var isLockedUser = this.user.needsSignin;
-      var isSupervisedUser = this.user.supervisedUser;
+      var isLegacySupervisedUser = this.user.legacySupervisedUser;
+      var isChildUser = this.user.childUser;
       this.classList.toggle('locked', isLockedUser);
-      this.classList.toggle('supervised-user', isSupervisedUser);
+      this.classList.toggle('legacy-supervised', isLegacySupervisedUser);
+      this.classList.toggle('child', isChildUser);
 
       if (this.isAuthTypeUserClick)
         this.passwordLabelElement.textContent = this.authValue;
 
-      this.actionBoxRemoveUserWarningTextElement.hidden = isSupervisedUser;
-      this.actionBoxRemoveSupervisedUserWarningTextElement.hidden =
-          !isSupervisedUser;
+      this.actionBoxRemoveUserWarningTextElement.hidden =
+          isLegacySupervisedUser;
+      this.actionBoxRemoveLegacySupervisedUserWarningTextElement.hidden =
+          !isLegacySupervisedUser;
 
       this.passwordElement.setAttribute('aria-label', loadTimeData.getStringF(
         'passwordFieldAccessibleName', this.user_.emailAddress));
@@ -1802,13 +1965,13 @@ cr.define('login', function() {
     /** @override */
     activate: function(e) {
       if (!this.user.needsSignin) {
-        Oobe.launchUser(this.user.emailAddress, this.user.displayName);
+        Oobe.launchUser(this.user.profilePath);
       } else if (!this.passwordElement.value) {
         return false;
       } else {
         chrome.send('authenticatedLaunchUser',
-                    [this.user.emailAddress,
-                     this.user.displayName,
+                    [this.user.profilePath,
+                     this.user.emailAddress,
                      this.passwordElement.value]);
       }
       this.passwordElement.value = '';
@@ -1976,9 +2139,8 @@ cr.define('login', function() {
     // Array of users that are shown (public/supervised/regular).
     users_: [],
 
-    // If we're disabling single pod autofocus for Touch View.
-    touchViewSinglePodExperimentOn_: true,
-
+    // If we're in Touch View mode.
+    touchViewEnabled_: false,
 
     /** @override */
     decorate: function() {
@@ -2016,9 +2178,7 @@ cr.define('login', function() {
       var isDesktopUserManager = Oobe.getInstance().displayType ==
           DISPLAY_TYPE.DESKTOP_USER_MANAGER;
 
-      return (isDesktopUserManager ||
-              (this.touchViewSinglePodExperimentOn_ &&
-               this.touchViewEnabled_)) ?
+      return (isDesktopUserManager || this.touchViewEnabled_) ?
           false : this.children.length == 1;
     },
 
@@ -2267,6 +2427,7 @@ cr.define('login', function() {
      * @param {string} username Username of pod to add button
      * @param {!{id: !string,
      *           hardlockOnClick: boolean,
+     *           isTrialRun: boolean,
      *           ariaLabel: string | undefined,
      *           tooltip: ({text: string, autoshow: boolean} | undefined)}} icon
      *     The icon parameters.
@@ -2274,8 +2435,7 @@ cr.define('login', function() {
     showUserPodCustomIcon: function(username, icon) {
       var pod = this.getPodWithUsername_(username);
       if (pod == null) {
-        console.error('Unable to show user pod button for ' + username +
-                      ': user pod not found.');
+        console.error('Unable to show user pod button: user pod not found.');
         return;
       }
 
@@ -2285,7 +2445,10 @@ cr.define('login', function() {
       if (icon.id)
         pod.customIconElement.setIcon(icon.id);
 
-      if (icon.hardlockOnClick) {
+      if (icon.isTrialRun) {
+        pod.customIconElement.setInteractive(
+            this.onDidClickLockIconDuringTrialRun_.bind(this, username));
+      } else if (icon.hardlockOnClick) {
         pod.customIconElement.setInteractive(
             this.hardlockUserPod_.bind(this, username));
       } else {
@@ -2318,14 +2481,23 @@ cr.define('login', function() {
     },
 
     /**
+     * Records a metric indicating that the user clicked on the lock icon during
+     * the trial run for Easy Unlock.
+     * @param {!string} username The user's username.
+     * @private
+     */
+    onDidClickLockIconDuringTrialRun_: function(username) {
+      chrome.send('recordClickOnLockIcon', [username]);
+    },
+
+    /**
      * Hides the custom icon in the user pod added by showUserPodCustomIcon().
      * @param {string} username Username of pod to remove button
      */
     hideUserPodCustomIcon: function(username) {
       var pod = this.getPodWithUsername_(username);
       if (pod == null) {
-        console.error('Unable to hide user pod button for ' + username +
-                      ': user pod not found.');
+        console.error('Unable to hide user pod button: user pod not found.');
         return;
       }
 
@@ -2343,8 +2515,7 @@ cr.define('login', function() {
     setAuthType: function(username, authType, value) {
       var pod = this.getPodWithUsername_(username);
       if (pod == null) {
-        console.error('Unable to set auth type for ' + username +
-                      ': user pod not found.');
+        console.error('Unable to set auth type: user pod not found.');
         return;
       }
       pod.setAuthType(authType, value);
@@ -2356,6 +2527,9 @@ cr.define('login', function() {
      */
     setTouchViewState: function(isTouchViewEnabled) {
       this.touchViewEnabled_ = isTouchViewEnabled;
+      this.pods.forEach(function(pod, index) {
+        pod.actionBoxAreaElement.classList.toggle('forced', isTouchViewEnabled);
+      });
     },
 
     /**
@@ -2596,9 +2770,10 @@ cr.define('login', function() {
       if (podToFocus) {
         podToFocus.classList.remove('faded');
         podToFocus.classList.add('focused');
-        if (!podToFocus.multiProfilesPolicyApplied)
-          podToFocus.reset(true);  // Reset and give focus.
-        else {
+        if (!podToFocus.multiProfilesPolicyApplied) {
+          podToFocus.classList.toggle('signing-in', false);
+          podToFocus.focusInput();
+        } else {
           podToFocus.userTypeBubbleElement.classList.add('bubble-shown');
           podToFocus.focus();
         }

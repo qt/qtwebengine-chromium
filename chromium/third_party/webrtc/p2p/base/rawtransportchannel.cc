@@ -17,11 +17,7 @@
 #include "webrtc/p2p/base/portinterface.h"
 #include "webrtc/p2p/base/rawtransport.h"
 #include "webrtc/p2p/base/relayport.h"
-#include "webrtc/p2p/base/sessionmanager.h"
 #include "webrtc/p2p/base/stunport.h"
-#include "webrtc/libjingle/xmllite/qname.h"
-#include "webrtc/libjingle/xmllite/xmlelement.h"
-#include "webrtc/libjingle/xmpp/constants.h"
 #include "webrtc/base/common.h"
 
 #if defined(FEATURE_ENABLE_PSTN)
@@ -74,6 +70,10 @@ int RawTransportChannel::SetOption(rtc::Socket::Option opt, int value) {
   if (port_ == NULL)
     return -1;
   return port_->SetOption(opt, value);
+}
+
+bool RawTransportChannel::GetOption(rtc::Socket::Option opt, int* value) {
+  return false;
 }
 
 int RawTransportChannel::GetError() {

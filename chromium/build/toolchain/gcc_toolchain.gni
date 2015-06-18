@@ -13,11 +13,13 @@ concurrent_links = exec_script("get_concurrent_links.py", [], "value")
 #  - cxx
 #  - ar
 #  - ld
+#  - readelf
+#  - nm
 # and the following which is used in the toolchain_args
-#  - toolchain_cpu_arch  (What "cpu_arch" should be set to when invoking a
-#                         build using this toolchain.)
-#  - toolchain_os  (What "os" should be set to when invoking a build using this
-#                   toolchain.)
+#  - toolchain_cpu  (What "current_cpu" should be set to when invoking a
+#                    build using this toolchain.)
+#  - toolchain_os  (What "current_os" should be set to when invoking a
+#                   build using this toolchain.)
 #
 # Optional parameters:
 #  - libs_section_prefix
@@ -40,8 +42,11 @@ template("gcc_toolchain") {
     assert(defined(invoker.cxx), "gcc_toolchain() must specify a \"cxx\" value")
     assert(defined(invoker.ar), "gcc_toolchain() must specify a \"ar\" value")
     assert(defined(invoker.ld), "gcc_toolchain() must specify a \"ld\" value")
-    assert(defined(invoker.toolchain_cpu_arch),
-           "gcc_toolchain() must specify a \"toolchain_cpu_arch\"")
+    assert(defined(invoker.readelf),
+           "gcc_toolchain() must specify a \"readelf\" value")
+    assert(defined(invoker.nm), "gcc_toolchain() must specify a \"nm\" value")
+    assert(defined(invoker.toolchain_cpu),
+           "gcc_toolchain() must specify a \"toolchain_cpu\"")
     assert(defined(invoker.toolchain_os),
            "gcc_toolchain() must specify a \"toolchain_os\"")
 
@@ -52,6 +57,8 @@ template("gcc_toolchain") {
     cxx = invoker.cxx
     ar = invoker.ar
     ld = invoker.ld
+    readelf = invoker.readelf
+    nm = invoker.nm
 
     # Bring these into our scope for string interpolation with default values.
     if (defined(invoker.libs_section_prefix)) {
@@ -119,7 +126,7 @@ template("gcc_toolchain") {
       description = "AR {{output}}"
       rspfile_content = "{{inputs}}"
       outputs = [
-        "{{target_out_dir}}/{{target_output_name}}{{output_extension}}"
+        "{{target_out_dir}}/{{target_output_name}}{{output_extension}}",
       ]
       default_output_extension = ".a"
       output_prefix = "lib"
@@ -136,8 +143,9 @@ template("gcc_toolchain") {
       # existing .TOC file, overwrite it, otherwise, don't change it.
       tocfile = sofile + ".TOC"
       temporary_tocname = sofile + ".tmp"
-      link_command = "$ld -shared {{ldflags}} -o $sofile -Wl,-soname=$soname @$rspfile"
-      toc_command = "{ readelf -d $sofile | grep SONAME ; nm -gD -f p $soname | cut -f1-2 -d' '; } > $temporary_tocname"
+      link_command =
+          "$ld -shared {{ldflags}} -o $sofile -Wl,-soname=$soname @$rspfile"
+      toc_command = "{ $readelf -d $sofile | grep SONAME ; $nm -gD -f p $sofile | cut -f1-2 -d' '; } > $temporary_tocname"
       replace_command = "if ! cmp -s $temporary_tocname $tocfile; then mv $temporary_tocname $tocfile; fi"
 
       command = "$link_command && $toc_command && $replace_command"
@@ -182,7 +190,9 @@ template("gcc_toolchain") {
       }
       description = "LINK $outfile"
       rspfile_content = "{{inputs}}"
-      outputs = [ outfile ]
+      outputs = [
+        outfile,
+      ]
       if (defined(invoker.link_outputs)) {
         outputs += invoker.link_outputs
       }
@@ -201,8 +211,13 @@ template("gcc_toolchain") {
     # When invoking this toolchain not as the default one, these args will be
     # passed to the build. They are ignored when this is the default toolchain.
     toolchain_args() {
-      cpu_arch = invoker.toolchain_cpu_arch
-      os = invoker.toolchain_os
+      current_cpu = invoker.toolchain_cpu
+      current_os = invoker.toolchain_os
+
+      # These values need to be passed through unchanged.
+      target_os = target_os
+      target_cpu = target_cpu
+
       if (defined(invoker.is_clang)) {
         is_clang = invoker.is_clang
       }

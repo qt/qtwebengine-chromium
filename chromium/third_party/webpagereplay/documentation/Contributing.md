@@ -1,4 +1,4 @@
-# Contributing  
+# Contributing
 
 1. Thanks for considering contributing to Web Page Replay. You're awesome!
 2. Style Guide - The source code of Web Page Replay follows the [Google
@@ -8,7 +8,19 @@ guidelines. You may also wish to email web-page-replay-dev at
 googlegroups.com for advice on your change before starting.
 3. Get the code - Fork this repo and clone it locally.
 4. Get a review - All submissions, including submissions by project members,
-require review. 
+require review.
+
+## Using rietveld
+
+1. Make sure that you have a fork of the original repo.
+2. Make your changes.
+3. Commit your changes.
+4. Run 'yes "" |git cl config' (first time only).
+5. Run 'git cl upload'.
+6. Once the review is approved, run 'git cl land' to land your changes. This also
+pushes your change to your forked branch.
+7. Login your github account and make a pull request to merge the change from
+your forked branch to the original repo.
 
 ## The fine print
 

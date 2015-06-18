@@ -43,7 +43,7 @@ namespace blink {
 // accumulator for a given node even if there are multiple ChildListMutationScopes
 // on the stack. The map is always empty when there are no ChildListMutationScopes
 // on the stack.
-typedef WillBeHeapHashMap<RawPtrWillBeMember<Node>, RawPtrWillBeMember<ChildListMutationAccumulator> > AccumulatorMap;
+typedef WillBeHeapHashMap<RawPtrWillBeMember<Node>, RawPtrWillBeMember<ChildListMutationAccumulator>> AccumulatorMap;
 
 static AccumulatorMap& accumulatorMap()
 {
@@ -157,7 +157,7 @@ bool ChildListMutationAccumulator::isEmpty()
     return result;
 }
 
-void ChildListMutationAccumulator::trace(Visitor* visitor)
+DEFINE_TRACE(ChildListMutationAccumulator)
 {
     visitor->trace(m_target);
     visitor->trace(m_removedNodes);

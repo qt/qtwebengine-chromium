@@ -18,20 +18,21 @@ class GLSurface;
 class GLContextWGL : public GLContextReal {
  public:
   explicit GLContextWGL(GLShareGroup* share_group);
-  virtual ~GLContextWGL();
 
   // Implement GLContext.
-  virtual bool Initialize(
-      GLSurface* compatible_surface, GpuPreference gpu_preference);
-  virtual void Destroy();
-  virtual bool MakeCurrent(GLSurface* surface);
-  virtual void ReleaseCurrent(GLSurface* surface);
-  virtual bool IsCurrent(GLSurface* surface);
-  virtual void* GetHandle();
-  virtual void SetSwapInterval(int interval);
-  virtual std::string GetExtensions();
+  bool Initialize(GLSurface* compatible_surface,
+                  GpuPreference gpu_preference) override;
+  void Destroy() override;
+  bool MakeCurrent(GLSurface* surface) override;
+  void ReleaseCurrent(GLSurface* surface) override;
+  bool IsCurrent(GLSurface* surface) override;
+  void* GetHandle() override;
+  void OnSetSwapInterval(int interval) override;
+  std::string GetExtensions() override;
 
  private:
+  ~GLContextWGL() override;
+
   HGLRC context_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextWGL);

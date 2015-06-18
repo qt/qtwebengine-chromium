@@ -25,12 +25,12 @@
         'test/fake_media_source.h',
         'test/fake_single_thread_task_runner.cc',
         'test/fake_single_thread_task_runner.h',
+        'test/loopback_transport.cc',
+        'test/loopback_transport.h',
         'test/skewed_single_thread_task_runner.cc',
         'test/skewed_single_thread_task_runner.h',
         'test/skewed_tick_clock.cc',
         'test/skewed_tick_clock.h',
-	'test/loopback_transport.cc',
-	'test/loopback_transport.h',
         'test/utility/audio_utility.cc',
         'test/utility/audio_utility.h',
         'test/utility/barcode.cc',
@@ -45,10 +45,10 @@
         'test/utility/net_utility.h',
         'test/utility/standalone_cast_environment.cc',
         'test/utility/standalone_cast_environment.h',
-        'test/utility/video_utility.cc',
-        'test/utility/video_utility.h',
         'test/utility/udp_proxy.cc',
         'test/utility/udp_proxy.h',
+        'test/utility/video_utility.cc',
+        'test/utility/video_utility.h',
       ], # source
     },
     {
@@ -75,21 +75,23 @@
       'sources': [
         '<(DEPTH)/media/base/run_all_unittests.cc',
         'logging/encoding_event_subscriber_unittest.cc',
-        'logging/serialize_deserialize_test.cc',
         'logging/logging_impl_unittest.cc',
         'logging/logging_raw_unittest.cc',
         'logging/receiver_time_offset_estimator_impl_unittest.cc',
+        'logging/serialize_deserialize_test.cc',
         'logging/simple_event_subscriber_unittest.cc',
         'logging/stats_event_subscriber_unittest.cc',
         'net/cast_transport_sender_impl_unittest.cc',
         'net/frame_id_wrap_helper_test.cc',
+        'net/mock_cast_transport_sender.cc',
+        'net/mock_cast_transport_sender.h',
         'net/pacing/mock_paced_packet_sender.cc',
         'net/pacing/mock_paced_packet_sender.h',
         'net/pacing/paced_sender_unittest.cc',
+        'net/rtcp/receiver_rtcp_event_subscriber_unittest.cc',
         'net/rtcp/rtcp_builder_unittest.cc',
         'net/rtcp/rtcp_unittest.cc',
         'net/rtcp/rtcp_utility_unittest.cc',
-        'net/rtcp/receiver_rtcp_event_subscriber_unittest.cc',
 # TODO(miu): The following two are test utility modules.  Rename/move the files.
         'net/rtcp/test_rtcp_packet_builder.cc',
         'net/rtcp/test_rtcp_packet_builder.h',
@@ -103,8 +105,8 @@
         'net/rtp/rtp_header_parser.cc',
         'net/rtp/rtp_header_parser.h',
         'net/rtp/rtp_packet_builder.cc',
-        'net/rtp/rtp_parser_unittest.cc',
         'net/rtp/rtp_packetizer_unittest.cc',
+        'net/rtp/rtp_parser_unittest.cc',
         'net/rtp/rtp_receiver_defines.h',
         'net/udp_transport_unittest.cc',
         'receiver/audio_decoder_unittest.cc',
@@ -113,16 +115,15 @@
         'sender/audio_encoder_unittest.cc',
         'sender/audio_sender_unittest.cc',
         'sender/congestion_control_unittest.cc',
-        'sender/external_video_encoder_unittest.cc',
-        'sender/video_encoder_impl_unittest.cc',
+        'sender/fake_video_encode_accelerator_factory.cc',
+        'sender/fake_video_encode_accelerator_factory.h',
+        'sender/video_encoder_unittest.cc',
         'sender/video_sender_unittest.cc',
         'test/end2end_unittest.cc',
         'test/fake_receiver_time_offset_estimator.cc',
         'test/fake_receiver_time_offset_estimator.h',
         'test/fake_single_thread_task_runner.cc',
         'test/fake_single_thread_task_runner.h',
-        'test/fake_video_encode_accelerator.cc',
-        'test/fake_video_encode_accelerator.h',
         'test/utility/audio_utility_unittest.cc',
         'test/utility/barcode_unittest.cc',
       ], # source
@@ -147,8 +148,6 @@
         'test/cast_benchmarks.cc',
         'test/fake_single_thread_task_runner.cc',
         'test/fake_single_thread_task_runner.h',
-        'test/fake_video_encode_accelerator.cc',
-        'test/fake_video_encode_accelerator.h',
         'test/utility/test_util.cc',
         'test/utility/test_util.h',
       ], # source
@@ -340,6 +339,46 @@
           }
         ]
       }
-    ]
-  ], # targets
+    ],
+    ['OS=="ios" or OS=="mac"', {
+      'targets': [
+        {
+          # GN version: //media/cast:cast_h264_vt_encoder_unittests
+          'target_name': 'cast_h264_vt_encoder_unittests',
+          'type': '<(gtest_target_type)',
+          'include_dirs': [
+            '<(DEPTH)/',
+          ],
+          'dependencies': [
+            'cast_base',
+            'cast_sender',
+            'cast_test_utility',
+            '<(DEPTH)/base/base.gyp:test_support_base',
+            '<(DEPTH)/testing/gmock.gyp:gmock',
+            '<(DEPTH)/testing/gtest.gyp:gtest',
+            '<(DEPTH)/third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
+          ],
+          'sources': [
+            'sender/h264_vt_encoder_unittest.cc',
+          ],
+      }], # targets
+    }], # OS=="ios" or OS=="mac"
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'cast_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'cast_unittests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            'cast_unittests.isolate',
+          ],
+        },
+      ],
+    }],
+  ], # conditions
 }

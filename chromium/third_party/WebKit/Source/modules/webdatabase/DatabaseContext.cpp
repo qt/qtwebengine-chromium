@@ -116,9 +116,10 @@ DatabaseContext::~DatabaseContext()
     DatabaseManager::manager().didDestructDatabaseContext();
 }
 
-void DatabaseContext::trace(Visitor* visitor)
+DEFINE_TRACE(DatabaseContext)
 {
     visitor->trace(m_databaseThread);
+    ActiveDOMObject::trace(visitor);
 }
 
 // This is called if the associated ExecutionContext is destructing while

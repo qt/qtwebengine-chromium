@@ -26,6 +26,7 @@
 #ifndef NetworkStateNotifier_h
 #define NetworkStateNotifier_h
 
+#include "core/CoreExport.h"
 #include "public/platform/WebConnectionType.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/HashMap.h"
@@ -37,18 +38,18 @@ namespace blink {
 
 class ExecutionContext;
 
-class NetworkStateNotifier {
-    WTF_MAKE_NONCOPYABLE(NetworkStateNotifier); WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT NetworkStateNotifier {
+    WTF_MAKE_NONCOPYABLE(NetworkStateNotifier); WTF_MAKE_FAST_ALLOCATED(NetworkStateNotifier);
 public:
     class NetworkStateObserver {
     public:
         // Will be called on the thread of the context passed in addObserver.
-        virtual void connectionTypeChange(blink::WebConnectionType) = 0;
+        virtual void connectionTypeChange(WebConnectionType) = 0;
     };
 
     NetworkStateNotifier()
         : m_isOnLine(true)
-        , m_type(blink::ConnectionTypeOther)
+        , m_type(ConnectionTypeOther)
         , m_testUpdatesOnly(false)
     {
     }
@@ -61,13 +62,13 @@ public:
 
     void setOnLine(bool);
 
-    blink::WebConnectionType connectionType() const
+    WebConnectionType connectionType() const
     {
         MutexLocker locker(m_mutex);
         return m_type;
     }
 
-    void setWebConnectionType(blink::WebConnectionType);
+    void setWebConnectionType(WebConnectionType);
 
     // Must be called on the context's thread. An added observer must be removed
     // before its ExecutionContext is deleted. It's possible for an observer to
@@ -82,7 +83,7 @@ public:
     // can update the connection type. This is used for layout tests (see crbug.com/377736).
     void setTestUpdatesOnly(bool);
     // Tests should call this as it will change the type regardless of the value of m_testUpdatesOnly.
-    void setWebConnectionTypeForTest(blink::WebConnectionType);
+    void setWebConnectionTypeForTest(WebConnectionType);
 
 private:
     struct ObserverList {
@@ -95,11 +96,11 @@ private:
         Vector<size_t> zeroedObservers; // Indices in observers that are 0.
     };
 
-    void setWebConnectionTypeImpl(blink::WebConnectionType);
+    void setWebConnectionTypeImpl(WebConnectionType);
 
     using ObserverListMap = HashMap<ExecutionContext*, OwnPtr<ObserverList>>;
 
-    void notifyObserversOnContext(ExecutionContext*, blink::WebConnectionType);
+    void notifyObserversOnContext(WebConnectionType, ExecutionContext*);
 
     ObserverList* lockAndFindObserverList(ExecutionContext*);
 
@@ -110,12 +111,12 @@ private:
 
     mutable Mutex m_mutex;
     bool m_isOnLine;
-    blink::WebConnectionType m_type;
+    WebConnectionType m_type;
     ObserverListMap m_observers;
     bool m_testUpdatesOnly;
 };
 
-NetworkStateNotifier& networkStateNotifier();
+CORE_EXPORT NetworkStateNotifier& networkStateNotifier();
 
 } // namespace blink
 

@@ -16,8 +16,7 @@ Local Modifications:
 Some files only have license headers in the master branch.
  - Added the same license headers to the versions brought down from the 'v4'
    branch src URL qcms/tree/v4
-google.patch contains the following modifications. Apply with
-   patch -p1 < google.patch.
+The following changes have been made since qcms was imported:
  - Add bgra output support.
  - Use HAVE_POSIX_MEMALIGN instead of HAS_POSIX_MEMALIG
    (https://bugzilla.mozilla.org/show_bug.cgi?id=692922)
@@ -41,5 +40,32 @@ google.patch contains the following modifications. Apply with
    - https://bugzilla.mozilla.org/show_bug.cgi?id=701348
  - Add qcms_profile_match api
    - https://code.google.com/p/chromium/issues/detail?id=401971
-To regenerate google.patch:
-  git diff b8456f38 src > google.patch
+ - Add qcms_profile_get_description api
+   - https://code.google.com/p/chromium/issues/detail?id=401971
+ - Convert MLUC profile description embedded nulls to '.'
+   - https://code.google.com/p/chromium/issues/detail?id=401971
+ - [APPLE port] Use en-localized profile description names
+   - https://code.google.com/p/chromium/issues/detail?id=401971
+ - [APPLE port] Use mmod data for profile descriptions
+   - https://code.google.com/p/chromium/issues/detail?id=401971
+ - Minor variable name change: description -> description_offset
+   - https://code.google.com/p/chromium/issues/detail?id=401971
+ - Avoid divisions creating sample points in the float cube LUT builder
+   - https://code.google.com/p/chromium/issues/detail?id=443863
+ - Add bgra (z,y,x) sampled transform lookup table api
+   - https://code.google.com/p/chromium/issues/detail?id=443863
+ - Apply upstream fix reject invalid sizes from
+   - https://bugzilla.mozilla.org/show_bug.cgi?id=1132468
+ - lut_inverse_interp16: remove odd whitespace formatting
+   - https://code.google.com/p/chromium/issues/detail?id=458024
+ - lut_inverse_interp16: better handle degenerate TRC curves
+   - https://code.google.com/p/chromium/issues/detail?id=458024
+ - Add vcgt tag reader and API to read its RGB gamma data
+   - https://code.google.com/p/chromium/issues/detail?id=471749
+ - Consolidate loop over channels and elements in VCGT parser
+   - https://code.google.com/p/chromium/issues/detail?id=471749
+ - Limit vcgt table to a maximum of 1024 entries
+   - https://code.google.com/p/chromium/issues/detail?id=471749
+
+For the Chromium changes, since the import, in a patch format run:
+  git diff b8456f38 src

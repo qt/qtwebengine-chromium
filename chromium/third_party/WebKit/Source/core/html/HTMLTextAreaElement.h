@@ -24,6 +24,7 @@
 #ifndef HTMLTextAreaElement_h
 #define HTMLTextAreaElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLTextFormControlElement.h"
 
 namespace blink {
@@ -31,7 +32,7 @@ namespace blink {
 class BeforeTextInsertedEvent;
 class ExceptionState;
 
-class HTMLTextAreaElement final : public HTMLTextFormControlElement {
+class CORE_EXPORT HTMLTextAreaElement final : public HTMLTextFormControlElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLTextAreaElement> create(Document&, HTMLFormElement*);
@@ -89,12 +90,14 @@ private:
     virtual void updatePlaceholderText() override;
     virtual bool isEmptyValue() const override { return value().isEmpty(); }
     virtual bool isEmptySuggestedValue() const override final { return suggestedValue().isEmpty(); }
+    virtual bool supportsAutocapitalize() const override { return true; }
+    virtual const AtomicString& defaultAutocapitalize() const override;
 
     virtual bool isOptionalFormControl() const override { return !isRequiredFormControl(); }
     virtual bool isRequiredFormControl() const override { return isRequired(); }
 
     virtual void defaultEventHandler(Event*) override;
-    virtual void handleFocusEvent(Element* oldFocusedNode, FocusType) override;
+    virtual void handleFocusEvent(Element* oldFocusedNode, WebFocusType) override;
 
     virtual void subtreeHasChanged() override;
 
@@ -114,7 +117,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool isPresentationAttribute(const QualifiedName&) const override;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual bool appendFormData(FormDataList&, bool) override;
     virtual void resetImpl() override;
     virtual bool hasCustomFocusLogic() const override;

@@ -54,10 +54,12 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCreateFileFunction orig_CreateFile,
 
     uint32 desired_access_uint32 = desired_access;
     uint32 options_uint32 = options;
+    uint32 disposition_uint32 = disposition;
     uint32 broker = FALSE;
     CountedParameterSet<OpenFile> params;
     params[OpenFile::NAME] = ParamPickerMake(name);
     params[OpenFile::ACCESS] = ParamPickerMake(desired_access_uint32);
+    params[OpenFile::DISPOSITION] = ParamPickerMake(disposition_uint32);
     params[OpenFile::OPTIONS] = ParamPickerMake(options_uint32);
     params[OpenFile::BROKER] = ParamPickerMake(broker);
 
@@ -74,14 +76,15 @@ NTSTATUS WINAPI TargetNtCreateFile(NtCreateFileFunction orig_CreateFile,
     if (SBOX_ALL_OK != code)
       break;
 
+    status = answer.nt_status;
+
     if (!NT_SUCCESS(answer.nt_status))
-        return answer.nt_status;
+      break;
 
     __try {
       *file = answer.handle;
       io_status->Status = answer.nt_status;
       io_status->Information = answer.extended[0].ulong_ptr;
-      status = io_status->Status;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
       break;
     }
@@ -127,10 +130,12 @@ NTSTATUS WINAPI TargetNtOpenFile(NtOpenFileFunction orig_OpenFile, PHANDLE file,
 
     uint32 desired_access_uint32 = desired_access;
     uint32 options_uint32 = options;
+    uint32 disposition_uint32 = FILE_OPEN;
     uint32 broker = FALSE;
     CountedParameterSet<OpenFile> params;
     params[OpenFile::NAME] = ParamPickerMake(name);
     params[OpenFile::ACCESS] = ParamPickerMake(desired_access_uint32);
+    params[OpenFile::DISPOSITION] = ParamPickerMake(disposition_uint32);
     params[OpenFile::OPTIONS] = ParamPickerMake(options_uint32);
     params[OpenFile::BROKER] = ParamPickerMake(broker);
 
@@ -145,14 +150,15 @@ NTSTATUS WINAPI TargetNtOpenFile(NtOpenFileFunction orig_OpenFile, PHANDLE file,
     if (SBOX_ALL_OK != code)
       break;
 
+    status = answer.nt_status;
+
     if (!NT_SUCCESS(answer.nt_status))
-      return answer.nt_status;
+      break;
 
     __try {
       *file = answer.handle;
       io_status->Status = answer.nt_status;
       io_status->Information = answer.extended[0].ulong_ptr;
-      status = io_status->Status;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
       break;
     }
@@ -208,12 +214,10 @@ NTSTATUS WINAPI TargetNtQueryAttributesFile(
     ResultCode code = CrossCall(ipc, IPC_NTQUERYATTRIBUTESFILE_TAG, name,
                                 attributes, file_info, &answer);
 
-    operator delete(name, NT_ALLOC);
-
     if (SBOX_ALL_OK != code)
       break;
 
-    return answer.nt_status;
+    status = answer.nt_status;
 
   } while (false);
 
@@ -269,12 +273,10 @@ NTSTATUS WINAPI TargetNtQueryFullAttributesFile(
     ResultCode code = CrossCall(ipc, IPC_NTQUERYFULLATTRIBUTESFILE_TAG, name,
                                 attributes, file_info, &answer);
 
-    operator delete(name, NT_ALLOC);
-
     if (SBOX_ALL_OK != code)
       break;
 
-    return answer.nt_status;
+    status = answer.nt_status;
   } while (false);
 
   if (name)

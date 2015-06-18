@@ -33,6 +33,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLStyleElement.h"
+#include "core/svg/SVGStyleElement.h"
 #include "platform/TraceEvent.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -61,18 +62,18 @@ StyleElement::~StyleElement()
 #endif
 }
 
-void StyleElement::processStyleSheet(Document& document, Element* element)
+StyleElement::ProcessingResult StyleElement::processStyleSheet(Document& document, Element* element)
 {
     TRACE_EVENT0("blink", "StyleElement::processStyleSheet");
     ASSERT(element);
     ASSERT(element->inDocument());
 
     m_registeredAsCandidate = true;
-    document.styleEngine()->addStyleSheetCandidateNode(element, m_createdByParser);
+    document.styleEngine().addStyleSheetCandidateNode(element, m_createdByParser);
     if (m_createdByParser)
-        return;
+        return ProcessingSuccessful;
 
-    process(element);
+    return process(element);
 }
 
 void StyleElement::insertedInto(Element* element, ContainerNode* insertionPoint)
@@ -97,7 +98,7 @@ void StyleElement::removedFrom(Element* element, ContainerNode* insertionPoint)
 
     Document& document = element->document();
     if (m_registeredAsCandidate) {
-        document.styleEngine()->removeStyleSheetCandidateNode(element, shadowRoot ? *toTreeScope(shadowRoot) : toTreeScope(document));
+        document.styleEngine().removeStyleSheetCandidateNode(element, shadowRoot ? *toTreeScope(shadowRoot) : toTreeScope(document));
         m_registeredAsCandidate = false;
     }
 
@@ -114,34 +115,35 @@ void StyleElement::clearDocumentData(Document& document, Element* element)
     if (m_sheet)
         m_sheet->clearOwnerNode();
 
-    if (element->inDocument()) {
-        // HTMLLinkElement in shadow tree is not supported.
-        TreeScope& treeScope = isHTMLStyleElement(element) || isSVGStyleElement(element) ? element->treeScope() : element->document();
-        document.styleEngine()->removeStyleSheetCandidateNode(element, treeScope);
+    if (m_registeredAsCandidate) {
+        ASSERT(element->inDocument());
+        document.styleEngine().removeStyleSheetCandidateNode(element, element->treeScope());
+        m_registeredAsCandidate = false;
     }
 }
 
-void StyleElement::childrenChanged(Element* element)
+StyleElement::ProcessingResult StyleElement::childrenChanged(Element* element)
 {
     ASSERT(element);
     if (m_createdByParser)
-        return;
+        return ProcessingSuccessful;
 
-    process(element);
+    return process(element);
 }
 
-void StyleElement::finishParsingChildren(Element* element)
+StyleElement::ProcessingResult StyleElement::finishParsingChildren(Element* element)
 {
     ASSERT(element);
-    process(element);
+    ProcessingResult result = process(element);
     m_createdByParser = false;
+    return result;
 }
 
-void StyleElement::process(Element* element)
+StyleElement::ProcessingResult StyleElement::process(Element* element)
 {
     if (!element || !element->inDocument())
-        return;
-    createSheet(element, element->textFromChildren());
+        return ProcessingSuccessful;
+    return createSheet(element, element->textFromChildren());
 }
 
 void StyleElement::clearSheet(Element* ownerElement)
@@ -149,7 +151,7 @@ void StyleElement::clearSheet(Element* ownerElement)
     ASSERT(m_sheet);
 
     if (ownerElement && m_sheet->isLoading())
-        ownerElement->document().styleEngine()->removePendingSheet(ownerElement);
+        ownerElement->document().styleEngine().removePendingSheet(ownerElement);
 
     m_sheet.release()->clearOwnerNode();
 }
@@ -169,7 +171,7 @@ static bool shouldBypassMainWorldCSP(Element* element)
     return false;
 }
 
-void StyleElement::createSheet(Element* e, const String& text)
+StyleElement::ProcessingResult StyleElement::createSheet(Element* e, const String& text)
 {
     ASSERT(e);
     ASSERT(e->inDocument());
@@ -181,7 +183,7 @@ void StyleElement::createSheet(Element* e, const String& text)
     bool passesContentSecurityPolicyChecks = shouldBypassMainWorldCSP(e)
         || csp->allowStyleWithHash(text)
         || csp->allowStyleWithNonce(e->fastGetAttribute(HTMLNames::nonceAttr))
-        || csp->allowInlineStyle(e->document().url(), m_startPosition.m_line);
+        || csp->allowInlineStyle(e->document().url(), m_startPosition.m_line, text);
 
     // If type is empty or CSS, this is a CSS style sheet.
     const AtomicString& type = this->type();
@@ -193,7 +195,7 @@ void StyleElement::createSheet(Element* e, const String& text)
         if (screenEval.eval(mediaQueries.get()) || printEval.eval(mediaQueries.get())) {
             m_loading = true;
             TextPosition startPosition = m_startPosition == TextPosition::belowRangePosition() ? TextPosition::minimumPosition() : m_startPosition;
-            m_sheet = document.styleEngine()->createSheet(e, text, startPosition, m_createdByParser);
+            m_sheet = document.styleEngine().createSheet(e, text, startPosition, m_createdByParser);
             m_sheet->setMediaQueries(mediaQueries.release());
             m_loading = false;
         }
@@ -201,6 +203,8 @@ void StyleElement::createSheet(Element* e, const String& text)
 
     if (m_sheet)
         m_sheet->contents()->checkLoaded();
+
+    return passesContentSecurityPolicyChecks ? ProcessingSuccessful : ProcessingFatalError;
 }
 
 bool StyleElement::isLoading() const
@@ -215,16 +219,16 @@ bool StyleElement::sheetLoaded(Document& document)
     if (isLoading())
         return false;
 
-    document.styleEngine()->removePendingSheet(m_sheet->ownerNode());
+    document.styleEngine().removePendingSheet(m_sheet->ownerNode());
     return true;
 }
 
 void StyleElement::startLoadingDynamicSheet(Document& document)
 {
-    document.styleEngine()->addPendingSheet();
+    document.styleEngine().addPendingSheet();
 }
 
-void StyleElement::trace(Visitor* visitor)
+DEFINE_TRACE(StyleElement)
 {
     visitor->trace(m_sheet);
 }

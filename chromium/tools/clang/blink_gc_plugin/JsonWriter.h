@@ -7,66 +7,75 @@
 
 #include "llvm/Support/raw_ostream.h"
 
+// TODO(hans): Remove this #ifdef after Clang is rolled past r234897.
+#ifdef LLVM_FORCE_HEAD_REVISION
+#define JSON_WRITER_STREAM std::unique_ptr<llvm::raw_ostream>
+#else
+#define JSON_WRITER_STREAM llvm::raw_fd_ostream*
+#endif
+
 // Helper to write information for the points-to graph.
 class JsonWriter {
  public:
-  static JsonWriter* from(llvm::raw_fd_ostream* os) {
-    return os ? new JsonWriter(os) : 0;
+  static JsonWriter* from(JSON_WRITER_STREAM os) {
+    return os ? new JsonWriter(std::move(os)) : 0;
   }
+#ifndef LLVM_FORCE_HEAD_REVISION
   ~JsonWriter() {
-    os_.close();
+    delete os_;
   }
+#endif
   void OpenList() {
     Separator();
-    os_ << "[";
+    *os_ << "[";
     state_.push(false);
   }
   void OpenList(const std::string key) {
     Write(key);
-    os_ << ":";
+    *os_ << ":";
     OpenList();
   }
   void CloseList() {
-    os_ << "]";
+    *os_ << "]";
     state_.pop();
   }
   void OpenObject() {
     Separator();
-    os_ << "{";
+    *os_ << "{";
     state_.push(false);
   }
   void CloseObject() {
-    os_ << "}\n";
+    *os_ << "}\n";
     state_.pop();
   }
   void Write(const size_t val) {
     Separator();
-    os_ << val;
+    *os_ << val;
   }
   void Write(const std::string val) {
     Separator();
-    os_ << "\"" << val << "\"";
+    *os_ << "\"" << val << "\"";
   }
   void Write(const std::string key, const size_t val) {
     Separator();
-    os_ << "\"" << key << "\":" << val;
+    *os_ << "\"" << key << "\":" << val;
   }
   void Write(const std::string key, const std::string val) {
     Separator();
-    os_ << "\"" << key << "\":\"" << val << "\"";
+    *os_ << "\"" << key << "\":\"" << val << "\"";
   }
  private:
-  JsonWriter(llvm::raw_fd_ostream* os) : os_(*os) {}
+  JsonWriter(JSON_WRITER_STREAM os) : os_(std::move(os)) {}
   void Separator() {
     if (state_.empty())
       return;
     if (state_.top()) {
-      os_ << ",";
+      *os_ << ",";
       return;
     }
     state_.top() = true;
   }
-  llvm::raw_fd_ostream& os_;
+  JSON_WRITER_STREAM os_;
   std::stack<bool> state_;
 };
 

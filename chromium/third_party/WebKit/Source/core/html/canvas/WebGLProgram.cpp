@@ -38,7 +38,7 @@ PassRefPtrWillBeRawPtr<WebGLProgram> WebGLProgram::create(WebGLRenderingContextB
 }
 
 WebGLProgram::WebGLProgram(WebGLRenderingContextBase* ctx)
-    : WebGLSharedObject(ctx)
+    : WebGLSharedPlatform3DObject(ctx)
     , m_linkStatus(false)
     , m_linkCount(0)
     , m_infoValid(true)
@@ -66,9 +66,10 @@ WebGLProgram::~WebGLProgram()
     detachAndDeleteObject();
 }
 
-void WebGLProgram::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject obj)
+void WebGLProgram::deleteObjectImpl(WebGraphicsContext3D* context3d)
 {
-    context3d->deleteProgram(obj);
+    context3d->deleteProgram(m_object);
+    m_object = 0;
     if (m_vertexShader) {
         m_vertexShader->onDetached(context3d);
         m_vertexShader = nullptr;
@@ -167,17 +168,17 @@ bool WebGLProgram::detachShader(WebGLShader* shader)
     }
 }
 
-void WebGLProgram::cacheActiveAttribLocations(blink::WebGraphicsContext3D* context3d)
+void WebGLProgram::cacheActiveAttribLocations(WebGraphicsContext3D* context3d)
 {
     m_activeAttribLocations.clear();
 
     GLint numAttribs = 0;
-    context3d->getProgramiv(object(), GL_ACTIVE_ATTRIBUTES, &numAttribs);
+    context3d->getProgramiv(m_object, GL_ACTIVE_ATTRIBUTES, &numAttribs);
     m_activeAttribLocations.resize(static_cast<size_t>(numAttribs));
     for (int i = 0; i < numAttribs; ++i) {
-        blink::WebGraphicsContext3D::ActiveInfo info;
-        context3d->getActiveAttrib(object(), i, info);
-        m_activeAttribLocations[i] = context3d->getAttribLocation(object(), info.name.utf8().data());
+        WebGraphicsContext3D::ActiveInfo info;
+        context3d->getActiveAttrib(m_object, i, info);
+        m_activeAttribLocations[i] = context3d->getAttribLocation(m_object, info.name.utf8().data());
     }
 }
 
@@ -186,27 +187,27 @@ void WebGLProgram::cacheInfoIfNeeded()
     if (m_infoValid)
         return;
 
-    if (!object())
+    if (!m_object)
         return;
 
     if (!contextGroup())
         return;
-    blink::WebGraphicsContext3D* context = contextGroup()->getAWebGraphicsContext3D();
+    WebGraphicsContext3D* context = contextGroup()->getAWebGraphicsContext3D();
     if (!context)
         return;
     GLint linkStatus = 0;
-    context->getProgramiv(object(), GL_LINK_STATUS, &linkStatus);
+    context->getProgramiv(m_object, GL_LINK_STATUS, &linkStatus);
     m_linkStatus = linkStatus;
     if (m_linkStatus)
         cacheActiveAttribLocations(context);
     m_infoValid = true;
 }
 
-void WebGLProgram::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLProgram)
 {
     visitor->trace(m_vertexShader);
     visitor->trace(m_fragmentShader);
-    WebGLSharedObject::trace(visitor);
+    WebGLSharedPlatform3DObject::trace(visitor);
 }
 
-}
+} // namespace blink

@@ -24,13 +24,6 @@ public:
     SkImageInfo info() const { return fSurface->info(); }
 
     /**
-     * Checks whether this GrSurface refers to the same GPU object as other. This
-     * catches the case where a GrTexture and GrRenderTarget refer to the same
-     * GPU memory.
-     */
-    bool isSameAs(const GrSurface* other) const { return fSurface->isSameAs(other); }
-
-    /**
      * Write the contents of the surface to a PNG. Returns true if successful.
      * @param filename      Full path to desired file
      */
@@ -41,9 +34,9 @@ public:
     bool hasPendingIO() const { return fSurface->hasPendingIO(); }
 
 private:
-    GrSurfacePriv(GrSurface* surface) : fSurface(surface) { }
-    GrSurfacePriv(const GrSurfacePriv& that) : fSurface(that.fSurface) { }
-    GrSurfacePriv& operator=(const GrSurface&); // unimpl
+    explicit GrSurfacePriv(GrSurface* surface) : fSurface(surface) {}
+    GrSurfacePriv(const GrSurfacePriv&); // unimpl
+    GrSurfacePriv& operator=(const GrSurfacePriv&); // unimpl
 
     // No taking addresses of this type.
     const GrSurfacePriv* operator&() const;

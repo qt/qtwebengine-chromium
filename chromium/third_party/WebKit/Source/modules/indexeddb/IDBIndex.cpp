@@ -27,7 +27,8 @@
 #include "modules/indexeddb/IDBIndex.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/modules/v8/IDBBindingUtilities.h"
+#include "bindings/modules/v8/ToV8ForModules.h"
+#include "bindings/modules/v8/V8BindingForModules.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -36,7 +37,7 @@
 #include "modules/indexeddb/IDBTracing.h"
 #include "modules/indexeddb/IDBTransaction.h"
 #include "modules/indexeddb/WebIDBCallbacksImpl.h"
-#include "public/platform/WebIDBKeyRange.h"
+#include "public/platform/modules/indexeddb/WebIDBKeyRange.h"
 
 using blink::WebIDBCallbacks;
 using blink::WebIDBCursor;
@@ -59,7 +60,7 @@ IDBIndex::~IDBIndex()
 {
 }
 
-void IDBIndex::trace(Visitor* visitor)
+DEFINE_TRACE(IDBIndex)
 {
     visitor->trace(m_objectStore);
     visitor->trace(m_transaction);
@@ -67,7 +68,7 @@ void IDBIndex::trace(Visitor* visitor)
 
 ScriptValue IDBIndex::keyPath(ScriptState* scriptState) const
 {
-    return idbAnyToScriptValue(scriptState, IDBAny::create(m_metadata.keyPath));
+    return ScriptValue::from(scriptState, m_metadata.keyPath);
 }
 
 IDBRequest* IDBIndex::openCursor(ScriptState* scriptState, const ScriptValue& range, const String& directionString, ExceptionState& exceptionState)

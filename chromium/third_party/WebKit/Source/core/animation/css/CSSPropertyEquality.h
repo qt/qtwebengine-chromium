@@ -9,11 +9,11 @@
 
 namespace blink {
 
-class RenderStyle;
+class ComputedStyle;
 
 class CSSPropertyEquality {
 public:
-    static bool propertiesEqual(CSSPropertyID, const RenderStyle&, const RenderStyle&);
+    static bool propertiesEqual(CSSPropertyID, const ComputedStyle&, const ComputedStyle&);
 };
 
 } // namespace blink

@@ -9,13 +9,13 @@
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/insets.h"
 #include "ui/gfx/nine_image_painter.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -272,20 +272,20 @@ Painter* Painter::CreateImageGridPainter(const int image_ids[]) {
 
 // static
 scoped_ptr<Painter> Painter::CreateDashedFocusPainter() {
-  return scoped_ptr<Painter>(new DashedFocusPainter(gfx::Insets())).Pass();
+  return make_scoped_ptr(new DashedFocusPainter(gfx::Insets()));
 }
 
 // static
 scoped_ptr<Painter> Painter::CreateDashedFocusPainterWithInsets(
     const gfx::Insets& insets) {
-  return scoped_ptr<Painter>(new DashedFocusPainter(insets)).Pass();
+  return make_scoped_ptr(new DashedFocusPainter(insets));
 }
 
 // static
 scoped_ptr<Painter> Painter::CreateSolidFocusPainter(
     SkColor color,
     const gfx::Insets& insets) {
-  return scoped_ptr<Painter>(new SolidFocusPainter(color, insets)).Pass();
+  return make_scoped_ptr(new SolidFocusPainter(color, insets));
 }
 
 // HorizontalPainter ----------------------------------------------------------

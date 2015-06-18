@@ -8,6 +8,8 @@
 #include "base/i18n/icu_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_device_source.h"
 #include "base/run_loop.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -30,6 +32,7 @@
 
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
+#include "ui/gfx/win/direct_write.h"
 #endif
 
 #if defined(USE_X11)
@@ -41,7 +44,7 @@ int main(int argc, char** argv) {
   ui::ScopedOleInitializer ole_initializer_;
 #endif
 
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
 
   base::AtExitManager at_exit;
 
@@ -54,8 +57,10 @@ int main(int argc, char** argv) {
   gfx::GLSurface::InitializeOneOff();
 
   // The ContextFactory must exist before any Compositors are created.
+  bool context_factory_for_test = false;
   scoped_ptr<ui::InProcessContextFactory> context_factory(
-      new ui::InProcessContextFactory());
+      new ui::InProcessContextFactory(context_factory_for_test, nullptr));
+  context_factory->set_use_test_surface(false);
 
   base::MessageLoopForUI message_loop;
 
@@ -66,6 +71,13 @@ int main(int argc, char** argv) {
   base::FilePath ui_test_pak_path;
   DCHECK(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
   ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
+
+  base::PowerMonitor power_monitor(make_scoped_ptr(
+      new base::PowerMonitorDeviceSource));
+
+#if defined(OS_WIN)
+    gfx::win::MaybeInitializeDirectWrite();
+#endif
 
 #if defined(USE_AURA)
   aura::Env::CreateInstance(true);

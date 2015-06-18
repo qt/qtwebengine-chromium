@@ -18,7 +18,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/version.h"
+#include "cc/resources/shared_bitmap.h"
 #include "content/child/child_process.h"
+#include "content/child/child_shared_bitmap_manager.h"
 #include "content/child/npapi/npobject_proxy.h"
 #include "content/child/npapi/npobject_stub.h"
 #include "content/child/npapi/npobject_util.h"
@@ -45,19 +47,16 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
-#endif
-
 #if defined(OS_WIN)
+#include "base/win/scoped_handle.h"
 #include "content/public/common/sandbox_init.h"
 #endif
 
@@ -312,13 +311,13 @@ bool WebPluginDelegateProxy::Initialize(
       if (!info_.path.empty()) {
         render_view_->GetMainRenderFrame()->PluginCrashed(
             info_.path, base::kNullProcessId);
-        LOG(ERROR) << "Plug-in crashed on start";
+        LOG(ERROR) << "Plugin crashed on start";
 
         // Return true so that the plugin widget is created and we can paint the
         // crashed plugin there.
         return true;
       }
-      LOG(ERROR) << "Plug-in couldn't be found";
+      LOG(ERROR) << "Plugin couldn't be found";
       return false;
     }
 
@@ -495,12 +494,12 @@ void WebPluginDelegateProxy::OnChannelError() {
 #endif
 }
 
-static void CopyTransportDIBHandleForMessage(
-    const TransportDIB::Handle& handle_in,
-    TransportDIB::Handle* handle_out,
+static void CopySharedMemoryHandleForMessage(
+    const base::SharedMemoryHandle& handle_in,
+    base::SharedMemoryHandle* handle_out,
     base::ProcessId peer_pid) {
-#if defined(OS_MACOSX)
-  // On Mac, TransportDIB::Handle is typedef'ed to FileDescriptor, and
+#if defined(OS_POSIX)
+  // On POSIX, base::ShardMemoryHandle is typedef'ed to FileDescriptor, and
   // FileDescriptor message fields needs to remain valid until the message is
   // sent or else the sendmsg() call will fail.
   if ((handle_out->fd = HANDLE_EINTR(dup(handle_in.fd))) < 0) {
@@ -515,8 +514,7 @@ static void CopyTransportDIBHandleForMessage(
                         FILE_MAP_READ | FILE_MAP_WRITE, 0);
   DCHECK(*handle_out != NULL);
 #else
-  // Don't need to do anything special for other platforms.
-  *handle_out = handle_in;
+#error Shared memory copy not implemented.
 #endif
 }
 
@@ -528,8 +526,8 @@ void WebPluginDelegateProxy::SendUpdateGeometry(
   PluginMsg_UpdateGeometry_Param param;
   param.window_rect = plugin_rect_;
   param.clip_rect = clip_rect_;
-  param.windowless_buffer0 = TransportDIB::DefaultHandleValue();
-  param.windowless_buffer1 = TransportDIB::DefaultHandleValue();
+  param.windowless_buffer0 = base::SharedMemory::NULLHandle();
+  param.windowless_buffer1 = base::SharedMemory::NULLHandle();
   param.windowless_buffer_index = back_buffer_index();
 
 #if defined(OS_POSIX)
@@ -539,15 +537,15 @@ void WebPluginDelegateProxy::SendUpdateGeometry(
   if (bitmaps_changed)
 #endif
   {
-    if (transport_stores_[0].dib)
-      CopyTransportDIBHandleForMessage(transport_stores_[0].dib->handle(),
-                                       &param.windowless_buffer0,
-                                       channel_host_->peer_pid());
+    if (transport_stores_[0].bitmap)
+      CopySharedMemoryHandleForMessage(
+          transport_stores_[0].bitmap->shared_memory()->handle(),
+          &param.windowless_buffer0, channel_host_->peer_pid());
 
-    if (transport_stores_[1].dib)
-      CopyTransportDIBHandleForMessage(transport_stores_[1].dib->handle(),
-                                       &param.windowless_buffer1,
-                                       channel_host_->peer_pid());
+    if (transport_stores_[1].bitmap)
+      CopySharedMemoryHandleForMessage(
+          transport_stores_[1].bitmap->shared_memory()->handle(),
+          &param.windowless_buffer1, channel_host_->peer_pid());
   }
 
   IPC::Message* msg;
@@ -593,9 +591,9 @@ void WebPluginDelegateProxy::UpdateGeometry(const gfx::Rect& window_rect,
       // asynchronously.
       ResetWindowlessBitmaps();
       if (!window_rect.IsEmpty()) {
-        if (!CreateSharedBitmap(&transport_stores_[0].dib,
+        if (!CreateSharedBitmap(&transport_stores_[0].bitmap,
                                 &transport_stores_[0].canvas) ||
-            !CreateSharedBitmap(&transport_stores_[1].dib,
+            !CreateSharedBitmap(&transport_stores_[1].bitmap,
                                 &transport_stores_[1].canvas)) {
           DCHECK(false);
           ResetWindowlessBitmaps();
@@ -609,8 +607,8 @@ void WebPluginDelegateProxy::UpdateGeometry(const gfx::Rect& window_rect,
 }
 
 void WebPluginDelegateProxy::ResetWindowlessBitmaps() {
-  transport_stores_[0].dib.reset();
-  transport_stores_[1].dib.reset();
+  transport_stores_[0].bitmap.reset();
+  transport_stores_[1].bitmap.reset();
 
   transport_stores_[0].canvas.reset();
   transport_stores_[1].canvas.reset();
@@ -640,28 +638,23 @@ bool WebPluginDelegateProxy::CreateLocalBitmap(
 #endif
 
 bool WebPluginDelegateProxy::CreateSharedBitmap(
-    scoped_ptr<TransportDIB>* memory,
+    scoped_ptr<SharedMemoryBitmap>* memory,
     scoped_ptr<skia::PlatformCanvas>* canvas) {
-  const size_t size = BitmapSizeForPluginRect(plugin_rect_);
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  memory->reset(TransportDIB::Create(size, 0));
+  *memory = ChildThreadImpl::current()
+                ->shared_bitmap_manager()
+                ->AllocateSharedMemoryBitmap(plugin_rect_.size());
   if (!memory->get())
     return false;
-#endif
-#if defined(OS_POSIX) && !defined(OS_ANDROID)
-  TransportDIB::Handle handle;
-  IPC::Message* msg = new ViewHostMsg_AllocTransportDIB(size, false, &handle);
-  if (!RenderThreadImpl::current()->Send(msg))
-    return false;
-  if (handle.fd < 0)
-    return false;
-  memory->reset(TransportDIB::Map(handle));
+  DCHECK((*memory)->shared_memory());
+#if defined(OS_POSIX)
+  canvas->reset(skia::CreatePlatformCanvas(
+      plugin_rect_.width(), plugin_rect_.height(), true, (*memory)->pixels(),
+      skia::RETURN_NULL_ON_FAILURE));
 #else
-  static uint32 sequence_number = 0;
-  memory->reset(TransportDIB::Create(size, sequence_number++));
+  canvas->reset(skia::CreatePlatformCanvas(
+      plugin_rect_.width(), plugin_rect_.height(), true,
+      (*memory)->shared_memory()->handle(), skia::RETURN_NULL_ON_FAILURE));
 #endif
-  canvas->reset((*memory)->GetPlatformCanvas(plugin_rect_.width(),
-                                             plugin_rect_.height()));
   return !!canvas->get();
 }
 
@@ -720,7 +713,7 @@ void WebPluginDelegateProxy::Paint(SkCanvas* canvas,
   if (invalidate_pending_) {
     // Only send the PaintAck message if this paint is in response to an
     // invalidate from the plugin, since this message acts as an access token
-    // to ensure only one process is using the transport dib at a time.
+    // to ensure only one process is using the shared bitmap at a time.
     invalidate_pending_ = false;
     Send(new PluginMsg_DidPaint(instance_id_));
   }
@@ -737,6 +730,9 @@ NPObject* WebPluginDelegateProxy::GetPluginScriptableObject() {
   Send(new PluginMsg_GetPluginScriptableObject(instance_id_, &route_id));
   if (route_id == MSG_ROUTING_NONE)
     return NULL;
+
+  if (!channel_host_.get())
+    return nullptr;
 
   npobject_ = NPObjectProxy::Create(
       channel_host_.get(), route_id, 0, page_url_, GetPluginNPP());
@@ -805,7 +801,7 @@ void WebPluginDelegateProxy::ImeCompositionUpdated(
     const std::vector<int>& target,
     int cursor_position,
     int plugin_id) {
-  // Dispatch the raw IME data if this plug-in is the focused one.
+  // Dispatch the raw IME data if this plugin is the focused one.
   if (instance_id_ != plugin_id)
     return;
 
@@ -817,7 +813,7 @@ void WebPluginDelegateProxy::ImeCompositionUpdated(
 
 void WebPluginDelegateProxy::ImeCompositionCompleted(const base::string16& text,
                                                      int plugin_id) {
-  // Dispatch the IME text if this plug-in is the focused one.
+  // Dispatch the IME text if this plugin is the focused one.
   if (instance_id_ != plugin_id)
     return;
 
@@ -897,10 +893,12 @@ void WebPluginDelegateProxy::WillDestroyWindow() {
 
 #if defined(OS_WIN)
 void WebPluginDelegateProxy::OnSetWindowlessData(
-      HANDLE modal_loop_pump_messages_event,
+      HANDLE modal_loop_pump_messages_event_handle,
       gfx::NativeViewId dummy_activation_window) {
-  DCHECK(modal_loop_pump_messages_event_ == NULL);
-  DCHECK(dummy_activation_window_ == NULL);
+  DCHECK(!modal_loop_pump_messages_event_.get());
+  DCHECK(!dummy_activation_window_);
+  base::win::ScopedHandle modal_loop_pump_messages_event(
+      modal_loop_pump_messages_event_handle);
 
   dummy_activation_window_ = dummy_activation_window;
   render_view_->Send(new ViewHostMsg_WindowlessPluginDummyWindowCreated(
@@ -908,11 +906,11 @@ void WebPluginDelegateProxy::OnSetWindowlessData(
 
   // Bug 25583: this can be null because some "virus scanners" block the
   // DuplicateHandle call in the plugin process.
-  if (!modal_loop_pump_messages_event)
+  if (!modal_loop_pump_messages_event.IsValid())
     return;
 
   modal_loop_pump_messages_event_.reset(
-      new base::WaitableEvent(modal_loop_pump_messages_event));
+      new base::WaitableEvent(modal_loop_pump_messages_event.Pass()));
 }
 
 void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
@@ -1020,12 +1018,12 @@ void WebPluginDelegateProxy::CopyFromBackBufferToFrontBuffer(
   const size_t stride =
       skia::PlatformCanvasStrideForWidth(plugin_rect_.width());
   const size_t chunk_size = 4 * rect.width();
-  DCHECK(back_buffer_dib() != NULL);
-  uint8* source_data = static_cast<uint8*>(back_buffer_dib()->memory()) +
-                       rect.y() * stride + 4 * rect.x();
-  DCHECK(front_buffer_dib() != NULL);
-  uint8* target_data = static_cast<uint8*>(front_buffer_dib()->memory()) +
-                       rect.y() * stride + 4 * rect.x();
+  DCHECK(back_buffer_bitmap() != NULL);
+  uint8* source_data =
+      back_buffer_bitmap()->pixels() + rect.y() * stride + 4 * rect.x();
+  DCHECK(front_buffer_bitmap() != NULL);
+  uint8* target_data =
+      front_buffer_bitmap()->pixels() + rect.y() * stride + 4 * rect.x();
   for (int row = 0; row < rect.height(); ++row) {
     memcpy(target_data, source_data, chunk_size);
     source_data += stride;
@@ -1121,7 +1119,7 @@ void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
                                       const std::string& method,
                                       const char* buf,
                                       unsigned int len,
-                                      const GURL& referrer,
+                                      const Referrer& referrer,
                                       bool notify_redirects,
                                       bool is_plugin_src_load,
                                       int origin_pid,
@@ -1137,7 +1135,8 @@ void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
     params.post_data.resize(len);
     memcpy(&params.post_data.front(), buf, len);
   }
-  params.referrer = referrer;
+  params.referrer = referrer.url;
+  params.referrer_policy = referrer.policy;
   params.notify_redirect = notify_redirects;
   params.is_plugin_src_load = is_plugin_src_load;
   params.render_frame_id = render_frame_id;

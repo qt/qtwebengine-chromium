@@ -34,6 +34,8 @@ class CC_EXPORT CompositorFrameMetadata {
   gfx::SizeF root_layer_size;
   float min_page_scale_factor;
   float max_page_scale_factor;
+  bool root_overflow_x_hidden;
+  bool root_overflow_y_hidden;
 
   // Used to position the Android location top bar and page content, whose
   // precise position is computed by the renderer compositor.
@@ -42,8 +44,7 @@ class CC_EXPORT CompositorFrameMetadata {
 
   // Provides selection region updates relative to the current viewport. If the
   // selection is empty or otherwise unused, the bound types will indicate such.
-  ViewportSelectionBound selection_start;
-  ViewportSelectionBound selection_end;
+  ViewportSelection selection;
 
   std::vector<ui::LatencyInfo> latency_info;
 

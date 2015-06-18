@@ -13,38 +13,6 @@
             "className": "WebInspector.ElementsPanel.ContextMenuProvider"
         },
         {
-            "type": "@WebInspector.ActionDelegate",
-            "actionId": "elements.undo",
-            "className": "WebInspector.ElementsPanel.UndoActionDelegate",
-            "contextTypes": ["WebInspector.ElementsPanel"],
-            "bindings": [
-                {
-                    "platform": "windows,linux",
-                    "shortcut": "Ctrl+Z"
-                },
-                {
-                    "platform": "mac",
-                    "shortcut": "Meta+Z"
-                }
-            ]
-        },
-        {
-            "type": "@WebInspector.ActionDelegate",
-            "actionId": "elements.redo",
-            "className": "WebInspector.ElementsPanel.RedoActionDelegate",
-            "contextTypes": ["WebInspector.ElementsPanel"],
-            "bindings": [
-                {
-                    "platform": "windows,linux",
-                    "shortcut": "Ctrl+Y"
-                },
-                {
-                    "platform": "mac",
-                    "shortcut": "Meta+Shift+Z"
-                }
-            ]
-        },
-        {
             "type": "@WebInspector.Renderer",
             "contextTypes": ["WebInspector.DOMNode", "WebInspector.RemoteObject"],
             "className": "WebInspector.ElementsTreeOutline.Renderer"
@@ -55,11 +23,12 @@
             "className": "WebInspector.ElementsPanel.DOMNodeRevealer"
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Color format:",
             "settingName": "colorFormat",
-            "settingType": "select",
+            "settingType": "enum",
+            "defaultValue": "original",
             "options": [
                 ["As authored", "original"],
                 ["HEX: #DAC0DE", "hex", true],
@@ -68,32 +37,36 @@
             ]
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
-            "title": "Show user agent styles",
-            "settingName": "showUserAgentStyles",
-            "settingType": "checkbox"
-        },
-        {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Show user agent shadow DOM",
             "settingName": "showUAShadowDOM",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Word wrap",
             "settingName": "domWordWrap",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": true
         },
         {
-            "type": "ui-setting",
-            "section": "Elements",
+            "type": "setting",
+            "category": "Elements",
             "title": "Show rulers",
             "settingName": "showMetricsRulers",
-            "settingType": "checkbox"
+            "settingType": "boolean",
+            "defaultValue": false
+        },
+        {
+            "type": "setting",
+            "category": "Elements",
+            "title": "Highlight DOM updates",
+            "settingName": "highlightDOMUpdates",
+            "settingType": "boolean",
+            "defaultValue": true
         }
     ],
     "dependencies": [
@@ -101,20 +74,32 @@
         "extensions"
     ],
     "scripts": [
+        "BezierUI.js",
+        "AnimationControlPane.js",
+        "AnimationTimeline.js",
+        "StylesPopoverHelper.js",
+        "BezierEditor.js",
         "Spectrum.js",
         "ElementsBreadcrumbs.js",
         "ElementsSidebarPane.js",
+        "ElementsSidebarView.js",
+        "ElementsTreeElement.js",
         "ElementsTreeOutline.js",
         "EventListenersSidebarPane.js",
         "MetricsSidebarPane.js",
         "PlatformFontsSidebarPane.js",
         "PropertiesSidebarPane.js",
+        "StylesSectionModel.js",
         "StylesSidebarPane.js",
+        "ComputedStyleSidebarPane.js",
         "ElementsPanel.js",
         "AnimationsSidebarPane.js"
     ],
-    "stylesheets": [
+    "resources": [
+        "animationTimeline.css",
+        "bezierEditor.css",
         "breadcrumbs.css",
+        "computedStyleSidebarPane.css",
         "elementsPanel.css",
         "elementsTreeOutline.css",
         "spectrum.css"

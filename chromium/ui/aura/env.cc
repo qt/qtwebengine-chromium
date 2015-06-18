@@ -43,6 +43,11 @@ Env* Env::GetInstance() {
 }
 
 // static
+Env* Env::GetInstanceDontCreate() {
+  return lazy_tls_ptr.Pointer()->Get();
+}
+
+// static
 void Env::DeleteInstance() {
   delete lazy_tls_ptr.Pointer()->Get();
 }
@@ -112,7 +117,7 @@ ui::EventTarget* Env::GetParentTarget() {
 }
 
 scoped_ptr<ui::EventTargetIterator> Env::GetChildIterator() const {
-  return scoped_ptr<ui::EventTargetIterator>();
+  return nullptr;
 }
 
 ui::EventTargeter* Env::GetEventTargeter() {

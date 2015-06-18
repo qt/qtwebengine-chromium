@@ -8,16 +8,18 @@
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/default_pref_store.h"
 #include "base/prefs/pref_notifier_impl.h"
 #include "base/prefs/pref_registry.h"
 #include "base/prefs/pref_value_store.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/value_conversions.h"
 #include "build/build_config.h"
 
@@ -36,6 +38,19 @@ class ReadErrorHandler : public PersistentPrefStore::ReadErrorDelegate {
   base::Callback<void(PersistentPrefStore::PrefReadError)> callback_;
 };
 
+// Returns the WriteablePrefStore::PrefWriteFlags for the pref with the given
+// |path|.
+uint32 GetWriteFlags(const PrefService::Preference* pref) {
+  uint32 write_flags = WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS;
+
+  if (!pref)
+    return write_flags;
+
+  if (pref->registration_flags() & PrefRegistry::LOSSY_PREF)
+    write_flags |= WriteablePrefStore::LOSSY_PREF_WRITE_FLAG;
+  return write_flags;
+}
+
 }  // namespace
 
 PrefService::PrefService(
@@ -52,6 +67,12 @@ PrefService::PrefService(
       user_pref_store_(user_prefs),
       read_error_callback_(read_error_callback) {
   pref_notifier_->SetPrefService(this);
+
+  // TODO(battre): This is a check for crbug.com/435208 to make sure that
+  // access violations are caused by a use-after-free bug and not by an
+  // initialization bug.
+  CHECK(pref_registry_);
+  CHECK(pref_value_store_);
 
   InitFromStorage(async);
 }
@@ -73,10 +94,9 @@ void PrefService::InitFromStorage(bool async) {
     read_error_callback_.Run(user_pref_store_->ReadPrefs());
   } else {
     // Guarantee that initialization happens after this function returned.
-    base::MessageLoop::current()->PostTask(
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&PersistentPrefStore::ReadPrefsAsync,
-                   user_pref_store_.get(),
+        base::Bind(&PersistentPrefStore::ReadPrefsAsync, user_pref_store_.get(),
                    new ReadErrorHandler(read_error_callback_)));
   }
 }
@@ -86,7 +106,7 @@ void PrefService::CommitPendingWrite() {
   user_pref_store_->CommitPendingWrite();
 }
 
-bool PrefService::GetBoolean(const char* path) const {
+bool PrefService::GetBoolean(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   bool result = false;
@@ -101,7 +121,7 @@ bool PrefService::GetBoolean(const char* path) const {
   return result;
 }
 
-int PrefService::GetInteger(const char* path) const {
+int PrefService::GetInteger(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   int result = 0;
@@ -116,7 +136,7 @@ int PrefService::GetInteger(const char* path) const {
   return result;
 }
 
-double PrefService::GetDouble(const char* path) const {
+double PrefService::GetDouble(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   double result = 0.0;
@@ -131,7 +151,7 @@ double PrefService::GetDouble(const char* path) const {
   return result;
 }
 
-std::string PrefService::GetString(const char* path) const {
+std::string PrefService::GetString(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   std::string result;
@@ -146,7 +166,7 @@ std::string PrefService::GetString(const char* path) const {
   return result;
 }
 
-base::FilePath PrefService::GetFilePath(const char* path) const {
+base::FilePath PrefService::GetFilePath(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   base::FilePath result;
@@ -161,7 +181,7 @@ base::FilePath PrefService::GetFilePath(const char* path) const {
   return result;
 }
 
-bool PrefService::HasPrefPath(const char* path) const {
+bool PrefService::HasPrefPath(const std::string& path) const {
   const Preference* pref = FindPreference(path);
   return pref && !pref->IsDefaultValue();
 }
@@ -169,11 +189,21 @@ bool PrefService::HasPrefPath(const char* path) const {
 scoped_ptr<base::DictionaryValue> PrefService::GetPreferenceValues() const {
   DCHECK(CalledOnValidThread());
   scoped_ptr<base::DictionaryValue> out(new base::DictionaryValue);
-  PrefRegistry::const_iterator i = pref_registry_->begin();
-  for (; i != pref_registry_->end(); ++i) {
-    const base::Value* value = GetPreferenceValue(i->first);
-    DCHECK(value);
-    out->Set(i->first, value->DeepCopy());
+  for (const auto& it : *pref_registry_) {
+    out->Set(it.first, GetPreferenceValue(it.first)->CreateDeepCopy());
+  }
+  return out.Pass();
+}
+
+scoped_ptr<base::DictionaryValue> PrefService::GetPreferenceValuesOmitDefaults()
+    const {
+  DCHECK(CalledOnValidThread());
+  scoped_ptr<base::DictionaryValue> out(new base::DictionaryValue);
+  for (const auto& it : *pref_registry_) {
+    const Preference* pref = FindPreference(it.first);
+    if (pref->IsDefaultValue())
+      continue;
+    out->Set(it.first, pref->GetValue()->CreateDeepCopy());
   }
   return out.Pass();
 }
@@ -182,17 +212,16 @@ scoped_ptr<base::DictionaryValue>
 PrefService::GetPreferenceValuesWithoutPathExpansion() const {
   DCHECK(CalledOnValidThread());
   scoped_ptr<base::DictionaryValue> out(new base::DictionaryValue);
-  PrefRegistry::const_iterator i = pref_registry_->begin();
-  for (; i != pref_registry_->end(); ++i) {
-    const base::Value* value = GetPreferenceValue(i->first);
+  for (const auto& it : *pref_registry_) {
+    const base::Value* value = GetPreferenceValue(it.first);
     DCHECK(value);
-    out->SetWithoutPathExpansion(i->first, value->DeepCopy());
+    out->SetWithoutPathExpansion(it.first, value->CreateDeepCopy());
   }
   return out.Pass();
 }
 
 const PrefService::Preference* PrefService::FindPreference(
-    const char* pref_name) const {
+    const std::string& pref_name) const {
   DCHECK(CalledOnValidThread());
   PreferenceMap::iterator it = prefs_map_.find(pref_name);
   if (it != prefs_map_.end())
@@ -225,18 +254,25 @@ PrefService::PrefInitializationStatus PrefService::GetInitializationStatus()
   }
 }
 
-bool PrefService::IsManagedPreference(const char* pref_name) const {
+bool PrefService::IsManagedPreference(const std::string& pref_name) const {
   const Preference* pref = FindPreference(pref_name);
   return pref && pref->IsManaged();
 }
 
-bool PrefService::IsUserModifiablePreference(const char* pref_name) const {
+bool PrefService::IsPreferenceManagedByCustodian(
+    const std::string& pref_name) const {
+  const Preference* pref = FindPreference(pref_name);
+  return pref && pref->IsManagedByCustodian();
+}
+
+bool PrefService::IsUserModifiablePreference(
+    const std::string& pref_name) const {
   const Preference* pref = FindPreference(pref_name);
   return pref && pref->IsUserModifiable();
 }
 
 const base::DictionaryValue* PrefService::GetDictionary(
-    const char* path) const {
+    const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   const base::Value* value = GetPreferenceValue(path);
@@ -251,7 +287,8 @@ const base::DictionaryValue* PrefService::GetDictionary(
   return static_cast<const base::DictionaryValue*>(value);
 }
 
-const base::Value* PrefService::GetUserPrefValue(const char* path) const {
+const base::Value* PrefService::GetUserPrefValue(
+    const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   const Preference* pref = FindPreference(path);
@@ -274,13 +311,14 @@ const base::Value* PrefService::GetUserPrefValue(const char* path) const {
   return value;
 }
 
-void PrefService::SetDefaultPrefValue(const char* path,
+void PrefService::SetDefaultPrefValue(const std::string& path,
                                       base::Value* value) {
   DCHECK(CalledOnValidThread());
   pref_registry_->SetDefaultPrefValue(path, value);
 }
 
-const base::Value* PrefService::GetDefaultPrefValue(const char* path) const {
+const base::Value* PrefService::GetDefaultPrefValue(
+    const std::string& path) const {
   DCHECK(CalledOnValidThread());
   // Lookup the preference in the default store.
   const base::Value* value = NULL;
@@ -291,7 +329,7 @@ const base::Value* PrefService::GetDefaultPrefValue(const char* path) const {
   return value;
 }
 
-const base::ListValue* PrefService::GetList(const char* path) const {
+const base::ListValue* PrefService::GetList(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   const base::Value* value = GetPreferenceValue(path);
@@ -306,11 +344,12 @@ const base::ListValue* PrefService::GetList(const char* path) const {
   return static_cast<const base::ListValue*>(value);
 }
 
-void PrefService::AddPrefObserver(const char* path, PrefObserver* obs) {
+void PrefService::AddPrefObserver(const std::string& path, PrefObserver* obs) {
   pref_notifier_->AddPrefObserver(path, obs);
 }
 
-void PrefService::RemovePrefObserver(const char* path, PrefObserver* obs) {
+void PrefService::RemovePrefObserver(const std::string& path,
+                                     PrefObserver* obs) {
   pref_notifier_->RemovePrefObserver(path, obs);
 }
 
@@ -322,7 +361,7 @@ PrefRegistry* PrefService::DeprecatedGetPrefRegistry() {
   return pref_registry_.get();
 }
 
-void PrefService::ClearPref(const char* path) {
+void PrefService::ClearPref(const std::string& path) {
   DCHECK(CalledOnValidThread());
 
   const Preference* pref = FindPreference(path);
@@ -330,38 +369,39 @@ void PrefService::ClearPref(const char* path) {
     NOTREACHED() << "Trying to clear an unregistered pref: " << path;
     return;
   }
-  user_pref_store_->RemoveValue(path);
+  user_pref_store_->RemoveValue(path, GetWriteFlags(pref));
 }
 
-void PrefService::Set(const char* path, const base::Value& value) {
+void PrefService::Set(const std::string& path, const base::Value& value) {
   SetUserPrefValue(path, value.DeepCopy());
 }
 
-void PrefService::SetBoolean(const char* path, bool value) {
+void PrefService::SetBoolean(const std::string& path, bool value) {
   SetUserPrefValue(path, new base::FundamentalValue(value));
 }
 
-void PrefService::SetInteger(const char* path, int value) {
+void PrefService::SetInteger(const std::string& path, int value) {
   SetUserPrefValue(path, new base::FundamentalValue(value));
 }
 
-void PrefService::SetDouble(const char* path, double value) {
+void PrefService::SetDouble(const std::string& path, double value) {
   SetUserPrefValue(path, new base::FundamentalValue(value));
 }
 
-void PrefService::SetString(const char* path, const std::string& value) {
+void PrefService::SetString(const std::string& path, const std::string& value) {
   SetUserPrefValue(path, new base::StringValue(value));
 }
 
-void PrefService::SetFilePath(const char* path, const base::FilePath& value) {
+void PrefService::SetFilePath(const std::string& path,
+                              const base::FilePath& value) {
   SetUserPrefValue(path, base::CreateFilePathValue(value));
 }
 
-void PrefService::SetInt64(const char* path, int64 value) {
+void PrefService::SetInt64(const std::string& path, int64 value) {
   SetUserPrefValue(path, new base::StringValue(base::Int64ToString(value)));
 }
 
-int64 PrefService::GetInt64(const char* path) const {
+int64 PrefService::GetInt64(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   const base::Value* value = GetPreferenceValue(path);
@@ -378,11 +418,11 @@ int64 PrefService::GetInt64(const char* path) const {
   return val;
 }
 
-void PrefService::SetUint64(const char* path, uint64 value) {
+void PrefService::SetUint64(const std::string& path, uint64 value) {
   SetUserPrefValue(path, new base::StringValue(base::Uint64ToString(value)));
 }
 
-uint64 PrefService::GetUint64(const char* path) const {
+uint64 PrefService::GetUint64(const std::string& path) const {
   DCHECK(CalledOnValidThread());
 
   const base::Value* value = GetPreferenceValue(path);
@@ -399,7 +439,7 @@ uint64 PrefService::GetUint64(const char* path) const {
   return val;
 }
 
-base::Value* PrefService::GetMutableUserPref(const char* path,
+base::Value* PrefService::GetMutableUserPref(const std::string& path,
                                              base::Value::Type type) {
   CHECK(type == base::Value::TYPE_DICTIONARY || type == base::Value::TYPE_LIST);
   DCHECK(CalledOnValidThread());
@@ -426,17 +466,18 @@ base::Value* PrefService::GetMutableUserPref(const char* path,
     } else {
       NOTREACHED();
     }
-    user_pref_store_->SetValueSilently(path, value);
+    user_pref_store_->SetValueSilently(path, value, GetWriteFlags(pref));
   }
   return value;
 }
 
 void PrefService::ReportUserPrefChanged(const std::string& key) {
   DCHECK(CalledOnValidThread());
-  user_pref_store_->ReportValueChanged(key);
+  user_pref_store_->ReportValueChanged(key, GetWriteFlags(FindPreference(key)));
 }
 
-void PrefService::SetUserPrefValue(const char* path, base::Value* new_value) {
+void PrefService::SetUserPrefValue(const std::string& path,
+                                   base::Value* new_value) {
   scoped_ptr<base::Value> owned_value(new_value);
   DCHECK(CalledOnValidThread());
 
@@ -452,7 +493,7 @@ void PrefService::SetUserPrefValue(const char* path, base::Value* new_value) {
     return;
   }
 
-  user_pref_store_->SetValue(path, owned_value.release());
+  user_pref_store_->SetValue(path, owned_value.release(), GetWriteFlags(pref));
 }
 
 void PrefService::UpdateCommandLinePrefStore(PrefStore* command_line_store) {
@@ -463,13 +504,13 @@ void PrefService::UpdateCommandLinePrefStore(PrefStore* command_line_store) {
 // PrefService::Preference
 
 PrefService::Preference::Preference(const PrefService* service,
-                                    const char* name,
+                                    const std::string& name,
                                     base::Value::Type type)
-      : name_(name),
-        type_(type),
-        pref_service_(service) {
-  DCHECK(name);
+    : name_(name), type_(type), pref_service_(service) {
   DCHECK(service);
+  // Cache the registration flags at creation time to avoid multiple map lookups
+  // later.
+  registration_flags_ = service->pref_registry_->GetRegistrationFlags(name_);
 }
 
 const std::string PrefService::Preference::name() const {
@@ -487,8 +528,8 @@ const base::Value* PrefService::Preference::GetValue() const {
 }
 
 const base::Value* PrefService::Preference::GetRecommendedValue() const {
-  DCHECK(pref_service_->FindPreference(name_.c_str())) <<
-      "Must register pref before getting its value";
+  DCHECK(pref_service_->FindPreference(name_))
+      << "Must register pref before getting its value";
 
   const base::Value* found_value = NULL;
   if (pref_value_store()->GetRecommendedValue(name_, type_, &found_value)) {
@@ -501,44 +542,56 @@ const base::Value* PrefService::Preference::GetRecommendedValue() const {
 }
 
 bool PrefService::Preference::IsManaged() const {
-  return pref_value_store()->PrefValueInManagedStore(name_.c_str());
+  return pref_value_store()->PrefValueInManagedStore(name_);
+}
+
+bool PrefService::Preference::IsManagedByCustodian() const {
+  return pref_value_store()->PrefValueInSupervisedStore(name_.c_str());
 }
 
 bool PrefService::Preference::IsRecommended() const {
-  return pref_value_store()->PrefValueFromRecommendedStore(name_.c_str());
+  return pref_value_store()->PrefValueFromRecommendedStore(name_);
 }
 
 bool PrefService::Preference::HasExtensionSetting() const {
-  return pref_value_store()->PrefValueInExtensionStore(name_.c_str());
+  return pref_value_store()->PrefValueInExtensionStore(name_);
 }
 
 bool PrefService::Preference::HasUserSetting() const {
-  return pref_value_store()->PrefValueInUserStore(name_.c_str());
+  return pref_value_store()->PrefValueInUserStore(name_);
 }
 
 bool PrefService::Preference::IsExtensionControlled() const {
-  return pref_value_store()->PrefValueFromExtensionStore(name_.c_str());
+  return pref_value_store()->PrefValueFromExtensionStore(name_);
 }
 
 bool PrefService::Preference::IsUserControlled() const {
-  return pref_value_store()->PrefValueFromUserStore(name_.c_str());
+  return pref_value_store()->PrefValueFromUserStore(name_);
 }
 
 bool PrefService::Preference::IsDefaultValue() const {
-  return pref_value_store()->PrefValueFromDefaultStore(name_.c_str());
+  return pref_value_store()->PrefValueFromDefaultStore(name_);
 }
 
 bool PrefService::Preference::IsUserModifiable() const {
-  return pref_value_store()->PrefValueUserModifiable(name_.c_str());
+  return pref_value_store()->PrefValueUserModifiable(name_);
 }
 
 bool PrefService::Preference::IsExtensionModifiable() const {
-  return pref_value_store()->PrefValueExtensionModifiable(name_.c_str());
+  return pref_value_store()->PrefValueExtensionModifiable(name_);
 }
 
 const base::Value* PrefService::GetPreferenceValue(
     const std::string& path) const {
   DCHECK(CalledOnValidThread());
+
+  // TODO(battre): This is a check for crbug.com/435208. After analyzing some
+  // crash dumps it looks like the PrefService is accessed even though it has
+  // been cleared already.
+  CHECK(pref_registry_);
+  CHECK(pref_registry_->defaults());
+  CHECK(pref_value_store_);
+
   const base::Value* default_value = NULL;
   if (pref_registry_->defaults()->GetValue(path, &default_value)) {
     const base::Value* found_value = NULL;

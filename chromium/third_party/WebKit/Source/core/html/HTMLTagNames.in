@@ -2,6 +2,7 @@ namespace="HTML"
 namespacePrefix="xhtml"
 namespaceURI="http://www.w3.org/1999/xhtml"
 fallbackInterfaceName="HTMLUnknownElement"
+export="CORE_EXPORT"
 
 a interfaceName=HTMLAnchorElement
 abbr interfaceName=HTMLElement
@@ -17,7 +18,7 @@ base
 basefont interfaceName=HTMLElement
 bdi interfaceName=HTMLBDIElement, JSInterfaceName=HTMLElement
 bdo interfaceName=HTMLElement
-bgsound interfaceName=HTMLElement
+bgsound interfaceName=HTMLUnknownElement
 big interfaceName=HTMLElement
 blockquote interfaceName=HTMLQuoteElement
 body
@@ -98,7 +99,7 @@ output constructorNeedsFormElement
 shadow interfaceName=HTMLShadowElement
 p interfaceName=HTMLParagraphElement
 param
-picture interfaceName=HTMLPictureElement, runtimeEnabled=picture
+picture interfaceName=HTMLPictureElement
 plaintext interfaceName=HTMLElement
 pre
 progress interfaceName=HTMLProgressElement

@@ -19,6 +19,8 @@
 
 namespace leveldb_env {
 
+// These entries map to values in tools/metrics/histograms/histograms.xml. New
+// values should be appended at the end.
 enum MethodID {
   kSequentialFileRead,
   kSequentialFileSkip,
@@ -41,45 +43,48 @@ enum MethodID {
   kNewLogger,
   kSyncParent,
   kGetChildren,
+  kNewAppendableFile,
   kNumEntries
 };
+
+// The default value for leveldb::Options::reuse_logs. Currently log reuse is an
+// experimental feature in leveldb. More info at:
+// https://github.com/google/leveldb/commit/251ebf5dc70129ad3
+#if defined(OS_CHROMEOS)
+// Reusing logs on Chrome OS resulted in an unacceptably high leveldb corruption
+// rate (at least for Indexed DB). More info at https://crbug.com/460568
+const bool kDefaultLogReuseOptionValue = false;
+#else
+const bool kDefaultLogReuseOptionValue = true;
+#endif
 
 const char* MethodIDToString(MethodID method);
 
 leveldb::Status MakeIOError(leveldb::Slice filename,
-                            const char* message,
-                            MethodID method,
-                            int saved_errno);
-leveldb::Status MakeIOError(leveldb::Slice filename,
-                            const char* message,
+                            const std::string& message,
                             MethodID method,
                             base::File::Error error);
 leveldb::Status MakeIOError(leveldb::Slice filename,
-                            const char* message,
+                            const std::string& message,
                             MethodID method);
 
 enum ErrorParsingResult {
   METHOD_ONLY,
-  METHOD_AND_PFE,
-  METHOD_AND_ERRNO,
+  METHOD_AND_BFE,
   NONE,
 };
 
-ErrorParsingResult ParseMethodAndError(const char* string,
+ErrorParsingResult ParseMethodAndError(const leveldb::Status& status,
                                        MethodID* method,
-                                       int* error);
+                                       base::File::Error* error);
 int GetCorruptionCode(const leveldb::Status& status);
 int GetNumCorruptionCodes();
 std::string GetCorruptionMessage(const leveldb::Status& status);
 bool IndicatesDiskFull(const leveldb::Status& status);
-bool IsIOError(const leveldb::Status& status);
-bool IsCorruption(const leveldb::Status& status);
-std::string FilePathToString(const base::FilePath& file_path);
 
 class UMALogger {
  public:
   virtual void RecordErrorAt(MethodID method) const = 0;
-  virtual void RecordOSError(MethodID method, int saved_errno) const = 0;
   virtual void RecordOSError(MethodID method,
                              base::File::Error error) const = 0;
   virtual void RecordBackupResult(bool success) const = 0;
@@ -93,24 +98,15 @@ class RetrierProvider {
       MethodID method) const = 0;
 };
 
-class WriteTracker {
- public:
-  virtual void DidCreateNewFile(const std::string& fname) = 0;
-  virtual bool DoesDirNeedSync(const std::string& fname) = 0;
-  virtual void DidSyncDir(const std::string& fname) = 0;
-};
-
 class ChromiumEnv : public leveldb::Env,
                     public UMALogger,
-                    public RetrierProvider,
-                    public WriteTracker {
+                    public RetrierProvider {
  public:
+  ChromiumEnv();
+
   typedef void(ScheduleFunc)(void*);
 
   static bool MakeBackup(const std::string& fname);
-  static base::FilePath CreateFilePath(const std::string& file_path);
-  static const char* FileErrorString(::base::File::Error error);
-  static bool HasTableExtension(const base::FilePath& path);
   virtual ~ChromiumEnv();
 
   virtual bool FileExists(const std::string& fname);
@@ -130,27 +126,33 @@ class ChromiumEnv : public leveldb::Env,
   virtual leveldb::Status GetTestDirectory(std::string* path);
   virtual uint64_t NowMicros();
   virtual void SleepForMicroseconds(int micros);
+  virtual leveldb::Status NewSequentialFile(const std::string& fname,
+                                            leveldb::SequentialFile** result);
+  virtual leveldb::Status NewRandomAccessFile(
+      const std::string& fname,
+      leveldb::RandomAccessFile** result);
+  virtual leveldb::Status NewWritableFile(const std::string& fname,
+                                          leveldb::WritableFile** result);
+  virtual leveldb::Status NewAppendableFile(const std::string& fname,
+                                            leveldb::WritableFile** result);
+  virtual leveldb::Status NewLogger(const std::string& fname,
+                                    leveldb::Logger** result);
 
  protected:
-  ChromiumEnv();
-
-  virtual void DidCreateNewFile(const std::string& fname);
-  virtual bool DoesDirNeedSync(const std::string& fname);
-  virtual void DidSyncDir(const std::string& fname);
-  virtual base::File::Error GetDirectoryEntries(
-      const base::FilePath& dir_param,
-      std::vector<base::FilePath>* result) const = 0;
-  virtual void RecordErrorAt(MethodID method) const;
-  virtual void RecordOSError(MethodID method, int saved_errno) const;
-  virtual void RecordOSError(MethodID method,
-                             base::File::Error error) const;
-  base::HistogramBase* GetMaxFDHistogram(const std::string& type) const;
-  base::HistogramBase* GetOSErrorHistogram(MethodID method, int limit) const;
-
   std::string name_;
+  std::string uma_ioerror_base_name_;
   bool make_backup_;
 
  private:
+  static const char* FileErrorString(base::File::Error error);
+
+  virtual void RecordErrorAt(MethodID method) const;
+  virtual void RecordOSError(MethodID method,
+                             base::File::Error error) const;
+  void RecordOpenFilesLimit(const std::string& type);
+  base::HistogramBase* GetMaxFDHistogram(const std::string& type) const;
+  base::HistogramBase* GetOSErrorHistogram(MethodID method, int limit) const;
+
   // File locks may not be exclusive within a process (e.g. on POSIX). Track
   // locks held by the ChromiumEnv to prevent access within the process.
   class LockTable {
@@ -167,9 +169,6 @@ class ChromiumEnv : public leveldb::Env,
     leveldb::port::Mutex mu_;
     std::set<std::string> locked_files_;
   };
-
-  std::set<std::string> directories_needing_sync_;
-  base::Lock directory_sync_lock_;
 
   const int kMaxRetryTimeMillis;
   // BGThread() is the body of the background thread
@@ -194,8 +193,8 @@ class ChromiumEnv : public leveldb::Env,
 
   base::FilePath test_directory_;
 
-  ::base::Lock mu_;
-  ::base::ConditionVariable bgsignal_;
+  base::Lock mu_;
+  base::ConditionVariable bgsignal_;
   bool started_bgthread_;
 
   // Entry per Schedule() call

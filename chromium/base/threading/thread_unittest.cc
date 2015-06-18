@@ -7,7 +7,8 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -133,13 +134,18 @@ TEST_F(ThreadTest, StartWithOptions_StackSize) {
   // Ensure that the thread can work with only 12 kb and still process a
   // message.
   Thread::Options options;
+#if defined(ADDRESS_SANITIZER) && defined(OS_MACOSX)
+  // ASan bloats the stack variables and overflows the 12 kb stack on OSX.
+  options.stack_size = 24*1024;
+#else
   options.stack_size = 12*1024;
+#endif
   EXPECT_TRUE(a.StartWithOptions(options));
   EXPECT_TRUE(a.message_loop());
   EXPECT_TRUE(a.IsRunning());
 
   bool was_invoked = false;
-  a.message_loop()->PostTask(FROM_HERE, base::Bind(&ToggleValue, &was_invoked));
+  a.task_runner()->PostTask(FROM_HERE, base::Bind(&ToggleValue, &was_invoked));
 
   // wait for the task to run (we could use a kernel event here
   // instead to avoid busy waiting, but this is sufficient for
@@ -160,14 +166,12 @@ TEST_F(ThreadTest, TwoTasks) {
     // Test that all events are dispatched before the Thread object is
     // destroyed.  We do this by dispatching a sleep event before the
     // event that will toggle our sentinel value.
-    a.message_loop()->PostTask(
-        FROM_HERE,
-        base::Bind(
-            static_cast<void (*)(base::TimeDelta)>(
-                &base::PlatformThread::Sleep),
-            base::TimeDelta::FromMilliseconds(20)));
-    a.message_loop()->PostTask(FROM_HERE, base::Bind(&ToggleValue,
-                                                     &was_invoked));
+    a.task_runner()->PostTask(
+        FROM_HERE, base::Bind(static_cast<void (*)(base::TimeDelta)>(
+                                  &base::PlatformThread::Sleep),
+                              base::TimeDelta::FromMilliseconds(20)));
+    a.task_runner()->PostTask(FROM_HERE,
+                              base::Bind(&ToggleValue, &was_invoked));
   }
   EXPECT_TRUE(was_invoked);
 }
@@ -216,7 +220,7 @@ TEST_F(ThreadTest, CleanUp) {
 
     // Register an observer that writes into |captured_events| once the
     // thread's message loop is destroyed.
-    t.message_loop()->PostTask(
+    t.task_runner()->PostTask(
         FROM_HERE, base::Bind(&RegisterDestructionObserver,
                               base::Unretained(&loop_destruction_observer)));
 

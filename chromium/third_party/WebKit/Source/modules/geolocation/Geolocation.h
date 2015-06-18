@@ -29,6 +29,7 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
+#include "modules/ModulesExport.h"
 #include "modules/geolocation/GeoNotifier.h"
 #include "modules/geolocation/GeolocationWatchers.h"
 #include "modules/geolocation/Geoposition.h"
@@ -41,21 +42,21 @@
 
 namespace blink {
 
-class Dictionary;
 class Document;
 class LocalFrame;
 class GeolocationError;
 class ExecutionContext;
 
-class Geolocation final
+class MODULES_EXPORT Geolocation final
     : public GarbageCollectedFinalized<Geolocation>
     , public ScriptWrappable
     , public ActiveDOMObject {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Geolocation);
 public:
     static Geolocation* create(ExecutionContext*);
     virtual ~Geolocation();
-    void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void stop() override;
     Document* document() const;
@@ -63,11 +64,11 @@ public:
 
     // Creates a oneshot and attempts to obtain a position that meets the
     // constraints of the options.
-    void getCurrentPosition(PositionCallback*, PositionErrorCallback*, const Dictionary&);
+    void getCurrentPosition(PositionCallback*, PositionErrorCallback*, const PositionOptions&);
 
     // Creates a watcher that will be notified whenever a new position is
     // available that meets the constraints of the options.
-    int watchPosition(PositionCallback*, PositionErrorCallback*, const Dictionary&);
+    int watchPosition(PositionCallback*, PositionErrorCallback*, const PositionOptions&);
 
     // Removes all references to the watcher, it will not be updated again.
     void clearWatch(int watchID);
@@ -102,8 +103,8 @@ private:
 
     explicit Geolocation(ExecutionContext*);
 
-    typedef HeapVector<Member<GeoNotifier> > GeoNotifierVector;
-    typedef HeapHashSet<Member<GeoNotifier> > GeoNotifierSet;
+    typedef HeapVector<Member<GeoNotifier>> GeoNotifierVector;
+    typedef HeapHashSet<Member<GeoNotifier>> GeoNotifierSet;
 
     bool hasListeners() const { return !m_oneShots.isEmpty() || !m_watchers.isEmpty(); }
 
@@ -156,7 +157,7 @@ private:
     // fatal error if permission is denied or no position can be obtained.
     void startRequest(GeoNotifier*);
 
-    bool haveSuitableCachedPosition(PositionOptions*);
+    bool haveSuitableCachedPosition(const PositionOptions&);
 
     // Runs the success callbacks for the set of notifiers awaiting a cached
     // position, the set is then cleared. The oneshots are removed everywhere.
@@ -164,7 +165,7 @@ private:
 
     // Record whether the origin trying to access Geolocation would be allowed
     // to access a feature that can only be accessed by secure origins.
-    // See http://goo.gl/lq4gCo
+    // See https://goo.gl/Y0ZkNV
     void recordOriginTypeAccess() const;
 
     GeoNotifierSet m_oneShots;

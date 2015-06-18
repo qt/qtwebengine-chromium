@@ -29,14 +29,25 @@ void vp9_rd_pick_intra_mode_sb(struct VP9_COMP *cpi, struct macroblock *x,
                                struct RD_COST *rd_cost, BLOCK_SIZE bsize,
                                PICK_MODE_CONTEXT *ctx, int64_t best_rd);
 
-void vp9_rd_pick_inter_mode_sb(struct VP9_COMP *cpi, struct macroblock *x,
-                               const struct TileInfo *const tile,
+unsigned int vp9_get_sby_perpixel_variance(VP9_COMP *cpi,
+                                           const struct buf_2d *ref,
+                                           BLOCK_SIZE bs);
+#if CONFIG_VP9_HIGHBITDEPTH
+unsigned int vp9_high_get_sby_perpixel_variance(VP9_COMP *cpi,
+                                                const struct buf_2d *ref,
+                                                BLOCK_SIZE bs, int bd);
+#endif
+
+void vp9_rd_pick_inter_mode_sb(struct VP9_COMP *cpi,
+                               struct TileDataEnc *tile_data,
+                               struct macroblock *x,
                                int mi_row, int mi_col,
                                struct RD_COST *rd_cost,
                                BLOCK_SIZE bsize, PICK_MODE_CONTEXT *ctx,
                                int64_t best_rd_so_far);
 
 void vp9_rd_pick_inter_mode_sb_seg_skip(struct VP9_COMP *cpi,
+                                        struct TileDataEnc *tile_data,
                                         struct macroblock *x,
                                         struct RD_COST *rd_cost,
                                         BLOCK_SIZE bsize,
@@ -44,8 +55,8 @@ void vp9_rd_pick_inter_mode_sb_seg_skip(struct VP9_COMP *cpi,
                                         int64_t best_rd_so_far);
 
 void vp9_rd_pick_inter_mode_sub8x8(struct VP9_COMP *cpi,
+                                   struct TileDataEnc *tile_data,
                                    struct macroblock *x,
-                                   const struct TileInfo *const tile,
                                    int mi_row, int mi_col,
                                    struct RD_COST *rd_cost,
                                    BLOCK_SIZE bsize, PICK_MODE_CONTEXT *ctx,

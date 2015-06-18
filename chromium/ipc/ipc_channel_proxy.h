@@ -55,8 +55,25 @@ class SendCallbackHelper;
 // The consumer of IPC::ChannelProxy is responsible for allocating the Thread
 // instance where the IPC::Channel will be created and operated.
 //
+// Thread-safe send
+//
+// If a particular |Channel| implementation has a thread-safe |Send()| operation
+// then ChannelProxy skips the inter-thread hop and calls |Send()| directly. In
+// this case the |channel_| variable is touched by multiple threads so
+// |channel_lifetime_lock_| is used to protect it. The locking overhead is only
+// paid if the underlying channel supports thread-safe |Send|.
+//
 class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
  public:
+#if defined(ENABLE_IPC_FUZZER)
+  // Interface for a filter to be imposed on outgoing messages which can
+  // re-write the message. Used for testing.
+  class OutgoingMessageFilter {
+   public:
+    virtual Message* Rewrite(Message* message) = 0;
+  };
+#endif
+
   // Initializes a channel proxy.  The channel_handle and mode parameters are
   // passed directly to the underlying IPC::Channel.  The listener is called on
   // the thread that creates the ChannelProxy.  The filter's OnMessageReceived
@@ -112,6 +129,18 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   void AddFilter(MessageFilter* filter);
   void RemoveFilter(MessageFilter* filter);
 
+#if defined(ENABLE_IPC_FUZZER)
+  void set_outgoing_message_filter(OutgoingMessageFilter* filter) {
+    outgoing_message_filter_ = filter;
+  }
+#endif
+
+  // Set the task runner on which dispatched messages are posted. Both the new
+  // task runner and the existing task runner must run on the same thread, and
+  // must belong to the calling thread.
+  void SetListenerTaskRunner(
+    scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner);
+
   // Called to clear the pointer to the IPC task runner when it's going away.
   void ClearIPCTaskRunner();
 
@@ -142,6 +171,8 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     Context(Listener* listener,
             const scoped_refptr<base::SingleThreadTaskRunner>& ipc_thread);
     void ClearIPCTaskRunner();
+    void SetListenerTaskRunner(
+      scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner);
     base::SingleThreadTaskRunner* ipc_task_runner() const {
       return ipc_task_runner_.get();
     }
@@ -149,6 +180,9 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
     // Dispatches a message on the listener thread.
     void OnDispatchMessage(const Message& message);
+
+    // Sends |message| from appropriate thread.
+    void Send(Message* message);
 
    protected:
     friend class base::RefCountedThreadSafe<Context>;
@@ -177,7 +211,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
    private:
     friend class ChannelProxy;
-    friend class SendCallbackHelper;
+    friend class IpcSecurityTestUtil;
 
     // Create the Channel
     void CreateChannel(scoped_ptr<ChannelFactory> factory);
@@ -193,6 +227,9 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     void OnDispatchError();
     void OnDispatchBadMessage(const Message& message);
 
+    void SendFromThisThread(Message* message);
+    void ClearChannel();
+
     scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner_;
     Listener* listener_;
 
@@ -203,9 +240,17 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     // Note, channel_ may be set on the Listener thread or the IPC thread.
     // But once it has been set, it must only be read or cleared on the IPC
     // thread.
+    // One exception is the thread-safe send. See the class comment.
     scoped_ptr<Channel> channel_;
     std::string channel_id_;
     bool channel_connected_called_;
+
+    // Lock for |channel_| value. This is only relevant in the context of
+    // thread-safe send.
+    base::Lock channel_lifetime_lock_;
+    // Indicates the thread-safe send availability. This is constant once
+    // |channel_| is set.
+    bool channel_send_thread_safe_;
 
     // Routes a given message to a proper subset of |filters_|, depending
     // on which message classes a filter might support.
@@ -224,8 +269,14 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   Context* context() { return context_.get(); }
 
+#if defined(ENABLE_IPC_FUZZER)
+  OutgoingMessageFilter* outgoing_message_filter() const {
+    return outgoing_message_filter_;
+  }
+#endif
+
  private:
-  friend class SendCallbackHelper;
+  friend class IpcSecurityTestUtil;
 
   // By maintaining this indirection (ref-counted) to our internal state, we
   // can safely be destroyed while the background thread continues to do stuff
@@ -234,6 +285,10 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   // Whether the channel has been initialized.
   bool did_init_;
+
+#if defined(ENABLE_IPC_FUZZER)
+  OutgoingMessageFilter* outgoing_message_filter_;
+#endif
 };
 
 }  // namespace IPC

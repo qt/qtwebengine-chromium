@@ -5,28 +5,41 @@
 #ifndef ServiceWorkerClient_h
 #define ServiceWorkerClient_h
 
+#include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "wtf/Forward.h"
 
 namespace blink {
 
-class ServiceWorkerClient final : public GarbageCollected<ServiceWorkerClient>, public ScriptWrappable {
+class ExecutionContext;
+class ScriptState;
+
+class ServiceWorkerClient : public GarbageCollectedFinalized<ServiceWorkerClient>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static ServiceWorkerClient* create(unsigned id);
+    static ServiceWorkerClient* create(const WebServiceWorkerClientInfo&);
 
-    // ServiceWorkerClient.idl
-    unsigned id() const { return m_id; }
+    virtual ~ServiceWorkerClient();
+
+    // Client.idl
+    String url() const { return m_url; }
+    String frameType() const;
     void postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
+
+protected:
+    explicit ServiceWorkerClient(const WebServiceWorkerClientInfo&);
+
+    String uuid() const { return m_uuid; }
 
 private:
-    explicit ServiceWorkerClient(unsigned id);
-
-    unsigned m_id;
+    String m_uuid;
+    String m_url;
+    WebURLRequest::FrameType m_frameType;
 };
 
 } // namespace blink

@@ -20,12 +20,10 @@
       },
       'sources': [
         'elf_loader.c',
-        'elf_loader.h',
       ],
       'dependencies': [
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
       ],
     },
     {
@@ -45,6 +43,12 @@
               '>(tc_lib_dir_nonsfi_helper32)/libplatform.a',
             ],
           }],
+          ['target_arch=="arm"', {
+            'extra_deps_newlib_arm_nonsfi': [
+              '>(tc_lib_dir_nonsfi_helper_arm)/libgio.a',
+              '>(tc_lib_dir_nonsfi_helper_arm)/libplatform.a',
+            ],
+          }],
         ],
       },
       'sources': [
@@ -59,7 +63,6 @@
         'elf_loader',
         '<(DEPTH)/native_client/src/nonsfi/irt/irt.gyp:nacl_sys_private',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib_newlib',
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
       ],
     },
   ],

@@ -92,8 +92,7 @@ public:
     BLINK_PLATFORM_EXPORT WebHTTPLoadInfo httpLoadInfo();
     BLINK_PLATFORM_EXPORT void setHTTPLoadInfo(const WebHTTPLoadInfo&);
 
-    BLINK_PLATFORM_EXPORT double responseTime() const;
-    BLINK_PLATFORM_EXPORT void setResponseTime(double);
+    BLINK_PLATFORM_EXPORT void setResponseTime(long long);
 
     BLINK_PLATFORM_EXPORT WebString mimeType() const;
     BLINK_PLATFORM_EXPORT void setMIMEType(const WebString&);
@@ -176,6 +175,11 @@ public:
     // The type of the response which was fetched by the ServiceWorker.
     BLINK_PLATFORM_EXPORT WebServiceWorkerResponseType serviceWorkerResponseType() const;
     BLINK_PLATFORM_EXPORT void setServiceWorkerResponseType(WebServiceWorkerResponseType);
+
+    // The original URL of the response which was fetched by the ServiceWorker.
+    // This may be empty if the response was created inside the ServiceWorker.
+    BLINK_PLATFORM_EXPORT WebURL originalURLViaServiceWorker() const;
+    BLINK_PLATFORM_EXPORT void setOriginalURLViaServiceWorker(const WebURL&);
 
     // Flag whether this request is part of a multipart response.
     BLINK_PLATFORM_EXPORT bool isMultipartPayload() const;

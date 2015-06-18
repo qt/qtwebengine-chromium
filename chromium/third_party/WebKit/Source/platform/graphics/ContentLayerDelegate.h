@@ -26,6 +26,7 @@
 #define ContentLayerDelegate_h
 
 #include "platform/PlatformExport.h"
+#include "platform/geometry/IntSize.h"
 #include "public/platform/WebContentLayerClient.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -34,12 +35,14 @@ class SkCanvas;
 
 namespace blink {
 
+class DisplayItemList;
 class GraphicsContext;
 class IntRect;
 
 class PLATFORM_EXPORT GraphicsContextPainter {
 public:
     virtual void paint(GraphicsContext&, const IntRect& clip) = 0;
+    virtual DisplayItemList* displayItemList() = 0;
 
 protected:
     virtual ~GraphicsContextPainter() { }
@@ -52,18 +55,12 @@ public:
     explicit ContentLayerDelegate(GraphicsContextPainter*);
     virtual ~ContentLayerDelegate();
 
-    // When we know everything painted through this delegate will be opaque, allow for optimizations to take place.
-    void setOpaque(bool opaque)
-    {
-        m_opaque = opaque;
-    }
-
     // WebContentLayerClient implementation.
-    virtual void paintContents(SkCanvas*, const WebRect& clip, bool canPaintLCDText, WebContentLayerClient::GraphicsContextStatus = GraphicsContextEnabled) override;
+    virtual void paintContents(SkCanvas*, const WebRect& clip, WebContentLayerClient::PaintingControlSetting = PaintDefaultBehavior) override;
+    virtual void paintContents(WebDisplayItemList*, const WebRect& clip, WebContentLayerClient::PaintingControlSetting = PaintDefaultBehavior) override;
 
 private:
     GraphicsContextPainter* m_painter;
-    bool m_opaque;
 };
 
 } // namespace blink

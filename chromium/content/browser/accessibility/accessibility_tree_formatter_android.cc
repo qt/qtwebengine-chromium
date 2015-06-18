@@ -10,6 +10,7 @@
 #include "base/android/jni_string.h"
 #include "base/files/file_path.h"
 #include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -35,6 +36,7 @@ const char* BOOL_ATTRIBUTES[] = {
   "heading",
   "hierarchical",
   "invisible",
+  "link",
   "multiline",
   "password",
   "range",
@@ -68,6 +70,8 @@ void AccessibilityTreeFormatter::Initialize() {
 
 void AccessibilityTreeFormatter::AddProperties(
     const BrowserAccessibility& node, base::DictionaryValue* dict) {
+  dict->SetInteger("id", node.GetId());
+
   const BrowserAccessibilityAndroid* android_node =
       static_cast<const BrowserAccessibilityAndroid*>(&node);
 
@@ -88,6 +92,7 @@ void AccessibilityTreeFormatter::AddProperties(
   dict->SetBoolean("heading", android_node->IsHeading());
   dict->SetBoolean("hierarchical", android_node->IsHierarchical());
   dict->SetBoolean("invisible", !android_node->IsVisibleToUser());
+  dict->SetBoolean("link", android_node->IsLink());
   dict->SetBoolean("multiline", android_node->IsMultiLine());
   dict->SetBoolean("range", android_node->IsRangeType());
   dict->SetBoolean("password", android_node->IsPassword());
@@ -115,9 +120,14 @@ void AccessibilityTreeFormatter::AddProperties(
 }
 
 base::string16 AccessibilityTreeFormatter::ToString(
-    const base::DictionaryValue& dict,
-    const base::string16& indent) {
+    const base::DictionaryValue& dict) {
   base::string16 line;
+
+  if (show_ids_) {
+    int id_value;
+    dict.GetInteger("id", &id_value);
+    WriteAttribute(true, base::IntToString16(id_value), &line);
+  }
 
   base::string16 class_value;
   dict.GetString("class", &class_value);
@@ -150,7 +160,7 @@ base::string16 AccessibilityTreeFormatter::ToString(
                    &line);
   }
 
-  return indent + line + base::ASCIIToUTF16("\n");
+  return line;
 }
 
 // static

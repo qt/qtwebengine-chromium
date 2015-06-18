@@ -27,8 +27,11 @@
 #include "config.h"
 #include "core/xmlhttprequest/XMLHttpRequestProgressEventThrottle.h"
 
+#include "core/EventTypeNames.h"
 #include "core/events/EventTarget.h"
 #include "core/xmlhttprequest/XMLHttpRequestProgressEvent.h"
+#include "wtf/Assertions.h"
+#include "wtf/text/AtomicString.h"
 
 namespace blink {
 
@@ -144,7 +147,7 @@ void XMLHttpRequestProgressEventThrottle::resume()
     startOneShot(0, FROM_HERE);
 }
 
-void XMLHttpRequestProgressEventThrottle::trace(Visitor* visitor)
+DEFINE_TRACE(XMLHttpRequestProgressEventThrottle)
 {
     visitor->trace(m_target);
 }

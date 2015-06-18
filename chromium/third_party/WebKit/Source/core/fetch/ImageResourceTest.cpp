@@ -36,12 +36,11 @@
 #include "core/fetch/MockImageResourceClient.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/loader/DocumentLoader.h"
-#include "core/loader/UniqueIdentifier.h"
-#include "core/testing/DummyPageHolder.h"
-#include "core/testing/URLTestHelpers.h"
-#include "core/testing/UnitTestHelpers.h"
+#include "core/fetch/UniqueIdentifier.h"
 #include "platform/SharedBuffer.h"
+#include "platform/graphics/Image.h"
+#include "platform/testing/URLTestHelpers.h"
+#include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLResponse.h"
@@ -132,15 +131,13 @@ TEST(ImageResourceTest, CancelOnDetach)
     KURL testURL(ParsedURLString, "http://www.test.com/cancelTest.html");
     URLTestHelpers::registerMockedURLLoad(testURL, "cancelTest.html", "text/html");
 
-    // Create enough of a mocked world to get a functioning ResourceLoader.
-    OwnPtr<DummyPageHolder> dummyPageHolder = DummyPageHolder::create();
-    RefPtr<DocumentLoader> documentLoader = DocumentLoader::create(&dummyPageHolder->frame(), ResourceRequest(testURL), SubstituteData());
+    RefPtrWillBeRawPtr<ResourceFetcher> fetcher = ResourceFetcher::create(nullptr);
 
     // Emulate starting a real load.
     ResourcePtr<ImageResource> cachedImage = new ImageResource(ResourceRequest(testURL));
     cachedImage->setIdentifier(createUniqueIdentifier());
 
-    cachedImage->load(documentLoader->fetcher(), ResourceLoaderOptions());
+    cachedImage->load(fetcher.get(), ResourceLoaderOptions());
     memoryCache()->add(cachedImage.get());
 
     MockImageResourceClient client;
@@ -157,7 +154,7 @@ TEST(ImageResourceTest, CancelOnDetach)
     EXPECT_EQ(Resource::LoadError, cachedImage->status());
     EXPECT_EQ(reinterpret_cast<Resource*>(0), memoryCache()->resourceForURL(testURL));
 
-    blink::Platform::current()->unitTestSupport()->unregisterMockedURL(testURL);
+    Platform::current()->unitTestSupport()->unregisterMockedURL(testURL);
 }
 
 TEST(ImageResourceTest, DecodedDataRemainsWhileHasClients)
@@ -218,12 +215,6 @@ TEST(ImageResourceTest, UpdateBitmapImages)
     HashSet<ImageResource*> bitmapImages;
     ASSERT_TRUE(cachedImage->image()->isBitmapImage());
     bitmapImages.add(cachedImage.get());
-
-    // Updating bitmap resources produces image changed callbacks on their clients.
-    ImageResource::updateBitmapImages(bitmapImages);
-    ASSERT_EQ(client.imageChangedCount(), 2);
-    ImageResource::updateBitmapImages(bitmapImages, true);
-    ASSERT_EQ(client.imageChangedCount(), 3);
 }
 
 } // namespace

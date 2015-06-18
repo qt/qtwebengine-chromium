@@ -27,8 +27,13 @@
 #ifndef SecurityContext_h
 #define SecurityContext_h
 
+#include "core/CoreExport.h"
+#include "core/dom/SandboxFlags.h"
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -37,8 +42,17 @@ class SecurityOrigin;
 class ContentSecurityPolicy;
 class KURL;
 
-class SecurityContext {
+class CORE_EXPORT SecurityContext {
+    WTF_MAKE_NONCOPYABLE(SecurityContext);
 public:
+    using InsecureNavigationsSet = HashSet<unsigned, WTF::AlreadyHashed>;
+
+    // The ordering here is important: 'Upgrade' overrides 'DoNotUpgrade'.
+    enum InsecureRequestsPolicy {
+        InsecureRequestsDoNotUpgrade = 0,
+        InsecureRequestsUpgrade
+    };
+
     SecurityOrigin* securityOrigin() const { return m_securityOrigin.get(); }
     ContentSecurityPolicy* contentSecurityPolicy() const { return m_contentSecurityPolicy.get(); }
 
@@ -48,6 +62,20 @@ public:
     // Note: It is dangerous to change the security origin of a script context
     //       that already contains content.
     void setSecurityOrigin(PassRefPtr<SecurityOrigin>);
+    virtual void didUpdateSecurityOrigin() = 0;
+
+    SandboxFlags sandboxFlags() const { return m_sandboxFlags; }
+    bool isSandboxed(SandboxFlags mask) const { return m_sandboxFlags & mask; }
+    void enforceSandboxFlags(SandboxFlags mask);
+
+    void setHostedInReservedIPRange() { m_hostedInReservedIPRange = true; }
+    bool isHostedInReservedIPRange() const { return m_hostedInReservedIPRange; }
+
+    void setInsecureRequestsPolicy(InsecureRequestsPolicy policy) { m_insecureRequestsPolicy = policy; }
+    InsecureRequestsPolicy insecureRequestsPolicy() const { return m_insecureRequestsPolicy; }
+
+    void addInsecureNavigationUpgrade(unsigned hashedHost) { m_insecureNavigationsToUpgrade.add(hashedHost); }
+    InsecureNavigationsSet* insecureNavigationsToUpgrade() { return &m_insecureNavigationsToUpgrade; }
 
 protected:
     SecurityContext();
@@ -62,6 +90,12 @@ private:
     bool m_haveInitializedSecurityOrigin;
     RefPtr<SecurityOrigin> m_securityOrigin;
     RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
+
+    SandboxFlags m_sandboxFlags;
+
+    bool m_hostedInReservedIPRange;
+    InsecureRequestsPolicy m_insecureRequestsPolicy;
+    InsecureNavigationsSet m_insecureNavigationsToUpgrade;
 };
 
 } // namespace blink

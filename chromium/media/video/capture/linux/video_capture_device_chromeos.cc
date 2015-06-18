@@ -6,7 +6,8 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/screen.h"
@@ -24,7 +25,7 @@ class VideoCaptureDeviceChromeOS::ScreenObserverDelegate
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner)
       : capture_device_(capture_device),
         ui_task_runner_(ui_task_runner),
-        capture_task_runner_(base::MessageLoopProxy::current()) {
+        capture_task_runner_(base::ThreadTaskRunnerHandle::Get()) {
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&ScreenObserverDelegate::AddObserverOnUIThread, this));
@@ -41,14 +42,12 @@ class VideoCaptureDeviceChromeOS::ScreenObserverDelegate
  private:
   friend class base::RefCountedThreadSafe<ScreenObserverDelegate>;
 
-  virtual ~ScreenObserverDelegate() {
-    DCHECK(!capture_device_);
-  }
+  ~ScreenObserverDelegate() override { DCHECK(!capture_device_); }
 
-  virtual void OnDisplayAdded(const gfx::Display& /*new_display*/) override {}
-  virtual void OnDisplayRemoved(const gfx::Display& /*old_display*/) override {}
-  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
-                                       uint32_t metrics) override {
+  void OnDisplayAdded(const gfx::Display& /*new_display*/) override {}
+  void OnDisplayRemoved(const gfx::Display& /*old_display*/) override {}
+  void OnDisplayMetricsChanged(const gfx::Display& display,
+                               uint32_t metrics) override {
     DCHECK(ui_task_runner_->BelongsToCurrentThread());
     if (!(metrics & DISPLAY_METRIC_ROTATION))
       return;

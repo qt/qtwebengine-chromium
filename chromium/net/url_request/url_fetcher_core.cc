@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -34,7 +35,6 @@ namespace {
 
 const int kBufferSize = 4096;
 const int kUploadProgressTimerInterval = 100;
-bool g_interception_enabled = false;
 bool g_ignore_certificate_requests = false;
 
 void EmptyCompletionCallback(int result) {}
@@ -137,10 +137,8 @@ void URLFetcherCore::Stop() {
 
 void URLFetcherCore::SetUploadData(const std::string& upload_content_type,
                                    const std::string& upload_content) {
+  AssertHasNoUploadData();
   DCHECK(!is_chunked_upload_);
-  DCHECK(!upload_content_set_);
-  DCHECK(upload_content_.empty());
-  DCHECK(upload_file_path_.empty());
   DCHECK(upload_content_type_.empty());
 
   // Empty |upload_content_type| is allowed iff the |upload_content| is empty.
@@ -157,10 +155,8 @@ void URLFetcherCore::SetUploadFilePath(
     uint64 range_offset,
     uint64 range_length,
     scoped_refptr<base::TaskRunner> file_task_runner) {
+  AssertHasNoUploadData();
   DCHECK(!is_chunked_upload_);
-  DCHECK(!upload_content_set_);
-  DCHECK(upload_content_.empty());
-  DCHECK(upload_file_path_.empty());
   DCHECK_EQ(upload_range_offset_, 0ULL);
   DCHECK_EQ(upload_range_length_, 0ULL);
   DCHECK(upload_content_type_.empty());
@@ -174,10 +170,23 @@ void URLFetcherCore::SetUploadFilePath(
   upload_content_set_ = true;
 }
 
+void URLFetcherCore::SetUploadStreamFactory(
+    const std::string& upload_content_type,
+    const URLFetcher::CreateUploadStreamCallback& factory) {
+  AssertHasNoUploadData();
+  DCHECK(!is_chunked_upload_);
+  DCHECK(upload_content_type_.empty());
+
+  upload_content_type_ = upload_content_type;
+  upload_stream_factory_ = factory;
+  upload_content_set_ = true;
+}
+
 void URLFetcherCore::SetChunkedUpload(const std::string& content_type) {
-  DCHECK(is_chunked_upload_ ||
-         (upload_content_type_.empty() &&
-          upload_content_.empty()));
+  if (!is_chunked_upload_) {
+    AssertHasNoUploadData();
+    DCHECK(upload_content_type_.empty());
+  }
 
   // Empty |content_type| is not allowed here, because it is impossible
   // to ensure non-empty upload content as it is not yet supplied.
@@ -425,9 +434,8 @@ void URLFetcherCore::OnReadCompleted(URLRequest* request,
     url_ = request->url();
   URLRequestThrottlerManager* throttler_manager =
       request->context()->throttler_manager();
-  if (throttler_manager) {
+  if (throttler_manager)
     url_throttler_entry_ = throttler_manager->RegisterRequestUrl(url_);
-  }
 
   do {
     if (!request_->status().is_success() || bytes_read <= 0)
@@ -445,7 +453,6 @@ void URLFetcherCore::OnReadCompleted(URLRequest* request,
   } while (request_->Read(buffer_.get(), kBufferSize, &bytes_read));
 
   const URLRequestStatus status = request_->status();
-
   if (status.is_success())
     request_->GetResponseCookies(&cookies_);
 
@@ -462,16 +469,17 @@ void URLFetcherCore::OnReadCompleted(URLRequest* request,
   }
 }
 
+void URLFetcherCore::OnContextShuttingDown() {
+  DCHECK(request_);
+  CancelRequestAndInformDelegate(ERR_CONTEXT_SHUT_DOWN);
+}
+
 void URLFetcherCore::CancelAll() {
   g_registry.Get().CancelAll();
 }
 
 int URLFetcherCore::GetNumFetcherCores() {
   return g_registry.Get().size();
-}
-
-void URLFetcherCore::SetEnableInterceptionForTests(bool enabled) {
-  g_interception_enabled = enabled;
 }
 
 void URLFetcherCore::SetIgnoreCertificateRequests(bool ignored) {
@@ -505,17 +513,21 @@ void URLFetcherCore::StartURLRequest() {
     return;
   }
 
+  if (!request_context_getter_->GetURLRequestContext()) {
+    CancelRequestAndInformDelegate(ERR_CONTEXT_SHUT_DOWN);
+    return;
+  }
+
   DCHECK(request_context_getter_.get());
   DCHECK(!request_.get());
 
   g_registry.Get().AddURLFetcherCore(this);
   current_response_bytes_ = 0;
+  request_context_getter_->AddObserver(this);
   request_ = request_context_getter_->GetURLRequestContext()->CreateRequest(
-      original_url_, DEFAULT_PRIORITY, this, NULL);
+      original_url_, DEFAULT_PRIORITY, this);
   request_->set_stack_trace(stack_trace_);
   int flags = request_->load_flags() | load_flags_;
-  if (!g_interception_enabled)
-    flags = flags | LOAD_DISABLE_INTERCEPT;
 
   if (is_chunked_upload_)
     request_->EnableChunkedUpload();
@@ -535,7 +547,7 @@ void URLFetcherCore::StartURLRequest() {
 
     case URLFetcher::POST:
     case URLFetcher::PUT:
-    case URLFetcher::PATCH:
+    case URLFetcher::PATCH: {
       // Upload content must be set.
       DCHECK(is_chunked_upload_ || upload_content_set_);
 
@@ -560,6 +572,10 @@ void URLFetcherCore::StartURLRequest() {
                                         base::Time()));
         request_->set_upload(
             ElementsUploadDataStream::CreateWithReader(reader.Pass(), 0));
+      } else if (!upload_stream_factory_.is_null()) {
+        scoped_ptr<UploadDataStream> stream = upload_stream_factory_.Run();
+        DCHECK(stream);
+        request_->set_upload(stream.Pass());
       }
 
       current_upload_bytes_ = -1;
@@ -573,6 +589,7 @@ void URLFetcherCore::StartURLRequest() {
           this,
           &URLFetcherCore::InformDelegateUploadProgress);
       break;
+    }
 
     case URLFetcher::HEAD:
       request_->set_method("HEAD");
@@ -594,10 +611,7 @@ void URLFetcherCore::StartURLRequest() {
 
 void URLFetcherCore::DidInitializeWriter(int result) {
   if (result != OK) {
-    CancelURLRequest(result);
-    delegate_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
+    CancelRequestAndInformDelegate(result);
     return;
   }
   StartURLRequestWhenAppropriate();
@@ -611,27 +625,33 @@ void URLFetcherCore::StartURLRequestWhenAppropriate() {
 
   DCHECK(request_context_getter_.get());
 
-  int64 delay = INT64_C(0);
-  if (!original_url_throttler_entry_.get()) {
-    URLRequestThrottlerManager* manager =
-        request_context_getter_->GetURLRequestContext()->throttler_manager();
-    if (manager) {
+  // Check if the request should be delayed, and if so, post a task to start it
+  // after the delay has expired.  Otherwise, start it now.
+
+  URLRequestContext* context = request_context_getter_->GetURLRequestContext();
+  // If the context has been shut down, or there's no ThrottlerManager, just
+  // start the request.  In the former case, StartURLRequest() will just inform
+  // the URLFetcher::Delegate the request has been canceled.
+  if (context && context->throttler_manager()) {
+    if (!original_url_throttler_entry_.get()) {
       original_url_throttler_entry_ =
-          manager->RegisterRequestUrl(original_url_);
+          context->throttler_manager()->RegisterRequestUrl(original_url_);
+    }
+
+    if (original_url_throttler_entry_.get()) {
+      int64 delay =
+          original_url_throttler_entry_->ReserveSendingTimeForNextRequest(
+              GetBackoffReleaseTime());
+      if (delay != 0) {
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+            FROM_HERE, base::Bind(&URLFetcherCore::StartURLRequest, this),
+            base::TimeDelta::FromMilliseconds(delay));
+        return;
+      }
     }
   }
-  if (original_url_throttler_entry_.get()) {
-    delay = original_url_throttler_entry_->ReserveSendingTimeForNextRequest(
-        GetBackoffReleaseTime());
-  }
 
-  if (delay == INT64_C(0)) {
-    StartURLRequest();
-  } else {
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, base::Bind(&URLFetcherCore::StartURLRequest, this),
-        base::TimeDelta::FromMilliseconds(delay));
-  }
+  StartURLRequest();
 }
 
 void URLFetcherCore::CancelURLRequest(int error) {
@@ -697,10 +717,7 @@ void URLFetcherCore::NotifyMalformedContent() {
 
 void URLFetcherCore::DidFinishWriting(int result) {
   if (result != OK) {
-    CancelURLRequest(result);
-    delegate_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
+    CancelRequestAndInformDelegate(result);
     return;
   }
   // If the file was successfully closed, then the URL request is complete.
@@ -762,7 +779,15 @@ void URLFetcherCore::RetryOrCompleteUrlFetch() {
   DCHECK(posted || !delegate_);
 }
 
+void URLFetcherCore::CancelRequestAndInformDelegate(int result) {
+  CancelURLRequest(result);
+  delegate_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
+}
+
 void URLFetcherCore::ReleaseRequest() {
+  request_context_getter_->RemoveObserver(this);
   upload_progress_checker_timer_.reset();
   request_.reset();
   g_registry.Get().RemoveURLFetcherCore(this);
@@ -821,11 +846,8 @@ int URLFetcherCore::WriteBuffer(scoped_refptr<DrainableIOBuffer> data) {
 void URLFetcherCore::DidWriteBuffer(scoped_refptr<DrainableIOBuffer> data,
                                     int result) {
   if (result < 0) {  // Handle errors.
-    CancelURLRequest(result);
     response_writer_->Finish(base::Bind(&EmptyCompletionCallback));
-    delegate_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
+    CancelRequestAndInformDelegate(result);
     return;
   }
 
@@ -887,6 +909,12 @@ void URLFetcherCore::InformDelegateUploadProgressInDelegateThread(
 
 void URLFetcherCore::InformDelegateDownloadProgress() {
   DCHECK(network_task_runner_->BelongsToCurrentThread());
+
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455952 delegate_task_runner_->PostTask()"));
+
   delegate_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(
@@ -899,6 +927,13 @@ void URLFetcherCore::InformDelegateDownloadProgressInDelegateThread(
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
   if (delegate_)
     delegate_->OnURLFetchDownloadProgress(fetcher_, current, total);
+}
+
+void URLFetcherCore::AssertHasNoUploadData() const {
+  DCHECK(!upload_content_set_);
+  DCHECK(upload_content_.empty());
+  DCHECK(upload_file_path_.empty());
+  DCHECK(upload_stream_factory_.is_null());
 }
 
 }  // namespace net

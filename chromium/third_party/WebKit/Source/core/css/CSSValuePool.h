@@ -28,35 +28,37 @@
 
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
+#include "core/CoreExport.h"
 #include "core/css/CSSInheritedValue.h"
 #include "core/css/CSSInitialValue.h"
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSUnsetValue.h"
+#include "core/css/CSSValueList.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicStringHash.h"
 
 namespace blink {
 
-class CSSValueList;
-
-class CSSValuePool :  public NoBaseWillBeGarbageCollected<CSSValuePool> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT CSSValuePool :  public NoBaseWillBeGarbageCollectedFinalized<CSSValuePool> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CSSValuePool);
 public:
     PassRefPtrWillBeRawPtr<CSSValueList> createFontFaceValue(const AtomicString&);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createFontFamilyValue(const String&);
     PassRefPtrWillBeRawPtr<CSSInheritedValue> createInheritedValue() { return m_inheritedValue; }
     PassRefPtrWillBeRawPtr<CSSInitialValue> createImplicitInitialValue() { return m_implicitInitialValue; }
     PassRefPtrWillBeRawPtr<CSSInitialValue> createExplicitInitialValue() { return m_explicitInitialValue; }
+    PassRefPtrWillBeRawPtr<CSSUnsetValue> createUnsetValue() { return m_unsetValue; }
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createIdentifierValue(CSSValueID identifier);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createIdentifierValue(CSSPropertyID identifier);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createColorValue(unsigned rgbValue);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createValue(double value, CSSPrimitiveValue::UnitType);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createValue(const String& value, CSSPrimitiveValue::UnitType type) { return CSSPrimitiveValue::create(value, type); }
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createValue(const Length& value, const RenderStyle&);
+    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createValue(const Length& value, const ComputedStyle&);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createValue(const Length& value, float zoom) { return CSSPrimitiveValue::create(value, zoom); }
     template<typename T> static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createValue(T value) { return CSSPrimitiveValue::create(value); }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     CSSValuePool();
@@ -64,10 +66,11 @@ private:
     RefPtrWillBeMember<CSSInheritedValue> m_inheritedValue;
     RefPtrWillBeMember<CSSInitialValue> m_implicitInitialValue;
     RefPtrWillBeMember<CSSInitialValue> m_explicitInitialValue;
+    RefPtrWillBeMember<CSSUnsetValue> m_unsetValue;
 
     WillBeHeapVector<RefPtrWillBeMember<CSSPrimitiveValue>, numCSSValueKeywords> m_identifierValueCache;
 
-    typedef WillBeHeapHashMap<unsigned, RefPtrWillBeMember<CSSPrimitiveValue> > ColorValueCache;
+    typedef WillBeHeapHashMap<unsigned, RefPtrWillBeMember<CSSPrimitiveValue>> ColorValueCache;
     ColorValueCache m_colorValueCache;
     RefPtrWillBeMember<CSSPrimitiveValue> m_colorTransparent;
     RefPtrWillBeMember<CSSPrimitiveValue> m_colorWhite;
@@ -79,16 +82,16 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<CSSPrimitiveValue>, maximumCacheableIntegerValue + 1> m_percentValueCache;
     WillBeHeapVector<RefPtrWillBeMember<CSSPrimitiveValue>, maximumCacheableIntegerValue + 1> m_numberValueCache;
 
-    typedef WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<CSSValueList> > FontFaceValueCache;
+    typedef WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<CSSValueList>> FontFaceValueCache;
     FontFaceValueCache m_fontFaceValueCache;
 
-    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<CSSPrimitiveValue> > FontFamilyValueCache;
+    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<CSSPrimitiveValue>> FontFamilyValueCache;
     FontFamilyValueCache m_fontFamilyValueCache;
 
-    friend CSSValuePool& cssValuePool();
+    friend CORE_EXPORT CSSValuePool& cssValuePool();
 };
 
-CSSValuePool& cssValuePool();
+CORE_EXPORT CSSValuePool& cssValuePool();
 
 }
 

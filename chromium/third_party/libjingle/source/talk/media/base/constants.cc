@@ -43,13 +43,17 @@ const char kRtxCodecName[] = "rtx";
 const char kRedCodecName[] = "red";
 const char kUlpfecCodecName[] = "ulpfec";
 
-// RTP payload type is in the 0-127 range. Use 128 to indicate "all" payload
-// types.
-const int kWildcardPayloadType = -1;
-
 const char kCodecParamAssociatedPayloadType[] = "apt";
 
 const char kOpusCodecName[] = "opus";
+const char kIsacCodecName[] = "isac";
+const char kL16CodecName[]  = "l16";
+const char kG722CodecName[] = "g722";
+const char kIlbcCodecName[] = "ilbc";
+const char kPcmuCodecName[] = "pcmu";
+const char kPcmaCodecName[] = "pcma";
+const char kCnCodecName[]   = "cn";
+const char kDtmfCodecName[] = "telephone-event";
 
 // draft-spittka-payload-rtp-opus-03.txt
 const char kCodecParamPTime[] = "ptime";
@@ -58,6 +62,7 @@ const char kCodecParamMinPTime[] = "minptime";
 const char kCodecParamSPropStereo[] = "sprop-stereo";
 const char kCodecParamStereo[] = "stereo";
 const char kCodecParamUseInbandFec[] = "useinbandfec";
+const char kCodecParamUseDtx[] = "usedtx";
 const char kCodecParamMaxAverageBitrate[] = "maxaveragebitrate";
 const char kCodecParamMaxPlaybackRate[] = "maxplaybackrate";
 
@@ -73,6 +78,7 @@ const int kOpusDefaultMinPTime = 3;
 const int kOpusDefaultSPropStereo = 0;
 const int kOpusDefaultStereo = 0;
 const int kOpusDefaultUseInbandFec = 0;
+const int kOpusDefaultUseDtx = 0;
 const int kOpusDefaultMaxPlaybackRate = 48000;
 
 const int kPreferredMaxPTime = 60;
@@ -113,8 +119,24 @@ const int kRtpAbsoluteSenderTimeHeaderExtensionDefaultId = 3;
 const char kRtpAbsoluteSenderTimeHeaderExtension[] =
     "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
 
+const int kRtpVideoRotationHeaderExtensionDefaultId = 4;
+const char kRtpVideoRotationHeaderExtension[] = "urn:3gpp:video-orientation";
+const char kRtpVideoRotation6BitsHeaderExtensionForTesting[] =
+    "urn:3gpp:video-orientation:6";
+
 const int kNumDefaultUnsignalledVideoRecvStreams = 0;
 
+const char kVp8CodecName[] = "VP8";
+const char kVp9CodecName[] = "VP9";
 
+const int kDefaultVp8PlType = 100;
+const int kDefaultVp9PlType = 101;
+const int kDefaultRedPlType = 116;
+const int kDefaultUlpfecType = 117;
+const int kDefaultRtxVp8PlType = 96;
+
+const int kDefaultVideoMaxWidth = 640;
+const int kDefaultVideoMaxHeight = 400;
+const int kDefaultVideoMaxFramerate = 30;
 }  // namespace cricket
 

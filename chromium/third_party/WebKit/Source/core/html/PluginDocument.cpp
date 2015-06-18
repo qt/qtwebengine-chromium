@@ -33,11 +33,11 @@
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLHtmlElement.h"
+#include "core/layout/LayoutEmbeddedObject.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderEmbeddedObject.h"
 
 namespace blink {
 
@@ -51,7 +51,7 @@ public:
         return adoptRefWillBeNoop(new PluginDocumentParser(document));
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_embedElement);
         RawDataDocumentParser::trace(visitor);
@@ -96,9 +96,7 @@ void PluginDocumentParser::createDocumentStructure()
     frame->loader().dispatchDocumentElementAvailable();
 
     RefPtrWillBeRawPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
-    body->setAttribute(marginwidthAttr, "0");
-    body->setAttribute(marginheightAttr, "0");
-    body->setAttribute(styleAttr, "background-color: rgb(38,38,38)");
+    body->setAttribute(styleAttr, "background-color: rgb(38,38,38); height: 100%; width: 100%; overflow: hidden; margin: 0");
     rootElement->appendChild(body);
 
     m_embedElement = HTMLEmbedElement::create(*document());
@@ -168,9 +166,9 @@ PassRefPtrWillBeRawPtr<DocumentParser> PluginDocument::createParser()
 
 Widget* PluginDocument::pluginWidget()
 {
-    if (m_pluginNode && m_pluginNode->renderer()) {
-        ASSERT(m_pluginNode->renderer()->isEmbeddedObject());
-        return toRenderEmbeddedObject(m_pluginNode->renderer())->widget();
+    if (m_pluginNode && m_pluginNode->layoutObject()) {
+        ASSERT(m_pluginNode->layoutObject()->isEmbeddedObject());
+        return toLayoutEmbeddedObject(m_pluginNode->layoutObject())->widget();
     }
     return 0;
 }
@@ -187,7 +185,7 @@ void PluginDocument::detach(const AttachContext& context)
     HTMLDocument::detach(context);
 }
 
-void PluginDocument::trace(Visitor* visitor)
+DEFINE_TRACE(PluginDocument)
 {
     visitor->trace(m_pluginNode);
     HTMLDocument::trace(visitor);

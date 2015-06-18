@@ -5,6 +5,7 @@
 #ifndef CSPDirectiveList_h
 #define CSPDirectiveList_h
 
+#include "core/fetch/Resource.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/frame/csp/MediaListDirective.h"
 #include "core/frame/csp/SourceListDirective.h"
@@ -21,7 +22,7 @@ namespace blink {
 class ContentSecurityPolicy;
 
 class CSPDirectiveList {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(CSPDirectiveList);
     WTF_MAKE_NONCOPYABLE(CSPDirectiveList);
 public:
     static PassOwnPtr<CSPDirectiveList> create(ContentSecurityPolicy*, const UChar* begin, const UChar* end, ContentSecurityPolicyHeaderType, ContentSecurityPolicyHeaderSource);
@@ -34,24 +35,30 @@ public:
 
     bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
     bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowEval(ScriptState*, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus, const String& scriptContent) const;
+    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus, const String& styleContent) const;
+    bool allowEval(ScriptState*, ContentSecurityPolicy::ReportingStatus, ContentSecurityPolicy::ExceptionStatus = ContentSecurityPolicy::WillNotThrowException) const;
     bool allowPluginType(const String& type, const String& typeAttribute, const KURL&, ContentSecurityPolicy::ReportingStatus) const;
 
-    bool allowScriptFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowObjectFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowChildFrameFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowImageFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowStyleFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowFontFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowMediaFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowManifestFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowConnectToSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowFormAction(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowBaseURI(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowScriptFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowObjectFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowChildFrameFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowImageFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowStyleFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowFontFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowMediaFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowManifestFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowConnectToSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowFormAction(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowBaseURI(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowChildContextFromSource(const KURL&, ContentSecurityPolicy::RedirectStatus, ContentSecurityPolicy::ReportingStatus) const;
+    // |allowAncestors| does not need to know whether the resource was a
+    // result of a redirect. After a redirect, source paths are usually
+    // ignored to stop a page from learning the path to which the
+    // request was redirected, but this is not a concern for ancestors,
+    // because a child frame can't manipulate the URL of a cross-origin
+    // parent.
     bool allowAncestors(LocalFrame*, const KURL&, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowChildContextFromSource(const KURL&, ContentSecurityPolicy::ReportingStatus) const;
     bool allowScriptNonce(const String&) const;
     bool allowStyleNonce(const String&) const;
     bool allowScriptHash(const CSPHashValue&) const;
@@ -64,6 +71,13 @@ public:
     bool isReportOnly() const { return m_reportOnly; }
     const Vector<String>& reportEndpoints() const { return m_reportEndpoints; }
 
+    // Used to copy plugin-types into a plugin document in a nested
+    // browsing context.
+    bool hasPluginTypes() const { return !!m_pluginTypes; };
+    const String& pluginTypesText() const;
+
+    bool shouldSendCSPHeader(Resource::Type) const;
+
 private:
     CSPDirectiveList(ContentSecurityPolicy*, ContentSecurityPolicyHeaderType, ContentSecurityPolicyHeaderSource);
 
@@ -74,6 +88,8 @@ private:
     void parseReferrer(const String& name, const String& value);
     void addDirective(const String& name, const String& value);
     void applySandboxPolicy(const String& name, const String& sandboxPolicy);
+    void enforceStrictMixedContentChecking(const String& name, const String& value);
+    void enableInsecureRequestsUpgrade(const String& name, const String& value);
 
     template <class CSPDirectiveType>
     void setCSPDirective(const String& name, const String& value, OwnPtr<CSPDirectiveType>&);
@@ -83,22 +99,22 @@ private:
     void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL) const;
     void reportViolationWithFrame(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, LocalFrame*) const;
     void reportViolationWithLocation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine) const;
-    void reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& message, const KURL& blockedURL, ScriptState*) const;
+    void reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& message, const KURL& blockedURL, ScriptState*, const ContentSecurityPolicy::ExceptionStatus) const;
 
     bool checkEval(SourceListDirective*) const;
     bool checkInline(SourceListDirective*) const;
     bool checkNonce(SourceListDirective*, const String&) const;
     bool checkHash(SourceListDirective*, const CSPHashValue&) const;
-    bool checkSource(SourceListDirective*, const KURL&) const;
+    bool checkSource(SourceListDirective*, const KURL&, ContentSecurityPolicy::RedirectStatus) const;
     bool checkMediaType(MediaListDirective*, const String& type, const String& typeAttribute) const;
     bool checkAncestors(SourceListDirective*, LocalFrame*) const;
 
     void setEvalDisabledErrorMessage(const String& errorMessage) { m_evalDisabledErrorMessage = errorMessage; }
 
-    bool checkEvalAndReportViolation(SourceListDirective*, const String& consoleMessage, ScriptState*) const;
-    bool checkInlineAndReportViolation(SourceListDirective*, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript) const;
+    bool checkEvalAndReportViolation(SourceListDirective*, const String& consoleMessage, ScriptState*, ContentSecurityPolicy::ExceptionStatus = ContentSecurityPolicy::WillNotThrowException) const;
+    bool checkInlineAndReportViolation(SourceListDirective*, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript, const String& hashValue) const;
 
-    bool checkSourceAndReportViolation(SourceListDirective*, const KURL&, const String& effectiveDirective) const;
+    bool checkSourceAndReportViolation(SourceListDirective*, const KURL&, const String& effectiveDirective, ContentSecurityPolicy::RedirectStatus) const;
     bool checkMediaTypeAndReportViolation(MediaListDirective*, const String& type, const String& typeAttribute, const String& consoleMessage) const;
     bool checkAncestorsAndReportViolation(SourceListDirective*, LocalFrame*, const KURL&) const;
 
@@ -116,6 +132,10 @@ private:
 
     bool m_didSetReferrerPolicy;
     ReferrerPolicy m_referrerPolicy;
+
+    bool m_strictMixedContentCheckingEnforced;
+
+    bool m_upgradeInsecureRequests;
 
     OwnPtr<MediaListDirective> m_pluginTypes;
     OwnPtr<SourceListDirective> m_baseURI;

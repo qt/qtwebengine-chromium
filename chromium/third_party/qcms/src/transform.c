@@ -1118,28 +1118,31 @@ qcms_transform* qcms_transform_precacheLUT_float(qcms_transform *transform, qcms
 	float* src = NULL;
 	float* dest = NULL;
 	float* lut = NULL;
+	float inverse;
 
 	src = malloc(lutSize*sizeof(float));
 	dest = malloc(lutSize*sizeof(float));
 
 	if (src && dest) {
-		/* Prepare a list of points we want to sample */
+		/* Prepare a list of points we want to sample: x, y, z order */
 		l = 0;
+		inverse = 1 / (float)(samples-1);
 		for (x = 0; x < samples; x++) {
 			for (y = 0; y < samples; y++) {
 				for (z = 0; z < samples; z++) {
-					src[l++] = x / (float)(samples-1);
-					src[l++] = y / (float)(samples-1);
-					src[l++] = z / (float)(samples-1);
+					src[l++] = x * inverse; // r
+					src[l++] = y * inverse; // g
+					src[l++] = z * inverse; // b
 				}
 			}
 		}
 
 		lut = qcms_chain_transform(in, out, src, dest, lutSize);
+
 		if (lut) {
-			transform->r_clut = &lut[0];
-			transform->g_clut = &lut[1];
-			transform->b_clut = &lut[2];
+			transform->r_clut = &lut[0]; // r
+			transform->g_clut = &lut[1]; // g
+			transform->b_clut = &lut[2]; // b
 			transform->grid_size = samples;
 			if (in_type == QCMS_DATA_RGBA_8) {
 				transform->transform_fn = qcms_transform_data_tetra_clut_rgba;
@@ -1149,8 +1152,8 @@ qcms_transform* qcms_transform_precacheLUT_float(qcms_transform *transform, qcms
 		}
 	}
 
-
-	//XXX: qcms_modular_transform_data may return either the src or dest buffer. If so it must not be free-ed
+	// XXX: qcms_modular_transform_data may return the lut in either the src or the
+	// dest buffer. If so, it must not be free-ed.
 	if (src && lut != src) {
 		free(src);
 	}
@@ -1162,6 +1165,71 @@ qcms_transform* qcms_transform_precacheLUT_float(qcms_transform *transform, qcms
 		return NULL;
 	}
 	return transform;
+}
+
+/* Create a transform LUT using the given number of sample points. The transform LUT data is stored
+   in the output (cube) in bgra format in zyx sample order. */
+qcms_bool qcms_transform_create_LUT_zyx_bgra(qcms_profile *in, qcms_profile *out, qcms_intent intent,
+                                             int samples, unsigned char* cube)
+{
+	uint16_t z,y,x;
+	uint32_t l,index;
+	uint32_t lutSize = 3 * samples * samples * samples;
+
+	float* src = NULL;
+	float* dest = NULL;
+	float* lut = NULL;
+	float inverse;
+
+	src = malloc(lutSize*sizeof(float));
+	dest = malloc(lutSize*sizeof(float));
+
+	if (src && dest) {
+		/* Prepare a list of points we want to sample: z, y, x order */
+		l = 0;
+		inverse = 1 / (float)(samples-1);
+		for (z = 0; z < samples; z++) {
+			for (y = 0; y < samples; y++) {
+				for (x = 0; x < samples; x++) {
+					src[l++] = x * inverse; // r
+					src[l++] = y * inverse; // g
+					src[l++] = z * inverse; // b
+				}
+			}
+		}
+
+		lut = qcms_chain_transform(in, out, src, dest, lutSize);
+
+		if (lut) {
+			index = l = 0;
+			for (z = 0; z < samples; z++) {
+				for (y = 0; y < samples; y++) {
+					for (x = 0; x < samples; x++) {
+						cube[index++] = (int)floorf(lut[l + 2] * 255.0f + 0.5f); // b
+						cube[index++] = (int)floorf(lut[l + 1] * 255.0f + 0.5f); // g
+						cube[index++] = (int)floorf(lut[l + 0] * 255.0f + 0.5f); // r
+						cube[index++] = 255;                                     // a
+						l += 3;
+					}
+				}
+			}
+		}
+	}
+
+	// XXX: qcms_modular_transform_data may return the lut data in either the src or
+	// dest buffer so free src, dest, and lut with care.
+
+	if (src && lut != src)
+		free(src);
+	if (dest && lut != dest)
+		free(dest);
+
+	if (lut) {
+		free(lut);
+		return true;
+	}
+
+	return false;
 }
 
 #define NO_MEM_TRANSFORM NULL

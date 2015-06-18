@@ -36,7 +36,6 @@ class PepperFileChooserHostTest : public RenderViewTest {
   void SetUp() override {
     SetContentClient(&client_);
     RenderViewTest::SetUp();
-    ppapi::ProxyLock::DisableLockingOnThreadForTest();
 
     globals_.GetResourceTracker()->DidCreateInstance(pp_instance_);
   }
@@ -51,6 +50,8 @@ class PepperFileChooserHostTest : public RenderViewTest {
  private:
   PP_Instance pp_instance_;
 
+  // Disables locking for the duration of the test.
+  ppapi::ProxyLock::LockingDisablerForTest disable_locking_;
   ppapi::TestGlobals globals_;
   TestContentClient client_;
 };
@@ -91,7 +92,7 @@ TEST_F(PepperFileChooserHostTest, Show) {
   ASSERT_TRUE(msg);
   ViewHostMsg_RunFileChooser::Schema::Param call_msg_param;
   ASSERT_TRUE(ViewHostMsg_RunFileChooser::Read(msg, &call_msg_param));
-  const FileChooserParams& chooser_params = call_msg_param.a;
+  const FileChooserParams& chooser_params = get<0>(call_msg_param);
 
   // Basic validation of request.
   EXPECT_EQ(FileChooserParams::Open, chooser_params.mode);
@@ -123,7 +124,7 @@ TEST_F(PepperFileChooserHostTest, Show) {
   ASSERT_TRUE(
       PpapiPluginMsg_FileChooser_ShowReply::Read(&reply_msg, &reply_msg_param));
   const std::vector<ppapi::FileRefCreateInfo>& chooser_results =
-      reply_msg_param.a;
+      get<0>(reply_msg_param);
   ASSERT_EQ(1u, chooser_results.size());
   EXPECT_EQ(FilePathToUTF8(selected_info.display_name),
             chooser_results[0].display_name);

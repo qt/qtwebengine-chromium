@@ -79,6 +79,9 @@ const short vp9_rv[] = {
   0, 9, 5, 5, 11, 10, 13, 9, 10, 13,
 };
 
+static const uint8_t q_diff_thresh = 20;
+static const uint8_t last_q_thresh = 170;
+
 void vp9_post_proc_down_and_across_c(const uint8_t *src_ptr,
                                      uint8_t *dst_ptr,
                                      int src_pixels_per_line,
@@ -88,10 +91,7 @@ void vp9_post_proc_down_and_across_c(const uint8_t *src_ptr,
                                      int flimit) {
   uint8_t const *p_src;
   uint8_t *p_dst;
-  int row;
-  int col;
-  int i;
-  int v;
+  int row, col, i, v, kernel;
   int pitch = src_pixels_per_line;
   uint8_t d[8];
   (void)dst_pixels_per_line;
@@ -102,8 +102,8 @@ void vp9_post_proc_down_and_across_c(const uint8_t *src_ptr,
     p_dst = dst_ptr;
 
     for (col = 0; col < cols; col++) {
-      int kernel = 4;
-      int v = p_src[col];
+      kernel = 4;
+      v = p_src[col];
 
       for (i = -2; i <= 2; i++) {
         if (abs(v - p_src[col + i * pitch]) > flimit)
@@ -125,7 +125,7 @@ void vp9_post_proc_down_and_across_c(const uint8_t *src_ptr,
       d[i] = p_src[i];
 
     for (col = 0; col < cols; col++) {
-      int kernel = 4;
+      kernel = 4;
       v = p_src[col];
 
       d[col & 7] = v;
@@ -165,10 +165,7 @@ void vp9_highbd_post_proc_down_and_across_c(const uint16_t *src_ptr,
                                             int flimit) {
   uint16_t const *p_src;
   uint16_t *p_dst;
-  int row;
-  int col;
-  int i;
-  int v;
+  int row, col, i, v, kernel;
   int pitch = src_pixels_per_line;
   uint16_t d[8];
 
@@ -178,8 +175,8 @@ void vp9_highbd_post_proc_down_and_across_c(const uint16_t *src_ptr,
     p_dst = dst_ptr;
 
     for (col = 0; col < cols; col++) {
-      int kernel = 4;
-      int v = p_src[col];
+      kernel = 4;
+      v = p_src[col];
 
       for (i = -2; i <= 2; i++) {
         if (abs(v - p_src[col + i * pitch]) > flimit)
@@ -202,7 +199,7 @@ void vp9_highbd_post_proc_down_and_across_c(const uint16_t *src_ptr,
       d[i] = p_src[i];
 
     for (col = 0; col < cols; col++) {
-      int kernel = 4;
+      kernel = 4;
       v = p_src[col];
 
       d[col & 7] = v;
@@ -515,22 +512,24 @@ void vp9_denoise(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst,
     assert((src->flags & YV12_FLAG_HIGHBITDEPTH) ==
            (dst->flags & YV12_FLAG_HIGHBITDEPTH));
     if (src->flags & YV12_FLAG_HIGHBITDEPTH) {
-      const uint16_t *const src = CONVERT_TO_SHORTPTR(srcs[i] + 2 * src_stride
-                                                      + 2);
-      uint16_t *const dst = CONVERT_TO_SHORTPTR(dsts[i] + 2 * dst_stride + 2);
-      vp9_highbd_post_proc_down_and_across(src, dst, src_stride, dst_stride,
-                                           src_height, src_width, ppl);
+      const uint16_t *const src_plane = CONVERT_TO_SHORTPTR(
+          srcs[i] + 2 * src_stride + 2);
+      uint16_t *const dst_plane = CONVERT_TO_SHORTPTR(
+          dsts[i] + 2 * dst_stride + 2);
+      vp9_highbd_post_proc_down_and_across(src_plane, dst_plane, src_stride,
+                                           dst_stride, src_height, src_width,
+                                           ppl);
     } else {
-      const uint8_t *const src = srcs[i] + 2 * src_stride + 2;
-      uint8_t *const dst = dsts[i] + 2 * dst_stride + 2;
+      const uint8_t *const src_plane = srcs[i] + 2 * src_stride + 2;
+      uint8_t *const dst_plane = dsts[i] + 2 * dst_stride + 2;
 
-      vp9_post_proc_down_and_across(src, dst, src_stride, dst_stride,
-                                    src_height, src_width, ppl);
+      vp9_post_proc_down_and_across(src_plane, dst_plane, src_stride,
+                                    dst_stride, src_height, src_width, ppl);
     }
 #else
-    const uint8_t *const src = srcs[i] + 2 * src_stride + 2;
-    uint8_t *const dst = dsts[i] + 2 * dst_stride + 2;
-    vp9_post_proc_down_and_across(src, dst, src_stride, dst_stride,
+    const uint8_t *const src_plane = srcs[i] + 2 * src_stride + 2;
+    uint8_t *const dst_plane = dsts[i] + 2 * dst_stride + 2;
+    vp9_post_proc_down_and_across(src_plane, dst_plane, src_stride, dst_stride,
                                   src_height, src_width, ppl);
 #endif
   }
@@ -555,16 +554,15 @@ static void fillrd(struct postproc_state *state, int q, int a) {
    * a gaussian distribution with sigma determined by q.
    */
   {
-    double i;
     int next, j;
 
     next = 0;
 
     for (i = -32; i < 32; i++) {
-      int a = (int)(0.5 + 256 * gaussian(sigma, 0, i));
+      int a_i = (int)(0.5 + 256 * gaussian(sigma, 0, i));
 
-      if (a) {
-        for (j = 0; j < a; j++) {
+      if (a_i) {
+        for (j = 0; j < a_i; j++) {
           char_dist[next + j] = (char) i;
         }
 
@@ -616,9 +614,20 @@ void vp9_plane_add_noise_c(uint8_t *start, char *noise,
   }
 }
 
+static void swap_mi_and_prev_mi(VP9_COMMON *cm) {
+  // Current mip will be the prev_mip for the next frame.
+  MODE_INFO *temp = cm->postproc_state.prev_mip;
+  cm->postproc_state.prev_mip = cm->mip;
+  cm->mip = temp;
+
+  // Update the upper left visible macroblock ptrs.
+  cm->mi = cm->mip + cm->mi_stride + 1;
+  cm->postproc_state.prev_mi = cm->postproc_state.prev_mip + cm->mi_stride + 1;
+}
+
 int vp9_post_proc_frame(struct VP9Common *cm,
                         YV12_BUFFER_CONFIG *dest, vp9_ppflags_t *ppflags) {
-  const int q = MIN(63, cm->lf.filter_level * 10 / 6);
+  const int q = MIN(105, cm->lf.filter_level * 2);
   const int flags = ppflags->post_proc_flag;
   YV12_BUFFER_CONFIG *const ppbuf = &cm->post_proc_buffer;
   struct postproc_state *const ppstate = &cm->postproc_state;
@@ -633,18 +642,74 @@ int vp9_post_proc_frame(struct VP9Common *cm,
 
   vp9_clear_system_state();
 
-#if CONFIG_VP9_POSTPROC || CONFIG_INTERNAL_STATS
+  // Alloc memory for prev_mip in the first frame.
+  if (cm->current_video_frame == 1) {
+    cm->postproc_state.last_base_qindex = cm->base_qindex;
+    cm->postproc_state.last_frame_valid = 1;
+    ppstate->prev_mip = vpx_calloc(cm->mi_alloc_size, sizeof(*cm->mip));
+    if (!ppstate->prev_mip) {
+      return 1;
+    }
+    ppstate->prev_mi = ppstate->prev_mip + cm->mi_stride + 1;
+    memset(ppstate->prev_mip, 0,
+           cm->mi_stride * (cm->mi_rows + 1) * sizeof(*cm->mip));
+  }
+
+  // Allocate post_proc_buffer_int if needed.
+  if ((flags & VP9D_MFQE) && !cm->post_proc_buffer_int.buffer_alloc) {
+    if ((flags & VP9D_DEMACROBLOCK) || (flags & VP9D_DEBLOCK)) {
+      const int width = ALIGN_POWER_OF_TWO(cm->width, 4);
+      const int height = ALIGN_POWER_OF_TWO(cm->height, 4);
+
+      if (vp9_alloc_frame_buffer(&cm->post_proc_buffer_int, width, height,
+                                 cm->subsampling_x, cm->subsampling_y,
+#if CONFIG_VP9_HIGHBITDEPTH
+                                 cm->use_highbitdepth,
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+                                 VP9_ENC_BORDER_IN_PIXELS,
+                                 cm->byte_alignment) < 0) {
+        vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
+                           "Failed to allocate MFQE framebuffer");
+      }
+
+      // Ensure that postproc is set to all 0s so that post proc
+      // doesn't pull random data in from edge.
+      memset(cm->post_proc_buffer_int.buffer_alloc, 128,
+             cm->post_proc_buffer.frame_size);
+    }
+  }
+
   if (vp9_realloc_frame_buffer(&cm->post_proc_buffer, cm->width, cm->height,
                                cm->subsampling_x, cm->subsampling_y,
 #if CONFIG_VP9_HIGHBITDEPTH
                                cm->use_highbitdepth,
 #endif
-                               VP9_DEC_BORDER_IN_PIXELS, NULL, NULL, NULL) < 0)
+                               VP9_DEC_BORDER_IN_PIXELS, cm->byte_alignment,
+                               NULL, NULL, NULL) < 0)
     vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
                        "Failed to allocate post-processing buffer");
-#endif
 
-  if (flags & VP9D_DEMACROBLOCK) {
+  if ((flags & VP9D_MFQE) && cm->current_video_frame >= 2 &&
+      cm->postproc_state.last_frame_valid && cm->bit_depth == 8 &&
+      cm->postproc_state.last_base_qindex <= last_q_thresh &&
+      cm->base_qindex - cm->postproc_state.last_base_qindex >= q_diff_thresh) {
+    vp9_mfqe(cm);
+    // TODO(jackychen): Consider whether enable deblocking by default
+    // if mfqe is enabled. Need to take both the quality and the speed
+    // into consideration.
+    if ((flags & VP9D_DEMACROBLOCK) || (flags & VP9D_DEBLOCK)) {
+      vp8_yv12_copy_frame(ppbuf, &cm->post_proc_buffer_int);
+    }
+    if ((flags & VP9D_DEMACROBLOCK) && cm->post_proc_buffer_int.buffer_alloc) {
+      deblock_and_de_macro_block(&cm->post_proc_buffer_int, ppbuf,
+                                 q + (ppflags->deblocking_level - 5) * 10,
+                                 1, 0);
+    } else if (flags & VP9D_DEBLOCK) {
+      vp9_deblock(&cm->post_proc_buffer_int, ppbuf, q);
+    } else {
+      vp8_yv12_copy_frame(&cm->post_proc_buffer_int, ppbuf);
+    }
+  } else if (flags & VP9D_DEMACROBLOCK) {
     deblock_and_de_macro_block(cm->frame_to_show, ppbuf,
                                q + (ppflags->deblocking_level - 5) * 10, 1, 0);
   } else if (flags & VP9D_DEBLOCK) {
@@ -652,6 +717,9 @@ int vp9_post_proc_frame(struct VP9Common *cm,
   } else {
     vp8_yv12_copy_frame(cm->frame_to_show, ppbuf);
   }
+
+  cm->postproc_state.last_base_qindex = cm->base_qindex;
+  cm->postproc_state.last_frame_valid = 1;
 
   if (flags & VP9D_ADDNOISE) {
     const int noise_level = ppflags->noise_level;
@@ -673,6 +741,7 @@ int vp9_post_proc_frame(struct VP9Common *cm,
   dest->uv_width = dest->y_width >> cm->subsampling_x;
   dest->uv_height = dest->y_height >> cm->subsampling_y;
 
+  swap_mi_and_prev_mi(cm);
   return 0;
 }
-#endif
+#endif  // CONFIG_VP9_POSTPROC

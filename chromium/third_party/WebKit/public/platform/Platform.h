@@ -40,20 +40,21 @@
 #include "WebCommon.h"
 #include "WebData.h"
 #include "WebDeviceLightListener.h"
-#include "WebDeviceMotionListener.h"
-#include "WebDeviceOrientationListener.h"
 #include "WebGamepadListener.h"
 #include "WebGamepads.h"
 #include "WebGestureDevice.h"
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
 #include "WebPlatformEventType.h"
+#include "WebSize.h"
 #include "WebSpeechSynthesizer.h"
 #include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
 #include "WebString.h"
 #include "WebURLError.h"
 #include "WebVector.h"
+
+#include <vector>
 
 class GrContext;
 
@@ -62,7 +63,6 @@ namespace blink {
 class WebAudioBus;
 class WebBlobRegistry;
 class WebBluetooth;
-class WebContentDecryptionModule;
 class WebClipboard;
 class WebCompositorSupport;
 class WebConvertableToTraceFormat;
@@ -76,7 +76,6 @@ class WebFileSystem;
 class WebFileUtilities;
 class WebFlingAnimator;
 class WebGeofencingProvider;
-class WebGestureCurveTarget;
 class WebGestureCurve;
 class WebGraphicsContext3DProvider;
 class WebIDBFactory;
@@ -84,22 +83,27 @@ class WebMIDIAccessor;
 class WebMIDIAccessorClient;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
+class WebMemoryDumpProvider;
 class WebMessagePortChannel;
 class WebMimeRegistry;
+class WebNavigatorConnectProvider;
 class WebNotificationManager;
+class WebPermissionClient;
 class WebPluginListBuilder;
 class WebPrescientNetworking;
 class WebPublicSuffixList;
+class WebPushProvider;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
-class WebScheduler;
 class WebSecurityOrigin;
 class WebScrollbarBehavior;
+class WebServiceWorkerCacheStorage;
 class WebSocketHandle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebStorageNamespace;
+class WebSyncProvider;
 struct WebFloatPoint;
 class WebThemeEngine;
 class WebThread;
@@ -107,7 +111,6 @@ class WebURL;
 class WebURLLoader;
 class WebUnitTestSupport;
 class WebWaitableEvent;
-class WebWorkerRunLoop;
 struct WebLocalizedString;
 struct WebSize;
 
@@ -190,6 +193,9 @@ public:
     // Returns the space available for the given origin
     virtual long long databaseGetSpaceAvailableForOrigin(const WebString& originIdentifier) { return 0; }
 
+    // Set the size of the given database file
+    virtual bool databaseSetFileSize(const WebString& vfsFileName, long long size) { return false; }
+
 
     // DOM Storage --------------------------------------------------
 
@@ -214,10 +220,14 @@ public:
     virtual WebIDBFactory* idbFactory() { return 0; }
 
 
+    // Cache Storage ----------------------------------------------------------
+
+    // The caller is responsible for deleting the returned object.
+    virtual WebServiceWorkerCacheStorage* cacheStorage(const WebString& originIdentifier) { return nullptr; }
+
     // Gamepad -------------------------------------------------------------
 
     virtual void sampleGamepads(WebGamepads& into) { into.length = 0; }
-
 
     // History -------------------------------------------------------------
 
@@ -277,15 +287,6 @@ public:
     // discardable.
     virtual WebDiscardableMemory* allocateAndLockDiscardableMemory(size_t bytes) { return 0; }
 
-    // A wrapper for tcmalloc's HeapProfilerStart();
-    virtual void startHeapProfiling(const WebString& /*prefix*/) { }
-    // A wrapper for tcmalloc's HeapProfilerStop();
-    virtual void stopHeapProfiling() { }
-    // A wrapper for tcmalloc's HeapProfilerDump()
-    virtual void dumpHeapProfiling(const WebString& /*reason*/) { }
-    // A wrapper for tcmalloc's GetHeapProfile()
-    virtual WebString getHeapProfile() { return WebString(); }
-
     static const size_t noDecodedImageByteLimit = static_cast<size_t>(-1);
 
     // Returns the maximum amount of memory a decoded image should be allowed.
@@ -315,15 +316,16 @@ public:
     virtual WebString userAgent() { return WebString(); }
 
     // A suggestion to cache this metadata in association with this URL.
-    virtual void cacheMetadata(const WebURL&, double responseTime, const char* data, size_t dataSize) { }
+    virtual void cacheMetadata(const WebURL&, int64 responseTime, const char* data, size_t dataSize) { }
 
     // Returns the decoded data url if url had a supported mimetype and parsing was successful.
     virtual WebData parseDataURL(const WebURL&, WebString& mimetype, WebString& charset) { return WebData(); }
 
     virtual WebURLError cancelledError(const WebURL&) const { return WebURLError(); }
 
-    virtual bool isReservedIPAddress(const WebURL&) const { return false; }
-    virtual bool isReservedIPAddress(const WebSecurityOrigin&) const { return false; }
+    virtual bool isReservedIPAddress(const WebString& host) const { return false; }
+
+    virtual bool portAllowed(const WebURL&) const { return false; }
 
     // Plugins -------------------------------------------------------------
 
@@ -357,9 +359,6 @@ public:
 
     // Yield the current thread so another thread can be scheduled.
     virtual void yieldCurrentThread() { }
-
-    // May return null.
-    virtual WebScheduler* scheduler() { return 0; }
 
     // WaitableEvent -------------------------------------------------------
 
@@ -403,7 +402,9 @@ public:
 
     // Sudden Termination --------------------------------------------------
 
-    // Disable/Enable sudden termination.
+    // Disable/Enable sudden termination on a process level. When possible, it
+    // is preferable to disable sudden termination on a per-frame level via
+    // WebFrameClient::suddenTerminationDisablerChanged.
     virtual void suddenTerminationChanged(bool enabled) { }
 
 
@@ -420,6 +421,10 @@ public:
     // it is recommended that the fixed point be no further in the past than the epoch.
     virtual double monotonicallyIncreasingTime() { return 0; }
 
+    // System trace time in seconds. For example, on Chrome OS, this timestamp should be
+    // synchronized with ftrace timestamps.
+    virtual double systemTraceTime() { return 0; }
+
     // WebKit clients must implement this funcion if they use cryptographic randomness.
     virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) = 0;
 
@@ -429,9 +434,8 @@ public:
     virtual void setSharedTimerFireInterval(double) { }
     virtual void stopSharedTimer() { }
 
-    // Callable from a background WebKit thread.
-    virtual void callOnMainThread(void (*func)(void*), void* context) { }
-
+    // Returns an interface to the main thread. Can be null if blink was initialized on a thread without a message loop.
+    BLINK_PLATFORM_EXPORT WebThread* mainThread() const;
 
     // Vibration -----------------------------------------------------------
 
@@ -460,7 +464,7 @@ public:
     // addTraceEvent is expected to be called by the trace event macros.
     virtual const unsigned char* getTraceCategoryEnabledFlag(const char* categoryName) { return 0; }
 
-    typedef long int TraceEventAPIAtomicWord;
+    typedef intptr_t TraceEventAPIAtomicWord;
 
     // Get a pointer to a global state of the given thread. An embedder is
     // expected to update the global state as the state of the embedder changes.
@@ -511,6 +515,10 @@ public:
     // - convertableValues is the array of WebConvertableToTraceFormat classes
     //   that may be converted to trace format by calling asTraceFormat method.
     //   ConvertableToTraceFormat interface.
+    //   convertableValues can be moved to another object by
+    //   WebConvertableToTraceFormat::moveFrom() in addTraceEvent(), and thus
+    //   should not be dereferenced (e.g. asTraceFormat() should not be called)
+    //   after return from addTraceEvent().
     // - thresholdBeginId optionally specifies the value returned by a previous
     //   call to addTraceEvent with a BEGIN phase.
     // - threshold is used on an END phase event in conjunction with the
@@ -530,11 +538,12 @@ public:
         const unsigned char* categoryEnabledFlag,
         const char* name,
         unsigned long long id,
+        double timestamp,
         int numArgs,
         const char** argNames,
         const unsigned char* argTypes,
         const unsigned long long* argValues,
-        const WebConvertableToTraceFormat* convertableValues,
+        WebConvertableToTraceFormat* convertableValues,
         unsigned char flags)
     {
         return 0;
@@ -551,6 +560,19 @@ public:
     // Unlike enumeration histograms, sparse histograms only allocate memory for non-empty buckets.
     virtual void histogramSparse(const char* name, int sample) { }
 
+    // Record to a RAPPOR privacy-preserving metric, see: https://www.chromium.org/developers/design-documents/rappor.
+    // recordRappor records a sample string, while recordRapporURL records the domain and registry of a url.
+    virtual void recordRappor(const char* metric, const WebString& sample) { }
+    virtual void recordRapporURL(const char* metric, const blink::WebURL& url) { }
+
+    // Registers a memory dump provider. The WebMemoryDumpProvider::onMemoryDump
+    // method will be called on the same thread that called the
+    // registerMemoryDumpProvider() method.
+    // See crbug.com/458295 for design docs.
+    virtual void registerMemoryDumpProvider(blink::WebMemoryDumpProvider*) { }
+
+    // Must be called on the thread that called registerMemoryDumpProvider().
+    virtual void unregisterMemoryDumpProvider(blink::WebMemoryDumpProvider*) { }
 
     // GPU ----------------------------------------------------------------
     //
@@ -594,8 +616,8 @@ public:
 
     // WebWorker ----------------------------------------------------------
 
-    virtual void didStartWorkerRunLoop(const WebWorkerRunLoop&) { }
-    virtual void didStopWorkerRunLoop(const WebWorkerRunLoop&) { }
+    virtual void didStartWorkerRunLoop() { }
+    virtual void didStopWorkerRunLoop() { }
 
     // WebCrypto ----------------------------------------------------------
 
@@ -612,6 +634,30 @@ public:
     // Request the platform to stop listening to the specified event and no
     // longer notify the listener, if any.
     virtual void stopListening(WebPlatformEventType type) { }
+
+    // This method converts from the supplied DOM code enum to the
+    // embedder's DOM code value for the key pressed. |domCode| values are
+    // based on the value defined in ui/events/keycodes/dom4/keycode_converter_data.h.
+    // Returns null string, if DOM code value is not found.
+    virtual WebString domCodeStringFromEnum(int domCode) { return WebString(); }
+
+    // This method converts from the suppled DOM code value to the
+    // embedder's DOM code enum for the key pressed. |codeString| is defined in
+    // ui/events/keycodes/dom4/keycode_converter_data.h.
+    // Returns 0, if DOM code enum is not found.
+    virtual int domEnumFromCodeString(const WebString& codeString) { return 0; }
+
+    // This method converts from the supplied DOM |key| enum to the
+    // corresponding DOM |key| string value for the key pressed. |domKey| values are
+    // based on the value defined in ui/events/keycodes/dom3/dom_key_data.h.
+    // Returns empty string, if DOM key value is not found.
+    virtual WebString domKeyStringFromEnum(int domKey) { return WebString(); }
+
+    // This method converts from the suppled DOM |key| value to the
+    // embedder's DOM |key| enum for the key pressed. |keyString| is defined in
+    // ui/events/keycodes/dom3/dom_key_data.h.
+    // Returns 0 if DOM key enum is not found.
+    virtual int domKeyEnumFromString(const WebString& keyString) { return 0; }
 
     // Quota -----------------------------------------------------------
 
@@ -640,13 +686,36 @@ public:
 
     virtual WebGeofencingProvider* geofencingProvider() { return 0; }
 
+
     // Bluetooth ----------------------------------------------------------
 
     // Returns pointer to client owned WebBluetooth implementation.
     virtual WebBluetooth* bluetooth() { return 0; }
 
+
+    // Push API------------------------------------------------------------
+
+    virtual WebPushProvider* pushProvider() { return 0; }
+
+
+    // navigator.connect --------------------------------------------------
+
+    virtual WebNavigatorConnectProvider* navigatorConnectProvider() { return 0; }
+
+    // Permissions --------------------------------------------------------
+
+    virtual WebPermissionClient* permissionClient() { return 0; }
+
+
+    // Background Sync API------------------------------------------------------------
+
+    virtual WebSyncProvider* backgroundSyncProvider() { return 0; }
+
 protected:
+    BLINK_PLATFORM_EXPORT Platform();
     virtual ~Platform() { }
+
+    WebThread* m_mainThread;
 };
 
 } // namespace blink

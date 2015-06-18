@@ -5,12 +5,12 @@
 #include "content/browser/tracing/etw_system_event_consumer_win.h"
 
 #include "base/base64.h"
-#include "base/debug/trace_event_impl.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event_impl.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace content {
@@ -96,8 +96,25 @@ bool EtwSystemEventConsumer::StartKernelSessionTracing() {
 
   HRESULT hr = base::win::EtwTraceController::Start(
       KERNEL_LOGGER_NAME, &properties_, &session_handle_);
+
+  // It's possible that a previous tracing session has been orphaned. If so
+  // try stopping and restarting it.
+  if (hr == HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)) {
+    VLOG(1) << "Session already exists, stopping and restarting it.";
+    hr = base::win::EtwTraceController::Stop(
+        KERNEL_LOGGER_NAME, &properties_);
+    if (FAILED(hr)) {
+      VLOG(1) << "EtwTraceController::Stop failed with " << hr << ".";
+      return false;
+    }
+
+    // The session was successfully shutdown so try to restart it.
+    hr = base::win::EtwTraceController::Start(
+        KERNEL_LOGGER_NAME, &properties_, &session_handle_);
+  }
+
   if (FAILED(hr)) {
-    VLOG(1) << "StartRealtimeSession() failed with " << hr << ".";
+    VLOG(1) << "EtwTraceController::Start failed with " << hr << ".";
     return false;
   }
 

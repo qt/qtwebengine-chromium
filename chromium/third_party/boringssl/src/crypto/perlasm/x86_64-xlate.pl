@@ -121,7 +121,7 @@ my %globals;
 		$self->{sz} = "";
 	    } elsif ($self->{op} =~ /^v/) { # VEX
 		$self->{sz} = "";
-	    } elsif ($self->{op} =~ /movq/ && $line =~ /%xmm/) {
+	    } elsif ($self->{op} =~ /mov[dq]/ && $line =~ /%xmm/) {
 		$self->{sz} = "";
 	    } elsif ($self->{op} =~ /([a-z]{3,})([qlwb])$/) {
 		$self->{op} = $1;
@@ -497,7 +497,11 @@ my %globals;
 		$self->{value} = $dir . "\t" . $line;
 
 		if ($dir =~ /\.extern/) {
-		    $self->{value} = ""; # swallow extern
+		    if ($flavour eq "elf") {
+			$self->{value} .= "\n.hidden $line";
+		    } else {
+			$self->{value} = "";
+		    }
 		} elsif (!$elf && $dir =~ /\.type/) {
 		    $self->{value} = "";
 		    $self->{value} = ".def\t" . ($globals{$1} or $1) . ";\t" .

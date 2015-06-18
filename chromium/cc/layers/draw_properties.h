@@ -6,6 +6,8 @@
 #define CC_LAYERS_DRAW_PROPERTIES_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "cc/trees/occlusion.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/transform.h"
 
@@ -17,6 +19,7 @@ template <typename LayerType>
 struct CC_EXPORT DrawProperties {
   DrawProperties()
       : opacity(0.f),
+        blend_mode(SkXfermode::kSrcOver_Mode),
         opacity_is_animating(false),
         screen_space_opacity_is_animating(false),
         target_space_transform_is_animating(false),
@@ -29,8 +32,10 @@ struct CC_EXPORT DrawProperties {
         num_unclipped_descendants(0),
         layer_or_descendant_has_copy_request(false),
         layer_or_descendant_has_input_handler(false),
+        layer_or_descendant_is_drawn(false),
         has_child_with_a_scroll_parent(false),
         sorted_for_recursion(false),
+        visited(false),
         index_of_first_descendants_addition(0),
         num_descendants_added(0),
         index_of_first_render_surface_layer_list_addition(0),
@@ -38,6 +43,7 @@ struct CC_EXPORT DrawProperties {
         last_drawn_render_surface_layer_list_id(0),
         ideal_contents_scale(0.f),
         maximum_animation_contents_scale(0.f),
+        starting_animation_contents_scale(0.f),
         page_scale_factor(0.f),
         device_scale_factor(0.f) {}
 
@@ -48,10 +54,17 @@ struct CC_EXPORT DrawProperties {
   // Transforms objects from content space to screen space (viewport space).
   gfx::Transform screen_space_transform;
 
+  // Known occlusion above the layer mapped to the content space of the layer.
+  Occlusion occlusion_in_content_space;
+
   // DrawProperties::opacity may be different than LayerType::opacity,
   // particularly in the case when a RenderSurface re-parents the layer's
   // opacity, or when opacity is compounded by the hierarchy.
   float opacity;
+
+  // DrawProperties::blend_mode may be different than LayerType::blend_mode,
+  // when a RenderSurface re-parents the layer's blend_mode.
+  SkXfermode::Mode blend_mode;
 
   // xxx_is_animating flags are used to indicate whether the DrawProperties
   // are actually meaningful on the main thread. When the properties are
@@ -72,9 +85,6 @@ struct CC_EXPORT DrawProperties {
   // either the same layer (draw_properties_.render_target == this) or an
   // ancestor of this layer.
   LayerType* render_target;
-
-  // The surface that this layer and its subtree would contribute to.
-  scoped_ptr<typename LayerType::RenderSurfaceType> render_surface;
 
   // This rect is in the layer's content space.
   gfx::Rect visible_content_rect;
@@ -106,6 +116,9 @@ struct CC_EXPORT DrawProperties {
   // If true, the layer or one of its descendants has a wheel or touch handler.
   bool layer_or_descendant_has_input_handler;
 
+  // If true, the layer or one of its descendants is drawn
+  bool layer_or_descendant_is_drawn;
+
   // This is true if the layer has any direct child that has a scroll parent.
   // This layer will not be the scroll parent in this case. This information
   // lets us avoid work in CalculateDrawPropertiesInternal -- if none of our
@@ -115,6 +128,9 @@ struct CC_EXPORT DrawProperties {
   // This is true if the order (wrt to its siblings in the tree) in which the
   // layer will be visited while computing draw properties has been determined.
   bool sorted_for_recursion;
+
+  // This is used to sanity-check CDP and ensure that we don't revisit a layer.
+  bool visited;
 
   // If this layer is visited out of order, its contribution to the descendant
   // and render surface layer lists will be put aside in a temporary list.
@@ -140,6 +156,10 @@ struct CC_EXPORT DrawProperties {
   // The maximum scale during the layers current animation at which content
   // should be rastered at to be crisp.
   float maximum_animation_contents_scale;
+
+  // The scale during the layer animation start at which content should be
+  // rastered at to be crisp.
+  float starting_animation_contents_scale;
 
   // The page scale factor that is applied to the layer. Since some layers may
   // have page scale applied and others not, this may differ between layers.

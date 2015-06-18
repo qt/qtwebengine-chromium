@@ -88,12 +88,13 @@ DOMFileSystem::DOMFileSystem(ExecutionContext* context, const String& name, File
     : DOMFileSystemBase(context, name, type, rootURL)
     , ActiveDOMObject(context)
     , m_numberOfPendingCallbacks(0)
+    , m_rootEntry(DirectoryEntry::create(this, DOMFilePath::root))
 {
 }
 
-DirectoryEntry* DOMFileSystem::root()
+DirectoryEntry* DOMFileSystem::root() const
 {
-    return DirectoryEntry::create(this, DOMFilePath::root);
+    return m_rootEntry.get();
 }
 
 void DOMFileSystem::addPendingCallbacks()
@@ -127,7 +128,7 @@ public:
         return new ConvertToFileWriterCallback(callback);
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_callback);
         FileWriterBaseCallback::trace(visitor);
@@ -171,6 +172,13 @@ void DOMFileSystem::createFile(const FileEntry* fileEntry, FileCallback* success
     }
 
     fileSystem()->createSnapshotFileAndReadMetadata(fileSystemURL, SnapshotFileCallback::create(this, fileEntry->name(), fileSystemURL, successCallback, errorCallback, m_context));
+}
+
+DEFINE_TRACE(DOMFileSystem)
+{
+    DOMFileSystemBase::trace(visitor);
+    ActiveDOMObject::trace(visitor);
+    visitor->trace(m_rootEntry);
 }
 
 } // namespace blink

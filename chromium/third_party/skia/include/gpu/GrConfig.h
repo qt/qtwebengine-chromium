@@ -213,24 +213,6 @@ typedef unsigned __int64 uint64_t;
 #endif
 
 /**
- * GR_DEFAULT_RESOURCE_CACHE_MB_LIMIT gives a threshold (in megabytes) for the
- * maximum size of the texture cache in vram. The value is only a default and
- * can be overridden at runtime.
- */
-#if !defined(GR_DEFAULT_RESOURCE_CACHE_MB_LIMIT)
-    #define GR_DEFAULT_RESOURCE_CACHE_MB_LIMIT 96
-#endif
-
-/**
- * GR_DEFAULT_RESOURCE_CACHE_COUNT_LIMIT specifies the maximum number of
- * textures the texture cache can hold in vram. The value is only a default and
- * can be overridden at runtime.
- */
-#if !defined(GR_DEFAULT_RESOURCE_CACHE_COUNT_LIMIT)
-    #define GR_DEFAULT_RESOURCE_CACHE_COUNT_LIMIT 2048
-#endif
-
-/**
  * GR_STROKE_PATH_RENDERING controls whether or not the GrStrokePathRenderer can be selected
  * as a path renderer. GrStrokePathRenderer is currently an experimental path renderer.
  */
@@ -248,6 +230,14 @@ typedef unsigned __int64 uint64_t;
  */
 #if !defined(GR_ALWAYS_ALLOCATE_ON_HEAP)
     #define GR_ALWAYS_ALLOCATE_ON_HEAP 0
+#endif
+
+/**
+ * GR_FORCE_GPU_TRACE_DEBUGGING will force gpu tracing/debug markers to be turned on. The trace
+ * markers will be printed out instead of making the backend calls to push and pop them.
+ */
+#if !defined(GR_FORCE_GPU_TRACE_DEBUGGING)
+    #define GR_FORCE_GPU_TRACE_DEBUGGING 0
 #endif
 
 #endif

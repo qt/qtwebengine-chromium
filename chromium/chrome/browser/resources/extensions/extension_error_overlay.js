@@ -2,35 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/**
- * The type of the stack trace object. The definition is based on
- * extensions/browser/extension_error.cc:RuntimeError::ToValue().
- * @typedef {{columnNumber: number,
- *            functionName: string,
- *            lineNumber: number,
- *            url: string}}
- */
-var StackTrace;
-
-/**
- * The type of the extension error trace object. The definition is based on
- * extensions/browser/extension_error.cc:RuntimeError::ToValue().
- * @typedef {{canInspect: (boolean|undefined),
- *            contextUrl: (string|undefined),
- *            extensionId: string,
- *            fromIncognito: boolean,
- *            level: number,
- *            manifestKey: string,
- *            manifestSpecific: string,
- *            message: string,
- *            renderProcessId: (number|undefined),
- *            renderViewId: (number|undefined),
- *            source: string,
- *            stackTrace: (Array.<StackTrace>|undefined),
- *            type: number}}
- */
-var RuntimeError;
-
 cr.define('extensions', function() {
   'use strict';
 
@@ -91,30 +62,12 @@ cr.define('extensions', function() {
     return !/^extensions::/.test(url);
   };
 
-  /**
-   * Send a call to chrome to open the developer tools for an error.
-   * This will call either the bound function in ExtensionErrorHandler or the
-   * API function from developerPrivate, depending on whether this is being
-   * used in the native chrome:extensions page or the Apps Developer Tool.
-   * @see chrome/browser/ui/webui/extensions/extension_error_ui_util.h
-   * @param {Object} args The arguments to pass to openDevTools.
-   * @private
-   */
-  RuntimeErrorContent.openDevtools_ = function(args) {
-    if (chrome.send)
-      chrome.send('extensionErrorOpenDevTools', [args]);
-    else if (chrome.developerPrivate)
-      chrome.developerPrivate.openDevTools(args);
-    else
-      assertNotReached('Cannot call either openDevTools function.');
-  };
-
   RuntimeErrorContent.prototype = {
     __proto__: HTMLDivElement.prototype,
 
     /**
      * The underlying error whose details are being displayed.
-     * @type {?RuntimeError}
+     * @type {?(RuntimeError|ManifestError)}
      * @private
      */
     error_: null,
@@ -158,11 +111,13 @@ cr.define('extensions', function() {
 
     /**
      * Sets the error for the content.
-     * @param {RuntimeError} error The error whose content should
-     *     be displayed.
+     * @param {(RuntimeError|ManifestError)} error The error whose content
+     *     should be displayed.
      * @param {string} extensionUrl The URL associated with this extension.
      */
     setError: function(error, extensionUrl) {
+      this.clearError();
+
       this.error_ = error;
       this.extensionUrl_ = extensionUrl;
       this.contextUrl_.textContent = error.contextUrl ?
@@ -236,13 +191,12 @@ cr.define('extensions', function() {
         frameNode.addEventListener('click', function(frame, frameNode, e) {
           this.setActiveFrame_(frameNode);
 
-          // Request the file source with the section highlighted; this will
-          // call ExtensionErrorOverlay.requestFileSourceResponse() when
-          // completed, which in turn calls setCode().
-          ExtensionErrorOverlay.requestFileSource(
+          // Request the file source with the section highlighted.
+          extensions.ExtensionErrorOverlay.getInstance().requestFileSource(
               {extensionId: this.error_.extensionId,
                message: this.error_.message,
-               pathSuffix: getRelativeUrl(frame.url, this.extensionUrl_),
+               pathSuffix: getRelativeUrl(frame.url,
+                                          assert(this.extensionUrl_)),
                lineNumber: frame.lineNumber});
         }.bind(this, frame, frameNode));
 
@@ -267,9 +221,9 @@ cr.define('extensions', function() {
       var stackFrame =
           this.error_.stackTrace[this.currentFrameNode_.indexIntoTrace];
 
-      RuntimeErrorContent.openDevtools_(
-          {renderProcessId: this.error_.renderProcessId,
-           renderViewId: this.error_.renderViewId,
+      chrome.developerPrivate.openDevTools(
+          {renderProcessId: this.error_.renderProcessId || -1,
+           renderViewId: this.error_.renderViewId || -1,
            url: stackFrame.url,
            lineNumber: stackFrame.lineNumber || 0,
            columnNumber: stackFrame.columnNumber || 0});
@@ -294,15 +248,6 @@ cr.define('extensions', function() {
   }
 
   /**
-   * Value of ExtensionError::RUNTIME_ERROR enum.
-   * @see extensions/browser/extension_error.h
-   * @type {number}
-   * @const
-   * @private
-   */
-  ExtensionErrorOverlay.RUNTIME_ERROR_TYPE_ = 1;
-
-  /**
    * The manifest filename.
    * @type {string}
    * @const
@@ -324,58 +269,15 @@ cr.define('extensions', function() {
            file.toLowerCase() == ExtensionErrorOverlay.MANIFEST_FILENAME_;
   };
 
-  /**
-   * Determine whether or not we can show an overlay with more details for
-   * the given extension error.
-   * @param {Object} error The extension error.
-   * @param {string} extensionUrl The url for the extension, in the form
-   *     "chrome-extension://<extension-id>/".
-   * @return {boolean} True if we can show an overlay for the error,
-   *     false otherwise.
-   */
-  ExtensionErrorOverlay.canShowOverlayForError = function(error, extensionUrl) {
-    if (ExtensionErrorOverlay.canLoadFileSource(error.source, extensionUrl))
-      return true;
-
-    if (error.stackTrace) {
-      for (var i = 0; i < error.stackTrace.length; ++i) {
-        if (RuntimeErrorContent.shouldDisplayForUrl(error.stackTrace[i].url))
-          return true;
-      }
-    }
-
-    return false;
-  };
-
-  /**
-   * Send a call to chrome to request the source of a given file.
-   * This will call either the bound function in ExtensionErrorHandler or the
-   * API function from developerPrivate, depending on whether this is being
-   * used in the native chrome:extensions page or the Apps Developer Tool.
-   * @see chrome/browser/ui/webui/extensions/extension_error_ui_util.h
-   * @param {Object} args The arguments to pass to requestFileSource.
-   */
-  ExtensionErrorOverlay.requestFileSource = function(args) {
-    if (chrome.send) {
-      chrome.send('extensionErrorRequestFileSource', [args]);
-    } else if (chrome.developerPrivate) {
-      chrome.developerPrivate.requestFileSource(args, function(result) {
-        extensions.ExtensionErrorOverlay.requestFileSourceResponse(result);
-      });
-    } else {
-      assertNotReached('Cannot call either requestFileSource function.');
-    }
-  };
-
   cr.addSingletonGetter(ExtensionErrorOverlay);
 
   ExtensionErrorOverlay.prototype = {
     /**
      * The underlying error whose details are being displayed.
-     * @type {?RuntimeError}
+     * @type {?(RuntimeError|ManifestError)}
      * @private
      */
-    error_: null,
+    selectedError_: null,
 
     /**
      * Initialize the page.
@@ -444,21 +346,91 @@ cr.define('extensions', function() {
       // There's a chance that the overlay receives multiple dismiss events; in
       // this case, handle it gracefully and return (since all necessary work
       // will already have been done).
-      if (!this.error_)
+      if (!this.selectedError_)
         return;
 
       // Remove all previous content.
       this.codeDiv_.clear();
 
-      this.openDevtoolsButton_.hidden = true;
+      this.overlayDiv_.querySelector('.extension-error-list').onRemoved();
 
-      if (this.error_.type == ExtensionErrorOverlay.RUNTIME_ERROR_TYPE_) {
-        this.overlayDiv_.querySelector('.content-area').removeChild(
+      this.clearRuntimeContent_();
+
+      this.selectedError_ = null;
+    },
+
+    /**
+     * Clears the current content.
+     * @private
+     */
+    clearRuntimeContent_: function() {
+      if (this.runtimeErrorContent_.parentNode) {
+        this.runtimeErrorContent_.parentNode.removeChild(
             this.runtimeErrorContent_);
         this.runtimeErrorContent_.clearError();
       }
+      this.openDevtoolsButton_.hidden = true;
+    },
 
-      this.error_ = null;
+    /**
+     * Sets the active error for the overlay.
+     * @param {?(ManifestError|RuntimeError)} error The error to make active.
+     * TODO(dbeam): add URL externs and re-enable typechecking in this method.
+     * @suppress {missingProperties}
+     * @private
+     */
+    setActiveError_: function(error) {
+      this.selectedError_ = error;
+
+      // If there is no error (this can happen if, e.g., the user deleted all
+      // the errors), then clear the content.
+      if (!error) {
+        this.codeDiv_.populate(
+            null, loadTimeData.getString('extensionErrorNoErrorsCodeMessage'));
+        this.clearRuntimeContent_();
+        return;
+      }
+
+      var extensionUrl = 'chrome-extension://' + error.extensionId + '/';
+      // Set or hide runtime content.
+      if (error.type == chrome.developerPrivate.ErrorType.RUNTIME) {
+        this.runtimeErrorContent_.setError(error, extensionUrl);
+        this.overlayDiv_.querySelector('.content-area').insertBefore(
+            this.runtimeErrorContent_,
+            this.codeDiv_.nextSibling);
+        this.openDevtoolsButton_.hidden = false;
+        this.openDevtoolsButton_.disabled = !error.canInspect;
+      } else {
+        this.clearRuntimeContent_();
+      }
+
+      // Read the file source to populate the code section, or set it to null if
+      // the file is unreadable.
+      if (ExtensionErrorOverlay.canLoadFileSource(error.source, extensionUrl)) {
+        // Use pathname instead of relativeUrl.
+        var requestFileSourceArgs = {extensionId: error.extensionId,
+                                     message: error.message};
+        switch (error.type) {
+          case chrome.developerPrivate.ErrorType.MANIFEST:
+            requestFileSourceArgs.pathSuffix = error.source;
+            requestFileSourceArgs.manifestKey = error.manifestKey;
+            requestFileSourceArgs.manifestSpecific = error.manifestSpecific;
+            break;
+          case chrome.developerPrivate.ErrorType.RUNTIME:
+            // slice(1) because pathname starts with a /.
+            var pathname = new URL(error.source).pathname.slice(1);
+            requestFileSourceArgs.pathSuffix = pathname;
+            requestFileSourceArgs.lineNumber =
+                error.stackTrace && error.stackTrace[0] ?
+                    error.stackTrace[0].lineNumber : 0;
+            break;
+          default:
+            assertNotReached();
+        }
+        this.requestFileSource(requestFileSourceArgs);
+      } else {
+        this.onFileSourceResponse_(null);
+      }
     },
 
     /**
@@ -466,75 +438,52 @@ cr.define('extensions', function() {
      * overlay, and, if possible, will populate the code section of the overlay
      * with the relevant file, load the stack trace, and generate links for
      * opening devtools (the latter two only happen for runtime errors).
-     * @param {RuntimeError} error The error to show in the overlay.
-     * @param {string} extensionUrl The URL of the extension, in the form
-     *     "chrome-extension://<extension_id>".
+     * @param {Array<(RuntimeError|ManifestError)>} errors The error to show in
+     *     the overlay.
+     * @param {string} extensionId The id of the extension.
+     * @param {string} extensionName The name of the extension.
      */
-    setErrorAndShowOverlay: function(error, extensionUrl) {
-      this.error_ = error;
+    setErrorsAndShowOverlay: function(errors, extensionId, extensionName) {
+      document.querySelector(
+          '#extension-error-overlay .extension-error-overlay-title').
+              textContent = extensionName;
+      var errorsDiv = this.overlayDiv_.querySelector('.extension-error-list');
+      var extensionErrors =
+          new extensions.ExtensionErrorList(errors, extensionId);
+      errorsDiv.parentNode.replaceChild(extensionErrors, errorsDiv);
+      extensionErrors.addEventListener('activeExtensionErrorChanged',
+                                       function(e) {
+        this.setActiveError_(e.detail);
+      }.bind(this));
 
-      if (this.error_.type == ExtensionErrorOverlay.RUNTIME_ERROR_TYPE_) {
-        this.runtimeErrorContent_.setError(this.error_, extensionUrl);
-        this.overlayDiv_.querySelector('.content-area').insertBefore(
-            this.runtimeErrorContent_,
-            this.codeDiv_.nextSibling);
-        this.openDevtoolsButton_.hidden = false;
-        this.openDevtoolsButton_.disabled = !error.canInspect;
-      }
-
-      if (ExtensionErrorOverlay.canLoadFileSource(error.source, extensionUrl)) {
-        var relativeUrl = getRelativeUrl(error.source, extensionUrl);
-
-        var requestFileSourceArgs = {extensionId: error.extensionId,
-                                     message: error.message,
-                                     pathSuffix: relativeUrl};
-
-        if (relativeUrl.toLowerCase() ==
-                ExtensionErrorOverlay.MANIFEST_FILENAME_) {
-          requestFileSourceArgs.manifestKey = error.manifestKey;
-          requestFileSourceArgs.manifestSpecific = error.manifestSpecific;
-        } else {
-          requestFileSourceArgs.lineNumber =
-              error.stackTrace && error.stackTrace[0] ?
-                  error.stackTrace[0].lineNumber : 0;
-        }
-        ExtensionErrorOverlay.requestFileSource(requestFileSourceArgs);
-      } else {
-        ExtensionErrorOverlay.requestFileSourceResponse(null);
-      }
+      if (errors.length > 0)
+        this.setActiveError_(errors[0]);
+      this.setVisible(true);
     },
 
+    /**
+     * Requests a file's source.
+     * @param {RequestFileSourceProperties} args The arguments for the call.
+     */
+    requestFileSource: function(args) {
+      chrome.developerPrivate.requestFileSource(
+          args, this.onFileSourceResponse_.bind(this));
+    },
 
     /**
      * Set the code to be displayed in the code portion of the overlay.
      * @see ExtensionErrorOverlay.requestFileSourceResponse().
-     * @param {?ExtensionHighlight} code The code to be displayed. If |code| is
-     *     null, then
-     *     a "Could not display code" message will be displayed instead.
+     * @param {?RequestFileSourceResponse} response The response from the
+     *     request file source call, which will be shown as code. If |response|
+     *     is null, then a "Could not display code" message will be displayed
+     *     instead.
      */
-    setCode: function(code) {
-      document.querySelector(
-          '#extension-error-overlay .extension-error-overlay-title').
-              textContent = code.title;
-
+    onFileSourceResponse_: function(response) {
       this.codeDiv_.populate(
-          code,
+          response,  // ExtensionCode can handle a null response.
           loadTimeData.getString('extensionErrorOverlayNoCodeToDisplay'));
+      this.setVisible(true);
     },
-  };
-
-  /**
-   * Called by the ExtensionErrorHandler responding to the request for a file's
-   * source. Populate the content area of the overlay and display the overlay.
-   * @param {?ExtensionHighlight} result The three 'highlight' strings represent
-   *     three portions of the file's content to display - the portion which is
-   *     most relevant and should be emphasized (highlight), and the parts both
-   *     before and after this portion. These may be empty.
-   */
-  ExtensionErrorOverlay.requestFileSourceResponse = function(result) {
-    var overlay = extensions.ExtensionErrorOverlay.getInstance();
-    overlay.setCode(result);
-    overlay.setVisible(true);
   };
 
   // Export

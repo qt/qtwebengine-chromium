@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "content/common/gpu/client/gl_helper.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 

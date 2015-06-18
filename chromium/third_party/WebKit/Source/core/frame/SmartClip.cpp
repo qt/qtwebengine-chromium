@@ -37,33 +37,32 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/layout/LayoutObject.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
 
-static IntRect applyScaleWithoutCollapsingToZero(const IntRect& rect, float scale)
+static IntRect convertToContentCoordinatesWithoutCollapsingToZero(const IntRect& rectInViewport, const FrameView* view)
 {
-    IntRect result = rect;
-    result.scale(scale);
-    if (rect.width() > 0 && !result.width())
-        result.setWidth(1);
-    if (rect.height() > 0 && !result.height())
-        result.setHeight(1);
-    return result;
+    IntRect rectInContents = view->viewportToContents(rectInViewport);
+    if (rectInViewport.width() > 0 && !rectInContents.width())
+        rectInContents.setWidth(1);
+    if (rectInViewport.height() > 0 && !rectInContents.height())
+        rectInContents.setHeight(1);
+    return rectInContents;
 }
 
 static Node* nodeInsideFrame(Node* node)
 {
     if (node->isFrameOwnerElement())
         return toHTMLFrameOwnerElement(node)->contentDocument();
-    return 0;
+    return nullptr;
 }
 
-IntRect SmartClipData::rect() const
+IntRect SmartClipData::rectInViewport() const
 {
-    return m_rect;
+    return m_rectInViewport;
 }
 
 const String& SmartClipData::clipData() const
@@ -76,22 +75,20 @@ SmartClip::SmartClip(PassRefPtrWillBeRawPtr<LocalFrame> frame)
 {
 }
 
-SmartClipData SmartClip::dataForRect(const IntRect& cropRect)
+SmartClipData SmartClip::dataForRect(const IntRect& cropRectInViewport)
 {
-    IntRect resizedCropRect = applyScaleWithoutCollapsingToZero(cropRect, 1 / pageScaleFactor());
-
-    Node* bestNode = findBestOverlappingNode(m_frame->document(), resizedCropRect);
+    Node* bestNode = findBestOverlappingNode(m_frame->document(), cropRectInViewport);
     if (!bestNode)
         return SmartClipData();
 
     if (Node* nodeFromFrame = nodeInsideFrame(bestNode)) {
         // FIXME: This code only hit-tests a single iframe. It seems like we ought support nested frames.
-        if (Node* bestNodeInFrame = findBestOverlappingNode(nodeFromFrame, resizedCropRect))
+        if (Node* bestNodeInFrame = findBestOverlappingNode(nodeFromFrame, cropRectInViewport))
             bestNode = bestNodeInFrame;
     }
 
-    WillBeHeapVector<RawPtrWillBeMember<Node> > hitNodes;
-    collectOverlappingChildNodes(bestNode, resizedCropRect, hitNodes);
+    WillBeHeapVector<RawPtrWillBeMember<Node>> hitNodes;
+    collectOverlappingChildNodes(bestNode, cropRectInViewport, hitNodes);
 
     if (hitNodes.isEmpty() || hitNodes.size() == bestNode->countChildren()) {
         hitNodes.clear();
@@ -106,7 +103,7 @@ SmartClipData SmartClip::dataForRect(const IntRect& cropRect)
         unitedRects.unite(hitNodes[i]->pixelSnappedBoundingBox());
     }
 
-    return SmartClipData(bestNode, convertRectToWindow(unitedRects), collectedText.toString());
+    return SmartClipData(bestNode, m_frame->document()->view()->contentsToViewport(unitedRects), collectedText.toString());
 }
 
 float SmartClip::pageScaleFactor()
@@ -147,7 +144,7 @@ Node* SmartClip::minNodeContainsNodes(Node* minNode, Node* newNode)
     // the documentElement.
     Node* node = minNode;
     while (node) {
-        if (node->renderer()) {
+        if (node->layoutObject()) {
             IntRect nodeRect = node->pixelSnappedBoundingBox();
             if (nodeRect.contains(newNodeRect)) {
                 return node;
@@ -156,18 +153,18 @@ Node* SmartClip::minNodeContainsNodes(Node* minNode, Node* newNode)
         node = node->parentNode();
     }
 
-    return 0;
+    return nullptr;
 }
 
-Node* SmartClip::findBestOverlappingNode(Node* rootNode, const IntRect& cropRect)
+Node* SmartClip::findBestOverlappingNode(Node* rootNode, const IntRect& cropRectInViewport)
 {
     if (!rootNode)
-        return 0;
+        return nullptr;
 
-    IntRect resizedCropRect = rootNode->document().view()->windowToContents(cropRect);
+    IntRect resizedCropRect = convertToContentCoordinatesWithoutCollapsingToZero(cropRectInViewport, rootNode->document().view());
 
     Node* node = rootNode;
-    Node* minNode = 0;
+    Node* minNode = nullptr;
 
     while (node) {
         IntRect nodeRect = node->pixelSnappedBoundingBox();
@@ -177,12 +174,12 @@ Node* SmartClip::findBestOverlappingNode(Node* rootNode, const IntRect& cropRect
             continue;
         }
 
-        RenderObject* renderer = node->renderer();
-        if (renderer && !nodeRect.isEmpty()) {
-            if (renderer->isText()
-                || renderer->isRenderImage()
+        LayoutObject* layoutObject = node->layoutObject();
+        if (layoutObject && !nodeRect.isEmpty()) {
+            if (layoutObject->isText()
+                || layoutObject->isLayoutImage()
                 || node->isFrameOwnerElement()
-                || (renderer->style()->hasBackgroundImage() && !shouldSkipBackgroundImage(node))) {
+                || (layoutObject->style()->hasBackgroundImage() && !shouldSkipBackgroundImage(node))) {
                 if (resizedCropRect.intersects(nodeRect)) {
                     minNode = minNodeContainsNodes(minNode, node);
                 } else {
@@ -211,30 +208,23 @@ bool SmartClip::shouldSkipBackgroundImage(Node* node)
     // image out of a CSS background, you're probably going to specify a height
     // or a width. On the other hand, if we've got a legit background image,
     // it's very likely the height or the width will be set to auto.
-    RenderObject* renderer = node->renderer();
-    if (renderer && (renderer->style()->logicalHeight().isAuto() || renderer->style()->logicalWidth().isAuto()))
+    LayoutObject* layoutObject = node->layoutObject();
+    if (layoutObject && (layoutObject->style()->logicalHeight().isAuto() || layoutObject->style()->logicalWidth().isAuto()))
         return true;
 
     return false;
 }
 
-void SmartClip::collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, WillBeHeapVector<RawPtrWillBeMember<Node> >& hitNodes)
+void SmartClip::collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRectInViewport, WillBeHeapVector<RawPtrWillBeMember<Node>>& hitNodes)
 {
     if (!parentNode)
         return;
-    IntRect resizedCropRect = parentNode->document().view()->windowToContents(cropRect);
+    IntRect resizedCropRect = convertToContentCoordinatesWithoutCollapsingToZero(cropRectInViewport, parentNode->document().view());
     for (Node* child = parentNode->firstChild(); child; child = child->nextSibling()) {
         IntRect childRect = child->pixelSnappedBoundingBox();
         if (resizedCropRect.intersects(childRect))
             hitNodes.append(child);
     }
-}
-
-IntRect SmartClip::convertRectToWindow(const IntRect& nodeRect)
-{
-    IntRect result = m_frame->document()->view()->contentsToWindow(nodeRect);
-    result.scale(pageScaleFactor());
-    return result;
 }
 
 String SmartClip::extractTextFromNode(Node* node)
@@ -244,7 +234,7 @@ String SmartClip::extractTextFromNode(Node* node)
 
     StringBuilder result;
     for (Node& currentNode : NodeTraversal::inclusiveDescendantsOf(*node)) {
-        RenderStyle* style = currentNode.computedStyle();
+        const ComputedStyle* style = currentNode.ensureComputedStyle();
         if (style && style->userSelect() == SELECT_NONE)
             continue;
 
@@ -252,7 +242,7 @@ String SmartClip::extractTextFromNode(Node* node)
             result.append(extractTextFromNode(nodeFromFrame));
 
         IntRect nodeRect = currentNode.pixelSnappedBoundingBox();
-        if (currentNode.renderer() && !nodeRect.isEmpty()) {
+        if (currentNode.layoutObject() && !nodeRect.isEmpty()) {
             if (currentNode.isTextNode()) {
                 String nodeValue = currentNode.nodeValue();
 

@@ -17,16 +17,6 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-#ifdef SK_DEBUG
-    #define SkASSERT_CONTINUE(pred)                                                         \
-        do {                                                                                \
-            if (!(pred))                                                                    \
-                SkDebugf("file %s:%d: assert failed '" #pred "'\n", __FILE__, __LINE__);    \
-        } while (false)
-#else
-    #define SkASSERT_CONTINUE(pred)
-#endif
-
 class SkScalerContext_FreeType_Base : public SkScalerContext {
 protected:
     // See http://freetype.sourceforge.net/freetype2/docs/reference/ft2-bitmap_handling.html#FT_Bitmap_Embolden
@@ -69,23 +59,22 @@ protected:
     {}
 
     virtual SkScalerContext* onCreateScalerContext(
-                                        const SkDescriptor*) const SK_OVERRIDE;
-    virtual void onFilterRec(SkScalerContextRec*) const SK_OVERRIDE;
-    virtual SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
-                                SkAdvancedTypefaceMetrics::PerGlyphInfo,
-                                const uint32_t*, uint32_t) const SK_OVERRIDE;
-    virtual int onGetUPEM() const SK_OVERRIDE;
+                                        const SkDescriptor*) const override;
+    void onFilterRec(SkScalerContextRec*) const override;
+    SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
+                        PerGlyphInfo, const uint32_t*, uint32_t) const override;
+    int onGetUPEM() const override;
     virtual bool onGetKerningPairAdjustments(const uint16_t glyphs[], int count,
-                                       int32_t adjustments[]) const SK_OVERRIDE;
+                                       int32_t adjustments[]) const override;
     virtual int onCharsToGlyphs(const void* chars, Encoding, uint16_t glyphs[],
-                                int glyphCount) const SK_OVERRIDE;
-    virtual int onCountGlyphs() const SK_OVERRIDE;
+                                int glyphCount) const override;
+    int onCountGlyphs() const override;
 
-    virtual LocalizedStrings* onCreateFamilyNameIterator() const SK_OVERRIDE;
+    LocalizedStrings* onCreateFamilyNameIterator() const override;
 
-    virtual int onGetTableTags(SkFontTableTag tags[]) const SK_OVERRIDE;
+    int onGetTableTags(SkFontTableTag tags[]) const override;
     virtual size_t onGetTableData(SkFontTableTag, size_t offset,
-                                  size_t length, void* data) const SK_OVERRIDE;
+                                  size_t length, void* data) const override;
 
 private:
     mutable int fGlyphCount;

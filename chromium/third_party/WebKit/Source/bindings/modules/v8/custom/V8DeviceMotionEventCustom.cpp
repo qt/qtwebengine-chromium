@@ -39,26 +39,31 @@ DeviceMotionData::Acceleration* readAccelerationArgument(v8::Local<v8::Value> va
     if (isUndefinedOrNull(value))
         return nullptr;
 
-    // Given the test above, this will always yield an object.
-    v8::Local<v8::Object> object = value->ToObject();
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
+    v8::Local<v8::Object> object;
+    if (!value->ToObject(context).ToLocal(&object))
+        return nullptr;
 
-    v8::Local<v8::Value> xValue = object->Get(v8AtomicString(isolate, "x"));
-    if (xValue.IsEmpty())
+    v8::Local<v8::Value> xValue;
+    if (!object->Get(context, v8AtomicString(isolate, "x")).ToLocal(&xValue))
         return nullptr;
     bool canProvideX = !isUndefinedOrNull(xValue);
-    double x = xValue->NumberValue();
+    double x;
+    V8_CALL(x, xValue, NumberValue(context), return nullptr);
 
-    v8::Local<v8::Value> yValue = object->Get(v8AtomicString(isolate, "y"));
-    if (yValue.IsEmpty())
+    v8::Local<v8::Value> yValue;
+    if (!object->Get(context, v8AtomicString(isolate, "y")).ToLocal(&yValue))
         return nullptr;
     bool canProvideY = !isUndefinedOrNull(yValue);
-    double y = yValue->NumberValue();
+    double y;
+    V8_CALL(y, yValue, NumberValue(context), return nullptr);
 
-    v8::Local<v8::Value> zValue = object->Get(v8AtomicString(isolate, "z"));
-    if (zValue.IsEmpty())
+    v8::Local<v8::Value> zValue;
+    if (!object->Get(context, v8AtomicString(isolate, "z")).ToLocal(&zValue))
         return nullptr;
     bool canProvideZ = !isUndefinedOrNull(zValue);
-    double z = zValue->NumberValue();
+    double z;
+    V8_CALL(z, zValue, NumberValue(context), return nullptr);
 
     if (!canProvideX && !canProvideY && !canProvideZ)
         return nullptr;
@@ -71,26 +76,31 @@ DeviceMotionData::RotationRate* readRotationRateArgument(v8::Local<v8::Value> va
     if (isUndefinedOrNull(value))
         return nullptr;
 
-    // Given the test above, this will always yield an object.
-    v8::Local<v8::Object> object = value->ToObject();
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
+    v8::Local<v8::Object> object;
+    if (!value->ToObject(context).ToLocal(&object))
+        return nullptr;
 
-    v8::Local<v8::Value> alphaValue = object->Get(v8AtomicString(isolate, "alpha"));
-    if (alphaValue.IsEmpty())
+    v8::Local<v8::Value> alphaValue;
+    if (!object->Get(context, v8AtomicString(isolate, "alpha")).ToLocal(&alphaValue))
         return nullptr;
     bool canProvideAlpha = !isUndefinedOrNull(alphaValue);
-    double alpha = alphaValue->NumberValue();
+    double alpha;
+    V8_CALL(alpha, alphaValue, NumberValue(context), return nullptr);
 
-    v8::Local<v8::Value> betaValue = object->Get(v8AtomicString(isolate, "beta"));
-    if (betaValue.IsEmpty())
+    v8::Local<v8::Value> betaValue;
+    if (!object->Get(context, v8AtomicString(isolate, "beta")).ToLocal(&betaValue))
         return nullptr;
     bool canProvideBeta = !isUndefinedOrNull(betaValue);
-    double beta = betaValue->NumberValue();
+    double beta;
+    V8_CALL(beta, betaValue, NumberValue(context), return nullptr);
 
-    v8::Local<v8::Value> gammaValue = object->Get(v8AtomicString(isolate, "gamma"));
-    if (gammaValue.IsEmpty())
+    v8::Local<v8::Value> gammaValue;
+    if (!object->Get(context, v8AtomicString(isolate, "gamma")).ToLocal(&gammaValue))
         return nullptr;
     bool canProvideGamma = !isUndefinedOrNull(gammaValue);
-    double gamma = gammaValue->NumberValue();
+    double gamma;
+    V8_CALL(gamma, gammaValue, NumberValue(context), return nullptr);
 
     if (!canProvideAlpha && !canProvideBeta && !canProvideGamma)
         return nullptr;
@@ -102,16 +112,27 @@ DeviceMotionData::RotationRate* readRotationRateArgument(v8::Local<v8::Value> va
 
 void V8DeviceMotionEvent::initDeviceMotionEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "initDeviceMotionEvent", "DeviceMotionEvent", info.Holder(), info.GetIsolate());
     DeviceMotionEvent* impl = V8DeviceMotionEvent::toImpl(info.Holder());
     v8::Isolate* isolate = info.GetIsolate();
-    TOSTRING_VOID(V8StringResource<>, type, info[0]);
-    bool bubbles = info[1]->BooleanValue();
-    bool cancelable = info[2]->BooleanValue();
+    V8StringResource<> type(info[0]);
+    if (!type.prepare())
+        return;
+    v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
+    bool bubbles;
+    V8_CALL(bubbles, info[1], BooleanValue(context), return);
+    bool cancelable;
+    V8_CALL(cancelable, info[2], BooleanValue(context), return);
     DeviceMotionData::Acceleration* acceleration = readAccelerationArgument(info[3], isolate);
     DeviceMotionData::Acceleration* accelerationIncludingGravity = readAccelerationArgument(info[4], isolate);
     DeviceMotionData::RotationRate* rotationRate = readRotationRateArgument(info[5], isolate);
     bool intervalProvided = !isUndefinedOrNull(info[6]);
-    double interval = info[6]->NumberValue();
+    double interval = 0;
+    if (intervalProvided) {
+        interval = toRestrictedDouble(isolate, info[6], exceptionState);
+        if (exceptionState.throwIfNeeded())
+            return;
+    }
     DeviceMotionData* deviceMotionData = DeviceMotionData::create(acceleration, accelerationIncludingGravity, rotationRate, intervalProvided, interval);
     impl->initDeviceMotionEvent(type, bubbles, cancelable, deviceMotionData);
 }

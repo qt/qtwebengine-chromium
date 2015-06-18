@@ -14,6 +14,7 @@
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_task_runner_handle.h"
+#include "components/device_event_log/device_event_log.h"
 #include "device/usb/usb_context.h"
 #include "device/usb/usb_descriptors.h"
 #include "device/usb/usb_device_impl.h"
@@ -145,468 +146,287 @@ UsbDeviceHandleImpl::InterfaceClaimer::~InterfaceClaimer() {
 bool UsbDeviceHandleImpl::InterfaceClaimer::Claim() const {
   const int rv = libusb_claim_interface(handle_->handle(), interface_number_);
   if (rv != LIBUSB_SUCCESS) {
-    VLOG(1) << "Failed to claim interface: "
-            << ConvertPlatformUsbErrorToString(rv);
+    USB_LOG(EVENT) << "Failed to claim interface " << interface_number_ << ": "
+                   << ConvertPlatformUsbErrorToString(rv);
   }
   return rv == LIBUSB_SUCCESS;
 }
 
-struct UsbDeviceHandleImpl::Transfer {
-  Transfer();
+// This inner class owns the underlying libusb_transfer and may outlast
+// the UsbDeviceHandle that created it.
+class UsbDeviceHandleImpl::Transfer {
+ public:
+  static scoped_ptr<Transfer> CreateControlTransfer(
+      scoped_refptr<UsbDeviceHandleImpl> device_handle,
+      uint8 type,
+      uint8 request,
+      uint16 value,
+      uint16 index,
+      uint16 length,
+      scoped_refptr<net::IOBuffer> buffer,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+  static scoped_ptr<Transfer> CreateBulkTransfer(
+      scoped_refptr<UsbDeviceHandleImpl> device_handle,
+      uint8 endpoint,
+      scoped_refptr<net::IOBuffer> buffer,
+      int length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+  static scoped_ptr<Transfer> CreateInterruptTransfer(
+      scoped_refptr<UsbDeviceHandleImpl> device_handle,
+      uint8 endpoint,
+      scoped_refptr<net::IOBuffer> buffer,
+      int length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+  static scoped_ptr<Transfer> CreateIsochronousTransfer(
+      scoped_refptr<UsbDeviceHandleImpl> device_handle,
+      uint8 endpoint,
+      scoped_refptr<net::IOBuffer> buffer,
+      size_t length,
+      unsigned int packets,
+      unsigned int packet_length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> task_runner,
+      const TransferCallback& callback);
+
   ~Transfer();
 
-  void Complete(UsbTransferStatus status, size_t bytes_transferred);
+  void Submit();
+  void Cancel();
+  void ProcessCompletion();
+  void TransferComplete(UsbTransferStatus status, size_t bytes_transferred);
 
-  UsbTransferType transfer_type;
-  scoped_refptr<net::IOBuffer> buffer;
-  scoped_refptr<UsbDeviceHandleImpl::InterfaceClaimer> claimed_interface;
-  scoped_refptr<base::SingleThreadTaskRunner> task_runner;
-  size_t length;
-  UsbTransferCallback callback;
+  const UsbDeviceHandleImpl::InterfaceClaimer* claimed_interface() const {
+    return claimed_interface_.get();
+  }
+
+  scoped_refptr<base::TaskRunner> callback_task_runner() const {
+    return callback_task_runner_;
+  }
+
+ private:
+  Transfer(scoped_refptr<UsbDeviceHandleImpl> device_handle,
+           scoped_refptr<InterfaceClaimer> claimed_interface,
+           UsbTransferType transfer_type,
+           scoped_refptr<net::IOBuffer> buffer,
+           size_t length,
+           scoped_refptr<base::TaskRunner> callback_task_runner,
+           const TransferCallback& callback);
+
+  static void LIBUSB_CALL PlatformCallback(PlatformUsbTransferHandle handle);
+
+  UsbTransferType transfer_type_;
+  scoped_refptr<UsbDeviceHandleImpl> device_handle_;
+  PlatformUsbTransferHandle platform_transfer_ = nullptr;
+  scoped_refptr<net::IOBuffer> buffer_;
+  scoped_refptr<UsbDeviceHandleImpl::InterfaceClaimer> claimed_interface_;
+  size_t length_;
+  bool cancelled_ = false;
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  scoped_refptr<base::TaskRunner> callback_task_runner_;
+  TransferCallback callback_;
 };
 
-UsbDeviceHandleImpl::Transfer::Transfer()
-    : transfer_type(USB_TRANSFER_CONTROL), length(0) {
+// static
+scoped_ptr<UsbDeviceHandleImpl::Transfer>
+UsbDeviceHandleImpl::Transfer::CreateControlTransfer(
+    scoped_refptr<UsbDeviceHandleImpl> device_handle,
+    uint8 type,
+    uint8 request,
+    uint16 value,
+    uint16 index,
+    uint16 length,
+    scoped_refptr<net::IOBuffer> buffer,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  scoped_ptr<Transfer> transfer(new Transfer(
+      device_handle, nullptr, USB_TRANSFER_CONTROL, buffer,
+      length + LIBUSB_CONTROL_SETUP_SIZE, callback_task_runner, callback));
+
+  transfer->platform_transfer_ = libusb_alloc_transfer(0);
+  if (!transfer->platform_transfer_) {
+    USB_LOG(ERROR) << "Failed to allocate control transfer.";
+    return nullptr;
+  }
+
+  libusb_fill_control_setup(reinterpret_cast<uint8*>(buffer->data()), type,
+                            request, value, index, length);
+  libusb_fill_control_transfer(transfer->platform_transfer_,
+                               device_handle->handle_,
+                               reinterpret_cast<uint8*>(buffer->data()),
+                               &UsbDeviceHandleImpl::Transfer::PlatformCallback,
+                               transfer.get(), timeout);
+
+  return transfer.Pass();
+}
+
+// static
+scoped_ptr<UsbDeviceHandleImpl::Transfer>
+UsbDeviceHandleImpl::Transfer::CreateBulkTransfer(
+    scoped_refptr<UsbDeviceHandleImpl> device_handle,
+    uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    int length,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  scoped_ptr<Transfer> transfer(new Transfer(
+      device_handle, device_handle->GetClaimedInterfaceForEndpoint(endpoint),
+      USB_TRANSFER_BULK, buffer, length, callback_task_runner, callback));
+
+  transfer->platform_transfer_ = libusb_alloc_transfer(0);
+  if (!transfer->platform_transfer_) {
+    USB_LOG(ERROR) << "Failed to allocate bulk transfer.";
+    return nullptr;
+  }
+
+  libusb_fill_bulk_transfer(
+      transfer->platform_transfer_, device_handle->handle_, endpoint,
+      reinterpret_cast<uint8*>(buffer->data()), static_cast<int>(length),
+      &UsbDeviceHandleImpl::Transfer::PlatformCallback, transfer.get(),
+      timeout);
+
+  return transfer.Pass();
+}
+
+// static
+scoped_ptr<UsbDeviceHandleImpl::Transfer>
+UsbDeviceHandleImpl::Transfer::CreateInterruptTransfer(
+    scoped_refptr<UsbDeviceHandleImpl> device_handle,
+    uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    int length,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  scoped_ptr<Transfer> transfer(new Transfer(
+      device_handle, device_handle->GetClaimedInterfaceForEndpoint(endpoint),
+      USB_TRANSFER_INTERRUPT, buffer, length, callback_task_runner, callback));
+
+  transfer->platform_transfer_ = libusb_alloc_transfer(0);
+  if (!transfer->platform_transfer_) {
+    USB_LOG(ERROR) << "Failed to allocate interrupt transfer.";
+    return nullptr;
+  }
+
+  libusb_fill_interrupt_transfer(
+      transfer->platform_transfer_, device_handle->handle_, endpoint,
+      reinterpret_cast<uint8*>(buffer->data()), static_cast<int>(length),
+      &UsbDeviceHandleImpl::Transfer::PlatformCallback, transfer.get(),
+      timeout);
+
+  return transfer.Pass();
+}
+
+// static
+scoped_ptr<UsbDeviceHandleImpl::Transfer>
+UsbDeviceHandleImpl::Transfer::CreateIsochronousTransfer(
+    scoped_refptr<UsbDeviceHandleImpl> device_handle,
+    uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    size_t length,
+    unsigned int packets,
+    unsigned int packet_length,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  DCHECK(packets <= length && (packets * packet_length) <= length)
+      << "transfer length is too small";
+
+  scoped_ptr<Transfer> transfer(new Transfer(
+      device_handle, device_handle->GetClaimedInterfaceForEndpoint(endpoint),
+      USB_TRANSFER_ISOCHRONOUS, buffer, length, callback_task_runner,
+      callback));
+
+  transfer->platform_transfer_ = libusb_alloc_transfer(packets);
+  if (!transfer->platform_transfer_) {
+    USB_LOG(ERROR) << "Failed to allocate isochronous transfer.";
+    return nullptr;
+  }
+
+  libusb_fill_iso_transfer(
+      transfer->platform_transfer_, device_handle->handle_, endpoint,
+      reinterpret_cast<uint8*>(buffer->data()), static_cast<int>(length),
+      packets, &Transfer::PlatformCallback, transfer.get(), timeout);
+  libusb_set_iso_packet_lengths(transfer->platform_transfer_, packet_length);
+
+  return transfer.Pass();
+}
+
+UsbDeviceHandleImpl::Transfer::Transfer(
+    scoped_refptr<UsbDeviceHandleImpl> device_handle,
+    scoped_refptr<InterfaceClaimer> claimed_interface,
+    UsbTransferType transfer_type,
+    scoped_refptr<net::IOBuffer> buffer,
+    size_t length,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback)
+    : transfer_type_(transfer_type),
+      device_handle_(device_handle),
+      buffer_(buffer),
+      claimed_interface_(claimed_interface),
+      length_(length),
+      callback_task_runner_(callback_task_runner),
+      callback_(callback) {
+  task_runner_ = base::ThreadTaskRunnerHandle::Get();
 }
 
 UsbDeviceHandleImpl::Transfer::~Transfer() {
-}
-
-void UsbDeviceHandleImpl::Transfer::Complete(UsbTransferStatus status,
-                                             size_t bytes_transferred) {
-  if (task_runner->RunsTasksOnCurrentThread()) {
-    callback.Run(status, buffer, bytes_transferred);
-  } else {
-    task_runner->PostTask(
-        FROM_HERE, base::Bind(callback, status, buffer, bytes_transferred));
+  if (platform_transfer_) {
+    libusb_free_transfer(platform_transfer_);
   }
 }
 
-UsbDeviceHandleImpl::UsbDeviceHandleImpl(scoped_refptr<UsbContext> context,
-                                         UsbDeviceImpl* device,
-                                         PlatformUsbDeviceHandle handle,
-                                         const UsbConfigDescriptor& config)
-    : device_(device),
-      handle_(handle),
-      config_(config),
-      context_(context),
-      task_runner_(base::ThreadTaskRunnerHandle::Get()) {
-  DCHECK(handle) << "Cannot create device with NULL handle.";
-}
-
-UsbDeviceHandleImpl::~UsbDeviceHandleImpl() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  libusb_close(handle_);
-  handle_ = NULL;
-}
-
-scoped_refptr<UsbDevice> UsbDeviceHandleImpl::GetDevice() const {
-  return static_cast<UsbDevice*>(device_);
-}
-
-void UsbDeviceHandleImpl::Close() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (device_)
-    device_->Close(this);
-}
-
-bool UsbDeviceHandleImpl::ClaimInterface(const int interface_number) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (!device_)
-    return false;
-  if (ContainsKey(claimed_interfaces_, interface_number))
-    return true;
-
-  scoped_refptr<InterfaceClaimer> claimer =
-      new InterfaceClaimer(this, interface_number);
-
-  if (claimer->Claim()) {
-    claimed_interfaces_[interface_number] = claimer;
-    RefreshEndpointMap();
-    return true;
-  }
-  return false;
-}
-
-bool UsbDeviceHandleImpl::ReleaseInterface(const int interface_number) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (!device_)
-    return false;
-  if (!ContainsKey(claimed_interfaces_, interface_number))
-    return false;
-
-  // Cancel all the transfers on that interface.
-  InterfaceClaimer* interface_claimer =
-      claimed_interfaces_[interface_number].get();
-  for (TransferMap::iterator it = transfers_.begin(); it != transfers_.end();
-       ++it) {
-    if (it->second.claimed_interface.get() == interface_claimer)
-      libusb_cancel_transfer(it->first);
-  }
-  claimed_interfaces_.erase(interface_number);
-
-  RefreshEndpointMap();
-  return true;
-}
-
-bool UsbDeviceHandleImpl::SetInterfaceAlternateSetting(
-    const int interface_number,
-    const int alternate_setting) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (!device_)
-    return false;
-  if (!ContainsKey(claimed_interfaces_, interface_number))
-    return false;
-  const int rv = libusb_set_interface_alt_setting(
-      handle_, interface_number, alternate_setting);
-  if (rv == LIBUSB_SUCCESS) {
-    claimed_interfaces_[interface_number]->set_alternate_setting(
-        alternate_setting);
-    RefreshEndpointMap();
-  } else {
-    VLOG(1) << "Failed to set interface (" << interface_number << ", "
-            << alternate_setting
-            << "): " << ConvertPlatformUsbErrorToString(rv);
-  }
-  return rv == LIBUSB_SUCCESS;
-}
-
-bool UsbDeviceHandleImpl::ResetDevice() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (!device_)
-    return false;
-
-  const int rv = libusb_reset_device(handle_);
+void UsbDeviceHandleImpl::Transfer::Submit() {
+  const int rv = libusb_submit_transfer(platform_transfer_);
   if (rv != LIBUSB_SUCCESS) {
-    VLOG(1) << "Failed to reset device: "
-            << ConvertPlatformUsbErrorToString(rv);
-  }
-  return rv == LIBUSB_SUCCESS;
-}
-
-bool UsbDeviceHandleImpl::GetStringDescriptor(uint8 string_id,
-                                              base::string16* string) {
-  if (!GetSupportedLanguages()) {
-    return false;
-  }
-
-  std::map<uint8, base::string16>::const_iterator it = strings_.find(string_id);
-  if (it != strings_.end()) {
-    *string = it->second;
-    return true;
-  }
-
-  for (size_t i = 0; i < languages_.size(); ++i) {
-    // Get the string using language ID.
-    uint16 language_id = languages_[i];
-    // The 1-byte length field limits the descriptor to 256-bytes (128 char16s).
-    base::char16 text[128];
-    int size =
-        libusb_get_string_descriptor(handle_,
-                                     string_id,
-                                     language_id,
-                                     reinterpret_cast<unsigned char*>(&text[0]),
-                                     sizeof(text));
-    if (size < 0) {
-      VLOG(1) << "Failed to get string descriptor " << string_id << " (langid "
-              << language_id << "): " << ConvertPlatformUsbErrorToString(size);
-      continue;
-    } else if (size < 2) {
-      VLOG(1) << "String descriptor " << string_id << " (langid " << language_id
-              << ") has no header.";
-      continue;
-      // The first 2 bytes of the descriptor are the total length and type tag.
-    } else if ((text[0] & 0xff) != size) {
-      VLOG(1) << "String descriptor " << string_id << " (langid " << language_id
-              << ") size mismatch: " << (text[0] & 0xff) << " != " << size;
-      continue;
-    } else if ((text[0] >> 8) != LIBUSB_DT_STRING) {
-      VLOG(1) << "String descriptor " << string_id << " (langid " << language_id
-              << ") is not a string descriptor.";
-      continue;
-    }
-
-    *string = base::string16(text + 1, (size - 2) / 2);
-    strings_[string_id] = *string;
-    return true;
-  }
-
-  return false;
-}
-
-void UsbDeviceHandleImpl::ControlTransfer(
-    const UsbEndpointDirection direction,
-    const TransferRequestType request_type,
-    const TransferRecipient recipient,
-    const uint8 request,
-    const uint16 value,
-    const uint16 index,
-    net::IOBuffer* buffer,
-    const size_t length,
-    const unsigned int timeout,
-    const UsbTransferCallback& callback) {
-  if (!device_) {
-    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
-    return;
-  }
-
-  const size_t resized_length = LIBUSB_CONTROL_SETUP_SIZE + length;
-  scoped_refptr<net::IOBuffer> resized_buffer(
-      new net::IOBufferWithSize(static_cast<int>(resized_length)));
-  if (!resized_buffer.get()) {
-    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
-    return;
-  }
-  memcpy(resized_buffer->data() + LIBUSB_CONTROL_SETUP_SIZE,
-         buffer->data(),
-         static_cast<int>(length));
-
-  PlatformUsbTransferHandle const transfer = libusb_alloc_transfer(0);
-  const uint8 converted_type =
-      CreateRequestType(direction, request_type, recipient);
-  libusb_fill_control_setup(reinterpret_cast<uint8*>(resized_buffer->data()),
-                            converted_type,
-                            request,
-                            value,
-                            index,
-                            static_cast<int16>(length));
-  libusb_fill_control_transfer(transfer,
-                               handle_,
-                               reinterpret_cast<uint8*>(resized_buffer->data()),
-                               &UsbDeviceHandleImpl::PlatformTransferCallback,
-                               this,
-                               timeout);
-
-  PostOrSubmitTransfer(transfer,
-                       USB_TRANSFER_CONTROL,
-                       resized_buffer.get(),
-                       resized_length,
-                       callback);
-}
-
-void UsbDeviceHandleImpl::BulkTransfer(const UsbEndpointDirection direction,
-                                       const uint8 endpoint,
-                                       net::IOBuffer* buffer,
-                                       const size_t length,
-                                       const unsigned int timeout,
-                                       const UsbTransferCallback& callback) {
-  if (!device_) {
-    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
-    return;
-  }
-
-  PlatformUsbTransferHandle const transfer = libusb_alloc_transfer(0);
-  const uint8 new_endpoint = ConvertTransferDirection(direction) | endpoint;
-  libusb_fill_bulk_transfer(transfer,
-                            handle_,
-                            new_endpoint,
-                            reinterpret_cast<uint8*>(buffer->data()),
-                            static_cast<int>(length),
-                            &UsbDeviceHandleImpl::PlatformTransferCallback,
-                            this,
-                            timeout);
-
-  PostOrSubmitTransfer(transfer, USB_TRANSFER_BULK, buffer, length, callback);
-}
-
-void UsbDeviceHandleImpl::InterruptTransfer(
-    const UsbEndpointDirection direction,
-    const uint8 endpoint,
-    net::IOBuffer* buffer,
-    const size_t length,
-    const unsigned int timeout,
-    const UsbTransferCallback& callback) {
-  if (!device_) {
-    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
-    return;
-  }
-
-  PlatformUsbTransferHandle const transfer = libusb_alloc_transfer(0);
-  const uint8 new_endpoint = ConvertTransferDirection(direction) | endpoint;
-  libusb_fill_interrupt_transfer(transfer,
-                                 handle_,
-                                 new_endpoint,
-                                 reinterpret_cast<uint8*>(buffer->data()),
-                                 static_cast<int>(length),
-                                 &UsbDeviceHandleImpl::PlatformTransferCallback,
-                                 this,
-                                 timeout);
-
-  PostOrSubmitTransfer(
-      transfer, USB_TRANSFER_INTERRUPT, buffer, length, callback);
-}
-
-void UsbDeviceHandleImpl::IsochronousTransfer(
-    const UsbEndpointDirection direction,
-    const uint8 endpoint,
-    net::IOBuffer* buffer,
-    const size_t length,
-    const unsigned int packets,
-    const unsigned int packet_length,
-    const unsigned int timeout,
-    const UsbTransferCallback& callback) {
-  if (!device_) {
-    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
-    return;
-  }
-
-  const uint64 total_length = packets * packet_length;
-  CHECK(packets <= length && total_length <= length)
-      << "transfer length is too small";
-
-  PlatformUsbTransferHandle const transfer = libusb_alloc_transfer(packets);
-  const uint8 new_endpoint = ConvertTransferDirection(direction) | endpoint;
-  libusb_fill_iso_transfer(transfer,
-                           handle_,
-                           new_endpoint,
-                           reinterpret_cast<uint8*>(buffer->data()),
-                           static_cast<int>(length),
-                           packets,
-                           &UsbDeviceHandleImpl::PlatformTransferCallback,
-                           this,
-                           timeout);
-  libusb_set_iso_packet_lengths(transfer, packet_length);
-
-  PostOrSubmitTransfer(
-      transfer, USB_TRANSFER_ISOCHRONOUS, buffer, length, callback);
-}
-
-void UsbDeviceHandleImpl::RefreshEndpointMap() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  endpoint_map_.clear();
-  for (ClaimedInterfaceMap::iterator claimedIt = claimed_interfaces_.begin();
-       claimedIt != claimed_interfaces_.end();
-       ++claimedIt) {
-    for (UsbInterfaceDescriptor::Iterator ifaceIt = config_.interfaces.begin();
-         ifaceIt != config_.interfaces.end();
-         ++ifaceIt) {
-      if (ifaceIt->interface_number == claimedIt->first &&
-          ifaceIt->alternate_setting ==
-              claimedIt->second->alternate_setting()) {
-        for (UsbEndpointDescriptor::Iterator endpointIt =
-                 ifaceIt->endpoints.begin();
-             endpointIt != ifaceIt->endpoints.end();
-             ++endpointIt) {
-          endpoint_map_[endpointIt->address] = claimedIt->first;
-        }
-        break;
-      }
-    }
+    USB_LOG(EVENT) << "Failed to submit transfer: "
+                   << ConvertPlatformUsbErrorToString(rv);
+    TransferComplete(USB_TRANSFER_ERROR, 0);
   }
 }
 
-scoped_refptr<UsbDeviceHandleImpl::InterfaceClaimer>
-UsbDeviceHandleImpl::GetClaimedInterfaceForEndpoint(unsigned char endpoint) {
-  if (ContainsKey(endpoint_map_, endpoint))
-    return claimed_interfaces_[endpoint_map_[endpoint]];
-  return NULL;
-}
-
-void UsbDeviceHandleImpl::PostOrSubmitTransfer(
-    PlatformUsbTransferHandle transfer,
-    UsbTransferType transfer_type,
-    net::IOBuffer* buffer,
-    size_t length,
-    const UsbTransferCallback& callback) {
-  if (task_runner_->RunsTasksOnCurrentThread()) {
-    SubmitTransfer(transfer,
-                   transfer_type,
-                   buffer,
-                   length,
-                   base::ThreadTaskRunnerHandle::Get(),
-                   callback);
-  } else {
-    task_runner_->PostTask(FROM_HERE,
-                           base::Bind(&UsbDeviceHandleImpl::SubmitTransfer,
-                                      this,
-                                      transfer,
-                                      transfer_type,
-                                      make_scoped_refptr(buffer),
-                                      length,
-                                      base::ThreadTaskRunnerHandle::Get(),
-                                      callback));
+void UsbDeviceHandleImpl::Transfer::Cancel() {
+  if (!cancelled_) {
+    libusb_cancel_transfer(platform_transfer_);
+    claimed_interface_ = nullptr;
   }
+  cancelled_ = true;
 }
 
-void UsbDeviceHandleImpl::SubmitTransfer(
-    PlatformUsbTransferHandle handle,
-    UsbTransferType transfer_type,
-    net::IOBuffer* buffer,
-    const size_t length,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    const UsbTransferCallback& callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  Transfer transfer;
-  transfer.transfer_type = transfer_type;
-  transfer.buffer = buffer;
-  transfer.length = length;
-  transfer.callback = callback;
-  transfer.task_runner = task_runner;
-
-  if (!device_) {
-    transfer.Complete(USB_TRANSFER_DISCONNECT, 0);
-    return;
-  }
-
-  // It's OK for this method to return NULL. libusb_submit_transfer will fail if
-  // it requires an interface we didn't claim.
-  transfer.claimed_interface = GetClaimedInterfaceForEndpoint(handle->endpoint);
-
-  const int rv = libusb_submit_transfer(handle);
-  if (rv == LIBUSB_SUCCESS) {
-    transfers_[handle] = transfer;
-  } else {
-    VLOG(1) << "Failed to submit transfer: "
-            << ConvertPlatformUsbErrorToString(rv);
-    transfer.Complete(USB_TRANSFER_ERROR, 0);
-  }
-}
-
-/* static */
-void LIBUSB_CALL UsbDeviceHandleImpl::PlatformTransferCallback(
-    PlatformUsbTransferHandle transfer) {
-  UsbDeviceHandleImpl* device_handle =
-      reinterpret_cast<UsbDeviceHandleImpl*>(transfer->user_data);
-  device_handle->task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(
-          &UsbDeviceHandleImpl::CompleteTransfer, device_handle, transfer));
-}
-
-void UsbDeviceHandleImpl::CompleteTransfer(PlatformUsbTransferHandle handle) {
-  DCHECK(ContainsKey(transfers_, handle)) << "Missing transfer completed";
-
-  Transfer transfer = transfers_[handle];
-  transfers_.erase(handle);
-
-  DCHECK_GE(handle->actual_length, 0) << "Negative actual length received";
+void UsbDeviceHandleImpl::Transfer::ProcessCompletion() {
+  DCHECK_GE(platform_transfer_->actual_length, 0)
+      << "Negative actual length received";
   size_t actual_length =
-      static_cast<size_t>(std::max(handle->actual_length, 0));
+      static_cast<size_t>(std::max(platform_transfer_->actual_length, 0));
 
-  DCHECK(transfer.length >= actual_length)
+  DCHECK(length_ >= actual_length)
       << "data too big for our buffer (libusb failure?)";
 
-  switch (transfer.transfer_type) {
+  switch (transfer_type_) {
     case USB_TRANSFER_CONTROL:
       // If the transfer is a control transfer we do not expose the control
       // setup header to the caller. This logic strips off the header if
       // present before invoking the callback provided with the transfer.
       if (actual_length > 0) {
-        CHECK(transfer.length >= LIBUSB_CONTROL_SETUP_SIZE)
+        CHECK(length_ >= LIBUSB_CONTROL_SETUP_SIZE)
             << "buffer was not correctly set: too small for the control header";
 
-        if (transfer.length >= (LIBUSB_CONTROL_SETUP_SIZE + actual_length)) {
+        if (length_ >= (LIBUSB_CONTROL_SETUP_SIZE + actual_length)) {
           // If the payload is zero bytes long, pad out the allocated buffer
           // size to one byte so that an IOBuffer of that size can be allocated.
           scoped_refptr<net::IOBuffer> resized_buffer =
               new net::IOBuffer(static_cast<int>(
                   std::max(actual_length, static_cast<size_t>(1))));
           memcpy(resized_buffer->data(),
-                 transfer.buffer->data() + LIBUSB_CONTROL_SETUP_SIZE,
-                 actual_length);
-          transfer.buffer = resized_buffer;
+                 buffer_->data() + LIBUSB_CONTROL_SETUP_SIZE, actual_length);
+          buffer_ = resized_buffer;
         }
       }
       break;
@@ -618,16 +438,16 @@ void UsbDeviceHandleImpl::CompleteTransfer(PlatformUsbTransferHandle handle) {
       // data bytes we are effectively providing and pack the results.
       if (actual_length == 0) {
         size_t packet_buffer_start = 0;
-        for (int i = 0; i < handle->num_iso_packets; ++i) {
-          PlatformUsbIsoPacketDescriptor packet = &handle->iso_packet_desc[i];
+        for (int i = 0; i < platform_transfer_->num_iso_packets; ++i) {
+          PlatformUsbIsoPacketDescriptor packet =
+              &platform_transfer_->iso_packet_desc[i];
           if (packet->actual_length > 0) {
             // We don't need to copy as long as all packets until now provide
             // all the data the packet can hold.
             if (actual_length < packet_buffer_start) {
-              CHECK(packet_buffer_start + packet->actual_length <=
-                    transfer.length);
-              memmove(transfer.buffer->data() + actual_length,
-                      transfer.buffer->data() + packet_buffer_start,
+              CHECK(packet_buffer_start + packet->actual_length <= length_);
+              memmove(buffer_->data() + actual_length,
+                      buffer_->data() + packet_buffer_start,
                       packet->actual_length);
             }
             actual_length += packet->actual_length;
@@ -647,45 +467,513 @@ void UsbDeviceHandleImpl::CompleteTransfer(PlatformUsbTransferHandle handle) {
       break;
   }
 
-  transfer.Complete(ConvertTransferStatus(handle->status), actual_length);
-  libusb_free_transfer(handle);
-
-  // Must release interface first before actually delete this.
-  transfer.claimed_interface = NULL;
+  TransferComplete(ConvertTransferStatus(platform_transfer_->status),
+                   actual_length);
 }
 
-bool UsbDeviceHandleImpl::GetSupportedLanguages() {
-  if (!languages_.empty()) {
-    return true;
+/* static */
+void LIBUSB_CALL UsbDeviceHandleImpl::Transfer::PlatformCallback(
+    PlatformUsbTransferHandle platform_transfer) {
+  Transfer* transfer =
+      reinterpret_cast<Transfer*>(platform_transfer->user_data);
+  DCHECK(transfer->platform_transfer_ == platform_transfer);
+  transfer->ProcessCompletion();
+}
+
+void UsbDeviceHandleImpl::Transfer::TransferComplete(UsbTransferStatus status,
+                                                     size_t bytes_transferred) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&UsbDeviceHandleImpl::TransferComplete, device_handle_,
+                 base::Unretained(this),
+                 base::Bind(callback_, status, buffer_, bytes_transferred)));
+}
+
+scoped_refptr<UsbDevice> UsbDeviceHandleImpl::GetDevice() const {
+  return device_;
+}
+
+void UsbDeviceHandleImpl::Close() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (device_)
+    device_->Close(this);
+}
+
+void UsbDeviceHandleImpl::SetConfiguration(int configuration_value,
+                                           const ResultCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!device_) {
+    callback.Run(false);
+    return;
   }
 
-  // The 1-byte length field limits the descriptor to 256-bytes (128 uint16s).
-  uint16 languages[128];
-  int size = libusb_get_string_descriptor(
-      handle_,
-      0,
-      0,
-      reinterpret_cast<unsigned char*>(&languages[0]),
-      sizeof(languages));
-  if (size < 0) {
-    VLOG(1) << "Failed to get list of supported languages: "
-            << ConvertPlatformUsbErrorToString(size);
-    return false;
-  } else if (size < 2) {
-    VLOG(1) << "String descriptor zero has no header.";
-    return false;
-    // The first 2 bytes of the descriptor are the total length and type tag.
-  } else if ((languages[0] & 0xff) != size) {
-    VLOG(1) << "String descriptor zero size mismatch: " << (languages[0] & 0xff)
-            << " != " << size;
-    return false;
-  } else if ((languages[0] >> 8) != LIBUSB_DT_STRING) {
-    VLOG(1) << "String descriptor zero is not a string descriptor.";
-    return false;
+  for (Transfer* transfer : transfers_) {
+    transfer->Cancel();
+  }
+  claimed_interfaces_.clear();
+
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&UsbDeviceHandleImpl::SetConfigurationOnBlockingThread, this,
+                 handle_, configuration_value, callback));
+}
+
+void UsbDeviceHandleImpl::ClaimInterface(int interface_number,
+                                         const ResultCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!device_) {
+    callback.Run(false);
+    return;
+  }
+  if (ContainsKey(claimed_interfaces_, interface_number)) {
+    callback.Run(true);
+    return;
   }
 
-  languages_.assign(languages[1], languages[(size - 2) / 2]);
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&UsbDeviceHandleImpl::ClaimInterfaceOnBlockingThread, this,
+                 handle_, interface_number, callback));
+}
+
+bool UsbDeviceHandleImpl::ReleaseInterface(int interface_number) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!device_)
+    return false;
+  if (!ContainsKey(claimed_interfaces_, interface_number))
+    return false;
+
+  // Cancel all the transfers on that interface.
+  InterfaceClaimer* interface_claimer =
+      claimed_interfaces_[interface_number].get();
+  for (Transfer* transfer : transfers_) {
+    if (transfer->claimed_interface() == interface_claimer) {
+      transfer->Cancel();
+    }
+  }
+  claimed_interfaces_.erase(interface_number);
+
+  RefreshEndpointMap();
   return true;
+}
+
+void UsbDeviceHandleImpl::SetInterfaceAlternateSetting(
+    int interface_number,
+    int alternate_setting,
+    const ResultCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!device_ || !ContainsKey(claimed_interfaces_, interface_number)) {
+    callback.Run(false);
+    return;
+  }
+
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &UsbDeviceHandleImpl::SetInterfaceAlternateSettingOnBlockingThread,
+          this, handle_, interface_number, alternate_setting, callback));
+}
+
+void UsbDeviceHandleImpl::ResetDevice(const ResultCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!device_) {
+    callback.Run(false);
+    return;
+  }
+
+  blocking_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&UsbDeviceHandleImpl::ResetDeviceOnBlockingThread,
+                            this, handle_, callback));
+}
+
+void UsbDeviceHandleImpl::ControlTransfer(UsbEndpointDirection direction,
+                                          TransferRequestType request_type,
+                                          TransferRecipient recipient,
+                                          uint8 request,
+                                          uint16 value,
+                                          uint16 index,
+                                          scoped_refptr<net::IOBuffer> buffer,
+                                          size_t length,
+                                          unsigned int timeout,
+                                          const TransferCallback& callback) {
+  if (task_runner_->BelongsToCurrentThread()) {
+    ControlTransferInternal(direction, request_type, recipient, request, value,
+                            index, buffer, length, timeout, task_runner_,
+                            callback);
+  } else {
+    task_runner_->PostTask(
+        FROM_HERE, base::Bind(&UsbDeviceHandleImpl::ControlTransferInternal,
+                              this, direction, request_type, recipient, request,
+                              value, index, buffer, length, timeout,
+                              base::ThreadTaskRunnerHandle::Get(), callback));
+  }
+}
+
+void UsbDeviceHandleImpl::BulkTransfer(UsbEndpointDirection direction,
+                                       uint8 endpoint,
+                                       scoped_refptr<net::IOBuffer> buffer,
+                                       size_t length,
+                                       unsigned int timeout,
+                                       const TransferCallback& callback) {
+  if (task_runner_->BelongsToCurrentThread()) {
+    BulkTransferInternal(direction, endpoint, buffer, length, timeout,
+                         task_runner_, callback);
+  } else {
+    task_runner_->PostTask(
+        FROM_HERE, base::Bind(&UsbDeviceHandleImpl::BulkTransferInternal, this,
+                              direction, endpoint, buffer, length, timeout,
+                              base::ThreadTaskRunnerHandle::Get(), callback));
+  }
+}
+
+void UsbDeviceHandleImpl::InterruptTransfer(UsbEndpointDirection direction,
+                                            uint8 endpoint,
+                                            scoped_refptr<net::IOBuffer> buffer,
+                                            size_t length,
+                                            unsigned int timeout,
+                                            const TransferCallback& callback) {
+  if (task_runner_->BelongsToCurrentThread()) {
+    InterruptTransferInternal(direction, endpoint, buffer, length, timeout,
+                              task_runner_, callback);
+  } else {
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&UsbDeviceHandleImpl::InterruptTransferInternal, this,
+                   direction, endpoint, buffer, length, timeout,
+                   base::ThreadTaskRunnerHandle::Get(), callback));
+  }
+}
+
+void UsbDeviceHandleImpl::IsochronousTransfer(
+    UsbEndpointDirection direction,
+    uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    size_t length,
+    unsigned int packets,
+    unsigned int packet_length,
+    unsigned int timeout,
+    const TransferCallback& callback) {
+  if (task_runner_->BelongsToCurrentThread()) {
+    IsochronousTransferInternal(direction, endpoint, buffer, length, packets,
+                                packet_length, timeout, task_runner_, callback);
+  } else {
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&UsbDeviceHandleImpl::IsochronousTransferInternal, this,
+                   direction, endpoint, buffer, length, packets, packet_length,
+                   timeout, base::ThreadTaskRunnerHandle::Get(), callback));
+  }
+}
+
+UsbDeviceHandleImpl::UsbDeviceHandleImpl(
+    scoped_refptr<UsbContext> context,
+    scoped_refptr<UsbDeviceImpl> device,
+    PlatformUsbDeviceHandle handle,
+    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner)
+    : device_(device),
+      handle_(handle),
+      context_(context),
+      task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      blocking_task_runner_(blocking_task_runner) {
+  DCHECK(handle) << "Cannot create device with NULL handle.";
+}
+
+UsbDeviceHandleImpl::~UsbDeviceHandleImpl() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  libusb_close(handle_);
+  handle_ = NULL;
+}
+
+void UsbDeviceHandleImpl::SetConfigurationOnBlockingThread(
+    PlatformUsbDeviceHandle handle,
+    int configuration_value,
+    const ResultCallback& callback) {
+  int rv = libusb_set_configuration(handle_, configuration_value);
+  if (rv != LIBUSB_SUCCESS) {
+    USB_LOG(EVENT) << "Failed to set configuration " << configuration_value
+                   << ": " << ConvertPlatformUsbErrorToString(rv);
+  }
+  task_runner_->PostTask(
+      FROM_HERE, base::Bind(&UsbDeviceHandleImpl::SetConfigurationComplete,
+                            this, rv == LIBUSB_SUCCESS, callback));
+}
+
+void UsbDeviceHandleImpl::SetConfigurationComplete(
+    bool success,
+    const ResultCallback& callback) {
+  if (success) {
+    device_->RefreshConfiguration();
+    RefreshEndpointMap();
+  }
+  callback.Run(success);
+}
+
+void UsbDeviceHandleImpl::ClaimInterfaceOnBlockingThread(
+    PlatformUsbDeviceHandle handle,
+    int interface_number,
+    const ResultCallback& callback) {
+  int rv = libusb_claim_interface(handle, interface_number);
+  if (rv != LIBUSB_SUCCESS) {
+    VLOG(1) << "Failed to claim interface: "
+            << ConvertPlatformUsbErrorToString(rv);
+  }
+  task_runner_->PostTask(
+      FROM_HERE, base::Bind(&UsbDeviceHandleImpl::ClaimInterfaceComplete, this,
+                            interface_number, rv == LIBUSB_SUCCESS, callback));
+}
+
+void UsbDeviceHandleImpl::ClaimInterfaceComplete(
+    int interface_number,
+    bool success,
+    const ResultCallback& callback) {
+  if (success) {
+    claimed_interfaces_[interface_number] =
+        new InterfaceClaimer(this, interface_number);
+    RefreshEndpointMap();
+  }
+  callback.Run(success);
+}
+
+void UsbDeviceHandleImpl::SetInterfaceAlternateSettingOnBlockingThread(
+    PlatformUsbDeviceHandle handle,
+    int interface_number,
+    int alternate_setting,
+    const ResultCallback& callback) {
+  int rv = libusb_set_interface_alt_setting(handle, interface_number,
+                                            alternate_setting);
+  if (rv != LIBUSB_SUCCESS) {
+    USB_LOG(EVENT) << "Failed to set interface " << interface_number
+                   << " to alternate setting " << alternate_setting << ": "
+                   << ConvertPlatformUsbErrorToString(rv);
+  }
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&UsbDeviceHandleImpl::SetInterfaceAlternateSettingComplete,
+                 this, interface_number, alternate_setting,
+                 rv == LIBUSB_SUCCESS, callback));
+}
+
+void UsbDeviceHandleImpl::SetInterfaceAlternateSettingComplete(
+    int interface_number,
+    int alternate_setting,
+    bool success,
+    const ResultCallback& callback) {
+  if (success) {
+    claimed_interfaces_[interface_number]->set_alternate_setting(
+        alternate_setting);
+    RefreshEndpointMap();
+  }
+  callback.Run(success);
+}
+
+void UsbDeviceHandleImpl::ResetDeviceOnBlockingThread(
+    PlatformUsbDeviceHandle handle,
+    const ResultCallback& callback) {
+  int rv = libusb_reset_device(handle);
+  if (rv != LIBUSB_SUCCESS) {
+    USB_LOG(EVENT) << "Failed to reset device: "
+                   << ConvertPlatformUsbErrorToString(rv);
+  }
+  task_runner_->PostTask(
+      FROM_HERE, base::Bind(&UsbDeviceHandleImpl::ResetDeviceComplete, this,
+                            rv == LIBUSB_SUCCESS, callback));
+}
+
+void UsbDeviceHandleImpl::ResetDeviceComplete(bool success,
+                                              const ResultCallback& callback) {
+  callback.Run(success);
+}
+
+void UsbDeviceHandleImpl::RefreshEndpointMap() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  endpoint_map_.clear();
+  const UsbConfigDescriptor* config = device_->GetConfiguration();
+  if (config) {
+    for (const auto& map_entry : claimed_interfaces_) {
+      int interface_number = map_entry.first;
+      const scoped_refptr<InterfaceClaimer>& claimed_iface = map_entry.second;
+
+      for (const UsbInterfaceDescriptor& iface : config->interfaces) {
+        if (iface.interface_number == interface_number &&
+            iface.alternate_setting == claimed_iface->alternate_setting()) {
+          for (const UsbEndpointDescriptor& endpoint : iface.endpoints) {
+            endpoint_map_[endpoint.address] = interface_number;
+          }
+          break;
+        }
+      }
+    }
+  }
+}
+
+scoped_refptr<UsbDeviceHandleImpl::InterfaceClaimer>
+UsbDeviceHandleImpl::GetClaimedInterfaceForEndpoint(unsigned char endpoint) {
+  if (ContainsKey(endpoint_map_, endpoint))
+    return claimed_interfaces_[endpoint_map_[endpoint]];
+  return NULL;
+}
+
+void UsbDeviceHandleImpl::ControlTransferInternal(
+    UsbEndpointDirection direction,
+    TransferRequestType request_type,
+    TransferRecipient recipient,
+    uint8 request,
+    uint16 value,
+    uint16 index,
+    scoped_refptr<net::IOBuffer> buffer,
+    size_t length,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (!device_) {
+    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
+    return;
+  }
+
+  if (length > UINT16_MAX) {
+    USB_LOG(USER) << "Transfer too long.";
+    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
+    return;
+  }
+
+  const size_t resized_length = LIBUSB_CONTROL_SETUP_SIZE + length;
+  scoped_refptr<net::IOBuffer> resized_buffer(
+      new net::IOBufferWithSize(static_cast<int>(resized_length)));
+  if (!resized_buffer.get()) {
+    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
+    return;
+  }
+  memcpy(resized_buffer->data() + LIBUSB_CONTROL_SETUP_SIZE, buffer->data(),
+         length);
+
+  scoped_ptr<Transfer> transfer = Transfer::CreateControlTransfer(
+      this, CreateRequestType(direction, request_type, recipient), request,
+      value, index, static_cast<uint16>(length), resized_buffer, timeout,
+      callback_task_runner, callback);
+  if (!transfer) {
+    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
+    return;
+  }
+
+  SubmitTransfer(transfer.Pass());
+}
+
+void UsbDeviceHandleImpl::BulkTransferInternal(
+    const UsbEndpointDirection direction,
+    const uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    const size_t length,
+    const unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (!device_) {
+    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
+    return;
+  }
+
+  if (length > INT_MAX) {
+    USB_LOG(USER) << "Transfer too long.";
+    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
+    return;
+  }
+
+  scoped_ptr<Transfer> transfer = Transfer::CreateBulkTransfer(
+      this, ConvertTransferDirection(direction) | endpoint, buffer,
+      static_cast<int>(length), timeout, callback_task_runner, callback);
+
+  SubmitTransfer(transfer.Pass());
+}
+
+void UsbDeviceHandleImpl::InterruptTransferInternal(
+    UsbEndpointDirection direction,
+    uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    size_t length,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (!device_) {
+    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
+    return;
+  }
+
+  if (length > INT_MAX) {
+    USB_LOG(USER) << "Transfer too long.";
+    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
+    return;
+  }
+
+  scoped_ptr<Transfer> transfer = Transfer::CreateInterruptTransfer(
+      this, ConvertTransferDirection(direction) | endpoint, buffer,
+      static_cast<int>(length), timeout, callback_task_runner, callback);
+
+  SubmitTransfer(transfer.Pass());
+}
+
+void UsbDeviceHandleImpl::IsochronousTransferInternal(
+    const UsbEndpointDirection direction,
+    uint8 endpoint,
+    scoped_refptr<net::IOBuffer> buffer,
+    size_t length,
+    unsigned int packets,
+    unsigned int packet_length,
+    unsigned int timeout,
+    scoped_refptr<base::TaskRunner> callback_task_runner,
+    const TransferCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (!device_) {
+    callback.Run(USB_TRANSFER_DISCONNECT, buffer, 0);
+    return;
+  }
+
+  if (length > INT_MAX) {
+    USB_LOG(USER) << "Transfer too long.";
+    callback.Run(USB_TRANSFER_ERROR, buffer, 0);
+    return;
+  }
+
+  scoped_ptr<Transfer> transfer = Transfer::CreateIsochronousTransfer(
+      this, ConvertTransferDirection(direction) | endpoint, buffer,
+      static_cast<int>(length), packets, packet_length, timeout,
+      callback_task_runner, callback);
+
+  SubmitTransfer(transfer.Pass());
+}
+
+void UsbDeviceHandleImpl::SubmitTransfer(scoped_ptr<Transfer> transfer) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  // Transfer is owned by libusb until its completion callback is run. This
+  // object holds a weak reference.
+  transfers_.insert(transfer.get());
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&Transfer::Submit, base::Unretained(transfer.release())));
+}
+
+void UsbDeviceHandleImpl::TransferComplete(Transfer* transfer,
+                                           const base::Closure& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(ContainsKey(transfers_, transfer)) << "Missing transfer completed";
+  transfers_.erase(transfer);
+
+  if (transfer->callback_task_runner()->RunsTasksOnCurrentThread()) {
+    callback.Run();
+  } else {
+    transfer->callback_task_runner()->PostTask(FROM_HERE, callback);
+  }
+
+  // libusb_free_transfer races with libusb_submit_transfer and only work-
+  // around is to make sure to call them on the same thread.
+  blocking_task_runner_->DeleteSoon(FROM_HERE, transfer);
 }
 
 void UsbDeviceHandleImpl::InternalClose() {
@@ -694,10 +982,9 @@ void UsbDeviceHandleImpl::InternalClose() {
     return;
 
   // Cancel all the transfers.
-  for (TransferMap::iterator it = transfers_.begin(); it != transfers_.end();
-       ++it) {
+  for (Transfer* transfer : transfers_) {
     // The callback will be called some time later.
-    libusb_cancel_transfer(it->first);
+    transfer->Cancel();
   }
 
   // Attempt-release all the interfaces.

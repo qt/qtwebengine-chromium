@@ -63,7 +63,9 @@ namespace blink {
 template <typename T>
 class WebVector {
 public:
-    typedef T ValueType;
+    using ValueType = T;
+    using iterator = T*;
+    using const_iterator = const T*;
 
     ~WebVector()
     {
@@ -146,6 +148,11 @@ public:
     T* data() { return m_ptr; }
     const T* data() const { return m_ptr; }
 
+    iterator begin() { return data(); }
+    iterator end() { return begin() + m_size; }
+    const_iterator begin() const { return data(); }
+    const_iterator end() const { return begin() + m_size; }
+
     void swap(WebVector<T>& other)
     {
         std::swap(m_ptr, other.m_ptr);
@@ -160,9 +167,10 @@ private:
         if (!m_size)
             m_ptr = 0;
         else {
-            m_ptr = static_cast<T*>(::operator new(sizeof(T) * m_size));
+            char* cptr = static_cast<char*>(::operator new(sizeof(T) * m_size));
             for (size_t i = 0; i < m_size; ++i)
-                new (&m_ptr[i]) T();
+                new (&cptr[sizeof(T) * i]) T();
+            m_ptr = reinterpret_cast<T*>(cptr);
         }
     }
 
@@ -174,9 +182,10 @@ private:
         if (!m_size)
             m_ptr = 0;
         else {
-            m_ptr = static_cast<T*>(::operator new(sizeof(T) * m_size));
+            char* cptr = static_cast<char*>(::operator new(sizeof(T) * m_size));
             for (size_t i = 0; i < m_size; ++i)
-                new (&m_ptr[i]) T(values[i]);
+                new (&cptr[sizeof(T) * i]) T(values[i]);
+            m_ptr = reinterpret_cast<T*>(cptr);
         }
     }
 

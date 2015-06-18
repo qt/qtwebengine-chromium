@@ -32,23 +32,22 @@ class CONTENT_EXPORT AndroidVideoEncodeAccelerator
     : public media::VideoEncodeAccelerator {
  public:
   AndroidVideoEncodeAccelerator();
-  virtual ~AndroidVideoEncodeAccelerator();
+  ~AndroidVideoEncodeAccelerator() override;
 
   // media::VideoEncodeAccelerator implementation.
-  virtual std::vector<media::VideoEncodeAccelerator::SupportedProfile>
-      GetSupportedProfiles() override;
-  virtual bool Initialize(media::VideoFrame::Format format,
-                          const gfx::Size& input_visible_size,
-                          media::VideoCodecProfile output_profile,
-                          uint32 initial_bitrate,
-                          Client* client) override;
-  virtual void Encode(const scoped_refptr<media::VideoFrame>& frame,
-                      bool force_keyframe) override;
-  virtual void UseOutputBitstreamBuffer(const media::BitstreamBuffer& buffer)
+  media::VideoEncodeAccelerator::SupportedProfiles GetSupportedProfiles()
       override;
-  virtual void RequestEncodingParametersChange(uint32 bitrate,
-                                               uint32 framerate) override;
-  virtual void Destroy() override;
+  bool Initialize(media::VideoFrame::Format format,
+                  const gfx::Size& input_visible_size,
+                  media::VideoCodecProfile output_profile,
+                  uint32 initial_bitrate,
+                  Client* client) override;
+  void Encode(const scoped_refptr<media::VideoFrame>& frame,
+              bool force_keyframe) override;
+  void UseOutputBitstreamBuffer(const media::BitstreamBuffer& buffer) override;
+  void RequestEncodingParametersChange(uint32 bitrate,
+                                       uint32 framerate) override;
+  void Destroy() override;
 
  private:
   enum {
@@ -86,7 +85,7 @@ class CONTENT_EXPORT AndroidVideoEncodeAccelerator
   // Frames waiting to be passed to the codec, queued until an input buffer is
   // available.  Each element is a tuple of <Frame, key_frame, enqueue_time>.
   typedef std::queue<
-      Tuple3<scoped_refptr<media::VideoFrame>, bool, base::Time> >
+      Tuple<scoped_refptr<media::VideoFrame>, bool, base::Time>>
       PendingFrames;
   PendingFrames pending_frames_;
 

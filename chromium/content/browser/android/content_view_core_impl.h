@@ -13,13 +13,14 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process/process.h"
+#include "content/browser/android/overscroll_refresh.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "url/gurl.h"
 
 namespace ui {
@@ -34,34 +35,33 @@ class RenderFrameHost;
 class RenderWidgetHostViewAndroid;
 struct MenuItem;
 
-// TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
+                            public OverscrollRefreshHandler,
                             public WebContentsObserver {
  public:
   static ContentViewCoreImpl* FromWebContents(WebContents* web_contents);
   ContentViewCoreImpl(JNIEnv* env,
                       jobject obj,
                       WebContents* web_contents,
-                      ui::ViewAndroid* view_android,
+                      jobject view_android,
                       ui::WindowAndroid* window_android,
                       jobject java_bridge_retained_object_set);
 
   // ContentViewCore implementation.
-  virtual base::android::ScopedJavaLocalRef<jobject> GetJavaObject() override;
-  virtual WebContents* GetWebContents() const override;
-  virtual ui::ViewAndroid* GetViewAndroid() const override;
-  virtual ui::WindowAndroid* GetWindowAndroid() const override;
-  virtual scoped_refptr<cc::Layer> GetLayer() const override;
-  virtual void ShowPastePopup(int x, int y) override;
-  virtual void GetScaledContentBitmap(
+  base::android::ScopedJavaLocalRef<jobject> GetJavaObject() override;
+  WebContents* GetWebContents() const override;
+  ui::ViewAndroid* GetViewAndroid() const override;
+  ui::WindowAndroid* GetWindowAndroid() const override;
+  const scoped_refptr<cc::Layer>& GetLayer() const override;
+  void ShowPastePopup(int x, int y) override;
+  void GetScaledContentBitmap(
       float scale,
-      SkColorType color_type,
+      SkColorType preferred_color_type,
       gfx::Rect src_subrect,
-      const base::Callback<void(bool, const SkBitmap&)>& result_callback)
-      override;
-  virtual float GetDpiScale() const override;
-  virtual void PauseOrResumeGeolocation(bool should_pause) override;
-  virtual void RequestTextSurroundingSelection(
+      ReadbackRequestCallback& result_callback) override;
+  float GetDpiScale() const override;
+  void PauseOrResumeGeolocation(bool should_pause) override;
+  void RequestTextSurroundingSelection(
       int max_length,
       const base::Callback<void(const base::string16& content,
                                 int start_offset,
@@ -120,7 +120,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                                jlong time_ms,
                                jfloat x,
                                jfloat y,
-                               jfloat vertical_axis);
+                               jfloat vertical_axis,
+                               jfloat horizontal_axis);
   void ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms,
                    jfloat x, jfloat y, jfloat hintx, jfloat hinty);
   void ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms);
@@ -172,6 +173,16 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void SetAccessibilityEnabled(JNIEnv* env, jobject obj, bool enabled);
 
+  void SetTextTrackSettings(JNIEnv* env,
+                            jobject obj,
+                            jstring textTrackBackgroundColor,
+                            jstring textTrackFontFamily,
+                            jstring textTrackFontStyle,
+                            jstring textTrackFontVariant,
+                            jstring textTrackTextColor,
+                            jstring textTrackTextShadow,
+                            jstring textTrackTextSize);
+
   void ExtractSmartClipData(JNIEnv* env,
                             jobject obj,
                             jint x,
@@ -180,6 +191,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                             jint height);
 
   void SetBackgroundOpaque(JNIEnv* env, jobject jobj, jboolean opaque);
+  void SetDrawsContent(JNIEnv* env, jobject jobj, jboolean draws);
 
   jint GetCurrentRenderProcessId(JNIEnv* env, jobject obj);
 
@@ -210,7 +222,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                        const gfx::SizeF& content_size,
                        const gfx::SizeF& viewport_size,
                        const gfx::Vector2dF& controls_offset,
-                       const gfx::Vector2dF& content_offset);
+                       const gfx::Vector2dF& content_offset,
+                       bool is_mobile_optimized_hint);
 
   void UpdateImeAdapter(long native_ime_adapter,
                         int text_input_type,
@@ -226,13 +239,15 @@ class ContentViewCoreImpl : public ContentViewCore,
   void OnBackgroundColorChanged(SkColor color);
 
   bool HasFocus();
+  void RequestDisallowInterceptTouchEvent();
   void OnGestureEventAck(const blink::WebGestureEvent& event,
                          InputEventAckState ack_result);
   bool FilterInputEvent(const blink::WebInputEvent& event);
   void OnSelectionChanged(const std::string& text);
-  void OnSelectionEvent(SelectionEventType event,
-                        const gfx::PointF& anchor_position);
-  scoped_ptr<TouchHandleDrawable> CreatePopupTouchHandleDrawable();
+  void OnSelectionEvent(ui::SelectionEventType event,
+                        const gfx::PointF& selection_anchor,
+                        const gfx::RectF& selection_rect);
+  scoped_ptr<ui::TouchHandleDrawable> CreatePopupTouchHandleDrawable();
 
   void StartContentIntent(const GURL& content_url);
 
@@ -268,7 +283,8 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   gfx::Size GetPhysicalBackingSize() const;
   gfx::Size GetViewportSizeDip() const;
-  float GetTopControlsLayoutHeightDip() const;
+  bool DoTopControlsShrinkBlinkSize() const;
+  float GetTopControlsHeightDip() const;
 
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
@@ -278,17 +294,25 @@ class ContentViewCoreImpl : public ContentViewCore,
   void SelectBetweenCoordinates(const gfx::PointF& base,
                                 const gfx::PointF& extent);
 
+  void OnShowUnhandledTapUIIfNeeded(int x_dip, int y_dip);
+
  private:
   class ContentViewUserData;
 
   friend class ContentViewUserData;
-  virtual ~ContentViewCoreImpl();
+  ~ContentViewCoreImpl() override;
 
   // WebContentsObserver implementation.
-  virtual void RenderViewReady() override;
-  virtual void RenderViewHostChanged(RenderViewHost* old_host,
-                                     RenderViewHost* new_host) override;
-  virtual void WebContentsDestroyed() override;
+  void RenderViewReady() override;
+  void RenderViewHostChanged(RenderViewHost* old_host,
+                             RenderViewHost* new_host) override;
+  void WebContentsDestroyed() override;
+
+  // OverscrollRefreshHandler implementation.
+  bool PullStart() override;
+  void PullUpdate(float delta) override;
+  void PullRelease(bool allow_refresh) override;
+  void PullReset() override;
 
   // --------------------------------------------------------------------------
   // Other private methods and data
@@ -296,13 +320,13 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void InitWebContents();
 
-  RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid();
+  RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid() const;
 
   blink::WebGestureEvent MakeGestureEvent(
       blink::WebInputEvent::Type type, int64 time_ms, float x, float y) const;
 
   gfx::Size GetViewportSizePix() const;
-  int GetTopControlsLayoutHeightPix() const;
+  int GetTopControlsHeightPix() const;
 
   void SendGestureEvent(const blink::WebGestureEvent& event);
 
@@ -329,7 +353,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // The Android view that can be used to add and remove decoration layers
   // like AutofillPopup.
-  ui::ViewAndroid* view_android_;
+  scoped_ptr<ui::ViewAndroid> view_android_;
 
   // The owning window that has a hold of main application activity.
   ui::WindowAndroid* window_android_;
@@ -341,8 +365,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   bool accessibility_enabled_;
 
   // Manages injecting Java objects.
-  scoped_ptr<GinJavaBridgeDispatcherHost>
-      java_bridge_dispatcher_host_;
+  scoped_refptr<GinJavaBridgeDispatcherHost> java_bridge_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

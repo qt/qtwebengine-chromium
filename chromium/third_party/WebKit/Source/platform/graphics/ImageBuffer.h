@@ -32,16 +32,23 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/Canvas2DLayerBridge.h"
-#include "platform/graphics/ColorSpace.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBufferSurface.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/transforms/AffineTransform.h"
+#include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Uint8ClampedArray.h"
+
+namespace WTF {
+
+class ArrayBufferContents;
+
+} // namespace WTF
 
 namespace blink {
 
@@ -69,7 +76,7 @@ enum ScaleBehavior {
 };
 
 class PLATFORM_EXPORT ImageBuffer {
-    WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED(ImageBuffer);
 public:
     static PassOwnPtr<ImageBuffer> create(const IntSize&, OpacityMode = NonOpaque);
     static PassOwnPtr<ImageBuffer> create(PassOwnPtr<ImageBufferSurface>);
@@ -80,14 +87,23 @@ public:
 
     const IntSize& size() const { return m_surface->size(); }
     bool isAccelerated() const { return m_surface->isAccelerated(); }
+    bool isRecording() const { return m_surface->isRecording(); }
+    void setHasExpensiveOp() { m_surface->setHasExpensiveOp(); }
+    bool isExpensiveToPaint() const { return m_surface->isExpensiveToPaint(); }
     bool isSurfaceValid() const;
     bool restoreSurface() const;
+    void didDraw(const FloatRect& rect) const { m_surface->didDraw(rect); }
 
+    void setFilterQuality(SkFilterQuality filterQuality) { m_surface->setFilterQuality(filterQuality); }
     void setIsHidden(bool hidden) { m_surface->setIsHidden(hidden); }
+
+    // Called by subclasses of ImageBufferSurface to install a new canvas object
+    void resetCanvas(SkCanvas*);
 
     void willDrawVideo() { m_surface->willDrawVideo(); }
 
-    GraphicsContext* context() const;
+    GraphicsContext* context() const; // Deprecated: use canvas()
+    SkCanvas* canvas() const;
 
     // Called at the end of a task that rendered a whole frame
     void finalizeFrame(const FloatRect &dirtyRect);
@@ -97,18 +113,20 @@ public:
 
     const SkBitmap& bitmap() const;
 
+    void willAccessPixels() { m_surface->willAccessPixels(); }
+    void willOverwriteCanvas() { m_surface->willOverwriteCanvas(); }
+
     PassRefPtr<Image> copyImage(BackingStoreCopy = CopyBackingStore, ScaleBehavior = Scaled) const;
     // Give hints on the faster copyImage Mode, return DontCopyBackingStore if it supports the DontCopyBackingStore behavior
     // or return CopyBackingStore if it doesn't.
     static BackingStoreCopy fastCopyImageMode();
 
-    PassRefPtr<Uint8ClampedArray> getImageData(Multiply, const IntRect&) const;
+    bool getImageData(Multiply, const IntRect&, WTF::ArrayBufferContents&) const;
 
-    void putByteArray(Multiply, Uint8ClampedArray*, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint);
+    void putByteArray(Multiply, const unsigned char* source, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint);
 
     String toDataURL(const String& mimeType, const double* quality = 0) const;
     AffineTransform baseTransform() const { return AffineTransform(); }
-    void transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
     WebLayer* platformLayer() const;
 
     // FIXME: current implementations of this method have the restriction that they only work
@@ -120,7 +138,7 @@ public:
     Platform3DObject getBackingTexture();
     void didModifyBackingTexture();
 
-    bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*, bool fromFrontBuffer = false);
+    bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*, SourceDrawingBuffer);
 
     void flush();
 
@@ -128,17 +146,15 @@ public:
 
     PassRefPtr<SkImage> newImageSnapshot() const;
 
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "ImageBuffer"; }
+
 private:
     ImageBuffer(PassOwnPtr<ImageBufferSurface>);
 
-    void draw(GraphicsContext*, const FloatRect&, const FloatRect* = 0, CompositeOperator = CompositeSourceOver, WebBlendMode = WebBlendModeNormal);
-    void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, WebBlendMode, const IntSize& repeatSpacing = IntSize());
-    static PassRefPtr<SkColorFilter> createColorSpaceFilter(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect*, SkXfermode::Mode);
 
     friend class GraphicsContext;
-    friend class GeneratedImage;
-    friend class CrossfadeGeneratedImage;
-    friend class GradientGeneratedImage;
     friend class SkiaImageFilterBuilder;
 
     OwnPtr<ImageBufferSurface> m_surface;
@@ -147,15 +163,14 @@ private:
 };
 
 struct ImageDataBuffer {
-    ImageDataBuffer(const IntSize& size, PassRefPtr<Uint8ClampedArray> data) : m_size(size), m_data(data) { }
-    IntSize size() const { return m_size; }
-    unsigned char* data() const { return m_data->data(); }
-
+    ImageDataBuffer(const IntSize& size, unsigned char* data) : m_data(data), m_size(size) { }
+    String PLATFORM_EXPORT toDataURL(const String& mimeType, const double* quality) const;
+    unsigned char* pixels() const { return m_data; }
+    int height() const { return m_size.height(); }
+    int width() const { return m_size.width(); }
+    unsigned char* m_data;
     IntSize m_size;
-    RefPtr<Uint8ClampedArray> m_data;
 };
-
-String PLATFORM_EXPORT ImageDataToDataURL(const ImageDataBuffer&, const String& mimeType, const double* quality);
 
 } // namespace blink
 

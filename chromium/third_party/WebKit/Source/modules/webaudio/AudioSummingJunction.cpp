@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioSummingJunction.h"
 
 #include "modules/webaudio/AudioContext.h"
@@ -34,49 +32,36 @@
 
 namespace blink {
 
-AudioSummingJunction::AudioSummingJunction(AudioContext* context)
-    : m_context(context)
+AudioSummingJunction::AudioSummingJunction(DeferredTaskHandler& handler)
+    : m_deferredTaskHandler(handler)
     , m_renderingStateNeedUpdating(false)
-    , m_didCallDispose(false)
 {
-    ASSERT(context);
-    m_context->registerLiveAudioSummingJunction(*this);
-}
-
-void AudioSummingJunction::dispose()
-{
-    m_didCallDispose = true;
-    m_context->removeMarkedSummingJunction(this);
 }
 
 AudioSummingJunction::~AudioSummingJunction()
 {
-}
-
-void AudioSummingJunction::trace(Visitor* visitor)
-{
-    visitor->trace(m_context);
+    deferredTaskHandler().removeMarkedSummingJunction(this);
 }
 
 void AudioSummingJunction::changedOutputs()
 {
-    ASSERT(context()->isGraphOwner());
-    if (!m_renderingStateNeedUpdating && !m_didCallDispose) {
-        context()->markSummingJunctionDirty(this);
+    ASSERT(deferredTaskHandler().isGraphOwner());
+    if (!m_renderingStateNeedUpdating) {
+        deferredTaskHandler().markSummingJunctionDirty(this);
         m_renderingStateNeedUpdating = true;
     }
 }
 
 void AudioSummingJunction::updateRenderingState()
 {
-    ASSERT(context()->isAudioThread() && context()->isGraphOwner());
+    ASSERT(deferredTaskHandler().isAudioThread());
+    ASSERT(deferredTaskHandler().isGraphOwner());
     if (m_renderingStateNeedUpdating) {
         // Copy from m_outputs to m_renderingOutputs.
         m_renderingOutputs.resize(m_outputs.size());
         unsigned j = 0;
-        for (HashSet<AudioNodeOutput*>::iterator i = m_outputs.begin(); i != m_outputs.end(); ++i, ++j) {
-            AudioNodeOutput* output = *i;
-            m_renderingOutputs[j] = output;
+        for (AudioNodeOutput* output : m_outputs) {
+            m_renderingOutputs[j++] = output;
             output->updateRenderingState();
         }
 

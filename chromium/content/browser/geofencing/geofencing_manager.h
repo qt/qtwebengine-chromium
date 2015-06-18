@@ -14,9 +14,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/geofencing/geofencing_registration_delegate.h"
+#include "content/browser/service_worker/service_worker_context_observer.h"
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/common/content_export.h"
-#include "content/common/geofencing_status.h"
+#include "content/common/geofencing_types.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 
 template <typename T>
@@ -30,6 +31,7 @@ struct WebCircularGeofencingRegion;
 namespace content {
 
 class GeofencingService;
+class MockGeofencingService;
 class ServiceWorkerContextWrapper;
 class ServiceWorkerRegistration;
 
@@ -41,10 +43,9 @@ class ServiceWorkerRegistration;
 // This class is created on the UI thread, but all its methods should only be
 // called from the IO thread.
 // TODO(mek): Implement some kind of persistence of registrations.
-// TODO(mek): Unregister a geofence when the ServiceWorkerRegistration it
-//    belongs to goes away.
 class CONTENT_EXPORT GeofencingManager
     : NON_EXPORTED_BASE(public GeofencingRegistrationDelegate),
+      NON_EXPORTED_BASE(public ServiceWorkerContextObserver),
       public base::RefCountedThreadSafe<GeofencingManager> {
  public:
   typedef base::Callback<void(GeofencingStatus)> StatusCallback;
@@ -89,6 +90,14 @@ class CONTENT_EXPORT GeofencingManager
       int64 service_worker_registration_id,
       std::map<std::string, blink::WebCircularGeofencingRegion>* result);
 
+  // Enables or disables mock geofencing service.
+  void SetMockProvider(GeofencingMockState mock_state);
+
+  // Set the mock geofencing position.
+  // TODO(mek): Unify this mock position with the devtools exposed geolocation
+  // mock position (http://crbug.com/440902).
+  void SetMockPosition(double latitude, double longitude);
+
   void SetServiceForTesting(GeofencingService* service) {
     service_ = service;
   }
@@ -103,6 +112,10 @@ class CONTENT_EXPORT GeofencingManager
 
   void InitOnIO();
   void ShutdownOnIO();
+
+  // ServiceWorkerContextObserver implementation.
+  void OnRegistrationDeleted(int64 service_worker_registration_id,
+                             const GURL& pattern) override;
 
   // GeofencingRegistrationDelegate implementation.
   void RegistrationFinished(int64 geofencing_registration_id,
@@ -131,6 +144,10 @@ class CONTENT_EXPORT GeofencingManager
 
   // Clears a registration.
   void ClearRegistration(Registration* registration);
+
+  // Unregisters and clears all registrations associated with a specific
+  // service worker.
+  void CleanUpForServiceWorker(int64 service_worker_registration_id);
 
   // Starts dispatching a particular geofencing |event_type| for the geofence
   // registration with the given ID. This first looks up the Service Worker
@@ -169,6 +186,7 @@ class CONTENT_EXPORT GeofencingManager
   RegistrationIdRegistrationMap registrations_by_id_;
 
   GeofencingService* service_;
+  scoped_ptr<MockGeofencingService> mock_service_;
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
 
   DISALLOW_COPY_AND_ASSIGN(GeofencingManager);

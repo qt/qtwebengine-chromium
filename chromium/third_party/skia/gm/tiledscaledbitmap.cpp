@@ -31,19 +31,15 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("tiledscaledbitmap");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(1016, 616);
     }
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
-
-    static SkBitmap make_bm(int width, int height) { 
+    static SkBitmap make_bm(int width, int height) {
         SkBitmap bm;
         bm.allocN32Pixels(width, height);
         bm.eraseColor(SK_ColorTRANSPARENT);
@@ -51,18 +47,18 @@ protected:
         SkPaint paint;
         paint.setAntiAlias(true);
         canvas.drawCircle(width/2.f, height/2.f, width/4.f, paint);
-        return bm; 
+        return bm;
     }
 
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         fBitmap = make_bm(360, 288);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
 
         paint.setAntiAlias(true);
-        paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
+        paint.setFilterQuality(kHigh_SkFilterQuality);
 
         SkMatrix mat;
         mat.setScale(121.f/360.f, 93.f/288.f);

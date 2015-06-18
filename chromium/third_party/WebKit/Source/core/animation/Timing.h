@@ -46,12 +46,16 @@ struct Timing {
         FillModeBoth
     };
 
+    static String fillModeString(FillMode);
+
     enum PlaybackDirection {
         PlaybackDirectionNormal,
         PlaybackDirectionReverse,
         PlaybackDirectionAlternate,
         PlaybackDirectionAlternateReverse
     };
+
+    static String playbackDirectionString(PlaybackDirection);
 
     static const Timing& defaults()
     {
@@ -82,6 +86,20 @@ struct Timing {
         ASSERT(std::isnan(iterationDuration) || iterationDuration >= 0);
         ASSERT(std::isfinite(playbackRate));
         ASSERT(timingFunction);
+    }
+
+    bool operator==(const Timing &other) const
+    {
+        return startDelay == other.startDelay && endDelay == other.endDelay
+            && fillMode == other.fillMode && iterationStart == other.iterationStart
+            && iterationCount == other.iterationCount && iterationDuration == other.iterationDuration
+            && playbackRate == other.playbackRate && direction == other.direction
+            && *timingFunction == *other.timingFunction;
+    }
+
+    bool operator!=(const Timing &other) const
+    {
+        return !(*this == other);
     }
 
     double startDelay;

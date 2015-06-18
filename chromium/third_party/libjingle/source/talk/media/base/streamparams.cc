@@ -31,10 +31,74 @@
 #include <sstream>
 
 namespace cricket {
+namespace {
+// NOTE: There is no check here for duplicate streams, so check before
+// adding.
+void AddStream(std::vector<StreamParams>* streams, const StreamParams& stream) {
+  streams->push_back(stream);
+}
+}
 
 const char kFecSsrcGroupSemantics[] = "FEC";
 const char kFidSsrcGroupSemantics[] = "FID";
 const char kSimSsrcGroupSemantics[] = "SIM";
+
+bool GetStream(const StreamParamsVec& streams,
+               const StreamSelector& selector,
+               StreamParams* stream_out) {
+  const StreamParams* found = GetStream(streams, selector);
+  if (found && stream_out)
+    *stream_out = *found;
+  return found != nullptr;
+}
+
+bool MediaStreams::GetAudioStream(
+    const StreamSelector& selector, StreamParams* stream) {
+  return GetStream(audio_, selector, stream);
+}
+
+bool MediaStreams::GetVideoStream(
+    const StreamSelector& selector, StreamParams* stream) {
+  return GetStream(video_, selector, stream);
+}
+
+bool MediaStreams::GetDataStream(
+    const StreamSelector& selector, StreamParams* stream) {
+  return GetStream(data_, selector, stream);
+}
+
+void MediaStreams::CopyFrom(const MediaStreams& streams) {
+  audio_ = streams.audio_;
+  video_ = streams.video_;
+  data_ = streams.data_;
+}
+
+void MediaStreams::AddAudioStream(const StreamParams& stream) {
+  AddStream(&audio_, stream);
+}
+
+void MediaStreams::AddVideoStream(const StreamParams& stream) {
+  AddStream(&video_, stream);
+}
+
+void MediaStreams::AddDataStream(const StreamParams& stream) {
+  AddStream(&data_, stream);
+}
+
+bool MediaStreams::RemoveAudioStream(
+    const StreamSelector& selector) {
+  return RemoveStream(&audio_, selector);
+}
+
+bool MediaStreams::RemoveVideoStream(
+    const StreamSelector& selector) {
+  return RemoveStream(&video_, selector);
+}
+
+bool MediaStreams::RemoveDataStream(
+    const StreamSelector& selector) {
+  return RemoveStream(&data_, selector);
+}
 
 static std::string SsrcsToString(const std::vector<uint32>& ssrcs) {
   std::ostringstream ost;
@@ -147,58 +211,6 @@ bool StreamParams::GetSecondarySsrc(const std::string& semantics,
     }
   }
   return false;
-}
-
-bool GetStream(const StreamParamsVec& streams,
-               const StreamSelector& selector,
-               StreamParams* stream_out) {
-  for (StreamParamsVec::const_iterator stream = streams.begin();
-       stream != streams.end(); ++stream) {
-    if (selector.Matches(*stream)) {
-      if (stream_out != NULL) {
-        *stream_out = *stream;
-      }
-      return true;
-    }
-  }
-  return false;
-}
-
-bool GetStreamBySsrc(const StreamParamsVec& streams, uint32 ssrc,
-                     StreamParams* stream_out) {
-  return GetStream(streams, StreamSelector(ssrc), stream_out);
-}
-
-bool GetStreamByIds(const StreamParamsVec& streams,
-                    const std::string& groupid,
-                    const std::string& id,
-                    StreamParams* stream_out) {
-  return GetStream(streams, StreamSelector(groupid, id), stream_out);
-}
-
-bool RemoveStream(StreamParamsVec* streams,
-                  const StreamSelector& selector) {
-  bool ret = false;
-  for (StreamParamsVec::iterator stream = streams->begin();
-       stream != streams->end(); ) {
-    if (selector.Matches(*stream)) {
-      stream = streams->erase(stream);
-      ret = true;
-    } else {
-      ++stream;
-    }
-  }
-  return ret;
-}
-
-bool RemoveStreamBySsrc(StreamParamsVec* streams, uint32 ssrc) {
-  return RemoveStream(streams, StreamSelector(ssrc));
-}
-
-bool RemoveStreamByIds(StreamParamsVec* streams,
-                       const std::string& groupid,
-                       const std::string& id) {
-  return RemoveStream(streams, StreamSelector(groupid, id));
 }
 
 bool IsOneSsrcStream(const StreamParams& sp) {

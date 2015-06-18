@@ -8,6 +8,8 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/thread_checker.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "media/base/cdm_factory.h"
 #include "media/base/media_keys.h"
 
@@ -17,34 +19,41 @@
 
 class GURL;
 
+namespace media {
+struct CdmConfig;
+}  // namespace media
+
 namespace content {
 
 #if defined(ENABLE_BROWSER_CDMS)
 class RendererCdmManager;
 #endif
 
-class RenderCdmFactory : public media::CdmFactory {
+// CdmFactory implementation in content/renderer. This class is not thread safe
+// and should only be used on one thread.
+class RenderCdmFactory : public media::CdmFactory, public RenderFrameObserver {
  public:
+  RenderCdmFactory(
 #if defined(ENABLE_PEPPER_CDMS)
-  explicit RenderCdmFactory(const CreatePepperCdmCB& create_pepper_cdm_cb);
+      const CreatePepperCdmCB& create_pepper_cdm_cb,
 #elif defined(ENABLE_BROWSER_CDMS)
-  explicit RenderCdmFactory(RendererCdmManager* manager);
-#else
-  RenderCdmFactory();
+      RendererCdmManager* manager,
 #endif  // defined(ENABLE_PEPPER_CDMS)
+      RenderFrame* render_frame);
 
   ~RenderCdmFactory() override;
 
-  scoped_ptr<media::MediaKeys> Create(
+  // CdmFactory implementation.
+  void Create(
       const std::string& key_system,
       const GURL& security_origin,
+      const media::CdmConfig& cdm_config,
       const media::SessionMessageCB& session_message_cb,
-      const media::SessionReadyCB& session_ready_cb,
       const media::SessionClosedCB& session_closed_cb,
-      const media::SessionErrorCB& session_error_cb,
+      const media::LegacySessionErrorCB& legacy_session_error_cb,
       const media::SessionKeysChangeCB& session_keys_change_cb,
-      const media::SessionExpirationUpdateCB& session_expiration_update_cb)
-      override;
+      const media::SessionExpirationUpdateCB& session_expiration_update_cb,
+      const media::CdmCreatedCB& cdm_created_cb) override;
 
  private:
 #if defined(ENABLE_PEPPER_CDMS)
@@ -53,6 +62,8 @@ class RenderCdmFactory : public media::CdmFactory {
   // The |manager_| is a per render frame object owned by RenderFrameImpl.
   RendererCdmManager* manager_;
 #endif
+
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderCdmFactory);
 };

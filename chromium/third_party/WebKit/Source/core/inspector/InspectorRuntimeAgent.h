@@ -41,21 +41,28 @@ namespace blink {
 class InjectedScript;
 class InjectedScriptManager;
 class JSONArray;
-class ScriptState;
 class ScriptDebugServer;
+class ScriptState;
 
 typedef String ErrorString;
 
-class InspectorRuntimeAgent : public InspectorBaseAgent<InspectorRuntimeAgent>, public InspectorBackendDispatcher::RuntimeCommandHandler {
+class InspectorRuntimeAgent : public InspectorBaseAgent<InspectorRuntimeAgent, InspectorFrontend::Runtime>, public InspectorBackendDispatcher::RuntimeCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorRuntimeAgent);
 public:
+    class Client {
+    public:
+        virtual ~Client() { }
+
+        virtual void resumeStartup() { }
+        virtual bool isRunRequired() { return false; }
+    };
+
     virtual ~InspectorRuntimeAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Part of the protocol.
-    virtual void enable(ErrorString*) override;
-    virtual void disable(ErrorString*) override final;
-    virtual void evaluate(ErrorString*,
+    void enable(ErrorString*) override;
+    void evaluate(ErrorString*,
         const String& expression,
         const String* objectGroup,
         const bool* includeCommandLineAPI,
@@ -66,7 +73,7 @@ public:
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
         TypeBuilder::OptOutput<bool>* wasThrown,
         RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override final;
-    virtual void callFunctionOn(ErrorString*,
+    void callFunctionOn(ErrorString*,
                         const String& objectId,
                         const String& expression,
                         const RefPtr<JSONArray>* optionalArguments,
@@ -75,18 +82,18 @@ public:
                         const bool* generatePreview,
                         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
                         TypeBuilder::OptOutput<bool>* wasThrown) override final;
-    virtual void releaseObject(ErrorString*, const String& objectId) override final;
-    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties) override final;
-    virtual void releaseObjectGroup(ErrorString*, const String& objectGroup) override final;
-    virtual void run(ErrorString*) override;
-    virtual void isRunRequired(ErrorString*, bool* out_result) override;
+    void releaseObject(ErrorString*, const String& objectId) override final;
+    void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, const bool* generatePreview, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor>>& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor>>& internalProperties, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override final;
+    void releaseObjectGroup(ErrorString*, const String& objectGroup) override final;
+    void run(ErrorString*) override;
+    void isRunRequired(ErrorString*, bool* out_result) override;
+    void setCustomObjectFormatterEnabled(ErrorString*, bool) override final;
 
-    virtual void setFrontend(InspectorFrontend*) override final;
-    virtual void clearFrontend() override final;
-    virtual void restore() override final;
+    void disable(ErrorString*) override final;
+    void restore() override final;
 
 protected:
-    InspectorRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*);
+    InspectorRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*, Client*);
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
 
     virtual void muteConsole() = 0;
@@ -96,14 +103,16 @@ protected:
     void addExecutionContextToFrontend(ScriptState*, bool isPageContext, const String& origin, const String& frameId);
 
     bool m_enabled;
-    InspectorFrontend::Runtime* m_frontend;
 
     typedef HashMap<RefPtr<ScriptState>, int> ScriptStateToId;
     ScriptStateToId m_scriptStateToId;
 
 private:
+    class InjectedScriptCallScope;
+
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     ScriptDebugServer* m_scriptDebugServer;
+    Client* m_client;
 };
 
 } // namespace blink

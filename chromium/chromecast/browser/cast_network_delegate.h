@@ -5,7 +5,7 @@
 #ifndef CHROMECAST_BROWSER_CAST_NETWORK_DELEGATE_H_
 #define CHROMECAST_BROWSER_CAST_NETWORK_DELEGATE_H_
 
-#include "net/base/network_delegate.h"
+#include "net/base/network_delegate_impl.h"
 
 namespace net {
 class X509Certificate;
@@ -14,22 +14,23 @@ class X509Certificate;
 namespace chromecast {
 namespace shell {
 
-class CastNetworkDelegate : public net::NetworkDelegate {
+class CastNetworkDelegate : public net::NetworkDelegateImpl {
  public:
   static CastNetworkDelegate* Create();
   static net::X509Certificate* DeviceCert();
 
   CastNetworkDelegate();
-  virtual ~CastNetworkDelegate();
+  ~CastNetworkDelegate() override;
 
   virtual void Initialize(bool use_sync_signing) = 0;
 
-  virtual bool IsWhitelisted(const GURL& gurl, bool for_device_auth) const = 0;
+  virtual bool IsWhitelisted(const GURL& gurl, int render_process_id,
+                             bool for_device_auth) const = 0;
 
  private:
   // net::NetworkDelegate implementation:
-  virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const base::FilePath& path) const override;
+  bool OnCanAccessFile(const net::URLRequest& request,
+                       const base::FilePath& path) const override;
 
   DISALLOW_COPY_AND_ASSIGN(CastNetworkDelegate);
 };

@@ -51,7 +51,7 @@ WebInspector.LinkifierFormatter.prototype = {
 WebInspector.Linkifier = function(formatter)
 {
     this._formatter = formatter || new WebInspector.Linkifier.DefaultFormatter(WebInspector.Linkifier.MaxLengthForDisplayedURLs);
-    /** @type {!Map.<!WebInspector.Target, !Array.<{anchor: !Element, location: !WebInspector.LiveLocation}>>}*/
+    /** @type {!Map.<!WebInspector.Target, !Map.<!Element, !WebInspector.LiveLocation>>}*/
     this._liveLocationsByTarget = new Map();
     WebInspector.targetManager.observeTargets(this);
 }
@@ -73,7 +73,7 @@ WebInspector.Linkifier.handleLink = function(url, lineNumber)
 {
     if (!WebInspector.Linkifier._linkHandler)
         return false;
-    return WebInspector.Linkifier._linkHandler.handleLink(url, lineNumber)
+    return WebInspector.Linkifier._linkHandler.handleLink(url, lineNumber);
 }
 
 /**
@@ -112,32 +112,41 @@ WebInspector.Linkifier.linkifyUsingRevealer = function(revealable, text, fallbac
     return a;
 }
 
+WebInspector.Linkifier._uiLocationSymbol = Symbol("uiLocation");
+WebInspector.Linkifier._fallbackAnchorSymbol = Symbol("fallbackAnchor");;
+
 WebInspector.Linkifier.prototype = {
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetAdded: function(target)
     {
-        this._liveLocationsByTarget.set(target, []);
+        this._liveLocationsByTarget.set(target, new Map());
     },
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetRemoved: function(target)
     {
         var liveLocations = this._liveLocationsByTarget.remove(target);
-        for (var i = 0; i < liveLocations.length; ++i) {
-            delete liveLocations[i].anchor.__uiLocation;
-            var anchor = liveLocations[i].anchor;
-            if (anchor.__fallbackAnchor) {
-                anchor.href = anchor.__fallbackAnchor.href;
-                anchor.lineNumber = anchor.__fallbackAnchor.lineNumber;
-                anchor.title = anchor.__fallbackAnchor.title;
-                anchor.className = anchor.__fallbackAnchor.className;
-                anchor.textContent = anchor.__fallbackAnchor.textContent;
+        var anchors = liveLocations.keysArray();
+        for (var i = 0; i < anchors.length; ++i) {
+            var anchor = anchors[i];
+            var location = liveLocations.get(anchor);
+            delete anchor[WebInspector.Linkifier._uiLocationSymbol];
+            var fallbackAnchor = anchor[WebInspector.Linkifier._fallbackAnchorSymbol];
+            if (fallbackAnchor) {
+                anchor.href = fallbackAnchor.href;
+                anchor.lineNumber = fallbackAnchor.lineNumber;
+                anchor.title = fallbackAnchor.title;
+                anchor.className = fallbackAnchor.className;
+                anchor.textContent = fallbackAnchor.textContent;
+                delete anchor[WebInspector.Linkifier._fallbackAnchorSymbol];
             }
-            liveLocations[i].location.dispose();
+            location.dispose();
         }
     },
 
@@ -152,15 +161,22 @@ WebInspector.Linkifier.prototype = {
      */
     linkifyScriptLocation: function(target, scriptId, sourceURL, lineNumber, columnNumber, classes)
     {
-        var rawLocation = target && !target.isDetached() ? target.debuggerModel.createRawLocationByScriptId(scriptId, sourceURL, lineNumber, columnNumber || 0) : null;
         var fallbackAnchor = WebInspector.linkifyResourceAsNode(sourceURL, lineNumber, classes);
+        if (!target || target.isDetached())
+            return fallbackAnchor;
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        if (!debuggerModel)
+            return fallbackAnchor;
+
+        var rawLocation = scriptId ? debuggerModel.createRawLocationByScriptId(scriptId, lineNumber, columnNumber || 0) :
+                                     debuggerModel.createRawLocationByURL(sourceURL, lineNumber, columnNumber || 0);
         if (!rawLocation)
             return fallbackAnchor;
 
         var anchor = this._createAnchor(classes);
         var liveLocation = WebInspector.debuggerWorkspaceBinding.createLiveLocation(rawLocation, this._updateAnchor.bind(this, anchor));
-        this._liveLocationsByTarget.get(rawLocation.target()).push({ anchor: anchor, location: liveLocation });
-        anchor.__fallbackAnchor = fallbackAnchor;
+        this._liveLocationsByTarget.get(rawLocation.target()).set(anchor, liveLocation);
+        anchor[WebInspector.Linkifier._fallbackAnchorSymbol] = fallbackAnchor;
         return anchor;
     },
 
@@ -187,8 +203,8 @@ WebInspector.Linkifier.prototype = {
         var lineNumber = callFrame.lineNumber ? callFrame.lineNumber - 1 : 0;
         var columnNumber = callFrame.columnNumber ? callFrame.columnNumber - 1 : 0;
         var anchor = this.linkifyScriptLocation(target, callFrame.scriptId, callFrame.url, lineNumber, columnNumber, classes);
-
-        var script = target && target.debuggerModel.scriptForId(callFrame.scriptId);
+        var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+        var script = debuggerModel && debuggerModel.scriptForId(callFrame.scriptId);
         var blackboxed = script ?
             WebInspector.BlackboxSupport.isBlackboxed(script.sourceURL, script.isContentScript()) :
             WebInspector.BlackboxSupport.isBlackboxedURL(callFrame.url);
@@ -207,7 +223,7 @@ WebInspector.Linkifier.prototype = {
     {
         var anchor = this._createAnchor(classes);
         var liveLocation = WebInspector.cssWorkspaceBinding.createLiveLocation(rawLocation, this._updateAnchor.bind(this, anchor));
-        this._liveLocationsByTarget.get(rawLocation.target()).push({ anchor: anchor, location: liveLocation });
+        this._liveLocationsByTarget.get(rawLocation.target()).set(anchor, liveLocation);
         return anchor;
     },
 
@@ -226,6 +242,22 @@ WebInspector.Linkifier.prototype = {
     },
 
     /**
+     * @param {!WebInspector.Target} target
+     * @param {!Element} anchor
+     */
+    disposeAnchor: function(target, anchor)
+    {
+        delete anchor[WebInspector.Linkifier._uiLocationSymbol];
+        delete anchor[WebInspector.Linkifier._fallbackAnchorSymbol];
+        var liveLocations = this._liveLocationsByTarget.get(target);
+        if (!liveLocations)
+            return;
+        var location = liveLocations.remove(anchor);
+        if (location)
+            location.dispose();
+    },
+
+    /**
      * @param {string=} classes
      * @return {!Element}
      */
@@ -239,13 +271,15 @@ WebInspector.Linkifier.prototype = {
          */
         function clickHandler(event)
         {
-            if (!anchor.__uiLocation)
+            var uiLocation = anchor[WebInspector.Linkifier._uiLocationSymbol];
+            if (!uiLocation)
                 return;
 
             event.consume(true);
-            if (WebInspector.Linkifier.handleLink(anchor.__uiLocation.uiSourceCode.url, anchor.__uiLocation.lineNumber))
+            var networkURL = WebInspector.networkMapping.networkURL(uiLocation.uiSourceCode);
+            if (WebInspector.Linkifier.handleLink(networkURL, uiLocation.lineNumber))
                 return;
-            WebInspector.Revealer.reveal(anchor.__uiLocation);
+            WebInspector.Revealer.reveal(uiLocation);
         }
         anchor.addEventListener("click", clickHandler, false);
         return anchor;
@@ -253,12 +287,19 @@ WebInspector.Linkifier.prototype = {
 
     reset: function()
     {
-        var keys = this._liveLocationsByTarget.keysArray();
-        for (var i = 0; i < keys.length; ++i) {
-            var target = keys[i];
+        var targets = this._liveLocationsByTarget.keysArray();
+        for (var i = 0; i < targets.length; ++i) {
+            var target = targets[i];
             this.targetRemoved(target);
             this.targetAdded(target);
         }
+    },
+
+    dispose: function()
+    {
+        this.reset();
+        WebInspector.targetManager.unobserveTargets(this);
+        this._liveLocationsByTarget.clear();
     },
 
     /**
@@ -267,7 +308,7 @@ WebInspector.Linkifier.prototype = {
      */
     _updateAnchor: function(anchor, uiLocation)
     {
-        anchor.__uiLocation = uiLocation;
+        anchor[WebInspector.Linkifier._uiLocationSymbol] = uiLocation;
         this._formatter.formatLiveAnchor(anchor, uiLocation);
     }
 }
@@ -284,6 +325,7 @@ WebInspector.Linkifier.DefaultFormatter = function(maxLength)
 
 WebInspector.Linkifier.DefaultFormatter.prototype = {
     /**
+     * @override
      * @param {!Element} anchor
      * @param {!WebInspector.UILocation} uiLocation
      */
@@ -314,6 +356,7 @@ WebInspector.Linkifier.DefaultCSSFormatter.MaxLengthForDisplayedURLs = 30;
 
 WebInspector.Linkifier.DefaultCSSFormatter.prototype = {
     /**
+     * @override
      * @param {!Element} anchor
      * @param {!WebInspector.UILocation} uiLocation
      */
@@ -359,10 +402,13 @@ WebInspector.Linkifier.LinkHandler.prototype = {
  */
 WebInspector.Linkifier.liveLocationText = function(target, scriptId, lineNumber, columnNumber)
 {
-    var script = target.debuggerModel.scriptForId(scriptId);
+    var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
+    if (!debuggerModel)
+        return "";
+    var script = debuggerModel.scriptForId(scriptId);
     if (!script)
         return "";
-    var location = /** @type {!WebInspector.DebuggerModel.Location} */ (target.debuggerModel.createRawLocation(script, lineNumber, columnNumber || 0));
+    var location = /** @type {!WebInspector.DebuggerModel.Location} */ (debuggerModel.createRawLocation(script, lineNumber, columnNumber || 0));
     var uiLocation = /** @type {!WebInspector.UILocation} */ (WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(location));
     return uiLocation.linkText();
 }

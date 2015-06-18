@@ -31,19 +31,19 @@
 #ifndef AnimatableColor_h
 #define AnimatableColor_h
 
+#include "core/CoreExport.h"
 #include "core/animation/animatable/AnimatableValue.h"
 #include "platform/graphics/Color.h"
 
 namespace blink {
 
-class AnimatableColorImpl {
+class CORE_EXPORT AnimatableColorImpl {
 public:
     AnimatableColorImpl(float red, float green, float blue, float alpha);
     AnimatableColorImpl(Color);
     Color toColor() const;
     AnimatableColorImpl interpolateTo(const AnimatableColorImpl&, double fraction) const;
     bool operator==(const AnimatableColorImpl&) const;
-    double distanceTo(const AnimatableColorImpl&) const;
 
 private:
     float m_alpha;
@@ -56,13 +56,13 @@ private:
 // property. Currently it is used for all properties, even those which do not
 // support a separate 'visited link' color (eg SVG properties). This is correct
 // but inefficient.
-class AnimatableColor final : public AnimatableValue {
+class CORE_EXPORT AnimatableColor final : public AnimatableValue {
 public:
     static PassRefPtrWillBeRawPtr<AnimatableColor> create(const AnimatableColorImpl&, const AnimatableColorImpl& visitedLinkColor);
     Color color() const { return m_color.toColor(); }
     Color visitedLinkColor() const { return m_visitedLinkColor.toColor(); }
 
-    virtual void trace(Visitor* visitor) override { AnimatableValue::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { AnimatableValue::trace(visitor); }
 
 protected:
     virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
@@ -75,7 +75,6 @@ private:
     }
     virtual AnimatableType type() const override { return TypeColor; }
     virtual bool equalTo(const AnimatableValue*) const override;
-    virtual double distanceTo(const AnimatableValue*) const override;
     const AnimatableColorImpl m_color;
     const AnimatableColorImpl m_visitedLinkColor;
 };

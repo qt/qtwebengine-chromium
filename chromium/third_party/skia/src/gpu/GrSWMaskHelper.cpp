@@ -7,7 +7,7 @@
 
 #include "GrSWMaskHelper.h"
 
-#include "GrDrawState.h"
+#include "GrPipelineBuilder.h"
 #include "GrDrawTargetCaps.h"
 #include "GrGpu.h"
 
@@ -248,11 +248,12 @@ GrTexture* GrSWMaskHelper::createTexture() {
         SkASSERT(fContext->getGpu()->caps()->isConfigTexturable(desc.fConfig));
     }
 
-    return fContext->refScratchTexture(desc, GrContext::kApprox_ScratchTexMatch);
+    return fContext->textureProvider()->refScratchTexture(
+        desc, GrTextureProvider::kApprox_ScratchTexMatch);
 }
 
 void GrSWMaskHelper::sendTextureData(GrTexture *texture, const GrSurfaceDesc& desc,
-                                     const void *data, int rowbytes) {
+                                     const void *data, size_t rowbytes) {
     // If we aren't reusing scratch textures we don't need to flush before
     // writing since no one else will be using 'texture'
     bool reuseScratch = fContext->getGpu()->caps()->reuseScratchTextures();
@@ -326,7 +327,7 @@ GrTexture* GrSWMaskHelper::DrawPathMaskToTexture(GrContext* context,
                                                  const SkStrokeRec& stroke,
                                                  const SkIRect& resultBounds,
                                                  bool antiAlias,
-                                                 SkMatrix* matrix) {
+                                                 const SkMatrix* matrix) {
     GrSWMaskHelper helper(context);
 
     if (!helper.init(resultBounds, matrix)) {
@@ -347,34 +348,33 @@ GrTexture* GrSWMaskHelper::DrawPathMaskToTexture(GrContext* context,
 
 void GrSWMaskHelper::DrawToTargetWithPathMask(GrTexture* texture,
                                               GrDrawTarget* target,
+                                              GrPipelineBuilder* pipelineBuilder,
+                                              GrColor color,
+                                              const SkMatrix& viewMatrix,
                                               const SkIRect& rect) {
-    GrDrawState* drawState = target->drawState();
-
-    GrDrawState::AutoViewMatrixRestore avmr;
-    if (!avmr.setIdentity(drawState)) {
+    SkMatrix invert;
+    if (!viewMatrix.invert(&invert)) {
         return;
     }
-    GrDrawState::AutoRestoreEffects are(drawState);
+    GrPipelineBuilder::AutoRestoreFragmentProcessors arfp(pipelineBuilder);
 
     SkRect dstRect = SkRect::MakeLTRB(SK_Scalar1 * rect.fLeft,
                                       SK_Scalar1 * rect.fTop,
                                       SK_Scalar1 * rect.fRight,
                                       SK_Scalar1 * rect.fBottom);
 
-    // We want to use device coords to compute the texture coordinates. We set our matrix to be
-    // equal to the view matrix followed by a translation so that the top-left of the device bounds
-    // maps to 0,0, and then a scaling matrix to normalized coords. We apply this matrix to the
-    // vertex positions rather than local coords.
+    // We use device coords to compute the texture coordinates. We take the device coords and apply
+    // a translation so that the top-left of the device bounds maps to 0,0, and then a scaling
+    // matrix to normalized coords.
     SkMatrix maskMatrix;
     maskMatrix.setIDiv(texture->width(), texture->height());
     maskMatrix.preTranslate(SkIntToScalar(-rect.fLeft), SkIntToScalar(-rect.fTop));
-    maskMatrix.preConcat(drawState->getViewMatrix());
 
-    drawState->addCoverageProcessor(
+    pipelineBuilder->addCoverageProcessor(
                          GrSimpleTextureEffect::Create(texture,
                                                        maskMatrix,
                                                        GrTextureParams::kNone_FilterMode,
-                                                       kPosition_GrCoordSet))->unref();
+                                                       kDevice_GrCoordSet))->unref();
 
-    target->drawSimpleRect(dstRect);
+    target->drawRect(pipelineBuilder, color, SkMatrix::I(), dstRect, NULL, &invert);
 }

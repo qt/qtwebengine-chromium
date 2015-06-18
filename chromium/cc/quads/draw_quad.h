@@ -11,7 +11,7 @@
 #include "cc/resources/resource_provider.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 class Value;
@@ -126,7 +126,7 @@ class CC_EXPORT DrawQuad {
     return IsLeftEdge() || IsTopEdge() || IsRightEdge() || IsBottomEdge();
   }
 
-  void AsValueInto(base::debug::TracedValue* value) const;
+  void AsValueInto(base::trace_event::TracedValue* value) const;
 
  protected:
   DrawQuad();
@@ -137,7 +137,7 @@ class CC_EXPORT DrawQuad {
               const gfx::Rect& opaque_rect,
               const gfx::Rect& visible_rect,
               bool needs_blending);
-  virtual void ExtendValue(base::debug::TracedValue* value) const = 0;
+  virtual void ExtendValue(base::trace_event::TracedValue* value) const = 0;
 };
 
 }  // namespace cc

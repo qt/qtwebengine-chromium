@@ -7,14 +7,13 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/null_transport_surface.h"
-#include "content/common/gpu/sync_point_manager.h"
-#include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/service/sync_point_manager.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
@@ -109,33 +108,6 @@ void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
 }
 
-void ImageTransportHelper::SendUpdateVSyncParameters(
-      base::TimeTicks timebase, base::TimeDelta interval) {
-  manager_->Send(new GpuHostMsg_UpdateVSyncParameters(stub_->surface_id(),
-                                                      timebase,
-                                                      interval));
-}
-
-void ImageTransportHelper::SwapBuffersCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  stub_->SwapBuffersCompleted(latency_info);
-}
-
-void ImageTransportHelper::SetScheduled(bool is_scheduled) {
-  gpu::GpuScheduler* scheduler = Scheduler();
-  if (!scheduler)
-    return;
-
-  scheduler->SetScheduled(is_scheduled);
-}
-
-void ImageTransportHelper::DeferToFence(base::Closure task) {
-  gpu::GpuScheduler* scheduler = Scheduler();
-  DCHECK(scheduler);
-
-  scheduler->DeferToFence(task);
-}
-
 void ImageTransportHelper::SetPreemptByFlag(
     scoped_refptr<gpu::PreemptionFlag> preemption_flag) {
   stub_->channel()->SetPreemptByFlag(preemption_flag);
@@ -149,16 +121,11 @@ bool ImageTransportHelper::MakeCurrent() {
 }
 
 void ImageTransportHelper::SetSwapInterval(gfx::GLContext* context) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync))
-    context->SetSwapInterval(0);
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuVsync))
+    context->ForceSwapIntervalZero(true);
   else
     context->SetSwapInterval(1);
-}
-
-gpu::GpuScheduler* ImageTransportHelper::Scheduler() {
-  if (!stub_.get())
-    return NULL;
-  return stub_->scheduler();
 }
 
 gpu::gles2::GLES2Decoder* ImageTransportHelper::Decoder() {
@@ -197,7 +164,8 @@ PassThroughImageTransportSurface::PassThroughImageTransportSurface(
     GpuCommandBufferStub* stub,
     gfx::GLSurface* surface)
     : GLSurfaceAdapter(surface),
-      did_set_swap_interval_(false) {
+      did_set_swap_interval_(false),
+      weak_ptr_factory_(this) {
   helper_.reset(new ImageTransportHelper(this,
                                          manager,
                                          stub,
@@ -223,33 +191,59 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
   // GetVsyncValues before SwapBuffers to work around Mali driver bug:
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
-  for (size_t i = 0; i < latency_info_.size(); ++i) {
-    latency_info_[i].AddLatencyNumber(
-        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0);
-  }
-  bool result = gfx::GLSurfaceAdapter::SwapBuffers();
-  for (size_t i = 0; i < latency_info_.size(); i++) {
-    latency_info_[i].AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
+
+  base::TimeTicks swap_time = base::TimeTicks::Now();
+  for (auto& latency : latency_info_) {
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0, swap_time, 1);
   }
 
-  helper_->SwapBuffersCompleted(latency_info_);
-  latency_info_.clear();
-  return result;
+  // We use WeakPtr here to avoid manual management of life time of an instance
+  // of this class. Callback will not be called once the instance of this class
+  // is destroyed. However, this also means that the callback can be run on
+  // the calling thread only.
+  std::vector<ui::LatencyInfo>* latency_info_ptr =
+      new std::vector<ui::LatencyInfo>();
+  latency_info_ptr->swap(latency_info_);
+  return gfx::GLSurfaceAdapter::SwapBuffersAsync(base::Bind(
+      &PassThroughImageTransportSurface::SwapBuffersCallBack,
+      weak_ptr_factory_.GetWeakPtr(), base::Owned(latency_info_ptr)));
 }
 
 bool PassThroughImageTransportSurface::PostSubBuffer(
     int x, int y, int width, int height) {
   SendVSyncUpdateIfAvailable();
-  bool result = gfx::GLSurfaceAdapter::PostSubBuffer(x, y, width, height);
-  for (size_t i = 0; i < latency_info_.size(); i++) {
-    latency_info_[i].AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
+
+  base::TimeTicks swap_time = base::TimeTicks::Now();
+  for (auto& latency : latency_info_) {
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0, swap_time, 1);
   }
 
-  helper_->SwapBuffersCompleted(latency_info_);
-  latency_info_.clear();
-  return result;
+  // We use WeakPtr here to avoid manual management of life time of an instance
+  // of this class. Callback will not be called once the instance of this class
+  // is destroyed. However, this also means that the callback can be run on
+  // the calling thread only.
+  std::vector<ui::LatencyInfo>* latency_info_ptr =
+      new std::vector<ui::LatencyInfo>();
+  latency_info_ptr->swap(latency_info_);
+  return gfx::GLSurfaceAdapter::PostSubBufferAsync(
+      x, y, width, height,
+      base::Bind(&PassThroughImageTransportSurface::SwapBuffersCallBack,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 base::Owned(latency_info_ptr)));
+}
+
+void PassThroughImageTransportSurface::SwapBuffersCallBack(
+    std::vector<ui::LatencyInfo>* latency_info_ptr) {
+  base::TimeTicks swap_ack_time = base::TimeTicks::Now();
+  for (auto& latency : *latency_info_ptr) {
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0,
+        swap_ack_time, 1);
+  }
+
+  helper_->stub()->SendSwapBuffersCompleted(*latency_info_ptr);
 }
 
 bool PassThroughImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {
@@ -286,8 +280,8 @@ void PassThroughImageTransportSurface::SendVSyncUpdateIfAvailable() {
   gfx::VSyncProvider* vsync_provider = GetVSyncProvider();
   if (vsync_provider) {
     vsync_provider->GetVSyncParameters(
-      base::Bind(&ImageTransportHelper::SendUpdateVSyncParameters,
-                 helper_->AsWeakPtr()));
+        base::Bind(&GpuCommandBufferStub::SendUpdateVSyncParameters,
+                   helper_->stub()->AsWeakPtr()));
   }
 }
 

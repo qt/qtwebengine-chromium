@@ -13,7 +13,6 @@
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/transport_security_state.h"
-#include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/quic_decrypter.h"
@@ -51,8 +50,8 @@ namespace test {
 namespace {
 
 const char kUploadData[] = "Really nifty data!";
-const char kServerHostname[] = "www.google.com";
-const uint16 kServerPort = 80;
+const char kDefaultServerHostName[] = "www.google.com";
+const uint16 kDefaultServerPort = 80;
 
 class TestQuicConnection : public QuicConnection {
  public:
@@ -65,29 +64,14 @@ class TestQuicConnection : public QuicConnection {
                        address,
                        helper,
                        writer_factory,
-                       true  /* owns_writer */,
-                       false  /* is_server */,
-                       versions) {
-  }
+                       true /* owns_writer */,
+                       Perspective::IS_CLIENT,
+                       false /* is_secure */,
+                       versions) {}
 
   void SetSendAlgorithm(SendAlgorithmInterface* send_algorithm) {
     QuicConnectionPeer::SetSendAlgorithm(this, send_algorithm);
   }
-
-  void SetReceiveAlgorithm(ReceiveAlgorithmInterface* receive_algorithm) {
-    QuicConnectionPeer::SetReceiveAlgorithm(this, receive_algorithm);
-  }
-};
-
-class TestReceiveAlgorithm : public ReceiveAlgorithmInterface {
- public:
-  virtual bool GenerateCongestionFeedback(
-      QuicCongestionFeedbackFrame* /*congestion_feedback*/) {
-    return false;
-  }
-
-  MOCK_METHOD3(RecordIncomingPacket,
-               void(QuicByteCount, QuicPacketSequenceNumber, QuicTime));
 };
 
 // Subclass of QuicHttpStream that closes itself when the first piece of data
@@ -151,7 +135,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         read_buffer_(new IOBufferWithSize(4096)),
         connection_id_(2),
         stream_id_(kClientDataStreamId1),
-        maker_(GetParam(), connection_id_, &clock_),
+        maker_(GetParam(), connection_id_, &clock_, kDefaultServerHostName),
         random_generator_(0) {
     IPAddressNumber ip;
     CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
@@ -161,7 +145,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   }
 
   ~QuicHttpStreamTest() {
-    session_->CloseSessionOnError(ERR_ABORTED);
+    session_->CloseSessionOnError(ERR_ABORTED, QUIC_INTERNAL_ERROR);
     for (size_t i = 0; i < writes_.size(); i++) {
       delete writes_[i].packet;
     }
@@ -202,9 +186,6 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
     socket->Connect(peer_addr_);
     runner_ = new TestTaskRunner(&clock_);
     send_algorithm_ = new MockSendAlgorithm();
-    receive_algorithm_ = new TestReceiveAlgorithm();
-    EXPECT_CALL(*receive_algorithm_, RecordIncomingPacket(_, _, _)).
-        Times(AnyNumber());
     EXPECT_CALL(*send_algorithm_,
                 OnPacketSent(_, _, _, _, _)).WillRepeatedly(Return(true));
     EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillRepeatedly(
@@ -224,23 +205,15 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                                          helper_.get(), writer_factory);
     connection_->set_visitor(&visitor_);
     connection_->SetSendAlgorithm(send_algorithm_);
-    connection_->SetReceiveAlgorithm(receive_algorithm_);
-    session_.reset(
-        new QuicClientSession(connection_,
-                              scoped_ptr<DatagramClientSocket>(socket),
-                              nullptr,
-                              &transport_security_state_,
-                              make_scoped_ptr((QuicServerInfo*)nullptr),
-                              DefaultQuicConfig(),
-                              /*is_secure=*/false,
-                              base::MessageLoop::current()->
-                                  message_loop_proxy().get(),
-                              nullptr));
-    session_->InitializeSession(QuicServerId(kServerHostname, kServerPort,
-                                             /*is_secure=*/false,
-                                             PRIVACY_MODE_DISABLED),
-                                &crypto_config_,
-                                &crypto_client_stream_factory_);
+    session_.reset(new QuicClientSession(
+        connection_, scoped_ptr<DatagramClientSocket>(socket), nullptr,
+        &transport_security_state_, make_scoped_ptr((QuicServerInfo*)nullptr),
+        DefaultQuicConfig(), "CONNECTION_UNKNOWN", base::TimeTicks::Now(),
+        base::MessageLoop::current()->message_loop_proxy().get(), nullptr));
+    session_->InitializeSession(
+        QuicServerId(kDefaultServerHostName, kDefaultServerPort,
+                     /*is_secure=*/false, PRIVACY_MODE_DISABLED),
+        &crypto_config_, &crypto_client_stream_factory_);
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_ ?
@@ -265,15 +238,19 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
       bool fin,
       QuicStreamOffset offset,
       base::StringPiece data) {
-    return maker_.MakeDataPacket(
-        sequence_number, stream_id_, should_include_version, fin, offset, data);
+    return maker_.MakeDataPacket(sequence_number, stream_id_,
+                                 should_include_version, fin, offset, data);
   }
 
   scoped_ptr<QuicEncryptedPacket> ConstructRequestHeadersPacket(
       QuicPacketSequenceNumber sequence_number,
-      bool fin) {
-    return maker_.MakeRequestHeadersPacket(
-        sequence_number, stream_id_, kIncludeVersion, fin, request_headers_);
+      bool fin,
+      RequestPriority request_priority) {
+    QuicPriority priority =
+        ConvertRequestPriorityToQuicPriority(request_priority);
+    return maker_.MakeRequestHeadersPacket(sequence_number, stream_id_,
+                                           kIncludeVersion, fin, priority,
+                                           request_headers_);
   }
 
   scoped_ptr<QuicEncryptedPacket> ConstructResponseHeadersPacket(
@@ -308,7 +285,6 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   BoundNetLog net_log_;
   bool use_closing_stream_;
   MockSendAlgorithm* send_algorithm_;
-  TestReceiveAlgorithm* receive_algorithm_;
   scoped_refptr<TestTaskRunner> runner_;
   scoped_ptr<MockWrite[]> mock_writes_;
   MockClock clock_;
@@ -361,7 +337,7 @@ TEST_P(QuicHttpStreamTest, IsConnectionReusable) {
 
 TEST_P(QuicHttpStreamTest, GetRequest) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
-  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, kFin, DEFAULT_PRIORITY));
   Initialize();
 
   request_.method = "GET";
@@ -400,7 +376,7 @@ TEST_P(QuicHttpStreamTest, GetRequest) {
 // Regression test for http://crbug.com/288128
 TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
-  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, kFin, DEFAULT_PRIORITY));
   Initialize();
 
   request_.method = "GET";
@@ -423,7 +399,8 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
   headers["content-type"] = "text/plain";
   headers["big6"] = std::string(10000, 'x');  // Lots of x's.
 
-  std::string response = SpdyUtils::SerializeUncompressedHeaders(headers);
+  std::string response =
+      SpdyUtils::SerializeUncompressedHeaders(headers, GetParam());
   EXPECT_LT(4096u, response.length());
   stream_->OnDataReceived(response.data(), response.length());
   stream_->OnClose(QUIC_NO_ERROR);
@@ -463,7 +440,7 @@ TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendRequest) {
 // Regression test for http://crbug.com/409871
 TEST_P(QuicHttpStreamTest, SessionClosedBeforeReadResponseHeaders) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
-  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, kFin, DEFAULT_PRIORITY));
   Initialize();
 
   request_.method = "GET";
@@ -482,7 +459,7 @@ TEST_P(QuicHttpStreamTest, SessionClosedBeforeReadResponseHeaders) {
 
 TEST_P(QuicHttpStreamTest, SendPostRequest) {
   SetRequest("POST", "/", DEFAULT_PRIORITY);
-  AddWrite(ConstructRequestHeadersPacket(1, !kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, !kFin, DEFAULT_PRIORITY));
   AddWrite(ConstructDataPacket(2, kIncludeVersion, kFin, 0, kUploadData));
   AddWrite(ConstructAckPacket(3, 3, 1));
 
@@ -530,7 +507,7 @@ TEST_P(QuicHttpStreamTest, SendPostRequest) {
 TEST_P(QuicHttpStreamTest, SendChunkedPostRequest) {
   SetRequest("POST", "/", DEFAULT_PRIORITY);
   size_t chunk_size = strlen(kUploadData);
-  AddWrite(ConstructRequestHeadersPacket(1, !kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, !kFin, DEFAULT_PRIORITY));
   AddWrite(ConstructDataPacket(2, kIncludeVersion, !kFin, 0, kUploadData));
   AddWrite(ConstructDataPacket(3, kIncludeVersion, kFin, chunk_size,
                                kUploadData));
@@ -583,7 +560,7 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequest) {
 TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithFinalEmptyDataPacket) {
   SetRequest("POST", "/", DEFAULT_PRIORITY);
   size_t chunk_size = strlen(kUploadData);
-  AddWrite(ConstructRequestHeadersPacket(1, !kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, !kFin, DEFAULT_PRIORITY));
   AddWrite(ConstructDataPacket(2, kIncludeVersion, !kFin, 0, kUploadData));
   AddWrite(ConstructDataPacket(3, kIncludeVersion, kFin, chunk_size, ""));
   AddWrite(ConstructAckPacket(4, 3, 1));
@@ -633,7 +610,7 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithFinalEmptyDataPacket) {
 
 TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithOneEmptyDataPacket) {
   SetRequest("POST", "/", DEFAULT_PRIORITY);
-  AddWrite(ConstructRequestHeadersPacket(1, !kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, !kFin, DEFAULT_PRIORITY));
   AddWrite(ConstructDataPacket(2, kIncludeVersion, kFin, 0, ""));
   AddWrite(ConstructAckPacket(3, 3, 1));
   Initialize();
@@ -681,7 +658,7 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithOneEmptyDataPacket) {
 
 TEST_P(QuicHttpStreamTest, DestroyedEarly) {
   SetRequest("GET", "/", DEFAULT_PRIORITY);
-  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, kFin, DEFAULT_PRIORITY));
   AddWrite(ConstructAckAndRstStreamPacket(2));
   use_closing_stream_ = true;
   Initialize();
@@ -709,7 +686,7 @@ TEST_P(QuicHttpStreamTest, DestroyedEarly) {
 
 TEST_P(QuicHttpStreamTest, Priority) {
   SetRequest("GET", "/", MEDIUM);
-  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  AddWrite(ConstructRequestHeadersPacket(1, kFin, MEDIUM));
   AddWrite(ConstructAckAndRstStreamPacket(2));
   use_closing_stream_ = true;
   Initialize();

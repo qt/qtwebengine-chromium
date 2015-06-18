@@ -78,6 +78,28 @@ class HtmlInlineUnittest(unittest.TestCase):
     self.failUnlessEqual(resources, source_resources)
     tmp_dir.CleanUp()
 
+  def testUnmatchedEndIfBlock(self):
+    '''Tests that an unmatched </if> raises an exception.'''
+
+    files = {
+      'index.html': '''
+      <!DOCTYPE HTML>
+      <html>
+        <if expr="lang == 'fr'">
+          bonjour
+        </if>
+        </if>
+      </html>
+      ''',
+    }
+
+    tmp_dir = util.TempDir(files)
+
+    with self.assertRaises(Exception) as cm:
+      html_inline.GetResourceFilenames(tmp_dir.GetPath('index.html'))
+    self.failUnlessEqual(cm.exception.message, 'Unmatched </if>')
+    tmp_dir.CleanUp()
+
   def testCompressedJavaScript(self):
     '''Tests that ".src=" doesn't treat as a tag.'''
 

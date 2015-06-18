@@ -33,95 +33,6 @@
 
 namespace blink {
 
-// Naming scheme:
-// TO*_RETURNTYPE[_ARGTYPE]...
-// ...using _DEFAULT instead of _ANY..._ANY when returing a default value.
-
-#define TONATIVE_EXCEPTION(type, var, value) \
-    type var;                                \
-    {                                        \
-        v8::TryCatch block;                  \
-        var = (value);                       \
-        if (UNLIKELY(block.HasCaught()))     \
-            return block.ReThrow();          \
-    }
-
-#define TONATIVE_VOID_INTERNAL(var, value) \
-    var = (value);                         \
-    if (UNLIKELY(block.HasCaught()))       \
-        return;
-
-#define TONATIVE_VOID(type, var, value)        \
-    type var;                                  \
-    {                                          \
-        v8::TryCatch block;                    \
-        V8RethrowTryCatchScope rethrow(block); \
-        TONATIVE_VOID_INTERNAL(var, value);    \
-    }
-
-#define TONATIVE_DEFAULT(type, var, value, retVal) \
-    type var;                                      \
-    {                                              \
-        v8::TryCatch block;                        \
-        var = (value);                             \
-        if (UNLIKELY(block.HasCaught())) {         \
-            block.ReThrow();                       \
-            return retVal;                         \
-        }                                          \
-    }
-
-// We need to cancel the exception propergation when we return a rejected
-// Promise.
-#define TONATIVE_VOID_PROMISE_INTERNAL(var, value, info)                                        \
-    var = (value);                                                                              \
-    if (UNLIKELY(block.HasCaught())) {                                                          \
-        v8SetReturnValue(info, ScriptPromise::rejectRaw(info.GetIsolate(), block.Exception())); \
-        block.Reset();                                                                          \
-        return;                                                                                 \
-    }
-
-#define TONATIVE_VOID_PROMISE(type, var, value, info)     \
-    type var;                                             \
-    {                                                     \
-        v8::TryCatch block;                               \
-        TONATIVE_VOID_PROMISE_INTERNAL(var, value, info); \
-    }
-
-
-#define TONATIVE_VOID_EXCEPTIONSTATE_INTERNAL(var, value, exceptionState) \
-    var = (value);                                                        \
-    if (UNLIKELY(exceptionState.throwIfNeeded()))                         \
-        return;                                                           \
-
-#define TONATIVE_VOID_EXCEPTIONSTATE(type, var, value, exceptionState)  \
-    type var;                                                           \
-    var = (value);                                                      \
-    if (UNLIKELY(exceptionState.throwIfNeeded()))                       \
-        return;
-
-#define TONATIVE_VOID_EXCEPTIONSTATE_ARGINTERNAL(value, exceptionState) \
-    (value);                                                            \
-    if (UNLIKELY(exceptionState.throwIfNeeded()))                       \
-        return;
-
-#define TONATIVE_DEFAULT_EXCEPTIONSTATE(type, var, value, exceptionState, retVal) \
-    type var = (value);                                                           \
-    if (UNLIKELY(exceptionState.throwIfNeeded()))                                 \
-        return retVal;
-
-// We need to cancel the exception propergation when we return a rejected
-// Promise.
-#define TONATIVE_VOID_EXCEPTIONSTATE_PROMISE_INTERNAL(var, value, exceptionState, info, scriptState) \
-    var = (value);                                                                                   \
-    if (UNLIKELY(exceptionState.hadException())) {                                                   \
-        v8SetReturnValue(info, exceptionState.reject(scriptState).v8Value());                        \
-        return;                                                                                      \
-    }
-
-#define TONATIVE_VOID_EXCEPTIONSTATE_PROMISE(type, var, value, exceptionState, info, scriptState)     \
-    type var;                                                                                         \
-    TONATIVE_VOID_EXCEPTIONSTATE_PROMISE_INTERNAL(var, value, exceptionState, info, scriptState);
-
 // type is an instance of class template V8StringResource<>,
 // but Mode argument varies; using type (not Mode) for consistency
 // with other macros and ease of code generation
@@ -130,29 +41,53 @@ namespace blink {
     if (UNLIKELY(!var.prepare()))       \
         return;
 
-#define TOSTRING_VOID_INTERNAL(var, value) \
-    var = (value);                         \
-    if (UNLIKELY(!var.prepare()))          \
-        return;
-
-#define TOSTRING_VOID_EXCEPTIONSTATE(type, var, value, exceptionState) \
-    type var(value);                                                   \
-    if (UNLIKELY(!var.prepare(exceptionState)))                        \
-        return;
-
 #define TOSTRING_DEFAULT(type, var, value, retVal) \
     type var(value);                               \
     if (UNLIKELY(!var.prepare()))                  \
         return retVal;
 
-// We need to cancel the exception propagation when we return a rejected
-// Promise.
-#define TOSTRING_VOID_EXCEPTIONSTATE_PROMISE_INTERNAL(var, value, exceptionState, info, scriptState) \
-    var = (value);                                                                                   \
-    if (UNLIKELY(!var.prepare(exceptionState)))  {                                                   \
-        v8SetReturnValue(info, exceptionState.reject(scriptState).v8Value());                        \
-        return;                                                                                      \
-    }
+template <typename T>
+inline bool v8Call(v8::Maybe<T> maybe, T& outVariable)
+{
+    if (maybe.IsNothing())
+        return false;
+    outVariable = maybe.FromJust();
+    return true;
+}
+
+inline bool v8CallBoolean(v8::Maybe<bool> maybe)
+{
+    bool result;
+    return v8Call(maybe, result) && result;
+}
+
+template <typename T>
+inline bool v8Call(v8::Maybe<T> maybe, T& outVariable, v8::TryCatch& tryCatch)
+{
+    bool success = v8Call(maybe, outVariable);
+    ASSERT(success || tryCatch.HasCaught());
+    return success;
+}
+
+template <typename T>
+inline bool v8Call(v8::MaybeLocal<T> maybeLocal, v8::Local<T>& outVariable, v8::TryCatch& tryCatch)
+{
+    bool success = maybeLocal.ToLocal(&outVariable);
+    ASSERT(success || tryCatch.HasCaught());
+    return success;
+}
+
+template <typename T>
+inline T v8CallOrCrash(v8::Maybe<T> maybe)
+{
+    return maybe.FromJust();
+}
+
+// The last "else" is to avoid dangling else problem.
+#define V8_CALL(outVariable, handle, methodCall, failureExpression)                \
+    if (handle.IsEmpty() || !v8Call(handle->methodCall, outVariable)) { \
+        failureExpression;                                                         \
+    } else
 
 } // namespace blink
 

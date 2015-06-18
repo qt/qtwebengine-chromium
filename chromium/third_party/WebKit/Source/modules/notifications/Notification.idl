@@ -34,7 +34,9 @@
     ActiveDOMObject,
     Constructor(DOMString title, optional NotificationOptions options),
     ConstructorCallWith=ExecutionContext,
+    Exposed=(Window,Worker),
     MeasureAs=NotificationCreated,
+    RaisesException=Constructor,
     RuntimeEnabled=Notifications,
 ] interface Notification : EventTarget {
     [CallWith=ExecutionContext, MeasureAs=NotificationPermission] static readonly attribute DOMString permission;
@@ -45,7 +47,7 @@
     attribute EventHandler onclick;
     [MeasureAs=NotificationShowEvent] attribute EventHandler onshow;
     attribute EventHandler onerror;
-    attribute EventHandler onclose;
+    [MeasureAs=NotificationCloseEvent] attribute EventHandler onclose;
 
     readonly attribute DOMString title;
     readonly attribute DOMString dir;
@@ -53,6 +55,10 @@
     readonly attribute DOMString body;
     readonly attribute DOMString tag;
     readonly attribute DOMString icon;
+
+    [RuntimeEnabled=NotificationExperimental] readonly attribute sequence<unsigned long>? vibrate;
+    readonly attribute boolean silent;
+    [CallWith=ScriptState] readonly attribute any data;
 
     [MeasureAs=NotificationClosed] void close();
 };

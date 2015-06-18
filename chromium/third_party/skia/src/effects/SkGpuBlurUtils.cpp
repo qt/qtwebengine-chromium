@@ -44,6 +44,8 @@ static float adjust_sigma(float sigma, int maxTextureSize, int *scaleFactor, int
 }
 
 static void convolve_gaussian_1d(GrContext* context,
+                                 GrRenderTarget* rt,
+                                 const GrClip& clip,
                                  const SkRect& srcRect,
                                  const SkRect& dstRect,
                                  GrTexture* texture,
@@ -53,15 +55,15 @@ static void convolve_gaussian_1d(GrContext* context,
                                  bool useBounds,
                                  float bounds[2]) {
     GrPaint paint;
-    paint.reset();
     SkAutoTUnref<GrFragmentProcessor> conv(GrConvolutionEffect::CreateGaussian(
         texture, direction, radius, sigma, useBounds, bounds));
-    paint.reset();
     paint.addColorProcessor(conv);
-    context->drawRectToRect(paint, dstRect, srcRect);
+    context->drawNonAARectToRect(rt, clip, paint, SkMatrix::I(), dstRect, srcRect);
 }
 
 static void convolve_gaussian_2d(GrContext* context,
+                                 GrRenderTarget* rt,
+                                 const GrClip& clip,
                                  const SkRect& srcRect,
                                  const SkRect& dstRect,
                                  GrTexture* texture,
@@ -74,17 +76,17 @@ static void convolve_gaussian_2d(GrContext* context,
     SkISize size = SkISize::Make(2 * radiusX + 1,  2 * radiusY + 1);
     SkIPoint kernelOffset = SkIPoint::Make(radiusX, radiusY);
     GrPaint paint;
-    paint.reset();
     SkAutoTUnref<GrFragmentProcessor> conv(GrMatrixConvolutionEffect::CreateGaussian(
             texture, bounds, size, 1.0, 0.0, kernelOffset,
             useBounds ? GrTextureDomain::kClamp_Mode : GrTextureDomain::kIgnore_Mode,
             true, sigmaX, sigmaY));
-    paint.reset();
     paint.addColorProcessor(conv);
-    context->drawRectToRect(paint, dstRect, srcRect);
+    context->drawNonAARectToRect(rt, clip, paint, SkMatrix::I(), dstRect, srcRect);
 }
 
 static void convolve_gaussian(GrContext* context,
+                              GrRenderTarget* rt,
+                              const GrClip& clip,
                               const SkRect& srcRect,
                               const SkRect& dstRect,
                               GrTexture* texture,
@@ -94,7 +96,7 @@ static void convolve_gaussian(GrContext* context,
                               bool cropToSrcRect) {
     float bounds[2] = { 0.0f, 1.0f };
     if (!cropToSrcRect) {
-        convolve_gaussian_1d(context, srcRect, dstRect, texture,
+        convolve_gaussian_1d(context, rt, clip, srcRect, dstRect, texture,
                              direction, radius, sigma, false, bounds);
         return;
     }
@@ -126,15 +128,15 @@ static void convolve_gaussian(GrContext* context,
     }
     if (radius >= size * SK_ScalarHalf) {
         // Blur radius covers srcRect; use bounds over entire draw
-        convolve_gaussian_1d(context, srcRect, dstRect, texture,
+        convolve_gaussian_1d(context, rt, clip, srcRect, dstRect, texture,
                             direction, radius, sigma, true, bounds);
     } else {
         // Draw upper and lower margins with bounds; middle without.
-        convolve_gaussian_1d(context, lowerSrcRect, lowerDstRect, texture,
+        convolve_gaussian_1d(context, rt, clip, lowerSrcRect, lowerDstRect, texture,
                              direction, radius, sigma, true, bounds);
-        convolve_gaussian_1d(context, upperSrcRect, upperDstRect, texture,
+        convolve_gaussian_1d(context, rt, clip, upperSrcRect, upperDstRect, texture,
                              direction, radius, sigma, true, bounds);
-        convolve_gaussian_1d(context, middleSrcRect, middleDstRect, texture,
+        convolve_gaussian_1d(context, rt, clip, middleSrcRect, middleDstRect, texture,
                              direction, radius, sigma, false, bounds);
     }
 }
@@ -148,11 +150,6 @@ GrTexture* GaussianBlur(GrContext* context,
                         float sigmaY) {
     SkASSERT(context);
 
-    GrContext::AutoRenderTarget art(context);
-
-    GrContext::AutoMatrix am;
-    am.setIdentity(context);
-
     SkIRect clearRect;
     int scaleFactorX, radiusX;
     int scaleFactorY, radiusY;
@@ -162,18 +159,19 @@ GrTexture* GaussianBlur(GrContext* context,
 
     SkRect srcRect(rect);
     scale_rect(&srcRect, 1.0f / scaleFactorX, 1.0f / scaleFactorY);
-    srcRect.roundOut();
+    srcRect.roundOut(&srcRect);
     scale_rect(&srcRect, static_cast<float>(scaleFactorX),
                          static_cast<float>(scaleFactorY));
 
-    GrContext::AutoClip acs(context, SkRect::MakeWH(srcRect.width(), srcRect.height()));
+    // setup new clip
+    GrClip clip(SkRect::MakeWH(srcRect.width(), srcRect.height()));
 
     SkASSERT(kBGRA_8888_GrPixelConfig == srcTexture->config() ||
              kRGBA_8888_GrPixelConfig == srcTexture->config() ||
              kAlpha_8_GrPixelConfig == srcTexture->config());
 
     GrSurfaceDesc desc;
-    desc.fFlags = kRenderTarget_GrSurfaceFlag | kNoStencil_GrSurfaceFlag;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
     desc.fWidth = SkScalarFloorToInt(srcRect.width());
     desc.fHeight = SkScalarFloorToInt(srcRect.height());
     desc.fConfig = srcTexture->config();
@@ -182,12 +180,14 @@ GrTexture* GaussianBlur(GrContext* context,
     GrTexture* tempTexture;
     SkAutoTUnref<GrTexture> temp1, temp2;
 
-    temp1.reset(context->refScratchTexture(desc, GrContext::kApprox_ScratchTexMatch));
+    temp1.reset(context->textureProvider()->refScratchTexture(
+        desc, GrTextureProvider::kApprox_ScratchTexMatch));
     dstTexture = temp1.get();
     if (canClobberSrc) {
         tempTexture = srcTexture;
     } else {
-        temp2.reset(context->refScratchTexture(desc, GrContext::kApprox_ScratchTexMatch));
+        temp2.reset(context->textureProvider()->refScratchTexture(
+            desc, GrTextureProvider::kApprox_ScratchTexMatch));
         tempTexture = temp2.get();
     }
 
@@ -199,7 +199,6 @@ GrTexture* GaussianBlur(GrContext* context,
         GrPaint paint;
         SkMatrix matrix;
         matrix.setIDiv(srcTexture->width(), srcTexture->height());
-        context->setRenderTarget(dstTexture->asRenderTarget());
         SkRect dstRect(srcRect);
         if (cropToRect && i == 1) {
             dstRect.offset(-dstRect.fLeft, -dstRect.fTop);
@@ -207,7 +206,7 @@ GrTexture* GaussianBlur(GrContext* context,
             matrix.mapRect(&domain, rect);
             domain.inset(i < scaleFactorX ? SK_ScalarHalf / srcTexture->width() : 0.0f,
                          i < scaleFactorY ? SK_ScalarHalf / srcTexture->height() : 0.0f);
-            SkAutoTUnref<GrFragmentProcessor> fp(GrTextureDomainEffect::Create(
+            SkAutoTUnref<GrFragmentProcessor> fp(   GrTextureDomainEffect::Create(
                 srcTexture,
                 matrix,
                 domain,
@@ -220,14 +219,14 @@ GrTexture* GaussianBlur(GrContext* context,
         }
         scale_rect(&dstRect, i < scaleFactorX ? 0.5f : 1.0f,
                              i < scaleFactorY ? 0.5f : 1.0f);
-        context->drawRectToRect(paint, dstRect, srcRect);
+        context->drawNonAARectToRect(dstTexture->asRenderTarget(), clip, paint, SkMatrix::I(),
+                                     dstRect, srcRect);
         srcRect = dstRect;
         srcTexture = dstTexture;
         SkTSwap(dstTexture, tempTexture);
     }
 
-    SkIRect srcIRect;
-    srcRect.roundOut(&srcIRect);
+    const SkIRect srcIRect = srcRect.roundOut();
 
     // For really small blurs(Certainly no wider than 5x5 on desktop gpus) it is faster to just
     // launch a single non separable kernel vs two launches
@@ -235,10 +234,9 @@ GrTexture* GaussianBlur(GrContext* context,
             (2 * radiusX + 1) * (2 * radiusY + 1) <= MAX_KERNEL_SIZE) {
         // We shouldn't be scaling because this is a small size blur
         SkASSERT((scaleFactorX == scaleFactorY) == 1);
-        context->setRenderTarget(dstTexture->asRenderTarget());
         SkRect dstRect = SkRect::MakeWH(srcRect.width(), srcRect.height());
-        convolve_gaussian_2d(context, srcRect, dstRect, srcTexture,
-                radiusX, radiusY, sigmaX, sigmaY, cropToRect, srcIRect);
+        convolve_gaussian_2d(context, dstTexture->asRenderTarget(), clip, srcRect, dstRect,
+                             srcTexture, radiusX, radiusY, sigmaX, sigmaY, cropToRect, srcIRect);
         srcTexture = dstTexture;
         srcRect = dstRect;
         SkTSwap(dstTexture, tempTexture);
@@ -250,12 +248,12 @@ GrTexture* GaussianBlur(GrContext* context,
                 // X convolution from reading garbage.
                 clearRect = SkIRect::MakeXYWH(srcIRect.fRight, srcIRect.fTop,
                                               radiusX, srcIRect.height());
-                context->clear(&clearRect, 0x0, false, context->getRenderTarget());
+                context->clear(&clearRect, 0x0, false, srcTexture->asRenderTarget());
             }
-            context->setRenderTarget(dstTexture->asRenderTarget());
             SkRect dstRect = SkRect::MakeWH(srcRect.width(), srcRect.height());
-            convolve_gaussian(context, srcRect, dstRect, srcTexture,
-                              Gr1DKernelEffect::kX_Direction, radiusX, sigmaX, cropToRect);
+            convolve_gaussian(context, dstTexture->asRenderTarget(), clip, srcRect, dstRect,
+                              srcTexture, Gr1DKernelEffect::kX_Direction, radiusX, sigmaX,
+                              cropToRect);
             srcTexture = dstTexture;
             srcRect = dstRect;
             SkTSwap(dstTexture, tempTexture);
@@ -267,13 +265,13 @@ GrTexture* GaussianBlur(GrContext* context,
                 // convolution from reading garbage.
                 clearRect = SkIRect::MakeXYWH(srcIRect.fLeft, srcIRect.fBottom,
                                               srcIRect.width(), radiusY);
-                context->clear(&clearRect, 0x0, false, context->getRenderTarget());
+                context->clear(&clearRect, 0x0, false, srcTexture->asRenderTarget());
             }
 
-            context->setRenderTarget(dstTexture->asRenderTarget());
             SkRect dstRect = SkRect::MakeWH(srcRect.width(), srcRect.height());
-            convolve_gaussian(context, srcRect, dstRect, srcTexture,
-                              Gr1DKernelEffect::kY_Direction, radiusY, sigmaY, cropToRect);
+            convolve_gaussian(context, dstTexture->asRenderTarget(), clip, srcRect,
+                              dstRect, srcTexture, Gr1DKernelEffect::kY_Direction, radiusY, sigmaY,
+                              cropToRect);
             srcTexture = dstTexture;
             srcRect = dstRect;
             SkTSwap(dstTexture, tempTexture);
@@ -285,13 +283,12 @@ GrTexture* GaussianBlur(GrContext* context,
         // upsampling.
         clearRect = SkIRect::MakeXYWH(srcIRect.fLeft, srcIRect.fBottom,
                                       srcIRect.width() + 1, 1);
-        context->clear(&clearRect, 0x0, false, context->getRenderTarget());
+        context->clear(&clearRect, 0x0, false, srcTexture->asRenderTarget());
         clearRect = SkIRect::MakeXYWH(srcIRect.fRight, srcIRect.fTop,
                                       1, srcIRect.height());
-        context->clear(&clearRect, 0x0, false, context->getRenderTarget());
+        context->clear(&clearRect, 0x0, false, srcTexture->asRenderTarget());
         SkMatrix matrix;
         matrix.setIDiv(srcTexture->width(), srcTexture->height());
-        context->setRenderTarget(dstTexture->asRenderTarget());
 
         GrPaint paint;
         // FIXME:  this should be mitchell, not bilinear.
@@ -300,7 +297,8 @@ GrTexture* GaussianBlur(GrContext* context,
 
         SkRect dstRect(srcRect);
         scale_rect(&dstRect, (float) scaleFactorX, (float) scaleFactorY);
-        context->drawRectToRect(paint, dstRect, srcRect);
+        context->drawNonAARectToRect(dstTexture->asRenderTarget(), clip, paint,
+                                     SkMatrix::I(), dstRect, srcRect);
         srcRect = dstRect;
         srcTexture = dstTexture;
         SkTSwap(dstTexture, tempTexture);

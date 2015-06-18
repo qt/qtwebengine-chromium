@@ -18,6 +18,7 @@
 #include "ipc/ipc_message.h"
 
 namespace cc {
+struct BeginFrameArgs;
 class InputHandler;
 }
 
@@ -27,6 +28,7 @@ class WebInputEvent;
 
 namespace content {
 class InputHandlerManager;
+class SynchronousCompositorExternalBeginFrameSource;
 struct DidOverscrollParams;
 
 // The purpose of this class is to act as the intermediary between the various
@@ -37,7 +39,6 @@ struct DidOverscrollParams;
 class SynchronousCompositorImpl
     : public cc::LayerScrollOffsetDelegate,
       public SynchronousCompositor,
-      public SynchronousCompositorOutputSurfaceDelegate,
       public WebContentsUserData<SynchronousCompositorImpl> {
  public:
   // When used from browser code, use both |process_id| and |routing_id|.
@@ -48,60 +49,71 @@ class SynchronousCompositorImpl
 
   InputEventAckState HandleInputEvent(const blink::WebInputEvent& input_event);
 
+  // Called by SynchronousCompositorRegistry.
+  void DidInitializeRendererObjects(
+      SynchronousCompositorOutputSurface* output_surface,
+      SynchronousCompositorExternalBeginFrameSource* begin_frame_source,
+      cc::InputHandler* input_handler);
+  void DidDestroyRendererObjects();
+
+  // Called by SynchronousCompositorExternalBeginFrameSource.
+  void OnNeedsBeginFramesChange(bool needs_begin_frames);
+
+  // Called by SynchronousCompositorOutputSurface.
+  void PostInvalidate();
+
+  // Called by RenderWidgetHostViewAndroid.
+  void BeginFrame(const cc::BeginFrameArgs& args);
+
   // SynchronousCompositor
-  virtual void SetClient(SynchronousCompositorClient* compositor_client)
-      override;
-  virtual bool InitializeHwDraw() override;
-  virtual void ReleaseHwDraw() override;
-  virtual scoped_ptr<cc::CompositorFrame> DemandDrawHw(
+  scoped_ptr<cc::CompositorFrame> DemandDrawHw(
       gfx::Size surface_size,
       const gfx::Transform& transform,
       gfx::Rect viewport,
       gfx::Rect clip,
       gfx::Rect viewport_rect_for_tile_priority,
       const gfx::Transform& transform_for_tile_priority) override;
-  virtual bool DemandDrawSw(SkCanvas* canvas) override;
-  virtual void ReturnResources(
-      const cc::CompositorFrameAck& frame_ack) override;
-  virtual void SetMemoryPolicy(size_t bytes_limit) override;
-  virtual void DidChangeRootLayerScrollOffset() override;
-
-  // SynchronousCompositorOutputSurfaceDelegate
-  virtual void DidBindOutputSurface(
-      SynchronousCompositorOutputSurface* output_surface) override;
-  virtual void DidDestroySynchronousOutputSurface(
-      SynchronousCompositorOutputSurface* output_surface) override;
-  virtual void SetContinuousInvalidate(bool enable) override;
-  virtual void DidActivatePendingTree() override;
+  bool DemandDrawSw(SkCanvas* canvas) override;
+  void ReturnResources(const cc::CompositorFrameAck& frame_ack) override;
+  void SetMemoryPolicy(size_t bytes_limit) override;
+  void DidChangeRootLayerScrollOffset() override;
+  void SetIsActive(bool is_active) override;
 
   // LayerScrollOffsetDelegate
-  virtual gfx::ScrollOffset GetTotalScrollOffset() override;
-  virtual void UpdateRootLayerState(
-      const gfx::ScrollOffset& total_scroll_offset,
-      const gfx::ScrollOffset& max_scroll_offset,
-      const gfx::SizeF& scrollable_size,
-      float page_scale_factor,
-      float min_page_scale_factor,
-      float max_page_scale_factor) override;
-  virtual bool IsExternalFlingActive() const override;
+  gfx::ScrollOffset GetTotalScrollOffset() override;
+  void UpdateRootLayerState(const gfx::ScrollOffset& total_scroll_offset,
+                            const gfx::ScrollOffset& max_scroll_offset,
+                            const gfx::SizeF& scrollable_size,
+                            float page_scale_factor,
+                            float min_page_scale_factor,
+                            float max_page_scale_factor) override;
+  bool IsExternalFlingActive() const override;
 
-  void SetInputHandler(cc::InputHandler* input_handler);
   void DidOverscroll(const DidOverscrollParams& params);
   void DidStopFlinging();
 
  private:
-  explicit SynchronousCompositorImpl(WebContents* contents);
-  virtual ~SynchronousCompositorImpl();
   friend class WebContentsUserData<SynchronousCompositorImpl>;
+  friend class SynchronousCompositor;
+  explicit SynchronousCompositorImpl(WebContents* contents);
+  ~SynchronousCompositorImpl() override;
 
+  void SetClient(SynchronousCompositorClient* compositor_client);
   void UpdateFrameMetaData(const cc::CompositorFrameMetadata& frame_info);
+  void DidActivatePendingTree();
   void DeliverMessages();
   bool CalledOnValidThread() const;
+  void UpdateNeedsBeginFrames();
+  void SetInputHandler(cc::InputHandler* input_handler);
 
   SynchronousCompositorClient* compositor_client_;
   SynchronousCompositorOutputSurface* output_surface_;
+  SynchronousCompositorExternalBeginFrameSource* begin_frame_source_;
   WebContents* contents_;
+  const int routing_id_;
   cc::InputHandler* input_handler_;
+  bool is_active_;
+  bool renderer_needs_begin_frames_;
 
   base::WeakPtrFactory<SynchronousCompositorImpl> weak_ptr_factory_;
 

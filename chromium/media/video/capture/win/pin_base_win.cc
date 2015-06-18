@@ -18,11 +18,8 @@ class TypeEnumerator final
         index_(0) {
   }
 
-  ~TypeEnumerator() {
-  }
-
   // Implement from IUnknown.
-  STDMETHOD(QueryInterface)(REFIID iid, void** object_ptr) {
+  STDMETHOD(QueryInterface)(REFIID iid, void** object_ptr) override {
     if (iid == IID_IEnumMediaTypes || iid == IID_IUnknown) {
       AddRef();
       *object_ptr = static_cast<IEnumMediaTypes*>(this);
@@ -31,18 +28,18 @@ class TypeEnumerator final
     return E_NOINTERFACE;
   }
 
-  STDMETHOD_(ULONG, AddRef)() {
+  STDMETHOD_(ULONG, AddRef)() override {
     base::RefCounted<TypeEnumerator>::AddRef();
     return 1;
   }
 
-  STDMETHOD_(ULONG, Release)() {
+  STDMETHOD_(ULONG, Release)() override {
     base::RefCounted<TypeEnumerator>::Release();
     return 1;
   }
 
   // Implement IEnumMediaTypes.
-  STDMETHOD(Next)(ULONG count, AM_MEDIA_TYPE** types, ULONG* fetched) {
+  STDMETHOD(Next)(ULONG count, AM_MEDIA_TYPE** types, ULONG* fetched) override {
     ULONG types_fetched = 0;
 
     while (types_fetched < count) {
@@ -81,18 +78,18 @@ class TypeEnumerator final
     return types_fetched == count ? S_OK : S_FALSE;
   }
 
-  STDMETHOD(Skip)(ULONG count) {
+  STDMETHOD(Skip)(ULONG count) override {
     index_ += count;
     return S_OK;
   }
 
-  STDMETHOD(Reset)() {
+  STDMETHOD(Reset)() override {
     index_ = 0;
     return S_OK;
   }
 
-  STDMETHOD(Clone)(IEnumMediaTypes** clone) {
-    TypeEnumerator* type_enum = new TypeEnumerator(pin_);
+  STDMETHOD(Clone)(IEnumMediaTypes** clone) override {
+    TypeEnumerator* type_enum = new TypeEnumerator(pin_.get());
     type_enum->AddRef();
     type_enum->index_ = index_;
     *clone = type_enum;
@@ -100,6 +97,9 @@ class TypeEnumerator final
   }
 
  private:
+  friend class base::RefCounted<TypeEnumerator>;
+  ~TypeEnumerator() {}
+
   void FreeAllocatedMediaTypes(ULONG allocated, AM_MEDIA_TYPE** types) {
     for (ULONG i = 0; i < allocated; ++i) {
       CoTaskMemFree(types[i]->pbFormat);
@@ -114,9 +114,6 @@ class TypeEnumerator final
 PinBase::PinBase(IBaseFilter* owner)
     : owner_(owner) {
   memset(&current_media_type_, 0, sizeof(current_media_type_));
-}
-
-PinBase::~PinBase() {
 }
 
 void PinBase::SetOwner(IBaseFilter* owner) {
@@ -152,7 +149,7 @@ STDMETHODIMP PinBase::ReceiveConnection(IPin* connector,
 }
 
 STDMETHODIMP PinBase::Disconnect() {
-  if (!connected_pin_)
+  if (!connected_pin_.get())
     return S_FALSE;
 
   connected_pin_.Release();
@@ -160,8 +157,8 @@ STDMETHODIMP PinBase::Disconnect() {
 }
 
 STDMETHODIMP PinBase::ConnectedTo(IPin** pin) {
-  *pin = connected_pin_;
-  if (!connected_pin_)
+  *pin = connected_pin_.get();
+  if (!connected_pin_.get())
     return VFW_E_NOT_CONNECTED;
 
   connected_pin_.get()->AddRef();
@@ -169,7 +166,7 @@ STDMETHODIMP PinBase::ConnectedTo(IPin** pin) {
 }
 
 STDMETHODIMP PinBase::ConnectionMediaType(AM_MEDIA_TYPE* media_type) {
-  if (!connected_pin_)
+  if (!connected_pin_.get())
     return VFW_E_NOT_CONNECTED;
   *media_type = current_media_type_;
   return S_OK;
@@ -285,6 +282,9 @@ STDMETHODIMP_(ULONG) PinBase::AddRef() {
 STDMETHODIMP_(ULONG) PinBase::Release() {
   base::RefCounted<PinBase>::Release();
   return 1;
+}
+
+PinBase::~PinBase() {
 }
 
 }  // namespace media

@@ -5,7 +5,6 @@
 #include "media/video/capture/android/video_capture_device_factory_android.h"
 
 #include "base/android/jni_string.h"
-#include "base/android/scoped_java_ref.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "jni/VideoCaptureFactory_jni.h"
@@ -41,11 +40,11 @@ scoped_ptr<VideoCaptureDevice> VideoCaptureDeviceFactoryAndroid::Create(
   if (!base::StringToInt(device_name.id(), &id))
     return scoped_ptr<VideoCaptureDevice>();
 
-  VideoCaptureDeviceAndroid* video_capture_device(
+  scoped_ptr<VideoCaptureDeviceAndroid> video_capture_device(
       new VideoCaptureDeviceAndroid(device_name));
 
   if (video_capture_device->Init())
-    return scoped_ptr<VideoCaptureDevice>(video_capture_device);
+    return video_capture_device.Pass();
 
   DLOG(ERROR) << "Error creating Video Capture Device.";
   return scoped_ptr<VideoCaptureDevice>();
@@ -58,21 +57,27 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceNames(
 
   JNIEnv* env = AttachCurrentThread();
 
-  int num_cameras = Java_VideoCaptureFactory_getNumberOfCameras(
-      env, base::android::GetApplicationContext());
+  const jobject context = base::android::GetApplicationContext();
+  const int num_cameras = Java_VideoCaptureFactory_getNumberOfCameras(env,
+                                                                      context);
   DVLOG(1) << "VideoCaptureDevice::GetDeviceNames: num_cameras=" << num_cameras;
   if (num_cameras <= 0)
     return;
 
   for (int camera_id = num_cameras - 1; camera_id >= 0; --camera_id) {
     base::android::ScopedJavaLocalRef<jstring> device_name =
-        Java_VideoCaptureFactory_getDeviceName(env, camera_id);
+        Java_VideoCaptureFactory_getDeviceName(env, camera_id, context);
     if (device_name.obj() == NULL)
       continue;
 
+    const int capture_api_type =
+        Java_VideoCaptureFactory_getCaptureApiType(env, camera_id, context);
+
     VideoCaptureDevice::Name name(
         base::android::ConvertJavaStringToUTF8(device_name),
-        base::IntToString(camera_id));
+        base::IntToString(camera_id),
+        static_cast<VideoCaptureDevice::Name::CaptureApiType>(
+            capture_api_type));
     device_names->push_back(name);
 
     DVLOG(1) << "VideoCaptureDeviceFactoryAndroid::GetDeviceNames: camera "
@@ -89,7 +94,8 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(
     return;
   JNIEnv* env = AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobjectArray> collected_formats =
-      Java_VideoCaptureFactory_getDeviceSupportedFormats(env, id);
+      Java_VideoCaptureFactory_getDeviceSupportedFormats(env,
+          base::android::GetApplicationContext(), id);
   if (collected_formats.is_null())
     return;
 
@@ -121,6 +127,13 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(
     capture_formats->push_back(capture_format);
     DVLOG(1) << device.name() << " " << capture_format.ToString();
   }
+}
+
+// static
+VideoCaptureDeviceFactory*
+VideoCaptureDeviceFactory::CreateVideoCaptureDeviceFactory(
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) {
+  return new VideoCaptureDeviceFactoryAndroid();
 }
 
 }  // namespace media

@@ -8,11 +8,11 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "media/base/video_frame.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
+#include "media/cast/sender/video_frame_factory.h"
 
 namespace media {
 namespace cast {
@@ -21,6 +21,22 @@ namespace cast {
 class VideoEncoder {
  public:
   typedef base::Callback<void(scoped_ptr<EncodedFrame>)> FrameEncodedCallback;
+
+  // Creates a VideoEncoder instance from the given |video_config| and based on
+  // the current platform's hardware/library support; or null if no
+  // implementation will suffice.  The instance will run |status_change_cb| at
+  // some point in the future to indicate initialization success/failure.
+  //
+  // All VideoEncoder instances returned by this function support encoding
+  // sequences of differently-size VideoFrames.
+  //
+  // TODO(miu): Remove the CreateVEA callbacks.  http://crbug.com/454029
+  static scoped_ptr<VideoEncoder> Create(
+      const scoped_refptr<CastEnvironment>& cast_environment,
+      const VideoSenderConfig& video_config,
+      const StatusChangeCallback& status_change_cb,
+      const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_memory_cb);
 
   virtual ~VideoEncoder() {}
 
@@ -41,6 +57,19 @@ class VideoEncoder {
 
   // Inform the encoder to only reference frames older or equal to frame_id;
   virtual void LatestFrameIdToReference(uint32 frame_id) = 0;
+
+  // Creates a |VideoFrameFactory| object to vend |VideoFrame| object with
+  // encoder affinity (defined as offering some sort of performance benefit).
+  // This is an optional capability and by default returns null.
+  virtual scoped_ptr<VideoFrameFactory> CreateVideoFrameFactory();
+
+  // Instructs the encoder to finish and emit all frames that have been
+  // submitted for encoding. An encoder may hold a certain number of frames for
+  // analysis. Under certain network conditions, particularly when there is
+  // network congestion, it is necessary to flush out of the encoder all
+  // submitted frames so that eventually new frames may be encoded. Like
+  // EncodeVideoFrame(), the encoder will process this request asynchronously.
+  virtual void EmitFrames();
 };
 
 }  // namespace cast

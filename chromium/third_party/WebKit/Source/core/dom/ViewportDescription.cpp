@@ -238,9 +238,7 @@ void ViewportDescription::reportMobilePageStats(const LocalFrame* mainFrame) con
                 // To get an idea of how "far" the viewport is from the device's ideal width, we
                 // report the zoom level that we'd need to be at for the entire page to be visible.
                 int viewportWidth = maxWidth.intValue();
-                int windowWidth = mainFrame->document()->settings()->pinchVirtualViewportEnabled()
-                    ? mainFrame->host()->pinchViewport().size().width()
-                    : mainFrame->view()->frameRect().width();
+                int windowWidth = mainFrame->host()->pinchViewport().size().width();
                 int overviewZoomPercent = 100 * windowWidth / static_cast<float>(viewportWidth);
                 Platform::current()->histogramSparse("Viewport.OverviewZoom", overviewZoomPercent);
             }
@@ -257,6 +255,13 @@ void ViewportDescription::reportMobilePageStats(const LocalFrame* mainFrame) con
         Platform::current()->histogramEnumeration("Viewport.MetaTagType", MobileOptimizedMeta, TypeCount);
     }
 #endif
+}
+
+bool ViewportDescription::matchesHeuristicsForGpuRasterization() const
+{
+    return maxWidth == Length(DeviceWidth)
+        && minZoom == 1.0
+        && minZoomIsExplicit;
 }
 
 } // namespace blink

@@ -29,6 +29,7 @@
 
 #include "core/events/NodeEventContext.h"
 #include "core/events/TreeScopeEventContext.h"
+#include "core/events/WindowEventContext.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
@@ -42,58 +43,69 @@ class TouchEvent;
 class TouchList;
 class TreeScope;
 
-class EventPath final : public NoBaseWillBeGarbageCollected<EventPath> {
+class EventPath final : public NoBaseWillBeGarbageCollectedFinalized<EventPath> {
 public:
-    explicit EventPath(Event*);
-    explicit EventPath(Node*);
-    void resetWith(Node*);
+    explicit EventPath(Node&, Event* = nullptr);
+
+    void initializeWith(Node&, Event*);
 
     NodeEventContext& operator[](size_t index) { return m_nodeEventContexts[index]; }
     const NodeEventContext& operator[](size_t index) const { return m_nodeEventContexts[index]; }
+    NodeEventContext& at(size_t index) { return m_nodeEventContexts[index]; }
     NodeEventContext& last() { return m_nodeEventContexts[size() - 1]; }
+
+    WindowEventContext& windowEventContext() { ASSERT(m_windowEventContext); return *m_windowEventContext; }
+    void ensureWindowEventContext();
 
     bool isEmpty() const { return m_nodeEventContexts.isEmpty(); }
     size_t size() const { return m_nodeEventContexts.size(); }
 
-    void adjustForRelatedTarget(Node*, EventTarget* relatedTarget);
-    void adjustForTouchEvent(Node*, TouchEvent&);
+    void adjustForRelatedTarget(Node&, EventTarget* relatedTarget);
+    void adjustForTouchEvent(TouchEvent&);
 
-    static EventTarget* eventTargetRespectingTargetRules(Node*);
+    static EventTarget* eventTargetRespectingTargetRules(Node&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
+    void clear()
+    {
+        m_nodeEventContexts.clear();
+        m_treeScopeEventContexts.clear();
+    }
 
 private:
     EventPath();
 
-    NodeEventContext& at(size_t index) { return m_nodeEventContexts[index]; }
+    void addNodeEventContext(Node&);
 
-    void addNodeEventContext(Node*);
-
+    void initialize();
     void calculatePath();
     void calculateAdjustedTargets();
     void calculateTreeScopePrePostOrderNumbers();
 
-    void shrink(size_t newSize) { m_nodeEventContexts.shrink(newSize); }
-    void shrinkIfNeeded(const Node* target, const EventTarget* relatedTarget);
+    void shrink(size_t newSize) { ASSERT(!m_windowEventContext); m_nodeEventContexts.shrink(newSize); }
+    void shrinkIfNeeded(const Node& target, const EventTarget& relatedTarget);
 
-    void adjustTouchList(const Node*, const TouchList*, WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope>>& treeScopes);
+    void adjustTouchList(const TouchList*, WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope>>& treeScopes);
 
     typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RefPtrWillBeMember<TreeScopeEventContext>> TreeScopeEventContextMap;
     TreeScopeEventContext* ensureTreeScopeEventContext(Node* currentTarget, TreeScope*, TreeScopeEventContextMap&);
 
     typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RawPtrWillBeMember<EventTarget>> RelatedTargetMap;
 
-    static void buildRelatedNodeMap(const Node*, RelatedTargetMap&);
-    static EventTarget* findRelatedNode(TreeScope*, RelatedTargetMap&);
+    static void buildRelatedNodeMap(const Node&, RelatedTargetMap&);
+    static EventTarget* findRelatedNode(TreeScope&, RelatedTargetMap&);
 
 #if ENABLE(ASSERT)
     static void checkReachability(TreeScope&, TouchList&);
 #endif
 
+    const NodeEventContext& topNodeEventContext();
+
     WillBeHeapVector<NodeEventContext, 64> m_nodeEventContexts;
     RawPtrWillBeMember<Node> m_node;
     RawPtrWillBeMember<Event> m_event;
     WillBeHeapVector<RefPtrWillBeMember<TreeScopeEventContext>> m_treeScopeEventContexts;
+    OwnPtrWillBeMember<WindowEventContext> m_windowEventContext;
 };
 
 } // namespace

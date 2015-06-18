@@ -6,6 +6,7 @@
 
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/screen.h"
@@ -73,8 +74,6 @@ void CustomButton::SetState(ButtonState state) {
 
   state_ = state;
   StateChanged();
-  if (state_changed_delegate_.get())
-    state_changed_delegate_->StateChanged(state_);
   SchedulePaint();
 }
 
@@ -129,6 +128,11 @@ bool CustomButton::OnMousePressed(const ui::MouseEvent& event) {
       SetState(STATE_PRESSED);
     if (request_focus_on_press_)
       RequestFocus();
+    if (IsTriggerableEvent(event) && notify_action_ == NOTIFY_ON_PRESS) {
+      NotifyClick(event);
+      // NOTE: We may be deleted at this point (by the listener's notification
+      // handler).
+    }
   }
   return true;
 }
@@ -153,7 +157,7 @@ void CustomButton::OnMouseReleased(const ui::MouseEvent& event) {
   }
 
   SetState(STATE_HOVERED);
-  if (IsTriggerableEvent(event)) {
+  if (IsTriggerableEvent(event) && notify_action_ == NOTIFY_ON_RELEASE) {
     NotifyClick(event);
     // NOTE: We may be deleted at this point (by the listener's notification
     // handler).
@@ -194,9 +198,8 @@ bool CustomButton::OnKeyPressed(const ui::KeyEvent& event) {
   } else if (event.key_code() == ui::VKEY_RETURN) {
     SetState(STATE_NORMAL);
     // TODO(beng): remove once NotifyClick takes ui::Event.
-    ui::MouseEvent synthetic_event(ui::ET_MOUSE_RELEASED,
-                                   gfx::Point(),
-                                   gfx::Point(),
+    ui::MouseEvent synthetic_event(ui::ET_MOUSE_RELEASED, gfx::Point(),
+                                   gfx::Point(), ui::EventTimeForNow(),
                                    ui::EF_LEFT_MOUSE_BUTTON,
                                    ui::EF_LEFT_MOUSE_BUTTON);
     NotifyClick(synthetic_event);
@@ -212,11 +215,9 @@ bool CustomButton::OnKeyReleased(const ui::KeyEvent& event) {
 
   SetState(STATE_NORMAL);
   // TODO(beng): remove once NotifyClick takes ui::Event.
-  ui::MouseEvent synthetic_event(ui::ET_MOUSE_RELEASED,
-                                 gfx::Point(),
-                                 gfx::Point(),
-                                 ui::EF_LEFT_MOUSE_BUTTON,
-                                 ui::EF_LEFT_MOUSE_BUTTON);
+  ui::MouseEvent synthetic_event(
+      ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), ui::EventTimeForNow(),
+      ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   NotifyClick(synthetic_event);
   return true;
 }
@@ -252,16 +253,10 @@ void CustomButton::OnGestureEvent(ui::GestureEvent* event) {
 
 bool CustomButton::AcceleratorPressed(const ui::Accelerator& accelerator) {
   SetState(STATE_NORMAL);
-  /*
-  ui::KeyEvent key_event(ui::ET_KEY_RELEASED, accelerator.key_code(),
-                         accelerator.modifiers());
-                         */
   // TODO(beng): remove once NotifyClick takes ui::Event.
-  ui::MouseEvent synthetic_event(ui::ET_MOUSE_RELEASED,
-                                 gfx::Point(),
-                                 gfx::Point(),
-                                 ui::EF_LEFT_MOUSE_BUTTON,
-                                 ui::EF_LEFT_MOUSE_BUTTON);
+  ui::MouseEvent synthetic_event(
+      ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), ui::EventTimeForNow(),
+      ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   NotifyClick(synthetic_event);
   return true;
 }
@@ -279,7 +274,10 @@ void CustomButton::ShowContextMenu(const gfx::Point& p,
 }
 
 void CustomButton::OnDragDone() {
-  SetState(STATE_NORMAL);
+  // Only reset the state to normal if the button isn't currently disabled
+  // (since disabled buttons may still be able to be dragged).
+  if (state_ != STATE_DISABLED)
+    SetState(STATE_NORMAL);
 }
 
 void CustomButton::GetAccessibleState(ui::AXViewState* state) {
@@ -323,7 +321,8 @@ CustomButton::CustomButton(ButtonListener* listener)
       animate_on_state_change_(true),
       is_throbbing_(false),
       triggerable_event_flags_(ui::EF_LEFT_MOUSE_BUTTON),
-      request_focus_on_press_(true) {
+      request_focus_on_press_(true),
+      notify_action_(NOTIFY_ON_RELEASE) {
   hover_animation_.reset(new gfx::ThrobAnimation(this));
   hover_animation_->SetSlideDuration(kHoverFadeDurationMs);
 }

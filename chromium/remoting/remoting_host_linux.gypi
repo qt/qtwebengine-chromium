@@ -4,7 +4,8 @@
 
 {
   'conditions': [
-    ['OS=="linux" and branding=="Chrome" and enable_remoting_host==1 and chromeos==0', {
+    ['(branding=="Chrome" and enable_remoting_host==1 and chromeos==0) or (archive_chromoting_tests==1)', {
+
       'variables': {
         'build_deb_script': 'host/installer/linux/build-deb.sh',
         'deb_filename': 'host/installer/<!(["<(build_deb_script)", "-p", "-s", "<(DEPTH)"])',
@@ -17,6 +18,7 @@
           '<(PRODUCT_DIR)/remote_assistance_host.debug',
         ]
       },
+
       'targets': [
         {
           # Store the installer package(s) into a zip file so there is a
@@ -39,9 +41,20 @@
               ],
               'action': [ 'zip', '-j', '-0', '<@(_outputs)', '<@(_inputs)' ],
             },
+            {
+              # Copy the debian package file, which has version info in it,
+              # to a consistent filename for use on Chromoting swarming bots.
+              'action_name': 'Copy debian package.',
+              'inputs': [
+                '<@(deb_filename)',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/remoting-me2me-host.deb',
+              ],
+              'action': [ 'cp', '<@(_inputs)', '<@(_outputs)'],
+            },
           ],
-        },
-        {
+        }, {
           'target_name': 'remoting_me2me_host_deb_installer',
           'type': 'none',
           'dependencies': [
@@ -75,10 +88,18 @@
             },
           ],
         },
-      ],
-    }],  # OS=="linux" and branding=="Chrome"
+      ],  # end of 'targets'
+    }, {
+      # Dummy targets.
+      'targets': [
+        {
+          'target_name': 'remoting_me2me_host_archive',
+          'type': 'none',
+        },
+      ],  # end of 'targets'
+    }],  # branding=="Chrome"
 
-    ['OS=="linux" and enable_remoting_host==1', {
+    ['enable_remoting_host==1', {
       'targets': [
         # Linux breakpad processing
         # The following target is disabled temporarily because it was failing
@@ -117,7 +138,7 @@
         #   ],  # end of 'conditions'
         # },  # end of target 'remoting_linux_symbols'
       ],  # end of 'targets'
-    }],  # 'OS=="linux"'
+    }],  # 'enable_remoting_host==1'
 
   ],  # end of 'conditions'
 }

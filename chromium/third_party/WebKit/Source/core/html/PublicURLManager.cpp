@@ -35,9 +35,9 @@
 
 namespace blink {
 
-PassOwnPtr<PublicURLManager> PublicURLManager::create(ExecutionContext* context)
+PassOwnPtrWillBeRawPtr<PublicURLManager> PublicURLManager::create(ExecutionContext* context)
 {
-    OwnPtr<PublicURLManager> publicURLManager(adoptPtr(new PublicURLManager(context)));
+    OwnPtrWillBeRawPtr<PublicURLManager> publicURLManager = adoptPtrWillBeNoop(new PublicURLManager(context));
     publicURLManager->suspendIfNeeded();
     return publicURLManager.release();
 }
@@ -79,7 +79,7 @@ void PublicURLManager::revoke(const String& uuid)
         for (auto& registeredUrl : registeredURLs) {
             if (uuid == registeredUrl.value) {
                 KURL url(ParsedURLString, registeredUrl.key);
-                MemoryCache::removeURLFromCache(executionContext(), url);
+                executionContext()->removeURLFromMemoryCache(url);
                 registry->unregisterURL(url);
                 urlsToRemove.append(registeredUrl.key);
             }
@@ -102,6 +102,11 @@ void PublicURLManager::stop()
     }
 
     m_registryToURL.clear();
+}
+
+DEFINE_TRACE(PublicURLManager)
+{
+    ActiveDOMObject::trace(visitor);
 }
 
 }

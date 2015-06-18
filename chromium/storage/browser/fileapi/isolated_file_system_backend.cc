@@ -10,12 +10,12 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util_proxy.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/sequenced_task_runner.h"
-#include "storage/browser/blob/file_stream_reader.h"
+#include "base/thread_task_runner_handle.h"
 #include "storage/browser/fileapi/async_file_util_adapter.h"
 #include "storage/browser/fileapi/copy_or_move_file_validator.h"
 #include "storage/browser/fileapi/dragged_file_util.h"
+#include "storage/browser/fileapi/file_stream_reader.h"
 #include "storage/browser/fileapi/file_stream_writer.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation.h"
@@ -29,8 +29,12 @@
 
 namespace storage {
 
-IsolatedFileSystemBackend::IsolatedFileSystemBackend()
-    : isolated_file_util_(new AsyncFileUtilAdapter(new LocalFileUtil())),
+IsolatedFileSystemBackend::IsolatedFileSystemBackend(
+    bool use_for_type_native_local,
+    bool use_for_type_platform_app)
+    : use_for_type_native_local_(use_for_type_native_local),
+      use_for_type_platform_app_(use_for_type_platform_app),
+      isolated_file_util_(new AsyncFileUtilAdapter(new LocalFileUtil())),
       dragged_file_util_(new AsyncFileUtilAdapter(new DraggedFileUtil())),
       transient_file_util_(new AsyncFileUtilAdapter(new TransientFileUtil())) {
 }
@@ -44,11 +48,10 @@ bool IsolatedFileSystemBackend::CanHandleType(FileSystemType type) const {
     case kFileSystemTypeDragged:
     case kFileSystemTypeForTransientFile:
       return true;
-#if !defined(OS_CHROMEOS)
     case kFileSystemTypeNativeLocal:
+      return use_for_type_native_local_;
     case kFileSystemTypeNativeForPlatformApp:
-      return true;
-#endif
+      return use_for_type_platform_app_;
     default:
       return false;
   }
@@ -62,7 +65,7 @@ void IsolatedFileSystemBackend::ResolveURL(
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
   // We never allow opening a new isolated FileSystem via usual ResolveURL.
-  base::MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(callback,
                  GURL(),

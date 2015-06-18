@@ -7,13 +7,14 @@ module mojo;
 import "media/mojo/interfaces/demuxer_stream.mojom";
 import "media/mojo/interfaces/media_types.mojom";
 
-[Client=MediaRendererClient]
 interface MediaRenderer {
   // Initializes the Renderer with one or both of an audio and video stream,
   // calling back upon completion.
   // NOTE: If an error occurs, MediaRendererClient::OnError() will be called
   // before the callback is executed.
-  Initialize(DemuxerStream? audio, DemuxerStream? video) => ();
+  Initialize(MediaRendererClient client,
+             DemuxerStream? audio,
+             DemuxerStream? video) => ();
 
   // Discards any buffered data, executing callback when completed.
   // NOTE: If an error occurs, MediaRendererClient::OnError() can be called
@@ -24,7 +25,7 @@ interface MediaRenderer {
   StartPlayingFrom(int64 time_usec);
 
   // Updates the current playback rate. The default playback rate should be 1.
-  SetPlaybackRate(float playback_rate);
+  SetPlaybackRate(double playback_rate);
 
   // Sets the output volume. The default volume should be 1.
   SetVolume(float volume);

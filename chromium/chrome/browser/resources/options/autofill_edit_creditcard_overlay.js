@@ -74,6 +74,13 @@ cr.define('options', function() {
       creditCard[3] = $('expiration-month').value;
       creditCard[4] = $('expiration-year').value;
       chrome.send('setCreditCard', creditCard);
+
+      // If the GUID is empty, this form is being used to add a new card,
+      // rather than edit an existing one.
+      if (!this.guid_.length) {
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_AutofillCreditCardAdded']);
+      }
     },
 
     /**
@@ -96,7 +103,8 @@ cr.define('options', function() {
      * @private
      */
     inputFieldChanged_: function(opt_event) {
-      var disabled = !$('name-on-card').value && !$('credit-card-number').value;
+      var disabled = !$('name-on-card').value.trim() &&
+              !$('credit-card-number').value.trim();
       $('autofill-edit-credit-card-apply-button').disabled = disabled;
     },
 

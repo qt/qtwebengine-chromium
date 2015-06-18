@@ -11,33 +11,52 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_policy_controller.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace content {
 
+namespace {
+
+// Converts a PowerSaveBlocker::Reason to a
+// chromeos::PowerPolicyController::WakeLockReason.
+chromeos::PowerPolicyController::WakeLockReason GetWakeLockReason(
+    PowerSaveBlocker::Reason reason) {
+  switch (reason) {
+    case PowerSaveBlocker::kReasonAudioPlayback:
+      return chromeos::PowerPolicyController::REASON_AUDIO_PLAYBACK;
+    case PowerSaveBlocker::kReasonVideoPlayback:
+      return chromeos::PowerPolicyController::REASON_VIDEO_PLAYBACK;
+    case PowerSaveBlocker::kReasonOther:
+      return chromeos::PowerPolicyController::REASON_OTHER;
+  }
+  return chromeos::PowerPolicyController::REASON_OTHER;
+}
+
+}  // namespace
+
 class PowerSaveBlockerImpl::Delegate
     : public base::RefCountedThreadSafe<PowerSaveBlockerImpl::Delegate> {
  public:
-  Delegate(PowerSaveBlockerType type, const std::string& reason)
-      : type_(type),
-        reason_(reason),
-        block_id_(0) {}
+  Delegate(PowerSaveBlockerType type,
+           Reason reason,
+           const std::string& description)
+      : type_(type), reason_(reason), description_(description), block_id_(0) {}
 
   void ApplyBlock() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (!chromeos::DBusThreadManager::IsInitialized())
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    if (!chromeos::PowerPolicyController::IsInitialized())
       return;
 
-    chromeos::PowerPolicyController* controller =
-        chromeos::DBusThreadManager::Get()->GetPowerPolicyController();
+    auto* controller = chromeos::PowerPolicyController::Get();
     switch (type_) {
       case kPowerSaveBlockPreventAppSuspension:
-        block_id_ = controller->AddSystemWakeLock(reason_);
+        block_id_ = controller->AddSystemWakeLock(GetWakeLockReason(reason_),
+                                                  description_);
         break;
       case kPowerSaveBlockPreventDisplaySleep:
-        block_id_ = controller->AddScreenWakeLock(reason_);
+        block_id_ = controller->AddScreenWakeLock(GetWakeLockReason(reason_),
+                                                  description_);
         break;
       default:
         NOTREACHED() << "Unhandled block type " << type_;
@@ -45,12 +64,11 @@ class PowerSaveBlockerImpl::Delegate
   }
 
   void RemoveBlock() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (!chromeos::DBusThreadManager::IsInitialized())
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
+    if (!chromeos::PowerPolicyController::IsInitialized())
       return;
 
-    chromeos::DBusThreadManager::Get()->GetPowerPolicyController()->
-        RemoveWakeLock(block_id_);
+    chromeos::PowerPolicyController::Get()->RemoveWakeLock(block_id_);
   }
 
  private:
@@ -58,7 +76,8 @@ class PowerSaveBlockerImpl::Delegate
   virtual ~Delegate() {}
 
   PowerSaveBlockerType type_;
-  std::string reason_;
+  Reason reason_;
+  std::string description_;
 
   // ID corresponding to the block request in PowerPolicyController.
   int block_id_;
@@ -67,8 +86,9 @@ class PowerSaveBlockerImpl::Delegate
 };
 
 PowerSaveBlockerImpl::PowerSaveBlockerImpl(PowerSaveBlockerType type,
-                                           const std::string& reason)
-    : delegate_(new Delegate(type, reason)) {
+                                           Reason reason,
+                                           const std::string& description)
+    : delegate_(new Delegate(type, reason, description)) {
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                           base::Bind(&Delegate::ApplyBlock, delegate_));
 }

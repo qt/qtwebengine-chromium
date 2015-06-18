@@ -8,26 +8,22 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event.h"
-#include "base/files/file.h"
+#include "base/memory/ref_counted.h"
 #include "base/pickle.h"
+#include "base/trace_event/trace_event.h"
 #include "ipc/ipc_export.h"
 
 #if !defined(NDEBUG)
 #define IPC_MESSAGE_LOG_ENABLED
 #endif
 
-#if defined(OS_POSIX)
-#include "base/memory/ref_counted.h"
-#endif
-
-class FileDescriptorSet;
-
 namespace IPC {
 
 //------------------------------------------------------------------------------
 
 struct LogData;
+class MessageAttachment;
+class MessageAttachmentSet;
 
 class IPC_EXPORT Message : public Pickle {
  public:
@@ -170,21 +166,17 @@ class IPC_EXPORT Message : public Pickle {
     return Pickle::FindNext(sizeof(Header), range_start, range_end);
   }
 
-#if defined(OS_POSIX)
-  // On POSIX, a message supports reading / writing FileDescriptor objects.
-  // This is used to pass a file descriptor to the peer of an IPC channel.
-
-  // Add a descriptor to the end of the set. Returns false if the set is full.
-  bool WriteFile(base::ScopedFD descriptor);
-  bool WriteBorrowingFile(const base::PlatformFile& descriptor);
-
-  // Get a file descriptor from the message. Returns false on error.
-  //   iter: a Pickle iterator to the current location in the message.
-  bool ReadFile(PickleIterator* iter, base::ScopedFD* file) const;
-
-  // Returns true if there are any file descriptors in this message.
-  bool HasFileDescriptors() const;
-#endif
+  // WriteAttachment appends |attachment| to the end of the set. It returns
+  // false iff the set is full.
+  bool WriteAttachment(scoped_refptr<MessageAttachment> attachment);
+  // ReadAttachment parses an attachment given the parsing state |iter| and
+  // writes it to |*attachment|. It returns true on success.
+  bool ReadAttachment(PickleIterator* iter,
+                      scoped_refptr<MessageAttachment>* attachment) const;
+  // Returns true if there are any attachment in this message.
+  bool HasAttachments() const;
+  // Returns true if there are any MojoHandleAttachments in this message.
+  bool HasMojoHandles() const;
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
   // Adds the outgoing time from Time::Now() at the end of the message and sets
@@ -250,21 +242,19 @@ class IPC_EXPORT Message : public Pickle {
   // Used internally to support IPC::Listener::OnBadMessageReceived.
   mutable bool dispatch_error_;
 
-#if defined(OS_POSIX)
   // The set of file descriptors associated with this message.
-  scoped_refptr<FileDescriptorSet> file_descriptor_set_;
+  scoped_refptr<MessageAttachmentSet> attachment_set_;
 
-  // Ensure that a FileDescriptorSet is allocated
-  void EnsureFileDescriptorSet();
+  // Ensure that a MessageAttachmentSet is allocated
+  void EnsureMessageAttachmentSet();
 
-  FileDescriptorSet* file_descriptor_set() {
-    EnsureFileDescriptorSet();
-    return file_descriptor_set_.get();
+  MessageAttachmentSet* attachment_set() {
+    EnsureMessageAttachmentSet();
+    return attachment_set_.get();
   }
-  const FileDescriptorSet* file_descriptor_set() const {
-    return file_descriptor_set_.get();
+  const MessageAttachmentSet* attachment_set() const {
+    return attachment_set_.get();
   }
-#endif
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
   // Used for logging.

@@ -14,27 +14,18 @@
 #ifndef CONTENT_BROWSER_BROWSER_PLUGIN_BROWSER_PLUGIN_EMBEDDER_H_
 #define CONTENT_BROWSER_BROWSER_PLUGIN_BROWSER_PLUGIN_EMBEDDER_H_
 
-#include <map>
-
 #include "base/memory/weak_ptr.h"
-#include "base/values.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 struct BrowserPluginHostMsg_Attach_Params;
-struct BrowserPluginHostMsg_ResizeGuest_Params;
-
-namespace gfx {
-class Point;
-}
 
 namespace content {
 
 class BrowserPluginGuest;
 class BrowserPluginGuestManager;
 class RenderWidgetHostImpl;
-class WebContentsImpl;
 struct NativeWebKeyboardEvent;
 
 class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
@@ -43,24 +34,33 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
 
   static BrowserPluginEmbedder* Create(WebContentsImpl* web_contents);
 
-  // Returns this embedder's WebContentsImpl.
-  WebContentsImpl* GetWebContents() const;
-
   // Called when embedder's |rwh| has sent screen rects to renderer.
   void DidSendScreenRects();
 
   // WebContentsObserver implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message,
+                         RenderFrameHost* render_frame_host) override;
 
+  // Sends a 'dragend' message to the guest that started the drag.
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
       int screen_y, blink::WebDragOperation operation);
 
-  void OnUpdateDragCursor(bool* handled);
+  // Indicates that a drag operation has entered into the bounds of a given
+  // |guest|. Returns whether the |guest| also started the operation.
+  bool DragEnteredGuest(BrowserPluginGuest* guest);
 
-  void DragEnteredGuest(BrowserPluginGuest* guest);
-
+  // Indicates that a drag operation has left the bounds of a given |guest|.
   void DragLeftGuest(BrowserPluginGuest* guest);
 
+  // Called when the screen info has changed.
+  void ScreenInfoChanged();
+
+  // Closes modal dialogs in all of the guests.
+  void CancelGuestDialogs();
+
+  // Called by WebContentsViewGuest when a drag operation is started within
+  // |guest|. This |guest| will be signaled at the end of the drag operation.
   void StartDrag(BrowserPluginGuest* guest);
 
   // Sends EndSystemDrag message to the guest that initiated the last drag/drop
@@ -70,11 +70,10 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   // Used to handle special keyboard events.
   bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
 
-  // Find the given |search_text| in the page. Returns true if the find request
-  // is handled by this browser plugin embedder.
-  bool Find(int request_id,
-            const base::string16& search_text,
-            const blink::WebFindOptions& options);
+  // Returns the "full page" guest if there is one. That is, if there is a
+  // single BrowserPlugin in the embedder which takes up the full page, then it
+  // is returned.
+  BrowserPluginGuest* GetFullPageGuest();
 
  private:
   explicit BrowserPluginEmbedder(WebContentsImpl* web_contents);
@@ -83,21 +82,23 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
 
   void ClearGuestDragStateIfApplicable();
 
-  bool DidSendScreenRectsCallback(WebContents* guest_web_contents);
+  static bool DidSendScreenRectsCallback(WebContents* guest_web_contents);
 
-  bool UnlockMouseIfNecessaryCallback(bool* mouse_unlocked, WebContents* guest);
+  // Notifies a guest that the embedder's screen info has changed.
+  static bool NotifyScreenInfoChanged(WebContents* guest_web_contents);
 
-  bool FindInGuest(int request_id,
-                   const base::string16& search_text,
-                   const blink::WebFindOptions& options,
-                   WebContents* guest);
+  // Closes modal dialogs in |guest_web_contents|.
+  static bool CancelDialogs(WebContents* guest_web_contents);
+
+  static bool UnlockMouseIfNecessaryCallback(bool* mouse_unlocked,
+                                             WebContents* guest);
 
   // Message handlers.
-  void OnAttach(int instance_id,
+
+  void OnAttach(RenderFrameHost* render_frame_host,
+                int instance_id,
                 const BrowserPluginHostMsg_Attach_Params& params);
-  void OnPluginAtPositionResponse(int instance_id,
-                                  int request_id,
-                                  const gfx::Point& position);
+  void OnUpdateDragCursor(bool* handled);
 
   // Used to correctly update the cursor when dragging over a guest, and to
   // handle a race condition when dropping onto the guest that started the drag

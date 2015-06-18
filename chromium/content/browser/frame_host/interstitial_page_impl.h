@@ -61,7 +61,7 @@ class CONTENT_EXPORT InterstitialPageImpl
   void Hide() override;
   void DontProceed() override;
   void Proceed() override;
-  RenderViewHost* GetRenderViewHostForTesting() const override;
+  RenderFrameHost* GetMainFrame() const override;
   InterstitialPageDelegate* GetDelegateForTesting() override;
   void DontCreateViewForTesting() override;
   void SetSize(const gfx::Size& size) override;
@@ -83,12 +83,6 @@ class CONTENT_EXPORT InterstitialPageImpl
     reload_on_dont_proceed_ = value;
   }
   bool reload_on_dont_proceed() const { return reload_on_dont_proceed_; }
-
-#if defined(OS_ANDROID)
-  // Android shares a single platform window for all tabs, so we need to expose
-  // the RenderViewHost to properly route gestures to the interstitial.
-  RenderViewHost* GetRenderViewHost() const;
-#endif
 
   // TODO(nasko): This should move to InterstitialPageNavigatorImpl, but in
   // the meantime make it public, so it can be called directly.
@@ -122,7 +116,6 @@ class CONTENT_EXPORT InterstitialPageImpl
                             int error_code) override;
   RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const override;
-  WebPreferences ComputeWebkitPrefs() override;
   gfx::Rect GetRootWindowResizerRect() const override;
   void CreateNewWindow(
       int render_process_id,
@@ -136,9 +129,9 @@ class CONTENT_EXPORT InterstitialPageImpl
   void CreateNewFullscreenWidget(int render_process_id, int route_id) override;
   void ShowCreatedWindow(int route_id,
                          WindowOpenDisposition disposition,
-                         const gfx::Rect& initial_pos,
+                         const gfx::Rect& initial_rect,
                          bool user_gesture) override;
-  void ShowCreatedWidget(int route_id, const gfx::Rect& initial_pos) override;
+  void ShowCreatedWidget(int route_id, const gfx::Rect& initial_rect) override;
   void ShowCreatedFullscreenWidget(int route_id) override;
 
   SessionStorageNamespace* GetSessionStorageNamespace(
@@ -152,7 +145,7 @@ class CONTENT_EXPORT InterstitialPageImpl
                               bool* is_keyboard_shortcut) override;
   void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) override;
 #if defined(OS_WIN)
-  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
+  gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
 #endif
 
   bool enabled() const { return enabled_; }

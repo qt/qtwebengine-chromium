@@ -20,14 +20,13 @@ TEST(ResourceLoaderOptionsTest, DeepCopy)
 {
     // Check that the fields of ResourceLoaderOptions are enums,
     // except for initiatorInfo and securityOrigin.
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<DataBufferingPolicy>::value, DataBufferingPolicy_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<StoredCredentials>::value, StoredCredentials_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<CredentialRequest>::value, CredentialRequest_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<ContentSecurityPolicyCheck>::value, ContentSecurityPolicyCheck_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<RequestInitiatorContext>::value, RequestInitiatorContext_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<MixedContentBlockingTreatment>::value, MixedContentBlockingTreatment_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<SynchronousPolicy>::value, SynchronousPolicy_is_enum);
-    COMPILE_ASSERT(WTF::IsConvertibleToInteger<CORSEnabled>::value, CORSEnabled_is_enum);
+    static_assert(WTF::IsEnum<DataBufferingPolicy>::value, "DataBufferingPolicy should be an enum");
+    static_assert(WTF::IsEnum<StoredCredentials>::value, "StoredCredentials should be an enum");
+    static_assert(WTF::IsEnum<CredentialRequest>::value, "CredentialRequest should be an enum");
+    static_assert(WTF::IsEnum<ContentSecurityPolicyDisposition>::value, "ContentSecurityPolicyDisposition should be an enum");
+    static_assert(WTF::IsEnum<RequestInitiatorContext>::value, "RequestInitiatorContext should be an enum");
+    static_assert(WTF::IsEnum<SynchronousPolicy>::value, "SynchronousPolicy should be an enum");
+    static_assert(WTF::IsEnum<CORSEnabled>::value, "CORSEnabled should be an enum");
 
     ResourceLoaderOptions original;
     RefPtr<SecurityOrigin> securityOrigin = SecurityOrigin::createFromString("http://www.google.com");
@@ -46,7 +45,6 @@ TEST(ResourceLoaderOptionsTest, DeepCopy)
     EXPECT_EQ(original.initiatorInfo.position, copyData.initiatorInfo.position);
     EXPECT_EQ(original.initiatorInfo.startTime, copyData.initiatorInfo.startTime);
     EXPECT_EQ(original.requestInitiatorContext, copyData.requestInitiatorContext);
-    EXPECT_EQ(original.mixedContentBlockingTreatment, copyData.mixedContentBlockingTreatment);
     EXPECT_EQ(original.synchronousPolicy, copyData.synchronousPolicy);
     EXPECT_EQ(original.corsEnabled, copyData.corsEnabled);
     EXPECT_EQ(original.securityOrigin->protocol(), copyData.securityOrigin->protocol());
@@ -69,7 +67,6 @@ TEST(ResourceLoaderOptionsTest, DeepCopy)
     EXPECT_EQ(original.initiatorInfo.position, copy.initiatorInfo.position);
     EXPECT_EQ(original.initiatorInfo.startTime, copy.initiatorInfo.startTime);
     EXPECT_EQ(original.requestInitiatorContext, copy.requestInitiatorContext);
-    EXPECT_EQ(original.mixedContentBlockingTreatment, copy.mixedContentBlockingTreatment);
     EXPECT_EQ(original.synchronousPolicy, copy.synchronousPolicy);
     EXPECT_EQ(original.corsEnabled, copy.corsEnabled);
     EXPECT_EQ(original.securityOrigin->protocol(), copy.securityOrigin->protocol());

@@ -19,8 +19,8 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/thread.h"
 #include "base/win/scoped_comptr.h"
+#include "media/base/video_capture_types.h"
 #include "media/video/capture/video_capture_device.h"
-#include "media/video/capture/video_capture_types.h"
 #include "media/video/capture/win/capability_list_win.h"
 #include "media/video/capture/win/sink_filter_win.h"
 #include "media/video/capture/win/sink_input_pin_win.h"
@@ -64,15 +64,14 @@ class VideoCaptureDeviceWin
       const GUID& sub_type);
 
   explicit VideoCaptureDeviceWin(const Name& device_name);
-  virtual ~VideoCaptureDeviceWin();
+  ~VideoCaptureDeviceWin() override;
   // Opens the device driver for this device.
   bool Init();
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(
-      const VideoCaptureParams& params,
-      scoped_ptr<VideoCaptureDevice::Client> client) override;
-  virtual void StopAndDeAllocate() override;
+  void AllocateAndStart(const VideoCaptureParams& params,
+                        scoped_ptr<VideoCaptureDevice::Client> client) override;
+  void StopAndDeAllocate() override;
 
  private:
   enum InternalState {
@@ -83,12 +82,10 @@ class VideoCaptureDeviceWin
   };
 
   // Implements SinkFilterObserver.
-  virtual void FrameReceived(const uint8* buffer, int length);
+  void FrameReceived(const uint8* buffer, int length) override;
 
   bool CreateCapabilityMap();
   void SetAntiFlickerInCaptureFilter();
-  HRESULT InstantiateWDMFiltersAndPins();
-  HRESULT AddWDMCrossbarFilterToGraphAndConnect();
   void SetErrorState(const std::string& reason);
 
   Name device_name_;
@@ -96,19 +93,13 @@ class VideoCaptureDeviceWin
   scoped_ptr<VideoCaptureDevice::Client> client_;
 
   base::win::ScopedComPtr<IBaseFilter> capture_filter_;
+
   base::win::ScopedComPtr<IGraphBuilder> graph_builder_;
+  base::win::ScopedComPtr<ICaptureGraphBuilder2> capture_graph_builder_;
+
   base::win::ScopedComPtr<IMediaControl> media_control_;
   base::win::ScopedComPtr<IPin> input_sink_pin_;
   base::win::ScopedComPtr<IPin> output_capture_pin_;
-  // Used when using a MJPEG decoder.
-  base::win::ScopedComPtr<IBaseFilter> mjpg_filter_;
-  base::win::ScopedComPtr<IPin> input_mjpg_pin_;
-  base::win::ScopedComPtr<IPin> output_mjpg_pin_;
-  // Used for WDM devices as specified by |device_name_|. These devices need a
-  // WDM Crossbar Filter upstream from the Capture filter.
-  base::win::ScopedComPtr<IBaseFilter> crossbar_filter_;
-  base::win::ScopedComPtr<IPin> crossbar_video_output_pin_;
-  base::win::ScopedComPtr<IPin> analog_video_input_pin_;
 
   scoped_refptr<SinkFilter> sink_filter_;
 

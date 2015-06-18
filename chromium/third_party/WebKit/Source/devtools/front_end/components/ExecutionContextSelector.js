@@ -19,29 +19,36 @@ WebInspector.ExecutionContextSelector = function()
 WebInspector.ExecutionContextSelector.prototype = {
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetAdded: function(target)
     {
+        if (!target.hasJSContext())
+            return;
         // Defer selecting default target since we need all clients to get their
         // targetAdded notifications first.
         setImmediate(function() {
-            if (!WebInspector.context.flavor(WebInspector.Target) || WebInspector.isWorkerFrontend())
+            // We always want the second context for the service worker targets.
+            if (!WebInspector.context.flavor(WebInspector.Target))
                 WebInspector.context.setFlavor(WebInspector.Target, target);
         });
     },
 
     /**
+     * @override
      * @param {!WebInspector.Target} target
      */
     targetRemoved: function(target)
     {
+        if (!target.hasJSContext())
+            return;
         var currentExecutionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
         if (currentExecutionContext && currentExecutionContext.target() === target)
             this._currentExecutionContextGone();
 
-        var targets = WebInspector.targetManager.targets();
-        if (WebInspector.context.flavor(WebInspector.Target) === target && targets.length && !WebInspector.isWorkerFrontend())
+        var targets = WebInspector.targetManager.targetsWithJSContext();
+        if (WebInspector.context.flavor(WebInspector.Target) === target && targets.length)
             WebInspector.context.setFlavor(WebInspector.Target, targets[0]);
     },
 
@@ -85,12 +92,8 @@ WebInspector.ExecutionContextSelector.prototype = {
     {
         var executionContext = /** @type {!WebInspector.ExecutionContext} */ (event.data);
 
-        if (!WebInspector.context.flavor(WebInspector.ExecutionContext)) {
-            // FIXME(413886): Execution context for the main thread on the service/shared worker shadow page
-            // should never be sent to frontend. The worker frontend check below could be removed once this is fixed.
-            if (!WebInspector.isWorkerFrontend() || executionContext.target() !== WebInspector.targetManager.mainTarget())
-                WebInspector.context.setFlavor(WebInspector.ExecutionContext, executionContext);
-        }
+        if (!WebInspector.context.flavor(WebInspector.ExecutionContext))
+            WebInspector.context.setFlavor(WebInspector.ExecutionContext, executionContext);
     },
 
     /**
@@ -105,10 +108,10 @@ WebInspector.ExecutionContextSelector.prototype = {
 
     _currentExecutionContextGone: function()
     {
-        var targets = WebInspector.targetManager.targets();
+        var targets = WebInspector.targetManager.targetsWithJSContext();
         var newContext = null;
         for (var i = 0; i < targets.length; ++i) {
-            if (WebInspector.isWorkerFrontend() && targets[i] === WebInspector.targetManager.mainTarget())
+            if (targets[i].isServiceWorker())
                 continue;
             var executionContexts = targets[i].runtimeModel.executionContexts();
             if (executionContexts.length) {
@@ -136,8 +139,14 @@ WebInspector.ExecutionContextSelector.completionsForTextPromptInCurrentContext =
     }
 
     // Pass less stop characters to rangeOfWord so the range will be a more complete expression.
-    var expressionRange = wordRange.startContainer.rangeOfWord(wordRange.startOffset, " =:[({;,!+-*/&|^<>", proxyElement, "backward");
+    var expressionRange = wordRange.startContainer.rangeOfWord(wordRange.startOffset, " =:({;,!+-*/&|^<>", proxyElement, "backward");
     var expressionString = expressionRange.toString();
+
+    // The "[" is also a stop character, except when it's the last character of the expression.
+    var pos = expressionString.lastIndexOf("[", expressionString.length - 2);
+    if (pos !== -1)
+        expressionString = expressionString.substr(pos + 1);
+
     var prefix = wordRange.toString();
     executionContext.completionsForExpression(expressionString, prefix, force, completionsReadyCallback);
 }

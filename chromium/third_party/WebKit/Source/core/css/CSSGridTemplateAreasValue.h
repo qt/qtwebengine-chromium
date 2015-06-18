@@ -32,7 +32,7 @@
 #define CSSGridTemplateAreasValue_h
 
 #include "core/css/CSSValue.h"
-#include "core/rendering/style/GridCoordinate.h"
+#include "core/style/GridCoordinate.h"
 #include "wtf/text/StringHash.h"
 
 namespace blink {
@@ -51,7 +51,9 @@ public:
     size_t rowCount() const { return m_rowCount; }
     size_t columnCount() const { return m_columnCount; }
 
-    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
+    bool equals(const CSSGridTemplateAreasValue&) const;
+
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSGridTemplateAreasValue(const NamedGridAreaMap&, size_t rowCount, size_t columnCount);

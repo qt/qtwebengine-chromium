@@ -9,7 +9,7 @@
 #include "content/common/device_sensors/device_orientation_hardware_buffer.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebDeviceOrientationListener.h"
+#include "third_party/WebKit/public/platform/modules/device_orientation/WebDeviceOrientationListener.h"
 
 namespace content {
 
@@ -74,7 +74,7 @@ class DeviceOrientationEventPumpTest : public testing::Test {
 
  protected:
   void SetUp() override {
-    const DeviceOrientationHardwareBuffer* null_buffer = NULL;
+    const DeviceOrientationHardwareBuffer* null_buffer = nullptr;
     listener_.reset(new MockDeviceOrientationListener);
     orientation_pump_.reset(new DeviceOrientationEventPumpForTesting);
     buffer_ = static_cast<DeviceOrientationHardwareBuffer*>(

@@ -9,7 +9,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/posix/eintr_wrapper.h"
@@ -31,12 +30,12 @@ namespace {
 
 #if defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL)
 static int CallFstat(int fd, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return fstat(fd, sb);
 }
 #else
 static int CallFstat(int fd, stat_wrapper_t *sb) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return fstat64(fd, sb);
 }
 #endif
@@ -50,10 +49,6 @@ static bool IsOpenAppend(PlatformFile file) {
 
 static int CallFtruncate(PlatformFile file, int64 length) {
   return HANDLE_EINTR(ftruncate(file, length));
-}
-
-static int CallFsync(PlatformFile file) {
-  return HANDLE_EINTR(fsync(file));
 }
 
 static int CallFutimes(PlatformFile file, const struct timeval times[2]) {
@@ -94,11 +89,6 @@ static bool IsOpenAppend(PlatformFile file) {
 
 static int CallFtruncate(PlatformFile file, int64 length) {
   NOTIMPLEMENTED();  // NaCl doesn't implement ftruncate.
-  return 0;
-}
-
-static int CallFsync(PlatformFile file) {
-  NOTIMPLEMENTED();  // NaCl doesn't implement fsync.
   return 0;
 }
 
@@ -166,95 +156,6 @@ void File::Info::FromStat(const stat_wrapper_t& stat_info) {
                                   Time::kNanosecondsPerMicrosecond);
 }
 
-// NaCl doesn't implement system calls to open files directly.
-#if !defined(OS_NACL)
-// TODO(erikkay): does it make sense to support FLAG_EXCLUSIVE_* here?
-void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(!IsValid());
-
-  int open_flags = 0;
-  if (flags & FLAG_CREATE)
-    open_flags = O_CREAT | O_EXCL;
-
-  created_ = false;
-
-  if (flags & FLAG_CREATE_ALWAYS) {
-    DCHECK(!open_flags);
-    DCHECK(flags & FLAG_WRITE);
-    open_flags = O_CREAT | O_TRUNC;
-  }
-
-  if (flags & FLAG_OPEN_TRUNCATED) {
-    DCHECK(!open_flags);
-    DCHECK(flags & FLAG_WRITE);
-    open_flags = O_TRUNC;
-  }
-
-  if (!open_flags && !(flags & FLAG_OPEN) && !(flags & FLAG_OPEN_ALWAYS)) {
-    NOTREACHED();
-    errno = EOPNOTSUPP;
-    error_details_ = FILE_ERROR_FAILED;
-    return;
-  }
-
-  if (flags & FLAG_WRITE && flags & FLAG_READ) {
-    open_flags |= O_RDWR;
-  } else if (flags & FLAG_WRITE) {
-    open_flags |= O_WRONLY;
-  } else if (!(flags & FLAG_READ) &&
-             !(flags & FLAG_WRITE_ATTRIBUTES) &&
-             !(flags & FLAG_APPEND) &&
-             !(flags & FLAG_OPEN_ALWAYS)) {
-    NOTREACHED();
-  }
-
-  if (flags & FLAG_TERMINAL_DEVICE)
-    open_flags |= O_NOCTTY | O_NDELAY;
-
-  if (flags & FLAG_APPEND && flags & FLAG_READ)
-    open_flags |= O_APPEND | O_RDWR;
-  else if (flags & FLAG_APPEND)
-    open_flags |= O_APPEND | O_WRONLY;
-
-  COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_equal_zero);
-
-  int mode = S_IRUSR | S_IWUSR;
-#if defined(OS_CHROMEOS)
-  mode |= S_IRGRP | S_IROTH;
-#endif
-
-  int descriptor = HANDLE_EINTR(open(name.value().c_str(), open_flags, mode));
-
-  if (flags & FLAG_OPEN_ALWAYS) {
-    if (descriptor < 0) {
-      open_flags |= O_CREAT;
-      if (flags & FLAG_EXCLUSIVE_READ || flags & FLAG_EXCLUSIVE_WRITE)
-        open_flags |= O_EXCL;   // together with O_CREAT implies O_NOFOLLOW
-
-      descriptor = HANDLE_EINTR(open(name.value().c_str(), open_flags, mode));
-      if (descriptor >= 0)
-        created_ = true;
-    }
-  }
-
-  if (descriptor < 0) {
-    error_details_ = File::OSErrorToFileError(errno);
-    return;
-  }
-
-  if (flags & (FLAG_CREATE_ALWAYS | FLAG_CREATE))
-    created_ = true;
-
-  if (flags & FLAG_DELETE_ON_CLOSE)
-    unlink(name.value().c_str());
-
-  async_ = ((flags & FLAG_ASYNC) == FLAG_ASYNC);
-  error_details_ = FILE_OK;
-  file_.reset(descriptor);
-}
-#endif  // !defined(OS_NACL)
-
 bool File::IsValid() const {
   return file_.is_valid();
 }
@@ -271,13 +172,16 @@ void File::Close() {
   if (!IsValid())
     return;
 
-  base::ThreadRestrictions::AssertIOAllowed();
+  SCOPED_FILE_TRACE("Close");
+  ThreadRestrictions::AssertIOAllowed();
   file_.reset();
 }
 
 int64 File::Seek(Whence whence, int64 offset) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE_WITH_SIZE("Seek", offset);
 
 #if defined(OS_ANDROID)
   COMPILE_ASSERT(sizeof(int64) == sizeof(off64_t), off64_t_64_bit);
@@ -291,10 +195,12 @@ int64 File::Seek(Whence whence, int64 offset) {
 }
 
 int File::Read(int64 offset, char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
   if (size < 0)
     return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("Read", size);
 
   int bytes_read = 0;
   int rv;
@@ -311,10 +217,12 @@ int File::Read(int64 offset, char* data, int size) {
 }
 
 int File::ReadAtCurrentPos(char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
   if (size < 0)
     return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPos", size);
 
   int bytes_read = 0;
   int rv;
@@ -330,23 +238,24 @@ int File::ReadAtCurrentPos(char* data, int size) {
 }
 
 int File::ReadNoBestEffort(int64 offset, char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
-
+  SCOPED_FILE_TRACE_WITH_SIZE("ReadNoBestEffort", size);
   return HANDLE_EINTR(pread(file_.get(), data, size, offset));
 }
 
 int File::ReadAtCurrentPosNoBestEffort(char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
   if (size < 0)
     return -1;
 
+  SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPosNoBestEffort", size);
   return HANDLE_EINTR(read(file_.get(), data, size));
 }
 
 int File::Write(int64 offset, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   if (IsOpenAppend(file_.get()))
     return WriteAtCurrentPos(data, size);
@@ -354,6 +263,8 @@ int File::Write(int64 offset, const char* data, int size) {
   DCHECK(IsValid());
   if (size < 0)
     return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("Write", size);
 
   int bytes_written = 0;
   int rv;
@@ -370,10 +281,12 @@ int File::Write(int64 offset, const char* data, int size) {
 }
 
 int File::WriteAtCurrentPos(const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
   if (size < 0)
     return -1;
+
+  SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPos", size);
 
   int bytes_written = 0;
   int rv;
@@ -390,16 +303,19 @@ int File::WriteAtCurrentPos(const char* data, int size) {
 }
 
 int File::WriteAtCurrentPosNoBestEffort(const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
   if (size < 0)
     return -1;
 
+  SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPosNoBestEffort", size);
   return HANDLE_EINTR(write(file_.get(), data, size));
 }
 
 int64 File::GetLength() {
   DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE("GetLength");
 
   stat_wrapper_t file_info;
   if (CallFstat(file_.get(), &file_info))
@@ -409,20 +325,18 @@ int64 File::GetLength() {
 }
 
 bool File::SetLength(int64 length) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE_WITH_SIZE("SetLength", length);
   return !CallFtruncate(file_.get(), length);
 }
 
-bool File::Flush() {
-  base::ThreadRestrictions::AssertIOAllowed();
-  DCHECK(IsValid());
-  return !CallFsync(file_.get());
-}
-
 bool File::SetTimes(Time last_access_time, Time last_modified_time) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
+
+  SCOPED_FILE_TRACE("SetTimes");
 
   timeval times[2];
   times[0] = last_access_time.ToTimeVal();
@@ -434,6 +348,8 @@ bool File::SetTimes(Time last_access_time, Time last_modified_time) {
 bool File::GetInfo(Info* info) {
   DCHECK(IsValid());
 
+  SCOPED_FILE_TRACE("GetInfo");
+
   stat_wrapper_t file_info;
   if (CallFstat(file_.get(), &file_info))
     return false;
@@ -443,11 +359,29 @@ bool File::GetInfo(Info* info) {
 }
 
 File::Error File::Lock() {
+  SCOPED_FILE_TRACE("Lock");
   return CallFctnlFlock(file_.get(), true);
 }
 
 File::Error File::Unlock() {
+  SCOPED_FILE_TRACE("Unlock");
   return CallFctnlFlock(file_.get(), false);
+}
+
+File File::Duplicate() {
+  if (!IsValid())
+    return File();
+
+  SCOPED_FILE_TRACE("Duplicate");
+
+  PlatformFile other_fd = dup(GetPlatformFile());
+  if (other_fd == -1)
+    return File(OSErrorToFileError(errno));
+
+  File other(other_fd);
+  if (async())
+    other.async_ = true;
+  return other.Pass();
 }
 
 // Static.
@@ -458,12 +392,15 @@ File::Error File::OSErrorToFileError(int saved_errno) {
     case EROFS:
     case EPERM:
       return FILE_ERROR_ACCESS_DENIED;
+    case EBUSY:
 #if !defined(OS_NACL)  // ETXTBSY not defined by NaCl.
     case ETXTBSY:
-      return FILE_ERROR_IN_USE;
 #endif
+      return FILE_ERROR_IN_USE;
     case EEXIST:
       return FILE_ERROR_EXISTS;
+    case EIO:
+      return FILE_ERROR_IO;
     case ENOENT:
       return FILE_ERROR_NOT_FOUND;
     case EMFILE:
@@ -524,6 +461,109 @@ void File::MemoryCheckingScopedFD::Check() const {
 
 void File::MemoryCheckingScopedFD::UpdateChecksum() {
   ComputeMemoryChecksum(&file_memory_checksum_);
+}
+
+// NaCl doesn't implement system calls to open files directly.
+#if !defined(OS_NACL)
+// TODO(erikkay): does it make sense to support FLAG_EXCLUSIVE_* here?
+void File::DoInitialize(uint32 flags) {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(!IsValid());
+
+  int open_flags = 0;
+  if (flags & FLAG_CREATE)
+    open_flags = O_CREAT | O_EXCL;
+
+  created_ = false;
+
+  if (flags & FLAG_CREATE_ALWAYS) {
+    DCHECK(!open_flags);
+    DCHECK(flags & FLAG_WRITE);
+    open_flags = O_CREAT | O_TRUNC;
+  }
+
+  if (flags & FLAG_OPEN_TRUNCATED) {
+    DCHECK(!open_flags);
+    DCHECK(flags & FLAG_WRITE);
+    open_flags = O_TRUNC;
+  }
+
+  if (!open_flags && !(flags & FLAG_OPEN) && !(flags & FLAG_OPEN_ALWAYS)) {
+    NOTREACHED();
+    errno = EOPNOTSUPP;
+    error_details_ = FILE_ERROR_FAILED;
+    return;
+  }
+
+  if (flags & FLAG_WRITE && flags & FLAG_READ) {
+    open_flags |= O_RDWR;
+  } else if (flags & FLAG_WRITE) {
+    open_flags |= O_WRONLY;
+  } else if (!(flags & FLAG_READ) &&
+             !(flags & FLAG_WRITE_ATTRIBUTES) &&
+             !(flags & FLAG_APPEND) &&
+             !(flags & FLAG_OPEN_ALWAYS)) {
+    NOTREACHED();
+  }
+
+  if (flags & FLAG_TERMINAL_DEVICE)
+    open_flags |= O_NOCTTY | O_NDELAY;
+
+  if (flags & FLAG_APPEND && flags & FLAG_READ)
+    open_flags |= O_APPEND | O_RDWR;
+  else if (flags & FLAG_APPEND)
+    open_flags |= O_APPEND | O_WRONLY;
+
+  COMPILE_ASSERT(O_RDONLY == 0, O_RDONLY_must_equal_zero);
+
+  int mode = S_IRUSR | S_IWUSR;
+#if defined(OS_CHROMEOS)
+  mode |= S_IRGRP | S_IROTH;
+#endif
+
+  int descriptor = HANDLE_EINTR(open(path_.value().c_str(), open_flags, mode));
+
+  if (flags & FLAG_OPEN_ALWAYS) {
+    if (descriptor < 0) {
+      open_flags |= O_CREAT;
+      if (flags & FLAG_EXCLUSIVE_READ || flags & FLAG_EXCLUSIVE_WRITE)
+        open_flags |= O_EXCL;   // together with O_CREAT implies O_NOFOLLOW
+
+      descriptor = HANDLE_EINTR(open(path_.value().c_str(), open_flags, mode));
+      if (descriptor >= 0)
+        created_ = true;
+    }
+  }
+
+  if (descriptor < 0) {
+    error_details_ = File::OSErrorToFileError(errno);
+    return;
+  }
+
+  if (flags & (FLAG_CREATE_ALWAYS | FLAG_CREATE))
+    created_ = true;
+
+  if (flags & FLAG_DELETE_ON_CLOSE)
+    unlink(path_.value().c_str());
+
+  async_ = ((flags & FLAG_ASYNC) == FLAG_ASYNC);
+  error_details_ = FILE_OK;
+  file_.reset(descriptor);
+}
+#endif  // !defined(OS_NACL)
+
+bool File::DoFlush() {
+  ThreadRestrictions::AssertIOAllowed();
+  DCHECK(IsValid());
+
+#if defined(OS_NACL)
+  NOTIMPLEMENTED();  // NaCl doesn't implement fsync.
+  return true;
+#elif defined(OS_LINUX) || defined(OS_ANDROID)
+  return !HANDLE_EINTR(fdatasync(file_.get()));
+#else
+  return !HANDLE_EINTR(fsync(file_.get()));
+#endif
 }
 
 void File::SetPlatformFile(PlatformFile file) {

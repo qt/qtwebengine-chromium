@@ -45,9 +45,6 @@ class HpackEncoderPeer {
   HpackHeaderTablePeer table_peer() {
     return HpackHeaderTablePeer(table());
   }
-  bool allow_huffman_compression() {
-    return encoder_->allow_huffman_compression_;
-  }
   void set_allow_huffman_compression(bool allow) {
     encoder_->allow_huffman_compression_ = allow;
   }
@@ -63,7 +60,7 @@ class HpackEncoderPeer {
   static void CookieToCrumbs(StringPiece cookie,
                              std::vector<StringPiece>* out) {
     Representations tmp;
-    HpackEncoder::CookieToCrumbs(make_pair("", cookie), &tmp);
+    HpackEncoder::CookieToCrumbs(std::make_pair("", cookie), &tmp);
 
     out->clear();
     for (size_t i = 0; i != tmp.size(); ++i) {
@@ -73,7 +70,8 @@ class HpackEncoderPeer {
   static void DecomposeRepresentation(StringPiece value,
                                       std::vector<StringPiece>* out) {
     Representations tmp;
-    HpackEncoder::DecomposeRepresentation(make_pair("foobar", value), &tmp);
+    HpackEncoder::DecomposeRepresentation(std::make_pair("foobar", value),
+                                          &tmp);
 
     out->clear();
     for (size_t i = 0; i != tmp.size(); ++i) {
@@ -152,9 +150,6 @@ class HpackEncoderTest : public ::testing::Test {
     expected_.TakeString(&expected_out);
     EXPECT_TRUE(encoder_.EncodeHeaderSet(header_set, &actual_out));
     EXPECT_EQ(expected_out, actual_out);
-  }
-  size_t IndexOf(HpackEntry* entry) {
-    return peer_.table()->IndexOf(entry);
   }
   size_t IndexOf(const HpackEntry* entry) {
     return peer_.table()->IndexOf(entry);
@@ -319,17 +314,14 @@ TEST_F(HpackEncoderTest, MultipleEncodingPasses) {
   // Pass 2.
   {
     map<string, string> headers;
-    headers["key1"] = "value1";
     headers["key2"] = "value2";
     headers["cookie"] = "c=dd; e=ff";
 
     ExpectIndex(IndexOf(cookie_c_));
-    // key1 by index.
-    ExpectIndex(65);
-    // key2 by index.
-    ExpectIndex(64);
-    // This cookie evicts |key1| from the header table.
+    // This cookie evicts |key1| from the dynamic table.
     ExpectIndexedLiteral(peer_.table()->GetByName("cookie"), "e=ff");
+    // "key2: value2"
+    ExpectIndex(65);
 
     CompareWithExpectedEncoding(headers);
   }
@@ -341,14 +333,17 @@ TEST_F(HpackEncoderTest, MultipleEncodingPasses) {
   // Pass 3.
   {
     map<string, string> headers;
-    headers["key1"] = "value1";
-    headers["key3"] = "value3";
-    headers["cookie"] = "e=ff";
+    headers["key2"] = "value2";
+    headers["cookie"] = "a=bb; b=cc; c=dd";
 
-    // cookie: e=ff by index.
-    ExpectIndex(62);
-    ExpectIndexedLiteral("key1", "value1");
-    ExpectIndexedLiteral("key3", "value3");
+    // "cookie: a=bb"
+    ExpectIndex(64);
+    // This cookie evicts |key2| from the dynamic table.
+    ExpectIndexedLiteral(peer_.table()->GetByName("cookie"), "b=cc");
+    // "cookie: c=dd"
+    ExpectIndex(64);
+    // "key2: value2"
+    ExpectIndexedLiteral("key2", "value2");
 
     CompareWithExpectedEncoding(headers);
   }
@@ -367,13 +362,14 @@ TEST_F(HpackEncoderTest, PseudoHeadersFirst) {
   headers["cookie"] = "c=dd";
 
   // Pseudo-headers are encoded in alphabetical order.
+  // This entry pushes "cookie: a=bb" back to 63.
   ExpectIndexedLiteral(peer_.table()->GetByName(":authority"),
                        "www.example.com");
   ExpectNonIndexedLiteral(":path", "/spam/eggs.html");
-  // Regular headers in the header table are encoded first.
-  ExpectIndex(IndexOf(cookie_a_));
-  // Regular headers not in the header table are encoded, in alphabetical order.
+  // Regular headers are endoded in alphabetical order.
+  // This entry pushes "cookie: a=bb" back to 64.
   ExpectIndexedLiteral("-foo", "bar");
+  ExpectIndex(64);
   ExpectIndexedLiteral("foo", "bar");
   CompareWithExpectedEncoding(headers);
 }

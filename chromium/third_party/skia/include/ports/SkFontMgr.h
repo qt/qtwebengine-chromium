@@ -12,7 +12,7 @@
 #include "SkFontStyle.h"
 
 class SkData;
-class SkStream;
+class SkStreamAsset;
 class SkString;
 class SkTypeface;
 
@@ -74,14 +74,9 @@ public:
      *  most significant. If no specified bcp47 codes match, any font with the
      *  requested character will be matched.
      */
-#ifdef SK_FM_NEW_MATCH_FAMILY_STYLE_CHARACTER
     SkTypeface* matchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
                                           const char* bcp47[], int bcp47Count,
                                           SkUnichar character) const;
-#else
-    SkTypeface* matchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
-                                          const char bcp47[], SkUnichar character) const;
-#endif
 
     SkTypeface* matchFaceStyle(const SkTypeface*, const SkFontStyle&) const;
 
@@ -97,7 +92,7 @@ public:
      *  (pass 0 for none) or NULL if the stream is not recognized. The caller
      *  must call unref() on the returned object if it is not null.
      */
-    SkTypeface* createFromStream(SkStream*, int ttcIndex = 0) const;
+    SkTypeface* createFromStream(SkStreamAsset*, int ttcIndex = 0) const;
 
     /**
      *  Create a typeface for the specified fileName and TTC index
@@ -126,21 +121,14 @@ protected:
 
     virtual SkTypeface* onMatchFamilyStyle(const char familyName[],
                                            const SkFontStyle&) const = 0;
-    // TODO: pure virtual, implement on all impls.
-#ifdef SK_FM_NEW_MATCH_FAMILY_STYLE_CHARACTER
     virtual SkTypeface* onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
                                                     const char* bcp47[], int bcp47Count,
-                                                    SkUnichar character) const
-#else
-    virtual SkTypeface* onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
-                                                    const char bcp47[], SkUnichar character) const
-#endif
-    { return NULL; }
+                                                    SkUnichar character) const = 0;
     virtual SkTypeface* onMatchFaceStyle(const SkTypeface*,
                                          const SkFontStyle&) const = 0;
 
     virtual SkTypeface* onCreateFromData(SkData*, int ttcIndex) const = 0;
-    virtual SkTypeface* onCreateFromStream(SkStream*, int ttcIndex) const = 0;
+    virtual SkTypeface* onCreateFromStream(SkStreamAsset*, int ttcIndex) const = 0;
     virtual SkTypeface* onCreateFromFile(const char path[], int ttcIndex) const = 0;
 
     virtual SkTypeface* onLegacyCreateTypeface(const char familyName[],

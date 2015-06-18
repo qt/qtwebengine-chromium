@@ -10,6 +10,7 @@
 #include <sys/types.h>
 
 #include <list>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -67,7 +68,7 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // Called to close the entire connection from this end.
   virtual void CloseConnection(QuicErrorCode error);
   virtual void CloseConnectionWithDetails(QuicErrorCode error,
-                                          const string& details);
+                                          const std::string& details);
 
   // Returns the effective priority for the stream.  This value may change
   // during the life of the stream.
@@ -84,8 +85,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   uint64 stream_bytes_read() const { return stream_bytes_read_; }
   uint64 stream_bytes_written() const { return stream_bytes_written_; }
 
-  QuicVersion version() const;
-
   void set_fin_sent(bool fin_sent) { fin_sent_ = fin_sent; }
   void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
 
@@ -95,29 +94,26 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // Adjust our flow control windows according to new offset in |frame|.
   virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
 
+  // Used in Chrome.
   int num_frames_received() const;
-
+  int num_early_frames_received() const;
   int num_duplicate_frames_received() const;
 
   QuicFlowController* flow_controller() { return &flow_controller_; }
 
   // Called when we see a frame which could increase the highest offset.
   // Returns true if the highest offset did increase.
-  bool MaybeIncreaseHighestReceivedOffset(uint64 new_offset);
+  bool MaybeIncreaseHighestReceivedOffset(QuicStreamOffset new_offset);
   // Called when bytese are sent to the peer.
-  void AddBytesSent(uint64 bytes);
+  void AddBytesSent(QuicByteCount bytes);
   // Called by the stream sequencer as bytes are consumed from the buffer.
   // If our receive window has dropped below the threshold, then send a
   // WINDOW_UPDATE frame.
-  void AddBytesConsumed(uint64 bytes);
+  void AddBytesConsumed(QuicByteCount bytes);
 
   // Updates the flow controller's send window offset and calls OnCanWrite if
   // it was blocked before.
-  void UpdateSendWindowOffset(uint64 new_offset);
-
-  // Returns true if the stream is flow control blocked, by the stream flow
-  // control window or the connection flow control window.
-  bool IsFlowControlBlocked();
+  void UpdateSendWindowOffset(QuicStreamOffset new_offset);
 
   // Returns true if we have received either a RST or a FIN - either of which
   // gives a definitive number of bytes which the peer has sent. If this is not
@@ -129,6 +125,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   // Returns true if the stream has queued data waiting to write.
   bool HasBufferedData() const;
+
+  // Returns the version of QUIC being used for this stream.
+  QuicVersion version() const;
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
@@ -166,11 +165,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   const QuicStreamSequencer* sequencer() const { return &sequencer_; }
   QuicStreamSequencer* sequencer() { return &sequencer_; }
 
-  // TODO(rjshade): Remove this method when removing QUIC_VERSION_19.
-  void DisableFlowControl() {
-    flow_controller_.Disable();
-  }
-
   void DisableConnectionFlowControlForThisStream() {
     stream_contributes_to_connection_flow_control_ = false;
   }
@@ -181,11 +175,14 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   class ProxyAckNotifierDelegate;
 
   struct PendingData {
-    PendingData(string data_in,
+    PendingData(std::string data_in,
                 scoped_refptr<ProxyAckNotifierDelegate> delegate_in);
     ~PendingData();
 
-    string data;
+    // Pending data to be written.
+    std::string data;
+    // Index of the first byte in data still to be written.
+    size_t offset;
     // Delegate that should be notified when the pending data is acked.
     // Can be nullptr.
     scoped_refptr<ProxyAckNotifierDelegate> delegate;
@@ -236,8 +233,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // FEC policy to be used for this stream.
   FecPolicy fec_policy_;
 
-  // True if the session this stream is running under is a server session.
-  bool is_server_;
+  // Tracks if the session this stream is running under was created by a
+  // server or a client.
+  Perspective perspective_;
 
   QuicFlowController flow_controller_;
 

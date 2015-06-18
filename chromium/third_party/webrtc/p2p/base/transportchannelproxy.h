@@ -34,12 +34,12 @@ class TransportChannelProxy : public TransportChannel,
                               public rtc::MessageHandler {
  public:
   TransportChannelProxy(const std::string& content_name,
-                        const std::string& name,
                         int component);
   virtual ~TransportChannelProxy();
 
-  const std::string& name() const { return name_; }
   TransportChannelImpl* impl() { return impl_; }
+
+  virtual TransportChannelState GetState() const;
 
   // Sets the implementation to which we will proxy.
   void SetImplementation(TransportChannelImpl* impl);
@@ -50,6 +50,7 @@ class TransportChannelProxy : public TransportChannel,
                          const rtc::PacketOptions& options,
                          int flags);
   virtual int SetOption(rtc::Socket::Option opt, int value);
+  virtual bool GetOption(rtc::Socket::Option opt, int* value);
   virtual int GetError();
   virtual IceRole GetIceRole() const;
   virtual bool GetStats(ConnectionInfos* infos);
@@ -58,6 +59,7 @@ class TransportChannelProxy : public TransportChannel,
   virtual bool SetSslRole(rtc::SSLRole role);
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers);
   virtual bool GetSrtpCipher(std::string* cipher);
+  virtual bool GetSslCipher(std::string* cipher);
   virtual bool GetLocalIdentity(rtc::SSLIdentity** identity) const;
   virtual bool GetRemoteCertificate(rtc::SSLCertificate** cert) const;
   virtual bool ExportKeyingMaterial(const std::string& label,
@@ -81,13 +83,12 @@ class TransportChannelProxy : public TransportChannel,
 
   typedef std::pair<rtc::Socket::Option, int> OptionPair;
   typedef std::vector<OptionPair> OptionList;
-  std::string name_;
   rtc::Thread* worker_thread_;
   TransportChannelImpl* impl_;
-  OptionList pending_options_;
+  OptionList options_;
   std::vector<std::string> pending_srtp_ciphers_;
 
-  DISALLOW_EVIL_CONSTRUCTORS(TransportChannelProxy);
+  DISALLOW_COPY_AND_ASSIGN(TransportChannelProxy);
 };
 
 }  // namespace cricket

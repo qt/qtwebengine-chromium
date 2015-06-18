@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 component("gpu") {
+  output_name = "ozone_gpu"
+
   sources = [
     "gpu_memory_buffer_factory_ozone_native_buffer.cc",
     "gpu_memory_buffer_factory_ozone_native_buffer.h",
@@ -15,5 +17,6 @@ component("gpu") {
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",
+    "//ui/ozone:ozone_base",
   ]
 }

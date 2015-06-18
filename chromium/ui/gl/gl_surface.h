@@ -7,13 +7,14 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "build/build_config.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/overlay_transform.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
-#include "ui/gfx/size.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gl_implementation.h"
 
@@ -37,6 +38,10 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
 
   // Destroys the surface.
   virtual void Destroy() = 0;
+
+  // Destroys the surface and terminates its underlying display. This must be
+  // the last surface which uses the display.
+  virtual void DestroyAndTerminateDisplay();
 
   virtual bool Resize(const gfx::Size& size);
 
@@ -68,8 +73,27 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // FBO. Otherwise returns 0.
   virtual unsigned int GetBackingFrameBufferObject();
 
+  typedef base::Callback<void()> SwapCompletionCallback;
+  // Swaps front and back buffers. This has no effect for off-screen
+  // contexts. On some platforms, we want to send SwapBufferAck only after the
+  // surface is displayed on screen. The callback can be used to delay sending
+  // SwapBufferAck till that data is available. The callback should be run on
+  // the calling thread (i.e. same thread SwapBuffersAsync is called)
+  virtual bool SwapBuffersAsync(const SwapCompletionCallback& callback);
+
   // Copy part of the backbuffer to the frontbuffer.
   virtual bool PostSubBuffer(int x, int y, int width, int height);
+
+  // Copy part of the backbuffer to the frontbuffer. On some platforms, we want
+  // to send SwapBufferAck only after the surface is displayed on screen. The
+  // callback can be used to delay sending SwapBufferAck till that data is
+  // available. The callback should be run on the calling thread (i.e. same
+  // thread PostSubBufferAsync is called)
+  virtual bool PostSubBufferAsync(int x,
+                                  int y,
+                                  int width,
+                                  int height,
+                                  const SwapCompletionCallback& callback);
 
   // Initialize GL bindings.
   static bool InitializeOneOff();
@@ -83,6 +107,10 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Called after a context is made current with this surface. Returns false
   // on error.
   virtual bool OnMakeCurrent(GLContext* context);
+
+  // Called when the surface is bound as the current framebuffer for the
+  // current context.
+  virtual void NotifyWasBound();
 
   // Used for explicit buffer management.
   virtual bool SetBackbufferAllocation(bool allocated);
@@ -128,13 +156,23 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   static scoped_refptr<GLSurface> CreateViewGLSurface(
       gfx::AcceleratedWidget window);
 
+#if defined(USE_OZONE)
+  // Create a GL surface that renders directly into a window with surfaceless
+  // semantics - there is no default framebuffer and the primary surface must
+  // be presented as an overlay. If surfaceless mode is not supported or
+  // enabled it will return a null pointer.
+  static scoped_refptr<GLSurface> CreateSurfacelessViewGLSurface(
+      gfx::AcceleratedWidget window);
+#endif  // defined(USE_OZONE)
+
   // Create a GL surface used for offscreen rendering.
   static scoped_refptr<GLSurface> CreateOffscreenGLSurface(
       const gfx::Size& size);
 
   static GLSurface* GetCurrent();
 
-  virtual void SetSwapInterval(int interval);
+  // Called when the swap interval for the associated context changes.
+  virtual void OnSetSwapInterval(int interval);
 
  protected:
   virtual ~GLSurface();
@@ -167,7 +205,13 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   bool DeferDraws() override;
   bool IsOffscreen() override;
   bool SwapBuffers() override;
+  bool SwapBuffersAsync(const SwapCompletionCallback& callback) override;
   bool PostSubBuffer(int x, int y, int width, int height) override;
+  bool PostSubBufferAsync(int x,
+                          int y,
+                          int width,
+                          int height,
+                          const SwapCompletionCallback& callback) override;
   bool SupportsPostSubBuffer() override;
   gfx::Size GetSize() override;
   void* GetHandle() override;

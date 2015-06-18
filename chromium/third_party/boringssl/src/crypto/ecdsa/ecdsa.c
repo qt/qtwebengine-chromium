@@ -52,10 +52,11 @@
 
 #include <openssl/ecdsa.h>
 
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
-#include <openssl/thread.h>
 
 #include "../ec/internal.h"
 
@@ -74,21 +75,30 @@ int ECDSA_verify(int type, const uint8_t *digest, size_t digest_len,
                  const uint8_t *sig, size_t sig_len, EC_KEY *eckey) {
   ECDSA_SIG *s;
   int ret = 0;
+  uint8_t *der = NULL;
 
   if (eckey->ecdsa_meth && eckey->ecdsa_meth->verify) {
     return eckey->ecdsa_meth->verify(digest, digest_len, sig, sig_len, eckey);
   }
 
   s = ECDSA_SIG_new();
-  if (s == NULL || d2i_ECDSA_SIG(&s, &sig, sig_len) == NULL) {
+  const uint8_t *sigp = sig;
+  if (s == NULL || d2i_ECDSA_SIG(&s, &sigp, sig_len) == NULL ||
+      sigp != sig + sig_len) {
     goto err;
   }
+
+  /* Ensure that the signature uses DER and doesn't have trailing garbage. */
+  const int der_len = i2d_ECDSA_SIG(s, &der);
+  if (der_len < 0 || (size_t) der_len != sig_len || memcmp(sig, der, sig_len)) {
+    goto err;
+  }
+
   ret = ECDSA_do_verify(digest, digest_len, s, eckey);
 
 err:
-  if (s != NULL) {
-    ECDSA_SIG_free(s);
-  }
+  OPENSSL_free(der);
+  ECDSA_SIG_free(s);
   return ret;
 }
 
@@ -217,9 +227,7 @@ int ECDSA_do_verify(const uint8_t *digest, size_t digest_len,
 err:
   BN_CTX_end(ctx);
   BN_CTX_free(ctx);
-  if (point) {
-    EC_POINT_free(point);
-  }
+  EC_POINT_free(point);
   return ret;
 }
 
@@ -319,12 +327,8 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in, BIGNUM **kinvp,
     goto err;
   }
   /* clear old values if necessary */
-  if (*rp != NULL) {
-    BN_clear_free(*rp);
-  }
-  if (*kinvp != NULL) {
-    BN_clear_free(*kinvp);
-  }
+  BN_clear_free(*rp);
+  BN_clear_free(*kinvp);
 
   /* save the pre-computed values  */
   *rp = r;
@@ -333,21 +337,15 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in, BIGNUM **kinvp,
 
 err:
   if (!ret) {
-    if (k != NULL) {
-      BN_clear_free(k);
-    }
-    if (r != NULL) {
-      BN_clear_free(r);
-    }
+    BN_clear_free(k);
+    BN_clear_free(r);
   }
-  if (ctx_in == NULL)
+  if (ctx_in == NULL) {
     BN_CTX_free(ctx);
-  if (order != NULL)
-    BN_free(order);
-  if (tmp_point != NULL)
-    EC_POINT_free(tmp_point);
-  if (X)
-    BN_clear_free(X);
+  }
+  BN_free(order);
+  EC_POINT_free(tmp_point);
+  BN_clear_free(X);
   return ret;
 }
 
@@ -446,16 +444,11 @@ err:
     ECDSA_SIG_free(ret);
     ret = NULL;
   }
-  if (ctx)
-    BN_CTX_free(ctx);
-  if (m)
-    BN_clear_free(m);
-  if (tmp)
-    BN_clear_free(tmp);
-  if (order)
-    BN_free(order);
-  if (kinv)
-    BN_clear_free(kinv);
+  BN_CTX_free(ctx);
+  BN_clear_free(m);
+  BN_clear_free(tmp);
+  BN_free(order);
+  BN_clear_free(kinv);
   return ret;
 }
 

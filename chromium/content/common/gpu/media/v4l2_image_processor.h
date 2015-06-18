@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_COMMON_GPU_MEDIA_V4L2_VIDEO_PROCESSOR_H_
-#define CONTENT_COMMON_GPU_MEDIA_V4L2_VIDEO_PROCESSOR_H_
+#ifndef CONTENT_COMMON_GPU_MEDIA_V4L2_IMAGE_PROCESSOR_H_
+#define CONTENT_COMMON_GPU_MEDIA_V4L2_IMAGE_PROCESSOR_H_
 
 #include <queue>
 #include <vector>
 
 #include "base/memory/linked_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/media/v4l2_video_device.h"
+#include "content/common/gpu/media/v4l2_device.h"
 #include "media/base/video_frame.h"
 
 namespace content {
@@ -22,7 +23,7 @@ namespace content {
 // hardware accelerators (see V4L2VideoDecodeAccelerator) for more details.
 class CONTENT_EXPORT V4L2ImageProcessor {
  public:
-  explicit V4L2ImageProcessor(scoped_ptr<V4L2Device> device);
+  explicit V4L2ImageProcessor(const scoped_refptr<V4L2Device>& device);
   virtual ~V4L2ImageProcessor();
 
   // Initializes the processor to convert from |input_format| to |output_format|
@@ -58,6 +59,7 @@ class CONTENT_EXPORT V4L2ImageProcessor {
   // Record for input buffers.
   struct InputRecord {
     InputRecord();
+    ~InputRecord();
     scoped_refptr<media::VideoFrame> frame;
     bool at_device;
   };
@@ -65,6 +67,7 @@ class CONTENT_EXPORT V4L2ImageProcessor {
   // Record for output buffers.
   struct OutputRecord {
     OutputRecord();
+    ~OutputRecord();
     bool at_device;
     bool at_client;
     std::vector<int> fds;
@@ -78,6 +81,7 @@ class CONTENT_EXPORT V4L2ImageProcessor {
   // device).
   struct JobRecord {
     JobRecord();
+    ~JobRecord();
     scoped_refptr<media::VideoFrame> frame;
     FrameReadyCB ready_cb;
   };
@@ -129,11 +133,11 @@ class CONTENT_EXPORT V4L2ImageProcessor {
   size_t input_planes_count_;
   size_t output_planes_count_;
 
-  // Our original calling message loop for the child thread.
-  const scoped_refptr<base::MessageLoopProxy> child_message_loop_proxy_;
+  // Our original calling task runner for the child thread.
+  const scoped_refptr<base::SingleThreadTaskRunner> child_task_runner_;
 
   // V4L2 device in use.
-  scoped_ptr<V4L2Device> device_;
+  scoped_refptr<V4L2Device> device_;
 
   // Thread to communicate with the device on.
   base::Thread device_thread_;
@@ -174,4 +178,4 @@ class CONTENT_EXPORT V4L2ImageProcessor {
 
 }  // namespace content
 
-#endif  // CONTENT_COMMON_GPU_MEDIA_V4L2_VIDEO_PROCESSOR_H_
+#endif  // CONTENT_COMMON_GPU_MEDIA_V4L2_IMAGE_PROCESSOR_H_

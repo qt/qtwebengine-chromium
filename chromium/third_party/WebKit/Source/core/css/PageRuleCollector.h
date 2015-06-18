@@ -32,18 +32,18 @@ class StyleRulePage;
 class PageRuleCollector {
     STACK_ALLOCATED();
 public:
-    PageRuleCollector(const RenderStyle* rootElementStyle, int pageIndex);
+    PageRuleCollector(const ComputedStyle* rootElementStyle, int pageIndex);
 
     void matchPageRules(RuleSet* rules);
     MatchResult& matchedResult() { return m_result; }
 
 private:
-    bool isLeftPage(const RenderStyle* rootElementStyle, int pageIndex) const;
-    bool isRightPage(const RenderStyle* rootElementStyle, int pageIndex) const { return !isLeftPage(rootElementStyle, pageIndex); }
+    bool isLeftPage(const ComputedStyle* rootElementStyle, int pageIndex) const;
+    bool isRightPage(const ComputedStyle* rootElementStyle, int pageIndex) const { return !isLeftPage(rootElementStyle, pageIndex); }
     bool isFirstPage(int pageIndex) const;
     String pageName(int pageIndex) const;
 
-    void matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >& rules, bool isLeftPage, bool isFirstPage, const String& pageName);
+    void matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>& rules, bool isLeftPage, bool isFirstPage, const String& pageName);
 
     const bool m_isLeftPage;
     const bool m_isFirstPage;

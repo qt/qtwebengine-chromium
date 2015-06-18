@@ -5,23 +5,23 @@
 #ifndef LineBoxListPainter_h
 #define LineBoxListPainter_h
 
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 
 namespace blink {
 
 class LayoutPoint;
 struct PaintInfo;
-class RenderBoxModelObject;
-class RenderLineBoxList;
+class LayoutBoxModelObject;
+class LineBoxList;
 
 class LineBoxListPainter {
 public:
-    LineBoxListPainter(RenderLineBoxList& renderLineBoxList) : m_renderLineBoxList(renderLineBoxList) { }
+    LineBoxListPainter(LineBoxList& lineBoxList) : m_lineBoxList(lineBoxList) { }
 
-    void paint(RenderBoxModelObject*, PaintInfo&, const LayoutPoint&) const;
+    void paint(LayoutBoxModelObject*, const PaintInfo&, const LayoutPoint&) const;
 
 private:
-    RenderLineBoxList& m_renderLineBoxList;
+    LineBoxList& m_lineBoxList;
 };
 
 } // namespace blink

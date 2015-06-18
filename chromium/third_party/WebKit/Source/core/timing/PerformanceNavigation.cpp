@@ -51,8 +51,7 @@ unsigned short PerformanceNavigation::type() const
     if (!documentLoader)
         return TYPE_NAVIGATE;
 
-    blink::NavigationType navigationType = documentLoader->triggeringAction().type();
-    switch (navigationType) {
+    switch (documentLoader->navigationType()) {
     case NavigationTypeReload:
         return TYPE_RELOAD;
     case NavigationTypeBackForward:
@@ -71,14 +70,14 @@ unsigned short PerformanceNavigation::redirectCount() const
     if (!loader)
         return 0;
 
-    DocumentLoadTiming* timing = loader->timing();
-    if (timing->hasCrossOriginRedirect())
+    const DocumentLoadTiming& timing = loader->timing();
+    if (timing.hasCrossOriginRedirect())
         return 0;
 
-    return timing->redirectCount();
+    return timing.redirectCount();
 }
 
-void PerformanceNavigation::trace(Visitor* visitor)
+DEFINE_TRACE(PerformanceNavigation)
 {
     DOMWindowProperty::trace(visitor);
 }

@@ -8,6 +8,7 @@
 namespace v8 {
 namespace internal {
 
+// TODO(svenpanne) introduce an AbortReason and partition this list
 #define ERROR_MESSAGES_LIST(V)                                                 \
   V(kNoReason, "no reason")                                                    \
                                                                                \
@@ -39,6 +40,7 @@ namespace internal {
     "BinaryStub_GenerateFloatingPointCode")                                    \
   V(kBothRegistersWereSmisInSelectNonSmi,                                      \
     "Both registers were smis in SelectNonSmi")                                \
+  V(kBuiltinFunctionCannotBeOptimized, "Builtin function cannot be optimized") \
   V(kCallToAJavaScriptRuntimeFunction,                                         \
     "Call to a JavaScript runtime function")                                   \
   V(kCannotTranslatePositionInChangedArea,                                     \
@@ -47,6 +49,7 @@ namespace internal {
   V(kCodeGenerationFailed, "Code generation failed")                           \
   V(kCodeObjectNotProperlyPatched, "Code object not properly patched")         \
   V(kCompoundAssignmentToLookupSlot, "Compound assignment to lookup slot")     \
+  V(kComputedPropertyName, "Computed property name")                           \
   V(kContextAllocatedArguments, "Context-allocated arguments")                 \
   V(kCopyBuffersOverlap, "Copy buffers overlap")                               \
   V(kCouldNotGenerateZero, "Could not generate +0.0")                          \
@@ -91,7 +94,6 @@ namespace internal {
   V(kExternalStringExpectedButNotFound,                                        \
     "External string expected, but not found")                                 \
   V(kFailedBailedOutLastTime, "Failed/bailed out last time")                   \
-  V(kForInStatementIsNotFastCase, "ForInStatement is not fast case")           \
   V(kForInStatementOptimizationIsDisabled,                                     \
     "ForInStatement optimization is disabled")                                 \
   V(kForInStatementWithNonLocalEachVariable,                                   \
@@ -113,19 +115,10 @@ namespace internal {
     "Improper object on prototype chain for store")                            \
   V(kIndexIsNegative, "Index is negative")                                     \
   V(kIndexIsTooLarge, "Index is too large")                                    \
-  V(kInlinedRuntimeFunctionClassOf, "Inlined runtime function: ClassOf")       \
   V(kInlinedRuntimeFunctionFastOneByteArrayJoin,                               \
     "Inlined runtime function: FastOneByteArrayJoin")                          \
-  V(kInlinedRuntimeFunctionGeneratorNext,                                      \
-    "Inlined runtime function: GeneratorNext")                                 \
-  V(kInlinedRuntimeFunctionGeneratorThrow,                                     \
-    "Inlined runtime function: GeneratorThrow")                                \
   V(kInlinedRuntimeFunctionGetFromCache,                                       \
     "Inlined runtime function: GetFromCache")                                  \
-  V(kInlinedRuntimeFunctionIsNonNegativeSmi,                                   \
-    "Inlined runtime function: IsNonNegativeSmi")                              \
-  V(kInlinedRuntimeFunctionIsStringWrapperSafeForDefaultValueOf,               \
-    "Inlined runtime function: IsStringWrapperSafeForDefaultValueOf")          \
   V(kInliningBailedOut, "Inlining bailed out")                                 \
   V(kInputGPRIsExpectedToHaveUpper32Cleared,                                   \
     "Input GPR is expected to have upper32 cleared")                           \
@@ -163,14 +156,7 @@ namespace internal {
   V(kMapBecameDeprecated, "Map became deprecated")                             \
   V(kMapBecameUnstable, "Map became unstable")                                 \
   V(kMapIsNoLongerInEax, "Map is no longer in eax")                            \
-  V(kModuleDeclaration, "Module declaration")                                  \
-  V(kModuleLiteral, "Module literal")                                          \
-  V(kModulePath, "Module path")                                                \
-  V(kModuleStatement, "Module statement")                                      \
-  V(kModuleVariable, "Module variable")                                        \
-  V(kModuleUrl, "Module url")                                                  \
   V(kNativeFunctionLiteral, "Native function literal")                         \
-  V(kSuperReference, "Super reference")                                        \
   V(kNeedSmiLiteral, "Need a Smi literal here")                                \
   V(kNoCasesLeft, "No cases left")                                             \
   V(kNoEmptyArraysHereInEmitFastOneByteArrayJoin,                              \
@@ -217,21 +203,30 @@ namespace internal {
   V(kRegisterDidNotMatchExpectedRoot, "Register did not match expected root")  \
   V(kRegisterWasClobbered, "Register was clobbered")                           \
   V(kRememberedSetPointerInNewSpace, "Remembered set pointer is in new space") \
+  V(kRestParameter, "Rest parameters")                                         \
   V(kReturnAddressNotFoundInFrame, "Return address not found in frame")        \
   V(kRhsHasBeenClobbered, "Rhs has been clobbered")                            \
   V(kScopedBlock, "ScopedBlock")                                               \
+  V(kScriptContext, "Allocation of script context")                            \
   V(kSmiAdditionOverflow, "Smi addition overflow")                             \
   V(kSmiSubtractionOverflow, "Smi subtraction overflow")                       \
   V(kStackAccessBelowStackPointer, "Stack access below stack pointer")         \
   V(kStackFrameTypesMustMatch, "Stack frame types must match")                 \
+  V(kSuperReference, "Super reference")                                        \
   V(kTheCurrentStackPointerIsBelowCsp,                                         \
     "The current stack pointer is below csp")                                  \
+  V(kTheInstructionShouldBeALis, "The instruction should be a lis")            \
   V(kTheInstructionShouldBeALui, "The instruction should be a lui")            \
   V(kTheInstructionShouldBeAnOri, "The instruction should be an ori")          \
+  V(kTheInstructionShouldBeAnOris, "The instruction should be an oris")        \
+  V(kTheInstructionShouldBeALi, "The instruction should be a li")              \
+  V(kTheInstructionShouldBeASldi, "The instruction should be a sldi")          \
   V(kTheInstructionToPatchShouldBeALoadFromConstantPool,                       \
     "The instruction to patch should be a load from the constant pool")        \
   V(kTheInstructionToPatchShouldBeAnLdrLiteral,                                \
     "The instruction to patch should be a ldr literal")                        \
+  V(kTheInstructionToPatchShouldBeALis,                                        \
+    "The instruction to patch should be a lis")                                \
   V(kTheInstructionToPatchShouldBeALui,                                        \
     "The instruction to patch should be a lui")                                \
   V(kTheInstructionToPatchShouldBeAnOri,                                       \
@@ -300,8 +295,6 @@ namespace internal {
   V(kUnexpectedUnusedPropertiesOfStringWrapper,                                \
     "Unexpected unused properties of string wrapper")                          \
   V(kUnimplemented, "unimplemented")                                           \
-  V(kUninitializedKSmiConstantRegister, "Uninitialized kSmiConstantRegister")  \
-  V(kUnknown, "Unknown")                                                       \
   V(kUnsupportedConstCompoundAssignment,                                       \
     "Unsupported const compound assignment")                                   \
   V(kUnsupportedCountOperationWithConst,                                       \
@@ -322,6 +315,8 @@ namespace internal {
   V(kWrongFunctionContext, "Wrong context passed to function")                 \
   V(kWrongAddressOrValuePassedToRecordWrite,                                   \
     "Wrong address or value passed to RecordWrite")                            \
+  V(kShouldNotDirectlyEnterOsrFunction,                                        \
+    "Should not directly enter OSR-compiled function")                         \
   V(kYield, "Yield")
 
 
@@ -333,7 +328,8 @@ enum BailoutReason {
 
 
 const char* GetBailoutReason(BailoutReason reason);
-}
-}  // namespace v8::internal
+
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_BAILOUT_REASON_H_

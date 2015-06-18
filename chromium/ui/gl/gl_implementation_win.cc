@@ -8,14 +8,17 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/win/windows_version.h"
+// TODO(jmadill): Apply to all platforms eventually
+#include "ui/gl/angle_platform_impl.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_egl_api_implementation.h"
@@ -33,7 +36,7 @@ namespace gfx {
 
 namespace {
 
-const wchar_t kD3DCompiler[] = L"D3DCompiler_46.dll";
+const wchar_t kD3DCompiler[] = L"D3DCompiler_47.dll";
 
 void GL_BINDING_CALL MarshalClearDepthToClearDepthf(GLclampd depth) {
   glClearDepthf(static_cast<GLclampf>(depth));
@@ -58,44 +61,11 @@ bool LoadD3DXLibrary(const base::FilePath& module_path,
   return true;
 }
 
-const unsigned char* AngleGetTraceCategoryEnabledFlag(const char* name) {
-  return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(name);
-}
+// TODO(jmadill): Apply to all platforms eventually
+base::LazyInstance<ANGLEPlatformImpl> g_angle_platform_impl =
+    LAZY_INSTANCE_INITIALIZER;
 
-void AngleAddTraceEvent(char phase,
-                        const unsigned char* category_group_enabled,
-                        const char* name,
-                        unsigned long long id,
-                        int num_args,
-                        const char** arg_names,
-                        const unsigned char* arg_types,
-                        const unsigned long long* arg_values,
-                        unsigned char flags) {
-  TRACE_EVENT_API_ADD_TRACE_EVENT(phase,
-                                  category_group_enabled,
-                                  name,
-                                  id,
-                                  num_args,
-                                  arg_names,
-                                  arg_types,
-                                  arg_values,
-                                  NULL,
-                                  flags);
-}
-
-typedef const unsigned char* (*GetCategoryEnabledFlagFunc)(const char* name);
-typedef void (*AddTraceEventFunc)(char phase,
-                                  const unsigned char* categoryGroupEnabled,
-                                  const char* name,
-                                  unsigned long long id,
-                                  int numArgs,
-                                  const char** argNames,
-                                  const unsigned char* argTypes,
-                                  const unsigned long long* argValues,
-                                  unsigned char flags);
-typedef void (__stdcall *SetTraceFunctionPointersFunc)(
-    GetCategoryEnabledFlagFunc get_category_enabled_flag,
-    AddTraceEventFunc add_trace_event_func);
+ANGLEPlatformShutdownFunc g_angle_platform_shutdown = nullptr;
 
 }  // namespace
 
@@ -162,7 +132,8 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       LoadD3DXLibrary(module_path, kD3DCompiler);
 
       base::FilePath gles_path;
-      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+      const base::CommandLine* command_line =
+          base::CommandLine::ForCurrentProcess();
       bool using_swift_shader =
           command_line->GetSwitchValueASCII(switches::kUseGL) == "swiftshader";
       if (using_swift_shader) {
@@ -203,13 +174,21 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
 #endif
 
       if (!using_swift_shader) {
-        SetTraceFunctionPointersFunc set_trace_function_pointers =
-            reinterpret_cast<SetTraceFunctionPointersFunc>(
+        // Init ANGLE platform here, before we call GetPlatformDisplay().
+        // TODO(jmadill): Apply to all platforms eventually
+        ANGLEPlatformInitializeFunc angle_platform_init =
+            reinterpret_cast<ANGLEPlatformInitializeFunc>(
                 base::GetFunctionPointerFromNativeLibrary(
-                    gles_library, "SetTraceFunctionPointers"));
-        if (set_trace_function_pointers) {
-          set_trace_function_pointers(&AngleGetTraceCategoryEnabledFlag,
-                                      &AngleAddTraceEvent);
+                    gles_library,
+                    "ANGLEPlatformInitialize"));
+        if (angle_platform_init) {
+          angle_platform_init(&g_angle_platform_impl.Get());
+
+          g_angle_platform_shutdown =
+              reinterpret_cast<ANGLEPlatformShutdownFunc>(
+                  base::GetFunctionPointerFromNativeLibrary(
+                      gles_library,
+                      "ANGLEPlatformShutdown"));
         }
       }
 
@@ -319,16 +298,9 @@ bool InitializeDynamicGLBindings(GLImplementation implementation,
     GLContext* context) {
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      InitializeDynamicGLBindingsGL(context);
-      InitializeDynamicGLBindingsOSMESA(context);
-      break;
     case kGLImplementationEGLGLES2:
-      InitializeDynamicGLBindingsGL(context);
-      InitializeDynamicGLBindingsEGL(context);
-      break;
     case kGLImplementationDesktopGL:
       InitializeDynamicGLBindingsGL(context);
-      InitializeDynamicGLBindingsWGL(context);
       break;
     case kGLImplementationMockGL:
       if (!context) {
@@ -354,6 +326,11 @@ void InitializeDebugGLBindings() {
 }
 
 void ClearGLBindings() {
+  // TODO(jmadill): Apply to all platforms eventually
+  if (g_angle_platform_shutdown) {
+    g_angle_platform_shutdown();
+  }
+
   ClearGLBindingsEGL();
   ClearGLBindingsGL();
   ClearGLBindingsOSMESA();

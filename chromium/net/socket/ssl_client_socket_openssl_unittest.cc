@@ -23,14 +23,13 @@
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
-#include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/test_root_certs.h"
 #include "net/dns/host_resolver.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_test_util.h"
@@ -49,8 +48,6 @@ namespace {
 
 // These client auth tests are currently dependent on OpenSSL's struct X509.
 #if defined(USE_OPENSSL_CERTS)
-
-const SSLConfig kDefaultSSLConfig;
 
 // Loads a PEM-encoded private key file into a scoped EVP_PKEY object.
 // |filepath| is the private key file path.
@@ -94,9 +91,7 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
     key_store_ = OpenSSLClientKeyStore::GetInstance();
   }
 
-  virtual ~SSLClientSocketOpenSSLClientAuthTest() {
-    key_store_->Flush();
-  }
+  ~SSLClientSocketOpenSSLClientAuthTest() override { key_store_->Flush(); }
 
  protected:
   scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
@@ -156,7 +151,7 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
   // Returns true on succes, false otherwise. Success means that the socket
   // could be created and its Connect() was called, not that the connection
   // itself was a success.
-  bool CreateAndConnectSSLClientSocket(SSLConfig& ssl_config,
+  bool CreateAndConnectSSLClientSocket(const SSLConfig& ssl_config,
                                        int* result) {
     sock_ = CreateSSLClientSocket(transport_.Pass(),
                                   test_server_->host_port_pair(),
@@ -188,7 +183,7 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
   scoped_ptr<SpawnedTestServer> test_server_;
   AddressList addr_;
   TestCompletionCallback callback_;
-  CapturingNetLog log_;
+  NetLog log_;
   scoped_ptr<StreamSocket> transport_;
   scoped_ptr<SSLClientSocket> sock_;
 };
@@ -202,10 +197,9 @@ TEST_F(SSLClientSocketOpenSSLClientAuthTest, NoCert) {
   ASSERT_TRUE(ConnectToTestServer(ssl_options));
 
   base::FilePath certs_dir = GetTestCertsDirectory();
-  SSLConfig ssl_config = kDefaultSSLConfig;
 
   int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
 
   EXPECT_EQ(ERR_SSL_CLIENT_AUTH_CERT_NEEDED, rv);
   EXPECT_FALSE(sock_->IsConnected());
@@ -222,7 +216,7 @@ TEST_F(SSLClientSocketOpenSSLClientAuthTest, SendEmptyCert) {
   ASSERT_TRUE(ConnectToTestServer(ssl_options));
 
   base::FilePath certs_dir = GetTestCertsDirectory();
-  SSLConfig ssl_config = kDefaultSSLConfig;
+  SSLConfig ssl_config;
   ssl_config.send_client_cert = true;
   ssl_config.client_cert = NULL;
 
@@ -244,7 +238,7 @@ TEST_F(SSLClientSocketOpenSSLClientAuthTest, SendGoodCert) {
   ASSERT_TRUE(ConnectToTestServer(ssl_options));
 
   base::FilePath certs_dir = GetTestCertsDirectory();
-  SSLConfig ssl_config = kDefaultSSLConfig;
+  SSLConfig ssl_config;
   ssl_config.send_client_cert = true;
   ssl_config.client_cert = ImportCertFromFile(certs_dir, "client_1.pem");
 

@@ -37,9 +37,9 @@ namespace blink {
 
 class ImageResource;
 class CrossfadeSubimageObserverProxy;
-class RenderObject;
+class LayoutObject;
 
-class CSSCrossfadeValue : public CSSImageGeneratorValue {
+class CSSCrossfadeValue final : public CSSImageGeneratorValue {
     friend class CrossfadeSubimageObserverProxy;
 public:
     static PassRefPtrWillBeRawPtr<CSSCrossfadeValue> create(PassRefPtrWillBeRawPtr<CSSValue> fromValue, PassRefPtrWillBeRawPtr<CSSValue> toValue)
@@ -51,14 +51,14 @@ public:
 
     String customCSSText() const;
 
-    PassRefPtr<Image> image(RenderObject*, const IntSize&);
+    PassRefPtr<Image> image(LayoutObject*, const IntSize&);
     bool isFixedSize() const { return true; }
-    IntSize fixedSize(const RenderObject*);
+    IntSize fixedSize(const LayoutObject*);
 
     bool isPending() const;
-    bool knownToBeOpaque(const RenderObject*) const;
+    bool knownToBeOpaque(const LayoutObject*) const;
 
-    void loadSubimages(ResourceFetcher*);
+    void loadSubimages(Document*);
 
     void setPercentage(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> percentageValue) { m_percentageValue = percentageValue; }
 
@@ -66,7 +66,7 @@ public:
 
     bool equals(const CSSCrossfadeValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     CSSCrossfadeValue(PassRefPtrWillBeRawPtr<CSSValue> fromValue, PassRefPtrWillBeRawPtr<CSSValue> toValue)
@@ -84,7 +84,7 @@ private:
         , m_ready(false) { }
 
         virtual ~CrossfadeSubimageObserverProxy() { }
-        virtual void imageChanged(ImageResource*, const IntRect* = 0) override;
+        virtual void imageChanged(ImageResource*, const IntRect* = nullptr) override;
         void setReady(bool ready) { m_ready = ready; }
     private:
         CSSCrossfadeValue* m_ownerValue;

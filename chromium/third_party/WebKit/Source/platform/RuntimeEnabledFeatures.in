@@ -16,66 +16,73 @@
 // condition=ENABLE_NAME is used for wrapping features in compile-time
 // #if ENABLE(FEATURE) guards.  These are deprecated and should all be removed.
 
-AnyPointerMediaQueries status=experimental
+AppBanner status=stable
 ApplicationCache status=stable
 AudioVideoTracks depends_on=Media, status=experimental
 AuthorShadowDOMForAnyElement
 BackgroundSync status=experimental
-BatteryStatus status=stable
-Beacon status=stable
+BackgroundSyncV2 status=experimental
 // Enable bleeding-edge code to make Blink draw content faster.
 // The changes enabled behind this flag are very likely to break lots of content.
 // ** DO NOT use this flag unless you know what you are doing. **
 BleedingEdgeFastPaths
 BlinkScheduler
 Bluetooth status=experimental
-ClientHintsDpr status=experimental
+ClientHints status=experimental
 CompositedSelectionUpdate
+CompositorWorker status=experimental
+// Unified Chrome Compositor and Blink Animations engine (Project Heaviside). crbug.com/394772
+CompositorAnimationTimelines
 ContextMenu status=experimental
 CredentialManager status=test
-Crypto status=stable
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
-CSSAnimationUnprefixed status=experimental
 CSSAttributeCaseSensitivity status=experimental
-CSSCompositing status=experimental
+CSSCompositing status=stable
+CSSFontSizeAdjust status=experimental
 CSSGridLayout status=experimental
 CSSMaskSourceType status=experimental
+CSSMotionPath status=experimental
 CSSOMSmoothScroll status=experimental
-CSSTouchActionDelay status=test
+CSSScrollBlocksOn status=experimental
+CSSTouchActionPanDirections status=experimental
 CSSViewport status=experimental
 // getPropertyCSSValue, CSSValue, etc. will be removed once layout tests no longer depend on them. crbug.com/331608
-CSSValue status=deprecated
 CustomSchemeHandler depends_on=NavigatorContentUtils, status=experimental
 Database status=stable
 DecodeToYUV status=experimental
 DeviceLight status=experimental
 DisplayList2dCanvas status=stable
 ForceDisplayList2dCanvas
-EncodingAPI status=stable
-EncryptedMedia status=test
+EncryptedMedia status=stable
 ExecCommandInJavaScript status=test
+ComputedAccessibilityInfo status=experimental
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
 FastMobileScrolling
+FirstPartyIncludesAncestors status=experimental
 FileAPIBlobClose status=experimental
 FileSystem status=stable
+FormDataNewMethods status=experimental
 FullscreenUnprefixed status=test
+FrameTimingSupport status=experimental
 Geofencing status=experimental
 GeometryInterfaces status=test
-// Temporary setting to allow easy rollback of change to hover media feature.
-HoverMediaQueryKeywords status=stable
+HTMLPopupMenu status=stable
+GlobalCacheStorage status=stable
 ImageColorProfiles
-ImageDataConstructor status=experimental
-ImageRenderingPixelated status=experimental
+ImageRenderingPixelated status=stable
 IMEAPI status=experimental
 IndexedDBExperimental status=experimental
 InputModeAttribute status=experimental
+KeyboardEventCode status=experimental
+KeyboardEventKey status=test
 LangAttributeAwareFormControlUI
-// Lax Mixed Content checking for WebSockets, XHR, etc. is deprecated and slated for removal. crbug.com/389089
-LaxMixedContentChecking status=deprecated
-LayerSquashing status=stable
-LocalStorage status=stable
+LinkPreconnect status=experimental
+LinkPreload status=experimental
+LinkHeader status=experimental
+FractionalScrollOffsets status=experimental
+GlobalFetch status=stable
 Media status=stable
 MediaCapture
 MediaController depends_on=Media, status=experimental
@@ -83,64 +90,84 @@ MediaSource status=stable
 MediaSourceExperimental depends_on=MediaSource, status=experimental
 MediaStreamSpeech status=experimental
 MemoryInfoInWorkers status=experimental
+MouseEventButtonsAttribute status=stable
 NavigationTransitions status=experimental
+NavigatorConnect status=experimental
 NavigatorContentUtils
 NetworkInformation status=stable
 // CSS parser based on the css-syntax spec. crbug.com/330389
-NewCSSParser
+NewCSSParser status=stable
+NotificationConstructor status=stable
+NotificationExperimental status=test
 Notifications status=stable
 OrientationEvent
+// The overflowchanged event is being removed. crbug.com/460822
+OverflowChangedEvent
 // Only enabled on Android, and for certain layout tests on Linux.
 OverlayFullscreenVideo
 OverlayScrollbars
 PagePopup status=stable
-PathOpsSVGClipping status=experimental
-PeerConnection status=stable
-Picture status=stable
-PictureSizes status=stable
+PathOpsSVGClipping
+Permissions status=stable
+PointerEvent
 PreciseMemoryInfo
+// This feature is deprecated and replaced by EncryptedMedia.
+// See http://crbug.com/451117 for current status.
 PrefixedEncryptedMedia status=stable
 // This feature is deprecated and we are evangalizing affected sites.
 // See https://crbug.com/346236 for current status.
 PrefixedVideoFullscreen status=stable
 Presentation status=test
-PseudoClassesInMatchingCriteriaInAuthorShadowTrees status=test
-PushMessaging status=experimental
+PushMessaging status=stable
+// Push messaging payloads are blocked on the Push API supporting encryption.
+PushMessagingData status=test
 QuotaPromise status=experimental
+ReducedReferrerGranularity
 RegionBasedColumns status=experimental
 RequestAutocomplete status=test
 ScreenOrientation status=stable
 ScriptedSpeech status=stable
 // Implements documentElement.scrollTop/Left and bodyElement.scrollTop/Left
 // as per the spec, matching other Web engines.
-ScrollTopLeftInterop status=experimental
-// window.showModalDialog is deprecated and slated for removal. crbug.com/345831
-ShowModalDialog status=deprecated
+ScrollTopLeftInterop
 ServiceWorker status=stable
 ServiceWorkerCache status=stable
+ServiceWorkerClientAttributes status=stable
+ServiceWorkerNotifications status=stable
 ServiceWorkerOnFetch status=stable
-SessionStorage status=stable
 SharedWorker status=stable
 SlimmingPaint
-Stream status=experimental
-SubpixelFontScaling status=stable
+SlimmingPaintCompositorLayerization depends_on=SlimmingPaint
+SlimmingPaintUnderInvalidationChecking depends_on=SlimmingPaint
+SlimmingPaintStrictCullRectClipping depends_on=SlimmingPaint
+StaleWhileRevalidateCacheControl
+// Do not turn this flag into stable, because many interfaces that should not
+// be shipped would be enabled. Instead, remove the flag from the shipping
+// interface.
+ExperimentalStream status=experimental
 SubresourceIntegrity status=experimental
+TabStopAttribute status=experimental
 TextBlob
-ThreadedParserDataReceiver status=experimental
+ThreadedParserDataReceiver
 // Many websites disable mouse support when touch APIs are available.  We'd
 // like to enable this always but can't until more websites fix this bug.
 // Chromium sets this conditionally (eg. based on the presence of a
 // touchscreen) in ApplyWebPreferences.
 Touch status=stable
 TouchIconLoading
+UnsafeES3APIs
+UnsandboxedAuxiliary status=experimental
 UserSelectAll status=experimental
 WebAnimationsAPI status=experimental
-WebAnimationsPlaybackControl status=stable
+WebAnimationsSVG status=experimental
 WebAudio condition=WEB_AUDIO, status=stable
 WebGLDraftExtensions status=experimental
 WebGLImageChromium
-WebMIDI status=test
+WebMIDI status=stable
+WebVR depends_on=GeometryInterfaces
 WebVTTRegions depends_on=Media, status=experimental
 V8IdleTasks
 XSLT status=stable
 SVG1DOM status=stable
+ScrollCustomization
+ScrollRestoration status=experimental

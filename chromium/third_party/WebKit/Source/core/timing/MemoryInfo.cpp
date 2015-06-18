@@ -37,15 +37,28 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
+#include "wtf/ThreadSpecific.h"
 #include <limits>
+#include <v8.h>
 
 namespace blink {
 
+static const double TwentyMinutesInSeconds = 20 * 60;
+
+static void getHeapSize(HeapInfo& info)
+{
+    v8::HeapStatistics heapStatistics;
+    v8::Isolate::GetCurrent()->GetHeapStatistics(&heapStatistics);
+    info.usedJSHeapSize = heapStatistics.used_heap_size();
+    info.totalJSHeapSize = heapStatistics.total_physical_size();
+    info.jsHeapSizeLimit = heapStatistics.heap_size_limit();
+}
+
 class HeapSizeCache {
-    WTF_MAKE_NONCOPYABLE(HeapSizeCache); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(HeapSizeCache); WTF_MAKE_FAST_ALLOCATED(HeapSizeCache);
 public:
     HeapSizeCache()
-        : m_lastUpdateTime(0)
+        : m_lastUpdateTime(monotonicallyIncreasingTime() - TwentyMinutesInSeconds)
     {
     }
 
@@ -55,13 +68,17 @@ public:
         info = m_info;
     }
 
+    static HeapSizeCache& forCurrentThread()
+    {
+        AtomicallyInitializedStaticReference(ThreadSpecific<HeapSizeCache>, heapSizeCache, new ThreadSpecific<HeapSizeCache>);
+        return *heapSizeCache;
+    }
+
 private:
     void maybeUpdate()
     {
         // We rate-limit queries to once every twenty minutes to make it more difficult
         // for attackers to compare memory usage before and after some event.
-        const double TwentyMinutesInSeconds = 20 * 60;
-
         double now = monotonicallyIncreasingTime();
         if (now - m_lastUpdateTime >= TwentyMinutesInSeconds) {
             update();
@@ -71,7 +88,7 @@ private:
 
     void update()
     {
-        ScriptGCEvent::getHeapSize(m_info);
+        getHeapSize(m_info);
         m_info.usedJSHeapSize = quantizeMemorySize(m_info.usedJSHeapSize);
         m_info.totalJSHeapSize = quantizeMemorySize(m_info.totalJSHeapSize);
         m_info.jsHeapSizeLimit = quantizeMemorySize(m_info.jsHeapSizeLimit);
@@ -132,12 +149,10 @@ size_t quantizeMemorySize(size_t size)
 
 MemoryInfo::MemoryInfo()
 {
-    if (RuntimeEnabledFeatures::preciseMemoryInfoEnabled()) {
-        ScriptGCEvent::getHeapSize(m_info);
-    } else {
-        DEFINE_STATIC_LOCAL(HeapSizeCache, heapSizeCache, ());
-        heapSizeCache.getCachedHeapSize(m_info);
-    }
+    if (RuntimeEnabledFeatures::preciseMemoryInfoEnabled())
+        getHeapSize(m_info);
+    else
+        HeapSizeCache::forCurrentThread().getCachedHeapSize(m_info);
 }
 
 } // namespace blink

@@ -3,9 +3,13 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 
 component("snapshot") {
   sources = [
+    "screenshot_grabber.cc",
+    "screenshot_grabber.h",
+    "screenshot_grabber_observer.h",
     "snapshot.h",
     "snapshot_android.cc",
     "snapshot_async.cc",
@@ -26,6 +30,10 @@ component("snapshot") {
     "//ui/gfx/geometry",
   ]
 
+  if (is_android) {
+    deps += [ "//ui/android" ]
+  }
+
   if (use_aura || is_android) {
     deps += [
       "//cc",
@@ -44,9 +52,7 @@ component("snapshot") {
       "//ui/compositor",
     ]
   } else {
-    sources -= [
-      "snapshot_aura.cc"
-    ]
+    sources -= [ "snapshot_aura.cc" ]
   }
 }
 
@@ -65,6 +71,7 @@ test("snapshot_unittests") {
     "//skia",
     "//testing/gtest",
     "//ui/base",
+    "//ui/compositor:test_support",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",

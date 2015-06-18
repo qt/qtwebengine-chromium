@@ -7,6 +7,7 @@ found in the LICENSE file.
 <html>
 <head>
 <meta charset="utf-8">
+<title>C++11 use in Chromium</title>
 <link rel="stylesheet" href="c++11.css">
 <style>
 table tbody tr td:first-child {
@@ -80,7 +81,7 @@ C++ Templates Angle Brackets Pitfall</a></td>
 <td>TODO: documentation link</td>
 <td>Use according to the <a
 href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#auto">Google
-Style Guide on <code>auto</code></a>. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/OQyYSfH9m2M">Discussion thread</a></td>
+Style Guide on <code>auto</code></a>. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/OQyYSfH9m2M">Discussion thread</a>. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/5-Bt3BJzAo0">Another discussion thread</a>.</td>
 </tr>
 
 <tr>
@@ -169,6 +170,23 @@ functions that will use them immediately, such as those in
 <td><a href="http://stackoverflow.com/questions/742607/using-local-classes-with-stl-algorithms">
 Local types, types without linkage and unnamed types as template arguments</a></td>
 <td>Usage should be rare. Approved without discussion.</td>
+</tr>
+
+<tr>
+<td>Non-Static Class Member Initializers</td>
+<td>
+<code>
+class C {<br />
+  <i>type</i> <i>var</i> = <i>value</i>;<br/>
+  C()  // copy-initializes <i>var</i><br/>
+</code>
+<td>Allows non-static class members to be initialized at their definitions (outside constructors)</td>
+<td><a href="http://en.cppreference.com/w/cpp/language/data_members">
+Non-static data members</a></td>
+<td><a href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#Initialization">Google
+Style Guide</a>.
+<a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/zqB-DySA4V0">Discussion thread</a>
+</td>
 </tr>
 
 <tr>
@@ -430,20 +448,6 @@ std::exception</a></td>
 <td>Allows better versioning of namespaces</td>
 <td><a href="http://en.cppreference.com/w/cpp/language/namespace">Namespaces</a></td>
 <td>Unclear how it will work with components</td>
-</tr>
-
-<tr>
-<td>Non-Static Class Member Initializers</td>
-<td>
-<code>
-class C {<br />
-  <i>type</i> <i>var</i> = <i>value</i>;<br/>
-  C()  // copy-initializes <i>var</i><br/>
-</code>
-<td>Allows non-static class members to be initialized at their definitions (outside constructors)</td>
-<td><a href="http://en.cppreference.com/w/cpp/language/data_members">
-Non-static data members</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/zqB-DySA4V0">Discussion thread</a></td>
 </tr>
 
 <tr>

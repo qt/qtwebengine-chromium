@@ -10,10 +10,12 @@
 #include "content/public/renderer/resource_fetcher.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 using blink::WebFrame;
+using blink::WebURLLoaderOptions;
 using blink::WebURLRequest;
 using blink::WebURLResponse;
 
@@ -24,17 +26,33 @@ MultiResolutionImageResourceFetcher::MultiResolutionImageResourceFetcher(
     WebFrame* frame,
     int id,
     WebURLRequest::RequestContext request_context,
+    blink::WebURLRequest::CachePolicy cache_policy,
     const Callback& callback)
     : callback_(callback),
       id_(id),
       http_status_code_(0),
       image_url_(image_url) {
   fetcher_.reset(ResourceFetcher::Create(image_url));
+
+  WebURLLoaderOptions options;
+  options.allowCredentials = true;
+  options.crossOriginRequestPolicy =
+      WebURLLoaderOptions::CrossOriginRequestPolicyAllow;
+  fetcher_->SetLoaderOptions(options);
+
+  // To prevent cache tainting, the favicon requests have to by-pass the service
+  // workers. This should ideally not happen or at least not all the time.
+  // See https://crbug.com/448427
+  if (request_context == WebURLRequest::RequestContextFavicon)
+    fetcher_->SetSkipServiceWorker(true);
+
+  fetcher_->SetCachePolicy(cache_policy);
+
   fetcher_->Start(
       frame,
       request_context,
       WebURLRequest::FrameTypeNone,
-      ResourceFetcher::PLATFORM_LOADER,
+      ResourceFetcher::FRAME_ASSOCIATED_LOADER,
       base::Bind(&MultiResolutionImageResourceFetcher::OnURLFetchComplete,
                  base::Unretained(this)));
 }

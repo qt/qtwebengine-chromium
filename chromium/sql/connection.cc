@@ -228,7 +228,7 @@ Connection::~Connection() {
 
 bool Connection::Open(const base::FilePath& path) {
   if (!histogram_tag_.empty()) {
-    int64 size_64 = 0;
+    int64_t size_64 = 0;
     if (base::GetFileSize(path, &size_64)) {
       size_t sample = static_cast<size_t>(size_64 / 1024);
       std::string full_histogram_name = "Sqlite.SizeKB." + histogram_tag_;
@@ -340,7 +340,7 @@ void Connection::Preload() {
     preload_size = file_size;
 
   scoped_ptr<char[]> buf(new char[page_size]);
-  for (sqlite3_int64 pos = 0; pos < file_size; pos += page_size) {
+  for (sqlite3_int64 pos = 0; pos < preload_size; pos += page_size) {
     rc = file->pMethods->xRead(file, buf.get(), page_size, pos);
     if (rc != SQLITE_OK)
       return;
@@ -725,7 +725,8 @@ scoped_refptr<Connection::StatementRef> Connection::GetUniqueStatement(
   int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
     // This is evidence of a syntax error in the incoming SQL.
-    DLOG(FATAL) << "SQL compile error " << GetErrorMessage();
+    if (!ShouldIgnoreSqliteError(rc))
+      DLOG(FATAL) << "SQL compile error " << GetErrorMessage();
 
     // It could also be database corruption.
     OnSqliteError(rc, NULL, sql);
@@ -744,7 +745,8 @@ scoped_refptr<Connection::StatementRef> Connection::GetUntrackedStatement(
   int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
     // This is evidence of a syntax error in the incoming SQL.
-    DLOG(FATAL) << "SQL compile error " << GetErrorMessage();
+    if (!ShouldIgnoreSqliteError(rc))
+      DLOG(FATAL) << "SQL compile error " << GetErrorMessage();
     return new StatementRef(NULL, NULL, false);
   }
   return new StatementRef(NULL, stmt, true);
@@ -798,8 +800,15 @@ bool Connection::DoesIndexExist(const char* index_name) const {
 
 bool Connection::DoesTableOrIndexExist(
     const char* name, const char* type) const {
-  const char* kSql = "SELECT name FROM sqlite_master WHERE type=? AND name=?";
+  const char* kSql =
+      "SELECT name FROM sqlite_master WHERE type=? AND name=? COLLATE NOCASE";
   Statement statement(GetUntrackedStatement(kSql));
+
+  // This can happen if the database is corrupt and the error is being ignored
+  // for testing purposes.
+  if (!statement.is_valid())
+    return false;
+
   statement.BindString(0, type);
   statement.BindString(1, name);
 
@@ -813,14 +822,20 @@ bool Connection::DoesColumnExist(const char* table_name,
   sql.append(")");
 
   Statement statement(GetUntrackedStatement(sql.c_str()));
+
+  // This can happen if the database is corrupt and the error is being ignored
+  // for testing purposes.
+  if (!statement.is_valid())
+    return false;
+
   while (statement.Step()) {
-    if (!statement.ColumnString(1).compare(column_name))
+    if (!base::strcasecmp(statement.ColumnString(1).c_str(), column_name))
       return true;
   }
   return false;
 }
 
-int64 Connection::GetLastInsertRowId() const {
+int64_t Connection::GetLastInsertRowId() const {
   if (!db_) {
     DLOG_IF(FATAL, !poisoned_) << "Illegal use of connection without a db";
     return 0;

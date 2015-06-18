@@ -26,28 +26,28 @@
 #ifndef WebGLRenderingContext_h
 #define WebGLRenderingContext_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace blink {
 
-class WebGLRenderingContext final : public WebGLRenderingContextBase, public ScriptWrappable {
+class WebGLRenderingContext final : public WebGLRenderingContextBase {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassOwnPtrWillBeRawPtr<WebGLRenderingContext> create(HTMLCanvasElement*, WebGLContextAttributes*);
+    static PassOwnPtrWillBeRawPtr<WebGLRenderingContext> create(HTMLCanvasElement*, const CanvasContextCreationAttributes&);
     virtual ~WebGLRenderingContext();
 
     virtual unsigned version() const override { return 1; }
     virtual String contextName() const override { return "WebGLRenderingContext"; }
     virtual void registerContextExtensions() override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    WebGLRenderingContext(HTMLCanvasElement*, PassOwnPtr<blink::WebGraphicsContext3D>, WebGLContextAttributes*);
+    WebGLRenderingContext(HTMLCanvasElement*, PassOwnPtr<WebGraphicsContext3D>, const WebGLContextAttributes&);
 
     // Enabled extension objects.
     RefPtrWillBeMember<ANGLEInstancedArrays> m_angleInstancedArrays;
+    RefPtrWillBeMember<CHROMIUMSubscribeUniform> m_chromiumSubscribeUniform;
     RefPtrWillBeMember<EXTBlendMinMax> m_extBlendMinMax;
     RefPtrWillBeMember<EXTFragDepth> m_extFragDepth;
     RefPtrWillBeMember<EXTShaderTextureLOD> m_extShaderTextureLOD;

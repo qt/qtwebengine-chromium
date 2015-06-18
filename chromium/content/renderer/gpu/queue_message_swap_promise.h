@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_QUEUE_MESSAGE_SWAP_PROMISE_H_
-#define CONTENT_RENDERER_QUEUE_MESSAGE_SWAP_PROMISE_H_
+#ifndef CONTENT_RENDERER_GPU_QUEUE_MESSAGE_SWAP_PROMISE_H_
+#define CONTENT_RENDERER_GPU_QUEUE_MESSAGE_SWAP_PROMISE_H_
 
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "cc/base/swap_promise.h"
+#include "cc/output/swap_promise.h"
 
 namespace IPC {
 class SyncMessageFilter;
@@ -25,8 +24,8 @@ class QueueMessageSwapPromise : public cc::SwapPromise {
 
   ~QueueMessageSwapPromise() override;
 
+  void DidActivate() override;
   void DidSwap(cc::CompositorFrameMetadata* metadata) override;
-
   void DidNotSwap(DidNotSwapReason reason) override;
 
   int64 TraceId() const override;
@@ -37,11 +36,11 @@ class QueueMessageSwapPromise : public cc::SwapPromise {
   scoped_refptr<IPC::SyncMessageFilter> message_sender_;
   scoped_refptr<content::FrameSwapMessageQueue> message_queue_;
   int source_frame_number_;
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   bool completed_;
 #endif
 };
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_QUEUE_MESSAGE_SWAP_PROMISE_H_
+#endif  // CONTENT_RENDERER_GPU_QUEUE_MESSAGE_SWAP_PROMISE_H_

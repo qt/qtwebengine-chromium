@@ -28,38 +28,44 @@
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/resolver/ElementStyleResources.h"
+#include "core/dom/Document.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/rendering/style/ContentData.h"
-#include "core/rendering/style/FillLayer.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleFetchedImage.h"
-#include "core/rendering/style/StyleFetchedImageSet.h"
-#include "core/rendering/style/StyleGeneratedImage.h"
-#include "core/rendering/style/StylePendingImage.h"
-#include "core/rendering/svg/ReferenceFilterBuilder.h"
+#include "core/style/ContentData.h"
+#include "core/style/FillLayer.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/StyleFetchedImage.h"
+#include "core/style/StyleFetchedImageSet.h"
+#include "core/style/StyleGeneratedImage.h"
+#include "core/style/StylePendingImage.h"
+#include "core/layout/svg/ReferenceFilterBuilder.h"
 
 namespace blink {
 
-StyleResourceLoader::StyleResourceLoader(ResourceFetcher* fetcher)
-    : m_fetcher(fetcher)
+StyleResourceLoader::StyleResourceLoader(Document* document)
+    : m_document(document)
 {
 }
 
-void StyleResourceLoader::loadPendingSVGDocuments(RenderStyle* renderStyle, ElementStyleResources& elementStyleResources)
+DEFINE_TRACE(StyleResourceLoader)
 {
-    if (!renderStyle->hasFilter() || elementStyleResources.pendingSVGDocuments().isEmpty())
+    visitor->trace(m_document);
+}
+
+void StyleResourceLoader::loadPendingSVGDocuments(ComputedStyle* computedStyle, ElementStyleResources& elementStyleResources)
+{
+    if (!computedStyle->hasFilter() || elementStyleResources.pendingSVGDocuments().isEmpty())
         return;
 
-    Vector<RefPtr<FilterOperation> >& filterOperations = renderStyle->mutableFilter().operations();
+    FilterOperations::FilterOperationVector& filterOperations = computedStyle->mutableFilter().operations();
     for (unsigned i = 0; i < filterOperations.size(); ++i) {
-        RefPtr<FilterOperation> filterOperation = filterOperations.at(i);
+        RefPtrWillBeRawPtr<FilterOperation> filterOperation = filterOperations.at(i);
         if (filterOperation->type() == FilterOperation::REFERENCE) {
             ReferenceFilterOperation* referenceFilter = toReferenceFilterOperation(filterOperation.get());
 
             CSSSVGDocumentValue* value = elementStyleResources.pendingSVGDocuments().get(referenceFilter);
             if (!value)
                 continue;
-            DocumentResource* resource = value->load(m_fetcher);
+            DocumentResource* resource = value->load(m_document);
             if (!resource)
                 continue;
 
@@ -71,33 +77,33 @@ void StyleResourceLoader::loadPendingSVGDocuments(RenderStyle* renderStyle, Elem
     elementStyleResources.clearPendingSVGDocuments();
 }
 
-static PassRefPtr<StyleImage> doLoadPendingImage(ResourceFetcher* fetcher, StylePendingImage* pendingImage, float deviceScaleFactor, const ResourceLoaderOptions& options)
+static PassRefPtr<StyleImage> doLoadPendingImage(Document* document, StylePendingImage* pendingImage, float deviceScaleFactor, const ResourceLoaderOptions& options)
 {
     if (CSSImageValue* imageValue = pendingImage->cssImageValue())
-        return imageValue->cachedImage(fetcher, options);
+        return imageValue->cachedImage(document, options);
 
     if (CSSImageGeneratorValue* imageGeneratorValue
         = pendingImage->cssImageGeneratorValue()) {
-        imageGeneratorValue->loadSubimages(fetcher);
+        imageGeneratorValue->loadSubimages(document);
         return StyleGeneratedImage::create(imageGeneratorValue);
     }
 
     if (CSSCursorImageValue* cursorImageValue
         = pendingImage->cssCursorImageValue())
-        return cursorImageValue->cachedImage(fetcher, deviceScaleFactor);
+        return cursorImageValue->cachedImage(document, deviceScaleFactor);
 
     if (CSSImageSetValue* imageSetValue = pendingImage->cssImageSetValue())
-        return imageSetValue->cachedImageSet(fetcher, deviceScaleFactor, options);
+        return imageSetValue->cachedImageSet(document, deviceScaleFactor, options);
 
     return nullptr;
 }
 
 PassRefPtr<StyleImage> StyleResourceLoader::loadPendingImage(StylePendingImage* pendingImage, float deviceScaleFactor)
 {
-    return doLoadPendingImage(m_fetcher, pendingImage, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
+    return doLoadPendingImage(m_document, pendingImage, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
 }
 
-void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeValue* shapeValue, float deviceScaleFactor)
+void StyleResourceLoader::loadPendingShapeImage(ComputedStyle* computedStyle, ShapeValue* shapeValue, float deviceScaleFactor)
 {
     if (!shapeValue)
         return;
@@ -111,10 +117,10 @@ void StyleResourceLoader::loadPendingShapeImage(RenderStyle* renderStyle, ShapeV
     options.credentialsRequested  = ClientDidNotRequestCredentials;
     options.corsEnabled = IsCORSEnabled;
 
-    shapeValue->setImage(doLoadPendingImage(m_fetcher, toStylePendingImage(image), deviceScaleFactor, options));
+    shapeValue->setImage(doLoadPendingImage(m_document, toStylePendingImage(image), deviceScaleFactor, options));
 }
 
-void StyleResourceLoader::loadPendingImages(RenderStyle* style, ElementStyleResources& elementStyleResources)
+void StyleResourceLoader::loadPendingImages(ComputedStyle* style, ElementStyleResources& elementStyleResources)
 {
     if (elementStyleResources.pendingImageProperties().isEmpty())
         return;
@@ -199,13 +205,13 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, ElementStyleReso
     elementStyleResources.clearPendingImageProperties();
 }
 
-void StyleResourceLoader::loadPendingResources(RenderStyle* renderStyle, ElementStyleResources& elementStyleResources)
+void StyleResourceLoader::loadPendingResources(ComputedStyle* computedStyle, ElementStyleResources& elementStyleResources)
 {
     // Start loading images referenced by this style.
-    loadPendingImages(renderStyle, elementStyleResources);
+    loadPendingImages(computedStyle, elementStyleResources);
 
     // Start loading the SVG Documents referenced by this style.
-    loadPendingSVGDocuments(renderStyle, elementStyleResources);
+    loadPendingSVGDocuments(computedStyle, elementStyleResources);
 }
 
 }

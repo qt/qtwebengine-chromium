@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_AREA_H_
 #define CONTENT_BROWSER_DOM_STORAGE_DOM_STORAGE_AREA_H_
 
+#include <string>
+
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
@@ -32,6 +34,12 @@ class CONTENT_EXPORT DOMStorageArea
   static const base::FilePath::CharType kDatabaseFileExtension[];
   static base::FilePath DatabaseFileNameFromOrigin(const GURL& origin);
   static GURL OriginFromDatabaseFileName(const base::FilePath& file_name);
+
+  // Commence aggressive flushing. This should be called early in the startup -
+  // before any localStorage writing. Currently scheduled writes will not be
+  // rescheduled and will be flushed at the scheduled time after which
+  // aggressive flushing will commence.
+  static void EnableAggressiveCommitDelay();
 
   // Local storage. Backed on disk if directory is nonempty.
   DOMStorageArea(const GURL& origin,
@@ -65,6 +73,7 @@ class CONTENT_EXPORT DOMStorageArea
       const std::string& destination_persistent_namespace_id);
 
   bool HasUncommittedChanges() const;
+  void ScheduleImmediateCommit();
 
   // Similar to Clear() but more optimized for just deleting
   // without raising events.
@@ -92,14 +101,42 @@ class CONTENT_EXPORT DOMStorageArea
   FRIEND_TEST_ALL_PREFIXES(DOMStorageAreaTest, CommitChangesAtShutdown);
   FRIEND_TEST_ALL_PREFIXES(DOMStorageAreaTest, DeleteOrigin);
   FRIEND_TEST_ALL_PREFIXES(DOMStorageAreaTest, PurgeMemory);
+  FRIEND_TEST_ALL_PREFIXES(DOMStorageAreaTest, RateLimiter);
   FRIEND_TEST_ALL_PREFIXES(DOMStorageContextImplTest, PersistentIds);
   friend class base::RefCountedThreadSafe<DOMStorageArea>;
+
+  // Used to rate limit commits.
+  class CONTENT_EXPORT RateLimiter {
+   public:
+    RateLimiter(size_t desired_rate, base::TimeDelta time_quantum);
+
+    void add_samples(size_t samples) {
+      samples_ += samples;
+    }
+
+    // Computes the total time needed to process the total samples seen
+    // at the desired rate.
+    base::TimeDelta ComputeTimeNeeded() const;
+
+    // Given the elapsed time since the start of the rate limiting session,
+    // computes the delay needed to mimic having processed the total samples
+    // seen at the desired rate.
+    base::TimeDelta ComputeDelayNeeded(
+        const base::TimeDelta elapsed_time) const;
+
+   private:
+    float rate_;
+    float samples_;
+    base::TimeDelta time_quantum_;
+  };
 
   struct CommitBatch {
     bool clear_all_first;
     DOMStorageValuesMap changed_values;
+
     CommitBatch();
     ~CommitBatch();
+    size_t GetDataSize() const;
   };
 
   ~DOMStorageArea();
@@ -113,11 +150,16 @@ class CONTENT_EXPORT DOMStorageArea
   // disk on the commit sequence, and to call back on the primary
   // task sequence when complete.
   CommitBatch* CreateCommitBatchIfNeeded();
+  void StartCommitTimer();
   void OnCommitTimer();
+  void PostCommitTask();
   void CommitChanges(const CommitBatch* commit_batch);
   void OnCommitComplete();
+  base::TimeDelta ComputeCommitDelay() const;
 
   void ShutdownInCommitSequence();
+
+  static bool s_aggressive_flushing_enabled_;
 
   int64 namespace_id_;
   std::string persistent_namespace_id_;
@@ -131,6 +173,11 @@ class CONTENT_EXPORT DOMStorageArea
   bool is_shutdown_;
   scoped_ptr<CommitBatch> commit_batch_;
   int commit_batches_in_flight_;
+  base::TimeTicks start_time_;
+  RateLimiter data_rate_limiter_;
+  RateLimiter commit_rate_limiter_;
+
+  DISALLOW_COPY_AND_ASSIGN(DOMStorageArea);
 };
 
 }  // namespace content

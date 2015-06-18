@@ -8,7 +8,8 @@
 
 #include "base/command_line.h"
 #include "base/mac/sdk_forward_declarations.h"
-#include "content/common/gpu/surface_handle_types_mac.h"
+#include "base/trace_event/trace_event.h"
+#include "ui/accelerated_widget_mac/surface_handle_types.h"
 #include "ui/base/cocoa/animation_utils.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gl/gl_gl_api_implementation.h"
@@ -17,10 +18,14 @@
 
 namespace {
 const size_t kFramesToKeepCAContextAfterDiscard = 2;
+const size_t kCanDrawFalsesBeforeSwitchFromAsync = 4;
+const base::TimeDelta kMinDeltaToSwitchToAsync =
+    base::TimeDelta::FromSecondsD(1. / 15.);
 }
 
 @interface ImageTransportLayer : CAOpenGLLayer {
   content::CALayerStorageProvider* storageProvider_;
+  base::Closure didDrawCallback_;
 }
 - (id)initWithStorageProvider:(content::CALayerStorageProvider*)storageProvider;
 - (void)resetStorageProvider;
@@ -51,12 +56,8 @@ const size_t kFramesToKeepCAContextAfterDiscard = 2;
 - (CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat {
   if (!storageProvider_)
     return NULL;
-  CGLContextObj context = NULL;
-  CGLError error = CGLCreateContext(
-      pixelFormat, storageProvider_->LayerShareGroupContext(), &context);
-  if (error != kCGLNoError)
-    DLOG(ERROR) << "CGLCreateContext failed with CGL error: " << error;
-  return context;
+  didDrawCallback_ = storageProvider_->LayerShareGroupContextDirtiedCallback();
+  return CGLRetainContext(storageProvider_->LayerShareGroupContext());
 }
 
 - (BOOL)canDrawInCGLContext:(CGLContextObj)glContext
@@ -86,6 +87,10 @@ const size_t kFramesToKeepCAContextAfterDiscard = 2;
               pixelFormat:pixelFormat
              forLayerTime:timeInterval
               displayTime:timeStamp];
+
+
+  DCHECK(!didDrawCallback_.is_null());
+  didDrawCallback_.Run();
 }
 
 @end
@@ -94,16 +99,23 @@ namespace content {
 
 CALayerStorageProvider::CALayerStorageProvider(
     ImageTransportSurfaceFBO* transport_surface)
-        : transport_surface_(transport_surface),
-          gpu_vsync_disabled_(CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kDisableGpuVsync)),
-          throttling_disabled_(false),
-          has_pending_draw_(false),
-          can_draw_returned_false_count_(0),
-          fbo_texture_(0),
-          fbo_scale_factor_(1),
-          recreate_layer_after_gpu_switch_(false),
-          pending_draw_weak_factory_(this) {
+    : transport_surface_(transport_surface),
+      gpu_vsync_disabled_(base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuVsync)),
+      throttling_disabled_(false),
+      has_pending_draw_(false),
+      can_draw_returned_false_count_(0),
+      fbo_texture_(0),
+      fbo_scale_factor_(1),
+      program_(0),
+      vertex_shader_(0),
+      fragment_shader_(0),
+      position_location_(0),
+      tex_location_(0),
+      vertex_buffer_(0),
+      vertex_array_(0),
+      recreate_layer_after_gpu_switch_(false),
+      pending_draw_weak_factory_(this) {
   ui::GpuSwitchingManager::GetInstance()->AddObserver(this);
 }
 
@@ -116,33 +128,131 @@ gfx::Size CALayerStorageProvider::GetRoundedSize(gfx::Size size) {
 }
 
 bool CALayerStorageProvider::AllocateColorBufferStorage(
-    CGLContextObj context, GLuint texture,
-    gfx::Size pixel_size, float scale_factor) {
+    CGLContextObj context, const base::Closure& context_dirtied_callback,
+    GLuint texture, gfx::Size pixel_size, float scale_factor) {
   // Allocate an ordinary OpenGL texture to back the FBO.
   GLenum error;
   while ((error = glGetError()) != GL_NO_ERROR) {
-    DLOG(ERROR) << "Error found (and ignored) before allocating buffer "
-                << "storage: " << error;
+    LOG(ERROR) << "OpenGL error hit but ignored before allocating buffer "
+               << "storage: " << error;
   }
-  glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,
-               0,
-               GL_RGBA,
-               pixel_size.width(),
-               pixel_size.height(),
-               0,
-               GL_RGBA,
-               GL_UNSIGNED_BYTE,
-               NULL);
-  error = glGetError();
-  if (error != GL_NO_ERROR) {
-    DLOG(ERROR) << "glTexImage failed with GL error: " << error;
+
+  if (gfx::GetGLImplementation() ==
+      gfx::kGLImplementationDesktopGLCoreProfile) {
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA,
+                 pixel_size.width(),
+                 pixel_size.height(),
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 NULL);
+    glFlush();
+
+    if (!vertex_shader_) {
+      const char* source =
+          "#version 150\n"
+          "in vec4 position;\n"
+          "out vec2 texcoord;\n"
+          "void main() {\n"
+          "    texcoord = vec2(position.x, position.y);\n"
+          "    gl_Position = vec4(2*position.x-1, 2*position.y-1,\n"
+          "        position.z, position.w);\n"
+          "}\n";
+      vertex_shader_ = glCreateShader(GL_VERTEX_SHADER);
+      glShaderSource(vertex_shader_, 1, &source, NULL);
+      glCompileShader(vertex_shader_);
+#if DCHECK_IS_ON()
+      GLint status = GL_FALSE;
+      glGetShaderiv(vertex_shader_, GL_COMPILE_STATUS, &status);
+      DCHECK(status == GL_TRUE);
+#endif
+    }
+    if (!fragment_shader_) {
+      const char* source =
+          "#version 150\n"
+          "uniform sampler2D tex;\n"
+          "in vec2 texcoord;\n"
+          "out vec4 frag_color;\n"
+          "void main() {\n"
+          "    frag_color = texture(tex, texcoord);\n"
+          "}\n";
+      fragment_shader_ = glCreateShader(GL_FRAGMENT_SHADER);
+      glShaderSource(fragment_shader_, 1, &source, NULL);
+      glCompileShader(fragment_shader_);
+#if DCHECK_IS_ON()
+      GLint status = GL_FALSE;
+      glGetShaderiv(fragment_shader_, GL_COMPILE_STATUS, &status);
+      DCHECK(status == GL_TRUE);
+#endif
+    }
+    if (!program_) {
+      program_ = glCreateProgram();
+      glAttachShader(program_, vertex_shader_);
+      glAttachShader(program_, fragment_shader_);
+      glBindFragDataLocation(program_, 0, "frag_color");
+      glLinkProgram(program_);
+#if DCHECK_IS_ON()
+      GLint status = GL_FALSE;
+      glGetProgramiv(program_, GL_LINK_STATUS, &status);
+      DCHECK(status == GL_TRUE);
+#endif
+      position_location_ = glGetAttribLocation(program_, "position");
+      tex_location_ = glGetUniformLocation(program_, "tex");
+    }
+    if (!vertex_buffer_) {
+      GLfloat vertex_data[24] = {
+        0, 0, 0, 1,
+        1, 0, 0, 1,
+        1, 1, 0, 1,
+        1, 1, 0, 1,
+        0, 1, 0, 1,
+        0, 0, 0, 1,
+      };
+      glGenBuffersARB(1, &vertex_buffer_);
+      glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_data),
+                   vertex_data, GL_STATIC_DRAW);
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+    if (!vertex_array_) {
+      glGenVertexArraysOES(1, &vertex_array_);
+      glBindVertexArrayOES(vertex_array_);
+      {
+        glEnableVertexAttribArray(position_location_);
+        glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
+        glVertexAttribPointer(position_location_, 4, GL_FLOAT, GL_FALSE, 0, 0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+      }
+      glBindVertexArrayOES(0);
+    }
+  } else {
+    glTexImage2D(GL_TEXTURE_RECTANGLE_ARB,
+                 0,
+                 GL_RGBA,
+                 pixel_size.width(),
+                 pixel_size.height(),
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 NULL);
+    glFlush();
+  }
+
+  bool hit_error = false;
+  while ((error = glGetError()) != GL_NO_ERROR) {
+    LOG(ERROR) << "OpenGL error hit while trying to allocate buffer storage: "
+               << error;
+    hit_error = true;
+  }
+  if (hit_error)
     return false;
-  }
-  glFlush();
 
   // Set the parameters that will be used to allocate the CALayer to draw the
   // texture into.
   share_group_context_.reset(CGLRetainContext(context));
+  share_group_context_dirtied_callback_ = context_dirtied_callback;
   fbo_texture_ = texture;
   fbo_pixel_size_ = pixel_size;
   fbo_scale_factor_ = scale_factor;
@@ -150,20 +260,50 @@ bool CALayerStorageProvider::AllocateColorBufferStorage(
 }
 
 void CALayerStorageProvider::FreeColorBufferStorage() {
+  if (gfx::GetGLImplementation() ==
+      gfx::kGLImplementationDesktopGLCoreProfile) {
+    if (vertex_shader_)
+      glDeleteShader(vertex_shader_);
+    if (fragment_shader_)
+      glDeleteShader(fragment_shader_);
+    if (program_)
+      glDeleteProgram(program_);
+    if (vertex_buffer_)
+      glDeleteBuffersARB(1, &vertex_buffer_);
+    if (vertex_array_)
+      glDeleteVertexArraysOES(1, &vertex_array_);
+    vertex_shader_ = 0;
+    fragment_shader_ = 0;
+    program_ = 0;
+    vertex_buffer_ = 0;
+    vertex_array_ = 0;
+  }
+
   // Note that |context_| still holds a reference to |layer_|, and will until
   // a new frame is swapped in.
   [layer_ resetStorageProvider];
   layer_.reset();
 
   share_group_context_.reset();
+  share_group_context_dirtied_callback_ = base::Closure();
   fbo_texture_ = 0;
   fbo_pixel_size_ = gfx::Size();
   can_draw_returned_false_count_ = 0;
 }
 
-void CALayerStorageProvider::SwapBuffers(
-    const gfx::Size& size, float scale_factor) {
+void CALayerStorageProvider::FrameSizeChanged(const gfx::Size& pixel_size,
+                                              float scale_factor) {
+  DCHECK_EQ(fbo_pixel_size_.ToString(), pixel_size.ToString());
+  DCHECK_EQ(fbo_scale_factor_, scale_factor);
+}
+
+void CALayerStorageProvider::SwapBuffers() {
+  TRACE_EVENT0("gpu", "CALayerStorageProvider::SwapBuffers");
   DCHECK(!has_pending_draw_);
+
+  // A trace value of 2 indicates that there is a pending swap ack. See
+  // LayerCanDraw for other value meanings.
+  TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 2);
 
   // Recreate the CALayer on the new GPU if a GPU switch has occurred. Note
   // that the CAContext will retain a reference to the old CALayer until the
@@ -188,7 +328,8 @@ void CALayerStorageProvider::SwapBuffers(
     [context_ retain];
   }
 
-  // Allocate a CALayer to use to draw the content, if needed.
+  // Allocate a CALayer to use to draw the content and make it current to the
+  // CAContext, if needed.
   if (!layer_) {
     layer_.reset([[ImageTransportLayer alloc] initWithStorageProvider:this]);
     gfx::Size dip_size(gfx::ToFlooredSize(gfx::ScaleSize(
@@ -196,13 +337,11 @@ void CALayerStorageProvider::SwapBuffers(
     [layer_ setContentsScale:fbo_scale_factor_];
     [layer_ setFrame:CGRectMake(0, 0, dip_size.width(), dip_size.height())];
 
-    // Make the CALayer current to the CAContext and display its contents
-    // immediately.
     [context_ setLayer:layer_];
   }
 
   // Replacing the CAContext's CALayer will sometimes results in an immediate
-  // draw. If that happens, early-out.
+  // draw.
   if (!has_pending_draw_)
     return;
 
@@ -210,8 +349,19 @@ void CALayerStorageProvider::SwapBuffers(
   if (gpu_vsync_disabled_ || throttling_disabled_) {
     DrawImmediatelyAndUnblockBrowser();
   } else {
-    if (![layer_ isAsynchronous])
-      [layer_ setAsynchronous:YES];
+    if (![layer_ isAsynchronous]) {
+      // Switch to asynchronous drawing only if we get two frames in rapid
+      // succession.
+      base::TimeTicks this_swap_time = base::TimeTicks::Now();
+      base::TimeDelta delta = this_swap_time - last_synchronous_swap_time_;
+      if (delta <= kMinDeltaToSwitchToAsync) {
+        last_synchronous_swap_time_ = base::TimeTicks();
+        [layer_ setAsynchronous:YES];
+      } else {
+        last_synchronous_swap_time_ = this_swap_time;
+        [layer_ setNeedsDisplay];
+      }
+    }
 
     // If CoreAnimation doesn't end up drawing our frame, un-block the browser
     // after a timeout of 1/6th of a second has passed.
@@ -272,6 +422,7 @@ void CALayerStorageProvider::DiscardBackbuffer() {
 
 void CALayerStorageProvider::SwapBuffersAckedByBrowser(
     bool disable_throttling) {
+  TRACE_EVENT0("gpu", "CALayerStorageProvider::SwapBuffersAckedByBrowser");
   throttling_disabled_ = disable_throttling;
   if (!previously_discarded_contexts_.empty())
     previously_discarded_contexts_.pop_front();
@@ -281,7 +432,29 @@ CGLContextObj CALayerStorageProvider::LayerShareGroupContext() {
   return share_group_context_;
 }
 
+base::Closure CALayerStorageProvider::LayerShareGroupContextDirtiedCallback() {
+  return share_group_context_dirtied_callback_;
+}
+
 bool CALayerStorageProvider::LayerCanDraw() {
+  TRACE_EVENT0("gpu", "CALayerStorageProvider::LayerCanDraw");
+
+  // This tracing would be more natural to do with a pseudo-thread for each
+  // layer, rather than a counter.
+  // http://crbug.com/366300
+  if (has_pending_draw_) {
+    // If there is a draw pending then increase the signal from 2 to 3, to
+    // indicate that there is a swap pending, and CoreAnimation has asked to
+    // draw it.
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 3);
+  } else {
+    // If there is not a draw pending, then give an instantaneous blip up from
+    // 0 to 1, indicating that CoreAnimation was ready to draw a frame but we
+    // were not (or didn't have new content to draw).
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 1);
+    TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 0);
+  }
+
   if (has_pending_draw_) {
     can_draw_returned_false_count_ = 0;
     return true;
@@ -289,10 +462,10 @@ bool CALayerStorageProvider::LayerCanDraw() {
     if ([layer_ isAsynchronous]) {
       DCHECK(!gpu_vsync_disabled_);
       // If we are in asynchronous mode, we will be getting callbacks at every
-      // vsync, asking us if we have anything to draw. If we get 30 of these in
-      // a row, ask that we stop getting these callback for now, so that we
+      // vsync, asking us if we have anything to draw. If we get many of these
+      // in a row, ask that we stop getting these callback for now, so that we
       // don't waste CPU cycles.
-      if (can_draw_returned_false_count_ == 30)
+      if (can_draw_returned_false_count_ >= kCanDrawFalsesBeforeSwitchFromAsync)
         [layer_ setAsynchronous:NO];
       else
         can_draw_returned_false_count_ += 1;
@@ -302,38 +475,70 @@ bool CALayerStorageProvider::LayerCanDraw() {
 }
 
 void CALayerStorageProvider::LayerDoDraw() {
-  GLint viewport[4] = {0, 0, 0, 0};
-  glGetIntegerv(GL_VIEWPORT, viewport);
-  gfx::Size viewport_size(viewport[2], viewport[3]);
+  TRACE_EVENT0("gpu", "CALayerStorageProvider::LayerDoDraw");
+  if (gfx::GetGLImplementation() ==
+      gfx::kGLImplementationDesktopGLCoreProfile) {
+    glClearColor(1, 0, 1, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_SCISSOR_TEST);
 
-  // Set the coordinate system to be one-to-one with pixels.
-  glMatrixMode(GL_PROJECTION);
-  glLoadIdentity();
-  glOrtho(0, viewport_size.width(), 0, viewport_size.height(), -1, 1);
-  glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
+    DCHECK(glIsProgram(program_));
+    glUseProgram(program_);
+    glBindVertexArrayOES(vertex_array_);
 
-  // Draw a fullscreen quad.
-  glColor4f(1, 1, 1, 1);
-  glEnable(GL_TEXTURE_RECTANGLE_ARB);
-  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, fbo_texture_);
-  glBegin(GL_QUADS);
-  {
-    glTexCoord2f(0, 0);
-    glVertex2f(0, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fbo_texture_);
+    glUniform1i(tex_location_, 0);
 
-    glTexCoord2f(0, fbo_pixel_size_.height());
-    glVertex2f(0, fbo_pixel_size_.height());
+    glDisable(GL_CULL_FACE);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArrayOES(0);
+    glUseProgram(0);
+  } else {
+    GLint viewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    gfx::Size viewport_size(viewport[2], viewport[3]);
 
-    glTexCoord2f(fbo_pixel_size_.width(), fbo_pixel_size_.height());
-    glVertex2f(fbo_pixel_size_.width(), fbo_pixel_size_.height());
+    // Set the coordinate system to be one-to-one with pixels.
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, viewport_size.width(), 0, viewport_size.height(), -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
 
-    glTexCoord2f(fbo_pixel_size_.width(), 0);
-    glVertex2f(fbo_pixel_size_.width(), 0);
+    // Reset drawing state and draw a fullscreen quad.
+    glUseProgram(0);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glColor4f(1, 1, 1, 1);
+    glActiveTexture(GL_TEXTURE0);
+    glEnable(GL_TEXTURE_RECTANGLE_ARB);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, fbo_texture_);
+    glBegin(GL_QUADS);
+    {
+      glTexCoord2f(0, 0);
+      glVertex2f(0, 0);
+
+      glTexCoord2f(0, fbo_pixel_size_.height());
+      glVertex2f(0, fbo_pixel_size_.height());
+
+      glTexCoord2f(fbo_pixel_size_.width(), fbo_pixel_size_.height());
+      glVertex2f(fbo_pixel_size_.width(), fbo_pixel_size_.height());
+
+      glTexCoord2f(fbo_pixel_size_.width(), 0);
+      glVertex2f(fbo_pixel_size_.width(), 0);
+    }
+    glEnd();
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0);
+    glDisable(GL_TEXTURE_RECTANGLE_ARB);
   }
-  glEnd();
-  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0);
-  glDisable(GL_TEXTURE_RECTANGLE_ARB);
 
   GLint current_renderer_id = 0;
   if (CGLGetParameter(CGLGetCurrentContext(),
@@ -341,6 +546,11 @@ void CALayerStorageProvider::LayerDoDraw() {
                       &current_renderer_id) == kCGLNoError) {
     current_renderer_id &= kCGLRendererIDMatchingMask;
     transport_surface_->SetRendererID(current_renderer_id);
+  }
+
+  GLenum error;
+  while ((error = glGetError()) != GL_NO_ERROR) {
+    LOG(ERROR) << "OpenGL error hit while drawing frame: " << error;
   }
 
   // Allow forward progress in the context now that the swap is complete.
@@ -363,9 +573,12 @@ void CALayerStorageProvider::UnblockBrowserIfNeeded() {
   pending_draw_weak_factory_.InvalidateWeakPtrs();
   has_pending_draw_ = false;
   transport_surface_->SendSwapBuffers(
-      SurfaceHandleFromCAContextID([context_ contextId]),
+      ui::SurfaceHandleFromCAContextID([context_ contextId]),
       fbo_pixel_size_,
       fbo_scale_factor_);
+
+  // A trace value of 0 indicates that there is no longer a pending swap ack.
+  TRACE_COUNTER_ID1("gpu", "CALayerPendingSwap", this, 0);
 }
 
 }  //  namespace content

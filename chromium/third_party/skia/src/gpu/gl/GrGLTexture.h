@@ -13,6 +13,7 @@
 #include "GrTexture.h"
 #include "GrGLUtil.h"
 
+class GrGLGpu;
 
 class GrGLTexture : public GrTexture {
 
@@ -27,17 +28,15 @@ public:
     };
 
     struct IDDesc {
-        GrGLuint        fTextureID;
-        bool            fIsWrapped;
+        GrGLuint                    fTextureID;
+        GrGpuResource::LifeCycle    fLifeCycle;
     };
 
-    GrGLTexture(GrGpuGL*, const GrSurfaceDesc&, const IDDesc&);
+    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&);
 
-    virtual ~GrGLTexture() { this->release(); }
+    GrBackendObject getTextureHandle() const override;
 
-    virtual GrBackendObject getTextureHandle() const SK_OVERRIDE;
-
-    virtual void textureParamsModified() SK_OVERRIDE { fTexParams.invalidate(); }
+    void textureParamsModified() override { fTexParams.invalidate(); }
 
     // These functions are used to track the texture parameters associated with the texture.
     const TexParams& getCachedTexParams(GrGpu::ResetTimestamp* timestamp) const {
@@ -58,17 +57,21 @@ protected:
     // class should register with the cache. This constructor does not do the registration and
     // rather moves that burden onto the derived class.
     enum Derived { kDerived };
-    GrGLTexture(GrGpuGL*, const GrSurfaceDesc&, const IDDesc&, Derived);
+    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, Derived);
 
     void init(const GrSurfaceDesc&, const IDDesc&);
 
-    virtual void onAbandon() SK_OVERRIDE;
-    virtual void onRelease() SK_OVERRIDE;
+    void onAbandon() override;
+    void onRelease() override;
 
 private:
     TexParams                       fTexParams;
     GrGpu::ResetTimestamp           fTexParamsTimestamp;
     GrGLuint                        fTextureID;
+
+    // We track this separately from GrGpuResource because this may be both a texture and a render
+    // target, and the texture may be wrapped while the render target is not.
+    bool fIsWrapped;
 
     typedef GrTexture INHERITED;
 };

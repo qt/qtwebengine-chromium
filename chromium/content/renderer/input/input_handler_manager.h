@@ -17,10 +17,16 @@ class MessageLoopProxy;
 
 namespace cc {
 class InputHandler;
+struct InputHandlerScrollResult;
 }
 
 namespace blink {
 class WebInputEvent;
+class WebMouseWheelEvent;
+}
+
+namespace scheduler {
+class RendererScheduler;
 }
 
 namespace content {
@@ -33,11 +39,14 @@ struct DidOverscrollParams;
 // the WebViews in this renderer.
 class InputHandlerManager {
  public:
-  // |message_loop_proxy| is the MessageLoopProxy of the compositor thread. Both
-  // the underlying MessageLoop and supplied |client| must outlive this object.
+  // |message_loop_proxy| is the MessageLoopProxy of the compositor thread. The
+  // underlying MessageLoop and supplied |client| and the |renderer_scheduler|
+  // must outlive this object. The RendererScheduler needs to know when input
+  // events and fling animations occur, which is why it's passed in here.
   InputHandlerManager(
       const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
-      InputHandlerManagerClient* client);
+      InputHandlerManagerClient* client,
+      scheduler::RendererScheduler* renderer_scheduler);
   ~InputHandlerManager();
 
   // Callable from the main thread only.
@@ -45,6 +54,11 @@ class InputHandlerManager {
       int routing_id,
       const base::WeakPtr<cc::InputHandler>& input_handler,
       const base::WeakPtr<RenderViewImpl>& render_view_impl);
+
+  void ObserveWheelEventAndResultOnMainThread(
+      int routing_id,
+      const blink::WebMouseWheelEvent& wheel_event,
+      const cc::InputHandlerScrollResult& scroll_result);
 
   // Callback only from the compositor's thread.
   void RemoveInputHandler(int routing_id);
@@ -60,6 +74,9 @@ class InputHandlerManager {
   // Called from the compositor's thread.
   void DidStopFlinging(int routing_id);
 
+  // Called from the compositor's thread.
+  void DidAnimateForInput();
+
  private:
   // Called from the compositor's thread.
   void AddInputHandlerOnCompositorThread(
@@ -68,12 +85,19 @@ class InputHandlerManager {
       const base::WeakPtr<cc::InputHandler>& input_handler,
       const base::WeakPtr<RenderViewImpl>& render_view_impl);
 
+  void ObserveWheelEventAndResultOnCompositorThread(
+      int routing_id,
+      const blink::WebMouseWheelEvent& wheel_event,
+      const cc::InputHandlerScrollResult& scroll_result);
+
   typedef base::ScopedPtrHashMap<int,  // routing_id
-                                 InputHandlerWrapper> InputHandlerMap;
+                                 scoped_ptr<InputHandlerWrapper>>
+      InputHandlerMap;
   InputHandlerMap input_handlers_;
 
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   InputHandlerManagerClient* client_;
+  scheduler::RendererScheduler* renderer_scheduler_;  // Not owned.
 };
 
 }  // namespace content

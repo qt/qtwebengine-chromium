@@ -8,32 +8,16 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/strings/string_number_conversions.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/http/http_stream_factory_impl_request.h"
+#include "net/log/net_log.h"
 #include "net/spdy/spdy_http_stream.h"
 #include "url/gurl.h"
 
 namespace net {
-
-namespace {
-
-GURL UpgradeUrlToHttps(const GURL& original_url, int port) {
-  GURL::Replacements replacements;
-  // new_sheme and new_port need to be in scope here because GURL::Replacements
-  // references the memory contained by them directly.
-  const std::string new_scheme = "https";
-  const std::string new_port = base::IntToString(port);
-  replacements.SetSchemeStr(new_scheme);
-  replacements.SetPortStr(new_port);
-  return original_url.ReplaceComponents(replacements);
-}
-
-}  // namespace
 
 HttpStreamFactoryImpl::HttpStreamFactoryImpl(HttpNetworkSession* session,
                                              bool for_websockets)
@@ -105,30 +89,21 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
                                  delegate,
                                  websocket_handshake_stream_create_helper,
                                  net_log);
-
-  GURL alternate_url;
-  AlternateProtocolInfo alternate =
-      GetAlternateProtocolRequestFor(request_info.url, &alternate_url);
-  Job* alternate_job = NULL;
-  if (alternate.protocol != UNINITIALIZED_ALTERNATE_PROTOCOL) {
-    // Never share connection with other jobs for FTP requests.
-    DCHECK(!request_info.url.SchemeIs("ftp"));
-
-    HttpRequestInfo alternate_request_info = request_info;
-    alternate_request_info.url = alternate_url;
-    alternate_job =
-        new Job(this, session_, alternate_request_info, priority,
-                server_ssl_config, proxy_ssl_config, net_log.net_log());
-    request->AttachJob(alternate_job);
-    alternate_job->MarkAsAlternate(request_info.url, alternate);
-  }
-
-  Job* job = new Job(this, session_, request_info, priority,
-                     server_ssl_config, proxy_ssl_config, net_log.net_log());
+  Job* job = new Job(this, session_, request_info, priority, server_ssl_config,
+                     proxy_ssl_config, net_log.net_log());
   request->AttachJob(job);
-  if (alternate_job) {
+
+  AlternativeService alternative_service =
+      GetAlternativeServiceFor(request_info.url);
+  if (alternative_service.protocol != UNINITIALIZED_ALTERNATE_PROTOCOL) {
     // Never share connection with other jobs for FTP requests.
     DCHECK(!request_info.url.SchemeIs("ftp"));
+
+    Job* alternate_job =
+        new Job(this, session_, request_info, priority, server_ssl_config,
+                proxy_ssl_config, net_log.net_log());
+    request->AttachJob(alternate_job);
+    alternate_job->MarkAsAlternate(alternative_service);
 
     job->WaitFor(alternate_job);
     // Make sure to wait until we call WaitFor(), before starting
@@ -136,6 +111,7 @@ HttpStreamRequest* HttpStreamFactoryImpl::RequestStreamInternal(
     // appropriately.
     alternate_job->Start(request);
   }
+
   // Even if |alternate_job| has already finished, it won't have notified the
   // request yet, since we defer that to the next iteration of the MessageLoop,
   // so starting |job| is always safe.
@@ -150,19 +126,12 @@ void HttpStreamFactoryImpl::PreconnectStreams(
     const SSLConfig& server_ssl_config,
     const SSLConfig& proxy_ssl_config) {
   DCHECK(!for_websockets_);
-  GURL alternate_url;
-  AlternateProtocolInfo alternate =
-      GetAlternateProtocolRequestFor(request_info.url, &alternate_url);
-  Job* job = NULL;
-  if (alternate.protocol != UNINITIALIZED_ALTERNATE_PROTOCOL) {
-    HttpRequestInfo alternate_request_info = request_info;
-    alternate_request_info.url = alternate_url;
-    job = new Job(this, session_, alternate_request_info, priority,
-                  server_ssl_config, proxy_ssl_config, session_->net_log());
-    job->MarkAsAlternate(request_info.url, alternate);
-  } else {
-    job = new Job(this, session_, request_info, priority,
-                  server_ssl_config, proxy_ssl_config, session_->net_log());
+  AlternativeService alternative_service =
+      GetAlternativeServiceFor(request_info.url);
+  Job* job = new Job(this, session_, request_info, priority, server_ssl_config,
+                     proxy_ssl_config, session_->net_log());
+  if (alternative_service.protocol != UNINITIALIZED_ALTERNATE_PROTOCOL) {
+    job->MarkAsAlternate(alternative_service);
   }
   preconnect_job_set_.insert(job);
   job->Preconnect(num_streams);
@@ -172,36 +141,31 @@ const HostMappingRules* HttpStreamFactoryImpl::GetHostMappingRules() const {
   return session_->params().host_mapping_rules;
 }
 
-AlternateProtocolInfo HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
-    const GURL& original_url,
-    GURL* alternate_url) {
-  const AlternateProtocolInfo kNoAlternateProtocol =
-      AlternateProtocolInfo(0,  UNINITIALIZED_ALTERNATE_PROTOCOL, 0);
+AlternativeService HttpStreamFactoryImpl::GetAlternativeServiceFor(
+    const GURL& original_url) {
+  const AlternativeService kNoAlternativeService;
 
   if (!session_->params().use_alternate_protocols)
-    return kNoAlternateProtocol;
+    return kNoAlternativeService;
 
   if (original_url.SchemeIs("ftp"))
-    return kNoAlternateProtocol;
+    return kNoAlternativeService;
 
-  HostPortPair origin = HostPortPair(original_url.HostNoBrackets(),
-                                     original_url.EffectiveIntPort());
-
+  HostPortPair origin = HostPortPair::FromURL(original_url);
   HttpServerProperties& http_server_properties =
       *session_->http_server_properties();
-  if (!http_server_properties.HasAlternateProtocol(origin))
-    return kNoAlternateProtocol;
+  const AlternativeService alternative_service =
+      http_server_properties.GetAlternativeService(origin);
 
-  AlternateProtocolInfo alternate =
-      http_server_properties.GetAlternateProtocol(origin);
-  if (alternate.is_broken) {
+  if (alternative_service.protocol == UNINITIALIZED_ALTERNATE_PROTOCOL)
+    return kNoAlternativeService;
+  if (http_server_properties.IsAlternativeServiceBroken(alternative_service)) {
     HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_BROKEN);
-    return kNoAlternateProtocol;
+    return kNoAlternativeService;
   }
-
-  if (!IsAlternateProtocolValid(alternate.protocol)) {
+  if (!IsAlternateProtocolValid(alternative_service.protocol)) {
     NOTREACHED();
-    return kNoAlternateProtocol;
+    return kNoAlternativeService;
   }
 
   // Some shared unix systems may have user home directories (like
@@ -212,32 +176,40 @@ AlternateProtocolInfo HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   // allow protocol upgrades to user-controllable ports.
   const int kUnrestrictedPort = 1024;
   if (!session_->params().enable_user_alternate_protocol_ports &&
-      (alternate.port >= kUnrestrictedPort &&
+      (alternative_service.port >= kUnrestrictedPort &&
        origin.port() < kUnrestrictedPort))
-    return kNoAlternateProtocol;
+    return kNoAlternativeService;
 
-  origin.set_port(alternate.port);
-  if (alternate.protocol >= NPN_SPDY_MINIMUM_VERSION &&
-      alternate.protocol <= NPN_SPDY_MAXIMUM_VERSION) {
+  origin.set_port(alternative_service.port);
+  if (alternative_service.protocol >= NPN_SPDY_MINIMUM_VERSION &&
+      alternative_service.protocol <= NPN_SPDY_MAXIMUM_VERSION) {
     if (!HttpStreamFactory::spdy_enabled())
-      return kNoAlternateProtocol;
+      return kNoAlternativeService;
 
     if (session_->HasSpdyExclusion(origin))
-      return kNoAlternateProtocol;
+      return kNoAlternativeService;
 
-    *alternate_url = UpgradeUrlToHttps(original_url, alternate.port);
-  } else {
-    DCHECK_EQ(QUIC, alternate.protocol);
-    if (!session_->params().enable_quic)
-        return kNoAlternateProtocol;
-
-    // TODO(rch):  Figure out how to make QUIC iteract with PAC
-    // scripts.  By not re-writing the URL, we will query the PAC script
-    // for the proxy to use to reach the original URL via TCP.  But
-    // the alternate request will be going via UDP to a different port.
-    *alternate_url = original_url;
+    return alternative_service;
   }
-  return alternate;
+
+  DCHECK_EQ(QUIC, alternative_service.protocol);
+  // TODO(bnc):  Make sure that certificate requirements are enforced when using
+  // QUIC, then remove the following two lines.
+  if (alternative_service.host != origin.host())
+    return kNoAlternativeService;
+
+  if (!session_->params().enable_quic)
+    return kNoAlternativeService;
+
+  if (session_->quic_stream_factory()->IsQuicDisabled(origin.port()))
+    return kNoAlternativeService;
+
+  if (session_->params().disable_insecure_quic &&
+      !original_url.SchemeIs("https")) {
+    return kNoAlternativeService;
+  }
+
+  return alternative_service;
 }
 
 void HttpStreamFactoryImpl::OrphanJob(Job* job, const Request* request) {

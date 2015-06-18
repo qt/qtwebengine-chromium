@@ -27,12 +27,13 @@
 #define MediaDeviceInfo_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebMediaDeviceInfo.h"
 
 namespace blink {
 
-class MediaDeviceInfo final : public GarbageCollectedFinalized<MediaDeviceInfo>, public ScriptWrappable {
+class MODULES_EXPORT MediaDeviceInfo final : public GarbageCollectedFinalized<MediaDeviceInfo>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static MediaDeviceInfo* create(const WebMediaDeviceInfo&);
@@ -42,7 +43,7 @@ public:
     String label() const;
     String groupId() const;
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     explicit MediaDeviceInfo(const WebMediaDeviceInfo&);
@@ -50,7 +51,7 @@ private:
     WebMediaDeviceInfo m_webMediaDeviceInfo;
 };
 
-typedef HeapVector<Member<MediaDeviceInfo> > MediaDeviceInfoVector;
+typedef HeapVector<Member<MediaDeviceInfo>> MediaDeviceInfoVector;
 
 } // namespace blink
 

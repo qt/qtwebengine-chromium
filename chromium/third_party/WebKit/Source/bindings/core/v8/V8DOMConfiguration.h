@@ -31,11 +31,12 @@
 
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8DOMWrapper.h"
+#include "core/CoreExport.h"
 #include <v8.h>
 
 namespace blink {
 
-class V8DOMConfiguration {
+class CORE_EXPORT V8DOMConfiguration final {
 public:
     // The following Configuration structs and install methods are used for
     // setting multiple properties on an ObjectTemplate, used from the
@@ -53,20 +54,31 @@ public:
         OnPrototype,
     };
 
+    enum HolderCheckConfiguration {
+        CheckHolder,
+        DoNotCheckHolder,
+    };
+
     // AttributeConfiguration translates into calls to SetAccessor() on either
     // the instance or the prototype ObjectTemplate, based on |instanceOrPrototypeConfiguration|.
     struct AttributeConfiguration {
         const char* const name;
-        v8::AccessorGetterCallback getter;
-        v8::AccessorSetterCallback setter;
-        v8::AccessorGetterCallback getterForMainWorld;
-        v8::AccessorSetterCallback setterForMainWorld;
+        v8::AccessorNameGetterCallback getter;
+        v8::AccessorNameSetterCallback setter;
+        v8::AccessorNameGetterCallback getterForMainWorld;
+        v8::AccessorNameSetterCallback setterForMainWorld;
         const WrapperTypeInfo* data;
         v8::AccessControl settings;
         v8::PropertyAttribute attribute;
-        ExposeConfiguration exposeConfiguration;
-        InstanceOrPrototypeConfiguration instanceOrPrototypeConfiguration;
+        unsigned exposeConfiguration : 1; // ExposeConfiguration
+        unsigned instanceOrPrototypeConfiguration : 1; // InstanceOrPrototypeConfiguration
     };
+
+    static void installAttributes(v8::Isolate*, v8::Local<v8::ObjectTemplate> instanceTemplate, v8::Local<v8::ObjectTemplate> prototypeTemplate, const AttributeConfiguration*, size_t attributeCount);
+
+    static void installAttribute(v8::Isolate*, v8::Local<v8::ObjectTemplate> instanceTemplate, v8::Local<v8::ObjectTemplate> prototypeTemplate, const AttributeConfiguration&);
+
+    static void installAttribute(v8::Isolate*, v8::Local<v8::Object> instance, v8::Local<v8::Object> prototype, const AttributeConfiguration&);
 
     // AccessorConfiguration translates into calls to SetAccessorProperty()
     // on prototype ObjectTemplate.
@@ -79,33 +91,15 @@ public:
         const WrapperTypeInfo* data;
         v8::AccessControl settings;
         v8::PropertyAttribute attribute;
-        ExposeConfiguration exposeConfiguration;
+        unsigned exposeConfiguration : 1; // ExposeConfiguration
+        unsigned holderCheckConfiguration : 1; // HolderCheckConfiguration
     };
 
-    static void installAttributes(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::ObjectTemplate>, const AttributeConfiguration*, size_t attributeCount, v8::Isolate*);
+    static void installAccessors(v8::Isolate*, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::Signature>, const AccessorConfiguration*, size_t accessorCount);
 
-    template<class ObjectOrTemplate>
-    static inline void installAttribute(v8::Handle<ObjectOrTemplate> instanceTemplate, v8::Handle<ObjectOrTemplate> prototype, const AttributeConfiguration& attribute, v8::Isolate* isolate)
-    {
-        DOMWrapperWorld& world = DOMWrapperWorld::current(isolate);
-        if (attribute.exposeConfiguration == OnlyExposedToPrivateScript && !world.isPrivateScriptIsolatedWorld())
-            return;
+    static void installAccessor(v8::Isolate*, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::Signature>, const AccessorConfiguration&);
 
-        v8::AccessorGetterCallback getter = attribute.getter;
-        v8::AccessorSetterCallback setter = attribute.setter;
-        if (world.isMainWorld()) {
-            if (attribute.getterForMainWorld)
-                getter = attribute.getterForMainWorld;
-            if (attribute.setterForMainWorld)
-                setter = attribute.setterForMainWorld;
-        }
-        (attribute.instanceOrPrototypeConfiguration == OnPrototype ? prototype : instanceTemplate)->SetAccessor(v8AtomicString(isolate, attribute.name),
-            getter,
-            setter,
-            v8::External::New(isolate, const_cast<WrapperTypeInfo*>(attribute.data)),
-            attribute.settings,
-            attribute.attribute);
-    }
+    static void installAccessor(v8::Isolate*, v8::Local<v8::Object> prototype, const AccessorConfiguration&);
 
     enum ConstantType {
         ConstantTypeShort,
@@ -128,8 +122,19 @@ public:
         ConstantType type;
     };
 
-    static void installConstants(v8::Handle<v8::FunctionTemplate>, v8::Handle<v8::ObjectTemplate>, const ConstantConfiguration*, size_t constantCount, v8::Isolate*);
-    static void installConstant(v8::Handle<v8::FunctionTemplate>, v8::Handle<v8::ObjectTemplate>, const char* name, v8::AccessorGetterCallback, v8::Isolate*);
+    // Constant installation
+    //
+    // installConstants and installConstant are used for simple constants. They
+    // install constants using v8::Template::Set(), which results in a property
+    // that is much faster to access from scripts.
+    // installConstantWithGetter is used when some C++ code needs to be executed
+    // when the constant is accessed, e.g. to handle deprecation or measuring
+    // usage. The property appears the same to scripts, but is slower to access.
+    static void installConstants(v8::Isolate*, v8::Local<v8::FunctionTemplate> functionDescriptor, v8::Local<v8::ObjectTemplate> prototypeTemplate, const ConstantConfiguration*, size_t constantCount);
+
+    static void installConstant(v8::Isolate*, v8::Local<v8::FunctionTemplate> functionDescriptor, v8::Local<v8::ObjectTemplate> prototypeTemplate, const ConstantConfiguration&);
+
+    static void installConstantWithGetter(v8::Isolate*, v8::Local<v8::FunctionTemplate> functionDescriptor, v8::Local<v8::ObjectTemplate> prototypeTemplate, const char* name, v8::AccessorNameGetterCallback);
 
     // MethodConfiguration translates into calls to Set() for setting up an
     // object's callbacks. It sets the method on both the FunctionTemplate or
@@ -162,44 +167,20 @@ public:
         ExposeConfiguration exposeConfiguration;
     };
 
-    static void installMethods(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration*, size_t callbackCount, v8::Isolate*);
+    static void installMethods(v8::Isolate*, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration*, size_t callbackCount);
 
-    template <class ObjectOrTemplate, class Configuration>
-    static void installMethod(v8::Handle<ObjectOrTemplate> objectOrTemplate, v8::Handle<v8::Signature> signature, v8::PropertyAttribute attribute, const Configuration& callback, v8::Isolate* isolate)
-    {
-        DOMWrapperWorld& world = DOMWrapperWorld::current(isolate);
-        if (callback.exposeConfiguration == OnlyExposedToPrivateScript && !world.isPrivateScriptIsolatedWorld())
-            return;
+    static void installMethod(v8::Isolate*, v8::Local<v8::FunctionTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration&);
 
-        v8::Local<v8::FunctionTemplate> functionTemplate = functionTemplateForCallback(isolate, signature, callback.callbackForWorld(world), callback.length);
-        setMethod(objectOrTemplate, callback.methodName(isolate), functionTemplate, attribute);
-    }
+    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration&);
 
-    static void installAccessors(v8::Handle<v8::ObjectTemplate>, v8::Handle<v8::Signature>, const AccessorConfiguration*, size_t accessorCount, v8::Isolate*);
+    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const SymbolKeyedMethodConfiguration&);
 
-    static v8::Local<v8::Signature> installDOMClassTemplate(v8::Handle<v8::FunctionTemplate>, const char* interfaceName, v8::Handle<v8::FunctionTemplate> parentClass, size_t fieldCount,
+    static v8::Local<v8::Signature> installDOMClassTemplate(v8::Isolate*, v8::Local<v8::FunctionTemplate>, const char* interfaceName, v8::Local<v8::FunctionTemplate> parentClass, size_t fieldCount,
         const AttributeConfiguration*, size_t attributeCount,
         const AccessorConfiguration*, size_t accessorCount,
-        const MethodConfiguration*, size_t callbackCount,
-        v8::Isolate*);
+        const MethodConfiguration*, size_t callbackCount);
 
-    static v8::Handle<v8::FunctionTemplate> domClassTemplate(v8::Isolate*, WrapperTypeInfo*, void (*)(v8::Handle<v8::FunctionTemplate>, v8::Isolate*));
-
-private:
-    static void setMethod(v8::Handle<v8::Object> target, v8::Handle<v8::Name> name, v8::Handle<v8::FunctionTemplate> functionTemplate, v8::PropertyAttribute attribute)
-    {
-        target->Set(name, functionTemplate->GetFunction());
-    }
-    static void setMethod(v8::Handle<v8::FunctionTemplate> target, v8::Handle<v8::Name> name, v8::Handle<v8::FunctionTemplate> functionTemplate, v8::PropertyAttribute attribute)
-    {
-        target->Set(name, functionTemplate, attribute);
-    }
-    static void setMethod(v8::Handle<v8::ObjectTemplate> target, v8::Handle<v8::Name> name, v8::Handle<v8::FunctionTemplate> functionTemplate, v8::PropertyAttribute attribute)
-    {
-        target->Set(name, functionTemplate, attribute);
-    }
-
-    static v8::Handle<v8::FunctionTemplate> functionTemplateForCallback(v8::Isolate*, v8::Handle<v8::Signature>, v8::FunctionCallback, int length);
+    static v8::Local<v8::FunctionTemplate> domClassTemplate(v8::Isolate*, WrapperTypeInfo*, void (*)(v8::Local<v8::FunctionTemplate>, v8::Isolate*));
 };
 
 } // namespace blink

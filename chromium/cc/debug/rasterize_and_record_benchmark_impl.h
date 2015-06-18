@@ -9,9 +9,10 @@
 #include <utility>
 #include <vector>
 
+#include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "cc/debug/micro_benchmark_impl.h"
-#include "cc/resources/task_graph_runner.h"
+#include "cc/raster/task_graph_runner.h"
 
 namespace cc {
 
@@ -21,7 +22,7 @@ class LayerImpl;
 class RasterizeAndRecordBenchmarkImpl : public MicroBenchmarkImpl {
  public:
   explicit RasterizeAndRecordBenchmarkImpl(
-      scoped_refptr<base::MessageLoopProxy> origin_loop,
+      scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner,
       base::Value* value,
       const MicroBenchmarkImpl::DoneCallback& callback);
   ~RasterizeAndRecordBenchmarkImpl() override;
@@ -31,8 +32,6 @@ class RasterizeAndRecordBenchmarkImpl : public MicroBenchmarkImpl {
   void RunOnLayer(PictureLayerImpl* layer) override;
 
  private:
-  void Run(LayerImpl* layer);
-
   struct RasterizeResults {
     RasterizeResults();
     ~RasterizeResults();
@@ -41,6 +40,7 @@ class RasterizeAndRecordBenchmarkImpl : public MicroBenchmarkImpl {
     int pixels_rasterized_with_non_solid_color;
     int pixels_rasterized_as_opaque;
     base::TimeDelta total_best_time;
+    int total_memory_usage;
     int total_layers;
     int total_picture_layers;
     int total_picture_layers_with_no_content;
@@ -49,7 +49,6 @@ class RasterizeAndRecordBenchmarkImpl : public MicroBenchmarkImpl {
 
   RasterizeResults rasterize_results_;
   int rasterize_repeat_count_;
-  NamespaceToken task_namespace_;
 };
 
 }  // namespace cc

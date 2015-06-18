@@ -43,7 +43,7 @@ bool ReadVectorWithoutCopy(const Message* m,
   // This part is just a copy of the the default ParamTraits vector Read().
   int size;
   // ReadLength() checks for < 0 itself.
-  if (!m->ReadLength(iter, &size))
+  if (!iter->ReadLength(&size))
     return false;
   // Resizing beforehand is not safe, see BUG 1006367 for details.
   if (INT_MAX / sizeof(T) <= static_cast<size_t>(size))
@@ -97,6 +97,52 @@ bool ParamTraits<PP_Bool>::Read(const Message* m,
 void ParamTraits<PP_Bool>::Log(const param_type& p, std::string* l) {
 }
 
+// PP_KeyInformation -------------------------------------------------------
+
+// static
+void ParamTraits<PP_KeyInformation>::Write(Message* m, const param_type& p) {
+  WriteParam(m, p.key_id_size);
+  m->WriteBytes(p.key_id, static_cast<int>(p.key_id_size));
+  WriteParam(m, p.key_status);
+  WriteParam(m, p.system_code);
+}
+
+// static
+bool ParamTraits<PP_KeyInformation>::Read(const Message* m,
+                                          PickleIterator* iter,
+                                          param_type* p) {
+  uint32_t size;
+  if (!ReadParam(m, iter, &size))
+    return false;
+  if (size > sizeof(p->key_id))
+    return false;
+  p->key_id_size = size;
+
+  const char* data;
+  if (!iter->ReadBytes(&data, size))
+    return false;
+  memcpy(p->key_id, data, size);
+
+  PP_CdmKeyStatus key_status;
+  if (!ReadParam(m, iter, &key_status))
+    return false;
+  p->key_status = key_status;
+
+  uint32_t system_code;
+  if (!ReadParam(m, iter, &system_code))
+    return false;
+  p->system_code = system_code;
+
+  return true;
+}
+
+// static
+void ParamTraits<PP_KeyInformation>::Log(const param_type& p, std::string* l) {
+  l->append("<PP_KeyInformation (");
+  LogParam(p.key_id_size, l);
+  l->append(" bytes)>");
+}
+
 // PP_NetAddress_Private -------------------------------------------------------
 
 // static
@@ -118,7 +164,7 @@ bool ParamTraits<PP_NetAddress_Private>::Read(const Message* m,
   p->size = size;
 
   const char* data;
-  if (!m->ReadBytes(iter, &data, size))
+  if (!iter->ReadBytes(&data, size))
     return false;
   memcpy(p->data, data, size);
   return true;

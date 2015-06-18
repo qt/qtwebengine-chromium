@@ -6,12 +6,16 @@
 # in the file PATENTS. All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
+import("//build/config/arm.gni")
+
 config("libyuv_config") {
   include_dirs = [
     ".",
     "include",
   ]
 }
+
+use_neon = current_cpu == "arm" && (arm_use_neon || arm_optionally_use_neon)
 
 source_set("libyuv") {
   sources = [
@@ -23,7 +27,6 @@ source_set("libyuv") {
     "include/libyuv/convert_from.h",
     "include/libyuv/convert_from_argb.h",
     "include/libyuv/cpu_id.h",
-    "include/libyuv/format_conversion.h",
     "include/libyuv/mjpeg_decoder.h",
     "include/libyuv/planar_functions.h",
     "include/libyuv/rotate.h",
@@ -48,7 +51,6 @@ source_set("libyuv") {
     "source/convert_to_argb.cc",
     "source/convert_to_i420.cc",
     "source/cpu_id.cc",
-    "source/format_conversion.cc",
     "source/mjpeg_decoder.cc",
     "source/mjpeg_validate.cc",
     "source/planar_functions.cc",
@@ -61,6 +63,7 @@ source_set("libyuv") {
     "source/row_posix.cc",
     "source/row_win.cc",
     "source/scale.cc",
+    "source/scale_any.cc",
     "source/scale_argb.cc",
     "source/scale_common.cc",
     "source/scale_mips.cc",
@@ -68,6 +71,9 @@ source_set("libyuv") {
     "source/scale_win.cc",
     "source/video_common.cc",
   ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
 
   public_configs = [ ":libyuv_config" ]
 
@@ -87,5 +93,27 @@ source_set("libyuv") {
     "//third_party:jpeg",
   ]
 
-  # TODO(GYP) Neon build.
+  if (use_neon) {
+    deps += [ ":libyuv_neon" ]
+  }
+}
+
+if (use_neon) {
+  static_library("libyuv_neon") {
+    sources = [
+      "source/compare_neon.cc",
+      "source/compare_neon64.cc",
+      "source/rotate_neon.cc",
+      "source/rotate_neon64.cc",
+      "source/row_neon.cc",
+      "source/row_neon64.cc",
+      "source/scale_neon.cc",
+      "source/scale_neon64.cc",
+    ]
+
+    public_configs = [ ":libyuv_config" ]
+
+    configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+    cflags = [ "-mfpu=neon" ]
+  }
 }

@@ -31,14 +31,6 @@
 
 namespace blink {
 
-enum FrameState {
-    FrameStateProvisional,
-    // This state indicates we are ready to commit to a page,
-    // which means the view will transition to use the new data source.
-    FrameStateCommittedPage,
-    FrameStateComplete
-};
-
 enum FrameLoadType {
     FrameLoadTypeStandard,
     FrameLoadTypeBackForward,
@@ -77,11 +69,6 @@ enum ReasonForCallingAllowPlugins {
     NotAboutToInstantiatePlugin
 };
 
-enum ReloadPolicy {
-    NormalReload,
-    EndToEndReload
-};
-
 enum LoadStartType {
     NavigationToDifferentDocument,
     NavigationWithinSameDocument
@@ -90,11 +77,6 @@ enum LoadStartType {
 enum SameDocumentNavigationSource {
     SameDocumentNavigationDefault,
     SameDocumentNavigationHistoryApi,
-};
-
-enum ClientRedirectPolicy {
-    NotClientRedirect,
-    ClientRedirect
 };
 
 enum HistoryLoadType {
@@ -107,6 +89,11 @@ enum HistoryCommitType {
     BackForwardCommit,
     InitialCommitInChildFrame,
     HistoryInertCommit
+};
+
+enum HistoryScrollRestorationType {
+    ScrollRestorationAuto,
+    ScrollRestorationManual
 };
 
 }

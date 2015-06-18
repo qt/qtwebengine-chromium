@@ -43,7 +43,7 @@ CSPSourceList::CSPSourceList(ContentSecurityPolicy* policy, const String& direct
 {
 }
 
-bool CSPSourceList::matches(const KURL& url) const
+bool CSPSourceList::matches(const KURL& url, ContentSecurityPolicy::RedirectStatus redirectStatus) const
 {
     if (m_allowStar)
         return true;
@@ -54,7 +54,7 @@ bool CSPSourceList::matches(const KURL& url) const
         return true;
 
     for (size_t i = 0; i < m_list.size(); ++i) {
-        if (m_list[i].matches(effectiveURL))
+        if (m_list[i].matches(effectiveURL, redirectStatus))
             return true;
     }
 
@@ -292,10 +292,14 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
         const char* prefix;
         ContentSecurityPolicyHashAlgorithm type;
     } kSupportedPrefixes[] = {
+        // FIXME: Drop support for SHA-1. It's not in the spec.
         { "'sha1-", ContentSecurityPolicyHashAlgorithmSha1 },
         { "'sha256-", ContentSecurityPolicyHashAlgorithmSha256 },
         { "'sha384-", ContentSecurityPolicyHashAlgorithmSha384 },
-        { "'sha512-", ContentSecurityPolicyHashAlgorithmSha512 }
+        { "'sha512-", ContentSecurityPolicyHashAlgorithmSha512 },
+        { "'sha-256-", ContentSecurityPolicyHashAlgorithmSha256 },
+        { "'sha-384-", ContentSecurityPolicyHashAlgorithmSha384 },
+        { "'sha-512-", ContentSecurityPolicyHashAlgorithmSha512 }
     };
 
     String prefix;
@@ -330,7 +334,8 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
         return false;
 
     Vector<char> hashVector;
-    base64Decode(hashBegin, position - hashBegin, hashVector);
+    // We accept base64url-encoded data here by normalizing it to base64.
+    base64Decode(normalizeToBase64(String(hashBegin, position - hashBegin)), hashVector);
     if (hashVector.size() > kMaxDigestSize)
         return false;
     hash.append(reinterpret_cast<uint8_t*>(hashVector.data()), hashVector.size());

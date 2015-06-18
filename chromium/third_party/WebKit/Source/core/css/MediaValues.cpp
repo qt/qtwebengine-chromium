@@ -15,12 +15,13 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/imports/HTMLImportsController.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutView.h"
+#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/page/Chrome.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "platform/PlatformScreen.h"
+#include "core/style/ComputedStyle.h"
+#include "public/platform/WebScreenInfo.h"
 
 namespace blink {
 
@@ -35,20 +36,20 @@ int MediaValues::calculateViewportWidth(LocalFrame* frame) const
 {
     ASSERT(frame && frame->view() && frame->document());
     int viewportWidth = frame->view()->layoutSize(IncludeScrollbars).width();
-    return adjustForAbsoluteZoom(viewportWidth, frame->document()->renderView());
+    return adjustForAbsoluteZoom(viewportWidth, frame->document()->layoutView());
 }
 
 int MediaValues::calculateViewportHeight(LocalFrame* frame) const
 {
     ASSERT(frame && frame->view() && frame->document());
     int viewportHeight = frame->view()->layoutSize(IncludeScrollbars).height();
-    return adjustForAbsoluteZoom(viewportHeight, frame->document()->renderView());
+    return adjustForAbsoluteZoom(viewportHeight, frame->document()->layoutView());
 }
 
 int MediaValues::calculateDeviceWidth(LocalFrame* frame) const
 {
     ASSERT(frame && frame->view() && frame->settings() && frame->host());
-    int deviceWidth = static_cast<int>(screenRect(frame->view()).width());
+    int deviceWidth = frame->host()->chrome().screenInfo().rect.width;
     if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
         deviceWidth = lroundf(deviceWidth * frame->host()->deviceScaleFactor());
     return deviceWidth;
@@ -57,7 +58,7 @@ int MediaValues::calculateDeviceWidth(LocalFrame* frame) const
 int MediaValues::calculateDeviceHeight(LocalFrame* frame) const
 {
     ASSERT(frame && frame->view() && frame->settings() && frame->host());
-    int deviceHeight = static_cast<int>(screenRect(frame->view()).height());
+    int deviceHeight = frame->host()->chrome().screenInfo().rect.height;
     if (frame->settings()->reportScreenSizeInPhysicalPixelsQuirk())
         deviceHeight = lroundf(deviceHeight * frame->host()->deviceScaleFactor());
     return deviceHeight;
@@ -78,18 +79,18 @@ int MediaValues::calculateColorBitsPerComponent(LocalFrame* frame) const
 {
     ASSERT(frame && frame->page() && frame->page()->mainFrame());
     if (!frame->page()->mainFrame()->isLocalFrame()
-        || screenIsMonochrome(frame->page()->deprecatedLocalMainFrame()->view()))
+        || frame->host()->chrome().screenInfo().isMonochrome)
         return 0;
-    return screenDepthPerComponent(frame->view());
+    return frame->host()->chrome().screenInfo().depthPerComponent;
 }
 
 int MediaValues::calculateMonochromeBitsPerComponent(LocalFrame* frame) const
 {
     ASSERT(frame && frame->page() && frame->page()->mainFrame());
     if (!frame->page()->mainFrame()->isLocalFrame()
-        || !screenIsMonochrome(frame->page()->deprecatedLocalMainFrame()->view()))
+        || !frame->host()->chrome().screenInfo().isMonochrome)
         return 0;
-    return screenDepthPerComponent(frame->view());
+    return frame->host()->chrome().screenInfo().depthPerComponent;
 }
 
 int MediaValues::calculateDefaultFontSize(LocalFrame* frame) const
@@ -105,11 +106,25 @@ const String MediaValues::calculateMediaType(LocalFrame* frame) const
     return frame->view()->mediaType();
 }
 
+WebDisplayMode MediaValues::calculateDisplayMode(LocalFrame* frame) const
+{
+    ASSERT(frame);
+    WebDisplayMode mode = frame->host()->settings().displayModeOverride();
+
+    if (mode != WebDisplayModeUndefined)
+        return mode;
+
+    if (!frame->view())
+        return WebDisplayModeBrowser;
+
+    return frame->view()->displayMode();
+}
+
 bool MediaValues::calculateThreeDEnabled(LocalFrame* frame) const
 {
-    ASSERT(frame && frame->contentRenderer() && frame->contentRenderer()->compositor());
+    ASSERT(frame && frame->contentLayoutObject() && frame->contentLayoutObject()->compositor());
     bool threeDEnabled = false;
-    if (RenderView* view = frame->contentRenderer())
+    if (LayoutView* view = frame->contentLayoutObject())
         threeDEnabled = view->compositor()->hasAcceleratedCompositing();
     return threeDEnabled;
 }

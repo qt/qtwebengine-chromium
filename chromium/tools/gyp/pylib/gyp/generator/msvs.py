@@ -42,7 +42,7 @@ OrderedDict = _import_OrderedDict()
 # if IncrediBuild is executed from inside Visual Studio.  This regex
 # validates that the string looks like a GUID with all uppercase hex
 # letters.
-VALID_MSVS_GUID_CHARS = re.compile('^[A-F0-9\-]+$')
+VALID_MSVS_GUID_CHARS = re.compile(r'^[A-F0-9\-]+$')
 
 
 generator_default_variables = {
@@ -118,11 +118,11 @@ def _GetDomainAndUserName():
       call = subprocess.Popen(['net', 'config', 'Workstation'],
                               stdout=subprocess.PIPE)
       config = call.communicate()[0]
-      username_re = re.compile('^User name\s+(\S+)', re.MULTILINE)
+      username_re = re.compile(r'^User name\s+(\S+)', re.MULTILINE)
       username_match = username_re.search(config)
       if username_match:
         username = username_match.group(1)
-      domain_re = re.compile('^Logon domain\s+(\S+)', re.MULTILINE)
+      domain_re = re.compile(r'^Logon domain\s+(\S+)', re.MULTILINE)
       domain_match = domain_re.search(config)
       if domain_match:
         domain = domain_match.group(1)
@@ -1236,7 +1236,7 @@ def _GetLibraries(spec):
   found = OrderedSet()
   unique_libraries_list = []
   for entry in reversed(libraries):
-    library = re.sub('^\-l', '', entry)
+    library = re.sub(r'^\-l', '', entry)
     if not os.path.splitext(library)[1]:
       library += '.lib'
     if library not in found:
@@ -1863,10 +1863,13 @@ def _InitNinjaFlavor(params, target_list, target_dicts):
     if not spec.get('msvs_external_builder_out_dir'):
       gyp_file, _, _ = gyp.common.ParseQualifiedTarget(qualified_target)
       gyp_dir = os.path.dirname(gyp_file)
+      configuration = '$(Configuration)'
+      if params.get('target_arch') == 'x64':
+        configuration += '_x64'
       spec['msvs_external_builder_out_dir'] = os.path.join(
           gyp.common.RelativePath(params['options'].toplevel_dir, gyp_dir),
           ninja_generator.ComputeOutputDir(params),
-          '$(Configuration)')
+          configuration)
     if not spec.get('msvs_external_builder_build_cmd'):
       spec['msvs_external_builder_build_cmd'] = [
         path_to_ninja,
@@ -2105,6 +2108,9 @@ def _MapFileToMsBuildSourceType(source, rule_dependencies,
   elif ext == '.rc':
     group = 'resource'
     element = 'ResourceCompile'
+  elif ext == '.asm':
+    group = 'masm'
+    element = 'MASM'
   elif ext == '.idl':
     group = 'midl'
     element = 'Midl'
@@ -2621,6 +2627,10 @@ def _GetMSBuildGlobalProperties(spec, guid, gyp_file_name):
       ]
     ]
 
+  if os.environ.get('PROCESSOR_ARCHITECTURE') == 'AMD64' or \
+     os.environ.get('PROCESSOR_ARCHITEW6432') == 'AMD64':
+    properties[0].append(['PreferredToolArchitecture', 'x64'])
+
   if spec.get('msvs_enable_winrt'):
     properties[0].append(['DefaultLanguage', 'en-US'])
     properties[0].append(['AppContainerApplication', 'true'])
@@ -2859,7 +2869,7 @@ def _AddConditionalProperty(properties, condition, name, value):
 
 
 # Regex for msvs variable references ( i.e. $(FOO) ).
-MSVS_VARIABLE_REFERENCE = re.compile('\$\(([a-zA-Z_][a-zA-Z0-9_]*)\)')
+MSVS_VARIABLE_REFERENCE = re.compile(r'\$\(([a-zA-Z_][a-zA-Z0-9_]*)\)')
 
 
 def _GetMSBuildPropertyGroup(spec, label, properties):
@@ -3083,7 +3093,7 @@ def _VerifySourcesExist(sources, root_dir):
 def _GetMSBuildSources(spec, sources, exclusions, rule_dependencies,
                        extension_to_rule_name, actions_spec,
                        sources_handled_by_action, list_excluded):
-  groups = ['none', 'midl', 'include', 'compile', 'resource', 'rule',
+  groups = ['none', 'masm', 'midl', 'include', 'compile', 'resource', 'rule',
             'rule_dependency']
   grouped_sources = {}
   for g in groups:
@@ -3248,6 +3258,12 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
       ['Import', {'Project': r'$(VCTargetsPath)\Microsoft.Cpp.props'}]]
   import_cpp_targets_section = [
       ['Import', {'Project': r'$(VCTargetsPath)\Microsoft.Cpp.targets'}]]
+  import_masm_props_section = [
+      ['Import',
+        {'Project': r'$(VCTargetsPath)\BuildCustomizations\masm.props'}]]
+  import_masm_targets_section = [
+      ['Import',
+        {'Project': r'$(VCTargetsPath)\BuildCustomizations\masm.targets'}]]
   macro_section = [['PropertyGroup', {'Label': 'UserMacros'}]]
 
   content = [
@@ -3266,6 +3282,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
   else:
    content += _GetMSBuildLocalProperties(project.msbuild_toolset)
   content += import_cpp_props_section
+  content += import_masm_props_section
   content += _GetMSBuildExtensions(props_files_of_rules)
   content += _GetMSBuildPropertySheets(configurations)
   content += macro_section
@@ -3277,6 +3294,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
       actions_spec, sources_handled_by_action, list_excluded)
   content += _GetMSBuildProjectReferences(project)
   content += import_cpp_targets_section
+  content += import_masm_targets_section
   content += _GetMSBuildExtensionTargets(targets_files_of_rules)
 
   if spec.get('msvs_external_builder'):

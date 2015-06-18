@@ -4,7 +4,7 @@
 
 {
   'includes': [
-    '../native_client/build/untrusted.gypi',
+    '../build/common_untrusted.gypi',
     'remoting_srcs.gypi',
   ],
 
@@ -12,7 +12,7 @@
     'protoc': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)protoc<(EXECUTABLE_SUFFIX)',
     'proto_out_base': '<(SHARED_INTERMEDIATE_DIR)/protoc_out',
     'proto_out_dir': '<(proto_out_base)/remoting/proto',
-    'use_nss': 0,
+    'use_nss_certs': 0,
     'nacl_untrusted_build': 1,
     'chromium_code': 1,
   },
@@ -64,8 +64,8 @@
           '<(proto_out_dir)/control.pb.cc',
           '<(proto_out_dir)/event.pb.cc',
           '<(proto_out_dir)/internal.pb.cc',
-          '<(proto_out_dir)/video.pb.cc',
           '<(proto_out_dir)/mux.pb.cc',
+          '<(proto_out_dir)/video.pb.cc',
         ],
         'extra_deps': [ '<@(files_list)' ],
         'extra_args': [ '<@(files_list)' ],
@@ -74,7 +74,6 @@
         'GOOGLE_PROTOBUF_HOST_ARCH_64_BIT=1'
       ],
       'dependencies': [
-        '../native_client/tools.gyp:prep_toolchain',
         '../third_party/protobuf/protobuf_nacl.gyp:protobuf_lite_nacl',
         'proto/chromotocol.gyp:chromotocol_proto_lib',
       ],
@@ -101,21 +100,22 @@
       'dependencies': [
         '../base/base_nacl.gyp:base_nacl',
         '../jingle/jingle_nacl.gyp:jingle_glue_nacl',
-        '../native_client/tools.gyp:prep_toolchain',
         '../native_client_sdk/native_client_sdk_untrusted.gyp:nacl_io_untrusted',
         '../net/net_nacl.gyp:net_nacl',
+        '../third_party/boringssl/boringssl_nacl.gyp:boringssl_nacl',
+        '../third_party/expat/expat_nacl.gyp:expat_nacl',
+        '../third_party/khronos/khronos.gyp:khronos_headers',
         '../third_party/libjingle/libjingle_nacl.gyp:libjingle_nacl',
         '../third_party/libvpx/libvpx_nacl.gyp:libvpx_nacl',
-        '../third_party/libwebm/libwebm_nacl.gyp:libwebm_nacl',
         '../third_party/libyuv/libyuv_nacl.gyp:libyuv_nacl',
-        '../third_party/boringssl/boringssl_nacl.gyp:boringssl_nacl',
         '../third_party/opus/opus_nacl.gyp:opus_nacl',
         'remoting_proto_nacl',
         'remoting_webrtc_nacl',
       ],
       'sources': [
-        '../ui/events/keycodes/dom4/keycode_converter.cc',
+        '../ui/events/keycodes/dom/keycode_converter.cc',
         '<@(remoting_base_sources)',
+        '<@(remoting_codec_sources)',
         '<@(remoting_client_plugin_sources)',
         '<@(remoting_client_sources)',
         '<@(remoting_protocol_sources)',
@@ -170,7 +170,6 @@
           '>(tc_lib_dir_pnacl_newlib)/libremoting_webrtc_nacl.a',
           '>(tc_lib_dir_pnacl_newlib)/liburl_nacl.a',
           '>(tc_lib_dir_pnacl_newlib)/libvpx_nacl.a',
-          '>(tc_lib_dir_pnacl_newlib)/libwebm_nacl.a',
           '>(tc_lib_dir_pnacl_newlib)/libyuv_nacl.a',
         ],
       },
@@ -180,10 +179,8 @@
         '../crypto/crypto_nacl.gyp:crypto_nacl',
         '../jingle/jingle_nacl.gyp:jingle_glue_nacl',
         '../media/media_nacl.gyp:media_yuv_nacl',
-        '../native_client/tools.gyp:prep_toolchain',
         '../native_client_sdk/native_client_sdk_untrusted.gyp:nacl_io_untrusted',
         '../net/net_nacl.gyp:net_nacl',
-        '../ppapi/native_client/native_client.gyp:nacl_irt',
         '../ppapi/native_client/native_client.gyp:ppapi_lib',
         '../ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '../third_party/expat/expat_nacl.gyp:expat_nacl',
@@ -191,7 +188,6 @@
         '../third_party/icu/icu_nacl.gyp:icui18n_nacl',
         '../third_party/icu/icu_nacl.gyp:icuuc_nacl',
         '../third_party/libjingle/libjingle_nacl.gyp:libjingle_nacl',
-        '../third_party/libwebm/libwebm_nacl.gyp:libwebm_nacl',
         '../third_party/libyuv/libyuv_nacl.gyp:libyuv_nacl',
         '../third_party/modp_b64/modp_b64_nacl.gyp:modp_b64_nacl',
         '../third_party/boringssl/boringssl_nacl.gyp:boringssl_nacl',
@@ -230,7 +226,6 @@
         '-licuuc_nacl',
         '-licudata_nacl',
         '-lprotobuf_lite_nacl',
-        '-lwebm_nacl',
 
         # Base NaCl libraries.
         '-lppapi_cpp',

@@ -13,7 +13,7 @@ namespace blink {
 
 class FontLoader;
 
-class RemoteFontFaceSource : public CSSFontFaceSource, public FontResourceClient {
+class RemoteFontFaceSource final : public CSSFontFaceSource, public FontResourceClient {
 public:
     explicit RemoteFontFaceSource(FontResource*, PassRefPtrWillBeRawPtr<FontLoader>);
     virtual ~RemoteFontFaceSource();
@@ -24,7 +24,6 @@ public:
     virtual bool isValid() const override;
 
     void beginLoadIfNeeded() override;
-    virtual bool ensureFontData();
 
     virtual void didStartFontLoad(FontResource*) override;
     virtual void fontLoaded(FontResource*) override;
@@ -34,7 +33,7 @@ public:
     virtual bool hadBlankText() override { return m_histograms.hadBlankText(); }
     void paintRequested() { m_histograms.fallbackFontPainted(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) override;

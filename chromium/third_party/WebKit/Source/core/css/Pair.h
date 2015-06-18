@@ -21,6 +21,7 @@
 #ifndef Pair_h
 #define Pair_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -32,7 +33,7 @@ namespace blink {
 // and border-spacing (all of which are space-separated sets of two values).  At the moment we are only using it for
 // border-radius and background-size, but (FIXME) border-spacing and background-position could be converted over to use
 // it (eliminating some extra -webkit- internal properties).
-class Pair final : public RefCountedWillBeGarbageCollected<Pair> {
+class CORE_EXPORT Pair final : public RefCountedWillBeGarbageCollected<Pair> {
 public:
     enum IdenticalValuesPolicy { DropIdenticalValues, KeepIdenticalValues };
 
@@ -44,11 +45,6 @@ public:
 
     CSSPrimitiveValue* first() const { return m_first.get(); }
     CSSPrimitiveValue* second() const { return m_second.get(); }
-    IdenticalValuesPolicy identicalValuesPolicy() const { return m_identicalValuesPolicy; }
-
-    void setFirst(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> first) { m_first = first; }
-    void setSecond(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> second) { m_second = second; }
-    void setIdenticalValuesPolicy(IdenticalValuesPolicy identicalValuesPolicy) { m_identicalValuesPolicy = identicalValuesPolicy; }
 
     String cssText() const
     {
@@ -62,14 +58,9 @@ public:
             && m_identicalValuesPolicy == other.m_identicalValuesPolicy;
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    Pair()
-        : m_first(nullptr)
-        , m_second(nullptr)
-        , m_identicalValuesPolicy(DropIdenticalValues) { }
-
     Pair(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> first, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> second, IdenticalValuesPolicy identicalValuesPolicy)
         : m_first(first)
         , m_second(second)

@@ -5,35 +5,40 @@
 #include "config.h"
 #include "core/paint/DetailsMarkerPainter.h"
 
+#include "core/layout/LayoutDetailsMarker.h"
 #include "core/paint/BlockPainter.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderDetailsMarker.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintInfo.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/Path.h"
 
 namespace blink {
 
-void DetailsMarkerPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void DetailsMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (paintInfo.phase != PaintPhaseForeground || m_renderDetailsMarker.style()->visibility() != VISIBLE) {
-        BlockPainter(m_renderDetailsMarker).paint(paintInfo, paintOffset);
+    if (paintInfo.phase != PaintPhaseForeground || m_layoutDetailsMarker.style()->visibility() != VISIBLE) {
+        BlockPainter(m_layoutDetailsMarker).paint(paintInfo, paintOffset);
         return;
     }
 
-    LayoutPoint boxOrigin(paintOffset + m_renderDetailsMarker.location());
-    LayoutRect overflowRect(m_renderDetailsMarker.visualOverflowRect());
+    LayoutPoint boxOrigin(paintOffset + m_layoutDetailsMarker.location());
+    LayoutRect overflowRect(m_layoutDetailsMarker.visualOverflowRect());
     overflowRect.moveBy(boxOrigin);
 
     if (!paintInfo.rect.intersects(pixelSnappedIntRect(overflowRect)))
         return;
 
-    const Color color(m_renderDetailsMarker.resolveColor(CSSPropertyColor));
+    LayoutObjectDrawingRecorder layoutDrawingRecorder(*paintInfo.context, m_layoutDetailsMarker, paintInfo.phase, overflowRect);
+    if (layoutDrawingRecorder.canUseCachedDrawing())
+        return;
+
+    const Color color(m_layoutDetailsMarker.resolveColor(CSSPropertyColor));
     paintInfo.context->setStrokeColor(color);
     paintInfo.context->setStrokeStyle(SolidStroke);
     paintInfo.context->setStrokeThickness(1.0f);
     paintInfo.context->setFillColor(color);
 
-    boxOrigin.move(m_renderDetailsMarker.borderLeft() + m_renderDetailsMarker.paddingLeft(), m_renderDetailsMarker.borderTop() + m_renderDetailsMarker.paddingTop());
+    boxOrigin.move(m_layoutDetailsMarker.borderLeft() + m_layoutDetailsMarker.paddingLeft(), m_layoutDetailsMarker.borderTop() + m_layoutDetailsMarker.paddingTop());
     paintInfo.context->fillPath(getPath(boxOrigin));
 }
 
@@ -72,11 +77,11 @@ static Path createRightArrowPath()
 
 Path DetailsMarkerPainter::getCanonicalPath() const
 {
-    switch (m_renderDetailsMarker.orientation()) {
-    case RenderDetailsMarker::Left: return createLeftArrowPath();
-    case RenderDetailsMarker::Right: return createRightArrowPath();
-    case RenderDetailsMarker::Up: return createUpArrowPath();
-    case RenderDetailsMarker::Down: return createDownArrowPath();
+    switch (m_layoutDetailsMarker.orientation()) {
+    case LayoutDetailsMarker::Left: return createLeftArrowPath();
+    case LayoutDetailsMarker::Right: return createRightArrowPath();
+    case LayoutDetailsMarker::Up: return createUpArrowPath();
+    case LayoutDetailsMarker::Down: return createDownArrowPath();
     }
 
     return Path();
@@ -85,7 +90,7 @@ Path DetailsMarkerPainter::getCanonicalPath() const
 Path DetailsMarkerPainter::getPath(const LayoutPoint& origin) const
 {
     Path result = getCanonicalPath();
-    result.transform(AffineTransform().scale(m_renderDetailsMarker.contentWidth().toFloat(), m_renderDetailsMarker.contentHeight().toFloat()));
+    result.transform(AffineTransform().scale(m_layoutDetailsMarker.contentWidth().toFloat(), m_layoutDetailsMarker.contentHeight().toFloat()));
     result.translate(FloatSize(origin.x().toFloat(), origin.y().toFloat()));
     return result;
 }

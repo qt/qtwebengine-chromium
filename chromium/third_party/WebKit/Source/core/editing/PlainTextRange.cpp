@@ -30,8 +30,8 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Range.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
+#include "core/editing/iterators/TextIterator.h"
 
 namespace blink {
 
@@ -82,20 +82,21 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
     TextIteratorBehaviorFlags behaviorFlags = TextIteratorEmitsObjectReplacementCharacter;
     if (getRangeFor == ForSelection)
         behaviorFlags |= TextIteratorEmitsCharactersBetweenAllVisiblePositions;
-    TextIterator it(rangeOfContents(const_cast<ContainerNode*>(&scope)).get(), behaviorFlags);
+    auto range = rangeOfContents(const_cast<ContainerNode*>(&scope));
+    TextIterator it(range->startPosition(), range->endPosition(), behaviorFlags);
 
     // FIXME: the atEnd() check shouldn't be necessary, workaround for <http://bugs.webkit.org/show_bug.cgi?id=6289>.
     if (!start() && !length() && it.atEnd()) {
-        resultRange->setStart(it.startContainer(), 0, ASSERT_NO_EXCEPTION);
-        resultRange->setEnd(it.startContainer(), 0, ASSERT_NO_EXCEPTION);
+        resultRange->setStart(it.currentContainer(), 0, ASSERT_NO_EXCEPTION);
+        resultRange->setEnd(it.currentContainer(), 0, ASSERT_NO_EXCEPTION);
         return resultRange.release();
     }
 
     for (; !it.atEnd(); it.advance()) {
         int len = it.length();
 
-        textRunStartPosition = it.startPosition();
-        textRunEndPosition = it.endPosition();
+        textRunStartPosition = it.startPositionInCurrentContainer();
+        textRunEndPosition = it.endPositionInCurrentContainer();
 
         bool foundStart = start() >= docTextPosition && start() <= docTextPosition + len;
         bool foundEnd = end() >= docTextPosition && end() <= docTextPosition + len;
@@ -105,11 +106,11 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
         if (foundEnd) {
             // FIXME: This is a workaround for the fact that the end of a run
             // is often at the wrong position for emitted '\n's or if the
-            // renderer of the current node is a replaced element.
-            if (len == 1 && (it.characterAt(0) == '\n' || it.isInsideReplacedElement())) {
+            // layoutObject of the current node is a replaced element.
+            if (len == 1 && (it.text().characterAt(0) == '\n' || it.isInsideReplacedElement())) {
                 it.advance();
                 if (!it.atEnd()) {
-                    textRunEndPosition = it.startPosition();
+                    textRunEndPosition = it.startPositionInCurrentContainer();
                 } else {
                     Position runEnd = VisiblePosition(textRunStartPosition).next().deepEquivalent();
                     if (runEnd.isNotNull())
@@ -174,11 +175,11 @@ PlainTextRange PlainTextRange::create(const ContainerNode& scope, const Range& r
 
     RefPtrWillBeRawPtr<Range> testRange = Range::create(scope.document(), const_cast<ContainerNode*>(&scope), 0, range.startContainer(), range.startOffset());
     ASSERT(testRange->startContainer() == &scope);
-    size_t start = TextIterator::rangeLength(testRange.get());
+    size_t start = TextIterator::rangeLength(testRange->startPosition(), testRange->endPosition());
 
     testRange->setEnd(range.endContainer(), range.endOffset(), IGNORE_EXCEPTION);
     ASSERT(testRange->startContainer() == &scope);
-    size_t end = TextIterator::rangeLength(testRange.get());
+    size_t end = TextIterator::rangeLength(testRange->startPosition(), testRange->endPosition());
 
     return PlainTextRange(start, end);
 }

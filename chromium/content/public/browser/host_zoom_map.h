@@ -20,6 +20,7 @@ namespace content {
 class NavigationEntry;
 class BrowserContext;
 class ResourceContext;
+class SiteInstance;
 class WebContents;
 
 // Maps hostnames to custom zoom levels.  Written on the UI thread and read on
@@ -36,11 +37,13 @@ class HostZoomMap {
  public:
   // Enum that indicates what was the scope of zoom level change.
   enum ZoomLevelChangeMode {
-    ZOOM_CHANGED_FOR_HOST,            // Zoom level changed for host.
-    ZOOM_CHANGED_FOR_SCHEME_AND_HOST, // Zoom level changed for scheme/host
-                                      // pair.
-    ZOOM_CHANGED_TEMPORARY_ZOOM,      // Temporary zoom change for specific
-                                      // renderer, no scheme/host is specified.
+    ZOOM_CHANGED_FOR_HOST,             // Zoom level changed for host.
+    ZOOM_CHANGED_FOR_SCHEME_AND_HOST,  // Zoom level changed for scheme/host
+                                       // pair.
+    ZOOM_CHANGED_TEMPORARY_ZOOM,       // Temporary zoom change for specific
+                                       // renderer, no scheme/host is specified.
+    PAGE_SCALE_IS_ONE_CHANGED,         // Page scale factor equal to one changed
+                                       // for a host.
   };
 
   // Structure used to notify about zoom changes. Host and/or scheme are empty
@@ -61,9 +64,24 @@ class HostZoomMap {
   CONTENT_EXPORT static HostZoomMap* GetDefaultForBrowserContext(
       BrowserContext* browser_context);
 
+  // Returns the HostZoomMap associated with this SiteInstance. The SiteInstance
+  // may serve multiple WebContents, and the HostZoomMap is the same for all of
+  // these WebContents.
+  CONTENT_EXPORT static HostZoomMap* Get(SiteInstance* instance);
+
+  // Returns the HostZoomMap associated with this WebContent's main frame. If
+  // multiple WebContents share the same SiteInstance, then they share a single
+  // HostZoomMap.
+  CONTENT_EXPORT static HostZoomMap* GetForWebContents(
+      const WebContents* contents);
+
   // Returns the current zoom level for the specified WebContents. May be
   // temporary or host-specific.
   CONTENT_EXPORT static double GetZoomLevel(const WebContents* web_contents);
+
+  // Returns true if the page scale factor for the WebContents is one.
+  CONTENT_EXPORT static bool PageScaleFactorIsOne(
+      const WebContents* web_contents);
 
   // Sets the current zoom level for the specified WebContents. The level may
   // be temporary or host-specific depending on the particular WebContents.
@@ -74,6 +92,12 @@ class HostZoomMap {
   // be called since error pages don't get loaded via the normal channel.
   CONTENT_EXPORT static void SendErrorPageZoomLevelRefresh(
       const WebContents* web_contents);
+
+  // Set or clear whether or not the page scale factor for a view is one.
+  virtual void SetPageScaleFactorIsOneForView(
+      int render_process_id, int render_view_id, bool is_one) = 0;
+  virtual void ClearPageScaleFactorIsOneForView(
+      int render_process_id, int render_view_id) = 0;
 
   // Copy the zoom levels from the given map. Can only be called on the UI
   // thread.

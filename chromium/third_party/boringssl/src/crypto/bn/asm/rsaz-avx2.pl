@@ -61,8 +61,12 @@
 #
 # rsa2048 sign/sec	OpenSSL 1.0.1	scalar(*)	this
 # 2.3GHz Haswell	621		765/+23%	1113/+79%
+# 2.3GHz Broadwell(**)	688		1200(***)/+74%	1120/+63%
 #
 # (*)	if system doesn't support AVX2, for reference purposes;
+# (**)	scaled to 2.3GHz to simplify comparison;
+# (***)	scalar AD*X code is faster than AVX2 and is preferred code
+#	path for Broadwell;
 
 $flavour = shift;
 $output  = shift;
@@ -99,7 +103,7 @@ if (!$avx && `$ENV{CC} -v 2>&1` =~ /(^clang version|based on LLVM) ([3-9])\.([0-
 	$addx = ($ver>=3.03);
 }
 
-open OUT,"| $^X $xlate $flavour $output";
+open OUT,"| \"$^X\" $xlate $flavour $output";
 *STDOUT = *OUT;
 
 if ($avx>1) {{{

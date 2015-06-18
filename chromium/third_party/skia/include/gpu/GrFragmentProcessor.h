@@ -11,6 +11,9 @@
 #include "GrProcessor.h"
 
 class GrCoordTransform;
+class GrGLSLCaps;
+class GrGLFragmentProcessor;
+class GrProcessorKeyBuilder;
 
 /** Provides custom fragment shader code. Fragment processors receive an input color (vec4f) and
     produce an output color. They may reference textures and uniforms. They may use
@@ -21,10 +24,21 @@ class GrFragmentProcessor : public GrProcessor {
 public:
     GrFragmentProcessor()
         : INHERITED()
-        , fWillReadDstColor(false)
-        , fWillUseInputColor(true) {}
+        , fWillUseInputColor(true)
+        , fUsesLocalCoords(false) {}
 
-    virtual const GrBackendFragmentProcessorFactory& getFactory() const = 0;
+    /** Implemented using GLFragmentProcessor::GenKey as described in this class's comment. */
+    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
+                                   GrProcessorKeyBuilder* b) const = 0;
+
+    /** Returns a new instance of the appropriate *GL* implementation class
+        for the given GrFragmentProcessor; caller is responsible for deleting
+        the object. */
+    virtual GrGLFragmentProcessor* createGLInstance() const = 0;
+
+    /** Human-meaningful string to identify this GrFragmentProcessor; may be embedded
+        in generated shader code. */
+    virtual const char* name() const = 0;
 
     int numTransforms() const { return fCoordTransforms.count(); }
 
@@ -32,27 +46,40 @@ public:
         numTransforms(). */
     const GrCoordTransform& coordTransform(int index) const { return *fCoordTransforms[index]; }
 
-    /** Will this prceossor read the destination pixel value? */
-    bool willReadDstColor() const { return fWillReadDstColor; }
+    const SkTArray<const GrCoordTransform*, true>& coordTransforms() const {
+        return fCoordTransforms;
+    }
 
     /** Will this prceossor read the source color value? */
     bool willUseInputColor() const { return fWillUseInputColor; }
 
-    /** Returns true if this and other prceossor conservatively draw identically. It can only return
-        true when the two prceossor are of the same subclass (i.e. they return the same object from
+    /** Do any of the coordtransforms for this processor require local coords? */
+    bool usesLocalCoords() const { return fUsesLocalCoords; }
+
+    /** Returns true if this and other processor conservatively draw identically. It can only return
+        true when the two processor are of the same subclass (i.e. they return the same object from
         from getFactory()).
 
-        A return value of true from isEqual() should not be used to test whether the prceossor would
-        generate the same shader code. To test for identical code generation use the prceossor' keys
-        computed by the GrBackendProcessorFactory. */
+        A return value of true from isEqual() should not be used to test whether the processor would
+        generate the same shader code. To test for identical code generation use getGLProcessorKey*/
     bool isEqual(const GrFragmentProcessor& that) const {
-        if (&this->getFactory() != &that.getFactory() ||
+        if (this->classID() != that.classID() ||
             !this->hasSameTransforms(that) ||
             !this->hasSameTextureAccesses(that)) {
             return false;
         }
         return this->onIsEqual(that);
     }
+
+    /**
+     * This function is used to perform optimizations. When called the invarientOuput param
+     * indicate whether the input components to this processor in the FS will have known values.
+     * In inout the validFlags member is a bitfield of GrColorComponentFlags. The isSingleComponent
+     * member indicates whether the input will be 1 or 4 bytes. The function updates the members of
+     * inout to indicate known values of its output. A component of the color member only has
+     * meaning if the corresponding bit in validFlags is set.
+     */
+    void computeInvariantOutput(GrInvariantOutput* inout) const;
 
 protected:
     /**
@@ -75,18 +102,16 @@ protected:
     void addCoordTransform(const GrCoordTransform*);
 
     /**
-     * If the prceossor subclass will read the destination pixel value then it must call this
-     * function from its constructor. Otherwise, when its generated backend-specific prceossor class
-     * attempts to generate code that reads the destination pixel it will fail.
-     */
-    void setWillReadDstColor() { fWillReadDstColor = true; }
-
-    /**
      * If the prceossor will generate a result that does not depend on the input color value then it
      * must call this function from its constructor. Otherwise, when its generated backend-specific
      * code might fail during variable binding due to unused variables.
      */
     void setWillNotUseInputColor() { fWillUseInputColor = false; }
+
+    /**
+     * Subclass implements this to support getConstantColorComponents(...).
+     */
+    virtual void onComputeInvariantOutput(GrInvariantOutput* inout) const = 0;
 
 private:
     /**
@@ -100,8 +125,8 @@ private:
     bool hasSameTransforms(const GrFragmentProcessor&) const;
 
     SkSTArray<4, const GrCoordTransform*, true>  fCoordTransforms;
-    bool                                         fWillReadDstColor;
     bool                                         fWillUseInputColor;
+    bool                                         fUsesLocalCoords;
 
     typedef GrProcessor INHERITED;
 };

@@ -12,8 +12,8 @@
 #include "base/strings/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/range/range.h"
-#include "ui/gfx/size.h"
 #include "ui/views/controls/link_listener.h"
 #include "ui/views/view.h"
 
@@ -29,6 +29,9 @@ class StyledLabelListener;
 // In this case, leading whitespace is ignored.
 class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
  public:
+  // Internal class name.
+  static const char kViewClassName[];
+
   // Parameters that define label style for a styled label's text range.
   struct VIEWS_EXPORT RangeStyleInfo {
     RangeStyleInfo();
@@ -90,8 +93,18 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
     auto_color_readability_enabled_ = auto_color_readability;
   }
 
-  // View implementation:
+  // Resizes the label so its width is set to the width of the longest line and
+  // its height deduced accordingly.
+  // This is only intended for multi-line labels and is useful when the label's
+  // text contains several lines separated with \n.
+  // |max_width| is the maximum width that will be used (longer lines will be
+  // wrapped). If 0, no maximum width is enforced.
+  void SizeToFit(int max_width);
+
+  // View:
+  const char* GetClassName() const override;
   gfx::Insets GetInsets() const override;
+  gfx::Size GetPreferredSize() const override;
   int GetHeightForWidth(int w) const override;
   void Layout() override;
   void PreferredSizeChanged() override;
@@ -115,10 +128,11 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
   };
   typedef std::list<StyleRange> StyleRanges;
 
-  // Calculates how to layout child views, creates them and sets their size
-  // and position. |width| is the horizontal space, in pixels, that the view
-  // has to work with. If |dry_run| is true, the view hierarchy is not touched.
-  // The return value is the necessary size.
+  // Calculates how to layout child views, creates them and sets their size and
+  // position. |width| is the horizontal space, in pixels, that the view has to
+  // work with. If |dry_run| is true, the view hierarchy is not touched. Caches
+  // the results in |calculated_size_|, |width_at_last_layout_|, and
+  // |width_at_last_size_calculation_|. Returns the needed size.
   gfx::Size CalculateAndDoLayout(int width, bool dry_run);
 
   // The text to display.
@@ -147,6 +161,8 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
   // This variable saves the result of the last GetHeightForWidth call in order
   // to avoid repeated calculation.
   mutable gfx::Size calculated_size_;
+  mutable int width_at_last_size_calculation_;
+  int width_at_last_layout_;
 
   // Background color on which the label is drawn, for auto color readability.
   SkColor displayed_on_background_color_;

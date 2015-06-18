@@ -13,8 +13,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
+#include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/bluetooth_uuid.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
+
+namespace base {
+class BinaryValue;
+}
 
 namespace device {
 
@@ -34,7 +39,7 @@ class BluetoothUUID;
 // Since the lifecycle of BluetoothDevice instances is managed by
 // BluetoothAdapter, that class rather than this provides observer methods
 // for devices coming and going, as well as properties being updated.
-class BluetoothDevice {
+class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
  public:
   // Possible values that may be returned by GetVendorIDSource(),
   // indicating different organisations that allocate the identifiers returned
@@ -42,7 +47,8 @@ class BluetoothDevice {
   enum VendorIDSource {
     VENDOR_ID_UNKNOWN,
     VENDOR_ID_BLUETOOTH,
-    VENDOR_ID_USB
+    VENDOR_ID_USB,
+    VENDOR_ID_MAX_VALUE = VENDOR_ID_USB
   };
 
   // Possible values that may be returned by GetDeviceType(), representing
@@ -68,6 +74,16 @@ class BluetoothDevice {
   // The value returned if the RSSI or transmit power cannot be read.
   static const int kUnknownPower = 127;
 
+  struct ConnectionInfo {
+    int rssi;
+    int transmit_power;
+    int max_transmit_power;
+
+    ConnectionInfo();
+    ConnectionInfo(int rssi, int transmit_power, int max_transmit_power);
+    ~ConnectionInfo();
+  };
+
   // Possible errors passed back to an error callback function in case of a
   // failed call to Connect().
   enum ConnectErrorCode {
@@ -80,6 +96,8 @@ class BluetoothDevice {
     ERROR_AUTH_TIMEOUT,
     ERROR_UNSUPPORTED_DEVICE
   };
+
+  typedef std::vector<BluetoothUUID> UUIDList;
 
   // Interface for negotiating pairing of bluetooth devices.
   class PairingDelegate {
@@ -174,6 +192,9 @@ class BluetoothDevice {
   // and metrics logging,
   virtual uint32 GetBluetoothClass() const = 0;
 
+  // Returns the identifier of the bluetooth device.
+  virtual std::string GetIdentifier() const;
+
   // Returns the Bluetooth of address the device. This should be used as
   // a unique key to identify the device and copied where needed.
   virtual std::string GetAddress() const = 0;
@@ -202,28 +223,6 @@ class BluetoothDevice {
   // values are unique, and do not overlap, so DEVICE_KEYBOARD is not also
   // DEVICE_PERIPHERAL.
   DeviceType GetDeviceType() const;
-
-  // Gets the "received signal strength indication" (RSSI) of the current
-  // connection to the device. The RSSI indicates the power present in the
-  // received radio signal, measured in dBm, to a resolution of 1dBm. Larger
-  // (typically, less negative) values indicate a stronger signal.
-  // If the device is not currently connected, then returns the RSSI read from
-  // the last inquiry that returned the device, where available. In case of an
-  // error, returns |kUnknownPower|. Otherwise, returns the connection's RSSI.
-  virtual int GetRSSI() const = 0;
-
-  // These two methods are used to read the current or maximum transmit power
-  // ("Tx power") of the current connection to the device. The transmit power
-  // indicates the strength of the signal broadcast from the host's Bluetooth
-  // antenna when communicating with the device, measured in dBm, to a
-  // resolution of 1dBm. Larger (typically, less negative) values
-  // indicate a stronger signal.
-  // It is only meaningful to call this method when there is a connection
-  // established to the device. If there is no connection, or in case of an
-  // error, returns |kUnknownPower|. Otherwise, returns the connection's
-  // transmit power.
-  virtual int GetCurrentHostTransmitPower() const = 0;
-  virtual int GetMaximumHostTransmitPower() const = 0;
 
   // Indicates whether the device is known to support pairing based on its
   // device class and address.
@@ -257,8 +256,18 @@ class BluetoothDevice {
   // devices this data is collected from both the EIR data and SDP tables,
   // for Low Energy devices this data is collected from AD and GATT primary
   // services, for dual mode devices this may be collected from both./
-  typedef std::vector<BluetoothUUID> UUIDList;
   virtual UUIDList GetUUIDs() const = 0;
+
+  // The received signal strength, in dBm. This field is avaliable and valid
+  // only during discovery. If not during discovery, or RSSI wasn't reported,
+  // this method will return |kUnknownPower|.
+  virtual int16 GetInquiryRSSI() const = 0;
+
+  // The transmitted power level. This field is avaliable only for LE devices
+  // that include this field in AD. It is avaliable and valid only during
+  // discovery. If not during discovery, or TxPower wasn't reported, this
+  // method will return |kUnknownPower|.
+  virtual int16 GetInquiryTxPower() const = 0;
 
   // The ErrorCallback is used for methods that can fail in which case it
   // is called, in the success case the callback is simply not called.
@@ -268,6 +277,8 @@ class BluetoothDevice {
   // passed back as an error code argument to this callback.
   // In the success case this callback is not called.
   typedef base::Callback<void(enum ConnectErrorCode)> ConnectErrorCallback;
+
+  typedef base::Callback<void(const ConnectionInfo&)> ConnectionInfoCallback;
 
   // Indicates whether the device is currently pairing and expecting a
   // PIN Code to be returned.
@@ -280,6 +291,21 @@ class BluetoothDevice {
   // Indicates whether the device is currently pairing and expecting
   // confirmation of a displayed passkey.
   virtual bool ExpectingConfirmation() const = 0;
+
+  // Returns the RSSI and TX power of the active connection to the device:
+  //
+  // The RSSI indicates the power present in the received radio signal, measured
+  // in dBm, to a resolution of 1dBm. Larger (typically, less negative) values
+  // indicate a stronger signal.
+  //
+  // The transmit power indicates the strength of the signal broadcast from the
+  // host's Bluetooth antenna when communicating with the device, measured in
+  // dBm, to a resolution of 1dBm. Larger (typically, less negative) values
+  // indicate a stronger signal.
+  //
+  // If the device isn't connected, then the ConnectionInfo struct passed into
+  // the callback will be populated with |kUnknownPower|.
+  virtual void GetConnectionInfo(const ConnectionInfoCallback& callback) = 0;
 
   // Initiates a connection to the device, pairing first if necessary.
   //
@@ -384,12 +410,6 @@ class BluetoothDevice {
       const GattConnectionCallback& callback,
       const ConnectErrorCallback& error_callback) = 0;
 
-  // Starts monitoring the connection properties, RSSI and TX power. These
-  // properties will be tracked, and updated when their values change. Exactly
-  // one of |callback| or |error_callback| will be run.
-  virtual void StartConnectionMonitor(const base::Closure& callback,
-                                      const ErrorCallback& error_callback) = 0;
-
   // Returns the list of discovered GATT services.
   virtual std::vector<BluetoothGattService*> GetGattServices() const;
 
@@ -397,6 +417,12 @@ class BluetoothDevice {
   // Returns NULL, if no such service exists.
   virtual BluetoothGattService* GetGattService(
       const std::string& identifier) const;
+
+  // Returns service data of a service given its UUID.
+  virtual base::BinaryValue* GetServiceData(BluetoothUUID serviceUUID) const;
+
+  // Returns the list UUIDs of services that have service data.
+  virtual UUIDList GetServiceDataUUIDs() const;
 
   // Returns the |address| in the canonical format: XX:XX:XX:XX:XX:XX, where
   // each 'X' is a hex digit.  If the input |address| is invalid, returns an
@@ -409,10 +435,22 @@ class BluetoothDevice {
   // Returns the internal name of the Bluetooth device, used by GetName().
   virtual std::string GetDeviceName() const = 0;
 
+  // Clears the list of service data.
+  void ClearServiceData();
+
+  // Set the data of a given service designated by its UUID.
+  void SetServiceData(BluetoothUUID serviceUUID, const char* buffer,
+                      size_t size);
+
   // Mapping from the platform-specific GATT service identifiers to
   // BluetoothGattService objects.
   typedef std::map<std::string, BluetoothGattService*> GattServiceMap;
   GattServiceMap gatt_services_;
+
+  // Mapping from service UUID represented as a std::string of a bluetooth
+  // service to
+  // the specific data. The data is stored as BinaryValue.
+  scoped_ptr<base::DictionaryValue> services_data_;
 
  private:
   // Returns a localized string containing the device's bluetooth address and

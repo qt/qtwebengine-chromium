@@ -75,6 +75,8 @@
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
+        'translate/core/common/language_detection_details.cc',
+        'translate/core/common/language_detection_details.h',
         'translate/core/common/translate_constants.cc',
         'translate/core/common/translate_constants.h',
         'translate/core/common/translate_errors.h',
@@ -86,8 +88,6 @@
         'translate/core/common/translate_switches.h',
         'translate/core/common/translate_util.cc',
         'translate/core/common/translate_util.h',
-        'translate/core/common/language_detection_details.cc',
-        'translate/core/common/language_detection_details.h',
       ],
     },
     {
@@ -108,7 +108,7 @@
         'translate/core/language_detection/language_detection_util.h',
       ],
       'conditions': [
-        ['cld_version==0 or cld_version==1', {
+        ['cld_version==1', {
           'dependencies': [
             '<(DEPTH)/third_party/cld/cld.gyp:cld',
           ],
@@ -138,23 +138,16 @@
           ],
           'sources': [
             # Note: sources list duplicated in GN build.
+            'translate/content/browser/browser_cld_data_provider.cc',
             'translate/content/browser/browser_cld_data_provider.h',
+            'translate/content/browser/browser_cld_data_provider_factory.cc',
+            'translate/content/browser/browser_cld_data_provider_factory.h',
+            'translate/content/browser/browser_cld_utils.cc',
+            'translate/content/browser/browser_cld_utils.h',
             'translate/content/browser/content_translate_driver.cc',
             'translate/content/browser/content_translate_driver.h',
-           ],
-          'conditions': [
-             ['cld2_data_source=="standalone" or cld2_data_source=="component"', {
-              'sources': [
-                'translate/content/browser/data_file_browser_cld_data_provider.cc',
-                'translate/content/browser/data_file_browser_cld_data_provider.h',
-              ]},
-            ],
-            ['cld2_data_source=="static"', {
-              'sources': [
-                'translate/content/browser/static_browser_cld_data_provider.cc',
-                'translate/content/browser/static_browser_cld_data_provider.h',
-              ]},
-            ],
+            'translate/content/browser/data_file_browser_cld_data_provider.cc',
+            'translate/content/browser/data_file_browser_cld_data_provider.h',
           ],
         },
         {
@@ -173,32 +166,12 @@
           ],
           'sources': [
             # Note: sources list duplicated in GN build.
+            'translate/content/common/cld_data_source.cc',
+            'translate/content/common/cld_data_source.h',
+            'translate/content/common/data_file_cld_data_provider_messages.cc',
+            'translate/content/common/data_file_cld_data_provider_messages.h',
             'translate/content/common/translate_messages.cc',
             'translate/content/common/translate_messages.h',
-            'translate/content/common/cld_data_source.h',
-           ],
-           'conditions': [
-             ['cld2_data_source=="standalone" or cld2_data_source=="component"', {
-               'sources': [
-                 'translate/content/common/data_file_cld_data_provider_messages.cc',
-                 'translate/content/common/data_file_cld_data_provider_messages.h',
-               ]},
-             ],
-             ['cld2_data_source=="standalone"', {
-               'sources': [
-                 'translate/content/common/standalone_cld_data_source.cc',
-               ]},
-             ],
-             ['cld2_data_source=="component"', {
-               'sources': [
-                 'translate/content/common/component_cld_data_source.cc',
-               ]},
-             ],
-             ['cld2_data_source=="static"', {
-               'sources': [
-                 'translate/content/common/static_cld_data_source.cc',
-               ]},
-             ],
            ],
         },
         {
@@ -222,7 +195,14 @@
           ],
           'sources': [
             # Note: sources list duplicated in GN build.
+            'translate/content/renderer/data_file_renderer_cld_data_provider.cc',
+            'translate/content/renderer/data_file_renderer_cld_data_provider.h',
+            'translate/content/renderer/renderer_cld_data_provider.cc',
             'translate/content/renderer/renderer_cld_data_provider.h',
+            'translate/content/renderer/renderer_cld_data_provider_factory.cc',
+            'translate/content/renderer/renderer_cld_data_provider_factory.h',
+            'translate/content/renderer/renderer_cld_utils.cc',
+            'translate/content/renderer/renderer_cld_utils.h',
             'translate/content/renderer/translate_helper.cc',
             'translate/content/renderer/translate_helper.h',
            ],
@@ -232,18 +212,55 @@
                 '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld_2',
               ],
             }],
-            ['cld2_data_source=="standalone" or cld2_data_source=="component"', {
-              'sources': [
-                'translate/content/renderer/data_file_renderer_cld_data_provider.cc',
-                'translate/content/renderer/data_file_renderer_cld_data_provider.h',
-              ]},
+          ],
+        },
+      ],
+    }],
+    ['OS == "ios"', {
+      'targets': [
+        {
+          'target_name': 'translate_ios_browser',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            'translate_core_language_detection',
+            'translate_core_browser',
+            'translate_core_common',
+            'translate_ios_injected_js',
+            '../base/base.gyp:base',
+            '../ios/web/ios_web.gyp:ios_web',
+            '../url/url.gyp:url_lib',
+          ],
+          'sources': [
+            'translate/ios/browser/ios_translate_driver.h',
+            'translate/ios/browser/ios_translate_driver.mm',
+            'translate/ios/browser/js_language_detection_manager.h',
+            'translate/ios/browser/js_language_detection_manager.mm',
+            'translate/ios/browser/js_translate_manager.h',
+            'translate/ios/browser/js_translate_manager.mm',
+            'translate/ios/browser/language_detection_controller.h',
+            'translate/ios/browser/language_detection_controller.mm',
+            'translate/ios/browser/translate_controller.h',
+            'translate/ios/browser/translate_controller.mm',
+          ],
+        },
+        {
+          'target_name': 'translate_ios_injected_js',
+          'type': 'none',
+          'sources': [
+            'translate/ios/browser/resources/language_detection.js',
+            'translate/ios/browser/resources/translate_ios.js',
+          ],
+          'link_settings': {
+            'mac_bundle_resources': [
+              '<(SHARED_INTERMEDIATE_DIR)/translate_ios.js',
+              '<(SHARED_INTERMEDIATE_DIR)/language_detection.js',
             ],
-            ['cld2_data_source=="static"', {
-              'sources': [
-                'translate/content/renderer/static_renderer_cld_data_provider.cc',
-                'translate/content/renderer/static_renderer_cld_data_provider.h',
-              ]},
-            ],
+          },
+          'includes': [
+            '../ios/web/js_compile.gypi',
           ],
         },
       ],

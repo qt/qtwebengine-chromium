@@ -113,8 +113,7 @@ static SkShader* make_bg_shader() {
     *bm.getAddr32(1, 0) = *bm.getAddr32(0, 1) = SkPackARGB32(0xFF, 0xCC,
                                                              0xCC, 0xCC);
 
-    SkMatrix m;
-    m.setScale(SkIntToScalar(6), SkIntToScalar(6));
+    const SkMatrix m = SkMatrix::MakeScale(SkIntToScalar(6), SkIntToScalar(6));
     SkShader* s = SkShader::CreateBitmapShader(bm,
                                                SkShader::kRepeat_TileMode,
                                                SkShader::kRepeat_TileMode,
@@ -133,17 +132,14 @@ namespace skiagm {
         }
 
     protected:
-        virtual uint32_t onGetFlags() const SK_OVERRIDE {
-            return kSkipTiled_Flag;
-        }
 
-        virtual SkString onShortName() {
+        SkString onShortName() override {
             return SkString("aarectmodes");
         }
 
-        virtual SkISize onISize() { return SkISize::Make(640, 480); }
+        SkISize onISize() override { return SkISize::Make(640, 480); }
 
-        virtual void onDraw(SkCanvas* canvas) {
+        void onDraw(SkCanvas* canvas) override {
             if (false) { // avoid bit rot, suppress warning
                 test4(canvas);
             }

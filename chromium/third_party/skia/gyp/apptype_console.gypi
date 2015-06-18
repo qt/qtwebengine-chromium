@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # target_defaults used for executable targets that generate a console app
 {
   'target_defaults': {
@@ -12,15 +16,17 @@
       },
     },
     'conditions': [
-      [ 'skia_os == "android" and not skia_android_framework', {
-        'dependencies': [
-          'android_deps.gyp:Android_EntryPoint',
-          'skia_launcher.gyp:skia_launcher',
+      [ 'skia_os == "android"', {
+        'conditions': [
+          ['skia_android_framework == 0', {
+            'dependencies': [
+              'android_deps.gyp:Android_EntryPoint',
+              'skia_launcher.gyp:skia_launcher',
+            ],
+          }],
         ],
-      }],
-      [ 'skia_os == "nacl"', {
         'dependencies': [
-          'nacl.gyp:nacl_interface',
+          'android_output.gyp:android_output',
         ],
       }],
       ['skia_os == "ios"', {
@@ -39,7 +45,6 @@
             'include_dirs' : [
               '../experimental/iOSSampleApp/Shared',
               '../include/views',
-              '../include/xml',
               '../include/utils/mac',
               '../src/views/mac',
             ],
@@ -55,7 +60,6 @@
         ],
         'dependencies': [
           'views.gyp:views',
-          'xml.gyp:xml',
         ],
         'link_settings': {
           'libraries': [

@@ -32,6 +32,7 @@
 #define NPV8Object_h
 
 #include "bindings/core/v8/V8DOMWrapper.h"
+#include "core/CoreExport.h"
 
 // Chromium uses npruntime.h from the Chromium source repository under
 // third_party/npapi/bindings.
@@ -41,7 +42,7 @@
 namespace blink {
 
 class LocalDOMWindow;
-class ScriptWrappableBase;
+class ScriptWrappable;
 
 static const int npObjectInternalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
 
@@ -66,15 +67,15 @@ struct PrivateIdentifier {
     bool isString;
 };
 
-NPObject* npCreateV8ScriptObject(v8::Isolate*, NPP, v8::Handle<v8::Object>, LocalDOMWindow*);
+CORE_EXPORT NPObject* npCreateV8ScriptObject(v8::Isolate*, NPP, v8::Local<v8::Object>, LocalDOMWindow*);
 
-NPObject* v8ObjectToNPObject(v8::Handle<v8::Object>);
+NPObject* v8ObjectToNPObject(v8::Local<v8::Object>);
 
-bool isWrappedNPObject(v8::Handle<v8::Object>);
+bool isWrappedNPObject(v8::Local<v8::Object>);
 
-V8NPObject* npObjectToV8NPObject(NPObject*);
+CORE_EXPORT V8NPObject* npObjectToV8NPObject(NPObject*);
 
-ScriptWrappableBase* npObjectToScriptWrappableBase(NPObject*);
+ScriptWrappable* npObjectToScriptWrappable(NPObject*);
 
 void disposeUnderlyingV8Object(v8::Isolate*, NPObject*);
 

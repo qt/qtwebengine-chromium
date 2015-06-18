@@ -31,20 +31,23 @@
 #include "config.h"
 #include "core/animation/CompositorAnimations.h"
 
-#include "core/animation/AnimationNode.h"
+#include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationTranslationUtil.h"
+#include "core/animation/ElementAnimations.h"
 #include "core/animation/CompositorAnimationsImpl.h"
 #include "core/animation/animatable/AnimatableDouble.h"
 #include "core/animation/animatable/AnimatableFilterOperations.h"
 #include "core/animation/animatable/AnimatableTransform.h"
 #include "core/animation/animatable/AnimatableValue.h"
-#include "core/rendering/RenderBoxModelObject.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
+#include "core/layout/LayoutBoxModelObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
+#include "core/paint/DeprecatedPaintLayer.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatBox.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorAnimation.h"
+#include "public/platform/WebCompositorAnimationPlayer.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebFilterAnimationCurve.h"
 #include "public/platform/WebFilterKeyframe.h"
@@ -60,23 +63,73 @@ namespace blink {
 
 namespace {
 
-void getKeyframeValuesForProperty(const KeyframeEffectModelBase* effect, CSSPropertyID id, double scale, PropertySpecificKeyframeVector& values)
+void getKeyframeValuesForProperty(const KeyframeEffectModelBase* effect, PropertyHandle property, double scale, PropertySpecificKeyframeVector& values)
 {
     ASSERT(values.isEmpty());
 
-    for (const auto& keyframe : effect->getPropertySpecificKeyframes(id)) {
+    for (const auto& keyframe : effect->getPropertySpecificKeyframes(property)) {
         double offset = keyframe->offset() * scale;
         values.append(keyframe->cloneWithOffset(offset));
     }
 }
 
+bool considerAnimationAsIncompatible(const Animation& animation, const Animation& animationToAdd)
+{
+    if (&animation == &animationToAdd)
+        return false;
+
+    switch (animation.playStateInternal()) {
+    case Animation::Idle:
+        return false;
+    case Animation::Pending:
+    case Animation::Running:
+        return true;
+    case Animation::Paused:
+    case Animation::Finished:
+        return Animation::hasLowerPriority(&animationToAdd, &animation);
+    default:
+        ASSERT_NOT_REACHED();
+        return true;
+    }
 }
 
-bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const AnimationEffect& effect, double minValue, double maxValue) const
+bool hasIncompatibleAnimations(const Element& targetElement, const Animation& animationToAdd, const EffectModel& effectToAdd)
+{
+    const bool affectsOpacity = effectToAdd.affects(PropertyHandle(CSSPropertyOpacity));
+    const bool affectsTransform = effectToAdd.affects(PropertyHandle(CSSPropertyTransform));
+    const bool affectsFilter = effectToAdd.affects(PropertyHandle(CSSPropertyWebkitFilter));
+
+    if (!targetElement.hasAnimations())
+        return false;
+
+    ElementAnimations* elementAnimations = targetElement.elementAnimations();
+    ASSERT(elementAnimations);
+
+    for (const auto& entry : elementAnimations->animations()) {
+        const Animation* attachedAnimation = entry.key;
+        if (!considerAnimationAsIncompatible(*attachedAnimation, animationToAdd))
+            continue;
+
+        if ((affectsOpacity && attachedAnimation->affects(targetElement, CSSPropertyOpacity))
+            || (affectsTransform && attachedAnimation->affects(targetElement, CSSPropertyTransform))
+            || (affectsFilter && attachedAnimation->affects(targetElement, CSSPropertyWebkitFilter)))
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+CSSPropertyID CompositorAnimations::CompositableProperties[3] = {
+    CSSPropertyOpacity, CSSPropertyTransform, CSSPropertyWebkitFilter
+};
+
+bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const EffectModel& effect, double minValue, double maxValue) const
 {
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
-    PropertySet properties = keyframeEffect.properties();
+    PropertyHandleSet properties = keyframeEffect.properties();
 
     if (properties.isEmpty())
         return true;
@@ -85,8 +138,11 @@ bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const Animation
     maxValue = std::max(maxValue, 1.0);
 
     for (const auto& property : properties) {
+        if (!property.isCSSProperty())
+            continue;
+
         // TODO: Add the ability to get expanded bounds for filters as well.
-        if (property != CSSPropertyTransform && property != CSSPropertyWebkitTransform)
+        if (property.cssProperty() != CSSPropertyTransform)
             continue;
 
         const PropertySpecificKeyframeVector& frames = keyframeEffect.getPropertySpecificKeyframes(property);
@@ -98,8 +154,11 @@ bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const Animation
         for (size_t j = 0; j < frames.size() - 1; ++j) {
             const AnimatableTransform* startTransform = toAnimatableTransform(frames[j]->getAnimatableValue().get());
             const AnimatableTransform* endTransform = toAnimatableTransform(frames[j+1]->getAnimatableValue().get());
+            if (!startTransform || !endTransform)
+                return false;
+
             // TODO: Add support for inflating modes other than Replace.
-            if (frames[j]->composite() != AnimationEffect::CompositeReplace)
+            if (frames[j]->composite() != EffectModel::CompositeReplace)
                 return false;
 
             const TimingFunction& timing = frames[j]->easing();
@@ -133,25 +192,27 @@ bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const Animation
 // CompositorAnimations public API
 // -----------------------------------------------------------------------
 
-bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& timing, const AnimationEffect& effect, double playerPlaybackRate)
+bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& timing, const Element& targetElement, const Animation* animationToAdd, const EffectModel& effect, double animationPlaybackRate)
 {
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
-    PropertySet properties = keyframeEffect.properties();
-
+    PropertyHandleSet properties = keyframeEffect.properties();
     if (properties.isEmpty())
         return false;
 
     for (const auto& property : properties) {
+        if (!property.isCSSProperty())
+            return false;
+
         const PropertySpecificKeyframeVector& keyframes = keyframeEffect.getPropertySpecificKeyframes(property);
         ASSERT(keyframes.size() >= 2);
-        auto* lastKeyframe = keyframes.last().get();
         for (const auto& keyframe : keyframes) {
             // FIXME: Determine candidacy based on the CSSValue instead of a snapshot AnimatableValue.
-            if (keyframe->composite() != AnimationEffect::CompositeReplace || !keyframe->getAnimatableValue())
+            bool isNeutralKeyframe = keyframe->isCSSPropertySpecificKeyframe() && !toCSSPropertySpecificKeyframe(keyframe.get())->value() && keyframe->composite() == EffectModel::CompositeAdd;
+            if ((keyframe->composite() != EffectModel::CompositeReplace && !isNeutralKeyframe) || !keyframe->getAnimatableValue())
                 return false;
 
-            switch (property) {
+            switch (property.cssProperty()) {
             case CSSPropertyOpacity:
                 break;
             case CSSPropertyTransform:
@@ -165,58 +226,75 @@ bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& tim
                 break;
             }
             default:
+                // any other types are not allowed to run on compositor.
                 return false;
             }
-
-            // FIXME: Remove this check when crbug.com/229405 is resolved
-            if (keyframe != lastKeyframe && keyframe->easing().type() == TimingFunction::StepsFunction)
-                return false;
         }
     }
 
+    if (animationToAdd && hasIncompatibleAnimations(targetElement, *animationToAdd, effect))
+        return false;
+
     CompositorAnimationsImpl::CompositorTiming out;
-    if (!CompositorAnimationsImpl::convertTimingForCompositor(timing, 0, out, playerPlaybackRate))
+    if (!CompositorAnimationsImpl::convertTimingForCompositor(timing, 0, out, animationPlaybackRate))
         return false;
-
-    if (timing.timingFunction->type() != TimingFunction::LinearFunction) {
-        // Checks the of size of KeyframeVector instead of PropertySpecificKeyframeVector.
-        const KeyframeVector& keyframes = keyframeEffect.getFrames();
-        if (keyframes.size() == 2 && keyframes.first()->easing().type() == TimingFunction::LinearFunction && timing.timingFunction->type() != TimingFunction::StepsFunction)
-            return true;
-
-        // FIXME: Support non-linear timing functions in the compositor for
-        // more than two keyframes and step timing functions in the compositor.
-        return false;
-    }
 
     return true;
 }
 
-bool CompositorAnimations::canStartAnimationOnCompositor(const Element& element)
+void CompositorAnimations::cancelIncompatibleAnimationsOnCompositor(const Element& targetElement, const Animation& animationToAdd, const EffectModel& effectToAdd)
 {
-    return element.renderer() && element.renderer()->compositingState() == PaintsIntoOwnBacking;
+    const bool affectsOpacity = effectToAdd.affects(PropertyHandle(CSSPropertyOpacity));
+    const bool affectsTransform = effectToAdd.affects(PropertyHandle(CSSPropertyTransform));
+    const bool affectsFilter = effectToAdd.affects(PropertyHandle(CSSPropertyWebkitFilter));
+
+    if (!targetElement.hasAnimations())
+        return;
+
+    ElementAnimations* elementAnimations = targetElement.elementAnimations();
+    ASSERT(elementAnimations);
+
+    for (const auto& entry : elementAnimations->animations()) {
+        Animation* attachedAnimation = entry.key;
+        if (!considerAnimationAsIncompatible(*attachedAnimation, animationToAdd))
+            continue;
+
+        if ((affectsOpacity && attachedAnimation->affects(targetElement, CSSPropertyOpacity))
+            || (affectsTransform && attachedAnimation->affects(targetElement, CSSPropertyTransform))
+            || (affectsFilter && attachedAnimation->affects(targetElement, CSSPropertyWebkitFilter)))
+            attachedAnimation->cancelAnimationOnCompositor();
+    }
 }
 
-bool CompositorAnimations::startAnimationOnCompositor(const Element& element, double startTime, double timeOffset, const Timing& timing, const AnimationEffect& effect, Vector<int>& startedAnimationIds, double playerPlaybackRate)
+bool CompositorAnimations::canStartAnimationOnCompositor(const Element& element)
+{
+    return element.layoutObject() && element.layoutObject()->compositingState() == PaintsIntoOwnBacking;
+}
+
+bool CompositorAnimations::startAnimationOnCompositor(const Element& element, int group, double startTime, double timeOffset, const Timing& timing, const Animation& animation, const EffectModel& effect, Vector<int>& startedAnimationIds, double animationPlaybackRate)
 {
     ASSERT(startedAnimationIds.isEmpty());
-    ASSERT(isCandidateForAnimationOnCompositor(timing, effect, playerPlaybackRate));
+    ASSERT(isCandidateForAnimationOnCompositor(timing, element, &animation, effect, animationPlaybackRate));
     ASSERT(canStartAnimationOnCompositor(element));
 
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
-    RenderLayer* layer = toRenderBoxModelObject(element.renderer())->layer();
+    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
     ASSERT(layer);
 
     Vector<OwnPtr<WebCompositorAnimation>> animations;
-    CompositorAnimationsImpl::getAnimationOnCompositor(timing, startTime, timeOffset, keyframeEffect, animations, playerPlaybackRate);
+    CompositorAnimationsImpl::getAnimationOnCompositor(timing, group, startTime, timeOffset, keyframeEffect, animations, animationPlaybackRate);
     ASSERT(!animations.isEmpty());
-    for (auto& animation : animations) {
-        int id = animation->id();
-        if (!layer->compositedLayerMapping()->mainGraphicsLayer()->addAnimation(animation.release())) {
+    for (auto& compositorAnimation : animations) {
+        int id = compositorAnimation->id();
+        if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+            WebCompositorAnimationPlayer* compositorPlayer = animation.compositorPlayer();
+            ASSERT(compositorPlayer);
+            compositorPlayer->addAnimation(compositorAnimation.leakPtr());
+        } else if (!layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->addAnimation(compositorAnimation.release())) {
             // FIXME: We should know ahead of time whether these animations can be started.
             for (int startedAnimationId : startedAnimationIds)
-                cancelAnimationOnCompositor(element, startedAnimationId);
+                cancelAnimationOnCompositor(element, animation, startedAnimationId);
             startedAnimationIds.clear();
             return false;
         }
@@ -226,20 +304,26 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, do
     return true;
 }
 
-void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, int id)
+void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, const Animation& animation, int id)
 {
     if (!canStartAnimationOnCompositor(element)) {
         // When an element is being detached, we cancel any associated
-        // AnimationPlayers for CSS animations. But by the time we get
+        // Animations for CSS animations. But by the time we get
         // here the mapping will have been removed.
         // FIXME: Defer remove/pause operations until after the
         // compositing update.
         return;
     }
-    toRenderBoxModelObject(element.renderer())->layer()->compositedLayerMapping()->mainGraphicsLayer()->removeAnimation(id);
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+        WebCompositorAnimationPlayer* compositorPlayer = animation.compositorPlayer();
+        ASSERT(compositorPlayer);
+        compositorPlayer->removeAnimation(id);
+    } else {
+        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->removeAnimation(id);
+    }
 }
 
-void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& element, int id, double pauseTime)
+void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& element, const Animation& animation, int id, double pauseTime)
 {
     // FIXME: canStartAnimationOnCompositor queries compositingState, which is not necessarily up to date.
     // https://code.google.com/p/chromium/issues/detail?id=339847
@@ -249,18 +333,66 @@ void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& e
         ASSERT_NOT_REACHED();
         return;
     }
-    toRenderBoxModelObject(element.renderer())->layer()->compositedLayerMapping()->mainGraphicsLayer()->pauseAnimation(id, pauseTime);
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+        WebCompositorAnimationPlayer* compositorPlayer = animation.compositorPlayer();
+        ASSERT(compositorPlayer);
+        compositorPlayer->pauseAnimation(id, pauseTime);
+    } else {
+        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->pauseAnimation(id, pauseTime);
+    }
+}
+
+bool CompositorAnimations::canAttachCompositedLayers(const Element& element, const Animation& animation)
+{
+    if (!RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled())
+        return false;
+
+    if (!animation.compositorPlayer())
+        return false;
+
+    if (!element.layoutObject() || !element.layoutObject()->isBoxModelObject())
+        return false;
+
+    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+
+    if (!layer || !layer->isAllowedToQueryCompositingState()
+        || !layer->compositedDeprecatedPaintLayerMapping()
+        || !layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer())
+        return false;
+
+    if (!layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->platformLayer())
+        return false;
+
+    return true;
+}
+
+void CompositorAnimations::attachCompositedLayers(const Element& element, const Animation& animation)
+{
+    ASSERT(element.layoutObject());
+
+    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+    ASSERT(layer);
+
+    WebCompositorAnimationPlayer* compositorPlayer = animation.compositorPlayer();
+    ASSERT(compositorPlayer);
+
+    ASSERT(layer->compositedDeprecatedPaintLayerMapping());
+    compositorPlayer->attachLayer(layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->platformLayer());
 }
 
 // -----------------------------------------------------------------------
 // CompositorAnimationsImpl
 // -----------------------------------------------------------------------
 
-bool CompositorAnimationsImpl::convertTimingForCompositor(const Timing& timing, double timeOffset, CompositorTiming& out, double playerPlaybackRate)
+bool CompositorAnimationsImpl::convertTimingForCompositor(const Timing& timing, double timeOffset, CompositorTiming& out, double animationPlaybackRate)
 {
     timing.assertValid();
 
-    if (!timing.iterationCount || !timing.iterationDuration)
+    // FIXME: Compositor does not know anything about endDelay.
+    if (timing.endDelay != 0)
+        return false;
+
+    if (std::isnan(timing.iterationDuration) || !timing.iterationCount || !timing.iterationDuration)
         return false;
 
     if (!std::isfinite(timing.iterationCount)) {
@@ -272,8 +404,8 @@ bool CompositorAnimationsImpl::convertTimingForCompositor(const Timing& timing, 
     out.scaledDuration = timing.iterationDuration;
     out.direction = timing.direction;
     // Compositor's time offset is positive for seeking into the animation.
-    out.scaledTimeOffset = -timing.startDelay + timeOffset;
-    out.playbackRate = timing.playbackRate * playerPlaybackRate;
+    out.scaledTimeOffset = -timing.startDelay / animationPlaybackRate + timeOffset;
+    out.playbackRate = timing.playbackRate * animationPlaybackRate;
     out.fillMode = timing.fillMode == Timing::FillModeAuto ? Timing::FillModeNone : timing.fillMode;
     out.iterationStart = timing.iterationStart;
     out.assertValid();
@@ -281,6 +413,60 @@ bool CompositorAnimationsImpl::convertTimingForCompositor(const Timing& timing, 
 }
 
 namespace {
+
+void getCubicBezierTimingFunctionParameters(const TimingFunction& timingFunction, bool& outCustom,
+    WebCompositorAnimationCurve::TimingFunctionType& outEaseSubType,
+    double& outX1, double& outY1, double& outX2, double& outY2)
+{
+    const CubicBezierTimingFunction& cubic = toCubicBezierTimingFunction(timingFunction);
+    outCustom = false;
+
+    switch (cubic.subType()) {
+    case CubicBezierTimingFunction::Ease:
+        outEaseSubType = WebCompositorAnimationCurve::TimingFunctionTypeEase;
+        break;
+    case CubicBezierTimingFunction::EaseIn:
+        outEaseSubType = WebCompositorAnimationCurve::TimingFunctionTypeEaseIn;
+        break;
+    case CubicBezierTimingFunction::EaseOut:
+        outEaseSubType = WebCompositorAnimationCurve::TimingFunctionTypeEaseOut;
+        break;
+    case CubicBezierTimingFunction::EaseInOut:
+        outEaseSubType = WebCompositorAnimationCurve::TimingFunctionTypeEaseInOut;
+        break;
+    case CubicBezierTimingFunction::Custom:
+        outCustom = true;
+        outX1 = cubic.x1();
+        outY1 = cubic.y1();
+        outX2 = cubic.x2();
+        outY2 = cubic.y2();
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+}
+
+void getStepsTimingFunctionParameters(const TimingFunction& timingFunction, int& outSteps, float& outStepsStartOffset)
+{
+    const StepsTimingFunction& steps = toStepsTimingFunction(timingFunction);
+
+    outSteps = steps.numberOfSteps();
+    switch (steps.stepAtPosition()) {
+    case StepsTimingFunction::Start:
+        outStepsStartOffset = 1;
+        break;
+    case StepsTimingFunction::Middle:
+        outStepsStartOffset = 0.5;
+        break;
+    case StepsTimingFunction::End:
+        outStepsStartOffset = 0;
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        outStepsStartOffset = 0;
+        break;
+    }
+}
 
 template<typename PlatformAnimationCurveType, typename PlatformAnimationKeyframeType>
 void addKeyframeWithTimingFunction(PlatformAnimationCurveType& curve, const PlatformAnimationKeyframeType& keyframe, const TimingFunction* timingFunction)
@@ -293,46 +479,74 @@ void addKeyframeWithTimingFunction(PlatformAnimationCurveType& curve, const Plat
     switch (timingFunction->type()) {
     case TimingFunction::LinearFunction:
         curve.add(keyframe, WebCompositorAnimationCurve::TimingFunctionTypeLinear);
-        return;
+        break;
 
     case TimingFunction::CubicBezierFunction: {
-        const CubicBezierTimingFunction* cubic = toCubicBezierTimingFunction(timingFunction);
+        bool custom;
+        WebCompositorAnimationCurve::TimingFunctionType easeSubType;
+        double x1, y1;
+        double x2, y2;
+        getCubicBezierTimingFunctionParameters(*timingFunction, custom, easeSubType, x1, y1, x2, y2);
 
-        if (cubic->subType() == CubicBezierTimingFunction::Custom) {
-            curve.add(keyframe, cubic->x1(), cubic->y1(), cubic->x2(), cubic->y2());
-        } else {
+        if (custom)
+            curve.add(keyframe, x1, y1, x2, y2);
+        else
+            curve.add(keyframe, easeSubType);
+        break;
+    }
 
-            WebCompositorAnimationCurve::TimingFunctionType easeType;
-            switch (cubic->subType()) {
-            case CubicBezierTimingFunction::Ease:
-                easeType = WebCompositorAnimationCurve::TimingFunctionTypeEase;
-                break;
-            case CubicBezierTimingFunction::EaseIn:
-                easeType = WebCompositorAnimationCurve::TimingFunctionTypeEaseIn;
-                break;
-            case CubicBezierTimingFunction::EaseOut:
-                easeType = WebCompositorAnimationCurve::TimingFunctionTypeEaseOut;
-                break;
-            case CubicBezierTimingFunction::EaseInOut:
-                easeType = WebCompositorAnimationCurve::TimingFunctionTypeEaseInOut;
-                break;
+    case TimingFunction::StepsFunction: {
+        int steps;
+        float stepsStartOffset;
+        getStepsTimingFunctionParameters(*timingFunction, steps, stepsStartOffset);
 
-            // Custom Bezier are handled seperately.
-            case CubicBezierTimingFunction::Custom:
-            default:
-                ASSERT_NOT_REACHED();
-                return;
-            }
+        curve.add(keyframe, steps, stepsStartOffset);
+        break;
+    }
 
-            curve.add(keyframe, easeType);
-        }
+    default:
+        ASSERT_NOT_REACHED();
+    }
+}
+
+template <typename PlatformAnimationCurveType>
+void setTimingFunctionOnCurve(PlatformAnimationCurveType& curve, TimingFunction* timingFunction)
+{
+    if (!timingFunction) {
+        curve.setLinearTimingFunction();
         return;
     }
 
-    case TimingFunction::StepsFunction:
+    switch (timingFunction->type()) {
+    case TimingFunction::LinearFunction:
+        curve.setLinearTimingFunction();
+        break;
+
+    case TimingFunction::CubicBezierFunction: {
+        bool custom;
+        WebCompositorAnimationCurve::TimingFunctionType easeSubType;
+        double x1, y1;
+        double x2, y2;
+        getCubicBezierTimingFunctionParameters(*timingFunction, custom, easeSubType, x1, y1, x2, y2);
+
+        if (custom)
+            curve.setCubicBezierTimingFunction(x1, y1, x2, y2);
+        else
+            curve.setCubicBezierTimingFunction(easeSubType);
+        break;
+    }
+
+    case TimingFunction::StepsFunction: {
+        int steps;
+        float stepsStartOffset;
+        getStepsTimingFunctionParameters(*timingFunction, steps, stepsStartOffset);
+
+        curve.setStepsTimingFunction(steps, stepsStartOffset);
+        break;
+    }
+
     default:
         ASSERT_NOT_REACHED();
-        return;
     }
 }
 
@@ -344,10 +558,7 @@ void CompositorAnimationsImpl::addKeyframesToCurve(WebCompositorAnimationCurve& 
     for (const auto& keyframe : keyframes) {
         const TimingFunction* keyframeTimingFunction = 0;
         if (keyframe != lastKeyframe) { // Ignore timing function of last frame.
-            if (keyframes.size() == 2 && keyframes.first()->easing().type() == TimingFunction::LinearFunction)
-                keyframeTimingFunction = timing.timingFunction.get();
-            else
-                keyframeTimingFunction = &keyframe->easing();
+            keyframeTimingFunction = &keyframe->easing();
         }
 
         // FIXME: This relies on StringKeyframes being eagerly evaluated, which will
@@ -386,14 +597,14 @@ void CompositorAnimationsImpl::addKeyframesToCurve(WebCompositorAnimationCurve& 
     }
 }
 
-void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, double startTime, double timeOffset, const KeyframeEffectModelBase& effect, Vector<OwnPtr<WebCompositorAnimation> >& animations, double playerPlaybackRate)
+void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, int group, double startTime, double timeOffset, const KeyframeEffectModelBase& effect, Vector<OwnPtr<WebCompositorAnimation>>& animations, double animationPlaybackRate)
 {
     ASSERT(animations.isEmpty());
     CompositorTiming compositorTiming;
-    bool timingValid = convertTimingForCompositor(timing, timeOffset, compositorTiming, playerPlaybackRate);
+    bool timingValid = convertTimingForCompositor(timing, timeOffset, compositorTiming, animationPlaybackRate);
     ASSERT_UNUSED(timingValid, timingValid);
 
-    PropertySet properties = effect.properties();
+    PropertyHandleSet properties = effect.properties();
     ASSERT(!properties.isEmpty());
     for (const auto& property : properties) {
         PropertySpecificKeyframeVector values;
@@ -401,12 +612,13 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
 
         WebCompositorAnimation::TargetProperty targetProperty;
         OwnPtr<WebCompositorAnimationCurve> curve;
-        switch (property) {
+        switch (property.cssProperty()) {
         case CSSPropertyOpacity: {
             targetProperty = WebCompositorAnimation::TargetPropertyOpacity;
 
             WebFloatAnimationCurve* floatCurve = Platform::current()->compositorSupport()->createFloatAnimationCurve();
             addKeyframesToCurve(*floatCurve, values, timing);
+            setTimingFunctionOnCurve(*floatCurve, timing.timingFunction.get());
             curve = adoptPtr(floatCurve);
             break;
         }
@@ -414,6 +626,7 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
             targetProperty = WebCompositorAnimation::TargetPropertyFilter;
             WebFilterAnimationCurve* filterCurve = Platform::current()->compositorSupport()->createFilterAnimationCurve();
             addKeyframesToCurve(*filterCurve, values, timing);
+            setTimingFunctionOnCurve(*filterCurve, timing.timingFunction.get());
             curve = adoptPtr(filterCurve);
             break;
         }
@@ -421,6 +634,7 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
             targetProperty = WebCompositorAnimation::TargetPropertyTransform;
             WebTransformAnimationCurve* transformCurve = Platform::current()->compositorSupport()->createTransformAnimationCurve();
             addKeyframesToCurve(*transformCurve, values, timing);
+            setTimingFunctionOnCurve(*transformCurve, timing.timingFunction.get());
             curve = adoptPtr(transformCurve);
             break;
         }
@@ -430,7 +644,7 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
         }
         ASSERT(curve.get());
 
-        OwnPtr<WebCompositorAnimation> animation = adoptPtr(Platform::current()->compositorSupport()->createAnimation(*curve, targetProperty));
+        OwnPtr<WebCompositorAnimation> animation = adoptPtr(Platform::current()->compositorSupport()->createAnimation(*curve, targetProperty, group, 0));
 
         if (!std::isnan(startTime))
             animation->setStartTime(startTime);
@@ -441,16 +655,16 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
 
         switch (compositorTiming.direction) {
         case Timing::PlaybackDirectionNormal:
-            animation->setDirection(blink::WebCompositorAnimation::DirectionNormal);
+            animation->setDirection(WebCompositorAnimation::DirectionNormal);
             break;
         case Timing::PlaybackDirectionReverse:
-            animation->setDirection(blink::WebCompositorAnimation::DirectionReverse);
+            animation->setDirection(WebCompositorAnimation::DirectionReverse);
             break;
         case Timing::PlaybackDirectionAlternate:
-            animation->setDirection(blink::WebCompositorAnimation::DirectionAlternate);
+            animation->setDirection(WebCompositorAnimation::DirectionAlternate);
             break;
         case Timing::PlaybackDirectionAlternateReverse:
-            animation->setDirection(blink::WebCompositorAnimation::DirectionAlternateReverse);
+            animation->setDirection(WebCompositorAnimation::DirectionAlternateReverse);
             break;
         default:
             ASSERT_NOT_REACHED();
@@ -459,16 +673,16 @@ void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, do
 
         switch (compositorTiming.fillMode) {
         case Timing::FillModeNone:
-            animation->setFillMode(blink::WebCompositorAnimation::FillModeNone);
+            animation->setFillMode(WebCompositorAnimation::FillModeNone);
             break;
         case Timing::FillModeForwards:
-            animation->setFillMode(blink::WebCompositorAnimation::FillModeForwards);
+            animation->setFillMode(WebCompositorAnimation::FillModeForwards);
             break;
         case Timing::FillModeBackwards:
-            animation->setFillMode(blink::WebCompositorAnimation::FillModeBackwards);
+            animation->setFillMode(WebCompositorAnimation::FillModeBackwards);
             break;
         case Timing::FillModeBoth:
-            animation->setFillMode(blink::WebCompositorAnimation::FillModeBoth);
+            animation->setFillMode(WebCompositorAnimation::FillModeBoth);
             break;
         default:
             ASSERT_NOT_REACHED();

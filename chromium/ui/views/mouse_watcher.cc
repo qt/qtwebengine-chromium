@@ -25,12 +25,12 @@ class MouseWatcher::Observer : public ui::EventHandler {
  public:
   explicit Observer(MouseWatcher* mouse_watcher)
       : mouse_watcher_(mouse_watcher),
-        event_monitor_(views::EventMonitor::Create(this)),
+        event_monitor_(EventMonitor::CreateApplicationMonitor(this)),
         notify_listener_factory_(this) {
   }
 
   // ui::EventHandler implementation:
-  virtual void OnMouseEvent(ui::MouseEvent* event) override {
+  void OnMouseEvent(ui::MouseEvent* event) override {
     switch (event->type()) {
       case ui::ET_MOUSE_MOVED:
       case ui::ET_MOUSE_DRAGGED:
@@ -38,6 +38,9 @@ class MouseWatcher::Observer : public ui::EventHandler {
         break;
       case ui::ET_MOUSE_EXITED:
         HandleMouseEvent(MouseWatcherHost::MOUSE_EXIT);
+        break;
+      case ui::ET_MOUSE_PRESSED:
+        HandleMouseEvent(MouseWatcherHost::MOUSE_PRESS);
         break;
       default:
         break;
@@ -52,9 +55,11 @@ class MouseWatcher::Observer : public ui::EventHandler {
     // It's safe to use last_mouse_location() here as this function is invoked
     // during event dispatching.
     if (!host()->Contains(EventMonitor::GetLastMouseLocation(), event_type)) {
-      // Mouse moved outside the host's zone, start a timer to notify the
-      // listener.
-      if (!notify_listener_factory_.HasWeakPtrs()) {
+      if (event_type == MouseWatcherHost::MOUSE_PRESS) {
+        NotifyListener();
+      } else if (!notify_listener_factory_.HasWeakPtrs()) {
+        // Mouse moved outside the host's zone, start a timer to notify the
+        // listener.
         base::MessageLoop::current()->PostDelayedTask(
             FROM_HERE,
             base::Bind(&Observer::NotifyListener,

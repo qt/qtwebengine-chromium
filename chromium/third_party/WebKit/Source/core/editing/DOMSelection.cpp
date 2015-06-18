@@ -40,8 +40,8 @@
 #include "core/dom/Range.h"
 #include "core/dom/TreeScope.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "wtf/text/WTFString.h"
@@ -344,7 +344,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is not a valid offset.");
         return;
     }
-    if (offset > (node->offsetInCharacters() ? caretMaxOffset(node) : (int)node->countChildren())) {
+    if (static_cast<unsigned>(offset) > node->lengthOfContents()) {
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is larger than the given node's length.");
         return;
     }
@@ -369,14 +369,13 @@ PassRefPtrWillBeRawPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState
     // If you're hitting this, you've added broken multi-range selection support
     ASSERT(rangeCount() == 1);
 
-    if (Node* shadowAncestor = selectionShadowAncestor(m_frame)) {
-        ASSERT(!shadowAncestor->isShadowRoot());
-        ContainerNode* container = shadowAncestor->parentOrShadowHostNode();
-        int offset = shadowAncestor->nodeIndex();
-        return Range::create(shadowAncestor->document(), container, offset, container, offset);
-    }
+    Position anchor = anchorPosition(visibleSelection());
+    if (!anchor.anchorNode()->isInShadowTree())
+        return m_frame->selection().firstRange();
 
-    return m_frame->selection().firstRange();
+    if (!visibleSelection().isBaseFirst())
+        return Range::create(*anchor.document(), focusNode(), focusOffset(), shadowAdjustedNode(anchor), anchorOffset());
+    return Range::create(*anchor.document(), shadowAdjustedNode(anchor), anchorOffset(), focusNode(), focusOffset());
 }
 
 void DOMSelection::removeAllRanges()
@@ -493,8 +492,7 @@ bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
 
 void DOMSelection::selectAllChildren(Node* n, ExceptionState& exceptionState)
 {
-    if (!n)
-        return;
+    ASSERT(n);
 
     // This doesn't (and shouldn't) select text node characters.
     setBaseAndExtent(n, 0, n, n->countChildren(), exceptionState);
@@ -560,7 +558,7 @@ void DOMSelection::addConsoleError(const String& message)
         m_treeScope->document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message));
 }
 
-void DOMSelection::trace(Visitor* visitor)
+DEFINE_TRACE(DOMSelection)
 {
     visitor->trace(m_treeScope);
     DOMWindowProperty::trace(visitor);

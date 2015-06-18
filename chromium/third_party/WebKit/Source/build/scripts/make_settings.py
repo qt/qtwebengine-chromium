@@ -73,26 +73,11 @@ class MakeSettingsWriter(in_generator.Writer):
         self.in_file.name_dictionaries.sort(key=lambda entry: entry['name'])
 
         self._outputs = {
-            ('InternalSettingsGenerated.h'): self.generate_header,
-            ('InternalSettingsGenerated.cpp'): self.generate_implementation,
-            ('InternalSettingsGenerated.idl'): self.generate_idl,
             ('SettingsMacros.h'): self.generate_macros,
         }
         self._template_context = {
             'settings': self.in_file.name_dictionaries,
         }
-
-    @template_expander.use_jinja('InternalSettingsGenerated.h.tmpl', filters=filters)
-    def generate_header(self):
-        return self._template_context
-
-    @template_expander.use_jinja('InternalSettingsGenerated.cpp.tmpl', filters=filters)
-    def generate_implementation(self):
-        return self._template_context
-
-    @template_expander.use_jinja('InternalSettingsGenerated.idl.tmpl', filters=filters)
-    def generate_idl(self):
-        return self._template_context
 
     @template_expander.use_jinja('SettingsMacros.h.tmpl', filters=filters)
     def generate_macros(self):

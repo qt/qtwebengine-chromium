@@ -7,28 +7,45 @@
 #include <errno.h>
 #include <linux/input.h>
 
-#include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/events/event.h"
-#include "ui/events/keycodes/dom4/keycode_converter.h"
-#include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/ozone/evdev/device_event_dispatcher_evdev.h"
+#include "ui/events/ozone/evdev/keyboard_util_evdev.h"
 
 namespace ui {
+
+namespace {
+
+// Values for EV_KEY.
+const int kKeyReleaseValue = 0;
+const int kKeyRepeatValue = 2;
+
+}  // namespace
 
 EventConverterEvdevImpl::EventConverterEvdevImpl(
     int fd,
     base::FilePath path,
     int id,
-    EventModifiersEvdev* modifiers,
+    InputDeviceType type,
+    const EventDeviceInfo& devinfo,
     CursorDelegateEvdev* cursor,
-    KeyboardEvdev* keyboard,
-    const EventDispatchCallback& callback)
-    : EventConverterEvdev(fd, path, id),
+    DeviceEventDispatcherEvdev* dispatcher)
+    : EventConverterEvdev(fd,
+                          path,
+                          id,
+                          type,
+                          devinfo.name(),
+                          devinfo.vendor_id(),
+                          devinfo.product_id()),
+      has_keyboard_(devinfo.HasKeyboard()),
+      has_touchpad_(devinfo.HasTouchpad()),
+      has_caps_lock_led_(devinfo.HasLedEvent(LED_CAPSL)),
       x_offset_(0),
       y_offset_(0),
       cursor_(cursor),
-      keyboard_(keyboard),
-      modifiers_(modifiers),
-      callback_(callback) {
+      dispatcher_(dispatcher) {
 }
 
 EventConverterEvdevImpl::~EventConverterEvdevImpl() {
@@ -37,6 +54,9 @@ EventConverterEvdevImpl::~EventConverterEvdevImpl() {
 }
 
 void EventConverterEvdevImpl::OnFileCanReadWithoutBlocking(int fd) {
+  TRACE_EVENT1("evdev", "EventConverterEvdevImpl::OnFileCanReadWithoutBlocking",
+               "fd", fd);
+
   input_event inputs[4];
   ssize_t read_size = read(fd, inputs, sizeof(inputs));
   if (read_size < 0) {
@@ -48,8 +68,58 @@ void EventConverterEvdevImpl::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
+  // TODO(spang): Re-implement this by releasing buttons & temporarily closing
+  // the device.
+  if (ignore_events_)
+    return;
+
   DCHECK_EQ(read_size % sizeof(*inputs), 0u);
   ProcessEvents(inputs, read_size / sizeof(*inputs));
+}
+
+bool EventConverterEvdevImpl::HasKeyboard() const {
+  return has_keyboard_;
+}
+
+bool EventConverterEvdevImpl::HasTouchpad() const {
+  return has_touchpad_;
+}
+
+bool EventConverterEvdevImpl::HasCapsLockLed() const {
+  return has_caps_lock_led_;
+}
+
+void EventConverterEvdevImpl::SetAllowedKeys(
+    scoped_ptr<std::set<DomCode>> allowed_keys) {
+  DCHECK(HasKeyboard());
+  if (!allowed_keys) {
+    blocked_keys_.reset();
+    return;
+  }
+
+  blocked_keys_.set();
+  for (const DomCode& it : *allowed_keys) {
+    int evdev_code =
+        NativeCodeToEvdevCode(KeycodeConverter::DomCodeToNativeKeycode(it));
+    blocked_keys_.reset(evdev_code);
+  }
+
+  // Release any pressed blocked keys.
+  base::TimeDelta timestamp = ui::EventTimeForNow();
+  for (int key = 0; key < KEY_CNT; ++key) {
+    if (blocked_keys_.test(key))
+      OnKeyChange(key, false /* down */, timestamp);
+  }
+}
+
+void EventConverterEvdevImpl::AllowAllKeys() {
+  DCHECK(HasKeyboard());
+  blocked_keys_.reset();
+}
+
+void EventConverterEvdevImpl::OnStopped() {
+  ReleaseKeys();
+  ReleaseMouseButtons();
 }
 
 void EventConverterEvdevImpl::ProcessEvents(const input_event* inputs,
@@ -64,20 +134,29 @@ void EventConverterEvdevImpl::ProcessEvents(const input_event* inputs,
         ConvertMouseMoveEvent(input);
         break;
       case EV_SYN:
-        FlushEvents();
+        if (input.code == SYN_DROPPED)
+          OnLostSync();
+        else if (input.code == SYN_REPORT)
+          FlushEvents(input);
         break;
     }
   }
 }
 
 void EventConverterEvdevImpl::ConvertKeyEvent(const input_event& input) {
+  // Ignore repeat events.
+  if (input.value == kKeyRepeatValue)
+    return;
+
   // Mouse processing.
   if (input.code >= BTN_MOUSE && input.code < BTN_JOYSTICK) {
     DispatchMouseButton(input);
     return;
   }
+
   // Keyboard processing.
-  keyboard_->OnKeyChange(input.code, input.value != 0);
+  OnKeyChange(input.code, input.value != kKeyReleaseValue,
+              TimeDeltaFromInputEvent(input));
 }
 
 void EventConverterEvdevImpl::ConvertMouseMoveEvent(const input_event& input) {
@@ -93,42 +172,83 @@ void EventConverterEvdevImpl::ConvertMouseMoveEvent(const input_event& input) {
   }
 }
 
+void EventConverterEvdevImpl::OnKeyChange(unsigned int key,
+                                          bool down,
+                                          const base::TimeDelta& timestamp) {
+  if (key > KEY_MAX)
+    return;
+
+  if (down == key_state_.test(key))
+    return;
+
+  // Apply key filter (releases for previously pressed keys are excepted).
+  if (down && blocked_keys_.test(key))
+    return;
+
+  // State transition: !(down) -> (down)
+  key_state_.set(key, down);
+
+  dispatcher_->DispatchKeyEvent(
+      KeyEventParams(input_device_.id, key, down, timestamp));
+}
+
+void EventConverterEvdevImpl::ReleaseKeys() {
+  base::TimeDelta timestamp = ui::EventTimeForNow();
+  for (int key = 0; key < KEY_CNT; ++key)
+    OnKeyChange(key, false /* down */, timestamp);
+}
+
+void EventConverterEvdevImpl::ReleaseMouseButtons() {
+  base::TimeDelta timestamp = ui::EventTimeForNow();
+  for (int code = BTN_MOUSE; code < BTN_JOYSTICK; ++code)
+    OnButtonChange(code, false /* down */, timestamp);
+}
+
+void EventConverterEvdevImpl::OnLostSync() {
+  LOG(WARNING) << "kernel dropped input events";
+
+  // We may have missed key releases. Release everything.
+  // TODO(spang): Use EVIOCGKEY to avoid releasing keys that are still held.
+  ReleaseKeys();
+  ReleaseMouseButtons();
+}
+
 void EventConverterEvdevImpl::DispatchMouseButton(const input_event& input) {
   if (!cursor_)
     return;
 
-  unsigned int modifier;
-  if (input.code == BTN_LEFT)
-    modifier = EVDEV_MODIFIER_LEFT_MOUSE_BUTTON;
-  else if (input.code == BTN_RIGHT)
-    modifier = EVDEV_MODIFIER_RIGHT_MOUSE_BUTTON;
-  else if (input.code == BTN_MIDDLE)
-    modifier = EVDEV_MODIFIER_MIDDLE_MOUSE_BUTTON;
-  else
-    return;
-
-  int flag = modifiers_->GetEventFlagFromModifier(modifier);
-  modifiers_->UpdateModifier(modifier, input.value);
-  callback_.Run(make_scoped_ptr(
-      new MouseEvent(input.value ? ET_MOUSE_PRESSED : ET_MOUSE_RELEASED,
-                     cursor_->location(),
-                     cursor_->location(),
-                     modifiers_->GetModifierFlags() | flag,
-                     flag)));
+  OnButtonChange(input.code, input.value, TimeDeltaFromInputEvent(input));
 }
 
-void EventConverterEvdevImpl::FlushEvents() {
+void EventConverterEvdevImpl::OnButtonChange(int code,
+                                             bool down,
+                                             const base::TimeDelta& timestamp) {
+  if (code == BTN_SIDE)
+    code = BTN_BACK;
+  else if (code == BTN_EXTRA)
+    code = BTN_FORWARD;
+
+  int button_offset = code - BTN_MOUSE;
+  if (mouse_button_state_.test(button_offset) == down)
+    return;
+
+  mouse_button_state_.set(button_offset, down);
+
+  dispatcher_->DispatchMouseButtonEvent(MouseButtonEventParams(
+      input_device_.id, cursor_->GetLocation(), code, down,
+      /* allow_remap */ true, timestamp));
+}
+
+void EventConverterEvdevImpl::FlushEvents(const input_event& input) {
   if (!cursor_ || (x_offset_ == 0 && y_offset_ == 0))
     return;
 
   cursor_->MoveCursor(gfx::Vector2dF(x_offset_, y_offset_));
 
-  callback_.Run(make_scoped_ptr(
-      new MouseEvent(ui::ET_MOUSE_MOVED,
-                     cursor_->location(),
-                     cursor_->location(),
-                     modifiers_->GetModifierFlags(),
-                     /* changed_button_flags */ 0)));
+  dispatcher_->DispatchMouseMoveEvent(
+      MouseMoveEventParams(input_device_.id, cursor_->GetLocation(),
+                           TimeDeltaFromInputEvent(input)));
+
   x_offset_ = 0;
   y_offset_ = 0;
 }

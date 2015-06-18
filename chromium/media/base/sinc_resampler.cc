@@ -111,6 +111,10 @@ static double SincScaleFactor(double io_ratio) {
   return sinc_scale_factor;
 }
 
+static int CalculateChunkSize(int block_size_, double io_ratio) {
+  return block_size_ / io_ratio;
+}
+
 SincResampler::SincResampler(double io_sample_rate_ratio,
                              int request_frames,
                              const ReadCB& read_cb)
@@ -153,6 +157,7 @@ void SincResampler::UpdateRegions(bool second_load) {
   r3_ = r0_ + request_frames_ - kKernelSize;
   r4_ = r0_ + request_frames_ - kKernelSize / 2;
   block_size_ = r4_ - r2_;
+  chunk_size_ = CalculateChunkSize(block_size_, io_sample_rate_ratio_);
 
   // r1_ at the beginning of the buffer.
   CHECK_EQ(r1_, input_buffer_.get());
@@ -205,6 +210,7 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
   }
 
   io_sample_rate_ratio_ = io_sample_rate_ratio;
+  chunk_size_ = CalculateChunkSize(block_size_, io_sample_rate_ratio_);
 
   // Optimize reinitialization by reusing values which are independent of
   // |sinc_scale_factor|.  Provides a 3x speedup.
@@ -293,8 +299,12 @@ void SincResampler::Resample(int frames, float* destination) {
   }
 }
 
-int SincResampler::ChunkSize() const {
-  return static_cast<int>(block_size_ / io_sample_rate_ratio_);
+void SincResampler::PrimeWithSilence() {
+  // By enforcing the buffer hasn't been primed, we ensure the input buffer has
+  // already been zeroed during construction or by a previous Flush() call.
+  DCHECK(!buffer_primed_);
+  DCHECK_EQ(input_buffer_[0], 0.0f);
+  UpdateRegions(true);
 }
 
 void SincResampler::Flush() {
@@ -303,6 +313,14 @@ void SincResampler::Flush() {
   memset(input_buffer_.get(), 0,
          sizeof(*input_buffer_.get()) * input_buffer_size_);
   UpdateRegions(false);
+}
+
+double SincResampler::BufferedFrames() const {
+  if (buffer_primed_) {
+    return request_frames_ - virtual_source_idx_;
+  } else {
+    return 0.0;
+  }
 }
 
 float SincResampler::Convolve_C(const float* input_ptr, const float* k1,

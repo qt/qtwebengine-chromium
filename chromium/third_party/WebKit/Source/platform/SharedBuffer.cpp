@@ -33,28 +33,28 @@
 #undef SHARED_BUFFER_STATS
 
 #ifdef SHARED_BUFFER_STATS
+#include "public/platform/Platform.h"
+#include "public/platform/WebTraceLocation.h"
 #include "wtf/DataLog.h"
-#include "wtf/MainThread.h"
 #endif
 
 namespace blink {
 
-static const unsigned segmentSize = 0x1000;
-static const unsigned segmentPositionMask = 0x0FFF;
+STATIC_CONST_MEMBER_DEFINITION const unsigned SharedBuffer::kSegmentSize;
 
 static inline unsigned segmentIndex(unsigned position)
 {
-    return position / segmentSize;
+    return position / SharedBuffer::kSegmentSize;
 }
 
 static inline unsigned offsetInSegment(unsigned position)
 {
-    return position & segmentPositionMask;
+    return position % SharedBuffer::kSegmentSize;
 }
 
 static inline char* allocateSegment()
 {
-    return static_cast<char*>(fastMalloc(segmentSize));
+    return static_cast<char*>(fastMalloc(SharedBuffer::kSegmentSize));
 }
 
 static inline void freeSegment(char* p)
@@ -106,7 +106,7 @@ static CString snippetForBuffer(SharedBuffer* sharedBuffer)
     return result;
 }
 
-static void printStats(void*)
+static void printStats()
 {
     MutexLocker locker(statsMutex());
     Vector<SharedBuffer*> buffers;
@@ -126,7 +126,7 @@ static void didCreateSharedBuffer(SharedBuffer* buffer)
     MutexLocker locker(statsMutex());
     liveBuffers().add(buffer);
 
-    callOnMainThread(printStats, 0);
+    Platform::current()->mainThread()->postTask(FROM_HERE, bind(&printStats));
 }
 
 static void willDestroySharedBuffer(SharedBuffer* buffer)
@@ -246,7 +246,7 @@ void SharedBuffer::append(const char* data, unsigned length)
     unsigned positionInSegment = offsetInSegment(m_size - m_buffer.size());
     m_size += length;
 
-    if (m_size <= segmentSize) {
+    if (m_size <= kSegmentSize) {
         // No need to use segments for small resource data.
         m_buffer.append(data, length);
         return;
@@ -259,7 +259,7 @@ void SharedBuffer::append(const char* data, unsigned length)
     } else
         segment = m_segments.last() + positionInSegment;
 
-    unsigned segmentFreeSpace = segmentSize - positionInSegment;
+    unsigned segmentFreeSpace = kSegmentSize - positionInSegment;
     unsigned bytesToCopy = std::min(length, segmentFreeSpace);
 
     for (;;) {
@@ -271,7 +271,7 @@ void SharedBuffer::append(const char* data, unsigned length)
         data += bytesToCopy;
         segment = allocateSegment();
         m_segments.append(segment);
-        bytesToCopy = std::min(length, segmentSize);
+        bytesToCopy = std::min(length, kSegmentSize);
     }
 }
 
@@ -312,10 +312,9 @@ void SharedBuffer::mergeSegmentsIntoBuffer() const
 {
     unsigned bufferSize = m_buffer.size();
     if (m_size > bufferSize) {
-        m_buffer.reserveCapacity(m_size);
         unsigned bytesLeft = m_size - bufferSize;
         for (unsigned i = 0; i < m_segments.size(); ++i) {
-            unsigned bytesToCopy = std::min(bytesLeft, segmentSize);
+            unsigned bytesToCopy = std::min(bytesLeft, kSegmentSize);
             m_buffer.append(m_segments[i], bytesToCopy);
             bytesLeft -= bytesToCopy;
             freeSegment(m_segments[i]);
@@ -342,7 +341,7 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
 
     position -= consecutiveSize;
     unsigned segments = m_segments.size();
-    unsigned maxSegmentedSize = segments * segmentSize;
+    unsigned maxSegmentedSize = segments * kSegmentSize;
     unsigned segment = segmentIndex(position);
     if (segment < segments) {
         unsigned bytesLeft = totalSize - consecutiveSize;
@@ -350,33 +349,31 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
 
         unsigned positionInSegment = offsetInSegment(position);
         someData = m_segments[segment] + positionInSegment;
-        return segment == segments - 1 ? segmentedSize - position : segmentSize - positionInSegment;
+        return segment == segments - 1 ? segmentedSize - position : kSegmentSize - positionInSegment;
     }
     ASSERT_NOT_REACHED();
     return 0;
 }
 
-PassRefPtr<ArrayBuffer> SharedBuffer::getAsArrayBuffer() const
+bool SharedBuffer::getAsBytes(void* dest, unsigned byteLength) const
 {
-    RefPtr<ArrayBuffer> arrayBuffer = ArrayBuffer::createUninitialized(static_cast<unsigned>(size()), 1);
-
-    if (!arrayBuffer)
-        return nullptr;
+    if (!dest || byteLength != size())
+        return false;
 
     const char* segment = 0;
     unsigned position = 0;
     while (unsigned segmentSize = getSomeData(segment, position)) {
-        memcpy(static_cast<char*>(arrayBuffer->data()) + position, segment, segmentSize);
+        memcpy(static_cast<char*>(dest) + position, segment, segmentSize);
         position += segmentSize;
     }
 
-    if (position != arrayBuffer->byteLength()) {
+    if (position != byteLength) {
         ASSERT_NOT_REACHED();
-        // Don't return the incomplete ArrayBuffer.
-        return nullptr;
+        // Don't return the incomplete data.
+        return false;
     }
 
-    return arrayBuffer;
+    return true;
 }
 
 PassRefPtr<SkData> SharedBuffer::getAsSkData() const

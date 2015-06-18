@@ -27,8 +27,8 @@
 #define Timer_h
 
 #include "platform/PlatformExport.h"
-#include "platform/TraceLocation.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebTraceLocation.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
@@ -38,25 +38,25 @@ namespace blink {
 // Time intervals are all in seconds.
 
 class PLATFORM_EXPORT TimerBase {
-    WTF_MAKE_NONCOPYABLE(TimerBase); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(TimerBase);
 public:
     TimerBase();
     virtual ~TimerBase();
 
-    void start(double nextFireInterval, double repeatInterval, const TraceLocation&);
+    void start(double nextFireInterval, double repeatInterval, const WebTraceLocation&);
 
-    void startRepeating(double repeatInterval, const TraceLocation& caller)
+    void startRepeating(double repeatInterval, const WebTraceLocation& caller)
     {
         start(repeatInterval, repeatInterval, caller);
     }
-    void startOneShot(double interval, const TraceLocation& caller)
+    void startOneShot(double interval, const WebTraceLocation& caller)
     {
         start(interval, 0, caller);
     }
 
     void stop();
     bool isActive() const;
-    const TraceLocation& location() const { return m_location; }
+    const WebTraceLocation& location() const { return m_location; }
 
     double nextFireInterval() const;
     double nextUnalignedFireInterval() const;
@@ -68,8 +68,6 @@ public:
     }
 
     void didChangeAlignmentInterval();
-
-    static void fireTimersInNestedEventLoop();
 
 private:
     virtual void fired() = 0;
@@ -102,7 +100,7 @@ private:
     int m_heapIndex; // -1 if not in heap
     unsigned m_heapInsertionOrder; // Used to keep order among equal-fire-time timers
     Vector<TimerBase*>* m_cachedThreadGlobalTimerHeap;
-    TraceLocation m_location;
+    WebTraceLocation m_location;
 
 #if ENABLE(ASSERT)
     ThreadIdentifier m_thread;
@@ -113,17 +111,41 @@ private:
     friend class TimerHeapReference;
 };
 
+template<typename T, bool = IsGarbageCollectedType<T>::value>
+class TimerIsObjectAliveTrait {
+public:
+    static bool isHeapObjectAlive(T*) { return true; }
+};
+
+template<typename T>
+class TimerIsObjectAliveTrait<T, true> {
+public:
+    static bool isHeapObjectAlive(T* objectPointer)
+    {
+        // Oilpan: if a timer fires while Oilpan heaps are being lazily
+        // swept, it is not safe to proceed if the object is about to
+        // be swept (and this timer will be stopped while doing so.)
+        return !Heap::willObjectBeLazilySwept(objectPointer);
+    }
+};
+
 template <typename TimerFiredClass>
-class Timer final : public TimerBase {
+class Timer : public TimerBase {
 public:
     typedef void (TimerFiredClass::*TimerFiredFunction)(Timer*);
 
     Timer(TimerFiredClass* o, TimerFiredFunction f)
         : m_object(o), m_function(f) { }
 
-private:
-    virtual void fired() override { (m_object->*m_function)(this); }
+protected:
+    virtual void fired() override
+    {
+        if (!TimerIsObjectAliveTrait<TimerFiredClass>::isHeapObjectAlive(m_object))
+            return;
+        (m_object->*m_function)(this);
+    }
 
+private:
     // FIXME: oilpan: TimerBase should be moved to the heap and m_object should be traced.
     // This raw pointer is safe as long as Timer<X> is held by the X itself (That's the case
     // in the current code base).
@@ -137,59 +159,6 @@ inline bool TimerBase::isActive() const
     ASSERT(m_thread == currentThread());
     return m_nextFireTime;
 }
-
-template <typename TimerFiredClass>
-class DeferrableOneShotTimer final : private TimerBase {
-public:
-    typedef void (TimerFiredClass::*TimerFiredFunction)(DeferrableOneShotTimer*);
-
-    DeferrableOneShotTimer(TimerFiredClass* o, TimerFiredFunction f, double delay)
-        : m_object(o)
-        , m_function(f)
-        , m_delay(delay)
-        , m_shouldRestartWhenTimerFires(false)
-    {
-    }
-
-    void restart(const TraceLocation& caller)
-    {
-        // Setting this boolean is much more efficient than calling startOneShot
-        // again, which might result in rescheduling the system timer which
-        // can be quite expensive.
-
-        if (isActive()) {
-            m_shouldRestartWhenTimerFires = true;
-            return;
-        }
-        startOneShot(m_delay, caller);
-    }
-
-    using TimerBase::stop;
-    using TimerBase::isActive;
-
-private:
-    virtual void fired() override
-    {
-        if (m_shouldRestartWhenTimerFires) {
-            m_shouldRestartWhenTimerFires = false;
-            // FIXME: This should not be FROM_HERE.
-            startOneShot(m_delay, FROM_HERE);
-            return;
-        }
-
-        (m_object->*m_function)(this);
-    }
-
-    // FIXME: oilpan: TimerBase should be moved to the heap and m_object should be traced.
-    // This raw pointer is safe as long as Timer<X> is held by the X itself (That's the case
-    // in the current code base).
-    GC_PLUGIN_IGNORE("363031")
-    TimerFiredClass* m_object;
-    TimerFiredFunction m_function;
-
-    double m_delay;
-    bool m_shouldRestartWhenTimerFires;
-};
 
 }
 

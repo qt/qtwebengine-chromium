@@ -19,6 +19,7 @@ TEST(GPUInfoBasicTest, EmptyGPUInfo) {
   EXPECT_EQ(gpu_info.driver_date, "");
   EXPECT_EQ(gpu_info.pixel_shader_version, "");
   EXPECT_EQ(gpu_info.vertex_shader_version, "");
+  EXPECT_EQ(gpu_info.max_msaa_samples, "");
   EXPECT_EQ(gpu_info.gl_version, "");
   EXPECT_EQ(gpu_info.gl_vendor, "");
   EXPECT_EQ(gpu_info.gl_renderer, "");
@@ -32,6 +33,7 @@ TEST(GPUInfoBasicTest, EmptyGPUInfo) {
 #if defined(OS_WIN)
   EXPECT_EQ(gpu_info.dx_diagnostics_info_state, kCollectInfoNone);
 #endif
+  EXPECT_EQ(gpu_info.video_decode_accelerator_supported_profiles.size(), 0u);
   EXPECT_EQ(gpu_info.video_encode_accelerator_supported_profiles.size(), 0u);
 }
 

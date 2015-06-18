@@ -43,8 +43,8 @@ static void QuitLoopWithStatus(base::MessageLoop* message_loop,
   message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
 
-static void NeedKey(const std::string& type,
-                    const std::vector<uint8>& init_data) {
+static void OnEncryptedMediaInitData(EmeInitDataType init_data_type,
+                                     const std::vector<uint8>& init_data) {
   VLOG(0) << "File is encrypted.";
 }
 
@@ -175,11 +175,10 @@ static void RunDemuxerBenchmark(const std::string& filename) {
     FileDataSource data_source;
     ASSERT_TRUE(data_source.Initialize(file_path));
 
-    Demuxer::NeedKeyCB need_key_cb = base::Bind(&NeedKey);
-    FFmpegDemuxer demuxer(message_loop.message_loop_proxy(),
-                          &data_source,
-                          need_key_cb,
-                          new MediaLog());
+    Demuxer::EncryptedMediaInitDataCB encrypted_media_init_data_cb =
+        base::Bind(&OnEncryptedMediaInitData);
+    FFmpegDemuxer demuxer(message_loop.message_loop_proxy(), &data_source,
+                          encrypted_media_init_data_cb, new MediaLog());
 
     demuxer.Initialize(&demuxer_host,
                        base::Bind(&QuitLoopWithStatus, &message_loop),
@@ -188,11 +187,11 @@ static void RunDemuxerBenchmark(const std::string& filename) {
     StreamReader stream_reader(&demuxer, false);
 
     // Benchmark.
-    base::TimeTicks start = base::TimeTicks::HighResNow();
+    base::TimeTicks start = base::TimeTicks::Now();
     while (!stream_reader.IsDone()) {
       stream_reader.Read();
     }
-    base::TimeTicks end = base::TimeTicks::HighResNow();
+    base::TimeTicks end = base::TimeTicks::Now();
     total_time += (end - start).InSecondsF();
     demuxer.Stop();
     QuitLoopWithStatus(&message_loop, PIPELINE_OK);

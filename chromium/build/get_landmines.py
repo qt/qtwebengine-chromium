@@ -24,12 +24,18 @@ def print_landmines():
   """
   ALL LANDMINES ARE EMITTED FROM HERE.
   """
+  # DO NOT add landmines as part of a regular CL. Landmines are a last-effort
+  # bandaid fix if a CL that got landed has a build dependency bug and all bots
+  # need to be cleaned up. If you're writing a new CL that causes build
+  # dependency problems, fix the dependency problems instead of adding a
+  # landmine.
+
   if (distributor() == 'goma' and platform() == 'win32' and
       builder() == 'ninja'):
     print 'Need to clobber winja goma due to backend cwd cache fix.'
   if platform() == 'android':
-    print 'Clobber: To delete newly generated mojo class files.'
-    print 'Clobber to ensure that recipe tests do not break (issue 680923002).'
+    print 'Clobber: to handle new way of suppressing findbugs failures.'
+    print 'Clobber to fix gyp not rename package name (crbug.com/457038)'
   if platform() == 'win' and builder() == 'ninja':
     print 'Compile on cc_unittests fails due to symbols removed in r185063.'
   if platform() == 'linux' and builder() == 'ninja':
@@ -48,19 +54,23 @@ def print_landmines():
       gyp_msvs_version().startswith('2013')):
     print "Switched win from VS2010 to VS2013."
     print "Update to VS2013 Update 2."
+    print "Update to VS2013 Update 4."
   print 'Need to clobber everything due to an IDL change in r154579 (blink)'
   print 'Need to clobber everything due to gen file moves in r175513 (Blink)'
   if (platform() != 'ios'):
     print 'Clobber to get rid of obselete test plugin after r248358'
     print 'Clobber to rebuild GN files for V8'
+  print 'Clobber to get rid of stale generated mojom.h files'
   print 'Need to clobber everything due to build_nexe change in nacl r13424'
   print '[chromium-dev] PSA: clobber build needed for IDR_INSPECTOR_* compil...'
   print 'blink_resources.grd changed: crbug.com/400860'
   print 'ninja dependency cycle: crbug.com/408192'
-  if platform() == 'android':
-    print 'Delete stale generated .java files yet again. crbug.com/349592'
-    print 'Clobber to delete incompatible object binary format with NDK r10c'
   print 'Clobber to fix missing NaCl gyp dependencies (crbug.com/427427).'
+  print 'Another clobber for missing NaCl gyp deps (crbug.com/427427).'
+  print 'Clobber to fix GN not picking up increased ID range (crbug.com/444902)'
+  print 'Remove NaCl toolchains from the output dir (crbug.com/456902)'
+  if platform() == 'ios':
+    print 'Clobber iOS to workaround Xcode deps bug (crbug.com/485435)'
 
 
 def main():

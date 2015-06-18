@@ -7,6 +7,7 @@
 
 #include <sys/types.h>
 #include "src/globals.h"
+#include "src/utils.h"
 /**
  * \file
  * Definitions and convenience functions for working with unicode.
@@ -28,16 +29,26 @@ class Predicate {
  public:
   inline Predicate() { }
   inline bool get(uchar c);
+
  private:
   friend class Test;
   bool CalculateValue(uchar c);
-  struct CacheEntry {
-    inline CacheEntry() : code_point_(0), value_(0) { }
+  class CacheEntry {
+   public:
+    inline CacheEntry()
+        : bit_field_(CodePointField::encode(0) | ValueField::encode(0)) {}
     inline CacheEntry(uchar code_point, bool value)
-      : code_point_(code_point),
-        value_(value) { }
-    uchar code_point_ : 21;
-    bool value_ : 1;
+        : bit_field_(CodePointField::encode(code_point) |
+                     ValueField::encode(value)) {}
+
+    uchar code_point() const { return CodePointField::decode(bit_field_); }
+    bool value() const { return ValueField::decode(bit_field_); }
+
+   private:
+    class CodePointField : public v8::internal::BitField<uchar, 0, 21> {};
+    class ValueField : public v8::internal::BitField<bool, 21, 1> {};
+
+    uint32_t bit_field_;
   };
   static const int kSize = size;
   static const int kMask = kSize - 1;
@@ -125,9 +136,7 @@ class Utf8 {
                                 uchar c,
                                 int previous,
                                 bool replace_invalid = false);
-  static uchar CalculateValue(const byte* str,
-                              unsigned length,
-                              unsigned* cursor);
+  static uchar CalculateValue(const byte* str, size_t length, size_t* cursor);
 
   // The unicode replacement character, used to signal invalid unicode
   // sequences (e.g. an orphan surrogate) when converting to a UTF-8 encoding.
@@ -145,9 +154,7 @@ class Utf8 {
   // The maximum size a single UTF-16 code unit may take up when encoded as
   // UTF-8.
   static const unsigned kMax16BitCodeUnitSize  = 3;
-  static inline uchar ValueOf(const byte* str,
-                              unsigned length,
-                              unsigned* cursor);
+  static inline uchar ValueOf(const byte* str, size_t length, size_t* cursor);
 };
 
 struct Uppercase {

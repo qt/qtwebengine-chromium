@@ -33,12 +33,12 @@
 
 namespace blink {
 
-class Node;
+class Attr;
 class ExceptionState;
 
 class NamedNodeMap final : public NoBaseWillBeGarbageCollected<NamedNodeMap>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(NamedNodeMap);
     friend class Element;
 public:
     static PassOwnPtrWillBeRawPtr<NamedNodeMap> create(Element* element)
@@ -53,21 +53,21 @@ public:
 
     // Public DOM interface.
 
-    PassRefPtrWillBeRawPtr<Node> getNamedItem(const AtomicString&) const;
-    PassRefPtrWillBeRawPtr<Node> removeNamedItem(const AtomicString& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Attr> getNamedItem(const AtomicString&) const;
+    PassRefPtrWillBeRawPtr<Attr> removeNamedItem(const AtomicString& name, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<Node> getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
-    PassRefPtrWillBeRawPtr<Node> removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Attr> getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
+    PassRefPtrWillBeRawPtr<Attr> removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<Node> setNamedItem(Node*, ExceptionState&);
-    PassRefPtrWillBeRawPtr<Node> setNamedItemNS(Node*, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Attr> setNamedItem(Attr*, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Attr> setNamedItemNS(Attr*, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<Node> item(unsigned index) const;
+    PassRefPtrWillBeRawPtr<Attr> item(unsigned index) const;
     size_t length() const;
 
     Element* element() const { return m_element; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit NamedNodeMap(Element* element)

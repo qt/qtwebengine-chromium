@@ -210,9 +210,7 @@ NET_EXPORT std::string CanonicalizeHost(const std::string& host,
 // rules based on RFC 1738 and tweaked to be compatible with the real world.
 // The rules are:
 //   * One or more components separated by '.'
-//   * Each component begins with an alphanumeric character or '-'
 //   * Each component contains only alphanumeric characters and '-' or '_'
-//   * Each component ends with an alphanumeric character or '-'
 //   * The last component begins with an alphanumeric character
 //   * Optional trailing dot after last component (means "treat as FQDN")
 //
@@ -247,6 +245,10 @@ NET_EXPORT base::string16 StripWWW(const base::string16& text);
 
 // Runs |url|'s host through StripWWW().  |url| must be valid.
 NET_EXPORT base::string16 StripWWWFromHost(const GURL& url);
+
+// Checks if |port| is in the valid range (0 to 65535, though 0 is technically
+// reserved).  Should be used before casting a port to a uint16.
+NET_EXPORT bool IsPortValid(int port);
 
 // Checks |port| against a list of ports which are restricted by default.
 // Returns true if |port| is allowed, false if it is restricted.
@@ -437,6 +439,12 @@ NET_EXPORT_PRIVATE int GetPortFromSockaddr(const struct sockaddr* address,
 // machine.
 NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 
+NET_EXPORT_PRIVATE bool IsLocalhostTLD(const std::string& host);
+
+// Returns true if the url's host is a Google server. This should only be used
+// for histograms and shouldn't be used to affect behavior.
+NET_EXPORT_PRIVATE bool HasGoogleHost(const GURL& url);
+
 // A subset of IP address attributes which are actionable by the
 // application layer. Currently unimplemented for all hosts;
 // IP_ADDRESS_ATTRIBUTE_NONE is always returned.
@@ -464,7 +472,7 @@ struct NET_EXPORT NetworkInterface {
                    uint32 interface_index,
                    NetworkChangeNotifier::ConnectionType type,
                    const IPAddressNumber& address,
-                   uint32 network_prefix,
+                   uint32 prefix_length,
                    int ip_address_attributes);
   ~NetworkInterface();
 
@@ -473,7 +481,7 @@ struct NET_EXPORT NetworkInterface {
   uint32 interface_index;  // Always 0 on Android.
   NetworkChangeNotifier::ConnectionType type;
   IPAddressNumber address;
-  uint32 network_prefix;
+  uint32 prefix_length;
   int ip_address_attributes;  // Combination of |IPAddressAttributes|.
 };
 
@@ -483,9 +491,6 @@ typedef std::vector<NetworkInterface> NetworkInterfaceList;
 enum HostAddressSelectionPolicy {
   INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x0,
   EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x1,
-  // Include temp address only when interface has both permanent and
-  // temp addresses.
-  INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE      = 0x2,
 };
 
 // Returns list of network interfaces except loopback interface. If an
@@ -494,6 +499,11 @@ enum HostAddressSelectionPolicy {
 // Can be called only on a thread that allows IO.
 NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks,
                                int policy);
+
+// Gets the SSID of the currently associated WiFi access point if there is one.
+// Otherwise, returns empty string.
+// Currently only implemented on Linux, ChromeOS and Android.
+NET_EXPORT std::string GetWifiSSID();
 
 // General category of the IEEE 802.11 (wifi) physical layer operating mode.
 enum WifiPHYLayerProtocol {

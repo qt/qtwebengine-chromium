@@ -390,17 +390,17 @@ public:
 
     size_t count(LChar) const;
 
-    bool startsWith(StringImpl* str, bool caseSensitive = true) { return (caseSensitive ? reverseFind(str, 0) : reverseFindIgnoringCase(str, 0)) == 0; }
+    bool startsWith(StringImpl* str, TextCaseSensitivity caseSensitivity = TextCaseSensitive) { return ((caseSensitivity == TextCaseSensitive) ? reverseFind(str, 0) : reverseFindIgnoringCase(str, 0)) == 0; }
     bool startsWith(UChar) const;
-    bool startsWith(const char*, unsigned matchLength, bool caseSensitive) const;
+    bool startsWith(const char*, unsigned matchLength, TextCaseSensitivity) const;
     template<unsigned matchLength>
-    bool startsWith(const char (&prefix)[matchLength], bool caseSensitive = true) const { return startsWith(prefix, matchLength - 1, caseSensitive); }
+    bool startsWith(const char (&prefix)[matchLength], TextCaseSensitivity caseSensitivity = TextCaseSensitive) const { return startsWith(prefix, matchLength - 1, caseSensitivity); }
 
-    bool endsWith(StringImpl*, bool caseSensitive = true);
+    bool endsWith(StringImpl*, TextCaseSensitivity = TextCaseSensitive);
     bool endsWith(UChar) const;
-    bool endsWith(const char*, unsigned matchLength, bool caseSensitive) const;
+    bool endsWith(const char*, unsigned matchLength, TextCaseSensitivity) const;
     template<unsigned matchLength>
-    bool endsWith(const char (&prefix)[matchLength], bool caseSensitive = true) const { return endsWith(prefix, matchLength - 1, caseSensitive); }
+    bool endsWith(const char (&prefix)[matchLength], TextCaseSensitivity caseSensitivity = TextCaseSensitive) const { return endsWith(prefix, matchLength - 1, caseSensitivity); }
 
     PassRefPtr<StringImpl> replace(UChar, UChar);
     PassRefPtr<StringImpl> replace(UChar, StringImpl*);
@@ -503,6 +503,33 @@ inline bool equalIgnoringCase(const UChar* a, const UChar* b, int length)
 WTF_EXPORT bool equalIgnoringCaseNonNull(const StringImpl*, const StringImpl*);
 
 WTF_EXPORT bool equalIgnoringNullity(StringImpl*, StringImpl*);
+
+template<typename CharacterTypeA, typename CharacterTypeB>
+inline bool equalIgnoringASCIICase(const CharacterTypeA* a, const CharacterTypeB* b, unsigned length)
+{
+    for (unsigned i = 0; i < length; ++i) {
+        if (toASCIILower(a[i]) != toASCIILower(b[i]))
+            return false;
+    }
+    return true;
+}
+
+template<typename CharacterTypeA, typename CharacterTypeB>
+bool startsWithIgnoringASCIICase(const CharacterTypeA& reference, const CharacterTypeB& prefix)
+{
+    unsigned prefixLength = prefix.length();
+    if (prefixLength > reference.length())
+        return false;
+
+    if (reference.is8Bit()) {
+        if (prefix.is8Bit())
+            return equalIgnoringASCIICase(reference.characters8(), prefix.characters8(), prefixLength);
+        return equalIgnoringASCIICase(reference.characters8(), prefix.characters16(), prefixLength);
+    }
+    if (prefix.is8Bit())
+        return equalIgnoringASCIICase(reference.characters16(), prefix.characters8(), prefixLength);
+    return equalIgnoringASCIICase(reference.characters16(), prefix.characters16(), prefixLength);
+}
 
 template<typename CharacterType>
 inline size_t find(const CharacterType* characters, unsigned length, CharacterType matchCharacter, unsigned index = 0)
@@ -736,7 +763,7 @@ template<typename T> struct DefaultHash;
 template<> struct DefaultHash<StringImpl*> {
     typedef StringHash Hash;
 };
-template<> struct DefaultHash<RefPtr<StringImpl> > {
+template<> struct DefaultHash<RefPtr<StringImpl>> {
     typedef StringHash Hash;
 };
 

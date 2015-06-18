@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "media/base/media_export.h"
 #include "media/base/video_frame.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 
@@ -108,6 +108,8 @@ class MEDIA_EXPORT VideoDecoderConfig {
   // Returns a human-readable string describing |*this|.  For debugging & test
   // output only.
   std::string AsHumanReadableString() const;
+
+  std::string GetHumanReadableCodecName() const;
 
   VideoCodec codec() const;
   VideoCodecProfile profile() const;

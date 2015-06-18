@@ -484,8 +484,8 @@ void MyInstance::PaintNextPicture() {
     gles2_if_->UseProgram(graphics_3d, shader_rectangle_arb_.program);
     gles2_if_->Uniform2f(graphics_3d,
                          shader_rectangle_arb_.texcoord_scale_location,
-                         picture.texture_size.width,
-                         picture.texture_size.height);
+                         static_cast<GLfloat>(picture.texture_size.width),
+                         static_cast<GLfloat>(picture.texture_size.height));
   } else {
     assert(picture.texture_target == GL_TEXTURE_EXTERNAL_OES);
     CreateExternalOESProgramOnce();
@@ -662,11 +662,12 @@ Shader MyInstance::CreateProgram(const char* vertex_shader,
   // Create shader program.
   shader.program = gles2_if_->CreateProgram(context_->pp_resource());
   CreateShader(
-      shader.program, GL_VERTEX_SHADER, vertex_shader, strlen(vertex_shader));
+      shader.program, GL_VERTEX_SHADER, vertex_shader,
+      static_cast<uint32_t>(strlen(vertex_shader)));
   CreateShader(shader.program,
                GL_FRAGMENT_SHADER,
                fragment_shader,
-               strlen(fragment_shader));
+               static_cast<int>(strlen(fragment_shader)));
   gles2_if_->LinkProgram(context_->pp_resource(), shader.program);
   gles2_if_->UseProgram(context_->pp_resource(), shader.program);
   gles2_if_->Uniform1i(

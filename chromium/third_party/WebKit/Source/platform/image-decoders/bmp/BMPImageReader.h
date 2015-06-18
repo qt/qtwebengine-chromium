@@ -40,7 +40,7 @@ namespace blink {
 // This class decodes a BMP image.  It is used in the BMP and ICO decoders,
 // which wrap it in the appropriate code to read file headers, etc.
 class PLATFORM_EXPORT BMPImageReader {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(BMPImageReader);
 public:
     // Read a value from |data[offset]|, converting from little to native
     // endianness.
@@ -78,7 +78,15 @@ public:
     // whether decoding succeeded.
     bool decodeBMP(bool onlySize);
 
+    // Helper for decodeBMP() which will call either processRLEData() or
+    // processNonRLEData(), depending on the value of |nonRLE|, call any
+    // appropriate notifications to deal with the result, then return whether
+    // decoding succeeded.
+    bool decodePixelData(bool nonRLE);
+
 private:
+    friend class PixelChangedScoper;
+
     // The various BMP compression types.  We don't currently decode all
     // these.
     enum CompressionType {
@@ -157,9 +165,13 @@ private:
     // array.
     bool processColorTable();
 
-    // Processes an RLE-encoded image.  Returns true if the entire image was
-    // decoded.
-    bool processRLEData();
+    // The next two functions return a ProcessingResult instead of a bool so
+    // they can avoid calling m_parent->setFailed(), which could lead to memory
+    // corruption since that will delete |this| but some callers still want
+    // to access member variables after they return.
+
+    // Processes an RLE-encoded image.
+    ProcessingResult processRLEData();
 
     // Processes a set of non-RLE-compressed pixels.  Two cases:
     //   * inRLE = true: the data is inside an RLE-encoded bitmap.  Tries to
@@ -169,11 +181,6 @@ private:
     //     beginning of the next row to be decoded.  Tries to process as
     //     many complete rows as possible.  Returns InsufficientData if
     //     there wasn't enough data to decode the whole image.
-    //
-    // This function returns a ProcessingResult instead of a bool so that it
-    // can avoid calling m_parent->setFailed(), which could lead to memory
-    // corruption since that will delete |this| but some callers still want
-    // to access member variables after this returns.
     ProcessingResult processNonRLEData(bool inRLE, int numPixels);
 
     // Returns true if the current y-coordinate plus |numRows| would be past
@@ -314,6 +321,7 @@ private:
 
     // Masks/offsets for the color values for non-palette formats. These are
     // bitwise, with array entries 0, 1, 2, 3 corresponding to R, G, B, A.
+    // These are uninitialized (and ignored) for images with less than 16bpp.
     uint32_t m_bitMasks[4];
 
     // Right shift values, meant to be applied after the masks. We need to shift

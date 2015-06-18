@@ -35,17 +35,19 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "core/CSSPropertyNames.h"
 #include "core/InputTypeNames.h"
-#include "core/events/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/events/MouseEvent.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/ColorChooser.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/layout/LayoutView.h"
 #include "core/page/Chrome.h"
-#include "core/rendering/RenderTheme.h"
-#include "core/rendering/RenderView.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/Color.h"
@@ -84,7 +86,7 @@ ColorInputType::~ColorInputType()
 {
 }
 
-void ColorInputType::trace(Visitor* visitor)
+DEFINE_TRACE(ColorInputType)
 {
     visitor->trace(m_chooser);
     BaseClickableWithKeyInputType::trace(visitor);
@@ -156,7 +158,7 @@ void ColorInputType::setValue(const String& value, bool valueChanged, TextFieldE
 
 void ColorInputType::handleDOMActivateEvent(Event* event)
 {
-    if (element().isDisabledFormControl() || !element().renderer())
+    if (element().isDisabledFormControl() || !element().layoutObject())
         return;
 
     if (!UserGestureIndicator::processingUserGesture())
@@ -184,19 +186,28 @@ bool ColorInputType::typeMismatchFor(const String& value) const
     return !isValidColorString(value);
 }
 
+void ColorInputType::warnIfValueIsInvalid(const String& value) const
+{
+    if (!equalIgnoringCase(value, element().sanitizeValue(value))) {
+        element().document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel,
+            String::format("The specified value '%s' does not conform to the required format.  The format is '#rrggbb' where rr, gg, bb are two-digit hexadecimal numbers.", value.utf8().data())));
+    }
+}
+
 void ColorInputType::didChooseColor(const Color& color)
 {
     if (element().isDisabledFormControl() || color == valueAsColor())
         return;
     element().setValueFromRenderer(color.serialized());
     element().updateView();
-    if (!RenderTheme::theme().isModalColorChooser())
+    if (!LayoutTheme::theme().isModalColorChooser())
         element().dispatchFormControlChangeEvent();
 }
 
 void ColorInputType::didEndChooser()
 {
-    if (RenderTheme::theme().isModalColorChooser())
+    EventQueueScope scope;
+    if (LayoutTheme::theme().isModalColorChooser())
         element().dispatchFormControlChangeEvent();
     m_chooser.clear();
 }
@@ -227,9 +238,9 @@ Element& ColorInputType::ownerElement() const
     return element();
 }
 
-IntRect ColorInputType::elementRectRelativeToRootView() const
+IntRect ColorInputType::elementRectRelativeToViewport() const
 {
-    return element().document().view()->contentsToRootView(element().pixelSnappedBoundingBox());
+    return element().document().view()->contentsToViewport(element().pixelSnappedBoundingBox());
 }
 
 Color ColorInputType::currentColor()
@@ -265,7 +276,7 @@ Vector<ColorSuggestion> ColorInputType::suggestions() const
 
 AXObject* ColorInputType::popupRootAXObject()
 {
-    return m_chooser ? m_chooser->rootAXObject() : 0;
+    return m_chooser ? m_chooser->rootAXObject() : nullptr;
 }
 
 ColorChooserClient* ColorInputType::colorChooserClient()

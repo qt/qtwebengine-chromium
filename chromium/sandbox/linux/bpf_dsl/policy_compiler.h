@@ -13,13 +13,12 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "sandbox/linux/seccomp-bpf/codegen.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl_forward.h"
+#include "sandbox/linux/bpf_dsl/codegen.h"
 #include "sandbox/linux/seccomp-bpf/errorcode.h"
 #include "sandbox/sandbox_export.h"
 
 namespace sandbox {
-struct Instruction;
-
 namespace bpf_dsl {
 class Policy;
 
@@ -33,31 +32,19 @@ class SANDBOX_EXPORT PolicyCompiler {
 
   // Compile registers any trap handlers needed by the policy and
   // compiles the policy to a BPF program, which it returns.
-  scoped_ptr<CodeGen::Program> Compile();
+  scoped_ptr<CodeGen::Program> Compile(bool verify);
+
+  // DangerousSetEscapePC sets the "escape PC" that is allowed to issue any
+  // system calls, regardless of policy.
+  void DangerousSetEscapePC(uint64_t escapepc);
 
   // Error returns an ErrorCode to indicate the system call should fail with
   // the specified error number.
   ErrorCode Error(int err);
 
-  // We can use ErrorCode to request calling of a trap handler. This method
-  // performs the required wrapping of the callback function into an
-  // ErrorCode object.
-  // The "aux" field can carry a pointer to arbitrary data. See EvaluateSyscall
-  // for a description of how to pass data from SetSandboxPolicy() to a Trap()
-  // handler.
-  ErrorCode Trap(TrapRegistry::TrapFnc fnc, const void* aux);
-
-  // Calls a user-space trap handler and disables all sandboxing for system
-  // calls made from this trap handler.
-  // This feature is available only if explicitly enabled by the user having
-  // set the CHROME_SANDBOX_DEBUGGING environment variable.
-  // Returns an ET_INVALID ErrorCode, if called when not enabled.
-  // NOTE: This feature, by definition, disables all security features of
-  //   the sandbox. It should never be used in production, but it can be
-  //   very useful to diagnose code that is incompatible with the sandbox.
-  //   If even a single system call returns "UnsafeTrap", the security of
-  //   entire sandbox should be considered compromised.
-  ErrorCode UnsafeTrap(TrapRegistry::TrapFnc fnc, const void* aux);
+  // Trap returns an ErrorCode to indicate the system call should
+  // instead invoke a trap handler.
+  ErrorCode Trap(TrapRegistry::TrapFnc fnc, const void* aux, bool safe);
 
   // UnsafeTraps require some syscalls to always be allowed.
   // This helper function returns true for these calls.
@@ -79,9 +66,6 @@ class SANDBOX_EXPORT PolicyCompiler {
                             const ErrorCode& passed,
                             const ErrorCode& failed);
 
-  // Kill the program and print an error message.
-  ErrorCode Kill(const char* msg);
-
   // Returns the fatal ErrorCode that is used to indicate that somebody
   // attempted to pass a 64bit value in a 32bit system call argument.
   // This method is primarily needed for testing purposes.
@@ -90,7 +74,6 @@ class SANDBOX_EXPORT PolicyCompiler {
  private:
   struct Range;
   typedef std::vector<Range> Ranges;
-  typedef std::map<uint32_t, ErrorCode> ErrMap;
   typedef std::set<ErrorCode, struct ErrorCode::LessThan> Conds;
 
   // Used by CondExpressionHalf to track which half of the argument it's
@@ -101,28 +84,28 @@ class SANDBOX_EXPORT PolicyCompiler {
   };
 
   // Compile the configured policy into a complete instruction sequence.
-  Instruction* AssemblePolicy();
+  CodeGen::Node AssemblePolicy();
 
   // Return an instruction sequence that checks the
   // arch_seccomp_data's "arch" field is valid, and then passes
   // control to |passed| if so.
-  Instruction* CheckArch(Instruction* passed);
+  CodeGen::Node CheckArch(CodeGen::Node passed);
 
   // If |has_unsafe_traps_| is true, returns an instruction sequence
-  // that allows all system calls from Syscall::Call(), and otherwise
+  // that allows all system calls from |escapepc_|, and otherwise
   // passes control to |rest|. Otherwise, simply returns |rest|.
-  Instruction* MaybeAddEscapeHatch(Instruction* rest);
+  CodeGen::Node MaybeAddEscapeHatch(CodeGen::Node rest);
 
   // Return an instruction sequence that loads and checks the system
   // call number, performs a binary search, and then dispatches to an
   // appropriate instruction sequence compiled from the current
   // policy.
-  Instruction* DispatchSyscall();
+  CodeGen::Node DispatchSyscall();
 
   // Return an instruction sequence that checks the system call number
   // (expected to be loaded in register A) and if valid, passes
   // control to |passed| (with register A still valid).
-  Instruction* CheckSyscallNumber(Instruction* passed);
+  CodeGen::Node CheckSyscallNumber(CodeGen::Node passed);
 
   // Finds all the ranges of system calls that need to be handled. Ranges are
   // sorted in ascending order of system call numbers. There are no gaps in the
@@ -132,34 +115,36 @@ class SANDBOX_EXPORT PolicyCompiler {
 
   // Returns a BPF program snippet that implements a jump table for the
   // given range of system call numbers. This function runs recursively.
-  Instruction* AssembleJumpTable(Ranges::const_iterator start,
-                                 Ranges::const_iterator stop);
+  CodeGen::Node AssembleJumpTable(Ranges::const_iterator start,
+                                  Ranges::const_iterator stop);
+
+  // CompileResult compiles an individual result expression into a
+  // CodeGen node.
+  CodeGen::Node CompileResult(const ResultExpr& res);
 
   // Returns a BPF program snippet that makes the BPF filter program exit
   // with the given ErrorCode "err". N.B. the ErrorCode may very well be a
   // conditional expression; if so, this function will recursively call
   // CondExpression() and possibly RetExpression() to build a complex set of
   // instructions.
-  Instruction* RetExpression(const ErrorCode& err);
+  CodeGen::Node RetExpression(const ErrorCode& err);
 
   // Returns a BPF program that evaluates the conditional expression in
   // "cond" and returns the appropriate value from the BPF filter program.
   // This function recursively calls RetExpression(); it should only ever be
   // called from RetExpression().
-  Instruction* CondExpression(const ErrorCode& cond);
+  CodeGen::Node CondExpression(const ErrorCode& cond);
 
   // Returns a BPF program that evaluates half of a conditional expression;
   // it should only ever be called from CondExpression().
-  Instruction* CondExpressionHalf(const ErrorCode& cond,
-                                  ArgHalf half,
-                                  Instruction* passed,
-                                  Instruction* failed);
-
-  // MakeTrap is the common implementation for Trap and UnsafeTrap.
-  ErrorCode MakeTrap(TrapRegistry::TrapFnc fnc, const void* aux, bool safe);
+  CodeGen::Node CondExpressionHalf(const ErrorCode& cond,
+                                   ArgHalf half,
+                                   CodeGen::Node passed,
+                                   CodeGen::Node failed);
 
   const Policy* policy_;
   TrapRegistry* registry_;
+  uint64_t escapepc_;
 
   Conds conds_;
   CodeGen gen_;

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -24,11 +25,8 @@ mcs_proto::HeartbeatConfig BuildHeartbeatConfig(int interval_ms) {
 
 class TestHeartbeatManager : public HeartbeatManager {
  public:
-  TestHeartbeatManager()
-      : HeartbeatManager(make_scoped_ptr(
-            new base::Timer(true, /* retain user task */
-                            false /* non repeating */))) {}
-  virtual ~TestHeartbeatManager() {}
+  TestHeartbeatManager() {}
+  ~TestHeartbeatManager() override {}
 
   // Bypass the heartbeat timer, and send the heartbeat now.
   void TriggerHearbeat();
@@ -48,7 +46,7 @@ void TestHeartbeatManager::TriggerMissedHeartbeatCheck() {
 class HeartbeatManagerTest : public testing::Test {
  public:
   HeartbeatManagerTest();
-  virtual ~HeartbeatManagerTest() {}
+  ~HeartbeatManagerTest() override {}
 
   TestHeartbeatManager* manager() const { return manager_.get(); }
   int heartbeats_sent() const { return heartbeats_sent_; }
@@ -60,7 +58,7 @@ class HeartbeatManagerTest : public testing::Test {
  private:
   // Helper functions for verifying heartbeat manager effects.
   void SendHeartbeatClosure();
-  void TriggerReconnectClosure();
+  void TriggerReconnectClosure(ConnectionFactory::ConnectionResetReason reason);
 
   scoped_ptr<TestHeartbeatManager> manager_;
 
@@ -87,7 +85,8 @@ void HeartbeatManagerTest::SendHeartbeatClosure() {
   heartbeats_sent_++;
 }
 
-void HeartbeatManagerTest::TriggerReconnectClosure() {
+void HeartbeatManagerTest::TriggerReconnectClosure(
+    ConnectionFactory::ConnectionResetReason reason) {
   reconnects_triggered_++;
 }
 
@@ -175,6 +174,26 @@ TEST_F(HeartbeatManagerTest, StartThenUpdateInterval) {
   EXPECT_NE(heartbeat, manager()->GetNextHeartbeatTime());
 }
 
+// Updating the timer used for heartbeats before starting should not start the
+// timer.
+TEST_F(HeartbeatManagerTest, UpdateTimerBeforeStart) {
+  manager()->UpdateHeartbeatTimer(
+      make_scoped_ptr(new base::Timer(true, false)));
+  EXPECT_TRUE(manager()->GetNextHeartbeatTime().is_null());
+}
+
+// Updating the timer used for heartbeats after starting should restart the
+// timer but not increase the heartbeat time by more than a millisecond.
+TEST_F(HeartbeatManagerTest, UpdateTimerAfterStart) {
+  StartManager();
+  base::TimeTicks heartbeat = manager()->GetNextHeartbeatTime();
+
+  manager()->UpdateHeartbeatTimer(
+      make_scoped_ptr(new base::Timer(true, false)));
+  EXPECT_LT(manager()->GetNextHeartbeatTime() - heartbeat,
+            base::TimeDelta::FromMilliseconds(5));
+}
+
 // Stopping the manager should reset the heartbeat timer.
 TEST_F(HeartbeatManagerTest, Stop) {
   StartManager();
@@ -196,6 +215,72 @@ TEST_F(HeartbeatManagerTest, MissedHeartbeat) {
   // Do nothing before the period is reached.
   manager()->TriggerMissedHeartbeatCheck();
   EXPECT_EQ(0, heartbeats_sent());
+}
+
+// Sets the client hearbeat interval and checks that it is picked up by the
+// manager.
+TEST_F(HeartbeatManagerTest, SetClientHeartbeatInterval) {
+  const int kIntervalMs = 180 * 1000;  // 180 seconds.
+  StartManager();
+  manager()->TriggerHearbeat();
+  manager()->OnHeartbeatAcked();
+
+  base::TimeTicks heartbeat = manager()->GetNextHeartbeatTime();
+  EXPECT_GT(heartbeat - base::TimeTicks::Now(),
+            base::TimeDelta::FromMilliseconds(kIntervalMs));
+
+  manager()->SetClientHeartbeatIntervalMs(kIntervalMs);
+  EXPECT_EQ(1, reconnects_triggered());
+
+  // Triggering and acking the heartbeat should result in a heartbeat being
+  // posted with the new interval.
+  manager()->TriggerHearbeat();
+  manager()->OnHeartbeatAcked();
+
+  EXPECT_LE(manager()->GetNextHeartbeatTime() - base::TimeTicks::Now(),
+            base::TimeDelta::FromMilliseconds(kIntervalMs));
+  EXPECT_GT(heartbeat, manager()->GetNextHeartbeatTime());
+
+  const int kLongerIntervalMs = 2 * kIntervalMs;
+  // Updating the interval should not affect an outstanding heartbeat.
+  manager()->SetClientHeartbeatIntervalMs(kLongerIntervalMs);
+  // No extra reconnects happen here, because the heartbeat is longer.
+  EXPECT_EQ(1, reconnects_triggered());
+
+  // Triggering and acking the heartbeat should result in a heartbeat being
+  // posted with the old, shorter interval.
+  manager()->TriggerHearbeat();
+  manager()->OnHeartbeatAcked();
+
+  EXPECT_LE(manager()->GetNextHeartbeatTime() - base::TimeTicks::Now(),
+            base::TimeDelta::FromMilliseconds(kIntervalMs));
+}
+
+// Verifies that setting the client interval too low or too high will set it to
+// a value within a reasonable scope.
+TEST_F(HeartbeatManagerTest, ClientIntervalInvalid) {
+  // Less than min value.
+  int interval_ms = manager()->GetMinClientHeartbeatIntervalMs() - 60 * 1000;
+  manager()->SetClientHeartbeatIntervalMs(interval_ms);
+  EXPECT_TRUE(manager()->GetNextHeartbeatTime().is_null());
+  StartManager();
+  base::TimeDelta till_heartbeat = manager()->GetNextHeartbeatTime() -
+      base::TimeTicks::Now();
+  EXPECT_GT(till_heartbeat, base::TimeDelta::FromMilliseconds(
+      manager()->GetMinClientHeartbeatIntervalMs()));
+  EXPECT_LE(till_heartbeat, base::TimeDelta::FromMilliseconds(
+      manager()->GetMaxClientHeartbeatIntervalMs()));
+
+  // More than max value.
+  interval_ms = manager()->GetMaxClientHeartbeatIntervalMs() + 60 * 1000;
+  // Triggering and acking the heartbeat should result in a heartbeat being
+  // posted with the new interval.
+  manager()->TriggerHearbeat();
+  manager()->OnHeartbeatAcked();
+
+  till_heartbeat = manager()->GetNextHeartbeatTime() - base::TimeTicks::Now();
+  EXPECT_LE(till_heartbeat, base::TimeDelta::FromMilliseconds(
+      manager()->GetMaxClientHeartbeatIntervalMs()));
 }
 
 }  // namespace

@@ -31,19 +31,17 @@
 #ifndef InspectorInstrumentationCustom_inl_h
 #define InspectorInstrumentationCustom_inl_h
 
+#include "bindings/core/v8/ScriptSourceCode.h"
+
 namespace blink {
 
 namespace InspectorInstrumentation {
 
 bool isDebuggerPausedImpl(InstrumentingAgents*);
 bool collectingHTMLParseErrorsImpl(InstrumentingAgents*);
-PassOwnPtr<ScriptSourceCode> preprocessImpl(InstrumentingAgents*, LocalFrame*, const ScriptSourceCode&);
-String preprocessEventListenerImpl(InstrumentingAgents*, LocalFrame*, const String& source, const String& url, const String& functionName);
 void appendAsyncCallStack(ExecutionContext*, ScriptCallStack*);
 
-bool canvasAgentEnabled(ExecutionContext*);
 bool consoleAgentEnabled(ExecutionContext*);
-bool timelineAgentEnabled(ExecutionContext*);
 
 inline bool isDebuggerPaused(LocalFrame* frame)
 {
@@ -53,32 +51,16 @@ inline bool isDebuggerPaused(LocalFrame* frame)
     return false;
 }
 
-inline bool collectingHTMLParseErrors(Page* page)
+inline bool collectingHTMLParseErrors(Document* document)
 {
     FAST_RETURN_IF_NO_FRONTENDS(false);
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(page))
+    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(document))
         return collectingHTMLParseErrorsImpl(instrumentingAgents);
     return false;
-}
-
-inline String preprocessEventListener(LocalFrame* frame, const String& source, const String& url, const String& functionName)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(source);
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(frame))
-        return preprocessEventListenerImpl(instrumentingAgents, frame, source, url, functionName);
-    return source;
-}
-
-inline PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame* frame, const ScriptSourceCode& sourceCode)
-{
-    FAST_RETURN_IF_NO_FRONTENDS(PassOwnPtr<ScriptSourceCode>());
-    if (InstrumentingAgents* instrumentingAgents = instrumentingAgentsFor(frame))
-        return preprocessImpl(instrumentingAgents, frame, sourceCode);
-    return PassOwnPtr<ScriptSourceCode>();
 }
 
 } // namespace InspectorInstrumentation
 
 } // namespace blink
 
-#endif // !defined(InspectorInstrumentationCustom_inl_h)
+#endif // InspectorInstrumentationCustom_inl_h

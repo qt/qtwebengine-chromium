@@ -2,15 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//mojo/public/tools/bindings/mojom.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
 # GYP version: device/serial/serial.gyp:device_serial
 static_library("serial") {
   output_name = "device_serial"
 
   sources = [
-    "async_waiter.cc",
-    "async_waiter.h",
     "buffer.cc",
     "buffer.h",
     "data_receiver.cc",
@@ -43,19 +41,24 @@ static_library("serial") {
     "serial_service_impl.h",
   ]
 
-  if (is_linux) {
-    configs += [ "//build/config/linux:udev" ]
-  }
-
-  deps = [
+  public_deps = [
     ":serial_mojo",
+    "//base",
   ]
+  deps = [
+    "//third_party/mojo/src/mojo/public/cpp/system",
+  ]
+
+  if (is_linux) {
+    deps += [ "//device/udev_linux" ]
+  }
+  if (is_chromeos) {
+    deps += [ "//chromeos" ]
+  }
 }
 
 # GYP version: device/serial/serial.gyp:device_serial_test_util
-static_library("test_util") {
-  output_name = "device_serial_test_util"
-
+static_library("test_support") {
   sources = [
     "test_serial_io_handler.cc",
     "test_serial_io_handler.h",

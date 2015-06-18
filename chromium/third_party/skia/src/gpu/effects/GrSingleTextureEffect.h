@@ -9,8 +9,9 @@
 #define GrSingleTextureEffect_DEFINED
 
 #include "GrFragmentProcessor.h"
-#include "SkMatrix.h"
 #include "GrCoordTransform.h"
+#include "GrInvariantOutput.h"
+#include "SkMatrix.h"
 
 class GrTexture;
 
@@ -38,11 +39,13 @@ protected:
      * the subclass output color will be a modulation of the input color with a value read from the
      * texture.
      */
-    void updateInvariantOutputForModulation(InvariantOutput* inout) const {
-        if (GrPixelConfigIsOpaque(this->texture(0)->config())) {
-            inout->mulByUnknownOpaqueColor();
+    void updateInvariantOutputForModulation(GrInvariantOutput* inout) const {
+        if (GrPixelConfigIsAlphaOnly(this->texture(0)->config())) {
+            inout->mulByUnknownSingleComponent();
+        } else if (GrPixelConfigIsOpaque(this->texture(0)->config())) {
+            inout->mulByUnknownOpaqueFourComponents();
         } else {
-            inout->mulByUnknownColor();
+            inout->mulByUnknownFourComponents();
         }
     }
 

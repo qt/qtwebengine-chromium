@@ -8,7 +8,8 @@
 #include "base/callback.h"
 #include "base/files/file.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/non_thread_safe.h"
 #include "device/serial/buffer.h"
 #include "device/serial/serial.mojom.h"
@@ -24,13 +25,14 @@ class SerialIoHandler : public base::NonThreadSafe,
  public:
   // Constructs an instance of some platform-specific subclass.
   static scoped_refptr<SerialIoHandler> Create(
-      scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-      scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop);
+      scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner);
 
   typedef base::Callback<void(bool success)> OpenCompleteCallback;
 
   // Initiates an asynchronous Open of the device.
   virtual void Open(const std::string& port,
+                    const serial::ConnectionOptions& options,
                     const OpenCompleteCallback& callback);
 
   // Signals that the access request for |port| is complete.
@@ -74,7 +76,7 @@ class SerialIoHandler : public base::NonThreadSafe,
 
   // Performs platform-specific port configuration. Returns |true| iff
   // configuration was successful.
-  virtual bool ConfigurePort(const serial::ConnectionOptions& options) = 0;
+  bool ConfigurePort(const serial::ConnectionOptions& options);
 
   // Performs a platform-specific port configuration query. Fills values in an
   // existing ConnectionInfo. Returns |true| iff port configuration was
@@ -83,8 +85,8 @@ class SerialIoHandler : public base::NonThreadSafe,
 
  protected:
   explicit SerialIoHandler(
-      scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-      scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop);
+      scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner);
   virtual ~SerialIoHandler();
 
   // Performs a platform-specific read operation. This must guarantee that
@@ -107,11 +109,14 @@ class SerialIoHandler : public base::NonThreadSafe,
   // Platform-specific write cancelation.
   virtual void CancelWriteImpl() = 0;
 
+  // Platform-specific port configuration applies options_ to the device.
+  virtual bool ConfigurePortImpl() = 0;
+
   // Requests access to the underlying serial device, if needed.
   virtual void RequestAccess(
       const std::string& port,
-      scoped_refptr<base::MessageLoopProxy> file_message_loop,
-      scoped_refptr<base::MessageLoopProxy> ui_message_loop);
+      scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
 
   // Performs platform-specific, one-time port configuration on open.
   virtual bool PostOpen();
@@ -164,15 +169,19 @@ class SerialIoHandler : public base::NonThreadSafe,
 
   bool write_canceled() const { return write_canceled_; }
 
+  const serial::ConnectionOptions& options() const { return options_; }
+
   // Possibly fixes up a serial port path name in a platform-specific manner.
   static std::string MaybeFixUpPortName(const std::string& port_name);
 
  private:
   friend class base::RefCounted<SerialIoHandler>;
 
+  void MergeConnectionOptions(const serial::ConnectionOptions& options);
+
   // Continues an Open operation on the FILE thread.
   void StartOpen(const std::string& port,
-                 scoped_refptr<base::MessageLoopProxy> io_message_loop);
+                 scoped_refptr<base::SingleThreadTaskRunner> io_task_runner);
 
   // Finalizes an Open operation (continued from StartOpen) on the IO thread.
   void FinishOpen(base::File file);
@@ -186,6 +195,9 @@ class SerialIoHandler : public base::NonThreadSafe,
   // thread.
   base::File file_;
 
+  // Currently applied connection options.
+  serial::ConnectionOptions options_;
+
   scoped_ptr<WritableBuffer> pending_read_buffer_;
   serial::ReceiveError read_cancel_reason_;
   bool read_canceled_;
@@ -197,9 +209,9 @@ class SerialIoHandler : public base::NonThreadSafe,
   // Callback to handle the completion of a pending Open() request.
   OpenCompleteCallback open_complete_;
 
-  scoped_refptr<base::MessageLoopProxy> file_thread_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner_;
   // On Chrome OS, PermissionBrokerClient should be called on the UI thread.
-  scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(SerialIoHandler);
 };

@@ -5,9 +5,11 @@
 /* This file holds CSS that should be shared, in theory, by all user-visible
  * chrome:// pages. */
 
-@import url("widgets.css");
+@import url(chrome://resources/css/text_defaults.css);
+@import url(i18n_process.css);
+@import url(widgets.css);
 <if expr="chromeos">
-  @import url("chromeos/ui_account_tweaks.css");
+@import url(chromeos/ui_account_tweaks.css);
 </if>
 
 /* Prevent CSS from overriding the hidden property. */
@@ -20,8 +22,8 @@ html {
 }
 
 html.loading * {
-  -webkit-transition-delay: 0 !important;
-  -webkit-transition-duration: 0 !important;
+  -webkit-transition-delay: 0ms !important;
+  -webkit-transition-duration: 0ms !important;
 }
 
 body {

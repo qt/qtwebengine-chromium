@@ -24,6 +24,7 @@
 #ifndef HTMLAnchorElement_h
 #define HTMLAnchorElement_h
 
+#include "core/CoreExport.h"
 #include "core/HTMLNames.h"
 #include "core/dom/DOMURLUtils.h"
 #include "core/dom/Document.h"
@@ -55,7 +56,7 @@ enum {
 //     RelationUp          = 0x00020000,
 };
 
-class HTMLAnchorElement : public HTMLElement, public DOMURLUtils {
+class CORE_EXPORT HTMLAnchorElement : public HTMLElement, public DOMURLUtils {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLAnchorElement> create(Document&);
@@ -94,7 +95,8 @@ protected:
 
 private:
     virtual bool shouldHaveFocusAppearance() const override final;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
     virtual bool isMouseFocusable() const override;
     virtual bool isKeyboardFocusable() const override;
     virtual void defaultEventHandler(Event*) override final;
@@ -123,7 +125,7 @@ inline LinkHash HTMLAnchorElement::visitedLinkHash() const
 
 // Functions shared with the other anchor elements (i.e., SVG).
 
-bool isEnterKeyKeypressEvent(Event*);
+bool isEnterKeyKeydownEvent(Event*);
 bool isLinkClick(Event*);
 
 } // namespace blink

@@ -57,6 +57,8 @@
 #include <openssl/bn.h>
 
 #include <limits.h>
+#include <string.h>
+
 #include <openssl/err.h>
 #include <openssl/mem.h>
 
@@ -86,7 +88,7 @@ void BN_free(BIGNUM *bn) {
     return;
   }
 
-  if (bn->d != NULL && (bn->flags & BN_FLG_STATIC_DATA) == 0) {
+  if ((bn->flags & BN_FLG_STATIC_DATA) == 0) {
     OPENSSL_free(bn->d);
   }
 
@@ -198,13 +200,15 @@ unsigned BN_num_bits_word(BN_ULONG l) {
     if (l & 0xffff000000000000L) {
       if (l & 0xff00000000000000L) {
         return (bits[(int)(l >> 56)] + 56);
-      } else
+      } else {
         return (bits[(int)(l >> 48)] + 48);
+      }
     } else {
       if (l & 0x0000ff0000000000L) {
         return (bits[(int)(l >> 40)] + 40);
-      } else
+      } else {
         return (bits[(int)(l >> 32)] + 32);
+      }
     }
   } else
 #endif
@@ -300,9 +304,7 @@ BIGNUM *bn_wexpand(BIGNUM *bn, unsigned words) {
 
   memcpy(a, bn->d, sizeof(BN_ULONG) * bn->top);
 
-  if (bn->d) {
-    OPENSSL_free(bn->d);
-  }
+  OPENSSL_free(bn->d);
   bn->d = a;
   bn->dmax = words;
 

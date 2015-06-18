@@ -31,15 +31,25 @@
 #ifndef HTMLContentElement_h
 #define HTMLContentElement_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/dom/shadow/InsertionPoint.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class HTMLContentElement final : public InsertionPoint {
+class HTMLContentSelectFilter : public NoBaseWillBeGarbageCollectedFinalized<HTMLContentSelectFilter> {
+public:
+    virtual ~HTMLContentSelectFilter() { }
+    virtual bool canSelectNode(const WillBeHeapVector<RawPtrWillBeMember<Node>, 32>& siblings, int nth) const = 0;
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
+};
+
+class CORE_EXPORT HTMLContentElement final : public InsertionPoint {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    DECLARE_NODE_FACTORY(HTMLContentElement);
+    static PassRefPtrWillBeRawPtr<HTMLContentElement> create(Document&, PassOwnPtrWillBeRawPtr<HTMLContentSelectFilter> = nullptr);
     virtual ~HTMLContentElement();
 
     virtual bool canAffectSelector() const override { return true; }
@@ -49,20 +59,23 @@ public:
     const CSSSelectorList& selectorList() const;
     bool isSelectValid() const;
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
-    explicit HTMLContentElement(Document&);
+    HTMLContentElement(Document&, PassOwnPtrWillBeRawPtr<HTMLContentSelectFilter>);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     bool validateSelect() const;
     void parseSelect();
 
-    bool matchSelector(const WillBeHeapVector<RawPtrWillBeMember<Node>, 32>& siblings, int nth) const;
+    bool matchSelector(Element&) const;
 
     bool m_shouldParseSelect;
     bool m_isValidSelector;
     AtomicString m_select;
     CSSSelectorList m_selectorList;
+    OwnPtrWillBeMember<HTMLContentSelectFilter> m_filter;
 };
 
 inline const CSSSelectorList& HTMLContentElement::selectorList() const
@@ -81,13 +94,15 @@ inline bool HTMLContentElement::isSelectValid() const
 
 inline bool HTMLContentElement::canSelectNode(const WillBeHeapVector<RawPtrWillBeMember<Node>, 32>& siblings, int nth) const
 {
+    if (m_filter)
+        return m_filter->canSelectNode(siblings, nth);
     if (m_select.isNull() || m_select.isEmpty())
         return true;
     if (!isSelectValid())
         return false;
     if (!siblings[nth]->isElementNode())
         return false;
-    return matchSelector(siblings, nth);
+    return matchSelector(*toElement(siblings[nth]));
 }
 
 } // namespace blink

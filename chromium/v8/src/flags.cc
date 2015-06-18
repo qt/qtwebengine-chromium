@@ -9,6 +9,7 @@
 #include "src/v8.h"
 
 #include "src/assembler.h"
+#include "src/base/functional.h"
 #include "src/base/platform/platform.h"
 #include "src/ostreams.h"
 
@@ -393,7 +394,7 @@ int FlagList::SetFlagsFromCommandLine(int* argc,
           *flag->maybe_bool_variable() = MaybeBoolFlag::Create(true, !is_bool);
           break;
         case Flag::TYPE_INT:
-          *flag->int_variable() = strtol(value, &endp, 10);  // NOLINT
+          *flag->int_variable() = static_cast<int>(strtol(value, &endp, 10));
           break;
         case Flag::TYPE_FLOAT:
           *flag->float_variable() = strtod(value, &endp);
@@ -542,11 +543,35 @@ void FlagList::PrintHelp() {
 }
 
 
+static uint32_t flag_hash = 0;
+
+
+void ComputeFlagListHash() {
+  std::ostringstream modified_args_as_string;
+#ifdef DEBUG
+  modified_args_as_string << "debug";
+#endif  // DEBUG
+  for (size_t i = 0; i < num_flags; ++i) {
+    Flag* current = &flags[i];
+    if (!current->IsDefault()) {
+      modified_args_as_string << i;
+      modified_args_as_string << *current;
+    }
+  }
+  std::string args(modified_args_as_string.str());
+  flag_hash = static_cast<uint32_t>(
+      base::hash_range(args.c_str(), args.c_str() + args.length()));
+}
+
+
 // static
 void FlagList::EnforceFlagImplications() {
 #define FLAG_MODE_DEFINE_IMPLICATIONS
 #include "src/flag-definitions.h"
 #undef FLAG_MODE_DEFINE_IMPLICATIONS
+  ComputeFlagListHash();
 }
 
+
+uint32_t FlagList::Hash() { return flag_hash; }
 } }  // namespace v8::internal

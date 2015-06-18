@@ -20,11 +20,11 @@ MutableStylePropertySet* SVGElementRareData::ensureAnimatedSMILStyleProperties()
     return m_animatedSMILStyleProperties.get();
 }
 
-RenderStyle* SVGElementRareData::overrideComputedStyle(Element* element, RenderStyle* parentStyle)
+ComputedStyle* SVGElementRareData::overrideComputedStyle(Element* element, const ComputedStyle* parentStyle)
 {
     ASSERT(element);
     if (!m_useOverrideComputedStyle)
-        return 0;
+        return nullptr;
     if (!m_overrideComputedStyle || m_needsOverrideComputedStyleUpdate) {
         // The style computed here contains no CSS Animations/Transitions or SMIL induced rules - this is needed to compute the "base value" for the SMIL animation sandwhich model.
         m_overrideComputedStyle = element->document().ensureStyleResolver().styleForElement(element, parentStyle, DisallowStyleSharing, MatchAllRulesExcludingSMIL);
@@ -34,7 +34,7 @@ RenderStyle* SVGElementRareData::overrideComputedStyle(Element* element, RenderS
     return m_overrideComputedStyle.get();
 }
 
-void SVGElementRareData::trace(Visitor* visitor)
+DEFINE_TRACE(SVGElementRareData)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_outgoingReferences);
@@ -43,7 +43,7 @@ void SVGElementRareData::trace(Visitor* visitor)
     visitor->trace(m_elementInstances);
     visitor->trace(m_correspondingElement);
     visitor->trace(m_owner);
-    visitor->registerWeakMembers<SVGElementRareData, &SVGElementRareData::processWeakMembers>(this);
+    visitor->template registerWeakMembers<SVGElementRareData, &SVGElementRareData::processWeakMembers>(this);
 #endif
 }
 
@@ -51,10 +51,10 @@ void SVGElementRareData::processWeakMembers(Visitor* visitor)
 {
 #if ENABLE(OILPAN)
         ASSERT(m_owner);
-        if (!visitor->isAlive(m_cursorElement))
+        if (!visitor->isHeapObjectAlive(m_cursorElement))
             m_cursorElement = nullptr;
 
-        if (!visitor->isAlive(m_cursorImageValue)) {
+        if (!visitor->isHeapObjectAlive(m_cursorImageValue)) {
             // The owning SVGElement is still alive and if it is pointing to an SVGCursorElement
             // we unregister it when the CSSCursorImageValue dies.
             if (m_cursorElement) {
@@ -63,8 +63,8 @@ void SVGElementRareData::processWeakMembers(Visitor* visitor)
             }
             m_cursorImageValue = nullptr;
         }
-        ASSERT(!m_cursorElement || visitor->isAlive(m_cursorElement));
-        ASSERT(!m_cursorImageValue || visitor->isAlive(m_cursorImageValue));
+        ASSERT(!m_cursorElement || visitor->isHeapObjectAlive(m_cursorElement));
+        ASSERT(!m_cursorImageValue || visitor->isHeapObjectAlive(m_cursorImageValue));
 #endif
 }
 

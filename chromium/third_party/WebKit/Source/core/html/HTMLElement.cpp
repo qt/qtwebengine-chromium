@@ -39,6 +39,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ComposedTreeTraversal.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/markup.h"
@@ -53,7 +54,8 @@
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/page/SpatialNavigation.h"
 #include "platform/Language.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/BidiTextRun.h"
@@ -126,8 +128,10 @@ static inline CSSValueID unicodeBidiAttributeForDirAuto(HTMLElement* element)
 unsigned HTMLElement::parseBorderWidthAttribute(const AtomicString& value) const
 {
     unsigned borderWidth = 0;
-    if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, borderWidth))
-        return hasTagName(tableTag) ? 1 : borderWidth;
+    if (value.isEmpty() || !parseHTMLNonNegativeInteger(value, borderWidth)) {
+        if (hasTagName(tableTag) && !value.isNull())
+            return 1;
+    }
     return borderWidth;
 }
 
@@ -141,7 +145,7 @@ void HTMLElement::mapLanguageAttributeToLocale(const AtomicString& value, Mutabl
 {
     if (!value.isEmpty()) {
         // Have to quote so the locale id is treated as a string instead of as a CSS keyword.
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, quoteCSSString(value));
+        addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitLocale, serializeString(value));
 
         // FIXME: Remove the following UseCounter code when we collect enough
         // data.
@@ -233,7 +237,7 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
     if (!attrName.namespaceURI().isNull())
         return nullAtom;
 
-    if (!attrName.localName().startsWith("on", false))
+    if (!attrName.localName().startsWith("on", TextCaseInsensitive))
         return nullAtom;
 
     typedef HashMap<AtomicString, AtomicString> StringToStringMap;
@@ -340,7 +344,7 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
 
 void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (name == tabindexAttr)
+    if (name == tabindexAttr || name == tabstopAttr)
         return Element::parseAttribute(name, value);
 
     if (name == dirAttr) {
@@ -421,10 +425,10 @@ void HTMLElement::setInnerText(const String& text, ExceptionState& exceptionStat
         return;
     }
 
-    // FIXME: Do we need to be able to detect preserveNewline style even when there's no renderer?
-    // FIXME: Can the renderer be out of date here? Do we need to call updateStyleIfNeeded?
+    // FIXME: Do we need to be able to detect preserveNewline style even when there's no layoutObject?
+    // FIXME: Can the layoutObject be out of date here? Do we need to call updateStyleIfNeeded?
     // For example, for the contents of textarea elements that are display:none?
-    RenderObject* r = renderer();
+    LayoutObject* r = layoutObject();
     if (r && r->style()->preserveNewline()) {
         if (!text.contains('\r')) {
             replaceChildrenWithText(this, text, exceptionState);
@@ -672,26 +676,6 @@ static inline bool elementAffectsDirectionality(const Node* node)
     return node->isHTMLElement() && (isHTMLBDIElement(toHTMLElement(*node)) || toHTMLElement(*node).hasAttribute(dirAttr));
 }
 
-static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastNode = 0)
-{
-    firstNode->setSelfOrAncestorHasDirAutoAttribute(flag);
-
-    Node* node = firstNode->firstChild();
-
-    while (node) {
-        if (elementAffectsDirectionality(node)) {
-            if (node == lastNode)
-                return;
-            node = NodeTraversal::nextSkippingChildren(*node, firstNode);
-            continue;
-        }
-        node->setSelfOrAncestorHasDirAutoAttribute(flag);
-        if (node == lastNode)
-            return;
-        node = NodeTraversal::next(*node, firstNode);
-    }
-}
-
 void HTMLElement::childrenChanged(const ChildrenChange& change)
 {
     Element::childrenChanged(change);
@@ -700,18 +684,17 @@ void HTMLElement::childrenChanged(const ChildrenChange& change)
 
 bool HTMLElement::hasDirectionAuto() const
 {
+    // <bdi> defaults to dir="auto"
+    // https://html.spec.whatwg.org/multipage/semantics.html#the-bdi-element
     const AtomicString& direction = fastGetAttribute(dirAttr);
     return (isHTMLBDIElement(*this) && direction == nullAtom) || equalIgnoringCase(direction, "auto");
 }
 
 TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) const
 {
-    if (!(selfOrAncestorHasDirAutoAttribute() && hasDirectionAuto())) {
-        isAuto = false;
+    isAuto = hasDirectionAuto();
+    if (!isAuto)
         return LTR;
-    }
-
-    isAuto = true;
     return directionality();
 }
 
@@ -720,18 +703,18 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
     if (isHTMLInputElement(*this)) {
         HTMLInputElement* inputElement = toHTMLInputElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
-        TextDirection textDirection = determineDirectionality(inputElement->value(), hasStrongDirectionality);
+        TextDirection textDirection = determineDirectionality(inputElement->value(), &hasStrongDirectionality);
         if (strongDirectionalityTextNode)
             *strongDirectionalityTextNode = hasStrongDirectionality ? inputElement : 0;
         return textDirection;
     }
 
-    Node* node = firstChild();
+    Node* node = ComposedTreeTraversal::firstChild(*this);
     while (node) {
         // Skip bdi, script, style and text form controls.
         if (equalIgnoringCase(node->nodeName(), "bdi") || isHTMLScriptElement(*node) || isHTMLStyleElement(*node)
             || (node->isElementNode() && toElement(node)->isTextFormControl())) {
-            node = NodeTraversal::nextSkippingChildren(*node, this);
+            node = ComposedTreeTraversal::nextSkippingChildren(*node, this);
             continue;
         }
 
@@ -739,32 +722,39 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
         if (node->isElementNode()) {
             AtomicString dirAttributeValue = toElement(node)->fastGetAttribute(dirAttr);
             if (isValidDirAttribute(dirAttributeValue)) {
-                node = NodeTraversal::nextSkippingChildren(*node, this);
+                node = ComposedTreeTraversal::nextSkippingChildren(*node, this);
                 continue;
             }
         }
 
         if (node->isTextNode()) {
             bool hasStrongDirectionality;
-            TextDirection textDirection = determineDirectionality(node->textContent(true), hasStrongDirectionality);
+            TextDirection textDirection = determineDirectionality(node->textContent(true), &hasStrongDirectionality);
             if (hasStrongDirectionality) {
                 if (strongDirectionalityTextNode)
                     *strongDirectionalityTextNode = node;
                 return textDirection;
             }
         }
-        node = NodeTraversal::next(*node, this);
+        node = ComposedTreeTraversal::next(*node, this);
     }
     if (strongDirectionalityTextNode)
         *strongDirectionalityTextNode = 0;
     return LTR;
 }
 
+bool HTMLElement::selfOrAncestorHasDirAutoAttribute() const
+{
+    return layoutObject() && layoutObject()->style() && layoutObject()->style()->selfOrAncestorHasDirAutoAttribute();
+}
+
 void HTMLElement::dirAttributeChanged(const AtomicString& value)
 {
-    Element* parent = parentElement();
-
-    if (parent && parent->isHTMLElement() && parent->selfOrAncestorHasDirAutoAttribute())
+    // If an ancestor has dir=auto, and this node has the first character,
+    // changes to dir attribute may affect the ancestor.
+    updateDistribution();
+    Element* parent = ComposedTreeTraversal::parentElement(*this);
+    if (parent && parent->isHTMLElement() && toHTMLElement(parent)->selfOrAncestorHasDirAutoAttribute())
         toHTMLElement(parent)->adjustDirectionalityIfNeededAfterChildAttributeChanged(this);
 
     if (equalIgnoringCase(value, "auto"))
@@ -774,12 +764,10 @@ void HTMLElement::dirAttributeChanged(const AtomicString& value)
 void HTMLElement::adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child)
 {
     ASSERT(selfOrAncestorHasDirAutoAttribute());
-    Node* strongDirectionalityTextNode;
-    TextDirection textDirection = directionality(&strongDirectionalityTextNode);
-    setHasDirAutoFlagRecursively(child, false);
-    if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection) {
+    TextDirection textDirection = directionality();
+    if (layoutObject() && layoutObject()->style() && layoutObject()->style()->direction() != textDirection) {
         Element* elementToAdjust = this;
-        for (; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
+        for (; elementToAdjust; elementToAdjust = ComposedTreeTraversal::parentElement(*elementToAdjust)) {
             if (elementAffectsDirectionality(elementToAdjust)) {
                 elementToAdjust->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::WritingModeChange));
                 return;
@@ -790,12 +778,8 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildAttributeChanged(Element
 
 void HTMLElement::calculateAndAdjustDirectionality()
 {
-    Node* strongDirectionalityTextNode;
-    TextDirection textDirection = directionality(&strongDirectionalityTextNode);
-    setHasDirAutoFlagRecursively(this, hasDirectionAuto(), strongDirectionalityTextNode);
-    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
-        setHasDirAutoFlagRecursively(root, hasDirectionAuto());
-    if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection)
+    TextDirection textDirection = directionality();
+    if (layoutObject() && layoutObject()->style() && layoutObject()->style()->direction() != textDirection)
         setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::WritingModeChange));
 }
 
@@ -804,13 +788,9 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(const Childre
     if (!selfOrAncestorHasDirAutoAttribute())
         return;
 
-    Node* oldMarkedNode = change.siblingBeforeChange ? NodeTraversal::nextSkippingChildren(*change.siblingBeforeChange) : 0;
-    while (oldMarkedNode && elementAffectsDirectionality(oldMarkedNode))
-        oldMarkedNode = NodeTraversal::nextSkippingChildren(*oldMarkedNode, this);
-    if (oldMarkedNode)
-        setHasDirAutoFlagRecursively(oldMarkedNode, false);
+    updateDistribution();
 
-    for (Element* elementToAdjust = this; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
+    for (Element* elementToAdjust = this; elementToAdjust; elementToAdjust = ComposedTreeTraversal::parentElement(*elementToAdjust)) {
         if (elementAffectsDirectionality(elementToAdjust)) {
             toHTMLElement(elementToAdjust)->calculateAndAdjustDirectionality();
             return;
@@ -934,6 +914,13 @@ bool HTMLElement::isInteractiveContent() const
     return false;
 }
 
+HTMLMenuElement* HTMLElement::assignedContextMenu() const
+{
+    if (HTMLMenuElement* menu = contextMenu())
+        return menu;
+
+    return parentElement() && parentElement()->isHTMLElement() ? toHTMLElement(parentElement())->assignedContextMenu() : nullptr;
+}
 
 HTMLMenuElement* HTMLElement::contextMenu() const
 {
@@ -1001,7 +988,7 @@ bool HTMLElement::matchesReadWritePseudoClass() const
 
 void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
 {
-    if (!document().settings() || !document().settings()->spatialNavigationEnabled() || !supportsFocus())
+    if (!isSpatialNavigationEnabled(document().frame()) || !supportsFocus())
         return;
     // if the element is a text form control (like <input type=text> or <textarea>)
     // or has contentEditable attribute on, we should enter a space or newline

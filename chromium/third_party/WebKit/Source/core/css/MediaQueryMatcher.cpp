@@ -44,7 +44,9 @@ MediaQueryMatcher::MediaQueryMatcher(Document& document)
     ASSERT(m_document);
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaQueryMatcher)
+MediaQueryMatcher::~MediaQueryMatcher()
+{
+}
 
 void MediaQueryMatcher::documentDetached()
 {
@@ -83,8 +85,6 @@ PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryMatcher::matchMedia(const Strin
         return nullptr;
 
     RefPtrWillBeRawPtr<MediaQuerySet> media = MediaQuerySet::create(query);
-    // Add warning message to inspector whenever dpi/dpcm values are used for "screen" media.
-    reportMediaQueryWarningIfNeeded(m_document, media.get());
     return MediaQueryList::create(m_document, this, media);
 }
 
@@ -121,7 +121,7 @@ void MediaQueryMatcher::mediaFeaturesChanged()
     if (!m_document)
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> > listenersToNotify;
+    WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener>> listenersToNotify;
     for (const auto& list : m_mediaLists) {
         if (list->mediaFeaturesChanged(&listenersToNotify)) {
             RefPtrWillBeRawPtr<Event> event(MediaQueryListEvent::create(list));
@@ -137,14 +137,14 @@ void MediaQueryMatcher::viewportChanged()
     if (!m_document)
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> > listenersToNotify;
+    WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener>> listenersToNotify;
     for (const auto& listener : m_viewportListeners)
         listenersToNotify.append(listener);
 
     m_document->enqueueMediaQueryChangeListeners(listenersToNotify);
 }
 
-void MediaQueryMatcher::trace(Visitor* visitor)
+DEFINE_TRACE(MediaQueryMatcher)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);

@@ -28,8 +28,8 @@
 
 #include "core/dom/Text.h"
 #include "core/editing/htmlediting.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/CharacterNames.h"
 
@@ -38,11 +38,11 @@ namespace blink {
 String convertHTMLTextToInterchangeFormat(const String& in, const Text& node)
 {
     // Assume all the text comes from node.
-    if (node.renderer() && node.renderer()->style()->preserveNewline())
+    if (node.layoutObject() && node.layoutObject()->style()->preserveNewline())
         return in;
 
     const char convertedSpaceString[] = "<span class=\"" AppleConvertedSpace "\">\xA0</span>";
-    COMPILE_ASSERT((static_cast<unsigned char>('\xA0') == noBreakSpace), ConvertedSpaceStringSpaceIsNoBreakSpace);
+    static_assert((static_cast<unsigned char>('\xA0') == noBreakSpaceCharacter), "\\xA0 should be non-breaking space");
 
     StringBuilder s;
 

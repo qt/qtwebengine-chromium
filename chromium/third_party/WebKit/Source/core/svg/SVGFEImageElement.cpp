@@ -55,6 +55,13 @@ SVGFEImageElement::~SVGFEImageElement()
 #endif
 }
 
+DEFINE_TRACE(SVGFEImageElement)
+{
+    visitor->trace(m_preserveAspectRatio);
+    SVGFilterPrimitiveStandardAttributes::trace(visitor);
+    SVGURIReference::trace(visitor);
+}
+
 bool SVGFEImageElement::currentFrameHasSingleSecurityOrigin() const
 {
     if (m_cachedImage && m_cachedImage->image())
@@ -106,41 +113,21 @@ void SVGFEImageElement::buildPendingResource()
     invalidate();
 }
 
-bool SVGFEImageElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::preserveAspectRatioAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGFEImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (attrName == SVGNames::preserveAspectRatioAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         invalidate();
         return;
     }
 
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         buildPendingResource();
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
 }
 
 Node::InsertionNotificationRequest SVGFEImageElement::insertedInto(ContainerNode* rootParent)
@@ -163,19 +150,17 @@ void SVGFEImageElement::notifyFinished(Resource*)
         return;
 
     Element* parent = parentElement();
-    ASSERT(parent);
-
-    if (!isSVGFilterElement(*parent) || !parent->renderer())
+    if (!parent || !isSVGFilterElement(parent) || !parent->layoutObject())
         return;
 
-    if (RenderObject* renderer = this->renderer())
-        markForLayoutAndParentResourceInvalidation(renderer);
+    if (LayoutObject* layoutObject = this->layoutObject())
+        markForLayoutAndParentResourceInvalidation(layoutObject);
 }
 
-PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
+PassRefPtrWillBeRawPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)
 {
     if (m_cachedImage)
-        return FEImage::createWithImage(filter, m_cachedImage->imageForRenderer(renderer()), m_preserveAspectRatio->currentValue());
+        return FEImage::createWithImage(filter, m_cachedImage->imageForLayoutObject(layoutObject()), m_preserveAspectRatio->currentValue());
     return FEImage::createWithIRIReference(filter, treeScope(), hrefString(), m_preserveAspectRatio->currentValue());
 }
 

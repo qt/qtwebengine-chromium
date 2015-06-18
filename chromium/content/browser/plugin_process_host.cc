@@ -24,8 +24,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "content/browser/browser_child_process_host_impl.h"
-#include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/plugin_process_messages.h"
@@ -47,7 +47,7 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #endif
 
 #if defined(OS_WIN)
@@ -106,7 +106,7 @@ class PluginSandboxedProcessLauncherDelegate
   ~PluginSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  virtual bool ShouldSandbox() override {
+  bool ShouldSandbox() override {
     return false;
   }
 
@@ -146,7 +146,7 @@ PluginProcessHost::~PluginProcessHost() {
     PostMessage(*window_index, WM_CLOSE, 0, 0);
   }
 #elif defined(OS_MACOSX)
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // If the plugin process crashed but had fullscreen windows open at the time,
   // make sure that the menu bar is visible.
   for (size_t i = 0; i < plugin_fullscreen_windows_set_.size(); ++i) {
@@ -189,8 +189,8 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
       browser_command_line.GetSwitchValueNative(switches::kPluginLauncher);
 
 #if defined(OS_MACOSX)
-  // Run the plug-in process in a mode tolerant of heap execution without
-  // explicit mprotect calls. Some plug-ins still rely on this quaint and
+  // Run the plugin process in a mode tolerant of heap execution without
+  // explicit mprotect calls. Some plugins still rely on this quaint and
   // archaic "feature." See http://crbug.com/93551.
   int flags = ChildProcessHost::CHILD_ALLOW_HEAP_EXECUTION;
 #elif defined(OS_LINUX)
@@ -248,31 +248,32 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 
   cmd_line->AppendSwitchASCII(switches::kProcessChannelID, channel_id);
 
-  process_->Launch(
-      new PluginSandboxedProcessLauncherDelegate(process_->GetHost()),
-      cmd_line);
-
   // The plugin needs to be shutdown gracefully, i.e. NP_Shutdown needs to be
   // called on the plugin. The plugin process exits when it receives the
   // OnChannelError notification indicating that the browser plugin channel has
   // been destroyed.
-  process_->SetTerminateChildOnShutdown(false);
+  bool terminate_on_shutdown = false;
+  process_->Launch(
+      new PluginSandboxedProcessLauncherDelegate(process_->GetHost()),
+      cmd_line,
+      terminate_on_shutdown);
 
   ResourceMessageFilter::GetContextsCallback get_contexts_callback(
       base::Bind(&PluginProcessHost::GetContexts,
       base::Unretained(this)));
 
-  // TODO(jam): right now we're passing NULL for appcache, blob storage, and
-  // file system. If NPAPI plugins actually use this, we'll have to plumb them.
+  // TODO(jam): right now we're passing NULL for appcache, blob storage, file
+  // system and host zoom level context. If NPAPI plugins actually use this,
+  // we'll have to plumb them.
   ResourceMessageFilter* resource_message_filter = new ResourceMessageFilter(
-      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL, NULL,
+      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL, NULL, NULL,
       get_contexts_callback);
   process_->AddFilter(resource_message_filter);
   return true;
 }
 
 void PluginProcessHost::ForceShutdown() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   Send(new PluginProcessMsg_NotifyRenderersOfPendingShutdown());
   process_->ForceShutdown();
 }

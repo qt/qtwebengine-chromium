@@ -28,6 +28,7 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/modules/v8/UnionTypesModules.h"
 #include "modules/indexeddb/IDBCursor.h"
 #include "modules/indexeddb/IDBIndex.h"
 #include "modules/indexeddb/IDBIndexParameters.h"
@@ -36,9 +37,9 @@
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IDBTransaction.h"
-#include "public/platform/WebIDBCursor.h"
-#include "public/platform/WebIDBDatabase.h"
-#include "public/platform/WebIDBTypes.h"
+#include "public/platform/modules/indexeddb/WebIDBCursor.h"
+#include "public/platform/modules/indexeddb/WebIDBDatabase.h"
+#include "public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
@@ -57,7 +58,7 @@ public:
         return new IDBObjectStore(metadata, transaction);
     }
     ~IDBObjectStore() { }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // Implement the IDBObjectStore IDL
     int64_t id() const { return m_metadata.id; }
@@ -70,16 +71,13 @@ public:
     IDBRequest* openCursor(ScriptState*, const ScriptValue& range, const String& direction, ExceptionState&);
     IDBRequest* openKeyCursor(ScriptState*, const ScriptValue& range, const String& direction, ExceptionState&);
     IDBRequest* get(ScriptState*, const ScriptValue& key, ExceptionState&);
+    IDBRequest* getAll(ScriptState*, const ScriptValue& range, unsigned long maxCount, ExceptionState&);
     IDBRequest* add(ScriptState*, const ScriptValue&, const ScriptValue& key, ExceptionState&);
     IDBRequest* put(ScriptState*, const ScriptValue&, const ScriptValue& key, ExceptionState&);
     IDBRequest* deleteFunction(ScriptState*, const ScriptValue& key, ExceptionState&);
     IDBRequest* clear(ScriptState*, ExceptionState&);
 
-    IDBIndex* createIndex(ScriptState* scriptState, const String& name, const String& keyPath, const IDBIndexParameters& options, ExceptionState& exceptionState)
-    {
-        return createIndex(scriptState, name, IDBKeyPath(keyPath), options, exceptionState);
-    }
-    IDBIndex* createIndex(ScriptState* scriptState, const String& name, const Vector<String>& keyPath, const IDBIndexParameters& options, ExceptionState& exceptionState)
+    IDBIndex* createIndex(ScriptState* scriptState, const String& name, const StringOrStringSequence& keyPath, const IDBIndexParameters& options, ExceptionState& exceptionState)
     {
         return createIndex(scriptState, name, IDBKeyPath(keyPath), options, exceptionState);
     }
@@ -101,7 +99,7 @@ public:
     const IDBObjectStoreMetadata& metadata() const { return m_metadata; }
     void setMetadata(const IDBObjectStoreMetadata& metadata) { m_metadata = metadata; }
 
-    typedef HeapVector<Member<IDBKey> > IndexKeys;
+    typedef HeapVector<Member<IDBKey>> IndexKeys;
 
     WebIDBDatabase* backendDB() const;
 
@@ -121,7 +119,7 @@ private:
     Member<IDBTransaction> m_transaction;
     bool m_deleted;
 
-    typedef HeapHashMap<String, Member<IDBIndex> > IDBIndexMap;
+    typedef HeapHashMap<String, Member<IDBIndex>> IDBIndexMap;
     IDBIndexMap m_indexMap;
 };
 

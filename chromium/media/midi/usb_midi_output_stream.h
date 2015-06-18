@@ -8,15 +8,16 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "media/base/media_export.h"
+#include "media/midi/usb_midi_export.h"
 #include "media/midi/usb_midi_jack.h"
 
 namespace media {
+namespace midi {
 
 // UsbMidiOutputStream converts MIDI data to USB-MIDI data.
 // See "USB Device Class Definition for MIDI Devices" Release 1.0,
 // Section 4 "USB-MIDI Event Packets" for details.
-class MEDIA_EXPORT UsbMidiOutputStream {
+class USB_MIDI_EXPORT UsbMidiOutputStream {
  public:
   explicit UsbMidiOutputStream(const UsbMidiJack& jack);
 
@@ -52,6 +53,7 @@ class MEDIA_EXPORT UsbMidiOutputStream {
   DISALLOW_COPY_AND_ASSIGN(UsbMidiOutputStream);
 };
 
+}  // namespace midi
 }  // namespace media
 
 #endif  // MEDIA_MIDI_USB_MIDI_OUTPUT_STREAM_H_

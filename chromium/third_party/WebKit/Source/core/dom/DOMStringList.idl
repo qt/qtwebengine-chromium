@@ -23,10 +23,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// https://dom.spec.whatwg.org/#domstringlist
+
+// FIXME: DOMStringList has been removed from the spec. crbug.com/460726
 [
     WillBeGarbageCollected,
 ] interface DOMStringList {
     readonly attribute unsigned long length;
-    [TreatReturnedNullStringAs=Null] getter DOMString item([Default=Undefined] optional unsigned long index);
-    [MeasureAs=DOMStringListContains] boolean contains([Default=Undefined] optional DOMString string);
+    getter DOMString? item(unsigned long index);
+    [MeasureAs=DOMStringListContains] boolean contains(DOMString string);
 };

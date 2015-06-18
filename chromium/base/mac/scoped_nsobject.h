@@ -5,9 +5,15 @@
 #ifndef BASE_MAC_SCOPED_NSOBJECT_H_
 #define BASE_MAC_SCOPED_NSOBJECT_H_
 
-#import <Foundation/Foundation.h>
+// Include NSObject.h directly because Foundation.h pulls in many dependencies.
+// (Approx 100k lines of code versus 1.5k for NSObject.h). scoped_nsobject gets
+// singled out because it is most typically included from other header files.
+#import <Foundation/NSObject.h>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+
+@class NSAutoreleasePool;
 
 namespace base {
 
@@ -38,6 +44,11 @@ class scoped_nsprotocol {
 
   scoped_nsprotocol(const scoped_nsprotocol<NST>& that)
       : object_([that.object_ retain]) {
+  }
+
+  template <typename NSU>
+  scoped_nsprotocol(const scoped_nsprotocol<NSU>& that)
+      : object_([that.get() retain]) {
   }
 
   ~scoped_nsprotocol() {
@@ -119,6 +130,11 @@ class scoped_nsobject : public scoped_nsprotocol<NST*> {
       : scoped_nsprotocol<NST*>(that) {
   }
 
+  template<typename NSU>
+  scoped_nsobject(const scoped_nsobject<NSU>& that)
+      : scoped_nsprotocol<NST*>(that) {
+  }
+
   scoped_nsobject& operator=(const scoped_nsobject<NST>& that) {
     scoped_nsprotocol<NST*>::operator=(that);
     return *this;
@@ -132,6 +148,11 @@ class scoped_nsobject<id> : public scoped_nsprotocol<id> {
   explicit scoped_nsobject(id object = nil) : scoped_nsprotocol<id>(object) {}
 
   scoped_nsobject(const scoped_nsobject<id>& that)
+      : scoped_nsprotocol<id>(that) {
+  }
+
+  template<typename NSU>
+  scoped_nsobject(const scoped_nsobject<NSU>& that)
       : scoped_nsprotocol<id>(that) {
   }
 

@@ -14,6 +14,7 @@
 #include "base/message_loop/message_loop.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/layer_animation_event_observer.h"
+#include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/layer_client.h"
@@ -27,7 +28,8 @@
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_delegate.h"
 #include "ui/compositor/layer_type.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/transform.h"
 
 class SkCanvas;
@@ -149,7 +151,7 @@ class COMPOSITOR_EXPORT Layer
 
   // The offset from our parent (stored in bounds.origin()) is an integer but we
   // may need to be at a fractional pixel offset to align properly on screen.
-  void SetSubpixelPositionOffset(const gfx::Vector2dF offset);
+  void SetSubpixelPositionOffset(const gfx::Vector2dF& offset);
   const gfx::Vector2dF& subpixel_position_offset() const {
     return subpixel_position_offset_;
   }
@@ -274,6 +276,8 @@ class COMPOSITOR_EXPORT Layer
                          scoped_ptr<cc::SingleReleaseCallback> release_callback,
                          gfx::Size texture_size_in_dip);
   void SetTextureSize(gfx::Size texture_size_in_dip);
+  void SetTextureFlipped(bool flipped);
+  bool TextureFlipped() const;
 
   // Begins showing delegated frames from the |frame_provider|.
   void SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
@@ -284,6 +288,7 @@ class COMPOSITOR_EXPORT Layer
                       const cc::SurfaceLayer::SatisfyCallback& satisfy_callback,
                       const cc::SurfaceLayer::RequireCallback& require_callback,
                       gfx::Size surface_size,
+                      float scale,
                       gfx::Size frame_size_in_dip);
 
   bool has_external_content() {
@@ -296,11 +301,13 @@ class COMPOSITOR_EXPORT Layer
 
   // Sets the layer's fill color.  May only be called for LAYER_SOLID_COLOR.
   void SetColor(SkColor color);
+  SkColor GetTargetColor();
+  SkColor background_color() const;
 
-  // Updates the nine patch layer's bitmap, aperture and border. May only be
+  // Updates the nine patch layer's image, aperture and border. May only be
   // called for LAYER_NINE_PATCH.
-  void UpdateNinePatchLayerBitmap(const SkBitmap& bitmap);
-  void UpdateNinePatchLayerAperture(const gfx::Rect& aperture);
+  void UpdateNinePatchLayerImage(const gfx::ImageSkia& image);
+  void UpdateNinePatchLayerAperture(const gfx::Rect& aperture_in_dip);
   void UpdateNinePatchLayerBorder(const gfx::Rect& border);
 
   // Adds |invalid_rect| to the Layer's pending invalid rect and calls
@@ -315,8 +322,9 @@ class COMPOSITOR_EXPORT Layer
   // Uses damaged rectangles recorded in |damaged_region_| to invalidate the
   // |cc_layer_|.
   void SendDamagedRects();
+  void ClearDamagedRects();
 
-  const SkRegion& damaged_region() const { return damaged_region_; }
+  const cc::Region& damaged_region() const { return damaged_region_; }
 
   void CompleteAllAnimations();
 
@@ -337,8 +345,11 @@ class COMPOSITOR_EXPORT Layer
   void PaintContents(
       SkCanvas* canvas,
       const gfx::Rect& clip,
-      ContentLayerClient::GraphicsContextStatus gc_status) override;
-  void DidChangeLayerCanUseLCDText() override {}
+      ContentLayerClient::PaintingControlSetting painting_control) override;
+  void PaintContentsToDisplayList(
+      cc::DisplayItemList* display_list,
+      const gfx::Rect& clip,
+      ContentLayerClient::PaintingControlSetting painting_control) override;
   bool FillsBoundsCompletely() const override;
 
   cc::Layer* cc_layer() { return cc_layer_; }
@@ -357,7 +368,8 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface() const { return force_render_surface_; }
 
   // LayerClient
-  scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo() override;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo()
+      override;
 
   // LayerAnimationEventObserver
   void OnAnimationStarted(const cc::AnimationEvent& event) override;
@@ -451,9 +463,9 @@ class COMPOSITOR_EXPORT Layer
   bool fills_bounds_opaquely_;
   bool fills_bounds_completely_;
 
-  // Union of damaged rects, in pixel coordinates, to be used when
-  // compositor is ready to paint the content.
-  SkRegion damaged_region_;
+  // Union of damaged rects, in layer space, to be used when compositor is ready
+  // to paint the content.
+  cc::Region damaged_region_;
 
   int background_blur_radius_;
 
@@ -505,6 +517,11 @@ class COMPOSITOR_EXPORT Layer
 
   // A cached copy of |Compositor::device_scale_factor()|.
   float device_scale_factor_;
+
+  // A cached copy of the nine patch layer's image and aperture.
+  // These are required for device scale factor change.
+  gfx::ImageSkia nine_patch_layer_image_;
+  gfx::Rect nine_patch_layer_aperture_;
 
   // The mailbox used by texture_layer_.
   cc::TextureMailbox mailbox_;

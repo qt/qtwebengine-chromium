@@ -64,6 +64,9 @@ extern "C" {
 #endif
 
 
+/* DES. */
+
+
 typedef struct DES_cblock_st {
   uint8_t bytes[8];
 } DES_cblock;
@@ -91,6 +94,10 @@ typedef struct DES_ks {
 OPENSSL_EXPORT void DES_set_key(const DES_cblock *key,
                                 DES_key_schedule *schedule);
 
+/* DES_set_odd_parity sets the parity bits (the least-significant bits in each
+ * byte) of |key| given the other bits in each byte. */
+OPENSSL_EXPORT void DES_set_odd_parity(DES_cblock *key);
+
 /* DES_ecb_encrypt encrypts (or decrypts, if |is_encrypt| is |DES_DECRYPT|) a
  * single DES block (8 bytes) from in to out, using the key configured in
  * |schedule|. */
@@ -104,6 +111,15 @@ OPENSSL_EXPORT void DES_ncbc_encrypt(const uint8_t *in, uint8_t *out,
                                      size_t len,
                                      const DES_key_schedule *schedule,
                                      DES_cblock *ivec, int enc);
+
+/* DES_ecb3_encrypt encrypts (or decrypts, if |enc| is |DES_DECRYPT|) a single
+ * block (8 bytes) of data from |input| to |output| using 3DES. */
+OPENSSL_EXPORT void DES_ecb3_encrypt(const DES_cblock *input,
+                                     DES_cblock *output,
+                                     const DES_key_schedule *ks1,
+                                     const DES_key_schedule *ks2,
+                                     const DES_key_schedule *ks3,
+                                     int enc);
 
 /* DES_ede3_cbc_encrypt encrypts (or decrypts, if |enc| is |DES_DECRYPT|) |len|
  * bytes from |in| to |out| with 3DES in CBC mode. 3DES uses three keys, thus

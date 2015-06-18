@@ -20,9 +20,9 @@ class SkDump : public SkDisplayable {
     DECLARE_MEMBER_INFO(Dump);
 #ifdef SK_DUMP_ENABLED
     SkDump();
-    virtual bool enable(SkAnimateMaker & );
+    bool enable(SkAnimateMaker & ) override;
     bool evaluate(SkAnimateMaker &);
-    virtual bool hasEnable() const;
+    bool hasEnable() const override;
     static void GetEnumString(SkDisplayTypes , int index, SkString* result);
     SkBool displayList;
     SkBool eventList;

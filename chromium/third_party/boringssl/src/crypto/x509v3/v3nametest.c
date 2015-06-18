@@ -52,6 +52,7 @@
  * (eay@cryptsoft.com).  This product includes software written by Tim
  * Hudson (tjh@cryptsoft.com). */
 
+#include <stdarg.h>
 #include <string.h>
 
 #include <openssl/crypto.h>
@@ -332,8 +333,7 @@ static void run_cert(X509 *crt, const char *nameincert,
 		int match, ret;
 		memcpy(name, *pname, namelen);
 
-		ret = X509_check_host(crt, (const unsigned char *)name,
-				      namelen, 0);
+		ret = X509_check_host(crt, name, namelen, 0, NULL);
 		match = -1;
 		if (ret < 0)
 			{
@@ -351,8 +351,8 @@ static void run_cert(X509 *crt, const char *nameincert,
 			match = 1;
 		check_message(fn, "host", nameincert, match, *pname);
 
-		ret = X509_check_host(crt, (const unsigned char *)name,
-				      namelen, X509_CHECK_FLAG_NO_WILDCARDS);
+		ret = X509_check_host(crt, name, namelen,
+				      X509_CHECK_FLAG_NO_WILDCARDS, NULL);
 		match = -1;
 		if (ret < 0)
 			{
@@ -371,8 +371,7 @@ static void run_cert(X509 *crt, const char *nameincert,
 		check_message(fn, "host-no-wildcards",
 			      nameincert, match, *pname);
 
-		ret = X509_check_email(crt, (const unsigned char *)name,
-				       namelen, 0);
+		ret = X509_check_email(crt, name, namelen, 0);
 		match = -1;
 		if (fn->email)
 			{

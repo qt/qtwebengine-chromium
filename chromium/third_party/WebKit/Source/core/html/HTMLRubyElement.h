@@ -10,7 +10,7 @@
 namespace blink {
 
 // <ruby> is an HTMLElement in script, but we use a separate interface here
-// so HTMLElement's createRenderer doesn't need to know about it.
+// so HTMLElement's createLayoutObject doesn't need to know about it.
 class HTMLRubyElement final : public HTMLElement {
 public:
     DECLARE_NODE_FACTORY(HTMLRubyElement);
@@ -18,7 +18,7 @@ public:
 private:
     explicit HTMLRubyElement(Document&);
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 };
 
 } // namespace

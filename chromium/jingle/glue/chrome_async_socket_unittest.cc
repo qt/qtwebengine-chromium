@@ -43,7 +43,7 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
 
   // If there's no read, sets the "has pending read" flag.  Otherwise,
   // pops the next read.
-  net::MockRead GetNextRead() override {
+  net::MockRead OnRead() override {
     if (reads_.empty()) {
       DCHECK(!has_pending_read_);
       has_pending_read_ = true;
@@ -91,6 +91,14 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
   // Simply queues up the given write.
   void AddWrite(const net::MockWrite& mock_write) {
     writes_.push_back(mock_write);
+  }
+
+  bool AllReadDataConsumed() const override {
+    return reads_.empty();
+  }
+
+  bool AllWriteDataConsumed() const override {
+    return writes_.empty();
   }
 
  private:
@@ -154,9 +162,9 @@ class ChromeAsyncSocketTest
     message_loop_.reset(new base::MessageLoop(pump.Pass()));
   }
 
-  virtual ~ChromeAsyncSocketTest() {}
+  ~ChromeAsyncSocketTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     scoped_ptr<net::MockClientSocketFactory> mock_client_socket_factory(
         new net::MockClientSocketFactory());
     mock_client_socket_factory->AddSocketDataProvider(
@@ -189,7 +197,7 @@ class ChromeAsyncSocketTest
         this, &ChromeAsyncSocketTest::OnError);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Run any tasks that we forgot to pump.
     message_loop_->RunUntilIdle();
     ExpectClosed();

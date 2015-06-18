@@ -41,40 +41,43 @@
 
 namespace blink {
 
-class Document;
 class Element;
 class Event;
 class EventListener;
 class EventTarget;
-class InspectorDOMAgent;
+class InjectedScriptManager;
 class InspectorDebuggerAgent;
+class InspectorDOMAgent;
 class JSONObject;
+class LocalFrame;
 class Node;
+class RegisteredEventListener;
 
 typedef String ErrorString;
 
 class InspectorDOMDebuggerAgent final
-    : public InspectorBaseAgent<InspectorDOMDebuggerAgent>
+    : public InspectorBaseAgent<InspectorDOMDebuggerAgent, InspectorFrontend::DOMDebugger>
     , public InspectorDebuggerAgent::Listener
     , public InspectorDOMAgent::Listener
     , public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMDebuggerAgent);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorDOMDebuggerAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> create(InspectorDOMAgent*, InspectorDebuggerAgent*);
+    static PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> create(InjectedScriptManager*, InspectorDOMAgent*, InspectorDebuggerAgent*);
 
-    virtual ~InspectorDOMDebuggerAgent();
-    virtual void trace(Visitor*) override;
+    ~InspectorDOMDebuggerAgent() override;
+    DECLARE_VIRTUAL_TRACE();
 
     // DOMDebugger API for InspectorFrontend
-    virtual void setXHRBreakpoint(ErrorString*, const String& url) override;
-    virtual void removeXHRBreakpoint(ErrorString*, const String& url) override;
-    virtual void setEventListenerBreakpoint(ErrorString*, const String& eventName, const String* targetName) override;
-    virtual void removeEventListenerBreakpoint(ErrorString*, const String& eventName, const String* targetName) override;
-    virtual void setInstrumentationBreakpoint(ErrorString*, const String& eventName) override;
-    virtual void removeInstrumentationBreakpoint(ErrorString*, const String& eventName) override;
-    virtual void setDOMBreakpoint(ErrorString*, int nodeId, const String& type) override;
-    virtual void removeDOMBreakpoint(ErrorString*, int nodeId, const String& type) override;
+    void setXHRBreakpoint(ErrorString*, const String& url) override;
+    void removeXHRBreakpoint(ErrorString*, const String& url) override;
+    void setEventListenerBreakpoint(ErrorString*, const String& eventName, const String* targetName) override;
+    void removeEventListenerBreakpoint(ErrorString*, const String& eventName, const String* targetName) override;
+    void setInstrumentationBreakpoint(ErrorString*, const String& eventName) override;
+    void removeInstrumentationBreakpoint(ErrorString*, const String& eventName) override;
+    void setDOMBreakpoint(ErrorString*, int nodeId, const String& type) override;
+    void removeDOMBreakpoint(ErrorString*, int nodeId, const String& type) override;
+    void getEventListeners(ErrorString*, const String& objectId, RefPtr<TypeBuilder::Array<TypeBuilder::DOMDebugger::EventListener>>& result) override;
     // InspectorInstrumentation API
     void willInsertDOMNode(Node* parent);
     void didInvalidateStyleAttr(Node*);
@@ -82,45 +85,42 @@ public:
     void willRemoveDOMNode(Node*);
     void didRemoveDOMNode(Node*);
     void willModifyDOMAttr(Element*, const AtomicString&, const AtomicString&);
+    void willSetInnerHTML();
     void willSendXMLHttpRequest(const String& url);
     void didInstallTimer(ExecutionContext*, int timerId, int timeout, bool singleShot);
     void didRemoveTimer(ExecutionContext*, int timerId);
     void willFireTimer(ExecutionContext*, int timerId);
-    void didRequestAnimationFrame(Document*, int callbackId);
-    void didCancelAnimationFrame(Document*, int callbackId);
-    void willFireAnimationFrame(Document*, int callbackId);
+    void didRequestAnimationFrame(ExecutionContext*, int callbackId);
+    void didCancelAnimationFrame(ExecutionContext*, int callbackId);
+    void willFireAnimationFrame(ExecutionContext*, int callbackId);
     void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
+    void willEvaluateScript(LocalFrame*, const String& url, int lineNumber);
     void didFireWebGLError(const String& errorName);
     void didFireWebGLWarning();
     void didFireWebGLErrorOrWarning(const String& message);
-    void willExecuteCustomElementCallback(Element*);
     void willCloseWindow();
 
-    void didProcessTask();
-
-    virtual void clearFrontend() override;
-    virtual void discardAgent() override;
+    void disable(ErrorString*) override;
+    void discardAgent() override;
 
 private:
-    InspectorDOMDebuggerAgent(InspectorDOMAgent*, InspectorDebuggerAgent*);
+    InspectorDOMDebuggerAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorDebuggerAgent*);
+    bool checkEnabled(ErrorString*);
 
     void pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous);
     PassRefPtr<JSONObject> preparePauseOnNativeEventData(const String& eventName, const String* targetName);
 
     // InspectorDOMAgent::Listener implementation.
-    virtual void domAgentWasEnabled() override;
-    virtual void domAgentWasDisabled() override;
+    void domAgentWasEnabled() override;
+    void domAgentWasDisabled() override;
 
     // InspectorDebuggerAgent::Listener implementation.
-    virtual void debuggerWasEnabled() override;
-    virtual void debuggerWasDisabled() override;
-    virtual void stepInto() override;
-    virtual void didPause() override;
-    virtual bool canPauseOnPromiseEvent() override;
-    virtual void didCreatePromise() override;
-    virtual void didResolvePromise() override;
-    virtual void didRejectPromise() override;
-    void disable();
+    void debuggerWasEnabled() override;
+    void debuggerWasDisabled() override;
+    bool canPauseOnPromiseEvent() override;
+    void didCreatePromise() override;
+    void didResolvePromise() override;
+    void didRejectPromise() override;
 
     void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description);
     void updateSubtreeBreakpoints(Node*, uint32_t rootMask, bool set);
@@ -128,12 +128,14 @@ private:
     void setBreakpoint(ErrorString*, const String& eventName, const String* targetName);
     void removeBreakpoint(ErrorString*, const String& eventName, const String* targetName);
 
+    PassRefPtr<TypeBuilder::DOMDebugger::EventListener> buildObjectForEventListener(const RegisteredEventListener&, const AtomicString& eventType, EventTarget*, const String& objectGroupId);
+
     void clear();
 
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
     RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
     WillBeHeapHashMap<RawPtrWillBeMember<Node>, uint32_t> m_domBreakpoints;
-    bool m_pauseInNextEventListener;
 };
 
 } // namespace blink

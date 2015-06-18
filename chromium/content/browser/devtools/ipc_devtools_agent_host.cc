@@ -4,13 +4,11 @@
 
 #include "content/browser/devtools/ipc_devtools_agent_host.h"
 
-#include "content/common/devtools_messages.h"
-
 namespace content {
 
 void IPCDevToolsAgentHost::Attach() {
   SendMessageToAgent(new DevToolsAgentMsg_Attach(MSG_ROUTING_NONE, GetId()));
-  OnClientAttached();
+  OnClientAttached(false);
 }
 
 void IPCDevToolsAgentHost::Detach() {
@@ -18,10 +16,14 @@ void IPCDevToolsAgentHost::Detach() {
   OnClientDetached();
 }
 
-void IPCDevToolsAgentHost::DispatchProtocolMessage(
+bool IPCDevToolsAgentHost::DispatchProtocolMessage(
     const std::string& message) {
+  if (DevToolsAgentHostImpl::DispatchProtocolMessage(message))
+    return true;
+
   SendMessageToAgent(new DevToolsAgentMsg_DispatchOnInspectorBackend(
       MSG_ROUTING_NONE, message));
+  return true;
 }
 
 void IPCDevToolsAgentHost::InspectElement(int x, int y) {
@@ -36,31 +38,35 @@ IPCDevToolsAgentHost::IPCDevToolsAgentHost()
 IPCDevToolsAgentHost::~IPCDevToolsAgentHost() {
 }
 
-void IPCDevToolsAgentHost::Reattach(const std::string& saved_agent_state) {
+void IPCDevToolsAgentHost::Reattach() {
   SendMessageToAgent(new DevToolsAgentMsg_Reattach(
-      MSG_ROUTING_NONE, GetId(), saved_agent_state));
-  OnClientAttached();
+      MSG_ROUTING_NONE, GetId(), state_cookie_));
+  OnClientAttached(true);
 }
 
 void IPCDevToolsAgentHost::ProcessChunkedMessageFromAgent(
-    const std::string& message, uint32 total_size) {
-  if (total_size && total_size == message.length()) {
-    DCHECK(message_buffer_size_ == 0);
-    SendMessageToClient(message);
+    const DevToolsMessageChunk& chunk) {
+  if (chunk.is_last && !chunk.post_state.empty())
+    state_cookie_ = chunk.post_state;
+
+  if (chunk.is_first && chunk.is_last) {
+    CHECK(message_buffer_size_ == 0);
+    SendMessageToClient(chunk.data);
     return;
   }
 
-  if (total_size) {
-    DCHECK(message_buffer_size_ == 0);
+  if (chunk.is_first) {
     message_buffer_ = std::string();
-    message_buffer_.reserve(total_size);
-    message_buffer_size_ = total_size;
+    message_buffer_.reserve(chunk.message_size);
+    message_buffer_size_ = chunk.message_size;
   }
 
-  message_buffer_.append(message);
+  CHECK(message_buffer_.size() + chunk.data.size() <=
+      message_buffer_size_);
+  message_buffer_.append(chunk.data);
 
-  if (message_buffer_.size() >= message_buffer_size_) {
-    DCHECK(message_buffer_.size() == message_buffer_size_);
+  if (chunk.is_last) {
+    CHECK(message_buffer_.size() == message_buffer_size_);
     SendMessageToClient(message_buffer_);
     message_buffer_ = std::string();
     message_buffer_size_ = 0;

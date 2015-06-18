@@ -2,10 +2,6 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-* {
-  font-family: Ubuntu, Arial, sans-serif;
-}
-
 tabbox {
   min-height: 650px;
 }
@@ -63,14 +59,14 @@ tbody tr:nth-child(odd) {
 }
 
 .file-icon {
-  background-image: url('chrome://syncfs-internals/file.png');
+  background-image: url(chrome://syncfs-internals/file.png);
   background-position: 0 2px;
   background-repeat: no-repeat;
   padding-left: 18px;
 }
 
 .folder-icon {
-  background-image: url('chrome://syncfs-internals/folder_closed.png');
+  background-image: url(chrome://syncfs-internals/folder_closed.png);
   background-position: 0 2px;
   background-repeat: no-repeat;
   padding-left: 18px;

@@ -32,9 +32,9 @@
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
+#include "core/layout/LayoutFileUploadControl.h"
 #include "core/page/Chrome.h"
 #include "core/page/DragData.h"
-#include "core/rendering/RenderFileUploadControl.h"
 #include "platform/FileMetadata.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
@@ -59,7 +59,7 @@ PassRefPtrWillBeRawPtr<InputType> FileInputType::create(HTMLInputElement& elemen
     return adoptRefWillBeNoop(new FileInputType(element));
 }
 
-void FileInputType::trace(Visitor* visitor)
+DEFINE_TRACE(FileInputType)
 {
     visitor->trace(m_fileList);
     BaseClickableWithKeyInputType::trace(visitor);
@@ -166,9 +166,9 @@ void FileInputType::handleDOMActivateEvent(Event* event)
     event->setDefaultHandled();
 }
 
-RenderObject* FileInputType::createRenderer(RenderStyle*) const
+LayoutObject* FileInputType::createLayoutObject(const ComputedStyle&) const
 {
-    return new RenderFileUploadControl(&element());
+    return new LayoutFileUploadControl(&element());
 }
 
 bool FileInputType::canSetStringValue() const
@@ -303,8 +303,8 @@ void FileInputType::setFiles(FileList* files)
     input->notifyFormStateChanged();
     input->setNeedsValidityCheck();
 
-    if (input->renderer())
-        input->renderer()->setShouldDoFullPaintInvalidation();
+    if (input->layoutObject())
+        input->layoutObject()->setShouldDoFullPaintInvalidation();
 
     if (filesChanged) {
         // This call may cause destruction of this instance.

@@ -25,30 +25,24 @@
 #ifndef AudioNodeOutput_h
 #define AudioNodeOutput_h
 
-#include "platform/audio/AudioBus.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioParam.h"
+#include "platform/audio/AudioBus.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class AudioContext;
 class AudioNodeInput;
 
 // AudioNodeOutput represents a single output for an AudioNode.
 // It may be connected to one or more AudioNodeInputs.
-class AudioNodeOutput : public GarbageCollectedFinalized<AudioNodeOutput> {
+class AudioNodeOutput final {
 public:
     // It's OK to pass 0 for numberOfChannels in which case
     // setNumberOfChannels() must be called later on.
-    static AudioNodeOutput* create(AudioNode*, unsigned numberOfChannels);
-    void trace(Visitor*);
+    static PassOwnPtr<AudioNodeOutput> create(AudioHandler*, unsigned numberOfChannels);
     void dispose();
-
-    // Can be called from any thread.
-    AudioNode* node() const { return m_node; }
-    AudioContext* context() { return m_node->context(); }
 
     // Causes our AudioNode to process if it hasn't already for this render quantum.
     // It returns the bus containing the processed audio for this output, returning inPlaceBus if in-place processing was possible.
@@ -66,11 +60,19 @@ public:
     // Must be called with the context's graph lock.
     void disconnectAll();
 
+    // Disconnect a specific input or AudioParam.
+    void disconnectInput(AudioNodeInput &);
+    void disconnectAudioParam(AudioParamHandler&);
+
     void setNumberOfChannels(unsigned);
     unsigned numberOfChannels() const { return m_numberOfChannels; }
     bool isChannelCountKnown() const { return numberOfChannels() > 0; }
 
     bool isConnected() { return fanOutCount() > 0 || paramFanOutCount() > 0; }
+
+    // Probe if the output node is connected with a certain input or AudioParam
+    bool isConnectedToInput(AudioNodeInput &);
+    bool isConnectedToAudioParam(AudioParamHandler&);
 
     // Disable/Enable happens when there are still JavaScript references to a node, but it has otherwise "finished" its work.
     // For example, when a note has finished playing.  It is kept around, because it may be played again at a later time.
@@ -83,19 +85,24 @@ public:
     void updateRenderingState();
 
 private:
-    AudioNodeOutput(AudioNode*, unsigned numberOfChannels);
+    AudioNodeOutput(AudioHandler*, unsigned numberOfChannels);
+    // Can be called from any thread.
+    AudioHandler& handler() const { return m_handler; }
+    DeferredTaskHandler& deferredTaskHandler() const { return m_handler.context()->deferredTaskHandler(); }
 
-    Member<AudioNode> m_node;
+    // This reference is safe because the AudioHandler owns this AudioNodeOutput
+    // object.
+    AudioHandler& m_handler;
 
     friend class AudioNodeInput;
-    friend class AudioParam;
+    friend class AudioParamHandler;
 
     // These are called from AudioNodeInput.
     // They must be called with the context's graph lock.
     void addInput(AudioNodeInput&);
     void removeInput(AudioNodeInput&);
-    void addParam(AudioParam&);
-    void removeParam(AudioParam&);
+    void addParam(AudioParamHandler&);
+    void removeParam(AudioParamHandler&);
 
     // fanOutCount() is the number of AudioNodeInputs that we're connected to.
     // This method should not be called in audio thread rendering code, instead renderingFanOutCount() should be used.
@@ -134,14 +141,14 @@ private:
     // If m_isInPlace is true, use m_inPlaceBus as the valid AudioBus; If false, use the default m_internalBus.
     bool m_isInPlace;
 
-    // Oilpan: This HashMap holds connection references. We must call
-    // AudioNode::makeConnection when we add an AudioNode to this, and must call
-    // AudioNode::breakConnection() when we remove an AudioNode from this.
-    HeapHashMap<Member<AudioNodeInput>, Member<AudioNode> > m_inputs;
-    typedef HeapHashMap<Member<AudioNodeInput>, Member<AudioNode> >::iterator InputsIterator;
+    // This HashSet holds connection references. We must call
+    // AudioNode::makeConnection when we add an AudioNodeInput to this, and must
+    // call AudioNode::breakConnection() when we remove an AudioNodeInput from
+    // this.
+    HashSet<AudioNodeInput*> m_inputs;
     bool m_isEnabled;
 
-#if ENABLE_ASSERT
+#if ENABLE(ASSERT)
     bool m_didCallDispose;
 #endif
 
@@ -150,7 +157,9 @@ private:
     unsigned m_renderingFanOutCount;
     unsigned m_renderingParamFanOutCount;
 
-    HeapHashSet<Member<AudioParam> > m_params;
+    // This collection of raw pointers is safe because they are retained by
+    // AudioParam objects retained by m_connectedParams of the owner AudioNode.
+    HashSet<AudioParamHandler*> m_params;
 };
 
 } // namespace blink

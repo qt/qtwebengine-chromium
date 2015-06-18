@@ -5,14 +5,15 @@
 #ifndef DeviceMotionController_h
 #define DeviceMotionController_h
 
-#include "core/dom/DocumentSupplementable.h"
+#include "core/dom/Document.h"
 #include "core/frame/DeviceSingleWindowEventController.h"
+#include "modules/ModulesExport.h"
 
 namespace blink {
 
 class Event;
 
-class DeviceMotionController final : public DeviceSingleWindowEventController, public DocumentSupplement {
+class MODULES_EXPORT DeviceMotionController final : public DeviceSingleWindowEventController, public WillBeHeapSupplement<Document> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DeviceMotionController);
 public:
     virtual ~DeviceMotionController();
@@ -20,7 +21,10 @@ public:
     static const char* supplementName();
     static DeviceMotionController& from(Document&);
 
-    virtual void trace(Visitor*) override;
+    // DeviceSingleWindowEventController
+    void didAddEventListener(LocalDOMWindow*, const AtomicString& eventType) override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit DeviceMotionController(Document&);

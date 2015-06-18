@@ -1,0 +1,95 @@
+<link rel="import" href="chrome://resources/polymer/polymer/polymer.html">
+<link rel="import" href="chrome://resources/polymer/polymer/layout.html">
+<link rel="import" href="chrome://resources/polymer/core-animated-pages/core-animated-pages.html">
+<link rel="import" href="chrome://resources/polymer/core-animated-pages/transitions/slide-from-right.html">
+<link rel="import" href="chrome://resources/polymer/paper-button/paper-button.html">
+<link rel="import" href="chrome://resources/polymer/paper-dialog/paper-action-dialog.html">
+
+<!--
+  Offline UI for the New Gaia flow.
+  Contains two cards with a slide transition between them:
+    1. Email input form.
+    2. Password input form.
+
+  Example:
+    <offline-gaia></offline-gaia>
+
+  Attributes:
+    'enterpriseInfo' - Information about device management.
+    'emailDomain' - autocomplete domain for the email input.
+
+  Events:
+    'authCompleted' - fired when user enters login and password. Fires with an
+                      argument |credentials| which contains.
+                      |credentials| = { 'useOffline': true,
+                                        'email': <email>,
+                                        'password': <typed password> }
+                      If user did not type domain |email| will be added by
+                      "@gmail.com" or by 'emailDomain' if it is set.
+  Methods:
+    'focus' - focuses current screen (email input or password input);
+    'setEmail' - accepts an argument |email|. If |email| is empty it sets
+                 current screen to the email input, otherwise it sets current
+                 screen to password input and shows error that previously
+                 entered password is incorrect.
+-->
+<polymer-element name="offline-gaia" vertical layout
+    attributes="enterpriseInfo emailDomain">
+  <template>
+    <link rel="stylesheet" href="offline_gaia.css">
+    <core-animated-pages id="animatedPages" transitions="slide-from-right"
+        valueattr="id"
+        on-core-animated-pages-transition-end="{{onTransitionEnd}}" flex>
+      <section flex id="emailSection">
+        <gaia-card>
+          <div class="header" flex vertical layout end-justified start>
+            <h1 class="welcome-message" i18n-content="offlineLoginWelcome"></h1>
+            <p class="enterprise-info"  hidden?="{{!enterpriseInfo}}">
+              {{enterpriseInfo}}
+            </p>
+          </div>
+          <div class="footer" flex vertical layout justified>
+            <gaia-input-form i18n-values="buttonText:offlineLoginNextBtn"
+                on-submit="{{onEmailSubmitted}}">
+              <gaia-input id="emailInput" type="email" required
+                  domain="{{emailDomain}}"
+                  i18n-values="error:offlineLoginInvalidEmail;
+                               label:offlineLoginEmail">
+              </gaia-input>
+            </gaia-input-form>
+            <img self-center src="chrome://theme/IDR_LOGO_GOOGLE_COLOR_90"
+                alt="">
+          </div>
+        </gaia-card>
+      </section>
+      <section flex id="passwordSection">
+        <gaia-card>
+          <gaia-header class="header" id="passwordHeader">
+          </gaia-header>
+          <gaia-input-form class="footer"
+              i18n-values="buttonText:offlineLoginNextBtn"
+              on-submit="{{onPasswordSubmitted}}">
+            <gaia-input id="passwordInput" type="password" required
+                i18n-values="error:offlineLoginInvalidPassword;
+                             label:offlineLoginPassword">
+            </gaia-input>
+            <gaia-paper-button noink class="link-button"
+                i18n-content="offlineLoginForgotPasswordBtn"
+                on-tap="{{onForgotPasswordClicked}}">
+            </gaia-paper-button>
+            <paper-action-dialog id="forgotPasswordDlg" autoCloseDisabled
+                backdrop on-keydown="{{onKeyDownOnDialog}}">
+              <p i18n-content="offlineLoginForgotPasswordDlg"></p>
+              <gaia-paper-button id="dialogCloseBtn" affirmative autofocus
+                  i18n-content="offlineLoginCloseBtn">
+              </gaia-paper-button>
+            </paper-action-dialog>
+          </gaia-input-form>
+        </gaia-card>
+      </section>
+    </core-animated-pages>
+    <button id="backButton" is="gaia-icon-button" icon="arrow-back"
+        i18n-values="aria-label:backButton" on-click="{{onBack}}">
+    </button>
+  </template>
+</polymer-element>

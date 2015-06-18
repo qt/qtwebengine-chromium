@@ -27,10 +27,8 @@ class MockPrefService : public TestingPrefServiceSimple {
   MockPrefService() {}
   virtual ~MockPrefService() {}
 
-  MOCK_METHOD2(AddPrefObserver,
-               void(const char*, PrefObserver*));
-  MOCK_METHOD2(RemovePrefObserver,
-               void(const char*, PrefObserver*));
+  MOCK_METHOD2(AddPrefObserver, void(const std::string&, PrefObserver*));
+  MOCK_METHOD2(RemovePrefObserver, void(const std::string&, PrefObserver*));
 };
 
 }  // namespace
@@ -38,10 +36,10 @@ class MockPrefService : public TestingPrefServiceSimple {
 class PrefChangeRegistrarTest : public testing::Test {
  public:
   PrefChangeRegistrarTest() {}
-  virtual ~PrefChangeRegistrarTest() {}
+  ~PrefChangeRegistrarTest() override {}
 
  protected:
-  virtual void SetUp() override;
+  void SetUp() override;
 
   base::Closure observer() const {
     return base::Bind(&base::DoNothing);

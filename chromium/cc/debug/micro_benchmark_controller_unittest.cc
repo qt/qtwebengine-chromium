@@ -21,18 +21,18 @@ class MicroBenchmarkControllerTest : public testing::Test {
   MicroBenchmarkControllerTest()
       : layer_tree_host_client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
-  virtual void SetUp() override {
+  void SetUp() override {
     impl_proxy_ = make_scoped_ptr(new FakeImplProxy);
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
     layer_tree_host_impl_ = make_scoped_ptr(new FakeLayerTreeHostImpl(
-        impl_proxy_.get(), shared_bitmap_manager_.get()));
+        impl_proxy_.get(), shared_bitmap_manager_.get(), nullptr));
 
     layer_tree_host_ = FakeLayerTreeHost::Create(&layer_tree_host_client_);
     layer_tree_host_->SetRootLayer(Layer::Create());
     layer_tree_host_->InitializeForTesting(scoped_ptr<Proxy>(new FakeProxy));
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     layer_tree_host_impl_ = nullptr;
     layer_tree_host_ = nullptr;
     impl_proxy_ = nullptr;

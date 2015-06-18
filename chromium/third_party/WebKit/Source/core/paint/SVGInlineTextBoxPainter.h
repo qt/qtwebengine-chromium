@@ -5,8 +5,8 @@
 #ifndef SVGInlineTextBoxPainter_h
 #define SVGInlineTextBoxPainter_h
 
-#include "core/rendering/style/RenderStyleConstants.h"
-#include "core/rendering/svg/RenderSVGResourcePaintServer.h"
+#include "core/style/ComputedStyleConstants.h"
+#include "core/layout/svg/LayoutSVGResourcePaintServer.h"
 
 namespace blink {
 
@@ -15,8 +15,7 @@ class Font;
 class GraphicsContext;
 struct PaintInfo;
 class LayoutPoint;
-class RenderStyle;
-class RenderObject;
+class ComputedStyle;
 class SVGInlineTextBox;
 struct SVGTextFragment;
 class TextRun;
@@ -25,14 +24,16 @@ class DocumentMarker;
 class SVGInlineTextBoxPainter {
 public:
     SVGInlineTextBoxPainter(SVGInlineTextBox& svgInlineTextBox) : m_svgInlineTextBox(svgInlineTextBox) { }
-    void paint(PaintInfo&, const LayoutPoint&);
-    void paintSelectionBackground(PaintInfo&);
-    virtual void paintTextMatchMarker(GraphicsContext*, const FloatPoint&, DocumentMarker*, RenderStyle*, const Font&);
+    void paint(const PaintInfo&, const LayoutPoint&);
+    void paintSelectionBackground(const PaintInfo&);
+    virtual void paintTextMatchMarker(GraphicsContext*, const FloatPoint&, DocumentMarker*, const ComputedStyle&, const Font&);
 
 private:
-    void paintDecoration(GraphicsContext*, TextDecoration, const SVGTextFragment&);
-    void paintTextWithShadows(GraphicsContext*, RenderStyle*, TextRun&, const SVGTextFragment&, int startPosition, int endPosition, RenderSVGResourceMode);
-    void paintText(GraphicsContext*, RenderStyle*, RenderStyle* selectionStyle, const SVGTextFragment&, RenderSVGResourceMode, bool hasSelection, bool paintSelectedTextOnly);
+    bool shouldPaintSelection() const;
+    void paintTextFragments(const PaintInfo&, LayoutObject&);
+    void paintDecoration(const PaintInfo&, TextDecoration, const SVGTextFragment&);
+    void paintTextWithShadows(const PaintInfo&, const ComputedStyle&, TextRun&, const SVGTextFragment&, int startPosition, int endPosition, LayoutSVGResourceMode);
+    void paintText(const PaintInfo&, const ComputedStyle&, const ComputedStyle& selectionStyle, const SVGTextFragment&, LayoutSVGResourceMode, bool shouldPaintSelection);
 
     SVGInlineTextBox& m_svgInlineTextBox;
 };

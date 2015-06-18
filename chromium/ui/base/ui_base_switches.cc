@@ -15,6 +15,9 @@ const char kDisableRemoteCoreAnimation[] = "disable-remote-core-animation";
 // Disables use of DWM composition for top level windows.
 const char kDisableDwmComposition[] = "disable-dwm-composition";
 
+// Disables large icons on the New Tab page.
+const char kDisableIconNtp[] = "disable-icon-ntp";
+
 // Disables an experimental focus manager to track text input clients.
 const char kDisableTextInputFocusManager[] = "disable-text-input-focus-manager";
 
@@ -26,6 +29,12 @@ const char kDisableTouchDragDrop[] = "disable-touch-drag-drop";
 
 // Disables controls that support touch base text editing.
 const char kDisableTouchEditing[] = "disable-touch-editing";
+
+// Disables additional visual feedback to touch input.
+const char kDisableTouchFeedback[] = "disable-touch-feedback";
+
+// Enables large icons on the New Tab page.
+const char kEnableIconNtp[] = "enable-icon-ntp";
 
 // Enables a zoomed popup bubble that allows the user to select a link.
 const char kEnableLinkDisambiguationPopup[] =
@@ -40,16 +49,9 @@ const char kEnableTouchDragDrop[] = "enable-touch-drag-drop";
 // Enables controls that support touch base text editing.
 const char kEnableTouchEditing[] = "enable-touch-editing";
 
-// Enables additional visual feedback to touch input.
-const char kEnableTouchFeedback[] = "enable-touch-feedback";
-
 // The language file that we want to try to open. Of the form
 // language[-country] where language is the 2 letter code from ISO-639.
 const char kLang[] = "lang";
-
-// Disable ui::MessageBox. This is useful when running as part of scripts that
-// do not have a user interface.
-const char kNoMessageBox[] = "no-message-box";
 
 // On Windows only: requests that Chrome connect to the running Metro viewer
 // process.

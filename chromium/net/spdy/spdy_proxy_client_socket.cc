@@ -17,6 +17,7 @@
 #include "net/base/net_util.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_auth_handler_factory.h"
+#include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/proxy_connect_redirect_http_stream.h"
 #include "net/spdy/spdy_http_utils.h"
@@ -28,7 +29,6 @@ SpdyProxyClientSocket::SpdyProxyClientSocket(
     const base::WeakPtr<SpdyStream>& spdy_stream,
     const std::string& user_agent,
     const HostPortPair& endpoint,
-    const GURL& url,
     const HostPortPair& proxy_server,
     const BoundNetLog& source_net_log,
     HttpAuthCache* auth_cache,
@@ -40,6 +40,7 @@ SpdyProxyClientSocket::SpdyProxyClientSocket(
                                    GURL("https://" + proxy_server.ToString()),
                                    auth_cache,
                                    auth_handler_factory)),
+      user_agent_(user_agent),
       user_buffer_len_(0),
       write_buffer_len_(0),
       was_ever_used_(false),
@@ -49,15 +50,11 @@ SpdyProxyClientSocket::SpdyProxyClientSocket(
       weak_factory_(this),
       write_callback_weak_factory_(this) {
   request_.method = "CONNECT";
-  request_.url = url;
-  if (!user_agent.empty())
-    request_.extra_headers.SetHeader(HttpRequestHeaders::kUserAgent,
-                                     user_agent);
-
+  request_.url = GURL("https://" + endpoint.ToString());
   net_log_.BeginEvent(NetLog::TYPE_SOCKET_ALIVE,
                       source_net_log.source().ToEventParametersCallback());
   net_log_.AddEvent(
-      NetLog::TYPE_SPDY_PROXY_CLIENT_SESSION,
+      NetLog::TYPE_HTTP2_PROXY_CLIENT_SESSION,
       spdy_stream->net_log().source().ToEventParametersCallback());
 
   spdy_stream_->SetDelegate(this);
@@ -193,6 +190,11 @@ bool SpdyProxyClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
                                   &protocol_negotiated);
 }
 
+void SpdyProxyClientSocket::GetConnectionAttempts(
+    ConnectionAttempts* out) const {
+  out->clear();
+}
+
 int SpdyProxyClientSocket::Read(IOBuffer* buf, int buf_len,
                                 const CompletionCallback& callback) {
   DCHECK(read_callback_.is_null());
@@ -265,7 +267,6 @@ int SpdyProxyClientSocket::GetLocalAddress(IPEndPoint* address) const {
 void SpdyProxyClientSocket::LogBlockedTunnelResponse() const {
   ProxyClientSocket::LogBlockedTunnelResponse(
       response_.headers->response_code(),
-      request_.url,
       /* is_https_proxy = */ true);
 }
 
@@ -355,29 +356,18 @@ int SpdyProxyClientSocket::DoSendRequest() {
   }
 
   std::string request_line;
-  HttpRequestHeaders request_headers;
-  BuildTunnelRequest(request_, authorization_headers, endpoint_, &request_line,
-                     &request_headers);
+  BuildTunnelRequest(endpoint_, authorization_headers, user_agent_,
+                     &request_line, &request_.extra_headers);
 
   net_log_.AddEvent(
       NetLog::TYPE_HTTP_TRANSACTION_SEND_TUNNEL_HEADERS,
       base::Bind(&HttpRequestHeaders::NetLogCallback,
-                 base::Unretained(&request_headers),
-                 &request_line));
+                 base::Unretained(&request_.extra_headers), &request_line));
 
-  request_.extra_headers.MergeFrom(request_headers);
   scoped_ptr<SpdyHeaderBlock> headers(new SpdyHeaderBlock());
-  CreateSpdyHeadersFromHttpRequest(request_, request_headers,
+  CreateSpdyHeadersFromHttpRequest(request_, request_.extra_headers,
                                    spdy_stream_->GetProtocolVersion(), true,
                                    headers.get());
-  // Reset the URL to be the endpoint of the connection
-  if (spdy_stream_->GetProtocolVersion() > 2) {
-    (*headers)[":path"] = endpoint_.ToString();
-    headers->erase(":scheme");
-  } else {
-    (*headers)["url"] = endpoint_.ToString();
-    headers->erase("scheme");
-  }
 
   return spdy_stream_->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND);
 }
@@ -414,20 +404,24 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
     case 302:  // Found / Moved Temporarily
       // Try to return a sanitized response so we can follow auth redirects.
       // If we can't, fail the tunnel connection.
-      if (SanitizeProxyRedirect(&response_, request_.url)) {
-        redirect_has_load_timing_info_ =
-            spdy_stream_->GetLoadTimingInfo(&redirect_load_timing_info_);
-        // Note that this triggers a RST_STREAM_CANCEL.
-        spdy_stream_->DetachDelegate();
-        next_state_ = STATE_DISCONNECTED;
-        return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
-      } else {
+      if (!SanitizeProxyRedirect(&response_)) {
         LogBlockedTunnelResponse();
         return ERR_TUNNEL_CONNECTION_FAILED;
       }
 
+      redirect_has_load_timing_info_ =
+          spdy_stream_->GetLoadTimingInfo(&redirect_load_timing_info_);
+      // Note that this triggers a RST_STREAM_CANCEL.
+      spdy_stream_->DetachDelegate();
+      next_state_ = STATE_DISCONNECTED;
+      return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;
+
     case 407:  // Proxy Authentication Required
       next_state_ = STATE_OPEN;
+      if (!SanitizeProxyAuth(&response_)) {
+        LogBlockedTunnelResponse();
+        return ERR_TUNNEL_CONNECTION_FAILED;
+      }
       return HandleProxyAuthChallenge(auth_.get(), &response_, net_log_);
 
     default:

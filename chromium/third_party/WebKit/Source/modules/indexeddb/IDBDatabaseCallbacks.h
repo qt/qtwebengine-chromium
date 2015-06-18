@@ -26,6 +26,7 @@
 #ifndef IDBDatabaseCallbacks_h
 #define IDBDatabaseCallbacks_h
 
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
@@ -34,11 +35,11 @@ namespace blink {
 class DOMError;
 class IDBDatabase;
 
-class IDBDatabaseCallbacks : public GarbageCollectedFinalized<IDBDatabaseCallbacks> {
+class MODULES_EXPORT IDBDatabaseCallbacks : public GarbageCollectedFinalized<IDBDatabaseCallbacks> {
 public:
     static IDBDatabaseCallbacks* create();
     virtual ~IDBDatabaseCallbacks();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // IDBDatabaseCallbacks
     virtual void onForcedClose();

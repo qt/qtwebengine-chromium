@@ -5,9 +5,9 @@
 #include "ui/gfx/transform_util.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace gfx {
 namespace {
@@ -174,6 +174,22 @@ TEST(TransformUtilTest, NoSnapSkewedCompositeTransform) {
   Rect viewport(1920, 1200);
   bool snapped = SnapTransform(&result, transform, viewport);
   EXPECT_FALSE(snapped) << "Skewed viewport should not snap.";
+}
+
+TEST(TransformUtilTest, TransformAboutPivot) {
+  Transform transform;
+  transform.Scale(3, 4);
+  transform = TransformAboutPivot(Point(7, 8), transform);
+
+  Point point;
+
+  point = Point(0, 0);
+  transform.TransformPoint(&point);
+  EXPECT_EQ(Point(-14, -24).ToString(), point.ToString());
+
+  point = Point(1, 1);
+  transform.TransformPoint(&point);
+  EXPECT_EQ(Point(-11, -20).ToString(), point.ToString());
 }
 
 }  // namespace

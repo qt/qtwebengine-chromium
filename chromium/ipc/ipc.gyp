@@ -44,11 +44,11 @@
         '..'
       ],
       'sources': [
-        'file_descriptor_set_posix_unittest.cc',
         'ipc_channel_posix_unittest.cc',
         'ipc_channel_proxy_unittest.cc',
         'ipc_channel_unittest.cc',
         'ipc_fuzzing_tests.cc',
+        'ipc_message_attachment_set_posix_unittest.cc',
         'ipc_message_unittest.cc',
         'ipc_message_utils_unittest.cc',
         'ipc_send_fds_test.cc',
@@ -132,6 +132,8 @@
         'ipc_multiprocess_test.h',
         'ipc_perftest_support.cc',
         'ipc_perftest_support.h',
+        'ipc_security_test_util.cc',
+        'ipc_security_test_util.h',
         'ipc_test_base.cc',
         'ipc_test_base.h',
         'ipc_test_channel_listener.cc',

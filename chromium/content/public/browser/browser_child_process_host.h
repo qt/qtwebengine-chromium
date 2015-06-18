@@ -35,7 +35,7 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // |process_type| needs to be either an enum value from ProcessType or an
   // embedder-defined value.
   static BrowserChildProcessHost* Create(
-      int process_type,
+      content::ProcessType process_type,
       BrowserChildProcessHostDelegate* delegate);
 
   ~BrowserChildProcessHost() override {}
@@ -44,7 +44,8 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // Takes ownership of |cmd_line| and |delegate|.
   virtual void Launch(
       SandboxedProcessLauncherDelegate* delegate,
-      base::CommandLine* cmd_line) = 0;
+      base::CommandLine* cmd_line,
+      bool terminate_on_shutdown) = 0;
 
   virtual const ChildProcessData& GetData() const = 0;
 
@@ -54,7 +55,7 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // Returns the termination status of a child.  |exit_code| is the
   // status returned when the process exited (for posix, as returned
   // from waitpid(), for Windows, as returned from
-  // GetExitCodeProcess()).  |exit_code| may be NULL.
+  // GetExitCodeProcess()).  |exit_code| may be nullptr.
   // |known_dead| indicates that the child is already dead. On Linux, this
   // information is necessary to retrieve accurate information. See
   // ChildProcessLauncher::GetChildTerminationStatus() for more details.

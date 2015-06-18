@@ -26,6 +26,7 @@
 #ifndef htmlediting_h
 #define htmlediting_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
 #include "platform/text/TextDirection.h"
@@ -36,15 +37,12 @@ namespace blink {
 
 class Document;
 class Element;
-class ExceptionState;
 class HTMLBRElement;
 class HTMLElement;
 class HTMLLIElement;
-class HTMLOListElement;
 class HTMLSpanElement;
 class HTMLUListElement;
 class Node;
-class Position;
 class PositionWithAffinity;
 class Range;
 class VisiblePosition;
@@ -59,7 +57,7 @@ class VisibleSelection;
 
 // Functions returning Node
 
-ContainerNode* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
+CORE_EXPORT ContainerNode* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
 
 Node* highestEnclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*),
     EditingBoundaryCrossingRule = CannotCrossEditingBoundary, Node* stayWithin = nullptr);
@@ -94,7 +92,7 @@ int caretMaxOffset(const Node*);
 // There are no VisiblePositions inside these nodes.
 inline bool editingIgnoresContent(const Node* node)
 {
-    return !node->canContainRangeEndPoint();
+    return EditingStrategy::editingIgnoresContent(node);
 }
 
 inline bool canHaveChildrenForEditing(const Node* node)
@@ -115,7 +113,7 @@ bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
 bool isHTMLListElement(Node*);
 bool isListItem(const Node*);
-bool isNodeRendered(const Node*);
+bool isNodeRendered(const Node&);
 bool isNodeVisiblyContainedWithin(Node&, const Range&);
 bool isRenderedAsNonInlineTableImageOrHR(const Node*);
 bool areIdenticalElements(const Node*, const Node*);
@@ -140,16 +138,12 @@ Position positionAfterContainingSpecialElement(const Position&, HTMLElement** co
 
 inline Position firstPositionInOrBeforeNode(Node* node)
 {
-    if (!node)
-        return Position();
-    return editingIgnoresContent(node) ? positionBeforeNode(node) : firstPositionInNode(node);
+    return Position::firstPositionInOrBeforeNode(node);
 }
 
 inline Position lastPositionInOrAfterNode(Node* node)
 {
-    if (!node)
-        return Position();
-    return editingIgnoresContent(node) ? positionAfterNode(node) : lastPositionInNode(node);
+    return Position::lastPositionInOrAfterNode(node);
 }
 
 Position lastEditablePositionBeforePositionInRoot(const Position&, Node*);
@@ -169,7 +163,6 @@ enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
 bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
 bool lineBreakExistsAtPosition(const Position&);
-bool isVisiblyAdjacent(const Position& first, const Position& second);
 bool isAtUnsplittableElement(const Position&);
 
 // miscellaneous functions on Position
@@ -199,14 +192,6 @@ int indexForVisiblePosition(const VisiblePosition&, RefPtrWillBeRawPtr<Container
 VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // -------------------------------------------------------------------------
-// Range
-// -------------------------------------------------------------------------
-
-// Functions returning Range
-
-PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
-
-// -------------------------------------------------------------------------
 // HTMLElement
 // -------------------------------------------------------------------------
 
@@ -214,11 +199,9 @@ PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& star
 
 PassRefPtrWillBeRawPtr<HTMLElement> createDefaultParagraphElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLBRElement> createBreakElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLOListElement> createOrderedListElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLUListElement> createUnorderedListElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLLIElement> createListItemElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
-PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
 
 HTMLElement* enclosingList(Node*);
 HTMLElement* outermostEnclosingList(Node*, HTMLElement* rootList = nullptr);
@@ -231,7 +214,6 @@ Node* enclosingListChild(Node*);
 // Functions returning Element
 
 PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, PassRefPtrWillBeRawPtr<Text> tabTextNode);
 PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, const String& tabText);
 PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document&);
 
@@ -255,7 +237,7 @@ Position adjustedSelectionStartForStyleComputation(const VisibleSelection&);
 // Miscellaneous functions on Text
 inline bool isWhitespace(UChar c)
 {
-    return c == noBreakSpace || c == ' ' || c == '\n' || c == '\t';
+    return c == noBreakSpaceCharacter || c == ' ' || c == '\n' || c == '\t';
 }
 
 // FIXME: Can't really answer this question correctly without knowing the white-space mode.
@@ -269,7 +251,7 @@ inline bool isAmbiguousBoundaryCharacter(UChar character)
     // These are characters that can behave as word boundaries, but can appear within words.
     // If they are just typed, i.e. if they are immediately followed by a caret, we want to delay text checking until the next character has been typed.
     // FIXME: this is required until 6853027 is fixed and text checking can do this for us.
-    return character == '\'' || character == rightSingleQuotationMark || character == hebrewPunctuationGershayim;
+    return character == '\'' || character == rightSingleQuotationMarkCharacter || character == hebrewPunctuationGershayimCharacter;
 }
 
 String stringWithRebalancedWhitespace(const String&, bool startIsStartOfParagraph, bool endIsEndOfParagraph);

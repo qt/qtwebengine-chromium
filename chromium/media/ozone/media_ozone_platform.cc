@@ -4,8 +4,8 @@
 
 #include "media/ozone/media_ozone_platform.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/ozone/platform_object.h"
 #include "ui/ozone/platform_selection.h"
 
@@ -17,7 +17,7 @@ class MediaOzonePlatformStub : public MediaOzonePlatform {
  public:
   MediaOzonePlatformStub() {}
 
-  virtual ~MediaOzonePlatformStub() {}
+  ~MediaOzonePlatformStub() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MediaOzonePlatformStub);
@@ -32,7 +32,15 @@ MediaOzonePlatform* CreateMediaOzonePlatformCaca() {
   return new MediaOzonePlatformStub;
 }
 
+MediaOzonePlatform* CreateMediaOzonePlatformCast() {
+  return new MediaOzonePlatformStub;
+}
+
 MediaOzonePlatform* CreateMediaOzonePlatformDri() {
+  return new MediaOzonePlatformStub;
+}
+
+MediaOzonePlatform* CreateMediaOzonePlatformDrm() {
   return new MediaOzonePlatformStub;
 }
 

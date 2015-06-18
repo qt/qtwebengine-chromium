@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html i18n-values="dir:textdirection;" id="uber" class="loading">
+<!doctype html>
+<html id="uber" class="loading" i18n-values="dir:textdirection;lang:language">
 <head>
 <meta charset="utf-8">
 <title i18n-content="pageTitle"></title>
@@ -20,7 +20,7 @@
 
 <body>
 
-<div id="navigation"><iframe src="chrome://uber-frame/" name="chrome"></iframe></div>
+<div id="navigation"><iframe src="chrome://uber-frame/" name="chrome" role="presentation"></iframe></div>
 
 <div class="iframe-container"
     i18n-values="id:historyHost; data-url:historyFrameURL;"
@@ -36,7 +36,7 @@
     data-favicon="IDR_PRODUCT_LOGO_16"></div>
 
 <script src="chrome://chrome/strings.js"></script>
-<script src="chrome://resources/js/i18n_template2.js"></script>
+<script src="chrome://resources/js/i18n_template.js"></script>
 
 </body>
 </html>

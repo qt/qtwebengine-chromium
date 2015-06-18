@@ -31,7 +31,8 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLTableElement.h"
-#include "core/rendering/RenderTableCell.h"
+#include "core/html/parser/HTMLParserIdioms.h"
+#include "core/layout/LayoutTableCell.h"
 
 using std::max;
 using std::min;
@@ -57,13 +58,19 @@ DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableCellElement)
 int HTMLTableCellElement::colSpan() const
 {
     const AtomicString& colSpanValue = fastGetAttribute(colspanAttr);
-    return max(1, min(colSpanValue.toInt(), maxColRowSpan));
+    int value = 0;
+    if (colSpanValue.isEmpty() || !parseHTMLInteger(colSpanValue, value))
+        return 1;
+    return max(1, min(value, maxColRowSpan));
 }
 
 int HTMLTableCellElement::rowSpan() const
 {
     const AtomicString& rowSpanValue = fastGetAttribute(rowspanAttr);
-    return max(1, min(rowSpanValue.toInt(), maxColRowSpan));
+    int value = 0;
+    if (rowSpanValue.isEmpty() || !parseHTMLInteger(rowSpanValue, value))
+        return 1;
+    return max(1, min(value, maxColRowSpan));
 }
 
 int HTMLTableCellElement::cellIndex() const
@@ -108,11 +115,11 @@ void HTMLTableCellElement::collectStyleForPresentationAttribute(const QualifiedN
 void HTMLTableCellElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == rowspanAttr) {
-        if (renderer() && renderer()->isTableCell())
-            toRenderTableCell(renderer())->colSpanOrRowSpanChanged();
+        if (layoutObject() && layoutObject()->isTableCell())
+            toLayoutTableCell(layoutObject())->colSpanOrRowSpanChanged();
     } else if (name == colspanAttr) {
-        if (renderer() && renderer()->isTableCell())
-            toRenderTableCell(renderer())->colSpanOrRowSpanChanged();
+        if (layoutObject() && layoutObject()->isTableCell())
+            toLayoutTableCell(layoutObject())->colSpanOrRowSpanChanged();
     } else
         HTMLTablePartElement::parseAttribute(name, value);
 }
@@ -171,18 +178,18 @@ const AtomicString& HTMLTableCellElement::scope() const
 
 HTMLTableCellElement* HTMLTableCellElement::cellAbove() const
 {
-    RenderObject* cellRenderer = renderer();
-    if (!cellRenderer)
+    LayoutObject* cellLayoutObject = layoutObject();
+    if (!cellLayoutObject)
         return nullptr;
-    if (!cellRenderer->isTableCell())
-        return nullptr;
-
-    RenderTableCell* tableCellRenderer = toRenderTableCell(cellRenderer);
-    RenderTableCell* cellAboveRenderer = tableCellRenderer->table()->cellAbove(tableCellRenderer);
-    if (!cellAboveRenderer)
+    if (!cellLayoutObject->isTableCell())
         return nullptr;
 
-    return toHTMLTableCellElement(cellAboveRenderer->node());
+    LayoutTableCell* tableCellLayoutObject = toLayoutTableCell(cellLayoutObject);
+    LayoutTableCell* cellAboveLayoutObject = tableCellLayoutObject->table()->cellAbove(tableCellLayoutObject);
+    if (!cellAboveLayoutObject)
+        return nullptr;
+
+    return toHTMLTableCellElement(cellAboveLayoutObject->node());
 }
 
 } // namespace blink

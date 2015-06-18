@@ -22,8 +22,10 @@ extern "C" {
 #endif
 
 
-/* RAND_bytes writes |len| bytes of random data to |buf|. It returns one on
- * success and zero on otherwise. */
+/* Random number generation. */
+
+
+/* RAND_bytes writes |len| bytes of random data to |buf| and returns one. */
 OPENSSL_EXPORT int RAND_bytes(uint8_t *buf, size_t len);
 
 /* RAND_cleanup frees any resources used by the RNG. This is not safe if other
@@ -39,11 +41,17 @@ OPENSSL_EXPORT int RAND_pseudo_bytes(uint8_t *buf, size_t len);
 /* RAND_seed does nothing. */
 OPENSSL_EXPORT void RAND_seed(const void *buf, int num);
 
+/* RAND_load_file returns a nonnegative number. */
+OPENSSL_EXPORT int RAND_load_file(const char *path, long num);
+
 /* RAND_add does nothing. */
 OPENSSL_EXPORT void RAND_add(const void *buf, int num, double entropy);
 
 /* RAND_poll returns one. */
 OPENSSL_EXPORT int RAND_poll(void);
+
+/* RAND_status returns one. */
+OPENSSL_EXPORT int RAND_status(void);
 
 
 #if defined(__cplusplus)

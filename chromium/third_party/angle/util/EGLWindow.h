@@ -21,16 +21,32 @@
 #include <cstdint>
 #include <memory>
 
-#include "shared_utils.h"
+#include "common/angleutils.h"
 
 class OSWindow;
 
-class EGLWindow
+// A hidden define used in some renderers (currently D3D-only)
+// to init a no-op renderer. Useful for performance testing.
+#ifndef EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE
+#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE 0x6AC0
+#endif
+
+struct EGLPlatformParameters
+{
+    EGLint renderer;
+    EGLint majorVersion;
+    EGLint minorVersion;
+    EGLint deviceType;
+
+    EGLPlatformParameters();
+    explicit EGLPlatformParameters(EGLint renderer);
+    EGLPlatformParameters(EGLint renderer, EGLint majorVersion, EGLint minorVersion, EGLint deviceType);
+};
+
+class EGLWindow : angle::NonCopyable
 {
   public:
-    EGLWindow(size_t width, size_t height,
-              EGLint glesMajorVersion,
-              EGLint requestedRenderer);
+    EGLWindow(size_t width, size_t height, EGLint glesMajorVersion, const EGLPlatformParameters &platform);
 
     ~EGLWindow();
 
@@ -48,8 +64,8 @@ class EGLWindow
 
     void swap();
 
-    GLuint getClientVersion() const { return mClientVersion; }
-    EGLint getRequestedRenderer() const { return mRequestedRenderer; }
+    EGLint getClientVersion() const { return mClientVersion; }
+    const EGLPlatformParameters &getPlatform() const { return mPlatform; }
     EGLConfig getConfig() const;
     EGLDisplay getDisplay() const;
     EGLSurface getSurface() const;
@@ -67,17 +83,16 @@ class EGLWindow
 
     bool initializeGL(OSWindow *osWindow);
     void destroyGL();
+    bool isGLInitialized() const;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(EGLWindow);
-
     EGLConfig mConfig;
     EGLDisplay mDisplay;
     EGLSurface mSurface;
     EGLContext mContext;
 
-    GLuint mClientVersion;
-    EGLint mRequestedRenderer;
+    EGLint mClientVersion;
+    EGLPlatformParameters mPlatform;
     size_t mWidth;
     size_t mHeight;
     int mRedBits;

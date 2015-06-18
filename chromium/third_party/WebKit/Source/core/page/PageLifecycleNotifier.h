@@ -26,51 +26,20 @@
 #ifndef PageLifecycleNotifier_h
 #define PageLifecycleNotifier_h
 
-#include "core/page/PageLifecycleObserver.h"
+#include "core/CoreExport.h"
 #include "platform/LifecycleNotifier.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/TemporaryChange.h"
 
 namespace blink {
 
-class Page;
 class LocalFrame;
+class Page;
+class PageLifecycleObserver;
 
-class PageLifecycleNotifier final : public LifecycleNotifier<Page> {
+class CORE_EXPORT PageLifecycleNotifier : public LifecycleNotifier<Page, PageLifecycleObserver> {
 public:
-    static PassOwnPtr<PageLifecycleNotifier> create(Page*);
-
     void notifyPageVisibilityChanged();
     void notifyDidCommitLoad(LocalFrame*);
-
-    virtual void addObserver(Observer*) override;
-    virtual void removeObserver(Observer*) override;
-
-private:
-    explicit PageLifecycleNotifier(Page*);
-
-    using PageObserverSet = HashSet<PageLifecycleObserver*>;
-    PageObserverSet m_pageObservers;
 };
-
-inline PassOwnPtr<PageLifecycleNotifier> PageLifecycleNotifier::create(Page* context)
-{
-    return adoptPtr(new PageLifecycleNotifier(context));
-}
-
-inline void PageLifecycleNotifier::notifyPageVisibilityChanged()
-{
-    TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverPageObservers);
-    for (PageLifecycleObserver* pageObserver : m_pageObservers)
-        pageObserver->pageVisibilityChanged();
-}
-
-inline void PageLifecycleNotifier::notifyDidCommitLoad(LocalFrame* frame)
-{
-    TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverPageObservers);
-    for (PageLifecycleObserver* pageObserver : m_pageObservers)
-        pageObserver->didCommitLoad(frame);
-}
 
 } // namespace blink
 

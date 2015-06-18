@@ -1,0 +1,24 @@
+# Copyright 2015 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/mojo/src/mojo/public/mojo.gni")
+
+group("app") {
+  deps = [
+    "//mandoline/ui",
+  ]
+
+  if (is_android) {
+    deps += [ "//mandoline/app/android" ]
+  } else {
+    deps += [ "//mandoline/app/desktop" ]
+  }
+
+  data_deps = [
+    "//components/html_viewer",
+    "//mandoline/ui/browser",
+    "//mandoline/services/core_services",
+    "//mojo/runner:mojo_runner",
+  ]
+}

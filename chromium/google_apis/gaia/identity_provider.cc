@@ -40,7 +40,8 @@ void IdentityProvider::RemoveObserver(Observer* observer) {
 }
 
 void IdentityProvider::OnRefreshTokenAvailable(const std::string& account_id) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 IdentityProvider::OnRefreshTokenAvailable"));

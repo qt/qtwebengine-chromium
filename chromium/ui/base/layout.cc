@@ -32,8 +32,8 @@ std::vector<ScaleFactor>* g_supported_scale_factors = NULL;
 
 const float kScaleFactorScales[] = {1.0f, 1.0f, 1.25f, 1.33f, 1.4f, 1.5f, 1.8f,
                                     2.0f, 2.5f, 3.0f};
-COMPILE_ASSERT(NUM_SCALE_FACTORS == arraysize(kScaleFactorScales),
-               kScaleFactorScales_incorrect_size);
+static_assert(NUM_SCALE_FACTORS == arraysize(kScaleFactorScales),
+              "kScaleFactorScales has incorrect size");
 
 }  // namespace
 
@@ -90,6 +90,14 @@ float GetImageScale(ScaleFactor scale_factor) {
 
 float GetScaleForScaleFactor(ScaleFactor scale_factor) {
   return kScaleFactorScales[scale_factor];
+}
+
+bool IsSupportedScale(float scale) {
+  for (auto scale_factor_idx : *g_supported_scale_factors) {
+    if (kScaleFactorScales[scale_factor_idx] == scale)
+      return true;
+  }
+  return false;
 }
 
 namespace test {

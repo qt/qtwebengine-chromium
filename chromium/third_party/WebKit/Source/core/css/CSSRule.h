@@ -34,7 +34,8 @@ class CSSParserContext;
 class CSSStyleSheet;
 class StyleRuleBase;
 
-class CSSRule : public RefCountedWillBeGarbageCollectedFinalized<CSSRule>, public ScriptWrappableBase {
+class CSSRule : public RefCountedWillBeGarbageCollectedFinalized<CSSRule>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~CSSRule() { }
 
@@ -55,7 +56,6 @@ public:
         WEBKIT_KEYFRAME_RULE = KEYFRAME_RULE,
         SUPPORTS_RULE = 12,
         VIEWPORT_RULE = 15,
-        WEBKIT_FILTER_RULE = 17
     };
 
     virtual Type type() const = 0;
@@ -74,7 +74,7 @@ public:
         m_parentRule = rule;
     }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     CSSStyleSheet* parentStyleSheet() const
     {

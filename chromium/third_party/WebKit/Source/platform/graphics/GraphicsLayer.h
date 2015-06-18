@@ -38,6 +38,7 @@
 #include "platform/graphics/GraphicsLayerDebugInfo.h"
 #include "platform/graphics/PaintInvalidationReason.h"
 #include "platform/graphics/filters/FilterOperations.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebCompositorAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
@@ -45,12 +46,15 @@
 #include "public/platform/WebLayerClient.h"
 #include "public/platform/WebLayerScrollClient.h"
 #include "public/platform/WebNinePatchLayer.h"
+#include "public/platform/WebScrollBlocksOn.h"
+#include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
+class DisplayItemList;
 class FloatRect;
 class GraphicsContext;
 class GraphicsLayer;
@@ -79,7 +83,7 @@ typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 // which may have associated transformation and animations.
 
 class PLATFORM_EXPORT GraphicsLayer : public GraphicsContextPainter, public WebCompositorAnimationDelegate, public WebLayerScrollClient, public WebLayerClient {
-    WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED(GraphicsLayer);
 public:
     static PassOwnPtr<GraphicsLayer> create(GraphicsLayerFactory*, GraphicsLayerClient*);
 
@@ -116,7 +120,7 @@ public:
     GraphicsLayer* contentsClippingMaskLayer() const { return m_contentsClippingMaskLayer; }
     void setContentsClippingMaskLayer(GraphicsLayer*);
 
-    // The given layer will replicate this layer and its children; the replica renders behind this layer.
+    // The given layer will replicate this layer and its children; the replica layoutObjects behind this layer.
     void setReplicatedByLayer(GraphicsLayer*);
     // The layer that replicates this layer (if any).
     GraphicsLayer* replicaLayer() const { return m_replicaLayer; }
@@ -128,9 +132,14 @@ public:
         SetNeedsDisplay
     };
 
-    // Offset is origin of the renderer minus origin of the graphics layer (so either zero or negative).
-    IntSize offsetFromRenderer() const { return m_offsetFromRenderer; }
-    void setOffsetFromRenderer(const IntSize&, ShouldSetNeedsDisplay = SetNeedsDisplay);
+    // Offset is origin of the layoutObject minus origin of the graphics layer (so either zero or negative).
+    IntSize offsetFromLayoutObject() const { return flooredIntSize(m_offsetFromLayoutObject); }
+    void setOffsetFromLayoutObject(const IntSize&, ShouldSetNeedsDisplay = SetNeedsDisplay);
+
+    // The double version is only used in |updateScrollingLayerGeometry()| for detecting
+    // scroll offset change at floating point precision.
+    DoubleSize offsetDoubleFromLayoutObject() const { return m_offsetFromLayoutObject; }
+    void setOffsetDoubleFromLayoutObject(const DoubleSize&, ShouldSetNeedsDisplay = SetNeedsDisplay);
 
     // The position of the layer (the location of its top-left corner in its parent)
     const FloatPoint& position() const { return m_position; }
@@ -159,7 +168,7 @@ public:
     void setClipParent(WebLayer*);
 
     // For special cases, e.g. drawing missing tiles on Android.
-    // The compositor should never paint this color in normal cases because the RenderLayer
+    // The compositor should never paint this color in normal cases because the Layer
     // will paint background by itself.
     void setBackgroundColor(const Color&);
 
@@ -174,9 +183,12 @@ public:
     void setOpacity(float);
 
     void setBlendMode(WebBlendMode);
+    void setScrollBlocksOn(WebScrollBlocksOn);
     void setIsRootForIsolatedGroup(bool);
 
     void setFilters(const FilterOperations&);
+
+    void setFilterQuality(SkFilterQuality);
 
     // Some GraphicsLayers paint only the foreground or the background content
     void setPaintingPhase(GraphicsLayerPaintingPhase);
@@ -186,6 +198,8 @@ public:
     void setNeedsDisplayInRect(const IntRect&, PaintInvalidationReason);
 
     void setContentsNeedsDisplay();
+
+    void invalidateDisplayItemClient(const DisplayItemClientWrapper&);
 
     // Set that the position/size of the contents (image or video).
     void setContentsRect(const IntRect&);
@@ -215,8 +229,10 @@ public:
     // pointers for the layers and timing data will be included in the returned string.
     String layerTreeAsText(LayerTreeFlags = LayerTreeNormal) const;
 
+    bool isTrackingPaintInvalidations() const { return m_client->isTrackingPaintInvalidations(); }
     void resetTrackedPaintInvalidations();
-    void addRepaintRect(const FloatRect&);
+    void trackPaintInvalidationRect(const FloatRect&);
+    void trackPaintInvalidationObject(const String&);
 
     void addLinkHighlight(LinkHighlightClient*);
     void removeLinkHighlight(LinkHighlightClient*);
@@ -242,15 +258,24 @@ public:
     // WebLayerScrollClient implementation.
     virtual void didScroll() override;
 
+    virtual DisplayItemList* displayItemList() override;
+
+    // Exposed for tests.
+    virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
+
+#ifndef NDEBUG
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return m_client->debugName(this) + " debug red fill"; }
+#endif
+
 protected:
     String debugName(WebLayer*) const;
 
     explicit GraphicsLayer(GraphicsLayerClient*);
     // GraphicsLayerFactoryChromium that wants to create a GraphicsLayer need to be friends.
     friend class GraphicsLayerFactoryChromium;
-
-    // Exposed for tests.
-    virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
+    // for testing
+    friend class FakeGraphicsLayerFactory;
 
 private:
     // Callback from the underlying graphics system to draw layer contents.
@@ -280,8 +305,8 @@ private:
 
     GraphicsLayerClient* m_client;
 
-    // Offset from the owning renderer
-    IntSize m_offsetFromRenderer;
+    // Offset from the owning layoutObject
+    DoubleSize m_offsetFromLayoutObject;
 
     // Position is relative to the parent GraphicsLayer
     FloatPoint m_position;
@@ -294,6 +319,8 @@ private:
     float m_opacity;
 
     WebBlendMode m_blendMode;
+
+    WebScrollBlocksOn m_scrollBlocksOn;
 
     bool m_hasTransformOrigin : 1;
     bool m_contentsOpaque : 1;
@@ -341,6 +368,8 @@ private:
     ScrollableArea* m_scrollableArea;
     GraphicsLayerDebugInfo m_debugInfo;
     int m_3dRenderingContext;
+
+    OwnPtr<DisplayItemList> m_displayItemList;
 };
 
 } // namespace blink

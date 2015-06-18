@@ -22,15 +22,15 @@ struct AXTreeUpdateState;
 // Be careful, as the tree may be in an inconsistent state at this time;
 // don't walk the parents and children at this time:
 //   OnNodeWillBeDeleted
+//   OnSubtreeWillBeDeleted
 //   OnNodeCreated
 //   OnNodeChanged
 //
-// Other notifications are called at the end of an atomic update operation.
-// From these, it's safe to walk the tree and do any initialization that
-// assumes the tree is in a consistent state.
-//   OnNodeCreationFinished
-//   OnNodeChangeFinished
-//   OnRootChanged
+// In addition, one additional notification is fired at the end of an
+// atomic update, and it provides a vector of nodes that were added or
+// changed, for final postprocessing:
+//   OnAtomicUpdateFinished
+//
 class AX_EXPORT AXTreeDelegate {
  public:
   AXTreeDelegate();
@@ -41,6 +41,11 @@ class AX_EXPORT AXTreeDelegate {
   // in the middle of an update, the tree may be in an invalid state!
   virtual void OnNodeWillBeDeleted(AXNode* node) = 0;
 
+  // Same as OnNodeWillBeDeleted, but only called once for an entire subtree.
+  // This is called in the middle of an update, the tree may be in an
+  // invalid state!
+  virtual void OnSubtreeWillBeDeleted(AXNode* node) = 0;
+
   // Called immediately after a new node is created. The tree may be in
   // the middle of an update, don't walk the parents and children now.
   virtual void OnNodeCreated(AXNode* node) = 0;
@@ -49,16 +54,28 @@ class AX_EXPORT AXTreeDelegate {
   // the middle of an update, don't walk the parents and children now.
   virtual void OnNodeChanged(AXNode* node) = 0;
 
-  // Called for each new node at the end of an update operation,
-  // when the tree is in a consistent state.
-  virtual void OnNodeCreationFinished(AXNode* node) = 0;
+  enum ChangeType {
+    NODE_CREATED,
+    SUBTREE_CREATED,
+    NODE_CHANGED
+  };
 
-  // Called for each existing node that changed at the end of an update
-  // operation, when the tree is in a consistent state.
-  virtual void OnNodeChangeFinished(AXNode* node) = 0;
+  struct Change {
+    Change(AXNode* node, ChangeType type) {
+      this->node = node;
+      this->type = type;
+    }
+    AXNode* node;
+    ChangeType type;
+  };
 
-  // Called at the end of an update operation when the root node changes.
-  virtual void OnRootChanged(AXNode* new_root) = 0;
+  // Called at the end of the update operation. Every node that was added
+  // or changed will be included in |changes|, along with an enum indicating
+  // the type of change - either (1) a node was created, (2) a node was created
+  // and it's the root of a new subtree, or (3) a node was changed. Finally,
+  // a bool indicates if the root of the tree was changed or not.
+  virtual void OnAtomicUpdateFinished(bool root_changed,
+                                      const std::vector<Change>& changes) = 0;
 };
 
 // AXTree is a live, managed tree of AXNode objects that can receive
@@ -74,8 +91,10 @@ class AX_EXPORT AXTree {
 
   virtual void SetDelegate(AXTreeDelegate* delegate);
 
-  virtual AXNode* GetRoot() const;
-  virtual AXNode* GetFromId(int32 id) const;
+  AXNode* root() const { return root_; }
+
+  // Returns the AXNode with the given |id| if it is part of this AXTree.
+  AXNode* GetFromId(int32 id) const;
 
   // Returns true on success. If it returns false, it's a fatal error
   // and this tree should be destroyed, and the source of the tree update
@@ -87,7 +106,9 @@ class AX_EXPORT AXTree {
 
   // A string describing the error from an unsuccessful Unserialize,
   // for testing and debugging.
-  const std::string& error() { return error_; }
+  const std::string& error() const { return error_; }
+
+  int size() { return static_cast<int>(id_map_.size()); }
 
  private:
   AXNode* CreateNode(AXNode* parent, int32 id, int32 index_in_parent);
@@ -97,15 +118,20 @@ class AX_EXPORT AXTree {
 
   void OnRootChanged();
 
+  // Notify the delegate that the subtree rooted at |node| will be destroyed,
+  // then call DestroyNodeAndSubtree on it.
+  void DestroySubtree(AXNode* node, AXTreeUpdateState* update_state);
+
   // Call Destroy() on |node|, and delete it from the id map, and then
   // call recursively on all nodes in its subtree.
-  void DestroyNodeAndSubtree(AXNode* node);
+  void DestroyNodeAndSubtree(AXNode* node, AXTreeUpdateState* update_state);
 
   // Iterate over the children of |node| and for each child, destroy the
   // child and its subtree if its id is not in |new_child_ids|. Returns
   // true on success, false on fatal error.
   bool DeleteOldChildren(AXNode* node,
-                         const std::vector<int32> new_child_ids);
+                         const std::vector<int32>& new_child_ids,
+                         AXTreeUpdateState* update_state);
 
   // Iterate over |new_child_ids| and populate |new_children| with
   // pointers to child nodes, reusing existing nodes already in the tree
@@ -113,7 +139,7 @@ class AX_EXPORT AXTree {
   // if the id already exists as the child of another node, that's an
   // error. Returns true on success, false on fatal error.
   bool CreateNewChildVector(AXNode* node,
-                            const std::vector<int32> new_child_ids,
+                            const std::vector<int32>& new_child_ids,
                             std::vector<AXNode*>* new_children,
                             AXTreeUpdateState* update_state);
 

@@ -31,6 +31,7 @@ PrintingContextNoSystemDialog::~PrintingContextNoSystemDialog() {
 void PrintingContextNoSystemDialog::AskUserForSettings(
     int max_pages,
     bool has_selection,
+    bool is_scripted,
     const PrintSettingsCallback& callback) {
   // We don't want to bring up a dialog here.  Ever.  Just signal the callback.
   callback.Run(OK);
@@ -76,7 +77,8 @@ gfx::Size PrintingContextNoSystemDialog::GetPdfPaperSizeDeviceUnits() {
 
 PrintingContext::Result PrintingContextNoSystemDialog::UpdatePrinterSettings(
     bool external_preview,
-    bool show_system_dialog) {
+    bool show_system_dialog,
+    int page_count) {
   DCHECK(!show_system_dialog);
 
   if (settings_.dpi() == 0)

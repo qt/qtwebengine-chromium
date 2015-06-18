@@ -30,6 +30,7 @@ class NativeViewHostAura::ClippingWindowDelegate : public aura::WindowDelegate {
   gfx::Size GetMaximumSize() const override { return gfx::Size(); }
   void OnBoundsChanged(const gfx::Rect& old_bounds,
                        const gfx::Rect& new_bounds) override {}
+  ui::TextInputClient* GetFocusedTextInputClient() override { return nullptr; }
   gfx::NativeCursor GetCursor(const gfx::Point& point) override {
     return gfx::kNullCursor;
   }
@@ -50,7 +51,7 @@ class NativeViewHostAura::ClippingWindowDelegate : public aura::WindowDelegate {
         : true;
   }
   void OnCaptureLost() override {}
-  void OnPaint(gfx::Canvas* canvas) override {}
+  void OnPaint(const ui::PaintContext& context) override {}
   void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
   void OnWindowDestroying(aura::Window* window) override {}
   void OnWindowDestroyed(aura::Window* window) override {}
@@ -69,7 +70,7 @@ NativeViewHostAura::NativeViewHostAura(NativeViewHost* host)
   // Set the type so descendant views (including popups) get positioned
   // appropriately.
   clipping_window_.SetType(ui::wm::WINDOW_TYPE_CONTROL);
-  clipping_window_.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  clipping_window_.Init(ui::LAYER_NOT_DRAWN);
   clipping_window_.set_owned_by_parent(false);
   clipping_window_.SetName("NativeViewHostAuraClip");
   clipping_window_.layer()->SetMasksToBounds(true);

@@ -43,7 +43,10 @@ TEST_F(ShaderManagerTest, Basic) {
   // Check we get nothing for a non-existent shader.
   EXPECT_TRUE(manager_.GetShader(kClient2Id) == NULL);
   // Check we can't get the shader after we remove it.
-  manager_.MarkAsDeleted(shader1);
+  EXPECT_CALL(*gl_, DeleteShader(kService1Id))
+      .Times(1)
+      .RetiresOnSaturation();
+  manager_.Delete(shader1);
   EXPECT_TRUE(manager_.GetShader(kClient1Id) == NULL);
 }
 
@@ -79,10 +82,19 @@ TEST_F(ShaderManagerTest, DeleteBug) {
   ASSERT_TRUE(shader1.get());
   ASSERT_TRUE(shader2.get());
   manager_.UseShader(shader1.get());
-  manager_.MarkAsDeleted(shader1.get());
-  manager_.MarkAsDeleted(shader2.get());
+  manager_.Delete(shader1.get());
+
+  EXPECT_CALL(*gl_, DeleteShader(kService2Id))
+      .Times(1)
+      .RetiresOnSaturation();
+  manager_.Delete(shader2.get());
   EXPECT_TRUE(manager_.IsOwned(shader1.get()));
   EXPECT_FALSE(manager_.IsOwned(shader2.get()));
+
+  EXPECT_CALL(*gl_, DeleteShader(kService1Id))
+      .Times(1)
+      .RetiresOnSaturation();
+  manager_.UnuseShader(shader1.get());
 }
 
 TEST_F(ShaderManagerTest, DoCompile) {
@@ -127,16 +139,30 @@ TEST_F(ShaderManagerTest, DoCompile) {
   EXPECT_FALSE(shader1->InUse());
   EXPECT_TRUE(shader1->source().empty());
   EXPECT_TRUE(shader1->log_info().empty());
-  EXPECT_TRUE(shader1->signature_source().empty());
+  EXPECT_TRUE(shader1->last_compiled_source().empty());
   EXPECT_TRUE(shader1->translated_source().empty());
   EXPECT_EQ(0u, shader1->attrib_map().size());
   EXPECT_EQ(0u, shader1->uniform_map().size());
   EXPECT_EQ(0u, shader1->varying_map().size());
+  EXPECT_EQ(Shader::kShaderStateWaiting, shader1->shader_state());
 
   // Check we can set its source.
   shader1->set_source(kClient1Source);
   EXPECT_STREQ(kClient1Source, shader1->source().c_str());
-  EXPECT_TRUE(shader1->signature_source().empty());
+  EXPECT_TRUE(shader1->last_compiled_source().empty());
+
+  // Check that DoCompile() will not work if RequestCompile() was not called.
+  shader1->DoCompile();
+  EXPECT_EQ(Shader::kShaderStateWaiting, shader1->shader_state());
+  EXPECT_FALSE(shader1->valid());
+
+  // Check RequestCompile() will update the state and last compiled source, but
+  // still keep the actual compile state invalid.
+  scoped_refptr<ShaderTranslatorInterface> translator(new MockShaderTranslator);
+  shader1->RequestCompile(translator, Shader::kANGLE);
+  EXPECT_EQ(Shader::kShaderStateCompileRequested, shader1->shader_state());
+  EXPECT_STREQ(kClient1Source, shader1->last_compiled_source().c_str());
+  EXPECT_FALSE(shader1->valid());
 
   // Check DoCompile() will set compilation states, log, translated source,
   // shader variables, and name mapping.
@@ -163,12 +189,12 @@ TEST_F(ShaderManagerTest, DoCompile) {
       kVarying1StaticUse, kVarying1Name);
 
   TestHelper::SetShaderStates(
-      gl_.get(), shader1, true, &kLog, &kTranslatedSource,
+      gl_.get(), shader1, true, &kLog, &kTranslatedSource, NULL,
       &attrib_map, &uniform_map, &varying_map, NULL);
   EXPECT_TRUE(shader1->valid());
   // When compilation succeeds, no log is recorded.
   EXPECT_STREQ("", shader1->log_info().c_str());
-  EXPECT_STREQ(kClient1Source, shader1->signature_source().c_str());
+  EXPECT_STREQ(kClient1Source, shader1->last_compiled_source().c_str());
   EXPECT_STREQ(kTranslatedSource.c_str(), shader1->translated_source().c_str());
 
   // Check varying infos got copied.
@@ -210,7 +236,7 @@ TEST_F(ShaderManagerTest, DoCompile) {
 
   // Compile failure case.
   TestHelper::SetShaderStates(
-      gl_.get(), shader1, false, &kLog, &kTranslatedSource,
+      gl_.get(), shader1, false, &kLog, &kTranslatedSource, NULL,
       &attrib_map, &uniform_map, &varying_map, NULL);
   EXPECT_FALSE(shader1->valid());
   EXPECT_STREQ(kLog.c_str(), shader1->log_info().c_str());
@@ -235,7 +261,10 @@ TEST_F(ShaderManagerTest, ShaderInfoUseCount) {
   EXPECT_TRUE(shader1->InUse());
   manager_.UseShader(shader1);
   EXPECT_TRUE(shader1->InUse());
-  manager_.MarkAsDeleted(shader1);
+  EXPECT_CALL(*gl_, DeleteShader(kService1Id))
+      .Times(1)
+      .RetiresOnSaturation();
+  manager_.Delete(shader1);
   EXPECT_TRUE(shader1->IsDeleted());
   Shader* shader2 = manager_.GetShader(kClient1Id);
   EXPECT_EQ(shader1, shader2);
@@ -258,7 +287,10 @@ TEST_F(ShaderManagerTest, ShaderInfoUseCount) {
   EXPECT_FALSE(shader1->InUse());
   shader2 = manager_.GetShader(kClient1Id);
   EXPECT_EQ(shader1, shader2);
-  manager_.MarkAsDeleted(shader1);  // this should delete the shader.
+  EXPECT_CALL(*gl_, DeleteShader(kService1Id))
+      .Times(1)
+      .RetiresOnSaturation();
+  manager_.Delete(shader1);  // this should delete the shader.
   shader2 = manager_.GetShader(kClient1Id);
   EXPECT_TRUE(shader2 == NULL);
 }

@@ -6,18 +6,23 @@
 #define DEVICE_USB_USB_DEVICE_HANDLE_IMPL_H_
 
 #include <map>
+#include <set>
 #include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
 #include "device/usb/usb_device_handle.h"
-#include "net/base/io_buffer.h"
 #include "third_party/libusb/src/libusb/libusb.h"
 
 namespace base {
+class SequencedTaskRunner;
 class SingleThreadTaskRunner;
+class TaskRunner;
+}
+
+namespace net {
+class IOBuffer;
 }
 
 namespace device {
@@ -35,12 +40,15 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
  public:
   scoped_refptr<UsbDevice> GetDevice() const override;
   void Close() override;
-  bool ClaimInterface(int interface_number) override;
+  void SetConfiguration(int configuration_value,
+                        const ResultCallback& callback) override;
+  void ClaimInterface(int interface_number,
+                      const ResultCallback& callback) override;
   bool ReleaseInterface(int interface_number) override;
-  bool SetInterfaceAlternateSetting(int interface_number,
-                                    int alternate_setting) override;
-  bool ResetDevice() override;
-  bool GetStringDescriptor(uint8 string_id, base::string16* string) override;
+  void SetInterfaceAlternateSetting(int interface_number,
+                                    int alternate_setting,
+                                    const ResultCallback& callback) override;
+  void ResetDevice(const ResultCallback& callback) override;
 
   void ControlTransfer(UsbEndpointDirection direction,
                        TransferRequestType request_type,
@@ -48,50 +56,74 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
                        uint8 request,
                        uint16 value,
                        uint16 index,
-                       net::IOBuffer* buffer,
+                       scoped_refptr<net::IOBuffer> buffer,
                        size_t length,
                        unsigned int timeout,
-                       const UsbTransferCallback& callback) override;
+                       const TransferCallback& callback) override;
 
   void BulkTransfer(UsbEndpointDirection direction,
                     uint8 endpoint,
-                    net::IOBuffer* buffer,
+                    scoped_refptr<net::IOBuffer> buffer,
                     size_t length,
                     unsigned int timeout,
-                    const UsbTransferCallback& callback) override;
+                    const TransferCallback& callback) override;
 
   void InterruptTransfer(UsbEndpointDirection direction,
                          uint8 endpoint,
-                         net::IOBuffer* buffer,
+                         scoped_refptr<net::IOBuffer> buffer,
                          size_t length,
                          unsigned int timeout,
-                         const UsbTransferCallback& callback) override;
+                         const TransferCallback& callback) override;
 
   void IsochronousTransfer(UsbEndpointDirection direction,
                            uint8 endpoint,
-                           net::IOBuffer* buffer,
+                           scoped_refptr<net::IOBuffer> buffer,
                            size_t length,
                            unsigned int packets,
                            unsigned int packet_length,
                            unsigned int timeout,
-                           const UsbTransferCallback& callback) override;
-
-  PlatformUsbDeviceHandle handle() const { return handle_; }
+                           const TransferCallback& callback) override;
 
  protected:
   friend class UsbDeviceImpl;
 
-  // This constructor is called by UsbDevice.
-  UsbDeviceHandleImpl(scoped_refptr<UsbContext> context,
-                      UsbDeviceImpl* device,
-                      PlatformUsbDeviceHandle handle,
-                      const UsbConfigDescriptor& config);
+  // This constructor is called by UsbDeviceImpl.
+  UsbDeviceHandleImpl(
+      scoped_refptr<UsbContext> context,
+      scoped_refptr<UsbDeviceImpl> device,
+      PlatformUsbDeviceHandle handle,
+      scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
 
   ~UsbDeviceHandleImpl() override;
 
+  PlatformUsbDeviceHandle handle() const { return handle_; }
+
  private:
   class InterfaceClaimer;
-  struct Transfer;
+  class Transfer;
+
+  void SetConfigurationOnBlockingThread(PlatformUsbDeviceHandle handle,
+                                        int configuration_value,
+                                        const ResultCallback& callback);
+  void SetConfigurationComplete(bool success, const ResultCallback& callback);
+  void ClaimInterfaceOnBlockingThread(PlatformUsbDeviceHandle handle,
+                                      int interface_number,
+                                      const ResultCallback& callback);
+  void ClaimInterfaceComplete(int interface_number,
+                              bool success,
+                              const ResultCallback& callback);
+  void SetInterfaceAlternateSettingOnBlockingThread(
+      PlatformUsbDeviceHandle handle,
+      int interface_number,
+      int alternate_setting,
+      const ResultCallback& callback);
+  void SetInterfaceAlternateSettingComplete(int interface_number,
+                                            int alternate_setting,
+                                            bool success,
+                                            const ResultCallback& callback);
+  void ResetDeviceOnBlockingThread(PlatformUsbDeviceHandle handle,
+                                   const ResultCallback& callback);
+  void ResetDeviceComplete(bool success, const ResultCallback& callback);
 
   // Refresh endpoint_map_ after ClaimInterface, ReleaseInterface and
   // SetInterfaceAlternateSetting.
@@ -102,52 +134,69 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
   scoped_refptr<InterfaceClaimer> GetClaimedInterfaceForEndpoint(
       unsigned char endpoint);
 
-  // If the device's task runner is on the current thread then the transfer will
-  // be submitted directly, otherwise a task to do so it posted. The callback
-  // will be called on the current message loop of the thread where this
-  // function was called.
-  void PostOrSubmitTransfer(PlatformUsbTransferHandle handle,
-                            UsbTransferType transfer_type,
-                            net::IOBuffer* buffer,
-                            size_t length,
-                            const UsbTransferCallback& callback);
+  void ControlTransferInternal(
+      UsbEndpointDirection direction,
+      TransferRequestType request_type,
+      TransferRecipient recipient,
+      uint8 request,
+      uint16 value,
+      uint16 index,
+      scoped_refptr<net::IOBuffer> buffer,
+      size_t length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+
+  void BulkTransferInternal(
+      UsbEndpointDirection direction,
+      uint8 endpoint,
+      scoped_refptr<net::IOBuffer> buffer,
+      size_t length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+
+  void InterruptTransferInternal(
+      UsbEndpointDirection direction,
+      uint8 endpoint,
+      scoped_refptr<net::IOBuffer> buffer,
+      size_t length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
+
+  void IsochronousTransferInternal(
+      UsbEndpointDirection direction,
+      uint8 endpoint,
+      scoped_refptr<net::IOBuffer> buffer,
+      size_t length,
+      unsigned int packets,
+      unsigned int packet_length,
+      unsigned int timeout,
+      scoped_refptr<base::TaskRunner> callback_task_runner,
+      const TransferCallback& callback);
 
   // Submits a transfer and starts tracking it. Retains the buffer and copies
   // the completion callback until the transfer finishes, whereupon it invokes
   // the callback then releases the buffer.
-  void SubmitTransfer(PlatformUsbTransferHandle handle,
-                      UsbTransferType transfer_type,
-                      net::IOBuffer* buffer,
-                      const size_t length,
-                      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-                      const UsbTransferCallback& callback);
+  void SubmitTransfer(scoped_ptr<Transfer> transfer);
 
-  static void LIBUSB_CALL
-      PlatformTransferCallback(PlatformUsbTransferHandle handle);
-
-  // Invokes the callbacks associated with a given transfer, and removes it from
-  // the in-flight transfer set.
-  void CompleteTransfer(PlatformUsbTransferHandle transfer);
-
-  bool GetSupportedLanguages();
+  // Removes the transfer from the in-flight transfer set and invokes the
+  // completion callback.
+  void TransferComplete(Transfer* transfer, const base::Closure& callback);
 
   // Informs the object to drop internal references.
   void InternalClose();
 
-  UsbDeviceImpl* device_;
+  scoped_refptr<UsbDeviceImpl> device_;
 
   PlatformUsbDeviceHandle handle_;
 
-  const UsbConfigDescriptor& config_;
-
-  std::vector<uint16> languages_;
-  std::map<uint8, base::string16> strings_;
-
-  typedef std::map<int, scoped_refptr<InterfaceClaimer> > ClaimedInterfaceMap;
+  typedef std::map<int, scoped_refptr<InterfaceClaimer>> ClaimedInterfaceMap;
   ClaimedInterfaceMap claimed_interfaces_;
 
-  typedef std::map<PlatformUsbTransferHandle, Transfer> TransferMap;
-  TransferMap transfers_;
+  // This set holds weak pointers to pending transfers.
+  std::set<Transfer*> transfers_;
 
   // A map from endpoints to interfaces
   typedef std::map<int, int> EndpointMap;
@@ -158,6 +207,7 @@ class UsbDeviceHandleImpl : public UsbDeviceHandle {
   scoped_refptr<UsbContext> context_;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
   base::ThreadChecker thread_checker_;
 

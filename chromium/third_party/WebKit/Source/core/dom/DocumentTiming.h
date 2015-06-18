@@ -28,21 +28,28 @@
 
 namespace blink {
 
-struct DocumentTiming {
-    DocumentTiming()
-        : domLoading(0.0)
-        , domInteractive(0.0)
-        , domContentLoadedEventStart(0.0)
-        , domContentLoadedEventEnd(0.0)
-        , domComplete(0.0)
-    {
-    }
+class DocumentTiming {
+public:
+    DocumentTiming();
 
-    double domLoading;
-    double domInteractive;
-    double domContentLoadedEventStart;
-    double domContentLoadedEventEnd;
-    double domComplete;
+    void setDomLoading(double);
+    void setDomInteractive(double);
+    void setDomContentLoadedEventStart(double);
+    void setDomContentLoadedEventEnd(double);
+    void setDomComplete(double);
+
+    double domLoading() const { return m_domLoading; }
+    double domInteractive() const { return m_domInteractive; }
+    double domContentLoadedEventStart() const { return m_domContentLoadedEventStart; }
+    double domContentLoadedEventEnd() const { return m_domContentLoadedEventEnd; }
+    double domComplete() const { return m_domComplete; }
+
+private:
+    double m_domLoading;
+    double m_domInteractive;
+    double m_domContentLoadedEventStart;
+    double m_domContentLoadedEventEnd;
+    double m_domComplete;
 };
 
 }

@@ -73,7 +73,7 @@ VideoDecoderResource::VideoDecoderResource(Connection connection,
       // just testing |decoder_last_error_|.
       decoder_last_error_(PP_ERROR_FAILED) {
   // Clear the decode_ids_ array.
-  memset(decode_ids_, 0, arraysize(decode_ids_));
+  memset(decode_ids_, 0, sizeof(decode_ids_));
   SendCreate(RENDERER, PpapiHostMsg_VideoDecoder_Create());
 }
 
@@ -367,9 +367,9 @@ void VideoDecoderResource::OnPluginMsgRequestTextures(
       gles2_impl_->ActiveTexture(GL_TEXTURE0);
       gles2_impl_->BindTexture(texture_target, texture_ids[i]);
       gles2_impl_->TexParameteri(
-          texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+          texture_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       gles2_impl_->TexParameteri(
-          texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+          texture_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       gles2_impl_->TexParameterf(
           texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
       gles2_impl_->TexParameterf(

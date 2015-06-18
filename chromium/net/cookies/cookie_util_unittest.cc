@@ -4,22 +4,24 @@
 
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "base/basictypes.h"
+#include "base/strings/string_split.h"
 #include "net/cookies/cookie_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace net {
 
 namespace {
 
 struct RequestCookieParsingTest {
   std::string str;
-  std::vector<std::pair<std::string, std::string> > parsed;
+  base::StringPairs parsed;
 };
 
-net::cookie_util::ParsedRequestCookies MakeParsedRequestCookies(
-    const std::vector<std::pair<std::string, std::string> >& data) {
-  net::cookie_util::ParsedRequestCookies parsed;
+cookie_util::ParsedRequestCookies MakeParsedRequestCookies(
+    const base::StringPairs& data) {
+  cookie_util::ParsedRequestCookies parsed;
   for (size_t i = 0; i < data.size(); i++) {
     parsed.push_back(std::make_pair(base::StringPiece(data[i].first),
                                     base::StringPiece(data[i].second)));
@@ -27,23 +29,18 @@ net::cookie_util::ParsedRequestCookies MakeParsedRequestCookies(
   return parsed;
 }
 
-void CheckParse(
-    const std::string& str,
-    const std::vector<std::pair<std::string, std::string> >& parsed_expected) {
-  net::cookie_util::ParsedRequestCookies parsed;
-  net::cookie_util::ParseRequestCookieLine(str, &parsed);
+void CheckParse(const std::string& str,
+                const base::StringPairs& parsed_expected) {
+  cookie_util::ParsedRequestCookies parsed;
+  cookie_util::ParseRequestCookieLine(str, &parsed);
   EXPECT_EQ(MakeParsedRequestCookies(parsed_expected), parsed);
 }
 
-void CheckSerialize(
-    const std::vector<std::pair<std::string, std::string> >& parsed,
-    const std::string& str_expected) {
-  net::cookie_util::ParsedRequestCookies prc =
-      MakeParsedRequestCookies(parsed);
-  EXPECT_EQ(str_expected, net::cookie_util::SerializeRequestCookieLine(prc));
+void CheckSerialize(const base::StringPairs& parsed,
+                    const std::string& str_expected) {
+  cookie_util::ParsedRequestCookies prc = MakeParsedRequestCookies(parsed);
+  EXPECT_EQ(str_expected, cookie_util::SerializeRequestCookieLine(prc));
 }
-
-} // namespace
 
 TEST(CookieUtilTest, TestDomainIsHostOnly) {
   const struct {
@@ -57,7 +54,7 @@ TEST(CookieUtilTest, TestDomainIsHostOnly) {
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
     EXPECT_EQ(tests[i].is_host_only,
-              net::cookie_util::DomainIsHostOnly(tests[i].str));
+              cookie_util::DomainIsHostOnly(tests[i].str));
   }
 }
 
@@ -139,9 +136,9 @@ TEST(CookieUtilTest, TestCookieDateParsing) {
 
   base::Time parsed_time;
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    parsed_time = net::cookie_util::ParseCookieTime(tests[i].str);
+    parsed_time = cookie_util::ParseCookieTime(tests[i].str);
     if (!tests[i].valid) {
-      EXPECT_FALSE(!parsed_time.is_null()) << tests[i].str;
+      EXPECT_TRUE(parsed_time.is_null()) << tests[i].str;
       continue;
     }
     EXPECT_TRUE(!parsed_time.is_null()) << tests[i].str;
@@ -194,3 +191,22 @@ TEST(CookieUtilTest, TestRequestCookieParsing) {
     CheckSerialize(tests[i].parsed, tests[i].str);
   }
 }
+
+TEST(CookieUtilTest, TestGetEffectiveDomain) {
+  // Note: registry_controlled_domains::GetDomainAndRegistry is tested in its
+  // own unittests.
+  EXPECT_EQ("example.com",
+            cookie_util::GetEffectiveDomain("http", "www.example.com"));
+  EXPECT_EQ("example.com",
+            cookie_util::GetEffectiveDomain("https", "www.example.com"));
+  EXPECT_EQ("example.com",
+            cookie_util::GetEffectiveDomain("ws", "www.example.com"));
+  EXPECT_EQ("example.com",
+            cookie_util::GetEffectiveDomain("wss", "www.example.com"));
+  EXPECT_EQ("www.example.com",
+            cookie_util::GetEffectiveDomain("ftp", "www.example.com"));
+}
+
+}  // namespace
+
+}  // namespace net

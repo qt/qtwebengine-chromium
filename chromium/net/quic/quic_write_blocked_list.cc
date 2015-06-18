@@ -12,8 +12,8 @@ const QuicPriority QuicWriteBlockedList::kLowestPriority =
     static_cast<QuicPriority>(net::kLowestPriority);
 
 QuicWriteBlockedList::QuicWriteBlockedList()
-    : crypto_stream_blocked_(false),
-      headers_stream_blocked_(false) {}
+    : crypto_stream_blocked_(false), headers_stream_blocked_(false) {
+}
 
 QuicWriteBlockedList::~QuicWriteBlockedList() {}
 

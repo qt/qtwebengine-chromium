@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2011, Google Inc.
+ * Copyright 2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,6 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef TALK_APP_WEBRTC_PEERCONNECTIONFACTORY_H_
 #define TALK_APP_WEBRTC_PEERCONNECTIONFACTORY_H_
 
@@ -37,8 +38,9 @@
 
 namespace webrtc {
 
-class PeerConnectionFactory : public PeerConnectionFactoryInterface,
-                              public rtc::MessageHandler {
+class DtlsIdentityStore;
+
+class PeerConnectionFactory : public PeerConnectionFactoryInterface {
  public:
   virtual void SetOptions(const Options& options) {
     options_ = options;
@@ -54,25 +56,25 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
 
   bool Initialize();
 
-  virtual rtc::scoped_refptr<MediaStreamInterface>
-      CreateLocalMediaStream(const std::string& label);
+  rtc::scoped_refptr<MediaStreamInterface>
+      CreateLocalMediaStream(const std::string& label) override;
 
-  virtual rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
-      const MediaConstraintsInterface* constraints);
+  rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
+      const MediaConstraintsInterface* constraints) override;
 
-  virtual rtc::scoped_refptr<VideoSourceInterface> CreateVideoSource(
+  rtc::scoped_refptr<VideoSourceInterface> CreateVideoSource(
       cricket::VideoCapturer* capturer,
-      const MediaConstraintsInterface* constraints);
+      const MediaConstraintsInterface* constraints) override;
 
-  virtual rtc::scoped_refptr<VideoTrackInterface>
+  rtc::scoped_refptr<VideoTrackInterface>
       CreateVideoTrack(const std::string& id,
-                       VideoSourceInterface* video_source);
+                       VideoSourceInterface* video_source) override;
 
-  virtual rtc::scoped_refptr<AudioTrackInterface>
+  rtc::scoped_refptr<AudioTrackInterface>
       CreateAudioTrack(const std::string& id,
-                       AudioSourceInterface* audio_source);
+                       AudioSourceInterface* audio_source) override;
 
-  virtual bool StartAecDump(rtc::PlatformFile file);
+  bool StartAecDump(rtc::PlatformFile file) override;
 
   virtual cricket::ChannelManager* channel_manager();
   virtual rtc::Thread* signaling_thread();
@@ -90,31 +92,14 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
   virtual ~PeerConnectionFactory();
 
  private:
-  bool Initialize_s();
-  void Terminate_s();
-  rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource_s(
-      const MediaConstraintsInterface* constraints);
-  rtc::scoped_refptr<VideoSourceInterface> CreateVideoSource_s(
-      cricket::VideoCapturer* capturer,
-      const MediaConstraintsInterface* constraints);
-
-  rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection_s(
-      const PeerConnectionInterface::RTCConfiguration& configuration,
-      const MediaConstraintsInterface* constraints,
-      PortAllocatorFactoryInterface* allocator_factory,
-      DTLSIdentityServiceInterface* dtls_identity_service,
-      PeerConnectionObserver* observer);
-
-  bool StartAecDump_s(rtc::PlatformFile file);
-
-  // Implements rtc::MessageHandler.
-  void OnMessage(rtc::Message* msg);
+  cricket::MediaEngineInterface* CreateMediaEngine_w();
 
   bool owns_ptrs_;
+  bool wraps_current_thread_;
   rtc::Thread* signaling_thread_;
   rtc::Thread* worker_thread_;
   Options options_;
-  rtc::scoped_refptr<PortAllocatorFactoryInterface> allocator_factory_;
+  rtc::scoped_refptr<PortAllocatorFactoryInterface> default_allocator_factory_;
   // External Audio device used for audio playback.
   rtc::scoped_refptr<AudioDeviceModule> default_adm_;
   rtc::scoped_ptr<cricket::ChannelManager> channel_manager_;
@@ -126,6 +111,8 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface,
   // injected any. In that case, video engine will use the internal SW decoder.
   rtc::scoped_ptr<cricket::WebRtcVideoDecoderFactory>
       video_decoder_factory_;
+
+  rtc::scoped_ptr<webrtc::DtlsIdentityStore> dtls_identity_store_;
 };
 
 }  // namespace webrtc

@@ -5,6 +5,7 @@
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_WIN_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_WIN_H_
 
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,6 +16,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "device/bluetooth/bluetooth_adapter.h"
+#include "device/bluetooth/bluetooth_audio_sink.h"
+#include "device/bluetooth/bluetooth_discovery_session.h"
+#include "device/bluetooth/bluetooth_export.h"
 #include "device/bluetooth/bluetooth_task_manager_win.h"
 
 namespace base {
@@ -28,51 +32,56 @@ class BluetoothAdapterWinTest;
 class BluetoothDevice;
 class BluetoothSocketThread;
 
-class BluetoothAdapterWin : public BluetoothAdapter,
-                            public BluetoothTaskManagerWin::Observer {
+class DEVICE_BLUETOOTH_EXPORT BluetoothAdapterWin
+    : public BluetoothAdapter,
+      public BluetoothTaskManagerWin::Observer {
  public:
   static base::WeakPtr<BluetoothAdapter> CreateAdapter(
       const InitCallback& init_callback);
 
   // BluetoothAdapter:
-  virtual void AddObserver(BluetoothAdapter::Observer* observer) override;
-  virtual void RemoveObserver(BluetoothAdapter::Observer* observer) override;
-  virtual std::string GetAddress() const override;
-  virtual std::string GetName() const override;
-  virtual void SetName(const std::string& name,
+  std::string GetAddress() const override;
+  std::string GetName() const override;
+  void SetName(const std::string& name,
+               const base::Closure& callback,
+               const ErrorCallback& error_callback) override;
+  bool IsInitialized() const override;
+  bool IsPresent() const override;
+  bool IsPowered() const override;
+  void SetPowered(bool discoverable,
+                  const base::Closure& callback,
+                  const ErrorCallback& error_callback) override;
+  bool IsDiscoverable() const override;
+  void SetDiscoverable(bool discoverable,
                        const base::Closure& callback,
                        const ErrorCallback& error_callback) override;
-  virtual bool IsInitialized() const override;
-  virtual bool IsPresent() const override;
-  virtual bool IsPowered() const override;
-  virtual void SetPowered(
-      bool discoverable,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
-  virtual bool IsDiscoverable() const override;
-  virtual void SetDiscoverable(
-      bool discoverable,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
-  virtual bool IsDiscovering() const override;
-  virtual void CreateRfcommService(
+  bool IsDiscovering() const override;
+  void CreateRfcommService(
       const BluetoothUUID& uuid,
       const ServiceOptions& options,
       const CreateServiceCallback& callback,
       const CreateServiceErrorCallback& error_callback) override;
-  virtual void CreateL2capService(
+  void CreateL2capService(
       const BluetoothUUID& uuid,
       const ServiceOptions& options,
       const CreateServiceCallback& callback,
       const CreateServiceErrorCallback& error_callback) override;
+  void RegisterAudioSink(
+      const BluetoothAudioSink::Options& options,
+      const AcquiredCallback& callback,
+      const BluetoothAudioSink::ErrorCallback& error_callback) override;
+  void RegisterAdvertisement(
+      scoped_ptr<BluetoothAdvertisement::Data> advertisement_data,
+      const CreateAdvertisementCallback& callback,
+      const CreateAdvertisementErrorCallback& error_callback) override;
 
   // BluetoothTaskManagerWin::Observer override
-  virtual void AdapterStateChanged(
+  void AdapterStateChanged(
       const BluetoothTaskManagerWin::AdapterState& state) override;
-  virtual void DiscoveryStarted(bool success) override;
-  virtual void DiscoveryStopped() override;
-  virtual void DevicesPolled(const ScopedVector<
-      BluetoothTaskManagerWin::DeviceState>& devices) override;
+  void DiscoveryStarted(bool success) override;
+  void DiscoveryStopped() override;
+  void DevicesPolled(const ScopedVector<BluetoothTaskManagerWin::DeviceState>&
+                         devices) override;
 
   const scoped_refptr<base::SequencedTaskRunner>& ui_task_runner() const {
     return ui_task_runner_;
@@ -83,7 +92,7 @@ class BluetoothAdapterWin : public BluetoothAdapter,
 
  protected:
   // BluetoothAdapter:
-  virtual void RemovePairingDelegateInternal(
+  void RemovePairingDelegateInternal(
       device::BluetoothDevice::PairingDelegate* pairing_delegate) override;
 
  private:
@@ -97,15 +106,18 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   };
 
   explicit BluetoothAdapterWin(const InitCallback& init_callback);
-  virtual ~BluetoothAdapterWin();
+  ~BluetoothAdapterWin() override;
 
   // BluetoothAdapter:
-  virtual void AddDiscoverySession(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
-  virtual void RemoveDiscoverySession(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
+  void AddDiscoverySession(BluetoothDiscoveryFilter* discovery_filter,
+                           const base::Closure& callback,
+                           const ErrorCallback& error_callback) override;
+  void RemoveDiscoverySession(BluetoothDiscoveryFilter* discovery_filter,
+                              const base::Closure& callback,
+                              const ErrorCallback& error_callback) override;
+  void SetDiscoveryFilter(scoped_ptr<BluetoothDiscoveryFilter> discovery_filter,
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) override;
 
   void Init();
   void InitForTest(
@@ -133,9 +145,6 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   scoped_refptr<BluetoothTaskManagerWin> task_manager_;
 
   base::ThreadChecker thread_checker_;
-
-  // List of observers interested in event notifications from us.
-  ObserverList<BluetoothAdapter::Observer> observers_;
 
   // NOTE: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

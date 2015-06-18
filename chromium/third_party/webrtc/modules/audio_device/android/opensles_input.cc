@@ -25,8 +25,6 @@
   do {                                                           \
     SLresult err = (op);                                         \
     if (err != SL_RESULT_SUCCESS) {                              \
-      WEBRTC_TRACE(kTraceError, kTraceAudioDevice, id_,          \
-                   "OpenSL error: %d", err);                     \
       assert(false);                                             \
       return ret_val;                                            \
     }                                                            \
@@ -44,9 +42,8 @@ enum {
 namespace webrtc {
 
 OpenSlesInput::OpenSlesInput(
-    const int32_t id, PlayoutDelayProvider* delay_provider)
-    : id_(id),
-      delay_provider_(delay_provider),
+    PlayoutDelayProvider* delay_provider, AudioManager* audio_manager)
+    : delay_provider_(delay_provider),
       initialized_(false),
       mic_initialized_(false),
       rec_initialized_(false),
@@ -70,7 +67,6 @@ OpenSlesInput::~OpenSlesInput() {
 }
 
 int32_t OpenSlesInput::SetAndroidAudioDeviceObjects(void* javaVM,
-                                                    void* env,
                                                     void* context) {
   return 0;
 }
@@ -289,7 +285,7 @@ void OpenSlesInput::AllocateBuffers() {
   fifo_.reset(new SingleRwFifo(num_fifo_buffers_needed_));
 
   // Allocate the memory area to be used.
-  rec_buf_.reset(new scoped_ptr<int8_t[]>[TotalBuffersUsed()]);
+  rec_buf_.reset(new rtc::scoped_ptr<int8_t[]>[TotalBuffersUsed()]);
   for (int i = 0; i < TotalBuffersUsed(); ++i) {
     rec_buf_[i].reset(new int8_t[buffer_size_bytes()]);
   }
@@ -419,7 +415,6 @@ bool OpenSlesInput::HandleOverrun(int event_id, int event_msg) {
   if (event_id == kNoOverrun) {
     return false;
   }
-  WEBRTC_TRACE(kTraceWarning, kTraceAudioDevice, id_, "Audio overrun");
   assert(event_id == kOverrun);
   assert(event_msg > 0);
   // Wait for all enqueued buffers be flushed.
@@ -476,16 +471,14 @@ void OpenSlesInput::RecorderSimpleBufferQueueCallbackHandler(
 }
 
 bool OpenSlesInput::StartCbThreads() {
-  rec_thread_.reset(ThreadWrapper::CreateThread(CbThread,
-                                                this,
-                                                kRealtimePriority,
-                                                "opensl_rec_thread"));
+  rec_thread_ = ThreadWrapper::CreateThread(CbThread, this,
+                                            "opensl_rec_thread");
   assert(rec_thread_.get());
-  unsigned int thread_id = 0;
-  if (!rec_thread_->Start(thread_id)) {
+  if (!rec_thread_->Start()) {
     assert(false);
     return false;
   }
+  rec_thread_->SetPriority(kRealtimePriority);
   OPENSL_RETURN_ON_FAILURE(
       (*sles_recorder_itf_)->SetRecordState(sles_recorder_itf_,
                                             SL_RECORDSTATE_RECORDING),

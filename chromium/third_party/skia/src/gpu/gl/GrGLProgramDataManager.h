@@ -14,7 +14,7 @@
 
 #include "SkTArray.h"
 
-class GrGpuGL;
+class GrGLGpu;
 class SkMatrix;
 class GrGLProgram;
 class GrGLProgramBuilder;
@@ -54,6 +54,7 @@ public:
 
         friend class GrGLProgramDataManager; // For accessing toProgramDataIndex().
         friend class GrGLProgramBuilder; // For accessing toShaderBuilderIndex().
+        friend class GrGLGeometryProcessor;
     };
 
     struct UniformInfo {
@@ -67,7 +68,7 @@ public:
     // name strings. Otherwise, we'd have to hand out copies.
     typedef GrTAllocator<UniformInfo> UniformInfoArray;
 
-    GrGLProgramDataManager(GrGpuGL*, const UniformInfoArray&);
+    GrGLProgramDataManager(GrGLGpu*, const UniformInfoArray&);
 
     /** Functions for uploading uniform values. The varities ending in v can be used to upload to an
      *  array of uniforms. arrayCount must be <= the array count of the uniform.
@@ -105,8 +106,10 @@ private:
         );
     };
 
+    SkDEBUGCODE(void printUnused(const Uniform&) const;)
+
     SkTArray<Uniform, true> fUniforms;
-    GrGpuGL* fGpu;
+    GrGLGpu* fGpu;
 
     typedef SkRefCnt INHERITED;
 };

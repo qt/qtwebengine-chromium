@@ -4,13 +4,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Script to install everything needed to build chromium on android that
-# requires sudo privileges.
+# Script to install everything needed to build chromium on android, including
+# items requiring sudo privileges.
 # See http://code.google.com/p/chromium/wiki/AndroidBuildInstructions
 
 # This script installs the sun-java6 packages (bin, jre and jdk). Sun requires
 # a license agreement, so upon installation it will prompt the user. To get
 # past the curses-based dialog press TAB <ret> TAB <ret> to agree.
+
+args="$@"
+if test "$1" = "--skip-sdk-packages"; then
+  skip_inst_sdk_packages=1
+  args="${@:2}"
+else
+  skip_inst_sdk_packages=0
+fi
 
 if ! uname -m | egrep -q "i686|x86_64"; then
   echo "Only x86 architectures are currently supported" >&2
@@ -19,7 +27,9 @@ fi
 
 # Install first the default Linux build deps.
 "$(dirname "${BASH_SOURCE[0]}")/install-build-deps.sh" \
-    --no-syms --no-arm --no-chromeos-fonts --no-nacl --no-prompt "$@"
+  --no-syms --lib32 --no-arm --no-chromeos-fonts --no-nacl --no-prompt "${args}"
+
+lsb_release=$(lsb_release --codename --short)
 
 # The temporary directory used to store output of update-java-alternatives
 TEMPDIR=$(mktemp -d)
@@ -30,8 +40,6 @@ cleanup() {
   exit ${status}
 }
 trap cleanup EXIT
-
-sudo apt-get update
 
 # Fix deps
 sudo apt-get -f install
@@ -44,13 +52,13 @@ sudo apt-get -f install
 # common
 sudo apt-get -y install lighttpd python-pexpect xvfb x11-utils
 
-# Few binaries in the Android SDK require 32-bit libraries on the host.
-sudo apt-get -y install lib32z1 g++-multilib
-
-# On Trusty-based systems you can't compile V8's mksnapshot without this one.
-# It is compiled for the host, using the -m32 flag, so it needs some 32 bit
-# development support. It seems harmless on older Linux releases.
-sudo apt-get -y install linux-libc-dev:i386
+# Some binaries in the Android SDK require 32-bit libraries on the host.
+# See https://developer.android.com/sdk/installing/index.html?pkg=tools
+if [[ $lsb_release == "precise" ]]; then
+  sudo apt-get -y install ia32-libs
+else
+  sudo apt-get -y install libncurses5:i386 libstdc++6:i386 zlib1g:i386
+fi
 
 sudo apt-get -y install ant
 
@@ -82,6 +90,11 @@ then
     grep -v 'javaplugin.so' "${TEMPDIR}"/update-java-alternatives.out
     exit 1
   fi
+fi
+
+# Install SDK packages for android
+if test "$skip_inst_sdk_packages" != 1; then
+  "$(dirname "${BASH_SOURCE[0]}")/install-android-sdks.sh"
 fi
 
 echo "install-build-deps-android.sh complete."

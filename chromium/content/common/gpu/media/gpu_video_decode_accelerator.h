@@ -14,14 +14,11 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "gpu/command_buffer/service/texture_manager.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "media/video/video_decode_accelerator.h"
-#include "ui/gfx/size.h"
-
-namespace base {
-class MessageLoopProxy;
-}
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 
@@ -37,7 +34,7 @@ class GpuVideoDecodeAccelerator
   GpuVideoDecodeAccelerator(
       int32 host_route_id,
       GpuCommandBufferStub* stub,
-      const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner);
 
   // IPC::Listener implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -59,13 +56,31 @@ class GpuVideoDecodeAccelerator
   // Function to delegate sending to actual sender.
   bool Send(IPC::Message* message) override;
 
-  // Initialize the accelerator with the given profile and send the
-  // |init_done_msg| when done.
+  // Initialize VDAs from the set of VDAs supported for current platform until
+  // one of them succeeds for given |profile|. Send the |init_done_msg| when
+  // done. filter_ is passed to GpuCommandBufferStub channel only if the chosen
+  // VDA can decode on IO thread.
   void Initialize(const media::VideoCodecProfile profile,
                   IPC::Message* init_done_msg);
 
+  // Static query for supported profiles. This query calls the appropriate
+  // platform-specific version. The returned supported profiles vector will
+  // not contain duplicates.
+  static gpu::VideoDecodeAcceleratorSupportedProfiles GetSupportedProfiles();
+
  private:
+  typedef scoped_ptr<media::VideoDecodeAccelerator>(
+      GpuVideoDecodeAccelerator::*CreateVDAFp)();
+
   class MessageFilter;
+
+  scoped_ptr<media::VideoDecodeAccelerator> CreateDXVAVDA();
+  scoped_ptr<media::VideoDecodeAccelerator> CreateV4L2VDA();
+  scoped_ptr<media::VideoDecodeAccelerator> CreateV4L2SliceVDA();
+  scoped_ptr<media::VideoDecodeAccelerator> CreateVaapiVDA();
+  scoped_ptr<media::VideoDecodeAccelerator> CreateVTVDA();
+  scoped_ptr<media::VideoDecodeAccelerator> CreateOzoneVDA();
+  scoped_ptr<media::VideoDecodeAccelerator> CreateAndroidVDA();
 
   // We only allow self-delete, from OnWillDestroyStub(), after cleanup there.
   ~GpuVideoDecodeAccelerator() override;
@@ -88,13 +103,18 @@ class GpuVideoDecodeAccelerator
   // Helper for replying to the creation request.
   void SendCreateDecoderReply(IPC::Message* message, bool succeeded);
 
+  // Helper to bind |image| to the texture specified by |client_texture_id|.
+  void BindImage(uint32 client_texture_id,
+                 uint32 texture_target,
+                 scoped_refptr<gfx::GLImage> image);
+
   // Route ID to communicate with the host.
-  int32 host_route_id_;
+  const int32 host_route_id_;
 
   // Unowned pointer to the underlying GpuCommandBufferStub.  |this| is
   // registered as a DestuctionObserver of |stub_| and will self-delete when
   // |stub_| is destroyed.
-  GpuCommandBufferStub* stub_;
+  GpuCommandBufferStub* const stub_;
 
   // The underlying VideoDecodeAccelerator.
   scoped_ptr<media::VideoDecodeAccelerator> video_decode_accelerator_;
@@ -116,11 +136,11 @@ class GpuVideoDecodeAccelerator
   // destroy the VDA.
   base::WaitableEvent filter_removed_;
 
-  // GPU child message loop.
-  scoped_refptr<base::MessageLoopProxy> child_message_loop_;
+  // GPU child thread task runner.
+  const scoped_refptr<base::SingleThreadTaskRunner> child_task_runner_;
 
-  // GPU IO message loop.
-  scoped_refptr<base::MessageLoopProxy> io_message_loop_;
+  // GPU IO thread task runner.
+  const scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
   // Weak pointers will be invalidated on IO thread.
   base::WeakPtrFactory<Client> weak_factory_for_io_;

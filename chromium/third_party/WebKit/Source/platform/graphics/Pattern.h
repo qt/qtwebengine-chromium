@@ -37,11 +37,10 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
+class SkPicture;
 class SkShader;
 
 namespace blink {
-
-class DisplayList;
 
 class PLATFORM_EXPORT Pattern : public RefCounted<Pattern> {
 public:
@@ -55,7 +54,7 @@ public:
 
     static PassRefPtr<Pattern> createBitmapPattern(PassRefPtr<Image> tileImage,
         RepeatMode = RepeatModeXY);
-    static PassRefPtr<Pattern> createDisplayListPattern(PassRefPtr<DisplayList>,
+    static PassRefPtr<Pattern> createPicturePattern(PassRefPtr<const SkPicture>,
         RepeatMode = RepeatModeXY);
     virtual ~Pattern();
 

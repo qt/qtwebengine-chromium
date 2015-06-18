@@ -26,6 +26,7 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGAnimationElement.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -38,16 +39,18 @@ public:
     static PassRefPtrWillBeRawPtr<SVGAnimateElement> create(Document&);
     virtual ~SVGAnimateElement();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     AnimatedPropertyType animatedPropertyType();
     bool animatedPropertyTypeSupportsAddition();
+
+    static SVGElementInstances findElementInstances(SVGElement* targetElement);
 
 protected:
     SVGAnimateElement(const QualifiedName&, Document&);
 
     virtual void resetAnimatedType() override final;
-    virtual void clearAnimatedType(SVGElement* targetElement) override final;
+    virtual void clearAnimatedType() override final;
 
     virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString) override final;
     virtual bool calculateFromAndToValues(const String& fromString, const String& toString) override final;
@@ -62,16 +65,15 @@ protected:
 
 private:
     void resetAnimatedPropertyType();
-    SVGAnimatedTypeAnimator* ensureAnimator();
 
     virtual bool hasValidAttributeType() override;
 
-    RefPtr<SVGPropertyBase> m_fromProperty;
-    RefPtr<SVGPropertyBase> m_toProperty;
-    RefPtr<SVGPropertyBase> m_toAtEndOfDurationProperty;
-    RefPtr<SVGPropertyBase> m_animatedProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_fromProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_toProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_toAtEndOfDurationProperty;
+    RefPtrWillBeMember<SVGPropertyBase> m_animatedProperty;
 
-    OwnPtrWillBeMember<SVGAnimatedTypeAnimator> m_animator;
+    SVGAnimatedTypeAnimator m_animator;
 };
 
 inline bool isSVGAnimateElement(const SVGElement& element)

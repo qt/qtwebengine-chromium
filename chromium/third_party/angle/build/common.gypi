@@ -6,8 +6,7 @@
     'includes': [ 'common_defines.gypi', ],
     'variables':
     {
-        'angle_build_tests%': '1',
-        'angle_build_samples%': '1',
+        'angle_path%': '<(DEPTH)',
         'angle_build_winrt%': '0',
         'angle_build_winphone%': '0',
         # angle_code is set to 1 for the core ANGLE targets defined in src/build_angle.gyp.
@@ -33,6 +32,18 @@
             '-Wwrite-strings',
             '-Wno-reorder',
             '-Wno-format-nonliteral',
+            '-Wno-deprecated-register',
+        ],
+
+        'conditions':
+        [
+            ['OS=="linux"',
+            {
+                'use_x11%': 1,
+            },
+            {
+                'use_x11%': 0,
+            }],
         ],
     },
     'target_defaults':
@@ -108,7 +119,28 @@
                     {
                         'Optimization': '0',    # /Od
                         'BasicRuntimeChecks': '3',
-                        'RuntimeLibrary': '3',  # /MDd (Debug Multithreaded DLL)
+                        'conditions':
+                        [
+                            ['angle_build_winrt==1',
+                            {
+                                # Use the dynamic C runtime to match
+                                # Windows Application Store requirements
+
+                                # The C runtime for Windows Store applications
+                                # is a framework package that is managed by
+                                # the Windows deployment model and can be
+                                # shared by multiple packages.
+
+                                'RuntimeLibrary': '3', # /MDd (debug dll)
+                            },
+                            {
+                                # Use the static C runtime to
+                                # match chromium and make sure
+                                # we don't depend on the dynamic
+                                # runtime's shared heaps
+                                'RuntimeLibrary': '1', # /MTd (debug static)
+                            }],
+                        ],
                     },
                     'VCLinkerTool':
                     {
@@ -128,6 +160,7 @@
                 },
                 'xcode_settings':
                 {
+                    'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',
                     'COPY_PHASE_STRIP': 'NO',
                     'GCC_OPTIMIZATION_LEVEL': '0',
                 },
@@ -145,7 +178,26 @@
                     'VCCLCompilerTool':
                     {
                         'Optimization': '2',    # /Os
-                        'RuntimeLibrary': '2',  # /MD (Multithreaded DLL)
+                        'conditions':
+                        [
+                            ['angle_build_winrt==1',
+                            {
+                                # Use the dynamic C runtime to match
+                                # Windows Application Store requirements
+
+                                # The C runtime for Windows Store applications
+                                # is a framework package that is managed by
+                                # the Windows deployment model and can be
+                                # shared by multiple packages.
+                                'RuntimeLibrary': '2', # /MD (nondebug dll)
+                            },
+                            {
+                                # Use the static C runtime to
+                                # match chromium and make sure
+                                # we don't depend on the dynamic
+                                'RuntimeLibrary': '0', # /MT (nondebug static)
+                            }],
+                        ],
                     },
                     'VCLinkerTool':
                     {

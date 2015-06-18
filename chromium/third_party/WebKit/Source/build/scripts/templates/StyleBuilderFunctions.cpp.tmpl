@@ -11,6 +11,7 @@
 
 #include "CSSValueKeywords.h"
 #include "core/css/BasicShapeFunctions.h"
+#include "core/css/CSSContentDistributionValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/Pair.h"
 #include "core/css/resolver/StyleResolverState.h"
@@ -49,11 +50,11 @@ namespace blink {
 {{declare_initial_function(property_id)}}
 {
     {% if property.svg %}
-    {{set_value(property)}}(SVGRenderStyle::{{property.initial}}());
+    {{set_value(property)}}(SVGComputedStyle::{{property.initial}}());
     {% elif property.font %}
     {{set_value(property)}}(FontBuilder::{{property.initial}}());
     {% else %}
-    {{set_value(property)}}(RenderStyle::{{property.initial}}());
+    {{set_value(property)}}(ComputedStyle::{{property.initial}}());
     {% endif %}
 }
 
@@ -102,22 +103,22 @@ namespace blink {
 {
     CSS{{animation}}Data& data = state.style()->access{{animation}}s();
     data.{{vector}}.clear();
-    for (CSSValueListIterator i = value; i.hasMore(); i.advance())
-        data.{{vector}}.append(state.styleMap().mapAnimation{{attribute}}(i.value()));
+    for (auto& listValue : toCSSValueList(*value))
+        data.{{vector}}.append(CSSToStyleMap::mapAnimation{{attribute}}(listValue.get()));
 }
 {% endmacro %}
-{{apply_animation('CSSPropertyWebkitAnimationDelay', 'Delay', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationDirection', 'Direction', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationDuration', 'Duration', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationFillMode', 'FillMode', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationIterationCount', 'IterationCount', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationName', 'Name', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationPlayState', 'PlayState', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitAnimationTimingFunction', 'TimingFunction', 'Animation')}}
-{{apply_animation('CSSPropertyWebkitTransitionDelay', 'Delay', 'Transition')}}
-{{apply_animation('CSSPropertyWebkitTransitionDuration', 'Duration', 'Transition')}}
-{{apply_animation('CSSPropertyWebkitTransitionProperty', 'Property', 'Transition')}}
-{{apply_animation('CSSPropertyWebkitTransitionTimingFunction', 'TimingFunction', 'Transition')}}
+{{apply_animation('CSSPropertyAnimationDelay', 'Delay', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationDirection', 'Direction', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationDuration', 'Duration', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationFillMode', 'FillMode', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationIterationCount', 'IterationCount', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationName', 'Name', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationPlayState', 'PlayState', 'Animation')}}
+{{apply_animation('CSSPropertyAnimationTimingFunction', 'TimingFunction', 'Animation')}}
+{{apply_animation('CSSPropertyTransitionDelay', 'Delay', 'Transition')}}
+{{apply_animation('CSSPropertyTransitionDuration', 'Duration', 'Transition')}}
+{{apply_animation('CSSPropertyTransitionProperty', 'Property', 'Transition')}}
+{{apply_animation('CSSPropertyTransitionTimingFunction', 'TimingFunction', 'Transition')}}
 
 {% macro apply_auto(property_id, auto_getter=none, auto_setter=none, auto_identity='CSSValueAuto') %}
 {% set property = properties[property_id] %}
@@ -249,13 +250,13 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {
     NinePieceImage image(state.style()->{{getter}}());
     {% if modifier_type == 'Outset' %}
-    image.setOutset(state.styleMap().mapNinePieceImageQuad(value));
+    image.setOutset(CSSToStyleMap::mapNinePieceImageQuad(state, value));
     {% elif modifier_type == 'Repeat' %}
-    state.styleMap().mapNinePieceImageRepeat(value, image);
+    CSSToStyleMap::mapNinePieceImageRepeat(state, value, image);
     {% elif modifier_type == 'Slice' %}
-    state.styleMap().mapNinePieceImageSlice(value, image);
+    CSSToStyleMap::mapNinePieceImageSlice(state, value, image);
     {% elif modifier_type == 'Width' %}
-    image.setBorderSlices(state.styleMap().mapNinePieceImageQuad(value));
+    image.setBorderSlices(CSSToStyleMap::mapNinePieceImageQuad(state, value));
     {% endif %}
     state.style()->{{setter}}(image);
 }
@@ -295,11 +296,10 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {
     // Visited link style can never explicitly inherit from parent visited link style so no separate getters are needed.
     StyleColor color = state.parentStyle()->{{property.getter}}();
-    Color resolvedColor = color.resolve(state.parentStyle()->color());
     if (state.applyPropertyToRegularStyle())
-        {{set_value(property)}}(resolvedColor);
+        {{set_value(property)}}(color);
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(resolvedColor);
+        state.style()->{{visited_link_setter}}(color);
 }
 
 {{declare_value_function(property_id)}}
@@ -310,7 +310,7 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
         state.style()->{{visited_link_setter}}(StyleBuilderConverter::convertStyleColor(state, value, true));
 }
 {% endmacro %}
-{{apply_color('CSSPropertyBackgroundColor', initial_color='RenderStyle::initialBackgroundColor') }}
+{{apply_color('CSSPropertyBackgroundColor', initial_color='ComputedStyle::initialBackgroundColor') }}
 {{apply_color('CSSPropertyBorderBottomColor')}}
 {{apply_color('CSSPropertyBorderLeftColor')}}
 {{apply_color('CSSPropertyBorderRightColor')}}
@@ -324,16 +324,22 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {% macro apply_counter(property_id, action) %}
 {% set property = properties[property_id] %}
-{{declare_initial_function(property_id)}} { }
+{{declare_initial_function(property_id)}} {
+    state.style()->clear{{action}}Directives();
+}
 
 {{declare_inherit_function(property_id)}}
 {
-    CounterDirectiveMap& map = state.style()->accessCounterDirectives();
-    CounterDirectiveMap& parentMap = state.parentStyle()->accessCounterDirectives();
+    const CounterDirectiveMap* parentMap = state.parentStyle()->counterDirectives();
+    if (!parentMap)
+        return;
 
-    typedef CounterDirectiveMap::iterator Iterator;
-    Iterator end = parentMap.end();
-    for (Iterator it = parentMap.begin(); it != end; ++it) {
+    CounterDirectiveMap& map = state.style()->accessCounterDirectives();
+    ASSERT(!parentMap->isEmpty());
+
+    typedef CounterDirectiveMap::const_iterator Iterator;
+    Iterator end = parentMap->end();
+    for (Iterator it = parentMap->begin(); it != end; ++it) {
         CounterDirectives& directives = map.add(it->key, CounterDirectives()).storedValue->value;
         directives.inherit{{action}}(it->value);
     }
@@ -341,17 +347,14 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {{declare_value_function(property_id)}}
 {
-    CounterDirectiveMap& map = state.style()->accessCounterDirectives();
-    typedef CounterDirectiveMap::iterator Iterator;
-
-    Iterator end = map.end();
-    for (Iterator it = map.begin(); it != end; ++it)
-        it->value.clear{{action}}();
+    state.style()->clear{{action}}Directives();
 
     if (!value->isValueList()) {
         ASSERT(value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueNone);
         return;
     }
+
+    CounterDirectiveMap& map = state.style()->accessCounterDirectives();
 
     CSSValueList* list = toCSSValueList(value);
 
@@ -374,6 +377,7 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
         directives.addIncrementValue(value);
         {% endif %}
     }
+    ASSERT(!map.isEmpty());
 }
 {% endmacro %}
 {{apply_counter('CSSPropertyCounterIncrement', 'Increment')}}
@@ -423,12 +427,12 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
         for (unsigned int i = 0; i < valueList->length(); i++) {
             if (!currChild)
                 currChild = prevChild->ensureNext();
-            state.styleMap().{{map_fill}}(currChild, valueList->item(i));
+            CSSToStyleMap::{{map_fill}}(state, currChild, valueList->item(i));
             prevChild = currChild;
             currChild = currChild->next();
         }
     } else {
-        state.styleMap().{{map_fill}}(currChild, value);
+        CSSToStyleMap::{{map_fill}}(state, currChild, value);
         currChild = currChild->next();
     }
     while (currChild) {
@@ -463,9 +467,9 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {% macro apply_grid_template(property_id, type) %}
 {{declare_initial_function(property_id)}}
 {
-    state.style()->setGridTemplate{{type}}s(RenderStyle::initialGridTemplate{{type}}s());
-    state.style()->setNamedGrid{{type}}Lines(RenderStyle::initialNamedGrid{{type}}Lines());
-    state.style()->setOrderedNamedGrid{{type}}Lines(RenderStyle::initialOrderedNamedGrid{{type}}Lines());
+    state.style()->setGridTemplate{{type}}s(ComputedStyle::initialGridTemplate{{type}}s());
+    state.style()->setNamedGrid{{type}}Lines(ComputedStyle::initialNamedGrid{{type}}Lines());
+    state.style()->setOrderedNamedGrid{{type}}Lines(ComputedStyle::initialOrderedNamedGrid{{type}}Lines());
 }
 
 {{declare_inherit_function(property_id)}}
@@ -493,50 +497,21 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {{apply_grid_template('CSSPropertyGridTemplateColumns', 'Column')}}
 {{apply_grid_template('CSSPropertyGridTemplateRows', 'Row')}}
 
-{% macro apply_alignment(property_id, alignment_type) %}
-{% set property = properties[property_id] %}
-{{declare_initial_function(property_id)}}
-{
-    state.style()->set{{alignment_type}}(RenderStyle::initial{{alignment_type}}());
-    state.style()->set{{alignment_type}}OverflowAlignment(RenderStyle::initial{{alignment_type}}OverflowAlignment());
-}
-
-{{declare_inherit_function(property_id)}}
-{
-    state.style()->set{{alignment_type}}(state.parentStyle()->{{property.getter}}());
-    state.style()->set{{alignment_type}}OverflowAlignment(state.parentStyle()->{{property.getter}}OverflowAlignment());
-}
-
-{{declare_value_function(property_id)}}
-{
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (Pair* pairValue = primitiveValue->getPairValue()) {
-        state.style()->set{{alignment_type}}(*pairValue->first());
-        state.style()->set{{alignment_type}}OverflowAlignment(*pairValue->second());
-    } else {
-        state.style()->set{{alignment_type}}(*primitiveValue);
-    }
-}
-{% endmacro %}
-{{apply_alignment('CSSPropertyJustifySelf', 'JustifySelf')}}
-{{apply_alignment('CSSPropertyAlignItems', 'AlignItems')}}
-{{apply_alignment('CSSPropertyAlignSelf', 'AlignSelf')}}
-
 {% macro apply_svg_paint(property_id, paint_type) %}
 {% set property = properties[property_id] %}
 {{declare_initial_function(property_id)}}
 {
     {{set_value(property)}}(
-        SVGRenderStyle::initial{{paint_type}}Type(),
-        SVGRenderStyle::initial{{paint_type}}Color(),
-        SVGRenderStyle::initial{{paint_type}}Uri(),
+        SVGComputedStyle::initial{{paint_type}}Type(),
+        SVGComputedStyle::initial{{paint_type}}Color(),
+        SVGComputedStyle::initial{{paint_type}}Uri(),
         state.applyPropertyToRegularStyle(),
         state.applyPropertyToVisitedLinkStyle());
 }
 
 {{declare_inherit_function(property_id)}}
 {
-    const SVGRenderStyle& svgParentStyle = state.parentStyle()->svgStyle();
+    const SVGComputedStyle& svgParentStyle = state.parentStyle()->svgStyle();
     {{set_value(property)}}(
         svgParentStyle.{{paint_type|lower_first}}Type(),
         svgParentStyle.{{paint_type|lower_first}}Color(),

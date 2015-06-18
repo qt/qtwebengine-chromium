@@ -245,16 +245,17 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
       const std::string& stream_label) {
     std::string video_track_label("video-label");
     std::string audio_track_label("audio-label");
-
     blink::WebMediaStreamSource audio_source;
     audio_source.initialize(blink::WebString::fromUTF8(audio_track_label),
                             blink::WebMediaStreamSource::TypeAudio,
-                            blink::WebString::fromUTF8("audio_track"));
+                            blink::WebString::fromUTF8("audio_track"),
+                            false /* remote */, true /* readonly */);
     audio_source.setExtraData(new MediaStreamAudioSource());
     blink::WebMediaStreamSource video_source;
     video_source.initialize(blink::WebString::fromUTF8(video_track_label),
                             blink::WebMediaStreamSource::TypeVideo,
-                            blink::WebString::fromUTF8("video_track"));
+                            blink::WebString::fromUTF8("video_track"),
+                            false /* remote */, true /* readonly */);
     MockMediaStreamVideoSource* native_video_source =
         new MockMediaStreamVideoSource(false);
     video_source.setExtraData(native_video_source);
@@ -268,8 +269,8 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     const blink::WebMediaConstraints constraints =
         constraint_factory.CreateWebMediaConstraints();
     scoped_refptr<WebRtcAudioCapturer> capturer(
-        WebRtcAudioCapturer::CreateCapturer(
-            -1, device_info, constraints, nullptr, nullptr));
+        WebRtcAudioCapturer::CreateCapturer(-1, device_info, constraints,
+                                            nullptr, nullptr));
     scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
         WebRtcLocalAudioTrackAdapter::Create(audio_track_label, nullptr));
     scoped_ptr<WebRtcLocalAudioTrack> native_track(
@@ -966,6 +967,7 @@ TEST_F(RTCPeerConnectionHandlerTest, CreateDataChannel) {
       pc_handler_->createDataChannel("d1", blink::WebRTCDataChannelInit()));
   EXPECT_TRUE(channel.get() != NULL);
   EXPECT_EQ(label, channel->label());
+  channel->setClient(nullptr);
 }
 
 TEST_F(RTCPeerConnectionHandlerTest, CreateDtmfSender) {

@@ -4,6 +4,8 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
+#include "media/base/renderer_factory.h"
+#include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
 #include "third_party/WebKit/public/web/WebPluginPlaceholder.h"
 
 namespace content {
@@ -121,6 +123,11 @@ bool ContentRendererClient::ShouldFork(blink::WebFrame* frame,
   return false;
 }
 
+bool ContentRendererClient::ShouldForwardToGuestContainer(
+    const IPC::Message& msg) {
+  return false;
+}
+
 bool ContentRendererClient::WillSendRequest(
     blink::WebFrame* frame,
     ui::PageTransition transition_type,
@@ -168,6 +175,13 @@ void ContentRendererClient::AddKeySystems(
     std::vector<media::KeySystemInfo>* key_systems) {
 }
 
+scoped_ptr<media::RendererFactory>
+ContentRendererClient::CreateMediaRendererFactory(
+    RenderFrame* render_frame,
+    const scoped_refptr<media::MediaLog>& media_log) {
+  return nullptr;
+}
+
 bool ContentRendererClient::ShouldReportDetailedMessageForSource(
     const base::string16& source) const {
   return false;
@@ -177,18 +191,18 @@ bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   return true;
 }
 
-blink::WebWorkerPermissionClientProxy*
-ContentRendererClient::CreateWorkerPermissionClientProxy(
+blink::WebWorkerContentSettingsClientProxy*
+ContentRendererClient::CreateWorkerContentSettingsClientProxy(
     RenderFrame* render_frame, blink::WebFrame* frame) {
   return nullptr;
 }
 
-bool ContentRendererClient::IsPluginAllowedToUseCompositorAPI(const GURL& url) {
+bool ContentRendererClient::IsPluginAllowedToUseCameraDeviceAPI(
+    const GURL& url) {
   return false;
 }
 
-bool ContentRendererClient::IsPluginAllowedToUseVideoDecodeAPI(
-    const GURL& url) {
+bool ContentRendererClient::IsPluginAllowedToUseCompositorAPI(const GURL& url) {
   return false;
 }
 
@@ -205,6 +219,11 @@ BrowserPluginDelegate* ContentRendererClient::CreateBrowserPluginDelegate(
 
 std::string ContentRendererClient::GetUserAgentOverrideForURL(const GURL& url) {
   return std::string();
+}
+
+scoped_ptr<blink::WebAppBannerClient>
+ContentRendererClient::CreateAppBannerClient(RenderFrame* render_frame) {
+  return nullptr;
 }
 
 }  // namespace content

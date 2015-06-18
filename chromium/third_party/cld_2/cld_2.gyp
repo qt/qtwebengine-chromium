@@ -2,77 +2,73 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Note to maintainers: In the October 2014 release, there are some options for
-# building:
-# Pick one quadgram file (cld2_generated_quadchrome*.cc):
-#   _16 = 160K entries, smallest size, lowest accuracy (set cld2_table_size=0)
-#   _2  = 256K entries, largest size, highest accuracy (set cld2_table_size=2)
-#
-# For the CJK bigram file (cld_generated_cjk_delta_bi*.cc), always use
-# cld_generated_cjk_delta_bi_4.cc, as this is intended for use with Chromium.
-# The _32 variant of the file is intended for applications that use the full
-# 175-language version of CLD2.
+# MAINTAINERS:
+# See the BUILD.gn file for more extensive comments and documentation. This
+# .gyp file exists only for compatibility with gyp. The variables defined below
+# are used in equivalent targets in BUILD.GN.
 
 {
-  'target_defaults': {
-    'conditions': [
-      ['OS=="win"', {
-        'msvs_disabled_warnings': [4267],
-      }],
-    ],
-  },
   'variables': {
+    'cld2_platform_support%': 'static',
+
     # These sources need to be included in both static and dynamic builds as
     # well as the dynamic data tool.
     'cld2_core_sources': [
       'src/internal/cld2tablesummary.h',
-      'src/internal/cldutil.cc',
       'src/internal/cldutil.h',
-      'src/internal/cldutil_shared.cc',
       'src/internal/cldutil_shared.h',
-      'src/internal/compact_lang_det.cc',
-      'src/internal/compact_lang_det_hint_code.cc',
       'src/internal/compact_lang_det_hint_code.h',
-      'src/internal/compact_lang_det_impl.cc',
       'src/internal/compact_lang_det_impl.h',
       'src/internal/debug.h',
-      'src/internal/debug_empty.cc',
-      'src/internal/fixunicodevalue.cc',
       'src/internal/fixunicodevalue.h',
-      'src/internal/generated_distinct_bi_0.cc',
-      'src/internal/generated_entities.cc',
-      'src/internal/generated_language.cc',
       'src/internal/generated_language.h',
-      'src/internal/generated_ulscript.cc',
       'src/internal/generated_ulscript.h',
-      'src/internal/getonescriptspan.cc',
       'src/internal/getonescriptspan.h',
       'src/internal/integral_types.h',
-      'src/internal/lang_script.cc',
       'src/internal/lang_script.h',
       'src/internal/langspan.h',
-      'src/internal/offsetmap.cc',
       'src/internal/offsetmap.h',
       'src/internal/port.h',
-      'src/internal/scoreonescriptspan.cc',
       'src/internal/scoreonescriptspan.h',
       'src/internal/stringpiece.h',
-      'src/internal/tote.cc',
       'src/internal/tote.h',
       'src/internal/utf8prop_lettermarkscriptnum.h',
       'src/internal/utf8repl_lettermarklower.h',
       'src/internal/utf8scannot_lettermarkspecial.h',
-      'src/internal/utf8statetable.cc',
       'src/internal/utf8statetable.h',
       'src/public/compact_lang_det.h',
       'src/public/encodings.h',
     ],
+
+    # These sources may have different compilation results based on flags.
+    'cld2_core_impl_sources': [
+      'src/internal/cldutil.cc',
+      'src/internal/cldutil_shared.cc',
+      'src/internal/compact_lang_det.cc',
+      'src/internal/compact_lang_det_hint_code.cc',
+      'src/internal/compact_lang_det_impl.cc',
+      'src/internal/debug_empty.cc',
+      'src/internal/fixunicodevalue.cc',
+      'src/internal/generated_entities.cc',
+      'src/internal/generated_language.cc',
+      'src/internal/generated_ulscript.cc',
+      'src/internal/getonescriptspan.cc',
+      'src/internal/lang_script.cc',
+      'src/internal/offsetmap.cc',
+      'src/internal/scoreonescriptspan.cc',
+      'src/internal/tote.cc',
+      'src/internal/utf8statetable.cc',
+    ],
+
+    # These sources are needed for a dynamic build to load data at runtime.
     'cld2_dynamic_data_loader_sources': [
       'src/internal/cld2_dynamic_data.h',
       'src/internal/cld2_dynamic_data.cc',
       'src/internal/cld2_dynamic_data_loader.h',
       'src/internal/cld2_dynamic_data_loader.cc',
     ],
+
+    # These sources are for both small-table and large-table data sets.
     'cld2_data_sources': [
       'src/internal/cld2_generated_cjk_compatible.cc',
       'src/internal/cld2_generated_deltaoctachrome.cc',
@@ -82,52 +78,74 @@
       'src/internal/cld_generated_score_quad_octa_2.cc',
       'src/internal/generated_distinct_bi_0.cc',
     ],
-    'conditions': [
-      ['cld2_table_size==0', {
-        'cld2_data_sources+': ['src/internal/cld2_generated_quadchrome_16.cc']
-      }],
-      ['cld2_table_size==2', {
-         'cld2_data_sources+': ['src/internal/cld2_generated_quadchrome_2.cc']
-      }],
+
+    # Used when cld2_table_size == 0 (small tables)
+    # See 'cld2_table_size' in build/common.gypi for more information.
+    'cld2_data_smallest_sources': [
+      'src/internal/cld2_generated_quadchrome_16.cc'
+    ],
+
+    # Used when cld2_table_size == 2 (large tables)
+    # See 'cld2_table_size' in build/common.gypi for more information.
+    'cld2_data_largest_sources': [
+      'src/internal/cld2_generated_quadchrome_2.cc'
     ],
   },
 
   'targets': [
     {
-      # GN version: //third_party/cld_2
+      # GN version: //third_party/cld_2:cld_2_dynamic_data_tool
       'target_name': 'cld_2_dynamic_data_tool',
       'type': 'executable',
       'include_dirs': [
         'src/internal',
         'src/public',
       ],
+
       'sources': [
         # Note: sources list duplicated in GN build.
         '<@(cld2_core_sources)',
+        '<@(cld2_core_impl_sources)',
         '<@(cld2_data_sources)',
         '<@(cld2_dynamic_data_loader_sources)',
         'src/internal/cld2_dynamic_data_extractor.h',
         'src/internal/cld2_dynamic_data_extractor.cc',
         'src/internal/cld2_dynamic_data_tool.cc',
       ],
+      'conditions': [
+        ['OS=="win"', {
+          'msvs_disabled_warnings': [4267], # size_t -> int conversion.
+        }],
+        ['cld2_table_size==0', {
+          'sources+': ['<@(cld2_data_smallest_sources)']
+        }],
+        ['cld2_table_size==2', {
+          'sources+': ['<@(cld2_data_largest_sources)']
+        }],
+      ],
+      'defines': ['CLD2_DYNAMIC_MODE'],
     },
 
     {
       # GN version: //third_party/cld_2
       'target_name': 'cld_2',
-      'type': 'static_library',
-      'sources': [],
+      'type': 'none',
+      'sources': ['<@(cld2_core_sources)'],
       'dependencies': [],
-      'conditions': [
-        ['cld2_data_source=="static"',
-          {'dependencies': ['cld2_static']},
-          {'dependencies': ['cld2_dynamic']}
-        ],
-      ],
+    },
+
+    # As described above in the comments for cld2_platform_support, this is a
+    # passthrough target that allows high-level targets to depend upon the same
+    # CLD support as desired by the embedder.
+    {
+      # GN version: //third_party/cld_2:cld2_platform_impl
+      'target_name': 'cld2_platform_impl',
+      'type': 'none',
+      'dependencies': ['cld2_<(cld2_platform_support)'],
     },
 
     {
-      # GN version: //third_party/cld_2
+      # GN version: //third_party/cld_2:cld2_static
       'target_name': 'cld2_static',
       'type': 'static_library',
       'include_dirs': [
@@ -136,26 +154,41 @@
       ],
       'sources': [
         '<@(cld2_core_sources)',
+        '<@(cld2_core_impl_sources)',
         '<@(cld2_data_sources)',
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'msvs_disabled_warnings': [4267], # size_t -> int conversion.
+        }],
+        ['cld2_table_size==0', {
+          'sources+': ['<@(cld2_data_smallest_sources)']
+        }],
+        ['cld2_table_size==2', {
+          'sources+': ['<@(cld2_data_largest_sources)']
+        }],
       ],
     },
 
     {
-      # GN version: //third_party/cld_2
+      # GN version: //third_party/cld_2:cld2_dynamic
       'target_name': 'cld2_dynamic',
       'type': 'static_library',
+      'conditions': [
+        ['OS=="win"', {
+          'msvs_disabled_warnings': [4267], # size_t -> int conversion.
+        }],
+      ],
       'include_dirs': [
         'src/internal',
         'src/public',
       ],
       'sources': [
         '<@(cld2_core_sources)',
+        '<@(cld2_core_impl_sources)',
         '<@(cld2_dynamic_data_loader_sources)',
       ],
       'defines': ['CLD2_DYNAMIC_MODE'],
-      'all_dependent_settings': {
-        'defines': ['CLD2_DYNAMIC_MODE'],
-      },
     },
   ],
 }

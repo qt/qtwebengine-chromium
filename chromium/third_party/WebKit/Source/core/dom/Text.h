@@ -23,14 +23,15 @@
 #ifndef Text_h
 #define Text_h
 
+#include "core/CoreExport.h"
 #include "core/dom/CharacterData.h"
 
 namespace blink {
 
 class ExceptionState;
-class RenderText;
+class LayoutText;
 
-class Text : public CharacterData {
+class CORE_EXPORT Text : public CharacterData {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static const unsigned defaultLengthLimit = 1 << 16;
@@ -38,7 +39,7 @@ public:
     static PassRefPtrWillBeRawPtr<Text> create(Document&, const String&);
     static PassRefPtrWillBeRawPtr<Text> createEditingText(Document&, const String&);
 
-    RenderText* renderer() const;
+    LayoutText* layoutObject() const;
 
     // mergeNextSiblingNodesIfPossible() merges next sibling nodes if possible
     // then returns a node not merged.
@@ -51,14 +52,17 @@ public:
     PassRefPtrWillBeRawPtr<Text> replaceWholeText(const String&);
 
     void recalcTextStyle(StyleRecalcChange, Text* nextTextSibling);
-    bool textRendererIsNeeded(const RenderStyle&, const RenderObject& parent);
-    RenderText* createTextRenderer(RenderStyle*);
-    void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, RecalcStyleBehavior = DoNotRecalcStyle);
+    bool textLayoutObjectIsNeeded(const ComputedStyle&, const LayoutObject& parent);
+    LayoutText* createTextLayoutObject(const ComputedStyle&);
+    void updateTextLayoutObject(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, RecalcStyleBehavior = DoNotRecalcStyle);
 
     virtual void attach(const AttachContext& = AttachContext()) override final;
+    void reattachIfNeeded(const AttachContext& = AttachContext());
 
     virtual bool canContainRangeEndPoint() const override final { return true; }
     virtual NodeType nodeType() const override;
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     Text(TreeScope& treeScope, const String& data, ConstructionType type)
@@ -68,9 +72,9 @@ private:
     virtual String nodeName() const override;
     virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override final;
 
-    bool isTextNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isTextNode() const = delete; // This will catch anyone doing an unnecessary check.
 
-    bool needsWhitespaceRenderer();
+    bool needsWhitespaceLayoutObject();
 
     virtual PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&);
 

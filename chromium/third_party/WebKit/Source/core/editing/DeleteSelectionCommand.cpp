@@ -40,8 +40,8 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/HTMLTableRowElement.h"
-#include "core/rendering/RenderTableCell.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutTableCell.h"
+#include "core/layout/LayoutText.h"
 
 namespace blink {
 
@@ -374,8 +374,8 @@ void DeleteSelectionCommand::removeNode(PassRefPtrWillBeRawPtr<Node> node, Shoul
 
         // Make sure empty cell has some height, if a placeholder can be inserted.
         document().updateLayoutIgnorePendingStylesheets();
-        RenderObject *r = node->renderer();
-        if (r && r->isTableCell() && toRenderTableCell(r)->contentHeight() <= 0) {
+        LayoutObject* r = node->layoutObject();
+        if (r && r->isTableCell() && toLayoutTableCell(r)->contentHeight() <= 0) {
             Position firstEditablePosition = firstEditablePositionInNode(node.get());
             if (firstEditablePosition.isNotNull())
                 insertBlockPlaceholder(firstEditablePosition);
@@ -489,7 +489,7 @@ void DeleteSelectionCommand::handleGeneralDelete()
         }
 
         // The selection to delete is all in one node.
-        if (!startNode->renderer() || (!startOffset && m_downstreamEnd.atLastEditingPositionForNode()))
+        if (!startNode->layoutObject() || (!startOffset && m_downstreamEnd.atLastEditingPositionForNode()))
             removeNode(startNode);
     }
     else {
@@ -574,12 +574,12 @@ void DeleteSelectionCommand::fixupWhitespace()
     // FIXME: isRenderedCharacter should be removed, and we should use VisiblePosition::characterAfter and VisiblePosition::characterBefore
     if (m_leadingWhitespace.isNotNull() && !m_leadingWhitespace.isRenderedCharacter() && m_leadingWhitespace.deprecatedNode()->isTextNode()) {
         Text* textNode = toText(m_leadingWhitespace.deprecatedNode());
-        ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
+        ASSERT(!textNode->layoutObject() || textNode->layoutObject()->style()->collapseWhiteSpace());
         replaceTextInNodePreservingMarkers(textNode, m_leadingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());
     }
     if (m_trailingWhitespace.isNotNull() && !m_trailingWhitespace.isRenderedCharacter() && m_trailingWhitespace.deprecatedNode()->isTextNode()) {
         Text* textNode = toText(m_trailingWhitespace.deprecatedNode());
-        ASSERT(!textNode->renderer() ||textNode->renderer()->style()->collapseWhiteSpace());
+        ASSERT(!textNode->layoutObject() || textNode->layoutObject()->style()->collapseWhiteSpace());
         replaceTextInNodePreservingMarkers(textNode, m_trailingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());
     }
 }
@@ -781,7 +781,7 @@ void DeleteSelectionCommand::doApply()
     if (!m_hasSelectionToDelete)
         m_selectionToDelete = endingSelection();
 
-    if (!m_selectionToDelete.isNonOrphanedRange())
+    if (!m_selectionToDelete.isNonOrphanedRange() || !m_selectionToDelete.isContentEditable())
         return;
 
     // save this to later make the selection with
@@ -845,7 +845,10 @@ void DeleteSelectionCommand::doApply()
     if (placeholder) {
         if (m_sanitizeMarkup)
             removeRedundantBlocks();
-        insertNodeAt(placeholder.get(), m_endingPosition);
+        // handleGeneralDelete cause DOM mutation events so |m_endingPosition|
+        // can be out of document.
+        if (m_endingPosition.inDocument())
+            insertNodeAt(placeholder.get(), m_endingPosition);
     }
 
     rebalanceWhitespaceAt(m_endingPosition);
@@ -872,7 +875,7 @@ bool DeleteSelectionCommand::preservesTypingStyle() const
     return m_typingStyle;
 }
 
-void DeleteSelectionCommand::trace(Visitor* visitor)
+DEFINE_TRACE(DeleteSelectionCommand)
 {
     visitor->trace(m_selectionToDelete);
     visitor->trace(m_upstreamStart);

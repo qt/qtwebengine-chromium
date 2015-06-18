@@ -39,19 +39,23 @@ namespace blink {
 class ExecutionContext;
 
 class V8MutationCallback final : public MutationCallback, public ActiveDOMCallback {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(V8MutationCallback);
 public:
-    static PassOwnPtr<V8MutationCallback> create(v8::Handle<v8::Function> callback, v8::Handle<v8::Object> owner, ScriptState* scriptState)
+    static PassOwnPtrWillBeRawPtr<V8MutationCallback> create(v8::Local<v8::Function> callback, v8::Local<v8::Object> owner, ScriptState* scriptState)
     {
-        return adoptPtr(new V8MutationCallback(callback, owner, scriptState));
+        return adoptPtrWillBeNoop(new V8MutationCallback(callback, owner, scriptState));
     }
+    virtual ~V8MutationCallback();
 
-    virtual void call(const WillBeHeapVector<RefPtrWillBeMember<MutationRecord> >&, MutationObserver*) override;
+    virtual void call(const WillBeHeapVector<RefPtrWillBeMember<MutationRecord>>&, MutationObserver*) override;
     virtual ExecutionContext* executionContext() const override { return ContextLifecycleObserver::executionContext(); }
 
-private:
-    V8MutationCallback(v8::Handle<v8::Function>, v8::Handle<v8::Object>, ScriptState*);
+    DECLARE_VIRTUAL_TRACE();
 
-    static void setWeakCallback(const v8::WeakCallbackData<v8::Function, V8MutationCallback>&);
+private:
+    V8MutationCallback(v8::Local<v8::Function>, v8::Local<v8::Object>, ScriptState*);
+
+    static void setWeakCallback(const v8::WeakCallbackInfo<V8MutationCallback>&);
 
     ScopedPersistent<v8::Function> m_callback;
     RefPtr<ScriptState> m_scriptState;

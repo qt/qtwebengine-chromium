@@ -35,6 +35,13 @@ namespace blink {
 
 class ExceptionState;
 
+class DOMSettableTokenListObserver : public WillBeGarbageCollectedMixin {
+public:
+    virtual void valueChanged() = 0;
+
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
+};
+
 class DOMSettableTokenList final
     : public DOMTokenList
 #if !ENABLE(OILPAN)
@@ -42,11 +49,11 @@ class DOMSettableTokenList final
 #endif
     {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DOMSettableTokenList);
 public:
-    static PassRefPtrWillBeRawPtr<DOMSettableTokenList> create()
+    static PassRefPtrWillBeRawPtr<DOMSettableTokenList> create(DOMSettableTokenListObserver* observer = nullptr)
     {
-        return adoptRefWillBeNoop(new DOMSettableTokenList());
+        return adoptRefWillBeNoop(new DOMSettableTokenList(observer));
     }
     virtual ~DOMSettableTokenList();
 
@@ -65,9 +72,12 @@ public:
     virtual void setValue(const AtomicString&) override;
 
     const SpaceSplitString& tokens() const { return m_tokens; }
+    void setObserver(DOMSettableTokenListObserver* observer) { m_observer = observer; };
+
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
-    DOMSettableTokenList();
+    explicit DOMSettableTokenList(DOMSettableTokenListObserver*);
 
 private:
     virtual void addInternal(const AtomicString&) override;
@@ -76,6 +86,7 @@ private:
 
     AtomicString m_value;
     SpaceSplitString m_tokens;
+    RawPtrWillBeWeakMember<DOMSettableTokenListObserver> m_observer;
 };
 
 } // namespace blink

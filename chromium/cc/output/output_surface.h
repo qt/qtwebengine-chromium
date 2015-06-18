@@ -46,6 +46,11 @@ class CC_EXPORT OutputSurface {
     DEFAULT_MAX_FRAMES_PENDING = 2
   };
 
+  OutputSurface(const scoped_refptr<ContextProvider>& context_provider,
+                const scoped_refptr<ContextProvider>& worker_context_provider,
+                scoped_ptr<SoftwareOutputDevice> software_device);
+  OutputSurface(const scoped_refptr<ContextProvider>& context_provider,
+                const scoped_refptr<ContextProvider>& worker_context_provider);
   explicit OutputSurface(
       const scoped_refptr<ContextProvider>& context_provider);
 
@@ -60,14 +65,14 @@ class CC_EXPORT OutputSurface {
     Capabilities()
         : delegated_rendering(false),
           max_frames_pending(0),
-          deferred_gl_initialization(false),
           draw_and_swap_full_viewport_every_frame(false),
           adjust_deadline_for_parent(true),
           uses_default_gl_framebuffer(true),
-          flipped_output_surface(false) {}
+          flipped_output_surface(false),
+          can_force_reclaim_resources(false),
+          delegated_sync_points_required(true) {}
     bool delegated_rendering;
     int max_frames_pending;
-    bool deferred_gl_initialization;
     bool draw_and_swap_full_viewport_every_frame;
     // This doesn't handle the <webview> case, but once BeginFrame is
     // supported natively, we shouldn't need adjust_deadline_for_parent.
@@ -77,6 +82,12 @@ class CC_EXPORT OutputSurface {
     bool uses_default_gl_framebuffer;
     // Whether this OutputSurface is flipped or not.
     bool flipped_output_surface;
+    // Whether ForceReclaimResources can be called to reclaim all resources
+    // from the OutputSurface.
+    bool can_force_reclaim_resources;
+    // True if sync points for resources are needed when swapping delegated
+    // frames.
+    bool delegated_sync_points_required;
   };
 
   const Capabilities& capabilities() const {
@@ -90,6 +101,9 @@ class CC_EXPORT OutputSurface {
   // In the event of a lost context, the entire output surface should be
   // recreated.
   ContextProvider* context_provider() const { return context_provider_.get(); }
+  ContextProvider* worker_context_provider() const {
+    return worker_context_provider_.get();
+  }
   SoftwareOutputDevice* software_device() const {
     return software_device_.get();
   }
@@ -100,16 +114,15 @@ class CC_EXPORT OutputSurface {
   // thread.
   virtual bool BindToClient(OutputSurfaceClient* client);
 
-  // This is called by the compositor on the compositor thread inside ReleaseGL
-  // in order to release the ContextProvider. Only used with
-  // deferred_gl_initialization capability.
-  void ReleaseContextProvider();
-
   virtual void EnsureBackbuffer();
   virtual void DiscardBackbuffer();
 
   virtual void Reshape(const gfx::Size& size, float scale_factor);
   virtual gfx::Size SurfaceSize() const;
+
+  // If supported, this causes a ReclaimResources for all resources that are
+  // currently in use.
+  virtual void ForceReclaimResources() {}
 
   virtual void BindFramebuffer();
 
@@ -125,36 +138,29 @@ class CC_EXPORT OutputSurface {
   // processing should be stopped, or lowered in priority.
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) {}
 
-  // Requests a BeginFrame notification from the output surface. The
-  // notification will be delivered by calling
-  // OutputSurfaceClient::BeginFrame until the callback is disabled.
-  virtual void SetNeedsBeginFrame(bool enable) {}
-
   bool HasClient() { return !!client_; }
 
   // Get the class capable of informing cc of hardware overlay capability.
-  OverlayCandidateValidator* overlay_candidate_validator() const {
-    return overlay_candidate_validator_.get();
-  }
+  virtual OverlayCandidateValidator* GetOverlayCandidateValidator() const;
 
   void DidLoseOutputSurface();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy);
 
+  // Support for a pull-model where draws are requested by the output surface.
+  //
+  // OutputSurface::Invalidate is called by the compositor to notify that
+  // there's new content.
+  virtual void Invalidate() {}
+
  protected:
   OutputSurfaceClient* client_;
-
-  // Synchronously initialize context3d and enter hardware mode.
-  // This can only supported in threaded compositing mode.
-  bool InitializeAndSetContext3d(
-      scoped_refptr<ContextProvider> context_provider);
-  void ReleaseGL();
 
   void PostSwapBuffersComplete();
 
   struct OutputSurface::Capabilities capabilities_;
   scoped_refptr<ContextProvider> context_provider_;
+  scoped_refptr<ContextProvider> worker_context_provider_;
   scoped_ptr<SoftwareOutputDevice> software_device_;
-  scoped_ptr<OverlayCandidateValidator> overlay_candidate_validator_;
   gfx::Size surface_size_;
   float device_scale_factor_;
 
@@ -173,9 +179,6 @@ class CC_EXPORT OutputSurface {
       bool resourceless_software_draw);
 
  private:
-  void SetUpContext3d();
-  void ResetContext3d();
-
   bool external_stencil_test_enabled_;
 
   base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;

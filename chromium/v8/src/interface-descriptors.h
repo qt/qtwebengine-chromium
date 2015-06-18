@@ -25,11 +25,14 @@ class PlatformInterfaceDescriptor;
   V(FastNewContext)                           \
   V(ToNumber)                                 \
   V(NumberToString)                           \
+  V(Typeof)                                   \
   V(FastCloneShallowArray)                    \
   V(FastCloneShallowObject)                   \
   V(CreateAllocationSite)                     \
+  V(CreateWeakCell)                           \
   V(CallFunction)                             \
   V(CallFunctionWithFeedback)                 \
+  V(CallFunctionWithFeedbackAndVector)        \
   V(CallConstruct)                            \
   V(RegExpConstructResult)                    \
   V(TransitionElementsKind)                   \
@@ -38,6 +41,7 @@ class PlatformInterfaceDescriptor;
   V(ArrayConstructor)                         \
   V(InternalArrayConstructorConstantArgCount) \
   V(InternalArrayConstructor)                 \
+  V(Compare)                                  \
   V(CompareNil)                               \
   V(ToBoolean)                                \
   V(BinaryOp)                                 \
@@ -47,13 +51,15 @@ class PlatformInterfaceDescriptor;
   V(Named)                                    \
   V(CallHandler)                              \
   V(ArgumentAdaptor)                          \
-  V(ApiGetter)                                \
   V(ApiFunction)                              \
+  V(ApiAccessor)                              \
+  V(ApiGetter)                                \
   V(ArgumentsAccessRead)                      \
   V(StoreArrayLiteralElement)                 \
   V(MathPowTagged)                            \
   V(MathPowInteger)                           \
-  V(ContextOnly)
+  V(ContextOnly)                              \
+  V(GrowArrayElements)
 
 
 class CallInterfaceDescriptorData {
@@ -298,6 +304,12 @@ class NumberToStringDescriptor : public CallInterfaceDescriptor {
 };
 
 
+class TypeofDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(TypeofDescriptor, CallInterfaceDescriptor)
+};
+
+
 class FastCloneShallowArrayDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(FastCloneShallowArrayDescriptor, CallInterfaceDescriptor)
@@ -316,6 +328,19 @@ class CreateAllocationSiteDescriptor : public CallInterfaceDescriptor {
 };
 
 
+class CreateWeakCellDescriptor : public CallInterfaceDescriptor {
+ public:
+  enum ParameterIndices {
+    kVectorIndex,
+    kSlotIndex,
+    kValueIndex,
+    kParameterCount
+  };
+
+  DECLARE_DESCRIPTOR(CreateWeakCellDescriptor, CallInterfaceDescriptor)
+};
+
+
 class CallFunctionDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(CallFunctionDescriptor, CallInterfaceDescriptor)
@@ -325,6 +350,14 @@ class CallFunctionDescriptor : public CallInterfaceDescriptor {
 class CallFunctionWithFeedbackDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(CallFunctionWithFeedbackDescriptor,
+                     CallInterfaceDescriptor)
+};
+
+
+class CallFunctionWithFeedbackAndVectorDescriptor
+    : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(CallFunctionWithFeedbackAndVectorDescriptor,
                      CallInterfaceDescriptor)
 };
 
@@ -379,6 +412,12 @@ class InternalArrayConstructorDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(InternalArrayConstructorDescriptor,
                      CallInterfaceDescriptor)
+};
+
+
+class CompareDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(CompareDescriptor, CallInterfaceDescriptor)
 };
 
 
@@ -443,6 +482,12 @@ class ApiFunctionDescriptor : public CallInterfaceDescriptor {
 };
 
 
+class ApiAccessorDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(ApiAccessorDescriptor, CallInterfaceDescriptor)
+};
+
+
 class ApiGetterDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(ApiGetterDescriptor, CallInterfaceDescriptor)
@@ -486,6 +531,17 @@ class MathPowIntegerDescriptor : public CallInterfaceDescriptor {
 class ContextOnlyDescriptor : public CallInterfaceDescriptor {
  public:
   DECLARE_DESCRIPTOR(ContextOnlyDescriptor, CallInterfaceDescriptor)
+};
+
+
+class GrowArrayElementsDescriptor : public CallInterfaceDescriptor {
+ public:
+  DECLARE_DESCRIPTOR(GrowArrayElementsDescriptor, CallInterfaceDescriptor)
+
+  enum RegisterInfo { kObjectIndex, kKeyIndex, kCapacityIndex };
+  static const Register ObjectRegister();
+  static const Register KeyRegister();
+  static const Register CapacityRegister();
 };
 
 #undef DECLARE_DESCRIPTOR

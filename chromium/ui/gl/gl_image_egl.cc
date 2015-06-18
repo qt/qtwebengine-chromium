@@ -4,6 +4,7 @@
 
 #include "ui/gl/gl_image_egl.h"
 
+#include "ui/gl/egl_util.h"
 #include "ui/gl/gl_surface_egl.h"
 
 namespace gfx {
@@ -13,12 +14,14 @@ GLImageEGL::GLImageEGL(const gfx::Size& size)
 }
 
 GLImageEGL::~GLImageEGL() {
+  DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_EQ(EGL_NO_IMAGE_KHR, egl_image_);
 }
 
 bool GLImageEGL::Initialize(EGLenum target,
                             EGLClientBuffer buffer,
                             const EGLint* attrs) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_EQ(EGL_NO_IMAGE_KHR, egl_image_);
   egl_image_ = eglCreateImageKHR(GLSurfaceEGL::GetHardwareDisplay(),
                                  EGL_NO_CONTEXT,
@@ -26,8 +29,7 @@ bool GLImageEGL::Initialize(EGLenum target,
                                  buffer,
                                  attrs);
   if (egl_image_ == EGL_NO_IMAGE_KHR) {
-    EGLint error = eglGetError();
-    LOG(ERROR) << "Error creating EGLImage: " << error;
+    DLOG(ERROR) << "Error creating EGLImage: " << ui::GetLastEGLErrorString();
     return false;
   }
 
@@ -35,8 +37,14 @@ bool GLImageEGL::Initialize(EGLenum target,
 }
 
 void GLImageEGL::Destroy(bool have_context) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   if (egl_image_ != EGL_NO_IMAGE_KHR) {
-    eglDestroyImageKHR(GLSurfaceEGL::GetHardwareDisplay(), egl_image_);
+    EGLBoolean result =
+        eglDestroyImageKHR(GLSurfaceEGL::GetHardwareDisplay(), egl_image_);
+    if (result == EGL_FALSE) {
+      DLOG(ERROR) << "Error destroying EGLImage: "
+                  << ui::GetLastEGLErrorString();
+    }
     egl_image_ = EGL_NO_IMAGE_KHR;
   }
 }
@@ -44,6 +52,7 @@ void GLImageEGL::Destroy(bool have_context) {
 gfx::Size GLImageEGL::GetSize() { return size_; }
 
 bool GLImageEGL::BindTexImage(unsigned target) {
+  DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK_NE(EGL_NO_IMAGE_KHR, egl_image_);
   glEGLImageTargetTexture2DOES(target, egl_image_);
   DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());

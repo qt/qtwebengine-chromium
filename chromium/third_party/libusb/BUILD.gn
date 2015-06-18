@@ -4,10 +4,10 @@
 
 assert(!is_android && !is_ios)
 
+import("//build/config/features.gni")
+
 config("libusb_config") {
-  include_dirs = [
-    "src/libusb",
-  ]
+  include_dirs = [ "src/libusb" ]
 }
 
 static_library("libusb") {
@@ -24,9 +24,6 @@ static_library("libusb") {
     "src/libusb/libusbi.h",
     "src/libusb/os/darwin_usb.c",
     "src/libusb/os/darwin_usb.h",
-    "src/libusb/os/linux_udev.c",
-    "src/libusb/os/linux_usbfs.c",
-    "src/libusb/os/linux_usbfs.h",
     "src/libusb/os/poll_posix.c",
     "src/libusb/os/poll_posix.h",
     "src/libusb/os/poll_windows.c",
@@ -46,9 +43,8 @@ static_library("libusb") {
     "src/msvc/inttypes.h",
     "src/msvc/stdint.h",
   ]
-  include_dirs = [
-    "src/libusb/os",
-  ]
+  deps = []
+  include_dirs = [ "src/libusb/os" ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
@@ -76,20 +72,32 @@ static_library("libusb") {
     ]
   }
 
-  if (is_linux || is_android) {
-    defines += [
-      "HAVE_LIBUDEV=1",
-      "OS_LINUX=1",
-      "USE_UDEV=1",
-      "_GNU_SOURCE=1",
-    ]
-    configs += [ "//build/config/linux:udev" ]
-  } else {
-    sources -= [
-      "src/libusb/os/linux_udev.c",
+  if (is_linux) {
+    sources += [
       "src/libusb/os/linux_usbfs.c",
       "src/libusb/os/linux_usbfs.h",
     ]
+    defines += [
+      "OS_LINUX=1",
+      "_GNU_SOURCE=1",
+    ]
+  }
+
+  if (use_udev) {
+    sources += [ "src/libusb/os/linux_udev.cc" ]
+    defines += [
+      "HAVE_LIBUDEV=1",
+      "USE_UDEV=1",
+    ]
+    deps += [ "//build/config/linux:udev" ]
+  }
+
+  if (is_linux && !use_udev) {
+    sources += [ "src/libusb/os/linux_netlink.c" ]
+    defines += [ "HAVE_LINUX_NETLINK_H" ]
+    if (is_clang) {
+      cflags += [ "-Wno-pointer-sign" ]
+    }
   }
 
   if (is_win) {
@@ -98,6 +106,7 @@ static_library("libusb") {
       "src/libusb/os/poll_posix.c",
       "src/libusb/os/threads_posix.c",
     ]
+    libs = [ "setupapi.lib" ]
   } else {
     include_dirs += [ "src" ]
     sources -= [

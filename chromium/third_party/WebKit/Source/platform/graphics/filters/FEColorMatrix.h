@@ -38,7 +38,7 @@ enum ColorMatrixType {
 
 class PLATFORM_EXPORT FEColorMatrix : public FilterEffect {
 public:
-    static PassRefPtr<FEColorMatrix> create(Filter*, ColorMatrixType, const Vector<float>&);
+    static PassRefPtrWillBeRawPtr<FEColorMatrix> create(Filter*, ColorMatrixType, const Vector<float>&);
 
     ColorMatrixType type() const;
     bool setType(ColorMatrixType);
@@ -59,6 +59,9 @@ private:
     virtual bool affectsTransparentPixels() override;
 
     ColorMatrixType m_type;
+
+    // The m_values vector may not contain the right number of values. Always check
+    // before accessing contents.
     Vector<float> m_values;
 };
 

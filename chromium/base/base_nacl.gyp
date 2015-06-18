@@ -7,8 +7,12 @@
     'chromium_code': 1,
   },
   'includes': [
-    '../build/common_untrusted.gypi',
+    # base.gypi must be included before common_untrusted.gypi.
+    #
+    # TODO(sergeyu): Replace the target_defaults magic in base.gypi with a
+    # sources variables lists. That way order of includes will not matter.
     'base.gypi',
+    '../build/common_untrusted.gypi',
   ],
   'conditions': [
     ['disable_nacl==0 and disable_nacl_untrusted==0', {
@@ -35,9 +39,6 @@
               '-fno-strict-aliasing',
             ],
           },
-          'dependencies': [
-            '../native_client/tools.gyp:prep_toolchain',
-          ],
         },
         {
           'target_name': 'base_i18n_nacl',
@@ -59,7 +60,6 @@
             ],
           },
           'dependencies': [
-            '../native_client/tools.gyp:prep_toolchain',
             '../third_party/icu/icu_nacl.gyp:icudata_nacl',
             '../third_party/icu/icu_nacl.gyp:icui18n_nacl',
             '../third_party/icu/icu_nacl.gyp:icuuc_nacl',
@@ -109,7 +109,6 @@
             'rand_util_nacl.cc',
           ],
           'dependencies': [
-            '../native_client/tools.gyp:prep_toolchain',
             '../third_party/libevent/libevent_nacl_nonsfi.gyp:event_nacl_nonsfi',
           ],
         },

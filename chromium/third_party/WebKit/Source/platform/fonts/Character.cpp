@@ -33,6 +33,7 @@
 
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
+#include <algorithm>
 
 using namespace WTF;
 using namespace Unicode;
@@ -170,6 +171,85 @@ CodePath Character::characterRangeCodePath(const UChar* characters, unsigned len
     return result;
 }
 
+bool Character::shouldIgnoreRotation(UChar32 character)
+{
+    if (character == 0x000A7 || character == 0x000A9 || character == 0x000AE)
+        return true;
+
+    if (character == 0x000B6 || character == 0x000BC || character == 0x000BD || character == 0x000BE)
+        return true;
+
+    if (isInRange(character, 0x002E5, 0x002EB))
+        return true;
+
+    if (isInRange(character, 0x01100, 0x011FF) || isInRange(character, 0x01401, 0x0167F) || isInRange(character, 0x018B0, 0x018FF))
+        return true;
+
+    if (character == 0x02016 || character == 0x02018 || character == 0x02019 || character == 0x02020 || character == 0x02021
+        || character == 0x2030 || character == 0x02031)
+        return true;
+
+    if (isInRange(character, 0x0203B, 0x0203D) || character == 0x02042 || character == 0x02044 || character == 0x02047
+        || character == 0x02048 || character == 0x02049 || character == 0x2051)
+        return true;
+
+    if (isInRange(character, 0x02065, 0x02069) || isInRange(character, 0x020DD, 0x020E0)
+        || isInRange(character, 0x020E2, 0x020E4) || isInRange(character, 0x02100, 0x02117)
+        || isInRange(character, 0x02119, 0x02131) || isInRange(character, 0x02133, 0x0213F))
+        return true;
+
+    if (isInRange(character, 0x02145, 0x0214A) || character == 0x0214C || character == 0x0214D
+        || isInRange(character, 0x0214F, 0x0218F))
+        return true;
+
+    if (isInRange(character, 0x02300, 0x02307) || isInRange(character, 0x0230C, 0x0231F)
+        || isInRange(character, 0x02322, 0x0232B) || isInRange(character, 0x0237D, 0x0239A)
+        || isInRange(character, 0x023B4, 0x023B6) || isInRange(character, 0x023BA, 0x023CF)
+        || isInRange(character, 0x023D1, 0x023DB) || isInRange(character, 0x023E2, 0x024FF))
+        return true;
+
+    if (isInRange(character, 0x025A0, 0x02619) || isInRange(character, 0x02620, 0x02767)
+        || isInRange(character, 0x02776, 0x02793) || isInRange(character, 0x02B12, 0x02B2F)
+        || isInRange(character, 0x02B4D, 0x02BFF) || isInRange(character, 0x02E80, 0x03007))
+        return true;
+
+    if (character == 0x03012 || character == 0x03013 || isInRange(character, 0x03020, 0x0302F)
+        || isInRange(character, 0x03031, 0x0309F) || isInRange(character, 0x030A1, 0x030FB)
+        || isInRange(character, 0x030FD, 0x0A4CF))
+        return true;
+
+    if (isInRange(character, 0x0A960, 0x0A97F)
+        || isInRange(character, 0x0AC00, 0x0D7FF) || isInRange(character, 0x0E000, 0x0FAFF))
+        return true;
+
+    if (isInRange(character, 0x0FE10, 0x0FE1F) || isInRange(character, 0x0FE30, 0x0FE48)
+        || isInRange(character, 0x0FE50, 0x0FE57) || isInRange(character, 0x0FE5F, 0x0FE62)
+        || isInRange(character, 0x0FE67, 0x0FE6F))
+        return true;
+
+    if (isInRange(character, 0x0FF01, 0x0FF07) || isInRange(character, 0x0FF0A, 0x0FF0C)
+        || isInRange(character, 0x0FF0E, 0x0FF19) || isInRange(character, 0x0FF1F, 0x0FF3A))
+        return true;
+
+    if (character == 0x0FF3C || character == 0x0FF3E)
+        return true;
+
+    if (isInRange(character, 0x0FF40, 0x0FF5A) || isInRange(character, 0x0FFE0, 0x0FFE2)
+        || isInRange(character, 0x0FFE4, 0x0FFE7) || isInRange(character, 0x0FFF0, 0x0FFF8)
+        || character == 0x0FFFD)
+        return true;
+
+    if (isInRange(character, 0x13000, 0x1342F) || isInRange(character, 0x1B000, 0x1B0FF)
+        || isInRange(character, 0x1D000, 0x1D1FF) || isInRange(character, 0x1D300, 0x1D37F)
+        || isInRange(character, 0x1F000, 0x1F64F) || isInRange(character, 0x1F680, 0x1F77F))
+        return true;
+
+    if (isInRange(character, 0x20000, 0x2FFFD) || isInRange(character, 0x30000, 0x3FFFD))
+        return true;
+
+    return false;
+}
+
 bool Character::isCJKIdeograph(UChar32 c)
 {
     static const UChar32 cjkIdeographRanges[] = {
@@ -260,9 +340,14 @@ bool Character::isCJKIdeographOrSymbol(UChar32 c)
     return valueInIntervalList(cjkSymbolRanges, c);
 }
 
-unsigned Character::expansionOpportunityCount(const LChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
+unsigned Character::expansionOpportunityCount(const LChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion, const TextJustify textJustify)
 {
     unsigned count = 0;
+    if (textJustify == TextJustifyDistribute) {
+        isAfterExpansion = true;
+        return length;
+    }
+
     if (direction == LTR) {
         for (size_t i = 0; i < length; ++i) {
             if (treatAsSpace(characters[i])) {
@@ -282,10 +367,11 @@ unsigned Character::expansionOpportunityCount(const LChar* characters, size_t le
             }
         }
     }
+
     return count;
 }
 
-unsigned Character::expansionOpportunityCount(const UChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
+unsigned Character::expansionOpportunityCount(const UChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion, const TextJustify textJustify)
 {
     unsigned count = 0;
     if (direction == LTR) {
@@ -299,6 +385,13 @@ unsigned Character::expansionOpportunityCount(const UChar* characters, size_t le
             if (U16_IS_LEAD(character) && i + 1 < length && U16_IS_TRAIL(characters[i + 1])) {
                 character = U16_GET_SUPPLEMENTARY(character, characters[i + 1]);
                 i++;
+            }
+            if (textJustify == TextJustify::TextJustifyAuto && isCJKIdeographOrSymbol(character)) {
+                if (!isAfterExpansion)
+                    count++;
+                count++;
+                isAfterExpansion = true;
+                continue;
             }
             isAfterExpansion = false;
         }
@@ -314,6 +407,13 @@ unsigned Character::expansionOpportunityCount(const UChar* characters, size_t le
                 character = U16_GET_SUPPLEMENTARY(characters[i - 2], character);
                 i--;
             }
+            if (textJustify == TextJustify::TextJustifyAuto && isCJKIdeographOrSymbol(character)) {
+                if (!isAfterExpansion)
+                    count++;
+                count++;
+                isAfterExpansion = true;
+                continue;
+            }
             isAfterExpansion = false;
         }
     }
@@ -327,8 +427,8 @@ bool Character::canReceiveTextEmphasis(UChar32 c)
         return false;
 
     // Additional word-separator characters listed in CSS Text Level 3 Editor's Draft 3 November 2010.
-    if (c == ethiopicWordspace || c == aegeanWordSeparatorLine || c == aegeanWordSeparatorDot
-        || c == ugariticWordDivider || c == tibetanMarkIntersyllabicTsheg || c == tibetanMarkDelimiterTshegBstar)
+    if (c == ethiopicWordspaceCharacter || c == aegeanWordSeparatorLineCharacter || c == aegeanWordSeparatorDotCharacter
+        || c == ugariticWordDividerCharacter || c == tibetanMarkIntersyllabicTshegCharacter || c == tibetanMarkDelimiterTshegBstarCharacter)
         return false;
 
     return true;

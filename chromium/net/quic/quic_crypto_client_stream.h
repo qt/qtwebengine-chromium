@@ -34,10 +34,8 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // CryptoFramerVisitorInterface implementation
   void OnHandshakeMessage(const CryptoHandshakeMessage& message) override;
 
-  // Performs a crypto handshake with the server. Returns true if the crypto
-  // handshake is started successfully.
-  // TODO(agl): this should probably return void.
-  virtual bool CryptoConnect();
+  // Performs a crypto handshake with the server.
+  virtual void CryptoConnect();
 
   // num_sent_client_hellos returns the number of client hello messages that
   // have been sent. If the handshake has completed then this is one greater
@@ -81,7 +79,7 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
 
     // ProofVerifierCallback interface.
     void Run(bool ok,
-             const string& error_details,
+             const std::string& error_details,
              scoped_ptr<ProofVerifyDetails>* details) override;
 
     // Cancel causes any future callbacks to be ignored. It must be called on
@@ -208,8 +206,13 @@ class NET_EXPORT_PRIVATE QuicCryptoClientStream : public QuicCryptoStream {
   // verification. These members must not be used after
   // STATE_VERIFY_PROOF_COMPLETE.
   bool verify_ok_;
-  string verify_error_details_;
+  std::string verify_error_details_;
   scoped_ptr<ProofVerifyDetails> verify_details_;
+
+  // True if the server responded to a previous CHLO with a stateless
+  // reject.  Used for book-keeping between the STATE_RECV_REJ,
+  // STATE_VERIFY_PROOF*, and subsequent STATE_SEND_CHLO state.
+  bool stateless_reject_received_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoClientStream);
 };

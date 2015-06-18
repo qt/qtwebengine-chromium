@@ -31,20 +31,20 @@
 #ifndef AnimatableValue_h
 #define AnimatableValue_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
 
-class AnimatableValue : public RefCountedWillBeGarbageCollectedFinalized<AnimatableValue> {
+class CORE_EXPORT AnimatableValue : public RefCountedWillBeGarbageCollectedFinalized<AnimatableValue> {
 public:
     virtual ~AnimatableValue() { }
 
     static const AnimatableValue* neutralValue();
 
     static PassRefPtrWillBeRawPtr<AnimatableValue> interpolate(const AnimatableValue*, const AnimatableValue*, double fraction);
-    static double distance(const AnimatableValue* from, const AnimatableValue* to);
     static bool usesDefaultInterpolation(const AnimatableValue* from, const AnimatableValue* to)
     {
         return !from->isSameType(to) || from->usesDefaultInterpolationWith(to);
@@ -62,6 +62,7 @@ public:
     bool isClipPathOperation() const { return type() == TypeClipPathOperation; }
     bool isColor() const { return type() == TypeColor; }
     bool isDouble() const { return type() == TypeDouble; }
+    bool isDoubleAndBool() const { return type() == TypeDoubleAndBool; }
     bool isFilterOperations() const { return type() == TypeFilterOperations; }
     bool isImage() const { return type() == TypeImage; }
     bool isLength() const { return type() == TypeLength; }
@@ -87,13 +88,14 @@ public:
         return value->type() == type();
     }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     enum AnimatableType {
         TypeClipPathOperation,
         TypeColor,
         TypeDouble,
+        TypeDoubleAndBool,
         TypeFilterOperations,
         TypeImage,
         TypeLength,
@@ -125,8 +127,6 @@ private:
     virtual AnimatableType type() const = 0;
     // Implementations can assume that the object being compared has the same type as the object this is called on
     virtual bool equalTo(const AnimatableValue*) const = 0;
-
-    virtual double distanceTo(const AnimatableValue*) const;
 
     template <class Keyframe> friend class KeyframeEffectModel;
 };

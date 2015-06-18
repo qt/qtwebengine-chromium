@@ -98,7 +98,7 @@ const char kDefaultValue[] = "default:default";
 
 class PrefValueStoreTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     // Create TestingPrefStores.
     CreateManagedPrefs();
     CreateSupervisedUserPrefs();
@@ -237,7 +237,7 @@ class PrefValueStoreTest : public testing::Test {
         default_pref::kDefaultValue);
   }
 
-  void ExpectValueChangeNotifications(const char* name) {
+  void ExpectValueChangeNotifications(const std::string& name) {
     EXPECT_CALL(pref_notifier_, OnPreferenceChanged(name));
     EXPECT_CALL(*sync_associator_, ProcessPrefChange(name));
   }

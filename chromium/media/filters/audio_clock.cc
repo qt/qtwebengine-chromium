@@ -28,7 +28,7 @@ AudioClock::~AudioClock() {
 void AudioClock::WroteAudio(int frames_written,
                             int frames_requested,
                             int delay_frames,
-                            float playback_rate) {
+                            double playback_rate) {
   DCHECK_GE(frames_written, 0);
   DCHECK_LE(frames_written, frames_requested);
   DCHECK_GE(delay_frames, 0);
@@ -80,18 +80,9 @@ void AudioClock::WroteAudio(int frames_written,
                                         microseconds_per_frame_);
 }
 
-base::TimeDelta AudioClock::TimestampSinceWriting(
-    base::TimeDelta time_since_writing) const {
-  int64_t frames_played_since_writing = std::min(
-      total_buffered_frames_,
-      static_cast<int64_t>(time_since_writing.InSecondsF() * sample_rate_));
-  return front_timestamp_ +
-         ComputeBufferedMediaTime(frames_played_since_writing);
-}
-
 base::TimeDelta AudioClock::TimeUntilPlayback(base::TimeDelta timestamp) const {
-  DCHECK(timestamp >= front_timestamp_);
-  DCHECK(timestamp <= back_timestamp_);
+  DCHECK_GE(timestamp, front_timestamp_);
+  DCHECK_LE(timestamp, back_timestamp_);
 
   int64_t frames_until_timestamp = 0;
   double timestamp_us = timestamp.InMicroseconds();
@@ -126,11 +117,11 @@ base::TimeDelta AudioClock::TimeUntilPlayback(base::TimeDelta timestamp) const {
                                            microseconds_per_frame_);
 }
 
-AudioClock::AudioData::AudioData(int64_t frames, float playback_rate)
+AudioClock::AudioData::AudioData(int64_t frames, double playback_rate)
     : frames(frames), playback_rate(playback_rate) {
 }
 
-void AudioClock::PushBufferedAudioData(int64_t frames, float playback_rate) {
+void AudioClock::PushBufferedAudioData(int64_t frames, double playback_rate) {
   if (frames == 0)
     return;
 

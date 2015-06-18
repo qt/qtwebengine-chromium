@@ -18,7 +18,6 @@
 #include "SkColorPriv.h"
 #include "SkColorFilter.h"
 #include "SkTypeface.h"
-#include "SkAvoidXfermode.h"
 
 static inline SkPMColor rgb2gray(SkPMColor c) {
     unsigned r = SkGetPackedR32(c);
@@ -33,7 +32,7 @@ static inline SkPMColor rgb2gray(SkPMColor c) {
 class SkGrayScaleColorFilter : public SkColorFilter {
 public:
     virtual void filterSpan(const SkPMColor src[], int count,
-                            SkPMColor result[]) const SK_OVERRIDE {
+                            SkPMColor result[]) const override {
         for (int i = 0; i < count; i++) {
             result[i] = rgb2gray(src[i]);
         }
@@ -47,7 +46,7 @@ public:
     }
 
     virtual void filterSpan(const SkPMColor src[], int count,
-                            SkPMColor result[]) const SK_OVERRIDE {
+                            SkPMColor result[]) const override {
         SkPMColor mask = fMask;
         for (int i = 0; i < count; i++) {
             result[i] = src[i] & mask;
@@ -75,7 +74,7 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Dot2DPathEffect)
 
 protected:
-    virtual void begin(const SkIRect& uvBounds, SkPath* dst) const SK_OVERRIDE {
+    void begin(const SkIRect& uvBounds, SkPath* dst) const override {
         if (fPts) {
             fPts->reset();
         }
@@ -83,21 +82,14 @@ protected:
     }
 
     virtual void next(const SkPoint& loc, int u, int v,
-                      SkPath* dst) const SK_OVERRIDE {
+                      SkPath* dst) const override {
         if (fPts) {
             *fPts->append() = loc;
         }
         dst->addCircle(loc.fX, loc.fY, fRadius);
     }
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    Dot2DPathEffect(SkReadBuffer& buffer) : INHERITED(buffer) {
-        fRadius = buffer.readScalar();
-        fPts = NULL;
-    }
-#endif
-
-    virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE {
+    void flatten(SkWriteBuffer& buffer) const override {
         buffer.writeMatrix(this->getMatrix());
         buffer.writeScalar(fRadius);
     }
@@ -119,20 +111,21 @@ class InverseFillPE : public SkPathEffect {
 public:
     InverseFillPE() {}
     virtual bool filterPath(SkPath* dst, const SkPath& src,
-                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE {
+                            SkStrokeRec*, const SkRect*) const override {
         *dst = src;
         dst->setFillType(SkPath::kInverseWinding_FillType);
         return true;
     }
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(InverseFillPE)
 
-protected:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    InverseFillPE(SkReadBuffer& buffer) : INHERITED(buffer) {}
+#ifndef SK_IGNORE_TO_STRING
+    void toString(SkString* str) const override {
+        str->appendf("InverseFillPE: ()");
+    }
 #endif
 
-private:
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(InverseFillPE)
 
+private:
     typedef SkPathEffect INHERITED;
 };
 

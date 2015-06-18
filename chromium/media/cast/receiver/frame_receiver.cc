@@ -23,36 +23,37 @@ FrameReceiver::FrameReceiver(
     const scoped_refptr<CastEnvironment>& cast_environment,
     const FrameReceiverConfig& config,
     EventMediaType event_media_type,
-    PacedPacketSender* const packet_sender)
+    CastTransportSender* const transport)
     : cast_environment_(cast_environment),
-      packet_parser_(config.incoming_ssrc, config.rtp_payload_type),
+      transport_(transport),
+      packet_parser_(config.sender_ssrc, config.rtp_payload_type),
       stats_(cast_environment->Clock()),
       event_media_type_(event_media_type),
       event_subscriber_(kReceiverRtcpEventHistorySize, event_media_type),
-      rtp_timebase_(config.frequency),
+      rtp_timebase_(config.rtp_timebase),
       target_playout_delay_(
           base::TimeDelta::FromMilliseconds(config.rtp_max_delay_ms)),
       expected_frame_duration_(
-          base::TimeDelta::FromSeconds(1) / config.max_frame_rate),
+          base::TimeDelta::FromSeconds(1) / config.target_frame_rate),
       reports_are_scheduled_(false),
       framer_(cast_environment->Clock(),
               this,
-              config.incoming_ssrc,
+              config.sender_ssrc,
               true,
-              config.rtp_max_delay_ms * config.max_frame_rate / 1000),
+              config.rtp_max_delay_ms * config.target_frame_rate / 1000),
       rtcp_(RtcpCastMessageCallback(),
             RtcpRttCallback(),
             RtcpLogMessageCallback(),
             cast_environment_->Clock(),
-            packet_sender,
-            config.feedback_ssrc,
-            config.incoming_ssrc),
+            NULL,
+            config.receiver_ssrc,
+            config.sender_ssrc),
       is_waiting_for_consecutive_frame_(false),
       lip_sync_drift_(ClockDriftSmoother::GetDefaultTimeConstant()),
-      rtcp_interval_(base::TimeDelta::FromMilliseconds(config.rtcp_interval)),
       weak_factory_(this) {
+  transport_->AddValidSsrc(config.sender_ssrc);
   DCHECK_GT(config.rtp_max_delay_ms, 0);
-  DCHECK_GT(config.max_frame_rate, 0);
+  DCHECK_GT(config.target_frame_rate, 0);
   decryptor_.Initialize(config.aes_key, config.aes_iv_mask);
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber_);
   memset(frame_id_to_rtp_timestamp_, 0, sizeof(frame_id_to_rtp_timestamp_));
@@ -98,15 +99,6 @@ bool FrameReceiver::ProcessPacket(scoped_ptr<Packet> packet) {
   }
 
   return true;
-}
-
-// static
-bool FrameReceiver::ParseSenderSsrc(const uint8* packet,
-                                    size_t length,
-                                    uint32* ssrc) {
-  base::BigEndianReader big_endian_reader(
-      reinterpret_cast<const char*>(packet), length);
-  return big_endian_reader.Skip(8) && big_endian_reader.ReadU32(ssrc);
 }
 
 void FrameReceiver::ProcessParsedPacket(const RtpCastHeader& rtp_header,
@@ -177,10 +169,15 @@ void FrameReceiver::CastFeedback(const RtcpCastMessage& cast_message) {
       now, FRAME_ACK_SENT, event_media_type_,
       rtp_timestamp, cast_message.ack_frame_id);
 
-  ReceiverRtcpEventSubscriber::RtcpEventMultiMap rtcp_events;
-  event_subscriber_.GetRtcpEventsAndReset(&rtcp_events);
-  rtcp_.SendRtcpFromRtpReceiver(&cast_message, target_playout_delay_,
-                                &rtcp_events, NULL);
+  ReceiverRtcpEventSubscriber::RtcpEvents rtcp_events;
+  event_subscriber_.GetRtcpEventsWithRedundancy(&rtcp_events);
+  transport_->SendRtcpFromRtpReceiver(rtcp_.GetLocalSsrc(),
+                                      rtcp_.GetRemoteSsrc(),
+                                      rtcp_.ConvertToNTPAndSave(now),
+                                      &cast_message,
+                                      target_playout_delay_,
+                                      &rtcp_events,
+                                      NULL);
 }
 
 void FrameReceiver::EmitAvailableEncodedFrames() {
@@ -322,21 +319,25 @@ void FrameReceiver::SendNextCastMessage() {
 
 void FrameReceiver::ScheduleNextRtcpReport() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  base::TimeDelta time_to_next = rtcp_interval_;
-  time_to_next = std::max(
-      time_to_next, base::TimeDelta::FromMilliseconds(kMinSchedulingDelayMs));
 
   cast_environment_->PostDelayedTask(
-      CastEnvironment::MAIN,
-      FROM_HERE,
+      CastEnvironment::MAIN, FROM_HERE,
       base::Bind(&FrameReceiver::SendNextRtcpReport,
                  weak_factory_.GetWeakPtr()),
-      time_to_next);
+      base::TimeDelta::FromMilliseconds(kDefaultRtcpIntervalMs));
 }
 
 void FrameReceiver::SendNextRtcpReport() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  rtcp_.SendRtcpFromRtpReceiver(NULL, base::TimeDelta(), NULL, &stats_);
+  const base::TimeTicks now = cast_environment_->Clock()->NowTicks();
+  RtpReceiverStatistics stats = stats_.GetStatistics();
+  transport_->SendRtcpFromRtpReceiver(rtcp_.GetLocalSsrc(),
+                                      rtcp_.GetRemoteSsrc(),
+                                      rtcp_.ConvertToNTPAndSave(now),
+                                      NULL,
+                                      base::TimeDelta(),
+                                      NULL,
+                                      &stats);
   ScheduleNextRtcpReport();
 }
 

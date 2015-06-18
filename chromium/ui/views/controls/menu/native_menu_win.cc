@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/win/wrapped_window_proc.h"
@@ -282,11 +283,6 @@ class NativeMenuWin::MenuHostWindow {
           state = draw_item_struct->itemState & ODS_SELECTED ?
               NativeTheme::kHovered : NativeTheme::kNormal;
         }
-        int height =
-            draw_item_struct->rcItem.bottom - draw_item_struct->rcItem.top;
-        int icon_y = kItemTopMargin +
-            (height - kItemTopMargin - kItemBottomMargin -
-             config.check_height) / 2;
         gfx::Canvas canvas(gfx::Size(config.check_width, config.check_height),
                            1.0f,
                            false);
@@ -350,6 +346,10 @@ class NativeMenuWin::MenuHostWindow {
                                              UINT message,
                                              WPARAM w_param,
                                              LPARAM l_param) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 MenuHostWindowProc"));
+
     MenuHostWindow* host =
         reinterpret_cast<MenuHostWindow*>(gfx::GetWindowUserData(window));
     // host is null during initial construction.
@@ -400,9 +400,9 @@ NativeMenuWin::NativeMenuWin(ui::MenuModel* model, HWND system_menu_for)
       menu_action_(MENU_ACTION_NONE),
       menu_to_select_(NULL),
       position_to_select_(-1),
-      menu_to_select_factory_(this),
       parent_(NULL),
-      destroyed_flag_(NULL) {
+      destroyed_flag_(NULL),
+      menu_to_select_factory_(this) {
 }
 
 NativeMenuWin::~NativeMenuWin() {
@@ -436,7 +436,6 @@ void NativeMenuWin::RunMenuAt(const gfx::Point& point, int alignment) {
 
   // Command dispatch is done through WM_MENUCOMMAND, handled by the host
   // window.
-  HWND hwnd = host_window_->hwnd();
   menu_to_select_ = NULL;
   position_to_select_ = -1;
   menu_to_select_factory_.InvalidateWeakPtrs();

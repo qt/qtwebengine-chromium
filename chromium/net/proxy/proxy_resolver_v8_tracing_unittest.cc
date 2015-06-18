@@ -4,6 +4,8 @@
 
 #include "net/proxy/proxy_resolver_v8_tracing.h"
 
+#include <string>
+
 #include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -15,11 +17,13 @@
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
-#include "net/base/net_log_unittest.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/host_cache.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/log/net_log.h"
+#include "net/log/test_net_log.h"
+#include "net/log/test_net_log_entry.h"
+#include "net/log/test_net_log_util.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -58,12 +62,28 @@ scoped_refptr<ProxyResolverScriptData> LoadScriptData(const char* filename) {
   return ProxyResolverScriptData::FromUTF8(file_contents);
 }
 
-void InitResolver(ProxyResolverV8Tracing* resolver, const char* filename) {
+scoped_ptr<ProxyResolverErrorObserver> ReturnErrorObserver(
+    scoped_ptr<ProxyResolverErrorObserver> error_observer) {
+  return error_observer;
+}
+
+scoped_ptr<ProxyResolver> CreateResolver(
+    NetLog* net_log,
+    HostResolver* host_resolver,
+    scoped_ptr<ProxyResolverErrorObserver> error_observer,
+    const char* filename) {
+  scoped_ptr<ProxyResolver> resolver;
+  ProxyResolverFactoryV8Tracing factory(
+      host_resolver, net_log, ProxyResolver::LoadStateChangedCallback(),
+      base::Bind(&ReturnErrorObserver, base::Passed(&error_observer)));
   TestCompletionCallback callback;
-  int rv =
-      resolver->SetPacScript(LoadScriptData(filename), callback.callback());
+  scoped_ptr<ProxyResolverFactory::Request> request;
+  int rv = factory.CreateProxyResolver(LoadScriptData(filename), &resolver,
+                                       callback.callback(), &request);
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
+  EXPECT_TRUE(resolver);
+  return resolver.Pass();
 }
 
 class MockErrorObserver : public ProxyResolverErrorObserver {
@@ -96,20 +116,20 @@ class MockErrorObserver : public ProxyResolverErrorObserver {
 };
 
 TEST_F(ProxyResolverV8TracingTest, Simple) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
-  InitResolver(&resolver, "simple.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      &log, &host_resolver, make_scoped_ptr(error_observer), "simple.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info, callback.callback(),
-      NULL, request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -127,20 +147,20 @@ TEST_F(ProxyResolverV8TracingTest, Simple) {
 }
 
 TEST_F(ProxyResolverV8TracingTest, JavascriptError) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
-  InitResolver(&resolver, "error.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      &log, &host_resolver, make_scoped_ptr(error_observer), "error.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://throw-an-error/"), &proxy_info, callback.callback(), NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://throw-an-error/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, callback.WaitForResult());
@@ -152,12 +172,12 @@ TEST_F(ProxyResolverV8TracingTest, JavascriptError) {
 
   // Check the NetLogs -- there was 1 alert and 1 javascript error, and they
   // were output to both the global log, and per-request log.
-  CapturingNetLog::CapturedEntryList entries_list[2];
+  TestNetLogEntry::List entries_list[2];
   log.GetEntries(&entries_list[0]);
   request_log.GetEntries(&entries_list[1]);
 
   for (size_t list_i = 0; list_i < arraysize(entries_list); list_i++) {
-    const CapturingNetLog::CapturedEntryList& entries = entries_list[list_i];
+    const TestNetLogEntry::List& entries = entries_list[list_i];
     EXPECT_EQ(2u, entries.size());
     EXPECT_TRUE(
         LogContainsEvent(entries, 0, NetLog::TYPE_PAC_JAVASCRIPT_ALERT,
@@ -173,23 +193,21 @@ TEST_F(ProxyResolverV8TracingTest, JavascriptError) {
 }
 
 TEST_F(ProxyResolverV8TracingTest, TooManyAlerts) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
-  InitResolver(&resolver, "too_many_alerts.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "too_many_alerts.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"),
-      &proxy_info,
-      callback.callback(),
-      NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -206,12 +224,12 @@ TEST_F(ProxyResolverV8TracingTest, TooManyAlerts) {
 
   // Check the NetLogs -- the script generated 50 alerts, which were mirrored
   // to both the global and per-request logs.
-  CapturingNetLog::CapturedEntryList entries_list[2];
+  TestNetLogEntry::List entries_list[2];
   log.GetEntries(&entries_list[0]);
   request_log.GetEntries(&entries_list[1]);
 
   for (size_t list_i = 0; list_i < arraysize(entries_list); list_i++) {
-    const CapturingNetLog::CapturedEntryList& entries = entries_list[list_i];
+    const TestNetLogEntry::List& entries = entries_list[list_i];
     EXPECT_EQ(50u, entries.size());
     for (size_t i = 0; i < entries.size(); ++i) {
       ASSERT_TRUE(
@@ -224,23 +242,21 @@ TEST_F(ProxyResolverV8TracingTest, TooManyAlerts) {
 // Verify that buffered alerts cannot grow unboundedly, even when the message is
 // empty string.
 TEST_F(ProxyResolverV8TracingTest, TooManyEmptyAlerts) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
-  InitResolver(&resolver, "too_many_empty_alerts.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "too_many_empty_alerts.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"),
-      &proxy_info,
-      callback.callback(),
-      NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -254,12 +270,12 @@ TEST_F(ProxyResolverV8TracingTest, TooManyEmptyAlerts) {
 
   // Check the NetLogs -- the script generated 50 alerts, which were mirrored
   // to both the global and per-request logs.
-  CapturingNetLog::CapturedEntryList entries_list[2];
+  TestNetLogEntry::List entries_list[2];
   log.GetEntries(&entries_list[0]);
   request_log.GetEntries(&entries_list[1]);
 
   for (size_t list_i = 0; list_i < arraysize(entries_list); list_i++) {
-    const CapturingNetLog::CapturedEntryList& entries = entries_list[list_i];
+    const TestNetLogEntry::List& entries = entries_list[list_i];
     EXPECT_EQ(1000u, entries.size());
     for (size_t i = 0; i < entries.size(); ++i) {
       ASSERT_TRUE(
@@ -273,11 +289,10 @@ TEST_F(ProxyResolverV8TracingTest, TooManyEmptyAlerts) {
 // verifies the final result, and that the underlying DNS resolver received
 // the correct set of queries.
 TEST_F(ProxyResolverV8TracingTest, Dns) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRuleForAddressFamily(
       "host1", ADDRESS_FAMILY_IPV4, "166.155.144.44");
@@ -291,17 +306,15 @@ TEST_F(ProxyResolverV8TracingTest, Dns) {
       "*", ADDRESS_FAMILY_IPV4, "122.133.144.155");
   host_resolver.rules()->AddRule("*", "133.122.100.200");
 
-  InitResolver(&resolver, "dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      &log, &host_resolver, make_scoped_ptr(error_observer), "dns.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"),
-      &proxy_info,
-      callback.callback(),
-      NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -332,12 +345,12 @@ TEST_F(ProxyResolverV8TracingTest, Dns) {
 
   // Check the NetLogs -- the script generated 1 alert, mirrored to both
   // the per-request and global logs.
-  CapturingNetLog::CapturedEntryList entries_list[2];
+  TestNetLogEntry::List entries_list[2];
   log.GetEntries(&entries_list[0]);
   request_log.GetEntries(&entries_list[1]);
 
   for (size_t list_i = 0; list_i < arraysize(entries_list); list_i++) {
-    const CapturingNetLog::CapturedEntryList& entries = entries_list[list_i];
+    const TestNetLogEntry::List& entries = entries_list[list_i];
     EXPECT_EQ(1u, entries.size());
     EXPECT_TRUE(
         LogContainsEvent(entries, 0, NetLog::TYPE_PAC_JAVASCRIPT_ALERT,
@@ -350,27 +363,24 @@ TEST_F(ProxyResolverV8TracingTest, Dns) {
 // "dnsResolve()". This requires 2 restarts. However once the HostResolver's
 // cache is warmed, subsequent calls should take 0 restarts.
 TEST_F(ProxyResolverV8TracingTest, DnsChecksCache) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("foopy", "166.155.144.11");
   host_resolver.rules()->AddRule("*", "122.133.144.155");
 
-  InitResolver(&resolver, "simple_dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      &log, &host_resolver, make_scoped_ptr(error_observer), "simple_dns.js");
 
   TestCompletionCallback callback1;
   TestCompletionCallback callback2;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foopy/req1"),
-      &proxy_info,
-      callback1.callback(),
-      NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foopy/req1"), &proxy_info,
+                               callback1.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback1.WaitForResult());
@@ -381,12 +391,9 @@ TEST_F(ProxyResolverV8TracingTest, DnsChecksCache) {
   // The first request took 2 restarts, hence on g_iteration=3.
   EXPECT_EQ("166.155.144.11:3", proxy_info.proxy_server().ToURI());
 
-  rv = resolver.GetProxyForURL(
-      GURL("http://foopy/req2"),
-      &proxy_info,
-      callback2.callback(),
-      NULL,
-      request_log.bound());
+  rv =
+      resolver->GetProxyForURL(GURL("http://foopy/req2"), &proxy_info,
+                               callback2.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback2.WaitForResult());
@@ -407,24 +414,25 @@ TEST_F(ProxyResolverV8TracingTest, DnsChecksCache) {
 // optimization. The proxy resolver should detect the inconsistency and
 // fall-back to synchronous mode execution.
 TEST_F(ProxyResolverV8TracingTest, FallBackToSynchronous1) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("host1", "166.155.144.11");
   host_resolver.rules()->AddRule("crazy4", "133.199.111.4");
   host_resolver.rules()->AddRule("*", "122.133.144.155");
 
-  InitResolver(&resolver, "global_sideffects1.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "global_sideffects1.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info, callback.callback(), NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
@@ -441,12 +449,12 @@ TEST_F(ProxyResolverV8TracingTest, FallBackToSynchronous1) {
 
   // Check the NetLogs -- the script generated 1 alert, mirrored to both
   // the per-request and global logs.
-  CapturingNetLog::CapturedEntryList entries_list[2];
+  TestNetLogEntry::List entries_list[2];
   log.GetEntries(&entries_list[0]);
   request_log.GetEntries(&entries_list[1]);
 
   for (size_t list_i = 0; list_i < arraysize(entries_list); list_i++) {
-    const CapturingNetLog::CapturedEntryList& entries = entries_list[list_i];
+    const TestNetLogEntry::List& entries = entries_list[list_i];
     EXPECT_EQ(1u, entries.size());
     EXPECT_TRUE(
         LogContainsEvent(entries, 0, NetLog::TYPE_PAC_JAVASCRIPT_ALERT,
@@ -459,11 +467,10 @@ TEST_F(ProxyResolverV8TracingTest, FallBackToSynchronous1) {
 // optimization. The proxy resolver should detect the inconsistency and
 // fall-back to synchronous mode execution.
 TEST_F(ProxyResolverV8TracingTest, FallBackToSynchronous2) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("host1", "166.155.144.11");
   host_resolver.rules()->AddRule("host2", "166.155.144.22");
@@ -471,14 +478,16 @@ TEST_F(ProxyResolverV8TracingTest, FallBackToSynchronous2) {
   host_resolver.rules()->AddRule("host4", "166.155.144.44");
   host_resolver.rules()->AddRule("*", "122.133.144.155");
 
-  InitResolver(&resolver, "global_sideffects2.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "global_sideffects2.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info, callback.callback(), NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
@@ -499,23 +508,24 @@ TEST_F(ProxyResolverV8TracingTest, FallBackToSynchronous2) {
 // DNS resolves per request limit (20) after which every DNS resolve will
 // fail.
 TEST_F(ProxyResolverV8TracingTest, InfiniteDNSSequence) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("host*", "166.155.144.11");
   host_resolver.rules()->AddRule("*", "122.133.144.155");
 
-  InitResolver(&resolver, "global_sideffects3.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "global_sideffects3.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info, callback.callback(), NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
@@ -542,23 +552,24 @@ TEST_F(ProxyResolverV8TracingTest, InfiniteDNSSequence) {
 // DNS resolves per request limit (20) after which every DNS resolve will
 // fail.
 TEST_F(ProxyResolverV8TracingTest, InfiniteDNSSequence2) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("host*", "166.155.144.11");
   host_resolver.rules()->AddRule("*", "122.133.144.155");
 
-  InitResolver(&resolver, "global_sideffects4.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "global_sideffects4.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info, callback.callback(), NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
@@ -575,17 +586,18 @@ TEST_F(ProxyResolverV8TracingTest, InfiniteDNSSequence2) {
 }
 
 void DnsDuringInitHelper(bool synchronous_host_resolver) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   host_resolver.set_synchronous_mode(synchronous_host_resolver);
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("host1", "91.13.12.1");
   host_resolver.rules()->AddRule("host2", "91.13.12.2");
 
-  InitResolver(&resolver, "dns_during_init.js");
+  scoped_ptr<ProxyResolver> resolver =
+      CreateResolver(&log, &host_resolver, make_scoped_ptr(error_observer),
+                     "dns_during_init.js");
 
   // Initialization did 2 dnsResolves.
   EXPECT_EQ(2u, host_resolver.num_resolve());
@@ -599,9 +611,9 @@ void DnsDuringInitHelper(bool synchronous_host_resolver) {
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info, callback.callback(), NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
 
@@ -614,7 +626,7 @@ void DnsDuringInitHelper(bool synchronous_host_resolver) {
 
   // Check the NetLogs -- the script generated 2 alerts during initialization.
   EXPECT_EQ(0u, request_log.GetSize());
-  CapturingNetLog::CapturedEntryList entries;
+  TestNetLogEntry::List entries;
   log.GetEntries(&entries);
 
   ASSERT_EQ(2u, entries.size());
@@ -649,25 +661,25 @@ void CrashCallback(int) {
 TEST_F(ProxyResolverV8TracingTest, CancelAll) {
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
 
   host_resolver.rules()->AddSimulatedFailure("*");
 
-  InitResolver(&resolver, "dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      nullptr, &host_resolver, make_scoped_ptr(error_observer), "dns.js");
 
   const size_t kNumRequests = 5;
   ProxyInfo proxy_info[kNumRequests];
   ProxyResolver::RequestHandle request[kNumRequests];
 
   for (size_t i = 0; i < kNumRequests; ++i) {
-    int rv = resolver.GetProxyForURL(
-        GURL("http://foo/"), &proxy_info[i],
-        base::Bind(&CrashCallback), &request[i], BoundNetLog());
+    int rv = resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info[i],
+                                      base::Bind(&CrashCallback), &request[i],
+                                      BoundNetLog());
     EXPECT_EQ(ERR_IO_PENDING, rv);
   }
 
   for (size_t i = 0; i < kNumRequests; ++i) {
-    resolver.CancelRequest(request[i]);
+    resolver->CancelRequest(request[i]);
   }
 }
 
@@ -677,11 +689,11 @@ TEST_F(ProxyResolverV8TracingTest, CancelAll) {
 TEST_F(ProxyResolverV8TracingTest, CancelSome) {
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
 
   host_resolver.rules()->AddSimulatedFailure("*");
 
-  InitResolver(&resolver, "dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      nullptr, &host_resolver, make_scoped_ptr(error_observer), "dns.js");
 
   ProxyInfo proxy_info1;
   ProxyInfo proxy_info2;
@@ -689,17 +701,16 @@ TEST_F(ProxyResolverV8TracingTest, CancelSome) {
   ProxyResolver::RequestHandle request2;
   TestCompletionCallback callback;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info1,
-      base::Bind(&CrashCallback), &request1, BoundNetLog());
+  int rv = resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info1,
+                                    base::Bind(&CrashCallback), &request1,
+                                    BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
-  rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info2,
-      callback.callback(), &request2, BoundNetLog());
+  rv = resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info2,
+                                callback.callback(), &request2, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
-  resolver.CancelRequest(request1);
+  resolver->CancelRequest(request1);
 
   EXPECT_EQ(OK, callback.WaitForResult());
 }
@@ -709,11 +720,11 @@ TEST_F(ProxyResolverV8TracingTest, CancelSome) {
 TEST_F(ProxyResolverV8TracingTest, CancelWhilePendingCompletionTask) {
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
 
   host_resolver.rules()->AddSimulatedFailure("*");
 
-  InitResolver(&resolver, "error.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      nullptr, &host_resolver, make_scoped_ptr(error_observer), "error.js");
 
   ProxyInfo proxy_info1;
   ProxyInfo proxy_info2;
@@ -723,14 +734,13 @@ TEST_F(ProxyResolverV8TracingTest, CancelWhilePendingCompletionTask) {
   ProxyResolver::RequestHandle request3;
   TestCompletionCallback callback;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info1,
-      base::Bind(&CrashCallback), &request1, BoundNetLog());
+  int rv = resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info1,
+                                    base::Bind(&CrashCallback), &request1,
+                                    BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
-  rv = resolver.GetProxyForURL(
-      GURL("http://throw-an-error/"), &proxy_info2,
-      callback.callback(), &request2, BoundNetLog());
+  rv = resolver->GetProxyForURL(GURL("http://throw-an-error/"), &proxy_info2,
+                                callback.callback(), &request2, BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   // Wait until the first request has finished running on the worker thread.
@@ -739,14 +749,14 @@ TEST_F(ProxyResolverV8TracingTest, CancelWhilePendingCompletionTask) {
 
   // Cancel the first request, while it has a pending completion task on
   // the origin thread.
-  resolver.CancelRequest(request1);
+  resolver->CancelRequest(request1);
 
   EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, callback.WaitForResult());
 
   // Start another request, to make sure it is able to complete.
-  rv = resolver.GetProxyForURL(
-      GURL("http://i-have-no-idea-what-im-doing/"), &proxy_info3,
-      callback.callback(), &request3, BoundNetLog());
+  rv = resolver->GetProxyForURL(GURL("http://i-have-no-idea-what-im-doing/"),
+                                &proxy_info3, callback.callback(), &request3,
+                                BoundNetLog());
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -827,33 +837,33 @@ class BlockableHostResolver : public HostResolver {
 TEST_F(ProxyResolverV8TracingTest, CancelWhileOutstandingNonBlockingDns) {
   BlockableHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
 
-  InitResolver(&resolver, "dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      nullptr, &host_resolver, make_scoped_ptr(error_observer), "dns.js");
 
   ProxyInfo proxy_info1;
   ProxyInfo proxy_info2;
   ProxyResolver::RequestHandle request1;
   ProxyResolver::RequestHandle request2;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/req1"), &proxy_info1,
-      base::Bind(&CrashCallback), &request1, BoundNetLog());
+  int rv = resolver->GetProxyForURL(GURL("http://foo/req1"), &proxy_info1,
+                                    base::Bind(&CrashCallback), &request1,
+                                    BoundNetLog());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   host_resolver.WaitUntilRequestIsReceived();
 
-  rv = resolver.GetProxyForURL(
-      GURL("http://foo/req2"), &proxy_info2,
-      base::Bind(&CrashCallback), &request2, BoundNetLog());
+  rv = resolver->GetProxyForURL(GURL("http://foo/req2"), &proxy_info2,
+                                base::Bind(&CrashCallback), &request2,
+                                BoundNetLog());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   host_resolver.WaitUntilRequestIsReceived();
 
-  resolver.CancelRequest(request1);
-  resolver.CancelRequest(request2);
+  resolver->CancelRequest(request1);
+  resolver->CancelRequest(request2);
 
   EXPECT_EQ(2, host_resolver.num_cancelled_requests());
 
@@ -862,7 +872,7 @@ TEST_F(ProxyResolverV8TracingTest, CancelWhileOutstandingNonBlockingDns) {
   // should have been cancelled.
 }
 
-void CancelRequestAndPause(ProxyResolverV8Tracing* resolver,
+void CancelRequestAndPause(ProxyResolver* resolver,
                            ProxyResolver::RequestHandle request) {
   resolver->CancelRequest(request);
 
@@ -878,21 +888,21 @@ void CancelRequestAndPause(ProxyResolverV8Tracing* resolver,
 TEST_F(ProxyResolverV8TracingTest, CancelWhileBlockedInNonBlockingDns) {
   BlockableHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
 
-  InitResolver(&resolver, "dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      nullptr, &host_resolver, make_scoped_ptr(error_observer), "dns.js");
 
   ProxyInfo proxy_info;
   ProxyResolver::RequestHandle request;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info,
-      base::Bind(&CrashCallback), &request, BoundNetLog());
+  int rv = resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                                    base::Bind(&CrashCallback), &request,
+                                    BoundNetLog());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   host_resolver.SetAction(
-      base::Bind(CancelRequestAndPause, &resolver, request));
+      base::Bind(CancelRequestAndPause, resolver.get(), request));
 
   host_resolver.WaitUntilRequestIsReceived();
 
@@ -907,16 +917,16 @@ TEST_F(ProxyResolverV8TracingTest, CancelWhileBlockedInNonBlockingDns) {
 TEST_F(ProxyResolverV8TracingTest, CancelWhileBlockedInNonBlockingDns2) {
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
 
-  InitResolver(&resolver, "dns.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      nullptr, &host_resolver, make_scoped_ptr(error_observer), "dns.js");
 
   ProxyInfo proxy_info;
   ProxyResolver::RequestHandle request;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foo/"), &proxy_info,
-      base::Bind(&CrashCallback), &request, BoundNetLog());
+  int rv = resolver->GetProxyForURL(GURL("http://foo/"), &proxy_info,
+                                    base::Bind(&CrashCallback), &request,
+                                    BoundNetLog());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
@@ -924,51 +934,95 @@ TEST_F(ProxyResolverV8TracingTest, CancelWhileBlockedInNonBlockingDns2) {
   // work whatever the delay is here, but it is most useful if the delay
   // is large enough to allow a task to be posted back.
   base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(10));
-  resolver.CancelRequest(request);
+  resolver->CancelRequest(request);
 
   EXPECT_EQ(0u, host_resolver.num_resolve());
 }
 
-TEST_F(ProxyResolverV8TracingTest, CancelSetPacWhileOutstandingBlockingDns) {
+TEST_F(ProxyResolverV8TracingTest,
+       CancelCreateResolverWhileOutstandingBlockingDns) {
   BlockableHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
 
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, NULL);
+  ProxyResolverFactoryV8Tracing factory(
+      &host_resolver, nullptr, ProxyResolver::LoadStateChangedCallback(),
+      base::Bind(&ReturnErrorObserver,
+                 base::Passed(make_scoped_ptr(error_observer))));
 
-  int rv =
-      resolver.SetPacScript(LoadScriptData("dns_during_init.js"),
-      base::Bind(&CrashCallback));
+  scoped_ptr<ProxyResolver> resolver;
+  scoped_ptr<ProxyResolverFactory::Request> request;
+  int rv = factory.CreateProxyResolver(LoadScriptData("dns_during_init.js"),
+                                       &resolver, base::Bind(&CrashCallback),
+                                       &request);
   EXPECT_EQ(ERR_IO_PENDING, rv);
 
   host_resolver.WaitUntilRequestIsReceived();
 
-  resolver.CancelSetPacScript();
+  request.reset();
   EXPECT_EQ(1, host_resolver.num_cancelled_requests());
+}
+
+TEST_F(ProxyResolverV8TracingTest, DeleteFactoryWhileOutstandingBlockingDns) {
+  BlockableHostResolver host_resolver;
+  MockErrorObserver* error_observer = new MockErrorObserver;
+
+  scoped_ptr<ProxyResolver> resolver;
+  scoped_ptr<ProxyResolverFactory::Request> request;
+  {
+    ProxyResolverFactoryV8Tracing factory(
+        &host_resolver, nullptr, ProxyResolver::LoadStateChangedCallback(),
+        base::Bind(&ReturnErrorObserver,
+                   base::Passed(make_scoped_ptr(error_observer))));
+
+    int rv = factory.CreateProxyResolver(LoadScriptData("dns_during_init.js"),
+                                         &resolver, base::Bind(&CrashCallback),
+                                         &request);
+    EXPECT_EQ(ERR_IO_PENDING, rv);
+    host_resolver.WaitUntilRequestIsReceived();
+  }
+  EXPECT_EQ(1, host_resolver.num_cancelled_requests());
+}
+
+TEST_F(ProxyResolverV8TracingTest, ErrorLoadingScript) {
+  BlockableHostResolver host_resolver;
+  MockErrorObserver* error_observer = new MockErrorObserver;
+
+  ProxyResolverFactoryV8Tracing factory(
+      &host_resolver, nullptr, ProxyResolver::LoadStateChangedCallback(),
+      base::Bind(&ReturnErrorObserver,
+                 base::Passed(make_scoped_ptr(error_observer))));
+
+  scoped_ptr<ProxyResolver> resolver;
+  scoped_ptr<ProxyResolverFactory::Request> request;
+  TestCompletionCallback callback;
+  int rv =
+      factory.CreateProxyResolver(LoadScriptData("error_on_load.js"), &resolver,
+                                  callback.callback(), &request);
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+  EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, callback.WaitForResult());
+  EXPECT_FALSE(resolver);
 }
 
 // This tests that the execution of a PAC script is terminated when the DNS
 // dependencies are missing. If the test fails, then it will hang.
 TEST_F(ProxyResolverV8TracingTest, Terminate) {
-  CapturingNetLog log;
-  CapturingBoundNetLog request_log;
+  TestNetLog log;
+  BoundTestNetLog request_log;
   MockCachingHostResolver host_resolver;
   MockErrorObserver* error_observer = new MockErrorObserver;
-  ProxyResolverV8Tracing resolver(&host_resolver, error_observer, &log);
 
   host_resolver.rules()->AddRule("host1", "182.111.0.222");
   host_resolver.rules()->AddRule("host2", "111.33.44.55");
 
-  InitResolver(&resolver, "terminate.js");
+  scoped_ptr<ProxyResolver> resolver = CreateResolver(
+      &log, &host_resolver, make_scoped_ptr(error_observer), "terminate.js");
 
   TestCompletionCallback callback;
   ProxyInfo proxy_info;
 
-  int rv = resolver.GetProxyForURL(
-      GURL("http://foopy/req1"),
-      &proxy_info,
-      callback.callback(),
-      NULL,
-      request_log.bound());
+  int rv =
+      resolver->GetProxyForURL(GURL("http://foopy/req1"), &proxy_info,
+                               callback.callback(), NULL, request_log.bound());
 
   EXPECT_EQ(ERR_IO_PENDING, rv);
   EXPECT_EQ(OK, callback.WaitForResult());
@@ -1005,39 +1059,39 @@ TEST_F(ProxyResolverV8TracingTest, MultipleResolvers) {
   host_resolver0.rules()->AddRuleForAddressFamily(
       "*", ADDRESS_FAMILY_IPV4, "122.133.144.155");
   host_resolver0.rules()->AddRule("*", "133.122.100.200");
-  ProxyResolverV8Tracing resolver0(
-      &host_resolver0, new MockErrorObserver, NULL);
-  InitResolver(&resolver0, "dns.js");
+  scoped_ptr<ProxyResolver> resolver0 =
+      CreateResolver(nullptr, &host_resolver0,
+                     make_scoped_ptr(new MockErrorObserver), "dns.js");
 
   // ------------------------
   // Setup resolver1
   // ------------------------
-  ProxyResolverV8Tracing resolver1(
-      &host_resolver0, new MockErrorObserver, NULL);
-  InitResolver(&resolver1, "dns.js");
+  scoped_ptr<ProxyResolver> resolver1 =
+      CreateResolver(nullptr, &host_resolver0,
+                     make_scoped_ptr(new MockErrorObserver), "dns.js");
 
   // ------------------------
   // Setup resolver2
   // ------------------------
-  ProxyResolverV8Tracing resolver2(
-      &host_resolver0, new MockErrorObserver, NULL);
-  InitResolver(&resolver2, "simple.js");
+  scoped_ptr<ProxyResolver> resolver2 =
+      CreateResolver(nullptr, &host_resolver0,
+                     make_scoped_ptr(new MockErrorObserver), "simple.js");
 
   // ------------------------
   // Setup resolver3
   // ------------------------
   MockHostResolver host_resolver3;
   host_resolver3.rules()->AddRule("foo", "166.155.144.33");
-  ProxyResolverV8Tracing resolver3(
-      &host_resolver3, new MockErrorObserver, NULL);
-  InitResolver(&resolver3, "simple_dns.js");
+  scoped_ptr<ProxyResolver> resolver3 =
+      CreateResolver(nullptr, &host_resolver3,
+                     make_scoped_ptr(new MockErrorObserver), "simple_dns.js");
 
   // ------------------------
   // Queue up work for each resolver (which will be running in parallel).
   // ------------------------
 
-  ProxyResolverV8Tracing* resolver[] = {
-    &resolver0, &resolver1, &resolver2, &resolver3,
+  ProxyResolver* resolver[] = {
+      resolver0.get(), resolver1.get(), resolver2.get(), resolver3.get(),
   };
 
   const size_t kNumResolvers = arraysize(resolver);

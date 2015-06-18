@@ -10,10 +10,13 @@ cr.define('hotword', function() {
  * control of the NaCl plugin, including creation, start, stop, trigger, and
  * shutdown.
  *
+ * @param {boolean} loggingEnabled Whether audio logging is enabled.
+ * @param {boolean} hotwordStream Whether the audio input stream is from a
+ *     hotword stream.
  * @constructor
  * @extends {cr.EventTarget}
  */
-function NaClManager() {
+function NaClManager(loggingEnabled, hotwordStream) {
   /**
    * Current state of this manager.
    * @private {hotword.NaClManager.ManagerState_}
@@ -55,6 +58,30 @@ function NaClManager() {
    * @private {?MediaStream}
    */
   this.stream_ = null;
+
+  /**
+   * The mode to start the recognizer in.
+   * @private {?chrome.hotwordPrivate.RecognizerStartMode}
+   */
+  this.startMode_ = hotword.constants.RecognizerStartMode.NORMAL;
+
+  /**
+   * Whether audio logging is enabled.
+   * @private {boolean}
+   */
+  this.loggingEnabled_ = loggingEnabled;
+
+  /**
+   * Whether the audio input stream is from a hotword stream.
+   * @private {boolean}
+   */
+  this.hotwordStream_ = hotwordStream;
+
+  /**
+   * Audio log of X seconds before hotword triggered.
+   * @private {?Object}
+   */
+  this.preambleLog_ = null;
 };
 
 /**
@@ -106,13 +133,6 @@ NaClManager.prototype.logPluginLoadResult_ = function(error) {
 };
 
 /**
- * @return {boolean} True if the recognizer is in a running state.
- */
-NaClManager.prototype.isRunning = function() {
-  return this.recognizerState_ == ManagerState_.RUNNING;
-};
-
-/**
  * Set a timeout. Only allow one timeout to exist at any given time.
  * @param {!function()} func
  * @param {number} timeout
@@ -138,13 +158,31 @@ NaClManager.prototype.clearTimeout_ = function() {
 
 /**
  * Starts a stopped or stopping hotword recognizer (NaCl plugin).
+ * @param {hotword.constants.RecognizerStartMode} mode The mode to start the
+ *     recognizer in.
  */
-NaClManager.prototype.startRecognizer = function() {
+NaClManager.prototype.startRecognizer = function(mode) {
+  this.startMode_ = mode;
   if (this.recognizerState_ == ManagerState_.STOPPED) {
+    this.preambleLog_ = null;
     this.recognizerState_ = ManagerState_.STARTING;
-    this.sendDataToPlugin_(hotword.constants.NaClPlugin.RESTART);
-    this.waitForMessage_(hotword.constants.TimeoutMs.LONG,
-                         hotword.constants.NaClPlugin.READY_FOR_AUDIO);
+    if (mode == hotword.constants.RecognizerStartMode.NEW_MODEL) {
+      hotword.debug('Starting Recognizer in START training mode');
+      this.sendDataToPlugin_(hotword.constants.NaClPlugin.BEGIN_SPEAKER_MODEL);
+    } else if (mode == hotword.constants.RecognizerStartMode.ADAPT_MODEL) {
+      hotword.debug('Starting Recognizer in ADAPT training mode');
+      this.sendDataToPlugin_(hotword.constants.NaClPlugin.ADAPT_SPEAKER_MODEL);
+    } else {
+      hotword.debug('Starting Recognizer in NORMAL mode');
+      this.sendDataToPlugin_(hotword.constants.NaClPlugin.RESTART);
+    }
+    // Normally, there would be a waitForMessage_(READY_FOR_AUDIO) here.
+    // However, this message is sent the first time audio data is read and in
+    // some cases (ie. using the hotword stream), this won't happen until a
+    // potential hotword trigger is seen. Having a waitForMessage_() would time
+    // out in this case, so just leave it out. This ends up sacrificing a bit of
+    // error detection in the non-hotword-stream case, but I think we can live
+    // with that.
   } else if (this.recognizerState_ == ManagerState_.STOPPING) {
     // Wait until the plugin is stopped before trying to start it.
     this.restartOnStop_ = true;
@@ -158,10 +196,31 @@ NaClManager.prototype.startRecognizer = function() {
  * Stops the hotword recognizer.
  */
 NaClManager.prototype.stopRecognizer = function() {
+  if (this.recognizerState_ == ManagerState_.STARTING) {
+    // If the recognizer is stopped before it finishes starting, it causes an
+    // assertion to be raised in waitForMessage_() since we're waiting for the
+    // READY_FOR_AUDIO message. Clear the current timeout and expecting message
+    // since we no longer expect it and may never receive it.
+    this.clearTimeout_();
+    this.expectingMessage_ = null;
+  }
   this.sendDataToPlugin_(hotword.constants.NaClPlugin.STOP);
   this.recognizerState_ = ManagerState_.STOPPING;
   this.waitForMessage_(hotword.constants.TimeoutMs.NORMAL,
                        hotword.constants.NaClPlugin.STOPPED);
+};
+
+/**
+ * Saves the speaker model.
+ */
+NaClManager.prototype.finalizeSpeakerModel = function() {
+  if (this.recognizerState_ == ManagerState_.UNINITIALIZED ||
+      this.recognizerState_ == ManagerState_.ERROR ||
+      this.recognizerState_ == ManagerState_.SHUTDOWN ||
+      this.recognizerState_ == ManagerState_.LOADING) {
+    return;
+  }
+  this.sendDataToPlugin_(hotword.constants.NaClPlugin.FINISH_SPEAKER_MODEL);
 };
 
 /**
@@ -187,7 +246,7 @@ NaClManager.prototype.fileExists_ = function(path) {
 /**
  * Creates and returns a list of possible languages to check for hotword
  * support.
- * @return {!Array.<string>} Array of languages.
+ * @return {!Array<string>} Array of languages.
  * @private
  */
 NaClManager.prototype.getPossibleLanguages_ = function() {
@@ -287,6 +346,8 @@ NaClManager.prototype.shutdown = function() {
   }
   this.clearTimeout_();
   this.recognizerState_ = ManagerState_.SHUTDOWN;
+  if (this.stream_)
+    this.stream_.stop();
   this.stream_ = null;
 };
 
@@ -310,8 +371,8 @@ NaClManager.prototype.sendDataToPlugin_ = function(data) {
  * @private
  */
 NaClManager.prototype.waitForMessage_ = function(timeout, message) {
-  assert(this.expectingMessage_ == null,
-         'Already waiting for message ' + this.expectingMessage_);
+  assert(this.expectingMessage_ == null, 'Cannot wait for message: ' +
+      message + ', already waiting for message ' + this.expectingMessage_);
   this.setTimeout_(
       function() {
         this.recognizerState_ = ManagerState_.ERROR;
@@ -371,6 +432,21 @@ NaClManager.prototype.handleRequestModel_ = function() {
       hotword.constants.NaClPlugin.MODEL_PREFIX + this.modelUrl_);
   this.waitForMessage_(hotword.constants.TimeoutMs.LONG,
                        hotword.constants.NaClPlugin.MODEL_LOADED);
+
+  // Configure logging in the plugin. This can be configured any time before
+  // starting the recognizer, and now is as good a time as any.
+  if (this.loggingEnabled_) {
+    this.sendDataToPlugin_(
+        hotword.constants.NaClPlugin.LOG + ':' +
+        hotword.constants.AUDIO_LOG_SECONDS);
+  }
+
+  // If the audio stream is from a hotword stream, tell the plugin.
+  if (this.hotwordStream_) {
+    this.sendDataToPlugin_(
+        hotword.constants.NaClPlugin.DSP + ':' +
+        hotword.constants.HOTWORD_STREAM_TIMEOUT_SECONDS);
+  }
 };
 
 /**
@@ -427,7 +503,9 @@ NaClManager.prototype.handleHotwordDetected_ = function() {
   this.recognizerState_ = ManagerState_.STOPPING;
   this.waitForMessage_(hotword.constants.TimeoutMs.NORMAL,
                        hotword.constants.NaClPlugin.STOPPED);
-  this.dispatchEvent(new Event(hotword.constants.Event.TRIGGER));
+  var event = new Event(hotword.constants.Event.TRIGGER);
+  event.log = this.preambleLog_;
+  this.dispatchEvent(event);
 };
 
 /**
@@ -440,8 +518,32 @@ NaClManager.prototype.handleStopped_ = function() {
   this.recognizerState_ = ManagerState_.STOPPED;
   if (this.restartOnStop_) {
     this.restartOnStop_ = false;
-    this.startRecognizer();
+    this.startRecognizer(this.startMode_);
   }
+};
+
+/**
+ * Handle a TIMEOUT message from the plugin.
+ * The plugin sends this message when it thinks the stream is from a DSP and
+ * a hotword wasn't detected within a timeout period after arrival of the first
+ * audio samples.
+ * @private
+ */
+NaClManager.prototype.handleTimeout_ = function() {
+  if (this.recognizerState_ != ManagerState_.RUNNING) {
+    return;
+  }
+  this.recognizerState_ = ManagerState_.STOPPED;
+  this.dispatchEvent(new Event(hotword.constants.Event.TIMEOUT));
+};
+
+/**
+ * Handle a SPEAKER_MODEL_SAVED message from the plugin.
+ * The plugin sends this message after writing the model to a file.
+ * @private
+ */
+NaClManager.prototype.handleSpeakerModelSaved_ = function() {
+  this.dispatchEvent(new Event(hotword.constants.Event.SPEAKER_MODEL_SAVED));
 };
 
 /**
@@ -451,6 +553,12 @@ NaClManager.prototype.handleStopped_ = function() {
  */
 NaClManager.prototype.handlePluginMessage_ = function(msg) {
   if (msg['data']) {
+    if (typeof(msg['data']) == 'object') {
+      // Save the preamble for delivery to the trigger handler when the trigger
+      // message arrives.
+      this.preambleLog_ = msg['data'];
+      return;
+    }
     this.receivedMessage_(msg['data']);
     switch (msg['data']) {
       case hotword.constants.NaClPlugin.REQUEST_MODEL:
@@ -470,6 +578,12 @@ NaClManager.prototype.handlePluginMessage_ = function(msg) {
         break;
       case hotword.constants.NaClPlugin.STOPPED:
         this.handleStopped_();
+        break;
+      case hotword.constants.NaClPlugin.TIMEOUT:
+        this.handleTimeout_();
+        break;
+      case hotword.constants.NaClPlugin.SPEAKER_MODEL_SAVED:
+        this.handleSpeakerModelSaved_();
         break;
     }
   }

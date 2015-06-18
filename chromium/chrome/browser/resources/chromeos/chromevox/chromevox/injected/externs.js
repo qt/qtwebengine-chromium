@@ -21,7 +21,7 @@ function MathJax() {}
 MathJax.Callback;
 
 /**
- * @param {Array.<*>} args
+ * @param {Array<*>} args
  * @param {string} err
  */
 MathJax.Callback.After = function(args, err) { };
@@ -37,7 +37,7 @@ MathJax.Jax;
 /**
  * @typedef {{inputID: string,
  *  spanID: number,
- *  data: Array.<Object>,
+ *  data: Array<Object>,
  *  id: string,
  *  texClass: string}}
  */
@@ -70,12 +70,12 @@ MathJax.Hub.getAllJax = function() { };
 
 /**
  * @type {{PreProcessor: Function,
- *  MessageHook: function(string, function(Array.<string>)):
- *                        function(Array.<string>),
- *  StartupHook: function(string, function(Array.<string>)):
- *                        function(Array.<string>),
- *  LoadHook: function(string, function(Array.<string>)):
- *                        function(Array.<string>)}}
+ *  MessageHook: function(string, function(Array<string>)):
+ *                        function(Array<string>),
+ *  StartupHook: function(string, function(Array<string>)):
+ *                        function(Array<string>),
+ *  LoadHook: function(string, function(Array<string>)):
+ *                        function(Array<string>)}}
  */
 MathJax.Hub.Register;
 
@@ -147,8 +147,8 @@ MathJax.HTML;
  * Creates an HTML element from a node tag, an object with attributes and an
  * array of text content.
  * @param {string} tag
- * @param {Object.<string, string>} attribs
- * @param {Array.<string>} text
+ * @param {Object<string, string>} attribs
+ * @param {Array<string>} text
  */
 MathJax.HTML.Element = function(tag, attribs, text) { };
 
@@ -169,3 +169,54 @@ MathJax.InputJax.TeX;
  * @typedef {Object}
  */
 function mediaWiki() {}
+
+
+/**
+ * This is the definition of the type that's returned from the PDF plug-in.
+ * @constructor
+ */
+var PDFAccessibilityJSONReply = function() {};
+
+/**
+ * Whether the PDF has finished loading or not.
+ * @type {boolean}
+ */
+PDFAccessibilityJSONReply.prototype.loaded;
+
+/**
+ * Whether the PDF allows accessible text access. Unfortunately PDFs can
+ * mark themselves as not copyable even for accessibility.
+ * @type {boolean}
+ */
+PDFAccessibilityJSONReply.prototype.copyable;
+
+/**
+ * The number of pages in the PDF.
+ * @type {number}
+ */
+PDFAccessibilityJSONReply.prototype.numberOfPages;
+
+/**
+ * The height of each PDF page in points.
+ * @type {number}
+ */
+PDFAccessibilityJSONReply.prototype.height;
+
+/**
+ * The width of each PDF page in points.
+ * @type {number}
+ */
+PDFAccessibilityJSONReply.prototype.width;
+
+/**
+ * The text boxes in the PDF, this is where most of the content is returned.
+ * Each text box has a bounding box (left, top, width, height) and
+ * each of these contains an array of nodes of type 'text' or 'url'.
+ * @type {Array<
+ *           {left: number, top: number, width: number, height: number,
+ *            textNodes: Array<
+ *                {type: string, text: string, url: string}>
+ *           }>
+ *       }
+ */
+PDFAccessibilityJSONReply.prototype.textBox;

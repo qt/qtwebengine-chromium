@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 GEN_INCLUDE([
-    'chrome/browser/resources/chromeos/chromevox/testing/common.js']);
+    'chrome/browser/resources/chromeos/chromevox/testing/common.js',
+    'chrome/browser/resources/chromeos/chromevox/testing/callback_helper.js']);
 
 /**
  * Base test fixture for ChromeVox end to end tests.
@@ -12,7 +13,9 @@ GEN_INCLUDE([
  * background page context.
  * @constructor
  */
-function ChromeVoxE2ETest() {}
+function ChromeVoxE2ETest() {
+  this.callbackHelper_ = new CallbackHelper(this);
+}
 
 ChromeVoxE2ETest.prototype = {
   __proto__: testing.Test.prototype,
@@ -43,11 +46,6 @@ ChromeVoxE2ETest.prototype = {
   /** @override */
   testGenPreamble: function() {
     GEN_BLOCK(function() {/*!
-  if (chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
-    chromeos::AccessibilityManager::Get()->EnableSpokenFeedback(false,
-        ui::A11Y_NOTIFICATION_NONE);
-  }
-
   base::Closure load_cb =
       base::Bind(&chromeos::AccessibilityManager::EnableSpokenFeedback,
           base::Unretained(chromeos::AccessibilityManager::Get()),
@@ -58,11 +56,26 @@ ChromeVoxE2ETest.prototype = {
   },
 
   /**
-   * Run a test with the specified HTML snippet loaded.
+   * Launch a new tab, wait until tab status complete, then run callback.
    * @param {function() : void} doc Snippet wrapped inside of a function.
    * @param {function()} callback Called once the document is ready.
    */
-  runWithDocument: function(doc, callback) {
+  runWithLoadedTab: function(doc, callback) {
+    this.launchNewTabWithDoc(doc, function(tab) {
+      chrome.tabs.onUpdated.addListener(function(tabId, changeInfo) {
+        if (tabId == tab.id && changeInfo.status == 'complete') {
+          callback(tabId);
+        }
+      });
+    });
+  },
+
+  /**
+   * Launches the given document in a new tab.
+   * @param {function() : void} doc Snippet wrapped inside of a function.
+   * @param {function()} opt_callback Called once the document is created.
+   */
+  runWithTab: function(doc, opt_callback) {
     var docString = TestUtils.extractHtmlFromCommentEncodedString(doc);
     var url = 'data:text/html,<!doctype html>' +
         docString +
@@ -71,13 +84,38 @@ ChromeVoxE2ETest.prototype = {
       active: true,
       url: url
     };
-    chrome.tabs.create(createParams, function(tab) {
-      chrome.tabs.onUpdated.addListener(function(tabId, changeInfo) {
-        if (tabId == tab.id && changeInfo.status == 'complete') {
-          callback();
-        }
-      });
-    });
+    chrome.tabs.create(createParams, opt_callback);
+  },
+
+  /**
+   * Send a key to the page.
+   * @param {number} tabId Of the page.
+   * @param {string} key Name of the key (e.g. Down).
+   * @param {string} elementQueryString
+   */
+  sendKeyToElement: function(tabId, key, elementQueryString) {
+    var code = TestUtils.extractHtmlFromCommentEncodedString(function() {/*!
+      var target = document.body.querySelector('$1');
+      target.focus();
+      var evt = document.createEvent('KeyboardEvent');
+      evt.initKeyboardEvent('keydown', true, true, window, '$0', 0, false,
+          false, false, false);
+      document.activeElement.dispatchEvent(evt);
+    */}, [key, elementQueryString]);
+
+    chrome.tabs.executeScript(tabId, {code: code});
+  },
+
+  /**
+   * Creates a callback that optionally calls {@code opt_callback} when
+   * called.  If this method is called one or more times, then
+   * {@code testDone()} will be called when all callbacks have been called.
+   * @param {Function=} opt_callback Wrapped callback that will have its this
+   *        reference bound to the test fixture.
+   * @return {Function}
+   */
+  newCallback: function(opt_callback) {
+    return this.callbackHelper_.wrap(opt_callback);
   }
 };
 

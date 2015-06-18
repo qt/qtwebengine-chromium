@@ -27,12 +27,18 @@
 #include "config.h"
 #include "core/dom/PseudoElement.h"
 
+#include "core/dom/FirstLetterPseudoElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderQuote.h"
-#include "core/rendering/style/ContentData.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutQuote.h"
+#include "core/style/ContentData.h"
 
 namespace blink {
+
+PassRefPtrWillBeRawPtr<PseudoElement> PseudoElement::create(Element* parent, PseudoId pseudoId)
+{
+    return adoptRefWillBeNoop(new PseudoElement(parent, pseudoId));
+}
 
 const QualifiedName& pseudoElementTagName(PseudoId pseudoId)
 {
@@ -48,6 +54,10 @@ const QualifiedName& pseudoElementTagName(PseudoId pseudoId)
     case BACKDROP: {
         DEFINE_STATIC_LOCAL(QualifiedName, backdrop, (nullAtom, "<pseudo:backdrop>", nullAtom));
         return backdrop;
+    }
+    case FIRST_LETTER: {
+        DEFINE_STATIC_LOCAL(QualifiedName, firstLetter, (nullAtom, "<pseudo:first-letter>", nullAtom));
+        return firstLetter;
     }
     default: {
         ASSERT_NOT_REACHED();
@@ -76,13 +86,14 @@ PseudoElement::PseudoElement(Element* parent, PseudoId pseudoId)
     , m_pseudoId(pseudoId)
 {
     ASSERT(pseudoId != NOPSEUDO);
+    parent->treeScope().adoptIfNeeded(*this);
     setParentOrShadowHostNode(parent);
     setHasCustomStyleCallbacks();
 }
 
-PassRefPtr<RenderStyle> PseudoElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> PseudoElement::customStyleForLayoutObject()
 {
-    return parentOrShadowHostElement()->renderer()->getCachedPseudoStyle(m_pseudoId);
+    return parentOrShadowHostElement()->layoutObject()->getCachedPseudoStyle(m_pseudoId);
 }
 
 void PseudoElement::dispose()
@@ -96,59 +107,87 @@ void PseudoElement::dispose()
 
     detach();
     RefPtrWillBeRawPtr<Element> parent = parentOrShadowHostElement();
+    document().adoptIfNeeded(*this);
     setParentOrShadowHostNode(0);
     removedFrom(parent.get());
 }
 
 void PseudoElement::attach(const AttachContext& context)
 {
-    ASSERT(!renderer());
+    ASSERT(!layoutObject());
 
     Element::attach(context);
 
-    RenderObject* renderer = this->renderer();
-    if (!renderer)
+    LayoutObject* layoutObject = this->layoutObject();
+    if (!layoutObject)
         return;
-    RenderStyle* style = renderer->style();
-    if (style->styleType() != BEFORE && style->styleType() != AFTER)
-        return;
-    ASSERT(style->contentData());
 
-    for (const ContentData* content = style->contentData(); content; content = content->next()) {
-        RenderObject* child = content->createRenderer(document(), style);
-        if (renderer->isChildAllowed(child, style)) {
-            renderer->addChild(child);
+    ComputedStyle& style = layoutObject->mutableStyleRef();
+    if (style.styleType() != BEFORE && style.styleType() != AFTER)
+        return;
+    ASSERT(style.contentData());
+
+    for (const ContentData* content = style.contentData(); content; content = content->next()) {
+        LayoutObject* child = content->createLayoutObject(document(), style);
+        if (layoutObject->isChildAllowed(child, style)) {
+            layoutObject->addChild(child);
             if (child->isQuote())
-                toRenderQuote(child)->attachQuote();
+                toLayoutQuote(child)->attachQuote();
         } else
             child->destroy();
     }
 }
 
-bool PseudoElement::rendererIsNeeded(const RenderStyle& style)
+bool PseudoElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    return pseudoElementRendererIsNeeded(&style);
+    return pseudoElementLayoutObjectIsNeeded(&style);
 }
 
 void PseudoElement::didRecalcStyle(StyleRecalcChange)
 {
-    if (!renderer())
+    if (!layoutObject())
         return;
 
-    // The renderers inside pseudo elements are anonymous so they don't get notified of recalcStyle and must have
-    // the style propagated downward manually similar to RenderObject::propagateStyleToAnonymousChildren.
-    RenderObject* renderer = this->renderer();
-    for (RenderObject* child = renderer->nextInPreOrder(renderer); child; child = child->nextInPreOrder(renderer)) {
+    // The layoutObjects inside pseudo elements are anonymous so they don't get notified of recalcStyle and must have
+    // the style propagated downward manually similar to LayoutObject::propagateStyleToAnonymousChildren.
+    LayoutObject* layoutObject = this->layoutObject();
+    for (LayoutObject* child = layoutObject->nextInPreOrder(layoutObject); child; child = child->nextInPreOrder(layoutObject)) {
         // We only manage the style for the generated content items.
         if (!child->isText() && !child->isQuote() && !child->isImage())
             continue;
 
-        // The style for the RenderTextFragment for first letter is managed by an enclosing block, not by us.
-        if (child->style()->styleType() == FIRST_LETTER)
-            continue;
-
-        child->setPseudoStyle(renderer->style());
+        child->setPseudoStyle(layoutObject->mutableStyle());
     }
+}
+
+// With PseudoElements the DOM tree and Layout tree can differ. When you attach
+// a, first-letter for example, into the DOM we walk down the Layout
+// tree to find the correct insertion point for the LayoutObject. But, this
+// means if we ask for the parentOrShadowHost Node from the first-letter
+// pseudo element we will get some arbitrary ancestor of the LayoutObject.
+//
+// For hit testing, we need the parent Node of the LayoutObject for the
+// first-letter pseudo element. So, by walking up the Layout tree we know
+// we will get the parent and not some other ancestor.
+Node* PseudoElement::findAssociatedNode() const
+{
+    // The ::backdrop element is parented to the LayoutView, not to the node
+    // that it's associated with. We need to make sure ::backdrop sends the
+    // events to the parent node correctly.
+    if (pseudoId() == BACKDROP)
+        return parentOrShadowHostNode();
+
+    ASSERT(layoutObject());
+    ASSERT(layoutObject()->parent());
+
+    // We can have any number of anonymous layout objects inserted between
+    // us and our parent so make sure we skip over them.
+    LayoutObject* ancestor = layoutObject()->parent();
+    while (ancestor->isAnonymous() || (ancestor->node() && ancestor->node()->isPseudoElement())) {
+        ASSERT(ancestor->parent());
+        ancestor = ancestor->parent();
+    }
+    return ancestor->node();
 }
 
 } // namespace

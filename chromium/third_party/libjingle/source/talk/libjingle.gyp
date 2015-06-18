@@ -1,6 +1,6 @@
 #
 # libjingle
-# Copyright 2012, Google Inc.
+# Copyright 2012 Google Inc.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -23,7 +23,6 @@
 # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
 
 {
   'includes': ['build/common.gypi'],
@@ -45,18 +44,27 @@
       'targets': [
         {
           'target_name': 'libjingle_peerconnection_so',
-          'type': 'loadable_module',
+          'type': 'shared_library',
           'dependencies': [
             'libjingle_peerconnection',
-            '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
           ],
           'sources': [
-            'app/webrtc/java/jni/peerconnection_jni.cc'
+            'app/webrtc/java/jni/classreferenceholder.cc',
+            'app/webrtc/java/jni/classreferenceholder.h',
+            'app/webrtc/java/jni/jni_helpers.cc',
+            'app/webrtc/java/jni/jni_helpers.h',
+            'app/webrtc/java/jni/native_handle_impl.h',
+            'app/webrtc/java/jni/peerconnection_jni.cc',
           ],
           'include_dirs': [
-            '<(DEPTH)/third_party/libyuv/include',
+            '<(libyuv_dir)/include',
           ],
           'conditions': [
+            ['build_icu==1', {
+              'dependencies': [
+                '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+              ],
+            }],
             ['OS=="linux"', {
               'defines': [
                 'HAVE_GTK',
@@ -65,12 +73,36 @@
                 '<(java_home)/include',
                 '<(java_home)/include/linux',
               ],
-              'link_settings': {
-                'libraries': [
-                  '<!@(pkg-config --libs-only-l gobject-2.0 gthread-2.0'
-                      ' gtk+-2.0)',
-                ],
+              'conditions': [
+                ['use_gtk==1', {
+                  'link_settings': {
+                    'libraries': [
+                      '<!@(pkg-config --libs-only-l gobject-2.0 gthread-2.0'
+                          ' gtk+-2.0)',
+                    ],
+                  },
+                }],
+              ],
+            }],
+            ['OS=="android"', {
+              'sources': [
+                'app/webrtc/java/jni/androidvideocapturer_jni.cc',
+                'app/webrtc/java/jni/androidvideocapturer_jni.h',
+              ],
+              'variables': {
+                # This library uses native JNI exports; tell GYP so that the
+                # required symbols will be kept.
+                'use_native_jni_exports': 1,
               },
+            }],
+            ['OS=="android" and build_with_chromium==0', {
+              'sources': [
+                'app/webrtc/java/jni/androidmediacodeccommon.h',
+                'app/webrtc/java/jni/androidmediadecoder_jni.cc',
+                'app/webrtc/java/jni/androidmediadecoder_jni.h',
+                'app/webrtc/java/jni/androidmediaencoder_jni.cc',
+                'app/webrtc/java/jni/androidmediaencoder_jni.h',
+              ]
             }],
           ],
         },
@@ -111,12 +143,13 @@
                   'app/webrtc/java/android/org/webrtc/VideoRendererGui.java',
                   'app/webrtc/java/src/org/webrtc/MediaCodecVideoEncoder.java',
                   'app/webrtc/java/src/org/webrtc/MediaCodecVideoDecoder.java',
+                  'app/webrtc/java/src/org/webrtc/VideoCapturerAndroid.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/AudioManagerAndroid.java',
-                  '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureAndroid.java',
-                  '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureDeviceInfoAndroid.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViEAndroidGLES20.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViERenderer.java',
                   '<(webrtc_modules_dir)/video_render/android/java/src/org/webrtc/videoengine/ViESurfaceRenderer.java',
+                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioManager.java',
+                  '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioUtils.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioRecord.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/WebRtcAudioTrack.java',
                 ],
@@ -158,6 +191,34 @@
           ],
         },
       ],
+    }],
+    ['OS=="android"', {
+      'targets': [
+        {
+          # |libjingle_peerconnection_java| builds a jar file with name
+          # libjingle_peerconnection_java.jar using Chromes build system.
+          # It includes all Java files needed to setup a PeeerConnection call
+          # from Android.
+          # TODO(perkj): Consider replacing the use of
+          # libjingle_peerconnection_jar with this target everywhere.
+          'target_name': 'libjingle_peerconnection_java',
+          'type': 'none',
+          'dependencies': [
+            'libjingle_peerconnection_so',
+          ],
+          'variables': {
+            'java_in_dir': 'app/webrtc/java',
+            'webrtc_modules_dir': '<(webrtc_root)/modules',
+            'additional_src_dirs' : [
+              'app/webrtc/java/android',
+              '<(webrtc_modules_dir)/audio_device/android/java/src',
+              '<(webrtc_modules_dir)/video_capture/android/java/src',
+              '<(webrtc_modules_dir)/video_render/android/java/src',
+            ],
+          },
+          'includes': ['../build/java.gypi'],
+        }, # libjingle_peerconnection_java
+      ]
     }],
     ['OS=="ios" or (OS=="mac" and target_arch!="ia32" and mac_sdk>="10.7")', {
       # The >= 10.7 above is required for ARC.
@@ -250,6 +311,11 @@
               '-lstdc++',
             ],
           },
+          'all_dependent_settings': {
+            'xcode_settings': {
+              'CLANG_ENABLE_OBJC_ARC': 'YES',
+            },
+          },
           'xcode_settings': {
             'CLANG_ENABLE_OBJC_ARC': 'YES',
             # common.gypi enables this for mac but we want this to be disabled
@@ -259,8 +325,13 @@
           'conditions': [
             ['OS=="ios"', {
               'sources': [
+                'app/webrtc/objc/avfoundationvideocapturer.h',
+                'app/webrtc/objc/avfoundationvideocapturer.mm',
+                'app/webrtc/objc/RTCAVFoundationVideoSource+Internal.h',
+                'app/webrtc/objc/RTCAVFoundationVideoSource.mm',
                 'app/webrtc/objc/RTCEAGLVideoView.m',
                 'app/webrtc/objc/public/RTCEAGLVideoView.h',
+                'app/webrtc/objc/public/RTCAVFoundationVideoSource.h',
               ],
               'link_settings': {
                 'xcode_settings': {
@@ -300,32 +371,38 @@
       'target_name': 'libjingle',
       'type': 'none',
       'dependencies': [
-        '<(DEPTH)/third_party/expat/expat.gyp:expat',
-        '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
         '<(webrtc_root)/base/base.gyp:rtc_base',
       ],
-      'export_dependent_settings': [
-        '<(DEPTH)/third_party/expat/expat.gyp:expat',
-        '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
+      'conditions': [
+        ['build_json==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
+          ],
+          'export_dependent_settings': [
+            '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
+          ],
+        }],
+        ['build_expat==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/expat/expat.gyp:expat',
+          ],
+          'export_dependent_settings': [
+            '<(DEPTH)/third_party/expat/expat.gyp:expat',
+          ],
+        }],
       ],
     },  # target libjingle
     {
       'target_name': 'libjingle_media',
       'type': 'static_library',
-      'include_dirs': [
-        # TODO(jiayl): move this into the direct_dependent_settings of
-        # usrsctp.gyp.
-        '<(DEPTH)/third_party/usrsctp',
-      ],
       'dependencies': [
-        '<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',
-        '<(DEPTH)/third_party/usrsctp/usrsctp.gyp:usrsctplib',
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/modules/modules.gyp:video_render_module',
         '<(webrtc_root)/webrtc.gyp:webrtc',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         '<(webrtc_root)/sound/sound.gyp:rtc_sound',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
         '<(webrtc_root)/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
         '<(webrtc_root)/libjingle/xmpp/xmpp.gyp:rtc_xmpp',
         '<(webrtc_root)/p2p/p2p.gyp:rtc_p2p',
@@ -333,7 +410,7 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          '<(DEPTH)/third_party/libyuv/include',
+          '<(libyuv_dir)/include',
         ],
       },
       'sources': [
@@ -377,6 +454,7 @@
         'media/base/videocommon.h',
         'media/base/videoframe.cc',
         'media/base/videoframe.h',
+        'media/base/videoframefactory.cc',
         'media/base/videoframefactory.h',
         'media/base/videoprocessor.h',
         'media/base/videorenderer.h',
@@ -395,6 +473,8 @@
         'media/other/linphonemediaengine.h',
         'media/sctp/sctpdataengine.cc',
         'media/sctp/sctpdataengine.h',
+        'media/webrtc/simulcast.cc',
+        'media/webrtc/simulcast.h',
         'media/webrtc/webrtccommon.h',
         'media/webrtc/webrtcexport.h',
         'media/webrtc/webrtcmediaengine.cc',
@@ -402,43 +482,49 @@
         'media/webrtc/webrtcmediaengine.cc',
         'media/webrtc/webrtcpassthroughrender.cc',
         'media/webrtc/webrtcpassthroughrender.h',
-        'media/webrtc/webrtctexturevideoframe.cc',
-        'media/webrtc/webrtctexturevideoframe.h',
         'media/webrtc/webrtcvideocapturer.cc',
         'media/webrtc/webrtcvideocapturerfactory.h',
         'media/webrtc/webrtcvideocapturerfactory.cc',
         'media/webrtc/webrtcvideocapturer.h',
         'media/webrtc/webrtcvideodecoderfactory.h',
         'media/webrtc/webrtcvideoencoderfactory.h',
-        'media/webrtc/webrtcvideoengine.cc',
-        'media/webrtc/webrtcvideoengine.h',
         'media/webrtc/webrtcvideoengine2.cc',
         'media/webrtc/webrtcvideoengine2.h',
         'media/webrtc/webrtcvideoframe.cc',
         'media/webrtc/webrtcvideoframe.h',
         'media/webrtc/webrtcvideoframefactory.cc',
         'media/webrtc/webrtcvideoframefactory.h',
-        'media/webrtc/webrtcvie.h',
         'media/webrtc/webrtcvoe.h',
         'media/webrtc/webrtcvoiceengine.cc',
         'media/webrtc/webrtcvoiceengine.h',
       ],
       'conditions': [
+        ['build_libyuv==1', {
+          'dependencies': ['<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',],
+        }],
+        ['build_usrsctp==1', {
+          'include_dirs': [
+            # TODO(jiayl): move this into the direct_dependent_settings of
+            # usrsctp.gyp.
+            '<(DEPTH)/third_party/usrsctp',
+          ],
+          'dependencies': [
+            '<(DEPTH)/third_party/usrsctp/usrsctp.gyp:usrsctplib',
+          ],
+        }],
         ['build_with_chromium==1', {
-	  'dependencies': [
-            '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
-            '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
-	  ],
-	}, {
-	  'dependencies': [
+          'dependencies': [
+            '<(webrtc_root)/modules/modules.gyp:video_capture',
+            '<(webrtc_root)/modules/modules.gyp:video_render',
+          ],
+        }, {
+          'dependencies': [
             '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
             '<(webrtc_root)/modules/modules.gyp:video_render_module_internal_impl',
-	  ],
-	}],
+          ],
+        }],
         ['OS=="linux"', {
           'sources': [
-            'media/devices/gtkvideorenderer.cc',
-            'media/devices/gtkvideorenderer.h',
             'media/devices/libudevsymboltable.cc',
             'media/devices/libudevsymboltable.h',
             'media/devices/linuxdeviceinfo.cc',
@@ -447,11 +533,19 @@
             'media/devices/v4llookup.cc',
             'media/devices/v4llookup.h',
           ],
+          'conditions': [
+            ['use_gtk==1', {
+              'sources': [
+                'media/devices/gtkvideorenderer.cc',
+                'media/devices/gtkvideorenderer.h',
+              ],
+              'cflags': [
+                '<!@(pkg-config --cflags gobject-2.0 gthread-2.0 gtk+-2.0)',
+              ],
+            }],
+          ],
           'include_dirs': [
             'third_party/libudev'
-          ],
-          'cflags': [
-            '<!@(pkg-config --cflags gobject-2.0 gthread-2.0 gtk+-2.0)',
           ],
           'libraries': [
             '-lrt',
@@ -541,9 +635,15 @@
       'target_name': 'libjingle_p2p',
       'type': 'static_library',
       'dependencies': [
-        '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
         'libjingle',
         'libjingle_media',
+      ],
+      'conditions': [
+        ['build_libsrtp==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
+          ],
+        }],
       ],
       'include_dirs': [
         '<(DEPTH)/testing/gtest/include',
@@ -554,34 +654,22 @@
         ],
       },
       'sources': [
-        'session/tunnel/pseudotcpchannel.cc',
-        'session/tunnel/pseudotcpchannel.h',
-        'session/tunnel/tunnelsessionclient.cc',
-        'session/tunnel/tunnelsessionclient.h',
-        'session/tunnel/securetunnelsessionclient.cc',
-        'session/tunnel/securetunnelsessionclient.h',
         'session/media/audiomonitor.cc',
         'session/media/audiomonitor.h',
         'session/media/bundlefilter.cc',
         'session/media/bundlefilter.h',
-        'session/media/call.cc',
-        'session/media/call.h',
         'session/media/channel.cc',
         'session/media/channel.h',
         'session/media/channelmanager.cc',
         'session/media/channelmanager.h',
         'session/media/currentspeakermonitor.cc',
         'session/media/currentspeakermonitor.h',
-        'session/media/mediamessages.cc',
-        'session/media/mediamessages.h',
         'session/media/mediamonitor.cc',
         'session/media/mediamonitor.h',
         'session/media/mediarecorder.cc',
         'session/media/mediarecorder.h',
         'session/media/mediasession.cc',
         'session/media/mediasession.h',
-        'session/media/mediasessionclient.cc',
-        'session/media/mediasessionclient.h',
         'session/media/mediasink.h',
         'session/media/rtcpmuxfilter.cc',
         'session/media/rtcpmuxfilter.h',
@@ -610,6 +698,10 @@
         'app/webrtc/datachannel.cc',
         'app/webrtc/datachannel.h',
         'app/webrtc/datachannelinterface.h',
+        'app/webrtc/dtlsidentityservice.cc',
+        'app/webrtc/dtlsidentityservice.h',
+        'app/webrtc/dtlsidentitystore.cc',
+        'app/webrtc/dtlsidentitystore.h',
         'app/webrtc/dtmfsender.cc',
         'app/webrtc/dtmfsender.h',
         'app/webrtc/dtmfsenderinterface.h',
@@ -639,6 +731,7 @@
         'app/webrtc/peerconnection.h',
         'app/webrtc/peerconnectionfactory.cc',
         'app/webrtc/peerconnectionfactory.h',
+        'app/webrtc/peerconnectionfactoryproxy.h',
         'app/webrtc/peerconnectioninterface.h',
         'app/webrtc/peerconnectionproxy.h',
         'app/webrtc/portallocatorfactory.cc',
@@ -652,6 +745,7 @@
         'app/webrtc/sctputils.h',
         'app/webrtc/statscollector.cc',
         'app/webrtc/statscollector.h',
+        'app/webrtc/statstypes.cc',
         'app/webrtc/statstypes.h',
         'app/webrtc/streamcollection.h',
         'app/webrtc/videosource.cc',
@@ -668,6 +762,14 @@
         'app/webrtc/webrtcsession.h',
         'app/webrtc/webrtcsessiondescriptionfactory.cc',
         'app/webrtc/webrtcsessiondescriptionfactory.h',
+      ],
+      'conditions': [
+        ['OS=="android" and build_with_chromium==0', {
+          'sources': [
+            'app/webrtc/androidvideocapturer.h',
+            'app/webrtc/androidvideocapturer.cc',
+           ],
+        }],
       ],
     },  # target libjingle_peerconnection
   ],

@@ -32,12 +32,31 @@
           '../ppapi/ppapi_internal.gyp:ppapi_host',
         ],
         'chromium_child_dependencies': [
+          'child',
           'plugin',
           'renderer',
           'utility',
           '../content/content.gyp:content_gpu',
           '../content/content.gyp:content_ppapi_plugin',
           '../third_party/WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources',
+        ],
+        'conditions': [
+          [ 'cld_version==0 or cld_version==2', {
+            'chromium_child_dependencies': [
+              # Use whatever CLD2 data access mode that the application
+              # embedder is using.
+              '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_platform_impl', ],
+          }],
+          ['enable_plugins==1 and disable_nacl==0', {
+            'chromium_child_dependencies': [
+              '<(DEPTH)/components/nacl/renderer/plugin/plugin.gyp:nacl_trusted_plugin',
+            ],
+          }],
+          ['remoting==1', {
+            'chromium_child_dependencies': [
+              '../remoting/remoting.gyp:remoting_client_plugin',
+            ],
+          }],
         ],
       }],
       ['enable_basic_printing==1 or enable_print_preview==1', {
@@ -57,15 +76,8 @@
       ['OS=="linux"', {
         'conditions': [
           ['chromeos==1', {
-            'conditions': [
-              ['branding=="Chrome"', {
-                'platform_locale_settings_grd':
-                    'app/resources/locale_settings_google_chromeos.grd',
-              }, {  # branding!=Chrome
-                'platform_locale_settings_grd':
-                    'app/resources/locale_settings_chromiumos.grd',
-              }],
-            ]
+            'platform_locale_settings_grd':
+                    'app/resources/locale_settings_<(branding_path_component)os.grd',
           }, {  # chromeos==0
             'platform_locale_settings_grd':
                 'app/resources/locale_settings_linux.grd',
@@ -97,13 +109,13 @@
     'chrome_browser_ui.gypi',
     'chrome_common.gypi',
     'chrome_installer_util.gypi',
-    '../components/nacl/nacl_defines.gypi',
   ],
   'conditions': [
     ['OS!="ios"', {
       'includes': [
         '../apps/apps.gypi',
         'app_installer/app_installer.gypi',
+        'chrome_child.gypi',
         'chrome_debugger.gypi',
         'chrome_dll.gypi',
         'chrome_exe.gypi',
@@ -244,12 +256,6 @@
                 'STRIPFLAGS': '-s $(CHROMIUM_STRIP_SAVE_FILE)',
               },
             }],
-            ['asan==1', {
-              'xcode_settings': {
-                # Override the outer definition of CHROMIUM_STRIP_SAVE_FILE.
-                'CHROMIUM_STRIP_SAVE_FILE': 'app/app_asan.saves',
-              },
-            }],
             ['component=="shared_library"', {
               'xcode_settings': {
                 'LD_RUNPATH_SEARCH_PATHS': [
@@ -264,6 +270,7 @@
         {
           # A library containing the actual code for the app mode app, shared
           # by unit tests.
+          # GN: //chrome/common:app_mode_app_support
           'target_name': 'app_mode_app_support',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -369,7 +376,7 @@
               ],
               'dependencies': [
                 'chrome',
-                '../breakpad/breakpad.gyp:dump_syms',
+                '../breakpad/breakpad.gyp:dump_syms#host',
               ],
             }],
           ],
@@ -392,26 +399,16 @@
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../net/net.gyp:net_unittests',
             '../ui/base/ui_base_tests.gyp:ui_base_unittests',
-            '../ui/base/ui_base_tests.gyp:ui_unittests',
           ],
         },
         {
+          # GN version: //chrome:chrome_version_resources
           'target_name': 'chrome_version_resources',
           'type': 'none',
-          'conditions': [
-            ['branding == "Chrome"', {
-              'variables': {
-                 'branding_path': 'app/theme/google_chrome/BRANDING',
-              },
-            }, { # else branding!="Chrome"
-              'variables': {
-                 'branding_path': 'app/theme/chromium/BRANDING',
-              },
-            }],
-          ],
           'variables': {
             'output_dir': 'chrome_version',
             'template_input_path': 'app/chrome_version.rc.version',
+            'branding_path': 'app/theme/<(branding_path_component)/BRANDING',
           },
           'direct_dependent_settings': {
             'include_dirs': [
@@ -439,18 +436,8 @@
               'variables': {
                 'lastchange_path':
                   '<(DEPTH)/build/util/LASTCHANGE',
+                'branding_path': 'app/theme/<(branding_path_component)/BRANDING',
               },
-              'conditions': [
-                ['branding == "Chrome"', {
-                  'variables': {
-                     'branding_path': 'app/theme/google_chrome/BRANDING',
-                  },
-                }, { # else branding!="Chrome"
-                  'variables': {
-                     'branding_path': 'app/theme/chromium/BRANDING',
-                  },
-                }],
-              ],
               'inputs': [
                 '<(version_path)',
                 '<(branding_path)',
@@ -499,19 +486,22 @@
           'type': 'executable',
           'dependencies': [
             '../base/base.gyp:base',
+            '../crypto/crypto.gyp:crypto',
             'safe_browsing_proto',
           ],
           'sources': [
-            'browser/safe_browsing/binary_feature_extractor.h',
-            'browser/safe_browsing/binary_feature_extractor_win.cc',
-            'browser/safe_browsing/pe_image_reader_win.cc',
-            'browser/safe_browsing/pe_image_reader_win.h',
+            'common/safe_browsing/binary_feature_extractor.cc',
+            'common/safe_browsing/binary_feature_extractor.h',
+            'common/safe_browsing/binary_feature_extractor_win.cc',
+            'common/safe_browsing/pe_image_reader_win.cc',
+            'common/safe_browsing/pe_image_reader_win.h',
             'tools/safe_browsing/sb_sigutil.cc',
           ],
         },
       ],  # 'targets'
       'includes': [
         'app_shim/app_shim_win.gypi',
+        'chrome_watcher/chrome_watcher.gypi',
         'chrome_process_finder.gypi',
         'metro_utils.gypi',
       ],
@@ -553,8 +543,8 @@
             '..',
           ],
           'sources': [
-            'tools/crash_service/main.cc',
             '../content/public/common/content_switches.cc',
+            'tools/crash_service/main.cc',
           ],
           'defines': [
             'COMPILE_CONTENT_STATICALLY',
@@ -584,31 +574,40 @@
           'type': 'none',
           'dependencies': [
             'activity_type_ids_java',
-            'app_banner_metrics_ids_java',
             'chrome_resources.gyp:chrome_strings',
             'chrome_strings_grd',
             'chrome_version_java',
+            'connection_security_helper_security_levels_java',
+            'document_tab_model_info_proto_java',
             'profile_account_management_metrics_java',
             'content_setting_java',
             'content_settings_type_java',
             'page_info_connection_type_java',
             'profile_sync_service_model_type_selection_java',
             'resource_id_java',
-            'toolbar_model_security_levels_java',
             'tab_load_status_java',
             '../base/base.gyp:base',
             '../components/components.gyp:bookmarks_java',
             '../components/components.gyp:dom_distiller_core_java',
+            '../components/components.gyp:enhanced_bookmarks_java_enums_srcjar',
             '../components/components.gyp:gcm_driver_java',
             '../components/components.gyp:invalidation_java',
             '../components/components.gyp:navigation_interception_java',
+            '../components/components.gyp:service_tab_launcher_java',
+            '../components/components.gyp:precache_java',
             '../components/components.gyp:variations_java',
             '../components/components.gyp:web_contents_delegate_android_java',
             '../content/content.gyp:content_java',
+            '../media/media.gyp:media_java',
             '../printing/printing.gyp:printing_java',
             '../sync/sync.gyp:sync_java',
+            '../third_party/android_data_chart/android_data_chart.gyp:android_data_chart_java',
+            '../third_party/android_media/android_media.gyp:android_media_java',
+            '../third_party/android_swipe_refresh/android_swipe_refresh.gyp:android_swipe_refresh_java',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
+            '../third_party/android_tools/android_tools.gyp:android_support_v7_mediarouter_javalib',
             '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
+            '../third_party/android_tools/android_tools.gyp:google_play_services_javalib',
             '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {
@@ -762,6 +761,42 @@
               ],
             }],
           ],
+        },
+      ],
+    }],
+    ['kasko==1', {
+      'variables': {
+        'kasko_exe_dir': '<(DEPTH)/third_party/kasko',
+      },
+      'targets': [
+        {
+          'target_name': 'kasko_dll',
+          'type': 'none',
+          'outputs': [
+            '<(PRODUCT_DIR)/kasko.dll',
+            '<(PRODUCT_DIR)/kasko.dll.pdb',
+          ],
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                '<(kasko_exe_dir)/kasko.dll',
+                '<(kasko_exe_dir)/kasko.dll.pdb',
+              ],
+            },
+          ],
+          'direct_dependent_settings': {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                'AdditionalDependencies': [
+                  'kasko.dll.lib',
+                ],
+                'AdditionalLibraryDirectories': [
+                  '<(DEPTH)/third_party/kasko'
+                ],
+              },
+            },
+          },
         },
       ],
     }],

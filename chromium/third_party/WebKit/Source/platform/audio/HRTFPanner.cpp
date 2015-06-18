@@ -109,10 +109,7 @@ int HRTFPanner::calculateDesiredAzimuthIndexAndBlend(double azimuth, double& azi
     if (azimuth < 0)
         azimuth += 360.0;
 
-    HRTFDatabase* database = m_databaseLoader->database();
-    ASSERT(database);
-
-    int numberOfAzimuths = database->numberOfAzimuths();
+    int numberOfAzimuths = HRTFDatabase::numberOfAzimuths();
     const double angleBetweenAzimuths = 360.0 / numberOfAzimuths;
 
     // Calculate the azimuth index and the blend (0 -> 1) for interpolation.
@@ -163,7 +160,7 @@ void HRTFPanner::pan(double desiredAzimuth, double elevation, const AudioBus* in
     // Normally, we'll just be dealing with mono sources.
     // If we have a stereo input, implement stereo panning with left source processed by left HRTF, and right source by right HRTF.
     const AudioChannel* inputChannelL = inputBus->channelByType(AudioBus::ChannelLeft);
-    const AudioChannel* inputChannelR = numInputChannels > 1 ? inputBus->channelByType(AudioBus::ChannelRight) : 0;
+    const AudioChannel* inputChannelR = numInputChannels > 1 ? inputBus->channelByType(AudioBus::ChannelRight) : nullptr;
 
     // Get source and destination pointers.
     const float* sourceL = inputChannelL->data();
@@ -315,12 +312,6 @@ double HRTFPanner::latencyTime() const
     // The latency of a FFTConvolver is also fftSize() / 2, and is in addition to its tailTime of the
     // same value.
     return (fftSize() / 2) / static_cast<double>(sampleRate());
-}
-
-void HRTFPanner::trace(Visitor* visitor)
-{
-    visitor->trace(m_databaseLoader);
-    Panner::trace(visitor);
 }
 
 } // namespace blink

@@ -109,20 +109,6 @@ bool Region::intersects(const Region& region) const
     return Shape::compareShapes<Shape::CompareIntersectsOperation>(m_shape, region.m_shape);
 }
 
-unsigned Region::totalArea() const
-{
-    Vector<IntRect> rects = this->rects();
-    size_t size = rects.size();
-    unsigned totalArea = 0;
-
-    for (size_t i = 0; i < size; ++i) {
-        IntRect rect = rects[i];
-        totalArea += (rect.width() * rect.height());
-    }
-
-    return totalArea;
-}
-
 template<typename CompareOperation>
 bool Region::Shape::compareShapes(const Shape& aShape, const Shape& bShape)
 {
@@ -402,8 +388,8 @@ enum {
 template<typename Operation>
 Region::Shape Region::Shape::shapeOperation(const Shape& shape1, const Shape& shape2)
 {
-    COMPILE_ASSERT(!(!Operation::shouldAddRemainingSegmentsFromSpan1 && Operation::shouldAddRemainingSegmentsFromSpan2), invalid_segment_combination);
-    COMPILE_ASSERT(!(!Operation::shouldAddRemainingSpansFromShape1 && Operation::shouldAddRemainingSpansFromShape2), invalid_span_combination);
+    static_assert(!(!Operation::shouldAddRemainingSegmentsFromSpan1 && Operation::shouldAddRemainingSegmentsFromSpan2), "invalid segment combination");
+    static_assert(!(!Operation::shouldAddRemainingSpansFromShape1 && Operation::shouldAddRemainingSpansFromShape2), "invalid span combination");
 
     size_t segmentsCapacity = shape1.segmentsSize() + shape2.segmentsSize();
     size_t spansCapacity = shape1.spansSize() + shape2.spansSize();

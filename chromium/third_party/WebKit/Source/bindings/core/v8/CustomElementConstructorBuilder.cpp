@@ -85,8 +85,10 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
     } else {
         m_prototype = v8::Object::New(m_scriptState->isolate());
         v8::Local<v8::Object> basePrototype = m_scriptState->perContextData()->prototypeForType(&V8HTMLElement::wrapperTypeInfo);
-        if (!basePrototype.IsEmpty())
-            m_prototype->SetPrototype(basePrototype);
+        if (!basePrototype.IsEmpty()) {
+            if (!v8CallBoolean(m_prototype->SetPrototype(m_scriptState->context(), basePrototype)))
+                return false;
+        }
     }
 
     AtomicString namespaceURI = HTMLNames::xhtmlNamespaceURI;
@@ -124,29 +126,28 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
     return true;
 }
 
-PassRefPtr<CustomElementLifecycleCallbacks> CustomElementConstructorBuilder::createCallbacks()
+PassRefPtrWillBeRawPtr<CustomElementLifecycleCallbacks> CustomElementConstructorBuilder::createCallbacks()
 {
     ASSERT(!m_prototype.IsEmpty());
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
 
-    v8::Isolate* isolate = m_scriptState->isolate();
-    v8::Handle<v8::Function> created = retrieveCallback(isolate, "createdCallback");
-    v8::Handle<v8::Function> attached = retrieveCallback(isolate, "attachedCallback");
-    v8::Handle<v8::Function> detached = retrieveCallback(isolate, "detachedCallback");
-    v8::Handle<v8::Function> attributeChanged = retrieveCallback(isolate, "attributeChangedCallback");
+    v8::MaybeLocal<v8::Function> created = retrieveCallback("createdCallback");
+    v8::MaybeLocal<v8::Function> attached = retrieveCallback("attachedCallback");
+    v8::MaybeLocal<v8::Function> detached = retrieveCallback("detachedCallback");
+    v8::MaybeLocal<v8::Function> attributeChanged = retrieveCallback("attributeChangedCallback");
 
     m_callbacks = V8CustomElementLifecycleCallbacks::create(m_scriptState.get(), m_prototype, created, attached, detached, attributeChanged);
     return m_callbacks.get();
 }
 
-v8::Handle<v8::Function> CustomElementConstructorBuilder::retrieveCallback(v8::Isolate* isolate, const char* name)
+v8::MaybeLocal<v8::Function> CustomElementConstructorBuilder::retrieveCallback(const char* name)
 {
-    v8::Handle<v8::Value> value = m_prototype->Get(v8String(isolate, name));
-    if (value.IsEmpty() || !value->IsFunction())
-        return v8::Handle<v8::Function>();
-    return value.As<v8::Function>();
+    v8::Local<v8::Value> value;
+    if (!m_prototype->Get(m_scriptState->context(), v8String(m_scriptState->isolate(), name)).ToLocal(&value) || !value->IsFunction())
+        return v8::MaybeLocal<v8::Function>();
+    return v8::MaybeLocal<v8::Function>(value.As<v8::Function>());
 }
 
 bool CustomElementConstructorBuilder::createConstructor(Document* document, CustomElementDefinition* definition, ExceptionState& exceptionState)
@@ -156,22 +157,22 @@ bool CustomElementConstructorBuilder::createConstructor(Document* document, Cust
     ASSERT(document);
 
     v8::Isolate* isolate = m_scriptState->isolate();
+    v8::Local<v8::Context> context = m_scriptState->context();
 
     if (!prototypeIsValid(definition->descriptor().type(), exceptionState))
         return false;
 
     v8::Local<v8::FunctionTemplate> constructorTemplate = v8::FunctionTemplate::New(isolate);
     constructorTemplate->SetCallHandler(constructCustomElement);
-    m_constructor = constructorTemplate->GetFunction();
-    if (m_constructor.IsEmpty()) {
+    if (!constructorTemplate->GetFunction(context).ToLocal(&m_constructor)) {
         CustomElementException::throwException(CustomElementException::ContextDestroyedRegisteringDefinition, definition->descriptor().type(), exceptionState);
         return false;
     }
 
     const CustomElementDescriptor& descriptor = definition->descriptor();
 
-    v8::Handle<v8::String> v8TagName = v8String(isolate, descriptor.localName());
-    v8::Handle<v8::Value> v8Type;
+    v8::Local<v8::String> v8TagName = v8String(isolate, descriptor.localName());
+    v8::Local<v8::Value> v8Type;
     if (descriptor.isTypeExtension())
         v8Type = v8String(isolate, descriptor.type());
     else
@@ -179,24 +180,36 @@ bool CustomElementConstructorBuilder::createConstructor(Document* document, Cust
 
     m_constructor->SetName(v8Type->IsNull() ? v8TagName : v8Type.As<v8::String>());
 
-    V8HiddenValue::setHiddenValue(isolate, m_constructor, V8HiddenValue::customElementDocument(isolate), toV8(document, m_scriptState->context()->Global(), isolate));
+    V8HiddenValue::setHiddenValue(isolate, m_constructor, V8HiddenValue::customElementDocument(isolate), toV8(document, context->Global(), isolate));
     V8HiddenValue::setHiddenValue(isolate, m_constructor, V8HiddenValue::customElementNamespaceURI(isolate), v8String(isolate, descriptor.namespaceURI()));
     V8HiddenValue::setHiddenValue(isolate, m_constructor, V8HiddenValue::customElementTagName(isolate), v8TagName);
     V8HiddenValue::setHiddenValue(isolate, m_constructor, V8HiddenValue::customElementType(isolate), v8Type);
 
-    v8::Handle<v8::String> prototypeKey = v8String(isolate, "prototype");
-    ASSERT(m_constructor->HasOwnProperty(prototypeKey));
+    v8::Local<v8::String> prototypeKey = v8String(isolate, "prototype");
+    if (!v8CallBoolean(m_constructor->HasOwnProperty(context, prototypeKey)))
+        return false;
     // This sets the property *value*; calling Set is safe because
     // "prototype" is a non-configurable data property so there can be
     // no side effects.
-    m_constructor->Set(prototypeKey, m_prototype);
+    if (!v8CallBoolean(m_constructor->Set(context, prototypeKey, m_prototype)))
+        return false;
     // This *configures* the property. ForceSet of a function's
     // "prototype" does not affect the value, but can reconfigure the
     // property.
-    m_constructor->ForceSet(prototypeKey, m_prototype, v8::PropertyAttribute(v8::ReadOnly | v8::DontEnum | v8::DontDelete));
+    if (!v8CallBoolean(m_constructor->ForceSet(context, prototypeKey, m_prototype, v8::PropertyAttribute(v8::ReadOnly | v8::DontEnum | v8::DontDelete))))
+        return false;
+
+    v8::Local<v8::String> constructorKey = v8String(isolate, "constructor");
+    v8::Local<v8::Value> constructorPrototype;
+    if (!m_prototype->Get(context, constructorKey).ToLocal(&constructorPrototype))
+        return false;
+
+    if (!v8CallBoolean(m_constructor->SetPrototype(context, constructorPrototype)))
+        return false;
 
     V8HiddenValue::setHiddenValue(isolate, m_prototype, V8HiddenValue::customElementIsInterfacePrototypeObject(isolate), v8::True(isolate));
-    m_prototype->ForceSet(v8String(isolate, "constructor"), m_constructor, v8::DontEnum);
+    if (!v8CallBoolean(m_prototype->ForceSet(context, v8String(isolate, "constructor"), m_constructor, v8::DontEnum)))
+        return false;
 
     return true;
 }
@@ -208,7 +221,8 @@ bool CustomElementConstructorBuilder::prototypeIsValid(const AtomicString& type,
         return false;
     }
 
-    if (m_prototype->GetPropertyAttributes(v8String(m_scriptState->isolate(), "constructor")) & v8::DontDelete) {
+    v8::PropertyAttribute propertyAttribute;
+    if (!v8Call(m_prototype->GetPropertyAttributes(m_scriptState->context(), v8String(m_scriptState->isolate(), "constructor")), propertyAttribute) || (propertyAttribute & v8::DontDelete)) {
         CustomElementException::throwException(CustomElementException::ConstructorPropertyNotConfigurable, type, exceptionState);
         return false;
     }
@@ -230,11 +244,11 @@ ScriptValue CustomElementConstructorBuilder::bindingsReturnValue() const
 
 bool CustomElementConstructorBuilder::hasValidPrototypeChainFor(const WrapperTypeInfo* type) const
 {
-    v8::Handle<v8::Object> elementPrototype = m_scriptState->perContextData()->prototypeForType(type);
+    v8::Local<v8::Object> elementPrototype = m_scriptState->perContextData()->prototypeForType(type);
     if (elementPrototype.IsEmpty())
         return false;
 
-    v8::Handle<v8::Value> chain = m_prototype;
+    v8::Local<v8::Value> chain = m_prototype;
     while (!chain.IsEmpty() && chain->IsObject()) {
         if (chain == elementPrototype)
             return true;
@@ -261,7 +275,7 @@ static void constructCustomElement(const v8::FunctionCallbackInfo<v8::Value>& in
     Document* document = V8Document::toImpl(V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Callee(), V8HiddenValue::customElementDocument(isolate)).As<v8::Object>());
     TOSTRING_VOID(V8StringResource<>, namespaceURI, V8HiddenValue::getHiddenValue(isolate, info.Callee(), V8HiddenValue::customElementNamespaceURI(isolate)));
     TOSTRING_VOID(V8StringResource<>, tagName, V8HiddenValue::getHiddenValue(isolate, info.Callee(), V8HiddenValue::customElementTagName(isolate)));
-    v8::Handle<v8::Value> maybeType = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Callee(), V8HiddenValue::customElementType(isolate));
+    v8::Local<v8::Value> maybeType = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Callee(), V8HiddenValue::customElementType(isolate));
     TOSTRING_VOID(V8StringResource<>, type, maybeType);
 
     ExceptionState exceptionState(ExceptionState::ConstructionContext, "CustomElement", info.Holder(), info.GetIsolate());

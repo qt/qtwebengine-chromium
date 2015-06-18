@@ -453,11 +453,20 @@ TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
   result = l10n_util::GetDisplayNameForLocale("es-419", "en", false);
   EXPECT_EQ(ASCIIToUTF16("Spanish (Latin America)"), result);
 
+  result = l10n_util::GetDisplayNameForLocale("mo", "en", false);
+  EXPECT_EQ(l10n_util::GetDisplayNameForLocale("ro-MD", "en", false), result);
+
   result = l10n_util::GetDisplayNameForLocale("-BR", "en", false);
   EXPECT_EQ(ASCIIToUTF16("Brazil"), result);
 
   result = l10n_util::GetDisplayNameForLocale("xyz-xyz", "en", false);
   EXPECT_EQ(ASCIIToUTF16("xyz (XYZ)"), result);
+
+  // Make sure that en-GB locale has the corect display names.
+  result = l10n_util::GetDisplayNameForLocale("en", "en-GB", false);
+  EXPECT_EQ(ASCIIToUTF16("English"), result);
+  result = l10n_util::GetDisplayNameForLocale("es-419", "en-GB", false);
+  EXPECT_EQ(ASCIIToUTF16("Spanish (Latin America)"), result);
 
   // Check for directional markers when using RTL languages to ensure that
   // direction neutral characters such as parentheses are properly formatted.

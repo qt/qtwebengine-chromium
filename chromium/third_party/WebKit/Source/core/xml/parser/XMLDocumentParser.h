@@ -66,7 +66,7 @@ private:
 };
 
 class XMLDocumentParser final : public ScriptableDocumentParser, public ScriptResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(XMLDocumentParser);
 public:
     static PassRefPtrWillBeRawPtr<XMLDocumentParser> create(Document& document, FrameView* view)
     {
@@ -77,7 +77,7 @@ public:
         return adoptRefWillBeNoop(new XMLDocumentParser(fragment, element, parserContentPolicy));
     }
     virtual ~XMLDocumentParser();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Exposed for callbacks:
     void handleError(XMLErrors::ErrorType, const char* message, TextPosition);
@@ -108,7 +108,7 @@ private:
 
     // From DocumentParser
     virtual void insert(const SegmentedString&) override;
-    virtual void append(PassRefPtr<StringImpl>) override;
+    virtual void append(const String&) override;
     virtual void finish() override;
     virtual bool isWaitingForScripts() const override;
     virtual void stopParsing() override;
@@ -161,11 +161,11 @@ private:
 
     xmlParserCtxtPtr context() const { return m_context ? m_context->context() : 0; };
     RefPtr<XMLParserContext> m_context;
-    Deque<OwnPtr<PendingCallback> > m_pendingCallbacks;
+    Deque<OwnPtr<PendingCallback>> m_pendingCallbacks;
     Vector<xmlChar> m_bufferedText;
 
     RawPtrWillBeMember<ContainerNode> m_currentNode;
-    WillBeHeapVector<RawPtrWillBeMember<ContainerNode> > m_currentNodeStack;
+    WillBeHeapVector<RawPtrWillBeMember<ContainerNode>> m_currentNodeStack;
 
     RefPtrWillBeMember<Text> m_leafTextNode;
 
@@ -193,7 +193,7 @@ private:
     SegmentedString m_pendingSrc;
 };
 
-xmlDocPtr xmlDocPtrForString(ResourceFetcher*, const String& source, const String& url);
+xmlDocPtr xmlDocPtrForString(Document*, const String& source, const String& url);
 HashMap<String, String> parseAttributes(const String&, bool& attrsOK);
 
 } // namespace blink

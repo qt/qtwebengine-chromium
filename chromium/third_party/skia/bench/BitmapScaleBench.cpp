@@ -48,7 +48,7 @@ protected:
         return float(outputSize())/inputSize();
     }
 
-    SkIPoint onGetSize() SK_OVERRIDE {
+    SkIPoint onGetSize() override {
         return SkIPoint::Make( fOutputSize, fOutputSize );
     }
 
@@ -88,13 +88,14 @@ class BitmapFilterScaleBench: public BitmapScaleBench {
         setName( "filter" );
     }
 protected:
-    virtual void doScaleImage() SK_OVERRIDE {
+    void doScaleImage() override {
         SkCanvas canvas( fOutputBitmap );
         SkPaint paint;
 
-        paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
+        paint.setFilterQuality(kHigh_SkFilterQuality);
         fInputBitmap.notifyPixelsChanged();
-        canvas.drawBitmapMatrix( fInputBitmap, fMatrix, &paint );
+        canvas.concat(fMatrix);
+        canvas.drawBitmap(fInputBitmap, 0, 0, &paint );
     }
 private:
     typedef BitmapScaleBench INHERITED;

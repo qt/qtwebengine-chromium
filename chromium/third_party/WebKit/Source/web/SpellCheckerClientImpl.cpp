@@ -28,6 +28,7 @@
 #include "web/SpellCheckerClientImpl.h"
 
 #include "core/dom/DocumentMarkerController.h"
+#include "core/dom/Element.h"
 #include "core/editing/Editor.h"
 #include "core/editing/SpellChecker.h"
 #include "core/frame/LocalFrame.h"
@@ -73,8 +74,8 @@ bool SpellCheckerClientImpl::shouldSpellcheckByDefault()
     // cause any problems to the LocalFrame's behavior.
     if (!element)
         return true;
-    const RenderObject* renderer = element->renderer();
-    if (!renderer)
+    const LayoutObject* layoutObject = element->layoutObject();
+    if (!layoutObject)
         return false;
 
     return true;

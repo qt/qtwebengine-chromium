@@ -99,13 +99,7 @@ bool WebDataSourceImpl::replacesCurrentHistoryItem() const
 
 WebNavigationType WebDataSourceImpl::navigationType() const
 {
-    return toWebNavigationType(triggeringAction().type());
-}
-
-double WebDataSourceImpl::triggeringEventTime() const
-{
-    // DOMTimeStamp uses units of milliseconds.
-    return convertDOMTimeStampToSeconds(triggeringAction().eventTimeStamp());
+    return toWebNavigationType(DocumentLoader::navigationType());
 }
 
 WebDataSource::ExtraData* WebDataSourceImpl::extraData() const
@@ -121,7 +115,7 @@ void WebDataSourceImpl::setExtraData(ExtraData* extraData)
 
 void WebDataSourceImpl::setNavigationStartTime(double navigationStart)
 {
-    timing()->setNavigationStart(navigationStart);
+    timing().setNavigationStart(navigationStart);
 }
 
 WebNavigationType WebDataSourceImpl::toWebNavigationType(NavigationType type)

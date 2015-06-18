@@ -10,7 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ui_base_export.h"
+#include "ui/base/ime/ui_base_ime_export.h"
 
 namespace gfx {
 class Rect;
@@ -24,16 +24,15 @@ class TextInputClient;
 
 // A helper class providing functionalities shared among ui::InputMethod
 // implementations.
-class UI_BASE_EXPORT InputMethodBase
-   : NON_EXPORTED_BASE(public InputMethod),
-     public base::SupportsWeakPtr<InputMethodBase> {
+class UI_BASE_IME_EXPORT InputMethodBase
+    : NON_EXPORTED_BASE(public InputMethod),
+      public base::SupportsWeakPtr<InputMethodBase> {
  public:
   InputMethodBase();
   ~InputMethodBase() override;
 
   // Overriden from InputMethod.
   void SetDelegate(internal::InputMethodDelegate* delegate) override;
-  void Init(bool focused) override;
   // If a derived class overrides OnFocus()/OnBlur(), it should call parent's
   // implementation first, to make sure |system_toplevel_window_focused_| flag
   // can be updated correctly.

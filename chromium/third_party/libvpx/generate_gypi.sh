@@ -103,6 +103,7 @@ function write_target_definition {
   done
   echo "      ]," >> "$2"
   if [[ $4 == fpu=neon ]]; then
+  echo "      'includes': [ 'ads2gas.gypi' ]," >> "$2"
   echo "      'cflags!': [ '-mfpu=vfpv3-d16' ]," >> "$2"
   echo "      'conditions': [" >> $2
   echo "        # Disable LTO in neon targets due to compiler bug" >> "$2"
@@ -117,12 +118,15 @@ function write_target_definition {
   fi
   echo "      'cflags': [ '-m$4', ]," >> "$2"
   echo "      'xcode_settings': { 'OTHER_CFLAGS': [ '-m$4' ] }," >> "$2"
-  if [[ $4 == avx* ]]; then
+  if [[ $4 == avx2 ]]; then
   echo "      'msvs_settings': {" >> "$2"
   echo "        'VCCLCompilerTool': {" >> "$2"
-  echo "          'EnableEnhancedInstructionSet': '3', # /arch:AVX" >> "$2"
+  echo "          'EnableEnhancedInstructionSet': '5', # /arch:AVX2" >> "$2"
   echo "        }," >> "$2"
   echo "      }," >> "$2"
+  echo "      # TODO(pcc): Remove this once we properly support subtarget specific" >> "$2"
+  echo "      # code generation in LLVM (http://llvm.org/PR19416)." >> "$2"
+  echo "      'cflags!': [ '-flto', '-fsanitize=cfi-vptr', ]," >> "$2"
   elif [[ $4 == ssse3 || $4 == sse4.1 ]]; then
   echo "      'conditions': [" >> "$2"
   echo "        ['OS==\"win\" and clang==1', {" >> "$2"
@@ -152,7 +156,7 @@ function write_intrinsics_gypi {
   local sse4_1_sources=$(echo "$file_list" | grep '_sse4\.c$')
   local avx_sources=$(echo "$file_list" | grep '_avx\.c$')
   local avx2_sources=$(echo "$file_list" | grep '_avx2\.c$')
-  local neon_sources=$(echo "$file_list" | grep '_neon\.c$')
+  local neon_sources=$(echo "$file_list" | grep '_neon\.c$\|\.asm$')
 
   # Intrinsic functions and files are in flux. We can selectively generate them
   # but we can not selectively include them in libvpx.gyp. Throw some errors
@@ -188,9 +192,7 @@ function write_intrinsics_gypi {
     exit 1
   fi
   if [ 0 -ne ${#avx2_sources} ]; then
-    #write_target_definition avx2_sources[@] "$2" libvpx_intrinsics_avx2 avx2
-    echo "ERROR: Uncomment avx2 sections in libvpx.gyp"
-    exit 1
+    write_target_definition avx2_sources[@] "$2" libvpx_intrinsics_avx2 avx2
   fi
 
   # arm neon
@@ -216,10 +218,6 @@ function convert_srcs_to_project_files {
 
   local source_list=$(grep -E '(\.c|\.h|\.S|\.s|\.asm)$' $1)
 
-  # _offsets are used in pre-processing to generate files for assembly. They are
-  # not part of the compiled library.
-  source_list=$(echo "$source_list" | grep -v '_offsets\.c')
-
   # Not sure why vpx_config is not included.
   source_list=$(echo "$source_list" | grep -v 'vpx_config\.c')
 
@@ -228,16 +226,16 @@ function convert_srcs_to_project_files {
 
   # Select all x86 files ending with .c
   local intrinsic_list=$(echo "$source_list" | \
-    egrep 'vp[89]/(encoder|decoder|common)/x86/'  | \
     egrep '(mmx|sse2|sse3|ssse3|sse4|avx|avx2).c$')
 
   # Select all neon files ending in C but only when building in RTCD mode
   if [ "libvpx_srcs_arm_neon_cpu_detect" == "$2" ]; then
-    # Select all arm neon files ending in _neon.c
+    # Select all arm neon files ending in _neon.c and all asm files.
+    # The asm files need to be included in the intrinsics target because
+    # they need the -mfpu=neon flag.
     # the pattern may need to be updated if vpx_scale gets intrinics
     local intrinsic_list=$(echo "$source_list" | \
-      egrep 'vp[89]/(encoder|decoder|common)/arm/neon/'  | \
-      egrep '_neon.c$')
+      egrep 'neon.*(\.c|\.asm)$')
   fi
 
   # Remove these files from the main list.
@@ -276,7 +274,8 @@ function convert_srcs_to_project_files {
     write_gni avx2_sources $2_avx2 "$BASE_DIR/libvpx_srcs.gni"
   else
     local c_sources=$(echo "$source_list" | egrep '.(c|h)$')
-    local assembly_sources=$(echo "$source_list" | egrep '.asm$')
+    local assembly_sources=$(echo -e "$source_list\n$intrinsic_list" | \
+      egrep '.asm$')
     local neon_sources=$(echo "$intrinsic_list" | grep '_neon\.c$')
     write_gni c_sources $2 "$BASE_DIR/libvpx_srcs.gni"
     write_gni assembly_sources $2_assembly "$BASE_DIR/libvpx_srcs.gni"
@@ -347,7 +346,6 @@ function gen_rtcd_header {
     --arch=$2 \
     --sym=vp8_rtcd \
     --config=$BASE_DIR/$TEMP_DIR/libvpx.config \
-    --disable-avx2 \
     $BASE_DIR/$LIBVPX_SRC_DIR/vp8/common/rtcd_defs.pl \
     > $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vp8_rtcd.h
 
@@ -355,7 +353,6 @@ function gen_rtcd_header {
     --arch=$2 \
     --sym=vp9_rtcd \
     --config=$BASE_DIR/$TEMP_DIR/libvpx.config \
-    --disable-avx2 \
     $BASE_DIR/$LIBVPX_SRC_DIR/vp9/common/vp9_rtcd_defs.pl \
     > $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vp9_rtcd.h
 
@@ -363,9 +360,15 @@ function gen_rtcd_header {
     --arch=$2 \
     --sym=vpx_scale_rtcd \
     --config=$BASE_DIR/$TEMP_DIR/libvpx.config \
-    --disable-avx2 \
     $BASE_DIR/$LIBVPX_SRC_DIR/vpx_scale/vpx_scale_rtcd.pl \
     > $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_scale_rtcd.h
+
+  $BASE_DIR/$LIBVPX_SRC_DIR/build/make/rtcd.pl \
+    --arch=$2 \
+    --sym=vpx_dsp_rtcd \
+    --config=$BASE_DIR/$TEMP_DIR/libvpx.config \
+    $BASE_DIR/$LIBVPX_SRC_DIR/vpx_dsp/vpx_dsp_rtcd_defs.pl \
+    > $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_dsp_rtcd.h
 
   rm -rf $BASE_DIR/$TEMP_DIR/libvpx.config
 }
@@ -375,7 +378,11 @@ function gen_rtcd_header {
 # $1 - Header file directory.
 # $2 - Config command line.
 function gen_config_files {
-  ./configure $2  > /dev/null
+  ./configure $2 > /dev/null
+
+  # Disable HAVE_UNISTD_H as it causes vp8 to try to detect how many cpus 
+  # available, which doesn't work from iniside a sandbox on linux.
+  ( echo '/HAVE_UNISTD_H/s/[01]/0/' ; echo 'w' ; echo 'q' ) | ed -s vpx_config.h
 
   # Generate vpx_config.asm. Do not create one for mips.
   if [[ "$1" != *mipsel && "$1" != *mips64el ]]; then
@@ -398,16 +405,15 @@ cp -R $LIBVPX_SRC_DIR $TEMP_DIR
 cd $TEMP_DIR
 
 echo "Generate config files."
-# TODO(joeyparrish) Enable AVX2 when broader VS2013 support is available
-all_platforms="--enable-external-build --enable-postproc --disable-install-srcs --enable-multi-res-encoding --enable-temporal-denoising --disable-unit-tests --disable-install-docs --disable-examples --disable-avx2"
+all_platforms="--enable-external-build --enable-postproc --disable-install-srcs --enable-multi-res-encoding --enable-temporal-denoising --disable-unit-tests --disable-install-docs --disable-examples --enable-vp9-temporal-denoising --enable-vp9-postproc --size-limit=16384x16384"
 gen_config_files linux/ia32 "--target=x86-linux-gcc --disable-ccache --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files linux/x64 "--target=x86_64-linux-gcc --disable-ccache --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files linux/arm "--target=armv6-linux-gcc --enable-pic --enable-realtime-only --disable-install-bins --disable-install-libs --disable-edsp ${all_platforms}"
 gen_config_files linux/arm-neon "--target=armv7-linux-gcc --enable-pic --enable-realtime-only --disable-edsp ${all_platforms}"
 gen_config_files linux/arm-neon-cpu-detect "--target=armv7-linux-gcc --enable-pic --enable-realtime-only --enable-runtime-cpu-detect --disable-edsp ${all_platforms}"
 gen_config_files linux/arm64 "--force-target=armv8-linux-gcc --enable-pic --enable-realtime-only --disable-edsp ${all_platforms}"
-gen_config_files linux/mipsel "--target=mips32-linux-gcc --disable-fast-unaligned ${all_platforms}"
-gen_config_files linux/mips64el "--target=mips64-linux-gcc --disable-fast-unaligned ${all_platforms}"
+gen_config_files linux/mipsel "--target=mips32-linux-gcc ${all_platforms}"
+gen_config_files linux/mips64el "--target=mips64-linux-gcc ${all_platforms}"
 gen_config_files linux/generic "--target=generic-gnu --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files win/ia32 "--target=x86-win32-vs12 --enable-realtime-only ${all_platforms}"
 gen_config_files win/x64 "--target=x86_64-win64-vs12 --enable-realtime-only ${all_platforms}"
@@ -527,5 +533,4 @@ echo "Remove temporary directory."
 cd $BASE_DIR
 rm -rf $TEMP_DIR
 
-# TODO(fgalligan): Is "--disable-fast-unaligned" needed on mipsel?
 # TODO(fgalligan): Can we turn on "--enable-realtime-only" for mipsel?

@@ -22,6 +22,7 @@ class GrRenderTarget;
 
 class SkCanvas;
 class SkData;
+class SkDeferredCanvas;
 class SkDocument;
 class SkEvent;
 class SkTypeface;
@@ -38,9 +39,8 @@ public:
 #if SK_ANGLE
         kANGLE_DeviceType,
 #endif // SK_ANGLE
-        kNullGPU_DeviceType,
 #endif // SK_SUPPORT_GPU
-
+        kDeferred_DeviceType,
         kDeviceTypeCnt
     };
 
@@ -51,7 +51,6 @@ public:
     #if SK_ANGLE
             case kANGLE_DeviceType:
     #endif // SK_ANGLE
-            case kNullGPU_DeviceType:
                 return true;
             default:
                 return false;
@@ -101,7 +100,7 @@ public:
     SampleWindow(void* hwnd, int argc, char** argv, DeviceManager*);
     virtual ~SampleWindow();
 
-    virtual SkSurface* createSurface() SK_OVERRIDE {
+    SkSurface* createSurface() override {
         SkSurface* surface = NULL;
         if (fDevManager) {
             surface = fDevManager->createSurface(fDeviceType, this);
@@ -112,7 +111,7 @@ public:
         return surface;
     }
 
-    virtual void draw(SkCanvas*) SK_OVERRIDE;
+    void draw(SkCanvas*) override;
 
     void setDeviceType(DeviceType type);
     void toggleRendering();
@@ -138,24 +137,24 @@ public:
     DeviceType getDeviceType() const { return fDeviceType; }
 
 protected:
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE;
-    virtual bool onHandleKey(SkKey key) SK_OVERRIDE;
-    virtual bool onHandleChar(SkUnichar) SK_OVERRIDE;
-    virtual void onSizeChange() SK_OVERRIDE;
+    void onDraw(SkCanvas* canvas) override;
+    bool onHandleKey(SkKey key) override;
+    bool onHandleChar(SkUnichar) override;
+    void onSizeChange() override;
 
-    virtual SkCanvas* beforeChildren(SkCanvas*) SK_OVERRIDE;
-    virtual void afterChildren(SkCanvas*) SK_OVERRIDE;
-    virtual void beforeChild(SkView* child, SkCanvas* canvas) SK_OVERRIDE;
-    virtual void afterChild(SkView* child, SkCanvas* canvas) SK_OVERRIDE;
+    SkCanvas* beforeChildren(SkCanvas*) override;
+    void afterChildren(SkCanvas*) override;
+    void beforeChild(SkView* child, SkCanvas* canvas) override;
+    void afterChild(SkView* child, SkCanvas* canvas) override;
 
-    virtual bool onEvent(const SkEvent& evt) SK_OVERRIDE;
-    virtual bool onQuery(SkEvent* evt) SK_OVERRIDE;
+    bool onEvent(const SkEvent& evt) override;
+    bool onQuery(SkEvent* evt) override;
 
     virtual bool onDispatchClick(int x, int y, Click::State, void* owner,
-                                 unsigned modi) SK_OVERRIDE;
-    virtual bool onClick(Click* click) SK_OVERRIDE;
+                                 unsigned modi) override;
+    bool onClick(Click* click) override;
     virtual Click* onFindClickHandler(SkScalar x, SkScalar y,
-                                      unsigned modi) SK_OVERRIDE;
+                                      unsigned modi) override;
 
 private:
     class DefaultDeviceManager;
@@ -163,6 +162,8 @@ private:
     int fCurrIndex;
 
     SkPictureRecorder fRecorder;
+    SkAutoTDelete<SkSurface> fDeferredSurface;
+    SkAutoTDelete<SkDeferredCanvas> fDeferredCanvas;
     SkPath fClipPath;
 
     SkTouchGesture fGesture;
@@ -176,12 +177,9 @@ private:
     SkAutoTUnref<SkDocument> fPDFDocument;
 
     bool fUseClip;
-    bool fNClip;
     bool fAnimating;
     bool fRotate;
-    SkScalar fRotateAnimTime;
     bool fPerspAnim;
-    SkScalar fPerspAnimTime;
     bool fRequestGrabImage;
     bool fMeasureFPS;
     SkMSec fMeasureFPS_Time;
@@ -207,7 +205,7 @@ private:
     SkOSMenu::TriState fAAState;
     SkOSMenu::TriState fSubpixelState;
     int fHintingState;
-    int fFilterLevelIndex;
+    int fFilterQualityIndex;
     unsigned   fFlipAxis;
 
     int fMSAASampleCount;
@@ -238,6 +236,7 @@ private:
     int findByTitle(const char*);
     void listTitles();
     SkSize tileSize() const;
+    bool sendAnimatePulse();
 
     typedef SkOSWindow INHERITED;
 };

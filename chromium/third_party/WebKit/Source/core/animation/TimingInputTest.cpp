@@ -5,8 +5,9 @@
 #include "config.h"
 #include "core/animation/TimingInput.h"
 
-#include "bindings/core/v8/Dictionary.h"
-#include "core/animation/AnimationNodeTiming.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
+#include "bindings/core/v8/V8KeyframeEffectOptions.h"
+#include "core/animation/AnimationEffectTiming.h"
 #include "core/animation/AnimationTestHelper.h"
 #include <gtest/gtest.h>
 #include <v8.h>
@@ -23,21 +24,24 @@ protected:
 
     Timing applyTimingInputNumber(String timingProperty, double timingPropertyValue)
     {
-        v8::Handle<v8::Object> timingInput = v8::Object::New(m_isolate);
-        setV8ObjectPropertyAsNumber(timingInput, timingProperty, timingPropertyValue);
-        Dictionary timingInputDictionary = Dictionary(v8::Handle<v8::Value>::Cast(timingInput), m_isolate);
+        v8::Local<v8::Object> timingInput = v8::Object::New(m_isolate);
+        setV8ObjectPropertyAsNumber(m_isolate, timingInput, timingProperty, timingPropertyValue);
+        KeyframeEffectOptions timingInputDictionary;
+        V8KeyframeEffectOptions::toImpl(m_isolate, timingInput, timingInputDictionary, exceptionState);
         return TimingInput::convert(timingInputDictionary);
     }
 
     Timing applyTimingInputString(String timingProperty, String timingPropertyValue)
     {
-        v8::Handle<v8::Object> timingInput = v8::Object::New(m_isolate);
-        setV8ObjectPropertyAsString(timingInput, timingProperty, timingPropertyValue);
-        Dictionary timingInputDictionary = Dictionary(v8::Handle<v8::Value>::Cast(timingInput), m_isolate);
+        v8::Local<v8::Object> timingInput = v8::Object::New(m_isolate);
+        setV8ObjectPropertyAsString(m_isolate, timingInput, timingProperty, timingPropertyValue);
+        KeyframeEffectOptions timingInputDictionary;
+        V8KeyframeEffectOptions::toImpl(m_isolate, timingInput, timingInputDictionary, exceptionState);
         return TimingInput::convert(timingInputDictionary);
     }
 
     v8::Isolate* m_isolate;
+    TrackExceptionState exceptionState;
 
 private:
     V8TestingScope m_scope;
@@ -103,9 +107,9 @@ TEST_F(AnimationTimingInputTest, TimingInputIterationDuration)
 {
     EXPECT_EQ(1.1, applyTimingInputNumber("duration", 1100).iterationDuration);
     EXPECT_TRUE(std::isnan(applyTimingInputNumber("duration", -1000).iterationDuration));
-    EXPECT_EQ(1, applyTimingInputString("duration", "1000").iterationDuration);
+    EXPECT_TRUE(std::isnan(applyTimingInputString("duration", "1000").iterationDuration));
 
-    Timing timing = applyTimingInputString("duration", "Infinity");
+    Timing timing = applyTimingInputNumber("duration", std::numeric_limits<double>::infinity());
     EXPECT_TRUE(std::isinf(timing.iterationDuration));
     EXPECT_GT(timing.iterationDuration, 0);
 
@@ -163,10 +167,7 @@ TEST_F(AnimationTimingInputTest, TimingInputTimingFunction)
 TEST_F(AnimationTimingInputTest, TimingInputEmpty)
 {
     Timing controlTiming;
-
-    v8::Handle<v8::Object> timingInput = v8::Object::New(m_isolate);
-    Dictionary timingInputDictionary = Dictionary(v8::Handle<v8::Value>::Cast(timingInput), m_isolate);
-    Timing updatedTiming = TimingInput::convert(timingInputDictionary);
+    Timing updatedTiming = TimingInput::convert(KeyframeEffectOptions());
 
     EXPECT_EQ(controlTiming.startDelay, updatedTiming.startDelay);
     EXPECT_EQ(controlTiming.fillMode, updatedTiming.fillMode);

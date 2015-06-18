@@ -4,13 +4,14 @@
 
 #include "cc/layers/layer.h"
 
+#include "base/thread_task_runner_handle.h"
 #include "cc/debug/lap_timer.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
-
+#include "cc/test/test_task_graph_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
 
@@ -30,26 +31,27 @@ class MockLayerPainter : public LayerPainter {
 class LayerPerfTest : public testing::Test {
  public:
   LayerPerfTest()
-      : host_impl_(&proxy_, &shared_bitmap_manager_),
+      : host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_),
         fake_client_(FakeLayerTreeHostClient::DIRECT_3D),
         timer_(kWarmupRuns,
                base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
                kTimeCheckInterval) {}
 
  protected:
-  virtual void SetUp() override {
+  void SetUp() override {
     layer_tree_host_ = FakeLayerTreeHost::Create(&fake_client_);
     layer_tree_host_->InitializeSingleThreaded(
-        &fake_client_, base::MessageLoopProxy::current());
+        &fake_client_, base::ThreadTaskRunnerHandle::Get(), nullptr);
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     layer_tree_host_->SetRootLayer(nullptr);
     layer_tree_host_ = nullptr;
   }
 
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
 
   FakeLayerTreeHostClient fake_client_;

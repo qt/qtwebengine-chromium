@@ -32,18 +32,20 @@
 #include "WebNonCopyable.h"
 #include "WebPrivateOwnPtr.h"
 #include "WebSize.h"
+#include "WebTopControlsState.h"
 
 class SkBitmap;
 
 namespace blink {
 
 class WebCompositeAndReadbackAsyncCallback;
-class WebGraphicsContext3D;
+class WebCompositorAnimationTimeline;
 class WebLayer;
+class WebLayoutAndPaintAsyncCallback;
 struct WebPoint;
-struct WebRect;
-struct WebRenderingStats;
 struct WebSelectionBound;
+class WebSelection;
+class WebWidget;
 
 class WebLayerTreeView {
 public:
@@ -51,15 +53,12 @@ public:
 
     // Initialization and lifecycle --------------------------------------
 
-    // Indicates that the compositing surface used by this WebLayerTreeView is ready to use.
-    // A WebLayerTreeView may request a context from its client before the surface is ready,
-    // but it won't attempt to use it.
-    virtual void setSurfaceReady() = 0;
-
     // Sets the root of the tree. The root is set by way of the constructor.
     virtual void setRootLayer(const WebLayer&) = 0;
     virtual void clearRootLayer() = 0;
 
+    virtual void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*) { }
+    virtual void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*) { }
 
     // View properties ---------------------------------------------------
 
@@ -76,9 +75,6 @@ public:
     // Sets the background transparency for the viewport. The default is 'false'.
     virtual void setHasTransparentBackground(bool) = 0;
 
-    // Sets the overhang gutter bitmap.
-    virtual void setOverhangBitmap(const SkBitmap&) { }
-
     // Sets whether this view is visible. In threaded mode, a view that is not visible will not
     // composite or trigger updateAnimations() or layout() calls until it becomes visible.
     virtual void setVisible(bool) = 0;
@@ -93,9 +89,16 @@ public:
 
     virtual void heuristicsForGpuRasterizationUpdated(bool) { }
 
-    // Sets the offset from the top of the screen that the contents are displaced by due to top controls showing.
-    virtual void setTopControlsContentOffset(float) { }
+    // Sets the amount that the top controls are showing, from 0 (hidden) to 1
+    // (fully shown).
+    virtual void setTopControlsShownRatio(float) { }
 
+    // Update top controls permitted and current states
+    virtual void updateTopControlsState(WebTopControlsState constraints, WebTopControlsState current, bool animate) { }
+
+    // Set top controls height. If |shrinkViewport| is set to true, then Blink shrunk the viewport clip
+    // layers by the top controls height.
+    virtual void setTopControlsHeight(float height, bool shrinkViewport) { }
 
     // Flow control and scheduling ---------------------------------------
 
@@ -107,6 +110,11 @@ public:
 
     // Relays the end of a fling animation.
     virtual void didStopFlinging() { }
+
+    // Run layout and paint of all pending document changes asynchronously.
+    // The caller is resposible for keeping the WebLayoutAndPaintAsyncCallback object
+    // alive until it is called.
+    virtual void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) { }
 
     // The caller is responsible for keeping the WebCompositeAndReadbackAsyncCallback
     // object alive until it is called.
@@ -125,19 +133,21 @@ public:
 
     // Identify key layers to the compositor when using the pinch virtual viewport.
     virtual void registerViewportLayers(
-        const WebLayer* pageScaleLayerLayer,
+        const WebLayer* overscrollElasticityLayer,
+        const WebLayer* pageScaleLayer,
         const WebLayer* innerViewportScrollLayer,
         const WebLayer* outerViewportScrollLayer) { }
     virtual void clearViewportLayers() { }
 
     // Used to update the active selection bounds.
-    // If the (empty) selection is an insertion point, |start| and |end| will be identical with type |Caret|.
-    // If the (non-empty) selection has mixed RTL/LTR text, |start| and |end| may share the same type,
-    // |SelectionLeft| or |SelectionRight|.
+    // FIXME: Remove this overload when downstream consumers have been updated to use WebSelection, crbug.com/466672.
     virtual void registerSelection(const WebSelectionBound& start, const WebSelectionBound& end) { }
+    virtual void registerSelection(const WebSelection&) { }
     virtual void clearSelection() { }
 
     // Debugging / dangerous ---------------------------------------------
+
+    virtual int layerTreeId() const { return 0; }
 
     // Toggles the FPS counter in the HUD layer
     virtual void setShowFPSCounter(bool) { }

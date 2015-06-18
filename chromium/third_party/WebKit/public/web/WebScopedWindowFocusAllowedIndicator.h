@@ -35,18 +35,19 @@
 
 namespace blink {
 
-class WindowFocusAllowedIndicator;
+class ScopedWindowFocusAllowedIndicator;
+class WebDocument;
 
 class WebScopedWindowFocusAllowedIndicator {
 public:
-    WebScopedWindowFocusAllowedIndicator() { initialize(); }
+    explicit WebScopedWindowFocusAllowedIndicator(WebDocument* document) { initialize(document); }
     ~WebScopedWindowFocusAllowedIndicator() { reset(); }
 
 private:
-    BLINK_EXPORT void initialize();
+    BLINK_EXPORT void initialize(WebDocument*);
     BLINK_EXPORT void reset();
 
-    WebPrivateOwnPtr<WindowFocusAllowedIndicator> m_indicator;
+    WebPrivateOwnPtr<ScopedWindowFocusAllowedIndicator> m_private;
 };
 
 }

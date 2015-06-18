@@ -4,6 +4,7 @@
 
 #include "content/common/gpu/image_transport_surface_fbo_mac.h"
 
+#include "base/trace_event/trace_event.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/image_transport_surface_calayer_mac.h"
 #include "content/common/gpu/image_transport_surface_iosurface_mac.h"
@@ -14,6 +15,13 @@
 #include "ui/gl/gl_surface_osmesa.h"
 
 namespace content {
+
+scoped_refptr<gfx::GLSurface> ImageTransportSurfaceCreateNativeSurface(
+    GpuChannelManager* manager,
+    GpuCommandBufferStub* stub,
+    gfx::PluginWindowHandle handle) {
+  return new ImageTransportSurfaceFBO(manager, stub, handle);
+}
 
 ImageTransportSurfaceFBO::ImageTransportSurfaceFBO(
     GpuChannelManager* manager,
@@ -43,7 +51,9 @@ bool ImageTransportSurfaceFBO::Initialize() {
   // Only support IOSurfaces if the GL implementation is the native desktop GL.
   // IO surfaces will not work with, for example, OSMesa software renderer
   // GL contexts.
-  if (gfx::GetGLImplementation() != gfx::kGLImplementationDesktopGL &&
+  if (gfx::GetGLImplementation() !=
+      gfx::kGLImplementationDesktopGLCoreProfile &&
+      gfx::GetGLImplementation() != gfx::kGLImplementationDesktopGL &&
       gfx::GetGLImplementation() != gfx::kGLImplementationAppleGL)
     return false;
 
@@ -62,6 +72,10 @@ bool ImageTransportSurfaceFBO::DeferDraws() {
   storage_provider_->WillWriteToBackbuffer();
   // We should not have a pending send when we are drawing the next frame.
   DCHECK(!is_swap_buffers_send_pending_);
+
+  // The call to WillWriteToBackbuffer could potentially force a draw. Ensure
+  // that any changes made to the context's state are restored.
+  context_->RestoreStateIfDirtiedExternally();
   return false;
 }
 
@@ -79,6 +93,47 @@ bool ImageTransportSurfaceFBO::OnMakeCurrent(gfx::GLContext* context) {
 
   made_current_ = true;
   return true;
+}
+
+void ImageTransportSurfaceFBO::NotifyWasBound() {
+  // Sometimes calling glBindFramebuffer doesn't seem to be enough to get
+  // rendered contents to show up in the color attachment. It appears that doing
+  // a glBegin/End pair with program 0 is enough to tickle the driver into
+  // actually effecting the binding.
+  // http://crbug.com/435786
+  DCHECK(has_complete_framebuffer_);
+
+  // We will restore the current program after the dummy glBegin/End pair.
+  // Ensure that we will be able to restore this state before attempting to
+  // change it.
+  GLint old_program_signed = 0;
+  glGetIntegerv(GL_CURRENT_PROGRAM, &old_program_signed);
+  GLuint old_program = static_cast<GLuint>(old_program_signed);
+  if (old_program && glIsProgram(old_program)) {
+    // A deleted program cannot be re-bound.
+    GLint delete_status = GL_FALSE;
+    glGetProgramiv(old_program, GL_DELETE_STATUS, &delete_status);
+    if (delete_status == GL_TRUE)
+      return;
+    // A program which has had the most recent link fail cannot be re-bound.
+    GLint link_status = GL_FALSE;
+    glGetProgramiv(old_program, GL_LINK_STATUS, &link_status);
+    if (link_status != GL_TRUE)
+      return;
+  }
+
+  // Issue the dummy call and then restore the state.
+  glUseProgram(0);
+  GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+  DCHECK(status == GL_FRAMEBUFFER_COMPLETE);
+  if (gfx::GetGLImplementation() == gfx::kGLImplementationDesktopGL) {
+    // These aren't present in the core profile.
+    // TODO(ccameron): verify this workaround isn't still needed with
+    // the core profile.
+    glBegin(GL_TRIANGLES);
+    glEnd();
+  }
+  glUseProgram(old_program);
 }
 
 unsigned int ImageTransportSurfaceFBO::GetBackingFrameBufferObject() {
@@ -115,6 +170,11 @@ void ImageTransportSurfaceFBO::AdjustBufferAllocation() {
 }
 
 bool ImageTransportSurfaceFBO::SwapBuffers() {
+  TRACE_EVENT0("gpu", "ImageTransportSurfaceFBO::SwapBuffers");
+  return SwapBuffersInternal();
+}
+
+bool ImageTransportSurfaceFBO::SwapBuffersInternal() {
   DCHECK(backbuffer_suggested_allocation_);
   if (!frontbuffer_suggested_allocation_)
     return true;
@@ -122,13 +182,18 @@ bool ImageTransportSurfaceFBO::SwapBuffers() {
 
   // It is the responsibility of the storage provider to send the swap IPC.
   is_swap_buffers_send_pending_ = true;
-  storage_provider_->SwapBuffers(pixel_size_, scale_factor_);
+  storage_provider_->SwapBuffers();
+
+  // The call to swapBuffers could potentially result in an immediate draw.
+  // Ensure that any changes made to the context's state are restored.
+  context_->RestoreStateIfDirtiedExternally();
   return true;
 }
 
 void ImageTransportSurfaceFBO::SendSwapBuffers(uint64 surface_handle,
                                                const gfx::Size pixel_size,
                                                float scale_factor) {
+  TRACE_EVENT0("gpu", "ImageTransportSurfaceFBO::SendSwapBuffers");
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.surface_handle = surface_handle;
   params.size = pixel_size;
@@ -145,9 +210,8 @@ void ImageTransportSurfaceFBO::SetRendererID(int renderer_id) {
 
 bool ImageTransportSurfaceFBO::PostSubBuffer(
     int x, int y, int width, int height) {
-  // Mac does not support sub-buffer swaps.
-  NOTREACHED();
-  return false;
+  TRACE_EVENT0("gpu", "ImageTransportSurfaceFBO::PostSubBuffer");
+  return SwapBuffersInternal();
 }
 
 bool ImageTransportSurfaceFBO::SupportsPostSubBuffer() {
@@ -168,6 +232,7 @@ void* ImageTransportSurfaceFBO::GetDisplay() {
 
 void ImageTransportSurfaceFBO::OnBufferPresented(
     const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
+  TRACE_EVENT0("gpu", "ImageTransportSurfaceFBO::OnBufferPresented");
   SetRendererID(params.renderer_id);
   storage_provider_->SwapBuffersAckedByBrowser(params.disable_throttling);
 }
@@ -244,8 +309,10 @@ void ImageTransportSurfaceFBO::AllocateOrResizeFramebuffer(
   rounded_pixel_size_ = new_rounded_pixel_size;
   scale_factor_ = new_scale_factor;
 
-  if (!needs_new_storage)
+  if (!needs_new_storage) {
+    storage_provider_->FrameSizeChanged(pixel_size_, scale_factor_);
     return;
+  }
 
   TRACE_EVENT2("gpu", "ImageTransportSurfaceFBO::AllocateOrResizeFramebuffer",
                "width", new_rounded_pixel_size.width(),
@@ -254,7 +321,19 @@ void ImageTransportSurfaceFBO::AllocateOrResizeFramebuffer(
   // GL_TEXTURE_RECTANGLE_ARB is the best supported render target on
   // Mac OS X and is required for IOSurface interoperability.
   GLint previous_texture_id = 0;
-  glGetIntegerv(GL_TEXTURE_BINDING_RECTANGLE_ARB, &previous_texture_id);
+
+  GLenum texture_target = GL_TEXTURE_RECTANGLE_ARB;
+  GLenum texture_binding_target = GL_TEXTURE_BINDING_RECTANGLE_ARB;
+  // However, the remote core animation path on the core profile will
+  // be the preferred combination going forward.
+  if (gfx::GetGLImplementation() ==
+      gfx::kGLImplementationDesktopGLCoreProfile &&
+      ui::RemoteLayerAPISupported()) {
+    texture_target = GL_TEXTURE_2D;
+    texture_binding_target = GL_TEXTURE_BINDING_2D;
+  }
+
+  glGetIntegerv(texture_binding_target, &previous_texture_id);
 
   // Free the old IO Surface first to reduce memory fragmentation.
   DestroyFramebuffer();
@@ -264,17 +343,17 @@ void ImageTransportSurfaceFBO::AllocateOrResizeFramebuffer(
 
   glGenTextures(1, &texture_id_);
 
-  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, texture_id_);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB,
+  glBindTexture(texture_target, texture_id_);
+  glTexParameteri(texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(texture_target,
                   GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB,
+  glTexParameteri(texture_target,
                   GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
   glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
                             GL_COLOR_ATTACHMENT0_EXT,
-                            GL_TEXTURE_RECTANGLE_ARB,
+                            texture_target,
                             texture_id_,
                             0);
 
@@ -310,8 +389,10 @@ void ImageTransportSurfaceFBO::AllocateOrResizeFramebuffer(
   }
 
   bool allocated_color_buffer = storage_provider_->AllocateColorBufferStorage(
-      static_cast<CGLContextObj>(context_->GetHandle()), texture_id_,
-      rounded_pixel_size_, scale_factor_);
+      static_cast<CGLContextObj>(
+          context_->GetHandle()),
+          context_->GetStateWasDirtiedExternallyCallback(),
+          texture_id_, rounded_pixel_size_, scale_factor_);
   if (!allocated_color_buffer) {
     DLOG(ERROR) << "Failed to allocate color buffer storage.";
     DestroyFramebuffer();
@@ -326,8 +407,9 @@ void ImageTransportSurfaceFBO::AllocateOrResizeFramebuffer(
   }
 
   has_complete_framebuffer_ = true;
+  storage_provider_->FrameSizeChanged(pixel_size_, scale_factor_);
 
-  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, previous_texture_id);
+  glBindTexture(texture_target, previous_texture_id);
   // The FBO remains bound for this GL context.
 }
 

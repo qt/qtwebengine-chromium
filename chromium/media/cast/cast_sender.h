@@ -21,6 +21,10 @@
 #include "media/cast/cast_environment.h"
 #include "media/cast/net/cast_transport_sender.h"
 
+namespace gfx {
+class Size;
+}
+
 namespace media {
 class VideoFrame;
 
@@ -35,6 +39,23 @@ class VideoFrameInput : public base::RefCountedThreadSafe<VideoFrameInput> {
   virtual void InsertRawVideoFrame(
       const scoped_refptr<media::VideoFrame>& video_frame,
       const base::TimeTicks& capture_time) = 0;
+
+  // Creates a |VideoFrame| optimized for the encoder. When available, these
+  // frames offer performance benefits, such as memory copy elimination. The
+  // format is guaranteed to be I420 or NV12.
+  //
+  // Not every encoder supports this method. Use |CanCreateOptimizedFrames| to
+  // determine if you can and should use this method.
+  //
+  // Even if |CanCreateOptimizedFrames| indicates support, there are transient
+  // conditions during a session where optimized frames cannot be provided.  In
+  // this case, the caller must be able to account for a nullptr return value
+  // and instantiate its own media::VideoFrames.
+  virtual scoped_refptr<VideoFrame> MaybeCreateOptimizedFrame(
+      const gfx::Size& frame_size, base::TimeDelta timestamp) = 0;
+
+  // Returns true if the encoder supports creating optimized frames.
+  virtual bool CanCreateOptimizedFrames() const = 0;
 
  protected:
   virtual ~VideoFrameInput() {}
@@ -74,16 +95,18 @@ class CastSender {
   virtual scoped_refptr<AudioFrameInput> audio_frame_input() = 0;
 
   // Initialize the audio stack. Must be called in order to send audio frames.
-  // Status of the initialization will be returned on cast_initialization_cb.
+  // |status_change_cb| will be run as operational status changes.
   virtual void InitializeAudio(
       const AudioSenderConfig& audio_config,
-      const CastInitializationCallback& cast_initialization_cb) = 0;
+      const StatusChangeCallback& status_change_cb) = 0;
 
   // Initialize the video stack. Must be called in order to send video frames.
-  // Status of the initialization will be returned on cast_initialization_cb.
+  // |status_change_cb| will be run as operational status changes.
+  //
+  // TODO(miu): Remove the VEA-specific callbacks.  http://crbug.com/454029
   virtual void InitializeVideo(
       const VideoSenderConfig& video_config,
-      const CastInitializationCallback& cast_initialization_cb,
+      const StatusChangeCallback& status_change_cb,
       const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
       const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb) = 0;
 

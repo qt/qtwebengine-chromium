@@ -98,8 +98,7 @@ class BASE_EXPORT ThreadLocalStorage {
     // Set up the TLS slot.  Called by the constructor.
     // 'destructor' is a pointer to a function to perform per-thread cleanup of
     // this object.  If set to NULL, no cleanup is done for this TLS slot.
-    // Returns false on error.
-    bool Initialize(TLSDestructorFunc destructor);
+    void Initialize(TLSDestructorFunc destructor);
 
     // Free a previously allocated TLS 'slot'.
     // If a destructor was set for this slot, removes
@@ -136,6 +135,7 @@ class BASE_EXPORT ThreadLocalStorage {
     DISALLOW_COPY_AND_ASSIGN(Slot);
   };
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalStorage);
 };
 

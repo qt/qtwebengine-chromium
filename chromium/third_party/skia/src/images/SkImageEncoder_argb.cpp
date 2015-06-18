@@ -13,7 +13,7 @@
 
 class SkARGBImageEncoder : public SkImageEncoder {
 protected:
-    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality) SK_OVERRIDE;
+    bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality) override;
 
 private:
     typedef SkImageEncoder INHERITED;
@@ -98,8 +98,7 @@ bool SkARGBImageEncoder::onEncode(SkWStream* stream, const SkBitmap& bitmap, int
         return false;
     }
 
-    SkAutoLockColors ctLocker;
-    const SkPMColor* colors = ctLocker.lockColors(bitmap);
+    const SkPMColor* colors = bitmap.getColorTable() ? bitmap.getColorTable()->readColors() : NULL;
 
     const int argbStride = bitmap.width() * 4;
     SkAutoTDeleteArray<uint8_t> ada(new uint8_t[argbStride]);

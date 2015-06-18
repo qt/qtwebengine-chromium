@@ -8,9 +8,9 @@
 #include <string>
 
 #include "base/logging.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/win/msg_util.h"
 
 namespace gfx {
@@ -51,6 +51,7 @@ class GFX_EXPORT WindowImpl : public MessageMapInterface {
 
   // Returns the default window icon to use for windows of this type.
   virtual HICON GetDefaultWindowIcon() const;
+  virtual HICON GetSmallWindowIcon() const;
 
   // Returns the HWND associated with this Window.
   HWND hwnd() const { return hwnd_; }

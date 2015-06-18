@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//testing/test.gni")
+
 component("cast") {
   deps = [
     ":sender",
@@ -52,6 +54,7 @@ source_set("common") {
     "//base",
     "//crypto",
     "//net",
+    "//third_party/zlib",
   ]
 }
 
@@ -66,34 +69,34 @@ source_set("net") {
     "net/pacing/paced_sender.cc",
     "net/pacing/paced_sender.h",
     "net/rtcp/receiver_rtcp_event_subscriber.cc",
-    "net/rtcp/rtcp_defines.cc",
-    "net/rtcp/rtcp_defines.h",
-    "net/rtcp/rtcp.h",
     "net/rtcp/rtcp.cc",
+    "net/rtcp/rtcp.h",
     "net/rtcp/rtcp_builder.cc",
     "net/rtcp/rtcp_builder.h",
+    "net/rtcp/rtcp_defines.cc",
+    "net/rtcp/rtcp_defines.h",
     "net/rtcp/rtcp_utility.cc",
     "net/rtcp/rtcp_utility.h",
-    "net/rtp/packet_storage.cc",
-    "net/rtp/packet_storage.h",
-    "net/rtp/rtp_packetizer.cc",
-    "net/rtp/rtp_packetizer.h",
-    "net/rtp/rtp_sender.cc",
-    "net/rtp/rtp_sender.h",
-    "net/udp_transport.cc",
-    "net/udp_transport.h",
     "net/rtp/cast_message_builder.cc",
     "net/rtp/cast_message_builder.h",
     "net/rtp/frame_buffer.cc",
     "net/rtp/frame_buffer.h",
     "net/rtp/framer.cc",
     "net/rtp/framer.h",
+    "net/rtp/packet_storage.cc",
+    "net/rtp/packet_storage.h",
     "net/rtp/receiver_stats.cc",
     "net/rtp/receiver_stats.h",
+    "net/rtp/rtp_packetizer.cc",
+    "net/rtp/rtp_packetizer.h",
     "net/rtp/rtp_parser.cc",
     "net/rtp/rtp_parser.h",
     "net/rtp/rtp_receiver_defines.cc",
     "net/rtp/rtp_receiver_defines.h",
+    "net/rtp/rtp_sender.cc",
+    "net/rtp/rtp_sender.h",
+    "net/udp_transport.cc",
+    "net/udp_transport.h",
   ]
 
   deps = [
@@ -106,24 +109,28 @@ source_set("sender") {
     "cast_sender.h",
     "cast_sender_impl.cc",
     "cast_sender_impl.h",
-    "sender/audio_encoder.h",
     "sender/audio_encoder.cc",
-    "sender/audio_sender.h",
+    "sender/audio_encoder.h",
     "sender/audio_sender.cc",
-    "sender/congestion_control.h",
+    "sender/audio_sender.h",
     "sender/congestion_control.cc",
-    "sender/external_video_encoder.h",
+    "sender/congestion_control.h",
     "sender/external_video_encoder.cc",
-    "sender/fake_software_video_encoder.h",
+    "sender/external_video_encoder.h",
     "sender/fake_software_video_encoder.cc",
+    "sender/fake_software_video_encoder.h",
     "sender/frame_sender.cc",
     "sender/frame_sender.h",
+    "sender/size_adaptable_video_encoder_base.cc",
+    "sender/size_adaptable_video_encoder_base.h",
     "sender/software_video_encoder.h",
+    "sender/video_encoder.cc",
     "sender/video_encoder.h",
-    "sender/video_encoder_impl.h",
     "sender/video_encoder_impl.cc",
-    "sender/video_sender.h",
+    "sender/video_encoder_impl.h",
+    "sender/video_frame_factory.h",
     "sender/video_sender.cc",
+    "sender/video_sender.h",
     "sender/vp8_encoder.cc",
     "sender/vp8_encoder.h",
   ]
@@ -135,6 +142,7 @@ source_set("sender") {
     "//media:shared_memory_support",
     "//third_party/libvpx",
     "//third_party/opus",
+    "//ui/gfx/geometry",
   ]
 
   # use a restricted subset of media and no software codecs on iOS
@@ -146,12 +154,33 @@ source_set("sender") {
       "//third_party/opus",
     ]
     sources -= [
-      "sender/external_video_encoder.h",
       "sender/external_video_encoder.cc",
-      "sender/video_encoder_impl.h",
+      "sender/external_video_encoder.h",
       "sender/video_encoder_impl.cc",
+      "sender/video_encoder_impl.h",
       "sender/vp8_encoder.cc",
       "sender/vp8_encoder.h",
+    ]
+  }
+
+  libs = []
+
+  # iOS and OS X encoders
+  if (is_ios || is_mac) {
+    sources += [
+      "sender/h264_vt_encoder.cc",
+      "sender/h264_vt_encoder.h",
+    ]
+
+    libs += [
+      "CoreVideo.framework",
+    ]
+  }
+
+  if (is_mac) {
+    # Required by audio_encoder.cc.
+    libs += [
+      "AudioToolbox.framework",
     ]
   }
 }
@@ -190,20 +219,20 @@ source_set("receiver") {
   }
 }
 
-source_set("test_support") {
+static_library("test_support") {
   testonly = true
   sources = [
-# TODO(hclam): FFmpeg.
-#    "test/fake_media_source.cc",
-#    "test/fake_media_source.h",
+    # TODO(hclam): FFmpeg.
+    #    "test/fake_media_source.cc",
+    #    "test/fake_media_source.h",
     "test/fake_single_thread_task_runner.cc",
     "test/fake_single_thread_task_runner.h",
+    "test/loopback_transport.cc",
+    "test/loopback_transport.h",
     "test/skewed_single_thread_task_runner.cc",
     "test/skewed_single_thread_task_runner.h",
     "test/skewed_tick_clock.cc",
     "test/skewed_tick_clock.h",
-    "test/loopback_transport.cc",
-    "test/loopback_transport.h",
     "test/utility/audio_utility.cc",
     "test/utility/audio_utility.h",
     "test/utility/barcode.cc",
@@ -218,10 +247,10 @@ source_set("test_support") {
     "test/utility/net_utility.h",
     "test/utility/standalone_cast_environment.cc",
     "test/utility/standalone_cast_environment.h",
-    "test/utility/video_utility.cc",
-    "test/utility/video_utility.h",
     "test/utility/udp_proxy.cc",
     "test/utility/udp_proxy.h",
+    "test/utility/video_utility.cc",
+    "test/utility/video_utility.h",
   ]
 
   deps = [
@@ -229,8 +258,9 @@ source_set("test_support") {
     ":receiver",
     "//base/test:test_support",
     "//testing/gtest",
-# TODO(hclam): Does not build on ARM yet.
-#    "//third_party/ffmpeg",
+
+    # TODO(hclam): Does not build on ARM yet.
+    #    "//third_party/ffmpeg",
     "//third_party/libyuv",
     "//third_party/mt19937ar",
     "//ui/gfx",
@@ -241,21 +271,24 @@ source_set("test_support") {
 test("cast_unittests") {
   sources = [
     "logging/encoding_event_subscriber_unittest.cc",
-    "logging/serialize_deserialize_test.cc",
     "logging/logging_impl_unittest.cc",
     "logging/logging_raw_unittest.cc",
     "logging/receiver_time_offset_estimator_impl_unittest.cc",
+    "logging/serialize_deserialize_test.cc",
     "logging/simple_event_subscriber_unittest.cc",
     "logging/stats_event_subscriber_unittest.cc",
     "net/cast_transport_sender_impl_unittest.cc",
+    "net/mock_cast_transport_sender.cc",
+    "net/mock_cast_transport_sender.h",
     "net/pacing/mock_paced_packet_sender.cc",
     "net/pacing/mock_paced_packet_sender.h",
     "net/pacing/paced_sender_unittest.cc",
+    "net/rtcp/receiver_rtcp_event_subscriber_unittest.cc",
     "net/rtcp/rtcp_builder_unittest.cc",
     "net/rtcp/rtcp_unittest.cc",
     "net/rtcp/rtcp_utility_unittest.cc",
-    "net/rtcp/receiver_rtcp_event_subscriber_unittest.cc",
-# TODO(miu): The following two are test utility modules.  Rename/move the files.
+
+    # TODO(miu): The following two are test utility modules.  Rename/move the files.
     "net/rtcp/test_rtcp_packet_builder.cc",
     "net/rtcp/test_rtcp_packet_builder.h",
     "net/rtp/cast_message_builder_unittest.cc",
@@ -268,8 +301,8 @@ test("cast_unittests") {
     "net/rtp/rtp_header_parser.cc",
     "net/rtp/rtp_header_parser.h",
     "net/rtp/rtp_packet_builder.cc",
-    "net/rtp/rtp_parser_unittest.cc",
     "net/rtp/rtp_packetizer_unittest.cc",
+    "net/rtp/rtp_parser_unittest.cc",
     "net/rtp/rtp_receiver_defines.h",
     "net/udp_transport_unittest.cc",
     "receiver/audio_decoder_unittest.cc",
@@ -278,14 +311,13 @@ test("cast_unittests") {
     "sender/audio_encoder_unittest.cc",
     "sender/audio_sender_unittest.cc",
     "sender/congestion_control_unittest.cc",
-    "sender/external_video_encoder_unittest.cc",
-    "sender/video_encoder_impl_unittest.cc",
+    "sender/fake_video_encode_accelerator_factory.cc",
+    "sender/fake_video_encode_accelerator_factory.h",
+    "sender/video_encoder_unittest.cc",
     "sender/video_sender_unittest.cc",
     "test/end2end_unittest.cc",
     "test/fake_receiver_time_offset_estimator.cc",
     "test/fake_receiver_time_offset_estimator.h",
-    "test/fake_video_encode_accelerator.cc",
-    "test/fake_video_encode_accelerator.h",
     "test/utility/audio_utility_unittest.cc",
     "test/utility/barcode_unittest.cc",
   ]
@@ -300,6 +332,23 @@ test("cast_unittests") {
     "//testing/gmock",
     "//testing/gtest",
   ]
+}
+
+if (is_ios || is_mac) {
+  test("cast_h264_vt_encoder_unittests") {
+    sources = [
+      "sender/h264_vt_encoder_unittest.cc",
+    ]
+    deps = [
+      ":common",
+      ":sender",
+      ":test_support",
+      "//base/test:test_support",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/ffmpeg",
+    ]
+  }
 }
 
 executable("generate_barcode_video") {
@@ -339,4 +388,40 @@ executable("udp_proxy") {
     "//base",
     "//net",
   ]
+}
+
+if (is_linux && !is_chromeos) {
+  # TODO(GYP): Figure out which of these work and are needed on other platforms.
+  test("cast_benchmarks") {
+    sources = [
+      "test/cast_benchmarks.cc",
+      "test/fake_single_thread_task_runner.cc",
+      "test/fake_single_thread_task_runner.h",
+      "test/utility/test_util.cc",
+      "test/utility/test_util.h",
+    ]
+
+    deps = [
+      ":common",
+      ":net",
+      ":receiver",
+      ":sender",
+      ":test_support",
+      "//base/test:test_support",
+      "//net",
+      "//testing/gtest",
+    ]
+  }
+
+  test("tap_proxy") {
+    sources = [
+      "test/utility/tap_proxy.cc",
+    ]
+
+    deps = [
+      ":test_support",
+      "//base",
+      "//media",
+    ]
+  }
 }

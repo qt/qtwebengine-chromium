@@ -8,39 +8,62 @@
 
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 
 namespace ui {
 
-bool IsTouchscreenInternal(const base::FilePath& path) {
+InputDeviceType GetInputDeviceTypeFromPath(const base::FilePath& path) {
+  DCHECK(!base::MessageLoopForUI::IsCurrent());
   std::string event_node = path.BaseName().value();
   if (event_node.empty() || !StartsWithASCII(event_node, "event", false))
-    return false;
+    return InputDeviceType::INPUT_DEVICE_UNKNOWN;
 
-  // Extract id "XXX" from "eventXXX"
-  std::string event_node_id = event_node.substr(5);
+  // Find sysfs device path for this device.
+  base::FilePath sysfs_path =
+      base::FilePath(FILE_PATH_LITERAL("/sys/class/input"));
+  sysfs_path = sysfs_path.Append(path.BaseName());
+  sysfs_path = base::MakeAbsoluteFilePath(sysfs_path);
 
-  // I2C input device registers its dev input node at
-  // /sys/bus/i2c/devices/*/input/inputXXX/eventXXX
-  base::FileEnumerator i2c_enum(
-      base::FilePath(FILE_PATH_LITERAL("/sys/bus/i2c/devices/")),
-      false,
-      base::FileEnumerator::DIRECTORIES);
-  for (base::FilePath i2c_name = i2c_enum.Next(); !i2c_name.empty();
-       i2c_name = i2c_enum.Next()) {
-    base::FileEnumerator input_enum(
-        i2c_name.Append(FILE_PATH_LITERAL("input")),
-        false,
-        base::FileEnumerator::DIRECTORIES,
-        FILE_PATH_LITERAL("input*"));
-    for (base::FilePath input = input_enum.Next(); !input.empty();
-         input = input_enum.Next()) {
-      if (input.BaseName().value().substr(5) == event_node_id)
-        return true;
-    }
+  // Device does not exist.
+  if (sysfs_path.empty())
+    return InputDeviceType::INPUT_DEVICE_UNKNOWN;
+
+  // Check ancestor devices for a known bus attachment.
+  for (base::FilePath path = sysfs_path; path != base::FilePath("/");
+       path = path.DirName()) {
+    // Bluetooth LE devices are virtual "uhid" devices.
+    if (path ==
+        base::FilePath(FILE_PATH_LITERAL("/sys/devices/virtual/misc/uhid")))
+      return InputDeviceType::INPUT_DEVICE_EXTERNAL;
+
+    std::string subsystem_path =
+        base::MakeAbsoluteFilePath(path.Append(FILE_PATH_LITERAL("subsystem")))
+            .value();
+    if (subsystem_path.empty())
+      continue;
+
+    // Internal bus attachments.
+    if (subsystem_path == "/sys/bus/pci")
+      return InputDeviceType::INPUT_DEVICE_INTERNAL;
+    if (subsystem_path == "/sys/bus/i2c")
+      return InputDeviceType::INPUT_DEVICE_INTERNAL;
+    if (subsystem_path == "/sys/bus/acpi")
+      return InputDeviceType::INPUT_DEVICE_INTERNAL;
+    if (subsystem_path == "/sys/bus/serio")
+      return InputDeviceType::INPUT_DEVICE_INTERNAL;
+    if (subsystem_path == "/sys/bus/platform")
+      return InputDeviceType::INPUT_DEVICE_INTERNAL;
+
+    // External bus attachments.
+    if (subsystem_path == "/sys/bus/usb")
+      return InputDeviceType::INPUT_DEVICE_EXTERNAL;
+    if (subsystem_path == "/sys/class/bluetooth")
+      return InputDeviceType::INPUT_DEVICE_EXTERNAL;
   }
 
-  return false;
+  return InputDeviceType::INPUT_DEVICE_UNKNOWN;
 }
 
 }  // namespace

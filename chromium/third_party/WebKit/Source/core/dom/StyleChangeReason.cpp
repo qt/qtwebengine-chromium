@@ -15,6 +15,7 @@ namespace StyleChangeReason {
 const char ActiveStylesheetsUpdate[] = "ActiveStylesheetsUpdate";
 const char Animation[] = "Animation";
 const char Attribute[] = "Attribute";
+const char CompositorProxy[] = "CompositorProxy";
 const char ControlValue[] = "ControlValue";
 const char Control[] = "Control";
 const char DesignMode[] = "DesignMode";
@@ -23,6 +24,7 @@ const char FontSizeChange[] = "FontSizeChange";
 const char Fonts[] = "Fonts";
 const char FullScreen[] = "FullScreen";
 const char Inline[] = "Inline";
+const char InlineCSSStyleMutated[] = "Inline CSS style declaration was mutated";
 const char Inspector[] = "Inspector";
 const char Language[] = "Language";
 const char LinkColorChange[] = "LinkColorChange";
@@ -49,6 +51,7 @@ DEFINE_GLOBAL(AtomicString, Active)
 DEFINE_GLOBAL(AtomicString, Disabled)
 DEFINE_GLOBAL(AtomicString, Focus)
 DEFINE_GLOBAL(AtomicString, Hover)
+DEFINE_GLOBAL(AtomicString, Past)
 DEFINE_GLOBAL(AtomicString, Unresolved)
 
 void init()
@@ -59,6 +62,7 @@ void init()
     new (NotNull, (void*)&Disabled) AtomicString(":disabled", AtomicString::ConstructFromLiteral);
     new (NotNull, (void*)&Focus) AtomicString(":focus", AtomicString::ConstructFromLiteral);
     new (NotNull, (void*)&Hover) AtomicString(":hover", AtomicString::ConstructFromLiteral);
+    new (NotNull, (void*)&Past) AtomicString(":past", AtomicString::ConstructFromLiteral);
     new (NotNull, (void*)&Unresolved) AtomicString(":unresolved", AtomicString::ConstructFromLiteral);
 }
 

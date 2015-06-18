@@ -32,7 +32,8 @@ void WebFilterAnimationCurveImpl::add(const WebFilterKeyframe& keyframe,
       static_cast<const WebFilterOperationsImpl&>(keyframe.value())
           .AsFilterOperations();
   curve_->AddKeyframe(cc::FilterKeyframe::Create(
-      keyframe.time(), filter_operations, CreateTimingFunction(type)));
+      base::TimeDelta::FromSecondsD(keyframe.time()), filter_operations,
+      CreateTimingFunction(type)));
 }
 
 void WebFilterAnimationCurveImpl::add(const WebFilterKeyframe& keyframe,
@@ -44,21 +45,43 @@ void WebFilterAnimationCurveImpl::add(const WebFilterKeyframe& keyframe,
       static_cast<const WebFilterOperationsImpl&>(keyframe.value())
           .AsFilterOperations();
   curve_->AddKeyframe(cc::FilterKeyframe::Create(
-      keyframe.time(),
-      filter_operations,
+      base::TimeDelta::FromSecondsD(keyframe.time()), filter_operations,
       cc::CubicBezierTimingFunction::Create(x1, y1, x2, y2)));
 }
 
-void WebFilterAnimationCurveImpl::setTimingFunction(TimingFunctionType type) {
+void WebFilterAnimationCurveImpl::add(const WebFilterKeyframe& keyframe,
+                                      int steps,
+                                      float steps_start_offset) {
+  const cc::FilterOperations& filter_operations =
+      static_cast<const WebFilterOperationsImpl&>(keyframe.value())
+          .AsFilterOperations();
+  curve_->AddKeyframe(cc::FilterKeyframe::Create(
+      base::TimeDelta::FromSecondsD(keyframe.time()), filter_operations,
+      cc::StepsTimingFunction::Create(steps, steps_start_offset)));
+}
+
+void WebFilterAnimationCurveImpl::setLinearTimingFunction() {
+  curve_->SetTimingFunction(nullptr);
+}
+
+void WebFilterAnimationCurveImpl::setCubicBezierTimingFunction(
+    TimingFunctionType type) {
   curve_->SetTimingFunction(CreateTimingFunction(type));
 }
 
-void WebFilterAnimationCurveImpl::setTimingFunction(double x1,
-                                                    double y1,
-                                                    double x2,
-                                                    double y2) {
+void WebFilterAnimationCurveImpl::setCubicBezierTimingFunction(double x1,
+                                                               double y1,
+                                                               double x2,
+                                                               double y2) {
   curve_->SetTimingFunction(
       cc::CubicBezierTimingFunction::Create(x1, y1, x2, y2).Pass());
+}
+
+void WebFilterAnimationCurveImpl::setStepsTimingFunction(
+    int number_of_steps,
+    float steps_start_offset) {
+  curve_->SetTimingFunction(cc::StepsTimingFunction::Create(
+                                number_of_steps, steps_start_offset).Pass());
 }
 
 scoped_ptr<cc::AnimationCurve>

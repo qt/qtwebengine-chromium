@@ -8,6 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/device_sensors/inertial_sensor_consts.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -16,10 +17,10 @@ namespace {
 
 class FakeSensorManagerAndroid : public SensorManagerAndroid {
  public:
-  FakeSensorManagerAndroid() { }
-  virtual ~FakeSensorManagerAndroid() { }
+  FakeSensorManagerAndroid() {}
+  ~FakeSensorManagerAndroid() override {}
 
-  virtual int GetNumberActiveDeviceMotionSensors() override {
+  int GetNumberActiveDeviceMotionSensors() override {
     return number_active_sensors_;
   }
 
@@ -28,12 +29,8 @@ class FakeSensorManagerAndroid : public SensorManagerAndroid {
   }
 
  protected:
-  virtual bool Start(EventType event_type) override {
-    return true;
-  }
-
-  virtual void Stop(EventType event_type) override {
-  }
+  bool Start(EventType event_type) override { return true; }
+  void Stop(EventType event_type) override {}
 
  private:
   int number_active_sensors_;
@@ -50,6 +47,7 @@ class AndroidSensorManagerTest : public testing::Test {
   scoped_ptr<DeviceLightHardwareBuffer> light_buffer_;
   scoped_ptr<DeviceMotionHardwareBuffer> motion_buffer_;
   scoped_ptr<DeviceOrientationHardwareBuffer> orientation_buffer_;
+  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 TEST_F(AndroidSensorManagerTest, ThreeDeviceMotionSensorsActive) {

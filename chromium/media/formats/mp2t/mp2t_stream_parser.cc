@@ -6,13 +6,10 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
-#include "media/base/audio_decoder_config.h"
 #include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/text_track_config.h"
-#include "media/base/video_decoder_config.h"
 #include "media/formats/mp2t/es_parser.h"
 #include "media/formats/mp2t/es_parser_adts.h"
 #include "media/formats/mp2t/es_parser_h264.h"
@@ -169,8 +166,8 @@ void Mp2tStreamParser::Init(
     const InitCB& init_cb,
     const NewConfigCB& config_cb,
     const NewBuffersCB& new_buffers_cb,
-    bool /* ignore_text_tracks */ ,
-    const NeedKeyCB& need_key_cb,
+    bool /* ignore_text_tracks */,
+    const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
     const NewMediaSegmentCB& new_segment_cb,
     const base::Closure& end_of_segment_cb,
     const LogCB& log_cb) {
@@ -179,13 +176,13 @@ void Mp2tStreamParser::Init(
   DCHECK(!init_cb.is_null());
   DCHECK(!config_cb.is_null());
   DCHECK(!new_buffers_cb.is_null());
-  DCHECK(!need_key_cb.is_null());
+  DCHECK(!encrypted_media_init_data_cb.is_null());
   DCHECK(!end_of_segment_cb.is_null());
 
   init_cb_ = init_cb;
   config_cb_ = config_cb;
   new_buffers_cb_ = new_buffers_cb;
-  need_key_cb_ = need_key_cb;
+  encrypted_media_init_data_cb_ = encrypted_media_init_data_cb;
   new_segment_cb_ = new_segment_cb;
   end_of_segment_cb_ = end_of_segment_cb;
   log_cb_ = log_cb;
@@ -512,8 +509,7 @@ bool Mp2tStreamParser::FinishInitializationIfNeeded() {
 
   // For Mpeg2 TS, the duration is not known.
   DVLOG(1) << "Mpeg2TS stream parser initialization done";
-  base::ResetAndReturn(&init_cb_)
-      .Run(true, InitParameters(kInfiniteDuration()));
+  base::ResetAndReturn(&init_cb_).Run(InitParameters(kInfiniteDuration()));
   is_initialized_ = true;
 
   return true;
@@ -559,8 +555,8 @@ void Mp2tStreamParser::OnEmitVideoBuffer(
       << stream_parser_buffer->timestamp().InMilliseconds()
       << " dur="
       << stream_parser_buffer->duration().InMilliseconds()
-      << " IsKeyframe="
-      << stream_parser_buffer->IsKeyframe();
+      << " is_key_frame="
+      << stream_parser_buffer->is_key_frame();
 
   // Ignore the incoming buffer if it is not associated with any config.
   if (buffer_queue_chain_.empty()) {

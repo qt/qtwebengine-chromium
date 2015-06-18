@@ -8,7 +8,7 @@
 #include <queue>
 #include <set>
 
-#include "base/callback_forward.h"
+#include "base/callback.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
@@ -40,7 +40,7 @@ class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
                                         public IPC::MessageFilter {
  public:
   InputEventFilter(
-      IPC::Listener* main_listener,
+      const base::Callback<void(const IPC::Message&)>& main_listener,
       const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner,
       const scoped_refptr<base::MessageLoopProxy>& target_loop);
 
@@ -71,13 +71,12 @@ class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
  private:
   ~InputEventFilter() override;
 
-  void ForwardToMainListener(const IPC::Message& message);
   void ForwardToHandler(const IPC::Message& message);
   void SendMessage(scoped_ptr<IPC::Message> message);
   void SendMessageOnIOThread(scoped_ptr<IPC::Message> message);
 
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
-  IPC::Listener* main_listener_;
+  base::Callback<void(const IPC::Message&)> main_listener_;
 
   // The sender_ only gets invoked on the thread corresponding to io_loop_.
   scoped_refptr<base::MessageLoopProxy> io_loop_;
@@ -92,9 +91,6 @@ class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
 
   // Indicates the routing_ids for which input events should be filtered.
   std::set<int> routes_;
-
-  // Specifies whether overscroll notifications are forwarded to the host.
-  bool overscroll_notifications_enabled_;
 
   // Used to intercept overscroll notifications while an event is being
   // dispatched.  If the event causes overscroll, the overscroll metadata can be

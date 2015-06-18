@@ -10,6 +10,8 @@ import("../build/webrtc.gni")
 
 source_set("video") {
   sources = [
+    "audio_receive_stream.cc",
+    "audio_receive_stream.h",
     "call.cc",
     "encoded_frame_callback_adapter.cc",
     "encoded_frame_callback_adapter.h",
@@ -19,6 +21,8 @@ source_set("video") {
     "send_statistics_proxy.h",
     "transport_adapter.cc",
     "transport_adapter.h",
+    "video_decoder.cc",
+    "video_encoder.cc",
     "video_receive_stream.cc",
     "video_receive_stream.h",
     "video_send_stream.cc",
@@ -34,6 +38,9 @@ source_set("video") {
     configs -= [ "//build/config/clang:find_bad_constructs" ]
   }
 
-  deps = [ "../video_engine:video_engine_core" ]
+  deps = [
+    "..:webrtc_common",
+    "../video_engine:video_engine_core",
+  ]
 }
 

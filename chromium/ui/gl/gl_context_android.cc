@@ -26,18 +26,18 @@ class GLNonOwnedContext : public GLContextReal {
   GLNonOwnedContext(GLShareGroup* share_group);
 
   // Implement GLContext.
-  virtual bool Initialize(GLSurface* compatible_surface,
-                          GpuPreference gpu_preference) override;
-  virtual void Destroy() override {}
-  virtual bool MakeCurrent(GLSurface* surface) override;
-  virtual void ReleaseCurrent(GLSurface* surface) override {}
-  virtual bool IsCurrent(GLSurface* surface) override { return true; }
-  virtual void* GetHandle() override { return NULL; }
-  virtual void SetSwapInterval(int interval) override {}
-  virtual std::string GetExtensions() override;
+  bool Initialize(GLSurface* compatible_surface,
+                  GpuPreference gpu_preference) override;
+  void Destroy() override {}
+  bool MakeCurrent(GLSurface* surface) override;
+  void ReleaseCurrent(GLSurface* surface) override {}
+  bool IsCurrent(GLSurface* surface) override { return true; }
+  void* GetHandle() override { return NULL; }
+  void OnSetSwapInterval(int interval) override {}
+  std::string GetExtensions() override;
 
  protected:
-  virtual ~GLNonOwnedContext() {}
+  ~GLNonOwnedContext() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GLNonOwnedContext);
@@ -120,7 +120,7 @@ bool GLContextEGL::GetTotalGpuMemory(size_t* bytes) {
   // Droid Razr M(1GB)  114MB (normally 57MB)
   // Galaxy Nexus(1GB)  100MB (normally 50MB)
   // Xoom(1GB)          100MB (normally 50MB)
-  // Nexus S(low-end)   12MB (normally 8MB)
+  // Nexus S(low-end)   8MB (normally 8MB)
   // Note that the compositor now uses only some of this memory for
   // pre-painting and uses the rest only for 'emergencies'.
   static size_t limit_bytes = 0;
@@ -140,9 +140,7 @@ bool GLContextEGL::GetTotalGpuMemory(size_t* bytes) {
       // Low-end devices have 512MB or less memory by definition
       // so we hard code the limit rather than relying on the heuristics
       // above. Low-end devices use 4444 textures so we can use a lower limit.
-      // NOTE: Low-end uses 2/3 (67%) of this memory in practice, so we have
-      // increased the limit to 12 (8MB, or 12MB in emergencies).
-      limit_bytes = 12;
+      limit_bytes = 8;
     }
     limit_bytes = limit_bytes * 1024 * 1024;
   }

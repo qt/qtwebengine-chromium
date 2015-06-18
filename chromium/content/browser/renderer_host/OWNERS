@@ -10,8 +10,6 @@ asvitkine@chromium.org
 # for GPU-related stuff in *mac*
 kbr@chromium.org
 ccameron@chromium.org
-per-file compositing_iosurface*=hclam@chromium.org
-per-file compositing_iosurface*=miu@chromium.org
 
 # for *android*
 sievers@chromium.org
@@ -20,6 +18,7 @@ aelias@chromium.org
 # For touch/gesture specific changes
 rjkroege@chromium.org
 sadrul@chromium.org
+jdduke@chromium.org
 
 # WebSocket
 per-file *websocket*=ricea@chromium.org

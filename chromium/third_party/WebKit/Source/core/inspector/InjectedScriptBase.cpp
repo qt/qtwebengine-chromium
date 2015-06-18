@@ -34,6 +34,7 @@
 #include "core/inspector/InjectedScriptBase.h"
 
 #include "bindings/core/v8/ScriptFunctionCall.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "platform/JSONValues.h"
@@ -43,6 +44,15 @@ using blink::TypeBuilder::Array;
 using blink::TypeBuilder::Runtime::RemoteObject;
 
 namespace blink {
+
+PassRefPtr<JSONValue> toJSONValue(const ScriptValue& value)
+{
+    ScriptState* scriptState = value.scriptState();
+    ASSERT(scriptState->contextIsValid());
+    ScriptState::Scope scope(scriptState);
+    NonThrowableExceptionState exceptionState;
+    return ScriptValue::to<JSONValuePtr>(scriptState->isolate(), value, exceptionState);
+}
 
 static PassRefPtr<TypeBuilder::Debugger::ExceptionDetails> toExceptionDetails(PassRefPtr<JSONObject> object)
 {
@@ -132,10 +142,11 @@ ScriptValue InjectedScriptBase::callFunctionWithEvalEnabled(ScriptFunctionCall& 
 {
     ASSERT(!isEmpty());
     ExecutionContext* executionContext = m_injectedScriptObject.scriptState()->executionContext();
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FunctionCall", "data", InspectorFunctionCallEvent::data(executionContext, 0, name(), 1));
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(executionContext, 0, name(), 1);
+    ScriptState::Scope scope(m_injectedScriptObject.scriptState());
+    v8::Local<v8::Function> functionObj = function.function();
+    DevToolsFunctionInfo info(functionObj);
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FunctionCall", "data", InspectorFunctionCallEvent::data(executionContext, info.scriptId(), "InjectedScriptSource.js", info.lineNumber()));
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willCallFunction(executionContext, info);
 
     ScriptState* scriptState = m_injectedScriptObject.scriptState();
     bool evalIsDisabled = false;
@@ -152,7 +163,7 @@ ScriptValue InjectedScriptBase::callFunctionWithEvalEnabled(ScriptFunctionCall& 
         scriptState->setEvalEnabled(false);
 
     InspectorInstrumentation::didCallFunction(cookie);
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
     return resultValue;
 }
 
@@ -168,7 +179,7 @@ void InjectedScriptBase::makeCall(ScriptFunctionCall& function, RefPtr<JSONValue
 
     ASSERT(!hadException);
     if (!hadException) {
-        *result = resultValue.toJSONValue(m_injectedScriptObject.scriptState());
+        *result = toJSONValue(resultValue);
         if (!*result)
             *result = JSONString::create(String::format("Object has too long reference chain(must not be longer than %d)", JSONValue::maxDepth));
     } else {
@@ -209,5 +220,20 @@ void InjectedScriptBase::makeEvalCall(ErrorString* errorString, ScriptFunctionCa
     *wasThrown = wasThrownVal;
 }
 
-} // namespace blink
+void InjectedScriptBase::makeCallWithExceptionDetails(ScriptFunctionCall& function, RefPtr<JSONValue>* result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* exceptionDetails)
+{
+    ScriptState::Scope scope(injectedScriptObject().scriptState());
+    v8::TryCatch tryCatch;
+    ScriptValue resultValue = function.callWithoutExceptionHandling();
+    if (tryCatch.HasCaught()) {
+        v8::Local<v8::Message> message = tryCatch.Message();
+        String text = !message.IsEmpty() ? toCoreStringWithUndefinedOrNullCheck(message->Get()) : "Internal error";
+        *exceptionDetails = TypeBuilder::Debugger::ExceptionDetails::create().setText(text);
+    } else {
+        *result = toJSONValue(resultValue);
+        if (!*result)
+            *result = JSONString::create(String::format("Object has too long reference chain(must not be longer than %d)", JSONValue::maxDepth));
+    }
+}
 
+} // namespace blink

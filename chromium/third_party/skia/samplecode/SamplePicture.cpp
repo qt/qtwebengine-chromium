@@ -13,7 +13,7 @@
 #include "SkColorFilter.h"
 #include "SkColorPriv.h"
 #include "SkData.h"
-#include "SkDecodingImageGenerator.h"
+#include "SkImageGenerator.h"
 #include "SkDumpCanvas.h"
 #include "SkGradientShader.h"
 #include "SkGraphics.h"
@@ -40,8 +40,7 @@ static SkBitmap load_bitmap() {
     SkString pngFilename = GetResourcePath("mandrill_512.png");
     SkAutoDataUnref data(SkData::NewFromFileName(pngFilename.c_str()));
     if (data.get() != NULL) {
-        SkInstallDiscardablePixelRef(SkDecodingImageGenerator::Create(
-            data, SkDecodingImageGenerator::Options()), &bm);
+        SkInstallDiscardablePixelRef(data, &bm);
     }
     return bm;
 }
@@ -96,7 +95,7 @@ public:
 
 protected:
     // overrides from SkEventSink
-    virtual bool onQuery(SkEvent* evt) {
+    bool onQuery(SkEvent* evt) override {
         if (SampleCode::TitleQ(*evt)) {
             SampleCode::TitleR(evt, "Picture");
             return true;
@@ -112,16 +111,11 @@ protected:
         canvas->drawBitmap(fBitmap, 0, 0, NULL);
         canvas->restore();
 
-        const char beforeStr[] = "before circle";
-        const char afterStr[] = "after circle";
-
         paint.setAntiAlias(true);
 
         paint.setColor(SK_ColorRED);
-        canvas->drawData(beforeStr, sizeof(beforeStr));
         canvas->drawCircle(SkIntToScalar(50), SkIntToScalar(50),
                            SkIntToScalar(40), paint);
-        canvas->drawData(afterStr, sizeof(afterStr));
         paint.setColor(SK_ColorBLACK);
         paint.setTextSize(SkIntToScalar(40));
         canvas->drawText("Picture", 7, SkIntToScalar(50), SkIntToScalar(62),
@@ -129,7 +123,7 @@ protected:
 
     }
 
-    virtual void onDrawContent(SkCanvas* canvas) {
+    void onDrawContent(SkCanvas* canvas) override {
         this->drawSomething(canvas);
 
         SkPictureRecorder recorder;
@@ -156,22 +150,6 @@ protected:
         canvas->translate(-SkIntToScalar(100), 0);
         canvas->drawPicture(pict);
         canvas->restore();
-
-#ifdef SK_DEVELOPER
-        if (false) {
-            SkDebugfDumper dumper;
-            SkDumpCanvas dumpCanvas(&dumper);
-            dumpCanvas.drawPicture(pict);
-        }
-#endif
-
-        // This used to re-record the sub-picture and redraw the parent
-        // A capability that is now forbidden!
-
-        SkRandom rand(SampleCode::GetAnimTime());
-        canvas->translate(SkIntToScalar(10), SkIntToScalar(250));
-        canvas->drawPicture(fPicture);
-        delayInval(500);
     }
 
 private:
@@ -181,7 +159,7 @@ private:
         (new SkEvent(INVAL_ALL_TYPE, this->getSinkID()))->postDelay(delay);
     }
 
-    virtual bool onEvent(const SkEvent& evt) {
+    bool onEvent(const SkEvent& evt) override {
         if (evt.isType(INVAL_ALL_TYPE)) {
             this->inval(NULL);
             return true;

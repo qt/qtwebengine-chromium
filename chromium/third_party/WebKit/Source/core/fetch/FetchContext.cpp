@@ -36,7 +36,7 @@ namespace blink {
 
 FetchContext& FetchContext::nullInstance()
 {
-    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FetchContext>, instance, (adoptPtrWillBeNoop(new FetchContext())));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FetchContext>, instance, (adoptPtrWillBeNoop(new FetchContext)));
     return *instance;
 }
 
@@ -44,11 +44,7 @@ void FetchContext::dispatchDidChangeResourcePriority(unsigned long, ResourceLoad
 {
 }
 
-void FetchContext::reportLocalLoadFailed(const KURL&)
-{
-}
-
-void FetchContext::addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType)
+void FetchContext::addAdditionalRequestHeaders(ResourceRequest&, FetchResourceType)
 {
 }
 
@@ -56,12 +52,17 @@ void FetchContext::setFirstPartyForCookies(ResourceRequest&)
 {
 }
 
-CachePolicy FetchContext::cachePolicy(Document*) const
+CachePolicy FetchContext::cachePolicy() const
 {
     return CachePolicyVerify;
 }
 
-void FetchContext::dispatchWillSendRequest(DocumentLoader*, unsigned long, ResourceRequest&, const ResourceResponse&, const FetchInitiatorInfo&)
+ResourceRequestCachePolicy FetchContext::resourceRequestCachePolicy(const ResourceRequest&, Resource::Type) const
+{
+    return UseProtocolCachePolicy;
+}
+
+void FetchContext::dispatchWillSendRequest(unsigned long, ResourceRequest&, const ResourceResponse&, const FetchInitiatorInfo&)
 {
 }
 
@@ -69,27 +70,63 @@ void FetchContext::dispatchDidLoadResourceFromMemoryCache(const ResourceRequest&
 {
 }
 
-void FetchContext::dispatchDidReceiveResponse(DocumentLoader*, unsigned long, const ResourceResponse&, ResourceLoader*)
+void FetchContext::dispatchDidReceiveResponse(unsigned long, const ResourceResponse&, ResourceLoader*)
 {
 }
 
-void FetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long, const char*, int, int)
+void FetchContext::dispatchDidReceiveData(unsigned long, const char*, int, int)
 {
 }
 
-void FetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long, int, int)
+void FetchContext::dispatchDidDownloadData(unsigned long, int, int)
 {
 }
 
-void FetchContext::dispatchDidFinishLoading(DocumentLoader*, unsigned long, double, int64_t)
+void FetchContext::dispatchDidFinishLoading(unsigned long, double, int64_t)
 {
 }
 
-void FetchContext::dispatchDidFail(DocumentLoader*, unsigned long, const ResourceError&, bool)
+void FetchContext::dispatchDidFail(unsigned long, const ResourceError&, bool)
 {
 }
 
-void FetchContext::sendRemainingDelegateMessages(DocumentLoader*, unsigned long, const ResourceResponse&, int)
+void FetchContext::sendRemainingDelegateMessages(unsigned long, const ResourceResponse&, int)
+{
+}
+
+void FetchContext::dispatchWillRequestResource(FetchRequest*)
+{
+}
+
+void FetchContext::willStartLoadingResource(ResourceRequest&)
+{
+}
+
+void FetchContext::didLoadResource()
+{
+}
+
+void FetchContext::addResourceTiming(ResourceTimingInfo*, bool)
+{
+}
+
+void FetchContext::sendImagePing(const KURL&)
+{
+}
+
+void FetchContext::addConsoleMessage(const String&) const
+{
+}
+
+void FetchContext::upgradeInsecureRequest(FetchRequest&)
+{
+}
+
+void FetchContext::addClientHintsIfNecessary(FetchRequest&)
+{
+}
+
+void FetchContext::addCSPHeaderIfNecessary(Resource::Type, FetchRequest&)
 {
 }
 

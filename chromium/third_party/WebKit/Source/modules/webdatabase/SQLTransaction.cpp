@@ -73,7 +73,7 @@ SQLTransaction::~SQLTransaction()
 {
 }
 
-void SQLTransaction::trace(Visitor* visitor)
+DEFINE_TRACE(SQLTransaction)
 {
     visitor->trace(m_database);
     visitor->trace(m_backend);
@@ -289,6 +289,19 @@ void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValu
 
     SQLStatement* statement = SQLStatement::create(m_database.get(), callback, callbackError);
     m_backend->executeSQL(statement, sqlStatement, arguments, permissions);
+}
+
+void SQLTransaction::executeSql(ScriptState* scriptState, const String& sqlStatement, ExceptionState& exceptionState)
+{
+    executeSQL(sqlStatement, Vector<SQLValue>(), nullptr, nullptr, exceptionState);
+}
+
+void SQLTransaction::executeSql(ScriptState* scriptState, const String& sqlStatement, const Nullable<Vector<ScriptValue>>& arguments, SQLStatementCallback* callback, SQLStatementErrorCallback* callbackError, ExceptionState& exceptionState)
+{
+    Vector<SQLValue> sqlValues;
+    if (!arguments.isNull())
+        sqlValues = toImplArray<Vector<SQLValue>>(arguments.get(), scriptState->isolate(), exceptionState);
+    executeSQL(sqlStatement, sqlValues, callback, callbackError, exceptionState);
 }
 
 bool SQLTransaction::computeNextStateAndCleanupIfNeeded()

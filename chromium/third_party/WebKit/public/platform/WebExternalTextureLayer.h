@@ -32,8 +32,6 @@
 
 namespace blink {
 
-class WebExternalTextureLayerClient;
-
 // This class represents a layer that renders a texture that is generated
 // externally (not managed by the WebLayerTreeView).
 // The texture will be used by the WebLayerTreeView during compositing passes.
@@ -62,6 +60,10 @@ public:
     // Sets whether this context should be rate limited by the compositor. Rate limiting works by blocking
     // invalidate() and invalidateRect() calls if the compositor is too many frames behind.
     virtual void setRateLimitContext(bool) = 0;
+
+    // Sets whether this texture should use nearest neighbor interpolation as
+    // opposed to bilinear. Defaults to false.
+    virtual void setNearestNeighbor(bool) = 0;
 };
 
 } // namespace blink

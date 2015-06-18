@@ -31,13 +31,13 @@
 #include "config.h"
 #include "core/html/forms/BaseDateAndTimeInputType.h"
 
-#include <limits>
 #include "core/html/HTMLInputElement.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/DateMath.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/WTFString.h"
+#include <limits>
 
 namespace blink {
 
@@ -183,6 +183,14 @@ bool BaseDateAndTimeInputType::valueMissing(const String& value) const
 bool BaseDateAndTimeInputType::shouldShowFocusRingOnMouseFocus() const
 {
     return true;
+}
+
+bool BaseDateAndTimeInputType::shouldHaveSecondField(const DateComponents& date) const
+{
+    StepRange stepRange = createStepRange(AnyIsDefaultStep);
+    return date.second() || date.millisecond()
+        || !stepRange.minimum().remainder(static_cast<int>(msPerMinute)).isZero()
+        || !stepRange.step().remainder(static_cast<int>(msPerMinute)).isZero();
 }
 
 } // namespace blink

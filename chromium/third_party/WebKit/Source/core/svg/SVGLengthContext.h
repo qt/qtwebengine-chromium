@@ -21,13 +21,15 @@
 #define SVGLengthContext_h
 
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/Length.h"
 #include "platform/geometry/FloatRect.h"
 
 namespace blink {
 
-class ExceptionState;
+class ComputedStyle;
 class SVGElement;
 class SVGLength;
+class UnzoomedLength;
 
 enum SVGLengthType {
     LengthTypeUnknown = 0,
@@ -40,13 +42,15 @@ enum SVGLengthType {
     LengthTypeMM,
     LengthTypeIN,
     LengthTypePT,
-    LengthTypePC
+    LengthTypePC,
+    LengthTypeREMS,
+    LengthTypeCHS
 };
 
-enum SVGLengthMode {
-    LengthModeWidth = 0,
-    LengthModeHeight,
-    LengthModeOther
+enum class SVGLengthMode {
+    Width,
+    Height,
+    Other
 };
 
 class SVGLengthContext {
@@ -57,32 +61,33 @@ public:
     template<typename T>
     static FloatRect resolveRectangle(const T* context, SVGUnitTypes::SVGUnitType type, const FloatRect& viewport)
     {
-        return SVGLengthContext::resolveRectangle(context, type, viewport, context->x()->currentValue(), context->y()->currentValue(), context->width()->currentValue(), context->height()->currentValue());
+        return resolveRectangle(context, type, viewport, *context->x()->currentValue(), *context->y()->currentValue(), *context->width()->currentValue(), *context->height()->currentValue());
     }
 
-    static FloatRect resolveRectangle(const SVGElement*, SVGUnitTypes::SVGUnitType, const FloatRect& viewport, PassRefPtr<SVGLength> x, PassRefPtr<SVGLength> y, PassRefPtr<SVGLength> width, PassRefPtr<SVGLength> height);
-    static FloatPoint resolvePoint(const SVGElement*, SVGUnitTypes::SVGUnitType, PassRefPtr<SVGLength> x, PassRefPtr<SVGLength> y);
-    static float resolveLength(const SVGElement*, SVGUnitTypes::SVGUnitType, PassRefPtr<SVGLength>);
+    static FloatRect resolveRectangle(const SVGElement*, SVGUnitTypes::SVGUnitType, const FloatRect& viewport, const SVGLength& x, const SVGLength& y, const SVGLength& width, const SVGLength& height);
+    static FloatPoint resolvePoint(const SVGElement*, SVGUnitTypes::SVGUnitType, const SVGLength& x, const SVGLength& y);
+    static float resolveLength(const SVGElement*, SVGUnitTypes::SVGUnitType, const SVGLength&);
 
-    float convertValueToUserUnits(float, SVGLengthMode, SVGLengthType fromUnit, ExceptionState&) const;
-    float convertValueFromUserUnits(float, SVGLengthMode, SVGLengthType toUnit, ExceptionState&) const;
+    float convertValueToUserUnits(float, SVGLengthMode, SVGLengthType fromUnit) const;
+    float convertValueFromUserUnits(float, SVGLengthMode, SVGLengthType toUnit) const;
+
+    float valueForLength(const UnzoomedLength&, SVGLengthMode = SVGLengthMode::Other) const;
+    float valueForLength(const Length&, const ComputedStyle&, SVGLengthMode = SVGLengthMode::Other) const;
+    static float valueForLength(const Length&, const ComputedStyle&, float dimension);
 
     bool determineViewport(FloatSize&) const;
 
 private:
-    SVGLengthContext(const SVGElement*, const FloatRect& viewport);
+    float valueForLength(const Length&, float zoom, SVGLengthMode) const;
+    static float valueForLength(const Length&, float zoom, float dimension);
 
-    float convertValueFromUserUnitsToPercentage(float value, SVGLengthMode, ExceptionState&) const;
-    float convertValueFromPercentageToUserUnits(float value, SVGLengthMode, ExceptionState&) const;
+    float convertValueFromUserUnitsToEXS(float value) const;
+    float convertValueFromEXSToUserUnits(float value) const;
 
-    float convertValueFromUserUnitsToEMS(float value, ExceptionState&) const;
-    float convertValueFromEMSToUserUnits(float value, ExceptionState&) const;
-
-    float convertValueFromUserUnitsToEXS(float value, ExceptionState&) const;
-    float convertValueFromEXSToUserUnits(float value, ExceptionState&) const;
+    float convertValueFromUserUnitsToCHS(float value) const;
+    float convertValueFromCHSToUserUnits(float value) const;
 
     RawPtrWillBeMember<const SVGElement> m_context;
-    FloatRect m_overridenViewport;
 };
 
 } // namespace blink

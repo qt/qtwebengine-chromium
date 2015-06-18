@@ -23,26 +23,15 @@ public:
     }
 
 protected:
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
-        SkString filename = GetResourcePath("/Funkster.ttf");
-        SkAutoTUnref<SkFILEStream> stream(new SkFILEStream(filename.c_str()));
-        if (!stream->isValid()) {
-            SkDebugf("Could not find Funkster.ttf, please set --resourcePath correctly.\n");
-            return;
-        }
-
-        fTypeface = SkTypeface::CreateFromStream(stream);
+    void onOnceBeforeDraw() override {
+        fTypeface = GetResourceAsTypeface("/fonts/Funkster.ttf");
     }
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kGPUOnly_Flag;
-    }
-
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("dftext");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(1024, 768);
     }
 
@@ -54,7 +43,7 @@ protected:
         canvas->translate(-px, -py);
     }
 
-    virtual void onDraw(SkCanvas* inputCanvas) {
+    virtual void onDraw(SkCanvas* inputCanvas) override {
 #ifdef SK_BUILD_FOR_ANDROID
         SkScalar textSizes[] = { 9.0f, 9.0f*2.0f, 9.0f*5.0f, 9.0f*2.0f*5.0f };
 #else
@@ -68,7 +57,8 @@ protected:
         SkImageInfo info = SkImageInfo::MakeN32Premul(onISize());
         SkSurfaceProps props(SkSurfaceProps::kUseDistanceFieldFonts_Flag,
                              SkSurfaceProps::kLegacyFontHost_InitType);
-        SkAutoTUnref<SkSurface> surface(SkSurface::NewRenderTarget(ctx, info, 0, &props));
+        SkAutoTUnref<SkSurface> surface(SkSurface::NewRenderTarget(ctx, SkSurface::kNo_Budgeted,
+                                                                   info, 0, &props));
         SkCanvas* canvas = surface.get() ? surface->getCanvas() : inputCanvas;
         // init our new canvas with the old canvas's matrix
         canvas->setMatrix(inputCanvas->getTotalMatrix());
@@ -138,8 +128,8 @@ protected:
 
             canvas->scale(2.0f, 2.0f);
 
-            SkAutoTArray<SkPoint>  pos(textLen);
-            SkAutoTArray<SkScalar> widths(textLen);
+            SkAutoTArray<SkPoint>  pos(SkToInt(textLen));
+            SkAutoTArray<SkScalar> widths(SkToInt(textLen));
             paint.setTextSize(textSizes[0]);
 
             paint.getTextWidths(text, textLen, &widths[0]);
@@ -199,8 +189,29 @@ protected:
             y += paint.getFontMetrics(NULL);
         }
 
+        // check skew
+        {
+            paint.setLCDRenderText(false);
+            SkAutoCanvasRestore acr(canvas, true);
+            canvas->skew(0.0f, 0.151515f);
+            paint.setTextSize(SkIntToScalar(32));
+            canvas->drawText(text, textLen, 745, 70, paint);
+        }
+        {
+            paint.setLCDRenderText(true);
+            SkAutoCanvasRestore acr(canvas, true);
+            canvas->skew(0.5f, 0.0f);
+            paint.setTextSize(SkIntToScalar(32));
+            canvas->drawText(text, textLen, 580, 230, paint);
+        }
+
         // check color emoji
         paint.setTypeface(fTypeface);
+#ifdef SK_BUILD_FOR_ANDROID
+        paint.setTextSize(SkIntToScalar(19));
+#else
+        paint.setTextSize(SkIntToScalar(22));
+#endif
         canvas->drawText(text, textLen, 670, 100, paint);
 
 #if SK_SUPPORT_GPU

@@ -27,13 +27,14 @@
 #define SpeechRecognitionAlternative_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
 
-class SpeechRecognitionAlternative final : public GarbageCollectedFinalized<SpeechRecognitionAlternative>, public ScriptWrappable {
+class MODULES_EXPORT SpeechRecognitionAlternative final : public GarbageCollectedFinalized<SpeechRecognitionAlternative>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static SpeechRecognitionAlternative* create(const String&, double);
@@ -41,7 +42,7 @@ public:
     const String& transcript() const { return m_transcript; }
     double confidence() const { return m_confidence; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     SpeechRecognitionAlternative(const String&, double);

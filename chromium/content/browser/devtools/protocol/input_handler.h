@@ -5,11 +5,22 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_PROTOCOL_INPUT_HANDLER_H_
 #define CONTENT_BROWSER_DEVTOOLS_PROTOCOL_INPUT_HANDLER_H_
 
-#include "content/browser/devtools/protocol/devtools_protocol_handler_impl.h"
+#include "base/memory/weak_ptr.h"
+#include "content/browser/devtools/protocol/devtools_protocol_handler.h"
+#include "content/browser/renderer_host/input/synthetic_gesture.h"
+#include "ui/gfx/geometry/size_f.h"
+
+namespace cc {
+class CompositorFrameMetadata;
+}
+
+namespace gfx {
+class Point;
+}
 
 namespace content {
 
-class RenderViewHostImpl;
+class RenderWidgetHostImpl;
 
 namespace devtools {
 namespace input {
@@ -21,7 +32,30 @@ class InputHandler {
   InputHandler();
   virtual ~InputHandler();
 
-  void SetRenderViewHost(RenderViewHostImpl* host);
+  void SetRenderWidgetHost(RenderWidgetHostImpl* host);
+  void SetClient(scoped_ptr<Client> client);
+  void OnSwapCompositorFrame(const cc::CompositorFrameMetadata& frame_metadata);
+
+  Response DispatchKeyEvent(const std::string& type,
+                            const int* modifiers,
+                            const double* timestamp,
+                            const std::string* text,
+                            const std::string* unmodified_text,
+                            const std::string* key_identifier,
+                            const std::string* code,
+                            const int* windows_virtual_key_code,
+                            const int* native_virtual_key_code,
+                            const bool* auto_repeat,
+                            const bool* is_keypad,
+                            const bool* is_system_key);
+
+  Response DispatchMouseEvent(const std::string& type,
+                              int x,
+                              int y,
+                              const int* modifiers,
+                              const double* timestamp,
+                              const std::string* button,
+                              const int* click_count);
 
   Response EmulateTouchFromMouseEvent(const std::string& type,
                                       int x,
@@ -33,13 +67,52 @@ class InputHandler {
                                       int* modifiers,
                                       int* click_count);
 
+  Response SynthesizePinchGesture(DevToolsCommandId command_id,
+                                  int x,
+                                  int y,
+                                  double scale_factor,
+                                  const int* relative_speed,
+                                  const std::string* gesture_source_type);
+
+  Response SynthesizeScrollGesture(DevToolsCommandId command_id,
+                                   int x,
+                                   int y,
+                                   const int* x_distance,
+                                   const int* y_distance,
+                                   const int* x_overscroll,
+                                   const int* y_overscroll,
+                                   const bool* prevent_fling,
+                                   const int* speed,
+                                   const std::string* gesture_source_type);
+
+  Response SynthesizeTapGesture(DevToolsCommandId command_id,
+                                int x,
+                                int y,
+                                const int* duration,
+                                const int* tap_count,
+                                const std::string* gesture_source_type);
+
  private:
-  RenderViewHostImpl* host_;
+  void SendSynthesizePinchGestureResponse(DevToolsCommandId command_id,
+                                          SyntheticGesture::Result result);
+
+  void SendSynthesizeScrollGestureResponse(DevToolsCommandId command_id,
+                                           SyntheticGesture::Result result);
+
+  void SendSynthesizeTapGestureResponse(DevToolsCommandId command_id,
+                                        bool send_success,
+                                        SyntheticGesture::Result result);
+
+  RenderWidgetHostImpl* host_;
+  scoped_ptr<Client> client_;
+  float page_scale_factor_;
+  gfx::SizeF scrollable_viewport_size_;
+  base::WeakPtrFactory<InputHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InputHandler);
 };
 
-}  // namespace inpue
+}  // namespace input
 }  // namespace devtools
 }  // namespace content
 

@@ -22,11 +22,13 @@ class QuicSentPacketManagerPeer {
   static void SetMaxTailLossProbes(
       QuicSentPacketManager* sent_packet_manager, size_t max_tail_loss_probes);
 
+  static bool GetUseNewRto(QuicSentPacketManager* sent_packet_manager);
+
   static QuicByteCount GetReceiveWindow(
       QuicSentPacketManager* sent_packet_manager);
 
-  static void SetIsServer(QuicSentPacketManager* sent_packet_manager,
-                          bool is_server);
+  static void SetPerspective(QuicSentPacketManager* sent_packet_manager,
+                             Perspective perspective);
 
   static const SendAlgorithmInterface* GetSendAlgorithm(
       const QuicSentPacketManager& sent_packet_manager);
@@ -41,13 +43,6 @@ class QuicSentPacketManagerPeer {
                                LossDetectionInterface* loss_detector);
 
   static RttStats* GetRttStats(QuicSentPacketManager* sent_packet_manager);
-
-  static size_t GetNackCount(
-      const QuicSentPacketManager* sent_packet_manager,
-      QuicPacketSequenceNumber sequence_number);
-
-  static size_t GetPendingRetransmissionCount(
-      const QuicSentPacketManager* sent_packet_manager);
 
   static bool HasPendingPackets(
       const QuicSentPacketManager* sent_packet_manager);

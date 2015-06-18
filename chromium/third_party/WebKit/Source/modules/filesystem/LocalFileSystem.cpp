@@ -31,16 +31,16 @@
 #include "config.h"
 #include "modules/filesystem/LocalFileSystem.h"
 
-#include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "core/fileapi/FileError.h"
 #include "core/frame/LocalFrame.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/filesystem/FileSystemClient.h"
 #include "platform/AsyncFileSystemCallbacks.h"
-#include "platform/PermissionCallbacks.h"
+#include "platform/ContentSettingCallbacks.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileSystem.h"
 #include "wtf/Functional.h"
@@ -50,7 +50,7 @@ namespace blink {
 
 namespace {
 
-void reportFailure(ExecutionContext*, PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileError::ErrorCode error)
+void reportFailure(PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileError::ErrorCode error)
 {
     callbacks->didFail(error);
 }
@@ -69,7 +69,7 @@ public:
         return m_callbacks.release();
     }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     OwnPtr<AsyncFileSystemCallbacks> m_callbacks;
@@ -122,35 +122,35 @@ WebFileSystem* LocalFileSystem::fileSystem() const
     return Platform::current()->fileSystem();
 }
 
-void LocalFileSystem::requestFileSystemAccessInternal(ExecutionContext* context, const Closure& allowed, const Closure& denied)
+void LocalFileSystem::requestFileSystemAccessInternal(ExecutionContext* context, PassOwnPtr<Closure> allowed, PassOwnPtr<Closure> denied)
 {
     if (!client()) {
-        denied();
+        (*denied)();
         return;
     }
     if (!context->isDocument()) {
         if (!client()->requestFileSystemAccessSync(context)) {
-            denied();
+            (*denied)();
             return;
         }
-        allowed();
+        (*allowed)();
         return;
     }
-    client()->requestFileSystemAccessAsync(context, PermissionCallbacks::create(allowed, denied));
+    client()->requestFileSystemAccessAsync(context, ContentSettingCallbacks::create(allowed, denied));
 }
 
 void LocalFileSystem::fileSystemNotAvailable(
     PassRefPtrWillBeRawPtr<ExecutionContext> context,
     CallbackWrapper* callbacks)
 {
-    context->postTask(createCrossThreadTask(&reportFailure, callbacks->release(), FileError::ABORT_ERR));
+    context->postTask(FROM_HERE, createSameThreadTask(&reportFailure, callbacks->release(), FileError::ABORT_ERR));
 }
 
 void LocalFileSystem::fileSystemNotAllowedInternal(
     PassRefPtrWillBeRawPtr<ExecutionContext> context,
     CallbackWrapper* callbacks)
 {
-    context->postTask(createCrossThreadTask(&reportFailure, callbacks->release(), FileError::ABORT_ERR));
+    context->postTask(FROM_HERE, createSameThreadTask(&reportFailure, callbacks->release(), FileError::ABORT_ERR));
 }
 
 void LocalFileSystem::fileSystemAllowedInternal(

@@ -6,7 +6,8 @@
 
 #include "base/android/jni_android.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
 
@@ -21,12 +22,18 @@ MediaPlayerAndroid::MediaPlayerAndroid(
       player_id_(player_id),
       manager_(manager),
       frame_url_(frame_url),
+      is_audible_(false),
       weak_factory_(this) {
-  listener_.reset(new MediaPlayerListener(base::MessageLoopProxy::current(),
+  listener_.reset(new MediaPlayerListener(base::ThreadTaskRunnerHandle::Get(),
                                           weak_factory_.GetWeakPtr()));
 }
 
 MediaPlayerAndroid::~MediaPlayerAndroid() {}
+
+// For most subclasses we can delete on the caller thread.
+void MediaPlayerAndroid::DeleteOnCorrectThread() {
+  delete this;
+}
 
 GURL MediaPlayerAndroid::GetUrl() {
   return GURL();
@@ -38,7 +45,7 @@ GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
 
 void MediaPlayerAndroid::SetCdm(BrowserCdm* /* cdm */) {
   // Players that support EME should override this.
-  NOTREACHED() << "EME not supported on base MediaPlayerAndroid class.";
+  LOG(ERROR) << "EME not supported on base MediaPlayerAndroid class.";
   return;
 }
 
@@ -79,5 +86,16 @@ void MediaPlayerAndroid::DetachListener() {
   listener_->ReleaseMediaPlayerListenerResources();
 }
 
+void MediaPlayerAndroid::DestroyListenerOnUIThread() {
+  weak_factory_.InvalidateWeakPtrs();
+  listener_.reset();
+}
+
+void MediaPlayerAndroid::SetAudible(bool is_audible) {
+  if (is_audible_ != is_audible) {
+    is_audible_ = is_audible;
+    manager_->OnAudibleStateChanged(player_id(), is_audible_);
+  }
+}
 
 }  // namespace media

@@ -46,7 +46,7 @@ public:
         ParentStackFrame() : element(nullptr) { }
         explicit ParentStackFrame(Element& element) : element(&element) { }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
         RawPtrWillBeMember<Element> element;
         Vector<unsigned, 4> identifierHashes;
@@ -65,14 +65,14 @@ public:
     inline bool fastRejectSelector(const unsigned* identifierHashes) const;
     static void collectIdentifierHashes(const CSSSelector&, unsigned* identifierHashes, unsigned maximumIdentifierCount);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     WillBeHeapVector<ParentStackFrame> m_parentStack;
 
     // With 100 unique strings in the filter, 2^12 slot table has false positive rate of ~0.2%.
     static const unsigned bloomFilterKeyBits = 12;
-    OwnPtr<BloomFilter<bloomFilterKeyBits> > m_ancestorIdentifierFilter;
+    OwnPtr<BloomFilter<bloomFilterKeyBits>> m_ancestorIdentifierFilter;
 };
 
 template <unsigned maximumIdentifierCount>

@@ -27,6 +27,7 @@
 #define DragState_h
 
 #include "core/page/DragActions.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
 
@@ -35,16 +36,17 @@ namespace blink {
 class DataTransfer;
 class Node;
 
-class DragState : public NoBaseWillBeGarbageCollected<DragState> {
+// TODO(Oilpan): when Node is always on the heap, just derive from GarbageCollected<>.
+class DragState final : public GarbageCollectedFinalized<DragState> {
     WTF_MAKE_NONCOPYABLE(DragState);
 public:
     DragState() { }
 
     RefPtrWillBeMember<Node> m_dragSrc; // element that may be a drag source, for the current mouse gesture
     DragSourceAction m_dragType;
-    RefPtrWillBeMember<DataTransfer> m_dragDataTransfer; // used on only the source side of dragging
+    Member<DataTransfer> m_dragDataTransfer; // used on only the source side of dragging
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_dragSrc);
         visitor->trace(m_dragDataTransfer);

@@ -38,7 +38,6 @@ class HttpResponseHeaders;
 class ProxyInfo;
 class ProxyServer;
 class ProxyService;
-class SocketStream;
 class URLRequest;
 
 class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
@@ -105,8 +104,9 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   bool CanEnablePrivacyMode(const GURL& url,
                             const GURL& first_party_for_cookies) const;
 
-  int NotifyBeforeSocketStreamConnect(SocketStream* socket,
-                                      const CompletionCallback& callback);
+  // TODO(mkwst): Remove this once we decide whether or not we wish to ship
+  // first-party cookies. https://crbug.com/459154
+  bool FirstPartyOnlyCookieExperimentEnabled() const;
 
   bool CancelURLRequestWithPolicyViolatingReferrerHeader(
       const URLRequest& request,
@@ -132,7 +132,7 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   // The default implementation returns OK (continue with request).
   virtual int OnBeforeURLRequest(URLRequest* request,
                                  const CompletionCallback& callback,
-                                 GURL* new_url);
+                                 GURL* new_url) = 0;
 
   // Called as the proxy is being resolved for |url|. Allows the delegate to
   // override the proxy resolution decision made by ProxyService. The delegate
@@ -140,14 +140,13 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   virtual void OnResolveProxy(const GURL& url,
                               int load_flags,
                               const ProxyService& proxy_service,
-                              ProxyInfo* result);
+                              ProxyInfo* result) = 0;
 
   // Called when use of |bad_proxy| fails due to |net_error|. |net_error| is
   // the network error encountered, if any, and OK if the fallback was
   // for a reason other than a network error (e.g. the proxy service was
   // explicitly directed to skip a proxy).
-  virtual void OnProxyFallback(const ProxyServer& bad_proxy,
-                               int net_error);
+  virtual void OnProxyFallback(const ProxyServer& bad_proxy, int net_error) = 0;
 
   // Called right before the HTTP headers are sent. Allows the delegate to
   // read/write |headers| before they get sent out. |callback| and |headers| are
@@ -156,20 +155,20 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   // See OnBeforeURLRequest for return value description. Returns OK by default.
   virtual int OnBeforeSendHeaders(URLRequest* request,
                                   const CompletionCallback& callback,
-                                  HttpRequestHeaders* headers);
+                                  HttpRequestHeaders* headers) = 0;
 
   // Called after a proxy connection. Allows the delegate to read/write
   // |headers| before they get sent out. |headers| is valid only until
   // OnCompleted or OnURLRequestDestroyed is called for this request.
   virtual void OnBeforeSendProxyHeaders(URLRequest* request,
                                         const ProxyInfo& proxy_info,
-                                        HttpRequestHeaders* headers);
+                                        HttpRequestHeaders* headers) = 0;
 
   // Called right before the HTTP request(s) are being sent to the network.
   // |headers| is only valid until OnCompleted or OnURLRequestDestroyed is
   // called for this request.
   virtual void OnSendHeaders(URLRequest* request,
-                             const HttpRequestHeaders& headers);
+                             const HttpRequestHeaders& headers) = 0;
 
   // Called for HTTP requests when the headers have been received.
   // |original_response_headers| contains the headers as received over the
@@ -189,33 +188,33 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
-      GURL* allowed_unsafe_redirect_url);
+      GURL* allowed_unsafe_redirect_url) = 0;
 
   // Called right after a redirect response code was received.
   // |new_location| is only valid until OnURLRequestDestroyed is called for this
   // request.
   virtual void OnBeforeRedirect(URLRequest* request,
-                                const GURL& new_location);
+                                const GURL& new_location) = 0;
 
   // This corresponds to URLRequestDelegate::OnResponseStarted.
-  virtual void OnResponseStarted(URLRequest* request);
+  virtual void OnResponseStarted(URLRequest* request) = 0;
 
   // Called every time we read raw bytes.
-  virtual void OnRawBytesRead(const URLRequest& request, int bytes_read);
+  virtual void OnRawBytesRead(const URLRequest& request, int bytes_read) = 0;
 
   // Indicates that the URL request has been completed or failed.
   // |started| indicates whether the request has been started. If false,
   // some information like the socket address is not available.
-  virtual void OnCompleted(URLRequest* request, bool started);
+  virtual void OnCompleted(URLRequest* request, bool started) = 0;
 
   // Called when an URLRequest is being destroyed. Note that the request is
   // being deleted, so it's not safe to call any methods that may result in
   // a virtual method call.
-  virtual void OnURLRequestDestroyed(URLRequest* request);
+  virtual void OnURLRequestDestroyed(URLRequest* request) = 0;
 
   // Corresponds to ProxyResolverJSBindings::OnError.
   virtual void OnPACScriptError(int line_number,
-                                const base::string16& error);
+                                const base::string16& error) = 0;
 
   // Called when a request receives an authentication challenge
   // specified by |auth_info|, and is unable to respond using cached
@@ -238,43 +237,45 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
-      AuthCredentials* credentials);
+      AuthCredentials* credentials) = 0;
 
   // Called when reading cookies to allow the network delegate to block access
   // to the cookie. This method will never be invoked when
   // LOAD_DO_NOT_SEND_COOKIES is specified.
   virtual bool OnCanGetCookies(const URLRequest& request,
-                               const CookieList& cookie_list);
+                               const CookieList& cookie_list) = 0;
 
   // Called when a cookie is set to allow the network delegate to block access
   // to the cookie. This method will never be invoked when
   // LOAD_DO_NOT_SAVE_COOKIES is specified.
   virtual bool OnCanSetCookie(const URLRequest& request,
                               const std::string& cookie_line,
-                              CookieOptions* options);
+                              CookieOptions* options) = 0;
 
   // Called when a file access is attempted to allow the network delegate to
   // allow or block access to the given file path.  Returns true if access is
   // allowed.
   virtual bool OnCanAccessFile(const URLRequest& request,
-                               const base::FilePath& path) const;
+                               const base::FilePath& path) const = 0;
 
   // Returns true if the given request may be rejected when the
   // URLRequestThrottlerManager believes the server servicing the
   // request is overloaded or down.
-  virtual bool OnCanThrottleRequest(const URLRequest& request) const;
+  virtual bool OnCanThrottleRequest(const URLRequest& request) const = 0;
 
   // Returns true if the given |url| has to be requested over connection that
   // is not tracked by the server. Usually is false, unless user privacy
   // settings block cookies from being get or set.
   virtual bool OnCanEnablePrivacyMode(
       const GURL& url,
-      const GURL& first_party_for_cookies) const;
+      const GURL& first_party_for_cookies) const = 0;
 
-  // Called before a SocketStream tries to connect.
-  // See OnBeforeURLRequest for return value description. Returns OK by default.
-  virtual int OnBeforeSocketStreamConnect(
-      SocketStream* socket, const CompletionCallback& callback);
+  // Returns true if the embedder has enabled the "first-party" cookie
+  // experiment, and false otherwise.
+  //
+  // TODO(mkwst): Remove this once we decide whether or not we wish to ship
+  // first-party cookies. https://crbug.com/459154
+  virtual bool OnFirstPartyOnlyCookieExperimentEnabled() const = 0;
 
   // Called when the |referrer_url| for requesting |target_url| during handling
   // of the |request| is does not comply with the referrer policy (e.g. a
@@ -284,7 +285,7 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   virtual bool OnCancelURLRequestWithPolicyViolatingReferrerHeader(
       const URLRequest& request,
       const GURL& target_url,
-      const GURL& referrer_url) const;
+      const GURL& referrer_url) const = 0;
 };
 
 }  // namespace net

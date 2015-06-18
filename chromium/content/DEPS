@@ -33,10 +33,6 @@ include_rules = [
   "+dbus",
   "+gpu",
   "+mojo/common",
-  "+mojo/edk/embedder",
-  "+mojo/edk/js",
-  "+mojo/edk/test",
-  "+mojo/public",
   "+net",
   "+ppapi",
   "+printing",
@@ -63,8 +59,13 @@ include_rules = [
   "+third_party/angle",
   "+third_party/flac",
   "+third_party/libjingle",
+  "+third_party/mojo/src/mojo/edk/embedder",
+  "+third_party/mojo/src/mojo/edk/js",
+  "+third_party/mojo/src/mojo/edk/test",
+  "+third_party/mojo/src/mojo/public",
   "+third_party/mozilla",
   "+third_party/npapi/bindings",
+  "+third_party/ocmock",
   "+third_party/re2",
   "+third_party/skia",
   "+third_party/sqlite",
@@ -75,6 +76,7 @@ include_rules = [
   "+third_party/WebKit/public/platform",
   "+third_party/WebKit/public/web",
 
+  "+ui/accelerated_widget_mac",
   "+ui/accessibility",
   "+ui/android",
   # Aura is analogous to Win32 or a Gtk, so it is allowed.
@@ -94,12 +96,14 @@ include_rules = [
   "+ui/snapshot",
   "+ui/strings/grit/ui_strings.h",
   "+ui/surface",
+  "+ui/touch_selection",
   "+ui/wm",
   # Content knows about grd files, but the specifics of how to get a resource
   # given its id is left to the embedder.
   "-ui/base/l10n",
   "-ui/base/resource",
-  # This file isn't related to grd, so it's fine.
+  # These files aren't related to grd, so they're fine.
+  "+ui/base/l10n/l10n_util_android.h",
   "+ui/base/l10n/l10n_util_win.h",
 
   # Content shouldn't depend on views. While we technically don't need this
@@ -109,7 +113,6 @@ include_rules = [
 
   "+storage/browser",
   "+storage/common",
-  "+webkit",
 
   # For generated JNI includes.
   "+jni",

@@ -6,163 +6,134 @@
 #include "net/proxy/proxy_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace net {
+
+namespace {
+
 // Test the creation of ProxyServer using ProxyServer::FromURI, which parses
 // inputs of the form [<scheme>"://"]<host>[":"<port>]. Verify that each part
 // was labelled correctly, and the accessors all give the right data.
 TEST(ProxyServerTest, FromURI) {
   const struct {
-    const char* input_uri;
-    const char* expected_uri;
-    net::ProxyServer::Scheme expected_scheme;
-    const char* expected_host;
+    const char* const input_uri;
+    const char* const expected_uri;
+    ProxyServer::Scheme expected_scheme;
+    const char* const expected_host;
     int expected_port;
-    const char* expected_pac_string;
+    const char* const expected_pac_string;
   } tests[] = {
-    // HTTP proxy URIs:
-    {
-       "foopy:10",  // No scheme.
+      // HTTP proxy URIs:
+      {"foopy:10",  // No scheme.
        "foopy:10",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "foopy",
        10,
-       "PROXY foopy:10"
-    },
-    {
-       "http://foopy",  // No port.
+       "PROXY foopy:10"},
+      {"http://foopy",  // No port.
        "foopy:80",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "foopy",
        80,
-       "PROXY foopy:80"
-    },
-    {
-       "http://foopy:10",
+       "PROXY foopy:80"},
+      {"http://foopy:10",
        "foopy:10",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "foopy",
        10,
-       "PROXY foopy:10"
-    },
+       "PROXY foopy:10"},
 
-    // IPv6 HTTP proxy URIs:
-    {
-       "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:10",  // No scheme.
+      // IPv6 HTTP proxy URIs:
+      {"[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:10",  // No scheme.
        "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:10",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "FEDC:BA98:7654:3210:FEDC:BA98:7654:3210",
        10,
-       "PROXY [FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:10"
-    },
-    {
-       "http://[3ffe:2a00:100:7031::1]",  // No port.
+       "PROXY [FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:10"},
+      {"http://[3ffe:2a00:100:7031::1]",  // No port.
        "[3ffe:2a00:100:7031::1]:80",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "3ffe:2a00:100:7031::1",
        80,
-       "PROXY [3ffe:2a00:100:7031::1]:80"
-    },
-    {
-       "http://[::192.9.5.5]",
+       "PROXY [3ffe:2a00:100:7031::1]:80"},
+      {"http://[::192.9.5.5]",
        "[::192.9.5.5]:80",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "::192.9.5.5",
        80,
-       "PROXY [::192.9.5.5]:80"
-    },
-    {
-       "http://[::FFFF:129.144.52.38]:80",
+       "PROXY [::192.9.5.5]:80"},
+      {"http://[::FFFF:129.144.52.38]:80",
        "[::FFFF:129.144.52.38]:80",
-       net::ProxyServer::SCHEME_HTTP,
+       ProxyServer::SCHEME_HTTP,
        "::FFFF:129.144.52.38",
        80,
-       "PROXY [::FFFF:129.144.52.38]:80"
-    },
+       "PROXY [::FFFF:129.144.52.38]:80"},
 
-    // SOCKS4 proxy URIs:
-    {
-       "socks4://foopy",  // No port.
+      // SOCKS4 proxy URIs:
+      {"socks4://foopy",  // No port.
        "socks4://foopy:1080",
-       net::ProxyServer::SCHEME_SOCKS4,
+       ProxyServer::SCHEME_SOCKS4,
        "foopy",
        1080,
-       "SOCKS foopy:1080"
-    },
-    {
+       "SOCKS foopy:1080"},
+      {"socks4://foopy:10",
        "socks4://foopy:10",
-       "socks4://foopy:10",
-       net::ProxyServer::SCHEME_SOCKS4,
+       ProxyServer::SCHEME_SOCKS4,
        "foopy",
        10,
-       "SOCKS foopy:10"
-    },
+       "SOCKS foopy:10"},
 
-    // SOCKS5 proxy URIs
-    {
-       "socks5://foopy",  // No port.
+      // SOCKS5 proxy URIs
+      {"socks5://foopy",  // No port.
        "socks5://foopy:1080",
-       net::ProxyServer::SCHEME_SOCKS5,
+       ProxyServer::SCHEME_SOCKS5,
        "foopy",
        1080,
-       "SOCKS5 foopy:1080"
-    },
-    {
+       "SOCKS5 foopy:1080"},
+      {"socks5://foopy:10",
        "socks5://foopy:10",
-       "socks5://foopy:10",
-       net::ProxyServer::SCHEME_SOCKS5,
+       ProxyServer::SCHEME_SOCKS5,
        "foopy",
        10,
-       "SOCKS5 foopy:10"
-    },
+       "SOCKS5 foopy:10"},
 
-    // SOCKS proxy URIs (should default to SOCKS5)
-    {
-       "socks://foopy",  // No port.
+      // SOCKS proxy URIs (should default to SOCKS5)
+      {"socks://foopy",  // No port.
        "socks5://foopy:1080",
-       net::ProxyServer::SCHEME_SOCKS5,
+       ProxyServer::SCHEME_SOCKS5,
        "foopy",
        1080,
-       "SOCKS5 foopy:1080"
-    },
-    {
-       "socks://foopy:10",
+       "SOCKS5 foopy:1080"},
+      {"socks://foopy:10",
        "socks5://foopy:10",
-       net::ProxyServer::SCHEME_SOCKS5,
+       ProxyServer::SCHEME_SOCKS5,
        "foopy",
        10,
-       "SOCKS5 foopy:10"
-    },
+       "SOCKS5 foopy:10"},
 
-    // HTTPS proxy URIs:
-    {
-       "https://foopy",     // No port
+      // HTTPS proxy URIs:
+      {"https://foopy",  // No port
        "https://foopy:443",
-       net::ProxyServer::SCHEME_HTTPS,
+       ProxyServer::SCHEME_HTTPS,
        "foopy",
        443,
-       "HTTPS foopy:443"
-    },
-    {
-       "https://foopy:10",  // Non-standard port
+       "HTTPS foopy:443"},
+      {"https://foopy:10",  // Non-standard port
        "https://foopy:10",
-       net::ProxyServer::SCHEME_HTTPS,
+       ProxyServer::SCHEME_HTTPS,
        "foopy",
        10,
-       "HTTPS foopy:10"
-    },
-    {
-       "https://1.2.3.4:10",  // IP Address
+       "HTTPS foopy:10"},
+      {"https://1.2.3.4:10",  // IP Address
        "https://1.2.3.4:10",
-       net::ProxyServer::SCHEME_HTTPS,
+       ProxyServer::SCHEME_HTTPS,
        "1.2.3.4",
        10,
-       "HTTPS 1.2.3.4:10"
-    },
+       "HTTPS 1.2.3.4:10"},
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    net::ProxyServer uri =
-        net::ProxyServer::FromURI(tests[i].input_uri,
-                                  net::ProxyServer::SCHEME_HTTP);
+    ProxyServer uri =
+        ProxyServer::FromURI(tests[i].input_uri, ProxyServer::SCHEME_HTTP);
     EXPECT_TRUE(uri.is_valid());
     EXPECT_FALSE(uri.is_direct());
     EXPECT_EQ(tests[i].expected_uri, uri.ToURI());
@@ -174,15 +145,14 @@ TEST(ProxyServerTest, FromURI) {
 }
 
 TEST(ProxyServerTest, DefaultConstructor) {
-  net::ProxyServer proxy_server;
+  ProxyServer proxy_server;
   EXPECT_FALSE(proxy_server.is_valid());
 }
 
 // Test parsing of the special URI form "direct://". Analagous to the "DIRECT"
 // entry in a PAC result.
 TEST(ProxyServerTest, Direct) {
-  net::ProxyServer uri =
-      net::ProxyServer::FromURI("direct://", net::ProxyServer::SCHEME_HTTP);
+  ProxyServer uri = ProxyServer::FromURI("direct://", ProxyServer::SCHEME_HTTP);
   EXPECT_TRUE(uri.is_valid());
   EXPECT_TRUE(uri.is_direct());
   EXPECT_EQ("direct://", uri.ToURI());
@@ -191,7 +161,7 @@ TEST(ProxyServerTest, Direct) {
 
 // Test parsing some invalid inputs.
 TEST(ProxyServerTest, Invalid) {
-  const char* tests[] = {
+  const char* const tests[] = {
     "",
     "   ",
     "dddf:",   // not a valid port
@@ -203,8 +173,7 @@ TEST(ProxyServerTest, Invalid) {
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    net::ProxyServer uri =
-        net::ProxyServer::FromURI(tests[i], net::ProxyServer::SCHEME_HTTP);
+    ProxyServer uri = ProxyServer::FromURI(tests[i], ProxyServer::SCHEME_HTTP);
     EXPECT_FALSE(uri.is_valid());
     EXPECT_FALSE(uri.is_direct());
     EXPECT_FALSE(uri.is_http());
@@ -214,15 +183,14 @@ TEST(ProxyServerTest, Invalid) {
 
 // Test that LWS (SP | HT) is disregarded from the ends.
 TEST(ProxyServerTest, Whitespace) {
-  const char* tests[] = {
+  const char* const tests[] = {
     "  foopy:80",
     "foopy:80   \t",
     "  \tfoopy:80  ",
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    net::ProxyServer uri =
-        net::ProxyServer::FromURI(tests[i], net::ProxyServer::SCHEME_HTTP);
+    ProxyServer uri = ProxyServer::FromURI(tests[i], ProxyServer::SCHEME_HTTP);
     EXPECT_EQ("foopy:80", uri.ToURI());
   }
 }
@@ -230,8 +198,8 @@ TEST(ProxyServerTest, Whitespace) {
 // Test parsing a ProxyServer from a PAC representation.
 TEST(ProxyServerTest, FromPACString) {
   const struct {
-    const char* input_pac;
-    const char* expected_uri;
+    const char* const input_pac;
+    const char* const expected_uri;
   } tests[] = {
     {
        "PROXY foopy:10",
@@ -280,7 +248,7 @@ TEST(ProxyServerTest, FromPACString) {
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    net::ProxyServer uri = net::ProxyServer::FromPacString(tests[i].input_pac);
+    ProxyServer uri = ProxyServer::FromPacString(tests[i].input_pac);
     EXPECT_TRUE(uri.is_valid());
     EXPECT_EQ(tests[i].expected_uri, uri.ToURI());
   }
@@ -288,7 +256,7 @@ TEST(ProxyServerTest, FromPACString) {
 
 // Test parsing a ProxyServer from an invalid PAC representation.
 TEST(ProxyServerTest, FromPACStringInvalid) {
-  const char* tests[] = {
+  const char* const tests[] = {
     "PROXY",  // missing host/port.
     "HTTPS",  // missing host/port.
     "SOCKS",  // missing host/port.
@@ -296,7 +264,7 @@ TEST(ProxyServerTest, FromPACStringInvalid) {
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    net::ProxyServer uri = net::ProxyServer::FromPacString(tests[i]);
+    ProxyServer uri = ProxyServer::FromPacString(tests[i]);
     EXPECT_FALSE(uri.is_valid());
   }
 }
@@ -304,8 +272,8 @@ TEST(ProxyServerTest, FromPACStringInvalid) {
 TEST(ProxyServerTest, ComparatorAndEquality) {
   struct {
     // Inputs.
-    const char* server1;
-    const char* server2;
+    const char* const server1;
+    const char* const server2;
 
     // Expectation.
     //   -1 means server1 is less than server2
@@ -337,13 +305,11 @@ TEST(ProxyServerTest, ComparatorAndEquality) {
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
     // Parse the expected inputs to ProxyServer instances.
-    const net::ProxyServer server1 =
-        net::ProxyServer::FromURI(
-            tests[i].server1, net::ProxyServer::SCHEME_HTTP);
+    const ProxyServer server1 =
+        ProxyServer::FromURI(tests[i].server1, ProxyServer::SCHEME_HTTP);
 
-    const net::ProxyServer server2 =
-        net::ProxyServer::FromURI(
-            tests[i].server2, net::ProxyServer::SCHEME_HTTP);
+    const ProxyServer server2 =
+        ProxyServer::FromURI(tests[i].server2, ProxyServer::SCHEME_HTTP);
 
     switch (tests[i].expected_comparison) {
       case -1:
@@ -366,3 +332,7 @@ TEST(ProxyServerTest, ComparatorAndEquality) {
     }
   }
 }
+
+}  // namespace
+
+}  // namespace net

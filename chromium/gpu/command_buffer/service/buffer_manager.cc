@@ -4,14 +4,15 @@
 
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include <limits>
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/context_state.h"
 #include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gpu {
 namespace gles2 {
@@ -23,6 +24,7 @@ BufferManager::BufferManager(
           new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
       feature_info_(feature_info),
       allow_buffers_on_multiple_targets_(false),
+      allow_fixed_attribs_(false),
       buffer_count_(0),
       have_context_(true),
       use_client_side_arrays_for_stream_buffers_(
@@ -72,6 +74,27 @@ void BufferManager::StopTracking(Buffer* buffer) {
   --buffer_count_;
 }
 
+Buffer::MappedRange::MappedRange(
+    GLintptr offset, GLsizeiptr size, GLenum access, void* pointer,
+    scoped_refptr<gpu::Buffer> shm)
+    : offset(offset),
+      size(size),
+      access(access),
+      pointer(pointer),
+      shm(shm) {
+  DCHECK(pointer);
+  DCHECK(shm.get() && GetShmPointer());
+}
+
+Buffer::MappedRange::~MappedRange() {
+}
+
+void* Buffer::MappedRange::GetShmPointer() const {
+  DCHECK(shm.get());
+  return shm->GetDataAddress(static_cast<unsigned int>(offset),
+                             static_cast<unsigned int>(size));
+}
+
 Buffer::Buffer(BufferManager* manager, GLuint service_id)
     : manager_(manager),
       size_(0),
@@ -117,6 +140,7 @@ void Buffer::SetInfo(
       memset(shadow_.get(), 0, size);
     }
   }
+  mapped_range_.reset(nullptr);
 }
 
 bool Buffer::CheckRange(
@@ -251,10 +275,13 @@ void BufferManager::SetInfo(
     Buffer* buffer, GLsizeiptr size, GLenum usage, const GLvoid* data) {
   DCHECK(buffer);
   memory_tracker_->TrackMemFree(buffer->size());
-  bool is_client_side_array = IsUsageClientSideArray(usage);
-  bool shadow = buffer->target() == GL_ELEMENT_ARRAY_BUFFER ||
-                allow_buffers_on_multiple_targets_ ||
-                is_client_side_array;
+  const bool is_client_side_array = IsUsageClientSideArray(usage);
+  const bool support_fixed_attribs =
+    gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2;
+  const bool shadow = buffer->target() == GL_ELEMENT_ARRAY_BUFFER ||
+                      allow_buffers_on_multiple_targets_ ||
+                      (allow_fixed_attribs_ && !support_fixed_attribs) ||
+                      is_client_side_array;
   buffer->SetInfo(size, usage, shadow, data, is_client_side_array);
   memory_tracker_->TrackMemAlloc(buffer->size());
 }
@@ -392,12 +419,23 @@ bool BufferManager::SetTarget(Buffer* buffer, GLenum target) {
 // Since one BufferManager can be shared by multiple decoders, ContextState is
 // passed in each time and not just passed in during initialization.
 Buffer* BufferManager::GetBufferInfoForTarget(
-    ContextState* state, GLenum target) {
-  DCHECK(target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER);
-  if (target == GL_ARRAY_BUFFER) {
-    return state->bound_array_buffer.get();
-  } else {
-    return state->vertex_attrib_manager->element_array_buffer();
+    ContextState* state, GLenum target) const {
+  switch (target) {
+    case GL_ARRAY_BUFFER:
+      return state->bound_array_buffer.get();
+    case GL_ELEMENT_ARRAY_BUFFER:
+      return state->vertex_attrib_manager->element_array_buffer();
+    case GL_COPY_READ_BUFFER:
+    case GL_COPY_WRITE_BUFFER:
+    case GL_PIXEL_PACK_BUFFER:
+    case GL_PIXEL_UNPACK_BUFFER:
+    case GL_TRANSFORM_FEEDBACK_BUFFER:
+    case GL_UNIFORM_BUFFER:
+      NOTIMPLEMENTED();
+      return nullptr;
+    default:
+      NOTREACHED();
+      return nullptr;
   }
 }
 

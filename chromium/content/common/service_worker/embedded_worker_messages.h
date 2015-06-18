@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "content/public/common/web_preferences.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
@@ -25,6 +26,7 @@ IPC_STRUCT_BEGIN(EmbeddedWorkerMsg_StartWorker_Params)
   IPC_STRUCT_MEMBER(int, worker_devtools_agent_route_id)
   IPC_STRUCT_MEMBER(bool, pause_after_download)
   IPC_STRUCT_MEMBER(bool, wait_for_debugger)
+  IPC_STRUCT_MEMBER(content::V8CacheOptions, v8_cache_options)
 IPC_STRUCT_END()
 
 // Parameters structure for EmbeddedWorkerHostMsg_ReportConsoleMessage.
@@ -63,9 +65,10 @@ IPC_MESSAGE_CONTROL1(EmbeddedWorkerHostMsg_WorkerReadyForInspection,
 
 // Renderer -> Browser message to indicate that the worker has loadedd the
 // script.
-IPC_MESSAGE_CONTROL2(EmbeddedWorkerHostMsg_WorkerScriptLoaded,
+IPC_MESSAGE_CONTROL3(EmbeddedWorkerHostMsg_WorkerScriptLoaded,
                      int /* embedded_worker_id */,
-                     int /* thread_id */)
+                     int /* thread_id */,
+                     int /* provider_id */)
 
 // Renderer -> Browser message to indicate that the worker has failed to load
 // the script.

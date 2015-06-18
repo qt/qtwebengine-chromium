@@ -107,29 +107,35 @@ void UIResourceLayer::SetLayerTreeHost(LayerTreeHost* host) {
 
   Layer::SetLayerTreeHost(host);
 
-  // Recreate the resource hold against the new LTH.
+  // Recreate the resource held against the new LTH.
   RecreateUIResourceHolder();
+
+  UpdateDrawsContent(HasDrawableContent());
 }
 
 void UIResourceLayer::RecreateUIResourceHolder() {
-  ui_resource_holder_ = nullptr;
-  if (layer_tree_host() && !bitmap_.empty()) {
-    ui_resource_holder_ =
-        ScopedUIResourceHolder::Create(layer_tree_host(), bitmap_);
-  }
-  UpdateDrawsContent(HasDrawableContent());
+  if (!bitmap_.empty())
+    SetBitmap(bitmap_);
 }
 
 void UIResourceLayer::SetBitmap(const SkBitmap& skbitmap) {
   bitmap_ = skbitmap;
-
-  RecreateUIResourceHolder();
+  if (layer_tree_host() && !bitmap_.empty()) {
+    ui_resource_holder_ =
+        ScopedUIResourceHolder::Create(layer_tree_host(), bitmap_);
+  } else {
+    ui_resource_holder_ = nullptr;
+  }
+  UpdateDrawsContent(HasDrawableContent());
   SetNeedsCommit();
 }
 
 void UIResourceLayer::SetUIResourceId(UIResourceId resource_id) {
   if (ui_resource_holder_ && ui_resource_holder_->id() == resource_id)
     return;
+
+  if (!bitmap_.isNull())
+    bitmap_.reset();
 
   if (resource_id)
     ui_resource_holder_ = SharedUIResourceHolder::Create(resource_id);

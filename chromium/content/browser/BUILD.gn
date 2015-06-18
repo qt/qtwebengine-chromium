@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
 import("//content/browser/browser.gni")
@@ -20,12 +21,17 @@ source_set("browser") {
   deps = [
     "//base",
     "//base:base_static",
+    "//components/mime_util",
     "//content:resources",
-    "//content/browser/service_worker:proto",
+    "//content/browser/background_sync:background_sync_proto",
+    "//content/browser/cache_storage:cache_storage_proto",
+    "//content/browser/notifications:notification_proto",
+    "//content/browser/service_worker:service_worker_proto",
     "//content/browser/speech/proto",
     "//content/public/common:common_sources",
     "//crypto",
     "//device/battery",
+    "//device/vibration",
     "//google_apis",
     "//net",
     "//skia",
@@ -38,6 +44,7 @@ source_set("browser") {
     "//ui/accessibility",
     "//ui/accessibility:ax_gen",
     "//ui/base",
+    "//ui/base/ime",
     "//ui/events",
     "//ui/events:gesture_detection",
     "//ui/gfx",
@@ -68,7 +75,8 @@ source_set("browser") {
   } else {
     # Normal non-iOS sources get everything.
     sources = rebase_path(content_browser_gypi_values.private_browser_sources,
-                          ".", "//content")
+                          ".",
+                          "//content")
 
     # TODO(GYP) these generated files are listed as sources in content_browser.
     # This is a bit suspicious. The GN grit template will make a source set
@@ -77,45 +85,49 @@ source_set("browser") {
     #
     # Need this annoying rebase_path call to match what happened with the
     # sources.
-    sources -= rebase_path([
-      "$root_gen_dir/webkit/grit/devtools_resources.h",
-      "$root_gen_dir/webkit/grit/devtools_resources_map.cc",
-      "$root_gen_dir/webkit/grit/devtools_resources_map.h",
-      "$root_gen_dir/content/browser/tracing/grit/tracing_resources.h",
-      "$root_gen_dir/ui/resources/grit/webui_resources_map.cc",
-      "$root_gen_dir/content/browser/devtools/devtools_protocol_constants.cc",
-      "$root_gen_dir/content/browser/devtools/devtools_protocol_constants.h",
-      "$root_gen_dir/content/browser/devtools/protocol/devtools_protocol_handler_impl.cc",
-      "$root_gen_dir/content/browser/devtools/protocol/devtools_protocol_handler_impl.h",
-    ], ".")
+    sources -= rebase_path(
+            [
+              "$root_gen_dir/blink/grit/devtools_resources.h",
+              "$root_gen_dir/blink/grit/devtools_resources_map.cc",
+              "$root_gen_dir/blink/grit/devtools_resources_map.h",
+              "$root_gen_dir/content/browser/tracing/grit/tracing_resources.h",
+              "$root_gen_dir/ui/resources/grit/webui_resources_map.cc",
+            ],
+            ".")
 
     # Non-iOS deps.
     deps += [
       "//cc",
       "//cc/surfaces",
+      "//components/scheduler:common",
       "//content/app/resources",
       "//content/app/strings",
+      "//content/browser/devtools:gen_devtools_protocol_handler",
       "//content/browser/devtools:resources",
       "//content/common:mojo_bindings",
       "//content/public/common:mojo_bindings",
-      "//mojo/public/cpp/bindings",
-      "//mojo/public/interfaces/application",
-      "//mojo/public/js",
-      "//net:http_server",
+      "//device/bluetooth",
+      "//mojo/application/public/interfaces",
       "//storage/browser",
       "//storage/common",
+      "//third_party/WebKit/public:image_resources",
       "//third_party/WebKit/public:resources",
       "//third_party/angle:commit_id",
       "//third_party/icu",
       "//third_party/leveldatabase",
       "//third_party/libyuv",
+      "//third_party/mojo/src/mojo/public/cpp/bindings",
+      "//third_party/mojo/src/mojo/public/js",
+      "//ui/events/blink",
       "//ui/resources",
       "//ui/surface",
+      "//ui/touch_selection",
     ]
   }
 
   configs += [
     "//content:content_implementation",
+    "//third_party/WebKit/public:debug_devtools",
   ]
 
   if (toolkit_views) {
@@ -130,9 +142,9 @@ source_set("browser") {
     deps += [ "//third_party/power_gadget" ]
   } else {
     sources += [
-      "power_profiler/power_data_provider_dummy.cc",
       "file_descriptor_info_impl.cc",
       "file_descriptor_info_impl.h",
+      "power_profiler/power_data_provider_dummy.cc",
     ]
     sources -= [ "renderer_host/web_input_event_aurawin.cc" ]
   }
@@ -145,12 +157,12 @@ source_set("browser") {
     deps += [ "//printing" ]
   }
 
-# TODO(GYP)
-#   ['OS!="ios" and chrome_multiple_dll!=1', {
-#     'dependencies': [
-#       '../third_party/WebKit/public/blink.gyp:blink',
-#     ],
-#   }],
+  # TODO(GYP)
+  #   ['OS!="ios" and chrome_multiple_dll!=1', {
+  #     'dependencies': [
+  #       '../third_party/WebKit/public/blink.gyp:blink',
+  #     ],
+  #   }],
   if (!is_mac && !is_ios) {
     deps += [ "//sandbox" ]
   }
@@ -160,7 +172,8 @@ source_set("browser") {
 
   if (enable_webrtc) {
     sources += rebase_path(content_browser_gypi_values.webrtc_browser_sources,
-                           ".", "//content")
+                           ".",
+                           "//content")
     deps += [ "//jingle:jingle_glue" ]
     if (is_linux) {
       deps += [ "//third_party/libjingle:libjingle_webrtc" ]
@@ -174,6 +187,8 @@ source_set("browser") {
       ]
       if (use_aura) {
         sources += [
+          "media/capture/aura_window_capture_machine.cc",
+          "media/capture/aura_window_capture_machine.h",
           "media/capture/desktop_capture_device_aura.cc",
           "media/capture/desktop_capture_device_aura.h",
         ]
@@ -202,17 +217,19 @@ source_set("browser") {
       "dinput8.lib",
       "dwmapi.lib",
       "dxguid.lib",
+      "oleacc.lib",
       "sensorsapi.lib",
       "portabledeviceguids.lib",
     ]
+
     # TODI(GYP)
-#       'msvs_settings': {
-#         'VCLinkerTool': {
-#           'DelayLoadDLLs': [
-#             'dinput8.dll',
-#             'user32.dll',
-#             'dwmapi.dll',
-#           ],
+    #       'msvs_settings': {
+    #         'VCLinkerTool': {
+    #           'DelayLoadDLLs': [
+    #             'dinput8.dll',
+    #             'user32.dll',
+    #             'dwmapi.dll',
+    #           ],
   }
 
   if (is_linux) {
@@ -220,7 +237,7 @@ source_set("browser") {
   }
 
   if (use_udev) {
-    configs += [ "//build/config/linux:udev" ]
+    deps += [ "//device/udev_linux" ]
   } else {
     # Remove udev-specific sources.
     sources -= [
@@ -239,10 +256,11 @@ source_set("browser") {
 
   if (enable_plugins) {
     sources += rebase_path(content_browser_gypi_values.plugin_browser_sources,
-                           ".", "//content")
+                           ".",
+                           "//content")
     deps += [
-      "//ppapi:ppapi_ipc",
-      "//ppapi:ppapi_shared",
+      "//ppapi/proxy:ipc",
+      "//ppapi/shared_impl",
     ]
     if (!use_ozone || use_pango) {
       sources -= [ "renderer_host/pepper/pepper_truetype_font_list_ozone.cc" ]
@@ -258,16 +276,17 @@ source_set("browser") {
 
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
+    deps += [ "//ui/gfx/x" ]
   }
 
   # Dealing with power_save_blocker_{x11,ozone}.cc is a little complicated
   # given the interaction between os_chromeos and the feature flags for X11 and
   # ozone, so do it all in one spot.
   if (is_chromeos || !use_ozone) {
-    sources -= [ "power_save_blocker_ozone.cc", ]
+    sources -= [ "power_save_blocker_ozone.cc" ]
   }
   if (is_chromeos || !use_x11) {
-    sources -= [ "power_save_blocker_x11.cc", ]
+    sources -= [ "power_save_blocker_x11.cc" ]
   }
 
   # Dealing with *wifi_data_provider_*.cc is also a bit complicated given
@@ -288,16 +307,16 @@ source_set("browser") {
 
   if (is_android) {
     sources += rebase_path(content_browser_gypi_values.android_browser_sources,
-                           ".", "//content")
+                           ".",
+                           "//content")
     sources -= [
       "browser_ipc_logging.cc",
       "device_sensors/data_fetcher_shared_memory_default.cc",
-      "font_list_async.cc",
       "geolocation/network_location_provider.cc",
       "geolocation/network_location_provider.h",
       "geolocation/network_location_request.cc",
       "geolocation/network_location_request.h",
-      "renderer_host/native_web_keyboard_event.cc",
+      "renderer_host/begin_frame_observer_proxy.cc",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
 
@@ -327,6 +346,7 @@ source_set("browser") {
       "//content/public/android:jni",
       "//media",
       "//mojo/android:libsystem_java",
+      "//ui/android",
     ]
     libs += [ "jnigraphics" ]
   }
@@ -337,10 +357,20 @@ source_set("browser") {
       "geolocation/empty_wifi_data_provider.cc",
       "geolocation/empty_wifi_data_provider.h",
     ]
-    libs += [ "bsm" ]
+    deps += [
+      "//sandbox/mac:sandbox",
+      "//third_party/mozilla",
+      "//third_party/sudden_motion_sensor",
+      "//ui/accelerated_widget_mac",
+    ]
+    libs += [
+      "bsm",
+      "QTKit.framework",
+    ]
   }
 
   if (is_chromeos) {
+    sources -= [ "device_sensors/data_fetcher_shared_memory_default.cc" ]
     deps += [
       "//chromeos",
       "//chromeos:power_manager_proto",
@@ -350,11 +380,14 @@ source_set("browser") {
   if (use_aura) {
     deps += [
       "//ui/aura",
+      "//ui/aura_extra",
       "//ui/strings",
       "//ui/wm",
     ]
   } else {  # Not aura.
     sources -= [
+      "renderer_host/compositor_resize_lock_aura.cc",
+      "renderer_host/compositor_resize_lock_aura.h",
       "renderer_host/input/synthetic_gesture_target_aura.cc",
       "renderer_host/input/synthetic_gesture_target_aura.h",
       "renderer_host/native_web_keyboard_event_aura.cc",
@@ -366,14 +399,14 @@ source_set("browser") {
       "renderer_host/web_input_event_aura.h",
       "web_contents/aura/gesture_nav_simple.cc",
       "web_contents/aura/gesture_nav_simple.h",
-      "web_contents/aura/image_window_delegate.cc",
-      "web_contents/aura/image_window_delegate.h",
       "web_contents/aura/overscroll_navigation_overlay.cc",
       "web_contents/aura/overscroll_navigation_overlay.h",
+      "web_contents/aura/overscroll_window_animation.cc",
+      "web_contents/aura/overscroll_window_animation.h",
+      "web_contents/aura/overscroll_window_delegate.cc",
+      "web_contents/aura/overscroll_window_delegate.h",
       "web_contents/aura/shadow_layer_delegate.cc",
       "web_contents/aura/shadow_layer_delegate.h",
-      "web_contents/aura/window_slider.cc",
-      "web_contents/aura/window_slider.h",
       "web_contents/touch_editable_impl_aura.cc",
       "web_contents/touch_editable_impl_aura.h",
       "web_contents/web_contents_view_aura.cc",
@@ -382,9 +415,10 @@ source_set("browser") {
   }
 
   if (use_aura || is_mac) {
-    sources += rebase_path(
-      content_browser_gypi_values.compositor_browser_sources,
-      ".", "//content")
+    sources +=
+        rebase_path(content_browser_gypi_values.compositor_browser_sources,
+                    ".",
+                    "//content")
     if (!use_x11) {
       sources -= [
         "compositor/software_output_device_x11.cc",
@@ -394,8 +428,8 @@ source_set("browser") {
 
     if (!use_ozone) {
       sources -= [
-        "compositor/overlay_candidate_validator_ozone.cc",
-        "compositor/overlay_candidate_validator_ozone.h",
+        "compositor/browser_compositor_overlay_candidate_validator_ozone.cc",
+        "compositor/browser_compositor_overlay_candidate_validator_ozone.h",
         "compositor/software_output_device_ozone.cc",
         "compositor/software_output_device_ozone.h",
       ]
@@ -421,5 +455,13 @@ source_set("browser") {
       "media/media_web_contents_observer.cc",
       "media/media_web_contents_observer.h",
     ]
+  }
+
+  if (is_linux && use_openssl) {
+    deps += [ "//third_party/boringssl" ]
+  }
+
+  if (enable_media_mojo_renderer) {
+    deps += [ "//media/mojo/services:renderer_service" ]
   }
 }

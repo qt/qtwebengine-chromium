@@ -11,10 +11,9 @@
 #include "SkImageDecoder.h"
 #include "SkImageEncoder.h"
 #include "SkMovie.h"
+#include "SkStream.h"
 
 class SkColorTable;
-class SkStream;
-class SkStreamRewindable;
 
 // Empty implementations for SkImageDecoder.
 
@@ -48,6 +47,13 @@ bool SkImageDecoder::buildTileIndex(SkStreamRewindable*, int *width, int *height
     return false;
 }
 
+bool SkImageDecoder::onBuildTileIndex(SkStreamRewindable* stream,
+                                      int* /*width*/, int* /*height*/) {
+    SkDELETE(stream);
+    return false;
+}
+
+
 bool SkImageDecoder::decodeSubset(SkBitmap*, const SkIRect&, SkColorType) {
     return false;
 }
@@ -68,12 +74,6 @@ SkImageDecoder::Peeker* SkImageDecoder::setPeeker(Peeker*) {
     return NULL;
 }
 
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-SkImageDecoder::Chooser* SkImageDecoder::setChooser(Chooser*) {
-    return NULL;
-}
-#endif
-
 SkBitmap::Allocator* SkImageDecoder::setAllocator(SkBitmap::Allocator*) {
     return NULL;
 }
@@ -84,12 +84,6 @@ bool SkImageDecoder::cropBitmap(SkBitmap*, SkBitmap*, int, int, int, int, int,
                     int, int) {
     return false;
 }
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-bool SkImageDecoder::chooseFromOneChoice(SkColorType, int, int) const {
-    return false;
-}
-#endif
 
 bool SkImageDecoder::allocPixelRef(SkBitmap*, SkColorTable*) const {
     return false;

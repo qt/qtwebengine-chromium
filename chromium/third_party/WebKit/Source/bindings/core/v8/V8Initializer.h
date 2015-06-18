@@ -26,15 +26,17 @@
 #ifndef V8Initializer_h
 #define V8Initializer_h
 
+#include "core/CoreExport.h"
 #include <v8.h>
 
 namespace blink {
 
-class V8Initializer {
+class CORE_EXPORT V8Initializer {
 public:
     static void initializeMainThreadIfNeeded();
     static void initializeWorker(v8::Isolate*);
-    static void reportRejectedPromises();
+
+    static void reportRejectedPromisesOnMainThread();
 };
 
 } // namespace blink

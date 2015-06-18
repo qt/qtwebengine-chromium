@@ -121,21 +121,6 @@ void DtlsTransportChannelWrapper::Connect() {
   channel_->Connect();
 }
 
-void DtlsTransportChannelWrapper::Reset() {
-  channel_->Reset();
-  set_writable(false);
-  set_readable(false);
-
-  // Re-call SetupDtls()
-  if (!SetupDtls()) {
-    LOG_J(LS_ERROR, this) << "Error re-initializing DTLS";
-    dtls_state_ = STATE_CLOSED;
-    return;
-  }
-
-  dtls_state_ = STATE_ACCEPTED;
-}
-
 bool DtlsTransportChannelWrapper::SetLocalIdentity(
     rtc::SSLIdentity* identity) {
   if (dtls_state_ != STATE_NONE) {
@@ -186,6 +171,14 @@ bool DtlsTransportChannelWrapper::GetSslRole(rtc::SSLRole* role) const {
   return true;
 }
 
+bool DtlsTransportChannelWrapper::GetSslCipher(std::string* cipher) {
+  if (dtls_state_ != STATE_OPEN) {
+    return false;
+  }
+
+  return dtls_->GetSslCipher(cipher);
+}
+
 bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
     const std::string& digest_alg,
     const uint8* digest,
@@ -216,7 +209,7 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
   }
 
   // At this point we know we are doing DTLS
-  remote_fingerprint_value.TransferTo(&remote_fingerprint_value_);
+  remote_fingerprint_value_ = remote_fingerprint_value.Pass();
   remote_fingerprint_algorithm_ = digest_alg;
 
   if (!SetupDtls()) {
@@ -255,8 +248,8 @@ bool DtlsTransportChannelWrapper::SetupDtls() {
   dtls_->SignalEvent.connect(this, &DtlsTransportChannelWrapper::OnDtlsEvent);
   if (!dtls_->SetPeerCertificateDigest(
           remote_fingerprint_algorithm_,
-          reinterpret_cast<unsigned char *>(remote_fingerprint_value_.data()),
-          remote_fingerprint_value_.length())) {
+          reinterpret_cast<unsigned char*>(remote_fingerprint_value_.data()),
+          remote_fingerprint_value_.size())) {
     LOG_J(LS_ERROR, this) << "Couldn't set DTLS certificate digest.";
     return false;
   }
@@ -390,7 +383,8 @@ void DtlsTransportChannelWrapper::OnReadableState(TransportChannel* channel) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
   ASSERT(channel == channel_);
   LOG_J(LS_VERBOSE, this)
-      << "DTLSTransportChannelWrapper: channel readable state changed.";
+      << "DTLSTransportChannelWrapper: channel readable state changed to "
+      << channel_->readable();
 
   if (dtls_state_ == STATE_NONE || dtls_state_ == STATE_OPEN) {
     set_readable(channel_->readable());
@@ -402,7 +396,8 @@ void DtlsTransportChannelWrapper::OnWritableState(TransportChannel* channel) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
   ASSERT(channel == channel_);
   LOG_J(LS_VERBOSE, this)
-      << "DTLSTransportChannelWrapper: channel writable state changed.";
+      << "DTLSTransportChannelWrapper: channel writable state changed to "
+      << channel_->writable();
 
   switch (dtls_state_) {
     case STATE_NONE:

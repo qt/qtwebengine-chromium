@@ -595,12 +595,6 @@
   [
     302,
     "apps/declare_permissions.html",
-    "apps/infobars.html",
-    "redirects to /extensions/infobars.html"
-  ],
-  [
-    302,
-    "apps/declare_permissions.html",
     "apps/signedInDevices.html",
     "redirects to /extensions/signedInDevices.html"
   ],
@@ -966,12 +960,6 @@
   [
     302,
     "apps/private_apis.html",
-    "apps/infobars.html",
-    "redirects to /extensions/infobars.html"
-  ],
-  [
-    302,
-    "apps/private_apis.html",
     "apps/input_ime.html",
     "redirects to /extensions/input_ime.html"
   ],
@@ -1088,12 +1076,6 @@
     "apps/private_apis.html",
     "apps/screenlockPrivate.html",
     "target page not found"
-  ],
-  [
-    302,
-    "apps/private_apis.html",
-    "apps/scriptBadge.html",
-    "redirects to /extensions/scriptBadge.html"
   ],
   [
     302,

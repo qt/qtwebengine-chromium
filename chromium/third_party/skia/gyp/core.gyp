@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # Core Skia library code.
 {
   'targets': [
@@ -20,7 +24,6 @@
         '../include/pipe',
         '../include/ports',
         '../include/utils',
-        '../include/xml',
         '../include/images',
         '../src/core',
         '../src/sfnt',

@@ -22,14 +22,18 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory_impl.h"
+#include "storage/browser/blob/blob_data_builder.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_data_snapshot.h"
+#include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/fileapi/file_system_operation_context.h"
 #include "storage/browser/fileapi/file_system_url.h"
-#include "storage/common/blob/blob_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using storage::BlobData;
+using storage::BlobDataSnapshot;
+using storage::BlobDataBuilder;
 using storage::BlobURLRequestJob;
 
 namespace content {
@@ -64,9 +68,8 @@ class BlobURLRequestJobTest : public testing::Test {
     net::URLRequestJob* MaybeCreateJob(
         net::URLRequest* request,
         net::NetworkDelegate* network_delegate) const override {
-      return new BlobURLRequestJob(request,
-                                   network_delegate,
-                                   test_->blob_data_.get(),
+      return new BlobURLRequestJob(request, network_delegate,
+                                   test_->GetSnapshotFromBuilder(),
                                    test_->file_system_context_.get(),
                                    base::MessageLoopProxy::current().get());
     }
@@ -76,8 +79,7 @@ class BlobURLRequestJobTest : public testing::Test {
   };
 
   BlobURLRequestJobTest()
-      : blob_data_(new BlobData()),
-        expected_status_code_(0) {}
+      : blob_data_(new BlobDataBuilder("uuid")), expected_status_code_(0) {}
 
   void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -103,7 +105,12 @@ class BlobURLRequestJobTest : public testing::Test {
     url_request_context_.set_job_factory(&url_request_job_factory_);
   }
 
-  void TearDown() override {}
+  void TearDown() override {
+    blob_handle_.reset();
+    // Clean up for ASAN
+    base::RunLoop run_loop;
+    run_loop.RunUntilIdle();
+  }
 
   void SetUpFileSystem() {
     // Prepare file system.
@@ -183,7 +190,7 @@ class BlobURLRequestJobTest : public testing::Test {
   void TestRequest(const std::string& method,
                    const net::HttpRequestHeaders& extra_headers) {
     request_ = url_request_context_.CreateRequest(
-        GURL("blob:blah"), net::DEFAULT_PRIORITY, &url_request_delegate_, NULL);
+        GURL("blob:blah"), net::DEFAULT_PRIORITY, &url_request_delegate_);
     request_->set_method(method);
     if (!extra_headers.IsEmpty())
       request_->SetExtraRequestHeaders(extra_headers);
@@ -215,14 +222,21 @@ class BlobURLRequestJobTest : public testing::Test {
     *expected_result += std::string(kTestFileSystemFileData2 + 6, 7);
   }
 
+  scoped_ptr<BlobDataSnapshot> GetSnapshotFromBuilder() {
+    if (!blob_handle_) {
+      blob_handle_ = blob_context_.AddFinishedBlob(blob_data_.get()).Pass();
+    }
+    return blob_handle_->CreateSnapshot().Pass();
+  }
+
   // This only works if all the Blob items have a definite pre-computed length.
   // Otherwise, this will fail a CHECK.
-  int64 GetTotalBlobLength() const {
+  int64 GetTotalBlobLength() {
     int64 total = 0;
-    const std::vector<BlobData::Item>& items = blob_data_->items();
-    for (std::vector<BlobData::Item>::const_iterator it = items.begin();
-         it != items.end(); ++it) {
-      int64 length = base::checked_cast<int64>(it->length());
+    scoped_ptr<BlobDataSnapshot> data = GetSnapshotFromBuilder();
+    const auto& items = data->items();
+    for (const auto& item : items) {
+      int64 length = base::checked_cast<int64>(item->length());
       CHECK(length <= kint64max - total);
       total += length;
     }
@@ -243,7 +257,11 @@ class BlobURLRequestJobTest : public testing::Test {
 
   base::MessageLoopForIO message_loop_;
   scoped_refptr<storage::FileSystemContext> file_system_context_;
-  scoped_refptr<BlobData> blob_data_;
+
+  storage::BlobStorageContext blob_context_;
+  scoped_ptr<storage::BlobDataHandle> blob_handle_;
+  scoped_ptr<BlobDataBuilder> blob_data_;
+  scoped_ptr<BlobDataSnapshot> blob_data_snapshot_;
   net::URLRequestJobFactoryImpl url_request_job_factory_;
   net::URLRequestContext url_request_context_;
   MockURLRequestDelegate url_request_delegate_;
@@ -326,6 +344,13 @@ TEST_F(BlobURLRequestJobTest, TestGetNonExistentFileSystemFileRequest) {
   blob_data_->AppendFileSystemFile(non_existent_file, 0, kuint64max,
                                    base::Time());
   TestErrorRequest(404);
+}
+
+TEST_F(BlobURLRequestJobTest, TestGetInvalidFileSystemFileRequest) {
+  SetUpFileSystem();
+  GURL invalid_file;
+  blob_data_->AppendFileSystemFile(invalid_file, 0, kuint64max, base::Time());
+  TestErrorRequest(500);
 }
 
 TEST_F(BlobURLRequestJobTest, TestGetChangedFileSystemFileRequest) {

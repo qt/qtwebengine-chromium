@@ -10,12 +10,12 @@
 #include "net/spdy/spdy_session.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_NSS) || defined(OS_IOS)
-#include "net/ocsp/nss_ocsp.h"
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
+#include "net/cert_net/nss_ocsp.h"
 #endif
 
 class StaticReset : public ::testing::EmptyTestEventListener {
-  virtual void OnTestStart(const ::testing::TestInfo& test_info) override {
+  void OnTestStart(const ::testing::TestInfo& test_info) override {
     net::HttpStreamFactory::ResetStaticSettingsToInit();
   }
 };
@@ -38,7 +38,7 @@ void NetTestSuite::Initialize() {
 }
 
 void NetTestSuite::Shutdown() {
-#if defined(USE_NSS) || defined(OS_IOS)
+#if defined(USE_NSS_CERTS) || defined(OS_IOS)
   net::ShutdownNSSHttpIO();
 #endif
 

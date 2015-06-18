@@ -15,7 +15,6 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,11 +29,11 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/safe_integer_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/strings/grit/app_locale_settings.h"
 
 #if defined(OS_ANDROID)
@@ -42,8 +41,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/platform_font_pango.h"
+#include "ui/gfx/platform_font_linux.h"
 #endif
 
 #if defined(OS_WIN)
@@ -74,23 +72,6 @@ const char kPakFileSuffix[] = ".pak";
 #endif
 
 ResourceBundle* g_shared_instance_ = NULL;
-
-void InitDefaultFontList() {
-#if defined(OS_CHROMEOS) && defined(USE_PANGO)
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  std::string font_family = base::UTF16ToUTF8(
-      rb.GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
-  gfx::FontList::SetDefaultFontDescription(font_family);
-
-  // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
-  // the font list is done.  We will no longer need SetDefaultFontDescription()
-  // after every client gets started using a FontList instead of a Font.
-  gfx::PlatformFontPango::SetDefaultFontDescription(font_family);
-#else
-  // Use a single default font as the default font list.
-  gfx::FontList::SetDefaultFontDescription(std::string());
-#endif
-}
 
 #if defined(OS_ANDROID)
 // Returns the scale factor closest to |scale| from the full list of factors.
@@ -171,7 +152,7 @@ std::string ResourceBundle::InitSharedInstanceWithLocale(
   if (load_resources == LOAD_COMMON_RESOURCES)
     g_shared_instance_->LoadCommonResources();
   std::string result = g_shared_instance_->LoadLocaleResources(pref_locale);
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
   return result;
 }
 
@@ -186,7 +167,7 @@ void ResourceBundle::InitSharedInstanceWithPakFileRegion(
     return;
   }
   g_shared_instance_->locale_resources_data_.reset(data_pack.release());
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
 }
 
 // static
@@ -194,7 +175,7 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
   InitSharedInstance(NULL);
   g_shared_instance_->LoadTestResources(path, path);
 
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
 }
 
 // static
@@ -454,20 +435,10 @@ base::StringPiece ResourceBundle::GetRawDataResource(int resource_id) const {
 base::StringPiece ResourceBundle::GetRawDataResourceForScale(
     int resource_id,
     ScaleFactor scale_factor) const {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422489 is fixed.
-  tracked_objects::ScopedTracker tracking_profile1(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422489 ResourceBundle::GetRawDataResourceForScale 1"));
-
   base::StringPiece data;
   if (delegate_ &&
       delegate_->GetRawDataResource(resource_id, scale_factor, &data))
     return data;
-
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422489 is fixed.
-  tracked_objects::ScopedTracker tracking_profile2(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422489 ResourceBundle::GetRawDataResourceForScale 2"));
 
   if (scale_factor != ui::SCALE_FACTOR_100P) {
     for (size_t i = 0; i < data_packs_.size(); i++) {
@@ -477,10 +448,6 @@ base::StringPiece ResourceBundle::GetRawDataResourceForScale(
         return data;
     }
   }
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422489 is fixed.
-  tracked_objects::ScopedTracker tracking_profile3(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422489 ResourceBundle::GetRawDataResourceForScale 3"));
 
   for (size_t i = 0; i < data_packs_.size(); i++) {
     if ((data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_100P ||
@@ -576,6 +543,7 @@ const gfx::Font& ResourceBundle::GetFont(FontStyle style) {
 
 void ResourceBundle::ReloadFonts() {
   base::AutoLock lock_scope(*images_and_fonts_lock_);
+  InitDefaultFontList();
   base_font_list_.reset();
   LoadFontsIfNecessary();
 }
@@ -694,11 +662,30 @@ void ResourceBundle::AddDataPackFromPathInternal(const base::FilePath& path,
 }
 
 void ResourceBundle::AddDataPack(DataPack* data_pack) {
+#if DCHECK_IS_ON()
+  data_pack->CheckForDuplicateResources(data_packs_);
+#endif
   data_packs_.push_back(data_pack);
 
   if (GetScaleForScaleFactor(data_pack->GetScaleFactor()) >
       GetScaleForScaleFactor(max_scale_factor_))
     max_scale_factor_ = data_pack->GetScaleFactor();
+}
+
+void ResourceBundle::InitDefaultFontList() {
+#if defined(OS_CHROMEOS)
+  std::string font_family = base::UTF16ToUTF8(
+      GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
+  gfx::FontList::SetDefaultFontDescription(font_family);
+
+  // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
+  // the font list is done.  We will no longer need SetDefaultFontDescription()
+  // after every client gets started using a FontList instead of a Font.
+  gfx::PlatformFontLinux::SetDefaultFontDescription(font_family);
+#else
+  // Use a single default font as the default font list.
+  gfx::FontList::SetDefaultFontDescription(std::string());
+#endif
 }
 
 void ResourceBundle::LoadFontsIfNecessary() {
@@ -767,8 +754,8 @@ scoped_ptr<gfx::FontList> ResourceBundle::GetFontListFromDelegate(
   DCHECK(delegate_);
   scoped_ptr<gfx::Font> font = delegate_->GetFont(style);
   if (font.get())
-    return scoped_ptr<gfx::FontList>(new gfx::FontList(*font));
-  return scoped_ptr<gfx::FontList>();
+    return make_scoped_ptr(new gfx::FontList(*font));
+  return nullptr;
 }
 
 bool ResourceBundle::LoadBitmap(const ResourceHandle& data_handle,

@@ -4,7 +4,7 @@
 
 #include "net/quic/congestion_control/rtt_stats.h"
 
-#include <complex>  // std::abs
+#include <cstdlib>  // std::abs
 
 using std::max;
 
@@ -28,7 +28,7 @@ RttStats::RttStats()
       min_rtt_(QuicTime::Delta::Zero()),
       smoothed_rtt_(QuicTime::Delta::Zero()),
       mean_deviation_(QuicTime::Delta::Zero()),
-      initial_rtt_us_(kInitialRttMs * base::Time::kMicrosecondsPerMillisecond),
+      initial_rtt_us_(kInitialRttMs * kNumMicrosPerMilli),
       num_min_rtt_samples_remaining_(0),
       recent_min_rtt_window_(QuicTime::Delta::Infinite()) {}
 
@@ -79,9 +79,9 @@ void RttStats::UpdateRtt(QuicTime::Delta send_delta,
     mean_deviation_ = QuicTime::Delta::FromMicroseconds(
         rtt_sample.ToMicroseconds() / 2);
   } else {
-    mean_deviation_ = QuicTime::Delta::FromMicroseconds(
+    mean_deviation_ = QuicTime::Delta::FromMicroseconds(static_cast<int64>(
         kOneMinusBeta * mean_deviation_.ToMicroseconds() +
-        kBeta * std::abs(smoothed_rtt_.Subtract(rtt_sample).ToMicroseconds()));
+        kBeta * std::abs(smoothed_rtt_.Subtract(rtt_sample).ToMicroseconds())));
     smoothed_rtt_ = smoothed_rtt_.Multiply(kOneMinusAlpha).Add(
         rtt_sample.Multiply(kAlpha));
     DVLOG(1) << " smoothed_rtt(us):" << smoothed_rtt_.ToMicroseconds()

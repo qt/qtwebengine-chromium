@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/sys_info.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -32,6 +33,8 @@ const char* kMultipleRasterThreadsFeatureName = "multiple_raster_threads";
 
 const int kMinRasterThreads = 1;
 const int kMaxRasterThreads = 64;
+
+const int kMinMSAASampleCount = 0;
 
 struct GpuFeatureInfo {
   std::string name;
@@ -173,11 +176,13 @@ bool IsPinchVirtualViewportEnabled() {
   if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport))
     return true;
 
-#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
   return true;
-#else
-  return false;
-#endif
+}
+
+bool IsPropertyTreeVerificationEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(cc::switches::kEnablePropertyTreeVerification);
 }
 
 bool IsDelegatedRendererEnabled() {
@@ -199,23 +204,49 @@ bool IsDelegatedRendererEnabled() {
 bool IsImplSidePaintingEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kEnableImplSidePainting))
-    return true;
-  else if (command_line.HasSwitch(switches::kDisableImplSidePainting))
+  if (command_line.HasSwitch(switches::kDisableImplSidePainting))
     return false;
-
   return true;
 }
 
 int NumberOfRendererRasterThreads() {
   int num_raster_threads = 1;
 
+  // Async uploads uses its own thread, so allow an extra thread when async
+  // uploads is not in use.
+  bool allow_extra_thread =
+      IsZeroCopyUploadEnabled() || IsOneCopyUploadEnabled();
+  if (base::SysInfo::NumberOfProcessors() >= 4 && allow_extra_thread)
+    num_raster_threads = 2;
+
   int force_num_raster_threads = ForceNumberOfRendererRasterThreads();
   if (force_num_raster_threads)
     num_raster_threads = force_num_raster_threads;
 
   return num_raster_threads;
+}
+
+bool IsOneCopyUploadEnabled() {
+  if (IsZeroCopyUploadEnabled())
+    return false;
+
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kEnableOneCopy))
+    return true;
+  if (command_line.HasSwitch(switches::kDisableOneCopy))
+    return false;
+
+#if defined(OS_ANDROID)
+  return false;
+#endif
+  return true;
+}
+
+bool IsZeroCopyUploadEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(switches::kEnableZeroCopy);
 }
 
 int ForceNumberOfRendererRasterThreads() {
@@ -232,7 +263,7 @@ int ForceNumberOfRendererRasterThreads() {
       force_num_raster_threads <= kMaxRasterThreads) {
     return force_num_raster_threads;
   } else {
-    LOG(WARNING) << "Failed to parse switch " <<
+    DLOG(WARNING) << "Failed to parse switch " <<
         switches::kNumRasterThreads  << ": " << string_value;
     return 0;
   }
@@ -254,7 +285,13 @@ bool IsGpuRasterizationEnabled() {
     return false;
   }
 
+#if defined(OS_ANDROID)
   return true;
+#endif
+
+  // explicitly disable GPU rasterization on all non-android devices until we
+  // have full test coverage.
+  return false;
 }
 
 bool IsForceGpuRasterizationEnabled() {
@@ -268,13 +305,48 @@ bool IsForceGpuRasterizationEnabled() {
 }
 
 bool UseSurfacesEnabled() {
+#if defined(OS_ANDROID)
+  return false;
+#endif
+  bool enabled = false;
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  enabled = true;
+#endif
+
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
 
-  return command_line.HasSwitch(switches::kUseSurfaces);
+  // Flags override.
+  enabled |= command_line.HasSwitch(switches::kUseSurfaces);
+  enabled &= !command_line.HasSwitch(switches::kDisableSurfaces);
+  return enabled;
 }
 
-base::Value* GetFeatureStatus() {
+int GpuRasterizationMSAASampleCount() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+
+  if (!command_line.HasSwitch(switches::kGpuRasterizationMSAASampleCount))
+#if defined(OS_ANDROID)
+    return 4;
+#else
+    return 8;
+#endif
+  std::string string_value = command_line.GetSwitchValueASCII(
+      switches::kGpuRasterizationMSAASampleCount);
+  int msaa_sample_count = 0;
+  if (base::StringToInt(string_value, &msaa_sample_count) &&
+      msaa_sample_count >= kMinMSAASampleCount) {
+    return msaa_sample_count;
+  } else {
+    DLOG(WARNING) << "Failed to parse switch "
+                  << switches::kGpuRasterizationMSAASampleCount << ": "
+                  << string_value;
+    return 0;
+  }
+}
+
+base::DictionaryValue* GetFeatureStatus() {
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
   std::string gpu_access_blocked_reason;
   bool gpu_access_blocked =
@@ -371,10 +443,8 @@ base::Value* GetProblems() {
   return problem_list;
 }
 
-base::Value* GetDriverBugWorkarounds() {
-  base::ListValue* workaround_list = new base::ListValue();
-  GpuDataManagerImpl::GetInstance()->GetDriverBugWorkarounds(workaround_list);
-  return workaround_list;
+std::vector<std::string> GetDriverBugWorkarounds() {
+  return GpuDataManagerImpl::GetInstance()->GetDriverBugWorkarounds();
 }
 
 }  // namespace content

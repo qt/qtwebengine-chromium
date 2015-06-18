@@ -22,20 +22,23 @@ Modifications:
 - Add a fix for handling of unknown namespaces, commit upstream is pending.
 - Add fixes for ending the parse properly if a SAX callback calls xmlStopParser(), commit upstream is pending.
 - Add fix for entities, commit upstream is http://git.gnome.org/browse/libxml2/commit/?id=5bd3c061823a8499b27422aee04ea20aae24f03e
-- Import UTF-8 fix from upstream: http://git.gnome.org/browse/libxml2/commit/?id=0795348aeb86648723bc391e4d02e20631c10bca 
+- Import UTF-8 fix from upstream: http://git.gnome.org/browse/libxml2/commit/?id=0795348aeb86648723bc391e4d02e20631c10bca
 - Import XPath fix http://git.gnome.org/browse/libxml2/commit/xpath.c?id=2ddecc23862bab1a9a9e51e097aefc92ec305e28
 - Merge clang warning fix http://git.gnome.org/browse/libxml2/commit/?id=aae48e64dfbf2b46b157a4c1857e30645116388f
 - Add a fix for proper escaping of xpointer expressions, commit upstream is pending.
 - Add helper classes in chromium/libxml_utils.cc and chromium/include/libxml/libxml_utils.h.
 - Add a tweak to limit problems caused by excessive strings and buffers.
 - Change the xmlNs struct a little bit, so it looks like it has no children
-if treated as a generic xmlNode object.
+  if treated as a generic xmlNode object.
 - Fix pretty harmless use-after-free in generate-id function.
 - Merge a clang warning fix http://git.gnome.org/browse/libxml2/commit/?id=713434d2309da469d64b35e163ea6556dadccada
 - Import attribute normalization fix http://git.gnome.org/browse/libxml2/commit/?id=6a36fbe3b3e001a8a840b5c1fdd81cefc9947f0d
 - Merge a redundant comparison fix http://git.gnome.org/browse/libxml2/commit/?id=2af19f985b911b6dc6ada478ba8d201d2ddc9309
 - Merge a redundant comparisons fix https://git.gnome.org/browse/libxml2/commit/?id=eea38159be421dbafbee38f40e239f91734bc713
 - Merge XML_PARSER_EOF checks https://git.gnome.org/browse/libxml2/commit/?id=48b4cdde3483e054af8ea02e0cd7ee467b0e9a50 and https://git.gnome.org/browse/libxml2/commit/?id=e50ba8164eee06461c73cd8abb9b46aa0be81869
+- Prevent snprintf from being defined as _snprintf on VS 2015.
+- Make ucrt of Win10 SDK not define POSIX error codes.
+- Delete/disable nanoftp and nanohttp.
 
 To import a new snapshot of libxml:
 

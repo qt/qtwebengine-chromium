@@ -5,6 +5,11 @@
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
 
+declare_args() {
+  # Enable to include Polymer 0.8 in the binary.
+  enable_polymer_v08 = false
+}
+
 # GYP version: ui/resources/ui_resources.gyp:ui_resources
 group("resources") {
   deps = [
@@ -35,6 +40,11 @@ grit("ui_unscaled_resources_grd") {
   ]
 }
 
+webui_grit_defines = []
+if (enable_polymer_v08) {
+  webui_grit_defines += [ "enable_polymer_v08" ]
+}
+
 grit("webui_resources_grd") {
   source = "../webui/resources/webui_resources.grd"
   outputs = [
@@ -43,13 +53,20 @@ grit("webui_resources_grd") {
     "grit/webui_resources_map.h",
     "webui_resources.pak",
   ]
+  defines = webui_grit_defines
 }
 
 if (!is_mac) {
   copy("copy_ui_resources_100_percent") {
-    sources = [ "$root_gen_dir/ui/resources/ui_resources_100_percent.pak" ]
-    outputs = [ "$root_out_dir/ui_resources_100_percent.pak" ]
-    deps = [ "//ui/resources" ]
+    sources = [
+      "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
+    ]
+    outputs = [
+      "$root_out_dir/ui_resources_100_percent.pak",
+    ]
+    deps = [
+      "//ui/resources",
+    ]
   }
 }
 
@@ -60,11 +77,22 @@ if (!is_mac) {
 #              (copy_ui_test_pak action)
 if (is_ios || is_mac) {
   group("ui_test_pak") {
-    deps = [ ":repack_ui_test_pak", ":repack_ui_test_mac_locale_pack" ]
+    deps = [
+      ":repack_ui_test_pak",
+      ":repack_ui_test_mac_locale_pack",
+    ]
   }
 } else {
-  group("ui_test_pak") {
-    deps = [ ":repack_ui_test_pak" ]
+  copy("ui_test_pak") {
+    sources = [
+      "$root_out_dir/ui_test.pak",
+    ]
+    outputs = [
+      "$root_out_dir/ui/en-US.pak",
+    ]
+    deps = [
+      ":repack_ui_test_pak",
+    ]
   }
 }
 
@@ -111,7 +139,10 @@ repack("repack_ui_test_pak") {
 # copied, because it causes leaks from allocations within system libraries when
 # trying to load non-string resources. http://crbug.com/413034.
 repack("repack_ui_test_mac_locale_pack") {
-  visibility = [ ":ui_test_pak" ]
+  visibility = [
+    ":ui_test_pak",
+    "//:gn_visibility",  # TODO(GYP): this shouldn't be necessary.
+  ]
 
   sources = [
     "$root_gen_dir/ui/strings/app_locale_settings_en-US.pak",

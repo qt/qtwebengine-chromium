@@ -13,19 +13,29 @@ source_set("child") {
   visibility = [ "//content/public/child:child_sources" ]
 
   sources = rebase_path(content_child_gypi_values.private_child_sources,
-                        ".", "//content")
+                        ".",
+                        "//content")
+
+  public_deps = [
+    "//third_party/mojo/src/mojo/edk/system",
+  ]
 
   deps = [
     "//base",
+    "//components/mime_util",
     "//components/tracing",
+    "//components/webcrypto",
+    "//content/common:mojo_bindings",
+    "//mojo/application/public/interfaces",
     "//mojo/common",
     "//mojo/environment:chromium",
-    "//mojo/public/interfaces/application",
     "//skia",
     "//third_party/icu",
     "//ui/base",
+    "//ui/events/gestures/blink",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/native_theme",
     "//url",
   ]
 
@@ -37,12 +47,12 @@ source_set("child") {
   }
 
   if (is_android) {
-    deps += [
-      "//third_party/android_tools:cpu_features",
-    ]
+    deps += [ "//third_party/android_tools:cpu_features" ]
   }
 
-  if (!enable_plugins) {
+  if (enable_plugins) {
+    deps += [ "//ppapi/proxy" ]
+  } else {
     sources -= [
       "browser_font_resource_trusted.cc",
       "npapi/plugin_host.cc",
@@ -83,19 +93,16 @@ source_set("child") {
         "npapi/webplugin_ime_win.h",
       ]
     } else if (is_android) {
-      sources -= [
-        "npapi/webplugin_delegate_impl_android.cc",
-      ]
+      sources -= [ "npapi/webplugin_delegate_impl_android.cc" ]
     }
     if (use_aura) {
-      sources -= [
-        "npapi/webplugin_delegate_impl_aura.cc",
-      ]
+      sources -= [ "npapi/webplugin_delegate_impl_aura.cc" ]
     }
   }
 
   configs += [
     "//content:content_implementation",
+    "//build/config/compiler:no_size_t_to_int_warning",
   ]
 
   if (is_ios) {
@@ -104,11 +111,13 @@ source_set("child") {
     sources = []
   } else {
     deps += [
+      "//components/scheduler:scheduler",
       "//content/app/resources",
       "//content/app/strings",
       "//crypto:platform",
       "//storage/common",
       "//third_party/WebKit/public:blink",
+      "//third_party/WebKit/public:image_resources",
       "//third_party/WebKit/public:resources",
       "//third_party/npapi",
     ]
@@ -121,13 +130,5 @@ source_set("child") {
 
   if (is_win || !use_aura) {
     sources -= [ "npapi/webplugin_delegate_impl_aura.cc" ]
-  }
-
-  if (!use_openssl) {
-    sources += rebase_path(content_child_gypi_values.webcrypto_nss_sources,
-                           ".", "//content")
-  } else {
-    sources += rebase_path(content_child_gypi_values.webcrypto_openssl_sources,
-                           ".", "//content")
   }
 }

@@ -47,14 +47,6 @@ public:
      */
     const SkMatrix& getLocalMatrix() const { return fLocalMatrix; }
 
-    /**
-     *  Returns true if the local matrix is not an identity matrix.
-     *
-     *  FIXME: This can be incorrect for a Shader with its own local matrix
-     *  that is also wrapped via CreateLocalMatrixShader.
-     */
-    bool hasLocalMatrix() const { return !fLocalMatrix.isIdentity(); }
-
     enum TileMode {
         /** replicate the edge color if the shader draws outside of its
          *  original bounds
@@ -73,8 +65,10 @@ public:
         /** only draw within the original domain, return 0 everywhere else */
         kDecal_TileMode,
 #endif
+    };
 
-        kTileModeCount
+    enum {
+        kTileModeCount = kMirror_TileMode + 1
     };
 
     // override these in your subclass
@@ -252,19 +246,6 @@ public:
                             //   to (0,0) as bitmap x coord, where angle = 0 is
                             //   bitmap left edge of bitmap = 2pi is the
                             //   right edge. Bitmap is 1 pixel tall. No extras
-        kTwoPointRadial_BitmapType,
-                            //<! Matrix transforms to space where (0,0) is
-                            //   the center of the starting circle.  The second
-                            //   circle will be centered (x, 0) where x  may be
-                            //   0. The post-matrix space is normalized such
-                            //   that 1 is the second radius - first radius.
-                            //   Three extra parameters are returned:
-                            //      0: x-offset of second circle center
-                            //         to first.
-                            //      1: radius of first circle in post-matrix
-                            //         space
-                            //      2: the second radius minus the first radius
-                            //         in pre-transformed space.
         kTwoPointConical_BitmapType,
                             //<! Matrix transforms to space where (0,0) is
                             //   the center of the starting circle.  The second
@@ -320,7 +301,7 @@ public:
      *      fPoint[0] and fPoint[1] are the end-points of the gradient
      *  Radial:
      *      fPoint[0] and fRadius[0] are the center and radius
-     *  Radial2:
+     *  Conical:
      *      fPoint[0] and fRadius[0] are the center and radius of the 1st circle
      *      fPoint[1] and fRadius[1] are the center and radius of the 2nd circle
      *  Sweep:
@@ -332,7 +313,6 @@ public:
         kColor_GradientType,
         kLinear_GradientType,
         kRadial_GradientType,
-        kRadial2_GradientType,
         kSweep_GradientType,
         kConical_GradientType,
         kLast_GradientType = kConical_GradientType
@@ -366,7 +346,7 @@ public:
         const SkXfermode*   fMode;
     };
 
-    virtual bool asACompose(ComposeRec* rec) const { return false; }
+    virtual bool asACompose(ComposeRec*) const { return false; }
 
 
     /**
@@ -384,8 +364,12 @@ public:
      *
      *  The GrContext may be used by the effect to create textures. The GPU device does not
      *  call createContext. Instead we pass the SkPaint here in case the shader needs paint info.
+     *
+     *  A view matrix is always required to create the correct GrFragmentProcessor.  Some shaders
+     *  may also use the optional localMatrix to define a matrix relevant only for sampling.
      */
-    virtual bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix*, GrColor*,
+    virtual bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix& viewM,
+                                     const SkMatrix* localMatrix, GrColor*,
                                      GrFragmentProcessor**) const;
 
     /**
@@ -403,7 +387,7 @@ public:
      *  If the shader is a custom shader which has data the caller might want, call this function
      *  to get that data.
      */
-    virtual bool asACustomShader(void** customData) const { return false; }
+    virtual bool asACustomShader(void** /* customData */) const { return false; }
 #endif
 
     //////////////////////////////////////////////////////////////////////////
@@ -443,7 +427,6 @@ public:
      *  @param src  The picture to use inside the shader (if not NULL, its ref count
      *              is incremented). The SkPicture must not be changed after
      *              successfully creating a picture shader.
-     *              FIXME: src cannot be const due to SkCanvas::drawPicture
      *  @param tmx  The tiling mode to use when sampling the bitmap in the x-direction.
      *  @param tmy  The tiling mode to use when sampling the bitmap in the y-direction.
      *  @param tile The tile rectangle in picture coordinates: this represents the subset
@@ -453,7 +436,7 @@ public:
      *              bounds.
      *  @return     Returns a new shader object. Note: this function never returns null.
     */
-    static SkShader* CreatePictureShader(SkPicture* src,
+    static SkShader* CreatePictureShader(const SkPicture* src,
                                          TileMode tmx, TileMode tmy,
                                          const SkMatrix* localMatrix,
                                          const SkRect* tile);
@@ -479,10 +462,7 @@ public:
     SK_DEFINE_FLATTENABLE_TYPE(SkShader)
 
 protected:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkShader(SkReadBuffer& );
-#endif
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const override;
 
     bool computeTotalInverse(const ContextRec&, SkMatrix* totalInverse) const;
 

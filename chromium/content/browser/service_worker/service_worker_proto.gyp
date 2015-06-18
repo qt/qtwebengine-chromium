@@ -1,11 +1,10 @@
 {
   'targets': [
     {
-      # GN version: //content/browser/service_worker:proto
-      'target_name': 'proto',
+      # GN version: //content/browser/service_worker:service_worker_proto
+      'target_name': 'service_worker_proto',
       'type': 'static_library',
       'sources': [
-        'service_worker_cache.proto',
         'service_worker_database.proto',
       ],
       'variables': {

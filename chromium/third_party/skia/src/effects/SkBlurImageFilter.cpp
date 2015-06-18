@@ -31,31 +31,18 @@ static SkVector mapSigma(const SkSize& localSigma, const SkMatrix& ctm) {
     return sigma;
 }
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkBlurImageFilter::SkBlurImageFilter(SkReadBuffer& buffer)
-  : INHERITED(1, buffer) {
-    fSigma.fWidth = buffer.readScalar();
-    fSigma.fHeight = buffer.readScalar();
-    buffer.validate(SkScalarIsFinite(fSigma.fWidth) &&
-                    SkScalarIsFinite(fSigma.fHeight) &&
-                    (fSigma.fWidth >= 0) &&
-                    (fSigma.fHeight >= 0));
-}
-#endif
-
 SkBlurImageFilter::SkBlurImageFilter(SkScalar sigmaX,
                                      SkScalar sigmaY,
                                      SkImageFilter* input,
-                                     const CropRect* cropRect,
-                                     uint32_t uniqueID)
-    : INHERITED(1, &input, cropRect, uniqueID), fSigma(SkSize::Make(sigmaX, sigmaY)) {
+                                     const CropRect* cropRect)
+    : INHERITED(1, &input, cropRect), fSigma(SkSize::Make(sigmaX, sigmaY)) {
 }
 
 SkFlattenable* SkBlurImageFilter::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 1);
     SkScalar sigmaX = buffer.readScalar();
     SkScalar sigmaY = buffer.readScalar();
-    return Create(sigmaX, sigmaY, common.getInput(0), &common.cropRect(), common.uniqueID());
+    return Create(sigmaX, sigmaY, common.getInput(0), &common.cropRect());
 }
 
 void SkBlurImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -216,10 +203,9 @@ bool SkBlurImageFilter::onFilterImage(Proxy* proxy,
     SkPMColor* d = dst->getAddr32(0, 0);
     int w = dstBounds.width(), h = dstBounds.height();
     int sw = src.rowBytesAsPixels();
-    SkBoxBlurProc boxBlurX, boxBlurY, boxBlurXY, boxBlurYX;
-    if (!SkBoxBlurGetPlatformProcs(&boxBlurX, &boxBlurY, &boxBlurXY, &boxBlurYX)) {
+    SkBoxBlurProc boxBlurX, boxBlurXY, boxBlurYX;
+    if (!SkBoxBlurGetPlatformProcs(&boxBlurX, &boxBlurXY, &boxBlurYX)) {
         boxBlurX = boxBlur<kX, kX>;
-        boxBlurY = boxBlur<kY, kY>;
         boxBlurXY = boxBlur<kX, kY>;
         boxBlurYX = boxBlur<kY, kX>;
     }
@@ -292,6 +278,9 @@ bool SkBlurImageFilter::filterImageGPU(Proxy* proxy, const SkBitmap& src, const 
                                                              true,
                                                              sigma.x(),
                                                              sigma.y()));
+    if (!tex) {
+        return false;
+    }
     WrapTexture(tex, rect.width(), rect.height(), result);
     return true;
 #else
@@ -299,3 +288,16 @@ bool SkBlurImageFilter::filterImageGPU(Proxy* proxy, const SkBitmap& src, const 
     return false;
 #endif
 }
+
+#ifndef SK_IGNORE_TO_STRING
+void SkBlurImageFilter::toString(SkString* str) const {
+    str->appendf("SkBlurImageFilter: (");
+    str->appendf("sigma: (%f, %f) input (", fSigma.fWidth, fSigma.fHeight);
+
+    if (this->getInput(0)) {
+        this->getInput(0)->toString(str);
+    }
+
+    str->append("))");
+}
+#endif

@@ -11,6 +11,7 @@
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/V8GCController.h"
 #include "core/dom/Document.h"
 #include "core/testing/DummyPageHolder.h"
@@ -31,7 +32,7 @@ namespace {
 
 class NotReached : public ScriptFunction {
 public:
-    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState)
+    static v8::Local<v8::Function> createFunction(ScriptState* scriptState)
     {
         NotReached* self = new NotReached(scriptState);
         return self->bindToV8Function();
@@ -54,7 +55,7 @@ ScriptValue NotReached::call(ScriptValue)
 
 class StubFunction : public ScriptFunction {
 public:
-    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, ScriptValue& value, size_t& callCount)
+    static v8::Local<v8::Function> createFunction(ScriptState* scriptState, ScriptValue& value, size_t& callCount)
     {
         StubFunction* self = new StubFunction(scriptState, value, callCount);
         return self->bindToV8Function();
@@ -81,7 +82,7 @@ private:
 
 class GarbageCollectedHolder : public GarbageCollectedScriptWrappable {
 public:
-    typedef ScriptPromiseProperty<Member<GarbageCollectedScriptWrappable>, Member<GarbageCollectedScriptWrappable>, Member<GarbageCollectedScriptWrappable> > Property;
+    typedef ScriptPromiseProperty<Member<GarbageCollectedScriptWrappable>, Member<GarbageCollectedScriptWrappable>, Member<GarbageCollectedScriptWrappable>> Property;
     GarbageCollectedHolder(ExecutionContext* executionContext)
         : GarbageCollectedScriptWrappable("holder")
         , m_property(new Property(executionContext, toGarbageCollectedScriptWrappable(), Property::Ready)) { }
@@ -89,7 +90,7 @@ public:
     Property* property() { return m_property; }
     GarbageCollectedScriptWrappable* toGarbageCollectedScriptWrappable() { return this; }
 
-    virtual void trace(Visitor *visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         GarbageCollectedScriptWrappable::trace(visitor);
         visitor->trace(m_property);
@@ -103,7 +104,7 @@ class RefCountedHolder : public RefCountedScriptWrappable {
 public:
     // Do not resolve or reject the property with the holder itself. It leads
     // to a leak.
-    typedef ScriptPromiseProperty<RefCountedScriptWrappable*, RefPtr<RefCountedScriptWrappable>, RefPtr<RefCountedScriptWrappable> > Property;
+    typedef ScriptPromiseProperty<RefCountedScriptWrappable*, RefPtr<RefCountedScriptWrappable>, RefPtr<RefCountedScriptWrappable>> Property;
     static PassRefPtr<RefCountedHolder> create(ExecutionContext* executionContext)
     {
         return adoptRef(new RefCountedHolder(executionContext));
@@ -125,7 +126,7 @@ public:
         : m_page(DummyPageHolder::create(IntSize(1, 1)))
     {
         v8::HandleScope handleScope(isolate());
-        m_otherScriptState = ScriptStateForTesting::create(v8::Context::New(isolate()), DOMWrapperWorld::create(1));
+        m_otherScriptState = ScriptStateForTesting::create(v8::Context::New(isolate()), DOMWrapperWorld::create(isolate(), 1));
     }
 
     virtual ~ScriptPromisePropertyTestBase()
@@ -148,13 +149,13 @@ public:
         m_page.clear();
         m_otherScriptState.clear();
         gc();
-        Heap::collectGarbage(ThreadState::HeapPointersOnStack);
+        Heap::collectGarbage(ThreadState::HeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGC);
     }
 
     void gc() { V8GCController::collectGarbage(v8::Isolate::GetCurrent()); }
 
-    v8::Handle<v8::Function> notReached(ScriptState* scriptState) { return NotReached::createFunction(scriptState); }
-    v8::Handle<v8::Function> stub(ScriptState* scriptState, ScriptValue& value, size_t& callCount) { return StubFunction::createFunction(scriptState, value, callCount); }
+    v8::Local<v8::Function> notReached(ScriptState* scriptState) { return NotReached::createFunction(scriptState); }
+    v8::Local<v8::Function> stub(ScriptState* scriptState, ScriptValue& value, size_t& callCount) { return StubFunction::createFunction(scriptState, value, callCount); }
 
     template <typename T>
     ScriptValue wrap(DOMWrapperWorld& world, const T& value)
@@ -162,7 +163,7 @@ public:
         v8::HandleScope handleScope(isolate());
         ScriptState* scriptState = ScriptState::from(toV8Context(&document(), world));
         ScriptState::Scope scope(scriptState);
-        return ScriptValue(scriptState, V8ValueTraits<T>::toV8Value(value, scriptState->context()->Global(), isolate()));
+        return ScriptValue(scriptState, toV8(value, scriptState->context()->Global(), isolate()));
     }
 
 private:
@@ -514,7 +515,7 @@ public:
     template <typename T>
     void test(const T& value, const char* expected, const char* file, size_t line)
     {
-        typedef ScriptPromiseProperty<Member<GarbageCollectedScriptWrappable>, T, V8UndefinedType> Property;
+        typedef ScriptPromiseProperty<Member<GarbageCollectedScriptWrappable>, T, ToV8UndefinedGenerator> Property;
         Property* property = new Property(&document(), new GarbageCollectedScriptWrappable("holder"), Property::Ready);
         size_t nResolveCalls = 0;
         ScriptValue actualValue;
@@ -527,10 +528,10 @@ public:
         isolate()->RunMicrotasks();
         {
             ScriptState::Scope scope(mainScriptState());
-            actual = toCoreString(actualValue.v8Value()->ToString());
+            actual = toCoreString(actualValue.v8Value()->ToString(mainScriptState()->context()).ToLocalChecked());
         }
         if (expected != actual) {
-            ADD_FAILURE_AT(file, line) << "toV8Value returns an incorrect value.\n  Actual: " << actual.utf8().data() << "\nExpected: " << expected;
+            ADD_FAILURE_AT(file, line) << "toV8 returns an incorrect value.\n  Actual: " << actual.utf8().data() << "\nExpected: " << expected;
             return;
         }
     }
@@ -538,7 +539,7 @@ public:
 
 TEST_F(ScriptPromisePropertyNonScriptWrappableResolutionTargetTest, ResolveWithUndefined)
 {
-    test(V8UndefinedType(), "undefined", __FILE__, __LINE__);
+    test(ToV8UndefinedGenerator(), "undefined", __FILE__, __LINE__);
 }
 
 TEST_F(ScriptPromisePropertyNonScriptWrappableResolutionTargetTest, ResolveWithString)
@@ -548,7 +549,7 @@ TEST_F(ScriptPromisePropertyNonScriptWrappableResolutionTargetTest, ResolveWithS
 
 TEST_F(ScriptPromisePropertyNonScriptWrappableResolutionTargetTest, ResolveWithInteger)
 {
-    test<int>(-1, "-1", __FILE__, __LINE__);
+    test(-1, "-1", __FILE__, __LINE__);
 }
 
 } // namespace

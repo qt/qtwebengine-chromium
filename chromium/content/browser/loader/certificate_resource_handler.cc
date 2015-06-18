@@ -4,26 +4,21 @@
 
 #include "content/browser/loader/certificate_resource_handler.h"
 
-#include "base/strings/string_util.h"
+#include <limits.h>
+
+#include "components/mime_util/mime_util.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
-#include "net/base/mime_sniffer.h"
-#include "net/base/mime_util.h"
-#include "net/http/http_response_headers.h"
-#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
 
 namespace content {
 
-CertificateResourceHandler::CertificateResourceHandler(
-    net::URLRequest* request)
+CertificateResourceHandler::CertificateResourceHandler(net::URLRequest* request)
     : ResourceHandler(request),
-      content_length_(0),
-      read_buffer_(NULL),
-      resource_buffer_(NULL),
+      buffer_(new net::GrowableIOBuffer),
       cert_type_(net::CERTIFICATE_MIME_TYPE_UNKNOWN) {
 }
 
@@ -44,7 +39,8 @@ bool CertificateResourceHandler::OnRequestRedirected(
 
 bool CertificateResourceHandler::OnResponseStarted(ResourceResponse* resp,
                                                    bool* defer) {
-  cert_type_ = net::GetCertificateMimeTypeForMimeType(resp->head.mime_type);
+  cert_type_ =
+      mime_util::GetCertificateMimeTypeForMimeType(resp->head.mime_type);
   return cert_type_ != net::CERTIFICATE_MIME_TYPE_UNKNOWN;
 }
 
@@ -60,34 +56,40 @@ bool CertificateResourceHandler::OnBeforeNetworkStart(const GURL& url,
 bool CertificateResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                             int* buf_size,
                                             int min_size) {
-  static const int kReadBufSize = 32768;
+  static const int kInitialBufferSizeInBytes = 32768;
+  static const int kMaxCertificateSizeInBytes = 1024 * 1024;
 
   // TODO(gauravsh): Should we use 'min_size' here?
-  DCHECK(buf && buf_size);
-  if (!read_buffer_.get()) {
-    read_buffer_ = new net::IOBuffer(kReadBufSize);
+  DCHECK(buf);
+  DCHECK(buf_size);
+
+  if (buffer_->capacity() == 0) {
+    buffer_->SetCapacity(kInitialBufferSizeInBytes);
+  } else if (buffer_->RemainingCapacity() == 0) {
+    int capacity = buffer_->capacity();
+    if (capacity >= kMaxCertificateSizeInBytes)
+      return false;
+    static_assert(kMaxCertificateSizeInBytes < INT_MAX / 2,
+                  "The size limit ensures the capacity remains in bounds.");
+    capacity *= 2;
+    if (capacity > kMaxCertificateSizeInBytes)
+      capacity = kMaxCertificateSizeInBytes;
+    buffer_->SetCapacity(capacity);
   }
-  *buf = read_buffer_.get();
-  *buf_size = kReadBufSize;
+
+  *buf = buffer_.get();
+  *buf_size = buffer_->RemainingCapacity();
 
   return true;
 }
 
 bool CertificateResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
+  DCHECK_LE(0, bytes_read);
+  DCHECK_LE(bytes_read, buffer_->RemainingCapacity());
   if (!bytes_read)
     return true;
 
-  // We have more data to read.
-  DCHECK(read_buffer_.get());
-  content_length_ += bytes_read;
-
-  // Release the ownership of the buffer, and store a reference
-  // to it. A new one will be allocated in OnWillRead().
-  scoped_refptr<net::IOBuffer> buffer;
-  read_buffer_.swap(buffer);
-  // TODO(gauravsh): Should this be handled by a separate thread?
-  buffer_.push_back(std::make_pair(buffer, bytes_read));
-
+  buffer_->set_offset(buffer_->offset() + bytes_read);
   return true;
 }
 
@@ -98,41 +100,13 @@ void CertificateResourceHandler::OnResponseCompleted(
   if (urs.status() != net::URLRequestStatus::SUCCESS)
     return;
 
-  AssembleResource();
-
-  const void* content_bytes = NULL;
-  if (resource_buffer_.get())
-    content_bytes = resource_buffer_->data();
-
   // Note that it's up to the browser to verify that the certificate
   // data is well-formed.
   const ResourceRequestInfo* info = GetRequestInfo();
   GetContentClient()->browser()->AddCertificate(
-      cert_type_, content_bytes, content_length_,
-      info->GetChildID(), info->GetRenderFrameID());
-}
-
-void CertificateResourceHandler::AssembleResource() {
-  // 0-length IOBuffers are not allowed.
-  if (content_length_ == 0) {
-    resource_buffer_ = NULL;
-    return;
-  }
-
-  // Create the new buffer.
-  resource_buffer_ = new net::IOBuffer(content_length_);
-
-  // Copy the data into it.
-  size_t bytes_copied = 0;
-  for (size_t i = 0; i < buffer_.size(); ++i) {
-    net::IOBuffer* data = buffer_[i].first.get();
-    size_t data_len = buffer_[i].second;
-    DCHECK(data != NULL);
-    DCHECK_LE(bytes_copied + data_len, content_length_);
-    memcpy(resource_buffer_->data() + bytes_copied, data->data(), data_len);
-    bytes_copied += data_len;
-  }
-  DCHECK_EQ(content_length_, bytes_copied);
+      cert_type_, buffer_->StartOfBuffer(),
+      static_cast<size_t>(buffer_->offset()), info->GetChildID(),
+      info->GetRenderFrameID());
 }
 
 void CertificateResourceHandler::OnDataDownloaded(int bytes_downloaded) {

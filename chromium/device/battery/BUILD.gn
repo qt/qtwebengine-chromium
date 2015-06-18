@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
-import("//mojo/public/tools/bindings/mojom.gni")
+import("//third_party/mojo/src/mojo/public/tools/bindings/mojom.gni")
 
 component("battery") {
   output_name = "device_battery"
@@ -12,8 +12,6 @@ component("battery") {
     "battery_export.h",
     "battery_monitor_impl.cc",
     "battery_monitor_impl.h",
-    "battery_status_manager_android.cc",
-    "battery_status_manager_android.h",
     "battery_status_manager_chromeos.cc",
     "battery_status_manager_default.cc",
     "battery_status_manager_linux.cc",
@@ -25,37 +23,21 @@ component("battery") {
     "battery_status_service.h",
   ]
 
-  defines = [
-    "DEVICE_BATTERY_IMPLEMENTATION",
-  ]
+  defines = [ "DEVICE_BATTERY_IMPLEMENTATION" ]
 
   deps = [
     ":mojo_bindings",
     "//base",
     "//base/third_party/dynamic_annotations",
     "//mojo/environment:chromium",
-    "//mojo/public/cpp/bindings",
-    "//mojo/edk/system",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/edk/system",
   ]
 
-  if (is_android) {
-    deps += [
-      "//device/battery/android:battery_jni_headers",
-    ]
-    sources += [
-      "android/battery_jni_registrar.h",
-      "android/battery_jni_registrar.cc",
-    ]
-    sources -= [
-      "battery_status_manager_default.cc",
-    ]
-  }
-
   if (is_chromeos) {
-    configs += [
-      "//build/config/linux:dbus",
-    ]
+    configs += [ "//build/config/linux:dbus" ]
     deps += [
+      "//chromeos:chromeos",
       "//chromeos:power_manager_proto",
     ]
     sources -= [
@@ -66,32 +48,20 @@ component("battery") {
 
   if (is_desktop_linux) {
     if (use_dbus) {
-      configs += [
-        "//build/config/linux:dbus",
-      ]
-      deps += [
-        "//dbus"
-      ]
-      sources -= [
-        "battery_status_manager_default.cc",
-      ]
+      configs += [ "//build/config/linux:dbus" ]
+      deps += [ "//dbus" ]
+      sources -= [ "battery_status_manager_default.cc" ]
     } else {
-      sources -= [
-        "battery_status_manager_linux.cc",
-      ]
+      sources -= [ "battery_status_manager_linux.cc" ]
     }
   }
 
   if (is_mac) {
-    sources -= [
-      "battery_status_manager_default.cc",
-    ]
+    sources -= [ "battery_status_manager_default.cc" ]
   }
 
   if (is_win) {
-    sources -= [
-      "battery_status_manager_default.cc",
-    ]
+    sources -= [ "battery_status_manager_default.cc" ]
   }
 }
 

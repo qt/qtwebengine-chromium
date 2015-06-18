@@ -56,8 +56,9 @@
 
 /* extension creation utilities */
 
-#include <stdio.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <openssl/conf.h>
 #include <openssl/err.h>
@@ -65,6 +66,8 @@
 #include <openssl/obj.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+
+#include "../internal.h"
 
 
 static int v3_check_critical(char **value);
@@ -259,6 +262,7 @@ static int v3_check_generic(char **value)
 static X509_EXTENSION *v3_generic_extension(const char *ext, char *value,
 					    int crit, int gen_type,
 					    X509V3_CTX *ctx)
+        OPENSSL_SUPPRESS_POTENTIALLY_UNINITIALIZED_WARNINGS
 	{
 	unsigned char *ext_der=NULL;
 	long ext_len;
@@ -430,7 +434,7 @@ static STACK_OF(CONF_VALUE) *nconf_get_section(void *db, char *section)
 	return NCONF_get_section(db, section);
 	}
 
-static X509V3_CONF_METHOD nconf_method = {
+static const X509V3_CONF_METHOD nconf_method = {
 nconf_get_string,
 nconf_get_section,
 NULL,
@@ -453,76 +457,3 @@ void X509V3_set_ctx(X509V3_CTX *ctx, X509 *issuer, X509 *subj, X509_REQ *req,
 	ctx->flags = flags;
 	}
 
-/* TODO(fork): remove */
-#if 0
-/* Old conf compatibility functions */
-
-X509_EXTENSION *X509V3_EXT_conf(LHASH_OF(CONF_VALUE) *conf, X509V3_CTX *ctx,
-				char *name, char *value)
-	{
-	CONF ctmp;
-	CONF_set_nconf(&ctmp, conf);
-	return X509V3_EXT_nconf(&ctmp, ctx, name, value);
-	}
-
-/* LHASH *conf:  Config file    */
-/* char *value:  Value    */
-X509_EXTENSION *X509V3_EXT_conf_nid(LHASH_OF(CONF_VALUE) *conf, X509V3_CTX *ctx,
-				    int ext_nid, char *value)
-	{
-	CONF ctmp;
-	CONF_set_nconf(&ctmp, conf);
-	return X509V3_EXT_nconf_nid(&ctmp, ctx, ext_nid, value);
-	}
-
-static char *conf_lhash_get_string(void *db, char *section, char *value)
-	{
-	return CONF_get_string(db, section, value);
-	}
-
-static STACK_OF(CONF_VALUE) *conf_lhash_get_section(void *db, char *section)
-	{
-	return CONF_get_section(db, section);
-	}
-
-static X509V3_CONF_METHOD conf_lhash_method = {
-conf_lhash_get_string,
-conf_lhash_get_section,
-NULL,
-NULL
-};
-
-void X509V3_set_conf_lhash(X509V3_CTX *ctx, LHASH_OF(CONF_VALUE) *lhash)
-	{
-	ctx->db_meth = &conf_lhash_method;
-	ctx->db = lhash;
-	}
-
-int X509V3_EXT_add_conf(LHASH_OF(CONF_VALUE) *conf, X509V3_CTX *ctx,
-			char *section, X509 *cert)
-	{
-	CONF ctmp;
-	CONF_set_nconf(&ctmp, conf);
-	return X509V3_EXT_add_nconf(&ctmp, ctx, section, cert);
-	}
-
-/* Same as above but for a CRL */
-
-int X509V3_EXT_CRL_add_conf(LHASH_OF(CONF_VALUE) *conf, X509V3_CTX *ctx,
-			    char *section, X509_CRL *crl)
-	{
-	CONF ctmp;
-	CONF_set_nconf(&ctmp, conf);
-	return X509V3_EXT_CRL_add_nconf(&ctmp, ctx, section, crl);
-	}
-
-/* Add extensions to certificate request */
-
-int X509V3_EXT_REQ_add_conf(LHASH_OF(CONF_VALUE) *conf, X509V3_CTX *ctx,
-			    char *section, X509_REQ *req)
-	{
-	CONF ctmp;
-	CONF_set_nconf(&ctmp, conf);
-	return X509V3_EXT_REQ_add_nconf(&ctmp, ctx, section, req);
-	}
-#endif

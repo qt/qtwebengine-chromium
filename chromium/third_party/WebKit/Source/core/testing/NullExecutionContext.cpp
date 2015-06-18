@@ -30,13 +30,18 @@ NullExecutionContext::NullExecutionContext()
 {
 }
 
-void NullExecutionContext::postTask(PassOwnPtr<ExecutionContextTask>)
+void NullExecutionContext::postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>)
 {
 }
 
 double NullExecutionContext::timerAlignmentInterval() const
 {
     return DOMTimer::visiblePageAlignmentInterval();
+}
+
+bool NullExecutionContext::isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck privilegeContextCheck) const
+{
+    return true;
 }
 
 } // namespace blink

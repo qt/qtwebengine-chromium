@@ -18,6 +18,7 @@
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/shared_impl/resource.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValue.h"
+#include "v8/include/v8-util.h"
 #include "v8/include/v8.h"
 
 struct PP_Var;
@@ -80,7 +81,7 @@ class MessageChannel :
   // related to postMessage. Note that this can be empty; it only gets set if
   // there is a scriptable 'InstanceObject' associated with this channel's
   // instance.
-  void SetPassthroughObject(v8::Handle<v8::Object> passthrough);
+  void SetPassthroughObject(v8::Local<v8::Object> passthrough);
 
   PepperPluginInstanceImpl* instance() { return instance_; }
 
@@ -123,7 +124,7 @@ class MessageChannel :
 
   PluginObject* GetPluginObject(v8::Isolate* isolate);
 
-  void EnqueuePluginMessage(v8::Handle<v8::Value> v8_value);
+  void EnqueuePluginMessage(v8::Local<v8::Value> v8_value);
 
   void FromV8ValueComplete(VarConversionResult* result_holder,
                            const ppapi::ScopedPPVar& result_var,
@@ -141,6 +142,11 @@ class MessageChannel :
   void DrainJSMessageQueueSoon();
 
   void UnregisterSyncMessageStatusObserver();
+
+  v8::Local<v8::FunctionTemplate> GetFunctionTemplate(
+      v8::Isolate* isolate,
+      const std::string& name,
+      void (MessageChannel::*memberFuncPtr)(gin::Arguments* args));
 
   PepperPluginInstanceImpl* instance_;
 
@@ -185,6 +191,8 @@ class MessageChannel :
   // A callback to invoke at shutdown to ensure we unregister ourselves as
   // Observers for sync messages.
   base::Closure unregister_observer_callback_;
+
+  v8::StdGlobalValueMap<std::string, v8::FunctionTemplate> template_cache_;
 
   // This is used to ensure pending tasks will not fire after this object is
   // destroyed.

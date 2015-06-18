@@ -24,10 +24,25 @@ class GrRenderTarget;
  *
  *  To draw into a canvas, first create the appropriate type of Surface, and
  *  then request the canvas from the surface.
+ *
+ *  SkSurface always has non-zero dimensions. If there is a request for a new surface, and either
+ *  of the requested dimensions are zero, then NULL will be returned.
  */
 class SK_API SkSurface : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(SkSurface)
+
+    /**
+     *  Indicates whether a new surface or image should count against a cache budget. Currently this
+     *  is only used by the GPU backend (sw-raster surfaces and images are never counted against the
+     *  resource cache budget.)
+     */
+    enum Budgeted {
+        /** The surface or image does not count against the cache budget. */
+        kNo_Budgeted,
+        /** The surface or image counts against the cache budget. */
+        kYes_Budgeted
+    };
 
     /**
      *  Create a new surface, using the specified pixels/rowbytes as its
@@ -61,7 +76,12 @@ public:
      *  specified width and height, and populates the rest of info to match
      *  pixels in SkPMColor format.
      */
+#ifdef SK_SUPPORT_LEGACY_NewRasterPMColor
     static SkSurface* NewRasterPMColor(int width, int height, const SkSurfaceProps* props = NULL) {
+        return NewRaster(SkImageInfo::MakeN32Premul(width, height), props);
+    }
+#endif
+    static SkSurface* NewRasterN32Premul(int width, int height, const SkSurfaceProps* props = NULL) {
         return NewRaster(SkImageInfo::MakeN32Premul(width, height), props);
     }
 
@@ -73,57 +93,24 @@ public:
     static SkSurface* NewRenderTargetDirect(GrRenderTarget* target) {
         return NewRenderTargetDirect(target, NULL);
     }
+
+    /**
+     *  Used to wrap a pre-existing backend 3D API texture in a SkSurface. The kRenderTarget flag
+     *  must be set on GrBackendTextureDesc for this to succeed.
+     */
+    static SkSurface* NewWrappedRenderTarget(GrContext*, GrBackendTextureDesc,
+                                             const SkSurfaceProps*);
     
     /**
      *  Return a new surface whose contents will be drawn to an offscreen
      *  render target, allocated by the surface.
      */
-    static SkSurface* NewRenderTarget(GrContext*, const SkImageInfo&, int sampleCount,
+    static SkSurface* NewRenderTarget(GrContext*, Budgeted, const SkImageInfo&, int sampleCount,
                                       const SkSurfaceProps* = NULL);
 
-    static SkSurface* NewRenderTarget(GrContext* gr, const SkImageInfo& info) {
-        return NewRenderTarget(gr, info, 0, NULL);
+    static SkSurface* NewRenderTarget(GrContext* gr, Budgeted b, const SkImageInfo& info) {
+        return NewRenderTarget(gr, b, info, 0, NULL);
     }
-
-    /**
-     *  Return a new surface whose contents will be drawn to an offscreen
-     *  render target, allocated by the surface from the scratch texture pool
-     *  managed by the GrContext. The scratch texture pool serves the purpose
-     *  of retaining textures after they are no longer in use in order to
-     *  re-use them later without having to re-allocate.  Scratch textures
-     *  should be used in cases where high turnover is expected. This allows,
-     *  for example, the copy on write to recycle a texture from a recently
-     *  released SkImage snapshot of the surface.
-     *  Note: Scratch textures count against the GrContext's cached resource
-     *  budget.
-     */
-    static SkSurface* NewScratchRenderTarget(GrContext*, const SkImageInfo&, int sampleCount,
-                                             const SkSurfaceProps* = NULL);
-
-    static SkSurface* NewScratchRenderTarget(GrContext* gr, const SkImageInfo& info) {
-        return NewScratchRenderTarget(gr, info, 0, NULL);
-    }
-
-#ifdef SK_SUPPORT_LEGACY_TEXTRENDERMODE
-    /**
-     *  Text rendering modes that can be passed to NewRenderTarget*
-     */
-    enum TextRenderMode {
-        /**
-         *  This will use the standard text rendering method
-         */
-        kStandard_TextRenderMode,
-        /**
-         *  This will use signed distance fields for text rendering when possible
-         */
-        kDistanceField_TextRenderMode,
-    };
-    static SkSurface* NewRenderTargetDirect(GrRenderTarget*, TextRenderMode);
-    static SkSurface* NewRenderTarget(GrContext*, const SkImageInfo&, int sampleCount,
-                                      TextRenderMode);
-    static SkSurface* NewScratchRenderTarget(GrContext*, const SkImageInfo&, int sampleCount,
-                                             TextRenderMode);
-#endif
 
     int width() const { return fWidth; }
     int height() const { return fHeight; }
@@ -187,12 +174,14 @@ public:
     /**
      *  Returns an image of the current state of the surface pixels up to this
      *  point. Subsequent changes to the surface (by drawing into its canvas)
-     *  will not be reflected in this image.
+     *  will not be reflected in this image. If a copy must be made the Budgeted
+     *  parameter controls whether it counts against the resource budget
+     *  (currently for the gpu backend only).
      */
-    SkImage* newImageSnapshot();
+    SkImage* newImageSnapshot(Budgeted = kYes_Budgeted);
 
     /**
-     *  Thought the caller could get a snapshot image explicitly, and draw that,
+     *  Though the caller could get a snapshot image explicitly, and draw that,
      *  it seems that directly drawing a surface into another canvas might be
      *  a common pattern, and that we could possibly be more efficient, since
      *  we'd know that the "snapshot" need only live until we've handed it off
@@ -211,6 +200,27 @@ public:
      *  ignored.
      */
     const void* peekPixels(SkImageInfo* info, size_t* rowBytes);
+
+    /**
+     *  Copy the pixels from the surface into the specified buffer (pixels + rowBytes),
+     *  converting them into the requested format (dstInfo). The surface pixels are read
+     *  starting at the specified (srcX,srcY) location.
+     *
+     *  The specified ImageInfo and (srcX,srcY) offset specifies a source rectangle
+     *
+     *      srcR.setXYWH(srcX, srcY, dstInfo.width(), dstInfo.height());
+     *
+     *  srcR is intersected with the bounds of the base-layer. If this intersection is not empty,
+     *  then we have two sets of pixels (of equal size). Replace the dst pixels with the
+     *  corresponding src pixels, performing any colortype/alphatype transformations needed
+     *  (in the case where the src and dst have different colortypes or alphatypes).
+     *
+     *  This call can fail, returning false, for several reasons:
+     *  - If srcR does not intersect the surface bounds.
+     *  - If the requested colortype/alphatype cannot be converted from the surface's types.
+     */
+    bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
+                    int srcX, int srcY);
 
     const SkSurfaceProps& props() const { return fProps; }
 

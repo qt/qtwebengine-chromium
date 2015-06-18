@@ -45,6 +45,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
     FORCE_CLOSE_DELETE_ORIGIN = 0,
     FORCE_CLOSE_BACKING_STORE_FAILURE,
     FORCE_CLOSE_INTERNALS_PAGE,
+    FORCE_CLOSE_COPY_ORIGIN,
     FORCE_CLOSE_REASON_MAX
   };
 
@@ -67,6 +68,8 @@ class CONTENT_EXPORT IndexedDBContextImpl
   std::vector<IndexedDBInfo> GetAllOriginsInfo() override;
   int64 GetOriginDiskUsage(const GURL& origin_url) override;
   void DeleteForOrigin(const GURL& origin_url) override;
+  void CopyOriginData(const GURL& origin_url,
+                      IndexedDBContext* dest_context) override;
   base::FilePath GetFilePathForTesting(
       const std::string& origin_id) const override;
   void SetTaskRunnerForTesting(base::SequencedTaskRunner* task_runner) override;
@@ -88,14 +91,17 @@ class CONTENT_EXPORT IndexedDBContextImpl
   // ForceClose takes a value rather than a reference since it may release the
   // owning object.
   void ForceClose(const GURL origin_url, ForceCloseReason reason);
+  // GetStoragePaths returns all paths owned by this database, in arbitrary
+  // order.
+  std::vector<base::FilePath> GetStoragePaths(const GURL& origin_url) const;
 
-  base::FilePath GetFilePath(const GURL& origin_url) const;
   base::FilePath data_path() const { return data_path_; }
   bool IsInOriginSet(const GURL& origin_url) {
     std::set<GURL>* set = GetOriginSet();
     return set->find(origin_url) != set->end();
   }
   size_t GetConnectionCount(const GURL& origin_url);
+  int GetOriginBlobFileCount(const GURL& origin_url);
 
   // For unit tests allow to override the |data_path_|.
   void set_data_path_for_testing(const base::FilePath& data_path) {
@@ -117,7 +123,9 @@ class CONTENT_EXPORT IndexedDBContextImpl
   typedef std::map<GURL, int64> OriginToSizeMap;
   class IndexedDBGetUsageAndQuotaCallback;
 
-  base::FilePath GetIndexedDBFilePath(const std::string& origin_id) const;
+  base::FilePath GetBlobPath(const std::string& origin_id) const;
+  base::FilePath GetLevelDBPath(const GURL& origin_url) const;
+  base::FilePath GetLevelDBPath(const std::string& origin_id) const;
   int64 ReadUsageFromDisk(const GURL& origin_url) const;
   void EnsureDiskUsageCacheInitialized(const GURL& origin_url);
   void QueryDiskAndUpdateQuotaUsage(const GURL& origin_url);

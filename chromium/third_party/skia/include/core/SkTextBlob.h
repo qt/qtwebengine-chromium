@@ -23,14 +23,14 @@ class SkWriteBuffer;
 class SK_API SkTextBlob : public SkRefCnt {
 public:
     /**
-     *  Returns the blob bounding box.
+     *  Returns a conservative blob bounding box.
      */
     const SkRect& bounds() const { return fBounds; }
 
     /**
      *  Return a non-zero, unique value representing the text blob.
      */
-    uint32_t uniqueID() const;
+    uint32_t uniqueID() const { return fUniqueID; }
 
     /**
      *  Serialize to a buffer.
@@ -68,6 +68,7 @@ private:
         const SkPoint& offset() const;
         void applyFontToPaint(SkPaint*) const;
         GlyphPositioning positioning() const;
+        bool isLCD() const;
 
     private:
         const RunRecord* fCurrentRun;
@@ -79,17 +80,28 @@ private:
     SkTextBlob(int runCount, const SkRect& bounds);
 
     virtual ~SkTextBlob();
-    virtual void internal_dispose() const SK_OVERRIDE;
+
+    // Memory for objects of this class is created with sk_malloc rather than operator new and must
+    // be freed with sk_free.
+    void operator delete(void* p) { sk_free(p); }
+    void* operator new(size_t) {
+        SkFAIL("All blobs are created by placement new.");
+        return sk_malloc_throw(0);
+    }
+    void* operator new(size_t, void* p) { return p; }
 
     static unsigned ScalarsPerGlyph(GlyphPositioning pos);
 
+    friend class GrAtlasTextContext;
+    friend class GrTextBlobCache;
+    friend class GrTextContext;
     friend class SkBaseDevice;
     friend class SkTextBlobBuilder;
     friend class TextBlobTester;
 
     const int        fRunCount;
     const SkRect     fBounds;
-    mutable uint32_t fUniqueID;
+    const uint32_t fUniqueID;
 
     SkDEBUGCODE(size_t fStorageSize;)
 
@@ -179,6 +191,9 @@ private:
     bool mergeRun(const SkPaint& font, SkTextBlob::GlyphPositioning positioning,
                   int count, SkPoint offset);
     void updateDeferredBounds();
+
+    static SkRect ConservativeRunBounds(const SkTextBlob::RunRecord&);
+    static SkRect TightRunBounds(const SkTextBlob::RunRecord&);
 
     SkAutoTMalloc<uint8_t> fStorage;
     size_t                 fStorageSize;

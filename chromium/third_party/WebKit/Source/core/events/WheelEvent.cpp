@@ -30,45 +30,44 @@
 
 namespace blink {
 
-WheelEventInit::WheelEventInit()
-    : deltaX(0)
-    , deltaY(0)
-    , deltaZ(0)
-    , wheelDeltaX(0)
-    , wheelDeltaY(0)
-    , deltaMode(WheelEvent::DOM_DELTA_PIXEL)
-{
-}
-
 WheelEvent::WheelEvent()
     : m_deltaX(0)
     , m_deltaY(0)
     , m_deltaZ(0)
     , m_deltaMode(DOM_DELTA_PIXEL)
+    , m_canScroll(true)
+    , m_hasPreciseScrollingDeltas(false)
+    , m_railsMode(RailsModeFree)
 {
 }
 
 WheelEvent::WheelEvent(const AtomicString& type, const WheelEventInit& initializer)
     : MouseEvent(type, initializer)
-    , m_wheelDelta(initializer.wheelDeltaX ? initializer.wheelDeltaX : -initializer.deltaX, initializer.wheelDeltaY ? initializer.wheelDeltaY : -initializer.deltaY)
-    , m_deltaX(initializer.deltaX ? initializer.deltaX : -initializer.wheelDeltaX)
-    , m_deltaY(initializer.deltaY ? initializer.deltaY : -initializer.wheelDeltaY)
-    , m_deltaZ(initializer.deltaZ)
-    , m_deltaMode(initializer.deltaMode)
+    , m_wheelDelta(initializer.wheelDeltaX() ? initializer.wheelDeltaX() : -initializer.deltaX(), initializer.wheelDeltaY() ? initializer.wheelDeltaY() : -initializer.deltaY())
+    , m_deltaX(initializer.deltaX() ? initializer.deltaX() : -initializer.wheelDeltaX())
+    , m_deltaY(initializer.deltaY() ? initializer.deltaY() : -initializer.wheelDeltaY())
+    , m_deltaZ(initializer.deltaZ())
+    , m_deltaMode(initializer.deltaMode())
+    , m_canScroll(true)
+    , m_hasPreciseScrollingDeltas(false)
+    , m_railsMode(RailsModeFree)
 {
 }
 
 WheelEvent::WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta, unsigned deltaMode,
-    PassRefPtrWillBeRawPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& pageLocation,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+    PassRefPtrWillBeRawPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& windowLocation,
+    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short buttons, bool canScroll, bool hasPreciseScrollingDeltas, RailsMode railsMode)
     : MouseEvent(EventTypeNames::wheel, true, true, view, 0, screenLocation.x(), screenLocation.y(),
-        pageLocation.x(), pageLocation.y(), 0, 0, ctrlKey, altKey, shiftKey, metaKey, 0, nullptr,
-        nullptr, false, PlatformMouseEvent::RealOrIndistinguishable)
+        windowLocation.x(), windowLocation.y(), 0, 0, ctrlKey, altKey, shiftKey, metaKey, 0, buttons,
+        nullptr, nullptr, false, PlatformMouseEvent::RealOrIndistinguishable)
     , m_wheelDelta(wheelTicks.x() * TickMultiplier, wheelTicks.y() * TickMultiplier)
     , m_deltaX(-rawDelta.x())
     , m_deltaY(-rawDelta.y())
     , m_deltaZ(0)
     , m_deltaMode(deltaMode)
+    , m_canScroll(canScroll)
+    , m_hasPreciseScrollingDeltas(hasPreciseScrollingDeltas)
+    , m_railsMode(railsMode)
 {
 }
 
@@ -87,7 +86,7 @@ bool WheelEvent::isWheelEvent() const
     return true;
 }
 
-void WheelEvent::trace(Visitor* visitor)
+DEFINE_TRACE(WheelEvent)
 {
     MouseEvent::trace(visitor);
 }
@@ -104,23 +103,24 @@ PassRefPtrWillBeRawPtr<WheelEventDispatchMediator> WheelEventDispatchMediator::c
 
 WheelEventDispatchMediator::WheelEventDispatchMediator(const PlatformWheelEvent& event, PassRefPtrWillBeRawPtr<AbstractView> view)
 {
-    if (!(event.deltaX() || event.deltaY()))
-        return;
-
     setEvent(WheelEvent::create(FloatPoint(event.wheelTicksX(), event.wheelTicksY()), FloatPoint(event.deltaX(), event.deltaY()),
         deltaMode(event), view, event.globalPosition(), event.position(),
-        event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey()));
+        event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey(),
+        MouseEvent::platformModifiersToButtons(event.modifiers()),
+        event.canScroll(), event.hasPreciseScrollingDeltas(),
+        static_cast<Event::RailsMode>(event.railsMode())));
 }
 
-WheelEvent* WheelEventDispatchMediator::event() const
+WheelEvent& WheelEventDispatchMediator::event() const
 {
     return toWheelEvent(EventDispatchMediator::event());
 }
 
-bool WheelEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool WheelEventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
-    ASSERT(event());
-    return EventDispatchMediator::dispatchEvent(dispatcher) && !event()->defaultHandled();
+    if (!(event().deltaX() || event().deltaY()))
+        return true;
+    return EventDispatchMediator::dispatchEvent(dispatcher) && !event().defaultHandled();
 }
 
 } // namespace blink

@@ -16,6 +16,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/process/process_metrics.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/safe_strerror_posix.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
@@ -80,6 +81,7 @@ SharedMemory::SharedMemory(SharedMemoryHandle handle, bool read_only,
 }
 
 SharedMemory::~SharedMemory() {
+  Unmap();
   Close();
 }
 
@@ -117,6 +119,11 @@ bool SharedMemory::CreateAndMapAnonymous(size_t size) {
 // In case we want to delete it later, it may be useful to save the value
 // of mem_filename after FilePathForMemoryName().
 bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/466437
+  // is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "466437 SharedMemory::Create::Start"));
   DCHECK_EQ(-1, mapped_file_);
   if (options.size == 0) return false;
 
@@ -139,11 +146,22 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     // Q: Why not use the shm_open() etc. APIs?
     // A: Because they're limited to 4mb on OS X.  FFFFFFFUUUUUUUUUUU
     FilePath directory;
-    if (GetShmemTempDir(options.executable, &directory))
+    if (GetShmemTempDir(options.executable, &directory)) {
+      // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/466437
+      // is fixed.
+      tracked_objects::ScopedTracker tracking_profile2(
+          FROM_HERE_WITH_EXPLICIT_FUNCTION(
+              "466437 SharedMemory::Create::OpenTemporaryFile"));
       fp.reset(CreateAndOpenTemporaryFileInDir(directory, &path));
+    }
 
     if (fp) {
       if (options.share_read_only) {
+        // TODO(erikchen): Remove ScopedTracker below once
+        // http://crbug.com/466437 is fixed.
+        tracked_objects::ScopedTracker tracking_profile3(
+            FROM_HERE_WITH_EXPLICIT_FUNCTION(
+                "466437 SharedMemory::Create::OpenReadonly"));
         // Also open as readonly so that we can ShareReadOnlyToProcess.
         readonly_fd.reset(HANDLE_EINTR(open(path.value().c_str(), O_RDONLY)));
         if (!readonly_fd.is_valid()) {
@@ -152,6 +170,12 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
           return false;
         }
       }
+
+      // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/466437
+      // is fixed.
+      tracked_objects::ScopedTracker tracking_profile4(
+          FROM_HERE_WITH_EXPLICIT_FUNCTION(
+              "466437 SharedMemory::Create::Unlink"));
       // Deleting the file prevents anyone else from mapping it in (making it
       // private), and prevents the need for cleanup (once the last fd is
       // closed, it is truly freed).
@@ -331,8 +355,6 @@ SharedMemoryHandle SharedMemory::handle() const {
 }
 
 void SharedMemory::Close() {
-  Unmap();
-
   if (mapped_file_ > 0) {
     if (close(mapped_file_) < 0)
       PLOG(ERROR) << "close";
@@ -454,7 +476,7 @@ bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
     case SHARE_READONLY:
       // We could imagine re-opening the file from /dev/fd, but that can't make
       // it readonly on Mac: https://codereview.chromium.org/27265002/#msg10
-      CHECK(readonly_mapped_file_ >= 0);
+      CHECK_GE(readonly_mapped_file_, 0);
       handle_to_dup = readonly_mapped_file_;
       break;
   }
@@ -468,8 +490,10 @@ bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
   new_handle->fd = new_fd;
   new_handle->auto_close = true;
 
-  if (close_self)
+  if (close_self) {
+    Unmap();
     Close();
+  }
 
   return true;
 }

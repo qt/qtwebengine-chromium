@@ -7,8 +7,9 @@
 
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "core/dom/DOMError.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/frame/Navigator.h"
 #include "modules/webmidi/MIDIAccess.h"
 #include "modules/webmidi/MIDIController.h"
@@ -17,22 +18,60 @@
 
 namespace blink {
 
+using PortState = WebMIDIAccessorClient::MIDIPortState;
+
 MIDIAccessInitializer::MIDIAccessInitializer(ScriptState* scriptState, const MIDIOptions& options)
     : ScriptPromiseResolver(scriptState)
     , m_requestSysex(false)
+    , m_hasBeenDisposed(false)
+    , m_sysexPermissionResolved(false)
 {
+#if ENABLE(OILPAN)
+#if ENABLE(ASSERT)
+    // A prefinalizer has already been registered for ScriptPromiseResolver;
+    // remove it and register a combined one as the infrastructure doesn't
+    // support multiple prefinalizers for an object.
+    ThreadState::current()->unregisterPreFinalizer(*static_cast<ScriptPromiseResolver*>(this));
+#endif
+    ThreadState::current()->registerPreFinalizer(*this);
+#endif
     if (options.hasSysex())
         m_requestSysex = options.sysex();
 }
 
 MIDIAccessInitializer::~MIDIAccessInitializer()
 {
-    // It is safe to cancel a request which is already finished or canceld.
-    Document* document = toDocument(executionContext());
-    ASSERT(document);
-    MIDIController* controller = MIDIController::from(document->frame());
-    if (controller)
-        controller->cancelSysexPermissionRequest(this);
+#if !ENABLE(OILPAN)
+    dispose();
+#endif
+}
+
+void MIDIAccessInitializer::contextDestroyed()
+{
+    dispose();
+    LifecycleObserver::contextDestroyed();
+}
+
+void MIDIAccessInitializer::dispose()
+{
+    if (m_hasBeenDisposed)
+        return;
+
+    if (!executionContext())
+        return;
+
+    if (!m_sysexPermissionResolved) {
+        Document* document = toDocument(executionContext());
+        ASSERT(document);
+        if (MIDIController* controller = MIDIController::from(document->frame()))
+            controller->cancelSysexPermissionRequest(this);
+        m_sysexPermissionResolved = true;
+    }
+
+    m_hasBeenDisposed = true;
+#if ENABLE(OILPAN) && ENABLE(ASSERT)
+    ScriptPromiseResolver::dispose();
+#endif
 }
 
 ScriptPromise MIDIAccessInitializer::start()
@@ -46,28 +85,27 @@ ScriptPromise MIDIAccessInitializer::start()
     }
     Document* document = toDocument(executionContext());
     ASSERT(document);
-    MIDIController* controller = MIDIController::from(document->frame());
-    if (controller) {
+    if (MIDIController* controller = MIDIController::from(document->frame()))
         controller->requestSysexPermission(this);
-    } else {
-        reject(DOMError::create("SecurityError"));
-    }
+    else
+        reject(DOMException::create(SecurityError));
+
     return promise;
 }
 
-void MIDIAccessInitializer::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+void MIDIAccessInitializer::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(m_accessor);
-    m_portDescriptors.append(PortDescriptor(id, manufacturer, name, MIDIPort::MIDIPortTypeInput, version, isActive));
+    m_portDescriptors.append(PortDescriptor(id, manufacturer, name, MIDIPort::TypeInput, version, state));
 }
 
-void MIDIAccessInitializer::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+void MIDIAccessInitializer::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(m_accessor);
-    m_portDescriptors.append(PortDescriptor(id, manufacturer, name, MIDIPort::MIDIPortTypeOutput, version, isActive));
+    m_portDescriptors.append(PortDescriptor(id, manufacturer, name, MIDIPort::TypeOutput, version, state));
 }
 
-void MIDIAccessInitializer::didSetInputPortState(unsigned portIndex, bool isActive)
+void MIDIAccessInitializer::didSetInputPortState(unsigned portIndex, PortState state)
 {
     // didSetInputPortState() is not allowed to call before didStartSession()
     // is called. Once didStartSession() is called, MIDIAccessorClient methods
@@ -75,7 +113,7 @@ void MIDIAccessInitializer::didSetInputPortState(unsigned portIndex, bool isActi
     ASSERT_NOT_REACHED();
 }
 
-void MIDIAccessInitializer::didSetOutputPortState(unsigned portIndex, bool isActive)
+void MIDIAccessInitializer::didSetOutputPortState(unsigned portIndex, PortState state)
 {
     // See comments on didSetInputPortState().
     ASSERT_NOT_REACHED();
@@ -87,16 +125,34 @@ void MIDIAccessInitializer::didStartSession(bool success, const String& error, c
     if (success) {
         resolve(MIDIAccess::create(m_accessor.release(), m_requestSysex, m_portDescriptors, executionContext()));
     } else {
-        reject(DOMError::create(error, message));
+        // The spec says the name is one of
+        //  - SecurityError
+        //  - AbortError
+        //  - InvalidStateError
+        //  - NotSupportedError
+        // TODO(toyoshim): Do not rely on |error| string. Instead an enum
+        // representing an ExceptionCode should be defined and deliverred.
+        ExceptionCode ec = InvalidStateError;
+        if (error == DOMException::getErrorName(SecurityError)) {
+            ec = SecurityError;
+        } else if (error == DOMException::getErrorName(AbortError)) {
+            ec = AbortError;
+        } else if (error == DOMException::getErrorName(InvalidStateError)) {
+            ec = InvalidStateError;
+        } else if (error == DOMException::getErrorName(NotSupportedError)) {
+            ec = NotSupportedError;
+        }
+        reject(DOMException::create(ec, message));
     }
 }
 
 void MIDIAccessInitializer::resolveSysexPermission(bool allowed)
 {
+    m_sysexPermissionResolved = true;
     if (allowed)
         m_accessor->startSession();
     else
-        reject(DOMError::create("SecurityError"));
+        reject(DOMException::create(SecurityError));
 }
 
 SecurityOrigin* MIDIAccessInitializer::securityOrigin() const

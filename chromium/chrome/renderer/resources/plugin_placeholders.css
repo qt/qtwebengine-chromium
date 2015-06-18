@@ -2,12 +2,14 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-body {
+html, body {
+  -webkit-user-select: none;
   font-family: sans-serif;
+  height: 100%;
   margin: 0;
   overflow: hidden;
   text-align: center;
-  -webkit-user-select: none;
+  width: 100%;
 }
 
 h1 {
@@ -37,43 +39,43 @@ p {
 }
 
 #inner {
-  position: relative;
   height: 100%;
-  width: 100%;
-  top: 50%;
 <if expr="not is_android">
   margin-top: -70px;
 </if>
 <if expr="is_android">
   margin-top: -14px;
 </if>
+  position: relative;
+  top: 50%;
+  width: 100%;
 }
 
 #close {
-<if expr="not is_android">
-  visibility: hidden;
-</if>
+  background-image: -webkit-image-set(
+      url(../../../ui/resources/default_100_percent/close_2.png) 1x,
+      url(../../../ui/resources/default_200_percent/close_2.png) 2x);
+  background-position: right top;
+  background-repeat: no-repeat;
   cursor: pointer;
+  height: 14px;
   position: absolute;
   right: 3px;
   top: 3px;
-  height: 14px;
+<if expr="not is_android">
+  visibility: hidden;
+</if>
   width: 14px;
-  background-image: -webkit-image-set(
-      url('../../../ui/resources/default_100_percent/close_2.png') 1x,
-      url('../../../ui/resources/default_200_percent/close_2.png') 2x);
-  background-position: right top;
-  background-repeat: no-repeat;
 }
 
 #close:hover {
   background-image: -webkit-image-set(
-      url('../../../ui/resources/default_100_percent/close_2_hover.png') 1x,
-      url('../../../ui/resources/default_200_percent/close_2_hover.png') 2x);
+      url(../../../ui/resources/default_100_percent/close_2_hover.png) 1x,
+      url(../../../ui/resources/default_200_percent/close_2_hover.png) 2x);
 }
 
 #close:active {
   background-image: -webkit-image-set(
-      url('../../../ui/resources/default_100_percent/close_2_pressed.png') 1x,
-      url('../../../ui/resources/default_200_percent/close_2_pressed.png') 2x);
+      url(../../../ui/resources/default_100_percent/close_2_pressed.png) 1x,
+      url(../../../ui/resources/default_200_percent/close_2_pressed.png) 2x);
 }

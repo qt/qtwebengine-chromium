@@ -28,6 +28,7 @@
 
 #include "core/dom/ContextLifecycleObserver.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/speech/SpeechSynthesisUtterance.h"
 #include "modules/speech/SpeechSynthesisVoice.h"
 #include "platform/heap/Handle.h"
@@ -39,7 +40,7 @@ namespace blink {
 class ExceptionState;
 class PlatformSpeechSynthesizerClient;
 
-class SpeechSynthesis final : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechSynthesis>, public PlatformSpeechSynthesizerClient, public ContextLifecycleObserver, public EventTargetWithInlineData {
+class MODULES_EXPORT SpeechSynthesis final : public RefCountedGarbageCollectedEventTargetWithInlineData<SpeechSynthesis>, public PlatformSpeechSynthesizerClient, public ContextLifecycleObserver {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechSynthesis>);
     DEFINE_WRAPPERTYPEINFO();
     USING_GARBAGE_COLLECTED_MIXIN(SpeechSynthesis);
@@ -55,7 +56,7 @@ public:
     void pause();
     void resume();
 
-    const HeapVector<Member<SpeechSynthesisVoice> >& getVoices();
+    const HeapVector<Member<SpeechSynthesisVoice>>& getVoices();
 
     // Used in testing to use a mock platform synthesizer
     void setPlatformSynthesizer(PlatformSpeechSynthesizer*);
@@ -64,7 +65,7 @@ public:
 
     virtual ExecutionContext* executionContext() const override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SpeechSynthesis(ExecutionContext*);
@@ -86,8 +87,8 @@ private:
     SpeechSynthesisUtterance* currentSpeechUtterance() const;
 
     Member<PlatformSpeechSynthesizer> m_platformSpeechSynthesizer;
-    HeapVector<Member<SpeechSynthesisVoice> > m_voiceList;
-    HeapDeque<Member<SpeechSynthesisUtterance> > m_utteranceQueue;
+    HeapVector<Member<SpeechSynthesisVoice>> m_voiceList;
+    HeapDeque<Member<SpeechSynthesisUtterance>> m_utteranceQueue;
     bool m_isPaused;
 
     // EventTarget

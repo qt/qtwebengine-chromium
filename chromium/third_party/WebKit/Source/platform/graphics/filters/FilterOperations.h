@@ -27,17 +27,21 @@
 #define FilterOperations_h
 
 #include "platform/PlatformExport.h"
-#include "platform/geometry/IntRectExtent.h"
+#include "platform/geometry/IntRectOutsets.h"
 #include "platform/graphics/filters/FilterOperation.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
-typedef IntRectExtent FilterOutsets;
+typedef IntRectOutsets FilterOutsets;
 
 class PLATFORM_EXPORT FilterOperations {
-    WTF_MAKE_FAST_ALLOCATED;
+#if ENABLE(OILPAN)
+    DISALLOW_ALLOCATION();
+#else
+    WTF_MAKE_FAST_ALLOCATED(FilterOperations);
+#endif
 public:
     FilterOperations();
     FilterOperations(const FilterOperations& other) { *this = other; }
@@ -55,8 +59,10 @@ public:
         m_operations.clear();
     }
 
-    Vector<RefPtr<FilterOperation> >& operations() { return m_operations; }
-    const Vector<RefPtr<FilterOperation> >& operations() const { return m_operations; }
+    typedef WillBeHeapVector<RefPtrWillBeMember<FilterOperation>> FilterOperationVector;
+
+    FilterOperationVector& operations() { return m_operations; }
+    const FilterOperationVector& operations() const { return m_operations; }
 
     bool isEmpty() const { return !m_operations.size(); }
     size_t size() const { return m_operations.size(); }
@@ -71,9 +77,34 @@ public:
     bool hasFilterThatMovesPixels() const;
 
     bool hasReferenceFilter() const;
+
+    DECLARE_TRACE();
+
 private:
-    Vector<RefPtr<FilterOperation> > m_operations;
+    FilterOperationVector m_operations;
 };
+
+#if ENABLE(OILPAN)
+// Wrapper object for the FilterOperations part object.
+class FilterOperationsWrapper : public GarbageCollected<FilterOperationsWrapper> {
+public:
+    static FilterOperationsWrapper* create()
+    {
+        return new FilterOperationsWrapper();
+    }
+
+    const FilterOperations& operations() const { return m_operations; }
+
+    DEFINE_INLINE_TRACE() { visitor->trace(m_operations); }
+
+private:
+    FilterOperationsWrapper()
+    {
+    }
+
+    FilterOperations m_operations;
+};
+#endif
 
 } // namespace blink
 

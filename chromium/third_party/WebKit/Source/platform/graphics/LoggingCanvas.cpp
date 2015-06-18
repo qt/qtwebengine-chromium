@@ -39,22 +39,486 @@
 
 namespace blink {
 
-class AutoLogger {
-public:
-    explicit AutoLogger(LoggingCanvas*);
-    PassRefPtr<JSONObject> logItem(const String& name);
-    PassRefPtr<JSONObject> logItemWithParams(const String& name);
-    ~AutoLogger();
+namespace {
 
-private:
-    LoggingCanvas* m_canvas;
-    RefPtr<JSONObject> m_logItem;
+struct VerbParams {
+    String name;
+    unsigned pointCount;
+    unsigned pointOffset;
+
+    VerbParams(const String& name, unsigned pointCount, unsigned pointOffset)
+        : name(name)
+        , pointCount(pointCount)
+        , pointOffset(pointOffset) { }
 };
 
-AutoLogger::AutoLogger(LoggingCanvas* loggingCanvas) : m_canvas(loggingCanvas)
+PassRefPtr<JSONObject> objectForSkRect(const SkRect& rect)
 {
-    loggingCanvas->m_depthCount++;
+    RefPtr<JSONObject> rectItem = JSONObject::create();
+    rectItem->setNumber("left", rect.left());
+    rectItem->setNumber("top", rect.top());
+    rectItem->setNumber("right", rect.right());
+    rectItem->setNumber("bottom", rect.bottom());
+    return rectItem.release();
 }
+
+PassRefPtr<JSONObject> objectForSkIRect(const SkIRect& rect)
+{
+    RefPtr<JSONObject> rectItem = JSONObject::create();
+    rectItem->setNumber("left", rect.left());
+    rectItem->setNumber("top", rect.top());
+    rectItem->setNumber("right", rect.right());
+    rectItem->setNumber("bottom", rect.bottom());
+    return rectItem.release();
+}
+
+String pointModeName(SkCanvas::PointMode mode)
+{
+    switch (mode) {
+    case SkCanvas::kPoints_PointMode: return "Points";
+    case SkCanvas::kLines_PointMode: return "Lines";
+    case SkCanvas::kPolygon_PointMode: return "Polygon";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+PassRefPtr<JSONObject> objectForSkPoint(const SkPoint& point)
+{
+    RefPtr<JSONObject> pointItem = JSONObject::create();
+    pointItem->setNumber("x", point.x());
+    pointItem->setNumber("y", point.y());
+    return pointItem.release();
+}
+
+PassRefPtr<JSONArray> arrayForSkPoints(size_t count, const SkPoint points[])
+{
+    RefPtr<JSONArray> pointsArrayItem = JSONArray::create();
+    for (size_t i = 0; i < count; ++i)
+        pointsArrayItem->pushObject(objectForSkPoint(points[i]));
+    return pointsArrayItem.release();
+}
+
+PassRefPtr<JSONObject> objectForSkPicture(const SkPicture& picture)
+{
+    const SkIRect bounds = picture.cullRect().roundOut();
+    RefPtr<JSONObject> pictureItem = JSONObject::create();
+    pictureItem->setNumber("width", bounds.width());
+    pictureItem->setNumber("height", bounds.height());
+    return pictureItem.release();
+}
+
+PassRefPtr<JSONObject> objectForRadius(const SkRRect& rrect, SkRRect::Corner corner)
+{
+    RefPtr<JSONObject> radiusItem = JSONObject::create();
+    SkVector radius = rrect.radii(corner);
+    radiusItem->setNumber("xRadius", radius.x());
+    radiusItem->setNumber("yRadius", radius.y());
+    return radiusItem.release();
+}
+
+String rrectTypeName(SkRRect::Type type)
+{
+    switch (type) {
+    case SkRRect::kEmpty_Type: return "Empty";
+    case SkRRect::kRect_Type: return "Rect";
+    case SkRRect::kOval_Type: return "Oval";
+    case SkRRect::kSimple_Type: return "Simple";
+    case SkRRect::kNinePatch_Type: return "Nine-patch";
+    case SkRRect::kComplex_Type: return "Complex";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String radiusName(SkRRect::Corner corner)
+{
+    switch (corner) {
+    case SkRRect::kUpperLeft_Corner: return "upperLeftRadius";
+    case SkRRect::kUpperRight_Corner: return "upperRightRadius";
+    case SkRRect::kLowerRight_Corner: return "lowerRightRadius";
+    case SkRRect::kLowerLeft_Corner: return "lowerLeftRadius";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    }
+}
+
+PassRefPtr<JSONObject> objectForSkRRect(const SkRRect& rrect)
+{
+    RefPtr<JSONObject> rrectItem = JSONObject::create();
+    rrectItem->setString("type", rrectTypeName(rrect.type()));
+    rrectItem->setNumber("left", rrect.rect().left());
+    rrectItem->setNumber("top", rrect.rect().top());
+    rrectItem->setNumber("right", rrect.rect().right());
+    rrectItem->setNumber("bottom", rrect.rect().bottom());
+    for (int i = 0; i < 4; ++i)
+        rrectItem->setObject(radiusName((SkRRect::Corner) i), objectForRadius(rrect, (SkRRect::Corner) i));
+    return rrectItem.release();
+}
+
+String fillTypeName(SkPath::FillType type)
+{
+    switch (type) {
+    case SkPath::kWinding_FillType: return "Winding";
+    case SkPath::kEvenOdd_FillType: return "EvenOdd";
+    case SkPath::kInverseWinding_FillType: return "InverseWinding";
+    case SkPath::kInverseEvenOdd_FillType: return "InverseEvenOdd";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String convexityName(SkPath::Convexity convexity)
+{
+    switch (convexity) {
+    case SkPath::kUnknown_Convexity: return "Unknown";
+    case SkPath::kConvex_Convexity: return "Convex";
+    case SkPath::kConcave_Convexity: return "Concave";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+VerbParams segmentParams(SkPath::Verb verb)
+{
+    switch (verb) {
+    case SkPath::kMove_Verb: return VerbParams("Move", 1, 0);
+    case SkPath::kLine_Verb: return VerbParams("Line", 1, 1);
+    case SkPath::kQuad_Verb: return VerbParams("Quad", 2, 1);
+    case SkPath::kConic_Verb: return VerbParams("Conic", 2, 1);
+    case SkPath::kCubic_Verb: return VerbParams("Cubic", 3, 1);
+    case SkPath::kClose_Verb: return VerbParams("Close", 0, 0);
+    case SkPath::kDone_Verb: return VerbParams("Done", 0, 0);
+    default:
+        ASSERT_NOT_REACHED();
+        return VerbParams("?", 0, 0);
+    };
+}
+
+PassRefPtr<JSONObject> objectForSkPath(const SkPath& path)
+{
+    RefPtr<JSONObject> pathItem = JSONObject::create();
+    pathItem->setString("fillType", fillTypeName(path.getFillType()));
+    pathItem->setString("convexity", convexityName(path.getConvexity()));
+    pathItem->setBoolean("isRect", path.isRect(0));
+    SkPath::Iter iter(path, false);
+    SkPoint points[4];
+    RefPtr<JSONArray> pathPointsArray = JSONArray::create();
+    for (SkPath::Verb verb = iter.next(points, false); verb != SkPath::kDone_Verb; verb = iter.next(points, false)) {
+        VerbParams verbParams = segmentParams(verb);
+        RefPtr<JSONObject> pathPointItem = JSONObject::create();
+        pathPointItem->setString("verb", verbParams.name);
+        ASSERT(verbParams.pointCount + verbParams.pointOffset <= WTF_ARRAY_LENGTH(points));
+        pathPointItem->setArray("points", arrayForSkPoints(verbParams.pointCount, points + verbParams.pointOffset));
+        if (SkPath::kConic_Verb == verb)
+            pathPointItem->setNumber("conicWeight", iter.conicWeight());
+        pathPointsArray->pushObject(pathPointItem);
+    }
+    pathItem->setArray("pathPoints", pathPointsArray);
+    pathItem->setObject("bounds", objectForSkRect(path.getBounds()));
+    return pathItem.release();
+}
+
+String colorTypeName(SkColorType colorType)
+{
+    switch (colorType) {
+    case kUnknown_SkColorType: return "None";
+    case kAlpha_8_SkColorType: return "A8";
+    case kIndex_8_SkColorType: return "Index8";
+    case kRGB_565_SkColorType: return "RGB565";
+    case kARGB_4444_SkColorType: return "ARGB4444";
+    case kN32_SkColorType: return "ARGB8888";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+PassRefPtr<JSONObject> objectForBitmapData(const SkBitmap& bitmap)
+{
+    RefPtr<JSONObject> dataItem = JSONObject::create();
+    Vector<unsigned char> output;
+    PNGImageEncoder::encode(bitmap, &output);
+    dataItem->setString("base64", WTF::base64Encode(reinterpret_cast<char*>(output.data()), output.size()));
+    dataItem->setString("mimeType", "image/png");
+    return dataItem.release();
+}
+
+PassRefPtr<JSONObject> objectForSkBitmap(const SkBitmap& bitmap)
+{
+    RefPtr<JSONObject> bitmapItem = JSONObject::create();
+    bitmapItem->setNumber("width", bitmap.width());
+    bitmapItem->setNumber("height", bitmap.height());
+    bitmapItem->setString("config", colorTypeName(bitmap.colorType()));
+    bitmapItem->setBoolean("opaque", bitmap.isOpaque());
+    bitmapItem->setBoolean("immutable", bitmap.isImmutable());
+    bitmapItem->setBoolean("volatile", bitmap.isVolatile());
+    bitmapItem->setNumber("genID", bitmap.getGenerationID());
+    bitmapItem->setObject("data", objectForBitmapData(bitmap));
+    return bitmapItem.release();
+}
+
+PassRefPtr<JSONObject> objectForSkImage(const SkImage* image)
+{
+    RefPtr<JSONObject> imageItem = JSONObject::create();
+    imageItem->setNumber("width", image->width());
+    imageItem->setNumber("height", image->height());
+    imageItem->setBoolean("opaque", image->isOpaque());
+    imageItem->setNumber("uniqueID", image->uniqueID());
+    return imageItem.release();
+}
+
+PassRefPtr<JSONArray> arrayForSkMatrix(const SkMatrix& matrix)
+{
+    RefPtr<JSONArray> matrixArray = JSONArray::create();
+    for (int i = 0; i < 9; ++i)
+        matrixArray->pushNumber(matrix[i]);
+    return matrixArray.release();
+}
+
+PassRefPtr<JSONObject> objectForSkShader(const SkShader& shader)
+{
+    RefPtr<JSONObject> shaderItem = JSONObject::create();
+    const SkMatrix localMatrix = shader.getLocalMatrix();
+    if (!localMatrix.isIdentity())
+        shaderItem->setArray("localMatrix", arrayForSkMatrix(localMatrix));
+    return shaderItem.release();
+}
+
+String stringForSkColor(const SkColor& color)
+{
+    String colorString = "#";
+    appendUnsignedAsHex(color, colorString);
+    return colorString;
+}
+
+void appendFlagToString(String* flagsString, bool isSet, const String& name)
+{
+    if (!isSet)
+        return;
+    if (flagsString->length())
+        flagsString->append("|");
+    flagsString->append(name);
+}
+
+String stringForSkPaintFlags(const SkPaint& paint)
+{
+    if (!paint.getFlags())
+        return "none";
+    String flagsString = "";
+    appendFlagToString(&flagsString, paint.isAntiAlias(), "AntiAlias");
+    appendFlagToString(&flagsString, paint.isDither(), "Dither");
+    appendFlagToString(&flagsString, paint.isUnderlineText(), "UnderlinText");
+    appendFlagToString(&flagsString, paint.isStrikeThruText(), "StrikeThruText");
+    appendFlagToString(&flagsString, paint.isFakeBoldText(), "FakeBoldText");
+    appendFlagToString(&flagsString, paint.isLinearText(), "LinearText");
+    appendFlagToString(&flagsString, paint.isSubpixelText(), "SubpixelText");
+    appendFlagToString(&flagsString, paint.isDevKernText(), "DevKernText");
+    appendFlagToString(&flagsString, paint.isLCDRenderText(), "LCDRenderText");
+    appendFlagToString(&flagsString, paint.isEmbeddedBitmapText(), "EmbeddedBitmapText");
+    appendFlagToString(&flagsString, paint.isAutohinted(), "Autohinted");
+    appendFlagToString(&flagsString, paint.isVerticalText(), "VerticalText");
+    appendFlagToString(&flagsString, paint.getFlags() & SkPaint::kGenA8FromLCD_Flag, "GenA8FromLCD");
+    return flagsString;
+}
+
+String filterQualityName(SkFilterQuality filterQuality)
+{
+    switch (filterQuality) {
+    case kNone_SkFilterQuality: return "None";
+    case kLow_SkFilterQuality: return "Low";
+    case kMedium_SkFilterQuality: return "Medium";
+    case kHigh_SkFilterQuality: return "High";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String textAlignName(SkPaint::Align align)
+{
+    switch (align) {
+    case SkPaint::kLeft_Align: return "Left";
+    case SkPaint::kCenter_Align: return "Center";
+    case SkPaint::kRight_Align: return "Right";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String strokeCapName(SkPaint::Cap cap)
+{
+    switch (cap) {
+    case SkPaint::kButt_Cap: return "Butt";
+    case SkPaint::kRound_Cap: return "Round";
+    case SkPaint::kSquare_Cap: return "Square";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String strokeJoinName(SkPaint::Join join)
+{
+    switch (join) {
+    case SkPaint::kMiter_Join: return "Miter";
+    case SkPaint::kRound_Join: return "Round";
+    case SkPaint::kBevel_Join: return "Bevel";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String styleName(SkPaint::Style style)
+{
+    switch (style) {
+    case SkPaint::kFill_Style: return "Fill";
+    case SkPaint::kStroke_Style: return "Stroke";
+    case SkPaint::kStrokeAndFill_Style: return "StrokeAndFill";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String textEncodingName(SkPaint::TextEncoding encoding)
+{
+    switch (encoding) {
+    case SkPaint::kUTF8_TextEncoding: return "UTF-8";
+    case SkPaint::kUTF16_TextEncoding: return "UTF-16";
+    case SkPaint::kUTF32_TextEncoding: return "UTF-32";
+    case SkPaint::kGlyphID_TextEncoding: return "GlyphID";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+String hintingName(SkPaint::Hinting hinting)
+{
+    switch (hinting) {
+    case SkPaint::kNo_Hinting: return "None";
+    case SkPaint::kSlight_Hinting: return "Slight";
+    case SkPaint::kNormal_Hinting: return "Normal";
+    case SkPaint::kFull_Hinting: return "Full";
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    };
+}
+
+PassRefPtr<JSONObject> objectForSkPaint(const SkPaint& paint)
+{
+    RefPtr<JSONObject> paintItem = JSONObject::create();
+    paintItem->setNumber("textSize", paint.getTextSize());
+    paintItem->setNumber("textScaleX", paint.getTextScaleX());
+    paintItem->setNumber("textSkewX", paint.getTextSkewX());
+    if (SkShader* shader = paint.getShader())
+        paintItem->setObject("shader", objectForSkShader(*shader));
+    paintItem->setString("color", stringForSkColor(paint.getColor()));
+    paintItem->setNumber("strokeWidth", paint.getStrokeWidth());
+    paintItem->setNumber("strokeMiter", paint.getStrokeMiter());
+    paintItem->setString("flags", stringForSkPaintFlags(paint));
+    paintItem->setString("filterLevel", filterQualityName(paint.getFilterQuality()));
+    paintItem->setString("textAlign", textAlignName(paint.getTextAlign()));
+    paintItem->setString("strokeCap", strokeCapName(paint.getStrokeCap()));
+    paintItem->setString("strokeJoin", strokeJoinName(paint.getStrokeJoin()));
+    paintItem->setString("styleName", styleName(paint.getStyle()));
+    paintItem->setString("textEncoding", textEncodingName(paint.getTextEncoding()));
+    paintItem->setString("hinting", hintingName(paint.getHinting()));
+    return paintItem.release();
+}
+
+PassRefPtr<JSONArray> arrayForSkScalars(size_t n, const SkScalar scalars[])
+{
+    RefPtr<JSONArray> scalarsArray = JSONArray::create();
+    for (size_t i = 0; i < n; ++i)
+        scalarsArray->pushNumber(scalars[i]);
+    return scalarsArray.release();
+}
+
+String regionOpName(SkRegion::Op op)
+{
+    switch (op) {
+    case SkRegion::kDifference_Op: return "kDifference_Op";
+    case SkRegion::kIntersect_Op: return "kIntersect_Op";
+    case SkRegion::kUnion_Op: return "kUnion_Op";
+    case SkRegion::kXOR_Op: return "kXOR_Op";
+    case SkRegion::kReverseDifference_Op: return "kReverseDifference_Op";
+    case SkRegion::kReplace_Op: return "kReplace_Op";
+    default: return "Unknown type";
+    };
+}
+
+String saveFlagsToString(SkCanvas::SaveFlags flags)
+{
+    String flagsString = "";
+    if (flags & SkCanvas::kHasAlphaLayer_SaveFlag)
+        flagsString.append("kHasAlphaLayer_SaveFlag ");
+    if (flags & SkCanvas::kFullColorLayer_SaveFlag)
+        flagsString.append("kFullColorLayer_SaveFlag ");
+    if (flags & SkCanvas::kClipToLayer_SaveFlag)
+        flagsString.append("kClipToLayer_SaveFlag ");
+    return flagsString;
+}
+
+String textEncodingCanonicalName(SkPaint::TextEncoding encoding)
+{
+    String name = textEncodingName(encoding);
+    if (encoding == SkPaint::kUTF16_TextEncoding || encoding == SkPaint::kUTF32_TextEncoding)
+        name.append("LE");
+    return name;
+}
+
+String stringForUTFText(const void* text, size_t length, SkPaint::TextEncoding encoding)
+{
+    return WTF::TextEncoding(textEncodingCanonicalName(encoding)).decode((const char*)text, length);
+}
+
+String stringForText(const void* text, size_t byteLength, const SkPaint& paint)
+{
+    SkPaint::TextEncoding encoding = paint.getTextEncoding();
+    switch (encoding) {
+    case SkPaint::kUTF8_TextEncoding:
+    case SkPaint::kUTF16_TextEncoding:
+    case SkPaint::kUTF32_TextEncoding:
+        return stringForUTFText(text, byteLength, encoding);
+    case SkPaint::kGlyphID_TextEncoding: {
+        WTF::Vector<SkUnichar> dataVector(byteLength / 2);
+        SkUnichar* textData = dataVector.data();
+        paint.glyphsToUnichars(static_cast<const uint16_t*>(text), byteLength / 2, textData);
+        return WTF::UTF32LittleEndianEncoding().decode(reinterpret_cast<const char*>(textData), byteLength * 2);
+    }
+    default:
+        ASSERT_NOT_REACHED();
+        return "?";
+    }
+}
+
+} // namespace
+
+class AutoLogger : InterceptingCanvasBase::CanvasInterceptorBase<LoggingCanvas> {
+public:
+    explicit AutoLogger(LoggingCanvas* canvas) : InterceptingCanvasBase::CanvasInterceptorBase<LoggingCanvas>(canvas) { }
+
+    PassRefPtr<JSONObject> logItem(const String& name);
+    PassRefPtr<JSONObject> logItemWithParams(const String& name);
+    ~AutoLogger()
+    {
+        if (topLevelCall())
+            canvas()->m_log->pushObject(m_logItem);
+    }
+
+private:
+    RefPtr<JSONObject> m_logItem;
+};
 
 PassRefPtr<JSONObject> AutoLogger::logItem(const String& name)
 {
@@ -72,79 +536,66 @@ PassRefPtr<JSONObject> AutoLogger::logItemWithParams(const String& name)
     return params.release();
 }
 
-AutoLogger::~AutoLogger()
+LoggingCanvas::LoggingCanvas(int width, int height)
+    : InterceptingCanvasBase(width, height)
+    , m_log(JSONArray::create())
 {
-    m_canvas->m_depthCount--;
-    if (!m_canvas->m_depthCount)
-        m_canvas->m_log->pushObject(m_logItem);
 }
 
-LoggingCanvas::LoggingCanvas(int width, int height) : InterceptingCanvas(width, height)
-{
-    m_log = JSONArray::create();
-}
-
-void LoggingCanvas::clear(SkColor color)
-{
-    AutoLogger logger(this);
-    logger.logItemWithParams("clear")->setString("color", stringForSkColor(color));
-    this->SkCanvas::clear(color);
-}
-
-void LoggingCanvas::drawPaint(const SkPaint& paint)
+void LoggingCanvas::onDrawPaint(const SkPaint& paint)
 {
     AutoLogger logger(this);
     logger.logItemWithParams("drawPaint")->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawPaint(paint);
+    this->SkCanvas::onDrawPaint(paint);
 }
 
-void LoggingCanvas::drawPoints(PointMode mode, size_t count, const SkPoint pts[], const SkPaint& paint)
+void LoggingCanvas::onDrawPoints(PointMode mode, size_t count, const SkPoint pts[], const SkPaint& paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawPoints");
     params->setString("pointMode", pointModeName(mode));
     params->setArray("points", arrayForSkPoints(count, pts));
     params->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawPoints(mode, count, pts, paint);
+    this->SkCanvas::onDrawPoints(mode, count, pts, paint);
 }
 
-void LoggingCanvas::drawRect(const SkRect& rect, const SkPaint& paint)
+void LoggingCanvas::onDrawRect(const SkRect& rect, const SkPaint& paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawRect");
     params->setObject("rect", objectForSkRect(rect));
     params->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawRect(rect, paint);
+    this->SkCanvas::onDrawRect(rect, paint);
 }
 
-void LoggingCanvas::drawOval(const SkRect& oval, const SkPaint& paint)
+void LoggingCanvas::onDrawOval(const SkRect& oval, const SkPaint& paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawOval");
     params->setObject("oval", objectForSkRect(oval));
     params->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawOval(oval, paint);
+    this->SkCanvas::onDrawOval(oval, paint);
 }
 
-void LoggingCanvas::drawRRect(const SkRRect& rrect, const SkPaint& paint)
+void LoggingCanvas::onDrawRRect(const SkRRect& rrect, const SkPaint& paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawRRect");
     params->setObject("rrect", objectForSkRRect(rrect));
     params->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawRRect(rrect, paint);
+    this->SkCanvas::onDrawRRect(rrect, paint);
 }
 
-void LoggingCanvas::drawPath(const SkPath& path, const SkPaint& paint)
+void LoggingCanvas::onDrawPath(const SkPath& path, const SkPaint& paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawPath");
     params->setObject("path", objectForSkPath(path));
     params->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawPath(path, paint);
+    this->SkCanvas::onDrawPath(path, paint);
 }
 
-void LoggingCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar top, const SkPaint* paint)
+void LoggingCanvas::onDrawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar top, const SkPaint* paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawBitmap");
@@ -153,10 +604,10 @@ void LoggingCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar t
     params->setObject("bitmap", objectForSkBitmap(bitmap));
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::drawBitmap(bitmap, left, top, paint);
+    this->SkCanvas::onDrawBitmap(bitmap, left, top, paint);
 }
 
-void LoggingCanvas::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst, const SkPaint* paint, DrawBitmapRectFlags flags)
+void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst, const SkPaint* paint, DrawBitmapRectFlags flags)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawBitmapRectToRect");
@@ -167,21 +618,10 @@ void LoggingCanvas::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* s
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
     params->setNumber("flags", flags);
-    this->SkCanvas::drawBitmapRectToRect(bitmap, src, dst, paint, flags);
+    this->SkCanvas::onDrawBitmapRect(bitmap, src, dst, paint, flags);
 }
 
-void LoggingCanvas::drawBitmapMatrix(const SkBitmap& bitmap, const SkMatrix& m, const SkPaint* paint)
-{
-    AutoLogger logger(this);
-    RefPtr<JSONObject> params = logger.logItemWithParams("drawBitmapMatrix");
-    params->setObject("bitmap", objectForSkBitmap(bitmap));
-    params->setArray("matrix", arrayForSkMatrix(m));
-    if (paint)
-        params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::drawBitmapMatrix(bitmap, m, paint);
-}
-
-void LoggingCanvas::drawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, const SkRect& dst, const SkPaint* paint)
+void LoggingCanvas::onDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, const SkRect& dst, const SkPaint* paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawBitmapNine");
@@ -190,10 +630,35 @@ void LoggingCanvas::drawBitmapNine(const SkBitmap& bitmap, const SkIRect& center
     params->setObject("dst", objectForSkRect(dst));
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::drawBitmapNine(bitmap, center, dst, paint);
+    this->SkCanvas::onDrawBitmapNine(bitmap, center, dst, paint);
 }
 
-void LoggingCanvas::drawSprite(const SkBitmap& bitmap, int left, int top, const SkPaint* paint)
+void LoggingCanvas::onDrawImage(const SkImage* image, SkScalar left, SkScalar top, const SkPaint* paint)
+{
+    AutoLogger logger(this);
+    RefPtr<JSONObject> params = logger.logItemWithParams("drawImage");
+    params->setNumber("left", left);
+    params->setNumber("top", top);
+    params->setObject("image", objectForSkImage(image));
+    if (paint)
+        params->setObject("paint", objectForSkPaint(*paint));
+    this->SkCanvas::onDrawImage(image, left, top, paint);
+}
+
+void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst, const SkPaint* paint)
+{
+    AutoLogger logger(this);
+    RefPtr<JSONObject> params = logger.logItemWithParams("drawImageRect");
+    params->setObject("image", objectForSkImage(image));
+    if (src)
+        params->setObject("src", objectForSkRect(*src));
+    params->setObject("dst", objectForSkRect(dst));
+    if (paint)
+        params->setObject("paint", objectForSkPaint(*paint));
+    this->SkCanvas::onDrawImageRect(image, src, dst, paint);
+}
+
+void LoggingCanvas::onDrawSprite(const SkBitmap& bitmap, int left, int top, const SkPaint* paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawSprite");
@@ -202,24 +667,16 @@ void LoggingCanvas::drawSprite(const SkBitmap& bitmap, int left, int top, const 
     params->setNumber("top", top);
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::drawSprite(bitmap, left, top, paint);
+    this->SkCanvas::onDrawSprite(bitmap, left, top, paint);
 }
 
-void LoggingCanvas::drawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[], const SkColor colors[], SkXfermode* xmode,
+void LoggingCanvas::onDrawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[], const SkPoint texs[], const SkColor colors[], SkXfermode* xmode,
     const uint16_t indices[], int indexCount, const SkPaint& paint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawVertices");
     params->setObject("paint", objectForSkPaint(paint));
-    this->SkCanvas::drawVertices(vmode, vertexCount, vertices, texs, colors, xmode, indices, indexCount, paint);
-}
-
-void LoggingCanvas::drawData(const void* data, size_t length)
-{
-    AutoLogger logger(this);
-    RefPtr<JSONObject> params = logger.logItemWithParams("drawData");
-    params->setNumber("length", length);
-    this->SkCanvas::drawData(data, length);
+    this->SkCanvas::onDrawVertices(vmode, vertexCount, vertices, texs, colors, xmode, indices, indexCount, paint);
 }
 
 void LoggingCanvas::beginCommentGroup(const char* description)
@@ -310,21 +767,6 @@ void LoggingCanvas::onDrawTextBlob(const SkTextBlob *blob, SkScalar x, SkScalar 
     params->setNumber("y", y);
     params->setObject("paint", objectForSkPaint(paint));
     this->SkCanvas::onDrawTextBlob(blob, x, y, paint);
-}
-
-void LoggingCanvas::onPushCull(const SkRect& cullRect)
-{
-    AutoLogger logger(this);
-    RefPtr<JSONObject> params = logger.logItemWithParams("pushCull");
-    params->setObject("cullRect", objectForSkRect(cullRect));
-    this->SkCanvas::onPushCull(cullRect);
-}
-
-void LoggingCanvas::onPopCull()
-{
-    AutoLogger logger(this);
-    logger.logItem("popCull");
-    this->SkCanvas::onPopCull();
 }
 
 void LoggingCanvas::onClipRect(const SkRect& rect, SkRegion::Op op, ClipEdgeStyle style)
@@ -436,459 +878,23 @@ PassRefPtr<JSONArray> LoggingCanvas::log()
     return m_log;
 }
 
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkRect(const SkRect& rect)
+#ifndef NDEBUG
+String pictureAsDebugString(const SkPicture* picture)
 {
-    RefPtr<JSONObject> rectItem = JSONObject::create();
-    rectItem->setNumber("left", rect.left());
-    rectItem->setNumber("top", rect.top());
-    rectItem->setNumber("right", rect.right());
-    rectItem->setNumber("bottom", rect.bottom());
-    return rectItem.release();
+    const SkIRect bounds = picture->cullRect().roundOut();
+    LoggingCanvas canvas(bounds.width(), bounds.height());
+    picture->playback(&canvas);
+    RefPtr<JSONObject> pictureAsJSON = JSONObject::create();
+    pictureAsJSON->setObject("cullRect", objectForSkRect(picture->cullRect()));
+    pictureAsJSON->setArray("operations", canvas.log());
+    RefPtr<JSONArray> operationsInJson = canvas.log();
+    return pictureAsJSON->toPrettyJSONString();
 }
 
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkIRect(const SkIRect& rect)
+void showSkPicture(const SkPicture* picture)
 {
-    RefPtr<JSONObject> rectItem = JSONObject::create();
-    rectItem->setNumber("left", rect.left());
-    rectItem->setNumber("top", rect.top());
-    rectItem->setNumber("right", rect.right());
-    rectItem->setNumber("bottom", rect.bottom());
-    return rectItem.release();
+    WTFLogAlways("%s\n", pictureAsDebugString(picture).utf8().data());
 }
-
-String LoggingCanvas::pointModeName(PointMode mode)
-{
-    switch (mode) {
-    case SkCanvas::kPoints_PointMode: return "Points";
-    case SkCanvas::kLines_PointMode: return "Lines";
-    case SkCanvas::kPolygon_PointMode: return "Polygon";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkPoint(const SkPoint& point)
-{
-    RefPtr<JSONObject> pointItem = JSONObject::create();
-    pointItem->setNumber("x", point.x());
-    pointItem->setNumber("y", point.y());
-    return pointItem.release();
-}
-
-PassRefPtr<JSONArray> LoggingCanvas::arrayForSkPoints(size_t count, const SkPoint points[])
-{
-    RefPtr<JSONArray> pointsArrayItem = JSONArray::create();
-    for (size_t i = 0; i < count; ++i)
-        pointsArrayItem->pushObject(objectForSkPoint(points[i]));
-    return pointsArrayItem.release();
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkPicture(const SkPicture& picture)
-{
-    RefPtr<JSONObject> pictureItem = JSONObject::create();
-    pictureItem->setNumber("width", picture.width());
-    pictureItem->setNumber("height", picture.height());
-    return pictureItem.release();
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForRadius(const SkRRect& rrect, SkRRect::Corner corner)
-{
-    RefPtr<JSONObject> radiusItem = JSONObject::create();
-    SkVector radius = rrect.radii(corner);
-    radiusItem->setNumber("xRadius", radius.x());
-    radiusItem->setNumber("yRadius", radius.y());
-    return radiusItem.release();
-}
-
-String LoggingCanvas::rrectTypeName(SkRRect::Type type)
-{
-    switch (type) {
-    case SkRRect::kEmpty_Type: return "Empty";
-    case SkRRect::kRect_Type: return "Rect";
-    case SkRRect::kOval_Type: return "Oval";
-    case SkRRect::kSimple_Type: return "Simple";
-    case SkRRect::kNinePatch_Type: return "Nine-patch";
-    case SkRRect::kComplex_Type: return "Complex";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::radiusName(SkRRect::Corner corner)
-{
-    switch (corner) {
-    case SkRRect::kUpperLeft_Corner: return "upperLeftRadius";
-    case SkRRect::kUpperRight_Corner: return "upperRightRadius";
-    case SkRRect::kLowerRight_Corner: return "lowerRightRadius";
-    case SkRRect::kLowerLeft_Corner: return "lowerLeftRadius";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    }
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkRRect(const SkRRect& rrect)
-{
-    RefPtr<JSONObject> rrectItem = JSONObject::create();
-    rrectItem->setString("type", rrectTypeName(rrect.type()));
-    rrectItem->setNumber("left", rrect.rect().left());
-    rrectItem->setNumber("top", rrect.rect().top());
-    rrectItem->setNumber("right", rrect.rect().right());
-    rrectItem->setNumber("bottom", rrect.rect().bottom());
-    for (int i = 0; i < 4; ++i)
-        rrectItem->setObject(radiusName((SkRRect::Corner) i), objectForRadius(rrect, (SkRRect::Corner) i));
-    return rrectItem.release();
-}
-
-String LoggingCanvas::fillTypeName(SkPath::FillType type)
-{
-    switch (type) {
-    case SkPath::kWinding_FillType: return "Winding";
-    case SkPath::kEvenOdd_FillType: return "EvenOdd";
-    case SkPath::kInverseWinding_FillType: return "InverseWinding";
-    case SkPath::kInverseEvenOdd_FillType: return "InverseEvenOdd";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::convexityName(SkPath::Convexity convexity)
-{
-    switch (convexity) {
-    case SkPath::kUnknown_Convexity: return "Unknown";
-    case SkPath::kConvex_Convexity: return "Convex";
-    case SkPath::kConcave_Convexity: return "Concave";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::verbName(SkPath::Verb verb)
-{
-    switch (verb) {
-    case SkPath::kMove_Verb: return "Move";
-    case SkPath::kLine_Verb: return "Line";
-    case SkPath::kQuad_Verb: return "Quad";
-    case SkPath::kConic_Verb: return "Conic";
-    case SkPath::kCubic_Verb: return "Cubic";
-    case SkPath::kClose_Verb: return "Close";
-    case SkPath::kDone_Verb: return "Done";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-LoggingCanvas::VerbParams LoggingCanvas::segmentParams(SkPath::Verb verb)
-{
-    switch (verb) {
-    case SkPath::kMove_Verb: return VerbParams("Move", 1, 0);
-    case SkPath::kLine_Verb: return VerbParams("Line", 1, 1);
-    case SkPath::kQuad_Verb: return VerbParams("Quad", 2, 1);
-    case SkPath::kConic_Verb: return VerbParams("Conic", 2, 1);
-    case SkPath::kCubic_Verb: return VerbParams("Cubic", 3, 1);
-    case SkPath::kClose_Verb: return VerbParams("Close", 0, 0);
-    case SkPath::kDone_Verb: return VerbParams("Done", 0, 0);
-    default:
-        ASSERT_NOT_REACHED();
-        return VerbParams("?", 0, 0);
-    };
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkPath(const SkPath& path)
-{
-    RefPtr<JSONObject> pathItem = JSONObject::create();
-    pathItem->setString("fillType", fillTypeName(path.getFillType()));
-    pathItem->setString("convexity", convexityName(path.getConvexity()));
-    pathItem->setBoolean("isRect", path.isRect(0));
-    SkPath::Iter iter(path, false);
-    SkPoint points[4];
-    RefPtr<JSONArray> pathPointsArray = JSONArray::create();
-    for (SkPath::Verb verb = iter.next(points, false); verb != SkPath::kDone_Verb; verb = iter.next(points, false)) {
-        VerbParams verbParams = segmentParams(verb);
-        RefPtr<JSONObject> pathPointItem = JSONObject::create();
-        pathPointItem->setString("verb", verbParams.name);
-        ASSERT(verbParams.pointCount + verbParams.pointOffset <= WTF_ARRAY_LENGTH(points));
-        pathPointItem->setArray("points", arrayForSkPoints(verbParams.pointCount, points + verbParams.pointOffset));
-        if (SkPath::kConic_Verb == verb)
-            pathPointItem->setNumber("conicWeight", iter.conicWeight());
-        pathPointsArray->pushObject(pathPointItem);
-    }
-    pathItem->setArray("pathPoints", pathPointsArray);
-    pathItem->setObject("bounds", objectForSkRect(path.getBounds()));
-    return pathItem.release();
-}
-
-String LoggingCanvas::colorTypeName(SkColorType colorType)
-{
-    switch (colorType) {
-    case kUnknown_SkColorType: return "None";
-    case kAlpha_8_SkColorType: return "A8";
-    case kIndex_8_SkColorType: return "Index8";
-    case kRGB_565_SkColorType: return "RGB565";
-    case kARGB_4444_SkColorType: return "ARGB4444";
-    case kN32_SkColorType: return "ARGB8888";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForBitmapData(const SkBitmap& bitmap)
-{
-    RefPtr<JSONObject> dataItem = JSONObject::create();
-    Vector<unsigned char> output;
-    PNGImageEncoder::encode(bitmap, &output);
-    dataItem->setString("base64", WTF::base64Encode(reinterpret_cast<char*>(output.data()), output.size()));
-    dataItem->setString("mimeType", "image/png");
-    return dataItem.release();
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkBitmap(const SkBitmap& bitmap)
-{
-    RefPtr<JSONObject> bitmapItem = JSONObject::create();
-    bitmapItem->setNumber("width", bitmap.width());
-    bitmapItem->setNumber("height", bitmap.height());
-    bitmapItem->setString("config", colorTypeName(bitmap.colorType()));
-    bitmapItem->setBoolean("opaque", bitmap.isOpaque());
-    bitmapItem->setBoolean("immutable", bitmap.isImmutable());
-    bitmapItem->setBoolean("volatile", bitmap.isVolatile());
-    bitmapItem->setNumber("genID", bitmap.getGenerationID());
-    bitmapItem->setObject("data", objectForBitmapData(bitmap));
-    return bitmapItem.release();
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkShader(const SkShader& shader)
-{
-    RefPtr<JSONObject> shaderItem = JSONObject::create();
-    const SkMatrix localMatrix = shader.getLocalMatrix();
-    if (!localMatrix.isIdentity())
-        shaderItem->setArray("localMatrix", arrayForSkMatrix(localMatrix));
-    return shaderItem.release();
-}
-
-String LoggingCanvas::stringForSkColor(const SkColor& color)
-{
-    String colorString = "#";
-    appendUnsignedAsHex(color, colorString);
-    return colorString;
-}
-
-void LoggingCanvas::appendFlagToString(String* flagsString, bool isSet, const String& name)
-{
-    if (!isSet)
-        return;
-    if (flagsString->length())
-        flagsString->append("|");
-    flagsString->append(name);
-}
-
-String LoggingCanvas::stringForSkPaintFlags(const SkPaint& paint)
-{
-    if (!paint.getFlags())
-        return "none";
-    String flagsString = "";
-    appendFlagToString(&flagsString, paint.isAntiAlias(), "AntiAlias");
-    appendFlagToString(&flagsString, paint.isDither(), "Dither");
-    appendFlagToString(&flagsString, paint.isUnderlineText(), "UnderlinText");
-    appendFlagToString(&flagsString, paint.isStrikeThruText(), "StrikeThruText");
-    appendFlagToString(&flagsString, paint.isFakeBoldText(), "FakeBoldText");
-    appendFlagToString(&flagsString, paint.isLinearText(), "LinearText");
-    appendFlagToString(&flagsString, paint.isSubpixelText(), "SubpixelText");
-    appendFlagToString(&flagsString, paint.isDevKernText(), "DevKernText");
-    appendFlagToString(&flagsString, paint.isLCDRenderText(), "LCDRenderText");
-    appendFlagToString(&flagsString, paint.isEmbeddedBitmapText(), "EmbeddedBitmapText");
-    appendFlagToString(&flagsString, paint.isAutohinted(), "Autohinted");
-    appendFlagToString(&flagsString, paint.isVerticalText(), "VerticalText");
-    appendFlagToString(&flagsString, paint.getFlags() & SkPaint::kGenA8FromLCD_Flag, "GenA8FromLCD");
-    return flagsString;
-}
-
-String LoggingCanvas::filterLevelName(SkPaint::FilterLevel filterLevel)
-{
-    switch (filterLevel) {
-    case SkPaint::kNone_FilterLevel: return "None";
-    case SkPaint::kLow_FilterLevel: return "Low";
-    case SkPaint::kMedium_FilterLevel: return "Medium";
-    case SkPaint::kHigh_FilterLevel: return "High";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::textAlignName(SkPaint::Align align)
-{
-    switch (align) {
-    case SkPaint::kLeft_Align: return "Left";
-    case SkPaint::kCenter_Align: return "Center";
-    case SkPaint::kRight_Align: return "Right";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::strokeCapName(SkPaint::Cap cap)
-{
-    switch (cap) {
-    case SkPaint::kButt_Cap: return "Butt";
-    case SkPaint::kRound_Cap: return "Round";
-    case SkPaint::kSquare_Cap: return "Square";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::strokeJoinName(SkPaint::Join join)
-{
-    switch (join) {
-    case SkPaint::kMiter_Join: return "Miter";
-    case SkPaint::kRound_Join: return "Round";
-    case SkPaint::kBevel_Join: return "Bevel";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::styleName(SkPaint::Style style)
-{
-    switch (style) {
-    case SkPaint::kFill_Style: return "Fill";
-    case SkPaint::kStroke_Style: return "Stroke";
-    case SkPaint::kStrokeAndFill_Style: return "StrokeAndFill";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::textEncodingName(SkPaint::TextEncoding encoding)
-{
-    switch (encoding) {
-    case SkPaint::kUTF8_TextEncoding: return "UTF-8";
-    case SkPaint::kUTF16_TextEncoding: return "UTF-16";
-    case SkPaint::kUTF32_TextEncoding: return "UTF-32";
-    case SkPaint::kGlyphID_TextEncoding: return "GlyphID";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-String LoggingCanvas::hintingName(SkPaint::Hinting hinting)
-{
-    switch (hinting) {
-    case SkPaint::kNo_Hinting: return "None";
-    case SkPaint::kSlight_Hinting: return "Slight";
-    case SkPaint::kNormal_Hinting: return "Normal";
-    case SkPaint::kFull_Hinting: return "Full";
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    };
-}
-
-PassRefPtr<JSONObject> LoggingCanvas::objectForSkPaint(const SkPaint& paint)
-{
-    RefPtr<JSONObject> paintItem = JSONObject::create();
-    paintItem->setNumber("textSize", paint.getTextSize());
-    paintItem->setNumber("textScaleX", paint.getTextScaleX());
-    paintItem->setNumber("textSkewX", paint.getTextSkewX());
-    if (SkShader* shader = paint.getShader())
-        paintItem->setObject("shader", objectForSkShader(*shader));
-    paintItem->setString("color", stringForSkColor(paint.getColor()));
-    paintItem->setNumber("strokeWidth", paint.getStrokeWidth());
-    paintItem->setNumber("strokeMiter", paint.getStrokeMiter());
-    paintItem->setString("flags", stringForSkPaintFlags(paint));
-    paintItem->setString("filterLevel", filterLevelName(paint.getFilterLevel()));
-    paintItem->setString("textAlign", textAlignName(paint.getTextAlign()));
-    paintItem->setString("strokeCap", strokeCapName(paint.getStrokeCap()));
-    paintItem->setString("strokeJoin", strokeJoinName(paint.getStrokeJoin()));
-    paintItem->setString("styleName", styleName(paint.getStyle()));
-    paintItem->setString("textEncoding", textEncodingName(paint.getTextEncoding()));
-    paintItem->setString("hinting", hintingName(paint.getHinting()));
-    return paintItem.release();
-}
-
-PassRefPtr<JSONArray> LoggingCanvas::arrayForSkMatrix(const SkMatrix& matrix)
-{
-    RefPtr<JSONArray> matrixArray = JSONArray::create();
-    for (int i = 0; i < 9; ++i)
-        matrixArray->pushNumber(matrix[i]);
-    return matrixArray.release();
-}
-
-PassRefPtr<JSONArray> LoggingCanvas::arrayForSkScalars(size_t n, const SkScalar scalars[])
-{
-    RefPtr<JSONArray> scalarsArray = JSONArray::create();
-    for (size_t i = 0; i < n; ++i)
-        scalarsArray->pushNumber(scalars[i]);
-    return scalarsArray.release();
-}
-
-String LoggingCanvas::regionOpName(SkRegion::Op op)
-{
-    switch (op) {
-    case SkRegion::kDifference_Op: return "kDifference_Op";
-    case SkRegion::kIntersect_Op: return "kIntersect_Op";
-    case SkRegion::kUnion_Op: return "kUnion_Op";
-    case SkRegion::kXOR_Op: return "kXOR_Op";
-    case SkRegion::kReverseDifference_Op: return "kReverseDifference_Op";
-    case SkRegion::kReplace_Op: return "kReplace_Op";
-    default: return "Unknown type";
-    };
-}
-
-String LoggingCanvas::saveFlagsToString(SkCanvas::SaveFlags flags)
-{
-    String flagsString = "";
-    if (flags & SkCanvas::kHasAlphaLayer_SaveFlag)
-        flagsString.append("kHasAlphaLayer_SaveFlag ");
-    if (flags & SkCanvas::kFullColorLayer_SaveFlag)
-        flagsString.append("kFullColorLayer_SaveFlag ");
-    if (flags & SkCanvas::kClipToLayer_SaveFlag)
-        flagsString.append("kClipToLayer_SaveFlag ");
-    return flagsString;
-}
-
-String LoggingCanvas::textEncodingCanonicalName(SkPaint::TextEncoding encoding)
-{
-    String name = textEncodingName(encoding);
-    if (encoding == SkPaint::kUTF16_TextEncoding || encoding == SkPaint::kUTF32_TextEncoding)
-        name.append("LE");
-    return name;
-}
-
-String LoggingCanvas::stringForUTFText(const void* text, size_t length, SkPaint::TextEncoding encoding)
-{
-    return WTF::TextEncoding(textEncodingCanonicalName(encoding)).decode((const char*)text, length);
-}
-
-String LoggingCanvas::stringForText(const void* text, size_t byteLength, const SkPaint& paint)
-{
-    SkPaint::TextEncoding encoding = paint.getTextEncoding();
-    switch (encoding) {
-    case SkPaint::kUTF8_TextEncoding:
-    case SkPaint::kUTF16_TextEncoding:
-    case SkPaint::kUTF32_TextEncoding:
-        return stringForUTFText(text, byteLength, encoding);
-    case SkPaint::kGlyphID_TextEncoding: {
-        WTF::Vector<SkUnichar> dataVector(byteLength / 2);
-        SkUnichar* textData = dataVector.data();
-        paint.glyphsToUnichars(static_cast<const uint16_t*>(text), byteLength / 2, textData);
-        return WTF::UTF32LittleEndianEncoding().decode(reinterpret_cast<const char*>(textData), byteLength * 2);
-    }
-    default:
-        ASSERT_NOT_REACHED();
-        return "?";
-    }
-}
+#endif
 
 } // namespace blink

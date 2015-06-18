@@ -22,8 +22,8 @@
 #include "config.h"
 #include "core/xml/XSLImportRule.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/XSLStyleSheetResource.h"
@@ -72,7 +72,7 @@ bool XSLImportRule::isLoading()
 
 void XSLImportRule::loadSheet()
 {
-    ResourceFetcher* fetcher = 0;
+    Document* ownerDocument = 0;
     XSLStyleSheet* rootSheet = parentStyleSheet();
 
     if (rootSheet) {
@@ -81,7 +81,7 @@ void XSLImportRule::loadSheet()
     }
 
     if (rootSheet)
-        fetcher = rootSheet->fetcher();
+        ownerDocument = rootSheet->ownerDocument();
 
     String absHref = m_strHref;
     XSLStyleSheet* parentSheet = parentStyleSheet();
@@ -98,18 +98,18 @@ void XSLImportRule::loadSheet()
     }
 
     ResourceLoaderOptions fetchOptions(ResourceFetcher::defaultResourceOptions());
-    FetchRequest request(ResourceRequest(fetcher->document()->completeURL(absHref)), FetchInitiatorTypeNames::xml, fetchOptions);
+    FetchRequest request(ResourceRequest(ownerDocument->completeURL(absHref)), FetchInitiatorTypeNames::xml, fetchOptions);
     request.setOriginRestriction(FetchRequest::RestrictToSameOrigin);
-    ResourcePtr<Resource> resource = fetcher->fetchSynchronously(request);
+    ResourcePtr<Resource> resource = ownerDocument->fetcher()->fetchSynchronously(request);
     if (!resource)
         return;
 
     ASSERT(!m_styleSheet);
     if (SharedBuffer* data = resource->resourceBuffer())
-        setXSLStyleSheet(absHref, parentSheet->baseURL(), UTF8Encoding().decode(data->data(), data->size()));
+        setXSLStyleSheet(absHref, resource->response().url(), UTF8Encoding().decode(data->data(), data->size()));
 }
 
-void XSLImportRule::trace(Visitor* visitor)
+DEFINE_TRACE(XSLImportRule)
 {
     visitor->trace(m_parentStyleSheet);
     visitor->trace(m_styleSheet);

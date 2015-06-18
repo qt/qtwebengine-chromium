@@ -26,7 +26,7 @@
 #include "core/html/HTMLOptGroupElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLContentElement.h"
@@ -98,23 +98,31 @@ void HTMLOptGroupElement::detach(const AttachContext& context)
     HTMLElement::detach(context);
 }
 
-void HTMLOptGroupElement::updateNonRenderStyle()
+bool HTMLOptGroupElement::supportsFocus() const
 {
-    m_style = originalStyleForRenderer();
-    if (renderer()) {
+    RefPtrWillBeRawPtr<HTMLSelectElement> select = ownerSelectElement();
+    if (select && select->usesMenuList())
+        return false;
+    return HTMLElement::supportsFocus();
+}
+
+void HTMLOptGroupElement::updateNonComputedStyle()
+{
+    m_style = originalStyleForLayoutObject();
+    if (layoutObject()) {
         if (HTMLSelectElement* select = ownerSelectElement())
-            select->updateListOnRenderer();
+            select->updateListOnLayoutObject();
     }
 }
 
-RenderStyle* HTMLOptGroupElement::nonRendererStyle() const
+ComputedStyle* HTMLOptGroupElement::nonLayoutObjectComputedStyle() const
 {
     return m_style.get();
 }
 
-PassRefPtr<RenderStyle> HTMLOptGroupElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> HTMLOptGroupElement::customStyleForLayoutObject()
 {
-    updateNonRenderStyle();
+    updateNonComputedStyle();
     return m_style;
 }
 
@@ -156,7 +164,7 @@ void HTMLOptGroupElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     root.appendChild(label);
 
     RefPtrWillBeRawPtr<HTMLContentElement> content = HTMLContentElement::create(document());
-    content->setAttribute(selectAttr, "option,optgroup");
+    content->setAttribute(selectAttr, "option,optgroup,hr");
     root.appendChild(content);
 }
 

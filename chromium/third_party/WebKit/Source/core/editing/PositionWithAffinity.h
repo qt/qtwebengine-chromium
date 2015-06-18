@@ -5,12 +5,13 @@
 #ifndef PositionWithAffinity_h
 #define PositionWithAffinity_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Position.h"
 #include "core/editing/TextAffinity.h"
 
 namespace blink {
 
-class PositionWithAffinity {
+class CORE_EXPORT PositionWithAffinity {
     DISALLOW_ALLOCATION();
 public:
     PositionWithAffinity(const Position&, EAffinity = DOWNSTREAM);
@@ -20,7 +21,7 @@ public:
     EAffinity affinity() const { return m_affinity; }
     const Position& position() const { return m_position; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     Position m_position;

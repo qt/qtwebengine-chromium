@@ -41,7 +41,7 @@ class Element;
 class DOMStringMap : public NoBaseWillBeGarbageCollected<DOMStringMap>, public ScriptWrappable {
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(DOMStringMap);
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DOMStringMap);
     WTF_MAKE_NONCOPYABLE(DOMStringMap);
 public:
 #if !ENABLE(OILPAN)
@@ -85,7 +85,7 @@ public:
 
     virtual Element* element() = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     DOMStringMap() { }

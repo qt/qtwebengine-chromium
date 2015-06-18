@@ -25,8 +25,8 @@ class ProfilerSubscriber;
 // object.
 class CONTENT_EXPORT ProfilerController {
  public:
-  // Returns the ProfilerController object for the current process, or NULL if
-  // none.
+  // Returns the ProfilerController object for the current process, or nullptr
+  // if none.
   static ProfilerController* GetInstance();
 
   virtual ~ProfilerController() {}
@@ -42,7 +42,14 @@ class CONTENT_EXPORT ProfilerController {
   virtual void Unregister(const ProfilerSubscriber* subscriber) = 0;
 
   // Contact all processes and get their profiler data.
-  virtual void GetProfilerData(int sequence_number) = 0;
+  // |current_profiling_phase| is the 0-indexed identifier of the current
+  // profiling phase.
+  virtual void GetProfilerData(int sequence_number,
+                               int current_profiling_phase) = 0;
+
+  // Contact child processes and notify them that the |profiling_phase| has
+  // completed.
+  virtual void OnProfilingPhaseCompleted(int profiling_phase) = 0;
 };
 
 }  // namespace content

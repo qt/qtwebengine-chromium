@@ -6,13 +6,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
-#include "device/serial/async_waiter.h"
 #include "device/serial/buffer.h"
 #include "device/serial/data_receiver.h"
 #include "device/serial/data_source_sender.h"
 #include "device/serial/data_stream.mojom.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "third_party/mojo/src/mojo/public/cpp/environment/async_waiter.h"
 
 namespace device {
 
@@ -31,12 +31,18 @@ class DataSourceTest : public testing::Test {
   void SetUp() override {
     message_loop_.reset(new base::MessageLoop);
     mojo::InterfacePtr<serial::DataSource> source_sender_handle;
-    source_sender_ = mojo::WeakBindToProxy(
-        new DataSourceSender(
-            base::Bind(&DataSourceTest::CanWriteData, base::Unretained(this)),
-            base::Bind(&DataSourceTest::OnError, base::Unretained(this))),
-        &source_sender_handle);
-    receiver_ = new DataReceiver(source_sender_handle.Pass(), 100, kFatalError);
+    mojo::InterfacePtr<serial::DataSourceClient> source_sender_client_handle;
+    mojo::InterfaceRequest<serial::DataSourceClient>
+        source_sender_client_request =
+            mojo::GetProxy(&source_sender_client_handle);
+    source_sender_ = new DataSourceSender(
+        mojo::GetProxy(&source_sender_handle),
+        source_sender_client_handle.Pass(),
+        base::Bind(&DataSourceTest::CanWriteData, base::Unretained(this)),
+        base::Bind(&DataSourceTest::OnError, base::Unretained(this)));
+    receiver_ =
+        new DataReceiver(source_sender_handle.Pass(),
+                         source_sender_client_request.Pass(), 100, kFatalError);
   }
 
   void TearDown() override {

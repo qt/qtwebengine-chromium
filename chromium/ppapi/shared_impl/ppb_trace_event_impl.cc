@@ -5,8 +5,8 @@
 #include "ppapi/shared_impl/ppb_trace_event_impl.h"
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event.h"
 #include "base/threading/platform_thread.h"
+#include "base/trace_event/trace_event.h"
 #include "ppapi/thunk/thunk.h"
 
 namespace ppapi {
@@ -24,7 +24,7 @@ void* TraceEventImpl::GetCategoryEnabled(const char* category_name) {
   // return a pointer type to the caller without some const_cast.  The pointer
   // type the tracing system works with is normally unsigned char*.
   return const_cast<void*>(static_cast<const void*>(
-      base::debug::TraceLog::GetInstance()->GetCategoryGroupEnabled(
+      base::trace_event::TraceLog::GetInstance()->GetCategoryGroupEnabled(
           category_name)));
 }
 
@@ -39,9 +39,10 @@ void TraceEventImpl::AddTraceEvent(int8_t phase,
                                    const uint64_t arg_values[],
                                    uint8_t flags) {
 
-  COMPILE_ASSERT(sizeof(unsigned long long) == sizeof(uint64_t), msg);
+  static_assert(sizeof(unsigned long long) == sizeof(uint64_t),
+                "unexpected data type sizes");
 
-  base::debug::TraceLog::GetInstance()->AddTraceEvent(
+  base::trace_event::TraceLog::GetInstance()->AddTraceEvent(
       phase,
       static_cast<const unsigned char*>(category_enabled),
       name,
@@ -71,16 +72,17 @@ void TraceEventImpl::AddTraceEventWithThreadIdAndTimestamp(
     const uint8_t arg_types[],
     const uint64_t arg_values[],
     uint8_t flags) {
-  base::debug::TraceLog::GetInstance()->AddTraceEventWithThreadIdAndTimestamp(
-      phase,
-      static_cast<const unsigned char*>(category_enabled),
-      name,
-      id,
-      thread_id,
-      base::TimeTicks::FromInternalValue(timestamp),
-      num_args,
-      arg_names,
-      arg_types,
+  base::trace_event::TraceLog::GetInstance()
+      ->AddTraceEventWithThreadIdAndTimestamp(
+          phase,
+          static_cast<const unsigned char*>(category_enabled),
+          name,
+          id,
+          thread_id,
+          base::TimeTicks::FromInternalValue(timestamp),
+          num_args,
+          arg_names,
+          arg_types,
       // This cast is necessary for LP64 systems, where uint64_t is defined as
       // an unsigned long int, but trace_event internals are hermetic and
       // accepts an |unsigned long long*|.  The pointer types are compatible but

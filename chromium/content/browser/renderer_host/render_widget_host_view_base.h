@@ -12,14 +12,15 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/scoped_ptr.h"
 #include "base/callback_forward.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/process/kill.h"
 #include "base/timer/timer.h"
 #include "cc/output/compositor_frame.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
+#include "content/public/browser/readback_types.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_listener.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
@@ -28,9 +29,9 @@
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/range/range.h"
-#include "ui/gfx/rect.h"
 #include "ui/surface/transport_dib.h"
 
 class SkBitmap;
@@ -56,12 +57,6 @@ struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
 struct WebPluginGeometry;
 
-// TODO(Sikugu): Though we have the return status of the result here,
-// we should add the reason for failure as a new parameter to handle cases
-// efficiently.
-typedef const base::Callback<void(bool, const SkBitmap&)>
-    CopyFromCompositingSurfaceCallback;
-
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                                 public IPC::Listener {
@@ -73,6 +68,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   void SetBackgroundColorToDefault() final;
   bool GetBackgroundOpaque() override;
   ui::TextInputClient* GetTextInputClient() override;
+  void WasUnOccluded() override {}
+  void WasOccluded() override {}
   bool IsShowingContextMenu() const override;
   void SetShowingContextMenu(bool showing_menu) override;
   base::string16 GetSelectedText() const override;
@@ -85,9 +82,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   // IPC::Listener implementation:
   bool OnMessageReceived(const IPC::Message& msg) override;
-
-  // Called by the host when the input flush has completed.
-  void OnDidFlushInput();
 
   void SetPopupType(blink::WebPopupType popup_type);
 
@@ -125,8 +119,12 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetPhysicalBackingSize() const;
 
-  // The amount that the viewport size given to Blink is shrunk by the URL-bar.
-  virtual float GetTopControlsLayoutHeight() const;
+  // Whether or not Blink's viewport size should be shrunk by the height of the
+  // URL-bar.
+  virtual bool DoTopControlsShrinkBlinkSize() const;
+
+  // The height of the URL-bar top controls.
+  virtual float GetTopControlsHeight() const;
 
   // Called prior to forwarding input event messages to the renderer, giving
   // the view a chance to perform in-process event filtering or processing.
@@ -161,8 +159,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget();
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible();
 
-  virtual SkColorType PreferredReadbackFormat();
-
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node) {}
 
@@ -181,6 +177,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   virtual void DidStopFlinging() {}
 
+  // Returns the compositing surface ID namespace, or 0 if Surfaces are not
+  // enabled.
+  virtual uint32_t GetSurfaceIdNamespace();
+
   //----------------------------------------------------------------------------
   // The following static methods are implemented by each platform.
 
@@ -192,7 +192,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Perform all the initialization steps necessary for this object to represent
   // a popup (such as a <select> dropdown), then shows the popup at |pos|.
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
-                           const gfx::Rect& pos) = 0;
+                           const gfx::Rect& bounds) = 0;
 
   // Perform all the initialization steps necessary for this object to represent
   // a full screen window.
@@ -200,19 +200,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // helps to position the full screen widget on the correct monitor.
   virtual void InitAsFullscreen(RenderWidgetHostView* reference_host_view) = 0;
 
-  // Notifies the View that it has become visible.
-  virtual void WasShown() = 0;
-
-  // Notifies the View that it has been hidden.
-  virtual void WasHidden() = 0;
-
   // Moves all plugin windows as described in the given list.
   // |scroll_offset| is the scroll offset of the render view.
   virtual void MovePluginWindows(
       const std::vector<WebPluginGeometry>& moves) = 0;
-
-  // Take focus from the associated View component.
-  virtual void Blur() = 0;
 
   // Sets the cursor to the one associated with the specified cursor_type
   virtual void UpdateCursor(const WebCursor& cursor) = 0;
@@ -257,15 +248,17 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Copies the contents of the compositing surface, providing a new SkBitmap
   // result via an asynchronously-run |callback|. |src_subrect| is specified in
   // layer space coordinates for the current platform (e.g., DIP for Aura/Mac,
-  // physical for Android), and is the region to be copied from this view. The
-  // copy is then scaled to a SkBitmap of size |dst_size|. |callback| is run
-  // with true on success, false otherwise. A smaller region than |src_subrect|
-  // may be copied if the underlying surface is smaller than |src_subrect|.
+  // physical for Android), and is the region to be copied from this view. When
+  // |src_subrect| is empty then the whole surface will be copied. The copy is
+  // then scaled to a SkBitmap of size |dst_size|. If |dst_size| is empty then
+  // output will be unscaled. |callback| is run with true on success,
+  // false otherwise. A smaller region than |src_subrect| may be copied
+  // if the underlying surface is smaller than |src_subrect|.
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      CopyFromCompositingSurfaceCallback& callback,
-      const SkColorType color_type) = 0;
+      ReadbackRequestCallback& callback,
+      const SkColorType preferred_color_type) = 0;
 
   // Copies the contents of the compositing surface, populating the given
   // |target| with YV12 image data. |src_subrect| is specified in layer space
@@ -323,6 +316,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void ShowDisambiguationPopup(const gfx::Rect& rect_pixels,
                                        const SkBitmap& zoomed_bitmap);
 
+  // Called by the WebContentsImpl when a user tries to navigate a new page on
+  // main frame.
+  virtual void OnDidNavigateMainFrameToNewPage();
+
 #if defined(OS_ANDROID)
   // Instructs the view to not drop the surface even when the view is hidden.
   virtual void LockCompositingSurface() = 0;
@@ -338,12 +335,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const NativeWebKeyboardEvent& event) = 0;
 #endif
 
-#if defined(OS_MACOSX) || defined(USE_AURA) || defined(OS_ANDROID)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) = 0;
-#endif
 
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(

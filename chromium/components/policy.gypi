@@ -20,6 +20,8 @@
         '<(policy_out_dir)/policy/policy_constants.cc',
     'protobuf_decoder_path':
         '<(policy_out_dir)/policy/cloud_policy_generated.cc',
+    'app_restrictions_path':
+        '<(policy_out_dir)/app_restrictions.xml',
     # This is the "full" protobuf, which defines one protobuf message per
     # policy. It is also the format currently used by the server.
     'chrome_settings_proto_path':
@@ -62,7 +64,7 @@
           ],
         },
       ],
-    }, {  # component=="static_library"
+    }, {  # component=="shared_library"
       'targets': [
         {
           # GN version: //components/policy:policy_component
@@ -101,6 +103,7 @@
             {
               'inputs': [
                 'policy/resources/policy_templates.json',
+		'<(DEPTH)/chrome/VERSION',
                 '<(generate_policy_source_script_path)',
               ],
               'outputs': [
@@ -109,6 +112,7 @@
                 '<(protobuf_decoder_path)',
                 '<(chrome_settings_proto_path)',
                 '<(cloud_policy_proto_path)',
+                '<(app_restrictions_path)',
               ],
               'action_name': 'generate_policy_source',
               'action': [
@@ -119,11 +123,20 @@
                 '--chrome-settings-protobuf=<(chrome_settings_proto_path)',
                 '--cloud-policy-protobuf=<(cloud_policy_proto_path)',
                 '--cloud-policy-decoder=<(protobuf_decoder_path)',
+                '--app-restrictions-definition=<(app_restrictions_path)',
+		'<(DEPTH)/chrome/VERSION',
                 '<(OS)',
                 '<(chromeos)',
                 'policy/resources/policy_templates.json',
               ],
               'message': 'Generating policy source',
+              'conditions': [
+                ['OS!="android"', {
+                  'outputs!': [
+                    '<(app_restrictions_path)',
+                  ],
+                }],
+              ],
             },
           ],
           'direct_dependent_settings': {
@@ -294,6 +307,8 @@
             'policy/core/common/cloud/policy_builder.h',
             'policy/core/common/configuration_policy_provider_test.cc',
             'policy/core/common/configuration_policy_provider_test.h',
+            'policy/core/common/fake_async_policy_loader.cc',
+            'policy/core/common/fake_async_policy_loader.h',
             'policy/core/common/mock_configuration_policy_provider.cc',
             'policy/core/common/mock_configuration_policy_provider.h',
             'policy/core/common/mock_policy_service.cc',
@@ -302,8 +317,18 @@
             'policy/core/common/policy_test_utils.h',
             'policy/core/common/preferences_mock_mac.cc',
             'policy/core/common/preferences_mock_mac.h',
+            'policy/core/common/remote_commands/test_remote_command_job.cc',
+            'policy/core/common/remote_commands/test_remote_command_job.h',
+            'policy/core/common/remote_commands/testing_remote_commands_server.cc',
+            'policy/core/common/remote_commands/testing_remote_commands_server.h',
           ],
           'conditions': [
+            ['OS=="android"', {
+              'sources!': [
+                'policy/core/common/fake_async_policy_loader.cc',
+                'policy/core/common/fake_async_policy_loader.h',
+              ],
+            }],
             ['chromeos==1', {
               'sources!': [
                 'policy/core/common/cloud/mock_user_cloud_policy_store.cc',
@@ -312,6 +337,71 @@
             }],
           ],
         },
+      ],
+    }],
+    ['OS=="android" and configuration_policy==1', {
+      'targets': [
+        {
+          'target_name': 'app_restrictions_resources',
+          'type': 'none',
+          'variables': {
+            'resources_zip': '<(PRODUCT_DIR)/res.java/<(_target_name).zip',
+            'input_resources_dir':
+            '<(SHARED_INTERMEDIATE_DIR)/chrome/app/policy/android',
+            'create_zip_script': '../build/android/gyp/zip.py',
+          },
+          'copies': [
+            {
+              'destination': '<(input_resources_dir)/xml-v21/',
+              'files': [
+                '<(SHARED_INTERMEDIATE_DIR)/policy/app_restrictions.xml'
+              ],
+            },
+          ],
+          'actions': [
+            {
+              'action_name': 'remove_localized_resources',
+              'outputs': [
+                '<(input_resources_dir)/remove_localized_resources.d.stamp'
+              ],
+              'inputs': [
+                'policy/tools/remove_localized_app_restrictions.py',
+              ],
+              'action': [
+                'python',
+                'policy/tools/remove_localized_app_restrictions.py',
+                '<(input_resources_dir)',
+              ],
+            },
+            {
+              'action_name': 'create_resources_zip',
+              'inputs': [
+                '<(create_zip_script)',
+                '<(input_resources_dir)/xml-v21/app_restrictions.xml',
+                '<(input_resources_dir)/values-v21/restriction_values.xml',
+                # A dummy stamp file to remove localized resources without
+                # clobbering the build.
+                # TODO(475515): Remove after all build bots have run
+                # 'remove_localized_resources' target.
+                '<(input_resources_dir)/remove_localized_resources.d.stamp',
+              ],
+              'outputs': [
+                '<(resources_zip)'
+              ],
+              'action': [
+                'python', '<(create_zip_script)',
+                '--input-dir', '<(input_resources_dir)',
+                '--output', '<(resources_zip)',
+              ],
+            }
+          ],
+          'all_dependent_settings': {
+            'variables': {
+              'additional_input_paths': ['<(resources_zip)'],
+              'dependencies_res_zip_paths': ['<(resources_zip)'],
+            },
+          },
+        }
       ],
     }],
     ['OS=="win" and target_arch=="ia32" and configuration_policy==1', {
@@ -343,7 +433,7 @@
         },
       ],
     }],
-    ['OS=="win" or OS=="mac" or OS=="linux"', {
+    ['OS!="ios"', {
       'targets': [
         {
           # policy_templates has different inputs and outputs, so it can't use

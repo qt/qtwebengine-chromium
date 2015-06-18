@@ -14,6 +14,7 @@
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/environment.h"
+#include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_piece.h"
 
@@ -21,7 +22,6 @@
 #include "base/posix/file_descriptor_shuffle.h"
 #elif defined(OS_WIN)
 #include <windows.h>
-#include "base/win/scoped_handle.h"
 #endif
 
 namespace base {
@@ -37,6 +37,24 @@ typedef std::vector<std::pair<int, int> > FileHandleMappingVector;
 // Options for launching a subprocess that are passed to LaunchProcess().
 // The default constructor constructs the object with default options.
 struct BASE_EXPORT LaunchOptions {
+#if defined(OS_POSIX)
+  // Delegate to be run in between fork and exec in the subprocess (see
+  // pre_exec_delegate below)
+  class BASE_EXPORT PreExecDelegate {
+   public:
+    PreExecDelegate() {}
+    virtual ~PreExecDelegate() {}
+
+    // Since this is to be run between fork and exec, and fork may have happened
+    // while multiple threads were running, this function needs to be async
+    // safe.
+    virtual void RunAsyncSafe() = 0;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(PreExecDelegate);
+  };
+#endif  // defined(OS_POSIX)
+
   LaunchOptions();
   ~LaunchOptions();
 
@@ -115,12 +133,31 @@ struct BASE_EXPORT LaunchOptions {
 
 #if defined(OS_LINUX)
   // If non-zero, start the process using clone(), using flags as provided.
+  // Unlike in clone, clone_flags may not contain a custom termination signal
+  // that is sent to the parent when the child dies. The termination signal will
+  // always be set to SIGCHLD.
   int clone_flags;
 
   // By default, child processes will have the PR_SET_NO_NEW_PRIVS bit set. If
   // true, then this bit will not be set in the new child process.
   bool allow_new_privs;
+
+  // Sets parent process death signal to SIGKILL.
+  bool kill_on_parent_death;
 #endif  // defined(OS_LINUX)
+
+#if defined(OS_POSIX)
+  // If not empty, change to this directory before execing the new process.
+  base::FilePath current_directory;
+
+  // If non-null, a delegate to be run immediately prior to executing the new
+  // program in the child process.
+  //
+  // WARNING: If LaunchProcess is called in the presence of multiple threads,
+  // code running in this delegate essentially needs to be async-signal safe
+  // (see man 7 signal for a list of allowed functions).
+  PreExecDelegate* pre_exec_delegate;
+#endif  // defined(OS_POSIX)
 
 #if defined(OS_CHROMEOS)
   // If non-negative, the specified file descriptor will be set as the launched
@@ -143,12 +180,7 @@ struct BASE_EXPORT LaunchOptions {
 // Launch a process via the command line |cmdline|.
 // See the documentation of LaunchOptions for details on |options|.
 //
-// Returns true upon success.
-//
-// Upon success, if |process_handle| is non-null, it will be filled in with the
-// handle of the launched process.  NOTE: In this case, the caller is
-// responsible for closing the handle so that it doesn't leak!
-// Otherwise, the process handle will be implicitly closed.
+// Returns a valid Process upon success.
 //
 // Unix-specific notes:
 // - All file descriptors open in the parent process will be closed in the
@@ -158,9 +190,8 @@ struct BASE_EXPORT LaunchOptions {
 //   parent's stdout and stderr.
 // - If the first argument on the command line does not contain a slash,
 //   PATH will be searched.  (See man execvp.)
-BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
-                               const LaunchOptions& options,
-                               ProcessHandle* process_handle);
+BASE_EXPORT Process LaunchProcess(const CommandLine& cmdline,
+                                  const LaunchOptions& options);
 
 #if defined(OS_WIN)
 // Windows-specific LaunchProcess that takes the command line as a
@@ -173,28 +204,24 @@ BASE_EXPORT bool LaunchProcess(const CommandLine& cmdline,
 //
 // Example (including literal quotes)
 //  cmdline = "c:\windows\explorer.exe" -foo "c:\bar\"
-BASE_EXPORT bool LaunchProcess(const string16& cmdline,
-                               const LaunchOptions& options,
-                               win::ScopedHandle* process_handle);
+BASE_EXPORT Process LaunchProcess(const string16& cmdline,
+                                  const LaunchOptions& options);
 
 // Launches a process with elevated privileges.  This does not behave exactly
 // like LaunchProcess as it uses ShellExecuteEx instead of CreateProcess to
 // create the process.  This means the process will have elevated privileges
-// and thus some common operations like OpenProcess will fail. The process will
-// be available through the |process_handle| argument.  Currently the only
-// supported LaunchOptions are |start_hidden| and |wait|.
-BASE_EXPORT bool LaunchElevatedProcess(const CommandLine& cmdline,
-                                       const LaunchOptions& options,
-                                       ProcessHandle* process_handle);
+// and thus some common operations like OpenProcess will fail. Currently the
+// only supported LaunchOptions are |start_hidden| and |wait|.
+BASE_EXPORT Process LaunchElevatedProcess(const CommandLine& cmdline,
+                                          const LaunchOptions& options);
 
 #elif defined(OS_POSIX)
 // A POSIX-specific version of LaunchProcess that takes an argv array
 // instead of a CommandLine.  Useful for situations where you need to
 // control the command line arguments directly, but prefer the
 // CommandLine version if launching Chrome itself.
-BASE_EXPORT bool LaunchProcess(const std::vector<std::string>& argv,
-                               const LaunchOptions& options,
-                               ProcessHandle* process_handle);
+BASE_EXPORT Process LaunchProcess(const std::vector<std::string>& argv,
+                                  const LaunchOptions& options);
 
 // Close all file descriptors, except those which are a destination in the
 // given multimap. Only call this function in a child process where you know
@@ -269,6 +296,25 @@ void ReplaceBootstrapPort(const std::string& replacement_bootstrap_name);
 // Creates a LaunchOptions object suitable for launching processes in a test
 // binary. This should not be called in production/released code.
 BASE_EXPORT LaunchOptions LaunchOptionsForTest();
+
+#if defined(OS_LINUX)
+// A wrapper for clone with fork-like behavior, meaning that it returns the
+// child's pid in the parent and 0 in the child. |flags|, |ptid|, and |ctid| are
+// as in the clone system call (the CLONE_VM flag is not supported).
+//
+// This function uses the libc clone wrapper (which updates libc's pid cache)
+// internally, so callers may expect things like getpid() to work correctly
+// after in both the child and parent. An exception is when this code is run
+// under Valgrind. Valgrind does not support the libc clone wrapper, so the libc
+// pid cache may be incorrect after this function is called under Valgrind.
+//
+// As with fork(), callers should be extremely careful when calling this while
+// multiple threads are running, since at the time the fork happened, the
+// threads could have been in any state (potentially holding locks, etc.).
+// Callers should most likely call execve() in the child soon after calling
+// this.
+BASE_EXPORT pid_t ForkWithFlags(unsigned long flags, pid_t* ptid, pid_t* ctid);
+#endif
 
 }  // namespace base
 

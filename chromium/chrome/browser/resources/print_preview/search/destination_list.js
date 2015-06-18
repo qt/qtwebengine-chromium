@@ -45,14 +45,14 @@ cr.define('print_preview', function() {
 
     /**
      * Backing store for the destination list.
-     * @type {!Array.<print_preview.Destination>}
+     * @type {!Array<print_preview.Destination>}
      * @private
      */
     this.destinations_ = [];
 
     /**
      * Set of destination ids.
-     * @type {!Object.<string, boolean>}
+     * @type {!Object<string, boolean>}
      * @private
      */
     this.destinationIds_ = {};
@@ -80,7 +80,7 @@ cr.define('print_preview', function() {
 
     /**
      * List items representing destinations.
-     * @type {!Array.<!print_preview.DestinationListItem>}
+     * @type {!Array<!print_preview.DestinationListItem>}
      * @private
      */
     this.listItems_ = [];
@@ -151,6 +151,14 @@ cr.define('print_preview', function() {
           DestinationList.HEIGHT_OF_ITEM_);
     },
 
+    /**
+     * @return {Element} The element that contains this one. Used for height
+     *     calculations.
+     */
+    getContainerElement: function() {
+      return this.getElement().parentNode;
+    },
+
     /** @param {boolean} isVisible Whether the throbber is visible. */
     setIsThrobberVisible: function(isVisible) {
       setIsVisible(this.getChildElement('.throbber-container'), isVisible);
@@ -198,7 +206,7 @@ cr.define('print_preview', function() {
 
     /**
      * Updates the destinations to render in the destination list.
-     * @param {!Array.<print_preview.Destination>} destinations Destinations to
+     * @param {!Array<print_preview.Destination>} destinations Destinations to
      *     render.
      */
     updateDestinations: function(destinations) {
@@ -251,7 +259,7 @@ cr.define('print_preview', function() {
 
     /**
      * Renders all destinations in the given list.
-     * @param {!Array.<print_preview.Destination>} destinations List of
+     * @param {!Array<print_preview.Destination>} destinations List of
      *     destinations to render.
      * @private
      */
@@ -290,10 +298,13 @@ cr.define('print_preview', function() {
       var focusedEl = listEl.querySelector(':focus');
       for (var i = 0; i < numItems; i++) {
         var listItem = visibleListItems[destinations[i].id];
-        if (listItem)
-          this.updateListItem_(listEl, listItem, focusedEl);
-        else
+        if (listItem) {
+          // Destination ID is the same, but it can be registered to a different
+          // user account, hence passing it to the item update.
+          this.updateListItem_(listEl, listItem, focusedEl, destinations[i]);
+        } else {
           this.renderListItem_(listEl, destinations[i]);
+        }
       }
     },
 
@@ -301,10 +312,11 @@ cr.define('print_preview', function() {
      * @param {Element} listEl List element.
      * @param {!print_preview.DestinationListItem} listItem List item to update.
      * @param {Element} focusedEl Currently focused element within the listEl.
+     * @param {!print_preview.Destination} destination Destination to render.
      * @private
      */
-    updateListItem_: function(listEl, listItem, focusedEl) {
-      listItem.update(this.query_);
+    updateListItem_: function(listEl, listItem, focusedEl, destination) {
+      listItem.update(destination, this.query_);
 
       var itemEl = listItem.getElement();
       // Preserve focused inner element, if there's one.

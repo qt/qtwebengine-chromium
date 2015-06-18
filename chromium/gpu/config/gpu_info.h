@@ -16,7 +16,6 @@
 #include "base/version.h"
 #include "build/build_config.h"
 #include "gpu/config/dx_diag_node.h"
-#include "gpu/config/gpu_performance_stats.h"
 #include "gpu/gpu_export.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -55,6 +54,15 @@ enum VideoCodecProfile {
   VIDEO_CODEC_PROFILE_MAX = VP9PROFILE_ANY,
 };
 
+// Specification of a decoding profile supported by a hardware decoder.
+struct GPU_EXPORT VideoDecodeAcceleratorSupportedProfile {
+  VideoCodecProfile profile;
+  gfx::Size max_resolution;
+  gfx::Size min_resolution;
+};
+using VideoDecodeAcceleratorSupportedProfiles =
+    std::vector<VideoDecodeAcceleratorSupportedProfile>;
+
 // Specification of an encoding profile supported by a hardware encoder.
 struct GPU_EXPORT VideoEncodeAcceleratorSupportedProfile {
   VideoCodecProfile profile;
@@ -62,6 +70,8 @@ struct GPU_EXPORT VideoEncodeAcceleratorSupportedProfile {
   uint32 max_framerate_numerator;
   uint32 max_framerate_denominator;
 };
+using VideoEncodeAcceleratorSupportedProfiles =
+    std::vector<VideoEncodeAcceleratorSupportedProfile>;
 
 struct GPU_EXPORT GPUInfo {
   struct GPU_EXPORT GPUDevice {
@@ -139,6 +149,10 @@ struct GPU_EXPORT GPUInfo {
   // The version of the vertex shader used by the gpu.
   std::string vertex_shader_version;
 
+  // The maximum multisapling sample count, either through ES3 or
+  // EXT_multisampled_render_to_texture MSAA.
+  std::string max_msaa_samples;
+
   // The machine model identifier. They can contain any character, including
   // whitespaces.  Currently it is supported on MacOSX and Android.
   // Android examples: "Naxus 5", "XT1032".
@@ -180,9 +194,6 @@ struct GPU_EXPORT GPUInfo {
   // semantics are available.
   bool can_lose_context;
 
-  // By default all values are 0.
-  GpuPerformanceStats performance_stats;
-
   bool software_rendering;
 
   // Whether the driver uses direct rendering. True on most platforms, false on
@@ -206,7 +217,9 @@ struct GPU_EXPORT GPUInfo {
   DxDiagNode dx_diagnostics;
 #endif
 
-  std::vector<VideoEncodeAcceleratorSupportedProfile>
+  VideoDecodeAcceleratorSupportedProfiles
+      video_decode_accelerator_supported_profiles;
+  VideoEncodeAcceleratorSupportedProfiles
       video_encode_accelerator_supported_profiles;
   // Note: when adding new members, please remember to update EnumerateFields
   // in gpu_info.cc.
@@ -231,6 +244,11 @@ struct GPU_EXPORT GPUInfo {
     // Markers indicating that a GPUDevice is being described.
     virtual void BeginGPUDevice() = 0;
     virtual void EndGPUDevice() = 0;
+
+    // Markers indicating that a VideoDecodeAcceleratorSupportedProfile is
+    // being described.
+    virtual void BeginVideoDecodeAcceleratorSupportedProfile() = 0;
+    virtual void EndVideoDecodeAcceleratorSupportedProfile() = 0;
 
     // Markers indicating that a VideoEncodeAcceleratorSupportedProfile is
     // being described.

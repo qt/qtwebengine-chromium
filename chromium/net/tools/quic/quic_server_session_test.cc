@@ -6,7 +6,7 @@
 
 #include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/crypto/quic_random.h"
-#include "net/quic/crypto/source_address_token.h"
+#include "net/quic/proto/cached_network_parameters.pb.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_crypto_server_stream.h"
 #include "net/quic/quic_flags.h"
@@ -18,6 +18,7 @@
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_sustained_bandwidth_recorder_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/test/gtest_util.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
 #include "net/tools/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -36,7 +37,7 @@ using net::test::ValueRestore;
 using net::test::kClientDataStreamId1;
 using net::test::kClientDataStreamId2;
 using net::test::kClientDataStreamId3;
-using net::test::kClientDataStreamId4;
+using std::string;
 using testing::StrictMock;
 using testing::_;
 
@@ -50,12 +51,12 @@ class QuicServerSessionPeer {
       QuicServerSession* s, QuicStreamId id) {
     return s->GetIncomingDataStream(id);
   }
-  static QuicDataStream* GetDataStream(QuicServerSession* s, QuicStreamId id) {
-    return s->GetDataStream(id);
-  }
   static void SetCryptoStream(QuicServerSession* s,
                               QuicCryptoServerStream* crypto_stream) {
     s->crypto_stream_.reset(crypto_stream);
+  }
+  static bool IsBandwidthResumptionEnabled(QuicServerSession* s) {
+    return s->bandwidth_resumption_enabled_;
   }
 };
 
@@ -70,26 +71,21 @@ class QuicServerSessionTest : public ::testing::TestWithParam<QuicVersion> {
                        QuicRandom::GetInstance()) {
     config_.SetMaxStreamsPerConnection(kMaxStreamsForTest,
                                        kMaxStreamsForTest);
-    config_.SetInitialFlowControlWindowToSend(
-        kInitialSessionFlowControlWindowForTest);
     config_.SetInitialStreamFlowControlWindowToSend(
         kInitialStreamFlowControlWindowForTest);
     config_.SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
 
-    connection_ =
-        new StrictMock<MockConnection>(true, SupportedVersions(GetParam()));
-    session_.reset(new QuicServerSession(config_, connection_, &owner_,
-                                         /*is_secure=*/false));
+    connection_ = new StrictMock<MockConnection>(Perspective::IS_SERVER,
+                                                 SupportedVersions(GetParam()));
+    session_.reset(new QuicServerSession(config_, connection_, &owner_));
     MockClock clock;
     handshake_message_.reset(crypto_config_.AddDefaultConfig(
         QuicRandom::GetInstance(), &clock,
         QuicCryptoServerConfig::ConfigOptions()));
-    session_->InitializeSession(crypto_config_);
+    session_->InitializeSession(&crypto_config_);
     visitor_ = QuicConnectionPeer::GetVisitor(connection_);
   }
-
-  QuicVersion version() const { return connection_->version(); }
 
   StrictMock<MockQuicServerSessionVisitor> owner_;
   StrictMock<MockConnection>* connection_;
@@ -193,7 +189,6 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
 }
 
 TEST_P(QuicServerSessionTest, MaxOpenStreams) {
-  ValueRestore<bool> old_flag(&FLAGS_quic_allow_more_open_streams, true);
   // Test that the server closes the connection if a client attempts to open too
   // many data streams. The server accepts slightly more than the negotiated
   // stream limit to deal with rare cases where a client FIN/RST is lost.
@@ -231,7 +226,6 @@ TEST_P(QuicServerSessionTest, MaxOpenStreams) {
 }
 
 TEST_P(QuicServerSessionTest, MaxOpenStreamsImplicit) {
-  ValueRestore<bool> old_flag(&FLAGS_quic_allow_more_open_streams, true);
   // Test that the server closes the connection if a client attempts to open too
   // many data streams implicitly.  The server accepts slightly more than the
   // negotiated stream limit to deal with rare cases where a client FIN/RST is
@@ -269,6 +263,13 @@ TEST_P(QuicServerSessionTest, GetEvenIncomingError) {
             QuicServerSessionPeer::GetIncomingDataStream(session_.get(), 4));
 }
 
+TEST_P(QuicServerSessionTest, GetStreamDisconnected) {
+  // Don't create new streams if the connection is disconnected.
+  QuicConnectionPeer::CloseConnection(connection_);
+  EXPECT_DFATAL(QuicServerSessionPeer::GetIncomingDataStream(session_.get(), 4),
+                "ShouldCreateIncomingDataStream called when disconnected");
+}
+
 TEST_P(QuicServerSessionTest, SetFecProtectionFromConfig) {
   ValueRestore<bool> old_flag(&FLAGS_enable_quic_fec, true);
 
@@ -291,9 +292,9 @@ TEST_P(QuicServerSessionTest, SetFecProtectionFromConfig) {
 class MockQuicCryptoServerStream : public QuicCryptoServerStream {
  public:
   explicit MockQuicCryptoServerStream(
-      const QuicCryptoServerConfig& crypto_config, QuicSession* session)
+      const QuicCryptoServerConfig* crypto_config, QuicSession* session)
       : QuicCryptoServerStream(crypto_config, session) {}
-  virtual ~MockQuicCryptoServerStream() {}
+  ~MockQuicCryptoServerStream() override {}
 
   MOCK_METHOD1(SendServerConfigUpdate,
                void(const CachedNetworkParameters* cached_network_parameters));
@@ -303,12 +304,18 @@ class MockQuicCryptoServerStream : public QuicCryptoServerStream {
 };
 
 TEST_P(QuicServerSessionTest, BandwidthEstimates) {
-  if (version() <= QUIC_VERSION_21) {
-    return;
-  }
+  // Test that bandwidth estimate updates are sent to the client, only when
+  // bandwidth resumption is enabled, the bandwidth estimate has changed
+  // sufficiently, enough time has passed,
+  // and we don't have any other data to write.
 
-  // Test that bandwidth estimate updates are sent to the client, only after the
-  // bandwidth estimate has changes sufficiently, and enough time has passed.
+  // Client has sent kBWRE connection option to trigger bandwidth resumption.
+  QuicTagVector copt;
+  copt.push_back(kBWRE);
+  QuicConfigPeer::SetReceivedConnectionOptions(session_->config(), copt);
+  session_->OnConfigNegotiated();
+  EXPECT_TRUE(
+      QuicServerSessionPeer::IsBandwidthResumptionEnabled(session_.get()));
 
   int32 bandwidth_estimate_kbytes_per_second = 123;
   int32 max_bandwidth_estimate_kbytes_per_second = 134;
@@ -317,7 +324,7 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
   session_->set_serving_region(serving_region);
 
   MockQuicCryptoServerStream* crypto_stream =
-      new MockQuicCryptoServerStream(crypto_config_, session_.get());
+      new MockQuicCryptoServerStream(&crypto_config_, session_.get());
   QuicServerSessionPeer::SetCryptoStream(session_.get(), crypto_stream);
 
   // Set some initial bandwidth values.
@@ -335,6 +342,10 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
   QuicSustainedBandwidthRecorderPeer::SetMaxBandwidthEstimate(
       &bandwidth_recorder, max_bandwidth_estimate_kbytes_per_second,
       max_bandwidth_estimate_timestamp);
+  // Queue up some pending data.
+  session_->MarkWriteBlocked(kCryptoStreamId,
+                             QuicWriteBlockedList::kHighestPriority);
+  EXPECT_TRUE(session_->HasDataToWrite());
 
   // There will be no update sent yet - not enough time has passed.
   QuicTime now = QuicTime::Zero();
@@ -352,6 +363,11 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
       sent_packet_manager->GetRttStats()->smoothed_rtt().ToMilliseconds();
   now = now.Add(QuicTime::Delta::FromMilliseconds(
       kMinIntervalBetweenServerConfigUpdatesRTTs * srtt_ms));
+  session_->OnCongestionWindowChange(now);
+
+  // The connection no longer has pending data to be written.
+  session_->OnCanWrite();
+  EXPECT_FALSE(session_->HasDataToWrite());
   session_->OnCongestionWindowChange(now);
 
   // Bandwidth estimate has now changed sufficiently, enough time has passed,
@@ -381,7 +397,66 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
   EXPECT_CALL(*crypto_stream,
               SendServerConfigUpdate(EqualsProto(expected_network_params)))
       .Times(1);
+  EXPECT_CALL(*connection_, OnSendConnectionState(_)).Times(1);
   session_->OnCongestionWindowChange(now);
+}
+
+TEST_P(QuicServerSessionTest, BandwidthResumptionExperiment) {
+  // Test that if a client provides a CachedNetworkParameters with the same
+  // serving region as the current server, that this data is passed down to the
+  // send algorithm.
+
+  // Client has sent kBWRE connection option to trigger bandwidth resumption.
+  QuicTagVector copt;
+  copt.push_back(kBWRE);
+  QuicConfigPeer::SetReceivedConnectionOptions(session_->config(), copt);
+
+  const string kTestServingRegion = "a serving region";
+  session_->set_serving_region(kTestServingRegion);
+
+  QuicCryptoServerStream* crypto_stream =
+      static_cast<QuicCryptoServerStream*>(
+          QuicSessionPeer::GetCryptoStream(session_.get()));
+
+  // No effect if no CachedNetworkParameters provided.
+  EXPECT_CALL(*connection_, ResumeConnectionState(_, _)).Times(0);
+  session_->OnConfigNegotiated();
+
+  // No effect if CachedNetworkParameters provided, but different serving
+  // regions.
+  CachedNetworkParameters cached_network_params;
+  cached_network_params.set_bandwidth_estimate_bytes_per_second(1);
+  cached_network_params.set_serving_region("different serving region");
+  crypto_stream->set_previous_cached_network_params(cached_network_params);
+  EXPECT_CALL(*connection_, ResumeConnectionState(_, _)).Times(0);
+  session_->OnConfigNegotiated();
+
+  // Same serving region results in CachedNetworkParameters being stored.
+  cached_network_params.set_serving_region(kTestServingRegion);
+  crypto_stream->set_previous_cached_network_params(cached_network_params);
+  EXPECT_CALL(*connection_, ResumeConnectionState(_, _)).Times(1);
+  session_->OnConfigNegotiated();
+}
+
+TEST_P(QuicServerSessionTest, BandwidthMaxEnablesResumption) {
+  EXPECT_FALSE(
+      QuicServerSessionPeer::IsBandwidthResumptionEnabled(session_.get()));
+
+  // Client has sent kBWMX connection option to trigger bandwidth resumption.
+  QuicTagVector copt;
+  copt.push_back(kBWMX);
+  QuicConfigPeer::SetReceivedConnectionOptions(session_->config(), copt);
+  session_->OnConfigNegotiated();
+  EXPECT_TRUE(
+      QuicServerSessionPeer::IsBandwidthResumptionEnabled(session_.get()));
+}
+
+TEST_P(QuicServerSessionTest, NoBandwidthResumptionByDefault) {
+  EXPECT_FALSE(
+      QuicServerSessionPeer::IsBandwidthResumptionEnabled(session_.get()));
+  session_->OnConfigNegotiated();
+  EXPECT_FALSE(
+      QuicServerSessionPeer::IsBandwidthResumptionEnabled(session_.get()));
 }
 
 }  // namespace

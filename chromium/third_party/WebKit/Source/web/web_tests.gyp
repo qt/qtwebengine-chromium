@@ -80,6 +80,7 @@
                     ],
                     'sources': [
                         '<@(bindings_unittest_files)',
+                        '<@(platform_unittest_support_files)',
                         '<@(core_unittest_files)',
                         '<@(modules_unittest_files)',
                         '<@(platform_web_unittest_files)',
@@ -132,7 +133,7 @@
                 'cflags_cc': ['-Wno-c++0x-compat'],
             },
         }],
-        ['OS=="android" and android_webview_build==0 and gtest_target_type == "shared_library"', {
+        ['OS=="android" and gtest_target_type == "shared_library"', {
             # Wrap libwebkit_unit_tests.so into an android apk for execution.
             'targets': [{
                 'target_name': 'webkit_unit_tests_apk',

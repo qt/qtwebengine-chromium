@@ -31,13 +31,14 @@ namespace blink {
 
 class StyleSheet;
 class CSSStyleSheet;
+class EventListener;
 
 class ProcessingInstruction final : public CharacterData, private ResourceOwner<StyleSheetResource> {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
     virtual ~ProcessingInstruction();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     const String& target() const { return m_target; }
 
@@ -52,6 +53,28 @@ public:
 
     void didAttributeChanged();
     bool isLoading() const;
+
+    // For XSLT
+    class DetachableEventListener {
+    public:
+        virtual ~DetachableEventListener() { }
+
+        void ref() { refDetachableEventListener(); }
+        void deref() { derefDetachableEventListener(); }
+
+        virtual EventListener* toEventListener() = 0;
+
+        // Detach event listener from its processing instruction.
+        virtual void detach() = 0;
+
+    private:
+        virtual void refDetachableEventListener() = 0;
+        virtual void derefDetachableEventListener() = 0;
+    };
+
+    void setEventListenerForXSLT(PassRefPtr<DetachableEventListener> listener) { m_listenerForXSLT = listener; }
+    EventListener* eventListenerForXSLT();
+    void clearEventListenerForXSLT();
 
 private:
     ProcessingInstruction(Document&, const String& target, const String& data);
@@ -84,6 +107,8 @@ private:
     bool m_createdByParser;
     bool m_isCSS;
     bool m_isXSL;
+
+    RefPtr<DetachableEventListener> m_listenerForXSLT;
 };
 
 DEFINE_NODE_TYPE_CASTS(ProcessingInstruction, nodeType() == Node::PROCESSING_INSTRUCTION_NODE);

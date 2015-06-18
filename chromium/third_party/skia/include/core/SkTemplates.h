@@ -10,6 +10,7 @@
 #ifndef SkTemplates_DEFINED
 #define SkTemplates_DEFINED
 
+#include "SkMath.h"
 #include "SkTypes.h"
 #include <limits.h>
 #include <new>
@@ -106,6 +107,10 @@ template <typename T, int (*P)(T*)> class SkAutoTCallIProc : SkNoncopyable {
 public:
     SkAutoTCallIProc(T* obj): fObj(obj) {}
     ~SkAutoTCallIProc() { if (fObj) P(fObj); }
+
+    operator T*() const { return fObj; }
+    T* operator->() const { SkASSERT(fObj); return fObj; }
+
     T* detach() { T* obj = fObj; fObj = NULL; return obj; }
 private:
     T* fObj;
@@ -127,7 +132,7 @@ public:
     ~SkAutoTDelete() { SkDELETE(fObj); }
 
     T* get() const { return fObj; }
-    operator T*() { return fObj; }
+    operator T*() const { return fObj; }
     T& operator*() const { SkASSERT(fObj); return *fObj; }
     T* operator->() const { SkASSERT(fObj); return fObj; }
 
@@ -249,6 +254,11 @@ public:
         return fArray[index];
     }
 
+    void swap(SkAutoTArray& other) {
+        SkTSwap(fArray, other.fArray);
+        SkDEBUGCODE(SkTSwap(fCount, other.fCount));
+    }
+
 private:
     T*  fArray;
     SkDEBUGCODE(int fCount;)
@@ -292,7 +302,12 @@ public:
             }
 
             if (count > N) {
-                fArray = (T*) sk_malloc_throw(count * sizeof(T));
+                const uint64_t size64 = sk_64_mul(count, sizeof(T));
+                const size_t size = static_cast<size_t>(size64);
+                if (size != size64) {
+                    sk_out_of_memory();
+                }
+                fArray = (T*) sk_malloc_throw(size);
             } else if (count > 0) {
                 fArray = (T*) fStorage;
             } else {
@@ -396,17 +411,13 @@ private:
 
 template <size_t N, typename T> class SkAutoSTMalloc : SkNoncopyable {
 public:
-    SkAutoSTMalloc() {
-        fPtr = NULL;
-    }
+    SkAutoSTMalloc() : fPtr(fTStorage) {}
 
     SkAutoSTMalloc(size_t count) {
         if (count > N) {
             fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
-        } else if (count) {
-            fPtr = fTStorage;
         } else {
-            fPtr = NULL;
+            fPtr = fTStorage;
         }
     }
 
@@ -422,11 +433,9 @@ public:
             sk_free(fPtr);
         }
         if (count > N) {
-            fPtr = (T*)sk_malloc_flags(count * sizeof(T), SK_MALLOC_THROW | SK_MALLOC_TEMP);
-        } else if (count) {
-            fPtr = fTStorage;
+            fPtr = (T*)sk_malloc_throw(count * sizeof(T));
         } else {
-            fPtr = NULL;
+            fPtr = fTStorage;
         }
         return fPtr;
     }
@@ -449,6 +458,20 @@ public:
         return fPtr[index];
     }
 
+    // Reallocs the array, can be used to shrink the allocation.  Makes no attempt to be intelligent
+    void realloc(size_t count) {
+        if (count > N) {
+            if (fPtr == fTStorage) {
+                fPtr = (T*)sk_malloc_throw(count * sizeof(T));
+                memcpy(fPtr, fTStorage, N * sizeof(T));
+            } else {
+                fPtr = (T*)sk_realloc_throw(fPtr, count * sizeof(T));
+            }
+        } else if (fPtr != fTStorage) {
+            fPtr = (T*)sk_realloc_throw(fPtr, count * sizeof(T));
+        }
+    }
+
 private:
     T*          fPtr;
     union {
@@ -464,6 +487,7 @@ private:
 template <size_t N> class SkAlignedSStorage : SkNoncopyable {
 public:
     void* get() { return fData; }
+    const void* get() const { return fData; }
 private:
     union {
         void*   fPtr;

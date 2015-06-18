@@ -11,7 +11,11 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/events/event_processor.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/test/event_generator.h"
+#include "ui/gfx/screen.h"
+#include "ui/views/test/test_views.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
@@ -26,6 +30,7 @@ typedef ViewsTestBase DesktopNativeWidgetAuraTest;
 // crash.
 TEST_F(DesktopNativeWidgetAuraTest, CreateWithParentNotInRootWindow) {
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
+  window->Init(ui::LAYER_NOT_DRAWN);
   Widget widget;
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
   params.bounds = gfx::Rect(0, 0, 200, 200);
@@ -195,6 +200,7 @@ TEST_F(DesktopNativeWidgetAuraTest, DontAccessContentWindowDuringDestruction) {
 
     // Owned by |widget|.
     aura::Window* window = new aura::Window(&delegate);
+    window->Init(ui::LAYER_NOT_DRAWN);
     window->Show();
     widget.GetNativeWindow()->parent()->AddChild(window);
 
@@ -249,7 +255,8 @@ class DesktopAuraTopLevelWindowTest
       : top_level_widget_(NULL),
         owned_window_(NULL),
         owner_destroyed_(false),
-        owned_window_destroyed_(false) {}
+        owned_window_destroyed_(false),
+        use_async_mode_(true) {}
 
   ~DesktopAuraTopLevelWindowTest() override {
     EXPECT_TRUE(owner_destroyed_);
@@ -270,7 +277,7 @@ class DesktopAuraTopLevelWindowTest
     init_params.type = Widget::InitParams::TYPE_WINDOW;
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    init_params.layer_type = aura::WINDOW_LAYER_NOT_DRAWN;
+    init_params.layer_type = ui::LAYER_NOT_DRAWN;
     init_params.accept_events = fullscreen;
 
     widget_.Init(init_params);
@@ -284,7 +291,7 @@ class DesktopAuraTopLevelWindowTest
     } else {
       owned_window_->SetType(ui::wm::WINDOW_TYPE_MENU);
     }
-    owned_window_->Init(aura::WINDOW_LAYER_TEXTURED);
+    owned_window_->Init(ui::LAYER_TEXTURED);
     aura::client::ParentWindowWithContext(
         owned_window_,
         widget_.GetNativeView()->GetRootWindow(),
@@ -302,6 +309,13 @@ class DesktopAuraTopLevelWindowTest
 
   void DestroyOwnedWindow() {
     ASSERT_TRUE(owned_window_ != NULL);
+    // If async mode is off then clean up state here.
+    if (!use_async_mode_) {
+      owned_window_->RemoveObserver(this);
+      owned_window_->parent()->RemoveObserver(this);
+      owner_destroyed_ = true;
+      owned_window_destroyed_ = true;
+    }
     delete owned_window_;
   }
 
@@ -329,6 +343,10 @@ class DesktopAuraTopLevelWindowTest
     return top_level_widget_;
   }
 
+  void set_use_async_mode(bool async_mode) {
+    use_async_mode_ = async_mode;
+  }
+
  private:
   views::Widget widget_;
   views::Widget* top_level_widget_;
@@ -336,6 +354,9 @@ class DesktopAuraTopLevelWindowTest
   bool owner_destroyed_;
   bool owned_window_destroyed_;
   aura::test::TestWindowDelegate child_window_delegate_;
+  // This flag controls whether we need to wait for the destruction to complete
+  // before finishing the test. Defaults to true.
+  bool use_async_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopAuraTopLevelWindowTest);
 };
@@ -381,6 +402,9 @@ TEST_F(DesktopAuraWidgetTest, TopLevelOwnedPopupTest) {
 TEST_F(DesktopAuraWidgetTest, TopLevelOwnedPopupResizeTest) {
   ViewsDelegate::views_delegate = NULL;
   DesktopAuraTopLevelWindowTest popup_window;
+
+  popup_window.set_use_async_mode(false);
+
   ASSERT_NO_FATAL_FAILURE(popup_window.CreateTopLevelWindow(
       gfx::Rect(0, 0, 200, 200), false));
 
@@ -389,9 +413,98 @@ TEST_F(DesktopAuraWidgetTest, TopLevelOwnedPopupResizeTest) {
 
   EXPECT_EQ(popup_window.top_level_widget()->GetNativeView()->bounds().size(),
             new_size.size());
-  RunPendingMessages();
+
   ASSERT_NO_FATAL_FAILURE(popup_window.DestroyOwnedWindow());
-  RunPendingMessages();
+}
+
+// This test validates that when a top level owned popup Aura window is
+// repositioned, the widget is repositioned as well.
+TEST_F(DesktopAuraWidgetTest, TopLevelOwnedPopupRepositionTest) {
+  ViewsDelegate::views_delegate = NULL;
+  DesktopAuraTopLevelWindowTest popup_window;
+
+  popup_window.set_use_async_mode(false);
+
+  ASSERT_NO_FATAL_FAILURE(popup_window.CreateTopLevelWindow(
+      gfx::Rect(0, 0, 200, 200), false));
+
+  gfx::Rect new_pos(10, 10, 400, 400);
+  popup_window.owned_window()->SetBoundsInScreen(
+      new_pos,
+      gfx::Screen::GetScreenFor(
+          popup_window.owned_window())->GetDisplayNearestPoint(gfx::Point()));
+
+  EXPECT_EQ(new_pos,
+            popup_window.top_level_widget()->GetWindowBoundsInScreen());
+
+  ASSERT_NO_FATAL_FAILURE(popup_window.DestroyOwnedWindow());
+}
+
+// The following code verifies we can correctly destroy a Widget from a mouse
+// enter/exit. We could test move/drag/enter/exit but in general we don't run
+// nested message loops from such events, nor has the code ever really dealt
+// with this situation.
+
+// Generates two moves (first generates enter, second real move), a press, drag
+// and release stopping at |last_event_type|.
+void GenerateMouseEvents(Widget* widget, ui::EventType last_event_type) {
+  const gfx::Rect screen_bounds(widget->GetWindowBoundsInScreen());
+  ui::MouseEvent move_event(ui::ET_MOUSE_MOVED, screen_bounds.CenterPoint(),
+                            screen_bounds.CenterPoint(), ui::EventTimeForNow(),
+                            0, 0);
+  ui::EventProcessor* dispatcher = WidgetTest::GetEventProcessor(widget);
+  ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&move_event);
+  if (last_event_type == ui::ET_MOUSE_ENTERED || details.dispatcher_destroyed)
+    return;
+  details = dispatcher->OnEventFromSource(&move_event);
+  if (last_event_type == ui::ET_MOUSE_MOVED || details.dispatcher_destroyed)
+    return;
+
+  ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED, screen_bounds.CenterPoint(),
+                             screen_bounds.CenterPoint(), ui::EventTimeForNow(),
+                             0, 0);
+  details = dispatcher->OnEventFromSource(&press_event);
+  if (last_event_type == ui::ET_MOUSE_PRESSED || details.dispatcher_destroyed)
+    return;
+
+  gfx::Point end_point(screen_bounds.CenterPoint());
+  end_point.Offset(1, 1);
+  ui::MouseEvent drag_event(ui::ET_MOUSE_DRAGGED, end_point, end_point,
+                            ui::EventTimeForNow(), 0, 0);
+  details = dispatcher->OnEventFromSource(&drag_event);
+  if (last_event_type == ui::ET_MOUSE_DRAGGED || details.dispatcher_destroyed)
+    return;
+
+  ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, end_point, end_point,
+                               ui::EventTimeForNow(), 0, 0);
+  details = dispatcher->OnEventFromSource(&release_event);
+  if (details.dispatcher_destroyed)
+    return;
+}
+
+// Creates a widget and invokes GenerateMouseEvents() with |last_event_type|.
+void RunCloseWidgetDuringDispatchTest(WidgetTest* test,
+                                      ui::EventType last_event_type) {
+  // |widget| is deleted by CloseWidgetView.
+  Widget* widget = new Widget;
+  Widget::InitParams params =
+      test->CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.native_widget = new PlatformDesktopNativeWidget(widget);
+  params.bounds = gfx::Rect(0, 0, 50, 100);
+  widget->Init(params);
+  widget->SetContentsView(new CloseWidgetView(last_event_type));
+  widget->Show();
+  GenerateMouseEvents(widget, last_event_type);
+}
+
+// Verifies deleting the widget from a mouse pressed event doesn't crash.
+TEST_F(DesktopAuraWidgetTest, CloseWidgetDuringMousePress) {
+  RunCloseWidgetDuringDispatchTest(this, ui::ET_MOUSE_PRESSED);
+}
+
+// Verifies deleting the widget from a mouse released event doesn't crash.
+TEST_F(DesktopAuraWidgetTest, CloseWidgetDuringMouseReleased) {
+  RunCloseWidgetDuringDispatchTest(this, ui::ET_MOUSE_RELEASED);
 }
 
 }  // namespace test

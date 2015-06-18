@@ -33,21 +33,23 @@
 
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerLoaderProxy.h"
+#include "platform/ThreadSafeFunctional.h"
+#include "platform/network/ResourceError.h"
+#include "platform/network/ResourceResponse.h"
 #include "public/platform/WebWaitableEvent.h"
-#include "wtf/ArrayBuffer.h"
-#include "wtf/Functional.h"
 #include "wtf/MainThread.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
-PassOwnPtr<WorkerLoaderClientBridgeSyncHelper> WorkerLoaderClientBridgeSyncHelper::create(ThreadableLoaderClient& client, PassOwnPtr<blink::WebWaitableEvent> event)
+PassOwnPtr<WorkerLoaderClientBridgeSyncHelper> WorkerLoaderClientBridgeSyncHelper::create(ThreadableLoaderClient& client, PassOwnPtr<WebWaitableEvent> event)
 {
     return adoptPtr(new WorkerLoaderClientBridgeSyncHelper(client, event));
 }
 
 WorkerLoaderClientBridgeSyncHelper::~WorkerLoaderClientBridgeSyncHelper()
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
     for (size_t i = 0; i < m_receivedData.size(); ++i)
         delete m_receivedData[i];
@@ -56,15 +58,17 @@ WorkerLoaderClientBridgeSyncHelper::~WorkerLoaderClientBridgeSyncHelper()
 void WorkerLoaderClientBridgeSyncHelper::run()
 {
     // This must be called only after m_event is signalled.
+    MutexLocker lock(m_lock);
     ASSERT(m_done);
     for (size_t i = 0; i < m_clientTasks.size(); ++i)
-        m_clientTasks[i]();
+        (*m_clientTasks[i])();
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didSendData, &m_client, bytesSent, totalBytesToBeSent));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didSendData, AllowCrossThreadAccess(&m_client), bytesSent, totalBytesToBeSent));
 }
 
 static void didReceiveResponseAdapter(ThreadableLoaderClient* client, unsigned long identifier, PassOwnPtr<CrossThreadResourceResponseData> responseData, PassOwnPtr<WebDataConsumerHandle> handle)
@@ -75,67 +79,75 @@ static void didReceiveResponseAdapter(ThreadableLoaderClient* client, unsigned l
 
 void WorkerLoaderClientBridgeSyncHelper::didReceiveResponse(unsigned long identifier, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&didReceiveResponseAdapter, &m_client, identifier, response.copyData(), handle));
+    m_clientTasks.append(threadSafeBind(&didReceiveResponseAdapter, AllowCrossThreadAccess(&m_client), identifier, response, handle));
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didReceiveData(const char* data, unsigned dataLength)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
     Vector<char>* buffer = new Vector<char>(dataLength);
     memcpy(buffer->data(), data, dataLength);
     m_receivedData.append(buffer);
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didReceiveData, &m_client, static_cast<const char*>(buffer->data()), dataLength));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didReceiveData, AllowCrossThreadAccess(&m_client), AllowCrossThreadAccess(static_cast<const char*>(buffer->data())), dataLength));
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didDownloadData(int dataLength)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didDownloadData, &m_client, dataLength));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didDownloadData, AllowCrossThreadAccess(&m_client), dataLength));
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didReceiveCachedMetadata(const char* data, int dataLength)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
     Vector<char>* buffer = new Vector<char>(dataLength);
     memcpy(buffer->data(), data, dataLength);
     m_receivedData.append(buffer);
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didReceiveCachedMetadata, &m_client, static_cast<const char*>(buffer->data()), dataLength));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didReceiveCachedMetadata, AllowCrossThreadAccess(&m_client), AllowCrossThreadAccess(static_cast<const char*>(buffer->data())), dataLength));
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didFinishLoading(unsigned long identifier, double finishTime)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFinishLoading, &m_client, identifier, finishTime));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didFinishLoading, AllowCrossThreadAccess(&m_client), identifier, finishTime));
     m_done = true;
     m_event->signal();
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didFail(const ResourceError& error)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFail, &m_client, error.copy()));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didFail, AllowCrossThreadAccess(&m_client), error));
     m_done = true;
     m_event->signal();
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didFailAccessControlCheck(const ResourceError& error)
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFailAccessControlCheck, &m_client, error.copy()));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didFailAccessControlCheck, AllowCrossThreadAccess(&m_client), error));
     m_done = true;
     m_event->signal();
 }
 
 void WorkerLoaderClientBridgeSyncHelper::didFailRedirectCheck()
 {
+    MutexLocker lock(m_lock);
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFailRedirectCheck, &m_client));
+    m_clientTasks.append(threadSafeBind(&ThreadableLoaderClient::didFailRedirectCheck, AllowCrossThreadAccess(&m_client)));
     m_done = true;
     m_event->signal();
 }
 
-WorkerLoaderClientBridgeSyncHelper::WorkerLoaderClientBridgeSyncHelper(ThreadableLoaderClient& client, PassOwnPtr<blink::WebWaitableEvent> event)
+WorkerLoaderClientBridgeSyncHelper::WorkerLoaderClientBridgeSyncHelper(ThreadableLoaderClient& client, PassOwnPtr<WebWaitableEvent> event)
     : m_done(false)
     , m_client(client)
     , m_event(event)

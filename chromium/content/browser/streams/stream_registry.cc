@@ -20,13 +20,24 @@ StreamRegistry::StreamRegistry()
 }
 
 StreamRegistry::~StreamRegistry() {
+  DCHECK(register_observers_.empty());
 }
 
-void StreamRegistry::RegisterStream(scoped_refptr<Stream> stream) {
+void StreamRegistry::RegisterStream(Stream* stream) {
   DCHECK(CalledOnValidThread());
-  DCHECK(stream.get());
+  DCHECK(stream);
   DCHECK(!stream->url().is_empty());
+
+  auto aborted_url_itr = reader_aborted_urls_.find(stream->url());
+  if (aborted_url_itr != reader_aborted_urls_.end()) {
+    reader_aborted_urls_.erase(aborted_url_itr);
+    return;
+  }
   streams_[stream->url()] = stream;
+
+  auto itr = register_observers_.find(stream->url());
+  if (itr != register_observers_.end())
+    itr->second->OnStreamRegistered(stream);
 }
 
 scoped_refptr<Stream> StreamRegistry::GetStream(const GURL& url) {
@@ -87,6 +98,24 @@ bool StreamRegistry::UpdateMemoryUsage(const GURL& url,
 
   total_memory_usage_ = current_total_memory_usage + increase;
   return true;
+}
+
+
+void StreamRegistry::SetRegisterObserver(const GURL& url,
+                                         StreamRegisterObserver* observer) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(register_observers_.find(url) == register_observers_.end());
+  register_observers_[url] = observer;
+}
+
+void StreamRegistry::RemoveRegisterObserver(const GURL& url) {
+  DCHECK(CalledOnValidThread());
+  register_observers_.erase(url);
+}
+
+void StreamRegistry::AbortPendingStream(const GURL& url) {
+  DCHECK(CalledOnValidThread());
+  reader_aborted_urls_.insert(url);
 }
 
 }  // namespace content

@@ -31,20 +31,18 @@
 #ifndef HTMLMediaSource_h
 #define HTMLMediaSource_h
 
+#include "core/CoreExport.h"
 #include "core/html/URLRegistry.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace blink {
+
 class WebMediaSource;
-}
-
-namespace blink {
-
 class HTMLMediaElement;
 class TimeRanges;
 
-class HTMLMediaSource : public URLRegistrable, public WillBeGarbageCollectedMixin {
+class CORE_EXPORT HTMLMediaSource : public URLRegistrable, public WillBeGarbageCollectedMixin {
 public:
     static void setRegistry(URLRegistry*);
     static HTMLMediaSource* lookup(const String& url) { return s_registry ? static_cast<HTMLMediaSource*>(s_registry->lookup(url)) : 0; }
@@ -62,11 +60,12 @@ public:
     // Once attached, the source uses the element to synchronously service some
     // API operations like duration change that may need to initiate seek.
     virtual bool attachToElement(HTMLMediaElement*) = 0;
-    virtual void setWebMediaSourceAndOpen(PassOwnPtr<blink::WebMediaSource>) = 0;
+    virtual void setWebMediaSourceAndOpen(PassOwnPtr<WebMediaSource>) = 0;
     virtual void close() = 0;
     virtual bool isClosed() const = 0;
     virtual double duration() const = 0;
     virtual PassRefPtrWillBeRawPtr<TimeRanges> buffered() const = 0;
+    virtual PassRefPtrWillBeRawPtr<TimeRanges> seekable() const = 0;
 #if !ENABLE(OILPAN)
     virtual void refHTMLMediaSource() = 0;
     virtual void derefHTMLMediaSource() = 0;

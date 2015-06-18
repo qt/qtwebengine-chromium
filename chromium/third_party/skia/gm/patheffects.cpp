@@ -107,17 +107,14 @@ public:
     PathEffectGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    SkString onShortName() {
+    SkString onShortName() override {
         return SkString("patheffect");
     }
 
-    SkISize onISize() { return SkISize::Make(800, 600); }
+    SkISize onISize() override { return SkISize::Make(800, 600); }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setStyle(SkPaint::kStroke_Style);

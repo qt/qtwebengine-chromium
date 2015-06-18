@@ -1,4 +1,5 @@
 namespace="EventType"
+export="CORE_EXPORT"
 
 DOMActivate
 DOMCharacterDataModified
@@ -12,6 +13,7 @@ DOMNodeRemovedFromDocument
 DOMSubtreeModified
 abort
 activate
+active
 addsourcebuffer
 addstream
 addtrack
@@ -26,6 +28,7 @@ autocompleteerror
 availablechange
 beforecopy
 beforecut
+beforeinstallprompt
 beforepaste
 beforeunload
 beginEvent
@@ -54,11 +57,15 @@ connecting
 contextlost
 contextmenu
 contextrestored
+controllerchange
 copy
+crossoriginconnect
+crossoriginmessage
 cuechange
 cut
 datachannel
 dblclick
+defaultsessionstart
 devicelight
 devicemotion
 deviceorientation
@@ -87,12 +94,14 @@ finish
 focus
 focusin
 focusout
+frametimingbufferfull
 fullscreenchange
 fullscreenerror
 gamepadconnected
 gamepaddisconnected
 geofenceenter
 geofenceleave
+gesturelongpress
 gesturescrollend
 gesturescrollstart
 gesturescrollupdate
@@ -103,11 +112,13 @@ gesturetapunconfirmed
 hashchange
 icecandidate
 iceconnectionstatechange
+inactive
 input
 install
 invalid
 keydown
 keypress
+keystatuseschange
 keyup
 languagechange
 levelchange
@@ -133,6 +144,8 @@ mousewheel
 mute
 negotiationneeded
 nomatch
+notificationclick
+notificationerror
 noupdate
 obsolete
 offline
@@ -144,6 +157,7 @@ pagehide
 pageshow
 paste
 pause
+periodicsync
 play
 playing
 pointerlockchange
@@ -152,7 +166,6 @@ popstate
 progress
 push
 ratechange
-ready
 readystatechange
 removesourcebuffer
 removestream
@@ -211,6 +224,7 @@ visibilitychange
 voiceschanged
 volumechange
 waiting
+waitingforkey
 webglcontextcreationerror
 webglcontextlost
 webglcontextrestored

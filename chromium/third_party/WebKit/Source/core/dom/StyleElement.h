@@ -29,15 +29,19 @@ namespace blink {
 class ContainerNode;
 class Document;
 class Element;
-class TreeScope;
 
 class StyleElement : public WillBeGarbageCollectedMixin {
 public:
     StyleElement(Document*, bool createdByParser);
     virtual ~StyleElement();
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
+    enum ProcessingResult {
+        ProcessingSuccessful,
+        ProcessingFatalError
+    };
+
     virtual const AtomicString& type() const = 0;
     virtual const AtomicString& media() const = 0;
 
@@ -49,16 +53,16 @@ protected:
 
     void insertedInto(Element*, ContainerNode* insertionPoint);
     void removedFrom(Element*, ContainerNode* insertionPoint);
-    void processStyleSheet(Document&, Element*);
     void clearDocumentData(Document&, Element*);
-    void childrenChanged(Element*);
-    void finishParsingChildren(Element*);
+    ProcessingResult processStyleSheet(Document&, Element*);
+    ProcessingResult childrenChanged(Element*);
+    ProcessingResult finishParsingChildren(Element*);
 
     RefPtrWillBeMember<CSSStyleSheet> m_sheet;
 
 private:
-    void createSheet(Element*, const String& text = String());
-    void process(Element*);
+    ProcessingResult createSheet(Element*, const String& text = String());
+    ProcessingResult process(Element*);
     void clearSheet(Element* ownerElement = 0);
 
     bool m_createdByParser : 1;

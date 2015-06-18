@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/dhcp_proxy_script_adapter_fetcher_win.h"
@@ -75,6 +76,11 @@ DhcpProxyScriptFetcherWin::~DhcpProxyScriptFetcherWin() {
 
 int DhcpProxyScriptFetcherWin::Fetch(base::string16* utf16_text,
                                      const CompletionCallback& callback) {
+  // TODO(joi): Remove ScopedTracker below once crbug.com/476182 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "476182 DhcpProxyScriptFetcherWin::Fetch 1"));
+
   DCHECK(CalledOnValidThread());
   if (state_ != STATE_START && state_ != STATE_DONE) {
     NOTREACHED();
@@ -86,6 +92,10 @@ int DhcpProxyScriptFetcherWin::Fetch(base::string16* utf16_text,
   destination_string_ = utf16_text;
 
   last_query_ = ImplCreateAdapterQuery();
+  // TODO(joi): Remove ScopedTracker below once crbug.com/476182 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "476182 DhcpProxyScriptFetcherWin::Fetch 2"));
   GetTaskRunner()->PostTaskAndReply(
       FROM_HERE,
       base::Bind(
@@ -125,6 +135,12 @@ void DhcpProxyScriptFetcherWin::CancelImpl() {
 
 void DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone(
     scoped_refptr<AdapterQuery> query) {
+  // TODO(joi): Remove ScopedTracker below once crbug.com/476182 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "476182 "
+          "DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone 1"));
+
   DCHECK(CalledOnValidThread());
 
   // This can happen if this object is reused for multiple queries,
@@ -143,12 +159,24 @@ void DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone(
 
   state_ = STATE_NO_RESULTS;
 
+  // TODO(joi): Remove ScopedTracker below once crbug.com/476182 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "476182 "
+          "DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone 2"));
+
   const std::set<std::string>& adapter_names = query->adapter_names();
 
   if (adapter_names.empty()) {
     TransitionToDone();
     return;
   }
+
+  // TODO(joi): Remove ScopedTracker below once crbug.com/476182 is fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "476182 "
+          "DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone 3"));
 
   for (std::set<std::string>::const_iterator it = adapter_names.begin();
        it != adapter_names.end();
@@ -339,9 +367,6 @@ bool DhcpProxyScriptFetcherWin::GetCandidateAdapterNames(
 DhcpProxyScriptFetcherWin::AdapterQuery::AdapterQuery() {
 }
 
-DhcpProxyScriptFetcherWin::AdapterQuery::~AdapterQuery() {
-}
-
 void DhcpProxyScriptFetcherWin::AdapterQuery::GetCandidateAdapterNames() {
   ImplGetCandidateAdapterNames(&adapter_names_);
 }
@@ -354,6 +379,9 @@ const std::set<std::string>&
 bool DhcpProxyScriptFetcherWin::AdapterQuery::ImplGetCandidateAdapterNames(
     std::set<std::string>* adapter_names) {
   return DhcpProxyScriptFetcherWin::GetCandidateAdapterNames(adapter_names);
+}
+
+DhcpProxyScriptFetcherWin::AdapterQuery::~AdapterQuery() {
 }
 
 }  // namespace net

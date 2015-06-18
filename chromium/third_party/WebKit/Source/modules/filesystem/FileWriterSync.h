@@ -42,14 +42,24 @@ namespace blink {
 class Blob;
 class ExceptionState;
 
-class FileWriterSync final : public FileWriterBase, public ScriptWrappable, public WebFileWriterClient {
+class FileWriterSync final
+#if ENABLE(OILPAN)
+    : public GarbageCollectedFinalized<FileWriterSync>
+    , public FileWriterBase
+#else
+    : public FileWriterBase
+#endif
+    , public ScriptWrappable
+    , public WebFileWriterClient {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FileWriterSync);
 public:
     static FileWriterSync* create()
     {
         return new FileWriterSync();
     }
     virtual ~FileWriterSync();
+    DECLARE_VIRTUAL_TRACE();
 
     // FileWriterBase
     void write(Blob*, ExceptionState&);
@@ -73,4 +83,4 @@ private:
 
 } // namespace blink
 
-#endif // FileWriter_h
+#endif // FileWriterSync_h

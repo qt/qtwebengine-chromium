@@ -88,12 +88,12 @@ int SkReduceOrder::reduce(const SkDQuad& quad) {
         }
     }
     if (minXSet == 0x7) {  // test for vertical line
-        if (minYSet == 0x7) {  // return 1 if all four are coincident
+        if (minYSet == 0x7) {  // return 1 if all three are coincident
             return coincident_line(quad, fQuad);
         }
         return vertical_line(quad, fQuad);
     }
-    if (minYSet == 0xF) {  // test for horizontal line
+    if (minYSet == 0x7) {  // test for horizontal line
         return horizontal_line(quad, fQuad);
     }
     int result = check_linear(quad, minX, maxX, minY, maxY, fQuad);
@@ -271,7 +271,20 @@ SkPath::Verb SkReduceOrder::Quad(const SkPoint a[3], SkPoint* reducePts) {
     return SkPathOpsPointsToVerb(order - 1);
 }
 
+SkPath::Verb SkReduceOrder::Conic(const SkPoint a[3], SkScalar weight, SkPoint* reducePts) {
+    SkPath::Verb verb = SkReduceOrder::Quad(a, reducePts);
+    if (verb > SkPath::kLine_Verb && weight == 1) {
+        return SkPath::kQuad_Verb;
+    }
+    return verb == SkPath::kQuad_Verb ? SkPath::kConic_Verb : verb;
+}
+
 SkPath::Verb SkReduceOrder::Cubic(const SkPoint a[4], SkPoint* reducePts) {
+    if (SkDPoint::ApproximatelyEqual(a[0], a[1]) && SkDPoint::ApproximatelyEqual(a[0], a[2])
+            && SkDPoint::ApproximatelyEqual(a[0], a[3])) {
+        reducePts[0] = a[0];
+        return SkPath::kMove_Verb;
+    }
     SkDCubic cubic;
     cubic.set(a);
     SkReduceOrder reducer;

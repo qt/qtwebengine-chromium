@@ -7,11 +7,13 @@
 #include <dwmapi.h>
 #include <oleacc.h>
 #include <shellapi.h>
-#include <wtsapi32.h>
-#pragma comment(lib, "wtsapi32.lib")
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/bind_helpers.h"
+#include "base/profiler/scoped_tracker.h"
+#include "base/trace_event/trace_event.h"
+#include "base/tracked_objects.h"
+#include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "ui/base/touch/touch_enabled.h"
@@ -25,9 +27,8 @@
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/icon_util.h"
-#include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_win.h"
 #include "ui/gfx/screen.h"
@@ -40,6 +41,7 @@
 #include "ui/views/win/fullscreen_handler.h"
 #include "ui/views/win/hwnd_message_handler_delegate.h"
 #include "ui/views/win/scoped_fullscreen_visibility.h"
+#include "ui/views/win/windows_session_change_observer.h"
 
 namespace views {
 namespace {
@@ -146,11 +148,10 @@ LRESULT CALLBACK MoveLoopMouseWatcher::KeyHook(int n_code,
   if (n_code == HC_ACTION && w_param == VK_ESCAPE) {
     if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
       int value = TRUE;
-      HRESULT result = DwmSetWindowAttribute(
-          instance_->host_->hwnd(),
-          DWMWA_TRANSITIONS_FORCEDISABLED,
-          &value,
-          sizeof(value));
+      DwmSetWindowAttribute(instance_->host_->hwnd(),
+                            DWMWA_TRANSITIONS_FORCEDISABLED,
+                            &value,
+                            sizeof(value));
     }
     if (instance_->hide_on_escape_)
       instance_->host_->Hide();
@@ -202,34 +203,6 @@ void EnableMenuItemByCommand(HMENU menu, UINT command, bool enabled) {
 // DWMCompositionChanged message.
 BOOL CALLBACK SendDwmCompositionChanged(HWND window, LPARAM param) {
   SendMessage(window, WM_DWMCOMPOSITIONCHANGED, 0, 0);
-  return TRUE;
-}
-
-// See comments in OnNCPaint() for details of this struct.
-struct ClipState {
-  // The window being painted.
-  HWND parent;
-
-  // DC painting to.
-  HDC dc;
-
-  // Origin of the window in terms of the screen.
-  int x;
-  int y;
-};
-
-// See comments in OnNCPaint() for details of this function.
-static BOOL CALLBACK ClipDCToChild(HWND window, LPARAM param) {
-  ClipState* clip_state = reinterpret_cast<ClipState*>(param);
-  if (GetParent(window) == clip_state->parent && IsWindowVisible(window)) {
-    RECT bounds;
-    GetWindowRect(window, &bounds);
-    ExcludeClipRect(clip_state->dc,
-      bounds.left - clip_state->x,
-      bounds.top - clip_state->y,
-      bounds.right - clip_state->x,
-      bounds.bottom - clip_state->y);
-  }
   return TRUE;
 }
 
@@ -335,7 +308,6 @@ long HWNDMessageHandler::last_touch_message_time_ = 0;
 HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
     : delegate_(delegate),
       fullscreen_handler_(new FullscreenHandler),
-      weak_factory_(this),
       waiting_for_close_now_(false),
       remove_standard_frame_(false),
       use_system_default_icon_(false),
@@ -347,19 +319,17 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       lock_updates_count_(0),
       ignore_window_pos_changes_(false),
       last_monitor_(NULL),
-      use_layered_buffer_(false),
-      layered_alpha_(255),
-      waiting_for_redraw_layered_window_contents_(false),
       is_first_nccalc_(true),
       menu_depth_(0),
-      autohide_factory_(this),
       id_generator_(0),
       needs_scroll_styles_(false),
       in_size_loop_(false),
       touch_down_contexts_(0),
       last_mouse_hwheel_time_(0),
       msg_handled_(FALSE),
-      dwm_transition_desired_(false) {
+      dwm_transition_desired_(false),
+      autohide_factory_(this),
+      weak_factory_(this) {
 }
 
 HWNDMessageHandler::~HWNDMessageHandler() {
@@ -559,8 +529,7 @@ void HWNDMessageHandler::CenterWindow(const gfx::Size& size) {
 
 void HWNDMessageHandler::SetRegion(HRGN region) {
   custom_window_region_.Set(region);
-  ResetWindowRegion(false, true);
-  UpdateDwmNcRenderingPolicy();
+  ResetWindowRegion(true, true);
 }
 
 void HWNDMessageHandler::StackAbove(HWND other_hwnd) {
@@ -597,6 +566,9 @@ void HWNDMessageHandler::ShowWindowWithState(ui::WindowShowState show_state) {
     case ui::SHOW_STATE_MINIMIZED:
       native_show_state = SW_SHOWMINIMIZED;
       break;
+    case ui::SHOW_STATE_NORMAL:
+      native_show_state = SW_SHOWNORMAL;
+      break;
     default:
       native_show_state = delegate_->GetInitialShowState();
       break;
@@ -632,6 +604,11 @@ void HWNDMessageHandler::ShowMaximizedWithBounds(const gfx::Rect& bounds) {
   placement.showCmd = SW_SHOWMAXIMIZED;
   placement.rcNormalPosition = bounds.ToRECT();
   SetWindowPlacement(hwnd(), &placement);
+
+  // We need to explicitly activate the window, because if we're opened from a
+  // desktop shortcut while an existing window is already running it doesn't
+  // seem to be enough to use SW_SHOWMAXIMIZED to activate the window.
+  Activate();
 }
 
 void HWNDMessageHandler::Hide() {
@@ -808,35 +785,6 @@ void HWNDMessageHandler::FrameTypeChanged() {
   }
 }
 
-void HWNDMessageHandler::SchedulePaintInRect(const gfx::Rect& rect) {
-  if (use_layered_buffer_) {
-    // We must update the back-buffer immediately, since Windows' handling of
-    // invalid rects is somewhat mysterious.
-    invalid_rect_.Union(rect);
-
-    // In some situations, such as drag and drop, when Windows itself runs a
-    // nested message loop our message loop appears to be starved and we don't
-    // receive calls to DidProcessMessage(). This only seems to affect layered
-    // windows, so we schedule a redraw manually using a task, since those never
-    // seem to be starved. Also, wtf.
-    if (!waiting_for_redraw_layered_window_contents_) {
-      waiting_for_redraw_layered_window_contents_ = true;
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&HWNDMessageHandler::RedrawLayeredWindowContents,
-                     weak_factory_.GetWeakPtr()));
-    }
-  } else {
-    // InvalidateRect() expects client coordinates.
-    RECT r = rect.ToRECT();
-    InvalidateRect(hwnd(), &r, FALSE);
-  }
-}
-
-void HWNDMessageHandler::SetOpacity(BYTE opacity) {
-  layered_alpha_ = opacity;
-}
-
 void HWNDMessageHandler::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                         const gfx::ImageSkia& app_icon) {
   if (!window_icon.isNull()) {
@@ -871,10 +819,13 @@ void HWNDMessageHandler::SetFullscreen(bool fullscreen) {
 void HWNDMessageHandler::SizeConstraintsChanged() {
   LONG style = GetWindowLong(hwnd(), GWL_STYLE);
   // Ignore if this is not a standard window.
-  if (!(style & WS_OVERLAPPED))
+  if (style & (WS_POPUP | WS_CHILD))
     return;
 
-  if (delegate_->CanResize()) {
+  LONG exstyle = GetWindowLong(hwnd(), GWL_EXSTYLE);
+  // Windows cannot have WS_THICKFRAME set if WS_EX_COMPOSITED is set.
+  // See CalculateWindowStylesFromInitParams().
+  if (delegate_->CanResize() && (exstyle & WS_EX_COMPOSITED) == 0) {
     style |= WS_THICKFRAME | WS_MAXIMIZEBOX;
     if (!delegate_->CanMaximize())
       style &= ~WS_MAXIMIZEBOX;
@@ -901,19 +852,38 @@ void HWNDMessageHandler::DispatchKeyEventPostIME(const ui::KeyEvent& key) {
 
 HICON HWNDMessageHandler::GetDefaultWindowIcon() const {
   if (use_system_default_icon_)
-    return NULL;
-  return ViewsDelegate::views_delegate ?
-      ViewsDelegate::views_delegate->GetDefaultWindowIcon() : NULL;
+    return nullptr;
+  return ViewsDelegate::views_delegate
+             ? ViewsDelegate::views_delegate->GetDefaultWindowIcon()
+             : nullptr;
+}
+
+HICON HWNDMessageHandler::GetSmallWindowIcon() const {
+  if (use_system_default_icon_)
+    return nullptr;
+  return ViewsDelegate::views_delegate
+             ? ViewsDelegate::views_delegate->GetSmallWindowIcon()
+             : nullptr;
 }
 
 LRESULT HWNDMessageHandler::OnWndProc(UINT message,
                                       WPARAM w_param,
                                       LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnWndProc1"));
+
   HWND window = hwnd();
   LRESULT result = 0;
 
   if (delegate_ && delegate_->PreHandleMSG(message, w_param, l_param, &result))
     return result;
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnWndProc2"));
 
   // Otherwise we handle everything else.
   // NOTE: We inline ProcessWindowMessage() as 'this' may be destroyed during
@@ -927,6 +897,11 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
   msg_handled_ = old_msg_handled;
 
   if (!processed) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile3(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::OnWndProc3"));
+
     result = DefWindowProc(window, message, w_param, l_param);
     // DefWindowProc() may have destroyed the window and/or us in a nested
     // message loop.
@@ -935,13 +910,24 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
   }
 
   if (delegate_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile4(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::OnWndProc4"));
+
     delegate_->PostHandleMSG(message, w_param, l_param);
     if (message == WM_NCDESTROY)
       delegate_->HandleDestroyed();
   }
 
-  if (message == WM_ACTIVATE && IsTopLevelWindow(window))
+  if (message == WM_ACTIVATE && IsTopLevelWindow(window)) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile5(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::OnWndProc5"));
+
     PostProcessActivateMessage(LOWORD(w_param), !!HIWORD(w_param));
+  }
   return result;
 }
 
@@ -962,7 +948,11 @@ LRESULT HWNDMessageHandler::HandleKeyboardMessage(unsigned int message,
                                                   LPARAM l_param,
                                                   bool* handled) {
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
-  LRESULT ret = OnKeyEvent(message, w_param, l_param);
+  LRESULT ret = 0;
+  if ((message == WM_CHAR) || (message == WM_SYSCHAR))
+    ret = OnImeMessages(message, w_param, l_param);
+  else
+    ret = OnKeyEvent(message, w_param, l_param);
   *handled = IsMsgHandled();
   return ret;
 }
@@ -998,6 +988,13 @@ LRESULT HWNDMessageHandler::HandleNcHitTestMessage(unsigned int message,
   return ret;
 }
 
+void HWNDMessageHandler::HandleParentChanged() {
+  // If the forwarder window's parent is changed then we need to reset our
+  // context as we will not receive touch releases if the touch was initiated
+  // in the forwarder window.
+  touch_ids_.clear();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, private:
 
@@ -1012,6 +1009,11 @@ int HWNDMessageHandler::GetAppbarAutohideEdges(HMONITOR monitor) {
 }
 
 void HWNDMessageHandler::OnAppbarAutohideEdgesChanged() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnAppbarAutohideEdgesChanged"));
+
   // This triggers querying WM_NCCALCSIZE again.
   RECT client;
   GetWindowRect(hwnd(), &client);
@@ -1081,8 +1083,6 @@ void HWNDMessageHandler::TrackMouseEvents(DWORD mouse_tracking_flags) {
 void HWNDMessageHandler::ClientAreaSizeChanged() {
   gfx::Size s = GetClientAreaBounds().size();
   delegate_->HandleClientSizeChanged(s);
-  if (use_layered_buffer_)
-    layered_window_contents_.reset(new gfx::Canvas(s, 1.0f, false));
 }
 
 bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
@@ -1128,14 +1128,14 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
 
   // Changing the window region is going to force a paint. Only change the
   // window region if the region really differs.
-  HRGN current_rgn = CreateRectRgn(0, 0, 0, 0);
-  int current_rgn_result = GetWindowRgn(hwnd(), current_rgn);
+  base::win::ScopedRegion current_rgn(CreateRectRgn(0, 0, 0, 0));
+  GetWindowRgn(hwnd(), current_rgn);
 
   RECT window_rect;
   GetWindowRect(hwnd(), &window_rect);
-  HRGN new_region;
+  base::win::ScopedRegion new_region;
   if (custom_window_region_) {
-    new_region = ::CreateRectRgn(0, 0, 0, 0);
+    new_region.Set(::CreateRectRgn(0, 0, 0, 0));
     ::CombineRgn(new_region, custom_window_region_.Get(), NULL, RGN_COPY);
   } else if (IsMaximized()) {
     HMONITOR monitor = MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST);
@@ -1144,23 +1144,23 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
     GetMonitorInfo(monitor, &mi);
     RECT work_rect = mi.rcWork;
     OffsetRect(&work_rect, -window_rect.left, -window_rect.top);
-    new_region = CreateRectRgnIndirect(&work_rect);
+    new_region.Set(CreateRectRgnIndirect(&work_rect));
   } else {
     gfx::Path window_mask;
     delegate_->GetWindowMask(gfx::Size(window_rect.right - window_rect.left,
                                        window_rect.bottom - window_rect.top),
                              &window_mask);
-    new_region = gfx::CreateHRGNFromSkPath(window_mask);
+    if (!window_mask.isEmpty())
+      new_region.Set(gfx::CreateHRGNFromSkPath(window_mask));
   }
 
-  if (current_rgn_result == ERROR || !EqualRgn(current_rgn, new_region)) {
+  const bool has_current_region = current_rgn != 0;
+  const bool has_new_region = new_region != 0;
+  if (has_current_region != has_new_region ||
+      (has_current_region && !EqualRgn(current_rgn, new_region))) {
     // SetWindowRgn takes ownership of the HRGN created by CreateNativeRegion.
-    SetWindowRgn(hwnd(), new_region, redraw);
-  } else {
-    DeleteObject(new_region);
+    SetWindowRgn(hwnd(), new_region.release(), redraw);
   }
-
-  DeleteObject(current_rgn);
 }
 
 void HWNDMessageHandler::UpdateDwmNcRenderingPolicy() {
@@ -1212,35 +1212,6 @@ void HWNDMessageHandler::UnlockUpdates(bool force) {
   }
 }
 
-void HWNDMessageHandler::RedrawLayeredWindowContents() {
-  waiting_for_redraw_layered_window_contents_ = false;
-  if (invalid_rect_.IsEmpty())
-    return;
-
-  // We need to clip to the dirty rect ourselves.
-  layered_window_contents_->sk_canvas()->save();
-  double scale = gfx::GetDPIScale();
-  layered_window_contents_->sk_canvas()->scale(
-      SkScalar(scale),SkScalar(scale));
-  layered_window_contents_->ClipRect(invalid_rect_);
-  delegate_->PaintLayeredWindow(layered_window_contents_.get());
-  layered_window_contents_->sk_canvas()->scale(
-      SkScalar(1.0/scale),SkScalar(1.0/scale));
-  layered_window_contents_->sk_canvas()->restore();
-
-  RECT wr;
-  GetWindowRect(hwnd(), &wr);
-  SIZE size = {wr.right - wr.left, wr.bottom - wr.top};
-  POINT position = {wr.left, wr.top};
-  HDC dib_dc = skia::BeginPlatformPaint(layered_window_contents_->sk_canvas());
-  POINT zero = {0, 0};
-  BLENDFUNCTION blend = {AC_SRC_OVER, 0, layered_alpha_, AC_SRC_ALPHA};
-  UpdateLayeredWindow(hwnd(), NULL, &position, &size, dib_dc, &zero,
-                      RGB(0xFF, 0xFF, 0xFF), &blend, ULW_ALPHA);
-  invalid_rect_.SetRect(0, 0, 0, 0);
-  skia::EndPlatformPaint(layered_window_contents_->sk_canvas());
-}
-
 void HWNDMessageHandler::ForceRedrawWindow(int attempts) {
   if (ui::IsWorkstationLocked()) {
     // Presents will continue to fail as long as the input desktop is
@@ -1261,6 +1232,11 @@ void HWNDMessageHandler::ForceRedrawWindow(int attempts) {
 // Message handlers ------------------------------------------------------------
 
 void HWNDMessageHandler::OnActivateApp(BOOL active, DWORD thread_id) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnActivateApp"));
+
   if (delegate_->IsWidgetWindow() && !active &&
       thread_id != GetCurrentThreadId()) {
     delegate_->HandleAppDeactivated();
@@ -1274,6 +1250,11 @@ BOOL HWNDMessageHandler::OnAppCommand(HWND window,
                                       short command,
                                       WORD device,
                                       int keystate) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnAppCommand"));
+
   BOOL handled = !!delegate_->HandleAppCommand(command);
   SetMsgHandled(handled);
   // Make sure to return TRUE if the event was handled or in some cases the
@@ -1283,22 +1264,40 @@ BOOL HWNDMessageHandler::OnAppCommand(HWND window,
 }
 
 void HWNDMessageHandler::OnCancelMode() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnCancelMode"));
+
   delegate_->HandleCancelMode();
   // Need default handling, otherwise capture and other things aren't canceled.
   SetMsgHandled(FALSE);
 }
 
 void HWNDMessageHandler::OnCaptureChanged(HWND window) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnCaptureChanged"));
+
   delegate_->HandleCaptureLost();
 }
 
 void HWNDMessageHandler::OnClose() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnClose"));
+
   delegate_->HandleClose();
 }
 
 void HWNDMessageHandler::OnCommand(UINT notification_code,
                                    int command,
                                    HWND window) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCommand"));
+
   // If the notification code is > 1 it means it is control specific and we
   // should ignore it.
   if (notification_code > 1 || delegate_->HandleAppCommand(command))
@@ -1306,9 +1305,16 @@ void HWNDMessageHandler::OnCommand(UINT notification_code,
 }
 
 LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
-  use_layered_buffer_ = !!(window_ex_style() & WS_EX_LAYERED);
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCreate1"));
 
   if (window_ex_style() &  WS_EX_COMPOSITED) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::OnCreate2"));
+
     if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
       // This is part of the magic to emulate layered windows with Aura
       // see the explanation elsewere when we set WS_EX_COMPOSITED style.
@@ -1319,6 +1325,10 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
 
   fullscreen_handler_->set_hwnd(hwnd());
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCreate3"));
+
   // This message initializes the window so that focus border are shown for
   // windows.
   SendMessage(hwnd(),
@@ -1327,10 +1337,19 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
               0);
 
   if (remove_standard_frame_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile4(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::OnCreate4"));
+
     SetWindowLong(hwnd(), GWL_STYLE,
                   GetWindowLong(hwnd(), GWL_STYLE) & ~WS_CAPTION);
     SendFrameChanged();
   }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile5(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCreate5"));
 
   // Get access to a modifiable copy of the system menu.
   GetSystemMenu(hwnd(), false);
@@ -1339,32 +1358,60 @@ LRESULT HWNDMessageHandler::OnCreate(CREATESTRUCT* create_struct) {
       ui::AreTouchEventsEnabled())
     RegisterTouchWindow(hwnd(), TWF_WANTPALM);
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile6(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCreate6"));
+
   // We need to allow the delegate to size its contents since the window may not
   // receive a size notification when its initial bounds are specified at window
   // creation time.
   ClientAreaSizeChanged();
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile7(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCreate7"));
+
   delegate_->HandleCreate();
 
-  WTSRegisterSessionNotification(hwnd(), NOTIFY_FOR_THIS_SESSION);
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile8(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnCreate8"));
+
+  windows_session_change_observer_.reset(new WindowsSessionChangeObserver(
+      base::Bind(&HWNDMessageHandler::OnSessionChange,
+                 base::Unretained(this))));
 
   // TODO(beng): move more of NWW::OnCreate here.
   return 0;
 }
 
 void HWNDMessageHandler::OnDestroy() {
-  WTSUnRegisterSessionNotification(hwnd());
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnDestroy"));
+
+  windows_session_change_observer_.reset(nullptr);
   delegate_->HandleDestroying();
 }
 
 void HWNDMessageHandler::OnDisplayChange(UINT bits_per_pixel,
                                          const gfx::Size& screen_size) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnDisplayChange"));
+
   delegate_->HandleDisplayChange();
 }
 
 LRESULT HWNDMessageHandler::OnDwmCompositionChanged(UINT msg,
                                                     WPARAM w_param,
                                                     LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnDwmCompositionChanged"));
+
   if (!delegate_->IsWidgetWindow()) {
     SetMsgHandled(FALSE);
     return 0;
@@ -1375,11 +1422,21 @@ LRESULT HWNDMessageHandler::OnDwmCompositionChanged(UINT msg,
 }
 
 void HWNDMessageHandler::OnEnterMenuLoop(BOOL from_track_popup_menu) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnEnterMenuLoop"));
+
   if (menu_depth_++ == 0)
     delegate_->HandleMenuLoop(true);
 }
 
 void HWNDMessageHandler::OnEnterSizeMove() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnEnterSizeMove"));
+
   // Please refer to the comments in the OnSize function about the scrollbar
   // hack.
   // Hide the Windows scrollbar if the scroll styles are present to ensure
@@ -1397,12 +1454,22 @@ LRESULT HWNDMessageHandler::OnEraseBkgnd(HDC dc) {
 }
 
 void HWNDMessageHandler::OnExitMenuLoop(BOOL is_shortcut_menu) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnExitMenuLoop"));
+
   if (--menu_depth_ == 0)
     delegate_->HandleMenuLoop(false);
   DCHECK_GE(0, menu_depth_);
 }
 
 void HWNDMessageHandler::OnExitSizeMove() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnExitSizeMove"));
+
   delegate_->HandleEndWMSizeMove();
   SetMsgHandled(FALSE);
   // Please refer to the notes in the OnSize function for information about
@@ -1415,6 +1482,11 @@ void HWNDMessageHandler::OnExitSizeMove() {
 }
 
 void HWNDMessageHandler::OnGetMinMaxInfo(MINMAXINFO* minmax_info) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnGetMinMaxInfo"));
+
   gfx::Size min_window_size;
   gfx::Size max_window_size;
   delegate_->GetMinMaxSize(&min_window_size, &max_window_size);
@@ -1453,6 +1525,11 @@ void HWNDMessageHandler::OnGetMinMaxInfo(MINMAXINFO* minmax_info) {
 LRESULT HWNDMessageHandler::OnGetObject(UINT message,
                                         WPARAM w_param,
                                         LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnGetObject"));
+
   LRESULT reference_result = static_cast<LRESULT>(0L);
 
   // Only the lower 32 bits of l_param are valid when checking the object id
@@ -1476,6 +1553,11 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
 LRESULT HWNDMessageHandler::OnImeMessages(UINT message,
                                           WPARAM w_param,
                                           LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnImeMessages"));
+
   LRESULT result = 0;
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
   const bool msg_handled =
@@ -1486,6 +1568,11 @@ LRESULT HWNDMessageHandler::OnImeMessages(UINT message,
 }
 
 void HWNDMessageHandler::OnInitMenu(HMENU menu) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnInitMenu"));
+
   bool is_fullscreen = fullscreen_handler_->fullscreen();
   bool is_minimized = IsMinimized();
   bool is_maximized = IsMaximized();
@@ -1509,13 +1596,24 @@ void HWNDMessageHandler::OnInitMenu(HMENU menu) {
 
 void HWNDMessageHandler::OnInputLangChange(DWORD character_set,
                                            HKL input_language_id) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnInputLangChange"));
+
   delegate_->HandleInputLanguageChange(character_set, input_language_id);
 }
 
 LRESULT HWNDMessageHandler::OnKeyEvent(UINT message,
                                        WPARAM w_param,
                                        LPARAM l_param) {
-  MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime() };
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnKeyEvent"));
+
+  MSG msg = {
+      hwnd(), message, w_param, l_param, static_cast<DWORD>(GetMessageTime())};
   ui::KeyEvent key(msg);
   if (!delegate_->HandleUntranslatedKeyEvent(key))
     DispatchKeyEventPostIME(key);
@@ -1523,6 +1621,11 @@ LRESULT HWNDMessageHandler::OnKeyEvent(UINT message,
 }
 
 void HWNDMessageHandler::OnKillFocus(HWND focused_window) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnKillFocus"));
+
   delegate_->HandleNativeBlur(focused_window);
   SetMsgHandled(FALSE);
 }
@@ -1530,6 +1633,11 @@ void HWNDMessageHandler::OnKillFocus(HWND focused_window) {
 LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
                                             WPARAM w_param,
                                             LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnMouseActivate"));
+
   // Please refer to the comments in the header for the touch_down_contexts_
   // member for the if statement below.
   if (touch_down_contexts_)
@@ -1574,21 +1682,39 @@ LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
 LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
                                          WPARAM w_param,
                                          LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnMouseRange"));
+
   return HandleMouseEventInternal(message, w_param, l_param, true);
 }
 
 void HWNDMessageHandler::OnMove(const gfx::Point& point) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnMove"));
+
   delegate_->HandleMove();
   SetMsgHandled(FALSE);
 }
 
 void HWNDMessageHandler::OnMoving(UINT param, const RECT* new_bounds) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnMoving"));
+
   delegate_->HandleMove();
 }
 
 LRESULT HWNDMessageHandler::OnNCActivate(UINT message,
                                          WPARAM w_param,
                                          LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnNCActivate"));
+
   // Per MSDN, w_param is either TRUE or FALSE. However, MSDN also hints that:
   // "If the window is minimized when this message is received, the application
   // should pass the message to the DefWindowProc function."
@@ -1641,6 +1767,11 @@ LRESULT HWNDMessageHandler::OnNCActivate(UINT message,
 }
 
 LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnNCCalcSize"));
+
   // We only override the default handling if we need to specify a custom
   // non-client edge width. Note that in most cases "no insets" means no
   // custom width, but in fullscreen mode or when the NonClientFrameView
@@ -1739,6 +1870,11 @@ LRESULT HWNDMessageHandler::OnNCCalcSize(BOOL mode, LPARAM l_param) {
 }
 
 LRESULT HWNDMessageHandler::OnNCHitTest(const gfx::Point& point) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnNCHitTest"));
+
   if (!delegate_->IsWidgetWindow()) {
     SetMsgHandled(FALSE);
     return 0;
@@ -1813,6 +1949,10 @@ LRESULT HWNDMessageHandler::OnNCHitTest(const gfx::Point& point) {
 }
 
 void HWNDMessageHandler::OnNCPaint(HRGN rgn) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnNCPaint"));
+
   // We only do non-client painting if we're not using the native frame.
   // It's required to avoid some native painting artifacts from appearing when
   // the window is resized.
@@ -1856,45 +1996,8 @@ void HWNDMessageHandler::OnNCPaint(HRGN rgn) {
     OffsetRect(&dirty_region, -window_rect.left, -window_rect.top);
   }
 
-  // In theory GetDCEx should do what we want, but I couldn't get it to work.
-  // In particular the docs mentiond DCX_CLIPCHILDREN, but as far as I can tell
-  // it doesn't work at all. So, instead we get the DC for the window then
-  // manually clip out the children.
-  HDC dc = GetWindowDC(hwnd());
-  ClipState clip_state;
-  clip_state.x = window_rect.left;
-  clip_state.y = window_rect.top;
-  clip_state.parent = hwnd();
-  clip_state.dc = dc;
-  EnumChildWindows(hwnd(), &ClipDCToChild,
-                   reinterpret_cast<LPARAM>(&clip_state));
+  delegate_->HandlePaintAccelerated(gfx::Rect(dirty_region));
 
-  gfx::Rect old_paint_region = invalid_rect_;
-  if (!old_paint_region.IsEmpty()) {
-    // The root view has a region that needs to be painted. Include it in the
-    // region we're going to paint.
-
-    RECT old_paint_region_crect = old_paint_region.ToRECT();
-    RECT tmp = dirty_region;
-    UnionRect(&dirty_region, &tmp, &old_paint_region_crect);
-  }
-
-  SchedulePaintInRect(gfx::Rect(dirty_region));
-
-  // gfx::CanvasSkiaPaint's destructor does the actual painting. As such, wrap
-  // the following in a block to force paint to occur so that we can release
-  // the dc.
-  if (!delegate_->HandlePaintAccelerated(gfx::Rect(dirty_region))) {
-    gfx::CanvasSkiaPaint canvas(dc,
-                                true,
-                                dirty_region.left,
-                                dirty_region.top,
-                                dirty_region.right - dirty_region.left,
-                                dirty_region.bottom - dirty_region.top);
-    delegate_->HandlePaint(&canvas);
-  }
-
-  ReleaseDC(hwnd(), dc);
   // When using a custom frame, we want to avoid calling DefWindowProc() since
   // that may render artifacts.
   SetMsgHandled(delegate_->IsUsingCustomFrame());
@@ -1903,6 +2006,11 @@ void HWNDMessageHandler::OnNCPaint(HRGN rgn) {
 LRESULT HWNDMessageHandler::OnNCUAHDrawCaption(UINT message,
                                                WPARAM w_param,
                                                LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnNCUAHDrawCaption"));
+
   // See comment in widget_win.h at the definition of WM_NCUAHDRAWCAPTION for
   // an explanation about why we need to handle this message.
   SetMsgHandled(delegate_->IsUsingCustomFrame());
@@ -1912,6 +2020,11 @@ LRESULT HWNDMessageHandler::OnNCUAHDrawCaption(UINT message,
 LRESULT HWNDMessageHandler::OnNCUAHDrawFrame(UINT message,
                                              WPARAM w_param,
                                              LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnNCUAHDrawFrame"));
+
   // See comment in widget_win.h at the definition of WM_NCUAHDRAWCAPTION for
   // an explanation about why we need to handle this message.
   SetMsgHandled(delegate_->IsUsingCustomFrame());
@@ -1919,12 +2032,20 @@ LRESULT HWNDMessageHandler::OnNCUAHDrawFrame(UINT message,
 }
 
 LRESULT HWNDMessageHandler::OnNotify(int w_param, NMHDR* l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnNotify"));
+
   LRESULT l_result = 0;
   SetMsgHandled(delegate_->HandleTooltipNotify(w_param, l_param, &l_result));
   return l_result;
 }
 
 void HWNDMessageHandler::OnPaint(HDC dc) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnPaint"));
+
   // Call BeginPaint()/EndPaint() around the paint handling, as that seems
   // to do more to actually validate the window's drawing region. This only
   // appears to matter for Windows that have the WS_EX_COMPOSITED style set
@@ -1933,11 +2054,8 @@ void HWNDMessageHandler::OnPaint(HDC dc) {
   HDC display_dc = BeginPaint(hwnd(), &ps);
   CHECK(display_dc);
 
-  // Try to paint accelerated first.
-  if (!IsRectEmpty(&ps.rcPaint) &&
-      !delegate_->HandlePaintAccelerated(gfx::Rect(ps.rcPaint))) {
-    delegate_->HandlePaint(NULL);
-  }
+  if (!IsRectEmpty(&ps.rcPaint))
+    delegate_->HandlePaintAccelerated(gfx::Rect(ps.rcPaint));
 
   EndPaint(hwnd(), &ps);
 }
@@ -1952,25 +2070,26 @@ LRESULT HWNDMessageHandler::OnReflectedMessage(UINT message,
 LRESULT HWNDMessageHandler::OnScrollMessage(UINT message,
                                             WPARAM w_param,
                                             LPARAM l_param) {
-  MSG msg = { hwnd(), message, w_param, l_param, GetMessageTime() };
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnScrollMessage"));
+
+  MSG msg = {
+      hwnd(), message, w_param, l_param, static_cast<DWORD>(GetMessageTime())};
   ui::ScrollEvent event(msg);
   delegate_->HandleScrollEvent(event);
   return 0;
 }
 
-void HWNDMessageHandler::OnSessionChange(WPARAM status_code,
-                                         PWTSSESSION_NOTIFICATION session_id) {
-  // Direct3D presents are ignored while the screen is locked, so force the
-  // window to be redrawn on unlock.
-  if (status_code == WTS_SESSION_UNLOCK)
-    ForceRedrawWindow(10);
-
-  SetMsgHandled(FALSE);
-}
-
 LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
                                         WPARAM w_param,
                                         LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnSetCursor"));
+
   // Reimplement the necessary default behavior here. Calling DefWindowProc can
   // trigger weird non-client painting for non-glass windows with custom frames.
   // Using a ScopedRedrawLock to prevent caption rendering artifacts may allow
@@ -2012,23 +2131,41 @@ LRESULT HWNDMessageHandler::OnSetCursor(UINT message,
 }
 
 void HWNDMessageHandler::OnSetFocus(HWND last_focused_window) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnSetFocus"));
+
   delegate_->HandleNativeFocus(last_focused_window);
   SetMsgHandled(FALSE);
 }
 
 LRESULT HWNDMessageHandler::OnSetIcon(UINT size_type, HICON new_icon) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnSetIcon"));
+
   // Use a ScopedRedrawLock to avoid weird non-client painting.
   return DefWindowProcWithRedrawLock(WM_SETICON, size_type,
                                      reinterpret_cast<LPARAM>(new_icon));
 }
 
 LRESULT HWNDMessageHandler::OnSetText(const wchar_t* text) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnSetText"));
+
   // Use a ScopedRedrawLock to avoid weird non-client painting.
   return DefWindowProcWithRedrawLock(WM_SETTEXT, NULL,
                                      reinterpret_cast<LPARAM>(text));
 }
 
 void HWNDMessageHandler::OnSettingChange(UINT flags, const wchar_t* section) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnSettingChange"));
+
   if (!GetParent(hwnd()) && (flags == SPI_SETWORKAREA) &&
       !delegate_->WillProcessWorkAreaChange()) {
     // Fire a dummy SetWindowPos() call, so we'll trip the code in
@@ -2044,6 +2181,10 @@ void HWNDMessageHandler::OnSettingChange(UINT flags, const wchar_t* section) {
 }
 
 void HWNDMessageHandler::OnSize(UINT param, const gfx::Size& size) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 HWNDMessageHandler::OnSize"));
+
   RedrawWindow(hwnd(), NULL, NULL, RDW_INVALIDATE | RDW_ALLCHILDREN);
   // ResetWindowRegion is going to trigger WM_NCPAINT. By doing it after we've
   // invoked OnSize we ensure the RootView has been laid out.
@@ -2065,6 +2206,11 @@ void HWNDMessageHandler::OnSize(UINT param, const gfx::Size& size) {
 
 void HWNDMessageHandler::OnSysCommand(UINT notification_code,
                                       const gfx::Point& point) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnSysCommand"));
+
   if (!delegate_->ShouldHandleSystemCommands())
     return;
 
@@ -2115,9 +2261,20 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
     // with the mouse/touch/keyboard, we flag as being in a size loop.
     if ((notification_code & sc_mask) == SC_SIZE)
       in_size_loop_ = true;
+    const bool runs_nested_loop = ((notification_code & sc_mask) == SC_SIZE) ||
+                                  ((notification_code & sc_mask) == SC_MOVE);
     base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
+
+    // Use task stopwatch to exclude the time spend in the move/resize loop from
+    // the current task, if any.
+    tracked_objects::TaskStopwatch stopwatch;
+    if (runs_nested_loop)
+      stopwatch.Start();
     DefWindowProc(hwnd(), WM_SYSCOMMAND, notification_code,
                   MAKELPARAM(point.x(), point.y()));
+    if (runs_nested_loop)
+      stopwatch.Stop();
+
     if (!ref.get())
       return;
     in_size_loop_ = false;
@@ -2125,12 +2282,22 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
 }
 
 void HWNDMessageHandler::OnThemeChanged() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnThemeChanged"));
+
   ui::NativeThemeWin::instance()->CloseHandles();
 }
 
 LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
                                          WPARAM w_param,
                                          LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnTouchEvent"));
+
   // Handle touch events only on Aura for now.
   int num_points = LOWORD(w_param);
   scoped_ptr<TOUCHINPUT[]> input(new TOUCHINPUT[num_points]);
@@ -2177,14 +2344,9 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         touch_event_type = ui::ET_TOUCH_MOVED;
       }
       if (touch_event_type != ui::ET_UNKNOWN) {
-        base::TimeTicks now;
         // input[i].dwTime doesn't necessarily relate to the system time at all,
-        // so use base::TimeTicks::HighResNow() if possible, or
-        // base::TimeTicks::Now() otherwise.
-        if (base::TimeTicks::IsHighResNowFastAndReliable())
-          now = base::TimeTicks::HighResNow();
-        else
-          now = base::TimeTicks::Now();
+        // so use base::TimeTicks::Now()
+        const base::TimeTicks now = base::TimeTicks::Now();
         ui::TouchEvent event(touch_event_type,
                              gfx::Point(point.x, point.y),
                              id_generator_.GetGeneratedID(input[i].dwID),
@@ -2217,6 +2379,11 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
 }
 
 void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnWindowPosChanging"));
+
   if (ignore_window_pos_changes_) {
     // If somebody's trying to toggle our visibility, change the nonclient area,
     // change our Z-order, or activate us, we should probably let it go through.
@@ -2282,8 +2449,15 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
     }
   }
 
-  if (DidClientAreaSizeChange(window_pos))
+  RECT window_rect;
+  gfx::Size old_size;
+  if (GetWindowRect(hwnd(), &window_rect))
+    old_size = gfx::Rect(window_rect).size();
+  gfx::Size new_size = gfx::Size(window_pos->cx, window_pos->cy);
+  if ((old_size != new_size && !(window_pos->flags & SWP_NOSIZE)) ||
+      window_pos->flags & SWP_FRAMECHANGED) {
     delegate_->HandleWindowSizeChanging();
+  }
 
   if (ScopedFullscreenVisibility::IsHiddenForFullscreen(hwnd())) {
     // Prevent the window from being made visible if we've been asked to do so.
@@ -2300,6 +2474,11 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
 }
 
 void HWNDMessageHandler::OnWindowPosChanged(WINDOWPOS* window_pos) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnWindowPosChanged"));
+
   if (DidClientAreaSizeChange(window_pos))
     ClientAreaSizeChanged();
   if (remove_standard_frame_ && window_pos->flags & SWP_FRAMECHANGED &&
@@ -2313,6 +2492,18 @@ void HWNDMessageHandler::OnWindowPosChanged(WINDOWPOS* window_pos) {
   else if (window_pos->flags & SWP_HIDEWINDOW)
     delegate_->HandleVisibilityChanged(false);
   SetMsgHandled(FALSE);
+}
+
+void HWNDMessageHandler::OnSessionChange(WPARAM status_code) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::OnSessionChange"));
+
+  // Direct3D presents are ignored while the screen is locked, so force the
+  // window to be redrawn on unlock.
+  if (status_code == WTS_SESSION_UNLOCK)
+    ForceRedrawWindow(10);
 }
 
 void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
@@ -2331,12 +2522,23 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
                                                      bool track_mouse) {
   if (!touch_ids_.empty())
     return 0;
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::HandleMouseEventInternal1"));
+
   // We handle touch events on Windows Aura. Windows generates synthesized
   // mouse messages in response to touch which we should ignore. However touch
   // messages are only received for the client area. We need to ignore the
   // synthesized mouse messages for all points in the client area and places
   // which return HTNOWHERE.
   if (ui::IsMouseEventFromTouch(message)) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::HandleMouseEventInternal2"));
+
     LPARAM l_param_ht = l_param;
     // For mouse events (except wheel events), location is in window coordinates
     // and should be converted to screen coordinates for WM_NCHITTEST.
@@ -2363,6 +2565,11 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
   }
 
   if (message == WM_RBUTTONUP && is_right_mouse_pressed_on_caption_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile3(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::HandleMouseEventInternal3"));
+
     is_right_mouse_pressed_on_caption_ = false;
     ReleaseCapture();
     // |point| is in window coordinates, but WM_NCHITTEST and TrackPopupMenu()
@@ -2405,14 +2612,26 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // be WM_RBUTTONUP instead of WM_NCRBUTTONUP.
     SetCapture();
   }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile4(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::HandleMouseEventInternal4"));
+
   long message_time = GetMessageTime();
-  MSG msg = { hwnd(), message, w_param, l_param, message_time,
+  MSG msg = { hwnd(), message, w_param, l_param,
+              static_cast<DWORD>(message_time),
               { CR_GET_X_LPARAM(l_param), CR_GET_Y_LPARAM(l_param) } };
   ui::MouseEvent event(msg);
   if (IsSynthesizedMouseMessage(message, message_time, l_param))
     event.set_flags(event.flags() | ui::EF_FROM_TOUCH);
 
   if (event.type() == ui::ET_MOUSE_MOVED && !HasCapture() && track_mouse) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile5(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::HandleMouseEventInternal5"));
+
     // Windows only fires WM_MOUSELEAVE events if the application begins
     // "tracking" mouse events for a given HWND during WM_MOUSEMOVE events.
     // We need to call |TrackMouseEvents| to listen for WM_MOUSELEAVE.
@@ -2424,19 +2643,40 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     // OnMouseEvent.
     active_mouse_tracking_flags_ = 0;
   } else if (event.type() == ui::ET_MOUSEWHEEL) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile6(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::HandleMouseEventInternal6"));
+
     // Reroute the mouse wheel to the window under the pointer if applicable.
     return (ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
             delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg))) ? 0 : 1;
   }
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile7(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::HandleMouseEventInternal7"));
+
   // There are cases where the code handling the message destroys the window,
   // so use the weak ptr to check if destruction occured or not.
   base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
   bool handled = delegate_->HandleMouseEvent(event);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile8(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "440919 HWNDMessageHandler::HandleMouseEventInternal8"));
+
   if (!ref.get())
     return 0;
   if (!handled && message == WM_NCLBUTTONDOWN && w_param != HTSYSMENU &&
       delegate_->IsUsingCustomFrame()) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile9(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::HandleMouseEventInternal9"));
+
     // TODO(msw): Eliminate undesired painting, or re-evaluate this workaround.
     // DefWindowProc for WM_NCLBUTTONDOWN does weird non-client painting, so we
     // need to call it inside a ScopedRedrawLock. This may cause other negative
@@ -2445,8 +2685,14 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     handled = true;
   }
 
-  if (ref.get())
+  if (ref.get()) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile10(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "440919 HWNDMessageHandler::HandleMouseEventInternal10"));
+
     SetMsgHandled(handled);
+  }
   return 0;
 }
 

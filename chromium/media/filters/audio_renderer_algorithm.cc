@@ -8,8 +8,6 @@
 #include <cmath>
 
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
-#include "media/base/audio_buffer.h"
 #include "media/base/audio_bus.h"
 #include "media/base/limits.h"
 #include "media/filters/wsola_internals.h"
@@ -49,8 +47,8 @@ namespace media {
 // Max/min supported playback rates for fast/slow audio. Audio outside of these
 // ranges are muted.
 // Audio at these speeds would sound better under a frequency domain algorithm.
-static const float kMinPlaybackRate = 0.5f;
-static const float kMaxPlaybackRate = 4.0f;
+static const double kMinPlaybackRate = 0.5;
+static const double kMaxPlaybackRate = 4.0;
 
 // Overlap-and-add window size in milliseconds.
 static const int kOlaWindowSizeMs = 20;
@@ -68,9 +66,9 @@ static const int kMaxCapacityInSeconds = 3;
 // maintain this number of frames.
 static const int kStartingBufferSizeInFrames = 16 * 512;
 
-COMPILE_ASSERT(kStartingBufferSizeInFrames <
-               (kMaxCapacityInSeconds * limits::kMinSampleRate),
-               max_capacity_smaller_than_starting_buffer_size);
+static_assert(kStartingBufferSizeInFrames <
+              (kMaxCapacityInSeconds * limits::kMinSampleRate),
+              "max capacity smaller than starting buffer size");
 
 AudioRendererAlgorithm::AudioRendererAlgorithm()
     : channels_(0),
@@ -142,8 +140,9 @@ void AudioRendererAlgorithm::Initialize(const AudioParameters& params) {
 }
 
 int AudioRendererAlgorithm::FillBuffer(AudioBus* dest,
+                                       int dest_offset,
                                        int requested_frames,
-                                       float playback_rate) {
+                                       double playback_rate) {
   if (playback_rate == 0)
     return 0;
 
@@ -162,7 +161,7 @@ int AudioRendererAlgorithm::FillBuffer(AudioBus* dest,
     // time.
     muted_partial_frame_ += frames_to_render * playback_rate;
     int seek_frames = static_cast<int>(muted_partial_frame_);
-    dest->ZeroFrames(frames_to_render);
+    dest->ZeroFramesPartial(dest_offset, frames_to_render);
     audio_buffer_.SeekFrames(seek_frames);
 
     // Determine the partial frame that remains to be skipped for next call. If
@@ -182,15 +181,17 @@ int AudioRendererAlgorithm::FillBuffer(AudioBus* dest,
   if (ola_window_size_ <= faster_step && slower_step >= ola_window_size_) {
     const int frames_to_copy =
         std::min(audio_buffer_.frames(), requested_frames);
-    const int frames_read = audio_buffer_.ReadFrames(frames_to_copy, 0, dest);
+    const int frames_read =
+        audio_buffer_.ReadFrames(frames_to_copy, dest_offset, dest);
     DCHECK_EQ(frames_read, frames_to_copy);
     return frames_read;
   }
 
   int rendered_frames = 0;
   do {
-    rendered_frames += WriteCompletedFramesTo(
-        requested_frames - rendered_frames, rendered_frames, dest);
+    rendered_frames +=
+        WriteCompletedFramesTo(requested_frames - rendered_frames,
+                               dest_offset + rendered_frames, dest);
   } while (rendered_frames < requested_frames &&
            RunOneWsolaIteration(playback_rate));
   return rendered_frames;
@@ -234,7 +235,7 @@ bool AudioRendererAlgorithm::CanPerformWsola() const {
       search_block_index_ + search_block_size <= frames;
 }
 
-bool AudioRendererAlgorithm::RunOneWsolaIteration(float playback_rate) {
+bool AudioRendererAlgorithm::RunOneWsolaIteration(double playback_rate) {
   if (!CanPerformWsola())
     return false;
 
@@ -260,7 +261,7 @@ bool AudioRendererAlgorithm::RunOneWsolaIteration(float playback_rate) {
   return true;
 }
 
-void AudioRendererAlgorithm::UpdateOutputTime(float playback_rate,
+void AudioRendererAlgorithm::UpdateOutputTime(double playback_rate,
                                               double time_change) {
   output_time_ += time_change;
   // Center of the search region, in frames.
@@ -269,7 +270,7 @@ void AudioRendererAlgorithm::UpdateOutputTime(float playback_rate,
   search_block_index_ = search_block_center_index - search_block_center_offset_;
 }
 
-void AudioRendererAlgorithm::RemoveOldInputFrames(float playback_rate) {
+void AudioRendererAlgorithm::RemoveOldInputFrames(double playback_rate) {
   const int earliest_used_index = std::min(target_block_index_,
                                            search_block_index_);
   if (earliest_used_index <= 0)

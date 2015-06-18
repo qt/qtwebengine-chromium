@@ -25,6 +25,7 @@
 #define ContainerNode_h
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "core/CoreExport.h"
 #include "core/dom/Node.h"
 #include "core/html/CollectionType.h"
 #include "wtf/OwnPtr.h"
@@ -36,7 +37,6 @@ class ClassCollection;
 class ExceptionState;
 class FloatPoint;
 class HTMLCollection;
-template <typename NodeType> class StaticNodeTypeList;
 using StaticElementList = StaticNodeTypeList<Element>;
 class TagCollection;
 
@@ -51,8 +51,15 @@ enum DynamicRestyleFlags {
     ChildrenAffectedByIndirectAdjacentRules = 1 << 7,
     ChildrenAffectedByForwardPositionalRules = 1 << 8,
     ChildrenAffectedByBackwardPositionalRules = 1 << 9,
+    AffectedByFirstChildRules = 1 << 10,
+    AffectedByLastChildRules = 1 << 11,
 
-    NumberOfDynamicRestyleFlags = 10,
+    NumberOfDynamicRestyleFlags = 12,
+};
+
+enum SubtreeModificationAction {
+    DispatchSubtreeModifiedEvent,
+    OmitSubtreeModifiedEvent
 };
 
 // This constant controls how much buffer is initially allocated
@@ -61,7 +68,7 @@ enum DynamicRestyleFlags {
 const int initialNodeVectorSize = 11;
 using NodeVector = WillBeHeapVector<RefPtrWillBeMember<Node>, initialNodeVectorSize>;
 
-class ContainerNode : public Node {
+class CORE_EXPORT ContainerNode : public Node {
 public:
     virtual ~ContainerNode();
 
@@ -93,13 +100,13 @@ public:
     PassRefPtrWillBeRawPtr<RadioNodeList> radioNodeList(const AtomicString&, bool onlyMatchImgElements = false);
 
     // These methods are only used during parsing.
-    // They don't send DOM mutation events or handle reparenting.
+    // They don't send DOM mutation events or accept DocumentFragments.
     void parserAppendChild(PassRefPtrWillBeRawPtr<Node>);
     void parserRemoveChild(Node&);
     void parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node& refChild);
     void parserTakeAllChildrenFrom(ContainerNode&);
 
-    void removeChildren();
+    void removeChildren(SubtreeModificationAction = DispatchSubtreeModifiedEvent);
 
     void cloneChildNodes(ContainerNode* clone);
 
@@ -142,6 +149,14 @@ public:
 
     bool childrenAffectedByBackwardPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
     void setChildrenAffectedByBackwardPositionalRules() { setRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
+
+    bool affectedByFirstChildRules() const { return hasRestyleFlag(AffectedByFirstChildRules); }
+    void setAffectedByFirstChildRules() { setRestyleFlag(AffectedByFirstChildRules); }
+
+    bool affectedByLastChildRules() const { return hasRestyleFlag(AffectedByLastChildRules); }
+    void setAffectedByLastChildRules() { setRestyleFlag(AffectedByLastChildRules); }
+
+    bool needsAdjacentStyleRecalc() const;
 
     // FIXME: These methods should all be renamed to something better than "check",
     // since it's not clear that they alter the style bits of siblings and children.
@@ -198,7 +213,7 @@ public:
 
     void disconnectDescendantFrames();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);
@@ -219,8 +234,8 @@ protected:
     template <typename Collection> Collection* cachedCollection(CollectionType);
 
 private:
-    bool isContainerNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isTextNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isContainerNode() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isTextNode() const = delete; // This will catch anyone doing an unnecessary check.
 
     NodeListsNodeData& ensureNodeLists();
     void removeBetween(Node* previousChild, Node* nextChild, Node& oldChild);
@@ -253,6 +268,8 @@ private:
     bool getUpperLeftCorner(FloatPoint&) const;
     bool getLowerRightCorner(FloatPoint&) const;
 
+    void handleStyleChangeOnFocusStateChange();
+
     RawPtrWillBeMember<Node> m_firstChild;
     RawPtrWillBeMember<Node> m_lastChild;
 };
@@ -260,6 +277,8 @@ private:
 #if ENABLE(ASSERT)
 bool childAttachedAllowedWhenAttachingChildren(ContainerNode*);
 #endif
+
+WILL_NOT_BE_EAGERLY_TRACED_CLASS(ContainerNode);
 
 DEFINE_NODE_TYPE_CASTS(ContainerNode, isContainerNode());
 
@@ -299,6 +318,13 @@ inline void ContainerNode::detachChildren(const AttachContext& context)
 
     for (Node* child = firstChild(); child; child = child->nextSibling())
         child->detach(childrenContext);
+}
+
+inline bool ContainerNode::needsAdjacentStyleRecalc() const
+{
+    if (!childrenAffectedByDirectAdjacentRules() && !childrenAffectedByIndirectAdjacentRules())
+        return false;
+    return childNeedsStyleRecalc() || childNeedsStyleInvalidation();
 }
 
 inline unsigned Node::countChildren() const

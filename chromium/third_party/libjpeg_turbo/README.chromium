@@ -31,6 +31,16 @@ following changes which are not merged to upstream:
 * Removed .func / .endfunc lines from arm assembly
   ( https://sourceforge.net/p/libjpeg-turbo/bugs/72/ , landed at
   https://sourceforge.net/p/libjpeg-turbo/code/1375 ).
+* Fix libjpeg_turbo svn r64 libjpeg6b compat issue: make the fast path Huffman
+  decoder fallback to slow decoding if the Huffman decoding bit sentinel > 16,
+  this to match the exact behavior of jpeg_huff_decode().
+  http://crbug.com/398235
 
 The 'google.patch' file represents our changes from the original
 libjpeg-turbo-1.2.
+
+Refer to working-with-nested-repos [1] for details of how to setup your git
+svn client to update the code (for making local changes, cherry picking from
+upstream, etc).
+
+[1] https://www.chromium.org/developers/how-tos/get-the-code/working-with-nested-repos

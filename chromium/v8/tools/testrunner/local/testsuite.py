@@ -34,6 +34,17 @@ from . import statusfile
 from . import utils
 from ..objects import testcase
 
+# Use this to run several variants of the tests.
+VARIANT_FLAGS = {
+    "default": [],
+    "stress": ["--stress-opt", "--always-opt"],
+    "turbofan": ["--turbo", "--always-opt"],
+    "nocrankshaft": ["--nocrankshaft"]}
+
+FAST_VARIANT_FLAGS = [
+    f for v, f in VARIANT_FLAGS.iteritems() if v in ["default", "turbofan"]
+]
+
 class TestSuite(object):
 
   @staticmethod
@@ -81,6 +92,11 @@ class TestSuite(object):
   def VariantFlags(self, testcase, default_flags):
     if testcase.outcomes and statusfile.OnlyStandardVariant(testcase.outcomes):
       return [[]]
+    if testcase.outcomes and statusfile.OnlyFastVariants(testcase.outcomes):
+      # FAST_VARIANTS implies no --always-opt.
+      return [ filter(lambda flag: flag != "--always-opt", f)
+               for f in filter(lambda flags: flags in FAST_VARIANT_FLAGS,
+                               default_flags) ]
     return default_flags
 
   def DownloadData(self):
@@ -123,6 +139,9 @@ class TestSuite(object):
         t.outcomes = self.rules[testname]
         if statusfile.DoSkip(t.outcomes):
           continue  # Don't add skipped tests to |filtered|.
+        for outcome in t.outcomes:
+          if outcome.startswith('Flags: '):
+            t.flags += outcome[7:].split()
         flaky = statusfile.IsFlaky(t.outcomes)
         slow = statusfile.IsSlow(t.outcomes)
         pass_fail = statusfile.IsPassOrFail(t.outcomes)
@@ -252,6 +271,9 @@ class GoogleTestSuite(TestSuite):
             ["--gtest_random_seed=%s" % context.random_seed] +
             ["--gtest_print_time=0"] +
             context.mode_flags)
+
+  def VariantFlags(self, testcase, default_flags):
+    return [[]]
 
   def shell(self):
     return self.name

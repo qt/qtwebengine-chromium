@@ -26,7 +26,7 @@ class NativeImageBuffer : public base::RefCountedThreadSafe<NativeImageBuffer> {
   virtual void AddClient(gfx::GLImage* client) = 0;
   virtual void RemoveClient(gfx::GLImage* client) = 0;
   virtual bool IsClient(gfx::GLImage* client) = 0;
-  virtual void BindToTexture(GLenum target) = 0;
+  virtual void BindToTexture(GLenum target) const = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<NativeImageBuffer>;
@@ -36,10 +36,21 @@ class NativeImageBuffer : public base::RefCountedThreadSafe<NativeImageBuffer> {
   DISALLOW_COPY_AND_ASSIGN(NativeImageBuffer);
 };
 
+class ScopedUpdateTexture {
+ public:
+  ScopedUpdateTexture();
+  ~ScopedUpdateTexture();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedUpdateTexture);
+};
+
 // An immutable description that can be used to create a texture that shares
 // the underlying image buffer(s).
 class TextureDefinition {
  public:
+  static void AvoidEGLTargetTextureReuse();
+
   TextureDefinition();
   TextureDefinition(Texture* texture,
                     unsigned int version,
@@ -47,6 +58,8 @@ class TextureDefinition {
   virtual ~TextureDefinition();
 
   Texture* CreateTexture() const;
+
+  // Must be wrapped with ScopedUpdateTexture.
   void UpdateTexture(Texture* texture) const;
 
   unsigned int version() const { return version_; }
@@ -58,7 +71,11 @@ class TextureDefinition {
   scoped_refptr<NativeImageBuffer> image() const { return image_buffer_; }
 
  private:
+  bool SafeToRenderFrom() const;
+  void UpdateTextureInternal(Texture* texture) const;
+
   struct LevelInfo {
+    LevelInfo();
     LevelInfo(GLenum target,
               GLenum internal_format,
               GLsizei width,
@@ -81,8 +98,6 @@ class TextureDefinition {
     bool cleared;
   };
 
-  typedef std::vector<std::vector<LevelInfo> > LevelInfos;
-
   unsigned int version_;
   GLenum target_;
   scoped_refptr<NativeImageBuffer> image_buffer_;
@@ -92,7 +107,10 @@ class TextureDefinition {
   GLenum wrap_t_;
   GLenum usage_;
   bool immutable_;
-  LevelInfos level_infos_;
+  bool defined_;
+
+  // Only support textures with one face and one level.
+  LevelInfo level_info_;
 };
 
 }  // namespage gles2

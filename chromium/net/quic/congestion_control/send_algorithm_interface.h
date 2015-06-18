@@ -21,6 +21,7 @@
 
 namespace net {
 
+class CachedNetworkParameters;
 class RttStats;
 
 class NET_EXPORT_PRIVATE SendAlgorithmInterface {
@@ -29,18 +30,24 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   typedef std::vector<std::pair<QuicPacketSequenceNumber, TransmissionInfo>>
       CongestionVector;
 
-  static SendAlgorithmInterface* Create(const QuicClock* clock,
-                                        const RttStats* rtt_stats,
-                                        CongestionControlType type,
-                                        QuicConnectionStats* stats);
+  static SendAlgorithmInterface* Create(
+      const QuicClock* clock,
+      const RttStats* rtt_stats,
+      CongestionControlType type,
+      QuicConnectionStats* stats,
+      QuicPacketCount initial_congestion_window);
 
   virtual ~SendAlgorithmInterface() {}
 
-  virtual void SetFromConfig(const QuicConfig& config, bool is_server) = 0;
+  virtual void SetFromConfig(const QuicConfig& config,
+                             Perspective perspective) = 0;
 
   // Sets the number of connections to emulate when doing congestion control,
   // particularly for congestion avoidance.  Can be set any time.
   virtual void SetNumEmulatedConnections(int num_connections) = 0;
+
+  // Sets the maximum congestion window in bytes.
+  virtual void SetMaxCongestionWindow(QuicByteCount max_congestion_window) = 0;
 
   // Indicates an update to the congestion state, caused either by an incoming
   // ack or loss event timeout.  |rtt_updated| indicates whether a new
@@ -67,9 +74,6 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // Called when the retransmission timeout fires.  Neither OnPacketAbandoned
   // nor OnPacketLost will be called for these packets.
   virtual void OnRetransmissionTimeout(bool packets_retransmitted) = 0;
-
-  // Called when the last retransmission timeout was spurious.
-  virtual void RevertRetransmissionTimeout() = 0;
 
   // Calculate the time until we can send the next packet.
   virtual QuicTime::Delta TimeUntilSend(
@@ -110,6 +114,13 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   virtual QuicByteCount GetSlowStartThreshold() const = 0;
 
   virtual CongestionControlType GetCongestionControlType() const = 0;
+
+  // Called by the Session when we get a bandwidth estimate from the client.
+  // Uses the max bandwidth in the params if |max_bandwidth_resumption| is true.
+  // Returns true if initial connection state is changed as a result.
+  virtual bool ResumeConnectionState(
+      const CachedNetworkParameters& cached_network_params,
+      bool max_bandwidth_resumption) = 0;
 };
 
 }  // namespace net

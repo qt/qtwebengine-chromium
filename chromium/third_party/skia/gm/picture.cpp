@@ -39,18 +39,24 @@ static SkPicture* make_picture() {
 //
 class PictureGM : public skiagm::GM {
 public:
-    PictureGM() : fPicture(make_picture()) {}
+    PictureGM()
+        : fPicture(NULL)
+    {}
 
 protected:
-    virtual SkString onShortName() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
+         fPicture.reset(make_picture());
+    }
+
+    SkString onShortName() override {
         return SkString("pictures");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(450, 120);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         canvas->translate(10, 10);
 
         SkMatrix matrix;

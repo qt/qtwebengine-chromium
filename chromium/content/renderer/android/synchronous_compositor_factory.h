@@ -14,15 +14,17 @@ class MessageLoopProxy;
 }
 
 namespace cc {
+class BeginFrameSource;
 class ContextProvider;
 class OutputSurface;
 }
 
-namespace webkit {
-namespace gpu {
+namespace cc_blink {
 class ContextProviderWebContext;
-class WebGraphicsContext3DInProcessCommandBufferImpl;
 }
+
+namespace gpu_blink {
+class WebGraphicsContext3DInProcessCommandBufferImpl;
 }
 
 namespace content {
@@ -52,13 +54,16 @@ class SynchronousCompositorFactory {
   // The factory maintains ownership of the returned interface.
   virtual InputHandlerManagerClient* GetInputHandlerManagerClient() = 0;
 
-  virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      CreateOffscreenContextProvider(
-          const blink::WebGraphicsContext3D::Attributes& attributes,
-          const std::string& debug_name) = 0;
+  virtual scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
+      int routing_id) = 0;
+
+  virtual scoped_refptr<cc_blink::ContextProviderWebContext>
+  CreateOffscreenContextProvider(
+      const blink::WebGraphicsContext3D::Attributes& attributes,
+      const std::string& debug_name) = 0;
   virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
       int frame_id) = 0;
-  virtual webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl*
+  virtual gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl*
       CreateOffscreenGraphicsContext3D(
           const blink::WebGraphicsContext3D::Attributes& attributes) = 0;
 

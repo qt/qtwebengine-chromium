@@ -41,6 +41,7 @@ cr.define('options', function() {
                           ['certType', 'label_channel_id_type'],
                           ['created', 'label_channel_id_created']],
     'service_worker': [['origin', 'label_service_worker_origin'],
+                       ['size', 'label_service_worker_size'],
                        ['scopes', 'label_service_worker_scopes']],
     'flash_lso': [['domain', 'label_cookie_domain']],
   };
@@ -64,9 +65,9 @@ cr.define('options', function() {
   /**
    * Create tree nodes for the objects in the data array, and insert them all
    * into the given list using its @{code splice} method at the given index.
-   * @param {Array.<Object>} data The data objects for the nodes to add.
+   * @param {Array<Object>} data The data objects for the nodes to add.
    * @param {number} start The index at which to start inserting the nodes.
-   * @return {Array.<options.CookieTreeNode>} An array of CookieTreeNodes added.
+   * @return {Array<options.CookieTreeNode>} An array of CookieTreeNodes added.
    */
   function spliceTreeNodes(data, start, list) {
     var nodes = data.map(function(x) { return new CookieTreeNode(x); });
@@ -395,7 +396,7 @@ cr.define('options', function() {
     /**
      * Insert the given list of cookie tree nodes at the given index.
      * Both CookiesList and CookieTreeNode implement this API.
-     * @param {Array.<Object>} data The data objects for the nodes to add.
+     * @param {Array<Object>} data The data objects for the nodes to add.
      * @param {number} start The index at which to start inserting the nodes.
      */
     insertAt: function(data, start) {
@@ -553,7 +554,7 @@ cr.define('options', function() {
      * Uses preallocated DOM elements for each cookie node type from @{code
      * infoNodes}, and inserts the appropriate elements to @{code element}.
      * @param {Element} element The DOM element to insert elements to.
-     * @param {Object.<string, {table: Element, info: Object.<string,
+     * @param {Object<string, {table: Element, info: Object<string,
      *     Element>}>} infoNodes The map from cookie node types to maps from
      *     cookie attribute names to DOM elements to display cookie attribute
      *     values, created by @{code CookiesList.decorate}.
@@ -733,6 +734,8 @@ cr.define('options', function() {
      */
     handleKeyLeftRight_: function(e) {
       var id = e.keyIdentifier;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey)
+        return;
       if ((id == 'Left' || id == 'Right') && this.expandedItem) {
         var cs = this.ownerDocument.defaultView.getComputedStyle(this);
         var rtl = cs.direction == 'rtl';
@@ -828,7 +831,7 @@ cr.define('options', function() {
     /**
      * Insert the given list of cookie tree nodes at the given index.
      * Both CookiesList and CookieTreeNode implement this API.
-     * @param {Array.<Object>} data The data objects for the nodes to add.
+     * @param {Array<Object>} data The data objects for the nodes to add.
      * @param {number} start The index at which to start inserting the nodes.
      */
     insertAt: function(data, start) {

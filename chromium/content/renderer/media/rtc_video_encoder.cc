@@ -15,9 +15,10 @@
 #include "media/base/bitstream_buffer.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
-#include "media/filters/gpu_video_accelerator_factories.h"
 #include "media/filters/h264_parser.h"
+#include "media/renderers/gpu_video_accelerator_factories.h"
 #include "media/video/video_encode_accelerator.h"
+#include "third_party/libyuv/include/libyuv.h"
 #include "third_party/webrtc/system_wrappers/interface/tick_util.h"
 
 #define NOTIFY_ERROR(x)                             \
@@ -356,7 +357,7 @@ void RTCVideoEncoder::Impl::RequireBitstreamBuffers(
   input_frame_coded_size_ = input_coded_size;
 
   for (unsigned int i = 0; i < input_count + kInputBufferExtraCount; ++i) {
-    base::SharedMemory* shm =
+    scoped_ptr<base::SharedMemory> shm =
         gpu_factories_->CreateSharedMemory(media::VideoFrame::AllocationSize(
             media::VideoFrame::I420, input_coded_size));
     if (!shm) {
@@ -365,12 +366,12 @@ void RTCVideoEncoder::Impl::RequireBitstreamBuffers(
       NOTIFY_ERROR(media::VideoEncodeAccelerator::kPlatformFailureError);
       return;
     }
-    input_buffers_.push_back(shm);
+    input_buffers_.push_back(shm.release());
     input_buffers_free_.push_back(i);
   }
 
   for (int i = 0; i < kOutputBufferCount; ++i) {
-    base::SharedMemory* shm =
+    scoped_ptr<base::SharedMemory> shm =
         gpu_factories_->CreateSharedMemory(output_buffer_size);
     if (!shm) {
       DLOG(ERROR) << "Impl::RequireBitstreamBuffers(): "
@@ -378,7 +379,7 @@ void RTCVideoEncoder::Impl::RequireBitstreamBuffers(
       NOTIFY_ERROR(media::VideoEncodeAccelerator::kPlatformFailureError);
       return;
     }
-    output_buffers_.push_back(shm);
+    output_buffers_.push_back(shm.release());
   }
 
   // Immediately provide all output buffers to the VEA.
@@ -502,6 +503,7 @@ void RTCVideoEncoder::Impl::EncodeOneFrame() {
           reinterpret_cast<uint8*>(input_buffer->memory()),
           input_buffer->mapped_size(),
           input_buffer->handle(),
+          0,
           base::TimeDelta(),
           base::Bind(&RTCVideoEncoder::Impl::EncodeFrameFinished, this, index));
   if (!frame.get()) {
@@ -513,18 +515,24 @@ void RTCVideoEncoder::Impl::EncodeOneFrame() {
   // Do a strided copy of the input frame to match the input requirements for
   // the encoder.
   // TODO(sheu): support zero-copy from WebRTC.  http://crbug.com/269312
-  media::CopyYPlane(next_frame->buffer(webrtc::kYPlane),
-                    next_frame->stride(webrtc::kYPlane),
-                    next_frame->height(),
-                    frame.get());
-  media::CopyUPlane(next_frame->buffer(webrtc::kUPlane),
-                    next_frame->stride(webrtc::kUPlane),
-                    next_frame->height(),
-                    frame.get());
-  media::CopyVPlane(next_frame->buffer(webrtc::kVPlane),
-                    next_frame->stride(webrtc::kVPlane),
-                    next_frame->height(),
-                    frame.get());
+  if (libyuv::I420Copy(next_frame->buffer(webrtc::kYPlane),
+                       next_frame->stride(webrtc::kYPlane),
+                       next_frame->buffer(webrtc::kUPlane),
+                       next_frame->stride(webrtc::kUPlane),
+                       next_frame->buffer(webrtc::kVPlane),
+                       next_frame->stride(webrtc::kVPlane),
+                       frame->data(media::VideoFrame::kYPlane),
+                       frame->stride(media::VideoFrame::kYPlane),
+                       frame->data(media::VideoFrame::kUPlane),
+                       frame->stride(media::VideoFrame::kUPlane),
+                       frame->data(media::VideoFrame::kVPlane),
+                       frame->stride(media::VideoFrame::kVPlane),
+                       next_frame->width(),
+                       next_frame->height())) {
+    DLOG(ERROR) << "Failed to copy buffer";
+    NOTIFY_ERROR(media::VideoEncodeAccelerator::kPlatformFailureError);
+    return;
+  }
 
   video_encoder_->Encode(frame, next_frame_keyframe);
   input_buffers_free_.pop_back();
@@ -586,7 +594,7 @@ RTCVideoEncoder::~RTCVideoEncoder() {
 
 int32_t RTCVideoEncoder::InitEncode(const webrtc::VideoCodec* codec_settings,
                                     int32_t number_of_cores,
-                                    uint32_t max_payload_size) {
+                                    size_t max_payload_size) {
   DVLOG(1) << "InitEncode(): codecType=" << codec_settings->codecType
            << ", width=" << codec_settings->width
            << ", height=" << codec_settings->height
@@ -673,7 +681,8 @@ int32_t RTCVideoEncoder::Release() {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int32_t RTCVideoEncoder::SetChannelParameters(uint32_t packet_loss, int rtt) {
+int32_t RTCVideoEncoder::SetChannelParameters(uint32_t packet_loss,
+                                              int64_t rtt) {
   DVLOG(3) << "SetChannelParameters(): packet_loss=" << packet_loss
            << ", rtt=" << rtt;
   // Ignored.

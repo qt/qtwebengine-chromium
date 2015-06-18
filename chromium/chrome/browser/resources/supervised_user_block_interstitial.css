@@ -3,7 +3,6 @@
  * found in the LICENSE file. */
 body {
   background-color: rgb(230, 230, 230);
-  font-family: Helvetica, Arial, sans-serif;
   font-size: 10pt;
   margin: 50px 40px 20px 40px;
   text-align: center;
@@ -41,8 +40,8 @@ a {
    * the resource manually. */
   -webkit-user-select: none;
   content: -webkit-image-set(
-      url('../../app/theme/default_100_percent/common/error_managed_mode_blocked_page.png') 1x,
-      url('../../app/theme/default_200_percent/common/error_managed_mode_blocked_page.png') 2x);
+      url(../../app/theme/default_100_percent/common/error_managed_mode_blocked_page.png) 1x,
+      url(../../app/theme/default_200_percent/common/error_managed_mode_blocked_page.png) 2x);
   margin-bottom: 15px;
   margin-top: 10px;
 }
@@ -62,6 +61,15 @@ a {
 
 #content-top {
   margin: 20px 25px;
+}
+
+#block-reason-message {
+  font-size: 80%;
+  margin-top: 5px;
+}
+
+#feedback-link {
+  font-size: 80%;
 }
 
 button {

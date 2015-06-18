@@ -32,12 +32,12 @@
 #include "core/EventNames.h"
 #include "core/HTMLNames.h"
 #include "core/XLinkNames.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransfer.h"
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
+#include "core/dom/AXObjectCache.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/NodeTraversal.h"
@@ -73,13 +73,13 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutImage.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/EditorClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderImage.h"
 #include "core/svg/SVGImageElement.h"
 #include "platform/KillRing.h"
 #include "platform/weborigin/KURL.h"
@@ -200,11 +200,6 @@ bool Editor::canDHTMLCut()
 bool Editor::canDHTMLCopy()
 {
     return !frame().selection().isInPasswordField() && !dispatchCPPEvent(EventTypeNames::beforecopy, DataTransferNumb);
-}
-
-bool Editor::canDHTMLPaste()
-{
-    return !dispatchCPPEvent(EventTypeNames::beforepaste, DataTransferNumb);
 }
 
 bool Editor::canCut() const
@@ -414,32 +409,33 @@ void Editor::pasteWithPasteboard(Pasteboard* pasteboard)
         pasteAsFragment(fragment, canSmartReplaceWithPasteboard(pasteboard), chosePlainText);
 }
 
-void Editor::writeSelectionToPasteboard(Pasteboard* pasteboard, Range* selectedRange, const String& plainText)
+void Editor::writeSelectionToPasteboard()
 {
-    String html = createMarkup(selectedRange, 0, AnnotateForInterchange, false, ResolveNonLocalURLs);
-    KURL url = selectedRange->startContainer()->document().url();
-    pasteboard->writeHTML(html, url, plainText, canSmartCopyOrDelete());
+    KURL url = frame().document()->url();
+    String html = frame().selection().selectedHTMLForClipboard();
+    String plainText = frame().selectedTextForClipboard();
+    Pasteboard::generalPasteboard()->writeHTML(html, url, plainText, canSmartCopyOrDelete());
 }
 
-static Image* imageFromNode(const Node& node)
+static PassRefPtr<Image> imageFromNode(const Node& node)
 {
     node.document().updateLayoutIgnorePendingStylesheets();
-    RenderObject* renderer = node.renderer();
-    if (!renderer)
+    LayoutObject* layoutObject = node.layoutObject();
+    if (!layoutObject)
         return nullptr;
 
-    if (renderer->isCanvas())
-        return toHTMLCanvasElement(node).copiedImage();
+    if (layoutObject->isCanvas())
+        return toHTMLCanvasElement(node).copiedImage(FrontBuffer);
 
-    if (renderer->isImage()) {
-        RenderImage* renderImage = toRenderImage(renderer);
-        if (!renderImage)
+    if (layoutObject->isImage()) {
+        LayoutImage* layoutImage = toLayoutImage(layoutObject);
+        if (!layoutImage)
             return nullptr;
 
-        ImageResource* cachedImage = renderImage->cachedImage();
+        ImageResource* cachedImage = layoutImage->cachedImage();
         if (!cachedImage || cachedImage->errorOccurred())
             return nullptr;
-        return cachedImage->imageForRenderer(renderImage);
+        return cachedImage->imageForLayoutObject(layoutImage);
     }
 
     return nullptr;
@@ -475,7 +471,7 @@ bool Editor::dispatchCPPEvent(const AtomicString& eventType, DataTransferAccessP
     if (!target)
         return true;
 
-    RefPtrWillBeRawPtr<DataTransfer> dataTransfer = DataTransfer::create(
+    DataTransfer* dataTransfer = DataTransfer::create(
         DataTransfer::CopyAndPaste,
         policy,
         policy == DataTransferWritable
@@ -485,10 +481,8 @@ bool Editor::dispatchCPPEvent(const AtomicString& eventType, DataTransferAccessP
     RefPtrWillBeRawPtr<Event> evt = ClipboardEvent::create(eventType, true, true, dataTransfer);
     target->dispatchEvent(evt, IGNORE_EXCEPTION);
     bool noDefaultProcessing = evt->defaultPrevented();
-    if (noDefaultProcessing && policy == DataTransferWritable) {
-        RefPtrWillBeRawPtr<DataObject> dataObject = dataTransfer->dataObject();
-        Pasteboard::generalPasteboard()->writeDataObject(dataObject.release());
-    }
+    if (noDefaultProcessing && policy == DataTransferWritable)
+        Pasteboard::generalPasteboard()->writeDataObject(dataTransfer->dataObject());
 
     // invalidate clipboard here for security
     dataTransfer->setAccessPolicy(DataTransferNumb);
@@ -830,12 +824,12 @@ void Editor::cut()
     RefPtrWillBeRawPtr<Range> selection = selectedRange();
     if (shouldDeleteRange(selection.get())) {
         spellChecker().updateMarkersForWordsAffectedByEditing(true);
-        String plainText = frame().selectedTextForClipboard();
         if (enclosingTextFormControl(frame().selection().start())) {
+            String plainText = frame().selectedTextForClipboard();
             Pasteboard::generalPasteboard()->writePlainText(plainText,
                 canSmartCopyOrDelete() ? Pasteboard::CanSmartReplace : Pasteboard::CannotSmartReplace);
         } else {
-            writeSelectionToPasteboard(Pasteboard::generalPasteboard(), selection.get(), plainText);
+            writeSelectionToPasteboard();
         }
         deleteSelectionWithSmartDelete(canSmartCopyOrDelete());
     }
@@ -855,7 +849,7 @@ void Editor::copy()
         if (HTMLImageElement* imageElement = imageElementFromImageDocument(document))
             writeImageNodeToPasteboard(Pasteboard::generalPasteboard(), imageElement, document->title());
         else
-            writeSelectionToPasteboard(Pasteboard::generalPasteboard(), selectedRange().get(), frame().selectedTextForClipboard());
+            writeSelectionToPasteboard();
     }
 }
 
@@ -964,7 +958,7 @@ void Editor::countEvent(ExecutionContext* executionContext, const Event* event)
 
 void Editor::copyImage(const HitTestResult& result)
 {
-    writeImageNodeToPasteboard(Pasteboard::generalPasteboard(), result.innerNonSharedNode(), result.altDisplayString());
+    writeImageNodeToPasteboard(Pasteboard::generalPasteboard(), result.innerNodeOrImageMapImage(), result.altDisplayString());
 }
 
 bool Editor::canUndo()
@@ -1001,7 +995,7 @@ void Editor::setBaseWritingDirection(WritingDirection direction)
             return;
         focusedElement->setAttribute(dirAttr, direction == LeftToRightWritingDirection ? "ltr" : "rtl");
         focusedElement->dispatchInputEvent();
-        frame().document()->updateRenderTreeIfNeeded();
+        frame().document()->updateLayoutTreeIfNeeded();
         return;
     }
 
@@ -1147,12 +1141,6 @@ void Editor::computeAndSetTypingStyle(StylePropertySet* style, EditAction editin
     frame().selection().setTypingStyle(typingStyle);
 }
 
-bool Editor::findString(const String& target, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection)
-{
-    FindOptions options = (forward ? 0 : Backwards) | (caseFlag ? 0 : CaseInsensitive) | (wrapFlag ? WrapAround : 0) | (startInSelection ? StartInSelection : 0);
-    return findString(target, options);
-}
-
 bool Editor::findString(const String& target, FindOptions options)
 {
     VisibleSelection selection = frame().selection().selection();
@@ -1173,7 +1161,7 @@ PassRefPtrWillBeRawPtr<Range> Editor::findStringAndScrollToVisible(const String&
     if (!nextMatch)
         return nullptr;
 
-    nextMatch->firstNode()->renderer()->scrollRectToVisible(nextMatch->boundingBox(),
+    nextMatch->firstNode()->layoutObject()->scrollRectToVisible(LayoutRect(nextMatch->boundingBox()),
         ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
 
     return nextMatch.release();
@@ -1278,7 +1266,7 @@ void Editor::toggleOverwriteModeEnabled()
     frame().selection().setShouldShowBlockCursor(m_overwriteModeEnabled);
 }
 
-void Editor::trace(Visitor* visitor)
+DEFINE_TRACE(Editor)
 {
     visitor->trace(m_frame);
     visitor->trace(m_lastEditCommand);

@@ -5,10 +5,10 @@
 #ifndef ScreenOrientationController_h
 #define ScreenOrientationController_h
 
-#include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/LocalFrameLifecycleObserver.h"
 #include "core/frame/PlatformEventController.h"
+#include "modules/ModulesExport.h"
 #include "platform/Supplementable.h"
-#include "platform/Timer.h"
 #include "public/platform/WebLockOrientationCallback.h"
 #include "public/platform/WebScreenOrientationLockType.h"
 #include "public/platform/WebScreenOrientationType.h"
@@ -19,10 +19,10 @@ class FrameView;
 class ScreenOrientation;
 class WebScreenOrientationClient;
 
-class ScreenOrientationController final
+class MODULES_EXPORT ScreenOrientationController final
     : public NoBaseWillBeGarbageCollectedFinalized<ScreenOrientationController>
     , public WillBeHeapSupplement<LocalFrame>
-    , public FrameDestructionObserver
+    , public LocalFrameLifecycleObserver
     , public PlatformEventController {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScreenOrientationController);
     WTF_MAKE_NONCOPYABLE(ScreenOrientationController);
@@ -39,11 +39,12 @@ public:
     static ScreenOrientationController* from(LocalFrame&);
     static const char* supplementName();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    explicit ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
-    static WebScreenOrientationType computeOrientation(FrameView*);
+    ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
+
+    static WebScreenOrientationType computeOrientation(Chrome&);
 
     // Inherited from PlatformEventController.
     virtual void didUpdateData() override;
@@ -52,20 +53,20 @@ private:
     virtual bool hasLastData() override;
     virtual void pageVisibilityChanged() override;
 
-    // Inherited from FrameDestructionObserver.
+    // Inherited from LocalFrameLifecycleObserver.
     virtual void willDetachFrameHost() override;
 
     void notifyDispatcher();
 
     void updateOrientation();
 
-    void dispatchEventTimerFired(Timer<ScreenOrientationController>*);
+    void dispatchChangeEvent();
 
     bool isActiveAndVisible() const;
 
     PersistentWillBeMember<ScreenOrientation> m_orientation;
     WebScreenOrientationClient* m_client;
-    Timer<ScreenOrientationController> m_dispatchEventTimer;
+    bool m_isDispatchingEvent;
 };
 
 } // namespace blink

@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/iterator.h"
 #include "third_party/leveldatabase/src/include/leveldb/options.h"
@@ -236,9 +237,14 @@ bool SessionStorageDatabase::DeleteArea(const std::string& namespace_id,
 }
 
 bool SessionStorageDatabase::DeleteNamespace(const std::string& namespace_id) {
-  if (!LazyOpen(false)) {
-    // No need to create the database if it doesn't exist.
-    return true;
+  {
+    // The caller should have called other methods to open the DB before this
+    // function. Otherwise, DB stores nothing interesting related to the
+    // specified namespace.
+    // Do nothing if the DB is not open (or we know it has failed already),
+    base::AutoLock auto_lock(db_lock_);
+    if (!IsOpen() || db_error_ || is_inconsistent_)
+      return false;
   }
   DBOperation operation(this);
   // Itereate through the areas in the namespace.
@@ -376,6 +382,7 @@ leveldb::Status SessionStorageDatabase::TryToOpen(leveldb::DB** db) {
   // situation gracefully by creating the database now.
   options.max_open_files = 0;  // Use minimum.
   options.create_if_missing = true;
+  options.reuse_logs = leveldb_env::kDefaultLogReuseOptionValue;
 #if defined(OS_WIN)
   return leveldb::DB::Open(options, base::WideToUTF8(file_path_.value()), db);
 #elif defined(OS_POSIX)

@@ -26,14 +26,6 @@ using base::internal::RANGE_OVERFLOW;
 using base::internal::RANGE_UNDERFLOW;
 using base::enable_if;
 
-// MSVS 2013 ia32 may not reset the FPU between calculations, and the test
-// framework masks the exceptions. So we just force a manual reset after NaN.
-inline void ResetFloatingPointUnit() {
-#if defined(COMPILER_MSVC) && defined(ARCH_CPU_32_BITS)
-  _mm_empty();
-#endif
-}
-
 // These tests deliberately cause arithmetic overflows. If the compiler is
 // aggressive enough, it can const fold these overflows. Disable warnings about
 // overflows for const expressions.
@@ -247,6 +239,9 @@ static void TestArithmetic(const char* dst, int line) {
   TEST_EXPECTED_VALUE(0, (CheckedNumeric<Dst>() * 1));
   TEST_EXPECTED_VALUE(1, (CheckedNumeric<Dst>(1) * 1));
   TEST_EXPECTED_VALUE(-2, (CheckedNumeric<Dst>(-1) * 2));
+  TEST_EXPECTED_VALUE(0, (CheckedNumeric<Dst>(0) * 0));
+  TEST_EXPECTED_VALUE(0, (CheckedNumeric<Dst>(-1) * 0));
+  TEST_EXPECTED_VALUE(0, (CheckedNumeric<Dst>(0) * -1));
   TEST_EXPECTED_VALIDITY(
       RANGE_OVERFLOW, CheckedNumeric<Dst>(DstLimits::max()) * DstLimits::max());
 
@@ -341,7 +336,6 @@ struct TestNumericConversion<Dst, Src, SIGN_PRESERVING_VALUE_PRESERVING> {
       TEST_EXPECTED_RANGE(RANGE_OVERFLOW, SrcLimits::infinity());
       TEST_EXPECTED_RANGE(RANGE_UNDERFLOW, SrcLimits::infinity() * -1);
       TEST_EXPECTED_RANGE(RANGE_INVALID, SrcLimits::quiet_NaN());
-      ResetFloatingPointUnit();
     } else if (numeric_limits<Src>::is_signed) {
       TEST_EXPECTED_RANGE(RANGE_VALID, static_cast<Src>(-1));
       TEST_EXPECTED_RANGE(RANGE_VALID, SrcLimits::min());
@@ -373,7 +367,6 @@ struct TestNumericConversion<Dst, Src, SIGN_PRESERVING_NARROW> {
       TEST_EXPECTED_RANGE(RANGE_OVERFLOW, SrcLimits::infinity());
       TEST_EXPECTED_RANGE(RANGE_UNDERFLOW, SrcLimits::infinity() * -1);
       TEST_EXPECTED_RANGE(RANGE_INVALID, SrcLimits::quiet_NaN());
-      ResetFloatingPointUnit();
     } else if (SrcLimits::is_signed) {
       TEST_EXPECTED_VALUE(-1, checked_dst - static_cast<Src>(1));
       TEST_EXPECTED_RANGE(RANGE_UNDERFLOW, SrcLimits::min());
@@ -432,7 +425,6 @@ struct TestNumericConversion<Dst, Src, SIGN_TO_UNSIGN_NARROW> {
       TEST_EXPECTED_RANGE(RANGE_OVERFLOW, SrcLimits::infinity());
       TEST_EXPECTED_RANGE(RANGE_UNDERFLOW, SrcLimits::infinity() * -1);
       TEST_EXPECTED_RANGE(RANGE_INVALID, SrcLimits::quiet_NaN());
-      ResetFloatingPointUnit();
     } else {
       TEST_EXPECTED_RANGE(RANGE_UNDERFLOW, SrcLimits::min());
     }

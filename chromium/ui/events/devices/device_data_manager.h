@@ -33,15 +33,17 @@ class EVENTS_DEVICES_EXPORT DeviceDataManager
   static DeviceDataManager* GetInstance();
   static bool HasInstance();
 
-  void ClearTouchTransformerRecord();
-  void UpdateTouchInfoForDisplay(int64_t display_id,
-                                 unsigned int touch_device_id,
+  void ClearTouchDeviceAssociations();
+  void UpdateTouchInfoForDisplay(int64_t target_display_id,
+                                 int touch_device_id,
                                  const gfx::Transform& touch_transformer);
-  void ApplyTouchTransformer(unsigned int touch_device_id, float* x, float* y);
-  int64_t GetDisplayForTouchDevice(unsigned int touch_device_id) const;
+  void ApplyTouchTransformer(int touch_device_id, float* x, float* y);
 
-  void UpdateTouchRadiusScale(unsigned int touch_device_id, double scale);
-  void ApplyTouchRadiusScale(unsigned int touch_device_id, double* radius);
+  // Gets the display that touches from |touch_device_id| should be sent to.
+  int64_t GetTargetDisplayForTouchDevice(int touch_device_id) const;
+
+  void UpdateTouchRadiusScale(int touch_device_id, double scale);
+  void ApplyTouchRadiusScale(int touch_device_id, double* radius);
 
   const std::vector<TouchscreenDevice>& touchscreen_devices() const {
     return touchscreen_devices_;
@@ -64,21 +66,27 @@ class EVENTS_DEVICES_EXPORT DeviceDataManager
       const std::vector<TouchscreenDevice>& devices) override;
   void OnKeyboardDevicesUpdated(
       const std::vector<KeyboardDevice>& devices) override;
+  void OnMouseDevicesUpdated(
+      const std::vector<InputDevice>& devices) override;
+  void OnTouchpadDevicesUpdated(
+      const std::vector<InputDevice>& devices) override;
 
  private:
   static DeviceDataManager* instance_;
 
-  bool IsTouchDeviceIdValid(unsigned int touch_device_id) const;
+  bool IsTouchDeviceIdValid(int touch_device_id) const;
 
   double touch_radius_scale_map_[kMaxDeviceNum];
 
-  // Table to keep track of which display id is mapped to which touch device.
-  int64_t touch_device_to_display_map_[kMaxDeviceNum];
+  // Index table to find the target display id for a touch device.
+  int64_t touch_device_to_target_display_map_[kMaxDeviceNum];
   // Index table to find the TouchTransformer for a touch device.
   gfx::Transform touch_device_transformer_map_[kMaxDeviceNum];
 
   std::vector<TouchscreenDevice> touchscreen_devices_;
   std::vector<KeyboardDevice> keyboard_devices_;
+  std::vector<InputDevice> mouse_devices_;
+  std::vector<InputDevice> touchpad_devices_;
 
   ObserverList<InputDeviceEventObserver> observers_;
 

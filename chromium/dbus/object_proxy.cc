@@ -55,12 +55,12 @@ ObjectProxy::ObjectProxy(Bus* bus,
     : bus_(bus),
       service_name_(service_name),
       object_path_(object_path),
-      filter_added_(false),
       ignore_service_unknown_errors_(
           options & IGNORE_SERVICE_UNKNOWN_ERRORS) {
 }
 
 ObjectProxy::~ObjectProxy() {
+  DCHECK(pending_calls_.empty());
 }
 
 // Originally we tried to make |method_call| a const reference, but we
@@ -169,17 +169,20 @@ void ObjectProxy::ConnectToSignal(const std::string& interface_name,
                                   OnConnectedCallback on_connected_callback) {
   bus_->AssertOnOriginThread();
 
-  base::PostTaskAndReplyWithResult(
-      bus_->GetDBusTaskRunner(),
-      FROM_HERE,
-      base::Bind(&ObjectProxy::ConnectToSignalInternal,
-                 this,
-                 interface_name,
-                 signal_name,
-                 signal_callback),
-      base::Bind(on_connected_callback,
-                 interface_name,
-                 signal_name));
+  if (bus_->HasDBusThread()) {
+    base::PostTaskAndReplyWithResult(
+        bus_->GetDBusTaskRunner(), FROM_HERE,
+        base::Bind(&ObjectProxy::ConnectToSignalInternal, this, interface_name,
+                   signal_name, signal_callback),
+        base::Bind(on_connected_callback, interface_name, signal_name));
+  } else {
+    // If the bus doesn't have a dedicated dbus thread we need to call
+    // ConnectToSignalInternal directly otherwise we might miss a signal
+    // that is currently queued if we do a PostTask.
+    const bool success =
+        ConnectToSignalInternal(interface_name, signal_name, signal_callback);
+    on_connected_callback.Run(interface_name, signal_name, success);
+  }
 }
 
 void ObjectProxy::SetNameOwnerChangedCallback(
@@ -202,22 +205,24 @@ void ObjectProxy::WaitForServiceToBeAvailable(
 void ObjectProxy::Detach() {
   bus_->AssertOnDBusThread();
 
-  if (filter_added_) {
-    if (!bus_->RemoveFilterFunction(&ObjectProxy::HandleMessageThunk, this)) {
-      LOG(ERROR) << "Failed to remove filter function";
-    }
-  }
+  if (bus_->is_connected())
+    bus_->RemoveFilterFunction(&ObjectProxy::HandleMessageThunk, this);
 
-  for (std::set<std::string>::iterator iter = match_rules_.begin();
-       iter != match_rules_.end(); ++iter) {
+  for (const auto& match_rule : match_rules_) {
     ScopedDBusError error;
-    bus_->RemoveMatch(*iter, error.get());
+    bus_->RemoveMatch(match_rule, error.get());
     if (error.is_set()) {
       // There is nothing we can do to recover, so just print the error.
-      LOG(ERROR) << "Failed to remove match rule: " << *iter;
+      LOG(ERROR) << "Failed to remove match rule: " << match_rule;
     }
   }
   match_rules_.clear();
+
+  for (auto* pending_call : pending_calls_) {
+    dbus_pending_call_cancel(pending_call);
+    dbus_pending_call_unref(pending_call);
+  }
+  pending_calls_.clear();
 }
 
 // static
@@ -276,9 +281,9 @@ void ObjectProxy::StartAsyncMethodCall(int timeout_ms,
       pending_call,
       &ObjectProxy::OnPendingCallIsCompleteThunk,
       data,
-      NULL);
+      &DeleteVoidPointer<OnPendingCallIsCompleteData>);
   CHECK(success) << "Unable to allocate memory";
-  dbus_pending_call_unref(pending_call);
+  pending_calls_.insert(pending_call);
 
   // It's now safe to unref the request message.
   dbus_message_unref(request_message);
@@ -298,6 +303,10 @@ void ObjectProxy::OnPendingCallIsComplete(DBusPendingCall* pending_call,
                                   start_time,
                                   response_message);
   bus_->GetOriginTaskRunner()->PostTask(FROM_HERE, task);
+
+  // Remove the pending call from the set.
+  pending_calls_.erase(pending_call);
+  dbus_pending_call_unref(pending_call);
 }
 
 void ObjectProxy::RunResponseCallback(ResponseCallback response_callback,
@@ -368,7 +377,6 @@ void ObjectProxy::OnPendingCallIsCompleteThunk(DBusPendingCall* pending_call,
                                 data->response_callback,
                                 data->error_callback,
                                 data->start_time);
-  delete data;
 }
 
 bool ObjectProxy::ConnectToNameOwnerChangedSignal() {
@@ -377,15 +385,8 @@ bool ObjectProxy::ConnectToNameOwnerChangedSignal() {
   if (!bus_->Connect() || !bus_->SetUpAsyncOperations())
     return false;
 
-  // We should add the filter only once. Otherwise, HandleMessage() will
-  // be called more than once.
-  if (!filter_added_) {
-    if (bus_->AddFilterFunction(&ObjectProxy::HandleMessageThunk, this)) {
-      filter_added_ = true;
-    } else {
-      LOG(ERROR) << "Failed to add filter function";
-    }
-  }
+  bus_->AddFilterFunction(&ObjectProxy::HandleMessageThunk, this);
+
   // Add a match_rule listening NameOwnerChanged for the well-known name
   // |service_name_|.
   const std::string name_owner_changed_match_rule =

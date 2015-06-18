@@ -9,17 +9,16 @@ namespace blink {
 
 struct PaintInfo;
 class LayoutPoint;
-class RenderBox;
-class RenderReplica;
+class LayoutReplica;
 
 class ReplicaPainter {
 public:
-    ReplicaPainter(RenderReplica& renderReplica) : m_renderReplica(renderReplica) { }
+    ReplicaPainter(LayoutReplica& layoutReplica) : m_layoutReplica(layoutReplica) { }
 
-    void paint(PaintInfo&, const LayoutPoint& paintOffset);
+    void paint(const PaintInfo&, const LayoutPoint& paintOffset);
 
 private:
-    RenderReplica& m_renderReplica;
+    LayoutReplica& m_layoutReplica;
 };
 
 } // namespace blink

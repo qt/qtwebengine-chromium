@@ -45,8 +45,8 @@ class CONTENT_EXPORT PpFrameWriter
 
   // FrameWriterInterface implementation.
   // This method will be called by the Pepper host from render thread.
-  virtual void PutFrame(PPB_ImageData_Impl* image_data,
-                        int64 time_stamp_ns) override;
+  void PutFrame(PPB_ImageData_Impl* image_data, int64 time_stamp_ns) override;
+
  protected:
   // MediaStreamVideoSource implementation.
   void GetCurrentSupportedFormats(
@@ -56,6 +56,7 @@ class CONTENT_EXPORT PpFrameWriter
       const VideoCaptureDeviceFormatsCB& callback) override;
   void StartSourceImpl(
       const media::VideoCaptureFormat& format,
+      const blink::WebMediaConstraints& constraints,
       const VideoCaptureDeliverFrameCB& frame_callback) override;
   void StopSourceImpl() override;
 
@@ -89,4 +90,4 @@ class CONTENT_EXPORT VideoDestinationHandler {
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_MEDIA_VIDEO_DESTINATION_HANDLER_H_
+#endif  // CONTENT_RENDERER_MEDIA_WEBRTC_VIDEO_DESTINATION_HANDLER_H_

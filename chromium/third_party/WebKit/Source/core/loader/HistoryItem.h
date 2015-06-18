@@ -28,6 +28,8 @@
 #define HistoryItem_h
 
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "core/CoreExport.h"
+#include "core/loader/FrameLoaderTypes.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/heap/Handle.h"
@@ -43,7 +45,7 @@ class FormData;
 class KURL;
 class ResourceRequest;
 
-class HistoryItem final : public RefCountedWillBeGarbageCollectedFinalized<HistoryItem> {
+class CORE_EXPORT HistoryItem final : public RefCountedWillBeGarbageCollectedFinalized<HistoryItem> {
 public:
     static PassRefPtrWillBeRawPtr<HistoryItem> create()
     {
@@ -97,13 +99,16 @@ public:
     void setFrameSequenceNumber(long long number) { m_frameSequenceNumber = number; }
     long long frameSequenceNumber() const { return m_frameSequenceNumber; }
 
+    void setScrollRestorationType(HistoryScrollRestorationType  type) { m_scrollRestorationType = type; }
+    HistoryScrollRestorationType scrollRestorationType() { return m_scrollRestorationType; }
+
     void setFormInfoFromRequest(const ResourceRequest&);
     void setFormData(PassRefPtr<FormData>);
     void setFormContentType(const AtomicString&);
 
     bool isCurrentDocument(Document*) const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     HistoryItem();
@@ -134,6 +139,10 @@ private:
     // whether a HistoryItem should navigate an existing frame or create a new
     // one during a history navigation.
     int64_t m_frameSequenceNumber;
+
+    // Type of the scroll restoration for the history item determines if scroll
+    // position should be restored when it is loaded during history traversal.
+    HistoryScrollRestorationType m_scrollRestorationType;
 
     // Support for HTML5 History
     RefPtr<SerializedScriptValue> m_stateObject;

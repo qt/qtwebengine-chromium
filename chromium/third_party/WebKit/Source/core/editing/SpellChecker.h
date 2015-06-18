@@ -26,6 +26,7 @@
 #ifndef SpellChecker_h
 #define SpellChecker_h
 
+#include "core/CoreExport.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/VisibleSelection.h"
@@ -42,13 +43,13 @@ class TextCheckerClient;
 class TextCheckingParagraph;
 struct TextCheckingResult;
 
-class SpellChecker final : public NoBaseWillBeGarbageCollectedFinalized<SpellChecker> {
+class CORE_EXPORT SpellChecker final : public NoBaseWillBeGarbageCollectedFinalized<SpellChecker> {
     WTF_MAKE_NONCOPYABLE(SpellChecker);
 public:
     static PassOwnPtrWillBeRawPtr<SpellChecker> create(LocalFrame&);
 
     ~SpellChecker();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     SpellCheckerClient& spellCheckerClient() const;
     TextCheckerClient& textChecker() const;

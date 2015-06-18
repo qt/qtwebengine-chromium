@@ -14,7 +14,7 @@
 
 static const SkScalar SH = SkIntToScalar(H);
 
-static void rnd_quad(SkPath* p, SkPaint* paint, SkLCGRandom& rand) {
+static void rnd_quad(SkPath* p, SkPaint* paint, SkRandom& rand) {
     p->moveTo(rand.nextRangeScalar(0,  W), rand.nextRangeScalar(0,  H));
     for (int x = 0; x < 2; ++x) {
         p->quadTo(rand.nextRangeScalar(W / 4,  W), rand.nextRangeScalar(0,  H),
@@ -27,7 +27,7 @@ static void rnd_quad(SkPath* p, SkPaint* paint, SkLCGRandom& rand) {
     paint->setAlpha(0xFF);
 }
 
-static void rnd_cubic(SkPath* p, SkPaint* paint, SkLCGRandom& rand) {
+static void rnd_cubic(SkPath* p, SkPaint* paint, SkRandom& rand) {
     p->moveTo(rand.nextRangeScalar(0,  W), rand.nextRangeScalar(0,  H));
     for (int x = 0; x < 2; ++x) {
         p->cubicTo(rand.nextRangeScalar(W / 4,  W), rand.nextRangeScalar(0,  H),
@@ -46,25 +46,22 @@ public:
     BeziersGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return SkString("beziers");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(W, H*2);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(SkIntToScalar(9)/2);
         paint.setAntiAlias(true);
 
-        SkLCGRandom rand;
+        SkRandom rand;
         for (int i = 0; i < N; i++) {
             SkPath p;
             rnd_quad(&p, &paint, rand);

@@ -9,7 +9,7 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/views/painter.h"
 
 namespace views {
@@ -25,6 +25,9 @@ void* GetBitmapPixels(const gfx::ImageSkia& img, float image_scale) {
 }
 
 }  // namespace
+
+// static
+const char ImageView::kViewClassName[] = "ImageView";
 
 ImageView::ImageView()
     : image_size_set_(false),
@@ -166,6 +169,10 @@ void ImageView::GetAccessibleState(ui::AXViewState* state) {
   state->name = tooltip_text_;
 }
 
+const char* ImageView::GetClassName() const {
+  return kViewClassName;
+}
+
 void ImageView::SetHorizontalAlignment(Alignment ha) {
   if (ha != horiz_alignment_) {
     horiz_alignment_ = ha;
@@ -223,7 +230,7 @@ void ImageView::OnPaintImage(gfx::Canvas* canvas) {
   if (image_bounds.size() != gfx::Size(image_.width(), image_.height())) {
     // Resize case
     SkPaint paint;
-    paint.setFilterLevel(SkPaint::kLow_FilterLevel);
+    paint.setFilterQuality(kLow_SkFilterQuality);
     canvas->DrawImageInt(image_, 0, 0, image_.width(), image_.height(),
         image_bounds.x(), image_bounds.y(), image_bounds.width(),
         image_bounds.height(), true, paint);

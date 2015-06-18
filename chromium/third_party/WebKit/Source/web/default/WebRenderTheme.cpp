@@ -31,17 +31,14 @@
 #include "config.h"
 #include "public/web/default/WebRenderTheme.h"
 
-#include "core/rendering/RenderThemeChromiumDefault.h"
+#include "core/layout/LayoutThemeDefault.h"
 #include "public/web/WebView.h"
-
-using blink::RenderTheme;
-using blink::RenderThemeChromiumDefault;
 
 namespace blink {
 
 void setCaretBlinkInterval(double interval)
 {
-    RenderThemeChromiumDefault::setCaretBlinkInterval(interval);
+    LayoutThemeDefault::setCaretBlinkInterval(interval);
 }
 
 } // namespace blink

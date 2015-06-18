@@ -27,7 +27,7 @@
 #include "core/svg/SVGAnimatedPath.h"
 #include "core/svg/SVGGeometryElement.h"
 #include "core/svg/SVGPathByteStream.h"
-#include "wtf/WeakPtr.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -57,38 +57,38 @@ public:
     DECLARE_NODE_FACTORY(SVGPathElement);
 
     float getTotalLength();
-    PassRefPtr<SVGPointTearOff> getPointAtLength(float distance);
+    PassRefPtrWillBeRawPtr<SVGPointTearOff> getPointAtLength(float distance);
     unsigned getPathSegAtLength(float distance);
 
     SVGAnimatedNumber* pathLength() { return m_pathLength.get(); }
 
-    PassRefPtr<SVGPathSegClosePath> createSVGPathSegClosePath();
-    PassRefPtr<SVGPathSegMovetoAbs> createSVGPathSegMovetoAbs(float x, float y);
-    PassRefPtr<SVGPathSegMovetoRel> createSVGPathSegMovetoRel(float x, float y);
-    PassRefPtr<SVGPathSegLinetoAbs> createSVGPathSegLinetoAbs(float x, float y);
-    PassRefPtr<SVGPathSegLinetoRel> createSVGPathSegLinetoRel(float x, float y);
-    PassRefPtr<SVGPathSegCurvetoCubicAbs> createSVGPathSegCurvetoCubicAbs(float x, float y, float x1, float y1, float x2, float y2);
-    PassRefPtr<SVGPathSegCurvetoCubicRel> createSVGPathSegCurvetoCubicRel(float x, float y, float x1, float y1, float x2, float y2);
-    PassRefPtr<SVGPathSegCurvetoQuadraticAbs> createSVGPathSegCurvetoQuadraticAbs(float x, float y, float x1, float y1);
-    PassRefPtr<SVGPathSegCurvetoQuadraticRel> createSVGPathSegCurvetoQuadraticRel(float x, float y, float x1, float y1);
-    PassRefPtr<SVGPathSegArcAbs> createSVGPathSegArcAbs(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag);
-    PassRefPtr<SVGPathSegArcRel> createSVGPathSegArcRel(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag);
-    PassRefPtr<SVGPathSegLinetoHorizontalAbs> createSVGPathSegLinetoHorizontalAbs(float x);
-    PassRefPtr<SVGPathSegLinetoHorizontalRel> createSVGPathSegLinetoHorizontalRel(float x);
-    PassRefPtr<SVGPathSegLinetoVerticalAbs> createSVGPathSegLinetoVerticalAbs(float y);
-    PassRefPtr<SVGPathSegLinetoVerticalRel> createSVGPathSegLinetoVerticalRel(float y);
-    PassRefPtr<SVGPathSegCurvetoCubicSmoothAbs> createSVGPathSegCurvetoCubicSmoothAbs(float x, float y, float x2, float y2);
-    PassRefPtr<SVGPathSegCurvetoCubicSmoothRel> createSVGPathSegCurvetoCubicSmoothRel(float x, float y, float x2, float y2);
-    PassRefPtr<SVGPathSegCurvetoQuadraticSmoothAbs> createSVGPathSegCurvetoQuadraticSmoothAbs(float x, float y);
-    PassRefPtr<SVGPathSegCurvetoQuadraticSmoothRel> createSVGPathSegCurvetoQuadraticSmoothRel(float x, float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegClosePath> createSVGPathSegClosePath();
+    PassRefPtrWillBeRawPtr<SVGPathSegMovetoAbs> createSVGPathSegMovetoAbs(float x, float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegMovetoRel> createSVGPathSegMovetoRel(float x, float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegLinetoAbs> createSVGPathSegLinetoAbs(float x, float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegLinetoRel> createSVGPathSegLinetoRel(float x, float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicAbs> createSVGPathSegCurvetoCubicAbs(float x, float y, float x1, float y1, float x2, float y2);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicRel> createSVGPathSegCurvetoCubicRel(float x, float y, float x1, float y1, float x2, float y2);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticAbs> createSVGPathSegCurvetoQuadraticAbs(float x, float y, float x1, float y1);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticRel> createSVGPathSegCurvetoQuadraticRel(float x, float y, float x1, float y1);
+    PassRefPtrWillBeRawPtr<SVGPathSegArcAbs> createSVGPathSegArcAbs(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag);
+    PassRefPtrWillBeRawPtr<SVGPathSegArcRel> createSVGPathSegArcRel(float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag);
+    PassRefPtrWillBeRawPtr<SVGPathSegLinetoHorizontalAbs> createSVGPathSegLinetoHorizontalAbs(float x);
+    PassRefPtrWillBeRawPtr<SVGPathSegLinetoHorizontalRel> createSVGPathSegLinetoHorizontalRel(float x);
+    PassRefPtrWillBeRawPtr<SVGPathSegLinetoVerticalAbs> createSVGPathSegLinetoVerticalAbs(float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegLinetoVerticalRel> createSVGPathSegLinetoVerticalRel(float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicSmoothAbs> createSVGPathSegCurvetoCubicSmoothAbs(float x, float y, float x2, float y2);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoCubicSmoothRel> createSVGPathSegCurvetoCubicSmoothRel(float x, float y, float x2, float y2);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticSmoothAbs> createSVGPathSegCurvetoQuadraticSmoothAbs(float x, float y);
+    PassRefPtrWillBeRawPtr<SVGPathSegCurvetoQuadraticSmoothRel> createSVGPathSegCurvetoQuadraticSmoothRel(float x, float y);
 
     // Used in the bindings only.
     SVGPathSegListTearOff* pathSegList() { return m_pathSegList->baseVal(); }
     SVGPathSegListTearOff* animatedPathSegList() { return m_pathSegList->animVal(); }
 
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=15412 - Implement normalized path segment lists!
-    SVGPathSegListTearOff* normalizedPathSegList() { return 0; }
-    SVGPathSegListTearOff* animatedNormalizedPathSegList() { return 0; }
+    SVGPathSegListTearOff* normalizedPathSegList() { return nullptr; }
+    SVGPathSegListTearOff* animatedNormalizedPathSegList() { return nullptr; }
 
     const SVGPathByteStream* pathByteStream() const { return m_pathSegList->currentValue()->byteStream(); }
 
@@ -96,11 +96,11 @@ public:
 
     virtual FloatRect getBBox() override;
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGPathElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
     virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) override;
@@ -108,8 +108,8 @@ private:
 
     void invalidateMPathDependencies();
 
-    RefPtr<SVGAnimatedNumber> m_pathLength;
-    RefPtr<SVGAnimatedPath> m_pathSegList;
+    RefPtrWillBeMember<SVGAnimatedNumber> m_pathLength;
+    RefPtrWillBeMember<SVGAnimatedPath> m_pathSegList;
 };
 
 } // namespace blink

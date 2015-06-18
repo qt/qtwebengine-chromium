@@ -47,6 +47,12 @@ SVGAnimatedAngle::~SVGAnimatedAngle()
 {
 }
 
+DEFINE_TRACE(SVGAnimatedAngle)
+{
+    visitor->trace(m_orientType);
+    SVGAnimatedProperty<SVGAngle>::trace(visitor);
+}
+
 void SVGAnimatedAngle::synchronizeAttribute()
 {
     DEFINE_STATIC_LOCAL(const AtomicString, autoValue, ("auto", AtomicString::ConstructFromLiteral));
@@ -59,7 +65,7 @@ void SVGAnimatedAngle::synchronizeAttribute()
     contextElement()->setSynchronizedLazyAttribute(attributeName(), value);
 }
 
-void SVGAnimatedAngle::setAnimatedValue(PassRefPtr<SVGPropertyBase> value)
+void SVGAnimatedAngle::setAnimatedValue(PassRefPtrWillBeRawPtr<SVGPropertyBase> value)
 {
     SVGAnimatedProperty<SVGAngle>::setAnimatedValue(value);
     m_orientType->setAnimatedValue(currentValue()->orientType());

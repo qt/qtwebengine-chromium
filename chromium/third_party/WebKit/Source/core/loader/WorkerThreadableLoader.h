@@ -35,6 +35,7 @@
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/loader/ThreadableLoaderClientWrapper.h"
 #include "platform/heap/Handle.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -50,7 +51,7 @@ namespace blink {
     struct CrossThreadResourceRequestData;
 
     class WorkerThreadableLoader final : public ThreadableLoader {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_FAST_ALLOCATED(WorkerThreadableLoader);
     public:
         static void loadResourceSynchronously(WorkerGlobalScope&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         static PassRefPtr<WorkerThreadableLoader> create(WorkerGlobalScope& workerGlobalScope, PassRefPtr<ThreadableLoaderClientWrapper> clientWrapper, PassOwnPtr<ThreadableLoaderClient> clientBridge, const ResourceRequest& request, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
@@ -87,7 +88,7 @@ namespace blink {
         class MainThreadBridge final : public ThreadableLoaderClient {
         public:
             // All executed on the worker context's thread.
-            MainThreadBridge(PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, WorkerLoaderProxy&, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&, const String& outgoingReferrer);
+            MainThreadBridge(PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, PassRefPtr<WorkerLoaderProxy>, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&, const ReferrerPolicy, const String& outgoingReferrer);
             void overrideTimeout(unsigned long timeoutMilliseconds);
             void cancel();
             void destroy();
@@ -97,12 +98,12 @@ namespace blink {
             void clearClientWrapper();
 
             // All executed on the main thread.
-            static void mainThreadDestroy(ExecutionContext*, MainThreadBridge*);
+            void mainThreadDestroy(ExecutionContext*);
             virtual ~MainThreadBridge();
 
-            static void mainThreadCreateLoader(ExecutionContext*, MainThreadBridge*, PassOwnPtr<CrossThreadResourceRequestData>, ThreadableLoaderOptions, ResourceLoaderOptions, const String& outgoingReferrer);
-            static void mainThreadOverrideTimeout(ExecutionContext*, MainThreadBridge*, unsigned long timeoutMilliseconds);
-            static void mainThreadCancel(ExecutionContext*, MainThreadBridge*);
+            void mainThreadCreateLoader(PassOwnPtr<CrossThreadResourceRequestData>, ThreadableLoaderOptions, ResourceLoaderOptions, const ReferrerPolicy, const String& outgoingReferrer, ExecutionContext*);
+            void mainThreadOverrideTimeout(unsigned long timeoutMilliseconds, ExecutionContext*);
+            void mainThreadCancel(ExecutionContext*);
             virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
             virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
             virtual void didReceiveData(const char*, unsigned dataLength) override;
@@ -122,7 +123,7 @@ namespace blink {
             RefPtr<ThreadableLoaderClientWrapper> m_workerClientWrapper;
 
             // Used on the worker context thread.
-            WorkerLoaderProxy& m_loaderProxy;
+            RefPtr<WorkerLoaderProxy> m_loaderProxy;
         };
 
         WorkerThreadableLoader(WorkerGlobalScope&, PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);

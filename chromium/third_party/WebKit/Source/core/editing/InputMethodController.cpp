@@ -36,10 +36,10 @@
 #include "core/editing/TypingCommand.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/layout/LayoutObject.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderObject.h"
 
 namespace blink {
 
@@ -230,7 +230,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
     // Updates styles before setting selection for composition to prevent
     // inserting the previous composition text into text nodes oddly.
     // See https://bugs.webkit.org/show_bug.cgi?id=46868
-    frame().document()->updateRenderTreeIfNeeded();
+    frame().document()->updateLayoutTreeIfNeeded();
 
     selectComposition();
 
@@ -302,8 +302,8 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
                 underline.startOffset += baseOffset;
                 underline.endOffset += baseOffset;
             }
-            if (baseNode->renderer())
-                baseNode->renderer()->setShouldDoFullPaintInvalidation();
+            if (baseNode->layoutObject())
+                baseNode->layoutObject()->setShouldDoFullPaintInvalidation();
 
             unsigned start = std::min(baseOffset + selectionStart, extentOffset);
             unsigned end = std::min(std::max(start, baseOffset + selectionEnd), extentOffset);
@@ -318,13 +318,13 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
     Element* editable = frame().selection().rootEditableElement();
     Position base = frame().selection().base().downstream();
     Node* baseNode = base.anchorNode();
-    if (editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
+    if (baseNode && editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
         m_compositionNode = nullptr;
         m_customCompositionUnderlines.clear();
 
         if (base.anchorType() != Position::PositionIsOffsetInAnchor)
             return;
-        if (!baseNode || baseNode != frame().selection().extent().anchorNode())
+        if (baseNode != frame().selection().extent().anchorNode())
             return;
 
         m_compositionNode = toText(baseNode);
@@ -340,8 +340,8 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
             m_customCompositionUnderlines[i].startOffset += m_compositionStart;
             m_customCompositionUnderlines[i].endOffset += m_compositionStart;
         }
-        if (baseNode->renderer())
-            baseNode->renderer()->setShouldDoFullPaintInvalidation();
+        if (baseNode->layoutObject())
+            baseNode->layoutObject()->setShouldDoFullPaintInvalidation();
         return;
     }
 
@@ -425,7 +425,7 @@ void InputMethodController::extendSelectionAndDelete(int before, int after)
     TypingCommand::deleteSelection(*frame().document());
 }
 
-void InputMethodController::trace(Visitor* visitor)
+DEFINE_TRACE(InputMethodController)
 {
     visitor->trace(m_frame);
     visitor->trace(m_compositionNode);

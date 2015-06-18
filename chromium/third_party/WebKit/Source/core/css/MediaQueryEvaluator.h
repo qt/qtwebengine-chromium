@@ -28,6 +28,7 @@
 #ifndef MediaQueryEvaluator_h
 #define MediaQueryEvaluator_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
@@ -39,7 +40,7 @@ class MediaQueryResult;
 class MediaQuerySet;
 class MediaValues;
 
-typedef WillBeHeapVector<RefPtrWillBeMember<MediaQueryResult> > MediaQueryResultList;
+typedef WillBeHeapVector<RefPtrWillBeMember<MediaQueryResult>> MediaQueryResultList;
 
 // Class that evaluates css media queries as defined in
 // CSS3 Module "Media Queries" (http://www.w3.org/TR/css3-mediaqueries/)
@@ -52,8 +53,8 @@ typedef WillBeHeapVector<RefPtrWillBeMember<MediaQueryResult> > MediaQueryResult
 // the device characteristics are not known. This can be used to prune the loading
 // of stylesheets to only those which are probable to match.
 
-class MediaQueryEvaluator {
-    WTF_MAKE_NONCOPYABLE(MediaQueryEvaluator); WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT MediaQueryEvaluator {
+    WTF_MAKE_NONCOPYABLE(MediaQueryEvaluator); WTF_MAKE_FAST_ALLOCATED(MediaQueryEvaluator);
 public:
     // Creates evaluator which evaluates only simple media queries
     // Evaluator returns true for "all", and returns value of \mediaFeatureResult

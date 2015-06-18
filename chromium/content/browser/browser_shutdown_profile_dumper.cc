@@ -6,14 +6,14 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_impl.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_impl.h"
 #include "content/public/common/content_switches.h"
 
 namespace content {
@@ -29,14 +29,20 @@ BrowserShutdownProfileDumper::~BrowserShutdownProfileDumper() {
   WriteTracesToDisc();
 }
 
+static float GetTraceBufferPercentFull() {
+  base::trace_event::TraceLogStatus status =
+      base::trace_event::TraceLog::GetInstance()->GetStatus();
+  return 100 * static_cast<float>(static_cast<double>(status.event_count) /
+                                  status.event_capacity);
+}
+
 void BrowserShutdownProfileDumper::WriteTracesToDisc() {
   // Note: I have seen a usage of 0.000xx% when dumping - which fits easily.
   // Since the tracer stops when the trace buffer is filled, we'd rather save
   // what we have than nothing since we might see from the amount of events
   // that caused the problem.
-  DVLOG(1) << "Flushing shutdown traces to disc. The buffer is %" <<
-      base::debug::TraceLog::GetInstance()->GetBufferPercentFull() <<
-      " full.";
+  DVLOG(1) << "Flushing shutdown traces to disc. The buffer is "
+           << GetTraceBufferPercentFull() << "% full.";
   DCHECK(!dump_file_);
   dump_file_ = base::OpenFile(dump_file_name_, "w+");
   if (!IsFileValid()) {
@@ -66,8 +72,8 @@ void BrowserShutdownProfileDumper::WriteTracesToDisc() {
 
 void BrowserShutdownProfileDumper::EndTraceAndFlush(
     base::WaitableEvent* flush_complete_event) {
-  base::debug::TraceLog::GetInstance()->SetDisabled();
-  base::debug::TraceLog::GetInstance()->Flush(
+  base::trace_event::TraceLog::GetInstance()->SetDisabled();
+  base::trace_event::TraceLog::GetInstance()->Flush(
       base::Bind(&BrowserShutdownProfileDumper::WriteTraceDataCollected,
                  base::Unretained(this),
                  base::Unretained(flush_complete_event)));

@@ -46,7 +46,7 @@ namespace blink {
 
 IDBTransaction* IDBTransaction::create(ScriptState* scriptState, int64_t id, const Vector<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db)
 {
-    IDBOpenDBRequest* openDBRequest = 0;
+    IDBOpenDBRequest* openDBRequest = nullptr;
     IDBTransaction* transaction = new IDBTransaction(scriptState, id, objectStoreNames, mode, db, openDBRequest, IDBDatabaseMetadata());
     transaction->suspendIfNeeded();
     return transaction;
@@ -58,6 +58,30 @@ IDBTransaction* IDBTransaction::create(ScriptState* scriptState, int64_t id, IDB
     transaction->suspendIfNeeded();
     return transaction;
 }
+
+namespace {
+
+class DeactivateTransactionTask : public V8PerIsolateData::EndOfScopeTask {
+public:
+    static PassOwnPtr<DeactivateTransactionTask> create(IDBTransaction* transaction)
+    {
+        return adoptPtr(new DeactivateTransactionTask(transaction));
+    }
+
+    void run() override
+    {
+        m_transaction->setActive(false);
+        m_transaction.clear();
+    }
+
+private:
+    explicit DeactivateTransactionTask(IDBTransaction* transaction)
+        : m_transaction(transaction) { }
+
+    Persistent<IDBTransaction> m_transaction;
+};
+
+} // namespace
 
 IDBTransaction::IDBTransaction(ScriptState* scriptState, int64_t id, const Vector<String>& objectStoreNames, WebIDBTransactionMode mode, IDBDatabase* db, IDBOpenDBRequest* openDBRequest, const IDBDatabaseMetadata& previousMetadata)
     : ActiveDOMObject(scriptState->executionContext())
@@ -77,7 +101,7 @@ IDBTransaction::IDBTransaction(ScriptState* scriptState, int64_t id, const Vecto
     }
 
     if (m_state == Active)
-        V8PerIsolateData::from(scriptState->isolate())->ensureIDBPendingTransactionMonitor()->addNewTransaction(*this);
+        V8PerIsolateData::from(scriptState->isolate())->addEndOfScopeTask(DeactivateTransactionTask::create(this));
     m_database->transactionCreated(this);
 }
 
@@ -87,7 +111,7 @@ IDBTransaction::~IDBTransaction()
     ASSERT(m_requestList.isEmpty() || m_contextStopped);
 }
 
-void IDBTransaction::trace(Visitor* visitor)
+DEFINE_TRACE(IDBTransaction)
 {
     visitor->trace(m_database);
     visitor->trace(m_openDBRequest);
@@ -96,7 +120,8 @@ void IDBTransaction::trace(Visitor* visitor)
     visitor->trace(m_objectStoreMap);
     visitor->trace(m_deletedObjectStores);
     visitor->trace(m_objectStoreCleanupMap);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<IDBTransaction>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 void IDBTransaction::setError(DOMError* error)
@@ -333,7 +358,7 @@ bool IDBTransaction::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
         (*it)->transactionFinished();
     m_deletedObjectStores.clear();
 
-    WillBeHeapVector<RefPtrWillBeMember<EventTarget> > targets;
+    WillBeHeapVector<RefPtrWillBeMember<EventTarget>> targets;
     targets.append(this);
     targets.append(db());
 

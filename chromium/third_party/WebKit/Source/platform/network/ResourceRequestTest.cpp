@@ -21,6 +21,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData)
     original.setCachePolicy(UseProtocolCachePolicy);
     original.setTimeoutInterval(10);
     original.setFirstPartyForCookies(KURL(ParsedURLString, "http://www.example.com/first_party.htm"));
+    original.setRequestorOrigin(SecurityOrigin::create(KURL(ParsedURLString, "http://www.example.com/first_party.htm")));
     original.setHTTPMethod(AtomicString("GET", AtomicString::ConstructFromLiteral));
     original.setHTTPHeaderField(AtomicString("Foo"), AtomicString("Bar"));
     original.setHTTPHeaderField(AtomicString("Piyo"), AtomicString("Fuga"));
@@ -46,6 +47,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData)
     EXPECT_EQ(UseProtocolCachePolicy, original.cachePolicy());
     EXPECT_EQ(10, original.timeoutInterval());
     EXPECT_STREQ("http://www.example.com/first_party.htm", original.firstPartyForCookies().string().utf8().data());
+    EXPECT_STREQ("www.example.com", original.requestorOrigin()->host().utf8().data());
     EXPECT_STREQ("GET", original.httpMethod().utf8().data());
     EXPECT_STREQ("Bar", original.httpHeaderFields().get("Foo").utf8().data());
     EXPECT_STREQ("Fuga", original.httpHeaderFields().get("Piyo").utf8().data());
@@ -73,6 +75,7 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData)
     EXPECT_EQ(UseProtocolCachePolicy, copy1->cachePolicy());
     EXPECT_EQ(10, copy1->timeoutInterval());
     EXPECT_STREQ("http://www.example.com/first_party.htm", copy1->firstPartyForCookies().string().utf8().data());
+    EXPECT_STREQ("www.example.com", copy1->requestorOrigin()->host().utf8().data());
     EXPECT_STREQ("GET", copy1->httpMethod().utf8().data());
     EXPECT_STREQ("Bar", copy1->httpHeaderFields().get("Foo").utf8().data());
     EXPECT_EQ(ResourceLoadPriorityLow, copy1->priority());
@@ -109,6 +112,16 @@ TEST(ResourceRequestTest, CrossThreadResourceRequestData)
     EXPECT_TRUE(copy2->skipServiceWorker());
     EXPECT_EQ(WebURLRequest::FetchRequestModeNoCORS, copy1->fetchRequestMode());
     EXPECT_EQ(WebURLRequest::FetchCredentialsModeInclude, copy1->fetchCredentialsMode());
+}
+
+TEST(ResourceRequestTest, SetHasUserGesture)
+{
+    ResourceRequest original;
+    EXPECT_FALSE(original.hasUserGesture());
+    original.setHasUserGesture(true);
+    EXPECT_TRUE(original.hasUserGesture());
+    original.setHasUserGesture(false);
+    EXPECT_TRUE(original.hasUserGesture());
 }
 
 } // namespace blink

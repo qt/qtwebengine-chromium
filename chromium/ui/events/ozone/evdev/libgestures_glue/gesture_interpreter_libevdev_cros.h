@@ -5,6 +5,7 @@
 #ifndef UI_EVENTS_OZONE_EVDEV_LIBGESTURES_GLUE_GESTURE_INTERPRETER_LIBEVDEV_CROS_H_
 #define UI_EVENTS_OZONE_EVDEV_LIBGESTURES_GLUE_GESTURE_INTERPRETER_LIBEVDEV_CROS_H_
 
+#include <bitset>
 #include <gestures/gestures.h>
 #include <libevdev/libevdev.h>
 
@@ -18,11 +19,10 @@
 
 namespace ui {
 
+class DeviceEventDispatcherEvdev;
 class EventDeviceInfo;
-class EventModifiersEvdev;
 class CursorDelegateEvdev;
-class KeyboardEvdev;
-class GestureDeviceProperties;
+struct GestureDeviceProperties;
 class GesturePropertyProvider;
 
 // Convert libevdev-cros events to ui::Events using libgestures.
@@ -42,11 +42,9 @@ class EVENTS_OZONE_EVDEV_EXPORT GestureInterpreterLibevdevCros
     : public EventReaderLibevdevCros::Delegate {
  public:
   GestureInterpreterLibevdevCros(int id,
-                                 EventModifiersEvdev* modifiers,
                                  CursorDelegateEvdev* cursor,
-                                 KeyboardEvdev* keyboard,
                                  GesturePropertyProvider* property_provider,
-                                 const EventDispatchCallback& callback);
+                                 DeviceEventDispatcherEvdev* dispatcher);
   ~GestureInterpreterLibevdevCros() override;
 
   // Overriden from ui::EventReaderLibevdevCros::Delegate
@@ -54,6 +52,7 @@ class EVENTS_OZONE_EVDEV_EXPORT GestureInterpreterLibevdevCros
   void OnLibEvdevCrosEvent(Evdev* evdev,
                            EventStateRec* evstate,
                            const timeval& time) override;
+  void OnLibEvdevCrosStopped(Evdev* evdev, EventStateRec* state) override;
 
   // Handler for gesture events generated from libgestures.
   void OnGestureReady(const Gesture* gesture);
@@ -76,33 +75,42 @@ class EVENTS_OZONE_EVDEV_EXPORT GestureInterpreterLibevdevCros
   void OnGesturePinch(const Gesture* gesture, const GesturePinch* pinch);
   void OnGestureMetrics(const Gesture* gesture, const GestureMetrics* metrics);
 
-  void Dispatch(scoped_ptr<Event> event);
-  void DispatchMouseButton(unsigned int modifier, bool down);
-  void DispatchChangedKeys(Evdev* evdev, const timeval& time);
+  void DispatchChangedMouseButtons(unsigned int changed_buttons,
+                                   bool down,
+                                   stime_t time);
+  void DispatchMouseButton(unsigned int button,
+                           bool down,
+                           stime_t time);
+  void DispatchChangedKeys(unsigned long* changed_keys, stime_t timestamp);
+  void ReleaseKeys(stime_t timestamp);
+  bool SetMouseButtonState(unsigned int button, bool down);
+  void ReleaseMouseButtons(stime_t timestamp);
 
   // The unique device id.
   int id_;
 
-  // Shared modifier state.
-  EventModifiersEvdev* modifiers_;
+  // True if the device may be regarded as a mouse. This includes normal mice
+  // and multi-touch mice.
+  bool is_mouse_;
 
   // Shared cursor state.
   CursorDelegateEvdev* cursor_;
 
-  // Shared keyboard state.
-  KeyboardEvdev* keyboard_;
-
   // Shared gesture property provider.
   GesturePropertyProvider* property_provider_;
 
-  // Callback for dispatching events.
-  EventDispatchCallback dispatch_callback_;
+  // Dispatcher for events.
+  DeviceEventDispatcherEvdev* dispatcher_;
 
   // Gestures interpretation state.
   gestures::GestureInterpreter* interpreter_;
 
   // Last key state from libevdev.
   unsigned long prev_key_state_[EVDEV_BITS_TO_LONGS(KEY_CNT)];
+
+  // Last mouse button state.
+  static const int kMouseButtonCount = BTN_JOYSTICK - BTN_MOUSE;
+  std::bitset<kMouseButtonCount> mouse_button_state_;
 
   // Device pointer.
   Evdev* evdev_;

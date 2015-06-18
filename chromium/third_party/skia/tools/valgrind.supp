@@ -1,5 +1,17 @@
 # Pass this file to Valgrind with "--suppressions=tools/valgrind.supp"
 
+# Intentional thread / memory leak in DM.
+{
+   dm_keepalive_thread_leak
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:_ZN8SkThreadC1EPFvPvES0_
+   ...
+   fun:_Z7dm_mainv
+   fun:main
+}
+
 # Third party lib, driver issues.
 {
     ati_driver_bug_1
@@ -67,13 +79,13 @@
     Memcheck:Param
     write(buf)
     ...
-    obj:/usr/lib/libnvidia-glcore.so*
+    obj:*/libnvidia-glcore.so*
 }
 {
     nv_driver_bug_2
     Memcheck:Cond
     ...
-    obj:/usr/lib/libnvidia-glcore.so*
+    obj:*/libnvidia-glcore.so*
 }
 {
     nv_driver_bug_3
@@ -108,6 +120,16 @@
     ...
     fun:FcConfigValues
     fun:FcConfigSubstituteWithPat
+    fun:FcFontRenderPrepare
+}
+{
+    #Same root cause as font_config_bug_2.
+    #The 'leak' is copies of font or pattern values into returned pattern values.
+    font_config_bug_4
+    Memcheck:Leak
+    fun:*alloc
+    ...
+    fun:FcValue*
     fun:FcFontRenderPrepare
 }
 {

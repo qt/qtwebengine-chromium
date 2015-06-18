@@ -4,8 +4,8 @@
 
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "ppapi/nacl_irt/public/irt_ppapi.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
@@ -51,6 +51,7 @@ void AudioCallbackCombined::Run(void* sample_buffer,
 PPB_Audio_Shared::PPB_Audio_Shared()
     : playing_(false),
       shared_memory_size_(0),
+      nacl_thread_id_(0),
       nacl_thread_active_(false),
       user_data_(NULL),
       client_buffer_size_bytes_(0),

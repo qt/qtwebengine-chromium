@@ -7,11 +7,10 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/prefs/pref_service.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/value_conversions.h"
 
-using base::MessageLoopProxy;
 using base::SingleThreadTaskRunner;
 
 namespace subtle {
@@ -25,23 +24,20 @@ PrefMemberBase::~PrefMemberBase() {
   Destroy();
 }
 
-void PrefMemberBase::Init(const char* pref_name,
+void PrefMemberBase::Init(const std::string& pref_name,
                           PrefService* prefs,
                           const NamedChangeCallback& observer) {
   observer_ = observer;
   Init(pref_name, prefs);
 }
 
-void PrefMemberBase::Init(const char* pref_name,
-                          PrefService* prefs) {
-  DCHECK(pref_name);
+void PrefMemberBase::Init(const std::string& pref_name, PrefService* prefs) {
   DCHECK(prefs);
   DCHECK(pref_name_.empty());  // Check that Init is only called once.
   prefs_ = prefs;
   pref_name_ = pref_name;
   // Check that the preference is registered.
-  DCHECK(prefs_->FindPreference(pref_name_.c_str()))
-      << pref_name << " not registered.";
+  DCHECK(prefs_->FindPreference(pref_name_)) << pref_name << " not registered.";
 
   // Add ourselves as a pref observer so we can keep our local value in sync.
   prefs_->AddPrefObserver(pref_name, this);
@@ -49,18 +45,18 @@ void PrefMemberBase::Init(const char* pref_name,
 
 void PrefMemberBase::Destroy() {
   if (prefs_ && !pref_name_.empty()) {
-    prefs_->RemovePrefObserver(pref_name_.c_str(), this);
+    prefs_->RemovePrefObserver(pref_name_, this);
     prefs_ = NULL;
   }
 }
 
 void PrefMemberBase::MoveToThread(
-    const scoped_refptr<SingleThreadTaskRunner>& task_runner) {
+    scoped_refptr<SingleThreadTaskRunner> task_runner) {
   VerifyValuePrefName();
   // Load the value from preferences if it hasn't been loaded so far.
   if (!internal())
     UpdateValueFromPref(base::Closure());
-  internal()->MoveToThread(task_runner);
+  internal()->MoveToThread(task_runner.Pass());
 }
 
 void PrefMemberBase::OnPreferenceChanged(PrefService* service,
@@ -72,8 +68,7 @@ void PrefMemberBase::OnPreferenceChanged(PrefService* service,
 
 void PrefMemberBase::UpdateValueFromPref(const base::Closure& callback) const {
   VerifyValuePrefName();
-  const PrefService::Preference* pref =
-      prefs_->FindPreference(pref_name_.c_str());
+  const PrefService::Preference* pref = prefs_->FindPreference(pref_name_);
   DCHECK(pref);
   if (!internal())
     CreateInternal();
@@ -95,15 +90,14 @@ void PrefMemberBase::InvokeUnnamedCallback(const base::Closure& callback,
 }
 
 PrefMemberBase::Internal::Internal()
-    : thread_loop_(MessageLoopProxy::current()),
+    : thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       is_managed_(false),
       is_user_modifiable_(false) {
 }
 PrefMemberBase::Internal::~Internal() { }
 
 bool PrefMemberBase::Internal::IsOnCorrectThread() const {
-  // In unit tests, there may not be a message loop.
-  return thread_loop_.get() == NULL || thread_loop_->BelongsToCurrentThread();
+  return thread_task_runner_->BelongsToCurrentThread();
 }
 
 void PrefMemberBase::Internal::UpdateValue(
@@ -119,19 +113,18 @@ void PrefMemberBase::Internal::UpdateValue(
     is_managed_ = is_managed;
     is_user_modifiable_ = is_user_modifiable;
   } else {
-    bool may_run = thread_loop_->PostTask(
-        FROM_HERE,
-        base::Bind(&PrefMemberBase::Internal::UpdateValue, this,
-                   value.release(), is_managed, is_user_modifiable,
-                   closure_runner.Release()));
+    bool may_run = thread_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&PrefMemberBase::Internal::UpdateValue, this,
+                              value.release(), is_managed, is_user_modifiable,
+                              closure_runner.Release()));
     DCHECK(may_run);
   }
 }
 
 void PrefMemberBase::Internal::MoveToThread(
-    const scoped_refptr<SingleThreadTaskRunner>& task_runner) {
+    scoped_refptr<SingleThreadTaskRunner> task_runner) {
   CheckOnCorrectThread();
-  thread_loop_ = task_runner;
+  thread_task_runner_ = task_runner.Pass();
 }
 
 bool PrefMemberVectorStringUpdate(const base::Value& value,
@@ -158,7 +151,7 @@ bool PrefMemberVectorStringUpdate(const base::Value& value,
 
 template <>
 void PrefMember<bool>::UpdatePref(const bool& value) {
-  prefs()->SetBoolean(pref_name().c_str(), value);
+  prefs()->SetBoolean(pref_name(), value);
 }
 
 template <>
@@ -169,7 +162,7 @@ bool PrefMember<bool>::Internal::UpdateValueInternal(
 
 template <>
 void PrefMember<int>::UpdatePref(const int& value) {
-  prefs()->SetInteger(pref_name().c_str(), value);
+  prefs()->SetInteger(pref_name(), value);
 }
 
 template <>
@@ -180,7 +173,7 @@ bool PrefMember<int>::Internal::UpdateValueInternal(
 
 template <>
 void PrefMember<double>::UpdatePref(const double& value) {
-  prefs()->SetDouble(pref_name().c_str(), value);
+  prefs()->SetDouble(pref_name(), value);
 }
 
 template <>
@@ -191,7 +184,7 @@ bool PrefMember<double>::Internal::UpdateValueInternal(const base::Value& value)
 
 template <>
 void PrefMember<std::string>::UpdatePref(const std::string& value) {
-  prefs()->SetString(pref_name().c_str(), value);
+  prefs()->SetString(pref_name(), value);
 }
 
 template <>
@@ -203,7 +196,7 @@ bool PrefMember<std::string>::Internal::UpdateValueInternal(
 
 template <>
 void PrefMember<base::FilePath>::UpdatePref(const base::FilePath& value) {
-  prefs()->SetFilePath(pref_name().c_str(), value);
+  prefs()->SetFilePath(pref_name(), value);
 }
 
 template <>
@@ -218,7 +211,7 @@ void PrefMember<std::vector<std::string> >::UpdatePref(
     const std::vector<std::string>& value) {
   base::ListValue list_value;
   list_value.AppendStrings(value);
-  prefs()->Set(pref_name().c_str(), list_value);
+  prefs()->Set(pref_name(), list_value);
 }
 
 template <>

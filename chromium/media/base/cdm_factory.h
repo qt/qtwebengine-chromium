@@ -15,20 +15,30 @@ class GURL;
 
 namespace media {
 
+// Callback used when CDM is created. |error_message| only used if
+// MediaKeys is null (i.e. CDM can't be created).
+using CdmCreatedCB = base::Callback<void(scoped_ptr<MediaKeys>,
+                                         const std::string& error_message)>;
+
+struct CdmConfig;
+
 class MEDIA_EXPORT CdmFactory {
  public:
   CdmFactory();
   virtual ~CdmFactory();
 
-  virtual scoped_ptr<MediaKeys> Create(
+  // Creates a CDM for |key_system| and returns it through |cdm_created_cb|
+  // asynchronously.
+  virtual void Create(
       const std::string& key_system,
       const GURL& security_origin,
+      const CdmConfig& cdm_config,
       const SessionMessageCB& session_message_cb,
-      const SessionReadyCB& session_ready_cb,
       const SessionClosedCB& session_closed_cb,
-      const SessionErrorCB& session_error_cb,
+      const LegacySessionErrorCB& legacy_session_error_cb,
       const SessionKeysChangeCB& session_keys_change_cb,
-      const SessionExpirationUpdateCB& session_expiration_update_cb) = 0;
+      const SessionExpirationUpdateCB& session_expiration_update_cb,
+      const CdmCreatedCB& cdm_created_cb) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CdmFactory);

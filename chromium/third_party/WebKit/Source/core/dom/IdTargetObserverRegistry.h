@@ -38,11 +38,11 @@ class IdTargetObserver;
 
 class IdTargetObserverRegistry final : public NoBaseWillBeGarbageCollectedFinalized<IdTargetObserverRegistry> {
     WTF_MAKE_NONCOPYABLE(IdTargetObserverRegistry);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(IdTargetObserverRegistry);
     friend class IdTargetObserver;
 public:
     static PassOwnPtrWillBeRawPtr<IdTargetObserverRegistry> create();
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void notifyObservers(const AtomicString& id);
     bool hasObservers(const AtomicString& id) const;
 
@@ -52,8 +52,8 @@ private:
     void removeObserver(const AtomicString& id, IdTargetObserver*);
     void notifyObserversInternal(const AtomicString& id);
 
-    typedef WillBeHeapHashSet<RawPtrWillBeMember<IdTargetObserver> > ObserverSet;
-    typedef WillBeHeapHashMap<StringImpl*, OwnPtrWillBeMember<ObserverSet> > IdToObserverSetMap;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<IdTargetObserver>> ObserverSet;
+    typedef WillBeHeapHashMap<StringImpl*, OwnPtrWillBeMember<ObserverSet>> IdToObserverSetMap;
     IdToObserverSetMap m_registry;
     RawPtrWillBeMember<ObserverSet> m_notifyingObserversInSet;
 };

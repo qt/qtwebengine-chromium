@@ -54,10 +54,14 @@ public:
         virtual void didDraw(const Image*) override { }
         virtual bool shouldPauseAnimation(const Image*) override { return false; }
         virtual void animationAdvanced(const Image*) override { }
+
         virtual void changedInRect(const Image*, const IntRect&) { }
 
         int m_lastDecodedSizeChangedDelta;
     };
+
+    BitmapImageTest() : BitmapImageTest(false) { }
+    BitmapImageTest(bool enableDeferredDecoding) : m_enableDeferredDecoding(enableDeferredDecoding) { }
 
     static PassRefPtr<SharedBuffer> readFile(const char* fileName)
     {
@@ -69,12 +73,16 @@ public:
     // Accessors to BitmapImage's protected methods.
     void destroyDecodedData(bool destroyAll) { m_image->destroyDecodedData(destroyAll); }
     size_t frameCount() { return m_image->frameCount(); }
+    void frameAtIndex(size_t index)
+    {
+        SkBitmap dummy;
+        ASSERT_TRUE(m_image->frameAtIndex(index, &dummy));
+    }
     void setCurrentFrame(size_t frame) { m_image->m_currentFrame = frame; }
     size_t frameDecodedSize(size_t frame) { return m_image->m_frames[frame].m_frameBytes; }
     size_t decodedFramesCount() const { return m_image->m_frames.size(); }
-    void resetDecoder() { return m_image->resetDecoder(); }
 
-    void loadImage(const char* fileName)
+    void loadImage(const char* fileName, bool loadAllFrames = true)
     {
         RefPtr<SharedBuffer> imageData = readFile(fileName);
         ASSERT_TRUE(imageData.get());
@@ -83,8 +91,10 @@ public:
         EXPECT_EQ(0u, decodedSize());
 
         size_t frameCount = m_image->frameCount();
-        for (size_t i = 0; i < frameCount; ++i)
-            m_image->frameAtIndex(i);
+        if (loadAllFrames) {
+            for (size_t i = 0; i < frameCount; ++i)
+                frameAtIndex(i);
+        }
     }
 
     size_t decodedSize()
@@ -114,20 +124,18 @@ public:
 protected:
     virtual void SetUp() override
     {
-        DeferredImageDecoder::setEnabled(false);
+        DeferredImageDecoder::setEnabled(m_enableDeferredDecoding);
         m_image = BitmapImage::create(&m_imageObserver);
     }
 
     FakeImageObserver m_imageObserver;
     RefPtr<BitmapImage> m_image;
+
+private:
+    bool m_enableDeferredDecoding;
 };
 
-// Fails on the WebKit XP (deps) bot, see http://crbug.com/327104
-#if OS(WIN)
-TEST_F(BitmapImageTest, DISABLED_destroyDecodedDataExceptCurrentFrame)
-#else
 TEST_F(BitmapImageTest, destroyDecodedDataExceptCurrentFrame)
-#endif
 {
     loadImage("/LayoutTests/fast/images/resources/animated-10color.gif");
     size_t totalSize = decodedSize();
@@ -139,12 +147,7 @@ TEST_F(BitmapImageTest, destroyDecodedDataExceptCurrentFrame)
     EXPECT_GE(m_imageObserver.m_lastDecodedSizeChangedDelta, -static_cast<int>(totalSize - size));
 }
 
-// Fails on the WebKit XP (deps) bot, see http://crbug.com/327104
-#if OS(WIN)
-TEST_F(BitmapImageTest, DISABLED_destroyAllDecodedData)
-#else
 TEST_F(BitmapImageTest, destroyAllDecodedData)
-#endif
 {
     loadImage("/LayoutTests/fast/images/resources/animated-10color.gif");
     size_t totalSize = decodedSize();
@@ -185,6 +188,14 @@ TEST_F(BitmapImageTest, isAllDataReceived)
     EXPECT_TRUE(image->isAllDataReceived());
 }
 
+TEST_F(BitmapImageTest, noColorProfile)
+{
+    loadImage("/LayoutTests/fast/images/resources/green.jpg");
+    EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(1024u, decodedSize());
+    EXPECT_FALSE(m_image->hasColorProfile());
+}
+
 #if USE(QCMSLIB)
 
 TEST_F(BitmapImageTest, jpegHasColorProfile)
@@ -194,13 +205,7 @@ TEST_F(BitmapImageTest, jpegHasColorProfile)
     EXPECT_EQ(227700u, decodedSize());
     EXPECT_TRUE(m_image->hasColorProfile());
 
-    resetDecoder();
     destroyDecodedData(true);
-
-    loadImage("/LayoutTests/fast/images/resources/green.jpg");
-    EXPECT_EQ(1u, decodedFramesCount());
-    EXPECT_EQ(1024u, decodedSize());
-    EXPECT_FALSE(m_image->hasColorProfile());
 }
 
 TEST_F(BitmapImageTest, pngHasColorProfile)
@@ -210,13 +215,7 @@ TEST_F(BitmapImageTest, pngHasColorProfile)
     EXPECT_EQ(65536u, decodedSize());
     EXPECT_TRUE(m_image->hasColorProfile());
 
-    resetDecoder();
     destroyDecodedData(true);
-
-    loadImage("/LayoutTests/fast/images/resources/green.jpg");
-    EXPECT_EQ(1u, decodedFramesCount());
-    EXPECT_EQ(1024u, decodedSize());
-    EXPECT_FALSE(m_image->hasColorProfile());
 }
 
 TEST_F(BitmapImageTest, webpHasColorProfile)
@@ -227,13 +226,9 @@ TEST_F(BitmapImageTest, webpHasColorProfile)
     EXPECT_TRUE(m_image->hasColorProfile());
 
     destroyDecodedData(true);
-    resetDecoder();
-
-    loadImage("/LayoutTests/fast/images/resources/test.webp");
-    EXPECT_EQ(1u, decodedFramesCount());
-    EXPECT_EQ(65536u, decodedSize());
-    EXPECT_FALSE(m_image->hasColorProfile());
 }
+
+#endif // USE(QCMSLIB)
 
 TEST_F(BitmapImageTest, icoHasWrongFrameDimensions)
 {
@@ -242,6 +237,44 @@ TEST_F(BitmapImageTest, icoHasWrongFrameDimensions)
     imageForDefaultFrame();
 }
 
-#endif // USE(QCMSLIB)
+TEST_F(BitmapImageTest, correctDecodedDataSize)
+{
+    // When requesting a frame of a multi-frame GIF causes another frame to be
+    // decoded as well, both frames' sizes should be included in the decoded
+    // size changed notification.
+    loadImage("/LayoutTests/fast/images/resources/anim_none.gif", false);
+    frameAtIndex(1);
+    int frameSize = static_cast<int>(m_image->size().area() * sizeof(ImageFrame::PixelData));
+    EXPECT_EQ(frameSize * 2, m_imageObserver.m_lastDecodedSizeChangedDelta);
+
+    // Trying to destroy all data except an undecoded frame should cause the
+    // decoder to seek backwards and preserve the most recent previous frame
+    // necessary to decode that undecoded frame, and destroy all other frames.
+    setCurrentFrame(2);
+    destroyDecodedData(false);
+    EXPECT_EQ(-frameSize, m_imageObserver.m_lastDecodedSizeChangedDelta);
+}
+
+class BitmapImageDeferredDecodingTest : public BitmapImageTest {
+public:
+    BitmapImageDeferredDecodingTest() : BitmapImageTest(true) { }
+};
+
+TEST_F(BitmapImageDeferredDecodingTest, correctDecodedDataSize)
+{
+    // When deferred decoding is enabled, requesting any one frame shouldn't
+    // result in decoding any other frames.
+    loadImage("/LayoutTests/fast/images/resources/anim_none.gif", false);
+    frameAtIndex(1);
+    int frameSize = static_cast<int>(m_image->size().area() * sizeof(ImageFrame::PixelData));
+    EXPECT_EQ(frameSize, m_imageObserver.m_lastDecodedSizeChangedDelta);
+    frameAtIndex(0);
+
+    // Trying to destroy all data except an undecoded frame should go ahead and
+    // destroy all other frames.
+    setCurrentFrame(2);
+    destroyDecodedData(false);
+    EXPECT_EQ(-frameSize * 2, m_imageObserver.m_lastDecodedSizeChangedDelta);
+}
 
 } // namespace blink

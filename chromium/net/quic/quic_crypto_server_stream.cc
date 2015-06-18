@@ -9,17 +9,18 @@
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
-#include "net/quic/crypto/source_address_token.h"
+#include "net/quic/crypto/quic_random.h"
+#include "net/quic/proto/cached_network_parameters.pb.h"
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
 
+using std::string;
+
 namespace net {
 
 void ServerHelloNotifier::OnAckNotification(
-    int num_original_packets,
-    int num_original_bytes,
     int num_retransmitted_packets,
     int num_retransmitted_bytes,
     QuicTime::Delta delta_largest_observed) {
@@ -27,13 +28,17 @@ void ServerHelloNotifier::OnAckNotification(
 }
 
 QuicCryptoServerStream::QuicCryptoServerStream(
-    const QuicCryptoServerConfig& crypto_config,
+    const QuicCryptoServerConfig* crypto_config,
     QuicSession* session)
     : QuicCryptoStream(session),
       crypto_config_(crypto_config),
       validate_client_hello_cb_(nullptr),
       num_handshake_messages_(0),
-      num_server_config_update_messages_sent_(0) {}
+      num_server_config_update_messages_sent_(0),
+      use_stateless_rejects_if_peer_supported_(false),
+      peer_supports_stateless_rejects_(false) {
+  DCHECK_EQ(Perspective::IS_SERVER, session->connection()->perspective());
+}
 
 QuicCryptoServerStream::~QuicCryptoServerStream() {
   CancelOutstandingCallbacks();
@@ -71,11 +76,9 @@ void QuicCryptoServerStream::OnHandshakeMessage(
   }
 
   validate_client_hello_cb_ = new ValidateCallback(this);
-  return crypto_config_.ValidateClientHello(
-      message,
-      session()->connection()->peer_address(),
-      session()->connection()->clock(),
-      validate_client_hello_cb_);
+  return crypto_config_->ValidateClientHello(
+      message, session()->connection()->peer_address().address(),
+      session()->connection()->clock(), validate_client_hello_cb_);
 }
 
 void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
@@ -85,10 +88,14 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
   DCHECK(validate_client_hello_cb_ != nullptr);
   validate_client_hello_cb_ = nullptr;
 
-  string error_details;
+  if (FLAGS_enable_quic_stateless_reject_support) {
+    peer_supports_stateless_rejects_ = DoesPeerSupportStatelessRejects(message);
+  }
+
   CryptoHandshakeMessage reply;
-  QuicErrorCode error = ProcessClientHello(
-      message, result, &reply, &error_details);
+  string error_details;
+  QuicErrorCode error =
+      ProcessClientHello(message, result, &reply, &error_details);
 
   if (error != QUIC_NO_ERROR) {
     CloseConnectionWithDetails(error, error_details);
@@ -100,7 +107,9 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
     return;
   }
 
-  // If we are returning a SHLO then we accepted the handshake.
+  // If we are returning a SHLO then we accepted the handshake.  Now
+  // process the negotiated configuration options as part of the
+  // session config.
   QuicConfig* config = session()->config();
   OverrideQuicConfigDefaults(config);
   error = config->ProcessPeerHello(message, CLIENT, &error_details);
@@ -108,6 +117,7 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
     CloseConnectionWithDetails(error, error_details);
     return;
   }
+
   session()->OnConfigNegotiated();
 
   config->ToHandshakeMessage(&reply);
@@ -129,21 +139,13 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
 
   // We want to be notified when the SHLO is ACKed so that we can disable
   // HANDSHAKE_MODE in the sent packet manager.
-  if (session()->connection()->version() <= QUIC_VERSION_21) {
-    SendHandshakeMessage(reply);
-  } else {
-    scoped_refptr<ServerHelloNotifier> server_hello_notifier(
-        new ServerHelloNotifier(this));
-    SendHandshakeMessage(reply, server_hello_notifier.get());
-  }
+  scoped_refptr<ServerHelloNotifier> server_hello_notifier(
+      new ServerHelloNotifier(this));
+  SendHandshakeMessage(reply, server_hello_notifier.get());
 
   session()->connection()->SetEncrypter(
       ENCRYPTION_FORWARD_SECURE,
       crypto_negotiated_params_.forward_secure_crypters.encrypter.release());
-  if (!FLAGS_enable_quic_delay_forward_security) {
-    session()->connection()->SetDefaultEncryptionLevel(
-        ENCRYPTION_FORWARD_SECURE);
-  }
   session()->connection()->SetAlternativeDecrypter(
       crypto_negotiated_params_.forward_secure_crypters.decrypter.release(),
       ENCRYPTION_FORWARD_SECURE, false /* don't latch */);
@@ -155,18 +157,18 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
 
 void QuicCryptoServerStream::SendServerConfigUpdate(
     const CachedNetworkParameters* cached_network_params) {
-  if (session()->connection()->version() <= QUIC_VERSION_21 ||
-      !handshake_confirmed_) {
+  if (!handshake_confirmed_) {
     return;
   }
 
   CryptoHandshakeMessage server_config_update_message;
-  if (!crypto_config_.BuildServerConfigUpdateMessage(
-          session()->connection()->peer_address(),
+  if (!crypto_config_->BuildServerConfigUpdateMessage(
+          previous_source_address_tokens_,
+          session()->connection()->self_address().address(),
+          session()->connection()->peer_address().address(),
           session()->connection()->clock(),
           session()->connection()->random_generator(),
-          crypto_negotiated_params_,
-          cached_network_params,
+          crypto_negotiated_params_, cached_network_params,
           &server_config_update_message)) {
     DVLOG(1) << "Server: Failed to build server config update (SCUP)!";
     return;
@@ -230,23 +232,30 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
     previous_cached_network_params_.reset(
         new CachedNetworkParameters(result.cached_network_params));
   }
+  previous_source_address_tokens_ = result.info.source_address_tokens;
 
-  return crypto_config_.ProcessClientHello(
-      result,
-      session()->connection()->connection_id(),
-      session()->connection()->peer_address(),
-      session()->connection()->version(),
-      session()->connection()->supported_versions(),
-      session()->connection()->clock(),
-      session()->connection()->random_generator(),
+  const bool use_stateless_rejects_in_crypto_config =
+      FLAGS_enable_quic_stateless_reject_support &&
+      use_stateless_rejects_if_peer_supported_ &&
+      peer_supports_stateless_rejects_;
+  QuicConnection* connection = session()->connection();
+  const QuicConnectionId server_designated_connection_id =
+      use_stateless_rejects_in_crypto_config
+          ? GenerateConnectionIdForReject(connection->connection_id())
+          : 0;
+  return crypto_config_->ProcessClientHello(
+      result, connection->connection_id(), connection->self_address().address(),
+      connection->peer_address(), version(), connection->supported_versions(),
+      use_stateless_rejects_in_crypto_config, server_designated_connection_id,
+      connection->clock(), connection->random_generator(),
       &crypto_negotiated_params_, reply, error_details);
 }
 
 void QuicCryptoServerStream::OverrideQuicConfigDefaults(QuicConfig* config) {
 }
 
-CachedNetworkParameters*
-QuicCryptoServerStream::get_previous_cached_network_params() {
+const CachedNetworkParameters*
+QuicCryptoServerStream::previous_cached_network_params() const {
   return previous_cached_network_params_.get();
 }
 
@@ -262,6 +271,31 @@ void QuicCryptoServerStream::ValidateCallback::RunImpl(
   if (parent_ != nullptr) {
     parent_->FinishProcessingHandshakeMessage(client_hello, result);
   }
+}
+
+QuicConnectionId QuicCryptoServerStream::GenerateConnectionIdForReject(
+    QuicConnectionId connection_id) {
+  return session()->connection()->random_generator()->RandUint64();
+}
+
+// TODO(jokulik): Once stateless rejects support is inherent in the version
+// number, this function will likely go away entirely.
+// static
+bool QuicCryptoServerStream::DoesPeerSupportStatelessRejects(
+    const CryptoHandshakeMessage& message) {
+  const QuicTag* received_tags;
+  size_t received_tags_length;
+  QuicErrorCode error =
+      message.GetTaglist(kCOPT, &received_tags, &received_tags_length);
+  if (error != QUIC_NO_ERROR) {
+    return false;
+  }
+  for (size_t i = 0; i < received_tags_length; ++i) {
+    if (received_tags[i] == kSREJ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace net

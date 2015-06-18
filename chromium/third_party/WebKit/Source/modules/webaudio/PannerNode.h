@@ -25,12 +25,12 @@
 #ifndef PannerNode_h
 #define PannerNode_h
 
+#include "modules/webaudio/AudioListener.h"
+#include "modules/webaudio/AudioNode.h"
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/Cone.h"
 #include "platform/audio/Distance.h"
 #include "platform/audio/Panner.h"
-#include "modules/webaudio/AudioListener.h"
-#include "modules/webaudio/AudioNode.h"
 #include "platform/geometry/FloatPoint3D.h"
 #include "wtf/HashMap.h"
 
@@ -43,8 +43,7 @@ namespace blink {
 // A cone effect will attenuate the gain as the orientation moves away from the listener.
 // All of these effects follow the OpenAL specification very closely.
 
-class PannerNode final : public AudioNode {
-    DEFINE_WRAPPERTYPEINFO();
+class PannerHandler final : public AudioHandler {
 public:
     // These enums are used to distinguish what cached values of panner are dirty.
     enum {
@@ -53,17 +52,11 @@ public:
         DopplerRateDirty = 0x4,
     };
 
-    static PannerNode* create(AudioContext* context, float sampleRate)
-    {
-        return new PannerNode(context, sampleRate);
-    }
+    static PassRefPtr<PannerHandler> create(AudioNode&, float sampleRate);
+    virtual ~PannerHandler();
 
-    virtual ~PannerNode();
-
-    // AudioNode
-    virtual void dispose() override;
+    // AudioHandler
     virtual void process(size_t framesToProcess) override;
-    virtual void pullInputs(size_t framesToProcess) override;
     virtual void initialize() override;
     virtual void uninitialize() override;
 
@@ -110,11 +103,8 @@ public:
     virtual void setChannelCount(unsigned long, ExceptionState&) final;
     virtual void setChannelCountMode(const String&, ExceptionState&) final;
 
-    virtual void trace(Visitor*) override;
-
 private:
-    PannerNode(AudioContext*, float sampleRate);
-
+    PannerHandler(AudioNode&, float sampleRate);
     // AudioContext's listener
     AudioListener* listener();
 
@@ -132,11 +122,10 @@ private:
     bool isDistanceConeGainDirty() const { return m_isDistanceConeGainDirty; }
     bool isDopplerRateDirty() const { return m_isDopplerRateDirty; }
 
-    // Notifies any AudioBufferSourceNodes connected to us either directly or indirectly about our existence.
-    // This is in order to handle the pitch change necessary for the doppler shift.
-    void notifyAudioSourcesConnectedToNode(AudioNode*, HashMap<AudioNode*, bool> &visitedNodes);
-
-    Member<Panner> m_panner;
+    // This Persistent doesn't make a reference cycle including the owner
+    // PannerNode.
+    Persistent<AudioListener> m_listener;
+    OwnPtr<Panner> m_panner;
     unsigned m_panningModel;
     unsigned m_distanceModel;
 
@@ -160,11 +149,38 @@ private:
     float m_cachedDistanceConeGain;
     double m_cachedDopplerRate;
 
-    // AudioContext's connection count
-    unsigned m_connectionCount;
-
     // Synchronize process() with setting of the panning model, source's location information, listener, distance parameters and sound cones.
     mutable Mutex m_processLock;
+};
+
+class PannerNode final : public AudioNode {
+    DEFINE_WRAPPERTYPEINFO();
+public:
+    static PannerNode* create(AudioContext&, float sampleRate);
+    PannerHandler& pannerHandler() const;
+
+    String panningModel() const;
+    void setPanningModel(const String&);
+    void setPosition(float x, float y, float z);
+    void setOrientation(float x, float y, float z);
+    void setVelocity(float x, float y, float z);
+    String distanceModel() const;
+    void setDistanceModel(const String&);
+    double refDistance() const;
+    void setRefDistance(double);
+    double maxDistance() const;
+    void setMaxDistance(double);
+    double rolloffFactor() const;
+    void setRolloffFactor(double);
+    double coneInnerAngle() const;
+    void setConeInnerAngle(double);
+    double coneOuterAngle() const;
+    void setConeOuterAngle(double);
+    double coneOuterGain() const;
+    void setConeOuterGain(double);
+
+private:
+    PannerNode(AudioContext&, float sampleRate);
 };
 
 } // namespace blink

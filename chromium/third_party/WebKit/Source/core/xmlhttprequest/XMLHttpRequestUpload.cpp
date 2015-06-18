@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/xmlhttprequest/XMLHttpRequestUpload.h"
 
-#include "core/events/Event.h"
+#include "core/EventTypeNames.h"
 #include "core/xmlhttprequest/XMLHttpRequestProgressEvent.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/AtomicString.h"
@@ -71,7 +71,7 @@ void XMLHttpRequestUpload::handleRequestError(const AtomicString& type)
     dispatchEventAndLoadEnd(type, lengthComputable, m_lastBytesSent, m_lastTotalBytesToBeSent);
 }
 
-void XMLHttpRequestUpload::trace(Visitor* visitor)
+DEFINE_TRACE(XMLHttpRequestUpload)
 {
     visitor->trace(m_xmlHttpRequest);
     XMLHttpRequestEventTarget::trace(visitor);

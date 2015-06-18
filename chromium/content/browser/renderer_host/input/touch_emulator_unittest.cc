@@ -53,7 +53,8 @@ class TouchEmulatorTest : public testing::Test,
 #endif
 
     emulator_.reset(new TouchEmulator(this));
-    emulator_->Enable();
+    emulator_->SetDoubleTapSupportForPageEnabled(false);
+    emulator_->Enable(ui::GestureProviderConfigType::GENERIC_MOBILE);
   }
 
   void TearDown() override {
@@ -62,6 +63,7 @@ class TouchEmulatorTest : public testing::Test,
 
 #if defined(USE_AURA)
     aura::Env::DeleteInstance();
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, nullptr);
     screen_.reset();
 #endif
   }
@@ -75,8 +77,8 @@ class TouchEmulatorTest : public testing::Test,
     EXPECT_EQ(1U, event.touchesLength);
     EXPECT_EQ(last_mouse_x_, event.touches[0].position.x);
     EXPECT_EQ(last_mouse_y_, event.touches[0].position.y);
-    int expectedCancelable = event.type != WebInputEvent::TouchCancel;
-    EXPECT_EQ(expectedCancelable, event.cancelable);
+    bool expected_cancelable = event.type != WebInputEvent::TouchCancel;
+    EXPECT_EQ(expected_cancelable, !!event.cancelable);
     if (ack_touches_synchronously_) {
       emulator()->HandleTouchEventAck(
           event, INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
@@ -282,6 +284,20 @@ TEST_F(TouchEmulatorTest, Touch) {
       ExpectedEvents());
 }
 
+TEST_F(TouchEmulatorTest, DoubleTapSupport) {
+  emulator()->SetDoubleTapSupportForPageEnabled(true);
+  MouseMove(100, 200);
+  EXPECT_EQ("", ExpectedEvents());
+  MouseDown(100, 200);
+  EXPECT_EQ("TouchStart GestureTapDown", ExpectedEvents());
+  MouseUp(100, 200);
+  EXPECT_EQ("TouchEnd GestureTapUnconfirmed", ExpectedEvents());
+  MouseDown(100, 200);
+  EXPECT_EQ("TouchStart GestureTapCancel GestureTapDown", ExpectedEvents());
+  MouseUp(100, 200);
+  EXPECT_EQ("TouchEnd GestureTapCancel GestureDoubleTap", ExpectedEvents());
+}
+
 TEST_F(TouchEmulatorTest, MultipleTouches) {
   MouseMove(100, 200);
   EXPECT_EQ("", ExpectedEvents());
@@ -373,7 +389,39 @@ TEST_F(TouchEmulatorTest, DisableAndReenable) {
   MouseMove(300, 300);
   EXPECT_EQ("", ExpectedEvents());
 
-  emulator()->Enable();
+  emulator()->Enable(ui::GestureProviderConfigType::GENERIC_MOBILE);
+  MouseDown(300, 300);
+  EXPECT_EQ("TouchStart GestureTapDown", ExpectedEvents());
+  MouseDrag(300, 400);
+  EXPECT_EQ(
+      "TouchMove GestureTapCancel GestureScrollBegin GestureScrollUpdate",
+      ExpectedEvents());
+
+  // Disable while scroll is in progress.
+  emulator()->Disable();
+  EXPECT_EQ("TouchCancel GestureScrollEnd", ExpectedEvents());
+}
+
+TEST_F(TouchEmulatorTest, DisableAndReenableDifferentConfig) {
+  MouseDown(100, 200);
+  EXPECT_EQ("TouchStart GestureTapDown", ExpectedEvents());
+  MouseDrag(200, 200);
+  EXPECT_EQ(
+      "TouchMove GestureTapCancel GestureScrollBegin GestureScrollUpdate",
+      ExpectedEvents());
+  PressShift();
+  MouseDrag(300, 200);
+  EXPECT_EQ("TouchMove GesturePinchBegin", ExpectedEvents());
+
+  // Disable while pinch is in progress.
+  emulator()->Disable();
+  EXPECT_EQ("TouchCancel GesturePinchEnd GestureScrollEnd", ExpectedEvents());
+  MouseUp(300, 200);
+  ReleaseShift();
+  MouseMove(300, 300);
+  EXPECT_EQ("", ExpectedEvents());
+
+  emulator()->Enable(ui::GestureProviderConfigType::GENERIC_DESKTOP);
   MouseDown(300, 300);
   EXPECT_EQ("TouchStart GestureTapDown", ExpectedEvents());
   MouseDrag(300, 400);
@@ -433,7 +481,7 @@ TEST_F(TouchEmulatorTest, MouseWheel) {
   emulator()->Disable();
   EXPECT_EQ("TouchCancel GestureTapCancel", ExpectedEvents());
   EXPECT_TRUE(SendMouseWheelEvent());
-  emulator()->Enable();
+  emulator()->Enable(ui::GestureProviderConfigType::GENERIC_MOBILE);
   EXPECT_TRUE(SendMouseWheelEvent());
 }
 
@@ -459,7 +507,7 @@ TEST_F(TouchEmulatorTest, MultipleTouchStreams) {
   EXPECT_EQ("", ExpectedEvents());
   // Re-enabling in the middle of a touch sequence should not affect this.
   emulator()->Disable();
-  emulator()->Enable();
+  emulator()->Enable(ui::GestureProviderConfigType::GENERIC_MOBILE);
   MouseDrag(300, 300);
   EXPECT_EQ("", ExpectedEvents());
   MouseUp(300, 300);
@@ -474,7 +522,7 @@ TEST_F(TouchEmulatorTest, MultipleTouchStreams) {
   EXPECT_TRUE(TouchEnd(20, 20, false));
   EXPECT_TRUE(TouchStart(30, 30, false));
   AckOldestTouchEvent(); // TouchStart.
-  emulator()->Enable();
+  emulator()->Enable(ui::GestureProviderConfigType::GENERIC_MOBILE);
   AckOldestTouchEvent(); // TouchMove.
   AckOldestTouchEvent(); // TouchEnd.
   MouseDown(300, 200);
@@ -517,6 +565,14 @@ TEST_F(TouchEmulatorTest, MultipleTouchStreamsLateEnable) {
       "TouchMove GestureTapCancel GestureScrollBegin GestureScrollUpdate"
       " TouchEnd GestureScrollEnd",
       ExpectedEvents());
+}
+
+TEST_F(TouchEmulatorTest, CancelAfterDisableDoesNotCrash) {
+  DisableSynchronousTouchAck();
+  MouseDown(100, 200);
+  emulator()->Disable();
+  EXPECT_EQ("TouchStart TouchCancel", ExpectedEvents());
+  emulator()->CancelTouch();
 }
 
 }  // namespace content

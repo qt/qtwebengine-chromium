@@ -96,10 +96,6 @@ bool ExternalMountPoints::RegisterFileSystem(
     FileSystemType type,
     const FileSystemMountOption& mount_option,
     const base::FilePath& path_in) {
-  // COPY_SYNC_OPTION_SYNC is only applicable to native local file system.
-  DCHECK(type == kFileSystemTypeNativeLocal ||
-         mount_option.copy_sync_option() != COPY_SYNC_OPTION_SYNC);
-
   base::AutoLock locker(lock_);
 
   base::FilePath path = NormalizeFilePath(path_in);
@@ -165,9 +161,7 @@ bool ExternalMountPoints::CrackVirtualPath(
   std::vector<base::FilePath::StringType>::iterator component_iter =
       components.begin();
   std::string maybe_mount_name =
-      base::FilePath(*component_iter++).MaybeAsASCII();
-  if (maybe_mount_name.empty())
-    return false;
+      base::FilePath(*component_iter++).AsUTF8Unsafe();
 
   base::FilePath cracked_path;
   {
@@ -235,7 +229,7 @@ bool ExternalMountPoints::GetVirtualPath(const base::FilePath& path_in,
 
 base::FilePath ExternalMountPoints::CreateVirtualRootPath(
     const std::string& mount_name) const {
-  return base::FilePath().AppendASCII(mount_name);
+  return base::FilePath().Append(base::FilePath::FromUTF8Unsafe(mount_name));
 }
 
 FileSystemURL ExternalMountPoints::CreateExternalFileSystemURL(

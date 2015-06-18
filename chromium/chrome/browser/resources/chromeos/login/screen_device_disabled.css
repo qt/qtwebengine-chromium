@@ -25,7 +25,7 @@
 
 #device-disabled-symbol {
   align-self: center;
-  background-image: url('chrome://theme/IDR_DEVICE_DISABLED');
+  background-image: url(chrome://theme/IDR_DEVICE_DISABLED);
   height: 24px;
   width: 24px;
 }
@@ -50,17 +50,9 @@
 }
 
 #device-disabled-message {
-  margin-top: -3px;
+  margin: -3px 0 -5px;
   max-height: 400px;
   overflow: auto;
   text-overflow: ellipsis;
   white-space: pre-wrap;
-}
-
-#device-disabled-help-link-container {
-  margin: 17px 0 -5px;
-}
-
-#device-disabled-help-link {
-  color: rgb(85, 149, 243);
 }

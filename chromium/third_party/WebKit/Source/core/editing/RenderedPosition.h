@@ -31,15 +31,15 @@
 #ifndef RenderedPosition_h
 #define RenderedPosition_h
 
+#include "core/CoreExport.h"
+#include "core/dom/Position.h"
 #include "core/editing/TextAffinity.h"
-#include "core/rendering/InlineBox.h"
+#include "core/layout/line/InlineBox.h"
 
 namespace blink {
 
-class GraphicsLayer;
 class LayoutUnit;
-class Position;
-class RenderObject;
+class LayoutObject;
 class VisiblePosition;
 struct CompositedSelectionBound;
 
@@ -50,7 +50,7 @@ public:
     explicit RenderedPosition(const Position&, EAffinity);
     bool isEquivalent(const RenderedPosition&) const;
 
-    bool isNull() const { return !m_renderer; }
+    bool isNull() const { return !m_layoutObject; }
     RootInlineBox* rootBox() { return m_inlineBox ? &m_inlineBox->root() : 0; }
 
     unsigned char bidiLevelOnLeft() const;
@@ -74,7 +74,7 @@ public:
 
 private:
     bool operator==(const RenderedPosition&) const { return false; }
-    explicit RenderedPosition(RenderObject*, InlineBox*, int offset);
+    explicit RenderedPosition(LayoutObject*, InlineBox*, int offset);
 
     InlineBox* prevLeafChild() const;
     InlineBox* nextLeafChild() const;
@@ -83,7 +83,7 @@ private:
     bool atLeftBoundaryOfBidiRun(ShouldMatchBidiLevel, unsigned char bidiLevelOfRun) const;
     bool atRightBoundaryOfBidiRun(ShouldMatchBidiLevel, unsigned char bidiLevelOfRun) const;
 
-    RenderObject* m_renderer;
+    LayoutObject* m_layoutObject;
     InlineBox* m_inlineBox;
     int m_offset;
 
@@ -95,7 +95,7 @@ private:
 };
 
 inline RenderedPosition::RenderedPosition()
-    : m_renderer(nullptr)
+    : m_layoutObject(nullptr)
     , m_inlineBox(nullptr)
     , m_offset(0)
     , m_prevLeafChild(uncachedInlineBox())
@@ -103,8 +103,8 @@ inline RenderedPosition::RenderedPosition()
 {
 }
 
-inline RenderedPosition::RenderedPosition(RenderObject* renderer, InlineBox* box, int offset)
-    : m_renderer(renderer)
+inline RenderedPosition::RenderedPosition(LayoutObject* layoutObject, InlineBox* box, int offset)
+    : m_layoutObject(layoutObject)
     , m_inlineBox(box)
     , m_offset(offset)
     , m_prevLeafChild(uncachedInlineBox())
@@ -112,7 +112,7 @@ inline RenderedPosition::RenderedPosition(RenderObject* renderer, InlineBox* box
 {
 }
 
-bool renderObjectContainsPosition(RenderObject*, const Position&);
+CORE_EXPORT bool layoutObjectContainsPosition(LayoutObject*, const Position&);
 
 };
 

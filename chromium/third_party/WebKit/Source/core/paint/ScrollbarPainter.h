@@ -10,22 +10,21 @@
 namespace blink {
 
 class GraphicsContext;
-struct PaintInfo;
 class IntRect;
 class LayoutPoint;
 class LayoutRect;
-class RenderScrollbar;
-class RenderScrollbarPart;
+class LayoutScrollbar;
+class LayoutScrollbarPart;
 
 class ScrollbarPainter {
 public:
-    ScrollbarPainter(RenderScrollbar& renderScrollbar) : m_renderScrollbar(renderScrollbar) { }
+    ScrollbarPainter(LayoutScrollbar& layoutScrollbar) : m_layoutScrollbar(layoutScrollbar) { }
 
     void paintPart(GraphicsContext*, ScrollbarPart, const IntRect&);
-    static void paintIntoRect(RenderScrollbarPart*, GraphicsContext*, const LayoutPoint& paintOffset, const LayoutRect&);
+    static void paintIntoRect(LayoutScrollbarPart*, GraphicsContext*, const LayoutPoint& paintOffset, const LayoutRect&);
 
 private:
-    RenderScrollbar& m_renderScrollbar;
+    LayoutScrollbar& m_layoutScrollbar;
 };
 
 } // namespace blink

@@ -7,21 +7,19 @@
 
 namespace blink {
 
-class GraphicsContext;
 struct PaintInfo;
 class LayoutPoint;
-class LayoutRect;
-class RenderVideo;
+class LayoutVideo;
 
 class VideoPainter {
 public:
-    VideoPainter(RenderVideo& renderVideo) : m_renderVideo(renderVideo) { }
+    VideoPainter(LayoutVideo& layoutVideo) : m_layoutVideo(layoutVideo) { }
 
-    void paintReplaced(PaintInfo&, const LayoutPoint&);
+    void paintReplaced(const PaintInfo&, const LayoutPoint&);
 
 private:
 
-    RenderVideo& m_renderVideo;
+    LayoutVideo& m_layoutVideo;
 };
 
 } // namespace blink

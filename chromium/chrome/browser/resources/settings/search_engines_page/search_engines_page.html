@@ -1,0 +1,17 @@
+<link rel="import" href="chrome://resources/polymer/v0_8/polymer/polymer.html">
+<link rel="import" href="chrome://resources/polymer/v0_8/paper-material/paper-material.html">
+<link rel="import" href="search_engine_adder.html">
+
+<dom-module id="cr-settings-search-engines-page">
+  <link rel="import" type="css" href="chrome://md-settings/settings_page/settings_page.css">
+  <template>
+    <paper-material>
+      <div class="content">
+        <cr-search-engine-adder></cr-search-engine-adder>
+        <!-- TODO(orenb): Add search engine lists with defaultSearchEngines and
+             otherSearchEngines. -->
+      </div>
+    </paper-material>
+  </template>
+  <script src="search_engines_page.js"></script>
+</dom-module>

@@ -12,14 +12,13 @@
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
-#include "base/process/process_handle.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/win/message_window.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/scoped_process_information.h"
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -91,7 +90,7 @@ bool LaunchChromeBrowserProcess() {
     return false;
   }
 
-  CommandLine cl(chrome_exe_path);
+  base::CommandLine cl(chrome_exe_path);
 
   // Prevent a Chrome window from showing up on the desktop.
   cl.AppendSwitch(switches::kSilentLaunch);
@@ -102,7 +101,7 @@ bool LaunchChromeBrowserProcess() {
   base::LaunchOptions launch_options;
   launch_options.start_hidden = true;
 
-  return base::LaunchProcess(cl, launch_options, NULL);
+  return base::LaunchProcess(cl, launch_options).IsValid();
 }
 
 }  // namespace
@@ -167,7 +166,7 @@ bool CommandExecuteImpl::path_provider_initialized_ = false;
 // mode again.
 //
 CommandExecuteImpl::CommandExecuteImpl()
-    : parameters_(CommandLine::NO_PROGRAM),
+    : parameters_(base::CommandLine::NO_PROGRAM),
       launch_scheme_(INTERNET_SCHEME_DEFAULT),
       integrity_level_(base::INTEGRITY_UNKNOWN) {
   memset(&start_info_, 0, sizeof(start_info_));
@@ -180,6 +179,9 @@ CommandExecuteImpl::CommandExecuteImpl()
     chrome::RegisterPathProvider();
     path_provider_initialized_ = true;
   }
+}
+
+CommandExecuteImpl::~CommandExecuteImpl() {
 }
 
 // CommandExecuteImpl
@@ -250,8 +252,7 @@ STDMETHODIMP CommandExecuteImpl::Execute() {
   }
 
   BrowserDistribution* distribution = BrowserDistribution::GetDistribution();
-  bool is_per_user_install = InstallUtil::IsPerUserInstall(
-      chrome_exe_.value().c_str());
+  bool is_per_user_install = InstallUtil::IsPerUserInstall(chrome_exe_);
   base::string16 app_id = ShellUtil::GetBrowserModelId(
       distribution, is_per_user_install);
 
@@ -288,8 +289,7 @@ STDMETHODIMP CommandExecuteImpl::Initialize(LPCWSTR name,
     verb_ = name;
   }
 
-  base::GetProcessIntegrityLevel(base::GetCurrentProcessHandle(),
-                                 &integrity_level_);
+  integrity_level_ = base::GetCurrentProcessIntegrityLevel();
   return S_OK;
 }
 
@@ -392,9 +392,8 @@ HRESULT CommandExecuteImpl::LaunchDesktopChrome() {
       break;
   }
 
-  CommandLine chrome(
-      delegate_execute::MakeChromeCommandLine(chrome_exe_, parameters_,
-                                              display_name));
+  base::CommandLine chrome(delegate_execute::MakeChromeCommandLine(
+      chrome_exe_, parameters_, display_name));
   base::string16 command_line(chrome.GetCommandLineString());
 
   AtlTrace("Formatted command line is %ls\n", command_line.c_str());
@@ -455,11 +454,11 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
   if (parameters_.HasSwitch(switches::kForceImmersive)) {
     launch_mode = ECHUIM_IMMERSIVE;
     launch_mode_determined = true;
-    parameters_ = CommandLine(CommandLine::NO_PROGRAM);
+    parameters_ = base::CommandLine(base::CommandLine::NO_PROGRAM);
   } else if (parameters_.HasSwitch(switches::kForceDesktop)) {
     launch_mode = ECHUIM_DESKTOP;
     launch_mode_determined = true;
-    parameters_ = CommandLine(CommandLine::NO_PROGRAM);
+    parameters_ = base::CommandLine(base::CommandLine::NO_PROGRAM);
   }
 
   base::win::RegKey reg_key;
@@ -483,6 +482,16 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
     AtlTrace("Launch mode forced by cmdline to %s\n", modes[launch_mode]);
     reg_key.WriteValue(chrome::kLaunchModeValue,
                        static_cast<DWORD>(launch_mode));
+    return launch_mode;
+  }
+
+  // As of now ActivateApplication fails on Windows 10 (Build 9926).
+  // Until there is some clarity on special status of browser in metro mode on
+  // Windows 10, we just  disable Chrome metro mode so that browser remains
+  // usable.
+  if (base::win::GetVersion() >= base::win::VERSION_WIN10) {
+    launch_mode = ECHUIM_DESKTOP;
+    launch_mode_determined = true;
     return launch_mode;
   }
 

@@ -125,7 +125,12 @@
 
 #include <openssl/base.h>
 
-#include <inttypes.h>
+#if defined(OPENSSL_X86_64) && defined(_MSC_VER) && _MSC_VER >= 1400
+#pragma warning(push, 3)
+#include <intrin.h>
+#pragma warning(pop)
+#pragma intrinsic(__umulh, _umul128)
+#endif
 
 #if defined(__cplusplus)
 extern "C" {
@@ -137,8 +142,14 @@ BIGNUM *bn_expand(BIGNUM *bn, unsigned bits);
 
 #if defined(OPENSSL_64_BIT)
 
-#define BN_ULLONG	unsigned long long
+#if !defined(_MSC_VER)
+/* MSVC doesn't support two-word integers on 64-bit. */
+#define BN_LLONG	__int128_t
+#define BN_ULLONG	__uint128_t
+#endif
+
 #define BN_BITS		128
+#define BN_BITS2	64
 #define BN_BYTES	8
 #define BN_BITS4	32
 #define BN_MASK		(0xffffffffffffffffffffffffffffffffLL)
@@ -148,16 +159,15 @@ BIGNUM *bn_expand(BIGNUM *bn, unsigned bits);
 #define BN_MASK2h1	(0xffffffff80000000L)
 #define BN_TBIT		(0x8000000000000000L)
 #define BN_DEC_CONV	(10000000000000000000UL)
-#define BN_DEC_FMT1	"%" PRIu64
-#define BN_DEC_FMT2	"%019" PRIu64
 #define BN_DEC_NUM	19
-#define BN_HEX_FMT1	"%" PRIx64
 
 #elif defined(OPENSSL_32_BIT)
 
-#define BN_ULLONG	unsigned long long
-#define BN_MASK	(0xffffffffffffffffLL)
+#define BN_LLONG	int64_t
+#define BN_ULLONG	uint64_t
+#define BN_MASK		(0xffffffffffffffffLL)
 #define BN_BITS		64
+#define BN_BITS2	32
 #define BN_BYTES	4
 #define BN_BITS4	16
 #define BN_MASK2	(0xffffffffL)
@@ -166,10 +176,7 @@ BIGNUM *bn_expand(BIGNUM *bn, unsigned bits);
 #define BN_MASK2h	(0xffff0000L)
 #define BN_TBIT		(0x80000000L)
 #define BN_DEC_CONV	(1000000000L)
-#define BN_DEC_FMT1	"%" PRIu32
-#define BN_DEC_FMT2	"%09" PRIu32
 #define BN_DEC_NUM	9
-#define BN_HEX_FMT1	"%" PRIx32
 
 #else
 #error "Must define either OPENSSL_32_BIT or OPENSSL_64_BIT"
@@ -182,6 +189,11 @@ BIGNUM *bn_expand(BIGNUM *bn, unsigned bits);
 #define BN_SQR_RECURSIVE_SIZE_NORMAL (16)     /* 32 */
 #define BN_MUL_LOW_RECURSIVE_SIZE_NORMAL (32) /* 32 */
 #define BN_MONT_CTX_SET_SIZE_WORD (64)        /* 32 */
+
+#if defined(BN_LLONG)
+#define Lw(t) (((BN_ULONG)(t))&BN_MASK2)
+#define Hw(t) (((BN_ULONG)((t)>>BN_BITS2))&BN_MASK2)
+#endif
 
 BN_ULONG bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, int num, BN_ULONG w);
 BN_ULONG bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, int num, BN_ULONG w);
@@ -207,6 +219,8 @@ int bn_cmp_part_words(const BN_ULONG *a, const BN_ULONG *b, int cl, int dl);
 
 int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
                 const BN_ULONG *np, const BN_ULONG *n0, int num);
+
+#if !defined(BN_LLONG)
 
 #define LBITS(a) ((a) & BN_MASK2l)
 #define HBITS(a) (((a) >> BN_BITS4) & BN_MASK2l)
@@ -238,8 +252,10 @@ int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
     (h) = ht;                     \
   }
 
+#endif  /* !defined(BN_LLONG) */
+
 #if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64)
-# if defined(__GNUC__) && __GNUC__>=2
+# if defined(__GNUC__) && __GNUC__ >= 2
 #  define BN_UMULT_HIGH(a,b)	({	\
 	register BN_ULONG ret,discard;	\
 	__asm__ ("mulq	%3"		\
@@ -252,14 +268,9 @@ int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
 		: "=a"(low),"=d"(high)	\
 		: "a"(a),"g"(b)		\
 		: "cc");
-# endif
-# if defined(_MSC_VER) && _MSC_VER>=1400
-   unsigned __int64 __umulh	(unsigned __int64 a,unsigned __int64 b);
-   unsigned __int64 _umul128	(unsigned __int64 a,unsigned __int64 b,
-				 unsigned __int64 *h);
-#  pragma intrinsic(__umulh,_umul128)
-#  define BN_UMULT_HIGH(a,b)		__umulh((a),(b))
-#  define BN_UMULT_LOHI(low,high,a,b)	((low)=_umul128((a),(b),&(high)))
+# elif defined(_MSC_VER) && _MSC_VER >= 1400
+#  define BN_UMULT_HIGH(a, b) __umulh((a), (b))
+#  define BN_UMULT_LOHI(low, high, a, b) ((low) = _umul128((a), (b), &(high)))
 # endif
 #elif !defined(OPENSSL_NO_ASM) && defined(OPENSSL_AARCH64)
 # if defined(__GNUC__) && __GNUC__>=2

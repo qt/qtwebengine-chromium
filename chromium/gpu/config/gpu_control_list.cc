@@ -428,6 +428,20 @@ GpuControlList::GpuControlListEntry::GetEntryFromValue(
     dictionary_entry_count++;
   }
 
+  const base::ListValue* disabled_extensions;
+  if (value->GetList("disabled_extensions", &disabled_extensions)) {
+    for (size_t i = 0; i < disabled_extensions->GetSize(); ++i) {
+      std::string disabled_extension;
+      if (disabled_extensions->GetString(i, &disabled_extension)) {
+        entry->disabled_extensions_.push_back(disabled_extension);
+      } else {
+        LOG(WARNING) << "Malformed disabled_extensions entry " << entry->id();
+        return NULL;
+      }
+    }
+    dictionary_entry_count++;
+  }
+
   const base::DictionaryValue* os_value = NULL;
   if (value->GetDictionary("os", &os_value)) {
     std::string os_type;
@@ -1010,7 +1024,9 @@ bool GpuControlList::GpuControlListEntry::GLVersionInfoMismatch(
   GLType gl_type = kGLTypeNone;
   if (segments.size() > 2 &&
       segments[0] == "OpenGL" && segments[1] == "ES") {
-    number = segments[2];
+    bool full_match = RE2::FullMatch(segments[2], "([\\d.]+).*", &number);
+    DCHECK(full_match);
+
     gl_type = kGLTypeGLES;
     if (segments.size() > 3 &&
         StartsWithASCII(segments[3], "(ANGLE", false)) {
@@ -1201,18 +1217,6 @@ bool GpuControlList::GpuControlListEntry::Contains(
   if (gl_reset_notification_strategy_info_.get() != NULL &&
       !gl_reset_notification_strategy_info_->Contains(
           gpu_info.gl_reset_notification_strategy))
-    return false;
-  if (perf_graphics_info_.get() != NULL &&
-      (gpu_info.performance_stats.graphics == 0.0 ||
-       !perf_graphics_info_->Contains(gpu_info.performance_stats.graphics)))
-    return false;
-  if (perf_gaming_info_.get() != NULL &&
-      (gpu_info.performance_stats.gaming == 0.0 ||
-       !perf_gaming_info_->Contains(gpu_info.performance_stats.gaming)))
-    return false;
-  if (perf_overall_info_.get() != NULL &&
-      (gpu_info.performance_stats.overall == 0.0 ||
-       !perf_overall_info_->Contains(gpu_info.performance_stats.overall)))
     return false;
   if (!machine_model_name_list_.empty()) {
     if (gpu_info.machine_model_name.empty())
@@ -1428,6 +1432,21 @@ void GpuControlList::GetDecisionEntries(
     if (disabled == active_entries_[i]->disabled())
       entry_ids->push_back(active_entries_[i]->id());
   }
+}
+
+std::vector<std::string> GpuControlList::GetDisabledExtensions() {
+  std::set<std::string> disabled_extensions;
+  for (size_t i = 0; i < active_entries_.size(); ++i) {
+    GpuControlListEntry* entry = active_entries_[i].get();
+
+    if (entry->disabled())
+      continue;
+
+    disabled_extensions.insert(entry->disabled_extensions().begin(),
+                               entry->disabled_extensions().end());
+  }
+  return std::vector<std::string>(disabled_extensions.begin(),
+                                  disabled_extensions.end());
 }
 
 void GpuControlList::GetReasons(base::ListValue* problem_list,

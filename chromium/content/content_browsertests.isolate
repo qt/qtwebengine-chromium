@@ -3,6 +3,35 @@
 # found in the LICENSE file.
 {
   'conditions': [
+    ['use_x11==0', {
+      'variables': {
+        'command': [
+          '../testing/test_env.py',
+          '<(PRODUCT_DIR)/content_browsertests<(EXECUTABLE_SUFFIX)',
+          '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--msan=<(msan)',
+          '--tsan=<(tsan)',
+        ],
+      },
+    }],
+    ['use_x11==1', {
+      'variables': {
+        'command': [
+          '../testing/xvfb.py',
+          '<(PRODUCT_DIR)',
+          '<(PRODUCT_DIR)/content_browsertests<(EXECUTABLE_SUFFIX)',
+          '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--msan=<(msan)',
+          '--tsan=<(tsan)',
+        ],
+        'files': [
+          '../testing/xvfb.py',
+          '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
+        ],
+      },
+    }],
     ['OS=="android"', {
       'variables': {
         'files': [
@@ -35,27 +64,17 @@
     }],
     ['OS=="linux"', {
       'variables': {
-        'command': [
-          '../testing/xvfb.py',
-          '<(PRODUCT_DIR)',
-          '<(PRODUCT_DIR)/content_browsertests<(EXECUTABLE_SUFFIX)',
-          '--test-launcher-bot-mode',
-          '--asan=<(asan)',
-          '--lsan=<(lsan)',
-        ],
         'files': [
-          '../testing/xvfb.py',
           '<(PRODUCT_DIR)/content_shell.pak',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libosmesa.so',
-          '<(PRODUCT_DIR)/libppapi_tests.so',
         ],
       },
     }],
-    ['OS=="linux" and use_ozone==0', {
+    ['OS=="linux" and enable_plugins==1', {
       'variables': {
         'files': [
-          '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
+          '<(PRODUCT_DIR)/libppapi_tests.so',
         ],
       },
     }],
@@ -84,14 +103,17 @@
         ],
       },
     }],
-    ['OS=="mac" or OS=="win"', {
+    ['OS=="mac" and asan==1 and fastbuild==0', {
       'variables': {
-        'command': [
-          '../testing/test_env.py',
-          '<(PRODUCT_DIR)/content_browsertests<(EXECUTABLE_SUFFIX)',
-          '--test-launcher-bot-mode',
-          '--asan=<(asan)',
-          '--lsan=<(lsan)',
+        'files': [
+          '<(PRODUCT_DIR)/Content Shell Framework.framework.dSYM/',
+          '<(PRODUCT_DIR)/Content Shell Helper.app.dSYM/',
+          '<(PRODUCT_DIR)/Content Shell.app.dSYM/',
+          '<(PRODUCT_DIR)/content_browsertests.dSYM/',
+          '<(PRODUCT_DIR)/ffmpegsumo.so.dSYM/',
+          '<(PRODUCT_DIR)/npapi_test_plugin.plugin.dSYM/',
+          '<(PRODUCT_DIR)/ppapi_tests.plugin.dSYM/',
+          '<(PRODUCT_DIR)/test_netscape_plugin.plugin.dSYM/',
         ],
       },
     }],
@@ -125,5 +147,6 @@
   'includes': [
     '../base/base.isolate',
     '../gin/v8.isolate',
+    '../third_party/angle/angle.isolate',
   ],
 }

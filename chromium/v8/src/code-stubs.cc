@@ -75,13 +75,15 @@ bool CodeStub::FindCodeInCache(Code** code_out) {
 
 
 void CodeStub::RecordCodeGeneration(Handle<Code> code) {
-  IC::RegisterWeakMapDependency(code);
   std::ostringstream os;
   os << *this;
   PROFILE(isolate(),
           CodeCreateEvent(Logger::STUB_TAG, *code, os.str().c_str()));
   Counters* counters = isolate()->counters();
   counters->total_stubs_code_size()->Increment(code->instruction_size());
+#ifdef DEBUG
+  code->VerifyEmbeddedObjects();
+#endif
 }
 
 
@@ -266,12 +268,9 @@ MaybeHandle<Code> CodeStub::GetCode(Isolate* isolate, uint32_t key) {
 void BinaryOpICStub::GenerateAheadOfTime(Isolate* isolate) {
   // Generate the uninitialized versions of the stub.
   for (int op = Token::BIT_OR; op <= Token::MOD; ++op) {
-    for (int mode = NO_OVERWRITE; mode <= OVERWRITE_RIGHT; ++mode) {
-      BinaryOpICStub stub(isolate,
-                          static_cast<Token::Value>(op),
-                          static_cast<OverwriteMode>(mode));
-      stub.GetCode();
-    }
+    BinaryOpICStub stub(isolate, static_cast<Token::Value>(op),
+                        LanguageMode::SLOPPY);
+    stub.GetCode();
   }
 
   // Generate special versions of the stub.
@@ -622,26 +621,6 @@ CallInterfaceDescriptor StoreTransitionStub::GetCallInterfaceDescriptor() {
 }
 
 
-static void InitializeVectorLoadStub(Isolate* isolate,
-                                     CodeStubDescriptor* descriptor,
-                                     Address deoptimization_handler) {
-  DCHECK(FLAG_vector_ics);
-  descriptor->Initialize(deoptimization_handler);
-}
-
-
-void VectorLoadStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  InitializeVectorLoadStub(isolate(), descriptor,
-                           FUNCTION_ADDR(LoadIC_MissFromStubFailure));
-}
-
-
-void VectorKeyedLoadStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  InitializeVectorLoadStub(isolate(), descriptor,
-                           FUNCTION_ADDR(KeyedLoadIC_MissFromStubFailure));
-}
-
-
 void MegamorphicLoadStub::InitializeDescriptor(CodeStubDescriptor* d) {}
 
 
@@ -654,7 +633,7 @@ void FastNewClosureStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
 void FastNewContextStub::InitializeDescriptor(CodeStubDescriptor* d) {}
 
 
-void ToNumberStub::InitializeDescriptor(CodeStubDescriptor* d) {}
+void TypeofStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {}
 
 
 void NumberToStringStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
@@ -683,10 +662,13 @@ void FastCloneShallowObjectStub::InitializeDescriptor(
 void CreateAllocationSiteStub::InitializeDescriptor(CodeStubDescriptor* d) {}
 
 
+void CreateWeakCellStub::InitializeDescriptor(CodeStubDescriptor* d) {}
+
+
 void RegExpConstructResultStub::InitializeDescriptor(
     CodeStubDescriptor* descriptor) {
   descriptor->Initialize(
-      Runtime::FunctionForId(Runtime::kRegExpConstructResult)->entry);
+      Runtime::FunctionForId(Runtime::kRegExpConstructResultRT)->entry);
 }
 
 
@@ -732,12 +714,31 @@ void BinaryOpWithAllocationSiteStub::InitializeDescriptor(
 
 
 void StringAddStub::InitializeDescriptor(CodeStubDescriptor* descriptor) {
-  descriptor->Initialize(Runtime::FunctionForId(Runtime::kStringAdd)->entry);
+  descriptor->Initialize(Runtime::FunctionForId(Runtime::kStringAddRT)->entry);
+}
+
+
+void GrowArrayElementsStub::InitializeDescriptor(
+    CodeStubDescriptor* descriptor) {
+  descriptor->Initialize(
+      Runtime::FunctionForId(Runtime::kGrowArrayElements)->entry);
+}
+
+
+void TypeofStub::GenerateAheadOfTime(Isolate* isolate) {
+  TypeofStub stub(isolate);
+  stub.GetCode();
 }
 
 
 void CreateAllocationSiteStub::GenerateAheadOfTime(Isolate* isolate) {
   CreateAllocationSiteStub stub(isolate);
+  stub.GetCode();
+}
+
+
+void CreateWeakCellStub::GenerateAheadOfTime(Isolate* isolate) {
+  CreateWeakCellStub stub(isolate);
   stub.GetCode();
 }
 
@@ -768,6 +769,21 @@ void StoreElementStub::Generate(MacroAssembler* masm) {
 }
 
 
+// static
+void StoreFastElementStub::GenerateAheadOfTime(Isolate* isolate) {
+  StoreFastElementStub(isolate, false, FAST_HOLEY_ELEMENTS, STANDARD_STORE)
+      .GetCode();
+  StoreFastElementStub(isolate, false, FAST_HOLEY_ELEMENTS,
+                       STORE_AND_GROW_NO_TRANSITION).GetCode();
+  for (int i = FIRST_FAST_ELEMENTS_KIND; i <= LAST_FAST_ELEMENTS_KIND; i++) {
+    ElementsKind kind = static_cast<ElementsKind>(i);
+    StoreFastElementStub(isolate, true, kind, STANDARD_STORE).GetCode();
+    StoreFastElementStub(isolate, true, kind, STORE_AND_GROW_NO_TRANSITION)
+        .GetCode();
+  }
+}
+
+
 void ArgumentsAccessStub::Generate(MacroAssembler* masm) {
   switch (type()) {
     case READ_ELEMENT:
@@ -783,6 +799,11 @@ void ArgumentsAccessStub::Generate(MacroAssembler* masm) {
       GenerateNewStrict(masm);
       break;
   }
+}
+
+
+void RestParamAccessStub::Generate(MacroAssembler* masm) {
+  GenerateNew(masm);
 }
 
 
@@ -803,6 +824,11 @@ void ArgumentsAccessStub::PrintName(std::ostream& os) const {  // NOLINT
       break;
   }
   return;
+}
+
+
+void RestParamAccessStub::PrintName(std::ostream& os) const {  // NOLINT
+  os << "RestParamAccessStub_";
 }
 
 

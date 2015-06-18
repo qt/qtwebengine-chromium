@@ -28,59 +28,78 @@
 #ifndef ExecutionContext_h
 #define ExecutionContext_h
 
-#include "core/dom/ActiveDOMObject.h"
-#include "core/dom/SandboxFlags.h"
+#include "core/CoreExport.h"
+#include "core/dom/ContextLifecycleNotifier.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/SecurityContext.h"
-#include "core/fetch/CrossOriginAccessControl.h"
-#include "core/frame/ConsoleTypes.h"
-#include "core/frame/DOMTimer.h"
-#include "core/inspector/ConsoleMessage.h"
-#include "platform/LifecycleContext.h"
+#include "core/dom/SuspendableTask.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/Functional.h"
+#include "platform/weborigin/ReferrerPolicy.h"
+#include "wtf/Deque.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
-class ContextLifecycleNotifier;
-class LocalDOMWindow;
+class ActiveDOMObject;
+class ConsoleMessage;
+class DOMTimerCoordinator;
 class ErrorEvent;
 class EventQueue;
+class EventTarget;
 class ExecutionContextTask;
-class ScriptState;
+class LocalDOMWindow;
 class PublicURLManager;
 class SecurityOrigin;
 class ScriptCallStack;
 
-class ExecutionContext
-    : public LifecycleContext<ExecutionContext>
-    , public WillBeHeapSupplementable<ExecutionContext> {
+class CORE_EXPORT ExecutionContext
+    : public ContextLifecycleNotifier, public WillBeHeapSupplementable<ExecutionContext> {
+    WTF_MAKE_NONCOPYABLE(ExecutionContext);
 public:
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    // Used to specify whether |isPrivilegedContext| should walk the
+    // ancestor tree to decide whether to restrict usage of a powerful
+    // feature.
+    enum PrivilegeContextCheck {
+        StandardPrivilegeCheck,
+        WebCryptoPrivilegeCheck
+    };
 
     virtual bool isDocument() const { return false; }
     virtual bool isWorkerGlobalScope() const { return false; }
     virtual bool isDedicatedWorkerGlobalScope() const { return false; }
     virtual bool isSharedWorkerGlobalScope() const { return false; }
     virtual bool isServiceWorkerGlobalScope() const { return false; }
+    virtual bool isCompositorWorkerGlobalScope() const { return false; }
     virtual bool isJSExecutionForbidden() const { return false; }
+
+    virtual bool isContextThread() const { return true; }
+
     SecurityOrigin* securityOrigin();
     ContentSecurityPolicy* contentSecurityPolicy();
-    virtual void didUpdateSecurityOrigin() = 0;
     const KURL& url() const;
     KURL completeURL(const String& url) const;
     virtual void disableEval(const String& errorMessage) = 0;
     virtual LocalDOMWindow* executingWindow() { return 0; }
     virtual String userAgent(const KURL&) const = 0;
-    virtual void postTask(PassOwnPtr<ExecutionContextTask>) = 0; // Executes the task on context's thread asynchronously.
+    virtual void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) = 0; // Executes the task on context's thread asynchronously.
     virtual double timerAlignmentInterval() const = 0;
+
+    // Gets the DOMTimerCoordinator which maintains the "active timer
+    // list" of tasks created by setTimeout and setInterval. The
+    // DOMTimerCoordinator is owned by the ExecutionContext and should
+    // not be used after the ExecutionContext is destroyed.
+    virtual DOMTimerCoordinator* timers() = 0;
 
     virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) = 0;
 
-    virtual SecurityContext& securityContext() = 0;
+    virtual const SecurityContext& securityContext() const = 0;
     KURL contextURL() const { return virtualURL(); }
     KURL contextCompleteURL(const String& url) const { return virtualCompleteURL(url); }
 
@@ -92,13 +111,13 @@ public:
 
     PublicURLManager& publicURLManager();
 
-    // Active objects are not garbage collected even if inaccessible, e.g. because their activity may result in callbacks being invoked.
-    bool hasPendingActivity();
+    virtual void removeURLFromMemoryCache(const KURL&);
 
     void suspendActiveDOMObjects();
     void resumeActiveDOMObjects();
     void stopActiveDOMObjects();
-    unsigned activeDOMObjectCount();
+    void postSuspendableTask(PassOwnPtr<SuspendableTask>);
+    void notifyContextDestroyed() override;
 
     virtual void suspendScheduledTasks();
     virtual void resumeScheduledTasks();
@@ -108,7 +127,6 @@ public:
 
     bool activeDOMObjectsAreSuspended() const { return m_activeDOMObjectsAreSuspended; }
     bool activeDOMObjectsAreStopped() const { return m_activeDOMObjectsAreStopped; }
-    bool isIteratingOverObservers() const;
 
     // Called after the construction of an ActiveDOMObject to synchronize suspend state.
     void suspendActiveDOMObjectIfNeeded(ActiveDOMObject*);
@@ -120,16 +138,24 @@ public:
     // Gets the next id in a circular sequence from 1 to 2^31-1.
     int circularSequentialID();
 
-    void didChangeTimerAlignmentInterval();
-
-    SandboxFlags sandboxFlags() const { return m_sandboxFlags; }
-    bool isSandboxed(SandboxFlags mask) const { return m_sandboxFlags & mask; }
-    void enforceSandboxFlags(SandboxFlags mask);
-
-    PassOwnPtr<LifecycleNotifier<ExecutionContext> > createLifecycleNotifier();
-
     virtual EventTarget* errorEventTarget() = 0;
     virtual EventQueue* eventQueue() const = 0;
+
+    void enforceStrictMixedContentChecking() { m_strictMixedContentCheckingEnforced = true; }
+    bool shouldEnforceStrictMixedContentChecking() const { return m_strictMixedContentCheckingEnforced; }
+
+    // Methods related to window interaction. It should be used to manage window
+    // focusing and window creation permission for an ExecutionContext.
+    void allowWindowInteraction();
+    void consumeWindowInteraction();
+    bool isWindowInteractionAllowed() const;
+
+    // Decides whether this context is privileged, as described in
+    // https://w3c.github.io/webappsec/specs/powerfulfeatures/#settings-privileged.
+    virtual bool isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck = StandardPrivilegeCheck) const = 0;
+
+    virtual void setReferrerPolicy(ReferrerPolicy);
+    ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
 
 protected:
     ExecutionContext();
@@ -138,12 +164,9 @@ protected:
     virtual const KURL& virtualURL() const = 0;
     virtual KURL virtualCompleteURL(const String&) const = 0;
 
-    ContextLifecycleNotifier& lifecycleNotifier();
-
 private:
-    friend class DOMTimer; // For installNewTimeout() and removeTimeoutByID() below.
-
     bool dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent>, AccessControlStatus);
+    void runSuspendableTasks();
 
 #if !ENABLE(OILPAN)
     virtual void refExecutionContext() = 0;
@@ -151,29 +174,29 @@ private:
 #endif
     // LifecycleContext implementation.
 
-    // Implementation details for DOMTimer. No other classes should call these functions.
-    int installNewTimeout(PassOwnPtr<ScheduledAction>, int timeout, bool singleShot);
-    void removeTimeoutByID(int timeoutID); // This makes underlying DOMTimer instance destructed.
-
-    SandboxFlags m_sandboxFlags;
-
     int m_circularSequentialID;
-    typedef HashMap<int, OwnPtr<DOMTimer> > TimeoutMap;
-    TimeoutMap m_timeouts;
 
     bool m_inDispatchErrorEvent;
     class PendingException;
-    OwnPtrWillBeMember<WillBeHeapVector<OwnPtrWillBeMember<PendingException> > > m_pendingExceptions;
+    OwnPtrWillBeMember<WillBeHeapVector<OwnPtrWillBeMember<PendingException>>> m_pendingExceptions;
 
     bool m_activeDOMObjectsAreSuspended;
     bool m_activeDOMObjectsAreStopped;
 
-    OwnPtr<PublicURLManager> m_publicURLManager;
+    OwnPtrWillBeMember<PublicURLManager> m_publicURLManager;
 
-    // The location of this member is important; to make sure contextDestroyed() notification on
-    // ExecutionContext's members (notably m_timeouts) is called before they are destructed,
-    // m_lifecycleNotifer should be placed *after* such members.
-    OwnPtr<ContextLifecycleNotifier> m_lifecycleNotifier;
+    bool m_strictMixedContentCheckingEnforced;
+
+    // Counter that keeps track of how many window interaction calls are allowed
+    // for this ExecutionContext. Callers are expected to call
+    // |allowWindowInteraction()| and |consumeWindowInteraction()| in order to
+    // increment and decrement the counter.
+    int m_windowInteractionTokens;
+
+    Deque<OwnPtr<SuspendableTask>> m_suspendedTasks;
+    bool m_isRunSuspendableTasksScheduled;
+
+    ReferrerPolicy m_referrerPolicy;
 };
 
 } // namespace blink

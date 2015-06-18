@@ -8,10 +8,10 @@
 #include "device/serial/serial.mojom.h"
 #include "device/serial/serial_service_impl.h"
 #include "device/serial/test_serial_io_handler.h"
-#include "mojo/public/cpp/bindings/error_handler.h"
-#include "mojo/public/cpp/bindings/interface_ptr.h"
-#include "mojo/public/cpp/bindings/interface_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
 
 namespace device {
 namespace {
@@ -28,6 +28,7 @@ class FakeSerialDeviceEnumerator : public SerialDeviceEnumerator {
 class FailToOpenIoHandler : public TestSerialIoHandler {
  public:
   void Open(const std::string& port,
+            const serial::ConnectionOptions& options,
             const OpenCompleteCallback& callback) override {
     callback.Run(false);
   }
@@ -78,17 +79,17 @@ class SerialServiceTest : public testing::Test, public mojo::ErrorHandler {
             new SerialConnectionFactory(
                 base::Bind(&SerialServiceTest::ReturnIoHandler,
                            base::Unretained(this)),
-                base::MessageLoopProxy::current()),
+                base::ThreadTaskRunnerHandle::Get()),
             scoped_ptr<SerialDeviceEnumerator>(new FakeSerialDeviceEnumerator)),
         &service);
     mojo::InterfacePtr<serial::Connection> connection;
     mojo::InterfacePtr<serial::DataSink> sink;
     mojo::InterfacePtr<serial::DataSource> source;
-    service->Connect(path,
-                     serial::ConnectionOptions::New(),
-                     mojo::GetProxy(&connection),
-                     mojo::GetProxy(&sink),
-                     mojo::GetProxy(&source));
+    mojo::InterfacePtr<serial::DataSourceClient> source_client;
+    mojo::GetProxy(&source_client);
+    service->Connect(path, serial::ConnectionOptions::New(),
+                     mojo::GetProxy(&connection), mojo::GetProxy(&sink),
+                     mojo::GetProxy(&source), source_client.Pass());
     connection.set_error_handler(this);
     expecting_error_ = !expecting_success;
     connection->GetInfo(

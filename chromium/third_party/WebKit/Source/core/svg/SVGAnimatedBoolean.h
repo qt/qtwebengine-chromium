@@ -37,14 +37,15 @@
 namespace blink {
 
 class SVGAnimatedBoolean final : public SVGAnimatedProperty<SVGBoolean> {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGAnimatedBoolean> create(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtr<SVGBoolean> initialValue)
+    static PassRefPtrWillBeRawPtr<SVGAnimatedBoolean> create(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtrWillBeRawPtr<SVGBoolean> initialValue)
     {
-        return adoptRef(new SVGAnimatedBoolean(contextElement, attributeName, initialValue));
+        return adoptRefWillBeNoop(new SVGAnimatedBoolean(contextElement, attributeName, initialValue));
     }
 
 protected:
-    SVGAnimatedBoolean(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtr<SVGBoolean> initialValue)
+    SVGAnimatedBoolean(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtrWillBeRawPtr<SVGBoolean> initialValue)
         : SVGAnimatedProperty<SVGBoolean>(contextElement, attributeName, initialValue)
     {
     }

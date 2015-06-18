@@ -15,6 +15,7 @@
     '<(SHARED_INTERMEDIATE_DIR)/chrome',
   ],
   'sources': [
+    '<(INTERMEDIATE_DIR)/packed_files.rc',
     'mini_installer/appid.h',
     'mini_installer/chrome.release',
     'mini_installer/chrome_appid.cc',
@@ -34,7 +35,6 @@
     'mini_installer/mini_string.h',
     'mini_installer/pe_resource.cc',
     'mini_installer/pe_resource.h',
-    '<(INTERMEDIATE_DIR)/packed_files.rc',
   ],
   # Disable precompiled headers for this project, to avoid
   # linker errors when building with VS 2008.
@@ -179,6 +179,12 @@
             '<(PRODUCT_DIR)/icudtl.dat',
           ],
         }],
+        ['v8_use_external_startup_data == 1', {
+          'inputs': [
+            '<(PRODUCT_DIR)/natives_blob.bin',
+            '<(PRODUCT_DIR)/snapshot_blob.bin',
+          ],
+        }],
       ],
       'inputs': [
         '<(create_installer_archive_py_path)',
@@ -217,15 +223,15 @@
       'message': 'Create installer archive',
     },
   ],
-  # TODO(mark):  <(branding_dir) should be defined by the
-  # global condition block at the bottom of the file, but
-  # this doesn't work due to the following issue:
-  #
-  #   http://code.google.com/p/gyp/issues/detail?id=22
-  #
-  # Remove this block once the above issue is fixed.
   'conditions': [
-    [ 'branding == "Chrome"', {
+    # TODO(mark):  <(branding_dir) should be defined by the
+    # global condition block at the bottom of the file, but
+    # this doesn't work due to the following issue:
+    #
+    #   http://code.google.com/p/gyp/issues/detail?id=22
+    #
+    # Remove this block once the above issue is fixed.
+    ['branding == "Chrome"', {
       'variables': {
          'branding_dir': '../app/theme/google_chrome',
       },
@@ -233,6 +239,10 @@
       'variables': {
          'branding_dir': '../app/theme/chromium',
       },
+    }],
+    ['OS=="win" and buildtype=="Official"', {
+      # Optimize for size when doing an official build.
+      'optimize' :'size',
     }],
   ],
 }

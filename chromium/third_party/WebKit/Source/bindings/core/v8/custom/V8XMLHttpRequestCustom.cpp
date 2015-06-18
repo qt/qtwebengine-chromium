@@ -52,24 +52,6 @@
 
 namespace blink {
 
-void V8XMLHttpRequest::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    ExecutionContext* context = currentExecutionContext(info.GetIsolate());
-
-    RefPtr<SecurityOrigin> securityOrigin;
-    if (context->isDocument()) {
-        DOMWrapperWorld& world = DOMWrapperWorld::current(info.GetIsolate());
-        if (world.isIsolatedWorld())
-            securityOrigin = world.isolatedWorldSecurityOrigin();
-    }
-
-    RefPtrWillBeRawPtr<XMLHttpRequest> xmlHttpRequest = XMLHttpRequest::create(context, securityOrigin);
-
-    v8::Handle<v8::Object> wrapper = info.Holder();
-    xmlHttpRequest->associateWithWrapper(xmlHttpRequest->wrapperTypeInfo(), wrapper, info.GetIsolate());
-    info.GetReturnValue().Set(wrapper);
-}
-
 void V8XMLHttpRequest::responseTextAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
     XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toImpl(info.Holder());
@@ -104,13 +86,14 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::PropertyCallbackI
                 return;
             }
 
-            // Catch syntax error.
+            // Catch syntax error. Swallows an exception (when thrown) as the
+            // spec says. https://xhr.spec.whatwg.org/#response-body
             v8::TryCatch exceptionCatcher;
-            v8::Handle<v8::Value> json = v8::JSON::Parse(jsonSource.v8Value());
-            if (exceptionCatcher.HasCaught() || json.IsEmpty())
-                v8SetReturnValue(info, v8::Null(isolate));
-            else
+            v8::Local<v8::Value> json;
+            if (v8Call(v8::JSON::Parse(isolate, jsonSource.v8Value()), json, exceptionCatcher))
                 v8SetReturnValue(info, json);
+            else
+                v8SetReturnValue(info, v8::Null(isolate));
             return;
         }
 
@@ -152,105 +135,6 @@ void V8XMLHttpRequest::responseAttributeGetterCustom(const v8::PropertyCallbackI
             return;
         }
     }
-}
-
-void V8XMLHttpRequest::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    // Four cases:
-    // open(method, url)
-    // open(method, url, async)
-    // open(method, url, async, user)
-    // open(method, url, async, user, passwd)
-
-    ExceptionState exceptionState(ExceptionState::ExecutionContext, "open", "XMLHttpRequest", info.Holder(), info.GetIsolate());
-
-    if (info.Length() < 2) {
-        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(2, info.Length()));
-        exceptionState.throwIfNeeded();
-        return;
-    }
-
-    XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toImpl(info.Holder());
-
-    TOSTRING_VOID(V8StringResource<>, method, info[0]);
-    TOSTRING_VOID(V8StringResource<>, urlstring, info[1]);
-
-    ExecutionContext* context = currentExecutionContext(info.GetIsolate());
-    KURL url = context->completeURL(urlstring);
-
-    if (info.Length() >= 3) {
-        bool async = info[2]->BooleanValue();
-
-        if (info.Length() >= 4 && !info[3]->IsUndefined()) {
-            TOSTRING_VOID(V8StringResource<TreatNullAsNullString>, user, info[3]);
-
-            if (info.Length() >= 5 && !info[4]->IsUndefined()) {
-                TOSTRING_VOID(V8StringResource<TreatNullAsNullString>, password, info[4]);
-                xmlHttpRequest->open(method, url, async, user, password, exceptionState);
-            } else {
-                xmlHttpRequest->open(method, url, async, user, exceptionState);
-            }
-        } else {
-            xmlHttpRequest->open(method, url, async, exceptionState);
-        }
-    } else {
-        xmlHttpRequest->open(method, url, exceptionState);
-    }
-
-    exceptionState.throwIfNeeded();
-}
-
-static bool isDocumentType(v8::Handle<v8::Value> value, v8::Isolate* isolate)
-{
-    // FIXME: add other document types.
-    return V8Document::hasInstance(value, isolate) || V8HTMLDocument::hasInstance(value, isolate);
-}
-
-void V8XMLHttpRequest::sendMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    XMLHttpRequest* xmlHttpRequest = V8XMLHttpRequest::toImpl(info.Holder());
-
-    InspectorInstrumentation::willSendXMLHttpRequest(xmlHttpRequest->executionContext(), xmlHttpRequest->url());
-
-    ExceptionState exceptionState(ExceptionState::ExecutionContext, "send", "XMLHttpRequest", info.Holder(), info.GetIsolate());
-    if (info.Length() < 1) {
-        xmlHttpRequest->send(exceptionState);
-    } else {
-        v8::Handle<v8::Value> arg = info[0];
-        if (isUndefinedOrNull(arg)) {
-            xmlHttpRequest->send(exceptionState);
-        } else if (isDocumentType(arg, info.GetIsolate())) {
-            v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
-            Document* document = V8Document::toImpl(object);
-            ASSERT(document);
-            xmlHttpRequest->send(document, exceptionState);
-        } else if (V8Blob::hasInstance(arg, info.GetIsolate())) {
-            v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
-            Blob* blob = V8Blob::toImpl(object);
-            ASSERT(blob);
-            xmlHttpRequest->send(blob, exceptionState);
-        } else if (V8FormData::hasInstance(arg, info.GetIsolate())) {
-            v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
-            DOMFormData* domFormData = V8FormData::toImpl(object);
-            ASSERT(domFormData);
-            xmlHttpRequest->send(domFormData, exceptionState);
-        } else if (V8ArrayBuffer::hasInstance(arg, info.GetIsolate())) {
-            v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
-            DOMArrayBuffer* arrayBuffer = V8ArrayBuffer::toImpl(object);
-            ASSERT(arrayBuffer);
-            xmlHttpRequest->send(arrayBuffer->buffer(), exceptionState);
-        } else if (V8ArrayBufferView::hasInstance(arg, info.GetIsolate())) {
-            v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(arg);
-            DOMArrayBufferView* arrayBufferView = V8ArrayBufferView::toImpl(object);
-            ASSERT(arrayBufferView);
-            xmlHttpRequest->send(arrayBufferView->view(), exceptionState);
-        } else {
-            TOSTRING_VOID(V8StringResource<TreatNullAsNullString>, argString, arg);
-            xmlHttpRequest->send(argString, exceptionState);
-        }
-    }
-
-    exceptionState.throwIfNeeded();
 }
 
 } // namespace blink

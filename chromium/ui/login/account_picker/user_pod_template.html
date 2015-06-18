@@ -5,7 +5,8 @@
     </div>
     <div class="signed-in-indicator" i18n-content="signedIn"></div>
     <div class="indicator-container">
-      <div class="indicator supervised-indicator"></div>
+      <div class="indicator legacy-supervised-indicator"></div>
+      <div class="indicator child-indicator"></div>
       <div class="indicator locked-indicator"></div>
     </div>
   </div>
@@ -30,6 +31,12 @@
       </div>
       <!-- User Click Authentication -->
       <div class="password-label"></div>
+      <div class="signin-transition-container">
+        <span class="signing-in-label" i18n-content="signingIn"></span>
+        <span class="animated-ellipsis-component0">.</span>
+        <span class="animated-ellipsis-component1">.</span>
+        <span class="animated-ellipsis-component2">.</span>
+      </div>
       <div class="custom-icon-container" hidden></div>
       <div class="signin-button-container">
         <button class="signin-button" i18n-content="signinButton"></button>
@@ -57,8 +64,8 @@
     <div class="action-box-remove-user-warning" hidden>
       <div class="action-box-remove-user-warning-text"
           i18n-content="removeUserWarningText" hidden></div>
-      <div class="action-box-remove-supervised-user-warning-text"
-          i18n-content="removeSupervisedUserWarningText"></div>
+      <div class="action-box-remove-legacy-supervised-user-warning-text"
+          i18n-content="removeLegacySupervisedUserWarningText"></div>
       <button class="remove-warning-button
                      custom-appearance button-fancy button-red"
           i18n-content="removeUserWarningButtonTitle"></button>

@@ -24,9 +24,9 @@
  */
 
 [
+    Constructor,
     GarbageCollected,
     NoInterfaceObject,
-    Constructor
 ] interface SpeechGrammarList {
     readonly attribute unsigned long length;
     getter SpeechGrammar item(unsigned long index);

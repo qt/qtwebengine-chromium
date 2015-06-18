@@ -30,21 +30,18 @@ class BluetoothRemoteGattDescriptorChromeOS
     : public device::BluetoothGattDescriptor {
  public:
   // device::BluetoothGattDescriptor overrides.
-  virtual std::string GetIdentifier() const override;
-  virtual device::BluetoothUUID GetUUID() const override;
-  virtual bool IsLocal() const override;
-  virtual const std::vector<uint8>& GetValue() const override;
-  virtual device::BluetoothGattCharacteristic*
-      GetCharacteristic() const override;
-  virtual device::BluetoothGattCharacteristic::Permissions
-      GetPermissions() const override;
-  virtual void ReadRemoteDescriptor(
-      const ValueCallback& callback,
-      const ErrorCallback& error_callback) override;
-  virtual void WriteRemoteDescriptor(
-      const std::vector<uint8>& new_value,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) override;
+  std::string GetIdentifier() const override;
+  device::BluetoothUUID GetUUID() const override;
+  bool IsLocal() const override;
+  const std::vector<uint8>& GetValue() const override;
+  device::BluetoothGattCharacteristic* GetCharacteristic() const override;
+  device::BluetoothGattCharacteristic::Permissions GetPermissions()
+      const override;
+  void ReadRemoteDescriptor(const ValueCallback& callback,
+                            const ErrorCallback& error_callback) override;
+  void WriteRemoteDescriptor(const std::vector<uint8>& new_value,
+                             const base::Closure& callback,
+                             const ErrorCallback& error_callback) override;
 
   // Object path of the underlying D-Bus characteristic.
   const dbus::ObjectPath& object_path() const { return object_path_; }
@@ -55,12 +52,7 @@ class BluetoothRemoteGattDescriptorChromeOS
   BluetoothRemoteGattDescriptorChromeOS(
       BluetoothRemoteGattCharacteristicChromeOS* characteristic,
       const dbus::ObjectPath& object_path);
-  virtual ~BluetoothRemoteGattDescriptorChromeOS();
-
-  // Called by dbus:: on successful completion of a request to read
-  // the descriptor value.
-  void OnValueSuccess(const ValueCallback& callback,
-                      const std::vector<uint8>& value);
+  ~BluetoothRemoteGattDescriptorChromeOS() override;
 
   // Called by dbus:: on unsuccessful completion of a request to read or write
   // the descriptor value.
@@ -73,9 +65,6 @@ class BluetoothRemoteGattDescriptorChromeOS
 
   // The GATT characteristic this descriptor belongs to.
   BluetoothRemoteGattCharacteristicChromeOS* characteristic_;
-
-  // The cached characteristic value based on the most recent read request.
-  std::vector<uint8> cached_value_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

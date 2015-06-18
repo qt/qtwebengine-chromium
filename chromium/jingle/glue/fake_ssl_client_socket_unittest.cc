@@ -12,8 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
+#include "net/log/net_log.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/stream_socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -68,6 +68,9 @@ class MockClientSocket : public net::StreamSocket {
   MOCK_CONST_METHOD0(WasNpnNegotiated, bool());
   MOCK_CONST_METHOD0(GetNegotiatedProtocol, net::NextProto());
   MOCK_METHOD1(GetSSLInfo, bool(net::SSLInfo*));
+  MOCK_CONST_METHOD1(GetConnectionAttempts, void(net::ConnectionAttempts*));
+  MOCK_METHOD0(ClearConnectionAttempts, void());
+  MOCK_METHOD1(AddConnectionAttempts, void(const net::ConnectionAttempts&));
 };
 
 // Break up |data| into a bunch of chunked MockReads/Writes and push
@@ -89,7 +92,7 @@ class FakeSSLClientSocketTest : public testing::Test {
  protected:
   FakeSSLClientSocketTest() {}
 
-  virtual ~FakeSSLClientSocketTest() {}
+  ~FakeSSLClientSocketTest() override {}
 
   scoped_ptr<net::StreamSocket> MakeClientSocket() {
     return mock_client_socket_factory_.CreateTransportClientSocket(

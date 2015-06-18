@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "media/base/media_export.h"
+#include "media/base/media_log.h"
 #include "media/formats/mp4/aac.h"
 #include "media/formats/mp4/avc.h"
 #include "media/formats/mp4/box_reader.h"
@@ -32,9 +33,9 @@ enum SampleFlags {
 
 #define DECLARE_BOX_METHODS(T) \
   T(); \
-  virtual ~T(); \
-  virtual bool Parse(BoxReader* reader) override; \
-  virtual FourCC BoxType() const override; \
+  ~T() override; \
+  bool Parse(BoxReader* reader) override; \
+  FourCC BoxType() const override;
 
 struct MEDIA_EXPORT FileType : Box {
   DECLARE_BOX_METHODS(FileType);

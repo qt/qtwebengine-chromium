@@ -42,7 +42,7 @@ public:
     String label() const;
     String facing() const;
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     explicit SourceInfo(const WebSourceInfo&);
@@ -50,7 +50,7 @@ private:
     WebSourceInfo m_webSourceInfo;
 };
 
-typedef HeapVector<Member<SourceInfo> > SourceInfoVector;
+typedef HeapVector<Member<SourceInfo>> SourceInfoVector;
 
 } // namespace blink
 

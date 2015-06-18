@@ -12,20 +12,19 @@
 
 class SkBitmap;
 class SkCanvas;
-class SkDrawPictureCallback;
 class SkPaint;
 class SkPictureData;
 
 // The basic picture playback class replays the provided picture into a canvas.
 class SkPicturePlayback : SkNoncopyable {
 public:
-    SkPicturePlayback(const SkPicture* picture)
-        : fPictureData(picture->fData.get())
+    SkPicturePlayback(const SkPictureData* data)
+        : fPictureData(data)
         , fCurOffset(0) {
     }
     virtual ~SkPicturePlayback() { }
 
-    virtual void draw(SkCanvas* canvas, SkDrawPictureCallback*);
+    virtual void draw(SkCanvas* canvas, SkPicture::AbortCallback*);
 
     // TODO: remove the curOp calls after cleaning up GrGatherDevice
     // Return the ID of the operation currently being executed when playing

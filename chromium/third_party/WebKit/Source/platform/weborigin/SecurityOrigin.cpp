@@ -213,8 +213,7 @@ void SecurityOrigin::setDomainFromDOM(const String& newDomain)
 
 bool SecurityOrigin::isSecure(const KURL& url)
 {
-    // Invalid URLs are secure, as are URLs which have a secure protocol.
-    if (!url.isValid() || SchemeRegistry::shouldTreatURLSchemeAsSecure(url.protocol()))
+    if (SchemeRegistry::shouldTreatURLSchemeAsSecure(url.protocol()))
         return true;
 
     // URLs that wrap inner URLs are secure if those inner URLs are secure.
@@ -345,13 +344,13 @@ bool SecurityOrigin::canReceiveDragData(const SecurityOrigin* dragInitiator) con
 static bool isFeedWithNestedProtocolInHTTPFamily(const KURL& url)
 {
     const String& urlString = url.string();
-    if (!urlString.startsWith("feed", false))
+    if (!urlString.startsWith("feed", TextCaseInsensitive))
         return false;
 
-    return urlString.startsWith("feed://", false)
-        || urlString.startsWith("feed:http:", false) || urlString.startsWith("feed:https:", false)
-        || urlString.startsWith("feeds:http:", false) || urlString.startsWith("feeds:https:", false)
-        || urlString.startsWith("feedsearch:http:", false) || urlString.startsWith("feedsearch:https:", false);
+    return urlString.startsWith("feed://", TextCaseInsensitive)
+        || urlString.startsWith("feed:http:", TextCaseInsensitive) || urlString.startsWith("feed:https:", TextCaseInsensitive)
+        || urlString.startsWith("feeds:http:", TextCaseInsensitive) || urlString.startsWith("feeds:https:", TextCaseInsensitive)
+        || urlString.startsWith("feedsearch:http:", TextCaseInsensitive) || urlString.startsWith("feedsearch:https:", TextCaseInsensitive);
 }
 
 bool SecurityOrigin::canDisplay(const KURL& url) const
@@ -376,13 +375,16 @@ bool SecurityOrigin::canDisplay(const KURL& url) const
     return true;
 }
 
-bool SecurityOrigin::canAccessFeatureRequiringSecureOrigin(String& errorMessage) const
+bool SecurityOrigin::isPotentiallyTrustworthy(String& errorMessage) const
 {
     ASSERT(m_protocol != "data");
     if (SchemeRegistry::shouldTreatURLSchemeAsSecure(m_protocol) || isLocal() || isLocalhost())
         return true;
 
-    errorMessage = "Only secure origins are allowed. http://goo.gl/lq4gCo";
+    if (SecurityPolicy::isOriginWhiteListedTrustworthy(*this))
+        return true;
+
+    errorMessage = "Only secure origins are allowed (see: https://goo.gl/Y0ZkNV).";
     return false;
 }
 
@@ -524,10 +526,10 @@ bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const
     return true;
 }
 
-const String& SecurityOrigin::urlWithUniqueSecurityOrigin()
+const KURL& SecurityOrigin::urlWithUniqueSecurityOrigin()
 {
     ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(const String, uniqueSecurityOriginURL, ("data:,"));
+    DEFINE_STATIC_LOCAL(const KURL, uniqueSecurityOriginURL, (ParsedURLString, "data:,"));
     return uniqueSecurityOriginURL;
 }
 

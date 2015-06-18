@@ -22,32 +22,32 @@ public:
         fSrcCoeff = rec.fSC;
         fDstCoeff = rec.fDC;
     }
-    
+
     virtual void xfer32(SkPMColor dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) const SK_OVERRIDE;
+                        const SkAlpha aa[]) const override;
     virtual void xfer16(uint16_t dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) const SK_OVERRIDE;
+                        const SkAlpha aa[]) const override;
     virtual void xferA8(SkAlpha dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) const SK_OVERRIDE;
+                        const SkAlpha aa[]) const override;
 
-    virtual bool asMode(Mode* mode) const SK_OVERRIDE;
+    bool asMode(Mode* mode) const override;
 
-    virtual bool asCoeff(Coeff* sc, Coeff* dc) const SK_OVERRIDE;
+    bool supportsCoverageAsAlpha() const override;
+
+    bool isOpaque(SkXfermode::SrcColorOpacity opacityType) const override;
 
 #if SK_SUPPORT_GPU
     virtual bool asFragmentProcessor(GrFragmentProcessor**,
-                                     GrTexture* background) const SK_OVERRIDE;
+                                     GrTexture* background) const override;
+
+    virtual bool asXPFactory(GrXPFactory**) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkProcCoeffXfermode)
 
 protected:
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-    SkProcCoeffXfermode(SkReadBuffer& buffer);
-#endif
-
-    virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer& buffer) const override;
 
     Mode getMode() const { return fMode; }
 

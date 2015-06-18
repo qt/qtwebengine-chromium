@@ -1,0 +1,113 @@
+/* Copyright 2015 The Chromium Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+:host {
+  height: 528px;
+  width: 448px;
+}
+
+.gaia-header {
+  background-color: rgb(66, 133, 244);
+  color: rgb(255, 255, 255);
+  height: 164px;
+}
+
+.gaia-footer,
+#progress-bar::shadow #progressContainer {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.gaia-footer {
+  position: relative;
+}
+
+.header-container {
+  padding: 34px 40px 16px;
+}
+
+.footer-container {
+  padding: 24px 40px 34px;
+}
+
+::content /deep/ .blue-button {
+  background-color: rgb(66, 133, 244);
+  color: rgb(255, 255, 255);
+  min-width: 90px;
+}
+
+::content /deep/ .dialog-action-button {
+  color: rgb(66, 133, 244);
+}
+
+::content /deep/ .dialog-action-button:focus {
+  background: rgb(217, 221, 234);
+}
+
+::content /deep/ .link-button {
+  color: rgb(66, 133, 244);
+  font-size: 14px;
+  margin: 0;
+  text-align: left;
+  text-transform: none;
+}
+
+::content /deep/ .link-button:focus {
+  background: rgb(217, 221, 234);
+}
+
+::content /deep/ .link-button::shadow .button-content {
+  padding: 0;
+}
+
+::content /deep/ div.gaia-body-text {
+  margin-bottom: 24px;
+}
+
+::content /deep/ div.gaia-body-text p {
+  color: rgba(0, 0, 0, 0.87);
+  font-size: 14px;
+  line-height: 20px;
+  margin: 0;
+}
+
+::content /deep/ p.email,
+::content /deep/ p.enterprise-info {
+  color: rgb(255, 255, 255);
+  font-size: 15px;
+  margin: 8px 0 0 0;
+}
+
+::content /deep/ h1.welcome-message {
+  color: rgb(255, 255, 255);
+  font-size: 20px;
+  font-weight: normal;
+  margin-bottom: 0;
+}
+
+.overlay {
+  background-color: rgba(0, 0, 0, 0.5);
+  display: none;
+  height: 100%;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 100%;
+  z-index: 11;
+}
+
+#progress-bar {
+  display: none;
+  width: 100%;
+}
+
+#progress-bar::shadow #activeProgress {
+  background-color: rgb(255, 184, 9);
+}
+
+:host(.full-disabled) #full-overlay,
+:host(.disabled) #bottom-overlay,
+:host(.disabled) #progress-bar {
+  display: block;
+}

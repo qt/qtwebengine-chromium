@@ -31,6 +31,7 @@
 #ifndef WorkerReportingProxy_h
 #define WorkerReportingProxy_h
 
+#include "core/CoreExport.h"
 #include "core/frame/ConsoleTypes.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -41,13 +42,14 @@ class ConsoleMessage;
 class WorkerGlobalScope;
 
 // APIs used by workers to report console and worker activity.
-class WorkerReportingProxy {
+class CORE_EXPORT WorkerReportingProxy {
 public:
     virtual ~WorkerReportingProxy() { }
 
-    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) = 0;
+    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId) = 0;
     virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) = 0;
     virtual void postMessageToPageInspector(const String&) = 0;
+    virtual void postWorkerConsoleAgentEnabled() = 0;
 
     // Invoked when the worker script is evaluated. |success| is true if the
     // evaluation completed with no uncaught exception.

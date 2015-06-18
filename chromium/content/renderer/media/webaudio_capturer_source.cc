@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "base/time/time.h"
-#include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
 
 using media::AudioBus;
@@ -20,13 +19,16 @@ static const int kMaxNumberOfBuffersInFifo = 5;
 
 namespace content {
 
-WebAudioCapturerSource::WebAudioCapturerSource()
+WebAudioCapturerSource::WebAudioCapturerSource(
+    const blink::WebMediaStreamSource& blink_source)
     : track_(NULL),
-      capturer_(NULL),
-      audio_format_changed_(false) {
+      audio_format_changed_(false),
+      blink_source_(blink_source) {
 }
 
 WebAudioCapturerSource::~WebAudioCapturerSource() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  removeFromBlinkSource();
 }
 
 void WebAudioCapturerSource::setFormat(
@@ -54,27 +56,23 @@ void WebAudioCapturerSource::setFormat(
 
   wrapper_bus_ = AudioBus::CreateWrapper(params_.channels());
   capture_bus_ = AudioBus::Create(params_);
-  audio_data_.reset(
-      new int16[params_.frames_per_buffer() * params_.channels()]);
   fifo_.reset(new AudioFifo(
       params_.channels(),
       kMaxNumberOfBuffersInFifo * params_.frames_per_buffer()));
 }
 
-void WebAudioCapturerSource::Start(
-    WebRtcLocalAudioTrack* track, WebRtcAudioCapturer* capturer) {
+void WebAudioCapturerSource::Start(WebRtcLocalAudioTrack* track) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(track);
   base::AutoLock auto_lock(lock_);
   track_ = track;
-  capturer_ = capturer;
 }
 
 void WebAudioCapturerSource::Stop() {
   DCHECK(thread_checker_.CalledOnValidThread());
   base::AutoLock auto_lock(lock_);
   track_ = NULL;
-  capturer_ = NULL;
+  removeFromBlinkSource();
 }
 
 void WebAudioCapturerSource::consumeAudio(
@@ -106,28 +104,32 @@ void WebAudioCapturerSource::consumeAudio(
     return;
   }
 
-  fifo_->Push(wrapper_bus_.get());
-  int capture_frames = params_.frames_per_buffer();
-  base::TimeDelta delay;
-  int volume = 0;
-  bool key_pressed = false;
-  if (capturer_) {
-    capturer_->GetAudioProcessingParams(&delay, &volume, &key_pressed);
-  }
+  // Compute the estimated capture time of the first sample frame of audio that
+  // will be consumed from the FIFO in the loop below.
+  base::TimeTicks estimated_capture_time = base::TimeTicks::Now() -
+      fifo_->frames() * base::TimeDelta::FromSeconds(1) / params_.sample_rate();
 
-  // Turn off audio processing if the delay value is 0, since in such case,
-  // it indicates the data is not from microphone.
-  // TODO(xians): remove the flag when supporting one APM per audio track.
-  // See crbug/264611 for details.
-  bool need_audio_processing = (delay.InMilliseconds() != 0);
-  while (fifo_->frames() >= capture_frames) {
-    fifo_->Consume(capture_bus_.get(), 0, capture_frames);
-    // TODO(xians): Avoid this interleave/deinterleave operation.
-    capture_bus_->ToInterleaved(capture_bus_->frames(),
-                                params_.bits_per_sample() / 8,
-                                audio_data_.get());
-    track_->Capture(audio_data_.get(), delay, volume, key_pressed,
-                    need_audio_processing, false);
+  fifo_->Push(wrapper_bus_.get());
+  while (fifo_->frames() >= capture_bus_->frames()) {
+    fifo_->Consume(capture_bus_.get(), 0, capture_bus_->frames());
+    track_->Capture(*capture_bus_, estimated_capture_time, false);
+
+    // Advance the estimated capture time for the next FIFO consume operation.
+    estimated_capture_time +=
+        capture_bus_->frames() * base::TimeDelta::FromSeconds(1) /
+            params_.sample_rate();
+  }
+}
+
+// If registered as audio consumer in |blink_source_|, deregister from
+// |blink_source_| and stop keeping a reference to |blink_source_|.
+// Failure to call this method when stopping the track might leave an invalid
+// WebAudioCapturerSource reference still registered as an audio consumer on
+// the blink side.
+void WebAudioCapturerSource::removeFromBlinkSource() {
+  if (!blink_source_.isNull()) {
+    blink_source_.removeAudioConsumer(this);
+    blink_source_.reset();
   }
 }
 

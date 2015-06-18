@@ -63,12 +63,12 @@ static av_cold void uninit(AVFilterContext *ctx)
 {
     KerndeintContext *kerndeint = ctx->priv;
 
-    av_free(kerndeint->tmp_data[0]);
+    av_freep(&kerndeint->tmp_data[0]);
 }
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static const enum PixelFormat pix_fmts[] = {
+    static const enum AVPixelFormat pix_fmts[] = {
         AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_YUYV422,
         AV_PIX_FMT_ARGB, AV_PIX_FMT_0RGB,

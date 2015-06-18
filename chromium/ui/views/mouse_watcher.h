@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/views/views_export.h"
 
 namespace gfx {
@@ -29,14 +29,11 @@ class VIEWS_EXPORT MouseWatcherListener {
 // The MouseWatcherHost determines what region is to be monitored.
 class VIEWS_EXPORT MouseWatcherHost {
  public:
-  // The MouseEventType can be used as a hint.
+  // The type of mouse event.
   enum MouseEventType {
-    // The mouse moved within the window which was current when the MouseWatcher
-    // was created.
     MOUSE_MOVE,
-    // The mouse moved exited the window which was current when the MouseWatcher
-    // was created.
-    MOUSE_EXIT
+    MOUSE_EXIT,
+    MOUSE_PRESS
   };
 
   virtual ~MouseWatcherHost();

@@ -10,9 +10,10 @@
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
+#include "modules/bluetooth/BluetoothDevice.h"
 #include "modules/bluetooth/BluetoothError.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebBluetooth.h"
+#include "public/platform/modules/bluetooth/WebBluetooth.h"
 
 namespace blink {
 
@@ -22,9 +23,9 @@ ScriptPromise BluetoothDiscovery::requestDevice(ScriptState* scriptState)
     if (!webbluetooth)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
-    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    webbluetooth->requestDevice(new CallbackPromiseAdapter<void, BluetoothError>(resolver));
+    webbluetooth->requestDevice(new CallbackPromiseAdapter<BluetoothDevice, BluetoothError>(resolver));
     return promise;
 }
 

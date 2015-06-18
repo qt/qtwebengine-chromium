@@ -9,11 +9,12 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/PinchViewport.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/html/forms/PopupMenuClient.h"
+#include "core/layout/LayoutMenuList.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderMenuList.h"
-#include "core/testing/URLTestHelpers.h"
+#include "core/testing/DummyPageHolder.h"
 #include "platform/PopupMenu.h"
-#include "platform/PopupMenuClient.h"
+#include "platform/testing/URLTestHelpers.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/web/WebExternalPopupMenu.h"
@@ -57,17 +58,23 @@ public:
     virtual int listSize() const override { return m_listSize; }
     virtual int selectedIndex() const override { return 0; }
     virtual void popupDidHide() override { }
+    virtual void popupDidCancel() override { }
     virtual bool itemIsSeparator(unsigned listIndex) const override { return false;}
     virtual bool itemIsLabel(unsigned listIndex) const override { return false; }
     virtual bool itemIsSelected(unsigned listIndex) const override { return listIndex == 0;}
-    virtual void setTextFromItem(unsigned listIndex) override { }
+    virtual void provisionalSelectionChanged(unsigned listIndex) override { }
     virtual bool multiple() const override { return false; }
+    virtual IntRect elementRectRelativeToViewport() const override { return IntRect(); }
+    virtual Element& ownerElement() const override { return *m_ownerElement; }
+    virtual const ComputedStyle* computedStyleForItem(Element& element) const override { return nullptr; }
 
     void setListSize(size_t size) { m_listSize = size; }
     void setDisplayNoneIndex(unsigned index) { m_displayNoneIndexSet.insert(index); }
+    void setOwnerElement(PassRefPtrWillBeRawPtr<Element> element) { m_ownerElement = element; }
 private:
     size_t m_listSize;
     std::set<unsigned> m_displayNoneIndexSet;
+    RefPtrWillBePersistent<Element> m_ownerElement;
 };
 
 class ExternalPopupMenuDisplayNoneItemsTest : public testing::Test {
@@ -82,6 +89,9 @@ protected:
         // Set the 4th an 5th items to have "display: none" property
         m_popupMenuClient.setDisplayNoneIndex(3);
         m_popupMenuClient.setDisplayNoneIndex(4);
+
+        OwnPtr<DummyPageHolder> dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
+        m_popupMenuClient.setOwnerElement(HTMLSelectElement::create(dummyPageHolder->document()));
     }
 
     TestPopupMenuClient m_popupMenuClient;
@@ -144,7 +154,7 @@ public:
 protected:
     virtual void SetUp() override
     {
-        m_helper.initialize(false, &m_webFrameClient, &m_webViewClient, &configureSettings);
+        m_helper.initialize(false, &m_webFrameClient, &m_webViewClient);
         webView()->setUseExternalPopupMenus(true);
     }
     virtual void TearDown() override
@@ -167,11 +177,6 @@ protected:
     WebLocalFrameImpl* mainFrame() const { return m_helper.webViewImpl()->mainFrameImpl(); }
 
 private:
-    static void configureSettings(WebSettings* settings)
-    {
-        settings->setPinchVirtualViewportEnabled(true);
-    }
-
     std::string m_baseURL;
     FrameTestHelpers::TestWebViewClient m_webViewClient;
     ExternalPopupMenuWebFrameClient m_webFrameClient;
@@ -187,7 +192,7 @@ TEST_F(ExternalPopupMenuTest, PopupAccountsForPinchViewportOffset)
     webView()->layout();
 
     HTMLSelectElement* select = toHTMLSelectElement(mainFrame()->frame()->document()->getElementById("select"));
-    RenderMenuList* menuList = toRenderMenuList(select->renderer());
+    LayoutMenuList* menuList = toLayoutMenuList(select->layoutObject());
     ASSERT_TRUE(menuList);
 
     PinchViewport& pinchViewport = webView()->page()->frameHost().pinchViewport();
@@ -210,7 +215,7 @@ TEST_F(ExternalPopupMenuTest, DidAcceptIndex)
     loadFrame("select.html");
 
     HTMLSelectElement* select = toHTMLSelectElement(mainFrame()->frame()->document()->getElementById("select"));
-    RenderMenuList* menuList = toRenderMenuList(select->renderer());
+    LayoutMenuList* menuList = toLayoutMenuList(select->layoutObject());
     ASSERT_TRUE(menuList);
 
     menuList->showPopup();
@@ -229,7 +234,7 @@ TEST_F(ExternalPopupMenuTest, DidAcceptIndices)
     loadFrame("select.html");
 
     HTMLSelectElement* select = toHTMLSelectElement(mainFrame()->frame()->document()->getElementById("select"));
-    RenderMenuList* menuList = toRenderMenuList(select->renderer());
+    LayoutMenuList* menuList = toLayoutMenuList(select->layoutObject());
     ASSERT_TRUE(menuList);
 
     menuList->showPopup();
@@ -250,7 +255,7 @@ TEST_F(ExternalPopupMenuTest, DidAcceptIndicesClearSelect)
     loadFrame("select.html");
 
     HTMLSelectElement* select = toHTMLSelectElement(mainFrame()->frame()->document()->getElementById("select"));
-    RenderMenuList* menuList = toRenderMenuList(select->renderer());
+    LayoutMenuList* menuList = toLayoutMenuList(select->layoutObject());
     ASSERT_TRUE(menuList);
 
     menuList->showPopup();

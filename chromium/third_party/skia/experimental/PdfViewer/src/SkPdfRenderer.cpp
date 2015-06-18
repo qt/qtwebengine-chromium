@@ -9,6 +9,7 @@
 
 #include "SkBitmapDevice.h"
 #include "SkCanvas.h"
+#include "SkColorPriv.h"
 #include "SkDevice.h"
 #include "SkForceLinking.h"
 #include "SkGraphics.h"
@@ -211,8 +212,8 @@ public:
     explicit PdfInlineImageLooper(SkPdfTokenLooper* parent)
         : INHERITED(parent) {}
 
-    virtual SkPdfResult consumeToken(PdfToken& token) SK_OVERRIDE;
-    virtual void loop() SK_OVERRIDE;
+    SkPdfResult consumeToken(PdfToken& token) override;
+    void loop() override;
 
 private:
     typedef SkPdfTokenLooper INHERITED;
@@ -223,8 +224,8 @@ public:
     explicit PdfCompatibilitySectionLooper(SkPdfTokenLooper* parent)
         : INHERITED (parent) {}
 
-    virtual SkPdfResult consumeToken(PdfToken& token) SK_OVERRIDE;
-    virtual void loop() SK_OVERRIDE;
+    SkPdfResult consumeToken(PdfToken& token) override;
+    void loop() override;
 
 private:
     typedef SkPdfTokenLooper INHERITED;
@@ -383,14 +384,15 @@ static SkBitmap* transferImageStreamToBitmap(const unsigned char* uncompressedSt
 
     // minimal support for now
     if ((colorSpace.equals("DeviceRGB") || colorSpace.equals("RGB")) && bpc == 8) {
-        SkColor* uncompressedStreamArgb = (SkColor*)malloc(width * height * sizeof(SkColor));
+        uint32_t* uncompressedStreamArgb = (SkColor*)malloc(width * height * sizeof(uint32_t));
 
         for (int h = 0 ; h < height; h++) {
             long i = width * (h);
             for (int w = 0 ; w < width; w++) {
-                uncompressedStreamArgb[i] = SkColorSetRGB(uncompressedStream[3 * w],
-                                                          uncompressedStream[3 * w + 1],
-                                                          uncompressedStream[3 * w + 2]);
+                uncompressedStreamArgb[i] = SkPackARGB32(0xFF,
+                                                         uncompressedStream[3 * w],
+                                                         uncompressedStream[3 * w + 1],
+                                                         uncompressedStream[3 * w + 2]);
                 i++;
             }
             uncompressedStream += bytesPerLine;
@@ -1067,7 +1069,7 @@ static SkPdfResult PdfOp_Tm(SkPdfContext* pdfContext, SkCanvas* canvas, SkPdfTok
                 "Text positioning not implemented for 2+ chars", NULL, pdfContext);
 
     pdfContext->fGraphicsState.fMatrixTm = matrix;
-    pdfContext->fGraphicsState.fMatrixTlm = matrix;;
+    pdfContext->fGraphicsState.fMatrixTlm = matrix;
 
     return kPartial_SkPdfResult;
 }

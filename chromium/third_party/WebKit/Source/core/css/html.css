@@ -27,6 +27,10 @@ html {
     display: block
 }
 
+:root {
+    scroll-blocks-on: start-touch wheel-event
+}
+
 /* children of the <head> element all have display:none */
 head {
     display: none
@@ -136,7 +140,8 @@ hr {
     -webkit-margin-start: auto;
     -webkit-margin-end: auto;
     border-style: inset;
-    border-width: 1px
+    border-width: 1px;
+    box-sizing: border-box
 }
 
 map {
@@ -397,6 +402,7 @@ input, textarea, keygen, select, button, meter, progress {
 input, textarea, keygen, select, button {
     margin: 0__qem;
     font: -webkit-small-control;
+    text-rendering: auto; /* FIXME: Remove when tabs work with optimizeLegibility. */
     color: initial;
     letter-spacing: normal;
     word-spacing: normal;
@@ -412,7 +418,7 @@ input[type="hidden" i] {
     display: none
 }
 
-input, input[type="password" i], input[type="search" i] {
+input {
     -webkit-appearance: textfield;
     padding: 1px;
     background-color: white;
@@ -445,7 +451,7 @@ input::-webkit-clear-button {
     -webkit-user-modify: read-only !important;
     -webkit-margin-start: 2px;
     opacity: 0;
-    pionter-events: none;
+    pointer-events: none;
 }
 
 input:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-clear-button {
@@ -604,14 +610,15 @@ input[type="range" i] {
 
 input[type="range" i]::-webkit-slider-container, input[type="range" i]::-webkit-media-slider-container {
     flex: 1;
+    min-width: 0;
     box-sizing: border-box;
     -webkit-user-modify: read-only !important;
     display: flex;
-    -webkit-align-contents: center;
 }
 
 input[type="range" i]::-webkit-slider-runnable-track {
     flex: 1;
+    min-width: 0;
     -webkit-align-self: center;
 
     box-sizing: border-box;
@@ -651,7 +658,8 @@ datalist {
 }
 
 area {
-    display: inline
+    display: inline;
+    cursor: pointer;
 }
 
 param {
@@ -691,6 +699,7 @@ input[type="color" i]::-webkit-color-swatch {
     background-color: #000000;
     border: 1px solid #777777;
     flex: 1;
+    min-width: 0;
     -webkit-user-modify: read-only !important;
 }
 
@@ -762,6 +771,10 @@ select {
     cursor: default;
 }
 
+select:not(:-internal-list-box) {
+    overflow: visible !important;
+}
+
 select:-internal-list-box {
     -webkit-appearance: listbox;
     align-items: flex-start;
@@ -787,6 +800,10 @@ option {
     min-height: 1.2em;
 }
 
+select:-internal-list-box optgroup option:before {
+    content: "\00a0\00a0\00a0\00a0";;
+}
+
 select:-internal-list-box option,
 select:-internal-list-box optgroup {
     line-height: initial !important;
@@ -807,6 +824,9 @@ select:-internal-list-box option:checked:disabled {
     color: gray !important;
 }
 
+select:-internal-list-box hr {
+    border-style: none;
+}
 
 output {
     display: inline;

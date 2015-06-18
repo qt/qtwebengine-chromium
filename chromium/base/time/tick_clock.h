@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_TICK_CLOCK_H_
-#define BASE_TICK_CLOCK_H_
+#ifndef BASE_TIME_TICK_CLOCK_H_
+#define BASE_TIME_TICK_CLOCK_H_
 
 #include "base/base_export.h"
 #include "base/time/time.h"
@@ -17,8 +17,8 @@ namespace base {
 // See DefaultTickClock (base/time/default_tick_clock.h) for the default
 // implementation that simply uses TimeTicks::Now().
 //
-// (Other implementations that use TimeTicks::HighResNow() or
-// TimeTicks::NowFromSystemTime() should be added as needed.)
+// (Other implementations that use TimeTicks::NowFromSystemTime() should
+// be added as needed.)
 //
 // See SimpleTestTickClock (base/test/simple_test_tick_clock.h) for a
 // simple test implementation.
@@ -37,4 +37,4 @@ class BASE_EXPORT TickClock {
 
 }  // namespace base
 
-#endif  // BASE_TICK_CLOCK_H_
+#endif  // BASE_TIME_TICK_CLOCK_H_

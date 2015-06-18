@@ -77,6 +77,10 @@ void SSLConfigService::NotifySSLConfigChange() {
   FOR_EACH_OBSERVER(Observer, observer_list_, OnSSLConfigChanged());
 }
 
+bool SSLConfigService::SupportsFastradioPadding(const GURL& url) {
+  return false;
+}
+
 SSLConfigService::~SSLConfigService() {
 }
 
@@ -92,8 +96,7 @@ void SSLConfigService::ProcessConfigUpdate(const SSLConfig& orig_config,
        new_config.disabled_cipher_suites) ||
       (orig_config.channel_id_enabled != new_config.channel_id_enabled) ||
       (orig_config.false_start_enabled != new_config.false_start_enabled) ||
-      (orig_config.require_forward_secrecy !=
-       new_config.require_forward_secrecy);
+      (orig_config.require_ecdhe != new_config.require_ecdhe);
 
   if (config_changed)
     NotifySSLConfigChange();

@@ -30,41 +30,19 @@
 
 #include "config.h"
 #include "modules/webmidi/MIDIConnectionEvent.h"
+#include "modules/webmidi/MIDIConnectionEventInit.h"
 
 namespace blink {
 
-MIDIConnectionEvent::MIDIConnectionEvent()
-{
-}
-
-MIDIConnectionEvent::MIDIConnectionEvent(const AtomicString& type, MIDIPort* port)
-    : Event(type, false, false)
-    , m_port(port)
-{
-}
-
 MIDIConnectionEvent::MIDIConnectionEvent(const AtomicString& type, const MIDIConnectionEventInit& initializer)
     : Event(type, initializer)
-    , m_port(initializer.port)
+    , m_port(nullptr)
 {
+    if (initializer.hasPort())
+        m_port = initializer.port();
 }
 
-PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create()
-{
-    return adoptRefWillBeNoop(new MIDIConnectionEvent());
-}
-
-PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create(const AtomicString& type, MIDIPort* port)
-{
-    return adoptRefWillBeNoop(new MIDIConnectionEvent(type, port));
-}
-
-PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create(const AtomicString& type, const MIDIConnectionEventInit& initializer)
-{
-    return adoptRefWillBeNoop(new MIDIConnectionEvent(type, initializer));
-}
-
-void MIDIConnectionEvent::trace(Visitor* visitor)
+DEFINE_TRACE(MIDIConnectionEvent)
 {
     visitor->trace(m_port);
     Event::trace(visitor);

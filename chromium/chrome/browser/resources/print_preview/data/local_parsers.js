@@ -37,7 +37,7 @@ cr.define('print_preview', function() {
   /**
    * Parses a privet destination as one or more local printers.
    * @param {!Object} destinationInfo Object that describes a privet printer.
-   * @return {!Array.<!print_preview.Destination>} Parsed destination info.
+   * @return {!Array<!print_preview.Destination>} Parsed destination info.
    */
   PrivetDestinationParser.parse = function(destinationInfo) {
     var returnedPrinters = [];
@@ -66,9 +66,31 @@ cr.define('print_preview', function() {
     return returnedPrinters;
   };
 
+  function ExtensionDestinationParser() {}
+
+  /**
+   * Parses an extension destination from an extension supplied printer
+   * description.
+   * @param {!Object} destinationInfo Object describing an extension printer.
+   * @return {!print_preview.Destination} Parsed destination.
+   */
+  ExtensionDestinationParser.parse = function(destinationInfo) {
+    return new print_preview.Destination(
+        destinationInfo.id,
+        print_preview.Destination.Type.LOCAL,
+        print_preview.Destination.Origin.EXTENSION,
+        destinationInfo.name,
+        false /* isRecent */,
+        print_preview.Destination.ConnectionStatus.ONLINE,
+        {description: destinationInfo.description || '',
+         extensionId: destinationInfo.extensionId,
+         extensionName: destinationInfo.extensionName || ''});
+  };
+
   // Export
   return {
     LocalDestinationParser: LocalDestinationParser,
-    PrivetDestinationParser: PrivetDestinationParser
+    PrivetDestinationParser: PrivetDestinationParser,
+    ExtensionDestinationParser: ExtensionDestinationParser
   };
 });

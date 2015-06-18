@@ -9,7 +9,7 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace gfx {
 
@@ -37,6 +37,7 @@ class GFX_EXPORT JavaBitmap {
   // Formats are in android/bitmap.h; e.g. ANDROID_BITMAP_FORMAT_RGBA_8888
   inline int format() const { return format_; }
   inline uint32_t stride() const { return stride_; }
+  inline int byte_count() const { return byte_count_; }
 
   // Registers methods with JNI and returns true if succeeded.
   static bool RegisterJavaBitmap(JNIEnv* env);
@@ -47,6 +48,7 @@ class GFX_EXPORT JavaBitmap {
   gfx::Size size_;
   int format_;
   uint32_t stride_;
+  int byte_count_;
 
   DISALLOW_COPY_AND_ASSIGN(JavaBitmap);
 };
@@ -57,13 +59,6 @@ GFX_EXPORT base::android::ScopedJavaLocalRef<jobject> CreateJavaBitmap(
     int width,
     int height,
     SkColorType color_type);
-
-// Loads an SkBitmap from the provided drawable resource identifier (e.g.,
-// android:drawable/overscroll_glow). If the resource loads successfully, it
-// will be integrally scaled down, preserving aspect ratio, to a size no smaller
-// than |size|. Otherwise, an empty bitmap is returned.
-GFX_EXPORT SkBitmap
-    CreateSkBitmapFromAndroidResource(const char* name, gfx::Size size);
 
 // Converts |skbitmap| to a Java-backed bitmap (android.graphics.Bitmap).
 // Note: |skbitmap| is assumed to be non-null, non-empty and one of RGBA_8888 or

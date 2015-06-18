@@ -38,7 +38,7 @@ const REGSAM kWow64AccessMask = KEY_WOW64_32KEY | KEY_WOW64_64KEY;
 class RegKey::Watcher : public ObjectWatcher::Delegate {
  public:
   explicit Watcher(RegKey* owner) : owner_(owner) {}
-  ~Watcher() {}
+  ~Watcher() override {}
 
   bool StartWatching(HKEY key, const ChangeCallback& callback);
 
@@ -210,7 +210,7 @@ void RegKey::Set(HKEY key) {
 }
 
 HKEY RegKey::Take() {
-  DCHECK(wow64access_ == 0);
+  DCHECK_EQ(wow64access_, 0u);
   HKEY key = key_;
   key_ = NULL;
   return key;
@@ -662,8 +662,8 @@ void RegistryKeyIterator::Initialize(HKEY root_key,
     key_ = NULL;
   } else {
     DWORD count = 0;
-    LONG result = ::RegQueryInfoKey(key_, NULL, 0, NULL, &count, NULL, NULL,
-                                    NULL, NULL, NULL, NULL, NULL);
+    result = ::RegQueryInfoKey(key_, NULL, 0, NULL, &count, NULL, NULL, NULL,
+                               NULL, NULL, NULL, NULL);
 
     if (result != ERROR_SUCCESS) {
       ::RegCloseKey(key_);

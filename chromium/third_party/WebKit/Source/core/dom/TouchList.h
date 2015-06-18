@@ -27,6 +27,7 @@
 #define TouchList_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/Touch.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
@@ -34,7 +35,7 @@
 
 namespace blink {
 
-class TouchList final : public RefCountedWillBeGarbageCollected<TouchList>, public ScriptWrappable {
+class CORE_EXPORT TouchList final : public RefCountedWillBeGarbageCollected<TouchList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<TouchList> create()
@@ -42,7 +43,7 @@ public:
         return adoptRefWillBeNoop(new TouchList);
     }
 
-    static PassRefPtrWillBeRawPtr<TouchList> adopt(WillBeHeapVector<RefPtrWillBeMember<Touch> >& touches)
+    static PassRefPtrWillBeRawPtr<TouchList> adopt(WillBeHeapVector<RefPtrWillBeMember<Touch>>& touches)
     {
         return adoptRefWillBeNoop(new TouchList(touches));
     }
@@ -54,17 +55,17 @@ public:
 
     void append(const PassRefPtrWillBeRawPtr<Touch> touch) { m_values.append(touch); }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     TouchList() { }
 
-    TouchList(WillBeHeapVector<RefPtrWillBeMember<Touch> >& touches)
+    TouchList(WillBeHeapVector<RefPtrWillBeMember<Touch>>& touches)
     {
         m_values.swap(touches);
     }
 
-    WillBeHeapVector<RefPtrWillBeMember<Touch> > m_values;
+    WillBeHeapVector<RefPtrWillBeMember<Touch>> m_values;
 };
 
 } // namespace blink

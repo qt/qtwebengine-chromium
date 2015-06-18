@@ -15,7 +15,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebData.h"
-#include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBCallbacks.h"
 #include "third_party/WebKit/public/web/WebHeap.h"
 
 using blink::WebBlobInfo;
@@ -25,6 +25,7 @@ using blink::WebIDBCursor;
 using blink::WebIDBDatabase;
 using blink::WebIDBDatabaseError;
 using blink::WebIDBKey;
+using blink::WebIDBValue;
 using blink::WebVector;
 
 namespace content {
@@ -71,6 +72,7 @@ class IndexedDBDispatcherTest : public testing::Test {
   void TearDown() override { blink::WebHeap::collectAllGarbageForTesting(); }
 
  protected:
+  base::MessageLoop message_loop_;
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
@@ -140,13 +142,12 @@ class CursorCallbacks : public WebIDBCallbacks {
   explicit CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor)
       : cursor_(cursor) {}
 
-  virtual void onSuccess(const WebData&,
-                         const WebVector<WebBlobInfo>&) override {}
-  virtual void onSuccess(WebIDBCursor* cursor,
-                         const WebIDBKey& key,
-                         const WebIDBKey& primaryKey,
-                         const WebData& value,
-                         const WebVector<WebBlobInfo>&) override {
+  void onSuccess(const WebIDBValue&) override {}
+  void onSuccess(WebIDBCursor* cursor,
+                 const WebIDBKey& key,
+                 const WebIDBKey& primaryKey,
+                 const WebData& value,
+                 const WebVector<WebBlobInfo>&) override {
     cursor_->reset(cursor);
   }
 

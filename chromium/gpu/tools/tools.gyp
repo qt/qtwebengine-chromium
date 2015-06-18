@@ -12,6 +12,7 @@
     ['OS == "linux" and target_arch != "arm" and use_x11==1', {
       'targets': [
         {
+          # GN version: //gpu/tools/compositor_model_bench
           'target_name': 'compositor_model_bench',
           'type': 'executable',
           'dependencies': [
@@ -25,11 +26,11 @@
           ],
           'sources': [
             'compositor_model_bench/compositor_model_bench.cc',
+            'compositor_model_bench/forward_render_model.cc',
+            'compositor_model_bench/render_model_utils.cc',
+            'compositor_model_bench/render_models.cc',
             'compositor_model_bench/render_tree.cc',
             'compositor_model_bench/shaders.cc',
-            'compositor_model_bench/render_models.cc',
-            'compositor_model_bench/render_model_utils.cc',
-            'compositor_model_bench/forward_render_model.cc',
           ],
         },
       ],

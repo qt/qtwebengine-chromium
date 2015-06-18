@@ -6,10 +6,14 @@
 #define UI_BASE_TOUCH_TOUCH_EDITING_CONTROLLER_H_
 
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+
+namespace gfx {
+class Point;
+class Rect;
+}
 
 namespace ui {
+class SelectionBound;
 
 // An interface implemented by widget that has text that can be selected/edited
 // using touch.
@@ -26,17 +30,18 @@ class UI_BASE_EXPORT TouchEditable : public ui::SimpleMenuModel::Delegate {
   // Move the caret to |point|. |point| is in local coordinates.
   virtual void MoveCaretTo(const gfx::Point& point) = 0;
 
-  // Gets the end points of the current selection. The end points p1 and p2 must
-  // be the cursor rect for the start and end of selection (in local
-  // coordinates):
+  // Gets the end points of the current selection. The end points |anchor| and
+  // |focus| must be the cursor rect for the logical start and logical end of
+  // selection (in local coordinates):
   // ____________________________________
   // | textfield with |selected text|   |
   // ------------------------------------
-  //                  ^p1           ^p2
+  //                  ^anchor       ^focus
   //
-  // p1 should be the logical start and p2 the logical end of selection. Hence,
-  // visually, p1 could be to the right of p2 in the figure above.
-  virtual void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) = 0;
+  // Visually, anchor could be to the right of focus in the figure above - it
+  // depends on the selection direction.
+  virtual void GetSelectionEndPoints(ui::SelectionBound* anchor,
+                                     ui::SelectionBound* focus) = 0;
 
   // Gets the bounds of the client view in its local coordinates.
   virtual gfx::Rect GetBounds() = 0;
@@ -49,7 +54,7 @@ class UI_BASE_EXPORT TouchEditable : public ui::SimpleMenuModel::Delegate {
   virtual void ConvertPointFromScreen(gfx::Point* point) = 0;
 
   // Returns true if the editable draws its own handles (hence, the
-  // TouchSelectionController need not draw handles).
+  // TouchEditingControllerDeprecated need not draw handles).
   virtual bool DrawsHandles() = 0;
 
   // Tells the editable to open context menu.
@@ -65,12 +70,13 @@ class UI_BASE_EXPORT TouchEditable : public ui::SimpleMenuModel::Delegate {
 
 // This defines the callback interface for other code to be notified of changes
 // in the state of a TouchEditable.
-class UI_BASE_EXPORT TouchSelectionController {
+class UI_BASE_EXPORT TouchEditingControllerDeprecated {
  public:
-  virtual ~TouchSelectionController() {}
+  virtual ~TouchEditingControllerDeprecated() {}
 
-  // Creates a TouchSelectionController. Caller owns the returned object.
-  static TouchSelectionController* create(
+  // Creates a TouchEditingControllerDeprecated. Caller owns the returned
+  // object.
+  static TouchEditingControllerDeprecated* Create(
       TouchEditable* client_view);
 
   // Notifies the controller that the selection has changed.
@@ -84,16 +90,17 @@ class UI_BASE_EXPORT TouchSelectionController {
   virtual void HideHandles(bool quick) = 0;
 };
 
-class UI_BASE_EXPORT TouchSelectionControllerFactory {
+class UI_BASE_EXPORT TouchEditingControllerFactory {
  public:
-  static void SetInstance(TouchSelectionControllerFactory* instance);
+  static void SetInstance(TouchEditingControllerFactory* instance);
 
-  virtual TouchSelectionController* create(TouchEditable* client_view) = 0;
+  virtual TouchEditingControllerDeprecated* Create(TouchEditable* client_view)
+      = 0;
 
  protected:
-  virtual ~TouchSelectionControllerFactory() {}
+  virtual ~TouchEditingControllerFactory() {}
 };
 
-}  // namespace views
+}  // namespace ui
 
 #endif  // UI_BASE_TOUCH_TOUCH_EDITING_CONTROLLER_H_

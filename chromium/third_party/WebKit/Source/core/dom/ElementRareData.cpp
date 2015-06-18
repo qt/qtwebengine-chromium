@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/dom/ElementRareData.h"
 
-#include "core/rendering/style/RenderStyle.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
@@ -39,7 +39,7 @@ struct SameSizeAsElementRareData : NodeRareData {
     short indices[2];
     LayoutSize sizeForResizing;
     IntSize scrollOffset;
-    void* pointers[13];
+    void* pointers[14];
 };
 
 CSSStyleDeclaration& ElementRareData::ensureInlineCSSStyleDeclaration(Element* ownerElement)
@@ -49,14 +49,14 @@ CSSStyleDeclaration& ElementRareData::ensureInlineCSSStyleDeclaration(Element* o
     return *m_cssomWrapper;
 }
 
-WillBeHeapVector<RefPtrWillBeMember<Attr> >& ElementRareData::ensureAttrNodeList()
+AttrNodeList& ElementRareData::ensureAttrNodeList()
 {
     if (!m_attrNodeList)
-        m_attrNodeList = adoptPtrWillBeNoop(new WillBeHeapVector<RefPtrWillBeMember<Attr> >());
+        m_attrNodeList = adoptPtrWillBeNoop(new AttrNodeList);
     return *m_attrNodeList;
 }
 
-void ElementRareData::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(ElementRareData)
 {
     visitor->trace(m_dataset);
     visitor->trace(m_classList);
@@ -66,14 +66,16 @@ void ElementRareData::traceAfterDispatch(Visitor* visitor)
     visitor->trace(m_attrNodeList);
 #endif
     visitor->trace(m_inputMethodContext);
-    visitor->trace(m_activeAnimations);
+    visitor->trace(m_elementAnimations);
     visitor->trace(m_cssomWrapper);
+    visitor->trace(m_customElementDefinition);
     visitor->trace(m_generatedBefore);
     visitor->trace(m_generatedAfter);
+    visitor->trace(m_generatedFirstLetter);
     visitor->trace(m_backdrop);
     NodeRareData::traceAfterDispatch(visitor);
 }
 
-COMPILE_ASSERT(sizeof(ElementRareData) == sizeof(SameSizeAsElementRareData), ElementRareDataShouldStaySmall);
+static_assert(sizeof(ElementRareData) == sizeof(SameSizeAsElementRareData), "ElementRareData should stay small");
 
 } // namespace blink

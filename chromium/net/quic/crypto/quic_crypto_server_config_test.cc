@@ -13,6 +13,7 @@
 #include "net/quic/crypto/crypto_server_config_protobuf.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/crypto/strike_register_client.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_time.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/quic_test_utils.h"
@@ -20,7 +21,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::StringPiece;
-using std::make_pair;
 using std::map;
 using std::pair;
 using std::string;
@@ -44,45 +44,32 @@ class QuicCryptoServerConfigPeer {
     }
   }
 
-  bool ConfigHasDefaultSourceAddressTokenBoxer(string config_id) {
-    scoped_refptr<QuicCryptoServerConfig::Config> config = GetConfig(config_id);
-    return config->source_address_token_boxer ==
-        &(server_config_->default_source_address_token_boxer_);
+  string NewSourceAddressToken(string config_id,
+                               SourceAddressTokens previous_tokens,
+                               const IPAddressNumber& ip,
+                               QuicRandom* rand,
+                               QuicWallTime now,
+                               CachedNetworkParameters* cached_network_params) {
+    return server_config_->NewSourceAddressToken(*GetConfig(config_id),
+                                                 previous_tokens, ip, rand, now,
+                                                 cached_network_params);
   }
 
-  string NewSourceAddressToken(
-      string config_id,
-      const IPEndPoint& ip,
-      QuicRandom* rand,
-      QuicWallTime now) {
-    return NewSourceAddressToken(config_id, ip, rand, now, NULL);
-  }
-
-  string NewSourceAddressToken(
-      string config_id,
-      const IPEndPoint& ip,
-      QuicRandom* rand,
-      QuicWallTime now,
-      CachedNetworkParameters* cached_network_params) {
-    return server_config_->NewSourceAddressToken(
-        *GetConfig(config_id), ip, rand, now, cached_network_params);
-  }
-
-  HandshakeFailureReason ValidateSourceAddressToken(string config_id,
-                                                    StringPiece srct,
-                                                    const IPEndPoint& ip,
-                                                    QuicWallTime now) {
-    return ValidateSourceAddressToken(config_id, srct, ip, now, NULL);
-  }
-
-  HandshakeFailureReason ValidateSourceAddressToken(
+  HandshakeFailureReason ValidateSourceAddressTokens(
       string config_id,
       StringPiece srct,
-      const IPEndPoint& ip,
+      const IPAddressNumber& ip,
       QuicWallTime now,
       CachedNetworkParameters* cached_network_params) {
-    return server_config_->ValidateSourceAddressToken(
-        *GetConfig(config_id), srct, ip, now, cached_network_params);
+    SourceAddressTokens tokens;
+    HandshakeFailureReason reason = server_config_->ParseSourceAddressToken(
+        *GetConfig(config_id), srct, &tokens);
+    if (reason != HANDSHAKE_OK) {
+      return reason;
+    }
+
+    return server_config_->ValidateSourceAddressTokens(tokens, ip, now,
+                                                       cached_network_params);
   }
 
   string NewServerNonce(QuicRandom* rand, QuicWallTime now) const {
@@ -134,7 +121,7 @@ class QuicCryptoServerConfigPeer {
       // varargs will promote the value to an int so we have to read that from
       // the stack and cast down.
       const bool is_primary = static_cast<bool>(va_arg(ap, int));
-      expected.push_back(make_pair(server_config_id, is_primary));
+      expected.push_back(std::make_pair(server_config_id, is_primary));
     }
 
     va_end(ap);
@@ -257,110 +244,183 @@ TEST(QuicCryptoServerConfigTest, GetOrbitIsCalledWithoutTheStrikeRegisterLock) {
   EXPECT_TRUE(strike_register->is_known_orbit_called());
 }
 
-TEST(QuicCryptoServerConfigTest, SourceAddressTokens) {
+class SourceAddressTokenTest : public ::testing::Test {
+ public:
+  SourceAddressTokenTest()
+      : ip4_(Loopback4()),
+        ip4_dual_(ConvertIPv4NumberToIPv6Number(ip4_)),
+        ip6_(Loopback6()),
+        original_time_(QuicWallTime::Zero()),
+        rand_(QuicRandom::GetInstance()),
+        server_(QuicCryptoServerConfig::TESTING, rand_),
+        peer_(&server_) {
+    // Advance the clock to some non-zero time.
+    clock_.AdvanceTime(QuicTime::Delta::FromSeconds(1000000));
+    original_time_ = clock_.WallNow();
+
+    primary_config_.reset(server_.AddDefaultConfig(
+        rand_, &clock_, QuicCryptoServerConfig::ConfigOptions()));
+
+    // Add a config that overrides the default boxer.
+    QuicCryptoServerConfig::ConfigOptions options;
+    options.id = kOverride;
+    override_config_protobuf_.reset(
+        QuicCryptoServerConfig::GenerateConfig(rand_, &clock_, options));
+    override_config_protobuf_->set_source_address_token_secret_override(
+        "a secret key");
+    // Lower priority than the default config.
+    override_config_protobuf_->set_priority(1);
+    override_config_.reset(
+        server_.AddConfig(override_config_protobuf_.get(), original_time_));
+  }
+
+  string NewSourceAddressToken(string config_id, const IPAddressNumber& ip) {
+    return NewSourceAddressToken(config_id, ip, NULL);
+  }
+
+  string NewSourceAddressToken(string config_id,
+                               const IPAddressNumber& ip,
+                               const SourceAddressTokens& previous_tokens) {
+    return peer_.NewSourceAddressToken(config_id, previous_tokens, ip, rand_,
+                                       clock_.WallNow(), NULL);
+  }
+
+  string NewSourceAddressToken(string config_id,
+                               const IPAddressNumber& ip,
+                               CachedNetworkParameters* cached_network_params) {
+    SourceAddressTokens previous_tokens;
+    return peer_.NewSourceAddressToken(config_id, previous_tokens, ip, rand_,
+                                       clock_.WallNow(), cached_network_params);
+  }
+
+  HandshakeFailureReason ValidateSourceAddressTokens(
+      string config_id,
+      StringPiece srct,
+      const IPAddressNumber& ip) {
+    return ValidateSourceAddressTokens(config_id, srct, ip, NULL);
+  }
+
+  HandshakeFailureReason ValidateSourceAddressTokens(
+      string config_id,
+      StringPiece srct,
+      const IPAddressNumber& ip,
+      CachedNetworkParameters* cached_network_params) {
+    return peer_.ValidateSourceAddressTokens(
+        config_id, srct, ip, clock_.WallNow(), cached_network_params);
+  }
+
   const string kPrimary = "<primary>";
   const string kOverride = "Config with custom source address token key";
 
-  MockClock clock;
-  clock.AdvanceTime(QuicTime::Delta::FromSeconds(1000000));
+  IPAddressNumber ip4_;
+  IPAddressNumber ip4_dual_;
+  IPAddressNumber ip6_;
 
-  QuicWallTime now = clock.WallNow();
-  const QuicWallTime original_time = now;
+  MockClock clock_;
+  QuicWallTime original_time_;
+  QuicRandom* rand_ = QuicRandom::GetInstance();
+  QuicCryptoServerConfig server_;
+  QuicCryptoServerConfigPeer peer_;
+  // Stores the primary config.
+  scoped_ptr<CryptoHandshakeMessage> primary_config_;
+  scoped_ptr<QuicServerConfigProtobuf> override_config_protobuf_;
+  scoped_ptr<CryptoHandshakeMessage> override_config_;
+};
 
-  QuicRandom* rand = QuicRandom::GetInstance();
-  QuicCryptoServerConfig server(QuicCryptoServerConfig::TESTING, rand);
-  QuicCryptoServerConfigPeer peer(&server);
-
-  scoped_ptr<CryptoHandshakeMessage>(
-      server.AddDefaultConfig(rand, &clock,
-                              QuicCryptoServerConfig::ConfigOptions()));
-
-  // Add a config that overrides the default boxer.
-  QuicCryptoServerConfig::ConfigOptions options;
-  options.id = kOverride;
-  scoped_ptr<QuicServerConfigProtobuf> protobuf(
-      QuicCryptoServerConfig::GenerateConfig(rand, &clock, options));
-  protobuf->set_source_address_token_secret_override("a secret key");
-  // Lower priority than the default config.
-  protobuf->set_priority(1);
-  scoped_ptr<CryptoHandshakeMessage>(
-      server.AddConfig(protobuf.get(), now));
-
-  EXPECT_TRUE(peer.ConfigHasDefaultSourceAddressTokenBoxer(kPrimary));
-  EXPECT_FALSE(peer.ConfigHasDefaultSourceAddressTokenBoxer(kOverride));
-
-  IPEndPoint ip4 = IPEndPoint(Loopback4(), 1);
-  IPEndPoint ip4d = IPEndPoint(ConvertIPv4NumberToIPv6Number(ip4.address()), 1);
-  IPEndPoint ip6 = IPEndPoint(Loopback6(), 2);
-
+// Test basic behavior of source address tokens including being specific
+// to a single IP address and server config.
+TEST_F(SourceAddressTokenTest, NewSourceAddressToken) {
   // Primary config generates configs that validate successfully.
-  const string token4 = peer.NewSourceAddressToken(kPrimary, ip4, rand, now);
-  const string token4d = peer.NewSourceAddressToken(kPrimary, ip4d, rand, now);
-  const string token6 = peer.NewSourceAddressToken(kPrimary, ip6, rand, now);
-  EXPECT_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kPrimary, token4, ip4, now));
-  DCHECK_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kPrimary, token4, ip4d, now));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
-            peer.ValidateSourceAddressToken(kPrimary, token4, ip6, now));
-  DCHECK_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kPrimary, token4d, ip4, now));
-  DCHECK_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kPrimary, token4d, ip4d, now));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
-            peer.ValidateSourceAddressToken(kPrimary, token4d, ip6, now));
-  DCHECK_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kPrimary, token6, ip6, now));
+  const string token4 = NewSourceAddressToken(kPrimary, ip4_);
+  const string token4d = NewSourceAddressToken(kPrimary, ip4_dual_);
+  const string token6 = NewSourceAddressToken(kPrimary, ip6_);
+  EXPECT_EQ(HANDSHAKE_OK, ValidateSourceAddressTokens(kPrimary, token4, ip4_));
+  ASSERT_EQ(HANDSHAKE_OK,
+            ValidateSourceAddressTokens(kPrimary, token4, ip4_dual_));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
+            ValidateSourceAddressTokens(kPrimary, token4, ip6_));
+  ASSERT_EQ(HANDSHAKE_OK, ValidateSourceAddressTokens(kPrimary, token4d, ip4_));
+  ASSERT_EQ(HANDSHAKE_OK,
+            ValidateSourceAddressTokens(kPrimary, token4d, ip4_dual_));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
+            ValidateSourceAddressTokens(kPrimary, token4d, ip6_));
+  ASSERT_EQ(HANDSHAKE_OK, ValidateSourceAddressTokens(kPrimary, token6, ip6_));
 
   // Override config generates configs that validate successfully.
-  const string override_token4 = peer.NewSourceAddressToken(
-      kOverride, ip4, rand, now);
-  const string override_token6 = peer.NewSourceAddressToken(
-      kOverride, ip6, rand, now);
-  DCHECK_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kOverride, override_token4, ip4, now));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
-            peer.ValidateSourceAddressToken(kOverride, override_token4, ip6,
-                                            now));
-  DCHECK_EQ(HANDSHAKE_OK, peer.ValidateSourceAddressToken(
-      kOverride, override_token6, ip6, now));
+  const string override_token4 = NewSourceAddressToken(kOverride, ip4_);
+  const string override_token6 = NewSourceAddressToken(kOverride, ip6_);
+  ASSERT_EQ(HANDSHAKE_OK,
+            ValidateSourceAddressTokens(kOverride, override_token4, ip4_));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
+            ValidateSourceAddressTokens(kOverride, override_token4, ip6_));
+  ASSERT_EQ(HANDSHAKE_OK,
+            ValidateSourceAddressTokens(kOverride, override_token6, ip6_));
 
   // Tokens generated by the primary config do not validate
   // successfully against the override config, and vice versa.
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
-            peer.ValidateSourceAddressToken(kOverride, token4, ip4, now));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
-            peer.ValidateSourceAddressToken(kOverride, token6, ip6, now));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
-            peer.ValidateSourceAddressToken(kPrimary, override_token4, ip4,
-                                            now));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
-            peer.ValidateSourceAddressToken(kPrimary, override_token6, ip6,
-                                            now));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+            ValidateSourceAddressTokens(kOverride, token4, ip4_));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+            ValidateSourceAddressTokens(kOverride, token6, ip6_));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+            ValidateSourceAddressTokens(kPrimary, override_token4, ip4_));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+            ValidateSourceAddressTokens(kPrimary, override_token6, ip6_));
+}
+
+TEST_F(SourceAddressTokenTest, NewSourceAddressTokenExpiration) {
+  const string token = NewSourceAddressToken(kPrimary, ip4_);
+
+  // Validation fails if the token is from the future.
+  clock_.AdvanceTime(QuicTime::Delta::FromSeconds(-3600 * 2));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_CLOCK_SKEW_FAILURE,
+            ValidateSourceAddressTokens(kPrimary, token, ip4_));
 
   // Validation fails after tokens expire.
-  now = original_time.Add(QuicTime::Delta::FromSeconds(86400 * 7));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_EXPIRED_FAILURE,
-            peer.ValidateSourceAddressToken(kPrimary, token4, ip4, now));
+  clock_.AdvanceTime(QuicTime::Delta::FromSeconds(86400 * 7));
+  ASSERT_EQ(SOURCE_ADDRESS_TOKEN_EXPIRED_FAILURE,
+            ValidateSourceAddressTokens(kPrimary, token, ip4_));
+}
 
-  now = original_time.Subtract(QuicTime::Delta::FromSeconds(3600 * 2));
-  DCHECK_EQ(SOURCE_ADDRESS_TOKEN_CLOCK_SKEW_FAILURE,
-            peer.ValidateSourceAddressToken(kPrimary, token4, ip4, now));
-
+TEST_F(SourceAddressTokenTest, NewSourceAddressTokenWithNetworkParams) {
   // Make sure that if the source address token contains CachedNetworkParameters
   // that this gets written to ValidateSourceAddressToken output argument.
   CachedNetworkParameters cached_network_params_input;
   cached_network_params_input.set_bandwidth_estimate_bytes_per_second(1234);
-  const string token4_with_cached_network_params = peer.NewSourceAddressToken(
-      kPrimary, ip4, rand, now, &cached_network_params_input);
+  const string token4_with_cached_network_params =
+      NewSourceAddressToken(kPrimary, ip4_, &cached_network_params_input);
 
   CachedNetworkParameters cached_network_params_output;
-  EXPECT_NE(cached_network_params_output, cached_network_params_input);
-  peer.ValidateSourceAddressToken(kPrimary, token4_with_cached_network_params,
-                                  ip4, now, &cached_network_params_output);
-  // TODO(rtenneti): For server, enable the following check after serialization
-  // of optional CachedNetworkParameters is implemented.
-  // EXPECT_EQ(cached_network_params_output, cached_network_params_input);
+  EXPECT_NE(cached_network_params_output.SerializeAsString(),
+            cached_network_params_input.SerializeAsString());
+  ValidateSourceAddressTokens(kPrimary, token4_with_cached_network_params, ip4_,
+                              &cached_network_params_output);
+  EXPECT_EQ(cached_network_params_output.SerializeAsString(),
+            cached_network_params_input.SerializeAsString());
+}
+
+// Test the ability for a source address token to be valid for multiple
+// addresses.
+TEST_F(SourceAddressTokenTest, SourceAddressTokenMultipleAddresses) {
+  QuicWallTime now = clock_.WallNow();
+
+  // Now create a token which is usable for both addresses.
+  SourceAddressToken previous_token;
+  IPAddressNumber ip_address = ip6_;
+  if (ip6_.size() == kIPv4AddressSize) {
+    ip_address = ConvertIPv4NumberToIPv6Number(ip_address);
+  }
+  previous_token.set_ip(IPAddressToPackedString(ip_address));
+  previous_token.set_timestamp(now.ToUNIXSeconds());
+  SourceAddressTokens previous_tokens;
+  (*previous_tokens.add_tokens()) = previous_token;
+  const string token4or6 =
+      NewSourceAddressToken(kPrimary, ip4_, previous_tokens);
+
+  EXPECT_EQ(HANDSHAKE_OK,
+            ValidateSourceAddressTokens(kPrimary, token4or6, ip4_));
+  ASSERT_EQ(HANDSHAKE_OK,
+            ValidateSourceAddressTokens(kPrimary, token4or6, ip6_));
 }
 
 TEST(QuicCryptoServerConfigTest, ValidateServerNonce) {

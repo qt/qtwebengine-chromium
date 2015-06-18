@@ -36,8 +36,8 @@
 
 namespace blink {
 
-DOMWindowPagePopup::DOMWindowPagePopup(PagePopupClient* popupClient)
-    : m_controller(PagePopupController::create(popupClient))
+DOMWindowPagePopup::DOMWindowPagePopup(PagePopup& popup, PagePopupClient* popupClient)
+    : m_controller(PagePopupController::create(popup, popupClient))
 {
     ASSERT(popupClient);
 }
@@ -49,17 +49,17 @@ const char* DOMWindowPagePopup::supplementName()
     return "DOMWindowPagePopup";
 }
 
-PagePopupController* DOMWindowPagePopup::pagePopupController(LocalDOMWindow& window)
+PagePopupController* DOMWindowPagePopup::pagePopupController(DOMWindow& window)
 {
-    DOMWindowPagePopup* supplement = static_cast<DOMWindowPagePopup*>(from(&window, supplementName()));
+    DOMWindowPagePopup* supplement = static_cast<DOMWindowPagePopup*>(from(&toLocalDOMWindow(window), supplementName()));
     ASSERT(supplement);
     return supplement->m_controller.get();
 }
 
-void DOMWindowPagePopup::install(LocalDOMWindow& window, PagePopupClient* popupClient)
+void DOMWindowPagePopup::install(LocalDOMWindow& window, PagePopup& popup, PagePopupClient* popupClient)
 {
     ASSERT(popupClient);
-    provideTo(window, supplementName(), adoptPtrWillBeNoop(new DOMWindowPagePopup(popupClient)));
+    provideTo(window, supplementName(), adoptPtrWillBeNoop(new DOMWindowPagePopup(popup, popupClient)));
 }
 
 void DOMWindowPagePopup::uninstall(LocalDOMWindow& window)
@@ -68,7 +68,7 @@ void DOMWindowPagePopup::uninstall(LocalDOMWindow& window)
     window.removeSupplement(supplementName());
 }
 
-void DOMWindowPagePopup::trace(Visitor* visitor)
+DEFINE_TRACE(DOMWindowPagePopup)
 {
     visitor->trace(m_controller);
     WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);

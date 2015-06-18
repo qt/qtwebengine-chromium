@@ -5,6 +5,8 @@
 #ifndef FrameClient_h
 #define FrameClient_h
 
+#include "core/CoreExport.h"
+
 namespace blink {
 
 class Frame;
@@ -12,8 +14,9 @@ class LocalFrame;
 class MessageEvent;
 class SecurityOrigin;
 
-class FrameClient {
+class CORE_EXPORT FrameClient {
 public:
+    virtual void willBeDetached() = 0;
     virtual void detached() = 0;
 
     virtual Frame* opener() const = 0;

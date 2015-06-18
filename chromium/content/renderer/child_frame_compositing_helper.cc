@@ -25,7 +25,7 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/khronos/GLES2/gl2.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 
 namespace content {
@@ -34,7 +34,7 @@ ChildFrameCompositingHelper*
 ChildFrameCompositingHelper::CreateForBrowserPlugin(
     const base::WeakPtr<BrowserPlugin>& browser_plugin) {
   return new ChildFrameCompositingHelper(
-      browser_plugin, NULL, NULL, browser_plugin->render_view_routing_id());
+      browser_plugin, NULL, NULL, browser_plugin->render_frame_routing_id());
 }
 
 ChildFrameCompositingHelper*
@@ -61,13 +61,16 @@ ChildFrameCompositingHelper::ChildFrameCompositingHelper(
       render_frame_proxy_(render_frame_proxy),
       frame_(frame) {}
 
-ChildFrameCompositingHelper::~ChildFrameCompositingHelper() {}
+ChildFrameCompositingHelper::~ChildFrameCompositingHelper() {
+  if (resource_collection_.get())
+    resource_collection_->SetClient(NULL);
+}
 
 BrowserPluginManager* ChildFrameCompositingHelper::GetBrowserPluginManager() {
   if (!browser_plugin_)
     return NULL;
 
-  return browser_plugin_->browser_plugin_manager();
+  return BrowserPluginManager::Get();
 }
 
 blink::WebPluginContainer* ChildFrameCompositingHelper::GetContainer() {
@@ -91,7 +94,7 @@ void ChildFrameCompositingHelper::SendCompositorFrameSwappedACKToBrowser(
   if (GetBrowserPluginManager()) {
     GetBrowserPluginManager()->Send(
         new BrowserPluginHostMsg_CompositorFrameSwappedACK(
-            host_routing_id_, GetInstanceID(), params));
+            GetInstanceID(), params));
   } else if (render_frame_proxy_) {
     render_frame_proxy_->Send(
         new FrameHostMsg_CompositorFrameSwappedACK(host_routing_id_, params));
@@ -105,7 +108,7 @@ void ChildFrameCompositingHelper::SendReclaimCompositorResourcesToBrowser(
   if (GetBrowserPluginManager()) {
     GetBrowserPluginManager()->Send(
         new BrowserPluginHostMsg_ReclaimCompositorResources(
-            host_routing_id_, GetInstanceID(), params));
+            GetInstanceID(), params));
   } else if (render_frame_proxy_) {
     render_frame_proxy_->Send(
         new FrameHostMsg_ReclaimCompositorResources(host_routing_id_, params));
@@ -164,6 +167,10 @@ void ChildFrameCompositingHelper::CheckSizeAndAdjustLayerProperties(
 }
 
 void ChildFrameCompositingHelper::OnContainerDestroy() {
+  // If we have a pending ACK, then ACK now so we don't lose frames in the
+  // future.
+  DidCommitCompositorFrame();
+
   if (GetContainer())
     GetContainer()->setWebLayer(NULL);
 

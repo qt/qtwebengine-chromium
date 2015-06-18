@@ -40,28 +40,35 @@ FieldAccess AccessBuilder::ForJSFunctionContext() {
 // static
 FieldAccess AccessBuilder::ForJSArrayBufferBackingStore() {
   return {kTaggedBase, JSArrayBuffer::kBackingStoreOffset, MaybeHandle<Name>(),
-          Type::UntaggedPtr(), kMachPtr};
+          Type::UntaggedPointer(), kMachPtr};
+}
+
+
+// static
+FieldAccess AccessBuilder::ForFixedArrayLength() {
+  return {kTaggedBase, FixedArray::kLengthOffset, MaybeHandle<Name>(),
+          Type::TaggedSigned(), kMachAnyTagged};
 }
 
 
 // static
 FieldAccess AccessBuilder::ForExternalArrayPointer() {
   return {kTaggedBase, ExternalArray::kExternalPointerOffset,
-          MaybeHandle<Name>(), Type::UntaggedPtr(), kMachPtr};
+          MaybeHandle<Name>(), Type::UntaggedPointer(), kMachPtr};
 }
 
 
 // static
 FieldAccess AccessBuilder::ForMapInstanceType() {
   return {kTaggedBase, Map::kInstanceTypeOffset, Handle<Name>(),
-          Type::UntaggedInt8(), kMachUint8};
+          Type::UntaggedUnsigned8(), kMachUint8};
 }
 
 
 // static
-FieldAccess AccessBuilder::ForStringLength() {
+FieldAccess AccessBuilder::ForStringLength(Zone* zone) {
   return {kTaggedBase, String::kLengthOffset, Handle<Name>(),
-          Type::SignedSmall(), kMachAnyTagged};
+          Type::Range(0, String::kMaxLength, zone), kMachAnyTagged};
 }
 
 
@@ -73,9 +80,30 @@ FieldAccess AccessBuilder::ForValue() {
 
 
 // static
-ElementAccess AccessBuilder::ForFixedArrayElement() {
-  return {kNoBoundsCheck, kTaggedBase, FixedArray::kHeaderSize, Type::Any(),
+FieldAccess AccessBuilder::ForContextSlot(size_t index) {
+  int offset = Context::kHeaderSize + static_cast<int>(index) * kPointerSize;
+  DCHECK_EQ(offset,
+            Context::SlotOffset(static_cast<int>(index)) + kHeapObjectTag);
+  return {kTaggedBase, offset, Handle<Name>(), Type::Any(), kMachAnyTagged};
+}
+
+
+// static
+FieldAccess AccessBuilder::ForStatsCounter() {
+  return {kUntaggedBase, 0, MaybeHandle<Name>(), Type::Signed32(), kMachInt32};
+}
+
+
+// static
+FieldAccess AccessBuilder::ForPropertyCellValue() {
+  return {kTaggedBase, PropertyCell::kValueOffset, Handle<Name>(), Type::Any(),
           kMachAnyTagged};
+}
+
+
+// static
+ElementAccess AccessBuilder::ForFixedArrayElement() {
+  return {kTaggedBase, FixedArray::kHeaderSize, Type::Any(), kMachAnyTagged};
 }
 
 
@@ -86,33 +114,40 @@ ElementAccess AccessBuilder::ForTypedArrayElement(ExternalArrayType type,
   int header_size = is_external ? 0 : FixedTypedArrayBase::kDataOffset;
   switch (type) {
     case kExternalInt8Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size, Type::Signed32(),
-              kMachInt8};
+      return {taggedness, header_size, Type::Signed32(), kMachInt8};
     case kExternalUint8Array:
     case kExternalUint8ClampedArray:
-      return {kTypedArrayBoundsCheck, taggedness, header_size,
-              Type::Unsigned32(), kMachUint8};
+      return {taggedness, header_size, Type::Unsigned32(), kMachUint8};
     case kExternalInt16Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size, Type::Signed32(),
-              kMachInt16};
+      return {taggedness, header_size, Type::Signed32(), kMachInt16};
     case kExternalUint16Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size,
-              Type::Unsigned32(), kMachUint16};
+      return {taggedness, header_size, Type::Unsigned32(), kMachUint16};
     case kExternalInt32Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size, Type::Signed32(),
-              kMachInt32};
+      return {taggedness, header_size, Type::Signed32(), kMachInt32};
     case kExternalUint32Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size,
-              Type::Unsigned32(), kMachUint32};
+      return {taggedness, header_size, Type::Unsigned32(), kMachUint32};
     case kExternalFloat32Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size, Type::Number(),
-              kRepFloat32};
+      return {taggedness, header_size, Type::Number(), kMachFloat32};
     case kExternalFloat64Array:
-      return {kTypedArrayBoundsCheck, taggedness, header_size, Type::Number(),
-              kRepFloat64};
+      return {taggedness, header_size, Type::Number(), kMachFloat64};
   }
   UNREACHABLE();
-  return {kTypedArrayBoundsCheck, kUntaggedBase, 0, Type::None(), kMachNone};
+  return {kUntaggedBase, 0, Type::None(), kMachNone};
+}
+
+
+// static
+ElementAccess AccessBuilder::ForSeqStringChar(String::Encoding encoding) {
+  switch (encoding) {
+    case String::ONE_BYTE_ENCODING:
+      return {kTaggedBase, SeqString::kHeaderSize, Type::Unsigned32(),
+              kMachUint8};
+    case String::TWO_BYTE_ENCODING:
+      return {kTaggedBase, SeqString::kHeaderSize, Type::Unsigned32(),
+              kMachUint16};
+  }
+  UNREACHABLE();
+  return {kUntaggedBase, 0, Type::None(), kMachNone};
 }
 
 }  // namespace compiler

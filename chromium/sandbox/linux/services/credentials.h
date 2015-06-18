@@ -12,9 +12,12 @@
 #endif  // defined(OS_ANDROID).
 
 #include <string>
+#include <vector>
 
-#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "sandbox/linux/system_headers/capability.h"
 #include "sandbox/sandbox_export.h"
 
 namespace sandbox {
@@ -24,45 +27,50 @@ namespace sandbox {
 // implemented by the Linux kernel.
 class SANDBOX_EXPORT Credentials {
  public:
-  Credentials();
-  ~Credentials();
-
-  // Returns the number of file descriptors in the current process's FD
-  // table, excluding |proc_fd|, which should be a file descriptor for
-  // /proc.
-  int CountOpenFds(int proc_fd);
-
-  // Checks whether the current process has any directory file descriptor open.
-  // Directory file descriptors are "capabilities" that would let a process use
-  // system calls such as openat() to bypass restrictions such as
-  // DropFileSystemAccess().
-  // Sometimes it's useful to call HasOpenDirectory() after file system access
-  // has been dropped. In this case, |proc_fd| should be a file descriptor to
-  // /proc. The file descriptor in |proc_fd| will be ignored by
-  // HasOpenDirectory() and remains owned by the caller. It is very important
-  // for the caller to close it.
-  // If /proc is available, |proc_fd| can be passed as -1.
-  // If |proc_fd| is -1 and /proc is not available, this function will return
-  // false.
-  bool HasOpenDirectory(int proc_fd);
+  // For brevity, we only expose enums for the subset of capabilities we use.
+  // This can be expanded as the need arises.
+  enum class Capability {
+    SYS_CHROOT,
+    SYS_ADMIN,
+  };
 
   // Drop all capabilities in the effective, inheritable and permitted sets for
-  // the current process.
-  bool DropAllCapabilities();
+  // the current thread. For security reasons, since capabilities are
+  // per-thread, the caller is responsible for ensuring it is single-threaded
+  // when calling this API.
+  // |proc_fd| must be a file descriptor to /proc/ and remains owned by
+  // the caller.
+  static bool DropAllCapabilities(int proc_fd) WARN_UNUSED_RESULT;
+  // A similar API which assumes that it can open /proc/self/ by itself.
+  static bool DropAllCapabilities() WARN_UNUSED_RESULT;
+  // Sets the effective and permitted capability sets for the current thread to
+  // the list of capabiltiies in |caps|. All other capability flags are cleared.
+  static bool SetCapabilities(int proc_fd,
+                              const std::vector<Capability>& caps)
+      WARN_UNUSED_RESULT;
+
+  // Versions of the above functions which do not check that the process is
+  // single-threaded. After calling these functions, capabilities of other
+  // threads will not be changed. This is dangerous, do not use unless you nkow
+  // what you are doing.
+  static bool DropAllCapabilitiesOnCurrentThread() WARN_UNUSED_RESULT;
+  static bool SetCapabilitiesOnCurrentThread(
+      const std::vector<Capability>& caps) WARN_UNUSED_RESULT;
+
+  // Returns true if the current thread has either the effective, permitted, or
+  // inheritable flag set for the given capability.
+  static bool HasCapability(Capability cap);
+
   // Return true iff there is any capability in any of the capabilities sets
-  // of the current process.
-  bool HasAnyCapability() const;
-  // Returns the capabilities of the current process in textual form, as
-  // documented in libcap2's cap_to_text(3). This is mostly useful for
-  // debugging and tests.
-  scoped_ptr<std::string> GetCurrentCapString() const;
+  // of the current thread.
+  static bool HasAnyCapability();
 
   // Returns whether the kernel supports CLONE_NEWUSER and whether it would be
   // possible to immediately move to a new user namespace. There is no point
   // in using this method right before calling MoveToNewUserNS(), simply call
-  // MoveToNewUserNS() immediately. This method is only useful to test kernel
-  // support ahead of time.
-  static bool SupportsNewUserNS();
+  // MoveToNewUserNS() immediately. This method is only useful to test the
+  // ability to move to a user namespace ahead of time.
+  static bool CanCreateProcessInNewUserNS();
 
   // Move the current process to a new "user namespace" as supported by Linux
   // 3.8+ (CLONE_NEWUSER).
@@ -70,21 +78,25 @@ class SANDBOX_EXPORT Credentials {
   // change.
   // If this call succeeds, the current process will be granted a full set of
   // capabilities in the new namespace.
-  bool MoveToNewUserNS();
+  // This will fail if the process is not mono-threaded.
+  static bool MoveToNewUserNS() WARN_UNUSED_RESULT;
 
   // Remove the ability of the process to access the file system. File
   // descriptors which are already open prior to calling this API remain
   // available.
   // The implementation currently uses chroot(2) and requires CAP_SYS_CHROOT.
   // CAP_SYS_CHROOT can be acquired by using the MoveToNewUserNS() API.
-  // Make sure to call DropAllCapabilities() after this call to prevent
-  // escapes.
-  // To be secure, it's very important for this API to not be called while the
-  // process has any directory file descriptor open.
-  bool DropFileSystemAccess();
+  // |proc_fd| must be a file descriptor to /proc/ and must be the only open
+  // directory file descriptor of the process.
+  //
+  // CRITICAL:
+  //   - the caller must close |proc_fd| eventually or access to the file
+  // system can be recovered.
+  //   - DropAllCapabilities() must be called to prevent escapes.
+  static bool DropFileSystemAccess(int proc_fd) WARN_UNUSED_RESULT;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(Credentials);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(Credentials);
 };
 
 }  // namespace sandbox.

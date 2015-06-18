@@ -44,12 +44,14 @@ public:
     explicit ScrollAnimatorNone(ScrollableArea*);
     virtual ~ScrollAnimatorNone();
 
-    virtual bool scroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) override;
+    virtual ScrollResultOneDimensional scroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) override;
     virtual void scrollToOffsetWithoutAnimation(const FloatPoint&) override;
 
     virtual void cancelAnimations() override;
     virtual void serviceScrollAnimations() override;
+    virtual bool hasRunningAnimation() const override;
 
+    virtual void updateAfterLayout() override;
     virtual void willEndLiveResize() override;
     virtual void didAddVerticalScrollbar(Scrollbar*) override;
     virtual void didAddHorizontalScrollbar(Scrollbar*) override;

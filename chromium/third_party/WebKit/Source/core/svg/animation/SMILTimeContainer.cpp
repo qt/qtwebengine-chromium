@@ -30,12 +30,14 @@
 #include "core/animation/AnimationTimeline.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/Settings.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SVGSMILElement.h"
 
 namespace blink {
 
 static const double initialFrameDelay = 0.025;
+static const double animationPolicyOnceDuration = 3.000;
 
 #if !ENABLE(OILPAN)
 // Every entry-point that calls updateAnimations() should instantiate a
@@ -58,6 +60,7 @@ SMILTimeContainer::SMILTimeContainer(SVGSVGElement& owner)
     , m_frameSchedulingState(Idle)
     , m_documentOrderIndexesDirty(false)
     , m_wakeupTimer(this, &SMILTimeContainer::wakeupTimerFired)
+    , m_animationPolicyOnceTimer(this, &SMILTimeContainer::animationPolicyTimerFired)
     , m_ownerSVGElement(owner)
 #if ENABLE(ASSERT)
     , m_preventScheduledAnimationsChanges(false)
@@ -68,6 +71,7 @@ SMILTimeContainer::SMILTimeContainer(SVGSVGElement& owner)
 SMILTimeContainer::~SMILTimeContainer()
 {
     cancelAnimationFrame();
+    cancelAnimationPolicyTimer();
     ASSERT(!m_wakeupTimer.isActive());
 #if ENABLE(ASSERT)
     ASSERT(!m_preventScheduledAnimationsChanges);
@@ -79,6 +83,7 @@ void SMILTimeContainer::schedule(SVGSMILElement* animation, SVGElement* target, 
     ASSERT(animation->timeContainer() == this);
     ASSERT(target);
     ASSERT(animation->hasValidAttributeName());
+    ASSERT(animation->hasValidAttributeType());
 
 #if ENABLE(ASSERT)
     ASSERT(!m_preventScheduledAnimationsChanges);
@@ -152,7 +157,8 @@ SMILTime SMILTimeContainer::elapsed() const
 
 bool SMILTimeContainer::isPaused() const
 {
-    return m_pauseTime;
+    // If animation policy is "none", it is always paused.
+    return m_pauseTime || animationPolicy() == ImageAnimationPolicyNoAnimation;
 }
 
 bool SMILTimeContainer::isStarted() const
@@ -163,6 +169,10 @@ bool SMILTimeContainer::isStarted() const
 void SMILTimeContainer::begin()
 {
     RELEASE_ASSERT(!m_beginTime);
+
+    if (!handleAnimationPolicy(RestartOnceTimerIfNotPaused))
+        return;
+
     double now = currentTime();
 
     // If 'm_presetStartTime' is set, the timeline was modified via setElapsed() before the document began.
@@ -194,6 +204,9 @@ void SMILTimeContainer::begin()
 
 void SMILTimeContainer::pause()
 {
+    if (!handleAnimationPolicy(CancelOnceTimer))
+        return;
+
     ASSERT(!isPaused());
     m_pauseTime = currentTime();
 
@@ -206,6 +219,9 @@ void SMILTimeContainer::pause()
 
 void SMILTimeContainer::resume()
 {
+    if (!handleAnimationPolicy(RestartOnceTimer))
+        return;
+
     ASSERT(isPaused());
     m_resumeTime = currentTime();
 
@@ -220,6 +236,9 @@ void SMILTimeContainer::setElapsed(SMILTime time)
         m_presetStartTime = time.value();
         return;
     }
+
+    if (!handleAnimationPolicy(RestartOnceTimerIfNotPaused))
+        return;
 
     cancelAnimationFrame();
 
@@ -236,14 +255,13 @@ void SMILTimeContainer::setElapsed(SMILTime time)
 #if ENABLE(ASSERT)
     m_preventScheduledAnimationsChanges = true;
 #endif
-    GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
-    for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
-        if (!it->key.first)
+    for (const auto& entry : m_scheduledAnimations) {
+        if (!entry.key.first)
             continue;
 
-        AnimationsLinkedHashSet* scheduled = it->value.get();
-        for (AnimationsLinkedHashSet::const_iterator itAnimation = scheduled->begin(), itAnimationEnd = scheduled->end(); itAnimation != itAnimationEnd; ++itAnimation)
-            (*itAnimation)->reset();
+        AnimationsLinkedHashSet* scheduled = entry.value.get();
+        for (SVGSMILElement* element : *scheduled)
+            element->reset();
     }
 #if ENABLE(ASSERT)
     m_preventScheduledAnimationsChanges = false;
@@ -294,6 +312,64 @@ void SMILTimeContainer::wakeupTimerFired(Timer<SMILTimeContainer>*)
         m_frameSchedulingState = Idle;
         updateAnimationsAndScheduleFrameIfNeeded(elapsed());
     }
+}
+
+void SMILTimeContainer::scheduleAnimationPolicyTimer()
+{
+    m_animationPolicyOnceTimer.startOneShot(animationPolicyOnceDuration, FROM_HERE);
+}
+
+void SMILTimeContainer::cancelAnimationPolicyTimer()
+{
+    if (m_animationPolicyOnceTimer.isActive())
+        m_animationPolicyOnceTimer.stop();
+}
+
+void SMILTimeContainer::animationPolicyTimerFired(Timer<SMILTimeContainer>*)
+{
+    pause();
+}
+
+ImageAnimationPolicy SMILTimeContainer::animationPolicy() const
+{
+    Settings* settings = document().settings();
+    if (!settings)
+        return ImageAnimationPolicyAllowed;
+
+    return settings->imageAnimationPolicy();
+}
+
+bool SMILTimeContainer::handleAnimationPolicy(AnimationPolicyOnceAction onceAction)
+{
+    ImageAnimationPolicy policy = animationPolicy();
+    // If the animation policy is "none", control is not allowed.
+    // returns false to exit flow.
+    if (policy == ImageAnimationPolicyNoAnimation)
+        return false;
+    // If the animation policy is "once",
+    if (policy == ImageAnimationPolicyAnimateOnce) {
+        switch (onceAction) {
+        case RestartOnceTimerIfNotPaused:
+            if (isPaused())
+                break;
+            /* fall through */
+        case RestartOnceTimer:
+            scheduleAnimationPolicyTimer();
+            break;
+        case CancelOnceTimer:
+            cancelAnimationPolicyTimer();
+            break;
+        }
+    }
+    if (policy == ImageAnimationPolicyAllowed) {
+        // When the SVG owner element becomes detached from its document,
+        // the policy defaults to ImageAnimationPolicyAllowed; there's
+        // no way back. If the policy had been "once" prior to that,
+        // ensure cancellation of its timer.
+        if (onceAction == CancelOnceTimer)
+            cancelAnimationPolicyTimer();
+    }
+    return true;
 }
 
 void SMILTimeContainer::updateDocumentOrderIndexes()
@@ -382,42 +458,37 @@ SMILTime SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
         updateDocumentOrderIndexes();
 
     WillBeHeapHashSet<ElementAttributePair> invalidKeys;
-    typedef WillBeHeapVector<RefPtrWillBeMember<SVGSMILElement> > AnimationsVector;
+    using AnimationsVector = WillBeHeapVector<RefPtrWillBeMember<SVGSMILElement>>;
     AnimationsVector animationsToApply;
-    for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(), end = m_scheduledAnimations.end(); it != end; ++it) {
-        if (!it->key.first || it->value->isEmpty()) {
-            invalidKeys.add(it->key);
+    AnimationsVector scheduledAnimationsInSameGroup;
+    for (const auto& entry : m_scheduledAnimations) {
+        if (!entry.key.first || entry.value->isEmpty()) {
+            invalidKeys.add(entry.key);
             continue;
         }
-
-        AnimationsLinkedHashSet* scheduled = it->value.get();
 
         // Sort according to priority. Elements with later begin time have higher priority.
         // In case of a tie, document order decides.
         // FIXME: This should also consider timing relationships between the elements. Dependents
         // have higher priority.
-        AnimationsVector scheduledAnimations;
-        copyToVector(*scheduled, scheduledAnimations);
-        std::sort(scheduledAnimations.begin(), scheduledAnimations.end(), PriorityCompare(elapsed));
+        copyToVector(*entry.value, scheduledAnimationsInSameGroup);
+        std::sort(scheduledAnimationsInSameGroup.begin(), scheduledAnimationsInSameGroup.end(), PriorityCompare(elapsed));
 
-        SVGSMILElement* resultElement = 0;
-        for (AnimationsVector::const_iterator itAnimation = scheduledAnimations.begin(), itAnimationEnd = scheduledAnimations.end(); itAnimation != itAnimationEnd; ++itAnimation) {
-            SVGSMILElement* animation = itAnimation->get();
+        SVGSMILElement* resultElement = nullptr;
+        for (const auto& itAnimation : scheduledAnimationsInSameGroup) {
+            SVGSMILElement* animation = itAnimation.get();
             ASSERT(animation->timeContainer() == this);
             ASSERT(animation->targetElement());
             ASSERT(animation->hasValidAttributeName());
+            ASSERT(animation->hasValidAttributeType());
 
             // Results are accumulated to the first animation that animates and contributes to a particular element/attribute pair.
-            // FIXME: we should ensure that resultElement is of an appropriate type.
-            if (!resultElement) {
-                if (!animation->hasValidAttributeType())
-                    continue;
+            if (!resultElement)
                 resultElement = animation;
-            }
 
             // This will calculate the contribution from the animation and add it to the resultsElement.
             if (!animation->progress(elapsed, resultElement, seekToTime) && resultElement == animation)
-                resultElement = 0;
+                resultElement = nullptr;
 
             SMILTime nextFireTime = animation->nextProgressTime();
             if (nextFireTime.isFinite())
@@ -465,7 +536,7 @@ SMILTime SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
     return earliestFireTime;
 }
 
-void SMILTimeContainer::trace(Visitor* visitor)
+DEFINE_TRACE(SMILTimeContainer)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_scheduledAnimations);

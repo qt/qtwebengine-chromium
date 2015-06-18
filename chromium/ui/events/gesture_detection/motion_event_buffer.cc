@@ -4,7 +4,7 @@
 
 #include "ui/events/gesture_detection/motion_event_buffer.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/events/gesture_detection/motion_event_generic.h"
 
 namespace ui {
@@ -146,8 +146,6 @@ scoped_ptr<MotionEventGeneric> ResampleMotionEvent(
   }
 
   DCHECK(event);
-  event->set_id(event0.GetId());
-  event->set_action_index(event0.GetActionIndex());
   event->set_button_state(event0.GetButtonState());
   return event.Pass();
 }

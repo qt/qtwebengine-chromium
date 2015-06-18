@@ -30,6 +30,7 @@
       'app/nibs/DownloadItem.xib',
       'app/nibs/DownloadShelf.xib',
       'app/nibs/EditSearchEngine.xib',
+      'app/nibs/ExclusiveAccessBubble.xib',
       'app/nibs/ExtensionInstallPrompt.xib',
       'app/nibs/ExtensionInstallPromptBundle.xib',
       'app/nibs/ExtensionInstallPromptNoWarnings.xib',
@@ -37,7 +38,6 @@
       'app/nibs/ExtensionInstalledBubble.xib',
       'app/nibs/FirstRunBubble.xib',
       'app/nibs/FirstRunDialog.xib',
-      'app/nibs/FullscreenExitBubble.xib',
       'app/nibs/HttpAuthLoginSheet.xib',
       'app/nibs/HungRendererDialog.xib',
       'app/nibs/ImportProgressDialog.xib',
@@ -50,7 +50,6 @@
       'app/nibs/WrenchMenu.xib',
     ],  # mac_translated_xibs
     'mac_untranslated_xibs': [
-      'app/nibs/AboutIPC.xib',
       'app/nibs/ActionBoxMenuItem.xib',
       'app/nibs/BookmarkBarFolderWindow.xib',
       'app/nibs/DevicePermissionsPrompt.xib',

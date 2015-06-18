@@ -17,13 +17,9 @@
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/buffers.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/decryptor.h"
-#include "media/base/demuxer_stream.h"
 #include "media/base/pipeline.h"
 
 namespace media {
-
-const int DecryptingAudioDecoder::kSupportedBitsPerChannel = 16;
 
 static inline bool IsOutOfSync(const base::TimeDelta& timestamp_1,
                                const base::TimeDelta& timestamp_2) {
@@ -36,13 +32,16 @@ static inline bool IsOutOfSync(const base::TimeDelta& timestamp_1,
 
 DecryptingAudioDecoder::DecryptingAudioDecoder(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    const SetDecryptorReadyCB& set_decryptor_ready_cb)
+    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+    const base::Closure& waiting_for_decryption_key_cb)
     : task_runner_(task_runner),
       state_(kUninitialized),
+      waiting_for_decryption_key_cb_(waiting_for_decryption_key_cb),
       set_decryptor_ready_cb_(set_decryptor_ready_cb),
       decryptor_(NULL),
       key_added_while_decode_pending_(false),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+}
 
 std::string DecryptingAudioDecoder::GetDisplayName() const {
   return "DecryptingAudioDecoder";
@@ -248,7 +247,7 @@ void DecryptingAudioDecoder::DecodePendingBuffer() {
 void DecryptingAudioDecoder::DeliverFrame(
     int buffer_size,
     Decryptor::Status status,
-    const Decryptor::AudioBuffers& frames) {
+    const Decryptor::AudioFrames& frames) {
   DVLOG(3) << "DeliverFrame() - status: " << status;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kPendingDecode) << state_;
@@ -290,6 +289,7 @@ void DecryptingAudioDecoder::DeliverFrame(
     }
 
     state_ = kWaitingForKey;
+    waiting_for_decryption_key_cb_.Run();
     return;
   }
 
@@ -340,8 +340,8 @@ void DecryptingAudioDecoder::DoReset() {
 }
 
 void DecryptingAudioDecoder::ProcessDecodedFrames(
-    const Decryptor::AudioBuffers& frames) {
-  for (Decryptor::AudioBuffers::const_iterator iter = frames.begin();
+    const Decryptor::AudioFrames& frames) {
+  for (Decryptor::AudioFrames::const_iterator iter = frames.begin();
        iter != frames.end();
        ++iter) {
     scoped_refptr<AudioBuffer> frame = *iter;

@@ -7,23 +7,23 @@
 
 #include "GrGLRenderTarget.h"
 
-#include "GrGpuGL.h"
+#include "GrGLGpu.h"
 
-#define GPUGL static_cast<GrGpuGL*>(this->getGpu())
+#define GPUGL static_cast<GrGLGpu*>(this->getGpu())
 #define GL_CALL(X) GR_GL_CALL(GPUGL->glInterface(), X)
 
 // Because this class is virtually derived from GrSurface we must explicitly call its constructor.
-GrGLRenderTarget::GrGLRenderTarget(GrGpuGL* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc)
-    : GrSurface(gpu, idDesc.fIsWrapped, desc)
-    , INHERITED(gpu, idDesc.fIsWrapped, desc) {
+GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc)
+    : GrSurface(gpu, idDesc.fLifeCycle, desc)
+    , INHERITED(gpu, idDesc.fLifeCycle, desc) {
     this->init(desc, idDesc);
     this->registerWithCache();
 }
 
-GrGLRenderTarget::GrGLRenderTarget(GrGpuGL* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc,
+GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc,
                                    Derived)
-    : GrSurface(gpu, idDesc.fIsWrapped, desc)
-    , INHERITED(gpu, idDesc.fIsWrapped, desc) {
+    : GrSurface(gpu, idDesc.fLifeCycle, desc)
+    , INHERITED(gpu, idDesc.fLifeCycle, desc) {
     this->init(desc, idDesc);
 }
 
@@ -31,6 +31,7 @@ void GrGLRenderTarget::init(const GrSurfaceDesc& desc, const IDDesc& idDesc) {
     fRTFBOID                = idDesc.fRTFBOID;
     fTexFBOID               = idDesc.fTexFBOID;
     fMSColorRenderbufferID  = idDesc.fMSColorRenderbufferID;
+    fIsWrapped              = kWrapped_LifeCycle == idDesc.fLifeCycle;
 
     fViewport.fLeft   = 0;
     fViewport.fBottom = 0;
@@ -38,23 +39,27 @@ void GrGLRenderTarget::init(const GrSurfaceDesc& desc, const IDDesc& idDesc) {
     fViewport.fHeight = desc.fHeight;
 
     // We own one color value for each MSAA sample.
-    fColorValuesPerPixel = SkTMax(1, fDesc.fSampleCnt);
+    int colorValuesPerPixel = SkTMax(1, fDesc.fSampleCnt);
     if (fTexFBOID != fRTFBOID) {
         // If we own the resolve buffer then that is one more sample per pixel.
-        fColorValuesPerPixel += 1;
-    } 
-}
-
-size_t GrGLRenderTarget::gpuMemorySize() const {
+        colorValuesPerPixel += 1;
+    } else if (fTexFBOID != 0) {
+        // For auto-resolving FBOs, the MSAA buffer is free.
+        colorValuesPerPixel = 1;
+    }
     SkASSERT(kUnknown_GrPixelConfig != fDesc.fConfig);
     SkASSERT(!GrPixelConfigIsCompressed(fDesc.fConfig));
     size_t colorBytes = GrBytesPerPixel(fDesc.fConfig);
     SkASSERT(colorBytes > 0);
-    return fColorValuesPerPixel * fDesc.fWidth * fDesc.fHeight * colorBytes;
+    fGpuMemorySize = colorValuesPerPixel * fDesc.fWidth * fDesc.fHeight * colorBytes;
+}
+
+size_t GrGLRenderTarget::onGpuMemorySize() const {
+    return fGpuMemorySize;
 }
 
 void GrGLRenderTarget::onRelease() {
-    if (!this->isWrapped()) {
+    if (!fIsWrapped) {
         if (fTexFBOID) {
             GL_CALL(DeleteFramebuffers(1, &fTexFBOID));
         }
@@ -68,6 +73,7 @@ void GrGLRenderTarget::onRelease() {
     fRTFBOID                = 0;
     fTexFBOID               = 0;
     fMSColorRenderbufferID  = 0;
+    fIsWrapped              = false;
     INHERITED::onRelease();
 }
 
@@ -75,5 +81,6 @@ void GrGLRenderTarget::onAbandon() {
     fRTFBOID                = 0;
     fTexFBOID               = 0;
     fMSColorRenderbufferID  = 0;
+    fIsWrapped              = false;
     INHERITED::onAbandon();
 }

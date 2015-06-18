@@ -5,28 +5,34 @@
 #include "content/browser/service_worker/service_worker_registration_handle.h"
 
 #include "content/browser/service_worker/service_worker_context_core.h"
-#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_handle.h"
 #include "content/common/service_worker/service_worker_messages.h"
+#include "content/common/service_worker/service_worker_types.h"
 
 namespace content {
 
-static const int kDocumentMainThreadId = 0;
-
 ServiceWorkerRegistrationHandle::ServiceWorkerRegistrationHandle(
     base::WeakPtr<ServiceWorkerContextCore> context,
-    ServiceWorkerDispatcherHost* dispatcher_host,
-    int provider_id,
+    base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     ServiceWorkerRegistration* registration)
     : context_(context),
-      dispatcher_host_(dispatcher_host),
-      provider_id_(provider_id),
+      provider_host_(provider_host),
+      provider_id_(provider_host ? provider_host->provider_id()
+                                 : kInvalidServiceWorkerProviderId),
       handle_id_(context ? context->GetNewRegistrationHandleId()
                          : kInvalidServiceWorkerRegistrationHandleId),
       ref_count_(1),
       registration_(registration) {
   DCHECK(registration_.get());
-  SetVersionAttributes(registration->installing_version(),
+  ChangedVersionAttributesMask changed_mask;
+  if (registration->installing_version())
+    changed_mask.add(ChangedVersionAttributesMask::INSTALLING_VERSION);
+  if (registration->waiting_version())
+    changed_mask.add(ChangedVersionAttributesMask::WAITING_VERSION);
+  if (registration->active_version())
+    changed_mask.add(ChangedVersionAttributesMask::ACTIVE_VERSION);
+  SetVersionAttributes(changed_mask,
+                       registration->installing_version(),
                        registration->waiting_version(),
                        registration->active_version());
   registration_->AddListener(this);
@@ -46,23 +52,6 @@ ServiceWorkerRegistrationHandle::GetObjectInfo() {
   return info;
 }
 
-ServiceWorkerObjectInfo
-ServiceWorkerRegistrationHandle::CreateServiceWorkerHandleAndPass(
-    ServiceWorkerVersion* version) {
-  ServiceWorkerObjectInfo info;
-  if (context_ && version) {
-    scoped_ptr<ServiceWorkerHandle> handle =
-        ServiceWorkerHandle::Create(context_,
-                                    dispatcher_host_,
-                                    kDocumentMainThreadId,
-                                    provider_id_,
-                                    version);
-    info = handle->GetObjectInfo();
-    dispatcher_host_->RegisterServiceWorkerHandle(handle.Pass());
-  }
-  return info;
-}
-
 void ServiceWorkerRegistrationHandle::IncrementRefCount() {
   DCHECK_GT(ref_count_, 0);
   ++ref_count_;
@@ -78,7 +67,8 @@ void ServiceWorkerRegistrationHandle::OnVersionAttributesChanged(
     ChangedVersionAttributesMask changed_mask,
     const ServiceWorkerRegistrationInfo& info) {
   DCHECK_EQ(registration->id(), registration_->id());
-  SetVersionAttributes(registration->installing_version(),
+  SetVersionAttributes(changed_mask,
+                       registration->installing_version(),
                        registration->waiting_version(),
                        registration->active_version());
 }
@@ -86,62 +76,32 @@ void ServiceWorkerRegistrationHandle::OnVersionAttributesChanged(
 void ServiceWorkerRegistrationHandle::OnRegistrationFailed(
     ServiceWorkerRegistration* registration) {
   DCHECK_EQ(registration->id(), registration_->id());
-  ClearVersionAttributes();
+  ChangedVersionAttributesMask changed_mask(
+      ChangedVersionAttributesMask::INSTALLING_VERSION |
+      ChangedVersionAttributesMask::WAITING_VERSION |
+      ChangedVersionAttributesMask::ACTIVE_VERSION);
+  SetVersionAttributes(changed_mask, nullptr, nullptr, nullptr);
 }
 
 void ServiceWorkerRegistrationHandle::OnUpdateFound(
     ServiceWorkerRegistration* registration) {
-  if (!dispatcher_host_)
-    return;  // Could be NULL in some tests.
-  dispatcher_host_->Send(new ServiceWorkerMsg_UpdateFound(
-      kDocumentMainThreadId, GetObjectInfo()));
+  if (!provider_host_)
+    return;  // Could be nullptr in some tests.
+  provider_host_->SendUpdateFoundMessage(handle_id_);
 }
 
 void ServiceWorkerRegistrationHandle::SetVersionAttributes(
+    ChangedVersionAttributesMask changed_mask,
     ServiceWorkerVersion* installing_version,
     ServiceWorkerVersion* waiting_version,
     ServiceWorkerVersion* active_version) {
-  ChangedVersionAttributesMask mask;
-
-  if (installing_version != installing_version_.get()) {
-    installing_version_ = installing_version;
-    mask.add(ChangedVersionAttributesMask::INSTALLING_VERSION);
-  }
-  if (waiting_version != waiting_version_.get()) {
-    waiting_version_ = waiting_version;
-    mask.add(ChangedVersionAttributesMask::WAITING_VERSION);
-  }
-  if (active_version != active_version_.get()) {
-    active_version_ = active_version;
-    mask.add(ChangedVersionAttributesMask::ACTIVE_VERSION);
-  }
-
-  if (!dispatcher_host_)
-    return;  // Could be NULL in some tests.
-  if (!mask.changed())
-    return;
-
-  ServiceWorkerVersionAttributes attributes;
-  if (mask.installing_changed()) {
-    attributes.installing =
-        CreateServiceWorkerHandleAndPass(installing_version);
-  }
-  if (mask.waiting_changed()) {
-    attributes.waiting =
-        CreateServiceWorkerHandleAndPass(waiting_version);
-  }
-  if (mask.active_changed()) {
-    attributes.active =
-        CreateServiceWorkerHandleAndPass(active_version);
-  }
-
-  dispatcher_host_->Send(new ServiceWorkerMsg_SetVersionAttributes(
-      kDocumentMainThreadId, provider_id_, handle_id_,
-      mask.changed(), attributes));
-}
-
-void ServiceWorkerRegistrationHandle::ClearVersionAttributes() {
-  SetVersionAttributes(NULL, NULL, NULL);
+  if (!provider_host_)
+    return;  // Could be nullptr in some tests.
+  provider_host_->SendSetVersionAttributesMessage(handle_id_,
+                                                  changed_mask,
+                                                  installing_version,
+                                                  waiting_version,
+                                                  active_version);
 }
 
 }  // namespace content

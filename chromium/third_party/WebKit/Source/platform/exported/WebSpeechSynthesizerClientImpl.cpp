@@ -42,7 +42,7 @@ WebSpeechSynthesizerClientImpl::~WebSpeechSynthesizerClientImpl()
 
 void WebSpeechSynthesizerClientImpl::setVoiceList(const WebVector<WebSpeechSynthesisVoice>& voices)
 {
-    HeapVector<Member<PlatformSpeechSynthesisVoice> > outVoices;
+    HeapVector<Member<PlatformSpeechSynthesisVoice>> outVoices;
     for (size_t i = 0; i < voices.size(); i++)
         outVoices.append(voices[i]);
     m_synthesizer->setVoiceList(outVoices);
@@ -84,7 +84,7 @@ void WebSpeechSynthesizerClientImpl::sentenceBoundaryEventOccurred(const WebSpee
     m_client->boundaryEventOccurred(utterance, SpeechSentenceBoundary, charIndex);
 }
 
-void WebSpeechSynthesizerClientImpl::trace(Visitor* visitor)
+DEFINE_TRACE(WebSpeechSynthesizerClientImpl)
 {
     visitor->trace(m_synthesizer);
     visitor->trace(m_client);

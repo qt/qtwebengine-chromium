@@ -5,7 +5,11 @@
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//build/module_args/v8.gni")
 import("//url/config.gni")
+import("//testing/test.gni")
+import("//third_party/icu/config.gni")
+import("//third_party/protobuf/proto_library.gni")
 
 # TODO(cjhopman): //build/config/android/rules.gni also imports grit_rule.gni.
 # Currently, that file can't be imported multiple times.  Make this always
@@ -22,11 +26,10 @@ if (is_android) {
 }
 
 # The list of net files is kept in net.gypi. Read it.
-gypi_values = exec_script(
-    "//build/gypi_to_gn.py",
-    [ rebase_path("net.gypi") ],
-    "scope",
-    [ "net.gypi" ])
+gypi_values = exec_script("//build/gypi_to_gn.py",
+                          [ rebase_path("net.gypi") ],
+                          "scope",
+                          [ "net.gypi" ])
 
 # Disable Kerberos on ChromeOS, Android and iOS, at least for now. It needs
 # configuration (krb5.conf and so on).
@@ -37,7 +40,7 @@ use_kerberos = !is_chromeos && !is_android && !is_ios
 # pretty confident that mmap-ing the index would not hurt any existing x86
 # android devices, but we cannot be so sure about the variety of ARM devices.
 # So enable it for x86 only for now.
-posix_avoid_mmap = is_android && cpu_arch != "x86"
+posix_avoid_mmap = is_android && current_cpu != "x86"
 
 # WebSockets and socket stream code are used everywhere except iOS.
 enable_websockets = !is_ios
@@ -60,18 +63,9 @@ config("net_config") {
   }
 }
 
-# Disables Windows warning about size to int truncations.
-# TODO(jschuh): crbug.com/167187 fix this and delete this config.
-config("net_win_size_truncation") {
-  if (is_win) {
-    cflags = [ "/wd4267" ]
-  }
-}
-
 component("net") {
   sources =
-    gypi_values.net_nacl_common_sources +
-    gypi_values.net_non_nacl_sources
+      gypi_values.net_nacl_common_sources + gypi_values.net_non_nacl_sources
 
   cflags = []
   defines = [
@@ -81,25 +75,28 @@ component("net") {
     # doesn't seem to be set in the regular builds, so we're skipping this
     # capability here.
     "DLOPEN_KERBEROS",
-    "NET_IMPLEMENTATION"
+    "NET_IMPLEMENTATION",
   ]
-  configs += [ ":net_win_size_truncation" ]
+
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
   public_configs = [ ":net_config" ]
   include_dirs = []
 
   public_deps = [
+    ":net_quic_proto",
     "//crypto",
-    "//crypto:platform"
+    "//crypto:platform",
+    "//url",
   ]
   deps = [
-   ":net_resources",
+    ":net_resources",
     "//base",
-    "//base:i18n",
     "//base:prefs",
     "//base/third_party/dynamic_annotations",
     "//net/base/registry_controlled_domains",
     "//sdch",
-    "//third_party/icu",
+    "//third_party/protobuf:protobuf_lite",
     "//third_party/zlib",
     "//url",
   ]
@@ -113,8 +110,8 @@ component("net") {
     sources -= [
       "http/http_auth_gssapi_posix.cc",
       "http/http_auth_gssapi_posix.h",
-      "http/http_auth_handler_negotiate.h",
       "http/http_auth_handler_negotiate.cc",
+      "http/http_auth_handler_negotiate.h",
     ]
   }
 
@@ -130,12 +127,12 @@ component("net") {
     sources -= [
       "base/directory_lister.cc",
       "base/directory_lister.h",
+      "url_request/file_protocol_handler.cc",
+      "url_request/file_protocol_handler.h",
       "url_request/url_request_file_dir_job.cc",
       "url_request/url_request_file_dir_job.h",
       "url_request/url_request_file_job.cc",
       "url_request/url_request_file_job.h",
-      "url_request/file_protocol_handler.cc",
-      "url_request/file_protocol_handler.h",
     ]
   }
 
@@ -197,11 +194,7 @@ component("net") {
       "cert/ct_objects_extractor_nss.cc",
       "cert/jwk_serializer_nss.cc",
       "cert/scoped_nss_types.h",
-      "cert/test_root_certs_nss.cc",
       "cert/x509_util_nss.cc",
-      "cert/x509_util_nss.h",
-      "ocsp/nss_ocsp.cc",
-      "ocsp/nss_ocsp.h",
       "quic/crypto/aead_base_decrypter_nss.cc",
       "quic/crypto/aead_base_encrypter_nss.cc",
       "quic/crypto/aes_128_gcm_12_decrypter_nss.cc",
@@ -217,31 +210,6 @@ component("net") {
       "socket/ssl_server_socket_nss.cc",
       "socket/ssl_server_socket_nss.h",
     ]
-    if (is_chromeos) {
-      sources -= [
-        "cert/nss_cert_database_chromeos.cc",
-        "cert/nss_cert_database_chromeos.h",
-        "cert/nss_profile_filter_chromeos.cc",
-        "cert/nss_profile_filter_chromeos.h",
-      ]
-    }
-    if (is_linux) {
-      # These are always removed for non-Linux cases below.
-      sources -= [
-        "base/crypto_module_nss.cc",
-        "base/keygen_handler_nss.cc",
-        "cert/cert_database_nss.cc",
-        "cert/nss_cert_database.cc",
-        "cert/nss_cert_database.h",
-        "cert/x509_certificate_nss.cc",
-        "third_party/mozilla_security_manager/nsKeygenHandler.cpp",
-        "third_party/mozilla_security_manager/nsKeygenHandler.h",
-        "third_party/mozilla_security_manager/nsNSSCertificateDB.cpp",
-        "third_party/mozilla_security_manager/nsNSSCertificateDB.h",
-        "third_party/mozilla_security_manager/nsPKCS12Blob.cpp",
-        "third_party/mozilla_security_manager/nsPKCS12Blob.h",
-      ]
-    }
     if (is_ios) {
       # Always removed for !ios below.
       sources -= [
@@ -250,13 +218,13 @@ component("net") {
       ]
     }
     if (is_win) {
-      sources -= [
-        "cert/cert/sha256_legacy_support_nss_win.cc",
-      ]
+      sources -= [ "cert/sha256_legacy_support_nss_win.cc" ]
+    }
+    if (!use_nss_certs && !is_ios) {
+      sources -= [ "cert/x509_util_nss.h" ]
     }
   } else {
     sources -= [
-      "base/crypto_module_openssl.cc",
       "cert/ct_log_verifier_openssl.cc",
       "cert/ct_objects_extractor_openssl.cc",
       "cert/jwk_serializer_openssl.cc",
@@ -276,16 +244,15 @@ component("net") {
       "socket/ssl_client_socket_openssl.h",
       "socket/ssl_server_socket_openssl.cc",
       "socket/ssl_server_socket_openssl.h",
-      "socket/ssl_session_cache_openssl.cc",
-      "socket/ssl_session_cache_openssl.h",
       "ssl/openssl_platform_key.h",
+      "ssl/openssl_platform_key_nss.cc",
       "ssl/openssl_ssl_util.cc",
       "ssl/openssl_ssl_util.h",
+      "ssl/ssl_client_session_cache_openssl.cc",
+      "ssl/ssl_client_session_cache_openssl.h",
     ]
     if (is_mac) {
-      sources -= [
-        "ssl/openssl_platform_key_mac.cc",
-      ]
+      sources -= [ "ssl/openssl_platform_key_mac.cc" ]
     }
     if (is_win) {
       sources -= [
@@ -297,6 +264,7 @@ component("net") {
 
   if (!use_openssl_certs) {
     sources -= [
+      "base/crypto_module_openssl.cc",
       "base/keygen_handler_openssl.cc",
       "base/openssl_private_key_store.h",
       "base/openssl_private_key_store_memory.cc",
@@ -309,9 +277,7 @@ component("net") {
       "ssl/openssl_client_key_store.h",
     ]
     if (is_android) {
-      sources -= [
-        "base/openssl_private_key_store_android.cc",
-      ]
+      sources -= [ "base/openssl_private_key_store_android.cc" ]
     }
   } else if (is_android) {
     # Android doesn't use these even when using OpenSSL.
@@ -330,7 +296,9 @@ component("net") {
 
   if (is_linux) {
     configs += [ "//build/config/linux:libresolv" ]
-  } else {
+  }
+
+  if (!use_nss_certs) {
     sources -= [
       "base/crypto_module_nss.cc",
       "base/keygen_handler_nss.cc",
@@ -338,6 +306,8 @@ component("net") {
       "cert/nss_cert_database.cc",
       "cert/nss_cert_database.h",
       "cert/x509_certificate_nss.cc",
+      "ssl/client_cert_store_nss.cc",
+      "ssl/client_cert_store_nss.h",
       "third_party/mozilla_security_manager/nsKeygenHandler.cpp",
       "third_party/mozilla_security_manager/nsKeygenHandler.h",
       "third_party/mozilla_security_manager/nsNSSCertificateDB.cpp",
@@ -345,52 +315,41 @@ component("net") {
       "third_party/mozilla_security_manager/nsPKCS12Blob.cpp",
       "third_party/mozilla_security_manager/nsPKCS12Blob.h",
     ]
-
-    if (!is_ios && !use_openssl) {
-      # These files are part of the partial implementation of NSS on iOS so
-      # keep them in that case.
-      sources -= [
-        "cert/test_root_certs_nss.cc",
-        "ocsp/nss_ocsp.cc",
-        "ocsp/nss_ocsp.h",
-      ]
-    }
-  }
-
-  if (!use_nss_certs) {
-    sources -= [
-      "ssl/client_cert_store_nss.cc",
-      "ssl/client_cert_store_nss.h",
-    ]
     if (!is_ios) {
       # These files are part of the partial implementation of NSS on iOS so
       # keep them in that case (even though use_nss_certs is not set).
       sources -= [
         "cert/cert_verify_proc_nss.cc",
         "cert/cert_verify_proc_nss.h",
+        "cert/test_root_certs_nss.cc",
+        "cert/x509_util_nss_certs.cc",
+        "cert_net/nss_ocsp.cc",
+        "cert_net/nss_ocsp.h",
       ]
     }
     if (is_chromeos) {
       # These were already removed on non-ChromeOS.
       sources -= [
+        "cert/nss_cert_database_chromeos.cc",
+        "cert/nss_cert_database_chromeos.h",
+        "cert/nss_profile_filter_chromeos.cc",
+        "cert/nss_profile_filter_chromeos.h",
         "ssl/client_cert_store_chromeos.cc",
         "ssl/client_cert_store_chromeos.h",
       ]
     }
+    if (use_openssl) {
+      sources -= [ "ssl/openssl_platform_key_nss.cc" ]
+    }
+  } else if (use_openssl) {
+    # client_cert_store_nss.c requires NSS_CmpCertChainWCANames from NSS's
+    # libssl, but our bundled copy is not built in OpenSSL ports. Pull that file
+    # in directly.
+    sources += [ "third_party/nss/ssl/cmpcert.c" ]
   }
 
   if (!enable_websockets) {
     sources -= [
-      "socket_stream/socket_stream.cc",
-      "socket_stream/socket_stream.h",
-      "socket_stream/socket_stream_job.cc",
-      "socket_stream/socket_stream_job.h",
-      "socket_stream/socket_stream_job_manager.cc",
-      "socket_stream/socket_stream_job_manager.h",
-      "socket_stream/socket_stream_metrics.cc",
-      "socket_stream/socket_stream_metrics.h",
-      "spdy/spdy_websocket_stream.cc",
-      "spdy/spdy_websocket_stream.h",
       "websockets/websocket_basic_handshake_stream.cc",
       "websockets/websocket_basic_handshake_stream.h",
       "websockets/websocket_basic_stream.cc",
@@ -414,10 +373,10 @@ component("net") {
       "websockets/websocket_frame.h",
       "websockets/websocket_frame_parser.cc",
       "websockets/websocket_frame_parser.h",
+      "websockets/websocket_handshake_challenge.cc",
+      "websockets/websocket_handshake_challenge.h",
       "websockets/websocket_handshake_constants.cc",
       "websockets/websocket_handshake_constants.h",
-      "websockets/websocket_handshake_handler.cc",
-      "websockets/websocket_handshake_handler.h",
       "websockets/websocket_handshake_request_info.cc",
       "websockets/websocket_handshake_request_info.h",
       "websockets/websocket_handshake_response_info.cc",
@@ -427,15 +386,9 @@ component("net") {
       "websockets/websocket_handshake_stream_create_helper.h",
       "websockets/websocket_inflater.cc",
       "websockets/websocket_inflater.h",
-      "websockets/websocket_job.cc",
-      "websockets/websocket_job.h",
       "websockets/websocket_mux.h",
-      "websockets/websocket_net_log_params.cc",
-      "websockets/websocket_net_log_params.h",
       "websockets/websocket_stream.cc",
       "websockets/websocket_stream.h",
-      "websockets/websocket_throttle.cc",
-      "websockets/websocket_throttle.h",
     ]
   }
 
@@ -485,22 +438,17 @@ component("net") {
   }
 
   if (is_ios) {
-    # Add back some sources that were otherwise filtered out. iOS additionally
-    # doesn't set USE_NSS but needs some of the files.
+    # Add back some sources that were otherwise filtered out. iOS needs some Mac
+    # files.
     set_sources_assignment_filter([])
     sources += [
+      "base/net_util_mac.cc",
+      "base/net_util_mac.h",
       "base/network_change_notifier_mac.cc",
       "base/network_config_watcher_mac.cc",
       "base/platform_mime_util_mac.mm",
-      "cert/cert_verify_proc_nss.cc",
-      "cert/cert_verify_proc_nss.h",
-      "cert/test_root_certs_nss.cc",
-      "cert/x509_util_nss.cc",
-      "cert/x509_util_nss.h",
       "proxy/proxy_resolver_mac.cc",
       "proxy/proxy_server_mac.cc",
-      "ocsp/nss_ocsp.cc",
-      "ocsp/nss_ocsp.h",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
 
@@ -514,35 +462,39 @@ component("net") {
     ]
   }
 
+  if (is_ios || is_mac) {
+    sources += gypi_values.net_base_mac_ios_sources
+  }
+
   if (is_android) {
     # Add some Linux sources that were excluded by the filter, but which
     # are needed.
     set_sources_assignment_filter([])
     sources += [
-      "base/platform_mime_util_linux.cc",
       "base/address_tracker_linux.cc",
       "base/address_tracker_linux.h",
+      "base/net_util_linux.cc",
+      "base/net_util_linux.h",
+      "base/platform_mime_util_linux.cc",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
-
-    if (!is_android_webview_build) {
-      deps += [ ":net_jni_headers" ]
-    }
+    deps += [ ":net_jni_headers" ]
   }
 
   if (use_icu_alternatives_on_android) {
-    deps -= [
-      "//base:i18n",
-      "//third_party/icu",
-    ]
-    sources -= [
-      "base/filename_util_icu.cc",
-      "base/net_string_util_icu.cc",
-      "base/net_util_icu.cc",
-    ]
     sources += [
       "base/net_string_util_icu_alternatives_android.cc",
       "base/net_string_util_icu_alternatives_android.h",
+    ]
+  } else {
+    deps += [
+      "//base:i18n",
+      "//third_party/icu",
+    ]
+    sources += [
+      "base/filename_util_icu.cc",
+      "base/net_string_util_icu.cc",
+      "base/net_util_icu.cc",
     ]
   }
 }
@@ -557,11 +509,27 @@ grit("net_resources") {
   ]
 }
 
+proto_library("net_quic_proto") {
+  visibility = [ "//net" ]  # Part of the net component.
+
+  sources = [
+    "quic/proto/cached_network_parameters.proto",
+    "quic/proto/source_address_token.proto",
+  ]
+  cc_generator_options = "dllexport_decl=NET_EXPORT_PRIVATE:"
+  cc_include = "net/base/net_export.h"
+
+  defines = [ "NET_IMPLEMENTATION" ]
+
+  extra_configs = [ "//build/config/compiler:wexit_time_destructors" ]
+}
+
 static_library("extras") {
   sources = gypi_values.net_extras_sources
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
   deps = [
     ":net",
+    "//base",
     "//sql:sql",
   ]
 }
@@ -578,8 +546,13 @@ static_library("http_server") {
     "server/http_server_response_info.h",
     "server/web_socket.cc",
     "server/web_socket.h",
+    "server/web_socket_encoder.cc",
+    "server/web_socket_encoder.h",
   ]
-  configs += [ "//build/config/compiler:wexit_time_destructors" ]
+  configs += [
+    "//build/config/compiler:no_size_t_to_int_warning",
+    "//build/config/compiler:wexit_time_destructors",
+  ]
   deps = [
     ":net",
     "//base",
@@ -598,11 +571,12 @@ executable("dump_cache") {
     "tools/dump_cache/simple_cache_dumper.h",
     "tools/dump_cache/url_to_filename_encoder.cc",
     "tools/dump_cache/url_to_filename_encoder.h",
-    "tools/dump_cache/url_utilities.h",
     "tools/dump_cache/url_utilities.cc",
+    "tools/dump_cache/url_utilities.h",
   ]
 
-  configs += [ ":net_win_size_truncation" ]
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   deps = [
     "//base",
@@ -614,8 +588,6 @@ executable("dump_cache") {
 source_set("test_support") {
   testonly = true
   sources = [
-    "base/capturing_net_log.cc",
-    "base/capturing_net_log.h",
     "base/load_timing_info_test_util.cc",
     "base/load_timing_info_test_util.h",
     "base/mock_file_stream.cc",
@@ -644,6 +616,12 @@ source_set("test_support") {
     "dns/mock_mdns_socket_factory.h",
     "http/http_transaction_test_util.cc",
     "http/http_transaction_test_util.h",
+    "log/test_net_log.cc",
+    "log/test_net_log.h",
+    "log/test_net_log_entry.cc",
+    "log/test_net_log_entry.h",
+    "log/test_net_log_util.cc",
+    "log/test_net_log_util.h",
     "proxy/mock_proxy_resolver.cc",
     "proxy/mock_proxy_resolver.h",
     "proxy/mock_proxy_script_fetcher.cc",
@@ -665,30 +643,36 @@ source_set("test_support") {
     "test/embedded_test_server/http_request.h",
     "test/embedded_test_server/http_response.cc",
     "test/embedded_test_server/http_response.h",
+    "test/event_waiter.h",
     "test/net_test_suite.cc",
     "test/net_test_suite.h",
     "test/python_utils.cc",
     "test/python_utils.h",
     "test/spawned_test_server/base_test_server.cc",
     "test/spawned_test_server/base_test_server.h",
-    "test/spawned_test_server/local_test_server_posix.cc",
-    "test/spawned_test_server/local_test_server_win.cc",
     "test/spawned_test_server/local_test_server.cc",
     "test/spawned_test_server/local_test_server.h",
+    "test/spawned_test_server/local_test_server_posix.cc",
+    "test/spawned_test_server/local_test_server_win.cc",
     "test/spawned_test_server/remote_test_server.cc",
     "test/spawned_test_server/remote_test_server.h",
     "test/spawned_test_server/spawned_test_server.h",
     "test/spawned_test_server/spawner_communicator.cc",
     "test/spawned_test_server/spawner_communicator.h",
+    "test/url_request/url_request_failed_job.cc",
+    "test/url_request/url_request_failed_job.h",
+    "test/url_request/url_request_mock_data_job.cc",
+    "test/url_request/url_request_mock_data_job.h",
+    "test/url_request/url_request_slow_download_job.cc",
+    "test/url_request/url_request_slow_download_job.h",
     "url_request/test_url_fetcher_factory.cc",
     "url_request/test_url_fetcher_factory.h",
-    "url_request/test_url_request_interceptor.cc",
-    "url_request/test_url_request_interceptor.h",
     "url_request/url_request_test_util.cc",
     "url_request/url_request_test_util.h",
   ]
 
-  configs += [ ":net_win_size_truncation" ]
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   public_deps = [
     "//base",
@@ -701,8 +685,12 @@ source_set("test_support") {
     "//url",
   ]
 
+  if (!is_ios) {
+    public_deps += [ "//third_party/protobuf:py_proto" ]
+  }
+
   if (!use_openssl && (use_nss_certs || is_ios)) {
-    public_deps += ["//crypto:platform" ]
+    public_deps += [ "//crypto:platform" ]
   }
 
   if (!is_android) {
@@ -726,8 +714,15 @@ source_set("test_support") {
   }
 
   if (!use_nss_certs) {
-    sources -= [
-      "test/cert_test_util_nss.cc",
+    sources -= [ "test/cert_test_util_nss.cc" ]
+  }
+
+  if (!disable_file_support) {
+    sources += [
+      "test/url_request/url_request_mock_http_job.cc",
+      "test/url_request/url_request_mock_http_job.h",
+      "url_request/test_url_request_interceptor.cc",
+      "url_request/test_url_request_interceptor.h",
     ]
   }
 }
@@ -750,8 +745,8 @@ source_set("balsa") {
     "tools/balsa/split.cc",
     "tools/balsa/split.h",
     "tools/balsa/string_piece_utils.h",
-    "tools/quic/spdy_utils.cc",
-    "tools/quic/spdy_utils.h",
+    "tools/quic/spdy_balsa_utils.cc",
+    "tools/quic/spdy_balsa_utils.h",
   ]
   deps = [
     ":net",
@@ -773,7 +768,7 @@ if (use_v8_in_net) {
 
     defines = [ "NET_IMPLEMENTATION" ]
     configs += [
-      ":net_win_size_truncation",
+      "//build/config/compiler:no_size_t_to_int_warning",
       "//build/config/compiler:wexit_time_destructors",
     ]
 
@@ -789,11 +784,88 @@ if (use_v8_in_net) {
   }
 }
 
+if (use_v8_in_net && !is_android) {
+  source_set("net_browser_services") {
+    sources = [
+      "dns/mojo_host_resolver_impl.cc",
+      "dns/mojo_host_resolver_impl.h",
+      "proxy/in_process_mojo_proxy_resolver_factory.cc",
+      "proxy/in_process_mojo_proxy_resolver_factory.h",
+      "proxy/mojo_proxy_resolver_factory.h",
+      "proxy/proxy_resolver_mojo.cc",
+      "proxy/proxy_resolver_mojo.h",
+      "proxy/proxy_service_mojo.cc",
+      "proxy/proxy_service_mojo.h",
+    ]
+
+    public_deps = [
+      ":mojo_type_converters",
+      ":net",
+      "//base",
+      "//mojo/common",
+      "//net/interfaces",
+      "//third_party/mojo/src/mojo/public/cpp/bindings",
+
+      # NOTE(amistry): As long as we support in-process Mojo v8 PAC, we need
+      # this dependency since in_process_mojo_proxy_resolver_factory creates
+      # the utility process side Mojo services in the browser process.
+      # Ultimately, this will go away when we only support out-of-process.
+      ":net_utility_services",
+    ]
+  }
+
+  source_set("mojo_type_converters") {
+    sources = [
+      "dns/mojo_host_type_converters.cc",
+      "dns/mojo_host_type_converters.h",
+      "proxy/mojo_proxy_type_converters.cc",
+      "proxy/mojo_proxy_type_converters.h",
+    ]
+
+    public_deps = [
+      ":net",
+      "//net/interfaces",
+      "//third_party/mojo/src/mojo/public/cpp/bindings",
+    ]
+  }
+
+  source_set("net_utility_services") {
+    sources = [
+      "dns/host_resolver_mojo.cc",
+      "dns/host_resolver_mojo.h",
+      "proxy/load_state_change_coalescer.cc",
+      "proxy/load_state_change_coalescer.h",
+      "proxy/mojo_proxy_resolver_factory_impl.cc",
+      "proxy/mojo_proxy_resolver_factory_impl.h",
+      "proxy/mojo_proxy_resolver_impl.cc",
+      "proxy/mojo_proxy_resolver_impl.h",
+      "proxy/proxy_resolver_error_observer_mojo.cc",
+      "proxy/proxy_resolver_error_observer_mojo.h",
+    ]
+
+    deps = [
+      ":net_with_v8",
+    ]
+
+    public_deps = [
+      ":mojo_type_converters",
+      ":net",
+      "//mojo/common",
+      "//net/interfaces",
+      "//third_party/mojo/src/mojo/public/cpp/bindings",
+    ]
+  }
+}
+
 if (!is_ios && !is_android) {
   executable("crash_cache") {
     testonly = true
-    sources = [ "tools/crash_cache/crash_cache.cc" ]
-    configs += [ ":net_win_size_truncation" ]
+    sources = [
+      "tools/crash_cache/crash_cache.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     deps = [
       ":net",
       ":test_support",
@@ -803,8 +875,12 @@ if (!is_ios && !is_android) {
 
   executable("crl_set_dump") {
     testonly = true
-    sources = [ "tools/crl_set_dump/crl_set_dump.cc" ]
-    configs += [ ":net_win_size_truncation" ]
+    sources = [
+      "tools/crl_set_dump/crl_set_dump.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     deps = [
       ":net",
       "//base",
@@ -813,8 +889,12 @@ if (!is_ios && !is_android) {
 
   executable("dns_fuzz_stub") {
     testonly = true
-    sources = [ "tools/dns_fuzz_stub/dns_fuzz_stub.cc" ]
-    configs += [ ":net_win_size_truncation" ]
+    sources = [
+      "tools/dns_fuzz_stub/dns_fuzz_stub.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     deps = [
       ":net",
       "//base",
@@ -835,8 +915,12 @@ if (!is_ios && !is_android) {
 
   executable("get_server_time") {
     testonly = true
-    sources = [ "tools/get_server_time/get_server_time.cc" ]
-    configs += [ ":net_win_size_truncation" ]
+    sources = [
+      "tools/get_server_time/get_server_time.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     deps = [
       ":net",
       "//base",
@@ -845,10 +929,54 @@ if (!is_ios && !is_android) {
     ]
   }
 
+  executable("hpack_example_generator") {
+    testonly = true
+    sources = [
+      "spdy/fuzzing/hpack_example_generator.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+    deps = [
+      "//base",
+      ":net",
+    ]
+  }
+
+  executable("hpack_fuzz_mutator") {
+    testonly = true
+    sources = [
+      "spdy/fuzzing/hpack_fuzz_mutator.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+    deps = [
+      "//base",
+      ":net",
+    ]
+  }
+
+  executable("hpack_fuzz_wrapper") {
+    testonly = true
+    sources = [
+      "spdy/fuzzing/hpack_fuzz_wrapper.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+    deps = [
+      "//base",
+      ":net",
+    ]
+  }
+
   if (use_v8_in_net) {
     executable("net_watcher") {
       testonly = true
-      sources = [ "tools/net_watcher/net_watcher.cc" ]
+      sources = [
+        "tools/net_watcher/net_watcher.cc",
+      ]
       deps = [
         ":net",
         ":net_with_v8",
@@ -867,10 +995,13 @@ if (!is_ios && !is_android) {
 
   executable("run_testserver") {
     testonly = true
-    sources = [ "tools/testserver/run_testserver.cc" ]
+    sources = [
+      "tools/testserver/run_testserver.cc",
+    ]
     deps = [
       ":net",  # TODO(brettw) bug 363749: this shouldn't be necessary. It's not
                # in the GYP build, and can be removed when the bug is fixed.
+
       ":test_support",
       "//base",
       "//base/test:test_support",
@@ -880,8 +1011,12 @@ if (!is_ios && !is_android) {
 
   executable("stress_cache") {
     testonly = true
-    sources = [ "disk_cache/blockfile/stress_cache.cc" ]
-    configs += [ ":net_win_size_truncation" ]
+    sources = [
+      "tools/stress_cache/stress_cache.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     deps = [
       ":net",
       ":test_support",
@@ -890,8 +1025,12 @@ if (!is_ios && !is_android) {
   }
 
   executable("tld_cleanup") {
-    sources = [ "tools/tld_cleanup/tld_cleanup.cc" ]
-    configs += [ ":net_win_size_truncation" ]
+    sources = [
+      "tools/tld_cleanup/tld_cleanup.cc",
+    ]
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
     deps = [
       "//base",
       "//base:i18n",
@@ -917,20 +1056,20 @@ if (is_linux) {
     sources = [
       "tools/dump_cache/url_to_filename_encoder.cc",
       "tools/dump_cache/url_to_filename_encoder.h",
-      "tools/dump_cache/url_utilities.h",
       "tools/dump_cache/url_utilities.cc",
-      "tools/flip_server/acceptor_thread.h",
+      "tools/dump_cache/url_utilities.h",
       "tools/flip_server/acceptor_thread.cc",
+      "tools/flip_server/acceptor_thread.h",
+      "tools/flip_server/constants.h",
       "tools/flip_server/create_listener.cc",
       "tools/flip_server/create_listener.h",
-      "tools/flip_server/constants.h",
       "tools/flip_server/flip_config.cc",
       "tools/flip_server/flip_config.h",
       "tools/flip_server/http_interface.cc",
       "tools/flip_server/http_interface.h",
       "tools/flip_server/loadtime_measurement.h",
-      "tools/flip_server/mem_cache.h",
       "tools/flip_server/mem_cache.cc",
+      "tools/flip_server/mem_cache.h",
       "tools/flip_server/output_ordering.cc",
       "tools/flip_server/output_ordering.h",
       "tools/flip_server/ring_buffer.cc",
@@ -938,10 +1077,10 @@ if (is_linux) {
       "tools/flip_server/sm_connection.cc",
       "tools/flip_server/sm_connection.h",
       "tools/flip_server/sm_interface.h",
-      "tools/flip_server/spdy_ssl.cc",
-      "tools/flip_server/spdy_ssl.h",
       "tools/flip_server/spdy_interface.cc",
       "tools/flip_server/spdy_interface.h",
+      "tools/flip_server/spdy_ssl.cc",
+      "tools/flip_server/spdy_ssl.h",
       "tools/flip_server/spdy_util.cc",
       "tools/flip_server/spdy_util.h",
       "tools/flip_server/streamer_interface.cc",
@@ -967,6 +1106,7 @@ if (is_linux) {
       "tools/flip_server/spdy_interface_test.cc",
     ]
     deps = [
+      ":balsa",
       ":flip_in_mem_edsm_server_base",
       ":net",
       ":test_support",
@@ -978,46 +1118,35 @@ if (is_linux) {
 
   executable("flip_in_mem_edsm_server") {
     testonly = true
-    sources = [ "tools/flip_server/flip_in_mem_edsm_server.cc" ]
+    sources = [
+      "tools/flip_server/flip_in_mem_edsm_server.cc",
+    ]
     deps = [
+      ":balsa",
       ":flip_in_mem_edsm_server_base",
       ":net",
       "//base",
     ]
   }
 
-  source_set("quic_base") {
+  source_set("epoll_quic_tools") {
     sources = [
       "tools/quic/quic_client.cc",
       "tools/quic/quic_client.h",
-      "tools/quic/quic_client_session.cc",
-      "tools/quic/quic_client_session.h",
       "tools/quic/quic_default_packet_writer.cc",
       "tools/quic/quic_default_packet_writer.h",
-      "tools/quic/quic_dispatcher.h",
-      "tools/quic/quic_dispatcher.cc",
       "tools/quic/quic_epoll_clock.cc",
       "tools/quic/quic_epoll_clock.h",
       "tools/quic/quic_epoll_connection_helper.cc",
       "tools/quic/quic_epoll_connection_helper.h",
-      "tools/quic/quic_in_memory_cache.cc",
-      "tools/quic/quic_in_memory_cache.h",
+      "tools/quic/quic_packet_reader.cc",
+      "tools/quic/quic_packet_reader.h",
       "tools/quic/quic_packet_writer_wrapper.cc",
       "tools/quic/quic_packet_writer_wrapper.h",
-      "tools/quic/quic_per_connection_packet_writer.cc",
-      "tools/quic/quic_per_connection_packet_writer.h",
       "tools/quic/quic_server.cc",
       "tools/quic/quic_server.h",
-      "tools/quic/quic_server_session.cc",
-      "tools/quic/quic_server_session.h",
       "tools/quic/quic_socket_utils.cc",
       "tools/quic/quic_socket_utils.h",
-      "tools/quic/quic_spdy_client_stream.cc",
-      "tools/quic/quic_spdy_client_stream.h",
-      "tools/quic/quic_spdy_server_stream.cc",
-      "tools/quic/quic_spdy_server_stream.h",
-      "tools/quic/quic_time_wait_list_manager.h",
-      "tools/quic/quic_time_wait_list_manager.cc",
     ]
     deps = [
       ":balsa",
@@ -1031,11 +1160,31 @@ if (is_linux) {
     ]
   }
 
-  executable("quic_client") {
-    sources = [ "tools/quic/quic_client_bin.cc" ]
+  executable("epoll_quic_client") {
+    sources = [
+      "tools/quic/quic_client_bin.cc",
+    ]
     deps = [
-      ":quic_base",
+      ":balsa",
+      ":epoll_server",
+      ":epoll_quic_tools",
       ":net",
+      ":simple_quic_tools",
+      "//base",
+      "//third_party/boringssl",
+    ]
+  }
+
+  executable("epoll_quic_server") {
+    sources = [
+      "tools/quic/quic_server_bin.cc",
+    ]
+    deps = [
+      ":balsa",
+      ":epoll_server",
+      ":epoll_quic_tools",
+      ":net",
+      ":simple_quic_tools",
       "//base",
       "//third_party/boringssl",
     ]
@@ -1067,7 +1216,9 @@ if (is_android) {
 if (is_android || is_linux) {
   executable("disk_cache_memory_test") {
     testonly = true
-    sources = [ "tools/disk_cache_memory_test/disk_cache_memory_test.cc" ]
+    sources = [
+      "tools/disk_cache_memory_test/disk_cache_memory_test.cc",
+    ]
     deps = [
       ":net",
       "//base",
@@ -1075,28 +1226,34 @@ if (is_android || is_linux) {
   }
 }
 
-# TODO(GYP) make this compile on Android, we need some native test deps done.
-# TODO(GYP) Also doesn't work on Windows; dependency on boringssl is wrong.
-if (!is_android && !is_win) {
-
-source_set("quic_tools") {
+source_set("simple_quic_tools") {
   sources = [
-    "quic/quic_dispatcher.cc",
-    "quic/quic_dispatcher.h",
-    "quic/quic_in_memory_cache.cc",
-    "quic/quic_in_memory_cache.h",
-    "quic/quic_per_connection_packet_writer.cc",
-    "quic/quic_per_connection_packet_writer.h",
-    "quic/quic_server.cc",
-    "quic/quic_server.h",
-    "quic/quic_server_packet_writer.cc",
-    "quic/quic_server_packet_writer.h",
-    "quic/quic_server_session.cc",
-    "quic/quic_server_session.h",
-    "quic/quic_spdy_server_stream.cc",
-    "quic/quic_spdy_server_stream.h",
-    "quic/quic_time_wait_list_manager.cc",
-    "quic/quic_time_wait_list_manager.h",
+    "tools/quic/quic_client_session.cc",
+    "tools/quic/quic_client_session.h",
+    "tools/quic/quic_dispatcher.cc",
+    "tools/quic/quic_dispatcher.h",
+    "tools/quic/quic_in_memory_cache.cc",
+    "tools/quic/quic_in_memory_cache.h",
+    "tools/quic/quic_per_connection_packet_writer.cc",
+    "tools/quic/quic_per_connection_packet_writer.h",
+    "tools/quic/quic_server_session.cc",
+    "tools/quic/quic_server_session.h",
+    "tools/quic/quic_simple_client.cc",
+    "tools/quic/quic_simple_client.h",
+    "tools/quic/quic_simple_per_connection_packet_writer.cc",
+    "tools/quic/quic_simple_per_connection_packet_writer.h",
+    "tools/quic/quic_simple_server.cc",
+    "tools/quic/quic_simple_server.h",
+    "tools/quic/quic_simple_server_packet_writer.cc",
+    "tools/quic/quic_simple_server_packet_writer.h",
+    "tools/quic/quic_spdy_client_stream.cc",
+    "tools/quic/quic_spdy_client_stream.h",
+    "tools/quic/quic_spdy_server_stream.cc",
+    "tools/quic/quic_spdy_server_stream.h",
+    "tools/quic/quic_time_wait_list_manager.cc",
+    "tools/quic/quic_time_wait_list_manager.h",
+    "tools/quic/synchronous_host_resolver.cc",
+    "tools/quic/synchronous_host_resolver.h",
   ]
   deps = [
     ":net",
@@ -1106,283 +1263,363 @@ source_set("quic_tools") {
   ]
 }
 
-test("net_unittests") {
-  sources = gypi_values.net_test_sources
-
-  configs += [ ":net_win_size_truncation" ]
-  defines = []
-
+executable("quic_client") {
+  sources = [
+    "tools/quic/quic_simple_client_bin.cc",
+  ]
   deps = [
-    ":extras",
-    ":http_server",
     ":net",
-    ":quic_tools",
-    ":test_support",
+    ":simple_quic_tools",
     "//base",
-    "//base:i18n",
-    "//base:prefs_test_support",
-    "//base/allocator",
-    "//base/third_party/dynamic_annotations",
-    "//crypto",
-    "//crypto:platform",
-    "//crypto:test_support",
-    "//net/base/registry_controlled_domains",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/zlib",
     "//url",
   ]
-
-  if (is_linux) {
-    sources += gypi_values.net_linux_test_sources
-    deps += [
-      ":balsa",
-      ":epoll_server",
-      ":flip_in_mem_edsm_server_base",
-      ":quic_base",
-    ]
-  }
-
-  if (is_chromeos) {
-    sources -= [
-      "proxy/proxy_config_service_linux_unittest.cc",
-    ]
-  }
-
-  if (is_android) {
-    sources -= [
-      # See bug http://crbug.com/344533.
-      "disk_cache/blockfile/index_table_v3_unittest.cc",
-      # No res_ninit() et al on Android, so this doesn't make a lot of
-      # sense.
-      "dns/dns_config_service_posix_unittest.cc",
-    ]
-    deps += [
-      ":net_javatests",  # FIXME(brettw)
-      ":net_test_jni_headers",
-    ]
-  }
-
-  if (!use_nss_certs) {
-    sources -= [
-      "ssl/client_cert_store_nss_unittest.cc",
-    ]
-    if (is_chromeos) {  # Already removed for all non-ChromeOS builds.
-      sources -= [
-        "ssl/client_cert_store_chromeos_unittest.cc",
-      ]
-    }
-  }
-
-  if (use_openssl) {
-    # When building for OpenSSL, we need to exclude NSS specific tests
-    # or functionality not supported by OpenSSL yet.
-    # TODO(bulach): Add equivalent tests when the underlying
-    #               functionality is ported to OpenSSL.
-    sources -= [
-      "cert/nss_cert_database_unittest.cc",
-      "cert/x509_util_nss_unittest.cc",
-      "quic/test_tools/crypto_test_utils_nss.cc",
-    ]
-    if (is_chromeos) {
-      # These were already removed in the non-ChromeOS case.
-      sources -= [
-        "cert/nss_cert_database_chromeos_unittest.cc",
-        "cert/nss_profile_filter_chromeos_unittest.cc",
-      ]
-    }
-  } else {
-    sources -= [
-      "cert/x509_util_openssl_unittest.cc",
-      "quic/test_tools/crypto_test_utils_openssl.cc",
-      "socket/ssl_client_socket_openssl_unittest.cc",
-      "socket/ssl_session_cache_openssl_unittest.cc",
-    ]
-    if (!is_desktop_linux && !is_chromeos) {
-      sources -= [ "cert/nss_cert_database_unittest.cc" ]
-    }
-  }
-
-  if (use_kerberos) {
-    defines += [ "USE_KERBEROS" ]
-  } else {
-    sources -= [
-      "http/http_auth_gssapi_posix_unittest.cc",
-      "http/http_auth_handler_negotiate_unittest.cc",
-      "http/mock_gssapi_library_posix.cc",
-      "http/mock_gssapi_library_posix.h",
-    ]
-  }
-
-  if (use_openssl || (!is_desktop_linux && !is_chromeos && !is_ios)) {
-    # Only include this test when on Posix and using NSS for
-    # cert verification or on iOS (which also uses NSS for certs).
-    sources -= [ "ocsp/nss_ocsp_unittest.cc" ]
-  }
-
-  if (!use_openssl_certs) {
-    sources -= [ "ssl/openssl_client_key_store_unittest.cc" ]
-  }
-
-  if (!enable_websockets) {
-    sources -= [
-      "socket_stream/socket_stream_metrics_unittest.cc",
-      "socket_stream/socket_stream_unittest.cc",
-      "spdy/spdy_websocket_stream_unittest.cc",
-      "websockets/websocket_basic_stream_test.cc",
-      "websockets/websocket_channel_test.cc",
-      "websockets/websocket_deflate_predictor_impl_test.cc",
-      "websockets/websocket_deflate_stream_test.cc",
-      "websockets/websocket_deflater_test.cc",
-      "websockets/websocket_errors_test.cc",
-      "websockets/websocket_extension_parser_test.cc",
-      "websockets/websocket_frame_parser_test.cc",
-      "websockets/websocket_frame_test.cc",
-      "websockets/websocket_handshake_handler_spdy_test.cc",
-      "websockets/websocket_handshake_handler_test.cc",
-      "websockets/websocket_handshake_stream_create_helper_test.cc",
-      "websockets/websocket_inflater_test.cc",
-      "websockets/websocket_job_test.cc",
-      "websockets/websocket_net_log_params_test.cc",
-      "websockets/websocket_stream_test.cc",
-      "websockets/websocket_test_util.cc",
-      "websockets/websocket_test_util.h",
-      "websockets/websocket_throttle_test.cc",
-    ]
-  }
-
-  if (disable_file_support) {
-    sources -= [
-      "base/directory_lister_unittest.cc",
-      "url_request/url_request_file_job_unittest.cc",
-    ]
-  }
-
-  if (disable_ftp_support) {
-    sources -= [
-      "ftp/ftp_auth_cache_unittest.cc",
-      "ftp/ftp_ctrl_response_buffer_unittest.cc",
-      "ftp/ftp_directory_listing_parser_ls_unittest.cc",
-      "ftp/ftp_directory_listing_parser_netware_unittest.cc",
-      "ftp/ftp_directory_listing_parser_os2_unittest.cc",
-      "ftp/ftp_directory_listing_parser_unittest.cc",
-      "ftp/ftp_directory_listing_parser_unittest.h",
-      "ftp/ftp_directory_listing_parser_vms_unittest.cc",
-      "ftp/ftp_directory_listing_parser_windows_unittest.cc",
-      "ftp/ftp_network_transaction_unittest.cc",
-      "ftp/ftp_util_unittest.cc",
-      "url_request/url_request_ftp_job_unittest.cc",
-    ]
-  }
-
-  if (!enable_built_in_dns) {
-    sources -= [
-      "dns/address_sorter_posix_unittest.cc",
-      "dns/address_sorter_unittest.cc",
-    ]
-  }
-
-  # Always need use_v8_in_net to be 1 to run on Android, so just remove
-  # net_unittest's dependency on v8 when using icu alternatives instead of
-  # setting use_v8_in_net to 0.
-  if (use_v8_in_net && !use_icu_alternatives_on_android) {
-    deps += [ ":net_with_v8" ]
-  } else {
-    sources -= [
-      "proxy/proxy_resolver_v8_unittest.cc",
-      "proxy/proxy_resolver_v8_tracing_unittest.cc",
-    ]
-  }
-
-  if (!enable_mdns) {
-    sources -= [
-      "dns/mdns_cache_unittest.cc",
-      "dns/mdns_client_unittest.cc",
-      "dns/record_parsed_unittest.cc",
-      "dns/record_rdata_unittest.cc",
-    ]
-  }
-
-  if (is_ios) {
-    # TODO(GYP)
-    #  'actions': [
-    #    {
-    #      'action_name': 'copy_test_data',
-    #      'variables': {
-    #        'test_data_files': [
-    #          'data/ssl/certificates/',
-    #          'data/test.html',
-    #          'data/url_request_unittest/',
-    #        ],
-    #        'test_data_prefix': 'net',
-    #      },
-    #      'includes': [ '../build/copy_test_data_ios.gypi' ],
-    #    },
-    #  ],
-    sources -= [
-      # TODO(droger): The following tests are disabled because the
-      # implementation is missing or incomplete.
-      # KeygenHandler::GenKeyAndSignChallenge() is not ported to iOS.
-      "base/keygen_handler_unittest.cc",
-      "disk_cache/backend_unittest.cc",
-      "disk_cache/blockfile/block_files_unittest.cc",
-      # Need to read input data files.
-      "filter/gzip_filter_unittest.cc",
-      "socket/ssl_server_socket_unittest.cc",
-      "spdy/fuzzing/hpack_fuzz_util_test.cc",
-      # Need TestServer.
-      "proxy/proxy_script_fetcher_impl_unittest.cc",
-      "socket/ssl_client_socket_unittest.cc",
-      "url_request/url_fetcher_impl_unittest.cc",
-      "url_request/url_request_context_builder_unittest.cc",
-      # Needs GetAppOutput().
-      "test/python_utils_unittest.cc",
-
-      # The following tests are disabled because they don't apply to
-      # iOS.
-      # OS is not "linux" or "freebsd" or "openbsd".
-      "socket/unix_domain_client_socket_posix_unittest.cc",
-      "socket/unix_domain_listen_socket_posix_unittest.cc",
-      "socket/unix_domain_server_socket_posix_unittest.cc",
-
-      # See bug http://crbug.com/344533.
-      "disk_cache/blockfile/index_table_v3_unittest.cc",
-    ]
-  }
-
-  if (is_android) {
-    sources -= [
-      "dns/dns_config_service_posix_unittest.cc",
-    ]
-    # TODO(GYP)
-    # # TODO(mmenke):  This depends on test_support_base, which depends on
-    # #                icu.  Figure out a way to remove that dependency.
-    # 'dependencies': [
-    #   '../testing/android/native_test.gyp:native_test_native_code',
-    # ]
-
-    set_sources_assignment_filter([])
-    sources += [ "base/address_tracker_linux_unittest.cc" ]
-    set_sources_assignment_filter(sources_assignment_filter)
-  }
-
-  if (use_icu_alternatives_on_android) {
-    sources -= [
-      "base/filename_util_unittest.cc",
-      "base/net_util_icu_unittest.cc",
-    ]
-    deps -= [ "//base:i18n" ]
-  }
 }
 
 executable("quic_server") {
-  sources = [ "quic/quic_server_bin.cc" ]
+  sources = [
+    "tools/quic/quic_simple_server_bin.cc",
+  ]
   deps = [
-    ":quic_tools",
     ":net",
+    ":simple_quic_tools",
     "//base",
     "//third_party/boringssl",
+    "//third_party/protobuf:protobuf_lite",
   ]
 }
 
-}  # !is_android
+# TODO(GYP) make this compile on Android, we need some native test deps done.
+# TODO(GYP) Also doesn't work on Mac, need to figure out why not.
+if (!is_android && !is_mac) {
+  test("net_unittests") {
+    sources = gypi_values.net_test_sources
+
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+    defines = []
+
+    deps = [
+      ":balsa",
+      ":extras",
+      ":http_server",
+      ":net",
+      ":simple_quic_tools",
+      ":test_support",
+      "//base",
+      "//base:i18n",
+      "//base:prefs_test_support",
+      "//base/allocator",
+      "//base/third_party/dynamic_annotations",
+      "//crypto",
+      "//crypto:platform",
+      "//crypto:test_support",
+      "//gin",
+      "//net/base/registry_controlled_domains",
+      "//sql",
+      "//testing/gmock",
+      "//testing/gtest",
+      "//third_party/zlib",
+      "//url",
+    ]
+
+    if (is_desktop_linux) {
+      deps += [ ":epoll_quic_tools" ]
+    }
+    if (is_linux) {
+      sources += gypi_values.net_linux_test_sources
+      deps += [
+        ":balsa",
+        ":epoll_server",
+        ":flip_in_mem_edsm_server_base",
+        ":epoll_quic_tools",
+      ]
+    }
+
+    if (is_mac || is_ios) {
+      sources += gypi_values.net_base_test_mac_ios_sources
+    }
+
+    if (is_chromeos) {
+      sources -= [ "proxy/proxy_config_service_linux_unittest.cc" ]
+    }
+
+    if (is_android) {
+      sources -= [
+        # See bug http://crbug.com/344533.
+        "disk_cache/blockfile/index_table_v3_unittest.cc",
+
+        # No res_ninit() et al on Android, so this doesn't make a lot of
+        # sense.
+        "dns/dns_config_service_posix_unittest.cc",
+      ]
+      deps += [ ":net_test_jni_headers" ]
+    }
+
+    if (v8_use_external_startup_data) {
+      deps += [ "//gin" ]
+    }
+
+    if (!use_nss_certs) {
+      sources -= [
+        "cert/nss_cert_database_unittest.cc",
+        "ssl/client_cert_store_nss_unittest.cc",
+      ]
+      if (is_chromeos) {  # Already removed for all non-ChromeOS builds.
+        sources -= [
+          "cert/nss_cert_database_chromeos_unittest.cc",
+          "cert/nss_profile_filter_chromeos_unittest.cc",
+          "ssl/client_cert_store_chromeos_unittest.cc",
+        ]
+      }
+    }
+
+    if (use_openssl) {
+      # When building for OpenSSL, we need to exclude NSS specific tests
+      # or functionality not supported by OpenSSL yet.
+      # TODO(bulach): Add equivalent tests when the underlying
+      #               functionality is ported to OpenSSL.
+      sources -= [
+        "cert/x509_util_nss_unittest.cc",
+        "quic/test_tools/crypto_test_utils_nss.cc",
+      ]
+    } else {
+      sources -= [
+        "cert/x509_util_openssl_unittest.cc",
+        "quic/test_tools/crypto_test_utils_openssl.cc",
+        "socket/ssl_client_socket_openssl_unittest.cc",
+        "ssl/ssl_client_session_cache_openssl_unittest.cc",
+      ]
+    }
+
+    if (use_kerberos) {
+      defines += [ "USE_KERBEROS" ]
+    } else {
+      sources -= [
+        "http/http_auth_gssapi_posix_unittest.cc",
+        "http/http_auth_handler_negotiate_unittest.cc",
+        "http/mock_gssapi_library_posix.cc",
+        "http/mock_gssapi_library_posix.h",
+      ]
+    }
+
+    if (use_openssl || (!is_desktop_linux && !is_chromeos && !is_ios)) {
+      # Only include this test when on Posix and using NSS for
+      # cert verification or on iOS (which also uses NSS for certs).
+      sources -= [ "cert_net/nss_ocsp_unittest.cc" ]
+    }
+
+    if (!use_openssl_certs) {
+      sources -= [ "ssl/openssl_client_key_store_unittest.cc" ]
+    }
+
+    if (!enable_websockets) {
+      sources -= [
+        "server/http_connection_unittest.cc",
+        "server/http_server_response_info_unittest.cc",
+        "server/http_server_unittest.cc",
+        "server/web_socket_encoder_unittest.cc",
+        "websockets/websocket_basic_stream_test.cc",
+        "websockets/websocket_channel_test.cc",
+        "websockets/websocket_deflate_predictor_impl_test.cc",
+        "websockets/websocket_deflate_stream_test.cc",
+        "websockets/websocket_deflater_test.cc",
+        "websockets/websocket_end_to_end_test.cc",
+        "websockets/websocket_errors_test.cc",
+        "websockets/websocket_extension_parser_test.cc",
+        "websockets/websocket_frame_parser_test.cc",
+        "websockets/websocket_frame_test.cc",
+        "websockets/websocket_handshake_challenge_test.cc",
+        "websockets/websocket_handshake_stream_create_helper_test.cc",
+        "websockets/websocket_inflater_test.cc",
+        "websockets/websocket_stream_test.cc",
+        "websockets/websocket_test_util.cc",
+        "websockets/websocket_test_util.h",
+      ]
+      deps -= [ ":http_server" ]
+    }
+
+    if (disable_file_support) {
+      sources -= [
+        "base/directory_lister_unittest.cc",
+        "url_request/url_request_file_job_unittest.cc",
+      ]
+    }
+
+    if (disable_ftp_support) {
+      sources -= [
+        "ftp/ftp_auth_cache_unittest.cc",
+        "ftp/ftp_ctrl_response_buffer_unittest.cc",
+        "ftp/ftp_directory_listing_parser_ls_unittest.cc",
+        "ftp/ftp_directory_listing_parser_netware_unittest.cc",
+        "ftp/ftp_directory_listing_parser_os2_unittest.cc",
+        "ftp/ftp_directory_listing_parser_unittest.cc",
+        "ftp/ftp_directory_listing_parser_unittest.h",
+        "ftp/ftp_directory_listing_parser_vms_unittest.cc",
+        "ftp/ftp_directory_listing_parser_windows_unittest.cc",
+        "ftp/ftp_network_transaction_unittest.cc",
+        "ftp/ftp_util_unittest.cc",
+        "url_request/url_request_ftp_job_unittest.cc",
+      ]
+    }
+
+    if (!enable_built_in_dns) {
+      sources -= [
+        "dns/address_sorter_posix_unittest.cc",
+        "dns/address_sorter_unittest.cc",
+      ]
+    }
+
+    # Always need use_v8_in_net to be 1 to run on Android, so just remove
+    # net_unittest's dependency on v8 when using icu alternatives instead of
+    # setting use_v8_in_net to 0.
+    if (use_v8_in_net && !use_icu_alternatives_on_android) {
+      deps += [ ":net_with_v8" ]
+    } else {
+      sources -= [
+        "proxy/proxy_resolver_v8_tracing_unittest.cc",
+        "proxy/proxy_resolver_v8_unittest.cc",
+      ]
+    }
+
+    if (use_v8_in_net && !is_android) {
+      deps += [
+        ":net_browser_services",
+        ":net_utility_services",
+        "//mojo/environment:chromium",
+        "//third_party/mojo/src/mojo/edk/system",
+      ]
+    } else {
+      sources -= [
+        "dns/host_resolver_mojo_unittest.cc",
+        "dns/mojo_host_resolver_impl_unittest.cc",
+        "proxy/load_state_change_coalescer_unittest.cc",
+        "proxy/mojo_proxy_resolver_factory_impl_unittest.cc",
+        "proxy/mojo_proxy_resolver_impl_unittest.cc",
+        "proxy/proxy_resolver_error_observer_mojo_unittest.cc",
+        "proxy/proxy_resolver_mojo_unittest.cc",
+        "proxy/proxy_service_mojo_unittest.cc",
+      ]
+    }
+
+    if (!enable_mdns) {
+      sources -= [
+        "dns/mdns_cache_unittest.cc",
+        "dns/mdns_client_unittest.cc",
+        "dns/record_parsed_unittest.cc",
+        "dns/record_rdata_unittest.cc",
+      ]
+    }
+
+    if (is_ios) {
+      # TODO(GYP)
+      #  'actions': [
+      #    {
+      #      'action_name': 'copy_test_data',
+      #      'variables': {
+      #        'test_data_files': [
+      #          'data/ssl/certificates/',
+      #          'data/test.html',
+      #          'data/url_request_unittest/',
+      #        ],
+      #        'test_data_prefix': 'net',
+      #      },
+      #      'includes': [ '../build/copy_test_data_ios.gypi' ],
+      #    },
+      #  ],
+      sources -= [
+        # TODO(droger): The following tests are disabled because the
+        # implementation is missing or incomplete.
+        # KeygenHandler::GenKeyAndSignChallenge() is not ported to iOS.
+        "base/keygen_handler_unittest.cc",
+        "disk_cache/backend_unittest.cc",
+        "disk_cache/blockfile/block_files_unittest.cc",
+
+        # Need to read input data files.
+        "filter/gzip_filter_unittest.cc",
+        "socket/ssl_server_socket_unittest.cc",
+        "spdy/fuzzing/hpack_fuzz_util_test.cc",
+
+        # Need TestServer.
+        "cert_net/cert_net_fetcher_impl_unittest.cc",
+        "proxy/proxy_script_fetcher_impl_unittest.cc",
+        "socket/ssl_client_socket_unittest.cc",
+        "url_request/url_fetcher_impl_unittest.cc",
+        "url_request/url_request_context_builder_unittest.cc",
+
+        # Needs GetAppOutput().
+        "test/python_utils_unittest.cc",
+
+        # The following tests are disabled because they don't apply to
+        # iOS.
+        # OS is not "linux" or "freebsd" or "openbsd".
+        "socket/unix_domain_client_socket_posix_unittest.cc",
+        "socket/unix_domain_listen_socket_posix_unittest.cc",
+        "socket/unix_domain_server_socket_posix_unittest.cc",
+
+        # See bug http://crbug.com/344533.
+        "disk_cache/blockfile/index_table_v3_unittest.cc",
+      ]
+    }
+
+    if (is_android) {
+      sources -= [ "dns/dns_config_service_posix_unittest.cc" ]
+
+      # TODO(GYP)
+      # # TODO(mmenke):  This depends on test_support_base, which depends on
+      # #                icu.  Figure out a way to remove that dependency.
+      # 'dependencies': [
+      #   '../testing/android/native_test.gyp:native_test_native_code',
+      # ]
+
+      set_sources_assignment_filter([])
+      sources += [ "base/address_tracker_linux_unittest.cc" ]
+      set_sources_assignment_filter(sources_assignment_filter)
+    }
+
+    if (use_icu_alternatives_on_android) {
+      sources -= [
+        "base/filename_util_unittest.cc",
+        "base/net_util_icu_unittest.cc",
+      ]
+      deps -= [ "//base:i18n" ]
+    }
+  }
+}  # !is_android && !is_win && !is_mac
+
+executable("net_perftests") {
+  testonly = true
+  sources = [
+    "cookies/cookie_monster_perftest.cc",
+    "disk_cache/blockfile/disk_cache_perftest.cc",
+    "proxy/proxy_resolver_perftest.cc",
+    "udp/udp_socket_perftest.cc",
+  ]
+
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+  deps = [
+    "//base",
+    "//base:i18n",
+    "//base/test:test_support_perf",
+    "//testing/gtest",
+    "//url",
+    ":net",
+    ":test_support",
+  ]
+
+  if (enable_websockets) {
+    sources += [ "websockets/websocket_frame_perftest.cc" ]
+  }
+
+  if (use_v8_in_net) {
+    deps += [ ":net_with_v8" ]
+  } else {
+    sources -= [ "proxy/proxy_resolver_perftest.cc" ]
+  }
+
+  if (is_win && icu_use_data_file) {
+    # This is needed to trigger the dll copy step on windows.
+    # TODO(mark): Specifying this here shouldn't be necessary.
+    deps += [ "//third_party/icu:icudata" ]
+  }
+}

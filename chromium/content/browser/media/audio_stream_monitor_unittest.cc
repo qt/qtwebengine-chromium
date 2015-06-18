@@ -34,7 +34,7 @@ const int kAnotherStreamId = 6;
 class MockWebContentsDelegate : public WebContentsDelegate {
  public:
   MOCK_METHOD2(NavigationStateChanged,
-               void(const WebContents* source, InvalidateTypes changed_flags));
+               void(WebContents* source, InvalidateTypes changed_flags));
 };
 
 }  // namespace
@@ -52,7 +52,13 @@ class AudioStreamMonitorTest : public RenderViewHostTestHarness {
     WebContentsImpl* web_contents = reinterpret_cast<WebContentsImpl*>(
         RenderViewHostTestHarness::web_contents());
     web_contents->SetDelegate(&mock_web_contents_delegate_);
-    monitor_ = web_contents->audio_stream_monitor();
+
+    AudioStateProvider* provider =  web_contents->audio_state_provider();
+    ASSERT_TRUE(provider);
+
+    monitor_ = provider->audio_stream_monitor();
+    ASSERT_TRUE(monitor_);
+
     const_cast<base::TickClock*&>(monitor_->clock_) = &clock_;
   }
 
@@ -106,7 +112,7 @@ class AudioStreamMonitorTest : public RenderViewHostTestHarness {
 
   static base::TimeDelta one_polling_interval() {
     return base::TimeDelta::FromSeconds(1) /
-           AudioStreamMonitor::kPowerMeasurementsPerSecond;
+           static_cast<int>(AudioStreamMonitor::kPowerMeasurementsPerSecond);
   }
 
   static base::TimeDelta holding_period() {

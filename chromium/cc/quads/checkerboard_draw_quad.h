@@ -19,23 +19,26 @@ class CC_EXPORT CheckerboardDrawQuad : public DrawQuad {
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
               const gfx::Rect& visible_rect,
-              SkColor color);
+              SkColor color,
+              float scale);
 
   void SetAll(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
               const gfx::Rect& opaque_rect,
               const gfx::Rect& visible_rect,
               bool needs_blending,
-              SkColor color);
+              SkColor color,
+              float scale);
 
   SkColor color;
+  float scale;
 
   void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const CheckerboardDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  void ExtendValue(base::debug::TracedValue* value) const override;
+  void ExtendValue(base::trace_event::TracedValue* value) const override;
 };
 
 }  // namespace cc

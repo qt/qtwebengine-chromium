@@ -139,8 +139,8 @@ cr.define('help', function() {
         channelChangeDisallowedError.className = 'channel-change-error-bubble';
 
         var channelChangeDisallowedIcon = document.createElement('div');
-        channelChangeDisallowedIcon.classList.add('help-page-icon-large');
-        channelChangeDisallowedIcon.classList.add('channel-change-error-icon');
+        channelChangeDisallowedIcon.className =
+            'help-page-icon channel-change-error-icon';
         channelChangeDisallowedError.appendChild(channelChangeDisallowedIcon);
 
         var channelChangeDisallowedText = document.createElement('div');
@@ -187,7 +187,7 @@ cr.define('help', function() {
      */
     setMoreInfoVisible_: function(visible) {
       var moreInfo = $('more-info-container');
-      if (visible == moreInfo.classList.contains('visible'))
+      if (!moreInfo || visible == moreInfo.classList.contains('visible'))
         return;
 
       moreInfo.classList.toggle('visible', visible);

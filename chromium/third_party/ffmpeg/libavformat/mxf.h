@@ -33,6 +33,7 @@ enum MXFMetadataSetType {
     SourcePackage,
     SourceClip,
     TimecodeComponent,
+    PulldownComponent,
     Sequence,
     MultipleDescriptor,
     Descriptor,
@@ -45,6 +46,8 @@ enum MXFMetadataSetType {
     IndexTableSegment,
     EssenceContainerData,
     TypeBottom,// add metadata type before this
+    EssenceGroup,
+    TaggedValue,
 };
 
 enum MXFFrameLayout {

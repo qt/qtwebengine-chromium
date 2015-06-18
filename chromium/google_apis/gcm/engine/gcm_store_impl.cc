@@ -10,25 +10,51 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/tracked_objects.h"
 #include "google_apis/gcm/base/encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
 namespace gcm {
 
 namespace {
+
+// This enum is used in an UMA histogram (GCMLoadStatus enum defined in
+// tools/metrics/histograms/histogram.xml). Hence the entries here shouldn't
+// be deleted or re-ordered and new ones should be added to the end.
+enum LoadStatus {
+  LOADING_SUCCEEDED,
+  RELOADING_OPEN_STORE,
+  OPENING_STORE_FAILED,
+  LOADING_DEVICE_CREDENTIALS_FAILED,
+  LOADING_REGISTRATION_FAILED,
+  LOADING_INCOMING_MESSAGES_FAILED,
+  LOADING_OUTGOING_MESSAGES_FAILED,
+  LOADING_LAST_CHECKIN_INFO_FAILED,
+  LOADING_GSERVICE_SETTINGS_FAILED,
+  LOADING_ACCOUNT_MAPPING_FAILED,
+  LOADING_LAST_TOKEN_TIME_FAILED,
+  LOADING_HEARTBEAT_INTERVALS_FAILED,
+  LOADING_INSTANCE_ID_DATA_FAILED,
+
+  // NOTE: always keep this entry at the end. Add new status types only
+  // immediately above this line. Make sure to update the corresponding
+  // histogram enum accordingly.
+  LOAD_STATUS_COUNT
+};
 
 // Limit to the number of outstanding messages per app.
 const int kMessagesPerAppLimit = 20;
@@ -74,8 +100,20 @@ const char kAccountKeyStart[] = "account1-";
 // Key guaranteed to be higher than all account keys.
 // Used for limiting iteration.
 const char kAccountKeyEnd[] = "account2-";
+// Lowest lexicographically ordered heartbeat key.
+// Used for prefixing account information.
+const char kHeartbeatKeyStart[] = "heartbeat1-";
+// Key guaranteed to be higher than all heartbeat keys.
+// Used for limiting iteration.
+const char kHeartbeatKeyEnd[] = "heartbeat2-";
 // Key used for last token fetch time.
 const char kLastTokenFetchTimeKey[] = "last_token_fetch_time";
+// Lowest lexicographically ordered app ids.
+// Used for prefixing app id.
+const char kInstanceIDKeyStart[] = "iid1-";
+// Key guaranteed to be higher than all app ids.
+// Used for limiting iteration.
+const char kInstanceIDKeyEnd[] = "iid2-";
 
 std::string MakeRegistrationKey(const std::string& app_id) {
   return kRegistrationKeyStart + app_id;
@@ -113,6 +151,22 @@ std::string ParseAccountKey(const std::string& key) {
   return key.substr(arraysize(kAccountKeyStart) - 1);
 }
 
+std::string MakeHeartbeatKey(const std::string& scope) {
+  return kHeartbeatKeyStart + scope;
+}
+
+std::string ParseHeartbeatKey(const std::string& key) {
+  return key.substr(arraysize(kHeartbeatKeyStart) - 1);
+}
+
+std::string MakeInstanceIDKey(const std::string& app_id) {
+  return kInstanceIDKeyStart + app_id;
+}
+
+std::string ParseInstanceIDKey(const std::string& key) {
+  return key.substr(arraysize(kInstanceIDKeyStart) - 1);
+}
+
 // Note: leveldb::Slice keeps a pointer to the data in |s|, which must therefore
 // outlive the slice.
 // For example: MakeSlice(MakeOutgoingKey(x)) is invalid.
@@ -137,7 +191,7 @@ class GCMStoreImpl::Backend
                             uint64 device_security_token,
                             const UpdateCallback& callback);
   void AddRegistration(const std::string& app_id,
-                       const linked_ptr<RegistrationInfo>& registration,
+                       const std::string& serialized_registration,
                        const UpdateCallback& callback);
   void RemoveRegistration(const std::string& app_id,
                           const UpdateCallback& callback);
@@ -170,11 +224,25 @@ class GCMStoreImpl::Backend
                             const UpdateCallback& callback);
   void SetLastTokenFetchTime(const base::Time& time,
                              const UpdateCallback& callback);
+  void AddHeartbeatInterval(const std::string& scope,
+                            int interval_ms,
+                            const UpdateCallback& callback);
+  void RemoveHeartbeatInterval(const std::string& scope,
+                               const UpdateCallback& callback);
+  void AddInstanceIDData(const std::string& app_id,
+                         const std::string& instance_id_data,
+                         const UpdateCallback& callback);
+  void RemoveInstanceIDData(const std::string& app_id,
+                            const UpdateCallback& callback);
+  void SetValue(const std::string& key,
+                const std::string& value,
+                const UpdateCallback& callback);
 
  private:
   friend class base::RefCountedThreadSafe<Backend>;
   ~Backend();
 
+  LoadStatus OpenStoreAndLoadData(LoadResult* result);
   bool LoadDeviceCredentials(uint64* android_id, uint64* security_token);
   bool LoadRegistrations(RegistrationInfoMap* registrations);
   bool LoadIncomingMessages(std::vector<std::string>* incoming_messages);
@@ -185,6 +253,8 @@ class GCMStoreImpl::Backend
                              std::string* digest);
   bool LoadAccountMappingInfo(AccountMappings* account_mappings);
   bool LoadLastTokenFetchTime(base::Time* last_token_fetch_time);
+  bool LoadHeartbeatIntervals(std::map<std::string, int>* heartbeat_intervals);
+  bool LoadInstanceIDData(std::map<std::string, std::string>* instance_id_data);
 
   const base::FilePath path_;
   scoped_refptr<base::SequencedTaskRunner> foreground_task_runner_;
@@ -204,43 +274,61 @@ GCMStoreImpl::Backend::Backend(
 
 GCMStoreImpl::Backend::~Backend() {}
 
-void GCMStoreImpl::Backend::Load(const LoadCallback& callback) {
-  scoped_ptr<LoadResult> result(new LoadResult());
+LoadStatus GCMStoreImpl::Backend::OpenStoreAndLoadData(LoadResult* result) {
+  LoadStatus load_status;
   if (db_.get()) {
     LOG(ERROR) << "Attempting to reload open database.";
-    foreground_task_runner_->PostTask(FROM_HERE,
-                                      base::Bind(callback,
-                                                 base::Passed(&result)));
-    return;
+    return RELOADING_OPEN_STORE;
   }
 
   leveldb::Options options;
   options.create_if_missing = true;
+  options.reuse_logs = leveldb_env::kDefaultLogReuseOptionValue;
   leveldb::DB* db;
   leveldb::Status status =
       leveldb::DB::Open(options, path_.AsUTF8Unsafe(), &db);
-  UMA_HISTOGRAM_BOOLEAN("GCM.LoadSucceeded", status.ok());
   if (!status.ok()) {
     LOG(ERROR) << "Failed to open database " << path_.value() << ": "
                << status.ToString();
-    foreground_task_runner_->PostTask(FROM_HERE,
-                                      base::Bind(callback,
-                                                 base::Passed(&result)));
-    return;
+    return OPENING_STORE_FAILED;
   }
-  db_.reset(db);
 
+  db_.reset(db);
   if (!LoadDeviceCredentials(&result->device_android_id,
-                             &result->device_security_token) ||
-      !LoadRegistrations(&result->registrations) ||
-      !LoadIncomingMessages(&result->incoming_messages) ||
-      !LoadOutgoingMessages(&result->outgoing_messages) ||
-      !LoadLastCheckinInfo(&result->last_checkin_time,
-                           &result->last_checkin_accounts) ||
-      !LoadGServicesSettings(&result->gservices_settings,
-                             &result->gservices_digest) ||
-      !LoadAccountMappingInfo(&result->account_mappings) ||
-      !LoadLastTokenFetchTime(&result->last_token_fetch_time)) {
+                             &result->device_security_token)) {
+    return LOADING_DEVICE_CREDENTIALS_FAILED;
+  }
+  if (!LoadRegistrations(&result->registrations))
+    return LOADING_REGISTRATION_FAILED;
+  if (!LoadIncomingMessages(&result->incoming_messages))
+    return LOADING_INCOMING_MESSAGES_FAILED;
+  if (!LoadOutgoingMessages(&result->outgoing_messages))
+    return LOADING_OUTGOING_MESSAGES_FAILED;
+  if (!LoadLastCheckinInfo(&result->last_checkin_time,
+                           &result->last_checkin_accounts)) {
+    return LOADING_LAST_CHECKIN_INFO_FAILED;
+  }
+  if (!LoadGServicesSettings(&result->gservices_settings,
+                             &result->gservices_digest)) {
+    return load_status = LOADING_GSERVICE_SETTINGS_FAILED;
+  }
+  if (!LoadAccountMappingInfo(&result->account_mappings))
+    return LOADING_ACCOUNT_MAPPING_FAILED;
+  if (!LoadLastTokenFetchTime(&result->last_token_fetch_time))
+    return LOADING_LAST_TOKEN_TIME_FAILED;
+  if (!LoadHeartbeatIntervals(&result->heartbeat_intervals))
+    return LOADING_HEARTBEAT_INTERVALS_FAILED;
+  if (!LoadInstanceIDData(&result->instance_id_data))
+    return LOADING_INSTANCE_ID_DATA_FAILED;
+
+  return LOADING_SUCCEEDED;
+}
+
+void GCMStoreImpl::Backend::Load(const LoadCallback& callback) {
+  scoped_ptr<LoadResult> result(new LoadResult());
+  LoadStatus load_status = OpenStoreAndLoadData(result.get());
+  UMA_HISTOGRAM_ENUMERATION("GCM.LoadStatus", load_status, LOAD_STATUS_COUNT);
+  if (load_status != LOADING_SUCCEEDED) {
     result->Reset();
     foreground_task_runner_->PostTask(FROM_HERE,
                                       base::Bind(callback,
@@ -330,7 +418,7 @@ void GCMStoreImpl::Backend::SetDeviceCredentials(
 
 void GCMStoreImpl::Backend::AddRegistration(
     const std::string& app_id,
-    const linked_ptr<RegistrationInfo>& registration,
+    const std::string& serialized_registration,
     const UpdateCallback& callback) {
   DVLOG(1) << "Saving registration info for app: " << app_id;
   if (!db_.get()) {
@@ -342,10 +430,9 @@ void GCMStoreImpl::Backend::AddRegistration(
   write_options.sync = true;
 
   std::string key = MakeRegistrationKey(app_id);
-  std::string value = registration->SerializeAsString();
   const leveldb::Status status = db_->Put(write_options,
                                           MakeSlice(key),
-                                          MakeSlice(value));
+                                          MakeSlice(serialized_registration));
   if (status.ok()) {
     foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, true));
     return;
@@ -543,6 +630,28 @@ void GCMStoreImpl::Backend::SetLastCheckinInfo(
   foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
 }
 
+void GCMStoreImpl::AddInstanceIDData(const std::string& app_id,
+                                     const std::string& instance_id_data,
+                                     const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::AddInstanceIDData,
+                 backend_,
+                 app_id,
+                 instance_id_data,
+                 callback));
+}
+
+void GCMStoreImpl::RemoveInstanceIDData(const std::string& app_id,
+                                        const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::RemoveInstanceIDData,
+                 backend_,
+                 app_id,
+                 callback));
+}
+
 void GCMStoreImpl::Backend::SetGServicesSettings(
     const std::map<std::string, std::string>& settings,
     const std::string& settings_digest,
@@ -644,6 +753,117 @@ void GCMStoreImpl::Backend::SetLastTokenFetchTime(
 
   if (!s.ok())
     LOG(ERROR) << "LevelDB setting last token fetching time: " << s.ToString();
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
+}
+
+void GCMStoreImpl::Backend::AddHeartbeatInterval(
+    const std::string& scope,
+    int interval_ms,
+    const UpdateCallback& callback) {
+  DVLOG(1) << "Saving a heartbeat interval: scope: " << scope
+           << " interval: " << interval_ms << "ms.";
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  std::string data = base::IntToString(interval_ms);
+  std::string key = MakeHeartbeatKey(scope);
+  const leveldb::Status s =
+      db_->Put(write_options, MakeSlice(key), MakeSlice(data));
+  if (!s.ok())
+    LOG(ERROR) << "LevelDB adding heartbeat interval failed: " << s.ToString();
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
+}
+
+void GCMStoreImpl::Backend::RemoveHeartbeatInterval(
+    const std::string& scope,
+    const UpdateCallback& callback) {
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  leveldb::Status s =
+      db_->Delete(write_options, MakeSlice(MakeHeartbeatKey(scope)));
+
+  if (!s.ok()) {
+    LOG(ERROR) << "LevelDB removal of heartbeat interval failed: "
+               << s.ToString();
+  }
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
+}
+
+void GCMStoreImpl::Backend::AddInstanceIDData(
+    const std::string& app_id,
+    const std::string& instance_id_data,
+    const UpdateCallback& callback) {
+  DVLOG(1) << "Adding Instance ID data.";
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  std::string key = MakeInstanceIDKey(app_id);
+  const leveldb::Status status = db_->Put(write_options,
+                                          MakeSlice(key),
+                                          MakeSlice(instance_id_data));
+  if (!status.ok())
+    LOG(ERROR) << "LevelDB put failed: " << status.ToString();
+  foreground_task_runner_->PostTask(
+      FROM_HERE, base::Bind(callback, status.ok()));
+}
+
+void GCMStoreImpl::Backend::RemoveInstanceIDData(
+    const std::string& app_id,
+    const UpdateCallback& callback) {
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  leveldb::Status status =
+      db_->Delete(write_options, MakeSlice(MakeInstanceIDKey(app_id)));
+  if (!status.ok())
+    LOG(ERROR) << "LevelDB remove failed: " << status.ToString();
+  foreground_task_runner_->PostTask(
+      FROM_HERE, base::Bind(callback, status.ok()));
+}
+
+void GCMStoreImpl::Backend::SetValue(const std::string& key,
+                                     const std::string& value,
+                                     const UpdateCallback& callback) {
+  DVLOG(1) << "Injecting a value to GCM Store for testing. Key: "
+           << key << ", Value: " << value;
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  const leveldb::Status s =
+      db_->Put(write_options, MakeSlice(key), MakeSlice(value));
+
+  if (!s.ok())
+    LOG(ERROR) << "LevelDB had problems injecting a value: " << s.ToString();
   foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
 }
 
@@ -773,8 +993,10 @@ bool GCMStoreImpl::Backend::LoadLastCheckinInfo(
                                MakeSlice(kLastCheckinTimeKey),
                                &result);
   int64 time_internal = 0LL;
-  if (s.ok() && !base::StringToInt64(result, &time_internal))
+  if (s.ok() && !base::StringToInt64(result, &time_internal)) {
     LOG(ERROR) << "Failed to restore last checkin time. Using default = 0.";
+    time_internal = 0LL;
+  }
 
   // In case we cannot read last checkin time, we default it to 0, as we don't
   // want that situation to cause the whole load to fail.
@@ -852,11 +1074,60 @@ bool GCMStoreImpl::Backend::LoadLastTokenFetchTime(
   leveldb::Status s =
       db_->Get(read_options, MakeSlice(kLastTokenFetchTimeKey), &result);
   int64 time_internal = 0LL;
-  if (s.ok() && !base::StringToInt64(result, &time_internal))
-    LOG(ERROR) << "Failed to restore last checkin time. Using default = 0.";
+  if (s.ok() && !base::StringToInt64(result, &time_internal)) {
+    LOG(ERROR) <<
+        "Failed to restore last token fetching time. Using default = 0.";
+    time_internal = 0LL;
+  }
 
   // In case we cannot read last token fetching time, we default it to 0.
   *last_token_fetch_time = base::Time::FromInternalValue(time_internal);
+
+  return true;
+}
+
+bool GCMStoreImpl::Backend::LoadHeartbeatIntervals(
+    std::map<std::string, int>* heartbeat_intervals) {
+  leveldb::ReadOptions read_options;
+  read_options.verify_checksums = true;
+
+  scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(read_options));
+  for (iter->Seek(MakeSlice(kHeartbeatKeyStart));
+       iter->Valid() && iter->key().ToString() < kHeartbeatKeyEnd;
+       iter->Next()) {
+    std::string scope = ParseHeartbeatKey(iter->key().ToString());
+    int interval_ms;
+    if (!base::StringToInt(iter->value().ToString(), &interval_ms)) {
+      DVLOG(1) << "Failed to parse heartbeat interval info with scope: "
+               << scope;
+      return false;
+    }
+    DVLOG(1) << "Found heartbeat interval with scope: " << scope
+             << " interval: " << interval_ms << "ms.";
+    (*heartbeat_intervals)[scope] = interval_ms;
+  }
+
+  return true;
+}
+
+bool GCMStoreImpl::Backend::LoadInstanceIDData(
+    std::map<std::string, std::string>* instance_id_data) {
+  leveldb::ReadOptions read_options;
+  read_options.verify_checksums = true;
+
+  scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(read_options));
+  for (iter->Seek(MakeSlice(kInstanceIDKeyStart));
+       iter->Valid() && iter->key().ToString() < kInstanceIDKeyEnd;
+       iter->Next()) {
+    leveldb::Slice s = iter->value();
+    if (s.size() <= 1) {
+      LOG(ERROR) << "Error reading IID data with key " << s.ToString();
+      return false;
+    }
+    std::string app_id = ParseInstanceIDKey(iter->key().ToString());
+    DVLOG(1) << "Found IID data with app id " << app_id;
+    (*instance_id_data)[app_id] = s.ToString();
+  }
 
   return true;
 }
@@ -866,7 +1137,7 @@ GCMStoreImpl::GCMStoreImpl(
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
     scoped_ptr<Encryptor> encryptor)
     : backend_(new Backend(path,
-                           base::MessageLoopProxy::current(),
+                           base::ThreadTaskRunnerHandle::Get(),
                            encryptor.Pass())),
       blocking_task_runner_(blocking_task_runner),
       weak_ptr_factory_(this) {
@@ -914,12 +1185,13 @@ void GCMStoreImpl::AddRegistration(
     const std::string& app_id,
     const linked_ptr<RegistrationInfo>& registration,
     const UpdateCallback& callback) {
+  std::string serialized_registration = registration->SerializeAsString();
   blocking_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&GCMStoreImpl::Backend::AddRegistration,
                  backend_,
                  app_id,
-                 registration,
+                 serialized_registration,
                  callback));
 }
 
@@ -1090,8 +1362,46 @@ void GCMStoreImpl::SetLastTokenFetchTime(const base::Time& time,
                  callback));
 }
 
+void GCMStoreImpl::AddHeartbeatInterval(const std::string& scope,
+                                        int interval_ms,
+                                        const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::AddHeartbeatInterval,
+                 backend_,
+                 scope,
+                 interval_ms,
+                 callback));
+}
+
+void GCMStoreImpl::RemoveHeartbeatInterval(const std::string& scope,
+                                           const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::RemoveHeartbeatInterval,
+                 backend_,
+                 scope,
+                 callback));
+}
+
+void GCMStoreImpl::SetValueForTesting(const std::string& key,
+                                      const std::string& value,
+                                      const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::SetValue,
+                 backend_,
+                 key,
+                 value,
+                 callback));
+}
+
 void GCMStoreImpl::LoadContinuation(const LoadCallback& callback,
                                     scoped_ptr<LoadResult> result) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/477117 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "477117 GCMStoreImpl::LoadContinuation"));
   if (!result->success) {
     callback.Run(result.Pass());
     return;

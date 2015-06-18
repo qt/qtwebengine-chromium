@@ -52,6 +52,7 @@
         # computing dependencies file-by-file in the build.
         # This data is generally stable.
         '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '<(bindings_modules_output_dir)/ComponentInfoModules.pickle',
         # Further, if any dependency (partial interface or implemented
         # interface) changes, rebuild everything, since every IDL potentially
         # depends on them, because we're not computing dependencies
@@ -74,8 +75,10 @@
         '<(bindings_scripts_output_dir)',
         '--output-dir',
         '<(bindings_modules_v8_output_dir)',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '--info-dir',
+        '<(bindings_output_dir)',
+        '--target-component',
+        'modules',
         '--write-file-only-if-changed',
         '<(write_file_only_if_changed)',
         '<(RULE_INPUT_PATH)',
@@ -151,10 +154,8 @@
         '<(bindings_modules_v8_output_dir)',
         '--impl-output-dir',
         '<(SHARED_INTERMEDIATE_DIR)/blink/',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
-        '--component-info',
-        '<(bindings_modules_output_dir)/ComponentInfoModules.pickle',
+        '--info-dir',
+        '<(bindings_output_dir)',
         '--target-component',
         'modules',
         '--write-file-only-if-changed',
@@ -201,6 +202,7 @@
         # computing dependencies file-by-file in the build.
         # This data is generally stable.
         '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '<(bindings_modules_output_dir)/ComponentInfoModules.pickle',
         # Further, if any dependency (partial interface or implemented
         # interface) changes, rebuild everything, since every IDL potentially
         # depends on them, because we're not computing dependencies
@@ -224,12 +226,12 @@
         '<(bindings_scripts_output_dir)',
         '--output-dir',
         '<(bindings_modules_v8_output_dir)',
-        '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
-        '--write-file-only-if-changed',
-        '<(write_file_only_if_changed)',
+        '--info-dir',
+        '<(bindings_output_dir)',
         '--target-component',
         'modules',
+        '--write-file-only-if-changed',
+        '<(write_file_only_if_changed)',
         '<(RULE_INPUT_PATH)',
       ],
       'message': 'Generating partial binding from <(RULE_INPUT_PATH)',

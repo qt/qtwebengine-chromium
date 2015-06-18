@@ -5,8 +5,9 @@
 #ifndef InlineFlowBoxPainter_h
 #define InlineFlowBoxPainter_h
 
-#include "core/rendering/style/ShadowData.h"
+#include "core/style/ShadowData.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "platform/text/TextDirection.h"
 
 namespace blink {
 
@@ -15,22 +16,31 @@ class FillLayer;
 class InlineFlowBox;
 class LayoutPoint;
 class LayoutRect;
+class LayoutSize;
 class LayoutUnit;
 struct PaintInfo;
-class RenderStyle;
+class ComputedStyle;
 
 class InlineFlowBoxPainter {
 public:
     InlineFlowBoxPainter(InlineFlowBox& inlineFlowBox) : m_inlineFlowBox(inlineFlowBox) { }
-    void paint(PaintInfo&, const LayoutPoint&, const LayoutUnit lineTop, const LayoutUnit lineBottom);
+    void paint(const PaintInfo&, const LayoutPoint&, const LayoutUnit lineTop, const LayoutUnit lineBottom);
 
 private:
-    void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&);
-    void paintMask(PaintInfo&, const LayoutPoint&);
-    void paintFillLayers(const PaintInfo&, const Color&, const FillLayer&, const LayoutRect&, CompositeOperator = CompositeSourceOver);
-    void paintFillLayer(const PaintInfo&, const Color&, const FillLayer&, const LayoutRect&, CompositeOperator);
-    void paintBoxShadow(const PaintInfo&, RenderStyle*, ShadowStyle, const LayoutRect&);
+    void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&);
+    void paintMask(const PaintInfo&, const LayoutPoint&);
+    void paintFillLayers(const PaintInfo&, const Color&, const FillLayer&, const LayoutRect&, SkXfermode::Mode = SkXfermode::kSrcOver_Mode);
+    void paintFillLayer(const PaintInfo&, const Color&, const FillLayer&, const LayoutRect&, SkXfermode::Mode);
+    void paintBoxShadow(const PaintInfo&, const ComputedStyle&, ShadowStyle, const LayoutRect&);
     LayoutRect roundedFrameRectClampedToLineTopAndBottomIfNeeded() const;
+    LayoutRect paintRectForImageStrip(const LayoutPoint&, const LayoutSize&, TextDirection) const;
+
+    enum BorderPaintingType {
+        DontPaintBorders,
+        PaintBordersWithoutClip,
+        PaintBordersWithClip
+    };
+    BorderPaintingType getBorderPaintType(const LayoutRect& adjustedFrameRect, LayoutRect& adjustedClipRect) const;
 
     InlineFlowBox& m_inlineFlowBox;
 };

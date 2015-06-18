@@ -37,7 +37,7 @@ namespace blink {
 
 class LocalFrame;
 
-class StyleMedia : public RefCountedWillBeGarbageCollected<StyleMedia>, public DOMWindowProperty, public ScriptWrappable {
+class StyleMedia final : public RefCountedWillBeGarbageCollected<StyleMedia>, public DOMWindowProperty, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(StyleMedia);
 public:
@@ -46,7 +46,7 @@ public:
     AtomicString type() const;
     bool matchMedium(const String&) const;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit StyleMedia(LocalFrame*);

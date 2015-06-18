@@ -34,20 +34,12 @@ class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
   // Getter for the one AudioMessageFilter object.
   static AudioMessageFilter* Get();
 
-  // Create an AudioOutputIPC to be owned by one delegate.  |render_view_id| and
-  // |render_frame_id| are the render view and render frame containing the
-  // entity producing the audio.
-  // TODO(jam): remove render_view_id
+  // Create an AudioOutputIPC to be owned by one delegate.  |render_frame_id| is
+  // the RenderFrame containing the entity producing the audio.
   //
   // The returned object is not thread-safe, and must be used on
   // |io_message_loop|.
-  scoped_ptr<media::AudioOutputIPC> CreateAudioOutputIPC(int render_view_id,
-                                                         int render_frame_id);
-
-  // When set, AudioMessageFilter will update the AudioHardwareConfig with new
-  // configuration values as received by OnOutputDeviceChanged().  The provided
-  // |config| must outlive AudioMessageFilter.
-  void SetAudioHardwareConfig(media::AudioHardwareConfig* config);
+  scoped_ptr<media::AudioOutputIPC> CreateAudioOutputIPC(int render_frame_id);
 
   // IO message loop associated with this message filter.
   scoped_refptr<base::MessageLoopProxy> io_message_loop() const {
@@ -62,7 +54,7 @@ class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
   FRIEND_TEST_ALL_PREFIXES(AudioMessageFilterTest, Delegates);
 
   // Implementation of media::AudioOutputIPC which augments IPC calls with
-  // stream_id and the source render_view_id.
+  // stream_id and the source render_frame_id.
   class AudioOutputIPCImpl;
 
   // Sends an IPC message using |sender_|.
@@ -84,21 +76,12 @@ class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
   void OnStreamStateChanged(int stream_id,
                             media::AudioOutputIPCDelegate::State state);
 
-  // Received when the browser process detects an output device change.
-  void OnOutputDeviceChanged(int stream_id, int new_buffer_size,
-                             int new_sample_rate);
-
   // IPC sender for Send(); must only be accesed on |io_message_loop_|.
   IPC::Sender* sender_;
 
   // A map of stream ids to delegates; must only be accessed on
   // |io_message_loop_|.
   IDMap<media::AudioOutputIPCDelegate> delegates_;
-
-  // Audio hardware configuration to update when OnOutputDeviceChanged() fires.
-  // Access is guarded by |lock_|.
-  base::Lock lock_;
-  media::AudioHardwareConfig* audio_hardware_config_;
 
   // Message loop on which IPC calls are driven.
   const scoped_refptr<base::MessageLoopProxy> io_message_loop_;

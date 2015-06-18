@@ -6,7 +6,6 @@
 #define CHROMECAST_BROWSER_METRICS_CAST_STABILITY_METRICS_PROVIDER_H_
 
 #include "base/basictypes.h"
-#include "base/metrics/user_metrics.h"
 #include "base/process/kill.h"
 #include "components/metrics/metrics_provider.h"
 #include "content/public/browser/browser_child_process_observer.h"
@@ -39,12 +38,12 @@ class CastStabilityMetricsProvider
 
   explicit CastStabilityMetricsProvider(
       ::metrics::MetricsService* metrics_service);
-  virtual ~CastStabilityMetricsProvider();
+  ~CastStabilityMetricsProvider() override;
 
   // metrics::MetricsDataProvider implementation:
-  virtual void OnRecordingEnabled() override;
-  virtual void OnRecordingDisabled() override;
-  virtual void ProvideStabilityMetrics(
+  void OnRecordingEnabled() override;
+  void OnRecordingDisabled() override;
+  void ProvideStabilityMetrics(
       ::metrics::SystemProfileProto* system_profile_proto) override;
 
   // Logs an external crash, presumably from the ExternalMetrics service.
@@ -52,13 +51,14 @@ class CastStabilityMetricsProvider
 
  private:
   // content::NotificationObserver implementation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) override;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // content::BrowserChildProcessObserver implementation:
-  virtual void BrowserChildProcessCrashed(
-      const content::ChildProcessData& data) override;
+  void BrowserChildProcessCrashed(
+      const content::ChildProcessData& data,
+      int exit_code) override;
 
   // Records a renderer process crash.
   void LogRendererCrash(content::RenderProcessHost* host,

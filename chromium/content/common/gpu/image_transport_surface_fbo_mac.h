@@ -34,16 +34,20 @@ class ImageTransportSurfaceFBO
     // Allocate the storage for the color buffer. The specified context is
     // current, and there is a texture bound to GL_TEXTURE_RECTANGLE_ARB.
     virtual bool AllocateColorBufferStorage(
-        CGLContextObj context, GLuint texture,
-        gfx::Size size, float scale_factor) = 0;
+        CGLContextObj context, const base::Closure& context_dirtied_callback,
+        GLuint texture, gfx::Size size, float scale_factor) = 0;
 
     // Free the storage allocated in the AllocateColorBufferStorage call. The
     // GL texture that was bound has already been deleted by the caller.
     virtual void FreeColorBufferStorage() = 0;
 
-    // Swap buffers and return the handle for the surface to send to the browser
-    // process to display.
-    virtual void SwapBuffers(const gfx::Size& size, float scale_factor) = 0;
+    // Called when the frame size has changed (the buffer may not have been
+    // reallocated, since its size may be rounded).
+    virtual void FrameSizeChanged(
+        const gfx::Size& pixel_size, float scale_factor) = 0;
+
+    // Swap buffers, or post sub-buffer.
+    virtual void SwapBuffers() = 0;
 
     // Indicate that the backbuffer will be written to.
     virtual void WillWriteToBackbuffer() = 0;
@@ -74,6 +78,7 @@ class ImageTransportSurfaceFBO
   void* GetHandle() override;
   void* GetDisplay() override;
   bool OnMakeCurrent(gfx::GLContext* context) override;
+  void NotifyWasBound() override;
   unsigned int GetBackingFrameBufferObject() override;
   bool SetBackbufferAllocation(bool allocated) override;
   void SetFrontbufferAllocation(bool allocated) override;
@@ -102,6 +107,7 @@ class ImageTransportSurfaceFBO
   void DestroyFramebuffer();
   void AllocateOrResizeFramebuffer(
       const gfx::Size& pixel_size, float scale_factor);
+  bool SwapBuffersInternal();
 
   scoped_ptr<StorageProvider> storage_provider_;
 
@@ -135,4 +141,4 @@ class ImageTransportSurfaceFBO
 
 }  // namespace content
 
-#endif  //  CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_MAC_H_
+#endif  // CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_FBO_MAC_H_

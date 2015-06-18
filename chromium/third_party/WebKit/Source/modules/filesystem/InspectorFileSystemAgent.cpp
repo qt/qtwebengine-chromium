@@ -32,6 +32,8 @@
 #include "modules/filesystem/InspectorFileSystemAgent.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/UnionTypesCore.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
@@ -60,7 +62,6 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "wtf/ArrayBuffer.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
 
@@ -204,7 +205,7 @@ private:
     bool didGetEntry(Entry*);
     bool didReadDirectoryEntries(const EntryHeapVector&);
 
-    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry> > entries = nullptr)
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry>> entries = nullptr)
     {
         m_requestCallback->sendSuccess(static_cast<int>(errorCode), entries);
     }
@@ -217,7 +218,7 @@ private:
 
     RefPtrWillBePersistent<RequestDirectoryContentCallback> m_requestCallback;
     KURL m_url;
-    RefPtr<Array<TypeBuilder::FileSystem::Entry> > m_entries;
+    RefPtr<Array<TypeBuilder::FileSystem::Entry>> m_entries;
     Persistent<DirectoryReader> m_directoryReader;
 };
 
@@ -482,7 +483,9 @@ bool FileContentRequest::didGetFile(File* file)
 
 void FileContentRequest::didRead()
 {
-    RefPtr<ArrayBuffer> buffer = m_reader->arrayBufferResult();
+    StringOrArrayBuffer resultAttribute;
+    m_reader->result(resultAttribute);
+    RefPtr<DOMArrayBuffer> buffer = resultAttribute.getAsArrayBuffer();
 
     if (!m_readAsText) {
         String result = base64Encode(static_cast<char*>(buffer->data()), buffer->byteLength());
@@ -686,19 +689,13 @@ void InspectorFileSystemAgent::deleteEntry(ErrorString* error, const String& url
     DeleteEntryRequest::create(requestCallback, url)->start(executionContext);
 }
 
-void InspectorFileSystemAgent::clearFrontend()
-{
-    m_enabled = false;
-    m_state->setBoolean(FileSystemAgentState::fileSystemAgentEnabled, m_enabled);
-}
-
 void InspectorFileSystemAgent::restore()
 {
     m_enabled = m_state->getBoolean(FileSystemAgentState::fileSystemAgentEnabled);
 }
 
 InspectorFileSystemAgent::InspectorFileSystemAgent(Page* page)
-    : InspectorBaseAgent<InspectorFileSystemAgent>("FileSystem")
+    : InspectorBaseAgent<InspectorFileSystemAgent, InspectorFrontend::FileSystem>("FileSystem")
     , m_page(page)
     , m_enabled(false)
 {
@@ -728,7 +725,7 @@ ExecutionContext* InspectorFileSystemAgent::assertExecutionContextForOrigin(Erro
     return 0;
 }
 
-void InspectorFileSystemAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorFileSystemAgent)
 {
     visitor->trace(m_page);
     InspectorBaseAgent::trace(visitor);

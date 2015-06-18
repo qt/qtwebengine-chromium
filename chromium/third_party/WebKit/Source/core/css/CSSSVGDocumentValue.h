@@ -31,7 +31,7 @@
 
 namespace blink {
 
-class ResourceFetcher;
+class Document;
 
 class CSSSVGDocumentValue : public CSSValue {
 public:
@@ -42,14 +42,14 @@ public:
     ~CSSSVGDocumentValue();
 
     DocumentResource* cachedSVGDocument() const { return m_document.get(); }
-    DocumentResource* load(ResourceFetcher*);
+    DocumentResource* load(Document*);
 
     String customCSSText() const;
     const String& url() const { return m_url; }
     bool loadRequested() const { return m_loadRequested; }
     bool equals(const CSSSVGDocumentValue&) const;
 
-    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
+    DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSSVGDocumentValue(const String& url);

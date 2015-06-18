@@ -14,7 +14,7 @@ namespace blink {
 
 class ExceptionState;
 
-class Credential : public GarbageCollectedFinalized<Credential>, public ScriptWrappable {
+class Credential : public GarbageCollected<Credential>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static Credential* create(const String& id, const String& name, const KURL& avatar);
@@ -25,7 +25,7 @@ public:
     const String& name() const { return m_platformCredential->name(); }
     const KURL& avatarURL() const { return m_platformCredential->avatarURL(); }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     PlatformCredential* platformCredential() const { return m_platformCredential; }
 

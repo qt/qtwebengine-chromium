@@ -7,6 +7,7 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 
 using base::StringPiece;
+using std::string;
 
 namespace {
 
@@ -256,15 +257,21 @@ QuicData* DecryptWithNonce(Aes128Gcm12Decrypter* decrypter,
                            StringPiece nonce,
                            StringPiece associated_data,
                            StringPiece ciphertext) {
-  size_t plaintext_size = ciphertext.length();
-  scoped_ptr<char[]> plaintext(new char[plaintext_size]);
-
-  if (!decrypter->Decrypt(nonce, associated_data, ciphertext,
-                          reinterpret_cast<unsigned char*>(plaintext.get()),
-                          &plaintext_size)) {
+  QuicPacketSequenceNumber sequence_number;
+  StringPiece nonce_prefix(nonce.data(),
+                           nonce.size() - sizeof(sequence_number));
+  decrypter->SetNoncePrefix(nonce_prefix);
+  memcpy(&sequence_number, nonce.data() + nonce_prefix.size(),
+         sizeof(sequence_number));
+  scoped_ptr<char[]> output(new char[ciphertext.length()]);
+  size_t output_length = 0;
+  const bool success = decrypter->DecryptPacket(
+      sequence_number, associated_data, ciphertext, output.get(),
+      &output_length, ciphertext.length());
+  if (!success) {
     return nullptr;
   }
-  return new QuicData(plaintext.release(), plaintext_size, true);
+  return new QuicData(output.release(), output_length, true);
 }
 
 TEST(Aes128Gcm12DecrypterTest, Decrypt) {

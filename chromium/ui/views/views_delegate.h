@@ -19,6 +19,7 @@
 #include "ui/views/widget/widget.h"
 
 namespace base {
+class TaskRunner;
 class TimeDelta;
 }
 
@@ -41,7 +42,7 @@ namespace views {
 
 class NativeWidget;
 class NonClientFrameView;
-class ViewsTouchSelectionControllerFactory;
+class ViewsTouchEditingControllerFactory;
 class View;
 class Widget;
 namespace internal {
@@ -95,6 +96,8 @@ class VIEWS_EXPORT ViewsDelegate {
 #if defined(OS_WIN)
   // Retrieves the default window icon to use for windows if none is specified.
   virtual HICON GetDefaultWindowIcon() const;
+  // Retrieves the small window icon to use for windows if none is specified.
+  virtual HICON GetSmallWindowIcon() const = 0;
   // Returns true if the window passed in is in the Windows 8 metro
   // environment.
   virtual bool IsWindowInMetro(gfx::NativeWindow window) const;
@@ -130,9 +133,17 @@ class VIEWS_EXPORT ViewsDelegate {
   // maximized windows; otherwise to restored windows.
   virtual bool WindowManagerProvidesTitleBar(bool maximized);
 
-#if defined(USE_AURA)
   // Returns the context factory for new windows.
   virtual ui::ContextFactory* GetContextFactory();
+
+  // Returns the user-visible name of the application.
+  virtual std::string GetApplicationName();
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Get a task runner suitable for posting initialization tasks for
+  // Aura Linux accessibility.
+  virtual scoped_refptr<base::TaskRunner>
+      GetTaskRunnerForAuraLinuxAccessibilityInit();
 #endif
 
 #if defined(OS_WIN)
@@ -150,7 +161,7 @@ class VIEWS_EXPORT ViewsDelegate {
   static ViewsDelegate* views_delegate;
 
  private:
-  scoped_ptr<ViewsTouchSelectionControllerFactory> views_tsc_factory_;
+  scoped_ptr<ViewsTouchEditingControllerFactory> views_tsc_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewsDelegate);
 };

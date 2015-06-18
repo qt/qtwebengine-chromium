@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// http://dev.w3.org/fxtf/geometry/#DOMMatrix
+
 [
+    // FIXME: Constructor(sequence<unrestricted double> numberSequence)
+    // FIXME: Exposed=(Window,Worker)
     GarbageCollected,
-    NotScriptWrappable,
     RuntimeEnabled=GeometryInterfaces,
 ] interface DOMMatrixReadOnly {
     // These attributes are simple aliases for certain elements of the 4x4 matrix
@@ -37,23 +40,24 @@
 
     // FIXME: Should implement some methods (See: crbug.com/388780)
     // Immutable transform methods
-    DOMMatrix multiply(DOMMatrix other);
     DOMMatrix translate(unrestricted double tx,
                         unrestricted double ty,
                         optional unrestricted double tz = 0);
     DOMMatrix scale(unrestricted double scale,
-                    optional unrestricted double ox = 0,
-                    optional unrestricted double oy = 0);
+                    optional unrestricted double originX = 0,
+                    optional unrestricted double originY = 0);
     DOMMatrix scale3d(unrestricted double scale,
-                      optional unrestricted double ox = 0,
-                      optional unrestricted double oy = 0,
-                      optional unrestricted double oz = 0);
-    DOMMatrix scaleNonUniform(unrestricted double sx,
-                              optional unrestricted double sy = 1,
-                              optional unrestricted double sz = 1,
-                              optional unrestricted double ox = 0,
-                              optional unrestricted double oy = 0,
-                              optional unrestricted double oz = 0);
+                      optional unrestricted double originX = 0,
+                      optional unrestricted double originY = 0,
+                      optional unrestricted double originZ = 0);
+    DOMMatrix scaleNonUniform(unrestricted double scaleX,
+                              optional unrestricted double scaleY = 1,
+                              optional unrestricted double scaleZn = 1,
+                              optional unrestricted double originX = 0,
+                              optional unrestricted double originY = 0,
+                              optional unrestricted double originZ = 0);
+    DOMMatrix multiply(DOMMatrix other);
+
     Float32Array toFloat32Array();
     Float64Array toFloat64Array();
 };

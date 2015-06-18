@@ -36,13 +36,13 @@ namespace XPath {
 
 struct EvaluationContext;
 
-class ValueData : public RefCountedWillBeGarbageCollectedFinalized<ValueData> {
+class ValueData : public GarbageCollectedFinalized<ValueData> {
 public:
-    static PassRefPtrWillBeRawPtr<ValueData> create() { return adoptRefWillBeNoop(new ValueData); }
-    static PassRefPtrWillBeRawPtr<ValueData> create(const NodeSet& nodeSet) { return adoptRefWillBeNoop(new ValueData(nodeSet)); }
-    static PassRefPtrWillBeRawPtr<ValueData> create(PassOwnPtrWillBeRawPtr<NodeSet> nodeSet) { return adoptRefWillBeNoop(new ValueData(nodeSet)); }
-    static PassRefPtrWillBeRawPtr<ValueData> create(const String& string) { return adoptRefWillBeNoop(new ValueData(string)); }
-    void trace(Visitor*);
+    static ValueData* create() { return new ValueData; }
+    static ValueData* create(const NodeSet& nodeSet) { return new ValueData(nodeSet); }
+    static ValueData* create(NodeSet* nodeSet) { return new ValueData(nodeSet); }
+    static ValueData* create(const String& string) { return new ValueData(string); }
+    DECLARE_TRACE();
     NodeSet& nodeSet() { return *m_nodeSet; }
 
     String m_string;
@@ -50,10 +50,10 @@ public:
 private:
     ValueData() : m_nodeSet(NodeSet::create()) { }
     explicit ValueData(const NodeSet& nodeSet) : m_nodeSet(NodeSet::create(nodeSet)) { }
-    explicit ValueData(PassOwnPtrWillBeRawPtr<NodeSet> nodeSet) : m_nodeSet(nodeSet) { }
+    explicit ValueData(NodeSet* nodeSet) : m_nodeSet(nodeSet) { }
     explicit ValueData(const String& string) : m_string(string), m_nodeSet(NodeSet::create()) { }
 
-    OwnPtrWillBeMember<NodeSet> m_nodeSet;
+    Member<NodeSet> m_nodeSet;
 };
 
 // Copying Value objects makes their data partially shared, so care has to be taken when dealing with copies.
@@ -70,14 +70,14 @@ public:
     Value(const String& value) : m_type(StringValue), m_bool(false), m_number(0), m_data(ValueData::create(value)) { }
     Value(const NodeSet& value) : m_type(NodeSetValue), m_bool(false), m_number(0), m_data(ValueData::create(value)) { }
     Value(Node* value) : m_type(NodeSetValue), m_bool(false), m_number(0), m_data(ValueData::create()) { m_data->nodeSet().append(value); }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // This is needed to safely implement constructing from bool - with normal
     // function overloading, any pointer type would match.
     template<typename T> Value(T);
 
     static const struct AdoptTag { } adopt;
-    Value(PassOwnPtrWillBeRawPtr<NodeSet> value, const AdoptTag&) : m_type(NodeSetValue), m_bool(false), m_number(0),  m_data(ValueData::create(value)) { }
+    Value(NodeSet* value, const AdoptTag&) : m_type(NodeSetValue), m_bool(false), m_number(0),  m_data(ValueData::create(value)) { }
 
     Type type() const { return m_type; }
 
@@ -98,7 +98,7 @@ private:
     Type m_type;
     bool m_bool;
     double m_number;
-    RefPtrWillBeMember<ValueData> m_data;
+    Member<ValueData> m_data;
 };
 
 template<>
@@ -109,7 +109,8 @@ inline Value::Value(bool value)
 {
 }
 
-}
+} // namespace XPath
 
-}
+} // namespace blink
+
 #endif // XPathValue_h

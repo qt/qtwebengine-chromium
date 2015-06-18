@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "printing/backend/print_backend.h"
@@ -16,13 +17,18 @@
 #include "printing/printing_utils.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-
-#if defined(USE_AURA)
 #include "ui/aura/remote_window_tree_host_win.h"
 #include "ui/aura/window.h"
-#endif
 
 namespace printing {
+
+namespace {
+
+void AssingResult(PrintingContext::Result* out, PrintingContext::Result in) {
+  *out = in;
+}
+
+}  // namespace
 
 // static
 scoped_ptr<PrintingContext> PrintingContext::Create(Delegate* delegate) {
@@ -45,6 +51,7 @@ PrintingContextWin::~PrintingContextWin() {
 void PrintingContextWin::AskUserForSettings(
     int max_pages,
     bool has_selection,
+    bool is_scripted,
     const PrintSettingsCallback& callback) {
   NOTIMPLEMENTED();
 }
@@ -133,7 +140,8 @@ gfx::Size PrintingContextWin::GetPdfPaperSizeDeviceUnits() {
 
 PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
     bool external_preview,
-    bool show_system_dialog) {
+    bool show_system_dialog,
+    int page_count) {
   DCHECK(!in_print_job_);
   DCHECK(!external_preview) << "Not implemented";
 
@@ -198,8 +206,10 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
 
   // Update data using DocumentProperties.
   if (show_system_dialog) {
-    scoped_dev_mode = ShowPrintDialog(
-        printer.Get(), delegate_->GetParentView(), scoped_dev_mode.get());
+    PrintingContext::Result result = PrintingContext::FAILED;
+    AskUserForSettings(page_count, false, false,
+                       base::Bind(&AssingResult, &result));
+    return result;
   } else {
     scoped_dev_mode = CreateDevMode(printer.Get(), scoped_dev_mode.get());
   }
@@ -351,14 +361,8 @@ PrintingContext::Result PrintingContextWin::InitializeSettings(
 
 HWND PrintingContextWin::GetRootWindow(gfx::NativeView view) {
   HWND window = NULL;
-#if defined(USE_AURA)
-  if (view)
+  if (view && view->GetHost())
     window = view->GetHost()->GetAcceleratedWidget();
-#else
-  if (view && IsWindow(view)) {
-    window = GetAncestor(view, GA_ROOTOWNER);
-  }
-#endif
   if (!window) {
     // TODO(maruel):  crbug.com/1214347 Get the right browser window instead.
     return GetDesktopWindow();

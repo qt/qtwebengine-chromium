@@ -131,7 +131,6 @@ void ParseHostsWithCommaMode(const std::string& contents,
                              DnsHosts* dns_hosts,
                              ParseHostsCommaMode comma_mode) {
   CHECK(dns_hosts);
-  DnsHosts& hosts = *dns_hosts;
 
   StringPiece ip_text;
   IPAddressNumber ip;
@@ -156,9 +155,9 @@ void ParseHostsWithCommaMode(const std::string& contents,
     } else {
       DnsHostsKey key(parser.token().as_string(), family);
       base::StringToLowerASCII(&key.first);
-      IPAddressNumber& mapped_ip = hosts[key];
-      if (mapped_ip.empty())
-        mapped_ip = ip;
+      IPAddressNumber* mapped_ip = &(*dns_hosts)[key];
+      if (mapped_ip->empty())
+        *mapped_ip = ip;
       // else ignore this entry (first hit counts)
     }
   }
@@ -195,7 +194,8 @@ bool ParseHostsFile(const base::FilePath& path, DnsHosts* dns_hosts) {
   if (!base::GetFileSize(path, &size))
     return false;
 
-  UMA_HISTOGRAM_COUNTS("AsyncDNS.HostsSize", size);
+  UMA_HISTOGRAM_COUNTS("AsyncDNS.HostsSize",
+                       static_cast<base::HistogramBase::Sample>(size));
 
   // Reject HOSTS files larger than |kMaxHostsSize| bytes.
   const int64 kMaxHostsSize = 1 << 25;  // 32MB

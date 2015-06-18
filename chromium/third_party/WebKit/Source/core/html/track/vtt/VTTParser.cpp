@@ -90,16 +90,16 @@ VTTParser::VTTParser(VTTParserClient* client, Document& document)
 {
 }
 
-void VTTParser::getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue>>& outputCues)
+void VTTParser::getNewCues(WillBeHeapVector<RefPtrWillBeMember<TextTrackCue>>& outputCues)
 {
-    outputCues = m_cueList;
-    m_cueList.clear();
+    ASSERT(outputCues.isEmpty());
+    outputCues.swap(m_cueList);
 }
 
 void VTTParser::getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion>>& outputRegions)
 {
-    outputRegions = m_regionList;
-    m_regionList.clear();
+    ASSERT(outputRegions.isEmpty());
+    outputRegions.swap(m_regionList);
 }
 
 void VTTParser::parseBytes(const char* data, unsigned length)
@@ -205,7 +205,7 @@ bool VTTParser::hasRequiredFileIdentifier(const String& line)
     // A WebVTT file identifier consists of an optional BOM character,
     // the string "WEBVTT" followed by an optional space or tab character,
     // and any number of characters that are not line terminators ...
-    if (!line.startsWith("WEBVTT", fileIdentifierLength))
+    if (!line.startsWith("WEBVTT"))
         return false;
     if (line.length() > fileIdentifierLength && !isASpace(line[fileIdentifierLength]))
         return false;
@@ -559,7 +559,7 @@ void VTTTreeBuilder::constructTreeFromToken(Document& document)
     }
 }
 
-void VTTParser::trace(Visitor* visitor)
+DEFINE_TRACE(VTTParser)
 {
     visitor->trace(m_document);
     visitor->trace(m_cueList);

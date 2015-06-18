@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "public/platform/WebDeviceMotionData.h"
+#include "public/platform/modules/device_orientation/WebDeviceMotionData.h"
 
 #include <string.h>
 

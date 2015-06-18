@@ -63,6 +63,7 @@ void MockMediaStreamVideoSource::GetCurrentSupportedFormats(
 
 void MockMediaStreamVideoSource::StartSourceImpl(
     const media::VideoCaptureFormat& format,
+    const blink::WebMediaConstraints& constraints,
     const VideoCaptureDeliverFrameCB& frame_callback) {
   DCHECK(frame_callback_.is_null());
   format_ = format;
@@ -78,17 +79,7 @@ void MockMediaStreamVideoSource::DeliverVideoFrame(
   DCHECK(!frame_callback_.is_null());
   io_message_loop()->PostTask(
       FROM_HERE,
-      base::Bind(&MockMediaStreamVideoSource::DeliverVideoFrameOnIO,
-                 base::Unretained(this), frame, format_,
-                 base::TimeTicks(), frame_callback_));
-}
-
-void MockMediaStreamVideoSource::DeliverVideoFrameOnIO(
-    const scoped_refptr<media::VideoFrame>& frame,
-    media::VideoCaptureFormat format,
-    const base::TimeTicks& estimated_capture_time,
-    const VideoCaptureDeliverFrameCB& frame_callback) {
-  frame_callback.Run(frame, format, estimated_capture_time);
+      base::Bind(frame_callback_, frame, base::TimeTicks()));
 }
 
 }  // namespace content

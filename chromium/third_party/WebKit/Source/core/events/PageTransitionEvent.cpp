@@ -28,11 +28,6 @@
 
 namespace blink {
 
-PageTransitionEventInit::PageTransitionEventInit()
-    : persisted(false)
-{
-}
-
 PageTransitionEvent::PageTransitionEvent()
     : m_persisted(false)
 {
@@ -46,8 +41,10 @@ PageTransitionEvent::PageTransitionEvent(const AtomicString& type, bool persiste
 
 PageTransitionEvent::PageTransitionEvent(const AtomicString& type, const PageTransitionEventInit& initializer)
     : Event(type, initializer)
-    , m_persisted(initializer.persisted)
+    , m_persisted(false)
 {
+    if (initializer.hasPersisted())
+        m_persisted = initializer.persisted();
 }
 
 PageTransitionEvent::~PageTransitionEvent()
@@ -59,7 +56,7 @@ const AtomicString& PageTransitionEvent::interfaceName() const
     return EventNames::PageTransitionEvent;
 }
 
-void PageTransitionEvent::trace(Visitor* visitor)
+DEFINE_TRACE(PageTransitionEvent)
 {
     Event::trace(visitor);
 }

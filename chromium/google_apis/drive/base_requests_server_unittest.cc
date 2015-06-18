@@ -33,7 +33,7 @@ class BaseRequestsServerTest : public testing::Test {
   BaseRequestsServerTest() {
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     request_context_getter_ = new net::TestURLRequestContextGetter(
@@ -70,7 +70,7 @@ class BaseRequestsServerTest : public testing::Test {
 };
 
 TEST_F(BaseRequestsServerTest, DownloadFileRequest_ValidFile) {
-  GDataErrorCode result_code = GDATA_OTHER_ERROR;
+  DriveApiErrorCode result_code = DRIVE_OTHER_ERROR;
   base::FilePath temp_file;
   {
     base::RunLoop run_loop;
@@ -104,7 +104,7 @@ TEST_F(BaseRequestsServerTest, DownloadFileRequest_ValidFile) {
 }
 
 TEST_F(BaseRequestsServerTest, DownloadFileRequest_NonExistentFile) {
-  GDataErrorCode result_code = GDATA_OTHER_ERROR;
+  DriveApiErrorCode result_code = DRIVE_OTHER_ERROR;
   base::FilePath temp_file;
   {
     base::RunLoop run_loop;

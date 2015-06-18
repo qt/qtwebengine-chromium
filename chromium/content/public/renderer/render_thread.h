@@ -10,12 +10,8 @@
 #include "base/memory/shared_memory.h"
 #include "base/metrics/user_metrics_action.h"
 #include "content/common/content_export.h"
+#include "content/public/child/child_thread.h"
 #include "ipc/ipc_channel_proxy.h"
-#include "ipc/ipc_sender.h"
-
-#if defined(OS_WIN)
-#include <windows.h>
-#endif
 
 class GURL;
 
@@ -23,6 +19,10 @@ namespace base {
 class MessageLoop;
 class MessageLoopProxy;
 class WaitableEvent;
+}
+
+namespace cc {
+class SharedBitmapManager;
 }
 
 namespace IPC {
@@ -41,7 +41,7 @@ class RenderProcessObserver;
 class ResourceDispatcherDelegate;
 class ServiceRegistry;
 
-class CONTENT_EXPORT RenderThread : public IPC::Sender {
+class CONTENT_EXPORT RenderThread : virtual public ChildThread {
  public:
   // Returns the one render thread for this process.  Note that this can only
   // be accessed when running on the render thread itself.
@@ -50,7 +50,7 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   RenderThread();
   ~RenderThread() override;
 
-  virtual base::MessageLoop* GetMessageLoop() = 0;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() = 0;
   virtual IPC::SyncChannel* GetChannel() = 0;
   virtual std::string GetLocale() = 0;
   virtual IPC::SyncMessageFilter* GetSyncMessageFilter() = 0;
@@ -102,6 +102,8 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   virtual scoped_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) = 0;
 
+  virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
+
   // Registers the given V8 extension with WebKit.
   virtual void RegisterExtension(v8::Extension* extension) = 0;
 
@@ -128,15 +130,6 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
 
   // Gets the shutdown event for the process.
   virtual base::WaitableEvent* GetShutdownEvent() = 0;
-
-#if defined(OS_WIN)
-  // Request that the given font be loaded by the browser so it's cached by the
-  // OS. Please see ChildProcessHost::PreCacheFont for details.
-  virtual void PreCacheFont(const LOGFONT& log_font) = 0;
-
-  // Release cached font.
-  virtual void ReleaseCachedFonts() = 0;
-#endif
 
   // Returns the ServiceRegistry for this thread.
   virtual ServiceRegistry* GetServiceRegistry() = 0;

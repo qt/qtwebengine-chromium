@@ -11,13 +11,14 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_base.h"
@@ -200,10 +201,14 @@ TransportConnectJob::TransportConnectJob(
     HostResolver* host_resolver,
     Delegate* delegate,
     NetLog* net_log)
-    : ConnectJob(group_name, timeout_duration, priority, delegate,
+    : ConnectJob(group_name,
+                 timeout_duration,
+                 priority,
+                 delegate,
                  BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
       helper_(params, client_socket_factory, host_resolver, &connect_timing_),
-      interval_between_connects_(CONNECT_INTERVAL_GT_20MS) {
+      interval_between_connects_(CONNECT_INTERVAL_GT_20MS),
+      resolve_result_(OK) {
   helper_.SetOnIOComplete(this);
 }
 
@@ -227,6 +232,21 @@ LoadState TransportConnectJob::GetLoadState() const {
   return LOAD_STATE_IDLE;
 }
 
+void TransportConnectJob::GetAdditionalErrorState(ClientSocketHandle* handle) {
+  // If hostname resolution failed, record an empty endpoint and the result.
+  // Also record any attempts made on either of the sockets.
+  ConnectionAttempts attempts;
+  if (resolve_result_ != OK) {
+    DCHECK_EQ(0u, helper_.addresses().size());
+    attempts.push_back(ConnectionAttempt(IPEndPoint(), resolve_result_));
+  }
+  attempts.insert(attempts.begin(), connection_attempts_.begin(),
+                  connection_attempts_.end());
+  attempts.insert(attempts.begin(), fallback_connection_attempts_.begin(),
+                  fallback_connection_attempts_.end());
+  handle->set_connection_attempts(attempts);
+}
+
 // static
 void TransportConnectJob::MakeAddressListStartWithIPv4(AddressList* list) {
   for (AddressList::iterator i = list->begin(); i != list->end(); ++i) {
@@ -238,10 +258,16 @@ void TransportConnectJob::MakeAddressListStartWithIPv4(AddressList* list) {
 }
 
 int TransportConnectJob::DoResolveHost() {
+  // TODO(ricea): Remove ScopedTracker below once crbug.com/436634 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436634 TransportConnectJob::DoResolveHost"));
+
   return helper_.DoResolveHost(priority(), net_log());
 }
 
 int TransportConnectJob::DoResolveHostComplete(int result) {
+  resolve_result_ = result;
   return helper_.DoResolveHostComplete(result, net_log());
 }
 
@@ -301,6 +327,16 @@ int TransportConnectJob::DoTransportConnect() {
 
 int TransportConnectJob::DoTransportConnectComplete(int result) {
   if (result == OK) {
+    // Success will be returned via the main socket, so also include connection
+    // attempts made on the fallback socket up to this point. (Unfortunately,
+    // the only simple way to return information in the success case is through
+    // the successfully-connected socket.)
+    if (fallback_transport_socket_) {
+      ConnectionAttempts fallback_attempts;
+      fallback_transport_socket_->GetConnectionAttempts(&fallback_attempts);
+      transport_socket_->AddConnectionAttempts(fallback_attempts);
+    }
+
     bool is_ipv4 =
         helper_.addresses().front().GetFamily() == ADDRESS_FAMILY_IPV4;
     TransportConnectJobHelper::ConnectionLatencyHistogram race_result =
@@ -349,10 +385,17 @@ int TransportConnectJob::DoTransportConnectComplete(int result) {
     SetSocket(transport_socket_.Pass());
     fallback_timer_.Stop();
   } else {
+    // Failure will be returned via |GetAdditionalErrorState|, so save
+    // connection attempts from both sockets for use there.
+    CopyConnectionAttemptsFromSockets();
+
     // Be a bit paranoid and kill off the fallback members to prevent reuse.
     fallback_transport_socket_.reset();
     fallback_addresses_.reset();
   }
+
+  // N.B.: The owner of the ConnectJob will delete it after the callback is
+  // called, so the fallback socket, if any, won't stick around for long.
 
   return result;
 }
@@ -397,6 +440,17 @@ void TransportConnectJob::DoIPv6FallbackTransportConnectComplete(int result) {
 
   if (result == OK) {
     DCHECK(!fallback_connect_start_time_.is_null());
+
+    // Success will be returned via the fallback socket, so also include
+    // connection attempts made on the main socket up to this point.
+    // (Unfortunately, the only simple way to return information in the success
+    // case is through the successfully-connected socket.)
+    if (transport_socket_) {
+      ConnectionAttempts attempts;
+      transport_socket_->GetConnectionAttempts(&attempts);
+      fallback_transport_socket_->AddConnectionAttempts(attempts);
+    }
+
     connect_timing_.connect_start = fallback_connect_start_time_;
     helper_.HistogramDuration(
         TransportConnectJobHelper::CONNECTION_LATENCY_IPV4_WINS_RACE);
@@ -404,15 +458,32 @@ void TransportConnectJob::DoIPv6FallbackTransportConnectComplete(int result) {
     helper_.set_next_state(TransportConnectJobHelper::STATE_NONE);
     transport_socket_.reset();
   } else {
+    // Failure will be returned via |GetAdditionalErrorState|, so save
+    // connection attempts from both sockets for use there.
+    CopyConnectionAttemptsFromSockets();
+
     // Be a bit paranoid and kill off the fallback members to prevent reuse.
     fallback_transport_socket_.reset();
     fallback_addresses_.reset();
   }
+
+  // N.B.: The owner of the ConnectJob will delete it after the callback is
+  // called, so the main socket, if any, won't stick around for long.
+
   NotifyDelegateOfCompletion(result);  // Deletes |this|
 }
 
 int TransportConnectJob::ConnectInternal() {
   return helper_.DoConnectInternal(this);
+}
+
+void TransportConnectJob::CopyConnectionAttemptsFromSockets() {
+  if (transport_socket_)
+    transport_socket_->GetConnectionAttempts(&connection_attempts_);
+  if (fallback_transport_socket_) {
+    fallback_transport_socket_->GetConnectionAttempts(
+        &fallback_connection_attempts_);
+  }
 }
 
 scoped_ptr<ConnectJob>
@@ -440,15 +511,17 @@ base::TimeDelta
 TransportClientSocketPool::TransportClientSocketPool(
     int max_sockets,
     int max_sockets_per_group,
-    ClientSocketPoolHistograms* histograms,
     HostResolver* host_resolver,
     ClientSocketFactory* client_socket_factory,
     NetLog* net_log)
-    : base_(NULL, max_sockets, max_sockets_per_group, histograms,
+    : base_(NULL,
+            max_sockets,
+            max_sockets_per_group,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
             new TransportConnectJobFactory(client_socket_factory,
-                                           host_resolver, net_log)) {
+                                           host_resolver,
+                                           net_log)) {
   base_.EnableConnectBackupJobs();
 }
 
@@ -473,7 +546,7 @@ int TransportClientSocketPool::RequestSocket(
 void TransportClientSocketPool::NetLogTcpClientSocketPoolRequestedSocket(
     const BoundNetLog& net_log,
     const scoped_refptr<TransportSocketParams>* casted_params) {
-  if (net_log.IsLogging()) {
+  if (net_log.IsCapturing()) {
     // TODO(eroman): Split out the host and port parameters.
     net_log.AddEvent(
         NetLog::TYPE_TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKET,
@@ -490,7 +563,7 @@ void TransportClientSocketPool::RequestSockets(
   const scoped_refptr<TransportSocketParams>* casted_params =
       static_cast<const scoped_refptr<TransportSocketParams>*>(params);
 
-  if (net_log.IsLogging()) {
+  if (net_log.IsCapturing()) {
     // TODO(eroman): Split out the host and port parameters.
     net_log.AddEvent(
         NetLog::TYPE_TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKETS,
@@ -545,10 +618,6 @@ base::DictionaryValue* TransportClientSocketPool::GetInfoAsValue(
 
 base::TimeDelta TransportClientSocketPool::ConnectionTimeout() const {
   return base_.ConnectionTimeout();
-}
-
-ClientSocketPoolHistograms* TransportClientSocketPool::histograms() const {
-  return base_.histograms();
 }
 
 bool TransportClientSocketPool::IsStalled() const {

@@ -23,48 +23,29 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/BiquadProcessor.h"
 
 #include "modules/webaudio/BiquadDSPKernel.h"
 
 namespace blink {
 
-BiquadProcessor::BiquadProcessor(AudioContext* context, float sampleRate, size_t numberOfChannels, bool autoInitialize)
+BiquadProcessor::BiquadProcessor(float sampleRate, size_t numberOfChannels, AudioParamHandler& frequency, AudioParamHandler& q, AudioParamHandler& gain, AudioParamHandler& detune)
     : AudioDSPKernelProcessor(sampleRate, numberOfChannels)
     , m_type(LowPass)
-    , m_parameter1(nullptr)
-    , m_parameter2(nullptr)
-    , m_parameter3(nullptr)
-    , m_parameter4(nullptr)
+    , m_parameter1(frequency)
+    , m_parameter2(q)
+    , m_parameter3(gain)
+    , m_parameter4(detune)
     , m_filterCoefficientsDirty(true)
     , m_hasSampleAccurateValues(false)
 {
-    // Create parameters for BiquadFilterNode.
-    m_parameter1 = AudioParam::create(context, 350.0);
-    m_parameter2 = AudioParam::create(context, 1);
-    m_parameter3 = AudioParam::create(context, 0.0);
-    m_parameter4 = AudioParam::create(context, 0.0);
-
-    if (autoInitialize)
-        initialize();
 }
 
 BiquadProcessor::~BiquadProcessor()
 {
     if (isInitialized())
         uninitialize();
-}
-
-void BiquadProcessor::trace(Visitor* visitor)
-{
-    visitor->trace(m_parameter1);
-    visitor->trace(m_parameter2);
-    visitor->trace(m_parameter3);
-    visitor->trace(m_parameter4);
-    AudioDSPKernelProcessor::trace(visitor);
 }
 
 PassOwnPtr<AudioDSPKernel> BiquadProcessor::createKernel()
@@ -126,17 +107,13 @@ void BiquadProcessor::setType(FilterType type)
     }
 }
 
-void BiquadProcessor::getFrequencyResponse(int nFrequencies,
-                                           const float* frequencyHz,
-                                           float* magResponse,
-                                           float* phaseResponse)
+void BiquadProcessor::getFrequencyResponse(int nFrequencies, const float* frequencyHz, float* magResponse, float* phaseResponse)
 {
     // Compute the frequency response on a separate temporary kernel
     // to avoid interfering with the processing running in the audio
     // thread on the main kernels.
 
     OwnPtr<BiquadDSPKernel> responseKernel = adoptPtr(new BiquadDSPKernel(this));
-
     responseKernel->getFrequencyResponse(nFrequencies, frequencyHz, magResponse, phaseResponse);
 }
 

@@ -18,6 +18,13 @@ class SkiaBuildbotDesktopPage(page_module.Page):
     self.user_agent_type = 'desktop'
     self.archive_data_file = 'data/skia_css3gradients_desktop.json'
 
+  def RunSmoothness(self, action_runner):
+    action_runner.ScrollElement()
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(15)
+
 
 class SkiaCss3gradientsDesktopPageSet(page_set_module.PageSet):
 
@@ -34,4 +41,4 @@ class SkiaCss3gradientsDesktopPageSet(page_set_module.PageSet):
     ]
 
     for url in urls_list:
-      self.AddPage(SkiaBuildbotDesktopPage(url, self))
+      self.AddUserStory(SkiaBuildbotDesktopPage(url, self))

@@ -28,29 +28,28 @@
 #define ClientRect_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
 class IntRect;
 
-class ClientRect final : public RefCountedWillBeGarbageCollected<ClientRect>, public ScriptWrappable {
+class CORE_EXPORT ClientRect final : public GarbageCollected<ClientRect>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<ClientRect> create()
+    static ClientRect* create()
     {
-        return adoptRefWillBeNoop(new ClientRect);
+        return new ClientRect;
     }
-    static PassRefPtrWillBeRawPtr<ClientRect> create(const IntRect& rect)
+    static ClientRect* create(const IntRect& rect)
     {
-        return adoptRefWillBeNoop(new ClientRect(rect));
+        return new ClientRect(rect);
     }
-    static PassRefPtrWillBeRawPtr<ClientRect> create(const FloatRect& rect)
+    static ClientRect* create(const FloatRect& rect)
     {
-        return adoptRefWillBeNoop(new ClientRect(rect));
+        return new ClientRect(rect);
     }
 
     float top() const { return m_rect.y(); }
@@ -60,7 +59,7 @@ public:
     float width() const { return m_rect.width(); }
     float height() const { return m_rect.height(); }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     ClientRect();

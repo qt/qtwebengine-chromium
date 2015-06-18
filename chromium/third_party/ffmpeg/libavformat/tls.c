@@ -30,34 +30,34 @@
 #if CONFIG_GNUTLS
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
-#define TLS_read(c, buf, size)  gnutls_record_recv(c->session, buf, size)
-#define TLS_write(c, buf, size) gnutls_record_send(c->session, buf, size)
-#define TLS_shutdown(c)         gnutls_bye(c->session, GNUTLS_SHUT_RDWR)
+#define TLS_read(c, buf, size)  gnutls_record_recv((c)->session, (buf), (size))
+#define TLS_write(c, buf, size) gnutls_record_send((c)->session, (buf), (size))
+#define TLS_shutdown(c)         gnutls_bye((c)->session, GNUTLS_SHUT_RDWR)
 #define TLS_free(c) do { \
-        if (c->session) \
-            gnutls_deinit(c->session); \
-        if (c->cred) \
-            gnutls_certificate_free_credentials(c->cred); \
+        if ((c)->session) \
+            gnutls_deinit((c)->session); \
+        if ((c)->cred) \
+            gnutls_certificate_free_credentials((c)->cred); \
     } while (0)
 #elif CONFIG_OPENSSL
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#define TLS_read(c, buf, size)  SSL_read(c->ssl,  buf, size)
-#define TLS_write(c, buf, size) SSL_write(c->ssl, buf, size)
-#define TLS_shutdown(c)         SSL_shutdown(c->ssl)
+#define TLS_read(c, buf, size)  SSL_read((c)->ssl,  (buf), (size))
+#define TLS_write(c, buf, size) SSL_write((c)->ssl, (buf), (size))
+#define TLS_shutdown(c)         SSL_shutdown((c)->ssl)
 #define TLS_free(c) do { \
-        if (c->ssl) \
-            SSL_free(c->ssl); \
-        if (c->ctx) \
-            SSL_CTX_free(c->ctx); \
+        if ((c)->ssl) \
+            SSL_free((c)->ssl); \
+        if ((c)->ctx) \
+            SSL_CTX_free((c)->ctx); \
     } while (0)
 #endif
 #if HAVE_POLL_H
 #include <poll.h>
 #endif
 
-typedef struct {
+typedef struct TLSContext {
     const AVClass *class;
     URLContext *tcp;
 #if CONFIG_GNUTLS
@@ -163,27 +163,36 @@ static void set_options(URLContext *h, const char *uri)
         c->key_file = av_strdup(buf);
 }
 
-static int tls_open(URLContext *h, const char *uri, int flags)
+static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **options)
 {
     TLSContext *c = h->priv_data;
     int ret;
     int port;
+    const char *p;
     char buf[200], host[200], opts[50] = "";
     int numerichost = 0;
     struct addrinfo hints = { 0 }, *ai = NULL;
     const char *proxy_path;
     int use_proxy;
-    const char *p = strchr(uri, '?');
 
-    ff_tls_init();
+    if ((ret = ff_tls_init()) < 0)
+        return ret;
 
-    if(p && av_find_info_tag(buf, sizeof(buf), "listen", p))
-        c->listen = 1;
     if (c->listen)
         snprintf(opts, sizeof(opts), "?listen=1");
 
     av_url_split(NULL, 0, NULL, 0, host, sizeof(host), &port, NULL, 0, uri);
-    ff_url_join(buf, sizeof(buf), "tcp", NULL, host, port, "%s", opts);
+
+    p = strchr(uri, '?');
+
+    if (!p) {
+        p = opts;
+    } else {
+        if (av_find_info_tag(opts, sizeof(opts), "listen", p))
+            c->listen = 1;
+    }
+
+    ff_url_join(buf, sizeof(buf), "tcp", NULL, host, port, "%s", p);
 
     hints.ai_flags = AI_NUMERICHOST;
     if (!getaddrinfo(host, NULL, &hints, &ai)) {
@@ -207,7 +216,7 @@ static int tls_open(URLContext *h, const char *uri, int flags)
     }
 
     ret = ffurl_open(&c->tcp, buf, AVIO_FLAG_READ_WRITE,
-                     &h->interrupt_callback, NULL);
+                     &h->interrupt_callback, options);
     if (ret)
         goto fail;
     c->fd = ffurl_get_file_handle(c->tcp);
@@ -386,7 +395,7 @@ static int tls_close(URLContext *h)
 
 URLProtocol ff_tls_protocol = {
     .name           = "tls",
-    .url_open       = tls_open,
+    .url_open2      = tls_open,
     .url_read       = tls_read,
     .url_write      = tls_write,
     .url_close      = tls_close,

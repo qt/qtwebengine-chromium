@@ -35,6 +35,7 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
@@ -55,9 +56,19 @@ void WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(const WebString& sche
     SchemeRegistry::registerURLSchemeAsDisplayIsolated(scheme);
 }
 
+void WebSecurityPolicy::registerURLSchemeAsRestrictingMixedContent(const WebString& scheme)
+{
+    SchemeRegistry::registerURLSchemeAsRestrictingMixedContent(scheme);
+}
+
 void WebSecurityPolicy::registerURLSchemeAsSecure(const WebString& scheme)
 {
     SchemeRegistry::registerURLSchemeAsSecure(scheme);
+}
+
+bool WebSecurityPolicy::shouldTreatURLSchemeAsSecure(const WebString& scheme)
+{
+    return SchemeRegistry::shouldTreatURLSchemeAsSecure(scheme);
 }
 
 void WebSecurityPolicy::registerURLSchemeAsCORSEnabled(const WebString& scheme)
@@ -68,6 +79,11 @@ void WebSecurityPolicy::registerURLSchemeAsCORSEnabled(const WebString& scheme)
 void WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(const WebString& scheme)
 {
     SchemeRegistry::registerURLSchemeAsBypassingContentSecurityPolicy(scheme);
+}
+
+void WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(const WebString& scheme, PolicyAreas policyAreas)
+{
+    SchemeRegistry::registerURLSchemeAsBypassingContentSecurityPolicy(scheme, static_cast<SchemeRegistry::PolicyAreas>(policyAreas));
 }
 
 void WebSecurityPolicy::registerURLSchemeAsEmptyDocument(const WebString& scheme)
@@ -100,6 +116,11 @@ void WebSecurityPolicy::removeOriginAccessWhitelistEntry(
 void WebSecurityPolicy::resetOriginAccessWhitelists()
 {
     SecurityPolicy::resetOriginAccessWhitelists();
+}
+
+void WebSecurityPolicy::addOriginTrustworthyWhiteList(const WebSecurityOrigin& origin)
+{
+    SecurityPolicy::addOriginTrustworthyWhiteList(origin);
 }
 
 WebString WebSecurityPolicy::generateReferrerHeader(WebReferrerPolicy referrerPolicy, const WebURL& url, const WebString& referrer)

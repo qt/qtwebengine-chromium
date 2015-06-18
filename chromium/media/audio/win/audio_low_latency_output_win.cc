@@ -7,11 +7,10 @@
 #include <Functiondiscoverykeys_devpkey.h>
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/win/scoped_propvariant.h"
 #include "media/audio/win/audio_manager_win.h"
 #include "media/audio/win/avrt_wrapper_win.h"
@@ -27,7 +26,7 @@ namespace media {
 
 // static
 AUDCLNT_SHAREMODE WASAPIAudioOutputStream::GetShareMode() {
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kEnableExclusiveAudio))
     return AUDCLNT_SHAREMODE_EXCLUSIVE;
   return AUDCLNT_SHAREMODE_SHARED;
@@ -41,12 +40,13 @@ int WASAPIAudioOutputStream::HardwareSampleRate(const std::string& device_id) {
     client = CoreAudioUtil::CreateDefaultClient(eRender, eConsole);
   } else {
     ScopedComPtr<IMMDevice> device(CoreAudioUtil::CreateDevice(device_id));
-    if (!device)
+    if (!device.get())
       return 0;
-    client = CoreAudioUtil::CreateClient(device);
+    client = CoreAudioUtil::CreateClient(device.get());
   }
 
-  if (!client || FAILED(CoreAudioUtil::GetSharedModeMixFormat(client, &format)))
+  if (!client.get() ||
+      FAILED(CoreAudioUtil::GetSharedModeMixFormat(client.get(), &format)))
     return 0;
 
   return static_cast<int>(format.Format.nSamplesPerSec);
@@ -72,9 +72,9 @@ WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
       audio_bus_(AudioBus::Create(params)) {
   DCHECK(manager_);
 
-  VLOG(1) << "WASAPIAudioOutputStream::WASAPIAudioOutputStream()";
-  VLOG_IF(1, share_mode_ == AUDCLNT_SHAREMODE_EXCLUSIVE)
-      << "Core Audio (WASAPI) EXCLUSIVE MODE is enabled.";
+  DVLOG(1) << "WASAPIAudioOutputStream::WASAPIAudioOutputStream()";
+  DVLOG_IF(1, share_mode_ == AUDCLNT_SHAREMODE_EXCLUSIVE)
+       << "Core Audio (WASAPI) EXCLUSIVE MODE is enabled.";
 
   // Load the Avrt DLL if not already loaded. Required to support MMCSS.
   bool avrt_init = avrt::Initialize();
@@ -103,10 +103,10 @@ WASAPIAudioOutputStream::WASAPIAudioOutputStream(AudioManagerWin* manager,
   // get from the audio endpoint device in each render event.
   packet_size_frames_ = params.frames_per_buffer();
   packet_size_bytes_ = params.GetBytesPerBuffer();
-  VLOG(1) << "Number of bytes per audio frame  : " << format->nBlockAlign;
-  VLOG(1) << "Number of audio frames per packet: " << packet_size_frames_;
-  VLOG(1) << "Number of bytes per packet       : " << packet_size_bytes_;
-  VLOG(1) << "Number of milliseconds per packet: "
+  DVLOG(1) << "Number of bytes per audio frame  : " << format->nBlockAlign;
+  DVLOG(1) << "Number of audio frames per packet: " << packet_size_frames_;
+  DVLOG(1) << "Number of bytes per packet       : " << packet_size_bytes_;
+  DVLOG(1) << "Number of milliseconds per packet: "
           << params.GetBufferDuration().InMillisecondsF();
 
   // All events are auto-reset events and non-signaled initially.
@@ -126,13 +126,13 @@ WASAPIAudioOutputStream::~WASAPIAudioOutputStream() {
 }
 
 bool WASAPIAudioOutputStream::Open() {
-  VLOG(1) << "WASAPIAudioOutputStream::Open()";
+  DVLOG(1) << "WASAPIAudioOutputStream::Open()";
   DCHECK_EQ(GetCurrentThreadId(), creating_thread_id_);
   if (opened_)
     return true;
 
-  DCHECK(!audio_client_);
-  DCHECK(!audio_render_client_);
+  DCHECK(!audio_client_.get());
+  DCHECK(!audio_render_client_.get());
 
   // Will be set to true if we ended up opening the default communications
   // device.
@@ -146,17 +146,16 @@ bool WASAPIAudioOutputStream::Open() {
     communications_device = (device_role_ == eCommunications);
   } else {
     ScopedComPtr<IMMDevice> device(CoreAudioUtil::CreateDevice(device_id_));
-    DLOG_IF(ERROR, !device) << "Failed to open device: " << device_id_;
-    if (device)
-      audio_client = CoreAudioUtil::CreateClient(device);
+    DLOG_IF(ERROR, !device.get()) << "Failed to open device: " << device_id_;
+    if (device.get())
+      audio_client = CoreAudioUtil::CreateClient(device.get());
   }
 
-  if (!audio_client)
+  if (!audio_client.get())
     return false;
 
   // Extra sanity to ensure that the provided device format is still valid.
-  if (!CoreAudioUtil::IsFormatSupported(audio_client,
-                                        share_mode_,
+  if (!CoreAudioUtil::IsFormatSupported(audio_client.get(), share_mode_,
                                         &format_)) {
     LOG(ERROR) << "Audio parameters are not supported.";
     return false;
@@ -167,7 +166,7 @@ bool WASAPIAudioOutputStream::Open() {
     // Initialize the audio stream between the client and the device in shared
     // mode and using event-driven buffer handling.
     hr = CoreAudioUtil::SharedModeInitialize(
-        audio_client, &format_, audio_samples_render_event_.Get(),
+        audio_client.get(), &format_, audio_samples_render_event_.Get(),
         &endpoint_buffer_size_frames_,
         communications_device ? &kCommunicationsSessionId : NULL);
     if (FAILED(hr))
@@ -187,7 +186,7 @@ bool WASAPIAudioOutputStream::Open() {
   } else {
     // TODO(henrika): break out to CoreAudioUtil::ExclusiveModeInitialize()
     // when removing the enable-exclusive-audio flag.
-    hr = ExclusiveModeInitialization(audio_client,
+    hr = ExclusiveModeInitialization(audio_client.get(),
                                      audio_samples_render_event_.Get(),
                                      &endpoint_buffer_size_frames_);
     if (FAILED(hr))
@@ -206,8 +205,8 @@ bool WASAPIAudioOutputStream::Open() {
   // The IAudioRenderClient interface enables us to write output data to
   // a rendering endpoint buffer.
   ScopedComPtr<IAudioRenderClient> audio_render_client =
-      CoreAudioUtil::CreateRenderClient(audio_client);
-  if (!audio_render_client)
+      CoreAudioUtil::CreateRenderClient(audio_client.get());
+  if (!audio_render_client.get())
     return false;
 
   // Store valid COM interfaces.
@@ -226,7 +225,7 @@ bool WASAPIAudioOutputStream::Open() {
 }
 
 void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
-  VLOG(1) << "WASAPIAudioOutputStream::Start()";
+  DVLOG(1) << "WASAPIAudioOutputStream::Start()";
   DCHECK_EQ(GetCurrentThreadId(), creating_thread_id_);
   CHECK(callback);
   CHECK(opened_);
@@ -241,7 +240,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
   // Ensure that the endpoint buffer is prepared with silence.
   if (share_mode_ == AUDCLNT_SHAREMODE_SHARED) {
     if (!CoreAudioUtil::FillRenderEndpointBufferWithSilence(
-             audio_client_, audio_render_client_)) {
+            audio_client_.get(), audio_render_client_.get())) {
       LOG(ERROR) << "Failed to prepare endpoint buffers with silence.";
       callback->OnError(this);
       return;
@@ -271,7 +270,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
 }
 
 void WASAPIAudioOutputStream::Stop() {
-  VLOG(1) << "WASAPIAudioOutputStream::Stop()";
+  DVLOG(1) << "WASAPIAudioOutputStream::Stop()";
   DCHECK_EQ(GetCurrentThreadId(), creating_thread_id_);
   if (!render_thread_)
     return;
@@ -306,7 +305,7 @@ void WASAPIAudioOutputStream::Stop() {
 }
 
 void WASAPIAudioOutputStream::Close() {
-  VLOG(1) << "WASAPIAudioOutputStream::Close()";
+  DVLOG(1) << "WASAPIAudioOutputStream::Close()";
   DCHECK_EQ(GetCurrentThreadId(), creating_thread_id_);
 
   // It is valid to call Close() before calling open or Start().
@@ -319,7 +318,7 @@ void WASAPIAudioOutputStream::Close() {
 }
 
 void WASAPIAudioOutputStream::SetVolume(double volume) {
-  VLOG(1) << "SetVolume(volume=" << volume << ")";
+  DVLOG(1) << "SetVolume(volume=" << volume << ")";
   float volume_float = static_cast<float>(volume);
   if (volume_float < 0.0f || volume_float > 1.0f) {
     return;
@@ -328,7 +327,7 @@ void WASAPIAudioOutputStream::SetVolume(double volume) {
 }
 
 void WASAPIAudioOutputStream::GetVolume(double* volume) {
-  VLOG(1) << "GetVolume()";
+  DVLOG(1) << "GetVolume()";
   *volume = static_cast<double>(volume_);
 }
 
@@ -336,7 +335,7 @@ void WASAPIAudioOutputStream::Run() {
   ScopedCOMInitializer com_init(ScopedCOMInitializer::kMTA);
 
   // Increase the thread priority.
-  render_thread_->SetThreadPriority(base::kThreadPriority_RealtimeAudio);
+  render_thread_->SetThreadPriority(base::ThreadPriority::REALTIME_AUDIO);
 
   // Enable MMCSS to ensure that this thread receives prioritized access to
   // CPU resources.
@@ -538,7 +537,7 @@ HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
                     event_handle != INVALID_HANDLE_VALUE);
   if (use_event)
     stream_flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
-  VLOG(2) << "stream_flags: 0x" << std::hex << stream_flags;
+  DVLOG(2) << "stream_flags: 0x" << std::hex << stream_flags;
 
   // Initialize the audio stream between the client and the device.
   // For an exclusive-mode stream that uses event-driven buffering, the
@@ -561,7 +560,7 @@ HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
 
       UINT32 aligned_buffer_size = 0;
       client->GetBufferSize(&aligned_buffer_size);
-      VLOG(1) << "Use aligned buffer size instead: " << aligned_buffer_size;
+      DVLOG(1) << "Use aligned buffer size instead: " << aligned_buffer_size;
 
       // Calculate new aligned periodicity. Each unit of reference time
       // is 100 nanoseconds.
@@ -573,9 +572,9 @@ HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
       // at this stage but we bail out with an error code instead and
       // combine it with a log message which informs about the suggested
       // aligned buffer size which should be used instead.
-      VLOG(1) << "aligned_buffer_duration: "
-              << static_cast<double>(aligned_buffer_duration / 10000.0)
-              << " [ms]";
+      DVLOG(1) << "aligned_buffer_duration: "
+               << static_cast<double>(aligned_buffer_duration / 10000.0)
+               << " [ms]";
     } else if (hr == AUDCLNT_E_INVALID_DEVICE_PERIOD) {
       // We will get this error if we try to use a smaller buffer size than
       // the minimum supported size (usually ~3ms on Windows 7).
@@ -587,7 +586,7 @@ HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
   if (use_event) {
     hr = client->SetEventHandle(event_handle);
     if (FAILED(hr)) {
-      VLOG(1) << "IAudioClient::SetEventHandle: " << std::hex << hr;
+      DVLOG(1) << "IAudioClient::SetEventHandle: " << std::hex << hr;
       return hr;
     }
   }
@@ -595,12 +594,12 @@ HRESULT WASAPIAudioOutputStream::ExclusiveModeInitialization(
   UINT32 buffer_size_in_frames = 0;
   hr = client->GetBufferSize(&buffer_size_in_frames);
   if (FAILED(hr)) {
-    VLOG(1) << "IAudioClient::GetBufferSize: " << std::hex << hr;
+    DVLOG(1) << "IAudioClient::GetBufferSize: " << std::hex << hr;
     return hr;
   }
 
   *endpoint_buffer_size = buffer_size_in_frames;
-  VLOG(2) << "endpoint buffer size: " << buffer_size_in_frames;
+  DVLOG(2) << "endpoint buffer size: " << buffer_size_in_frames;
   return hr;
 }
 

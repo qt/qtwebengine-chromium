@@ -10,25 +10,36 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "ui/gfx/insets.h"
-#include "ui/gfx/point_conversions.h"
-#include "ui/gfx/point_f.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/switches.h"
 
 namespace gfx {
 namespace {
 
+// This variable tracks whether the forced device scale factor switch needs to
+// be read from the command line, i.e. if it is set to -1 then the command line
+// is checked.
+int g_has_forced_device_scale_factor = -1;
+
+// This variable caches the forced device scale factor value which is read off
+// the command line. If the cache is invalidated by setting this variable to
+// -1.0, we read the forced device scale factor again.
+float g_forced_device_scale_factor = -1.0;
+
 bool HasForceDeviceScaleFactorImpl() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kForceDeviceScaleFactor);
 }
 
 float GetForcedDeviceScaleFactorImpl() {
   double scale_in_double = 1.0;
   if (HasForceDeviceScaleFactorImpl()) {
-    std::string value = CommandLine::ForCurrentProcess()->
-        GetSwitchValueASCII(switches::kForceDeviceScaleFactor);
+    std::string value =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kForceDeviceScaleFactor);
     if (!base::StringToDouble(value, &scale_in_double))
       LOG(ERROR) << "Failed to parse the default device scale factor:" << value;
   }
@@ -43,16 +54,22 @@ const int64 Display::kInvalidDisplayID = -1;
 
 // static
 float Display::GetForcedDeviceScaleFactor() {
-  static const float kForcedDeviceScaleFactor =
-      GetForcedDeviceScaleFactorImpl();
-  return kForcedDeviceScaleFactor;
+  if (g_forced_device_scale_factor < 0)
+    g_forced_device_scale_factor = GetForcedDeviceScaleFactorImpl();
+  return g_forced_device_scale_factor;
 }
 
 //static
 bool Display::HasForceDeviceScaleFactor() {
-  static const bool kHasForceDeviceScaleFactor =
-      HasForceDeviceScaleFactorImpl();
-  return kHasForceDeviceScaleFactor;
+  if (g_has_forced_device_scale_factor == -1)
+    g_has_forced_device_scale_factor = HasForceDeviceScaleFactorImpl();
+  return !!g_has_forced_device_scale_factor;
+}
+
+// static
+void Display::ResetForceDeviceScaleFactorForTesting() {
+  g_has_forced_device_scale_factor = -1;
+  g_forced_device_scale_factor = -1.0;
 }
 
 Display::Display()
@@ -181,12 +198,19 @@ bool Display::IsInternal() const {
   return is_valid() && (id_ == internal_display_id_);
 }
 
+// static
 int64 Display::InternalDisplayId() {
   return internal_display_id_;
 }
 
+// static
 void Display::SetInternalDisplayId(int64 internal_display_id) {
   internal_display_id_ = internal_display_id;
+}
+
+// static
+bool Display::HasInternalDisplay() {
+  return internal_display_id_ != kInvalidDisplayID;
 }
 
 }  // namespace gfx

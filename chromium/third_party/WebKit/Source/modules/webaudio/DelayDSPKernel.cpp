@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/DelayDSPKernel.h"
 
 #include "platform/audio/AudioUtilities.h"
@@ -37,14 +35,16 @@ namespace blink {
 const float SmoothingTimeConstant = 0.020f; // 20ms
 
 DelayDSPKernel::DelayDSPKernel(DelayProcessor* processor)
-    : AudioDelayDSPKernel(processor, AudioNode::ProcessingSizeInFrames)
+    : AudioDelayDSPKernel(processor, AudioHandler::ProcessingSizeInFrames)
 {
-    ASSERT(processor && processor->sampleRate() > 0);
+    ASSERT(processor);
+    ASSERT(processor->sampleRate() > 0);
     if (!(processor && processor->sampleRate() > 0))
         return;
 
     m_maxDelayTime = processor->maxDelayTime();
-    ASSERT(m_maxDelayTime >= 0 && !std::isnan(m_maxDelayTime));
+    ASSERT(m_maxDelayTime >= 0);
+    ASSERT(!std::isnan(m_maxDelayTime));
     if (m_maxDelayTime < 0 || std::isnan(m_maxDelayTime))
         return;
 
@@ -56,17 +56,17 @@ DelayDSPKernel::DelayDSPKernel(DelayProcessor* processor)
 
 bool DelayDSPKernel::hasSampleAccurateValues()
 {
-    return delayProcessor()->delayTime()->hasSampleAccurateValues();
+    return delayProcessor()->delayTime().hasSampleAccurateValues();
 }
 
 void DelayDSPKernel::calculateSampleAccurateValues(float* delayTimes, size_t framesToProcess)
 {
-    delayProcessor()->delayTime()->calculateSampleAccurateValues(delayTimes, framesToProcess);
+    delayProcessor()->delayTime().calculateSampleAccurateValues(delayTimes, framesToProcess);
 }
 
 double DelayDSPKernel::delayTime(float)
 {
-    return delayProcessor()->delayTime()->finalValue();
+    return delayProcessor()->delayTime().finalValue();
 }
 
 } // namespace blink

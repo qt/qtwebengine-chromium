@@ -86,18 +86,6 @@ bool enable_histogrammer_ = false;
 
 MessageLoop::MessagePumpFactory* message_pump_for_ui_factory_ = NULL;
 
-// Returns true if MessagePump::ScheduleWork() must be called one
-// time for every task that is added to the MessageLoop incoming queue.
-bool AlwaysNotifyPump(MessageLoop::Type type) {
-#if defined(OS_ANDROID)
-  // The Android UI message loop needs to get notified each time a task is added
-  // to the incoming queue.
-  return type == MessageLoop::TYPE_UI || type == MessageLoop::TYPE_JAVA;
-#else
-  return false;
-#endif
-}
-
 #if defined(OS_IOS)
 typedef MessagePumpIOSForIO MessagePumpForIO;
 #elif defined(OS_NACL_SFI)
@@ -106,9 +94,11 @@ typedef MessagePumpDefault MessagePumpForIO;
 typedef MessagePumpLibevent MessagePumpForIO;
 #endif
 
+#if !defined(OS_NACL_SFI)
 MessagePumpForIO* ToPumpIO(MessagePump* pump) {
   return static_cast<MessagePumpForIO*>(pump);
 }
+#endif  // !defined(OS_NACL_SFI)
 
 }  // namespace
 
@@ -127,8 +117,10 @@ MessageLoop::DestructionObserver::~DestructionObserver() {
 
 MessageLoop::MessageLoop(Type type)
     : type_(type),
+#if defined(OS_WIN)
       pending_high_res_tasks_(0),
       in_high_res_mode_(false),
+#endif
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
@@ -143,8 +135,10 @@ MessageLoop::MessageLoop(Type type)
 MessageLoop::MessageLoop(scoped_ptr<MessagePump> pump)
     : pump_(pump.Pass()),
       type_(TYPE_CUSTOM),
+#if defined(OS_WIN)
       pending_high_res_tasks_(0),
       in_high_res_mode_(false),
+#endif
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
@@ -158,7 +152,12 @@ MessageLoop::MessageLoop(scoped_ptr<MessagePump> pump)
 MessageLoop::~MessageLoop() {
   DCHECK_EQ(this, current());
 
+  // iOS just attaches to the loop, it doesn't Run it.
+  // TODO(stuartmorgan): Consider wiring up a Detach().
+#if !defined(OS_IOS)
   DCHECK(!run_loop_);
+#endif
+
 #if defined(OS_WIN)
   if (in_high_res_mode_)
     Time::ActivateHighResolutionTimer(false);
@@ -276,31 +275,27 @@ void MessageLoop::RemoveDestructionObserver(
 void MessageLoop::PostTask(
     const tracked_objects::Location& from_here,
     const Closure& task) {
-  DCHECK(!task.is_null()) << from_here.ToString();
-  incoming_task_queue_->AddToIncomingQueue(from_here, task, TimeDelta(), true);
+  message_loop_proxy_->PostTask(from_here, task);
 }
 
 void MessageLoop::PostDelayedTask(
     const tracked_objects::Location& from_here,
     const Closure& task,
     TimeDelta delay) {
-  DCHECK(!task.is_null()) << from_here.ToString();
-  incoming_task_queue_->AddToIncomingQueue(from_here, task, delay, true);
+  message_loop_proxy_->PostDelayedTask(from_here, task, delay);
 }
 
 void MessageLoop::PostNonNestableTask(
     const tracked_objects::Location& from_here,
     const Closure& task) {
-  DCHECK(!task.is_null()) << from_here.ToString();
-  incoming_task_queue_->AddToIncomingQueue(from_here, task, TimeDelta(), false);
+  message_loop_proxy_->PostNonNestableTask(from_here, task);
 }
 
 void MessageLoop::PostNonNestableDelayedTask(
     const tracked_objects::Location& from_here,
     const Closure& task,
     TimeDelta delay) {
-  DCHECK(!task.is_null()) << from_here.ToString();
-  incoming_task_queue_->AddToIncomingQueue(from_here, task, delay, false);
+  message_loop_proxy_->PostNonNestableDelayedTask(from_here, task, delay);
 }
 
 void MessageLoop::Run() {
@@ -432,10 +427,13 @@ bool MessageLoop::ProcessNextDelayedNonNestableTask() {
 void MessageLoop::RunTask(const PendingTask& pending_task) {
   DCHECK(nestable_tasks_allowed_);
 
+#if defined(OS_WIN)
   if (pending_task.is_high_res) {
     pending_high_res_tasks_--;
-    CHECK(pending_high_res_tasks_ >= 0);
+    CHECK_GE(pending_high_res_tasks_, 0);
   }
+#endif
+
   // Execute the task and assume the worst: It is probably not reentrant.
   nestable_tasks_allowed_ = false;
 
@@ -505,14 +503,17 @@ void MessageLoop::ReloadWorkQueue() {
   // load. That reduces the number of locks-per-task significantly when our
   // queues get large.
   if (work_queue_.empty()) {
+#if defined(OS_WIN)
     pending_high_res_tasks_ +=
         incoming_task_queue_->ReloadWorkQueue(&work_queue_);
+#else
+    incoming_task_queue_->ReloadWorkQueue(&work_queue_);
+#endif
   }
 }
 
-void MessageLoop::ScheduleWork(bool was_empty) {
-  if (was_empty || AlwaysNotifyPump(type_))
-    pump_->ScheduleWork();
+void MessageLoop::ScheduleWork() {
+  pump_->ScheduleWork();
 }
 
 //------------------------------------------------------------------------------
@@ -703,8 +704,8 @@ bool MessageLoopForIO::WaitForIOCompletion(DWORD timeout, IOHandler* filter) {
 bool MessageLoopForIO::WatchFileDescriptor(int fd,
                                            bool persistent,
                                            Mode mode,
-                                           FileDescriptorWatcher *controller,
-                                           Watcher *delegate) {
+                                           FileDescriptorWatcher* controller,
+                                           Watcher* delegate) {
   return ToPumpIO(pump_.get())->WatchFileDescriptor(
       fd,
       persistent,

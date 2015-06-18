@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -16,7 +17,6 @@
 #include <string>
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
@@ -24,6 +24,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
+#include "sandbox/linux/syscall_broker/broker_client.h"
 #include "sandbox/linux/tests/scoped_temporary_file.h"
 #include "sandbox/linux/tests/test_utils.h"
 #include "sandbox/linux/tests/unit_tests.h"
@@ -31,10 +32,15 @@
 
 namespace sandbox {
 
+namespace syscall_broker {
+
 class BrokerProcessTestHelper {
  public:
-  static int get_ipc_socketpair(const BrokerProcess* broker) {
-    return broker->ipc_socketpair_;
+  static void CloseChannel(BrokerProcess* broker) { broker->CloseChannel(); }
+  // Get the client's IPC descriptor to send IPC requests directly.
+  // TODO(jln): refator tests to get rid of this.
+  static int GetIPCDescriptor(const BrokerProcess* broker) {
+    return broker->broker_client_->GetIPCDescriptor();
   }
 };
 
@@ -47,11 +53,10 @@ bool NoOpCallback() {
 }  // namespace
 
 TEST(BrokerProcess, CreateAndDestroy) {
-  std::vector<std::string> read_whitelist;
-  read_whitelist.push_back("/proc/cpuinfo");
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadOnly("/proc/cpuinfo"));
 
-  scoped_ptr<BrokerProcess> open_broker(
-      new BrokerProcess(EPERM, read_whitelist, std::vector<std::string>()));
+  scoped_ptr<BrokerProcess> open_broker(new BrokerProcess(EPERM, permissions));
   ASSERT_TRUE(open_broker->Init(base::Bind(&NoOpCallback)));
 
   ASSERT_TRUE(TestUtils::CurrentProcessHasChildren());
@@ -61,8 +66,8 @@ TEST(BrokerProcess, CreateAndDestroy) {
 }
 
 TEST(BrokerProcess, TestOpenAccessNull) {
-  const std::vector<std::string> empty;
-  BrokerProcess open_broker(EPERM, empty, empty);
+  std::vector<BrokerFilePermission> empty;
+  BrokerProcess open_broker(EPERM, empty);
   ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
 
   int fd = open_broker.Open(NULL, O_RDONLY);
@@ -81,17 +86,14 @@ void TestOpenFilePerms(bool fast_check_in_client, int denied_errno) {
   const char kRW_WhiteListed[] = "/proc/DOESNOTEXIST3";
   const char k_NotWhitelisted[] = "/proc/DOESNOTEXIST4";
 
-  std::vector<std::string> read_whitelist;
-  read_whitelist.push_back(kR_WhiteListed);
-  read_whitelist.push_back(kR_WhiteListedButDenied);
-  read_whitelist.push_back(kRW_WhiteListed);
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadOnly(kR_WhiteListed));
+  permissions.push_back(
+      BrokerFilePermission::ReadOnly(kR_WhiteListedButDenied));
+  permissions.push_back(BrokerFilePermission::WriteOnly(kW_WhiteListed));
+  permissions.push_back(BrokerFilePermission::ReadWrite(kRW_WhiteListed));
 
-  std::vector<std::string> write_whitelist;
-  write_whitelist.push_back(kW_WhiteListed);
-  write_whitelist.push_back(kRW_WhiteListed);
-
-  BrokerProcess open_broker(
-      denied_errno, read_whitelist, write_whitelist, fast_check_in_client);
+  BrokerProcess open_broker(denied_errno, permissions, fast_check_in_client);
   ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
 
   int fd = -1;
@@ -236,13 +238,78 @@ TEST(BrokerProcess, OpenOpenFilePermsNoClientCheckNoEnt) {
   // expected.
 }
 
-void TestOpenCpuinfo(bool fast_check_in_client) {
+void TestBadPaths(bool fast_check_in_client) {
   const char kFileCpuInfo[] = "/proc/cpuinfo";
-  std::vector<std::string> read_whitelist;
-  read_whitelist.push_back(kFileCpuInfo);
+  const char kNotAbsPath[] = "proc/cpuinfo";
+  const char kDotDotStart[] = "/../proc/cpuinfo";
+  const char kDotDotMiddle[] = "/proc/self/../cpuinfo";
+  const char kDotDotEnd[] = "/proc/..";
+  const char kTrailingSlash[] = "/proc/";
 
-  scoped_ptr<BrokerProcess> open_broker(new BrokerProcess(
-      EPERM, read_whitelist, std::vector<std::string>(), fast_check_in_client));
+  std::vector<BrokerFilePermission> permissions;
+
+  permissions.push_back(BrokerFilePermission::ReadOnlyRecursive("/proc/"));
+  scoped_ptr<BrokerProcess> open_broker(
+      new BrokerProcess(EPERM, permissions, fast_check_in_client));
+  ASSERT_TRUE(open_broker->Init(base::Bind(&NoOpCallback)));
+  // Open cpuinfo via the broker.
+  int cpuinfo_fd = open_broker->Open(kFileCpuInfo, O_RDONLY);
+  base::ScopedFD cpuinfo_fd_closer(cpuinfo_fd);
+  ASSERT_GE(cpuinfo_fd, 0);
+
+  int fd = -1;
+  int can_access;
+
+  can_access = open_broker->Access(kNotAbsPath, R_OK);
+  ASSERT_EQ(can_access, -EPERM);
+  fd = open_broker->Open(kNotAbsPath, O_RDONLY);
+  ASSERT_EQ(fd, -EPERM);
+
+  can_access = open_broker->Access(kDotDotStart, R_OK);
+  ASSERT_EQ(can_access, -EPERM);
+  fd = open_broker->Open(kDotDotStart, O_RDONLY);
+  ASSERT_EQ(fd, -EPERM);
+
+  can_access = open_broker->Access(kDotDotMiddle, R_OK);
+  ASSERT_EQ(can_access, -EPERM);
+  fd = open_broker->Open(kDotDotMiddle, O_RDONLY);
+  ASSERT_EQ(fd, -EPERM);
+
+  can_access = open_broker->Access(kDotDotEnd, R_OK);
+  ASSERT_EQ(can_access, -EPERM);
+  fd = open_broker->Open(kDotDotEnd, O_RDONLY);
+  ASSERT_EQ(fd, -EPERM);
+
+  can_access = open_broker->Access(kTrailingSlash, R_OK);
+  ASSERT_EQ(can_access, -EPERM);
+  fd = open_broker->Open(kTrailingSlash, O_RDONLY);
+  ASSERT_EQ(fd, -EPERM);
+}
+
+TEST(BrokerProcess, BadPathsClientCheck) {
+  TestBadPaths(true /* fast_check_in_client */);
+  // Don't do anything here, so that ASSERT works in the subfunction as
+  // expected.
+}
+
+TEST(BrokerProcess, BadPathsNoClientCheck) {
+  TestBadPaths(false /* fast_check_in_client */);
+  // Don't do anything here, so that ASSERT works in the subfunction as
+  // expected.
+}
+
+void TestOpenCpuinfo(bool fast_check_in_client, bool recursive) {
+  const char kFileCpuInfo[] = "/proc/cpuinfo";
+  const char kDirProc[] = "/proc/";
+
+  std::vector<BrokerFilePermission> permissions;
+  if (recursive)
+    permissions.push_back(BrokerFilePermission::ReadOnlyRecursive(kDirProc));
+  else
+    permissions.push_back(BrokerFilePermission::ReadOnly(kFileCpuInfo));
+
+  scoped_ptr<BrokerProcess> open_broker(
+      new BrokerProcess(EPERM, permissions, fast_check_in_client));
   ASSERT_TRUE(open_broker->Init(base::Bind(&NoOpCallback)));
 
   int fd = -1;
@@ -286,16 +353,28 @@ void TestOpenCpuinfo(bool fast_check_in_client) {
   ASSERT_FALSE(TestUtils::CurrentProcessHasChildren());
 }
 
-// Run the same thing twice. The second time, we make sure that no security
-// check is performed on the client.
+// Run this test 4 times. With and without the check in client
+// and using a recursive path.
 TEST(BrokerProcess, OpenCpuinfoWithClientCheck) {
-  TestOpenCpuinfo(true /* fast_check_in_client */);
+  TestOpenCpuinfo(true /* fast_check_in_client */, false /* not recursive */);
   // Don't do anything here, so that ASSERT works in the subfunction as
   // expected.
 }
 
 TEST(BrokerProcess, OpenCpuinfoNoClientCheck) {
-  TestOpenCpuinfo(false /* fast_check_in_client */);
+  TestOpenCpuinfo(false /* fast_check_in_client */, false /* not recursive */);
+  // Don't do anything here, so that ASSERT works in the subfunction as
+  // expected.
+}
+
+TEST(BrokerProcess, OpenCpuinfoWithClientCheckRecursive) {
+  TestOpenCpuinfo(true /* fast_check_in_client */, true /* recursive */);
+  // Don't do anything here, so that ASSERT works in the subfunction as
+  // expected.
+}
+
+TEST(BrokerProcess, OpenCpuinfoNoClientCheckRecursive) {
+  TestOpenCpuinfo(false /* fast_check_in_client */, true /* recursive */);
   // Don't do anything here, so that ASSERT works in the subfunction as
   // expected.
 }
@@ -304,10 +383,10 @@ TEST(BrokerProcess, OpenFileRW) {
   ScopedTemporaryFile tempfile;
   const char* tempfile_name = tempfile.full_file_name();
 
-  std::vector<std::string> whitelist;
-  whitelist.push_back(tempfile_name);
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadWrite(tempfile_name));
 
-  BrokerProcess open_broker(EPERM, whitelist, whitelist);
+  BrokerProcess open_broker(EPERM, permissions);
   ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
 
   // Check we can access that file with read or write.
@@ -337,13 +416,11 @@ TEST(BrokerProcess, OpenFileRW) {
 // SANDBOX_TEST because the process could die with a SIGPIPE
 // and we want this to happen in a subprocess.
 SANDBOX_TEST(BrokerProcess, BrokerDied) {
-  std::vector<std::string> read_whitelist;
-  read_whitelist.push_back("/proc/cpuinfo");
+  const char kCpuInfo[] = "/proc/cpuinfo";
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadOnly(kCpuInfo));
 
-  BrokerProcess open_broker(EPERM,
-                            read_whitelist,
-                            std::vector<std::string>(),
-                            true /* fast_check_in_client */,
+  BrokerProcess open_broker(EPERM, permissions, true /* fast_check_in_client */,
                             true /* quiet_failures_for_tests */);
   SANDBOX_ASSERT(open_broker.Init(base::Bind(&NoOpCallback)));
   const pid_t broker_pid = open_broker.broker_pid();
@@ -359,16 +436,16 @@ SANDBOX_TEST(BrokerProcess, BrokerDied) {
   SANDBOX_ASSERT(SIGKILL == process_info.si_status);
 
   // Check that doing Open with a dead broker won't SIGPIPE us.
-  SANDBOX_ASSERT(open_broker.Open("/proc/cpuinfo", O_RDONLY) == -ENOMEM);
-  SANDBOX_ASSERT(open_broker.Access("/proc/cpuinfo", O_RDONLY) == -ENOMEM);
+  SANDBOX_ASSERT(open_broker.Open(kCpuInfo, O_RDONLY) == -ENOMEM);
+  SANDBOX_ASSERT(open_broker.Access(kCpuInfo, O_RDONLY) == -ENOMEM);
 }
 
 void TestOpenComplexFlags(bool fast_check_in_client) {
   const char kCpuInfo[] = "/proc/cpuinfo";
-  std::vector<std::string> whitelist;
-  whitelist.push_back(kCpuInfo);
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadOnly(kCpuInfo));
 
-  BrokerProcess open_broker(EPERM, whitelist, whitelist, fast_check_in_client);
+  BrokerProcess open_broker(EPERM, permissions, fast_check_in_client);
   ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
   // Test that we do the right thing for O_CLOEXEC and O_NONBLOCK.
   int fd = -1;
@@ -447,13 +524,13 @@ SANDBOX_TEST_ALLOW_NOISE(BrokerProcess, RecvMsgDescriptorLeak) {
   SANDBOX_ASSERT(0 == setrlimit(RLIMIT_NOFILE, &rlim));
 
   static const char kCpuInfo[] = "/proc/cpuinfo";
-  std::vector<std::string> read_whitelist;
-  read_whitelist.push_back(kCpuInfo);
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadOnly(kCpuInfo));
 
-  BrokerProcess open_broker(EPERM, read_whitelist, std::vector<std::string>());
+  BrokerProcess open_broker(EPERM, permissions);
   SANDBOX_ASSERT(open_broker.Init(base::Bind(&NoOpCallback)));
 
-  const int ipc_fd = BrokerProcessTestHelper::get_ipc_socketpair(&open_broker);
+  const int ipc_fd = BrokerProcessTestHelper::GetIPCDescriptor(&open_broker);
   SANDBOX_ASSERT(ipc_fd >= 0);
 
   static const char kBogus[] = "not a pickle";
@@ -471,5 +548,109 @@ SANDBOX_TEST_ALLOW_NOISE(BrokerProcess, RecvMsgDescriptorLeak) {
   SANDBOX_ASSERT(fd >= 0);
   SANDBOX_ASSERT(0 == IGNORE_EINTR(close(fd)));
 }
+
+bool CloseFD(int fd) {
+  PCHECK(0 == IGNORE_EINTR(close(fd)));
+  return true;
+}
+
+// Return true if the other end of the |reader| pipe was closed,
+// false if |timeout_in_seconds| was reached or another event
+// or error occured.
+bool WaitForClosedPipeWriter(int reader, int timeout_in_ms) {
+  struct pollfd poll_fd = {reader, POLLIN | POLLRDHUP, 0};
+  const int num_events = HANDLE_EINTR(poll(&poll_fd, 1, timeout_in_ms));
+  if (1 == num_events && poll_fd.revents | POLLHUP)
+    return true;
+  return false;
+}
+
+// Closing the broker client's IPC channel should terminate the broker
+// process.
+TEST(BrokerProcess, BrokerDiesOnClosedChannel) {
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadOnly("/proc/cpuinfo"));
+
+  // Get the writing end of a pipe into the broker (child) process so
+  // that we can reliably detect when it dies.
+  int lifeline_fds[2];
+  PCHECK(0 == pipe(lifeline_fds));
+
+  BrokerProcess open_broker(EPERM, permissions, true /* fast_check_in_client */,
+                            false /* quiet_failures_for_tests */);
+  ASSERT_TRUE(open_broker.Init(base::Bind(&CloseFD, lifeline_fds[0])));
+  // Make sure the writing end only exists in the broker process.
+  CloseFD(lifeline_fds[1]);
+  base::ScopedFD reader(lifeline_fds[0]);
+
+  const pid_t broker_pid = open_broker.broker_pid();
+
+  // This should cause the broker process to exit.
+  BrokerProcessTestHelper::CloseChannel(&open_broker);
+
+  const int kTimeoutInMilliseconds = 5000;
+  const bool broker_lifeline_closed =
+      WaitForClosedPipeWriter(reader.get(), kTimeoutInMilliseconds);
+  // If the broker exited, its lifeline fd should be closed.
+  ASSERT_TRUE(broker_lifeline_closed);
+  // Now check that the broker has exited, but do not reap it.
+  siginfo_t process_info;
+  ASSERT_EQ(0, HANDLE_EINTR(waitid(P_PID, broker_pid, &process_info,
+                                   WEXITED | WNOWAIT)));
+  EXPECT_EQ(broker_pid, process_info.si_pid);
+  EXPECT_EQ(CLD_EXITED, process_info.si_code);
+  EXPECT_EQ(1, process_info.si_status);
+}
+
+TEST(BrokerProcess, CreateFile) {
+  std::string temp_str;
+  {
+    ScopedTemporaryFile tmp_file;
+    temp_str = tmp_file.full_file_name();
+  }
+  const char* tempfile_name = temp_str.c_str();
+
+  std::vector<BrokerFilePermission> permissions;
+  permissions.push_back(BrokerFilePermission::ReadWriteCreate(tempfile_name));
+
+  BrokerProcess open_broker(EPERM, permissions);
+  ASSERT_TRUE(open_broker.Init(base::Bind(&NoOpCallback)));
+
+  int fd = -1;
+
+  // Try without O_EXCL
+  fd = open_broker.Open(tempfile_name, O_RDWR | O_CREAT);
+  ASSERT_EQ(fd, -EPERM);
+
+  const char kTestText[] = "TESTTESTTEST";
+  // Create a file
+  fd = open_broker.Open(tempfile_name, O_RDWR | O_CREAT | O_EXCL);
+  ASSERT_GE(fd, 0);
+  {
+    base::ScopedFD scoped_fd(fd);
+
+    // Confirm fail if file exists
+    int bad_fd = open_broker.Open(tempfile_name, O_RDWR | O_CREAT | O_EXCL);
+    ASSERT_EQ(bad_fd, -EEXIST);
+
+    // Write to the descriptor opened by the broker.
+
+    ssize_t len = HANDLE_EINTR(write(fd, kTestText, sizeof(kTestText)));
+    ASSERT_EQ(len, static_cast<ssize_t>(sizeof(kTestText)));
+  }
+
+  int fd_check = open(tempfile_name, O_RDONLY);
+  ASSERT_GE(fd_check, 0);
+  {
+    base::ScopedFD scoped_fd(fd_check);
+    char buf[1024];
+    ssize_t len = HANDLE_EINTR(read(fd_check, buf, sizeof(buf)));
+
+    ASSERT_EQ(len, static_cast<ssize_t>(sizeof(kTestText)));
+    ASSERT_EQ(memcmp(kTestText, buf, sizeof(kTestText)), 0);
+  }
+}
+
+}  // namespace syscall_broker
 
 }  // namespace sandbox

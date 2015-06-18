@@ -108,13 +108,14 @@ def FetchGitRevision(directory):
   if not hsh:
     return None
   pos = ''
-  proc = RunGitCommand(directory, ['show', '-s', '--format=%B', 'HEAD'])
+  proc = RunGitCommand(directory, ['cat-file', 'commit', 'HEAD'])
   if proc:
     output = proc.communicate()[0]
     if proc.returncode == 0 and output:
       for line in reversed(output.splitlines()):
         if line.startswith('Cr-Commit-Position:'):
           pos = line.rsplit()[-1].strip()
+          break
   if not pos:
     return VersionInfo('git', hsh)
   return VersionInfo('git', '%s-%s' % (hsh, pos))

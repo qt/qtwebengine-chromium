@@ -22,8 +22,8 @@
 #define SpatialNavigation_h
 
 #include "core/dom/Node.h"
-#include "core/page/FocusType.h"
 #include "platform/geometry/LayoutRect.h"
+#include "public/platform/WebFocusType.h"
 
 #include <limits>
 
@@ -33,9 +33,9 @@ class LocalFrame;
 class HTMLAreaElement;
 class HTMLFrameOwnerElement;
 
-inline long long maxDistance()
+inline double maxDistance()
 {
-    return std::numeric_limits<long long>::max();
+    return std::numeric_limits<double>::max();
 }
 
 inline int fudgeFactor()
@@ -44,6 +44,7 @@ inline int fudgeFactor()
 }
 
 bool isSpatialNavigationEnabled(const LocalFrame*);
+bool spatialNavigationIgnoresEventHandlers(const LocalFrame*);
 
 // Spatially speaking, two given elements in a web page can be:
 // 1) Fully aligned: There is a full intersection between the rects, either
@@ -102,14 +103,13 @@ public:
         , focusableNode(nullptr)
         , enclosingScrollableBox(nullptr)
         , distance(maxDistance())
-        , alignment(None)
         , isOffscreen(true)
         , isOffscreenAfterScrolling(true)
     {
     }
 
-    FocusCandidate(Node*, FocusType);
-    explicit FocusCandidate(HTMLAreaElement*, FocusType);
+    FocusCandidate(Node*, WebFocusType);
+    explicit FocusCandidate(HTMLAreaElement*, WebFocusType);
     bool isNull() const { return !visibleNode; }
     bool inScrollableContainer() const { return visibleNode && enclosingScrollableBox; }
     bool isFrameOwnerElement() const { return visibleNode && visibleNode->isFrameOwnerElement(); }
@@ -121,26 +121,25 @@ public:
     RawPtrWillBeMember<Node> visibleNode;
     RawPtrWillBeMember<Node> focusableNode;
     RawPtrWillBeMember<Node> enclosingScrollableBox;
-    long long distance;
-    RectsAlignment alignment;
+    double distance;
     LayoutRect rect;
     bool isOffscreen;
     bool isOffscreenAfterScrolling;
 };
 
-bool hasOffscreenRect(Node*, FocusType = FocusTypeNone);
-bool scrollInDirection(LocalFrame*, FocusType);
-bool scrollInDirection(Node* container, FocusType);
-bool canScrollInDirection(const Node* container, FocusType);
-bool canScrollInDirection(const LocalFrame*, FocusType);
-bool canBeScrolledIntoView(FocusType, const FocusCandidate&);
+bool hasOffscreenRect(Node*, WebFocusType = WebFocusTypeNone);
+bool scrollInDirection(LocalFrame*, WebFocusType);
+bool scrollInDirection(Node* container, WebFocusType);
+bool canScrollInDirection(const Node* container, WebFocusType);
+bool canScrollInDirection(const LocalFrame*, WebFocusType);
+bool canBeScrolledIntoView(WebFocusType, const FocusCandidate&);
 bool areElementsOnSameLine(const FocusCandidate& firstCandidate, const FocusCandidate& secondCandidate);
-void distanceDataForNode(FocusType, const FocusCandidate& current, FocusCandidate&);
-Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(FocusType, Node*);
+void distanceDataForNode(WebFocusType, const FocusCandidate& current, FocusCandidate&);
+Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(WebFocusType, Node*);
 LayoutRect nodeRectInAbsoluteCoordinates(Node*, bool ignoreBorder = false);
 LayoutRect frameRectInAbsoluteCoordinates(LocalFrame*);
-LayoutRect virtualRectForDirection(FocusType, const LayoutRect& startingRect, LayoutUnit width = 0);
-LayoutRect virtualRectForAreaElementAndDirection(HTMLAreaElement&, FocusType);
+LayoutRect virtualRectForDirection(WebFocusType, const LayoutRect& startingRect, LayoutUnit width = 0);
+LayoutRect virtualRectForAreaElementAndDirection(HTMLAreaElement&, WebFocusType);
 HTMLFrameOwnerElement* frameOwnerElement(FocusCandidate&);
 
 } // namespace blink

@@ -38,7 +38,9 @@ class DriveApiUrlGenerator {
   GURL GetAppsDeleteUrl(const std::string& app_id) const;
 
   // Returns a URL to fetch a file metadata.
-  GURL GetFilesGetUrl(const std::string& file_id) const;
+  GURL GetFilesGetUrl(const std::string& file_id,
+                      bool use_internal_endpoint,
+                      const GURL& embed_origin) const;
 
   // Returns a URL to authorize an app to access a file.
   GURL GetFilesAuthorizeUrl(const std::string& file_id,
@@ -80,19 +82,40 @@ class DriveApiUrlGenerator {
   GURL GetChildrenDeleteUrl(const std::string& child_id,
                             const std::string& folder_id) const;
 
-  // Returns a URL to initiate uploading a new file.
+  // Returns a URL to initiate "resumable upload" of a new file that uploads
+  // chunked data by multiple HTTP posts.
   GURL GetInitiateUploadNewFileUrl(bool set_modified_date) const;
 
-  // Returns a URL to initiate uploading an existing file specified by
-  // |resource_id|.
+  // Returns a URL to initiate "resumable upload" of an existing file specified
+  // by |resource_id| that uploads chunked data by multiple HTTP posts.
   GURL GetInitiateUploadExistingFileUrl(const std::string& resource_id,
                                         bool set_modified_date) const;
+
+  // Returns a URL for "multipart upload" of a new file that sends both metadata
+  // and file content in a single HTTP post.
+  GURL GetMultipartUploadNewFileUrl(bool set_modified_date) const;
+
+  // Returns a URL for "multipart upload" of an existing file specified by
+  // |resource_id| that sends both metadata and file content in a single HTTP
+  // post.
+  GURL GetMultipartUploadExistingFileUrl(const std::string& resource_id,
+                                         bool set_modified_date) const;
 
   // Generates a URL for downloading a file.
   GURL GenerateDownloadFileUrl(const std::string& resource_id) const;
 
   // Generates a URL for adding permissions.
   GURL GetPermissionsInsertUrl(const std::string& resource_id) const;
+
+  // Generates a URL for a thumbnail with specified dimensions. Set |crop| to
+  // true to get a cropped thumbnail in the dimensions.
+  GURL GetThumbnailUrl(const std::string& resource_id,
+                       int width,
+                       int height,
+                       bool crop) const;
+
+  // Generates a URL for batch upload.
+  GURL GetBatchUploadUrl() const;
 
  private:
   const GURL base_url_;

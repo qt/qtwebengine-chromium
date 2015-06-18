@@ -20,11 +20,14 @@ action("generate_tracing_grd") {
     "$tracing_gen_dir/about_tracing.js",
   ]
   inputs = input_pages
-  outputs = [ tracing_grd ]
+  outputs = [
+    tracing_grd,
+  ]
 
   args = rebase_path(input_pages, target_gen_dir) + [
-    "--output", rebase_path(tracing_grd, root_build_dir),
-  ]
+           "--output",
+           rebase_path(tracing_grd, root_build_dir),
+         ]
 
   deps = [
     "//third_party/trace-viewer:generate_about_tracing",
@@ -41,9 +44,10 @@ grit("resources") {
   # resource_ids has an entry for our .grd file that looks like:
   # "<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.grd"
   # and what we pass here should make that resolve to our .grd file.
-  defines = [
-    "SHARED_INTERMEDIATE_DIR=" + rebase_path(root_gen_dir, root_build_dir),
-  ]
+  defines =
+      [ "SHARED_INTERMEDIATE_DIR=" + rebase_path(root_gen_dir, root_build_dir) ]
 
-  deps = [ ":generate_tracing_grd" ]
+  deps = [
+    ":generate_tracing_grd",
+  ]
 }

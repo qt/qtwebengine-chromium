@@ -226,7 +226,7 @@ class VIEWS_EXPORT FocusManager {
   void BlurTextInputClient(View* view);
 
   // Disable shortcut handling.
-  static void set_shortcut_handling_suspended(bool suspended) {
+  void set_shortcut_handling_suspended(bool suspended) {
     shortcut_handling_suspended_ = suspended;
   }
   // Returns whether shortcut handling is currently suspended.
@@ -287,7 +287,7 @@ class VIEWS_EXPORT FocusManager {
   // keyboard accelerator, or NULL if no view is registered for that keyboard
   // accelerator.
   ui::AcceleratorTarget* GetCurrentTargetForAccelerator(
-      const ui::Accelerator& accelertor) const;
+      const ui::Accelerator& accelerator) const;
 
   // Whether the given |accelerator| has a priority handler associated with it.
   bool HasPriorityHandler(const ui::Accelerator& accelerator) const;
@@ -344,9 +344,6 @@ class VIEWS_EXPORT FocusManager {
   // and should not be processed further.
   bool ProcessArrowKeyTraversal(const ui::KeyEvent& event);
 
-  // Keeps track of whether shortcut handling is currently suspended.
-  static bool shortcut_handling_suspended_;
-
   // Whether arrow key traversal is enabled.
   static bool arrow_key_traversal_enabled_;
 
@@ -362,6 +359,9 @@ class VIEWS_EXPORT FocusManager {
 
   // The AcceleratorManager this FocusManager is associated with.
   scoped_ptr<ui::AcceleratorManager> accelerator_manager_;
+
+  // Keeps track of whether shortcut handling is currently suspended.
+  bool shortcut_handling_suspended_;
 
   // The storage id used in the ViewStorage to store/restore the view that last
   // had focus.

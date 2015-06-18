@@ -32,6 +32,8 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
 #include "public/platform/WebThread.h"
+#include "public/platform/WebTraceLocation.h"
+#include "public/platform/WebUnitTestSupport.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -136,7 +138,7 @@ protected:
         manager.init(10, 10);
         {
             OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
-            RefPtr<SkSurface> surface1 = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+            RefPtr<SkSurface> surface1 = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
             OwnPtr<SkDeferredCanvas> canvas1 = adoptPtr(SkDeferredCanvas::Create(surface1.get()));
             FakeCanvas2DLayerBridgePtr layer1(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas1.release(), surface1.release())));
             EXPECT_EQ((size_t)0, manager.m_bytesAllocated);
@@ -149,7 +151,7 @@ protected:
             layer1->storageAllocatedForRecordingChanged(1);
             EXPECT_EQ((size_t)1, manager.m_bytesAllocated);
             {
-                RefPtr<SkSurface> surface2 = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+                RefPtr<SkSurface> surface2 = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
                 OwnPtr<SkDeferredCanvas> canvas2 = adoptPtr(SkDeferredCanvas::Create(surface2.get()));
                 FakeCanvas2DLayerBridgePtr layer2(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas2.release(), surface2.release())));
                 EXPECT_EQ((size_t)1, manager.m_bytesAllocated);
@@ -167,7 +169,7 @@ protected:
         OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
         OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
         FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         layer->fakeFreeableBytes(10);
@@ -185,7 +187,7 @@ protected:
         OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(20, 5);
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
         OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
         FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         layer->fakeFreeableBytes(5);
@@ -205,7 +207,7 @@ protected:
         OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
         OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
         FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         EXPECT_FALSE(manager.isInList(layer.get()));
@@ -220,7 +222,7 @@ protected:
         OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
         OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
         FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         layer->fakeFreeableBytes(1); // Not enough freeable bytes, will cause aggressive eviction by flushing
@@ -238,14 +240,15 @@ protected:
     {
         FloatRect invalidationRect(0, 0, 1, 1);
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
+        layer->didDraw();
+        EXPECT_TRUE(Canvas2DLayerManager::get().m_taskObserverActive);
         layer->finalizeFrame(invalidationRect);
         layer->storageAllocatedForRecordingChanged(1);
-        EXPECT_TRUE(Canvas2DLayerManager::get().m_taskObserverActive);
         if (skipCommands) {
             layer->finalizeFrame(invalidationRect);
             layer->skippedPendingDrawCommands();
         }
-        Platform::current()->currentThread()->exitRunLoop();
+        Platform::current()->unitTestSupport()->exitRunLoop(); // FIXME: remove this and use runPendingTasks() instead.
     }
 
     class DeferredFrameTestTask : public WebThread::Task {
@@ -271,35 +274,35 @@ protected:
     {
         OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager::get().init(10, 10);
-        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(1, 1));
         OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
         FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
-        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
-        Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(FROM_HERE, new DeferredFrameTestTask(this, layer.get(), true));
+        Platform::current()->unitTestSupport()->enterRunLoop();
         // Verify that didProcessTask was called upon completion
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         // Verify that no flush was performed because frame is fresh
         EXPECT_EQ(0, layer->m_flushCount);
 
         // Verify that no flushes are triggered as long as frame are fresh
-        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
-        Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(FROM_HERE, new DeferredFrameTestTask(this, layer.get(), true));
+        Platform::current()->unitTestSupport()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(0, layer->m_flushCount);
 
-        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
-        Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(FROM_HERE, new DeferredFrameTestTask(this, layer.get(), true));
+        Platform::current()->unitTestSupport()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(0, layer->m_flushCount);
 
         // Verify that a flush is triggered when queue is accumulating a multi-frame backlog.
-        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), false));
-        Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(FROM_HERE, new DeferredFrameTestTask(this, layer.get(), false));
+        Platform::current()->unitTestSupport()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(1, layer->m_flushCount);
 
-        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), false));
-        Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(FROM_HERE, new DeferredFrameTestTask(this, layer.get(), false));
+        Platform::current()->unitTestSupport()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(2, layer->m_flushCount);
     }

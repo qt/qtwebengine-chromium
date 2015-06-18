@@ -180,7 +180,7 @@ class ContentShellDriverDetails():
         return '/data/local/tmp/content-shell-crash-dumps'
 
     def additional_command_line_flags(self, use_breakpad):
-        flags = ['--dump-render-tree', '--encode-binary']
+        flags = ['--run-layout-test', '--encode-binary']
         if use_breakpad:
             flags.extend(['--enable-crash-reporter', '--crash-dumps-dir=%s' % self.device_crash_dumps_directory()])
         return flags
@@ -257,9 +257,7 @@ class AndroidCommands(object):
         result = self._executive.run_command(self.adb_command() + command, error_handler=error_handler, debug_logging=self._debug_logging)
 
         # We limit the length to avoid outputting too verbose commands, such as "adb logcat".
-        # Also make sure that the output is ascii-encoded to avoid confusing other parts of
-        # the system.
-        self._log_debug('Run adb result: ' + result[:80].encode('ascii', errors='replace'))
+        self._log_debug('Run adb result: ' + result[:80])
         return result
 
     def get_serial(self):
@@ -462,7 +460,7 @@ class AndroidPort(base.Port):
     def path_to_md5sum_host(self):
         return self._build_path(MD5SUM_HOST_FILE_NAME)
 
-    def additional_drt_flag(self):
+    def additional_driver_flag(self):
         return self._driver_details.additional_command_line_flags(use_breakpad=not self.get_option('disable_breakpad'))
 
     def default_timeout_ms(self):

@@ -16,8 +16,8 @@
 #include "ppapi/host/resource_host.h"
 #include "third_party/WebKit/public/platform/WebCanvas.h"
 #include "ui/events/latency_info.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 class SharedBitmap;
@@ -78,7 +78,6 @@ class CONTENT_EXPORT PepperGraphics2DHost
   // Notifications about the view's progress painting.  See PluginInstance.
   // These messages are used to send Flush callbacks to the plugin.
   void ViewInitiatedPaint();
-  void ViewFlushedPaint();
 
   void SetScale(float scale);
   float GetScale() const;

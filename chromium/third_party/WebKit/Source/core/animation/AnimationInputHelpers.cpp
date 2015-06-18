@@ -5,6 +5,7 @@
 #include "config.h"
 #include "core/animation/AnimationInputHelpers.h"
 
+#include "core/css/CSSValueList.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/CSSToStyleMap.h"
 #include "wtf/text/StringBuilder.h"
@@ -33,8 +34,10 @@ PassRefPtr<TimingFunction> AnimationInputHelpers::parseTimingFunction(const Stri
         return nullptr;
 
     RefPtrWillBeRawPtr<CSSValue> value = CSSParser::parseSingleValue(CSSPropertyTransitionTimingFunction, string);
-    if (!value || value->isInitialValue() || value->isInheritedValue())
+    if (!value || !value->isValueList()) {
+        ASSERT(!value || value->isCSSWideKeyword());
         return nullptr;
+    }
     CSSValueList* valueList = toCSSValueList(value.get());
     if (valueList->length() > 1)
         return nullptr;

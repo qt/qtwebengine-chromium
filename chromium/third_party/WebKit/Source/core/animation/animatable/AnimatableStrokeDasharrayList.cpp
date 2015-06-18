@@ -31,41 +31,39 @@
 #include "config.h"
 #include "core/animation/animatable/AnimatableStrokeDasharrayList.h"
 
-#include "bindings/core/v8/ExceptionStatePlaceholder.h"
-#include "core/animation/animatable/AnimatableSVGLength.h"
+#include "core/animation/animatable/AnimatableLength.h"
 
 namespace blink {
 
-AnimatableStrokeDasharrayList::AnimatableStrokeDasharrayList(PassRefPtr<SVGLengthList> passLengths)
+AnimatableStrokeDasharrayList::AnimatableStrokeDasharrayList(PassRefPtr<SVGDashArray> passLengths, float zoom)
 {
-    RefPtr<SVGLengthList> lengths = passLengths;
-    SVGLengthList::ConstIterator it = lengths->begin();
-    SVGLengthList::ConstIterator itEnd = lengths->end();
-    for (; it != itEnd; ++it)
-        m_values.append(AnimatableSVGLength::create(*it));
+    RefPtr<SVGDashArray> lengths = passLengths;
+    for (const Length& dashLength : lengths->vector())
+        m_values.append(AnimatableLength::create(dashLength, zoom));
 }
 
-PassRefPtr<SVGLengthList> AnimatableStrokeDasharrayList::toSVGLengthList() const
+PassRefPtr<SVGDashArray> AnimatableStrokeDasharrayList::toSVGDashArray(float zoom) const
 {
-    RefPtr<SVGLengthList> lengths = SVGLengthList::create();
-    for (size_t i = 0; i < m_values.size(); ++i) {
-        RefPtr<SVGLength> length = toAnimatableSVGLength(m_values[i].get())->toSVGLength()->clone();
-        if (length->valueInSpecifiedUnits() < 0)
-            length->setValueInSpecifiedUnits(0);
-        lengths->append(length);
-    }
+    RefPtr<SVGDashArray> lengths = SVGDashArray::create();
+    for (const auto& dashLength : m_values)
+        lengths->append(toAnimatableLength(dashLength.get())->length(zoom, ValueRangeNonNegative));
     return lengths.release();
 }
 
 bool AnimatableStrokeDasharrayList::usesDefaultInterpolationWith(const AnimatableValue* value) const
 {
-    return false;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>> from = m_values;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>> to = toAnimatableStrokeDasharrayList(value)->m_values;
+    return !from.isEmpty() && !to.isEmpty() && AnimatableRepeatable::usesDefaultInterpolationWith(value);
 }
 
 PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const AnimatableValue* value, double fraction) const
 {
-    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > from = m_values;
-    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > to = toAnimatableStrokeDasharrayList(value)->m_values;
+    if (usesDefaultInterpolationWith(value))
+        return defaultInterpolateTo(this, value, fraction);
+
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>> from = m_values;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>> to = toAnimatableStrokeDasharrayList(value)->m_values;
 
     // The spec states that if the sum of all values is zero, this should be
     // treated like a value of 'none', which means that a solid line is drawn.
@@ -75,7 +73,7 @@ PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpola
     if (from.isEmpty() && to.isEmpty())
         return takeConstRef(this);
     if (from.isEmpty() || to.isEmpty()) {
-        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(AnimatableSVGLength, zeroPixels, (AnimatableSVGLength::create(SVGLength::create())));
+        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(AnimatableLength, zeroPixels, (AnimatableLength::create(Length(Fixed), 1)));
         if (from.isEmpty()) {
             from.append(zeroPixels);
             from.append(zeroPixels);
@@ -86,13 +84,13 @@ PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpola
         }
     }
 
-    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > interpolatedValues;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>> interpolatedValues;
     bool success = interpolateLists(from, to, fraction, interpolatedValues);
     ASSERT_UNUSED(success, success);
     return adoptRefWillBeNoop(new AnimatableStrokeDasharrayList(interpolatedValues));
 }
 
-void AnimatableStrokeDasharrayList::trace(Visitor* visitor)
+DEFINE_TRACE(AnimatableStrokeDasharrayList)
 {
     AnimatableRepeatable::trace(visitor);
 }

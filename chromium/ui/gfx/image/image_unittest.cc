@@ -14,7 +14,7 @@
 #include "base/mac/foundation_util.h"
 #include "skia/ext/skia_utils_ios.h"
 #elif defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
+#include "base/mac/foundation_util.h"
 #include "skia/ext/skia_utils_mac.h"
 #endif
 
@@ -676,7 +676,7 @@ TEST_F(ImageTest, OwnershipTest) {
 }
 
 // Integration tests with UI toolkit frameworks require linking against the
-// Views library and cannot be here (ui_unittests doesn't include it). They
+// Views library and cannot be here (ui_base_unittests doesn't include it). They
 // instead live in /chrome/browser/ui/tests/ui_gfx_image_unittest.cc.
 
 }  // namespace

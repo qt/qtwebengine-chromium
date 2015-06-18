@@ -31,13 +31,13 @@
 #ifndef WebDocument_h
 #define WebDocument_h
 
-#include "../platform/WebReferrerPolicy.h"
-#include "../platform/WebVector.h"
 #include "WebDraggableRegion.h"
 #include "WebExceptionCode.h"
 #include "WebFrame.h"
 #include "WebNode.h"
-#include "WebSecurityOrigin.h"
+#include "public/platform/WebReferrerPolicy.h"
+#include "public/platform/WebSecurityOrigin.h"
+#include "public/platform/WebVector.h"
 
 #if BLINK_IMPLEMENTATION
 namespace WTF { template <typename T> class PassRefPtr; }
@@ -45,7 +45,7 @@ namespace WTF { template <typename T> class PassRefPtr; }
 
 namespace v8 {
 class Value;
-template <class T> class Handle;
+template <class T> class Local;
 }
 
 namespace blink {
@@ -57,7 +57,6 @@ class WebDocumentType;
 class WebElement;
 class WebFormElement;
 class WebElementCollection;
-class WebNodeList;
 class WebString;
 class WebURL;
 
@@ -77,6 +76,7 @@ public:
     BLINK_EXPORT WebURL url() const;
     // Note: Security checks should use the securityOrigin(), not url().
     BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
+    BLINK_EXPORT bool isPrivilegedContext(WebString& errorMessage) const;
 
     BLINK_EXPORT WebString encoding() const;
     BLINK_EXPORT WebString contentLanguage() const;
@@ -101,6 +101,7 @@ public:
     BLINK_EXPORT WebElement body() const;
     BLINK_EXPORT WebElement head();
     BLINK_EXPORT WebString title() const;
+    BLINK_EXPORT WebString contentAsTextForTesting() const;
     BLINK_EXPORT WebElementCollection all();
     BLINK_EXPORT void forms(WebVector<WebFormElement>&) const;
     BLINK_EXPORT void images(WebVector<WebElement>&);
@@ -119,8 +120,11 @@ public:
     BLINK_EXPORT WebSize minimumScrollOffset() const;
     // Shorthand of frame()->maximumScrollOffset().
     BLINK_EXPORT WebSize maximumScrollOffset() const;
-    BLINK_EXPORT void setIsTransitionDocument();
-    BLINK_EXPORT void beginExitTransition(const WebString& cssSelector);
+    BLINK_EXPORT void setIsTransitionDocument(bool);
+    BLINK_EXPORT void beginExitTransition(const WebString& cssSelector, bool exitToNativeApp);
+    BLINK_EXPORT void revertExitTransition();
+    BLINK_EXPORT void hideTransitionElements(const WebString& cssSelector);
+    BLINK_EXPORT void showTransitionElements(const WebString& cssSelector);
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -141,9 +145,11 @@ public:
 
     BLINK_EXPORT WebVector<WebDraggableRegion> draggableRegions() const;
 
-    BLINK_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
+    BLINK_EXPORT v8::Local<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Local<v8::Value> options, WebExceptionCode&);
 
     BLINK_EXPORT WebURL manifestURL() const;
+
+    BLINK_EXPORT WebURL defaultPresentationURL() const;
 
 #if BLINK_IMPLEMENTATION
     WebDocument(const PassRefPtrWillBeRawPtr<Document>&);

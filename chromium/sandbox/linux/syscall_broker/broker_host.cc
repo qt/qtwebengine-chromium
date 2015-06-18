@@ -20,9 +20,9 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/third_party/valgrind/valgrind.h"
-#include "sandbox/linux/services/linux_syscalls.h"
 #include "sandbox/linux/syscall_broker/broker_common.h"
 #include "sandbox/linux/syscall_broker/broker_policy.h"
+#include "sandbox/linux/system_headers/linux_syscalls.h"
 
 namespace sandbox {
 
@@ -38,8 +38,13 @@ bool IsRunningOnValgrind() {
 // make a direct system call since we want to keep in control of the broker
 // process' system calls profile to be able to loosely sandbox it.
 int sys_open(const char* pathname, int flags) {
-  // Always pass a defined |mode| in case flags mistakenly contains O_CREAT.
-  const int mode = 0;
+  // Hardcode mode to rw------- when creating files.
+  int mode;
+  if (flags & O_CREAT) {
+    mode = 0600;
+  } else {
+    mode = 0;
+  }
   if (IsRunningOnValgrind()) {
     // Valgrind does not support AT_FDCWD, just use libc's open() in this case.
     return open(pathname, flags, mode);
@@ -59,8 +64,9 @@ void OpenFileForIPC(const BrokerPolicy& policy,
   DCHECK(write_pickle);
   DCHECK(opened_files);
   const char* file_to_open = NULL;
+  bool unlink_after_open = false;
   const bool safe_to_open_file = policy.GetFileNameIfAllowedToOpen(
-      requested_filename.c_str(), flags, &file_to_open);
+      requested_filename.c_str(), flags, &file_to_open, &unlink_after_open);
 
   if (safe_to_open_file) {
     CHECK(file_to_open);
@@ -69,6 +75,9 @@ void OpenFileForIPC(const BrokerPolicy& policy,
       write_pickle->WriteInt(-errno);
     } else {
       // Success.
+      if (unlink_after_open) {
+        unlink(file_to_open);
+      }
       opened_files->push_back(opened_fd);
       write_pickle->WriteInt(0);
     }
@@ -101,21 +110,18 @@ void AccessFileForIPC(const BrokerPolicy& policy,
   }
 }
 
-// Handle a |command_type| request contained in |read_pickle| and send the reply
+// Handle a |command_type| request contained in |iter| and send the reply
 // on |reply_ipc|.
 // Currently COMMAND_OPEN and COMMAND_ACCESS are supported.
 bool HandleRemoteCommand(const BrokerPolicy& policy,
                          IPCCommand command_type,
                          int reply_ipc,
-                         const Pickle& read_pickle,
                          PickleIterator iter) {
   // Currently all commands have two arguments: filename and flags.
   std::string requested_filename;
   int flags = 0;
-  if (!read_pickle.ReadString(&iter, &requested_filename) ||
-      !read_pickle.ReadInt(&iter, &flags)) {
+  if (!iter.ReadString(&requested_filename) || !iter.ReadInt(&flags))
     return false;
-  }
 
   Pickle write_pickle;
   std::vector<int> opened_files;
@@ -154,8 +160,9 @@ bool HandleRemoteCommand(const BrokerPolicy& policy,
 
 }  // namespace
 
-BrokerHost::BrokerHost(const BrokerPolicy& broker_policy, int ipc_channel)
-    : broker_policy_(broker_policy), ipc_channel_(ipc_channel) {
+BrokerHost::BrokerHost(const BrokerPolicy& broker_policy,
+                       BrokerChannel::EndPoint ipc_channel)
+    : broker_policy_(broker_policy), ipc_channel_(ipc_channel.Pass()) {
 }
 
 BrokerHost::~BrokerHost() {
@@ -165,17 +172,16 @@ BrokerHost::~BrokerHost() {
 // A request should have a file descriptor attached on which we will reply and
 // that we will then close.
 // A request should start with an int that will be used as the command type.
-bool BrokerHost::HandleRequest() const {
+BrokerHost::RequestStatus BrokerHost::HandleRequest() const {
   ScopedVector<base::ScopedFD> fds;
   char buf[kMaxMessageLength];
   errno = 0;
   const ssize_t msg_len =
-      UnixDomainSocket::RecvMsg(ipc_channel_, buf, sizeof(buf), &fds);
+      UnixDomainSocket::RecvMsg(ipc_channel_.get(), buf, sizeof(buf), &fds);
 
   if (msg_len == 0 || (msg_len == -1 && errno == ECONNRESET)) {
     // EOF from the client, or the client died, we should die.
-    // TODO(jln): change this.
-    _exit(0);
+    return RequestStatus::LOST_CLIENT;
   }
 
   // The client should send exactly one file descriptor, on which we
@@ -183,7 +189,7 @@ bool BrokerHost::HandleRequest() const {
   // TODO(mdempsky): ScopedVector doesn't have 'at()', only 'operator[]'.
   if (msg_len < 0 || fds.size() != 1 || fds[0]->get() < 0) {
     PLOG(ERROR) << "Error reading message from the client";
-    return false;
+    return RequestStatus::FAILURE;
   }
 
   base::ScopedFD temporary_ipc(fds[0]->Pass());
@@ -191,29 +197,33 @@ bool BrokerHost::HandleRequest() const {
   Pickle pickle(buf, msg_len);
   PickleIterator iter(pickle);
   int command_type;
-  if (pickle.ReadInt(&iter, &command_type)) {
-    bool r = false;
+  if (iter.ReadInt(&command_type)) {
+    bool command_handled = false;
     // Go through all the possible IPC messages.
     switch (command_type) {
       case COMMAND_ACCESS:
       case COMMAND_OPEN:
         // We reply on the file descriptor sent to us via the IPC channel.
-        r = HandleRemoteCommand(broker_policy_,
-                                static_cast<IPCCommand>(command_type),
-                                temporary_ipc.get(),
-                                pickle,
-                                iter);
+        command_handled = HandleRemoteCommand(
+            broker_policy_, static_cast<IPCCommand>(command_type),
+            temporary_ipc.get(), iter);
         break;
       default:
         NOTREACHED();
-        r = false;
         break;
     }
-    return r;
+
+    if (command_handled) {
+      return RequestStatus::SUCCESS;
+    } else {
+      return RequestStatus::FAILURE;
+    }
+
+    NOTREACHED();
   }
 
   LOG(ERROR) << "Error parsing IPC request";
-  return false;
+  return RequestStatus::FAILURE;
 }
 
 }  // namespace syscall_broker

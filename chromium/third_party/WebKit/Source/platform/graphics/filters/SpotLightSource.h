@@ -24,6 +24,7 @@
 #define SpotLightSource_h
 
 #include "platform/graphics/filters/LightSource.h"
+#include <algorithm>
 
 namespace blink {
 
@@ -52,9 +53,6 @@ public:
 
     virtual bool setSpecularExponent(float) override;
     virtual bool setLimitingConeAngle(float) override;
-
-    virtual void initPaintingData(PaintingData&) const override;
-    virtual void updatePaintingData(PaintingData&, int x, int y, float z) const override;
 
     virtual TextStream& externalRepresentation(TextStream&) const override;
 

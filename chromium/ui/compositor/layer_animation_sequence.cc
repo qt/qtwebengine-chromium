@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iterator>
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/animation/animation_id_provider.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_element.h"
@@ -228,7 +228,7 @@ void LayerAnimationSequence::OnScheduled() {
 
 void LayerAnimationSequence::OnAnimatorDestroyed() {
   if (observers_.might_have_observers()) {
-    ObserverListBase<LayerAnimationObserver>::Iterator it(observers_);
+    ObserverListBase<LayerAnimationObserver>::Iterator it(&observers_);
     LayerAnimationObserver* obs;
     while ((obs = it.GetNext()) != NULL) {
       if (!obs->RequiresNotificationWhenAnimatorDestroyed()) {

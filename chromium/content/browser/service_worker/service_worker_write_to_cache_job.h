@@ -48,6 +48,8 @@ class CONTENT_EXPORT ServiceWorkerWriteToCacheJob
                            UpdateBefore24Hours);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateAfter24Hours);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           UpdateForceBypassCache);
 
   ~ServiceWorkerWriteToCacheJob() override;
 
@@ -93,7 +95,10 @@ class CONTENT_EXPORT ServiceWorkerWriteToCacheJob
   void OnResponseStarted(net::URLRequest* request) override;
   void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
 
-  void AsyncNotifyDoneHelper(const net::URLRequestStatus& status);
+  bool CheckPathRestriction(net::URLRequest* request);
+
+  void AsyncNotifyDoneHelper(const net::URLRequestStatus& status,
+                             const std::string& status_message);
 
   ResourceType resource_type_;  // Differentiate main script and imports
   scoped_refptr<net::IOBuffer> io_buffer_;

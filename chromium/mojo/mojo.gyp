@@ -4,7 +4,7 @@
 
 {
   'includes': [
-    'mojo_variables.gypi',
+    '../third_party/mojo/mojo_variables.gypi',
   ],
   'targets': [
     {
@@ -12,14 +12,9 @@
       'target_name': 'mojo',
       'type': 'none',
       'dependencies': [
-        'edk/mojo_edk.gyp:mojo_edk',
         'mojo_base.gyp:mojo_base',
-        'mojo_geometry_converters.gyp:mojo_geometry_lib',
-        'mojo_input_events_converters.gyp:mojo_input_events_lib',
-        'mojo_surface_converters.gyp:mojo_surfaces_lib',
-        'mojo_surface_converters.gyp:mojo_surfaces_lib_unittests',
-        'services/public/mojo_services_public.gyp:mojo_services_public',
-        'public/mojo_public.gyp:mojo_public',
+        '../third_party/mojo/mojo_edk_tests.gyp:mojo_edk_tests',
+        '../third_party/mojo/mojo_public.gyp:mojo_public',
       ],
     },
   ]

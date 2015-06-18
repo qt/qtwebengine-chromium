@@ -24,9 +24,9 @@
 #include "config.h"
 #include "core/fetch/Resource.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/fetch/CachedMetadata.h"
 #include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
@@ -86,7 +86,7 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
             return false;
     }
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(headerPrefixesToIgnoreAfterRevalidation); i++) {
-        if (header.startsWith(headerPrefixesToIgnoreAfterRevalidation[i], false))
+        if (header.startsWith(headerPrefixesToIgnoreAfterRevalidation[i], TextCaseInsensitive))
             return false;
     }
     return true;
@@ -94,6 +94,48 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
 
 DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, cachedResourceLeakCounter, ("Resource"));
 unsigned Resource::s_instanceCount = 0;
+
+class Resource::CacheHandler : public CachedMetadataHandler {
+public:
+    static PassOwnPtr<CacheHandler> create(Resource* resource)
+    {
+        return adoptPtr(new CacheHandler(resource));
+    }
+    ~CacheHandler() override { }
+    void setCachedMetadata(unsigned, const char*, size_t, CacheType) override;
+    void clearCachedMetadata(CacheType) override;
+    CachedMetadata* cachedMetadata(unsigned) const override;
+    String encoding() const override;
+
+private:
+    explicit CacheHandler(Resource*);
+    Resource* m_resource;
+};
+
+Resource::CacheHandler::CacheHandler(Resource* resource)
+    : m_resource(resource)
+{
+}
+
+void Resource::CacheHandler::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, CacheType type)
+{
+    m_resource->setCachedMetadata(dataTypeID, data, size, type);
+}
+
+void Resource::CacheHandler::clearCachedMetadata(CacheType type)
+{
+    m_resource->clearCachedMetadata(type);
+}
+
+CachedMetadata* Resource::CacheHandler::cachedMetadata(unsigned dataTypeID) const
+{
+    return m_resource->cachedMetadata(dataTypeID);
+}
+
+String Resource::CacheHandler::encoding() const
+{
+    return m_resource->encoding();
+}
 
 Resource::Resource(const ResourceRequest& request, Type type)
     : m_resourceRequest(request)
@@ -128,6 +170,10 @@ Resource::Resource(const ResourceRequest& request, Type type)
 #endif
     memoryCache()->registerLiveResource(*this);
 
+    // Currently we support the metadata caching only for HTTP family.
+    if (m_resourceRequest.url().protocolIsInHTTPFamily())
+        m_cacheHandler = CacheHandler::create(this);
+
     if (!m_resourceRequest.url().hasFragmentIdentifier())
         return;
     KURL urlForCache = MemoryCache::removeFragmentIdentifierIfNeeded(m_resourceRequest.url());
@@ -158,26 +204,15 @@ void Resource::dispose()
 {
 }
 
-void Resource::trace(Visitor* visitor)
+DEFINE_TRACE(Resource)
 {
     visitor->trace(m_loader);
     visitor->trace(m_resourceToRevalidate);
     visitor->trace(m_proxyResource);
 }
 
-void Resource::failBeforeStarting()
-{
-    WTF_LOG(ResourceLoading, "Cannot start loading '%s'", url().string().latin1().data());
-    error(Resource::LoadError);
-}
-
 void Resource::load(ResourceFetcher* fetcher, const ResourceLoaderOptions& options)
 {
-    if (!fetcher->frame()) {
-        failBeforeStarting();
-        return;
-    }
-
     m_options = options;
     m_loading = true;
 
@@ -274,15 +309,21 @@ void Resource::finish()
         m_status = Cached;
 }
 
-bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin)
+bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin) const
 {
     String ignoredErrorDescription;
     return passesAccessControlCheck(securityOrigin, ignoredErrorDescription);
 }
 
-bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& errorDescription)
+bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& errorDescription) const
 {
     return blink::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
+}
+
+bool Resource::isEligibleForIntegrityCheck(SecurityOrigin* securityOrigin) const
+{
+    String errorDescription;
+    return securityOrigin->canRequest(resourceRequest().url()) || passesAccessControlCheck(securityOrigin, errorDescription);
 }
 
 static double currentAge(const ResourceResponse& response, double responseTimestamp)
@@ -295,6 +336,11 @@ static double currentAge(const ResourceResponse& response, double responseTimest
     double correctedReceivedAge = std::isfinite(ageValue) ? std::max(apparentAge, ageValue) : apparentAge;
     double residentTime = currentTime() - responseTimestamp;
     return correctedReceivedAge + residentTime;
+}
+
+double Resource::currentAge() const
+{
+    return blink::currentAge(m_response, m_responseTimestamp);
 }
 
 static double freshnessLifetime(ResourceResponse& response, double responseTimestamp)
@@ -324,6 +370,16 @@ static double freshnessLifetime(ResourceResponse& response, double responseTimes
         return (creationTime - lastModifiedValue) * 0.1;
     // If no cache headers are present, the specification leaves the decision to the UA. Other browsers seem to opt for 0.
     return 0;
+}
+
+double Resource::freshnessLifetime()
+{
+    return blink::freshnessLifetime(m_response, m_responseTimestamp);
+}
+
+double Resource::stalenessLifetime()
+{
+    return m_response.cacheControlStaleWhileRevalidate();
 }
 
 static bool canUseResponse(ResourceResponse& response, double responseTimestamp)
@@ -412,7 +468,12 @@ void Resource::setSerializedCachedMetadata(const char* data, size_t size)
     m_cachedMetadata = CachedMetadata::deserialize(data, size);
 }
 
-void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, MetadataCacheType cacheType)
+CachedMetadataHandler* Resource::cacheHandler()
+{
+    return m_cacheHandler.get();
+}
+
+void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, CachedMetadataHandler::CacheType cacheType)
 {
     // Currently, only one type of cached metadata per resource is supported.
     // If the need arises for multiple types of metadata per resource this could
@@ -421,15 +482,23 @@ void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t s
 
     m_cachedMetadata = CachedMetadata::create(dataTypeID, data, size);
 
-    if (cacheType == SendToPlatform) {
+    // We don't support sending the metadata to the platform when the response
+    // was fetched via a ServiceWorker to prevent an attacker's Service Worker
+    // from poisoning the metadata cache.
+    // FIXME: Support sending the metadata even if the response was fetched via
+    // a ServiceWorker. https://crbug.com/448706
+    if (cacheType == CachedMetadataHandler::SendToPlatform && !m_response.wasFetchedViaServiceWorker()) {
         const Vector<char>& serializedData = m_cachedMetadata->serialize();
-        blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
+        Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
     }
 }
 
-void Resource::clearCachedMetadata()
+void Resource::clearCachedMetadata(CachedMetadataHandler::CacheType cacheType)
 {
     m_cachedMetadata.clear();
+
+    if (cacheType == CachedMetadataHandler::SendToPlatform)
+        Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), 0, 0);
 }
 
 bool Resource::canDelete() const
@@ -1012,4 +1081,4 @@ const char* ResourceTypeName(Resource::Type type)
 }
 #endif // !LOG_DISABLED
 
-}
+} // namespace blink

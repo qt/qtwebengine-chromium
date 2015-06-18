@@ -30,16 +30,10 @@
 
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/stream.h"
+#include "webrtc/common_video/interface/video_frame_buffer.h"
+#include "webrtc/common_video/rotation.h"
 
 namespace cricket {
-
-// Simple rotation constants.
-enum {
-  ROTATION_0 = 0,
-  ROTATION_90 = 90,
-  ROTATION_180 = 180,
-  ROTATION_270 = 270
-};
 
 // Represents a YUV420 (a.k.a. I420) video frame.
 class VideoFrame {
@@ -48,21 +42,51 @@ class VideoFrame {
   virtual ~VideoFrame() {}
 
   virtual bool InitToBlack(int w, int h, size_t pixel_width,
-                           size_t pixel_height, int64 elapsed_time,
-                           int64 time_stamp) = 0;
+                           size_t pixel_height, int64_t elapsed_time,
+                           int64_t time_stamp) = 0;
   // Creates a frame from a raw sample with FourCC |format| and size |w| x |h|.
   // |h| can be negative indicating a vertically flipped image.
   // |dw| is destination width; can be less than |w| if cropping is desired.
   // |dh| is destination height, like |dw|, but must be a positive number.
   // Returns whether the function succeeded or failed.
-  virtual bool Reset(uint32 fourcc, int w, int h, int dw, int dh, uint8 *sample,
-                     size_t sample_size, size_t pixel_width,
-                     size_t pixel_height, int64 elapsed_time, int64 time_stamp,
-                     int rotation) = 0;
+
+  virtual bool Reset(uint32 fourcc,
+                     int w,
+                     int h,
+                     int dw,
+                     int dh,
+                     uint8* sample,
+                     size_t sample_size,
+                     size_t pixel_width,
+                     size_t pixel_height,
+                     int64_t elapsed_time,
+                     int64_t time_stamp,
+                     webrtc::VideoRotation rotation,
+                     bool apply_rotation) = 0;
+
+  // TODO(guoweis): Remove this once all external implementations are updated.
+  virtual bool Reset(uint32 fourcc,
+                     int w,
+                     int h,
+                     int dw,
+                     int dh,
+                     uint8* sample,
+                     size_t sample_size,
+                     size_t pixel_width,
+                     size_t pixel_height,
+                     int64_t elapsed_time,
+                     int64_t time_stamp,
+                     int rotation) {
+    return Reset(fourcc, w, h, dw, dh, sample, sample_size, pixel_width,
+                 pixel_height, elapsed_time, time_stamp,
+                 static_cast<webrtc::VideoRotation>(rotation), true);
+  }
 
   // Basic accessors.
+  // Note this is the width and height without rotation applied.
   virtual size_t GetWidth() const = 0;
   virtual size_t GetHeight() const = 0;
+
   size_t GetChromaWidth() const { return (GetWidth() + 1) / 2; }
   size_t GetChromaHeight() const { return (GetHeight() + 1) / 2; }
   size_t GetChromaSize() const { return GetUPitch() * GetChromaHeight(); }
@@ -83,18 +107,28 @@ class VideoFrame {
   // longer in use, so the underlying resource can be freed.
   virtual void* GetNativeHandle() const = 0;
 
+  // Returns the underlying video frame buffer. This function is ok to call
+  // multiple times, but the returned object will refer to the same memory.
+  virtual rtc::scoped_refptr<webrtc::VideoFrameBuffer> GetVideoFrameBuffer()
+      const = 0;
+
   // For retrieving the aspect ratio of each pixel. Usually this is 1x1, but
   // the aspect_ratio_idc parameter of H.264 can specify non-square pixels.
   virtual size_t GetPixelWidth() const = 0;
   virtual size_t GetPixelHeight() const = 0;
 
-  virtual int64 GetElapsedTime() const = 0;
-  virtual int64 GetTimeStamp() const = 0;
-  virtual void SetElapsedTime(int64 elapsed_time) = 0;
-  virtual void SetTimeStamp(int64 time_stamp) = 0;
+  virtual int64_t GetElapsedTime() const = 0;
+  virtual int64_t GetTimeStamp() const = 0;
+  virtual void SetElapsedTime(int64_t elapsed_time) = 0;
+  virtual void SetTimeStamp(int64_t time_stamp) = 0;
 
   // Indicates the rotation angle in degrees.
-  virtual int GetRotation() const = 0;
+  // TODO(guoweis): Remove this function, rename GetVideoRotation and remove the
+  // skeleton implementation of GetRotation once chrome is updated.
+  virtual int GetRotation() const { return GetVideoRotation(); }
+  virtual webrtc::VideoRotation GetVideoRotation() const {
+    return webrtc::kVideoRotation_0;
+  }
 
   // Make a shallow copy of the frame. The frame buffer itself is not copied.
   // Both the current and new VideoFrame will share a single reference-counted
@@ -102,9 +136,12 @@ class VideoFrame {
   virtual VideoFrame *Copy() const = 0;
 
   // Since VideoFrame supports shallow copy and the internal frame buffer might
-  // be shared, in case VideoFrame needs exclusive access of the frame buffer,
-  // user can call MakeExclusive() to make sure the frame buffer is exclusive
-  // accessable to the current object.  This might mean a deep copy of the frame
+  // be shared, this function can be used to check exclusive ownership.
+  virtual bool IsExclusive() const = 0;
+
+  // In case VideoFrame needs exclusive access of the frame buffer, user can
+  // call MakeExclusive() to make sure the frame buffer is exclusively
+  // accessible to the current object.  This might mean a deep copy of the frame
   // buffer if it is currently shared by other objects.
   virtual bool MakeExclusive() = 0;
 
@@ -112,7 +149,7 @@ class VideoFrame {
   // sufficient size. Returns the frame's actual size, regardless of whether
   // it was written or not (like snprintf). If there is insufficient space,
   // nothing is written.
-  virtual size_t CopyToBuffer(uint8 *buffer, size_t size) const = 0;
+  virtual size_t CopyToBuffer(uint8 *buffer, size_t size) const;
 
   // Writes the frame into the given planes, stretched to the given width and
   // height. The parameter "interpolate" controls whether to interpolate or just
@@ -125,19 +162,23 @@ class VideoFrame {
   // Writes the frame into the target VideoFrame.
   virtual void CopyToFrame(VideoFrame* target) const;
 
+  // Return a copy of frame which has its pending rotation applied. The
+  // ownership of the returned frame is held by this frame.
+  virtual const VideoFrame* GetCopyWithRotationApplied() const = 0;
+
   // Writes the frame into the given stream and returns the StreamResult.
   // See webrtc/base/stream.h for a description of StreamResult and error.
   // Error may be NULL. If a non-success value is returned from
   // StreamInterface::Write(), we immediately return with that value.
-  virtual rtc::StreamResult Write(rtc::StreamInterface *stream,
-                                        int *error);
+  virtual rtc::StreamResult Write(rtc::StreamInterface* stream,
+                                  int* error) const;
 
   // Converts the I420 data to RGB of a certain type such as ARGB and ABGR.
   // Returns the frame's actual size, regardless of whether it was written or
   // not (like snprintf). Parameters size and stride_rgb are in units of bytes.
   // If there is insufficient space, nothing is written.
   virtual size_t ConvertToRgbBuffer(uint32 to_fourcc, uint8 *buffer,
-                                    size_t size, int stride_rgb) const = 0;
+                                    size_t size, int stride_rgb) const;
 
   // Writes the frame into the given planes, stretched to the given width and
   // height. The parameter "interpolate" controls whether to interpolate or just
@@ -186,8 +227,9 @@ class VideoFrame {
  protected:
   // Creates an empty frame.
   virtual VideoFrame *CreateEmptyFrame(int w, int h, size_t pixel_width,
-                                       size_t pixel_height, int64 elapsed_time,
-                                       int64 time_stamp) const = 0;
+                                       size_t pixel_height,
+                                       int64_t elapsed_time,
+                                       int64_t time_stamp) const = 0;
 };
 
 }  // namespace cricket

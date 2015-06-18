@@ -76,6 +76,10 @@ struct PopupItem {
         , yOffset(0)
     {
     }
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "PopupItem " + label; }
+
     String label;
     Type type;
     int yOffset; // y offset of this item, relative to the top of the popup.
@@ -129,20 +133,17 @@ public:
     bool handleTouchEvent(const PlatformTouchEvent&);
     bool handleGestureEvent(const PlatformGestureEvent&);
 
-    // Closes the popup
-    void abandon();
+    // Closes the popup without accepting a selection.
+    void cancel();
 
     // Updates our internal list to match the client.
     void updateFromElement();
 
-    // Frees any allocated resources used in a particular popup session.
-    void clear();
-
-    // Sets the index of the option that is displayed in the <select> widget in the page
-    void setOriginalIndex(int);
+    // Sets the index of the option that is displayed in the popup.
+    void setSelectedIndex(int index) { m_selectedIndex = index; }
 
     // Gets the index of the item that the user is currently moused over or has
-    // selected with the keyboard. This is not the same as the original index,
+    // selected with the keyboard. This is not the same as the element value,
     // since the user has not yet accepted this input.
     int selectedIndex() const { return m_selectedIndex; }
 
@@ -159,9 +160,6 @@ public:
     // Computes the size of widget and children.
     virtual void layout() override;
 
-    // Returns whether the popup wants to process events for the passed key.
-    bool isInterestedInEventForKey(int keyCode);
-
     // Gets the height of a row.
     int getRowHeight(int index) const;
 
@@ -175,13 +173,14 @@ public:
 
     void disconnectClient() { m_popupClient = 0; }
 
-    const Vector<PopupItem*>& items() const { return m_items; }
-
     virtual int popupContentHeight() const override;
 
     static const int defaultMaxHeight;
 
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "PopupListBox"; }
 
 protected:
     virtual void invalidateScrollCornerRect(const IntRect&) override { }
@@ -193,7 +192,7 @@ private:
     PopupListBox(PopupMenuClient*, bool deviceSupportsTouch, PopupContainer*);
     virtual ~PopupListBox();
 
-    // Hides the popup. Other classes should not call this. Use abandon instead.
+    // Hides the popup. Other classes should not call this. Use cancel instead.
     void hidePopup();
 
     // Returns true if the selection can be changed to index.
@@ -245,7 +244,7 @@ private:
     int scrollY() const { return scrollPosition().y(); }
     void updateScrollbars(IntPoint desiredOffset);
     void setHasVerticalScrollbar(bool);
-    Scrollbar* scrollbarAtWindowPoint(const IntPoint& windowPoint);
+    Scrollbar* scrollbarAtRootFramePoint(const IntPoint& pointInRootFrame);
     IntRect contentsToWindow(const IntRect&) const;
     void setContentsSize(const IntSize&);
     void adjustScrollbarExistence();
@@ -256,20 +255,10 @@ private:
     // to make it easier to unambiguously touch them.
     bool m_deviceSupportsTouch;
 
-    // This is the index of the item marked as "selected" - i.e. displayed in
-    // the widget on the page.
-    int m_originalIndex;
-
     // This is the index of the item that the user is hovered over or has
     // selected using the keyboard in the list. They have not confirmed this
     // selection by clicking or pressing enter yet however.
     int m_selectedIndex;
-
-    // If >= 0, this is the index we should accept if the popup is "abandoned".
-    // This is used for keyboard navigation, where we want the
-    // selection to change immediately, and is only used if the settings
-    // acceptOnAbandon field is true.
-    int m_acceptedIndexOnAbandon;
 
     // This is the number of rows visible in the popup. The maximum number
     // visible at a time is defined as being kMaxVisibleRows. For a scrolled
@@ -283,7 +272,7 @@ private:
     int m_maxHeight;
 
     // A list of the options contained within the <select>
-    Vector<PopupItem*> m_items;
+    Vector<OwnPtr<PopupItem>> m_items;
 
     // The <select> PopupMenuClient that opened us.
     PopupMenuClient* m_popupClient;

@@ -28,6 +28,7 @@
 #ifndef WorkerScriptLoader_h
 #define WorkerScriptLoader_h
 
+#include "core/CoreExport.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "platform/network/ResourceRequest.h"
@@ -46,8 +47,8 @@ class ExecutionContext;
 class TextResourceDecoder;
 class WorkerScriptLoaderClient;
 
-class WorkerScriptLoader final : public RefCounted<WorkerScriptLoader>, public ThreadableLoaderClient {
-    WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT WorkerScriptLoader final : public RefCounted<WorkerScriptLoader>, public ThreadableLoaderClient {
+    WTF_MAKE_FAST_ALLOCATED(WorkerScriptLoader);
 public:
     static PassRefPtr<WorkerScriptLoader> create()
     {
@@ -70,9 +71,12 @@ public:
     const KURL& responseURL() const;
     bool failed() const { return m_failed; }
     unsigned long identifier() const { return m_identifier; }
+    PassOwnPtr<Vector<char>> releaseCachedMetadata() { return m_cachedMetadata.release(); }
+    const Vector<char>* cachedMetadata() const { return m_cachedMetadata.get(); }
 
     virtual void didReceiveResponse(unsigned long /*identifier*/, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
     virtual void didReceiveData(const char* data, unsigned dataLength) override;
+    virtual void didReceiveCachedMetadata(const char*, int /*dataLength*/) override;
     virtual void didFinishLoading(unsigned long identifier, double) override;
     virtual void didFail(const ResourceError&) override;
     virtual void didFailRedirectCheck() override;
@@ -98,6 +102,7 @@ private:
     bool m_failed;
     unsigned long m_identifier;
     bool m_finishing;
+    OwnPtr<Vector<char>> m_cachedMetadata;
     WebURLRequest::RequestContext m_requestContext;
 };
 

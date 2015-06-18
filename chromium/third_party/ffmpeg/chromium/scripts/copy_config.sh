@@ -6,14 +6,14 @@
 
 # Use this to copy all config files into the tree.
 for os in linux linux-noasm mac win win-vs2013; do
-  for target in Chromium ChromiumOS Chrome ChromeOS; do
+  for target in Chromium ChromiumOS Chrome ChromeOS Ensemble; do
     # Copy config files for various architectures:
     #   - ia32/x64 have config.asm, config.h
     #   - arm/arm-neon have config.h
-    for arch in arm arm-neon ia32 x64 mipsel; do
+    for arch in arm arm-neon arm64 ia32 x64 mipsel; do
       # Don't waste time on non-existent configs, if no config.h then skip.
       [ ! -e "build.$arch.$os/$target/config.h" ] && continue
-      for f in config.h config.asm libavutil/avconfig.h; do
+      for f in config.h config.asm libavutil/avconfig.h libavutil/ffversion.h; do
         FROM="build.$arch.$os/$target/$f"
         TO="chromium/config/$target/$os/$arch/$f"
         if [ "$(dirname $f)" != "" ]; then mkdir -p $(dirname $TO); fi

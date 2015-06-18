@@ -12,7 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/thread_task_runner_handle.h"
 #include "ui/compositor/compositor.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace ui {
 
@@ -20,14 +20,12 @@ class TestCompositorHostOzone : public TestCompositorHost {
  public:
   TestCompositorHostOzone(const gfx::Rect& bounds,
                           ui::ContextFactory* context_factory);
-  virtual ~TestCompositorHostOzone();
+  ~TestCompositorHostOzone() override;
 
  private:
   // Overridden from TestCompositorHost:
-  virtual void Show() override;
-  virtual ui::Compositor* GetCompositor() override;
-
-  void Draw();
+  void Show() override;
+  ui::Compositor* GetCompositor() override;
 
   gfx::Rect bounds_;
 
@@ -62,11 +60,6 @@ void TestCompositorHostOzone::Show() {
 
 ui::Compositor* TestCompositorHostOzone::GetCompositor() {
   return compositor_.get();
-}
-
-void TestCompositorHostOzone::Draw() {
-  if (compositor_.get())
-    compositor_->Draw();
 }
 
 // static

@@ -218,6 +218,13 @@ void MockVideoSource::RemoveSink(cricket::VideoRenderer* output) {
   NOTIMPLEMENTED();
 }
 
+void MockVideoSource::Stop() {
+  NOTIMPLEMENTED();
+}
+void MockVideoSource::Restart() {
+  NOTIMPLEMENTED();
+}
+
 cricket::VideoRenderer* MockVideoSource::FrameInput() {
   return &renderer_;
 }
@@ -511,7 +518,8 @@ MockPeerConnectionDependencyFactory::CreateIceCandidate(
 
 scoped_refptr<WebRtcAudioCapturer>
 MockPeerConnectionDependencyFactory::CreateAudioCapturer(
-    int render_view_id, const StreamDeviceInfo& device_info,
+    int render_frame_id,
+    const StreamDeviceInfo& device_info,
     const blink::WebMediaConstraints& constraints,
     MediaStreamAudioSource* audio_source) {
   if (fail_to_create_next_audio_capturer_) {
@@ -519,8 +527,8 @@ MockPeerConnectionDependencyFactory::CreateAudioCapturer(
     return NULL;
   }
   DCHECK(audio_source);
-  return WebRtcAudioCapturer::CreateCapturer(-1, device_info,
-                                             constraints, NULL, audio_source);
+  return WebRtcAudioCapturer::CreateCapturer(-1, device_info, constraints, NULL,
+                                             audio_source);
 }
 
 void MockPeerConnectionDependencyFactory::StartLocalAudioTrack(

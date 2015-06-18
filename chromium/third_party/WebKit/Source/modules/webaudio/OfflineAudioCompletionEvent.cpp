@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/OfflineAudioCompletionEvent.h"
 
 namespace blink {
@@ -59,7 +57,7 @@ const AtomicString& OfflineAudioCompletionEvent::interfaceName() const
     return EventNames::OfflineAudioCompletionEvent;
 }
 
-void OfflineAudioCompletionEvent::trace(Visitor* visitor)
+DEFINE_TRACE(OfflineAudioCompletionEvent)
 {
     visitor->trace(m_renderedBuffer);
     Event::trace(visitor);

@@ -28,7 +28,7 @@
 namespace blink {
 
 class RadioButtonGroup : public NoBaseWillBeGarbageCollected<RadioButtonGroup> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(RadioButtonGroup);
 public:
     static PassOwnPtrWillBeRawPtr<RadioButtonGroup> create();
     bool isEmpty() const { return m_members.isEmpty(); }
@@ -40,7 +40,7 @@ public:
     void remove(HTMLInputElement*);
     bool contains(HTMLInputElement*) const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     RadioButtonGroup();
@@ -174,7 +174,7 @@ bool RadioButtonGroup::contains(HTMLInputElement* button) const
     return m_members.contains(button);
 }
 
-void RadioButtonGroup::trace(Visitor* visitor)
+DEFINE_TRACE(RadioButtonGroup)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_members);
@@ -275,7 +275,7 @@ void RadioButtonGroupScope::removeButton(HTMLInputElement* element)
     }
 }
 
-void RadioButtonGroupScope::trace(Visitor* visitor)
+DEFINE_TRACE(RadioButtonGroupScope)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_nameToGroupMap);

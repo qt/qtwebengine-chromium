@@ -32,6 +32,7 @@
 #define Entry_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/ModulesExport.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/EntryBase.h"
 #include "platform/heap/Handle.h"
@@ -44,7 +45,7 @@ class ErrorCallback;
 class MetadataCallback;
 class VoidCallback;
 
-class Entry : public EntryBase, public ScriptWrappable {
+class MODULES_EXPORT Entry : public EntryBase, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DOMFileSystem* filesystem() const { return static_cast<DOMFileSystem*>(m_fileSystem.get()); }
@@ -55,7 +56,7 @@ public:
     void remove(VoidCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
     void getParent(EntryCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     Entry(DOMFileSystemBase*, const String& fullPath);

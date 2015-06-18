@@ -6,6 +6,7 @@ cr.exportPath('options');
 
 /**
  * @typedef {{actionLinkText: (string|undefined),
+ *            childUser: (boolean|undefined),
  *            hasError: (boolean|undefined),
  *            hasUnrecoverableError: (boolean|undefined),
  *            managed: (boolean|undefined),
@@ -15,6 +16,7 @@ cr.exportPath('options');
  *            signinAllowed: (boolean|undefined),
  *            signoutAllowed: (boolean|undefined),
  *            statusText: (string|undefined),
+ *            supervisedUser: (boolean|undefined),
  *            syncSystemEnabled: (boolean|undefined)}}
  * @see chrome/browser/ui/webui/options/browser_options_handler.cc
  */
@@ -24,6 +26,17 @@ options.SyncStatus;
  * @typedef {{id: string, name: string}}
  */
 options.ExtensionData;
+
+/**
+ * @typedef {{name: string,
+ *            filePath: string,
+ *            isCurrentProfile: boolean,
+ *            isSupervised: boolean,
+ *            isChild: boolean,
+ *            iconUrl: string}}
+ * @see chrome/browser/ui/webui/options/browser_options_handler.cc
+ */
+options.Profile;
 
 cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
@@ -116,7 +129,7 @@ cr.define('options', function() {
       window.addEventListener('message', this.handleWindowMessage_.bind(this));
 
       if (loadTimeData.getBoolean('allowAdvancedSettings')) {
-        $('advanced-settings-expander').onclick = function() {
+        $('advanced-settings-expander').onclick = function(e) {
           var showAdvanced =
               BrowserOptions.shouldShowSection_($('advanced-settings'));
           if (showAdvanced) {
@@ -127,11 +140,10 @@ cr.define('options', function() {
               $('advanced-settings'),
               $('advanced-settings-container'));
 
-          // If the link was focused (i.e., it was activated using the keyboard)
-          // and it was used to show the section (rather than hiding it), focus
-          // the first element in the container.
-          if (document.activeElement === $('advanced-settings-expander') &&
-              showAdvanced) {
+          // If the click was triggered using the keyboard and it showed the
+          // section (rather than hiding it), focus the first element in the
+          // container.
+          if (e.detail == 0 && showAdvanced) {
             var focusElement = $('advanced-settings-container').querySelector(
                 'button, input, list, select, a[href]');
             if (focusElement)
@@ -139,7 +151,7 @@ cr.define('options', function() {
           }
         };
       } else {
-        $('advanced-settings-expander').hidden = true;
+        $('advanced-settings-footer').hidden = true;
         $('advanced-settings').hidden = true;
       }
 
@@ -192,8 +204,6 @@ cr.define('options', function() {
           networkIndicator.setAttribute('controlled-by', 'shared');
           networkIndicator.location = cr.ui.ArrowLocation.TOP_START;
         }
-        options.network.NetworkList.refreshNetworkData(
-            loadTimeData.getValue('networkData'));
       }
 
       // On Startup section.
@@ -228,9 +238,13 @@ cr.define('options', function() {
           $('hotword-search-setting-indicator'));
       HotwordSearchSettingIndicator.decorate(
           $('hotword-no-dsp-search-setting-indicator'));
-      HotwordSearchSettingIndicator.decorate(
-          $('hotword-always-on-search-setting-indicator'));
+      var hotwordIndicator = $('hotword-always-on-search-setting-indicator');
+      HotwordSearchSettingIndicator.decorate(hotwordIndicator);
+      hotwordIndicator.disabledOnErrorSection =
+          $('hotword-always-on-search-checkbox');
       chrome.send('requestHotwordAvailable');
+
+      chrome.send('requestGoogleNowAvailable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
@@ -329,6 +343,8 @@ cr.define('options', function() {
         profilesList.addEventListener('change',
             this.setProfileViewButtonsStatus_);
         $('profiles-create').onclick = function(event) {
+          chrome.send('metricsHandler:recordAction',
+                      ['Options_ShowCreateProfileDlg']);
           ManageProfileOverlay.showCreateDialog();
         };
         if (OptionsPage.isSettingsApp()) {
@@ -338,15 +354,22 @@ cr.define('options', function() {
           };
         }
         $('profiles-manage').onclick = function(event) {
+          chrome.send('metricsHandler:recordAction',
+                      ['Options_ShowEditProfileDlg']);
           ManageProfileOverlay.showManageDialog();
         };
         $('profiles-delete').onclick = function(event) {
           var selectedProfile = self.getSelectedProfileItem_();
-          if (selectedProfile)
+          if (selectedProfile) {
+            chrome.send('metricsHandler:recordAction',
+                        ['Options_ShowDeleteProfileDlg']);
             ManageProfileOverlay.showDeleteDialog(selectedProfile);
+          }
         };
         if (loadTimeData.getBoolean('profileIsSupervised')) {
           $('profiles-create').disabled = true;
+        }
+        if (!loadTimeData.getBoolean('allowProfileDeletion')) {
           $('profiles-delete').disabled = true;
           $('profiles-list').canDeleteItems = false;
         }
@@ -381,8 +404,18 @@ cr.define('options', function() {
       }
 
       // Date and time section (CrOS only).
-      if ($('set-time-button'))
-        $('set-time-button').onclick = this.handleSetTime_.bind(this);
+      if (cr.isChromeOS) {
+        if ($('set-time-button'))
+          $('set-time-button').onclick = this.handleSetTime_.bind(this);
+
+        // Timezone
+        if (loadTimeData.getBoolean('enableTimeZoneTrackingOption')) {
+          $('resolve-timezone-by-geolocation-selection').hidden = false;
+          this.setSystemTimezoneManaged_(false);
+          $('timezone-value-select').disabled = loadTimeData.getBoolean(
+              'resolveTimezoneByGeolocationInitialValue');
+        }
+      }
 
       // Default browser section.
       if (!cr.isChromeOS) {
@@ -411,13 +444,13 @@ cr.define('options', function() {
       // 'metricsReportingEnabled' element is only present on Chrome branded
       // builds, and the 'metricsReportingCheckboxAction' message is only
       // handled on ChromeOS.
-      if ($('metricsReportingEnabled') && cr.isChromeOS) {
-        $('metricsReportingEnabled').onclick = function(event) {
+      if ($('metrics-reporting-enabled') && cr.isChromeOS) {
+        $('metrics-reporting-enabled').onclick = function(event) {
           chrome.send('metricsReportingCheckboxAction',
               [String(event.currentTarget.checked)]);
         };
       }
-      if ($('metricsReportingEnabled') && !cr.isChromeOS) {
+      if ($('metrics-reporting-enabled') && !cr.isChromeOS) {
         // The localized string has the | symbol on each side of the text that
         // needs to be made into a button to restart Chrome. We parse the text
         // and build the button from that.
@@ -434,20 +467,21 @@ cr.define('options', function() {
         restartElements[1].onclick = function(event) {
           chrome.send('restartBrowser');
         };
-        // Attach the listener for updating the checkbox and restart button.
-        var updateMetricsRestartButton = function() {
-          $('metrics-reporting-reset-restart').hidden =
-              loadTimeData.getBoolean('metricsReportingEnabledAtStart') ==
-                  $('metricsReportingEnabled').checked;
-        };
-        $('metricsReportingEnabled').onclick = function(event) {
+        $('metrics-reporting-enabled').onclick = function(event) {
           chrome.send('metricsReportingCheckboxChanged',
               [Boolean(event.currentTarget.checked)]);
-          updateMetricsRestartButton();
+          if (cr.isMac) {
+            // A browser restart is never needed to toggle metrics reporting,
+            // and is only needed to toggle crash reporting when using Breakpad.
+            // Crashpad, used on Mac, does not require a browser restart.
+            return;
+          }
+          $('metrics-reporting-reset-restart').hidden =
+              loadTimeData.getBoolean('metricsReportingEnabledAtStart') ==
+                  $('metrics-reporting-enabled').checked;
         };
-        $('metricsReportingEnabled').checked =
+        $('metrics-reporting-enabled').checked =
             loadTimeData.getBoolean('metricsReportingEnabledAtStart');
-        updateMetricsRestartButton();
       }
       $('networkPredictionOptions').onchange = function(event) {
         var value = (event.target.checked ?
@@ -460,6 +494,10 @@ cr.define('options', function() {
             true,
             metric);
       };
+      if (loadTimeData.valueExists('showWakeOnWifi') &&
+          loadTimeData.getBoolean('showWakeOnWifi')) {
+        $('wake-on-wifi').hidden = false;
+      }
 
       // Bluetooth (CrOS only).
       if (cr.isChromeOS) {
@@ -475,6 +513,8 @@ cr.define('options', function() {
         };
 
         $('bluetooth-reconnect-device').onclick = function(event) {
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_BluetoothConnectPairedDevice']);
           var device = $('bluetooth-paired-devices-list').selectedItem;
           var address = device.address;
           chrome.send('updateBluetoothDevice', [address, 'connect']);
@@ -563,7 +603,8 @@ cr.define('options', function() {
       // Web Content section.
       $('fontSettingsCustomizeFontsButton').onclick = function(event) {
         PageManager.showPageByName('fonts');
-        chrome.send('coreOptionsUserMetricsAction', ['Options_FontSettings']);
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_ShowFontSettings']);
       };
       $('defaultFontSize').onchange = function(event) {
         var value = event.target.options[event.target.selectedIndex].value;
@@ -637,19 +678,9 @@ cr.define('options', function() {
         $('accessibility-settings-button').onclick = function(unused_event) {
           window.open(loadTimeData.getString('accessibilitySettingsURL'));
         };
-        $('accessibility-spoken-feedback-check').onchange = function(
-            unused_event) {
-          chrome.send('spokenFeedbackChange',
-                      [$('accessibility-spoken-feedback-check').checked]);
-          updateAccessibilitySettingsButton();
-        };
+        $('accessibility-spoken-feedback-check').onchange =
+            updateAccessibilitySettingsButton;
         updateAccessibilitySettingsButton();
-
-        $('accessibility-high-contrast-check').onchange = function(
-            unused_event) {
-          chrome.send('highContrastChange',
-                      [$('accessibility-high-contrast-check').checked]);
-        };
 
         var updateDelayDropdown = function() {
           $('accessibility-autoclick-dropdown').disabled =
@@ -813,6 +844,10 @@ cr.define('options', function() {
      * @private
      */
     showSection_: function(section, container, animate) {
+      if (section == $('advanced-settings') &&
+          !loadTimeData.getBoolean('allowAdvancedSettings')) {
+        return;
+      }
       // Delay starting the transition if animating so that hidden change will
       // be processed.
       if (animate) {
@@ -981,7 +1016,7 @@ cr.define('options', function() {
       $('sync-section').hidden = false;
       this.maybeShowUserSection_();
 
-      if (cr.isChromeOS && syncData.supervisedUser) {
+      if (cr.isChromeOS && syncData.supervisedUser && !syncData.childUser) {
         var subSection = $('sync-section').firstChild;
         while (subSection) {
           if (subSection.nodeType == Node.ELEMENT_NODE)
@@ -1087,14 +1122,15 @@ cr.define('options', function() {
     },
 
     /**
-     * Update the UI depending on whether the current profile has a pairing for
-     * Easy Unlock.
-     * @param {boolean} hasPairing True if the current profile has a pairing.
+     * Update the UI depending on whether Easy Unlock is enabled for the current
+     * profile.
+     * @param {boolean} isEnabled True if the feature is enabled for the current
+     *     profile.
      */
-    updateEasyUnlock_: function(hasPairing) {
-      $('easy-unlock-setup').hidden = hasPairing;
-      $('easy-unlock-enable').hidden = !hasPairing;
-      if (!hasPairing && EasyUnlockTurnOffOverlay.getInstance().visible) {
+    updateEasyUnlock_: function(isEnabled) {
+      $('easy-unlock-disabled').hidden = isEnabled;
+      $('easy-unlock-enabled').hidden = !isEnabled;
+      if (!isEnabled && EasyUnlockTurnOffOverlay.getInstance().visible) {
         EasyUnlockTurnOffOverlay.dismiss();
       }
     },
@@ -1167,7 +1203,7 @@ cr.define('options', function() {
     },
 
     /**
-     * Activates the Audio History and Always-On Hotword sections from the
+     * Activates the Always-On Hotword sections from the
      * System settings page.
      * @param {string=} opt_error The error message to display.
      * @private
@@ -1177,7 +1213,6 @@ cr.define('options', function() {
           'hotword-always-on-search',
           'hotword-always-on-search-setting-indicator',
           opt_error);
-      $('audio-logging').hidden = false;
     },
 
     /**
@@ -1191,6 +1226,18 @@ cr.define('options', function() {
           'hotword-no-dsp-search',
           'hotword-no-dsp-search-setting-indicator',
           opt_error);
+    },
+
+    /**
+     * Controls the visibility of all the hotword sections.
+     * @param {boolean} visible Whether to show hotword sections.
+     * @private
+     */
+    setAllHotwordSectionsVisible_: function(visible) {
+      $('hotword-search').hidden = !visible;
+      $('hotword-always-on-search').hidden = !visible;
+      $('hotword-no-dsp-search').hidden = !visible;
+      $('audio-history').hidden = !visible;
     },
 
     /**
@@ -1210,6 +1257,26 @@ cr.define('options', function() {
      */
     onHotwordAlwaysOnChanged_: function(event) {
       this.setHotwordRetrainLinkVisible_(event.value.value);
+    },
+
+    /**
+     * Controls the visibility of the Now settings.
+     * @param {boolean} visible Whether to show Now settings.
+     * @private
+     */
+    setNowSectionVisible_: function(visible) {
+      $('google-now-launcher').hidden = !visible;
+    },
+
+    /**
+     * Activates the Audio History section of the Settings page.
+     * @param {boolean} visible Whether the audio history section is visible.
+     * @param {string} labelText Text describing current audio history state.
+     * @private
+     */
+    setAudioHistorySectionVisible_: function(visible, labelText) {
+      $('audio-history').hidden = !visible;
+      $('audio-history-label').textContent = labelText;
     },
 
     /**
@@ -1382,14 +1449,13 @@ cr.define('options', function() {
       var selectedProfile = profilesList.selectedItem;
       var hasSelection = selectedProfile != null;
       var hasSingleProfile = profilesList.dataModel.length == 1;
-      var isSupervised = loadTimeData.getBoolean('profileIsSupervised');
       $('profiles-manage').disabled = !hasSelection ||
           !selectedProfile.isCurrentProfile;
       if (hasSelection && !selectedProfile.isCurrentProfile)
         $('profiles-manage').title = loadTimeData.getString('currentUserOnly');
       else
         $('profiles-manage').title = '';
-      $('profiles-delete').disabled = isSupervised ||
+      $('profiles-delete').disabled = !profilesList.canDeleteItems ||
                                       (!hasSelection && !hasSingleProfile);
       if (OptionsPage.isSettingsApp()) {
         $('profiles-app-list-switch').disabled = !hasSelection ||
@@ -1425,9 +1491,8 @@ cr.define('options', function() {
 
     /**
      * Adds all |profiles| to the list.
-     * @param {Array.<{name: string, filePath: string,
-     *     isCurrentProfile: boolean, isSupervised: boolean}>} profiles An array
-     *     of profile info objects.
+     * @param {Array<!options.Profile>} profiles An array of profile info
+     *     objects.
      * @private
      */
     setProfilesInfo_: function(profiles) {
@@ -1486,7 +1551,7 @@ cr.define('options', function() {
 
     /**
     * Reports successful profile creation to the "create" overlay.
-     * @param {Object} profileInfo An object of the form:
+     * @param {options.Profile} profileInfo An object of the form:
      *     profileInfo = {
      *       name: "Profile Name",
      *       filePath: "/path/to/profile/data/on/disk"
@@ -1500,7 +1565,7 @@ cr.define('options', function() {
 
     /**
      * Returns the currently active profile for this browser window.
-     * @return {Object} A profile info object.
+     * @return {options.Profile} A profile info object.
      * @private
      */
     getCurrentProfile_: function() {
@@ -1589,10 +1654,35 @@ cr.define('options', function() {
     },
 
     /**
+     * This is called from chromium code when system timezone "managed" state
+     * is changed. Enables or disables dependent settings.
+     * @param {boolean} managed Is true when system Timezone is managed by
+     *     enterprise policy. False otherwize.
+     */
+    setSystemTimezoneManaged_: function(managed) {
+      if (loadTimeData.getBoolean('enableTimeZoneTrackingOption')) {
+        if (managed) {
+          $('resolve-timezone-by-geolocation-selection').disabled = true;
+          $('resolve-timezone-by-geolocation').onclick = function(event) {};
+        } else {
+          this.enableElementIfPossible_(
+              getRequiredElement('resolve-timezone-by-geolocation-selection'));
+          $('resolve-timezone-by-geolocation').onclick = function(event) {
+            $('timezone-value-select').disabled = event.currentTarget.checked;
+          };
+          $('timezone-value-select').disabled =
+              $('resolve-timezone-by-geolocation').checked;
+        }
+      }
+    },
+
+    /**
      * Handle the 'add device' button click.
      * @private
      */
     handleAddBluetoothDevice_: function() {
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_BluetoothShowAddDevice']);
       chrome.send('findBluetoothDevices');
       PageManager.showPageByName('bluetooth', false);
     },
@@ -1606,12 +1696,14 @@ cr.define('options', function() {
     },
 
     /**
-     * Enables or disables the ChromeOS display settings button.
+     * Enables or disables the Chrome OS display settings button and overlay.
      * @private
      */
-    enableDisplayButton_: function(enabled) {
-      if (cr.isChromeOS)
+    enableDisplaySettings_: function(enabled, showUnifiedDesktop) {
+      if (cr.isChromeOS) {
         $('display-options').disabled = !enabled;
+        DisplayOptions.getInstance().setEnabled(enabled, showUnifiedDesktop);
+      }
     },
 
     /**
@@ -1627,8 +1719,8 @@ cr.define('options', function() {
      * @private
      */
     setMetricsReportingCheckboxState_: function(checked, disabled) {
-      $('metricsReportingEnabled').checked = checked;
-      $('metricsReportingEnabled').disabled = disabled;
+      $('metrics-reporting-enabled').checked = checked;
+      $('metrics-reporting-enabled').disabled = disabled;
 
       // If checkbox gets disabled then add an attribute for displaying the
       // special icon. Otherwise remove the indicator attribute.
@@ -1645,9 +1737,9 @@ cr.define('options', function() {
      */
     setMetricsReportingSettingVisibility_: function(visible) {
       if (visible)
-        $('metricsReportingSetting').style.display = 'block';
+        $('metrics-reporting-setting').style.display = 'block';
       else
-        $('metricsReportingSetting').style.display = 'none';
+        $('metrics-reporting-setting').style.display = 'none';
     },
 
     /**
@@ -2026,7 +2118,6 @@ cr.define('options', function() {
      */
     setCanSetTime_: function(canSetTime) {
       // If the time has been network-synced, it cannot be set manually.
-      $('time-synced-explanation').hidden = canSetTime;
       $('set-time').hidden = !canSetTime;
     },
 
@@ -2079,7 +2170,7 @@ cr.define('options', function() {
     'addBluetoothDevice',
     'deleteCurrentProfile',
     'enableCertificateButton',
-    'enableDisplayButton',
+    'enableDisplaySettings',
     'enableFactoryResetSection',
     'getCurrentProfile',
     'getStartStopSyncButton',
@@ -2098,15 +2189,19 @@ cr.define('options', function() {
     'setHotwordRetrainLinkVisible',
     'setNativeThemeButtonEnabled',
     'setNetworkPredictionValue',
+    'setNowSectionVisible',
     'setHighContrastCheckboxState',
+    'setAllHotwordSectionsVisible',
     'setMetricsReportingCheckboxState',
     'setMetricsReportingSettingVisibility',
     'setProfilesInfo',
     'setSpokenFeedbackCheckboxState',
+    'setSystemTimezoneManaged',
     'setThemesResetButtonEnabled',
     'setVirtualKeyboardCheckboxState',
     'setupPageZoomSelector',
     'setupProxySettingsButton',
+    'setAudioHistorySectionVisible',
     'showBluetoothSettings',
     'showCreateProfileError',
     'showCreateProfileSuccess',

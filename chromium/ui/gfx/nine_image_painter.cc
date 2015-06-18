@@ -10,11 +10,11 @@
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/insets.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/skia_util.h"
 
@@ -22,14 +22,20 @@ namespace gfx {
 
 namespace {
 
-// The following functions width and height of the image in pixels for the
-// scale factor in the Canvas.
-int ImageWidthInPixels(const ImageSkia& i, Canvas* c) {
-  return i.GetRepresentation(c->image_scale()).pixel_width();
+// The following functions calculate width and height of the image in pixels
+// for the scale factor.
+int ImageWidthInPixels(const ImageSkia& i, float scale) {
+  if (i.isNull())
+    return 0;
+  ImageSkiaRep image_rep = i.GetRepresentation(scale);
+  return image_rep.pixel_width() * scale / image_rep.scale();
 }
 
-int ImageHeightInPixels(const ImageSkia& i, Canvas* c) {
-  return i.GetRepresentation(c->image_scale()).pixel_height();
+int ImageHeightInPixels(const ImageSkia& i, float scale) {
+  if (i.isNull())
+    return 0;
+  ImageSkiaRep image_rep = i.GetRepresentation(scale);
+  return image_rep.pixel_height() * scale / image_rep.scale();
 }
 
 // Stretches the given image over the specified canvas area.
@@ -40,8 +46,11 @@ void Fill(Canvas* c,
           int w,
           int h,
           const SkPaint& paint) {
-  c->DrawImageIntInPixel(i, 0, 0, ImageWidthInPixels(i, c),
-                         ImageHeightInPixels(i, c), x, y, w, h, false, paint);
+  if (i.isNull())
+    return;
+  c->DrawImageIntInPixel(i, 0, 0, ImageWidthInPixels(i, c->image_scale()),
+                         ImageHeightInPixels(i, c->image_scale()),
+                         x, y, w, h, false, paint);
 }
 
 }  // namespace
@@ -54,21 +63,12 @@ NineImagePainter::NineImagePainter(const std::vector<ImageSkia>& images) {
 
 NineImagePainter::NineImagePainter(const ImageSkia& image,
                                    const Insets& insets) {
-  DCHECK_GE(image.width(), insets.width());
-  DCHECK_GE(image.height(), insets.height());
+  std::vector<gfx::Rect> regions;
+  GetSubsetRegions(image, insets, &regions);
+  DCHECK_EQ(9u, regions.size());
 
-  // Extract subsets of the original image to match the |images_| format.
-  const int x[] =
-      { 0, insets.left(), image.width() - insets.right(), image.width() };
-  const int y[] =
-      { 0, insets.top(), image.height() - insets.bottom(), image.height() };
-
-  for (size_t j = 0; j < 3; ++j) {
-    for (size_t i = 0; i < 3; ++i) {
-      images_[i + j * 3] = ImageSkiaOperations::ExtractSubset(image,
-          Rect(x[i], y[j], x[i + 1] - x[i], y[j + 1] - y[j]));
-    }
-  }
+  for (size_t i = 0; i < 9; ++i)
+    images_[i] = ImageSkiaOperations::ExtractSubset(image, regions[i]);
 }
 
 NineImagePainter::~NineImagePainter() {
@@ -118,27 +118,29 @@ void NineImagePainter::Paint(Canvas* canvas,
 
   const int width_in_pixels = bounds_in_pixels.width();
   const int height_in_pixels = bounds_in_pixels.height();
+  const float scale_x = matrix.getScaleX();
+  const float scale_y = matrix.getScaleY();
 
   // In case the corners and edges don't all have the same width/height, we draw
   // the center first, and extend it out in all directions to the edges of the
   // images with the smallest widths/heights.  This way there will be no
   // unpainted areas, though some corners or edges might overlap the center.
-  int i0w = ImageWidthInPixels(images_[0], canvas);
-  int i2w = ImageWidthInPixels(images_[2], canvas);
-  int i3w = ImageWidthInPixels(images_[3], canvas);
-  int i5w = ImageWidthInPixels(images_[5], canvas);
-  int i6w = ImageWidthInPixels(images_[6], canvas);
-  int i8w = ImageWidthInPixels(images_[8], canvas);
+  int i0w = ImageWidthInPixels(images_[0], scale_x);
+  int i2w = ImageWidthInPixels(images_[2], scale_x);
+  int i3w = ImageWidthInPixels(images_[3], scale_x);
+  int i5w = ImageWidthInPixels(images_[5], scale_x);
+  int i6w = ImageWidthInPixels(images_[6], scale_x);
+  int i8w = ImageWidthInPixels(images_[8], scale_x);
 
   int i4x = std::min(std::min(i0w, i3w), i6w);
   int i4w = width_in_pixels - i4x - std::min(std::min(i2w, i5w), i8w);
 
-  int i0h = ImageHeightInPixels(images_[0], canvas);
-  int i1h = ImageHeightInPixels(images_[1], canvas);
-  int i2h = ImageHeightInPixels(images_[2], canvas);
-  int i6h = ImageHeightInPixels(images_[6], canvas);
-  int i7h = ImageHeightInPixels(images_[7], canvas);
-  int i8h = ImageHeightInPixels(images_[8], canvas);
+  int i0h = ImageHeightInPixels(images_[0], scale_y);
+  int i1h = ImageHeightInPixels(images_[1], scale_y);
+  int i2h = ImageHeightInPixels(images_[2], scale_y);
+  int i6h = ImageHeightInPixels(images_[6], scale_y);
+  int i7h = ImageHeightInPixels(images_[7], scale_y);
+  int i8h = ImageHeightInPixels(images_[8], scale_y);
 
   int i4y = std::min(std::min(i0h, i1h), i2h);
   int i4h = height_in_pixels - i4y - std::min(std::min(i6h, i7h), i8h);
@@ -146,22 +148,48 @@ void NineImagePainter::Paint(Canvas* canvas,
   SkPaint paint;
   paint.setAlpha(alpha);
 
-  if (!images_[4].isNull())
-    Fill(canvas, images_[4], i4x, i4y, i4w, i4h, paint);
-  canvas->DrawImageIntInPixel(images_[0], 0, 0, i0w, i0h,
-                              0, 0, i0w, i0h, false, paint);
+  Fill(canvas, images_[4], i4x, i4y, i4w, i4h, paint);
+
+  Fill(canvas, images_[0], 0, 0, i0w, i0h, paint);
+
   Fill(canvas, images_[1], i0w, 0, width_in_pixels - i0w - i2w, i1h, paint);
-  canvas->DrawImageIntInPixel(images_[2], 0, 0, i2w, i2h, width_in_pixels - i2w,
-                              0, i2w, i2h, false, paint);
+
+  Fill(canvas, images_[2], width_in_pixels - i2w, 0, i2w, i2h, paint);
+
   Fill(canvas, images_[3], 0, i0h, i3w, height_in_pixels - i0h - i6h, paint);
+
   Fill(canvas, images_[5], width_in_pixels - i5w, i2h, i5w,
        height_in_pixels - i2h - i8h, paint);
-  canvas->DrawImageIntInPixel(images_[6], 0, 0, i6w, i6h, 0,
-                              height_in_pixels - i6h, i6w, i6h, false, paint);
+
+  Fill(canvas, images_[6], 0, height_in_pixels - i6h, i6w, i6h, paint);
+
   Fill(canvas, images_[7], i6w, height_in_pixels - i7h,
        width_in_pixels - i6w - i8w, i7h, paint);
-  canvas->DrawImageIntInPixel(images_[8], 0, 0, i8w, i8h, width_in_pixels - i8w,
-                              height_in_pixels - i8h, i8w, i8h, false, paint);
+
+  Fill(canvas, images_[8], width_in_pixels - i8w, height_in_pixels - i8h, i8w,
+       i8h, paint);
+}
+
+// static
+void NineImagePainter::GetSubsetRegions(const ImageSkia& image,
+                                        const Insets& insets,
+                                        std::vector<Rect>* regions) {
+  DCHECK_GE(image.width(), insets.width());
+  DCHECK_GE(image.height(), insets.height());
+
+  std::vector<Rect> result(9);
+
+  const int x[] = {
+      0, insets.left(), image.width() - insets.right(), image.width()};
+  const int y[] = {
+      0, insets.top(), image.height() - insets.bottom(), image.height()};
+
+  for (size_t j = 0; j < 3; ++j) {
+    for (size_t i = 0; i < 3; ++i) {
+      result[i + j * 3] = Rect(x[i], y[j], x[i + 1] - x[i], y[j + 1] - y[j]);
+    }
+  }
+  result.swap(*regions);
 }
 
 }  // namespace gfx

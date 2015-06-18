@@ -20,21 +20,36 @@
 // and exposed through kMath as typed array. We assume the compiler to convert
 // from decimal to binary accurately enough to produce the intended values.
 // kMath is initialized to a Float64Array during genesis and not writable.
-var kMath;
+// rempio2result is used as a container for return values of %RemPiO2. It is
+// initialized to a two-element Float64Array during genesis.
 
-const INVPIO2 = kMath[0];
-const PIO2_1  = kMath[1];
-const PIO2_1T = kMath[2];
-const PIO2_2  = kMath[3];
-const PIO2_2T = kMath[4];
-const PIO2_3  = kMath[5];
-const PIO2_3T = kMath[6];
-const PIO4    = kMath[32];
-const PIO4LO  = kMath[33];
+var kMath;
+var rempio2result;
+
+(function(global, shared, exports) {
+  
+"use strict";
+
+%CheckIsBootstrapping();
+
+var GlobalMath = global.Math;
+
+//-------------------------------------------------------------------
+
+define INVPIO2 = kMath[0];
+define PIO2_1  = kMath[1];
+define PIO2_1T = kMath[2];
+define PIO2_2  = kMath[3];
+define PIO2_2T = kMath[4];
+define PIO2_3  = kMath[5];
+define PIO2_3T = kMath[6];
+define PIO4    = kMath[32];
+define PIO4LO  = kMath[33];
 
 // Compute k and r such that x - k*pi/2 = r where |r| < pi/4. For
 // precision, r is returned as two values y0 and y1 such that r = y0 + y1
 // to more than double precision.
+
 macro REMPIO2(X)
   var n, y0, y1;
   var hx = %_DoubleHi(X);
@@ -72,7 +87,7 @@ macro REMPIO2(X)
     }
   } else if (ix <= 0x413921fb) {
     // |X| ~<= 2^19*(pi/2), medium size
-    var t = MathAbs(X);
+    var t = $abs(X);
     n = (t * INVPIO2 + 0.5) | 0;
     var r = t - n * PIO2_1;
     var w = n * PIO2_1T;
@@ -102,10 +117,9 @@ macro REMPIO2(X)
     }
   } else {
     // Need to do full Payne-Hanek reduction here.
-    var r = %RemPiO2(X);
-    n = r[0];
-    y0 = r[1];
-    y1 = r[2];
+    n = %RemPiO2(X, rempio2result);
+    y0 = rempio2result[0];
+    y1 = rempio2result[1];
   }
 endmacro
 
@@ -135,16 +149,18 @@ endmacro
 //     then                   3    2
 //          sin(x) = X + (S1*X + (X *(r-Y/2)+Y))
 //
-macro KSIN(x)
-kMath[7+x]
-endmacro
+define S1 = -1.66666666666666324348e-01;
+define S2 = 8.33333333332248946124e-03;
+define S3 = -1.98412698298579493134e-04;
+define S4 = 2.75573137070700676789e-06;
+define S5 = -2.50507602534068634195e-08;
+define S6 = 1.58969099521155010221e-10;
 
 macro RETURN_KERNELSIN(X, Y, SIGN)
   var z = X * X;
   var v = z * X;
-  var r = KSIN(1) + z * (KSIN(2) + z * (KSIN(3) +
-                    z * (KSIN(4) + z * KSIN(5))));
-  return (X - ((z * (0.5 * Y - v * r) - Y) - v * KSIN(0))) SIGN;
+  var r = S2 + z * (S3 + z * (S4 + z * (S5 + z * S6)));
+  return (X - ((z * (0.5 * Y - v * r) - Y) - v * S1)) SIGN;
 endmacro
 
 // __kernel_cos(X, Y)
@@ -179,15 +195,17 @@ endmacro
 //     magnitude of the latter is at least a quarter of X*X/2,
 //     thus, reducing the rounding error in the subtraction.
 //
-macro KCOS(x)
-kMath[13+x]
-endmacro
+define C1 = 4.16666666666666019037e-02;
+define C2 = -1.38888888888741095749e-03;
+define C3 = 2.48015872894767294178e-05;
+define C4 = -2.75573143513906633035e-07;
+define C5 = 2.08757232129817482790e-09;
+define C6 = -1.13596475577881948265e-11;
 
 macro RETURN_KERNELCOS(X, Y, SIGN)
   var ix = %_DoubleHi(X) & 0x7fffffff;
   var z = X * X;
-  var r = z * (KCOS(0) + z * (KCOS(1) + z * (KCOS(2)+
-          z * (KCOS(3) + z * (KCOS(4) + z * KCOS(5))))));
+  var r = z * (C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6)))));
   if (ix < 0x3fd33333) {  // |x| ~< 0.3
     return (1 - (0.5 * z - (z * r - X * Y))) SIGN;
   } else {
@@ -251,7 +269,7 @@ function KernelTan(x, y, returnTan) {
   if (ix < 0x3e300000) {  // |x| < 2^-28
     if (((ix | %_DoubleLo(x)) | (returnTan + 1)) == 0) {
       // x == 0 && returnTan = -1
-      return 1 / MathAbs(x);
+      return 1 / $abs(x);
     } else {
       if (returnTan == 1) {
         return x;
@@ -330,22 +348,22 @@ function MathCosSlow(x) {
 
 // ECMA 262 - 15.8.2.16
 function MathSin(x) {
-  x = x * 1;  // Convert to number.
+  x = +x;  // Convert to number.
   if ((%_DoubleHi(x) & 0x7fffffff) <= 0x3fe921fb) {
     // |x| < pi/4, approximately.  No reduction needed.
     RETURN_KERNELSIN(x, 0, /* empty */);
   }
-  return MathSinSlow(x);
+  return +MathSinSlow(x);
 }
 
 // ECMA 262 - 15.8.2.7
 function MathCos(x) {
-  x = x * 1;  // Convert to number.
+  x = +x;  // Convert to number.
   if ((%_DoubleHi(x) & 0x7fffffff) <= 0x3fe921fb) {
     // |x| < pi/4, approximately.  No reduction needed.
     RETURN_KERNELCOS(x, 0, /* empty */);
   }
-  return MathCosSlow(x);
+  return +MathCosSlow(x);
 }
 
 // ECMA 262 - 15.8.2.18
@@ -422,13 +440,14 @@ function MathTan(x) {
 //
 //       See HP-15C Advanced Functions Handbook, p.193.
 //
-const LN2_HI    = kMath[34];
-const LN2_LO    = kMath[35];
-const TWO54     = kMath[36];
-const TWO_THIRD = kMath[37];
+define LN2_HI    = kMath[34];
+define LN2_LO    = kMath[35];
+define TWO_THIRD = kMath[36];
 macro KLOG1P(x)
-(kMath[38+x])
+(kMath[37+x])
 endmacro
+// 2^54
+define TWO54 = 18014398509481984;
 
 function MathLog1p(x) {
   x = x * 1;  // Convert to number.
@@ -607,10 +626,10 @@ function MathLog1p(x) {
 //      For IEEE double 
 //          if x > 7.09782712893383973096e+02 then expm1(x) overflow
 //
-const KEXPM1_OVERFLOW = kMath[45];
-const INVLN2          = kMath[46];
+define KEXPM1_OVERFLOW = kMath[44];
+define INVLN2          = kMath[45];
 macro KEXPM1(x)
-(kMath[47+x])
+(kMath[46+x])
 endmacro
 
 function MathExpm1(x) {
@@ -730,15 +749,15 @@ function MathExpm1(x) {
 //      sinh(x) is |x| if x is +Infinity, -Infinity, or NaN.
 //      only sinh(0)=0 is exact for finite x.
 //
-const KSINH_OVERFLOW = kMath[52];
-const TWO_M28 = 3.725290298461914e-9;  // 2^-28, empty lower half
-const LOG_MAXD = 709.7822265625;  // 0x40862e42 00000000, empty lower half
+define KSINH_OVERFLOW = kMath[51];
+define TWO_M28 = 3.725290298461914e-9;  // 2^-28, empty lower half
+define LOG_MAXD = 709.7822265625;  // 0x40862e42 00000000, empty lower half
 
 function MathSinh(x) {
   x = x * 1;  // Convert to number.
   var h = (x < 0) ? -0.5 : 0.5;
   // |x| in [0, 22]. return sign(x)*0.5*(E+E/(E+1))
-  var ax = MathAbs(x);
+  var ax = $abs(x);
   if (ax < 22) {
     // For |x| < 2^-28, sinh(x) = x
     if (ax < TWO_M28) return x;
@@ -747,11 +766,11 @@ function MathSinh(x) {
     return h * (t + t / (t + 1));
   }
   // |x| in [22, log(maxdouble)], return 0.5 * exp(|x|)
-  if (ax < LOG_MAXD) return h * MathExp(ax);
+  if (ax < LOG_MAXD) return h * $exp(ax);
   // |x| in [log(maxdouble), overflowthreshold]
   // overflowthreshold = 710.4758600739426
   if (ax <= KSINH_OVERFLOW) {
-    var w = MathExp(0.5 * ax);
+    var w = $exp(0.5 * ax);
     var t = h * w;
     return t * w;
   }
@@ -782,14 +801,14 @@ function MathSinh(x) {
 //      cosh(x) is |x| if x is +INF, -INF, or NaN.
 //      only cosh(0)=1 is exact for finite x.
 //
-const KCOSH_OVERFLOW = kMath[52];
+define KCOSH_OVERFLOW = kMath[51];
 
 function MathCosh(x) {
   x = x * 1;  // Convert to number.
   var ix = %_DoubleHi(x) & 0x7fffffff;
   // |x| in [0,0.5*log2], return 1+expm1(|x|)^2/(2*exp(|x|))
   if (ix < 0x3fd62e43) {
-    var t = MathExpm1(MathAbs(x));
+    var t = MathExpm1($abs(x));
     var w = 1 + t;
     // For |x| < 2^-55, cosh(x) = 1
     if (ix < 0x3c800000) return w;
@@ -797,14 +816,14 @@ function MathCosh(x) {
   }
   // |x| in [0.5*log2, 22], return (exp(|x|)+1/exp(|x|)/2
   if (ix < 0x40360000) {
-    var t = MathExp(MathAbs(x));
+    var t = $exp($abs(x));
     return 0.5 * t + 0.5 / t;
   }
   // |x| in [22, log(maxdouble)], return half*exp(|x|)
-  if (ix < 0x40862e42) return 0.5 * MathExp(MathAbs(x));
+  if (ix < 0x40862e42) return 0.5 * $exp($abs(x));
   // |x| in [log(maxdouble), overflowthreshold]
-  if (MathAbs(x) <= KCOSH_OVERFLOW) {
-    var w = MathExp(0.5 * MathAbs(x));
+  if ($abs(x) <= KCOSH_OVERFLOW) {
+    var w = $exp(0.5 * $abs(x));
     var t = 0.5 * w;
     return t * w;
   }
@@ -812,3 +831,200 @@ function MathCosh(x) {
   // |x| > overflowthreshold.
   return INFINITY;
 }
+
+// ES6 draft 09-27-13, section 20.2.2.21.
+// Return the base 10 logarithm of x
+//
+// Method :
+//      Let log10_2hi = leading 40 bits of log10(2) and
+//          log10_2lo = log10(2) - log10_2hi,
+//          ivln10   = 1/log(10) rounded.
+//      Then
+//              n = ilogb(x),
+//              if(n<0)  n = n+1;
+//              x = scalbn(x,-n);
+//              log10(x) := n*log10_2hi + (n*log10_2lo + ivln10*log(x))
+//
+// Note 1:
+//      To guarantee log10(10**n)=n, where 10**n is normal, the rounding
+//      mode must set to Round-to-Nearest.
+// Note 2:
+//      [1/log(10)] rounded to 53 bits has error .198 ulps;
+//      log10 is monotonic at all binary break points.
+//
+// Special cases:
+//      log10(x) is NaN if x < 0;
+//      log10(+INF) is +INF; log10(0) is -INF;
+//      log10(NaN) is that NaN;
+//      log10(10**N) = N  for N=0,1,...,22.
+//
+
+define IVLN10 = kMath[52];
+define LOG10_2HI = kMath[53];
+define LOG10_2LO = kMath[54];
+
+function MathLog10(x) {
+  x = x * 1;  // Convert to number.
+  var hx = %_DoubleHi(x);
+  var lx = %_DoubleLo(x);
+  var k = 0;
+
+  if (hx < 0x00100000) {
+    // x < 2^-1022
+    // log10(+/- 0) = -Infinity.
+    if (((hx & 0x7fffffff) | lx) === 0) return -INFINITY;
+    // log10 of negative number is NaN.
+    if (hx < 0) return NAN;
+    // Subnormal number. Scale up x.
+    k -= 54;
+    x *= TWO54;
+    hx = %_DoubleHi(x);
+    lx = %_DoubleLo(x);
+  }
+
+  // Infinity or NaN.
+  if (hx >= 0x7ff00000) return x;
+
+  k += (hx >> 20) - 1023;
+  var i = (k & 0x80000000) >>> 31;
+  hx = (hx & 0x000fffff) | ((0x3ff - i) << 20);
+  var y = k + i;
+  x = %_ConstructDouble(hx, lx);
+
+  var z = y * LOG10_2LO + IVLN10 * %_MathLogRT(x);
+  return z + y * LOG10_2HI;
+}
+
+
+// ES6 draft 09-27-13, section 20.2.2.22.
+// Return the base 2 logarithm of x
+//
+// fdlibm does not have an explicit log2 function, but fdlibm's pow
+// function does implement an accurate log2 function as part of the
+// pow implementation.  This extracts the core parts of that as a
+// separate log2 function.
+
+// Method:
+// Compute log2(x) in two pieces:
+// log2(x) = w1 + w2
+// where w1 has 53-24 = 29 bits of trailing zeroes.
+
+define DP_H = kMath[64];
+define DP_L = kMath[65];
+
+// Polynomial coefficients for (3/2)*(log2(x) - 2*s - 2/3*s^3)
+macro KLOG2(x)
+(kMath[55+x])
+endmacro
+
+// cp = 2/(3*ln(2)). Note that cp_h + cp_l is cp, but with more accuracy.
+define CP = kMath[61];
+define CP_H = kMath[62];
+define CP_L = kMath[63];
+// 2^53
+define TWO53 = 9007199254740992; 
+
+function MathLog2(x) {
+  x = x * 1;  // Convert to number.
+  var ax = $abs(x);
+  var hx = %_DoubleHi(x);
+  var lx = %_DoubleLo(x);
+  var ix = hx & 0x7fffffff;
+
+  // Handle special cases.
+  // log2(+/- 0) = -Infinity
+  if ((ix | lx) == 0) return -INFINITY;
+
+  // log(x) = NaN, if x < 0
+  if (hx < 0) return NAN;
+
+  // log2(Infinity) = Infinity, log2(NaN) = NaN
+  if (ix >= 0x7ff00000) return x;
+
+  var n = 0;
+
+  // Take care of subnormal number.
+  if (ix < 0x00100000) {
+    ax *= TWO53;
+    n -= 53;
+    ix = %_DoubleHi(ax);
+  }
+
+  n += (ix >> 20) - 0x3ff;
+  var j = ix & 0x000fffff;
+
+  // Determine interval.
+  ix = j | 0x3ff00000;  // normalize ix.
+
+  var bp = 1;
+  var dp_h = 0;
+  var dp_l = 0;
+  if (j > 0x3988e) {  // |x| > sqrt(3/2)
+    if (j < 0xbb67a) {  // |x| < sqrt(3)
+      bp = 1.5;
+      dp_h = DP_H;
+      dp_l = DP_L;
+    } else {
+      n += 1;
+      ix -= 0x00100000;
+    }
+  }
+ 
+  ax = %_ConstructDouble(ix, %_DoubleLo(ax));
+
+  // Compute ss = s_h + s_l = (x - 1)/(x+1) or (x - 1.5)/(x + 1.5)
+  var u = ax - bp;
+  var v = 1 / (ax + bp);
+  var ss = u * v;
+  var s_h = %_ConstructDouble(%_DoubleHi(ss), 0);
+
+  // t_h = ax + bp[k] High
+  var t_h = %_ConstructDouble(%_DoubleHi(ax + bp), 0)
+  var t_l = ax - (t_h - bp);
+  var s_l = v * ((u - s_h * t_h) - s_h * t_l);
+
+  // Compute log2(ax)
+  var s2 = ss * ss;
+  var r = s2 * s2 * (KLOG2(0) + s2 * (KLOG2(1) + s2 * (KLOG2(2) + s2 * (
+                     KLOG2(3) + s2 * (KLOG2(4) + s2 * KLOG2(5))))));
+  r += s_l * (s_h + ss);
+  s2  = s_h * s_h;
+  t_h = %_ConstructDouble(%_DoubleHi(3.0 + s2 + r), 0);
+  t_l = r - ((t_h - 3.0) - s2);
+  // u + v = ss * (1 + ...)
+  u = s_h * t_h;
+  v = s_l * t_h + t_l * ss;
+
+  // 2 / (3 * log(2)) * (ss + ...)
+  p_h = %_ConstructDouble(%_DoubleHi(u + v), 0);
+  p_l = v - (p_h - u);
+  z_h = CP_H * p_h;
+  z_l = CP_L * p_h + p_l * CP + dp_l;
+
+  // log2(ax) = (ss + ...) * 2 / (3 * log(2)) = n + dp_h + z_h + z_l
+  var t = n;
+  var t1 = %_ConstructDouble(%_DoubleHi(((z_h + z_l) + dp_h) + t), 0);
+  var t2 = z_l - (((t1 - t) - dp_h) - z_h);
+
+  // t1 + t2 = log2(ax), sum up because we do not care about extra precision.
+  return t1 + t2;
+}
+
+//-------------------------------------------------------------------
+
+$installFunctions(GlobalMath, DONT_ENUM, [
+  "cos", MathCos,
+  "sin", MathSin,
+  "tan", MathTan,
+  "sinh", MathSinh,
+  "cosh", MathCosh,
+  "log10", MathLog10,
+  "log2", MathLog2,
+  "log1p", MathLog1p,
+  "expm1", MathExpm1
+]);
+
+%SetInlineBuiltinFlag(MathSin);
+%SetInlineBuiltinFlag(MathCos);
+
+})

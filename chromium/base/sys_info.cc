@@ -7,7 +7,9 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info_internal.h"
 #include "base/time/time.h"
 
@@ -19,15 +21,9 @@ static const int kLowMemoryDeviceThresholdMB = 512;
 
 bool DetectLowEndDevice() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  int int_value = 0;
-  if (command_line->HasSwitch(switches::kLowEndDeviceMode)) {
-    std::string string_value =
-      command_line->GetSwitchValueASCII(switches::kLowEndDeviceMode);
-    StringToInt(string_value, &int_value);
-  }
-  if (int_value == 1)
+  if (command_line->HasSwitch(switches::kEnableLowEndDeviceMode))
     return true;
-  if (int_value != 2)
+  if (command_line->HasSwitch(switches::kDisableLowEndDeviceMode))
     return false;
 
   int ram_size_mb = SysInfo::AmountOfPhysicalMemoryMB();
@@ -40,6 +36,14 @@ static LazyInstance<
 
 // static
 bool SysInfo::IsLowEndDevice() {
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("MemoryReduction");
+
+  // Low End Device Mode will be enabled if this client is assigned to
+  // one of those EnabledXXX groups.
+  if (StartsWithASCII(group_name, "Enabled", true))
+    return true;
+
   return g_lazy_low_end_device.Get().value();
 }
 #endif

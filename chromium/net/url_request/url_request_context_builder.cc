@@ -9,12 +9,14 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "net/base/cache_type.h"
 #include "net/base/net_errors.h"
-#include "net/base/network_delegate.h"
+#include "net/base/network_delegate_impl.h"
+#include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/dns/host_resolver.h"
@@ -33,6 +35,8 @@
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
+#include "net/url_request/url_request_intercepting_job_factory.h"
+#include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_throttler_manager.h"
 
@@ -48,7 +52,7 @@ namespace net {
 
 namespace {
 
-class BasicNetworkDelegate : public NetworkDelegate {
+class BasicNetworkDelegate : public NetworkDelegateImpl {
  public:
   BasicNetworkDelegate() {}
   ~BasicNetworkDelegate() override {}
@@ -111,7 +115,7 @@ class BasicNetworkDelegate : public NetworkDelegate {
     return true;
   }
 
-  bool OnCanAccessFile(const net::URLRequest& request,
+  bool OnCanAccessFile(const URLRequest& request,
                        const base::FilePath& path) const override {
     return true;
   }
@@ -122,39 +126,29 @@ class BasicNetworkDelegate : public NetworkDelegate {
     return true;
   }
 
-  int OnBeforeSocketStreamConnect(SocketStream* stream,
-                                  const CompletionCallback& callback) override {
-    return OK;
-  }
-
   DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
 };
 
 class BasicURLRequestContext : public URLRequestContext {
  public:
-  BasicURLRequestContext()
-      : storage_(this) {}
+  explicit BasicURLRequestContext(
+      const scoped_refptr<base::SingleThreadTaskRunner>& file_task_runner)
+      : file_task_runner_(file_task_runner), storage_(this) {}
 
   URLRequestContextStorage* storage() {
     return &storage_;
   }
 
-  base::Thread* GetCacheThread() {
-    if (!cache_thread_) {
-      cache_thread_.reset(new base::Thread("Network Cache Thread"));
-      cache_thread_->StartWithOptions(
-          base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
-    }
-    return cache_thread_.get();
-  }
-
-  base::Thread* GetFileThread() {
-    if (!file_thread_) {
+  scoped_refptr<base::SingleThreadTaskRunner>& GetFileTaskRunner() {
+    // Create a new thread to run file tasks, if needed.
+    if (!file_task_runner_) {
+      DCHECK(!file_thread_);
       file_thread_.reset(new base::Thread("Network File Thread"));
       file_thread_->StartWithOptions(
           base::Thread::Options(base::MessageLoop::TYPE_DEFAULT, 0));
+      file_task_runner_ = file_thread_->task_runner();
     }
-    return file_thread_.get();
+    return file_task_runner_;
   }
 
   void set_transport_security_persister(
@@ -166,9 +160,9 @@ class BasicURLRequestContext : public URLRequestContext {
   ~BasicURLRequestContext() override { AssertNoURLRequests(); }
 
  private:
-  // Threads should be torn down last.
-  scoped_ptr<base::Thread> cache_thread_;
+  // The thread should be torn down last.
   scoped_ptr<base::Thread> file_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
 
   URLRequestContextStorage storage_;
   scoped_ptr<TransportSecurityPersister> transport_security_persister_;
@@ -198,7 +192,7 @@ URLRequestContextBuilder::HttpNetworkSessionParams::~HttpNetworkSessionParams()
 
 URLRequestContextBuilder::SchemeFactory::SchemeFactory(
     const std::string& auth_scheme,
-    net::HttpAuthHandlerFactory* auth_handler_factory)
+    HttpAuthHandlerFactory* auth_handler_factory)
     : scheme(auth_scheme), factory(auth_handler_factory) {
 }
 
@@ -215,7 +209,7 @@ URLRequestContextBuilder::URLRequestContextBuilder()
 #endif
       http_cache_enabled_(true),
       throttling_enabled_(false),
-      channel_id_enabled_(true) {
+      sdch_enabled_(false) {
 }
 
 URLRequestContextBuilder::~URLRequestContextBuilder() {}
@@ -237,8 +231,27 @@ void URLRequestContextBuilder::SetSpdyAndQuicEnabled(bool spdy_enabled,
   http_network_session_params_.enable_quic = quic_enabled;
 }
 
+void URLRequestContextBuilder::SetInterceptors(
+    ScopedVector<URLRequestInterceptor> url_request_interceptors) {
+  url_request_interceptors_ = url_request_interceptors.Pass();
+}
+
+void URLRequestContextBuilder::SetCookieAndChannelIdStores(
+      const scoped_refptr<CookieStore>& cookie_store,
+      scoped_ptr<ChannelIDService> channel_id_service) {
+  DCHECK(cookie_store);
+  cookie_store_ = cookie_store;
+  channel_id_service_ = channel_id_service.Pass();
+}
+
+void URLRequestContextBuilder::SetFileTaskRunner(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
+  file_task_runner_ = task_runner;
+}
+
 URLRequestContext* URLRequestContextBuilder::Build() {
-  BasicURLRequestContext* context = new BasicURLRequestContext;
+  BasicURLRequestContext* context =
+      new BasicURLRequestContext(file_task_runner_);
   URLRequestContextStorage* storage = context->storage();
 
   storage->set_http_user_agent_settings(new StaticHttpUserAgentSettings(
@@ -252,12 +265,11 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   if (net_log_) {
     storage->set_net_log(net_log_.release());
   } else {
-    storage->set_net_log(new net::NetLog);
+    storage->set_net_log(new NetLog);
   }
 
   if (!host_resolver_) {
-    host_resolver_ = net::HostResolver::CreateDefaultResolver(
-        context->net_log());
+    host_resolver_ = HostResolver::CreateDefaultResolver(context->net_log());
   }
   storage->set_host_resolver(host_resolver_.Pass());
 
@@ -271,10 +283,9 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     if (proxy_config_service_) {
       proxy_config_service = proxy_config_service_.release();
     } else {
-      proxy_config_service =
-          ProxyService::CreateSystemProxyConfigService(
-              base::ThreadTaskRunnerHandle::Get().get(),
-              context->GetFileThread()->task_runner());
+      proxy_config_service = ProxyService::CreateSystemProxyConfigService(
+          base::ThreadTaskRunnerHandle::Get().get(),
+          context->GetFileTaskRunner());
     }
   #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
     proxy_service_.reset(
@@ -285,47 +296,50 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   }
   storage->set_proxy_service(proxy_service_.release());
 
-  storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
+  storage->set_ssl_config_service(new SSLConfigServiceDefaults);
   HttpAuthHandlerRegistryFactory* http_auth_handler_registry_factory =
-      net::HttpAuthHandlerRegistryFactory::CreateDefault(
-           context->host_resolver());
+      HttpAuthHandlerRegistryFactory::CreateDefault(context->host_resolver());
   for (size_t i = 0; i < extra_http_auth_handlers_.size(); ++i) {
     http_auth_handler_registry_factory->RegisterSchemeFactory(
         extra_http_auth_handlers_[i].scheme,
         extra_http_auth_handlers_[i].factory);
   }
   storage->set_http_auth_handler_factory(http_auth_handler_registry_factory);
-  storage->set_cookie_store(new CookieMonster(NULL, NULL));
 
-  if (channel_id_enabled_) {
+  if (cookie_store_) {
+    storage->set_cookie_store(cookie_store_.get());
+    storage->set_channel_id_service(channel_id_service_.Pass());
+  } else {
+    storage->set_cookie_store(new CookieMonster(NULL, NULL));
     // TODO(mmenke):  This always creates a file thread, even when it ends up
     // not being used.  Consider lazily creating the thread.
-    storage->set_channel_id_service(
-        new ChannelIDService(
-            new DefaultChannelIDStore(NULL),
-            context->GetFileThread()->message_loop_proxy()));
+    storage->set_channel_id_service(make_scoped_ptr(new ChannelIDService(
+        new DefaultChannelIDStore(NULL), context->GetFileTaskRunner())));
   }
 
-  storage->set_transport_security_state(new net::TransportSecurityState());
+  if (sdch_enabled_) {
+    storage->set_sdch_manager(
+        scoped_ptr<net::SdchManager>(new SdchManager()).Pass());
+  }
+
+  storage->set_transport_security_state(new TransportSecurityState());
   if (!transport_security_persister_path_.empty()) {
     context->set_transport_security_persister(
         make_scoped_ptr<TransportSecurityPersister>(
-            new TransportSecurityPersister(
-                context->transport_security_state(),
-                transport_security_persister_path_,
-                context->GetFileThread()->message_loop_proxy(),
-                false)));
+            new TransportSecurityPersister(context->transport_security_state(),
+                                           transport_security_persister_path_,
+                                           context->GetFileTaskRunner(),
+                                           false)));
   }
 
   storage->set_http_server_properties(
-      scoped_ptr<net::HttpServerProperties>(
-          new net::HttpServerPropertiesImpl()));
+      scoped_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
   storage->set_cert_verifier(CertVerifier::CreateDefault());
 
   if (throttling_enabled_)
     storage->set_throttler_manager(new URLRequestThrottlerManager());
 
-  net::HttpNetworkSession::Params network_session_params;
+  HttpNetworkSession::Params network_session_params;
   network_session_params.host_resolver = context->host_resolver();
   network_session_params.cert_verifier = context->cert_verifier();
   network_session_params.transport_security_state =
@@ -354,6 +368,8 @@ URLRequestContext* URLRequestContextBuilder::Build() {
       http_network_session_params_.trusted_spdy_proxy;
   network_session_params.next_protos = http_network_session_params_.next_protos;
   network_session_params.enable_quic = http_network_session_params_.enable_quic;
+  network_session_params.quic_connection_options =
+      http_network_session_params_.quic_connection_options;
 
   HttpTransactionFactory* http_transaction_factory = NULL;
   if (http_cache_enabled_) {
@@ -362,11 +378,8 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     HttpCache::BackendFactory* http_cache_backend = NULL;
     if (http_cache_params_.type == HttpCacheParams::DISK) {
       http_cache_backend = new HttpCache::DefaultBackend(
-          DISK_CACHE,
-          net::CACHE_BACKEND_DEFAULT,
-          http_cache_params_.path,
-          http_cache_params_.max_size,
-          context->GetCacheThread()->task_runner());
+          DISK_CACHE, CACHE_BACKEND_DEFAULT, http_cache_params_.path,
+          http_cache_params_.max_size, context->GetFileTaskRunner());
     } else {
       http_cache_backend =
           HttpCache::DefaultBackend::InMemory(http_cache_params_.max_size);
@@ -375,8 +388,8 @@ URLRequestContext* URLRequestContextBuilder::Build() {
     http_transaction_factory = new HttpCache(
         network_session_params, http_cache_backend);
   } else {
-    scoped_refptr<net::HttpNetworkSession> network_session(
-        new net::HttpNetworkSession(network_session_params));
+    scoped_refptr<HttpNetworkSession> network_session(
+        new HttpNetworkSession(network_session_params));
 
     http_transaction_factory = new HttpNetworkLayer(network_session.get());
   }
@@ -389,8 +402,7 @@ URLRequestContext* URLRequestContextBuilder::Build() {
 #if !defined(DISABLE_FILE_SUPPORT)
   if (file_enabled_) {
     job_factory->SetProtocolHandler(
-    "file",
-    new FileProtocolHandler(context->GetFileThread()->message_loop_proxy()));
+        "file", new FileProtocolHandler(context->GetFileTaskRunner()));
   }
 #endif  // !defined(DISABLE_FILE_SUPPORT)
 
@@ -403,8 +415,19 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   }
 #endif  // !defined(DISABLE_FTP_SUPPORT)
 
-  storage->set_job_factory(job_factory);
+  scoped_ptr<net::URLRequestJobFactory> top_job_factory(job_factory);
+  if (!url_request_interceptors_.empty()) {
+    // Set up interceptors in the reverse order.
 
+    for (ScopedVector<net::URLRequestInterceptor>::reverse_iterator i =
+             url_request_interceptors_.rbegin();
+         i != url_request_interceptors_.rend(); ++i) {
+      top_job_factory.reset(new net::URLRequestInterceptingJobFactory(
+          top_job_factory.Pass(), make_scoped_ptr(*i)));
+    }
+    url_request_interceptors_.weak_clear();
+  }
+  storage->set_job_factory(top_job_factory.release());
   // TODO(willchan): Support sdch.
 
   return context;

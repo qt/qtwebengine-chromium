@@ -23,13 +23,20 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
+#include "ui/events/devices/device_data_manager.h"
 #include "ui/events/devices/device_util_linux.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_switches.h"
-#include "ui/gfx/screen.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/ozone/evdev/device_event_dispatcher_evdev.h"
+#include "ui/events/ozone/evdev/touch_evdev_types.h"
+#include "ui/events/ozone/evdev/touch_noise/touch_noise_finder.h"
 
 namespace {
+
+const int kMaxTrackingId = 0xffff;  // TRKID_MAX in kernel.
 
 struct TouchCalibration {
   int bezel_left;
@@ -40,63 +47,65 @@ struct TouchCalibration {
 
 void GetTouchCalibration(TouchCalibration* cal) {
   std::vector<std::string> parts;
-  if (Tokenize(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+  if (Tokenize(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
                    switches::kTouchCalibration),
-               ",",
-               &parts) >= 4) {
+               ",", &parts) >= 4) {
     if (!base::StringToInt(parts[0], &cal->bezel_left))
-      DLOG(ERROR) << "Incorrect left border calibration value passed.";
+      LOG(ERROR) << "Incorrect left border calibration value passed.";
     if (!base::StringToInt(parts[1], &cal->bezel_right))
-      DLOG(ERROR) << "Incorrect right border calibration value passed.";
+      LOG(ERROR) << "Incorrect right border calibration value passed.";
     if (!base::StringToInt(parts[2], &cal->bezel_top))
-      DLOG(ERROR) << "Incorrect top border calibration value passed.";
+      LOG(ERROR) << "Incorrect top border calibration value passed.";
     if (!base::StringToInt(parts[3], &cal->bezel_bottom))
-      DLOG(ERROR) << "Incorrect bottom border calibration value passed.";
+      LOG(ERROR) << "Incorrect bottom border calibration value passed.";
   }
 }
 
-float TuxelsToPixels(float val,
-                     float min_tuxels,
-                     float num_tuxels,
-                     float min_pixels,
-                     float num_pixels) {
-  // Map [min_tuxels, min_tuxels + num_tuxels) to
-  //     [min_pixels, min_pixels + num_pixels).
-  return min_pixels + (val - min_tuxels) * num_pixels / num_tuxels;
+int32_t AbsCodeToMtCode(int32_t code) {
+  switch (code) {
+    case ABS_X:
+      return ABS_MT_POSITION_X;
+    case ABS_Y:
+      return ABS_MT_POSITION_Y;
+    case ABS_PRESSURE:
+      return ABS_MT_PRESSURE;
+    case ABS_DISTANCE:
+      return ABS_MT_DISTANCE;
+    default:
+      return -1;
+  }
 }
 
-float TuxelToPixelSize(float val, float num_tuxels, float num_pixels) {
-  return val * num_pixels / num_tuxels;
-}
+const int kTrackingIdForUnusedSlot = -1;
 
 }  // namespace
 
 namespace ui {
 
-TouchEventConverterEvdev::InProgressEvents::InProgressEvents()
-    : x_(0),
-      y_(0),
-      id_(-1),
-      finger_(-1),
-      type_(ET_UNKNOWN),
-      radius_x_(0),
-      radius_y_(0),
-      pressure_(0) {
-}
-
 TouchEventConverterEvdev::TouchEventConverterEvdev(
     int fd,
     base::FilePath path,
     int id,
-    const EventDeviceInfo& info,
-    const EventDispatchCallback& callback)
-    : EventConverterEvdev(fd, path, id),
-      callback_(callback),
+    InputDeviceType type,
+    const EventDeviceInfo& devinfo,
+    DeviceEventDispatcherEvdev* dispatcher)
+    : EventConverterEvdev(fd,
+                          path,
+                          id,
+                          type,
+                          devinfo.name(),
+                          devinfo.vendor_id(),
+                          devinfo.product_id()),
+      dispatcher_(dispatcher),
       syn_dropped_(false),
-      is_type_a_(false),
-      current_slot_(0),
-      is_internal_(IsTouchscreenInternal(path)) {
-  Init(info);
+      has_mt_(false),
+      touch_points_(0),
+      next_tracking_id_(0),
+      current_slot_(0) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kExtraTouchNoiseFiltering)) {
+    touch_noise_finder_.reset(new TouchNoiseFinder);
+  }
 }
 
 TouchEventConverterEvdev::~TouchEventConverterEvdev() {
@@ -104,63 +113,86 @@ TouchEventConverterEvdev::~TouchEventConverterEvdev() {
   close(fd_);
 }
 
-void TouchEventConverterEvdev::Init(const EventDeviceInfo& info) {
-  gfx::Screen* screen = gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE);
-  if (!screen)
-    return;  // No scaling.
-  gfx::Display display = screen->GetPrimaryDisplay();
-  gfx::Size size = display.GetSizeInPixel();
+void TouchEventConverterEvdev::Initialize(const EventDeviceInfo& info) {
+  has_mt_ = info.HasMultitouch();
 
-  pressure_min_ = info.GetAbsMinimum(ABS_MT_PRESSURE);
-  pressure_max_ = info.GetAbsMaximum(ABS_MT_PRESSURE);
-  x_min_tuxels_ = info.GetAbsMinimum(ABS_MT_POSITION_X);
-  x_num_tuxels_ = info.GetAbsMaximum(ABS_MT_POSITION_X) - x_min_tuxels_ + 1;
-  y_min_tuxels_ = info.GetAbsMinimum(ABS_MT_POSITION_Y);
-  y_num_tuxels_ = info.GetAbsMaximum(ABS_MT_POSITION_Y) - y_min_tuxels_ + 1;
-  native_size_ = gfx::Size(x_num_tuxels_, y_num_tuxels_);
-
-  // Map coordinates onto screen.
-  x_min_pixels_ = 0;
-  y_min_pixels_ = 0;
-  x_num_pixels_ = size.width();
-  y_num_pixels_ = size.height();
-
-  VLOG(1) << "mapping touch coordinates to screen coordinates: "
-          << base::StringPrintf("%dx%d", size.width(), size.height());
+  if (has_mt_) {
+    pressure_min_ = info.GetAbsMinimum(ABS_MT_PRESSURE);
+    pressure_max_ = info.GetAbsMaximum(ABS_MT_PRESSURE);
+    x_min_tuxels_ = info.GetAbsMinimum(ABS_MT_POSITION_X);
+    x_num_tuxels_ = info.GetAbsMaximum(ABS_MT_POSITION_X) - x_min_tuxels_ + 1;
+    y_min_tuxels_ = info.GetAbsMinimum(ABS_MT_POSITION_Y);
+    y_num_tuxels_ = info.GetAbsMaximum(ABS_MT_POSITION_Y) - y_min_tuxels_ + 1;
+    touch_points_ =
+        std::min<int>(info.GetAbsMaximum(ABS_MT_SLOT) + 1, kNumTouchEvdevSlots);
+    current_slot_ = info.GetAbsValue(ABS_MT_SLOT);
+  } else {
+    pressure_min_ = info.GetAbsMinimum(ABS_PRESSURE);
+    pressure_max_ = info.GetAbsMaximum(ABS_PRESSURE);
+    x_min_tuxels_ = info.GetAbsMinimum(ABS_X);
+    x_num_tuxels_ = info.GetAbsMaximum(ABS_X) - x_min_tuxels_ + 1;
+    y_min_tuxels_ = info.GetAbsMinimum(ABS_Y);
+    y_num_tuxels_ = info.GetAbsMaximum(ABS_Y) - y_min_tuxels_ + 1;
+    touch_points_ = 1;
+    current_slot_ = 0;
+  }
 
   // Apply --touch-calibration.
-  TouchCalibration cal = {};
-  GetTouchCalibration(&cal);
-  x_min_tuxels_ += cal.bezel_left;
-  x_num_tuxels_ -= cal.bezel_left + cal.bezel_right;
-  y_min_tuxels_ += cal.bezel_top;
-  y_num_tuxels_ -= cal.bezel_top + cal.bezel_bottom;
+  if (type() == INPUT_DEVICE_INTERNAL) {
+    TouchCalibration cal = {};
+    GetTouchCalibration(&cal);
+    x_min_tuxels_ += cal.bezel_left;
+    x_num_tuxels_ -= cal.bezel_left + cal.bezel_right;
+    y_min_tuxels_ += cal.bezel_top;
+    y_num_tuxels_ -= cal.bezel_top + cal.bezel_bottom;
 
-  VLOG(1) << "applying touch calibration: "
-          << base::StringPrintf("[%d, %d, %d, %d]",
-                                cal.bezel_left,
-                                cal.bezel_right,
-                                cal.bezel_top,
-                                cal.bezel_bottom);
+    VLOG(1) << "applying touch calibration: "
+            << base::StringPrintf("[%d, %d, %d, %d]", cal.bezel_left,
+                                  cal.bezel_right, cal.bezel_top,
+                                  cal.bezel_bottom);
+  }
 
-  for (int i = 0;
-       i < std::min<int>(info.GetAbsMaximum(ABS_MT_SLOT) + 1, MAX_FINGERS);
-       ++i) {
-    events_[i].finger_ = info.GetSlotValue(ABS_MT_TRACKING_ID, i);
-    events_[i].type_ =
-        events_[i].finger_ < 0 ? ET_TOUCH_RELEASED : ET_TOUCH_PRESSED;
-    events_[i].x_ = info.GetSlotValue(ABS_MT_POSITION_X, i);
-    events_[i].y_ = info.GetSlotValue(ABS_MT_POSITION_Y, i);
-    events_[i].radius_x_ = info.GetSlotValue(ABS_MT_TOUCH_MAJOR, i);
-    events_[i].radius_y_ = info.GetSlotValue(ABS_MT_TOUCH_MINOR, i);
-    events_[i].pressure_ = info.GetSlotValue(ABS_MT_PRESSURE, i);
+  events_.resize(touch_points_);
+
+  if (has_mt_) {
+    for (size_t i = 0; i < events_.size(); ++i) {
+      events_[i].x = info.GetAbsMtSlotValueWithDefault(ABS_MT_POSITION_X, i, 0);
+      events_[i].y = info.GetAbsMtSlotValueWithDefault(ABS_MT_POSITION_Y, i, 0);
+      events_[i].tracking_id = info.GetAbsMtSlotValueWithDefault(
+          ABS_MT_TRACKING_ID, i, kTrackingIdForUnusedSlot);
+      events_[i].touching = (events_[i].tracking_id >= 0);
+      events_[i].slot = i;
+
+      // Dirty the slot so we'll update the consumer at the first opportunity.
+      // We can't dispatch here as this is currently called on the worker pool.
+      // TODO(spang): Move initialization off worker pool.
+      events_[i].altered = true;
+
+      // Optional bits.
+      events_[i].radius_x =
+          info.GetAbsMtSlotValueWithDefault(ABS_MT_TOUCH_MAJOR, i, 0) / 2.0f;
+      events_[i].radius_y =
+          info.GetAbsMtSlotValueWithDefault(ABS_MT_TOUCH_MINOR, i, 0) / 2.0f;
+      events_[i].pressure = ScalePressure(
+          info.GetAbsMtSlotValueWithDefault(ABS_MT_PRESSURE, i, 0));
+    }
+  } else {
+    // TODO(spang): Add key state to EventDeviceInfo to allow initial contact.
+    events_[0].x = 0;
+    events_[0].y = 0;
+    events_[0].tracking_id = kTrackingIdForUnusedSlot;
+    events_[0].touching = false;
+    events_[0].slot = 0;
+    events_[0].radius_x = 0;
+    events_[0].radius_y = 0;
+    events_[0].pressure = 0;
   }
 }
 
 bool TouchEventConverterEvdev::Reinitialize() {
   EventDeviceInfo info;
   if (info.Initialize(fd_)) {
-    Init(info);
+    Initialize(info);
     return true;
   }
   return false;
@@ -171,15 +203,23 @@ bool TouchEventConverterEvdev::HasTouchscreen() const {
 }
 
 gfx::Size TouchEventConverterEvdev::GetTouchscreenSize() const {
-  return native_size_;
+  return gfx::Size(x_num_tuxels_, y_num_tuxels_);
 }
 
-bool TouchEventConverterEvdev::IsInternal() const {
-  return is_internal_;
+int TouchEventConverterEvdev::GetTouchPoints() const {
+  return touch_points_;
+}
+
+void TouchEventConverterEvdev::OnStopped() {
+  ReleaseTouches();
 }
 
 void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
-  input_event inputs[MAX_FINGERS * 6 + 1];
+  TRACE_EVENT1("evdev",
+               "TouchEventConverterEvdev::OnFileCanReadWithoutBlocking", "fd",
+               fd);
+
+  input_event inputs[kNumTouchEvdevSlots * 6 + 1];
   ssize_t read_size = read(fd, inputs, sizeof(inputs));
   if (read_size < 0) {
     if (errno == EINTR || errno == EAGAIN)
@@ -190,86 +230,103 @@ void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
+  if (ignore_events_)
+    return;
+
   for (unsigned i = 0; i < read_size / sizeof(*inputs); i++) {
-    ProcessInputEvent(inputs[i]);
+    if (!has_mt_) {
+      // Emulate the device as an MT device with only 1 slot by inserting extra
+      // MT protocol events in the stream.
+      EmulateMultitouchEvent(inputs[i]);
+    }
+
+    ProcessMultitouchEvent(inputs[i]);
   }
 }
 
-void TouchEventConverterEvdev::ProcessInputEvent(const input_event& input) {
+void TouchEventConverterEvdev::ProcessMultitouchEvent(
+    const input_event& input) {
   if (input.type == EV_SYN) {
     ProcessSyn(input);
-  } else if(syn_dropped_) {
+  } else if (syn_dropped_) {
     // Do nothing. This branch indicates we have lost sync with the driver.
   } else if (input.type == EV_ABS) {
-    if (current_slot_ >= MAX_FINGERS) {
-      LOG(ERROR) << "too many touch events: " << current_slot_;
-      return;
+    if (events_.size() <= current_slot_) {
+      LOG(ERROR) << "current_slot_ (" << current_slot_
+                 << ") >= events_.size() (" << events_.size() << ")";
+    } else {
+      ProcessAbs(input);
     }
-    ProcessAbs(input);
   } else if (input.type == EV_KEY) {
-    switch (input.code) {
-      case BTN_TOUCH:
-        break;
-      default:
-        NOTIMPLEMENTED() << "invalid code for EV_KEY: " << input.code;
-    }
+    ProcessKey(input);
   } else {
     NOTIMPLEMENTED() << "invalid type: " << input.type;
+  }
+}
+
+void TouchEventConverterEvdev::EmulateMultitouchEvent(
+    const input_event& event) {
+  input_event emulated_event = event;
+
+  if (event.type == EV_ABS) {
+    emulated_event.code = AbsCodeToMtCode(event.code);
+    if (emulated_event.code >= 0)
+      ProcessMultitouchEvent(emulated_event);
+  } else if (event.type == EV_KEY && event.code == BTN_TOUCH) {
+    emulated_event.type = EV_ABS;
+    emulated_event.code = ABS_MT_TRACKING_ID;
+    emulated_event.value =
+        event.value ? NextTrackingId() : kTrackingIdForUnusedSlot;
+    ProcessMultitouchEvent(emulated_event);
+  }
+}
+
+void TouchEventConverterEvdev::ProcessKey(const input_event& input) {
+  switch (input.code) {
+    case BTN_TOUCH:
+      break;
+    default:
+      NOTIMPLEMENTED() << "invalid code for EV_KEY: " << input.code;
   }
 }
 
 void TouchEventConverterEvdev::ProcessAbs(const input_event& input) {
   switch (input.code) {
     case ABS_MT_TOUCH_MAJOR:
-      altered_slots_.set(current_slot_);
       // TODO(spang): If we have all of major, minor, and orientation,
       // we can scale the ellipse correctly. However on the Pixel we get
       // neither minor nor orientation, so this is all we can do.
-      events_[current_slot_].radius_x_ =
-          TuxelToPixelSize(input.value, x_num_tuxels_, x_num_pixels_) / 2.0f;
+      events_[current_slot_].radius_x = input.value / 2.0f;
       break;
     case ABS_MT_TOUCH_MINOR:
-      altered_slots_.set(current_slot_);
-      events_[current_slot_].radius_y_ =
-          TuxelToPixelSize(input.value, y_num_tuxels_, y_num_pixels_) / 2.0f;
+      events_[current_slot_].radius_y = input.value / 2.0f;
       break;
     case ABS_MT_POSITION_X:
-      altered_slots_.set(current_slot_);
-      events_[current_slot_].x_ = TuxelsToPixels(input.value,
-                                                 x_min_tuxels_,
-                                                 x_num_tuxels_,
-                                                 x_min_pixels_,
-                                                 x_num_pixels_);
+      events_[current_slot_].x = input.value;
       break;
     case ABS_MT_POSITION_Y:
-      altered_slots_.set(current_slot_);
-      events_[current_slot_].y_ = TuxelsToPixels(input.value,
-                                                 y_min_tuxels_,
-                                                 y_num_tuxels_,
-                                                 y_min_pixels_,
-                                                 y_num_pixels_);
+      events_[current_slot_].y = input.value;
       break;
     case ABS_MT_TRACKING_ID:
-      altered_slots_.set(current_slot_);
-      if (input.value < 0) {
-        events_[current_slot_].type_ = ET_TOUCH_RELEASED;
-      } else {
-        events_[current_slot_].finger_ = input.value;
-        events_[current_slot_].type_ = ET_TOUCH_PRESSED;
-      }
+      UpdateTrackingId(current_slot_, input.value);
       break;
     case ABS_MT_PRESSURE:
-      altered_slots_.set(current_slot_);
-      events_[current_slot_].pressure_ = input.value - pressure_min_;
-      events_[current_slot_].pressure_ /= pressure_max_ - pressure_min_;
+      events_[current_slot_].pressure = ScalePressure(input.value);
       break;
     case ABS_MT_SLOT:
-      current_slot_ = input.value;
-      altered_slots_.set(current_slot_);
+      if (input.value >= 0 &&
+          static_cast<size_t>(input.value) < events_.size()) {
+        current_slot_ = input.value;
+      } else {
+        LOG(ERROR) << "invalid touch event index: " << input.value;
+        return;
+      }
       break;
     default:
       DVLOG(5) << "unhandled code for EV_ABS: " << input.code;
+      return;
   }
+  events_[current_slot_].altered = true;
 }
 
 void TouchEventConverterEvdev::ProcessSyn(const input_event& input) {
@@ -279,22 +336,12 @@ void TouchEventConverterEvdev::ProcessSyn(const input_event& input) {
         // Have to re-initialize.
         if (Reinitialize()) {
           syn_dropped_ = false;
-          altered_slots_.reset();
         } else {
           LOG(ERROR) << "failed to re-initialize device info";
         }
       } else {
-        ReportEvents(base::TimeDelta::FromMicroseconds(
-            input.time.tv_sec * 1000000 + input.time.tv_usec));
+        ReportEvents(EventConverterEvdev::TimeDeltaFromInputEvent(input));
       }
-      if (is_type_a_)
-        current_slot_ = 0;
-      break;
-    case SYN_MT_REPORT:
-      // For type A devices, we just get a stream of all current contacts,
-      // in some arbitrary order.
-      events_[current_slot_++].type_ = ET_TOUCH_PRESSED;
-      is_type_a_ = true;
       break;
     case SYN_DROPPED:
       // Some buffer has overrun. We ignore all events up to and
@@ -306,29 +353,82 @@ void TouchEventConverterEvdev::ProcessSyn(const input_event& input) {
   }
 }
 
-void TouchEventConverterEvdev::ReportEvents(base::TimeDelta delta) {
-  for (int i = 0; i < MAX_FINGERS; i++) {
-    if (altered_slots_[i]) {
-      // TODO(rikroege): Support elliptical finger regions.
-      scoped_ptr<TouchEvent> event(
-          new TouchEvent(events_[i].type_,
-                         gfx::PointF(events_[i].x_, events_[i].y_),
-                         /* flags */ 0,
-                         /* touch_id */ i,
-                         delta,
-                         /* radius_x */ events_[i].radius_x_,
-                         /* radius_y */ events_[i].radius_y_,
-                         /* angle */ 0.,
-                         events_[i].pressure_));
-      event->set_source_device_id(id_);
-      callback_.Run(event.Pass());
+EventType TouchEventConverterEvdev::GetEventTypeForTouch(
+    const InProgressTouchEvdev& touch) {
+  if (touch.cancelled)
+    return ET_UNKNOWN;
 
-      // Subsequent events for this finger will be touch-move until it
-      // is released.
-      events_[i].type_ = ET_TOUCH_MOVED;
-    }
+  if (touch_noise_finder_ && touch_noise_finder_->SlotHasNoise(touch.slot)) {
+    if (touch.touching && !touch.was_touching)
+      return ET_UNKNOWN;
+    return ET_TOUCH_CANCELLED;
   }
-  altered_slots_.reset();
+
+  if (touch.touching)
+    return touch.was_touching ? ET_TOUCH_MOVED : ET_TOUCH_PRESSED;
+  return touch.was_touching ? ET_TOUCH_RELEASED : ET_UNKNOWN;
+}
+
+void TouchEventConverterEvdev::ReportEvent(const InProgressTouchEvdev& event,
+                                           EventType event_type,
+                                           const base::TimeDelta& timestamp) {
+  dispatcher_->DispatchTouchEvent(TouchEventParams(
+      input_device_.id, event.slot, event_type, gfx::PointF(event.x, event.y),
+      gfx::Vector2dF(event.radius_x, event.radius_y), event.pressure,
+      timestamp));
+}
+
+void TouchEventConverterEvdev::ReportEvents(base::TimeDelta delta) {
+  if (touch_noise_finder_)
+    touch_noise_finder_->HandleTouches(events_, delta);
+
+  for (size_t i = 0; i < events_.size(); i++) {
+    InProgressTouchEvdev* event = &events_[i];
+    if (!event->altered)
+      continue;
+
+    EventType event_type = GetEventTypeForTouch(*event);
+    if (event_type == ET_UNKNOWN || event_type == ET_TOUCH_CANCELLED)
+      event->cancelled = true;
+
+    if (event_type != ET_UNKNOWN)
+      ReportEvent(*event, event_type, delta);
+
+    event->was_touching = event->touching;
+    event->altered = false;
+  }
+}
+
+void TouchEventConverterEvdev::UpdateTrackingId(int slot, int tracking_id) {
+  InProgressTouchEvdev* event = &events_[slot];
+
+  if (event->tracking_id == tracking_id)
+    return;
+
+  event->tracking_id = tracking_id;
+  event->touching = (tracking_id >= 0);
+  event->altered = true;
+
+  if (tracking_id >= 0)
+    event->cancelled = false;
+}
+
+void TouchEventConverterEvdev::ReleaseTouches() {
+  for (size_t slot = 0; slot < events_.size(); slot++)
+    UpdateTrackingId(slot, kTrackingIdForUnusedSlot);
+
+  ReportEvents(EventTimeForNow());
+}
+
+float TouchEventConverterEvdev::ScalePressure(int32_t value) {
+  float pressure = value - pressure_min_;
+  if (pressure_max_ - pressure_min_)
+    pressure /= pressure_max_ - pressure_min_;
+  return pressure;
+}
+
+int TouchEventConverterEvdev::NextTrackingId() {
+  return next_tracking_id_++ & kMaxTrackingId;
 }
 
 }  // namespace ui

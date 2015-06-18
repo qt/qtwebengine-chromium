@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_PUBLIC_UTILITY_IMAGE_DECODER_UTILS_H_
-#define CONTENT_PUBLIC_UTILITY_IMAGE_DECODER_UTILS_H_
+#ifndef CONTENT_PUBLIC_CHILD_IMAGE_DECODER_UTILS_H_
+#define CONTENT_PUBLIC_CHILD_IMAGE_DECODER_UTILS_H_
 
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
-#include "ui/gfx/size.h"
 
 class SkBitmap;
+
+namespace gfx {
+class Size;
+}
 
 namespace content {
 
@@ -21,4 +24,4 @@ CONTENT_EXPORT SkBitmap DecodeImage(const unsigned char* data,
                                     size_t size);
 }  // namespace content
 
-#endif  // CONTENT_PUBLIC_UTILITY_IMAGE_DECODER_UTILS_H_
+#endif  // CONTENT_PUBLIC_CHILD_IMAGE_DECODER_UTILS_H_

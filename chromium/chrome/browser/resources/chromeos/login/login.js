@@ -7,6 +7,7 @@
  */
 
 <include src="login_common.js">
+<include src="notification_card.js">
 
 cr.define('cr.ui.Oobe', function() {
   return {

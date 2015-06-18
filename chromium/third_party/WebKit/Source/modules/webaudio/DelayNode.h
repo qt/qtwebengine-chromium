@@ -25,29 +25,23 @@
 #ifndef DelayNode_h
 #define DelayNode_h
 
-#include "modules/webaudio/AudioBasicProcessorNode.h"
-#include "modules/webaudio/DelayProcessor.h"
-#include "wtf/PassRefPtr.h"
+#include "modules/webaudio/AudioNode.h"
 
 namespace blink {
 
-class AudioParam;
 class ExceptionState;
 
-class DelayNode final : public AudioBasicProcessorNode {
+class DelayNode final : public AudioNode {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static DelayNode* create(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
-    {
-        return new DelayNode(context, sampleRate, maxDelayTime, exceptionState);
-    }
-
+    static DelayNode* create(AudioContext&, float sampleRate, double maxDelayTime, ExceptionState&);
+    DECLARE_VIRTUAL_TRACE();
     AudioParam* delayTime();
 
 private:
-    DelayNode(AudioContext*, float sampleRate, double maxDelayTime, ExceptionState&);
+    DelayNode(AudioContext&, float sampleRate, double maxDelayTime);
 
-    DelayProcessor* delayProcessor() { return static_cast<DelayProcessor*>(processor()); }
+    Member<AudioParam> m_delayTime;
 };
 
 } // namespace blink

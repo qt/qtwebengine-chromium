@@ -3,24 +3,65 @@
 // found in the LICENSE file.
 
 /**
+ * Turn a dictionary received from postMessage into a key event.
+ * @param {Object} dict A dictionary representing the key event.
+ * @return {Event} A key event.
+ */
+function DeserializeKeyEvent(dict) {
+  var e = document.createEvent('Event');
+  e.initEvent('keydown');
+  e.keyCode = dict.keyCode;
+  e.shiftKey = dict.shiftKey;
+  e.ctrlKey = dict.ctrlKey;
+  e.altKey = dict.altKey;
+  e.metaKey = dict.metaKey;
+  e.fromScriptingAPI = true;
+  return e;
+}
+
+/**
+ * Turn a key event into a dictionary which can be sent over postMessage.
+ * @param {Event} event A key event.
+ * @return {Object} A dictionary representing the key event.
+ */
+function SerializeKeyEvent(event) {
+  return {
+    keyCode: event.keyCode,
+    shiftKey: event.shiftKey,
+    ctrlKey: event.ctrlKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey
+  };
+}
+
+/**
+ * An enum containing a value specifying whether the PDF is currently loading,
+ * has finished loading or failed to load.
+ */
+var LoadState = {
+  LOADING: 'loading',
+  SUCCESS: 'success',
+  FAILED: 'failed'
+};
+
+/**
  * Create a new PDFScriptingAPI. This provides a scripting interface to
  * the PDF viewer so that it can be customized by things like print preview.
  * @param {Window} window the window of the page containing the pdf viewer.
- * @param {string} extensionUrl the url of the PDF extension.
+ * @param {Object} plugin the plugin element containing the pdf viewer.
  */
-function PDFScriptingAPI(window, extensionUrl) {
-  this.extensionUrl_ = extensionUrl;
-  this.messageQueue_ = [];
+function PDFScriptingAPI(window, plugin) {
+  this.loadState_ = LoadState.LOADING;
+  this.pendingScriptingMessages_ = [];
+  this.setPlugin(plugin);
+
   window.addEventListener('message', function(event) {
-    if (event.origin != this.extensionUrl_) {
+    if (event.origin != 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai') {
       console.error('Received message that was not from the extension: ' +
                     event);
       return;
     }
     switch (event.data.type) {
-      case 'readyToReceive':
-        this.setDestinationWindow(event.source);
-        break;
       case 'viewport':
         if (this.viewportChangedCallback_)
           this.viewportChangedCallback_(event.data.pageX,
@@ -30,14 +71,25 @@ function PDFScriptingAPI(window, extensionUrl) {
                                         event.data.viewportHeight);
         break;
       case 'documentLoaded':
+        this.loadState_ = event.data.load_state;
         if (this.loadCallback_)
-          this.loadCallback_();
+          this.loadCallback_(this.loadState_ == LoadState.SUCCESS);
         break;
       case 'getAccessibilityJSONReply':
         if (this.accessibilityCallback_) {
           this.accessibilityCallback_(event.data.json);
           this.accessibilityCallback_ = null;
         }
+        break;
+      case 'getSelectedTextReply':
+        if (this.selectedTextCallback_) {
+          this.selectedTextCallback_(event.data.selectedText);
+          this.selectedTextCallback_ = null;
+        }
+        break;
+      case 'sendKeyEvent':
+        if (this.keyEventCallback_)
+          this.keyEventCallback_(DeserializeKeyEvent(event.data.keyEvent));
         break;
     }
   }.bind(this), false);
@@ -46,31 +98,35 @@ function PDFScriptingAPI(window, extensionUrl) {
 PDFScriptingAPI.prototype = {
   /**
    * @private
-   * Send a message to the extension. If we try to send messages prior to the
-   * extension being ready to receive messages (i.e. before it has finished
-   * loading) we queue up the messages and flush them later.
+   * Send a message to the extension. If messages try to get sent before there
+   * is a plugin element set, then we queue them up and send them later (this
+   * can happen in print preview).
    * @param {Object} message The message to send.
    */
   sendMessage_: function(message) {
-    if (!this.pdfWindow_) {
-      this.messageQueue_.push(message);
-      return;
-    }
-
-    this.pdfWindow_.postMessage(message, this.extensionUrl_);
+    if (this.plugin_)
+      this.plugin_.postMessage(message, '*');
+    else
+      this.pendingScriptingMessages_.push(message);
   },
 
-  /**
-   * Sets the destination window containing the PDF viewer. This will be called
-   * when a 'readyToReceive' message is received from the PDF viewer or it can
-   * be called during tests. It then flushes any pending messages to the window.
-   * @param {Window} pdfWindow the window containing the PDF viewer.
-   */
-  setDestinationWindow: function(pdfWindow) {
-    this.pdfWindow_ = pdfWindow;
-    while (this.messageQueue_.length != 0) {
-      this.pdfWindow_.postMessage(this.messageQueue_.shift(),
-                                  this.extensionUrl_);
+ /**
+  * Sets the plugin element containing the PDF viewer. The element will usually
+  * be passed into the PDFScriptingAPI constructor but may also be set later.
+  * @param {Object} plugin the plugin element containing the PDF viewer.
+  */
+  setPlugin: function(plugin) {
+    this.plugin_ = plugin;
+
+    if (this.plugin_) {
+      // Send a message to ensure the postMessage channel is initialized which
+      // allows us to receive messages.
+      this.sendMessage_({
+        type: 'initialize'
+      });
+      // Flush pending messages.
+      while (this.pendingScriptingMessages_.length > 0)
+        this.sendMessage_(this.pendingScriptingMessages_.shift());
     }
   },
 
@@ -84,21 +140,32 @@ PDFScriptingAPI.prototype = {
 
   /**
    * Sets the callback which will be run when the PDF document has finished
-   * loading.
+   * loading. If the document is already loaded, it will be run immediately.
    * @param {Function} callback the callback to be called.
    */
   setLoadCallback: function(callback) {
     this.loadCallback_ = callback;
+    if (this.loadState_ != LoadState.LOADING && this.loadCallback_)
+      this.loadCallback_(this.loadState_ == LoadState.SUCCESS);
+  },
+
+  /**
+   * Sets a callback that gets run when a key event is fired in the PDF viewer.
+   * @param {Function} callback the callback to be called with a key event.
+   */
+  setKeyEventCallback: function(callback) {
+    this.keyEventCallback_ = callback;
   },
 
   /**
    * Resets the PDF viewer into print preview mode.
    * @param {string} url the url of the PDF to load.
    * @param {boolean} grayscale whether or not to display the PDF in grayscale.
-   * @param {Array.<number>} pageNumbers an array of the page numbers.
+   * @param {Array<number>} pageNumbers an array of the page numbers.
    * @param {boolean} modifiable whether or not the document is modifiable.
    */
   resetPrintPreviewMode: function(url, grayscale, pageNumbers, modifiable) {
+    this.loadState_ = LoadState.LOADING;
     this.sendMessage_({
       type: 'resetPrintPreviewMode',
       url: url,
@@ -122,7 +189,8 @@ PDFScriptingAPI.prototype = {
   },
 
   /**
-   * Get accessibility JSON for the document.
+   * Get accessibility JSON for the document. May only be called after document
+   * load.
    * @param {Function} callback a callback to be called with the accessibility
    *     json that has been retrieved.
    * @param {number} [page] the 0-indexed page number to get accessibility data
@@ -145,13 +213,49 @@ PDFScriptingAPI.prototype = {
   },
 
   /**
-   * Send a key event to the extension.
-   * @param {number} keyCode the key code to send to the extension.
+   * Select all the text in the document. May only be called after document
+   * load.
    */
-  sendKeyEvent: function(keyCode) {
+  selectAll: function() {
+    this.sendMessage_({
+      type: 'selectAll'
+    });
+  },
+
+  /**
+   * Get the selected text in the document. The callback will be called with the
+   * text that is selected. May only be called after document load.
+   * @param {Function} callback a callback to be called with the selected text.
+   * @return {boolean} true if the function is successful, false if there is an
+   *     outstanding request for selected text that has not been answered.
+   */
+  getSelectedText: function(callback) {
+    if (this.selectedTextCallback_)
+      return false;
+    this.selectedTextCallback_ = callback;
+    this.sendMessage_({
+      type: 'getSelectedText'
+    });
+    return true;
+  },
+
+  /**
+   * Print the document. May only be called after document load.
+   */
+  print: function() {
+    this.sendMessage_({
+      type: 'print'
+    });
+  },
+
+  /**
+   * Send a key event to the extension.
+   * @param {Event} keyEvent the key event to send to the extension.
+   */
+  sendKeyEvent: function(keyEvent) {
     this.sendMessage_({
       type: 'sendKeyEvent',
-      keyCode: keyCode
+      keyEvent: SerializeKeyEvent(keyEvent)
     });
   },
 };
@@ -165,15 +269,21 @@ PDFScriptingAPI.prototype = {
  * @return {HTMLIFrameElement} the iframe element containing the PDF viewer.
  */
 function PDFCreateOutOfProcessPlugin(src) {
-  var EXTENSION_URL = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai';
   var iframe = window.document.createElement('iframe');
-  iframe.setAttribute('src', EXTENSION_URL + '/index.html?' + src);
-  var client = new PDFScriptingAPI(window, EXTENSION_URL);
-
+  iframe.setAttribute(
+      'src',
+      'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html?' + src);
+  // Prevent the frame from being tab-focusable.
+  iframe.setAttribute('tabindex', '-1');
+  var client = new PDFScriptingAPI(window);
+  iframe.onload = function() {
+    client.setPlugin(iframe.contentWindow);
+  };
   // Add the functions to the iframe so that they can be called directly.
   iframe.setViewportChangedCallback =
       client.setViewportChangedCallback.bind(client);
   iframe.setLoadCallback = client.setLoadCallback.bind(client);
+  iframe.setKeyEventCallback = client.setKeyEventCallback.bind(client);
   iframe.resetPrintPreviewMode = client.resetPrintPreviewMode.bind(client);
   iframe.loadPreviewPage = client.loadPreviewPage.bind(client);
   iframe.sendKeyEvent = client.sendKeyEvent.bind(client);

@@ -46,7 +46,7 @@ bool getFileSize(const String& path, long long& result)
     return true;
 }
 
-bool getFileModificationTime(const String& path, time_t& result)
+bool getFileModificationTime(const String& path, double& result)
 {
     FileMetadata metadata;
     if (!getFileMetadata(path, metadata))

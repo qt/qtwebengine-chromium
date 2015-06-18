@@ -2,11 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef CONTENT_BROWSER_SITE_PER_PROCESS_BROWSERTEST_H_
+#define CONTENT_BROWSER_SITE_PER_PROCESS_BROWSERTEST_H_
+
+#include <string>
+
 #include "content/public/test/content_browser_test.h"
+#include "content/test/content_browser_test_utils_internal.h"
 #include "url/gurl.h"
 
 namespace content {
 
+class FrameTreeNode;
 class Shell;
 
 class SitePerProcessBrowserTest : public ContentBrowserTest {
@@ -19,12 +26,15 @@ class SitePerProcessBrowserTest : public ContentBrowserTest {
   // TODO(creis): This won't be necessary when we can wait for LOAD_STOP.
   void StartFrameAtDataURL();
 
-  bool NavigateIframeToURL(Shell* window,
-                           const GURL& url,
-                           std::string iframe_id);
+  std::string DepictFrameTree(FrameTreeNode* node);
 
   void SetUpCommandLine(base::CommandLine* command_line) override;
   void SetUpOnMainThread() override;
+
+ private:
+  FrameTreeVisualizer visualizer_;
 };
 
 }  // namespace content
+
+#endif  // CONTENT_BROWSER_SITE_PER_PROCESS_BROWSERTEST_H_

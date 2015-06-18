@@ -38,21 +38,23 @@
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/PluginDocument.h"
+#include "core/layout/LayoutBlockFlow.h"
+#include "core/layout/LayoutEmbeddedObject.h"
+#include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutPart.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/MixedContentChecker.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/plugins/PluginPlaceholder.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderEmbeddedObject.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderPart.h"
 #include "platform/Logging.h"
 #include "platform/MIMETypeFromURL.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/Widget.h"
 #include "platform/plugins/PluginData.h"
+#include "public/platform/WebURLRequest.h"
 
 namespace blink {
 
@@ -83,7 +85,7 @@ HTMLPlugInElement::~HTMLPlugInElement()
     }
 }
 
-void HTMLPlugInElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLPlugInElement)
 {
     visitor->trace(m_imageLoader);
     visitor->trace(m_placeholder);
@@ -129,22 +131,24 @@ void HTMLPlugInElement::setPersistedPluginWidget(Widget* widget)
 
 bool HTMLPlugInElement::canProcessDrag() const
 {
-    return pluginWidget() && pluginWidget()->isPluginView() && toPluginView(pluginWidget())->canProcessDrag();
+    if (Widget* widget = existingPluginWidget())
+        return widget->isPluginView() && toPluginView(widget)->canProcessDrag();
+    return false;
 }
 
 bool HTMLPlugInElement::willRespondToMouseClickEvents()
 {
     if (isDisabledFormControl())
         return false;
-    RenderObject* r = renderer();
-    return r && (r->isEmbeddedObject() || r->isRenderPart());
+    LayoutObject* r = layoutObject();
+    return r && (r->isEmbeddedObject() || r->isLayoutPart());
 }
 
 void HTMLPlugInElement::removeAllEventListeners()
 {
     HTMLFrameOwnerElement::removeAllEventListeners();
-    if (RenderPart* renderer = existingRenderPart()) {
-        if (Widget* widget = renderer->widget())
+    if (LayoutPart* layoutObject = existingLayoutPart()) {
+        if (Widget* widget = layoutObject->widget())
             widget->eventListenersRemoved();
     }
 }
@@ -160,7 +164,7 @@ void HTMLPlugInElement::attach(const AttachContext& context)
 {
     HTMLFrameOwnerElement::attach(context);
 
-    if (!renderer() || useFallbackContent())
+    if (!layoutObject() || useFallbackContent())
         return;
 
     if (isImageType()) {
@@ -168,8 +172,8 @@ void HTMLPlugInElement::attach(const AttachContext& context)
             m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
     } else if (needsWidgetUpdate()
-        && renderEmbeddedObject()
-        && !renderEmbeddedObject()->showsUnavailablePluginIndicator()
+        && layoutEmbeddedObject()
+        && !layoutEmbeddedObject()->showsUnavailablePluginIndicator()
         && !wouldLoadAsNetscapePlugin(m_url, m_serviceType)
         && !m_isDelayingLoadEvent) {
         m_isDelayingLoadEvent = true;
@@ -188,7 +192,7 @@ void HTMLPlugInElement::updateWidget()
     }
 }
 
-void HTMLPlugInElement::requestPluginCreationWithoutRendererIfPossible()
+void HTMLPlugInElement::requestPluginCreationWithoutLayoutObjectIfPossible()
 {
     if (m_serviceType.isEmpty())
         return;
@@ -197,13 +201,13 @@ void HTMLPlugInElement::requestPluginCreationWithoutRendererIfPossible()
         || !document().frame()->loader().client()->canCreatePluginWithoutRenderer(m_serviceType))
         return;
 
-    if (renderer() && renderer()->isRenderPart())
+    if (layoutObject() && layoutObject()->isLayoutPart())
         return;
 
-    createPluginWithoutRenderer();
+    createPluginWithoutLayoutObject();
 }
 
-void HTMLPlugInElement::createPluginWithoutRenderer()
+void HTMLPlugInElement::createPluginWithoutLayoutObject()
 {
     ASSERT(document().frame()->loader().client()->canCreatePluginWithoutRenderer(m_serviceType));
 
@@ -229,7 +233,7 @@ void HTMLPlugInElement::detach(const AttachContext& context)
 {
     // Update the widget the next time we attach (detaching destroys the plugin).
     // FIXME: None of this "needsWidgetUpdate" related code looks right.
-    if (renderer() && !useFallbackContent())
+    if (layoutObject() && !useFallbackContent())
         setNeedsWidgetUpdate(true);
     if (m_isDelayingLoadEvent) {
         m_isDelayingLoadEvent = false;
@@ -259,24 +263,24 @@ void HTMLPlugInElement::detach(const AttachContext& context)
     HTMLFrameOwnerElement::detach(context);
 }
 
-RenderObject* HTMLPlugInElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLPlugInElement::createLayoutObject(const ComputedStyle& style)
 {
-    // Fallback content breaks the DOM->Renderer class relationship of this
+    // Fallback content breaks the DOM->layoutObject class relationship of this
     // class and all superclasses because createObject won't necessarily return
-    // a RenderEmbeddedObject or RenderPart.
+    // a LayoutEmbeddedObject or LayoutPart.
     if (useFallbackContent())
-        return RenderObject::createObject(this, style);
+        return LayoutObject::createObject(this, style);
 
     if (isImageType()) {
-        RenderImage* image = new RenderImage(this);
-        image->setImageResource(RenderImageResource::create());
+        LayoutImage* image = new LayoutImage(this);
+        image->setImageResource(LayoutImageResource::create());
         return image;
     }
 
     if (usePlaceholderContent())
-        return new RenderBlockFlow(this);
+        return new LayoutBlockFlow(this);
 
-    return new RenderEmbeddedObject(this);
+    return new LayoutEmbeddedObject(this);
 }
 
 void HTMLPlugInElement::finishParsingChildren()
@@ -310,7 +314,7 @@ SharedPersistent<v8::Object>* HTMLPlugInElement::pluginWrapper()
         if (m_persistedPluginWidget)
             plugin = m_persistedPluginWidget.get();
         else
-            plugin = pluginWidget();
+            plugin = pluginWidgetForJSBindings();
 
         if (plugin)
             m_pluginWrapper = frame->script().createPluginWrapper(plugin);
@@ -318,10 +322,17 @@ SharedPersistent<v8::Object>* HTMLPlugInElement::pluginWrapper()
     return m_pluginWrapper.get();
 }
 
-Widget* HTMLPlugInElement::pluginWidget() const
+Widget* HTMLPlugInElement::existingPluginWidget() const
 {
-    if (RenderPart* renderPart = renderPartForJSBindings())
-        return renderPart->widget();
+    if (LayoutPart* layoutPart = existingLayoutPart())
+        return layoutPart->widget();
+    return nullptr;
+}
+
+Widget* HTMLPlugInElement::pluginWidgetForJSBindings()
+{
+    if (LayoutPart* layoutPart = layoutPartForJSBindings())
+        return layoutPart->widget();
     return nullptr;
 }
 
@@ -353,24 +364,24 @@ void HTMLPlugInElement::collectStyleForPresentationAttribute(const QualifiedName
 
 void HTMLPlugInElement::defaultEventHandler(Event* event)
 {
-    // Firefox seems to use a fake event listener to dispatch events to plug-in
+    // Firefox seems to use a fake event listener to dispatch events to plugin
     // (tested with mouse events only). This is observable via different order
     // of events - in Firefox, event listeners specified in HTML attributes
-    // fires first, then an event gets dispatched to plug-in, and only then
+    // fires first, then an event gets dispatched to plugin, and only then
     // other event listeners fire. Hopefully, this difference does not matter in
     // practice.
 
-    // FIXME: Mouse down and scroll events are passed down to plug-in via custom
+    // FIXME: Mouse down and scroll events are passed down to plugin via custom
     // code in EventHandler; these code paths should be united.
 
-    RenderObject* r = renderer();
-    if (!r || !r->isRenderPart())
+    LayoutObject* r = layoutObject();
+    if (!r || !r->isLayoutPart())
         return;
     if (r->isEmbeddedObject()) {
-        if (toRenderEmbeddedObject(r)->showsUnavailablePluginIndicator())
+        if (toLayoutEmbeddedObject(r)->showsUnavailablePluginIndicator())
             return;
     }
-    RefPtrWillBeRawPtr<Widget> widget = toRenderPart(r)->widget();
+    RefPtrWillBeRawPtr<Widget> widget = toLayoutPart(r)->widget();
     if (!widget)
         return;
     widget->handleEvent(event);
@@ -379,25 +390,32 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
     HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
-RenderPart* HTMLPlugInElement::renderPartForJSBindings() const
+LayoutPart* HTMLPlugInElement::layoutPartForJSBindings() const
 {
     // Needs to load the plugin immediatedly because this function is called
     // when JavaScript code accesses the plugin.
     // FIXME: Check if dispatching events here is safe.
     document().updateLayoutIgnorePendingStylesheets(Document::RunPostLayoutTasksSynchronously);
-    return existingRenderPart();
+    return existingLayoutPart();
 }
 
 bool HTMLPlugInElement::isKeyboardFocusable() const
 {
+    if (useFallbackContent() || usePlaceholderContent())
+        return HTMLElement::isKeyboardFocusable();
+
     if (!document().isActive())
         return false;
-    return pluginWidget() && pluginWidget()->isPluginView() && toPluginView(pluginWidget())->supportsKeyboardFocus();
+
+    if (Widget* widget = existingPluginWidget())
+        return widget->isPluginView() && toPluginView(widget)->supportsKeyboardFocus();
+
+    return false;
 }
 
 bool HTMLPlugInElement::hasCustomFocusLogic() const
 {
-    return !hasAuthorShadowRoot();
+    return !useFallbackContent() && !usePlaceholderContent();
 }
 
 bool HTMLPlugInElement::isPluginElement() const
@@ -405,14 +423,14 @@ bool HTMLPlugInElement::isPluginElement() const
     return true;
 }
 
-bool HTMLPlugInElement::rendererIsFocusable() const
+bool HTMLPlugInElement::layoutObjectIsFocusable() const
 {
-    if (HTMLFrameOwnerElement::supportsFocus() && HTMLFrameOwnerElement::rendererIsFocusable())
+    if (HTMLFrameOwnerElement::supportsFocus() && HTMLFrameOwnerElement::layoutObjectIsFocusable())
         return true;
 
-    if (useFallbackContent() || !renderer() || !renderer()->isEmbeddedObject())
+    if (useFallbackContent() || !layoutObject() || !layoutObject()->isEmbeddedObject())
         return false;
-    return !toRenderEmbeddedObject(renderer())->showsUnavailablePluginIndicator();
+    return !toLayoutEmbeddedObject(layoutObject())->showsUnavailablePluginIndicator();
 }
 
 NPObject* HTMLPlugInElement::getNPObject()
@@ -421,6 +439,14 @@ NPObject* HTMLPlugInElement::getNPObject()
     if (!m_NPObject)
         m_NPObject = document().frame()->script().createScriptObjectForPluginElement(this);
     return m_NPObject;
+}
+
+void HTMLPlugInElement::setPluginFocus(bool focused)
+{
+    Widget* focusedWidget = existingPluginWidget();
+    // NPAPI flash requires to receive messages when web contents focus changes.
+    if (getNPObject() && focusedWidget)
+        focusedWidget->setFocus(focused, WebFocusTypeNone);
 }
 
 bool HTMLPlugInElement::isImageType()
@@ -436,13 +462,13 @@ bool HTMLPlugInElement::isImageType()
     return Image::supportsType(m_serviceType);
 }
 
-RenderEmbeddedObject* HTMLPlugInElement::renderEmbeddedObject() const
+LayoutEmbeddedObject* HTMLPlugInElement::layoutEmbeddedObject() const
 {
-    // HTMLObjectElement and HTMLEmbedElement may return arbitrary renderers
+    // HTMLObjectElement and HTMLEmbedElement may return arbitrary layoutObjects
     // when using fallback content.
-    if (!renderer() || !renderer()->isEmbeddedObject())
+    if (!layoutObject() || !layoutObject()->isEmbeddedObject())
         return nullptr;
-    return toRenderEmbeddedObject(renderer());
+    return toLayoutEmbeddedObject(layoutObject());
 }
 
 // We don't use m_url, as it may not be the final URL that the object loads,
@@ -475,41 +501,34 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
     if (protocolIsJavaScript(url))
         return false;
 
-    // FIXME: None of this code should use renderers!
-    RenderEmbeddedObject* renderer = renderEmbeddedObject();
-    ASSERT(renderer);
-    if (!renderer)
-        return false;
-
     KURL completedURL = document().completeURL(url);
     if (!pluginIsLoadable(completedURL, mimeType))
         return false;
 
     bool useFallback;
-    bool requireRenderer = true;
     if (shouldUsePlugin(completedURL, mimeType, hasFallbackContent(), useFallback))
-        return loadPlugin(completedURL, mimeType, paramNames, paramValues, useFallback, requireRenderer);
+        return loadPlugin(completedURL, mimeType, paramNames, paramValues, useFallback, true);
 
-    // If the plug-in element already contains a subframe,
+    // If the plugin element already contains a subframe,
     // loadOrRedirectSubframe will re-use it. Otherwise, it will create a new
-    // frame and set it as the RenderPart's widget, causing what was previously
+    // frame and set it as the LayoutPart's widget, causing what was previously
     // in the widget to be torn down.
     return loadOrRedirectSubframe(completedURL, getNameAttribute(), true);
 }
 
-bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback, bool requireRenderer)
+bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback, bool requireLayoutObject)
 {
     LocalFrame* frame = document().frame();
 
     if (!frame->loader().allowPlugins(AboutToInstantiatePlugin))
         return false;
 
-    RenderEmbeddedObject* renderer = renderEmbeddedObject();
-    // FIXME: This code should not depend on renderer!
-    if ((!renderer && requireRenderer) || useFallback)
+    LayoutEmbeddedObject* layoutObject = layoutEmbeddedObject();
+    // FIXME: This code should not depend on layoutObject!
+    if ((!layoutObject && requireLayoutObject) || useFallback)
         return false;
 
-    WTF_LOG(Plugins, "%p Plug-in URL: %s", this, m_url.utf8().data());
+    WTF_LOG(Plugins, "%p Plugin URL: %s", this, m_url.utf8().data());
     WTF_LOG(Plugins, "   Loaded URL: %s", url.string().utf8().data());
     m_loadedUrl = url;
 
@@ -519,14 +538,14 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
         bool loadManually = document().isPluginDocument() && !document().containsPlugins();
         placeholder = frame->loader().client()->createPluginPlaceholder(document(), url, paramNames, paramValues, mimeType, loadManually);
         if (!placeholder) {
-            FrameLoaderClient::DetachedPluginPolicy policy = requireRenderer ? FrameLoaderClient::FailOnDetachedPlugin : FrameLoaderClient::AllowDetachedPlugin;
+            FrameLoaderClient::DetachedPluginPolicy policy = requireLayoutObject ? FrameLoaderClient::FailOnDetachedPlugin : FrameLoaderClient::AllowDetachedPlugin;
             widget = frame->loader().client()->createPlugin(this, url, paramNames, paramValues, mimeType, loadManually, policy);
         }
     }
 
     if (!placeholder && !widget) {
-        if (renderer && !renderer->showsUnavailablePluginIndicator())
-            renderer->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginMissing);
+        if (layoutObject && !layoutObject->showsUnavailablePluginIndicator())
+            layoutObject->setPluginUnavailabilityReason(LayoutEmbeddedObject::PluginMissing);
         setPlaceholder(nullptr);
         return false;
     }
@@ -536,7 +555,7 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
         return true;
     }
 
-    if (renderer) {
+    if (layoutObject) {
         setWidget(widget);
         setPersistedPluginWidget(nullptr);
     } else {
@@ -555,13 +574,13 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
 
 bool HTMLPlugInElement::shouldUsePlugin(const KURL& url, const String& mimeType, bool hasFallback, bool& useFallback)
 {
-    // Allow other plug-ins to win over QuickTime because if the user has
-    // installed a plug-in that can handle TIFF (which QuickTime can also
+    // Allow other plugins to win over QuickTime because if the user has
+    // installed a plugin that can handle TIFF (which QuickTime can also
     // handle) they probably intended to override QT.
     if (document().frame()->page() && (mimeType == "image/tiff" || mimeType == "image/tif" || mimeType == "image/x-tiff")) {
         const PluginData* pluginData = document().frame()->page()->pluginData();
         String pluginName = pluginData ? pluginData->pluginNameForMimeType(mimeType) : String();
-        if (!pluginName.isEmpty() && !pluginName.contains("QuickTime", false))
+        if (!pluginName.isEmpty() && !pluginName.contains("QuickTime", TextCaseInsensitive))
             return true;
     }
 
@@ -598,6 +617,9 @@ void HTMLPlugInElement::dispatchErrorEvent()
 
 bool HTMLPlugInElement::pluginIsLoadable(const KURL& url, const String& mimeType)
 {
+    if (url.isEmpty() && mimeType.isEmpty())
+        return false;
+
     LocalFrame* frame = document().frame();
     Settings* settings = frame->settings();
     if (!settings)
@@ -618,12 +640,12 @@ bool HTMLPlugInElement::pluginIsLoadable(const KURL& url, const String& mimeType
         document().ownerElement()->fastGetAttribute(HTMLNames::typeAttr) :
         fastGetAttribute(HTMLNames::typeAttr);
     if (!document().contentSecurityPolicy()->allowObjectFromSource(url)
-        || !document().contentSecurityPolicy()->allowPluginType(mimeType, declaredMimeType, url)) {
-        renderEmbeddedObject()->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy);
+        || !document().contentSecurityPolicy()->allowPluginTypeForDocument(document(), mimeType, declaredMimeType, url)) {
+        layoutEmbeddedObject()->setPluginUnavailabilityReason(LayoutEmbeddedObject::PluginBlockedByContentSecurityPolicy);
         return false;
     }
 
-    return frame->loader().mixedContentChecker()->canRunInsecureContent(document().securityOrigin(), url);
+    return (!mimeType.isEmpty() && url.isEmpty()) || !MixedContentChecker::shouldBlockFetch(frame, WebURLRequest::RequestContextObject, WebURLRequest::FrameTypeNone, url);
 }
 
 void HTMLPlugInElement::didAddUserAgentShadowRoot(ShadowRoot&)
@@ -631,7 +653,7 @@ void HTMLPlugInElement::didAddUserAgentShadowRoot(ShadowRoot&)
     userAgentShadowRoot()->appendChild(HTMLContentElement::create(document()));
 }
 
-void HTMLPlugInElement::willAddFirstAuthorShadowRoot()
+void HTMLPlugInElement::willAddFirstOpenShadowRoot()
 {
     lazyReattachIfAttached();
 }
@@ -643,12 +665,12 @@ bool HTMLPlugInElement::hasFallbackContent() const
 
 bool HTMLPlugInElement::useFallbackContent() const
 {
-    return hasAuthorShadowRoot();
+    return hasOpenShadowRoot();
 }
 
 void HTMLPlugInElement::lazyReattachIfNeeded()
 {
-    if (!useFallbackContent() && !usePlaceholderContent() && needsWidgetUpdate() && renderer() && !isImageType())
+    if (!useFallbackContent() && !usePlaceholderContent() && needsWidgetUpdate() && layoutObject() && !isImageType())
         lazyReattachIfAttached();
 }
 

@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "7.8",
+  "version": "8.12",
   "entries": [
     {
       "id": 1,
@@ -175,7 +175,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 11,
       "description": "Limit max texure size to 4096 on Macs with Intel GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x8086",
       "features": [
@@ -212,7 +216,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 14,
       "description": "Limit max texure size and cube map texture size to 4096 on Macs with AMD GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x1002",
       "features": [
@@ -250,6 +258,9 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "gl_vendor": "Qualcomm.*",
       "features": [
         "disable_depth_texture"
+      ],
+      "disabled_extensions": [
+        "GL_OES_depth_texture"
       ]
     },
     {
@@ -494,20 +505,20 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "gl_vendor": "ARM.*",
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
       "id": 42,
-      "cr_bugs": [290876],
+      "cr_bugs": [290876, 488463],
       "description": "Framebuffer discarding causes flickering on older IMG drivers",
       "os": {
         "type": "android"
       },
       "gl_vendor": "Imagination.*",
-      "gl_renderer": "PowerVR SGX 540",
+      "gl_renderer": "PowerVR SGX 5.*",
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
@@ -519,7 +530,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "gl_extensions": ".*GL_VIV_shader_binary.*",
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
@@ -530,7 +541,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "type": "chromeos"
       },
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
@@ -599,7 +610,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "gl_vendor": "Qualcomm.*",
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -669,7 +680,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x1002",
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -682,7 +693,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x8086",
       "device_id": ["0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -697,7 +708,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         }
       },
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -857,7 +868,7 @@ LONG_STRING_CONST(
       "gl_vendor": "ARM.*",
       "gl_renderer": ".*Mali-400.*",
       "features": [
-        "disable_multisampling"
+        "disable_multisampled_render_to_texture"
       ]
     },
     {
@@ -912,17 +923,6 @@ LONG_STRING_CONST(
       "gl_vendor": "Broadcom.*",
       "features": [
         "disable_egl_khr_fence_sync"
-      ]
-    },
-    {
-      "id": 79,
-      "cr_bugs": [371530],
-      "description": "Testing ARB sync fences is broken on MacOSX",
-      "os": {
-        "type": "macosx"
-      },
-      "features": [
-        "disable_arb_sync"
       ]
     },
     {
@@ -1055,7 +1055,7 @@ LONG_STRING_CONST(
         "type": "android",
         "version": {
           "op": "<=",
-          "value": "5.0.0"
+          "value": "5.0.2"
         }
       },
       "gl_vendor": "NVIDIA.*",
@@ -1066,6 +1066,291 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_egl_khr_wait_sync"
+      ]
+    },
+    {
+      "id": 95,
+      "cr_bugs": [421271],
+      "description": "glClear does not always work on these drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.0"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "gl_clear_broken"
+      ]
+    },
+    {
+      "id": 96,
+      "description": "glBindFramebuffer sometimes requires a glBegin/End to take effect",
+      "cr_bugs": [435786],
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "gl_begin_gl_end_on_fbo_change_to_backbuffer"
+      ]
+    },
+    {
+      "id": 97,
+      "description": "Multisampling has poor performance in Intel BayTrail",
+      "cr_bugs": [443517],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Intel",
+      "gl_renderer": "Intel.*BayTrail",
+      "features": [
+        "disable_chromium_framebuffer_multisample"
+      ]
+    },
+    {
+      "id": 98,
+      "description": "PowerVR SGX 540 drivers throw GL_OUT_OF_MEMORY error when a buffer object's size is set to 0",
+      "cr_bugs": [451501],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 540",
+      "features": [
+        "use_non_zero_size_for_client_side_stream_buffers"
+      ]
+    },
+    {
+      "id": 99,
+      "description": "Qualcomm driver before Lollipop deletes egl sync objects after context destruction",
+      "cr_bugs": [453857],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.0.0"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "features": [
+        "ignore_egl_sync_failures"
+      ]
+    },
+    {
+      "id": 100,
+      "description": "Disable Direct3D11 on systems with AMD switchable graphics",
+      "cr_bugs": [451420],
+      "os": {
+        "type": "win"
+      },
+      "multi_gpu_style": "amd_switchable",
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 101,
+      "description": "The Mali-Txxx driver hangs when reading from currently displayed buffer",
+      "cr_bugs": [457511],
+      "os": {
+        "type": "chromeos"
+      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali-T.*",
+      "features": [
+        "disable_post_sub_buffers_for_onscreen_surfaces"
+      ]
+    },
+    {
+      "id": 102,
+      "description": "Adreno 420 driver loses FBO attachment contents on bound FBO deletion",
+      "cr_bugs": [457027],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": ">",
+          "value": "5.0.2"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*420",
+      "features": [
+        "unbind_attachments_on_bound_render_fbo_delete"
+      ]
+    },
+    {
+      "id": 103,
+      "description": "Adreno 420 driver drops draw calls after FBO invalidation",
+      "cr_bugs": [443060],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*420",
+      "features": [
+        "disable_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 104,
+      "description": "EXT_occlusion_query hangs on MediaTek MT8135 pre-Lollipop",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.0.0"
+        }
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR Rogue Han",
+      "features": [
+        "disable_ext_occlusion_query"
+      ]
+    },
+    {
+      "id": 105,
+      "cr_bugs": [449488,451230],
+      "description": "Framebuffer discarding causes corruption on Mali-4xx",
+      "gl_renderer": "Mali-4.*",
+      "os": {
+        "type": "android"
+      },
+      "features": [
+        "disable_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 106,
+      "description": "EXT_occlusion_query hangs on PowerVR SGX 544 (IMG) drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 544",
+      "features": [
+        "disable_ext_occlusion_query"
+      ],
+      "disabled_extensions": [
+        "EXT_occlusion_query_boolean"
+      ]
+    },
+    {
+      "id": 107,
+      "description": "Workaround IMG PowerVR G6xxx drivers bugs",
+      "cr_bugs": [480992],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "between",
+          "value": "5.0.0",
+          "value2": "5.1.99"
+        }
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR Rogue.*",
+      "driver_version": {
+        "op": "between",
+        "value": "1.3",
+        "value2": "1.4"
+      },
+      "features": [
+        "avoid_egl_image_target_texture_reuse",
+        "disable_egl_khr_wait_sync"
+      ]
+    },
+    {
+      "id": 108,
+      "cr_bugs": [449150],
+      "description": "Mali-400 does not support GL_RGB format",
+      "gl_vendor": "ARM.*",
+      "gl_renderer": ".*Mali-400.*",
+      "features": [
+        "disable_gl_rgb_format"
+      ]
+    },
+    {
+      "id": 109,
+      "description": "MakeCurrent is slow on Linux",
+      "os": {
+        "type": "linux"
+      },
+      "features": [
+        "use_virtualized_gl_contexts"
+      ]
+    },
+    {
+      "id": 110,
+      "description": "EGL Sync server causes crashes on Adreno 3xx drivers",
+      "cr_bugs": [482298],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": "Adreno \\(TM\\) 3.*",
+      "driver_version": {
+        "op": "<",
+        "value": "95"
+      },
+      "features": [
+        "disable_egl_khr_wait_sync"
+      ]
+    },
+    {
+      "id": 111,
+      "description": "Discard Framebuffer breaks WebGL on Mali-400 Linux",
+      "cr_bugs": [485814],
+      "os": {
+        "type": "linux"
+      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": ".*Mali-400.*",
+      "features": [
+        "disable_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 116,
+      "description": "Adreno 420 support for EXT_multisampled_render_to_texture is buggy on Android < 5.1",
+      "cr_bugs": [490379],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.1"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*420",
+      "features": [
+        "disable_multisampled_render_to_texture"
+      ]
+    },
+    {
+      "id": 117,
+      "description": "GL_KHR_blend_equation_advanced breaks blending on Adreno 4xx",
+      "cr_bugs": [488485],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*4\\d\\d",
+      "features": [
+        "disable_blend_equation_advanced"
+      ]
+    },
+    {
+      "id": 119,
+      "description": "Context lost recovery often fails on Mali-400/450 on Android.",
+      "cr_bugs": [496438],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": ".*Mali-4.*",
+      "features": [
+        "exit_on_context_lost"
       ]
     }
   ]

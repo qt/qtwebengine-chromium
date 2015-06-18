@@ -27,10 +27,13 @@
 #ifndef InternalSettings_h
 #define InternalSettings_h
 
-#include "core/InternalSettingsGenerated.h"
 #include "core/editing/EditingBehaviorTypes.h"
+#include "core/page/Page.h"
+#include "core/testing/InternalSettingsGenerated.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/ImageAnimationPolicy.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebDisplayMode.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -58,21 +61,22 @@ public:
 
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
         bool m_originalCSP;
-        bool m_originalLaxMixedContentCheckingEnabled;
         bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
         IntSize m_originalTextAutosizingWindowSizeOverride;
         float m_originalAccessibilityFontScaleFactor;
         String m_originalMediaTypeOverride;
+        WebDisplayMode m_originalDisplayModeOverride;
         bool m_originalMockScrollbarsEnabled;
         bool m_originalMockGestureTapHighlightsEnabled;
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
         String m_defaultVideoPosterURL;
         bool m_originalLayerSquashingEnabled;
-        bool m_originalPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled;
         bool m_originalImageColorProfilesEnabled;
+        ImageAnimationPolicy m_originalImageAnimationPolicy;
+        bool m_originalScrollTopLeftInteropEnabled;
     };
 
     static PassRefPtrWillBeRawPtr<InternalSettings> create(Page& page)
@@ -100,16 +104,14 @@ public:
     void setEditingBehavior(const String&, ExceptionState&);
     void setImagesEnabled(bool, ExceptionState&);
     void setMediaTypeOverride(const String& mediaType, ExceptionState&);
+    void setDisplayModeOverride(const String& displayMode, ExceptionState&);
     void setMockScrollbarsEnabled(bool, ExceptionState&);
     void setMockGestureTapHighlightsEnabled(bool, ExceptionState&);
     void setTextAutosizingEnabled(bool, ExceptionState&);
     void setAccessibilityFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
     void setViewportEnabled(bool, ExceptionState&);
-
-    // FIXME: This is a temporary flag and should be removed once squashing is
-    // ready (crbug.com/261605).
-    void setLayerSquashingEnabled(bool, ExceptionState&);
+    void setViewportMetaEnabled(bool, ExceptionState&);
 
     // FIXME: The following are RuntimeEnabledFeatures and likely
     // cannot be changed after process start. These setters should
@@ -118,16 +120,19 @@ public:
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setOverlayScrollbarsEnabled(bool);
     void setExperimentalContentSecurityPolicyFeaturesEnabled(bool);
-    void setLaxMixedContentCheckingEnabled(bool);
-    void setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(bool);
     void setImageColorProfilesEnabled(bool);
+    void setImageAnimationPolicy(const String&, ExceptionState&);
+    void setScrollTopLeftInteropEnabled(bool);
+    void setLinkHeaderEnabled(bool);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void setAvailablePointerTypes(const String&, ExceptionState&);
     void setPrimaryPointerType(const String&, ExceptionState&);
     void setAvailableHoverTypes(const String&, ExceptionState&);
     void setPrimaryHoverType(const String&, ExceptionState&);
+    void setDnsPrefetchLogging(bool, ExceptionState&);
+    void setPreloadLogging(bool, ExceptionState&);
 
 private:
     explicit InternalSettings(Page&);

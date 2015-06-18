@@ -31,38 +31,31 @@
 #include "config.h"
 #include "core/fetch/ResourceFetcher.h"
 
-#include <gtest/gtest.h>
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/FetchRequest.h"
+#include "core/fetch/ImageResource.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/html/HTMLDocument.h"
-#include "core/loader/DocumentLoader.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/KURL.h"
+#include <gtest/gtest.h>
 
-using namespace blink;
+namespace blink {
 
-namespace {
+class ResourceFetcherTest : public ::testing::Test {
+};
 
-TEST(ResourceFetcherTest, StartLoadAfterFrameDetach)
+TEST_F(ResourceFetcherTest, StartLoadAfterFrameDetach)
 {
-    KURL testURL(ParsedURLString, "http://www.test.com/cancelTest.jpg");
-
-    // Create a ResourceFetcher that has a real DocumentLoader and Document, but is not attached to a LocalFrame.
-    // Technically, we're concerned about what happens after a LocalFrame is detached (rather than before
-    // any attach occurs), but ResourceFetcher can't tell the difference.
-    RefPtr<DocumentLoader> documentLoader = DocumentLoader::create(0, ResourceRequest(testURL), SubstituteData());
-    RefPtrWillBeRawPtr<HTMLDocument> document = HTMLDocument::create();
-    RefPtrWillBeRawPtr<ResourceFetcher> fetcher(documentLoader->fetcher());
-    fetcher->setDocument(document.get());
-    EXPECT_EQ(fetcher->frame(), static_cast<LocalFrame*>(0));
-
+    KURL secureURL(ParsedURLString, "https://secureorigin.test/image.png");
     // Try to request a url. The request should fail, no resource should be returned,
     // and no resource should be present in the cache.
-    FetchRequest fetchRequest = FetchRequest(ResourceRequest(testURL), FetchInitiatorInfo());
+    RefPtrWillBeRawPtr<ResourceFetcher> fetcher = ResourceFetcher::create(nullptr);
+    FetchRequest fetchRequest = FetchRequest(ResourceRequest(secureURL), FetchInitiatorInfo());
     ResourcePtr<ImageResource> image = fetcher->fetchImage(fetchRequest);
     EXPECT_EQ(image.get(), static_cast<ImageResource*>(0));
-    EXPECT_EQ(memoryCache()->resourceForURL(testURL), static_cast<Resource*>(0));
+    EXPECT_EQ(memoryCache()->resourceForURL(secureURL), static_cast<Resource*>(0));
 }
 
-} // namespace
+} // namespace blink

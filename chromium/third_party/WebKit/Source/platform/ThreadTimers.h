@@ -28,37 +28,36 @@
 #define ThreadTimers_h
 
 #include "platform/PlatformExport.h"
+#include "platform/SharedTimer.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
-class SharedTimer;
 class TimerBase;
 
 // A collection of timers per thread. Kept in PlatformThreadData.
 class PLATFORM_EXPORT ThreadTimers {
-    WTF_MAKE_NONCOPYABLE(ThreadTimers); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ThreadTimers); WTF_MAKE_FAST_ALLOCATED(ThreadTimers);
 public:
     ThreadTimers();
 
     // On a thread different then main, we should set the thread's instance of the SharedTimer.
-    void setSharedTimer(SharedTimer*);
+    void setSharedTimer(WTF::PassOwnPtr<SharedTimer>);
 
     Vector<TimerBase*>& timerHeap() { return m_timerHeap; }
 
     void updateSharedTimer();
-    void fireTimersInNestedEventLoop();
+    double nextFireTime() const { return m_pendingSharedTimerFireTime; }
 
 private:
     static void sharedTimerFired();
 
     void sharedTimerFiredInternal();
-    void fireTimersInNestedEventLoopInternal();
 
     Vector<TimerBase*> m_timerHeap;
-    SharedTimer* m_sharedTimer; // External object, can be a run loop on a worker thread. Normally set/reset by worker thread.
+    OwnPtr<SharedTimer> m_sharedTimer;
     bool m_firingTimers; // Reentrancy guard.
     double m_pendingSharedTimerFireTime;
 };

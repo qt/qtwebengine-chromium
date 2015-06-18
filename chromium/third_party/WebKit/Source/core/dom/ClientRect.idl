@@ -24,8 +24,16 @@
  *
  */
 
+// An old version of CSSOM View Module defines the ClientRect interface:
+// http://www.w3.org/TR/2011/WD-cssom-view-20110804/#the-clientrect-interface
+
+// It has since been replaced by DOMRect in CSSOM View Module and
+// Geometry Interfaces Module:
+// http://dev.w3.org/csswg/cssom-view/#extension-to-the-element-interface
+// http://dev.w3.org/fxtf/geometry/#DOMRect
+
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
 ] interface ClientRect {
     readonly attribute float top;
     readonly attribute float right;
@@ -34,4 +42,3 @@
     readonly attribute float width;
     readonly attribute float height;
 };
-

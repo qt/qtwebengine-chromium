@@ -24,15 +24,14 @@
  */
 
 #include "config.h"
-
 #include "core/html/track/TrackEvent.h"
 
+#include "bindings/core/v8/UnionTypesCore.h"
+#include "core/html/track/AudioTrack.h"
+#include "core/html/track/TextTrack.h"
+#include "core/html/track/VideoTrack.h"
+
 namespace blink {
-
-TrackEventInit::TrackEventInit()
-{
-}
-
 
 TrackEvent::TrackEvent()
 {
@@ -40,8 +39,19 @@ TrackEvent::TrackEvent()
 
 TrackEvent::TrackEvent(const AtomicString& type, const TrackEventInit& initializer)
     : Event(type, initializer)
-    , m_track(initializer.track)
 {
+    if (!initializer.hasTrack())
+        return;
+
+    const VideoTrackOrAudioTrackOrTextTrack& track = initializer.track();
+    if (track.isVideoTrack())
+        m_track = track.getAsVideoTrack();
+    else if (track.isAudioTrack())
+        m_track = track.getAsAudioTrack();
+    else if (track.isTextTrack())
+        m_track = track.getAsTextTrack();
+    else
+        ASSERT_NOT_REACHED();
 }
 
 TrackEvent::~TrackEvent()
@@ -53,7 +63,27 @@ const AtomicString& TrackEvent::interfaceName() const
     return EventNames::TrackEvent;
 }
 
-void TrackEvent::trace(Visitor* visitor)
+void TrackEvent::track(VideoTrackOrAudioTrackOrTextTrack& returnValue)
+{
+    if (!m_track)
+        return;
+
+    switch (m_track->type()) {
+    case TrackBase::TextTrack:
+        returnValue.setTextTrack(toTextTrack(m_track.get()));
+        break;
+    case TrackBase::AudioTrack:
+        returnValue.setAudioTrack(toAudioTrack(m_track.get()));
+        break;
+    case TrackBase::VideoTrack:
+        returnValue.setVideoTrack(toVideoTrack(m_track.get()));
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+}
+
+DEFINE_TRACE(TrackEvent)
 {
     visitor->trace(m_track);
     Event::trace(visitor);

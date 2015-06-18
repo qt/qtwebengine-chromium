@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/compiler/generic-node-inl.h"
+#include "src/compiler/simplified-operator-reducer.h"
+
 #include "src/compiler/js-graph.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-matchers.h"
-#include "src/compiler/simplified-operator-reducer.h"
+#include "src/compiler/operator-properties.h"
 
 namespace v8 {
 namespace internal {
@@ -99,35 +100,18 @@ Reduction SimplifiedOperatorReducer::Reduce(Node* node) {
       if (m.HasValue()) return ReplaceNumber(FastUI2D(m.Value()));
       break;
     }
-    case IrOpcode::kLoadElement: {
-      ElementAccess access = ElementAccessOf(node->op());
-      if (access.bounds_check == kTypedArrayBoundsCheck) {
-        NumberMatcher mkey(node->InputAt(1));
-        NumberMatcher mlength(node->InputAt(2));
-        if (mkey.HasValue() && mlength.HasValue()) {
-          // Skip the typed array bounds check if key and length are constant.
-          if (mkey.Value() >= 0 && mkey.Value() < mlength.Value()) {
-            access.bounds_check = kNoBoundsCheck;
-            node->set_op(simplified()->LoadElement(access));
-            return Changed(node);
-          }
-        }
-      }
-      break;
-    }
-    case IrOpcode::kStoreElement: {
-      ElementAccess access = ElementAccessOf(node->op());
-      if (access.bounds_check == kTypedArrayBoundsCheck) {
-        NumberMatcher mkey(node->InputAt(1));
-        NumberMatcher mlength(node->InputAt(2));
-        if (mkey.HasValue() && mlength.HasValue()) {
-          // Skip the typed array bounds check if key and length are constant.
-          if (mkey.Value() >= 0 && mkey.Value() < mlength.Value()) {
-            access.bounds_check = kNoBoundsCheck;
-            node->set_op(simplified()->StoreElement(access));
-            return Changed(node);
-          }
-        }
+    case IrOpcode::kStoreField: {
+      // TODO(turbofan): Poor man's store elimination, remove this once we have
+      // a fully featured store elimination in place.
+      Node* const effect = node->InputAt(2);
+      if (effect->op()->Equals(node->op()) && effect->OwnedBy(node) &&
+          effect->InputAt(0) == node->InputAt(0)) {
+        // The {effect} is a store to the same field in the same object, and
+        // {node} is the only effect observer, so we can kill {effect} and
+        // instead make {node} depend on the incoming effect to {effect}.
+        node->ReplaceInput(2, effect->InputAt(2));
+        effect->Kill();
+        return Changed(node);
       }
       break;
     }
@@ -140,6 +124,8 @@ Reduction SimplifiedOperatorReducer::Reduce(Node* node) {
 
 Reduction SimplifiedOperatorReducer::Change(Node* node, const Operator* op,
                                             Node* a) {
+  DCHECK_EQ(node->InputCount(), OperatorProperties::GetTotalInputCount(op));
+  DCHECK_LE(1, node->InputCount());
   node->set_op(op);
   node->ReplaceInput(0, a);
   return Changed(node);

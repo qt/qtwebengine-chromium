@@ -17,7 +17,7 @@ namespace {
 
 class QuitDelegate : public ObjectWatcher::Delegate {
  public:
-  virtual void OnObjectSignaled(HANDLE object) {
+  void OnObjectSignaled(HANDLE object) override {
     MessageLoop::current()->QuitWhenIdle();
   }
 };
@@ -26,9 +26,8 @@ class DecrementCountDelegate : public ObjectWatcher::Delegate {
  public:
   explicit DecrementCountDelegate(int* counter) : counter_(counter) {
   }
-  virtual void OnObjectSignaled(HANDLE object) {
-    --(*counter_);
-  }
+  void OnObjectSignaled(HANDLE object) override { --(*counter_); }
+
  private:
   int* counter_;
 };
@@ -37,7 +36,7 @@ void RunTest_BasicSignal(MessageLoop::Type message_loop_type) {
   MessageLoop message_loop(message_loop_type);
 
   ObjectWatcher watcher;
-  EXPECT_EQ(NULL, watcher.GetWatchedObject());
+  EXPECT_FALSE(watcher.IsWatching());
 
   // A manual-reset event that is not yet signaled.
   HANDLE event = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -45,13 +44,14 @@ void RunTest_BasicSignal(MessageLoop::Type message_loop_type) {
   QuitDelegate delegate;
   bool ok = watcher.StartWatching(event, &delegate);
   EXPECT_TRUE(ok);
+  EXPECT_TRUE(watcher.IsWatching());
   EXPECT_EQ(event, watcher.GetWatchedObject());
 
   SetEvent(event);
 
   MessageLoop::current()->Run();
 
-  EXPECT_EQ(NULL, watcher.GetWatchedObject());
+  EXPECT_FALSE(watcher.IsWatching());
   CloseHandle(event);
 }
 
@@ -115,7 +115,7 @@ void RunTest_SignalBeforeWatch(MessageLoop::Type message_loop_type) {
 
   MessageLoop::current()->Run();
 
-  EXPECT_EQ(NULL, watcher.GetWatchedObject());
+  EXPECT_FALSE(watcher.IsWatching());
   CloseHandle(event);
 }
 

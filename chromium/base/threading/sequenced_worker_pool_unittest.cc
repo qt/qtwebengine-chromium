@@ -11,7 +11,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/test/sequenced_task_runner_test_template.h"
@@ -54,7 +53,7 @@ class ThreadBlocker {
   void Unblock(size_t count) {
     {
       base::AutoLock lock(lock_);
-      DCHECK(unblock_counter_ == 0);
+      DCHECK_EQ(unblock_counter_, 0u);
       unblock_counter_ = count;
     }
     cond_var_.Signal();
@@ -65,6 +64,23 @@ class ThreadBlocker {
   base::ConditionVariable cond_var_;
 
   size_t unblock_counter_;
+};
+
+class DestructionDeadlockChecker
+    : public base::RefCountedThreadSafe<DestructionDeadlockChecker> {
+ public:
+  DestructionDeadlockChecker(const scoped_refptr<SequencedWorkerPool>& pool)
+      : pool_(pool) {}
+
+ protected:
+  virtual ~DestructionDeadlockChecker() {
+    // This method should not deadlock.
+    pool_->RunsTasksOnCurrentThread();
+  }
+
+ private:
+  scoped_refptr<SequencedWorkerPool> pool_;
+  friend class base::RefCountedThreadSafe<DestructionDeadlockChecker>;
 };
 
 class TestTracker : public base::RefCountedThreadSafe<TestTracker> {
@@ -115,6 +131,41 @@ class TestTracker : public base::RefCountedThreadSafe<TestTracker> {
         FROM_HERE, fast_task,
         SequencedWorkerPool::BLOCK_SHUTDOWN);
     SignalWorkerDone(id);
+  }
+
+  // This task posts itself back onto the SequencedWorkerPool before it
+  // finishes running. Each instance of the task maintains a strong reference
+  // to a DestructionDeadlockChecker. The DestructionDeadlockChecker is only
+  // destroyed when the task is destroyed without being run, which only happens
+  // during destruction of the SequencedWorkerPool.
+  void PostRepostingTask(
+      const scoped_refptr<SequencedWorkerPool>& pool,
+      const scoped_refptr<DestructionDeadlockChecker>& checker) {
+    Closure reposting_task =
+        base::Bind(&TestTracker::PostRepostingTask, this, pool, checker);
+    pool->PostWorkerTaskWithShutdownBehavior(
+        FROM_HERE, reposting_task, SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+  }
+
+  // This task reposts itself back onto the SequencedWorkerPool before it
+  // finishes running.
+  void PostRepostingBlockingTask(
+      const scoped_refptr<SequencedWorkerPool>& pool,
+      const SequencedWorkerPool::SequenceToken& token) {
+    Closure reposting_task =
+        base::Bind(&TestTracker::PostRepostingBlockingTask, this, pool, token);
+    pool->PostSequencedWorkerTaskWithShutdownBehavior(token,
+        FROM_HERE, reposting_task, SequencedWorkerPool::BLOCK_SHUTDOWN);
+  }
+
+  void PostBlockingTaskThenUnblockThreads(
+      const scoped_refptr<SequencedWorkerPool>& pool,
+      ThreadBlocker* blocker,
+      size_t threads_to_wake) {
+    Closure arbitrary_task = base::Bind(&TestTracker::FastTask, this, 0);
+    pool->PostWorkerTaskWithShutdownBehavior(
+        FROM_HERE, arbitrary_task, SequencedWorkerPool::BLOCK_SHUTDOWN);
+    blocker->Unblock(threads_to_wake);
   }
 
   // Waits until the given number of tasks have started executing.
@@ -183,13 +234,7 @@ class SequencedWorkerPoolTest : public testing::Test {
     ResetPool();
   }
 
-  virtual ~SequencedWorkerPoolTest() {}
-
-  virtual void SetUp() override {}
-
-  virtual void TearDown() override {
-    pool()->Shutdown();
-  }
+  void TearDown() override { pool()->Shutdown(); }
 
   const scoped_refptr<SequencedWorkerPool>& pool() {
     return pool_owner_->pool();
@@ -251,7 +296,7 @@ class SequencedWorkerPoolTest : public testing::Test {
 
 // Checks that the given number of entries are in the tasks to complete of
 // the given tracker, and then signals the given event the given number of
-// times. This is used to wakt up blocked background threads before blocking
+// times. This is used to wake up blocked background threads before blocking
 // on shutdown.
 void EnsureTasksToCompleteCountAndUnblock(scoped_refptr<TestTracker> tracker,
                                           size_t expected_tasks_to_complete,
@@ -547,6 +592,34 @@ TEST_F(SequencedWorkerPoolTest, AllowsAfterShutdown) {
   tracker()->ClearCompleteSequence();
 }
 
+// Tests that blocking tasks can still be posted during shutdown, as long as
+// the task is not being posted within the context of a running task.
+TEST_F(SequencedWorkerPoolTest,
+       AllowsBlockingTasksDuringShutdownOutsideOfRunningTask) {
+  EnsureAllWorkersCreated();
+  ThreadBlocker blocker;
+
+  // Start tasks to take all the threads and block them.
+  const int kNumBlockTasks = static_cast<int>(kNumWorkerThreads);
+  for (int i = 0; i < kNumBlockTasks; ++i) {
+    EXPECT_TRUE(pool()->PostWorkerTask(
+        FROM_HERE,
+        base::Bind(&TestTracker::BlockTask, tracker(), i, &blocker)));
+  }
+  tracker()->WaitUntilTasksBlocked(kNumWorkerThreads);
+
+  // Setup to open the floodgates from within Shutdown().
+  SetWillWaitForShutdownCallback(
+      base::Bind(&TestTracker::PostBlockingTaskThenUnblockThreads,
+                 scoped_refptr<TestTracker>(tracker()), pool(), &blocker,
+                 kNumWorkerThreads));
+  pool()->Shutdown(kNumWorkerThreads + 1);
+
+  // Ensure that the correct number of tasks actually got run.
+  tracker()->WaitUntilTasksComplete(static_cast<size_t>(kNumWorkerThreads + 1));
+  tracker()->ClearCompleteSequence();
+}
+
 // Tests that unrun tasks are discarded properly according to their shutdown
 // mode.
 TEST_F(SequencedWorkerPoolTest, DiscardOnShutdown) {
@@ -753,6 +826,41 @@ TEST_F(SequencedWorkerPoolTest, IsRunningOnCurrentThread) {
                  unsequenced_token, token1, pool(), unused_pool));
   pool()->Shutdown();
   unused_pool->Shutdown();
+}
+
+// Checks that tasks are destroyed in the right context during shutdown. If a
+// task is destroyed while SequencedWorkerPool's global lock is held,
+// SequencedWorkerPool might deadlock.
+TEST_F(SequencedWorkerPoolTest, AvoidsDeadlockOnShutdown) {
+  for (int i = 0; i < 4; ++i) {
+    scoped_refptr<DestructionDeadlockChecker> checker(
+        new DestructionDeadlockChecker(pool()));
+    tracker()->PostRepostingTask(pool(), checker);
+  }
+
+  // Shutting down the pool should destroy the DestructionDeadlockCheckers,
+  // which in turn should not deadlock in their destructors.
+  pool()->Shutdown();
+}
+
+// Similar to the test AvoidsDeadlockOnShutdown, but there are now also
+// sequenced, blocking tasks in the queue during shutdown.
+TEST_F(SequencedWorkerPoolTest,
+       AvoidsDeadlockOnShutdownWithSequencedBlockingTasks) {
+  const std::string sequence_token_name("name");
+  for (int i = 0; i < 4; ++i) {
+    scoped_refptr<DestructionDeadlockChecker> checker(
+        new DestructionDeadlockChecker(pool()));
+    tracker()->PostRepostingTask(pool(), checker);
+
+    SequencedWorkerPool::SequenceToken token1 =
+        pool()->GetNamedSequenceToken(sequence_token_name);
+    tracker()->PostRepostingBlockingTask(pool(), token1);
+  }
+
+  // Shutting down the pool should destroy the DestructionDeadlockCheckers,
+  // which in turn should not deadlock in their destructors.
+  pool()->Shutdown();
 }
 
 // Verify that FlushForTesting works as intended.

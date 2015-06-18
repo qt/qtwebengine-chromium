@@ -45,6 +45,7 @@ class Resource;
 struct FetchInitiatorInfo;
 class Document;
 class DocumentLoader;
+class ExecutionContext;
 class FormData;
 class LocalFrame;
 class HTTPHeaderMap;
@@ -66,26 +67,25 @@ class WebSocketHandshakeResponse;
 
 typedef String ErrorString;
 
-class InspectorResourceAgent final : public InspectorBaseAgent<InspectorResourceAgent>, public InspectorBackendDispatcher::NetworkCommandHandler {
+class InspectorResourceAgent final : public InspectorBaseAgent<InspectorResourceAgent, InspectorFrontend::Network>, public InspectorBackendDispatcher::NetworkCommandHandler {
 public:
     static PassOwnPtrWillBeRawPtr<InspectorResourceAgent> create(InspectorPageAgent* pageAgent)
     {
         return adoptPtrWillBeNoop(new InspectorResourceAgent(pageAgent));
     }
 
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void clearFrontend() override;
-    virtual void restore() override;
+    void disable(ErrorString*) override;
+    void restore() override;
 
     virtual ~InspectorResourceAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Called from instrumentation.
     void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void markResourceAsCached(unsigned long identifier);
     void didReceiveResourceResponse(LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didReceiveData(LocalFrame*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
-    void didFinishLoading(unsigned long identifier, DocumentLoader*, double monotonicFinishTime, int64_t encodedDataLength);
+    void didFinishLoading(unsigned long identifier, double monotonicFinishTime, int64_t encodedDataLength);
     void didReceiveCORSRedirectResponse(LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didFailLoading(unsigned long identifier, const ResourceError&);
     void didCommitLoad(LocalFrame*, DocumentLoader*);
@@ -96,7 +96,11 @@ public:
     void documentThreadableLoaderStartedLoadingForClient(unsigned long identifier, ThreadableLoaderClient*);
     void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didFailXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*);
-    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&);
+    void didFinishXHRLoading(ExecutionContext*, XMLHttpRequest*, ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&);
+
+    void willSendEventSourceRequest(ThreadableLoaderClient*);
+    void willDispachEventSourceEvent(ThreadableLoaderClient*, const AtomicString& eventName, const AtomicString& eventId, const Vector<UChar>& data);
+    void didFinishEventSourceRequest(ThreadableLoaderClient*);
 
     void willDestroyResource(Resource*);
 
@@ -120,24 +124,21 @@ public:
     void didSendWebSocketFrame(unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength);
     void didReceiveWebSocketFrameError(unsigned long identifier, const String&);
 
-    // called from Internals for layout test purposes.
-    void setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize);
-
     // Called from frontend
     virtual void enable(ErrorString*) override;
-    virtual void disable(ErrorString*) override;
     virtual void setUserAgentOverride(ErrorString*, const String& userAgent) override;
     virtual void setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>&) override;
-    virtual void getResponseBody(ErrorString*, const String& requestId, String* content, bool* base64Encoded) override;
+    virtual void getResponseBody(ErrorString*, const String& requestId, PassRefPtrWillBeRawPtr<GetResponseBodyCallback>) override;
 
     virtual void replayXHR(ErrorString*, const String& requestId) override;
+    virtual void setMonitoringXHREnabled(ErrorString*, bool) override;
 
     virtual void canClearBrowserCache(ErrorString*, bool*) override;
     virtual void canClearBrowserCookies(ErrorString*, bool*) override;
     virtual void emulateNetworkConditions(ErrorString*, bool, double, double, double) override;
     virtual void setCacheDisabled(ErrorString*, bool cacheDisabled) override;
 
-    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtrWillBeRawPtr<LoadResourceForFrontendCallback>) override;
+    virtual void setDataSizeLimitsForTest(ErrorString*, int maxTotal, int maxResource) override;
 
     // Called from other agents.
     void setHostId(const String&);
@@ -150,14 +151,19 @@ private:
     void delayedRemoveReplayXHR(XMLHttpRequest*);
     void removeFinishedReplayXHRFired(Timer<InspectorResourceAgent>*);
 
+    bool getResponseBodyBlob(const String& requestId, PassRefPtrWillBeRawPtr<GetResponseBodyCallback>);
+
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    InspectorFrontend::Network* m_frontend;
     String m_userAgentOverride;
     String m_hostId;
     OwnPtr<NetworkResourcesData> m_resourcesData;
 
     typedef WillBeHeapHashMap<ThreadableLoaderClient*, RefPtrWillBeMember<XHRReplayData> > PendingXHRReplayDataMap;
     PendingXHRReplayDataMap m_pendingXHRReplayData;
+
+    ThreadableLoaderClient* m_pendingEventSource;
+    typedef HashMap<ThreadableLoaderClient*, unsigned long> EventSourceRequestIdMap;
+    EventSourceRequestIdMap m_eventSourceRequestIdMap;
 
     typedef HashMap<String, RefPtr<TypeBuilder::Network::Initiator> > FrameNavigationInitiatorMap;
     FrameNavigationInitiatorMap m_frameNavigationInitiatorMap;

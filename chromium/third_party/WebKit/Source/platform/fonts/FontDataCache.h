@@ -56,7 +56,6 @@ struct FontDataCacheKeyHash {
 
 struct FontDataCacheKeyTraits : WTF::GenericHashTraits<FontPlatformData> {
     static const bool emptyValueIsZero = true;
-    static const bool needsDestruction = true;
     static const FontPlatformData& emptyValue()
     {
         DEFINE_STATIC_LOCAL(FontPlatformData, key, (0.f, false, false));
@@ -91,7 +90,7 @@ private:
 
     typedef HashMap<FontPlatformData, pair<RefPtr<SimpleFontData>, unsigned>, FontDataCacheKeyHash, FontDataCacheKeyTraits> Cache;
     Cache m_cache;
-    ListHashSet<RefPtr<SimpleFontData> > m_inactiveFontData;
+    ListHashSet<RefPtr<SimpleFontData>> m_inactiveFontData;
 };
 
 } // namespace blink

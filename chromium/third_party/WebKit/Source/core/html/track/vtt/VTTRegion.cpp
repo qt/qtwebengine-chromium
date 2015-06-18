@@ -39,8 +39,8 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/vtt/VTTParser.h"
 #include "core/html/track/vtt/VTTScanner.h"
-#include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/Logging.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -373,7 +373,7 @@ void VTTRegion::displayLastVTTCueBox()
 
     // Find first cue that is not entirely displayed and scroll it upwards.
     for (Element* child = ElementTraversal::firstChild(*m_cueContainer); child && !m_scrollTimer.isActive(); child = ElementTraversal::nextSibling(*child)) {
-        RefPtrWillBeRawPtr<ClientRect> clientRect = child->getBoundingClientRect();
+        ClientRect* clientRect = child->getBoundingClientRect();
         float childTop = clientRect->top();
         float childBottom = clientRect->bottom();
 
@@ -469,7 +469,7 @@ void VTTRegion::scrollTimerFired(Timer<VTTRegion>*)
     displayLastVTTCueBox();
 }
 
-void VTTRegion::trace(Visitor* visitor)
+DEFINE_TRACE(VTTRegion)
 {
     visitor->trace(m_cueContainer);
     visitor->trace(m_regionDisplayTree);

@@ -15,7 +15,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
-#include "google_apis/drive/gdata_errorcode.h"
+#include "google_apis/drive/drive_api_error_codes.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_fetcher_response_writer.h"
@@ -27,18 +27,49 @@ class Value;
 
 namespace google_apis {
 
+class FileResource;
 class RequestSender;
+
+// Content type for multipart body.
+enum MultipartType {
+  MULTIPART_RELATED,
+  MULTIPART_MIXED
+};
+
+// Pair of content type and data.
+struct ContentTypeAndData {
+  std::string type;
+  std::string data;
+};
+
+typedef base::Callback<void(DriveApiErrorCode)> PrepareCallback;
+
+// Callback used for requests that the server returns FileResource data
+// formatted into JSON value.
+typedef base::Callback<void(DriveApiErrorCode error,
+                            scoped_ptr<FileResource> entry)>
+    FileResourceCallback;
 
 // Callback used for DownloadFileRequest and ResumeUploadRequestBase.
 typedef base::Callback<void(int64 progress, int64 total)> ProgressCallback;
 
 // Callback used to get the content from DownloadFileRequest.
 typedef base::Callback<void(
-    GDataErrorCode error,
+    DriveApiErrorCode error,
     scoped_ptr<std::string> content)> GetContentCallback;
 
 // Parses JSON passed in |json|. Returns NULL on failure.
 scoped_ptr<base::Value> ParseJson(const std::string& json);
+
+// Generate multipart body. If |predetermined_boundary| is not empty, it uses
+// the string as boundary. Otherwise it generates random boundary that does not
+// conflict with |parts|. If |data_offset| is not nullptr, it stores the
+// index of first byte of each part in multipart body.
+void GenerateMultipartBody(MultipartType multipart_type,
+                           const std::string& predetermined_boundary,
+                           const std::vector<ContentTypeAndData>& parts,
+                           ContentTypeAndData* output,
+                           std::vector<uint64>* data_offset);
 
 //======================= AuthenticatedRequestInterface ======================
 
@@ -65,7 +96,7 @@ class AuthenticatedRequestInterface {
                      const ReAuthenticateCallback& callback) = 0;
 
   // Invoked when the authentication failed with an error code |code|.
-  virtual void OnAuthFailed(GDataErrorCode code) = 0;
+  virtual void OnAuthFailed(DriveApiErrorCode code) = 0;
 
   // Gets a weak pointer to this request object. Since requests may be
   // deleted when it is canceled by user action, for posting asynchronous tasks
@@ -75,7 +106,7 @@ class AuthenticatedRequestInterface {
   virtual base::WeakPtr<AuthenticatedRequestInterface> GetWeakPtr() = 0;
 
   // Cancels the request. It will invoke the callback object passed in
-  // each request's constructor with error code GDATA_CANCELLED.
+  // each request's constructor with error code DRIVE_CANCELLED.
   virtual void Cancel() = 0;
 };
 
@@ -133,6 +164,10 @@ class UrlFetchRequestBase : public AuthenticatedRequestInterface,
   explicit UrlFetchRequestBase(RequestSender* sender);
   ~UrlFetchRequestBase() override;
 
+  // Does async initialization for the request. |Start| calls this method so you
+  // don't need to call this before |Start|.
+  virtual void Prepare(const PrepareCallback& callback);
+
   // Gets URL for the request.
   virtual GURL GetURL() const = 0;
 
@@ -174,14 +209,14 @@ class UrlFetchRequestBase : public AuthenticatedRequestInterface,
 
   // Invoked by this base class upon an authentication error or cancel by
   // a user request. Must be implemented by a derived class.
-  virtual void RunCallbackOnPrematureFailure(GDataErrorCode code) = 0;
+  virtual void RunCallbackOnPrematureFailure(DriveApiErrorCode code) = 0;
 
   // Invoked from derived classes when ProcessURLFetchResults() is completed.
   void OnProcessURLFetchResultsComplete();
 
-  // Returns an appropriate GDataErrorCode based on the HTTP response code and
-  // the status of the URLFetcher.
-  GDataErrorCode GetErrorCode();
+  // Returns an appropriate DriveApiErrorCode based on the HTTP response code
+  // and the status of the URLFetcher.
+  DriveApiErrorCode GetErrorCode();
 
   // Returns true if called on the thread where the constructor was called.
   bool CalledOnValidThread();
@@ -193,18 +228,28 @@ class UrlFetchRequestBase : public AuthenticatedRequestInterface,
   base::SequencedTaskRunner* blocking_task_runner() const;
 
  private:
+  // Continues |Start| function after |Prepare|.
+  void StartAfterPrepare(const std::string& access_token,
+                         const std::string& custom_user_agent,
+                         const ReAuthenticateCallback& callback,
+                         DriveApiErrorCode code);
+
+  // Invokes callback with |code| and request to delete the request to
+  // |sender_|.
+  void CompleteRequestWithError(DriveApiErrorCode code);
+
   // URLFetcherDelegate overrides.
   void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // AuthenticatedRequestInterface overrides.
-  void OnAuthFailed(GDataErrorCode code) override;
+  void OnAuthFailed(DriveApiErrorCode code) override;
 
   ReAuthenticateCallback re_authenticate_callback_;
   int re_authenticate_count_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
   ResponseWriter* response_writer_;  // Owned by |url_fetcher_|.
   RequestSender* sender_;
-  GDataErrorCode error_code_;
+  DriveApiErrorCode error_code_;
 
   base::ThreadChecker thread_checker_;
 
@@ -215,10 +260,46 @@ class UrlFetchRequestBase : public AuthenticatedRequestInterface,
   DISALLOW_COPY_AND_ASSIGN(UrlFetchRequestBase);
 };
 
+//============================ BatchableDelegate ============================
+
+// Delegate to be used by |SingleBatchableDelegateRequest| and
+// |BatchUploadRequest|.
+class BatchableDelegate {
+ public:
+  virtual ~BatchableDelegate() {}
+
+  // See UrlFetchRequestBase.
+  virtual GURL GetURL() const = 0;
+  virtual net::URLFetcher::RequestType GetRequestType() const = 0;
+  virtual std::vector<std::string> GetExtraRequestHeaders() const = 0;
+  virtual void Prepare(const PrepareCallback& callback) = 0;
+  virtual bool GetContentData(std::string* upload_content_type,
+                              std::string* upload_content) = 0;
+
+  // Notifies result of the request. Usually, it parses the |code| and
+  // |response_body|, then notifies the parsed value to client code of the
+  // API.  |callback| must be called on completion. The instance must not
+  // do anything after calling |callback| since the instance may be deleted in
+  // |callback|.
+  virtual void NotifyResult(DriveApiErrorCode code,
+                            const std::string& response_body,
+                            const base::Closure& callback) = 0;
+
+  // Notifies error. Unlike |NotifyResult|, it must report error
+  // synchronously. The instance may be deleted just after calling
+  // NotifyError.
+  virtual void NotifyError(DriveApiErrorCode code) = 0;
+
+  // Notifies progress.
+  virtual void NotifyUploadProgress(const net::URLFetcher* source,
+                                    int64 current,
+                                    int64 total) = 0;
+};
+
 //============================ EntryActionRequest ============================
 
 // Callback type for requests that return only error status, like: Delete/Move.
-typedef base::Callback<void(GDataErrorCode error)> EntryActionCallback;
+typedef base::Callback<void(DriveApiErrorCode error)> EntryActionCallback;
 
 // This class performs a simple action over a given entry (document/file).
 // It is meant to be used for requests that return no JSON blobs.
@@ -233,7 +314,7 @@ class EntryActionRequest : public UrlFetchRequestBase {
  protected:
   // Overridden from UrlFetchRequestBase.
   void ProcessURLFetchResults(const net::URLFetcher* source) override;
-  void RunCallbackOnPrematureFailure(GDataErrorCode code) override;
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode code) override;
 
  private:
   const EntryActionCallback callback_;
@@ -244,7 +325,7 @@ class EntryActionRequest : public UrlFetchRequestBase {
 //=========================== InitiateUploadRequestBase=======================
 
 // Callback type for DriveServiceInterface::InitiateUpload.
-typedef base::Callback<void(GDataErrorCode error,
+typedef base::Callback<void(DriveApiErrorCode error,
                             const GURL& upload_url)> InitiateUploadCallback;
 
 // This class provides base implementation for performing the request for
@@ -272,7 +353,7 @@ class InitiateUploadRequestBase : public UrlFetchRequestBase {
 
   // UrlFetchRequestBase overrides.
   void ProcessURLFetchResults(const net::URLFetcher* source) override;
-  void RunCallbackOnPrematureFailure(GDataErrorCode code) override;
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode code) override;
   std::vector<std::string> GetExtraRequestHeaders() const override;
 
  private:
@@ -288,12 +369,12 @@ class InitiateUploadRequestBase : public UrlFetchRequestBase {
 // Struct for response to ResumeUpload and GetUploadStatus.
 struct UploadRangeResponse {
   UploadRangeResponse();
-  UploadRangeResponse(GDataErrorCode code,
+  UploadRangeResponse(DriveApiErrorCode code,
                       int64 start_position_received,
                       int64 end_position_received);
   ~UploadRangeResponse();
 
-  GDataErrorCode code;
+  DriveApiErrorCode code;
   // The values of "Range" header returned from the server. The values are
   // used to continue uploading more data. These are set to -1 if an upload
   // is complete.
@@ -317,7 +398,7 @@ class UploadRangeRequestBase : public UrlFetchRequestBase {
   GURL GetURL() const override;
   net::URLFetcher::RequestType GetRequestType() const override;
   void ProcessURLFetchResults(const net::URLFetcher* source) override;
-  void RunCallbackOnPrematureFailure(GDataErrorCode code) override;
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode code) override;
 
   // This method will be called when the request is done, regardless of
   // whether it is succeeded or failed.
@@ -340,7 +421,7 @@ class UploadRangeRequestBase : public UrlFetchRequestBase {
 
  private:
   // Called when ParseJson() is completed.
-  void OnDataParsed(GDataErrorCode code, scoped_ptr<base::Value> value);
+  void OnDataParsed(DriveApiErrorCode code, scoped_ptr<base::Value> value);
 
   const GURL upload_url_;
 
@@ -428,10 +509,81 @@ class GetUploadStatusRequestBase : public UploadRangeRequestBase {
   DISALLOW_COPY_AND_ASSIGN(GetUploadStatusRequestBase);
 };
 
+//=========================== MultipartUploadRequestBase=======================
+
+// This class provides base implementation for performing the request for
+// uploading a file by multipart body.
+class MultipartUploadRequestBase : public BatchableDelegate {
+ public:
+  // Set boundary. Only tests can use this method.
+  void SetBoundaryForTesting(const std::string& boundary);
+
+ protected:
+  // |callback| will be called with the file resource.upload URL.
+  // |content_type| and |content_length| should be the attributes of the
+  // uploading file. Other parameters are optional and can be empty or null
+  // depending on Upload URL provided by the subclasses.
+  MultipartUploadRequestBase(base::SequencedTaskRunner* blocking_task_runner,
+                             const std::string& metadata_json,
+                             const std::string& content_type,
+                             int64 content_length,
+                             const base::FilePath& local_file_path,
+                             const FileResourceCallback& callback,
+                             const ProgressCallback& progress_callback);
+  ~MultipartUploadRequestBase() override;
+
+  // BatchableDelegate.
+  std::vector<std::string> GetExtraRequestHeaders() const override;
+  void Prepare(const PrepareCallback& callback) override;
+  bool GetContentData(std::string* upload_content_type,
+                      std::string* upload_content) override;
+  void NotifyResult(DriveApiErrorCode code,
+                    const std::string& body,
+                    const base::Closure& callback) override;
+  void NotifyError(DriveApiErrorCode code) override;
+  void NotifyUploadProgress(const net::URLFetcher* source,
+                            int64 current,
+                            int64 total) override;
+  // Parses the response value and invokes |callback_| with |FileResource|.
+  void OnDataParsed(DriveApiErrorCode code,
+                    const base::Closure& callback,
+                    scoped_ptr<base::Value> value);
+
+ private:
+  // Continues to rest part of |Start| method after determining boundary string
+  // of multipart/related.
+  void OnPrepareUploadContent(const PrepareCallback& callback,
+                              std::string* upload_content_type,
+                              std::string* upload_content_data,
+                              bool result);
+
+  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  const std::string metadata_json_;
+  const std::string content_type_;
+  const base::FilePath local_path_;
+  const FileResourceCallback callback_;
+  const ProgressCallback progress_callback_;
+
+  // Boundary of multipart body.
+  std::string boundary_;
+
+  // Upload content of multipart body.
+  std::string upload_content_type_;
+  std::string upload_content_data_;
+
+  base::ThreadChecker thread_checker_;
+
+  // Note: This should remain the last member so it'll be destroyed and
+  // invalidate its weak pointers before any other members are destroyed.
+  base::WeakPtrFactory<MultipartUploadRequestBase> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(MultipartUploadRequestBase);
+};
+
 //============================ DownloadFileRequest ===========================
 
 // Callback type for receiving the completion of DownloadFileRequest.
-typedef base::Callback<void(GDataErrorCode error,
+typedef base::Callback<void(DriveApiErrorCode error,
                             const base::FilePath& temp_file)>
     DownloadActionCallback;
 
@@ -470,7 +622,7 @@ class DownloadFileRequestBase : public UrlFetchRequestBase {
   void GetOutputFilePath(base::FilePath* local_file_path,
                          GetContentCallback* get_content_callback) override;
   void ProcessURLFetchResults(const net::URLFetcher* source) override;
-  void RunCallbackOnPrematureFailure(GDataErrorCode code) override;
+  void RunCallbackOnPrematureFailure(DriveApiErrorCode code) override;
 
   // net::URLFetcherDelegate overrides.
   void OnURLFetchDownloadProgress(const net::URLFetcher* source,

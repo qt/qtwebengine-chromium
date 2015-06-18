@@ -6,24 +6,25 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <netdb.h>
 #include <net/if.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
 #include "base/callback.h"
+#include "base/debug/alias.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/rand_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/base/network_activity_monitor.h"
+#include "net/log/net_log.h"
 #include "net/socket/socket_descriptor.h"
 #include "net/udp/udp_net_log_parameters.h"
 
@@ -66,6 +67,7 @@ UDPSocketLibevent::UDPSocketLibevent(
     const net::NetLog::Source& source)
         : socket_(kInvalidSocket),
           addr_family_(0),
+          is_connected_(false),
           socket_options_(SOCKET_OPTION_MULTICAST_LOOP),
           multicast_interface_(0),
           multicast_time_to_live_(1),
@@ -88,10 +90,26 @@ UDPSocketLibevent::~UDPSocketLibevent() {
   net_log_.EndEvent(NetLog::TYPE_SOCKET_ALIVE);
 }
 
+int UDPSocketLibevent::Open(AddressFamily address_family) {
+  DCHECK(CalledOnValidThread());
+  DCHECK_EQ(socket_, kInvalidSocket);
+
+  addr_family_ = ConvertAddressFamily(address_family);
+  socket_ = CreatePlatformSocket(addr_family_, SOCK_DGRAM, 0);
+  if (socket_ == kInvalidSocket)
+    return MapSystemError(errno);
+  if (SetNonBlocking(socket_)) {
+    const int err = MapSystemError(errno);
+    Close();
+    return err;
+  }
+  return OK;
+}
+
 void UDPSocketLibevent::Close() {
   DCHECK(CalledOnValidThread());
 
-  if (!is_connected())
+  if (socket_ == kInvalidSocket)
     return;
 
   // Zero out any pending read/write callback state.
@@ -109,11 +127,11 @@ void UDPSocketLibevent::Close() {
   ok = write_socket_watcher_.StopWatchingFileDescriptor();
   DCHECK(ok);
 
-  if (IGNORE_EINTR(close(socket_)) < 0)
-    PLOG(ERROR) << "close";
+  PCHECK(IGNORE_EINTR(close(socket_)) == 0);
 
   socket_ = kInvalidSocket;
   addr_family_ = 0;
+  is_connected_ = false;
 }
 
 int UDPSocketLibevent::GetPeerAddress(IPEndPoint* address) const {
@@ -242,12 +260,12 @@ int UDPSocketLibevent::SendToOrWrite(IOBuffer* buf,
 }
 
 int UDPSocketLibevent::Connect(const IPEndPoint& address) {
+  DCHECK_NE(socket_, kInvalidSocket);
   net_log_.BeginEvent(NetLog::TYPE_UDP_CONNECT,
                       CreateNetLogUDPConnectCallback(&address));
   int rv = InternalConnect(address);
-  if (rv != OK)
-    Close();
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_UDP_CONNECT, rv);
+  is_connected_ = (rv == OK);
   return rv;
 }
 
@@ -255,16 +273,13 @@ int UDPSocketLibevent::InternalConnect(const IPEndPoint& address) {
   DCHECK(CalledOnValidThread());
   DCHECK(!is_connected());
   DCHECK(!remote_address_.get());
-  int addr_family = address.GetSockAddrFamily();
-  int rv = CreateSocket(addr_family);
-  if (rv < 0)
-    return rv;
 
+  int rv = 0;
   if (bind_type_ == DatagramSocket::RANDOM_BIND) {
     // Construct IPAddressNumber of appropriate size (IPv4 or IPv6) of 0s,
     // representing INADDR_ANY or in6addr_any.
-    size_t addr_size =
-        addr_family == AF_INET ? kIPv4AddressSize : kIPv6AddressSize;
+    size_t addr_size = address.GetSockAddrFamily() == AF_INET ?
+        kIPv4AddressSize : kIPv6AddressSize;
     IPAddressNumber addr_any(addr_size);
     rv = RandomBind(addr_any);
   }
@@ -272,79 +287,79 @@ int UDPSocketLibevent::InternalConnect(const IPEndPoint& address) {
 
   if (rv < 0) {
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", -rv);
-    Close();
     return rv;
   }
 
   SockaddrStorage storage;
-  if (!address.ToSockAddr(storage.addr, &storage.addr_len)) {
-    Close();
+  if (!address.ToSockAddr(storage.addr, &storage.addr_len))
     return ERR_ADDRESS_INVALID;
-  }
 
   rv = HANDLE_EINTR(connect(socket_, storage.addr, storage.addr_len));
-  if (rv < 0) {
-    // Close() may change the current errno. Map errno beforehand.
-    int result = MapSystemError(errno);
-    Close();
-    return result;
-  }
+  if (rv < 0)
+    return MapSystemError(errno);
 
   remote_address_.reset(new IPEndPoint(address));
   return rv;
 }
 
 int UDPSocketLibevent::Bind(const IPEndPoint& address) {
+  DCHECK_NE(socket_, kInvalidSocket);
   DCHECK(CalledOnValidThread());
   DCHECK(!is_connected());
-  int rv = CreateSocket(address.GetSockAddrFamily());
+
+  int rv = SetMulticastOptions();
   if (rv < 0)
     return rv;
 
-  rv = SetSocketOptions();
-  if (rv < 0) {
-    Close();
-    return rv;
-  }
   rv = DoBind(address);
-  if (rv < 0) {
-    Close();
+  if (rv < 0)
     return rv;
-  }
+
+  is_connected_ = true;
   local_address_.reset();
   return rv;
 }
 
 int UDPSocketLibevent::SetReceiveBufferSize(int32 size) {
+  DCHECK_NE(socket_, kInvalidSocket);
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  int last_error = errno;
-  DCHECK(!rv) << "Could not set socket receive buffer size: " << last_error;
-  return rv == 0 ? OK : MapSystemError(last_error);
+  return rv == 0 ? OK : MapSystemError(errno);
 }
 
 int UDPSocketLibevent::SetSendBufferSize(int32 size) {
+  DCHECK_NE(socket_, kInvalidSocket);
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  int last_error = errno;
-  DCHECK(!rv) << "Could not set socket send buffer size: " << last_error;
-  return rv == 0 ? OK : MapSystemError(last_error);
+  return rv == 0 ? OK : MapSystemError(errno);
 }
 
-void UDPSocketLibevent::AllowAddressReuse() {
+int UDPSocketLibevent::AllowAddressReuse() {
+  DCHECK_NE(socket_, kInvalidSocket);
   DCHECK(CalledOnValidThread());
   DCHECK(!is_connected());
-
-  socket_options_ |= SOCKET_OPTION_REUSE_ADDRESS;
+  int true_value = 1;
+  int rv = setsockopt(
+      socket_, SOL_SOCKET, SO_REUSEADDR, &true_value, sizeof(true_value));
+  return rv == 0 ? OK : MapSystemError(errno);
 }
 
-void UDPSocketLibevent::AllowBroadcast() {
+int UDPSocketLibevent::SetBroadcast(bool broadcast) {
+  DCHECK_NE(socket_, kInvalidSocket);
   DCHECK(CalledOnValidThread());
-  DCHECK(!is_connected());
-
-  socket_options_ |= SOCKET_OPTION_BROADCAST;
+  int value = broadcast ? 1 : 0;
+  int rv;
+#if defined(OS_MACOSX)
+  // SO_REUSEPORT on OSX permits multiple processes to each receive
+  // UDP multicast or broadcast datagrams destined for the bound
+  // port.
+  rv = setsockopt(socket_, SOL_SOCKET, SO_REUSEPORT, &value, sizeof(value));
+#else
+  rv = setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, &value, sizeof(value));
+#endif  // defined(OS_MACOSX)
+  return rv == 0 ? OK : MapSystemError(errno);
 }
 
 void UDPSocketLibevent::ReadWatcher::OnFileCanReadWithoutBlocking(int) {
@@ -399,7 +414,7 @@ void UDPSocketLibevent::LogRead(int result,
     return;
   }
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     DCHECK(addr_len > 0);
     DCHECK(addr);
 
@@ -412,21 +427,7 @@ void UDPSocketLibevent::LogRead(int result,
             is_address_valid ? &address : NULL));
   }
 
-  base::StatsCounter read_bytes("udp.read_bytes");
-  read_bytes.Add(result);
-}
-
-int UDPSocketLibevent::CreateSocket(int addr_family) {
-  addr_family_ = addr_family;
-  socket_ = CreatePlatformSocket(addr_family_, SOCK_DGRAM, 0);
-  if (socket_ == kInvalidSocket)
-    return MapSystemError(errno);
-  if (SetNonBlocking(socket_)) {
-    const int err = MapSystemError(errno);
-    Close();
-    return err;
-  }
-  return OK;
+  NetworkActivityMonitor::GetInstance()->IncrementBytesReceived(result);
 }
 
 void UDPSocketLibevent::DidCompleteWrite() {
@@ -450,14 +451,13 @@ void UDPSocketLibevent::LogWrite(int result,
     return;
   }
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
         NetLog::TYPE_UDP_BYTES_SENT,
         CreateNetLogUDPDataTranferCallback(result, bytes, address));
   }
 
-  base::StatsCounter write_bytes("udp.write_bytes");
-  write_bytes.Add(result);
+  NetworkActivityMonitor::GetInstance()->IncrementBytesSent(result);
 }
 
 int UDPSocketLibevent::InternalRecvFrom(IOBuffer* buf, int buf_len,
@@ -515,30 +515,7 @@ int UDPSocketLibevent::InternalSendTo(IOBuffer* buf, int buf_len,
   return result;
 }
 
-int UDPSocketLibevent::SetSocketOptions() {
-  int true_value = 1;
-  if (socket_options_ & SOCKET_OPTION_REUSE_ADDRESS) {
-    int rv = setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, &true_value,
-                        sizeof(true_value));
-    if (rv < 0)
-      return MapSystemError(errno);
-  }
-  if (socket_options_ & SOCKET_OPTION_BROADCAST) {
-    int rv;
-#if defined(OS_MACOSX)
-    // SO_REUSEPORT on OSX permits multiple processes to each receive
-    // UDP multicast or broadcast datagrams destined for the bound
-    // port.
-    rv = setsockopt(socket_, SOL_SOCKET, SO_REUSEPORT, &true_value,
-                    sizeof(true_value));
-#else
-    rv = setsockopt(socket_, SOL_SOCKET, SO_BROADCAST, &true_value,
-                    sizeof(true_value));
-#endif  // defined(OS_MACOSX)
-    if (rv < 0)
-      return MapSystemError(errno);
-  }
-
+int UDPSocketLibevent::SetMulticastOptions() {
   if (!(socket_options_ & SOCKET_OPTION_MULTICAST_LOOP)) {
     int rv;
     if (addr_family_ == AF_INET) {

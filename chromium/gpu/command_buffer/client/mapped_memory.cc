@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <functional>
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 
 namespace gpu {
@@ -26,7 +26,7 @@ MemoryChunk::~MemoryChunk() {}
 MappedMemoryManager::MappedMemoryManager(CommandBufferHelper* helper,
                                          const base::Closure& poll_callback,
                                          size_t unused_memory_reclaim_limit)
-    : chunk_size_multiple_(1),
+    : chunk_size_multiple_(FencedAllocator::kAllocAlignment),
       helper_(helper),
       poll_callback_(poll_callback),
       allocated_memory_(0),

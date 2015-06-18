@@ -40,48 +40,35 @@ class Transform;
 // of kSrcOver_Mode.
 class GFX_EXPORT Canvas {
  public:
-  // Specifies the alignment for text rendered with the DrawStringRect method.
   enum {
+    // Specifies the alignment for text rendered with the DrawStringRect method.
     TEXT_ALIGN_LEFT = 1 << 0,
     TEXT_ALIGN_CENTER = 1 << 1,
     TEXT_ALIGN_RIGHT = 1 << 2,
+    TEXT_ALIGN_TO_HEAD = 1 << 3,
 
     // Specifies the text consists of multiple lines.
-    MULTI_LINE = 1 << 3,
+    MULTI_LINE = 1 << 4,
 
     // By default DrawStringRect does not process the prefix ('&') character
     // specially. That is, the string "&foo" is rendered as "&foo". When
     // rendering text from a resource that uses the prefix character for
     // mnemonics, the prefix should be processed and can be rendered as an
     // underline (SHOW_PREFIX), or not rendered at all (HIDE_PREFIX).
-    SHOW_PREFIX = 1 << 4,
-    HIDE_PREFIX = 1 << 5,
+    SHOW_PREFIX = 1 << 5,
+    HIDE_PREFIX = 1 << 6,
 
     // Prevent ellipsizing
-    NO_ELLIPSIS = 1 << 6,
+    NO_ELLIPSIS = 1 << 7,
 
     // Specifies if words can be split by new lines.
     // This only works with MULTI_LINE.
-    CHARACTER_BREAK = 1 << 7,
-
-    // Instructs DrawStringRect() to render the text using RTL directionality.
-    // In most cases, passing this flag is not necessary because information
-    // about the text directionality is going to be embedded within the string
-    // in the form of special Unicode characters. However, we don't insert
-    // directionality characters into strings if the locale is LTR because some
-    // platforms (for example, an English Windows XP with no RTL fonts
-    // installed) don't support these characters. Thus, this flag should be
-    // used to render text using RTL directionality when the locale is LTR.
-    FORCE_RTL_DIRECTIONALITY = 1 << 8,
-
-    // Similar to FORCE_RTL_DIRECTIONALITY, but left-to-right.
-    // See FORCE_RTL_DIRECTIONALITY for details.
-    FORCE_LTR_DIRECTIONALITY = 1 << 9,
+    CHARACTER_BREAK = 1 << 8,
 
     // Instructs DrawStringRect() to not use subpixel rendering.  This is useful
     // when rendering text onto a fully- or partially-transparent background
     // that will later be blended with another image.
-    NO_SUBPIXEL_RENDERING = 1 << 10,
+    NO_SUBPIXEL_RENDERING = 1 << 9,
   };
 
   // Creates an empty canvas with image_scale of 1x.
@@ -96,13 +83,12 @@ class GFX_EXPORT Canvas {
   // |image_rep|, and draws the |image_rep| into it.
   Canvas(const ImageSkiaRep& image_rep, bool is_opaque);
 
-  virtual ~Canvas();
-
   // Creates a Canvas backed by an |sk_canvas| with |image_scale_|.
   // |sk_canvas| is assumed to be already scaled based on |image_scale|
   // so no additional scaling is applied.
-  static Canvas* CreateCanvasWithoutScaling(SkCanvas* sk_canvas,
-                                            float image_scale);
+  Canvas(SkCanvas* sk_canvas, float image_scale);
+
+  virtual ~Canvas();
 
   // Recreates the backing platform canvas with DIP |size| and |image_scale_|.
   // If the canvas is not opaque, it is explicitly cleared.
@@ -426,8 +412,6 @@ class GFX_EXPORT Canvas {
   float image_scale() const { return image_scale_; }
 
  private:
-  Canvas(SkCanvas* canvas, float image_scale);
-
   // Test whether the provided rectangle intersects the current clip rect.
   bool IntersectsClipRectInt(int x, int y, int w, int h);
   bool IntersectsClipRect(const Rect& rect);

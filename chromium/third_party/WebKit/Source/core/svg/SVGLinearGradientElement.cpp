@@ -22,23 +22,27 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGLinearGradientElement.h"
 
-#include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
+#include "core/layout/svg/LayoutSVGResourceLinearGradient.h"
 #include "core/svg/LinearGradientAttributes.h"
 #include "core/svg/SVGLength.h"
-#include "core/svg/SVGTransformList.h"
 
 namespace blink {
 
 inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     : SVGGradientElement(SVGNames::linearGradientTag, document)
-    , m_x1(SVGAnimatedLength::create(this, SVGNames::x1Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y1(SVGAnimatedLength::create(this, SVGNames::y1Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_x1(SVGAnimatedLength::create(this, SVGNames::x1Attr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y1(SVGAnimatedLength::create(this, SVGNames::y1Attr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
 {
+
+    // Spec: If the x1|y1|y2 attribute is not specified, the effect is as if a value of "0%" were specified.
+    m_x1->setDefaultValueAsString("0%");
+    m_y1->setDefaultValueAsString("0%");
+    m_y2->setDefaultValueAsString("0%");
+
     // Spec: If the x2 attribute is not specified, the effect is as if a value of "100%" were specified.
     m_x2->setDefaultValueAsString("100%");
 
@@ -48,44 +52,38 @@ inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     addToPropertyMap(m_y2);
 }
 
+DEFINE_TRACE(SVGLinearGradientElement)
+{
+    visitor->trace(m_x1);
+    visitor->trace(m_y1);
+    visitor->trace(m_x2);
+    visitor->trace(m_y2);
+    SVGGradientElement::trace(visitor);
+}
+
 DEFINE_NODE_FACTORY(SVGLinearGradientElement)
-
-bool SVGLinearGradientElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::x1Attr);
-        supportedAttributes.add(SVGNames::x2Attr);
-        supportedAttributes.add(SVGNames::y1Attr);
-        supportedAttributes.add(SVGNames::y2Attr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGLinearGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
 
 void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGGradientElement::svgAttributeChanged(attrName);
+    if (attrName == SVGNames::x1Attr || attrName == SVGNames::x2Attr
+        || attrName == SVGNames::y1Attr || attrName == SVGNames::y2Attr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
+        updateRelativeLengthsInformation();
+
+        LayoutSVGResourceContainer* layoutObject = toLayoutSVGResourceContainer(this->layoutObject());
+        if (layoutObject)
+            layoutObject->invalidateCacheAndMarkForLayout();
+
         return;
     }
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    updateRelativeLengthsInformation();
-
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
-    if (renderer)
-        renderer->invalidateCacheAndMarkForLayout();
+    SVGGradientElement::svgAttributeChanged(attrName);
 }
 
-RenderObject* SVGLinearGradientElement::createRenderer(RenderStyle*)
+LayoutObject* SVGLinearGradientElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGResourceLinearGradient(this);
+    return new LayoutSVGResourceLinearGradient(this);
 }
 
 static void setGradientAttributes(SVGGradientElement* element, LinearGradientAttributes& attributes, bool isLinear = true)
@@ -127,10 +125,10 @@ static void setGradientAttributes(SVGGradientElement* element, LinearGradientAtt
 
 bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttributes& attributes)
 {
-    if (!renderer())
+    if (!layoutObject())
         return false;
 
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement> > processedGradients;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement>> processedGradients;
     SVGGradientElement* current = this;
 
     setGradientAttributes(current, attributes);
@@ -146,7 +144,7 @@ bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttribute
             if (processedGradients.contains(current))
                 return true;
 
-            if (!current->renderer())
+            if (!current->layoutObject())
                 return false;
 
             setGradientAttributes(current, attributes, isSVGLinearGradientElement(*current));

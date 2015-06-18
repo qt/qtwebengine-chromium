@@ -26,6 +26,7 @@
 #ifndef GenericEventQueue_h
 #define GenericEventQueue_h
 
+#include "core/CoreExport.h"
 #include "core/events/EventQueue.h"
 #include "core/events/EventTarget.h"
 #include "platform/Timer.h"
@@ -35,14 +36,14 @@
 
 namespace blink {
 
-class GenericEventQueue final : public EventQueue {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT GenericEventQueue final : public EventQueue {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(GenericEventQueue);
 public:
     static PassOwnPtrWillBeRawPtr<GenericEventQueue> create(EventTarget*);
     virtual ~GenericEventQueue();
 
     // EventQueue
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) override;
     virtual bool cancelEvent(Event*) override;
     virtual void close() override;

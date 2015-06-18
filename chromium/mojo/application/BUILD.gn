@@ -10,11 +10,54 @@ source_set("application") {
   ]
 
   public_deps = [
-    "//mojo/public/cpp/application",
+    "//mojo/application/public/cpp",
   ]
   deps = [
     "//base",
     "//mojo/common",
     "//mojo/environment:chromium",
   ]
+}
+
+source_set("content_handler") {
+  sources = [
+    "content_handler_factory.cc",
+    "content_handler_factory.h",
+  ]
+  deps = [
+    ":application",
+    "//base",
+    "//mojo/application/public/interfaces",
+    "//mojo/common",
+    "//mojo/environment:chromium",
+    "//third_party/mojo_services/src/content_handler/public/interfaces",
+    "//mojo/services/network/public/interfaces",
+  ]
+}
+
+source_set("test_support") {
+  testonly = true
+  sources = [
+    "application_test_base_chromium.cc",
+    "application_test_base_chromium.h",
+    "application_test_main_chromium.cc",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/application/public/cpp",
+    "//third_party/mojo/src/mojo/public/cpp/bindings",
+    "//third_party/mojo/src/mojo/public/cpp/environment",
+    "//third_party/mojo/src/mojo/public/cpp/system",
+    "//testing/gtest",
+  ]
+
+  data_deps = []
+  if (is_android) {
+    data_deps += [ "//mojo/android" ]
+  }
+  if (!is_component_build) {
+    data_deps += [ "//mojo/runner" ]
+  }
 }

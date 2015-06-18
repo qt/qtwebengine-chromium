@@ -96,9 +96,6 @@ extern "C" {
  *
  * LHASH_OF:ASN1_OBJECT
  * LHASH_OF:CONF_VALUE
- * LHASH_OF:ERR_STATE
- * LHASH_OF:ERR_STRING_DATA
- * LHASH_OF:EX_CLASS_ITEM
  * LHASH_OF:SSL_SESSION */
 
 #define IN_LHASH_H
@@ -116,7 +113,7 @@ typedef struct lhash_item_st {
   uint32_t hash;
 } LHASH_ITEM;
 
-/* lhash_cmp_func is a comparision function that returns a value equal, or not
+/* lhash_cmp_func is a comparison function that returns a value equal, or not
  * equal, to zero depending on whether |*a| is equal, or not equal to |*b|,
  * respectively. Note the difference between this and |stack_cmp_func| in that
  * this takes pointers to the objects directly. */

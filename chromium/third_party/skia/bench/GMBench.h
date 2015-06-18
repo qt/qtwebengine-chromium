@@ -21,10 +21,10 @@ public:
     virtual ~GMBench();
 
 protected:
-    virtual const char* onGetName() SK_OVERRIDE;
-    virtual bool isSuitableFor(Backend backend) SK_OVERRIDE;
-    virtual void onDraw(const int loops, SkCanvas* canvas) SK_OVERRIDE;
-    virtual SkIPoint onGetSize() SK_OVERRIDE;
+    const char* onGetName() override;
+    bool isSuitableFor(Backend backend) override;
+    void onDraw(const int loops, SkCanvas* canvas) override;
+    SkIPoint onGetSize() override;
 
 private:
     skiagm::GM* fGM;

@@ -110,21 +110,15 @@ bool MIMETypeRegistry::isSupportedMediaSourceMIMEType(const String& mimeType, co
         && Platform::current()->mimeRegistry()->supportsMediaSourceMIMEType(mimeType.lower(), codecs);
 }
 
-bool MIMETypeRegistry::isSupportedEncryptedMediaMIMEType(const String& keySystem, const String& mimeType, const String& codecs)
-{
-    // Key system names are case-sensitive!
-    return Platform::current()->mimeRegistry()->supportsEncryptedMediaMIMEType(keySystem, mimeType.lower(), codecs);
-}
-
 bool MIMETypeRegistry::isJavaAppletMIMEType(const String& mimeType)
 {
     // Since this set is very limited and is likely to remain so we won't bother with the overhead
     // of using a hash set.
     // Any of the MIME types below may be followed by any number of specific versions of the JVM,
     // which is why we use startsWith()
-    return mimeType.startsWith("application/x-java-applet", false)
-        || mimeType.startsWith("application/x-java-bean", false)
-        || mimeType.startsWith("application/x-java-vm", false);
+    return mimeType.startsWith("application/x-java-applet", TextCaseInsensitive)
+        || mimeType.startsWith("application/x-java-bean", TextCaseInsensitive)
+        || mimeType.startsWith("application/x-java-vm", TextCaseInsensitive);
 }
 
 } // namespace blink

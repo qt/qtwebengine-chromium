@@ -56,10 +56,10 @@
 #include "core/editing/SplitElementCommand.h"
 #include "core/editing/SplitTextNodeCommand.h"
 #include "core/editing/SplitTextNodeContainingElementCommand.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/WrapContentsInDummySpanCommand.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/frame/LocalFrame.h"
@@ -69,10 +69,10 @@
 #include "core/html/HTMLLIElement.h"
 #include "core/html/HTMLQuoteElement.h"
 #include "core/html/HTMLSpanElement.h"
-#include "core/rendering/InlineTextBox.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutBlock.h"
+#include "core/layout/LayoutListItem.h"
+#include "core/layout/LayoutText.h"
+#include "core/layout/line/InlineTextBox.h"
 
 namespace blink {
 
@@ -156,7 +156,7 @@ void EditCommandComposition::setEndingSelection(const VisibleSelection& selectio
     m_endingRootEditableElement = selection.rootEditableElement();
 }
 
-void EditCommandComposition::trace(Visitor* visitor)
+DEFINE_TRACE(EditCommandComposition)
 {
     visitor->trace(m_document);
     visitor->trace(m_startingSelection);
@@ -360,7 +360,12 @@ void CompositeEditCommand::insertNodeAt(PassRefPtrWillBeRawPtr<Node> insertChild
 
 void CompositeEditCommand::appendNode(PassRefPtrWillBeRawPtr<Node> node, PassRefPtrWillBeRawPtr<ContainerNode> parent)
 {
-    ASSERT(canHaveChildrenForEditing(parent.get()));
+    // When cloneParagraphUnderNewElement() clones the fallback content
+    // of an OBJECT element, the ASSERT below may fire since the return
+    // value of canHaveChildrenForEditing is not reliable until the layout
+    // object of the OBJECT is created. Hence we ignore this check for OBJECTs.
+    ASSERT(canHaveChildrenForEditing(parent.get())
+        || (parent->isElementNode() && toElement(parent.get())->tagQName() == objectTag));
     applyCommandToComposite(AppendNodeCommand::create(parent, node));
 }
 
@@ -616,8 +621,8 @@ bool CompositeEditCommand::canRebalance(const Position& position) const
     if (textNode->length() == 0)
         return false;
 
-    RenderText* renderer = textNode->renderer();
-    if (renderer && !renderer->style()->collapseWhiteSpace())
+    LayoutText* layoutText = textNode->layoutObject();
+    if (layoutText && !layoutText->style()->collapseWhiteSpace())
         return false;
 
     return true;
@@ -685,8 +690,8 @@ void CompositeEditCommand::prepareWhitespaceAtPositionForSplit(Position& positio
 
     if (textNode->length() == 0)
         return;
-    RenderText* renderer = textNode->renderer();
-    if (renderer && !renderer->style()->collapseWhiteSpace())
+    LayoutText* layoutText = textNode->layoutObject();
+    if (layoutText && !layoutText->style()->collapseWhiteSpace())
         return;
 
     // Delete collapsed whitespace so that inserting nbsps doesn't uncollapse it.
@@ -728,19 +733,19 @@ void CompositeEditCommand::deleteInsignificantText(PassRefPtrWillBeRawPtr<Text> 
 
     document().updateLayout();
 
-    RenderText* textRenderer = textNode->renderer();
-    if (!textRenderer)
+    LayoutText* textLayoutObject = textNode->layoutObject();
+    if (!textLayoutObject)
         return;
 
     Vector<InlineTextBox*> sortedTextBoxes;
     size_t sortedTextBoxesPosition = 0;
 
-    for (InlineTextBox* textBox = textRenderer->firstTextBox(); textBox; textBox = textBox->nextTextBox())
+    for (InlineTextBox* textBox = textLayoutObject->firstTextBox(); textBox; textBox = textBox->nextTextBox())
         sortedTextBoxes.append(textBox);
 
     // If there is mixed directionality text, the boxes can be out of order,
     // (like Arabic with embedded LTR), so sort them first.
-    if (textRenderer->containsReversedText())
+    if (textLayoutObject->containsReversedText())
         std::sort(sortedTextBoxes.begin(), sortedTextBoxes.end(), InlineTextBox::compareByStart);
     InlineTextBox* box = sortedTextBoxes.isEmpty() ? 0 : sortedTextBoxes[sortedTextBoxesPosition];
 
@@ -838,8 +843,8 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> CompositeEditCommand::appendBlockPlacehold
 
     document().updateLayoutIgnorePendingStylesheets();
 
-    // Should assert isRenderBlockFlow || isInlineFlow when deletion improves. See 4244964.
-    ASSERT(container->renderer());
+    // Should assert isLayoutBlockFlow || isInlineFlow when deletion improves. See 4244964.
+    ASSERT(container->layoutObject());
 
     RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBlockPlaceholderElement(document());
     appendNode(placeholder, container);
@@ -851,8 +856,8 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> CompositeEditCommand::insertBlockPlacehold
     if (pos.isNull())
         return nullptr;
 
-    // Should assert isRenderBlockFlow || isInlineFlow when deletion improves. See 4244964.
-    ASSERT(pos.deprecatedNode()->renderer());
+    // Should assert isLayoutBlockFlow || isInlineFlow when deletion improves. See 4244964.
+    ASSERT(pos.deprecatedNode()->layoutObject());
 
     RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBlockPlaceholderElement(document());
     insertNodeAt(placeholder, pos);
@@ -866,14 +871,14 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> CompositeEditCommand::addBlockPlaceholderI
 
     document().updateLayoutIgnorePendingStylesheets();
 
-    RenderObject* renderer = container->renderer();
-    if (!renderer || !renderer->isRenderBlockFlow())
+    LayoutObject* layoutObject = container->layoutObject();
+    if (!layoutObject || !layoutObject->isLayoutBlockFlow())
         return nullptr;
 
     // append the placeholder to make sure it follows
     // any unrendered blocks
-    RenderBlockFlow* block = toRenderBlockFlow(renderer);
-    if (block->height() == 0 || (block->isListItem() && toRenderListItem(block)->isEmpty()))
+    LayoutBlockFlow* block = toLayoutBlockFlow(layoutObject);
+    if (block->size().height() == 0 || (block->isListItem() && toLayoutListItem(block)->isEmpty()))
         return appendBlockPlaceholder(container);
 
     return nullptr;
@@ -930,7 +935,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> CompositeEditCommand::moveParagraphContentsT
         if (upstreamStart.deprecatedNode() == editableRootForPosition(upstreamStart)) {
             // If the block is the root editable element and it contains no visible content, create a new
             // block but don't try and move content into it, since there's nothing for moveParagraphs to move.
-            if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(upstreamStart.deprecatedNode()->renderer()))
+            if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(upstreamStart.deprecatedNode()->layoutObject()))
                 return insertNewDefaultParagraphElementAt(upstreamStart);
         } else if (isBlock(upstreamEnd.deprecatedNode())) {
             if (!upstreamEnd.deprecatedNode()->isDescendantOf(upstreamStart.deprecatedNode())) {
@@ -1211,7 +1216,7 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
     // FIXME: This is an inefficient way to preserve style on nodes in the paragraph to move. It
     // shouldn't matter though, since moved paragraphs will usually be quite small.
     RefPtrWillBeRawPtr<DocumentFragment> fragment = startOfParagraphToMove != endOfParagraphToMove ?
-        createFragmentFromMarkup(document(), createMarkup(range.get(), 0, DoNotAnnotateForInterchange, true, DoNotResolveURLs, constrainingAncestor), "") : nullptr;
+        createFragmentFromMarkup(document(), createMarkup(range.get(), DoNotAnnotateForInterchange, true, DoNotResolveURLs, constrainingAncestor), "") : nullptr;
 
     // A non-empty paragraph's style is moved when we copy and move it.  We don't move
     // anything if we're given an empty paragraph, but an empty paragraph can have style
@@ -1385,7 +1390,7 @@ bool CompositeEditCommand::breakOutOfEmptyMailBlockquotedParagraph()
 
     Position caretPos(caret.deepEquivalent().downstream());
     // A line break is either a br or a preserved newline.
-    ASSERT(isHTMLBRElement(caretPos.deprecatedNode()) || (caretPos.deprecatedNode()->isTextNode() && caretPos.deprecatedNode()->renderer()->style()->preserveNewline()));
+    ASSERT(isHTMLBRElement(caretPos.deprecatedNode()) || (caretPos.deprecatedNode()->isTextNode() && caretPos.deprecatedNode()->layoutObject()->style()->preserveNewline()));
 
     if (isHTMLBRElement(*caretPos.deprecatedNode()))
         removeNodeAndPruneAncestors(caretPos.deprecatedNode());
@@ -1492,7 +1497,7 @@ PassRefPtrWillBeRawPtr<Node> CompositeEditCommand::splitTreeToNode(Node* start, 
     return node.release();
 }
 
-void CompositeEditCommand::trace(Visitor* visitor)
+DEFINE_TRACE(CompositeEditCommand)
 {
     visitor->trace(m_commands);
     visitor->trace(m_composition);

@@ -12,8 +12,8 @@
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/content_browser_test.h"
+#include "gpu/blink/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "ui/gl/gl_switches.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace {
 
@@ -36,8 +36,12 @@ class ContextTestBase : public content::ContentBrowserTest {
         content::BrowserGpuChannelHostFactory::instance();
     CHECK(factory);
     bool lose_context_when_out_of_memory = false;
-    scoped_refptr<content::GpuChannelHost> gpu_channel_host(
-        factory->EstablishGpuChannelSync(kInitCause));
+    base::RunLoop run_loop;
+    factory->EstablishGpuChannel(kInitCause, run_loop.QuitClosure());
+    run_loop.Run();
+    scoped_refptr<content::GpuChannelHost>
+        gpu_channel_host(factory->GetGpuChannel());
+    DCHECK(gpu_channel_host.get());
     context_.reset(
         WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
             gpu_channel_host.get(),
@@ -87,6 +91,12 @@ class BrowserGpuChannelHostFactoryTest : public ContentBrowserTest {
     ContentBrowserTest::SetUpOnMainThread();
   }
 
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    // Start all tests without a gpu channel so that the tests exercise a
+    // consistent codepath.
+    command_line->AppendSwitch(switches::kDisableGpuEarlyInit);
+  }
+
   void OnContextLost(const base::Closure callback, int* counter) {
     (*counter)++;
     callback.Run();
@@ -129,16 +139,28 @@ class BrowserGpuChannelHostFactoryTest : public ContentBrowserTest {
   }
 };
 
-// Fails since UI Compositor establishes a GpuChannel.
-IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest, DISABLED_Basic) {
+// Test fails on Chromeos + Mac, flaky on Windows because UI Compositor
+// establishes a GPU channel.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_Basic Basic
+#else
+#define MAYBE_Basic DISABLED_Basic
+#endif
+IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest, MAYBE_Basic) {
   DCHECK(!IsChannelEstablished());
   EstablishAndWait();
   EXPECT_TRUE(GetGpuChannel() != NULL);
 }
 
-// Fails since UI Compositor establishes a GpuChannel.
+// Test fails on Chromeos + Mac, flaky on Windows because UI Compositor
+// establishes a GPU channel.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_EstablishAndTerminate EstablishAndTerminate
+#else
+#define MAYBE_EstablishAndTerminate DISABLED_EstablishAndTerminate
+#endif
 IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest,
-                       DISABLED_EstablishAndTerminate) {
+                       MAYBE_EstablishAndTerminate) {
   DCHECK(!IsChannelEstablished());
   base::RunLoop run_loop;
   GetFactory()->EstablishGpuChannel(kInitCause, run_loop.QuitClosure());
@@ -148,9 +170,16 @@ IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest,
   run_loop.Run();
 }
 
-// Fails since UI Compositor establishes a GpuChannel.
+#if !defined(OS_ANDROID)
+// Test fails on Chromeos + Mac, flaky on Windows because UI Compositor
+// establishes a GPU channel.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_AlreadyEstablished AlreadyEstablished
+#else
+#define MAYBE_AlreadyEstablished DISABLED_AlreadyEstablished
+#endif
 IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest,
-                       DISABLED_AlreadyEstablished) {
+                       MAYBE_AlreadyEstablished) {
   DCHECK(!IsChannelEstablished());
   scoped_refptr<GpuChannelHost> gpu_channel =
       GetFactory()->EstablishGpuChannelSync(kInitCause);
@@ -163,17 +192,24 @@ IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest,
   EXPECT_TRUE(event);
   EXPECT_EQ(gpu_channel.get(), GetGpuChannel());
 }
+#endif
 
-// Fails since UI Compositor establishes a GpuChannel.
+// Test fails on Chromeos + Mac, flaky on Windows because UI Compositor
+// establishes a GPU channel.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_CrashAndRecover
+#else
+#define MAYBE_CrashAndRecover DISABLED_CrashAndRecover
+#endif
 IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest,
-                       DISABLED_CrashAndRecover) {
+                       MAYBE_CrashAndRecover) {
   DCHECK(!IsChannelEstablished());
   EstablishAndWait();
   scoped_refptr<GpuChannelHost> host = GetGpuChannel();
 
   scoped_refptr<ContextProviderCommandBuffer> provider =
       ContextProviderCommandBuffer::Create(CreateContext(),
-                                           "BrowserGpuChannelHostFactoryTest");
+                                           OFFSCREEN_CONTEXT_FOR_TESTING);
   base::RunLoop run_loop;
   int counter = 0;
   provider->SetLostContextCallback(

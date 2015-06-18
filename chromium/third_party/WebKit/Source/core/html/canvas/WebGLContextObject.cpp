@@ -62,7 +62,7 @@ void WebGLContextObject::detachContext()
     }
 }
 
-blink::WebGraphicsContext3D* WebGLContextObject::getAWebGraphicsContext3D() const
+WebGraphicsContext3D* WebGLContextObject::getAWebGraphicsContext3D() const
 {
 #if ENABLE(OILPAN)
     return m_sharedWebGraphicsContext3D ? m_sharedWebGraphicsContext3D->webContext() : 0;
@@ -71,10 +71,10 @@ blink::WebGraphicsContext3D* WebGLContextObject::getAWebGraphicsContext3D() cons
 #endif
 }
 
-void WebGLContextObject::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLContextObject)
 {
     visitor->trace(m_context);
     WebGLObject::trace(visitor);
 }
 
-}
+} // namespace blink

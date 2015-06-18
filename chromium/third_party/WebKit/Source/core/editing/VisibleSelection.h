@@ -26,19 +26,20 @@
 #ifndef VisibleSelection_h
 #define VisibleSelection_h
 
+#include "core/CoreExport.h"
 #include "core/editing/SelectionType.h"
 #include "core/editing/TextGranularity.h"
 #include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleUnits.h"
 
 namespace blink {
 
 class LayoutPoint;
-class Position;
 
 const EAffinity SEL_DEFAULT_AFFINITY = DOWNSTREAM;
 enum SelectionDirection { DirectionForward, DirectionBackward, DirectionRight, DirectionLeft };
 
-class VisibleSelection {
+class CORE_EXPORT VisibleSelection {
     DISALLOW_ALLOCATION();
 public:
     VisibleSelection();
@@ -84,6 +85,7 @@ public:
     bool isCaretOrRange() const { return selectionType() != NoSelection; }
     bool isNonOrphanedRange() const { return isRange() && !start().isOrphan() && !end().isOrphan(); }
     bool isNonOrphanedCaretOrRange() const { return isCaretOrRange() && !start().isOrphan() && !end().isOrphan(); }
+    static SelectionType selectionType(const Position& start, const Position& end);
 
     bool isBaseFirst() const { return m_baseIsFirst; }
     bool isDirectional() const { return m_isDirectional; }
@@ -104,6 +106,7 @@ public:
     // moves the caret upstream before returning the range/positions.
     PassRefPtrWillBeRawPtr<Range> toNormalizedRange() const;
     bool toNormalizedPositions(Position& start, Position& end) const;
+    static void normalizePositions(const Position& start, const Position& end, Position* normalizedStart, Position* normalizedEnd);
 
     Element* rootEditableElement() const;
     bool isContentEditable() const;
@@ -121,20 +124,20 @@ public:
     // or end is moved to a different position.
     //
     // Objects implementing |ChangeObserver| interface must outlive the VisibleSelection object.
-    class ChangeObserver : public WillBeGarbageCollectedMixin {
+    class CORE_EXPORT ChangeObserver : public WillBeGarbageCollectedMixin {
         WTF_MAKE_NONCOPYABLE(ChangeObserver);
     public:
         ChangeObserver();
         virtual ~ChangeObserver();
         virtual void didChangeVisibleSelection() = 0;
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
     };
 
     void setChangeObserver(ChangeObserver&);
     void clearChangeObserver();
     void didChange(); // Fire the change observer, if any.
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void validatePositionsIfNeeded();
 
@@ -144,12 +147,14 @@ public:
     void showTreeForThis() const;
 #endif
 
+    void setStartRespectingGranularity(TextGranularity, EWordSide = RightWordIfOnBoundary);
+    void setEndRespectingGranularity(TextGranularity, EWordSide = RightWordIfOnBoundary);
+
 private:
     void validate(TextGranularity = CharacterGranularity);
 
     // Support methods for validate()
     void setBaseAndExtentToDeepEquivalents();
-    void setStartAndEndFromBaseAndExtentRespectingGranularity(TextGranularity);
     void adjustSelectionToAvoidCrossingShadowBoundaries();
     void adjustSelectionToAvoidCrossingEditingBoundaries();
     void updateSelectionType();
@@ -178,8 +183,14 @@ private:
 
 inline bool operator==(const VisibleSelection& a, const VisibleSelection& b)
 {
-    return a.start() == b.start() && a.end() == b.end() && a.affinity() == b.affinity() && a.isBaseFirst() == b.isBaseFirst()
-        && a.isDirectional() == b.isDirectional();
+    if (a.affinity() != b.affinity() || a.isDirectional() != b.isDirectional())
+        return false;
+
+    if (a.isNone())
+        return b.isNone();
+
+    return a.start() == b.start() && a.end() == b.end() && a.affinity() == b.affinity()
+        && a.isDirectional() == b.isDirectional() && a.base() == b.base() && a.extent() == b.extent();
 }
 
 inline bool operator!=(const VisibleSelection& a, const VisibleSelection& b)

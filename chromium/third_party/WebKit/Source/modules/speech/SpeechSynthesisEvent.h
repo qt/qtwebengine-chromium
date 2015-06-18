@@ -27,6 +27,7 @@
 #define SpeechSynthesisEvent_h
 
 #include "modules/EventModules.h"
+#include "modules/speech/SpeechSynthesisUtterance.h"
 
 namespace blink {
 
@@ -34,24 +35,23 @@ class SpeechSynthesisEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create();
-    static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create(const AtomicString& type, unsigned long charIndex, float elapsedTime, const String& name);
+    static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create(const AtomicString& type, SpeechSynthesisUtterance*, unsigned charIndex, float elapsedTime, const String& name);
 
-    unsigned long charIndex() const { return m_charIndex; }
+    SpeechSynthesisUtterance* utterance() const { return m_utterance; }
+    unsigned charIndex() const { return m_charIndex; }
     float elapsedTime() const { return m_elapsedTime; }
     const String& name() const { return m_name; }
 
     virtual const AtomicString& interfaceName() const override { return EventNames::SpeechSynthesisEvent; }
 
-    virtual void trace(Visitor* visitor) override
-    {
-        Event::trace(visitor);
-    }
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SpeechSynthesisEvent();
-    SpeechSynthesisEvent(const AtomicString& type, unsigned long charIndex, float elapsedTime, const String& name);
+    SpeechSynthesisEvent(const AtomicString& type, SpeechSynthesisUtterance*, unsigned charIndex, float elapsedTime, const String& name);
 
-    unsigned long m_charIndex;
+    PersistentWillBeMember<SpeechSynthesisUtterance> m_utterance;
+    unsigned m_charIndex;
     float m_elapsedTime;
     String m_name;
 };

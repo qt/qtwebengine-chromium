@@ -9,13 +9,14 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/compositor/dip_util.h"
+#include "ui/compositor/paint_recorder.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/size.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/transform.h"
 
 using std::max;
@@ -266,10 +267,11 @@ void ImageGrid::ImagePainter::SetClipRect(const gfx::Rect& clip_rect,
   }
 }
 
-void ImageGrid::ImagePainter::OnPaintLayer(gfx::Canvas* canvas) {
+void ImageGrid::ImagePainter::OnPaintLayer(const ui::PaintContext& context) {
+  ui::PaintRecorder recorder(context);
   if (!clip_rect_.IsEmpty())
-    canvas->ClipRect(clip_rect_);
-  canvas->DrawImageInt(image_, 0, 0);
+    recorder.canvas()->ClipRect(clip_rect_);
+  recorder.canvas()->DrawImageInt(image_, 0, 0);
 }
 
 void ImageGrid::ImagePainter::OnDelegatedFrameDamage(

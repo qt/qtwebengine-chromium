@@ -55,7 +55,7 @@ cvox.ChromeVoxUserCommands.init_ = function() {
 
 
 /**
- * @type {!Object.<string, function(Object=): boolean>}
+ * @type {!Object<string, function(Object=): boolean>}
  */
 cvox.ChromeVoxUserCommands.commands;
 
@@ -102,10 +102,8 @@ cvox.ChromeVoxUserCommands.handleTabAction_ = function() {
     return false;
   }
 
-  // If the user is already focused on a link or control,
-  // nothing more needs to be done.
-  var isLinkControl = cvox.ChromeVoxUserCommands.isFocusedOnLinkControl_();
-  if (isLinkControl) {
+  // If the user is already focused on anything, nothing more needs to be done.
+  if (document.activeElement != document.body) {
     return true;
   }
 
@@ -160,20 +158,6 @@ cvox.ChromeVoxUserCommands.handleTabAction_ = function() {
   bestGuess.parentNode.insertBefore(dummySpan, bestGuess);
   dummySpan.focus();
   return true;
-};
-
-
-/**
- * @return {boolean} True if we are focused on a link or any other control.
- * @private
- */
-cvox.ChromeVoxUserCommands.isFocusedOnLinkControl_ = function() {
-  var tagName = 'A';
-  if ((document.activeElement.tagName == tagName) ||
-      cvox.DomUtil.isControl(document.activeElement)) {
-    return true;
-  }
-  return false;
 };
 
 
@@ -607,9 +591,10 @@ cvox.ChromeVoxUserCommands.doCommand_ = function(cmdStruct) {
     case 'speakTableLocation':
     case 'exitShifterContent':
       if (!cvox.DomPredicates.tablePredicate(cvox.DomUtil.getAncestors(
-              cvox.ChromeVox.navigationManager.getCurrentNode())) ||
-          !cvox.ChromeVox.navigationManager.performAction(cmd)) {
+          cvox.ChromeVox.navigationManager.getCurrentNode()))) {
         errorMsg = 'not_inside_table';
+      } else if (!cvox.ChromeVox.navigationManager.performAction(cmd)) {
+        errorMsg = 'not_in_table_mode';
       }
       break;
 

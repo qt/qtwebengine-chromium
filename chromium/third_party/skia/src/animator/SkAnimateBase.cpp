@@ -12,7 +12,7 @@
 #include "SkAnimateProperties.h"
 #include "SkAnimatorScript.h"
 #include "SkDisplayApply.h"
-#include "SkDrawable.h"
+#include "SkADrawable.h"
 
 #if SK_USE_CONDENSED_INFO == 0
 
@@ -91,7 +91,7 @@ void SkAnimateBase::dump(SkAnimateMaker* maker) {
         SkDebugf("to=\"%s\" ", to.c_str());
     }
     if (begin != 0) {
-        SkDebugf("begin=\"%g\" ", SkScalarToFloat(SkScalarDiv(begin,1000)));
+        SkDebugf("begin=\"%g\" ", begin * 0.001);
     }
 }
 #endif

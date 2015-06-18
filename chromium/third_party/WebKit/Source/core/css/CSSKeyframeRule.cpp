@@ -26,122 +26,15 @@
 #include "config.h"
 #include "core/css/CSSKeyframeRule.h"
 
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/css/CSSKeyframesRule.h"
-#include "core/css/PropertySetCSSStyleDeclaration.h"
-#include "core/css/StylePropertySet.h"
-#include "core/css/parser/CSSParser.h"
-#include "core/frame/UseCounter.h"
-#include "wtf/text/StringBuilder.h"
+#include "core/css/CSSStyleSheet.h"
+#include "core/css/KeyframeStyleRuleCSSStyleDeclaration.h"
+#include "core/dom/ExceptionCode.h"
 
 namespace blink {
 
-StyleKeyframe::StyleKeyframe()
-{
-}
-
-StyleKeyframe::~StyleKeyframe()
-{
-}
-
-String StyleKeyframe::keyText() const
-{
-    if (m_keyText.isNull()) {
-        // Keys are always set when these objects are created.
-        ASSERT(m_keys && !m_keys->isEmpty());
-        StringBuilder keyText;
-        for (unsigned i = 0; i < m_keys->size(); ++i) {
-            if (i)
-                keyText.append(',');
-            keyText.appendNumber(m_keys->at(i) * 100);
-            keyText.append('%');
-        }
-        m_keyText = keyText.toString();
-    }
-    ASSERT(!m_keyText.isNull());
-    return m_keyText;
-}
-
-void StyleKeyframe::setKeyText(const String& keyText)
-{
-    // FIXME: Should we trim whitespace?
-    // FIXME: Should we leave keyText unchanged when attempting to set to an
-    // invalid string?
-    ASSERT(!keyText.isNull());
-    m_keyText = keyText;
-    m_keys.clear();
-}
-
-const Vector<double>& StyleKeyframe::keys() const
-{
-    if (!m_keys) {
-        // Keys can only be cleared by setting the key text from JavaScript
-        // and this can never be null.
-        ASSERT(!m_keyText.isNull());
-        m_keys = CSSParser::parseKeyframeKeyList(m_keyText);
-    }
-    // If an invalid key string was set, m_keys may be empty.
-    ASSERT(m_keys);
-    return *m_keys;
-}
-
-void StyleKeyframe::setKeys(PassOwnPtr<Vector<double> > keys)
-{
-    ASSERT(keys && !keys->isEmpty());
-    m_keys = keys;
-    m_keyText = String();
-    ASSERT(m_keyText.isNull());
-}
-
-MutableStylePropertySet& StyleKeyframe::mutableProperties()
-{
-    if (!m_properties->isMutable())
-        m_properties = m_properties->mutableCopy();
-    return *toMutableStylePropertySet(m_properties.get());
-}
-
-void StyleKeyframe::setProperties(PassRefPtrWillBeRawPtr<StylePropertySet> properties)
-{
-    ASSERT(properties);
-    m_properties = properties;
-}
-
-String StyleKeyframe::cssText() const
-{
-    StringBuilder result;
-    result.append(keyText());
-    result.appendLiteral(" { ");
-    String decls = m_properties->asText();
-    result.append(decls);
-    if (!decls.isEmpty())
-        result.append(' ');
-    result.append('}');
-    return result.toString();
-}
-
-PassOwnPtr<Vector<double> > StyleKeyframe::createKeyList(CSSParserValueList* keys)
-{
-    OwnPtr<Vector<double> > keyVector = adoptPtr(new Vector<double>(keys->size()));
-    for (unsigned i = 0; i < keys->size(); ++i) {
-        ASSERT(keys->valueAt(i)->unit == blink::CSSPrimitiveValue::CSS_NUMBER);
-        double key = keys->valueAt(i)->fValue;
-        if (key < 0 || key > 100) {
-            // As per http://www.w3.org/TR/css3-animations/#keyframes,
-            // "If a keyframe selector specifies negative percentage values
-            // or values higher than 100%, then the keyframe will be ignored."
-            keyVector->clear();
-            break;
-        }
-        keyVector->at(i) = key / 100;
-    }
-    return keyVector.release();
-}
-
-void StyleKeyframe::trace(Visitor* visitor)
-{
-    visitor->trace(m_properties);
-}
-
-CSSKeyframeRule::CSSKeyframeRule(StyleKeyframe* keyframe, CSSKeyframesRule* parent)
+CSSKeyframeRule::CSSKeyframeRule(StyleRuleKeyframe* keyframe, CSSKeyframesRule* parent)
     : CSSRule(0)
     , m_keyframe(keyframe)
 {
@@ -156,10 +49,18 @@ CSSKeyframeRule::~CSSKeyframeRule()
 #endif
 }
 
+void CSSKeyframeRule::setKeyText(const String& keyText, ExceptionState& exceptionState)
+{
+    if (!m_keyframe->setKeyText(keyText))
+        exceptionState.throwDOMException(SyntaxError, "The key '" + keyText + "' is invalid and cannot be parsed");
+
+    toCSSKeyframesRule(parentRule())->styleChanged();
+}
+
 CSSStyleDeclaration* CSSKeyframeRule::style() const
 {
     if (!m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_keyframe->mutableProperties(), const_cast<CSSKeyframeRule*>(this));
+        m_propertiesCSSOMWrapper = KeyframeStyleRuleCSSStyleDeclaration::create(m_keyframe->mutableProperties(), const_cast<CSSKeyframeRule*>(this));
     return m_propertiesCSSOMWrapper.get();
 }
 
@@ -169,7 +70,7 @@ void CSSKeyframeRule::reattach(StyleRuleBase*)
     ASSERT_NOT_REACHED();
 }
 
-void CSSKeyframeRule::trace(Visitor* visitor)
+DEFINE_TRACE(CSSKeyframeRule)
 {
     visitor->trace(m_keyframe);
     visitor->trace(m_propertiesCSSOMWrapper);

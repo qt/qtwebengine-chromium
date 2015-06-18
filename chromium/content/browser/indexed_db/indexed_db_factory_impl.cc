@@ -16,7 +16,7 @@
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "storage/common/database/database_identifier.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBDatabaseException.h"
 #include "third_party/leveldatabase/env_chromium.h"
 
 using base::ASCIIToUTF16;
@@ -52,7 +52,7 @@ void IndexedDBFactoryImpl::RemoveDatabaseFromMaps(
 
 void IndexedDBFactoryImpl::ReleaseDatabase(
     const IndexedDBDatabase::Identifier& identifier,
-    bool forcedClose) {
+    bool forced_close) {
   DCHECK(!database_map_.find(identifier)->second->backing_store());
 
   RemoveDatabaseFromMaps(identifier);
@@ -60,7 +60,7 @@ void IndexedDBFactoryImpl::ReleaseDatabase(
   // No grace period on a forced-close, as the initiator is
   // assuming the backing store will be released once all
   // connections are closed.
-  ReleaseBackingStore(identifier.first, forcedClose);
+  ReleaseBackingStore(identifier.first, forced_close);
 }
 
 void IndexedDBFactoryImpl::ReleaseBackingStore(const GURL& origin_url,
@@ -266,7 +266,7 @@ void IndexedDBFactoryImpl::DeleteDatabase(
             "Internal error creating database backend for "
             "indexedDB.deleteDatabase."));
     callbacks->OnError(error);
-    if (leveldb_env::IsCorruption(s)) {
+    if (s.IsCorruption()) {
       backing_store = NULL;
       HandleBackingStoreCorruption(origin_url, error);
     }
@@ -463,7 +463,7 @@ void IndexedDBFactoryImpl::Open(const base::string16& name,
                                        "database backend for "
                                        "indexedDB.open."));
       connection.callbacks->OnError(error);
-      if (leveldb_env::IsCorruption(s)) {
+      if (s.IsCorruption()) {
         backing_store = NULL;  // Closes the LevelDB so that it can be deleted
         HandleBackingStoreCorruption(origin_url, error);
       }

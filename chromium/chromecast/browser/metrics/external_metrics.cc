@@ -14,12 +14,12 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/timer/elapsed_timer.h"
 #include "chromecast/base/metrics/cast_histograms.h"
+#include "chromecast/base/metrics/cast_metrics_helper.h"
 #include "chromecast/browser/metrics/cast_stability_metrics_provider.h"
 #include "components/metrics/metrics_service.h"
 #include "components/metrics/serialization/metric_sample.h"
 #include "components/metrics/serialization/serialization_utils.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/user_metrics.h"
 
 namespace chromecast {
 namespace metrics {
@@ -58,17 +58,16 @@ ExternalMetrics::ExternalMetrics(
   DCHECK(stability_provider);
 }
 
-ExternalMetrics::~ExternalMetrics() {}
+ExternalMetrics::~ExternalMetrics() {
+}
+
+void ExternalMetrics::StopAndDestroy() {
+  content::BrowserThread::DeleteSoon(
+      content::BrowserThread::FILE, FROM_HERE, this);
+}
 
 void ExternalMetrics::Start() {
   ScheduleCollector();
-}
-
-void ExternalMetrics::RecordAction(const std::string& action) {
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&content::RecordComputedAction, action));
 }
 
 void ExternalMetrics::RecordCrash(const std::string& crash_kind) {
@@ -102,7 +101,7 @@ int ExternalMetrics::CollectEvents() {
         RecordCrash(sample.name());
         break;
       case ::metrics::MetricSample::USER_ACTION:
-        RecordAction(sample.name());
+        CastMetricsHelper::GetInstance()->RecordSimpleAction(sample.name());
         break;
       case ::metrics::MetricSample::HISTOGRAM:
         if (!CheckValues(sample.name(), sample.min(), sample.max(),

@@ -31,10 +31,10 @@
 #ifndef FileReaderLoader_h
 #define FileReaderLoader_h
 
+#include "core/CoreExport.h"
 #include "core/fileapi/FileError.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/ArrayBuffer.h"
 #include "wtf/ArrayBufferBuilder.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
@@ -44,13 +44,14 @@
 namespace blink {
 
 class BlobDataHandle;
-class FileReaderLoaderClient;
+class DOMArrayBuffer;
 class ExecutionContext;
+class FileReaderLoaderClient;
 class Stream;
 class TextResourceDecoder;
 class ThreadableLoader;
 
-class FileReaderLoader final : public ThreadableLoaderClient {
+class CORE_EXPORT FileReaderLoader final : public ThreadableLoaderClient {
 public:
     enum ReadType {
         ReadAsArrayBuffer,
@@ -76,7 +77,7 @@ public:
     virtual void didFail(const ResourceError&) override;
 
     String stringResult();
-    PassRefPtr<ArrayBuffer> arrayBufferResult() const;
+    PassRefPtr<DOMArrayBuffer> arrayBufferResult() const;
 
     // Returns the total bytes received. Bytes ignored by m_rawData won't be
     // counted.

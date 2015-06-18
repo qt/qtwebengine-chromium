@@ -9,23 +9,28 @@
 
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
-#include "base/threading/thread.h"
-#include "base/time/time.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
+#include "media/audio/fake_audio_worker.h"
+
 
 namespace media {
 
 class AudioBus;
 class AudioManagerBase;
+class SimpleSource;
 
+// This class acts as a fake audio input stream. The default is to generate a
+// beeping sound unless --use-file-for-fake-audio-capture=<file> is specified,
+// in which case the indicated .wav file will be read and played into the
+// stream.
 class MEDIA_EXPORT FakeAudioInputStream
     : public AudioInputStream {
  public:
-  static AudioInputStream* MakeFakeStream(AudioManagerBase* manager,
-                                          const AudioParameters& params);
+  static AudioInputStream* MakeFakeStream(
+      AudioManagerBase* manager, const AudioParameters& params);
 
   bool Open() override;
   void Start(AudioInputCallback* callback) override;
@@ -35,15 +40,16 @@ class MEDIA_EXPORT FakeAudioInputStream
   void SetVolume(double volume) override;
   double GetVolume() override;
   bool IsMuted() override;
-  void SetAutomaticGainControl(bool enabled) override;
+  bool SetAutomaticGainControl(bool enabled) override;
   bool GetAutomaticGainControl() override;
 
-  // Generate one beep sound. This method is called by
-  // FakeVideoCaptureDevice to test audio/video synchronization.
-  // This is a static method because FakeVideoCaptureDevice is
-  // disconnected from an audio device. This means only one instance of
-  // this class gets to respond, which is okay because we assume there's
-  // only one stream for this testing purpose.
+  // Generate one beep sound. This method is called by FakeVideoCaptureDevice to
+  // test audio/video synchronization. This is a static method because
+  // FakeVideoCaptureDevice is disconnected from an audio device. This means
+  // only one instance of this class gets to respond, which is okay because we
+  // assume there's only one stream for this testing purpose. Furthermore this
+  // method will do nothing if --use-file-for-fake-audio-capture is specified
+  // since the input stream will be playing from a file instead of beeping.
   // TODO(hclam): Make this non-static. To do this we'll need to fix
   // crbug.com/159053 such that video capture device is aware of audio
   // input stream.
@@ -52,29 +58,18 @@ class MEDIA_EXPORT FakeAudioInputStream
  private:
   FakeAudioInputStream(AudioManagerBase* manager,
                        const AudioParameters& params);
-
   ~FakeAudioInputStream() override;
 
-  void DoCallback();
+  scoped_ptr<AudioOutputStream::AudioSourceCallback> ChooseSource();
+  void ReadAudioFromSource();
 
   AudioManagerBase* audio_manager_;
   AudioInputCallback* callback_;
-  scoped_ptr<uint8[]> buffer_;
-  int buffer_size_;
+  FakeAudioWorker fake_audio_worker_;
   AudioParameters params_;
-  const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::TimeTicks last_callback_time_;
-  base::TimeDelta callback_interval_;
-  base::TimeDelta interval_from_last_beep_;
-  int beep_duration_in_buffers_;
-  int beep_generated_in_buffers_;
-  int beep_period_in_frames_;
-  int frames_elapsed_;
-  scoped_ptr<media::AudioBus> audio_bus_;
 
-  // Allows us to run tasks on the FakeAudioInputStream instance which are
-  // bound by its lifetime.
-  base::WeakPtrFactory<FakeAudioInputStream> weak_factory_;
+  scoped_ptr<AudioOutputStream::AudioSourceCallback> audio_source_;
+  scoped_ptr<media::AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAudioInputStream);
 };

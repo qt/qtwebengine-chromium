@@ -27,13 +27,14 @@
 #define MediaKeyError_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
 
-class MediaKeyError final : public RefCountedWillBeGarbageCollectedFinalized<MediaKeyError>, public ScriptWrappable {
+class CORE_EXPORT MediaKeyError final : public RefCountedWillBeGarbageCollectedFinalized<MediaKeyError>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum {
@@ -46,22 +47,25 @@ public:
     };
     typedef unsigned short Code;
 
-    static PassRefPtrWillBeRawPtr<MediaKeyError> create(Code code, unsigned long systemCode = 0)
+    static PassRefPtrWillBeRawPtr<MediaKeyError> create(Code code, unsigned systemCode = 0)
     {
         return adoptRefWillBeNoop(new MediaKeyError(code, systemCode));
     }
 
     Code code() const { return m_code; }
-    unsigned long systemCode() { return m_systemCode; }
+    unsigned systemCode() { return m_systemCode; }
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
-    MediaKeyError(Code code, unsigned long systemCode)
-        : m_code(code), m_systemCode(systemCode) { }
+    MediaKeyError(Code code, unsigned systemCode)
+        : m_code(code)
+        , m_systemCode(systemCode)
+    {
+    }
 
     Code m_code;
-    unsigned long m_systemCode;
+    unsigned m_systemCode;
 };
 
 } // namespace blink

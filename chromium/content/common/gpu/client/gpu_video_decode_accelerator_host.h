@@ -12,7 +12,7 @@
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_decode_accelerator.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace content {
 class GpuChannelHost;
@@ -65,7 +65,8 @@ class GpuVideoDecodeAcceleratorHost
   void OnDismissPictureBuffer(int32 picture_buffer_id);
   void OnPictureReady(int32 picture_buffer_id,
                       int32 bitstream_buffer_id,
-                      const gfx::Rect& visible_rect);
+                      const gfx::Rect& visible_rect,
+                      bool allow_overlay);
   void OnFlushDone();
   void OnResetDone();
   void OnNotifyError(uint32 error);

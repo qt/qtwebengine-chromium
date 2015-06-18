@@ -55,8 +55,12 @@ class PRINTING_EXPORT PrintingContext {
   // context with the select device settings. The result of the call is returned
   // in the callback. This is necessary for Linux, which only has an
   // asynchronous printing API.
+  // On Android, when |is_scripted| is true, calling it initiates a full
+  // printing flow from the framework's PrintManager.
+  // (see https://codereview.chromium.org/740983002/)
   virtual void AskUserForSettings(int max_pages,
                                   bool has_selection,
+                                  bool is_scripted,
                                   const PrintSettingsCallback& callback) = 0;
 
   // Selects the user's default printer and format. Updates the context with the
@@ -73,7 +77,8 @@ class PRINTING_EXPORT PrintingContext {
   // |external_preview| is true if pdf is going to be opened in external
   // preview. Used by MacOS only now to open Preview.app.
   virtual Result UpdatePrinterSettings(bool external_preview,
-                                       bool show_system_dialog) = 0;
+                                       bool show_system_dialog,
+                                       int page_count) = 0;
 
   // Updates Print Settings. |job_settings| contains all print job
   // settings information. |ranges| has the new page range settings.
@@ -134,9 +139,6 @@ class PRINTING_EXPORT PrintingContext {
 
   // Printing context delegate.
   Delegate* delegate_;
-
-  // The dialog box has been dismissed.
-  volatile bool dialog_box_dismissed_;
 
   // Is a print job being done.
   volatile bool in_print_job_;

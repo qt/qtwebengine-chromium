@@ -4,6 +4,7 @@
 
 #include "media/cdm/json_web_key.h"
 
+#include "base/base64.h"
 #include "base/logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -44,7 +45,9 @@ class JSONWebKeyTest : public testing::Test {
                               MediaKeys::SessionType session_type,
                               const std::string& expected_result) {
     std::vector<uint8> result;
-    CreateLicenseRequest(key_id, key_id_length, session_type, &result);
+    KeyIdList key_ids;
+    key_ids.push_back(std::vector<uint8>(key_id, key_id + key_id_length));
+    CreateLicenseRequest(key_ids, session_type, &result);
     std::string s(result.begin(), result.end());
     EXPECT_EQ(expected_result, s);
   }
@@ -57,11 +60,24 @@ class JSONWebKeyTest : public testing::Test {
     std::vector<uint8> key;
     EXPECT_EQ(expected_result,
               ExtractFirstKeyIdFromLicenseRequest(license_vector, &key));
-    if (expected_result) {
-      std::vector<uint8> key_result(expected_key,
-                                    expected_key + expected_key_length);
-      EXPECT_EQ(key_result, key);
-    }
+    if (expected_result)
+      VerifyKeyId(key, expected_key, expected_key_length);
+  }
+
+  void VerifyKeyId(std::vector<uint8> key,
+                   const uint8* expected_key,
+                   int expected_key_length) {
+    std::vector<uint8> key_result(expected_key,
+                                  expected_key + expected_key_length);
+    EXPECT_EQ(key_result, key);
+  }
+
+  KeyIdAndKeyPair MakeKeyIdAndKeyPair(const uint8* key,
+                                      int key_length,
+                                      const uint8* key_id,
+                                      int key_id_length) {
+    return std::make_pair(std::string(key_id, key_id + key_id_length),
+                          std::string(key, key + key_length));
   }
 };
 
@@ -84,17 +100,47 @@ TEST_F(JSONWebKeyTest, GenerateJWKSet) {
       "{\"keys\":[{\"k\":\"AQIDBAUGBwgJCgsMDQ4PEA\",\"kid\":"
       "\"AQIDBAUGBwgJCgsMDQ4PEA\",\"kty\":\"oct\"}]}",
       GenerateJWKSet(data3, arraysize(data3), data3, arraysize(data3)));
+
+  KeyIdAndKeyPairs keys;
+  keys.push_back(
+      MakeKeyIdAndKeyPair(data1, arraysize(data1), data1, arraysize(data1)));
+  EXPECT_EQ(
+      "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}],\"type\":"
+      "\"temporary\"}",
+      GenerateJWKSet(keys, MediaKeys::TEMPORARY_SESSION));
+  keys.push_back(
+      MakeKeyIdAndKeyPair(data2, arraysize(data2), data2, arraysize(data2)));
+  EXPECT_EQ(
+      "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"},{\"k\":"
+      "\"AQIDBA\",\"kid\":\"AQIDBA\",\"kty\":\"oct\"}],\"type\":\"persistent-"
+      "license\"}",
+      GenerateJWKSet(keys, MediaKeys::PERSISTENT_LICENSE_SESSION));
+  keys.push_back(
+      MakeKeyIdAndKeyPair(data3, arraysize(data3), data3, arraysize(data3)));
+  EXPECT_EQ(
+      "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"},{\"k\":"
+      "\"AQIDBA\",\"kid\":\"AQIDBA\",\"kty\":\"oct\"},{\"k\":"
+      "\"AQIDBAUGBwgJCgsMDQ4PEA\",\"kid\":\"AQIDBAUGBwgJCgsMDQ4PEA\",\"kty\":"
+      "\"oct\"}],\"type\":\"persistent-release-message\"}",
+      GenerateJWKSet(keys, MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION));
 }
 
-TEST_F(JSONWebKeyTest, ExtractJWKKeys) {
-  // Try a simple JWK key (i.e. not in a set)
-  const std::string kJwkSimple =
+TEST_F(JSONWebKeyTest, ExtractValidJWKKeys) {
+  // Try an empty 'keys' dictionary.
+  ExtractJWKKeysAndExpect("{ \"keys\": [] }", true, 0);
+
+  // Try a key list with one entry.
+  const std::string kJwksOneEntry =
       "{"
-      "  \"kty\": \"oct\","
-      "  \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
-      "  \"k\": \"FBUWFxgZGhscHR4fICEiIw\""
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"FBUWFxgZGhscHR4fICEiIw\""
+      "    }"
+      "  ]"
       "}";
-  ExtractJWKKeysAndExpect(kJwkSimple, false, 0);
+  ExtractJWKKeysAndExpect(kJwksOneEntry, true, 1);
 
   // Try a key list with multiple entries.
   const std::string kJwksMultipleEntries =
@@ -108,7 +154,7 @@ TEST_F(JSONWebKeyTest, ExtractJWKKeys) {
       "    {"
       "      \"kty\": \"oct\","
       "      \"kid\": \"JCUmJygpKissLS4vMA\","
-      "      \"k\":\"MTIzNDU2Nzg5Ojs8PT4/QA\""
+      "      \"k\":\"MTIzNDU2Nzg5Ojs8PT4_QA\""
       "    }"
       "  ]"
       "}";
@@ -116,10 +162,39 @@ TEST_F(JSONWebKeyTest, ExtractJWKKeys) {
 
   // Try a key with no spaces and some \n plus additional fields.
   const std::string kJwksNoSpaces =
-      "\n\n{\"something\":1,\"keys\":[{\n\n\"kty\":\"oct\",\"alg\":\"A128KW\","
+      "\n\n{\"something\":1,\"keys\":[{\n\n\"kty\":\"oct\","
       "\"kid\":\"AAECAwQFBgcICQoLDA0ODxAREhM\",\"k\":\"GawgguFyGrWKav7AX4VKUg"
       "\",\"foo\":\"bar\"}]}\n\n";
   ExtractJWKKeysAndExpect(kJwksNoSpaces, true, 1);
+
+  // Try a list with multiple keys with the same kid.
+  const std::string kJwksDuplicateKids =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"kid\": \"JCUmJygpKissLS4vMA\","
+      "      \"k\": \"FBUWFxgZGhscHR4fICEiIw\""
+      "    },"
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"kid\": \"JCUmJygpKissLS4vMA\","
+      "      \"k\":\"MTIzNDU2Nzg5Ojs8PT4_QA\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksDuplicateKids, true, 2);
+}
+
+TEST_F(JSONWebKeyTest, ExtractInvalidJWKKeys) {
+  // Try a simple JWK key (i.e. not in a set)
+  const std::string kJwkSimple =
+      "{"
+      "  \"kty\": \"oct\","
+      "  \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "  \"k\": \"FBUWFxgZGhscHR4fICEiIw\""
+      "}";
+  ExtractJWKKeysAndExpect(kJwkSimple, false, 0);
 
   // Try some non-ASCII characters.
   ExtractJWKKeysAndExpect(
@@ -127,7 +202,7 @@ TEST_F(JSONWebKeyTest, ExtractJWKKeys) {
 
   // Try some non-ASCII characters in an otherwise valid JWK.
   const std::string kJwksInvalidCharacters =
-      "\n\n{\"something\":1,\"keys\":[{\n\n\"kty\":\"oct\",\"alg\":\"A128KW\","
+      "\n\n{\"something\":1,\"keys\":[{\n\n\"kty\":\"oct\","
       "\"kid\":\"AAECAwQFBgcICQoLDA0ODxAREhM\",\"k\":\"\xff\xfe\xfd"
       "\",\"foo\":\"bar\"}]}\n\n";
   ExtractJWKKeysAndExpect(kJwksInvalidCharacters, false, 0);
@@ -142,9 +217,6 @@ TEST_F(JSONWebKeyTest, ExtractJWKKeys) {
 
   // Try an empty dictionary.
   ExtractJWKKeysAndExpect("{ }", false, 0);
-
-  // Try an empty 'keys' dictionary.
-  ExtractJWKKeysAndExpect("{ \"keys\": [] }", true, 0);
 
   // Try with 'keys' not a dictionary.
   ExtractJWKKeysAndExpect("{ \"keys\":\"1\" }", false, 0);
@@ -203,50 +275,144 @@ TEST_F(JSONWebKeyTest, ExtractJWKKeys) {
       "  ]"
       "}";
   ExtractJWKKeysAndExpect(kJwksWithEmptyKeyId, false, 0);
+}
 
-  // Try a list with multiple keys with the same kid.
-  const std::string kJwksDuplicateKids =
+TEST_F(JSONWebKeyTest, KeyType) {
+  // Valid key type.
+  const std::string kJwksWithValidKeyType =
       "{"
       "  \"keys\": ["
       "    {"
       "      \"kty\": \"oct\","
-      "      \"kid\": \"JCUmJygpKissLS4vMA\","
-      "      \"k\": \"FBUWFxgZGhscHR4fICEiIw\""
-      "    },"
-      "    {"
-      "      \"kty\": \"oct\","
-      "      \"kid\": \"JCUmJygpKissLS4vMA\","
-      "      \"k\":\"MTIzNDU2Nzg5Ojs8PT4/QA\""
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
       "    }"
       "  ]"
       "}";
-  ExtractJWKKeysAndExpect(kJwksDuplicateKids, true, 2);
+  ExtractJWKKeysAndExpect(kJwksWithValidKeyType, true, 1);
+
+  // Empty key type.
+  const std::string kJwksWithEmptyKeyType =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithEmptyKeyType, false, 0);
+
+  // Key type is case sensitive.
+  const std::string kJwksWithUppercaseKeyType =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"OCT\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithUppercaseKeyType, false, 0);
+
+  // Wrong key type.
+  const std::string kJwksWithWrongKeyType =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"RSA\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithWrongKeyType, false, 0);
+}
+
+TEST_F(JSONWebKeyTest, Alg) {
+  // 'alg' is ignored, so verify that anything is allowed.
+  // Valid alg.
+  const std::string kJwksWithValidAlg =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"alg\": \"A128KW\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithValidAlg, true, 1);
+
+  // Empty alg.
+  const std::string kJwksWithEmptyAlg =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"alg\": \"\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithEmptyAlg, true, 1);
+
+  // Alg is case sensitive.
+  const std::string kJwksWithLowercaseAlg =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"alg\": \"a128kw\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithLowercaseAlg, true, 1);
+
+  // Wrong alg.
+  const std::string kJwksWithWrongAlg =
+      "{"
+      "  \"keys\": ["
+      "    {"
+      "      \"kty\": \"oct\","
+      "      \"alg\": \"RS256\","
+      "      \"kid\": \"AAECAwQFBgcICQoLDA0ODxAREhM\","
+      "      \"k\": \"BAUGBwgJCgsMDQ4PEBESEw\""
+      "    }"
+      "  ]"
+      "}";
+  ExtractJWKKeysAndExpect(kJwksWithWrongAlg, true, 1);
 }
 
 TEST_F(JSONWebKeyTest, SessionType) {
   ExtractSessionTypeAndExpect(
-      "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}]}",
-      true,
+      "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}]}", true,
       MediaKeys::TEMPORARY_SESSION);
   ExtractSessionTypeAndExpect(
       "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}],\"type\":"
       "\"temporary\"}",
-      true,
-      MediaKeys::TEMPORARY_SESSION);
+      true, MediaKeys::TEMPORARY_SESSION);
   ExtractSessionTypeAndExpect(
       "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}],\"type\":"
-      "\"persistent\"}",
-      true,
-      MediaKeys::PERSISTENT_SESSION);
+      "\"persistent-license\"}",
+      true, MediaKeys::PERSISTENT_LICENSE_SESSION);
+  ExtractSessionTypeAndExpect(
+      "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}],\"type\":"
+      "\"persistent-release-message\"}",
+      true, MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION);
   ExtractSessionTypeAndExpect(
       "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}],\"type\":"
       "\"unknown\"}",
-      false,
-      MediaKeys::TEMPORARY_SESSION);
+      false, MediaKeys::TEMPORARY_SESSION);
   ExtractSessionTypeAndExpect(
       "{\"keys\":[{\"k\":\"AQI\",\"kid\":\"AQI\",\"kty\":\"oct\"}],\"type\":3}",
-      false,
-      MediaKeys::TEMPORARY_SESSION);
+      false, MediaKeys::TEMPORARY_SESSION);
 }
 
 TEST_F(JSONWebKeyTest, CreateLicense) {
@@ -259,19 +425,20 @@ TEST_F(JSONWebKeyTest, CreateLicense) {
                          arraysize(data1),
                          MediaKeys::TEMPORARY_SESSION,
                          "{\"kids\":[\"AQI\"],\"type\":\"temporary\"}");
-  CreateLicenseAndExpect(data1,
-                         arraysize(data1),
-                         MediaKeys::PERSISTENT_SESSION,
-                         "{\"kids\":[\"AQI\"],\"type\":\"persistent\"}");
+  CreateLicenseAndExpect(
+      data1, arraysize(data1), MediaKeys::PERSISTENT_LICENSE_SESSION,
+      "{\"kids\":[\"AQI\"],\"type\":\"persistent-license\"}");
+  CreateLicenseAndExpect(
+      data1, arraysize(data1), MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION,
+      "{\"kids\":[\"AQI\"],\"type\":\"persistent-release-message\"}");
   CreateLicenseAndExpect(data2,
                          arraysize(data2),
                          MediaKeys::TEMPORARY_SESSION,
                          "{\"kids\":[\"AQIDBA\"],\"type\":\"temporary\"}");
-  CreateLicenseAndExpect(
-      data3,
-      arraysize(data3),
-      MediaKeys::PERSISTENT_SESSION,
-      "{\"kids\":[\"AQIDBAUGBwgJCgsMDQ4PEA\"],\"type\":\"persistent\"}");
+  CreateLicenseAndExpect(data3, arraysize(data3),
+                         MediaKeys::PERSISTENT_LICENSE_SESSION,
+                         "{\"kids\":[\"AQIDBAUGBwgJCgsMDQ4PEA\"],\"type\":"
+                         "\"persistent-license\"}");
 }
 
 TEST_F(JSONWebKeyTest, ExtractLicense) {
@@ -315,6 +482,158 @@ TEST_F(JSONWebKeyTest, ExtractLicense) {
 
   // Correct tag, but invalid base64 encoding.
   ExtractKeyFromLicenseAndExpect("{\"kids\":[\"!@#$%^&*()\"]}", false, NULL, 0);
+}
+
+TEST_F(JSONWebKeyTest, Base64UrlEncoding) {
+  const uint8 data1[] = { 0xfb, 0xfd, 0xfb, 0xfd, 0xfb, 0xfd, 0xfb };
+
+  // Verify that |data1| contains invalid base64url characters '+' and '/'
+  // and is padded with = when converted to base64.
+  std::string encoded_text;
+  base::Base64Encode(
+      std::string(reinterpret_cast<const char*>(&data1[0]), arraysize(data1)),
+      &encoded_text);
+  EXPECT_EQ(encoded_text, "+/37/fv9+w==");
+  EXPECT_NE(encoded_text.find('+'), std::string::npos);
+  EXPECT_NE(encoded_text.find('/'), std::string::npos);
+  EXPECT_NE(encoded_text.find('='), std::string::npos);
+
+  // base64url characters '-' and '_' not in base64 encoding.
+  EXPECT_EQ(encoded_text.find('-'), std::string::npos);
+  EXPECT_EQ(encoded_text.find('_'), std::string::npos);
+
+  CreateLicenseAndExpect(data1, arraysize(data1), MediaKeys::TEMPORARY_SESSION,
+                         "{\"kids\":[\"-_37_fv9-w\"],\"type\":\"temporary\"}");
+
+  ExtractKeyFromLicenseAndExpect(
+      "{\"kids\":[\"-_37_fv9-w\"],\"type\":\"temporary\"}", true, data1,
+      arraysize(data1));
+}
+
+TEST_F(JSONWebKeyTest, MultipleKeys) {
+  const uint8 data1[] = { 0x01, 0x02 };
+  const uint8 data2[] = { 0x01, 0x02, 0x03, 0x04 };
+  const uint8 data3[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                          0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10 };
+
+  std::vector<uint8> result;
+  KeyIdList key_ids;
+  key_ids.push_back(std::vector<uint8>(data1, data1 + arraysize(data1)));
+  key_ids.push_back(std::vector<uint8>(data2, data2 + arraysize(data2)));
+  key_ids.push_back(std::vector<uint8>(data3, data3 + arraysize(data3)));
+  CreateLicenseRequest(key_ids, MediaKeys::TEMPORARY_SESSION, &result);
+  std::string s(result.begin(), result.end());
+  EXPECT_EQ(
+      "{\"kids\":[\"AQI\",\"AQIDBA\",\"AQIDBAUGBwgJCgsMDQ4PEA\"],\"type\":"
+      "\"temporary\"}",
+      s);
+}
+
+TEST_F(JSONWebKeyTest, ExtractKeyIds) {
+  const uint8 data1[] = { 0x01, 0x02 };
+  const uint8 data2[] = { 0x01, 0x02, 0x03, 0x04 };
+  const uint8 data3[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                          0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10 };
+
+  KeyIdList key_ids;
+  std::string error_message;
+
+  EXPECT_TRUE(ExtractKeyIdsFromKeyIdsInitData("{\"kids\":[\"AQI\"]}", &key_ids,
+                                              &error_message));
+  EXPECT_EQ(1u, key_ids.size());
+  EXPECT_EQ(0u, error_message.length());
+  VerifyKeyId(key_ids[0], data1, arraysize(data1));
+
+  EXPECT_TRUE(ExtractKeyIdsFromKeyIdsInitData(
+      "{\"kids\":[\"AQI\",\"AQIDBA\",\"AQIDBAUGBwgJCgsMDQ4PEA\"]}", &key_ids,
+      &error_message));
+  EXPECT_EQ(3u, key_ids.size());
+  EXPECT_EQ(0u, error_message.length());
+  VerifyKeyId(key_ids[0], data1, arraysize(data1));
+  VerifyKeyId(key_ids[1], data2, arraysize(data2));
+  VerifyKeyId(key_ids[2], data3, arraysize(data3));
+
+  // Expect failure when non-ascii.
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData(
+      "This is not ASCII due to \xff\xfe\x0a in it.", &key_ids,
+      &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message,
+            "Non ASCII: This is not ASCII due to \\u00FF\\u00FE\\n in it.");
+
+  // Expect failure when not JSON or not a dictionary.
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("This is invalid.", &key_ids,
+                                               &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message, "Not valid JSON: This is invalid.");
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("6", &key_ids, &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message, "Not valid JSON: 6");
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData(
+      "This is a very long string that is longer than 64 characters and is "
+      "invalid.",
+      &key_ids, &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message,
+            "Not valid JSON: This is a very long string that is longer than 64 "
+            "characters ...");
+
+  // Expect failure when "kids" not specified.
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("{\"keys\":[\"AQI\"]}", &key_ids,
+                                               &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message, "Missing 'kids' parameter or not a list");
+
+  // Expect failure when invalid key_ids specified.
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("{\"kids\":[1]}", &key_ids,
+                                               &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message, "'kids'[0] is not string.");
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("{\"kids\": {\"id\":\"AQI\" }}",
+                                               &key_ids, &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message, "Missing 'kids' parameter or not a list");
+
+  // Expect failure when non-base64 key_ids specified.
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("{\"kids\":[\"AQI+\"]}",
+                                               &key_ids, &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message,
+            "'kids'[0] is not valid base64url encoded. Value: AQI+");
+  EXPECT_FALSE(ExtractKeyIdsFromKeyIdsInitData("{\"kids\":[\"AQI\",\"AQI/\"]}",
+                                               &key_ids, &error_message));
+  EXPECT_EQ(3u, key_ids.size());  // |key_ids| should be unchanged.
+  EXPECT_EQ(error_message,
+            "'kids'[1] is not valid base64url encoded. Value: AQI/");
+}
+
+TEST_F(JSONWebKeyTest, CreateInitData) {
+  const uint8 data1[] = { 0x01, 0x02 };
+  const uint8 data2[] = { 0x01, 0x02, 0x03, 0x04 };
+  const uint8 data3[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                          0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10 };
+
+  KeyIdList key_ids;
+  std::string error_message;
+
+  key_ids.push_back(std::vector<uint8>(data1, data1 + arraysize(data1)));
+  std::vector<uint8> init_data1;
+  CreateKeyIdsInitData(key_ids, &init_data1);
+  std::string result1(init_data1.begin(), init_data1.end());
+  EXPECT_EQ(result1, "{\"kids\":[\"AQI\"]}");
+
+  key_ids.push_back(std::vector<uint8>(data2, data2 + arraysize(data2)));
+  std::vector<uint8> init_data2;
+  CreateKeyIdsInitData(key_ids, &init_data2);
+  std::string result2(init_data2.begin(), init_data2.end());
+  EXPECT_EQ(result2, "{\"kids\":[\"AQI\",\"AQIDBA\"]}");
+
+  key_ids.push_back(std::vector<uint8>(data3, data3 + arraysize(data3)));
+  std::vector<uint8> init_data3;
+  CreateKeyIdsInitData(key_ids, &init_data3);
+  std::string result3(init_data3.begin(), init_data3.end());
+  EXPECT_EQ(result3,
+            "{\"kids\":[\"AQI\",\"AQIDBA\",\"AQIDBAUGBwgJCgsMDQ4PEA\"]}");
 }
 
 }  // namespace media

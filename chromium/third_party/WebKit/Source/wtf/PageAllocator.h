@@ -53,8 +53,12 @@ static const size_t kSystemPageSize = 4096;
 static const size_t kSystemPageOffsetMask = kSystemPageSize - 1;
 static const size_t kSystemPageBaseMask = ~kSystemPageOffsetMask;
 
-// Allocate one or more pages. Addresses in the range will be readable and
-// writeable but not executable.
+enum PageAccessibilityConfiguration {
+    PageAccessible,
+    PageInaccessible,
+};
+
+// Allocate one or more pages.
 // The requested address is just a hint; the actual address returned may
 // differ. The returned address will be aligned at least to align bytes.
 // len is in bytes, and must be a multiple of kPageAllocationGranularity.
@@ -62,8 +66,10 @@ static const size_t kSystemPageBaseMask = ~kSystemPageOffsetMask;
 // kPageAllocationGranularity.
 // If addr is null, then a suitable and randomized address will be chosen
 // automatically.
+// PageAccessibilityConfiguration controls the permission of the
+// allocated pages.
 // This call will return null if the allocation cannot be satisfied.
-WTF_EXPORT void* allocPages(void* addr, size_t len, size_t align);
+WTF_EXPORT void* allocPages(void* addr, size_t len, size_t align, PageAccessibilityConfiguration);
 
 // Free one or more pages.
 // addr and len must match a previous call to allocPages().
@@ -78,7 +84,11 @@ WTF_EXPORT void setSystemPagesInaccessible(void* addr, size_t len);
 // Mark one or more system pages as being accessible.
 // The pages will be readable and writeable.
 // len must be a multiple of kSystemPageSize bytes.
-WTF_EXPORT void setSystemPagesAccessible(void* addr, size_t len);
+// The result bool value indicates whether the permission
+// change succeeded or not. You must check the result
+// (in most cases you need to RELEASE_ASSERT that it is
+// true).
+WTF_EXPORT WARN_UNUSED_RETURN bool setSystemPagesAccessible(void* addr, size_t len);
 
 // Decommit one or more system pages. Decommitted means that the physical memory
 // is released to the system, but the virtual address space remains reserved.

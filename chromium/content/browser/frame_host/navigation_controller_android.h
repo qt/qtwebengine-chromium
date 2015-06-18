@@ -39,6 +39,7 @@ class CONTENT_EXPORT NavigationControllerAndroid {
   void GoBack(JNIEnv* env, jobject obj);
   void GoForward(JNIEnv* env, jobject obj);
   void GoToOffset(JNIEnv* env, jobject obj, jint offset);
+  jboolean IsInitialNavigation(JNIEnv* env, jobject obj);
   void LoadIfNecessary(JNIEnv* env, jobject obj);
   void ContinuePendingReload(JNIEnv* env, jobject obj);
   void Reload(JNIEnv* env, jobject obj, jboolean check_for_repost);
@@ -66,6 +67,9 @@ class CONTENT_EXPORT NavigationControllerAndroid {
                               jobject /* obj */,
                               jboolean state,
                               jboolean reload_on_state_change);
+  base::android::ScopedJavaLocalRef<jobject> GetEntryAtIndex(JNIEnv* env,
+                                                             jobject obj,
+                                                             int index);
   base::android::ScopedJavaLocalRef<jobject> GetPendingEntry(JNIEnv* env,
                                                              jobject /* obj */);
   int GetNavigationHistory(JNIEnv* env, jobject obj, jobject history);
@@ -79,6 +83,15 @@ class CONTENT_EXPORT NavigationControllerAndroid {
   void ClearHistory(JNIEnv* env, jobject obj);
   int GetLastCommittedEntryIndex(JNIEnv* env, jobject obj);
   jboolean RemoveEntryAtIndex(JNIEnv* env, jobject obj, jint index);
+  jboolean CanCopyStateOver(JNIEnv* env, jobject obj);
+  jboolean CanPruneAllButLastCommitted(JNIEnv* env, jobject obj);
+  void CopyStateFrom(JNIEnv* env,
+                     jobject obj,
+                     jlong source_native_navigation_controller_android);
+  void CopyStateFromAndPrune(JNIEnv* env,
+                     jobject obj,
+                     jlong source_native_navigation_controller_android,
+                     jboolean replace_entry);
 
  private:
   NavigationController* navigation_controller_;

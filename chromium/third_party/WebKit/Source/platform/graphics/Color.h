@@ -40,7 +40,6 @@ typedef unsigned RGBA32; // RGBA quadruplet
 PLATFORM_EXPORT RGBA32 makeRGB(int r, int g, int b);
 PLATFORM_EXPORT RGBA32 makeRGBA(int r, int g, int b, int a);
 
-PLATFORM_EXPORT RGBA32 colorWithOverrideAlpha(RGBA32 color, float overrideAlpha);
 PLATFORM_EXPORT RGBA32 makeRGBA32FromFloats(float r, float g, float b, float a);
 PLATFORM_EXPORT RGBA32 makeRGBAFromHSLA(double h, double s, double l, double a);
 PLATFORM_EXPORT RGBA32 makeRGBAFromCMYKA(float c, float m, float y, float k, float a);
@@ -60,7 +59,7 @@ struct NamedColor {
 const NamedColor* findColor(register const char* str, register unsigned len);
 
 class PLATFORM_EXPORT Color {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(Color);
 public:
     Color() : m_color(Color::transparent) { }
     Color(RGBA32 color) : m_color(color) { }
@@ -92,7 +91,7 @@ public:
 
     // Returns the color serialized as either #RRGGBB or #RRGGBBAA
     // The latter format is not a valid CSS color, and should only be seen in DRT dumps.
-    String nameForRenderTreeAsText() const;
+    String nameForLayoutTreeAsText() const;
 
     // Returns whether parsing succeeded. The resulting Color is arbitrary
     // if parsing fails.

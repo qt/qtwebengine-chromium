@@ -1,5 +1,5 @@
-<!DOCTYPE HTML>
-<html i18n-values="dir:textdirection;">
+<!doctype html>
+<html i18n-values="dir:textdirection;lang:language">
 <head>
 <meta charset="utf-8">
 <if expr="is_android or is_ios">
@@ -35,6 +35,7 @@
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/command.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_manager.js"></script>
+<script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_row.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_grid.js"></script>
 <script src="chrome://resources/js/cr/ui/menu_item.js"></script>
@@ -60,11 +61,10 @@
 </head>
 
 <if expr="not is_android and not is_ios">
-<body class="uber-frame"
-    i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
+<body class="uber-frame">
 </if>
 <if expr="is_android or is_ios">
-<body i18n-values=".style.fontFamily:fontfamily">
+<body>
 </if>
 
 <if expr="not is_android and not is_ios">
@@ -81,7 +81,7 @@
         <input type="search" id="search-field"
                i18n-values="aria-label:searchButton">
         <input type="submit" id="search-button"
-               i18n-values="value:searchButton">
+               i18n-values="value:searchButton" aria-controls="results-header">
       </div>
       <div id="filter-controls" hidden>
         <div id="range-controls">
@@ -94,11 +94,14 @@
         </div>
         <div id="timeframe-controls">
           <input type="radio" name="timeframe-filter" value="0" checked
-              i18n-values="aria-label:rangeAllTime">
+              i18n-values="aria-label:rangeAllTime"
+              aria-controls="results-header">
           <input type="radio" name="timeframe-filter" value="1"
-              i18n-values="aria-label:rangeWeek">
+              i18n-values="aria-label:rangeWeek"
+              aria-controls="results-header">
           <input type="radio" name="timeframe-filter" value="2"
-              i18n-values="aria-label:rangeMonth">
+              i18n-values="aria-label:rangeMonth"
+              aria-controls="results-header">
         </div>
       </div>
     </header>
@@ -115,7 +118,9 @@
       <div id="notification-bar" hidden></div>
     </div>
 
-    <div id="results-display"></div>
+    <div id="results-display">
+      <h3 id="results-header" aria-live="polite"></h3>
+    </div>
     <div id="loading-spinner" hidden>
       <span id="loading">
         <div id="spinner" class="inline-spinner"></div>
@@ -130,12 +135,14 @@
   </div>
 </div>
 
-<menu id="action-menu" hidden>
+<command id="remove-visit-command"></command>
+<cr-menu id="action-menu" hidden>
   <button id="more-from-site" i18n-content="moreFromSite"></button>
-  <button id="remove-visit" i18n-content="removeFromHistory"></button>
-</menu>
+  <button id="remove-visit" i18n-content="removeFromHistory"
+      command="#remove-visit-command"></button>
+</cr-menu>
 
 <script src="chrome://history-frame/strings.js"></script>
-<script src="chrome://resources/js/i18n_template2.js"></script>
+<script src="chrome://resources/js/i18n_template.js"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
+#include "base/containers/hash_tables.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_stdint.h"
@@ -27,22 +28,37 @@ namespace proxy {
 class PPAPI_PROXY_EXPORT PluginResourceTracker : public ResourceTracker {
  public:
   PluginResourceTracker();
-  virtual ~PluginResourceTracker();
+  ~PluginResourceTracker() override;
 
   // Given a host resource, maps it to an existing plugin resource ID if it
   // exists, or returns 0 on failure.
   PP_Resource PluginResourceForHostResource(
       const HostResource& resource) const;
 
+  // "Abandons" a PP_Resource on the plugin side. This releases a reference to
+  // the resource and allows the plugin side of the resource (the proxy
+  // resource) to be destroyed without sending a message to the renderer
+  // notifing it that the plugin has released the resource. This is useful when
+  // the plugin sends a resource to the renderer in reply to a sync IPC. The
+  // plugin would want to release its reference to the reply resource straight
+  // away but doing so can sometimes cause the resource to be deleted in the
+  // renderer before the sync IPC reply has been received giving the renderer a
+  // chance to add a ref to it. (see e.g. crbug.com/490611). Instead the
+  // renderer assumes responsibility for the ref that the plugin created and
+  // this function can be called.
+  void AbandonResource(PP_Resource res);
+
  protected:
   // ResourceTracker overrides.
-  virtual PP_Resource AddResource(Resource* object) override;
-  virtual void RemoveResource(Resource* object) override;
+  PP_Resource AddResource(Resource* object) override;
+  void RemoveResource(Resource* object) override;
 
  private:
   // Map of host instance/resource pairs to a plugin resource ID.
   typedef std::map<HostResource, PP_Resource> HostResourceMap;
   HostResourceMap host_resource_map_;
+
+  base::hash_set<PP_Resource> abandoned_resources_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginResourceTracker);
 };

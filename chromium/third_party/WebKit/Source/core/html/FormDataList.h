@@ -21,7 +21,9 @@
 #ifndef FormDataList_h
 #define FormDataList_h
 
+#include "core/CoreExport.h"
 #include "core/fileapi/Blob.h"
+#include "core/fileapi/File.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/FormData.h"
 #include "wtf/Forward.h"
@@ -30,9 +32,34 @@
 
 namespace blink {
 
-class FormDataList : public RefCountedWillBeGarbageCollected<FormDataList> {
-    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(FormDataList);
+class CORE_EXPORT FormDataList : public GarbageCollected<FormDataList> {
 public:
+    class Entry final {
+        ALLOW_ONLY_INLINE_ALLOCATION();
+    public:
+        enum Type { None, StringType, FileType };
+
+        Entry() : m_type(None) { }
+        Entry(const String& name, const String& value) : m_type(StringType), m_name(name), m_string(value) { }
+        Entry(const String& name, File* value) : m_type(FileType), m_name(name), m_file(value) { }
+
+        bool isNone() const { return m_type == None; }
+        bool isString() const { return m_type == StringType; }
+        bool isFile() const { return m_type == FileType; }
+
+        const String& name() const { ASSERT(m_type != None); return m_name; }
+        const String& string() const { ASSERT(m_type == StringType); return m_string; }
+        File* file() const { ASSERT(m_type == FileType); return m_file; }
+
+        DECLARE_TRACE();
+
+    private:
+        const Type m_type;
+        const String m_name;
+        const String m_string;
+        const Member<File> m_file;
+    };
+
     class Item {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
@@ -44,7 +71,7 @@ public:
         Blob* blob() const { return m_blob.get(); }
         const String& filename() const { return m_filename; }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         WTF::CString m_data;
@@ -52,12 +79,12 @@ public:
         String m_filename;
     };
 
-    static PassRefPtrWillBeRawPtr<FormDataList> create(const WTF::TextEncoding& encoding)
+    static FormDataList* create(const WTF::TextEncoding& encoding)
     {
-        return adoptRefWillBeNoop(new FormDataList(encoding));
+        return new FormDataList(encoding);
     }
 
-    typedef PersistentHeapVectorWillBeHeapVector<FormDataList::Item> FormDataListItems;
+    using FormDataListItems = HeapVector<FormDataList::Item>;
 
     void appendData(const String& key, const String& value)
     {
@@ -80,13 +107,22 @@ public:
         appendBlob(blob, filename);
     }
 
+    void deleteEntry(const String& key);
+    Entry getEntry(const String& key) const;
+    Entry getEntry(size_t index) const;
+    HeapVector<Entry> getAll(const String& key) const;
+    bool hasEntry(const String& key) const;
+    void setBlob(const String& key, Blob*, const String& filename);
+    void setData(const String& key, const String& value);
+    size_t size() const { return m_items.size() / 2; }
+
     const FormDataListItems& items() const { return m_items; }
     const WTF::TextEncoding& encoding() const { return m_encoding; }
 
     PassRefPtr<FormData> createFormData(FormData::EncodingType = FormData::FormURLEncoded);
     PassRefPtr<FormData> createMultiPartFormData();
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     explicit FormDataList(const WTF::TextEncoding&);
@@ -97,6 +133,9 @@ private:
     void appendString(const CString&);
     void appendString(const String&);
     void appendBlob(Blob*, const String& filename);
+    void setEntry(const String& key, const Item&);
+    Entry itemsToEntry(const Item& key, const Item& value) const;
+    CString encodeAndNormalize(const String& key) const;
 
     WTF::TextEncoding m_encoding;
     FormDataListItems m_items;
@@ -104,6 +143,7 @@ private:
 
 } // namespace blink
 
-WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::FormDataList::Item);
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::FormDataList::Entry);
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::FormDataList::Item);
 
 #endif // FormDataList_h

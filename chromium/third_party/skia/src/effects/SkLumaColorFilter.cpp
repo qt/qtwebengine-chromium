@@ -11,10 +11,10 @@
 #include "SkString.h"
 
 #if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "GrInvariantOutput.h"
 #include "gl/GrGLProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
-#include "GrContext.h"
-#include "GrTBackendProcessorFactory.h"
 #endif
 
 void SkLumaColorFilter::filterSpan(const SkPMColor src[], int count,
@@ -43,10 +43,6 @@ SkColorFilter* SkLumaColorFilter::Create() {
 
 SkLumaColorFilter::SkLumaColorFilter() : INHERITED() {}
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkLumaColorFilter::SkLumaColorFilter(SkReadBuffer& buffer) : INHERITED(buffer) {}
-#endif
-
 SkFlattenable* SkLumaColorFilter::CreateProc(SkReadBuffer&) {
     return SkNEW(SkLumaColorFilter);
 }
@@ -67,33 +63,34 @@ public:
         return SkRef(gLumaEffect);
     }
 
-    static const char* Name() { return "Luminance-to-Alpha"; }
+    const char* name() const override { return "Luminance-to-Alpha"; }
 
-    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE {
-        return GrTBackendFragmentProcessorFactory<LumaColorFilterEffect>::getInstance();
+    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
+                                   GrProcessorKeyBuilder* b) const override {
+        GLProcessor::GenKey(*this, caps, b);
+    }
+
+    GrGLFragmentProcessor* createGLInstance() const override {
+        return SkNEW_ARGS(GLProcessor, (*this));
     }
 
     class GLProcessor : public GrGLFragmentProcessor {
     public:
-        GLProcessor(const GrBackendProcessorFactory& factory,
-                    const GrProcessor&)
-        : INHERITED(factory) {
-        }
+        GLProcessor(const GrProcessor&) {}
 
-        static void GenKey(const GrProcessor&, const GrGLCaps&, GrProcessorKeyBuilder* b) {}
+        static void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {}
 
         virtual void emitCode(GrGLFPBuilder* builder,
                               const GrFragmentProcessor&,
-                              const GrProcessorKey&,
                               const char* outputColor,
                               const char* inputColor,
                               const TransformedCoordsArray&,
-                              const TextureSamplerArray&) SK_OVERRIDE {
+                              const TextureSamplerArray&) override {
             if (NULL == inputColor) {
                 inputColor = "vec4(1)";
             }
 
-            GrGLFPFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+            GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
             fsBuilder->codeAppendf("\tfloat luma = dot(vec3(%f, %f, %f), %s.rgb);\n",
                                    SK_ITU_BT709_LUM_COEFF_R,
                                    SK_ITU_BT709_LUM_COEFF_G,
@@ -109,16 +106,29 @@ public:
     };
 
 private:
-    virtual bool onIsEqual(const GrFragmentProcessor&) const SK_OVERRIDE { return true; }
+    LumaColorFilterEffect() {
+        this->initClassID<LumaColorFilterEffect>();
+    }
 
-    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE {
+    bool onIsEqual(const GrFragmentProcessor&) const override { return true; }
+
+    void onComputeInvariantOutput(GrInvariantOutput* inout) const override {
         // The output is always black. The alpha value for the color passed in is arbitrary.
         inout->setToOther(kRGB_GrColorComponentFlags, GrColorPackRGBA(0, 0, 0, 0),
-                          InvariantOutput::kWill_ReadInput);
+                          GrInvariantOutput::kWill_ReadInput);
     }
 };
 
-GrFragmentProcessor* SkLumaColorFilter::asFragmentProcessor(GrContext*) const {
-    return LumaColorFilterEffect::Create();
+bool SkLumaColorFilter::asFragmentProcessors(GrContext*,
+                                             SkTDArray<GrFragmentProcessor*>* array) const {
+
+    GrFragmentProcessor* frag = LumaColorFilterEffect::Create();
+    if (frag) {
+        if (array) {
+            *array->append() = frag;
+        }
+        return true;
+    }
+    return false;
 }
 #endif

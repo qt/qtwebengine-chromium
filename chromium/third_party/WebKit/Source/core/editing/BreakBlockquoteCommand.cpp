@@ -34,7 +34,7 @@
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLQuoteElement.h"
-#include "core/rendering/RenderListItem.h"
+#include "core/layout/LayoutListItem.h"
 
 namespace blink {
 
@@ -152,8 +152,8 @@ void BreakBlockquoteCommand::doApply()
             // find the first one so that we know where to start numbering.
             while (listChildNode && !isHTMLLIElement(*listChildNode))
                 listChildNode = listChildNode->nextSibling();
-            if (listChildNode && listChildNode->renderer() && listChildNode->renderer()->isListItem())
-                setNodeAttribute(clonedChild, startAttr, AtomicString::number(toRenderListItem(listChildNode->renderer())->value()));
+            if (isListItem(listChildNode))
+                setNodeAttribute(clonedChild, startAttr, AtomicString::number(toLayoutListItem(listChildNode->layoutObject())->value()));
         }
 
         appendNode(clonedChild.get(), clonedAncestor.get());

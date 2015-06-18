@@ -5,7 +5,9 @@
 #include "config.h"
 #include "public/platform/WebThread.h"
 
+#include "public/platform/WebTraceLocation.h"
 #include "wtf/Assertions.h"
+#include "wtf/OwnPtr.h"
 
 #if OS(WIN)
 #include <windows.h>
@@ -13,12 +15,43 @@
 #include <unistd.h>
 #endif
 
+namespace blink {
+
 namespace {
 #if OS(WIN)
-COMPILE_ASSERT(sizeof(blink::PlatformThreadId) >= sizeof(DWORD), Size_of_platform_thread_id_is_too_small);
+static_assert(sizeof(blink::PlatformThreadId) >= sizeof(DWORD), "size of platform thread id is too small");
 #elif OS(POSIX)
-COMPILE_ASSERT(sizeof(blink::PlatformThreadId) >= sizeof(pid_t), Size_of_platform_thread_id_is_too_small);
+static_assert(sizeof(blink::PlatformThreadId) >= sizeof(pid_t), "size of platform thread id is too small");
 #else
 #error Unexpected platform
 #endif
+
+class FunctionTask: public WebThread::Task {
+    WTF_MAKE_NONCOPYABLE(FunctionTask);
+public:
+    FunctionTask(PassOwnPtr<Function<void()>> function)
+        : m_function(function)
+    {
+    }
+
+    void run() override
+    {
+        (*m_function)();
+    }
+private:
+    OwnPtr<Function<void()>> m_function;
+};
+
+} // namespace
+
+void WebThread::postTask(const WebTraceLocation& location, PassOwnPtr<Function<void()>> function)
+{
+    postTask(location, new FunctionTask(function));
 }
+
+void WebThread::postDelayedTask(const WebTraceLocation& location, PassOwnPtr<Function<void()>> function, long long delayMs)
+{
+    postDelayedTask(location, new FunctionTask(function), delayMs);
+}
+
+} // namespace blink

@@ -80,7 +80,7 @@ cr.define('extensions', function() {
 
       /**
        * An array of Failures for keeping track of multiple active failures.
-       * @type {Array.<Failure>}
+       * @type {Array<Failure>}
        * @private
        */
       this.failures_ = [];
@@ -103,7 +103,7 @@ cr.define('extensions', function() {
     /**
      * Add a failure to failures_ array. If there is already a displayed
      * failure, display the additional failures element.
-     * @param {Array.<Object>} failures Array of failures containing paths,
+     * @param {Array<Object>} failures Array of failures containing paths,
      *     errors, and manifests.
      * @private
      */
@@ -186,17 +186,31 @@ cr.define('extensions', function() {
 
   ExtensionLoader.prototype = {
     /**
+     * Whether or not we are currently loading an unpacked extension.
+     * @private {boolean}
+     */
+    isLoading_: false,
+
+    /**
      * Begin the sequence of loading an unpacked extension. If an error is
      * encountered, this object will get notified via notifyFailed().
      */
     loadUnpacked: function() {
-      chrome.send('extensionLoaderLoadUnpacked');
+      if (this.isLoading_)  // Only one running load at a time.
+        return;
+      this.isLoading_ = true;
+      chrome.developerPrivate.loadUnpacked({failQuietly: true}, function() {
+        // Check lastError to avoid the log, but don't do anything with it -
+        // error-handling is done on the C++ side.
+        var lastError = chrome.runtime.lastError;
+        this.isLoading_ = false;
+      }.bind(this));
     },
 
     /**
      * Notify the ExtensionLoader that loading an unpacked extension failed.
      * Add the failure to failures_ and show the ExtensionLoadError.
-     * @param {Array.<Object>} failures Array of failures containing paths,
+     * @param {Array<Object>} failures Array of failures containing paths,
      *     errors, and manifests.
      */
     notifyFailed: function(failures) {
@@ -206,7 +220,7 @@ cr.define('extensions', function() {
 
   /**
    * A static forwarding function for ExtensionLoader.notifyFailed.
-   * @param {Array.<Object>} failures Array of failures containing paths,
+   * @param {Array<Object>} failures Array of failures containing paths,
    *     errors, and manifests.
    * @see ExtensionLoader.notifyFailed
    */

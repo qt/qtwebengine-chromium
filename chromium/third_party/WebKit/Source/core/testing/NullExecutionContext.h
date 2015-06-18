@@ -8,6 +8,8 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/SecurityContext.h"
 #include "core/events/EventQueue.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/inspector/ScriptCallStack.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/RefCounted.h"
@@ -22,9 +24,9 @@ public:
     virtual void disableEval(const String&) override { }
     virtual String userAgent(const KURL&) const override { return String(); }
 
-    virtual void postTask(PassOwnPtr<ExecutionContextTask>) override;
+    virtual void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override;
 
-    virtual EventTarget* errorEventTarget() override { return 0; }
+    virtual EventTarget* errorEventTarget() override { return nullptr; }
     virtual EventQueue* eventQueue() const override { return m_queue.get(); }
 
     virtual bool tasksNeedSuspension() override { return m_tasksNeedSuspension; }
@@ -32,14 +34,17 @@ public:
 
     virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) override { }
     virtual void didUpdateSecurityOrigin() override { }
-    virtual SecurityContext& securityContext() override { return *this; }
+    virtual const SecurityContext& securityContext() const override { return *this; }
+    virtual DOMTimerCoordinator* timers() override { return nullptr; }
 
     double timerAlignmentInterval() const;
 
     virtual void addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override { }
     virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override { }
 
-    void trace(Visitor* visitor)
+    bool isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck = StandardPrivilegeCheck) const override;
+
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_queue);
         ExecutionContext::trace(visitor);

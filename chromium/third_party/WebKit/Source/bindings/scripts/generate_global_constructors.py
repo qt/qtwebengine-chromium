@@ -25,7 +25,7 @@ import re
 import sys
 
 from collections import defaultdict
-from utilities import get_file_contents, idl_filename_to_interface_name, read_file_to_list, write_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl
+from utilities import should_generate_impl_file_from_idl, get_file_contents, idl_filename_to_interface_name, read_file_to_list, write_file, get_interface_extended_attributes_from_idl, get_interface_exposed_arguments, is_callback_interface_from_idl
 
 interface_name_to_global_names = {}
 global_name_to_constructors = defaultdict(list)
@@ -77,25 +77,33 @@ def record_global_constructors(idl_filename):
     # Callback interfaces with constants also have interface properties,
     # but there are none of these in Blink.
     # http://heycam.github.io/webidl/#es-interfaces
-    if (is_callback_interface_from_idl(idl_file_contents) or
+    if ((not should_generate_impl_file_from_idl(idl_file_contents)) or
+        is_callback_interface_from_idl(idl_file_contents) or
         'NoInterfaceObject' in extended_attributes):
         return
 
-    # The [Exposed] extended attribute MUST take an identifier list. Each
-    # identifier in the list MUST be a global name. An interface or interface
-    # member the extended attribute applies to will be exposed only on objects
-    # associated with ECMAScript global environments whose global object
-    # implements an interface that has a matching global name.
-    exposed_global_names = extended_attributes.get('Exposed', 'Window').strip('()').split(',')
-    new_constructors_list = generate_global_constructors_list(interface_name, extended_attributes)
-    for exposed_global_name in exposed_global_names:
-        global_name_to_constructors[exposed_global_name].extend(new_constructors_list)
+    exposed_arguments = get_interface_exposed_arguments(idl_file_contents)
+    if exposed_arguments:
+        # Exposed(Arguments) case
+        for argument in exposed_arguments:
+            if 'RuntimeEnabled' in extended_attributes:
+                raise ValueError('RuntimeEnabled should not be used with Exposed(Arguments)')
+            attributes = extended_attributes.copy()
+            attributes['RuntimeEnabled'] = argument['runtime_enabled']
+            new_constructors_list = generate_global_constructors_list(interface_name, attributes)
+            global_name_to_constructors[argument['exposed']].extend(new_constructors_list)
+    else:
+        # Exposed=env or Exposed=(env1,...) case
+        exposed_global_names = extended_attributes.get('Exposed', 'Window').strip('()').split(',')
+        new_constructors_list = generate_global_constructors_list(interface_name, extended_attributes)
+        for name in exposed_global_names:
+            global_name_to_constructors[name].extend(new_constructors_list)
 
 
 def generate_global_constructors_list(interface_name, extended_attributes):
     extended_attributes_list = [
             name + '=' + extended_attributes[name]
-            for name in 'Conditional', 'PerContextEnabled', 'RuntimeEnabled'
+            for name in 'Conditional', 'RuntimeEnabled'
             if name in extended_attributes]
     if extended_attributes_list:
         extended_string = '[%s] ' % ', '.join(extended_attributes_list)

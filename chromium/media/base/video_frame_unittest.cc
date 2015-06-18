@@ -252,14 +252,15 @@ TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
 
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        make_scoped_ptr(
-            new gpu::MailboxHolder(gpu::Mailbox(), 5, 0 /* sync_point */)),
+        gpu::MailboxHolder(gpu::Mailbox(), 5, 0 /* sync_point */),
         base::Bind(&TextureCallback, &called_sync_point),
-        gfx::Size(10, 10),            // coded_size
-        gfx::Rect(10, 10),            // visible_rect
-        gfx::Size(10, 10),            // natural_size
-        base::TimeDelta(),            // timestamp
-        VideoFrame::ReadPixelsCB());  // read_pixels_cb
+        gfx::Size(10, 10),  // coded_size
+        gfx::Rect(10, 10),  // visible_rect
+        gfx::Size(10, 10),  // natural_size
+        base::TimeDelta(),  // timestamp
+        false,              // allow_overlay
+        true);              // has_alpha
+    EXPECT_EQ(VideoFrame::TEXTURE_RGBA, frame->texture_format());
   }
   // Nobody set a sync point to |frame|, so |frame| set |called_sync_point| to 0
   // as default value.
@@ -284,33 +285,44 @@ class SyncPointClientImpl : public VideoFrame::SyncPointClient {
 // Verify the gpu::MailboxHolder::ReleaseCallback is called when VideoFrame is
 // destroyed with the release sync point, which was updated by clients.
 // (i.e. the compositor, webgl).
-TEST(VideoFrame, TextureNoLongerNeededCallbackAfterTakingAndReleasingMailbox) {
-  gpu::Mailbox mailbox;
-  mailbox.name[0] = 50;
+TEST(VideoFrame,
+     TexturesNoLongerNeededCallbackAfterTakingAndReleasingMailboxes) {
+  const int kPlanesNum = 3;
+  gpu::Mailbox mailbox[kPlanesNum];
+  for (int i = 0; i < kPlanesNum; ++i) {
+    mailbox[i].name[0] = 50 + 1;
+  }
+
   uint32 sync_point = 7;
   uint32 target = 9;
   uint32 release_sync_point = 111;
   uint32 called_sync_point = 0;
-
   {
-    scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        make_scoped_ptr(new gpu::MailboxHolder(mailbox, target, sync_point)),
+    scoped_refptr<VideoFrame> frame = VideoFrame::WrapYUV420NativeTextures(
+        gpu::MailboxHolder(mailbox[VideoFrame::kYPlane], target, sync_point),
+        gpu::MailboxHolder(mailbox[VideoFrame::kUPlane], target, sync_point),
+        gpu::MailboxHolder(mailbox[VideoFrame::kVPlane], target, sync_point),
         base::Bind(&TextureCallback, &called_sync_point),
-        gfx::Size(10, 10),            // coded_size
-        gfx::Rect(10, 10),            // visible_rect
-        gfx::Size(10, 10),            // natural_size
-        base::TimeDelta(),            // timestamp
-        VideoFrame::ReadPixelsCB());  // read_pixels_cb
+        gfx::Size(10, 10),  // coded_size
+        gfx::Rect(10, 10),  // visible_rect
+        gfx::Size(10, 10),  // natural_size
+        base::TimeDelta(),  // timestamp
+        false);             // allow_overlay
 
-    const gpu::MailboxHolder* mailbox_holder = frame->mailbox_holder();
-
-    EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox.name[0]);
-    EXPECT_EQ(target, mailbox_holder->texture_target);
-    EXPECT_EQ(sync_point, mailbox_holder->sync_point);
+    EXPECT_EQ(VideoFrame::TEXTURE_YUV_420, frame->texture_format());
+    EXPECT_EQ(3u, VideoFrame::NumTextures(frame->texture_format()));
+    for (size_t i = 0; i < VideoFrame::NumTextures(frame->texture_format());
+         ++i) {
+      const gpu::MailboxHolder& mailbox_holder = frame->mailbox_holder(i);
+      EXPECT_EQ(mailbox[i].name[0], mailbox_holder.mailbox.name[0]);
+      EXPECT_EQ(target, mailbox_holder.texture_target);
+      EXPECT_EQ(sync_point, mailbox_holder.sync_point);
+    }
 
     SyncPointClientImpl client(release_sync_point);
     frame->UpdateReleaseSyncPoint(&client);
-    EXPECT_EQ(sync_point, mailbox_holder->sync_point);
+    EXPECT_EQ(sync_point,
+              frame->mailbox_holder(VideoFrame::kYPlane).sync_point);
   }
   EXPECT_EQ(release_sync_point, called_sync_point);
 }
@@ -326,6 +338,84 @@ TEST(VideoFrame, ZeroInitialized) {
 
   for (size_t i = 0; i < VideoFrame::NumPlanes(frame->format()); ++i)
     EXPECT_EQ(0, frame->data(i)[0]);
+}
+
+TEST(VideoFrameMetadata, SetAndThenGetAllKeysForAllTypes) {
+  VideoFrameMetadata metadata;
+
+  for (int i = 0; i < VideoFrameMetadata::NUM_KEYS; ++i) {
+    const VideoFrameMetadata::Key key = static_cast<VideoFrameMetadata::Key>(i);
+
+    EXPECT_FALSE(metadata.HasKey(key));
+    metadata.SetBoolean(key, true);
+    EXPECT_TRUE(metadata.HasKey(key));
+    bool bool_value = false;
+    EXPECT_TRUE(metadata.GetBoolean(key, &bool_value));
+    EXPECT_EQ(true, bool_value);
+    metadata.Clear();
+
+    EXPECT_FALSE(metadata.HasKey(key));
+    metadata.SetInteger(key, i);
+    EXPECT_TRUE(metadata.HasKey(key));
+    int int_value = -999;
+    EXPECT_TRUE(metadata.GetInteger(key, &int_value));
+    EXPECT_EQ(i, int_value);
+    metadata.Clear();
+
+    EXPECT_FALSE(metadata.HasKey(key));
+    metadata.SetDouble(key, 3.14 * i);
+    EXPECT_TRUE(metadata.HasKey(key));
+    double double_value = -999.99;
+    EXPECT_TRUE(metadata.GetDouble(key, &double_value));
+    EXPECT_EQ(3.14 * i, double_value);
+    metadata.Clear();
+
+    EXPECT_FALSE(metadata.HasKey(key));
+    metadata.SetString(key, base::StringPrintf("\xfe%d\xff", i));
+    EXPECT_TRUE(metadata.HasKey(key));
+    std::string string_value;
+    EXPECT_TRUE(metadata.GetString(key, &string_value));
+    EXPECT_EQ(base::StringPrintf("\xfe%d\xff", i), string_value);
+    metadata.Clear();
+
+    EXPECT_FALSE(metadata.HasKey(key));
+    metadata.SetTimeTicks(key, base::TimeTicks::FromInternalValue(~(0LL) + i));
+    EXPECT_TRUE(metadata.HasKey(key));
+    base::TimeTicks ticks_value;
+    EXPECT_TRUE(metadata.GetTimeTicks(key, &ticks_value));
+    EXPECT_EQ(base::TimeTicks::FromInternalValue(~(0LL) + i), ticks_value);
+    metadata.Clear();
+
+    EXPECT_FALSE(metadata.HasKey(key));
+    metadata.SetValue(key, base::Value::CreateNullValue());
+    EXPECT_TRUE(metadata.HasKey(key));
+    const base::Value* const null_value = metadata.GetValue(key);
+    EXPECT_TRUE(null_value);
+    EXPECT_EQ(base::Value::TYPE_NULL, null_value->GetType());
+    metadata.Clear();
+  }
+}
+
+TEST(VideoFrameMetadata, PassMetadataViaIntermediary) {
+  VideoFrameMetadata expected;
+  for (int i = 0; i < VideoFrameMetadata::NUM_KEYS; ++i) {
+    const VideoFrameMetadata::Key key = static_cast<VideoFrameMetadata::Key>(i);
+    expected.SetInteger(key, i);
+  }
+
+  base::DictionaryValue tmp;
+  expected.MergeInternalValuesInto(&tmp);
+  EXPECT_EQ(static_cast<size_t>(VideoFrameMetadata::NUM_KEYS), tmp.size());
+
+  VideoFrameMetadata result;
+  result.MergeInternalValuesFrom(tmp);
+
+  for (int i = 0; i < VideoFrameMetadata::NUM_KEYS; ++i) {
+    const VideoFrameMetadata::Key key = static_cast<VideoFrameMetadata::Key>(i);
+    int value = -1;
+    EXPECT_TRUE(result.GetInteger(key, &value));
+    EXPECT_EQ(i, value);
+  }
 }
 
 }  // namespace media

@@ -4,39 +4,84 @@
 
 #include "ui/gl/gl_version_info.h"
 
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
+
+namespace {
+
+bool DesktopCoreCommonCheck(
+    bool is_es, unsigned major_version, unsigned minor_version) {
+  return (!is_es &&
+          ((major_version == 3 && minor_version >= 2) ||
+           major_version > 3));
+}
+
+}
+
 
 namespace gfx {
 
+GLVersionInfo::GLVersionInfo(const char* version_str, const char* renderer_str,
+                             const char* extensions_str)
+    : GLVersionInfo(version_str, renderer_str) {
+  is_desktop_core_profile =
+      DesktopCoreCommonCheck(is_es, major_version, minor_version) &&
+      !strstr(extensions_str, "GL_ARB_compatibility");
+}
+
+GLVersionInfo::GLVersionInfo(const char* version_str, const char* renderer_str,
+                             const std::set<std::string>& extensions)
+    : GLVersionInfo(version_str, renderer_str) {
+  is_desktop_core_profile =
+      DesktopCoreCommonCheck(is_es, major_version, minor_version) &&
+      extensions.find("GL_ARB_compatibility") == extensions.end();
+}
+
 GLVersionInfo::GLVersionInfo(const char* version_str, const char* renderer_str)
     : is_es(false),
-      is_es1(false),
-      is_es2(false),
+      is_angle(false),
+      major_version(0),
+      minor_version(0),
       is_es3(false),
-      is_gl1(false),
-      is_gl2(false),
-      is_gl3(false),
-      is_gl4(false),
-      is_angle(false) {
+      is_desktop_core_profile(false) {
   if (version_str) {
-    std::string lstr(base::StringToLowerASCII(std::string(version_str)));
-    is_es = (lstr.substr(0, 9) == "opengl es");
-    if (is_es) {
-      is_es1 = (lstr.substr(9, 2) == "-c" && lstr.substr(13, 2) == "1.");
-      is_es2 = (lstr.substr(9, 3) == " 2.");
-      is_es3 = (lstr.substr(9, 3) == " 3.");
-    } else {
-      is_gl2 = (lstr.substr(0, 2) == "2.");
-      is_gl3 = (lstr.substr(0, 2) == "3.");
-      is_gl4 = (lstr.substr(0, 2) == "4.");
-      // In early GL versions, GetString output format is implementation
-      // dependent.
-      is_gl1 = !is_gl2 && !is_gl3 && !is_gl4;
-    }
+    ParseVersionString(version_str, &major_version, &minor_version,
+                       &is_es, &is_es3);
   }
   if (renderer_str) {
     is_angle = StartsWithASCII(renderer_str, "ANGLE", true);
   }
+}
+
+void GLVersionInfo::ParseVersionString(const char* version_str,
+                                       unsigned* major_version,
+                                       unsigned* minor_version,
+                                       bool* is_es,
+                                       bool* is_es3) {
+  // Make sure the outputs are always initialized.
+  *major_version = 0;
+  *minor_version = 0;
+  *is_es = false;
+  *is_es3 = false;
+  if (!version_str)
+    return;
+  std::string lstr(base::StringToLowerASCII(std::string(version_str)));
+  *is_es = (lstr.length() > 12) && (lstr.substr(0, 9) == "opengl es");
+  if (*is_es)
+    lstr = lstr.substr(10, 3);
+  base::StringTokenizer tokenizer(lstr.begin(), lstr.end(), ".");
+  unsigned major, minor;
+  if (tokenizer.GetNext() &&
+      base::StringToUint(tokenizer.token_piece(), &major)) {
+    *major_version = major;
+    if (tokenizer.GetNext() &&
+        base::StringToUint(tokenizer.token_piece(), &minor)) {
+      *minor_version = minor;
+    }
+  }
+  if (*is_es && *major_version == 3)
+    *is_es3 = true;
 }
 
 }  // namespace gfx

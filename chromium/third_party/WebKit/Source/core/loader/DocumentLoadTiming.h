@@ -26,29 +26,31 @@
 #ifndef DocumentLoadTiming_h
 #define DocumentLoadTiming_h
 
+#include "core/CoreExport.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
 
 class KURL;
 
-class DocumentLoadTiming {
+class CORE_EXPORT DocumentLoadTiming {
 public:
     DocumentLoadTiming();
 
     double monotonicTimeToZeroBasedDocumentTime(double) const;
     double monotonicTimeToPseudoWallTime(double) const;
+    double pseudoWallTimeToMonotonicTime(double) const;
 
     void markNavigationStart();
     void setNavigationStart(double);
     void addRedirect(const KURL& redirectingUrl, const KURL& redirectedUrl);
 
-    void markUnloadEventStart() { m_unloadEventStart = monotonicallyIncreasingTime(); }
-    void markUnloadEventEnd() { m_unloadEventEnd = monotonicallyIncreasingTime(); }
-    void markFetchStart() { m_fetchStart = monotonicallyIncreasingTime(); }
-    void setResponseEnd(double monotonicTime) { m_responseEnd = monotonicTime; }
-    void markLoadEventStart() { m_loadEventStart = monotonicallyIncreasingTime(); }
-    void markLoadEventEnd() { m_loadEventEnd = monotonicallyIncreasingTime(); }
+    void markUnloadEventStart();
+    void markUnloadEventEnd();
+    void markFetchStart();
+    void setResponseEnd(double);
+    void markLoadEventStart();
+    void markLoadEventEnd();
 
     void setHasSameOriginAsPreviousDocument(bool value) { m_hasSameOriginAsPreviousDocument = value; }
 
@@ -68,6 +70,9 @@ public:
     double referenceMonotonicTime() const { return m_referenceMonotonicTime; }
 
 private:
+    void setRedirectStart(double);
+    void markRedirectEnd();
+
     double m_referenceMonotonicTime;
     double m_referenceWallTime;
     double m_navigationStart;

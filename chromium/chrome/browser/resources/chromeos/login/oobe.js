@@ -14,13 +14,14 @@
 /* @const */ var WAIT_FOR_POLYMER = true;
 
 <include src="login_common.js">
-<include src="oobe_screen_eula.js">
-<include src="oobe_screen_network.js">
-<include src="oobe_screen_hid_detection.js">
-<include src="oobe_screen_update.js">
-<include src="oobe_screen_controller_pairing.js">
-<include src="oobe_screen_host_pairing.js">
 <include src="oobe_screen_auto_enrollment_check.js">
+<include src="oobe_screen_controller_pairing.js">
+<include src="oobe_screen_enable_debugging.js">
+<include src="oobe_screen_eula.js">
+<include src="oobe_screen_hid_detection.js">
+<include src="oobe_screen_host_pairing.js">
+<include src="oobe_screen_network.js">
+<include src="oobe_screen_update.js">
 
 cr.define('cr.ui.Oobe', function() {
   return {
@@ -49,11 +50,11 @@ cr.define('cr.ui.Oobe', function() {
         }
       }
       if (callback) {
-        var sendCallback = function() {
-          chrome.send(callback, [select.options[select.selectedIndex].value]);
+        var runCallback = function() {
+          callback(select.options[select.selectedIndex].value);
         };
-        select.addEventListener('blur', sendCallback);
-        select.addEventListener('click', sendCallback);
+        select.addEventListener('blur', runCallback);
+        select.addEventListener('click', runCallback);
         select.addEventListener('keyup', function(event) {
           var keycodeInterested = [
             9,  // Tab
@@ -61,7 +62,7 @@ cr.define('cr.ui.Oobe', function() {
             27,  // Escape
           ];
           if (keycodeInterested.indexOf(event.keyCode) >= 0)
-            sendCallback();
+            runCallback();
         });
       }
     },
@@ -78,6 +79,7 @@ cr.define('cr.ui.Oobe', function() {
       login.EulaScreen.register();
       login.UpdateScreen.register();
       login.AutoEnrollmentCheckScreen.register();
+      login.EnableDebuggingScreen.register();
       login.ResetScreen.register();
       login.AutolaunchScreen.register();
       login.KioskEnableScreen.register();
@@ -278,9 +280,9 @@ cr.define('cr.ui.Oobe', function() {
       i18nTemplate.process(document, loadTimeData);
 
       // Update language and input method menu lists.
-      Oobe.setupSelect($('language-select'), data.languageList, '');
-      Oobe.setupSelect($('keyboard-select'), data.inputMethodsList, '');
-      Oobe.setupSelect($('timezone-select'), data.timezoneList, '');
+      Oobe.setupSelect($('language-select'), data.languageList);
+      Oobe.setupSelect($('keyboard-select'), data.inputMethodsList);
+      Oobe.setupSelect($('timezone-select'), data.timezoneList);
 
       // Update localized content of the screens.
       Oobe.updateLocalizedContent();

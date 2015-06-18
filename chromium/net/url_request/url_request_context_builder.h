@@ -21,21 +21,30 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "build/build_config.h"
 #include "net/base/net_export.h"
 #include "net/base/network_delegate.h"
 #include "net/dns/host_resolver.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
+#include "net/quic/quic_protocol.h"
 #include "net/socket/next_proto.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace net {
 
+class ChannelIDService;
+class CookieStore;
 class FtpTransactionFactory;
 class HostMappingRules;
 class HttpAuthHandlerFactory;
 class ProxyConfigService;
 class URLRequestContext;
+class URLRequestInterceptor;
 
 class NET_EXPORT URLRequestContextBuilder {
  public:
@@ -63,7 +72,7 @@ class NET_EXPORT URLRequestContextBuilder {
     HttpNetworkSessionParams();
     ~HttpNetworkSessionParams();
 
-    // These fields mirror those in net::HttpNetworkSession::Params;
+    // These fields mirror those in HttpNetworkSession::Params;
     bool ignore_certificate_errors;
     HostMappingRules* host_mapping_rules;
     uint16 testing_fixed_http_port;
@@ -72,6 +81,7 @@ class NET_EXPORT URLRequestContextBuilder {
     std::string trusted_spdy_proxy;
     bool use_alternate_protocols;
     bool enable_quic;
+    QuicTagVector quic_connection_options;
   };
 
   URLRequestContextBuilder();
@@ -133,13 +143,12 @@ class NET_EXPORT URLRequestContextBuilder {
     network_delegate_.reset(delegate);
   }
 
-
   // Adds additional auth handler factories to be used in addition to what is
   // provided in the default |HttpAuthHandlerRegistryFactory|. The auth |scheme|
   // and |factory| are provided. The builder takes ownership of the factory and
   // Build() must be called after this method.
   void add_http_auth_handler_factory(const std::string& scheme,
-                                     net::HttpAuthHandlerFactory* factory) {
+                                     HttpAuthHandlerFactory* factory) {
     extra_http_auth_handlers_.push_back(SchemeFactory(scheme, factory));
   }
 
@@ -147,7 +156,7 @@ class NET_EXPORT URLRequestContextBuilder {
   void EnableHttpCache(const HttpCacheParams& params);
   void DisableHttpCache();
 
-  // Override default net::HttpNetworkSession::Params settings.
+  // Override default HttpNetworkSession::Params settings.
   void set_http_network_session_params(
       const HttpNetworkSessionParams& http_network_session_params) {
     http_network_session_params_ = http_network_session_params;
@@ -162,24 +171,51 @@ class NET_EXPORT URLRequestContextBuilder {
   void SetSpdyAndQuicEnabled(bool spdy_enabled,
                              bool quic_enabled);
 
+  void set_quic_connection_options(
+      const QuicTagVector& quic_connection_options) {
+    http_network_session_params_.quic_connection_options =
+        quic_connection_options;
+  }
+
   void set_throttling_enabled(bool throttling_enabled) {
     throttling_enabled_ = throttling_enabled;
   }
 
-  void set_channel_id_enabled(bool enable) {
-    channel_id_enabled_ = enable;
-  }
+  void SetInterceptors(
+      ScopedVector<URLRequestInterceptor> url_request_interceptors);
+
+  // Override the default in-memory cookie store and channel id service.
+  // |cookie_store| must not be NULL. |channel_id_service| may be NULL to
+  // disable channel id for this context.
+  // Note that a persistent cookie store should not be used with an in-memory
+  // channel id service, and one cookie store should not be shared between
+  // multiple channel-id stores (or used both with and without a channel id
+  // store).
+  void SetCookieAndChannelIdStores(
+      const scoped_refptr<CookieStore>& cookie_store,
+      scoped_ptr<ChannelIDService> channel_id_service);
+
+  // Sets the task runner used to perform file operations. If not set, one will
+  // be created.
+  void SetFileTaskRunner(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+
+  // Note that if SDCH is enabled without a policy object observing
+  // the SDCH manager and handling at least Get-Dictionary events, the
+  // result will be "Content-Encoding: sdch" advertisements, but no
+  // dictionaries fetches and no specific dictionaries advertised.
+  // SdchOwner in net/sdch/sdch_owner.h is a simple policy object.
+  void set_sdch_enabled(bool enable) { sdch_enabled_ = enable; }
 
   URLRequestContext* Build();
 
  private:
   struct NET_EXPORT SchemeFactory {
-    SchemeFactory(const std::string& scheme,
-                  net::HttpAuthHandlerFactory* factory);
+    SchemeFactory(const std::string& scheme, HttpAuthHandlerFactory* factory);
     ~SchemeFactory();
 
     std::string scheme;
-    net::HttpAuthHandlerFactory* factory;
+    HttpAuthHandlerFactory* factory;
   };
 
   std::string accept_language_;
@@ -196,18 +232,22 @@ class NET_EXPORT URLRequestContextBuilder {
 #endif
   bool http_cache_enabled_;
   bool throttling_enabled_;
-  bool channel_id_enabled_;
+  bool sdch_enabled_;
 
+  scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
   HttpCacheParams http_cache_params_;
   HttpNetworkSessionParams http_network_session_params_;
   base::FilePath transport_security_persister_path_;
   scoped_ptr<NetLog> net_log_;
   scoped_ptr<HostResolver> host_resolver_;
+  scoped_ptr<ChannelIDService> channel_id_service_;
   scoped_ptr<ProxyConfigService> proxy_config_service_;
   scoped_ptr<ProxyService> proxy_service_;
   scoped_ptr<NetworkDelegate> network_delegate_;
+  scoped_refptr<CookieStore> cookie_store_;
   scoped_ptr<FtpTransactionFactory> ftp_transaction_factory_;
   std::vector<SchemeFactory> extra_http_auth_handlers_;
+  ScopedVector<URLRequestInterceptor> url_request_interceptors_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestContextBuilder);
 };

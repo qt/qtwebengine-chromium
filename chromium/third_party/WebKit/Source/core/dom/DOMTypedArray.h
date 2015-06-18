@@ -6,6 +6,7 @@
 #define DOMTypedArray_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "wtf/Float32Array.h"
 #include "wtf/Float64Array.h"
@@ -22,33 +23,32 @@ namespace blink {
 
 template<typename WTFTypedArray, typename V8TypedArray>
 class DOMTypedArray final : public DOMArrayBufferView {
-    DEFINE_WRAPPERTYPEINFO();
     typedef DOMTypedArray<WTFTypedArray, V8TypedArray> ThisType;
+    DECLARE_WRAPPERTYPEINFO();
 public:
     typedef typename WTFTypedArray::ValueType ValueType;
 
     static PassRefPtr<ThisType> create(PassRefPtr<WTFTypedArray> bufferView)
     {
-        if (!bufferView.get())
-            return nullptr;
         return adoptRef(new ThisType(bufferView));
     }
     static PassRefPtr<ThisType> create(unsigned length)
     {
-        return adoptRef(new ThisType(WTFTypedArray::create(length)));
+        return create(WTFTypedArray::create(length));
     }
     static PassRefPtr<ThisType> create(const ValueType* array, unsigned length)
     {
-        return adoptRef(new ThisType(WTFTypedArray::create(array, length)));
+        return create(WTFTypedArray::create(array, length));
     }
     static PassRefPtr<ThisType> create(PassRefPtr<WTF::ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
     {
-        return adoptRef(new ThisType(WTFTypedArray::create(buffer, byteOffset, length)));
+        return create(WTFTypedArray::create(buffer, byteOffset, length));
     }
     static PassRefPtr<ThisType> create(PassRefPtr<DOMArrayBuffer> prpBuffer, unsigned byteOffset, unsigned length)
     {
         RefPtr<DOMArrayBuffer> buffer = prpBuffer;
-        return adoptRef(new ThisType(WTFTypedArray::create(buffer->buffer(), byteOffset, length), buffer));
+        RefPtr<WTFTypedArray> bufferView = WTFTypedArray::create(buffer->buffer(), byteOffset, length);
+        return adoptRef(new ThisType(bufferView.release(), buffer.release()));
     }
 
     const WTFTypedArray* view() const { return static_cast<const WTFTypedArray*>(DOMArrayBufferView::view()); }
@@ -56,9 +56,20 @@ public:
 
     ValueType* data() const { return view()->data(); }
     unsigned length() const { return view()->length(); }
+    bool setRange(const ValueType* data, size_t dataLength, unsigned offset)
+    {
+        return view()->setRange(data, dataLength, offset);
+    }
+    bool zeroRange(unsigned offset, size_t length)
+    {
+        return view()->zeroRange(offset, length);
+    }
+    // Invoked by the indexed getter. Does not perform range checks; caller
+    // is responsible for doing so and returning undefined as necessary.
+    ValueType item(unsigned index) const { return view()->item(index); }
 
-    virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
-    virtual v8::Handle<v8::Object> associateWithWrapper(const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper, v8::Isolate*) override;
+    virtual v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override;
+    virtual v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override;
 
 private:
     explicit DOMTypedArray(PassRefPtr<WTFTypedArray> bufferView)
@@ -66,6 +77,16 @@ private:
     DOMTypedArray(PassRefPtr<WTFTypedArray> bufferView, PassRefPtr<DOMArrayBuffer> domArrayBuffer)
         : DOMArrayBufferView(bufferView, domArrayBuffer) { }
 };
+
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Int8Array, v8::Int8Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Int16Array, v8::Int16Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Int32Array, v8::Int32Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Uint8Array, v8::Uint8Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Uint8ClampedArray, v8::Uint8ClampedArray>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Uint16Array, v8::Uint16Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Uint32Array, v8::Uint32Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Float32Array, v8::Float32Array>;
+extern template class CORE_TEMPLATE_EXPORT DOMTypedArray<WTF::Float64Array, v8::Float64Array>;
 
 typedef DOMTypedArray<WTF::Int8Array, v8::Int8Array> DOMInt8Array;
 typedef DOMTypedArray<WTF::Int16Array, v8::Int16Array> DOMInt16Array;

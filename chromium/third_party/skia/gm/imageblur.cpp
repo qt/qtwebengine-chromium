@@ -23,19 +23,16 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         return fName;
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(WIDTH, HEIGHT);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setImageFilter(SkBlurImageFilter::Create(fSigmaX, fSigmaY))->unref();
         canvas->saveLayer(NULL, &paint);

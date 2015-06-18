@@ -6,7 +6,9 @@
 
 #include <errno.h>
 #include <sched.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -22,7 +24,8 @@
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
-#include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/services/syscall_wrappers.h"
+#include "sandbox/linux/system_headers/linux_syscalls.h"
 #include "sandbox/linux/tests/unit_tests.h"
 
 #if !defined(OS_ANDROID)
@@ -89,12 +92,12 @@ class ClockSystemTesterDelegate : public sandbox::BPFTesterDelegate {
  public:
   ClockSystemTesterDelegate()
       : is_running_on_chromeos_(base::SysInfo::IsRunningOnChromeOS()) {}
-  virtual ~ClockSystemTesterDelegate() {}
+  ~ClockSystemTesterDelegate() override {}
 
-  virtual scoped_ptr<sandbox::bpf_dsl::Policy> GetSandboxBPFPolicy() override {
+  scoped_ptr<sandbox::bpf_dsl::Policy> GetSandboxBPFPolicy() override {
     return scoped_ptr<sandbox::bpf_dsl::Policy>(new RestrictClockIdPolicy());
   }
-  virtual void RunTestFunction() override {
+  void RunTestFunction() override {
     if (is_running_on_chromeos_) {
       CheckClock(base::TimeTicks::kClockSystemTrace);
     } else {
@@ -163,7 +166,7 @@ void CheckSchedGetParam(pid_t pid, struct sched_param* param) {
 
 void SchedGetParamThread(base::WaitableEvent* thread_run) {
   const pid_t pid = getpid();
-  const pid_t tid = syscall(__NR_gettid);
+  const pid_t tid = sys_gettid();
   BPF_ASSERT_NE(pid, tid);
 
   struct sched_param current_pid_param;
@@ -206,6 +209,63 @@ BPF_DEATH_TEST_C(ParameterRestrictions,
   const pid_t kInitPID = 1;
   struct sched_param param;
   sched_getparam(kInitPID, &param);
+}
+
+class RestrictPrlimit64Policy : public bpf_dsl::Policy {
+ public:
+  RestrictPrlimit64Policy() {}
+  ~RestrictPrlimit64Policy() override {}
+
+  ResultExpr EvaluateSyscall(int sysno) const override {
+    switch (sysno) {
+      case __NR_prlimit64:
+        return RestrictPrlimit64(getpid());
+      default:
+        return Allow();
+    }
+  }
+};
+
+BPF_TEST_C(ParameterRestrictions, prlimit64_allowed, RestrictPrlimit64Policy) {
+  BPF_ASSERT_EQ(0, sys_prlimit64(0, RLIMIT_AS, NULL, NULL));
+  BPF_ASSERT_EQ(0, sys_prlimit64(getpid(), RLIMIT_AS, NULL, NULL));
+}
+
+BPF_DEATH_TEST_C(ParameterRestrictions,
+                 prlimit64_crash_not_self,
+                 DEATH_SEGV_MESSAGE(sandbox::GetErrorMessageContentForTests()),
+                 RestrictPrlimit64Policy) {
+  const pid_t kInitPID = 1;
+  BPF_ASSERT_NE(kInitPID, getpid());
+  sys_prlimit64(kInitPID, RLIMIT_AS, NULL, NULL);
+}
+
+class RestrictGetrusagePolicy : public bpf_dsl::Policy {
+ public:
+  RestrictGetrusagePolicy() {}
+  ~RestrictGetrusagePolicy() override {}
+
+  ResultExpr EvaluateSyscall(int sysno) const override {
+    switch (sysno) {
+      case __NR_getrusage:
+        return RestrictGetrusage();
+      default:
+        return Allow();
+    }
+  }
+};
+
+BPF_TEST_C(ParameterRestrictions, getrusage_allowed, RestrictGetrusagePolicy) {
+  struct rusage usage;
+  BPF_ASSERT_EQ(0, getrusage(RUSAGE_SELF, &usage));
+}
+
+BPF_DEATH_TEST_C(ParameterRestrictions,
+                 getrusage_crash_not_self,
+                 DEATH_SEGV_MESSAGE(sandbox::GetErrorMessageContentForTests()),
+                 RestrictGetrusagePolicy) {
+  struct rusage usage;
+  getrusage(RUSAGE_CHILDREN, &usage);
 }
 
 }  // namespace

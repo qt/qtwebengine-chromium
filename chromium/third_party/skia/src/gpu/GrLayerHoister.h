@@ -11,16 +11,17 @@
 #include "SkPicture.h"
 #include "SkTDArray.h"
 
-class GrAccelData;
 struct GrCachedLayer;
 class GrReplacements;
+class SkGpuDevice;
 struct SkRect;
 
 class GrHoistedLayer {
 public:
-    const SkPicture* fPicture;
+    const SkPicture* fPicture;  // the picture that actually contains the layer
+                                // (not necessarily the top-most picture)
     GrCachedLayer*   fLayer;
-    SkIPoint         fOffset;
+    SkMatrix         fInitialMat;
     SkMatrix         fPreMat;
     SkMatrix         fLocalMat;
 };
@@ -37,31 +38,39 @@ public:
         layers can be inside nested sub-pictures.
         @param context    Owner of the layer cache (the source of new layers)
         @param topLevelPicture The top-level picture that is about to be rendered
+        @param initialMat  The CTM of the canvas into which the layers will be drawn
         @param query       The rectangle that is about to be drawn.
         @param atlasedNeedRendering Out parameter storing the layers that 
                                     should be hoisted to the atlas
         @param recycled    Out parameter storing layers that are atlased but do not need rendering
+        @param numSamples  The number if MSAA samples required
         */
     static void FindLayersToAtlas(GrContext* context,
                                   const SkPicture* topLevelPicture,
+                                  const SkMatrix& initialMat,
                                   const SkRect& query,
                                   SkTDArray<GrHoistedLayer>* atlasedNeedRendering,
-                                  SkTDArray<GrHoistedLayer>* recycled);
+                                  SkTDArray<GrHoistedLayer>* recycled,
+                                  int numSamples);
 
     /** Find the layers in 'topLevelPicture' that need hoisting. Note that the discovered
         layers can be inside nested sub-pictures.
         @param context    Owner of the layer cache (the source of new layers)
         @param topLevelPicture The top-level picture that is about to be rendered
+        @param initialMat  The CTM of the canvas into which the layers will be drawn
         @param query       The rectangle that is about to be drawn.
         @param needRendering Out parameter storing the layers that need rendering.
                              This should never include atlased layers.
         @param recycled    Out parameter storing layers that need hoisting but not rendering
+        @param numSamples  The number if MSAA samples required
     */
     static void FindLayersToHoist(GrContext* context,
                                   const SkPicture* topLevelPicture,
+                                  const SkMatrix& initialMat,
                                   const SkRect& query,
                                   SkTDArray<GrHoistedLayer>* needRendering,
-                                  SkTDArray<GrHoistedLayer>* recycled);
+                                  SkTDArray<GrHoistedLayer>* recycled,
+                                  int numSamples);
 
     /** Draw the specified layers into the atlas.
         @param context      Owner of the layer cache (and thus the layers)
@@ -79,7 +88,8 @@ public:
         @param layers       The hoisted layers
         @param replacements Replacement object that will be used for a replacement draw
     */
-    static void ConvertLayersToReplacements(const SkTDArray<GrHoistedLayer>& layers,
+    static void ConvertLayersToReplacements(const SkPicture* topLevelPicture, 
+                                            const SkTDArray<GrHoistedLayer>& layers,
                                             GrReplacements* replacements);
 
     /** Unlock a group of layers in the layer cache.
@@ -93,6 +103,15 @@ public:
         @param context    Owner of the layer cache (and thus the layers)
      */
     static void PurgeCache(GrContext* context);
+
+private:
+    /** Update the GrTexture in 'layer' with its filtered version
+        @param context    Owner of the layer cache (and thus the layers)
+        @param device     Required by the filtering code
+        @param info       Layer info for a layer needing filtering prior to being composited
+     */
+    static void FilterLayer(GrContext* context, SkGpuDevice* device, const GrHoistedLayer& info);
+
 };
 
 #endif

@@ -9,7 +9,7 @@
 #include "base/callback.h"
 #include "base/callback_forward.h"
 #include "content/common/content_export.h"
-#include "ui/gfx/vector2d_f.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace ui {
 struct LatencyInfo;
@@ -58,4 +58,4 @@ class CONTENT_EXPORT InputHandlerManagerClient {
 
 }  // namespace content
 
-#endif  // CONTENT_COMMON_GPU_INPUT_HANDLER_MANAGER_CLIENT_H_
+#endif  // CONTENT_RENDERER_INPUT_INPUT_HANDLER_MANAGER_CLIENT_H_

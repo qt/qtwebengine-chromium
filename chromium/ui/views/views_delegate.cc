@@ -4,17 +4,18 @@
 
 #include "ui/views/views_delegate.h"
 
+#include "base/command_line.h"
 #include "ui/views/views_touch_selection_controller_factory.h"
 
 namespace views {
 
 ViewsDelegate::ViewsDelegate()
-    : views_tsc_factory_(new ViewsTouchSelectionControllerFactory) {
-  ui::TouchSelectionControllerFactory::SetInstance(views_tsc_factory_.get());
+    : views_tsc_factory_(new ViewsTouchEditingControllerFactory) {
+  ui::TouchEditingControllerFactory::SetInstance(views_tsc_factory_.get());
 }
 
 ViewsDelegate::~ViewsDelegate() {
-  ui::TouchSelectionControllerFactory::SetInstance(NULL);
+  ui::TouchEditingControllerFactory::SetInstance(NULL);
 }
 
 void ViewsDelegate::SaveWindowPlacement(const Widget* widget,
@@ -81,9 +82,19 @@ bool ViewsDelegate::WindowManagerProvidesTitleBar(bool maximized) {
   return false;
 }
 
-#if defined(USE_AURA)
 ui::ContextFactory* ViewsDelegate::GetContextFactory() {
   return NULL;
+}
+
+std::string ViewsDelegate::GetApplicationName() {
+  base::FilePath program = base::CommandLine::ForCurrentProcess()->GetProgram();
+  return program.BaseName().AsUTF8Unsafe();
+}
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+scoped_refptr<base::TaskRunner>
+    ViewsDelegate::GetTaskRunnerForAuraLinuxAccessibilityInit() {
+  return nullptr;
 }
 #endif
 

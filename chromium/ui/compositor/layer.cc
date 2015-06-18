@@ -6,11 +6,13 @@
 
 #include <algorithm>
 
+#include "base/auto_reset.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/json/json_writer.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/scoped_ptr_algorithm.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/delegated_renderer_layer.h"
@@ -27,13 +29,14 @@
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/gfx/animation/animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/interpolated_transform.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/point_conversions.h"
-#include "ui/gfx/size_conversions.h"
 
 namespace {
 
@@ -245,7 +248,7 @@ void Layer::SetBounds(const gfx::Rect& bounds) {
   GetAnimator()->SetBounds(bounds);
 }
 
-void Layer::SetSubpixelPositionOffset(const gfx::Vector2dF offset) {
+void Layer::SetSubpixelPositionOffset(const gfx::Vector2dF& offset) {
   subpixel_position_offset_ = offset;
   RecomputePosition();
 }
@@ -539,6 +542,9 @@ void Layer::SetTextureMailbox(
     new_layer->SetFlipped(true);
     SwitchToLayer(new_layer);
     texture_layer_ = new_layer;
+    // Reset the frame_size_in_dip_ so that SetTextureSize() will not early out,
+    // the frame_size_in_dip_ was for a previous (different) |texture_layer_|.
+    frame_size_in_dip_ = gfx::Size();
   }
   if (mailbox_release_callback_)
     mailbox_release_callback_->Run(0, false);
@@ -554,6 +560,16 @@ void Layer::SetTextureSize(gfx::Size texture_size_in_dip) {
   frame_size_in_dip_ = texture_size_in_dip;
   RecomputeDrawsContentAndUVRect();
   texture_layer_->SetNeedsDisplay();
+}
+
+void Layer::SetTextureFlipped(bool flipped) {
+  DCHECK(texture_layer_.get());
+  texture_layer_->SetFlipped(flipped);
+}
+
+bool Layer::TextureFlipped() const {
+  DCHECK(texture_layer_.get());
+  return texture_layer_->flipped();
 }
 
 void Layer::SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
@@ -574,12 +590,13 @@ void Layer::SetShowSurface(
     const cc::SurfaceLayer::SatisfyCallback& satisfy_callback,
     const cc::SurfaceLayer::RequireCallback& require_callback,
     gfx::Size surface_size,
+    float scale,
     gfx::Size frame_size_in_dip) {
   DCHECK(type_ == LAYER_TEXTURED || type_ == LAYER_SOLID_COLOR);
 
   scoped_refptr<cc::SurfaceLayer> new_layer =
       cc::SurfaceLayer::Create(satisfy_callback, require_callback);
-  new_layer->SetSurfaceId(surface_id, surface_size);
+  new_layer->SetSurfaceId(surface_id, scale, surface_size);
   SwitchToLayer(new_layer);
   surface_layer_ = new_layer;
 
@@ -605,8 +622,11 @@ void Layer::SetShowSolidColorContent() {
   RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap) {
+void Layer::UpdateNinePatchLayerImage(const gfx::ImageSkia& image) {
   DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
+  nine_patch_layer_image_ = image;
+  SkBitmap bitmap = nine_patch_layer_image_.GetRepresentation(
+      device_scale_factor_).sk_bitmap();
   SkBitmap bitmap_copy;
   if (bitmap.isImmutable()) {
     bitmap_copy = bitmap;
@@ -618,9 +638,11 @@ void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap) {
   nine_patch_layer_->SetBitmap(bitmap_copy);
 }
 
-void Layer::UpdateNinePatchLayerAperture(const gfx::Rect& aperture) {
+void Layer::UpdateNinePatchLayerAperture(const gfx::Rect& aperture_in_dip) {
   DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
-  nine_patch_layer_->SetAperture(aperture);
+  nine_patch_layer_aperture_ = aperture_in_dip;
+  gfx::Rect aperture_in_pixel = ConvertRectToPixel(this, aperture_in_dip);
+  nine_patch_layer_->SetAperture(aperture_in_pixel);
 }
 
 void Layer::UpdateNinePatchLayerBorder(const gfx::Rect& border) {
@@ -630,16 +652,22 @@ void Layer::UpdateNinePatchLayerBorder(const gfx::Rect& border) {
 
 void Layer::SetColor(SkColor color) { GetAnimator()->SetColor(color); }
 
+SkColor Layer::GetTargetColor() {
+  if (GetAnimator()->IsAnimatingProperty(LayerAnimationElement::COLOR))
+    return GetAnimator()->GetTargetColor();
+  return cc_layer_->background_color();
+}
+
+SkColor Layer::background_color() const {
+  return cc_layer_->background_color();
+}
+
 bool Layer::SchedulePaint(const gfx::Rect& invalid_rect) {
   if ((type_ == LAYER_SOLID_COLOR && !texture_layer_.get()) ||
       type_ == LAYER_NINE_PATCH || (!delegate_ && !mailbox_.IsValid()))
     return false;
 
-  damaged_region_.op(invalid_rect.x(),
-                     invalid_rect.y(),
-                     invalid_rect.right(),
-                     invalid_rect.bottom(),
-                     SkRegion::kUnion_Op);
+  damaged_region_.Union(invalid_rect);
   ScheduleDraw();
   return true;
 }
@@ -651,20 +679,17 @@ void Layer::ScheduleDraw() {
 }
 
 void Layer::SendDamagedRects() {
-  if ((delegate_ || mailbox_.IsValid()) && !damaged_region_.isEmpty()) {
-    for (SkRegion::Iterator iter(damaged_region_); !iter.done(); iter.next()) {
-      const SkIRect& sk_damaged = iter.rect();
-      gfx::Rect damaged(
-          sk_damaged.x(),
-          sk_damaged.y(),
-          sk_damaged.width(),
-          sk_damaged.height());
-      cc_layer_->SetNeedsDisplayRect(damaged);
-    }
-    damaged_region_.setEmpty();
-  }
-  for (size_t i = 0; i < children_.size(); ++i)
-    children_[i]->SendDamagedRects();
+  if (damaged_region_.IsEmpty())
+    return;
+  if (!delegate_ && !mailbox_.IsValid())
+    return;
+
+  for (cc::Region::Iterator iter(damaged_region_); iter.has_rect(); iter.next())
+    cc_layer_->SetNeedsDisplayRect(iter.rect());
+}
+
+void Layer::ClearDamagedRects() {
+  damaged_region_.Clear();
 }
 
 void Layer::CompleteAllAnimations() {
@@ -694,6 +719,10 @@ void Layer::OnDeviceScaleFactorChanged(float device_scale_factor) {
   device_scale_factor_ = device_scale_factor;
   RecomputeDrawsContentAndUVRect();
   RecomputePosition();
+  if (nine_patch_layer_) {
+    UpdateNinePatchLayerImage(nine_patch_layer_image_);
+    UpdateNinePatchLayerAperture(nine_patch_layer_aperture_);
+  }
   SchedulePaint(gfx::Rect(bounds_.size()));
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
@@ -714,14 +743,32 @@ void Layer::RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request) {
   cc_layer_->RequestCopyOfOutput(request.Pass());
 }
 
-void Layer::PaintContents(SkCanvas* sk_canvas,
-                          const gfx::Rect& clip,
-                          ContentLayerClient::GraphicsContextStatus gc_status) {
-  TRACE_EVENT0("ui", "Layer::PaintContents");
-  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
-      sk_canvas, device_scale_factor_));
-  if (delegate_)
-    delegate_->OnPaintLayer(canvas.get());
+void Layer::PaintContents(
+    SkCanvas* sk_canvas,
+    const gfx::Rect& clip,
+    ContentLayerClient::PaintingControlSetting painting_control) {
+  TRACE_EVENT1("ui", "Layer::PaintContents", "name", name_);
+  ClearDamagedRects();
+  if (delegate_) {
+    gfx::Canvas canvas(sk_canvas, device_scale_factor_);
+    delegate_->OnPaintLayer(PaintContext(&canvas, clip));
+  }
+}
+
+void Layer::PaintContentsToDisplayList(
+    cc::DisplayItemList* display_list,
+    const gfx::Rect& clip,
+    ContentLayerClient::PaintingControlSetting painting_control) {
+  TRACE_EVENT1("ui", "Layer::PaintContentsToDisplayList", "name", name_);
+  gfx::Rect local_bounds(bounds().size());
+  gfx::Rect invalidation(
+      gfx::IntersectRects(damaged_region_.bounds(), local_bounds));
+  DCHECK(clip.Contains(invalidation));
+  ClearDamagedRects();
+  if (!delegate_)
+    return;
+  delegate_->OnPaintLayer(
+      PaintContext(display_list, device_scale_factor_, clip, invalidation));
 }
 
 bool Layer::FillsBoundsCompletely() const { return fills_bounds_completely_; }
@@ -745,7 +792,7 @@ void Layer::SetForceRenderSurface(bool force) {
   cc_layer_->SetForceRenderSurface(force_render_surface_);
 }
 
-class LayerDebugInfo : public base::debug::ConvertableToTraceFormat {
+class LayerDebugInfo : public base::trace_event::ConvertableToTraceFormat {
  public:
   explicit LayerDebugInfo(std::string name) : name_(name) { }
   void AppendAsTraceFormat(std::string* out) const override {
@@ -759,7 +806,8 @@ class LayerDebugInfo : public base::debug::ConvertableToTraceFormat {
   std::string name_;
 };
 
-scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+Layer::TakeDebugInfo() {
   return new LayerDebugInfo(name_);
 }
 

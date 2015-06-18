@@ -35,7 +35,7 @@ VCMPacket::VCMPacket()
 }
 
 VCMPacket::VCMPacket(const uint8_t* ptr,
-                     const uint32_t size,
+                     const size_t size,
                      const WebRtcRTPHeader& rtpHeader) :
     payloadType(rtpHeader.header.payloadType),
     timestamp(rtpHeader.header.timestamp),
@@ -57,7 +57,11 @@ VCMPacket::VCMPacket(const uint8_t* ptr,
     CopyCodecSpecifics(rtpHeader.type.Video);
 }
 
-VCMPacket::VCMPacket(const uint8_t* ptr, uint32_t size, uint16_t seq, uint32_t ts, bool mBit) :
+VCMPacket::VCMPacket(const uint8_t* ptr,
+                     size_t size,
+                     uint16_t seq,
+                     uint32_t ts,
+                     bool mBit) :
     payloadType(0),
     timestamp(ts),
     ntp_time_ms_(0),
@@ -95,6 +99,9 @@ void VCMPacket::Reset() {
 }
 
 void VCMPacket::CopyCodecSpecifics(const RTPVideoHeader& videoHeader) {
+  if (markerBit) {
+    codecSpecificHeader.rotation = videoHeader.rotation;
+  }
   switch (videoHeader.codec) {
     case kRtpVideoVp8:
       // Handle all packets within a frame as depending on the previous packet
@@ -116,7 +123,7 @@ void VCMPacket::CopyCodecSpecifics(const RTPVideoHeader& videoHeader) {
       if (isFirstPacket)
         insertStartCode = true;
 
-      if (videoHeader.codecHeader.H264.single_nalu) {
+      if (isFirstPacket && markerBit) {
         completeNALU = kNaluComplete;
       } else if (isFirstPacket) {
         completeNALU = kNaluStart;

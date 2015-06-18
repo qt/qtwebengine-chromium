@@ -47,7 +47,8 @@ PP_CompletionCallback MakeCallback() {
 PP_Var MakeStringVar(const std::string& string) {
   if (!ppb_var_)
     ppb_var_ = ppapi::PPB_Var_Shared::GetVarInterface1_2();
-  return ppb_var_->VarFromUtf8(string.c_str(), string.length());
+  return ppb_var_->VarFromUtf8(string.c_str(),
+                               static_cast<uint32_t>(string.length()));
 }
 
 }  // namespace
@@ -77,9 +78,9 @@ TEST_F(WebSocketResourceTest, Connect) {
       PpapiHostMsg_WebSocket_Connect::ID, &params, &msg));
   PpapiHostMsg_WebSocket_Connect::Schema::Param p;
   PpapiHostMsg_WebSocket_Connect::Read(&msg, &p);
-  EXPECT_EQ(url, p.a);
-  EXPECT_EQ(protocol0, p.b[0]);
-  EXPECT_EQ(protocol1, p.b[1]);
+  EXPECT_EQ(url, get<0>(p));
+  EXPECT_EQ(protocol0, get<1>(p)[0]);
+  EXPECT_EQ(protocol1, get<1>(p)[1]);
 
   // Synthesize a response.
   ResourceMessageReplyParams reply_params(params.pp_resource(),

@@ -30,9 +30,8 @@ SkMatrixConvolutionImageFilter::SkMatrixConvolutionImageFilter(
     TileMode tileMode,
     bool convolveAlpha,
     SkImageFilter* input,
-    const CropRect* cropRect,
-    uint32_t uniqueID)
-  : INHERITED(1, &input, cropRect, uniqueID),
+    const CropRect* cropRect)
+  : INHERITED(1, &input, cropRect),
     fKernelSize(kernelSize),
     fGain(gain),
     fBias(bias),
@@ -56,8 +55,7 @@ SkMatrixConvolutionImageFilter* SkMatrixConvolutionImageFilter::Create(
     TileMode tileMode,
     bool convolveAlpha,
     SkImageFilter* input,
-    const CropRect* cropRect,
-    uint32_t uniqueID) {
+    const CropRect* cropRect) {
     if (kernelSize.width() < 1 || kernelSize.height() < 1) {
         return NULL;
     }
@@ -67,54 +65,14 @@ SkMatrixConvolutionImageFilter* SkMatrixConvolutionImageFilter::Create(
     if (!kernel) {
         return NULL;
     }
+    if ((kernelOffset.fX < 0) || (kernelOffset.fX >= kernelSize.fWidth) ||
+        (kernelOffset.fY < 0) || (kernelOffset.fY >= kernelSize.fHeight)) {
+        return NULL;
+    }
     return SkNEW_ARGS(SkMatrixConvolutionImageFilter, (kernelSize, kernel, gain, bias,
                                                        kernelOffset, tileMode, convolveAlpha,
-                                                       input, cropRect, uniqueID));
+                                                       input, cropRect));
 }
-
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-static bool tile_mode_is_valid(SkMatrixConvolutionImageFilter::TileMode tileMode) {
-    switch (tileMode) {
-        case SkMatrixConvolutionImageFilter::kClamp_TileMode:
-        case SkMatrixConvolutionImageFilter::kRepeat_TileMode:
-        case SkMatrixConvolutionImageFilter::kClampToBlack_TileMode:
-            return true;
-        default:
-            break;
-    }
-    return false;
-}
-
-SkMatrixConvolutionImageFilter::SkMatrixConvolutionImageFilter(SkReadBuffer& buffer)
-    : INHERITED(1, buffer) {
-    fKernelSize.fWidth = buffer.readInt();
-    fKernelSize.fHeight = buffer.readInt();
-    if ((fKernelSize.fWidth >= 1) && (fKernelSize.fHeight >= 1) &&
-        // Make sure size won't be larger than a signed int,
-        // which would still be extremely large for a kernel,
-        // but we don't impose a hard limit for kernel size
-        (gMaxKernelSize / fKernelSize.fWidth >= fKernelSize.fHeight)) {
-        size_t size = fKernelSize.fWidth * fKernelSize.fHeight;
-        fKernel = SkNEW_ARRAY(SkScalar, size);
-        SkDEBUGCODE(bool success =) buffer.readScalarArray(fKernel, size);
-        SkASSERT(success);
-    } else {
-        fKernel = 0;
-    }
-    fGain = buffer.readScalar();
-    fBias = buffer.readScalar();
-    fKernelOffset.fX = buffer.readInt();
-    fKernelOffset.fY = buffer.readInt();
-    fTileMode = (TileMode) buffer.readInt();
-    fConvolveAlpha = buffer.readBool();
-    buffer.validate((fKernel != 0) &&
-                    SkScalarIsFinite(fGain) &&
-                    SkScalarIsFinite(fBias) &&
-                    tile_mode_is_valid(fTileMode) &&
-                    (fKernelOffset.fX >= 0) && (fKernelOffset.fX < fKernelSize.fWidth) &&
-                    (fKernelOffset.fY >= 0) && (fKernelOffset.fY < fKernelSize.fHeight));
-}
-#endif
 
 SkFlattenable* SkMatrixConvolutionImageFilter::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 1);
@@ -139,7 +97,7 @@ SkFlattenable* SkMatrixConvolutionImageFilter::CreateProc(SkReadBuffer& buffer) 
     TileMode tileMode = (TileMode)buffer.readInt();
     bool convolveAlpha = buffer.readBool();
     return Create(kernelSize, kernel.get(), gain, bias, kernelOffset, tileMode, convolveAlpha,
-                  common.getInput(0), &common.cropRect(), common.uniqueID());
+                  common.getInput(0), &common.cropRect());
 }
 
 void SkMatrixConvolutionImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -407,5 +365,22 @@ bool SkMatrixConvolutionImageFilter::asFragmentProcessor(GrFragmentProcessor** f
                                             convert_tilemodes(fTileMode),
                                             fConvolveAlpha);
     return true;
+}
+#endif
+
+#ifndef SK_IGNORE_TO_STRING
+void SkMatrixConvolutionImageFilter::toString(SkString* str) const {
+    str->appendf("SkMatrixConvolutionImageFilter: (");
+    str->appendf("size: (%d,%d) kernel: (", fKernelSize.width(), fKernelSize.height());
+    for (int y = 0; y < fKernelSize.height(); y++) {
+        for (int x = 0; x < fKernelSize.width(); x++) {
+            str->appendf("%f ", fKernel[y * fKernelSize.width() + x]);
+        }
+    }
+    str->appendf(")");
+    str->appendf("gain: %f bias: %f ", fGain, fBias);
+    str->appendf("offset: (%d, %d) ", fKernelOffset.fX, fKernelOffset.fY);
+    str->appendf("convolveAlpha: %s", fConvolveAlpha ? "true" : "false");
+    str->append(")");
 }
 #endif

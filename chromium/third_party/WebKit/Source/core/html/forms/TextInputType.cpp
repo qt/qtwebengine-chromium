@@ -61,14 +61,15 @@ const AtomicString& TextInputType::formControlType() const
     return InputTypeNames::text;
 }
 
-bool TextInputType::shouldRespectSpeechAttribute()
+bool TextInputType::supportsInputModeAttribute() const
 {
     return true;
 }
 
-bool TextInputType::supportsInputModeAttribute() const
+const AtomicString& TextInputType::defaultAutocapitalize() const
 {
-    return true;
+    DEFINE_STATIC_LOCAL(const AtomicString, sentences, ("sentences", AtomicString::ConstructFromLiteral));
+    return sentences;
 }
 
 } // namespace blink

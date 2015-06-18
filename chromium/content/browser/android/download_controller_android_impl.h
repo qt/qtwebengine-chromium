@@ -24,6 +24,7 @@
 #include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
 #include "content/public/browser/android/download_controller_android.h"
 #include "content/public/browser/download_item.h"
@@ -36,6 +37,7 @@ class URLRequest;
 
 namespace content {
 struct GlobalRequestID;
+class DeferredDownloadObserver;
 class RenderViewHost;
 class WebContents;
 
@@ -48,6 +50,10 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
 
   // Called when DownloadController Java object is instantiated.
   void Init(JNIEnv* env, jobject obj);
+
+  // Removes a deferred download from |deferred_downloads_|.
+  void CancelDeferredDownload(DeferredDownloadObserver* observer);
+
  private:
   // Used to store all the information about an Android download.
   struct DownloadInfoAndroid {
@@ -73,20 +79,22 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   struct JavaObject;
   friend struct DefaultSingletonTraits<DownloadControllerAndroidImpl>;
   DownloadControllerAndroidImpl();
-  virtual ~DownloadControllerAndroidImpl();
+  ~DownloadControllerAndroidImpl() override;
 
   // DownloadControllerAndroid implementation.
-  virtual void CreateGETDownload(int render_process_id, int render_view_id,
-                                 int request_id) override;
-  virtual void OnDownloadStarted(DownloadItem* download_item) override;
-  virtual void StartContextMenuDownload(
-      const ContextMenuParams& params, WebContents* web_contents,
-      bool is_link) override;
-  virtual void DangerousDownloadValidated(
-      WebContents* web_contents, int download_id, bool accept) override;
+  void CreateGETDownload(int render_process_id,
+                         int render_view_id,
+                         int request_id) override;
+  void OnDownloadStarted(DownloadItem* download_item) override;
+  void StartContextMenuDownload(const ContextMenuParams& params,
+                                WebContents* web_contents,
+                                bool is_link) override;
+  void DangerousDownloadValidated(WebContents* web_contents,
+                                  int download_id,
+                                  bool accept) override;
 
   // DownloadItem::Observer interface.
-  virtual void OnDownloadUpdated(DownloadItem* item) override;
+  void OnDownloadUpdated(DownloadItem* item) override;
 
   typedef base::Callback<void(const DownloadInfoAndroid&)>
       GetDownloadInfoCB;
@@ -114,13 +122,14 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   base::android::ScopedJavaLocalRef<jobject> GetContentViewCoreFromWebContents(
       WebContents* web_contents);
 
-  base::android::ScopedJavaLocalRef<jobject> GetContentView(
-      int render_process_id, int render_view_id);
+  WebContents* GetWebContents(int render_process_id, int render_view_id);
 
   // Creates Java object if it is not created already and returns it.
   JavaObject* GetJavaObject();
 
   JavaObject* java_object_;
+
+  ScopedVector<DeferredDownloadObserver> deferred_downloads_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadControllerAndroidImpl);
 };

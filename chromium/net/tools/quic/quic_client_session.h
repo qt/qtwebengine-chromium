@@ -25,9 +25,7 @@ namespace tools {
 
 class QuicClientSession : public QuicClientSessionBase {
  public:
-  QuicClientSession(const QuicConfig& config,
-                    QuicConnection* connection,
-                    bool is_secure);
+  QuicClientSession(const QuicConfig& config, QuicConnection* connection);
   ~QuicClientSession() override;
 
   void InitializeSession(const QuicServerId& server_id,
@@ -42,14 +40,17 @@ class QuicClientSession : public QuicClientSessionBase {
   void OnProofVerifyDetailsAvailable(
       const ProofVerifyDetails& verify_details) override;
 
-  // Performs a crypto handshake with the server. Returns true if the crypto
-  // handshake is started successfully.
-  bool CryptoConnect();
+  // Performs a crypto handshake with the server.
+  void CryptoConnect();
 
   // Returns the number of client hello messages that have been sent on the
   // crypto stream. If the handshake has completed then this is one greater
   // than the number of round-trips needed for the handshake.
   int GetNumSentClientHellos() const;
+
+  void set_respect_goaway(bool respect_goaway) {
+    respect_goaway_ = respect_goaway;
+  }
 
  protected:
   // QuicSession methods:
@@ -57,6 +58,10 @@ class QuicClientSession : public QuicClientSessionBase {
 
  private:
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
+
+  // If this is set to false, the client will ignore server GOAWAYs and allow
+  // the creation of streams regardless of the high chance they will fail.
+  bool respect_goaway_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClientSession);
 };

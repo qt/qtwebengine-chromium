@@ -48,9 +48,7 @@
         'compiler/codegen-tester.cc',
         'compiler/codegen-tester.h',
         'compiler/function-tester.h',
-        'compiler/graph-builder-tester.cc',
         'compiler/graph-builder-tester.h',
-        'compiler/graph-tester.h',
         'compiler/simplified-graph-builder.cc',
         'compiler/simplified-graph-builder.h',
         'compiler/test-basic-block-profiler.cc',
@@ -59,20 +57,19 @@
         'compiler/test-codegen-deopt.cc',
         'compiler/test-control-reducer.cc',
         'compiler/test-gap-resolver.cc',
-        'compiler/test-graph-reducer.cc',
         'compiler/test-graph-visualizer.cc',
         'compiler/test-instruction.cc',
         'compiler/test-js-context-specialization.cc',
         'compiler/test-js-constant-cache.cc',
         'compiler/test-js-typed-lowering.cc',
+        'compiler/test-jump-threading.cc',
         'compiler/test-linkage.cc',
         'compiler/test-loop-assignment-analysis.cc',
+        'compiler/test-loop-analysis.cc',
         'compiler/test-machine-operator-reducer.cc',
-        'compiler/test-node-algorithm.cc',
-        'compiler/test-node-cache.cc',
         'compiler/test-node.cc',
         'compiler/test-operator.cc',
-        'compiler/test-phi-reducer.cc',
+        'compiler/test-osr.cc',
         'compiler/test-pipeline.cc',
         'compiler/test-representation-change.cc',
         'compiler/test-run-deopt.cc',
@@ -85,11 +82,9 @@
         'compiler/test-run-machops.cc',
         'compiler/test-run-properties.cc',
         'compiler/test-run-stackcheck.cc',
+        'compiler/test-run-stubs.cc',
         'compiler/test-run-variables.cc',
-        'compiler/test-schedule.cc',
-        'compiler/test-scheduler.cc',
         'compiler/test-simplified-lowering.cc',
-        'compiler/test-typer.cc',
         'cctest.cc',
         'gay-fixed.cc',
         'gay-precision.cc',
@@ -99,12 +94,14 @@
         'test-accessors.cc',
         'test-alloc.cc',
         'test-api.cc',
+        'test-api.h',
+        'test-api-interceptors.cc',
+        'test-array-list.cc',
         'test-ast.cc',
         'test-atomicops.cc',
         'test-bignum.cc',
         'test-bignum-dtoa.cc',
         'test-bit-vector.cc',
-        'test-checks.cc',
         'test-circular-queue.cc',
         'test-compiler.cc',
         'test-constantpool.cc',
@@ -112,7 +109,6 @@
         'test-cpu-profiler.cc',
         'test-date.cc',
         'test-debug.cc',
-        'test-declarative-accessors.cc',
         'test-decls.cc',
         'test-deoptimization.cc',
         'test-dictionary.cc',
@@ -132,6 +128,7 @@
         'test-heap.cc',
         'test-heap-profiler.cc',
         'test-hydrogen-types.cc',
+        'test-identity-map.cc',
         'test-list.cc',
         'test-liveedit.cc',
         'test-lockers.cc',
@@ -139,8 +136,8 @@
         'test-microtask-delivery.cc',
         'test-mark-compact.cc',
         'test-mementos.cc',
+        'test-migrations.cc',
         'test-object-observe.cc',
-        'test-ordered-hash-table.cc',
         'test-parsing.cc',
         'test-platform.cc',
         'test-profile-generator.cc',
@@ -156,16 +153,20 @@
         'test-strtod.cc',
         'test-thread-termination.cc',
         'test-threads.cc',
+        'test-transitions.cc',
+        'test-typedarrays.cc',
         'test-types.cc',
         'test-unbound-queue.cc',
+        'test-unboxed-doubles.cc',
         'test-unique.cc',
         'test-unscopables-hidden-prototype.cc',
         'test-utils.cc',
         'test-version.cc',
         'test-weakmaps.cc',
         'test-weaksets.cc',
-        'test-weaktypedarrays.cc',
-        'trace-extension.cc'
+        'trace-extension.cc',
+        '../../src/startup-data-util.h',
+        '../../src/startup-data-util.cc'
       ],
       'conditions': [
         ['v8_target_arch=="ia32"', {
@@ -207,6 +208,20 @@
             'test-fuzz-arm64.cc',
             'test-javascript-arm64.cc',
             'test-js-arm64-variables.cc'
+          ],
+        }],
+        ['v8_target_arch=="ppc"', {
+          'sources': [  ### gcmole(arch:ppc) ###
+            'test-assembler-ppc.cc',
+            'test-code-stubs.cc',
+            'test-disasm-ppc.cc'
+          ],
+        }],
+        ['v8_target_arch=="ppc64"', {
+          'sources': [  ### gcmole(arch:ppc64) ###
+            'test-assembler-ppc.cc',
+            'test-code-stubs.cc',
+            'test-disasm-ppc.cc'
           ],
         }],
         ['v8_target_arch=="mipsel"', {
@@ -253,19 +268,13 @@
             },
           },
         }],
+        ['OS=="aix"', {
+          'ldflags': [ '-Wl,-bbigtoc' ],
+        }],
         ['component=="shared_library"', {
           # cctest can't be built against a shared library, so we need to
           # depend on the underlying static target in that case.
-          'conditions': [
-            ['v8_use_snapshot=="true"', {
-              'dependencies': ['../../tools/gyp/v8.gyp:v8_snapshot'],
-            },
-            {
-              'dependencies': [
-                '../../tools/gyp/v8.gyp:v8_nosnapshot',
-              ],
-            }],
-          ],
+          'dependencies': ['../../tools/gyp/v8.gyp:v8_maybe_snapshot'],
         }, {
           'dependencies': ['../../tools/gyp/v8.gyp:v8'],
         }],
@@ -301,7 +310,6 @@
             '../../tools/js2c.py',
             '<@(_outputs)',
             'TEST',  # type
-            'off',  # compression
             '<@(file_list)',
           ],
         }

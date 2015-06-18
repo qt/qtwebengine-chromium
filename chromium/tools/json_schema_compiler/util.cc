@@ -4,42 +4,136 @@
 
 #include "tools/json_schema_compiler/util.h"
 
+#include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 
 namespace json_schema_compiler {
 namespace util {
 
-bool GetItemFromList(const base::ListValue& from, int index, int* out) {
-  return from.GetInteger(index, out);
+bool PopulateItem(const base::Value& from, int* out) {
+  return from.GetAsInteger(out);
 }
 
-bool GetItemFromList(const base::ListValue& from, int index, bool* out) {
-  return from.GetBoolean(index, out);
-}
-
-bool GetItemFromList(const base::ListValue& from, int index, double* out) {
-  return from.GetDouble(index, out);
-}
-
-bool GetItemFromList(const base::ListValue& from, int index, std::string* out) {
-  return from.GetString(index, out);
-}
-
-bool GetItemFromList(const base::ListValue& from,
-                     int index,
-                     linked_ptr<base::Value>* out) {
-  const base::Value* value = NULL;
-  if (!from.Get(index, &value))
+bool PopulateItem(const base::Value& from, int* out, base::string16* error) {
+  if (!from.GetAsInteger(out)) {
+    if (error->length()) {
+      error->append(base::UTF8ToUTF16("; "));
+    }
+    error->append(base::UTF8ToUTF16("expected integer, got " +
+                                    ValueTypeToString(from.GetType())));
     return false;
-  *out = make_linked_ptr(value->DeepCopy());
+  }
   return true;
 }
 
-bool GetItemFromList(const base::ListValue& from, int index,
-    linked_ptr<base::DictionaryValue>* out) {
-  const base::DictionaryValue* dict = NULL;
-  if (!from.GetDictionary(index, &dict))
+bool PopulateItem(const base::Value& from, bool* out) {
+  return from.GetAsBoolean(out);
+}
+
+bool PopulateItem(const base::Value& from, bool* out, base::string16* error) {
+  if (!from.GetAsBoolean(out)) {
+    if (error->length()) {
+      error->append(base::UTF8ToUTF16("; "));
+    }
+    error->append(base::UTF8ToUTF16("expected boolean, got " +
+                                    ValueTypeToString(from.GetType())));
     return false;
+  }
+  return true;
+}
+
+bool PopulateItem(const base::Value& from, double* out) {
+  return from.GetAsDouble(out);
+}
+
+bool PopulateItem(const base::Value& from, double* out, base::string16* error) {
+  if (!from.GetAsDouble(out)) {
+    if (error->length()) {
+      error->append(base::UTF8ToUTF16("; "));
+    }
+    error->append(base::UTF8ToUTF16("expected double, got " +
+                                    ValueTypeToString(from.GetType())));
+    return false;
+  }
+  return true;
+}
+
+bool PopulateItem(const base::Value& from, std::string* out) {
+  return from.GetAsString(out);
+}
+
+bool PopulateItem(const base::Value& from,
+                  std::string* out,
+                  base::string16* error) {
+  if (!from.GetAsString(out)) {
+    if (error->length()) {
+      error->append(base::UTF8ToUTF16("; "));
+    }
+    error->append(base::UTF8ToUTF16("expected string, got " +
+                                    ValueTypeToString(from.GetType())));
+    return false;
+  }
+  return true;
+}
+
+bool PopulateItem(const base::Value& from, std::vector<char>* out) {
+  const base::BinaryValue* binary = nullptr;
+  if (!from.GetAsBinary(&binary))
+    return false;
+  out->assign(binary->GetBuffer(), binary->GetBuffer() + binary->GetSize());
+  return true;
+}
+
+bool PopulateItem(const base::Value& from,
+                  std::vector<char>* out,
+                  base::string16* error) {
+  const base::BinaryValue* binary = nullptr;
+  if (!from.GetAsBinary(&binary)) {
+    if (error->length()) {
+      error->append(base::UTF8ToUTF16("; "));
+    }
+    error->append(base::UTF8ToUTF16("expected binary, got " +
+                                    ValueTypeToString(from.GetType())));
+    return false;
+  }
+  out->assign(binary->GetBuffer(), binary->GetBuffer() + binary->GetSize());
+  return true;
+}
+
+bool PopulateItem(const base::Value& from, linked_ptr<base::Value>* out) {
+  *out = make_linked_ptr(from.DeepCopy());
+  return true;
+}
+
+bool PopulateItem(const base::Value& from,
+                  linked_ptr<base::Value>* out,
+                  base::string16* error) {
+  *out = make_linked_ptr(from.DeepCopy());
+  return true;
+}
+
+bool PopulateItem(const base::Value& from,
+                  linked_ptr<base::DictionaryValue>* out) {
+  const base::DictionaryValue* dict = nullptr;
+  if (!from.GetAsDictionary(&dict))
+    return false;
+  *out = make_linked_ptr(dict->DeepCopy());
+  return true;
+}
+
+bool PopulateItem(const base::Value& from,
+                  linked_ptr<base::DictionaryValue>* out,
+                  base::string16* error) {
+  const base::DictionaryValue* dict = nullptr;
+  if (!from.GetAsDictionary(&dict)) {
+    if (error->length()) {
+      error->append(base::UTF8ToUTF16("; "));
+    }
+    error->append(base::UTF8ToUTF16("expected dictionary, got " +
+                                    ValueTypeToString(from.GetType())));
+    return false;
+  }
   *out = make_linked_ptr(dict->DeepCopy());
   return true;
 }
@@ -60,8 +154,12 @@ void AddItemToList(const std::string& from, base::ListValue* out) {
   out->Append(new base::StringValue(from));
 }
 
-void AddItemToList(const linked_ptr<base::Value>& from,
-                   base::ListValue* out) {
+void AddItemToList(const std::vector<char>& from, base::ListValue* out) {
+  out->Append(base::BinaryValue::CreateWithCopiedBuffer(vector_as_array(&from),
+                                                        from.size()));
+}
+
+void AddItemToList(const linked_ptr<base::Value>& from, base::ListValue* out) {
   out->Append(from->DeepCopy());
 }
 
@@ -71,7 +169,7 @@ void AddItemToList(const linked_ptr<base::DictionaryValue>& from,
 }
 
 std::string ValueTypeToString(base::Value::Type type) {
-  switch(type) {
+  switch (type) {
     case base::Value::TYPE_NULL:
       return "null";
     case base::Value::TYPE_BOOLEAN:
@@ -93,5 +191,5 @@ std::string ValueTypeToString(base::Value::Type type) {
   return "";
 }
 
-}  // namespace api_util
-}  // namespace extensions
+}  // namespace util
+}  // namespace json_schema_compiler

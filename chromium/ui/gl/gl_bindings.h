@@ -5,6 +5,8 @@
 #ifndef UI_GL_GL_BINDINGS_H_
 #define UI_GL_GL_BINDINGS_H_
 
+#include <string>
+
 // Includes the platform independent and platform dependent GL headers.
 // Only include this in cc files. It pulls in system headers, including
 // the X11 headers on linux, which define all kinds of macros that are
@@ -100,9 +102,13 @@
 #define GL_LUMINANCE_ALPHA32F_EXT                        0x8819
 #define GL_RGBA16F_EXT                                   0x881A
 #define GL_RGB16F_EXT                                    0x881B
+#define GL_RG16F_EXT 0x822F
+#define GL_R16F_EXT 0x822D
 #define GL_ALPHA16F_EXT                                  0x881C
 #define GL_LUMINANCE16F_EXT                              0x881E
 #define GL_LUMINANCE_ALPHA16F_EXT                        0x881F
+#define GL_R32F_EXT 0x822E
+#define GL_RG32F_EXT 0x8230
 #define GL_BGRA8_EXT                                     0x93A1
 
 // GL_ANGLE_instanced_arrays
@@ -116,17 +122,17 @@
 #define GL_QUERY_RESULT_AVAILABLE_EXT                    0x8867
 
 // GL_CHROMIUM_command_buffer_query
-#define GL_COMMANDS_ISSUED_CHROMIUM                      0x84F2
+#define GL_COMMANDS_ISSUED_CHROMIUM                      0x6004
 
 /* GL_CHROMIUM_get_error_query */
-#define GL_GET_ERROR_QUERY_CHROMIUM                      0x84F3
+#define GL_GET_ERROR_QUERY_CHROMIUM                      0x6003
 
 /* GL_CHROMIUM_command_buffer_latency_query */
-#define GL_LATENCY_QUERY_CHROMIUM                        0x84F4
+#define GL_LATENCY_QUERY_CHROMIUM                        0x6007
 
 /* GL_CHROMIUM_async_pixel_transfers */
-#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x84F5
-#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x84F6
+#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x6005
+#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x6006
 
 // GL_CHROMIUM_sync_query
 #define GL_COMMANDS_COMPLETED_CHROMIUM                   0x84F7
@@ -134,6 +140,9 @@
 // GL_CHROMIUM_gpu_memory_buffer_image
 #define GL_MAP_CHROMIUM                                  0x78F1
 #define GL_SCANOUT_CHROMIUM                              0x78F2
+
+// GL_CHROMIUM_yuv_420_image
+#define GL_RGB_YUV_420_CHROMIUM                          0x78FA
 
 // GL_CHROMIUM_schedule_overlay_plane
 #define GL_OVERLAY_TRANSFORM_NONE_CHROMIUM               0x9245
@@ -272,6 +281,14 @@
 #define GL_CONTEXT_LOST_KHR               0x0507
 #endif /* GL_KHR_robustness */
 
+#ifndef GL_EXT_texture_rg
+#define GL_EXT_texture_rg 1
+#define GL_RED_EXT 0x1903
+#define GL_RG_EXT 0x8227
+#define GL_R8_EXT 0x8229
+#define GL_RG8_EXT 0x822B
+#endif /* GL_EXT_texture_rg */
+
 #define GL_GLEXT_PROTOTYPES 1
 
 #if defined(OS_WIN)
@@ -333,51 +350,60 @@ struct GL_EXPORT DriverGL {
 
 struct GL_EXPORT DriverOSMESA {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsOSMESA fn;
   ProcsOSMESA debug_fn;
   ExtensionsOSMESA ext;
+
+ private:
+  static std::string GetPlatformExtensions();
 };
 
 #if defined(OS_WIN)
 struct GL_EXPORT DriverWGL {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsWGL fn;
   ProcsWGL debug_fn;
   ExtensionsWGL ext;
+
+ private:
+  static std::string GetPlatformExtensions();
 };
 #endif
 
 #if defined(OS_WIN) || defined(USE_X11) || defined(OS_ANDROID) || defined(USE_OZONE)
 struct GL_EXPORT DriverEGL {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsEGL fn;
   ProcsEGL debug_fn;
   ExtensionsEGL ext;
+
+ private:
+  static std::string GetPlatformExtensions();
+  static std::string GetClientExtensions();
 };
 #endif
 
 #if defined(USE_X11)
 struct GL_EXPORT DriverGLX {
   void InitializeStaticBindings();
-  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
 
   ProcsGLX fn;
   ProcsGLX debug_fn;
   ExtensionsGLX ext;
+
+ private:
+  static std::string GetPlatformExtensions();
 };
 #endif
 

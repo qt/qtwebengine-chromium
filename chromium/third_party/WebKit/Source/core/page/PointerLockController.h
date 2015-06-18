@@ -25,6 +25,7 @@
 #ifndef PointerLockController_h
 #define PointerLockController_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicString.h"
@@ -36,9 +37,9 @@ class Document;
 class Page;
 class PlatformMouseEvent;
 
-class PointerLockController final : public NoBaseWillBeGarbageCollected<PointerLockController> {
+class CORE_EXPORT PointerLockController final : public NoBaseWillBeGarbageCollected<PointerLockController> {
     WTF_MAKE_NONCOPYABLE(PointerLockController);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(PointerLockController);
 public:
     static PassOwnPtrWillBeRawPtr<PointerLockController> create(Page*);
 
@@ -54,7 +55,7 @@ public:
     void didLosePointerLock();
     void dispatchLockedMouseEvent(const PlatformMouseEvent&, const AtomicString& eventType);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit PointerLockController(Page*);

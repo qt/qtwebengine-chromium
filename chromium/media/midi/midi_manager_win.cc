@@ -5,7 +5,9 @@
 #include "media/midi/midi_manager_win.h"
 
 #include <windows.h>
-
+#include <ks.h>
+#include <ksmedia.h>
+#include <mmreg.h>
 // Prevent unnecessary functions from being included from <mmsystem.h>
 #define MMNODRV
 #define MMNOSOUND
@@ -19,18 +21,36 @@
 #include <mmsystem.h>
 
 #include <algorithm>
+#include <functional>
+#include <queue>
 #include <string>
+
 #include "base/bind.h"
+#include "base/containers/hash_tables.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread.h"
+#include "base/system_monitor/system_monitor.h"
+#include "base/threading/thread_checker.h"
+#include "base/timer/timer.h"
+#include "base/win/message_window.h"
+#include "device/usb/usb_ids.h"
 #include "media/midi/midi_message_queue.h"
 #include "media/midi/midi_message_util.h"
 #include "media/midi/midi_port_info.h"
 
 namespace media {
+namespace midi {
 namespace {
+
+static const size_t kBufferLength = 32 * 1024;
+
+// We assume that nullpter represents an invalid MIDI handle.
+const HMIDIIN kInvalidMidiInHandle = nullptr;
+const HMIDIOUT kInvalidMidiOutHandle = nullptr;
 
 std::string GetInErrorMessage(MMRESULT result) {
   wchar_t text[MAXERRORLENGTH];
@@ -56,6 +76,10 @@ std::string GetOutErrorMessage(MMRESULT result) {
   return base::WideToUTF8(text);
 }
 
+std::string MmversionToString(MMVERSION version) {
+  return base::StringPrintf("%d.%d", HIBYTE(version), LOBYTE(version));
+}
+
 class MIDIHDRDeleter {
  public:
   void operator()(MIDIHDR* header) {
@@ -74,14 +98,14 @@ ScopedMIDIHDR CreateMIDIHDR(size_t size) {
   ScopedMIDIHDR header(new MIDIHDR);
   ZeroMemory(header.get(), sizeof(*header));
   header->lpData = new char[size];
-  header->dwBufferLength = size;
+  header->dwBufferLength = static_cast<DWORD>(size);
   return header.Pass();
 }
 
 void SendShortMidiMessageInternal(HMIDIOUT midi_out_handle,
                                   const std::vector<uint8>& message) {
-  if (message.size() >= 4)
-    return;
+  DCHECK_LE(message.size(), static_cast<size_t>(3))
+      << "A short MIDI message should be up to 3 bytes.";
 
   DWORD packed_message = 0;
   for (size_t i = 0; i < message.size(); ++i)
@@ -94,8 +118,9 @@ void SendShortMidiMessageInternal(HMIDIOUT midi_out_handle,
 void SendLongMidiMessageInternal(HMIDIOUT midi_out_handle,
                                  const std::vector<uint8>& message) {
   // Implementation note:
-  // Sending long MIDI message can be performed synchronously or asynchronously
-  // depending on the driver. There are 2 options to support both cases:
+  // Sending a long MIDI message can be performed synchronously or
+  // asynchronously depending on the driver. There are 2 options to support both
+  // cases:
   // 1) Call midiOutLongMsg() API and wait for its completion within this
   //   function. In this approach, we can avoid memory copy by directly pointing
   //   |message| as the data buffer to be sent.
@@ -119,24 +144,23 @@ void SendLongMidiMessageInternal(HMIDIOUT midi_out_handle,
   }
 
   ScopedMIDIHDR midi_header(CreateMIDIHDR(message.size()));
-  for (size_t i = 0; i < message.size(); ++i)
-    midi_header->lpData[i] = static_cast<char>(message[i]);
+  std::copy(message.begin(), message.end(), midi_header->lpData);
 
-  MMRESULT result = midiOutPrepareHeader(
-      midi_out_handle, midi_header.get(), sizeof(*midi_header));
+  MMRESULT result = midiOutPrepareHeader(midi_out_handle, midi_header.get(),
+                                         sizeof(*midi_header));
   if (result != MMSYSERR_NOERROR) {
     DLOG(ERROR) << "Failed to prepare output buffer: "
                 << GetOutErrorMessage(result);
     return;
   }
 
-  result = midiOutLongMsg(
-      midi_out_handle, midi_header.get(), sizeof(*midi_header));
+  result =
+      midiOutLongMsg(midi_out_handle, midi_header.get(), sizeof(*midi_header));
   if (result != MMSYSERR_NOERROR) {
     DLOG(ERROR) << "Failed to output long message: "
                 << GetOutErrorMessage(result);
-    result = midiOutUnprepareHeader(
-        midi_out_handle, midi_header.get(), sizeof(*midi_header));
+    result = midiOutUnprepareHeader(midi_out_handle, midi_header.get(),
+                                    sizeof(*midi_header));
     DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
         << "Failed to uninitialize output buffer: "
         << GetOutErrorMessage(result);
@@ -147,452 +171,997 @@ void SendLongMidiMessageInternal(HMIDIOUT midi_out_handle,
   midi_header.release();
 }
 
-}  // namespace
+template <size_t array_size>
+base::string16 AsString16(const wchar_t(&buffer)[array_size]) {
+  size_t len = 0;
+  for (len = 0; len < array_size; ++len) {
+    if (buffer[len] == L'\0')
+      break;
+  }
+  return base::string16(buffer, len);
+}
 
-class MidiManagerWin::InDeviceInfo {
+struct MidiDeviceInfo final {
+  explicit MidiDeviceInfo(const MIDIINCAPS2W& caps)
+      : manufacturer_id(caps.wMid),
+        product_id(caps.wPid),
+        driver_version(caps.vDriverVersion),
+        product_name(AsString16(caps.szPname)),
+        usb_vendor_id(ExtractUsbVendorIdIfExists(caps)),
+        usb_product_id(ExtractUsbProductIdIfExists(caps)),
+        is_usb_device(IsUsbDevice(caps)) {}
+  explicit MidiDeviceInfo(const MIDIOUTCAPS2W& caps)
+      : manufacturer_id(caps.wMid),
+        product_id(caps.wPid),
+        driver_version(caps.vDriverVersion),
+        product_name(AsString16(caps.szPname)),
+        usb_vendor_id(ExtractUsbVendorIdIfExists(caps)),
+        usb_product_id(ExtractUsbProductIdIfExists(caps)),
+        is_usb_device(IsUsbDevice(caps)) {}
+  explicit MidiDeviceInfo(const MidiDeviceInfo& info)
+      : manufacturer_id(info.manufacturer_id),
+        product_id(info.product_id),
+        driver_version(info.driver_version),
+        product_name(info.product_name),
+        usb_vendor_id(info.usb_vendor_id),
+        usb_product_id(info.usb_product_id),
+        is_usb_device(info.is_usb_device) {}
+  // Currently only following entities are considered when testing the equality
+  // of two MIDI devices.
+  // TODO(toyoshim): Consider to calculate MIDIPort.id here and use it as the
+  // key. See crbug.com/467448.  Then optimize the data for |MidiPortInfo|.
+  const uint16 manufacturer_id;
+  const uint16 product_id;
+  const uint32 driver_version;
+  const base::string16 product_name;
+  const uint16 usb_vendor_id;
+  const uint16 usb_product_id;
+  const bool is_usb_device;
+
+  // Required to be used as the key of base::hash_map.
+  bool operator==(const MidiDeviceInfo& that) const {
+    return manufacturer_id == that.manufacturer_id &&
+           product_id == that.product_id &&
+           driver_version == that.driver_version &&
+           product_name == that.product_name &&
+           is_usb_device == that.is_usb_device &&
+           (is_usb_device && usb_vendor_id == that.usb_vendor_id &&
+            usb_product_id == that.usb_product_id);
+  }
+
+  // Hash function to be used in base::hash_map.
+  struct Hasher {
+    size_t operator()(const MidiDeviceInfo& info) const {
+      size_t hash = info.manufacturer_id;
+      hash *= 131;
+      hash += info.product_id;
+      hash *= 131;
+      hash += info.driver_version;
+      hash *= 131;
+      hash += info.product_name.size();
+      hash *= 131;
+      if (!info.product_name.empty()) {
+        hash += info.product_name[0];
+      }
+      hash *= 131;
+      hash += info.usb_vendor_id;
+      hash *= 131;
+      hash += info.usb_product_id;
+      return hash;
+    }
+  };
+
+ private:
+  static bool IsUsbDevice(const MIDIINCAPS2W& caps) {
+    return IS_COMPATIBLE_USBAUDIO_MID(&caps.ManufacturerGuid) &&
+           IS_COMPATIBLE_USBAUDIO_PID(&caps.ProductGuid);
+  }
+  static bool IsUsbDevice(const MIDIOUTCAPS2W& caps) {
+    return IS_COMPATIBLE_USBAUDIO_MID(&caps.ManufacturerGuid) &&
+           IS_COMPATIBLE_USBAUDIO_PID(&caps.ProductGuid);
+  }
+  static uint16 ExtractUsbVendorIdIfExists(const MIDIINCAPS2W& caps) {
+    if (!IS_COMPATIBLE_USBAUDIO_MID(&caps.ManufacturerGuid))
+      return 0;
+    return EXTRACT_USBAUDIO_MID(&caps.ManufacturerGuid);
+  }
+  static uint16 ExtractUsbVendorIdIfExists(const MIDIOUTCAPS2W& caps) {
+    if (!IS_COMPATIBLE_USBAUDIO_MID(&caps.ManufacturerGuid))
+      return 0;
+    return EXTRACT_USBAUDIO_MID(&caps.ManufacturerGuid);
+  }
+  static uint16 ExtractUsbProductIdIfExists(const MIDIINCAPS2W& caps) {
+    if (!IS_COMPATIBLE_USBAUDIO_PID(&caps.ProductGuid))
+      return 0;
+    return EXTRACT_USBAUDIO_PID(&caps.ProductGuid);
+  }
+  static uint16 ExtractUsbProductIdIfExists(const MIDIOUTCAPS2W& caps) {
+    if (!IS_COMPATIBLE_USBAUDIO_PID(&caps.ProductGuid))
+      return 0;
+    return EXTRACT_USBAUDIO_PID(&caps.ProductGuid);
+  }
+};
+
+std::string GetManufacturerName(const MidiDeviceInfo& info) {
+  if (info.is_usb_device) {
+    const char* name = device::UsbIds::GetVendorName(info.usb_vendor_id);
+    return std::string(name ? name : "");
+  }
+
+  switch (info.manufacturer_id) {
+    case MM_MICROSOFT:
+      return "Microsoft Corporation";
+    default:
+      // TODO(toyoshim): Support other manufacture IDs.  crbug.com/472341.
+      return "";
+  }
+}
+
+using PortNumberCache = base::hash_map<
+    MidiDeviceInfo,
+    std::priority_queue<uint32, std::vector<uint32>, std::greater<uint32>>,
+    MidiDeviceInfo::Hasher>;
+
+struct MidiInputDeviceState final : base::RefCounted<MidiInputDeviceState> {
+  explicit MidiInputDeviceState(const MidiDeviceInfo& device_info)
+      : device_info(device_info),
+        midi_handle(kInvalidMidiInHandle),
+        port_index(0),
+        port_age(0),
+        start_time_initialized(false) {}
+
+  const MidiDeviceInfo device_info;
+  HMIDIIN midi_handle;
+  ScopedMIDIHDR midi_header;
+  // Since Win32 multimedia system uses a relative time offset from when
+  // |midiInStart| API is called, we need to record when it is called.
+  base::TimeTicks start_time;
+  // 0-based port index.  We will try to reuse the previous port index when the
+  // MIDI device is closed then reopened.
+  uint32 port_index;
+  // A sequence number which represents how many times |port_index| is reused.
+  // We can remove this field if we decide not to clear unsent events
+  // when the device is disconnected.
+  // See https://github.com/WebAudio/web-midi-api/issues/133
+  uint64 port_age;
+  // True if |start_time| is initialized. This field is not used so far, but
+  // kept for the debugging purpose.
+  bool start_time_initialized;
+
+ private:
+  friend class base::RefCounted<MidiInputDeviceState>;
+  ~MidiInputDeviceState() {}
+};
+
+struct MidiOutputDeviceState final : base::RefCounted<MidiOutputDeviceState> {
+  explicit MidiOutputDeviceState(const MidiDeviceInfo& device_info)
+      : device_info(device_info),
+        midi_handle(kInvalidMidiOutHandle),
+        port_index(0),
+        port_age(0),
+        closed(false) {}
+
+  const MidiDeviceInfo device_info;
+  HMIDIOUT midi_handle;
+  // 0-based port index.  We will try to reuse the previous port index when the
+  // MIDI device is closed then reopened.
+  uint32 port_index;
+  // A sequence number which represents how many times |port_index| is reused.
+  // We can remove this field if we decide not to clear unsent events
+  // when the device is disconnected.
+  // See https://github.com/WebAudio/web-midi-api/issues/133
+  uint64 port_age;
+  // True if the device is already closed and |midi_handle| is considered to be
+  // invalid.
+  // TODO(toyoshim): Use std::atomic<bool> when it is allowed in Chromium
+  // project.
+  volatile bool closed;
+
+ private:
+  friend class base::RefCounted<MidiOutputDeviceState>;
+  ~MidiOutputDeviceState() {}
+};
+
+// The core logic of MIDI device handling for Windows. Basically this class is
+// shared among following 4 threads:
+//  1. Chrome IO Thread
+//  2. OS Multimedia Thread
+//  3. Task Thread
+//  4. Sender Thread
+//
+// Chrome IO Thread:
+//  MidiManager runs on Chrome IO thread. Device change notification is
+//  delivered to the thread through the SystemMonitor service.
+//  OnDevicesChanged() callback is invoked to update the MIDI device list.
+//  Note that in the current implementation we will try to open all the
+//  existing devices in practice. This is OK because trying to reopen a MIDI
+//  device that is already opened would simply fail, and there is no unwilling
+//  side effect.
+//
+// OS Multimedia Thread:
+//  This thread is maintained by the OS as a part of MIDI runtime, and
+//  responsible for receiving all the system initiated events such as device
+//  close, and receiving data. For performance reasons, most of potentially
+//  blocking operations will be dispatched into Task Thread.
+//
+// Task Thread:
+//  This thread will be used to call back following methods of MidiManager.
+//  - MidiManager::CompleteInitialization
+//  - MidiManager::AddInputPort
+//  - MidiManager::AddOutputPort
+//  - MidiManager::SetInputPortState
+//  - MidiManager::SetOutputPortState
+//  - MidiManager::ReceiveMidiData
+//
+// Sender Thread:
+//  This thread will be used to call Win32 APIs to send MIDI message at the
+//  specified time. We don't want to call MIDI send APIs on Task Thread
+//  because those APIs could be performed synchronously, hence they could block
+//  the caller thread for a while. See the comment in
+//  SendLongMidiMessageInternal for details. Currently we expect that the
+//  blocking time would be less than 1 second.
+class MidiServiceWinImpl : public MidiServiceWin,
+                           public base::SystemMonitor::DevicesChangedObserver {
  public:
-  ~InDeviceInfo() {
-    Uninitialize();
-  }
-  void set_port_index(int index) {
-    port_index_ = index;
-  }
-  int port_index() const {
-    return port_index_;
-  }
-  bool device_to_be_closed() const {
-    return device_to_be_closed_;
-  }
-  HMIDIIN midi_handle() const {
-    return midi_handle_;
+  MidiServiceWinImpl()
+      : delegate_(nullptr),
+        sender_thread_("Windows MIDI sender thread"),
+        task_thread_("Windows MIDI task thread"),
+        destructor_started(false) {}
+
+  ~MidiServiceWinImpl() final {
+    // Start() and Stop() of the threads, and AddDevicesChangeObserver() and
+    // RemoveDevicesChangeObserver() should be called on the same thread.
+    CHECK(thread_checker_.CalledOnValidThread());
+
+    destructor_started = true;
+    base::SystemMonitor::Get()->RemoveDevicesChangedObserver(this);
+    {
+      std::vector<HMIDIIN> input_devices;
+      {
+        base::AutoLock auto_lock(input_ports_lock_);
+        for (auto it : input_device_map_)
+          input_devices.push_back(it.first);
+      }
+      {
+        for (const auto handle : input_devices) {
+          MMRESULT result = midiInClose(handle);
+          if (result == MIDIERR_STILLPLAYING) {
+            result = midiInReset(handle);
+            DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
+                << "midiInReset failed: " << GetInErrorMessage(result);
+            result = midiInClose(handle);
+          }
+          DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
+              << "midiInClose failed: " << GetInErrorMessage(result);
+        }
+      }
+    }
+    {
+      std::vector<HMIDIOUT> output_devices;
+      {
+        base::AutoLock auto_lock(output_ports_lock_);
+        for (auto it : output_device_map_)
+          output_devices.push_back(it.first);
+      }
+      {
+        for (const auto handle : output_devices) {
+          MMRESULT result = midiOutClose(handle);
+          if (result == MIDIERR_STILLPLAYING) {
+            result = midiOutReset(handle);
+            DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
+                << "midiOutReset failed: " << GetOutErrorMessage(result);
+            result = midiOutClose(handle);
+          }
+          DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
+              << "midiOutClose failed: " << GetOutErrorMessage(result);
+        }
+      }
+    }
+    sender_thread_.Stop();
+    task_thread_.Stop();
   }
 
-  static scoped_ptr<InDeviceInfo> Create(MidiManagerWin* manager,
-                                         UINT device_id) {
-    scoped_ptr<InDeviceInfo> obj(new InDeviceInfo(manager));
-    if (!obj->Initialize(device_id))
-      obj.reset();
-    return obj.Pass();
+  // MidiServiceWin overrides:
+  void InitializeAsync(MidiServiceWinDelegate* delegate) final {
+    // Start() and Stop() of the threads, and AddDevicesChangeObserver() and
+    // RemoveDevicesChangeObserver() should be called on the same thread.
+    CHECK(thread_checker_.CalledOnValidThread());
+
+    delegate_ = delegate;
+
+    sender_thread_.Start();
+    task_thread_.Start();
+
+    // Start monitoring device changes. This should start before the
+    // following UpdateDeviceList() call not to miss the event happening
+    // between the call and the observer registration.
+    base::SystemMonitor::Get()->AddDevicesChangedObserver(this);
+
+    UpdateDeviceList();
+
+    task_thread_.message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&MidiServiceWinImpl::CompleteInitializationOnTaskThread,
+                   base::Unretained(this), MIDI_OK));
+  }
+
+  void SendMidiDataAsync(uint32 port_number,
+                         const std::vector<uint8>& data,
+                         base::TimeTicks time) final {
+    if (destructor_started) {
+      LOG(ERROR) << "ThreadSafeSendData failed because MidiServiceWinImpl is "
+                    "being destructed.  port: " << port_number;
+      return;
+    }
+    auto state = GetOutputDeviceFromPort(port_number);
+    if (!state) {
+      LOG(ERROR) << "ThreadSafeSendData failed due to an invalid port number. "
+                 << "port: " << port_number;
+      return;
+    }
+    if (state->closed) {
+      LOG(ERROR)
+          << "ThreadSafeSendData failed because target port is already closed."
+          << "port: " << port_number;
+      return;
+    }
+    const auto now = base::TimeTicks::Now();
+    if (now < time) {
+      sender_thread_.message_loop()->PostDelayedTask(
+          FROM_HERE, base::Bind(&MidiServiceWinImpl::SendOnSenderThread,
+                                base::Unretained(this), port_number,
+                                state->port_age, data, time),
+          time - now);
+    } else {
+      sender_thread_.message_loop()->PostTask(
+          FROM_HERE, base::Bind(&MidiServiceWinImpl::SendOnSenderThread,
+                                base::Unretained(this), port_number,
+                                state->port_age, data, time));
+    }
+  }
+
+  // base::SystemMonitor::DevicesChangedObserver overrides:
+  void OnDevicesChanged(base::SystemMonitor::DeviceType device_type) final {
+    CHECK(thread_checker_.CalledOnValidThread());
+    if (destructor_started)
+      return;
+
+    switch (device_type) {
+      case base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE:
+      case base::SystemMonitor::DEVTYPE_VIDEO_CAPTURE:
+        // Add case of other unrelated device types here.
+        return;
+      case base::SystemMonitor::DEVTYPE_UNKNOWN:
+        // Interested in MIDI devices. Try updating the device list.
+        UpdateDeviceList();
+        break;
+        // No default here to capture new DeviceType by compile time.
+    }
   }
 
  private:
-  static const int kInvalidPortIndex = -1;
-  static const size_t kBufferLength = 32 * 1024;
-
-  explicit InDeviceInfo(MidiManagerWin* manager)
-      : manager_(manager),
-        port_index_(kInvalidPortIndex),
-        midi_handle_(NULL),
-        started_(false),
-        device_to_be_closed_(false) {
+  scoped_refptr<MidiInputDeviceState> GetInputDeviceFromHandle(
+      HMIDIIN midi_handle) {
+    base::AutoLock auto_lock(input_ports_lock_);
+    const auto it = input_device_map_.find(midi_handle);
+    return (it != input_device_map_.end() ? it->second : nullptr);
   }
 
-  bool Initialize(DWORD device_id) {
-    Uninitialize();
-    midi_header_ = CreateMIDIHDR(kBufferLength);
-
-    // Here we use |CALLBACK_FUNCTION| to subscribe MIM_DATA, MIM_LONGDATA, and
-    // MIM_CLOSE events.
-    // - MIM_DATA: This is the only way to get a short MIDI message with
-    //     timestamp information.
-    // - MIM_LONGDATA: This is the only way to get a long MIDI message with
-    //     timestamp information.
-    // - MIM_CLOSE: This event is sent when 1) midiInClose() is called, or 2)
-    //     the MIDI device becomes unavailable for some reasons, e.g., the cable
-    //     is disconnected. As for the former case, HMIDIOUT will be invalidated
-    //     soon after the callback is finished. As for the later case, however,
-    //     HMIDIOUT continues to be valid until midiInClose() is called.
-    MMRESULT result = midiInOpen(&midi_handle_,
-                                 device_id,
-                                 reinterpret_cast<DWORD_PTR>(&HandleMessage),
-                                 reinterpret_cast<DWORD_PTR>(this),
-                                 CALLBACK_FUNCTION);
-    if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to open output device. "
-                  << " id: " << device_id
-                  << " message: " << GetInErrorMessage(result);
-      return false;
-    }
-    result = midiInPrepareHeader(
-        midi_handle_, midi_header_.get(), sizeof(*midi_header_));
-    if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to initialize input buffer: "
-                  << GetInErrorMessage(result);
-      return false;
-    }
-    result = midiInAddBuffer(
-        midi_handle_, midi_header_.get(), sizeof(*midi_header_));
-    if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to attach input buffer: "
-                  << GetInErrorMessage(result);
-      return false;
-    }
-    result = midiInStart(midi_handle_);
-    if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to start input port: "
-                  << GetInErrorMessage(result);
-      return false;
-    }
-    started_ = true;
-    start_time_ = base::TimeTicks::Now();
-    return true;
+  scoped_refptr<MidiOutputDeviceState> GetOutputDeviceFromHandle(
+      HMIDIOUT midi_handle) {
+    base::AutoLock auto_lock(output_ports_lock_);
+    const auto it = output_device_map_.find(midi_handle);
+    return (it != output_device_map_.end() ? it->second : nullptr);
   }
 
-  void Uninitialize() {
-    MMRESULT result = MMSYSERR_NOERROR;
-    if (midi_handle_ && started_) {
-      result = midiInStop(midi_handle_);
-      DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-          << "Failed to stop input port: " << GetInErrorMessage(result);
-      started_ = false;
-      start_time_ = base::TimeTicks();
-    }
-    if (midi_handle_) {
-      // midiInReset flushes pending messages. We ignore these messages.
-      device_to_be_closed_ = true;
-      result = midiInReset(midi_handle_);
-      DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-          << "Failed to reset input port: " << GetInErrorMessage(result);
-      result = midiInClose(midi_handle_);
-      device_to_be_closed_ = false;
-      DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-          << "Failed to close input port: " << GetInErrorMessage(result);
-      midi_header_.reset();
-      midi_handle_ = NULL;
-      port_index_ = kInvalidPortIndex;
-    }
+  scoped_refptr<MidiOutputDeviceState> GetOutputDeviceFromPort(
+      uint32 port_number) {
+    base::AutoLock auto_lock(output_ports_lock_);
+    if (output_ports_.size() <= port_number)
+      return nullptr;
+    return output_ports_[port_number];
   }
 
-  static void CALLBACK HandleMessage(HMIDIIN midi_in_handle,
-                                     UINT message,
-                                     DWORD_PTR instance,
-                                     DWORD_PTR param1,
-                                     DWORD_PTR param2) {
-    // This method can be called back on any thread depending on Windows
-    // multimedia subsystem and underlying MIDI drivers.
-    InDeviceInfo* self = reinterpret_cast<InDeviceInfo*>(instance);
+  void UpdateDeviceList() {
+    task_thread_.message_loop()->PostTask(
+        FROM_HERE, base::Bind(&MidiServiceWinImpl::UpdateDeviceListOnTaskThread,
+                              base::Unretained(this)));
+  }
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Callbacks on the OS multimedia thread.
+  /////////////////////////////////////////////////////////////////////////////
+
+  static void CALLBACK
+  OnMidiInEventOnMainlyMultimediaThread(HMIDIIN midi_in_handle,
+                                        UINT message,
+                                        DWORD_PTR instance,
+                                        DWORD_PTR param1,
+                                        DWORD_PTR param2) {
+    MidiServiceWinImpl* self = reinterpret_cast<MidiServiceWinImpl*>(instance);
     if (!self)
       return;
-    if (self->midi_handle() != midi_in_handle)
-      return;
-
     switch (message) {
+      case MIM_OPEN:
+        self->OnMidiInOpen(midi_in_handle);
+        break;
       case MIM_DATA:
-        self->OnShortMessageReceived(static_cast<uint8>(param1 & 0xff),
-                                     static_cast<uint8>((param1 >> 8) & 0xff),
-                                     static_cast<uint8>((param1 >> 16) & 0xff),
-                                     param2);
-        return;
+        self->OnMidiInDataOnMultimediaThread(midi_in_handle, param1, param2);
+        break;
       case MIM_LONGDATA:
-        self->OnLongMessageReceived(reinterpret_cast<MIDIHDR*>(param1),
-                                    param2);
-        return;
+        self->OnMidiInLongDataOnMultimediaThread(midi_in_handle, param1,
+                                                 param2);
+        break;
       case MIM_CLOSE:
-        // TODO(yukawa): Implement crbug.com/279097.
-        return;
+        self->OnMidiInCloseOnMultimediaThread(midi_in_handle);
+        break;
     }
   }
 
-  void OnShortMessageReceived(uint8 status_byte,
-                              uint8 first_data_byte,
-                              uint8 second_data_byte,
-                              DWORD elapsed_ms) {
-    if (device_to_be_closed())
+  void OnMidiInOpen(HMIDIIN midi_in_handle) {
+    UINT device_id = 0;
+    MMRESULT result = midiInGetID(midi_in_handle, &device_id);
+    if (result != MMSYSERR_NOERROR) {
+      DLOG(ERROR) << "midiInGetID failed: " << GetInErrorMessage(result);
       return;
-    const size_t len = GetMidiMessageLength(status_byte);
-    if (len == 0 || port_index() == kInvalidPortIndex)
+    }
+    MIDIINCAPS2W caps = {};
+    result = midiInGetDevCaps(device_id, reinterpret_cast<LPMIDIINCAPSW>(&caps),
+                              sizeof(caps));
+    if (result != MMSYSERR_NOERROR) {
+      DLOG(ERROR) << "midiInGetDevCaps failed: " << GetInErrorMessage(result);
       return;
-    const uint8 kData[] = { status_byte, first_data_byte, second_data_byte };
-    DCHECK_LE(len, arraysize(kData));
-    OnMessageReceived(kData, len, elapsed_ms);
+    }
+    auto state =
+        make_scoped_refptr(new MidiInputDeviceState(MidiDeviceInfo(caps)));
+    state->midi_handle = midi_in_handle;
+    state->midi_header = CreateMIDIHDR(kBufferLength);
+    const auto& state_device_info = state->device_info;
+    bool add_new_port = false;
+    uint32 port_number = 0;
+    {
+      base::AutoLock auto_lock(input_ports_lock_);
+      const auto it = unused_input_ports_.find(state_device_info);
+      if (it == unused_input_ports_.end()) {
+        port_number = static_cast<uint32>(input_ports_.size());
+        add_new_port = true;
+        input_ports_.push_back(nullptr);
+        input_ports_ages_.push_back(0);
+      } else {
+        port_number = it->second.top();
+        it->second.pop();
+        if (it->second.empty()) {
+          unused_input_ports_.erase(it);
+        }
+      }
+      input_ports_[port_number] = state;
+
+      input_ports_ages_[port_number] += 1;
+      input_device_map_[input_ports_[port_number]->midi_handle] =
+          input_ports_[port_number];
+      input_ports_[port_number]->port_index = port_number;
+      input_ports_[port_number]->port_age = input_ports_ages_[port_number];
+    }
+    // Several initial startup tasks cannot be done in MIM_OPEN handler.
+    task_thread_.message_loop()->PostTask(
+        FROM_HERE, base::Bind(&MidiServiceWinImpl::StartInputDeviceOnTaskThread,
+                              base::Unretained(this), midi_in_handle));
+    if (add_new_port) {
+      const MidiPortInfo port_info(
+          // TODO(toyoshim): Use a hash ID insted crbug.com/467448
+          base::IntToString(static_cast<int>(port_number)),
+          GetManufacturerName(state_device_info),
+          base::WideToUTF8(state_device_info.product_name),
+          MmversionToString(state_device_info.driver_version),
+          MIDI_PORT_OPENED);
+      task_thread_.message_loop()->PostTask(
+          FROM_HERE, base::Bind(&MidiServiceWinImpl::AddInputPortOnTaskThread,
+                                base::Unretained(this), port_info));
+    } else {
+      task_thread_.message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&MidiServiceWinImpl::SetInputPortStateOnTaskThread,
+                     base::Unretained(this), port_number,
+                     MidiPortState::MIDI_PORT_CONNECTED));
+    }
   }
 
-  void OnLongMessageReceived(MIDIHDR* header, DWORD elapsed_ms) {
-    if (header != midi_header_.get())
+  void OnMidiInDataOnMultimediaThread(HMIDIIN midi_in_handle,
+                                      DWORD_PTR param1,
+                                      DWORD_PTR param2) {
+    auto state = GetInputDeviceFromHandle(midi_in_handle);
+    if (!state)
       return;
+    const uint8 status_byte = static_cast<uint8>(param1 & 0xff);
+    const uint8 first_data_byte = static_cast<uint8>((param1 >> 8) & 0xff);
+    const uint8 second_data_byte = static_cast<uint8>((param1 >> 16) & 0xff);
+    const DWORD elapsed_ms = param2;
+    const size_t len = GetMidiMessageLength(status_byte);
+    const uint8 kData[] = {status_byte, first_data_byte, second_data_byte};
+    std::vector<uint8> data;
+    data.assign(kData, kData + len);
+    DCHECK_LE(len, arraysize(kData));
+    // MIM_DATA/MIM_LONGDATA message treats the time when midiInStart() is
+    // called as the origin of |elapsed_ms|.
+    // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757284.aspx
+    // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757286.aspx
+    const base::TimeTicks event_time =
+        state->start_time + base::TimeDelta::FromMilliseconds(elapsed_ms);
+    task_thread_.message_loop()->PostTask(
+        FROM_HERE, base::Bind(&MidiServiceWinImpl::ReceiveMidiDataOnTaskThread,
+                              base::Unretained(this), state->port_index, data,
+                              event_time));
+  }
+
+  void OnMidiInLongDataOnMultimediaThread(HMIDIIN midi_in_handle,
+                                          DWORD_PTR param1,
+                                          DWORD_PTR param2) {
+    auto state = GetInputDeviceFromHandle(midi_in_handle);
+    if (!state)
+      return;
+    MIDIHDR* header = reinterpret_cast<MIDIHDR*>(param1);
+    const DWORD elapsed_ms = param2;
     MMRESULT result = MMSYSERR_NOERROR;
-    if (device_to_be_closed()) {
-      if (midi_header_ &&
-          (midi_header_->dwFlags & MHDR_PREPARED) == MHDR_PREPARED) {
-        result = midiInUnprepareHeader(
-            midi_handle_, midi_header_.get(), sizeof(*midi_header_));
+    if (destructor_started) {
+      if (state->midi_header &&
+          (state->midi_header->dwFlags & MHDR_PREPARED) == MHDR_PREPARED) {
+        result =
+            midiInUnprepareHeader(state->midi_handle, state->midi_header.get(),
+                                  sizeof(*state->midi_header));
         DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
             << "Failed to uninitialize input buffer: "
             << GetInErrorMessage(result);
       }
       return;
     }
-    if (header->dwBytesRecorded > 0 && port_index() != kInvalidPortIndex) {
-      OnMessageReceived(reinterpret_cast<const uint8*>(header->lpData),
-                        header->dwBytesRecorded,
-                        elapsed_ms);
+    if (header->dwBytesRecorded > 0) {
+      const uint8* src = reinterpret_cast<const uint8*>(header->lpData);
+      std::vector<uint8> data;
+      data.assign(src, src + header->dwBytesRecorded);
+      // MIM_DATA/MIM_LONGDATA message treats the time when midiInStart() is
+      // called as the origin of |elapsed_ms|.
+      // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757284.aspx
+      // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757286.aspx
+      const base::TimeTicks event_time =
+          state->start_time + base::TimeDelta::FromMilliseconds(elapsed_ms);
+      task_thread_.message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&MidiServiceWinImpl::ReceiveMidiDataOnTaskThread,
+                     base::Unretained(this), state->port_index, data,
+                     event_time));
     }
-    result = midiInAddBuffer(midi_handle_, header, sizeof(*header));
+    result = midiInAddBuffer(state->midi_handle, header, sizeof(*header));
     DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-        << "Failed to attach input port: " << GetInErrorMessage(result);
+        << "Failed to attach input buffer: " << GetInErrorMessage(result)
+        << "port number:" << state->port_index;
   }
 
-  void OnMessageReceived(const uint8* data, size_t length, DWORD elapsed_ms) {
-    // MIM_DATA/MIM_LONGDATA message treats the time when midiInStart() is
-    // called as the origin of |elapsed_ms|.
-    // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757284.aspx
-    // http://msdn.microsoft.com/en-us/library/windows/desktop/dd757286.aspx
-    const base::TimeTicks event_time =
-        start_time_ + base::TimeDelta::FromMilliseconds(elapsed_ms);
-    manager_->ReceiveMidiData(port_index_, data, length, event_time);
-  }
-
-  MidiManagerWin* manager_;
-  int port_index_;
-  HMIDIIN midi_handle_;
-  ScopedMIDIHDR midi_header_;
-  base::TimeTicks start_time_;
-  bool started_;
-  bool device_to_be_closed_;
-  DISALLOW_COPY_AND_ASSIGN(InDeviceInfo);
-};
-
-class MidiManagerWin::OutDeviceInfo {
- public:
-  ~OutDeviceInfo() {
-    Uninitialize();
-  }
-
-  static scoped_ptr<OutDeviceInfo> Create(UINT device_id) {
-    scoped_ptr<OutDeviceInfo> obj(new OutDeviceInfo);
-    if (!obj->Initialize(device_id))
-      obj.reset();
-    return obj.Pass();
-  }
-
-  HMIDIOUT midi_handle() const {
-    return midi_handle_;
-  }
-
-  void Quit() {
-    quitting_ = true;
-  }
-
-  void Send(const std::vector<uint8>& data) {
-    // Check if the attached device is still available or not.
-    if (!midi_handle_)
+  void OnMidiInCloseOnMultimediaThread(HMIDIIN midi_in_handle) {
+    auto state = GetInputDeviceFromHandle(midi_in_handle);
+    if (!state)
       return;
+    const uint32 port_number = state->port_index;
+    const auto device_info(state->device_info);
+    {
+      base::AutoLock auto_lock(input_ports_lock_);
+      input_device_map_.erase(state->midi_handle);
+      input_ports_[port_number] = nullptr;
+      input_ports_ages_[port_number] += 1;
+      unused_input_ports_[device_info].push(port_number);
+    }
+    task_thread_.message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&MidiServiceWinImpl::SetInputPortStateOnTaskThread,
+                   base::Unretained(this), port_number,
+                   MIDI_PORT_DISCONNECTED));
+  }
 
-    // Give up sending MIDI messages here if the device is already closed.
-    // Note that this check is optional. Regardless of that we check |closed_|
-    // or not, nothing harmful happens as long as |midi_handle_| is still valid.
-    if (closed_)
+  static void CALLBACK
+  OnMidiOutEventOnMainlyMultimediaThread(HMIDIOUT midi_out_handle,
+                                         UINT message,
+                                         DWORD_PTR instance,
+                                         DWORD_PTR param1,
+                                         DWORD_PTR param2) {
+    MidiServiceWinImpl* self = reinterpret_cast<MidiServiceWinImpl*>(instance);
+    if (!self)
       return;
+    switch (message) {
+      case MOM_OPEN:
+        self->OnMidiOutOpen(midi_out_handle, param1, param2);
+        break;
+      case MOM_DONE:
+        self->OnMidiOutDoneOnMultimediaThread(midi_out_handle, param1);
+        break;
+      case MOM_CLOSE:
+        self->OnMidiOutCloseOnMultimediaThread(midi_out_handle);
+        break;
+    }
+  }
+
+  void OnMidiOutOpen(HMIDIOUT midi_out_handle,
+                     DWORD_PTR param1,
+                     DWORD_PTR param2) {
+    UINT device_id = 0;
+    MMRESULT result = midiOutGetID(midi_out_handle, &device_id);
+    if (result != MMSYSERR_NOERROR) {
+      DLOG(ERROR) << "midiOutGetID failed: " << GetOutErrorMessage(result);
+      return;
+    }
+    MIDIOUTCAPS2W caps = {};
+    result = midiOutGetDevCaps(
+        device_id, reinterpret_cast<LPMIDIOUTCAPSW>(&caps), sizeof(caps));
+    if (result != MMSYSERR_NOERROR) {
+      DLOG(ERROR) << "midiInGetDevCaps failed: " << GetOutErrorMessage(result);
+      return;
+    }
+    auto state =
+        make_scoped_refptr(new MidiOutputDeviceState(MidiDeviceInfo(caps)));
+    state->midi_handle = midi_out_handle;
+    const auto& state_device_info = state->device_info;
+    bool add_new_port = false;
+    uint32 port_number = 0;
+    {
+      base::AutoLock auto_lock(output_ports_lock_);
+      const auto it = unused_output_ports_.find(state_device_info);
+      if (it == unused_output_ports_.end()) {
+        port_number = static_cast<uint32>(output_ports_.size());
+        add_new_port = true;
+        output_ports_.push_back(nullptr);
+        output_ports_ages_.push_back(0);
+      } else {
+        port_number = it->second.top();
+        it->second.pop();
+        if (it->second.empty())
+          unused_output_ports_.erase(it);
+      }
+      output_ports_[port_number] = state;
+      output_ports_ages_[port_number] += 1;
+      output_device_map_[output_ports_[port_number]->midi_handle] =
+          output_ports_[port_number];
+      output_ports_[port_number]->port_index = port_number;
+      output_ports_[port_number]->port_age = output_ports_ages_[port_number];
+    }
+    if (add_new_port) {
+      const MidiPortInfo port_info(
+          // TODO(toyoshim): Use a hash ID insted. crbug.com/467448
+          base::IntToString(static_cast<int>(port_number)),
+          GetManufacturerName(state_device_info),
+          base::WideToUTF8(state_device_info.product_name),
+          MmversionToString(state_device_info.driver_version),
+          MIDI_PORT_OPENED);
+      task_thread_.message_loop()->PostTask(
+          FROM_HERE, base::Bind(&MidiServiceWinImpl::AddOutputPortOnTaskThread,
+                                base::Unretained(this), port_info));
+    } else {
+      task_thread_.message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&MidiServiceWinImpl::SetOutputPortStateOnTaskThread,
+                     base::Unretained(this), port_number, MIDI_PORT_CONNECTED));
+    }
+  }
+
+  void OnMidiOutDoneOnMultimediaThread(HMIDIOUT midi_out_handle,
+                                       DWORD_PTR param1) {
+    auto state = GetOutputDeviceFromHandle(midi_out_handle);
+    if (!state)
+      return;
+    // Take ownership of the MIDIHDR object.
+    ScopedMIDIHDR header(reinterpret_cast<MIDIHDR*>(param1));
+    if (!header)
+      return;
+    MMRESULT result = midiOutUnprepareHeader(state->midi_handle, header.get(),
+                                             sizeof(*header));
+    DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
+        << "Failed to uninitialize output buffer: "
+        << GetOutErrorMessage(result);
+  }
+
+  void OnMidiOutCloseOnMultimediaThread(HMIDIOUT midi_out_handle) {
+    auto state = GetOutputDeviceFromHandle(midi_out_handle);
+    if (!state)
+      return;
+    const uint32 port_number = state->port_index;
+    const auto device_info(state->device_info);
+    {
+      base::AutoLock auto_lock(output_ports_lock_);
+      output_device_map_.erase(state->midi_handle);
+      output_ports_[port_number] = nullptr;
+      output_ports_ages_[port_number] += 1;
+      unused_output_ports_[device_info].push(port_number);
+      state->closed = true;
+    }
+    task_thread_.message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&MidiServiceWinImpl::SetOutputPortStateOnTaskThread,
+                   base::Unretained(this), port_number,
+                   MIDI_PORT_DISCONNECTED));
+  }
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Callbacks on the sender thread.
+  /////////////////////////////////////////////////////////////////////////////
+
+  void AssertOnSenderThread() {
+    DCHECK_EQ(sender_thread_.thread_id(), base::PlatformThread::CurrentId());
+  }
+
+  void SendOnSenderThread(uint32 port_number,
+                          uint64 port_age,
+                          const std::vector<uint8>& data,
+                          base::TimeTicks time) {
+    AssertOnSenderThread();
+    if (destructor_started) {
+      LOG(ERROR) << "ThreadSafeSendData failed because MidiServiceWinImpl is "
+                    "being destructed. port: " << port_number;
+    }
+    auto state = GetOutputDeviceFromPort(port_number);
+    if (!state) {
+      LOG(ERROR) << "ThreadSafeSendData failed due to an invalid port number. "
+                 << "port: " << port_number;
+      return;
+    }
+    if (state->closed) {
+      LOG(ERROR)
+          << "ThreadSafeSendData failed because target port is already closed."
+          << "port: " << port_number;
+      return;
+    }
+    if (state->port_age != port_age) {
+      LOG(ERROR)
+          << "ThreadSafeSendData failed because target port is being closed."
+          << "port: " << port_number << "expected port age: " << port_age
+          << "actual port age: " << state->port_age;
+    }
 
     // MIDI Running status must be filtered out.
     MidiMessageQueue message_queue(false);
     message_queue.Add(data);
     std::vector<uint8> message;
-    while (!quitting_) {
+    while (true) {
+      if (destructor_started)
+        break;
+      if (state->closed)
+        break;
       message_queue.Get(&message);
       if (message.empty())
         break;
       // SendShortMidiMessageInternal can send a MIDI message up to 3 bytes.
       if (message.size() <= 3)
-        SendShortMidiMessageInternal(midi_handle_, message);
+        SendShortMidiMessageInternal(state->midi_handle, message);
       else
-        SendLongMidiMessageInternal(midi_handle_, message);
+        SendLongMidiMessageInternal(state->midi_handle, message);
     }
   }
 
- private:
-  OutDeviceInfo()
-      : midi_handle_(NULL),
-        closed_(false),
-        quitting_(false) {}
+  /////////////////////////////////////////////////////////////////////////////
+  // Callbacks on the task thread.
+  /////////////////////////////////////////////////////////////////////////////
 
-  bool Initialize(DWORD device_id) {
-    Uninitialize();
-    // Here we use |CALLBACK_FUNCTION| to subscribe MOM_DONE and MOM_CLOSE
-    // events.
-    // - MOM_DONE: SendLongMidiMessageInternal() relies on this event to clean
-    //     up the backing store where a long MIDI message is stored.
-    // - MOM_CLOSE: This event is sent when 1) midiOutClose() is called, or 2)
-    //     the MIDI device becomes unavailable for some reasons, e.g., the cable
-    //     is disconnected. As for the former case, HMIDIOUT will be invalidated
-    //     soon after the callback is finished. As for the later case, however,
-    //     HMIDIOUT continues to be valid until midiOutClose() is called.
-    MMRESULT result = midiOutOpen(&midi_handle_,
-                                  device_id,
-                                  reinterpret_cast<DWORD_PTR>(&HandleMessage),
-                                  reinterpret_cast<DWORD_PTR>(this),
-                                  CALLBACK_FUNCTION);
+  void AssertOnTaskThread() {
+    DCHECK_EQ(task_thread_.thread_id(), base::PlatformThread::CurrentId());
+  }
+
+  void UpdateDeviceListOnTaskThread() {
+    AssertOnTaskThread();
+    const UINT num_in_devices = midiInGetNumDevs();
+    for (UINT device_id = 0; device_id < num_in_devices; ++device_id) {
+      // Here we use |CALLBACK_FUNCTION| to subscribe MIM_DATA, MIM_LONGDATA,
+      // MIM_OPEN, and MIM_CLOSE events.
+      // - MIM_DATA: This is the only way to get a short MIDI message with
+      //     timestamp information.
+      // - MIM_LONGDATA: This is the only way to get a long MIDI message with
+      //     timestamp information.
+      // - MIM_OPEN: This event is sent the input device is opened. Note that
+      //     this message is called on the caller thread.
+      // - MIM_CLOSE: This event is sent when 1) midiInClose() is called, or 2)
+      //     the MIDI device becomes unavailable for some reasons, e.g., the
+      //     cable is disconnected. As for the former case, HMIDIOUT will be
+      //     invalidated soon after the callback is finished. As for the later
+      //     case, however, HMIDIOUT continues to be valid until midiInClose()
+      //     is called.
+      HMIDIIN midi_handle = kInvalidMidiInHandle;
+      const MMRESULT result = midiInOpen(
+          &midi_handle, device_id,
+          reinterpret_cast<DWORD_PTR>(&OnMidiInEventOnMainlyMultimediaThread),
+          reinterpret_cast<DWORD_PTR>(this), CALLBACK_FUNCTION);
+      DLOG_IF(ERROR, result != MMSYSERR_NOERROR && result != MMSYSERR_ALLOCATED)
+          << "Failed to open output device. "
+          << " id: " << device_id << " message: " << GetInErrorMessage(result);
+    }
+
+    const UINT num_out_devices = midiOutGetNumDevs();
+    for (UINT device_id = 0; device_id < num_out_devices; ++device_id) {
+      // Here we use |CALLBACK_FUNCTION| to subscribe MOM_DONE, MOM_OPEN, and
+      // MOM_CLOSE events.
+      // - MOM_DONE: SendLongMidiMessageInternal() relies on this event to clean
+      //     up the backing store where a long MIDI message is stored.
+      // - MOM_OPEN: This event is sent the output device is opened. Note that
+      //     this message is called on the caller thread.
+      // - MOM_CLOSE: This event is sent when 1) midiOutClose() is called, or 2)
+      //     the MIDI device becomes unavailable for some reasons, e.g., the
+      //     cable is disconnected. As for the former case, HMIDIOUT will be
+      //     invalidated soon after the callback is finished. As for the later
+      //     case, however, HMIDIOUT continues to be valid until midiOutClose()
+      //     is called.
+      HMIDIOUT midi_handle = kInvalidMidiOutHandle;
+      const MMRESULT result = midiOutOpen(
+          &midi_handle, device_id,
+          reinterpret_cast<DWORD_PTR>(&OnMidiOutEventOnMainlyMultimediaThread),
+          reinterpret_cast<DWORD_PTR>(this), CALLBACK_FUNCTION);
+      DLOG_IF(ERROR, result != MMSYSERR_NOERROR && result != MMSYSERR_ALLOCATED)
+          << "Failed to open output device. "
+          << " id: " << device_id << " message: " << GetOutErrorMessage(result);
+    }
+  }
+
+  void StartInputDeviceOnTaskThread(HMIDIIN midi_in_handle) {
+    AssertOnTaskThread();
+    auto state = GetInputDeviceFromHandle(midi_in_handle);
+    if (!state)
+      return;
+    MMRESULT result =
+        midiInPrepareHeader(state->midi_handle, state->midi_header.get(),
+                            sizeof(*state->midi_header));
     if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to open output device. "
-                  << " id: " << device_id
-                  << " message: "<< GetOutErrorMessage(result);
-      midi_handle_ = NULL;
-      return false;
+      DLOG(ERROR) << "Failed to initialize input buffer: "
+                  << GetInErrorMessage(result);
+      return;
     }
-    return true;
-  }
-
-  void Uninitialize() {
-    if (!midi_handle_)
+    result = midiInAddBuffer(state->midi_handle, state->midi_header.get(),
+                             sizeof(*state->midi_header));
+    if (result != MMSYSERR_NOERROR) {
+      DLOG(ERROR) << "Failed to attach input buffer: "
+                  << GetInErrorMessage(result);
       return;
-
-    MMRESULT result = midiOutReset(midi_handle_);
-    DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-        << "Failed to reset output port: " << GetOutErrorMessage(result);
-    result = midiOutClose(midi_handle_);
-    DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-        << "Failed to close output port: " << GetOutErrorMessage(result);
-    midi_handle_ = NULL;
-    closed_ = true;
-  }
-
-  static void CALLBACK HandleMessage(HMIDIOUT midi_out_handle,
-                                     UINT message,
-                                     DWORD_PTR instance,
-                                     DWORD_PTR param1,
-                                     DWORD_PTR param2) {
-    // This method can be called back on any thread depending on Windows
-    // multimedia subsystem and underlying MIDI drivers.
-
-    OutDeviceInfo* self = reinterpret_cast<OutDeviceInfo*>(instance);
-    if (!self)
-      return;
-    if (self->midi_handle() != midi_out_handle)
-      return;
-    switch (message) {
-      case MOM_DONE: {
-        // Take ownership of the MIDIHDR object.
-        ScopedMIDIHDR header(reinterpret_cast<MIDIHDR*>(param1));
-        if (!header)
-          return;
-        MMRESULT result = midiOutUnprepareHeader(
-            self->midi_handle(), header.get(), sizeof(*header));
-        DLOG_IF(ERROR, result != MMSYSERR_NOERROR)
-            << "Failed to uninitialize output buffer: "
-            << GetOutErrorMessage(result);
-        return;
-      }
-      case MOM_CLOSE:
-        // No lock is required since this flag is just a hint to avoid
-        // unnecessary API calls that will result in failure anyway.
-        self->closed_ = true;
-        // TODO(yukawa): Implement crbug.com/279097.
-        return;
     }
+    result = midiInStart(state->midi_handle);
+    if (result != MMSYSERR_NOERROR) {
+      DLOG(ERROR) << "Failed to start input port: "
+                  << GetInErrorMessage(result);
+      return;
+    }
+    state->start_time = base::TimeTicks::Now();
+    state->start_time_initialized = true;
   }
 
-  HMIDIOUT midi_handle_;
+  void CompleteInitializationOnTaskThread(MidiResult result) {
+    AssertOnTaskThread();
+    delegate_->OnCompleteInitialization(result);
+  }
 
-  // True if the device is already closed.
-  volatile bool closed_;
+  void ReceiveMidiDataOnTaskThread(uint32 port_index,
+                                   std::vector<uint8> data,
+                                   base::TimeTicks time) {
+    AssertOnTaskThread();
+    delegate_->OnReceiveMidiData(port_index, data, time);
+  }
 
-  // True if the MidiManagerWin is trying to stop the sender thread.
-  volatile bool quitting_;
+  void AddInputPortOnTaskThread(MidiPortInfo info) {
+    AssertOnTaskThread();
+    delegate_->OnAddInputPort(info);
+  }
 
-  DISALLOW_COPY_AND_ASSIGN(OutDeviceInfo);
+  void AddOutputPortOnTaskThread(MidiPortInfo info) {
+    AssertOnTaskThread();
+    delegate_->OnAddOutputPort(info);
+  }
+
+  void SetInputPortStateOnTaskThread(uint32 port_index, MidiPortState state) {
+    AssertOnTaskThread();
+    delegate_->OnSetInputPortState(port_index, state);
+  }
+
+  void SetOutputPortStateOnTaskThread(uint32 port_index, MidiPortState state) {
+    AssertOnTaskThread();
+    delegate_->OnSetOutputPortState(port_index, state);
+  }
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Fields:
+  /////////////////////////////////////////////////////////////////////////////
+
+  // Does not take ownership.
+  MidiServiceWinDelegate* delegate_;
+
+  base::ThreadChecker thread_checker_;
+
+  base::Thread sender_thread_;
+  base::Thread task_thread_;
+
+  base::Lock input_ports_lock_;
+  base::hash_map<HMIDIIN, scoped_refptr<MidiInputDeviceState>>
+      input_device_map_;                // GUARDED_BY(input_ports_lock_)
+  PortNumberCache unused_input_ports_;  // GUARDED_BY(input_ports_lock_)
+  std::vector<scoped_refptr<MidiInputDeviceState>>
+      input_ports_;                       // GUARDED_BY(input_ports_lock_)
+  std::vector<uint64> input_ports_ages_;  // GUARDED_BY(input_ports_lock_)
+
+  base::Lock output_ports_lock_;
+  base::hash_map<HMIDIOUT, scoped_refptr<MidiOutputDeviceState>>
+      output_device_map_;                // GUARDED_BY(output_ports_lock_)
+  PortNumberCache unused_output_ports_;  // GUARDED_BY(output_ports_lock_)
+  std::vector<scoped_refptr<MidiOutputDeviceState>>
+      output_ports_;                       // GUARDED_BY(output_ports_lock_)
+  std::vector<uint64> output_ports_ages_;  // GUARDED_BY(output_ports_lock_)
+
+  // True if one thread reached MidiServiceWinImpl::~MidiServiceWinImpl(). Note
+  // that MidiServiceWinImpl::~MidiServiceWinImpl() is blocked until
+  // |sender_thread_|, and |task_thread_| are stopped.
+  // This flag can be used as the signal that when background tasks must be
+  // interrupted.
+  // TODO(toyoshim): Use std::atomic<bool> when it is allowed.
+  volatile bool destructor_started;
+
+  DISALLOW_COPY_AND_ASSIGN(MidiServiceWinImpl);
 };
 
-MidiManagerWin::MidiManagerWin()
-    : send_thread_("MidiSendThread") {
-}
+}  // namespace
 
-void MidiManagerWin::StartInitialization() {
-  const UINT num_in_devices = midiInGetNumDevs();
-  in_devices_.reserve(num_in_devices);
-  int inport_index = 0;
-  for (UINT device_id = 0; device_id < num_in_devices; ++device_id) {
-    MIDIINCAPS caps = {};
-    MMRESULT result = midiInGetDevCaps(device_id, &caps, sizeof(caps));
-    if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to obtain input device info: "
-                  << GetInErrorMessage(result);
-      continue;
-    }
-    scoped_ptr<InDeviceInfo> in_device(InDeviceInfo::Create(this, device_id));
-    if (!in_device)
-      continue;
-    MidiPortInfo info(
-        base::IntToString(static_cast<int>(device_id)),
-        "",
-        base::WideToUTF8(caps.szPname),
-        base::IntToString(static_cast<int>(caps.vDriverVersion)));
-    AddInputPort(info);
-    in_device->set_port_index(inport_index++);
-    in_devices_.push_back(in_device.release());
-  }
-
-  const UINT num_out_devices = midiOutGetNumDevs();
-  out_devices_.reserve(num_out_devices);
-  for (UINT device_id = 0; device_id < num_out_devices; ++device_id) {
-    MIDIOUTCAPS caps = {};
-    MMRESULT result = midiOutGetDevCaps(device_id, &caps, sizeof(caps));
-    if (result != MMSYSERR_NOERROR) {
-      DLOG(ERROR) << "Failed to obtain output device info: "
-                  << GetOutErrorMessage(result);
-      continue;
-    }
-    scoped_ptr<OutDeviceInfo> out_port(OutDeviceInfo::Create(device_id));
-    if (!out_port)
-      continue;
-    MidiPortInfo info(
-        base::IntToString(static_cast<int>(device_id)),
-        "",
-        base::WideToUTF8(caps.szPname),
-        base::IntToString(static_cast<int>(caps.vDriverVersion)));
-    AddOutputPort(info);
-    out_devices_.push_back(out_port.release());
-  }
-
-  CompleteInitialization(MIDI_OK);
+MidiManagerWin::MidiManagerWin() {
 }
 
 MidiManagerWin::~MidiManagerWin() {
-  // Cleanup order is important. |send_thread_| must be stopped before
-  // |out_devices_| is cleared.
-  for (auto& device : out_devices_)
-    device->Quit();
-  send_thread_.Stop();
+  midi_service_.reset();
+}
 
-  out_devices_.clear();
-  in_devices_.clear();
+void MidiManagerWin::StartInitialization() {
+  midi_service_.reset(new MidiServiceWinImpl);
+  // Note that |CompleteInitialization()| will be called from the callback.
+  midi_service_->InitializeAsync(this);
 }
 
 void MidiManagerWin::DispatchSendMidiData(MidiManagerClient* client,
                                           uint32 port_index,
                                           const std::vector<uint8>& data,
                                           double timestamp) {
-  if (out_devices_.size() <= port_index)
+  if (!midi_service_)
     return;
 
-  base::TimeDelta delay;
+  base::TimeTicks time_to_send = base::TimeTicks::Now();
   if (timestamp != 0.0) {
-    base::TimeTicks time_to_send =
+    time_to_send =
         base::TimeTicks() + base::TimeDelta::FromMicroseconds(
-            timestamp * base::Time::kMicrosecondsPerSecond);
-    delay = std::max(time_to_send - base::TimeTicks::Now(), base::TimeDelta());
+                                timestamp * base::Time::kMicrosecondsPerSecond);
   }
+  midi_service_->SendMidiDataAsync(port_index, data, time_to_send);
 
-  if (!send_thread_.IsRunning())
-    send_thread_.Start();
+  // TOOD(toyoshim): This calculation should be done when the date is actually
+  // sent.
+  client->AccumulateMidiBytesSent(data.size());
+}
 
-  OutDeviceInfo* out_port = out_devices_[port_index];
-  send_thread_.message_loop()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&OutDeviceInfo::Send, base::Unretained(out_port), data),
-      delay);
+void MidiManagerWin::OnCompleteInitialization(MidiResult result) {
+  CompleteInitialization(result);
+}
 
-  // Call back AccumulateMidiBytesSent() on |send_thread_| to emulate the
-  // behavior of MidiManagerMac::SendMidiData.
-  // TODO(yukawa): Do this task in a platform-independent way if possible.
-  // See crbug.com/325810.
-  send_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&MidiManagerClient::AccumulateMidiBytesSent,
-                 base::Unretained(client), data.size()));
+void MidiManagerWin::OnAddInputPort(MidiPortInfo info) {
+  AddInputPort(info);
+}
+
+void MidiManagerWin::OnAddOutputPort(MidiPortInfo info) {
+  AddOutputPort(info);
+}
+
+void MidiManagerWin::OnSetInputPortState(uint32 port_index,
+                                         MidiPortState state) {
+  SetInputPortState(port_index, state);
+}
+
+void MidiManagerWin::OnSetOutputPortState(uint32 port_index,
+                                          MidiPortState state) {
+  SetOutputPortState(port_index, state);
+}
+
+void MidiManagerWin::OnReceiveMidiData(uint32 port_index,
+                                       const std::vector<uint8>& data,
+                                       base::TimeTicks time) {
+  ReceiveMidiData(port_index, &data[0], data.size(), time);
 }
 
 MidiManager* MidiManager::Create() {
   return new MidiManagerWin();
 }
 
+}  // namespace midi
 }  // namespace media

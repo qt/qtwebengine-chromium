@@ -36,9 +36,19 @@
 namespace blink {
 
 class Document;
+class DoubleOrAutoKeyword;
 class ExecutionContext;
 class VTTCue;
 class VTTScanner;
+
+struct VTTDisplayParameters {
+    VTTDisplayParameters();
+
+    FloatPoint position;
+    float size;
+    CSSValueID direction;
+    CSSValueID writingMode;
+};
 
 class VTTCueBox final : public HTMLDivElement {
 public:
@@ -48,14 +58,14 @@ public:
     }
 
     VTTCue* getCue() const { return m_cue; }
-    void applyCSSProperties(const IntSize& videoSize);
+    void applyCSSProperties(const VTTDisplayParameters&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     VTTCueBox(Document&, VTTCue*);
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     RawPtrWillBeMember<VTTCue> m_cue;
 };
@@ -76,14 +86,14 @@ public:
     bool snapToLines() const { return m_snapToLines; }
     void setSnapToLines(bool);
 
-    int line() const { return m_linePosition; }
-    void setLine(int, ExceptionState&);
+    void line(DoubleOrAutoKeyword&) const;
+    void setLine(const DoubleOrAutoKeyword&);
 
-    int position() const { return m_textPosition; }
-    void setPosition(int, ExceptionState&);
+    void position(DoubleOrAutoKeyword&) const;
+    void setPosition(const DoubleOrAutoKeyword&, ExceptionState&);
 
-    int size() const { return m_cueSize; }
-    void setSize(int, ExceptionState&);
+    double size() const { return m_cueSize; }
+    void setSize(double, ExceptionState&);
 
     const String& align() const;
     void setAlign(const String&);
@@ -93,28 +103,21 @@ public:
 
     void parseSettings(const String&);
 
+    // Applies CSS override style from user settings.
+    void applyUserOverrideCSSProperties();
+
     PassRefPtrWillBeRawPtr<DocumentFragment> getCueAsHTML();
-    PassRefPtrWillBeRawPtr<DocumentFragment> createCueRenderingTree();
 
     const String& regionId() const { return m_regionId; }
     void setRegionId(const String&);
 
-    virtual void updateDisplay(const IntSize& videoSize, HTMLDivElement& container) override;
+    virtual void updateDisplay(HTMLDivElement& container) override;
 
-    virtual void updateDisplayTree(double movieTime) override;
-    virtual void removeDisplayTree() override;
-    virtual void notifyRegionWhenRemovingDisplayTree(bool notifyRegion) override;
+    virtual void updatePastAndFutureNodes(double movieTime) override;
 
-    void markFutureAndPastNodes(ContainerNode*, double previousTimestamp, double movieTime);
+    virtual void removeDisplayTree(RemovalNotification) override;
 
-    int calculateComputedLinePosition();
-
-    std::pair<double, double> getCSSPosition() const;
-
-    CSSValueID getCSSAlignment() const;
-    int getCSSSize() const;
-    CSSValueID getCSSWritingDirection() const;
-    CSSValueID getCSSWritingMode() const;
+    float calculateComputedLinePosition() const;
 
     enum WritingDirection {
         Horizontal = 0,
@@ -132,7 +135,7 @@ public:
         Right,
         NumberOfAlignments
     };
-    CueAlignment getAlignment() const { return m_cueAlignment; }
+    CueAlignment cueAlignment() const { return m_cueAlignment; }
 
     virtual ExecutionContext* executionContext() const override;
 
@@ -140,24 +143,26 @@ public:
     virtual String toString() const override;
 #endif
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     VTTCue(Document&, double startTime, double endTime, const String& text);
 
     Document& document() const;
 
-    VTTCueBox& ensureDisplayTree();
-    PassRefPtrWillBeRawPtr<VTTCueBox> getDisplayTree(const IntSize& videoSize);
+    PassRefPtrWillBeRawPtr<VTTCueBox> getDisplayTree();
 
     virtual void cueDidChange() override;
 
     void createVTTNodeTree();
     void copyVTTNodeToDOMTree(ContainerNode* vttNode, ContainerNode* root);
 
-    std::pair<double, double> getPositionCoordinates() const;
+    bool lineIsAuto() const;
+    bool textPositionIsAuto() const;
 
-    void calculateDisplayParameters();
+    VTTDisplayParameters calculateDisplayParameters() const;
+    float calculateComputedTextPosition() const;
+    CueAlignment calculateComputedCueAlignment() const;
 
     enum CueSetting {
         None,
@@ -168,13 +173,12 @@ private:
         Align,
         RegionId
     };
-    CueSetting settingName(VTTScanner&);
+    CueSetting settingName(VTTScanner&) const;
 
     String m_text;
-    int m_linePosition;
-    int m_computedLinePosition;
-    int m_textPosition;
-    int m_cueSize;
+    float m_linePosition;
+    float m_textPosition;
+    float m_cueSize;
     WritingDirection m_writingDirection;
     CueAlignment m_cueAlignment;
     String m_regionId;
@@ -183,13 +187,8 @@ private:
     RefPtrWillBeMember<HTMLDivElement> m_cueBackgroundBox;
     RefPtrWillBeMember<VTTCueBox> m_displayTree;
 
-    CSSValueID m_displayDirection;
-    int m_displaySize;
-    std::pair<float, float> m_displayPosition;
-
     bool m_snapToLines : 1;
     bool m_displayTreeShouldChange : 1;
-    bool m_notifyRegion : 1;
 };
 
 // VTTCue is currently the only TextTrackCue subclass.

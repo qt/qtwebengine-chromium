@@ -30,7 +30,7 @@
 #include "modules/indexeddb/IDBFactory.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/modules/v8/IDBBindingUtilities.h"
+#include "bindings/modules/v8/V8BindingForModules.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -44,7 +44,7 @@
 #include "platform/weborigin/DatabaseIdentifier.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebIDBFactory.h"
+#include "public/platform/modules/indexeddb/WebIDBFactory.h"
 
 namespace blink {
 
@@ -55,7 +55,7 @@ IDBFactory::IDBFactory(IndexedDBClient* permissionClient)
 {
 }
 
-void IDBFactory::trace(Visitor* visitor)
+DEFINE_TRACE(IDBFactory)
 {
     visitor->trace(m_permissionClient);
 }
@@ -105,10 +105,6 @@ IDBOpenDBRequest* IDBFactory::openInternal(ScriptState* scriptState, const Strin
 {
     Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
     ASSERT(version >= 1 || version == IDBDatabaseMetadata::NoIntVersion);
-    if (name.isNull()) {
-        exceptionState.throwTypeError("The name provided must not be empty.");
-        return 0;
-    }
     if (!isContextValid(scriptState->executionContext()))
         return nullptr;
     if (!scriptState->executionContext()->securityOrigin()->canAccessDatabase()) {
@@ -139,10 +135,6 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
 {
     IDB_TRACE("IDBFactory::deleteDatabase");
     Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
-    if (name.isNull()) {
-        exceptionState.throwTypeError("The name provided must not be empty.");
-        return 0;
-    }
     if (!isContextValid(scriptState->executionContext()))
         return nullptr;
     if (!scriptState->executionContext()->securityOrigin()->canAccessDatabase()) {
@@ -163,8 +155,8 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
 
 short IDBFactory::cmp(ScriptState* scriptState, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionState& exceptionState)
 {
-    IDBKey* first = scriptValueToIDBKey(scriptState->isolate(), firstValue);
-    IDBKey* second = scriptValueToIDBKey(scriptState->isolate(), secondValue);
+    IDBKey* first = ScriptValue::to<IDBKey*>(scriptState->isolate(), firstValue, exceptionState);
+    IDBKey* second = ScriptValue::to<IDBKey*>(scriptState->isolate(), secondValue, exceptionState);
 
     ASSERT(first);
     ASSERT(second);

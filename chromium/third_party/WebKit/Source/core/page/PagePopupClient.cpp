@@ -32,6 +32,7 @@
 #include "core/page/PagePopupClient.h"
 
 #include "wtf/text/StringBuilder.h"
+#include "wtf/unicode/CharacterNames.h"
 
 namespace blink {
 
@@ -43,9 +44,22 @@ void PagePopupClient::addJavaScriptString(const String& str, SharedBuffer* data)
     StringBuilder builder;
     builder.reserveCapacity(str.length());
     for (unsigned i = 0; i < str.length(); ++i) {
-        if (str[i] == '\\' || str[i] == '"')
+        if (str[i] == '\r') {
+            builder.append("\\r");
+        } else if (str[i] == '\n') {
+            builder.append("\\n");
+        } else if (str[i] == '\\' || str[i] == '"') {
             builder.append('\\');
-        builder.append(str[i]);
+            builder.append(str[i]);
+        } else if (str[i] == '<') {
+            // Need to avoid to add "</script>" because the resultant string is
+            // typically embedded in <script>.
+            builder.append("\\x3C");
+        } else if (str[i] < 0x20 || str[i] == lineSeparator || str[i] == paragraphSeparator) {
+            builder.append(String::format("\\u%04X", str[i]));
+        } else {
+            builder.append(str[i]);
+        }
     }
     addString(builder.toString(), data);
     addLiteral("\"", data);
@@ -83,6 +97,14 @@ void PagePopupClient::addProperty(const char* name, bool value, SharedBuffer* da
         addLiteral("true", data);
     else
         addLiteral("false", data);
+    addLiteral(",\n", data);
+}
+
+void PagePopupClient::addProperty(const char* name, double value, SharedBuffer* data)
+{
+    data->append(name, strlen(name));
+    addLiteral(": ", data);
+    addString(String::number(value), data);
     addLiteral(",\n", data);
 }
 

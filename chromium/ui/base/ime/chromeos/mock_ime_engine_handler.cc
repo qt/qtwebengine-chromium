@@ -49,6 +49,10 @@ void MockIMEEngineHandler::Reset() {
   ++reset_call_count_;
 }
 
+bool MockIMEEngineHandler::IsInterestedInKeyEvent() const {
+  return true;
+}
+
 void MockIMEEngineHandler::ProcessKeyEvent(
     const ui::KeyEvent& key_event,
     const KeyEventDoneCallback& callback) {
@@ -69,7 +73,8 @@ void MockIMEEngineHandler::SetSurroundingText(const std::string& text,
   last_set_surrounding_anchor_pos_ = anchor_pos;
 }
 
-void MockIMEEngineHandler::SetCompositionBounds(const gfx::Rect& bounds) {
+void MockIMEEngineHandler::SetCompositionBounds(
+    const std::vector<gfx::Rect>& bounds) {
 }
 
 } // namespace chromeos

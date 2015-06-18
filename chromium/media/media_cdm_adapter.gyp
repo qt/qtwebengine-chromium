@@ -16,6 +16,8 @@
     ['enable_pepper_cdms==1', {
       'targets': [
         {
+          # GN version: Use the template cdm_adapter in
+          # //media/cdm/ppapi/cdm_adapter.gni.
           'target_name': 'cdmadapter',
           'type': 'none',
           'direct_dependent_settings': {

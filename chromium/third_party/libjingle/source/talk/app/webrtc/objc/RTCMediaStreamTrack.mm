@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -38,7 +38,7 @@ class RTCMediaStreamTrackObserver : public ObserverInterface {
  public:
   RTCMediaStreamTrackObserver(RTCMediaStreamTrack* track) { _track = track; }
 
-  virtual void OnChanged() OVERRIDE {
+  void OnChanged() override {
     [_track.delegate mediaStreamTrackDidChange:_track];
   }
 

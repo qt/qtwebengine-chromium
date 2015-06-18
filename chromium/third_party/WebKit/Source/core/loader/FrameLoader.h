@@ -32,29 +32,27 @@
 #ifndef FrameLoader_h
 #define FrameLoader_h
 
+#include "core/CoreExport.h"
 #include "core/dom/IconURL.h"
 #include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
 #include "core/fetch/ResourceLoaderOptions.h"
+#include "core/frame/FrameTypes.h"
 #include "core/loader/FrameLoaderStateMachine.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/HistoryItem.h"
-#include "core/loader/MixedContentChecker.h"
+#include "core/loader/NavigationPolicy.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
-#include "wtf/OwnPtr.h"
 
 namespace blink {
 
 class DocumentLoader;
-class FetchContext;
-class FormState;
 class Frame;
 class FrameLoaderClient;
-class NavigationAction;
 class ProgressTracker;
 class ResourceError;
 class SerializedScriptValue;
@@ -62,9 +60,9 @@ class SubstituteData;
 
 struct FrameLoadRequest;
 
-bool isBackForwardLoadType(FrameLoadType);
+CORE_EXPORT bool isBackForwardLoadType(FrameLoadType);
 
-class FrameLoader final {
+class CORE_EXPORT FrameLoader final {
     WTF_MAKE_NONCOPYABLE(FrameLoader);
     DISALLOW_ALLOCATION();
 public:
@@ -75,10 +73,9 @@ public:
 
     void init();
 
-    MixedContentChecker* mixedContentChecker() const { return &m_mixedContentChecker; }
     ProgressTracker& progress() const { return *m_progressTracker; }
 
-    // These functions start a load. All eventually call into loadWithNavigationAction() or loadInSameDocument().
+    // These functions start a load. All eventually call into startLoad() or loadInSameDocument().
     void load(const FrameLoadRequest&); // The entry point for non-reload, non-history loads.
     void reload(ReloadPolicy, const KURL& overrideURL = KURL(), ClientRedirectPolicy = NotClientRedirect);
     void loadHistoryItem(HistoryItem*, FrameLoadType = FrameLoadTypeBackForward,
@@ -87,12 +84,9 @@ public:
 
     static void reportLocalLoadFailed(LocalFrame*, const String& url);
 
-    // FIXME: These are all functions which stop loads. We have too many.
     // Warning: stopAllLoaders can and will detach the LocalFrame out from under you. All callers need to either protect the LocalFrame
     // or guarantee they won't in any way access the LocalFrame after stopAllLoaders returns.
     void stopAllLoaders();
-    void stopLoading();
-    bool closeURL();
 
     // FIXME: clear() is trying to do too many things. We should break it down into smaller functions.
     void clear();
@@ -112,10 +106,8 @@ public:
     DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
     DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
     DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
-    FrameState state() const { return m_state; }
-    FetchContext& fetchContext() const { return *m_fetchContext; }
 
-    void receivedMainResourceError(const ResourceError&);
+    void receivedMainResourceError(DocumentLoader*, const ResourceError&);
 
     bool isLoadingMainFrame() const;
 
@@ -124,8 +116,6 @@ public:
 
     FrameLoadType loadType() const;
     void setLoadType(FrameLoadType loadType) { m_loadType = loadType; }
-
-    void checkLoadComplete();
 
     FrameLoaderClient* client() const;
 
@@ -149,6 +139,11 @@ public:
     void forceSandboxFlags(SandboxFlags flags) { m_forcedSandboxFlags |= flags; }
     SandboxFlags effectiveSandboxFlags() const;
 
+    bool shouldEnforceStrictMixedContentChecking() const;
+
+    SecurityContext::InsecureRequestsPolicy insecureRequestsPolicy() const;
+    SecurityContext::InsecureNavigationsSet* insecureNavigationsToUpgrade() const;
+
     Frame* opener();
     void setOpener(LocalFrame*);
 
@@ -162,8 +157,6 @@ public:
 
     FrameLoaderStateMachine* stateMachine() const { return &m_stateMachine; }
 
-    LocalFrame* findFrameForNavigation(const AtomicString& name, Document* activeDocument);
-
     void applyUserAgent(ResourceRequest&);
 
     bool shouldInterruptLoadForXFrameOptions(const String&, const KURL&, unsigned long requestIdentifier);
@@ -171,10 +164,11 @@ public:
     bool allAncestorsAreComplete() const; // including this
 
     bool shouldClose();
+    void dispatchUnloadEvent();
 
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
-    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, FrameLoadType);
+    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, HistoryScrollRestorationType, FrameLoadType);
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
     void saveScrollState();
@@ -182,36 +176,27 @@ public:
 
     void restoreScrollPositionAndViewState();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    bool allChildrenAreComplete() const; // immediate children, not all descendants
-
-    void completed();
-
     void checkTimerFired(Timer<FrameLoader>*);
     void didAccessInitialDocumentTimerFired(Timer<FrameLoader>*);
 
     bool prepareRequestForThisFrame(FrameLoadRequest&);
     static void setReferrerForFrameRequest(ResourceRequest&, ShouldSendReferrer, Document*);
     FrameLoadType determineFrameLoadType(const FrameLoadRequest&);
-    bool isScriptTriggeredFormSubmissionInChildFrame(const FrameLoadRequest&) const;
 
     SubstituteData defaultSubstituteDataForURL(const KURL&);
 
     bool shouldPerformFragmentNavigation(bool isFormSubmission, const String& httpMethod, FrameLoadType, const KURL&);
     void scrollToFragmentWithParentBoundary(const KURL&);
 
-    bool checkLoadCompleteForThisFrame();
-
-    // Calls continueLoadAfterNavigationPolicy
-    void loadWithNavigationAction(const NavigationAction&, FrameLoadType, PassRefPtrWillBeRawPtr<FormState>,
-        const SubstituteData&, ContentSecurityPolicyCheck shouldCheckMainWorldContentSecurityPolicy, ClientRedirectPolicy = NotClientRedirect);
+    void startLoad(FrameLoadRequest&, FrameLoadType, NavigationPolicy);
 
     bool validateTransitionNavigationMode();
     bool dispatchNavigationTransitionData();
 
-    void setHistoryItemStateForCommit(HistoryCommitType, bool isPushOrReplaceState = false, PassRefPtr<SerializedScriptValue> = nullptr);
+    void setHistoryItemStateForCommit(HistoryCommitType, bool isPushOrReplaceState = false, HistoryScrollRestorationType = ScrollRestorationAuto, PassRefPtr<SerializedScriptValue> = nullptr);
 
     void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, ClientRedirectPolicy);
 
@@ -223,11 +208,9 @@ private:
     // header dependencies unless performance testing proves otherwise.
     // Some of these could be lazily created for memory savings on devices.
     mutable FrameLoaderStateMachine m_stateMachine;
-    mutable MixedContentChecker m_mixedContentChecker;
 
     OwnPtrWillBeMember<ProgressTracker> m_progressTracker;
 
-    FrameState m_state;
     FrameLoadType m_loadType;
 
     // Document loaders for the three phases of frame loading. Note that while
@@ -237,7 +220,6 @@ private:
     RefPtr<DocumentLoader> m_documentLoader;
     RefPtr<DocumentLoader> m_provisionalDocumentLoader;
     RefPtr<DocumentLoader> m_policyDocumentLoader;
-    OwnPtrWillBeMember<FetchContext> m_fetchContext;
 
     RefPtrWillBeMember<HistoryItem> m_currentItem;
     RefPtrWillBeMember<HistoryItem> m_provisionalItem;
@@ -256,7 +238,7 @@ private:
 
         bool isValid() { return m_item; }
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(m_item);
         }

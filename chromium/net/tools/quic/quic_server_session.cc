@@ -5,7 +5,7 @@
 #include "net/tools/quic/quic_server_session.h"
 
 #include "base/logging.h"
-#include "net/quic/crypto/source_address_token.h"
+#include "net/quic/proto/cached_network_parameters.pb.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/reliable_quic_stream.h"
@@ -16,37 +16,58 @@ namespace tools {
 
 QuicServerSession::QuicServerSession(const QuicConfig& config,
                                      QuicConnection* connection,
-                                     QuicServerSessionVisitor* visitor,
-                                     bool is_secure)
-    : QuicSession(connection, config, is_secure),
+                                     QuicServerSessionVisitor* visitor)
+    : QuicSession(connection, config),
       visitor_(visitor),
+      bandwidth_resumption_enabled_(false),
       bandwidth_estimate_sent_to_client_(QuicBandwidth::Zero()),
       last_scup_time_(QuicTime::Zero()),
-      last_scup_sequence_number_(0) {}
+      last_scup_sequence_number_(0) {
+}
 
 QuicServerSession::~QuicServerSession() {}
 
 void QuicServerSession::InitializeSession(
-    const QuicCryptoServerConfig& crypto_config) {
+    const QuicCryptoServerConfig* crypto_config) {
   QuicSession::InitializeSession();
   crypto_stream_.reset(CreateQuicCryptoServerStream(crypto_config));
 }
 
 QuicCryptoServerStream* QuicServerSession::CreateQuicCryptoServerStream(
-    const QuicCryptoServerConfig& crypto_config) {
+    const QuicCryptoServerConfig* crypto_config) {
   return new QuicCryptoServerStream(crypto_config, this);
 }
 
 void QuicServerSession::OnConfigNegotiated() {
   QuicSession::OnConfigNegotiated();
-  if (!FLAGS_enable_quic_fec ||
-      !config()->HasReceivedConnectionOptions() ||
-      !net::ContainsQuicTag(config()->ReceivedConnectionOptions(), kFHDR)) {
+
+  if (!config()->HasReceivedConnectionOptions()) {
     return;
   }
-  // kFHDR config maps to FEC protection always for headers stream.
-  // TODO(jri): Add crypto stream in addition to headers for kHDR.
-  headers_stream_->set_fec_policy(FEC_PROTECT_ALWAYS);
+
+  // If the client has provided a bandwidth estimate from the same serving
+  // region, then pass it to the sent packet manager in preparation for possible
+  // bandwidth resumption.
+  const CachedNetworkParameters* cached_network_params =
+      crypto_stream_->previous_cached_network_params();
+  const bool last_bandwidth_resumption =
+      ContainsQuicTag(config()->ReceivedConnectionOptions(), kBWRE);
+  const bool max_bandwidth_resumption =
+      ContainsQuicTag(config()->ReceivedConnectionOptions(), kBWMX);
+  bandwidth_resumption_enabled_ =
+      last_bandwidth_resumption || max_bandwidth_resumption;
+  if (cached_network_params != nullptr && bandwidth_resumption_enabled_ &&
+      cached_network_params->serving_region() == serving_region_) {
+    connection()->ResumeConnectionState(*cached_network_params,
+                                        max_bandwidth_resumption);
+  }
+
+  if (FLAGS_enable_quic_fec &&
+      ContainsQuicTag(config()->ReceivedConnectionOptions(), kFHDR)) {
+    // kFHDR config maps to FEC protection always for headers stream.
+    // TODO(jri): Add crypto stream in addition to headers for kHDR.
+    headers_stream_->set_fec_policy(FEC_PROTECT_ALWAYS);
+  }
 }
 
 void QuicServerSession::OnConnectionClosed(QuicErrorCode error,
@@ -66,7 +87,11 @@ void QuicServerSession::OnWriteBlocked() {
 }
 
 void QuicServerSession::OnCongestionWindowChange(QuicTime now) {
-  if (connection()->version() <= QUIC_VERSION_21) {
+  if (!bandwidth_resumption_enabled_) {
+    return;
+  }
+  // Only send updates when the application has no data to write.
+  if (HasDataToWrite()) {
     return;
   }
 
@@ -141,12 +166,20 @@ void QuicServerSession::OnCongestionWindowChange(QuicTime now) {
   }
 
   crypto_stream_->SendServerConfigUpdate(&cached_network_params);
+
+  connection()->OnSendConnectionState(cached_network_params);
+
   last_scup_time_ = now;
   last_scup_sequence_number_ =
       connection()->sequence_number_of_last_sent_packet();
 }
 
 bool QuicServerSession::ShouldCreateIncomingDataStream(QuicStreamId id) {
+  if (!connection()->connected()) {
+    LOG(DFATAL) << "ShouldCreateIncomingDataStream called when disconnected";
+    return false;
+  }
+
   if (id % 2 == 0) {
     DVLOG(1) << "Invalid incoming even stream_id:" << id;
     connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);

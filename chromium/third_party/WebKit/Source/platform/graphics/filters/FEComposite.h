@@ -25,7 +25,6 @@
 
 #include "SkXfermode.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
@@ -36,12 +35,13 @@ enum CompositeOperationType {
     FECOMPOSITE_OPERATOR_OUT        = 3,
     FECOMPOSITE_OPERATOR_ATOP       = 4,
     FECOMPOSITE_OPERATOR_XOR        = 5,
-    FECOMPOSITE_OPERATOR_ARITHMETIC = 6
+    FECOMPOSITE_OPERATOR_ARITHMETIC = 6,
+    FECOMPOSITE_OPERATOR_LIGHTER    = 7
 };
 
 class PLATFORM_EXPORT FEComposite : public FilterEffect {
 public:
-    static PassRefPtr<FEComposite> create(Filter*, const CompositeOperationType&, float, float, float, float);
+    static PassRefPtrWillBeRawPtr<FEComposite> create(Filter*, const CompositeOperationType&, float, float, float, float);
 
     CompositeOperationType operation() const;
     bool setOperation(CompositeOperationType);
@@ -72,14 +72,6 @@ private:
     FEComposite(Filter*, const CompositeOperationType&, float, float, float, float);
 
     PassRefPtr<SkImageFilter> createImageFilterInternal(SkiaImageFilterBuilder*, bool requiresPMColorValidation);
-
-    inline void platformArithmeticSoftware(Uint8ClampedArray* source, Uint8ClampedArray* destination,
-        float k1, float k2, float k3, float k4);
-    template <int b1, int b4>
-    static inline void computeArithmeticPixelsNeon(unsigned char* source, unsigned  char* destination,
-        unsigned pixelArrayLength, float k1, float k2, float k3, float k4);
-    static inline void platformArithmeticNeon(unsigned char* source, unsigned  char* destination,
-        unsigned pixelArrayLength, float k1, float k2, float k3, float k4);
 
     CompositeOperationType m_type;
     float m_k1;

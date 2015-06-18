@@ -29,7 +29,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
  public:
   static scoped_ptr<SoftwareRenderer> Create(
       RendererClient* client,
-      const LayerTreeSettings* settings,
+      const RendererSettings* settings,
       OutputSurface* output_surface,
       ResourceProvider* resource_provider);
 
@@ -46,13 +46,14 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   bool BindFramebufferToTexture(DrawingFrame* frame,
                                 const ScopedResource* texture,
                                 const gfx::Rect& target_rect) override;
-  void SetDrawViewport(const gfx::Rect& window_space_viewport) override;
   void SetScissorTestRect(const gfx::Rect& scissor_rect) override;
-  void DiscardPixels(bool has_external_stencil_test,
-                     bool draw_rect_covers_full_surface) override;
-  void ClearFramebuffer(DrawingFrame* frame,
-                        bool has_external_stencil_test) override;
-  void DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) override;
+  void PrepareSurfaceForPass(DrawingFrame* frame,
+                             SurfaceInitializationMode initialization_mode,
+                             const gfx::Rect& render_pass_scissor) override;
+
+  void DoDrawQuad(DrawingFrame* frame,
+                  const DrawQuad* quad,
+                  const gfx::QuadF* draw_region) override;
   void BeginDrawingFrame(DrawingFrame* frame) override;
   void FinishDrawingFrame(DrawingFrame* frame) override;
   bool FlippedFramebuffer(const DrawingFrame* frame) const override;
@@ -63,7 +64,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
       scoped_ptr<CopyOutputRequest> request) override;
 
   SoftwareRenderer(RendererClient* client,
-                   const LayerTreeSettings* settings,
+                   const RendererSettings* settings,
                    OutputSurface* output_surface,
                    ResourceProvider* resource_provider);
 
@@ -71,6 +72,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
 
  private:
   void ClearCanvas(SkColor color);
+  void ClearFramebuffer(DrawingFrame* frame);
   void SetClipRect(const gfx::Rect& rect);
   bool IsSoftwareResource(ResourceProvider::ResourceId resource_id) const;
 
@@ -102,6 +104,7 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   SkPaint current_paint_;
   scoped_ptr<ResourceProvider::ScopedWriteLockSoftware>
       current_framebuffer_lock_;
+  skia::RefPtr<SkCanvas> current_framebuffer_canvas_;
   scoped_ptr<SoftwareFrameData> current_frame_data_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareRenderer);

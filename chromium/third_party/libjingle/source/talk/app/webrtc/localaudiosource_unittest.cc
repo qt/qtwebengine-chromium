@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -46,11 +46,13 @@ TEST(LocalAudioSourceTest, SetValidOptions) {
   constraints.AddMandatory(MediaConstraintsInterface::kEchoCancellation, false);
   constraints.AddOptional(
       MediaConstraintsInterface::kExperimentalEchoCancellation, true);
+  constraints.AddOptional(MediaConstraintsInterface::kDAEchoCancellation, true);
   constraints.AddOptional(MediaConstraintsInterface::kAutoGainControl, true);
   constraints.AddOptional(
       MediaConstraintsInterface::kExperimentalAutoGainControl, true);
   constraints.AddMandatory(MediaConstraintsInterface::kNoiseSuppression, false);
   constraints.AddOptional(MediaConstraintsInterface::kHighpassFilter, true);
+  constraints.AddOptional(MediaConstraintsInterface::kAecDump, true);
 
   rtc::scoped_refptr<LocalAudioSource> source =
       LocalAudioSource::Create(PeerConnectionFactoryInterface::Options(),
@@ -61,6 +63,8 @@ TEST(LocalAudioSourceTest, SetValidOptions) {
   EXPECT_FALSE(value);
   EXPECT_TRUE(source->options().experimental_aec.Get(&value));
   EXPECT_TRUE(value);
+  EXPECT_TRUE(source->options().delay_agnostic_aec.Get(&value));
+  EXPECT_TRUE(value);
   EXPECT_TRUE(source->options().auto_gain_control.Get(&value));
   EXPECT_TRUE(value);
   EXPECT_TRUE(source->options().experimental_agc.Get(&value));
@@ -68,6 +72,8 @@ TEST(LocalAudioSourceTest, SetValidOptions) {
   EXPECT_TRUE(source->options().noise_suppression.Get(&value));
   EXPECT_FALSE(value);
   EXPECT_TRUE(source->options().highpass_filter.Get(&value));
+  EXPECT_TRUE(value);
+  EXPECT_TRUE(source->options().aec_dump.Get(&value));
   EXPECT_TRUE(value);
 }
 

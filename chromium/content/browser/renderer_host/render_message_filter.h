@@ -20,6 +20,8 @@
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "cc/resources/shared_bitmap_manager.h"
+#include "content/common/host_discardable_shared_memory_manager.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/three_d_api_types.h"
 #include "ipc/message_filter.h"
@@ -70,7 +72,6 @@ struct MediaLogEvent;
 }
 
 namespace net {
-class CookieStore;
 class KeygenHandler;
 class URLRequestContext;
 class URLRequestContextGetter;
@@ -114,10 +115,10 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
 
   int render_process_id() const { return render_process_id_; }
 
-  // Returns the correct net::CookieStore depending on what type of url is
+  // Returns the correct net::URLRequestContext depending on what type of url is
   // given.
   // Only call on the IO thread.
-  net::CookieStore* GetCookieStoreForURL(const GURL& url);
+  net::URLRequestContext* GetRequestContextForURL(const GURL& url);
 
  protected:
   ~RenderMessageFilter() override;
@@ -156,11 +157,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                     const GURL& url,
                     const GURL& first_party_for_cookies,
                     IPC::Message* reply_msg);
-  void OnGetRawCookies(const GURL& url,
-                       const GURL& first_party_for_cookies,
-                       IPC::Message* reply_msg);
-  void OnDeleteCookie(const GURL& url,
-                      const std::string& cookieName);
   void OnCookiesEnabled(int render_frame_id,
                         const GURL& url,
                         const GURL& first_party_for_cookies,
@@ -205,6 +201,9 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                                              bool is_external);
   void OnOpenChannelToPpapiBroker(int routing_id,
                                   const base::FilePath& path);
+  void OnPluginInstanceThrottleStateChange(int plugin_child_id,
+                                           int32 pp_instance,
+                                           bool is_throttled);
 #endif  // defined(ENABLE_PLUGINS)
   void OnGenerateRoutingID(int* route_id);
   void OnDownloadUrl(int render_view_id,
@@ -212,8 +211,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                      const Referrer& referrer,
                      const base::string16& suggested_name);
   void OnSaveImageFromDataURL(int render_view_id, const std::string& url_str);
-  void OnCheckNotificationPermission(const GURL& source_origin,
-                                     int* permission_level);
 
   void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
                                 media::AudioParameters* output_params);
@@ -226,8 +223,9 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
   // Used to ask the browser to allocate a block of shared memory for the
   // renderer to send back data in, since shared memory can't be created
   // in the renderer on POSIX due to the sandbox.
-  void OnAllocateSharedMemory(uint32 buffer_size,
-                              base::SharedMemoryHandle* handle);
+  void AllocateSharedMemoryOnFileThread(uint32 buffer_size,
+                                        IPC::Message* reply_msg);
+  void OnAllocateSharedMemory(uint32 buffer_size, IPC::Message* reply_msg);
   void AllocateSharedBitmapOnFileThread(uint32 buffer_size,
                                         const cc::SharedBitmapId& id,
                                         IPC::Message* reply_msg);
@@ -241,17 +239,18 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 
   // Browser side discardable shared memory allocation.
-  void OnAllocateLockedDiscardableSharedMemory(
+  void AllocateLockedDiscardableSharedMemoryOnFileThread(
       uint32 size,
-      base::SharedMemoryHandle* handle);
+      DiscardableSharedMemoryId id,
+      IPC::Message* reply_message);
+  void OnAllocateLockedDiscardableSharedMemory(uint32 size,
+                                               DiscardableSharedMemoryId id,
+                                               IPC::Message* reply_message);
+  void DeletedDiscardableSharedMemoryOnFileThread(DiscardableSharedMemoryId id);
+  void OnDeletedDiscardableSharedMemory(DiscardableSharedMemoryId id);
 
-  // Browser side transport DIB allocation
-  void OnAllocTransportDIB(uint32 size,
-                           bool cache_in_browser,
-                           TransportDIB::Handle* result);
-  void OnFreeTransportDIB(TransportDIB::Id dib_id);
   void OnCacheableMetadataAvailable(const GURL& url,
-                                    double expected_response_time,
+                                    base::Time expected_response_time,
                                     const std::vector<char>& data);
   void OnKeygen(uint32 key_size_index, const std::string& challenge_string,
                 const GURL& url, IPC::Message* reply_msg);
@@ -272,8 +271,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
   // Callback functions for getting cookies from cookie store.
   void SendGetCookiesResponse(IPC::Message* reply_msg,
                               const std::string& cookies);
-  void SendGetRawCookiesResponse(IPC::Message* reply_msg,
-                                 const net::CookieList& cookie_list);
 
   bool CheckBenchmarkingEnabled() const;
   bool CheckPreparsedJsCachingEnabled() const;
@@ -313,6 +310,8 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
   ResourceDispatcherHostImpl* resource_dispatcher_host_;
   PluginServiceImpl* plugin_service_;
   base::FilePath profile_data_directory_;
+
+  HostSharedBitmapManagerClient bitmap_manager_client_;
 
   // Contextual information to be used for requests created here.
   scoped_refptr<net::URLRequestContextGetter> request_context_;

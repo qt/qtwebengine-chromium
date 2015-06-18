@@ -56,7 +56,9 @@
 
 #include <openssl/rsa.h>
 
-#include <openssl/bio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
@@ -247,13 +249,13 @@ static int test_bad_key(void) {
 
   if (!RSA_generate_key_ex(key, 512, &e, NULL)) {
     fprintf(stderr, "RSA_generate_key_ex failed.\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     return 0;
   }
 
   if (!BN_add(key->p, key->p, BN_value_one())) {
     fprintf(stderr, "BN error.\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     return 0;
   }
 
@@ -290,19 +292,21 @@ static int test_only_d_given(void) {
 
   if (!RSA_check_key(key)) {
     fprintf(stderr, "RSA_check_key failed with only d given.\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     goto err;
   }
 
-  if (!RSA_sign(NID_md5, kDummyHash, sizeof(kDummyHash), buf, &buf_len, key)) {
+  if (!RSA_sign(NID_sha256, kDummyHash, sizeof(kDummyHash), buf, &buf_len,
+                key)) {
     fprintf(stderr, "RSA_sign failed with only d given.\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     goto err;
   }
 
-  if (!RSA_verify(NID_md5, kDummyHash, sizeof(kDummyHash), buf, buf_len, key)) {
+  if (!RSA_verify(NID_sha256, kDummyHash, sizeof(kDummyHash), buf, buf_len,
+                  key)) {
     fprintf(stderr, "RSA_verify failed with only d given.\n");
-    BIO_print_errors_fp(stderr);
+    ERR_print_errors_fp(stderr);
     goto err;
   }
 
@@ -329,13 +333,13 @@ static int test_recover_crt_params(void) {
     key1 = RSA_new();
     if (!RSA_generate_key_ex(key1, 512, e, NULL)) {
       fprintf(stderr, "RSA_generate_key_ex failed.\n");
-      BIO_print_errors_fp(stderr);
+      ERR_print_errors_fp(stderr);
       return 0;
     }
 
     if (!RSA_check_key(key1)) {
       fprintf(stderr, "RSA_check_key failed with original key.\n");
-      BIO_print_errors_fp(stderr);
+      ERR_print_errors_fp(stderr);
       return 0;
     }
 
@@ -347,7 +351,7 @@ static int test_recover_crt_params(void) {
 
     if (!RSA_recover_crt_params(key2)) {
       fprintf(stderr, "RSA_recover_crt_params failed.\n");
-      BIO_print_errors_fp(stderr);
+      ERR_print_errors_fp(stderr);
       return 0;
     }
 
@@ -357,21 +361,21 @@ static int test_recover_crt_params(void) {
 
     if (!RSA_check_key(key2)) {
       fprintf(stderr, "RSA_check_key failed with recovered key.\n");
-      BIO_print_errors_fp(stderr);
+      ERR_print_errors_fp(stderr);
       return 0;
     }
 
-    if (!RSA_sign(NID_md5, kDummyHash, sizeof(kDummyHash), buf, &buf_len,
+    if (!RSA_sign(NID_sha256, kDummyHash, sizeof(kDummyHash), buf, &buf_len,
                   key2)) {
       fprintf(stderr, "RSA_sign failed with recovered key.\n");
-      BIO_print_errors_fp(stderr);
+      ERR_print_errors_fp(stderr);
       return 0;
     }
 
-    if (!RSA_verify(NID_md5, kDummyHash, sizeof(kDummyHash), buf, buf_len,
+    if (!RSA_verify(NID_sha256, kDummyHash, sizeof(kDummyHash), buf, buf_len,
                     key2)) {
       fprintf(stderr, "RSA_verify failed with recovered key.\n");
-      BIO_print_errors_fp(stderr);
+      ERR_print_errors_fp(stderr);
       return 0;
     }
 
@@ -413,7 +417,6 @@ int main(int argc, char *argv[]) {
         break;
       default:
         abort();
-        return 1;
     }
 
     if (!RSA_check_key(key)) {
@@ -477,8 +480,9 @@ int main(int argc, char *argv[]) {
       int b;
       unsigned char saved = ctext[n];
       for (b = 0; b < 256; ++b) {
-        if (b == saved)
+        if (b == saved) {
           continue;
+        }
         ctext[n] = b;
         num =
             RSA_private_decrypt(num, ctext, ptext, key, RSA_PKCS1_OAEP_PADDING);

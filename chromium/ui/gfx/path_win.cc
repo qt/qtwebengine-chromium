@@ -25,46 +25,11 @@ HRGN CreateHRGNFromSkRegion(const SkRegion& region) {
 }
 
 HRGN CreateHRGNFromSkPath(const SkPath& path) {
-  int point_count = path.getPoints(NULL, 0);
-  scoped_ptr<SkPoint[]> points(new SkPoint[point_count]);
-  path.getPoints(points.get(), point_count);
-  scoped_ptr<POINT[]> windows_points(new POINT[point_count]);
-  for (int i = 0; i < point_count; ++i) {
-    windows_points[i].x = SkScalarRoundToInt(points[i].fX);
-    windows_points[i].y = SkScalarRoundToInt(points[i].fY);
-  }
-
-  return ::CreatePolygonRgn(windows_points.get(), point_count, ALTERNATE);
+  SkRegion clip_region;
+  clip_region.setRect(path.getBounds().round());
+  SkRegion region;
+  region.setPath(path, clip_region);
+  return CreateHRGNFromSkRegion(region);
 }
-
-// See path_aura.cc for Aura definition of these methods:
-#if !defined(USE_AURA)
-
-NativeRegion Path::CreateNativeRegion() const {
-  return CreateHRGNFromSkPath(*this);
-}
-
-// static
-NativeRegion Path::IntersectRegions(NativeRegion r1, NativeRegion r2) {
-  HRGN dest = CreateRectRgn(0, 0, 1, 1);
-  CombineRgn(dest, r1, r2, RGN_AND);
-  return dest;
-}
-
-// static
-NativeRegion Path::CombineRegions(NativeRegion r1, NativeRegion r2) {
-  HRGN dest = CreateRectRgn(0, 0, 1, 1);
-  CombineRgn(dest, r1, r2, RGN_OR);
-  return dest;
-}
-
-// static
-NativeRegion Path::SubtractRegion(NativeRegion r1, NativeRegion r2) {
-  HRGN dest = CreateRectRgn(0, 0, 1, 1);
-  CombineRgn(dest, r1, r2, RGN_DIFF);
-  return dest;
-}
-
-#endif
 
 }  // namespace gfx

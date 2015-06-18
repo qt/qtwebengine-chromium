@@ -23,6 +23,7 @@
 #ifndef CharacterData_h
 #define CharacterData_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Node.h"
 #include "wtf/text/WTFString.h"
 
@@ -30,7 +31,7 @@ namespace blink {
 
 class ExceptionState;
 
-class CharacterData : public Node {
+class CORE_EXPORT CharacterData : public Node {
     DEFINE_WRAPPERTYPEINFO();
 public:
     void atomize();
@@ -64,7 +65,11 @@ protected:
         ASSERT(!data.isNull());
         m_data = data;
     }
-    void didModifyData(const String& oldValue);
+    enum UpdateSource {
+        UpdateFromParser,
+        UpdateFromNonParser,
+    };
+    void didModifyData(const String& oldValue, UpdateSource);
 
     String m_data;
 
@@ -73,11 +78,10 @@ private:
     virtual void setNodeValue(const String&) override final;
     virtual bool isCharacterDataNode() const override final { return true; }
     virtual int maxCharacterOffset() const override final;
-    virtual bool offsetInCharacters() const override final;
-    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, RecalcStyleBehavior = DoNotRecalcStyle);
+    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, UpdateSource = UpdateFromNonParser, RecalcStyleBehavior = DoNotRecalcStyle);
 
-    bool isContainerNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isElementNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isContainerNode() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isElementNode() const = delete; // This will catch anyone doing an unnecessary check.
 };
 
 DEFINE_NODE_TYPE_CASTS(CharacterData, isCharacterDataNode());

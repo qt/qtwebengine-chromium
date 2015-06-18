@@ -53,7 +53,7 @@
 // between char[]-based pathnames on POSIX systems and wchar_t[]-based
 // pathnames on Windows.
 //
-// Paths can't contain NULs as a precaution agaist premature truncation.
+// As a precaution against premature truncation, paths can't contain NULs.
 //
 // Because a FilePath object should not be instantiated at the global scope,
 // instead, use a FilePath::CharType[] and initialize it with
@@ -83,9 +83,9 @@
 //    in case it ever comes across such a system.  FilePath needs this support
 //    for Windows UNC paths, anyway.
 //    References:
-//    The Open Group Base Specifications Issue 7, sections 3.266 ("Pathname")
+//    The Open Group Base Specifications Issue 7, sections 3.267 ("Pathname")
 //    and 4.12 ("Pathname Resolution"), available at:
-//    http://www.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_266
+//    http://www.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_267
 //    http://www.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_12
 //
 //  - Windows treats c:\\ the same way it treats \\.  This was intended to
@@ -107,6 +107,7 @@
 #include <vector>
 
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"  // For implicit conversions.
@@ -237,7 +238,7 @@ class BASE_EXPORT FilePath {
   // ASSERT(new_path == path.value());
   // NOTE: this is different from the original file_util implementation which
   // returned the extension without a leading "." ("jpg" instead of ".jpg")
-  StringType Extension() const;
+  StringType Extension() const WARN_UNUSED_RESULT;
 
   // Returns the path's file extension, as in Extension(), but will
   // never return a double extension.
@@ -246,7 +247,7 @@ class BASE_EXPORT FilePath {
   // we can rename this to Extension() and the other to something like
   // LongExtension(), defaulting to short extensions and leaving the
   // long "extensions" to logic like base::GetUniquePathNumber().
-  StringType FinalExtension() const;
+  StringType FinalExtension() const WARN_UNUSED_RESULT;
 
   // Returns "C:\pics\jojo" for path "C:\pics\jojo.jpg"
   // NOTE: this is slightly different from the similar file_util implementation
@@ -442,11 +443,9 @@ BASE_EXPORT extern void PrintTo(const base::FilePath& path, std::ostream* out);
 #if defined(OS_POSIX)
 #define FILE_PATH_LITERAL(x) x
 #define PRFilePath "s"
-#define PRFilePathLiteral "%s"
 #elif defined(OS_WIN)
 #define FILE_PATH_LITERAL(x) L ## x
 #define PRFilePath "ls"
-#define PRFilePathLiteral L"%ls"
 #endif  // OS_WIN
 
 // Provide a hash function so that hash_sets and maps can contain FilePath

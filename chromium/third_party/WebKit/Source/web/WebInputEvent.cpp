@@ -43,7 +43,7 @@ struct SameSizeAsWebInputEvent {
 };
 
 struct SameSizeAsWebKeyboardEvent : public SameSizeAsWebInputEvent {
-    int keyboardData[12];
+    int keyboardData[14];
 };
 
 struct SameSizeAsWebMouseEvent : public SameSizeAsWebInputEvent {
@@ -51,24 +51,24 @@ struct SameSizeAsWebMouseEvent : public SameSizeAsWebInputEvent {
 };
 
 struct SameSizeAsWebMouseWheelEvent : public SameSizeAsWebMouseEvent {
-    int mousewheelData[12];
+    int mousewheelData[11];
 };
 
 struct SameSizeAsWebGestureEvent : public SameSizeAsWebInputEvent {
-    int gestureData[9];
+    int gestureData[10];
 };
 
 struct SameSizeAsWebTouchEvent : public SameSizeAsWebInputEvent {
     WebTouchPoint touchPoints[WebTouchEvent::touchesLengthCap];
-    int touchData[2];
+    int touchData[3];
 };
 
-COMPILE_ASSERT(sizeof(WebInputEvent) == sizeof(SameSizeAsWebInputEvent), WebInputEvent_has_gaps);
-COMPILE_ASSERT(sizeof(WebKeyboardEvent) == sizeof(SameSizeAsWebKeyboardEvent), WebKeyboardEvent_has_gaps);
-COMPILE_ASSERT(sizeof(WebMouseEvent) == sizeof(SameSizeAsWebMouseEvent), WebMouseEvent_has_gaps);
-COMPILE_ASSERT(sizeof(WebMouseWheelEvent) == sizeof(SameSizeAsWebMouseWheelEvent), WebMouseWheelEvent_has_gaps);
-COMPILE_ASSERT(sizeof(WebGestureEvent) == sizeof(SameSizeAsWebGestureEvent), WebGestureEvent_has_gaps);
-COMPILE_ASSERT(sizeof(WebTouchEvent) == sizeof(SameSizeAsWebTouchEvent), WebTouchEvent_has_gaps);
+static_assert(sizeof(WebInputEvent) == sizeof(SameSizeAsWebInputEvent), "WebInputEvent should not have gaps");
+static_assert(sizeof(WebKeyboardEvent) == sizeof(SameSizeAsWebKeyboardEvent), "WebKeyboardEvent should not have gaps");
+static_assert(sizeof(WebMouseEvent) == sizeof(SameSizeAsWebMouseEvent), "WebMouseEvent should not have gaps");
+static_assert(sizeof(WebMouseWheelEvent) == sizeof(SameSizeAsWebMouseWheelEvent), "WebMouseWheelEvent should not have gaps");
+static_assert(sizeof(WebGestureEvent) == sizeof(SameSizeAsWebGestureEvent), "WebGestureEvent should not have gaps");
+static_assert(sizeof(WebTouchEvent) == sizeof(SameSizeAsWebTouchEvent), "WebTouchEvent should not have gaps");
 
 static const char* staticKeyIdentifiers(unsigned short keyCode)
 {

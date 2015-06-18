@@ -5,9 +5,28 @@
 #include "ui/events/gesture_detection/gesture_configuration.h"
 
 namespace ui {
+namespace {
+
+GestureConfiguration* instance = nullptr;
+
+}  // namespace
+
+// static
+void GestureConfiguration::SetInstance(GestureConfiguration* config) {
+  instance = config;
+}
+
+// static
+GestureConfiguration* GestureConfiguration::GetInstance() {
+  if (instance)
+    return instance;
+
+  return GestureConfiguration::GetPlatformSpecificInstance();
+}
 
 GestureConfiguration::GestureConfiguration()
     : default_radius_(25),
+      double_tap_enabled_(false),
       double_tap_timeout_in_ms_(400),
       fling_max_cancel_to_down_time_in_ms_(400),
       fling_max_tap_gap_time_in_ms_(200),
@@ -32,9 +51,8 @@ GestureConfiguration::GestureConfiguration()
       // The default value of min_scaling_touch_major_ is 2 * default_radius_.
       min_scaling_touch_major_(50),
       min_swipe_velocity_(20),
-      velocity_tracker_strategy_(VelocityTracker::Strategy::STRATEGY_DEFAULT),
-// TODO(jdduke): Disable and remove entirely when issues with intermittent
-// scroll end detection on the Pixel are resolved, crbug.com/353702.
+      // TODO(jdduke): Disable and remove entirely when issues with intermittent
+      // scroll end detection on the Pixel are resolved, crbug.com/353702.
 #if defined(OS_CHROMEOS)
       scroll_debounce_interval_in_ms_(30),
 #else
@@ -47,7 +65,8 @@ GestureConfiguration::GestureConfiguration()
       span_slop_(30),
       swipe_enabled_(false),
       tab_scrub_activation_delay_in_ms_(200),
-      two_finger_tap_enabled_(false) {
+      two_finger_tap_enabled_(false),
+      velocity_tracker_strategy_(VelocityTracker::Strategy::STRATEGY_DEFAULT) {
 }
 
 GestureConfiguration::~GestureConfiguration() {

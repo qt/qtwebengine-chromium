@@ -15,15 +15,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
 
-// Declare notification names from the 10.7 SDK.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-NSString* NSPreferredScrollerStyleDidChangeNotification =
-    @"NSPreferredScrollerStyleDidChangeNotification";
-
-#endif
-
 @interface ScrollbarPrefsObserver : NSObject
 
 + (void)registerAsObserver;
@@ -53,7 +44,8 @@ suspensionBehavior:NSNotificationSuspensionBehaviorCoalesce];
   // In single-process mode, renderers will catch these notifications
   // themselves and listening for them here may trigger the DCHECK in Observe().
   if ([NSScroller respondsToSelector:@selector(preferredScrollerStyle)] &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(behaviorPrefsChanged:)
@@ -71,7 +63,7 @@ suspensionBehavior:NSNotificationSuspensionBehaviorCoalesce];
 }
 
 + (void)notifyPrefsChangedWithRedraw:(BOOL)redraw {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
   [defaults synchronize];
 
@@ -134,7 +126,7 @@ void ThemeHelperMac::Observe(int type,
                              const NotificationDetails& details) {
   DCHECK_EQ(NOTIFICATION_RENDERER_PROCESS_CREATED, type);
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
   [defaults synchronize];
 

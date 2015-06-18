@@ -40,14 +40,14 @@
 #include "core/editing/EditingStyle.h"
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/PlainTextRange.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLSpanElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
 #include "platform/heap/Handle.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -262,8 +262,8 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
     Node& scope = NodeTraversal::highestAncestorOrSelf(*visibleStart.deepEquivalent().deprecatedNode());
     RefPtrWillBeRawPtr<Range> startRange = Range::create(document(), firstPositionInNode(&scope), visibleStart.deepEquivalent().parentAnchoredEquivalent());
     RefPtrWillBeRawPtr<Range> endRange = Range::create(document(), firstPositionInNode(&scope), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
-    int startIndex = TextIterator::rangeLength(startRange.get(), true);
-    int endIndex = TextIterator::rangeLength(endRange.get(), true);
+    int startIndex = TextIterator::rangeLength(startRange->startPosition(), startRange->endPosition(), true);
+    int endIndex = TextIterator::rangeLength(endRange->startPosition(), endRange->endPosition(), true);
 
     VisiblePosition paragraphStart(startOfParagraph(visibleStart));
     VisiblePosition nextParagraphStart(endOfParagraph(paragraphStart).next());
@@ -372,8 +372,12 @@ void ApplyStyleCommand::applyRelativeFontStyleChange(EditingStyle* style)
     if (startNode == beyondEnd)
         return;
 
-    if (startNode->isTextNode() && start.deprecatedEditingOffset() >= caretMaxOffset(startNode)) // Move out of text node if range does not include its characters.
+    if (startNode->isTextNode() && start.deprecatedEditingOffset() >= caretMaxOffset(startNode)) {
+        // Move out of text node if range does not include its characters.
         startNode = NodeTraversal::next(*startNode);
+        if (!startNode)
+            return;
+    }
 
     // Store away font size before making any changes to the document.
     // This ensures that changes to one node won't effect another.
@@ -395,7 +399,7 @@ void ApplyStyleCommand::applyRelativeFontStyleChange(EditingStyle* style)
             if (!elementFullySelected(toHTMLElement(*node), start, end))
                 continue;
             element = toHTMLElement(node);
-        } else if (node->isTextNode() && node->renderer() && node->parentNode() != lastStyledNode) {
+        } else if (node->isTextNode() && node->layoutObject() && node->parentNode() != lastStyledNode) {
             // Last styled node was not parent node of this text node, but we wish to style this
             // text node. To make this possible, add a style span to surround this text node.
             RefPtrWillBeRawPtr<HTMLSpanElement> span = createStyleSpanElement(document());
@@ -750,7 +754,7 @@ public:
         return start && end && start->inDocument() && end->inDocument();
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(start);
         visitor->trace(end);
@@ -785,10 +789,10 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
     for (RefPtrWillBeRawPtr<Node> next; node && node != pastEndNode; node = next) {
         next = NodeTraversal::next(*node);
 
-        if (!node->renderer() || !node->hasEditableStyle())
+        if (!node->layoutObject() || !node->hasEditableStyle())
             continue;
 
-        if (!node->rendererIsRichlyEditable() && node->isHTMLElement()) {
+        if (!node->layoutObjectIsRichlyEditable() && node->isHTMLElement()) {
             HTMLElement* element = toHTMLElement(node);
             // This is a plaintext-only region. Only proceed if it's fully selected.
             // pastEndNode is the node after the last fully selected node, so if it's inside node then
@@ -1022,9 +1026,9 @@ void ApplyStyleCommand::applyInlineStyleToPushDown(Node* node, EditingStyle* sty
 {
     ASSERT(node);
 
-    node->document().updateRenderTreeIfNeeded();
+    node->document().updateLayoutTreeIfNeeded();
 
-    if (!style || style->isEmpty() || !node->renderer() || isHTMLIFrameElement(*node))
+    if (!style || style->isEmpty() || !node->layoutObject() || isHTMLIFrameElement(*node))
         return;
 
     RefPtrWillBeRawPtr<EditingStyle> newInlineStyle = style;
@@ -1033,14 +1037,14 @@ void ApplyStyleCommand::applyInlineStyleToPushDown(Node* node, EditingStyle* sty
         newInlineStyle->mergeInlineStyleOfElement(toHTMLElement(node), EditingStyle::OverrideValues);
     }
 
-    // Since addInlineStyleIfNeeded can't add styles to block-flow render objects, add style attribute instead.
+    // Since addInlineStyleIfNeeded can't add styles to block-flow layout objects, add style attribute instead.
     // FIXME: applyInlineStyleToRange should be used here instead.
-    if ((node->renderer()->isRenderBlockFlow() || node->hasChildren()) && node->isHTMLElement()) {
+    if ((node->layoutObject()->isLayoutBlockFlow() || node->hasChildren()) && node->isHTMLElement()) {
         setNodeAttribute(toHTMLElement(node), styleAttr, AtomicString(newInlineStyle->style()->asText()));
         return;
     }
 
-    if (node->renderer()->isText() && toRenderText(node->renderer())->isAllCollapsibleWhitespace())
+    if (node->layoutObject()->isText() && toLayoutText(node->layoutObject())->isAllCollapsibleWhitespace())
         return;
 
     // We can't wrap node with the styled element here because new styled element will never be removed if we did.
@@ -1083,6 +1087,10 @@ void ApplyStyleCommand::pushDownInlineStyleAroundNode(EditingStyle* style, Node*
                 for (const auto& element : elementsToPushDown) {
                     RefPtrWillBeRawPtr<Element> wrapper = element->cloneElementWithoutChildren();
                     wrapper->removeAttribute(styleAttr);
+                    // Delete id attribute from the second element because the same id cannot be used for more than one element
+                    element->removeAttribute(HTMLNames::idAttr);
+                    if (isHTMLAnchorElement(element))
+                        element->removeAttribute(HTMLNames::nameAttr);
                     surroundNodeRangeWithElement(child, child, wrapper);
                 }
             }
@@ -1106,6 +1114,7 @@ void ApplyStyleCommand::removeInlineStyle(EditingStyle* style, const Position &s
     ASSERT(end.isNotNull());
     ASSERT(start.inDocument());
     ASSERT(end.inDocument());
+    ASSERT(Position::commonAncestorTreeScope(start, end));
     ASSERT(comparePositions(start, end) <= 0);
     // FIXME: We should assert that start/end are not in the middle of a text node.
 
@@ -1134,6 +1143,11 @@ void ApplyStyleCommand::removeInlineStyle(EditingStyle* style, const Position &s
     // use pushDownStart or pushDownEnd instead, which pushDownInlineStyleAroundNode won't prune.
     Position s = start.isNull() || start.isOrphan() ? pushDownStart : start;
     Position e = end.isNull() || end.isOrphan() ? pushDownEnd : end;
+
+    // Current ending selection resetting algorithm assumes |start| and |end|
+    // are in a same DOM tree even if they are not in document.
+    if (!Position::commonAncestorTreeScope(start, end))
+        return;
 
     RefPtrWillBeRawPtr<Node> node = start.deprecatedNode();
     while (node) {
@@ -1534,7 +1548,8 @@ float ApplyStyleCommand::computedFontSize(Node* node)
     if (!value)
         return 0;
 
-    return value->getFloatValue(CSSPrimitiveValue::CSS_PX);
+    ASSERT(value->primitiveType() == CSSPrimitiveValue::CSS_PX);
+    return value->getFloatValue();
 }
 
 void ApplyStyleCommand::joinChildTextNodes(ContainerNode* node, const Position& start, const Position& end)
@@ -1573,7 +1588,7 @@ void ApplyStyleCommand::joinChildTextNodes(ContainerNode* node, const Position& 
     updateStartEnd(newStart, newEnd);
 }
 
-void ApplyStyleCommand::trace(Visitor* visitor)
+DEFINE_TRACE(ApplyStyleCommand)
 {
     visitor->trace(m_style);
     visitor->trace(m_start);

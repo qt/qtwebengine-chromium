@@ -761,9 +761,9 @@ class MacroAssembler : public Assembler {
   // it can be evidence of a potential bug because the ABI forbids accesses
   // below csp.
   //
-  // If StackPointer() is the system stack pointer (csp) or ALWAYS_ALIGN_CSP is
-  // enabled, then csp will be dereferenced to  cause the processor
-  // (or simulator) to abort if it is not properly aligned.
+  // If StackPointer() is the system stack pointer (csp), then csp will be
+  // dereferenced to cause the processor (or simulator) to abort if it is not
+  // properly aligned.
   //
   // If emit_debug_code() is false, this emits no code.
   void AssertStackConsistency();
@@ -831,9 +831,7 @@ class MacroAssembler : public Assembler {
   inline void BumpSystemStackPointer(const Operand& space);
 
   // Re-synchronizes the system stack pointer (csp) with the current stack
-  // pointer (according to StackPointer()).  This function will ensure the
-  // new value of the system stack pointer is remains aligned to 16 bytes, and
-  // is lower than or equal to the value of the current stack pointer.
+  // pointer (according to StackPointer()).
   //
   // This method asserts that StackPointer() is not csp, since the call does
   // not make sense in that context.
@@ -883,6 +881,8 @@ class MacroAssembler : public Assembler {
   void EnumLengthUntagged(Register dst, Register map);
   void EnumLengthSmi(Register dst, Register map);
   void NumberOfOwnDescriptors(Register dst, Register map);
+  void LoadAccessor(Register dst, Register holder, int accessor_index,
+                    AccessorComponent accessor);
 
   template<typename Field>
   void DecodeField(Register dst, Register src) {
@@ -1078,22 +1078,6 @@ class MacroAssembler : public Assembler {
   // This is required for compatibility in architecture indepenedant code.
   inline void jmp(Label* L) { B(L); }
 
-  // Passes thrown value to the handler of top of the try handler chain.
-  // Register value must be x0.
-  void Throw(Register value,
-             Register scratch1,
-             Register scratch2,
-             Register scratch3,
-             Register scratch4);
-
-  // Propagates an uncatchable exception to the top of the current JS stack's
-  // handler chain. Register value must be x0.
-  void ThrowUncatchable(Register value,
-                        Register scratch1,
-                        Register scratch2,
-                        Register scratch3,
-                        Register scratch4);
-
   void CallStub(CodeStub* stub, TypeFeedbackId ast_id = TypeFeedbackId::None());
   void TailCallStub(CodeStub* stub);
 
@@ -1131,24 +1115,6 @@ class MacroAssembler : public Assembler {
   void CallCFunction(Register function,
                      int num_reg_arguments,
                      int num_double_arguments);
-
-  // Calls an API function. Allocates HandleScope, extracts returned value
-  // from handle and propagates exceptions.
-  // 'stack_space' is the space to be unwound on exit (includes the call JS
-  // arguments space and the additional space allocated for the fast call).
-  // 'spill_offset' is the offset from the stack pointer where
-  // CallApiFunctionAndReturn can spill registers.
-  void CallApiFunctionAndReturn(Register function_address,
-                                ExternalReference thunk_ref,
-                                int stack_space,
-                                int spill_offset,
-                                MemOperand return_value_operand,
-                                MemOperand* context_restore_operand);
-
-  // The number of register that CallApiFunctionAndReturn will need to save on
-  // the stack. The space for these registers need to be allocated in the
-  // ExitFrame before calling CallApiFunctionAndReturn.
-  static const int kCallApiFunctionSpillSpace = 4;
 
   // Jump to a runtime routine.
   void JumpToExternalReference(const ExternalReference& builtin);
@@ -1307,18 +1273,18 @@ class MacroAssembler : public Assembler {
   // ---------------------------------------------------------------------------
   // Exception handling
 
-  // Push a new try handler and link into try handler chain.
-  void PushTryHandler(StackHandler::Kind kind, int handler_index);
+  // Push a new stack handler and link into stack handler chain.
+  void PushStackHandler();
 
-  // Unlink the stack handler on top of the stack from the try handler chain.
+  // Unlink the stack handler on top of the stack from the stack handler chain.
   // Must preserve the result register.
-  void PopTryHandler();
+  void PopStackHandler();
 
 
   // ---------------------------------------------------------------------------
   // Allocation support
 
-  // Allocate an object in new space or old pointer space. The object_size is
+  // Allocate an object in new space or old space. The object_size is
   // specified either in bytes or in words if the allocation flag SIZE_IN_WORDS
   // is passed. The allocated object is returned in result.
   //
@@ -1395,6 +1361,11 @@ class MacroAssembler : public Assembler {
     kMissOnBoundFunction,
     kDontMissOnBoundFunction
   };
+
+  // Machine code version of Map::GetConstructor().
+  // |temp| holds |result|'s map when done, and |temp2| its instance type.
+  void GetMapConstructor(Register result, Register map, Register temp,
+                         Register temp2);
 
   void TryGetFunctionPrototype(Register function,
                                Register result,
@@ -1480,14 +1451,21 @@ class MacroAssembler : public Assembler {
                 Label* fail,
                 SmiCheckType smi_check_type);
 
-  // Check if the map of an object is equal to a specified map and branch to a
-  // specified target if equal. Skip the smi check if not required (object is
-  // known to be a heap object)
-  void DispatchMap(Register obj,
-                   Register scratch,
-                   Handle<Map> map,
-                   Handle<Code> success,
-                   SmiCheckType smi_check_type);
+  // Check if the map of an object is equal to a specified weak map and branch
+  // to a specified target if equal. Skip the smi check if not required
+  // (object is known to be a heap object)
+  void DispatchWeakMap(Register obj, Register scratch1, Register scratch2,
+                       Handle<WeakCell> cell, Handle<Code> success,
+                       SmiCheckType smi_check_type);
+
+  // Compare the given value and the value of weak cell.
+  void CmpWeakValue(Register value, Handle<WeakCell> cell, Register scratch);
+
+  void GetWeakValue(Register value, Handle<WeakCell> cell);
+
+  // Load the value of the weak cell in the value register. Branch to the given
+  // miss label if the weak cell was cleared.
+  void LoadWeakValue(Register value, Handle<WeakCell> cell, Label* miss);
 
   // Test the bitfield of the heap object map with mask and set the condition
   // flags. The object register is preserved.
@@ -1776,10 +1754,6 @@ class MacroAssembler : public Assembler {
                           const Register& scratch,
                           int mask,
                           Label* if_all_clear);
-
-  void CheckMapDeprecated(Handle<Map> map,
-                          Register scratch,
-                          Label* if_deprecated);
 
   // Check if object is in new space and jump accordingly.
   // Register 'object' is preserved.
@@ -2084,14 +2058,6 @@ class MacroAssembler : public Assembler {
   // proper PCS registers (and in calling order). The argument registers can
   // have mixed types. The format string (x0) should not be included.
   void CallPrintf(int arg_count = 0, const CPURegister * args = NULL);
-
-  // Helper for throwing exceptions.  Compute a handler address and jump to
-  // it.  See the implementation for register usage.
-  void JumpToHandlerEntry(Register exception,
-                          Register object,
-                          Register state,
-                          Register scratch1,
-                          Register scratch2);
 
   // Helper for implementing JumpIfNotInNewSpace and JumpIfInNewSpace.
   void InNewSpace(Register object,

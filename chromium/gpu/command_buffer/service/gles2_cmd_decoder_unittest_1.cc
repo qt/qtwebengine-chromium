@@ -161,14 +161,6 @@ void GLES2DecoderTestBase::SpecializedSetup<
 };
 
 template <>
-void GLES2DecoderTestBase::SpecializedSetup<
-    cmds::GetRenderbufferParameteriv, 0>(
-        bool /* valid */) {
-  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
-                    kServiceRenderbufferId);
-};
-
-template <>
 void GLES2DecoderTestBase::SpecializedSetup<cmds::GetProgramiv, 0>(
     bool valid) {
   if (valid) {
@@ -248,56 +240,9 @@ void GLES2DecoderTestBase::SpecializedSetup<cmds::GetProgramInfoLog, 0>(
   attach_cmd.Init(client_program_id_, kClientFragmentShaderId);
   EXPECT_EQ(error::kNoError, ExecuteCmd(attach_cmd));
 
-  program->Link(NULL, NULL, NULL, Program::kCountOnlyStaticallyUsed,
+  program->Link(NULL, Program::kCountOnlyStaticallyUsed,
                 base::Bind(&ShaderCacheCb));
 };
-
-template <>
-void GLES2DecoderTestBase::SpecializedSetup<cmds::GetVertexAttribfv, 0>(
-    bool valid) {
-  DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
-  DoVertexAttribPointer(1, 1, GL_FLOAT, 0, 0);
-  if (valid) {
-    EXPECT_CALL(*gl_, GetError())
-        .WillOnce(Return(GL_NO_ERROR))
-        .WillOnce(Return(GL_NO_ERROR))
-        .RetiresOnSaturation();
-  }
-};
-
-template <>
-void GLES2DecoderTestBase::SpecializedSetup<cmds::GetVertexAttribiv, 0>(
-    bool valid) {
-  DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
-  DoVertexAttribPointer(1, 1, GL_FLOAT, 0, 0);
-  if (valid) {
-    EXPECT_CALL(*gl_, GetError())
-        .WillOnce(Return(GL_NO_ERROR))
-        .WillOnce(Return(GL_NO_ERROR))
-        .RetiresOnSaturation();
-  }
-};
-
-template <>
-void GLES2DecoderTestBase::SpecializedSetup<cmds::RenderbufferStorage, 0>(
-    bool valid) {
-  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
-                    kServiceRenderbufferId);
-  if (valid) {
-    EnsureRenderbufferBound(false);
-    EXPECT_CALL(*gl_, GetError())
-        .WillOnce(Return(GL_NO_ERROR))
-        .RetiresOnSaturation();
-    EXPECT_CALL(*gl_,
-                RenderbufferStorageEXT(GL_RENDERBUFFER, _, 3, 4))
-        .Times(1)
-        .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, GetError())
-        .WillOnce(Return(GL_NO_ERROR))
-        .RetiresOnSaturation();
-  }
-}
-
 
 #include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_1_autogen.h"
 

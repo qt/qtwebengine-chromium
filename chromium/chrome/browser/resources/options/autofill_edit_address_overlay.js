@@ -242,12 +242,19 @@ cr.define('options', function() {
         inputFields['state'] || '',
         inputFields['postalCode'] || '',
         inputFields['sortingCode'] || '',
-        inputFields['country'] || '',
+        inputFields['country'] || loadTimeData.getString('defaultCountryCode'),
         inputFields['phone'] || [],
         inputFields['email'] || [],
         this.languageCode_,
       ];
       chrome.send('setAddress', address);
+
+      // If the GUID is empty, this form is being used to add a new address,
+      // rather than edit an existing one.
+      if (!this.guid_.length) {
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_AutofillAddressAdded']);
+      }
     },
 
     /**
@@ -353,7 +360,7 @@ cr.define('options', function() {
      * Takes a snapshot of the input values, clears the input values, loads the
      * address input layout from |input.components|, restores the input values
      * from snapshot, and stores the |input.languageCode| for the address.
-     * @param {{languageCode: string, components: Array.<Array.<Object>>}} input
+     * @param {{languageCode: string, components: Array<Array<Object>>}} input
      *     Info about how to layout inputs fields in this dialog.
      * @private
      */
@@ -373,7 +380,7 @@ cr.define('options', function() {
     /**
      * Clears address inputs and rebuilds the input fields according to
      * |components|.
-     * @param {Array.<Array.<Object>>} components A list of information about
+     * @param {Array<Array<Object>>} components A list of information about
      *     each input field.
      * @private
      */

@@ -1936,7 +1936,7 @@ usrsctp_get_non_blocking(struct socket *so)
 		return (-1);
 	}
 	SOCK_LOCK(so);
-	if (so->so_state | SS_NBIO) {
+	if (so->so_state & SS_NBIO) {
 		result = 1;
 	} else {
 		result = 0;
@@ -2345,6 +2345,12 @@ userspace_getsockopt(struct socket *so, int level, int option_name,
 }
 
 int
+usrsctp_set_ulpinfo(struct socket *so, void *ulp_info)
+{
+	return (register_ulp_info(so, ulp_info));
+}
+
+int
 usrsctp_bindx(struct socket *so, struct sockaddr *addrs, int addrcnt, int flags)
 {
 	struct sctp_getaddresses *gaddrs;
@@ -2556,6 +2562,7 @@ usrsctp_connectx(struct socket *so,
 				return (-1);
 			}
 #endif
+#ifdef INET
 			if (IN6_IS_ADDR_V4MAPPED(&((struct sockaddr_in6 *)at)->sin6_addr)) {
 				in6_sin6_2_sin((struct sockaddr_in *)cpto, (struct sockaddr_in6 *)at);
 				cpto = ((caddr_t)cpto + sizeof(struct sockaddr_in));
@@ -2565,6 +2572,11 @@ usrsctp_connectx(struct socket *so,
 				cpto = ((caddr_t)cpto + sizeof(struct sockaddr_in6));
 				len += sizeof(struct sockaddr_in6);
 			}
+#else
+			memcpy(cpto, at, sizeof(struct sockaddr_in6));
+			cpto = ((caddr_t)cpto + sizeof(struct sockaddr_in6));
+			len += sizeof(struct sockaddr_in6);
+#endif
 			at = (struct sockaddr *)((caddr_t)at + sizeof(struct sockaddr_in6));
 			break;
 #endif

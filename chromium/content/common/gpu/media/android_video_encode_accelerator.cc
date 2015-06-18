@@ -28,6 +28,14 @@ using media::VideoFrame;
 
 namespace content {
 
+// Limit default max video codec size for Android to avoid
+// HW codec initialization failure for resolution higher than 720p.
+// Default values are from Libjingle "jsepsessiondescription.cc".
+const int kMaxEncodeFrameWidth = 1280;
+const int kMaxEncodeFrameHeight = 720;
+const int kMaxFramerateNumerator = 30;
+const int kMaxFramerateDenominator = 1;
+
 enum PixelFormat {
   // Subset of MediaCodecInfo.CodecCapabilities.
   COLOR_FORMAT_YUV420_PLANAR = 19,
@@ -72,6 +80,9 @@ static inline const base::TimeDelta NoWaitTimeOut() {
 
 static bool GetSupportedColorFormatForMime(const std::string& mime,
                                            PixelFormat* pixel_format) {
+  if (mime.empty())
+    return false;
+
   std::set<int> formats = MediaCodecBridge::GetEncoderColorFormats(mime);
   if (formats.count(COLOR_FORMAT_YUV420_SEMIPLANAR) > 0)
     *pixel_format = COLOR_FORMAT_YUV420_SEMIPLANAR;
@@ -93,12 +104,9 @@ AndroidVideoEncodeAccelerator::~AndroidVideoEncodeAccelerator() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
-std::vector<media::VideoEncodeAccelerator::SupportedProfile>
+media::VideoEncodeAccelerator::SupportedProfiles
 AndroidVideoEncodeAccelerator::GetSupportedProfiles() {
-  std::vector<MediaCodecBridge::CodecsInfo> codecs_info =
-      MediaCodecBridge::GetCodecsInfo();
-
-  std::vector<SupportedProfile> profiles;
+  SupportedProfiles profiles;
 
 #if defined(ENABLE_WEBRTC)
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
@@ -106,22 +114,29 @@ AndroidVideoEncodeAccelerator::GetSupportedProfiles() {
     return profiles;
 #endif
 
-  for (size_t i = 0; i < codecs_info.size(); ++i) {
-    const MediaCodecBridge::CodecsInfo& info = codecs_info[i];
-    if (info.direction != media::MEDIA_CODEC_ENCODER || info.codecs != "vp8" ||
-        VideoCodecBridge::IsKnownUnaccelerated(media::kCodecVP8,
+  const struct {
+      const media::VideoCodec codec;
+      const media::VideoCodecProfile profile;
+  } kSupportedCodecs[] = {
+      { media::kCodecVP8, media::VP8PROFILE_ANY },
+      { media::kCodecH264, media::H264PROFILE_BASELINE },
+      { media::kCodecH264, media::H264PROFILE_MAIN }
+  };
+
+  for (const auto& supported_codec : kSupportedCodecs) {
+    if (VideoCodecBridge::IsKnownUnaccelerated(supported_codec.codec,
                                                media::MEDIA_CODEC_ENCODER)) {
-      // We're only looking for a HW VP8 encoder.
       continue;
     }
+
     SupportedProfile profile;
-    profile.profile = media::VP8PROFILE_ANY;
-    // Wouldn't it be nice if MediaCodec exposed the maximum capabilities of the
-    // encoder?  Sure would be.  Too bad it doesn't.  So we hard-code some
-    // reasonable defaults.
-    profile.max_resolution.SetSize(1920, 1088);
-    profile.max_framerate_numerator = 30;
-    profile.max_framerate_denominator = 1;
+    profile.profile = supported_codec.profile;
+    // It would be nice if MediaCodec exposes the maximum capabilities of
+    // the encoder. Hard-code some reasonable defaults as workaround.
+    profile.max_resolution.SetSize(kMaxEncodeFrameWidth,
+                                   kMaxEncodeFrameHeight);
+    profile.max_framerate_numerator = kMaxFramerateNumerator;
+    profile.max_framerate_denominator = kMaxFramerateDenominator;
     profiles.push_back(profile);
   }
   return profiles;
@@ -143,9 +158,21 @@ bool AndroidVideoEncodeAccelerator::Initialize(
   client_ptr_factory_.reset(new base::WeakPtrFactory<Client>(client));
 
   if (!(media::MediaCodecBridge::SupportsSetParameters() &&
-        format == VideoFrame::I420 &&
-        output_profile == media::VP8PROFILE_ANY)) {
+        format == VideoFrame::I420)) {
     DLOG(ERROR) << "Unexpected combo: " << format << ", " << output_profile;
+    return false;
+  }
+
+  std::string mime_type;
+  media::VideoCodec codec;
+  if (output_profile == media::VP8PROFILE_ANY) {
+    codec = media::kCodecVP8;
+    mime_type = "video/x-vnd.on2.vp8";
+  } else if (output_profile == media::H264PROFILE_BASELINE ||
+             output_profile == media::H264PROFILE_MAIN) {
+    codec = media::kCodecH264;
+    mime_type = "video/avc";
+  } else {
     return false;
   }
 
@@ -153,17 +180,17 @@ bool AndroidVideoEncodeAccelerator::Initialize(
 
   // Only consider using MediaCodec if it's likely backed by hardware.
   if (media::VideoCodecBridge::IsKnownUnaccelerated(
-          media::kCodecVP8, media::MEDIA_CODEC_ENCODER)) {
+          codec, media::MEDIA_CODEC_ENCODER)) {
     DLOG(ERROR) << "No HW support";
     return false;
   }
 
   PixelFormat pixel_format = COLOR_FORMAT_YUV420_SEMIPLANAR;
-  if (!GetSupportedColorFormatForMime("video/x-vnd.on2.vp8", &pixel_format)) {
+  if (!GetSupportedColorFormatForMime(mime_type, &pixel_format)) {
     DLOG(ERROR) << "No color format support.";
     return false;
   }
-  media_codec_.reset(media::VideoCodecBridge::CreateEncoder(media::kCodecVP8,
+  media_codec_.reset(media::VideoCodecBridge::CreateEncoder(codec,
                                                             input_visible_size,
                                                             initial_bitrate,
                                                             INITIAL_FRAMERATE,
@@ -293,7 +320,7 @@ void AndroidVideoEncodeAccelerator::QueueInput() {
   }
 
   const PendingFrames::value_type& input = pending_frames_.front();
-  bool is_key_frame = input.b;
+  bool is_key_frame = get<1>(input);
   if (is_key_frame) {
     // Ideally MediaCodec would honor BUFFER_FLAG_SYNC_FRAME so we could
     // indicate this in the QueueInputBuffer() call below and guarantee _this_
@@ -301,7 +328,7 @@ void AndroidVideoEncodeAccelerator::QueueInput() {
     // Instead, we request a key frame "soon".
     media_codec_->RequestKeyFrameSoon();
   }
-  scoped_refptr<VideoFrame> frame = input.a;
+  scoped_refptr<VideoFrame> frame = get<0>(input);
 
   uint8* buffer = NULL;
   size_t capacity = 0;
@@ -337,7 +364,8 @@ void AndroidVideoEncodeAccelerator::QueueInput() {
   fake_input_timestamp_ += base::TimeDelta::FromMicroseconds(1);
   status = media_codec_->QueueInputBuffer(
       input_buf_index, NULL, queued_size, fake_input_timestamp_);
-  UMA_HISTOGRAM_TIMES("Media.AVEA.InputQueueTime", base::Time::Now() - input.c);
+  UMA_HISTOGRAM_TIMES("Media.AVEA.InputQueueTime",
+                      base::Time::Now() - get<2>(input));
   RETURN_ON_FAILURE(status == media::MEDIA_CODEC_OK,
                     "Failed to QueueInputBuffer: " << status,
                     kPlatformFailureError);
@@ -351,8 +379,8 @@ bool AndroidVideoEncodeAccelerator::DoOutputBuffersSuffice() {
   // prepared to field multiple requests to RequireBitstreamBuffers().
   int count = media_codec_->GetOutputBuffersCount();
   size_t capacity = media_codec_->GetOutputBuffersCapacity();
-  bool ret = media_codec_->GetOutputBuffers() && count <= num_output_buffers_ &&
-             capacity <= output_buffers_capacity_;
+  bool ret = count <= num_output_buffers_ &&
+      capacity <= output_buffers_capacity_;
   LOG_IF(ERROR, !ret) << "Need more/bigger buffers; before: "
                       << num_output_buffers_ << "x" << output_buffers_capacity_
                       << ", now: " << count << "x" << capacity;

@@ -27,6 +27,13 @@ class MediaDrmBridge;
 // data request will be sent to the renderer.
 class MediaDecoderJob {
  public:
+  // Return value when Decode() is called.
+  enum MediaDecoderJobStatus {
+    STATUS_SUCCESS,
+    STATUS_KEY_FRAME_REQUIRED,
+    STATUS_FAILURE,
+  };
+
   struct Deleter {
     inline void operator()(MediaDecoderJob* ptr) const { ptr->Release(); }
   };
@@ -57,20 +64,19 @@ class MediaDecoderJob {
   // Called by MediaSourcePlayer to decode some data.
   // |callback| - Run when decode operation has completed.
   //
-  // Returns true if the next decode was started and |callback| will be
-  // called when the decode operation is complete.
-  // Returns false if |media_codec_bridge_| cannot be created; |callback| is
-  // ignored and will not be called.
-  bool Decode(base::TimeTicks start_time_ticks,
-              base::TimeDelta start_presentation_timestamp,
-              const DecoderCallback& callback);
+  // Returns STATUS_SUCCESS on success, or STATUS_FAILURE on failure, or
+  // STATUS_KEY_FRAME_REQUIRED if a browser seek is required. |callback| is
+  // ignored and will not be called for the latter 2 cases.
+  MediaDecoderJobStatus Decode(base::TimeTicks start_time_ticks,
+                               base::TimeDelta start_presentation_timestamp,
+                               const DecoderCallback& callback);
 
   // Called to stop the last Decode() early.
   // If the decoder is in the process of decoding the next frame, then
   // this method will just allow the decode to complete as normal. If
   // this object is waiting for a data request to complete, then this method
   // will wait for the data to arrive and then call the |callback|
-  // passed to Decode() with a status of MEDIA_CODEC_STOPPED. This ensures that
+  // passed to Decode() with a status of MEDIA_CODEC_ABORT. This ensures that
   // the |callback| passed to Decode() is always called and the status
   // reflects whether data was actually decoded or the decode terminated early.
   void StopDecode();
@@ -102,6 +108,9 @@ class MediaDecoderJob {
 
   bool prerolling() const { return prerolling_; }
 
+  // Returns true if this object has data to decode.
+  bool HasData() const;
+
  protected:
   // Creates a new MediaDecoderJob instance.
   // |decoder_task_runner| - Thread on which the decoder task will run.
@@ -132,6 +141,11 @@ class MediaDecoderJob {
   // Releases the |media_codec_bridge_|.
   void ReleaseMediaCodecBridge();
 
+  // Sets the current frame to a previously cached key frame. Returns true if
+  // a key frame is found, or false otherwise.
+  // TODO(qinmin): add UMA to study the cache hit ratio for key frames.
+  bool SetCurrentFrameToPreviouslyCachedKeyFrame();
+
   MediaDrmBridge* drm_bridge() { return drm_bridge_; }
 
   void set_is_content_encrypted(bool is_content_encrypted) {
@@ -150,9 +164,6 @@ class MediaDecoderJob {
 
   // Queues an access unit into |media_codec_bridge_|'s input buffer.
   MediaCodecStatus QueueInputBuffer(const AccessUnit& unit);
-
-  // Returns true if this object has data to decode.
-  bool HasData() const;
 
   // Initiates a request for more data.
   // |done_cb| is called when more data is available in |received_data_|.
@@ -209,18 +220,16 @@ class MediaDecoderJob {
   // Called when the decoder is completely drained and is ready to be released.
   void OnDecoderDrained();
 
-  // Creates |media_codec_bridge_| for decoding purpose. Returns true if it is
-  // created, or false otherwise.
-  bool CreateMediaCodecBridge();
-
-  // Called when an access unit is consumed by the decoder. |is_config_change|
-  // indicates whether the current access unit is a config change. If it is
-  // true, the next access unit is guarateed to be an I-frame.
-  virtual void CurrentDataConsumed(bool is_config_change) {}
+  // Creates |media_codec_bridge_| for decoding purpose.
+  // Returns STATUS_SUCCESS on success, or STATUS_FAILURE on failure, or
+  // STATUS_KEY_FRAME_REQUIRED if a browser seek is required.
+  MediaDecoderJobStatus CreateMediaCodecBridge();
 
   // Implemented by the child class to create |media_codec_bridge_| for a
-  // particular stream. Returns true if it is created, or false otherwise.
-  virtual bool CreateMediaCodecBridgeInternal() = 0;
+  // particular stream.
+  // Returns STATUS_SUCCESS on success, or STATUS_FAILURE on failure, or
+  // STATUS_KEY_FRAME_REQUIRED if a browser seek is required.
+  virtual MediaDecoderJobStatus CreateMediaCodecBridgeInternal() = 0;
 
   // Returns true if the |configs| doesn't match the current demuxer configs
   // the decoder job has.
@@ -230,6 +239,11 @@ class MediaDecoderJob {
   // Returns true if |media_codec_bridge_| needs to be reconfigured for the
   // new DemuxerConfigs, or false otherwise.
   virtual bool IsCodecReconfigureNeeded(const DemuxerConfigs& configs) const;
+
+  // Signals to decoder job that decoder has updated output format. Decoder job
+  // may need to do internal reconfiguration in order to correctly interpret
+  // incoming buffers
+  virtual void OnOutputFormatChanged();
 
   // Update the output format from the decoder, returns true if the output
   // format changes, or false otherwise.

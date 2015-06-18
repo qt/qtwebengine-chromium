@@ -9,7 +9,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 #define IPC_MESSAGE_START ImageMsgStart
 
@@ -17,7 +17,7 @@
 
 // Requests the renderer to download the specified image, decode it,
 // and send the image data back via ImageHostMsg_DidDownloadImage.
-IPC_MESSAGE_ROUTED4(ImageMsg_DownloadImage,
+IPC_MESSAGE_ROUTED5(ImageMsg_DownloadImage,
                     int /* Identifier for the request */,
                     GURL /* URL of the image */,
                     bool /* is favicon (turn off cookies) */,
@@ -26,7 +26,8 @@ IPC_MESSAGE_ROUTED4(ImageMsg_DownloadImage,
                                 bitmaps at the passed in GURL <= max size, the
                                 smallest bitmap is resized to the max size and
                                 is the only result. A max size of zero means
-                                that the max size is unlimited. */)
+                                that the max size is unlimited. */,
+                    bool /* bypass cache */)
 
 // Messages sent from the renderer to the browser.
 

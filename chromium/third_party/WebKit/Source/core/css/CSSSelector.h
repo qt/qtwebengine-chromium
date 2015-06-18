@@ -22,8 +22,9 @@
 #ifndef CSSSelector_h
 #define CSSSelector_h
 
+#include "core/CoreExport.h"
 #include "core/dom/QualifiedName.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -50,7 +51,7 @@ namespace blink {
     //
     // The order of tagHistory() varies depending on the situation.
     // * Relations using combinators (http://www.w3.org/TR/css3-selectors/#combinators), such as descendant, sibling, etc., are parsed
-    //   right-to-left (in the example above, this is why .c is earlier in the tagHistory() chain than .a.b).
+    //   right-to-left (in the example above, this is why #c is earlier in the tagHistory() chain than .a.b).
     // * SubSelector relations are parsed left-to-right in most cases (such as the .a.b example above); a counter-example is the
     //   ::content pseudo-element. Most (all?) other pseudo elements and pseudo classes are parsed left-to-right.
     // * ShadowPseudo relations are parsed right-to-left. Example: summary::-webkit-details-marker is parsed as:
@@ -78,12 +79,12 @@ namespace blink {
     // It appears this is used only for pseudo elements that appear in user-agent shadow DOM. They are not exposed to author-created
     // shadow DOM.
 
-    class CSSSelector {
-        WTF_MAKE_FAST_ALLOCATED;
+    class CORE_EXPORT CSSSelector {
+        WTF_MAKE_FAST_ALLOCATED(CSSSelector);
     public:
         CSSSelector();
         CSSSelector(const CSSSelector&);
-        explicit CSSSelector(const QualifiedName&, bool tagIsForNamespaceRule = false);
+        explicit CSSSelector(const QualifiedName&, bool tagIsImplicit = false);
 
         ~CSSSelector();
 
@@ -276,7 +277,6 @@ namespace blink {
         void setAttribute(const QualifiedName&, AttributeMatchType);
         void setArgument(const AtomicString&);
         void setSelectorList(PassOwnPtr<CSSSelectorList>);
-        void setMatchUserAgentOnly();
 
         bool parseNth() const;
         bool matchNth(int count) const;
@@ -315,6 +315,11 @@ namespace blink {
         // http://dev.w3.org/csswg/selectors4/#compound
         bool isCompound() const;
 
+        bool isCommonPseudoClass() const;
+
+        enum LinkMatchMask { MatchLink = 1, MatchVisited = 2, MatchAll = MatchLink | MatchVisited };
+        unsigned computeLinkMatchType() const;
+
         bool isForPage() const { return m_isForPage; }
         void setForPage() { m_isForPage = true; }
 
@@ -330,7 +335,7 @@ namespace blink {
         unsigned m_isLastInTagHistory     : 1;
         unsigned m_hasRareData            : 1;
         unsigned m_isForPage              : 1;
-        unsigned m_tagIsForNamespaceRule  : 1;
+        unsigned m_tagIsImplicit          : 1;
         unsigned m_relationIsAffectedByPseudoContent  : 1;
 
         unsigned specificityForOneSelector() const;
@@ -475,12 +480,12 @@ inline CSSSelector::CSSSelector()
     , m_isLastInTagHistory(true)
     , m_hasRareData(false)
     , m_isForPage(false)
-    , m_tagIsForNamespaceRule(false)
+    , m_tagIsImplicit(false)
     , m_relationIsAffectedByPseudoContent(false)
 {
 }
 
-inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsForNamespaceRule)
+inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsImplicit)
     : m_relation(SubSelector)
     , m_match(Tag)
     , m_pseudoType(PseudoNotParsed)
@@ -489,7 +494,7 @@ inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsForName
     , m_isLastInTagHistory(true)
     , m_hasRareData(false)
     , m_isForPage(false)
-    , m_tagIsForNamespaceRule(tagIsForNamespaceRule)
+    , m_tagIsImplicit(tagIsImplicit)
     , m_relationIsAffectedByPseudoContent(false)
 {
     m_data.m_tagQName = tagQName.impl();
@@ -505,7 +510,7 @@ inline CSSSelector::CSSSelector(const CSSSelector& o)
     , m_isLastInTagHistory(o.m_isLastInTagHistory)
     , m_hasRareData(o.m_hasRareData)
     , m_isForPage(o.m_isForPage)
-    , m_tagIsForNamespaceRule(o.m_tagIsForNamespaceRule)
+    , m_tagIsImplicit(o.m_tagIsImplicit)
     , m_relationIsAffectedByPseudoContent(o.m_relationIsAffectedByPseudoContent)
 {
     if (o.m_match == Tag) {

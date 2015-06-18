@@ -10,7 +10,7 @@
 #include "core/events/WheelEvent.h"
 #include "core/frame/RemoteFrame.h"
 #include "core/frame/RemoteFrameView.h"
-#include "core/rendering/RenderPart.h"
+#include "core/layout/LayoutPart.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
@@ -23,6 +23,10 @@ namespace blink {
 
 RemoteFrameClientImpl::RemoteFrameClientImpl(WebRemoteFrameImpl* webFrame)
     : m_webFrame(webFrame)
+{
+}
+
+void RemoteFrameClientImpl::willBeDetached()
 {
 }
 
@@ -95,6 +99,12 @@ void RemoteFrameClientImpl::navigate(const ResourceRequest& request, bool should
         m_webFrame->client()->navigate(WrappedResourceRequest(request), shouldReplaceCurrentEntry);
 }
 
+void RemoteFrameClientImpl::reload(ReloadPolicy reloadPolicy, ClientRedirectPolicy clientRedirectPolicy)
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->reload(reloadPolicy == EndToEndReload, clientRedirectPolicy == ClientRedirect);
+}
+
 // FIXME: Remove this code once we have input routing in the browser
 // process. See http://crbug.com/339659.
 void RemoteFrameClientImpl::forwardInputEvent(Event* event)
@@ -106,9 +116,9 @@ void RemoteFrameClientImpl::forwardInputEvent(Event* event)
     if (event->isKeyboardEvent())
         webEvent = adoptPtr(new WebKeyboardEventBuilder(*static_cast<KeyboardEvent*>(event)));
     else if (event->isMouseEvent())
-        webEvent = adoptPtr(new WebMouseEventBuilder(m_webFrame->frame()->view(), toCoreFrame(m_webFrame)->ownerRenderer(), *static_cast<MouseEvent*>(event)));
+        webEvent = adoptPtr(new WebMouseEventBuilder(m_webFrame->frame()->view(), toCoreFrame(m_webFrame)->ownerLayoutObject(), *static_cast<MouseEvent*>(event)));
     else if (event->isWheelEvent())
-        webEvent = adoptPtr(new WebMouseWheelEventBuilder(m_webFrame->frame()->view(), toCoreFrame(m_webFrame)->ownerRenderer(), *static_cast<WheelEvent*>(event)));
+        webEvent = adoptPtr(new WebMouseWheelEventBuilder(m_webFrame->frame()->view(), toCoreFrame(m_webFrame)->ownerLayoutObject(), *static_cast<WheelEvent*>(event)));
 
     // Other or internal Blink events should not be forwarded.
     if (!webEvent || webEvent->type == WebInputEvent::Undefined)

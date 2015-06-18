@@ -34,17 +34,14 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    SkString onShortName() {
+    SkString onShortName() override {
         return fName;
     }
 
-    virtual SkISize onISize() { return SkISize::Make(320, 240); }
+    SkISize onISize() override { return SkISize::Make(320, 240); }
 
-    virtual SkMatrix onGetInitialTransform() const SK_OVERRIDE {
+    SkMatrix onGetInitialTransform() const override {
         SkMatrix result;
         SkScalar scale = 0.8f;
         result.setScale(scale, scale);
@@ -52,7 +49,7 @@ protected:
         return result;
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         // The PDF device has already clipped to the content area, but we
         // do it again here so that the raster and pdf results are consistent.
         canvas->clipRect(SkRect::MakeWH(SkIntToScalar(320),
@@ -83,10 +80,9 @@ protected:
         if (background) {
             scale = 0.6f;
         }
-        SkScalar shaderWidth = SkScalarDiv(SkIntToScalar(width), scale);
-        SkScalar shaderHeight = SkScalarDiv(SkIntToScalar(height), scale);
-        SkMatrix shaderScale;
-        shaderScale.setScale(scale, scale);
+        SkScalar shaderWidth = width / scale;
+        SkScalar shaderHeight = height / scale;
+        SkMatrix shaderScale = SkMatrix::MakeScale(scale);
         SkShader* shader = fShaderMaker(shaderWidth, shaderHeight, background, shaderScale);
         return shader;
     }

@@ -4,6 +4,8 @@
 
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 
+#include <algorithm>
+
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
@@ -37,43 +39,45 @@
 #include "storage/browser/fileapi/file_writer_delegate.h"
 #include "storage/browser/fileapi/local_file_stream_writer.h"
 #include "storage/common/database/database_identifier.h"
-#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+#include "storage/common/fileapi/file_system_mount_option.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValueVersion.h"
 #include "third_party/leveldatabase/env_chromium.h"
 
 using base::FilePath;
 using base::StringPiece;
+using std::string;
 using storage::FileWriterDelegate;
 
 namespace content {
 
 namespace {
 
-FilePath GetBlobDirectoryName(const FilePath& pathBase, int64 database_id) {
-  return pathBase.AppendASCII(base::StringPrintf("%" PRIx64, database_id));
+FilePath GetBlobDirectoryName(const FilePath& path_base, int64 database_id) {
+  return path_base.AppendASCII(base::StringPrintf("%" PRIx64, database_id));
 }
 
-FilePath GetBlobDirectoryNameForKey(const FilePath& pathBase,
+FilePath GetBlobDirectoryNameForKey(const FilePath& path_base,
                                     int64 database_id,
                                     int64 key) {
-  FilePath path = GetBlobDirectoryName(pathBase, database_id);
+  FilePath path = GetBlobDirectoryName(path_base, database_id);
   path = path.AppendASCII(base::StringPrintf(
       "%02x", static_cast<int>(key & 0x000000000000ff00) >> 8));
   return path;
 }
 
-FilePath GetBlobFileNameForKey(const FilePath& pathBase,
+FilePath GetBlobFileNameForKey(const FilePath& path_base,
                                int64 database_id,
                                int64 key) {
-  FilePath path = GetBlobDirectoryNameForKey(pathBase, database_id, key);
+  FilePath path = GetBlobDirectoryNameForKey(path_base, database_id, key);
   path = path.AppendASCII(base::StringPrintf("%" PRIx64, key));
   return path;
 }
 
-bool MakeIDBBlobDirectory(const FilePath& pathBase,
+bool MakeIDBBlobDirectory(const FilePath& path_base,
                           int64 database_id,
                           int64 key) {
-  FilePath path = GetBlobDirectoryNameForKey(pathBase, database_id, key);
+  FilePath path = GetBlobDirectoryNameForKey(path_base, database_id, key);
   return base::CreateDirectory(path);
 }
 
@@ -554,19 +558,22 @@ static bool UpdateBlobKeyGeneratorCurrentNumber(
 // though that may be costly. Still, database/directory deletion should always
 // clean things up, and we can write an fsck that will do a full correction if
 // need be.
-template <typename T>
-static leveldb::Status GetBlobJournal(const StringPiece& leveldb_key,
-                                      T* leveldb_transaction,
+
+// Read and decode the specified blob journal via the supplied transaction.
+// The key must be either the primary journal key or live journal key.
+template <typename TransactionType>
+static leveldb::Status GetBlobJournal(const StringPiece& key,
+                                      TransactionType* transaction,
                                       BlobJournalType* journal) {
   std::string data;
   bool found = false;
-  leveldb::Status s = leveldb_transaction->Get(leveldb_key, &data, &found);
+  leveldb::Status s = transaction->Get(key, &data, &found);
   if (!s.ok()) {
     INTERNAL_READ_ERROR(READ_BLOB_JOURNAL);
     return s;
   }
   journal->clear();
-  if (!found || !data.size())
+  if (!found || data.empty())
     return leveldb::Status::OK();
   StringPiece slice(data);
   if (!DecodeBlobJournal(&slice, journal)) {
@@ -576,70 +583,111 @@ static leveldb::Status GetBlobJournal(const StringPiece& leveldb_key,
   return s;
 }
 
-static void ClearBlobJournal(LevelDBTransaction* leveldb_transaction,
-                             const std::string& level_db_key) {
-  leveldb_transaction->Remove(level_db_key);
+template <typename TransactionType>
+static leveldb::Status GetPrimaryBlobJournal(TransactionType* transaction,
+                                             BlobJournalType* journal) {
+  return GetBlobJournal(BlobJournalKey::Encode(), transaction, journal);
 }
 
-static void UpdatePrimaryJournalWithBlobList(
-    LevelDBTransaction* leveldb_transaction,
-    const BlobJournalType& journal) {
-  const std::string leveldb_key = BlobJournalKey::Encode();
+template <typename TransactionType>
+static leveldb::Status GetLiveBlobJournal(TransactionType* transaction,
+                                          BlobJournalType* journal) {
+  return GetBlobJournal(LiveBlobJournalKey::Encode(), transaction, journal);
+}
+
+// Clear the specified blob journal via the supplied transaction.
+// The key must be either the primary journal key or live journal key.
+template <typename TransactionType>
+static void ClearBlobJournal(TransactionType* transaction,
+                             const std::string& key) {
+  transaction->Remove(key);
+}
+
+// Overwrite the specified blob journal via the supplied transaction.
+// The key must be either the primary journal key or live journal key.
+template <typename TransactionType>
+static void UpdateBlobJournal(TransactionType* transaction,
+                              const std::string& key,
+                              const BlobJournalType& journal) {
   std::string data;
   EncodeBlobJournal(journal, &data);
-  leveldb_transaction->Put(leveldb_key, &data);
+  transaction->Put(key, &data);
 }
 
-static void UpdateLiveBlobJournalWithBlobList(
-    LevelDBTransaction* leveldb_transaction,
-    const BlobJournalType& journal) {
-  const std::string leveldb_key = LiveBlobJournalKey::Encode();
-  std::string data;
-  EncodeBlobJournal(journal, &data);
-  leveldb_transaction->Put(leveldb_key, &data);
+template <typename TransactionType>
+static void UpdatePrimaryBlobJournal(TransactionType* transaction,
+                                     const BlobJournalType& journal) {
+  UpdateBlobJournal(transaction, BlobJournalKey::Encode(), journal);
 }
 
-static leveldb::Status MergeBlobsIntoLiveBlobJournal(
-    LevelDBTransaction* leveldb_transaction,
+template <typename TransactionType>
+static void UpdateLiveBlobJournal(TransactionType* transaction,
+                                  const BlobJournalType& journal) {
+  UpdateBlobJournal(transaction, LiveBlobJournalKey::Encode(), journal);
+}
+
+// Append blobs to the specified blob journal via the supplied transaction.
+// The key must be either the primary journal key or live journal key.
+template <typename TransactionType>
+static leveldb::Status AppendBlobsToBlobJournal(
+    TransactionType* transaction,
+    const std::string& key,
     const BlobJournalType& journal) {
+  if (journal.empty())
+    return leveldb::Status::OK();
   BlobJournalType old_journal;
-  const std::string key = LiveBlobJournalKey::Encode();
-  leveldb::Status s = GetBlobJournal(key, leveldb_transaction, &old_journal);
+  leveldb::Status s = GetBlobJournal(key, transaction, &old_journal);
   if (!s.ok())
     return s;
-
   old_journal.insert(old_journal.end(), journal.begin(), journal.end());
-
-  UpdateLiveBlobJournalWithBlobList(leveldb_transaction, old_journal);
+  UpdateBlobJournal(transaction, key, old_journal);
   return leveldb::Status::OK();
 }
 
-static void UpdateBlobJournalWithDatabase(
-    LevelDBDirectTransaction* leveldb_transaction,
+template <typename TransactionType>
+static leveldb::Status AppendBlobsToPrimaryBlobJournal(
+    TransactionType* transaction,
+    const BlobJournalType& journal) {
+  return AppendBlobsToBlobJournal(transaction, BlobJournalKey::Encode(),
+                                  journal);
+}
+
+template <typename TransactionType>
+static leveldb::Status AppendBlobsToLiveBlobJournal(
+    TransactionType* transaction,
+    const BlobJournalType& journal) {
+  return AppendBlobsToBlobJournal(transaction, LiveBlobJournalKey::Encode(),
+                                  journal);
+}
+
+// Append a database to the specified blob journal via the supplied transaction.
+// The key must be either the primary journal key or live journal key.
+static leveldb::Status MergeDatabaseIntoBlobJournal(
+    LevelDBDirectTransaction* transaction,
+    const std::string& key,
     int64 database_id) {
   BlobJournalType journal;
+  leveldb::Status s = GetBlobJournal(key, transaction, &journal);
+  if (!s.ok())
+    return s;
   journal.push_back(
       std::make_pair(database_id, DatabaseMetaDataKey::kAllBlobsKey));
-  const std::string key = BlobJournalKey::Encode();
-  std::string data;
-  EncodeBlobJournal(journal, &data);
-  leveldb_transaction->Put(key, &data);
+  UpdateBlobJournal(transaction, key, journal);
+  return leveldb::Status::OK();
+}
+
+static leveldb::Status MergeDatabaseIntoPrimaryBlobJournal(
+    LevelDBDirectTransaction* leveldb_transaction,
+    int64 database_id) {
+  return MergeDatabaseIntoBlobJournal(leveldb_transaction,
+                                      BlobJournalKey::Encode(), database_id);
 }
 
 static leveldb::Status MergeDatabaseIntoLiveBlobJournal(
     LevelDBDirectTransaction* leveldb_transaction,
     int64 database_id) {
-  BlobJournalType journal;
-  const std::string key = LiveBlobJournalKey::Encode();
-  leveldb::Status s = GetBlobJournal(key, leveldb_transaction, &journal);
-  if (!s.ok())
-    return s;
-  journal.push_back(
-      std::make_pair(database_id, DatabaseMetaDataKey::kAllBlobsKey));
-  std::string data;
-  EncodeBlobJournal(journal, &data);
-  leveldb_transaction->Put(key, &data);
-  return leveldb::Status::OK();
+  return MergeDatabaseIntoBlobJournal(
+      leveldb_transaction, LiveBlobJournalKey::Encode(), database_id);
 }
 
 // Blob Data is encoded as a series of:
@@ -714,7 +762,8 @@ IndexedDBBackingStore::IndexedDBBackingStore(
       task_runner_(task_runner),
       db_(db.Pass()),
       comparator_(comparator.Pass()),
-      active_blob_registry_(this) {
+      active_blob_registry_(this),
+      committing_transaction_count_(0) {
 }
 
 IndexedDBBackingStore::~IndexedDBBackingStore() {
@@ -744,6 +793,7 @@ IndexedDBBackingStore::RecordIdentifier::~RecordIdentifier() {}
 IndexedDBBackingStore::Cursor::CursorOptions::CursorOptions() {}
 IndexedDBBackingStore::Cursor::CursorOptions::~CursorOptions() {}
 
+// Values match entries in tools/metrics/histograms/histograms.xml
 enum IndexedDBBackingStoreOpenResult {
   INDEXED_DB_BACKING_STORE_OPEN_MEMORY_SUCCESS,
   INDEXED_DB_BACKING_STORE_OPEN_SUCCESS,
@@ -753,7 +803,7 @@ enum IndexedDBBackingStoreOpenResult {
   INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_FAILED,
   INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS,
   INDEXED_DB_BACKING_STORE_OPEN_FAILED_IO_ERROR_CHECKING_SCHEMA,
-  INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR,
+  INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR_DEPRECATED,
   INDEXED_DB_BACKING_STORE_OPEN_MEMORY_FAILED,
   INDEXED_DB_BACKING_STORE_OPEN_ATTEMPT_NON_ASCII,
   INDEXED_DB_BACKING_STORE_OPEN_DISK_FULL_DEPRECATED,
@@ -975,7 +1025,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
   if (!status->ok()) {
     if (leveldb_env::IndicatesDiskFull(*status)) {
       *is_disk_full = true;
-    } else if (leveldb_env::IsCorruption(*status)) {
+    } else if (status->IsCorruption()) {
       *data_loss = blink::WebIDBDataLossTotal;
       *data_loss_message = leveldb_env::GetCorruptionMessage(*status);
     }
@@ -1013,18 +1063,18 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     }
   }
 
-  DCHECK(status->ok() || !is_schema_known || leveldb_env::IsIOError(*status) ||
-         leveldb_env::IsCorruption(*status));
+  DCHECK(status->ok() || !is_schema_known || status->IsIOError() ||
+         status->IsCorruption());
 
   if (db) {
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_SUCCESS, origin_url);
-  } else if (leveldb_env::IsIOError(*status)) {
+  } else if (status->IsIOError()) {
     LOG(ERROR) << "Unable to open backing store, not trying to recover - "
                << status->ToString();
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY, origin_url);
     return scoped_refptr<IndexedDBBackingStore>();
   } else {
-    DCHECK(!is_schema_known || leveldb_env::IsCorruption(*status));
+    DCHECK(!is_schema_known || status->IsCorruption());
     LOG(ERROR) << "IndexedDB backing store open failed, attempting cleanup";
     *status = leveldb_factory->DestroyLevelDB(file_path);
     if (!status->ok()) {
@@ -1044,13 +1094,6 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     }
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS,
                         origin_url);
-  }
-
-  if (!db) {
-    NOTREACHED();
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR,
-                        origin_url);
-    return scoped_refptr<IndexedDBBackingStore>();
   }
 
   scoped_refptr<IndexedDBBackingStore> backing_store =
@@ -1171,8 +1214,8 @@ std::vector<base::string16> IndexedDBBackingStore::GetDatabaseNames(
 
     // Decode database id (in iterator value).
     int64 database_id = 0;
-    StringPiece valueSlice(it->Value());
-    if (!DecodeInt(&valueSlice, &database_id) || !valueSlice.empty()) {
+    StringPiece value_slice(it->Value());
+    if (!DecodeInt(&value_slice, &database_id) || !value_slice.empty()) {
       INTERNAL_CONSISTENCY_ERROR_UNTESTED(GET_DATABASE_NAMES);
       continue;
     }
@@ -1418,9 +1461,6 @@ leveldb::Status IndexedDBBackingStore::DeleteDatabase(
       LevelDBDirectTransaction::Create(db_.get());
 
   leveldb::Status s;
-  s = CleanUpBlobJournal(BlobJournalKey::Encode());
-  if (!s.ok())
-    return s;
 
   IndexedDBDatabaseMetadata metadata;
   bool success = false;
@@ -1454,7 +1494,9 @@ leveldb::Status IndexedDBBackingStore::DeleteDatabase(
     if (!s.ok())
       return s;
   } else {
-    UpdateBlobJournalWithDatabase(transaction.get(), metadata.id);
+    s = MergeDatabaseIntoPrimaryBlobJournal(transaction.get(), metadata.id);
+    if (!s.ok())
+      return s;
     need_cleanup = true;
   }
 
@@ -1464,8 +1506,10 @@ leveldb::Status IndexedDBBackingStore::DeleteDatabase(
     return s;
   }
 
+  // If another transaction is running, this will defer processing
+  // the journal until completion.
   if (need_cleanup)
-    CleanUpBlobJournal(BlobJournalKey::Encode());
+    CleanPrimaryJournalIgnoreReturn();
 
   db_->Compact(start_key, stop_key);
   return s;
@@ -2198,8 +2242,7 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
       : waiting_for_callback_(false),
         database_id_(database_id),
         backing_store_(backing_store),
-        callback_(callback),
-        aborted_(false) {
+        callback_(callback) {
     blobs_.swap(*blobs);
     iter_ = blobs_.begin();
     backing_store->task_runner()->PostTask(
@@ -2217,8 +2260,8 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
     if (delegate_.get())  // Only present for Blob, not File.
       content::BrowserThread::DeleteSoon(
           content::BrowserThread::IO, FROM_HERE, delegate_.release());
-    if (aborted_) {
-      self_ref_ = NULL;
+    if (aborted_self_ref_.get()) {
+      aborted_self_ref_ = NULL;
       return;
     }
     if (iter_->size() != -1 && iter_->size() != bytes_written)
@@ -2234,38 +2277,36 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
   void Abort() override {
     if (!waiting_for_callback_)
       return;
-    self_ref_ = this;
-    aborted_ = true;
+    aborted_self_ref_ = this;
   }
 
  private:
-  ~ChainedBlobWriterImpl() override {}
+  ~ChainedBlobWriterImpl() override { DCHECK(!waiting_for_callback_); }
 
   void WriteNextFile() {
     DCHECK(!waiting_for_callback_);
-    DCHECK(!aborted_);
+    DCHECK(!aborted_self_ref_.get());
     if (iter_ == blobs_.end()) {
-      DCHECK(!self_ref_.get());
       callback_->Run(true);
       return;
     } else {
+      waiting_for_callback_ = true;
       if (!backing_store_->WriteBlobFile(database_id_, *iter_, this)) {
+        waiting_for_callback_ = false;
         callback_->Run(false);
         return;
       }
-      waiting_for_callback_ = true;
     }
   }
 
   bool waiting_for_callback_;
-  scoped_refptr<ChainedBlobWriterImpl> self_ref_;
+  scoped_refptr<ChainedBlobWriterImpl> aborted_self_ref_;
   WriteDescriptorVec blobs_;
   WriteDescriptorVec::const_iterator iter_;
   int64 database_id_;
   IndexedDBBackingStore* backing_store_;
   scoped_refptr<IndexedDBBackingStore::BlobWriteCallback> callback_;
   scoped_ptr<FileWriterDelegate> delegate_;
-  bool aborted_;
 
   DISALLOW_COPY_AND_ASSIGN(ChainedBlobWriterImpl);
 };
@@ -2293,32 +2334,47 @@ class LocalWriteClosure : public FileWriterDelegate::DelegateWriteCallback,
       DCHECK(write_status == FileWriterDelegate::ERROR_WRITE_STARTED ||
              write_status == FileWriterDelegate::ERROR_WRITE_NOT_STARTED);
     }
-    task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&IndexedDBBackingStore::Transaction::ChainedBlobWriter::
-                       ReportWriteCompletion,
-                   chained_blob_writer_,
-                   write_status == FileWriterDelegate::SUCCESS_COMPLETED,
-                   bytes_written_));
+
+    bool success = write_status == FileWriterDelegate::SUCCESS_COMPLETED;
+    if (success && !bytes_written_) {
+      // LocalFileStreamWriter only creates a file if data is actually written.
+      // If none was then create one now.
+      task_runner_->PostTask(
+          FROM_HERE, base::Bind(&LocalWriteClosure::CreateEmptyFile, this));
+    } else if (success && !last_modified_.is_null()) {
+      task_runner_->PostTask(
+          FROM_HERE, base::Bind(&LocalWriteClosure::UpdateTimeStamp, this));
+    } else {
+      task_runner_->PostTask(
+          FROM_HERE,
+          base::Bind(&IndexedDBBackingStore::Transaction::ChainedBlobWriter::
+                     ReportWriteCompletion,
+                     chained_blob_writer_,
+                     success,
+                     bytes_written_));
+    }
   }
 
-  void writeBlobToFileOnIOThread(const FilePath& file_path,
+  void WriteBlobToFileOnIOThread(const FilePath& file_path,
                                  const GURL& blob_url,
+                                 const base::Time& last_modified,
                                  net::URLRequestContext* request_context) {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
     scoped_ptr<storage::FileStreamWriter> writer(
         storage::FileStreamWriter::CreateForLocalFile(
             task_runner_.get(),
             file_path,
             0,
             storage::FileStreamWriter::CREATE_NEW_FILE));
-    scoped_ptr<FileWriterDelegate> delegate(
-        new FileWriterDelegate(writer.Pass(),
-                               FileWriterDelegate::FLUSH_ON_COMPLETION));
+    scoped_ptr<FileWriterDelegate> delegate(new FileWriterDelegate(
+        writer.Pass(), storage::FlushPolicy::FLUSH_ON_COMPLETION));
 
     DCHECK(blob_url.is_valid());
     scoped_ptr<net::URLRequest> blob_request(request_context->CreateRequest(
-        blob_url, net::DEFAULT_PRIORITY, delegate.get(), NULL));
+        blob_url, net::DEFAULT_PRIORITY, delegate.get()));
+
+    this->file_path_ = file_path;
+    this->last_modified_ = last_modified;
 
     delegate->Start(blob_request.Pass(),
                     base::Bind(&LocalWriteClosure::Run, this));
@@ -2338,10 +2394,37 @@ class LocalWriteClosure : public FileWriterDelegate::DelegateWriteCallback,
   }
   friend class base::RefCountedThreadSafe<LocalWriteClosure>;
 
+  // If necessary, update the timestamps on the file as a final
+  // step before reporting success.
+  void UpdateTimeStamp() {
+    DCHECK(task_runner_->RunsTasksOnCurrentThread());
+    if (!base::TouchFile(file_path_, last_modified_, last_modified_)) {
+      // TODO(ericu): Complain quietly; timestamp's probably not vital.
+    }
+    chained_blob_writer_->ReportWriteCompletion(true, bytes_written_);
+  }
+
+  // Create an empty file.
+  void CreateEmptyFile() {
+    DCHECK(task_runner_->RunsTasksOnCurrentThread());
+    base::File file(file_path_,
+                    base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+    bool success = file.created();
+    if (success && !last_modified_.is_null() &&
+        !file.SetTimes(last_modified_, last_modified_)) {
+      // TODO(cmumford): Complain quietly; timestamp's probably not vital.
+    }
+    file.Close();
+    chained_blob_writer_->ReportWriteCompletion(success, bytes_written_);
+  }
+
   scoped_refptr<IndexedDBBackingStore::Transaction::ChainedBlobWriter>
       chained_blob_writer_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   int64 bytes_written_;
+
+  base::FilePath file_path_;
+  base::Time last_modified_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalWriteClosure);
 };
@@ -2356,8 +2439,7 @@ bool IndexedDBBackingStore::WriteBlobFile(
 
   FilePath path = GetBlobFileName(database_id, descriptor.key());
 
-  if (descriptor.is_file()) {
-    DCHECK(!descriptor.file_path().empty());
+  if (descriptor.is_file() && !descriptor.file_path().empty()) {
     if (!base::CopyFile(descriptor.file_path(), path))
       return false;
 
@@ -2392,10 +2474,11 @@ bool IndexedDBBackingStore::WriteBlobFile(
     content::BrowserThread::PostTask(
         content::BrowserThread::IO,
         FROM_HERE,
-        base::Bind(&LocalWriteClosure::writeBlobToFileOnIOThread,
+        base::Bind(&LocalWriteClosure::WriteBlobToFileOnIOThread,
                    write_closure.get(),
                    path,
                    descriptor.url(),
+                   descriptor.last_modified(),
                    request_context_));
   }
   return true;
@@ -2409,16 +2492,11 @@ void IndexedDBBackingStore::ReportBlobUnused(int64 database_id,
   scoped_refptr<LevelDBTransaction> transaction =
       IndexedDBClassFactory::Get()->CreateLevelDBTransaction(db_.get());
 
-  std::string live_blob_key = LiveBlobJournalKey::Encode();
-  BlobJournalType live_blob_journal;
-  if (!GetBlobJournal(live_blob_key, transaction.get(), &live_blob_journal)
-           .ok())
+  BlobJournalType live_blob_journal, primary_journal;
+  if (!GetLiveBlobJournal(transaction.get(), &live_blob_journal).ok())
     return;
-  DCHECK(live_blob_journal.size());
-
-  std::string primary_key = BlobJournalKey::Encode();
-  BlobJournalType primary_journal;
-  if (!GetBlobJournal(primary_key, transaction.get(), &primary_journal).ok())
+  DCHECK(!live_blob_journal.empty());
+  if (!GetPrimaryBlobJournal(transaction.get(), &primary_journal).ok())
     return;
 
   // There are several cases to handle.  If blob_key is kAllBlobsKey, we want to
@@ -2459,8 +2537,8 @@ void IndexedDBBackingStore::ReportBlobUnused(int64 database_id,
     primary_journal.push_back(
         std::make_pair(database_id, DatabaseMetaDataKey::kAllBlobsKey));
   }
-  UpdatePrimaryJournalWithBlobList(transaction.get(), primary_journal);
-  UpdateLiveBlobJournalWithBlobList(transaction.get(), new_live_blob_journal);
+  UpdatePrimaryBlobJournal(transaction.get(), primary_journal);
+  UpdateLiveBlobJournal(transaction.get(), new_live_blob_journal);
   transaction->Commit();
   // We could just do the deletions/cleaning here, but if there are a lot of
   // blobs about to be garbage collected, it'd be better to wait and do them all
@@ -2481,7 +2559,8 @@ void IndexedDBBackingStore::StartJournalCleaningTimer() {
 }
 
 // This assumes a file path of dbId/second-to-LSB-of-counter/counter.
-FilePath IndexedDBBackingStore::GetBlobFileName(int64 database_id, int64 key) {
+FilePath IndexedDBBackingStore::GetBlobFileName(int64 database_id,
+                                                int64 key) const {
   return GetBlobFileNameForKey(blob_path_, database_id, key);
 }
 
@@ -2601,26 +2680,19 @@ leveldb::Status IndexedDBBackingStore::GetIndexes(
   return s;
 }
 
-bool IndexedDBBackingStore::RemoveBlobFile(int64 database_id, int64 key) {
-  FilePath fileName = GetBlobFileName(database_id, key);
-  return base::DeleteFile(fileName, false);
+bool IndexedDBBackingStore::RemoveBlobFile(int64 database_id, int64 key) const {
+  FilePath path = GetBlobFileName(database_id, key);
+  return base::DeleteFile(path, false);
 }
 
-bool IndexedDBBackingStore::RemoveBlobDirectory(int64 database_id) {
-  FilePath dirName = GetBlobDirectoryName(blob_path_, database_id);
-  return base::DeleteFile(dirName, true);
+bool IndexedDBBackingStore::RemoveBlobDirectory(int64 database_id) const {
+  FilePath path = GetBlobDirectoryName(blob_path_, database_id);
+  return base::DeleteFile(path, true);
 }
 
-leveldb::Status IndexedDBBackingStore::CleanUpBlobJournal(
-    const std::string& level_db_key) {
-  scoped_refptr<LevelDBTransaction> journal_transaction =
-      IndexedDBClassFactory::Get()->CreateLevelDBTransaction(db_.get());
-  BlobJournalType journal;
-  leveldb::Status s =
-      GetBlobJournal(level_db_key, journal_transaction.get(), &journal);
-  if (!s.ok())
-    return s;
-  if (!journal.size())
+leveldb::Status IndexedDBBackingStore::CleanUpBlobJournalEntries(
+    const BlobJournalType& journal) const {
+  if (journal.empty())
     return leveldb::Status::OK();
   for (const auto& entry : journal) {
     int64 database_id = entry.first;
@@ -2635,6 +2707,25 @@ leveldb::Status IndexedDBBackingStore::CleanUpBlobJournal(
         return IOErrorStatus();
     }
   }
+  return leveldb::Status::OK();
+}
+
+leveldb::Status IndexedDBBackingStore::CleanUpBlobJournal(
+    const std::string& level_db_key) const {
+  DCHECK(!committing_transaction_count_);
+  leveldb::Status s;
+  scoped_refptr<LevelDBTransaction> journal_transaction =
+      IndexedDBClassFactory::Get()->CreateLevelDBTransaction(db_.get());
+  BlobJournalType journal;
+
+  s = GetBlobJournal(level_db_key, journal_transaction.get(), &journal);
+  if (!s.ok())
+    return s;
+  if (journal.empty())
+    return leveldb::Status::OK();
+  s = CleanUpBlobJournalEntries(journal);
+  if (!s.ok())
+    return s;
   ClearBlobJournal(journal_transaction.get(), level_db_key);
   return journal_transaction->Commit();
 }
@@ -2688,7 +2779,7 @@ leveldb::Status IndexedDBBackingStore::Transaction::GetBlobInfoForRecord(
       entry.set_release_callback(
           backing_store_->active_blob_registry()->GetFinalReleaseCallback(
               database_id, entry.key()));
-      if (entry.is_file()) {
+      if (entry.is_file() && !entry.file_path().empty()) {
         base::File::Info info;
         if (base::GetFileInfo(entry.file_path(), &info)) {
           // This should always work, but it isn't fatal if it doesn't; it just
@@ -2703,7 +2794,11 @@ leveldb::Status IndexedDBBackingStore::Transaction::GetBlobInfoForRecord(
 }
 
 void IndexedDBBackingStore::CleanPrimaryJournalIgnoreReturn() {
-  CleanUpBlobJournal(BlobJournalKey::Encode());
+  // While a transaction is busy it is not safe to clean the journal.
+  if (committing_transaction_count_ > 0)
+    StartJournalCleaningTimer();
+  else
+    CleanUpBlobJournal(BlobJournalKey::Encode());
 }
 
 WARN_UNUSED_RESULT static leveldb::Status SetMaxIndexId(
@@ -3628,7 +3723,7 @@ bool ObjectStoreCursorOptions(
   } else {
     cursor_options->low_key =
         ObjectStoreDataKey::Encode(database_id, object_store_id, range.lower());
-    cursor_options->low_open = range.lowerOpen();
+    cursor_options->low_open = range.lower_open();
   }
 
   leveldb::Status s;
@@ -3652,7 +3747,7 @@ bool ObjectStoreCursorOptions(
   } else {
     cursor_options->high_key =
         ObjectStoreDataKey::Encode(database_id, object_store_id, range.upper());
-    cursor_options->high_open = range.upperOpen();
+    cursor_options->high_open = range.upper_open();
 
     if (!cursor_options->forward) {
       // For reverse cursors, we need a key that exists.
@@ -3707,7 +3802,7 @@ bool IndexCursorOptions(
   } else {
     cursor_options->low_key = IndexDataKey::Encode(
         database_id, object_store_id, index_id, range.lower());
-    cursor_options->low_open = range.lowerOpen();
+    cursor_options->low_open = range.lower_open();
   }
 
   leveldb::Status s;
@@ -3728,7 +3823,7 @@ bool IndexCursorOptions(
   } else {
     cursor_options->high_key = IndexDataKey::Encode(
         database_id, object_store_id, index_id, range.upper());
-    cursor_options->high_open = range.upperOpen();
+    cursor_options->high_open = range.upper_open();
 
     std::string found_high_key;
     // Seek to the *last* key in the set of non-unique keys
@@ -3862,7 +3957,7 @@ IndexedDBBackingStore::OpenIndexCursor(
 
 IndexedDBBackingStore::Transaction::Transaction(
     IndexedDBBackingStore* backing_store)
-    : backing_store_(backing_store), database_id_(-1) {
+    : backing_store_(backing_store), database_id_(-1), committing_(false) {
 }
 
 IndexedDBBackingStore::Transaction::~Transaction() {
@@ -3870,6 +3965,7 @@ IndexedDBBackingStore::Transaction::~Transaction() {
       blob_change_map_.begin(), blob_change_map_.end());
   STLDeleteContainerPairSecondPointers(incognito_blob_map_.begin(),
                                        incognito_blob_map_.end());
+  DCHECK(!committing_);
 }
 
 void IndexedDBBackingStore::Transaction::Begin() {
@@ -3884,7 +3980,7 @@ void IndexedDBBackingStore::Transaction::Begin() {
     incognito_blob_map_[iter.first] = iter.second->Clone().release();
 }
 
-static GURL getURLFromUUID(const string& uuid) {
+static GURL GetURLFromUUID(const string& uuid) {
   return GURL("blob:uuid/" + uuid);
 }
 
@@ -3894,58 +3990,58 @@ leveldb::Status IndexedDBBackingStore::Transaction::HandleBlobPreTransaction(
   if (backing_store_->is_incognito())
     return leveldb::Status::OK();
 
-  new_blob_entries->clear();
-  new_files_to_write->clear();
-  if (!blob_change_map_.empty()) {
-    // Create LevelDBTransaction for the name generator seed and add-journal.
-    scoped_refptr<LevelDBTransaction> pre_transaction =
-        IndexedDBClassFactory::Get()->CreateLevelDBTransaction(
-            backing_store_->db_.get());
-    BlobJournalType journal;
-    for (auto& iter : blob_change_map_) {
-      std::vector<IndexedDBBlobInfo*> new_blob_keys;
-      for (auto& entry : iter.second->mutable_blob_info()) {
-        int64 next_blob_key = -1;
-        bool result = GetBlobKeyGeneratorCurrentNumber(
-            pre_transaction.get(), database_id_, &next_blob_key);
-        if (!result || next_blob_key < 0)
-          return InternalInconsistencyStatus();
-        BlobJournalEntryType journal_entry =
-            std::make_pair(database_id_, next_blob_key);
-        journal.push_back(journal_entry);
-        if (entry.is_file()) {
-          new_files_to_write->push_back(
-              WriteDescriptor(entry.file_path(),
-                              next_blob_key,
-                              entry.size(),
-                              entry.last_modified()));
-        } else {
-          new_files_to_write->push_back(
-              WriteDescriptor(getURLFromUUID(entry.uuid()),
-                              next_blob_key,
-                              entry.size()));
-        }
-        entry.set_key(next_blob_key);
-        new_blob_keys.push_back(&entry);
-        result = UpdateBlobKeyGeneratorCurrentNumber(
-            pre_transaction.get(), database_id_, next_blob_key + 1);
-        if (!result)
-          return InternalInconsistencyStatus();
-      }
-      BlobEntryKey blob_entry_key;
-      StringPiece key_piece(iter.second->key());
-      if (!BlobEntryKey::FromObjectStoreDataKey(&key_piece, &blob_entry_key)) {
-        NOTREACHED();
+  DCHECK(new_blob_entries->empty());
+  DCHECK(new_files_to_write->empty());
+  DCHECK(blobs_to_write_.empty());
+
+  if (blob_change_map_.empty())
+    return leveldb::Status::OK();
+
+  // Create LevelDBTransaction for the name generator seed and add-journal.
+  scoped_refptr<LevelDBTransaction> pre_transaction =
+      IndexedDBClassFactory::Get()->CreateLevelDBTransaction(
+          backing_store_->db_.get());
+
+  for (auto& iter : blob_change_map_) {
+    std::vector<IndexedDBBlobInfo*> new_blob_keys;
+    for (auto& entry : iter.second->mutable_blob_info()) {
+      int64 next_blob_key = -1;
+      bool result = GetBlobKeyGeneratorCurrentNumber(
+          pre_transaction.get(), database_id_, &next_blob_key);
+      if (!result || next_blob_key < 0)
         return InternalInconsistencyStatus();
+      blobs_to_write_.push_back(std::make_pair(database_id_, next_blob_key));
+      if (entry.is_file() && !entry.file_path().empty()) {
+        new_files_to_write->push_back(
+            WriteDescriptor(entry.file_path(), next_blob_key, entry.size(),
+                            entry.last_modified()));
+      } else {
+        new_files_to_write->push_back(
+            WriteDescriptor(GetURLFromUUID(entry.uuid()), next_blob_key,
+                            entry.size(), entry.last_modified()));
       }
-      new_blob_entries->push_back(
-          std::make_pair(blob_entry_key, EncodeBlobData(new_blob_keys)));
+      entry.set_key(next_blob_key);
+      new_blob_keys.push_back(&entry);
+      result = UpdateBlobKeyGeneratorCurrentNumber(
+          pre_transaction.get(), database_id_, next_blob_key + 1);
+      if (!result)
+        return InternalInconsistencyStatus();
     }
-    UpdatePrimaryJournalWithBlobList(pre_transaction.get(), journal);
-    leveldb::Status s = pre_transaction->Commit();
-    if (!s.ok())
+    BlobEntryKey blob_entry_key;
+    StringPiece key_piece(iter.second->key());
+    if (!BlobEntryKey::FromObjectStoreDataKey(&key_piece, &blob_entry_key)) {
+      NOTREACHED();
       return InternalInconsistencyStatus();
+    }
+    new_blob_entries->push_back(
+        std::make_pair(blob_entry_key, EncodeBlobData(new_blob_keys)));
   }
+
+  AppendBlobsToPrimaryBlobJournal(pre_transaction.get(), blobs_to_write_);
+  leveldb::Status s = pre_transaction->Commit();
+  if (!s.ok())
+    return InternalInconsistencyStatus();
+
   return leveldb::Status::OK();
 }
 
@@ -3989,24 +4085,17 @@ bool IndexedDBBackingStore::Transaction::CollectBlobFilesToRemove() {
   return true;
 }
 
-leveldb::Status IndexedDBBackingStore::Transaction::SortBlobsToRemove() {
+void IndexedDBBackingStore::Transaction::PartitionBlobsToRemove(
+    BlobJournalType* dead_blobs,
+    BlobJournalType* live_blobs) const {
   IndexedDBActiveBlobRegistry* registry =
       backing_store_->active_blob_registry();
-  BlobJournalType primary_journal, live_blob_journal;
   for (const auto& iter : blobs_to_remove_) {
     if (registry->MarkDeletedCheckIfUsed(iter.first, iter.second))
-      live_blob_journal.push_back(iter);
+      live_blobs->push_back(iter);
     else
-      primary_journal.push_back(iter);
+      dead_blobs->push_back(iter);
   }
-  UpdatePrimaryJournalWithBlobList(transaction_.get(), primary_journal);
-  leveldb::Status s =
-      MergeBlobsIntoLiveBlobJournal(transaction_.get(), live_blob_journal);
-  if (!s.ok())
-    return s;
-  // To signal how many blobs need attention right now.
-  blobs_to_remove_.swap(primary_journal);
-  return leveldb::Status::OK();
 }
 
 leveldb::Status IndexedDBBackingStore::Transaction::CommitPhaseOne(
@@ -4016,13 +4105,6 @@ leveldb::Status IndexedDBBackingStore::Transaction::CommitPhaseOne(
   DCHECK(backing_store_->task_runner()->RunsTasksOnCurrentThread());
 
   leveldb::Status s;
-
-  s = backing_store_->CleanUpBlobJournal(BlobJournalKey::Encode());
-  if (!s.ok()) {
-    INTERNAL_WRITE_ERROR(TRANSACTION_COMMIT_METHOD);
-    transaction_ = NULL;
-    return s;
-  }
 
   BlobEntryKeyValuePairVec new_blob_entries;
   WriteDescriptorVec new_files_to_write;
@@ -4041,13 +4123,13 @@ leveldb::Status IndexedDBBackingStore::Transaction::CommitPhaseOne(
     return InternalInconsistencyStatus();
   }
 
-  if (new_files_to_write.size()) {
+  committing_ = true;
+  ++backing_store_->committing_transaction_count_;
+
+  if (!new_files_to_write.empty()) {
     // This kicks off the writes of the new blobs, if any.
     // This call will zero out new_blob_entries and new_files_to_write.
     WriteNewBlobs(&new_blob_entries, &new_files_to_write, callback);
-    // Remove the add journal, if any; once the blobs are written, and we
-    // commit, this will do the cleanup.
-    ClearBlobJournal(transaction_.get(), BlobJournalKey::Encode());
   } else {
     callback->Run(true);
   }
@@ -4058,37 +4140,98 @@ leveldb::Status IndexedDBBackingStore::Transaction::CommitPhaseOne(
 leveldb::Status IndexedDBBackingStore::Transaction::CommitPhaseTwo() {
   IDB_TRACE("IndexedDBBackingStore::Transaction::CommitPhaseTwo");
   leveldb::Status s;
-  if (blobs_to_remove_.size()) {
-    s = SortBlobsToRemove();
-    if (!s.ok()) {
-      INTERNAL_READ_ERROR_UNTESTED(TRANSACTION_COMMIT_METHOD);
-      transaction_ = NULL;
+
+  DCHECK(committing_);
+  committing_ = false;
+  DCHECK_GT(backing_store_->committing_transaction_count_, 0UL);
+  --backing_store_->committing_transaction_count_;
+
+  BlobJournalType primary_journal, live_journal, saved_primary_journal,
+      dead_blobs;
+  if (!blob_change_map_.empty()) {
+    // Read the persisted states of the primary/live blob journals,
+    // so that they can be updated correctly by the transaction.
+    scoped_refptr<LevelDBTransaction> journal_transaction =
+        IndexedDBClassFactory::Get()->CreateLevelDBTransaction(
+            backing_store_->db_.get());
+    s = GetPrimaryBlobJournal(journal_transaction.get(), &primary_journal);
+    if (!s.ok())
       return s;
+    s = GetLiveBlobJournal(journal_transaction.get(), &live_journal);
+    if (!s.ok())
+      return s;
+
+    // Remove newly added blobs from the journal - they will be accounted
+    // for in blob entry tables in the transaction.
+    std::sort(primary_journal.begin(), primary_journal.end());
+    std::sort(blobs_to_write_.begin(), blobs_to_write_.end());
+    BlobJournalType new_journal = base::STLSetDifference<BlobJournalType>(
+        primary_journal, blobs_to_write_);
+    primary_journal.swap(new_journal);
+
+    // Append newly deleted blobs to appropriate primary/live journals.
+    saved_primary_journal = primary_journal;
+    BlobJournalType live_blobs;
+    if (!blobs_to_remove_.empty()) {
+      DCHECK(!backing_store_->is_incognito());
+      PartitionBlobsToRemove(&dead_blobs, &live_blobs);
     }
+    primary_journal.insert(primary_journal.end(), dead_blobs.begin(),
+                           dead_blobs.end());
+    live_journal.insert(live_journal.end(), live_blobs.begin(),
+                        live_blobs.end());
+    UpdatePrimaryBlobJournal(transaction_.get(), primary_journal);
+    UpdateLiveBlobJournal(transaction_.get(), live_journal);
   }
 
+  // Actually commit. If this succeeds, the journals will appropriately
+  // reflect pending blob work - dead files that should be deleted
+  // immediately, and live files to monitor.
   s = transaction_->Commit();
   transaction_ = NULL;
 
-  if (s.ok() && backing_store_->is_incognito() && !blob_change_map_.empty()) {
-    BlobChangeMap& target_map = backing_store_->incognito_blob_map_;
-    for (auto& iter : blob_change_map_) {
-      BlobChangeMap::iterator target_record = target_map.find(iter.first);
-      if (target_record != target_map.end()) {
-        delete target_record->second;
-        target_map.erase(target_record);
-      }
-      if (iter.second) {
-        target_map[iter.first] = iter.second;
-        iter.second = NULL;
+  if (!s.ok()) {
+    INTERNAL_WRITE_ERROR(TRANSACTION_COMMIT_METHOD);
+    return s;
+  }
+
+  if (backing_store_->is_incognito()) {
+    if (!blob_change_map_.empty()) {
+      BlobChangeMap& target_map = backing_store_->incognito_blob_map_;
+      for (auto& iter : blob_change_map_) {
+        BlobChangeMap::iterator target_record = target_map.find(iter.first);
+        if (target_record != target_map.end()) {
+          delete target_record->second;
+          target_map.erase(target_record);
+        }
+        if (iter.second) {
+          target_map[iter.first] = iter.second;
+          iter.second = NULL;
+        }
       }
     }
+    return leveldb::Status::OK();
   }
-  if (!s.ok())
-    INTERNAL_WRITE_ERROR(TRANSACTION_COMMIT_METHOD);
-  else if (blobs_to_remove_.size())
-    s = backing_store_->CleanUpBlobJournal(BlobJournalKey::Encode());
 
+  // Actually delete dead blob files, then remove those entries
+  // from the persisted primary journal.
+  if (dead_blobs.empty())
+    return leveldb::Status::OK();
+
+  DCHECK(!blob_change_map_.empty());
+
+  s = backing_store_->CleanUpBlobJournalEntries(dead_blobs);
+  if (!s.ok()) {
+    INTERNAL_WRITE_ERROR_UNTESTED(TRANSACTION_COMMIT_METHOD);
+    return s;
+  }
+
+  scoped_refptr<LevelDBTransaction> update_journal_transaction =
+      IndexedDBClassFactory::Get()->CreateLevelDBTransaction(
+          backing_store_->db_.get());
+  UpdatePrimaryBlobJournal(update_journal_transaction.get(),
+                           saved_primary_journal);
+  s = update_journal_transaction->Commit();
   return s;
 }
 
@@ -4124,7 +4267,7 @@ void IndexedDBBackingStore::Transaction::WriteNewBlobs(
   for (auto& blob_entry_iter : *new_blob_entries) {
     // Add the new blob-table entry for each blob to the main transaction, or
     // remove any entry that may exist if there's no new one.
-    if (!blob_entry_iter.second.size())
+    if (blob_entry_iter.second.empty())
       transaction_->Remove(blob_entry_iter.first.Encode());
     else
       transaction_->Put(blob_entry_iter.first.Encode(),
@@ -4140,6 +4283,12 @@ void IndexedDBBackingStore::Transaction::WriteNewBlobs(
 
 void IndexedDBBackingStore::Transaction::Rollback() {
   IDB_TRACE("IndexedDBBackingStore::Transaction::Rollback");
+  if (committing_) {
+    committing_ = false;
+    DCHECK_GT(backing_store_->committing_transaction_count_, 0UL);
+    --backing_store_->committing_transaction_count_;
+  }
+
   if (chained_blob_writer_.get()) {
     chained_blob_writer_->Abort();
     chained_blob_writer_ = NULL;
@@ -4247,8 +4396,13 @@ void IndexedDBBackingStore::Transaction::PutBlobInfo(
 IndexedDBBackingStore::Transaction::WriteDescriptor::WriteDescriptor(
     const GURL& url,
     int64_t key,
-    int64_t size)
-    : is_file_(false), url_(url), key_(key), size_(size) {
+    int64_t size,
+    base::Time last_modified)
+    : is_file_(false),
+      url_(url),
+      key_(key),
+      size_(size),
+      last_modified_(last_modified) {
 }
 
 IndexedDBBackingStore::Transaction::WriteDescriptor::WriteDescriptor(
@@ -4262,5 +4416,13 @@ IndexedDBBackingStore::Transaction::WriteDescriptor::WriteDescriptor(
       size_(size),
       last_modified_(last_modified) {
 }
+
+IndexedDBBackingStore::Transaction::WriteDescriptor::WriteDescriptor(
+    const WriteDescriptor& other) = default;
+IndexedDBBackingStore::Transaction::WriteDescriptor::~WriteDescriptor() =
+    default;
+IndexedDBBackingStore::Transaction::WriteDescriptor&
+    IndexedDBBackingStore::Transaction::WriteDescriptor::
+    operator=(const WriteDescriptor& other) = default;
 
 }  // namespace content

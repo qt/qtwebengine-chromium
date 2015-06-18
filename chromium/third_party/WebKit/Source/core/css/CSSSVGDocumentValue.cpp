@@ -26,9 +26,9 @@
 
 #include "core/css/CSSSVGDocumentValue.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/CSSMarkup.h"
 #include "core/dom/Document.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 
@@ -45,15 +45,15 @@ CSSSVGDocumentValue::~CSSSVGDocumentValue()
 {
 }
 
-DocumentResource* CSSSVGDocumentValue::load(ResourceFetcher* loader)
+DocumentResource* CSSSVGDocumentValue::load(Document* document)
 {
-    ASSERT(loader);
+    ASSERT(document);
 
     if (!m_loadRequested) {
         m_loadRequested = true;
 
-        FetchRequest request(ResourceRequest(loader->document()->completeURL(m_url)), FetchInitiatorTypeNames::css);
-        m_document = loader->fetchSVGDocument(request);
+        FetchRequest request(ResourceRequest(document->completeURL(m_url)), FetchInitiatorTypeNames::css);
+        m_document = document->fetcher()->fetchSVGDocument(request);
     }
 
     return m_document.get();

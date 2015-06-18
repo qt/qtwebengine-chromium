@@ -64,9 +64,10 @@ class TestChannelIDKey : public ChannelIDKey {
     // The signature consists of a pair of 32-byte numbers.
     static const size_t kSignatureLength = 32 * 2;
     scoped_ptr<uint8[]> signature(new uint8[kSignatureLength]);
-    memset(signature.get(), 0, kSignatureLength);
-    BN_bn2bin(sig.get()->r, signature.get() + 32 - BN_num_bytes(sig.get()->r));
-    BN_bn2bin(sig.get()->s, signature.get() + 64 - BN_num_bytes(sig.get()->s));
+    if (!BN_bn2bin_padded(&signature[0], 32, sig->r) ||
+        !BN_bn2bin_padded(&signature[32], 32, sig->s)) {
+      return false;
+    }
 
     *out_signature = string(reinterpret_cast<char*>(signature.get()),
                             kSignatureLength);
@@ -132,16 +133,14 @@ class TestChannelIDSource : public ChannelIDSource {
     crypto::ScopedBIGNUM k(BN_new());
     CHECK(BN_bin2bn(digest, sizeof(digest), k.get()) != nullptr);
 
-    crypto::ScopedOpenSSL<EC_GROUP, EC_GROUP_free>::Type p256(
+    crypto::ScopedEC_GROUP p256(
         EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1));
-    CHECK(p256.get());
+    CHECK(p256);
 
     crypto::ScopedEC_KEY ecdsa_key(EC_KEY_new());
-    CHECK(ecdsa_key.get() != nullptr &&
-          EC_KEY_set_group(ecdsa_key.get(), p256.get()));
+    CHECK(ecdsa_key && EC_KEY_set_group(ecdsa_key.get(), p256.get()));
 
-    crypto::ScopedOpenSSL<EC_POINT, EC_POINT_free>::Type point(
-        EC_POINT_new(p256.get()));
+    crypto::ScopedEC_POINT point(EC_POINT_new(p256.get()));
     CHECK(EC_POINT_mul(p256.get(), point.get(), k.get(), nullptr, nullptr,
                        nullptr));
 

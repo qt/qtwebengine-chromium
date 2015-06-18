@@ -8,13 +8,14 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
+#include "base/run_loop.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 using ::testing::_;
 using ::testing::StrictMock;
@@ -84,26 +85,31 @@ void WaitableMessageLoopEvent::RunAndWaitForStatus(PipelineStatus expected) {
     return;
   }
 
+  run_loop_.reset(new base::RunLoop());
   base::Timer timer(false, false);
   timer.Start(FROM_HERE, TestTimeouts::action_timeout(), base::Bind(
       &WaitableMessageLoopEvent::OnTimeout, base::Unretained(this)));
 
-  message_loop_->Run();
+  run_loop_->Run();
   EXPECT_TRUE(signaled_);
   EXPECT_EQ(expected, status_);
+  run_loop_.reset();
 }
 
 void WaitableMessageLoopEvent::OnCallback(PipelineStatus status) {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
   signaled_ = true;
   status_ = status;
-  message_loop_->QuitWhenIdle();
+
+  // |run_loop_| may be null if the callback fires before RunAndWaitForStatus().
+  if (run_loop_)
+    run_loop_->Quit();
 }
 
 void WaitableMessageLoopEvent::OnTimeout() {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
   ADD_FAILURE() << "Timed out waiting for message loop to quit";
-  message_loop_->QuitWhenIdle();
+  run_loop_->Quit();
 }
 
 static VideoDecoderConfig GetTestConfig(VideoCodec codec,
@@ -222,6 +228,7 @@ scoped_refptr<DecoderBuffer> CreateFakeVideoBufferForTest(
       static_cast<int>(pickle.size()));
   buffer->set_timestamp(timestamp);
   buffer->set_duration(duration);
+  buffer->set_is_key_frame(true);
 
   return buffer;
 }
@@ -257,6 +264,12 @@ void CallbackPairChecker::RecordACalled() {
 void CallbackPairChecker::RecordBCalled() {
   EXPECT_TRUE(expecting_b_);
   expecting_b_ = false;
+}
+
+void AddLogEntryForTest(MediaLog::MediaLogLevel level,
+                        const std::string& message) {
+  DVLOG(1) << "Media log (" << MediaLog::MediaLogLevelToString(level)
+           << "): " << message;
 }
 
 }  // namespace media

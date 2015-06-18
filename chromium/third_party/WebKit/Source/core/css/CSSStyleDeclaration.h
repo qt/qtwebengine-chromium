@@ -23,6 +23,7 @@
 
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/CSSPropertyNames.h"
+#include "core/CoreExport.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
@@ -34,9 +35,9 @@ class CSSValue;
 class ExceptionState;
 class MutableStylePropertySet;
 
-class CSSStyleDeclaration : public NoBaseWillBeGarbageCollectedFinalized<CSSStyleDeclaration>, public ScriptWrappable {
+class CORE_EXPORT CSSStyleDeclaration : public NoBaseWillBeGarbageCollectedFinalized<CSSStyleDeclaration>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CSSStyleDeclaration);
 public:
     virtual ~CSSStyleDeclaration() { }
 
@@ -50,7 +51,6 @@ public:
     virtual void setCSSText(const String&, ExceptionState&) = 0;
     virtual unsigned length() const = 0;
     virtual String item(unsigned index) const = 0;
-    virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(const String& propertyName) = 0;
     virtual String getPropertyValue(const String& propertyName) = 0;
     virtual String getPropertyPriority(const String& propertyName) = 0;
     virtual String getPropertyShorthand(const String& propertyName) = 0;
@@ -70,7 +70,7 @@ public:
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const = 0;
     virtual CSSStyleSheet* parentStyleSheet() const { return 0; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     CSSStyleDeclaration() { }

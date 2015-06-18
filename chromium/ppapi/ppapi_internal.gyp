@@ -33,7 +33,7 @@
   ],
   'targets': [
     {
-      # GN version: //ppapi:ppapi_shared
+      # GN version: //ppapi/shared_impl and //ppapi/thunk
       'target_name': 'ppapi_shared',
       'type': '<(component)',
       'variables': {
@@ -69,24 +69,7 @@
             ],
           },
         }],
-        ['chrome_multiple_dll==1', {
-          'dependencies': [
-            '../third_party/WebKit/public/blink.gyp:blink_minimal',
-          ],
-          'export_dependent_settings': [
-            '../third_party/WebKit/public/blink.gyp:blink_minimal',
-          ],
-        }, {
-          'dependencies': [
-            '../third_party/WebKit/public/blink.gyp:blink',
-          ],
-          'export_dependent_settings': [
-            '../third_party/WebKit/public/blink.gyp:blink',
-          ],
-        }],
       ],
-      # Disable c4267 warnings until we fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
   ],
   'conditions': [
@@ -94,7 +77,7 @@
       # In a static build, build ppapi_ipc separately.
       'targets': [
         {
-          # GN version: //ppapi:ppapi_ipc
+          # GN version: //ppapi/proxy:ipc
           'target_name': 'ppapi_ipc',
           'type': 'static_library',
           'variables': {
@@ -116,7 +99,7 @@
           },
         },
         {
-          # GN version: //ppapi:ppapi_proxy
+          # GN version: //ppapi/proxy
           'target_name': 'ppapi_proxy',
           'type': 'static_library',
           'variables': {
@@ -125,6 +108,7 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '../gin/gin.gyp:gin',
             '../gpu/gpu.gyp:gles2_implementation',
             '../gpu/gpu.gyp:gpu_ipc',
             '../media/media.gyp:shared_memory_support',
@@ -143,8 +127,6 @@
                 '..',
             ],
           },
-          # Disable c4267 warnings until we fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
           'conditions': [
             ['chrome_multiple_dll==1', {
               'dependencies': [
@@ -175,6 +157,7 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '../gin/gin.gyp:gin',
             '../gpu/gpu.gyp:gles2_implementation',
             '../gpu/gpu.gyp:gpu_ipc',
             '../media/media.gyp:shared_memory_support',
@@ -193,8 +176,6 @@
                 '..',
             ],
           },
-          # Disable c4267 warnings until we fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
           'conditions': [
             ['chrome_multiple_dll==1', {
               'dependencies': [

@@ -23,17 +23,16 @@
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/accessibility/AXObjectCache.h"
+#include "core/dom/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/Event.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/layout/LayoutPart.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderPart.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace blink {
@@ -111,13 +110,13 @@ HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Docum
 {
 }
 
-RenderPart* HTMLFrameOwnerElement::renderPart() const
+LayoutPart* HTMLFrameOwnerElement::layoutPart() const
 {
-    // HTMLObjectElement and HTMLEmbedElement may return arbitrary renderers
+    // HTMLObjectElement and HTMLEmbedElement may return arbitrary layoutObjects
     // when using fallback content.
-    if (!renderer() || !renderer()->isRenderPart())
+    if (!layoutObject() || !layoutObject()->isLayoutPart())
         return nullptr;
-    return toRenderPart(renderer());
+    return toLayoutPart(layoutObject());
 }
 
 void HTMLFrameOwnerElement::setContentFrame(Frame& frame)
@@ -176,7 +175,7 @@ Document* HTMLFrameOwnerElement::contentDocument() const
     return (m_contentFrame && m_contentFrame->isLocalFrame()) ? toLocalFrame(m_contentFrame)->document() : 0;
 }
 
-LocalDOMWindow* HTMLFrameOwnerElement::contentWindow() const
+DOMWindow* HTMLFrameOwnerElement::contentWindow() const
 {
     return m_contentFrame ? m_contentFrame->domWindow() : 0;
 }
@@ -184,6 +183,10 @@ LocalDOMWindow* HTMLFrameOwnerElement::contentWindow() const
 void HTMLFrameOwnerElement::setSandboxFlags(SandboxFlags flags)
 {
     m_sandboxFlags = flags;
+    // Don't notify about updates if contentFrame() is null, for example when
+    // the subframe hasn't been created yet.
+    if (contentFrame())
+        document().frame()->loader().client()->didChangeSandboxFlags(contentFrame(), flags);
 }
 
 bool HTMLFrameOwnerElement::isKeyboardFocusable() const
@@ -217,20 +220,20 @@ void HTMLFrameOwnerElement::setWidget(PassRefPtrWillBeRawPtr<Widget> widget)
 
     m_widget = widget;
 
-    RenderPart* renderPart = toRenderPart(renderer());
-    if (!renderPart)
+    LayoutPart* layoutPart = toLayoutPart(layoutObject());
+    if (!layoutPart)
         return;
 
     if (m_widget) {
-        renderPart->updateOnWidgetChange();
+        layoutPart->updateOnWidgetChange();
 
-        ASSERT(document().view() == renderPart->frameView());
-        ASSERT(renderPart->frameView());
-        moveWidgetToParentSoon(m_widget.get(), renderPart->frameView());
+        ASSERT(document().view() == layoutPart->frameView());
+        ASSERT(layoutPart->frameView());
+        moveWidgetToParentSoon(m_widget.get(), layoutPart->frameView());
     }
 
     if (AXObjectCache* cache = document().existingAXObjectCache())
-        cache->childrenChanged(renderPart);
+        cache->childrenChanged(layoutPart);
 }
 
 Widget* HTMLFrameOwnerElement::ownedWidget() const
@@ -254,10 +257,10 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     if (!SubframeLoadingDisabler::canLoadFrame(*this))
         return false;
 
-    return parentFrame->loader().client()->createFrame(url, frameName, this);
+    return parentFrame->loader().client()->createFrame(FrameLoadRequest(&document(), url, "_self", CheckContentSecurityPolicy), frameName, this);
 }
 
-void HTMLFrameOwnerElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLFrameOwnerElement)
 {
     visitor->trace(m_contentFrame);
     visitor->trace(m_widget);

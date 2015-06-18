@@ -8,13 +8,12 @@
 #include "crypto/scoped_openssl_types.h"
 #include "net/cert/x509_util.h"
 #include "net/cert/x509_util_openssl.h"
+#include "net/ssl/scoped_openssl_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
 
 namespace {
-
-typedef crypto::ScopedOpenSSL<X509, X509_free>::Type ScopedX509;
 
 // Verify that a given certificate was signed with the private key corresponding
 // to a given public key.
@@ -47,7 +46,7 @@ void VerifyChannelID(const std::string& domain,
                      const std::string& der_cert) {
   // Origin Bound Cert OID.
   static const char oid_string[] = "1.3.6.1.4.1.11129.2.1.6";
-  crypto::ScopedOpenSSL<ASN1_OBJECT, ASN1_OBJECT_free>::Type oid_obj(
+  crypto::ScopedOpenSSL<ASN1_OBJECT, ASN1_OBJECT_free> oid_obj(
       OBJ_txt2obj(oid_string, 0));
   ASSERT_TRUE(oid_obj.get());
 

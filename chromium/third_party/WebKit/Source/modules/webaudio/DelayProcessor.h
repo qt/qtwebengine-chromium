@@ -25,8 +25,8 @@
 #ifndef DelayProcessor_h
 #define DelayProcessor_h
 
-#include "platform/audio/AudioDSPKernelProcessor.h"
 #include "modules/webaudio/AudioParam.h"
+#include "platform/audio/AudioDSPKernelProcessor.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -36,18 +36,16 @@ class AudioDSPKernel;
 
 class DelayProcessor final : public AudioDSPKernelProcessor {
 public:
-    DelayProcessor(AudioContext*, float sampleRate, unsigned numberOfChannels, double maxDelayTime);
+    DelayProcessor(float sampleRate, unsigned numberOfChannels, AudioParamHandler& delayTime, double maxDelayTime);
     virtual ~DelayProcessor();
-    virtual void trace(Visitor*) override;
 
     virtual PassOwnPtr<AudioDSPKernel> createKernel() override;
 
-    AudioParam* delayTime() const { return m_delayTime.get(); }
-
+    AudioParamHandler& delayTime() const { return *m_delayTime; }
     double maxDelayTime() { return m_maxDelayTime; }
-private:
 
-    Member<AudioParam> m_delayTime;
+private:
+    RefPtr<AudioParamHandler> m_delayTime;
     double m_maxDelayTime;
 };
 

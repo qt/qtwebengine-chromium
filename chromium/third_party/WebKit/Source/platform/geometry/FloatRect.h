@@ -28,6 +28,7 @@
 #define FloatRect_h
 
 #include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRectOutsets.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "wtf/Vector.h"
 
@@ -41,8 +42,9 @@ typedef struct CGRect CGRect;
 
 namespace blink {
 
-class LayoutRect;
 class IntRect;
+class LayoutRect;
+class LayoutSize;
 
 class PLATFORM_EXPORT FloatRect {
 public:
@@ -87,11 +89,19 @@ public:
     FloatPoint center() const { return FloatPoint(x() + width() / 2, y() + height() / 2); }
 
     void move(const FloatSize& delta) { m_location += delta; }
+    void move(const LayoutSize&);
+    void move(const IntSize&);
     void moveBy(const FloatPoint& delta) { m_location.move(delta.x(), delta.y()); }
     void move(float dx, float dy) { m_location.move(dx, dy); }
 
     void expand(const FloatSize& size) { m_size += size; }
     void expand(float dw, float dh) { m_size.expand(dw, dh); }
+    void expand(const FloatRectOutsets& outsets)
+    {
+        m_location.move(-outsets.left(), -outsets.top());
+        m_size.expand(outsets.left() + outsets.right(), outsets.top() + outsets.bottom());
+    }
+
     void contract(const FloatSize& size) { m_size -= size; }
     void contract(float dw, float dh) { m_size.expand(-dw, -dh); }
 
@@ -156,11 +166,6 @@ public:
 
     FloatRect transposedRect() const { return FloatRect(m_location.transposedPoint(), m_size.transposedSize()); }
 
-    // Re-initializes this rectangle to fit the sets of passed points.
-    void fitToPoints(const FloatPoint& p0, const FloatPoint& p1);
-    void fitToPoints(const FloatPoint& p0, const FloatPoint& p1, const FloatPoint& p2);
-    void fitToPoints(const FloatPoint& p0, const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& p3);
-
 #if OS(MACOSX)
     FloatRect(const CGRect&);
     operator CGRect() const;
@@ -171,6 +176,11 @@ public:
 #endif
 
     operator SkRect() const { return SkRect::MakeXYWH(x(), y(), width(), height()); }
+
+#ifndef NDEBUG
+    // Prints the rect to the screen.
+    void show() const;
+#endif
 
 private:
     FloatPoint m_location;

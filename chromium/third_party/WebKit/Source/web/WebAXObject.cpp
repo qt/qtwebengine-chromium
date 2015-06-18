@@ -32,26 +32,32 @@
 #include "public/web/WebAXObject.h"
 
 #include "core/HTMLNames.h"
-#include "core/accessibility/AXObject.h"
-#include "core/accessibility/AXObjectCache.h"
-#include "core/accessibility/AXTable.h"
-#include "core/accessibility/AXTableCell.h"
-#include "core/accessibility/AXTableColumn.h"
-#include "core/accessibility/AXTableRow.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/PinchViewport.h"
+#include "core/layout/LayoutView.h"
+#include "core/style/ComputedStyle.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/page/Page.h"
+#include "modules/accessibility/AXObject.h"
+#include "modules/accessibility/AXObjectCacheImpl.h"
+#include "modules/accessibility/AXTable.h"
+#include "modules/accessibility/AXTableCell.h"
+#include "modules/accessibility/AXTableColumn.h"
+#include "modules/accessibility/AXTableRow.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/web/WebDocument.h"
+#include "public/web/WebElement.h"
 #include "public/web/WebNode.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
@@ -64,9 +70,25 @@ static bool isLayoutClean(Document* document)
     if (!document || !document->view())
         return false;
     return document->lifecycle().state() >= DocumentLifecycle::LayoutClean
-        || (document->lifecycle().state() == DocumentLifecycle::StyleClean && !document->view()->needsLayout());
+        || ((document->lifecycle().state() == DocumentLifecycle::StyleClean || document->lifecycle().state() == DocumentLifecycle::LayoutSubtreeChangeClean)
+            && !document->view()->needsLayout());
 }
 #endif
+
+WebScopedAXContext::WebScopedAXContext(WebDocument& rootDocument)
+    : m_private(adoptRef(new ScopedAXObjectCache(*rootDocument.unwrap<Document>())))
+{
+}
+
+WebScopedAXContext::~WebScopedAXContext()
+{
+    m_private.reset();
+}
+
+WebAXObject WebScopedAXContext::root() const
+{
+    return WebAXObject(static_cast<AXObjectCacheImpl*>(m_private->get())->root());
+}
 
 void WebAXObject::reset()
 {
@@ -105,26 +127,11 @@ bool WebAXObject::updateLayoutAndCheckValidity()
         Document* document = m_private->document();
         if (!document || !document->topDocument().view())
             return false;
-        document->topDocument().view()->updateLayoutAndStyleIfNeededRecursive();
+        document->view()->updateLayoutAndStyleForPainting();
     }
 
     // Doing a layout can cause this object to be invalid, so check again.
     return !isDetached();
-}
-
-bool WebAXObject::updateBackingStoreAndCheckValidity()
-{
-    return updateLayoutAndCheckValidity();
-}
-
-WebString WebAXObject::accessibilityDescription() const
-{
-    if (isDetached())
-        return WebString();
-
-    ASSERT(isLayoutClean(m_private->document()));
-
-    return m_private->accessibilityDescription();
 }
 
 WebString WebAXObject::actionVerb() const
@@ -205,7 +212,7 @@ WebAXObject WebAXObject::parentObject() const
 bool WebAXObject::canSetSelectedAttribute() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->canSetSelectedAttribute();
 }
@@ -213,23 +220,39 @@ bool WebAXObject::canSetSelectedAttribute() const
 bool WebAXObject::isAnchor() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isAnchor();
+}
+
+WebAXOptionalBool WebAXObject::isAriaGrabbed() const
+{
+    if (isDetached())
+        return WebAXOptionalBoolUndefined;
+
+    return static_cast<WebAXOptionalBool>(m_private->isAriaGrabbed());
 }
 
 bool WebAXObject::isAriaReadOnly() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return equalIgnoringCase(m_private->getAttribute(HTMLNames::aria_readonlyAttr), "true");
+}
+
+WebString WebAXObject::ariaAutoComplete() const
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->ariaAutoComplete();
 }
 
 bool WebAXObject::isButtonStateMixed() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->checkboxOrRadioValue() == ButtonStateMixed;
 }
@@ -237,7 +260,7 @@ bool WebAXObject::isButtonStateMixed() const
 bool WebAXObject::isChecked() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isChecked();
 }
@@ -245,7 +268,7 @@ bool WebAXObject::isChecked() const
 bool WebAXObject::isClickable() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isClickable();
 }
@@ -253,7 +276,7 @@ bool WebAXObject::isClickable() const
 bool WebAXObject::isCollapsed() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isCollapsed();
 }
@@ -261,7 +284,7 @@ bool WebAXObject::isCollapsed() const
 bool WebAXObject::isControl() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isControl();
 }
@@ -269,7 +292,7 @@ bool WebAXObject::isControl() const
 bool WebAXObject::isEnabled() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isEnabled();
 }
@@ -285,7 +308,7 @@ WebAXExpanded WebAXObject::isExpanded() const
 bool WebAXObject::isFocused() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isFocused();
 }
@@ -293,7 +316,7 @@ bool WebAXObject::isFocused() const
 bool WebAXObject::isHovered() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isHovered();
 }
@@ -301,7 +324,7 @@ bool WebAXObject::isHovered() const
 bool WebAXObject::isIndeterminate() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isIndeterminate();
 }
@@ -309,7 +332,7 @@ bool WebAXObject::isIndeterminate() const
 bool WebAXObject::isLinked() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isLinked();
 }
@@ -317,7 +340,7 @@ bool WebAXObject::isLinked() const
 bool WebAXObject::isLoaded() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isLoaded();
 }
@@ -325,7 +348,7 @@ bool WebAXObject::isLoaded() const
 bool WebAXObject::isMultiSelectable() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isMultiSelectable();
 }
@@ -333,7 +356,7 @@ bool WebAXObject::isMultiSelectable() const
 bool WebAXObject::isOffScreen() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isOffScreen();
 }
@@ -341,7 +364,7 @@ bool WebAXObject::isOffScreen() const
 bool WebAXObject::isPasswordField() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isPasswordField();
 }
@@ -349,7 +372,7 @@ bool WebAXObject::isPasswordField() const
 bool WebAXObject::isPressed() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isPressed();
 }
@@ -357,7 +380,7 @@ bool WebAXObject::isPressed() const
 bool WebAXObject::isReadOnly() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isReadOnly();
 }
@@ -365,7 +388,7 @@ bool WebAXObject::isReadOnly() const
 bool WebAXObject::isRequired() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isRequired();
 }
@@ -373,7 +396,7 @@ bool WebAXObject::isRequired() const
 bool WebAXObject::isSelected() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isSelected();
 }
@@ -386,18 +409,10 @@ bool WebAXObject::isSelectedOptionActive() const
     return m_private->isSelectedOptionActive();
 }
 
-bool WebAXObject::isVertical() const
-{
-    if (isDetached())
-        return 0;
-
-    return m_private->orientation() == AccessibilityOrientationVertical;
-}
-
 bool WebAXObject::isVisible() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isVisible();
 }
@@ -405,7 +420,7 @@ bool WebAXObject::isVisible() const
 bool WebAXObject::isVisited() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->isVisited();
 }
@@ -416,6 +431,45 @@ WebString WebAXObject::accessKey() const
         return WebString();
 
     return WebString(m_private->accessKey());
+}
+
+unsigned WebAXObject::backgroundColor() const
+{
+    if (isDetached())
+        return 0;
+
+    // RGBA32 is an alias for unsigned int.
+    return m_private->backgroundColor();
+}
+
+unsigned WebAXObject::color() const
+{
+    if (isDetached())
+        return 0;
+
+    // RGBA32 is an alias for unsigned int.
+    return m_private->color();
+}
+
+// Deprecated.
+void WebAXObject::colorValue(int& r, int& g, int& b) const
+{
+    if (isDetached())
+        return;
+
+    unsigned color = m_private->colorValue();
+    r = (color >> 16) & 0xFF;
+    g = (color >> 8) & 0xFF;
+    b = color & 0xFF;
+}
+
+unsigned WebAXObject::colorValue() const
+{
+    if (isDetached())
+        return 0;
+
+    // RGBA32 is an alias for unsigned int.
+    return m_private->colorValue();
 }
 
 WebAXObject WebAXObject::ariaActiveDescendant() const
@@ -442,26 +496,18 @@ bool WebAXObject::ariaControls(WebVector<WebAXObject>& controlsElements) const
     return true;
 }
 
-bool WebAXObject::ariaDescribedby(WebVector<WebAXObject>& describedbyElements) const
+WebString WebAXObject::ariaDropEffect() const
 {
     if (isDetached())
-        return false;
+        return WebString();
 
-    AXObject::AccessibilityChildrenVector describedby;
-    m_private->ariaDescribedbyElements(describedby);
-
-    WebVector<WebAXObject> result(describedby.size());
-    for (size_t i = 0; i < describedby.size(); i++)
-        result[i] = WebAXObject(describedby[i]);
-    describedbyElements.swap(result);
-
-    return true;
+    return WebString(m_private->ariaDropEffect());
 }
 
 bool WebAXObject::ariaHasPopup() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->ariaHasPopup();
 }
@@ -482,20 +528,28 @@ bool WebAXObject::ariaFlowTo(WebVector<WebAXObject>& flowToElements) const
     return true;
 }
 
-bool WebAXObject::ariaLabelledby(WebVector<WebAXObject>& labelledbyElements) const
+bool WebAXObject::isMultiline() const
 {
     if (isDetached())
         return false;
 
-    AXObject::AccessibilityChildrenVector labelledby;
-    m_private->ariaLabelledbyElements(labelledby);
+    return m_private->isMultiline();
+}
 
-    WebVector<WebAXObject> result(labelledby.size());
-    for (size_t i = 0; i < labelledby.size(); i++)
-        result[i] = WebAXObject(labelledby[i]);
-    labelledbyElements.swap(result);
+int WebAXObject::posInSet() const
+{
+    if (isDetached())
+        return 0;
 
-    return true;
+    return m_private->posInSet();
+}
+
+int WebAXObject::setSize() const
+{
+    if (isDetached())
+        return 0;
+
+    return m_private->setSize();
 }
 
 bool WebAXObject::isInLiveRegion() const
@@ -509,7 +563,7 @@ bool WebAXObject::isInLiveRegion() const
 bool WebAXObject::liveRegionAtomic() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->liveRegionAtomic();
 }
@@ -517,7 +571,7 @@ bool WebAXObject::liveRegionAtomic() const
 bool WebAXObject::liveRegionBusy() const
 {
     if (isDetached())
-        return 0;
+        return false;
 
     return m_private->liveRegionBusy();
 }
@@ -596,6 +650,14 @@ WebRect WebAXObject::boundingBoxRect() const
     return pixelSnappedIntRect(m_private->elementRect());
 }
 
+float WebAXObject::fontSize() const
+{
+    if (isDetached())
+        return 0.0f;
+
+    return m_private->fontSize();
+}
+
 bool WebAXObject::canvasHasFallbackContent() const
 {
     if (isDetached())
@@ -612,12 +674,21 @@ WebPoint WebAXObject::clickPoint() const
     return WebPoint(m_private->clickPoint());
 }
 
-void WebAXObject::colorValue(int& r, int& g, int& b) const
+WebAXInvalidState WebAXObject::invalidState() const
 {
     if (isDetached())
-        return;
+        return WebAXInvalidStateUndefined;
 
-    m_private->colorValue(r, g, b);
+    return static_cast<WebAXInvalidState>(m_private->invalidState());
+}
+
+// Only used when invalidState() returns WebAXInvalidStateOther.
+WebString WebAXObject::ariaInvalidValue() const
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->ariaInvalidValue();
 }
 
 double WebAXObject::estimatedLoadingProgress() const
@@ -626,14 +697,6 @@ double WebAXObject::estimatedLoadingProgress() const
         return 0.0;
 
     return m_private->estimatedLoadingProgress();
-}
-
-WebString WebAXObject::helpText() const
-{
-    if (isDetached())
-        return WebString();
-
-    return m_private->helpText();
 }
 
 int WebAXObject::headingLevel() const
@@ -652,12 +715,15 @@ int WebAXObject::hierarchicalLevel() const
     return m_private->hierarchicalLevel();
 }
 
+// FIXME: This method passes in a point that has page scale applied but assumes that (0, 0)
+// is the top left of the visual viewport. In other words, the point has the PinchViewport
+// scale applied, but not the PinchViewport offset. crbug.com/459591.
 WebAXObject WebAXObject::hitTest(const WebPoint& point) const
 {
     if (isDetached())
         return WebAXObject();
 
-    IntPoint contentsPoint = m_private->documentFrameView()->windowToContents(point);
+    IntPoint contentsPoint = m_private->documentFrameView()->soonToBeRemovedUnscaledViewportToContents(point);
     RefPtr<AXObject> hit = m_private->accessibilityHitTest(contentsPoint);
 
     if (hit)
@@ -699,6 +765,14 @@ WebString WebAXObject::keyboardShortcut() const
     return String(modifierString + accessKey);
 }
 
+WebString WebAXObject::language() const
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->language();
+}
+
 bool WebAXObject::performDefaultAction() const
 {
     if (isDetached())
@@ -729,6 +803,14 @@ bool WebAXObject::decrement() const
         return true;
     }
     return false;
+}
+
+WebAXOrientation WebAXObject::orientation() const
+{
+    if (isDetached())
+        return WebAXOrientationUndefined;
+
+    return static_cast<WebAXOrientation>(m_private->orientation());
 }
 
 bool WebAXObject::press() const
@@ -809,6 +891,39 @@ void WebAXObject::setValue(WebString value) const
     m_private->setValue(value);
 }
 
+void WebAXObject::showContextMenu() const
+{
+    if (isDetached())
+        return;
+
+    Node* node = m_private->node();
+    if (!node)
+        return;
+
+    Element* element = nullptr;
+    if (node->isElementNode()) {
+        element = toElement(node);
+    } else {
+        node->updateDistribution();
+        ContainerNode* parent = ComposedTreeTraversal::parent(*node);
+        ASSERT_WITH_SECURITY_IMPLICATION(parent->isElementNode());
+        element = toElement(parent);
+    }
+
+    if (!element)
+        return;
+
+    LocalFrame* frame = element->document().frame();
+    if (!frame)
+        return;
+
+    WebViewImpl* view = WebLocalFrameImpl::fromFrame(frame)->viewImpl();
+    if (!view)
+        return;
+
+    view->showContextMenuForElement(WebElement(element));
+}
+
 WebString WebAXObject::stringValue() const
 {
     if (isDetached())
@@ -817,25 +932,20 @@ WebString WebAXObject::stringValue() const
     return m_private->stringValue();
 }
 
-WebString WebAXObject::title() const
+WebAXTextDirection WebAXObject::textDirection() const
 {
     if (isDetached())
-        return WebString();
+        return WebAXTextDirectionLR;
 
-    ASSERT(isLayoutClean(m_private->document()));
-
-    return m_private->title();
+    return static_cast<WebAXTextDirection>(m_private->textDirection());
 }
 
-WebAXObject WebAXObject::titleUIElement() const
+WebAXTextStyle WebAXObject::textStyle() const
 {
     if (isDetached())
-        return WebAXObject();
+        return WebAXTextStyleNone;
 
-    if (!m_private->exposesTitleUIElement())
-        return WebAXObject();
-
-    return WebAXObject(m_private->titleUIElement());
+    return static_cast<WebAXTextStyle>(m_private->textStyle());
 }
 
 WebURL WebAXObject::url() const
@@ -844,6 +954,164 @@ WebURL WebAXObject::url() const
         return WebURL();
 
     return m_private->url();
+}
+
+WebString WebAXObject::deprecatedAccessibilityDescription() const
+{
+    if (isDetached())
+        return WebString();
+
+    ASSERT(isLayoutClean(m_private->document()));
+
+    return m_private->deprecatedAccessibilityDescription();
+}
+
+bool WebAXObject::deprecatedAriaDescribedby(WebVector<WebAXObject>& describedbyElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector describedby;
+    m_private->deprecatedAriaDescribedbyElements(describedby);
+
+    WebVector<WebAXObject> result(describedby.size());
+    for (size_t i = 0; i < describedby.size(); i++)
+        result[i] = WebAXObject(describedby[i]);
+    describedbyElements.swap(result);
+
+    return true;
+}
+
+bool WebAXObject::deprecatedAriaLabelledby(WebVector<WebAXObject>& labelledbyElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector labelledby;
+    m_private->deprecatedAriaLabelledbyElements(labelledby);
+
+    WebVector<WebAXObject> result(labelledby.size());
+    for (size_t i = 0; i < labelledby.size(); i++)
+        result[i] = WebAXObject(labelledby[i]);
+    labelledbyElements.swap(result);
+
+    return true;
+}
+
+WebString WebAXObject::deprecatedHelpText() const
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->deprecatedHelpText();
+}
+
+WebString WebAXObject::deprecatedPlaceholder() const
+{
+    if (isDetached())
+        return WebString();
+
+    return WebString(m_private->deprecatedPlaceholder());
+}
+
+WebString WebAXObject::deprecatedTitle() const
+{
+    if (isDetached())
+        return WebString();
+
+    ASSERT(isLayoutClean(m_private->document()));
+
+    return m_private->deprecatedTitle();
+}
+
+WebAXObject WebAXObject::deprecatedTitleUIElement() const
+{
+    if (isDetached())
+        return WebAXObject();
+
+    if (!m_private->deprecatedExposesTitleUIElement())
+        return WebAXObject();
+
+    return WebAXObject(m_private->deprecatedTitleUIElement());
+}
+
+WebString WebAXObject::accessibilityDescription() const
+{
+    return deprecatedAccessibilityDescription();
+}
+
+bool WebAXObject::ariaDescribedby(WebVector<WebAXObject>& describedbyElements) const
+{
+    return deprecatedAriaDescribedby(describedbyElements);
+}
+
+bool WebAXObject::ariaLabelledby(WebVector<WebAXObject>& labelledbyElements) const
+{
+    return deprecatedAriaLabelledby(labelledbyElements);
+}
+
+WebString WebAXObject::helpText() const
+{
+    return deprecatedHelpText();
+}
+
+WebString WebAXObject::placeholder() const
+{
+    return deprecatedPlaceholder();
+}
+
+WebString WebAXObject::title() const
+{
+    return deprecatedTitle();
+}
+
+WebAXObject WebAXObject::titleUIElement() const
+{
+    return deprecatedTitleUIElement();
+}
+
+WebString WebAXObject::name(WebAXNameFrom& outNameFrom, WebVector<WebAXObject>& outNameObjects)
+{
+    if (isDetached())
+        return WebString();
+
+    AXNameFrom nameFrom = AXNameFromAttribute;
+    Vector<AXObject*> nameObjects;
+    WebString result = m_private->name(nameFrom, nameObjects);
+    outNameFrom = static_cast<WebAXNameFrom>(nameFrom);
+
+    WebVector<WebAXObject> webNameObjects(nameObjects.size());
+    for (size_t i = 0; i < nameObjects.size(); i++)
+        webNameObjects[i] = WebAXObject(nameObjects[i]);
+    outNameObjects.swap(webNameObjects);
+
+    return result;
+}
+
+WebString WebAXObject::description(WebAXNameFrom nameFrom, WebAXDescriptionFrom& outDescriptionFrom, WebVector<WebAXObject>& outDescriptionObjects)
+{
+    if (isDetached())
+        return WebString();
+
+    AXDescriptionFrom descriptionFrom;
+    Vector<AXObject*> descriptionObjects;
+    String result = m_private->description(static_cast<AXNameFrom>(nameFrom), descriptionFrom, descriptionObjects);
+    outDescriptionFrom = static_cast<WebAXDescriptionFrom>(descriptionFrom);
+
+    WebVector<WebAXObject> webDescriptionObjects(descriptionObjects.size());
+    for (size_t i = 0; i < descriptionObjects.size(); i++)
+        webDescriptionObjects[i] = WebAXObject(descriptionObjects[i]);
+    outDescriptionObjects.swap(webDescriptionObjects);
+
+    return result;
+}
+
+WebString WebAXObject::placeholder(WebAXNameFrom nameFrom, WebAXDescriptionFrom descriptionFrom)
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->placeholder(static_cast<AXNameFrom>(nameFrom), static_cast<AXDescriptionFrom>(descriptionFrom));
 }
 
 bool WebAXObject::supportsRangeValue() const
@@ -917,13 +1185,13 @@ bool WebAXObject::hasComputedStyle() const
 
     Document* document = m_private->document();
     if (document)
-        document->updateRenderTreeIfNeeded();
+        document->updateLayoutTreeIfNeeded();
 
     Node* node = m_private->node();
     if (!node)
         return false;
 
-    return node->computedStyle();
+    return node->ensureComputedStyle();
 }
 
 WebString WebAXObject::computedStyleDisplay() const
@@ -933,17 +1201,17 @@ WebString WebAXObject::computedStyleDisplay() const
 
     Document* document = m_private->document();
     if (document)
-        document->updateRenderTreeIfNeeded();
+        document->updateLayoutTreeIfNeeded();
 
     Node* node = m_private->node();
     if (!node)
         return WebString();
 
-    RenderStyle* renderStyle = node->computedStyle();
-    if (!renderStyle)
+    const ComputedStyle* computedStyle = node->ensureComputedStyle();
+    if (!computedStyle)
         return WebString();
 
-    return WebString(CSSPrimitiveValue::create(renderStyle->display())->getStringValue());
+    return WebString(CSSPrimitiveValue::create(computedStyle->display())->getStringValue());
 }
 
 bool WebAXObject::accessibilityIsIgnored() const
@@ -1076,6 +1344,26 @@ WebAXObject WebAXObject::rowHeader() const
     return WebAXObject(toAXTableRow(m_private.get())->headerObject());
 }
 
+void WebAXObject::rowHeaders(WebVector<WebAXObject>& rowHeaderElements) const
+{
+    if (isDetached())
+        return;
+
+    if (!m_private->isAXTable())
+        return;
+
+    AXObject::AccessibilityChildrenVector headers;
+    toAXTable(m_private.get())->rowHeaders(headers);
+
+    size_t headerCount = headers.size();
+    WebVector<WebAXObject> result(headerCount);
+
+    for (size_t i = 0; i < headerCount; i++)
+        result[i] = WebAXObject(headers[i]);
+
+    rowHeaderElements.swap(result);
+}
+
 unsigned WebAXObject::columnIndex() const
 {
     if (isDetached())
@@ -1096,6 +1384,26 @@ WebAXObject WebAXObject::columnHeader() const
         return WebAXObject();
 
     return WebAXObject(toAXTableColumn(m_private.get())->headerObject());
+}
+
+void WebAXObject::columnHeaders(WebVector<WebAXObject>& columnHeaderElements) const
+{
+    if (isDetached())
+        return;
+
+    if (!m_private->isAXTable())
+        return;
+
+    AXObject::AccessibilityChildrenVector headers;
+    toAXTable(m_private.get())->columnHeaders(headers);
+
+    size_t headerCount = headers.size();
+    WebVector<WebAXObject> result(headerCount);
+
+    for (size_t i = 0; i < headerCount; i++)
+        result[i] = WebAXObject(headers[i]);
+
+    columnHeaderElements.swap(result);
 }
 
 unsigned WebAXObject::cellColumnIndex() const
@@ -1150,6 +1458,14 @@ unsigned WebAXObject::cellRowSpan() const
     return rowRange.second;
 }
 
+WebAXSortDirection WebAXObject::sortDirection() const
+{
+    if (isDetached())
+        return WebAXSortDirectionUndefined;
+
+    return static_cast<WebAXSortDirection>(m_private->sortDirection());
+}
+
 void WebAXObject::loadInlineTextBoxes() const
 {
     if (isDetached())
@@ -1158,12 +1474,20 @@ void WebAXObject::loadInlineTextBoxes() const
     m_private->loadInlineTextBoxes();
 }
 
-WebAXTextDirection WebAXObject::textDirection() const
+WebAXObject WebAXObject::nextOnLine() const
 {
     if (isDetached())
-        return WebAXTextDirectionLR;
+        return WebAXObject();
 
-    return static_cast<WebAXTextDirection>(m_private->textDirection());
+    return WebAXObject(m_private.get()->nextOnLine());
+}
+
+WebAXObject WebAXObject::previousOnLine() const
+{
+    if (isDetached())
+        return WebAXObject();
+
+    return WebAXObject(m_private.get()->previousOnLine());
 }
 
 void WebAXObject::characterOffsets(WebVector<int>& offsets) const
@@ -1197,6 +1521,46 @@ void WebAXObject::wordBoundaries(WebVector<int>& starts, WebVector<int>& ends) c
     }
     starts.swap(startsWebVector);
     ends.swap(endsWebVector);
+}
+
+bool WebAXObject::isScrollableContainer() const
+{
+    if (isDetached())
+        return false;
+
+    return m_private->isScrollableContainer();
+}
+
+WebPoint WebAXObject::scrollOffset() const
+{
+    if (isDetached())
+        return WebPoint();
+
+    return m_private->scrollOffset();
+}
+
+WebPoint WebAXObject::minimumScrollOffset() const
+{
+    if (isDetached())
+        return WebPoint();
+
+    return m_private->minimumScrollOffset();
+}
+
+WebPoint WebAXObject::maximumScrollOffset() const
+{
+    if (isDetached())
+        return WebPoint();
+
+    return m_private->maximumScrollOffset();
+}
+
+void WebAXObject::setScrollOffset(const WebPoint& offset) const
+{
+    if (isDetached())
+        return;
+
+    m_private->setScrollOffset(offset);
 }
 
 void WebAXObject::scrollToMakeVisible() const

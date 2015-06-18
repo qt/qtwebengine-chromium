@@ -66,20 +66,6 @@ DataMediaChannel* RtpDataEngine::CreateChannel(
   return new RtpDataMediaChannel(timing_.get());
 }
 
-// TODO(pthatcher): Should we move these find/get functions somewhere
-// common?
-bool FindCodecById(const std::vector<DataCodec>& codecs,
-                   int id, DataCodec* codec_out) {
-  std::vector<DataCodec>::const_iterator iter;
-  for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
-    if (iter->id == id) {
-      *codec_out = *iter;
-      return true;
-    }
-  }
-  return false;
-}
-
 bool FindCodecByName(const std::vector<DataCodec>& codecs,
                      const std::string& name, DataCodec* codec_out) {
   std::vector<DataCodec>::const_iterator iter;
@@ -174,8 +160,7 @@ bool RtpDataMediaChannel::AddSendStream(const StreamParams& stream) {
     return false;
   }
 
-  StreamParams found_stream;
-  if (GetStreamBySsrc(send_streams_, stream.first_ssrc(), &found_stream)) {
+  if (GetStreamBySsrc(send_streams_, stream.first_ssrc())) {
     LOG(LS_WARNING) << "Not adding data send stream '" << stream.id
                     << "' with ssrc=" << stream.first_ssrc()
                     << " because stream already exists.";
@@ -195,8 +180,7 @@ bool RtpDataMediaChannel::AddSendStream(const StreamParams& stream) {
 }
 
 bool RtpDataMediaChannel::RemoveSendStream(uint32 ssrc) {
-  StreamParams found_stream;
-  if (!GetStreamBySsrc(send_streams_, ssrc, &found_stream)) {
+  if (!GetStreamBySsrc(send_streams_, ssrc)) {
     return false;
   }
 
@@ -211,8 +195,7 @@ bool RtpDataMediaChannel::AddRecvStream(const StreamParams& stream) {
     return false;
   }
 
-  StreamParams found_stream;
-  if (GetStreamBySsrc(recv_streams_, stream.first_ssrc(), &found_stream)) {
+  if (GetStreamBySsrc(recv_streams_, stream.first_ssrc())) {
     LOG(LS_WARNING) << "Not adding data recv stream '" << stream.id
                     << "' with ssrc=" << stream.first_ssrc()
                     << " because stream already exists.";
@@ -233,7 +216,7 @@ bool RtpDataMediaChannel::RemoveRecvStream(uint32 ssrc) {
 void RtpDataMediaChannel::OnPacketReceived(
     rtc::Buffer* packet, const rtc::PacketTime& packet_time) {
   RtpHeader header;
-  if (!GetRtpHeader(packet->data(), packet->length(), &header)) {
+  if (!GetRtpHeader(packet->data(), packet->size(), &header)) {
     // Don't want to log for every corrupt packet.
     // LOG(LS_WARNING) << "Could not read rtp header from packet of length "
     //                 << packet->length() << ".";
@@ -241,15 +224,16 @@ void RtpDataMediaChannel::OnPacketReceived(
   }
 
   size_t header_length;
-  if (!GetRtpHeaderLen(packet->data(), packet->length(), &header_length)) {
+  if (!GetRtpHeaderLen(packet->data(), packet->size(), &header_length)) {
     // Don't want to log for every corrupt packet.
     // LOG(LS_WARNING) << "Could not read rtp header"
     //                 << length from packet of length "
     //                 << packet->length() << ".";
     return;
   }
-  const char* data = packet->data() + header_length + sizeof(kReservedSpace);
-  size_t data_len = packet->length() - header_length - sizeof(kReservedSpace);
+  const char* data =
+      packet->data<char>() + header_length + sizeof(kReservedSpace);
+  size_t data_len = packet->size() - header_length - sizeof(kReservedSpace);
 
   if (!receiving_) {
     LOG(LS_WARNING) << "Not receiving packet "
@@ -269,13 +253,13 @@ void RtpDataMediaChannel::OnPacketReceived(
     return;
   }
 
-  StreamParams found_stream;
-  if (!GetStreamBySsrc(recv_streams_, header.ssrc, &found_stream)) {
+  if (!GetStreamBySsrc(recv_streams_, header.ssrc)) {
     LOG(LS_WARNING) << "Received packet for unknown ssrc: " << header.ssrc;
     return;
   }
 
   // Uncomment this for easy debugging.
+  // const auto* found_stream = GetStreamBySsrc(recv_streams_, header.ssrc);
   // LOG(LS_INFO) << "Received packet"
   //              << " groupid=" << found_stream.groupid
   //              << ", ssrc=" << header.ssrc
@@ -309,7 +293,7 @@ bool RtpDataMediaChannel::SendData(
   }
   if (!sending_) {
     LOG(LS_WARNING) << "Not sending packet with ssrc=" << params.ssrc
-                    << " len=" << payload.length() << " before SetSend(true).";
+                    << " len=" << payload.size() << " before SetSend(true).";
     return false;
   }
 
@@ -318,8 +302,9 @@ bool RtpDataMediaChannel::SendData(
     return false;
   }
 
-  StreamParams found_stream;
-  if (!GetStreamBySsrc(send_streams_, params.ssrc, &found_stream)) {
+  const StreamParams* found_stream =
+      GetStreamBySsrc(send_streams_, params.ssrc);
+  if (!found_stream) {
     LOG(LS_WARNING) << "Not sending data because ssrc is unknown: "
                     << params.ssrc;
     return false;
@@ -332,8 +317,8 @@ bool RtpDataMediaChannel::SendData(
     return false;
   }
 
-  size_t packet_len = (kMinRtpPacketLen + sizeof(kReservedSpace)
-                       + payload.length() + kMaxSrtpHmacOverhead);
+  size_t packet_len = (kMinRtpPacketLen + sizeof(kReservedSpace) +
+                       payload.size() + kMaxSrtpHmacOverhead);
   if (packet_len > kDataMaxRtpPacketLen) {
     return false;
   }
@@ -353,21 +338,18 @@ bool RtpDataMediaChannel::SendData(
   rtp_clock_by_send_ssrc_[header.ssrc]->Tick(
       now, &header.seq_num, &header.timestamp);
 
-  rtc::Buffer packet;
-  packet.SetCapacity(packet_len);
-  packet.SetLength(kMinRtpPacketLen);
-  if (!SetRtpHeader(packet.data(), packet.length(), header)) {
+  rtc::Buffer packet(kMinRtpPacketLen, packet_len);
+  if (!SetRtpHeader(packet.data(), packet.size(), header)) {
     return false;
   }
-  packet.AppendData(&kReservedSpace, sizeof(kReservedSpace));
-  packet.AppendData(payload.data(), payload.length());
+  packet.AppendData(kReservedSpace);
+  packet.AppendData(payload);
 
   LOG(LS_VERBOSE) << "Sent RTP data packet: "
-                  << " stream=" << found_stream.id
-                  << " ssrc=" << header.ssrc
+                  << " stream=" << found_stream->id << " ssrc=" << header.ssrc
                   << ", seqnum=" << header.seq_num
                   << ", timestamp=" << header.timestamp
-                  << ", len=" << payload.length();
+                  << ", len=" << payload.size();
 
   MediaChannel::SendPacket(&packet);
   send_limiter_->Use(packet_len, now);

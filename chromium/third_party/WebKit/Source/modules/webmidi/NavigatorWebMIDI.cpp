@@ -33,8 +33,7 @@
 
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "bindings/core/v8/V8DOMError.h"
-#include "core/dom/DOMError.h"
+#include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Navigator.h"
@@ -48,11 +47,13 @@ NavigatorWebMIDI::NavigatorWebMIDI(LocalFrame* frame)
 {
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorWebMIDI);
-
-void NavigatorWebMIDI::trace(Visitor* visitor)
+NavigatorWebMIDI::~NavigatorWebMIDI()
 {
-    WillBeHeapSupplement<Navigator>::trace(visitor);
+}
+
+DEFINE_TRACE(NavigatorWebMIDI)
+{
+    HeapSupplement<Navigator>::trace(visitor);
     DOMWindowProperty::trace(visitor);
 }
 
@@ -63,10 +64,10 @@ const char* NavigatorWebMIDI::supplementName()
 
 NavigatorWebMIDI& NavigatorWebMIDI::from(Navigator& navigator)
 {
-    NavigatorWebMIDI* supplement = static_cast<NavigatorWebMIDI*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
+    NavigatorWebMIDI* supplement = static_cast<NavigatorWebMIDI*>(HeapSupplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
         supplement = new NavigatorWebMIDI(navigator.frame());
-        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
+        provideTo(navigator, supplementName(), supplement);
     }
     return *supplement;
 }
@@ -79,7 +80,7 @@ ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* scriptState, Navi
 ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* scriptState, const MIDIOptions& options)
 {
     if (!frame() || frame()->document()->activeDOMObjectsAreStopped()) {
-        return ScriptPromise::reject(scriptState, toV8(DOMError::create("AbortError"), scriptState->context()->Global(), scriptState->isolate()));
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(AbortError, "The frame is not working."));
     }
 
     return MIDIAccessInitializer::start(scriptState, options);

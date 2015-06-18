@@ -9,13 +9,11 @@
 #include <windows.h>
 
 #include <BluetoothAPIs.h>
-#if defined(_WIN32_WINNT_WIN8) && _MSC_VER < 1700
-// The Windows 8 SDK defines FACILITY_VISUALCPP in winerror.h.
-#undef FACILITY_VISUALCPP
-#endif
 #include <delayimp.h>
 #include <ws2def.h>
 #include <ws2bth.h>
+
+#include "device/bluetooth/bluetooth_export.h"
 
 #pragma comment(lib, "Bthprops.lib")
 #pragma comment(lib, "BluetoothApis.lib")
@@ -26,7 +24,7 @@ namespace bluetooth_init_win {
 // Returns true if the machine has a bluetooth stack available. The first call
 // to this function will involve file IO, so it should be done on an appropriate
 // thread. This function is not thread-safe.
-bool HasBluetoothStack();
+bool DEVICE_BLUETOOTH_EXPORT HasBluetoothStack();
 
 }  // namespace bluetooth_init_win
 }  // namespace device

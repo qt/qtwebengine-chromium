@@ -54,10 +54,10 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return event->key_code();
 }
 
-const char* CodeFromNative(const base::NativeEvent& native_event) {
+DomCode CodeFromNative(const base::NativeEvent& native_event) {
   const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
   DCHECK(event->IsKeyEvent());
-  return event->code().c_str();
+  return event->code();
 }
 
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
@@ -84,9 +84,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
-}
-
-void IncrementTouchIdRefCount(const base::NativeEvent& event) {
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -184,6 +181,9 @@ void DispatchEventFromNativeUiEvent(const base::NativeEvent& native_event,
   if (native_ui_event->IsKeyEvent()) {
     ui::KeyEvent key_event(native_event);
     callback.Run(&key_event);
+  } else if (native_ui_event->IsMouseWheelEvent()) {
+    ui::MouseWheelEvent wheel_event(native_event);
+    callback.Run(&wheel_event);
   } else if (native_ui_event->IsMouseEvent()) {
     ui::MouseEvent mouse_event(native_event);
     callback.Run(&mouse_event);

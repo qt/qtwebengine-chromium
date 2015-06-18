@@ -66,6 +66,8 @@
 
 #include <openssl/ecdh.h>
 
+#include <string.h>
+
 #include <openssl/bn.h>
 #include <openssl/digest.h>
 #include <openssl/err.h>
@@ -81,7 +83,7 @@ int ECDH_compute_key(void *out, size_t outlen, const EC_POINT *pub_key,
   const BIGNUM *priv;
   const EC_GROUP *group;
   int ret = -1;
-  size_t buflen, len;
+  size_t buflen;
   uint8_t *buf = NULL;
 
   if ((ctx = BN_CTX_new()) == NULL) {
@@ -116,20 +118,14 @@ int ECDH_compute_key(void *out, size_t outlen, const EC_POINT *pub_key,
   }
 
   buflen = (EC_GROUP_get_degree(group) + 7) / 8;
-  len = BN_num_bytes(x);
-  if (len > buflen) {
-    OPENSSL_PUT_ERROR(ECDH, ECDH_compute_key, ERR_R_INTERNAL_ERROR);
-    goto err;
-  }
   buf = OPENSSL_malloc(buflen);
   if (buf == NULL) {
     OPENSSL_PUT_ERROR(ECDH, ECDH_compute_key, ERR_R_MALLOC_FAILURE);
     goto err;
   }
 
-  memset(buf, 0, buflen - len);
-  if (len != (size_t)BN_bn2bin(x, buf + buflen - len)) {
-    OPENSSL_PUT_ERROR(ECDH, ECDH_compute_key, ERR_R_BN_LIB);
+  if (!BN_bn2bin_padded(buf, buflen, x)) {
+    OPENSSL_PUT_ERROR(ECDH, ECDH_compute_key, ERR_R_INTERNAL_ERROR);
     goto err;
   }
 
@@ -149,70 +145,17 @@ int ECDH_compute_key(void *out, size_t outlen, const EC_POINT *pub_key,
   }
 
 err:
-  if (tmp)
+  if (tmp) {
     EC_POINT_free(tmp);
-  if (ctx)
+  }
+  if (ctx) {
     BN_CTX_end(ctx);
-  if (ctx)
+  }
+  if (ctx) {
     BN_CTX_free(ctx);
-  if (buf)
+  }
+  if (buf) {
     OPENSSL_free(buf);
+  }
   return ret;
-}
-
-/* Key derivation function from X9.62/SECG */
-/* Way more than we will ever need */
-#define ECDH_KDF_MAX	(1 << 30)
-
-int ECDH_KDF_X9_62(uint8_t *out, size_t outlen, const uint8_t *Z,
-                   size_t Zlen, const uint8_t *sinfo, size_t sinfolen,
-                   const EVP_MD *md) {
-  EVP_MD_CTX mctx;
-  int rv = 0;
-  unsigned int i;
-  size_t mdlen;
-  uint8_t ctr[4];
-
-  if (sinfolen > ECDH_KDF_MAX || outlen > ECDH_KDF_MAX || Zlen > ECDH_KDF_MAX) {
-    return 0;
-  }
-  mdlen = EVP_MD_size(md);
-  EVP_MD_CTX_init(&mctx);
-
-  for (i = 1;; i++) {
-    uint8_t mtmp[EVP_MAX_MD_SIZE];
-    EVP_DigestInit_ex(&mctx, md, NULL);
-    ctr[3] = i & 0xFF;
-    ctr[2] = (i >> 8) & 0xFF;
-    ctr[1] = (i >> 16) & 0xFF;
-    ctr[0] = (i >> 24) & 0xFF;
-    if (!EVP_DigestUpdate(&mctx, Z, Zlen) ||
-        !EVP_DigestUpdate(&mctx, ctr, sizeof(ctr)) ||
-        !EVP_DigestUpdate(&mctx, sinfo, sinfolen)) {
-      goto err;
-    }
-
-    if (outlen >= mdlen) {
-      if (!EVP_DigestFinal(&mctx, out, NULL)) {
-        goto err;
-      }
-      outlen -= mdlen;
-      if (outlen == 0) {
-        break;
-      }
-      out += mdlen;
-    } else {
-      if (!EVP_DigestFinal(&mctx, mtmp, NULL)) {
-        goto err;
-      }
-      memcpy(out, mtmp, outlen);
-      OPENSSL_cleanse(mtmp, mdlen);
-      break;
-    }
-  }
-  rv = 1;
-
-err:
-  EVP_MD_CTX_cleanup(&mctx);
-  return rv;
 }

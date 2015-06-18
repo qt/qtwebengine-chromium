@@ -56,6 +56,7 @@ void RawResource::didAddClient(ResourceClient* c)
     // this resource to be evicted from the cache and all clients to be removed,
     // so a protector is necessary.
     ResourcePtr<RawResource> protect(this);
+    ASSERT(c->resourceClientType() == RawResourceClient::expectedType());
     RawResourceClient* client = static_cast<RawResourceClient*>(c);
     for (const auto& redirect : redirectChain()) {
         ResourceRequest request(redirect.m_request);
@@ -105,6 +106,15 @@ void RawResource::responseReceived(const ResourceResponse& response, PassOwnPtr<
         // |handle| is null when there are two or more clients, as asserted.
         c->responseReceived(this, m_response, handle);
     }
+}
+
+void RawResource::setSerializedCachedMetadata(const char* data, size_t size)
+{
+    ResourcePtr<RawResource> protect(this);
+    Resource::setSerializedCachedMetadata(data, size);
+    ResourceClientWalker<RawResourceClient> w(m_clients);
+    while (RawResourceClient* c = w.next())
+        c->setSerializedCachedMetadata(this, data, size);
 }
 
 void RawResource::didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent)

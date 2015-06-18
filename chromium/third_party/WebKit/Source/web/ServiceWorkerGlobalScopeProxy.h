@@ -68,18 +68,23 @@ public:
     virtual ~ServiceWorkerGlobalScopeProxy();
 
     // WebServiceWorkerContextProxy overrides:
+    virtual void setRegistration(WebServiceWorkerRegistration*) override;
     virtual void dispatchActivateEvent(int) override;
-    virtual void dispatchInstallEvent(int) override;
+    virtual void dispatchCrossOriginConnectEvent(int, const WebCrossOriginServiceWorkerClient&) override;
+    virtual void dispatchCrossOriginMessageEvent(const WebCrossOriginServiceWorkerClient&, const WebString& message, const WebMessagePortChannelArray&) override;
     virtual void dispatchFetchEvent(int, const WebServiceWorkerRequest&) override;
     virtual void dispatchGeofencingEvent(int, WebGeofencingEventType, const WebString& regionID, const WebCircularGeofencingRegion&) override;
+    virtual void dispatchInstallEvent(int) override;
     virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) override;
+    virtual void dispatchNotificationClickEvent(int, int64_t notificationID, const WebNotificationData&) override;
     virtual void dispatchPushEvent(int, const WebString& data) override;
     virtual void dispatchSyncEvent(int) override;
 
     // WorkerReportingProxy overrides:
-    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) override;
+    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, int exceptionId) override;
     virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
     virtual void postMessageToPageInspector(const String&) override;
+    virtual void postWorkerConsoleAgentEnabled() override { }
     virtual void didEvaluateWorkerScript(bool success) override;
     virtual void workerGlobalScopeStarted(WorkerGlobalScope*) override;
     virtual void workerGlobalScopeClosed() override;

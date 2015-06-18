@@ -37,13 +37,14 @@
 #include "core/editing/TextCheckingHelper.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/CharacterIterator.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
+#include "core/layout/LayoutTextControl.h"
 #include "core/page/SpellCheckerClient.h"
-#include "core/rendering/RenderTextControl.h"
 #include "platform/text/TextCheckerClient.h"
 
 namespace blink {
@@ -140,6 +141,8 @@ void SpellChecker::didBeginEditing(Element* element)
             HTMLTextFormControlElement* textControl = toHTMLTextFormControlElement(element);
             parent = textControl;
             element = textControl->innerEditorElement();
+            if (!element)
+                return;
             isTextField = isHTMLInputElement(*textControl) && toHTMLInputElement(*textControl).isTextField();
         }
 
@@ -733,8 +736,10 @@ void SpellChecker::updateMarkersForWordsAffectedByEditing(bool doNotRemoveIfSele
     // of marker that contains the word in question, and remove marker on that whole range.
     Document* document = frame().document();
     ASSERT(document);
-    RefPtrWillBeRawPtr<Range> wordRange = Range::create(*document, startOfFirstWord.deepEquivalent(), endOfLastWord.deepEquivalent());
-    document->markers().removeMarkers(wordRange.get(), DocumentMarker::MisspellingMarkers(), DocumentMarkerController::RemovePartiallyOverlappingMarker);
+    Node* startNode = startOfFirstWord.deepEquivalent().containerNode();
+    int startOffset = startOfFirstWord.deepEquivalent().computeOffsetInContainerNode();
+    int endOffset = endOfLastWord.deepEquivalent().computeOffsetInContainerNode();
+    document->markers().removeMarkers(startNode, startOffset, endOffset - startOffset, DocumentMarker::MisspellingMarkers(), DocumentMarkerController::RemovePartiallyOverlappingMarker);
 }
 
 void SpellChecker::didEndEditingOnTextField(Element* e)
@@ -871,12 +876,12 @@ void SpellChecker::spellCheckOldSelection(const VisibleSelection& oldSelection, 
 static Node* findFirstMarkable(Node* node)
 {
     while (node) {
-        if (!node->renderer())
+        if (!node->layoutObject())
             return 0;
-        if (node->renderer()->isText())
+        if (node->layoutObject()->isText())
             return node;
-        if (node->renderer()->isTextControl())
-            node = toRenderTextControl(node->renderer())->textFormControlElement()->visiblePositionForIndex(1).deepEquivalent().deprecatedNode();
+        if (node->layoutObject()->isTextControl())
+            node = toLayoutTextControl(node->layoutObject())->textFormControlElement()->visiblePositionForIndex(1).deepEquivalent().deprecatedNode();
         else if (node->hasChildren())
             node = node->firstChild();
         else
@@ -939,7 +944,7 @@ void SpellChecker::requestTextChecking(const Element& element)
     m_spellCheckRequester->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
 }
 
-void SpellChecker::trace(Visitor* visitor)
+DEFINE_TRACE(SpellChecker)
 {
     visitor->trace(m_frame);
     visitor->trace(m_spellCheckRequester);

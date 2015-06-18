@@ -28,25 +28,29 @@
 #define SchemeRegistry_h
 
 #include "platform/PlatformExport.h"
+#include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-typedef HashSet<String, CaseFoldingHash> URLSchemesMap;
+using URLSchemesSet = HashSet<String, CaseFoldingHash>;
+
+template <typename T>
+using URLSchemesMap = HashMap<String, T, CaseFoldingHash>;
 
 class PLATFORM_EXPORT SchemeRegistry {
 public:
     static void registerURLSchemeAsLocal(const String&);
-    static void removeURLSchemeRegisteredAsLocal(const String&);
-    static const URLSchemesMap& localSchemes();
-
     static bool shouldTreatURLSchemeAsLocal(const String&);
 
-    // Secure schemes do not trigger mixed content warnings. For example,
-    // https and data are secure schemes because they cannot be corrupted by
-    // active network attackers.
+    static void registerURLSchemeAsRestrictingMixedContent(const String&);
+    static bool shouldTreatURLSchemeAsRestrictingMixedContent(const String&);
+
+    // Subresources transported by secure schemes do not trigger mixed content
+    // warnings. For example, https and data are secure schemes because they
+    // cannot be corrupted by active network attackers.
     static void registerURLSchemeAsSecure(const String&);
     static bool shouldTreatURLSchemeAsSecure(const String&);
 
@@ -67,7 +71,6 @@ public:
     // Such schemes should delegate to SecurityOrigin::canRequest for any URL
     // passed to SecurityOrigin::canDisplay.
     static bool canDisplayOnlyIfCanRequest(const String& scheme);
-    static void registerAsCanDisplayOnlyIfCanRequest(const String& scheme);
 
     // Schemes against which javascript: URLs should not be allowed to run (stop
     // bookmarklets from running on sensitive pages).
@@ -82,14 +85,25 @@ public:
     static String listOfCORSEnabledURLSchemes();
 
     // "Legacy" schemes (e.g. 'ftp:', 'gopher:') which we might want to treat differently from "webby" schemes.
-    static void registerURLSchemeAsLegacy(const String& scheme);
     static bool shouldTreatURLSchemeAsLegacy(const String& scheme);
 
     // Allow resources from some schemes to load on a page, regardless of its
     // Content Security Policy.
-    static void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme);
+    // This enum should be kept in sync with public/web/WebSecurityPolicy.h.
+    // Enforced in AssertMatchingEnums.cpp.
+    enum PolicyAreas : uint32_t {
+        PolicyAreaNone = 0,
+        PolicyAreaImage = 1 << 0,
+        PolicyAreaStyle = 1 << 1,
+        // Add more policy areas as needed by clients.
+        PolicyAreaAll = ~static_cast<uint32_t>(0),
+    };
+    static void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme, PolicyAreas = PolicyAreaAll);
     static void removeURLSchemeRegisteredAsBypassingContentSecurityPolicy(const String& scheme);
-    static bool schemeShouldBypassContentSecurityPolicy(const String& scheme);
+    static bool schemeShouldBypassContentSecurityPolicy(const String& scheme, PolicyAreas = PolicyAreaAll);
+
+private:
+    static const URLSchemesSet& localSchemes();
 };
 
 } // namespace blink

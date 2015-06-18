@@ -123,7 +123,7 @@ void P2PSocketDispatcher::UnregisterHostAddressRequest(int id) {
 void P2PSocketDispatcher::OnNetworkListChanged(
     const net::NetworkInterfaceList& networks) {
   network_list_observers_->Notify(
-      &NetworkListObserver::OnNetworkListChanged, networks);
+      FROM_HERE, &NetworkListObserver::OnNetworkListChanged, networks);
 }
 
 void P2PSocketDispatcher::OnGetHostAddressResult(
@@ -131,7 +131,7 @@ void P2PSocketDispatcher::OnGetHostAddressResult(
     const net::IPAddressList& addresses) {
   P2PAsyncAddressResolver* request = host_address_requests_.Lookup(request_id);
   if (!request) {
-    VLOG(1) << "Received P2P message for socket that doesn't exist.";
+    DVLOG(1) << "Received P2P message for socket that doesn't exist.";
     return;
   }
 
@@ -156,10 +156,12 @@ void P2PSocketDispatcher::OnIncomingTcpConnection(
   }
 }
 
-void P2PSocketDispatcher::OnSendComplete(int socket_id) {
+void P2PSocketDispatcher::OnSendComplete(
+    int socket_id,
+    const P2PSendPacketMetrics& send_metrics) {
   P2PSocketClientImpl* client = GetClient(socket_id);
   if (client) {
-    client->OnSendComplete();
+    client->OnSendComplete(send_metrics);
   }
 }
 
@@ -186,7 +188,7 @@ P2PSocketClientImpl* P2PSocketDispatcher::GetClient(int socket_id) {
     // This may happen if the socket was closed, but the browser side
     // hasn't processed the close message by the time it sends the
     // message to the renderer.
-    VLOG(1) << "Received P2P message for socket that doesn't exist.";
+    DVLOG(1) << "Received P2P message for socket that doesn't exist.";
     return NULL;
   }
 

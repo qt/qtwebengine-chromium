@@ -15,7 +15,7 @@ namespace internal {
 // (runtime.js, etc.) to precompiled functions. Instead of mapping
 // names to functions it might make sense to let the JS2C tool
 // generate an index for each native JS file.
-class SourceCodeCache FINAL BASE_EMBEDDED {
+class SourceCodeCache final BASE_EMBEDDED {
  public:
   explicit SourceCodeCache(Script::Type type): type_(type), cache_(NULL) { }
 
@@ -64,7 +64,7 @@ class SourceCodeCache FINAL BASE_EMBEDDED {
 
 // The Boostrapper is the public interface for creating a JavaScript global
 // context.
-class Bootstrapper FINAL {
+class Bootstrapper final {
  public:
   static void InitializeOncePerProcess();
   static void TearDownExtensions();
@@ -87,7 +87,8 @@ class Bootstrapper FINAL {
   void Iterate(ObjectVisitor* v);
 
   // Accessor for the native scripts source code.
-  Handle<String> NativesSourceLookup(int index);
+  template <class Source>
+  Handle<String> SourceLookup(int index);
 
   // Tells whether bootstrapping is active.
   bool IsActive() const { return nesting_ != 0; }
@@ -97,10 +98,6 @@ class Bootstrapper FINAL {
   char* ArchiveState(char* to);
   char* RestoreState(char* from);
   void FreeThreadResources();
-
-  // This will allocate a char array that is deleted when V8 is shut down.
-  // It should only be used for strictly finite allocations.
-  char* AllocateAutoDeletedArray(int bytes);
 
   // Used for new context creation.
   bool InstallExtensions(Handle<Context> native_context,
@@ -113,10 +110,6 @@ class Bootstrapper FINAL {
   typedef int NestingCounterType;
   NestingCounterType nesting_;
   SourceCodeCache extensions_cache_;
-  // This is for delete, not delete[].
-  List<char*>* delete_these_non_arrays_on_tear_down_;
-  // This is for delete[]
-  List<char*>* delete_these_arrays_on_tear_down_;
 
   friend class BootstrapperActive;
   friend class Isolate;
@@ -134,7 +127,7 @@ class Bootstrapper FINAL {
 };
 
 
-class BootstrapperActive FINAL BASE_EMBEDDED {
+class BootstrapperActive final BASE_EMBEDDED {
  public:
   explicit BootstrapperActive(Bootstrapper* bootstrapper)
       : bootstrapper_(bootstrapper) {
@@ -152,14 +145,13 @@ class BootstrapperActive FINAL BASE_EMBEDDED {
 };
 
 
-class NativesExternalStringResource FINAL
+class NativesExternalStringResource final
     : public v8::String::ExternalOneByteStringResource {
  public:
-  NativesExternalStringResource(Bootstrapper* bootstrapper,
-                                const char* source,
-                                size_t length);
-  virtual const char* data() const OVERRIDE { return data_; }
-  virtual size_t length() const OVERRIDE { return length_; }
+  NativesExternalStringResource(const char* source, size_t length)
+      : data_(source), length_(length) {}
+  const char* data() const override { return data_; }
+  size_t length() const override { return length_; }
 
  private:
   const char* data_;

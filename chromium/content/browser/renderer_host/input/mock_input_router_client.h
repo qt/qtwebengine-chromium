@@ -26,9 +26,9 @@ class MockInputRouterClient : public InputRouterClient {
   void IncrementInFlightEventCount() override;
   void DecrementInFlightEventCount() override;
   void OnHasTouchEventHandlers(bool has_handlers) override;
-  void SetNeedsFlush() override;
   void DidFlush() override;
   void DidOverscroll(const DidOverscrollParams& params) override;
+  void DidStopFlinging() override;
 
   bool GetAndResetFilterEventCalled();
   size_t GetAndResetDidFlushCount();
@@ -60,11 +60,10 @@ class MockInputRouterClient : public InputRouterClient {
   scoped_ptr<InputEvent> last_filter_event_;
 
   size_t did_flush_called_count_;
-  bool set_needs_flush_called_;
 
   DidOverscrollParams overscroll_;
 };
 
 }  // namespace content
 
-#endif // CONTENT_BROWSER_RENDERER_HOST_INPUT_MOCK_INPUT_ROUTER_CLIENT_H_
+#endif  // CONTENT_BROWSER_RENDERER_HOST_INPUT_MOCK_INPUT_ROUTER_CLIENT_H_

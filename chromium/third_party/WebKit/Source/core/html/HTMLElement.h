@@ -23,6 +23,7 @@
 #ifndef HTMLElement_h
 #define HTMLElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Element.h"
 
 namespace blink {
@@ -38,7 +39,7 @@ enum TranslateAttributeMode {
     TranslateAttributeInherit
 };
 
-class HTMLElement : public Element {
+class CORE_EXPORT HTMLElement : public Element {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
@@ -96,8 +97,11 @@ public:
 
     static const AtomicString& eventParameterName();
 
+    HTMLMenuElement* assignedContextMenu() const;
     HTMLMenuElement* contextMenu() const;
     void setContextMenu(HTMLMenuElement*);
+
+    virtual String altText() const { return String(); }
 
 protected:
     HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
@@ -119,13 +123,14 @@ protected:
 private:
     virtual String nodeName() const override final;
 
-    bool isHTMLElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
-    bool isStyledElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isHTMLElement() const = delete; // This will catch anyone doing an unnecessary check.
+    bool isStyledElement() const = delete; // This will catch anyone doing an unnecessary check.
 
     void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
     PassRefPtrWillBeRawPtr<DocumentFragment> textToFragment(const String&, ExceptionState&);
 
+    bool selfOrAncestorHasDirAutoAttribute() const;
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
     void adjustDirectionalityIfNeededAfterChildrenChanged(const ChildrenChange&);

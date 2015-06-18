@@ -24,6 +24,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -37,7 +38,6 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/dns/address_sorter.h"
 #include "net/dns/dns_client.h"
@@ -46,8 +46,10 @@
 #include "net/dns/dns_response.h"
 #include "net/dns/dns_transaction.h"
 #include "net/dns/host_resolver_proc.h"
+#include "net/log/net_log.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/udp/datagram_client_socket.h"
+#include "url/url_canon_ip.h"
 
 #if defined(OS_WIN)
 #include "net/base/winsock_init.h"
@@ -69,6 +71,17 @@ const unsigned kNegativeCacheEntryTTLSeconds = 0;
 
 // Minimum TTL for successful resolutions with DnsTask.
 const unsigned kMinimumTTLSeconds = kCacheEntryTTLSeconds;
+
+const char kLocalhost[] = "localhost.";
+
+// Time between IPv6 probes, i.e. for how long results of each IPv6 probe are
+// cached.
+const int kIPv6ProbePeriodMs = 1000;
+
+// Google DNS address used for IPv6 probes.
+const uint8_t kIPv6ProbeAddress[] =
+    { 0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0x88 };
 
 // We use a separate histogram name for each platform to facilitate the
 // display of error codes by their symbolic name (since each platform has
@@ -142,6 +155,17 @@ enum DnsResolveStatus {
   RESOLVE_STATUS_MAX
 };
 
+// ICANN uses this localhost address to indicate a name collision.
+//
+// The policy in Chromium is to fail host resolving if it resolves to
+// this special address.
+//
+// Not however that IP literals are exempt from this policy, so it is still
+// possible to navigate to http://127.0.53.53/ directly.
+//
+// For more details: https://www.icann.org/news/announcement-2-2014-08-01-en
+const unsigned char kIcanNameCollisionIp[] = {127, 0, 53, 53};
+
 void UmaAsyncDnsResolveStatus(DnsResolveStatus result) {
   UMA_HISTOGRAM_ENUMERATION("AsyncDNS.ResolveStatus",
                             result,
@@ -170,6 +194,10 @@ bool ResemblesMulticastDNSName(const std::string& hostname) {
 // Attempts to connect a UDP socket to |dest|:53.
 bool IsGloballyReachable(const IPAddressNumber& dest,
                          const BoundNetLog& net_log) {
+  // TODO(eroman): Remove ScopedTracker below once crbug.com/455942 is fixed.
+  tracked_objects::ScopedTracker tracking_profile_1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("455942 IsGloballyReachable"));
+
   scoped_ptr<DatagramClientSocket> socket(
       ClientSocketFactory::GetDefaultFactory()->CreateDatagramClientSocket(
           DatagramSocket::DEFAULT_BIND,
@@ -283,10 +311,11 @@ bool IsAllIPv4Loopback(const AddressList& addresses) {
 }
 
 // Creates NetLog parameters when the resolve failed.
-base::Value* NetLogProcTaskFailedCallback(uint32 attempt_number,
-                                          int net_error,
-                                          int os_error,
-                                          NetLog::LogLevel /* log_level */) {
+base::Value* NetLogProcTaskFailedCallback(
+    uint32 attempt_number,
+    int net_error,
+    int os_error,
+    NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   if (attempt_number)
     dict->SetInteger("attempt_number", attempt_number);
@@ -300,14 +329,13 @@ base::Value* NetLogProcTaskFailedCallback(uint32 attempt_number,
 #elif defined(OS_WIN)
     // Map the error code to a human-readable string.
     LPWSTR error_string = NULL;
-    int size = FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-                             FORMAT_MESSAGE_FROM_SYSTEM,
-                             0,  // Use the internal message table.
-                             os_error,
-                             0,  // Use default language.
-                             (LPWSTR)&error_string,
-                             0,  // Buffer size.
-                             0);  // Arguments (unused).
+    FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                  0,  // Use the internal message table.
+                  os_error,
+                  0,  // Use default language.
+                  (LPWSTR)&error_string,
+                  0,  // Buffer size.
+                  0);  // Arguments (unused).
     dict->SetString("os_error_string", base::WideToUTF8(error_string));
     LocalFree(error_string);
 #endif
@@ -319,7 +347,7 @@ base::Value* NetLogProcTaskFailedCallback(uint32 attempt_number,
 // Creates NetLog parameters when the DnsTask failed.
 base::Value* NetLogDnsTaskFailedCallback(int net_error,
                                          int dns_error,
-                                         NetLog::LogLevel /* log_level */) {
+                                         NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("net_error", net_error);
   if (dns_error)
@@ -329,11 +357,9 @@ base::Value* NetLogDnsTaskFailedCallback(int net_error,
 
 // Creates NetLog parameters containing the information in a RequestInfo object,
 // along with the associated NetLog::Source.
-base::Value* NetLogRequestInfoCallback(const NetLog::Source& source,
-                                       const HostResolver::RequestInfo* info,
-                                       NetLog::LogLevel /* log_level */) {
+base::Value* NetLogRequestInfoCallback(const HostResolver::RequestInfo* info,
+                                       NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  source.AddToEventParameters(dict);
 
   dict->SetString("host", info->host_port_pair().ToString());
   dict->SetInteger("address_family",
@@ -346,7 +372,7 @@ base::Value* NetLogRequestInfoCallback(const NetLog::Source& source,
 // Creates NetLog parameters for the creation of a HostResolverImpl::Job.
 base::Value* NetLogJobCreationCallback(const NetLog::Source& source,
                                        const std::string* host,
-                                       NetLog::LogLevel /* log_level */) {
+                                       NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   source.AddToEventParameters(dict);
   dict->SetString("host", *host);
@@ -356,7 +382,7 @@ base::Value* NetLogJobCreationCallback(const NetLog::Source& source,
 // Creates NetLog parameters for HOST_RESOLVER_IMPL_JOB_ATTACH/DETACH events.
 base::Value* NetLogJobAttachCallback(const NetLog::Source& source,
                                      RequestPriority priority,
-                                     NetLog::LogLevel /* log_level */) {
+                                     NetLogCaptureMode /* capture_mode */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   source.AddToEventParameters(dict);
   dict->SetString("priority", RequestPriorityToString(priority));
@@ -365,8 +391,17 @@ base::Value* NetLogJobAttachCallback(const NetLog::Source& source,
 
 // Creates NetLog parameters for the DNS_CONFIG_CHANGED event.
 base::Value* NetLogDnsConfigCallback(const DnsConfig* config,
-                                     NetLog::LogLevel /* log_level */) {
+                                     NetLogCaptureMode /* capture_mode */) {
   return config->ToValue();
+}
+
+base::Value* NetLogIPv6AvailableCallback(bool ipv6_available,
+                                         bool cached,
+                                         NetLogCaptureMode /* capture_mode */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->SetBoolean("ipv6_available", ipv6_available);
+  dict->SetBoolean("cached", cached);
+  return dict;
 }
 
 // The logging routines are defined here because some requests are resolved
@@ -374,34 +409,25 @@ base::Value* NetLogDnsConfigCallback(const DnsConfig* config,
 
 // Logs when a request has just been started.
 void LogStartRequest(const BoundNetLog& source_net_log,
-                     const BoundNetLog& request_net_log,
                      const HostResolver::RequestInfo& info) {
   source_net_log.BeginEvent(
-      NetLog::TYPE_HOST_RESOLVER_IMPL,
-      request_net_log.source().ToEventParametersCallback());
-
-  request_net_log.BeginEvent(
       NetLog::TYPE_HOST_RESOLVER_IMPL_REQUEST,
-      base::Bind(&NetLogRequestInfoCallback, source_net_log.source(), &info));
+      base::Bind(&NetLogRequestInfoCallback, &info));
 }
 
 // Logs when a request has just completed (before its callback is run).
 void LogFinishRequest(const BoundNetLog& source_net_log,
-                      const BoundNetLog& request_net_log,
                       const HostResolver::RequestInfo& info,
                       int net_error) {
-  request_net_log.EndEventWithNetErrorCode(
+  source_net_log.EndEventWithNetErrorCode(
       NetLog::TYPE_HOST_RESOLVER_IMPL_REQUEST, net_error);
-  source_net_log.EndEvent(NetLog::TYPE_HOST_RESOLVER_IMPL);
 }
 
 // Logs when a request has been cancelled.
 void LogCancelRequest(const BoundNetLog& source_net_log,
-                      const BoundNetLog& request_net_log,
                       const HostResolverImpl::RequestInfo& info) {
-  request_net_log.AddEvent(NetLog::TYPE_CANCELLED);
-  request_net_log.EndEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_REQUEST);
-  source_net_log.EndEvent(NetLog::TYPE_HOST_RESOLVER_IMPL);
+  source_net_log.AddEvent(NetLog::TYPE_CANCELLED);
+  source_net_log.EndEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_REQUEST);
 }
 
 //-----------------------------------------------------------------------------
@@ -461,13 +487,11 @@ const unsigned HostResolverImpl::kMaximumDnsFailures = 16;
 class HostResolverImpl::Request {
  public:
   Request(const BoundNetLog& source_net_log,
-          const BoundNetLog& request_net_log,
           const RequestInfo& info,
           RequestPriority priority,
           const CompletionCallback& callback,
           AddressList* addresses)
       : source_net_log_(source_net_log),
-        request_net_log_(request_net_log),
         info_(info),
         priority_(priority),
         job_(NULL),
@@ -511,11 +535,6 @@ class HostResolverImpl::Request {
     return source_net_log_;
   }
 
-  // NetLog for this request.
-  const BoundNetLog& request_net_log() {
-    return request_net_log_;
-  }
-
   const RequestInfo& info() const {
     return info_;
   }
@@ -525,8 +544,7 @@ class HostResolverImpl::Request {
   base::TimeTicks request_time() const { return request_time_; }
 
  private:
-  BoundNetLog source_net_log_;
-  BoundNetLog request_net_log_;
+  const BoundNetLog source_net_log_;
 
   // The request info that started the request.
   const RequestInfo info_;
@@ -675,6 +693,17 @@ class HostResolverImpl::ProcTask
                                                key_.host_resolver_flags,
                                                &results,
                                                &os_error);
+
+    // Fail the resolution if the result contains 127.0.53.53. See the comment
+    // block of kIcanNameCollisionIp for details on why.
+    for (const auto& it : results) {
+      const IPAddressNumber& cur = it.address();
+      if (cur.size() == arraysize(kIcanNameCollisionIp) &&
+          0 == memcmp(&cur.front(), kIcanNameCollisionIp, cur.size())) {
+        error = ERR_ICANN_NAME_COLLISION;
+        break;
+      }
+    }
 
     origin_loop_->PostTask(
         FROM_HERE,
@@ -1200,7 +1229,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
   Job(const base::WeakPtr<HostResolverImpl>& resolver,
       const Key& key,
       RequestPriority priority,
-      const BoundNetLog& request_net_log)
+      const BoundNetLog& source_net_log)
       : resolver_(resolver),
         key_(key),
         priority_tracker_(priority),
@@ -1210,14 +1239,14 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
         dns_task_error_(OK),
         creation_time_(base::TimeTicks::Now()),
         priority_change_time_(creation_time_),
-        net_log_(BoundNetLog::Make(request_net_log.net_log(),
+        net_log_(BoundNetLog::Make(source_net_log.net_log(),
                                    NetLog::SOURCE_HOST_RESOLVER_IMPL_JOB)) {
-    request_net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_CREATE_JOB);
+    source_net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_CREATE_JOB);
 
     net_log_.BeginEvent(
         NetLog::TYPE_HOST_RESOLVER_IMPL_JOB,
         base::Bind(&NetLogJobCreationCallback,
-                   request_net_log.source(),
+                   source_net_log.source(),
                    &key_.hostname));
   }
 
@@ -1248,8 +1277,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
       if (req->was_canceled())
         continue;
       DCHECK_EQ(this, req->job());
-      LogCancelRequest(req->source_net_log(), req->request_net_log(),
-                       req->info());
+      LogCancelRequest(req->source_net_log(), req->info());
     }
   }
 
@@ -1273,19 +1301,25 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
   }
 
   void AddRequest(scoped_ptr<Request> req) {
-    DCHECK_EQ(key_.hostname, req->info().hostname());
+    // .localhost queries are redirected to "localhost." to make sure
+    // that they are never sent out on the network, per RFC 6761.
+    if (IsLocalhostTLD(req->info().hostname())) {
+      DCHECK_EQ(key_.hostname, kLocalhost);
+    } else {
+      DCHECK_EQ(key_.hostname, req->info().hostname());
+    }
 
     req->set_job(this);
     priority_tracker_.Add(req->priority());
 
-    req->request_net_log().AddEvent(
+    req->source_net_log().AddEvent(
         NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_ATTACH,
         net_log_.source().ToEventParametersCallback());
 
     net_log_.AddEvent(
         NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_REQUEST_ATTACH,
         base::Bind(&NetLogJobAttachCallback,
-                   req->request_net_log().source(),
+                   req->source_net_log().source(),
                    priority()));
 
     // TODO(szym): Check if this is still needed.
@@ -1308,13 +1342,12 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
 
     // Don't remove it from |requests_| just mark it canceled.
     req->MarkAsCanceled();
-    LogCancelRequest(req->source_net_log(), req->request_net_log(),
-                     req->info());
+    LogCancelRequest(req->source_net_log(), req->info());
 
     priority_tracker_.Remove(req->priority());
     net_log_.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_JOB_REQUEST_DETACH,
                       base::Bind(&NetLogJobAttachCallback,
-                                 req->request_net_log().source(),
+                                 req->source_net_log().source(),
                                  priority()));
 
     if (num_active_requests() > 0) {
@@ -1700,8 +1733,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
 
       DCHECK_EQ(this, req->job());
       // Update the net log and notify registered observers.
-      LogFinishRequest(req->source_net_log(), req->request_net_log(),
-                       req->info(), entry.error);
+      LogFinishRequest(req->source_net_log(), req->info(), entry.error);
       if (did_complete) {
         // Record effective total time from creation to completion.
         RecordTotalTime(had_dns_config_, req->info().is_speculative(),
@@ -1801,6 +1833,7 @@ HostResolverImpl::HostResolverImpl(const Options& options, NetLog* net_log)
       num_dns_failures_(0),
       probe_ipv6_support_(true),
       use_local_ipv6_(false),
+      last_ipv6_probe_result_(true),
       resolved_known_ipv6_hostname_(false),
       additional_resolver_flags_(0),
       fallback_to_proctask_(true),
@@ -1871,19 +1904,20 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
   if (!DNSDomainFromDot(info.hostname(), &labeled_hostname))
     return ERR_NAME_NOT_RESOLVED;
 
-  // Make a log item for the request.
-  BoundNetLog request_net_log = BoundNetLog::Make(net_log_,
-      NetLog::SOURCE_HOST_RESOLVER_IMPL_REQUEST);
+  LogStartRequest(source_net_log, info);
 
-  LogStartRequest(source_net_log, request_net_log, info);
+  IPAddressNumber ip_number;
+  IPAddressNumber* ip_number_ptr = nullptr;
+  if (ParseIPLiteralToNumber(info.hostname(), &ip_number))
+    ip_number_ptr = &ip_number;
 
   // Build a key that identifies the request in the cache and in the
   // outstanding jobs map.
-  Key key = GetEffectiveKeyForRequest(info, request_net_log);
+  Key key = GetEffectiveKeyForRequest(info, ip_number_ptr, source_net_log);
 
-  int rv = ResolveHelper(key, info, addresses, request_net_log);
+  int rv = ResolveHelper(key, info, ip_number_ptr, addresses, source_net_log);
   if (rv != ERR_DNS_CACHE_MISS) {
-    LogFinishRequest(source_net_log, request_net_log, info, rv);
+    LogFinishRequest(source_net_log, info, rv);
     RecordTotalTime(HaveDnsConfig(), info.is_speculative(), base::TimeDelta());
     return rv;
   }
@@ -1895,7 +1929,7 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
   Job* job;
   if (jobit == jobs_.end()) {
     job =
-        new Job(weak_ptr_factory_.GetWeakPtr(), key, priority, request_net_log);
+        new Job(weak_ptr_factory_.GetWeakPtr(), key, priority, source_net_log);
     job->Schedule(false);
 
     // Check for queue overflow.
@@ -1905,7 +1939,7 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
       evicted->OnEvicted();  // Deletes |evicted|.
       if (evicted == job) {
         rv = ERR_HOST_RESOLVER_QUEUE_TOO_LARGE;
-        LogFinishRequest(source_net_log, request_net_log, info, rv);
+        LogFinishRequest(source_net_log, info, rv);
         return rv;
       }
     }
@@ -1916,7 +1950,7 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
 
   // Can't complete synchronously. Create and attach request.
   scoped_ptr<Request> req(new Request(
-      source_net_log, request_net_log, info, priority, callback, addresses));
+      source_net_log, info, priority, callback, addresses));
   if (out_req)
     *out_req = reinterpret_cast<RequestHandle>(req.get());
 
@@ -1927,8 +1961,9 @@ int HostResolverImpl::Resolve(const RequestInfo& info,
 
 int HostResolverImpl::ResolveHelper(const Key& key,
                                     const RequestInfo& info,
+                                    const IPAddressNumber* ip_number,
                                     AddressList* addresses,
-                                    const BoundNetLog& request_net_log) {
+                                    const BoundNetLog& source_net_log) {
   // The result of |getaddrinfo| for empty hosts is inconsistent across systems.
   // On Windows it gives the default interface's address, whereas on Linux it
   // gives an error. We will make it fail on all platforms for consistency.
@@ -1936,16 +1971,16 @@ int HostResolverImpl::ResolveHelper(const Key& key,
     return ERR_NAME_NOT_RESOLVED;
 
   int net_error = ERR_UNEXPECTED;
-  if (ResolveAsIP(key, info, &net_error, addresses))
+  if (ResolveAsIP(key, info, ip_number, &net_error, addresses))
     return net_error;
   if (ServeFromCache(key, info, &net_error, addresses)) {
-    request_net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_CACHE_HIT);
+    source_net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_CACHE_HIT);
     return net_error;
   }
   // TODO(szym): Do not do this if nsswitch.conf instructs not to.
   // http://crbug.com/117655
   if (ServeFromHosts(key, info, addresses)) {
-    request_net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_HOSTS_HIT);
+    source_net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_HOSTS_HIT);
     return OK;
   }
   return ERR_DNS_CACHE_MISS;
@@ -1957,17 +1992,18 @@ int HostResolverImpl::ResolveFromCache(const RequestInfo& info,
   DCHECK(CalledOnValidThread());
   DCHECK(addresses);
 
-  // Make a log item for the request.
-  BoundNetLog request_net_log = BoundNetLog::Make(net_log_,
-      NetLog::SOURCE_HOST_RESOLVER_IMPL_REQUEST);
-
   // Update the net log and notify registered observers.
-  LogStartRequest(source_net_log, request_net_log, info);
+  LogStartRequest(source_net_log, info);
 
-  Key key = GetEffectiveKeyForRequest(info, request_net_log);
+  IPAddressNumber ip_number;
+  IPAddressNumber* ip_number_ptr = nullptr;
+  if (ParseIPLiteralToNumber(info.hostname(), &ip_number))
+    ip_number_ptr = &ip_number;
 
-  int rv = ResolveHelper(key, info, addresses, request_net_log);
-  LogFinishRequest(source_net_log, request_net_log, info, rv);
+  Key key = GetEffectiveKeyForRequest(info, ip_number_ptr, source_net_log);
+
+  int rv = ResolveHelper(key, info, ip_number_ptr, addresses, source_net_log);
+  LogFinishRequest(source_net_log, info, rv);
   return rv;
 }
 
@@ -2021,12 +2057,12 @@ base::Value* HostResolverImpl::GetDnsConfigAsValue() const {
 
 bool HostResolverImpl::ResolveAsIP(const Key& key,
                                    const RequestInfo& info,
+                                   const IPAddressNumber* ip_number,
                                    int* net_error,
                                    AddressList* addresses) {
   DCHECK(addresses);
   DCHECK(net_error);
-  IPAddressNumber ip_number;
-  if (!ParseIPLiteralToNumber(key.hostname, &ip_number))
+  if (ip_number == nullptr)
     return false;
 
   DCHECK_EQ(key.host_resolver_flags &
@@ -2035,7 +2071,7 @@ bool HostResolverImpl::ResolveAsIP(const Key& key,
             0) << " Unhandled flag";
 
   *net_error = OK;
-  AddressFamily family = GetAddressFamily(ip_number);
+  AddressFamily family = GetAddressFamily(*ip_number);
   if (family == ADDRESS_FAMILY_IPV6 &&
       !probe_ipv6_support_ &&
       default_address_family_ == ADDRESS_FAMILY_IPV4) {
@@ -2047,7 +2083,7 @@ bool HostResolverImpl::ResolveAsIP(const Key& key,
     // Don't return IPv6 addresses for IPv4 queries, and vice versa.
     *net_error = ERR_NAME_NOT_RESOLVED;
   } else {
-    *addresses = AddressList::CreateFromIPAddress(ip_number, info.port());
+    *addresses = AddressList::CreateFromIPAddress(*ip_number, info.port());
     if (key.host_resolver_flags & HOST_RESOLVER_CANONNAME)
       addresses->SetDefaultCanonicalName();
   }
@@ -2148,38 +2184,25 @@ void HostResolverImpl::SetHaveOnlyLoopbackAddresses(bool result) {
 }
 
 HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
-    const RequestInfo& info, const BoundNetLog& net_log) const {
+    const RequestInfo& info,
+    const IPAddressNumber* ip_number,
+    const BoundNetLog& net_log) {
   HostResolverFlags effective_flags =
       info.host_resolver_flags() | additional_resolver_flags_;
   AddressFamily effective_address_family = info.address_family();
 
   if (info.address_family() == ADDRESS_FAMILY_UNSPECIFIED) {
-    if (probe_ipv6_support_ && !use_local_ipv6_) {
-      base::TimeTicks start_time = base::TimeTicks::Now();
-      // Google DNS address.
-      const uint8 kIPv6Address[] =
-          { 0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0x88 };
-      IPAddressNumber address(kIPv6Address,
-                              kIPv6Address + arraysize(kIPv6Address));
-      BoundNetLog probe_net_log = BoundNetLog::Make(
-          net_log.net_log(), NetLog::SOURCE_IPV6_REACHABILITY_CHECK);
-      probe_net_log.BeginEvent(NetLog::TYPE_IPV6_REACHABILITY_CHECK,
-                               net_log.source().ToEventParametersCallback());
-      bool rv6 = IsGloballyReachable(address, probe_net_log);
-      probe_net_log.EndEvent(NetLog::TYPE_IPV6_REACHABILITY_CHECK);
-      if (rv6)
-        net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_SUPPORTED);
-
-      UMA_HISTOGRAM_TIMES("Net.IPv6ConnectDuration",
-                          base::TimeTicks::Now() - start_time);
-      if (rv6) {
-        UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectSuccessMatch",
-            default_address_family_ == ADDRESS_FAMILY_UNSPECIFIED);
-      } else {
-        UMA_HISTOGRAM_BOOLEAN("Net.IPv6ConnectFailureMatch",
-            default_address_family_ != ADDRESS_FAMILY_UNSPECIFIED);
-
+    if (probe_ipv6_support_ && !use_local_ipv6_ &&
+        // When resolving IPv4 literals, there's no need to probe for IPv6.
+        // When resolving IPv6 literals, there's no benefit to artificially
+        // limiting our resolution based on a probe.  Prior logic ensures
+        // that this query is UNSPECIFIED (see info.address_family()
+        // check above) and that |default_address_family_| is UNSPECIFIED
+        // (|prove_ipv6_support_| is false if |default_address_family_| is
+        // set) so the code requesting the resolution should be amenable to
+        // receiving a IPv6 resolution.
+        ip_number == nullptr) {
+      if (!IsIPv6Reachable(net_log)) {
         effective_address_family = ADDRESS_FAMILY_IPV4;
         effective_flags |= HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6;
       }
@@ -2188,7 +2211,29 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
     }
   }
 
-  return Key(info.hostname(), effective_address_family, effective_flags);
+  std::string hostname = info.hostname();
+  // Redirect .localhost queries to "localhost." to make sure that they
+  // are never sent out on the network, per RFC 6761.
+  if (IsLocalhostTLD(info.hostname()))
+    hostname = kLocalhost;
+
+  return Key(hostname, effective_address_family, effective_flags);
+}
+
+bool HostResolverImpl::IsIPv6Reachable(const BoundNetLog& net_log) {
+  base::TimeTicks now = base::TimeTicks::Now();
+  bool cached = true;
+  if ((now - last_ipv6_probe_time_).InMilliseconds() > kIPv6ProbePeriodMs) {
+    IPAddressNumber address(kIPv6ProbeAddress,
+                            kIPv6ProbeAddress + arraysize(kIPv6ProbeAddress));
+    last_ipv6_probe_result_ = IsGloballyReachable(address, net_log);
+    last_ipv6_probe_time_ = now;
+    cached = false;
+  }
+  net_log.AddEvent(NetLog::TYPE_HOST_RESOLVER_IMPL_IPV6_REACHABILITY_CHECK,
+                   base::Bind(&NetLogIPv6AvailableCallback,
+                              last_ipv6_probe_result_, cached));
+  return last_ipv6_probe_result_;
 }
 
 void HostResolverImpl::AbortAllInProgressJobs() {
@@ -2260,6 +2305,7 @@ void HostResolverImpl::TryServingAllJobsFromHosts() {
 
 void HostResolverImpl::OnIPAddressChanged() {
   resolved_known_ipv6_hostname_ = false;
+  last_ipv6_probe_time_ = base::TimeTicks();
   // Abandon all ProbeJobs.
   probe_weak_ptr_factory_.InvalidateWeakPtrs();
   if (cache_.get())
@@ -2271,7 +2317,15 @@ void HostResolverImpl::OnIPAddressChanged() {
   // |this| may be deleted inside AbortAllInProgressJobs().
 }
 
+void HostResolverImpl::OnInitialDNSConfigRead() {
+  UpdateDNSConfig(false);
+}
+
 void HostResolverImpl::OnDNSChanged() {
+  UpdateDNSConfig(true);
+}
+
+void HostResolverImpl::UpdateDNSConfig(bool config_changed) {
   DnsConfig dns_config;
   NetworkChangeNotifier::GetDnsConfig(&dns_config);
 
@@ -2292,27 +2346,33 @@ void HostResolverImpl::OnDNSChanged() {
   // the newly started jobs use the new config.
   if (dns_client_.get()) {
     dns_client_->SetConfig(dns_config);
-    if (dns_client_->GetConfig())
+    if (dns_client_->GetConfig()) {
       UMA_HISTOGRAM_BOOLEAN("AsyncDNS.DnsClientEnabled", true);
+      // If we just switched DnsClients, restart jobs using new resolver.
+      // TODO(pauljensen): Is this necessary?
+      config_changed = true;
+    }
   }
 
-  // If the DNS server has changed, existing cached info could be wrong so we
-  // have to drop our internal cache :( Note that OS level DNS caches, such
-  // as NSCD's cache should be dropped automatically by the OS when
-  // resolv.conf changes so we don't need to do anything to clear that cache.
-  if (cache_.get())
-    cache_->clear();
+  if (config_changed) {
+    // If the DNS server has changed, existing cached info could be wrong so we
+    // have to drop our internal cache :( Note that OS level DNS caches, such
+    // as NSCD's cache should be dropped automatically by the OS when
+    // resolv.conf changes so we don't need to do anything to clear that cache.
+    if (cache_.get())
+      cache_->clear();
 
-  // Life check to bail once |this| is deleted.
-  base::WeakPtr<HostResolverImpl> self = weak_ptr_factory_.GetWeakPtr();
+    // Life check to bail once |this| is deleted.
+    base::WeakPtr<HostResolverImpl> self = weak_ptr_factory_.GetWeakPtr();
 
-  // Existing jobs will have been sent to the original server so they need to
-  // be aborted.
-  AbortAllInProgressJobs();
+    // Existing jobs will have been sent to the original server so they need to
+    // be aborted.
+    AbortAllInProgressJobs();
 
-  // |this| may be deleted inside AbortAllInProgressJobs().
-  if (self.get())
-    TryServingAllJobsFromHosts();
+    // |this| may be deleted inside AbortAllInProgressJobs().
+    if (self.get())
+      TryServingAllJobsFromHosts();
+  }
 }
 
 bool HostResolverImpl::HaveDnsConfig() const {

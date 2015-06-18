@@ -8,7 +8,6 @@
 #include <list>
 
 #include "content/common/gpu/image_transport_surface_fbo_mac.h"
-#include "ui/gl/gl_bindings.h"
 
 // Note that this must be included after gl_bindings.h to avoid conflicts.
 #include <OpenGL/CGLIOSurface.h>
@@ -24,12 +23,13 @@ class IOSurfaceStorageProvider
 
   // ImageTransportSurfaceFBO::StorageProvider implementation:
   gfx::Size GetRoundedSize(gfx::Size size) override;
-  bool AllocateColorBufferStorage(CGLContextObj context,
-                                  GLuint texture,
-                                  gfx::Size pixel_size,
-                                  float scale_factor) override;
+  bool AllocateColorBufferStorage(
+      CGLContextObj context, const base::Closure& context_dirtied_callback,
+      GLuint texture, gfx::Size pixel_size, float scale_factor) override;
   void FreeColorBufferStorage() override;
-  void SwapBuffers(const gfx::Size& size, float scale_factor) override;
+  void FrameSizeChanged(
+      const gfx::Size& pixel_size, float scale_factor) override;
+  void SwapBuffers() override;
   void WillWriteToBackbuffer() override;
   void DiscardBackbuffer() override;
   void SwapBuffersAckedByBrowser(bool disable_throttling) override;
@@ -38,6 +38,8 @@ class IOSurfaceStorageProvider
   ImageTransportSurfaceFBO* transport_surface_;
 
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
+  gfx::Size frame_pixel_size_;
+  float frame_scale_factor_;
 
   // The list of IOSurfaces that have been sent to the browser process but have
   // not been opened in the browser process yet. This list should never have
@@ -52,4 +54,4 @@ class IOSurfaceStorageProvider
 
 }  // namespace content
 
-#endif  //  CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_MAC_H_
+#endif  // CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_IOSURFACE_MAC_H_

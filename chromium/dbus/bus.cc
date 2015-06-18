@@ -47,9 +47,7 @@ class Watch : public base::MessagePumpLibevent::Watcher {
     dbus_watch_set_data(raw_watch_, this, NULL);
   }
 
-  virtual ~Watch() {
-    dbus_watch_set_data(raw_watch_, NULL, NULL);
-  }
+  ~Watch() override { dbus_watch_set_data(raw_watch_, NULL, NULL); }
 
   // Returns true if the underlying file descriptor is ready to be watched.
   bool IsReadyToBeWatched() {
@@ -84,13 +82,13 @@ class Watch : public base::MessagePumpLibevent::Watcher {
 
  private:
   // Implement MessagePumpLibevent::Watcher.
-  virtual void OnFileCanReadWithoutBlocking(int file_descriptor) override {
+  void OnFileCanReadWithoutBlocking(int file_descriptor) override {
     const bool success = dbus_watch_handle(raw_watch_, DBUS_WATCH_READABLE);
     CHECK(success) << "Unable to allocate memory";
   }
 
   // Implement MessagePumpLibevent::Watcher.
-  virtual void OnFileCanWriteWithoutBlocking(int file_descriptor) override {
+  void OnFileCanWriteWithoutBlocking(int file_descriptor) override {
     const bool success = dbus_watch_handle(raw_watch_, DBUS_WATCH_WRITABLE);
     CHECK(success) << "Unable to allocate memory";
   }
@@ -197,8 +195,7 @@ Bus::Bus(const Options& options)
       shutdown_completed_(false),
       num_pending_watches_(0),
       num_pending_timeouts_(0),
-      address_(options.address),
-      on_disconnected_closure_(options.disconnected_callback) {
+      address_(options.address) {
   // This is safe to call multiple times.
   dbus_threads_init_default();
   // The origin message loop is unnecessary if the client uses synchronous
@@ -690,7 +687,7 @@ void Bus::Send(DBusMessage* request, uint32* serial) {
   CHECK(success) << "Unable to allocate memory";
 }
 
-bool Bus::AddFilterFunction(DBusHandleMessageFunction filter_function,
+void Bus::AddFilterFunction(DBusHandleMessageFunction filter_function,
                             void* user_data) {
   DCHECK(connection_);
   AssertOnDBusThread();
@@ -701,17 +698,16 @@ bool Bus::AddFilterFunction(DBusHandleMessageFunction filter_function,
       filter_functions_added_.end()) {
     VLOG(1) << "Filter function already exists: " << filter_function
             << " with associated data: " << user_data;
-    return false;
+    return;
   }
 
   const bool success = dbus_connection_add_filter(
       connection_, filter_function, user_data, NULL);
   CHECK(success) << "Unable to allocate memory";
   filter_functions_added_.insert(filter_data_pair);
-  return true;
 }
 
-bool Bus::RemoveFilterFunction(DBusHandleMessageFunction filter_function,
+void Bus::RemoveFilterFunction(DBusHandleMessageFunction filter_function,
                                void* user_data) {
   DCHECK(connection_);
   AssertOnDBusThread();
@@ -723,12 +719,11 @@ bool Bus::RemoveFilterFunction(DBusHandleMessageFunction filter_function,
     VLOG(1) << "Requested to remove an unknown filter function: "
             << filter_function
             << " with associated data: " << user_data;
-    return false;
+    return;
   }
 
   dbus_connection_remove_filter(connection_, filter_function, user_data);
   filter_functions_added_.erase(filter_data_pair);
-  return true;
 }
 
 void Bus::AddMatch(const std::string& match_rule, DBusError* error) {
@@ -826,8 +821,7 @@ void Bus::ProcessAllIncomingDataIfAny() {
     return;
 
   // It is safe and necessary to call dbus_connection_get_dispatch_status even
-  // if the connection is lost. Otherwise we will miss "Disconnected" signal.
-  // (crbug.com/174431)
+  // if the connection is lost.
   if (dbus_connection_get_dispatch_status(connection_) ==
       DBUS_DISPATCH_DATA_REMAINS) {
     while (dbus_connection_dispatch(connection_) ==
@@ -948,11 +942,8 @@ void Bus::ListenForServiceOwnerChangeInternal(
   if (!Connect() || !SetUpAsyncOperations())
     return;
 
-  if (service_owner_changed_listener_map_.empty()) {
-    bool filter_added =
-        AddFilterFunction(Bus::OnServiceOwnerChangedFilter, this);
-    DCHECK(filter_added);
-  }
+  if (service_owner_changed_listener_map_.empty())
+    AddFilterFunction(Bus::OnServiceOwnerChangedFilter, this);
 
   ServiceOwnerChangedListenerMap::iterator it =
       service_owner_changed_listener_map_.find(service_name);
@@ -1026,11 +1017,8 @@ void Bus::UnlistenForServiceOwnerChangeInternal(
   // And remove |service_owner_changed_listener_map_| entry.
   service_owner_changed_listener_map_.erase(it);
 
-  if (service_owner_changed_listener_map_.empty()) {
-    bool filter_removed =
-        RemoveFilterFunction(Bus::OnServiceOwnerChangedFilter, this);
-    DCHECK(filter_removed);
-  }
+  if (service_owner_changed_listener_map_.empty())
+    RemoveFilterFunction(Bus::OnServiceOwnerChangedFilter, this);
 }
 
 dbus_bool_t Bus::OnAddWatch(DBusWatch* raw_watch) {
@@ -1110,19 +1098,6 @@ void Bus::OnDispatchStatusChanged(DBusConnection* connection,
   GetDBusTaskRunner()->PostTask(FROM_HERE,
                                 base::Bind(&Bus::ProcessAllIncomingDataIfAny,
                                            this));
-}
-
-void Bus::OnConnectionDisconnected(DBusConnection* connection) {
-  AssertOnDBusThread();
-
-  if (!on_disconnected_closure_.is_null())
-    GetOriginTaskRunner()->PostTask(FROM_HERE, on_disconnected_closure_);
-
-  if (!connection)
-    return;
-  DCHECK(!dbus_connection_get_is_connected(connection));
-
-  ShutdownAndBlock();
 }
 
 void Bus::OnServiceOwnerChanged(DBusMessage* message) {
@@ -1215,9 +1190,8 @@ DBusHandlerResult Bus::OnConnectionDisconnectedFilter(
   if (dbus_message_is_signal(message,
                              DBUS_INTERFACE_LOCAL,
                              kDisconnectedSignal)) {
-    Bus* self = static_cast<Bus*>(data);
-    self->OnConnectionDisconnected(connection);
-    return DBUS_HANDLER_RESULT_HANDLED;
+    // Abort when the connection is lost.
+    LOG(FATAL) << "D-Bus connection was disconnected. Aborting.";
   }
   return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }

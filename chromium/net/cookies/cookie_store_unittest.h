@@ -30,6 +30,8 @@ const char kUrlGoogle[] = "http://www.google.izzle";
 const char kUrlGoogleFoo[] = "http://www.google.izzle/foo";
 const char kUrlGoogleBar[] = "http://www.google.izzle/bar";
 const char kUrlGoogleSecure[] = "https://www.google.izzle";
+const char kUrlGoogleWebSocket[] = "ws://www.google.izzle";
+const char kUrlGoogleWebSocketSecure[] = "wss://www.google.izzle";
 const char kValidCookieLine[] = "A=B; path=/";
 const char kValidDomainCookieLine[] = "A=B; path=/; domain=google.izzle";
 
@@ -1105,10 +1107,9 @@ TYPED_TEST_P(MultiThreadedCookieStoreTest, ThreadCheckGetCookies) {
   EXPECT_TRUE(this->SetCookie(cs.get(), this->url_google_, "A=B"));
   this->MatchCookieLines("A=B", this->GetCookies(cs.get(), this->url_google_));
   StringResultCookieCallback callback(&this->other_thread_);
-  base::Closure task = base::Bind(
-      &net::MultiThreadedCookieStoreTest<TypeParam>::GetCookiesTask,
-      base::Unretained(this),
-      cs, this->url_google_, &callback);
+  base::Closure task =
+      base::Bind(&MultiThreadedCookieStoreTest<TypeParam>::GetCookiesTask,
+                 base::Unretained(this), cs, this->url_google_, &callback);
   this->RunOnOtherThread(task);
   EXPECT_TRUE(callback.did_run());
   EXPECT_EQ("A=B", callback.result());
@@ -1124,9 +1125,8 @@ TYPED_TEST_P(MultiThreadedCookieStoreTest, ThreadCheckGetCookiesWithOptions) {
       "A=B", this->GetCookiesWithOptions(cs.get(), this->url_google_, options));
   StringResultCookieCallback callback(&this->other_thread_);
   base::Closure task = base::Bind(
-      &net::MultiThreadedCookieStoreTest<TypeParam>::GetCookiesWithOptionsTask,
-      base::Unretained(this),
-      cs, this->url_google_, options, &callback);
+      &MultiThreadedCookieStoreTest<TypeParam>::GetCookiesWithOptionsTask,
+      base::Unretained(this), cs, this->url_google_, options, &callback);
   this->RunOnOtherThread(task);
   EXPECT_TRUE(callback.did_run());
   EXPECT_EQ("A=B", callback.result());
@@ -1141,9 +1141,8 @@ TYPED_TEST_P(MultiThreadedCookieStoreTest, ThreadCheckSetCookieWithOptions) {
       this->SetCookieWithOptions(cs.get(), this->url_google_, "A=B", options));
   ResultSavingCookieCallback<bool> callback(&this->other_thread_);
   base::Closure task = base::Bind(
-      &net::MultiThreadedCookieStoreTest<TypeParam>::SetCookieWithOptionsTask,
-      base::Unretained(this),
-      cs, this->url_google_, "A=B", options, &callback);
+      &MultiThreadedCookieStoreTest<TypeParam>::SetCookieWithOptionsTask,
+      base::Unretained(this), cs, this->url_google_, "A=B", options, &callback);
   this->RunOnOtherThread(task);
   EXPECT_TRUE(callback.did_run());
   EXPECT_TRUE(callback.result());
@@ -1160,10 +1159,9 @@ TYPED_TEST_P(MultiThreadedCookieStoreTest, ThreadCheckDeleteCookie) {
   EXPECT_TRUE(
       this->SetCookieWithOptions(cs.get(), this->url_google_, "A=B", options));
   NoResultCookieCallback callback(&this->other_thread_);
-  base::Closure task = base::Bind(
-      &net::MultiThreadedCookieStoreTest<TypeParam>::DeleteCookieTask,
-      base::Unretained(this),
-      cs, this->url_google_, "A", &callback);
+  base::Closure task =
+      base::Bind(&MultiThreadedCookieStoreTest<TypeParam>::DeleteCookieTask,
+                 base::Unretained(this), cs, this->url_google_, "A", &callback);
   this->RunOnOtherThread(task);
   EXPECT_TRUE(callback.did_run());
 }
@@ -1186,9 +1184,8 @@ TYPED_TEST_P(MultiThreadedCookieStoreTest, ThreadCheckDeleteSessionCookies) {
       this->SetCookieWithOptions(cs.get(), this->url_google_, "A=B", options));
   ResultSavingCookieCallback<int> callback(&this->other_thread_);
   base::Closure task = base::Bind(
-      &net::MultiThreadedCookieStoreTest<TypeParam>::DeleteSessionCookiesTask,
-      base::Unretained(this),
-      cs, &callback);
+      &MultiThreadedCookieStoreTest<TypeParam>::DeleteSessionCookiesTask,
+      base::Unretained(this), cs, &callback);
   this->RunOnOtherThread(task);
   EXPECT_TRUE(callback.did_run());
   EXPECT_EQ(1, callback.result());

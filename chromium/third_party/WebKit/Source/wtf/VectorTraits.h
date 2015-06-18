@@ -66,24 +66,24 @@ namespace WTF {
     // moving with memcpy (and then not destructing the original) will totally
     // work.
     template<typename P>
-    struct VectorTraits<RefPtr<P> > : SimpleClassVectorTraits<RefPtr<P> > { };
+    struct VectorTraits<RefPtr<P>> : SimpleClassVectorTraits<RefPtr<P>> { };
 
     template<typename P>
-    struct VectorTraits<OwnPtr<P> > : SimpleClassVectorTraits<OwnPtr<P> > {
+    struct VectorTraits<OwnPtr<P>> : SimpleClassVectorTraits<OwnPtr<P>> {
         // OwnPtr -> PassOwnPtr has a very particular structure that
         // tricks the normal type traits into thinking that the class
         // is "trivially copyable".
         static const bool canCopyWithMemcpy = false;
     };
-    COMPILE_ASSERT(VectorTraits<RefPtr<int> >::canInitializeWithMemset, inefficientRefPtrVector);
-    COMPILE_ASSERT(VectorTraits<RefPtr<int> >::canMoveWithMemcpy, inefficientRefPtrVector);
-    COMPILE_ASSERT(VectorTraits<RefPtr<int> >::canCompareWithMemcmp, inefficientRefPtrVector);
-    COMPILE_ASSERT(VectorTraits<OwnPtr<int> >::canInitializeWithMemset, inefficientOwnPtrVector);
-    COMPILE_ASSERT(VectorTraits<OwnPtr<int> >::canMoveWithMemcpy, inefficientOwnPtrVector);
-    COMPILE_ASSERT(VectorTraits<OwnPtr<int> >::canCompareWithMemcmp, inefficientOwnPtrVector);
+    static_assert(VectorTraits<RefPtr<int>>::canInitializeWithMemset, "inefficient RefPtr Vector");
+    static_assert(VectorTraits<RefPtr<int>>::canMoveWithMemcpy, "inefficient RefPtr Vector");
+    static_assert(VectorTraits<RefPtr<int>>::canCompareWithMemcmp, "inefficient RefPtr Vector");
+    static_assert(VectorTraits<OwnPtr<int>>::canInitializeWithMemset, "inefficient OwnPtr Vector");
+    static_assert(VectorTraits<OwnPtr<int>>::canMoveWithMemcpy, "inefficient OwnPtr Vector");
+    static_assert(VectorTraits<OwnPtr<int>>::canCompareWithMemcmp, "inefficient OwnPtr Vector");
 
     template<typename First, typename Second>
-    struct VectorTraits<pair<First, Second> >
+    struct VectorTraits<pair<First, Second>>
     {
         typedef VectorTraits<First> FirstTraits;
         typedef VectorTraits<Second> SecondTraits;
@@ -105,14 +105,14 @@ namespace WTF {
 
 #define WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(ClassName) \
 namespace WTF { \
-COMPILE_ASSERT(!IsTriviallyDefaultConstructible<ClassName>::value || !IsTriviallyCopyAssignable<ClassName>::value, macro_not_needed); \
+static_assert(!IsTriviallyDefaultConstructible<ClassName>::value || !IsTriviallyMoveAssignable<ClassName>::value || !IsScalar<ClassName>::value, "macro not needed"); \
     template<> \
     struct VectorTraits<ClassName> : SimpleClassVectorTraits<ClassName> { }; \
 }
 
 #define WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(ClassName) \
 namespace WTF { \
-COMPILE_ASSERT(!WTF::IsTriviallyDefaultConstructible<ClassName>::value || !IsTriviallyCopyAssignable<ClassName>::value, macro_not_needed); \
+static_assert(!IsTriviallyDefaultConstructible<ClassName>::value || !IsTriviallyMoveAssignable<ClassName>::value, "macro not needed"); \
     template<> \
     struct VectorTraits<ClassName> : VectorTraitsBase<ClassName> \
     { \
@@ -123,7 +123,7 @@ COMPILE_ASSERT(!WTF::IsTriviallyDefaultConstructible<ClassName>::value || !IsTri
 
 #define WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(ClassName) \
 namespace WTF { \
-COMPILE_ASSERT(!WTF::IsTriviallyDefaultConstructible<ClassName>::value, macro_not_needed); \
+static_assert(!IsTriviallyDefaultConstructible<ClassName>::value, "macro not needed"); \
     template<> \
     struct VectorTraits<ClassName> : VectorTraitsBase<ClassName> \
     { \

@@ -22,17 +22,20 @@
 #ifndef StyleResolver_h
 #define StyleResolver_h
 
+#include "core/animation/PropertyHandle.h"
+#include "core/css/ElementRuleCollector.h"
 #include "core/css/PseudoStyleRequest.h"
 #include "core/css/RuleFeature.h"
 #include "core/css/RuleSet.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorFilter.h"
-#include "core/css/SiblingTraversalStrategies.h"
 #include "core/css/TreeBoundaryCrossingRules.h"
+#include "core/css/resolver/CSSPropertyPriority.h"
 #include "core/css/resolver/MatchedPropertiesCache.h"
-#include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResourceLoader.h"
+#include "core/style/AuthorStyleInfo.h"
+#include "core/style/CachedUAStyle.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
@@ -50,15 +53,14 @@ class CSSValue;
 class ContainerNode;
 class Document;
 class Element;
-class ElementRuleCollector;
 class Interpolation;
 class MediaQueryEvaluator;
 class RuleData;
-class StyleKeyframe;
+class ScopedStyleResolver;
 class StylePropertySet;
 class StyleResolverStats;
 class StyleRule;
-class StyleRuleKeyframes;
+class StyleRuleKeyframe;
 class StyleRulePage;
 class ViewportStyleResolver;
 
@@ -78,20 +80,9 @@ const unsigned styleSharingListSize = 15;
 const unsigned styleSharingMaxDepth = 32;
 typedef WillBeHeapDeque<RawPtrWillBeMember<Element>, styleSharingListSize> StyleSharingList;
 
-struct CSSPropertyValue {
-    STACK_ALLOCATED();
-public:
-    CSSPropertyValue(CSSPropertyID property, CSSValue* value)
-        : property(property), value(value) { }
-    // Stores value=propertySet.getPropertyCSSValue(id).get().
-    CSSPropertyValue(CSSPropertyID, const StylePropertySet&);
-    CSSPropertyID property;
-    RawPtrWillBeMember<CSSValue> value;
-};
-
-// This class selects a RenderStyle for a given element based on a collection of stylesheets.
+// This class selects a ComputedStyle for a given element based on a collection of stylesheets.
 class StyleResolver final : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
-    WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleResolver);
 public:
     explicit StyleResolver(Document&);
     virtual ~StyleResolver();
@@ -103,37 +94,34 @@ public:
     void pushParentElement(Element&);
     void popParentElement(Element&);
 
-    PassRefPtr<RenderStyle> styleForElement(Element*, RenderStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
+    PassRefPtr<ComputedStyle> styleForElement(Element*, const ComputedStyle* parentStyle = 0, StyleSharingBehavior = AllowStyleSharing,
         RuleMatchingBehavior = MatchAllRules);
 
-    PassRefPtr<RenderStyle> styleForKeyframe(Element&, const RenderStyle&, RenderStyle* parentStyle, const StyleKeyframe*, const AtomicString& animationName);
-    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, CSSPropertyID, CSSValue&);
-    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(StyleResolverState&, CSSPropertyID, CSSValue&);
+    PassRefPtr<ComputedStyle> styleForKeyframe(Element&, const ComputedStyle&, const ComputedStyle* parentStyle, const StyleRuleKeyframe*, const AtomicString& animationName);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, const ComputedStyle* baseStyle, CSSPropertyID, CSSValue*);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(StyleResolverState&, CSSPropertyID, CSSValue*);
 
-    PassRefPtr<RenderStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, RenderStyle* parentStyle);
+    PassRefPtr<ComputedStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, const ComputedStyle* parentStyle);
 
-    PassRefPtr<RenderStyle> styleForPage(int pageIndex);
-    PassRefPtr<RenderStyle> defaultStyleForElement();
-    PassRefPtr<RenderStyle> styleForText(Text*);
+    PassRefPtr<ComputedStyle> styleForPage(int pageIndex);
+    PassRefPtr<ComputedStyle> styleForText(Text*);
 
-    static PassRefPtr<RenderStyle> styleForDocument(Document&);
+    static PassRefPtr<ComputedStyle> styleForDocument(Document&);
 
     // FIXME: It could be better to call appendAuthorStyleSheets() directly after we factor StyleResolver further.
     // https://bugs.webkit.org/show_bug.cgi?id=108890
-    void appendAuthorStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
+    void appendAuthorStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>&);
     void resetAuthorStyle(TreeScope&);
     void finishAppendAuthorStyleSheets();
 
-    void processScopedRules(const RuleSet& authorRules, CSSStyleSheet*, unsigned sheetIndex, ContainerNode& scope);
-
-    void lazyAppendAuthorStyleSheets(unsigned firstNew, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
-    void removePendingAuthorStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >&);
+    void lazyAppendAuthorStyleSheets(unsigned firstNew, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>&);
+    void removePendingAuthorStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>&);
     void appendPendingAuthorStyleSheets();
     bool hasPendingAuthorStyleSheets() const { return m_pendingStyleSheets.size() > 0 || m_needCollectFeatures; }
 
     SelectorFilter& selectorFilter() { return m_selectorFilter; }
 
-    void styleTreeResolveScopedKeyframesRules(const Element*, WillBeHeapVector<RawPtrWillBeMember<ScopedStyleResolver>, 8>&);
+    StyleRuleKeyframes* findKeyframesRule(const Element*, const AtomicString& animationName);
 
     // These methods will give back the set of rules that matched for a given element (or a pseudo-element).
     enum CSSRuleFilter {
@@ -148,8 +136,7 @@ public:
     PassRefPtrWillBeRawPtr<CSSRuleList> pseudoCSSRulesForElement(Element*, PseudoId, unsigned rulesToInclude = AllButEmptyCSSRules);
     PassRefPtrWillBeRawPtr<StyleRuleList> styleRulesForElement(Element*, unsigned rulesToInclude);
 
-    // |properties| is an array with |count| elements.
-    void applyPropertiesToStyle(const CSSPropertyValue* properties, size_t count, RenderStyle*);
+    void computeFont(ComputedStyle*, const StylePropertySet&);
 
     ViewportStyleResolver* viewportStyleResolver() { return m_viewportStyleResolver.get(); }
 
@@ -163,8 +150,8 @@ public:
 
     void notifyResizeForViewportUnits();
 
-    // Exposed for RenderStyle::isStyleAvilable().
-    static RenderStyle* styleNotYetAvailable() { return s_styleNotYetAvailable; }
+    // Exposed for ComputedStyle::isStyleAvilable().
+    static ComputedStyle* styleNotYetAvailable() { return s_styleNotYetAvailable; }
 
     RuleFeatureSet& ensureUpdatedRuleFeatureSet()
     {
@@ -200,25 +187,30 @@ public:
 
     PassRefPtrWillBeRawPtr<PseudoElement> createPseudoElementIfNeeded(Element& parent, PseudoId);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
+
+    void addTreeBoundaryCrossingScope(ContainerNode& scope);
 
 private:
-    void initWatchedSelectorRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRule> >& watchedSelectors);
+    PassRefPtr<ComputedStyle> initialStyleForElement();
+
+    void initWatchedSelectorRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRule>>& watchedSelectors);
 
     // FIXME: This should probably go away, folded into FontBuilder.
     void updateFont(StyleResolverState&);
 
-    void loadPendingResources(StyleResolverState&);
-    void adjustRenderStyle(StyleResolverState&, Element*);
+    static AuthorStyleInfo authorStyleInfo(StyleResolverState&);
 
-    void appendCSSStyleSheet(CSSStyleSheet*);
-    void addRulesFromSheet(CSSStyleSheet*, TreeScope*, unsigned);
+    void loadPendingResources(StyleResolverState&);
+    void adjustComputedStyle(StyleResolverState&, Element*);
+
+    void appendCSSStyleSheet(CSSStyleSheet&);
+    void addRulesFromSheet(CSSStyleSheet&, TreeScope*, unsigned);
 
     void collectPseudoRulesForElement(Element*, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
     void matchRuleSet(ElementRuleCollector&, RuleSet*);
     void matchUARules(ElementRuleCollector&);
     void matchAuthorRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
-    void matchAuthorRulesForShadowHost(Element*, ElementRuleCollector&, bool includeEmptyRules, WillBeHeapVector<RawPtrWillBeMember<ScopedStyleResolver>, 8>& resolvers, WillBeHeapVector<RawPtrWillBeMember<ScopedStyleResolver>, 8>& resolversInShadowTree);
     void matchAllRules(StyleResolverState&, ElementRuleCollector&, bool includeSMILProperties);
     void collectFeatures();
     void resetRuleFeatures();
@@ -229,30 +221,17 @@ private:
     bool applyAnimatedProperties(StyleResolverState&, const Element* animatingElement);
     void applyCallbackSelectors(StyleResolverState&);
 
-    void resolveScopedStyles(const Element*, WillBeHeapVector<RawPtrWillBeMember<ScopedStyleResolver>, 8>&);
-    void collectScopedResolversForHostedShadowTrees(const Element*, WillBeHeapVector<RawPtrWillBeMember<ScopedStyleResolver>, 8>&);
-
-    enum StyleApplicationPass {
-        HighPriorityProperties,
-        LowPriorityProperties
-    };
-    template <StyleResolver::StyleApplicationPass pass>
-    static inline CSSPropertyID firstCSSPropertyId();
-    template <StyleResolver::StyleApplicationPass pass>
-    static inline CSSPropertyID lastCSSPropertyId();
-    template <StyleResolver::StyleApplicationPass pass>
-    static inline bool isPropertyForPass(CSSPropertyID);
-    template <StyleApplicationPass pass>
+    template <CSSPropertyPriority priority>
     void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, int startIndex, int endIndex, bool inheritedOnly);
-    template <StyleApplicationPass pass>
+    template <CSSPropertyPriority priority>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
-    template <StyleApplicationPass pass>
-    void applyAnimatedProperties(StyleResolverState&, const WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> >&);
-    template <StyleResolver::StyleApplicationPass pass>
-    void applyAllProperty(StyleResolverState&, CSSValue*);
+    template <CSSPropertyPriority priority>
+    void applyAnimatedProperties(StyleResolverState&, const WillBeHeapHashMap<PropertyHandle, RefPtrWillBeMember<Interpolation>>&);
+    template <CSSPropertyPriority priority>
+    void applyAllProperty(StyleResolverState&, CSSValue*, bool inheritedOnly);
 
     void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
-    void matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >&, bool isLeftPage, bool isFirstPage, const String& pageName);
+    void matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage>>&, bool isLeftPage, bool isFirstPage, const String& pageName);
     void collectViewportRules();
 
     bool isLeftPage(int pageIndex) const;
@@ -260,15 +239,13 @@ private:
     bool isFirstPage(int pageIndex) const;
     String pageName(int pageIndex) const;
 
-    bool pseudoStyleForElementInternal(Element&, const PseudoStyleRequest&, RenderStyle* parentStyle, StyleResolverState&);
+    bool pseudoStyleForElementInternal(Element&, const PseudoStyleRequest&, const ComputedStyle* parentStyle, StyleResolverState&);
+
+    PassRefPtrWillBeRawPtr<PseudoElement> createPseudoElement(Element* parent, PseudoId);
 
     Document& document() { return *m_document; }
 
-    // FIXME: This likely belongs on RuleSet.
-    typedef WillBeHeapHashMap<StringImpl*, RefPtrWillBeMember<StyleRuleKeyframes> > KeyframesRuleMap;
-    KeyframesRuleMap m_keyframesRuleMap;
-
-    static RenderStyle* s_styleNotYetAvailable;
+    static ComputedStyle* s_styleNotYetAvailable;
 
     void cacheBorderAndBackground();
 

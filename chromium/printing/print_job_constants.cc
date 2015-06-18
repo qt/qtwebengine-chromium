@@ -51,6 +51,9 @@ const char kSettingCopies[] = "copies";
 // Device name: Unique printer identifier.
 const char kSettingDeviceName[] = "deviceName";
 
+// Option to disable scaling. True if scaling is disabled else false.
+const char kSettingDisableScaling[] = "disableScaling";
+
 // Print job duplex mode.
 const char kSettingDuplexMode[] = "duplex";
 
@@ -156,6 +159,10 @@ const char kSettingPrintToPDF[] = "printToPDF";
 // Print using Privet option: true if destination is a Privet printer, false if
 // not.
 const char kSettingPrintWithPrivet[] = "printWithPrivet";
+
+// Print using extension option: true if destination is an extension printer,
+// false if not.
+const char kSettingPrintWithExtension[] = "printWithExtension";
 
 // Ticket option. Contains the ticket in CJT format.
 const char kSettingTicket[] = "ticket";

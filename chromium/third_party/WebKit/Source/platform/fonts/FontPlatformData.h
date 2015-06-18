@@ -50,11 +50,10 @@ OBJC_CLASS NSFont;
 typedef struct CGFont* CGFontRef;
 typedef const struct __CTFont* CTFontRef;
 
-#include "platform/fonts/mac/MemoryActivatedFont.h"
-#include <CoreFoundation/CFBase.h>
 #include <objc/objc-auto.h>
 
 inline CTFontRef toCTFontRef(NSFont *nsFont) { return reinterpret_cast<CTFontRef>(nsFont); }
+inline NSFont* toNSFont(CTFontRef ctFontRef) { return const_cast<NSFont*>(reinterpret_cast<const NSFont*>(ctFontRef)); }
 #endif // OS(MACOSX)
 
 class SkTypeface;
@@ -76,36 +75,21 @@ public:
     FontPlatformData(WTF::HashTableDeletedValueType);
     FontPlatformData();
     FontPlatformData(const FontPlatformData&);
-    FontPlatformData(float size, bool syntheticBold, bool syntheticItalic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
+    FontPlatformData(float size, bool syntheticBold, bool syntheticItalic, FontOrientation = FontOrientation::Horizontal);
     FontPlatformData(const FontPlatformData& src, float textSize);
 #if OS(MACOSX)
-    FontPlatformData(NSFont*, float size, bool syntheticBold = false, bool syntheticItalic = false,
-                     FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
-    FontPlatformData(CGFontRef, PassRefPtr<SkTypeface>, float size, bool syntheticBold, bool syntheticOblique, FontOrientation, FontWidthVariant);
-#else
-    FontPlatformData(PassRefPtr<SkTypeface>, const char* name, float textSize, bool syntheticBold, bool syntheticItalic, FontOrientation = Horizontal, bool subpixelTextPosition = defaultUseSubpixelPositioning());
+    FontPlatformData(NSFont*, float size, bool syntheticBold = false, bool syntheticItalic = false, FontOrientation = FontOrientation::Horizontal);
 #endif
+    FontPlatformData(PassRefPtr<SkTypeface>, const char* name, float textSize, bool syntheticBold, bool syntheticItalic, FontOrientation = FontOrientation::Horizontal, bool subpixelTextPosition = defaultUseSubpixelPositioning());
     ~FontPlatformData();
 
 #if OS(MACOSX)
-    NSFont* font() const { return m_font; }
-    void setFont(NSFont*);
-
-    CGFontRef cgFont() const { return m_cgFont.get(); }
     CTFontRef ctFont() const;
-
-    bool roundsGlyphAdvances() const;
-    bool allowsLigatures() const;
-
-    bool isColorBitmapFont() const { return m_isColorBitmapFont; }
-    bool isCompositeFontReference() const { return m_isCompositeFontReference; }
-
-    FontWidthVariant widthVariant() const { return m_widthVariant; }
+    CGFontRef cgFont() const;
 #endif
 
     String fontFamilyName() const;
     float size() const { return m_textSize; }
-    bool isFixedPitch() const;
     bool syntheticBold() const { return m_syntheticBold; }
     bool syntheticItalic() const { return m_syntheticItalic; }
 
@@ -115,6 +99,7 @@ public:
     unsigned hash() const;
 
     FontOrientation orientation() const { return m_orientation; }
+    bool isVerticalAnyUpright() const { return blink::isVerticalAnyUpright(m_orientation); }
     void setOrientation(FontOrientation orientation) { m_orientation = orientation; }
     void setSyntheticBold(bool syntheticBold) { m_syntheticBold = syntheticBold; }
     void setSyntheticItalic(bool syntheticItalic) { m_syntheticItalic = syntheticItalic; }
@@ -135,16 +120,14 @@ public:
 #endif
     bool fontContainsCharacter(UChar32 character);
 
-#if ENABLE(OPENTYPE_VERTICAL)
     PassRefPtr<OpenTypeVerticalData> verticalData() const;
     PassRefPtr<SharedBuffer> openTypeTable(uint32_t table) const;
-#endif
 
 #if !OS(MACOSX)
     // The returned styles are all actual styles without FontRenderStyle::NoPreference.
     const FontRenderStyle& fontRenderStyle() const { return m_style; }
 #endif
-    void setupPaint(SkPaint*, GraphicsContext* = 0, const Font* = 0) const;
+    void setupPaint(SkPaint*, float deviceScaleFactor = 1, const Font* = 0) const;
 
 #if OS(WIN)
     int paintTextFlags() const { return m_paintTextFlags; }
@@ -157,20 +140,9 @@ public:
 #endif
 
 private:
-#if !OS(MACOSX)
     bool static defaultUseSubpixelPositioning();
+#if !OS(MACOSX)
     void querySystemForRenderStyle(bool useSkiaSubpixelPositioning);
-#else
-    // Load various data about the font specified by |nsFont| with the size fontSize into the following output paramters:
-    // Note: Callers should always take into account that for the Chromium port, |outNSFont| isn't necessarily the same
-    // font as |nsFont|. This because the sandbox may block loading of the original font.
-    // * outNSFont - The font that was actually loaded, for the Chromium port this may be different than nsFont.
-    // The caller is responsible for calling CFRelease() on this parameter when done with it.
-    // * cgFont - CGFontRef representing the input font at the specified point size.
-    void loadFont(NSFont*, float fontSize, NSFont*& outNSFont, CGFontRef&);
-    void platformDataInit(const FontPlatformData&);
-    const FontPlatformData& platformDataAssign(const FontPlatformData&);
-    bool isAATFont(CTFontRef) const;
 #endif
 
     mutable RefPtr<SkTypeface> m_typeface;
@@ -183,18 +155,8 @@ public:
     bool m_syntheticBold;
     bool m_syntheticItalic;
     FontOrientation m_orientation;
-#if OS(MACOSX)
-    bool m_isColorBitmapFont;
-    bool m_isCompositeFontReference;
-#endif
-    FontWidthVariant m_widthVariant;
 private:
-#if OS(MACOSX)
-    NSFont* m_font;
-    RetainPtr<CGFontRef> m_cgFont;
-    mutable RetainPtr<CTFontRef> m_CTFont;
-    RefPtr<MemoryActivatedFont> m_inMemoryFont;
-#else
+#if !OS(MACOSX)
     FontRenderStyle m_style;
 #endif
 

@@ -87,7 +87,7 @@
     Error parsing policy settings
   </message>
   <message name="IDS_POLICY_VALIDATION_BAD_KEY_VERIFICATION_SIGNATURE" desc="Message indicating a policy key had an invalid verification signature.">
-    Bad verification signature.
+    Bad verification signature
   </message>
   <message name="IDS_POLICY_VALIDATION_UNKNOWN_ERROR" desc="Message indicating unknown error in policy validation.">
     Unknown error
@@ -102,14 +102,14 @@
   <message name="IDS_POLICY_STORE_STATUS_STORE_ERROR" desc="Message indicating a failure to store policy.">
     Failed to store policy settings
   </message>
-  <message name="IDS_POLICY_STORE_STATUS_PARSE_ERROR" desc="Message indicating a parse error on loading policy">
+  <message name="IDS_POLICY_STORE_STATUS_PARSE_ERROR" desc="Message indicating a parse error on loading policy.">
     Policy parse error
   </message>
   <message name="IDS_POLICY_STORE_STATUS_SERIALIZE_ERROR" desc="Message indicating an error preparing policy for storage.">
     Serialization error
   </message>
   <message name="IDS_POLICY_STORE_STATUS_VALIDATION_ERROR" desc="Message indicating policy validation on store/load failed.">
-    Validation error: <ph name="VALIDATION_ERROR">$1<ex>Bad signature</ex></ph>.
+    Validation error: <ph name="VALIDATION_ERROR">$1<ex>Bad signature</ex></ph>
   </message>
   <message name="IDS_POLICY_STORE_STATUS_BAD_STATE" desc="Message indicating policy cannot be stored/loaded due to the backend being in bad state.">
     Backing store in bad state
@@ -246,8 +246,20 @@
   <message name="IDS_POLICY_LABEL_CLIENT_ID" desc="Label for the client IDs in the policy status boxes.">
     Client ID:
   </message>
+  <message name="IDS_POLICY_LABEL_ASSET_ID" desc="Label for the asset ID in the device policy status box.">
+    Asset ID:
+  </message>
+  <message name="IDS_POLICY_LABEL_LOCATION" desc="Label for the device location in the device policy status box.">
+    Assigned Location:
+  </message>
+  <message name="IDS_POLICY_LABEL_DIRECTORY_API_ID" desc="Label for the directory API ID in the device policy status box.">
+    Directory API ID:
+  </message>
   <message name="IDS_POLICY_LABEL_TIME_SINCE_LAST_REFRESH" desc="Label for the time since the last refresh in the policy status boxes.">
     Last fetched:
+  </message>
+  <message name="IDS_POLICY_NOT_SPECIFIED" desc="Indicates if that device attribute has not specified yet.">
+    Not Specified
   </message>
   <message name="IDS_POLICY_NEVER_FETCHED" desc="Indicates that a policy fetch was never performed before.">
     Never

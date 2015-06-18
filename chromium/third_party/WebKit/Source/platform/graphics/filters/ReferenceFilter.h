@@ -14,7 +14,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -33,6 +33,7 @@
 
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/filters/Filter.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -43,24 +44,26 @@ class FilterEffect;
 
 class PLATFORM_EXPORT ReferenceFilter: public Filter {
 public:
-    static PassRefPtr<ReferenceFilter> create(float scale)
+    static PassRefPtrWillBeRawPtr<ReferenceFilter> create(float scale)
     {
-        return adoptRef(new ReferenceFilter(scale));
+        return adoptRefWillBeNoop(new ReferenceFilter(scale));
     }
+
+    virtual ~ReferenceFilter();
+    DECLARE_VIRTUAL_TRACE();
 
     virtual IntRect sourceImageRect() const override { return IntRect(); };
 
-    void setLastEffect(PassRefPtr<FilterEffect>);
+    void setLastEffect(PassRefPtrWillBeRawPtr<FilterEffect>);
     FilterEffect* lastEffect() const { return m_lastEffect.get(); }
 
     SourceGraphic* sourceGraphic() const { return m_sourceGraphic.get(); }
 
 private:
-    ReferenceFilter(float scale);
-    virtual ~ReferenceFilter();
+    explicit ReferenceFilter(float scale);
 
-    RefPtr<SourceGraphic> m_sourceGraphic;
-    RefPtr<FilterEffect> m_lastEffect;
+    RefPtrWillBeMember<SourceGraphic> m_sourceGraphic;
+    RefPtrWillBeMember<FilterEffect> m_lastEffect;
 };
 
 } // namespace blink

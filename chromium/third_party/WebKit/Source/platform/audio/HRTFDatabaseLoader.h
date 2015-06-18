@@ -30,22 +30,24 @@
 #define HRTFDatabaseLoader_h
 
 #include "platform/audio/HRTFDatabase.h"
-#include "platform/heap/Handle.h"
 #include "public/platform/WebThread.h"
 #include "wtf/HashMap.h"
+#include "wtf/RefCounted.h"
 #include "wtf/ThreadingPrimitives.h"
 
 namespace blink {
 
+class TaskSynchronizer;
+
 // HRTFDatabaseLoader will asynchronously load the default HRTFDatabase in a new thread.
 
-class PLATFORM_EXPORT HRTFDatabaseLoader final : public GarbageCollectedFinalized<HRTFDatabaseLoader> {
+class PLATFORM_EXPORT HRTFDatabaseLoader final : public RefCounted<HRTFDatabaseLoader> {
 public:
     // Lazily creates a HRTFDatabaseLoader (if not already created) for the given sample-rate
     // and starts loading asynchronously (when created the first time).
     // Returns the HRTFDatabaseLoader.
     // Must be called from the main thread.
-    static HRTFDatabaseLoader* createAndLoadAsynchronouslyIfNecessary(float sampleRate);
+    static PassRefPtr<HRTFDatabaseLoader> createAndLoadAsynchronouslyIfNecessary(float sampleRate);
 
     // Both constructor and destructor must be called from the main thread.
     ~HRTFDatabaseLoader();
@@ -60,11 +62,6 @@ public:
 
     float databaseSampleRate() const { return m_databaseSampleRate; }
 
-    // Called in asynchronous loading thread.
-    void load();
-
-    void trace(Visitor*) { }
-
 private:
     // Both constructor and destructor must be called from the main thread.
     explicit HRTFDatabaseLoader(float sampleRate);
@@ -73,11 +70,15 @@ private:
     // This must be called from the main thread.
     void loadAsynchronously();
 
+    // Called in asynchronous loading thread.
+    void loadTask();
+    void cleanupTask(TaskSynchronizer*);
+
     // Holding a m_lock is required when accessing m_hrtfDatabase since we access it from multiple threads.
     Mutex m_lock;
     OwnPtr<HRTFDatabase> m_hrtfDatabase;
 
-    OwnPtr<WebThread> m_databaseLoaderThread;
+    OwnPtr<WebThread> m_thread;
 
     float m_databaseSampleRate;
 };

@@ -32,6 +32,7 @@
 #include "core/inspector/WorkerDebuggerAgent.h"
 
 #include "bindings/core/v8/ScriptDebugServer.h"
+#include "core/inspector/InjectedScript.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
@@ -61,14 +62,14 @@ private:
 
 } // namespace
 
-PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerThreadDebugger* workerThreadDebugger, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
 {
-    return adoptPtrWillBeNoop(new WorkerDebuggerAgent(scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
+    return adoptPtrWillBeNoop(new WorkerDebuggerAgent(workerThreadDebugger, inspectedWorkerGlobalScope, injectedScriptManager));
 }
 
-WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
-    : InspectorDebuggerAgent(injectedScriptManager)
-    , m_scriptDebugServer(scriptDebugServer)
+WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerThreadDebugger* workerThreadDebugger, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+    : InspectorDebuggerAgent(injectedScriptManager, workerThreadDebugger->scriptDebugServer()->isolate())
+    , m_workerThreadDebugger(workerThreadDebugger)
     , m_inspectedWorkerGlobalScope(inspectedWorkerGlobalScope)
 {
 }
@@ -77,7 +78,7 @@ WorkerDebuggerAgent::~WorkerDebuggerAgent()
 {
 }
 
-void WorkerDebuggerAgent::trace(Visitor* visitor)
+DEFINE_TRACE(WorkerDebuggerAgent)
 {
     visitor->trace(m_inspectedWorkerGlobalScope);
     InspectorDebuggerAgent::trace(visitor);
@@ -85,22 +86,22 @@ void WorkerDebuggerAgent::trace(Visitor* visitor)
 
 void WorkerDebuggerAgent::interruptAndDispatchInspectorCommands()
 {
-    scriptDebugServer().interruptAndRunTask(adoptPtr(new RunInspectorCommandsTask(m_inspectedWorkerGlobalScope->thread())));
+    scriptDebugServer().interruptAndRun(adoptPtr(new RunInspectorCommandsTask(m_inspectedWorkerGlobalScope->thread())));
 }
 
 void WorkerDebuggerAgent::startListeningScriptDebugServer()
 {
-    scriptDebugServer().addListener(this);
+    m_workerThreadDebugger->addListener(this);
 }
 
 void WorkerDebuggerAgent::stopListeningScriptDebugServer()
 {
-    scriptDebugServer().removeListener(this);
+    m_workerThreadDebugger->removeListener(this);
 }
 
-WorkerScriptDebugServer& WorkerDebuggerAgent::scriptDebugServer()
+ScriptDebugServer& WorkerDebuggerAgent::scriptDebugServer()
 {
-    return *m_scriptDebugServer;
+    return *(m_workerThreadDebugger->scriptDebugServer());
 }
 
 InjectedScript WorkerDebuggerAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)

@@ -27,19 +27,21 @@ declare_args() {
   # of a replacement for GDI or GTK.
   use_aura = is_win || is_linux
 
-  # XInput2 multitouch support. Zero means disabled, nonzero indicates the
-  # minimum XI2 version. For example, use_xi2_mt=2 means XI2.2 or above.
-  use_xi2_mt = 2
-
   # True means the UI is built using the "views" framework.
-  toolkit_views = is_win || is_chromeos || use_aura
+  toolkit_views = is_mac || is_win || is_chromeos || use_aura
+
+  # Whether the entire browser uses toolkit-views on Mac instead of Cocoa.
+  mac_views_browser = false
+
+  # Whether we should use glib, a low level C utility library.
+  use_glib = is_linux && !use_ozone
 }
 
 # Additional dependent variables -----------------------------------------------
 #
 # These variables depend on other variables and can't be set externally.
 
-if (is_linux) {
+if (is_linux && use_glib) {
   use_cairo = true
   use_pango = true
 } else {
@@ -58,10 +60,6 @@ use_x11 = is_linux && !use_ozone
 
 use_ozone_evdev = use_ozone
 
-use_glib = is_linux && !use_ozone
-
 use_clipboard_aurax11 = is_linux && use_aura && use_x11
 
-use_athena = false
-
-enable_hidpi = is_mac || is_chromeos || is_win
+enable_hidpi = is_mac || is_chromeos || is_win || is_linux

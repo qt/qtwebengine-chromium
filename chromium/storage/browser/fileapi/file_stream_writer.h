@@ -46,9 +46,9 @@ class FileStreamWriter {
   // callback will be run on the thread where Write() was called when the write
   // has completed.
   //
-  // After the last write, Flush() must be called unless the flushing on
-  // completion is explicitly disabled for the file system type, the writer is
-  // created for. See FileSystemContext::ShouldFlushOnWriteCompletion().
+  // After the last write, Flush() must be called if the file system written to
+  // was registered with the FlushPolicy::FLUSH_ON_COMPLETION policy in mount
+  // options.
   //
   // This errors out (either synchronously or via callback) with:
   //   net::ERR_FILE_NOT_FOUND: When the target file is not found.

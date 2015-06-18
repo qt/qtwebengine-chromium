@@ -11,13 +11,13 @@
 #include <assert.h>
 #include <jni.h>
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/examples/android/opensl_loopback/fake_audio_device_buffer.h"
 #include "webrtc/modules/audio_device/android/audio_device_template.h"
 #include "webrtc/modules/audio_device/android/audio_record_jni.h"
 #include "webrtc/modules/audio_device/android/audio_track_jni.h"
 #include "webrtc/modules/audio_device/android/opensles_input.h"
 #include "webrtc/modules/audio_device/android/opensles_output.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 // Java globals
 static JavaVM* g_vm = NULL;
@@ -29,8 +29,8 @@ template <class InputType, class OutputType>
 class OpenSlRunnerTemplate {
  public:
   OpenSlRunnerTemplate()
-      : output_(0),
-        input_(0, &output_) {
+      : output_(NULL),  // TODO(henrika): inject proper audio manager.
+        input_(&output_, NULL) {
     output_.AttachAudioBuffer(&audio_buffer_);
     if (output_.Init() != 0) {
       assert(false);
@@ -84,8 +84,8 @@ class OpenSlRunner
       jobject obj,
       jobject context) {
     assert(!g_runner);  // Should only be called once.
-    OpenSlesInput::SetAndroidAudioDeviceObjects(g_vm, env, context);
-    OpenSlesOutput::SetAndroidAudioDeviceObjects(g_vm, env, context);
+    OpenSlesInput::SetAndroidAudioDeviceObjects(g_vm, context);
+    OpenSlesOutput::SetAndroidAudioDeviceObjects(g_vm, context);
     g_runner = new OpenSlRunner();
   }
 

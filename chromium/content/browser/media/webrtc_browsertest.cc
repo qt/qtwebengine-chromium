@@ -33,9 +33,6 @@ namespace content {
 #if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
 // Renderer crashes under Android ASAN: https://crbug.com/408496.
 #define MAYBE_WebRtcBrowserTest DISABLED_WebRtcBrowserTest
-#elif defined(OS_ANDROID) && defined(__aarch64__)
-// Failures on ARM64 Android: http://crbug.com/408179.
-#define MAYBE_WebRtcBrowserTest DISABLED_WebRtcBrowserTest
 #else
 #define MAYBE_WebRtcBrowserTest WebRtcBrowserTest
 #endif
@@ -113,12 +110,8 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
   MakeTypicalPeerConnectionCall(javascript);
 }
 
-#if defined(OS_ANDROID) && defined(ARCH_CPU_ARM64)
-// Failing on ARM64 Android bot: http://crbug.com/408179
-#define MAYBE_CanSetupVideoCallWith16To9AspectRatio \
-  DISABLED_CanSetupVideoCallWith16To9AspectRatio
 // Flaky on TSAN v2. http://crbug.com/408006
-#elif defined(THREAD_SANITIZER)
+#if defined(THREAD_SANITIZER)
 #define MAYBE_CanSetupVideoCallWith16To9AspectRatio \
   DISABLED_CanSetupVideoCallWith16To9AspectRatio
 #else
@@ -144,21 +137,16 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
 IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
                        MAYBE_CanSetupVideoCallWith4To3AspectRatio) {
   const std::string javascript =
-      "callAndExpectResolution({video: {mandatory: {minWidth: 960,"
-      "maxAspectRatio: 1.333}}}, 960, 720);";
+      "callAndExpectResolution({video: {mandatory: { minWidth: 960,"
+      "maxWidth: 960, minAspectRatio: 1.333, maxAspectRatio: 1.333}}}, 960,"
+      " 720);";
   MakeTypicalPeerConnectionCall(javascript);
 }
 
 // Flaky on TSAN v2. http://crbug.com/408006
-#if defined(THREAD_SANITIZER)
-#define MAYBE_CanSetupVideoCallAndDisableLocalVideo \
-  DISABLED_CanSetupVideoCallAndDisableLocalVideo
-#else
-#define MAYBE_CanSetupVideoCallAndDisableLocalVideo \
-  CanSetupVideoCallAndDisableLocalVideo
-#endif
+// Flaky everywhere: http://crbug.com/477498
 IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
-                       MAYBE_CanSetupVideoCallAndDisableLocalVideo) {
+                       DISABLED_CanSetupVideoCallAndDisableLocalVideo) {
   const std::string javascript =
       "callAndDisableLocalVideo({video: true});";
   MakeTypicalPeerConnectionCall(javascript);
@@ -181,31 +169,39 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
   MakeTypicalPeerConnectionCall("callAndSendDtmf(\'123,abc\');");
 }
 
-// TODO(phoglund): this test fails because the peer connection state will be
-// stable in the second negotiation round rather than have-local-offer.
-// http://crbug.com/293125.
 IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
-                       DISABLED_CanMakeEmptyCallThenAddStreamsAndRenegotiate) {
+                       CanMakeEmptyCallThenAddStreamsAndRenegotiate) {
   const char* kJavascript =
       "callEmptyThenAddOneStreamAndRenegotiate({video: true, audio: true});";
   MakeTypicalPeerConnectionCall(kJavascript);
 }
 
-// Below 2 test will make a complete PeerConnection-based call between pc1 and
-// pc2, and then use the remote stream to setup a call between pc3 and pc4, and
-// then verify that video is received on pc3 and pc4.
-// The stream sent from pc3 to pc4 is the stream received on pc1.
-// The stream sent from pc4 to pc3 is cloned from stream the stream received
-// on pc2.
-#if defined(THREAD_SANITIZER)
-// Flaky on TSAN v2. http://crbug.com/373637
-#define MAYBE_CanForwardRemoteStream DISABLED_CanForwardRemoteStream
-#define MAYBE_CanForwardRemoteStream720p DISABLED_CanForwardRemoteStream720p
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
+                       CanMakeAudioCallAndThenRenegotiateToVideo) {
+  const char* kJavascript =
+      "callAndRenegotiateToVideo({audio: true}, {audio: true, video:true});";
+  MakeTypicalPeerConnectionCall(kJavascript);
+}
+
+#if defined(OS_MACOSX)
+// Flaky on Mac-10.9: https://crbug.com/484826
+#define MAYBE_CanMakeVideoCallAndThenRenegotiateToAudio DISABLED_CanMakeVideoCallAndThenRenegotiateToAudio
 #else
-#define MAYBE_CanForwardRemoteStream CanForwardRemoteStream
-#define MAYBE_CanForwardRemoteStream720p CanForwardRemoteStream720p
+#define MAYBE_CanMakeVideoCallAndThenRenegotiateToAudio CanMakeVideoCallAndThenRenegotiateToAudio
 #endif
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
+                       MAYBE_CanMakeVideoCallAndThenRenegotiateToAudio) {
+  MakeAudioDetectingPeerConnectionCall(base::StringPrintf(
+      "callAndRenegotiateToAudio("
+      "    %s, {audio: true, video:true}, {audio: true});",
+      kUseLenientAudioChecking));
+}
+
+// This test makes a call between pc1 and pc2 where a video only stream is sent
+// from pc1 to pc2. The stream sent from pc1 to pc2 is cloned from the stream
+// received on pc2 to test that cloning of remote video tracks works as
+// intended and is sent back to pc1.
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest, CanForwardRemoteStream) {
 #if defined (OS_ANDROID)
   // This test fails on Nexus 5 devices.
   // TODO(henrika): see http://crbug.com/362437 and http://crbug.com/359389
@@ -215,20 +211,6 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
 #endif
   MakeTypicalPeerConnectionCall(
       "callAndForwardRemoteStream({video: true, audio: false});");
-}
-
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
-                       MAYBE_CanForwardRemoteStream720p) {
-#if defined (OS_ANDROID)
-  // This test fails on Nexus 5 devices.
-  // TODO(henrika): see http://crbug.com/362437 and http://crbug.com/359389
-  // for details.
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kDisableWebRtcHWDecoding);
-#endif
-  const std::string javascript = GenerateGetUserMediaCall(
-      "callAndForwardRemoteStream", 1280, 1280, 720, 720, 10, 30);
-  MakeTypicalPeerConnectionCall(javascript);
 }
 
 IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
@@ -365,9 +347,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest,
 // MediaStream that has been created based on a MediaStream created with
 // getUserMedia. When video is flowing, the VideoTrack is removed and an
 // AudioTrack is added instead.
-// TODO(phoglund): This test is manual since not all buildbots has an audio
-// input.
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest, MANUAL_CallAndModifyStream) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcBrowserTest, CallAndModifyStream) {
   MakeTypicalPeerConnectionCall(
       "callWithNewVideoMediaStreamLaterSwitchToAudio();");
 }

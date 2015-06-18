@@ -97,6 +97,18 @@ struct ObjectGroupRetainerInfo {
 };
 
 
+enum WeaknessType {
+  NORMAL_WEAK,  // Embedder gets a handle to the dying object.
+  // In the following cases, the embedder gets the parameter they passed in
+  // earlier, and 0 or 2 first internal fields. Note that the internal
+  // fields must contain aligned non-V8 pointers.  Getting pointers to V8
+  // objects through this interface would be GC unsafe so in that case the
+  // embedder gets a null pointer instead.
+  PHANTOM_WEAK,
+  PHANTOM_WEAK_2_INTERNAL_FIELDS
+};
+
+
 class GlobalHandles {
  public:
   ~GlobalHandles();
@@ -128,8 +140,13 @@ class GlobalHandles {
   // before the callback is invoked, but the handle can still be identified
   // in the callback by using the location() of the handle.
   static void MakeWeak(Object** location, void* parameter,
-                       WeakCallback weak_callback,
-                       PhantomState phantom = Nonphantom);
+                       WeakCallback weak_callback);
+
+  // It would be nice to template this one, but it's really hard to get
+  // the template instantiator to work right if you do.
+  static void MakeWeak(Object** location, void* parameter,
+                       WeakCallbackInfo<void>::Callback weak_callback,
+                       v8::WeakCallbackType type);
 
   void RecordStats(HeapStats* stats);
 
@@ -270,10 +287,17 @@ class GlobalHandles {
   // don't assign any initial capacity.
   static const int kObjectGroupConnectionsCapacity = 20;
 
+  // Helpers for PostGarbageCollectionProcessing.
+  int PostScavengeProcessing(int initial_post_gc_processing_count);
+  int PostMarkSweepProcessing(int initial_post_gc_processing_count);
+  int DispatchPendingPhantomCallbacks();
+  void UpdateListOfNewSpaceNodes();
+
   // Internal node structures.
   class Node;
   class NodeBlock;
   class NodeIterator;
+  class PendingPhantomCallback;
 
   Isolate* isolate_;
 
@@ -306,9 +330,36 @@ class GlobalHandles {
   List<ObjectGroupRetainerInfo> retainer_infos_;
   List<ObjectGroupConnection> implicit_ref_connections_;
 
+  List<PendingPhantomCallback> pending_phantom_callbacks_;
+
   friend class Isolate;
 
   DISALLOW_COPY_AND_ASSIGN(GlobalHandles);
+};
+
+
+class GlobalHandles::PendingPhantomCallback {
+ public:
+  typedef v8::WeakCallbackInfo<void> Data;
+  PendingPhantomCallback(
+      Node* node, Data::Callback callback, void* parameter,
+      void* internal_fields[v8::kInternalFieldsInWeakCallback])
+      : node_(node), callback_(callback), parameter_(parameter) {
+    for (int i = 0; i < v8::kInternalFieldsInWeakCallback; ++i) {
+      internal_fields_[i] = internal_fields[i];
+    }
+  }
+
+  void Invoke(Isolate* isolate);
+
+  Node* node() { return node_; }
+  Data::Callback callback() { return callback_; }
+
+ private:
+  Node* node_;
+  Data::Callback callback_;
+  void* parameter_;
+  void* internal_fields_[v8::kInternalFieldsInWeakCallback];
 };
 
 

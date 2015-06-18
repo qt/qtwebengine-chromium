@@ -26,23 +26,17 @@
                     { "name": "driverBugWorkarounds", "type": "array", "items": { "type": "string" }, "description": "An optional array of GPU driver bug workarounds." }
                 ],
                 "description": "Provides information about the GPU(s) on the system."
-            },
-            {
-                "id": "SystemInfo",
-                "type": "object",
-                "properties": [
-                    { "name": "gpu", "$ref": "GPUInfo", "description": "Information about the GPUs on the system." },
-                    { "name": "modelName", "type": "string", "description": "A platform-dependent description of the model of the machine. On Mac OS, this is, for example, 'MacBookPro 10.1'. Will be the empty string if not supported." }
-                ],
-                "description": "Provides information about the system."
             }
         ],
         "commands": [
             {
                 "name": "getInfo",
+                "async": true,
                 "description": "Returns information about the system.",
                 "returns": [
-                    { "name": "info", "$ref": "SystemInfo", "description": "Information about the system." }
+                    { "name": "gpu", "$ref": "GPUInfo", "description": "Information about the GPUs on the system." },
+                    { "name": "modelName", "type": "string", "description": "A platform-dependent description of the model of the machine. On Mac OS, this is, for example, 'MacBookPro'. Will be the empty string if not supported." },
+                    { "name": "modelVersion", "type": "string", "description": "A platform-dependent description of the version of the machine. On Mac OS, this is, for example, '10.1'. Will be the empty string if not supported." }
                 ],
                 "handlers": ["browser"]
             }
@@ -55,17 +49,19 @@
         "commands": [
             {
                 "name": "bind",
+                "async": true,
                 "description": "Request browser port binding.",
                 "parameters": [
-                    { "name": "port", "type": "number", "description": "Port number to bind." }
+                    { "name": "port", "type": "integer", "description": "Port number to bind." }
                 ],
                 "handlers": ["browser"]
             },
             {
                 "name": "unbind",
+                "async": true,
                 "description": "Request browser port unbinding.",
                 "parameters": [
-                    { "name": "port", "type": "number", "description": "Port number to unbind." }
+                    { "name": "port", "type": "integer", "description": "Port number to unbind." }
                 ],
                 "handlers": ["browser"]
             }
@@ -75,7 +71,7 @@
                 "name": "accepted",
                 "description": "Informs that port was successfully bound and got a specified connection id.",
                 "parameters": [
-                    {"name": "port", "type": "number", "description": "Port number that was successfully bound." },
+                    {"name": "port", "type": "integer", "description": "Port number that was successfully bound." },
                     {"name": "connectionId", "type": "string", "description": "Connection id to be used." }
                 ],
                 "handlers": ["browser"]

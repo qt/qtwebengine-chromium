@@ -35,9 +35,9 @@
 
 namespace blink {
 
-static blink::WebMediaPlayer::TrackId nextTrackId()
+static WebMediaPlayer::TrackId nextTrackId()
 {
-    static blink::WebMediaPlayer::TrackId next = 0;
+    static WebMediaPlayer::TrackId next = 0;
     return ++next;
 }
 
@@ -64,7 +64,7 @@ Node* TrackBase::owner() const
     return m_mediaElement;
 }
 
-void TrackBase::trace(Visitor* visitor)
+DEFINE_TRACE(TrackBase)
 {
     visitor->trace(m_mediaElement);
 }

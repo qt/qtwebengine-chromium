@@ -19,7 +19,7 @@ const size_t kNoncePrefixSize = 0;
 
 }  // namespace
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 
 // System NSS doesn't support ChaCha20+Poly1305 yet.
 
@@ -36,21 +36,22 @@ bool ChaCha20Poly1305Decrypter::IsSupported() {
   return false;
 }
 
-void ChaCha20Poly1305Decrypter::FillAeadParams(StringPiece nonce,
-                                               StringPiece associated_data,
-                                               size_t auth_tag_size,
-                                               AeadParams* aead_params) const {
+void ChaCha20Poly1305Decrypter::FillAeadParams(
+    StringPiece nonce,
+    const StringPiece& associated_data,
+    size_t auth_tag_size,
+    AeadParams* aead_params) const {
   NOTIMPLEMENTED();
 }
 
-#else  // defined(USE_NSS)
+#else  // defined(USE_NSS_CERTS)
 
 ChaCha20Poly1305Decrypter::ChaCha20Poly1305Decrypter()
     : AeadBaseDecrypter(CKM_NSS_CHACHA20_POLY1305, PK11_Decrypt, kKeySize,
                         kAuthTagSize, kNoncePrefixSize) {
-  COMPILE_ASSERT(kKeySize <= kMaxKeySize, key_size_too_big);
-  COMPILE_ASSERT(kNoncePrefixSize <= kMaxNoncePrefixSize,
-                 nonce_prefix_size_too_big);
+  static_assert(kKeySize <= kMaxKeySize, "key size too big");
+  static_assert(kNoncePrefixSize <= kMaxNoncePrefixSize,
+                "nonce prefix size too big");
 }
 
 ChaCha20Poly1305Decrypter::~ChaCha20Poly1305Decrypter() {}
@@ -60,10 +61,11 @@ bool ChaCha20Poly1305Decrypter::IsSupported() {
   return true;
 }
 
-void ChaCha20Poly1305Decrypter::FillAeadParams(StringPiece nonce,
-                                               StringPiece associated_data,
-                                               size_t auth_tag_size,
-                                               AeadParams* aead_params) const {
+void ChaCha20Poly1305Decrypter::FillAeadParams(
+    StringPiece nonce,
+    const StringPiece& associated_data,
+    size_t auth_tag_size,
+    AeadParams* aead_params) const {
   aead_params->len = sizeof(aead_params->data.nss_aead_params);
   CK_NSS_AEAD_PARAMS* nss_aead_params = &aead_params->data.nss_aead_params;
   nss_aead_params->pIv =
@@ -75,6 +77,6 @@ void ChaCha20Poly1305Decrypter::FillAeadParams(StringPiece nonce,
   nss_aead_params->ulTagLen = auth_tag_size;
 }
 
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
 }  // namespace net

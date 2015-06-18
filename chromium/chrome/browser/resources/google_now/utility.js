@@ -266,7 +266,7 @@ var wrapper = (function() {
    * callbacks. This is a map from unique callback id to the stack at the moment
    * when the callback was wrapped. This stack identifies the callback.
    * Used only for diagnostics.
-   * @type {Object.<number, string>}
+   * @type {Object<number, string>}
    */
   var pendingCallbacks = {};
 
@@ -345,7 +345,7 @@ var wrapper = (function() {
 
   /**
    * Returns an instrumented function.
-   * @param {!Array.<string>} functionIdentifierParts Path to the chrome.*
+   * @param {!Array<string>} functionIdentifierParts Path to the chrome.*
    *     function.
    * @param {string} functionName Name of the chrome API function.
    * @param {number} callbackParameter Index of the callback parameter to this
@@ -515,7 +515,7 @@ function registerPromiseAdapter() {
      * The indirection allows quick checks against the array and clearing the
      * array without ugly splicing and copying.
      * @typedef {{
-     *   callback: array.<Function>=
+     *   callback: array<Function>=
      * }}
      */
     var CallbackTracker;
@@ -696,7 +696,7 @@ function buildTaskManager(areConflicting) {
   /**
    * Queue of scheduled tasks. The first element, if present, corresponds to the
    * currently running task.
-   * @type {Array.<Object.<string, function()>>}
+   * @type {Array<Object<string, function()>>}
    */
   var queue = [];
 
@@ -982,15 +982,25 @@ function buildAuthenticationManager() {
   }
 
   /**
+   * Determines the active account's login (username).
+   * @return {Promise} A promise to determine the current account's login.
+   */
+  function getLogin() {
+    return new Promise(function(resolve) {
+      instrumented.webstorePrivate.getBrowserLogin(function(accountInfo) {
+        resolve(accountInfo.login);
+      });
+    });
+  }
+
+  /**
    * Determines whether there is an account attached to the profile.
    * @return {Promise} A promise to determine if there is an account attached
    *     to the profile.
    */
   function isSignedIn() {
-    return new Promise(function(resolve) {
-      instrumented.webstorePrivate.getBrowserLogin(function(accountInfo) {
-        resolve(!!accountInfo.login);
-      });
+    return getLogin().then(function(login) {
+      return Promise.resolve(!!login);
     });
   }
 
@@ -1055,6 +1065,7 @@ function buildAuthenticationManager() {
   return {
     addListener: addListener,
     getAuthToken: getAuthToken,
+    getLogin: getLogin,
     isSignedIn: isSignedIn,
     removeToken: removeToken
   };

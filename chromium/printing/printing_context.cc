@@ -20,7 +20,6 @@ const float kCloudPrintMarginInch = 0.25;
 
 PrintingContext::PrintingContext(Delegate* delegate)
     : delegate_(delegate),
-      dialog_box_dismissed_(false),
       in_print_job_(false),
       abort_printing_(false) {
   CHECK(delegate_);
@@ -40,7 +39,6 @@ void PrintingContext::ResetSettings() {
   settings_.Clear();
 
   in_print_job_ = false;
-  dialog_box_dismissed_ = false;
   abort_printing_ = false;
 }
 
@@ -65,6 +63,7 @@ PrintingContext::Result PrintingContext::UsePdfSettings() {
   pdf_settings->SetBoolean(kSettingPrintToPDF, true);
   pdf_settings->SetBoolean(kSettingCloudPrintDialog, false);
   pdf_settings->SetBoolean(kSettingPrintWithPrivet, false);
+  pdf_settings->SetBoolean(kSettingPrintWithExtension, false);
   return UpdatePrintSettings(*pdf_settings);
 }
 
@@ -80,10 +79,13 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
   bool print_to_pdf = false;
   bool is_cloud_dialog = false;
   bool print_with_privet = false;
+  bool print_with_extension = false;
 
   if (!job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf) ||
       !job_settings.GetBoolean(kSettingCloudPrintDialog, &is_cloud_dialog) ||
-      !job_settings.GetBoolean(kSettingPrintWithPrivet, &print_with_privet)) {
+      !job_settings.GetBoolean(kSettingPrintWithPrivet, &print_with_privet) ||
+      !job_settings.GetBoolean(kSettingPrintWithExtension,
+                               &print_with_extension)) {
     NOTREACHED();
     return OnError();
   }
@@ -92,8 +94,9 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
   bool open_in_external_preview =
       job_settings.HasKey(kSettingOpenPDFInPreview);
 
-  if (!open_in_external_preview && (print_to_pdf || print_to_cloud ||
-                                    is_cloud_dialog || print_with_privet)) {
+  if (!open_in_external_preview &&
+      (print_to_pdf || print_to_cloud || is_cloud_dialog || print_with_privet ||
+       print_with_extension)) {
     settings_.set_dpi(kDefaultPdfDpi);
     gfx::Size paper_size(GetPdfPaperSizeDeviceUnits());
     if (!settings_.requested_media().size_microns.IsEmpty()) {
@@ -115,10 +118,13 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
   }
 
   bool show_system_dialog = false;
-  job_settings.GetBoolean(printing::kSettingShowSystemDialog,
-                          &show_system_dialog);
+  job_settings.GetBoolean(kSettingShowSystemDialog, &show_system_dialog);
 
-  return UpdatePrinterSettings(open_in_external_preview, show_system_dialog);
+  int page_count = 0;
+  job_settings.GetInteger(kSettingPreviewPageCount, &page_count);
+
+  return UpdatePrinterSettings(open_in_external_preview, show_system_dialog,
+                               page_count);
 }
 
 }  // namespace printing

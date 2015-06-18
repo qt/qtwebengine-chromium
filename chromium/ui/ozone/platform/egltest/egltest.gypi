@@ -21,8 +21,11 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../third_party/khronos/khronos.gyp:khronos_headers',
+        '../events/devices/events_devices.gyp:events_devices',
         '../events/events.gyp:events',
         '../events/ozone/events_ozone.gyp:events_ozone_evdev',
+        '../events/ozone/events_ozone.gyp:events_ozone_layout',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         'eglplatform_shim',
       ],
@@ -49,8 +52,8 @@
       'actions': [
         {
           'variables': {
-            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libeglplatform_shim.h',
             'output_cc': '<(INTERMEDIATE_DIR)/libeglplatform_shim_loader.cc',
+            'output_h': '<(SHARED_INTERMEDIATE_DIR)/library_loaders/libeglplatform_shim.h',
             'generator': '../../tools/generate_library_loader/generate_library_loader.py',
           },
           'action_name': 'generate_libeglplatform_shim_loader',

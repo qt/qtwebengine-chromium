@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2011, Google Inc.
+ * Copyright 2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,19 +29,14 @@
 
 #include <stdio.h>
 
+#include "webrtc/base/stringencode.h"
+
+using rtc::ToString;
+
 std::string int2str(int i) {
-  char buffer[11] = {0};
-  sprintf(buffer, "%d", i);  // NOLINT
-  return buffer;
+  return ToString<int>(i);
 }
 
 std::string size_t2str(size_t i) {
-  char buffer[32] = {0};
-#ifdef WIN32
-  // %zu isn't supported on Windows.
-  sprintf(buffer, "%Iu", i);  // NOLINT
-#else
-  sprintf(buffer, "%zu", i);  // NOLINT
-#endif
-  return buffer;
+  return ToString<size_t>(i);
 }

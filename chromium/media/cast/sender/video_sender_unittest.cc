@@ -15,11 +15,13 @@
 #include "media/cast/net/cast_transport_config.h"
 #include "media/cast/net/cast_transport_sender_impl.h"
 #include "media/cast/net/pacing/paced_sender.h"
+#include "media/cast/sender/fake_video_encode_accelerator_factory.h"
+#include "media/cast/sender/video_frame_factory.h"
 #include "media/cast/sender/video_sender.h"
 #include "media/cast/test/fake_single_thread_task_runner.h"
-#include "media/cast/test/fake_video_encode_accelerator.h"
 #include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/video_utility.h"
+#include "media/video/fake_video_encode_accelerator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -34,25 +36,11 @@ static const int kHeight = 240;
 using testing::_;
 using testing::AtLeast;
 
-void CreateVideoEncodeAccelerator(
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    scoped_ptr<VideoEncodeAccelerator> fake_vea,
-    const ReceiveVideoEncodeAcceleratorCallback& callback) {
-  callback.Run(task_runner, fake_vea.Pass());
-}
 
-void CreateSharedMemory(
-    size_t size, const ReceiveVideoEncodeMemoryCallback& callback) {
-  scoped_ptr<base::SharedMemory> shm(new base::SharedMemory());
-  if (!shm->CreateAndMapAnonymous(size)) {
-    NOTREACHED();
-    return;
-  }
-  callback.Run(shm.Pass());
-}
-
-void SaveInitializationStatus(CastInitializationStatus* out_status,
-                              CastInitializationStatus in_status) {
+void SaveOperationalStatus(OperationalStatus* out_status,
+                           OperationalStatus in_status) {
+  DVLOG(1) << "OperationalStatus transitioning from " << *out_status << " to "
+           << in_status;
   *out_status = in_status;
 }
 
@@ -64,7 +52,7 @@ class TestPacketSender : public PacketSender {
         paused_(false) {}
 
   // A singular packet implies a RTCP packet.
-  bool SendPacket(PacketRef packet, const base::Closure& cb) override {
+  bool SendPacket(PacketRef packet, const base::Closure& cb) final {
     if (paused_) {
       stored_packet_ = packet;
       callback_ = cb;
@@ -84,7 +72,7 @@ class TestPacketSender : public PacketSender {
     return true;
   }
 
-  int64 GetBytesSent() override { return 0; }
+  int64 GetBytesSent() final { return 0; }
 
   int number_of_rtp_packets() const { return number_of_rtp_packets_; }
 
@@ -110,18 +98,19 @@ class TestPacketSender : public PacketSender {
 
 void IgnorePlayoutDelayChanges(base::TimeDelta unused_playout_delay) {
 }
+
 class PeerVideoSender : public VideoSender {
  public:
   PeerVideoSender(
       scoped_refptr<CastEnvironment> cast_environment,
       const VideoSenderConfig& video_config,
-      const CastInitializationCallback& initialization_cb,
+      const StatusChangeCallback& status_change_cb,
       const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
       const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
       CastTransportSender* const transport_sender)
       : VideoSender(cast_environment,
                     video_config,
-                    initialization_cb,
+                    status_change_cb,
                     create_vea_cb,
                     create_video_encode_mem_cb,
                     transport_sender,
@@ -132,32 +121,37 @@ class PeerVideoSender : public VideoSender {
 
 class VideoSenderTest : public ::testing::Test {
  protected:
-  VideoSenderTest() {
-    testing_clock_ = new base::SimpleTestTickClock();
+  VideoSenderTest()
+      : testing_clock_(new base::SimpleTestTickClock()),
+        task_runner_(new test::FakeSingleThreadTaskRunner(testing_clock_)),
+        cast_environment_(new CastEnvironment(
+            scoped_ptr<base::TickClock>(testing_clock_).Pass(),
+            task_runner_,
+            task_runner_,
+            task_runner_)),
+        operational_status_(STATUS_UNINITIALIZED),
+        vea_factory_(task_runner_) {
     testing_clock_->Advance(base::TimeTicks::Now() - base::TimeTicks());
-    task_runner_ = new test::FakeSingleThreadTaskRunner(testing_clock_);
-    cast_environment_ =
-        new CastEnvironment(scoped_ptr<base::TickClock>(testing_clock_).Pass(),
-                            task_runner_,
-                            task_runner_,
-                            task_runner_);
+    vea_factory_.SetAutoRespond(true);
     last_pixel_value_ = kPixelValue;
     net::IPEndPoint dummy_endpoint;
     transport_sender_.reset(new CastTransportSenderImpl(
         NULL,
         testing_clock_,
         dummy_endpoint,
+        dummy_endpoint,
         make_scoped_ptr(new base::DictionaryValue),
         base::Bind(&UpdateCastTransportStatus),
         BulkRawEventsCallback(),
         base::TimeDelta(),
         task_runner_,
+        PacketReceiverCallback(),
         &transport_));
   }
 
   ~VideoSenderTest() override {}
 
-  void TearDown() override {
+  void TearDown() final {
     video_sender_.reset();
     task_runner_->RunTasks();
   }
@@ -168,53 +162,34 @@ class VideoSenderTest : public ::testing::Test {
 
   // If |external| is true then external video encoder (VEA) is used.
   // |expect_init_sucess| is true if initialization is expected to succeed.
-  CastInitializationStatus InitEncoder(bool external,
-                                       bool expect_init_success) {
-    VideoSenderConfig video_config;
-    video_config.ssrc = 1;
-    video_config.incoming_feedback_ssrc = 2;
-    video_config.rtp_payload_type = 127;
+  void InitEncoder(bool external, bool expect_init_success) {
+    VideoSenderConfig video_config = GetDefaultVideoSenderConfig();
     video_config.use_external_encoder = external;
-    video_config.width = kWidth;
-    video_config.height = kHeight;
-    video_config.max_bitrate = 5000000;
-    video_config.min_bitrate = 1000000;
-    video_config.start_bitrate = 1000000;
-    video_config.max_qp = 56;
-    video_config.min_qp = 0;
-    video_config.max_frame_rate = 30;
-    video_config.max_number_of_video_buffers_used = 1;
-    video_config.codec = CODEC_VIDEO_VP8;
-    CastInitializationStatus status = STATUS_VIDEO_UNINITIALIZED;
+
+    ASSERT_EQ(operational_status_, STATUS_UNINITIALIZED);
 
     if (external) {
-      test::FakeVideoEncodeAccelerator* fake_vea =
-          new test::FakeVideoEncodeAccelerator(
-              task_runner_, &stored_bitrates_);
-      fake_vea->SetWillInitializationSucceed(expect_init_success);
-      scoped_ptr<VideoEncodeAccelerator> fake_vea_owner(fake_vea);
-      video_sender_.reset(
-          new PeerVideoSender(cast_environment_,
-                              video_config,
-                              base::Bind(&SaveInitializationStatus,
-                                         &status),
-                              base::Bind(&CreateVideoEncodeAccelerator,
-                                         task_runner_,
-                                         base::Passed(&fake_vea_owner)),
-                              base::Bind(&CreateSharedMemory),
-                              transport_sender_.get()));
+      vea_factory_.SetInitializationWillSucceed(expect_init_success);
+      video_sender_.reset(new PeerVideoSender(
+          cast_environment_,
+          video_config,
+          base::Bind(&SaveOperationalStatus, &operational_status_),
+          base::Bind(
+              &FakeVideoEncodeAcceleratorFactory::CreateVideoEncodeAccelerator,
+              base::Unretained(&vea_factory_)),
+          base::Bind(&FakeVideoEncodeAcceleratorFactory::CreateSharedMemory,
+                     base::Unretained(&vea_factory_)),
+          transport_sender_.get()));
     } else {
-      video_sender_.reset(
-          new PeerVideoSender(cast_environment_,
-                              video_config,
-                              base::Bind(&SaveInitializationStatus,
-                                         &status),
-                              CreateDefaultVideoEncodeAcceleratorCallback(),
-                              CreateDefaultVideoEncodeMemoryCallback(),
-                              transport_sender_.get()));
+      video_sender_.reset(new PeerVideoSender(
+          cast_environment_,
+          video_config,
+          base::Bind(&SaveOperationalStatus, &operational_status_),
+          CreateDefaultVideoEncodeAcceleratorCallback(),
+          CreateDefaultVideoEncodeMemoryCallback(),
+          transport_sender_.get()));
     }
     task_runner_->RunTasks();
-    return status;
   }
 
   scoped_refptr<media::VideoFrame> GetNewVideoFrame() {
@@ -245,13 +220,14 @@ class VideoSenderTest : public ::testing::Test {
     task_runner_->Sleep(base::TimeDelta::FromMilliseconds(during_ms));
   }
 
-  base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
+  base::SimpleTestTickClock* const testing_clock_;  // Owned by CastEnvironment.
+  const scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
+  const scoped_refptr<CastEnvironment> cast_environment_;
+  OperationalStatus operational_status_;
+  FakeVideoEncodeAcceleratorFactory vea_factory_;
   TestPacketSender transport_;
   scoped_ptr<CastTransportSenderImpl> transport_sender_;
-  scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   scoped_ptr<PeerVideoSender> video_sender_;
-  std::vector<uint32> stored_bitrates_;
-  scoped_refptr<CastEnvironment> cast_environment_;
   int last_pixel_value_;
   base::TimeTicks first_frame_timestamp_;
 
@@ -259,7 +235,9 @@ class VideoSenderTest : public ::testing::Test {
 };
 
 TEST_F(VideoSenderTest, BuiltInEncoder) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
   const base::TimeTicks reference_time = testing_clock_->NowTicks();
@@ -271,34 +249,65 @@ TEST_F(VideoSenderTest, BuiltInEncoder) {
 }
 
 TEST_F(VideoSenderTest, ExternalEncoder) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(true, true));
+  InitEncoder(true, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
+  // The SizeAdaptableExternalVideoEncoder initally reports STATUS_INITIALIZED
+  // so that frames will be sent to it.  Therefore, no encoder activity should
+  // have occurred at this point.  Send a frame to spurn creation of the
+  // underlying ExternalVideoEncoder instance.
+  if (vea_factory_.vea_response_count() == 0) {
+    video_sender_->InsertRawVideoFrame(GetNewVideoFrame(),
+                                       testing_clock_->NowTicks());
+    task_runner_->RunTasks();
+  }
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+  RunTasks(33);
+
+  // VideoSender created an encoder for 1280x720 frames, in order to provide the
+  // INITIALIZED status.
+  EXPECT_EQ(1, vea_factory_.vea_response_count());
+  EXPECT_EQ(3, vea_factory_.shm_response_count());
 
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
-  const base::TimeTicks reference_time = testing_clock_->NowTicks();
-  video_sender_->InsertRawVideoFrame(video_frame, reference_time);
-  task_runner_->RunTasks();
-  video_sender_->InsertRawVideoFrame(video_frame, reference_time);
-  task_runner_->RunTasks();
-  video_sender_->InsertRawVideoFrame(video_frame, reference_time);
-  task_runner_->RunTasks();
+  for (int i = 0; i < 3; ++i) {
+    const base::TimeTicks reference_time = testing_clock_->NowTicks();
+    video_sender_->InsertRawVideoFrame(video_frame, reference_time);
+    RunTasks(33);
+    // VideoSender re-created the encoder for the 320x240 frames we're
+    // providing.
+    EXPECT_EQ(1, vea_factory_.vea_response_count());
+    EXPECT_EQ(3, vea_factory_.shm_response_count());
+  }
 
-  // Fixed bitrate is used for external encoder. Bitrate is only once
-  // to the encoder.
-  EXPECT_EQ(1u, stored_bitrates_.size());
   video_sender_.reset(NULL);
   task_runner_->RunTasks();
+  EXPECT_EQ(1, vea_factory_.vea_response_count());
+  EXPECT_EQ(3, vea_factory_.shm_response_count());
 }
 
 TEST_F(VideoSenderTest, ExternalEncoderInitFails) {
-  EXPECT_EQ(STATUS_HW_VIDEO_ENCODER_NOT_SUPPORTED,
-            InitEncoder(true, false));
+  InitEncoder(true, false);
+
+  // The SizeAdaptableExternalVideoEncoder initally reports STATUS_INITIALIZED
+  // so that frames will be sent to it.  Send a frame to spurn creation of the
+  // underlying ExternalVideoEncoder instance, which should result in failure.
+  if (operational_status_ == STATUS_INITIALIZED ||
+      operational_status_ == STATUS_CODEC_REINIT_PENDING) {
+    video_sender_->InsertRawVideoFrame(GetNewVideoFrame(),
+                                       testing_clock_->NowTicks());
+    task_runner_->RunTasks();
+  }
+  EXPECT_EQ(STATUS_CODEC_INIT_FAILED, operational_status_);
+
   video_sender_.reset(NULL);
   task_runner_->RunTasks();
 }
 
 TEST_F(VideoSenderTest, RtcpTimer) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
 
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
@@ -322,7 +331,8 @@ TEST_F(VideoSenderTest, RtcpTimer) {
 }
 
 TEST_F(VideoSenderTest, ResendTimer) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
 
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
@@ -350,7 +360,9 @@ TEST_F(VideoSenderTest, ResendTimer) {
 }
 
 TEST_F(VideoSenderTest, LogAckReceivedEvent) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
   SimpleEventSubscriber event_subscriber;
   cast_environment_->Logging()->AddRawEventSubscriber(&event_subscriber);
 
@@ -382,7 +394,9 @@ TEST_F(VideoSenderTest, LogAckReceivedEvent) {
 }
 
 TEST_F(VideoSenderTest, StopSendingInTheAbsenceOfAck) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
   // Send a stream of frames and don't ACK; by default we shouldn't have more
   // than 4 frames in flight.
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
@@ -428,7 +442,9 @@ TEST_F(VideoSenderTest, StopSendingInTheAbsenceOfAck) {
 }
 
 TEST_F(VideoSenderTest, DuplicateAckRetransmit) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
   video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
   RunTasks(33);
@@ -468,7 +484,9 @@ TEST_F(VideoSenderTest, DuplicateAckRetransmit) {
 }
 
 TEST_F(VideoSenderTest, DuplicateAckRetransmitDoesNotCancelRetransmits) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
   video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
   RunTasks(33);
@@ -519,7 +537,9 @@ TEST_F(VideoSenderTest, DuplicateAckRetransmitDoesNotCancelRetransmits) {
 }
 
 TEST_F(VideoSenderTest, AcksCancelRetransmits) {
-  EXPECT_EQ(STATUS_VIDEO_INITIALIZED, InitEncoder(false, true));
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
   transport_.SetPause(true);
   scoped_refptr<media::VideoFrame> video_frame = GetLargeNewVideoFrame();
   video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
@@ -534,6 +554,13 @@ TEST_F(VideoSenderTest, AcksCancelRetransmits) {
   transport_.SetPause(false);
   RunTasks(33);
   EXPECT_EQ(0, transport_.number_of_rtp_packets());
+}
+
+TEST_F(VideoSenderTest, CheckVideoFrameFactoryIsNull) {
+  InitEncoder(false, true);
+  ASSERT_EQ(STATUS_INITIALIZED, operational_status_);
+
+  EXPECT_EQ(nullptr, video_sender_->CreateVideoFrameFactory().get());
 }
 
 }  // namespace cast

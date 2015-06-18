@@ -12,17 +12,32 @@ namespace views {
 // static
 const char Separator::kViewClassName[] = "Separator";
 
-// The separator height in pixels.
-const int kSeparatorHeight = 1;
+// The separator size in pixels.
+const int kSeparatorSize = 1;
 
 // Default color of the separator.
 const SkColor kDefaultColor = SkColorSetARGB(255, 233, 233, 233);
 
-Separator::Separator(Orientation orientation) : orientation_(orientation) {
+Separator::Separator(Orientation orientation)
+    : orientation_(orientation),
+      color_(kDefaultColor),
+      size_(kSeparatorSize) {
   SetFocusable(false);
 }
 
 Separator::~Separator() {
+}
+
+void Separator::SetColor(SkColor color) {
+  color_ = color;
+  SchedulePaint();
+}
+
+void Separator::SetPreferredSize(int size) {
+  if (size != size_) {
+    size_ = size;
+    PreferredSizeChanged();
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -30,16 +45,16 @@ Separator::~Separator() {
 
 gfx::Size Separator::GetPreferredSize() const {
   if (orientation_ == HORIZONTAL)
-    return gfx::Size(width(), kSeparatorHeight);
-  return gfx::Size(kSeparatorHeight, height());
+    return gfx::Size(width(), size_);
+  return gfx::Size(size_, height());
 }
 
 void Separator::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_SPLITTER;
 }
 
-void Separator::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
-  canvas->FillRect(bounds(), kDefaultColor);
+void Separator::OnPaint(gfx::Canvas* canvas) {
+  canvas->FillRect(GetContentsBounds(), color_);
 }
 
 const char* Separator::GetClassName() const {

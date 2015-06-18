@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/gl/gl_context_cgl.h"
 #include "ui/gl/gl_context_osmesa.h"
 #include "ui/gl/gl_context_stub.h"
@@ -24,6 +24,7 @@ scoped_refptr<GLContext> GLContext::CreateGLContext(
   TRACE_EVENT0("gpu", "GLContext::CreateGLContext");
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
+    case kGLImplementationDesktopGLCoreProfile:
     case kGLImplementationAppleGL: {
       scoped_refptr<GLContext> context;
       // Note that with virtualization we might still be able to make current

@@ -24,7 +24,9 @@ PepperVideoDestinationHost::PepperVideoDestinationHost(RendererPpapiHost* host,
                                                        PP_Instance instance,
                                                        PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
-      renderer_ppapi_host_(host),
+#if DCHECK_IS_ON()
+      has_received_frame_(false),
+#endif
       weak_factory_(this) {}
 
 PepperVideoDestinationHost::~PepperVideoDestinationHost() {}
@@ -80,13 +82,18 @@ int32_t PepperVideoDestinationHost::OnHostMsgPutFrame(
   if (!frame_writer_.get())
     return PP_ERROR_FAILED;
 
-  // Convert PP_TimeTicks (a double, in seconds) to a TimeDelta (int64,
-  // microseconds) and then to a video timestamp (int64, nanoseconds). All times
-  // are relative to the Unix Epoch so don't subtract it to get a delta.
-  base::TimeDelta time_delta =
-      base::Time::FromDoubleT(timestamp) - base::Time();
-  int64_t timestamp_ns =
-      time_delta.InMicroseconds() * base::Time::kNanosecondsPerMicrosecond;
+  // Convert PP_TimeTicks (a double, in seconds) to a video timestamp (int64,
+  // nanoseconds).
+  const int64_t timestamp_ns =
+      static_cast<int64_t>(timestamp * base::Time::kNanosecondsPerSecond);
+  // Check that timestamps are strictly increasing.
+#if DCHECK_IS_ON()
+  if (has_received_frame_)
+    DCHECK_GT(timestamp_ns, previous_timestamp_ns_);
+  has_received_frame_ = true;
+  previous_timestamp_ns_ = timestamp_ns;
+#endif
+
   frame_writer_->PutFrame(image_data_impl, timestamp_ns);
 
   return PP_OK;

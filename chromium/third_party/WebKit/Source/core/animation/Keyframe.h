@@ -5,27 +5,29 @@
 #ifndef Keyframe_h
 #define Keyframe_h
 
-#include "core/CSSPropertyNames.h"
+#include "core/CoreExport.h"
 #include "core/animation/AnimationEffect.h"
-#include "core/animation/AnimationNode.h"
+#include "core/animation/EffectModel.h"
+#include "core/animation/PropertyHandle.h"
 #include "core/animation/animatable/AnimatableValue.h"
 
 namespace blink {
 
-using PropertySet = HashSet<CSSPropertyID>;
+using PropertyHandleSet = HashSet<PropertyHandle>;
 
 class Element;
+class ComputedStyle;
 
 // FIXME: Make Keyframe immutable
-class Keyframe : public RefCountedWillBeGarbageCollectedFinalized<Keyframe> {
+class CORE_EXPORT Keyframe : public RefCountedWillBeGarbageCollectedFinalized<Keyframe> {
 public:
     virtual ~Keyframe() { }
 
     void setOffset(double offset) { m_offset = offset; }
     double offset() const { return m_offset; }
 
-    void setComposite(AnimationEffect::CompositeOperation composite) { m_composite = composite; }
-    AnimationEffect::CompositeOperation composite() const { return m_composite; }
+    void setComposite(EffectModel::CompositeOperation composite) { m_composite = composite; }
+    EffectModel::CompositeOperation composite() const { return m_composite; }
 
     void setEasing(PassRefPtr<TimingFunction> easing) { m_easing = easing; }
     TimingFunction& easing() const { return *m_easing; }
@@ -35,7 +37,7 @@ public:
         return a->offset() < b->offset();
     }
 
-    virtual PropertySet properties() const = 0;
+    virtual PropertyHandleSet properties() const = 0;
 
     virtual PassRefPtrWillBeRawPtr<Keyframe> clone() const = 0;
     PassRefPtrWillBeRawPtr<Keyframe> cloneWithOffset(double offset) const
@@ -48,44 +50,47 @@ public:
     virtual bool isAnimatableValueKeyframe() const { return false; }
     virtual bool isStringKeyframe() const { return false; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     class PropertySpecificKeyframe : public NoBaseWillBeGarbageCollectedFinalized<PropertySpecificKeyframe> {
     public:
         virtual ~PropertySpecificKeyframe() { }
         double offset() const { return m_offset; }
         TimingFunction& easing() const { return *m_easing; }
-        AnimationEffect::CompositeOperation composite() const { return m_composite; }
+        EffectModel::CompositeOperation composite() const { return m_composite; }
         virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> cloneWithOffset(double offset) const = 0;
 
+        // FIXME: Remove this once CompositorAnimations no longer depends on AnimatableValues
+        virtual void populateAnimatableValue(CSSPropertyID, Element&, const ComputedStyle* baseStyle) const { }
         virtual const PassRefPtrWillBeRawPtr<AnimatableValue> getAnimatableValue() const = 0;
 
         virtual bool isAnimatableValuePropertySpecificKeyframe() const { return false; }
-        virtual bool isStringPropertySpecificKeyframe() const { return false; }
+        virtual bool isCSSPropertySpecificKeyframe() const { return false; }
+        virtual bool isSVGPropertySpecificKeyframe() const { return false; }
 
         virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const = 0;
-        virtual PassRefPtrWillBeRawPtr<Interpolation> createInterpolation(CSSPropertyID, blink::Keyframe::PropertySpecificKeyframe* end, Element*) const = 0;
+        virtual PassRefPtrWillBeRawPtr<Interpolation> maybeCreateInterpolation(PropertyHandle, Keyframe::PropertySpecificKeyframe& end, Element*, const ComputedStyle* baseStyle) const = 0;
 
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     protected:
-        PropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, AnimationEffect::CompositeOperation);
+        PropertySpecificKeyframe(double offset, PassRefPtr<TimingFunction> easing, EffectModel::CompositeOperation);
 
         double m_offset;
         RefPtr<TimingFunction> m_easing;
-        AnimationEffect::CompositeOperation m_composite;
+        EffectModel::CompositeOperation m_composite;
     };
 
-    virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> createPropertySpecificKeyframe(CSSPropertyID) const = 0;
+    virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> createPropertySpecificKeyframe(PropertyHandle) const = 0;
 
 protected:
     Keyframe()
         : m_offset(nullValue())
-        , m_composite(AnimationEffect::CompositeReplace)
+        , m_composite(EffectModel::CompositeReplace)
         , m_easing(LinearTimingFunction::shared())
     {
     }
-    Keyframe(double offset, AnimationEffect::CompositeOperation composite, PassRefPtr<TimingFunction> easing)
+    Keyframe(double offset, EffectModel::CompositeOperation composite, PassRefPtr<TimingFunction> easing)
         : m_offset(offset)
         , m_composite(composite)
         , m_easing(easing)
@@ -93,10 +98,10 @@ protected:
     }
 
     double m_offset;
-    AnimationEffect::CompositeOperation m_composite;
+    EffectModel::CompositeOperation m_composite;
     RefPtr<TimingFunction> m_easing;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // Keyframe_h

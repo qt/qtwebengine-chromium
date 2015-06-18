@@ -46,8 +46,6 @@ class CC_EXPORT ContentLayer : public TiledLayer {
 
   void SetContentsOpaque(bool contents_opaque) override;
 
-  bool SupportsLCDText() const override;
-
   skia::RefPtr<SkPicture> GetPicture() const override;
 
   void OnOutputSurfaceCreated() override;
@@ -65,11 +63,8 @@ class CC_EXPORT ContentLayer : public TiledLayer {
   // TiledLayer implementation.
   void CreateUpdaterIfNeeded() override;
 
-  void UpdateCanUseLCDText();
-
   ContentLayerClient* client_;
   scoped_refptr<ContentLayerUpdater> updater_;
-  bool can_use_lcd_text_last_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentLayer);
 };

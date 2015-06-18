@@ -4,6 +4,7 @@
 
 #include "build/build_config.h"
 
+#include "base/single_thread_task_runner.h"
 #include "ipc/ipc_test_base.h"
 
 #include "base/command_line.h"
@@ -22,8 +23,7 @@ std::string IPCTestBase::GetChannelName(const std::string& test_client_name) {
   return test_client_name + "__Channel";
 }
 
-IPCTestBase::IPCTestBase()
-    : client_process_(base::kNullProcessHandle) {
+IPCTestBase::IPCTestBase() {
 }
 
 IPCTestBase::~IPCTestBase() {
@@ -104,8 +104,8 @@ std::string IPCTestBase::GetTestMainName() const {
 }
 
 bool IPCTestBase::DidStartClient() {
-  DCHECK_NE(base::kNullProcessHandle, client_process_);
-  return client_process_ != base::kNullProcessHandle;
+  DCHECK(client_process_.IsValid());
+  return client_process_.IsValid();
 }
 
 #if defined(OS_POSIX)
@@ -117,7 +117,7 @@ bool IPCTestBase::StartClient() {
 }
 
 bool IPCTestBase::StartClientWithFD(int ipcfd) {
-  DCHECK_EQ(client_process_, base::kNullProcessHandle);
+  DCHECK(!client_process_.IsValid());
 
   base::FileHandleMappingVector fds_to_map;
   if (ipcfd > -1)
@@ -133,7 +133,7 @@ bool IPCTestBase::StartClientWithFD(int ipcfd) {
 #elif defined(OS_WIN)
 
 bool IPCTestBase::StartClient() {
-  DCHECK_EQ(client_process_, base::kNullProcessHandle);
+  DCHECK(!client_process_.IsValid());
   client_process_ = SpawnChild(GetTestMainName());
   return DidStartClient();
 }
@@ -141,12 +141,12 @@ bool IPCTestBase::StartClient() {
 #endif
 
 bool IPCTestBase::WaitForClientShutdown() {
-  DCHECK(client_process_ != base::kNullProcessHandle);
+  DCHECK(client_process_.IsValid());
 
-  bool rv = base::WaitForSingleProcess(client_process_,
-                                       base::TimeDelta::FromSeconds(5));
-  base::CloseProcessHandle(client_process_);
-  client_process_ = base::kNullProcessHandle;
+  int exit_code;
+  bool rv = client_process_.WaitForExitWithTimeout(
+      base::TimeDelta::FromSeconds(5), &exit_code);
+  client_process_.Close();
   return rv;
 }
 
@@ -154,12 +154,12 @@ IPC::ChannelHandle IPCTestBase::GetTestChannelHandle() {
   return GetChannelName(test_client_name_);
 }
 
-scoped_refptr<base::TaskRunner> IPCTestBase::task_runner() {
-  return message_loop_->message_loop_proxy();
+scoped_refptr<base::SequencedTaskRunner> IPCTestBase::task_runner() {
+  return message_loop_->task_runner();
 }
 
 scoped_ptr<IPC::ChannelFactory> IPCTestBase::CreateChannelFactory(
     const IPC::ChannelHandle& handle,
-    base::TaskRunner* runner) {
+    base::SequencedTaskRunner* runner) {
   return IPC::ChannelFactory::Create(handle, IPC::Channel::MODE_SERVER);
 }

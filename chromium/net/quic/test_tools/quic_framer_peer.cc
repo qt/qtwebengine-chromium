@@ -31,8 +31,9 @@ void QuicFramerPeer::SetLastSequenceNumber(
   framer->last_sequence_number_ = packet_sequence_number;
 }
 
-void QuicFramerPeer::SetIsServer(QuicFramer* framer, bool is_server) {
-  framer->is_server_ = is_server;
+void QuicFramerPeer::SetPerspective(QuicFramer* framer,
+                                    Perspective perspective) {
+  framer->perspective_ = perspective;
 }
 
 void QuicFramerPeer::SwapCrypters(QuicFramer* framer1, QuicFramer* framer2) {
@@ -54,6 +55,12 @@ void QuicFramerPeer::SwapCrypters(QuicFramer* framer1, QuicFramer* framer2) {
   framer2->alternative_decrypter_latch_ =
       framer1->alternative_decrypter_latch_;
   framer1->alternative_decrypter_latch_ = framer2_latch;
+}
+
+// static.
+QuicEncrypter* QuicFramerPeer::GetEncrypter(QuicFramer* framer,
+                                            EncryptionLevel level) {
+  return framer->encrypter_[level].get();
 }
 
 }  // namespace test

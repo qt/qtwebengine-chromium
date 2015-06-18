@@ -16,4 +16,8 @@ KeyboardDevice::KeyboardDevice(int id,
     : InputDevice(id, type, name) {
 }
 
+KeyboardDevice::KeyboardDevice(const InputDevice& input_device)
+    : InputDevice(input_device) {
+}
+
 }  // namespace ui

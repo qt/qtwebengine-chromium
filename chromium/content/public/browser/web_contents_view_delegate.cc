@@ -11,8 +11,12 @@ namespace content {
 WebContentsViewDelegate::~WebContentsViewDelegate() {
 }
 
+gfx::NativeWindow WebContentsViewDelegate::GetNativeWindow() {
+  return nullptr;
+}
+
 WebDragDestDelegate* WebContentsViewDelegate::GetDragDestDelegate() {
-  return NULL;
+  return nullptr;
 }
 
 void WebContentsViewDelegate::ShowContextMenu(
@@ -49,7 +53,7 @@ void WebContentsViewDelegate::SizeChanged(const gfx::Size& size) {
 
 void* WebContentsViewDelegate::CreateRenderWidgetHostViewDelegate(
     RenderWidgetHost* render_widget_host) {
-  return NULL;
+  return nullptr;
 }
 
 }  // namespace content

@@ -1,4 +1,8 @@
-# GYP file to build various tools.
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+    # GYP file to build various tools.
 #
 # To build on Linux:
 #  ./gyp_skia tools.gyp && make tools
@@ -13,23 +17,25 @@
       'target_name': 'tools',
       'type': 'none',
       'dependencies': [
-        'bbh_shootout',
         'bench_pictures',
+        'chrome_fuzz',
         'dump_record',
         'filter',
         'gpuveto',
         'lua_app',
         'lua_pictures',
+        'imgconv',
         'pinspect',
         'render_pdfs',
         'render_pictures',
         'skdiff',
         'skhello',
+        'skp2svg',
         'skpdiff',
         'skpinfo',
         'skpmaker',
-        'skimage',
         'test_image_decoder',
+        'test_public_includes',
       ],
       'conditions': [
         ['skia_shared_lib',
@@ -41,21 +47,15 @@
         ],
       ],
     },
-    {  # This would go in gm.gyp, but it's also used by skimage below.
-      'target_name': 'gm_expectations',
-      'type': 'static_library',
-      'include_dirs' : [ '../src/utils/' ],
+    {
+      'target_name': 'chrome_fuzz',
+      'type': 'executable',
       'sources': [
-        '../gm/gm_expectations.cpp',
+        '../tools/chrome_fuzz.cpp',
       ],
       'dependencies': [
-        'jsoncpp.gyp:jsoncpp',
-        'sk_tool_utils',
         'skia_lib.gyp:skia_lib',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [ '../gm/' ],
-      },
     },
     {
       'target_name': 'crash_handler',
@@ -65,6 +65,12 @@
         'direct_dependent_settings': {
           'include_dirs': [ '../tools' ],
         },
+        'conditions': [
+          [ 'skia_is_bot', {
+            'defines': [ 'SK_CRASH_HANDLER' ],
+          }],
+        ],
+
         'all_dependent_settings': {
           'msvs_settings': {
             'VCLinkerTool': {
@@ -247,40 +253,12 @@
       'target_name': 'skhello',
       'type': 'executable',
       'dependencies': [
-        'skia_lib.gyp:skia_lib',
-      ],
-      'conditions': [
-        [ 'skia_os == "nacl"', {
-          'sources': [
-            '../platform_tools/nacl/src/nacl_hello.cpp',
-          ],
-        }, {
-          'sources': [
-            '../tools/skhello.cpp',
-          ],
-          'dependencies': [
-            'flags.gyp:flags',
-            'pdf.gyp:pdf',
-          ],
-        }],
-      ],
-    },
-    {
-      'target_name': 'skimage',
-      'type': 'executable',
-      'sources': [
-        '../tools/skimage_main.cpp',
-      ],
-      'include_dirs': [
-        # For SkBitmapHasher.h
-        '../src/utils/',
-        '../tools/',
-      ],
-      'dependencies': [
-        'gm_expectations',
         'flags.gyp:flags',
-        'jsoncpp.gyp:jsoncpp',
+        'pdf.gyp:pdf',
         'skia_lib.gyp:skia_lib',
+      ],
+      'sources': [
+        '../tools/skhello.cpp',
       ],
     },
     {
@@ -295,6 +273,26 @@
       'dependencies': [
         'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
+      ],
+    },
+    {
+      # Superseded by dm, should be removed.
+      'target_name': 'skp2svg',
+      'type': 'executable',
+      'sources': [
+        '../src/svg/skp2svg.cpp',
+        '../tools/LazyDecodeBitmap.cpp',
+      ],
+      'include_dirs': [
+        '../src/core/',
+        '../src/lazy/',
+        '../tools/',
+      ],
+      'dependencies': [
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+        'svg.gyp:svg',
+        'xml.gyp:xml',
       ],
     },
     {
@@ -473,6 +471,9 @@
             'dependencies': [
               'gputest.gyp:skgputest',
             ],
+            'export_dependent_settings': [
+                'gputest.gyp:skgputest',
+            ],
           },
         ],
       ],
@@ -560,23 +561,14 @@
       ],
     },
     {
-      'target_name': 'bbh_shootout',
+      'target_name': 'imgconv',
       'type': 'executable',
-      'include_dirs': [
-        '../bench',
-        '../tools/'
-      ],
       'sources': [
-        '../tools/bbh_shootout.cpp',
-
-        # Bench code:
+        '../tools/imgconv.cpp',
       ],
       'dependencies': [
-        'timer',
         'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
-        'tools.gyp:picture_renderer',
-        'tools.gyp:picture_utils',
       ],
     },
     {
@@ -620,6 +612,78 @@
       'direct_dependent_settings': {
         'include_dirs': [ '../tools', ],
       },
+    },
+    {
+      'target_name': 'test_public_includes',
+      'type': 'static_library',
+      # Ensure that our public headers don't have unused params so that clients
+      # (e.g. Android) that include us can build with these warnings enabled
+      'cflags!': [ '-Wno-unused-parameter' ],
+      'variables': {
+        'includes_to_test': [
+          '<(skia_include_path)/animator',
+          '<(skia_include_path)/c',
+          '<(skia_include_path)/config',
+          '<(skia_include_path)/core',
+          '<(skia_include_path)/effects',
+          '<(skia_include_path)/gpu',
+          '<(skia_include_path)/images',
+          '<(skia_include_path)/pathops',
+          '<(skia_include_path)/pipe',
+          '<(skia_include_path)/ports',
+          '<(skia_include_path)/svg/parser',
+          '<(skia_include_path)/utils',
+          '<(skia_include_path)/views',
+          '<(skia_include_path)/xml',
+        ],
+        'paths_to_ignore': [
+          '<(skia_include_path)/gpu/gl/GrGLConfig_chrome.h',
+          '<(skia_include_path)/ports/SkAtomics_std.h',
+          '<(skia_include_path)/ports/SkAtomics_atomic.h',
+          '<(skia_include_path)/ports/SkAtomics_sync.h',
+          '<(skia_include_path)/ports/SkMutex_pthread.h',
+          '<(skia_include_path)/ports/SkMutex_win.h',
+          '<(skia_include_path)/ports/SkTypeface_mac.h',
+          '<(skia_include_path)/ports/SkTypeface_win.h',
+          '<(skia_include_path)/utils/ios',
+          '<(skia_include_path)/utils/mac',
+          '<(skia_include_path)/utils/win',
+          '<(skia_include_path)/utils/SkDebugUtils.h',
+          '<(skia_include_path)/utils/SkJSONCPP.h',
+          '<(skia_include_path)/views/animated',
+          '<(skia_include_path)/views/SkOSWindow_Android.h',
+          '<(skia_include_path)/views/SkOSWindow_iOS.h',
+          '<(skia_include_path)/views/SkOSWindow_Mac.h',
+          '<(skia_include_path)/views/SkOSWindow_SDL.h',
+          '<(skia_include_path)/views/SkOSWindow_Unix.h',
+          '<(skia_include_path)/views/SkOSWindow_Win.h',
+          '<(skia_include_path)/views/SkWindow.h',
+        ],
+      },
+      'include_dirs': [
+        '<@(includes_to_test)',
+      ],
+      'sources': [
+        # unused_param_test.cpp is generated by the action below.
+        '<(INTERMEDIATE_DIR)/test_public_includes.cpp',
+      ],
+      'actions': [
+        {
+          'action_name': 'generate_includes_cpp',
+          'inputs': [
+            '../tools/generate_includes_cpp.py',
+            '<@(includes_to_test)',
+            # This causes the gyp generator on mac to fail
+            #'<@(paths_to_ignore)',
+          ],
+          'outputs': [
+            '<(INTERMEDIATE_DIR)/test_public_includes.cpp',
+          ],
+          'action': ['python', '../tools/generate_includes_cpp.py',
+                               '--ignore', '<(paths_to_ignore)',
+                               '<@(_outputs)', '<@(includes_to_test)'],
+        },
+      ],
     },
   ],
   'conditions': [

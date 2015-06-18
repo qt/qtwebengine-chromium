@@ -7,9 +7,12 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -30,13 +33,15 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/process/kill.h"
+#include "base/process/process.h"
 #include "base/process/process_metrics.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/third_party/valgrind/valgrind.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "build/build_config.h"
 
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
@@ -184,6 +189,54 @@ void ResetChildSignalHandlersToDefaults(void) {
 #endif  // !defined(OS_LINUX) ||
         // (!defined(__i386__) && !defined(__x86_64__) && !defined(__arm__))
 
+#if defined(OS_LINUX)
+bool IsRunningOnValgrind() {
+  return RUNNING_ON_VALGRIND;
+}
+
+// This function runs on the stack specified on the clone call. It uses longjmp
+// to switch back to the original stack so the child can return from sys_clone.
+int CloneHelper(void* arg) {
+  jmp_buf* env_ptr = reinterpret_cast<jmp_buf*>(arg);
+  longjmp(*env_ptr, 1);
+
+  // Should not be reached.
+  RAW_CHECK(false);
+  return 1;
+}
+
+// This function is noinline to ensure that stack_buf is below the stack pointer
+// that is saved when setjmp is called below. This is needed because when
+// compiled with FORTIFY_SOURCE, glibc's longjmp checks that the stack is moved
+// upwards. See crbug.com/442912 for more details.
+#if defined(ADDRESS_SANITIZER)
+// Disable AddressSanitizer instrumentation for this function to make sure
+// |stack_buf| is allocated on thread stack instead of ASan's fake stack.
+// Under ASan longjmp() will attempt to clean up the area between the old and
+// new stack pointers and print a warning that may confuse the user.
+__attribute__((no_sanitize_address))
+#endif
+NOINLINE pid_t CloneAndLongjmpInChild(unsigned long flags,
+                                      pid_t* ptid,
+                                      pid_t* ctid,
+                                      jmp_buf* env) {
+  // We use the libc clone wrapper instead of making the syscall
+  // directly because making the syscall may fail to update the libc's
+  // internal pid cache. The libc interface unfortunately requires
+  // specifying a new stack, so we use setjmp/longjmp to emulate
+  // fork-like behavior.
+  char stack_buf[PTHREAD_STACK_MIN];
+#if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) || \
+    defined(ARCH_CPU_MIPS64_FAMILY) || defined(ARCH_CPU_MIPS_FAMILY)
+  // The stack grows downward.
+  void* stack = stack_buf + sizeof(stack_buf);
+#else
+#error "Unsupported architecture"
+#endif
+  return clone(&CloneHelper, stack, flags, env, ptid, nullptr, ctid);
+}
+#endif  // defined(OS_LINUX)
+
 }  // anonymous namespace
 
 // Functor for |ScopedDIR| (below).
@@ -277,9 +330,13 @@ void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
   }
 }
 
-bool LaunchProcess(const std::vector<std::string>& argv,
-                   const LaunchOptions& options,
-                   ProcessHandle* process_handle) {
+Process LaunchProcess(const CommandLine& cmdline,
+                      const LaunchOptions& options) {
+  return LaunchProcess(cmdline.argv(), options);
+}
+
+Process LaunchProcess(const std::vector<std::string>& argv,
+                      const LaunchOptions& options) {
   size_t fd_shuffle_size = 0;
   if (options.fds_to_remap) {
     fd_shuffle_size = options.fds_to_remap->size();
@@ -290,7 +347,12 @@ bool LaunchProcess(const std::vector<std::string>& argv,
   fd_shuffle1.reserve(fd_shuffle_size);
   fd_shuffle2.reserve(fd_shuffle_size);
 
-  scoped_ptr<char*[]> argv_cstr(new char*[argv.size() + 1]);
+  scoped_ptr<char* []> argv_cstr(new char* [argv.size() + 1]);
+  for (size_t i = 0; i < argv.size(); i++) {
+    argv_cstr[i] = const_cast<char*>(argv[i].c_str());
+  }
+  argv_cstr[argv.size()] = NULL;
+
   scoped_ptr<char*[]> new_environ;
   char* const empty_environ = NULL;
   char* const* old_environ = GetEnvironment();
@@ -303,6 +365,11 @@ bool LaunchProcess(const std::vector<std::string>& argv,
   sigfillset(&full_sigset);
   const sigset_t orig_sigmask = SetSignalMask(full_sigset);
 
+  const char* current_directory = nullptr;
+  if (!options.current_directory.empty()) {
+    current_directory = options.current_directory.value().c_str();
+  }
+
   pid_t pid;
 #if defined(OS_LINUX)
   if (options.clone_flags) {
@@ -311,7 +378,17 @@ bool LaunchProcess(const std::vector<std::string>& argv,
     // and that signal handling follows the process-creation rules.
     RAW_CHECK(
         !(options.clone_flags & (CLONE_SIGHAND | CLONE_THREAD | CLONE_VM)));
-    pid = syscall(__NR_clone, options.clone_flags, 0, 0, 0);
+
+    // We specify a null ptid and ctid.
+    RAW_CHECK(
+        !(options.clone_flags &
+          (CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | CLONE_PARENT_SETTID)));
+
+    // Since we use waitpid, we do not support custom termination signals in the
+    // clone flags.
+    RAW_CHECK((options.clone_flags & 0xff) == 0);
+
+    pid = ForkWithFlags(options.clone_flags | SIGCHLD, nullptr, nullptr);
   } else
 #endif
   {
@@ -325,7 +402,7 @@ bool LaunchProcess(const std::vector<std::string>& argv,
 
   if (pid < 0) {
     DPLOG(ERROR) << "fork";
-    return false;
+    return Process();
   } else if (pid == 0) {
     // Child process
 
@@ -446,11 +523,23 @@ bool LaunchProcess(const std::vector<std::string>& argv,
         RAW_LOG(FATAL, "prctl(PR_SET_NO_NEW_PRIVS) failed");
       }
     }
+
+    if (options.kill_on_parent_death) {
+      if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0) {
+        RAW_LOG(ERROR, "prctl(PR_SET_PDEATHSIG) failed");
+        _exit(127);
+      }
+    }
 #endif
 
-    for (size_t i = 0; i < argv.size(); i++)
-      argv_cstr[i] = const_cast<char*>(argv[i].c_str());
-    argv_cstr[argv.size()] = NULL;
+    if (current_directory != nullptr) {
+      RAW_CHECK(chdir(current_directory) == 0);
+    }
+
+    if (options.pre_exec_delegate != nullptr) {
+      options.pre_exec_delegate->RunAsyncSafe();
+    }
+
     execvp(argv_cstr[0], argv_cstr.get());
 
     RAW_LOG(ERROR, "LaunchProcess: failed to execvp:");
@@ -465,19 +554,9 @@ bool LaunchProcess(const std::vector<std::string>& argv,
       pid_t ret = HANDLE_EINTR(waitpid(pid, 0, 0));
       DPCHECK(ret > 0);
     }
-
-    if (process_handle)
-      *process_handle = pid;
   }
 
-  return true;
-}
-
-
-bool LaunchProcess(const CommandLine& cmdline,
-                   const LaunchOptions& options,
-                   ProcessHandle* process_handle) {
-  return LaunchProcess(cmdline.argv(), options, process_handle);
+  return Process(pid);
 }
 
 void RaiseProcessToHighPriority() {
@@ -612,7 +691,8 @@ static GetAppOutputInternalResult GetAppOutputInternal(
 
         // Always wait for exit code (even if we know we'll declare
         // GOT_MAX_OUTPUT).
-        bool success = WaitForExitCode(pid, exit_code);
+        Process process(pid);
+        bool success = process.WaitForExit(exit_code);
 
         // If we stopped because we read as much as we wanted, we return
         // GOT_MAX_OUTPUT (because the child may exit due to |SIGPIPE|).
@@ -660,5 +740,46 @@ bool GetAppOutputWithExitCode(const CommandLine& cl,
       exit_code);
   return result == EXECUTE_SUCCESS;
 }
+
+#if defined(OS_LINUX)
+pid_t ForkWithFlags(unsigned long flags, pid_t* ptid, pid_t* ctid) {
+  const bool clone_tls_used = flags & CLONE_SETTLS;
+  const bool invalid_ctid =
+      (flags & (CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID)) && !ctid;
+  const bool invalid_ptid = (flags & CLONE_PARENT_SETTID) && !ptid;
+
+  // We do not support CLONE_VM.
+  const bool clone_vm_used = flags & CLONE_VM;
+
+  if (clone_tls_used || invalid_ctid || invalid_ptid || clone_vm_used) {
+    RAW_LOG(FATAL, "Invalid usage of ForkWithFlags");
+  }
+
+  // Valgrind's clone implementation does not support specifiying a child_stack
+  // without CLONE_VM, so we cannot use libc's clone wrapper when running under
+  // Valgrind. As a result, the libc pid cache may be incorrect under Valgrind.
+  // See crbug.com/442817 for more details.
+  if (IsRunningOnValgrind()) {
+    // See kernel/fork.c in Linux. There is different ordering of sys_clone
+    // parameters depending on CONFIG_CLONE_BACKWARDS* configuration options.
+#if defined(ARCH_CPU_X86_64)
+    return syscall(__NR_clone, flags, nullptr, ptid, ctid, nullptr);
+#elif defined(ARCH_CPU_X86) || defined(ARCH_CPU_ARM_FAMILY) || \
+    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_MIPS64_FAMILY)
+    // CONFIG_CLONE_BACKWARDS defined.
+    return syscall(__NR_clone, flags, nullptr, ptid, nullptr, ctid);
+#else
+#error "Unsupported architecture"
+#endif
+  }
+
+  jmp_buf env;
+  if (setjmp(env) == 0) {
+    return CloneAndLongjmpInChild(flags, ptid, ctid, &env);
+  }
+
+  return 0;
+}
+#endif  // defined(OS_LINUX)
 
 }  // namespace base

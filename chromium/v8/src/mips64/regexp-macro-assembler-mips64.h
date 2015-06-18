@@ -17,7 +17,8 @@ namespace internal {
 #ifndef V8_INTERPRETED_REGEXP
 class RegExpMacroAssemblerMIPS: public NativeRegExpMacroAssembler {
  public:
-  RegExpMacroAssemblerMIPS(Mode mode, int registers_to_save, Zone* zone);
+  RegExpMacroAssemblerMIPS(Isolate* isolate, Zone* zone, Mode mode,
+                           int registers_to_save);
   virtual ~RegExpMacroAssemblerMIPS();
   virtual int stack_limit_slack();
   virtual void AdvanceCurrentPosition(int by);
@@ -89,9 +90,8 @@ class RegExpMacroAssemblerMIPS: public NativeRegExpMacroAssembler {
   // Called from RegExp if the stack-guard is triggered.
   // If the code object is relocated, the return address is fixed before
   // returning.
-  static int CheckStackGuardState(Address* return_address,
-                                  Code* re_code,
-                                  Address re_frame);
+  static int64_t CheckStackGuardState(Address* return_address, Code* re_code,
+                                      Address re_frame);
 
   void print_regexp_frame_constants();
 

@@ -231,7 +231,7 @@
 //
 //     At birth (in Database::runTransaction()):
 //     ====================================================
-//     Database                           // HeapDeque<Member<SQLTransactionBackend> > m_transactionQueue points to ...
+//     Database                           // HeapDeque<Member<SQLTransactionBackend>> m_transactionQueue points to ...
 //     --> SQLTransactionBackend          // Member<SQLTransaction> m_frontend points to ...
 //         --> SQLTransaction             // Member<SQLTransactionBackend> m_backend points to ...
 //             --> SQLTransactionBackend  // which is a circular reference.
@@ -367,7 +367,7 @@ SQLTransactionBackend::~SQLTransactionBackend()
     ASSERT(!m_sqliteTransaction);
 }
 
-void SQLTransactionBackend::trace(Visitor* visitor)
+DEFINE_TRACE(SQLTransactionBackend)
 {
     visitor->trace(m_frontend);
     visitor->trace(m_currentStatementBackend);

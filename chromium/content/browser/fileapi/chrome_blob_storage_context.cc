@@ -9,6 +9,7 @@
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 
@@ -24,8 +25,7 @@ const char kBlobStorageContextKeyName[] = "content_blob_storage_context";
 class BlobHandleImpl : public BlobHandle {
  public:
   explicit BlobHandleImpl(scoped_ptr<storage::BlobDataHandle> handle)
-      : handle_(handle.Pass()) {
-  }
+      : handle_(handle.Pass()) {}
 
   ~BlobHandleImpl() override {}
 
@@ -60,20 +60,41 @@ ChromeBlobStorageContext* ChromeBlobStorageContext::GetFor(
 }
 
 void ChromeBlobStorageContext::InitializeOnIOThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   context_.reset(new BlobStorageContext());
 }
 
 scoped_ptr<BlobHandle> ChromeBlobStorageContext::CreateMemoryBackedBlob(
     const char* data, size_t length) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   std::string uuid(base::GenerateGUID());
-  scoped_refptr<storage::BlobData> blob_data = new storage::BlobData(uuid);
-  blob_data->AppendData(data, length);
+  storage::BlobDataBuilder blob_data_builder(uuid);
+  blob_data_builder.AppendData(data, length);
 
   scoped_ptr<storage::BlobDataHandle> blob_data_handle =
-      context_->AddFinishedBlob(blob_data.get());
+      context_->AddFinishedBlob(&blob_data_builder);
+  if (!blob_data_handle)
+    return scoped_ptr<BlobHandle>();
+
+  scoped_ptr<BlobHandle> blob_handle(
+      new BlobHandleImpl(blob_data_handle.Pass()));
+  return blob_handle.Pass();
+}
+
+scoped_ptr<BlobHandle> ChromeBlobStorageContext::CreateFileBackedBlob(
+    const base::FilePath& path,
+    int64_t offset,
+    int64_t size,
+    const base::Time& expected_modification_time) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  std::string uuid(base::GenerateGUID());
+  storage::BlobDataBuilder blob_data_builder(uuid);
+  blob_data_builder.AppendFile(path, offset, size, expected_modification_time);
+
+  scoped_ptr<storage::BlobDataHandle> blob_data_handle =
+      context_->AddFinishedBlob(&blob_data_builder);
   if (!blob_data_handle)
     return scoped_ptr<BlobHandle>();
 

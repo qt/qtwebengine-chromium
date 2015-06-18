@@ -55,7 +55,10 @@ NET_EXPORT bool ParseSSLCipherString(const std::string& cipher_string,
 // Currently, this function follows these criteria:
 // 1) Only uses forward secure key exchanges
 // 2) Only uses AEADs
-NET_EXPORT_PRIVATE bool IsSecureTLSCipherSuite(uint16 cipher_suite);
+NET_EXPORT bool IsSecureTLSCipherSuite(uint16 cipher_suite);
+
+// Returns true if |cipher_suite| is suitable for use with False Start.
+NET_EXPORT bool IsFalseStartableTLSCipherSuite(uint16 cipher_suite);
 
 }  // namespace net
 

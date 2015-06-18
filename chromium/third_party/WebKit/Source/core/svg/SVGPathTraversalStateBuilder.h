@@ -22,43 +22,28 @@
 #define SVGPathTraversalStateBuilder_h
 
 #include "core/svg/SVGPathConsumer.h"
-#include "core/svg/SVGPoint.h"
+#include "platform/graphics/PathTraversalState.h"
 
 namespace blink {
 
-class PathTraversalState;
+class FloatPoint;
 
 class SVGPathTraversalStateBuilder final : public SVGPathConsumer {
 public:
-    SVGPathTraversalStateBuilder();
+    SVGPathTraversalStateBuilder(PathTraversalState::PathTraversalAction, float desiredLength = 0);
 
-    unsigned pathSegmentIndex();
+    unsigned pathSegmentIndex() const { return m_segmentIndex; }
     float totalLength();
     FloatPoint currentPoint();
 
-    void setCurrentTraversalState(PathTraversalState* traversalState) { m_traversalState = traversalState; }
-    void setDesiredLength(float);
     virtual void incrementPathSegmentCount() override;
     virtual bool continueConsuming() override;
-    virtual void cleanup() override { m_traversalState = 0; }
 
 private:
-    // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) override;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) override;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
-    virtual void closePath() override;
+    virtual void emitSegment(const PathSegmentData&) override;
 
-private:
-    // Not used for PathTraversalState.
-    virtual void lineToHorizontal(float, PathCoordinateMode) override { ASSERT_NOT_REACHED(); }
-    virtual void lineToVertical(float, PathCoordinateMode) override { ASSERT_NOT_REACHED(); }
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) override { ASSERT_NOT_REACHED(); }
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) override { ASSERT_NOT_REACHED(); }
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) override { ASSERT_NOT_REACHED(); }
-    virtual void arcTo(float, float, float, bool, bool, const FloatPoint&, PathCoordinateMode) override { ASSERT_NOT_REACHED(); }
-
-    PathTraversalState* m_traversalState;
+    PathTraversalState m_traversalState;
+    unsigned m_segmentIndex;
 };
 
 } // namespace blink

@@ -32,6 +32,7 @@
 #include "bindings/core/v8/V8GCForContextDispose.h"
 
 #include "bindings/core/v8/V8PerIsolateData.h"
+#include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 #include <v8.h>
@@ -48,7 +49,7 @@ void V8GCForContextDispose::notifyContextDisposed(bool isMainFrame)
 {
     m_didDisposeContextForMainFrame = isMainFrame;
     m_lastContextDisposalTime = WTF::currentTime();
-    V8PerIsolateData::mainThreadIsolate()->ContextDisposedNotification();
+    V8PerIsolateData::mainThreadIsolate()->ContextDisposedNotification(!isMainFrame);
     if (m_pseudoIdleTimer.isActive())
         m_pseudoIdleTimer.stop();
 }
@@ -69,7 +70,7 @@ V8GCForContextDispose& V8GCForContextDispose::instance()
 
 void V8GCForContextDispose::pseudoIdleTimerFired(Timer<V8GCForContextDispose>*)
 {
-    V8PerIsolateData::mainThreadIsolate()->IdleNotification(0);
+    V8PerIsolateData::mainThreadIsolate()->IdleNotificationDeadline(Platform::current()->monotonicallyIncreasingTime());
     reset();
 }
 

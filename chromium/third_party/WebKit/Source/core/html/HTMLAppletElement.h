@@ -35,7 +35,7 @@ public:
     static PassRefPtrWillBeRawPtr<HTMLAppletElement> create(Document&, bool createdByParser);
 
 protected:
-    virtual RenderPart* renderPartForJSBindings() const override;
+    virtual LayoutPart* layoutPartForJSBindings() const override;
 
 private:
     HTMLAppletElement(Document&, bool createdByParser);
@@ -44,10 +44,10 @@ private:
     virtual bool isURLAttribute(const Attribute&) const override;
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual RenderPart* existingRenderPart() const override;
+    virtual LayoutPart* existingLayoutPart() const override;
     virtual void updateWidgetInternal() override;
 
     bool canEmbedJava() const;

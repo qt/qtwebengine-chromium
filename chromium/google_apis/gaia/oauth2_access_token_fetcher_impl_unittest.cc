@@ -8,6 +8,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
@@ -61,11 +62,19 @@ class MockUrlFetcherFactory : public ScopedURLFetcherFactory,
   MockUrlFetcherFactory() : ScopedURLFetcherFactory(this) {}
   virtual ~MockUrlFetcherFactory() {}
 
-  MOCK_METHOD4(CreateURLFetcher,
+  MOCK_METHOD4(CreateURLFetcherMock,
                URLFetcher*(int id,
                            const GURL& url,
                            URLFetcher::RequestType request_type,
                            URLFetcherDelegate* d));
+
+  scoped_ptr<URLFetcher> CreateURLFetcher(int id,
+                                          const GURL& url,
+                                          URLFetcher::RequestType request_type,
+                                          URLFetcherDelegate* d) override {
+    return scoped_ptr<URLFetcher>(
+        CreateURLFetcherMock(id, url, request_type, d));
+  }
 };
 
 class MockOAuth2AccessTokenConsumer : public OAuth2AccessTokenConsumer {
@@ -85,12 +94,12 @@ class OAuth2AccessTokenFetcherImplTest : public testing::Test {
  public:
   OAuth2AccessTokenFetcherImplTest()
       : request_context_getter_(new net::TestURLRequestContextGetter(
-            base::MessageLoopProxy::current())),
+            base::ThreadTaskRunnerHandle::Get())),
         fetcher_(&consumer_, request_context_getter_.get(), "refresh_token") {
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual ~OAuth2AccessTokenFetcherImplTest() {}
+  ~OAuth2AccessTokenFetcherImplTest() override {}
 
   virtual TestURLFetcher* SetupGetAccessToken(bool fetch_succeeds,
                                               int response_code,
@@ -107,7 +116,7 @@ class OAuth2AccessTokenFetcherImplTest : public testing::Test {
     if (!body.empty())
       url_fetcher->SetResponseString(body);
 
-    EXPECT_CALL(factory_, CreateURLFetcher(_, url, _, _))
+    EXPECT_CALL(factory_, CreateURLFetcherMock(_, url, _, _))
         .WillOnce(Return(url_fetcher));
     return url_fetcher;
   }
@@ -199,7 +208,7 @@ TEST_F(OAuth2AccessTokenFetcherImplTest, DISABLED_MakeGetAccessTokenBody) {
 #endif  // defined(OS_WIN)
 TEST_F(OAuth2AccessTokenFetcherImplTest, MAYBE_ParseGetAccessTokenResponse) {
   {  // No body.
-    TestURLFetcher url_fetcher(0, GURL("www.google.com"), NULL);
+    TestURLFetcher url_fetcher(0, GURL("http://www.google.com"), NULL);
 
     std::string at;
     int expires_in;
@@ -209,7 +218,7 @@ TEST_F(OAuth2AccessTokenFetcherImplTest, MAYBE_ParseGetAccessTokenResponse) {
     EXPECT_TRUE(at.empty());
   }
   {  // Bad json.
-    TestURLFetcher url_fetcher(0, GURL("www.google.com"), NULL);
+    TestURLFetcher url_fetcher(0, GURL("http://www.google.com"), NULL);
     url_fetcher.SetResponseString("foo");
 
     std::string at;
@@ -220,7 +229,7 @@ TEST_F(OAuth2AccessTokenFetcherImplTest, MAYBE_ParseGetAccessTokenResponse) {
     EXPECT_TRUE(at.empty());
   }
   {  // Valid json: access token missing.
-    TestURLFetcher url_fetcher(0, GURL("www.google.com"), NULL);
+    TestURLFetcher url_fetcher(0, GURL("http://www.google.com"), NULL);
     url_fetcher.SetResponseString(kTokenResponseNoAccessToken);
 
     std::string at;
@@ -231,7 +240,7 @@ TEST_F(OAuth2AccessTokenFetcherImplTest, MAYBE_ParseGetAccessTokenResponse) {
     EXPECT_TRUE(at.empty());
   }
   {  // Valid json: all good.
-    TestURLFetcher url_fetcher(0, GURL("www.google.com"), NULL);
+    TestURLFetcher url_fetcher(0, GURL("http://www.google.com"), NULL);
     url_fetcher.SetResponseString(kValidTokenResponse);
 
     std::string at;
@@ -243,7 +252,7 @@ TEST_F(OAuth2AccessTokenFetcherImplTest, MAYBE_ParseGetAccessTokenResponse) {
     EXPECT_EQ(3600, expires_in);
   }
   {  // Valid json: invalid error response.
-    TestURLFetcher url_fetcher(0, GURL("www.google.com"), NULL);
+    TestURLFetcher url_fetcher(0, GURL("http://www.google.com"), NULL);
     url_fetcher.SetResponseString(kTokenResponseNoAccessToken);
 
     std::string error;
@@ -253,7 +262,7 @@ TEST_F(OAuth2AccessTokenFetcherImplTest, MAYBE_ParseGetAccessTokenResponse) {
     EXPECT_TRUE(error.empty());
   }
   {  // Valid json: error response.
-    TestURLFetcher url_fetcher(0, GURL("www.google.com"), NULL);
+    TestURLFetcher url_fetcher(0, GURL("http://www.google.com"), NULL);
     url_fetcher.SetResponseString(kValidFailureTokenResponse);
 
     std::string error;

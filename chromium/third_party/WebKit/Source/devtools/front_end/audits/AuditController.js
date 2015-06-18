@@ -75,10 +75,10 @@ WebInspector.AuditController.prototype = {
             if (++categoriesDone !== categories.length)
                 return;
             this._progress.done();
-            resultCallback(mainResourceURL, results)
+            resultCallback(mainResourceURL, results);
         }
 
-        var requests = target.networkLog.requests.slice();
+        var requests = target.networkLog.requests().slice();
         var compositeProgress = new WebInspector.CompositeProgress(this._progress);
         var subprogresses = [];
         for (var i = 0; i < categories.length; ++i)

@@ -14,7 +14,7 @@ initial
 // border-bottom-style
 // border-left-style
 // border-right-style
-// The order here must match the order of the EBorderStyle enum in RenderStyleConstants.h.
+// The order here must match the order of the EBorderStyle enum in ComputedStyleConstants.h.
 none
 hidden
 inset
@@ -204,7 +204,6 @@ destination-in
 destination-out
 destination-atop
 xor
-plus-darker
 // highlight
 plus-lighter
 //
@@ -222,7 +221,7 @@ bottom
 -webkit-baseline-middle
 //
 // text-align
-// The order here must match the order of the ETextAlign enum in RenderStyleConstants.h.
+// The order here must match the order of the ETextAlign enum in ComputedStyleConstants.h.
 //
 -webkit-auto
 left
@@ -247,7 +246,7 @@ outside
 inside
 //
 // list-style-type
-// The order here must match the order of the EListStyleType enum in RenderStyleConstants.h.
+// The order here must match the order of the EListStyleType enum in ComputedStyleConstants.h.
 //
 disc
 circle
@@ -332,7 +331,7 @@ katakana-iroha
 //none
 //
 // display
-// The order here must match the order of the EDisplay enum in RenderStyleConstants.h.
+// The order here must match the order of the EDisplay enum in ComputedStyleConstants.h.
 //
 inline
 block
@@ -359,7 +358,7 @@ inline-grid
 -webkit-inline-flex
 //
 // cursor
-// The order here must match the order of the ECursor enum in RenderStyleConstants.h.
+// The order here must match the order of the ECursor enum in ComputedStyleConstants.h.
 //
 auto
 crosshair
@@ -542,7 +541,6 @@ wrap-reverse
 
 // grid-auto-flow
 dense
-stack
 
 //
 // -webkit-user-modify
@@ -590,6 +588,7 @@ discard
 // word-break
 //
 break-all
+keep-all
 
 //
 // word-wrap
@@ -870,6 +869,12 @@ at
 
 alphabetic
 
+// (display-mode:) media feature
+fullscreen
+standalone
+minimal-ui
+browser
+
 // (pointer:) media feature
 // none
 coarse
@@ -943,13 +948,19 @@ markers
 // auto
 isolate
 
-// touch-action-delay
+// scroll-blocks-on
 // none
-script
+start-touch
+wheel-event
+scroll-event
 
 // touch-action
 pan-x
 pan-y
+pan-left
+pan-right
+pan-up
+pan-down
 manipulation
 
 // justify-items / justify-self
@@ -971,7 +982,7 @@ safe
 legacy
 
 // scroll-behavior
-instant
+// auto
 smooth
 
 // will-change
@@ -1028,6 +1039,7 @@ brightness
 contrast
 blur
 drop-shadow
+url
 
 // colors
 rgb
@@ -1040,23 +1052,26 @@ matrix
 matrix3d
 perspective
 rotate
-rotatex
-rotatey
-rotatez
+rotateX
+rotateY
+rotateZ
 rotate3d
 scale
-scalex
-scaley
-scalez
+scaleX
+scaleY
+scaleZ
 scale3d
 skew
-skewx
-skewy
+skewX
+skewY
 translate
-translatex
-translatey
-translatez
+translateX
+translateY
+translateZ
 translate3d
+
+// motion path
+path
 
 calc
 -webkit-calc

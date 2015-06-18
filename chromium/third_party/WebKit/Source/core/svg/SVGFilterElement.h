@@ -32,15 +32,17 @@
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
 class SVGFilterElement final : public SVGElement,
                                public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGFilterElement);
 public:
     DECLARE_NODE_FACTORY(SVGFilterElement);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void setFilterRes(unsigned x, unsigned y);
     void addClient(Node*);
@@ -60,24 +62,22 @@ private:
 
     virtual bool needsPendingResourceHandling() const override { return false; }
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     virtual bool selfHasRelativeLengths() const override;
 
-    RefPtr<SVGAnimatedLength> m_x;
-    RefPtr<SVGAnimatedLength> m_y;
-    RefPtr<SVGAnimatedLength> m_width;
-    RefPtr<SVGAnimatedLength> m_height;
-    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_filterUnits;
-    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_primitiveUnits;
-    RefPtr<SVGAnimatedIntegerOptionalInteger> m_filterRes;
+    RefPtrWillBeMember<SVGAnimatedLength> m_x;
+    RefPtrWillBeMember<SVGAnimatedLength> m_y;
+    RefPtrWillBeMember<SVGAnimatedLength> m_width;
+    RefPtrWillBeMember<SVGAnimatedLength> m_height;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_filterUnits;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_primitiveUnits;
+    RefPtrWillBeMember<SVGAnimatedIntegerOptionalInteger> m_filterRes;
 
-    WillBeHeapHashSet<RefPtrWillBeMember<Node> > m_clientsToAdd;
+    WillBeHeapHashSet<RefPtrWillBeMember<Node>> m_clientsToAdd;
 };
 
 } // namespace blink

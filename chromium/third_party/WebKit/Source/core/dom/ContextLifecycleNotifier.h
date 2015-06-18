@@ -24,50 +24,42 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #ifndef ContextLifecycleNotifier_h
 #define ContextLifecycleNotifier_h
 
-#include "core/dom/ActiveDOMObject.h"
+#include "core/CoreExport.h"
 #include "platform/LifecycleNotifier.h"
-#include "wtf/HashSet.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/Noncopyable.h"
 
 namespace blink {
 
 class ActiveDOMObject;
+class ContextLifecycleObserver;
 class ExecutionContext;
 
-class ContextLifecycleNotifier : public LifecycleNotifier<ExecutionContext> {
+class CORE_EXPORT ContextLifecycleNotifier : public LifecycleNotifier<ExecutionContext, ContextLifecycleObserver> {
+    WTF_MAKE_NONCOPYABLE(ContextLifecycleNotifier);
 public:
-    static PassOwnPtr<ContextLifecycleNotifier> create(ExecutionContext*);
-
-    virtual ~ContextLifecycleNotifier();
-
-    typedef HashSet<ActiveDOMObject*> ActiveDOMObjectSet;
-
-    const ActiveDOMObjectSet& activeDOMObjects() const { return m_activeDOMObjects; }
-
-    virtual void addObserver(Observer*) override;
-    virtual void removeObserver(Observer*) override;
-
     void notifyResumingActiveDOMObjects();
     void notifySuspendingActiveDOMObjects();
     void notifyStoppingActiveDOMObjects();
 
-    bool contains(ActiveDOMObject* object) const { return m_activeDOMObjects.contains(object); }
+    unsigned activeDOMObjectCount() const;
     bool hasPendingActivity() const;
 
 protected:
-    explicit ContextLifecycleNotifier(ExecutionContext*);
+    // Need a default constructor to link core and modules separately.
+    // If no default constructor, we will see an error: "constructor for
+    // 'blink::ExecutionContext' must explicitly initialize the base class
+    // 'blink::ContextLifecycleNotifier' which does not have a default
+    // constructor ExecutionContext::ExecutionContext()".
+    ContextLifecycleNotifier() { }
 
-private:
-    ActiveDOMObjectSet m_activeDOMObjects;
+#if ENABLE(ASSERT)
+    bool contains(ActiveDOMObject*) const;
+#endif
 };
-
-inline PassOwnPtr<ContextLifecycleNotifier> ContextLifecycleNotifier::create(ExecutionContext* context)
-{
-    return adoptPtr(new ContextLifecycleNotifier(context));
-}
 
 } // namespace blink
 

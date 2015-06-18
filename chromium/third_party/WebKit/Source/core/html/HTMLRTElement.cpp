@@ -6,7 +6,7 @@
 #include "core/html/HTMLRTElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/rendering/RenderRubyText.h"
+#include "core/layout/LayoutRubyText.h"
 
 namespace blink {
 
@@ -19,11 +19,11 @@ inline HTMLRTElement::HTMLRTElement(Document& document)
 
 DEFINE_NODE_FACTORY(HTMLRTElement)
 
-RenderObject* HTMLRTElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLRTElement::createLayoutObject(const ComputedStyle& style)
 {
-    if (style->display() == BLOCK)
-        return new RenderRubyText(this);
-    return RenderObject::createObject(this, style);
+    if (style.display() == BLOCK)
+        return new LayoutRubyText(this);
+    return LayoutObject::createObject(this, style);
 }
 
 }

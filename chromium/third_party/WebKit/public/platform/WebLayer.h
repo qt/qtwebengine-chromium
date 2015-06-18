@@ -34,6 +34,7 @@
 #include "WebFloatPoint3D.h"
 #include "WebPoint.h"
 #include "WebRect.h"
+#include "WebScrollBlocksOn.h"
 #include "WebSize.h"
 #include "WebString.h"
 #include "WebVector.h"
@@ -163,6 +164,18 @@ public:
     // Scrolling
     virtual void setScrollPositionDouble(WebDoublePoint) = 0;
     virtual WebDoublePoint scrollPositionDouble() const = 0;
+    // Blink tells cc the scroll offset through setScrollPositionDouble() using
+    // floating precision but it currently can only position cc layers at integer
+    // boundary. So Blink needs to also call setScrollCompensationAdjustment()
+    // to tell cc what's the part of the scroll offset that Blink doesn't handle
+    // but cc needs to take into consideration, e.g. compensating
+    // for fixed-position layer that's positioned in Blink using only integer scroll
+    // offset.
+    // We make this call explicit, instead of letting cc to infer the fractional part
+    // from the scroll offset, to be clear that this is Blink's limitation. Once
+    // Blink can fully handle fractional scroll offset, it can stop calling
+    // this function and cc side would just work.
+    virtual void setScrollCompensationAdjustment(WebDoublePoint) = 0;
 
     // To set a WebLayer as scrollable we must specify the corresponding clip layer.
     virtual void setScrollClipLayer(WebLayer*) = 0;
@@ -185,6 +198,15 @@ public:
 
     virtual void setTouchEventHandlerRegion(const WebVector<WebRect>&) = 0;
     virtual WebVector<WebRect> touchEventHandlerRegion() const = 0;
+
+    // Setter and getter for Frame Timing rects.
+    // See http://w3c.github.io/frame-timing/ for definition of terms.
+    virtual void setFrameTimingRequests(const WebVector<std::pair<int64_t, WebRect>>&) = 0;
+    virtual WebVector<std::pair<int64_t, WebRect>> frameTimingRequests() const = 0;
+
+    // FIXME: Make pure once cc is updated.  crbug.com/347272
+    virtual void setScrollBlocksOn(WebScrollBlocksOn) { };
+    virtual WebScrollBlocksOn scrollBlocksOn() const { return WebScrollBlocksOnNone;};
 
     virtual void setIsContainerForFixedPositionLayers(bool) = 0;
     virtual bool isContainerForFixedPositionLayers() const = 0;

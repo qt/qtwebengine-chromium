@@ -34,24 +34,27 @@ class ContentDecryptor_Private {
   // TODO(tomfinegan): This could be optimized to pass pp::Var instead of
   // strings. The change would allow the CDM wrapper to reuse vars when
   // replying to the browser.
-  virtual void Initialize(const std::string& key_system) = 0;
+  virtual void Initialize(uint32_t promise_id,
+                          const std::string& key_system,
+                          bool allow_distinctive_identifier,
+                          bool allow_persistent_state) = 0;
   virtual void SetServerCertificate(uint32_t promise_id,
                                     pp::VarArrayBuffer server_certificate) = 0;
-  virtual void CreateSession(uint32_t promise_id,
-                             const std::string& init_data_type,
-                             pp::VarArrayBuffer init_data,
-                             PP_SessionType session_type) = 0;
+  virtual void CreateSessionAndGenerateRequest(
+      uint32_t promise_id,
+      PP_SessionType session_type,
+      PP_InitDataType init_data_type,
+      pp::VarArrayBuffer init_data) = 0;
   virtual void LoadSession(uint32_t promise_id,
-                           const std::string& web_session_id) = 0;
+                           PP_SessionType session_type,
+                           const std::string& session_id) = 0;
   virtual void UpdateSession(uint32_t promise_id,
-                             const std::string& web_session_id,
+                             const std::string& session_id,
                              pp::VarArrayBuffer response) = 0;
   virtual void CloseSession(uint32_t promise_id,
-                            const std::string& web_session_id) = 0;
+                            const std::string& session_id) = 0;
   virtual void RemoveSession(uint32_t promise_id,
-                             const std::string& web_session_id) = 0;
-  virtual void GetUsableKeyIds(uint32_t promise_id,
-                               const std::string& web_session_id) = 0;
+                             const std::string& session_id) = 0;
   virtual void Decrypt(pp::Buffer_Dev encrypted_buffer,
                        const PP_EncryptedBlockInfo& encrypted_block_info) = 0;
   virtual void InitializeAudioDecoder(
@@ -74,27 +77,25 @@ class ContentDecryptor_Private {
   // to the browser.
   void PromiseResolved(uint32_t promise_id);
   void PromiseResolvedWithSession(uint32_t promise_id,
-                                  const std::string& web_session_id);
-  void PromiseResolvedWithKeyIds(
-      uint32_t promise_id,
-      const std::vector<std::vector<uint8_t> >& key_ids);
+                                  const std::string& session_id);
   void PromiseRejected(uint32_t promise_id,
                        PP_CdmExceptionCode exception_code,
                        uint32_t system_code,
                        const std::string& error_description);
-  void SessionMessage(const std::string& web_session_id,
+  void SessionMessage(const std::string& session_id,
+                      PP_CdmMessageType message_type,
                       pp::VarArrayBuffer message,
-                      const std::string& destination_url);
-  void SessionKeysChange(const std::string& web_session_id,
-                         bool has_additional_usable_key);
-  void SessionExpirationChange(const std::string& web_session_id,
+                      const std::string& legacy_destination_url);
+  void SessionKeysChange(const std::string& session_id,
+                         bool has_additional_usable_key,
+                         const std::vector<PP_KeyInformation>& key_information);
+  void SessionExpirationChange(const std::string& session_id,
                                PP_Time new_expiry_time);
-  void SessionReady(const std::string& web_session_id);
-  void SessionClosed(const std::string& web_session_id);
-  void SessionError(const std::string& web_session_id,
-                    PP_CdmExceptionCode exception_code,
-                    uint32_t system_code,
-                    const std::string& error_description);
+  void SessionClosed(const std::string& session_id);
+  void LegacySessionError(const std::string& session_id,
+                          PP_CdmExceptionCode exception_code,
+                          uint32_t system_code,
+                          const std::string& error_description);
 
   // The plugin must not hold a reference to the encrypted buffer resource
   // provided to Decrypt() when it calls this method. The browser will reuse

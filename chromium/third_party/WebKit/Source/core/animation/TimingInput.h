@@ -5,15 +5,17 @@
 #ifndef TimingInput_h
 #define TimingInput_h
 
+#include "core/CoreExport.h"
 #include "core/animation/Timing.h"
 
 namespace blink {
 
 class Dictionary;
+class KeyframeEffectOptions;
 
-class TimingInput {
+class CORE_EXPORT TimingInput {
 public:
-    static Timing convert(const Dictionary& timingInputDictionary);
+    static Timing convert(const KeyframeEffectOptions& timingInput);
     static Timing convert(double duration);
 
     static void setStartDelay(Timing&, double startDelay);

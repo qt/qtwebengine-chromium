@@ -31,33 +31,21 @@
 #include "config.h"
 #include "modules/mediastream/RTCSessionDescription.h"
 
-#include "bindings/core/v8/Dictionary.h"
-#include "bindings/core/v8/ExceptionState.h"
-#include "core/dom/ExceptionCode.h"
+#include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/V8ObjectBuilder.h"
+#include "modules/mediastream/RTCSessionDescriptionInit.h"
 
 namespace blink {
 
-static bool verifyType(const String& type)
-{
-    return type == "offer" || type == "pranswer" || type == "answer";
-}
-
-static String constructIllegalTypeExceptionMessage(const String& type)
-{
-    return "Illegal value of attribute 'type' : " + type;
-}
-
-RTCSessionDescription* RTCSessionDescription::create(const Dictionary& descriptionInitDict, ExceptionState& exceptionState)
+RTCSessionDescription* RTCSessionDescription::create(const RTCSessionDescriptionInit& descriptionInitDict)
 {
     String type;
-    bool ok = DictionaryHelper::get(descriptionInitDict, "type", type);
-    if (ok && !verifyType(type)) {
-        exceptionState.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
-        return nullptr;
-    }
+    if (descriptionInitDict.hasType())
+        type = descriptionInitDict.type();
 
     String sdp;
-    DictionaryHelper::get(descriptionInitDict, "sdp", sdp);
+    if (descriptionInitDict.hasSdp())
+        sdp = descriptionInitDict.sdp();
 
     return new RTCSessionDescription(WebRTCSessionDescription(type, sdp));
 }
@@ -77,12 +65,9 @@ String RTCSessionDescription::type()
     return m_webSessionDescription.type();
 }
 
-void RTCSessionDescription::setType(const String& type, ExceptionState& exceptionState)
+void RTCSessionDescription::setType(const String& type)
 {
-    if (verifyType(type))
-        m_webSessionDescription.setType(type);
-    else
-        exceptionState.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
+    m_webSessionDescription.setType(type);
 }
 
 String RTCSessionDescription::sdp()
@@ -93,6 +78,20 @@ String RTCSessionDescription::sdp()
 void RTCSessionDescription::setSdp(const String& sdp)
 {
     m_webSessionDescription.setSDP(sdp);
+}
+
+ScriptValue RTCSessionDescription::toJSONForBinding(ScriptState* scriptState)
+{
+    V8ObjectBuilder result(scriptState);
+    if (type().isNull())
+        result.addNull("type");
+    else
+        result.addString("type", type());
+    if (sdp().isNull())
+        result.addNull("sdp");
+    else
+        result.addString("sdp", sdp());
+    return result.scriptValue();
 }
 
 WebRTCSessionDescription RTCSessionDescription::webSessionDescription()

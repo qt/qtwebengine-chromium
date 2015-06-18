@@ -10,7 +10,7 @@
 namespace media {
 
 bool IsSupportedCdmModuleVersion(int version) {
-  switch(version) {
+  switch (version) {
     // Latest.
     case CDM_MODULE_VERSION:
       return true;
@@ -20,12 +20,13 @@ bool IsSupportedCdmModuleVersion(int version) {
 }
 
 bool IsSupportedCdmInterfaceVersion(int version) {
-  COMPILE_ASSERT(cdm::ContentDecryptionModule::kVersion ==
-                     cdm::ContentDecryptionModule_6::kVersion,
-                 update_code_below);
+  static_assert(cdm::ContentDecryptionModule::kVersion ==
+                    cdm::ContentDecryptionModule_8::kVersion,
+                "update the code below");
   switch(version) {
     // Supported versions in decreasing order.
-    case cdm::ContentDecryptionModule_6::kVersion:
+    case cdm::ContentDecryptionModule_8::kVersion:
+    case cdm::ContentDecryptionModule_7::kVersion:
       return true;
     default:
       return false;
@@ -33,12 +34,13 @@ bool IsSupportedCdmInterfaceVersion(int version) {
 }
 
 bool IsSupportedCdmHostVersion(int version) {
-  COMPILE_ASSERT(cdm::ContentDecryptionModule::Host::kVersion ==
-                     cdm::ContentDecryptionModule_6::Host::kVersion,
-                 update_code_below);
+  static_assert(cdm::ContentDecryptionModule::Host::kVersion ==
+                    cdm::ContentDecryptionModule_8::Host::kVersion,
+                "update the code below");
   switch(version) {
     // Supported versions in decreasing order.
-    case cdm::Host_6::kVersion:
+    case cdm::Host_8::kVersion:
+    case cdm::Host_7::kVersion:
       return true;
     default:
       return false;

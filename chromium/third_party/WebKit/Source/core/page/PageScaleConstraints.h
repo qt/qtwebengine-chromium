@@ -31,11 +31,12 @@
 #ifndef PageScaleConstraints_h
 #define PageScaleConstraints_h
 
+#include "core/CoreExport.h"
 #include "platform/geometry/FloatSize.h"
 
 namespace blink {
 
-struct PageScaleConstraints {
+struct CORE_EXPORT PageScaleConstraints {
     FloatSize layoutSize;
 
     float initialScale;
@@ -49,6 +50,7 @@ struct PageScaleConstraints {
     float clampToConstraints(float pageScaleFactor) const;
     void clampAll();
     void fitToContentsWidth(float contentsWidth, int viewWidthNotIncludingScrollbars);
+    void resolveAutoInitialScale();
 
     bool operator==(const PageScaleConstraints& other) const;
 };

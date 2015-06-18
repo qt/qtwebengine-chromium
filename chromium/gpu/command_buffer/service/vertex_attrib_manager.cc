@@ -35,6 +35,7 @@ VertexAttrib::VertexAttrib()
       gl_stride_(0),
       real_stride_(16),
       divisor_(0),
+      integer_(GL_FALSE),
       is_client_side_array_(false),
       list_(NULL) {
 }
@@ -49,7 +50,8 @@ void VertexAttrib::SetInfo(
     GLboolean normalized,
     GLsizei gl_stride,
     GLsizei real_stride,
-    GLsizei offset) {
+    GLsizei offset,
+    GLboolean integer) {
   DCHECK_GT(real_stride, 0);
   buffer_ = buffer;
   size_ = size;
@@ -58,6 +60,7 @@ void VertexAttrib::SetInfo(
   gl_stride_ = gl_stride;
   real_stride_ = real_stride;
   offset_ = offset;
+  integer_ = integer;
 }
 
 void VertexAttrib::Unbind(Buffer* buffer) {

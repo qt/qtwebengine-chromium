@@ -29,6 +29,7 @@
 #include "config.h"
 #include "web/PageOverlay.h"
 
+#include "core/frame/FrameHost.h"
 #include "core/frame/Settings.h"
 #include "core/page/Page.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -37,18 +38,11 @@
 #include "public/platform/WebLayer.h"
 #include "public/web/WebPageOverlay.h"
 #include "public/web/WebViewClient.h"
+#include "web/WebDevToolsAgentImpl.h"
+#include "web/WebGraphicsContextImpl.h"
 #include "web/WebViewImpl.h"
 
 namespace blink {
-
-namespace {
-
-WebCanvas* ToWebCanvas(GraphicsContext* gc)
-{
-    return gc->canvas();
-}
-
-} // namespace
 
 PassOwnPtr<PageOverlay> PageOverlay::create(WebViewImpl* viewImpl, WebPageOverlay* overlay)
 {
@@ -62,46 +56,15 @@ PageOverlay::PageOverlay(WebViewImpl* viewImpl, WebPageOverlay* overlay)
 {
 }
 
-class OverlayGraphicsLayerClientImpl : public GraphicsLayerClient {
-public:
-    static PassOwnPtr<OverlayGraphicsLayerClientImpl> create(WebPageOverlay* overlay)
-    {
-        return adoptPtr(new OverlayGraphicsLayerClientImpl(overlay));
-    }
-
-    virtual ~OverlayGraphicsLayerClientImpl() { }
-
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext& gc, GraphicsLayerPaintingPhase, const IntRect& inClip)
-    {
-        gc.save();
-        m_overlay->paintPageOverlay(ToWebCanvas(&gc));
-        gc.restore();
-    }
-
-    virtual String debugName(const GraphicsLayer* graphicsLayer) override
-    {
-        return String("WebViewImpl Page Overlay Content Layer");
-    }
-
-private:
-    explicit OverlayGraphicsLayerClientImpl(WebPageOverlay* overlay)
-        : m_overlay(overlay)
-    {
-    }
-
-    WebPageOverlay* m_overlay;
-};
-
 void PageOverlay::clear()
 {
     invalidateWebFrame();
 
     if (m_layer) {
         m_layer->removeFromParent();
-        if (Page* page = m_viewImpl->page())
-            page->inspectorController().didRemovePageOverlay(m_layer.get());
+        if (WebDevToolsAgentImpl* devTools = m_viewImpl->mainFrameDevToolsAgentImpl())
+            devTools->didRemovePageOverlay(m_layer.get());
         m_layer = nullptr;
-        m_layerClient = nullptr;
     }
 }
 
@@ -110,19 +73,20 @@ void PageOverlay::update()
     invalidateWebFrame();
 
     if (!m_layer) {
-        m_layerClient = OverlayGraphicsLayerClientImpl::create(m_overlay);
-        m_layer = GraphicsLayer::create(m_viewImpl->graphicsLayerFactory(), m_layerClient.get());
+        m_layer = GraphicsLayer::create(m_viewImpl->graphicsLayerFactory(), this);
         m_layer->setDrawsContent(true);
 
-        if (Page* page = m_viewImpl->page())
-            page->inspectorController().willAddPageOverlay(m_layer.get());
+        if (WebDevToolsAgentImpl* devTools = m_viewImpl->mainFrameDevToolsAgentImpl())
+            devTools->willAddPageOverlay(m_layer.get());
 
         // This is required for contents of overlay to stay in sync with the page while scrolling.
         WebLayer* platformLayer = m_layer->platformLayer();
         platformLayer->setShouldScrollOnMainThread(true);
     }
 
-    FloatSize size(m_viewImpl->size());
+    FloatSize size;
+    if (m_viewImpl->page())
+        size = m_viewImpl->page()->frameHost().pinchViewport().visibleSize();
     if (size != m_layer->size()) {
         // Triggers re-adding to root layer to ensure that we are on top of
         // scrollbars.
@@ -136,11 +100,18 @@ void PageOverlay::update()
 
 void PageOverlay::paintWebFrame(GraphicsContext& gc)
 {
-    if (!m_viewImpl->isAcceleratedCompositingActive()) {
-        gc.save();
-        m_overlay->paintPageOverlay(ToWebCanvas(&gc));
-        gc.restore();
-    }
+    WebGraphicsContextImpl contextWrapper(gc, *this, DisplayItem::PageOverlay);
+    m_overlay->paintPageOverlay(&contextWrapper, expandedIntSize(m_layer->size()));
+}
+
+void PageOverlay::paintContents(const GraphicsLayer*, GraphicsContext& gc, GraphicsLayerPaintingPhase, const IntRect& inClip)
+{
+    paintWebFrame(gc);
+}
+
+String PageOverlay::debugName(const GraphicsLayer*)
+{
+    return "WebViewImpl Page Overlay Content Layer";
 }
 
 void PageOverlay::invalidateWebFrame()
@@ -152,7 +123,9 @@ void PageOverlay::invalidateWebFrame()
         // FIXME: Is it important to just invalidate a smaller rect given that
         // this is not on a critical codepath? In order to do so, we'd
         // have to take scrolling into account.
-        const WebSize& size = m_viewImpl->size();
+        WebSize size = m_viewImpl->size();
+        if (m_viewImpl->page())
+            size = expandedIntSize(m_viewImpl->page()->frameHost().pinchViewport().visibleSize());
         WebRect damagedRect(0, 0, size.width, size.height);
         if (m_viewImpl->client())
             m_viewImpl->client()->didInvalidateRect(damagedRect);

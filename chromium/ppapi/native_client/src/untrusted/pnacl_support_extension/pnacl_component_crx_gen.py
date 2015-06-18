@@ -120,16 +120,7 @@ class PnaclPackaging(object):
                    'getrevision',
                    '--revision-package', PnaclPackaging.pnacl_package]
 
-    version = subprocess.check_output(pkg_ver_cmd).strip()
-
-    # CWS happens to use version quads, so make it a quad too.
-    # However, each component of the quad is limited to 64K max.
-    # Try to handle a bit more.
-    max_version = 2 ** 16
-    version = int(version)
-    version_more = version / max_version
-    version = version % max_version
-    return '0.1.%d.%d' % (version_more, version)
+    return subprocess.check_output(pkg_ver_cmd).strip()
 
   @staticmethod
   def GeneratePnaclInfo(target_dir, abi_version, arch):

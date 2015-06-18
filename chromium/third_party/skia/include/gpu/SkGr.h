@@ -44,13 +44,13 @@ GR_STATIC_ASSERT((int)kIDA_GrBlendCoeff  == (int)SkXfermode::kIDA_Coeff);
 
 #include "SkColorPriv.h"
 
-GrPixelConfig SkImageInfo2GrPixelConfig(SkColorType, SkAlphaType);
+GrPixelConfig SkImageInfo2GrPixelConfig(SkColorType, SkAlphaType, SkColorProfileType);
 
 static inline GrPixelConfig SkImageInfo2GrPixelConfig(const SkImageInfo& info) {
-    return SkImageInfo2GrPixelConfig(info.colorType(), info.alphaType());
+    return SkImageInfo2GrPixelConfig(info.colorType(), info.alphaType(), info.profileType());
 }
 
-bool GrPixelConfig2ColorType(GrPixelConfig, SkColorType*);
+bool GrPixelConfig2ColorAndProfileType(GrPixelConfig, SkColorType*, SkColorProfileType*);
 
 static inline GrColor SkColor2GrColor(SkColor c) {
     SkPMColor pm = SkPreMultiplyColor(c);
@@ -78,16 +78,23 @@ GrTexture* GrRefCachedBitmapTexture(GrContext*, const SkBitmap&, const GrTexture
 // Sets the color of GrPaint to the value of the parameter paintColor
 // Callers may subsequently modify the GrPaint. Setting constantColor indicates
 // that the final paint will draw the same color at every pixel. This allows
-// an optimization where the the color filter can be applied to the SkPaint's
-// color once while converting to GrPaint and then ignored.
-void SkPaint2GrPaintNoShader(GrContext* context, const SkPaint& skPaint, GrColor paintColor,
-                             bool constantColor, GrPaint* grPaint);
+// an optimization where the color filter can be applied to the SkPaint's
+// color once while converting to GrPaint and then ignored. TODO: Remove this
+// bool and use the invariant info to automatically apply the color filter.
+bool SkPaint2GrPaintNoShader(GrContext* context, GrRenderTarget*, const SkPaint& skPaint,
+                             GrColor paintColor, bool constantColor, GrPaint* grPaint);
 
 // This function is similar to skPaint2GrPaintNoShader but also converts
-// skPaint's shader to a GrTexture/GrProcessorStage if possible.
+// skPaint's shader to a GrFragmentProcessor if possible.
 // constantColor has the same meaning as in skPaint2GrPaintNoShader.
-void SkPaint2GrPaintShader(GrContext* context, const SkPaint& skPaint,
-                           bool constantColor, GrPaint* grPaint);
+bool SkPaint2GrPaint(GrContext* context, GrRenderTarget*, const SkPaint& skPaint,
+                     const SkMatrix& viewM, bool constantColor, GrPaint* grPaint);
+
+
+SkImageInfo GrMakeInfoFromTexture(GrTexture* tex, int w, int h, bool isOpaque);
+
+// Using the dreaded SkGrPixelRef ...
+void GrWrapTextureInBitmap(GrTexture* src, int w, int h, bool isOpaque, SkBitmap* dst);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Classes

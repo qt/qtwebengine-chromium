@@ -215,11 +215,23 @@ class XcodeSettings(object):
     if test_key in self._Settings():
       print 'Warning: Ignoring not yet implemented key "%s".' % test_key
 
+  def IsBinaryOutputFormat(self, configname):
+    default = "binary" if self.isIOS else "xml"
+    format = self.xcode_settings[configname].get('INFOPLIST_OUTPUT_FORMAT',
+                                                 default)
+    return format == "binary"
+
   def _IsBundle(self):
     return int(self.spec.get('mac_bundle', 0)) != 0
 
   def _IsIosAppExtension(self):
     return int(self.spec.get('ios_app_extension', 0)) != 0
+
+  def _IsIosWatchKitExtension(self):
+    return int(self.spec.get('ios_watchkit_extension', 0)) != 0
+
+  def _IsIosWatchApp(self):
+    return int(self.spec.get('ios_watch_app', 0)) != 0
 
   def GetFrameworkVersion(self):
     """Returns the framework version of the current target. Only valid for
@@ -240,7 +252,7 @@ class XcodeSettings(object):
           'WRAPPER_EXTENSION', default=default_wrapper_extension)
       return '.' + self.spec.get('product_extension', wrapper_extension)
     elif self.spec['type'] == 'executable':
-      if self._IsIosAppExtension():
+      if self._IsIosAppExtension() or self._IsIosWatchKitExtension():
         return '.' + self.spec.get('product_extension', 'appex')
       else:
         return '.' + self.spec.get('product_extension', 'app')
@@ -302,6 +314,14 @@ class XcodeSettings(object):
       assert self._IsBundle(), ('ios_app_extension flag requires mac_bundle '
           '(target %s)' % self.spec['target_name'])
       return 'com.apple.product-type.app-extension'
+    if self._IsIosWatchKitExtension():
+      assert self._IsBundle(), ('ios_watchkit_extension flag requires '
+          'mac_bundle (target %s)' % self.spec['target_name'])
+      return 'com.apple.product-type.watchkit-extension'
+    if self._IsIosWatchApp():
+      assert self._IsBundle(), ('ios_watch_app flag requires mac_bundle '
+          '(target %s)' % self.spec['target_name'])
+      return 'com.apple.product-type.application.watchapp'
     if self._IsBundle():
       return {
         'executable': 'com.apple.product-type.application',
@@ -504,6 +524,13 @@ class XcodeSettings(object):
 
     if self._Test('GCC_WARN_ABOUT_MISSING_NEWLINE', 'YES', default='NO'):
       cflags.append('-Wnewline-eof')
+
+    # In Xcode, this is only activated when GCC_COMPILER_VERSION is clang or
+    # llvm-gcc. It also requires a fairly recent libtool, and
+    # if the system clang isn't used, DYLD_LIBRARY_PATH needs to contain the
+    # path to the libLTO.dylib that matches the used clang.
+    if self._Test('LLVM_LTO', 'YES', default='NO'):
+      cflags.append('-flto')
 
     self._AppendPlatformVersionMinFlags(cflags)
 
@@ -713,8 +740,8 @@ class XcodeSettings(object):
     #   -exported_symbols_list file
     #   -Wl,exported_symbols_list file
     #   -Wl,exported_symbols_list,file
-    LINKER_FILE = '(\S+)'
-    WORD = '\S+'
+    LINKER_FILE = r'(\S+)'
+    WORD = r'\S+'
     linker_flags = [
       ['-exported_symbols_list', LINKER_FILE],    # Needed for NaCl.
       ['-unexported_symbols_list', LINKER_FILE],
@@ -804,7 +831,8 @@ class XcodeSettings(object):
     for directory in framework_dirs:
       ldflags.append('-F' + directory.replace('$(SDKROOT)', sdk_root))
 
-    if sdk_root and self._IsIosAppExtension():
+    is_extension = self._IsIosAppExtension() or self._IsIosWatchKitExtension()
+    if sdk_root and is_extension:
       # Adds the link flags for extensions. These flags are common for all
       # extensions and provide loader and main function.
       # These flags reflect the compilation options used by xcode to compile
@@ -1213,13 +1241,13 @@ def XcodeVersion():
     # In that case this may be a CLT-only install so fall back to
     # checking that version.
     if len(version_list) < 2:
-      raise GypError, "xcodebuild returned unexpected results"
+      raise GypError("xcodebuild returned unexpected results")
   except:
     version = CLTVersion()
     if version:
-      version = re.match('(\d\.\d\.?\d*)', version).groups()[0]
+      version = re.match(r'(\d\.\d\.?\d*)', version).groups()[0]
     else:
-      raise GypError, "No Xcode or CLT version detected!"
+      raise GypError("No Xcode or CLT version detected!")
     # The CLT has no build information, so we return an empty string.
     version_list = [version, '']
   version = version_list[0]

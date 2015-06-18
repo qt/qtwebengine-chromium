@@ -14,8 +14,8 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/dns/host_resolver.h"
+#include "net/log/net_log.h"
 #include "net/socket/stream_socket.h"
 #include "url/gurl.h"
 
@@ -55,6 +55,9 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   bool WasNpnNegotiated() const override;
   NextProto GetNegotiatedProtocol() const override;
   bool GetSSLInfo(SSLInfo* ssl_info) override;
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
+  void ClearConnectionAttempts() override {}
+  void AddConnectionAttempts(const ConnectionAttempts& attempts) override {}
 
   // Socket implementation.
   int Read(IOBuffer* buf,

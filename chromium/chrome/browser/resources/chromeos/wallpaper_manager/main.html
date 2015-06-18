@@ -1,14 +1,15 @@
-<!DOCTYPE HTML>
+<!doctype html>
 <!--
 ------
 Copyright (c) 2013 The Chromium Authors. All rights reserved.
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
-<html i18n-values="dir:textdirection;">
+<html i18n-values="dir:textdirection;lang:language">
 <head>
   <meta charset="utf-8">
   <title>Wallpaper Picker</title>
+  <link rel="stylesheet" href="../../../../../ui/webui/resources/css/text_defaults.css">
   <link rel="stylesheet" href="../../../../../ui/webui/resources/css/widgets.css">
   <link rel="stylesheet" href="../../../../../ui/webui/resources/css/menu.css"></link>
 
@@ -43,21 +44,21 @@ found in the LICENSE file.
     <script src="js/util.js"></script>
     <script src="js/progress_manager.js"></script>
     <script src="js/wallpaper_directories.js"></script>
+    <script src="js/wallpaper_categories_list.js"></script>
     <script src="js/wallpaper_images_grid.js"></script>
     <script src="js/wallpaper_manager.js"></script>
     <script src="js/main.js"></script>
   </if>
 </head>
-<body i18n-values=".style.fontFamily:webFontFamily;
-                   .style.fontSize:webFontSize">
+<body>
   <commands>
     <command id="delete" i18n-values="label:deleteCommandLabel"
         shortcut="U+007F"></command>
   </commands>
 
-  <menu id="wallpaper-context-menu" class="chrome-menu" visibleif="custom">
-    <menuitem command="#delete"></menuitem>
-  </menu>
+  <cr-menu id="wallpaper-context-menu" class="chrome-menu" visibleif="custom">
+    <cr-menu-item command="#delete"></cr-menu-item>
+  </cr-menu>
 
   <div id="error-container" class="overlay-container" hidden>
     <div class="page">

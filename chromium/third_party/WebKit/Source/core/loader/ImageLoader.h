@@ -23,6 +23,7 @@
 #ifndef ImageLoader_h
 #define ImageLoader_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
@@ -37,14 +38,14 @@ class IncrementLoadEventDelayCount;
 class FetchRequest;
 class Document;
 
-class ImageLoaderClient : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT ImageLoaderClient : public WillBeGarbageCollectedMixin {
 public:
     virtual void notifyImageSourceChanged() = 0;
 
     // Determines whether the observed ImageResource should have higher priority in the decoded resources cache.
     virtual bool requestsHighLiveResourceCachePriority() { return false; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     ImageLoaderClient() { }
@@ -52,21 +53,16 @@ protected:
 
 class Element;
 class ImageLoader;
-class RenderImageResource;
+class LayoutImageResource;
 
 template<typename T> class EventSender;
 typedef EventSender<ImageLoader> ImageEventSender;
 
-class ImageLoader : public NoBaseWillBeGarbageCollectedFinalized<ImageLoader>, public ImageResourceClient {
+class CORE_EXPORT ImageLoader : public NoBaseWillBeGarbageCollectedFinalized<ImageLoader>, public ImageResourceClient {
 public:
     explicit ImageLoader(Element*);
     virtual ~ImageLoader();
-    void trace(Visitor*);
-
-    enum LoadType {
-        LoadNormally,
-        ForceLoadImmediately
-    };
+    DECLARE_TRACE();
 
     enum UpdateFromElementBehavior {
         // This should be the update behavior when the element is attached to a document, or when DOM mutations trigger a new load.
@@ -77,7 +73,9 @@ public:
         // FIXME - Verify that this is the right behavior according to the spec.
         UpdateIgnorePreviousError,
         // This forces the image to update its intrinsic size, even if the image source has not changed.
-        UpdateSizeChanged
+        UpdateSizeChanged,
+        // This force the image to refetch and reload the image source, even if it has not changed.
+        UpdateForcedReload
     };
 
     enum BypassMainWorldBehavior {
@@ -85,7 +83,7 @@ public:
         DoNotBypassMainWorldCSP
     };
 
-    void updateFromElement(UpdateFromElementBehavior = UpdateNormal, LoadType = LoadNormally);
+    void updateFromElement(UpdateFromElementBehavior = UpdateNormal);
 
     void elementDidMoveToNewDocument();
 
@@ -113,6 +111,7 @@ public:
     void addClient(ImageLoaderClient*);
     void removeClient(ImageLoaderClient*);
 
+    virtual bool getImageAnimationPolicy(ImageResource*, ImageAnimationPolicy&) override final;
 protected:
     virtual void notifyFinished(Resource*) override;
 
@@ -124,21 +123,22 @@ private:
 
     virtual void dispatchLoadEvent() = 0;
     virtual String sourceURI(const AtomicString&) const = 0;
+    virtual void noImageResourceToLoad() { };
 
     void updatedHasPendingEvent();
 
     void dispatchPendingLoadEvent();
     void dispatchPendingErrorEvent();
 
-    RenderImageResource* renderImageResource();
-    void updateRenderer();
+    LayoutImageResource* layoutImageResource();
+    void updateLayoutObject();
 
     void setImageWithoutConsideringPendingLoadEvent(ImageResource*);
     void sourceImageChanged();
     void clearFailedLoadURL();
-    void crossSiteOrCSPViolationOccured(AtomicString);
+    void dispatchErrorEvent();
+    void crossSiteOrCSPViolationOccurred(AtomicString);
     void enqueueImageLoadingMicroTask(UpdateFromElementBehavior);
-    static ResourcePtr<ImageResource> createImageResourceForImageDocument(Document&, FetchRequest&);
 
     void timerFired(Timer<ImageLoader>*);
 
@@ -146,7 +146,7 @@ private:
 
     // Used to determine whether to immediately initiate the load
     // or to schedule a microtask.
-    bool shouldLoadImmediately(const KURL&, LoadType) const;
+    bool shouldLoadImmediately(const KURL&) const;
 
     void willRemoveClient(ImageLoaderClient&);
 
@@ -173,7 +173,7 @@ private:
     // for HeapHashMap is not triggered when both of ImageLoader and
     // ImageLoaderClient are unreachable.
     GC_PLUGIN_IGNORE("http://crbug.com/383742")
-    PersistentHeapHashMap<WeakMember<ImageLoaderClient>, OwnPtr<ImageLoaderClientRemover> > m_clients;
+    PersistentHeapHashMap<WeakMember<ImageLoaderClient>, OwnPtr<ImageLoaderClientRemover>> m_clients;
 #else
     HashSet<ImageLoaderClient*> m_clients;
 #endif

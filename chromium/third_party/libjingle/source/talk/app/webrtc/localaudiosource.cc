@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -60,6 +60,8 @@ void FromConstraints(const MediaConstraintsInterface::Constraints& constraints,
     else if (iter->key ==
         MediaConstraintsInterface::kExperimentalEchoCancellation)
       options->experimental_aec.Set(value);
+    else if (iter->key == MediaConstraintsInterface::kDAEchoCancellation)
+      options->delay_agnostic_aec.Set(value);
     else if (iter->key == MediaConstraintsInterface::kAutoGainControl)
       options->auto_gain_control.Set(value);
     else if (iter->key ==
@@ -76,6 +78,8 @@ void FromConstraints(const MediaConstraintsInterface::Constraints& constraints,
       options->typing_detection.Set(value);
     else if (iter->key == MediaConstraintsInterface::kAudioMirroring)
       options->stereo_swapping.Set(value);
+    else if (iter->key == MediaConstraintsInterface::kAecDump)
+      options->aec_dump.Set(value);
   }
 }
 

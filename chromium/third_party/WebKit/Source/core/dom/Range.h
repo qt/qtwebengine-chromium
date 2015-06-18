@@ -27,6 +27,7 @@
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/RangeBoundaryPoint.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
@@ -47,13 +48,22 @@ class Node;
 class NodeWithIndex;
 class Text;
 
-class Range final : public RefCountedWillBeGarbageCollectedFinalized<Range>, public ScriptWrappable {
+class CORE_EXPORT Range final
+#ifndef NDEBUG
+    : public RefCountedWillBeGarbageCollectedFinalized<Range>
+#else
+    : public RefCountedWillBeGarbageCollected<Range>
+#endif
+    , public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<Range> create(Document&);
     static PassRefPtrWillBeRawPtr<Range> create(Document&, Node* startContainer, int startOffset, Node* endContainer, int endOffset);
     static PassRefPtrWillBeRawPtr<Range> create(Document&, const Position&, const Position&);
+    static PassRefPtrWillBeRawPtr<Range> createAdjustedToTreeScope(const TreeScope&, const Position&);
+#if !ENABLE(OILPAN) || !defined(NDEBUG)
     ~Range();
+#endif
 
     Document& ownerDocument() const { ASSERT(m_ownerDocument); return *m_ownerDocument.get(); }
     Node* startContainer() const { return m_start.container(); }
@@ -64,7 +74,7 @@ public:
     bool collapsed() const { return m_start == m_end; }
 
     Node* commonAncestorContainer() const;
-    static Node* commonAncestorContainer(Node* containerA, Node* containerB);
+    static Node* commonAncestorContainer(const Node* containerA, const Node* containerB);
     void setStart(PassRefPtrWillBeRawPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
     void setEnd(PassRefPtrWillBeRawPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
     void collapse(bool toStart);
@@ -85,7 +95,6 @@ public:
     void insertNode(PassRefPtrWillBeRawPtr<Node>, ExceptionState&);
     String toString() const;
 
-    String toHTML() const;
     String text() const;
 
     PassRefPtrWillBeRawPtr<DocumentFragment> createContextualFragment(const String& html, ExceptionState&);
@@ -142,14 +151,14 @@ public:
     // for details.
     void expand(const String&, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<ClientRectList> getClientRects() const;
-    PassRefPtrWillBeRawPtr<ClientRect> getBoundingClientRect() const;
+    ClientRectList* getClientRects() const;
+    ClientRect* getBoundingClientRect() const;
 
 #ifndef NDEBUG
     void formatForDebugger(char* buffer, unsigned length) const;
 #endif
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit Range(Document&);
@@ -164,7 +173,7 @@ private:
     enum ActionType { DELETE_CONTENTS, EXTRACT_CONTENTS, CLONE_CONTENTS };
     PassRefPtrWillBeRawPtr<DocumentFragment> processContents(ActionType, ExceptionState&);
     static PassRefPtrWillBeRawPtr<Node> processContentsBetweenOffsets(ActionType, PassRefPtrWillBeRawPtr<DocumentFragment>, Node*, unsigned startOffset, unsigned endOffset, ExceptionState&);
-    static void processNodes(ActionType, WillBeHeapVector<RefPtrWillBeMember<Node> >&, PassRefPtrWillBeRawPtr<Node> oldContainer, PassRefPtrWillBeRawPtr<Node> newContainer, ExceptionState&);
+    static void processNodes(ActionType, WillBeHeapVector<RefPtrWillBeMember<Node>>&, PassRefPtrWillBeRawPtr<Node> oldContainer, PassRefPtrWillBeRawPtr<Node> newContainer, ExceptionState&);
     enum ContentsProcessDirection { ProcessContentsForward, ProcessContentsBackward };
     static PassRefPtrWillBeRawPtr<Node> processAncestorsAndTheirSiblings(ActionType, Node* container, ContentsProcessDirection, PassRefPtrWillBeRawPtr<Node> clonedContainer, Node* commonRoot, ExceptionState&);
 
@@ -173,9 +182,9 @@ private:
     RangeBoundaryPoint m_end;
 };
 
-PassRefPtrWillBeRawPtr<Range> rangeOfContents(Node*);
+CORE_EXPORT PassRefPtrWillBeRawPtr<Range> rangeOfContents(Node*);
 
-bool areRangesEqual(const Range*, const Range*);
+CORE_EXPORT bool areRangesEqual(const Range*, const Range*);
 
 } // namespace blink
 

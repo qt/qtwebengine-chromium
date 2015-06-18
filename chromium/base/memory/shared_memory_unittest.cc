@@ -101,10 +101,10 @@ const char* const MultipleThreadMain::s_test_name_ =
 class MultipleLockThread : public PlatformThread::Delegate {
  public:
   explicit MultipleLockThread(int id) : id_(id) {}
-  virtual ~MultipleLockThread() {}
+  ~MultipleLockThread() override {}
 
   // PlatformThread::Delegate interface.
-  virtual void ThreadMain() override {
+  void ThreadMain() override {
     const uint32 kDataSize = sizeof(int);
     SharedMemoryHandle handle = NULL;
     {
@@ -259,6 +259,29 @@ TEST(SharedMemoryTest, OpenExclusive) {
   EXPECT_TRUE(rv);
 }
 #endif
+
+// Check that memory is still mapped after its closed.
+TEST(SharedMemoryTest, CloseNoUnmap) {
+  const size_t kDataSize = 4096;
+
+  SharedMemory memory;
+  ASSERT_TRUE(memory.CreateAndMapAnonymous(kDataSize));
+  char* ptr = static_cast<char*>(memory.memory());
+  ASSERT_NE(ptr, static_cast<void*>(NULL));
+  memset(ptr, 'G', kDataSize);
+
+  memory.Close();
+
+  EXPECT_EQ(ptr, memory.memory());
+  EXPECT_EQ(SharedMemory::NULLHandle(), memory.handle());
+
+  for (size_t i = 0; i < kDataSize; i++) {
+    EXPECT_EQ('G', ptr[i]);
+  }
+
+  memory.Unmap();
+  EXPECT_EQ(nullptr, memory.memory());
+}
 
 // Create a set of N threads to each open a shared memory segment and write to
 // it. Verify that they are always reading/writing consistent data.
@@ -676,15 +699,15 @@ const char* const SharedMemoryProcessTest::s_test_name_ = "MPMem";
 TEST_F(SharedMemoryProcessTest, Tasks) {
   SharedMemoryProcessTest::CleanUp();
 
-  ProcessHandle handles[kNumTasks];
+  Process processes[kNumTasks];
   for (int index = 0; index < kNumTasks; ++index) {
-    handles[index] = SpawnChild("SharedMemoryTestMain");
-    ASSERT_TRUE(handles[index]);
+    processes[index] = SpawnChild("SharedMemoryTestMain");
+    ASSERT_TRUE(processes[index].IsValid());
   }
 
   int exit_code = 0;
   for (int index = 0; index < kNumTasks; ++index) {
-    EXPECT_TRUE(WaitForExitCode(handles[index], &exit_code));
+    EXPECT_TRUE(processes[index].WaitForExit(&exit_code));
     EXPECT_EQ(0, exit_code);
   }
 

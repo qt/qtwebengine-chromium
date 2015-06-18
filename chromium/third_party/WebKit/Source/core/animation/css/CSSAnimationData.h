@@ -7,7 +7,7 @@
 
 #include "core/animation/Timing.h"
 #include "core/animation/css/CSSTimingData.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 
 namespace blink {
 

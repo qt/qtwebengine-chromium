@@ -66,7 +66,7 @@ HRESULT FillCapabilities(IMFSourceReader* source,
   while (SUCCEEDED(hr = source->GetNativeMediaType(
                        kFirstVideoStream, stream_index, type.Receive()))) {
     VideoCaptureFormat format;
-    if (FillFormat(type, &format))
+    if (FillFormat(type.get(), &format))
       capabilities->emplace_back(stream_index, format);
     type.Release();
     ++stream_index;
@@ -91,7 +91,7 @@ class MFReaderCallback final
     wait_event_ = event;
   }
 
-  STDMETHOD(QueryInterface)(REFIID riid, void** object) {
+  STDMETHOD(QueryInterface)(REFIID riid, void** object) override {
     if (riid != IID_IUnknown && riid != IID_IMFSourceReaderCallback)
       return E_NOINTERFACE;
     *object = static_cast<IMFSourceReaderCallback*>(this);
@@ -99,18 +99,21 @@ class MFReaderCallback final
     return S_OK;
   }
 
-  STDMETHOD_(ULONG, AddRef)() {
+  STDMETHOD_(ULONG, AddRef)() override {
     base::RefCountedThreadSafe<MFReaderCallback>::AddRef();
     return 1U;
   }
 
-  STDMETHOD_(ULONG, Release)() {
+  STDMETHOD_(ULONG, Release)() override {
     base::RefCountedThreadSafe<MFReaderCallback>::Release();
     return 1U;
   }
 
-  STDMETHOD(OnReadSample)(HRESULT status, DWORD stream_index,
-      DWORD stream_flags, LONGLONG time_stamp, IMFSample* sample) {
+  STDMETHOD(OnReadSample)(HRESULT status,
+                          DWORD stream_index,
+                          DWORD stream_flags,
+                          LONGLONG time_stamp,
+                          IMFSample* sample) override {
     base::TimeTicks stamp(base::TimeTicks::Now());
     if (!sample) {
       observer_->OnIncomingCapturedData(NULL, 0, 0, stamp);
@@ -123,7 +126,7 @@ class MFReaderCallback final
     for (DWORD i = 0; i < count; ++i) {
       ScopedComPtr<IMFMediaBuffer> buffer;
       sample->GetBufferByIndex(i, buffer.Receive());
-      if (buffer) {
+      if (buffer.get()) {
         DWORD length = 0, max_length = 0;
         BYTE* data = NULL;
         buffer->Lock(&data, &max_length, &length);
@@ -134,7 +137,7 @@ class MFReaderCallback final
     return S_OK;
   }
 
-  STDMETHOD(OnFlush)(DWORD stream_index) {
+  STDMETHOD(OnFlush)(DWORD stream_index) override {
     if (wait_event_) {
       wait_event_->Signal();
       wait_event_ = NULL;
@@ -142,7 +145,7 @@ class MFReaderCallback final
     return S_OK;
   }
 
-  STDMETHOD(OnEvent)(DWORD stream_index, IMFMediaEvent* event) {
+  STDMETHOD(OnEvent)(DWORD stream_index, IMFMediaEvent* event) override {
     NOTIMPLEMENTED();
     return S_OK;
   }
@@ -213,17 +216,17 @@ VideoCaptureDeviceMFWin::~VideoCaptureDeviceMFWin() {
 bool VideoCaptureDeviceMFWin::Init(
     const base::win::ScopedComPtr<IMFMediaSource>& source) {
   DCHECK(CalledOnValidThread());
-  DCHECK(!reader_);
+  DCHECK(!reader_.get());
 
   ScopedComPtr<IMFAttributes> attributes;
   MFCreateAttributes(attributes.Receive(), 1);
-  DCHECK(attributes);
+  DCHECK(attributes.get());
 
   callback_ = new MFReaderCallback(this);
   attributes->SetUnknown(MF_SOURCE_READER_ASYNC_CALLBACK, callback_.get());
 
-  return SUCCEEDED(MFCreateSourceReaderFromMediaSource(source, attributes,
-                                                       reader_.Receive()));
+  return SUCCEEDED(MFCreateSourceReaderFromMediaSource(
+      source.get(), attributes.get(), reader_.Receive()));
 }
 
 void VideoCaptureDeviceMFWin::AllocateAndStart(
@@ -238,8 +241,8 @@ void VideoCaptureDeviceMFWin::AllocateAndStart(
 
   CapabilityList capabilities;
   HRESULT hr = S_OK;
-  if (reader_) {
-    hr = FillCapabilities(reader_, &capabilities);
+  if (reader_.get()) {
+    hr = FillCapabilities(reader_.get(), &capabilities);
     if (SUCCEEDED(hr)) {
       const CapabilityWin found_capability =
           GetBestMatchedCapability(params.requested_format, capabilities);
@@ -247,7 +250,7 @@ void VideoCaptureDeviceMFWin::AllocateAndStart(
       hr = reader_->GetNativeMediaType(
           kFirstVideoStream, found_capability.stream_index, type.Receive());
       if (SUCCEEDED(hr)) {
-        hr = reader_->SetCurrentMediaType(kFirstVideoStream, NULL, type);
+        hr = reader_->SetCurrentMediaType(kFirstVideoStream, NULL, type.get());
         if (SUCCEEDED(hr)) {
           hr = reader_->ReadSample(kFirstVideoStream, 0, NULL, NULL, NULL,
                                    NULL);

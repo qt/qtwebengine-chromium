@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2014, Google Inc.
+ * Copyright 2014 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -50,15 +50,15 @@
 
 - (instancetype)initWithStatsReport:(const webrtc::StatsReport&)statsReport {
   if (self = [super init]) {
-    _reportId = @(statsReport.id.c_str());
-    _type = @(statsReport.type.c_str());
-    _timestamp = statsReport.timestamp;
+    _reportId = @(statsReport.id()->ToString().c_str());
+    _type = @(statsReport.TypeToString());
+    _timestamp = statsReport.timestamp();
     NSMutableArray* values =
-        [NSMutableArray arrayWithCapacity:statsReport.values.size()];
-    webrtc::StatsReport::Values::const_iterator it = statsReport.values.begin();
-    for (; it != statsReport.values.end(); ++it) {
-      RTCPair* pair = [[RTCPair alloc] initWithKey:@(it->display_name())
-                                             value:@(it->value.c_str())];
+        [NSMutableArray arrayWithCapacity:statsReport.values().size()];
+    for (const auto& it : statsReport.values()) {
+      RTCPair* pair =
+          [[RTCPair alloc] initWithKey:@(it.second->display_name())
+                                 value:@(it.second->ToString().c_str())];
       [values addObject:pair];
     }
     _values = values;

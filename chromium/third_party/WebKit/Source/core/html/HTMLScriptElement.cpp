@@ -73,8 +73,7 @@ void HTMLScriptElement::childrenChanged(const ChildrenChange& change)
 
 void HTMLScriptElement::didMoveToNewDocument(Document& oldDocument)
 {
-    if (RefPtrWillBeRawPtr<Document> contextDocument = document().contextDocument().get())
-        oldDocument.scriptRunner()->movePendingAsyncScript(contextDocument->scriptRunner(), m_loader.get());
+    ScriptRunner::movePendingAsyncScript(oldDocument, document(), m_loader.get());
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
@@ -212,7 +211,7 @@ PassRefPtrWillBeRawPtr<Element> HTMLScriptElement::cloneElementWithoutAttributes
     return adoptRefWillBeNoop(new HTMLScriptElement(document(), false, m_loader->alreadyStarted()));
 }
 
-void HTMLScriptElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLScriptElement)
 {
     visitor->trace(m_loader);
     HTMLElement::trace(visitor);

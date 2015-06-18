@@ -17,11 +17,11 @@ namespace content {
 class MockMediaStreamVideoSink : public MediaStreamVideoSink {
  public:
   MockMediaStreamVideoSink();
-  virtual ~MockMediaStreamVideoSink();
+  ~MockMediaStreamVideoSink() override;
 
-  virtual void OnReadyStateChanged(
+  void OnReadyStateChanged(
       blink::WebMediaStreamSource::ReadyState state) override;
-  virtual void OnEnabledChanged(bool enabled) override;
+  void OnEnabledChanged(bool enabled) override;
 
   // Triggered when OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame)
   // is called.
@@ -38,10 +38,8 @@ class MockMediaStreamVideoSink : public MediaStreamVideoSink {
   blink::WebMediaStreamSource::ReadyState state() const { return state_; }
 
  private:
-  void DeliverVideoFrame(
-      const scoped_refptr<media::VideoFrame>& frame,
-      const media::VideoCaptureFormat& format,
-      const base::TimeTicks& estimated_capture_time);
+  void DeliverVideoFrame(const scoped_refptr<media::VideoFrame>& frame,
+                         const base::TimeTicks& estimated_capture_time);
 
   int number_of_frames_;
   bool enabled_;
@@ -54,4 +52,4 @@ class MockMediaStreamVideoSink : public MediaStreamVideoSink {
 
 }  // namespace content
 
-#endif
+#endif  // CONTENT_RENDERER_MEDIA_MOCK_MEDIA_STREAM_VIDEO_SINK_H_

@@ -14,9 +14,9 @@
 #include "ui/events/event.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/gestures/gesture_types.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/vector2d_f.h"
 
 namespace content {
 class BrowserPluginGuest;
@@ -55,6 +55,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void SetBounds(const gfx::Rect& rect) override;
   void Focus() override;
   bool HasFocus() const override;
+  void Show() override;
+  void Hide() override;
   gfx::NativeView GetNativeView() const override;
   gfx::NativeViewId GetNativeViewId() const override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
@@ -65,10 +67,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
   // RenderWidgetHostViewBase implementation.
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
-                   const gfx::Rect& pos) override;
+                   const gfx::Rect& bounds) override;
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
-  void WasShown() override;
-  void WasHidden() override;
   void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
@@ -124,22 +124,20 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #endif  // defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
 
 #if defined(OS_ANDROID)
-  virtual void LockCompositingSurface() override;
-  virtual void UnlockCompositingSurface() override;
+  void LockCompositingSurface() override;
+  void UnlockCompositingSurface() override;
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_WIN)
-  virtual void SetParentNativeViewAccessible(
+  void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) override;
-  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const override;
+  gfx::NativeViewId GetParentForWindowlessPlugin() const override;
 #endif
 
   // Overridden from ui::GestureEventHelper.
   bool CanDispatchToConsumer(ui::GestureConsumer* consumer) override;
   void DispatchGestureEvent(ui::GestureEvent* event) override;
   void DispatchCancelTouchEvent(ui::TouchEvent* event) override;
-
-  SkColorType PreferredReadbackFormat() override;
 
  protected:
   friend class RenderWidgetHostView;
@@ -154,7 +152,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   // Process all of the given gestures (passes them on to renderer)
   void ProcessGestures(ui::GestureRecognizer::Gestures* gestures);
 
-  RenderWidgetHostViewBase* GetGuestRenderWidgetHostView() const;
+  RenderWidgetHostViewBase* GetOwnerRenderWidgetHostView() const;
 
   void OnHandleInputEvent(RenderWidgetHostImpl* embedder,
                           int browser_plugin_instance_id,

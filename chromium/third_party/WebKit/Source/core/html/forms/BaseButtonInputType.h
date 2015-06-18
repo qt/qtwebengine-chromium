@@ -39,15 +39,15 @@ namespace blink {
 class BaseButtonInputType : public BaseClickableWithKeyInputType {
 protected:
     BaseButtonInputType(HTMLInputElement& element) : BaseClickableWithKeyInputType(element) { }
-    virtual void valueAttributeChanged() override;
+    void valueAttributeChanged() override;
+    void createShadowSubtree() override;
 
 private:
-    virtual void createShadowSubtree() override;
-    virtual bool shouldSaveAndRestoreFormControlState() const override;
-    virtual bool appendFormData(FormDataList&, bool) const override;
-    virtual RenderObject* createRenderer(RenderStyle*) const override;
-    virtual bool storesValueSeparateFromAttribute() override;
-    virtual void setValue(const String&, bool, TextFieldEventBehavior) override;
+    bool shouldSaveAndRestoreFormControlState() const override;
+    bool appendFormData(FormDataList&, bool) const override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    bool storesValueSeparateFromAttribute() override;
+    void setValue(const String&, bool, TextFieldEventBehavior) override;
 };
 
 } // namespace blink

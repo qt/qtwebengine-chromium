@@ -5,6 +5,8 @@
 #ifndef CSPSource_h
 #define CSPSource_h
 
+#include "core/CoreExport.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -12,7 +14,7 @@ namespace blink {
 class ContentSecurityPolicy;
 class KURL;
 
-class CSPSource {
+class CORE_EXPORT CSPSource {
 public:
     enum WildcardDisposition {
         HasWildcard,
@@ -20,7 +22,7 @@ public:
     };
 
     CSPSource(ContentSecurityPolicy*, const String& scheme, const String& host, int port, const String& path, WildcardDisposition hostWildcard, WildcardDisposition portWildcard);
-    bool matches(const KURL&) const;
+    bool matches(const KURL&, ContentSecurityPolicy::RedirectStatus = ContentSecurityPolicy::DidNotRedirect) const;
 
 private:
     bool schemeMatches(const KURL&) const;

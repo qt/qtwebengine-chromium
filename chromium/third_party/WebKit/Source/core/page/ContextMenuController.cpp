@@ -60,7 +60,7 @@ PassOwnPtrWillBeRawPtr<ContextMenuController> ContextMenuController::create(Page
     return adoptPtrWillBeNoop(new ContextMenuController(page, client));
 }
 
-void ContextMenuController::trace(Visitor* visitor)
+DEFINE_TRACE(ContextMenuController)
 {
     visitor->trace(m_menuProvider);
     visitor->trace(m_hitTestResult);
@@ -95,13 +95,13 @@ void ContextMenuController::populateCustomContextMenu(const Event& event)
         return;
 
     HTMLElement& element = toHTMLElement(*node);
-    RefPtrWillBeRawPtr<HTMLMenuElement> menuElement = element.contextMenu();
+    RefPtrWillBeRawPtr<HTMLMenuElement> menuElement = element.assignedContextMenu();
     if (!menuElement || !equalIgnoringCase(menuElement->fastGetAttribute(typeAttr), "popup"))
         return;
     RefPtrWillBeRawPtr<RelatedEvent> relatedEvent = RelatedEvent::create(EventTypeNames::show, true, true, node);
     if (!menuElement->dispatchEvent(relatedEvent.release()))
         return;
-    if (menuElement != element.contextMenu())
+    if (menuElement != element.assignedContextMenu())
         return;
     m_menuProvider = CustomContextMenuProvider::create(*menuElement, element);
     m_menuProvider->populateContextMenu(m_contextMenu.get());
@@ -158,12 +158,13 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
 
 PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(LocalFrame* frame, const LayoutPoint& location)
 {
-    HitTestResult result(location);
+    HitTestRequest::HitTestRequestType type = HitTestRequest::ReadOnly | HitTestRequest::Active;
+    HitTestResult result(type, location);
 
     if (frame)
-        result = frame->eventHandler().hitTestResultAtPoint(location, HitTestRequest::ReadOnly | HitTestRequest::Active);
+        result = frame->eventHandler().hitTestResultAtPoint(location, type);
 
-    if (!result.innerNonSharedNode())
+    if (!result.innerNodeOrImageMapImage())
         return nullptr;
 
     m_hitTestResult = result;

@@ -50,7 +50,6 @@ class Context;
 class Function;
 class Object;
 class Value;
-template <class T> class Handle;
 template <class T> class Local;
 }
 
@@ -63,13 +62,9 @@ class WebData;
 class WebDataSource;
 class WebDocument;
 class WebElement;
-class WebFormElement;
-class WebFrameClient;
-class WebInputElement;
 class WebLayer;
 class WebLocalFrame;
 class WebPerformance;
-class WebPermissionClient;
 class WebRange;
 class WebRemoteFrame;
 class WebSecurityOrigin;
@@ -79,6 +74,7 @@ class WebURL;
 class WebURLLoader;
 class WebURLRequest;
 class WebView;
+enum class WebSandboxFlags;
 struct WebConsoleMessage;
 struct WebFindOptions;
 struct WebFloatPoint;
@@ -100,13 +96,25 @@ template <typename T> class WebVector;
 // getting a frame's parent or its opener.
 class WebFrame {
 public:
-    // Control of renderTreeAsText output
-    enum RenderAsTextControl {
-        RenderAsTextNormal = 0,
-        RenderAsTextDebug = 1 << 0,
-        RenderAsTextPrinting = 1 << 1
+    // Control of layoutTreeAsText output
+    enum LayoutAsTextControl {
+        LayoutAsTextNormal = 0,
+        LayoutAsTextDebug = 1 << 0,
+        LayoutAsTextPrinting = 1 << 1
     };
-    typedef unsigned RenderAsTextControls;
+    typedef unsigned LayoutAsTextControls;
+
+    // FIXME: We already have blink::TextGranularity. For now we support only
+    // a part of blink::TextGranularity.
+    // Ideally it seems blink::TextGranularity should be broken up into
+    // blink::TextGranularity and perhaps blink::TextBoundary and then
+    // TextGranularity enum could be moved somewhere to public/, and we could
+    // just use it here directly without introducing a new enum.
+    enum TextGranularity {
+        CharacterGranularity = 0,
+        WordGranularity,
+        TextGranularityLast = WordGranularity,
+    };
 
     // Returns the number of live WebFrame objects, used for leak checking.
     BLINK_EXPORT static int instanceCount();
@@ -152,8 +160,16 @@ public:
     virtual void setRemoteWebLayer(WebLayer*) = 0;
 
     // Initializes the various client interfaces.
-    virtual void setPermissionClient(WebPermissionClient*) = 0;
     virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
+
+    // The security origin of this frame.
+    BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
+
+    // Updates the sandbox flags in the frame's FrameOwner.  This is used when
+    // this frame's parent is in another process and it dynamically updates
+    // this frame's sandbox flags.  The flags won't take effect until the next
+    // navigation.
+    BLINK_EXPORT void setFrameOwnerSandboxFlags(WebSandboxFlags);
 
     // Geometry -----------------------------------------------------------
 
@@ -197,6 +213,10 @@ public:
     // Reset the frame that opened this frame to 0.
     // This is executed between layout tests runs
     void clearOpener() { setOpener(0); }
+
+    // Inserts the given frame as a child of this frame, so that it is the next
+    // child after |previousSibling|, or first child if |previousSibling| is null.
+    BLINK_EXPORT void insertAfter(WebFrame* child, WebFrame* previousSibling);
 
     // Adds the given frame as a child of this frame.
     BLINK_EXPORT void appendChild(WebFrame*);
@@ -300,7 +320,7 @@ public:
     // Executes script in the context of the current page and returns the value
     // that the script evaluated to.
     // DEPRECATED: Use WebLocalFrame::requestExecuteScriptAndReturnValue.
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
+    virtual v8::Local<v8::Value> executeScriptAndReturnValue(
         const WebScriptSource&) = 0;
 
     // worldID must be > 0 (as 0 represents the main world).
@@ -312,11 +332,11 @@ public:
 
     // Call the function with the given receiver and arguments, bypassing
     // canExecute().
-    virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
-        v8::Handle<v8::Function>,
-        v8::Handle<v8::Value>,
+    virtual v8::Local<v8::Value> callFunctionEvenIfScriptDisabled(
+        v8::Local<v8::Function>,
+        v8::Local<v8::Value>,
         int argc,
-        v8::Handle<v8::Value> argv[]) = 0;
+        v8::Local<v8::Value> argv[]) = 0;
 
     // Returns the V8 context for associated with the main world and this
     // frame. There can be many V8 contexts associated with this frame, one for
@@ -414,12 +434,11 @@ public:
 
     virtual WebRange markedRange() const = 0;
 
-    // Returns the frame rectangle in window coordinate space of the given text
-    // range.
+    // Returns the text range rectangle in the viepwort coordinate space.
     virtual bool firstRectForCharacterRange(unsigned location, unsigned length, WebRect&) const = 0;
 
     // Returns the index of a character in the Frame's text stream at the given
-    // point. The point is in the window coordinate space. Will return
+    // point. The point is in the viewport coordinate space. Will return
     // WTF::notFound if the point is invalid.
     virtual size_t characterIndexForPoint(const WebPoint&) const = 0;
 
@@ -456,10 +475,12 @@ public:
 
     virtual void selectRange(const WebRange&) = 0;
 
-    // Move the current selection to the provided window point/points. If the
+    // Move the current selection to the provided viewport point/points. If the
     // current selection is editable, the new selection will be restricted to
     // the root editable element.
-    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) = 0;
+    // |TextGranularity| represents character wrapping granularity. If
+    // WordGranularity is set, WebFrame extends selection to wrap word.
+    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity = CharacterGranularity) = 0;
     virtual void moveCaretSelection(const WebPoint&) = 0;
 
     virtual bool setEditableSelectionOffsets(int start, int end) = 0;
@@ -495,9 +516,6 @@ public:
     // plugin whose content indicates that printed output should not be scaled,
     // return true, otherwise return false.
     virtual bool isPrintScalingDisabledForPlugin(const WebNode& = WebNode()) = 0;
-
-    // Returns the number of copies to be printed.
-    virtual int getPrintCopiesForPlugin(const WebNode& = WebNode()) = 0;
 
     // CSS3 Paged Media ----------------------------------------------------
 
@@ -634,9 +652,9 @@ public:
 
     // Returns a text representation of the render tree.  This method is used
     // to support layout tests.
-    virtual WebString renderTreeAsText(RenderAsTextControls toShow = RenderAsTextNormal) const = 0;
+    virtual WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const = 0;
 
-    // Calls markerTextForListItem() defined in WebCore/rendering/RenderTreeAsText.h.
+    // Calls markerTextForListItem() defined in core/layout/LayoutTreeAsText.h.
     virtual WebString markerTextForListItem(const WebElement&) const = 0;
 
     // Prints all of the pages into the canvas, with page boundaries drawn as
@@ -661,7 +679,9 @@ public:
     static WebFrame* fromFrame(Frame*);
 #if ENABLE(OILPAN)
     static void traceFrames(Visitor*, WebFrame*);
+    static void traceFrames(InlinedGlobalMarkingVisitor, WebFrame*);
     void clearWeakFrames(Visitor*);
+    void clearWeakFrames(InlinedGlobalMarkingVisitor);
 #endif
 #endif
 
@@ -681,7 +701,18 @@ private:
 #if BLINK_IMPLEMENTATION
 #if ENABLE(OILPAN)
     static void traceFrame(Visitor*, WebFrame*);
+    static void traceFrame(InlinedGlobalMarkingVisitor, WebFrame*);
     static bool isFrameAlive(Visitor*, const WebFrame*);
+    static bool isFrameAlive(InlinedGlobalMarkingVisitor, const WebFrame*);
+
+    template <typename VisitorDispatcher>
+    static void traceFramesImpl(VisitorDispatcher, WebFrame*);
+    template <typename VisitorDispatcher>
+    void clearWeakFramesImpl(VisitorDispatcher);
+    template <typename VisitorDispatcher>
+    static void traceFrameImpl(VisitorDispatcher, WebFrame*);
+    template <typename VisitorDispatcher>
+    static bool isFrameAliveImpl(VisitorDispatcher, const WebFrame*);
 #endif
 #endif
 

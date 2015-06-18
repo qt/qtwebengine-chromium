@@ -2,20 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(hclam): This class should be renamed to VideoCaptureService.
-
-// This class provides access to a video capture device in the browser
-// process through IPC. The main function is to deliver video frames
-// to a client.
-//
-// THREADING
-//
-// VideoCaptureImplManager lives only on the render thread. All methods
-// must be called on this thread.
-//
-// VideoFrames are delivered on the IO thread. Callbacks provided by
-// a client are also called on the IO thread.
-
 #ifndef CONTENT_RENDERER_MEDIA_VIDEO_CAPTURE_IMPL_MANAGER_H_
 #define CONTENT_RENDERER_MEDIA_VIDEO_CAPTURE_IMPL_MANAGER_H_
 
@@ -32,13 +18,26 @@
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
 #include "content/public/renderer/media_stream_video_sink.h"
-#include "media/video/capture/video_capture_types.h"
+#include "media/base/video_capture_types.h"
 
 namespace content {
 
 class VideoCaptureImpl;
 class VideoCaptureMessageFilter;
 
+// TODO(hclam): This class should be renamed to VideoCaptureService.
+
+// This class provides access to a video capture device in the browser
+// process through IPC. The main function is to deliver video frames
+// to a client.
+//
+// THREADING
+//
+// VideoCaptureImplManager lives only on the Render Main thread. All methods
+// must be called on this thread.
+//
+// VideoFrames are delivered on the IO thread. Callbacks provided by
+// a client are also called on the IO thread.
 class CONTENT_EXPORT VideoCaptureImplManager {
  public:
   VideoCaptureImplManager();
@@ -76,15 +75,13 @@ class CONTENT_EXPORT VideoCaptureImplManager {
 
   // Get supported formats supported by the device for the given session
   // ID. |callback| will be called on the IO thread.
-  void GetDeviceSupportedFormats(
-      media::VideoCaptureSessionId id,
-      const VideoCaptureDeviceFormatsCB& callback);
+  void GetDeviceSupportedFormats(media::VideoCaptureSessionId id,
+                                 const VideoCaptureDeviceFormatsCB& callback);
 
   // Get supported formats currently in use for the given session ID.
   // |callback| will be called on the IO thread.
-  void GetDeviceFormatsInUse(
-      media::VideoCaptureSessionId id,
-      const VideoCaptureDeviceFormatsCB& callback);
+  void GetDeviceFormatsInUse(media::VideoCaptureSessionId id,
+                             const VideoCaptureDeviceFormatsCB& callback);
 
   // Make all existing VideoCaptureImpl instances stop/resume delivering
   // video frames to their clients, depends on flag |suspend|.
@@ -116,10 +113,11 @@ class CONTENT_EXPORT VideoCaptureImplManager {
   // The ID is global for the render process.
   int next_client_id_;
 
-  scoped_refptr<VideoCaptureMessageFilter> filter_;
+  const scoped_refptr<VideoCaptureMessageFilter> filter_;
 
-  // Bound to the render thread.
-  base::ThreadChecker thread_checker_;
+  // Hold a pointer to the Render Main message loop to check we operate on the
+  // right thread.
+  const scoped_refptr<base::MessageLoopProxy> render_main_message_loop_;
 
   // Bound to the render thread.
   // NOTE: Weak pointers must be invalidated before all other member variables.

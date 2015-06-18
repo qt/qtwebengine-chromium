@@ -56,11 +56,8 @@ HTMLImportChild::HTMLImportChild(const KURL& url, HTMLImportLoader* loader, Sync
 HTMLImportChild::~HTMLImportChild()
 {
 #if !ENABLE(OILPAN)
-    // importDestroyed() should be called before the destruction.
+    // dispose() should be called before the destruction.
     ASSERT(!m_loader);
-
-    if (m_client)
-        m_client->importChildWasDestroyed(this);
 #endif
 }
 
@@ -100,8 +97,7 @@ void HTMLImportChild::didFinishUpgradingCustomElements()
     m_customElementMicrotaskStep.clear();
 }
 
-#if !ENABLE(OILPAN)
-void HTMLImportChild::importDestroyed()
+void HTMLImportChild::dispose()
 {
     if (parent())
         parent()->removeChild(this);
@@ -109,8 +105,12 @@ void HTMLImportChild::importDestroyed()
     ASSERT(m_loader);
     m_loader->removeImport(this);
     m_loader = nullptr;
+
+    if (m_client) {
+        m_client->importChildWasDisposed(this);
+        m_client = nullptr;
+    }
 }
-#endif
 
 Document* HTMLImportChild::document() const
 {
@@ -143,7 +143,7 @@ void HTMLImportChild::createCustomElementMicrotaskStepIfNeeded()
 {
     ASSERT(!m_customElementMicrotaskStep);
 
-    if (!isDone() && !formsCycle()) {
+    if (!hasFinishedLoading() && !formsCycle()) {
 #if ENABLE(OILPAN)
         m_customElementMicrotaskStep = CustomElement::didCreateImport(this);
 #else
@@ -152,7 +152,7 @@ void HTMLImportChild::createCustomElementMicrotaskStepIfNeeded()
     }
 }
 
-bool HTMLImportChild::isDone() const
+bool HTMLImportChild::hasFinishedLoading() const
 {
     ASSERT(m_loader);
 
@@ -161,7 +161,7 @@ bool HTMLImportChild::isDone() const
 
 HTMLImportLoader* HTMLImportChild::loader() const
 {
-    // This should never be called after importDestroyed.
+    // This should never be called after dispose().
     ASSERT(m_loader);
     return m_loader;
 }
@@ -221,7 +221,7 @@ void HTMLImportChild::showThis()
 }
 #endif
 
-void HTMLImportChild::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLImportChild)
 {
     visitor->trace(m_customElementMicrotaskStep);
     visitor->trace(m_loader);

@@ -52,10 +52,8 @@ size_t CBS_len(const CBS *cbs) {
 }
 
 int CBS_stow(const CBS *cbs, uint8_t **out_ptr, size_t *out_len) {
-  if (*out_ptr != NULL) {
-    OPENSSL_free(*out_ptr);
-    *out_ptr = NULL;
-  }
+  OPENSSL_free(*out_ptr);
+  *out_ptr = NULL;
   *out_len = 0;
 
   if (cbs->len == 0) {
@@ -82,8 +80,9 @@ int CBS_contains_zero_byte(const CBS *cbs) {
 }
 
 int CBS_mem_equal(const CBS *cbs, const uint8_t *data, size_t len) {
-  if (len != cbs->len)
+  if (len != cbs->len) {
     return 0;
+  }
   return CRYPTO_memcmp(cbs->data, data, len) == 0;
 }
 
@@ -290,7 +289,12 @@ int CBS_get_asn1_uint64(CBS *cbs, uint64_t *out) {
   }
 
   if ((data[0] & 0x80) != 0) {
-    /* negative number */
+    /* Negative number. */
+    return 0;
+  }
+
+  if (data[0] == 0 && len > 1 && (data[1] & 0x80) == 0) {
+    /* Extra leading zeros. */
     return 0;
   }
 

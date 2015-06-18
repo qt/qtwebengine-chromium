@@ -13,6 +13,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -29,6 +31,7 @@
 #include "build/build_config.h"
 #include "content/common/child_process_sandbox_support_impl_linux.h"
 #include "content/common/font_config_ipc_linux.h"
+#include "content/common/sandbox_linux/sandbox_debug_handling_linux.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/zygote_commands_linux.h"
 #include "content/public/common/content_switches.h"
@@ -37,8 +40,11 @@
 #include "content/public/common/zygote_fork_delegate_linux.h"
 #include "content/zygote/zygote_linux.h"
 #include "crypto/nss_util.h"
+#include "sandbox/linux/services/credentials.h"
 #include "sandbox/linux/services/init_process_reaper.h"
 #include "sandbox/linux/services/libc_urandom_override.h"
+#include "sandbox/linux/services/namespace_sandbox.h"
+#include "sandbox/linux/services/thread_helpers.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
@@ -60,47 +66,26 @@
 #include "third_party/libjingle/overrides/init_webrtc.h"
 #endif
 
-#if defined(ADDRESS_SANITIZER)
-#include <sanitizer/asan_interface.h>
+#if defined(SANITIZER_COVERAGE)
+#include <sanitizer/common_interface_defs.h>
+#include <sanitizer/coverage_interface.h>
 #endif
 
 namespace content {
 
 namespace {
 
-void DoChrootSignalHandler(int) {
-  const int old_errno = errno;
-  const char kFirstMessage[] = "Chroot signal handler called.\n";
-  ignore_result(write(STDERR_FILENO, kFirstMessage, sizeof(kFirstMessage) - 1));
-
-  const int chroot_ret = chroot("/");
-
-  char kSecondMessage[100];
-  const ssize_t printed =
-      base::strings::SafeSPrintf(kSecondMessage,
-                                 "chroot() returned %d. Errno is %d.\n",
-                                 chroot_ret,
-                                 errno);
-  if (printed > 0 && printed < static_cast<ssize_t>(sizeof(kSecondMessage))) {
-    ignore_result(write(STDERR_FILENO, kSecondMessage, printed));
+void CloseFds(const std::vector<int>& fds) {
+  for (const auto& it : fds) {
+    PCHECK(0 == IGNORE_EINTR(close(it)));
   }
-  errno = old_errno;
 }
 
-// This is a quick hack to allow testing sandbox crash reports in production
-// binaries.
-// This installs a signal handler for SIGUSR2 that performs a chroot().
-// In most of our BPF policies, it is a "watched" system call which will
-// trigger a SIGSYS signal whose handler will crash.
-// This has been added during the investigation of https://crbug.com/415842.
-void InstallSandboxCrashTestHandler() {
-  struct sigaction act = {};
-  act.sa_handler = DoChrootSignalHandler;
-  CHECK_EQ(0, sigemptyset(&act.sa_mask));
-  act.sa_flags = 0;
-
-  PCHECK(0 == sigaction(SIGUSR2, &act, NULL));
+void RunTwoClosures(const base::Closure* first, const base::Closure* second) {
+  first->Run();
+  second->Run();
 }
+
 }  // namespace
 
 // See http://code.google.com/p/chromium/wiki/LinuxZygote
@@ -125,8 +110,8 @@ static void ProxyLocaltimeCallToBrowser(time_t input, struct tm* output,
   Pickle reply(reinterpret_cast<char*>(reply_buf), r);
   PickleIterator iter(reply);
   std::string result, timezone;
-  if (!reply.ReadString(&iter, &result) ||
-      !reply.ReadString(&iter, &timezone) ||
+  if (!iter.ReadString(&result) ||
+      !iter.ReadString(&timezone) ||
       result.size() != sizeof(struct tm)) {
     memset(output, 0, sizeof(struct tm));
     return;
@@ -324,7 +309,7 @@ void PreloadPepperPlugins() {
   std::vector<PepperPluginInfo> plugins;
   ComputePepperPluginList(&plugins);
   for (size_t i = 0; i < plugins.size(); ++i) {
-    if (!plugins[i].is_internal && plugins[i].is_sandboxed) {
+    if (!plugins[i].is_internal) {
       base::NativeLibraryLoadError error;
       base::NativeLibrary library = base::LoadNativeLibrary(plugins[i].path,
                                                             &error);
@@ -353,7 +338,7 @@ static void ZygotePreSandboxInit() {
   // cached and there's no more need to access the file system.
   scoped_ptr<icu::TimeZone> zone(icu::TimeZone::createDefault());
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
   // NSS libraries are loaded before sandbox is activated. This is to allow
   // successful initialization of NSS which tries to load extra library files.
   crypto::LoadNSSLibraries();
@@ -424,43 +409,28 @@ static bool EnterSuidSandbox(sandbox::SetuidSandboxClient* setuid_sandbox,
     CHECK(CreateInitProcessReaper(post_fork_parent_callback));
   }
 
-#if !defined(OS_OPENBSD)
-  // Previously, we required that the binary be non-readable. This causes the
-  // kernel to mark the process as non-dumpable at startup. The thinking was
-  // that, although we were putting the renderers into a PID namespace (with
-  // the SUID sandbox), they would nonetheless be in the /same/ PID
-  // namespace. So they could ptrace each other unless they were non-dumpable.
-  //
-  // If the binary was readable, then there would be a window between process
-  // startup and the point where we set the non-dumpable flag in which a
-  // compromised renderer could ptrace attach.
-  //
-  // However, now that we have a zygote model, only the (trusted) zygote
-  // exists at this point and we can set the non-dumpable flag which is
-  // inherited by all our renderer children.
-  //
-  // Note: a non-dumpable process can't be debugged. To debug sandbox-related
-  // issues, one can specify --allow-sandbox-debugging to let the process be
-  // dumpable.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!command_line.HasSwitch(switches::kAllowSandboxDebugging)) {
-    prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
-    if (prctl(PR_GET_DUMPABLE, 0, 0, 0, 0)) {
-      LOG(ERROR) << "Failed to set non-dumpable flag";
-      return false;
-    }
-  } else {
-    // If sandbox debugging is allowed, install a handler for sandbox-related
-    // crash testing.
-    InstallSandboxCrashTestHandler();
-  }
-
-#endif
-
+  CHECK(SandboxDebugHandling::SetDumpableStatusAndHandlers());
   return true;
 }
 
-#if defined(ADDRESS_SANITIZER)
+static void DropAllCapabilities(int proc_fd) {
+  CHECK(sandbox::Credentials::DropAllCapabilities(proc_fd));
+}
+
+static void EnterNamespaceSandbox(LinuxSandbox* linux_sandbox,
+                                  base::Closure* post_fork_parent_callback) {
+  linux_sandbox->EngageNamespaceSandbox();
+
+  if (getpid() == 1) {
+    base::Closure drop_all_caps_callback =
+        base::Bind(&DropAllCapabilities, linux_sandbox->proc_fd());
+    base::Closure callback = base::Bind(
+        &RunTwoClosures, &drop_all_caps_callback, post_fork_parent_callback);
+    CHECK(CreateInitProcessReaper(&callback));
+  }
+}
+
+#if defined(SANITIZER_COVERAGE)
 const size_t kSanitizerMaxMessageLength = 1 * 1024 * 1024;
 
 // A helper process which collects code coverage data from the renderers over a
@@ -494,13 +464,17 @@ static void CreateSanitizerCoverageSocketPair(int fds[2]) {
   PCHECK(0 == shutdown(fds[1], SHUT_RD));
 }
 
-static pid_t ForkSanitizerCoverageHelper(int child_fd, int parent_fd,
-                                        base::ScopedFD file_fd) {
+static pid_t ForkSanitizerCoverageHelper(
+    int child_fd,
+    int parent_fd,
+    base::ScopedFD file_fd,
+    const std::vector<int>& extra_fds_to_close) {
   pid_t pid = fork();
   PCHECK(pid >= 0);
   if (pid == 0) {
     // In the child.
     PCHECK(0 == IGNORE_EINTR(close(parent_fd)));
+    CloseFds(extra_fds_to_close);
     SanitizerCoverageHelper(child_fd, file_fd.get());
     _exit(0);
   } else {
@@ -510,16 +484,10 @@ static pid_t ForkSanitizerCoverageHelper(int child_fd, int parent_fd,
   }
 }
 
-void CloseFdPair(const int fds[2]) {
-  PCHECK(0 == IGNORE_EINTR(close(fds[0])));
-  PCHECK(0 == IGNORE_EINTR(close(fds[1])));
-}
-#endif  // defined(ADDRESS_SANITIZER)
+#endif  // defined(SANITIZER_COVERAGE)
 
-// If |is_suid_sandbox_child|, then make sure that the setuid sandbox is
-// engaged.
 static void EnterLayerOneSandbox(LinuxSandbox* linux_sandbox,
-                                 bool is_suid_sandbox_child,
+                                 const bool using_layer1_sandbox,
                                  base::Closure* post_fork_parent_callback) {
   DCHECK(linux_sandbox);
 
@@ -527,15 +495,18 @@ static void EnterLayerOneSandbox(LinuxSandbox* linux_sandbox,
 
   // Check that the pre-sandbox initialization didn't spawn threads.
 #if !defined(THREAD_SANITIZER)
-  DCHECK(linux_sandbox->IsSingleThreaded());
+  DCHECK(sandbox::ThreadHelpers::IsSingleThreaded());
 #endif
 
   sandbox::SetuidSandboxClient* setuid_sandbox =
       linux_sandbox->setuid_sandbox_client();
-
-  if (is_suid_sandbox_child) {
+  if (setuid_sandbox->IsSuidSandboxChild()) {
     CHECK(EnterSuidSandbox(setuid_sandbox, post_fork_parent_callback))
         << "Failed to enter setuid sandbox";
+  } else if (sandbox::NamespaceSandbox::InNewUserNamespace()) {
+    EnterNamespaceSandbox(linux_sandbox, post_fork_parent_callback);
+  } else {
+    CHECK(!using_layer1_sandbox);
   }
 }
 
@@ -544,11 +515,11 @@ bool ZygoteMain(const MainFunctionParams& params,
   g_am_zygote_or_renderer = true;
   sandbox::InitLibcUrandomOverrides();
 
-  base::Closure *post_fork_parent_callback = NULL;
+  std::vector<int> fds_to_close_post_fork;
 
   LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(SANITIZER_COVERAGE)
   const std::string sancov_file_name =
       "zygote." + base::Uint64ToString(base::RandUint64());
   base::ScopedFD sancov_file_fd(
@@ -562,19 +533,29 @@ bool ZygoteMain(const MainFunctionParams& params,
   // Zygote termination will block until the helper process exits, which will
   // not happen until the write end of the socket is closed everywhere. Make
   // sure the init process does not hold on to it.
-  base::Closure close_sancov_socket_fds =
-      base::Bind(&CloseFdPair, sancov_socket_fds);
-  post_fork_parent_callback = &close_sancov_socket_fds;
-#endif
+  fds_to_close_post_fork.push_back(sancov_socket_fds[0]);
+  fds_to_close_post_fork.push_back(sancov_socket_fds[1]);
+#endif  // SANITIZER_COVERAGE
 
-  // This will pre-initialize the various sandboxes that need it.
-  linux_sandbox->PreinitializeSandbox();
+  // Skip pre-initializing sandbox under --no-sandbox for crbug.com/444900.
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kNoSandbox)) {
+    // This will pre-initialize the various sandboxes that need it.
+    linux_sandbox->PreinitializeSandbox();
+  }
 
-  const bool must_enable_setuid_sandbox =
+  const bool using_setuid_sandbox =
       linux_sandbox->setuid_sandbox_client()->IsSuidSandboxChild();
-  if (must_enable_setuid_sandbox) {
-    linux_sandbox->setuid_sandbox_client()->CloseDummyFile();
+  const bool using_namespace_sandbox =
+      sandbox::NamespaceSandbox::InNewUserNamespace();
+  const bool using_layer1_sandbox =
+      using_setuid_sandbox || using_namespace_sandbox;
 
+  if (using_setuid_sandbox) {
+    linux_sandbox->setuid_sandbox_client()->CloseDummyFile();
+  }
+
+  if (using_layer1_sandbox) {
     // Let the ZygoteHost know we're booting up.
     CHECK(UnixDomainSocket::SendMsg(kZygoteSocketPairFd,
                                     kZygoteBootMessage,
@@ -584,22 +565,32 @@ bool ZygoteMain(const MainFunctionParams& params,
 
   VLOG(1) << "ZygoteMain: initializing " << fork_delegates.size()
           << " fork delegates";
-  for (ScopedVector<ZygoteForkDelegate>::iterator i = fork_delegates.begin();
-       i != fork_delegates.end();
-       ++i) {
-    (*i)->Init(GetSandboxFD(), must_enable_setuid_sandbox);
+  for (ZygoteForkDelegate* fork_delegate : fork_delegates) {
+    fork_delegate->Init(GetSandboxFD(), using_layer1_sandbox);
   }
 
-  // Turn on the first layer of the sandbox if the configuration warrants it.
-  EnterLayerOneSandbox(linux_sandbox, must_enable_setuid_sandbox,
-                       post_fork_parent_callback);
+  const std::vector<int> sandbox_fds_to_close_post_fork =
+      linux_sandbox->GetFileDescriptorsToClose();
 
+  fds_to_close_post_fork.insert(fds_to_close_post_fork.end(),
+                                sandbox_fds_to_close_post_fork.begin(),
+                                sandbox_fds_to_close_post_fork.end());
+  base::Closure post_fork_parent_callback =
+      base::Bind(&CloseFds, fds_to_close_post_fork);
+
+  // Turn on the first layer of the sandbox if the configuration warrants it.
+  EnterLayerOneSandbox(linux_sandbox, using_layer1_sandbox,
+                       &post_fork_parent_callback);
+
+  // Extra children and file descriptors created that the Zygote must have
+  // knowledge of.
   std::vector<pid_t> extra_children;
   std::vector<int> extra_fds;
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(SANITIZER_COVERAGE)
   pid_t sancov_helper_pid = ForkSanitizerCoverageHelper(
-      sancov_socket_fds[0], sancov_socket_fds[1], sancov_file_fd.Pass());
+      sancov_socket_fds[0], sancov_socket_fds[1], sancov_file_fd.Pass(),
+      sandbox_fds_to_close_post_fork);
   // It's important that the zygote reaps the helper before dying. Otherwise,
   // the destruction of the PID namespace could kill the helper before it
   // completes its I/O tasks. |sancov_helper_pid| will exit once the last
@@ -609,11 +600,15 @@ bool ZygoteMain(const MainFunctionParams& params,
   // from the zygote. We must keep it open until the very end of the zygote's
   // lifetime, even though we don't explicitly use it.
   extra_fds.push_back(sancov_socket_fds[1]);
-#endif
+#endif  // SANITIZER_COVERAGE
 
-  int sandbox_flags = linux_sandbox->GetStatus();
-  bool setuid_sandbox_engaged = sandbox_flags & kSandboxLinuxSUID;
-  CHECK_EQ(must_enable_setuid_sandbox, setuid_sandbox_engaged);
+  const int sandbox_flags = linux_sandbox->GetStatus();
+
+  const bool setuid_sandbox_engaged = sandbox_flags & kSandboxLinuxSUID;
+  CHECK_EQ(using_setuid_sandbox, setuid_sandbox_engaged);
+
+  const bool namespace_sandbox_engaged = sandbox_flags & kSandboxLinuxUserNS;
+  CHECK_EQ(using_namespace_sandbox, namespace_sandbox_engaged);
 
   Zygote zygote(sandbox_flags, fork_delegates.Pass(), extra_children,
                 extra_fds);

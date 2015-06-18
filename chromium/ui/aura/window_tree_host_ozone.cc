@@ -4,15 +4,15 @@
 
 #include "ui/aura/window_tree_host_ozone.h"
 
+#include "base/trace_event/trace_event.h"
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/platform_window/platform_window.h"
 
 namespace aura {
 
 WindowTreeHostOzone::WindowTreeHostOzone(const gfx::Rect& bounds)
-    : widget_(gfx::kNullAcceleratedWidget) {
+    : widget_(gfx::kNullAcceleratedWidget), current_cursor_(ui::kCursorNull) {
   platform_window_ =
       ui::OzonePlatform::GetInstance()->CreatePlatformWindow(this, bounds);
 }
@@ -20,42 +20,6 @@ WindowTreeHostOzone::WindowTreeHostOzone(const gfx::Rect& bounds)
 WindowTreeHostOzone::~WindowTreeHostOzone() {
   DestroyCompositor();
   DestroyDispatcher();
-}
-
-void WindowTreeHostOzone::OnBoundsChanged(const gfx::Rect& new_bounds) {
-  // TOOD(spang): Should we determine which parts changed?
-  OnHostResized(new_bounds.size());
-  OnHostMoved(new_bounds.origin());
-}
-
-void WindowTreeHostOzone::OnDamageRect(const gfx::Rect& damaged_region) {
-}
-
-void WindowTreeHostOzone::DispatchEvent(ui::Event* event) {
-  SendEventToProcessor(event);
-}
-
-void WindowTreeHostOzone::OnCloseRequest() {
-  OnHostCloseRequested();
-}
-
-void WindowTreeHostOzone::OnClosed() {
-}
-
-void WindowTreeHostOzone::OnWindowStateChanged(
-    ui::PlatformWindowState new_state) {
-}
-
-void WindowTreeHostOzone::OnLostCapture() {
-}
-
-void WindowTreeHostOzone::OnAcceleratedWidgetAvailable(
-    gfx::AcceleratedWidget widget) {
-  widget_ = widget;
-  CreateCompositor(widget_);
-}
-
-void WindowTreeHostOzone::OnActivationChanged(bool active) {
 }
 
 ui::EventSource* WindowTreeHostOzone::GetEventSource() {
@@ -95,6 +59,9 @@ void WindowTreeHostOzone::ReleaseCapture() {
 }
 
 void WindowTreeHostOzone::SetCursorNative(gfx::NativeCursor cursor) {
+  if (cursor == current_cursor_)
+    return;
+  current_cursor_ = cursor;
   platform_window_->SetCursor(cursor.platform());
 }
 
@@ -103,7 +70,43 @@ void WindowTreeHostOzone::MoveCursorToNative(const gfx::Point& location) {
 }
 
 void WindowTreeHostOzone::OnCursorVisibilityChangedNative(bool show) {
-  NOTIMPLEMENTED();
+}
+
+void WindowTreeHostOzone::OnBoundsChanged(const gfx::Rect& new_bounds) {
+  // TOOD(spang): Should we determine which parts changed?
+  OnHostResized(new_bounds.size());
+  OnHostMoved(new_bounds.origin());
+}
+
+void WindowTreeHostOzone::OnDamageRect(const gfx::Rect& damaged_region) {
+}
+
+void WindowTreeHostOzone::DispatchEvent(ui::Event* event) {
+  TRACE_EVENT0("input", "WindowTreeHostOzone::DispatchEvent");
+  SendEventToProcessor(event);
+}
+
+void WindowTreeHostOzone::OnCloseRequest() {
+  OnHostCloseRequested();
+}
+
+void WindowTreeHostOzone::OnClosed() {
+}
+
+void WindowTreeHostOzone::OnWindowStateChanged(
+    ui::PlatformWindowState new_state) {
+}
+
+void WindowTreeHostOzone::OnLostCapture() {
+}
+
+void WindowTreeHostOzone::OnAcceleratedWidgetAvailable(
+    gfx::AcceleratedWidget widget) {
+  widget_ = widget;
+  CreateCompositor(widget_);
+}
+
+void WindowTreeHostOzone::OnActivationChanged(bool active) {
 }
 
 ui::EventProcessor* WindowTreeHostOzone::GetEventProcessor() {

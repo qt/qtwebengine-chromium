@@ -39,8 +39,11 @@ window.addEventListener('DOMContentLoaded', function() {
           data.provider));
     }
     // Creates and adds an image.
-    function createThumbnail(src) {
+    function createThumbnail(src, imageClass) {
       var image = document.createElement('img');
+      if (imageClass) {
+        image.classList.add(imageClass);
+      }
       image.onload = function() {
         var link = createMostVisitedLink(
             params, data.url, data.title, undefined, data.direction,
@@ -51,6 +54,7 @@ window.addEventListener('DOMContentLoaded', function() {
         link.appendChild(blocker);
         link.appendChild(image);
         displayLink(link);
+        logEvent(NTP_LOGGING_EVENT_TYPE.NTP_TILE_LOADED);
       };
       image.onerror = function() {
         // If no external thumbnail fallback (etfb), and have domain.
@@ -62,15 +66,20 @@ window.addEventListener('DOMContentLoaded', function() {
           logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE_FALLBACK);
         }
         logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ERROR);
+        logEvent(NTP_LOGGING_EVENT_TYPE.NTP_TILE_LOADED);
       };
       image.src = src;
     }
 
+    var useIcons = params['icons'] == '1';
     if (data.dummy) {
       showEmptyTile();
       logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE);
-    } else if (data.thumbnailUrl) {
-      createThumbnail(data.thumbnailUrl);
+    } else if (useIcons && data.largeIconUrl) {
+      createThumbnail(data.largeIconUrl, 'large-icon');
+      // TODO(huangs): Log event for large icons.
+    } else if (!useIcons && data.thumbnailUrl) {
+      createThumbnail(data.thumbnailUrl, 'thumbnail');
       logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_TILE);
     } else if (data.domain) {
       showDomainElement();

@@ -21,8 +21,8 @@ public:
     SkStrokeRec(InitStyle style);
 
     SkStrokeRec(const SkStrokeRec&);
-    SkStrokeRec(const SkPaint&, SkPaint::Style);
-    explicit SkStrokeRec(const SkPaint&);
+    SkStrokeRec(const SkPaint&, SkPaint::Style, SkScalar resScale = 1);
+    explicit SkStrokeRec(const SkPaint&, SkScalar resScale = 1);
 
     enum Style {
         kHairline_Style,
@@ -64,6 +64,11 @@ public:
         fMiterLimit = miterLimit;
     }
 
+    void setResScale(SkScalar rs) {
+        SkASSERT(rs > 0 && SkScalarIsFinite(rs));
+        fResScale = rs;
+    }
+
     /**
      *  Returns true if this specifes any thick stroking, i.e. applyToPath()
      *  will return true.
@@ -85,18 +90,31 @@ public:
      */
     bool applyToPath(SkPath* dst, const SkPath& src) const;
 
-    bool operator==(const SkStrokeRec& other) const {
-            return fWidth == other.fWidth &&
-                   fMiterLimit == other.fMiterLimit &&
-                   fCap == other.fCap &&
-                   fJoin == other.fJoin &&
-                   fStrokeAndFill == other.fStrokeAndFill;
+    /**
+     *  Apply these stroke parameters to a paint.
+     */
+    void applyToPaint(SkPaint* paint) const;
+
+    /**
+     * Compare if two SkStrokeRecs have an equal effect on a path.
+     * Equal SkStrokeRecs produce equal paths. Equality of produced
+     * paths does not take the ResScale parameter into account.
+     */
+    bool hasEqualEffect(const SkStrokeRec& other) const {
+        if (!this->needToApply()) {
+            return this->getStyle() == other.getStyle();
+        }
+        return fWidth == other.fWidth &&
+               fMiterLimit == other.fMiterLimit &&
+               fCap == other.fCap &&
+               fJoin == other.fJoin &&
+               fStrokeAndFill == other.fStrokeAndFill;
     }
 
 private:
-    void init(const SkPaint& paint, SkPaint::Style style);
+    void init(const SkPaint&, SkPaint::Style, SkScalar resScale);
 
-
+    SkScalar        fResScale;
     SkScalar        fWidth;
     SkScalar        fMiterLimit;
     SkPaint::Cap    fCap;

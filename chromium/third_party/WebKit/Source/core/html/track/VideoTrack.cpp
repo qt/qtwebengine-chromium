@@ -20,6 +20,11 @@ VideoTrack::~VideoTrack()
 {
 }
 
+DEFINE_TRACE(VideoTrack)
+{
+    TrackBase::trace(visitor);
+}
+
 void VideoTrack::setSelected(bool selected)
 {
     if (selected == m_selected)
@@ -28,7 +33,7 @@ void VideoTrack::setSelected(bool selected)
     m_selected = selected;
 
     if (mediaElement()) {
-        blink::WebMediaPlayer::TrackId selectedTrackId = trackId();
+        WebMediaPlayer::TrackId selectedTrackId = trackId();
         mediaElement()->selectedVideoTrackChanged(selected ? &selectedTrackId : 0);
     }
 }
@@ -69,14 +74,15 @@ const AtomicString& VideoTrack::commentaryKeyword()
     return keyword;
 }
 
-bool VideoTrack::isValidKind(const AtomicString& kind) const
+bool VideoTrack::isValidKindKeyword(const String& kind)
 {
     return (kind == alternativeKeyword())
         || (kind == captionsKeyword())
         || (kind == mainKeyword())
         || (kind == signKeyword())
         || (kind == subtitlesKeyword())
-        || (kind == commentaryKeyword());
+        || (kind == commentaryKeyword())
+        || (kind == emptyAtom);
 }
 
 AtomicString VideoTrack::defaultKind() const
@@ -84,4 +90,4 @@ AtomicString VideoTrack::defaultKind() const
     return emptyAtom;
 }
 
-}
+} // namespace blink

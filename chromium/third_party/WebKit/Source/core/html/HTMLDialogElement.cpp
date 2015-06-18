@@ -27,15 +27,15 @@
 #include "core/html/HTMLDialogElement.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/accessibility/AXObjectCache.h"
+#include "core/dom/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/events/Event.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFormControlElement.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/layout/LayoutBlock.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 

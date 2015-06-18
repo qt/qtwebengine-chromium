@@ -34,8 +34,8 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/StylePropertySet.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/StyleInheritedData.h"
 
 #include <gtest/gtest.h>
 
@@ -89,9 +89,9 @@ bool lengthArraysEqual(CSSLengthArray& a, CSSLengthArray& b)
 
 TEST(CSSCalculationValue, AccumulatePixelsAndPercent)
 {
-    RefPtr<RenderStyle> style = RenderStyle::createDefaultStyle();
+    RefPtr<ComputedStyle> style = ComputedStyle::create();
     style->setEffectiveZoom(5);
-    CSSToLengthConversionData conversionData(style.get(), style.get(), 0);
+    CSSToLengthConversionData conversionData(style.get(), style.get(), nullptr, style->effectiveZoom());
 
     testAccumulatePixelsAndPercent(conversionData,
         CSSCalcValue::createExpressionNode(CSSPrimitiveValue::create(10, CSSPrimitiveValue::CSS_PX), true),

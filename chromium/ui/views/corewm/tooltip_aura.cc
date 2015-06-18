@@ -5,14 +5,18 @@
 #include "ui/views/corewm/tooltip_aura.h"
 
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/render_text.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/text_utils.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
+#include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -20,8 +24,6 @@ namespace {
 // Max visual tooltip width. If a tooltip is greater than this width, it will
 // be wrapped.
 const int kTooltipMaxWidthPixels = 400;
-
-const size_t kMaxLines = 10;
 
 // FIXME: get cursor offset from actual cursor size.
 const int kCursorOffsetX = 10;
@@ -47,113 +49,94 @@ views::Widget* CreateTooltipWidget(aura::Window* tooltip_window) {
 namespace views {
 namespace corewm {
 
-TooltipAura::TooltipAura(gfx::ScreenType screen_type)
-    : screen_type_(screen_type),
+// TODO(oshima): Consider to use views::Label.
+class TooltipAura::TooltipView : public views::View {
+ public:
+  TooltipView()
+      : render_text_(gfx::RenderText::CreateInstance()),
+        max_width_(0) {
+    const int kHorizontalPadding = 3;
+    const int kVerticalPadding = 2;
+    SetBorder(Border::CreateEmptyBorder(
+        kVerticalPadding, kHorizontalPadding,
+        kVerticalPadding, kHorizontalPadding));
+
+    set_owned_by_client();
+    render_text_->SetWordWrapBehavior(gfx::WRAP_LONG_WORDS);
+    render_text_->SetMultiline(true);
+
+    ResetDisplayRect();
+  }
+
+  ~TooltipView() override {}
+
+  // views:View:
+  void OnPaint(gfx::Canvas* canvas) override {
+    OnPaintBackground(canvas);
+    gfx::Size text_size = size();
+    gfx::Insets insets = border()->GetInsets();
+    text_size.Enlarge(-insets.width(), -insets.height());
+    render_text_->SetDisplayRect(gfx::Rect(text_size));
+    canvas->Save();
+    canvas->Translate(gfx::Vector2d(insets.left(), insets.top()));
+    render_text_->Draw(canvas);
+    canvas->Restore();
+    OnPaintBorder(canvas);
+  }
+
+  gfx::Size GetPreferredSize() const override {
+    gfx::Size view_size = render_text_->GetStringSize();
+    gfx::Insets insets = border()->GetInsets();
+    view_size.Enlarge(insets.width(), insets.height());
+    return view_size;
+  }
+
+  const char* GetClassName() const override {
+    return "TooltipView";
+  }
+
+  void SetText(const base::string16& text) {
+    render_text_->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
+    render_text_->SetText(text);
+  }
+
+  void SetForegroundColor(SkColor color) {
+    render_text_->SetColor(color);
+  }
+
+  void SetMaxWidth(int width) {
+    max_width_ = width;
+    ResetDisplayRect();
+  }
+
+ private:
+  void ResetDisplayRect() {
+    gfx::Insets insets = border()->GetInsets();
+    int max_text_width = max_width_ - insets.width();
+    render_text_->SetDisplayRect(gfx::Rect(0, 0, max_text_width, 100000));
+  }
+
+  scoped_ptr<gfx::RenderText> render_text_;
+  int max_width_;
+
+  DISALLOW_COPY_AND_ASSIGN(TooltipView);
+};
+
+TooltipAura::TooltipAura()
+    : tooltip_view_(new TooltipView),
       widget_(NULL),
       tooltip_window_(NULL) {
-  label_.set_owned_by_client();
-  label_.SetMultiLine(true);
-
-  const int kHorizontalPadding = 3;
-  const int kVerticalPadding = 2;
-  label_.SetBorder(Border::CreateEmptyBorder(
-      kVerticalPadding, kHorizontalPadding,
-      kVerticalPadding, kHorizontalPadding));
 }
 
 TooltipAura::~TooltipAura() {
   DestroyWidget();
 }
 
-// static
-void TooltipAura::TrimTooltipToFit(const gfx::FontList& font_list,
-                                   int max_width,
-                                   base::string16* text,
-                                   int* width,
-                                   int* line_count) {
-  *width = 0;
-  *line_count = 0;
-
-  // Determine the available width for the tooltip.
-  int available_width = std::min(kTooltipMaxWidthPixels, max_width);
-
-  std::vector<base::string16> lines;
-  base::SplitString(*text, '\n', &lines);
-  std::vector<base::string16> result_lines;
-
-  // Format each line to fit.
-  for (std::vector<base::string16>::iterator l = lines.begin();
-       l != lines.end(); ++l) {
-    // We break the line at word boundaries, then stuff as many words as we can
-    // in the available width to the current line, and move the remaining words
-    // to a new line.
-    std::vector<base::string16> words;
-    base::SplitStringDontTrim(*l, ' ', &words);
-    int current_width = 0;
-    base::string16 line;
-    for (std::vector<base::string16>::iterator w = words.begin();
-         w != words.end(); ++w) {
-      base::string16 word = *w;
-      if (w + 1 != words.end())
-        word.push_back(' ');
-      int word_width = gfx::GetStringWidth(word, font_list);
-      if (current_width + word_width > available_width) {
-        // Current width will exceed the available width. Must start a new line.
-        if (!line.empty())
-          result_lines.push_back(line);
-        current_width = 0;
-        line.clear();
-      }
-      current_width += word_width;
-      line.append(word);
-    }
-    result_lines.push_back(line);
-  }
-
-  // Clamp number of lines to |kMaxLines|.
-  if (result_lines.size() > kMaxLines) {
-    result_lines.resize(kMaxLines);
-    // Add ellipses character to last line.
-    result_lines[kMaxLines - 1] = gfx::TruncateString(
-        result_lines.back(), result_lines.back().length() - 1, gfx::WORD_BREAK);
-  }
-  *line_count = result_lines.size();
-
-  // Flatten the result.
-  base::string16 result;
-  for (std::vector<base::string16>::iterator l = result_lines.begin();
-      l != result_lines.end(); ++l) {
-    if (!result.empty())
-      result.push_back('\n');
-    int line_width = gfx::GetStringWidth(*l, font_list);
-    // Since we only break at word boundaries, it could happen that due to some
-    // very long word, line_width is greater than the available_width. In such
-    // case, we simply truncate at available_width and add ellipses at the end.
-    if (line_width > available_width) {
-      *width = available_width;
-      result.append(gfx::ElideText(*l, font_list, available_width,
-                                   gfx::ELIDE_TAIL));
-    } else {
-      *width = std::max(*width, line_width);
-      result.append(*l);
-    }
-  }
-  *text = result;
-}
-
-int TooltipAura::GetMaxWidth(const gfx::Point& location) const {
-  // TODO(varunjain): implementation duplicated in tooltip_manager_aura. Figure
-  // out a way to merge.
-  gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
-  gfx::Rect display_bounds(screen->GetDisplayNearestPoint(location).bounds());
-  return (display_bounds.width() + 1) / 2;
-}
-
 void TooltipAura::SetTooltipBounds(const gfx::Point& mouse_pos,
                                    const gfx::Size& tooltip_size) {
   gfx::Rect tooltip_rect(mouse_pos, tooltip_size);
   tooltip_rect.Offset(kCursorOffsetX, kCursorOffsetY);
-  gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
+  gfx::Screen* screen = gfx::Screen::GetScreenFor(tooltip_window_);
   gfx::Rect display_bounds(screen->GetDisplayNearestPoint(mouse_pos).bounds());
 
   // If tooltip is out of bounds on the x axis, we simply shift it
@@ -180,34 +163,34 @@ void TooltipAura::DestroyWidget() {
   }
 }
 
+int TooltipAura::GetMaxWidth(const gfx::Point& location,
+                             aura::Window* context) const {
+  gfx::Screen* screen = gfx::Screen::GetScreenFor(context);
+  gfx::Rect display_bounds(screen->GetDisplayNearestPoint(location).bounds());
+  return std::min(kTooltipMaxWidthPixels, (display_bounds.width() + 1) / 2);
+}
+
 void TooltipAura::SetText(aura::Window* window,
                           const base::string16& tooltip_text,
                           const gfx::Point& location) {
   tooltip_window_ = window;
-  int max_width = 0;
-  int line_count = 0;
-  base::string16 trimmed_text(tooltip_text);
-  TrimTooltipToFit(label_.font_list(), GetMaxWidth(location), &trimmed_text,
-                   &max_width, &line_count);
-  label_.SetText(trimmed_text);
+  tooltip_view_->SetMaxWidth(GetMaxWidth(location, window));
+  tooltip_view_->SetText(tooltip_text);
 
   if (!widget_) {
     widget_ = CreateTooltipWidget(tooltip_window_);
-    widget_->SetContentsView(&label_);
+    widget_->SetContentsView(tooltip_view_.get());
     widget_->AddObserver(this);
   }
 
-  label_.SizeToFit(max_width + label_.GetInsets().width());
-  SetTooltipBounds(location, label_.size());
+  SetTooltipBounds(location, tooltip_view_->GetPreferredSize());
 
   ui::NativeTheme* native_theme = widget_->GetNativeTheme();
-  label_.set_background(
+  tooltip_view_->set_background(
       views::Background::CreateSolidBackground(
           native_theme->GetSystemColor(
               ui::NativeTheme::kColorId_TooltipBackground)));
-
-  label_.SetAutoColorReadabilityEnabled(false);
-  label_.SetEnabledColor(native_theme->GetSystemColor(
+  tooltip_view_->SetForegroundColor(native_theme->GetSystemColor(
       ui::NativeTheme::kColorId_TooltipText));
 }
 

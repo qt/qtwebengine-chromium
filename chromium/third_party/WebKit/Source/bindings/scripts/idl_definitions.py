@@ -31,14 +31,10 @@
 Classes are primarily constructors, which build an IdlDefinitions object
 (and various contained objects) from an AST (produced by blink_idl_parser).
 
-This is in two steps:
-* Constructors walk the AST, creating objects.
-* Typedef resolution.
-
-Typedefs are all resolved here, and not stored in IR.
+IR stores typedefs and they are resolved by the code generator.
 
 Typedef resolution uses some auxiliary classes and OOP techniques to make this
-a generic call, via the resolve_typedefs() method.
+a generic call. See TypedefResolver class in code_generator_v8.py.
 
 Class hierarchy (mostly containment, '<' for inheritance):
 
@@ -51,11 +47,15 @@ IdlDefinitions
         IdlLiteral
         IdlOperation < TypedObject
             IdlArgument < TypedObject
+        IdlSerializer
         IdlStringifier
+        IdlIterable < IdlIterableOrMaplikeOrSetlike
+        IdlMaplike < IdlIterableOrMaplikeOrSetlike
+        IdlSetlike < IdlIterableOrMaplikeOrSetlike
     IdlException < IdlInterface
         (same contents as IdlInterface)
 
-TypedObject :: mixin for typedef resolution
+TypedObject :: Object with one or more attributes that is a type.
 
 IdlArgument is 'picklable', as it is stored in interfaces_info.
 
@@ -67,34 +67,20 @@ import abc
 from idl_types import IdlType, IdlUnionType, IdlArrayType, IdlSequenceType, IdlNullableType
 
 SPECIAL_KEYWORD_LIST = ['GETTER', 'SETTER', 'DELETER']
-STANDARD_TYPEDEFS = {
-    # http://www.w3.org/TR/WebIDL/#common-DOMTimeStamp
-    'DOMTimeStamp': 'unsigned long long',
-}
 
 
 ################################################################################
-# TypedObject (mixin for typedef resolution)
+# TypedObject
 ################################################################################
 
 class TypedObject(object):
     """Object with a type, such as an Attribute or Operation (return value).
 
     The type can be an actual type, or can be a typedef, which must be resolved
-    before passing data to the code generator.
+    by the TypedefResolver before passing data to the code generator.
     """
     __metaclass__ = abc.ABCMeta
-    idl_type = None
-
-    def resolve_typedefs(self, typedefs):
-        """Resolve typedefs to actual types in the object."""
-        # Constructors don't have their own return type, because it's the
-        # interface itself.
-        if not self.idl_type:
-            return
-        # Need to re-assign self.idl_type, not just mutate idl_type,
-        # since type(idl_type) may change.
-        self.idl_type = self.idl_type.resolve_typedefs(typedefs)
+    idl_type_attributes = ('idl_type',)
 
 
 ################################################################################
@@ -110,14 +96,11 @@ class IdlDefinitions(object):
         self.implements = []
         self.interfaces = {}
         self.idl_name = idl_name
+        self.typedefs = {}
 
         node_class = node.GetClass()
         if node_class != 'File':
             raise ValueError('Unrecognized node class: %s' % node_class)
-
-        typedefs = dict((typedef_name, IdlType(type_name))
-                        for typedef_name, type_name in
-                        STANDARD_TYPEDEFS.iteritems())
 
         children = node.GetChildren()
         for child in children:
@@ -130,8 +113,8 @@ class IdlDefinitions(object):
                 # For simplicity, treat exceptions as interfaces
                 self.interfaces[exception.name] = exception
             elif child_class == 'Typedef':
-                type_name = child.GetName()
-                typedefs[type_name] = typedef_node_to_type(child)
+                typedef = IdlTypedef(child)
+                self.typedefs[typedef.name] = typedef
             elif child_class == 'Enum':
                 enumeration = IdlEnum(idl_name, child)
                 self.enumerations[enumeration.name] = enumeration
@@ -146,16 +129,16 @@ class IdlDefinitions(object):
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
 
-        # Typedefs are not stored in IR:
-        # Resolve typedefs with the actual types and then discard the Typedefs.
-        # http://www.w3.org/TR/WebIDL/#idl-typedefs
-        self.resolve_typedefs(typedefs)
-
-    def resolve_typedefs(self, typedefs):
-        for callback_function in self.callback_functions.itervalues():
-            callback_function.resolve_typedefs(typedefs)
+    def accept(self, visitor):
+        visitor.visit_definitions(self)
         for interface in self.interfaces.itervalues():
-            interface.resolve_typedefs(typedefs)
+            interface.accept(visitor)
+        for callback_function in self.callback_functions.itervalues():
+            callback_function.accept(visitor)
+        for dictionary in self.dictionaries.itervalues():
+            dictionary.accept(visitor)
+        for typedef in self.typedefs.itervalues():
+            typedef.accept(visitor)
 
     def update(self, other):
         """Update with additional IdlDefinitions."""
@@ -198,10 +181,10 @@ class IdlCallbackFunction(TypedObject):
         self.idl_type = type_node_to_type(type_node)
         self.arguments = arguments_node_to_arguments(idl_name, arguments_node)
 
-    def resolve_typedefs(self, typedefs):
-        TypedObject.resolve_typedefs(self, typedefs)
+    def accept(self, visitor):
+        visitor.visit_callback_function(self)
         for argument in self.arguments:
-            argument.resolve_typedefs(typedefs)
+            argument.accept(visitor)
 
 
 ################################################################################
@@ -211,7 +194,7 @@ class IdlCallbackFunction(TypedObject):
 class IdlDictionary(object):
     def __init__(self, idl_name, node):
         self.extended_attributes = {}
-        self.is_partial = node.GetProperty('Partial') or False
+        self.is_partial = bool(node.GetProperty('Partial'))
         self.idl_name = idl_name
         self.name = node.GetName()
         self.members = []
@@ -228,13 +211,19 @@ class IdlDictionary(object):
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
 
+    def accept(self, visitor):
+        visitor.visit_dictionary(self)
+        for member in self.members:
+            member.accept(visitor)
 
-class IdlDictionaryMember(object):
+
+class IdlDictionaryMember(TypedObject):
     def __init__(self, idl_name, node):
         self.default_value = None
         self.extended_attributes = {}
         self.idl_type = None
         self.idl_name = idl_name
+        self.is_required = bool(node.GetProperty('REQUIRED'))
         self.name = node.GetName()
         for child in node.GetChildren():
             child_class = child.GetClass()
@@ -247,6 +236,9 @@ class IdlDictionaryMember(object):
                     ext_attributes_node_to_extended_attributes(idl_name, child))
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
+
+    def accept(self, visitor):
+        visitor.visit_dictionary_member(self)
 
 
 ################################################################################
@@ -264,6 +256,21 @@ class IdlEnum(object):
 
 
 ################################################################################
+# Typedefs
+################################################################################
+
+class IdlTypedef(object):
+    idl_type_attributes = ('idl_type',)
+
+    def __init__(self, node):
+        self.name = node.GetName()
+        self.idl_type = typedef_node_to_type(node)
+
+    def accept(self, visitor):
+        visitor.visit_typedef(self)
+
+
+################################################################################
 # Interfaces and Exceptions
 ################################################################################
 
@@ -276,16 +283,20 @@ class IdlInterface(object):
         self.extended_attributes = {}
         self.operations = []
         self.parent = None
+        self.serializer = None
         self.stringifier = None
+        self.iterable = None
+        self.maplike = None
+        self.setlike = None
         self.original_interface = None
         self.partial_interfaces = []
         if not node:  # Early exit for IdlException.__init__
             return
 
-        self.is_callback = node.GetProperty('CALLBACK') or False
+        self.is_callback = bool(node.GetProperty('CALLBACK'))
         self.is_exception = False
         # FIXME: uppercase 'Partial' => 'PARTIAL' in base IDL parser
-        self.is_partial = node.GetProperty('Partial') or False
+        self.is_partial = bool(node.GetProperty('Partial'))
         self.idl_name = idl_name
         self.name = node.GetName()
         self.idl_type = IdlType(self.name)
@@ -307,23 +318,48 @@ class IdlInterface(object):
                 self.operations.append(IdlOperation(idl_name, child))
             elif child_class == 'Inherit':
                 self.parent = child.GetName()
+            elif child_class == 'Serializer':
+                self.serializer = IdlSerializer(idl_name, child)
+                self.process_serializer()
             elif child_class == 'Stringifier':
                 self.stringifier = IdlStringifier(idl_name, child)
                 self.process_stringifier()
+            elif child_class == 'Iterable':
+                self.iterable = IdlIterable(idl_name, child)
+            elif child_class == 'Maplike':
+                self.maplike = IdlMaplike(idl_name, child)
+            elif child_class == 'Setlike':
+                self.setlike = IdlSetlike(idl_name, child)
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
 
-    def resolve_typedefs(self, typedefs):
+        if len(filter(None, [self.iterable, self.maplike, self.setlike])) > 1:
+            raise ValueError('Interface can only have one of iterable<>, maplike<> and setlike<>.')
+
+    def accept(self, visitor):
+        visitor.visit_interface(self)
         for attribute in self.attributes:
-            attribute.resolve_typedefs(typedefs)
+            attribute.accept(visitor)
         for constant in self.constants:
-            constant.resolve_typedefs(typedefs)
+            constant.accept(visitor)
         for constructor in self.constructors:
-            constructor.resolve_typedefs(typedefs)
+            constructor.accept(visitor)
         for custom_constructor in self.custom_constructors:
-            custom_constructor.resolve_typedefs(typedefs)
+            custom_constructor.accept(visitor)
         for operation in self.operations:
-            operation.resolve_typedefs(typedefs)
+            operation.accept(visitor)
+        if self.iterable:
+            self.iterable.accept(visitor)
+        elif self.maplike:
+            self.maplike.accept(visitor)
+        elif self.setlike:
+            self.setlike.accept(visitor)
+
+    def process_serializer(self):
+        """Add the serializer's named operation child, if it has one, as a regular
+        operation of this interface."""
+        if self.serializer.operation:
+            self.operations.append(self.serializer.operation)
 
     def process_stringifier(self):
         """Add the stringifier's attribute or named operation child, if it has
@@ -379,8 +415,8 @@ class IdlException(IdlInterface):
 
 class IdlAttribute(TypedObject):
     def __init__(self, idl_name, node):
-        self.is_read_only = node.GetProperty('READONLY') or False
-        self.is_static = node.GetProperty('STATIC') or False
+        self.is_read_only = bool(node.GetProperty('READONLY'))
+        self.is_static = bool(node.GetProperty('STATIC'))
         self.idl_name = idl_name
         self.name = node.GetName()
         # Defaults, overridden below
@@ -396,6 +432,9 @@ class IdlAttribute(TypedObject):
                 self.extended_attributes = ext_attributes_node_to_extended_attributes(idl_name, child)
             else:
                 raise ValueError('Unrecognized node class: %s' % child_class)
+
+    def accept(self, visitor):
+        visitor.visit_attribute(self)
 
 
 ################################################################################
@@ -432,6 +471,9 @@ class IdlConstant(TypedObject):
             self.extended_attributes = ext_attributes_node_to_extended_attributes(idl_name, ext_attributes_node)
         else:
             self.extended_attributes = {}
+
+    def accept(self, visitor):
+        visitor.visit_constant(self)
 
 
 ################################################################################
@@ -480,7 +522,7 @@ def default_node_to_idl_literal(node):
         return IdlLiteral(idl_type, int(node.GetProperty('NAME'), base=0))
     if idl_type == 'float':
         return IdlLiteral(idl_type, float(node.GetProperty('VALUE')))
-    if idl_type == 'boolean':
+    if idl_type in ['boolean', 'sequence']:
         return IdlLiteral(idl_type, node.GetProperty('VALUE'))
     if idl_type == 'NULL':
         return IdlLiteralNull()
@@ -497,23 +539,24 @@ class IdlOperation(TypedObject):
         self.extended_attributes = {}
         self.specials = []
         self.is_constructor = False
+        self.idl_name = idl_name
+        self.idl_type = None
+        self.is_static = False
 
         if not node:
-            self.is_static = False
             return
-        self.idl_name = idl_name
+
         self.name = node.GetName()  # FIXME: should just be: or ''
         # FIXME: AST should use None internally
         if self.name == '_unnamed_':
             self.name = ''
 
-        self.is_static = node.GetProperty('STATIC') or False
+        self.is_static = bool(node.GetProperty('STATIC'))
         property_dictionary = node.GetProperties()
         for special_keyword in SPECIAL_KEYWORD_LIST:
             if special_keyword in property_dictionary:
                 self.specials.append(special_keyword.lower())
 
-        self.idl_type = None
         children = node.GetChildren()
         for child in children:
             child_class = child.GetClass()
@@ -555,10 +598,10 @@ class IdlOperation(TypedObject):
         constructor.is_constructor = True
         return constructor
 
-    def resolve_typedefs(self, typedefs):
-        TypedObject.resolve_typedefs(self, typedefs)
+    def accept(self, visitor):
+        visitor.visit_operation(self)
         for argument in self.arguments:
-            argument.resolve_typedefs(typedefs)
+            argument.accept(visitor)
 
 
 ################################################################################
@@ -566,14 +609,19 @@ class IdlOperation(TypedObject):
 ################################################################################
 
 class IdlArgument(TypedObject):
-    def __init__(self, idl_name, node):
+    def __init__(self, idl_name, node=None):
         self.extended_attributes = {}
         self.idl_type = None
-        self.is_optional = node.GetProperty('OPTIONAL')  # syntax: (optional T)
+        self.is_optional = False  # syntax: (optional T)
         self.is_variadic = False  # syntax: (T...)
         self.idl_name = idl_name
-        self.name = node.GetName()
         self.default_value = None
+
+        if not node:
+            return
+
+        self.is_optional = node.GetProperty('OPTIONAL')
+        self.name = node.GetName()
 
         children = node.GetChildren()
         for child in children:
@@ -586,7 +634,7 @@ class IdlArgument(TypedObject):
                 child_name = child.GetName()
                 if child_name != '...':
                     raise ValueError('Unrecognized Argument node; expected "...", got "%s"' % child_name)
-                self.is_variadic = child.GetProperty('ELLIPSIS') or False
+                self.is_variadic = bool(child.GetProperty('ELLIPSIS'))
             elif child_class == 'Default':
                 self.default_value = default_node_to_idl_literal(child)
             else:
@@ -600,6 +648,9 @@ class IdlArgument(TypedObject):
     def __setstate__(self, state):
         pass
 
+    def accept(self, visitor):
+        visitor.visit_argument(self)
+
 
 def arguments_node_to_arguments(idl_name, node):
     # [Constructor] and [CustomConstructor] without arguments (the bare form)
@@ -610,6 +661,43 @@ def arguments_node_to_arguments(idl_name, node):
         return []
     return [IdlArgument(idl_name, argument_node)
             for argument_node in node.GetChildren()]
+
+
+################################################################################
+# Serializers
+################################################################################
+
+class IdlSerializer(object):
+    def __init__(self, idl_name, node):
+        self.attribute_name = node.GetProperty('ATTRIBUTE')
+        self.attribute_names = None
+        self.operation = None
+        self.extended_attributes = {}
+        self.is_attribute = False
+        self.is_getter = False
+        self.is_inherit = False
+        self.is_list = False
+        self.is_map = False
+        self.idl_name = idl_name
+
+        for child in node.GetChildren():
+            child_class = child.GetClass()
+            if child_class == 'Operation':
+                self.operation = IdlOperation(idl_name, child)
+            elif child_class == 'List':
+                self.is_list = True
+                self.is_getter = bool(child.GetProperty('GETTER'))
+                self.attributes = child.GetProperty('ATTRIBUTES')
+            elif child_class == 'Map':
+                self.is_map = True
+                self.is_attribute = bool(child.GetProperty('ATTRIBUTE'))
+                self.is_getter = bool(child.GetProperty('GETTER'))
+                self.is_inherit = bool(child.GetProperty('INHERIT'))
+                self.attributes = child.GetProperty('ATTRIBUTES')
+            elif child_class == 'ExtAttributes':
+                self.extended_attributes = ext_attributes_node_to_extended_attributes(idl_name, child)
+            else:
+                raise ValueError('Unrecognized node class: %s' % child_class)
 
 
 ################################################################################
@@ -644,6 +732,82 @@ class IdlStringifier(object):
 
 
 ################################################################################
+# Iterable, Maplike, Setlike
+################################################################################
+
+class IdlIterableOrMaplikeOrSetlike(TypedObject):
+    def __init__(self, idl_name, node):
+        self.extended_attributes = {}
+        self.type_children = []
+
+        for child in node.GetChildren():
+            child_class = child.GetClass()
+            if child_class == 'ExtAttributes':
+                self.extended_attributes = ext_attributes_node_to_extended_attributes(idl_name, child)
+            elif child_class == 'Type':
+                self.type_children.append(child)
+            else:
+                raise ValueError('Unrecognized node class: %s' % child_class)
+
+
+class IdlIterable(IdlIterableOrMaplikeOrSetlike):
+    idl_type_attributes = ('key_type', 'value_type')
+
+    def __init__(self, idl_name, node):
+        super(IdlIterable, self).__init__(idl_name, node)
+
+        if len(self.type_children) == 1:
+            self.key_type = None
+            self.value_type = type_node_to_type(self.type_children[0])
+        elif len(self.type_children) == 2:
+            self.key_type = type_node_to_type(self.type_children[0])
+            self.value_type = type_node_to_type(self.type_children[1])
+        else:
+            raise ValueError('Unexpected number of type children: %d' % len(self.type_children))
+        del self.type_children
+
+    def accept(self, visitor):
+        visitor.visit_iterable(self)
+
+
+class IdlMaplike(IdlIterableOrMaplikeOrSetlike):
+    idl_type_attributes = ('key_type', 'value_type')
+
+    def __init__(self, idl_name, node):
+        super(IdlMaplike, self).__init__(idl_name, node)
+
+        self.is_read_only = bool(node.GetProperty('READONLY'))
+
+        if len(self.type_children) == 2:
+            self.key_type = type_node_to_type(self.type_children[0])
+            self.value_type = type_node_to_type(self.type_children[1])
+        else:
+            raise ValueError('Unexpected number of children: %d' % len(self.type_children))
+        del self.type_children
+
+    def accept(self, visitor):
+        visitor.visit_maplike(self)
+
+
+class IdlSetlike(IdlIterableOrMaplikeOrSetlike):
+    idl_type_attributes = ('value_type',)
+
+    def __init__(self, idl_name, node):
+        super(IdlSetlike, self).__init__(idl_name, node)
+
+        self.is_read_only = bool(node.GetProperty('READONLY'))
+
+        if len(self.type_children) == 1:
+            self.value_type = type_node_to_type(self.type_children[0])
+        else:
+            raise ValueError('Unexpected number of children: %d' % len(self.type_children))
+        del self.type_children
+
+    def accept(self, visitor):
+        visitor.visit_setlike(self)
+
+
+################################################################################
 # Implement statements
 ################################################################################
 
@@ -656,6 +820,17 @@ class IdlImplement(object):
 ################################################################################
 # Extended attributes
 ################################################################################
+
+class Exposure:
+    """An Exposure holds one Exposed or RuntimeEnabled condition.
+    Each exposure has two properties: exposed and runtime_enabled.
+    Exposure(e, r) corresponds to [Exposed(e r)]. Exposure(e) corresponds to
+    [Exposed=e].
+    """
+    def __init__(self, exposed, runtime_enabled=None):
+        self.exposed = exposed
+        self.runtime_enabled = runtime_enabled
+
 
 def ext_attributes_node_to_extended_attributes(idl_name, node):
     """
@@ -713,6 +888,21 @@ def ext_attributes_node_to_extended_attributes(idl_name, node):
             if child_class != 'Arguments':
                 raise ValueError('[SetWrapperReferenceTo] only supports Arguments as child, but has child of class: %s' % child_class)
             extended_attributes[name] = arguments_node_to_arguments(idl_name, child)
+        elif name == 'Exposed':
+            if child_class and child_class != 'Arguments':
+                raise ValueError('[Exposed] only supports Arguments as child, but has child of class: %s' % child_class)
+            exposures = []
+            if child_class == 'Arguments':
+                exposures = [Exposure(exposed=str(arg.idl_type),
+                                      runtime_enabled=arg.name)
+                             for arg in arguments_node_to_arguments('*', child)]
+            else:
+                value = extended_attribute_node.GetProperty('VALUE')
+                if type(value) is str:
+                    exposures = [Exposure(exposed=value)]
+                else:
+                    exposures = [Exposure(exposed=v) for v in value]
+            extended_attributes[name] = exposures
         elif child:
             raise ValueError('ExtAttributes node with unexpected children: %s' % name)
         else:
@@ -805,7 +995,7 @@ def type_node_inner_to_type(node):
     # interface type. We do not distinguish these, and just use the type name.
     if node_class in ['PrimitiveType', 'Typeref']:
         # unrestricted syntax: unrestricted double | unrestricted float
-        is_unrestricted = node.GetProperty('UNRESTRICTED') or False
+        is_unrestricted = bool(node.GetProperty('UNRESTRICTED'))
         return IdlType(node.GetName(), is_unrestricted=is_unrestricted)
     elif node_class == 'Any':
         return IdlType('any')
@@ -848,3 +1038,53 @@ def union_type_node_to_idl_union_type(node):
     member_types = [type_node_to_type(member_type_node)
                     for member_type_node in node.GetChildren()]
     return IdlUnionType(member_types)
+
+
+################################################################################
+# Visitor
+################################################################################
+
+class Visitor(object):
+    """Abstract visitor class for IDL definitions traverse."""
+
+    def visit_definitions(self, definitions):
+        pass
+
+    def visit_typed_object(self, typed_object):
+        pass
+
+    def visit_callback_function(self, callback_function):
+        self.visit_typed_object(callback_function)
+
+    def visit_dictionary(self, dictionary):
+        pass
+
+    def visit_dictionary_member(self, member):
+        self.visit_typed_object(member)
+
+    def visit_interface(self, interface):
+        pass
+
+    def visit_typedef(self, typedef):
+        self.visit_typed_object(typedef)
+
+    def visit_attribute(self, attribute):
+        self.visit_typed_object(attribute)
+
+    def visit_constant(self, constant):
+        self.visit_typed_object(constant)
+
+    def visit_operation(self, operation):
+        self.visit_typed_object(operation)
+
+    def visit_argument(self, argument):
+        self.visit_typed_object(argument)
+
+    def visit_iterable(self, iterable):
+        self.visit_typed_object(iterable)
+
+    def visit_maplike(self, maplike):
+        self.visit_typed_object(maplike)
+
+    def visit_setlike(self, setlike):
+        self.visit_typed_object(setlike)

@@ -4,10 +4,10 @@
 
 #include "google_apis/gaia/account_tracker.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
+#include "base/trace_event/trace_event.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace gaia {
@@ -85,7 +85,8 @@ AccountIds AccountTracker::FindAccountIdsByGaiaId(const std::string& gaia_id) {
 }
 
 void AccountTracker::OnRefreshTokenAvailable(const std::string& account_id) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::OnRefreshTokenAvailable"));
@@ -164,7 +165,8 @@ void AccountTracker::NotifyAccountRemoved(const AccountState& account) {
 }
 
 void AccountTracker::NotifySignInChanged(const AccountState& account) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::NotifySignInChanged"));
@@ -177,6 +179,8 @@ void AccountTracker::NotifySignInChanged(const AccountState& account) {
 
 void AccountTracker::UpdateSignInState(const std::string account_key,
                                        bool is_signed_in) {
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::UpdateSignInState"));
@@ -195,7 +199,8 @@ void AccountTracker::UpdateSignInState(const std::string account_key,
 }
 
 void AccountTracker::StartTrackingAccount(const std::string account_key) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::StartTrackingAccount"));
@@ -231,13 +236,15 @@ void AccountTracker::StopTrackingAllAccounts() {
 }
 
 void AccountTracker::StartFetchingUserInfo(const std::string account_key) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::StartFetchingUserInfo"));
 
   if (ContainsKey(user_info_requests_, account_key)) {
-    // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+    // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460
+    // is fixed.
     tracked_objects::ScopedTracker tracking_profile1(
         FROM_HERE_WITH_EXPLICIT_FUNCTION(
             "422460 AccountTracker::StartFetchingUserInfo 1"));
@@ -246,7 +253,8 @@ void AccountTracker::StartFetchingUserInfo(const std::string account_key) {
   }
 
   DVLOG(1) << "StartFetching " << account_key;
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile2(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::StartFetchingUserInfo 2"));
@@ -258,7 +266,8 @@ void AccountTracker::StartFetchingUserInfo(const std::string account_key) {
                            account_key);
   user_info_requests_[account_key] = fetcher;
 
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/422460 is
+  // fixed.
   tracked_objects::ScopedTracker tracking_profile3(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422460 AccountTracker::StartFetchingUserInfo 3"));

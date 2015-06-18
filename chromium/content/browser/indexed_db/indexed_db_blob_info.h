@@ -11,7 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-#include "storage/common/blob/shareable_file_reference.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 
 namespace content {
 
@@ -33,7 +33,9 @@ class CONTENT_EXPORT IndexedDBBlobInfo {
                     const base::string16& type,
                     const base::string16& file_name);
 
+  IndexedDBBlobInfo(const IndexedDBBlobInfo& other);
   ~IndexedDBBlobInfo();
+  IndexedDBBlobInfo& operator=(const IndexedDBBlobInfo& other);
 
   bool is_file() const { return is_file_; }
   const std::string& uuid() const { return uuid_; }

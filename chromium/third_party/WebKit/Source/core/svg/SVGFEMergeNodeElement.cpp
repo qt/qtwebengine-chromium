@@ -33,12 +33,13 @@ inline SVGFEMergeNodeElement::SVGFEMergeNodeElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-DEFINE_NODE_FACTORY(SVGFEMergeNodeElement)
-
-void SVGFEMergeNodeElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+DEFINE_TRACE(SVGFEMergeNodeElement)
 {
-    parseAttributeNew(name, value);
+    visitor->trace(m_in1);
+    SVGElement::trace(visitor);
 }
+
+DEFINE_NODE_FACTORY(SVGFEMergeNodeElement)
 
 void SVGFEMergeNodeElement::svgAttributeChanged(const QualifiedName& attrName)
 {

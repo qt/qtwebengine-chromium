@@ -20,7 +20,7 @@
 #include "media/base/text_track_config.h"
 #include "media/base/time_delta_interpolator.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 using ::testing::_;
 using ::testing::AnyNumber;
@@ -53,6 +53,13 @@ ACTION_P2(SetError, pipeline, status) {
 
 ACTION_P2(SetBufferingState, cb, buffering_state) {
   cb->Run(buffering_state);
+}
+
+ACTION_TEMPLATE(PostCallback,
+                HAS_1_TEMPLATE_PARAMS(int, k),
+                AND_1_VALUE_PARAMS(p0)) {
+  return base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(::std::tr1::get<k>(args), p0));
 }
 
 // TODO(scherkus): even though some filters are initialized on separate
@@ -98,9 +105,6 @@ class PipelineTest : public ::testing::Test {
     EXPECT_CALL(*demuxer_, GetTimelineOffset())
         .WillRepeatedly(Return(base::Time()));
 
-    EXPECT_CALL(*demuxer_, GetLiveness())
-        .WillRepeatedly(Return(Demuxer::LIVENESS_UNKNOWN));
-
     EXPECT_CALL(*renderer_, GetMediaTime())
         .WillRepeatedly(Return(base::TimeDelta()));
 
@@ -141,7 +145,7 @@ class PipelineTest : public ::testing::Test {
     EXPECT_CALL(callbacks_, OnDurationChange());
     EXPECT_CALL(*demuxer_, Initialize(_, _, _))
         .WillOnce(DoAll(SetDemuxerProperties(duration),
-                        RunCallback<1>(PIPELINE_OK)));
+                        PostCallback<1>(PIPELINE_OK)));
 
     // Configure the demuxer to return the streams.
     for (size_t i = 0; i < streams->size(); ++i) {
@@ -165,10 +169,10 @@ class PipelineTest : public ::testing::Test {
 
   // Sets up expectations to allow the video renderer to initialize.
   void SetRendererExpectations() {
-    EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _))
-        .WillOnce(DoAll(SaveArg<3>(&ended_cb_),
-                        SaveArg<5>(&buffering_state_cb_),
-                        RunCallback<1>()));
+    EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _, _))
+        .WillOnce(DoAll(SaveArg<3>(&buffering_state_cb_),
+                        SaveArg<4>(&ended_cb_),
+                        PostCallback<1>(PIPELINE_OK)));
     EXPECT_CALL(*renderer_, HasAudio()).WillRepeatedly(Return(audio_stream()));
     EXPECT_CALL(*renderer_, HasVideo()).WillRepeatedly(Return(video_stream()));
   }
@@ -182,9 +186,9 @@ class PipelineTest : public ::testing::Test {
   }
 
   void StartPipeline() {
+    EXPECT_CALL(*this, OnWaitingForDecryptionKey()).Times(0);
     pipeline_->Start(
-        demuxer_.get(),
-        scoped_renderer_.Pass(),
+        demuxer_.get(), scoped_renderer_.Pass(),
         base::Bind(&CallbackHelper::OnEnded, base::Unretained(&callbacks_)),
         base::Bind(&CallbackHelper::OnError, base::Unretained(&callbacks_)),
         base::Bind(&CallbackHelper::OnStart, base::Unretained(&callbacks_)),
@@ -193,7 +197,9 @@ class PipelineTest : public ::testing::Test {
                    base::Unretained(&callbacks_)),
         base::Bind(&CallbackHelper::OnDurationChange,
                    base::Unretained(&callbacks_)),
-        base::Bind(&PipelineTest::OnAddTextTrack, base::Unretained(this)));
+        base::Bind(&PipelineTest::OnAddTextTrack, base::Unretained(this)),
+        base::Bind(&PipelineTest::OnWaitingForDecryptionKey,
+                   base::Unretained(this)));
   }
 
   // Sets up expectations on the callback and initializes the pipeline. Called
@@ -203,7 +209,7 @@ class PipelineTest : public ::testing::Test {
 
     if (start_status == PIPELINE_OK) {
       EXPECT_CALL(callbacks_, OnMetadata(_)).WillOnce(SaveArg<0>(&metadata_));
-      EXPECT_CALL(*renderer_, SetPlaybackRate(0.0f));
+      EXPECT_CALL(*renderer_, SetPlaybackRate(0.0));
       EXPECT_CALL(*renderer_, SetVolume(1.0f));
       EXPECT_CALL(*renderer_, StartPlayingFrom(start_time_))
           .WillOnce(SetBufferingState(&buffering_state_cb_,
@@ -290,6 +296,7 @@ class PipelineTest : public ::testing::Test {
 
   MOCK_METHOD2(OnAddTextTrack, void(const TextTrackConfig&,
                                     const AddTextTrackDoneCB&));
+  MOCK_METHOD0(OnWaitingForDecryptionKey, void(void));
 
   void DoOnAddTextTrack(const TextTrackConfig& config,
                         const AddTextTrackDoneCB& done_cb) {
@@ -330,9 +337,9 @@ TEST_F(PipelineTest, NotStarted) {
 
   // Setting should still work.
   EXPECT_EQ(0.0f, pipeline_->GetPlaybackRate());
-  pipeline_->SetPlaybackRate(-1.0f);
+  pipeline_->SetPlaybackRate(-1.0);
   EXPECT_EQ(0.0f, pipeline_->GetPlaybackRate());
-  pipeline_->SetPlaybackRate(1.0f);
+  pipeline_->SetPlaybackRate(1.0);
   EXPECT_EQ(1.0f, pipeline_->GetPlaybackRate());
 
   // Setting should still work.
@@ -373,7 +380,7 @@ TEST_F(PipelineTest, StopWithoutStart) {
 
 TEST_F(PipelineTest, StartThenStopImmediately) {
   EXPECT_CALL(*demuxer_, Initialize(_, _, _))
-      .WillOnce(RunCallback<1>(PIPELINE_OK));
+      .WillOnce(PostCallback<1>(PIPELINE_OK));
   EXPECT_CALL(*demuxer_, Stop());
 
   EXPECT_CALL(callbacks_, OnStart(_));
@@ -407,7 +414,7 @@ TEST_F(PipelineTest, DemuxerErrorDuringStop) {
 
 TEST_F(PipelineTest, URLNotFound) {
   EXPECT_CALL(*demuxer_, Initialize(_, _, _))
-      .WillOnce(RunCallback<1>(PIPELINE_ERROR_URL_NOT_FOUND));
+      .WillOnce(PostCallback<1>(PIPELINE_ERROR_URL_NOT_FOUND));
   EXPECT_CALL(*demuxer_, Stop());
 
   StartPipelineAndExpect(PIPELINE_ERROR_URL_NOT_FOUND);
@@ -415,8 +422,9 @@ TEST_F(PipelineTest, URLNotFound) {
 
 TEST_F(PipelineTest, NoStreams) {
   EXPECT_CALL(*demuxer_, Initialize(_, _, _))
-      .WillOnce(RunCallback<1>(PIPELINE_OK));
+      .WillOnce(PostCallback<1>(PIPELINE_OK));
   EXPECT_CALL(*demuxer_, Stop());
+  EXPECT_CALL(callbacks_, OnMetadata(_));
 
   StartPipelineAndExpect(PIPELINE_ERROR_COULD_NOT_RENDER);
 }
@@ -632,7 +640,7 @@ TEST_F(PipelineTest, ErrorDuringSeek) {
   SetRendererExpectations();
   StartPipelineAndExpect(PIPELINE_OK);
 
-  float playback_rate = 1.0f;
+  double playback_rate = 1.0;
   EXPECT_CALL(*renderer_, SetPlaybackRate(playback_rate));
   pipeline_->SetPlaybackRate(playback_rate);
   message_loop_.RunUntilIdle();
@@ -667,7 +675,7 @@ static void TestNoCallsAfterError(
   EXPECT_TRUE(message_loop->IsIdleForTesting());
 
   // Make calls on pipeline after error has occurred.
-  pipeline->SetPlaybackRate(0.5f);
+  pipeline->SetPlaybackRate(0.5);
   pipeline->SetVolume(0.5f);
 
   // No additional tasks should be queued as a result of these calls.
@@ -823,12 +831,12 @@ class PipelineTeardownTest : public PipelineTest {
       if (stop_or_error == kStop) {
         EXPECT_CALL(*demuxer_, Initialize(_, _, _))
             .WillOnce(DoAll(Stop(pipeline_.get(), stop_cb),
-                            RunCallback<1>(PIPELINE_OK)));
+                            PostCallback<1>(PIPELINE_OK)));
         ExpectPipelineStopAndDestroyPipeline();
       } else {
         status = DEMUXER_ERROR_COULD_NOT_OPEN;
         EXPECT_CALL(*demuxer_, Initialize(_, _, _))
-            .WillOnce(RunCallback<1>(status));
+            .WillOnce(PostCallback<1>(status));
       }
 
       EXPECT_CALL(*demuxer_, Stop());
@@ -847,28 +855,29 @@ class PipelineTeardownTest : public PipelineTest {
 
     if (state == kInitRenderer) {
       if (stop_or_error == kStop) {
-        EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _))
+        EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _, _))
             .WillOnce(DoAll(Stop(pipeline_.get(), stop_cb),
-                            RunCallback<1>()));
+                            PostCallback<1>(PIPELINE_OK)));
         ExpectPipelineStopAndDestroyPipeline();
       } else {
         status = PIPELINE_ERROR_INITIALIZATION_FAILED;
-        EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _))
-            .WillOnce(DoAll(RunCallback<4>(status), RunCallback<1>()));
+        EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _, _))
+            .WillOnce(PostCallback<1>(status));
       }
 
       EXPECT_CALL(*demuxer_, Stop());
+      EXPECT_CALL(callbacks_, OnMetadata(_));
       return status;
     }
 
-    EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _))
-        .WillOnce(DoAll(SaveArg<5>(&buffering_state_cb_),
-                        RunCallback<1>()));
+    EXPECT_CALL(*renderer_, Initialize(_, _, _, _, _, _, _))
+        .WillOnce(DoAll(SaveArg<3>(&buffering_state_cb_),
+                        PostCallback<1>(PIPELINE_OK)));
 
     EXPECT_CALL(callbacks_, OnMetadata(_));
 
     // If we get here it's a successful initialization.
-    EXPECT_CALL(*renderer_, SetPlaybackRate(0.0f));
+    EXPECT_CALL(*renderer_, SetPlaybackRate(0.0));
     EXPECT_CALL(*renderer_, SetVolume(1.0f));
     EXPECT_CALL(*renderer_, StartPlayingFrom(base::TimeDelta()))
         .WillOnce(SetBufferingState(&buffering_state_cb_,

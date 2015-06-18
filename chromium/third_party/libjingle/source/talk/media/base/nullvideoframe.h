@@ -35,10 +35,19 @@ namespace cricket {
 // Simple subclass for use in mocks.
 class NullVideoFrame : public VideoFrame {
  public:
-  virtual bool Reset(uint32 format, int w, int h, int dw, int dh, uint8 *sample,
-                     size_t sample_size, size_t pixel_width,
-                     size_t pixel_height, int64 elapsed_time, int64 time_stamp,
-                     int rotation) {
+  virtual bool Reset(uint32 format,
+                     int w,
+                     int h,
+                     int dw,
+                     int dh,
+                     uint8* sample,
+                     size_t sample_size,
+                     size_t pixel_width,
+                     size_t pixel_height,
+                     int64 elapsed_time,
+                     int64 time_stamp,
+                     webrtc::VideoRotation rotation,
+                     bool apply_rotation) {
     return false;
   }
   virtual bool InitToBlack(int w, int h, size_t pixel_width,
@@ -65,9 +74,13 @@ class NullVideoFrame : public VideoFrame {
   virtual int64 GetTimeStamp() const { return 0; }
   virtual void SetElapsedTime(int64 elapsed_time) {}
   virtual void SetTimeStamp(int64 time_stamp) {}
-  virtual int GetRotation() const { return 0; }
+  virtual webrtc::VideoRotation GetVideoRotation() const {
+    return webrtc::kVideoRotation_0;
+  }
 
   virtual VideoFrame *Copy() const { return NULL; }
+
+  virtual bool IsExclusive() const { return false; }
 
   virtual bool MakeExclusive() { return false; }
 
@@ -82,11 +95,17 @@ class NullVideoFrame : public VideoFrame {
       uint8 *y, uint8 *u, uint8 *v, int32 pitchY, int32 pitchU, int32 pitchV,
       size_t width, size_t height, bool interpolate, bool crop) const {}
 
+  rtc::scoped_refptr<webrtc::VideoFrameBuffer> GetVideoFrameBuffer() const {
+    return NULL;
+  }
+
   virtual VideoFrame *CreateEmptyFrame(int w, int h, size_t pixel_width,
                                        size_t pixel_height, int64 elapsed_time,
                                        int64 time_stamp) const {
     return NULL;
   }
+
+  virtual const VideoFrame* GetCopyWithRotationApplied() const { return NULL; }
 };
 
 }  // namespace cricket

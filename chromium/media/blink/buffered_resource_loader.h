@@ -85,7 +85,7 @@ class MEDIA_EXPORT BufferedResourceLoader
       int64 last_byte_position,
       DeferStrategy strategy,
       int bitrate,
-      float playback_rate,
+      double playback_rate,
       MediaLog* media_log);
   virtual ~BufferedResourceLoader();
 
@@ -179,7 +179,7 @@ class MEDIA_EXPORT BufferedResourceLoader
 
   // Sets the playback rate to the given value and updates buffer window
   // accordingly.
-  void SetPlaybackRate(float playback_rate);
+  void SetPlaybackRate(double playback_rate);
 
   // Sets the bitrate to the given value and updates buffer window
   // accordingly.
@@ -197,6 +197,13 @@ class MEDIA_EXPORT BufferedResourceLoader
   static bool ParseContentRange(
       const std::string& content_range_str, int64* first_byte_position,
       int64* last_byte_position, int64* instance_size);
+
+  // Cancels and closes any outstanding deferred ActiveLoader instances. Does
+  // not report a failed state, so subsequent read calls to cache may still
+  // complete okay. If the ActiveLoader is not deferred it will be canceled once
+  // it is unless playback starts before then (as determined by the reported
+  // playback rate).
+  void CancelUponDeferral();
 
  private:
   friend class BufferedDataSourceTest;
@@ -307,9 +314,11 @@ class MEDIA_EXPORT BufferedResourceLoader
   int bitrate_;
 
   // Playback rate of the media.
-  float playback_rate_;
+  double playback_rate_;
 
   scoped_refptr<MediaLog> media_log_;
+
+  bool cancel_upon_deferral_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferedResourceLoader);
 };

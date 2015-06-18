@@ -22,10 +22,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_log.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/websockets/websocket_errors.h"
 #include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_frame.h"
@@ -549,7 +549,7 @@ void WebSocketChannel::SendAddChannelRequestWithSuppliedCreator(
   if (!socket_url.SchemeIsWSOrWSS()) {
     // TODO(ricea): Kill the renderer (this error should have been caught by
     // Javascript).
-    ignore_result(event_interface_->OnAddChannelResponse(true, "", ""));
+    ignore_result(event_interface_->OnFailChannel("Invalid scheme"));
     // |this| is deleted here.
     return;
   }
@@ -573,8 +573,8 @@ void WebSocketChannel::OnConnectSuccess(scoped_ptr<WebSocketStream> stream) {
 
   SetState(CONNECTED);
 
-  if (event_interface_->OnAddChannelResponse(
-          false, stream_->GetSubProtocol(), stream_->GetExtensions()) ==
+  if (event_interface_->OnAddChannelResponse(stream_->GetSubProtocol(),
+                                             stream_->GetExtensions()) ==
       CHANNEL_DELETED)
     return;
 
@@ -1066,8 +1066,8 @@ ChannelState WebSocketChannel::SendClose(uint16 code,
     body = new IOBuffer(payload_length);
     size = payload_length;
     base::WriteBigEndian(body->data(), code);
-    COMPILE_ASSERT(sizeof(code) == kWebSocketCloseCodeLength,
-                   they_should_both_be_two);
+    static_assert(sizeof(code) == kWebSocketCloseCodeLength,
+                  "they should both be two");
     std::copy(
         reason.begin(), reason.end(), body->data() + kWebSocketCloseCodeLength);
   }
@@ -1102,8 +1102,8 @@ bool WebSocketChannel::ParseClose(const scoped_refptr<IOBuffer>& buffer,
   const char* data = buffer->data();
   uint16 unchecked_code = 0;
   base::ReadBigEndian(data, &unchecked_code);
-  COMPILE_ASSERT(sizeof(unchecked_code) == kWebSocketCloseCodeLength,
-                 they_should_both_be_two_bytes);
+  static_assert(sizeof(unchecked_code) == kWebSocketCloseCodeLength,
+                "they should both be two bytes");
 
   switch (unchecked_code) {
     case kWebSocketErrorNoStatusReceived:

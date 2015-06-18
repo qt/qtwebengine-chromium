@@ -35,8 +35,8 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/html/HTMLMeterElement.h"
-#include "core/rendering/RenderMeter.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/layout/LayoutMeter.h"
+#include "core/layout/LayoutTheme.h"
 
 namespace blink {
 
@@ -52,10 +52,10 @@ HTMLMeterElement* MeterShadowElement::meterElement() const
     return toHTMLMeterElement(shadowHost());
 }
 
-bool MeterShadowElement::rendererIsNeeded(const RenderStyle& style)
+bool MeterShadowElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    RenderObject* renderer = meterElement()->renderer();
-    return renderer && !RenderTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* layoutObject = meterElement()->layoutObject();
+    return layoutObject && !LayoutTheme::theme().supportsMeter(layoutObject->style()->appearance()) && HTMLDivElement::layoutObjectIsNeeded(style);
 }
 
 inline MeterInnerElement::MeterInnerElement(Document& document)
@@ -70,18 +70,18 @@ PassRefPtrWillBeRawPtr<MeterInnerElement> MeterInnerElement::create(Document& do
     return element.release();
 }
 
-bool MeterInnerElement::rendererIsNeeded(const RenderStyle& style)
+bool MeterInnerElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    if (meterElement()->hasAuthorShadowRoot())
-        return HTMLDivElement::rendererIsNeeded(style);
+    if (meterElement()->hasOpenShadowRoot())
+        return HTMLDivElement::layoutObjectIsNeeded(style);
 
-    RenderObject* renderer = meterElement()->renderer();
-    return renderer && !RenderTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* layoutObject = meterElement()->layoutObject();
+    return layoutObject && !LayoutTheme::theme().supportsMeter(layoutObject->style()->appearance()) && HTMLDivElement::layoutObjectIsNeeded(style);
 }
 
-RenderObject* MeterInnerElement::createRenderer(RenderStyle*)
+LayoutObject* MeterInnerElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderMeter(this);
+    return new LayoutMeter(this);
 }
 
 inline MeterBarElement::MeterBarElement(Document& document)

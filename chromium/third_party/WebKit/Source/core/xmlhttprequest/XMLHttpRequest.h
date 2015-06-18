@@ -23,54 +23,64 @@
 #define XMLHttpRequest_h
 
 #include "bindings/core/v8/ScriptString.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DocumentParserClient.h"
-#include "core/events/EventListener.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/streams/ReadableStreamImpl.h"
 #include "core/xmlhttprequest/XMLHttpRequestEventTarget.h"
 #include "core/xmlhttprequest/XMLHttpRequestProgressEventThrottle.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/FormData.h"
+#include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceResponse.h"
+#include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/text/AtomicStringHash.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
+#include "wtf/text/WTFString.h"
 
 namespace blink {
 
+class ArrayBufferOrArrayBufferViewOrBlobOrDocumentOrStringOrFormData;
 class Blob;
 class BlobDataHandle;
 class DOMArrayBuffer;
+class DOMArrayBufferView;
 class DOMFormData;
 class Document;
 class DocumentParser;
 class ExceptionState;
-class ResourceRequest;
-class SecurityOrigin;
+class ExecutionContext;
+class ReadableStream;
+class ScriptState;
 class SharedBuffer;
 class Stream;
 class TextResourceDecoder;
 class ThreadableLoader;
-class UnderlyingSource;
+class WebDataConsumerHandle;
 class XMLHttpRequestUpload;
 
 typedef int ExceptionCode;
 
 class XMLHttpRequest final
-    : public RefCountedWillBeGarbageCollectedFinalized<XMLHttpRequest>
-    , public XMLHttpRequestEventTarget
+    : public XMLHttpRequestEventTarget
+    , public RefCountedWillBeNoBase<XMLHttpRequest>
     , private ThreadableLoaderClient
     , public DocumentParserClient
     , public ActiveDOMObject {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(XMLHttpRequest);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(XMLHttpRequest);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(XMLHttpRequest);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassRefPtrWillBeRawPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = nullptr);
+    static PassRefPtrWillBeRawPtr<XMLHttpRequest> create(ScriptState*);
+    static PassRefPtrWillBeRawPtr<XMLHttpRequest> create(ExecutionContext*);
     virtual ~XMLHttpRequest();
 
     // These exact numeric values are important because JS expects them.
@@ -111,17 +121,13 @@ public:
     State readyState() const;
     bool withCredentials() const { return m_includeCredentials; }
     void setWithCredentials(bool, ExceptionState&);
-    void open(const AtomicString& method, const KURL&, ExceptionState&);
+    void open(const AtomicString& method, const String& url, ExceptionState&);
+    void open(const AtomicString& method, const String& url, bool async, ExceptionState&);
+    void open(const AtomicString& method, const String& url, bool async, const String& user, ExceptionState&);
+    void open(const AtomicString& method, const String& url, bool async, const String& user, const String& password, ExceptionState&);
     void open(const AtomicString& method, const KURL&, bool async, ExceptionState&);
-    void open(const AtomicString& method, const KURL&, bool async, const String& user, ExceptionState&);
-    void open(const AtomicString& method, const KURL&, bool async, const String& user, const String& password, ExceptionState&);
     void send(ExceptionState&);
-    void send(Document*, ExceptionState&);
-    void send(const String&, ExceptionState&);
-    void send(Blob*, ExceptionState&);
-    void send(DOMFormData*, ExceptionState&);
-    void send(ArrayBuffer*, ExceptionState&);
-    void send(ArrayBufferView*, ExceptionState&);
+    void send(const ArrayBufferOrArrayBufferViewOrBlobOrDocumentOrStringOrFormData&, ExceptionState&);
     void abort();
     void setRequestHeader(const AtomicString& name, const AtomicString& value, ExceptionState&);
     void overrideMimeType(const AtomicString& override, ExceptionState&);
@@ -134,8 +140,8 @@ public:
     DOMArrayBuffer* responseArrayBuffer();
     Stream* responseLegacyStream();
     ReadableStream* responseStream();
-    unsigned long timeout() const { return m_timeoutMilliseconds; }
-    void setTimeout(unsigned long timeout, ExceptionState&);
+    unsigned timeout() const { return m_timeoutMilliseconds; }
+    void setTimeout(unsigned timeout, ExceptionState&);
     ResponseTypeCode responseTypeCode() const { return m_responseTypeCode; }
     String responseType();
     void setResponseType(const String&, ExceptionState&);
@@ -148,10 +154,11 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     class BlobLoader;
+    class ReadableStreamSource;
     XMLHttpRequest(ExecutionContext*, PassRefPtr<SecurityOrigin>);
 
     Document* document() const;
@@ -203,6 +210,12 @@ private:
 
     bool initSend(ExceptionState&);
     void sendBytesData(const void*, size_t, ExceptionState&);
+    void send(Document*, ExceptionState&);
+    void send(const String&, ExceptionState&);
+    void send(Blob*, ExceptionState&);
+    void send(DOMFormData*, ExceptionState&);
+    void send(DOMArrayBuffer*, ExceptionState&);
+    void send(DOMArrayBufferView*, ExceptionState&);
 
     const AtomicString& getRequestHeader(const AtomicString& name) const;
     void setRequestHeaderInternal(const AtomicString& name, const AtomicString& value);
@@ -254,9 +267,9 @@ private:
     AtomicString m_mimeTypeOverride;
     unsigned long m_timeoutMilliseconds;
     PersistentWillBeMember<Blob> m_responseBlob;
-    RefPtrWillBeMember<Stream> m_responseLegacyStream;
-    PersistentWillBeMember<ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer> > > m_responseStream;
-    PersistentWillBeMember<UnderlyingSource> m_streamSource;
+    PersistentWillBeMember<Stream> m_responseLegacyStream;
+    PersistentWillBeMember<ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBufferView>>> m_responseStream;
+    PersistentWillBeMember<ReadableStreamSource> m_responseStreamSource;
 
     RefPtr<ThreadableLoader> m_loader;
     unsigned long m_loaderIdentifier;
@@ -292,7 +305,12 @@ private:
 
     // This blob loader will be used if |m_downloadingToFile| is true and
     // |m_responseTypeCode| is NOT ResponseTypeBlob.
-    OwnPtrWillBeMember<BlobLoader> m_blobLoader;
+    PersistentWillBeMember<BlobLoader> m_blobLoader;
+
+    // Positive if we are dispatching events.
+    // This is an integer specifying the recursion level rather than a boolean
+    // because in some cases we have recursive dispatching.
+    int m_eventDispatchRecursionLevel;
 
     bool m_async;
     bool m_includeCredentials;
@@ -306,6 +324,7 @@ private:
     // True iff the ongoing resource loading is using the downloadToFile
     // option.
     bool m_downloadingToFile;
+    bool m_responseTextOverflow;
 };
 
 } // namespace blink

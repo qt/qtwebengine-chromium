@@ -31,13 +31,14 @@
 #ifndef SmartClip_h
 #define SmartClip_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Node.h"
 #include "core/frame/LocalFrame.h"
 #include "platform/heap/Handle.h"
 
 namespace blink {
 
-class SmartClipData {
+class CORE_EXPORT SmartClipData {
 public:
     SmartClipData()
         : m_isEmpty(true)
@@ -46,17 +47,17 @@ public:
 
     SmartClipData(Node* node, IntRect rect, String string)
         : m_isEmpty(!node)
-        , m_rect(rect)
+        , m_rectInViewport(rect)
         , m_string(string)
     {
     }
 
-    IntRect rect() const;
+    IntRect rectInViewport() const;
     const String& clipData() const;
 
 private:
     bool m_isEmpty;
-    IntRect m_rect;
+    IntRect m_rectInViewport;
     String m_string;
 };
 
@@ -65,7 +66,7 @@ private:
 // class is quirky and poorly tested. It's approximately
 // trying to do a poor-mans implementation of columnar
 // selection followed by a copy operation.
-class SmartClip {
+class CORE_EXPORT SmartClip {
     STACK_ALLOCATED();
 public:
     explicit SmartClip(PassRefPtrWillBeRawPtr<LocalFrame>);
@@ -76,10 +77,9 @@ private:
     float pageScaleFactor();
 
     Node* minNodeContainsNodes(Node* minNode, Node* newNode);
-    Node* findBestOverlappingNode(Node*, const IntRect& cropRect);
+    Node* findBestOverlappingNode(Node*, const IntRect& cropRectInViewport);
     bool shouldSkipBackgroundImage(Node*);
-    void collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, WillBeHeapVector<RawPtrWillBeMember<Node> >& overlappingNodeInfoTable);
-    IntRect convertRectToWindow(const IntRect& nodeRect);
+    void collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRectInViewport, WillBeHeapVector<RawPtrWillBeMember<Node>>& overlappingNodeInfoTable);
     String extractTextFromNode(Node*);
 
     RefPtrWillBeMember<LocalFrame> m_frame;

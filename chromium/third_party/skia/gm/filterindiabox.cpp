@@ -23,28 +23,27 @@ static SkSize computeSize(const SkBitmap& bm, const SkMatrix& mat) {
     return SkSize::Make(bounds.width(), bounds.height());
 }
 
-static void draw_row(SkCanvas* canvas, const SkBitmap& bm, const SkMatrix& mat, SkScalar dx) {
+static void draw_cell(SkCanvas* canvas, const SkBitmap& bm, const SkMatrix& mat, SkScalar dx,
+                      SkFilterQuality lvl) {
     SkPaint paint;
+    paint.setFilterQuality(lvl);
 
     SkAutoCanvasRestore acr(canvas, true);
 
-    canvas->drawBitmapMatrix(bm, mat, &paint);
-
-    paint.setFilterLevel(SkPaint::kLow_FilterLevel);
     canvas->translate(dx, 0);
-    canvas->drawBitmapMatrix(bm, mat, &paint);
+    canvas->concat(mat);
+    canvas->drawBitmap(bm, 0, 0, &paint);
+}
 
-    paint.setFilterLevel(SkPaint::kMedium_FilterLevel);
-    canvas->translate(dx, 0);
-    canvas->drawBitmapMatrix(bm, mat, &paint);
-
-    paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
-    canvas->translate(dx, 0);
-    canvas->drawBitmapMatrix(bm, mat, &paint);
+static void draw_row(SkCanvas* canvas, const SkBitmap& bm, const SkMatrix& mat, SkScalar dx) {
+    draw_cell(canvas, bm, mat, 0 * dx, kNone_SkFilterQuality);
+    draw_cell(canvas, bm, mat, 1 * dx, kLow_SkFilterQuality);
+    draw_cell(canvas, bm, mat, 2 * dx, kMedium_SkFilterQuality);
+    draw_cell(canvas, bm, mat, 3 * dx, kHigh_SkFilterQuality);
 }
 
 class FilterIndiaBoxGM : public skiagm::GM {
-    void onOnceBeforeDraw() {
+    void onOnceBeforeDraw() override {
         this->makeBitmap();
 
         SkScalar cx = SkScalarHalf(fBM.width());
@@ -71,22 +70,15 @@ public:
     }
 
 protected:
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return fName;
     }
 
-#ifdef SK_CPU_ARM64
-    // Skip tiled drawing on 64-bit ARM until https://skbug.com/2908 is fixed.
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
-#endif
-
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(1024, 768);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         canvas->translate(10, 10);
         for (size_t i = 0; i < SK_ARRAY_COUNT(fMatrix); ++i) {
             SkSize size = computeSize(fBM, fMatrix[i]);

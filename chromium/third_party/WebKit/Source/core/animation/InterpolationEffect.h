@@ -5,25 +5,40 @@
 #ifndef InterpolationEffect_h
 #define InterpolationEffect_h
 
+#include "core/CoreExport.h"
 #include "core/animation/Interpolation.h"
+#include "core/animation/Keyframe.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/animation/TimingFunction.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
 
-class InterpolationEffect : public RefCountedWillBeGarbageCollected<InterpolationEffect> {
+class CORE_EXPORT InterpolationEffect : public RefCountedWillBeGarbageCollected<InterpolationEffect> {
 public:
-    static PassRefPtrWillBeRawPtr<InterpolationEffect> create() { return adoptRefWillBeNoop(new InterpolationEffect()); }
+    static PassRefPtrWillBeRawPtr<InterpolationEffect> create()
+    {
+        return adoptRefWillBeNoop(new InterpolationEffect());
+    }
 
-    PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > getActiveInterpolations(double fraction, double iterationDuration) const;
+    void getActiveInterpolations(double fraction, double iterationDuration, OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>&) const;
 
     void addInterpolation(PassRefPtrWillBeRawPtr<Interpolation> interpolation, PassRefPtr<TimingFunction> easing, double start, double end, double applyFrom, double applyTo)
     {
         m_interpolations.append(InterpolationRecord::create(interpolation, easing, start, end, applyFrom, applyTo));
     }
 
-    void trace(Visitor*);
+    void addInterpolationsFromKeyframes(PropertyHandle, Element*, const ComputedStyle* baseStyle, Keyframe::PropertySpecificKeyframe& keyframeA, Keyframe::PropertySpecificKeyframe& keyframeB, double applyFrom, double applyTo);
+
+    template<typename T>
+    inline void forEachInterpolation(const T& callback)
+    {
+        for (auto& record : m_interpolations)
+            callback(*record->m_interpolation);
+    }
+
+    DECLARE_TRACE();
 
 private:
     InterpolationEffect()
@@ -44,7 +59,7 @@ private:
             return adoptPtrWillBeNoop(new InterpolationRecord(interpolation, easing, start, end, applyFrom, applyTo));
         }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         InterpolationRecord(PassRefPtrWillBeRawPtr<Interpolation> interpolation, PassRefPtr<TimingFunction> easing, double start, double end, double applyFrom, double applyTo)
@@ -58,9 +73,9 @@ private:
         }
     };
 
-    WillBeHeapVector<OwnPtrWillBeMember<InterpolationRecord> > m_interpolations;
+    WillBeHeapVector<OwnPtrWillBeMember<InterpolationRecord>> m_interpolations;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // InterpolationEffect_h

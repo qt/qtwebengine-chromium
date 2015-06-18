@@ -19,6 +19,7 @@
 namespace content {
 
 class InputHandlerProxyClient;
+class InputScrollElasticityController;
 
 // This class is a proxy between the content input event filtering and the
 // compositor's input handling logic. InputHandlerProxy instances live entirely
@@ -31,6 +32,10 @@ class CONTENT_EXPORT InputHandlerProxy
   InputHandlerProxy(cc::InputHandler* input_handler,
                     InputHandlerProxyClient* client);
   virtual ~InputHandlerProxy();
+
+  InputScrollElasticityController* scroll_elasticity_controller() {
+    return scroll_elasticity_controller_.get();
+  }
 
   enum EventDisposition {
     DID_HANDLE,
@@ -46,6 +51,7 @@ class CONTENT_EXPORT InputHandlerProxy
   void WillShutdown() override;
   void Animate(base::TimeTicks time) override;
   void MainThreadHasStoppedFlinging() override;
+  void ReconcileElasticOverscrollAndRootScroll() override;
 
   // blink::WebGestureCurveTarget implementation.
   virtual bool scrollBy(const blink::WebFloatSize& offset,
@@ -56,7 +62,19 @@ class CONTENT_EXPORT InputHandlerProxy
   }
 
  private:
-  EventDisposition HandleGestureFling(const blink::WebGestureEvent& event);
+  // Helper functions for handling more complicated input events.
+  EventDisposition HandleMouseWheel(
+      const blink::WebMouseWheelEvent& event);
+  EventDisposition HandleGestureScrollBegin(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleGestureScrollUpdate(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleGestureScrollEnd(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleGestureFlingStart(
+      const blink::WebGestureEvent& event);
+  EventDisposition HandleTouchStart(
+      const blink::WebTouchEvent& event);
 
   // Returns true if the event should be suppressed due to to an active,
   // boost-enabled fling, in which case further processing should cease.
@@ -122,7 +140,12 @@ class CONTENT_EXPORT InputHandlerProxy
   // Non-zero only within the scope of |scrollBy|.
   gfx::Vector2dF current_fling_velocity_;
 
+  // Used to animate rubber-band over-scroll effect on Mac.
+  scoped_ptr<InputScrollElasticityController> scroll_elasticity_controller_;
+
   bool smooth_scroll_enabled_;
+
+  bool uma_latency_reporting_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(InputHandlerProxy);
 };

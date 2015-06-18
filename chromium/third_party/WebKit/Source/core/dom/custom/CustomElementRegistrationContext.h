@@ -51,6 +51,7 @@ public:
     }
 
     ~CustomElementRegistrationContext() { }
+    void documentWasDetached() { m_registry.documentWasDetached(); }
 
     // Definitions
     void registerElement(Document*, CustomElementConstructorBuilder*, const AtomicString& type, CustomElement::NameSet validNames, ExceptionState&);
@@ -61,7 +62,7 @@ public:
 
     void resolve(Element*, const CustomElementDescriptor&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 protected:
     CustomElementRegistrationContext();

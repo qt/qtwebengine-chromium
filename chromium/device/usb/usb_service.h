@@ -7,12 +7,14 @@
 
 #include <vector>
 
+#include "base/bind_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/threading/non_thread_safe.h"
 
 namespace base {
-class SingleThreadTaskRunner;
+class SequencedTaskRunner;
 }
 
 namespace device {
@@ -25,26 +27,45 @@ class UsbDevice;
 // competition for the same USB device.
 class UsbService : public base::NonThreadSafe {
  public:
-  // Must be called on a thread with a MessageLoopForIO (for example
-  // BrowserThread::FILE). The UI task runner reference is used to talk to the
-  // PermissionBrokerClient on ChromeOS (UI thread). Returns NULL when
-  // initialization fails.
-  static UsbService* GetInstance(
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
+  using GetDevicesCallback =
+      base::Callback<void(const std::vector<scoped_refptr<UsbDevice>>&)>;
 
-  static void SetInstanceForTest(UsbService* instance);
+  class Observer {
+   public:
+    // These events are delivered from the thread on which the UsbService object
+    // was created.
+    virtual void OnDeviceAdded(scoped_refptr<UsbDevice> device);
+    virtual void OnDeviceRemoved(scoped_refptr<UsbDevice> device);
+    // For observers that need to process device removal after others have run.
+    // Should not depend on any other service's knowledge of connected devices.
+    virtual void OnDeviceRemovedCleanup(scoped_refptr<UsbDevice> device);
+  };
+
+  // The file task runner reference is used for blocking I/O operations.
+  // Returns NULL when initialization fails.
+  static UsbService* GetInstance(
+      scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
 
   virtual scoped_refptr<UsbDevice> GetDeviceById(uint32 unique_id) = 0;
 
-  // Get all of the devices attached to the system, inserting them into
-  // |devices|. Clears |devices| before use. The result will be sorted by id
-  // in increasing order. Must be called on FILE thread.
-  virtual void GetDevices(std::vector<scoped_refptr<UsbDevice> >* devices) = 0;
+  // Enumerates available devices.
+  virtual void GetDevices(const GetDevicesCallback& callback) = 0;
+
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
 
  protected:
-  friend struct base::DefaultDeleter<UsbService>;
-  UsbService() {}
-  virtual ~UsbService() {}
+  UsbService();
+  virtual ~UsbService();
+
+  void NotifyDeviceAdded(scoped_refptr<UsbDevice> device);
+  void NotifyDeviceRemoved(scoped_refptr<UsbDevice> device);
+
+  ObserverList<Observer, true> observer_list_;
+
+ private:
+  friend void base::DeletePointer<UsbService>(UsbService* service);
+
   DISALLOW_COPY_AND_ASSIGN(UsbService);
 };
 

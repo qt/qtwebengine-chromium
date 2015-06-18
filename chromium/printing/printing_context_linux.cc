@@ -67,6 +67,7 @@ void PrintingContextLinux::PrintDocument(const MetafilePlayer& metafile) {
 void PrintingContextLinux::AskUserForSettings(
     int max_pages,
     bool has_selection,
+    bool is_scripted,
     const PrintSettingsCallback& callback) {
   if (!print_dialog_) {
     // Can only get here if the renderer is sending bad messages.
@@ -106,7 +107,8 @@ gfx::Size PrintingContextLinux::GetPdfPaperSizeDeviceUnits() {
 
 PrintingContext::Result PrintingContextLinux::UpdatePrinterSettings(
     bool external_preview,
-    bool show_system_dialog) {
+    bool show_system_dialog,
+    int page_count) {
   DCHECK(!show_system_dialog);
   DCHECK(!in_print_job_);
   DCHECK(!external_preview) << "Not implemented";

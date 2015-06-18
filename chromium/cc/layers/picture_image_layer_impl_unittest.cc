@@ -4,15 +4,17 @@
 
 #include "cc/layers/picture_image_layer_impl.h"
 
+#include "base/thread_task_runner_handle.h"
 #include "cc/layers/append_quads_data.h"
 #include "cc/quads/draw_quad.h"
-#include "cc/resources/tile_priority.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/impl_side_painting_settings.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
+#include "cc/tiles/tile_priority.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -22,11 +24,9 @@ namespace {
 class TestablePictureImageLayerImpl : public PictureImageLayerImpl {
  public:
   TestablePictureImageLayerImpl(LayerTreeImpl* tree_impl, int id)
-      : PictureImageLayerImpl(tree_impl, id) {
-  }
+      : PictureImageLayerImpl(tree_impl, id, false) {}
   using PictureLayerImpl::UpdateIdealScales;
   using PictureLayerImpl::MaximumTilingContentsScale;
-  using PictureLayerImpl::DoPostCommitInitializationIfNeeded;
 
   PictureLayerTilingSet* tilings() { return tilings_.get(); }
 
@@ -36,10 +36,11 @@ class TestablePictureImageLayerImpl : public PictureImageLayerImpl {
 class PictureImageLayerImplTest : public testing::Test {
  public:
   PictureImageLayerImplTest()
-      : proxy_(base::MessageLoopProxy::current()),
+      : proxy_(base::ThreadTaskRunnerHandle::Get()),
         host_impl_(ImplSidePaintingSettings(),
                    &proxy_,
-                   &shared_bitmap_manager_) {
+                   &shared_bitmap_manager_,
+                   &task_graph_runner_) {
     host_impl_.CreatePendingTree();
     host_impl_.InitializeRenderer(FakeOutputSurface::Create3d());
   }
@@ -54,15 +55,12 @@ class PictureImageLayerImplTest : public testing::Test {
       case PENDING_TREE:
         tree = host_impl_.pending_tree();
         break;
-      case NUM_TREES:
-        NOTREACHED();
-        break;
     }
     TestablePictureImageLayerImpl* layer =
         new TestablePictureImageLayerImpl(tree, id);
-    layer->pile_ = FakePicturePileImpl::CreateInfiniteFilledPile();
-    layer->SetBounds(layer->pile_->tiling_size());
-    layer->SetContentBounds(layer->pile_->tiling_size());
+    layer->raster_source_ = FakePicturePileImpl::CreateInfiniteFilledPile();
+    layer->SetBounds(layer->raster_source_->GetSize());
+    layer->SetContentBounds(layer->raster_source_->GetSize());
     return make_scoped_ptr(layer);
   }
 
@@ -82,19 +80,19 @@ class PictureImageLayerImplTest : public testing::Test {
         animating_transform_to_screen;
     layer->draw_properties().visible_content_rect = viewport_rect;
     bool resourceless_software_draw = false;
-    layer->UpdateTiles(Occlusion(), resourceless_software_draw);
+    layer->UpdateTiles(resourceless_software_draw);
   }
 
  protected:
   FakeImplProxy proxy_;
-  FakeLayerTreeHostImpl host_impl_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
+  FakeLayerTreeHostImpl host_impl_;
 };
 
 TEST_F(PictureImageLayerImplTest, CalculateContentsScale) {
   scoped_ptr<TestablePictureImageLayerImpl> layer(CreateLayer(1, PENDING_TREE));
   layer->SetDrawsContent(true);
-  layer->DoPostCommitInitializationIfNeeded();
 
   gfx::Rect viewport(100, 200);
   SetupDrawPropertiesAndUpdateTiles(
@@ -152,7 +150,7 @@ TEST_F(PictureImageLayerImplTest, IgnoreIdealContentScale) {
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
   AppendQuadsData data;
   active_layer->WillDraw(DRAW_MODE_SOFTWARE, nullptr);
-  active_layer->AppendQuads(render_pass.get(), Occlusion(), &data);
+  active_layer->AppendQuads(render_pass.get(), &data);
   active_layer->DidDraw(nullptr);
 
   EXPECT_EQ(DrawQuad::TILED_CONTENT, render_pass->quad_list.front()->material);

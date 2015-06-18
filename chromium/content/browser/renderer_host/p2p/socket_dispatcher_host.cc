@@ -12,9 +12,9 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/sys_addrinfo.h"
 #include "net/dns/single_request_host_resolver.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request_context_getter.h"
 
 using content::BrowserMessageFilter;
@@ -152,7 +152,7 @@ void P2PSocketDispatcherHost::StartRtpDump(
     bool incoming,
     bool outgoing,
     const RenderProcessHost::WebRtcRtpPacketCallback& packet_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if ((!dump_incoming_rtp_packet_ && incoming) ||
       (!dump_outgoing_rtp_packet_ && outgoing)) {
@@ -170,7 +170,7 @@ void P2PSocketDispatcherHost::StartRtpDump(
 
 void P2PSocketDispatcherHost::StopRtpDumpOnUIThread(bool incoming,
                                                     bool outgoing) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
@@ -256,9 +256,15 @@ void P2PSocketDispatcherHost::OnAcceptIncomingTcpConnection(
   P2PSocketHost* socket = LookupSocket(listen_socket_id);
   if (!socket) {
     LOG(ERROR) << "Received P2PHostMsg_AcceptIncomingTcpConnection "
-        "for invalid socket_id.";
+        "for invalid listen_socket_id.";
     return;
   }
+  if (LookupSocket(connected_socket_id) != NULL) {
+    LOG(ERROR) << "Received P2PHostMsg_AcceptIncomingTcpConnection "
+        "for duplicated connected_socket_id.";
+    return;
+  }
+
   P2PSocketHost* accepted_connection =
       socket->AcceptIncomingTcpConnection(remote_address, connected_socket_id);
   if (accepted_connection) {
@@ -313,8 +319,7 @@ void P2PSocketDispatcherHost::OnDestroySocket(int socket_id) {
 
 void P2PSocketDispatcherHost::DoGetNetworkList() {
   net::NetworkInterfaceList list;
-  net::GetNetworkList(&list, net::EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES |
-                             net::INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE);
+  net::GetNetworkList(&list, net::EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE, base::Bind(
           &P2PSocketDispatcherHost::SendNetworkList, this, list));

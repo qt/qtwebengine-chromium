@@ -5,6 +5,7 @@
 #ifndef ScriptStreamerThread_h
 #define ScriptStreamerThread_h
 
+#include "core/CoreExport.h"
 #include "platform/TaskSynchronizer.h"
 #include "public/platform/WebThread.h"
 #include "wtf/OwnPtr.h"
@@ -16,7 +17,7 @@ namespace blink {
 class ScriptStreamer;
 
 // A singleton thread for running background tasks for script streaming.
-class ScriptStreamerThread {
+class CORE_EXPORT ScriptStreamerThread {
     WTF_MAKE_NONCOPYABLE(ScriptStreamerThread);
 public:
     static void init();
@@ -42,11 +43,11 @@ private:
         return !!m_thread;
     }
 
-    blink::WebThread& platformThread();
+    WebThread& platformThread();
 
     // At the moment, we only use one thread, so we can only stream one script
     // at a time. FIXME: Use a thread pool and stream multiple scripts.
-    WTF::OwnPtr<blink::WebThread> m_thread;
+    WTF::OwnPtr<WebThread> m_thread;
     bool m_runningTask;
     mutable Mutex m_mutex; // Guards m_runningTask.
 };

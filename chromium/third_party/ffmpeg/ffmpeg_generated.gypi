@@ -1,4 +1,4 @@
-# Copyright 2014 The Chromium Authors. All rights reserved.
+# Copyright 2015 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -28,7 +28,6 @@
           'libavcodec/x86/fdctdsp_init.c',
           'libavcodec/x86/h263dsp_init.c',
           'libavcodec/x86/idctdsp_init.c',
-          'libavcodec/x86/idctdsp_mmx.c',
           'libavcodec/x86/me_cmp_init.c',
           'libavcodec/x86/mpegvideo.c',
           'libavcodec/x86/mpegvideodsp.c',
@@ -36,8 +35,6 @@
           'libavcodec/x86/qpeldsp_init.c',
           'libavcodec/x86/simple_idct.c',
           'libavcodec/x86/xvididct_init.c',
-          'libavcodec/x86/xvididct_mmx.c',
-          'libavcodec/x86/xvididct_sse2.c',
         ],
         'asm_sources': [
           'libavcodec/x86/blockdsp.asm',
@@ -46,6 +43,7 @@
           'libavcodec/x86/me_cmp.asm',
           'libavcodec/x86/pixblockdsp.asm',
           'libavcodec/x86/qpeldsp.asm',
+          'libavcodec/x86/xvididct.asm',
         ],
       }],  # (target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromeOS") and (1)
       ['(target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "ChromeOS") and (1)', {
@@ -81,20 +79,68 @@
           'libavcodec/arm/sbrdsp_neon.S',
         ],
       }],  # ((target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)
+      ['(target_arch == "mipsel") and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)', {
+        'c_sources': [
+          'libavcodec/mips/aacdec_mips.c',
+          'libavcodec/mips/aacpsdsp_mips.c',
+          'libavcodec/mips/aacsbr_mips.c',
+          'libavcodec/mips/sbrdsp_mips.c',
+        ],
+      }],  # (target_arch == "mipsel") and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)
       ['(target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "Chromium") and (OS == "win")', {
         'c_sources': [
           'compat/msvcrt/snprintf.c',
           'compat/strtod.c',
         ],
       }],  # (target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "Chromium") and (OS == "win")
-      ['(target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS") and (1)', {
+      ['(target_arch == "ia32" or target_arch == "mipsel" or target_arch == "arm" or target_arch == "x64") and (ffmpeg_branding == "Ensemble") and (1)', {
         'c_sources': [
-          'libavcodec/x86/flacdsp_init.c',
+          'libavcodec/alac.c',
+          'libavcodec/alac_data.c',
+        ],
+      }],  # (target_arch == "ia32" or target_arch == "mipsel" or target_arch == "arm" or target_arch == "x64") and (ffmpeg_branding == "Ensemble") and (1)
+      ['(target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)', {
+        'c_sources': [
+          'libavcodec/arm/aacpsdsp_init_arm.c',
+          'libavcodec/arm/h264chroma_init_arm.c',
+          'libavcodec/arm/h264dsp_init_arm.c',
+          'libavcodec/arm/h264qpel_init_arm.c',
+          'libavcodec/arm/mpegaudiodsp_init_arm.c',
+          'libavcodec/arm/sbrdsp_init_arm.c',
         ],
         'asm_sources': [
-          'libavcodec/x86/flacdsp.asm',
+          'libavcodec/arm/mpegaudiodsp_fixed_armv6.S',
+          'libavcodec/arm/startcode_armv6.S',
         ],
-      }],  # (target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS") and (1)
+      }],  # (target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)
+      ['(target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)', {
+        'c_sources': [
+          'libavcodec/arm/flacdsp_init_arm.c',
+        ],
+        'asm_sources': [
+          'libavcodec/arm/flacdsp_arm.S',
+        ],
+      }],  # (target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)
+      ['((target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "Chromium" or ffmpeg_branding == "ChromeOS") and (1)', {
+        'c_sources': [
+          'libavcodec/arm/hpeldsp_init_neon.c',
+          'libavcodec/arm/vp8dsp_init_neon.c',
+          'libavutil/arm/float_dsp_init_neon.c',
+        ],
+        'asm_sources': [
+          'libavcodec/arm/fft_fixed_neon.S',
+          'libavcodec/arm/fft_neon.S',
+          'libavcodec/arm/h264pred_neon.S',
+          'libavcodec/arm/hpeldsp_neon.S',
+          'libavcodec/arm/mdct_fixed_neon.S',
+          'libavcodec/arm/mdct_neon.S',
+          'libavcodec/arm/rdft_neon.S',
+          'libavcodec/arm/vorbisdsp_neon.S',
+          'libavcodec/arm/vp3dsp_neon.S',
+          'libavcodec/arm/vp8dsp_neon.S',
+          'libavutil/arm/float_dsp_neon.S',
+        ],
+      }],  # ((target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "Chromium" or ffmpeg_branding == "ChromeOS") and (1)
       ['(1) and (ffmpeg_branding == "ChromeOS") and (1)', {
         'c_sources': [
           'libavcodec/acelp_filters.c',
@@ -105,7 +151,6 @@
           'libavcodec/blockdsp.c',
           'libavcodec/celp_filters.c',
           'libavcodec/celp_math.c',
-          'libavcodec/dsputil_compat.c',
           'libavcodec/error_resilience.c',
           'libavcodec/exif.c',
           'libavcodec/faandct.c',
@@ -146,50 +191,20 @@
           'libavformat/gsmdec.c',
         ],
       }],  # (1) and (ffmpeg_branding == "ChromeOS") and (1)
-      ['(target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)', {
+      ['(target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)', {
         'c_sources': [
-          'libavcodec/arm/aacpsdsp_init_arm.c',
-          'libavcodec/arm/h264chroma_init_arm.c',
-          'libavcodec/arm/h264dsp_init_arm.c',
-          'libavcodec/arm/h264qpel_init_arm.c',
-          'libavcodec/arm/mpegaudiodsp_init_arm.c',
-          'libavcodec/arm/sbrdsp_init_arm.c',
+          'libavcodec/x86/flacdsp_init.c',
         ],
         'asm_sources': [
-          'libavcodec/arm/mpegaudiodsp_fixed_armv6.S',
-          'libavcodec/arm/startcode_armv6.S',
+          'libavcodec/x86/flacdsp.asm',
         ],
-      }],  # (target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)
-      ['(target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS") and (1)', {
+      }],  # (target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)
+      ['(target_arch == "mipsel") and (1) and (1)', {
         'c_sources': [
-          'libavcodec/arm/flacdsp_init_arm.c',
+          'libavutil/mips/float_dsp_mips.c',
         ],
-        'asm_sources': [
-          'libavcodec/arm/flacdsp_arm.S',
-        ],
-      }],  # (target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS") and (1)
-      ['((target_arch == "arm" and arm_neon == 1)) and (1) and (1)', {
-        'c_sources': [
-          'libavcodec/arm/hpeldsp_init_neon.c',
-          'libavcodec/arm/vp8dsp_init_neon.c',
-          'libavutil/arm/float_dsp_init_neon.c',
-        ],
-        'asm_sources': [
-          'libavcodec/arm/fft_fixed_neon.S',
-          'libavcodec/arm/fft_neon.S',
-          'libavcodec/arm/fmtconvert_neon.S',
-          'libavcodec/arm/h264pred_neon.S',
-          'libavcodec/arm/hpeldsp_neon.S',
-          'libavcodec/arm/mdct_fixed_neon.S',
-          'libavcodec/arm/mdct_neon.S',
-          'libavcodec/arm/rdft_neon.S',
-          'libavcodec/arm/vorbisdsp_neon.S',
-          'libavcodec/arm/vp3dsp_neon.S',
-          'libavcodec/arm/vp8dsp_neon.S',
-          'libavutil/arm/float_dsp_neon.S',
-        ],
-      }],  # ((target_arch == "arm" and arm_neon == 1)) and (1) and (1)
-      ['(target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)', {
+      }],  # (target_arch == "mipsel") and (1) and (1)
+      ['(target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Chrome" or ffmpeg_branding == "Ensemble") and (1)', {
         'c_sources': [
           'libavcodec/x86/dct_init.c',
           'libavcodec/x86/h264_qpel.c',
@@ -214,20 +229,11 @@
           'libavcodec/x86/qpel.asm',
           'libavcodec/x86/sbrdsp.asm',
         ],
-      }],  # (target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)
-      ['(1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS") and (1)', {
-        'c_sources': [
-          'libavcodec/flac_parser.c',
-          'libavcodec/flacdec.c',
-          'libavcodec/flacdsp.c',
-          'libavformat/flacdec.c',
-        ],
-      }],  # (1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS") and (1)
+      }],  # (target_arch == "ia32" or target_arch == "x64") and (ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Chrome" or ffmpeg_branding == "Ensemble") and (1)
       ['(target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (1) and (1)', {
         'c_sources': [
           'libavcodec/arm/fft_fixed_init_arm.c',
           'libavcodec/arm/fft_init_arm.c',
-          'libavcodec/arm/fmtconvert_init_arm.c',
           'libavcodec/arm/h264pred_init_arm.c',
           'libavcodec/arm/hpeldsp_init_arm.c',
           'libavcodec/arm/hpeldsp_init_armv6.c',
@@ -243,8 +249,6 @@
         ],
         'asm_sources': [
           'libavcodec/arm/fft_vfp.S',
-          'libavcodec/arm/fmtconvert_vfp.S',
-          'libavcodec/arm/fmtconvert_vfp_armv6.S',
           'libavcodec/arm/hpeldsp_arm.S',
           'libavcodec/arm/hpeldsp_armv6.S',
           'libavcodec/arm/mdct_vfp.S',
@@ -254,7 +258,49 @@
           'libavutil/arm/float_dsp_vfp.S',
         ],
       }],  # (target_arch == "arm" or (target_arch == "arm" and arm_neon == 1)) and (1) and (1)
-      ['(1) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)', {
+      ['(target_arch == "ia32" or target_arch == "x64") and (1) and (1)', {
+        'c_sources': [
+          'libavcodec/x86/constants.c',
+          'libavcodec/x86/fft_init.c',
+          'libavcodec/x86/h264_intrapred_init.c',
+          'libavcodec/x86/hpeldsp_init.c',
+          'libavcodec/x86/videodsp_init.c',
+          'libavcodec/x86/vorbisdsp_init.c',
+          'libavcodec/x86/vp3dsp_init.c',
+          'libavcodec/x86/vp8dsp_init.c',
+          'libavutil/x86/cpu.c',
+          'libavutil/x86/float_dsp_init.c',
+          'libavutil/x86/lls_init.c',
+        ],
+        'asm_sources': [
+          'libavcodec/x86/deinterlace.asm',
+          'libavcodec/x86/fft.asm',
+          'libavcodec/x86/fpel.asm',
+          'libavcodec/x86/h264_intrapred.asm',
+          'libavcodec/x86/h264_intrapred_10bit.asm',
+          'libavcodec/x86/hpeldsp.asm',
+          'libavcodec/x86/videodsp.asm',
+          'libavcodec/x86/vorbisdsp.asm',
+          'libavcodec/x86/vp3dsp.asm',
+          'libavcodec/x86/vp8dsp.asm',
+          'libavcodec/x86/vp8dsp_loopfilter.asm',
+          'libavutil/x86/cpuid.asm',
+          'libavutil/x86/emms.asm',
+          'libavutil/x86/float_dsp.asm',
+          'libavutil/x86/lls.asm',
+        ],
+      }],  # (target_arch == "ia32" or target_arch == "x64") and (1) and (1)
+      ['(1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)', {
+        'c_sources': [
+          'libavcodec/flac.c',
+          'libavcodec/flac_parser.c',
+          'libavcodec/flacdata.c',
+          'libavcodec/flacdec.c',
+          'libavcodec/flacdsp.c',
+          'libavformat/flacdec.c',
+        ],
+      }],  # (1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)
+      ['(1) and (ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Chrome" or ffmpeg_branding == "Ensemble") and (1)', {
         'c_sources': [
           'libavcodec/aac_ac3_parser.c',
           'libavcodec/aac_parser.c',
@@ -285,6 +331,7 @@
           'libavcodec/h264dsp.c',
           'libavcodec/h264idct.c',
           'libavcodec/h264qpel.c',
+          'libavcodec/imdct15.c',
           'libavcodec/kbdwin.c',
           'libavcodec/mpegaudio.c',
           'libavcodec/mpegaudio_parser.c',
@@ -304,46 +351,12 @@
           'libavformat/mov_chan.c',
           'libavformat/mp3dec.c',
         ],
-      }],  # (1) and (ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS") and (1)
-      ['(target_arch == "ia32" or target_arch == "x64") and (1) and (1)', {
-        'c_sources': [
-          'libavcodec/x86/constants.c',
-          'libavcodec/x86/fft_init.c',
-          'libavcodec/x86/fmtconvert_init.c',
-          'libavcodec/x86/h264_intrapred_init.c',
-          'libavcodec/x86/hpeldsp_init.c',
-          'libavcodec/x86/videodsp_init.c',
-          'libavcodec/x86/vorbisdsp_init.c',
-          'libavcodec/x86/vp3dsp_init.c',
-          'libavcodec/x86/vp8dsp_init.c',
-          'libavutil/x86/cpu.c',
-          'libavutil/x86/float_dsp_init.c',
-          'libavutil/x86/lls_init.c',
-        ],
-        'asm_sources': [
-          'libavcodec/x86/deinterlace.asm',
-          'libavcodec/x86/fft.asm',
-          'libavcodec/x86/fmtconvert.asm',
-          'libavcodec/x86/fpel.asm',
-          'libavcodec/x86/h264_intrapred.asm',
-          'libavcodec/x86/h264_intrapred_10bit.asm',
-          'libavcodec/x86/hpeldsp.asm',
-          'libavcodec/x86/videodsp.asm',
-          'libavcodec/x86/vorbisdsp.asm',
-          'libavcodec/x86/vp3dsp.asm',
-          'libavcodec/x86/vp8dsp.asm',
-          'libavcodec/x86/vp8dsp_loopfilter.asm',
-          'libavutil/x86/cpuid.asm',
-          'libavutil/x86/emms.asm',
-          'libavutil/x86/float_dsp.asm',
-          'libavutil/x86/lls.asm',
-        ],
-      }],  # (target_arch == "ia32" or target_arch == "x64") and (1) and (1)
-      ['(1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Chrome") and (1)', {
+      }],  # (1) and (ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Chrome" or ffmpeg_branding == "Ensemble") and (1)
+      ['(1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)', {
         'c_sources': [
           'libavformat/rawdec.c',
         ],
-      }],  # (1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Chrome") and (1)
+      }],  # (1) and (ffmpeg_branding == "ChromiumOS" or ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS" or ffmpeg_branding == "Ensemble") and (1)
       ['(1) and (1) and (1)', {
         'c_sources': [
           'libavcodec/allcodecs.c',
@@ -360,9 +373,6 @@
           'libavcodec/fft_fixed_32.c',
           'libavcodec/fft_float.c',
           'libavcodec/fft_init_table.c',
-          'libavcodec/flac.c',
-          'libavcodec/flacdata.c',
-          'libavcodec/fmtconvert.c',
           'libavcodec/golomb.c',
           'libavcodec/h264pred.c',
           'libavcodec/hpeldsp.c',
@@ -382,6 +392,7 @@
           'libavcodec/pthread.c',
           'libavcodec/pthread_frame.c',
           'libavcodec/pthread_slice.c',
+          'libavcodec/qsv_api.c',
           'libavcodec/raw.c',
           'libavcodec/rdft.c',
           'libavcodec/utils.c',
@@ -431,7 +442,6 @@
           'libavformat/riff.c',
           'libavformat/riffdec.c',
           'libavformat/rmsipr.c',
-          'libavformat/seek.c',
           'libavformat/url.c',
           'libavformat/utils.c',
           'libavformat/vorbiscomment.c',
@@ -441,7 +451,9 @@
           'libavutil/base64.c',
           'libavutil/bprint.c',
           'libavutil/buffer.c',
+          'libavutil/camellia.c',
           'libavutil/channel_layout.c',
+          'libavutil/color_utils.c',
           'libavutil/cpu.c',
           'libavutil/crc.c',
           'libavutil/dict.c',
@@ -455,7 +467,6 @@
           'libavutil/float_dsp.c',
           'libavutil/frame.c',
           'libavutil/imgutils.c',
-          'libavutil/intfloat_readwrite.c',
           'libavutil/intmath.c',
           'libavutil/lfg.c',
           'libavutil/log.c',
@@ -475,6 +486,7 @@
           'libavutil/threadmessage.c',
           'libavutil/time.c',
           'libavutil/timecode.c',
+          'libavutil/twofish.c',
           'libavutil/utils.c',
         ],
       }],  # (1) and (1) and (1)

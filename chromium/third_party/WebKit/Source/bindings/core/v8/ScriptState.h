@@ -7,7 +7,9 @@
 
 #include "bindings/core/v8/ScopedPersistent.h"
 #include "bindings/core/v8/V8PerContextData.h"
+#include "core/CoreExport.h"
 #include "wtf/RefCounted.h"
+#include "wtf/Vector.h"
 #include <v8.h>
 
 namespace blink {
@@ -21,7 +23,7 @@ class ScriptValue;
 // ScriptState is created when v8::Context is created.
 // ScriptState is destroyed when v8::Context is garbage-collected and
 // all V8 proxy objects that have references to the ScriptState are destructed.
-class ScriptState : public RefCounted<ScriptState> {
+class CORE_EXPORT ScriptState : public RefCounted<ScriptState> {
     WTF_MAKE_NONCOPYABLE(ScriptState);
 public:
     class Scope {
@@ -31,7 +33,7 @@ public:
             : m_handleScope(scriptState->isolate())
             , m_context(scriptState->context())
         {
-            ASSERT(!m_context.IsEmpty());
+            ASSERT(scriptState->contextIsValid());
             m_context->Enter();
         }
 
@@ -42,10 +44,10 @@ public:
 
     private:
         v8::HandleScope m_handleScope;
-        v8::Handle<v8::Context> m_context;
+        v8::Local<v8::Context> m_context;
     };
 
-    static PassRefPtr<ScriptState> create(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
+    static PassRefPtr<ScriptState> create(v8::Local<v8::Context>, PassRefPtr<DOMWrapperWorld>);
     virtual ~ScriptState();
 
     static ScriptState* current(v8::Isolate* isolate)
@@ -53,7 +55,7 @@ public:
         return from(isolate->GetCurrentContext());
     }
 
-    static ScriptState* from(v8::Handle<v8::Context> context)
+    static ScriptState* from(v8::Local<v8::Context> context)
     {
         ASSERT(!context.IsEmpty());
         ScriptState* scriptState = static_cast<ScriptState*>(context->GetAlignedPointerFromEmbedderData(v8ContextPerContextDataIndex));
@@ -73,20 +75,31 @@ public:
     virtual void setExecutionContext(ExecutionContext*);
 
     // This can return an empty handle if the v8::Context is gone.
-    v8::Handle<v8::Context> context() const { return m_context.newLocal(m_isolate); }
-    bool contextIsValid() const { return !m_context.isEmpty() && !m_globalObjectDetached; }
+    v8::Local<v8::Context> context() const { return m_context.newLocal(m_isolate); }
+    bool contextIsValid() const { return !m_context.isEmpty() && m_perContextData; }
     void detachGlobalObject();
     void clearContext() { return m_context.clear(); }
+#if ENABLE(ASSERT)
+    bool isGlobalObjectDetached() const { return m_globalObjectDetached; }
+#endif
 
     V8PerContextData* perContextData() const { return m_perContextData.get(); }
-    void disposePerContextData() { m_perContextData = nullptr; }
+    void disposePerContextData();
+
+    class Observer {
+    public:
+        virtual ~Observer() { }
+        virtual void willDisposeScriptState(ScriptState*) = 0;
+    };
+    void addObserver(Observer*);
+    void removeObserver(Observer*);
 
     bool evalEnabled() const;
     void setEvalEnabled(bool);
     ScriptValue getFromGlobalObject(const char* name);
 
 protected:
-    ScriptState(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
+    ScriptState(v8::Local<v8::Context>, PassRefPtr<DOMWrapperWorld>);
 
 private:
     v8::Isolate* m_isolate;
@@ -102,20 +115,10 @@ private:
     // once you no longer need V8PerContextData. Otherwise, the v8::Context will leak.
     OwnPtr<V8PerContextData> m_perContextData;
 
+#if ENABLE(ASSERT)
     bool m_globalObjectDetached;
-};
-
-class ScriptStateForTesting : public ScriptState {
-public:
-    static PassRefPtr<ScriptStateForTesting> create(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
-
-    virtual ExecutionContext* executionContext() const override;
-    virtual void setExecutionContext(ExecutionContext*) override;
-
-private:
-    ScriptStateForTesting(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
-
-    ExecutionContext* m_executionContext;
+#endif
+    Vector<Observer*> m_observers;
 };
 
 // ScriptStateProtectingContext keeps the context associated with the ScriptState alive.

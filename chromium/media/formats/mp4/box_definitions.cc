@@ -27,11 +27,8 @@ FourCC ProtectionSystemSpecificHeader::BoxType() const { return FOURCC_PSSH; }
 
 bool ProtectionSystemSpecificHeader::Parse(BoxReader* reader) {
   // Validate the box's contents and hang on to the system ID.
-  uint32 size;
   RCHECK(reader->ReadFullBoxHeader() &&
-         reader->ReadVec(&system_id, 16) &&
-         reader->Read4(&size) &&
-         reader->HasBytes(size));
+         reader->ReadVec(&system_id, 16));
 
   // Copy the entire box, including the header, for passing to EME as initData.
   DCHECK(raw_box.empty());
@@ -396,10 +393,10 @@ bool AVCDecoderConfigurationRecord::ParseInternal(BufferReader* reader,
     RCHECK(sps_list[i].size() > 4);
 
     if (!log_cb.is_null()) {
-      MEDIA_LOG(log_cb) << "Video codec: avc1." << std::hex
-                        << static_cast<int>(sps_list[i][1])
-                        << static_cast<int>(sps_list[i][2])
-                        << static_cast<int>(sps_list[i][3]);
+      MEDIA_LOG(INFO, log_cb) << "Video codec: avc1." << std::hex
+                              << static_cast<int>(sps_list[i][1])
+                              << static_cast<int>(sps_list[i][2])
+                              << static_cast<int>(sps_list[i][3]);
     }
   }
 
@@ -492,8 +489,8 @@ bool ElementaryStreamDescriptor::Parse(BoxReader* reader) {
   object_type = es_desc.object_type();
 
   if (object_type != 0x40) {
-    MEDIA_LOG(reader->log_cb()) << "Audio codec: mp4a."
-                                << std::hex << static_cast<int>(object_type);
+    MEDIA_LOG(INFO, reader->log_cb()) << "Audio codec: mp4a." << std::hex
+                                      << static_cast<int>(object_type);
   }
 
   if (es_desc.IsAAC(object_type))
@@ -660,12 +657,15 @@ Movie::~Movie() {}
 FourCC Movie::BoxType() const { return FOURCC_MOOV; }
 
 bool Movie::Parse(BoxReader* reader) {
-  return reader->ScanChildren() &&
-         reader->ReadChild(&header) &&
-         reader->ReadChildren(&tracks) &&
-         // Media Source specific: 'mvex' required
-         reader->ReadChild(&extends) &&
-         reader->MaybeReadChildren(&pssh);
+  RCHECK(reader->ScanChildren() && reader->ReadChild(&header) &&
+         reader->ReadChildren(&tracks));
+
+  RCHECK_MEDIA_LOGGED(reader->ReadChild(&extends), reader->log_cb(),
+                      "Detected unfragmented MP4. Media Source Extensions "
+                      "require ISO BMFF moov to contain mvex to indicate that "
+                      "Movie Fragments are to be expected.");
+
+  return reader->MaybeReadChildren(&pssh);
 }
 
 TrackFragmentDecodeTime::TrackFragmentDecodeTime() : decode_time(0) {}

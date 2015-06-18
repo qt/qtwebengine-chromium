@@ -14,32 +14,33 @@ class SkLinearGradient : public SkGradientShaderBase {
 public:
     SkLinearGradient(const SkPoint pts[2], const Descriptor&);
 
-    virtual size_t contextSize() const SK_OVERRIDE;
+    size_t contextSize() const override;
 
     class LinearGradientContext : public SkGradientShaderBase::GradientShaderBaseContext {
     public:
         LinearGradientContext(const SkLinearGradient&, const ContextRec&);
         ~LinearGradientContext() {}
 
-        virtual void shadeSpan(int x, int y, SkPMColor dstC[], int count) SK_OVERRIDE;
-        virtual void shadeSpan16(int x, int y, uint16_t dstC[], int count) SK_OVERRIDE;
+        void shadeSpan(int x, int y, SkPMColor dstC[], int count) override;
+        void shadeSpan16(int x, int y, uint16_t dstC[], int count) override;
 
     private:
         typedef SkGradientShaderBase::GradientShaderBaseContext INHERITED;
     };
 
-    virtual BitmapType asABitmap(SkBitmap*, SkMatrix*, TileMode*) const SK_OVERRIDE;
-    virtual GradientType asAGradient(GradientInfo* info) const SK_OVERRIDE;
-    virtual bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix*,
-                                     GrColor*, GrFragmentProcessor**) const SK_OVERRIDE;
+    BitmapType asABitmap(SkBitmap*, SkMatrix*, TileMode*) const override;
+    GradientType asAGradient(GradientInfo* info) const override;
+    virtual bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix& viewM,
+                                     const SkMatrix*,
+                                     GrColor*, GrFragmentProcessor**) const override;
 
     SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkLinearGradient)
 
 protected:
     SkLinearGradient(SkReadBuffer& buffer);
-    virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE;
-    virtual Context* onCreateContext(const ContextRec&, void* storage) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer& buffer) const override;
+    Context* onCreateContext(const ContextRec&, void* storage) const override;
 
 private:
     friend class SkGradientShader;

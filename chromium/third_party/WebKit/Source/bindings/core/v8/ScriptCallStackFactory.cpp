@@ -46,7 +46,7 @@ namespace blink {
 
 class ExecutionContext;
 
-static ScriptCallFrame toScriptCallFrame(v8::Handle<v8::StackFrame> frame)
+static ScriptCallFrame toScriptCallFrame(v8::Local<v8::StackFrame> frame)
 {
     StringBuilder stringBuilder;
     stringBuilder.appendNumber(frame->GetScriptId());
@@ -66,7 +66,7 @@ static ScriptCallFrame toScriptCallFrame(v8::Handle<v8::StackFrame> frame)
     return ScriptCallFrame(functionName, scriptId, sourceName, sourceLineNumber, sourceColumn);
 }
 
-static void toScriptCallFramesVector(v8::Handle<v8::StackTrace> stackTrace, Vector<ScriptCallFrame>& scriptCallFrames, size_t maxStackSize, bool emptyStackIsAllowed, v8::Isolate* isolate)
+static void toScriptCallFramesVector(v8::Local<v8::StackTrace> stackTrace, Vector<ScriptCallFrame>& scriptCallFrames, size_t maxStackSize, bool emptyStackIsAllowed, v8::Isolate* isolate)
 {
     ASSERT(isolate->InContext());
     int frameCount = stackTrace->GetFrameCount();
@@ -84,9 +84,10 @@ static void toScriptCallFramesVector(v8::Handle<v8::StackTrace> stackTrace, Vect
     }
 }
 
-static PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTrace> stackTrace, size_t maxStackSize, bool emptyStackIsAllowed, v8::Isolate* isolate)
+static PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Isolate* isolate, v8::Local<v8::StackTrace> stackTrace, size_t maxStackSize, bool emptyStackIsAllowed)
 {
     ASSERT(isolate->InContext());
+    ASSERT(!stackTrace.IsEmpty());
     v8::HandleScope scope(isolate);
     Vector<ScriptCallFrame> scriptCallFrames;
     toScriptCallFramesVector(stackTrace, scriptCallFrames, maxStackSize, emptyStackIsAllowed, isolate);
@@ -96,9 +97,9 @@ static PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Handle<
     return callStack.release();
 }
 
-PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTrace> stackTrace, size_t maxStackSize, v8::Isolate* isolate)
+PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Isolate* isolate, v8::Local<v8::StackTrace> stackTrace, size_t maxStackSize)
 {
-    return createScriptCallStack(stackTrace, maxStackSize, true, isolate);
+    return createScriptCallStack(isolate, stackTrace, maxStackSize, true);
 }
 
 PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(size_t maxStackSize, bool emptyStackIsAllowed)
@@ -107,8 +108,8 @@ PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(size_t maxStackSiz
     if (!isolate->InContext())
         return nullptr;
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::StackTrace> stackTrace(v8::StackTrace::CurrentStackTrace(isolate, maxStackSize, stackTraceOptions));
-    return createScriptCallStack(stackTrace, maxStackSize, emptyStackIsAllowed, isolate);
+    v8::Local<v8::StackTrace> stackTrace(v8::StackTrace::CurrentStackTrace(isolate, maxStackSize, stackTraceOptions));
+    return createScriptCallStack(isolate, stackTrace, maxStackSize, emptyStackIsAllowed);
 }
 
 PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStackForConsole(size_t maxStackSize, bool emptyStackIsAllowed)

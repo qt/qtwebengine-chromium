@@ -7,11 +7,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fcntl.h>
-#include <linux/futex.h>
 #include <linux/net.h>
 #include <sched.h>
 #include <signal.h>
-#include <sys/ioctl.h>
+#include <stdint.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
@@ -21,23 +20,36 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+#include "sandbox/linux/bpf_dsl/seccomp_macros.h"
 #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
-#include "sandbox/linux/seccomp-bpf/linux_seccomp.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
-#include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/system_headers/linux_futex.h"
+#include "sandbox/linux/system_headers/linux_syscalls.h"
+
+// PNaCl toolchain does not provide sys/ioctl.h header.
+#if !defined(OS_NACL_NONSFI)
+#include <sys/ioctl.h>
+#endif
 
 #if defined(OS_ANDROID)
 
-#include "sandbox/linux/services/android_futex.h"
-
 #if !defined(F_DUPFD_CLOEXEC)
 #define F_DUPFD_CLOEXEC (F_LINUX_SPECIFIC_BASE + 6)
+#endif
+
+// https://android.googlesource.com/platform/bionic/+/lollipop-release/libc/private/bionic_prctl.h
+#if !defined(PR_SET_VMA)
+#define PR_SET_VMA 0x53564d41
+#endif
+
+// https://android.googlesource.com/platform/system/core/+/lollipop-release/libcutils/sched_policy.c
+#if !defined(PR_SET_TIMERSLACK_PID)
+#define PR_SET_TIMERSLACK_PID 41
 #endif
 
 #endif  // defined(OS_ANDROID)
@@ -96,6 +108,7 @@ using sandbox::bpf_dsl::ResultExpr;
 
 namespace sandbox {
 
+#if !defined(OS_NACL_NONSFI)
 // Allow Glibc's and Android pthread creation flags, crash on any other
 // thread creation attempts and EPERM attempts to use neither
 // CLONE_VM, nor CLONE_THREAD, which includes all fork() implementations.
@@ -129,6 +142,9 @@ ResultExpr RestrictPrctl() {
   return Switch(option)
       .CASES((PR_GET_NAME, PR_SET_NAME, PR_GET_DUMPABLE, PR_SET_DUMPABLE),
              Allow())
+#if defined(OS_ANDROID)
+      .CASES((PR_SET_VMA, PR_SET_TIMERSLACK_PID), Allow())
+#endif
       .Default(CrashSIGSYSPrctl());
 }
 
@@ -250,21 +266,6 @@ ResultExpr RestrictGetSetpriority(pid_t target_pid) {
       .Else(CrashSIGSYS());
 }
 
-ResultExpr RestrictClockID() {
-  COMPILE_ASSERT(4 == sizeof(clockid_t), clockid_is_not_32bit);
-  const Arg<clockid_t> clockid(0);
-  return If(
-#if defined(OS_CHROMEOS)
-             // Allow the special clock for Chrome OS used by Chrome tracing.
-             clockid == base::TimeTicks::kClockSystemTrace ||
-#endif
-                 clockid == CLOCK_MONOTONIC ||
-                 clockid == CLOCK_PROCESS_CPUTIME_ID ||
-                 clockid == CLOCK_REALTIME ||
-                 clockid == CLOCK_THREAD_CPUTIME_ID,
-             Allow()).Else(CrashSIGSYS());
-}
-
 ResultExpr RestrictSchedTarget(pid_t target_pid, int sysno) {
   switch (sysno) {
     case __NR_sched_getaffinity:
@@ -286,5 +287,30 @@ ResultExpr RestrictSchedTarget(pid_t target_pid, int sysno) {
   }
 }
 
+ResultExpr RestrictPrlimit64(pid_t target_pid) {
+  const Arg<pid_t> pid(0);
+  return If(pid == 0 || pid == target_pid, Allow()).Else(CrashSIGSYS());
+}
+
+ResultExpr RestrictGetrusage() {
+  const Arg<int> who(0);
+  return If(who == RUSAGE_SELF, Allow()).Else(CrashSIGSYS());
+}
+#endif  // !defined(OS_NACL_NONSFI)
+
+ResultExpr RestrictClockID() {
+  static_assert(4 == sizeof(clockid_t), "clockid_t is not 32bit");
+  const Arg<clockid_t> clockid(0);
+  return If(
+#if defined(OS_CHROMEOS)
+             // Allow the special clock for Chrome OS used by Chrome tracing.
+             clockid == base::TimeTicks::kClockSystemTrace ||
+#endif
+                 clockid == CLOCK_MONOTONIC ||
+                 clockid == CLOCK_PROCESS_CPUTIME_ID ||
+                 clockid == CLOCK_REALTIME ||
+                 clockid == CLOCK_THREAD_CPUTIME_ID,
+             Allow()).Else(CrashSIGSYS());
+}
 
 }  // namespace sandbox.

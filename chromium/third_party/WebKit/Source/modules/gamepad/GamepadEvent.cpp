@@ -7,10 +7,6 @@
 
 namespace blink {
 
-GamepadEventInit::GamepadEventInit()
-{
-}
-
 GamepadEvent::GamepadEvent()
 {
 }
@@ -23,8 +19,9 @@ GamepadEvent::GamepadEvent(const AtomicString& type, bool canBubble, bool cancel
 
 GamepadEvent::GamepadEvent(const AtomicString& type, const GamepadEventInit& initializer)
     : Event(type, initializer)
-    , m_gamepad(initializer.gamepad)
 {
+    if (initializer.hasGamepad())
+        m_gamepad = initializer.gamepad();
 }
 
 GamepadEvent::~GamepadEvent()
@@ -36,7 +33,7 @@ const AtomicString& GamepadEvent::interfaceName() const
     return EventNames::GamepadEvent;
 }
 
-void GamepadEvent::trace(Visitor* visitor)
+DEFINE_TRACE(GamepadEvent)
 {
     visitor->trace(m_gamepad);
     Event::trace(visitor);

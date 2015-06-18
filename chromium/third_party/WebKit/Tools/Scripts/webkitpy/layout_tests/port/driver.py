@@ -169,7 +169,7 @@ class Driver(object):
         leaked = self._leaked
 
         if not crashed:
-            sanitizer = self._port._output_contains_sanitizer_messages(self.error_from_test)
+            sanitizer = self._port.output_contains_sanitizer_messages(self.error_from_test)
             if sanitizer:
                 self.error_from_test = 'OUTPUT CONTAINS "' + sanitizer + '", so we are treating this test as if it crashed, even though it did not.\n\n' + self.error_from_test
                 crashed = True
@@ -344,8 +344,8 @@ class Driver(object):
         cmd.append(self._port._path_to_driver())
         if self._no_timeout:
             cmd.append('--no-timeout')
-        cmd.extend(self._port.get_option('additional_drt_flag', []))
-        cmd.extend(self._port.additional_drt_flag())
+        cmd.extend(self._port.get_option('additional_driver_flag', []))
+        cmd.extend(self._port.additional_driver_flag())
         if self._port.get_option('enable_leak_detection'):
             cmd.append('--enable-leak-detection')
         cmd.extend(per_test_args)

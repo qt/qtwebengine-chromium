@@ -10,8 +10,8 @@
 #include "ui/aura/window_tree_host.h"
 #include "ui/events/event_source.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
-#include "ui/gfx/insets.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 
 // X forward decls to avoid including Xlib.h in a header file.
@@ -68,7 +68,7 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
 
   ::Window x_root_window() { return x_root_window_; }
   XDisplay* xdisplay() { return xdisplay_; }
-  const gfx::Rect bounds() const { return bounds_; }
+  const gfx::Rect& bounds() const { return bounds_; }
   ui::X11AtomCache* atom_cache() { return &atom_cache_; }
 
  private:

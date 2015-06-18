@@ -22,15 +22,9 @@
 #define HashChangeEvent_h
 
 #include "core/events/Event.h"
+#include "core/events/HashChangeEventInit.h"
 
 namespace blink {
-
-struct HashChangeEventInit : public EventInit {
-    HashChangeEventInit() { }
-
-    String oldURL;
-    String newURL;
-};
 
 class HashChangeEvent final : public Event {
     DEFINE_WRAPPERTYPEINFO();
@@ -66,7 +60,7 @@ public:
 
     virtual const AtomicString& interfaceName() const override { return EventNames::HashChangeEvent; }
 
-    virtual void trace(Visitor* visitor) override { Event::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { Event::trace(visitor); }
 
 private:
     HashChangeEvent() { }
@@ -78,8 +72,12 @@ private:
 
     HashChangeEvent(const AtomicString& type, const HashChangeEventInit& initializer)
         : Event(type, initializer)
-        , m_oldURL(initializer.oldURL)
-        , m_newURL(initializer.newURL) { }
+    {
+        if (initializer.hasOldURL())
+            m_oldURL = initializer.oldURL();
+        if (initializer.hasNewURL())
+            m_newURL = initializer.newURL();
+    }
 
     String m_oldURL;
     String m_newURL;

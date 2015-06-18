@@ -15,8 +15,8 @@
 #include "printing/page_range.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
-#include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
 // Tests that serialize/deserialize correctly understand each other
@@ -109,7 +109,7 @@ TEST(IPCMessageTest, Bitmap) {
   const char* fixed_data;
   int fixed_data_size;
   iter = PickleIterator(msg);
-  EXPECT_TRUE(msg.ReadData(&iter, &fixed_data, &fixed_data_size));
+  EXPECT_TRUE(iter.ReadData(&fixed_data, &fixed_data_size));
   bad_msg.WriteData(fixed_data, fixed_data_size);
   // Add some bogus pixel data.
   const size_t bogus_pixels_size = bitmap.getSize() * 2;

@@ -69,6 +69,15 @@ dictionary MyDictBig {
   long unsetLong;
 };
 
+/* TREE
+ *Dictionary(MyDictRequired)
+ *  Key(setLong)
+ *    Type()
+ *      PrimitiveType(long)
+ */
+dictionary MyDictRequired {
+  required long setLong;
+};
 
 /* ERROR Unexpected "{" after keyword "dictionary". */
 dictionary {
@@ -92,4 +101,7 @@ dictionary MyDictNull {
   DOMString? setString = null;
 };
 
-
+/* ERROR Unexpected keyword "attribute" after "{". */
+dictionary MyDictUnexpectedAttribute {
+  attribute DOMString foo = "";
+};

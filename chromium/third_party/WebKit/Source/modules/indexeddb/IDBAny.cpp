@@ -44,14 +44,8 @@ IDBAny* IDBAny::createNull()
     return new IDBAny(NullType);
 }
 
-IDBAny* IDBAny::createString(const String& value)
-{
-    return new IDBAny(value);
-}
-
 IDBAny::IDBAny(Type type)
     : m_type(type)
-    , m_integer(0)
 {
     ASSERT(type == UndefinedType || type == NullType);
 }
@@ -104,40 +98,23 @@ IDBObjectStore* IDBAny::idbObjectStore() const
     return m_idbObjectStore.get();
 }
 
-IDBTransaction* IDBAny::idbTransaction() const
-{
-    ASSERT(m_type == IDBTransactionType);
-    return m_idbTransaction.get();
-}
-
 const IDBKey* IDBAny::key() const
 {
-    ASSERT(m_type == KeyType || m_type == BufferKeyAndKeyPathType);
+    // If type is IDBValueType then instead use value()->primaryKey().
+    ASSERT(m_type == KeyType);
     return m_idbKey.get();
 }
 
-const IDBKeyPath& IDBAny::keyPath() const
+IDBValue* IDBAny::value() const
 {
-    ASSERT(m_type == KeyPathType || m_type == BufferKeyAndKeyPathType);
-    return m_idbKeyPath;
+    ASSERT(m_type == IDBValueType);
+    return m_idbValue.get();
 }
 
-SharedBuffer* IDBAny::buffer() const
+const Vector<RefPtr<IDBValue>>* IDBAny::values() const
 {
-    ASSERT(m_type == BufferType || m_type == BufferKeyAndKeyPathType);
-    return m_buffer.get();
-}
-
-const Vector<WebBlobInfo>* IDBAny::blobInfo() const
-{
-    ASSERT(m_type == BufferType || m_type == BufferKeyAndKeyPathType);
-    return m_blobInfo;
-}
-
-const String& IDBAny::string() const
-{
-    ASSERT(m_type == StringType);
-    return m_string;
+    ASSERT(m_type == IDBValueArrayType);
+    return &m_idbValues;
 }
 
 int64_t IDBAny::integer() const
@@ -149,81 +126,48 @@ int64_t IDBAny::integer() const
 IDBAny::IDBAny(PassRefPtrWillBeRawPtr<DOMStringList> value)
     : m_type(DOMStringListType)
     , m_domStringList(value)
-    , m_integer(0)
 {
 }
 
 IDBAny::IDBAny(IDBCursor* value)
     : m_type(value->isCursorWithValue() ? IDBCursorWithValueType : IDBCursorType)
     , m_idbCursor(value)
-    , m_integer(0)
 {
 }
 
 IDBAny::IDBAny(IDBDatabase* value)
     : m_type(IDBDatabaseType)
     , m_idbDatabase(value)
-    , m_integer(0)
 {
 }
 
 IDBAny::IDBAny(IDBIndex* value)
     : m_type(IDBIndexType)
     , m_idbIndex(value)
-    , m_integer(0)
-{
-}
-
-IDBAny::IDBAny(IDBTransaction* value)
-    : m_type(IDBTransactionType)
-    , m_idbTransaction(value)
-    , m_integer(0)
 {
 }
 
 IDBAny::IDBAny(IDBObjectStore* value)
     : m_type(IDBObjectStoreType)
     , m_idbObjectStore(value)
-    , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<SharedBuffer> value, const Vector<WebBlobInfo>* blobInfo)
-    : m_type(BufferType)
-    , m_buffer(value)
-    , m_blobInfo(blobInfo)
-    , m_integer(0)
+IDBAny::IDBAny(const Vector<RefPtr<IDBValue>>& values)
+    : m_type(IDBValueArrayType)
+    , m_idbValues(values)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<SharedBuffer> value, const Vector<WebBlobInfo>* blobInfo, IDBKey* key, const IDBKeyPath& keyPath)
-    : m_type(BufferKeyAndKeyPathType)
-    , m_idbKey(key)
-    , m_idbKeyPath(keyPath)
-    , m_buffer(value)
-    , m_blobInfo(blobInfo)
-    , m_integer(0)
+IDBAny::IDBAny(PassRefPtr<IDBValue> value)
+    : m_type(IDBValueType)
+    , m_idbValue(value)
 {
 }
 
 IDBAny::IDBAny(IDBKey* key)
     : m_type(KeyType)
     , m_idbKey(key)
-    , m_integer(0)
-{
-}
-
-IDBAny::IDBAny(const IDBKeyPath& value)
-    : m_type(KeyPathType)
-    , m_idbKeyPath(value)
-    , m_integer(0)
-{
-}
-
-IDBAny::IDBAny(const String& value)
-    : m_type(StringType)
-    , m_string(value)
-    , m_integer(0)
 {
 }
 
@@ -233,14 +177,13 @@ IDBAny::IDBAny(int64_t value)
 {
 }
 
-void IDBAny::trace(Visitor* visitor)
+DEFINE_TRACE(IDBAny)
 {
     visitor->trace(m_domStringList);
     visitor->trace(m_idbCursor);
     visitor->trace(m_idbDatabase);
     visitor->trace(m_idbIndex);
     visitor->trace(m_idbObjectStore);
-    visitor->trace(m_idbTransaction);
     visitor->trace(m_idbKey);
 }
 

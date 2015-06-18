@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -18,6 +19,13 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event_processor.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/events/keycodes/dom/dom_key.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
+#include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/keyboard/keyboard_switches.h"
 #include "url/gurl.h"
 
@@ -28,7 +36,8 @@ const char kKeyUp[] = "keyup";
 
 void SendProcessKeyEvent(ui::EventType type,
                          aura::WindowTreeHost* host) {
-  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::EF_NONE);
+  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::DomCode::NONE, ui::EF_NONE,
+                     ui::DomKey::PROCESS, 0, ui::EventTimeForNow());
   event.SetTranslated(true);
   ui::EventDispatchDetails details =
       host->event_processor()->OnEventFromSource(&event);
@@ -54,21 +63,12 @@ keyboard::KeyboardShowOverride g_keyboard_show_override =
 
 namespace keyboard {
 
-gfx::Rect DefaultKeyboardBoundsFromWindowBounds(
-    const gfx::Rect& window_bounds) {
-  // Initialize default keyboard height to 0. The keyboard window height should
-  // only be set by window.resizeTo in virtual keyboard web contents. Otherwise,
-  // the default height may conflict with the new height and causing some
-  // strange animation issues.
-  return KeyboardBoundsFromWindowBounds(window_bounds, 0);
-}
-
-gfx::Rect KeyboardBoundsFromWindowBounds(const gfx::Rect& window_bounds,
-                                         int keyboard_height) {
+gfx::Rect FullWidthKeyboardBoundsFromRootBounds(const gfx::Rect& root_bounds,
+                                                int keyboard_height) {
   return gfx::Rect(
-      window_bounds.x(),
-      window_bounds.bottom() - keyboard_height,
-      window_bounds.width(),
+      root_bounds.x(),
+      root_bounds.bottom() - keyboard_height,
+      root_bounds.width(),
       keyboard_height);
 }
 
@@ -102,7 +102,7 @@ bool IsKeyboardEnabled() {
   if (g_keyboard_show_override == keyboard::KEYBOARD_SHOW_OVERRIDE_DISABLED)
     return false;
   // Check if any of the flags are enabled.
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kEnableVirtualKeyboard) ||
          g_touch_keyboard_enabled ||
          (g_keyboard_show_override == keyboard::KEYBOARD_SHOW_OVERRIDE_ENABLED);
@@ -124,8 +124,8 @@ bool IsKeyboardOverscrollEnabled() {
         KEYBOARD_OVERSCROLL_OVERRIDE_ENABLED;
   }
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableVirtualKeyboardOverscroll)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableVirtualKeyboardOverscroll)) {
     return false;
   }
   return true;
@@ -140,28 +140,59 @@ void SetKeyboardShowOverride(KeyboardShowOverride override) {
 }
 
 bool IsInputViewEnabled() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableInputView))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableInputView))
     return true;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableInputView))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableInputView))
     return false;
   // Default value if no command line flags specified.
   return true;
 }
 
 bool IsExperimentalInputViewEnabled() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableExperimentalInputViewFeatures)) {
-    return true;
-  }
-  return false;
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExperimentalInputViewFeatures);
 }
 
-bool InsertText(const base::string16& text, aura::Window* root_window) {
-  if (!root_window)
+bool IsFloatingVirtualKeyboardEnabled() {
+  std::string floating_virtual_keyboard_switch =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kFloatingVirtualKeyboard);
+  return floating_virtual_keyboard_switch ==
+      switches::kFloatingVirtualKeyboardEnabled;
+}
+
+bool IsGestureTypingEnabled() {
+  std::string keyboard_switch =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kGestureTyping);
+  return keyboard_switch == switches::kGestureTypingEnabled;
+}
+
+bool IsGestureEditingEnabled() {
+  std::string keyboard_switch =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kGestureEditing);
+  return keyboard_switch == switches::kGestureEditingEnabled;
+}
+
+bool IsMaterialDesignEnabled() {
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableNewMDInputView);
+}
+
+bool IsVoiceInputEnabled() {
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableVoiceInput);
+}
+
+bool InsertText(const base::string16& text) {
+  keyboard::KeyboardController* controller = KeyboardController::GetInstance();
+  if (!controller)
     return false;
 
-  ui::InputMethod* input_method = root_window->GetProperty(
-      aura::client::kRootWindowInputMethodKey);
+  ui::InputMethod* input_method = controller->proxy()->GetInputMethod();
   if (!input_method)
     return false;
 
@@ -183,36 +214,54 @@ bool MoveCursor(int swipe_direction,
                 aura::WindowTreeHost* host) {
   if (!host)
     return false;
-  ui::KeyboardCode codex = ui::VKEY_UNKNOWN;
-  ui::KeyboardCode codey = ui::VKEY_UNKNOWN;
+  ui::DomCode domcodex = ui::DomCode::NONE;
+  ui::DomCode domcodey = ui::DomCode::NONE;
   if (swipe_direction & kCursorMoveRight)
-    codex = ui::VKEY_RIGHT;
+    domcodex = ui::DomCode::ARROW_RIGHT;
   else if (swipe_direction & kCursorMoveLeft)
-    codex = ui::VKEY_LEFT;
+    domcodex = ui::DomCode::ARROW_LEFT;
 
   if (swipe_direction & kCursorMoveUp)
-    codey = ui::VKEY_UP;
+    domcodey = ui::DomCode::ARROW_UP;
   else if (swipe_direction & kCursorMoveDown)
-    codey = ui::VKEY_DOWN;
+    domcodey = ui::DomCode::ARROW_DOWN;
 
   // First deal with the x movement.
-  if (codex != ui::VKEY_UNKNOWN) {
-    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, modifier_flags);
+  if (domcodex != ui::DomCode::NONE) {
+    ui::KeyboardCode codex = ui::VKEY_UNKNOWN;
+    ui::DomKey domkeyx = ui::DomKey::NONE;
+    base::char16 cx;
+    ignore_result(DomCodeToUsLayoutMeaning(domcodex, ui::EF_NONE, &domkeyx,
+                                           &cx, &codex));
+    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, domcodex,
+                             modifier_flags, domkeyx, cx,
+                             ui::EventTimeForNow());
     ui::EventDispatchDetails details =
         host->event_processor()->OnEventFromSource(&press_event);
     CHECK(!details.dispatcher_destroyed);
-    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, modifier_flags);
+    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, domcodex,
+                               modifier_flags, domkeyx, cx,
+                               ui::EventTimeForNow());
     details = host->event_processor()->OnEventFromSource(&release_event);
     CHECK(!details.dispatcher_destroyed);
   }
 
   // Then deal with the y movement.
-  if (codey != ui::VKEY_UNKNOWN) {
-    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, modifier_flags);
+  if (domcodey != ui::DomCode::NONE) {
+    ui::KeyboardCode codey = ui::VKEY_UNKNOWN;
+    ui::DomKey domkeyy = ui::DomKey::NONE;
+    base::char16 cy;
+    ignore_result(DomCodeToUsLayoutMeaning(domcodey, ui::EF_NONE, &domkeyy,
+                                           &cy, &codey));
+    ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, domcodey,
+                             modifier_flags, domkeyy, cy,
+                             ui::EventTimeForNow());
     ui::EventDispatchDetails details =
         host->event_processor()->OnEventFromSource(&press_event);
     CHECK(!details.dispatcher_destroyed);
-    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, modifier_flags);
+    ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, domcodey,
+                               modifier_flags, domkeyy, cy,
+                               ui::EventTimeForNow());
     details = host->event_processor()->OnEventFromSource(&release_event);
     CHECK(!details.dispatcher_destroyed);
   }
@@ -266,7 +315,17 @@ bool SendKeyEvent(const std::string type,
       }
     }
 
-    ui::KeyEvent event(event_type, code, key_name, modifiers);
+    ui::DomCode dom_code = ui::DomCode::NONE;
+    if (!key_name.empty())
+      dom_code = ui::KeycodeConverter::CodeStringToDomCode(key_name.c_str());
+    if (dom_code == ui::DomCode::NONE)
+      dom_code = ui::UsLayoutKeyboardCodeToDomCode(code);
+    CHECK(dom_code != ui::DomCode::NONE);
+    ui::KeyEvent event(
+        event_type,
+        code,
+        dom_code,
+        modifiers);
     ui::EventDispatchDetails details =
         host->event_processor()->OnEventFromSource(&event);
     CHECK(!details.dispatcher_destroyed);
@@ -304,45 +363,62 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
   // necessary to have a custom path for the extension path, so the resource
   // map cannot be used directly.
   static const GritResourceMap kKeyboardResources[] = {
-      {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
-      {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
+      {"keyboard/locales/en.js", IDR_KEYBOARD_LOCALES_EN},
+      {"keyboard/config/m-emoji.js", IDR_KEYBOARD_CONFIG_EMOJI},
+      {"keyboard/config/m-hwt.js", IDR_KEYBOARD_CONFIG_HWT},
+      {"keyboard/config/us.js", IDR_KEYBOARD_CONFIG_US},
+      {"keyboard/emoji.css", IDR_KEYBOARD_CSS_EMOJI},
       {"keyboard/images/backspace.png", IDR_KEYBOARD_IMAGES_BACKSPACE},
-      {"keyboard/images/brightness-down.svg",
-       IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN},
-      {"keyboard/images/brightness-up.svg", IDR_KEYBOARD_IMAGES_BRIGHTNESS_UP},
-      {"keyboard/images/change-window.svg", IDR_KEYBOARD_IMAGES_CHANGE_WINDOW},
-      {"keyboard/images/down.svg", IDR_KEYBOARD_IMAGES_DOWN},
-      {"keyboard/images/forward.svg", IDR_KEYBOARD_IMAGES_FORWARD},
-      {"keyboard/images/fullscreen.svg", IDR_KEYBOARD_IMAGES_FULLSCREEN},
-      {"keyboard/images/hide-keyboard.png", IDR_KEYBOARD_IMAGES_HIDE_KEYBOARD},
+      {"keyboard/images/car.png", IDR_KEYBOARD_IMAGES_CAR},
+      {"keyboard/images/check.png", IDR_KEYBOARD_IMAGES_CHECK},
+      {"keyboard/images/compact.png", IDR_KEYBOARD_IMAGES_COMPACT},
+      {"keyboard/images/down.png", IDR_KEYBOARD_IMAGES_DOWN},
+      {"keyboard/images/emoji.png", IDR_KEYBOARD_IMAGES_EMOJI},
+      {"keyboard/images/emoji_cat_items.png", IDR_KEYBOARD_IMAGES_CAT},
+      {"keyboard/images/emoticon.png", IDR_KEYBOARD_IMAGES_EMOTICON},
+      {"keyboard/images/enter.png", IDR_KEYBOARD_IMAGES_RETURN},
+      {"keyboard/images/error.png", IDR_KEYBOARD_IMAGES_ERROR},
+      {"keyboard/images/favorit.png", IDR_KEYBOARD_IMAGES_FAVORITE},
+      {"keyboard/images/flower.png", IDR_KEYBOARD_IMAGES_FLOWER},
+      {"keyboard/images/globe.png", IDR_KEYBOARD_IMAGES_GLOBE},
+      {"keyboard/images/hide.png", IDR_KEYBOARD_IMAGES_HIDE_KEYBOARD},
       {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
-      {"keyboard/images/left.svg", IDR_KEYBOARD_IMAGES_LEFT},
-      {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
-      {"keyboard/images/microphone-green.svg",
-       IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN},
-      {"keyboard/images/mute.svg", IDR_KEYBOARD_IMAGES_MUTE},
-      {"keyboard/images/reload.svg", IDR_KEYBOARD_IMAGES_RELOAD},
-      {"keyboard/images/return.png", IDR_KEYBOARD_IMAGES_RETURN},
-      {"keyboard/images/right.svg", IDR_KEYBOARD_IMAGES_RIGHT},
+      {"keyboard/images/left.png", IDR_KEYBOARD_IMAGES_LEFT},
+      {"keyboard/images/penci.png", IDR_KEYBOARD_IMAGES_PENCIL},
+      {"keyboard/images/recent.png", IDR_KEYBOARD_IMAGES_RECENT},
+      {"keyboard/images/regular_size.png", IDR_KEYBOARD_IMAGES_FULLSIZE},
+      {"keyboard/images/menu.png", IDR_KEYBOARD_IMAGES_MENU},
+      {"keyboard/images/pencil.png", IDR_KEYBOARD_IMAGES_PENCIL},
+      {"keyboard/images/right.png", IDR_KEYBOARD_IMAGES_RIGHT},
       {"keyboard/images/search.png", IDR_KEYBOARD_IMAGES_SEARCH},
+      {"keyboard/images/setting.png", IDR_KEYBOARD_IMAGES_SETTINGS},
       {"keyboard/images/shift.png", IDR_KEYBOARD_IMAGES_SHIFT},
-      {"keyboard/images/shutdown.svg", IDR_KEYBOARD_IMAGES_SHUTDOWN},
+      {"keyboard/images/space.png", IDR_KEYBOARD_IMAGES_SPACE},
       {"keyboard/images/tab.png", IDR_KEYBOARD_IMAGES_TAB},
-      {"keyboard/images/up.svg", IDR_KEYBOARD_IMAGES_UP},
-      {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
-      {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
+      {"keyboard/images/triangle.png", IDR_KEYBOARD_IMAGES_TRIANGLE},
+      {"keyboard/images/up.png", IDR_KEYBOARD_IMAGES_UP},
       {"keyboard/index.html", IDR_KEYBOARD_INDEX},
-      {"keyboard/keyboard.js", IDR_KEYBOARD_JS},
-      {"keyboard/keyboard_mojo.js", IDR_KEYBOARD_MOJO_JS},
-      {"keyboard/layouts/numeric.html", IDR_KEYBOARD_LAYOUTS_NUMERIC},
-      {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
-      {"keyboard/layouts/system-qwerty.html",
-       IDR_KEYBOARD_LAYOUTS_SYSTEM_QWERTY},
-      {"keyboard/layouts/spacebar-row.html", IDR_KEYBOARD_SPACEBAR_ROW},
+      {"keyboard/inputview_adapter.js", IDR_KEYBOARD_INPUTVIEW_ADAPTER},
+      {"keyboard/inputview.css", IDR_KEYBOARD_INPUTVIEW_CSS},
+      {"keyboard/inputview.js", IDR_KEYBOARD_INPUTVIEW_JS},
+      {"keyboard/inputview_layouts/101kbd.js", IDR_KEYBOARD_LAYOUTS_101},
+      {"keyboard/inputview_layouts/compactkbd-qwerty.js",
+       IDR_KEYBOARD_LAYOUTS_COMPACT_QWERTY},
+      {"keyboard/inputview_layouts/compactkbd-numberpad.js",
+       IDR_KEYBOARD_LAYOUTS_COMPACT_NUMBERPAD},
+      {"keyboard/inputview_layouts/emoji.js", IDR_KEYBOARD_LAYOUTS_EMOJI},
+      {"keyboard/inputview_layouts/handwriting.js", IDR_KEYBOARD_LAYOUTS_HWT},
+      {"keyboard/inputview_layouts/m-101kbd.js",
+       IDR_KEYBOARD_LAYOUTS_MATERIAL_101},
+      {"keyboard/inputview_layouts/m-compactkbd-qwerty.js",
+       IDR_KEYBOARD_LAYOUTS_MATERIAL_COMPACT_QWERTY},
+      {"keyboard/inputview_layouts/m-compactkbd-numberpad.js",
+       IDR_KEYBOARD_LAYOUTS_MATERIAL_COMPACT_NUMBERPAD},
+      {"keyboard/inputview_layouts/m-emoji.js",
+       IDR_KEYBOARD_LAYOUTS_MATERIAL_EMOJI},
+      {"keyboard/inputview_layouts/m-handwriting.js",
+       IDR_KEYBOARD_LAYOUTS_MATERIAL_HWT},
       {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
-      {"keyboard/main.css", IDR_KEYBOARD_MAIN_CSS},
-      {"keyboard/polymer_loader.js", IDR_KEYBOARD_POLYMER_LOADER},
-      {"keyboard/roboto_bold.ttf", IDR_KEYBOARD_ROBOTO_BOLD_TTF},
       {"keyboard/sounds/keypress-delete.wav",
        IDR_KEYBOARD_SOUNDS_KEYPRESS_DELETE},
       {"keyboard/sounds/keypress-return.wav",

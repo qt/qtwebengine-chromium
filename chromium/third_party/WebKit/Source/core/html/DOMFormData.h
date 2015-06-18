@@ -31,11 +31,13 @@
 #ifndef DOMFormData_h
 #define DOMFormData_h
 
+#include "bindings/core/v8/Iterable.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/UnionTypesCore.h"
+#include "core/CoreExport.h"
 #include "core/html/FormDataList.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace WTF{
 class TextEncoding;
@@ -46,25 +48,36 @@ namespace blink {
 class Blob;
 class HTMLFormElement;
 
-class DOMFormData final : public FormDataList, public ScriptWrappable {
+// Typedef from FormData.idl:
+typedef FileOrUSVString FormDataEntryValue;
+
+class CORE_EXPORT DOMFormData final : public FormDataList, public ScriptWrappable, public PairIterable<String, FormDataEntryValue> {
     DEFINE_WRAPPERTYPEINFO();
+
 public:
-    static PassRefPtrWillBeRawPtr<DOMFormData> create(HTMLFormElement* form = 0)
+    static DOMFormData* create(HTMLFormElement* form = 0)
     {
-        return adoptRefWillBeNoop(new DOMFormData(form));
+        return new DOMFormData(form);
     }
 
-    static PassRefPtrWillBeRawPtr<DOMFormData> create(const WTF::TextEncoding& encoding)
+    static DOMFormData* create(const WTF::TextEncoding& encoding)
     {
-        return adoptRefWillBeNoop(new DOMFormData(encoding));
+        return new DOMFormData(encoding);
     }
 
+    // FormData interface.
     void append(const String& name, const String& value);
     void append(const String& name, Blob*, const String& filename = String());
+    void get(const String& name, FormDataEntryValue& result);
+    Vector<FormDataEntryValue> getAll(const String& name);
+    void set(const String& name, const String& value);
+    void set(const String& name, Blob*, const String& filename = String());
 
 private:
     explicit DOMFormData(const WTF::TextEncoding&);
     explicit DOMFormData(HTMLFormElement*);
+
+    IterationSource* startIteration(ScriptState*, ExceptionState&) override;
 };
 
 } // namespace blink

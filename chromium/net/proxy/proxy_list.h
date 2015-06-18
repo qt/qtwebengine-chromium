@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_retry_info.h"
 
 namespace base {
@@ -63,6 +63,9 @@ class NET_EXPORT_PRIVATE ProxyList {
   // this if !IsEmpty().
   const ProxyServer& Get() const;
 
+  // Returns all proxy servers in the list.
+  const std::vector<ProxyServer>& GetAll() const;
+
   // Sets the list by parsing the pac result |pac_string|.
   // Some examples for |pac_string|:
   //   "DIRECT"
@@ -94,14 +97,14 @@ class NET_EXPORT_PRIVATE ProxyList {
   // retry after |retry_delay| if positive, and will use the default proxy retry
   // duration otherwise. It may reconsider the proxy beforehand if |reconsider|
   // is true. Additionally updates |proxy_retry_info| with
-  // |another_proxy_to_bypass| if non-empty. |net_error| should contain the
-  // network error countered when this proxy was tried, or OK if the proxy retry
-  // info is being updated for a non-network related reason (e.g. local policy).
+  // |additional_proxies_to_bypass|. |net_error| should contain the network
+  // error countered when this proxy was tried, or OK if the proxy retry info is
+  // being updated for a non-network related reason (e.g. local policy).
   void UpdateRetryInfoOnFallback(
       ProxyRetryInfoMap* proxy_retry_info,
       base::TimeDelta retry_delay,
       bool reconsider,
-      const ProxyServer& another_proxy_to_bypass,
+      const std::vector<ProxyServer>& additional_proxies_to_bypass,
       int net_error,
       const BoundNetLog& net_log) const;
 

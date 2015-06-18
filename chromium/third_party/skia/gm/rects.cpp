@@ -25,15 +25,12 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("rects");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(1200, 900);
     }
 
@@ -254,7 +251,7 @@ protected:
                           SK_Scalar1 * 100 * (testCount / 10) + 3 * SK_Scalar1 / 4);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         SkAutoCommentBlock acb(canvas, "onDraw");
 
         canvas->translate(20 * SK_Scalar1, 20 * SK_Scalar1);

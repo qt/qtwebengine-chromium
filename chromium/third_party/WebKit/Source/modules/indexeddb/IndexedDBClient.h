@@ -28,6 +28,7 @@
 #ifndef IndexedDBClient_h
 #define IndexedDBClient_h
 
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
@@ -38,14 +39,14 @@ class ExecutionContext;
 class IndexedDBClient : public GarbageCollected<IndexedDBClient> {
 public:
     static IndexedDBClient* create();
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     virtual bool allowIndexedDB(ExecutionContext*, const String& name) = 0;
 };
 
 typedef IndexedDBClient* CreateIndexedDBClient();
 
-void setIndexedDBClientCreateFunction(CreateIndexedDBClient);
+MODULES_EXPORT void setIndexedDBClientCreateFunction(CreateIndexedDBClient);
 
 } // namespace blink
 

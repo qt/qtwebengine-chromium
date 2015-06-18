@@ -117,7 +117,7 @@ struct ParamTraits<bool> {
     m->WriteBool(p);
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return m->ReadBool(iter, r);
+    return iter->ReadBool(r);
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -145,7 +145,7 @@ struct ParamTraits<int> {
     m->WriteInt(p);
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return m->ReadInt(iter, r);
+    return iter->ReadInt(r);
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -157,7 +157,7 @@ struct ParamTraits<unsigned int> {
     m->WriteInt(p);
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return m->ReadInt(iter, reinterpret_cast<int*>(r));
+    return iter->ReadInt(reinterpret_cast<int*>(r));
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -169,7 +169,7 @@ struct ParamTraits<long> {
     m->WriteLongUsingDangerousNonPortableLessPersistableForm(p);
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return m->ReadLong(iter, r);
+    return iter->ReadLong(r);
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -181,7 +181,7 @@ struct ParamTraits<unsigned long> {
     m->WriteLongUsingDangerousNonPortableLessPersistableForm(p);
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return m->ReadLong(iter, reinterpret_cast<long*>(r));
+    return iter->ReadLong(reinterpret_cast<long*>(r));
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -194,7 +194,7 @@ struct ParamTraits<long long> {
   }
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r) {
-    return m->ReadInt64(iter, reinterpret_cast<int64*>(r));
+    return iter->ReadInt64(reinterpret_cast<int64*>(r));
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -207,7 +207,7 @@ struct ParamTraits<unsigned long long> {
   }
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r) {
-    return m->ReadInt64(iter, reinterpret_cast<int64*>(r));
+    return iter->ReadInt64(reinterpret_cast<int64*>(r));
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
@@ -222,7 +222,7 @@ struct IPC_EXPORT ParamTraits<float> {
     m->WriteFloat(p);
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return m->ReadFloat(iter, r);
+    return iter->ReadFloat(r);
   }
   static void Log(const param_type& p, std::string* l);
 };
@@ -245,27 +245,11 @@ struct ParamTraits<std::string> {
   }
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r) {
-    return m->ReadString(iter, r);
+    return iter->ReadString(r);
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
 
-template <>
-struct ParamTraits<std::wstring> {
-  typedef std::wstring param_type;
-  static void Write(Message* m, const param_type& p) {
-    m->WriteWString(p);
-  }
-  static bool Read(const Message* m, PickleIterator* iter,
-                   param_type* r) {
-    return m->ReadWString(iter, r);
-  }
-  IPC_EXPORT static void Log(const param_type& p, std::string* l);
-};
-
-// If WCHAR_T_IS_UTF16 is defined, then string16 is a std::wstring so we don't
-// need this trait.
-#if !defined(WCHAR_T_IS_UTF16)
 template <>
 struct ParamTraits<base::string16> {
   typedef base::string16 param_type;
@@ -274,11 +258,10 @@ struct ParamTraits<base::string16> {
   }
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r) {
-    return m->ReadString16(iter, r);
+    return iter->ReadString16(r);
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
-#endif
 
 template <>
 struct IPC_EXPORT ParamTraits<std::vector<char> > {
@@ -316,7 +299,7 @@ struct ParamTraits<std::vector<P> > {
                    param_type* r) {
     int size;
     // ReadLength() checks for < 0 itself.
-    if (!m->ReadLength(iter, &size))
+    if (!iter->ReadLength(&size))
       return false;
     // Resizing beforehand is not safe, see BUG 1006367 for details.
     if (INT_MAX / sizeof(P) <= static_cast<size_t>(size))
@@ -349,7 +332,7 @@ struct ParamTraits<std::set<P> > {
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r) {
     int size;
-    if (!m->ReadLength(iter, &size))
+    if (!iter->ReadLength(&size))
       return false;
     for (int i = 0; i < size; ++i) {
       P item;
@@ -520,8 +503,8 @@ struct IPC_EXPORT ParamTraits<base::TimeTicks> {
 };
 
 template <>
-struct ParamTraits<Tuple0> {
-  typedef Tuple0 param_type;
+struct ParamTraits<Tuple<>> {
+  typedef Tuple<> param_type;
   static void Write(Message* m, const param_type& p) {
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
@@ -532,112 +515,112 @@ struct ParamTraits<Tuple0> {
 };
 
 template <class A>
-struct ParamTraits< Tuple1<A> > {
-  typedef Tuple1<A> param_type;
+struct ParamTraits<Tuple<A>> {
+  typedef Tuple<A> param_type;
   static void Write(Message* m, const param_type& p) {
-    WriteParam(m, p.a);
+    WriteParam(m, get<0>(p));
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return ReadParam(m, iter, &r->a);
+    return ReadParam(m, iter, &get<0>(*r));
   }
   static void Log(const param_type& p, std::string* l) {
-    LogParam(p.a, l);
+    LogParam(get<0>(p), l);
   }
 };
 
 template <class A, class B>
-struct ParamTraits< Tuple2<A, B> > {
-  typedef Tuple2<A, B> param_type;
+struct ParamTraits< Tuple<A, B> > {
+  typedef Tuple<A, B> param_type;
   static void Write(Message* m, const param_type& p) {
-    WriteParam(m, p.a);
-    WriteParam(m, p.b);
+    WriteParam(m, get<0>(p));
+    WriteParam(m, get<1>(p));
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return (ReadParam(m, iter, &r->a) &&
-            ReadParam(m, iter, &r->b));
+    return (ReadParam(m, iter, &get<0>(*r)) &&
+            ReadParam(m, iter, &get<1>(*r)));
   }
   static void Log(const param_type& p, std::string* l) {
-    LogParam(p.a, l);
+    LogParam(get<0>(p), l);
     l->append(", ");
-    LogParam(p.b, l);
+    LogParam(get<1>(p), l);
   }
 };
 
 template <class A, class B, class C>
-struct ParamTraits< Tuple3<A, B, C> > {
-  typedef Tuple3<A, B, C> param_type;
+struct ParamTraits< Tuple<A, B, C> > {
+  typedef Tuple<A, B, C> param_type;
   static void Write(Message* m, const param_type& p) {
-    WriteParam(m, p.a);
-    WriteParam(m, p.b);
-    WriteParam(m, p.c);
+    WriteParam(m, get<0>(p));
+    WriteParam(m, get<1>(p));
+    WriteParam(m, get<2>(p));
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return (ReadParam(m, iter, &r->a) &&
-            ReadParam(m, iter, &r->b) &&
-            ReadParam(m, iter, &r->c));
+    return (ReadParam(m, iter, &get<0>(*r)) &&
+            ReadParam(m, iter, &get<1>(*r)) &&
+            ReadParam(m, iter, &get<2>(*r)));
   }
   static void Log(const param_type& p, std::string* l) {
-    LogParam(p.a, l);
+    LogParam(get<0>(p), l);
     l->append(", ");
-    LogParam(p.b, l);
+    LogParam(get<1>(p), l);
     l->append(", ");
-    LogParam(p.c, l);
+    LogParam(get<2>(p), l);
   }
 };
 
 template <class A, class B, class C, class D>
-struct ParamTraits< Tuple4<A, B, C, D> > {
-  typedef Tuple4<A, B, C, D> param_type;
+struct ParamTraits< Tuple<A, B, C, D> > {
+  typedef Tuple<A, B, C, D> param_type;
   static void Write(Message* m, const param_type& p) {
-    WriteParam(m, p.a);
-    WriteParam(m, p.b);
-    WriteParam(m, p.c);
-    WriteParam(m, p.d);
+    WriteParam(m, get<0>(p));
+    WriteParam(m, get<1>(p));
+    WriteParam(m, get<2>(p));
+    WriteParam(m, get<3>(p));
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return (ReadParam(m, iter, &r->a) &&
-            ReadParam(m, iter, &r->b) &&
-            ReadParam(m, iter, &r->c) &&
-            ReadParam(m, iter, &r->d));
+    return (ReadParam(m, iter, &get<0>(*r)) &&
+            ReadParam(m, iter, &get<1>(*r)) &&
+            ReadParam(m, iter, &get<2>(*r)) &&
+            ReadParam(m, iter, &get<3>(*r)));
   }
   static void Log(const param_type& p, std::string* l) {
-    LogParam(p.a, l);
+    LogParam(get<0>(p), l);
     l->append(", ");
-    LogParam(p.b, l);
+    LogParam(get<1>(p), l);
     l->append(", ");
-    LogParam(p.c, l);
+    LogParam(get<2>(p), l);
     l->append(", ");
-    LogParam(p.d, l);
+    LogParam(get<3>(p), l);
   }
 };
 
 template <class A, class B, class C, class D, class E>
-struct ParamTraits< Tuple5<A, B, C, D, E> > {
-  typedef Tuple5<A, B, C, D, E> param_type;
+struct ParamTraits< Tuple<A, B, C, D, E> > {
+  typedef Tuple<A, B, C, D, E> param_type;
   static void Write(Message* m, const param_type& p) {
-    WriteParam(m, p.a);
-    WriteParam(m, p.b);
-    WriteParam(m, p.c);
-    WriteParam(m, p.d);
-    WriteParam(m, p.e);
+    WriteParam(m, get<0>(p));
+    WriteParam(m, get<1>(p));
+    WriteParam(m, get<2>(p));
+    WriteParam(m, get<3>(p));
+    WriteParam(m, get<4>(p));
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
-    return (ReadParam(m, iter, &r->a) &&
-            ReadParam(m, iter, &r->b) &&
-            ReadParam(m, iter, &r->c) &&
-            ReadParam(m, iter, &r->d) &&
-            ReadParam(m, iter, &r->e));
+    return (ReadParam(m, iter, &get<0>(*r)) &&
+            ReadParam(m, iter, &get<1>(*r)) &&
+            ReadParam(m, iter, &get<2>(*r)) &&
+            ReadParam(m, iter, &get<3>(*r)) &&
+            ReadParam(m, iter, &get<4>(*r)));
   }
   static void Log(const param_type& p, std::string* l) {
-    LogParam(p.a, l);
+    LogParam(get<0>(p), l);
     l->append(", ");
-    LogParam(p.b, l);
+    LogParam(get<1>(p), l);
     l->append(", ");
-    LogParam(p.c, l);
+    LogParam(get<2>(p), l);
     l->append(", ");
-    LogParam(p.d, l);
+    LogParam(get<3>(p), l);
     l->append(", ");
-    LogParam(p.e, l);
+    LogParam(get<4>(p), l);
   }
 };
 
@@ -651,7 +634,7 @@ struct ParamTraits<ScopedVector<P> > {
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
     int size = 0;
-    if (!m->ReadLength(iter, &size))
+    if (!iter->ReadLength(&size))
       return false;
     if (INT_MAX/sizeof(P) <= static_cast<size_t>(size))
       return false;
@@ -690,7 +673,7 @@ struct ParamTraits<base::SmallMap<NormalMap, kArraySize, EqualKey, MapInit> > {
   }
   static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
     int size;
-    if (!m->ReadLength(iter, &size))
+    if (!iter->ReadLength(&size))
       return false;
     for (int i = 0; i < size; ++i) {
       K key;
@@ -865,7 +848,8 @@ class ParamDeserializer : public MessageReplyDeserializer {
  public:
   explicit ParamDeserializer(const RefTuple& out) : out_(out) { }
 
-  bool SerializeOutputParameters(const IPC::Message& msg, PickleIterator iter) {
+  bool SerializeOutputParameters(const IPC::Message& msg,
+                                 PickleIterator iter) override {
     return ReadParam(&msg, &iter, &out_);
   }
 
@@ -911,7 +895,7 @@ class SyncMessageSchema {
                                                Method func) {
     Message* reply = SyncMessage::GenerateReply(msg);
     if (ok) {
-      Tuple1<Message&> t = MakeRefTuple(*reply);
+      Tuple<Message&> t = MakeRefTuple(*reply);
       ConnectMessageAndReply(msg, reply);
       DispatchToMethod(obj, func, send_params, &t);
     } else {
@@ -922,33 +906,9 @@ class SyncMessageSchema {
     return ok;
   }
 
-  template<typename TA>
-  static void WriteReplyParams(Message* reply, TA a) {
-    ReplyParam p(a);
-    WriteParam(reply, p);
-  }
-
-  template<typename TA, typename TB>
-  static void WriteReplyParams(Message* reply, TA a, TB b) {
-    ReplyParam p(a, b);
-    WriteParam(reply, p);
-  }
-
-  template<typename TA, typename TB, typename TC>
-  static void WriteReplyParams(Message* reply, TA a, TB b, TC c) {
-    ReplyParam p(a, b, c);
-    WriteParam(reply, p);
-  }
-
-  template<typename TA, typename TB, typename TC, typename TD>
-  static void WriteReplyParams(Message* reply, TA a, TB b, TC c, TD d) {
-    ReplyParam p(a, b, c, d);
-    WriteParam(reply, p);
-  }
-
-  template<typename TA, typename TB, typename TC, typename TD, typename TE>
-  static void WriteReplyParams(Message* reply, TA a, TB b, TC c, TD d, TE e) {
-    ReplyParam p(a, b, c, d, e);
+  template <typename... Ts>
+  static void WriteReplyParams(Message* reply, Ts... args) {
+    ReplyParam p(args...);
     WriteParam(reply, p);
   }
 };

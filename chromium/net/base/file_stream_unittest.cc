@@ -17,10 +17,10 @@
 #include "base/test/test_timeouts.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
-#include "net/base/capturing_net_log.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/log/test_net_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -546,6 +546,25 @@ class TestWriteReadCompletionCallback {
 
   const CompletionCallback& callback() const { return callback_; }
 
+  void ValidateWrittenData() {
+    TestCompletionCallback callback;
+    int rv = 0;
+    for (;;) {
+      scoped_refptr<IOBufferWithSize> buf = new IOBufferWithSize(4);
+      rv = stream_->Read(buf.get(), buf->size(), callback.callback());
+      if (rv == ERR_IO_PENDING) {
+        base::MessageLoop::ScopedNestableTaskAllower allow(
+            base::MessageLoop::current());
+        rv = callback.WaitForResult();
+      }
+      EXPECT_LE(0, rv);
+      if (rv <= 0)
+        break;
+      *total_bytes_read_ += rv;
+      data_read_->append(buf->data(), rv);
+    }
+  }
+
  private:
   void OnComplete(int result) {
     DCHECK_LT(0, result);
@@ -576,22 +595,6 @@ class TestWriteReadCompletionCallback {
         base::MessageLoop::ScopedNestableTaskAllower allow(
             base::MessageLoop::current());
         EXPECT_LE(0, callback64.WaitForResult());
-      }
-
-      TestCompletionCallback callback;
-      for (;;) {
-        scoped_refptr<IOBufferWithSize> buf = new IOBufferWithSize(4);
-        rv = stream_->Read(buf.get(), buf->size(), callback.callback());
-        if (rv == ERR_IO_PENDING) {
-          base::MessageLoop::ScopedNestableTaskAllower allow(
-              base::MessageLoop::current());
-          rv = callback.WaitForResult();
-        }
-        EXPECT_LE(0, rv);
-        if (rv <= 0)
-          break;
-        *total_bytes_read_ += rv;
-        data_read_->append(buf->data(), rv);
       }
     }
 
@@ -645,6 +648,8 @@ TEST_F(FileStreamTest, WriteRead) {
     rv = callback.WaitForResult();
   EXPECT_LT(0, rv);
   EXPECT_EQ(kTestDataSize, total_bytes_written);
+
+  callback.ValidateWrittenData();
 
   stream.reset();
 

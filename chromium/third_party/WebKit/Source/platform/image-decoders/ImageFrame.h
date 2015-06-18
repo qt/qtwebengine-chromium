@@ -29,7 +29,7 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntRect.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
 
@@ -114,7 +114,7 @@ public:
     // Returns a caller-owned pointer to the underlying native image data.
     // (Actual use: This pointer will be owned by BitmapImage and freed in
     // FrameData::clear()).
-    PassRefPtr<NativeImageSkia> asNewNativeImage() const;
+    const SkBitmap& bitmap() const;
 
     bool hasAlpha() const;
     const IntRect& originalFrameRect() const { return m_originalFrameRect; }
@@ -127,15 +127,7 @@ public:
     const SkBitmap& getSkBitmap() const { return m_bitmap; }
     // Returns true if the pixels changed, but the bitmap has not yet been notified.
     bool pixelsChanged() const { return m_pixelsChanged; }
-
-    size_t requiredPreviousFrameIndex() const
-    {
-        ASSERT(m_requiredPreviousFrameIndexValid);
-        return m_requiredPreviousFrameIndex;
-    }
-#if ENABLE(ASSERT)
-    bool requiredPreviousFrameIndexValid() const { return m_requiredPreviousFrameIndexValid; }
-#endif
+    size_t requiredPreviousFrameIndex() const { return m_requiredPreviousFrameIndex; }
     void setHasAlpha(bool alpha);
     void setOriginalFrameRect(const IntRect& r) { m_originalFrameRect = r; }
     void setStatus(Status);
@@ -144,18 +136,10 @@ public:
     void setAlphaBlendSource(AlphaBlendSource alphaBlendSource) { m_alphaBlendSource = alphaBlendSource; }
     void setPremultiplyAlpha(bool premultiplyAlpha) { m_premultiplyAlpha = premultiplyAlpha; }
     void setMemoryAllocator(SkBitmap::Allocator* allocator) { m_allocator = allocator; }
-    void setSkBitmap(const SkBitmap& bitmap) { m_bitmap = bitmap; }
     // The pixelsChanged flag needs to be set when the raw pixel data was directly modified
     // (e.g. through a pointer or setRGBA). The flag is usually set after a batch of changes was made.
     void setPixelsChanged(bool pixelsChanged) { m_pixelsChanged = pixelsChanged; }
-
-    void setRequiredPreviousFrameIndex(size_t previousFrameIndex)
-    {
-        m_requiredPreviousFrameIndex = previousFrameIndex;
-#if ENABLE(ASSERT)
-        m_requiredPreviousFrameIndexValid = true;
-#endif
-    }
+    void setRequiredPreviousFrameIndex(size_t previousFrameIndex) { m_requiredPreviousFrameIndex = previousFrameIndex; }
 
     inline PixelData* getAddr(int x, int y)
     {
@@ -175,24 +159,17 @@ public:
             *dest = SkPackARGB32NoCheck(a, r, g, b);
     }
 
-    static const unsigned div255 = static_cast<unsigned>(1.0 / 255 * (1 << 24)) + 1;
-
     static inline void setRGBAPremultiply(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
     {
-        if (a < 255) {
-            if (!a) {
-                *dest = 0;
-                return;
-            }
+        enum FractionControl { RoundFractionControl = 257 * 128 };
 
-            unsigned alpha = a * div255;
-            r = (r * alpha) >> 24;
-            g = (g * alpha) >> 24;
-            b = (b * alpha) >> 24;
+        if (a < 255) {
+            unsigned alpha = a * 257;
+            r = (r * alpha + RoundFractionControl) >> 16;
+            g = (g * alpha + RoundFractionControl) >> 16;
+            b = (b * alpha + RoundFractionControl) >> 16;
         }
 
-        // Call the "NoCheck" version since we may deliberately pass non-premultiplied
-        // values, and we don't want an assert.
         *dest = SkPackARGB32NoCheck(a, r, g, b);
     }
 
@@ -239,9 +216,6 @@ private:
     // This is used by ImageDecoder::clearCacheExceptFrame(), and will never
     // be read for image formats that do not have multiple frames.
     size_t m_requiredPreviousFrameIndex;
-#if ENABLE(ASSERT)
-    bool m_requiredPreviousFrameIndexValid;
-#endif
 };
 
 } // namespace blink

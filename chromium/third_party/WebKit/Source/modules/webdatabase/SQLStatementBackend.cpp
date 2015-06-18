@@ -43,7 +43,7 @@
 //
 //     At birth (in SQLTransactionBackend::executeSQL()):
 //     =================================================
-//     SQLTransactionBackend           // HeapDeque<Member<SQLStatementBackend> > m_statementQueue points to ...
+//     SQLTransactionBackend           // HeapDeque<Member<SQLStatementBackend>> m_statementQueue points to ...
 //     --> SQLStatementBackend         // Member<SQLStatement> m_frontend points to ...
 //         --> SQLStatement
 //
@@ -90,7 +90,7 @@ SQLStatementBackend::SQLStatementBackend(SQLStatement* frontend,
     m_frontend->setBackend(this);
 }
 
-void SQLStatementBackend::trace(Visitor* visitor)
+DEFINE_TRACE(SQLStatementBackend)
 {
     visitor->trace(m_frontend);
     visitor->trace(m_resultSet);

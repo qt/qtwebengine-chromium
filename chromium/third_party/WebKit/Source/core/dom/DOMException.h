@@ -30,19 +30,18 @@
 #define DOMException_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/Forward.h"
 
 namespace blink {
 
 typedef int ExceptionCode;
 
-class DOMException final : public RefCountedWillBeGarbageCollectedFinalized<DOMException>, public ScriptWrappable {
+class CORE_EXPORT DOMException final : public GarbageCollectedFinalized<DOMException>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DOMException> create(ExceptionCode, const String& sanitizedMessage = String(), const String& unsanitizedMessage = String());
+    static DOMException* create(ExceptionCode, const String& sanitizedMessage = String(), const String& unsanitizedMessage = String());
 
     unsigned short code() const { return m_code; }
     String name() const { return m_name; }
@@ -58,7 +57,7 @@ public:
     static String getErrorName(ExceptionCode);
     static String getErrorMessage(ExceptionCode);
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     DOMException(unsigned short m_code, const String& name, const String& sanitizedMessage, const String& unsanitizedMessage);

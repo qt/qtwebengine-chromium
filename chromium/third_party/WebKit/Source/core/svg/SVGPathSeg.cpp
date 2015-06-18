@@ -36,9 +36,15 @@
 namespace blink {
 
 SVGPathSeg::SVGPathSeg(SVGPathElement* contextElement)
-    : m_ownerList(0)
+    : m_ownerList(nullptr)
     , m_contextElement(contextElement)
 {
+}
+
+DEFINE_TRACE(SVGPathSeg)
+{
+    visitor->trace(m_ownerList);
+    visitor->trace(m_contextElement);
 }
 
 void SVGPathSeg::commitChange()

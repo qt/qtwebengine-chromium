@@ -41,10 +41,9 @@ namespace blink {
 
 class TextTrack;
 
-class TextTrackCue : public RefCountedWillBeGarbageCollectedFinalized<TextTrackCue>, public EventTargetWithInlineData {
+class TextTrackCue : public EventTargetWithInlineData, public RefCountedWillBeNoBase<TextTrackCue> {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(TextTrackCue);
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextTrackCue);
 public:
     static const AtomicString& cueShadowPseudoId()
     {
@@ -71,22 +70,31 @@ public:
     bool pauseOnExit() const { return m_pauseOnExit; }
     void setPauseOnExit(bool);
 
-    int cueIndex();
+    unsigned cueIndex();
+    void updateCueIndex(unsigned cueIndex) { m_cueIndex = cueIndex; }
     void invalidateCueIndex();
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
-    bool isActive();
-    void setIsActive(bool);
+    bool isActive() const { return m_isActive; }
+    void setIsActive(bool active) { m_isActive = active; }
 
-    virtual void updateDisplay(const IntSize& videoSize, HTMLDivElement& container) = 0;
+    // Updates the display tree and appends it to container if it has not
+    // already been added.
+    virtual void updateDisplay(HTMLDivElement& container) = 0;
 
-    // FIXME: Consider refactoring to eliminate or merge the following three members.
-    // https://code.google.com/p/chromium/issues/detail?id=322434
-    virtual void updateDisplayTree(double movieTime) = 0;
-    virtual void removeDisplayTree() = 0;
-    virtual void notifyRegionWhenRemovingDisplayTree(bool notifyRegion) = 0;
+    // Marks the nodes of the display tree as past or future relative to
+    // movieTime. If updateDisplay() has not been called there is no display
+    // tree and nothing is done.
+    virtual void updatePastAndFutureNodes(double movieTime) = 0;
+
+    // FIXME: Refactor to eliminate removeDisplayTree(). https://crbug.com/322434
+    enum RemovalNotification {
+        DontNotifyRegion,
+        NotifyRegion
+    };
+    virtual void removeDisplayTree(RemovalNotification = NotifyRegion) = 0;
 
     virtual const AtomicString& interfaceName() const override;
 
@@ -97,7 +105,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(enter);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(exit);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     TextTrackCue(double start, double end);
@@ -109,9 +117,10 @@ private:
     AtomicString m_id;
     double m_startTime;
     double m_endTime;
-    int m_cueIndex;
 
     RawPtrWillBeMember<TextTrack> m_track;
+
+    unsigned m_cueIndex;
 
     bool m_isActive : 1;
     bool m_pauseOnExit : 1;

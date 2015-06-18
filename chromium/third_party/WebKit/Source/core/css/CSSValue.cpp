@@ -33,7 +33,6 @@
 #include "core/css/CSSContentDistributionValue.h"
 #include "core/css/CSSCrossfadeValue.h"
 #include "core/css/CSSCursorImageValue.h"
-#include "core/css/CSSFilterValue.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSFontFeatureValue.h"
 #include "core/css/CSSFontValue.h"
@@ -46,85 +45,32 @@
 #include "core/css/CSSInheritedValue.h"
 #include "core/css/CSSInitialValue.h"
 #include "core/css/CSSLineBoxContainValue.h"
+#include "core/css/CSSPathValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSReflectValue.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSShadowValue.h"
 #include "core/css/CSSTimingFunctionValue.h"
-#include "core/css/CSSTransformValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
+#include "core/css/CSSUnsetValue.h"
 #include "core/css/CSSValueList.h"
 
 namespace blink {
 
 struct SameSizeAsCSSValue : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSValue>
-// VC++ 2013 doesn't support EBCO (Empty Base Class Optimization), and having
-// multiple empty base classes makes the size of CSSValue bloat (Note that both
-// of GarbageCollectedFinalized and ScriptWrappableBase are empty classes).
-// See the following article for details.
-// http://social.msdn.microsoft.com/forums/vstudio/en-US/504c6598-6076-4acf-96b6-e6acb475d302/vc-multiple-inheritance-empty-base-classes-bloats-object-size
-//
-// FIXME: Remove this #if directive once VC++'s issue gets fixed.
-// Note that we're going to split CSSValue class into two classes; CSSOMValue
-// (assumed name) which derives ScriptWrappable and CSSValue (new one) which
-// doesn't derive ScriptWrappable or ScriptWrappableBase. Then, we can safely
-// remove this #if directive.
-#if ENABLE(OILPAN) && COMPILER(MSVC)
-    , public ScriptWrappableBase
-#endif
 {
     uint32_t bitfields;
 };
 
-COMPILE_ASSERT(sizeof(CSSValue) <= sizeof(SameSizeAsCSSValue), CSS_value_should_stay_small);
-
-class TextCloneCSSValue : public CSSValue {
-public:
-    static PassRefPtrWillBeRawPtr<TextCloneCSSValue> create(ClassType classType, const String& text)
-    {
-        return adoptRefWillBeNoop(new TextCloneCSSValue(classType, text));
-    }
-
-    String cssText() const { return m_cssText; }
-
-    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
-
-private:
-    TextCloneCSSValue(ClassType classType, const String& text)
-        : CSSValue(classType, /*isCSSOMSafe*/ true)
-        , m_cssText(text)
-    {
-        m_isTextClone = true;
-    }
-
-    String m_cssText;
-};
-
-DEFINE_CSS_VALUE_TYPE_CASTS(TextCloneCSSValue, isTextCloneCSSValue());
+static_assert(sizeof(CSSValue) <= sizeof(SameSizeAsCSSValue), "CSSValue should stay small");
 
 bool CSSValue::isImplicitInitialValue() const
 {
     return m_classType == InitialClass && toCSSInitialValue(this)->isImplicit();
 }
 
-CSSValue::Type CSSValue::cssValueType() const
-{
-    if (isInheritedValue())
-        return CSS_INHERIT;
-    if (isPrimitiveValue())
-        return CSS_PRIMITIVE_VALUE;
-    if (isValueList())
-        return CSS_VALUE_LIST;
-    if (isInitialValue())
-        return CSS_INITIAL;
-    return CSS_CUSTOM;
-}
-
 bool CSSValue::hasFailedOrCanceledSubresources() const
 {
-    // This should get called for internal instances only.
-    ASSERT(!isCSSOMSafe());
-
     if (isValueList())
         return toCSSValueList(this)->hasFailedOrCanceledSubresources();
     if (classType() == FontFaceSrcClass)
@@ -147,11 +93,6 @@ inline static bool compareCSSValues(const CSSValue& first, const CSSValue& secon
 
 bool CSSValue::equals(const CSSValue& other) const
 {
-    if (m_isTextClone) {
-        ASSERT(isCSSOMSafe());
-        return toTextCloneCSSValue(this)->cssText() == other.cssText();
-    }
-
     if (m_classType == other.m_classType) {
         switch (m_classType) {
         case BorderImageSliceClass:
@@ -180,10 +121,14 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSInheritedValue>(*this, other);
         case InitialClass:
             return compareCSSValues<CSSInitialValue>(*this, other);
+        case UnsetClass:
+            return compareCSSValues<CSSUnsetValue>(*this, other);
         case GridLineNamesClass:
             return compareCSSValues<CSSGridLineNamesValue>(*this, other);
         case GridTemplateAreasClass:
             return compareCSSValues<CSSGridTemplateAreasValue>(*this, other);
+        case PathClass:
+            return compareCSSValues<CSSPathValue>(*this, other);
         case PrimitiveClass:
             return compareCSSValues<CSSPrimitiveValue>(*this, other);
         case ReflectClass:
@@ -198,16 +143,12 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSUnicodeRangeValue>(*this, other);
         case ValueListClass:
             return compareCSSValues<CSSValueList>(*this, other);
-        case CSSTransformClass:
-            return compareCSSValues<CSSTransformValue>(*this, other);
         case LineBoxContainClass:
             return compareCSSValues<CSSLineBoxContainValue>(*this, other);
         case CalculationClass:
             return compareCSSValues<CSSCalcValue>(*this, other);
         case ImageSetClass:
             return compareCSSValues<CSSImageSetValue>(*this, other);
-        case CSSFilterClass:
-            return compareCSSValues<CSSFilterValue>(*this, other);
         case CSSSVGDocumentClass:
             return compareCSSValues<CSSSVGDocumentValue>(*this, other);
         case CSSContentDistributionClass:
@@ -216,21 +157,12 @@ bool CSSValue::equals(const CSSValue& other) const
             ASSERT_NOT_REACHED();
             return false;
         }
-    } else if (m_classType == ValueListClass && other.m_classType != ValueListClass)
-        return toCSSValueList(this)->equals(other);
-    else if (m_classType != ValueListClass && other.m_classType == ValueListClass)
-        return static_cast<const CSSValueList&>(other).equals(*this);
+    }
     return false;
 }
 
 String CSSValue::cssText() const
 {
-    if (m_isTextClone) {
-         ASSERT(isCSSOMSafe());
-        return toTextCloneCSSValue(this)->cssText();
-    }
-    ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
-
     switch (classType()) {
     case BorderImageSliceClass:
         return toCSSBorderImageSliceValue(this)->customCSSText();
@@ -256,12 +188,16 @@ String CSSValue::cssText() const
         return toCSSImageValue(this)->customCSSText();
     case InheritedClass:
         return toCSSInheritedValue(this)->customCSSText();
+    case UnsetClass:
+        return toCSSUnsetValue(this)->customCSSText();
     case InitialClass:
         return toCSSInitialValue(this)->customCSSText();
     case GridLineNamesClass:
         return toCSSGridLineNamesValue(this)->customCSSText();
     case GridTemplateAreasClass:
         return toCSSGridTemplateAreasValue(this)->customCSSText();
+    case PathClass:
+        return toCSSPathValue(this)->customCSSText();
     case PrimitiveClass:
         return toCSSPrimitiveValue(this)->customCSSText();
     case ReflectClass:
@@ -276,16 +212,12 @@ String CSSValue::cssText() const
         return toCSSUnicodeRangeValue(this)->customCSSText();
     case ValueListClass:
         return toCSSValueList(this)->customCSSText();
-    case CSSTransformClass:
-        return toCSSTransformValue(this)->customCSSText();
     case LineBoxContainClass:
         return toCSSLineBoxContainValue(this)->customCSSText();
     case CalculationClass:
         return toCSSCalcValue(this)->customCSSText();
     case ImageSetClass:
         return toCSSImageSetValue(this)->customCSSText();
-    case CSSFilterClass:
-        return toCSSFilterValue(this)->customCSSText();
     case CSSSVGDocumentClass:
         return toCSSSVGDocumentValue(this)->customCSSText();
     case CSSContentDistributionClass:
@@ -297,13 +229,6 @@ String CSSValue::cssText() const
 
 void CSSValue::destroy()
 {
-    if (m_isTextClone) {
-        ASSERT(isCSSOMSafe());
-        delete toTextCloneCSSValue(this);
-        return;
-    }
-    ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
-
     switch (classType()) {
     case BorderImageSliceClass:
         delete toCSSBorderImageSliceValue(this);
@@ -344,11 +269,17 @@ void CSSValue::destroy()
     case InitialClass:
         delete toCSSInitialValue(this);
         return;
+    case UnsetClass:
+        delete toCSSUnsetValue(this);
+        return;
     case GridLineNamesClass:
         delete toCSSGridLineNamesValue(this);
         return;
     case GridTemplateAreasClass:
         delete toCSSGridTemplateAreasValue(this);
+        return;
+    case PathClass:
+        delete toCSSPathValue(this);
         return;
     case PrimitiveClass:
         delete toCSSPrimitiveValue(this);
@@ -371,9 +302,6 @@ void CSSValue::destroy()
     case ValueListClass:
         delete toCSSValueList(this);
         return;
-    case CSSTransformClass:
-        delete toCSSTransformValue(this);
-        return;
     case LineBoxContainClass:
         delete toCSSLineBoxContainValue(this);
         return;
@@ -382,9 +310,6 @@ void CSSValue::destroy()
         return;
     case ImageSetClass:
         delete toCSSImageSetValue(this);
-        return;
-    case CSSFilterClass:
-        delete toCSSFilterValue(this);
         return;
     case CSSSVGDocumentClass:
         delete toCSSSVGDocumentValue(this);
@@ -398,13 +323,6 @@ void CSSValue::destroy()
 
 void CSSValue::finalizeGarbageCollectedObject()
 {
-    if (m_isTextClone) {
-        ASSERT(isCSSOMSafe());
-        toTextCloneCSSValue(this)->~TextCloneCSSValue();
-        return;
-    }
-    ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
-
     switch (classType()) {
     case BorderImageSliceClass:
         toCSSBorderImageSliceValue(this)->~CSSBorderImageSliceValue();
@@ -445,11 +363,17 @@ void CSSValue::finalizeGarbageCollectedObject()
     case InitialClass:
         toCSSInitialValue(this)->~CSSInitialValue();
         return;
+    case UnsetClass:
+        toCSSUnsetValue(this)->~CSSUnsetValue();
+        return;
     case GridLineNamesClass:
         toCSSGridLineNamesValue(this)->~CSSGridLineNamesValue();
         return;
     case GridTemplateAreasClass:
         toCSSGridTemplateAreasValue(this)->~CSSGridTemplateAreasValue();
+        return;
+    case PathClass:
+        toCSSPathValue(this)->~CSSPathValue();
         return;
     case PrimitiveClass:
         toCSSPrimitiveValue(this)->~CSSPrimitiveValue();
@@ -472,9 +396,6 @@ void CSSValue::finalizeGarbageCollectedObject()
     case ValueListClass:
         toCSSValueList(this)->~CSSValueList();
         return;
-    case CSSTransformClass:
-        toCSSTransformValue(this)->~CSSTransformValue();
-        return;
     case LineBoxContainClass:
         toCSSLineBoxContainValue(this)->~CSSLineBoxContainValue();
         return;
@@ -483,9 +404,6 @@ void CSSValue::finalizeGarbageCollectedObject()
         return;
     case ImageSetClass:
         toCSSImageSetValue(this)->~CSSImageSetValue();
-        return;
-    case CSSFilterClass:
-        toCSSFilterValue(this)->~CSSFilterValue();
         return;
     case CSSSVGDocumentClass:
         toCSSSVGDocumentValue(this)->~CSSSVGDocumentValue();
@@ -497,15 +415,8 @@ void CSSValue::finalizeGarbageCollectedObject()
     ASSERT_NOT_REACHED();
 }
 
-void CSSValue::trace(Visitor* visitor)
+DEFINE_TRACE(CSSValue)
 {
-    if (m_isTextClone) {
-        ASSERT(isCSSOMSafe());
-        toTextCloneCSSValue(this)->traceAfterDispatch(visitor);
-        return;
-    }
-    ASSERT(!isCSSOMSafe() || isSubtypeExposedToCSSOM());
-
     switch (classType()) {
     case BorderImageSliceClass:
         toCSSBorderImageSliceValue(this)->traceAfterDispatch(visitor);
@@ -546,11 +457,17 @@ void CSSValue::trace(Visitor* visitor)
     case InitialClass:
         toCSSInitialValue(this)->traceAfterDispatch(visitor);
         return;
+    case UnsetClass:
+        toCSSUnsetValue(this)->traceAfterDispatch(visitor);
+        return;
     case GridLineNamesClass:
         toCSSGridLineNamesValue(this)->traceAfterDispatch(visitor);
         return;
     case GridTemplateAreasClass:
         toCSSGridTemplateAreasValue(this)->traceAfterDispatch(visitor);
+        return;
+    case PathClass:
+        toCSSPathValue(this)->traceAfterDispatch(visitor);
         return;
     case PrimitiveClass:
         toCSSPrimitiveValue(this)->traceAfterDispatch(visitor);
@@ -573,9 +490,6 @@ void CSSValue::trace(Visitor* visitor)
     case ValueListClass:
         toCSSValueList(this)->traceAfterDispatch(visitor);
         return;
-    case CSSTransformClass:
-        toCSSTransformValue(this)->traceAfterDispatch(visitor);
-        return;
     case LineBoxContainClass:
         toCSSLineBoxContainValue(this)->traceAfterDispatch(visitor);
         return;
@@ -585,9 +499,6 @@ void CSSValue::trace(Visitor* visitor)
     case ImageSetClass:
         toCSSImageSetValue(this)->traceAfterDispatch(visitor);
         return;
-    case CSSFilterClass:
-        toCSSFilterValue(this)->traceAfterDispatch(visitor);
-        return;
     case CSSSVGDocumentClass:
         toCSSSVGDocumentValue(this)->traceAfterDispatch(visitor);
         return;
@@ -596,28 +507,6 @@ void CSSValue::trace(Visitor* visitor)
         return;
     }
     ASSERT_NOT_REACHED();
-}
-
-PassRefPtrWillBeRawPtr<CSSValue> CSSValue::cloneForCSSOM() const
-{
-    switch (classType()) {
-    case PrimitiveClass:
-        return toCSSPrimitiveValue(this)->cloneForCSSOM();
-    case ValueListClass:
-        return toCSSValueList(this)->cloneForCSSOM();
-    case ImageClass:
-    case CursorImageClass:
-        return toCSSImageValue(this)->cloneForCSSOM();
-    case CSSFilterClass:
-        return toCSSFilterValue(this)->cloneForCSSOM();
-    case CSSTransformClass:
-        return toCSSTransformValue(this)->cloneForCSSOM();
-    case ImageSetClass:
-        return toCSSImageSetValue(this)->cloneForCSSOM();
-    default:
-        ASSERT(!isSubtypeExposedToCSSOM());
-        return TextCloneCSSValue::create(classType(), cssText());
-    }
 }
 
 }

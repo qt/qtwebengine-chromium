@@ -11,6 +11,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
+#include "media/base/media_log.h"
 #include "media/base/mock_filters.h"
 #include "media/base/test_helpers.h"
 #include "media/filters/chunk_demuxer.h"
@@ -26,8 +27,6 @@ namespace media {
 typedef StreamParser::BufferQueue BufferQueue;
 typedef StreamParser::TextBufferQueueMap TextBufferQueueMap;
 typedef StreamParser::TrackId TrackId;
-
-static void LogFunc(const std::string& str) { DVLOG(1) << str; }
 
 // Used for setting expectations on callbacks. Using a StrictMock also lets us
 // test for missing or extra callbacks.
@@ -266,7 +265,8 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
     switch (type) {
       case DemuxerStream::AUDIO: {
         ASSERT_FALSE(audio_);
-        audio_.reset(new ChunkDemuxerStream(DemuxerStream::AUDIO, true));
+        audio_.reset(new ChunkDemuxerStream(
+            DemuxerStream::AUDIO, DemuxerStream::LIVENESS_UNKNOWN, true));
         AudioDecoderConfig decoder_config(kCodecVorbis,
                                           kSampleFormatPlanarF32,
                                           CHANNEL_LAYOUT_STEREO,
@@ -275,15 +275,16 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
                                           0,
                                           false);
         frame_processor_->OnPossibleAudioConfigUpdate(decoder_config);
-        ASSERT_TRUE(
-            audio_->UpdateAudioConfig(decoder_config, base::Bind(&LogFunc)));
+        ASSERT_TRUE(audio_->UpdateAudioConfig(decoder_config,
+                                              base::Bind(&AddLogEntryForTest)));
         break;
       }
       case DemuxerStream::VIDEO: {
         ASSERT_FALSE(video_);
-        video_.reset(new ChunkDemuxerStream(DemuxerStream::VIDEO, true));
+        video_.reset(new ChunkDemuxerStream(
+            DemuxerStream::VIDEO, DemuxerStream::LIVENESS_UNKNOWN, true));
         ASSERT_TRUE(video_->UpdateVideoConfig(TestVideoConfig::Normal(),
-                                              base::Bind(&LogFunc)));
+                                              base::Bind(&AddLogEntryForTest)));
         break;
       }
       // TODO(wolenetz): Test text coded frame processing.

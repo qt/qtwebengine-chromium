@@ -10,10 +10,10 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_control_list_jsons.h"
 #include "gpu/config/gpu_driver_bug_list.h"
 #include "gpu/config/gpu_info_collector.h"
+#include "gpu/config/gpu_switches.h"
 #include "ui/gl/gl_switches.h"
 
 namespace gpu {
@@ -53,15 +53,15 @@ void MergeFeatureSets(std::set<int>* dst, const std::set<int>& src) {
   dst->insert(src.begin(), src.end());
 }
 
-void ApplyGpuDriverBugWorkarounds(CommandLine* command_line) {
+void ApplyGpuDriverBugWorkarounds(base::CommandLine* command_line) {
   GPUInfo gpu_info;
   CollectBasicGraphicsInfo(&gpu_info);
 
   ApplyGpuDriverBugWorkarounds(gpu_info, command_line);
 }
 
-void ApplyGpuDriverBugWorkarounds(
-    const GPUInfo& gpu_info, CommandLine* command_line) {
+void ApplyGpuDriverBugWorkarounds(const GPUInfo& gpu_info,
+                                  base::CommandLine* command_line) {
   scoped_ptr<GpuDriverBugList> list(GpuDriverBugList::Create());
   list->LoadList(kGpuDriverBugListJson,
                  GpuControlList::kCurrentOsOnly);

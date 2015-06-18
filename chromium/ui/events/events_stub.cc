@@ -6,8 +6,9 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "ui/events/event_utils.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/vector2d.h"
+#include "ui/events/keycodes/dom/dom_code.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 namespace ui {
 
@@ -69,10 +70,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
 }
 
-void IncrementTouchIdRefCount(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-}
-
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
 }
@@ -127,9 +124,9 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return static_cast<KeyboardCode>(0);
 }
 
-const char* CodeFromNative(const base::NativeEvent& native_event) {
+DomCode CodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
-  return "";
+  return DomCode::NONE;
 }
 
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {

@@ -771,6 +771,10 @@ void NativeWidgetAura::OnBoundsChanged(const gfx::Rect& old_bounds,
     delegate_->OnNativeWidgetSizeChanged(new_bounds.size());
 }
 
+ui::TextInputClient* NativeWidgetAura::GetFocusedTextInputClient() {
+  return GetWidget()->GetFocusedTextInputClient();
+}
+
 gfx::NativeCursor NativeWidgetAura::GetCursor(const gfx::Point& point) {
   return cursor_;
 }
@@ -822,12 +826,12 @@ void NativeWidgetAura::OnCaptureLost() {
   delegate_->OnMouseCaptureLost();
 }
 
-void NativeWidgetAura::OnPaint(gfx::Canvas* canvas) {
-  delegate_->OnNativeWidgetPaint(canvas);
+void NativeWidgetAura::OnPaint(const ui::PaintContext& context) {
+  delegate_->OnNativeWidgetPaint(context);
 }
 
 void NativeWidgetAura::OnDeviceScaleFactorChanged(float device_scale_factor) {
-  // Repainting with new scale factor will paint the content at the right scale.
+  GetWidget()->DeviceScaleFactorChanged(device_scale_factor);
 }
 
 void NativeWidgetAura::OnWindowDestroying(aura::Window* window) {
@@ -954,7 +958,7 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
     // this differs from the behavior on windows.
     if (GetWidget()->GetInputMethod())  // Null in tests.
       GetWidget()->GetInputMethod()->OnFocus();
-    delegate_->OnNativeFocus(lost_focus);
+    delegate_->OnNativeFocus();
   } else if (window_ == lost_focus) {
     // GetInputMethod() recreates the input method if it's previously been
     // destroyed.  If we get called during destruction, the input method will be
@@ -970,7 +974,7 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
       DCHECK_EQ(ownership_, Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET);
     }
 
-    delegate_->OnNativeBlur(gained_focus);
+    delegate_->OnNativeBlur();
   }
 }
 

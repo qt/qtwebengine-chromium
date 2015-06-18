@@ -5,7 +5,6 @@
 #include "gin/modules/module_registry.h"
 
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
 #include "gin/modules/module_registry_observer.h"
 #include "gin/modules/module_runner_delegate.h"
 #include "gin/public/context_holder.h"
@@ -25,7 +24,6 @@ struct TestHelper {
         scope(runner.get()) {
   }
 
-  base::MessageLoop message_loop;
   ModuleRunnerDelegate delegate;
   scoped_ptr<ShellRunner> runner;
   Runner::Scope scope;
@@ -55,19 +53,23 @@ class ModuleRegistryObserverImpl : public ModuleRegistryObserver {
   DISALLOW_COPY_AND_ASSIGN(ModuleRegistryObserverImpl);
 };
 
-void NestedCallback(v8::Handle<v8::Value> value) {
+void NestedCallback(v8::Local<v8::Value> value) {
   FAIL() << "Should not be called";
 }
 
 void OnModuleLoaded(TestHelper* helper,
                     v8::Isolate* isolate,
                     int64_t* counter,
-                    v8::Handle<v8::Value> value) {
+                    v8::Local<v8::Value> value) {
   ASSERT_TRUE(value->IsNumber());
-  v8::Handle<v8::Integer> int_value = v8::Handle<v8::Integer>::Cast(value);
+  v8::Local<v8::Integer> int_value = v8::Local<v8::Integer>::Cast(value);
   *counter += int_value->Value();
   ModuleRegistry::From(helper->runner->GetContextHolder()->context())
       ->LoadModule(isolate, "two", base::Bind(NestedCallback));
+}
+
+void OnModuleLoadedNoOp(v8::Local<v8::Value> value) {
+  ASSERT_TRUE(value->IsNumber());
 }
 
 }  // namespace
@@ -79,8 +81,8 @@ typedef V8Test ModuleRegistryTest;
 TEST_F(ModuleRegistryTest, DestroyedWithContext) {
   v8::Isolate::Scope isolate_scope(instance_->isolate());
   v8::HandleScope handle_scope(instance_->isolate());
-  v8::Handle<v8::Context> context = v8::Context::New(
-      instance_->isolate(), NULL, v8::Handle<v8::ObjectTemplate>());
+  v8::Local<v8::Context> context = v8::Context::New(
+      instance_->isolate(), NULL, v8::Local<v8::ObjectTemplate>());
   {
     ContextHolder context_holder(instance_->isolate());
     context_holder.SetContext(context);
@@ -131,6 +133,30 @@ TEST_F(ModuleRegistryTest, LoadModuleTest) {
   EXPECT_EQ(0, counter);
   helper.runner->Run(source, "script");
   EXPECT_EQ(3, counter);
+}
+
+// Verifies that explicitly loading a module that's already pending does
+// not cause the ModuleRegistry's unsatisfied_dependency set to grow.
+TEST_F(ModuleRegistryTest, UnsatisfiedDependenciesTest) {
+  TestHelper helper(instance_->isolate());
+  std::string source =
+      "define('one', ['no_such_module'], function(nsm) {"
+      "  return 1;"
+      "});";
+  ModuleRegistry* registry =
+    ModuleRegistry::From(helper.runner->GetContextHolder()->context());
+
+  std::set<std::string> no_such_module_set;
+  no_such_module_set.insert("no_such_module");
+
+  // Adds one unsatisfied dependency on "no-such-module".
+  helper.runner->Run(source, "script");
+  EXPECT_EQ(no_such_module_set, registry->unsatisfied_dependencies());
+
+  // Should have no effect on the unsatisfied_dependencies set.
+  ModuleRegistry::LoadModuleCallback callback = base::Bind(OnModuleLoadedNoOp);
+  registry->LoadModule(instance_->isolate(), "one", callback);
+  EXPECT_EQ(no_such_module_set, registry->unsatisfied_dependencies());
 }
 
 }  // namespace gin

@@ -52,7 +52,9 @@ ActiveDOMObject::~ActiveDOMObject()
         return;
 
     ASSERT(m_suspendIfNeededCalled);
+#if !ENABLE(OILPAN)
     ASSERT(executionContext()->isContextThread());
+#endif
 }
 
 void ActiveDOMObject::suspendIfNeeded()
@@ -84,7 +86,7 @@ void ActiveDOMObject::stop()
 
 void ActiveDOMObject::didMoveToNewExecutionContext(ExecutionContext* context)
 {
-    observeContext(context);
+    setContext(context);
 
     if (context->activeDOMObjectsAreStopped()) {
         stop();

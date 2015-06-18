@@ -167,8 +167,14 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
       // Show web authentication if this is not a supervised user.
       if (loginAttempts > MAX_LOGIN_ATTEMPTS_IN_POD &&
           !activatedPod.user.supervisedUser) {
+        chrome.send('maxIncorrectPasswordAttempts',
+            [activatedPod.user.emailAddress]);
         activatedPod.showSigninUI();
       } else {
+        if (loginAttempts == 1) {
+          chrome.send('firstIncorrectPasswordAttempt',
+              [activatedPod.user.emailAddress]);
+        }
         // We want bubble's arrow to point to the first letter of input.
         /** @const */ var BUBBLE_OFFSET = 7;
         /** @const */ var BUBBLE_PADDING = 4;
@@ -290,6 +296,7 @@ login.createScreen('AccountPickerScreen', 'account-picker', function() {
      * @param {string} username Username of pod to add button
      * @param {!{id: !string,
      *           hardlockOnClick: boolean,
+     *           isTrialRun: boolean,
      *           tooltip: ({text: string, autoshow: boolean} | undefined)}} icon
      *     The icon parameters.
      */

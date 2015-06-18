@@ -28,19 +28,21 @@ void CryptoUtils::GenerateNonce(QuicWallTime now,
   // a 4-byte timestamp + 28 random bytes.
   nonce->reserve(kNonceSize);
   nonce->resize(kNonceSize);
-  uint32 gmt_unix_time = now.ToUNIXSeconds();
+
+  uint32 gmt_unix_time = static_cast<uint32>(now.ToUNIXSeconds());
   // The time in the nonce must be encoded in big-endian because the
   // strike-register depends on the nonces being ordered by time.
   (*nonce)[0] = static_cast<char>(gmt_unix_time >> 24);
   (*nonce)[1] = static_cast<char>(gmt_unix_time >> 16);
   (*nonce)[2] = static_cast<char>(gmt_unix_time >> 8);
   (*nonce)[3] = static_cast<char>(gmt_unix_time);
+  size_t bytes_written = 4;
 
-  size_t bytes_written = sizeof(gmt_unix_time);
   if (orbit.size() == 8) {
     memcpy(&(*nonce)[bytes_written], orbit.data(), orbit.size());
     bytes_written += orbit.size();
   }
+
   random_generator->RandBytes(&(*nonce)[bytes_written],
                               kNonceSize - bytes_written);
 }
@@ -102,7 +104,7 @@ bool CryptoUtils::DeriveKeys(StringPiece premaster_secret,
 
   crypto::HKDF hkdf(premaster_secret, nonce, hkdf_input, key_bytes,
                     nonce_prefix_bytes, subkey_secret_bytes);
-  if (perspective == SERVER) {
+  if (perspective == Perspective::IS_SERVER) {
     if (!crypters->encrypter->SetKey(hkdf.server_write_key()) ||
         !crypters->encrypter->SetNoncePrefix(hkdf.server_write_iv()) ||
         !crypters->decrypter->SetKey(hkdf.client_write_key()) ||

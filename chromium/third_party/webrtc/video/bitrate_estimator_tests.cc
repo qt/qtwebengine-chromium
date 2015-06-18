@@ -13,11 +13,12 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "webrtc/base/checks.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/call.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/event_wrapper.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 #include "webrtc/test/call_test.h"
 #include "webrtc/test/direct_transport.h"
@@ -28,8 +29,8 @@
 
 namespace webrtc {
 namespace {
-// Note: consider to write tests that don't depend on the trace system instead
-// of re-using this class.
+// Note: If you consider to re-use this class, think twice and instead consider
+// writing tests that don't depend on the trace system.
 class TraceObserver {
  public:
   TraceObserver() {
@@ -48,7 +49,7 @@ class TraceObserver {
   }
 
   ~TraceObserver() {
-    Trace::SetTraceCallback(NULL);
+    Trace::SetTraceCallback(nullptr);
     Trace::ReturnTrace();
   }
 
@@ -63,14 +64,10 @@ class TraceObserver {
  private:
   class Callback : public TraceCallback {
    public:
-    Callback()
-        : crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
-          done_(EventWrapper::Create()) {}
+    Callback() : done_(EventWrapper::Create()) {}
 
-    virtual void Print(TraceLevel level,
-                       const char* message,
-                       int length) OVERRIDE {
-      CriticalSectionScoped lock(crit_sect_.get());
+    void Print(TraceLevel level, const char* message, int length) override {
+      rtc::CritScope lock(&crit_sect_);
       std::string msg(message);
       if (msg.find("BitrateEstimator") != std::string::npos) {
         received_log_lines_.push_back(msg);
@@ -97,16 +94,16 @@ class TraceObserver {
     }
 
     void PushExpectedLogLine(const std::string& expected_log_line) {
-      CriticalSectionScoped lock(crit_sect_.get());
+      rtc::CritScope lock(&crit_sect_);
       expected_log_lines_.push_back(expected_log_line);
     }
 
    private:
     typedef std::list<std::string> Strings;
-    const scoped_ptr<CriticalSectionWrapper> crit_sect_;
+    rtc::CriticalSection crit_sect_;
     Strings received_log_lines_ GUARDED_BY(crit_sect_);
     Strings expected_log_lines_ GUARDED_BY(crit_sect_);
-    scoped_ptr<EventWrapper> done_;
+    rtc::scoped_ptr<EventWrapper> done_;
   };
 
   Callback callback_;
@@ -145,7 +142,7 @@ class BitrateEstimatorTest : public test::CallTest {
     send_config_ = VideoSendStream::Config();
     send_config_.rtp.ssrcs.push_back(kSendSsrcs[0]);
     // Encoders will be set separately per stream.
-    send_config_.encoder_settings.encoder = NULL;
+    send_config_.encoder_settings.encoder = nullptr;
     send_config_.encoder_settings.payload_name = "FAKE";
     send_config_.encoder_settings.payload_type = kFakeSendPayloadType;
     encoder_config_.streams = test::CreateVideoStreams(1);
@@ -154,6 +151,7 @@ class BitrateEstimatorTest : public test::CallTest {
     // receive_config_.decoders will be set by every stream separately.
     receive_config_.rtp.remote_ssrc = send_config_.rtp.ssrcs[0];
     receive_config_.rtp.local_ssrc = kReceiverLocalSsrc;
+    receive_config_.rtp.remb = true;
     receive_config_.rtp.extensions.push_back(
         RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
     receive_config_.rtp.extensions.push_back(
@@ -180,11 +178,12 @@ class BitrateEstimatorTest : public test::CallTest {
 
   class Stream {
    public:
-    explicit Stream(BitrateEstimatorTest* test)
+    Stream(BitrateEstimatorTest* test, bool receive_audio)
         : test_(test),
           is_sending_receiving_(false),
-          send_stream_(NULL),
-          receive_stream_(NULL),
+          send_stream_(nullptr),
+          audio_receive_stream_(nullptr),
+          video_receive_stream_(nullptr),
           frame_generator_capturer_(),
           fake_encoder_(Clock::GetRealTimeClock()),
           fake_decoder_() {
@@ -192,7 +191,7 @@ class BitrateEstimatorTest : public test::CallTest {
       test_->send_config_.encoder_settings.encoder = &fake_encoder_;
       send_stream_ = test_->sender_call_->CreateVideoSendStream(
           test_->send_config_, test_->encoder_config_);
-      assert(test_->encoder_config_.streams.size() == 1);
+      DCHECK_EQ(1u, test_->encoder_config_.streams.size());
       frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
           send_stream_->Input(),
           test_->encoder_config_.streams[0].width,
@@ -202,33 +201,53 @@ class BitrateEstimatorTest : public test::CallTest {
       send_stream_->Start();
       frame_generator_capturer_->Start();
 
-      VideoReceiveStream::Decoder decoder;
-      decoder.decoder = &fake_decoder_;
-      decoder.payload_type = test_->send_config_.encoder_settings.payload_type;
-      decoder.payload_name = test_->send_config_.encoder_settings.payload_name;
-      test_->receive_config_.decoders.push_back(decoder);
-      test_->receive_config_.rtp.remote_ssrc = test_->send_config_.rtp.ssrcs[0];
-      test_->receive_config_.rtp.local_ssrc++;
-      receive_stream_ = test_->receiver_call_->CreateVideoReceiveStream(
-          test_->receive_config_);
-      receive_stream_->Start();
-
+      if (receive_audio) {
+        AudioReceiveStream::Config receive_config;
+        receive_config.rtp.remote_ssrc = test_->send_config_.rtp.ssrcs[0];
+        receive_config.rtp.extensions.push_back(
+            RtpExtension(RtpExtension::kAbsSendTime, kASTExtensionId));
+        audio_receive_stream_ = test_->receiver_call_->CreateAudioReceiveStream(
+            receive_config);
+      } else {
+        VideoReceiveStream::Decoder decoder;
+        decoder.decoder = &fake_decoder_;
+        decoder.payload_type =
+            test_->send_config_.encoder_settings.payload_type;
+        decoder.payload_name =
+            test_->send_config_.encoder_settings.payload_name;
+        test_->receive_config_.decoders.push_back(decoder);
+        test_->receive_config_.rtp.remote_ssrc =
+            test_->send_config_.rtp.ssrcs[0];
+        test_->receive_config_.rtp.local_ssrc++;
+        video_receive_stream_ = test_->receiver_call_->CreateVideoReceiveStream(
+            test_->receive_config_);
+        video_receive_stream_->Start();
+      }
       is_sending_receiving_ = true;
     }
 
     ~Stream() {
-      frame_generator_capturer_.reset(NULL);
+      EXPECT_FALSE(is_sending_receiving_);
+      frame_generator_capturer_.reset(nullptr);
       test_->sender_call_->DestroyVideoSendStream(send_stream_);
-      send_stream_ = NULL;
-      test_->receiver_call_->DestroyVideoReceiveStream(receive_stream_);
-      receive_stream_ = NULL;
+      send_stream_ = nullptr;
+      if (audio_receive_stream_) {
+        test_->receiver_call_->DestroyAudioReceiveStream(audio_receive_stream_);
+        audio_receive_stream_ = nullptr;
+      }
+      if (video_receive_stream_) {
+        test_->receiver_call_->DestroyVideoReceiveStream(video_receive_stream_);
+        video_receive_stream_ = nullptr;
+      }
     }
 
     void StopSending() {
       if (is_sending_receiving_) {
         frame_generator_capturer_->Stop();
         send_stream_->Stop();
-        receive_stream_->Stop();
+        if (video_receive_stream_) {
+          video_receive_stream_->Stop();
+        }
         is_sending_receiving_ = false;
       }
     }
@@ -237,8 +256,9 @@ class BitrateEstimatorTest : public test::CallTest {
     BitrateEstimatorTest* test_;
     bool is_sending_receiving_;
     VideoSendStream* send_stream_;
-    VideoReceiveStream* receive_stream_;
-    scoped_ptr<test::FrameGeneratorCapturer> frame_generator_capturer_;
+    AudioReceiveStream* audio_receive_stream_;
+    VideoReceiveStream* video_receive_stream_;
+    rtc::scoped_ptr<test::FrameGeneratorCapturer> frame_generator_capturer_;
     test::FakeEncoder fake_encoder_;
     test::FakeDecoder fake_decoder_;
   };
@@ -246,24 +266,24 @@ class BitrateEstimatorTest : public test::CallTest {
   TraceObserver receiver_trace_;
   test::DirectTransport send_transport_;
   test::DirectTransport receive_transport_;
-  scoped_ptr<Call> sender_call_;
-  scoped_ptr<Call> receiver_call_;
+  rtc::scoped_ptr<Call> sender_call_;
+  rtc::scoped_ptr<Call> receiver_call_;
   VideoReceiveStream::Config receive_config_;
   std::vector<Stream*> streams_;
 };
 
-TEST_F(BitrateEstimatorTest, InstantiatesTOFPerDefault) {
+TEST_F(BitrateEstimatorTest, InstantiatesTOFPerDefaultForVideo) {
   send_config_.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, false));
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
 }
 
-TEST_F(BitrateEstimatorTest, ImmediatelySwitchToAST) {
+TEST_F(BitrateEstimatorTest, ImmediatelySwitchToASTForAudio) {
   send_config_.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kAbsSendTime, kASTExtensionId));
   receiver_trace_.PushExpectedLogLine(
@@ -273,18 +293,49 @@ TEST_F(BitrateEstimatorTest, ImmediatelySwitchToAST) {
   receiver_trace_.PushExpectedLogLine("Switching to absolute send time RBE.");
   receiver_trace_.PushExpectedLogLine(
       "AbsoluteSendTimeRemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, true));
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
 }
 
-TEST_F(BitrateEstimatorTest, SwitchesToAST) {
+TEST_F(BitrateEstimatorTest, ImmediatelySwitchToASTForVideo) {
+  send_config_.rtp.extensions.push_back(
+      RtpExtension(RtpExtension::kAbsSendTime, kASTExtensionId));
+  receiver_trace_.PushExpectedLogLine(
+      "RemoteBitrateEstimatorFactory: Instantiating.");
+  receiver_trace_.PushExpectedLogLine(
+      "RemoteBitrateEstimatorFactory: Instantiating.");
+  receiver_trace_.PushExpectedLogLine("Switching to absolute send time RBE.");
+  receiver_trace_.PushExpectedLogLine(
+      "AbsoluteSendTimeRemoteBitrateEstimatorFactory: Instantiating.");
+  streams_.push_back(new Stream(this, false));
+  EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
+}
+
+TEST_F(BitrateEstimatorTest, SwitchesToASTForAudio) {
+  receiver_trace_.PushExpectedLogLine(
+      "RemoteBitrateEstimatorFactory: Instantiating.");
+  receiver_trace_.PushExpectedLogLine(
+      "RemoteBitrateEstimatorFactory: Instantiating.");
+  streams_.push_back(new Stream(this, true));
+  EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
+
+  send_config_.rtp.extensions.push_back(
+      RtpExtension(RtpExtension::kAbsSendTime, kASTExtensionId));
+  receiver_trace_.PushExpectedLogLine("Switching to absolute send time RBE.");
+  receiver_trace_.PushExpectedLogLine(
+      "AbsoluteSendTimeRemoteBitrateEstimatorFactory: Instantiating.");
+  streams_.push_back(new Stream(this, true));
+  EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
+}
+
+TEST_F(BitrateEstimatorTest, SwitchesToASTForVideo) {
   send_config_.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, false));
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
 
   send_config_.rtp.extensions[0] =
@@ -292,18 +343,18 @@ TEST_F(BitrateEstimatorTest, SwitchesToAST) {
   receiver_trace_.PushExpectedLogLine("Switching to absolute send time RBE.");
   receiver_trace_.PushExpectedLogLine(
       "AbsoluteSendTimeRemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, false));
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
 }
 
-TEST_F(BitrateEstimatorTest, SwitchesToASTThenBackToTOF) {
+TEST_F(BitrateEstimatorTest, SwitchesToASTThenBackToTOFForVideo) {
   send_config_.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, false));
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
 
   send_config_.rtp.extensions[0] =
@@ -311,7 +362,7 @@ TEST_F(BitrateEstimatorTest, SwitchesToASTThenBackToTOF) {
   receiver_trace_.PushExpectedLogLine("Switching to absolute send time RBE.");
   receiver_trace_.PushExpectedLogLine(
       "AbsoluteSendTimeRemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, false));
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());
 
   send_config_.rtp.extensions[0] =
@@ -320,7 +371,7 @@ TEST_F(BitrateEstimatorTest, SwitchesToASTThenBackToTOF) {
       "WrappingBitrateEstimator: Switching to transmission time offset RBE.");
   receiver_trace_.PushExpectedLogLine(
       "RemoteBitrateEstimatorFactory: Instantiating.");
-  streams_.push_back(new Stream(this));
+  streams_.push_back(new Stream(this, false));
   streams_[0]->StopSending();
   streams_[1]->StopSending();
   EXPECT_EQ(kEventSignaled, receiver_trace_.Wait());

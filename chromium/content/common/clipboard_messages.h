@@ -4,14 +4,27 @@
 
 // Multiply-included message file, so no include guard.
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "base/memory/shared_memory.h"
+#include "base/strings/string16.h"
 #include "content/common/clipboard_format.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/base/clipboard/clipboard.h"
+
+// Singly-included section for types and/or struct declarations.
+#ifndef CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
+#define CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
+
+// Custom data consists of arbitrary MIME types an untrusted sender wants to
+// write to the clipboard. Note that exposing a general interface to do this is
+// dangerous--an untrusted sender could cause a DoS or code execution.
+typedef std::map<base::string16, base::string16> CustomDataMap;
+
+#endif  // CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
 
 #define IPC_MESSAGE_START ClipboardMsgStart
 
@@ -21,15 +34,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(ui::ClipboardType, ui::CLIPBOARD_TYPE_LAST)
 
 // Clipboard IPC messages sent from the renderer to the browser.
 
-// This message is used when the object list does not contain a bitmap.
-IPC_MESSAGE_CONTROL1(ClipboardHostMsg_WriteObjectsAsync,
-                     ui::Clipboard::ObjectMap /* objects */)
-// This message is used when the object list contains a bitmap.
-// It is synchronized so that the renderer knows when it is safe to
-// free the shared memory used to transfer the bitmap.
-IPC_SYNC_MESSAGE_CONTROL2_0(ClipboardHostMsg_WriteObjectsSync,
-                            ui::Clipboard::ObjectMap /* objects */,
-                            base::SharedMemoryHandle /* bitmap handle */)
 IPC_SYNC_MESSAGE_CONTROL1_1(ClipboardHostMsg_GetSequenceNumber,
                             ui::ClipboardType /* type */,
                             uint64 /* result */)
@@ -63,6 +67,35 @@ IPC_SYNC_MESSAGE_CONTROL2_1(ClipboardHostMsg_ReadCustomData,
                             ui::ClipboardType /* type */,
                             base::string16 /* type */,
                             base::string16 /* result */)
+
+// Writing to the clipboard via IPC is a two-phase operation. First, the sender
+// sends the different types of data it'd like to write to the receiver. Then,
+// it sends a commit message to commit the data to the system clipboard.
+IPC_MESSAGE_CONTROL2(ClipboardHostMsg_WriteText,
+                     ui::ClipboardType /* type */,
+                     base::string16 /* text */)
+IPC_MESSAGE_CONTROL3(ClipboardHostMsg_WriteHTML,
+                     ui::ClipboardType /* type */,
+                     base::string16 /* markup */,
+                     GURL /* url */)
+IPC_MESSAGE_CONTROL1(ClipboardHostMsg_WriteSmartPasteMarker,
+                     ui::ClipboardType /* type */)
+IPC_MESSAGE_CONTROL2(ClipboardHostMsg_WriteCustomData,
+                     ui::ClipboardType /* type */,
+                     CustomDataMap /* custom data */)
+// TODO(dcheng): The |url| parameter should really be a GURL, but <canvas>'s
+// copy as image tries to set very long data: URLs on the clipboard. Using
+// GURL causes the browser to kill the renderer for sending a bad IPC (GURLs
+// bigger than 2 megabytes are considered to be bad). https://crbug.com/459822
+IPC_MESSAGE_CONTROL3(ClipboardHostMsg_WriteBookmark,
+                     ui::ClipboardType /* type */,
+                     std::string /* url */,
+                     base::string16 /* title */)
+IPC_SYNC_MESSAGE_CONTROL3_0(ClipboardHostMsg_WriteImage,
+                            ui::ClipboardType /* type */,
+                            gfx::Size /* size */,
+                            base::SharedMemoryHandle /* bitmap handle */)
+IPC_MESSAGE_CONTROL1(ClipboardHostMsg_CommitWrite, ui::ClipboardType /* type */)
 
 #if defined(OS_MACOSX)
 IPC_MESSAGE_CONTROL1(ClipboardHostMsg_FindPboardWriteStringAsync,

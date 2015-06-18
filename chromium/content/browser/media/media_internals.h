@@ -16,6 +16,7 @@
 #include "base/values.h"
 #include "content/common/content_export.h"
 #include "media/audio/audio_logging.h"
+#include "media/base/media_log.h"
 #include "media/video/capture/video_capture_device_info.h"
 
 namespace media {
@@ -58,7 +59,18 @@ class CONTENT_EXPORT MediaInternals
   // AudioLogFactory implementation.  Safe to call from any thread.
   scoped_ptr<media::AudioLog> CreateAudioLog(AudioComponent component) override;
 
+  // If possible, i.e. a WebContents exists for the given RenderFrameHostID,
+  // tells an existing AudioLogEntry the WebContents title for easier
+  // differentiation on the UI.
+  void SetWebContentsTitleForAudioLogEntry(int component_id,
+                                           int render_process_id,
+                                           int render_frame_id,
+                                           media::AudioLog* audio_log);
+
  private:
+  // Inner class to handle reporting pipelinestatus to UMA
+  class MediaInternalsUMAHandler;
+
   friend class AudioLogImpl;
   friend class MediaInternalsTest;
   friend struct base::DefaultLazyInstanceTraits<MediaInternals>;
@@ -69,16 +81,19 @@ class CONTENT_EXPORT MediaInternals
   // thread, but will forward to the IO thread.
   void SendUpdate(const base::string16& update);
 
-  // Caches |value| under |cache_key| so that future SendAudioStreamData() calls
+  // Caches |value| under |cache_key| so that future SendAudioLogUpdate() calls
   // will include the current data.  Calls JavaScript |function|(|value|) for
-  // each registered UpdateCallback.  SendUpdateAndPurgeCache() is similar but
-  // purges the cache entry after completion instead.
-  void SendUpdateAndCacheAudioStreamKey(const std::string& cache_key,
-                                        const std::string& function,
-                                        const base::DictionaryValue* value);
-  void SendUpdateAndPurgeAudioStreamCache(const std::string& cache_key,
-                                          const std::string& function,
-                                          const base::DictionaryValue* value);
+  // each registered UpdateCallback.
+  enum AudioLogUpdateType {
+    CREATE,             // Creates a new AudioLog cache entry.
+    UPDATE_IF_EXISTS,   // Updates an existing AudioLog cache entry, does
+                        // nothing if it doesn't exist.
+    UPDATE_AND_DELETE,  // Deletes an existing AudioLog cache entry.
+  };
+  void SendAudioLogUpdate(AudioLogUpdateType type,
+                          const std::string& cache_key,
+                          const std::string& function,
+                          const base::DictionaryValue* value);
 
   // Must only be accessed on the IO thread.
   std::vector<UpdateCallback> update_callbacks_;
@@ -88,10 +103,11 @@ class CONTENT_EXPORT MediaInternals
   base::Lock lock_;
   base::DictionaryValue audio_streams_cached_data_;
   int owner_ids_[AUDIO_COMPONENT_MAX];
+  scoped_ptr<MediaInternalsUMAHandler> uma_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaInternals);
 };
 
-} // namespace content
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_MEDIA_MEDIA_INTERNALS_H_

@@ -20,6 +20,7 @@ class TimeDelta;
 namespace blink {
 class WebFrame;
 class WebURLResponse;
+struct WebURLLoaderOptions;
 }
 
 namespace content {
@@ -47,11 +48,18 @@ class CONTENT_EXPORT ResourceFetcher {
   static ResourceFetcher* Create(const GURL& url);
 
   // Set the corresponding parameters of the request.  Must be called before
-  // Start.  By default, requests are GETs with no body.
+  // Start.  By default, requests are GETs with no body and respect the default
+  // cache policy.
   virtual void SetMethod(const std::string& method) = 0;
   virtual void SetBody(const std::string& body) = 0;
   virtual void SetHeader(const std::string& header,
                          const std::string& value) = 0;
+  virtual void SetSkipServiceWorker(bool skip_service_worker) = 0;
+  virtual void SetCachePolicy(blink::WebURLRequest::CachePolicy policy) = 0;
+
+  // Associate the corresponding WebURLLoaderOptions to the loader. Must be
+  // called before Start. Used if the LoaderType is FRAME_ASSOCIATED_LOADER.
+  virtual void SetLoaderOptions(const blink::WebURLLoaderOptions& options) = 0;
 
   // Starts the request using the specified frame.  Calls |callback| when
   // done.

@@ -24,11 +24,11 @@ class NET_EXPORT IPEndPoint {
  public:
   IPEndPoint();
   ~IPEndPoint();
-  IPEndPoint(const IPAddressNumber& address, int port);
+  IPEndPoint(const IPAddressNumber& address, uint16 port);
   IPEndPoint(const IPEndPoint& endpoint);
 
   const IPAddressNumber& address() const { return address_; }
-  int port() const { return port_; }
+  uint16 port() const { return port_; }
 
   // Returns AddressFamily of the address.
   AddressFamily GetFamily() const;
@@ -53,9 +53,8 @@ class NET_EXPORT IPEndPoint {
   bool FromSockAddr(const struct sockaddr* address, socklen_t address_length)
       WARN_UNUSED_RESULT;
 
-  // Returns value as a string (e.g. "127.0.0.1:80"). Returns empty
-  // string if the address is invalid, and cannot not be converted to a
-  // string.
+  // Returns value as a string (e.g. "127.0.0.1:80"). The IP address must be
+  // valid.
   std::string ToString() const;
 
   // As above, but without port.
@@ -66,7 +65,7 @@ class NET_EXPORT IPEndPoint {
 
  private:
   IPAddressNumber address_;
-  int port_;
+  uint16 port_;
 };
 
 }  // namespace net

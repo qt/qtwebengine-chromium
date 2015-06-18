@@ -6,6 +6,7 @@
 
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_utils.h"
+#include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/test_tools/mock_quic_dispatcher.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -22,10 +23,10 @@ class QuicServerDispatchPacketTest : public ::testing::Test {
   QuicServerDispatchPacketTest()
       : crypto_config_("blah", QuicRandom::GetInstance()),
         dispatcher_(config_,
-                    crypto_config_,
+                    &crypto_config_,
                     new QuicDispatcher::DefaultPacketWriterFactory(),
-                    &eps_) {
-    dispatcher_.Initialize(1234);
+                    new QuicEpollConnectionHelper(&eps_)) {
+    dispatcher_.InitializeWithWriter(new QuicDefaultPacketWriter(1234));
   }
 
   void DispatchPacket(const QuicEncryptedPacket& packet) {

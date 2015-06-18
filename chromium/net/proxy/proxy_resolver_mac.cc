@@ -13,6 +13,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/proxy_info.h"
+#include "net/proxy/proxy_resolver.h"
 #include "net/proxy/proxy_server.h"
 
 #if defined(OS_IOS)
@@ -21,26 +22,28 @@
 #include <CoreServices/CoreServices.h>
 #endif
 
+namespace net {
+
 namespace {
 
 // Utility function to map a CFProxyType to a ProxyServer::Scheme.
 // If the type is unknown, returns ProxyServer::SCHEME_INVALID.
-net::ProxyServer::Scheme GetProxyServerScheme(CFStringRef proxy_type) {
+ProxyServer::Scheme GetProxyServerScheme(CFStringRef proxy_type) {
   if (CFEqual(proxy_type, kCFProxyTypeNone))
-    return net::ProxyServer::SCHEME_DIRECT;
+    return ProxyServer::SCHEME_DIRECT;
   if (CFEqual(proxy_type, kCFProxyTypeHTTP))
-    return net::ProxyServer::SCHEME_HTTP;
+    return ProxyServer::SCHEME_HTTP;
   if (CFEqual(proxy_type, kCFProxyTypeHTTPS)) {
     // The "HTTPS" on the Mac side here means "proxy applies to https://" URLs;
     // the proxy itself is still expected to be an HTTP proxy.
-    return net::ProxyServer::SCHEME_HTTP;
+    return ProxyServer::SCHEME_HTTP;
   }
   if (CFEqual(proxy_type, kCFProxyTypeSOCKS)) {
     // We can't tell whether this was v4 or v5. We will assume it is
     // v5 since that is the only version OS X supports.
-    return net::ProxyServer::SCHEME_SOCKS5;
+    return ProxyServer::SCHEME_SOCKS5;
   }
-  return net::ProxyServer::SCHEME_INVALID;
+  return ProxyServer::SCHEME_INVALID;
 }
 
 // Callback for CFNetworkExecuteProxyAutoConfigurationURL. |client| is a pointer
@@ -60,12 +63,35 @@ void ResultCallback(void* client, CFArrayRef proxies, CFErrorRef error) {
   CFRunLoopStop(CFRunLoopGetCurrent());
 }
 
-}  // namespace
+class ProxyResolverMac : public ProxyResolver {
+ public:
+  explicit ProxyResolverMac(
+      const scoped_refptr<ProxyResolverScriptData>& script_data);
+  ~ProxyResolverMac() override;
 
-namespace net {
+  // ProxyResolver methods:
+  int GetProxyForURL(const GURL& url,
+                     ProxyInfo* results,
+                     const CompletionCallback& callback,
+                     RequestHandle* request,
+                     const BoundNetLog& net_log) override;
 
-ProxyResolverMac::ProxyResolverMac()
-    : ProxyResolver(false /*expects_pac_bytes*/) {
+  void CancelRequest(RequestHandle request) override;
+
+  LoadState GetLoadState(RequestHandle request) const override;
+
+  void CancelSetPacScript() override;
+
+  int SetPacScript(const scoped_refptr<ProxyResolverScriptData>& script_data,
+                   const CompletionCallback& /*callback*/) override;
+
+ private:
+  const scoped_refptr<ProxyResolverScriptData> script_data_;
+};
+
+ProxyResolverMac::ProxyResolverMac(
+    const scoped_refptr<ProxyResolverScriptData>& script_data)
+    : ProxyResolver(false /*expects_pac_bytes*/), script_data_(script_data) {
 }
 
 ProxyResolverMac::~ProxyResolverMac() {}
@@ -120,8 +146,7 @@ int ProxyResolverMac::GetProxyForURL(const GURL& query_url,
   CFRunLoopAddSource(CFRunLoopGetCurrent(), runloop_source.get(),
                      private_runloop_mode);
   CFRunLoopRunInMode(private_runloop_mode, DBL_MAX, false);
-  CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runloop_source.get(),
-                        private_runloop_mode);
+  CFRunLoopSourceInvalidate(runloop_source.get());
   DCHECK(result != NULL);
 
   if (CFGetTypeID(result) == CFErrorGetTypeID()) {
@@ -197,7 +222,22 @@ void ProxyResolverMac::CancelSetPacScript() {
 int ProxyResolverMac::SetPacScript(
     const scoped_refptr<ProxyResolverScriptData>& script_data,
     const CompletionCallback& /*callback*/) {
-  script_data_ = script_data;
+  NOTREACHED();
+  return ERR_NOT_IMPLEMENTED;
+}
+
+}  // namespace
+
+ProxyResolverFactoryMac::ProxyResolverFactoryMac()
+    : ProxyResolverFactory(false /*expects_pac_bytes*/) {
+}
+
+int ProxyResolverFactoryMac::CreateProxyResolver(
+    const scoped_refptr<ProxyResolverScriptData>& pac_script,
+    scoped_ptr<ProxyResolver>* resolver,
+    const CompletionCallback& callback,
+    scoped_ptr<Request>* request) {
+  resolver->reset(new ProxyResolverMac(pac_script));
   return OK;
 }
 

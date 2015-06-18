@@ -24,9 +24,9 @@
  */
 
 [
+    Constructor,
     GarbageCollected,
     NoInterfaceObject,
-    Constructor
 ] interface SpeechGrammar {
     [URL,CallWith=ExecutionContext] attribute DOMString src;
     attribute float weight;

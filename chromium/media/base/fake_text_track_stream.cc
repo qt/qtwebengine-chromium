@@ -6,13 +6,15 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "media/base/decoder_buffer.h"
 #include "media/filters/webvtt_util.h"
 
 namespace media {
 
 FakeTextTrackStream::FakeTextTrackStream()
-    : task_runner_(base::MessageLoopProxy::current()),
+    : task_runner_(base::ThreadTaskRunnerHandle::Get()),
       stopping_(false) {
 }
 
@@ -32,7 +34,7 @@ void FakeTextTrackStream::Read(const ReadCB& read_cb) {
   }
 }
 
-DemuxerStream::Type FakeTextTrackStream::type() {
+DemuxerStream::Type FakeTextTrackStream::type() const {
   return DemuxerStream::TEXT;
 }
 
@@ -66,6 +68,9 @@ void FakeTextTrackStream::SatisfyPendingRead(
 
   buffer->set_timestamp(start);
   buffer->set_duration(duration);
+
+  // Assume all fake text buffers are keyframes.
+  buffer->set_is_key_frame(true);
 
   base::ResetAndReturn(&read_cb_).Run(kOk, buffer);
 }

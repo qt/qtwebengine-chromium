@@ -21,23 +21,16 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return this->INHERITED::onGetFlags() |
-               GM::kSkipTiled_Flag |
-               GM::kSkipPicture_Flag |
-               GM::kSkipPipe_Flag |
-               GM::kSkipPipeCrossProcess_Flag;
-    }
 
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("imagealphathreshold");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         return SkISize::Make(WIDTH, HEIGHT);
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         SkIRect rects[2];
         rects[0] = SkIRect::MakeXYWH(0, 150, WIDTH, HEIGHT - 300);
         rects[1] = SkIRect::MakeXYWH(150, 0, WIDTH - 300, HEIGHT);

@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/time/time.h"
 #include "content/browser/appcache/appcache_interceptor.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -174,6 +175,13 @@ void ResourceLoader::MarkAsTransferring() {
   CHECK(IsResourceTypeFrame(GetRequestInfo()->GetResourceType()))
       << "Can only transfer for navigations";
   is_transferring_ = true;
+
+  int child_id = GetRequestInfo()->GetChildID();
+  AppCacheInterceptor::PrepareForCrossSiteTransfer(request(), child_id);
+  ServiceWorkerRequestHandler* handler =
+      ServiceWorkerRequestHandler::GetHandler(request());
+  if (handler)
+    handler->PrepareForCrossSiteTransfer(child_id);
 }
 
 void ResourceLoader::CompleteTransfer() {
@@ -183,6 +191,18 @@ void ResourceLoader::CompleteTransfer() {
   // a later read stage.
   DCHECK(DEFERRED_READ == deferred_stage_ ||
          DEFERRED_RESPONSE_COMPLETE == deferred_stage_);
+  DCHECK(is_transferring_);
+
+  // In some cases, a process transfer doesn't really happen and the
+  // request is resumed in the original process. Real transfers to a new process
+  // are completed via ResourceDispatcherHostImpl::UpdateRequestForTransfer.
+  int child_id = GetRequestInfo()->GetChildID();
+  AppCacheInterceptor::MaybeCompleteCrossSiteTransferInOldProcess(
+      request(), child_id);
+  ServiceWorkerRequestHandler* handler =
+      ServiceWorkerRequestHandler::GetHandler(request());
+  if (handler)
+    handler->MaybeCompleteCrossSiteTransferInOldProcess(child_id);
 
   is_transferring_ = false;
   GetRequestInfo()->cross_site_handler()->ResumeResponse();
@@ -231,7 +251,6 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
   PopulateResourceResponse(info, request_.get(), response.get());
-
   if (!handler_->OnRequestRedirected(redirect_info, response.get(), defer)) {
     Cancel();
   } else if (*defer) {
@@ -243,7 +262,8 @@ void ResourceLoader::OnAuthRequired(net::URLRequest* unused,
                                     net::AuthChallengeInfo* auth_info) {
   DCHECK_EQ(request_.get(), unused);
 
-  if (request_->load_flags() & net::LOAD_DO_NOT_PROMPT_FOR_LOGIN) {
+  ResourceRequestInfoImpl* info = GetRequestInfo();
+  if (info->do_not_prompt_for_login()) {
     request_->CancelAuth();
     return;
   }
@@ -271,11 +291,8 @@ void ResourceLoader::OnCertificateRequested(
   DCHECK(!ssl_client_auth_handler_)
       << "OnCertificateRequested called with ssl_client_auth_handler pending";
   ssl_client_auth_handler_.reset(new SSLClientAuthHandler(
-      GetRequestInfo()->GetContext()->CreateClientCertStore(),
-      request_.get(),
-      cert_info,
-      base::Bind(&ResourceLoader::ContinueWithCertificate,
-                 weak_ptr_factory_.GetWeakPtr())));
+      GetRequestInfo()->GetContext()->CreateClientCertStore(), request_.get(),
+      cert_info, this));
   ssl_client_auth_handler_->SelectCertificate();
 }
 
@@ -346,11 +363,10 @@ void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
   if (is_deferred())
     return;
 
-  if (request_->status().is_success()) {
+  if (request_->status().is_success())
     StartReading(false);  // Read the first chunk.
-  } else {
+  else
     ResponseCompleted();
-  }
 }
 
 void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
@@ -379,6 +395,10 @@ void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
   if (bytes_read > 0) {
     StartReading(true);  // Read the next chunk.
   } else {
+    // TODO(darin): Remove ScopedTracker below once crbug.com/475761 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("475761 ResponseCompleted()"));
+
     // URLRequest reported an EOF. Call ResponseCompleted.
     DCHECK_EQ(0, bytes_read);
     ResponseCompleted();
@@ -387,7 +407,7 @@ void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
 
 void ResourceLoader::CancelSSLRequest(int error,
                                       const net::SSLInfo* ssl_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // The request can be NULL if it was cancelled by the renderer (as the
   // request of the user navigating to a new page from the location bar).
@@ -403,11 +423,23 @@ void ResourceLoader::CancelSSLRequest(int error,
 }
 
 void ResourceLoader::ContinueSSLRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   DVLOG(1) << "ContinueSSLRequest() url: " << request_->url().spec();
 
   request_->ContinueDespiteLastError();
+}
+
+void ResourceLoader::ContinueWithCertificate(net::X509Certificate* cert) {
+  DCHECK(ssl_client_auth_handler_);
+  ssl_client_auth_handler_.reset();
+  request_->ContinueWithCertificate(cert);
+}
+
+void ResourceLoader::CancelCertificateSelection() {
+  DCHECK(ssl_client_auth_handler_);
+  ssl_client_auth_handler_.reset();
+  request_->CancelWithError(net::ERR_SSL_CLIENT_AUTH_CERT_NEEDED);
 }
 
 void ResourceLoader::Resume() {
@@ -524,7 +556,6 @@ void ResourceLoader::StoreSignedCertificateTimestamps(
 
 void ResourceLoader::CompleteResponseStarted() {
   ResourceRequestInfoImpl* info = GetRequestInfo();
-
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
   PopulateResourceResponse(info, request_.get(), response.get());
 
@@ -552,6 +583,10 @@ void ResourceLoader::CompleteResponseStarted() {
   }
 
   delegate_->DidReceiveResponse(this);
+
+  // TODO(darin): Remove ScopedTracker below once crbug.com/475761 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("475761 OnResponseStarted()"));
 
   bool defer = false;
   if (!handler_->OnResponseStarted(response.get(), &defer)) {
@@ -607,9 +642,15 @@ void ResourceLoader::ReadMore(int* bytes_read) {
   // doesn't use the buffer.
   scoped_refptr<net::IOBuffer> buf;
   int buf_size;
-  if (!handler_->OnWillRead(&buf, &buf_size, -1)) {
-    Cancel();
-    return;
+  {
+    // TODO(darin): Remove ScopedTracker below once crbug.com/475761 is fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("475761 OnWillRead()"));
+
+    if (!handler_->OnWillRead(&buf, &buf_size, -1)) {
+      Cancel();
+      return;
+    }
   }
 
   DCHECK(buf.get());
@@ -624,6 +665,10 @@ void ResourceLoader::ReadMore(int* bytes_read) {
 void ResourceLoader::CompleteRead(int bytes_read) {
   DCHECK(bytes_read >= 0);
   DCHECK(request_->status().is_success());
+
+  // TODO(darin): Remove ScopedTracker below once crbug.com/475761 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("475761 OnReadCompleted()"));
 
   bool defer = false;
   if (!handler_->OnReadCompleted(bytes_read, &defer)) {
@@ -660,7 +705,13 @@ void ResourceLoader::ResponseCompleted() {
   }
 
   bool defer = false;
-  handler_->OnResponseCompleted(request_->status(), security_info, &defer);
+  {
+    // TODO(darin): Remove ScopedTracker below once crbug.com/475761 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("475761 OnResponseCompleted()"));
+
+    handler_->OnResponseCompleted(request_->status(), security_info, &defer);
+  }
   if (defer) {
     // The handler is not ready to die yet.  We will call DidFinishLoading when
     // we resume.
@@ -706,11 +757,6 @@ void ResourceLoader::RecordHistograms() {
 
     UMA_HISTOGRAM_ENUMERATION("Net.Prefetch.Pattern", status, STATUS_MAX);
   }
-}
-
-void ResourceLoader::ContinueWithCertificate(net::X509Certificate* cert) {
-  ssl_client_auth_handler_.reset();
-  request_->ContinueWithCertificate(cert);
 }
 
 }  // namespace content

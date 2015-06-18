@@ -4,6 +4,7 @@
 
 #include "cc/layers/ui_resource_layer.h"
 
+#include "base/thread_task_runner_handle.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/resource_update_queue.h"
@@ -28,18 +29,35 @@ using ::testing::AnyNumber;
 namespace cc {
 namespace {
 
+class TestUIResourceLayer : public UIResourceLayer {
+ public:
+  static scoped_refptr<TestUIResourceLayer> Create() {
+    return make_scoped_refptr(new TestUIResourceLayer());
+  }
+
+  UIResourceId GetUIResourceId() {
+    if (ui_resource_holder_)
+      return ui_resource_holder_->id();
+    return 0;
+  }
+
+ protected:
+  TestUIResourceLayer() : UIResourceLayer() { SetIsDrawable(true); }
+  ~TestUIResourceLayer() override {}
+};
+
 class UIResourceLayerTest : public testing::Test {
  public:
   UIResourceLayerTest() : fake_client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     layer_tree_host_ = FakeLayerTreeHost::Create(&fake_client_);
     layer_tree_host_->InitializeSingleThreaded(
-        &fake_client_, base::MessageLoopProxy::current());
+        &fake_client_, base::ThreadTaskRunnerHandle::Get(), nullptr);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
   }
 
@@ -48,9 +66,8 @@ class UIResourceLayerTest : public testing::Test {
 };
 
 TEST_F(UIResourceLayerTest, SetBitmap) {
-  scoped_refptr<UIResourceLayer> test_layer = UIResourceLayer::Create();
+  scoped_refptr<UIResourceLayer> test_layer = TestUIResourceLayer::Create();
   ASSERT_TRUE(test_layer.get());
-  test_layer->SetIsDrawable(true);
   test_layer->SetBounds(gfx::Size(100, 100));
 
   layer_tree_host_->SetRootLayer(test_layer);
@@ -76,9 +93,8 @@ TEST_F(UIResourceLayerTest, SetBitmap) {
 }
 
 TEST_F(UIResourceLayerTest, SetUIResourceId) {
-  scoped_refptr<UIResourceLayer> test_layer = UIResourceLayer::Create();
+  scoped_refptr<TestUIResourceLayer> test_layer = TestUIResourceLayer::Create();
   ASSERT_TRUE(test_layer.get());
-  test_layer->SetIsDrawable(true);
   test_layer->SetBounds(gfx::Size(100, 100));
 
   layer_tree_host_->SetRootLayer(test_layer);
@@ -100,6 +116,33 @@ TEST_F(UIResourceLayerTest, SetUIResourceId) {
   test_layer->Update(&queue, &occlusion_tracker);
 
   EXPECT_TRUE(test_layer->DrawsContent());
+
+  // ID is preserved even when you set ID first and attach it to the tree.
+  layer_tree_host_->SetRootLayer(nullptr);
+  scoped_ptr<ScopedUIResource> shared_resource = ScopedUIResource::Create(
+      layer_tree_host_.get(), UIResourceBitmap(gfx::Size(5, 5), is_opaque));
+  test_layer->SetUIResourceId(shared_resource->id());
+  layer_tree_host_->SetRootLayer(test_layer);
+  EXPECT_EQ(shared_resource->id(), test_layer->GetUIResourceId());
+  EXPECT_TRUE(test_layer->DrawsContent());
+}
+
+TEST_F(UIResourceLayerTest, BitmapClearedOnSetUIResourceId) {
+  scoped_refptr<UIResourceLayer> test_layer = TestUIResourceLayer::Create();
+  ASSERT_TRUE(test_layer.get());
+  test_layer->SetBounds(gfx::Size(100, 100));
+
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(10, 10);
+  bitmap.setImmutable();
+  ASSERT_FALSE(bitmap.isNull());
+  ASSERT_TRUE(bitmap.pixelRef()->unique());
+
+  test_layer->SetBitmap(bitmap);
+  ASSERT_FALSE(bitmap.pixelRef()->unique());
+
+  test_layer->SetUIResourceId(0);
+  EXPECT_TRUE(bitmap.pixelRef()->unique());
 }
 
 }  // namespace

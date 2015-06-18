@@ -20,6 +20,7 @@ namespace libyuv {
 extern "C" {
 #endif
 
+// TODO(fbarchard): switch to standard form of inline; fails on clangcl.
 #if !defined(LIBYUV_DISABLE_X86) && \
     (defined(_M_IX86) || defined(__x86_64__) || defined(__i386__))
 #if defined(__APPLE__) && defined(__i386__)
@@ -70,9 +71,9 @@ void TransposeUVWx8_MIPS_DSPR2(const uint8* src, int src_stride,
 #endif  // defined(__mips__)
 
 #if !defined(LIBYUV_DISABLE_X86) && \
-    defined(_M_IX86) && defined(_MSC_VER)
+    defined(_M_IX86) && defined(_MSC_VER) && !defined(__clang__)
 #define HAS_TRANSPOSE_WX8_SSSE3
-__declspec(naked) __declspec(align(16))
+__declspec(naked)
 static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
                                uint8* dst, int dst_stride, int width) {
   __asm {
@@ -164,7 +165,7 @@ static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
 }
 
 #define HAS_TRANSPOSE_UVWX8_SSE2
-__declspec(naked) __declspec(align(16))
+__declspec(naked)
 static void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
                                 uint8* dst_a, int dst_stride_a,
                                 uint8* dst_b, int dst_stride_b,
@@ -376,14 +377,12 @@ static void TransposeWx8_SSSE3(const uint8* src, int src_stride,
       "+r"(width)   // %2
     : "r"((intptr_t)(src_stride)),  // %3
       "r"((intptr_t)(dst_stride))   // %4
-    : "memory", "cc"
-  #if defined(__SSE2__)
-      , "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"
-  #endif
+    : "memory", "cc",
+      "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"
   );
 }
 
-#if !defined(LIBYUV_DISABLE_X86) && defined(__i386__)
+#if !defined(LIBYUV_DISABLE_X86) && defined(__i386__)  && !defined(__clang__)
 #define HAS_TRANSPOSE_UVWX8_SSE2
 void TransposeUVWx8_SSE2(const uint8* src, int src_stride,
                          uint8* dst_a, int dst_stride_a,
@@ -879,23 +878,35 @@ void RotatePlane180(const uint8* src, int src_stride,
   void (*MirrorRow)(const uint8* src, uint8* dst, int width) = MirrorRow_C;
   void (*CopyRow)(const uint8* src, uint8* dst, int width) = CopyRow_C;
 #if defined(HAS_MIRRORROW_NEON)
-  if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(width, 16)) {
-    MirrorRow = MirrorRow_NEON;
+  if (TestCpuFlag(kCpuHasNEON)) {
+    MirrorRow = MirrorRow_Any_NEON;
+    if (IS_ALIGNED(width, 16)) {
+      MirrorRow = MirrorRow_NEON;
+    }
   }
 #endif
 #if defined(HAS_MIRRORROW_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(width, 16)) {
-    MirrorRow = MirrorRow_SSE2;
+  if (TestCpuFlag(kCpuHasSSE2)) {
+    MirrorRow = MirrorRow_Any_SSE2;
+    if (IS_ALIGNED(width, 16)) {
+      MirrorRow = MirrorRow_SSE2;
+    }
   }
 #endif
 #if defined(HAS_MIRRORROW_SSSE3)
-  if (TestCpuFlag(kCpuHasSSSE3) && IS_ALIGNED(width, 16)) {
-    MirrorRow = MirrorRow_SSSE3;
+  if (TestCpuFlag(kCpuHasSSSE3)) {
+    MirrorRow = MirrorRow_Any_SSSE3;
+    if (IS_ALIGNED(width, 16)) {
+      MirrorRow = MirrorRow_SSSE3;
+    }
   }
 #endif
 #if defined(HAS_MIRRORROW_AVX2)
-  if (TestCpuFlag(kCpuHasAVX2) && IS_ALIGNED(width, 32)) {
-    MirrorRow = MirrorRow_AVX2;
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    MirrorRow = MirrorRow_Any_AVX2;
+    if (IS_ALIGNED(width, 32)) {
+      MirrorRow = MirrorRow_AVX2;
+    }
   }
 #endif
 // TODO(fbarchard): Mirror on mips handle unaligned memory.
@@ -906,29 +917,24 @@ void RotatePlane180(const uint8* src, int src_stride,
     MirrorRow = MirrorRow_MIPS_DSPR2;
   }
 #endif
-#if defined(HAS_COPYROW_NEON)
-  if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(width, 32)) {
-    CopyRow = CopyRow_NEON;
-  }
-#endif
-#if defined(HAS_COPYROW_X86)
-  if (TestCpuFlag(kCpuHasX86) && IS_ALIGNED(width, 4)) {
-    CopyRow = CopyRow_X86;
-  }
-#endif
 #if defined(HAS_COPYROW_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(width, 32)) {
-    CopyRow = CopyRow_SSE2;
+  if (TestCpuFlag(kCpuHasSSE2)) {
+    CopyRow = IS_ALIGNED(width, 32) ? CopyRow_SSE2 : CopyRow_Any_SSE2;
   }
 #endif
 #if defined(HAS_COPYROW_AVX)
-  if (TestCpuFlag(kCpuHasAVX) && IS_ALIGNED(width, 64)) {
-    CopyRow = CopyRow_AVX;
+  if (TestCpuFlag(kCpuHasAVX)) {
+    CopyRow = IS_ALIGNED(width, 64) ? CopyRow_AVX : CopyRow_Any_AVX;
   }
 #endif
 #if defined(HAS_COPYROW_ERMS)
   if (TestCpuFlag(kCpuHasERMS)) {
     CopyRow = CopyRow_ERMS;
+  }
+#endif
+#if defined(HAS_COPYROW_NEON)
+  if (TestCpuFlag(kCpuHasNEON)) {
+    CopyRow = IS_ALIGNED(width, 32) ? CopyRow_NEON : CopyRow_Any_NEON;
   }
 #endif
 #if defined(HAS_COPYROW_MIPS)

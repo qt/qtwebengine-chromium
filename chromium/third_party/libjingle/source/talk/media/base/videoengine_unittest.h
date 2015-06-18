@@ -1,27 +1,29 @@
-// libjingle
-// Copyright 2004 Google Inc. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. The name of the author may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
-// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * libjingle
+ * Copyright 2014 Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #ifndef TALK_MEDIA_BASE_VIDEOENGINE_UNITTEST_H_  // NOLINT
 #define TALK_MEDIA_BASE_VIDEOENGINE_UNITTEST_H_
@@ -98,7 +100,7 @@ inline int TimeBetweenSend(const cricket::VideoCodec& codec) {
 template<class T>
 class VideoEngineOverride : public T {
  public:
-  VideoEngineOverride() {
+  VideoEngineOverride() : T(nullptr) {
   }
   virtual ~VideoEngineOverride() {
   }
@@ -668,7 +670,7 @@ class VideoMediaChannelTest : public testing::Test,
   static bool ParseRtpPacket(const rtc::Buffer* p, bool* x, int* pt,
                              int* seqnum, uint32* tstamp, uint32* ssrc,
                              std::string* payload) {
-    rtc::ByteBuffer buf(p->data(), p->length());
+    rtc::ByteBuffer buf(*p);
     uint8 u08 = 0;
     uint16 u16 = 0;
     uint32 u32 = 0;
@@ -728,10 +730,10 @@ class VideoMediaChannelTest : public testing::Test,
     int count = 0;
     for (int i = start_index; i < stop_index; ++i) {
       rtc::scoped_ptr<const rtc::Buffer> p(GetRtcpPacket(i));
-      rtc::ByteBuffer buf(p->data(), p->length());
+      rtc::ByteBuffer buf(*p);
       size_t total_len = 0;
       // The packet may be a compound RTCP packet.
-      while (total_len < p->length()) {
+      while (total_len < p->size()) {
         // Read FMT, type and length.
         uint8 fmt = 0;
         uint8 type = 0;
@@ -842,17 +844,6 @@ class VideoMediaChannelTest : public testing::Test,
         EXPECT_TRUE(WaitAndSendFrame(1000 / fps));
         EXPECT_FRAME_WAIT(frame + i * fps, codec.width, codec.height, kTimeout);
       }
-      cricket::VideoMediaInfo info;
-      EXPECT_TRUE(channel_->GetStats(cricket::StatsOptions(), &info));
-      // For webrtc, |framerate_sent| and |framerate_rcvd| depend on periodic
-      // callbacks (1 sec).
-      // Received |fraction_lost| and |packets_lost| are from sent RTCP packet.
-      // One sent packet needed (sent about once per second).
-      // |framerate_input|, |framerate_decoded| and |framerate_output| are using
-      // RateTracker. RateTracker needs to be called twice (with >1 second in
-      // b/w calls) before a framerate is calculated.
-      // Therefore insert frames (and call GetStats each sec) for a few seconds
-      // before testing stats.
     }
     rtc::scoped_ptr<const rtc::Buffer> p(GetRtpPacket(0));
     EXPECT_EQ(codec.id, GetPayloadType(p.get()));
@@ -865,7 +856,7 @@ class VideoMediaChannelTest : public testing::Test,
     SendReceiveManyAndGetStats(DefaultCodec(), kDurationSec, kFps);
 
     cricket::VideoMediaInfo info;
-    EXPECT_TRUE(channel_->GetStats(cricket::StatsOptions(), &info));
+    EXPECT_TRUE(channel_->GetStats(&info));
 
     ASSERT_EQ(1U, info.senders.size());
     // TODO(whyuan): bytes_sent and bytes_rcvd are different. Are both payload?
@@ -927,7 +918,7 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_FRAME_ON_RENDERER_WAIT(
         renderer2, 1, DefaultCodec().width, DefaultCodec().height, kTimeout);
     cricket::VideoMediaInfo info;
-    EXPECT_TRUE(channel_->GetStats(cricket::StatsOptions(), &info));
+    EXPECT_TRUE(channel_->GetStats(&info));
 
     ASSERT_EQ(1U, info.senders.size());
     // TODO(whyuan): bytes_sent and bytes_rcvd are different. Are both payload?
@@ -966,7 +957,7 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_FRAME_WAIT(1, DefaultCodec().width, DefaultCodec().height, kTimeout);
 
     // Add an additional capturer, and hook up a renderer to receive it.
-    cricket::FakeVideoRenderer renderer1;
+    cricket::FakeVideoRenderer renderer2;
     rtc::scoped_ptr<cricket::FakeVideoCapturer> capturer(
         CreateFakeVideoCapturer());
     capturer->SetScreencast(true);
@@ -981,18 +972,30 @@ class VideoMediaChannelTest : public testing::Test,
     EXPECT_TRUE(channel_->SetCapturer(5678, capturer.get()));
     EXPECT_TRUE(channel_->AddRecvStream(
         cricket::StreamParams::CreateLegacy(5678)));
-    EXPECT_TRUE(channel_->SetRenderer(5678, &renderer1));
+    EXPECT_TRUE(channel_->SetRenderer(5678, &renderer2));
     EXPECT_TRUE(capturer->CaptureCustomFrame(
         kTestWidth, kTestHeight, cricket::FOURCC_I420));
     EXPECT_FRAME_ON_RENDERER_WAIT(
-        renderer1, 1, kTestWidth, kTestHeight, kTimeout);
+        renderer2, 1, kTestWidth, kTestHeight, kTimeout);
 
-    // Get stats, and make sure they are correct for two senders.
+    // Get stats, and make sure they are correct for two senders. We wait until
+    // the number of expected packets have been sent to avoid races where we
+    // check stats before it has been updated.
     cricket::VideoMediaInfo info;
-    EXPECT_TRUE(channel_->GetStats(cricket::StatsOptions(), &info));
-    ASSERT_EQ(2U, info.senders.size());
+    for (uint32 i = 0; i < kTimeout; ++i) {
+      rtc::Thread::Current()->ProcessMessages(1);
+      EXPECT_TRUE(channel_->GetStats(&info));
+      ASSERT_EQ(2U, info.senders.size());
+      if (info.senders[0].packets_sent + info.senders[1].packets_sent ==
+          NumRtpPackets()) {
+        // Stats have been updated for both sent frames, expectations can be
+        // checked now.
+        break;
+      }
+    }
     EXPECT_EQ(NumRtpPackets(),
-        info.senders[0].packets_sent + info.senders[1].packets_sent);
+              info.senders[0].packets_sent + info.senders[1].packets_sent)
+        << "Timed out while waiting for packet counts for all sent packets.";
     EXPECT_EQ(1U, info.senders[0].ssrcs().size());
     EXPECT_EQ(1234U, info.senders[0].ssrcs()[0]);
     EXPECT_EQ(DefaultCodec().width, info.senders[0].send_frame_width);
@@ -1348,14 +1351,15 @@ class VideoMediaChannelTest : public testing::Test,
       EXPECT_FALSE(renderer_.black_frame());
       EXPECT_TRUE(channel_->SetCapturer(kSsrc, NULL));
       // Make sure a black frame is generated within the specified timeout.
-      // The black frame should be the resolution of the send codec.
+      // The black frame should be the resolution of the previous frame to
+      // prevent expensive encoder reconfigurations.
       EXPECT_TRUE_WAIT(renderer_.num_rendered_frames() >= captured_frames &&
-                       codec.width == renderer_.width() &&
-                       codec.height == renderer_.height() &&
+                       format.width == renderer_.width() &&
+                       format.height == renderer_.height() &&
                        renderer_.black_frame(), kTimeout);
       EXPECT_GE(renderer_.num_rendered_frames(), captured_frames);
-      EXPECT_EQ(codec.width, renderer_.width());
-      EXPECT_EQ(codec.height, renderer_.height());
+      EXPECT_EQ(format.width, renderer_.width());
+      EXPECT_EQ(format.height, renderer_.height());
       EXPECT_TRUE(renderer_.black_frame());
 
       // The black frame has the same timestamp as the next frame since it's

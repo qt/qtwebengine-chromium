@@ -40,12 +40,34 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
-#include "ui/gfx/vector2d.h"
 
 DECLARE_WINDOW_PROPERTY_TYPE(const char*)
-DECLARE_WINDOW_PROPERTY_TYPE(int)
+
+namespace {
+
+class TestProperty {
+ public:
+  TestProperty() {}
+  ~TestProperty() {
+    last_deleted_ = this;
+  }
+  static TestProperty* last_deleted() { return last_deleted_; }
+
+ private:
+  static TestProperty* last_deleted_;
+  DISALLOW_COPY_AND_ASSIGN(TestProperty);
+};
+
+TestProperty* TestProperty::last_deleted_ = nullptr;
+
+DEFINE_OWNED_WINDOW_PROPERTY_KEY(TestProperty, kOwnedKey, NULL);
+
+}  // namespace
+
+DECLARE_WINDOW_PROPERTY_TYPE(TestProperty*);
 
 namespace aura {
 namespace test {
@@ -246,6 +268,12 @@ class DestroyWindowDelegate : public TestWindowDelegate {
   DISALLOW_COPY_AND_ASSIGN(DestroyWindowDelegate);
 };
 
+void OffsetBounds(Window* window, int horizontal, int vertical) {
+  gfx::Rect bounds = window->bounds();
+  bounds.Offset(horizontal, vertical);
+  window->SetBounds(bounds);
+}
+
 }  // namespace
 
 TEST_F(WindowTest, GetChildById) {
@@ -263,11 +291,11 @@ TEST_F(WindowTest, GetChildById) {
 // and not containing NULL or parents.
 TEST_F(WindowTest, Contains) {
   Window parent(NULL);
-  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent.Init(ui::LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child1.Init(ui::LAYER_NOT_DRAWN);
   Window child2(NULL);
-  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child2.Init(ui::LAYER_NOT_DRAWN);
 
   parent.AddChild(&child1);
   child1.AddChild(&child2);
@@ -451,6 +479,14 @@ TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
       gfx::Screen::GetScreenFor(root)->GetCursorScreenPoint().ToString());
 }
 
+// Tests that we do not crash when a Window is destroyed by going out of
+// scope (as opposed to being explicitly deleted by its WindowDelegate).
+TEST_F(WindowTest, NoCrashOnWindowDelete) {
+  CaptureWindowDelegateImpl delegate;
+  scoped_ptr<Window> window(CreateTestWindowWithDelegate(
+      &delegate, 0, gfx::Rect(0, 0, 20, 20), root_window()));
+}
+
 TEST_F(WindowTest, GetEventHandlerForPoint) {
   scoped_ptr<Window> w1(
       CreateTestWindow(SK_ColorWHITE, 1, gfx::Rect(10, 10, 500, 500),
@@ -585,7 +621,7 @@ TEST_F(WindowTest, WindowAddedToRootWindowShouldNotifyChildAndNotParent) {
   AddedToRootWindowObserver child_observer;
   scoped_ptr<Window> parent_window(CreateTestWindowWithId(1, root_window()));
   scoped_ptr<Window> child_window(new Window(NULL));
-  child_window->Init(aura::WINDOW_LAYER_TEXTURED);
+  child_window->Init(ui::LAYER_TEXTURED);
   child_window->Show();
 
   parent_window->AddObserver(&parent_observer);
@@ -634,11 +670,11 @@ TEST_F(WindowTest, OrphanedBeforeOnDestroyed) {
 // Make sure StackChildAtTop moves both the window and layer to the front.
 TEST_F(WindowTest, StackChildAtTop) {
   Window parent(NULL);
-  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent.Init(ui::LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child1.Init(ui::LAYER_NOT_DRAWN);
   Window child2(NULL);
-  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child2.Init(ui::LAYER_NOT_DRAWN);
 
   parent.AddChild(&child1);
   parent.AddChild(&child2);
@@ -661,15 +697,15 @@ TEST_F(WindowTest, StackChildAtTop) {
 // Make sure StackChildBelow works.
 TEST_F(WindowTest, StackChildBelow) {
   Window parent(NULL);
-  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent.Init(ui::LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child1.Init(ui::LAYER_NOT_DRAWN);
   child1.set_id(1);
   Window child2(NULL);
-  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child2.Init(ui::LAYER_NOT_DRAWN);
   child2.set_id(2);
   Window child3(NULL);
-  child3.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child3.Init(ui::LAYER_NOT_DRAWN);
   child3.set_id(3);
 
   parent.AddChild(&child1);
@@ -693,13 +729,13 @@ TEST_F(WindowTest, StackChildBelow) {
 // Various assertions for StackChildAbove.
 TEST_F(WindowTest, StackChildAbove) {
   Window parent(NULL);
-  parent.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent.Init(ui::LAYER_NOT_DRAWN);
   Window child1(NULL);
-  child1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child1.Init(ui::LAYER_NOT_DRAWN);
   Window child2(NULL);
-  child2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child2.Init(ui::LAYER_NOT_DRAWN);
   Window child3(NULL);
-  child3.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child3.Init(ui::LAYER_NOT_DRAWN);
 
   parent.AddChild(&child1);
   parent.AddChild(&child2);
@@ -824,13 +860,13 @@ TEST_F(WindowTest, TouchCaptureCancelsOtherTouches) {
   delegate1.ResetCounts();
   delegate2.ResetCounts();
 
-  // Events now go to w2.
+  // Events are now untargetted.
   ui::TouchEvent move(ui::ET_TOUCH_MOVED, gfx::Point(10, 20), 0, getTime());
   DispatchEventUsingWindowDispatcher(&move);
   EXPECT_EQ(0, delegate1.gesture_event_count());
   EXPECT_EQ(0, delegate1.touch_event_count());
   EXPECT_EQ(0, delegate2.gesture_event_count());
-  EXPECT_EQ(1, delegate2.touch_event_count());
+  EXPECT_EQ(0, delegate2.touch_event_count());
 
   ui::TouchEvent release(
       ui::ET_TOUCH_RELEASED, gfx::Point(10, 20), 0, getTime());
@@ -950,31 +986,26 @@ TEST_F(WindowTest, TransferCaptureTouchEvents) {
   CaptureWindowDelegateImpl d3;
   scoped_ptr<Window> w3(CreateTestWindowWithDelegate(
       &d3, 0, gfx::Rect(0, 0, 100, 101), root_window()));
-  // Set capture on w3. No new events should be received.
-  // Note this difference in behavior between the first and second capture
-  // is confusing and error prone.  http://crbug.com/236930
+  // Set capture on |w3|. All touches have already been cancelled.
   w3->SetCapture();
   EXPECT_EQ(0, d1.touch_event_count());
   EXPECT_EQ(0, d1.gesture_event_count());
-  EXPECT_EQ(0, d2.touch_event_count());
-  EXPECT_EQ(0, d2.gesture_event_count());
+  EXPECT_EQ(1, d2.touch_event_count());
+  EXPECT_EQ(2, d2.gesture_event_count());
   EXPECT_EQ(0, d3.touch_event_count());
   EXPECT_EQ(0, d3.gesture_event_count());
+  d2.ResetCounts();
 
-  // Move touch id originally associated with |w2|. Since capture was transfered
-  // from 2 to 3 only |w3| should get the event.
+  // Move touch id originally associated with |w2|. The touch has been
+  // cancelled, so no events should be dispatched.
   ui::TouchEvent m3(ui::ET_TOUCH_MOVED, gfx::Point(110, 105), 1, getTime());
   DispatchEventUsingWindowDispatcher(&m3);
   EXPECT_EQ(0, d1.touch_event_count());
   EXPECT_EQ(0, d1.gesture_event_count());
   EXPECT_EQ(0, d2.touch_event_count());
   EXPECT_EQ(0, d2.gesture_event_count());
-  // |w3| gets a TOUCH_MOVE, TAP_CANCEL and two scroll related events.
-  EXPECT_EQ(1, d3.touch_event_count());
-  EXPECT_EQ(3, d3.gesture_event_count());
-  d1.ResetCounts();
-  d2.ResetCounts();
-  d3.ResetCounts();
+  EXPECT_EQ(0, d3.touch_event_count());
+  EXPECT_EQ(0, d3.gesture_event_count());
 
   // When we release capture, no touches are canceled.
   w3->ReleaseCapture();
@@ -985,18 +1016,15 @@ TEST_F(WindowTest, TransferCaptureTouchEvents) {
   EXPECT_EQ(0, d3.touch_event_count());
   EXPECT_EQ(0, d3.gesture_event_count());
 
-  // And when we move the touch again, |w3| still gets the events.
+  // The touch has been cancelled, so no events are dispatched.
   ui::TouchEvent m4(ui::ET_TOUCH_MOVED, gfx::Point(120, 105), 1, getTime());
   DispatchEventUsingWindowDispatcher(&m4);
   EXPECT_EQ(0, d1.touch_event_count());
   EXPECT_EQ(0, d1.gesture_event_count());
   EXPECT_EQ(0, d2.touch_event_count());
   EXPECT_EQ(0, d2.gesture_event_count());
-  EXPECT_EQ(1, d3.touch_event_count());
-  EXPECT_EQ(1, d3.gesture_event_count());
-  d1.ResetCounts();
-  d2.ResetCounts();
-  d3.ResetCounts();
+  EXPECT_EQ(0, d3.touch_event_count());
+  EXPECT_EQ(0, d3.gesture_event_count());
 }
 
 // Changes capture while capture is already ongoing.
@@ -1075,6 +1103,76 @@ TEST_F(WindowTest, GetBoundsInRootWindow) {
   EXPECT_EQ("0,0 100x100", child->GetBoundsInRootWindow().ToString());
 }
 
+TEST_F(WindowTest, GetBoundsInRootWindowWithLayers) {
+  scoped_ptr<Window> viewport(
+      CreateTestWindowWithBounds(gfx::Rect(0, 0, 300, 300), root_window()));
+
+  scoped_ptr<Window> widget(
+      CreateTestWindowWithBounds(gfx::Rect(0, 0, 200, 200), viewport.get()));
+
+  scoped_ptr<Window> child(
+      CreateTestWindowWithBounds(gfx::Rect(0, 0, 100, 100), widget.get()));
+
+  // Sanity check.
+  EXPECT_EQ("0,0 100x100", child->GetBoundsInRootWindow().ToString());
+
+  // The |child| window's screen bounds should move along with the |viewport|.
+  OffsetBounds(viewport.get(), -100, -100);
+  EXPECT_EQ("-100,-100 100x100", child->GetBoundsInRootWindow().ToString());
+
+  OffsetBounds(widget.get(), 50, 50);
+  EXPECT_EQ("-50,-50 100x100", child->GetBoundsInRootWindow().ToString());
+
+  // The |child| window is moved to the 0,0 in screen coordinates.
+  // |GetBoundsInRootWindow()| should return 0,0.
+  OffsetBounds(child.get(), 50, 50);
+  EXPECT_EQ("0,0 100x100", child->GetBoundsInRootWindow().ToString());
+}
+
+TEST_F(WindowTest, GetBoundsInRootWindowWithLayersAndTranslations) {
+  scoped_ptr<Window> viewport(
+      CreateTestWindowWithBounds(gfx::Rect(0, 0, 300, 300), root_window()));
+
+  scoped_ptr<Window> widget(
+      CreateTestWindowWithBounds(gfx::Rect(0, 0, 200, 200), viewport.get()));
+
+  scoped_ptr<Window> child(
+      CreateTestWindowWithBounds(gfx::Rect(0, 0, 100, 100), widget.get()));
+
+  // Sanity check.
+  EXPECT_EQ("0,0 100x100", child->GetBoundsInRootWindow().ToString());
+
+  // The |child| window's screen bounds should move along with the |viewport|.
+  viewport->SetBounds(gfx::Rect(-100, -100, 300, 300));
+  EXPECT_EQ("-100,-100 100x100", child->GetBoundsInRootWindow().ToString());
+
+  widget->SetBounds(gfx::Rect(50, 50, 200, 200));
+  EXPECT_EQ("-50,-50 100x100", child->GetBoundsInRootWindow().ToString());
+
+  // The |child| window is moved to the 0,0 in screen coordinates.
+  // |GetBoundsInRootWindow()| should return 0,0.
+  child->SetBounds(gfx::Rect(50, 50, 100, 100));
+  EXPECT_EQ("0,0 100x100", child->GetBoundsInRootWindow().ToString());
+
+  gfx::Transform transform1;
+  transform1.Translate(-10, 20);
+  viewport->SetTransform(transform1);
+  EXPECT_EQ("-10,20 100x100", child->GetBoundsInRootWindow().ToString());
+
+  gfx::Transform transform2;
+  transform2.Translate(40, 100);
+  widget->SetTransform(transform2);
+  EXPECT_EQ("30,120 100x100", child->GetBoundsInRootWindow().ToString());
+
+  // Testing potentially buggy place
+  gfx::Transform transform3;
+  transform3.Translate(-30, -120);
+  child->SetTransform(transform3);
+  EXPECT_EQ("0,0 100x100", child->GetBoundsInRootWindow().ToString());
+}
+
+// TODO(tdanderson): Remove this class and use
+//                   test::EventCountDelegate in its place.
 class MouseEnterExitWindowDelegate : public TestWindowDelegate {
  public:
   MouseEnterExitWindowDelegate() : entered_(false), exited_(false) {}
@@ -1109,7 +1207,6 @@ class MouseEnterExitWindowDelegate : public TestWindowDelegate {
 
   DISALLOW_COPY_AND_ASSIGN(MouseEnterExitWindowDelegate);
 };
-
 
 // Verifies that the WindowDelegate receives MouseExit and MouseEnter events for
 // mouse transitions from window to window.
@@ -1150,8 +1247,8 @@ TEST_F(WindowTest, WindowTreeHostExit) {
   EXPECT_FALSE(d1.exited());
   d1.ResetExpectations();
 
-  ui::MouseEvent exit_event(
-      ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(), 0, 0);
+  ui::MouseEvent exit_event(ui::ET_MOUSE_EXITED, gfx::Point(), gfx::Point(),
+                            ui::EventTimeForNow(), 0, 0);
   DispatchEventUsingWindowDispatcher(&exit_event);
   EXPECT_FALSE(d1.entered());
   EXPECT_TRUE(d1.exited());
@@ -1216,14 +1313,16 @@ TEST_F(WindowTest, MouseEnterExitWhenDeleteWithCapture) {
   EXPECT_FALSE(delegate.exited());
 }
 
-// Verifies that enter / exits are sent if windows appear and are deleted
-// under the current mouse position..
-TEST_F(WindowTest, MouseEnterExitWithDelete) {
+// Verifies that the correct enter / exits are sent if windows appear and are
+// deleted under the current mouse position.
+TEST_F(WindowTest, MouseEnterExitWithWindowAppearAndDelete) {
   MouseEnterExitWindowDelegate d1;
   scoped_ptr<Window> w1(
       CreateTestWindowWithDelegate(&d1, 1, gfx::Rect(10, 10, 50, 50),
                                    root_window()));
 
+  // The cursor is moved into the bounds of |w1|. We expect the delegate
+  // of |w1| to see an ET_MOUSE_ENTERED event.
   ui::test::EventGenerator generator(root_window());
   generator.MoveMouseToCenterOf(w1.get());
   EXPECT_TRUE(d1.entered());
@@ -1237,6 +1336,9 @@ TEST_F(WindowTest, MouseEnterExitWithDelete) {
                                      root_window()));
     // Enters / exits can be sent asynchronously.
     RunAllPendingInMessageLoop();
+
+    // |w2| appears over top of |w1|. We expect the delegate of |w1| to see
+    // an ET_MOUSE_EXITED and the delegate of |w2| to see an ET_MOUSE_ENTERED.
     EXPECT_FALSE(d1.entered());
     EXPECT_TRUE(d1.exited());
     EXPECT_TRUE(d2.entered());
@@ -1244,10 +1346,16 @@ TEST_F(WindowTest, MouseEnterExitWithDelete) {
     d1.ResetExpectations();
     d2.ResetExpectations();
   }
+
   // Enters / exits can be sent asynchronously.
   RunAllPendingInMessageLoop();
-  EXPECT_TRUE(d2.exited());
+
+  // |w2| has been destroyed, so its delegate should see no further events.
+  // The delegate of |w1| should see an ET_MOUSE_ENTERED event.
   EXPECT_TRUE(d1.entered());
+  EXPECT_FALSE(d1.exited());
+  EXPECT_FALSE(d2.entered());
+  EXPECT_FALSE(d2.exited());
 }
 
 // Verifies that enter / exits are sent if windows appear and are hidden
@@ -1325,8 +1433,13 @@ TEST_F(WindowTest, MouseEnterExitWithParentDelete) {
   d2.ResetExpectations();
   w1.reset();
   RunAllPendingInMessageLoop();
+
+  // Both windows are in the process of destroying, so their delegates should
+  // not see any mouse events.
+  EXPECT_FALSE(d1.entered());
+  EXPECT_FALSE(d1.exited());
   EXPECT_FALSE(d2.entered());
-  EXPECT_TRUE(d2.exited());
+  EXPECT_FALSE(d2.exited());
 }
 
 // Creates a window with a delegate (w111) that can handle events at a lower
@@ -1557,27 +1670,6 @@ TEST_F(WindowTest, Property) {
   EXPECT_EQ(std::string("squeamish"), w->GetProperty(kStringKey));
 }
 
-namespace {
-
-class TestProperty {
- public:
-  TestProperty() {}
-  virtual ~TestProperty() {
-    last_deleted_ = this;
-  }
-  static TestProperty* last_deleted() { return last_deleted_; }
-
- private:
-  static TestProperty* last_deleted_;
-  DISALLOW_COPY_AND_ASSIGN(TestProperty);
-};
-
-TestProperty* TestProperty::last_deleted_ = NULL;
-
-DEFINE_OWNED_WINDOW_PROPERTY_KEY(TestProperty, kOwnedKey, NULL);
-
-}  // namespace
-
 TEST_F(WindowTest, OwnedProperty) {
   scoped_ptr<Window> w(CreateTestWindowWithId(0, root_window()));
   EXPECT_EQ(NULL, w->GetProperty(kOwnedKey));
@@ -1611,7 +1703,7 @@ TEST_F(WindowTest, SetBoundsInternalShouldCheckTargetBounds) {
   scoped_ptr<Window> w1(
       CreateTestWindowWithBounds(gfx::Rect(0, 0, 100, 100), root_window()));
 
-  EXPECT_FALSE(!w1->layer());
+  EXPECT_TRUE(w1->layer());
   w1->layer()->GetAnimator()->set_disable_timer_for_test(true);
   ui::LayerAnimator* animator = w1->layer()->GetAnimator();
 
@@ -1779,7 +1871,7 @@ TEST_F(WindowObserverTest, WindowObserver) {
   w1->RemoveObserver(this);
 }
 
-// Test if OnWindowVisibilityChagned is invoked with expected
+// Test if OnWindowVisibilityChanged is invoked with expected
 // parameters.
 TEST_F(WindowObserverTest, WindowVisibility) {
   scoped_ptr<Window> w1(CreateTestWindowWithId(1, root_window()));
@@ -1789,8 +1881,8 @@ TEST_F(WindowObserverTest, WindowVisibility) {
   // Hide should make the window invisible and the passed visible
   // parameter is false.
   w2->Hide();
-  EXPECT_FALSE(!GetVisibilityInfo());
-  EXPECT_FALSE(!GetVisibilityInfo());
+  EXPECT_TRUE(GetVisibilityInfo());
+  EXPECT_TRUE(GetVisibilityInfo());
   if (!GetVisibilityInfo())
     return;
   EXPECT_FALSE(GetVisibilityInfo()->window_visible);
@@ -1803,7 +1895,7 @@ TEST_F(WindowObserverTest, WindowVisibility) {
   ResetVisibilityInfo();
   EXPECT_TRUE(!GetVisibilityInfo());
   w2->Show();
-  EXPECT_FALSE(!GetVisibilityInfo());
+  EXPECT_TRUE(GetVisibilityInfo());
   if (!GetVisibilityInfo())
     return;
   EXPECT_FALSE(GetVisibilityInfo()->window_visible);
@@ -1816,7 +1908,7 @@ TEST_F(WindowObserverTest, WindowVisibility) {
   w2->Hide();
   ResetVisibilityInfo();
   w2->Show();
-  EXPECT_FALSE(!GetVisibilityInfo());
+  EXPECT_TRUE(GetVisibilityInfo());
   if (!GetVisibilityInfo())
     return;
   EXPECT_TRUE(GetVisibilityInfo()->window_visible);
@@ -1945,7 +2037,7 @@ TEST_F(WindowTest, RecreateLayer) {
   // Set properties to non default values.
   Window w(new ColorTestWindowDelegate(SK_ColorWHITE));
   w.set_id(1);
-  w.Init(aura::WINDOW_LAYER_SOLID_COLOR);
+  w.Init(ui::LAYER_SOLID_COLOR);
   w.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   ui::Layer* layer = w.layer();
@@ -1994,26 +2086,6 @@ TEST_F(WindowTest, AcquireThenRecreateLayer) {
   w.reset();
 }
 
-TEST_F(WindowTest, StackWindowAtBottomBelowWindowWhoseLayerHasNoDelegate) {
-  scoped_ptr<Window> window1(CreateTestWindowWithId(1, root_window()));
-  window1->layer()->set_name("1");
-  scoped_ptr<Window> window2(CreateTestWindowWithId(2, root_window()));
-  window2->layer()->set_name("2");
-  scoped_ptr<Window> window3(CreateTestWindowWithId(3, root_window()));
-  window3->layer()->set_name("3");
-
-  EXPECT_EQ("1 2 3", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("1 2 3",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-  window1->layer()->set_delegate(NULL);
-  root_window()->StackChildAtBottom(window3.get());
-
-  // Window 3 should have moved to the bottom.
-  EXPECT_EQ("3 1 2", ChildWindowIDsAsString(root_window()));
-  EXPECT_EQ("3 1 2",
-            ui::test::ChildLayerNamesAsString(*root_window()->layer()));
-}
-
 class TestVisibilityClient : public client::VisibilityClient {
  public:
   explicit TestVisibilityClient(Window* root_window)
@@ -2055,8 +2127,9 @@ TEST_F(WindowTest, VisibilityClientIsVisible) {
   EXPECT_TRUE(window->layer()->visible());
 }
 
-// Tests mouse events on window change.
-TEST_F(WindowTest, MouseEventsOnWindowChange) {
+// Tests the mouse events seen by WindowDelegates in a Window hierarchy when
+// changing the properties of a leaf Window.
+TEST_F(WindowTest, MouseEventsOnLeafWindowChange) {
   gfx::Size size = host()->GetBounds().size();
 
   ui::test::EventGenerator generator(root_window());
@@ -2066,10 +2139,10 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
   scoped_ptr<Window> w1(CreateTestWindowWithDelegate(&d1, 1,
       gfx::Rect(0, 0, 100, 100), root_window()));
   RunAllPendingInMessageLoop();
-  // The format of result is "Enter/Mouse/Leave".
+  // The format of result is "Enter/Move/Leave".
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
 
-  // Adding new window.
+  // Add new window |w11| on top of |w1| which contains the cursor.
   EventCountDelegate d11;
   scoped_ptr<Window> w11(CreateTestWindowWithDelegate(
       &d11, 1, gfx::Rect(0, 0, 100, 100), w1.get()));
@@ -2077,42 +2150,43 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
   EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1 0", d11.GetMouseMotionCountsAndReset());
 
-  // Move bounds.
+  // Resize |w11| so that it does not contain the cursor.
   w11->SetBounds(gfx::Rect(0, 0, 10, 10));
   RunAllPendingInMessageLoop();
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
+  // Resize |w11| so that it does contain the cursor.
   w11->SetBounds(gfx::Rect(0, 0, 60, 60));
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1 0", d11.GetMouseMotionCountsAndReset());
 
-  // Detach, then re-attach.
+  // Detach |w11| from |w1|.
   w1->RemoveChild(w11.get());
   RunAllPendingInMessageLoop();
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
-  // Window is detached, so no event is set.
   EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
+  // Re-attach |w11| to |w1|.
   w1->AddChild(w11.get());
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
-  // Window is detached, so no event is set.
   EXPECT_EQ("1 1 0", d11.GetMouseMotionCountsAndReset());
 
-  // Visibility Change
+  // Hide |w11|.
   w11->Hide();
   RunAllPendingInMessageLoop();
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
+  // Show |w11|.
   w11->Show();
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1 0", d11.GetMouseMotionCountsAndReset());
 
-  // Transform: move d11 by 100 100.
+  // Translate |w11| so that it does not contain the mouse cursor.
   gfx::Transform transform;
   transform.Translate(100, 100);
   w11->SetTransform(transform);
@@ -2120,33 +2194,80 @@ TEST_F(WindowTest, MouseEventsOnWindowChange) {
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
 
+  // Clear the transform on |w11| so that it does contain the cursor.
   w11->SetTransform(gfx::Transform());
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("1 1 0", d11.GetMouseMotionCountsAndReset());
 
-  // Closing a window.
+  // Close |w11|. Note that since |w11| is being destroyed, its delegate should
+  // not see any further events.
   w11.reset();
   RunAllPendingInMessageLoop();
   EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
 
-  // Make sure we don't synthesize events if the mouse
-  // is outside of the root window.
+  // Move the mouse outside the bounds of the root window. Since the mouse
+  // cursor is no longer within their bounds, the delegates of the child
+  // windows should not see any mouse events.
   generator.MoveMouseTo(-10, -10);
   EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
 
-  // Adding new windows.
+  // Add |w11|.
   w11.reset(CreateTestWindowWithDelegate(
       &d11, 1, gfx::Rect(0, 0, 100, 100), w1.get()));
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 0", d1.GetMouseMotionCountsAndReset());
-  EXPECT_EQ("0 0 1", d11.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
 
-  // Closing windows
+  // Close |w11|.
   w11.reset();
   RunAllPendingInMessageLoop();
   EXPECT_EQ("0 0 0", d1.GetMouseMotionCountsAndReset());
   EXPECT_EQ("0 0 0", d11.GetMouseMotionCountsAndReset());
+}
+
+// Tests the mouse events seen by WindowDelegates in a Window hierarchy when
+// deleting a non-leaf Window.
+TEST_F(WindowTest, MouseEventsOnNonLeafWindowDelete) {
+  gfx::Size size = host()->GetBounds().size();
+
+  ui::test::EventGenerator generator(root_window());
+  generator.MoveMouseTo(50, 50);
+
+  EventCountDelegate d1;
+  scoped_ptr<Window> w1(CreateTestWindowWithDelegate(&d1, 1,
+      gfx::Rect(0, 0, 100, 100), root_window()));
+  RunAllPendingInMessageLoop();
+  // The format of result is "Enter/Move/Leave".
+  EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
+
+  // Add new window |w2| on top of |w1| which contains the cursor.
+  EventCountDelegate d2;
+  scoped_ptr<Window> w2(CreateTestWindowWithDelegate(
+      &d2, 1, gfx::Rect(0, 0, 100, 100), w1.get()));
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ("0 0 1", d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("1 1 0", d2.GetMouseMotionCountsAndReset());
+
+  // Add new window on top of |w2| which contains the cursor.
+  EventCountDelegate d3;
+  CreateTestWindowWithDelegate(
+      &d3, 1, gfx::Rect(0, 0, 100, 100), w2.get());
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ("0 0 0", d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 1", d2.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("1 1 0", d3.GetMouseMotionCountsAndReset());
+
+  // Delete |w2|, which will also delete its owned child window. Since |w2| and
+  // its child are in the process of being destroyed, their delegates should
+  // not see any further events.
+  w2.reset();
+  RunAllPendingInMessageLoop();
+  EXPECT_EQ("1 1 0", d1.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", d2.GetMouseMotionCountsAndReset());
+  EXPECT_EQ("0 0 0", d3.GetMouseMotionCountsAndReset());
 }
 
 class RootWindowAttachmentObserver : public WindowObserver {
@@ -2181,7 +2302,7 @@ TEST_F(WindowTest, RootWindowAttachment) {
 
   // Test a direct add/remove from the RootWindow.
   scoped_ptr<Window> w1(new Window(NULL));
-  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w1->Init(ui::LAYER_NOT_DRAWN);
   w1->AddObserver(&observer);
 
   ParentWindow(w1.get());
@@ -2196,9 +2317,9 @@ TEST_F(WindowTest, RootWindowAttachment) {
 
   // Test an indirect add/remove from the RootWindow.
   w1.reset(new Window(NULL));
-  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w1->Init(ui::LAYER_NOT_DRAWN);
   Window* w11 = new Window(NULL);
-  w11->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w11->Init(ui::LAYER_NOT_DRAWN);
   w11->AddObserver(&observer);
   w1->AddChild(w11);
   EXPECT_EQ(0, observer.added_count());
@@ -2217,13 +2338,13 @@ TEST_F(WindowTest, RootWindowAttachment) {
 
   // Test an indirect add/remove with nested observers.
   w1.reset(new Window(NULL));
-  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w1->Init(ui::LAYER_NOT_DRAWN);
   w11 = new Window(NULL);
-  w11->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w11->Init(ui::LAYER_NOT_DRAWN);
   w11->AddObserver(&observer);
   w1->AddChild(w11);
   Window* w111 = new Window(NULL);
-  w111->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w111->Init(ui::LAYER_NOT_DRAWN);
   w111->AddObserver(&observer);
   w11->AddChild(w111);
 
@@ -2261,9 +2382,9 @@ class BoundsChangedWindowObserver : public WindowObserver {
 
 TEST_F(WindowTest, RootWindowSetWhenReparenting) {
   Window parent1(NULL);
-  parent1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent1.Init(ui::LAYER_NOT_DRAWN);
   Window parent2(NULL);
-  parent2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent2.Init(ui::LAYER_NOT_DRAWN);
   ParentWindow(&parent1);
   ParentWindow(&parent2);
   parent1.SetBounds(gfx::Rect(10, 10, 300, 300));
@@ -2271,7 +2392,7 @@ TEST_F(WindowTest, RootWindowSetWhenReparenting) {
 
   BoundsChangedWindowObserver observer;
   Window child(NULL);
-  child.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child.Init(ui::LAYER_NOT_DRAWN);
   child.SetBounds(gfx::Rect(5, 5, 100, 100));
   parent1.AddChild(&child);
 
@@ -2302,10 +2423,10 @@ TEST_F(WindowTest, OwnedByParentFalse) {
   // window will not be destroyed when its parent is.
 
   scoped_ptr<Window> w1(new Window(NULL));
-  w1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w1->Init(ui::LAYER_NOT_DRAWN);
   scoped_ptr<Window> w2(new Window(NULL));
   w2->set_owned_by_parent(false);
-  w2->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  w2->Init(ui::LAYER_NOT_DRAWN);
   w1->AddChild(w2.get());
 
   w1.reset();
@@ -2343,13 +2464,13 @@ class OwningWindowDelegate : public TestWindowDelegate {
 // bubble.
 TEST_F(WindowTest, DeleteWindowFromOnWindowDestroyed) {
   scoped_ptr<Window> parent(new Window(NULL));
-  parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  parent->Init(ui::LAYER_NOT_DRAWN);
   OwningWindowDelegate delegate;
   Window* c1 = new Window(&delegate);
-  c1->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  c1->Init(ui::LAYER_NOT_DRAWN);
   parent->AddChild(c1);
   Window* c2 = new Window(NULL);
-  c2->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  c2->Init(ui::LAYER_NOT_DRAWN);
   parent->AddChild(c2);
   delegate.SetOwnedWindow(c2);
   parent.reset();
@@ -2522,7 +2643,7 @@ TEST_F(WindowTest, DelegateDestroysSelfOnWindowDestroy) {
 
 class HierarchyObserver : public WindowObserver {
  public:
-  HierarchyObserver(Window* target) : target_(target) {
+  explicit HierarchyObserver(Window* target) : target_(target) {
     target_->AddObserver(this);
   }
   ~HierarchyObserver() override { target_->RemoveObserver(this); }
@@ -2714,669 +2835,6 @@ TEST_F(WindowTest, OnWindowHierarchyChange) {
     w1.reset();
     w2.reset();
   }
-
-}
-
-// Verifies SchedulePaint() on a layerless window results in damaging the right
-// thing.
-TEST_F(WindowTest, LayerlessWindowSchedulePaint) {
-  Window root(NULL);
-  root.Init(aura::WINDOW_LAYER_NOT_DRAWN);
-  root.SetBounds(gfx::Rect(0, 0, 100, 100));
-
-  Window* layerless_window = new Window(NULL);  // Owned by |root|.
-  layerless_window->Init(WINDOW_LAYER_NONE);
-  layerless_window->SetBounds(gfx::Rect(10, 11, 12, 13));
-  root.AddChild(layerless_window);
-
-  root.layer()->SendDamagedRects();
-  layerless_window->SchedulePaintInRect(gfx::Rect(1, 2, 100, 4));
-  // Note the the region is clipped by the parent hence 100 going to 11.
-  EXPECT_EQ("11,13 11x4",
-            gfx::SkIRectToRect(root.layer()->damaged_region().getBounds()).
-            ToString());
-
-  Window* layerless_window2 = new Window(NULL);  // Owned by |layerless_window|.
-  layerless_window2->Init(WINDOW_LAYER_NONE);
-  layerless_window2->SetBounds(gfx::Rect(1, 2, 3, 4));
-  layerless_window->AddChild(layerless_window2);
-
-  root.layer()->SendDamagedRects();
-  layerless_window2->SchedulePaintInRect(gfx::Rect(1, 2, 100, 4));
-  // Note the the region is clipped by the |layerless_window| hence 100 going to
-  // 2.
-  EXPECT_EQ("12,15 2x2",
-            gfx::SkIRectToRect(root.layer()->damaged_region().getBounds()).
-            ToString());
-}
-
-// Verifies bounds of layerless windows are correctly updated when adding
-// removing.
-TEST_F(WindowTest, NestedLayerlessWindowsBoundsOnAddRemove) {
-  // Creates the following structure (all children owned by root):
-  // root
-  //   w1ll      1,2
-  //     w11ll   3,4
-  //       w111  5,6
-  //     w12     7,8
-  //       w121  9,10
-  //
-  // ll: layer less, eg no layer
-  Window root(NULL);
-  root.Init(WINDOW_LAYER_NOT_DRAWN);
-  root.SetBounds(gfx::Rect(0, 0, 100, 100));
-
-  Window* w1ll = new Window(NULL);
-  w1ll->Init(WINDOW_LAYER_NONE);
-  w1ll->SetBounds(gfx::Rect(1, 2, 100, 100));
-
-  Window* w11ll = new Window(NULL);
-  w11ll->Init(WINDOW_LAYER_NONE);
-  w11ll->SetBounds(gfx::Rect(3, 4, 100, 100));
-  w1ll->AddChild(w11ll);
-
-  Window* w111 = new Window(NULL);
-  w111->Init(WINDOW_LAYER_NOT_DRAWN);
-  w111->SetBounds(gfx::Rect(5, 6, 100, 100));
-  w11ll->AddChild(w111);
-
-  Window* w12 = new Window(NULL);
-  w12->Init(WINDOW_LAYER_NOT_DRAWN);
-  w12->SetBounds(gfx::Rect(7, 8, 100, 100));
-  w1ll->AddChild(w12);
-
-  Window* w121 = new Window(NULL);
-  w121->Init(WINDOW_LAYER_NOT_DRAWN);
-  w121->SetBounds(gfx::Rect(9, 10, 100, 100));
-  w12->AddChild(w121);
-
-  root.AddChild(w1ll);
-
-  // All layers should be parented to the root.
-  EXPECT_EQ(root.layer(), w111->layer()->parent());
-  EXPECT_EQ(root.layer(), w12->layer()->parent());
-  EXPECT_EQ(w12->layer(), w121->layer()->parent());
-
-  // Ensure bounds are what we expect.
-  EXPECT_EQ("1,2 100x100", w1ll->bounds().ToString());
-  EXPECT_EQ("3,4 100x100", w11ll->bounds().ToString());
-  EXPECT_EQ("5,6 100x100", w111->bounds().ToString());
-  EXPECT_EQ("7,8 100x100", w12->bounds().ToString());
-  EXPECT_EQ("9,10 100x100", w121->bounds().ToString());
-
-  // Bounds of layers are relative to the nearest ancestor with a layer.
-  EXPECT_EQ("8,10 100x100", w12->layer()->bounds().ToString());
-  EXPECT_EQ("9,12 100x100", w111->layer()->bounds().ToString());
-  EXPECT_EQ("9,10 100x100", w121->layer()->bounds().ToString());
-
-  // Remove and repeat.
-  root.RemoveChild(w1ll);
-
-  EXPECT_TRUE(w111->layer()->parent() == NULL);
-  EXPECT_TRUE(w12->layer()->parent() == NULL);
-
-  // Verify bounds haven't changed again.
-  EXPECT_EQ("1,2 100x100", w1ll->bounds().ToString());
-  EXPECT_EQ("3,4 100x100", w11ll->bounds().ToString());
-  EXPECT_EQ("5,6 100x100", w111->bounds().ToString());
-  EXPECT_EQ("7,8 100x100", w12->bounds().ToString());
-  EXPECT_EQ("9,10 100x100", w121->bounds().ToString());
-
-  // Bounds of layers should now match that of windows.
-  EXPECT_EQ("7,8 100x100", w12->layer()->bounds().ToString());
-  EXPECT_EQ("5,6 100x100", w111->layer()->bounds().ToString());
-  EXPECT_EQ("9,10 100x100", w121->layer()->bounds().ToString());
-
-  delete w1ll;
-}
-
-// Verifies bounds of layerless windows are correctly updated when bounds
-// of ancestor changes.
-TEST_F(WindowTest, NestedLayerlessWindowsBoundsOnSetBounds) {
-  // Creates the following structure (all children owned by root):
-  // root
-  //   w1ll      1,2
-  //     w11ll   3,4
-  //       w111  5,6
-  //     w12     7,8
-  //       w121  9,10
-  //
-  // ll: layer less, eg no layer
-  Window root(NULL);
-  root.Init(WINDOW_LAYER_NOT_DRAWN);
-  root.SetBounds(gfx::Rect(0, 0, 100, 100));
-
-  Window* w1ll = new Window(NULL);
-  w1ll->Init(WINDOW_LAYER_NONE);
-  w1ll->SetBounds(gfx::Rect(1, 2, 100, 100));
-
-  Window* w11ll = new Window(NULL);
-  w11ll->Init(WINDOW_LAYER_NONE);
-  w11ll->SetBounds(gfx::Rect(3, 4, 100, 100));
-  w1ll->AddChild(w11ll);
-
-  Window* w111 = new Window(NULL);
-  w111->Init(WINDOW_LAYER_NOT_DRAWN);
-  w111->SetBounds(gfx::Rect(5, 6, 100, 100));
-  w11ll->AddChild(w111);
-
-  Window* w12 = new Window(NULL);
-  w12->Init(WINDOW_LAYER_NOT_DRAWN);
-  w12->SetBounds(gfx::Rect(7, 8, 100, 100));
-  w1ll->AddChild(w12);
-
-  Window* w121 = new Window(NULL);
-  w121->Init(WINDOW_LAYER_NOT_DRAWN);
-  w121->SetBounds(gfx::Rect(9, 10, 100, 100));
-  w12->AddChild(w121);
-
-  root.AddChild(w1ll);
-
-  w111->SetBounds(gfx::Rect(7, 8, 11, 12));
-  EXPECT_EQ("7,8 11x12", w111->bounds().ToString());
-  EXPECT_EQ("7,8 11x12", w111->GetTargetBounds().ToString());
-  EXPECT_EQ("11,14 11x12", w111->layer()->bounds().ToString());
-
-  // Set back.
-  w111->SetBounds(gfx::Rect(5, 6, 100, 100));
-  EXPECT_EQ("5,6 100x100", w111->bounds().ToString());
-  EXPECT_EQ("5,6 100x100", w111->GetTargetBounds().ToString());
-  EXPECT_EQ("9,12 100x100", w111->layer()->bounds().ToString());
-
-  // Setting the bounds of a layerless window needs to adjust the bounds of
-  // layered children.
-  w11ll->SetBounds(gfx::Rect(5, 6, 100, 100));
-  EXPECT_EQ("5,6 100x100", w11ll->bounds().ToString());
-  EXPECT_EQ("5,6 100x100", w11ll->GetTargetBounds().ToString());
-  EXPECT_EQ("5,6 100x100", w111->bounds().ToString());
-  EXPECT_EQ("5,6 100x100", w111->GetTargetBounds().ToString());
-  EXPECT_EQ("11,14 100x100", w111->layer()->bounds().ToString());
-
-  root.RemoveChild(w1ll);
-
-  w111->SetBounds(gfx::Rect(7, 8, 11, 12));
-  EXPECT_EQ("7,8 11x12", w111->bounds().ToString());
-  EXPECT_EQ("7,8 11x12", w111->GetTargetBounds().ToString());
-  EXPECT_EQ("7,8 11x12", w111->layer()->bounds().ToString());
-
-  delete w1ll;
-}
-
-namespace {
-
-// Tracks the number of times paint is invoked along with what the clip and
-// translate was.
-class PaintWindowDelegate : public TestWindowDelegate {
- public:
-  PaintWindowDelegate() : paint_count_(0) {}
-  ~PaintWindowDelegate() override {}
-
-  const gfx::Rect& most_recent_paint_clip_bounds() const {
-    return most_recent_paint_clip_bounds_;
-  }
-
-  const gfx::Vector2d& most_recent_paint_matrix_offset() const {
-    return most_recent_paint_matrix_offset_;
-  }
-
-  void clear_paint_count() { paint_count_ = 0; }
-  int paint_count() const { return paint_count_; }
-
-  // TestWindowDelegate::
-  void OnPaint(gfx::Canvas* canvas) override {
-    paint_count_++;
-    canvas->GetClipBounds(&most_recent_paint_clip_bounds_);
-    const SkMatrix& matrix = canvas->sk_canvas()->getTotalMatrix();
-    most_recent_paint_matrix_offset_ = gfx::Vector2d(
-        SkScalarFloorToInt(matrix.getTranslateX()),
-        SkScalarFloorToInt(matrix.getTranslateY()));
-  }
-
- private:
-  int paint_count_;
-  gfx::Rect most_recent_paint_clip_bounds_;
-  gfx::Vector2d most_recent_paint_matrix_offset_;
-
-  DISALLOW_COPY_AND_ASSIGN(PaintWindowDelegate);
-};
-
-}  // namespace
-
-// Assertions around layerless children being painted when non-layerless window
-// is painted.
-TEST_F(WindowTest, PaintLayerless) {
-  // Creates the following structure (all children owned by root):
-  // root
-  //   w1ll      1,2 40x50
-  //     w11ll   3,4 11x12
-  //       w111  5,6
-  //
-  // ll: layer less, eg no layer
-  PaintWindowDelegate w1ll_delegate;
-  PaintWindowDelegate w11ll_delegate;
-  PaintWindowDelegate w111_delegate;
-
-  Window root(NULL);
-  root.Init(WINDOW_LAYER_NOT_DRAWN);
-  root.SetBounds(gfx::Rect(0, 0, 100, 100));
-
-  Window* w1ll = new Window(&w1ll_delegate);
-  w1ll->Init(WINDOW_LAYER_NONE);
-  w1ll->SetBounds(gfx::Rect(1, 2, 40, 50));
-  w1ll->Show();
-  root.AddChild(w1ll);
-
-  Window* w11ll = new Window(&w11ll_delegate);
-  w11ll->Init(WINDOW_LAYER_NONE);
-  w11ll->SetBounds(gfx::Rect(3, 4, 11, 12));
-  w11ll->Show();
-  w1ll->AddChild(w11ll);
-
-  Window* w111 = new Window(&w111_delegate);
-  w111->Init(WINDOW_LAYER_NOT_DRAWN);
-  w111->SetBounds(gfx::Rect(5, 6, 100, 100));
-  w111->Show();
-  w11ll->AddChild(w111);
-
-  EXPECT_EQ(0, w1ll_delegate.paint_count());
-  EXPECT_EQ(0, w11ll_delegate.paint_count());
-  EXPECT_EQ(0, w111_delegate.paint_count());
-
-  // Paint the root, this should trigger painting of the two layerless
-  // descendants but not the layered descendant.
-  gfx::Canvas canvas(gfx::Size(200, 200), 1.0f, true);
-  static_cast<ui::LayerDelegate&>(root).OnPaintLayer(&canvas);
-
-  // NOTE: SkCanvas::getClipBounds() extends the clip 1 pixel to the left and up
-  // and 2 pixels down and to the right.
-  EXPECT_EQ(1, w1ll_delegate.paint_count());
-  EXPECT_EQ("-1,-1 42x52",
-            w1ll_delegate.most_recent_paint_clip_bounds().ToString());
-  EXPECT_EQ("[1 2]",
-            w1ll_delegate.most_recent_paint_matrix_offset().ToString());
-  EXPECT_EQ(1, w11ll_delegate.paint_count());
-  EXPECT_EQ("-1,-1 13x14",
-            w11ll_delegate.most_recent_paint_clip_bounds().ToString());
-  EXPECT_EQ("[4 6]",
-            w11ll_delegate.most_recent_paint_matrix_offset().ToString());
-  EXPECT_EQ(0, w111_delegate.paint_count());
-}
-
-namespace {
-
-std::string ConvertPointToTargetString(const Window* source,
-                                       const Window* target) {
-  gfx::Point location;
-  Window::ConvertPointToTarget(source, target, &location);
-  return location.ToString();
-}
-
-}  // namespace
-
-// Assertions around Window::ConvertPointToTarget() with layerless windows.
-TEST_F(WindowTest, ConvertPointToTargetLayerless) {
-  // Creates the following structure (all children owned by root):
-  // root
-  //   w1ll      1,2
-  //     w11ll   3,4
-  //       w111  5,6
-  //     w12     7,8
-  //       w121  9,10
-  //
-  // ll: layer less, eg no layer
-  Window root(NULL);
-  root.Init(WINDOW_LAYER_NOT_DRAWN);
-  root.SetBounds(gfx::Rect(0, 0, 100, 100));
-
-  Window* w1ll = new Window(NULL);
-  w1ll->Init(WINDOW_LAYER_NONE);
-  w1ll->SetBounds(gfx::Rect(1, 2, 100, 100));
-
-  Window* w11ll = new Window(NULL);
-  w11ll->Init(WINDOW_LAYER_NONE);
-  w11ll->SetBounds(gfx::Rect(3, 4, 100, 100));
-  w1ll->AddChild(w11ll);
-
-  Window* w111 = new Window(NULL);
-  w111->Init(WINDOW_LAYER_NOT_DRAWN);
-  w111->SetBounds(gfx::Rect(5, 6, 100, 100));
-  w11ll->AddChild(w111);
-
-  Window* w12 = new Window(NULL);
-  w12->Init(WINDOW_LAYER_NOT_DRAWN);
-  w12->SetBounds(gfx::Rect(7, 8, 100, 100));
-  w1ll->AddChild(w12);
-
-  Window* w121 = new Window(NULL);
-  w121->Init(WINDOW_LAYER_NOT_DRAWN);
-  w121->SetBounds(gfx::Rect(9, 10, 100, 100));
-  w12->AddChild(w121);
-
-  root.AddChild(w1ll);
-
-  // w111->w11ll
-  EXPECT_EQ("5,6", ConvertPointToTargetString(w111, w11ll));
-
-  // w111->w1ll
-  EXPECT_EQ("8,10", ConvertPointToTargetString(w111, w1ll));
-
-  // w111->root
-  EXPECT_EQ("9,12", ConvertPointToTargetString(w111, &root));
-
-  // w111->w12
-  EXPECT_EQ("1,2", ConvertPointToTargetString(w111, w12));
-
-  // w111->w121
-  EXPECT_EQ("-8,-8", ConvertPointToTargetString(w111, w121));
-
-  // w11ll->w111
-  EXPECT_EQ("-5,-6", ConvertPointToTargetString(w11ll, w111));
-
-  // w11ll->w11ll
-  EXPECT_EQ("3,4", ConvertPointToTargetString(w11ll, w1ll));
-
-  // w11ll->root
-  EXPECT_EQ("4,6", ConvertPointToTargetString(w11ll, &root));
-
-  // w11ll->w12
-  EXPECT_EQ("-4,-4", ConvertPointToTargetString(w11ll, w12));
-}
-
-#if !defined(NDEBUG)
-// Verifies PrintWindowHierarchy() doesn't crash with a layerless window.
-TEST_F(WindowTest, PrintWindowHierarchyNotCrashLayerless) {
-  Window root(NULL);
-  root.Init(WINDOW_LAYER_NONE);
-  root.SetBounds(gfx::Rect(0, 0, 100, 100));
-  root.PrintWindowHierarchy(0);
-}
-#endif
-
-namespace {
-
-// See AddWindowsFromString() for details.
-aura::Window* CreateWindowFromDescription(const std::string& description,
-                                          WindowDelegate* delegate) {
-  WindowLayerType window_type = WINDOW_LAYER_NOT_DRAWN;
-  std::vector<std::string> tokens;
-  Tokenize(description, ":", &tokens);
-  DCHECK(!tokens.empty());
-  std::string name(tokens[0]);
-  tokens.erase(tokens.begin());
-  if (!tokens.empty()) {
-    if (tokens[0] == "ll") {
-      window_type = WINDOW_LAYER_NONE;
-      tokens.erase(tokens.begin());
-    }
-    DCHECK(tokens.empty()) << "unknown tokens for creating window "
-                           << description;
-  }
-  Window* window = new Window(delegate);
-  window->Init(window_type);
-  window->SetName(name);
-  // Window name is only propagated to layer in debug builds.
-  if (window->layer())
-    window->layer()->set_name(name);
-  return window;
-}
-
-// Creates and adds a tree of windows to |parent|. |description| consists
-// of the following pieces:
-//   X: Identifies a new window. Consists of a name and optionally ":ll" to
-//      specify  WINDOW_LAYER_NONE, eg "w1:ll".
-//   []: optionally used to specify the children of the window. Contains any
-//       number of window identifiers and their corresponding children.
-// For example: "[ a [ a1 a2:ll ] b c [ c1 ] ]" creates the tree:
-//   a
-//     a1
-//     a2 -> WINDOW_LAYER_NONE.
-//   b
-//   c
-//     c1
-// NOTE: you must have a space after every token.
-std::string::size_type AddWindowsFromString(aura::Window* parent,
-                                            const std::string& description,
-                                            std::string::size_type start_pos,
-                                            WindowDelegate* delegate) {
-  DCHECK(parent);
-  std::string::size_type end_pos = description.find(' ', start_pos);
-  while (end_pos != std::string::npos) {
-    const std::string::size_type part_length = end_pos - start_pos;
-    const std::string window_description =
-        description.substr(start_pos, part_length);
-    if (window_description == "[") {
-      start_pos = AddWindowsFromString(parent->children().back(),
-                                       description,
-                                       end_pos + 1,
-                                       delegate);
-      end_pos = description.find(' ', start_pos);
-      if (end_pos == std::string::npos && start_pos != end_pos)
-        end_pos = description.length();
-    } else if (window_description == "]") {
-      ++end_pos;
-      break;
-    } else {
-      Window* window =
-          CreateWindowFromDescription(window_description, delegate);
-      parent->AddChild(window);
-      start_pos = ++end_pos;
-      end_pos = description.find(' ', start_pos);
-    }
-  }
-  return end_pos;
-}
-
-// Used by BuildRootWindowTreeDescription().
-std::string BuildWindowTreeDescription(const aura::Window& window) {
-  std::string result;
-  result += window.name();
-  if (window.children().empty())
-    return result;
-
-  result += " [ ";
-  for (size_t i = 0; i < window.children().size(); ++i) {
-    if (i != 0)
-      result += " ";
-    result += BuildWindowTreeDescription(*(window.children()[i]));
-  }
-  result += " ]";
-  return result;
-}
-
-// Creates a string from |window|. See AddWindowsFromString() for details of the
-// returned string. This does *not* include the layer type in the description,
-// on the name.
-std::string BuildRootWindowTreeDescription(const aura::Window& window) {
-  std::string result;
-  for (size_t i = 0; i < window.children().size(); ++i) {
-    if (i != 0)
-      result += " ";
-    result += BuildWindowTreeDescription(*(window.children()[i]));
-  }
-  return result;
-}
-
-// Used by BuildRootWindowTreeDescription().
-std::string BuildLayerTreeDescription(const ui::Layer& layer) {
-  std::string result;
-  result += layer.name();
-  if (layer.children().empty())
-    return result;
-
-  result += " [ ";
-  for (size_t i = 0; i < layer.children().size(); ++i) {
-    if (i != 0)
-      result += " ";
-    result += BuildLayerTreeDescription(*(layer.children()[i]));
-  }
-  result += " ]";
-  return result;
-}
-
-// Builds a string for all the children of |layer|. The returned string is in
-// the same format as AddWindowsFromString() but only includes the name of the
-// layers.
-std::string BuildRootLayerTreeDescription(const ui::Layer& layer) {
-  std::string result;
-  for (size_t i = 0; i < layer.children().size(); ++i) {
-    if (i != 0)
-      result += " ";
-    result += BuildLayerTreeDescription(*(layer.children()[i]));
-  }
-  return result;
-}
-
-// Returns the first window whose name matches |name| in |parent|.
-aura::Window* FindWindowByName(aura::Window* parent,
-                               const std::string& name) {
-  if (parent->name() == name)
-    return parent;
-  for (size_t i = 0; i < parent->children().size(); ++i) {
-    aura::Window* child = FindWindowByName(parent->children()[i], name);
-    if (child)
-      return child;
-  }
-  return NULL;
-}
-
-}  // namespace
-
-// Direction to stack.
-enum StackType {
-  STACK_ABOVE,
-  STACK_BELOW,
-  STACK_AT_BOTTOM,
-  STACK_AT_TOP,
-};
-
-// Permutations of StackChildAt with various data.
-TEST_F(WindowTest, StackChildAtLayerless) {
-  struct TestData {
-    // Describes the window tree to create. See AddWindowsFromString() for
-    // details.
-    const std::string initial_description;
-
-    // Identifies the window to move.
-    const std::string source_window;
-
-    // Window to move |source_window| relative to. Not used for STACK_AT_BOTTOM
-    // or STACK_AT_TOP.
-    const std::string target_window;
-
-    StackType stack_type;
-
-    // Expected window and layer results.
-    const std::string expected_description;
-    const std::string expected_layer_description;
-  } data[] = {
-    // 1 at top.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ]",
-      "1",
-      "",
-      STACK_AT_TOP,
-      "2 [ 21 ] 1 [ 11 12 ]",
-      "21 11 12",
-    },
-
-    // 1 at bottom.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ]",
-      "1",
-      "",
-      STACK_AT_BOTTOM,
-      "1 [ 11 12 ] 2 [ 21 ]",
-      "11 12 21",
-    },
-
-    // 2 at bottom.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ]",
-      "2",
-      "",
-      STACK_AT_BOTTOM,
-      "2 [ 21 ] 1 [ 11 12 ]",
-      "21 11 12",
-    },
-
-    // 3 below 2.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ] 3:ll",
-      "3",
-      "2",
-      STACK_BELOW,
-      "1 [ 11 12 ] 3 2 [ 21 ]",
-      "11 12 21",
-    },
-
-    // 2 below 1.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ]",
-      "2",
-      "1",
-      STACK_BELOW,
-      "2 [ 21 ] 1 [ 11 12 ]",
-      "21 11 12",
-    },
-
-    // 1 above 3.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ] 3:ll",
-      "1",
-      "3",
-      STACK_ABOVE,
-      "2 [ 21 ] 3 1 [ 11 12 ]",
-      "21 11 12",
-    },
-
-    // 1 above 2.
-    {
-      "1:ll [ 11 12 ] 2:ll [ 21 ]",
-      "1",
-      "2",
-      STACK_ABOVE,
-      "2 [ 21 ] 1 [ 11 12 ]",
-      "21 11 12",
-    },
-  };
-  for (size_t i = 0; i < arraysize(data); ++i) {
-    test::TestWindowDelegate delegate;
-    Window root(NULL);
-    root.Init(WINDOW_LAYER_NOT_DRAWN);
-    root.SetBounds(gfx::Rect(0, 0, 100, 100));
-    AddWindowsFromString(
-        &root,
-        data[i].initial_description,
-        static_cast<std::string::size_type>(0), &delegate);
-    aura::Window* source = FindWindowByName(&root, data[i].source_window);
-    ASSERT_TRUE(source != NULL) << "unable to find source window "
-                                << data[i].source_window << " at " << i;
-    aura::Window* target = FindWindowByName(&root, data[i].target_window);
-    switch (data[i].stack_type) {
-      case STACK_ABOVE:
-        ASSERT_TRUE(target != NULL) << "unable to find target window "
-                                    << data[i].target_window << " at " << i;
-        source->parent()->StackChildAbove(source, target);
-        break;
-      case STACK_BELOW:
-        ASSERT_TRUE(target != NULL) << "unable to find target window "
-                                    << data[i].target_window << " at " << i;
-        source->parent()->StackChildBelow(source, target);
-        break;
-      case STACK_AT_BOTTOM:
-        source->parent()->StackChildAtBottom(source);
-        break;
-      case STACK_AT_TOP:
-        source->parent()->StackChildAtTop(source);
-        break;
-    }
-    EXPECT_EQ(data[i].expected_layer_description,
-              BuildRootLayerTreeDescription(*root.layer()))
-        << "layer tree doesn't match at " << i;
-    EXPECT_EQ(data[i].expected_description,
-              BuildRootWindowTreeDescription(root))
-        << "window tree doesn't match at " << i;
-  }
 }
 
 namespace {
@@ -3415,7 +2873,7 @@ class TestLayerAnimationObserver : public ui::LayerAnimationObserver {
   DISALLOW_COPY_AND_ASSIGN(TestLayerAnimationObserver);
 };
 
-}
+}  // namespace
 
 TEST_F(WindowTest, WindowDestroyCompletesAnimations) {
   ui::ScopedAnimationDurationScaleMode test_duration_mode(

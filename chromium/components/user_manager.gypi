@@ -8,8 +8,9 @@
     'user_manager_shared_sources': [
       'user_manager/empty_user_info.cc',
       'user_manager/empty_user_info.h',
-      'user_manager/user_info.h',
+      'user_manager/user_id.h',
       'user_manager/user_info.cc',
+      'user_manager/user_info.h',
       'user_manager/user_info_impl.cc',
       'user_manager/user_info_impl.h',
       'user_manager/user_manager_export.h',
@@ -17,12 +18,12 @@
     # Chrome OS user_manager sources.
     'user_manager_chromeos_sources': [
       'user_manager/remove_user_delegate.h',
+      'user_manager/user.cc',
+      'user_manager/user.h',
       'user_manager/user_image/default_user_images.cc',
       'user_manager/user_image/default_user_images.h',
       'user_manager/user_image/user_image.cc',
       'user_manager/user_image/user_image.h',
-      'user_manager/user.cc',
-      'user_manager/user.h',
       'user_manager/user_manager.cc',
       'user_manager/user_manager.h',
       'user_manager/user_manager_base.cc',
@@ -51,8 +52,10 @@
       ['chromeos == 1', {
         'dependencies': [
           '<(DEPTH)/base/base.gyp:base_prefs',
+          '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
           '<(DEPTH)/components/components.gyp:session_manager_component',
           '<(DEPTH)/google_apis/google_apis.gyp:google_apis',
+          '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
           '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos_resources',
           '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos_strings',
           '<(DEPTH)/url/url.gyp:url_lib',
@@ -60,5 +63,25 @@
         'sources': [ '<@(user_manager_chromeos_sources)' ],
       }],
     ],
-  }],
+  },
+  {
+    # GN version: //components/user_manager:test_support
+    'target_name': 'user_manager_test_support',
+    'type': 'static_library',
+    'conditions': [
+      ['chromeos == 1', {
+        'dependencies': [
+          '<(DEPTH)/base/base.gyp:base',
+          '<(DEPTH)/base/base.gyp:test_support_base',
+          '<(DEPTH)/testing/gmock.gyp:gmock',
+          '<(DEPTH)/testing/gtest.gyp:gtest',
+          'user_manager',
+        ],
+        'sources': [
+          'user_manager/fake_user_manager.cc',
+          'user_manager/fake_user_manager.h',
+        ],
+      }],
+     ]
+  },],
 }

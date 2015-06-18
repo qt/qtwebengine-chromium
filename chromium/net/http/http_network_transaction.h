@@ -12,15 +12,17 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "net/base/net_log.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_auth.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_transaction.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_service.h"
+#include "net/socket/connection_attempts.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_failure_state.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
 
 namespace net {
@@ -84,7 +86,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
       WebSocketHandshakeStreamBase* stream) override;
-  void OnStreamFailed(int status, const SSLConfig& used_ssl_config) override;
+  void OnStreamFailed(int status,
+                      const SSLConfig& used_ssl_config,
+                      SSLFailureState ssl_failure_state) override;
   void OnCertificateError(int status,
                           const SSLConfig& used_ssl_config,
                           const SSLInfo& ssl_info) override;
@@ -98,6 +102,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                                   const SSLConfig& used_ssl_config,
                                   const ProxyInfo& used_proxy_info,
                                   HttpStream* stream) override;
+
+  void GetConnectionAttempts(ConnectionAttempts* out) const override;
 
  private:
   friend class HttpNetworkTransactionSSLTest;
@@ -142,7 +148,11 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
     STATE_NONE
   };
 
-  bool is_https_request() const;
+  bool IsSecureRequest() const;
+
+  // Returns true if the request is using an HTTP(S) proxy without being
+  // tunneled via the CONNECT method.
+  bool UsingHttpProxyWithoutTunnel() const;
 
   void DoCallback(int result);
   void OnIOComplete(int result);
@@ -176,7 +186,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   int DoDrainBodyForAuthRestart();
   int DoDrainBodyForAuthRestartComplete(int result);
 
-  void BuildRequestHeaders(bool using_proxy);
+  void BuildRequestHeaders(bool using_http_proxy_without_tunnel);
 
   // Writes a log message to help debugging in the field when we block a proxy
   // response to a CONNECT request.
@@ -184,6 +194,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Called to handle a client certificate request.
   int HandleCertificateRequest(int error);
+
+  // Called wherever ERR_HTTP_1_1_REQUIRED or
+  // ERR_PROXY_HTTP_1_1_REQUIRED has to be handled.
+  int HandleHttp11Required(int error);
 
   // Called to possibly handle a client authentication error.
   void HandleClientAuthError(int error);
@@ -224,6 +238,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // to be maintained for multi-round auth.
   void ResetStateForAuthRestart();
 
+  // Records metrics relating to SSL fallbacks.
+  void RecordSSLFallbackMetrics(int result);
+
   // Returns true if we should try to add a Proxy-Authorization header
   bool ShouldApplyProxyAuth() const;
 
@@ -248,6 +265,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   static std::string DescribeState(State state);
 
   void SetStream(HttpStream* stream);
+
+  void CopyConnectionAttemptsFromStreamRequest();
 
   scoped_refptr<HttpAuthController>
       auth_controllers_[HttpAuth::AUTH_NUM_TARGETS];
@@ -278,12 +297,16 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
+  // The SSLFailureState of the most recent failed stream.
+  SSLFailureState server_ssl_failure_state_;
   // fallback_error_code contains the error code that caused the last TLS
   // fallback. If the fallback connection results in
   // ERR_SSL_INAPPROPRIATE_FALLBACK (i.e. the server indicated that the
   // fallback should not have been needed) then we use this value to return the
   // original error that triggered the fallback.
   int fallback_error_code_;
+  // The SSLFailureState which caused the last TLS version fallback.
+  SSLFailureState fallback_failure_state_;
 
   HttpRequestHeaders request_headers_;
 
@@ -318,6 +341,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   BeforeNetworkStartCallback before_network_start_callback_;
   BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
+
+  ConnectionAttempts connection_attempts_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

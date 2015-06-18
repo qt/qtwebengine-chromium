@@ -6,6 +6,8 @@
 #define DEVICE_SERIAL_SERIAL_IO_HANDLER_POSIX_H_
 
 #include "base/message_loop/message_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "device/serial/serial_io_handler.h"
 
 namespace device {
@@ -18,24 +20,23 @@ class SerialIoHandlerPosix : public SerialIoHandler,
   void WriteImpl() override;
   void CancelReadImpl() override;
   void CancelWriteImpl() override;
+  bool ConfigurePortImpl() override;
   bool Flush() const override;
   serial::DeviceControlSignalsPtr GetControlSignals() const override;
   bool SetControlSignals(
       const serial::HostControlSignals& control_signals) override;
-  bool ConfigurePort(const serial::ConnectionOptions& options) override;
   serial::ConnectionInfoPtr GetPortInfo() const override;
   void RequestAccess(
       const std::string& port,
-      scoped_refptr<base::MessageLoopProxy> file_message_loop,
-      scoped_refptr<base::MessageLoopProxy> ui_message_loop) override;
-  bool PostOpen() override;
+      scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) override;
 
  private:
   friend class SerialIoHandler;
 
   SerialIoHandlerPosix(
-      scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-      scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop);
+      scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner);
   ~SerialIoHandlerPosix() override;
 
   // base::MessageLoopForIO::Watcher implementation.

@@ -6,12 +6,16 @@
 
 #include "base/message_loop/message_loop_proxy.h"
 #include "chromecast/browser/android/cast_window_manager.h"
+#include "chromecast/browser/cast_content_window.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/renderer_preferences.h"
 #include "jni/CastWindowAndroid_jni.h"
+#include "ui/gfx/skia_util.h"
 
 namespace chromecast {
 namespace shell {
@@ -29,67 +33,67 @@ bool CastWindowAndroid::RegisterJni(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-CastWindowAndroid::CastWindowAndroid(content::WebContents* web_contents)
-    : content::WebContentsObserver(web_contents),
-      weak_factory_(this) {
-}
-
-CastWindowAndroid::~CastWindowAndroid() {
-}
-
 // static
 CastWindowAndroid* CastWindowAndroid::CreateNewWindow(
     content::BrowserContext* browser_context,
     const GURL& url) {
-  content::WebContents::CreateParams create_params(browser_context);
-  create_params.routing_id = MSG_ROUTING_NONE;
-  content::WebContents* web_contents =
-      content::WebContents::Create(create_params);
-  CastWindowAndroid* shell = CreateCastWindowAndroid(
-      web_contents,
-      create_params.initial_size);
+  CastWindowAndroid* window_android = new CastWindowAndroid(browser_context);
+  window_android->Initialize();
+
   if (!url.is_empty())
-    shell->LoadURL(url);
-  return shell;
+    window_android->LoadURL(url);
+
+  content::RenderWidgetHostView* rwhv =
+      window_android->web_contents_->GetRenderWidgetHostView();
+  if (rwhv) {
+    rwhv->SetBackgroundColor(SK_ColorBLACK);
+  }
+
+  return window_android;
 }
 
-// static
-CastWindowAndroid* CastWindowAndroid::CreateCastWindowAndroid(
-    content::WebContents* web_contents,
-    const gfx::Size& initial_size) {
-  CastWindowAndroid* shell = new CastWindowAndroid(web_contents);
+CastWindowAndroid::CastWindowAndroid(content::BrowserContext* browser_context)
+    : browser_context_(browser_context),
+      content_window_(new CastContentWindow),
+      weak_factory_(this) {
+}
+
+void CastWindowAndroid::Initialize() {
+  web_contents_ =
+      content_window_->CreateWebContents(gfx::Size(), browser_context_);
+  web_contents_->SetDelegate(this);
+  content::WebContentsObserver::Observe(web_contents_.get());
 
   JNIEnv* env = base::android::AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jobject> shell_android(
-      CreateCastWindowView(shell));
-
-  shell->java_object_.Reset(env, shell_android.Release());
-  shell->web_contents_.reset(web_contents);
-  web_contents->SetDelegate(shell);
+  window_java_.Reset(CreateCastWindowView(this));
 
   Java_CastWindowAndroid_initFromNativeWebContents(
-      env, shell->java_object_.obj(), reinterpret_cast<jint>(web_contents));
+      env, window_java_.obj(), web_contents_->GetJavaWebContents().obj(),
+      web_contents_->GetRenderProcessHost()->GetID());
 
   // Enabling hole-punching also requires runtime renderer preference
-  web_contents->GetMutableRendererPrefs()->
-      use_video_overlay_for_embedded_encrypted_video = true;
-  web_contents->GetRenderViewHost()->SyncRendererPrefs();
+  content::RendererPreferences* prefs =
+      web_contents_->GetMutableRendererPrefs();
+  prefs->use_video_overlay_for_embedded_encrypted_video = true;
+  prefs->use_view_overlay_for_all_video = true;
+  web_contents_->GetRenderViewHost()->SyncRendererPrefs();
+}
 
-  return shell;
+CastWindowAndroid::~CastWindowAndroid() {
 }
 
 void CastWindowAndroid::Close() {
   // Close page first, which fires the window.unload event. The WebContents
   // itself will be destroyed after browser-process has received renderer
   // notification that the page is closed.
-  web_contents_->GetRenderViewHost()->ClosePage();
+  web_contents_->ClosePage();
 }
 
 void CastWindowAndroid::Destroy() {
   // Note: if multiple windows becomes supported, this may close other devtools
   // sessions.
   content::DevToolsAgentHost::DetachAllClients();
-  CloseCastWindowView(java_object_.obj());
+  CloseCastWindowView(window_java_.obj());
   delete this;
 }
 
@@ -105,7 +109,7 @@ void CastWindowAndroid::LoadURL(const GURL& url) {
 void CastWindowAndroid::AddNewContents(content::WebContents* source,
                                        content::WebContents* new_contents,
                                        WindowOpenDisposition disposition,
-                                       const gfx::Rect& initial_pos,
+                                       const gfx::Rect& initial_rect,
                                        bool user_gesture,
                                        bool* was_blocked) {
   NOTIMPLEMENTED();
@@ -121,20 +125,6 @@ void CastWindowAndroid::CloseContents(content::WebContents* source) {
   // give (and guarantee) the renderer enough time to finish 'onunload'
   // handler (but we don't want to wait any longer than that to delay the
   // starting of next app).
-
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
-    // When shutting down in a test context, the last remaining WebContents
-    // is torn down at browser-thread shutdown time. Call Destroy directly to
-    // avoid losing the last posted task to delete this object.
-    // TODO(gunsch): This could probably be avoided by using a
-    // CompletionCallback in StopCurrentApp to wait until the app is completely
-    // stopped. This might require a separate message loop and might only be
-    // appropriate for test contexts or during shutdown, since it triggers a
-    // wait on the main thread.
-    Destroy();
-    return;
-  }
-
   base::MessageLoopProxy::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&CastWindowAndroid::Destroy, weak_factory_.GetWeakPtr()),

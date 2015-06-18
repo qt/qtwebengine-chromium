@@ -170,7 +170,7 @@ class DomSerializerTests : public ContentBrowserTest,
     : serialized_(false),
       local_directory_name_(FILE_PATH_LITERAL("./dummy_files/")) {}
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
@@ -582,8 +582,9 @@ class DomSerializerTests : public ContentBrowserTest,
       '%', 0x2285, 0x00b9, '\'', 0
     };
     WebString value = body_element.getAttribute("title");
+    WebString content = doc.contentAsTextForTesting();
     ASSERT_TRUE(base::UTF16ToWide(value) == parsed_value);
-    ASSERT_TRUE(base::UTF16ToWide(body_element.innerText()) == parsed_value);
+    ASSERT_TRUE(base::UTF16ToWide(content) == parsed_value);
 
     // Do serialization.
     SerializeDomForURL(file_url, false);

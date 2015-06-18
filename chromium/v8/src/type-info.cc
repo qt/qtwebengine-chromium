@@ -16,16 +16,16 @@ namespace internal {
 
 
 TypeFeedbackOracle::TypeFeedbackOracle(
-    Handle<Code> code, Handle<TypeFeedbackVector> feedback_vector,
-    Handle<Context> native_context, Zone* zone)
-    : native_context_(native_context), zone_(zone) {
+    Isolate* isolate, Zone* zone, Handle<Code> code,
+    Handle<TypeFeedbackVector> feedback_vector, Handle<Context> native_context)
+    : native_context_(native_context), isolate_(isolate), zone_(zone) {
   BuildDictionary(code);
   DCHECK(dictionary_->IsDictionary());
   // We make a copy of the feedback vector because a GC could clear
   // the type feedback info contained therein.
   // TODO(mvstanton): revisit the decision to copy when we weakly
   // traverse the feedback vector at GC time.
-  feedback_vector_ = TypeFeedbackVector::Copy(isolate(), feedback_vector);
+  feedback_vector_ = TypeFeedbackVector::Copy(isolate, feedback_vector);
 }
 
 
@@ -51,33 +51,72 @@ Handle<Object> TypeFeedbackOracle::GetInfo(TypeFeedbackId ast_id) {
 
 Handle<Object> TypeFeedbackOracle::GetInfo(FeedbackVectorSlot slot) {
   DCHECK(slot.ToInt() >= 0 && slot.ToInt() < feedback_vector_->length());
+  Handle<Object> undefined =
+      Handle<Object>::cast(isolate()->factory()->undefined_value());
   Object* obj = feedback_vector_->Get(slot);
-  if (!obj->IsJSFunction() ||
-      !CanRetainOtherContext(JSFunction::cast(obj), *native_context_)) {
-    return Handle<Object>(obj, isolate());
+
+  // Slots do not embed direct pointers to functions. Instead a WeakCell is
+  // always used.
+  DCHECK(!obj->IsJSFunction());
+  if (obj->IsWeakCell()) {
+    WeakCell* cell = WeakCell::cast(obj);
+    if (cell->cleared()) return undefined;
+    obj = cell->value();
   }
-  return Handle<Object>::cast(isolate()->factory()->undefined_value());
+
+  return Handle<Object>(obj, isolate());
 }
 
 
 Handle<Object> TypeFeedbackOracle::GetInfo(FeedbackVectorICSlot slot) {
   DCHECK(slot.ToInt() >= 0 && slot.ToInt() < feedback_vector_->length());
+  Handle<Object> undefined =
+      Handle<Object>::cast(isolate()->factory()->undefined_value());
   Object* obj = feedback_vector_->Get(slot);
-  if (!obj->IsJSFunction() ||
-      !CanRetainOtherContext(JSFunction::cast(obj), *native_context_)) {
+
+  // Vector-based ICs do not embed direct pointers to maps, functions.
+  // Instead a WeakCell is always used.
+  if (obj->IsWeakCell()) {
+    WeakCell* cell = WeakCell::cast(obj);
+    if (cell->cleared()) return undefined;
+    obj = cell->value();
+  }
+
+  if (obj->IsJSFunction() || obj->IsAllocationSite() || obj->IsSymbol()) {
     return Handle<Object>(obj, isolate());
   }
-  return Handle<Object>::cast(isolate()->factory()->undefined_value());
+
+  return undefined;
 }
 
 
-bool TypeFeedbackOracle::LoadIsUninitialized(TypeFeedbackId id) {
+InlineCacheState TypeFeedbackOracle::LoadInlineCacheState(TypeFeedbackId id) {
   Handle<Object> maybe_code = GetInfo(id);
   if (maybe_code->IsCode()) {
     Handle<Code> code = Handle<Code>::cast(maybe_code);
-    return code->is_inline_cache_stub() && code->ic_state() == UNINITIALIZED;
+    if (code->is_inline_cache_stub()) return code->ic_state();
   }
-  return false;
+
+  // If we can't find an IC, assume we've seen *something*, but we don't know
+  // what. PREMONOMORPHIC roughly encodes this meaning.
+  return PREMONOMORPHIC;
+}
+
+
+InlineCacheState TypeFeedbackOracle::LoadInlineCacheState(
+    FeedbackVectorICSlot slot) {
+  Code::Kind kind = feedback_vector_->GetKind(slot);
+  if (kind == Code::LOAD_IC) {
+    LoadICNexus nexus(feedback_vector_, slot);
+    return nexus.StateFromFeedback();
+  } else if (kind == Code::KEYED_LOAD_IC) {
+    KeyedLoadICNexus nexus(feedback_vector_, slot);
+    return nexus.StateFromFeedback();
+  }
+
+  // If we can't find an IC, assume we've seen *something*, but we don't know
+  // what. PREMONOMORPHIC roughly encodes this meaning.
+  return PREMONOMORPHIC;
 }
 
 
@@ -86,6 +125,14 @@ bool TypeFeedbackOracle::StoreIsUninitialized(TypeFeedbackId ast_id) {
   if (!maybe_code->IsCode()) return false;
   Handle<Code> code = Handle<Code>::cast(maybe_code);
   return code->ic_state() == UNINITIALIZED;
+}
+
+
+bool TypeFeedbackOracle::CallIsUninitialized(FeedbackVectorICSlot slot) {
+  Handle<Object> value = GetInfo(slot);
+  return value->IsUndefined() ||
+         value.is_identical_to(
+             TypeFeedbackVector::UninitializedSentinel(isolate()));
 }
 
 
@@ -126,6 +173,21 @@ void TypeFeedbackOracle::GetStoreModeAndKeyType(
     }
   }
   *store_mode = STANDARD_STORE;
+  *key_type = ELEMENT;
+}
+
+
+void TypeFeedbackOracle::GetLoadKeyType(
+    TypeFeedbackId ast_id, IcCheckType* key_type) {
+  Handle<Object> maybe_code = GetInfo(ast_id);
+  if (maybe_code->IsCode()) {
+    Handle<Code> code = Handle<Code>::cast(maybe_code);
+    if (code->kind() == Code::KEYED_LOAD_IC) {
+      ExtraICState extra_ic_state = code->extra_ic_state();
+      *key_type = KeyedLoadIC::GetKeyType(extra_ic_state);
+      return;
+    }
+  }
   *key_type = ELEMENT;
 }
 
@@ -193,12 +255,7 @@ void TypeFeedbackOracle::CompareType(TypeFeedbackId id,
 
   Handle<Map> map;
   Map* raw_map = code->FindFirstMap();
-  if (raw_map != NULL) {
-    if (Map::TryUpdate(handle(raw_map)).ToHandle(&map) &&
-        CanRetainOtherContext(*map, *native_context_)) {
-      map = Handle<Map>::null();
-    }
-  }
+  if (raw_map != NULL) Map::TryUpdate(handle(raw_map)).ToHandle(&map);
 
   if (code->is_compare_ic_stub()) {
     CompareICStub stub(code->stub_key(), isolate());
@@ -227,7 +284,7 @@ void TypeFeedbackOracle::BinaryType(TypeFeedbackId id,
     DCHECK(op < BinaryOpICState::FIRST_TOKEN ||
            op > BinaryOpICState::LAST_TOKEN);
     *left = *right = *result = Type::None(zone());
-    *fixed_right_arg = Maybe<int>();
+    *fixed_right_arg = Nothing<int>();
     *allocation_site = Handle<AllocationSite>::null();
     return;
   }
@@ -261,7 +318,7 @@ Type* TypeFeedbackOracle::CountType(TypeFeedbackId id) {
 
 
 void TypeFeedbackOracle::PropertyReceiverTypes(TypeFeedbackId id,
-                                               Handle<String> name,
+                                               Handle<Name> name,
                                                SmallMapList* receiver_types) {
   receiver_types->Clear();
   Code::Flags flags = Code::ComputeHandlerFlags(Code::LOAD_IC);
@@ -269,22 +326,51 @@ void TypeFeedbackOracle::PropertyReceiverTypes(TypeFeedbackId id,
 }
 
 
-void TypeFeedbackOracle::KeyedPropertyReceiverTypes(
-    TypeFeedbackId id, SmallMapList* receiver_types, bool* is_string) {
-  receiver_types->Clear();
-  CollectReceiverTypes(id, receiver_types);
-
-  // Are all the receiver maps string maps?
+bool TypeFeedbackOracle::HasOnlyStringMaps(SmallMapList* receiver_types) {
   bool all_strings = receiver_types->length() > 0;
   for (int i = 0; i < receiver_types->length(); i++) {
     all_strings &= receiver_types->at(i)->IsStringMap();
   }
-  *is_string = all_strings;
+  return all_strings;
 }
 
 
-void TypeFeedbackOracle::AssignmentReceiverTypes(
-    TypeFeedbackId id, Handle<String> name, SmallMapList* receiver_types) {
+void TypeFeedbackOracle::KeyedPropertyReceiverTypes(
+    TypeFeedbackId id,
+    SmallMapList* receiver_types,
+    bool* is_string,
+    IcCheckType* key_type) {
+  receiver_types->Clear();
+  CollectReceiverTypes(id, receiver_types);
+  *is_string = HasOnlyStringMaps(receiver_types);
+  GetLoadKeyType(id, key_type);
+}
+
+
+void TypeFeedbackOracle::PropertyReceiverTypes(FeedbackVectorICSlot slot,
+                                               Handle<Name> name,
+                                               SmallMapList* receiver_types) {
+  receiver_types->Clear();
+  LoadICNexus nexus(feedback_vector_, slot);
+  Code::Flags flags = Code::ComputeHandlerFlags(Code::LOAD_IC);
+  CollectReceiverTypes(&nexus, name, flags, receiver_types);
+}
+
+
+void TypeFeedbackOracle::KeyedPropertyReceiverTypes(
+    FeedbackVectorICSlot slot, SmallMapList* receiver_types, bool* is_string,
+    IcCheckType* key_type) {
+  receiver_types->Clear();
+  KeyedLoadICNexus nexus(feedback_vector_, slot);
+  CollectReceiverTypes<FeedbackNexus>(&nexus, receiver_types);
+  *is_string = HasOnlyStringMaps(receiver_types);
+  *key_type = nexus.FindFirstName() != NULL ? PROPERTY : ELEMENT;
+}
+
+
+void TypeFeedbackOracle::AssignmentReceiverTypes(TypeFeedbackId id,
+                                                 Handle<Name> name,
+                                                 SmallMapList* receiver_types) {
   receiver_types->Clear();
   Code::Flags flags = Code::ComputeHandlerFlags(Code::STORE_IC);
   CollectReceiverTypes(id, name, flags, receiver_types);
@@ -308,7 +394,7 @@ void TypeFeedbackOracle::CountReceiverTypes(TypeFeedbackId id,
 
 
 void TypeFeedbackOracle::CollectReceiverTypes(TypeFeedbackId ast_id,
-                                              Handle<String> name,
+                                              Handle<Name> name,
                                               Code::Flags flags,
                                               SmallMapList* types) {
   Handle<Object> object = GetInfo(ast_id);
@@ -316,49 +402,22 @@ void TypeFeedbackOracle::CollectReceiverTypes(TypeFeedbackId ast_id,
 
   DCHECK(object->IsCode());
   Handle<Code> code(Handle<Code>::cast(object));
+  CollectReceiverTypes<Code>(*code, name, flags, types);
+}
 
+
+template <class T>
+void TypeFeedbackOracle::CollectReceiverTypes(T* obj, Handle<Name> name,
+                                              Code::Flags flags,
+                                              SmallMapList* types) {
   if (FLAG_collect_megamorphic_maps_from_stub_cache &&
-      code->ic_state() == MEGAMORPHIC) {
+      obj->ic_state() == MEGAMORPHIC) {
     types->Reserve(4, zone());
     isolate()->stub_cache()->CollectMatchingMaps(
         types, name, flags, native_context_, zone());
   } else {
-    CollectReceiverTypes(ast_id, types);
+    CollectReceiverTypes<T>(obj, types);
   }
-}
-
-
-// Check if a map originates from a given native context. We use this
-// information to filter out maps from different context to avoid
-// retaining objects from different tabs in Chrome via optimized code.
-bool TypeFeedbackOracle::CanRetainOtherContext(Map* map,
-                                               Context* native_context) {
-  Object* constructor = NULL;
-  while (!map->prototype()->IsNull()) {
-    constructor = map->constructor();
-    if (!constructor->IsNull()) {
-      // If the constructor is not null or a JSFunction, we have to
-      // conservatively assume that it may retain a native context.
-      if (!constructor->IsJSFunction()) return true;
-      // Check if the constructor directly references a foreign context.
-      if (CanRetainOtherContext(JSFunction::cast(constructor),
-                                native_context)) {
-        return true;
-      }
-    }
-    map = HeapObject::cast(map->prototype())->map();
-  }
-  constructor = map->constructor();
-  if (constructor->IsNull()) return false;
-  JSFunction* function = JSFunction::cast(constructor);
-  return CanRetainOtherContext(function, native_context);
-}
-
-
-bool TypeFeedbackOracle::CanRetainOtherContext(JSFunction* function,
-                                               Context* native_context) {
-  return function->context()->global_object() != native_context->global_object()
-      && function->context()->global_object() != native_context->builtins();
 }
 
 
@@ -367,20 +426,26 @@ void TypeFeedbackOracle::CollectReceiverTypes(TypeFeedbackId ast_id,
   Handle<Object> object = GetInfo(ast_id);
   if (!object->IsCode()) return;
   Handle<Code> code = Handle<Code>::cast(object);
+  CollectReceiverTypes<Code>(*code, types);
+}
+
+
+template <class T>
+void TypeFeedbackOracle::CollectReceiverTypes(T* obj, SmallMapList* types) {
   MapHandleList maps;
-  if (code->ic_state() == MONOMORPHIC) {
-    Map* map = code->FindFirstMap();
+  if (obj->ic_state() == MONOMORPHIC) {
+    Map* map = obj->FindFirstMap();
     if (map != NULL) maps.Add(handle(map));
-  } else if (code->ic_state() == POLYMORPHIC) {
-    code->FindAllMaps(&maps);
+  } else if (obj->ic_state() == POLYMORPHIC) {
+    obj->FindAllMaps(&maps);
   } else {
     return;
   }
   types->Reserve(maps.length(), zone());
   for (int i = 0; i < maps.length(); i++) {
     Handle<Map> map(maps.at(i));
-    if (!CanRetainOtherContext(*map, *native_context_)) {
-      types->AddMapIfMissing(map, zone());
+    if (IsRelevantFeedback(*map, *native_context_)) {
+      types->AddMapIfMissing(maps.at(i), zone());
     }
   }
 }

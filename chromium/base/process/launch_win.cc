@@ -105,9 +105,13 @@ void RouteStdioToConsole() {
   std::ios::sync_with_stdio();
 }
 
-bool LaunchProcess(const string16& cmdline,
-                   const LaunchOptions& options,
-                   win::ScopedHandle* process_handle) {
+Process LaunchProcess(const CommandLine& cmdline,
+                      const LaunchOptions& options) {
+  return LaunchProcess(cmdline.GetCommandLineString(), options);
+}
+
+Process LaunchProcess(const string16& cmdline,
+                      const LaunchOptions& options) {
   win::StartupInformation startup_info_wrapper;
   STARTUPINFO* startup_info = startup_info_wrapper.startup_info();
 
@@ -119,18 +123,18 @@ bool LaunchProcess(const string16& cmdline,
     } else {
       if (base::win::GetVersion() < base::win::VERSION_VISTA) {
         DLOG(ERROR) << "Specifying handles to inherit requires Vista or later.";
-        return false;
+        return Process();
       }
 
       if (options.handles_to_inherit->size() >
               std::numeric_limits<DWORD>::max() / sizeof(HANDLE)) {
         DLOG(ERROR) << "Too many handles to inherit.";
-        return false;
+        return Process();
       }
 
       if (!startup_info_wrapper.InitializeProcThreadAttributeList(1)) {
         DPLOG(ERROR);
-        return false;
+        return Process();
       }
 
       if (!startup_info_wrapper.UpdateProcThreadAttribute(
@@ -139,7 +143,7 @@ bool LaunchProcess(const string16& cmdline,
               static_cast<DWORD>(options.handles_to_inherit->size() *
                   sizeof(HANDLE)))) {
         DPLOG(ERROR);
-        return false;
+        return Process();
       }
 
       inherit_handles = true;
@@ -184,7 +188,7 @@ bool LaunchProcess(const string16& cmdline,
 
     if (!CreateEnvironmentBlock(&enviroment_block, options.as_user, FALSE)) {
       DPLOG(ERROR);
-      return false;
+      return Process();
     }
 
     BOOL launched =
@@ -197,7 +201,7 @@ bool LaunchProcess(const string16& cmdline,
     if (!launched) {
       DPLOG(ERROR) << "Command line:" << std::endl << UTF16ToUTF8(cmdline)
                    << std::endl;;
-      return false;
+      return Process();
     }
   } else {
     if (!CreateProcess(NULL,
@@ -206,7 +210,7 @@ bool LaunchProcess(const string16& cmdline,
                        startup_info, &temp_process_info)) {
       DPLOG(ERROR) << "Command line:" << std::endl << UTF16ToUTF8(cmdline)
                    << std::endl;;
-      return false;
+      return Process();
     }
   }
   base::win::ScopedProcessInformation process_info(temp_process_info);
@@ -215,8 +219,9 @@ bool LaunchProcess(const string16& cmdline,
     if (0 == AssignProcessToJobObject(options.job_handle,
                                       process_info.process_handle())) {
       DLOG(ERROR) << "Could not AssignProcessToObject.";
-      KillProcess(process_info.process_handle(), kProcessKilledExitCode, true);
-      return false;
+      Process scoped_process(process_info.TakeProcessHandle());
+      scoped_process.Terminate(kProcessKilledExitCode, true);
+      return Process();
     }
 
     ResumeThread(process_info.thread_handle());
@@ -225,28 +230,11 @@ bool LaunchProcess(const string16& cmdline,
   if (options.wait)
     WaitForSingleObject(process_info.process_handle(), INFINITE);
 
-  // If the caller wants the process handle, we won't close it.
-  if (process_handle)
-    process_handle->Set(process_info.TakeProcessHandle());
-
-  return true;
+  return Process(process_info.TakeProcessHandle());
 }
 
-bool LaunchProcess(const CommandLine& cmdline,
-                   const LaunchOptions& options,
-                   ProcessHandle* process_handle) {
-  if (!process_handle)
-    return LaunchProcess(cmdline.GetCommandLineString(), options, NULL);
-
-  win::ScopedHandle process;
-  bool rv = LaunchProcess(cmdline.GetCommandLineString(), options, &process);
-  *process_handle = process.Take();
-  return rv;
-}
-
-bool LaunchElevatedProcess(const CommandLine& cmdline,
-                           const LaunchOptions& options,
-                           ProcessHandle* process_handle) {
+Process LaunchElevatedProcess(const CommandLine& cmdline,
+                              const LaunchOptions& options) {
   const string16 file = cmdline.GetProgram().value();
   const string16 arguments = cmdline.GetArgumentsString();
 
@@ -263,20 +251,13 @@ bool LaunchElevatedProcess(const CommandLine& cmdline,
 
   if (!ShellExecuteEx(&shex_info)) {
     DPLOG(ERROR);
-    return false;
+    return Process();
   }
 
   if (options.wait)
     WaitForSingleObject(shex_info.hProcess, INFINITE);
 
-  // If the caller wants the process handle give it to them, otherwise just
-  // close it.  Closing it does not terminate the process.
-  if (process_handle)
-    *process_handle = shex_info.hProcess;
-  else
-    CloseHandle(shex_info.hProcess);
-
-  return true;
+  return Process(shex_info.hProcess);
 }
 
 bool SetJobObjectLimitFlags(HANDLE job_object, DWORD limit_flags) {

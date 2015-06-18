@@ -7,7 +7,6 @@
 
 #include "src/allocation.h"
 #include "src/assembler.h"
-#include "src/zone-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -46,10 +45,9 @@ class RegExpImpl {
   // generic data and choice of implementation - as well as what
   // the implementation wants to store in the data field.
   // Returns false if compilation fails.
-  MUST_USE_RESULT static MaybeHandle<Object> Compile(
-      Handle<JSRegExp> re,
-      Handle<String> pattern,
-      Handle<String> flags);
+  MUST_USE_RESULT static MaybeHandle<Object> Compile(Handle<JSRegExp> re,
+                                                     Handle<String> pattern,
+                                                     JSRegExp::Flags flags);
 
   // See ECMA-262 section 15.10.6.2.
   // This function calls the garbage collector if necessary.
@@ -213,7 +211,8 @@ class RegExpImpl {
   // total regexp code compiled including code that has subsequently been freed
   // and the total executable memory at any point.
   static const int kRegExpExecutableMemoryLimit = 16 * MB;
-  static const int kRegWxpCompiledLimit = 1 * MB;
+  static const int kRegExpCompiledLimit = 1 * MB;
+  static const int kRegExpTooLargeToOptimize = 10 * KB;
 
  private:
   static bool CompileIrregexp(Handle<JSRegExp> re,
@@ -240,7 +239,7 @@ class CharacterRange {
  public:
   CharacterRange() : from_(0), to_(0) { }
   // For compatibility with the CHECK_OK macro
-  CharacterRange(void* null) { DCHECK_EQ(NULL, null); }  //NOLINT
+  CharacterRange(void* null) { DCHECK_NULL(null); }  // NOLINT
   CharacterRange(uc16 from, uc16 to) : from_(from), to_(to) { }
   static void AddClassEscape(uc16 type, ZoneList<CharacterRange>* ranges,
                              Zone* zone);
@@ -263,8 +262,8 @@ class CharacterRange {
   bool is_valid() { return from_ <= to_; }
   bool IsEverything(uc16 max) { return from_ == 0 && to_ >= max; }
   bool IsSingleton() { return (from_ == to_); }
-  void AddCaseEquivalents(ZoneList<CharacterRange>* ranges, bool is_one_byte,
-                          Zone* zone);
+  void AddCaseEquivalents(Isolate* isolate, Zone* zone,
+                          ZoneList<CharacterRange>* ranges, bool is_one_byte);
   static void Split(ZoneList<CharacterRange>* base,
                     Vector<const int> overlay,
                     ZoneList<CharacterRange>** included,
@@ -407,7 +406,7 @@ FOR_EACH_REG_EXP_TREE_TYPE(FORWARD_DECLARE)
 #undef FORWARD_DECLARE
 
 
-class TextElement FINAL BASE_EMBEDDED {
+class TextElement final BASE_EMBEDDED {
  public:
   enum TextType {
     ATOM,
@@ -571,7 +570,7 @@ extern int kUninitializedRegExpNodePlaceHolder;
 class RegExpNode: public ZoneObject {
  public:
   explicit RegExpNode(Zone* zone)
-  : replacement_(NULL), trace_count_(0), zone_(zone) {
+      : replacement_(NULL), on_work_list_(false), trace_count_(0), zone_(zone) {
     bm_info_[0] = bm_info_[1] = NULL;
   }
   virtual ~RegExpNode();
@@ -619,6 +618,7 @@ class RegExpNode: public ZoneObject {
   // EatsAtLeast, GetQuickCheckDetails.  The budget argument is used to limit
   // the number of nodes we are willing to look at in order to create this data.
   static const int kRecursionBudget = 200;
+  bool KeepRecursing(RegExpCompiler* compiler);
   virtual void FillInBMInfo(int offset,
                             int budget,
                             BoyerMooreLookahead* bm,
@@ -659,6 +659,9 @@ class RegExpNode: public ZoneObject {
   // the deferred actions in the current trace and generating a goto.
   static const int kMaxCopiesCodeGenerated = 10;
 
+  bool on_work_list() { return on_work_list_; }
+  void set_on_work_list(bool value) { on_work_list_ = value; }
+
   NodeInfo* info() { return &info_; }
 
   BoyerMooreLookahead* bm_info(bool not_at_start) {
@@ -680,6 +683,7 @@ class RegExpNode: public ZoneObject {
  private:
   static const int kFirstCharBudget = 10;
   Label label_;
+  bool on_work_list_;
   NodeInfo info_;
   // This variable keeps track of how many times code has been generated for
   // this node (in different traces).  We don't keep track of where the
@@ -847,7 +851,7 @@ class TextNode: public SeqRegExpNode {
                                     int characters_filled_in,
                                     bool not_at_start);
   ZoneList<TextElement>* elements() { return elms_; }
-  void MakeCaseIndependent(bool is_one_byte);
+  void MakeCaseIndependent(Isolate* isolate, bool is_one_byte);
   virtual int GreedyLoopTextLength();
   virtual RegExpNode* GetSuccessorOfOmnivorousTextNode(
       RegExpCompiler* compiler);
@@ -1598,8 +1602,9 @@ FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 //   +-------+        +------------+
 class Analysis: public NodeVisitor {
  public:
-  Analysis(bool ignore_case, bool is_one_byte)
-      : ignore_case_(ignore_case),
+  Analysis(Isolate* isolate, bool ignore_case, bool is_one_byte)
+      : isolate_(isolate),
+        ignore_case_(ignore_case),
         is_one_byte_(is_one_byte),
         error_message_(NULL) {}
   void EnsureAnalyzed(RegExpNode* node);
@@ -1619,7 +1624,10 @@ FOR_EACH_NODE_TYPE(DECLARE_VISIT)
     error_message_ = error_message;
   }
 
+  Isolate* isolate() const { return isolate_; }
+
  private:
+  Isolate* isolate_;
   bool ignore_case_;
   bool is_one_byte_;
   const char* error_message_;
@@ -1652,19 +1660,20 @@ class RegExpEngine: public AllStatic {
           code(isolate->heap()->the_hole_value()),
           num_registers(0) {}
     CompilationResult(Object* code, int registers)
-      : error_message(NULL),
-        code(code),
-        num_registers(registers) {}
+        : error_message(NULL), code(code), num_registers(registers) {}
     const char* error_message;
     Object* code;
     int num_registers;
   };
 
-  static CompilationResult Compile(RegExpCompileData* input, bool ignore_case,
+  static CompilationResult Compile(Isolate* isolate, Zone* zone,
+                                   RegExpCompileData* input, bool ignore_case,
                                    bool global, bool multiline, bool sticky,
                                    Handle<String> pattern,
                                    Handle<String> sample_subject,
-                                   bool is_one_byte, Zone* zone);
+                                   bool is_one_byte);
+
+  static bool TooMuchRegExpCode(Handle<String> pattern);
 
   static void DotPrint(const char* label, RegExpNode* node, bool ignore_case);
 };

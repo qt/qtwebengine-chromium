@@ -12,14 +12,13 @@ goog.provide('cvox.NodeSearchWidget');
 goog.require('cvox.ChromeVox');
 goog.require('cvox.DomUtil');
 goog.require('cvox.SearchWidget');
-goog.require('cvox.SpokenMessages');
 
 
 /**
  * @constructor
  * @param {string} typeMsg A message id identifying the type of items
  * contained in the list.
- * @param {?function(Array.<Node>)} predicate A predicate; if null, no predicate
+ * @param {?function(Array<Node>)} predicate A predicate; if null, no predicate
  * applies.
  * @extends {cvox.SearchWidget}
  */
@@ -58,7 +57,7 @@ cvox.NodeSearchWidget.prototype.getPredicate = function() {
 /**
  * Shows a list generated dynamic satisfying some predicate.
  * @param {string} typeMsg The message id of the type contained in nodes.
- * @param {function(Array.<Node>)} predicate The predicate.
+ * @param {function(Array<Node>)} predicate The predicate.
  * @return {cvox.NodeSearchWidget} The widget.
  */
 cvox.NodeSearchWidget.create = function(typeMsg, predicate) {

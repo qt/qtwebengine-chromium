@@ -30,30 +30,17 @@ void PopupTouchHandleDrawable::SetEnabled(bool enabled) {
 }
 
 void PopupTouchHandleDrawable::SetOrientation(
-    TouchHandleOrientation orientation) {
+    ui::TouchHandleOrientation orientation) {
   JNIEnv* env = base::android::AttachCurrentThread();
   jobject obj = drawable_.obj();
-  switch (orientation) {
-    case TOUCH_HANDLE_LEFT:
-      Java_PopupTouchHandleDrawable_setLeftOrientation(env, obj);
-      break;
-
-    case TOUCH_HANDLE_RIGHT:
-      Java_PopupTouchHandleDrawable_setRightOrientation(env, obj);
-      break;
-
-    case TOUCH_HANDLE_CENTER:
-      Java_PopupTouchHandleDrawable_setCenterOrientation(env, obj);
-      break;
-
-    case TOUCH_HANDLE_ORIENTATION_UNDEFINED:
-      NOTREACHED() << "Invalid touch handle orientation.";
-  };
+  Java_PopupTouchHandleDrawable_setOrientation(env, obj,
+                                               static_cast<int>(orientation));
 }
 
 void PopupTouchHandleDrawable::SetAlpha(float alpha) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  Java_PopupTouchHandleDrawable_setOpacity(env, drawable_.obj(), alpha);
+  bool visible = alpha > 0;
+  Java_PopupTouchHandleDrawable_setVisible(env, drawable_.obj(), visible);
 }
 
 void PopupTouchHandleDrawable::SetFocus(const gfx::PointF& position) {
@@ -63,20 +50,14 @@ void PopupTouchHandleDrawable::SetFocus(const gfx::PointF& position) {
       env, drawable_.obj(), position_pix.x(), position_pix.y());
 }
 
-void PopupTouchHandleDrawable::SetVisible(bool visible) {
+gfx::RectF PopupTouchHandleDrawable::GetVisibleBounds() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  Java_PopupTouchHandleDrawable_setVisible(env, drawable_.obj(), visible);
-}
-
-bool PopupTouchHandleDrawable::IntersectsWith(const gfx::RectF& rect) const {
-  const gfx::RectF rect_pix = gfx::ScaleRect(rect, dpi_scale_);
-  JNIEnv* env = base::android::AttachCurrentThread();
-  return Java_PopupTouchHandleDrawable_intersectsWith(env,
-                                                      drawable_.obj(),
-                                                      rect_pix.x(),
-                                                      rect_pix.y(),
-                                                      rect_pix.width(),
-                                                      rect_pix.height());
+  gfx::RectF unscaled_rect(
+      Java_PopupTouchHandleDrawable_getPositionX(env, drawable_.obj()),
+      Java_PopupTouchHandleDrawable_getPositionY(env, drawable_.obj()),
+      Java_PopupTouchHandleDrawable_getVisibleWidth(env, drawable_.obj()),
+      Java_PopupTouchHandleDrawable_getVisibleHeight(env, drawable_.obj()));
+  return gfx::ScaleRect(unscaled_rect, 1.f / dpi_scale_);
 }
 
 // static

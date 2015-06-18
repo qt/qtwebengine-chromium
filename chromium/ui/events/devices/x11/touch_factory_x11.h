@@ -49,14 +49,17 @@ class EVENTS_DEVICES_EXPORT TouchFactory {
   // Keeps a list of touch devices so that it is possible to determine if a
   // pointer event is a touch-event or a mouse-event. The list is reset each
   // time this is called.
-  void SetTouchDeviceList(const std::vector<unsigned int>& devices);
+  void SetTouchDeviceList(const std::vector<int>& devices);
+
+  // Is the device ID valid?
+  bool IsValidDevice(int deviceid) const;
 
   // Is the device a touch-device?
-  bool IsTouchDevice(unsigned int deviceid) const;
+  bool IsTouchDevice(int deviceid) const;
 
   // Is the device a real multi-touch-device? (see doc. for |touch_device_list_|
   // below for more explanation.)
-  bool IsMultiTouchDevice(unsigned int deviceid) const;
+  bool IsMultiTouchDevice(int deviceid) const;
 
   // Tries to find an existing slot ID mapping to tracking ID. Returns true
   // if the slot is found and it is saved in |slot|, false if no such slot
@@ -66,10 +69,6 @@ class EVENTS_DEVICES_EXPORT TouchFactory {
   // Tries to find an existing slot ID mapping to tracking ID. If there
   // isn't one already, allocates a new slot ID and sets up the mapping.
   int GetSlotForTrackingID(uint32 tracking_id);
-
-  // Increases the number of times |ReleaseSlotForTrackingID| needs to be called
-  // on a given tracking id before it will actually be released.
-  void AcquireSlotForTrackingID(uint32 tracking_id);
 
   // Releases the slot ID mapping to tracking ID.
   void ReleaseSlotForTrackingID(uint32 tracking_id);
@@ -82,27 +81,24 @@ class EVENTS_DEVICES_EXPORT TouchFactory {
     return touchscreen_ids_;
   }
 
-  // Return maximum simultaneous touch points supported by device.
-  int GetMaxTouchPoints() const;
-
   // Resets the TouchFactory singleton.
   void ResetForTest();
 
   // Sets up the device id in the list |devices| as multi-touch capable
   // devices and enables touch events processing. This function is only
   // for test purpose, and it does not query from X server.
-  void SetTouchDeviceForTest(const std::vector<unsigned int>& devices);
+  void SetTouchDeviceForTest(const std::vector<int>& devices);
 
   // Sets up the device id in the list |devices| as pointer devices.
   // This function is only for test purpose, and it does not query from
   // X server.
-  void SetPointerDeviceForTest(const std::vector<unsigned int>& devices);
+  void SetPointerDeviceForTest(const std::vector<int>& devices);
 
  private:
   // Requirement for Singleton
   friend struct DefaultSingletonTraits<TouchFactory>;
 
-  void CacheTouchscreenIds(Display* display, int id);
+  void CacheTouchscreenIds(int id);
 
   // NOTE: To keep track of touch devices, we currently maintain a lookup table
   // to quickly decide if a device is a touch device or not. We also maintain a
@@ -132,16 +128,6 @@ class EVENTS_DEVICES_EXPORT TouchFactory {
 
   // Touch screen <vid, pid>s.
   std::set<std::pair<int, int> > touchscreen_ids_;
-
-  // Maps from a tracking id to the number of times |ReleaseSlotForTrackingID|
-  // must be called before the tracking id is released.
-  std::map<uint32, int> tracking_id_refcounts_;
-
-  // Maximum simultaneous touch points supported by device. In the case of
-  // devices with multiple digitizers (e.g. multiple touchscreens), the value
-  // is the maximum of the set of maximum supported contacts by each individual
-  // digitizer.
-  int max_touch_points_;
 
   // Device ID of the virtual core keyboard.
   int virtual_core_keyboard_device_;

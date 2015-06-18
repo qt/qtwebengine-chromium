@@ -29,122 +29,39 @@
 #ifndef InspectorOverlay_h
 #define InspectorOverlay_h
 
-#include "core/InspectorTypeBuilder.h"
-#include "platform/Timer.h"
+#include "core/inspector/InspectorHighlight.h"
 #include "platform/geometry/FloatQuad.h"
-#include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/Color.h"
 #include "platform/heap/Handle.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/RefPtr.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/Forward.h"
 
 namespace blink {
 
-class Color;
-class EmptyChromeClient;
-class GraphicsContext;
-class InspectorClient;
-class InspectorOverlayHost;
-class JSONValue;
-class Node;
-class Page;
-class PlatformGestureEvent;
-class PlatformKeyboardEvent;
-class PlatformMouseEvent;
-class PlatformTouchEvent;
+struct InspectorHighlightConfig;
 
-struct HighlightConfig {
-    WTF_MAKE_FAST_ALLOCATED;
+class InspectorOverlay : public WillBeGarbageCollectedMixin {
 public:
-    Color content;
-    Color contentOutline;
-    Color padding;
-    Color border;
-    Color margin;
-    Color eventTarget;
-    Color shape;
-    Color shapeMargin;
+    virtual ~InspectorOverlay() { }
 
-    bool showInfo;
-    bool showRulers;
-    bool showExtensionLines;
-};
+    virtual void update() = 0;
+    virtual void setPausedInDebuggerMessage(const String*) = 0;
+    virtual void setInspectModeEnabled(bool) = 0;
+    virtual void hideHighlight() = 0;
+    virtual void highlightNode(Node*, Node* eventTarget, const InspectorHighlightConfig&, bool omitTooltip) = 0;
+    virtual void highlightQuad(PassOwnPtr<FloatQuad>, const InspectorHighlightConfig&) = 0;
+    virtual void showAndHideViewSize(bool showGrid) = 0;
+    virtual void suspendUpdates() = 0;
+    virtual void resumeUpdates() = 0;
+    virtual void clear() = 0;
 
-class InspectorOverlay {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    static PassOwnPtr<InspectorOverlay> create(Page* page, InspectorClient* client)
-    {
-        return adoptPtr(new InspectorOverlay(page, client));
-    }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
-    ~InspectorOverlay();
-
-    void update();
-    void hide();
-    void paint(GraphicsContext&);
-    void drawOutline(GraphicsContext*, const LayoutRect&, const Color&);
-    bool handleGestureEvent(const PlatformGestureEvent&);
-    bool handleMouseEvent(const PlatformMouseEvent&);
-    bool handleTouchEvent(const PlatformTouchEvent&);
-    bool handleKeyboardEvent(const PlatformKeyboardEvent&);
-
-    void setPausedInDebuggerMessage(const String*);
-    void setInspectModeEnabled(bool);
-
-    void hideHighlight();
-    void highlightNode(Node*, Node* eventTarget, const HighlightConfig&, bool omitTooltip);
-    void highlightQuad(PassOwnPtr<FloatQuad>, const HighlightConfig&);
-    void showAndHideViewSize(bool showGrid);
-
-    Node* highlightedNode() const;
-    bool getBoxModel(Node*, RefPtr<TypeBuilder::DOM::BoxModel>&);
-    PassRefPtr<JSONObject> highlightJSONForNode(Node*);
-
-    void freePage();
-
-    InspectorOverlayHost* overlayHost() const { return m_overlayHost.get(); }
-
-    void startedRecordingProfile();
-    void finishedRecordingProfile() { m_activeProfilerCount--; }
-
-    // Methods supporting underlying overlay page.
-    void invalidate();
-private:
-    InspectorOverlay(Page*, InspectorClient*);
-
-    bool isEmpty();
-
-    void drawNodeHighlight();
-    void drawQuadHighlight();
-    void drawPausedInDebuggerMessage();
-    void drawViewSize();
-
-    Page* overlayPage();
-    void reset(const IntSize& viewportSize, int scrollX, int scrollY);
-    void evaluateInOverlay(const String& method, const String& argument);
-    void evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument);
-    void onTimer(Timer<InspectorOverlay>*);
-
-    Page* m_page;
-    InspectorClient* m_client;
-    String m_pausedInDebuggerMessage;
-    bool m_inspectModeEnabled;
-    RefPtrWillBePersistent<Node> m_highlightNode;
-    RefPtrWillBePersistent<Node> m_eventTargetNode;
-    HighlightConfig m_nodeHighlightConfig;
-    OwnPtr<FloatQuad> m_highlightQuad;
-    OwnPtrWillBePersistent<Page> m_overlayPage;
-    OwnPtr<EmptyChromeClient> m_overlayChromeClient;
-    RefPtrWillBePersistent<InspectorOverlayHost> m_overlayHost;
-    HighlightConfig m_quadHighlightConfig;
-    bool m_drawViewSize;
-    bool m_drawViewSizeWithGrid;
-    bool m_omitTooltip;
-    Timer<InspectorOverlay> m_timer;
-    int m_activeProfilerCount;
+    class Listener : public WillBeGarbageCollectedMixin {
+    public:
+        virtual ~Listener() { }
+        virtual void overlayResumed() = 0;
+        virtual void overlaySteppedOver() = 0;
+    };
+    virtual void setListener(Listener*) = 0;
 };
 
 } // namespace blink

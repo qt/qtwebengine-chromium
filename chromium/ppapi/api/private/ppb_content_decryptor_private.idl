@@ -12,7 +12,7 @@
 [generate_thunk]
 
 label Chrome {
-  M36 = 0.12
+  M44 = 0.14
 };
 
 /**
@@ -37,27 +37,14 @@ interface PPB_ContentDecryptor_Private {
    *
    * @param[in] promise_id Identifies the promise that the CDM resolved.
    *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
+   * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the session's ID attribute.
    */
   void PromiseResolvedWithSession(
       [in] PP_Instance instance,
       [in] uint32_t promise_id,
-      [in] PP_Var web_session_id);
+      [in] PP_Var session_id);
 
-  /**
-   * A promise that returns a set of key IDs has been resolved by the CDM.
-   *
-   * @param[in] promise_id Identifies the promise that the CDM resolved.
-   *
-   * @param[in] key_ids A <code>PP_Var</code> of type
-   * <code>PP_VARTYPE_ARRAY</code> containing elements of type
-   * <code>PP_VARTYPE_ARRAYBUFFER</code> that are the session's usable key IDs.
-   */
-  void PromiseResolvedWithKeyIds(
-      [in] PP_Instance instance,
-      [in] uint32_t promise_id,
-      [in] PP_Var key_ids_array);
 
   /**
    * A promise has been rejected by the CDM due to an error.
@@ -93,42 +80,54 @@ interface PPB_ContentDecryptor_Private {
    * of <code>UpdateSession()</code> and <code>SessionMessage()</code> calls
    * required to prepare for decryption.
    *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
+   * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the ID of a session for
    * which this message is intended.
+   *
+   * @param[in] message_type A <code>PP_CdmMessageType</code> containing the
+   * message type.
    *
    * @param[in] message A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_ARRAY_BUFFER</code> that contains the message.
    *
-   * @param[in] destination_url A <code>PP_Var</code> of type
+   * @param[in] legacy_destination_url A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the destination URL for the
    * message.
    */
   void SessionMessage(
       [in] PP_Instance instance,
-      [in] PP_Var web_session_id,
+      [in] PP_Var session_id,
+      [in] PP_CdmMessageType message_type,
       [in] PP_Var message,
-      [in] PP_Var destination_url);
+      [in] PP_Var legacy_destination_url);
 
   /**
    * The keys for a session have changed.
    *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
+   * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the ID of the session that has
    * a change in keys.
    *
    * @param[in] has_additional_usable_key A <code>PP_Bool</code> indicating if
    * a new usable key has been added.
+   *
+   * @param[in] key_count The number of arguments contained in
+   * <code>key_information</code>
+   *
+   * @param[in] key_information An array of type <code>PP_KeyInformation</code>
+   * that are the session's key IDs and their status.
    */
   void SessionKeysChange(
       [in] PP_Instance instance,
-      [in] PP_Var web_session_id,
-      [in] PP_Bool has_additional_usable_key);
+      [in] PP_Var session_id,
+      [in] PP_Bool has_additional_usable_key,
+      [in] uint32_t key_count,
+      [in, size_as=key_count] PP_KeyInformation[] key_information);
 
   /**
    * The expiration time for a session has changed.
    *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
+   * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the ID of the session that has
    * a new expiration time.
    *
@@ -138,28 +137,8 @@ interface PPB_ContentDecryptor_Private {
    */
   void SessionExpirationChange(
       [in] PP_Instance instance,
-      [in] PP_Var web_session_id,
+      [in] PP_Var session_id,
       [in] PP_Time new_expiry_time);
-
-  /**
-   * The session is now ready to decrypt the media stream.
-   *
-   * Note: The above describes the most simple case. Depending on the key
-   * system, a series of <code>SessionMessage()</code> calls from the CDM will
-   * be sent to the browser, and then on to the web application. The web
-   * application must then provide more data to the CDM by directing the browser
-   * to pass the data to the CDM via calls to <code>UpdateSession()</code> on
-   * the <code>PPP_ContentDecryptor_Private</code> interface.
-   * The CDM must call <code>SessionReady()</code> when the sequence is
-   * completed, and, in response, the browser must notify the web application.
-   *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
-   * <code>PP_VARTYPE_STRING</code> containing the session's ID attribute of
-   * the session that is now ready.
-   */
-  void SessionReady(
-      [in] PP_Instance instance,
-      [in] PP_Var web_session_id);
 
   /**
    * The session has been closed as the result of a call to the
@@ -167,19 +146,19 @@ interface PPB_ContentDecryptor_Private {
    * <code>PPP_ContentDecryptor_Private</code> interface, or due to other
    * factors as determined by the CDM.
    *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
+   * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the session's ID attribute of
    * the session that is now closed.
    */
   void SessionClosed(
       [in] PP_Instance instance,
-      [in] PP_Var web_session_id);
+      [in] PP_Var session_id);
 
   /**
    * An error occurred in a <code>PPP_ContentDecryptor_Private</code> method,
    * or within the plugin implementing the interface.
    *
-   * @param[in] web_session_id A <code>PP_Var</code> of type
+   * @param[in] session_id A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the session's ID attribute of
    * the session that caused the error.
    *
@@ -191,9 +170,9 @@ interface PPB_ContentDecryptor_Private {
    * @param[in] error_description A <code>PP_Var</code> of type
    * <code>PP_VARTYPE_STRING</code> containing the error description.
    */
-  void SessionError(
+  void LegacySessionError(
       [in] PP_Instance instance,
-      [in] PP_Var web_session_id,
+      [in] PP_Var session_id,
       [in] PP_CdmExceptionCode exception_code,
       [in] uint32_t system_code,
       [in] PP_Var error_description);

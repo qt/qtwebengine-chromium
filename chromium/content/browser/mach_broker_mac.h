@@ -5,11 +5,14 @@
 #ifndef CONTENT_BROWSER_MACH_BROKER_MAC_H_
 #define CONTENT_BROWSER_MACH_BROKER_MAC_H_
 
+#include <mach/mach.h>
+
 #include <map>
 #include <string>
 
-#include <mach/mach.h>
-
+#include "base/mac/dispatch_source_mach.h"
+#include "base/mac/scoped_mach_port.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/process/process_handle.h"
 #include "base/process/process_metrics.h"
@@ -61,7 +64,7 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
   // Callers are expected to later update the port with FinalizePid().  Callers
   // MUST acquire the lock given by GetLock() before calling this method (and
   // release the lock afterwards).
-  void AddPlaceholderForPid(base::ProcessHandle pid);
+  void AddPlaceholderForPid(base::ProcessHandle pid, int child_process_id);
 
   // Implement |ProcessMetrics::PortProvider|.
   mach_port_t TaskForPid(base::ProcessHandle process) const override;
@@ -69,7 +72,8 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
   // Implement |BrowserChildProcessObserver|.
   void BrowserChildProcessHostDisconnected(
       const ChildProcessData& data) override;
-  void BrowserChildProcessCrashed(const ChildProcessData& data) override;
+  void BrowserChildProcessCrashed(const ChildProcessData& data,
+      int exit_code) override;
 
   // Implement |NotificationObserver|.
   void Observe(int type,
@@ -78,11 +82,17 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
 
  private:
   friend class MachBrokerTest;
-  friend class MachListenerThreadDelegate;
   friend struct DefaultSingletonTraits<MachBroker>;
 
   MachBroker();
   ~MachBroker() override;
+
+  // Performs any initialization work.
+  bool Init();
+
+  // Message handler that is invoked on |dispatch_source_| when an
+  // incoming message needs to be received.
+  void HandleRequest();
 
   // Updates the mapping for |pid| to include the given |mach_info|.  Does
   // nothing if PlaceholderForPid() has not already been called for the given
@@ -90,27 +100,39 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
   // this method (and release the lock afterwards).
   void FinalizePid(base::ProcessHandle pid, mach_port_t task_port);
 
-  // Removes all mappings belonging to |pid| from the broker.
-  void InvalidatePid(base::ProcessHandle pid);
+  // Removes all mappings belonging to |child_process_id| from the broker.
+  void InvalidateChildProcessId(int child_process_id);
 
   // Returns the Mach port name to use when sending or receiving messages.
   // Does the Right Thing in the browser and in child processes.
   static std::string GetMachPortName();
+
   // Callback used to register notifications on the UI thread.
   void RegisterNotifications();
 
-  // True if the listener thread has been started.
-  bool listener_thread_started_;
+  // Whether or not the class has been initialized.
+  bool initialized_;
 
   // Used to register for notifications received by NotificationObserver.
   // Accessed only on the UI thread.
   NotificationRegistrar registrar_;
 
+  // The Mach port on which the server listens.
+  base::mac::ScopedMachReceiveRight server_port_;
+
+  // The dispatch source and queue on which Mach messages will be received.
+  scoped_ptr<base::DispatchSourceMach> dispatch_source_;
+
   // Stores mach info for every process in the broker.
   typedef std::map<base::ProcessHandle, mach_port_t> MachMap;
   MachMap mach_map_;
 
-  // Mutex that guards |mach_map_|.
+  // Stores the Child process unique id (RenderProcessHost ID) for every
+  // process.
+  typedef std::map<int, base::ProcessHandle> ChildProcessIdMap;
+  ChildProcessIdMap child_process_id_map_;
+
+  // Mutex that guards |mach_map_| and |child_process_id_map_|.
   mutable base::Lock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(MachBroker);

@@ -37,10 +37,10 @@ chrome.extension.inIncognitoContext;
 
 
 /**
- * @param {string|Object.<string>=} opt_extensionIdOrConnectInfo Either the
+ * @param {string|Object<string>=} opt_extensionIdOrConnectInfo Either the
  *     extensionId to connect to, in which case connectInfo params can be
  *     passed in the next optional argument, or the connectInfo params.
- * @param {Object.<string>=} opt_connectInfo The connectInfo object,
+ * @param {Object<string>=} opt_connectInfo The connectInfo object,
  *     if arg1 was the extensionId to connect to.
  * @return {Port} New port.
  */
@@ -161,7 +161,7 @@ chrome.runtime.Manifest.Oauth2 = function() {};
 /** @type {string} */
 chrome.runtime.Manifest.Oauth2.prototype.client_id;
 
-/**@type {!Array.<string>} */
+/**@type {!Array<string>} */
 chrome.runtime.Manifest.Oauth2.prototype.scopes;
 
 
@@ -181,10 +181,10 @@ chrome.runtime.getManifest = function() {};
 chrome.runtime.getURL = function(path) {};
 
 /**
- * @param {string|!Object.<string>=} opt_extensionIdOrConnectInfo Either the
+ * @param {string|!Object<string>=} opt_extensionIdOrConnectInfo Either the
  *     extensionId to connect to, in which case connectInfo params can be
  *     passed in the next optional argument, or the connectInfo params.
- * @param {!Object.<string>=} opt_connectInfo The connectInfo object,
+ * @param {!Object<string>=} opt_connectInfo The connectInfo object,
  *     if arg1 was the extensionId to connect to.
  * @return {!Port} New port.
  */
@@ -325,7 +325,7 @@ chrome.tabs.captureVisibleTab = function(windowId, options, callback) {};
 
 /**
  * @param {number} tabId Tab Id.
- * @param {Object.<string>=} opt_connectInfo Info Object.
+ * @param {Object<string>=} opt_connectInfo Info Object.
  */
 chrome.tabs.connect = function(tabId, opt_connectInfo) {};
 
@@ -365,7 +365,7 @@ chrome.tabs.get = function(tabId, callback) {};
  * the public web pages, but there are still existing usages
  *
  * @param {number?} windowId Window id.
- * @param {function(Array.<Tab>): void} callback Callback.
+ * @param {function(Array<Tab>): void} callback Callback.
  */
 chrome.tabs.getAllInWindow = function(windowId, callback) {};
 
@@ -387,7 +387,7 @@ chrome.tabs.getSelected = function(windowId, callback) {};
 
 
 /**
- * @param {Object.<string, (number|Array.<number>)>} highlightInfo
+ * @param {Object<string, (number|Array<number>)>} highlightInfo
  *     An object with 'windowId' (number) and 'tabs'
  *     (number or array of numbers) keys.
  * @param {function(Window): void} callback Callback function invoked
@@ -407,7 +407,7 @@ chrome.tabs.insertCSS = function(tabId, details, opt_callback) {};
 
 /**
  * @param {number} tabId Tab id.
- * @param {Object.<string, number>} moveProperties An object with 'index'
+ * @param {Object<string, number>} moveProperties An object with 'index'
  *     and optional 'windowId' keys.
  * @param {function(Tab): void=} opt_callback Callback.
  */
@@ -415,18 +415,18 @@ chrome.tabs.move = function(tabId, moveProperties, opt_callback) {};
 
 
 /**
- * @param {Object.<string, (number|string)>} queryInfo An object which may have
+ * @param {Object<string, (number|string)>} queryInfo An object which may have
  *     'active', 'pinned', 'highlighted', 'status', 'title', 'url', 'windowId',
  *     and 'windowType' keys.
- * @param {function(Array.<Tab>): void=} opt_callback Callback.
- * @return {!Array.<Tab>}
+ * @param {function(Array<Tab>): void=} opt_callback Callback.
+ * @return {!Array<Tab>}
  */
 chrome.tabs.query = function(queryInfo, opt_callback) {};
 
 
 /**
  * @param {number=} opt_tabId Tab id.
- * @param {Object.<string, boolean>=} opt_reloadProperties An object which
+ * @param {Object<string, boolean>=} opt_reloadProperties An object which
  *   may have a 'bypassCache' key.
  * @param {function(): void=} opt_callback The callback function invoked
  *    after the tab has been reloaded.
@@ -435,7 +435,7 @@ chrome.tabs.reload = function(opt_tabId, opt_reloadProperties, opt_callback) {};
 
 
 /**
- * @param {number|Array.<number>} tabIds A tab ID or an array of tab IDs.
+ * @param {number|Array<number>} tabIds A tab ID or an array of tab IDs.
  * @param {function(Tab): void=} opt_callback Callback.
  */
 chrome.tabs.remove = function(tabIds, opt_callback) {};
@@ -461,7 +461,7 @@ chrome.tabs.sendRequest = function(tabId, request, opt_callback) {};
 
 /**
  * @param {number} tabId Tab id.
- * @param {Object.<string, (string|boolean)>} updateProperties An object which
+ * @param {Object<string, (string|boolean)>} updateProperties An object which
  *     may have 'url' or 'selected' key.
  * @param {function(Tab): void=} opt_callback Callback.
  */
@@ -532,7 +532,7 @@ chrome.windows.get = function(id, opt_getInfo, opt_callback) {};
 
 /**
  * @param {Object=} opt_getInfo May have 'populate' key. Or the callback.
- * @param {function(!Array.<!ChromeWindow>): void=} opt_callback Callback.
+ * @param {function(!Array<!ChromeWindow>): void=} opt_callback Callback.
  */
 chrome.windows.getAll = function(opt_getInfo, opt_callback) {};
 
@@ -598,7 +598,7 @@ chrome.i18n = {};
 
 
 /**
- * @param {function(Array.<string>): void} callback The callback function which
+ * @param {function(Array<string>): void} callback The callback function which
  *     accepts an array of the accept languages of the browser, such as
  *     'en-US','en','zh-CN'.
  */
@@ -607,7 +607,7 @@ chrome.i18n.getAcceptLanguages = function(callback) {};
 
 /**
  * @param {string} messageName
- * @param {(string|Array.<string>)=} opt_args
+ * @param {(string|Array<string>)=} opt_args
  * @return {string}
  */
 chrome.i18n.getMessage = function(messageName, opt_args) {};
@@ -664,13 +664,13 @@ TtsVoice.prototype.gender;
 TtsVoice.prototype.extensionId;
 
 
-/** @type {Array.<string>} */
+/** @type {Array<string>} */
 TtsVoice.prototype.eventTypes;
 
 
 /**
  * Gets an array of all available voices.
- * @param {function(Array.<TtsVoice>)=} opt_callback An optional callback
+ * @param {function(Array<TtsVoice>)=} opt_callback An optional callback
  *     function.
  */
 chrome.tts.getVoices = function(opt_callback) {};
@@ -708,7 +708,7 @@ chrome.history = {};
 
 
 /**
- * @param {Object.<string, string>} details Object with a 'url' key.
+ * @param {Object<string, string>} details Object with a 'url' key.
  */
 chrome.history.addUrl = function(details) {};
 
@@ -720,7 +720,7 @@ chrome.history.deleteAll = function(callback) {};
 
 
 /**
- * @param {Object.<string, string>} range Object with 'startTime'
+ * @param {Object<string, string>} range Object with 'startTime'
  *     and 'endTime' keys.
  * @param {function(): void} callback Callback function.
  */
@@ -728,25 +728,25 @@ chrome.history.deleteRange = function(range, callback) {};
 
 
 /**
- * @param {Object.<string, string>} details Object with a 'url' key.
+ * @param {Object<string, string>} details Object with a 'url' key.
  */
 chrome.history.deleteUrl = function(details) {};
 
 
 /**
- * @param {Object.<string, string>} details Object with a 'url' key.
- * @param {function(!Array.<!VisitItem>): void} callback Callback function.
- * @return {!Array.<!VisitItem>}
+ * @param {Object<string, string>} details Object with a 'url' key.
+ * @param {function(!Array<!VisitItem>): void} callback Callback function.
+ * @return {!Array<!VisitItem>}
  */
 chrome.history.getVisits = function(details, callback) {};
 
 
 /**
- * @param {Object.<string, string>} query Object with a 'text' (string)
+ * @param {Object<string, string>} query Object with a 'text' (string)
  *     key and optional 'startTime' (number), 'endTime' (number) and
  *     'maxResults' keys.
- * @param {function(!Array.<!HistoryItem>): void} callback Callback function.
- * @return {!Array.<!HistoryItem>}
+ * @param {function(!Array<!HistoryItem>): void} callback Callback function.
+ * @return {!Array<!HistoryItem>}
  */
 chrome.history.search = function(query, callback) {};
 
@@ -767,8 +767,8 @@ chrome.permissions = {};
 
 /**
  * @typedef {{
- *   permissions: (Array.<string>|undefined),
- *   origins: (Array.<string>|undefined)
+ *   permissions: (Array<string>|undefined),
+ *   origins: (Array<string>|undefined)
  * }}
 * @see http://developer.chrome.com/extensions/permissions.html#type-Permissions
 */
@@ -914,7 +914,7 @@ ChromeWindow.prototype.width;
 ChromeWindow.prototype.height;
 
 
-/** @type {Array.<Tab>} */
+/** @type {Array<Tab>} */
 ChromeWindow.prototype.tabs;
 
 
@@ -983,7 +983,7 @@ Port.prototype.sender;
 
 
 /**
- * @param {Object.<string>} obj Message object.
+ * @param {Object<string>} obj Message object.
  */
 Port.prototype.postMessage = function(obj) {};
 
@@ -1053,7 +1053,7 @@ BookmarkTreeNode.prototype.dateAdded;
 BookmarkTreeNode.prototype.dateGroupModified;
 
 
-/** @type {Array.<BookmarkTreeNode>} */
+/** @type {Array<BookmarkTreeNode>} */
 BookmarkTreeNode.prototype.children;
 
 
@@ -1211,15 +1211,377 @@ chrome.storage.local.remove = function(keys, opt_callback) {};
 chrome.storage.onChanged;
 
 
+// Begin auto generated externs; do not edit.
+// The following was generated from:
+//
+// python tools/json_schema_compiler/compiler.py
+//     -g externs
+//     chrome/common/extensions/api/automation.idl
+
 /**
  * @const
  */
 chrome.automation = {};
 
 /**
+ * @enum {string}
+ */
+chrome.automation.EventType = {
+  activedescendantchanged: 'activedescendantchanged',
+  alert: 'alert',
+  ariaAttributeChanged: 'ariaAttributeChanged',
+  autocorrectionOccured: 'autocorrectionOccured',
+  blur: 'blur',
+  checkedStateChanged: 'checkedStateChanged',
+  childrenChanged: 'childrenChanged',
+  focus: 'focus',
+  hide: 'hide',
+  hover: 'hover',
+  invalidStatusChanged: 'invalidStatusChanged',
+  layoutComplete: 'layoutComplete',
+  liveRegionChanged: 'liveRegionChanged',
+  loadComplete: 'loadComplete',
+  locationChanged: 'locationChanged',
+  menuEnd: 'menuEnd',
+  menuListItemSelected: 'menuListItemSelected',
+  menuListValueChanged: 'menuListValueChanged',
+  menuPopupEnd: 'menuPopupEnd',
+  menuPopupStart: 'menuPopupStart',
+  menuStart: 'menuStart',
+  rowCollapsed: 'rowCollapsed',
+  rowCountChanged: 'rowCountChanged',
+  rowExpanded: 'rowExpanded',
+  scrollPositionChanged: 'scrollPositionChanged',
+  scrolledToAnchor: 'scrolledToAnchor',
+  selectedChildrenChanged: 'selectedChildrenChanged',
+  selection: 'selection',
+  selectionAdd: 'selectionAdd',
+  selectionRemove: 'selectionRemove',
+  show: 'show',
+  textChanged: 'textChanged',
+  textSelectionChanged: 'textSelectionChanged',
+  treeChanged: 'treeChanged',
+  valueChanged: 'valueChanged',
+};
+
+/**
+ * @enum {string}
+ */
+chrome.automation.RoleType = {
+  alertDialog: 'alertDialog',
+  alert: 'alert',
+  annotation: 'annotation',
+  application: 'application',
+  article: 'article',
+  banner: 'banner',
+  blockquote: 'blockquote',
+  busyIndicator: 'busyIndicator',
+  button: 'button',
+  buttonDropDown: 'buttonDropDown',
+  canvas: 'canvas',
+  caption: 'caption',
+  cell: 'cell',
+  checkBox: 'checkBox',
+  client: 'client',
+  colorWell: 'colorWell',
+  columnHeader: 'columnHeader',
+  column: 'column',
+  comboBox: 'comboBox',
+  complementary: 'complementary',
+  contentInfo: 'contentInfo',
+  date: 'date',
+  dateTime: 'dateTime',
+  definition: 'definition',
+  descriptionListDetail: 'descriptionListDetail',
+  descriptionList: 'descriptionList',
+  descriptionListTerm: 'descriptionListTerm',
+  desktop: 'desktop',
+  details: 'details',
+  dialog: 'dialog',
+  directory: 'directory',
+  disclosureTriangle: 'disclosureTriangle',
+  div: 'div',
+  document: 'document',
+  embeddedObject: 'embeddedObject',
+  figcaption: 'figcaption',
+  figure: 'figure',
+  footer: 'footer',
+  form: 'form',
+  grid: 'grid',
+  group: 'group',
+  heading: 'heading',
+  iframe: 'iframe',
+  iframePresentational: 'iframePresentational',
+  ignored: 'ignored',
+  imageMapLink: 'imageMapLink',
+  imageMap: 'imageMap',
+  image: 'image',
+  inlineTextBox: 'inlineTextBox',
+  labelText: 'labelText',
+  legend: 'legend',
+  lineBreak: 'lineBreak',
+  link: 'link',
+  listBoxOption: 'listBoxOption',
+  listBox: 'listBox',
+  listItem: 'listItem',
+  listMarker: 'listMarker',
+  list: 'list',
+  locationBar: 'locationBar',
+  log: 'log',
+  main: 'main',
+  marquee: 'marquee',
+  math: 'math',
+  menuBar: 'menuBar',
+  menuButton: 'menuButton',
+  menuItem: 'menuItem',
+  menuItemCheckBox: 'menuItemCheckBox',
+  menuItemRadio: 'menuItemRadio',
+  menuListOption: 'menuListOption',
+  menuListPopup: 'menuListPopup',
+  menu: 'menu',
+  meter: 'meter',
+  navigation: 'navigation',
+  note: 'note',
+  outline: 'outline',
+  pane: 'pane',
+  paragraph: 'paragraph',
+  popUpButton: 'popUpButton',
+  pre: 'pre',
+  presentational: 'presentational',
+  progressIndicator: 'progressIndicator',
+  radioButton: 'radioButton',
+  radioGroup: 'radioGroup',
+  region: 'region',
+  rootWebArea: 'rootWebArea',
+  rowHeader: 'rowHeader',
+  row: 'row',
+  ruby: 'ruby',
+  ruler: 'ruler',
+  svgRoot: 'svgRoot',
+  scrollArea: 'scrollArea',
+  scrollBar: 'scrollBar',
+  seamlessWebArea: 'seamlessWebArea',
+  search: 'search',
+  searchBox: 'searchBox',
+  slider: 'slider',
+  sliderThumb: 'sliderThumb',
+  spinButtonPart: 'spinButtonPart',
+  spinButton: 'spinButton',
+  splitter: 'splitter',
+  staticText: 'staticText',
+  status: 'status',
+  switch: 'switch',
+  tabGroup: 'tabGroup',
+  tabList: 'tabList',
+  tabPanel: 'tabPanel',
+  tab: 'tab',
+  tableHeaderContainer: 'tableHeaderContainer',
+  table: 'table',
+  textField: 'textField',
+  time: 'time',
+  timer: 'timer',
+  titleBar: 'titleBar',
+  toggleButton: 'toggleButton',
+  toolbar: 'toolbar',
+  treeGrid: 'treeGrid',
+  treeItem: 'treeItem',
+  tree: 'tree',
+  unknown: 'unknown',
+  tooltip: 'tooltip',
+  webArea: 'webArea',
+  webView: 'webView',
+  window: 'window',
+};
+
+/**
+ * @enum {string}
+ */
+chrome.automation.StateType = {
+  busy: 'busy',
+  checked: 'checked',
+  collapsed: 'collapsed',
+  default: 'default',
+  disabled: 'disabled',
+  editable: 'editable',
+  enabled: 'enabled',
+  expanded: 'expanded',
+  focusable: 'focusable',
+  focused: 'focused',
+  haspopup: 'haspopup',
+  horizontal: 'horizontal',
+  hovered: 'hovered',
+  indeterminate: 'indeterminate',
+  invisible: 'invisible',
+  linked: 'linked',
+  multiselectable: 'multiselectable',
+  offscreen: 'offscreen',
+  pressed: 'pressed',
+  protected: 'protected',
+  readOnly: 'readOnly',
+  required: 'required',
+  selectable: 'selectable',
+  selected: 'selected',
+  vertical: 'vertical',
+  visited: 'visited',
+};
+
+/**
+ * @enum {string}
+ */
+chrome.automation.TreeChangeType = {
+  nodeCreated: 'nodeCreated',
+  subtreeCreated: 'subtreeCreated',
+  nodeChanged: 'nodeChanged',
+  nodeRemoved: 'nodeRemoved',
+};
+
+/**
+ * @typedef {{
+ *   left: number,
+ *   top: number,
+ *   width: number,
+ *   height: number
+ * }}
+ */
+chrome.automation.Rect;
+
+/**
+ * @typedef {{
+ *   role: (!chrome.automation.RoleType|undefined),
+ *   state: (Object|undefined),
+ *   attributes: (Object|undefined)
+ * }}
+ */
+chrome.automation.FindParams;
+
+/**
+ * @constructor
+ */
+chrome.automation.AutomationEvent = function() {};
+
+/**
+ * @typedef {{
+ *   target: chrome.automation.AutomationNode,
+ *   type: !chrome.automation.TreeChangeType
+ * }}
+ */
+chrome.automation.TreeChange;
+
+/**
  * @constructor
  */
 chrome.automation.AutomationNode = function() {};
+
+/**
+ * @typedef {{
+ *   activedescendant: chrome.automation.AutomationNode
+ * }}
+ */
+chrome.automation.ActiveDescendantMixin;
+
+/**
+ * @typedef {{
+ *   url: string
+ * }}
+ */
+chrome.automation.LinkMixins;
+
+/**
+ * @typedef {{
+ *   docUrl: string,
+ *   docTitle: string,
+ *   docLoaded: boolean,
+ *   docLoadingProgress: number
+ * }}
+ */
+chrome.automation.DocumentMixins;
+
+/**
+ * @typedef {{
+ *   scrollX: number,
+ *   scrollXMin: number,
+ *   scrollXMax: number,
+ *   scrollY: number,
+ *   scrollYMin: number,
+ *   scrollYMax: number
+ * }}
+ */
+chrome.automation.ScrollableMixins;
+
+/**
+ * @typedef {{
+ *   textSelStart: number,
+ *   textSelEnd: number
+ * }}
+ */
+chrome.automation.EditableTextMixins;
+
+/**
+ * @typedef {{
+ *   valueForRange: number,
+ *   minValueForRange: number,
+ *   maxValueForRange: number
+ * }}
+ */
+chrome.automation.RangeMixins;
+
+/**
+ * @typedef {{
+ *   tableRowCount: number,
+ *   tableColumnCount: number
+ * }}
+ */
+chrome.automation.TableMixins;
+
+/**
+ * @typedef {{
+ *   tableCellColumnIndex: number,
+ *   tableCellColumnSpan: number,
+ *   tableCellRowIndex: number,
+ *   tableCellRowSpan: number
+ * }}
+ */
+chrome.automation.TableCellMixins;
+
+/**
+ * Get the automation tree for the tab with the given tabId, or the current tab
+ * if no tabID is given, enabling automation if necessary. Returns a tree with a
+ * placeholder root node; listen for the "loadComplete" event to get a
+ * notification that the tree has fully loaded (the previous root node reference
+ * will stop working at or before this point).
+ * @param {number} tabId
+ * @param {function(chrome.automation.AutomationNode):void} callback
+ *     Called when the <code>AutomationNode</code> for the page is available.
+ */
+chrome.automation.getTree = function(tabId, callback) {};
+
+/**
+ * Get the automation tree for the whole desktop which consists of all on screen
+ * views. Note this API is currently only supported on Chrome OS.
+ * @param {function(chrome.automation.AutomationNode):void} callback
+ *     Called when the <code>AutomationNode</code> for the page is available.
+ */
+chrome.automation.getDesktop = function(callback) {};
+
+/**
+ * Add a tree change observer. Tree change observers are static/global,
+ * they listen to tree changes across all trees.
+ * @param {function(chrome.automation.TreeChange):void} observer
+ *     A listener for tree changes on the <code>AutomationNode</code> tree.
+ */
+chrome.automation.addTreeChangeObserver = function(observer) {};
+
+/**
+ * Remove a tree change observer.
+ * @param {function(chrome.automation.TreeChange):void} observer
+ *     A listener for tree changes on the <code>AutomationNode</code> tree.
+ */
+chrome.automation.removeTreeChangeObserver = function(observer) {};
+
+//
+// End auto generated externs; do not edit.
+//
+
 
 
 /**
@@ -1229,11 +1591,26 @@ chrome.automation.AutomationNode.prototype.role;
 
 
 /**
+ * @type {!Object<chrome.automation.StateType, boolean>}
+ */
+chrome.automation.AutomationNode.prototype.state;
+
+
+/**
+ * @type {number}
+ */
+chrome.automation.AutomationNode.prototype.indexInParent;
+
+
+/**
  * @type {{
  *     name: string,
+ *     url: string,
  *     value: string,
- *     wordStarts: Array.<number>,
- *     wordEnds: Array.<number>
+ *     textSelStart: number,
+ *     textSelEnd: number,
+ *     wordStarts: Array<number>,
+ *     wordEnds: Array<number>
  * }}
  */
 chrome.automation.AutomationNode.prototype.attributes;
@@ -1246,39 +1623,39 @@ chrome.automation.AutomationNode.prototype.root;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.firstChild = function() {};
+chrome.automation.AutomationNode.prototype.firstChild;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.lastChild = function() {};
+chrome.automation.AutomationNode.prototype.lastChild;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.nextSibling = function() {};
+chrome.automation.AutomationNode.prototype.nextSibling;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.previousSibling = function() {};
+chrome.automation.AutomationNode.prototype.previousSibling;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.parent = function() {};
+chrome.automation.AutomationNode.prototype.parent;
 
 
 /**
- * @return {!Array.<chrome.automation.AutomationNode>}
+ * @type {!Array<chrome.automation.AutomationNode>}
  */
-chrome.automation.AutomationNode.prototype.children = function() {};
+chrome.automation.AutomationNode.prototype.children;
 
 
 /**
@@ -1305,19 +1682,56 @@ chrome.automation.AutomationNode.prototype.removeEventListener =
     function(eventType, callback, capture) {};
 
 
+/**
+ * @type {chrome.automation.AutomationNode}
+ */
+chrome.automation.TreeChange.prototype.target;
+
+
+/**
+ * @type {chrome.automation.TreeChangeType}
+ */
+chrome.automation.TreeChange.prototype.type;
+
+
+/**
+ * @param {function(chrome.automation.TreeChange) : void}
+ *    callback
+ */
+chrome.automation.AutomationNode.prototype.addTreeChangeObserver =
+    function(callback) {};
+
+
+/**
+ * @param {function(chrome.automation.TreeChange) : void}
+ *    callback
+ */
+chrome.automation.AutomationNode.prototype.removeTreeChangeObserver =
+    function(callback) {};
+
+
+chrome.automation.AutomationNode.prototype.doDefault = function() {};
+
+
 chrome.automation.AutomationNode.prototype.focus = function() {};
 
+/** @type {string} */
+chrome.automation.AutomationNode.prototype.containerLiveStatus;
+
+/** @type {string} */
+chrome.automation.AutomationNode.prototype.containerLiveRelevant;
+
+/** @type {boolean} */
+chrome.automation.AutomationNode.prototype.containerLiveAtomic;
+
+/** @type {boolean} */
+chrome.automation.AutomationNode.prototype.containerLiveBusy;
+
 
 /**
- * @param {function(chrome.automation.AutomationNode)} callback
+ * @param {Object} findParams
  */
-chrome.automation.getDesktop = function(callback) {};
-
-
-/**
- * @param {function(chrome.automation.AutomationNode)} callback
- */
-chrome.automation.getTree = function(callback) {};
+chrome.automation.AutomationNode.prototype.find = function(findParams) {};
 
 
 /**
@@ -1331,206 +1745,9 @@ chrome.commands = {};
  */
 chrome.commands.onCommand;
 
-
-// Begin auto generated externs; do not edit.
-// The following was generated from tools/json_schema_compiler/compiler.py.
 /**
- * Possible events fired on an $(ref:automation.AutomationNode).
- * @enum {string}
+ * @param {function(Array<{description: string,
+ *                         name: string,
+ *                         shortcut: string}>): void} callback
  */
-chrome.automation.EventType = {
-    activedescendantchanged: 'activedescendantchanged',
-    alert: 'alert',
-    ariaAttributeChanged: 'ariaAttributeChanged',
-    autocorrectionOccured: 'autocorrectionOccured',
-    blur: 'blur',
-    checkedStateChanged: 'checkedStateChanged',
-    childrenChanged: 'childrenChanged',
-    focus: 'focus',
-    hide: 'hide',
-    hover: 'hover',
-    invalidStatusChanged: 'invalidStatusChanged',
-    layoutComplete: 'layoutComplete',
-    liveRegionChanged: 'liveRegionChanged',
-    loadComplete: 'loadComplete',
-    locationChanged: 'locationChanged',
-    menuEnd: 'menuEnd',
-    menuListItemSelected: 'menuListItemSelected',
-    menuListValueChanged: 'menuListValueChanged',
-    menuPopupEnd: 'menuPopupEnd',
-    menuPopupStart: 'menuPopupStart',
-    menuStart: 'menuStart',
-    rowCollapsed: 'rowCollapsed',
-    rowCountChanged: 'rowCountChanged',
-    rowExpanded: 'rowExpanded',
-    scrollPositionChanged: 'scrollPositionChanged',
-    scrolledToAnchor: 'scrolledToAnchor',
-    selectedChildrenChanged: 'selectedChildrenChanged',
-    selectedTextChanged: 'selectedTextChanged',
-    selection: 'selection',
-    selectionAdd: 'selectionAdd',
-    selectionRemove: 'selectionRemove',
-    show: 'show',
-    textChanged: 'textChanged',
-    textInserted: 'textInserted',
-    textRemoved: 'textRemoved',
-    textSelectionChanged: 'textSelectionChanged',
-    valueChanged: 'valueChanged'
-};
-/**
- * Describes the purpose of an $(ref:automation.AutomationNode).
- * @enum {string}
- */
-chrome.automation.RoleType = {
-    alertDialog: 'alertDialog',
-    alert: 'alert',
-    annotation: 'annotation',
-    application: 'application',
-    article: 'article',
-    banner: 'banner',
-    browser: 'browser',
-    busyIndicator: 'busyIndicator',
-    button: 'button',
-    buttonDropDown: 'buttonDropDown',
-    canvas: 'canvas',
-    cell: 'cell',
-    checkBox: 'checkBox',
-    client: 'client',
-    colorWell: 'colorWell',
-    columnHeader: 'columnHeader',
-    column: 'column',
-    comboBox: 'comboBox',
-    complementary: 'complementary',
-    contentInfo: 'contentInfo',
-    definition: 'definition',
-    descriptionListDetail: 'descriptionListDetail',
-    descriptionListTerm: 'descriptionListTerm',
-    desktop: 'desktop',
-    dialog: 'dialog',
-    directory: 'directory',
-    disclosureTriangle: 'disclosureTriangle',
-    div: 'div',
-    document: 'document',
-    drawer: 'drawer',
-    editableText: 'editableText',
-    embeddedObject: 'embeddedObject',
-    footer: 'footer',
-    form: 'form',
-    grid: 'grid',
-    group: 'group',
-    growArea: 'growArea',
-    heading: 'heading',
-    helpTag: 'helpTag',
-    horizontalRule: 'horizontalRule',
-    iframe: 'iframe',
-    ignored: 'ignored',
-    imageMapLink: 'imageMapLink',
-    imageMap: 'imageMap',
-    image: 'image',
-    incrementor: 'incrementor',
-    inlineTextBox: 'inlineTextBox',
-    labelText: 'labelText',
-    legend: 'legend',
-    link: 'link',
-    listBoxOption: 'listBoxOption',
-    listBox: 'listBox',
-    listItem: 'listItem',
-    listMarker: 'listMarker',
-    list: 'list',
-    locationBar: 'locationBar',
-    log: 'log',
-    main: 'main',
-    marquee: 'marquee',
-    mathElement: 'mathElement',
-    math: 'math',
-    matte: 'matte',
-    menuBar: 'menuBar',
-    menuButton: 'menuButton',
-    menuItem: 'menuItem',
-    menuListOption: 'menuListOption',
-    menuListPopup: 'menuListPopup',
-    menu: 'menu',
-    navigation: 'navigation',
-    note: 'note',
-    outline: 'outline',
-    pane: 'pane',
-    paragraph: 'paragraph',
-    popUpButton: 'popUpButton',
-    presentational: 'presentational',
-    progressIndicator: 'progressIndicator',
-    radioButton: 'radioButton',
-    radioGroup: 'radioGroup',
-    region: 'region',
-    rootWebArea: 'rootWebArea',
-    rowHeader: 'rowHeader',
-    row: 'row',
-    rulerMarker: 'rulerMarker',
-    ruler: 'ruler',
-    svgRoot: 'svgRoot',
-    scrollArea: 'scrollArea',
-    scrollBar: 'scrollBar',
-    seamlessWebArea: 'seamlessWebArea',
-    search: 'search',
-    sheet: 'sheet',
-    slider: 'slider',
-    sliderThumb: 'sliderThumb',
-    spinButtonPart: 'spinButtonPart',
-    spinButton: 'spinButton',
-    splitGroup: 'splitGroup',
-    splitter: 'splitter',
-    staticText: 'staticText',
-    status: 'status',
-    systemWide: 'systemWide',
-    tabGroup: 'tabGroup',
-    tabList: 'tabList',
-    tabPanel: 'tabPanel',
-    tab: 'tab',
-    tableHeaderContainer: 'tableHeaderContainer',
-    table: 'table',
-    textArea: 'textArea',
-    textField: 'textField',
-    timer: 'timer',
-    titleBar: 'titleBar',
-    toggleButton: 'toggleButton',
-    toolbar: 'toolbar',
-    treeGrid: 'treeGrid',
-    treeItem: 'treeItem',
-    tree: 'tree',
-    unknown: 'unknown',
-    tooltip: 'tooltip',
-    valueIndicator: 'valueIndicator',
-    webArea: 'webArea',
-    window: 'window'
-};
-/**
- * Describes characteristics of an $(ref:automation.AutomationNode).
- * @enum {string}
- */
-chrome.automation.StateType = {
-    busy: 'busy',
-    checked: 'checked',
-    collapsed: 'collapsed',
-    default: 'default',
-    disabled: 'disabled',
-    editable: 'editable',
-    enabled: 'enabled',
-    expanded: 'expanded',
-    focusable: 'focusable',
-    focused: 'focused',
-    haspopup: 'haspopup',
-    hovered: 'hovered',
-    indeterminate: 'indeterminate',
-    invisible: 'invisible',
-    linked: 'linked',
-    multiselectable: 'multiselectable',
-    offscreen: 'offscreen',
-    pressed: 'pressed',
-    protected: 'protected',
-    readOnly: 'readOnly',
-    required: 'required',
-    selectable: 'selectable',
-    selected: 'selected',
-    vertical: 'vertical',
-    visited: 'visited'
-};
-// End auto generated externs; do not edit.
+chrome.commands.getAll = function(callback) {};

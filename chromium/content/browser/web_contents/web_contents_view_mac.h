@@ -17,7 +17,7 @@
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "ui/base/cocoa/base_view.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 @class FocusTracker;
 class SkBitmap;
@@ -45,6 +45,7 @@ CONTENT_EXPORT
 }
 
 - (void)setMouseDownCanMoveWindow:(BOOL)canMove;
+- (void)setOpaque:(BOOL)opaque;
 
 // Expose this, since sometimes one needs both the NSView and the
 // WebContentsImpl.

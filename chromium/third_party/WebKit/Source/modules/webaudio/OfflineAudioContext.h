@@ -25,19 +25,21 @@
 #ifndef OfflineAudioContext_h
 #define OfflineAudioContext_h
 
+#include "modules/ModulesExport.h"
 #include "modules/webaudio/AudioContext.h"
 
 namespace blink {
 
 class ExceptionState;
 
-class OfflineAudioContext final : public AudioContext {
+class MODULES_EXPORT OfflineAudioContext final : public AudioContext {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static OfflineAudioContext* create(ExecutionContext*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
 
     virtual ~OfflineAudioContext();
 
+    ScriptPromise startOfflineRendering(ScriptState*);
 private:
     OfflineAudioContext(Document*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
 };

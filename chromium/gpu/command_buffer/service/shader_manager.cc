@@ -26,69 +26,112 @@ std::string GetTopVariableName(const std::string& fullname) {
 
 Shader::Shader(GLuint service_id, GLenum shader_type)
       : use_count_(0),
+        shader_state_(kShaderStateWaiting),
+        marked_for_deletion_(false),
         service_id_(service_id),
         shader_type_(shader_type),
+        shader_version_(kUndefinedShaderVersion),
+        source_type_(kANGLE),
         valid_(false) {
 }
 
 Shader::~Shader() {
 }
 
-void Shader::DoCompile(ShaderTranslatorInterface* translator,
-                       TranslatedShaderSourceType type) {
+void Shader::Destroy() {
+  if (service_id_) {
+    DeleteServiceID();
+  }
+}
+
+void Shader::RequestCompile(scoped_refptr<ShaderTranslatorInterface> translator,
+                            TranslatedShaderSourceType type) {
+  shader_state_ = kShaderStateCompileRequested;
+  translator_ = translator;
+  source_type_ = type;
+  last_compiled_source_ = source_;
+}
+
+void Shader::DoCompile() {
+  // We require that RequestCompile() must be called before DoCompile(),
+  // so we can return early if the shader state is not what we expect.
+  if (shader_state_ != kShaderStateCompileRequested) {
+    return;
+  }
+
+  // Signify the shader has been compiled, whether or not it is valid
+  // is dependent on the |valid_| member variable.
+  shader_state_ = kShaderStateCompiled;
+  valid_ = false;
+
   // Translate GL ES 2.0 shader to Desktop GL shader and pass that to
   // glShaderSource and then glCompileShader.
-  const char* source_for_driver = source_.c_str();
+  const char* source_for_driver = last_compiled_source_.c_str();
+  ShaderTranslatorInterface* translator = translator_.get();
   if (translator) {
-    valid_ = translator->Translate(source_,
-                                   &log_info_,
-                                   &translated_source_,
-                                   &attrib_map_,
-                                   &uniform_map_,
-                                   &varying_map_,
-                                   &name_map_);
-    if (!valid_) {
+    bool success = translator->Translate(last_compiled_source_,
+                                         &log_info_,
+                                         &translated_source_,
+                                         &shader_version_,
+                                         &attrib_map_,
+                                         &uniform_map_,
+                                         &varying_map_,
+                                         &name_map_);
+    if (!success) {
       return;
     }
-    signature_source_ = source_;
     source_for_driver = translated_source_.c_str();
   }
 
   glShaderSource(service_id_, 1, &source_for_driver, NULL);
   glCompileShader(service_id_);
-  if (type == kANGLE) {
+  if (source_type_ == kANGLE) {
     GLint max_len = 0;
     glGetShaderiv(service_id_,
                   GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE,
                   &max_len);
-    scoped_ptr<char[]> buffer(new char[max_len]);
-    GLint len = 0;
-    glGetTranslatedShaderSourceANGLE(
-        service_id_, max_len, &len, buffer.get());
-    DCHECK(max_len == 0 || len < max_len);
-    DCHECK(len == 0 || buffer[len] == '\0');
-    translated_source_ = std::string(buffer.get(), len);
+    source_for_driver = "\0";
+    translated_source_.resize(max_len);
+    if (max_len) {
+      GLint len = 0;
+      glGetTranslatedShaderSourceANGLE(
+          service_id_, translated_source_.size(),
+          &len, &translated_source_.at(0));
+      DCHECK(max_len == 0 || len < max_len);
+      DCHECK(len == 0 || translated_source_[len] == '\0');
+      translated_source_.resize(len);
+      source_for_driver = translated_source_.c_str();
+    }
   }
 
   GLint status = GL_FALSE;
   glGetShaderiv(service_id_, GL_COMPILE_STATUS, &status);
-  if (status != GL_TRUE) {
+  if (status == GL_TRUE) {
+    valid_ = true;
+  } else {
+    valid_ = false;
+
     // We cannot reach here if we are using the shader translator.
     // All invalid shaders must be rejected by the translator.
     // All translated shaders must compile.
+    std::string translator_log = log_info_;
+
     GLint max_len = 0;
     glGetShaderiv(service_id_, GL_INFO_LOG_LENGTH, &max_len);
-    scoped_ptr<char[]> buffer(new char[max_len]);
-    GLint len = 0;
-    glGetShaderInfoLog(service_id_, max_len, &len, buffer.get());
-    DCHECK(max_len == 0 || len < max_len);
-    DCHECK(len == 0 || buffer[len] == '\0');
-    valid_ = false;
-    log_info_ = std::string(buffer.get(), len);
+    log_info_.resize(max_len);
+    if (max_len) {
+      GLint len = 0;
+      glGetShaderInfoLog(service_id_, log_info_.size(), &len, &log_info_.at(0));
+      DCHECK(max_len == 0 || len < max_len);
+      DCHECK(len == 0 || log_info_[len] == '\0');
+      log_info_.resize(len);
+    }
+
     LOG_IF(ERROR, translator)
         << "Shader translator allowed/produced an invalid shader "
         << "unless the driver is buggy:"
-        << "\n--original-shader--\n" << source_
+        << "\n--Log from shader translator--\n" << translator_log
+        << "\n--original-shader--\n" << last_compiled_source_
         << "\n--translated-shader--\n" << source_for_driver
         << "\n--info-log--\n" << log_info_;
   }
@@ -101,10 +144,24 @@ void Shader::IncUseCount() {
 void Shader::DecUseCount() {
   --use_count_;
   DCHECK_GE(use_count_, 0);
+  if (service_id_ && use_count_ == 0 && marked_for_deletion_) {
+    DeleteServiceID();
+  }
 }
 
-void Shader::MarkAsDeleted() {
+void Shader::MarkForDeletion() {
+  DCHECK(!marked_for_deletion_);
   DCHECK_NE(service_id_, 0u);
+
+  marked_for_deletion_ = true;
+  if (use_count_ == 0) {
+    DeleteServiceID();
+  }
+}
+
+void Shader::DeleteServiceID() {
+  DCHECK_NE(service_id_, 0u);
+  glDeleteShader(service_id_);
   service_id_ = 0;
 }
 
@@ -154,10 +211,7 @@ void ShaderManager::Destroy(bool have_context) {
   while (!shaders_.empty()) {
     if (have_context) {
       Shader* shader = shaders_.begin()->second.get();
-      if (!shader->IsDeleted()) {
-        glDeleteShader(shader->service_id());
-        shader->MarkAsDeleted();
-      }
+      shader->Destroy();
     }
     shaders_.erase(shaders_.begin());
   }
@@ -217,10 +271,10 @@ void ShaderManager::RemoveShader(Shader* shader) {
   }
 }
 
-void ShaderManager::MarkAsDeleted(Shader* shader) {
+void ShaderManager::Delete(Shader* shader) {
   DCHECK(shader);
   DCHECK(IsOwned(shader));
-  shader->MarkAsDeleted();
+  shader->MarkForDeletion();
   RemoveShader(shader);
 }
 
@@ -239,5 +293,3 @@ void ShaderManager::UnuseShader(Shader* shader) {
 
 }  // namespace gles2
 }  // namespace gpu
-
-

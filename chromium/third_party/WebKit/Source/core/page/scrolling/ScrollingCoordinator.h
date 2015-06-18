@@ -26,10 +26,12 @@
 #ifndef ScrollingCoordinator_h
 #define ScrollingCoordinator_h
 
-#include "core/rendering/RenderObject.h"
+#include "core/CoreExport.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/PlatformWheelEvent.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -47,7 +49,8 @@ class Page;
 class Region;
 class ScrollableArea;
 
-class ScrollingCoordinator {
+class CORE_EXPORT ScrollingCoordinator {
+    WTF_MAKE_NONCOPYABLE(ScrollingCoordinator);
 public:
     ~ScrollingCoordinator();
 
@@ -66,6 +69,9 @@ public:
     void updateHaveWheelEventHandlers();
     void updateHaveScrollEventHandlers();
 
+    // Should be called whenever scrollable area set changes.
+    void scrollableAreasDidChange();
+
     // Should be called whenever the slow repaint objects counter changes between zero and one.
     void frameViewHasSlowRepaintObjectsDidChange(FrameView*);
 
@@ -82,27 +88,26 @@ public:
 
     enum MainThreadScrollingReasonFlags {
         HasSlowRepaintObjects = 1 << 0,
-        HasViewportConstrainedObjectsWithoutSupportingFixedLayers = 1 << 1,
-        HasNonLayerViewportConstrainedObjects = 1 << 2,
-        ThreadedScrollingDisabled = 1 << 3
+        HasNonLayerViewportConstrainedObjects = 1 << 1,
+        ThreadedScrollingDisabled = 1 << 2
     };
 
     MainThreadScrollingReasons mainThreadScrollingReasons() const;
     bool shouldUpdateScrollLayerPositionOnMainThread() const { return mainThreadScrollingReasons() != 0; }
 
-    PassOwnPtr<blink::WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar);
+    PassOwnPtr<WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar);
 
     void willDestroyScrollableArea(ScrollableArea*);
     // Returns true if the coordinator handled this change.
     bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
-    void updateLayerPositionConstraint(RenderLayer*);
+    void updateLayerPositionConstraint(DeprecatedPaintLayer*);
     void touchEventTargetRectsDidChange();
-    void willDestroyRenderLayer(RenderLayer*);
+    void willDestroyLayer(DeprecatedPaintLayer*);
 
-    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent);
-    void updateClipParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent);
+    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
+    void updateClipParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
@@ -117,6 +122,7 @@ public:
 protected:
     explicit ScrollingCoordinator(Page*);
 
+    bool isForRootLayer(ScrollableArea*) const;
     bool isForMainFrame(ScrollableArea*) const;
     bool isForViewport(ScrollableArea*) const;
 
@@ -128,7 +134,7 @@ protected:
     bool m_shouldScrollOnMainThreadDirty;
 
 private:
-    bool shouldUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsDirty(); }
+    bool shouldUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || m_shouldScrollOnMainThreadDirty || frameViewIsDirty(); }
 
     void setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons);
 
@@ -138,19 +144,18 @@ private:
     void setTouchEventTargetRects(LayerHitTestRects&);
     void computeTouchEventTargetRects(LayerHitTestRects&);
 
-    blink::WebScrollbarLayer* addWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation, PassOwnPtr<blink::WebScrollbarLayer>);
-    blink::WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
+    WebScrollbarLayer* addWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation, PassOwnPtr<WebScrollbarLayer>);
+    WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
     void removeWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
 
     bool frameViewIsDirty() const;
 
-    using ScrollbarMap = HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer>>;
+    using ScrollbarMap = HashMap<ScrollableArea*, OwnPtr<WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
-    HashSet<const RenderLayer*> m_layersWithTouchRects;
+    HashSet<const DeprecatedPaintLayer*> m_layersWithTouchRects;
     bool m_wasFrameScrollable;
 
-    // This is retained for testing.
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;
 };
 

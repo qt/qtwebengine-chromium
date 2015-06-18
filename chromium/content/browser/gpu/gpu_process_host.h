@@ -26,9 +26,9 @@
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sender.h"
 #include "ipc/message_filter.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
 #include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
@@ -40,10 +40,12 @@ struct ChannelHandle;
 namespace content {
 class BrowserChildProcessHostImpl;
 class GpuMainThread;
+class InProcessChildThreadParams;
 class RenderWidgetHostViewFrameSubscriber;
 class ShaderDiskCache;
 
-typedef base::Thread* (*GpuMainThreadFactoryFunction)(const std::string& id);
+typedef base::Thread* (*GpuMainThreadFactoryFunction)(
+    const InProcessChildThreadParams&);
 
 class GpuProcessHost : public BrowserChildProcessHostDelegate,
                        public IPC::Sender,
@@ -119,17 +121,16 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       const CreateCommandBufferCallback& callback);
 
   // Tells the GPU process to create a new GPU memory buffer.
-  void CreateGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
-                             gfx::GpuMemoryBufferId id,
+  void CreateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                              const gfx::Size& size,
                              gfx::GpuMemoryBuffer::Format format,
                              gfx::GpuMemoryBuffer::Usage usage,
                              int client_id,
+                             int32 surface_id,
                              const CreateGpuMemoryBufferCallback& callback);
 
   // Tells the GPU process to destroy GPU memory buffer.
-  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
-                              gfx::GpuMemoryBufferId id,
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                               int client_id,
                               int sync_point);
 
@@ -205,6 +206,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // The pending create gpu memory buffer requests we need to reply to.
   std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
+
+  // Surface ids for pending gpu memory buffer request refs.
+  std::queue<int32> create_gpu_memory_buffer_surface_refs_;
 
   // Qeueud messages to send when the process launches.
   std::queue<IPC::Message*> queued_messages_;

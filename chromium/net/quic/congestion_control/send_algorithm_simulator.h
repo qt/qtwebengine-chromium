@@ -27,7 +27,11 @@ namespace net {
 class SendAlgorithmSimulator {
  public:
   struct Sender {
-    Sender(SendAlgorithmInterface* send_algorithm, RttStats* rtt_stats);
+    Sender(SendAlgorithmInterface* send_algorithm,
+           RttStats* rtt_stats);
+    Sender(SendAlgorithmInterface* send_algorithm,
+           RttStats* rtt_stats,
+           QuicTime::Delta additional_rtt);
 
     void RecordStats() {
       QuicByteCount cwnd = send_algorithm->GetCongestionWindow();
@@ -53,6 +57,7 @@ class SendAlgorithmSimulator {
 
     SendAlgorithmInterface* send_algorithm;
     RttStats* rtt_stats;
+    QuicTime::Delta additional_rtt;
 
     // Last sequence number the sender sent.
     QuicPacketSequenceNumber last_sent;
@@ -72,13 +77,10 @@ class SendAlgorithmSimulator {
   };
 
   struct Transfer {
-    Transfer(Sender* sender, QuicByteCount num_bytes, QuicTime start_time)
-        : sender(sender),
-          num_bytes(num_bytes),
-          bytes_acked(0),
-          bytes_lost(0),
-          bytes_in_flight(0),
-          start_time(start_time) {}
+    Transfer(Sender* sender,
+             QuicByteCount num_bytes,
+             QuicTime start_time,
+             std::string name);
 
     Sender* sender;
     QuicByteCount num_bytes;
@@ -86,6 +88,7 @@ class SendAlgorithmSimulator {
     QuicByteCount bytes_lost;
     QuicByteCount bytes_in_flight;
     QuicTime start_time;
+    std::string name;
   };
 
   struct SentPacket {
@@ -119,6 +122,7 @@ class SendAlgorithmSimulator {
                          QuicTime::Delta rtt);
   ~SendAlgorithmSimulator();
 
+  // For local ad-hoc testing.
   void set_bandwidth(QuicBandwidth bandwidth) {
     bandwidth_ = bandwidth;
   }
@@ -128,11 +132,13 @@ class SendAlgorithmSimulator {
     forward_loss_rate_ = loss_rate;
   }
 
+  // For local ad-hoc testing.
   void set_reverse_loss_rate(float loss_rate) {
     DCHECK_LT(loss_rate, 1.0f);
     reverse_loss_rate_ = loss_rate;
   }
 
+  // For local ad-hoc testing.
   void set_loss_correlation(float loss_correlation) {
     DCHECK_LT(loss_correlation, 1.0f);
     loss_correlation_ = loss_correlation;
@@ -147,6 +153,7 @@ class SendAlgorithmSimulator {
   }
 
   // Advance the time by |delta| without sending anything.
+  // For local ad-hoc testing.
   void AdvanceTime(QuicTime::Delta delta);
 
   // Adds a pending sender.  The send will run when TransferBytes is called.
@@ -154,7 +161,10 @@ class SendAlgorithmSimulator {
   void AddTransfer(Sender* sender, size_t num_bytes);
 
   // Adds a pending sending to start at the specified time.
-  void AddTransfer(Sender* sender, size_t num_bytes, QuicTime start_time);
+  void AddTransfer(Sender* sender,
+                   size_t num_bytes,
+                   QuicTime start_time,
+                   std::string name);
 
   // Convenience method to transfer all bytes.
   void TransferBytes();

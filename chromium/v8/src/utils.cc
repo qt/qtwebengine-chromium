@@ -114,6 +114,15 @@ void PrintPID(const char* format, ...) {
 }
 
 
+void PrintIsolate(void* isolate, const char* format, ...) {
+  base::OS::Print("[%d:%p] ", base::OS::GetCurrentProcessId(), isolate);
+  va_list arguments;
+  va_start(arguments, format);
+  base::OS::VPrint(format, arguments);
+  va_end(arguments);
+}
+
+
 int SNPrintF(Vector<char> str, const char* format, ...) {
   va_list args;
   va_start(args, format);
@@ -203,7 +212,7 @@ char* ReadCharsFromFile(FILE* file,
   }
 
   // Get the size of the file and rewind it.
-  *size = ftell(file);
+  *size = static_cast<int>(ftell(file));
   rewind(file);
 
   char* result = NewArray<char>(*size + extra_space);
@@ -408,9 +417,9 @@ void init_memcopy_functions() {
 
 bool DoubleToBoolean(double d) {
   // NaN, +0, and -0 should return the false object
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if V8_TARGET_LITTLE_ENDIAN
   union IeeeDoubleLittleEndianArchType u;
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#else
   union IeeeDoubleBigEndianArchType u;
 #endif
   u.d = d;

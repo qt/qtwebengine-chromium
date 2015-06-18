@@ -13,26 +13,22 @@ class ExecutionContext;
 class NetworkInformation;
 class WorkerNavigator;
 
-class WorkerNavigatorNetworkInformation final
-    : public NoBaseWillBeGarbageCollectedFinalized<WorkerNavigatorNetworkInformation>
-    , public WillBeHeapSupplement<WorkerNavigator> {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigatorNetworkInformation);
-
+class WorkerNavigatorNetworkInformation final : public GarbageCollected<WorkerNavigatorNetworkInformation>, public HeapSupplement<WorkerNavigator> {
+    USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigatorNetworkInformation);
 public:
-    virtual ~WorkerNavigatorNetworkInformation();
     static WorkerNavigatorNetworkInformation& from(WorkerNavigator&, ExecutionContext*);
     static WorkerNavigatorNetworkInformation* toWorkerNavigatorNetworkInformation(WorkerNavigator&, ExecutionContext*);
     static const char* supplementName();
 
     static NetworkInformation* connection(ExecutionContext*, WorkerNavigator&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     WorkerNavigatorNetworkInformation(WorkerNavigator&, ExecutionContext*);
     NetworkInformation* connection(ExecutionContext*);
 
-    PersistentWillBeMember<NetworkInformation> m_connection;
+    Member<NetworkInformation> m_connection;
 };
 
 } // namespace blink

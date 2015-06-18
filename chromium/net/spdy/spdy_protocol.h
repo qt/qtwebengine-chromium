@@ -11,6 +11,7 @@
 #ifndef NET_SPDY_SPDY_PROTOCOL_H_
 #define NET_SPDY_SPDY_PROTOCOL_H_
 
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -35,8 +36,8 @@ enum SpdyMajorVersion {
   SPDY_MIN_VERSION = SPDY2,
   SPDY3 = 3,
   SPDY4 = 4,
-  SPDY5 = 5,
-  SPDY_MAX_VERSION = SPDY5
+  HTTP2 = SPDY4,
+  SPDY_MAX_VERSION = SPDY4
 };
 
 // A SPDY stream id is a 31 bit entity.
@@ -46,17 +47,11 @@ typedef uint32 SpdyStreamId;
 // flow control).
 const SpdyStreamId kSessionFlowControlStreamId = 0;
 
-// Initial window size for a Spdy stream in bytes.
-const int32 kSpdyStreamInitialWindowSize = 64 * 1024;  // 64 KBytes
-
 // The maxmium possible control frame size allowed by the spec.
 const int32 kSpdyMaxControlFrameSize = (1 << 24) - 1;
 
 // The maximum control frame size we accept.
 const int32 kControlFrameSizeLimit = 1 << 14;
-
-// Initial window size for a Spdy session in bytes.
-const int32 kSpdySessionInitialWindowSize = 64 * 1024;  // 64 KBytes
 
 // Maximum window size for a Spdy stream or session.
 const int32 kSpdyMaximumWindowSize = 0x7FFFFFFF;  // Max signed 32bit int
@@ -397,7 +392,9 @@ enum SpdyRstStreamStatus {
   RST_STREAM_SETTINGS_TIMEOUT = 12,
   RST_STREAM_CONNECT_ERROR = 13,
   RST_STREAM_ENHANCE_YOUR_CALM = 14,
-  RST_STREAM_NUM_STATUS_CODES = 15
+  RST_STREAM_INADEQUATE_SECURITY = 15,
+  RST_STREAM_HTTP_1_1_REQUIRED = 16,
+  RST_STREAM_NUM_STATUS_CODES = 17
 };
 
 // Status codes for GOAWAY frames.
@@ -415,7 +412,8 @@ enum SpdyGoAwayStatus {
   GOAWAY_COMPRESSION_ERROR = 9,
   GOAWAY_CONNECT_ERROR = 10,
   GOAWAY_ENHANCE_YOUR_CALM = 11,
-  GOAWAY_INADEQUATE_SECURITY = 12
+  GOAWAY_INADEQUATE_SECURITY = 12,
+  GOAWAY_HTTP_1_1_REQUIRED = 13
 };
 
 // A SPDY priority is a number between 0 and 7 (inclusive).
@@ -428,6 +426,8 @@ typedef std::map<std::string, std::string> SpdyNameValueBlock;
 typedef uint64 SpdyPingId;
 
 typedef std::string SpdyProtocolId;
+
+enum class SpdyHeaderValidatorType { REQUEST, RESPONSE };
 
 // TODO(hkhalil): Add direct testing for this? It won't increase coverage any,
 // but is good to do anyway.
@@ -526,6 +526,12 @@ class NET_EXPORT_PRIVATE SpdyConstants {
 
   // Returns the size (in bytes) of a wire setting ID and value.
   static size_t GetSettingSize(SpdyMajorVersion version);
+
+  // Initial window size for a stream in bytes.
+  static int32 GetInitialStreamWindowSize(SpdyMajorVersion version);
+
+  // Initial window size for a session in bytes.
+  static int32 GetInitialSessionWindowSize(SpdyMajorVersion version);
 
   static SpdyMajorVersion ParseMajorVersion(int version_number);
 
@@ -735,10 +741,6 @@ class NET_EXPORT_PRIVATE SpdyRstStreamIR : public SpdyFrameWithStreamIdIR {
 
   base::StringPiece description() const { return description_; }
 
-  void set_description(base::StringPiece description) {
-    description_ = description;
-  }
-
   void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
@@ -777,9 +779,6 @@ class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
   }
 
   bool clear_settings() const { return clear_settings_; }
-  void set_clear_settings(bool clear_settings) {
-    clear_settings_ = clear_settings;
-  }
   bool is_ack() const { return is_ack_; }
   void set_is_ack(bool is_ack) {
     is_ack_ = is_ack;
@@ -921,7 +920,6 @@ class NET_EXPORT_PRIVATE SpdyPushPromiseIR
         padded_(false),
         padding_payload_len_(0) {}
   SpdyStreamId promised_stream_id() const { return promised_stream_id_; }
-  void set_promised_stream_id(SpdyStreamId id) { promised_stream_id_ = id; }
 
   void Visit(SpdyFrameVisitor* visitor) const override;
 
@@ -980,12 +978,8 @@ class NET_EXPORT_PRIVATE SpdyAltSvcIR : public SpdyFrameWithStreamIdIR {
   void set_protocol_id(SpdyProtocolId protocol_id) {
     protocol_id_ = protocol_id;
   }
-  void set_host(std::string host) {
-    host_ = host;
-  }
-  void set_origin(std::string origin) {
-    origin_ = origin;
-  }
+  void set_host(std::string host) { host_ = host; }
+  void set_origin(std::string origin) { origin_ = origin; }
 
   void Visit(SpdyFrameVisitor* visitor) const override;
 
@@ -1000,11 +994,19 @@ class NET_EXPORT_PRIVATE SpdyAltSvcIR : public SpdyFrameWithStreamIdIR {
 
 class NET_EXPORT_PRIVATE SpdyPriorityIR : public SpdyFrameWithStreamIdIR {
  public:
-  explicit SpdyPriorityIR(SpdyStreamId stream_id);
-  explicit SpdyPriorityIR(SpdyStreamId stream_id,
-                          SpdyStreamId parent_stream_id,
-                          uint8 weight,
-                          bool exclusive);
+  explicit SpdyPriorityIR(SpdyStreamId stream_id)
+      : SpdyFrameWithStreamIdIR(stream_id),
+        parent_stream_id_(0),
+        weight_(1),
+        exclusive_(false) {}
+  SpdyPriorityIR(SpdyStreamId stream_id,
+                 SpdyStreamId parent_stream_id,
+                 uint8 weight,
+                 bool exclusive)
+      : SpdyFrameWithStreamIdIR(stream_id),
+        parent_stream_id_(parent_stream_id),
+        weight_(weight),
+        exclusive_(exclusive) {}
   SpdyStreamId parent_stream_id() const { return parent_stream_id_; }
   void set_parent_stream_id(SpdyStreamId id) { parent_stream_id_ = id; }
   uint8 weight() const { return weight_; }

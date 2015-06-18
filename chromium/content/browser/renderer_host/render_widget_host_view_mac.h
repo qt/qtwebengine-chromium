@@ -9,6 +9,7 @@
 #include <IOSurface/IOSurfaceAPI.h>
 #include <list>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,22 +20,23 @@
 #include "base/time/time.h"
 #include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/compositor/delegated_frame_host.h"
-#include "content/browser/compositor/io_surface_layer_mac.h"
 #include "content/browser/renderer_host/display_link_mac.h"
+#include "content/browser/renderer_host/input/mouse_wheel_rails_filter_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/browser/renderer_host/software_frame_manager.h"
 #include "content/common/content_export.h"
 #include "content/common/cursors/webcursor.h"
 #include "content/common/edit_command.h"
 #import "content/public/browser/render_widget_host_view_mac_base.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
+#include "ui/accelerated_widget_mac/io_surface_layer.h"
 #include "ui/base/cocoa/base_view.h"
 #include "ui/base/cocoa/remote_layer_api.h"
 #include "ui/gfx/display_observer.h"
 
 namespace content {
-class BrowserCompositorviewMac;
+class RenderWidgetHostImpl;
 class RenderWidgetHostViewMac;
 class RenderWidgetHostViewMacEditCommandHelper;
 class WebContents;
@@ -68,6 +70,7 @@ class Layer;
       responderDelegate_;
   BOOL canBeKeyView_;
   BOOL closeOnDeactivate_;
+  BOOL opaque_;
   scoped_ptr<content::RenderWidgetHostViewMacEditCommandHelper>
       editCommand_helper_;
 
@@ -148,11 +151,41 @@ class Layer;
   // Event monitor for scroll wheel end event.
   id endWheelMonitor_;
 
+  // When a gesture starts, the system does not inform the view of which type
+  // of gesture is happening (magnify, rotate, etc), rather, it just informs
+  // the view that some as-yet-undefined gesture is starting. Capture the
+  // information about the gesture's beginning event here. It will be used to
+  // create a specific gesture begin event later.
+  scoped_ptr<blink::WebGestureEvent> gestureBeginEvent_;
+
+  // To avoid accidental pinches, require that a certain zoom threshold be
+  // reached before forwarding it to the browser. Use |pinchUnusedAmount_| to
+  // hold this value. If the user reaches this value, don't re-require the
+  // threshold be reached until the page has been zoomed back to page scale of
+  // one.
+  bool pinchHasReachedZoomThreshold_;
+  float pinchUnusedAmount_;
+  NSTimeInterval pinchLastGestureTimestamp_;
+
+  // This is set if a GesturePinchBegin event has been sent in the lifetime of
+  // |gestureBeginEvent_|. If set, a GesturePinchEnd will be sent when the
+  // gesture ends.
+  BOOL gestureBeginPinchSent_;
+
   // If true then escape key down events are suppressed until the first escape
   // key up event. (The up event is suppressed as well). This is used by the
   // flash fullscreen code to avoid sending a key up event without a matching
   // key down event.
   BOOL suppressNextEscapeKeyUp_;
+
+  // The set of key codes from key down events that we haven't seen the matching
+  // key up events yet.
+  // Used for filtering out non-matching NSKeyUp events.
+  std::set<unsigned short> keyDownCodes_;
+
+  // The filter used to guide touch events towards a horizontal or vertical
+  // orientation.
+  content::MouseWheelRailsFilterMac mouseWheelFilter_;
 }
 
 @property(nonatomic, readonly) NSRange selectedRange;
@@ -160,6 +193,7 @@ class Layer;
 
 - (void)setCanBeKeyView:(BOOL)can;
 - (void)setCloseOnDeactivate:(BOOL)b;
+- (void)setOpaque:(BOOL)opaque;
 - (void)setToolTipAtMousePoint:(NSString *)string;
 // True for always-on-top special windows (e.g. Balloons and Panels).
 - (BOOL)acceptsMouseEventsWhenInactive;
@@ -180,7 +214,6 @@ class Layer;
 @end
 
 namespace content {
-class RenderWidgetHostImpl;
 
 ///////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostViewMac
@@ -201,7 +234,7 @@ class RenderWidgetHostImpl;
 class CONTENT_EXPORT RenderWidgetHostViewMac
     : public RenderWidgetHostViewBase,
       public DelegatedFrameHostClient,
-      public BrowserCompositorViewMacClient,
+      public ui::AcceleratedWidgetMacNSView,
       public IPC::Sender,
       public gfx::DisplayObserver {
  public:
@@ -240,6 +273,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void Show() override;
   void Hide() override;
   bool IsShowing() override;
+  void WasUnOccluded() override;
+  void WasOccluded() override;
   gfx::Rect GetViewBounds() const override;
   void SetShowingContextMenu(bool showing) override;
   void SetActive(bool active) override;
@@ -256,11 +291,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& pos) override;
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
-  void WasShown() override;
-  void WasHidden() override;
   void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
   void Focus() override;
-  void Blur() override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
   void TextInputTypeChanged(ui::TextInputType type,
@@ -281,11 +313,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
                         const gfx::Range& range) override;
   void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) override;
-  void CopyFromCompositingSurface(
-      const gfx::Rect& src_subrect,
-      const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      SkColorType color_type) override;
+  void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
+                                  const gfx::Size& dst_size,
+                                  ReadbackRequestCallback& callback,
+                                  SkColorType preferred_color_type) override;
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -314,10 +345,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
                      InputEventAckState ack_result) override;
 
+  uint32_t GetSurfaceIdNamespace() override;
+
   // IPC::Sender implementation.
   bool Send(IPC::Message* message) override;
-
-  SkColorType PreferredReadbackFormat() override;
 
   // gfx::DisplayObserver implementation.
   void OnDisplayAdded(const gfx::Display& new_display) override;
@@ -377,29 +408,29 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // The background CoreAnimation layer which is hosted by |cocoa_view_|.
   base::scoped_nsobject<CALayer> background_layer_;
 
-  // The state of |delegated_frame_host_| and |browser_compositor_view_| to
+  // The state of |delegated_frame_host_| and |browser_compositor_| to
   // manage being visible, hidden, or occluded.
   enum BrowserCompositorViewState {
     // Effects:
-    // - |browser_compositor_view_| exists and |delegated_frame_host_| is
+    // - |browser_compositor_| exists and |delegated_frame_host_| is
     //    visible.
     // Happens when:
     // - |render_widet_host_| is in the visible state (this includes when
     //   the tab isn't visible, but tab capture is enabled).
     BrowserCompositorActive,
     // Effects:
-    // - |browser_compositor_view_| exists, but |delegated_frame_host_| has
+    // - |browser_compositor_| exists, but |delegated_frame_host_| has
     //   been hidden.
     // Happens when:
     // - The |render_widget_host_| is hidden, but |cocoa_view_| is still in the
     //   NSWindow hierarchy.
     // - This happens when |cocoa_view_| is hidden (minimized, on another
-    //   occluded by other windows, etc). The |browser_compositor_view_| and
+    //   occluded by other windows, etc). The |browser_compositor_| and
     //   its CALayers are kept around so that we will have content to show when
     //   we are un-occluded.
     BrowserCompositorSuspended,
     // Effects:
-    // - |browser_compositor_view_| has been destroyed and
+    // - |browser_compositor_| has been destroyed and
     //   |delegated_frame_host_| has been hidden.
     // Happens when:
     // - The |render_widget_host_| is hidden or dead, and |cocoa_view_| is not
@@ -409,18 +440,22 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   };
   BrowserCompositorViewState browser_compositor_state_;
 
-  // Delegated frame management and compositior.
+  // Delegated frame management and compositor.
   scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
   scoped_ptr<ui::Layer> root_layer_;
 
-  // Container for the CALayer tree drawn by the browser compositor.
-  scoped_ptr<BrowserCompositorViewMac> browser_compositor_view_;
+  // Container for ui::Compositor the CALayer tree drawn by it.
+  scoped_ptr<BrowserCompositorMac> browser_compositor_;
 
-  // Placeholder that is allocated while browser_compositor_view_ is NULL,
+  // Placeholder that is allocated while browser_compositor_ is NULL,
   // indicating that a BrowserCompositorViewMac may be allocated. This is to
   // help in recycling the internals of BrowserCompositorViewMac.
-  scoped_ptr<BrowserCompositorViewPlaceholderMac>
-      browser_compositor_view_placeholder_;
+  scoped_ptr<BrowserCompositorMacPlaceholder>
+      browser_compositor_placeholder_;
+
+  // Set when the currently-displayed frame is the minimum scale. Used to
+  // determine if pinch gestures need to be thresholded.
+  bool page_at_minimum_scale_;
 
   NSWindow* pepper_fullscreen_window() const {
     return pepper_fullscreen_window_;
@@ -446,20 +481,30 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void PauseForPendingResizeOrRepaintsAndDraw();
 
   // DelegatedFrameHostClient implementation.
-  ui::Compositor* GetCompositor() const override;
-  ui::Layer* GetLayer() override;
-  RenderWidgetHostImpl* GetHost() override;
-  bool IsVisible() override;
-  scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock) override;
-  gfx::Size DesiredFrameSize() override;
-  float CurrentDeviceScaleFactor() override;
-  gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) override;
-  DelegatedFrameHost* GetDelegatedFrameHost() const override;
+  ui::Layer* DelegatedFrameHostGetLayer() const override;
+  bool DelegatedFrameHostIsVisible() const override;
+  gfx::Size DelegatedFrameHostDesiredSizeInDIP() const override;
+  bool DelegatedFrameCanCreateResizeLock() const override;
+  scoped_ptr<ResizeLock> DelegatedFrameHostCreateResizeLock(
+      bool defer_compositor_lock) override;
+  void DelegatedFrameHostResizeLockWasReleased() override;
+  void DelegatedFrameHostSendCompositorSwapAck(
+      int output_surface_id,
+      const cc::CompositorFrameAck& ack) override;
+  void DelegatedFrameHostSendReclaimCompositorResources(
+      int output_surface_id,
+      const cc::CompositorFrameAck& ack) override;
+  void DelegatedFrameHostOnLostCompositorResources() override;
+  void DelegatedFrameHostUpdateVSyncParameters(
+      const base::TimeTicks& timebase,
+      const base::TimeDelta& interval) override;
 
-  // BrowserCompositorViewMacClient implementation.
-  bool BrowserCompositorViewShouldAckImmediately() const override;
-  void BrowserCompositorViewFrameSwapped(
+  // AcceleratedWidgetMacNSView implementation.
+  NSView* AcceleratedWidgetGetNSView() const override;
+  bool AcceleratedWidgetShouldIgnoreBackpressure() const override;
+  void AcceleratedWidgetSwapCompleted(
       const std::vector<ui::LatencyInfo>& latency_info) override;
+  void AcceleratedWidgetHitError() override;
 
   // Transition from being in the Suspended state to being in the Destroyed
   // state, if appropriate (see BrowserCompositorViewState for details).
@@ -517,9 +562,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // RenderWidgetHostViewGuest.
   bool is_guest_view_hack_;
 
-  // Factory used to safely scope delayed calls to ShutdownHost().
-  base::WeakPtrFactory<RenderWidgetHostViewMac> weak_factory_;
-
   // selected text on the renderer.
   std::string selected_text_;
 
@@ -546,6 +588,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // The current caret bounds.
   gfx::Rect caret_rect_;
+
+  // Factory used to safely scope delayed calls to ShutdownHost().
+  base::WeakPtrFactory<RenderWidgetHostViewMac> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewMac);
 };

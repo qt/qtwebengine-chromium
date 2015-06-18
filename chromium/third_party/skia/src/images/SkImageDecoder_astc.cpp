@@ -19,12 +19,12 @@ class SkASTCImageDecoder : public SkImageDecoder {
 public:
     SkASTCImageDecoder() { }
 
-    virtual Format getFormat() const SK_OVERRIDE {
+    Format getFormat() const override {
         return kASTC_Format;
     }
 
 protected:
-    virtual Result onDecode(SkStream* stream, SkBitmap* bm, Mode) SK_OVERRIDE;
+    Result onDecode(SkStream* stream, SkBitmap* bm, Mode) override;
 
 private:
     typedef SkImageDecoder INHERITED;
@@ -116,13 +116,6 @@ SkImageDecoder::Result SkASTCImageDecoder::onDecode(SkStream* stream, SkBitmap* 
 
     // Advance the buffer past the image dimensions
     buf += 9;
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-    // should we allow the Chooser (if present) to pick a config for us???
-    if (!this->chooseFromOneChoice(kN32_SkColorType, width, height)) {
-        return kFailure;
-    }
-#endif
 
     // Setup the sampler...
     SkScaledBitmapSampler sampler(width, height, this->getSampleSize());

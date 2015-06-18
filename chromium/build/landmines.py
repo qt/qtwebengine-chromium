@@ -44,15 +44,89 @@ def get_build_dir(build_tool, is_iphone=False):
   if build_tool == 'xcode':
     ret = os.path.join(SRC_DIR, 'xcodebuild')
   elif build_tool in ['make', 'ninja', 'ninja-ios']:  # TODO: Remove ninja-ios.
-    if ('CHROMIUM_OUT_DIR' not in os.environ and
-        'output_dir' in landmine_utils.gyp_generator_flags()):
-      output_dir = landmine_utils.gyp_generator_flags()['output_dir']
+    if 'CHROMIUM_OUT_DIR' in os.environ:
+      output_dir = os.environ.get('CHROMIUM_OUT_DIR').strip()
+      if not output_dir:
+        raise Error('CHROMIUM_OUT_DIR environment variable is set but blank!')
     else:
-      output_dir = os.environ.get('CHROMIUM_OUT_DIR', 'out')
+      output_dir = landmine_utils.gyp_generator_flags().get('output_dir', 'out')
     ret = os.path.join(SRC_DIR, output_dir)
   else:
     raise NotImplementedError('Unexpected GYP_GENERATORS (%s)' % build_tool)
   return os.path.abspath(ret)
+
+
+def extract_gn_build_commands(build_ninja_file):
+  """Extracts from a build.ninja the commands to run GN.
+
+  The commands to run GN are the gn rule and build.ninja build step at the
+  top of the build.ninja file. We want to keep these when deleting GN builds
+  since we want to preserve the command-line flags to GN.
+
+  On error, returns the empty string."""
+  result = ""
+  with open(build_ninja_file, 'r') as f:
+    # Read until the second blank line. The first thing GN writes to the file
+    # is the "rule gn" and the second is the section for "build build.ninja",
+    # separated by blank lines.
+    num_blank_lines = 0
+    while num_blank_lines < 2:
+      line = f.readline()
+      if len(line) == 0:
+        return ''  # Unexpected EOF.
+      result += line
+      if line[0] == '\n':
+        num_blank_lines = num_blank_lines + 1
+  return result
+
+def delete_build_dir(build_dir):
+  # GN writes a build.ninja.d file. Note that not all GN builds have args.gn.
+  build_ninja_d_file = os.path.join(build_dir, 'build.ninja.d')
+  if not os.path.exists(build_ninja_d_file):
+    shutil.rmtree(build_dir)
+    return
+
+  # GN builds aren't automatically regenerated when you sync. To avoid
+  # messing with the GN workflow, erase everything but the args file, and
+  # write a dummy build.ninja file that will automatically rerun GN the next
+  # time Ninja is run.
+  build_ninja_file = os.path.join(build_dir, 'build.ninja')
+  build_commands = extract_gn_build_commands(build_ninja_file)
+
+  try:
+    gn_args_file = os.path.join(build_dir, 'args.gn')
+    with open(gn_args_file, 'r') as f:
+      args_contents = f.read()
+  except IOError:
+    args_contents = ''
+
+  shutil.rmtree(build_dir)
+
+  # Put back the args file (if any).
+  os.mkdir(build_dir)
+  if args_contents != '':
+    with open(gn_args_file, 'w') as f:
+      f.write(args_contents)
+
+  # Write the build.ninja file sufficiently to regenerate itself.
+  with open(os.path.join(build_dir, 'build.ninja'), 'w') as f:
+    if build_commands != '':
+      f.write(build_commands)
+    else:
+      # Couldn't parse the build.ninja file, write a default thing.
+      f.write('''rule gn
+command = gn -q gen //out/%s/
+description = Regenerating ninja files
+
+build build.ninja: gn
+generator = 1
+depfile = build.ninja.d
+''' % (os.path.split(build_dir)[1]))
+
+  # Write a .d file for the build which references a nonexistant file. This
+  # will make Ninja always mark the build as dirty.
+  with open(build_ninja_d_file, 'w') as f:
+    f.write('build.ninja: nonexistant_file.gn\n')
 
 
 def clobber_if_necessary(new_landmines):
@@ -83,7 +157,7 @@ def clobber_if_necessary(new_landmines):
         if os.path.isfile(path):
           os.unlink(path)
         elif os.path.isdir(path):
-          shutil.rmtree(path)
+          delete_build_dir(path)
 
   # Save current set of landmines for next time.
   with open(landmines_path, 'w') as f:

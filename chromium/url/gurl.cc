@@ -177,6 +177,22 @@ const std::string& GURL::spec() const {
   return EmptyStringForGURL();
 }
 
+bool GURL::operator==(const GURL& other) const {
+  return spec_ == other.spec_;
+}
+
+bool GURL::operator!=(const GURL& other) const {
+  return spec_ != other.spec_;
+}
+
+bool GURL::operator<(const GURL& other) const {
+  return spec_ < other.spec_;
+}
+
+bool GURL::operator>(const GURL& other) const {
+  return spec_ > other.spec_;
+}
+
 GURL GURL::Resolve(const std::string& relative) const {
   return ResolveWithCharsetConverter(relative, NULL);
 }
@@ -322,8 +338,10 @@ GURL GURL::GetOrigin() const {
 }
 
 GURL GURL::GetAsReferrer() const {
-  if (!is_valid_ ||
-      (!has_ref() && !has_username() && !has_password()))
+  if (!is_valid_ || !SchemeIsHTTPOrHTTPS())
+    return GURL();
+
+  if (!has_ref() && !has_username() && !has_password())
     return GURL(*this);
 
   url::Replacements<char> replacements;

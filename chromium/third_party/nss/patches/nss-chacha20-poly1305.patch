@@ -1,7 +1,8 @@
-diff -r c3565a90b8c4 lib/freebl/blapi.h
---- a/lib/freebl/blapi.h	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/freebl/blapi.h	Tue Jan 07 12:11:36 2014 -0800
-@@ -986,6 +986,38 @@
+diff --git a/nss/lib/freebl/blapi.h b/nss/lib/freebl/blapi.h
+index 8324714..682be76 100644
+--- a/nss/lib/freebl/blapi.h
++++ b/nss/lib/freebl/blapi.h
+@@ -986,6 +986,38 @@ Camellia_Decrypt(CamelliaContext *cx, unsigned char *output,
  		 unsigned int *outputLen, unsigned int maxOutputLen,
  		 const unsigned char *input, unsigned int inputLen);
  
@@ -40,10 +41,11 @@ diff -r c3565a90b8c4 lib/freebl/blapi.h
  
  /******************************************/
  /*
-diff -r c3565a90b8c4 lib/freebl/blapit.h
---- a/lib/freebl/blapit.h	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/freebl/blapit.h	Tue Jan 07 12:11:36 2014 -0800
-@@ -222,6 +222,7 @@
+diff --git a/nss/lib/freebl/blapit.h b/nss/lib/freebl/blapit.h
+index 8e172d4..5726dc7 100644
+--- a/nss/lib/freebl/blapit.h
++++ b/nss/lib/freebl/blapit.h
+@@ -222,6 +222,7 @@ struct SHA256ContextStr     ;
  struct SHA512ContextStr     ;
  struct AESKeyWrapContextStr ;
  struct SEEDContextStr       ;	
@@ -51,7 +53,7 @@ diff -r c3565a90b8c4 lib/freebl/blapit.h
  
  typedef struct DESContextStr        DESContext;
  typedef struct RC2ContextStr        RC2Context;
-@@ -240,6 +241,7 @@
+@@ -240,6 +241,7 @@ typedef struct SHA512ContextStr     SHA512Context;
  typedef struct SHA512ContextStr     SHA384Context;
  typedef struct AESKeyWrapContextStr AESKeyWrapContext;
  typedef struct SEEDContextStr	    SEEDContext;	
@@ -59,9 +61,11 @@ diff -r c3565a90b8c4 lib/freebl/blapit.h
  
  /***************************************************************************
  ** RSA Public and Private Key structures
-diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20.c
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/chacha20/chacha20.c	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/chacha20/chacha20.c b/nss/lib/freebl/chacha20/chacha20.c
+new file mode 100644
+index 0000000..ca0b1ff
+--- /dev/null
++++ b/nss/lib/freebl/chacha20/chacha20.c
 @@ -0,0 +1,108 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -171,9 +175,11 @@ diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20.c
 +	}
 +    }
 +}
-diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20.h
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/chacha20/chacha20.h	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/chacha20/chacha20.h b/nss/lib/freebl/chacha20/chacha20.h
+new file mode 100644
+index 0000000..6336ba7
+--- /dev/null
++++ b/nss/lib/freebl/chacha20/chacha20.h
 @@ -0,0 +1,22 @@
 +/*
 + * chacha20.h - header file for ChaCha20 implementation.
@@ -197,9 +203,11 @@ diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20.h
 +			uint64_t counter);
 +
 +#endif  /* FREEBL_CHACHA20_H_ */
-diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20_vec.c
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/chacha20/chacha20_vec.c	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/chacha20/chacha20_vec.c b/nss/lib/freebl/chacha20/chacha20_vec.c
+new file mode 100644
+index 0000000..c3573b3
+--- /dev/null
++++ b/nss/lib/freebl/chacha20/chacha20_vec.c
 @@ -0,0 +1,281 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -482,9 +490,11 @@ diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20_vec.c
 +	}
 +    }
 +}
-diff -r c3565a90b8c4 lib/freebl/chacha20poly1305.c
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/chacha20poly1305.c	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/chacha20poly1305.c b/nss/lib/freebl/chacha20poly1305.c
+new file mode 100644
+index 0000000..6fa5c4b
+--- /dev/null
++++ b/nss/lib/freebl/chacha20poly1305.c
 @@ -0,0 +1,169 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -655,9 +665,11 @@ diff -r c3565a90b8c4 lib/freebl/chacha20poly1305.c
 +
 +    return SECSuccess;
 +}
-diff -r c3565a90b8c4 lib/freebl/chacha20poly1305.h
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/chacha20poly1305.h	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/chacha20poly1305.h b/nss/lib/freebl/chacha20poly1305.h
+new file mode 100644
+index 0000000..c77632a
+--- /dev/null
++++ b/nss/lib/freebl/chacha20poly1305.h
 @@ -0,0 +1,15 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -674,9 +686,11 @@ diff -r c3565a90b8c4 lib/freebl/chacha20poly1305.h
 +};
 +
 +#endif /* _CHACHA20_POLY1305_H_ */
-diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c b/nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
+new file mode 100644
+index 0000000..38cbf35
+--- /dev/null
++++ b/nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c
 @@ -0,0 +1,623 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1301,9 +1315,11 @@ diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-sou
 +	U64TO8_LE(mac + 0, ((h0      ) | (h1 << 44)));
 +	U64TO8_LE(mac + 8, ((h1 >> 20) | (h2 << 24)));
 +}
-diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305.c
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/poly1305/poly1305.c	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/poly1305/poly1305.c b/nss/lib/freebl/poly1305/poly1305.c
+new file mode 100644
+index 0000000..d86048a
+--- /dev/null
++++ b/nss/lib/freebl/poly1305/poly1305.c
 @@ -0,0 +1,254 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1559,9 +1575,11 @@ diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305.c
 +	U32TO8_LE(&mac[ 8], (uint32_t)f2); f3 += (f2 >> 32);
 +	U32TO8_LE(&mac[12], (uint32_t)f3);
 +}
-diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305.h
---- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/lib/freebl/poly1305/poly1305.h	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/freebl/poly1305/poly1305.h b/nss/lib/freebl/poly1305/poly1305.h
+new file mode 100644
+index 0000000..4beb172
+--- /dev/null
++++ b/nss/lib/freebl/poly1305/poly1305.h
 @@ -0,0 +1,31 @@
 +/*
 + * poly1305.h - header file for Poly1305 implementation.
@@ -1594,10 +1612,11 @@ diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305.h
 +			   unsigned char mac[16]);
 +
 +#endif  /* FREEBL_POLY1305_H_ */
-diff -r c3565a90b8c4 lib/pk11wrap/pk11mech.c
---- a/lib/pk11wrap/pk11mech.c	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/pk11wrap/pk11mech.c	Tue Jan 07 12:11:36 2014 -0800
-@@ -152,6 +152,8 @@
+diff --git a/nss/lib/pk11wrap/pk11mech.c b/nss/lib/pk11wrap/pk11mech.c
+index b7a7296..edc7a9b 100644
+--- a/nss/lib/pk11wrap/pk11mech.c
++++ b/nss/lib/pk11wrap/pk11mech.c
+@@ -152,6 +152,8 @@ PK11_GetKeyMechanism(CK_KEY_TYPE type)
  	return CKM_SEED_CBC;
      case CKK_CAMELLIA:
  	return CKM_CAMELLIA_CBC;
@@ -1606,7 +1625,7 @@ diff -r c3565a90b8c4 lib/pk11wrap/pk11mech.c
      case CKK_AES:
  	return CKM_AES_CBC;
      case CKK_DES:
-@@ -219,6 +221,8 @@
+@@ -219,6 +221,8 @@ PK11_GetKeyType(CK_MECHANISM_TYPE type,unsigned long len)
      case CKM_CAMELLIA_CBC_PAD:
      case CKM_CAMELLIA_KEY_GEN:
  	return CKK_CAMELLIA;
@@ -1615,7 +1634,7 @@ diff -r c3565a90b8c4 lib/pk11wrap/pk11mech.c
      case CKM_AES_ECB:
      case CKM_AES_CBC:
      case CKM_AES_CCM:
-@@ -429,6 +433,8 @@
+@@ -429,6 +433,8 @@ PK11_GetKeyGenWithSize(CK_MECHANISM_TYPE type, int size)
      case CKM_CAMELLIA_CBC_PAD:
      case CKM_CAMELLIA_KEY_GEN:
  	return CKM_CAMELLIA_KEY_GEN;
@@ -1624,10 +1643,11 @@ diff -r c3565a90b8c4 lib/pk11wrap/pk11mech.c
      case CKM_AES_ECB:
      case CKM_AES_CBC:
      case CKM_AES_CCM:
-diff -r c3565a90b8c4 lib/softoken/pkcs11.c
---- a/lib/softoken/pkcs11.c	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/softoken/pkcs11.c	Tue Jan 07 12:11:36 2014 -0800
-@@ -368,6 +368,9 @@
+diff --git a/nss/lib/softoken/pkcs11.c b/nss/lib/softoken/pkcs11.c
+index bd7c4bd..716922f 100644
+--- a/nss/lib/softoken/pkcs11.c
++++ b/nss/lib/softoken/pkcs11.c
+@@ -370,6 +370,9 @@ static const struct mechanismList mechanisms[] = {
       {CKM_SEED_MAC,		{16, 16, CKF_SN_VR},		PR_TRUE},
       {CKM_SEED_MAC_GENERAL,	{16, 16, CKF_SN_VR},		PR_TRUE},
       {CKM_SEED_CBC_PAD,		{16, 16, CKF_EN_DE_WR_UN},	PR_TRUE},
@@ -1637,10 +1657,11 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11.c
       /* ------------------------- Hashing Operations ----------------------- */
       {CKM_MD2,			{0,   0, CKF_DIGEST},		PR_FALSE},
       {CKM_MD2_HMAC,		{1, 128, CKF_SN_VR},		PR_TRUE},
-diff -r c3565a90b8c4 lib/softoken/pkcs11c.c
---- a/lib/softoken/pkcs11c.c	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/softoken/pkcs11c.c	Tue Jan 07 12:11:36 2014 -0800
-@@ -632,6 +632,97 @@
+diff --git a/nss/lib/softoken/pkcs11c.c b/nss/lib/softoken/pkcs11c.c
+index fc050f3..955d4c9 100644
+--- a/nss/lib/softoken/pkcs11c.c
++++ b/nss/lib/softoken/pkcs11c.c
+@@ -663,6 +663,97 @@ sftk_RSADecryptOAEP(SFTKOAEPDecryptInfo *info, unsigned char *output,
      return rv;
  }
  
@@ -1738,7 +1759,7 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11c.c
  /** NSC_CryptInit initializes an encryption/Decryption operation.
   *
   * Always called by NSC_EncryptInit, NSC_DecryptInit, NSC_WrapKey,NSC_UnwrapKey.
-@@ -1027,6 +1118,35 @@
+@@ -1056,6 +1147,35 @@ finish_des:
  	context->destroy = (SFTKDestroy) AES_DestroyContext;
  	break;
  
@@ -1774,7 +1795,7 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11c.c
      case CKM_NETSCAPE_AES_KEY_WRAP_PAD:
      	context->doPad = PR_TRUE;
  	/* fall thru */
-@@ -3601,6 +3721,10 @@
+@@ -3609,6 +3729,10 @@ nsc_SetupBulkKeyGen(CK_MECHANISM_TYPE mechanism, CK_KEY_TYPE *key_type,
  	*key_type = CKK_AES;
  	if (*key_length == 0) crv = CKR_TEMPLATE_INCOMPLETE;
  	break;
@@ -1785,7 +1806,7 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11c.c
      default:
  	PORT_Assert(0);
  	crv = CKR_MECHANISM_INVALID;
-@@ -3846,6 +3970,7 @@
+@@ -3854,6 +3978,7 @@ CK_RV NSC_GenerateKey(CK_SESSION_HANDLE hSession,
      case CKM_SEED_KEY_GEN:
      case CKM_CAMELLIA_KEY_GEN:
      case CKM_AES_KEY_GEN:
@@ -1793,9 +1814,10 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11c.c
  #if NSS_SOFTOKEN_DOES_RC5
      case CKM_RC5_KEY_GEN:
  #endif
-diff -r c3565a90b8c4 lib/softoken/pkcs11i.h
---- a/lib/softoken/pkcs11i.h	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/softoken/pkcs11i.h	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/softoken/pkcs11i.h b/nss/lib/softoken/pkcs11i.h
+index 9a00273..175bb78 100644
+--- a/nss/lib/softoken/pkcs11i.h
++++ b/nss/lib/softoken/pkcs11i.h
 @@ -14,6 +14,7 @@
  #include "pkcs11t.h"
  
@@ -1804,7 +1826,7 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11i.h
  #include "hasht.h"
  
  /* 
-@@ -104,6 +105,7 @@
+@@ -104,6 +105,7 @@ typedef struct SFTKHashSignInfoStr SFTKHashSignInfo;
  typedef struct SFTKOAEPEncryptInfoStr SFTKOAEPEncryptInfo;
  typedef struct SFTKOAEPDecryptInfoStr SFTKOAEPDecryptInfo;
  typedef struct SFTKSSLMACInfoStr SFTKSSLMACInfo;
@@ -1812,7 +1834,7 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11i.h
  typedef struct SFTKItemTemplateStr SFTKItemTemplate;
  
  /* define function pointer typdefs for pointer tables */
-@@ -399,6 +401,16 @@
+@@ -399,6 +401,16 @@ struct SFTKSSLMACInfoStr {
      unsigned int	keySize;
  };
  
@@ -1829,9 +1851,10 @@ diff -r c3565a90b8c4 lib/softoken/pkcs11i.h
  /*
   * Template based on SECItems, suitable for passing as arrays
   */
-diff -r c3565a90b8c4 lib/util/pkcs11n.h
---- a/lib/util/pkcs11n.h	Fri Jan 03 20:59:10 2014 +0100
-+++ b/lib/util/pkcs11n.h	Tue Jan 07 12:11:36 2014 -0800
+diff --git a/nss/lib/util/pkcs11n.h b/nss/lib/util/pkcs11n.h
+index a1a0ebb..d48cef6 100644
+--- a/nss/lib/util/pkcs11n.h
++++ b/nss/lib/util/pkcs11n.h
 @@ -51,6 +51,8 @@
  #define CKK_NSS_JPAKE_ROUND1       (CKK_NSS + 2)
  #define CKK_NSS_JPAKE_ROUND2       (CKK_NSS + 3)
@@ -1851,7 +1874,7 @@ diff -r c3565a90b8c4 lib/util/pkcs11n.h
  /*
   * HISTORICAL:
   * Do not attempt to use these. They are only used by NETSCAPE's internal
-@@ -281,6 +286,14 @@
+@@ -281,6 +286,14 @@ typedef struct CK_NSS_MAC_CONSTANT_TIME_PARAMS {
      CK_ULONG ulHeaderLen;       /* in */
  } CK_NSS_MAC_CONSTANT_TIME_PARAMS;
  

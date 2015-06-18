@@ -210,7 +210,7 @@ bool CopyDirectory(const FilePath& from_path, const FilePath& to_path,
                     << target_path.value().c_str();
         success = false;
       }
-    } else if (!internal::CopyFileUnsafe(current, target_path)) {
+    } else if (!CopyFile(current, target_path)) {
       DLOG(ERROR) << "CopyDirectory() couldn't create file: "
                   << target_path.value().c_str();
       success = false;
@@ -480,7 +480,7 @@ bool DevicePathToDriveLetterPath(const FilePath& nt_device_path,
     }
     // Move to the next drive letter string, which starts one
     // increment after the '\0' that terminates the current string.
-    while (*drive_map_ptr++);
+    while (*drive_map_ptr++) {}
   }
 
   // No drive matched.  The path does not start with a device junction
@@ -496,7 +496,7 @@ bool NormalizeToNativeFilePath(const FilePath& path, FilePath* nt_path) {
   // code below to a call to GetFinalPathNameByHandle().  The method this
   // function uses is explained in the following msdn article:
   // http://msdn.microsoft.com/en-us/library/aa366789(VS.85).aspx
-  base::win::ScopedHandle file_handle(
+  win::ScopedHandle file_handle(
       ::CreateFile(path.value().c_str(),
                    GENERIC_READ,
                    kFileShareAll,
@@ -510,7 +510,7 @@ bool NormalizeToNativeFilePath(const FilePath& path, FilePath* nt_path) {
   // Create a file mapping object.  Can't easily use MemoryMappedFile, because
   // we only map the first byte, and need direct access to the handle. You can
   // not map an empty file, this call fails in that case.
-  base::win::ScopedHandle file_map_handle(
+  win::ScopedHandle file_map_handle(
       ::CreateFileMapping(file_handle.Get(),
                           NULL,
                           PAGE_READONLY,
@@ -575,7 +575,7 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
 
 FILE* OpenFile(const FilePath& filename, const char* mode) {
   ThreadRestrictions::AssertIOAllowed();
-  std::wstring w_mode = ASCIIToWide(std::string(mode));
+  string16 w_mode = ASCIIToUTF16(mode);
   return _wfsopen(filename.value().c_str(), w_mode.c_str(), _SH_DENYNO);
 }
 
@@ -595,13 +595,13 @@ FILE* FileToFILE(File file, const char* mode) {
 
 int ReadFile(const FilePath& filename, char* data, int max_size) {
   ThreadRestrictions::AssertIOAllowed();
-  base::win::ScopedHandle file(CreateFile(filename.value().c_str(),
-                                          GENERIC_READ,
-                                          FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                          NULL,
-                                          OPEN_EXISTING,
-                                          FILE_FLAG_SEQUENTIAL_SCAN,
-                                          NULL));
+  win::ScopedHandle file(CreateFile(filename.value().c_str(),
+                                    GENERIC_READ,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                    NULL,
+                                    OPEN_EXISTING,
+                                    FILE_FLAG_SEQUENTIAL_SCAN,
+                                    NULL));
   if (!file.IsValid())
     return -1;
 
@@ -614,13 +614,13 @@ int ReadFile(const FilePath& filename, char* data, int max_size) {
 
 int WriteFile(const FilePath& filename, const char* data, int size) {
   ThreadRestrictions::AssertIOAllowed();
-  base::win::ScopedHandle file(CreateFile(filename.value().c_str(),
-                                          GENERIC_WRITE,
-                                          0,
-                                          NULL,
-                                          CREATE_ALWAYS,
-                                          0,
-                                          NULL));
+  win::ScopedHandle file(CreateFile(filename.value().c_str(),
+                                    GENERIC_WRITE,
+                                    0,
+                                    NULL,
+                                    CREATE_ALWAYS,
+                                    0,
+                                    NULL));
   if (!file.IsValid()) {
     DPLOG(WARNING) << "CreateFile failed for path "
                    << UTF16ToUTF8(filename.value());
@@ -646,13 +646,13 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
 
 bool AppendToFile(const FilePath& filename, const char* data, int size) {
   ThreadRestrictions::AssertIOAllowed();
-  base::win::ScopedHandle file(CreateFile(filename.value().c_str(),
-                                          FILE_APPEND_DATA,
-                                          0,
-                                          NULL,
-                                          OPEN_EXISTING,
-                                          0,
-                                          NULL));
+  win::ScopedHandle file(CreateFile(filename.value().c_str(),
+                                    FILE_APPEND_DATA,
+                                    0,
+                                    NULL,
+                                    OPEN_EXISTING,
+                                    0,
+                                    NULL));
   if (!file.IsValid()) {
     VPLOG(1) << "CreateFile failed for path " << UTF16ToUTF8(filename.value());
     return false;
@@ -722,6 +722,37 @@ int GetMaximumPathComponentLength(const FilePath& path) {
   return std::min(whole_path_limit, static_cast<int>(max_length));
 }
 
+bool CopyFile(const FilePath& from_path, const FilePath& to_path) {
+  ThreadRestrictions::AssertIOAllowed();
+  if (from_path.ReferencesParent() || to_path.ReferencesParent())
+    return false;
+
+  // NOTE: I suspect we could support longer paths, but that would involve
+  // analyzing all our usage of files.
+  if (from_path.value().length() >= MAX_PATH ||
+      to_path.value().length() >= MAX_PATH) {
+    return false;
+  }
+
+  // Unlike the posix implementation that copies the file manually and discards
+  // the ACL bits, CopyFile() copies the complete SECURITY_DESCRIPTOR and access
+  // bits, which is usually not what we want. We can't do much about the
+  // SECURITY_DESCRIPTOR but at least remove the read only bit.
+  const wchar_t* dest = to_path.value().c_str();
+  if (!::CopyFile(from_path.value().c_str(), dest, false)) {
+    // Copy failed.
+    return false;
+  }
+  DWORD attrs = GetFileAttributes(dest);
+  if (attrs == INVALID_FILE_ATTRIBUTES) {
+    return false;
+  }
+  if (attrs & FILE_ATTRIBUTE_READONLY) {
+    SetFileAttributes(dest, attrs & ~FILE_ATTRIBUTE_READONLY);
+  }
+  return true;
+}
+
 // -----------------------------------------------------------------------------
 
 namespace internal {
@@ -758,35 +789,6 @@ bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {
   }
 
   return ret;
-}
-
-bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
-  ThreadRestrictions::AssertIOAllowed();
-
-  // NOTE: I suspect we could support longer paths, but that would involve
-  // analyzing all our usage of files.
-  if (from_path.value().length() >= MAX_PATH ||
-      to_path.value().length() >= MAX_PATH) {
-    return false;
-  }
-
-  // Unlike the posix implementation that copies the file manually and discards
-  // the ACL bits, CopyFile() copies the complete SECURITY_DESCRIPTOR and access
-  // bits, which is usually not what we want. We can't do much about the
-  // SECURITY_DESCRIPTOR but at least remove the read only bit.
-  const wchar_t* dest = to_path.value().c_str();
-  if (!::CopyFile(from_path.value().c_str(), dest, false)) {
-    // Copy failed.
-    return false;
-  }
-  DWORD attrs = GetFileAttributes(dest);
-  if (attrs == INVALID_FILE_ATTRIBUTES) {
-    return false;
-  }
-  if (attrs & FILE_ATTRIBUTE_READONLY) {
-    SetFileAttributes(dest, attrs & ~FILE_ATTRIBUTE_READONLY);
-  }
-  return true;
 }
 
 bool CopyAndDeleteDirectory(const FilePath& from_path,

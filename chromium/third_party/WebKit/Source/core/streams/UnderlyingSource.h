@@ -11,7 +11,6 @@
 
 namespace blink {
 
-class ExceptionState;
 class ScriptState;
 
 class UnderlyingSource : public GarbageCollectedMixin {
@@ -20,7 +19,7 @@ public:
 
     virtual void pullSource() = 0;
     virtual ScriptPromise cancelSource(ScriptState*, ScriptValue reason) = 0;
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
 } // namespace blink

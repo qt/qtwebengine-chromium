@@ -9,35 +9,40 @@
 #ifndef GrAADistanceFieldPathRenderer_DEFINED
 #define GrAADistanceFieldPathRenderer_DEFINED
 
-#include "GrAllocPool.h"
-#include "GrAtlas.h"
+#include "GrBatchAtlas.h"
 #include "GrPathRenderer.h"
 #include "GrRect.h"
 
 #include "SkChecksum.h"
+#include "SkTDynamicHash.h"
 
 class GrContext;
-class GrPlot;
 
 class GrAADistanceFieldPathRenderer : public GrPathRenderer {
 public:
     GrAADistanceFieldPathRenderer(GrContext* context);
     virtual ~GrAADistanceFieldPathRenderer();
     
-    virtual bool canDrawPath(const SkPath& path,
-                             const SkStrokeRec& stroke,
-                             const GrDrawTarget* target,
-                             bool antiAlias) const SK_OVERRIDE;
+    virtual bool canDrawPath(const GrDrawTarget*,
+                             const GrPipelineBuilder*,
+                             const SkMatrix& viewMatrix,
+                             const SkPath&,
+                             const GrStrokeInfo&,
+                             bool antiAlias) const override;
 
 protected:
-    virtual StencilSupport onGetStencilSupport(const SkPath&,
-                                               const SkStrokeRec&,
-                                               const GrDrawTarget*) const SK_OVERRIDE;
+    virtual StencilSupport onGetStencilSupport(const GrDrawTarget*,
+                                               const GrPipelineBuilder*,
+                                               const SkPath&,
+                                               const GrStrokeInfo&) const override;
     
-    virtual bool onDrawPath(const SkPath& path,
-                            const SkStrokeRec& stroke,
-                            GrDrawTarget* target,
-                            bool antiAlias) SK_OVERRIDE;
+    virtual bool onDrawPath(GrDrawTarget*,
+                            GrPipelineBuilder*,
+                            GrColor,
+                            const SkMatrix& viewMatrix,
+                            const SkPath&,
+                            const GrStrokeInfo&,
+                            bool antiAlias) override;
 
 private:
     struct PathData {
@@ -49,11 +54,11 @@ private:
                 return other.fGenID == fGenID && other.fDimension == fDimension;
             }
         };
-        Key        fKey;
-        SkScalar   fScale;
-        GrPlot*    fPlot;
-        SkRect     fBounds;
-        SkIPoint16 fAtlasLocation;
+        Key                   fKey;
+        SkScalar              fScale;
+        GrBatchAtlas::AtlasID fID;
+        SkRect                fBounds;
+        SkIPoint16            fAtlasLocation;
         SK_DECLARE_INTERNAL_LLIST_INTERFACE(PathData);
         
         static inline const Key& GetKey(const PathData& data) {
@@ -64,23 +69,21 @@ private:
             return SkChecksum::Murmur3(reinterpret_cast<const uint32_t*>(&key), sizeof(key));
         }
     };
+
+    static void HandleEviction(GrBatchAtlas::AtlasID, void*);
+
+    typedef SkTDynamicHash<PathData, PathData::Key> PathCache;
     typedef SkTInternalLList<PathData> PathDataList;
     
     GrContext*                         fContext;
-    GrAtlas*                           fAtlas;
-    SkAutoTUnref<GrGeometryProcessor>  fCachedGeometryProcessor;
-    // current set of flags used to create the cached geometry processor
-    uint32_t                           fEffectFlags;
-    GrAtlas::ClientPlotUsage           fPlotUsage;
-    SkTDynamicHash<PathData, PathData::Key> fPathCache;
+    GrBatchAtlas*                      fAtlas;
+    PathCache                          fPathCache;
     PathDataList                       fPathList;
     
-    bool internalDrawPath(const SkPath& path, const PathData* pathData, GrDrawTarget* target);
-    PathData* addPathToAtlas(const SkPath& path, const SkStrokeRec& stroke, bool antiAlias,
-                             uint32_t dimension, SkScalar scale);
-    bool freeUnusedPlot();
-    
     typedef GrPathRenderer INHERITED;
+
+    friend class AADistanceFieldPathBatch;
+    friend struct PathTestStruct;
 };
 
 #endif

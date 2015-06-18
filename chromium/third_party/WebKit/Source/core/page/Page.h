@@ -21,13 +21,17 @@
 #ifndef Page_h
 #define Page_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/OriginsUsingFeatures.h"
 #include "core/frame/SettingsDelegate.h"
 #include "core/frame/UseCounter.h"
+#include "core/page/Page.h"
 #include "core/page/PageAnimator.h"
+#include "core/page/PageLifecycleNotifier.h"
+#include "core/page/PageLifecycleObserver.h"
 #include "core/page/PageVisibilityState.h"
-#include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/geometry/Region.h"
@@ -53,16 +57,11 @@ class EditorClient;
 class FocusController;
 class Frame;
 class FrameHost;
-class InspectorClient;
-class InspectorController;
-class PageLifecycleNotifier;
 class PluginData;
 class PointerLockController;
-class StorageClient;
 class ScrollingCoordinator;
 class Settings;
 class SpellCheckerClient;
-class StorageNamespace;
 class UndoStack;
 class ValidationMessageClient;
 
@@ -70,16 +69,16 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
+class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
-    static void scheduleForcedStyleRecalcForAllPages();
+    static void platformColorsChanged();
 
     // It is up to the platform to ensure that non-null clients are provided where required.
-    struct PageClients {
-        WTF_MAKE_NONCOPYABLE(PageClients); WTF_MAKE_FAST_ALLOCATED;
+    struct CORE_EXPORT PageClients {
+        WTF_MAKE_NONCOPYABLE(PageClients); WTF_MAKE_FAST_ALLOCATED(PageClients);
     public:
         PageClients();
         ~PageClients();
@@ -88,9 +87,7 @@ public:
         ContextMenuClient* contextMenuClient;
         EditorClient* editorClient;
         DragClient* dragClient;
-        InspectorClient* inspectorClient;
         SpellCheckerClient* spellCheckerClient;
-        StorageClient* storageClient;
     };
 
     explicit Page(PageClients&);
@@ -111,7 +108,7 @@ public:
 
     ViewportDescription viewportDescription() const;
 
-    static void refreshPlugins(bool reload);
+    static void refreshPlugins();
     PluginData* pluginData() const;
 
     EditorClient& editorClient() const { return *m_editorClient; }
@@ -139,7 +136,6 @@ public:
     DragController& dragController() const { return *m_dragController; }
     FocusController& focusController() const { return *m_focusController; }
     ContextMenuController& contextMenuController() const { return *m_contextMenuController; }
-    InspectorController& inspectorController() const { return *m_inspectorController; }
     PointerLockController& pointerLockController() const { return *m_pointerLockController; }
     ValidationMessageClient& validationMessageClient() const { return *m_validationMessageClient; }
     void setValidationMessageClient(PassOwnPtrWillBeRawPtr<ValidationMessageClient>);
@@ -147,11 +143,12 @@ public:
     ScrollingCoordinator* scrollingCoordinator();
 
     String mainThreadScrollingReasonsAsText();
-    PassRefPtrWillBeRawPtr<ClientRectList> nonFastScrollableRects(const LocalFrame*);
+    ClientRectList* nonFastScrollableRects(const LocalFrame*);
 
     Settings& settings() const { return *m_settings; }
 
     UseCounter& useCounter() { return m_useCounter; }
+    OriginsUsingFeatures& originsUsingFeatures() { return m_originsUsingFeatures; }
 
     void setTabKeyCyclesThroughElements(bool b) { m_tabKeyCyclesThroughElements = b; }
     bool tabKeyCyclesThroughElements() const { return m_tabKeyCyclesThroughElements; }
@@ -175,9 +172,6 @@ public:
     static void allVisitedStateChanged();
     static void visitedStateChanged(LinkHash visitedHash);
 
-    StorageNamespace* sessionStorage(bool optionalCreate = true);
-    StorageClient& storageClient() const { return *m_storageClient; }
-
     PageVisibilityState visibilityState() const;
     void setVisibilityState(PageVisibilityState, bool);
 
@@ -191,7 +185,7 @@ public:
 
     double timerAlignmentInterval() const;
 
-    class MultisamplingChangedObserver : public WillBeGarbageCollectedMixin {
+    class CORE_EXPORT MultisamplingChangedObserver : public WillBeGarbageCollectedMixin {
     public:
         virtual void multisamplingChanged(bool) = 0;
     };
@@ -204,13 +198,9 @@ public:
     void acceptLanguagesChanged();
 
     static void networkStateChanged(bool online);
-    PassOwnPtr<LifecycleNotifier<Page>> createLifecycleNotifier();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void willBeDestroyed();
-
-protected:
-    PageLifecycleNotifier& lifecycleNotifier();
 
 private:
     void initGroup();
@@ -229,7 +219,6 @@ private:
     const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtrWillBeMember<FocusController> m_focusController;
     const OwnPtrWillBeMember<ContextMenuController> m_contextMenuController;
-    const OwnPtrWillBeMember<InspectorController> m_inspectorController;
     const OwnPtrWillBeMember<PointerLockController> m_pointerLockController;
     OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
     const OwnPtrWillBeMember<UndoStack> m_undoStack;
@@ -252,10 +241,10 @@ private:
 
     EditorClient* const m_editorClient;
     SpellCheckerClient* const m_spellCheckerClient;
-    StorageClient* m_storageClient;
     OwnPtrWillBeMember<ValidationMessageClient> m_validationMessageClient;
 
     UseCounter m_useCounter;
+    OriginsUsingFeatures m_originsUsingFeatures;
 
     bool m_openedByDOM;
 
@@ -263,8 +252,6 @@ private:
     bool m_defersLoading;
 
     float m_deviceScaleFactor;
-
-    OwnPtr<StorageNamespace> m_sessionStorage;
 
     double m_timerAlignmentInterval;
 
@@ -282,6 +269,8 @@ private:
     // FIXME: Most of the members of Page should move onto FrameHost.
     OwnPtrWillBeMember<FrameHost> m_frameHost;
 };
+
+extern template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Page>;
 
 } // namespace blink
 

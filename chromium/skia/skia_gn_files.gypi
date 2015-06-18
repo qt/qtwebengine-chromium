@@ -5,6 +5,8 @@
   'skia_library_sources': [
     '<(skia_src_path)/core/SkFlate.cpp',  # this should likely be moved into src/utils in skia
 
+    '<(skia_src_path)/ports/SkImageGenerator_none.cpp',
+
     '<(skia_include_path)/images/SkMovie.h',
     '<(skia_include_path)/images/SkPageFlipper.h',
     '<(skia_include_path)/ports/SkTypeface_win.h',
@@ -40,12 +42,6 @@
     '<(skia_src_path)/sfnt/SkOTTable_name.h',
     '<(skia_src_path)/sfnt/SkOTUtils.cpp',
     '<(skia_src_path)/sfnt/SkOTUtils.h',
-    '<(skia_src_path)/utils/debugger/SkDebugCanvas.cpp',
-    '<(skia_src_path)/utils/debugger/SkDebugCanvas.h',
-    '<(skia_src_path)/utils/debugger/SkDrawCommand.cpp',
-    '<(skia_src_path)/utils/debugger/SkDrawCommand.h',
-    '<(skia_src_path)/utils/debugger/SkObjectParser.cpp',
-    '<(skia_src_path)/utils/debugger/SkObjectParser.h',
 
     #mac
     '<(skia_src_path)/utils/mac/SkStream_mac.cpp',

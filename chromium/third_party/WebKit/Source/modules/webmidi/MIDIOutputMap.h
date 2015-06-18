@@ -16,9 +16,7 @@ class ScriptState;
 class MIDIOutputMap : public MIDIPortMap<MIDIOutput>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    explicit MIDIOutputMap(HeapHashMap<String, Member<MIDIOutput> >);
-
-    ScriptValue getForBinding(ScriptState*, const String& id);
+    explicit MIDIOutputMap(HeapVector<Member<MIDIOutput>>&);
 };
 
 } // namespace blink

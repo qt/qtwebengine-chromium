@@ -53,21 +53,22 @@ bool isIntegerArray(DOMArrayBufferView* array)
 
 } // namespace
 
-void Crypto::getRandomValues(DOMArrayBufferView* array, ExceptionState& exceptionState)
+DOMArrayBufferView* Crypto::getRandomValues(DOMArrayBufferView* array, ExceptionState& exceptionState)
 {
     if (!array) {
         exceptionState.throwDOMException(TypeMismatchError, "The provided ArrayBufferView is null.");
-        return;
+        return nullptr;
     }
     if (!isIntegerArray(array)) {
         exceptionState.throwDOMException(TypeMismatchError, String::format("The provided ArrayBufferView is of type '%s', which is not an integer array type.", array->typeName()));
-        return;
+        return nullptr;
     }
     if (array->byteLength() > 65536) {
         exceptionState.throwDOMException(QuotaExceededError, String::format("The ArrayBufferView's byte length (%u) exceeds the number of bytes of entropy available via this API (65536).", array->byteLength()));
-        return;
+        return nullptr;
     }
     cryptographicallyRandomValues(array->baseAddress(), array->byteLength());
+    return array;
 }
 
 SubtleCrypto* Crypto::subtle()
@@ -77,7 +78,7 @@ SubtleCrypto* Crypto::subtle()
     return m_subtleCrypto.get();
 }
 
-void Crypto::trace(Visitor* visitor)
+DEFINE_TRACE(Crypto)
 {
     visitor->trace(m_subtleCrypto);
 }

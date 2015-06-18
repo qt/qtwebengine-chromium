@@ -27,28 +27,26 @@ SerialServiceImpl::~SerialServiceImpl() {
 
 // static
 void SerialServiceImpl::Create(
-    scoped_refptr<base::MessageLoopProxy> io_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_message_loop,
+    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
     mojo::InterfaceRequest<serial::SerialService> request) {
-  mojo::BindToRequest(new SerialServiceImpl(new SerialConnectionFactory(
-                          base::Bind(SerialIoHandler::Create,
-                                     base::MessageLoopProxy::current(),
-                                     ui_message_loop),
-                          io_message_loop)),
-                      &request);
+  mojo::BindToRequest(
+      new SerialServiceImpl(new SerialConnectionFactory(
+          base::Bind(SerialIoHandler::Create,
+                     base::ThreadTaskRunnerHandle::Get(), ui_task_runner),
+          io_task_runner)),
+      &request);
 }
 
 // static
 void SerialServiceImpl::CreateOnMessageLoop(
-    scoped_refptr<base::MessageLoopProxy> message_loop,
-    scoped_refptr<base::MessageLoopProxy> io_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_message_loop,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
     mojo::InterfaceRequest<serial::SerialService> request) {
-  message_loop->PostTask(FROM_HERE,
-                         base::Bind(&SerialServiceImpl::Create,
-                                    io_message_loop,
-                                    ui_message_loop,
-                                    base::Passed(&request)));
+  task_runner->PostTask(FROM_HERE,
+                        base::Bind(&SerialServiceImpl::Create, io_task_runner,
+                                   ui_task_runner, base::Passed(&request)));
 }
 
 void SerialServiceImpl::GetDevices(
@@ -61,14 +59,13 @@ void SerialServiceImpl::Connect(
     serial::ConnectionOptionsPtr options,
     mojo::InterfaceRequest<serial::Connection> connection_request,
     mojo::InterfaceRequest<serial::DataSink> sink,
-    mojo::InterfaceRequest<serial::DataSource> source) {
+    mojo::InterfaceRequest<serial::DataSource> source,
+    mojo::InterfacePtr<serial::DataSourceClient> source_client) {
   if (!IsValidPath(path))
     return;
-  connection_factory_->CreateConnection(path,
-                                        options.Pass(),
-                                        connection_request.Pass(),
-                                        sink.Pass(),
-                                        source.Pass());
+  connection_factory_->CreateConnection(path, options.Pass(),
+                                        connection_request.Pass(), sink.Pass(),
+                                        source.Pass(), source_client.Pass());
 }
 
 SerialDeviceEnumerator* SerialServiceImpl::GetDeviceEnumerator() {

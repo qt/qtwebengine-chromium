@@ -43,9 +43,13 @@ bool WebDialogDelegate::HandleAddNewContents(
     content::WebContents* source,
     content::WebContents* new_contents,
     WindowOpenDisposition disposition,
-    const gfx::Rect& initial_pos,
+    const gfx::Rect& initial_rect,
     bool user_gesture) {
   return false;
+}
+
+bool WebDialogDelegate::HandleShouldCreateWebContents() {
+  return true;
 }
 
 }  // namespace ui

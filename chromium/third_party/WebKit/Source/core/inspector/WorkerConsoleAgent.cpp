@@ -29,14 +29,18 @@
  */
 
 #include "config.h"
-
 #include "core/inspector/WorkerConsoleAgent.h"
+
+#include "bindings/core/v8/ScriptController.h"
+#include "core/inspector/ConsoleMessageStorage.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "core/workers/WorkerReportingProxy.h"
+#include "core/workers/WorkerThread.h"
 
 namespace blink {
 
-WorkerConsoleAgent::WorkerConsoleAgent(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
-    : InspectorConsoleAgent(timelineAgent, injectedScriptManager)
+WorkerConsoleAgent::WorkerConsoleAgent(InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
+    : InspectorConsoleAgent(injectedScriptManager)
     , m_workerGlobalScope(workerGlobalScope)
 {
 }
@@ -45,14 +49,36 @@ WorkerConsoleAgent::~WorkerConsoleAgent()
 {
 }
 
+DEFINE_TRACE(WorkerConsoleAgent)
+{
+    visitor->trace(m_workerGlobalScope);
+    InspectorConsoleAgent::trace(visitor);
+}
+
+void WorkerConsoleAgent::enable(ErrorString* error)
+{
+    InspectorConsoleAgent::enable(error);
+    m_workerGlobalScope->thread()->workerReportingProxy().postWorkerConsoleAgentEnabled();
+}
+
+void WorkerConsoleAgent::clearMessages(ErrorString*)
+{
+    messageStorage()->clear(m_workerGlobalScope.get());
+}
+
 ConsoleMessageStorage* WorkerConsoleAgent::messageStorage()
 {
     return m_workerGlobalScope->messageStorage();
 }
 
-void WorkerConsoleAgent::addInspectedNode(ErrorString* error, int)
+void WorkerConsoleAgent::enableStackCapturingIfNeeded()
 {
-    *error = "addInspectedNode is not supported for workers";
+    ScriptController::setCaptureCallStackForUncaughtExceptions(true);
+}
+
+void WorkerConsoleAgent::disableStackCapturingIfNeeded()
+{
+    ScriptController::setCaptureCallStackForUncaughtExceptions(false);
 }
 
 } // namespace blink

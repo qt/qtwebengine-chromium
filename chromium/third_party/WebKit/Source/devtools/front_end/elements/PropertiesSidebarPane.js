@@ -45,6 +45,7 @@ WebInspector.PropertiesSidebarPane._objectGroupName = "properties-sidebar-pane";
 
 WebInspector.PropertiesSidebarPane.prototype = {
     /**
+     * @override
      * @param {!WebInspector.Throttler.FinishCallback} finishCallback
      * @protected
      */
@@ -139,6 +140,7 @@ WebInspector.PropertiesSidebarPane.prototype = {
                 var title = prototype.description;
                 title = title.replace(/Prototype$/, "");
                 var section = new WebInspector.ObjectPropertiesSection(prototype, title);
+                section.element.classList.add("properties-widget-section");
                 this.sections.push(section);
                 body.appendChild(section.element);
                 if (expanded[this.sections.length - 1])

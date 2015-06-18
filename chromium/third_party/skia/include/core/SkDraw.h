@@ -34,7 +34,11 @@ public:
     void    drawPaint(const SkPaint&) const;
     void    drawPoints(SkCanvas::PointMode, size_t count, const SkPoint[],
                        const SkPaint&, bool forceUseDevice = false) const;
-    void    drawRect(const SkRect&, const SkPaint&) const;
+    void    drawRect(const SkRect& prePaintRect, const SkPaint&, const SkMatrix* paintMatrix,
+                     const SkRect* postPaintRect) const;
+    void    drawRect(const SkRect& rect, const SkPaint& paint) const {
+        this->drawRect(rect, paint, NULL, NULL);
+    }
     void    drawRRect(const SkRRect&, const SkPaint&) const;
     /**
      *  To save on mallocs, we allow a flag that tells us that srcPath is
@@ -55,15 +59,15 @@ public:
         this->drawPath(path, paint, NULL, false, false, customBlitter);
     }
 
-    void    drawBitmap(const SkBitmap&, const SkMatrix&, const SkPaint&) const;
+    /* If dstOrNull is null, computes a dst by mapping the bitmap's bounds through the matrix. */
+    void    drawBitmap(const SkBitmap&, const SkMatrix&, const SkRect* dstOrNull,
+                       const SkPaint&) const;
     void    drawSprite(const SkBitmap&, int x, int y, const SkPaint&) const;
     void    drawText(const char text[], size_t byteLength, SkScalar x,
                      SkScalar y, const SkPaint& paint) const;
     void    drawPosText(const char text[], size_t byteLength,
                         const SkScalar pos[], int scalarsPerPosition,
                         const SkPoint& offset, const SkPaint& paint) const;
-    void    drawTextOnPath(const char text[], size_t byteLength,
-                        const SkPath&, const SkMatrix*, const SkPaint&) const;
     void    drawVertices(SkCanvas::VertexMode mode, int count,
                          const SkPoint vertices[], const SkPoint textures[],
                          const SkColor colors[], SkXfermode* xmode,

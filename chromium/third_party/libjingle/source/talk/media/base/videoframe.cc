@@ -29,13 +29,11 @@
 
 #include <string.h>
 
-#if !defined(DISABLE_YUV)
 #include "libyuv/compare.h"
 #include "libyuv/planar_functions.h"
 #include "libyuv/scale.h"
-#endif
-
 #include "talk/media/base/videocommon.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 
 namespace cricket {
@@ -44,7 +42,7 @@ namespace cricket {
 #define ROUNDTO2(v) (v & ~1)
 
 rtc::StreamResult VideoFrame::Write(rtc::StreamInterface* stream,
-                                          int* error) {
+                                          int* error) const {
   rtc::StreamResult result = rtc::SR_SUCCESS;
   const uint8* src_y = GetYPlane();
   const uint8* src_u = GetUPlane();
@@ -83,10 +81,25 @@ rtc::StreamResult VideoFrame::Write(rtc::StreamInterface* stream,
   return result;
 }
 
+size_t VideoFrame::CopyToBuffer(uint8* buffer, size_t size) const {
+  const size_t y_size = GetHeight() * GetYPitch();
+  const size_t u_size = GetUPitch() * GetChromaHeight();
+  const size_t v_size = GetVPitch() * GetChromaHeight();
+  const size_t needed = y_size + u_size + v_size;
+  if (size < needed)
+    return needed;
+  CopyToPlanes(buffer, buffer + y_size, buffer + y_size + u_size,
+               GetYPitch(), GetUPitch(), GetVPitch());
+  return needed;
+}
+
 bool VideoFrame::CopyToPlanes(
     uint8* dst_y, uint8* dst_u, uint8* dst_v,
     int32 dst_pitch_y, int32 dst_pitch_u, int32 dst_pitch_v) const {
-#if !defined(DISABLE_YUV)
+  if (!GetYPlane() || !GetUPlane() || !GetVPlane()) {
+    LOG(LS_ERROR) << "NULL plane pointer.";
+    return false;
+  }
   int32 src_width = static_cast<int>(GetWidth());
   int32 src_height = static_cast<int>(GetHeight());
   return libyuv::I420Copy(GetYPlane(), GetYPitch(),
@@ -96,13 +109,6 @@ bool VideoFrame::CopyToPlanes(
                           dst_u, dst_pitch_u,
                           dst_v, dst_pitch_v,
                           src_width, src_height) == 0;
-#else
-  int uv_size = GetUPitch() * GetChromaHeight();
-  memcpy(dst_y, GetYPlane(), GetWidth() * GetHeight());
-  memcpy(dst_u, GetUPlane(), uv_size);
-  memcpy(dst_v, GetVPlane(), uv_size);
-  return true;
-#endif
 }
 
 void VideoFrame::CopyToFrame(VideoFrame* dst) const {
@@ -113,6 +119,26 @@ void VideoFrame::CopyToFrame(VideoFrame* dst) const {
 
   CopyToPlanes(dst->GetYPlane(), dst->GetUPlane(), dst->GetVPlane(),
                dst->GetYPitch(), dst->GetUPitch(), dst->GetVPitch());
+}
+
+size_t VideoFrame::ConvertToRgbBuffer(uint32 to_fourcc,
+                                      uint8* buffer,
+                                      size_t size,
+                                      int stride_rgb) const {
+  const size_t needed = std::abs(stride_rgb) * GetHeight();
+  if (size < needed) {
+    LOG(LS_WARNING) << "RGB buffer is not large enough";
+    return needed;
+  }
+
+  if (libyuv::ConvertFromI420(GetYPlane(), GetYPitch(), GetUPlane(),
+                              GetUPitch(), GetVPlane(), GetVPitch(), buffer,
+                              stride_rgb, static_cast<int>(GetWidth()),
+                              static_cast<int>(GetHeight()), to_fourcc)) {
+    LOG(LS_ERROR) << "RGB type not supported: " << to_fourcc;
+    return 0;  // 0 indicates error
+  }
+  return needed;
 }
 
 // TODO(fbarchard): Handle odd width/height with rounding.
@@ -156,15 +182,12 @@ void VideoFrame::StretchToPlanes(
     }
   }
 
-  // TODO(fbarchard): Implement a simple scale for non-libyuv.
-#if !defined(DISABLE_YUV)
   // Scale to the output I420 frame.
   libyuv::Scale(src_y, src_u, src_v,
                 GetYPitch(), GetUPitch(), GetVPitch(),
                 static_cast<int>(src_width), static_cast<int>(src_height),
                 dst_y, dst_u, dst_v, dst_pitch_y, dst_pitch_u, dst_pitch_v,
                 static_cast<int>(width), static_cast<int>(height), interpolate);
-#endif
 }
 
 size_t VideoFrame::StretchToBuffer(size_t dst_width, size_t dst_height,
@@ -217,7 +240,6 @@ VideoFrame* VideoFrame::Stretch(size_t dst_width, size_t dst_height,
 }
 
 bool VideoFrame::SetToBlack() {
-#if !defined(DISABLE_YUV)
   return libyuv::I420Rect(GetYPlane(), GetYPitch(),
                           GetUPlane(), GetUPitch(),
                           GetVPlane(), GetVPitch(),
@@ -225,13 +247,6 @@ bool VideoFrame::SetToBlack() {
                           static_cast<int>(GetWidth()),
                           static_cast<int>(GetHeight()),
                           16, 128, 128) == 0;
-#else
-  int uv_size = GetUPitch() * GetChromaHeight();
-  memset(GetYPlane(), 16, GetWidth() * GetHeight());
-  memset(GetUPlane(), 128, uv_size);
-  memset(GetVPlane(), 128, uv_size);
-  return true;
-#endif
 }
 
 static const size_t kMaxSampleSize = 1000000000u;
@@ -261,7 +276,6 @@ bool VideoFrame::Validate(uint32 fourcc, int w, int h,
     case FOURCC_YU12:
     case FOURCC_YV12:
     case FOURCC_M420:
-    case FOURCC_Q420:
     case FOURCC_NV21:
     case FOURCC_NV12:
       expected_bpp = 12;

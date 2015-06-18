@@ -36,6 +36,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValueFactory.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -46,6 +47,7 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/ThreadableLoader.h"
 #include "core/page/EventSourceInit.h"
 #include "platform/network/ResourceError.h"
@@ -86,12 +88,7 @@ PassRefPtrWillBeRawPtr<EventSource> EventSource::create(ExecutionContext* contex
     }
 
     // FIXME: Convert this to check the isolated world's Content Security Policy once webkit.org/b/104520 is solved.
-    bool shouldBypassMainWorldCSP = false;
-    if (context->isDocument()) {
-        Document* document = toDocument(context);
-        shouldBypassMainWorldCSP = document->frame()->script().shouldBypassMainWorldCSP();
-    }
-    if (!shouldBypassMainWorldCSP && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
+    if (!ContentSecurityPolicy::shouldBypassMainWorld(context) && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
         // We can safely expose the URL to JavaScript, as this exception is generate synchronously before any redirects take place.
         exceptionState.throwSecurityError("Refused to connect to '" + fullURL.elidedString() + "' because it violates the document's Content Security Policy.");
         return nullptr;
@@ -130,7 +127,7 @@ void EventSource::connect()
     request.setHTTPMethod("GET");
     request.setHTTPHeaderField("Accept", "text/event-stream");
     request.setHTTPHeaderField("Cache-Control", "no-cache");
-    request.setRequestContext(blink::WebURLRequest::RequestContextEventSource);
+    request.setRequestContext(WebURLRequest::RequestContextEventSource);
     if (!m_lastEventId.isEmpty())
         request.setHTTPHeaderField("Last-Event-ID", m_lastEventId);
 
@@ -146,8 +143,9 @@ void EventSource::connect()
     resourceLoaderOptions.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
     resourceLoaderOptions.dataBufferingPolicy = DoNotBufferData;
     resourceLoaderOptions.securityOrigin = origin;
-    resourceLoaderOptions.mixedContentBlockingTreatment = TreatAsActiveContent;
 
+    InspectorInstrumentation::willSendEventSourceRequest(&executionContext, this);
+    // InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient will be called synchronously.
     m_loader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
 
     if (m_loader)
@@ -158,6 +156,8 @@ void EventSource::networkRequestEnded()
 {
     if (!m_requestInFlight)
         return;
+
+    InspectorInstrumentation::didFinishEventSourceRequest(executionContext(), this);
 
     m_requestInFlight = false;
 
@@ -380,6 +380,7 @@ void EventSource::parseEventStreamLine(unsigned bufPos, int fieldLength, int lin
                 m_lastEventId = m_currentlyParsedEventId;
                 m_currentlyParsedEventId = nullAtom;
             }
+            InspectorInstrumentation::willDispachEventSourceEvent(executionContext(), this, m_eventName.isEmpty() ? EventTypeNames::message : m_eventName, m_lastEventId, m_data);
             dispatchEvent(createMessageEvent());
         }
         if (!m_eventName.isEmpty())
@@ -433,9 +434,15 @@ bool EventSource::hasPendingActivity() const
 PassRefPtrWillBeRawPtr<MessageEvent> EventSource::createMessageEvent()
 {
     RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create();
-    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : m_eventName, false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
+    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : m_eventName, false, false, SerializedScriptValueFactory::instance().create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
     m_data.clear();
     return event.release();
+}
+
+DEFINE_TRACE(EventSource)
+{
+    EventTargetWithInlineData::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

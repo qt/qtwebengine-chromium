@@ -1,40 +1,43 @@
 {
+    "extensions": [
+        {
+            "type": "setting",
+            "category": "Console",
+            "title": "Enable custom formatters",
+            "settingName": "customFormatters",
+            "settingType": "boolean",
+            "defaultValue": false,
+            "experiment": "customObjectFormatters"
+        }
+    ],
     "dependencies": [
         "bindings",
         "platform",
         "ui"
     ],
     "scripts": [
-        "CookiesTable.js",
-        "NativeBreakpointsSidebarPane.js",
+        "BreakpointsSidebarPaneBase.js",
+        "CustomPreviewSection.js",
+        "DataSaverInfobar.js",
+        "DebuggerPresentationUtils.js",
         "DOMBreakpointsSidebarPane.js",
         "DOMPresentationUtils.js",
-        "Section.js",
-        "PropertiesSection.js",
         "DockController.js",
         "Drawer.js",
-        "Panel.js",
         "ExecutionContextSelector.js",
-        "FilterBar.js",
-        "FilterSuggestionBuilder.js",
-        "FlameChart.js",
         "HandlerRegistry.js",
-        "HelpScreen.js",
         "InspectElementModeController.js",
         "InspectorView.js",
         "ObjectPopoverHelper.js",
         "ObjectPropertiesSection.js",
-        "OverviewGrid.js",
-        "SearchableView.js",
-        "ShortcutsScreen.js",
-        "TargetsComboBoxController.js",
-        "TimelineGrid.js"
+        "RemoteObjectPreviewFormatter.js",
+        "ShortcutsScreen.js"
     ],
-    "stylesheets": [
+    "resources": [
         "breakpointsList.css",
-        "flameChart.css",
-        "helpScreen.css",
-        "overviewGrid.css",
-        "panelEnablerView.css"
+        "customPreviewSection.css",
+        "nodeLink.css",
+        "objectPropertiesSection.css",
+        "objectValue.css"
     ]
 }

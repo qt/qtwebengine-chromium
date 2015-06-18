@@ -5,6 +5,7 @@
 #ifndef CSSTokenizer_h
 #define CSSTokenizer_h
 
+#include "core/CoreExport.h"
 #include "core/css/parser/CSSParserToken.h"
 #include "core/html/parser/InputStreamPreprocessor.h"
 #include "wtf/text/WTFString.h"
@@ -14,14 +15,34 @@
 namespace blink {
 
 class CSSTokenizerInputStream;
+class CSSParserObserverWrapper;
+struct CSSParserString;
+class CSSParserTokenRange;
 
-class CSSTokenizer {
+class CORE_EXPORT CSSTokenizer {
     WTF_MAKE_NONCOPYABLE(CSSTokenizer);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(CSSTokenizer);
 public:
-    static void tokenize(String, Vector<CSSParserToken>&);
+    class CORE_EXPORT Scope {
+    public:
+        Scope(const String&);
+        Scope(const String&, CSSParserObserverWrapper&); // For the inspector
+
+        CSSParserTokenRange tokenRange();
+        unsigned tokenCount();
+
+    private:
+        void storeString(const String& string) { m_stringPool.append(string); }
+        Vector<CSSParserToken> m_tokens;
+        // We only allocate strings when escapes are used.
+        Vector<String> m_stringPool;
+        String m_string;
+
+        friend class CSSTokenizer;
+    };
+
 private:
-    CSSTokenizer(CSSTokenizerInputStream&);
+    CSSTokenizer(CSSTokenizerInputStream&, Scope&);
 
     CSSParserToken nextToken();
 
@@ -39,11 +60,11 @@ private:
     void consumeBadUrlRemnants();
     void consumeUntilNonWhitespace();
     void consumeSingleWhitespaceIfNext();
-    bool consumeUntilCommentEndFound();
+    void consumeUntilCommentEndFound();
 
     bool consumeIfNext(UChar);
-    String consumeName();
-    UChar consumeEscape();
+    CSSParserString consumeName();
+    UChar32 consumeEscape();
 
     bool nextTwoCharsAreValidEscape();
     bool nextCharsAreNumber(UChar);
@@ -51,7 +72,7 @@ private:
     bool nextCharsAreIdentifier(UChar);
     bool nextCharsAreIdentifier();
     CSSParserToken blockStart(CSSParserTokenType);
-    CSSParserToken blockStart(CSSParserTokenType blockType, CSSParserTokenType, String);
+    CSSParserToken blockStart(CSSParserTokenType blockType, CSSParserTokenType, CSSParserString);
     CSSParserToken blockEnd(CSSParserTokenType, CSSParserTokenType startType);
 
     typedef CSSParserToken (CSSTokenizer::*CodePoint)(UChar);
@@ -70,10 +91,16 @@ private:
     CSSParserToken comma(UChar);
     CSSParserToken hyphenMinus(UChar);
     CSSParserToken asterisk(UChar);
+    CSSParserToken lessThan(UChar);
     CSSParserToken solidus(UChar);
     CSSParserToken colon(UChar);
     CSSParserToken semiColon(UChar);
     CSSParserToken hash(UChar);
+    CSSParserToken circumflexAccent(UChar);
+    CSSParserToken dollarSign(UChar);
+    CSSParserToken verticalLine(UChar);
+    CSSParserToken tilde(UChar);
+    CSSParserToken commercialAt(UChar);
     CSSParserToken reverseSolidus(UChar);
     CSSParserToken asciiDigit(UChar);
     CSSParserToken letterU(UChar);
@@ -81,7 +108,10 @@ private:
     CSSParserToken stringStart(UChar);
     CSSParserToken endOfFile(UChar);
 
+    CSSParserString registerString(const String&);
+
     CSSTokenizerInputStream& m_input;
+    Scope& m_scope;
 };
 
 

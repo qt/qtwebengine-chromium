@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -54,9 +54,9 @@ class DataChannelProviderInterface {
   // Disconnects from the transport signals.
   virtual void DisconnectDataChannel(DataChannel* data_channel) = 0;
   // Adds the data channel SID to the transport for SCTP.
-  virtual void AddSctpDataStream(uint32 sid) = 0;
+  virtual void AddSctpDataStream(int sid) = 0;
   // Removes the data channel SID from the transport for SCTP.
-  virtual void RemoveSctpDataStream(uint32 sid) = 0;
+  virtual void RemoveSctpDataStream(int sid) = 0;
   // Returns true if the transport channel is ready to send data.
   virtual bool ReadyToSendData() const = 0;
 
@@ -213,7 +213,7 @@ class DataChannel : public DataChannelInterface,
   void DeliverQueuedReceivedData();
 
   void SendQueuedDataMessages();
-  bool SendDataMessage(const DataBuffer& buffer);
+  bool SendDataMessage(const DataBuffer& buffer, bool queue_if_blocked);
   bool QueueSendDataMessage(const DataBuffer& buffer);
 
   void SendQueuedControlMessages();

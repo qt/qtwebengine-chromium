@@ -8,9 +8,10 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -71,7 +72,7 @@ class AddInObserve : public Foo {
         adder(1) {
   }
 
-  virtual void Observe(int x) override {
+  void Observe(int x) override {
     if (!added) {
       added = true;
       observer_list->AddObserver(&adder);
@@ -94,7 +95,7 @@ class AddRemoveThread : public PlatformThread::Delegate,
  public:
   AddRemoveThread(ObserverListThreadSafe<Foo>* list, bool notify)
       : list_(list),
-        loop_(NULL),
+        loop_(nullptr),
         in_list_(false),
         start_(Time::Now()),
         count_observes_(0),
@@ -107,7 +108,7 @@ class AddRemoveThread : public PlatformThread::Delegate,
 
   void ThreadMain() override {
     loop_ = new MessageLoop();  // Fire up a message loop.
-    loop_->PostTask(
+    loop_->task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&AddRemoveThread::AddTask, weak_factory_.GetWeakPtr()));
     loop_->Run();
@@ -134,16 +135,17 @@ class AddRemoveThread : public PlatformThread::Delegate,
     }
 
     if (do_notifies_) {
-      list_->Notify(&Foo::Observe, 10);
+      list_->Notify(FROM_HERE, &Foo::Observe, 10);
     }
 
-    loop_->PostTask(
+    loop_->task_runner()->PostTask(
         FROM_HERE,
         base::Bind(&AddRemoveThread::AddTask, weak_factory_.GetWeakPtr()));
   }
 
   void Quit() {
-    loop_->PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
+    loop_->task_runner()->PostTask(FROM_HERE,
+                                   MessageLoop::QuitWhenIdleClosure());
   }
 
   void Observe(int x) override {
@@ -182,6 +184,9 @@ TEST(ObserverListTest, BasicTest) {
   observer_list.AddObserver(&a);
   observer_list.AddObserver(&b);
 
+  EXPECT_TRUE(observer_list.HasObserver(&a));
+  EXPECT_FALSE(observer_list.HasObserver(&c));
+
   FOR_EACH_OBSERVER(Foo, observer_list, Observe(10));
 
   observer_list.AddObserver(&evil);
@@ -214,14 +219,14 @@ TEST(ObserverListThreadSafeTest, BasicTest) {
   observer_list->AddObserver(&a);
   observer_list->AddObserver(&b);
 
-  observer_list->Notify(&Foo::Observe, 10);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 10);
   RunLoop().RunUntilIdle();
 
   observer_list->AddObserver(&evil);
   observer_list->AddObserver(&c);
   observer_list->AddObserver(&d);
 
-  observer_list->Notify(&Foo::Observe, 10);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 10);
   RunLoop().RunUntilIdle();
 
   EXPECT_EQ(20, a.total);
@@ -244,7 +249,7 @@ TEST(ObserverListThreadSafeTest, RemoveObserver) {
   observer_list->RemoveObserver(&a);
   observer_list->RemoveObserver(&b);
 
-  observer_list->Notify(&Foo::Observe, 10);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 10);
   RunLoop().RunUntilIdle();
 
   EXPECT_EQ(0, a.total);
@@ -255,7 +260,7 @@ TEST(ObserverListThreadSafeTest, RemoveObserver) {
   // Should also do nothing.
   observer_list->RemoveObserver(&b);
 
-  observer_list->Notify(&Foo::Observe, 10);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 10);
   RunLoop().RunUntilIdle();
 
   EXPECT_EQ(10, a.total);
@@ -277,7 +282,7 @@ TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
     MessageLoop loop;
     observer_list->AddObserver(&c);
 
-    observer_list->Notify(&Foo::Observe, 10);
+    observer_list->Notify(FROM_HERE, &Foo::Observe, 10);
     RunLoop().RunUntilIdle();
 
     EXPECT_EQ(0, a.total);
@@ -291,7 +296,7 @@ TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
     observer_list->RemoveObserver(&c);
 
     // Notify again.
-    observer_list->Notify(&Foo::Observe, 20);
+    observer_list->Notify(FROM_HERE, &Foo::Observe, 20);
     RunLoop().RunUntilIdle();
 
     EXPECT_EQ(20, a.total);
@@ -305,7 +310,7 @@ TEST(ObserverListThreadSafeTest, WithoutMessageLoop) {
   // Notifying should not fail but should also be a no-op.
   MessageLoop loop;
   observer_list->AddObserver(&b);
-  observer_list->Notify(&Foo::Observe, 30);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 30);
   RunLoop().RunUntilIdle();
 
   EXPECT_EQ(20, a.total);
@@ -350,7 +355,7 @@ TEST(ObserverListThreadSafeTest, RemoveMultipleObservers) {
   a.AddFooToRemove(&a);
   a.AddFooToRemove(&b);
 
-  observer_list->Notify(&Foo::Observe, 1);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 1);
   RunLoop().RunUntilIdle();
 }
 
@@ -389,7 +394,7 @@ static void ThreadSafeObserverHarness(int num_threads,
     if ((Time::Now() - start).InMilliseconds() > kThreadRunTime)
       break;
 
-    observer_list->Notify(&Foo::Observe, 10);
+    observer_list->Notify(FROM_HERE, &Foo::Observe, 10);
 
     RunLoop().RunUntilIdle();
   }
@@ -421,7 +426,7 @@ TEST(ObserverListThreadSafeTest, OutlivesMessageLoop) {
   observer_list->AddObserver(&a);
   delete loop;
   // Test passes if we don't crash here.
-  observer_list->Notify(&Foo::Observe, 1);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 1);
 }
 
 TEST(ObserverListTest, Existing) {
@@ -455,7 +460,7 @@ TEST(ObserverListThreadSafeTest, Existing) {
   observer_list->AddObserver(&a);
   observer_list->AddObserver(&b);
 
-  observer_list->Notify(&Foo::Observe, 1);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 1);
   RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(b.added);
@@ -464,7 +469,7 @@ TEST(ObserverListThreadSafeTest, Existing) {
   EXPECT_EQ(0, b.adder.total);
 
   // Notify again to make sure b's adder is notified.
-  observer_list->Notify(&Foo::Observe, 1);
+  observer_list->Notify(FROM_HERE, &Foo::Observe, 1);
   RunLoop().RunUntilIdle();
   EXPECT_EQ(1, b.adder.total);
 }

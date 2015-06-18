@@ -15,7 +15,7 @@ class WebMouseEvent;
 
 namespace content {
 
-class RenderViewHostImpl;
+class RenderWidgetHostImpl;
 
 namespace devtools {
 namespace page {
@@ -27,14 +27,14 @@ class ColorPicker {
   explicit ColorPicker(ColorPickedCallback callback);
   virtual ~ColorPicker();
 
-  void SetRenderViewHost(RenderViewHostImpl* host);
+  void SetRenderWidgetHost(RenderWidgetHostImpl* host);
   void SetEnabled(bool enabled);
   void OnSwapCompositorFrame();
 
  private:
   void UpdateFrame();
   void ResetFrame();
-  void FrameUpdated(bool succeeded, const SkBitmap& bitmap);
+  void FrameUpdated(const SkBitmap&, ReadbackResponse);
   bool HandleMouseEvent(const blink::WebMouseEvent& event);
   void UpdateCursor();
 
@@ -44,7 +44,7 @@ class ColorPicker {
   int last_cursor_x_;
   int last_cursor_y_;
   RenderWidgetHost::MouseEventCallback mouse_event_callback_;
-  RenderViewHostImpl* host_;
+  RenderWidgetHostImpl* host_;
   base::WeakPtrFactory<ColorPicker> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ColorPicker);

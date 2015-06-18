@@ -36,6 +36,9 @@ enum PacketFlags {
                            // crypto provided by the transport (e.g. DTLS)
 };
 
+// Used to indicate channel's connection state.
+enum TransportChannelState { STATE_CONNECTING, STATE_COMPLETED, STATE_FAILED };
+
 // A TransportChannel represents one logical stream of packets that are sent
 // between the two sides of a session.
 class TransportChannel : public sigslot::has_slots<> {
@@ -45,6 +48,12 @@ class TransportChannel : public sigslot::has_slots<> {
         component_(component),
         readable_(false), writable_(false) {}
   virtual ~TransportChannel() {}
+
+  // TODO(guoweis) - Make this pure virtual once all subclasses of
+  // TransportChannel have this defined.
+  virtual TransportChannelState GetState() const {
+    return TransportChannelState::STATE_CONNECTING;
+  }
 
   // TODO(mallinath) - Remove this API, as it's no longer useful.
   // Returns the session id of this channel.
@@ -72,6 +81,9 @@ class TransportChannel : public sigslot::has_slots<> {
   // Sets a socket option on this channel.  Note that not all options are
   // supported by all transport types.
   virtual int SetOption(rtc::Socket::Option opt, int value) = 0;
+  // TODO(pthatcher): Once Chrome's MockTransportChannel implments
+  // this, remove the default implementation.
+  virtual bool GetOption(rtc::Socket::Option opt, int* value) { return false; }
 
   // Returns the most recent error that occurred on this channel.
   virtual int GetError() = 0;
@@ -88,8 +100,11 @@ class TransportChannel : public sigslot::has_slots<> {
   // Sets up the ciphers to use for DTLS-SRTP.
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) = 0;
 
-  // Finds out which DTLS-SRTP cipher was negotiated
+  // Finds out which DTLS-SRTP cipher was negotiated.
   virtual bool GetSrtpCipher(std::string* cipher) = 0;
+
+  // Finds out which DTLS cipher was negotiated.
+  virtual bool GetSslCipher(std::string* cipher) = 0;
 
   // Gets a copy of the local SSL identity, owned by the caller.
   virtual bool GetLocalIdentity(rtc::SSLIdentity** identity) const = 0;
@@ -135,7 +150,7 @@ class TransportChannel : public sigslot::has_slots<> {
   bool readable_;
   bool writable_;
 
-  DISALLOW_EVIL_CONSTRUCTORS(TransportChannel);
+  DISALLOW_COPY_AND_ASSIGN(TransportChannel);
 };
 
 }  // namespace cricket

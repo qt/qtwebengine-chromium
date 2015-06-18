@@ -48,10 +48,13 @@ enum {
   // lengths are somewhat arbitrary as the EME spec doesn't specify any limits.
   kMinCertificateLength = 128,
   kMaxCertificateLength = 16 * 1024,
-  kMaxWebSessionIdLength = 512,
+  kMaxSessionIdLength = 512,
   kMinKeyIdLength = 1,
   kMaxKeyIdLength = 512,
   kMaxKeyIds = 128,
+  kMaxInitDataLength = 64 * 1024,         // 64 KB
+  kMaxSessionResponseLength = 64 * 1024,  // 64 KB
+  kMaxKeySystemLength = 256,
 };
 
 }  // namespace limits

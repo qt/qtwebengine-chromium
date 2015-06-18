@@ -22,15 +22,10 @@
 #include "config.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGElementRareData.h"
+#include "core/layout/svg/SVGResourcesCache.h"
 #include "core/svg/SVGSVGElement.h"
-#include "core/svg/SVGViewSpec.h"
-#include "core/svg/SVGZoomAndPan.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/AtomicString.h"
@@ -60,7 +55,7 @@ void SVGDocumentExtensions::removeTimeContainer(SVGSVGElement* element)
     m_timeContainers.remove(element);
 }
 
-void SVGDocumentExtensions::addResource(const AtomicString& id, RenderSVGResourceContainer* resource)
+void SVGDocumentExtensions::addResource(const AtomicString& id, LayoutSVGResourceContainer* resource)
 {
     ASSERT(resource);
 
@@ -79,10 +74,10 @@ void SVGDocumentExtensions::removeResource(const AtomicString& id)
     m_resources.remove(id);
 }
 
-RenderSVGResourceContainer* SVGDocumentExtensions::resourceById(const AtomicString& id) const
+LayoutSVGResourceContainer* SVGDocumentExtensions::resourceById(const AtomicString& id) const
 {
     if (id.isEmpty())
-        return 0;
+        return nullptr;
 
     return m_resources.get(id);
 }
@@ -96,11 +91,10 @@ void SVGDocumentExtensions::serviceOnAnimationFrame(Document& document, double m
 
 void SVGDocumentExtensions::serviceAnimations(double monotonicAnimationStartTime)
 {
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
-    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator end = timeContainers.end();
-    for (WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr)
-        (*itr)->timeContainer()->serviceAnimations(monotonicAnimationStartTime);
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement>> timeContainers;
+    copyToVector(m_timeContainers, timeContainers);
+    for (const auto& container : timeContainers)
+        container->timeContainer()->serviceAnimations(monotonicAnimationStartTime);
 }
 
 void SVGDocumentExtensions::startAnimations()
@@ -109,11 +103,10 @@ void SVGDocumentExtensions::startAnimations()
     // starting animations for a document will do this "latching"
     // FIXME: We hold a ref pointers to prevent a shadow tree from getting removed out from underneath us.
     // In the future we should refactor the use-element to avoid this. See https://webkit.org/b/53704
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
-    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator end = timeContainers.end();
-    for (WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr) {
-        SMILTimeContainer* timeContainer = (*itr)->timeContainer();
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement>> timeContainers;
+    copyToVector(m_timeContainers, timeContainers);
+    for (const auto& container : timeContainers) {
+        SMILTimeContainer* timeContainer = container->timeContainer();
         if (!timeContainer->isStarted())
             timeContainer->begin();
     }
@@ -121,19 +114,16 @@ void SVGDocumentExtensions::startAnimations()
 
 void SVGDocumentExtensions::pauseAnimations()
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator end = m_timeContainers.end();
-    for (WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator itr = m_timeContainers.begin(); itr != end; ++itr)
-        (*itr)->pauseAnimations();
+    for (SVGSVGElement* element : m_timeContainers)
+        element->pauseAnimations();
 }
 
 void SVGDocumentExtensions::dispatchSVGLoadEventToOutermostSVGElements()
 {
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
-    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
-
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator end = timeContainers.end();
-    for (WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator it = timeContainers.begin(); it != end; ++it) {
-        SVGSVGElement* outerSVG = it->get();
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement>> timeContainers;
+    copyToVector(m_timeContainers, timeContainers);
+    for (const auto& container : timeContainers) {
+        SVGSVGElement* outerSVG = container.get();
         if (!outerSVG->isOutermostSVGSVGElement())
             continue;
 
@@ -167,7 +157,7 @@ void SVGDocumentExtensions::addPendingResource(const AtomicString& id, Element* 
     if (id.isEmpty())
         return;
 
-    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::AddResult result = m_pendingResources.add(id, nullptr);
+    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements>>::AddResult result = m_pendingResources.add(id, nullptr);
     if (result.isNewEntry)
         result.storedValue->value = adoptPtrWillBeNoop(new SVGPendingElements);
     result.storedValue->value->add(element);
@@ -190,9 +180,8 @@ bool SVGDocumentExtensions::isElementPendingResources(Element* element) const
 
     ASSERT(element);
 
-    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::const_iterator end = m_pendingResources.end();
-    for (WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::const_iterator it = m_pendingResources.begin(); it != end; ++it) {
-        SVGPendingElements* elements = it->value.get();
+    for (const auto& entry : m_pendingResources) {
+        SVGPendingElements* elements = entry.value.get();
         ASSERT(elements);
 
         if (elements->contains(element))
@@ -224,43 +213,39 @@ void SVGDocumentExtensions::removeElementFromPendingResources(Element* element)
     // Remove the element from pending resources.
     if (!m_pendingResources.isEmpty() && element->hasPendingResources()) {
         Vector<AtomicString> toBeRemoved;
-        WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::iterator end = m_pendingResources.end();
-        for (WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::iterator it = m_pendingResources.begin(); it != end; ++it) {
-            SVGPendingElements* elements = it->value.get();
+        for (const auto& entry : m_pendingResources) {
+            SVGPendingElements* elements = entry.value.get();
             ASSERT(elements);
             ASSERT(!elements->isEmpty());
 
             elements->remove(element);
             if (elements->isEmpty())
-                toBeRemoved.append(it->key);
+                toBeRemoved.append(entry.key);
         }
 
         clearHasPendingResourcesIfPossible(element);
 
         // We use the removePendingResource function here because it deals with set lifetime correctly.
-        Vector<AtomicString>::iterator itEnd = toBeRemoved.end();
-        for (Vector<AtomicString>::iterator it = toBeRemoved.begin(); it != itEnd; ++it)
-            removePendingResource(*it);
+        for (const AtomicString& id : toBeRemoved)
+            removePendingResource(id);
     }
 
     // Remove the element from pending resources that were scheduled for removal.
     if (!m_pendingResourcesForRemoval.isEmpty()) {
         Vector<AtomicString> toBeRemoved;
-        WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::iterator end = m_pendingResourcesForRemoval.end();
-        for (WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::iterator it = m_pendingResourcesForRemoval.begin(); it != end; ++it) {
-            SVGPendingElements* elements = it->value.get();
+        for (const auto& entry : m_pendingResourcesForRemoval) {
+            SVGPendingElements* elements = entry.value.get();
             ASSERT(elements);
             ASSERT(!elements->isEmpty());
 
             elements->remove(element);
             if (elements->isEmpty())
-                toBeRemoved.append(it->key);
+                toBeRemoved.append(entry.key);
         }
 
         // We use the removePendingResourceForRemoval function here because it deals with set lifetime correctly.
-        Vector<AtomicString>::iterator itEnd = toBeRemoved.end();
-        for (Vector<AtomicString>::iterator it = toBeRemoved.begin(); it != itEnd; ++it)
-            removePendingResourceForRemoval(*it);
+        for (const AtomicString& id : toBeRemoved)
+            removePendingResourceForRemoval(id);
     }
 }
 
@@ -291,11 +276,11 @@ void SVGDocumentExtensions::markPendingResourcesForRemoval(const AtomicString& i
 Element* SVGDocumentExtensions::removeElementFromPendingResourcesForRemoval(const AtomicString& id)
 {
     if (id.isEmpty())
-        return 0;
+        return nullptr;
 
     SVGPendingElements* resourceSet = m_pendingResourcesForRemoval.get(id);
     if (!resourceSet || resourceSet->isEmpty())
-        return 0;
+        return nullptr;
 
     SVGPendingElements::iterator firstElement = resourceSet->begin();
     Element* element = *firstElement;
@@ -332,22 +317,14 @@ void SVGDocumentExtensions::invalidateSVGRootsWithRelativeLengthDescendents(Subt
     TemporaryChange<bool> inRelativeLengthSVGRootsChange(m_inRelativeLengthSVGRootsInvalidation, true);
 #endif
 
-    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator end = m_relativeLengthSVGRoots.end();
-    for (WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator it = m_relativeLengthSVGRoots.begin(); it != end; ++it)
-        (*it)->invalidateRelativeLengthClients(scope);
+    for (SVGSVGElement* element : m_relativeLengthSVGRoots)
+        element->invalidateRelativeLengthClients(scope);
 }
 
 bool SVGDocumentExtensions::zoomAndPanEnabled() const
 {
-    if (SVGSVGElement* svg = rootElement(*m_document)) {
-        if (svg->useCurrentView()) {
-            if (svg->currentView())
-                return svg->currentView()->zoomAndPan() == SVGZoomAndPanMagnify;
-        } else {
-            return svg->zoomAndPan() == SVGZoomAndPanMagnify;
-        }
-    }
-
+    if (SVGSVGElement* svg = rootElement(*m_document))
+        return svg->zoomAndPanEnabled();
     return false;
 }
 
@@ -375,7 +352,7 @@ SVGSVGElement* SVGDocumentExtensions::rootElement() const
     return rootElement(*m_document);
 }
 
-void SVGDocumentExtensions::trace(Visitor* visitor)
+DEFINE_TRACE(SVGDocumentExtensions)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);

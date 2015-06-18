@@ -35,6 +35,8 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 #if defined(OPENSSL_PNACL)
 /* pnacl doesn't include readdir_r! So we do the best we can. */

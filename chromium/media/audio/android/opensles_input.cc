@@ -4,8 +4,8 @@
 
 #include "media/audio/android/opensles_input.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "media/audio/android/audio_manager_android.h"
 #include "media/base/audio_bus.h"
 
@@ -176,8 +176,9 @@ double OpenSLESInputStream::GetVolume() {
   return 0.0;
 }
 
-void OpenSLESInputStream::SetAutomaticGainControl(bool enabled) {
+bool OpenSLESInputStream::SetAutomaticGainControl(bool enabled) {
   NOTIMPLEMENTED();
+  return false;
 }
 
 bool OpenSLESInputStream::GetAutomaticGainControl() {

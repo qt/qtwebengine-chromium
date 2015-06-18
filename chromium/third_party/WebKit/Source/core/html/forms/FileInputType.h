@@ -32,6 +32,7 @@
 #ifndef FileInputType_h
 #define FileInputType_h
 
+#include "core/CoreExport.h"
 #include "core/html/forms/BaseClickableWithKeyInputType.h"
 #include "platform/FileChooser.h"
 #include "platform/heap/Handle.h"
@@ -42,43 +43,42 @@ namespace blink {
 class DragData;
 class FileList;
 
-class FileInputType final : public BaseClickableWithKeyInputType, private FileChooserClient {
+class CORE_EXPORT FileInputType final : public BaseClickableWithKeyInputType, private FileChooserClient {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     static Vector<FileChooserFileInfo> filesFromFormControlState(const FormControlState&);
     static FileList* createFileList(const Vector<FileChooserFileInfo>& files, bool hasWebkitDirectoryAttr);
 
 private:
     FileInputType(HTMLInputElement&);
-    virtual const AtomicString& formControlType() const override;
-    virtual FormControlState saveFormControlState() const override;
-    virtual void restoreFormControlState(const FormControlState&) override;
-    virtual bool appendFormData(FormDataList&, bool) const override;
-    virtual bool valueMissing(const String&) const override;
-    virtual String valueMissingText() const override;
-    virtual void handleDOMActivateEvent(Event*) override;
-    virtual RenderObject* createRenderer(RenderStyle*) const override;
-    virtual bool canSetStringValue() const override;
-    virtual FileList* files() override;
-    virtual void setFiles(FileList*) override;
-    virtual bool canSetValue(const String&) override;
-    virtual bool getTypeSpecificValue(String&) override; // Checked first, before internal storage or the value attribute.
-    virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) override;
-    virtual bool receiveDroppedFiles(const DragData*) override;
-    virtual String droppedFileSystemId() override;
-    virtual void createShadowSubtree() override;
-    virtual void disabledAttributeChanged() override;
-    virtual void multipleAttributeChanged() override;
-    virtual String defaultToolTip() const override;
+    const AtomicString& formControlType() const override;
+    FormControlState saveFormControlState() const override;
+    void restoreFormControlState(const FormControlState&) override;
+    bool appendFormData(FormDataList&, bool) const override;
+    bool valueMissing(const String&) const override;
+    String valueMissingText() const override;
+    void handleDOMActivateEvent(Event*) override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
+    bool canSetStringValue() const override;
+    FileList* files() override;
+    void setFiles(FileList*) override;
+    bool canSetValue(const String&) override;
+    bool getTypeSpecificValue(String&) override; // Checked first, before internal storage or the value attribute.
+    void setValue(const String&, bool valueChanged, TextFieldEventBehavior) override;
+    bool receiveDroppedFiles(const DragData*) override;
+    String droppedFileSystemId() override;
+    void createShadowSubtree() override;
+    void disabledAttributeChanged() override;
+    void multipleAttributeChanged() override;
+    String defaultToolTip() const override;
 
     // FileChooserClient implementation.
-    virtual void filesChosen(const Vector<FileChooserFileInfo>&) override;
+    void filesChosen(const Vector<FileChooserFileInfo>&) override;
 
     void receiveDropForDirectoryUpload(const Vector<String>&);
 
     PersistentWillBeMember<FileList> m_fileList;
-
     String m_droppedFileSystemId;
 };
 

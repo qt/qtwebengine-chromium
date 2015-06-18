@@ -175,7 +175,8 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
     return;
   }
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   base::FilePath path =
       command_line.GetSwitchValuePath(switches::kPluginPath);
 
@@ -438,7 +439,7 @@ void WebPluginDelegateStub::OnFetchURL(
                       params.method,
                       data,
                       static_cast<unsigned int>(params.post_data.size()),
-                      params.referrer,
+                      Referrer(params.referrer, params.referrer_policy),
                       params.notify_redirect,
                       params.is_plugin_src_load,
                       channel_->renderer_id(),

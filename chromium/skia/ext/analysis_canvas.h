@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkDrawPictureCallback.h"
 
 namespace skia {
 
@@ -30,45 +30,49 @@ class SK_API AnalysisCanvas : public SkCanvas, public SkDrawPictureCallback {
   bool abortDrawing() override;
 
   // SkCanvas overrides.
-  void clear(SkColor) override;
-  void drawPaint(const SkPaint& paint) override;
-  void drawPoints(PointMode,
+  void onDrawPaint(const SkPaint& paint) override;
+  void onDrawPoints(PointMode,
                   size_t count,
                   const SkPoint pts[],
                   const SkPaint&) override;
-  void drawOval(const SkRect&, const SkPaint&) override;
-  void drawRect(const SkRect&, const SkPaint&) override;
-  void drawRRect(const SkRRect&, const SkPaint&) override;
-  void drawPath(const SkPath& path, const SkPaint&) override;
-  void drawBitmap(const SkBitmap&,
-                  SkScalar left,
-                  SkScalar top,
-                  const SkPaint* paint = NULL) override;
-  void drawBitmapRectToRect(const SkBitmap&,
-                            const SkRect* src,
-                            const SkRect& dst,
-                            const SkPaint* paint,
-                            DrawBitmapRectFlags flags) override;
-  void drawBitmapMatrix(const SkBitmap&,
-                        const SkMatrix&,
+  void onDrawOval(const SkRect&, const SkPaint&) override;
+  void onDrawRect(const SkRect&, const SkPaint&) override;
+  void onDrawRRect(const SkRRect&, const SkPaint&) override;
+  void onDrawPath(const SkPath& path, const SkPaint&) override;
+  void onDrawBitmap(const SkBitmap&,
+                    SkScalar left,
+                    SkScalar top,
+                    const SkPaint* paint = NULL) override;
+  void onDrawBitmapRect(const SkBitmap&,
+                        const SkRect* src,
+                        const SkRect& dst,
+                        const SkPaint* paint,
+                        DrawBitmapRectFlags flags) override;
+  void onDrawBitmapNine(const SkBitmap& bitmap,
+                        const SkIRect& center,
+                        const SkRect& dst,
                         const SkPaint* paint = NULL) override;
-  void drawBitmapNine(const SkBitmap& bitmap,
-                      const SkIRect& center,
-                      const SkRect& dst,
-                      const SkPaint* paint = NULL) override;
-  void drawSprite(const SkBitmap&,
-                  int left,
-                  int top,
-                  const SkPaint* paint = NULL) override;
-  void drawVertices(VertexMode,
-                    int vertexCount,
-                    const SkPoint vertices[],
-                    const SkPoint texs[],
-                    const SkColor colors[],
-                    SkXfermode*,
-                    const uint16_t indices[],
-                    int indexCount,
-                    const SkPaint&) override;
+  void onDrawImage(const SkImage*,
+                    SkScalar left,
+                    SkScalar top,
+                    const SkPaint* paint = NULL) override;
+  void onDrawImageRect(const SkImage*,
+                        const SkRect* src,
+                        const SkRect& dst,
+                        const SkPaint* paint) override;
+  void onDrawSprite(const SkBitmap&,
+                    int left,
+                    int top,
+                    const SkPaint* paint = NULL) override;
+  void onDrawVertices(VertexMode,
+                      int vertexCount,
+                      const SkPoint vertices[],
+                      const SkPoint texs[],
+                      const SkColor colors[],
+                      SkXfermode*,
+                      const uint16_t indices[],
+                      int indexCount,
+                      const SkPaint&) override;
 
  protected:
   void willSave() override;

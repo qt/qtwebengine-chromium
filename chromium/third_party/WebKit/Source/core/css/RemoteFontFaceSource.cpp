@@ -69,6 +69,10 @@ void RemoteFontFaceSource::fontLoaded(FontResource*)
 {
     m_histograms.recordRemoteFont(m_font.get());
 
+    m_font->ensureCustomFontData();
+    if (m_font->status() == Resource::DecodeError)
+        m_fontLoader->didFailToDecode(m_font.get());
+
     pruneTable();
     if (m_face) {
         m_fontLoader->fontFaceInvalidated();
@@ -101,7 +105,7 @@ PassRefPtr<SimpleFontData> RemoteFontFaceSource::createFontData(const FontDescri
     return SimpleFontData::create(
         m_font->platformDataFromCustomData(fontDescription.effectiveFontSize(),
             fontDescription.isSyntheticBold(), fontDescription.isSyntheticItalic(),
-            fontDescription.orientation(), fontDescription.widthVariant()), CustomFontData::create());
+            fontDescription.orientation()), CustomFontData::create());
 }
 
 PassRefPtr<SimpleFontData> RemoteFontFaceSource::createLoadingFallbackFontData(const FontDescription& fontDescription)
@@ -126,12 +130,7 @@ void RemoteFontFaceSource::beginLoadIfNeeded()
         m_face->didBeginLoad();
 }
 
-bool RemoteFontFaceSource::ensureFontData()
-{
-    return m_font->ensureCustomFontData();
-}
-
-void RemoteFontFaceSource::trace(Visitor* visitor)
+DEFINE_TRACE(RemoteFontFaceSource)
 {
     visitor->trace(m_fontLoader);
     CSSFontFaceSource::trace(visitor);
@@ -154,7 +153,7 @@ void RemoteFontFaceSource::FontLoadHistograms::recordFallbackTime(const FontReso
     if (m_fallbackPaintTime <= 0)
         return;
     int duration = static_cast<int>(currentTimeMS() - m_fallbackPaintTime);
-    blink::Platform::current()->histogramCustomCounts("WebFont.BlankTextShownTime", duration, 0, 10000, 50);
+    Platform::current()->histogramCustomCounts("WebFont.BlankTextShownTime", duration, 0, 10000, 50);
     m_fallbackPaintTime = -1;
 }
 
@@ -162,18 +161,18 @@ void RemoteFontFaceSource::FontLoadHistograms::recordRemoteFont(const FontResour
 {
     if (m_loadStartTime > 0 && font && !font->isLoading()) {
         int duration = static_cast<int>(currentTimeMS() - m_loadStartTime);
-        blink::Platform::current()->histogramCustomCounts(histogramName(font), duration, 0, 10000, 50);
+        Platform::current()->histogramCustomCounts(histogramName(font), duration, 0, 10000, 50);
         m_loadStartTime = -1;
 
         enum { Miss, Hit, DataUrl, CacheHitEnumMax };
         int histogramValue = font->url().protocolIsData() ? DataUrl
             : font->response().wasCached() ? Hit
             : Miss;
-        blink::Platform::current()->histogramEnumeration("WebFont.CacheHit", histogramValue, CacheHitEnumMax);
+        Platform::current()->histogramEnumeration("WebFont.CacheHit", histogramValue, CacheHitEnumMax);
 
         enum { CORSFail, CORSSuccess, CORSEnumMax };
         int corsValue = font->isCORSFailed() ? CORSFail : CORSSuccess;
-        blink::Platform::current()->histogramEnumeration("WebFont.CORSSuccess", corsValue, CORSEnumMax);
+        Platform::current()->histogramEnumeration("WebFont.CORSSuccess", corsValue, CORSEnumMax);
     }
 }
 

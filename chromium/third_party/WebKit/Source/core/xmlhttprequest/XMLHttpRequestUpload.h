@@ -26,24 +26,21 @@
 #ifndef XMLHttpRequestUpload_h
 #define XMLHttpRequestUpload_h
 
-#include "core/events/EventListener.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/xmlhttprequest/XMLHttpRequest.h"
 #include "core/xmlhttprequest/XMLHttpRequestEventTarget.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-#include "wtf/text/AtomicStringHash.h"
 
 namespace blink {
 
 class ExecutionContext;
-class XMLHttpRequest;
 
-class XMLHttpRequestUpload final : public NoBaseWillBeGarbageCollectedFinalized<XMLHttpRequestUpload>, public XMLHttpRequestEventTarget {
+class XMLHttpRequestUpload final : public XMLHttpRequestEventTarget {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(XMLHttpRequestUpload);
 public:
     static PassOwnPtrWillBeRawPtr<XMLHttpRequestUpload> create(XMLHttpRequest* xmlHttpRequest)
     {
@@ -65,7 +62,7 @@ public:
 
     void handleRequestError(const AtomicString&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit XMLHttpRequestUpload(XMLHttpRequest*);
@@ -76,7 +73,6 @@ private:
 #endif
 
     RawPtrWillBeMember<XMLHttpRequest> m_xmlHttpRequest;
-    EventTargetData m_eventTargetData;
 
     // Last progress event values; used when issuing the
     // required 'progress' event on a request error or abort.

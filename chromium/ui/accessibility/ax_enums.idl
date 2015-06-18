@@ -70,11 +70,11 @@
     article,
     banner,
     blockquote,
-    browser,
     busy_indicator,
     button,
     button_drop_down,
     canvas,
+    caption,
     cell,
     check_box,
     client,
@@ -97,8 +97,6 @@
     disclosure_triangle,
     div,
     document,
-    drawer,
-    editable_text,
     embedded_object,
     figcaption,
     figure,
@@ -106,19 +104,17 @@
     form,
     grid,
     group,
-    grow_area,
     heading,
-    help_tag,
-    horizontal_rule,
     iframe,
+    iframe_presentational,
     ignored,
     image_map_link,
     image_map,
     image,
-    incrementor,
     inline_text_box,
     label_text,
     legend,
+    line_break,
     link,
     list_box_option,
     list_box,
@@ -130,7 +126,6 @@
     main,
     marquee,
     math,
-    matte,
     menu_bar,
     menu_button,
     menu_item,
@@ -155,30 +150,28 @@
     root_web_area,
     row_header,
     row,
-    ruler_marker,
+    ruby,
     ruler,
     svg_root,
     scroll_area,
     scroll_bar,
     seamless_web_area,
     search,
-    sheet,
+    search_box,
     slider,
     slider_thumb,
     spin_button_part,
     spin_button,
-    split_group,
     splitter,
     static_text,
     status,
-    system_wide,
+    switch,
     tab_group,
     tab_list,
     tab_panel,
     tab,
     table_header_container,
     table,
-    text_area,
     text_field,
     time,
     timer,
@@ -190,7 +183,6 @@
     tree,
     unknown,
     tooltip,
-    value_indicator,
     web_area,
     web_view,
     window
@@ -210,10 +202,12 @@
     focusable,
     focused,
     haspopup,
+    horizontal,
     hovered,
     indeterminate,
     invisible,
     linked,
+    multiline,
     multiselectable,
     offscreen,
     pressed,
@@ -226,6 +220,14 @@
     visited
   };
 
+  // A change to the accessibility tree.
+  enum AXMutation {
+    node_created,
+    subtree_created,
+    node_changed,
+    node_removed
+  };
+
   [cpp_enum_prefix_override="ax_attr"] enum AXStringAttribute {
     // Document attributes.
     doc_url,
@@ -236,15 +238,20 @@
     // Attributes that could apply to any node.
     access_key,
     action,
+    auto_complete,
     container_live_relevant,
     container_live_status,
     description,
     display,
+    dropeffect,
     help,
     html_tag,
+    // Only used when invalid_state == invalid_state_other.
+    aria_invalid_value,
     name,
     live_relevant,
     live_status,
+    placeholder,
     role,
     shortcut,
     text_input_type,
@@ -283,6 +290,7 @@
     table_cell_column_span,
     table_cell_row_index,
     table_cell_row_span,
+    sort_direction,
 
     // Tree control attributes.
     hierarchical_level,
@@ -291,19 +299,35 @@
     title_ui_element,
     activedescendant_id,
 
-    // Color value for AX_ROLE_COLOR_WELL, each component is 0..255
-    color_value_red,
-    color_value_green,
-    color_value_blue,
-
-    // Inline text attributes.
-    text_direction,
-
     // Uniquely identifies an AXTree.
     tree_id,
 
     // Identifies a child tree which this node hosts.
-    child_tree_id
+    child_tree_id,
+
+    // Position or Number of items in current set of listitems or treeitems
+    set_size,
+    pos_in_set,
+
+    // In the case of AX_ROLE_COLOR_WELL, specifies the selected color.
+    color_value,
+
+
+    // Text attributes.
+
+    // Foreground and background color in RGBA.
+    background_color,
+    color,
+
+    // Indicates if a form control has invalid input or
+    // if an element has an aria-invalid attribute.
+    invalid_state,
+
+    // Specifies the direction of the text, e.g., right-to-left.
+    text_direction,
+
+    // Bold, italic, underline, etc.
+    text_style
   };
 
   [cpp_enum_prefix_override="ax_attr"] enum AXFloatAttribute {
@@ -313,7 +337,11 @@
     // Range attributes.
     value_for_range,
     min_value_for_range,
-    max_value_for_range
+    max_value_for_range,
+
+    // Text attributes.
+    // Font size is in pixels.
+    font_size
   };
 
   [cpp_enum_prefix_override="ax_attr"] enum AXBoolAttribute {
@@ -345,7 +373,11 @@
     // Set if this node is the host of an external AXTree, for
     // example a web view that's a child of a native view, or a
     // web iframe that's the child of another web frame.
-    is_ax_tree_host
+    is_ax_tree_host,
+
+    // Set if this node has been selected for dragging in
+    // a drag-n-drop operation.
+    grabbed
   };
 
   [cpp_enum_prefix_override="ax_attr"] enum AXIntListAttribute {
@@ -389,9 +421,34 @@
   };
 
   [cpp_enum_prefix_override="ax"] enum AXTextDirection {
-    text_direction_lr,
-    text_direction_rl,
-    text_direction_tb,
-    text_direction_bt
+    text_direction_ltr,
+    text_direction_rtl,
+    text_direction_ttb,
+    text_direction_btt
   };
+
+  // A Java counterpart will be generated for this enum.
+  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.ui.accessibility
+  [cpp_enum_prefix_override="ax"] enum AXTextStyle {
+    text_style_bold  = 1,
+    text_style_italic = 2,
+    text_style_underline = 4,
+    text_style_line_through = 8
+  };
+
+  [cpp_enum_prefix_override="ax"] enum AXInvalidState {
+    invalid_state_false,
+    invalid_state_true,
+    invalid_state_spelling,
+    invalid_state_grammar,
+    invalid_state_other
+  };
+
+  [cpp_enum_prefix_override="ax"] enum AXSortDirection {
+    sort_direction_unsorted,
+    sort_direction_ascending,
+    sort_direction_descending,
+    sort_direction_other
+  };
+
 };

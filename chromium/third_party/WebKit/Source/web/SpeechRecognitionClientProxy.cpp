@@ -36,7 +36,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebMediaStreamTrack.h"
-#include "public/web/WebSecurityOrigin.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "public/web/WebSpeechGrammar.h"
 #include "public/web/WebSpeechRecognitionHandle.h"
 #include "public/web/WebSpeechRecognitionParams.h"
@@ -55,7 +55,7 @@ PassOwnPtr<SpeechRecognitionClientProxy> SpeechRecognitionClientProxy::create(We
     return adoptPtr(new SpeechRecognitionClientProxy(recognizer));
 }
 
-void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const SpeechGrammarList* grammarList, const String& lang, bool continuous, bool interimResults, unsigned long maxAlternatives, MediaStreamTrack* audioTrack)
+void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const SpeechGrammarList* grammarList, const String& lang, const String& serviceURI, bool continuous, bool interimResults, unsigned long maxAlternatives, MediaStreamTrack* audioTrack)
 {
     WebVector<WebSpeechGrammar> webSpeechGrammars(static_cast<size_t>(grammarList->length()));
     for (unsigned long i = 0; i < grammarList->length(); ++i)
@@ -64,7 +64,7 @@ void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const S
     WebMediaStreamTrack track;
     if (RuntimeEnabledFeatures::mediaStreamSpeechEnabled() && audioTrack)
         track.assign(audioTrack->component());
-    WebSpeechRecognitionParams params(webSpeechGrammars, lang, continuous, interimResults, maxAlternatives, track, WebSecurityOrigin(recognition->executionContext()->securityOrigin()));
+    WebSpeechRecognitionParams params(webSpeechGrammars, lang, serviceURI, continuous, interimResults, maxAlternatives, track, WebSecurityOrigin(recognition->executionContext()->securityOrigin()));
     m_recognizer->start(recognition, params, this);
 }
 
@@ -108,11 +108,11 @@ void SpeechRecognitionClientProxy::didReceiveResults(const WebSpeechRecognitionH
 {
     SpeechRecognition* recognition(handle);
 
-    HeapVector<Member<SpeechRecognitionResult> > finalResultsVector(newFinalResults.size());
+    HeapVector<Member<SpeechRecognitionResult>> finalResultsVector(newFinalResults.size());
     for (size_t i = 0; i < newFinalResults.size(); ++i)
         finalResultsVector[i] = Member<SpeechRecognitionResult>(newFinalResults[i]);
 
-    HeapVector<Member<SpeechRecognitionResult> > interimResultsVector(currentInterimResults.size());
+    HeapVector<Member<SpeechRecognitionResult>> interimResultsVector(currentInterimResults.size());
     for (size_t i = 0; i < currentInterimResults.size(); ++i)
         interimResultsVector[i] = Member<SpeechRecognitionResult>(currentInterimResults[i]);
 

@@ -36,8 +36,15 @@ class CONTENT_EXPORT NavigationURLLoaderDelegate {
       scoped_ptr<StreamHandle> body_stream) = 0;
 
   // Called if the request fails before receving a response. |net_error| is a
-  // network error code for the failure.
-  virtual void OnRequestFailed(int net_error) = 0;
+  // network error code for the failure. |has_stale_copy_in_cache| is true if
+  // there is a stale copy of the unreachable page in cache.
+  virtual void OnRequestFailed(bool has_stale_copy_in_cache, int net_error) = 0;
+
+  // Called after the network request has begun on the IO thread at time
+  // |timestamp|. This is just a thread hop but is used to compare timing
+  // against the pre-PlzNavigate codepath which didn't start the network request
+  // until after the renderer was initialized.
+  virtual void OnRequestStarted(base::TimeTicks timestamp) = 0;
 
  protected:
   NavigationURLLoaderDelegate() {}

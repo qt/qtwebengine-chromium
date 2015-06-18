@@ -6,6 +6,7 @@
 
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_info.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_register_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
@@ -34,13 +35,13 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(
       should_activate_when_ready_(false),
       resources_total_size_bytes_(0),
       context_(context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(context_);
   context_->AddLiveRegistration(this);
 }
 
 ServiceWorkerRegistration::~ServiceWorkerRegistration() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!listeners_.might_have_observers());
   if (context_)
     context_->RemoveLiveRegistration(registration_id_);
@@ -73,34 +74,65 @@ void ServiceWorkerRegistration::NotifyUpdateFound() {
 }
 
 ServiceWorkerRegistrationInfo ServiceWorkerRegistration::GetInfo() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return ServiceWorkerRegistrationInfo(
-      pattern(),
-      registration_id_,
+      pattern(), registration_id_,
+      is_deleted_ ? ServiceWorkerRegistrationInfo::IS_DELETED
+                  : ServiceWorkerRegistrationInfo::IS_NOT_DELETED,
       GetVersionInfo(active_version_.get()),
       GetVersionInfo(waiting_version_.get()),
-      GetVersionInfo(installing_version_.get()),
-      resources_total_size_bytes_);
+      GetVersionInfo(installing_version_.get()), resources_total_size_bytes_);
 }
 
 void ServiceWorkerRegistration::SetActiveVersion(
-    ServiceWorkerVersion* version) {
+    const scoped_refptr<ServiceWorkerVersion>& version) {
   should_activate_when_ready_ = false;
-  SetVersionInternal(version, &active_version_,
-                     ChangedVersionAttributesMask::ACTIVE_VERSION);
+  if (active_version_ == version)
+    return;
+
+  ChangedVersionAttributesMask mask;
+  if (version)
+    UnsetVersionInternal(version.get(), &mask);
+  if (active_version_)
+    active_version_->RemoveListener(this);
+  active_version_ = version;
+  if (active_version_)
+    active_version_->AddListener(this);
+  mask.add(ChangedVersionAttributesMask::ACTIVE_VERSION);
+
+  FOR_EACH_OBSERVER(Listener, listeners_,
+                    OnVersionAttributesChanged(this, mask, GetInfo()));
 }
 
 void ServiceWorkerRegistration::SetWaitingVersion(
-    ServiceWorkerVersion* version) {
+    const scoped_refptr<ServiceWorkerVersion>& version) {
   should_activate_when_ready_ = false;
-  SetVersionInternal(version, &waiting_version_,
-                     ChangedVersionAttributesMask::WAITING_VERSION);
+  if (waiting_version_ == version)
+    return;
+
+  ChangedVersionAttributesMask mask;
+  if (version)
+    UnsetVersionInternal(version.get(), &mask);
+  waiting_version_ = version;
+  mask.add(ChangedVersionAttributesMask::WAITING_VERSION);
+
+  FOR_EACH_OBSERVER(Listener, listeners_,
+                    OnVersionAttributesChanged(this, mask, GetInfo()));
 }
 
 void ServiceWorkerRegistration::SetInstallingVersion(
-    ServiceWorkerVersion* version) {
-  SetVersionInternal(version, &installing_version_,
-                     ChangedVersionAttributesMask::INSTALLING_VERSION);
+    const scoped_refptr<ServiceWorkerVersion>& version) {
+  if (installing_version_ == version)
+    return;
+
+  ChangedVersionAttributesMask mask;
+  if (version)
+    UnsetVersionInternal(version.get(), &mask);
+  installing_version_ = version;
+  mask.add(ChangedVersionAttributesMask::INSTALLING_VERSION);
+
+  FOR_EACH_OBSERVER(Listener, listeners_,
+                    OnVersionAttributesChanged(this, mask, GetInfo()));
 }
 
 void ServiceWorkerRegistration::UnsetVersion(ServiceWorkerVersion* version) {
@@ -113,25 +145,6 @@ void ServiceWorkerRegistration::UnsetVersion(ServiceWorkerVersion* version) {
     FOR_EACH_OBSERVER(Listener, listeners_,
                       OnVersionAttributesChanged(this, mask, info));
   }
-}
-
-void ServiceWorkerRegistration::SetVersionInternal(
-    ServiceWorkerVersion* version,
-    scoped_refptr<ServiceWorkerVersion>* data_member,
-    int change_flag) {
-  if (version == data_member->get())
-    return;
-  scoped_refptr<ServiceWorkerVersion> protect(version);
-  ChangedVersionAttributesMask mask;
-  if (version)
-    UnsetVersionInternal(version, &mask);
-  *data_member = version;
-  if (active_version_.get() && active_version_.get() == version)
-    active_version_->AddListener(this);
-  mask.add(change_flag);
-  ServiceWorkerRegistrationInfo info = GetInfo();
-  FOR_EACH_OBSERVER(Listener, listeners_,
-                    OnVersionAttributesChanged(this, mask, info));
 }
 
 void ServiceWorkerRegistration::UnsetVersionInternal(
@@ -154,8 +167,27 @@ void ServiceWorkerRegistration::UnsetVersionInternal(
 void ServiceWorkerRegistration::ActivateWaitingVersionWhenReady() {
   DCHECK(waiting_version());
   should_activate_when_ready_ = true;
-  if (!active_version() || !active_version()->HasControllee())
+
+  if (!active_version() || !active_version()->HasControllee() ||
+      waiting_version()->skip_waiting())
     ActivateWaitingVersion();
+}
+
+void ServiceWorkerRegistration::ClaimClients() {
+  DCHECK(context_);
+  DCHECK(active_version());
+
+  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
+           context_->GetProviderHostIterator();
+       !it->IsAtEnd(); it->Advance()) {
+    ServiceWorkerProviderHost* host = it->GetProviderHost();
+    if (host->IsHostToRunningServiceWorker())
+      continue;
+    if (host->controlling_version() == active_version())
+      continue;
+    if (host->MatchRegistration() == this)
+      host->ClaimedByRegistration(this);
+  }
 }
 
 void ServiceWorkerRegistration::ClearWhenReady() {
@@ -197,7 +229,32 @@ void ServiceWorkerRegistration::AbortPendingClear(
                  most_recent_version));
 }
 
+void ServiceWorkerRegistration::GetUserData(
+    const std::string& key,
+    const GetUserDataCallback& callback) {
+  DCHECK(context_);
+  context_->storage()->GetUserData(registration_id_, key, callback);
+}
+
+void ServiceWorkerRegistration::StoreUserData(
+    const std::string& key,
+    const std::string& data,
+    const StatusCallback& callback) {
+  DCHECK(context_);
+  context_->storage()->StoreUserData(
+      registration_id_, pattern().GetOrigin(), key, data, callback);
+}
+
+void ServiceWorkerRegistration::ClearUserData(
+    const std::string& key,
+    const StatusCallback& callback) {
+  DCHECK(context_);
+  context_->storage()->ClearUserData(registration_id_, key, callback);
+}
+
 void ServiceWorkerRegistration::OnNoControllees(ServiceWorkerVersion* version) {
+  if (!context_)
+    return;
   DCHECK_EQ(active_version(), version);
   if (is_uninstalling_)
     Clear();
@@ -215,14 +272,11 @@ void ServiceWorkerRegistration::ActivateWaitingVersion() {
   scoped_refptr<ServiceWorkerVersion> activating_version = waiting_version();
   scoped_refptr<ServiceWorkerVersion> exiting_version = active_version();
 
-  if (activating_version->is_doomed() ||
-      activating_version->status() == ServiceWorkerVersion::REDUNDANT) {
+  if (activating_version->is_redundant())
     return;  // Activation is no longer relevant.
-  }
 
-  // "4. If exitingWorker is not null,
+  // "5. If exitingWorker is not null,
   if (exiting_version.get()) {
-    DCHECK(!exiting_version->HasControllee());
     // TODO(michaeln): should wait for events to be complete
     // "1. Wait for exitingWorker to finish handling any in-progress requests."
     // "2. Terminate exitingWorker."
@@ -233,20 +287,62 @@ void ServiceWorkerRegistration::ActivateWaitingVersion() {
     exiting_version->SetStatus(ServiceWorkerVersion::REDUNDANT);
   }
 
-  // "5. Set serviceWorkerRegistration.activeWorker to activatingWorker."
-  // "6. Set serviceWorkerRegistration.waitingWorker to null."
-  SetActiveVersion(activating_version.get());
+  // "6. Set serviceWorkerRegistration.activeWorker to activatingWorker."
+  // "7. Set serviceWorkerRegistration.waitingWorker to null."
+  SetActiveVersion(activating_version);
 
-  // "7. Run the [[UpdateState]] algorithm passing registration.activeWorker and
+  // "8. Run the [[UpdateState]] algorithm passing registration.activeWorker and
   // "activating" as arguments."
   activating_version->SetStatus(ServiceWorkerVersion::ACTIVATING);
+  // "9. Fire a simple event named controllerchange..."
+  if (activating_version->skip_waiting())
+    FOR_EACH_OBSERVER(Listener, listeners_, OnSkippedWaiting(this));
 
-  // TODO(nhiroki): "8. Fire a simple event named controllerchange..."
-
-  // "9. Queue a task to fire an event named activate..."
+  // "10. Queue a task to fire an event named activate..."
   activating_version->DispatchActivateEvent(
       base::Bind(&ServiceWorkerRegistration::OnActivateEventFinished,
                  this, activating_version));
+}
+
+void ServiceWorkerRegistration::DeleteVersion(
+    const scoped_refptr<ServiceWorkerVersion>& version) {
+  DCHECK_EQ(id(), version->registration_id());
+
+  // "Set registration's active worker to null." (The spec's step order may
+  // differ. It's OK because the other steps queue a task.)
+  UnsetVersion(version.get());
+
+  // "Run the Update State algorithm passing registration's active worker and
+  // 'redundant' as the arguments."
+  version->SetStatus(ServiceWorkerVersion::REDUNDANT);
+
+  // "For each service worker client client whose active worker is
+  // registration's active worker..." set the active worker to null.
+  for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
+           context_->GetProviderHostIterator();
+       !it->IsAtEnd(); it->Advance()) {
+    ServiceWorkerProviderHost* host = it->GetProviderHost();
+    if (host->controlling_version() == version)
+      host->NotifyControllerActivationFailed();
+  }
+
+  version->Doom();
+
+  if (!active_version() && !waiting_version()) {
+    // Delete the records from the db.
+    context_->storage()->DeleteRegistration(
+        id(), pattern().GetOrigin(),
+        base::Bind(&ServiceWorkerRegistration::OnDeleteFinished, this));
+    // But not from memory if there is a version in the pipeline.
+    // TODO(falken): Fix this logic. There could be a running register job for
+    // this registration that hasn't set installing_version() yet.
+    if (installing_version()) {
+      is_deleted_ = false;
+    } else {
+      is_uninstalled_ = true;
+      FOR_EACH_OBSERVER(Listener, listeners_, OnRegistrationFailed(this));
+    }
+  }
 }
 
 void ServiceWorkerRegistration::OnActivateEventFinished(
@@ -254,26 +350,16 @@ void ServiceWorkerRegistration::OnActivateEventFinished(
     ServiceWorkerStatusCode status) {
   if (!context_ || activating_version != active_version())
     return;
-  // TODO(kinuko,falken): For some error cases (e.g. ServiceWorker is
-  // unexpectedly terminated) we may want to retry sending the event again.
+  ServiceWorkerMetrics::RecordActivateEventStatus(status);
+
+  // "If activateFailed is true, then:..."
   if (status != SERVICE_WORKER_OK) {
-    // "11. If activateFailed is true, then:..."
-    UnsetVersion(activating_version);
-    activating_version->Doom();
-    if (!waiting_version()) {
-      // Delete the records from the db.
-      context_->storage()->DeleteRegistration(
-          id(), pattern().GetOrigin(),
-          base::Bind(&ServiceWorkerRegistration::OnDeleteFinished, this));
-      // But not from memory if there is a version in the pipeline.
-      if (installing_version())
-        is_deleted_ = false;
-    }
+    DeleteVersion(make_scoped_refptr(activating_version));
     return;
   }
 
-  // "12. Run the [[UpdateState]] algorithm passing registration.activeWorker
-  // and "activated" as the arguments."
+  // "Run the Update State algorithm passing registration's active worker and
+  // 'activated' as the arguments."
   activating_version->SetStatus(ServiceWorkerVersion::ACTIVATED);
   if (context_) {
     context_->storage()->UpdateToActiveState(

@@ -25,10 +25,17 @@ enum NextProto {
 
   kProtoDeprecatedSPDY2 = 100,
   kProtoSPDYMinimumVersion = kProtoDeprecatedSPDY2,
+  kProtoSPDYHistogramOffset = kProtoDeprecatedSPDY2,
   kProtoSPDY3 = 101,
   kProtoSPDY31 = 102,
-  kProtoSPDY4 = 103,  // SPDY4 is HTTP/2.
-  kProtoSPDYMaximumVersion = kProtoSPDY4,
+  kProtoSPDY4_14 = 103,  // HTTP/2 draft-14, designated implementation draft.
+  kProtoSPDY4MinimumVersion = kProtoSPDY4_14,
+  // kProtoSPDY4_15 = 104,  // HTTP/2 draft-15
+  // kProtoSPDY4_16 = 105,  // HTTP/2 draft-16
+  // kProtoSPDY4_17 = 106,  // HTTP/2 draft-17
+  kProtoSPDY4 = 107,  // HTTP/2.  TODO(bnc):  Add RFC number when published.
+  kProtoSPDY4MaximumVersion = kProtoSPDY4,
+  kProtoSPDYMaximumVersion = kProtoSPDY4MaximumVersion,
 
   kProtoQUIC1SPDY3 = 200,
 
@@ -40,18 +47,18 @@ typedef std::vector<NextProto> NextProtoVector;
 
 // Convenience functions to create NextProtoVector.
 
-NET_EXPORT NextProtoVector NextProtosHttpOnly();
-
-// Default values, which are subject to change over time.  Currently just
-// SPDY 3 and 3.1.
+// Default values, which are subject to change over time.
 NET_EXPORT NextProtoVector NextProtosDefaults();
 
+// Enable SPDY/3.1 and QUIC, but not HTTP/2.
+NET_EXPORT NextProtoVector NextProtosSpdy31();
+
+// Control SPDY/3.1 and HTTP/2 separately.
 NET_EXPORT NextProtoVector NextProtosWithSpdyAndQuic(bool spdy_enabled,
                                                      bool quic_enabled);
 
-// All of these also enable QUIC.
-NET_EXPORT NextProtoVector NextProtosSpdy31();
-NET_EXPORT NextProtoVector NextProtosSpdy4Http2();
+// Returns true if |next_proto| is a version of SPDY or HTTP/2.
+bool NextProtoIsSPDY(NextProto next_proto);
 
 }  // namespace net
 

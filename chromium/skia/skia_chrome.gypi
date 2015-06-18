@@ -52,8 +52,6 @@
     'ext/google_logging.cc',
     'ext/image_operations.cc',
     'ext/image_operations.h',
-    'ext/lazy_pixel_ref.cc',
-    'ext/lazy_pixel_ref.h',
     'ext/opacity_draw_filter.cc',
     'ext/opacity_draw_filter.h',
     'ext/pixel_ref_utils.cc',
@@ -71,7 +69,6 @@
     'ext/SkDiscardableMemory_chrome.h',
     'ext/SkDiscardableMemory_chrome.cc',
     'ext/SkMemory_new_handler.cpp',
-    'ext/skia_trace_shim.h',
     'ext/skia_utils_base.cc',
     'ext/skia_utils_base.h',
     'ext/skia_utils_ios.mm',
@@ -80,11 +77,6 @@
     'ext/skia_utils_mac.h',
     'ext/skia_utils_win.cc',
     'ext/skia_utils_win.h',
-    'ext/vector_canvas.h',
-    'ext/vector_platform_device_emf_win.cc',
-    'ext/vector_platform_device_emf_win.h',
-    'ext/vector_platform_device_skia.cc',
-    'ext/vector_platform_device_skia.h',
   ],
   'conditions': [
     [ 'OS == "android" and '
@@ -93,15 +85,7 @@
         'ext/skia_utils_base.cc',
       ],
     }],
-    [ 'enable_basic_printing==0 and enable_print_preview==0', {
-      'sources!': [
-        'ext/vector_platform_device_skia.cc',
-      ],
-    }],
     ['OS == "ios"', {
-      'sources/': [
-        ['exclude', '^ext/vector_platform_device_skia\\.'],
-      ],
       'dependencies!': [
         'skia_chrome_opts',
       ],

@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "dbus/bus.h"
@@ -26,8 +27,7 @@ namespace dbus {
 // Property<>.
 class PropertyTest : public testing::Test {
  public:
-  PropertyTest() {
-  }
+  PropertyTest() {}
 
   struct Properties : public PropertySet {
     Property<std::string> name;
@@ -49,7 +49,7 @@ class PropertyTest : public testing::Test {
     }
   };
 
-  virtual void SetUp() {
+  void SetUp() override {
     // Make the main thread not to allow IO.
     base::ThreadRestrictions::SetIOAllowed(false);
 
@@ -87,7 +87,7 @@ class PropertyTest : public testing::Test {
     properties_->GetAll();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     bus_->ShutdownOnDBusThreadAndBlock();
 
     // Shut down the service.
@@ -108,6 +108,10 @@ class PropertyTest : public testing::Test {
     last_callback_ = id;
     run_loop_->Quit();
   }
+
+  // Generic method callback, that might be used together with
+  // WaitForMethodCallback to test wether method was succesfully called.
+  void MethodCallback(Response* response) { run_loop_->Quit(); }
 
  protected:
   // Called when a property value is updated.
@@ -134,6 +138,12 @@ class PropertyTest : public testing::Test {
     WaitForUpdates(kExpectedSignalUpdates);
   }
 
+  // Waits until MethodCallback is called.
+  void WaitForMethodCallback() {
+    run_loop_.reset(new base::RunLoop);
+    run_loop_->Run();
+  }
+
   // Waits for the callback. |id| is the string bound to the callback when
   // the method call is made that identifies it and distinguishes from any
   // other; you can set this to whatever you wish.
@@ -158,9 +168,14 @@ class PropertyTest : public testing::Test {
 };
 
 TEST_F(PropertyTest, InitialValues) {
+  EXPECT_FALSE(properties_->name.is_valid());
+  EXPECT_FALSE(properties_->version.is_valid());
+
   WaitForGetAll();
 
+  EXPECT_TRUE(properties_->name.is_valid());
   EXPECT_EQ("TestService", properties_->name.value());
+  EXPECT_TRUE(properties_->version.is_valid());
   EXPECT_EQ(10, properties_->version.value());
 
   std::vector<std::string> methods = properties_->methods.value();
@@ -275,6 +290,142 @@ TEST_F(PropertyTest, Set) {
   WaitForUpdates(1);
 
   EXPECT_EQ("NewService", properties_->name.value());
+}
+
+TEST_F(PropertyTest, Invalidate) {
+  WaitForGetAll();
+
+  EXPECT_TRUE(properties_->name.is_valid());
+
+  // Invalidate name.
+  MethodCall method_call("org.chromium.TestInterface", "PerformAction");
+  MessageWriter writer(&method_call);
+  writer.AppendString("InvalidateProperty");
+  writer.AppendObjectPath(ObjectPath("/org/chromium/TestService"));
+  object_proxy_->CallMethod(
+      &method_call, ObjectProxy::TIMEOUT_USE_DEFAULT,
+      base::Bind(&PropertyTest::MethodCallback, base::Unretained(this)));
+  WaitForMethodCallback();
+
+  // TestService sends a property update.
+  WaitForUpdates(1);
+
+  EXPECT_FALSE(properties_->name.is_valid());
+
+  // Set name to something valid.
+  properties_->name.Set("NewService",
+                        base::Bind(&PropertyTest::PropertyCallback,
+                                   base::Unretained(this), "Set"));
+  WaitForCallback("Set");
+
+  // TestService sends a property update.
+  WaitForUpdates(1);
+
+  EXPECT_TRUE(properties_->name.is_valid());
+}
+
+TEST(PropertyTestStatic, ReadWriteStringMap) {
+  scoped_ptr<Response> message(Response::CreateEmpty());
+  MessageWriter writer(message.get());
+  MessageWriter variant_writer(NULL);
+  MessageWriter variant_array_writer(NULL);
+  MessageWriter struct_entry_writer(NULL);
+
+  writer.OpenVariant("a{ss}", &variant_writer);
+  variant_writer.OpenArray("{ss}", &variant_array_writer);
+  const char* items[] = {"One", "Two", "Three", "Four"};
+  for (unsigned i = 0; i < arraysize(items); ++i) {
+    variant_array_writer.OpenDictEntry(&struct_entry_writer);
+    struct_entry_writer.AppendString(items[i]);
+    struct_entry_writer.AppendString(base::UintToString(i + 1));
+    variant_array_writer.CloseContainer(&struct_entry_writer);
+  }
+  variant_writer.CloseContainer(&variant_array_writer);
+  writer.CloseContainer(&variant_writer);
+
+  MessageReader reader(message.get());
+  Property<std::map<std::string, std::string>> string_map;
+  EXPECT_TRUE(string_map.PopValueFromReader(&reader));
+  ASSERT_EQ(4U, string_map.value().size());
+  EXPECT_EQ("1", string_map.value().at("One"));
+  EXPECT_EQ("2", string_map.value().at("Two"));
+  EXPECT_EQ("3", string_map.value().at("Three"));
+  EXPECT_EQ("4", string_map.value().at("Four"));
+}
+
+TEST(PropertyTestStatic, SerializeStringMap) {
+  std::map<std::string, std::string> test_map;
+  test_map["Hi"] = "There";
+  test_map["Map"] = "Test";
+  test_map["Random"] = "Text";
+
+  scoped_ptr<Response> message(Response::CreateEmpty());
+  MessageWriter writer(message.get());
+
+  Property<std::map<std::string, std::string>> string_map;
+  string_map.ReplaceSetValueForTesting(test_map);
+  string_map.AppendSetValueToWriter(&writer);
+
+  MessageReader reader(message.get());
+  EXPECT_TRUE(string_map.PopValueFromReader(&reader));
+  EXPECT_EQ(test_map, string_map.value());
+}
+
+TEST(PropertyTestStatic, ReadWriteNetAddressArray) {
+  scoped_ptr<Response> message(Response::CreateEmpty());
+  MessageWriter writer(message.get());
+  MessageWriter variant_writer(NULL);
+  MessageWriter variant_array_writer(NULL);
+  MessageWriter struct_entry_writer(NULL);
+
+  writer.OpenVariant("a(ayq)", &variant_writer);
+  variant_writer.OpenArray("(ayq)", &variant_array_writer);
+  uint8 ip_bytes[] = {0x54, 0x65, 0x73, 0x74, 0x30};
+  for (uint16 i = 0; i < 5; ++i) {
+    variant_array_writer.OpenStruct(&struct_entry_writer);
+    ip_bytes[4] = 0x30 + i;
+    struct_entry_writer.AppendArrayOfBytes(ip_bytes, arraysize(ip_bytes));
+    struct_entry_writer.AppendUint16(i);
+    variant_array_writer.CloseContainer(&struct_entry_writer);
+  }
+  variant_writer.CloseContainer(&variant_array_writer);
+  writer.CloseContainer(&variant_writer);
+
+  MessageReader reader(message.get());
+  Property<std::vector<std::pair<std::vector<uint8>, uint16>>> ip_list;
+  EXPECT_TRUE(ip_list.PopValueFromReader(&reader));
+
+  ASSERT_EQ(5U, ip_list.value().size());
+  size_t item_index = 0;
+  for (auto& item : ip_list.value()) {
+    ASSERT_EQ(5U, item.first.size());
+    ip_bytes[4] = 0x30 + item_index;
+    EXPECT_EQ(0, memcmp(ip_bytes, item.first.data(), 5U));
+    EXPECT_EQ(item_index, item.second);
+    ++item_index;
+  }
+}
+
+TEST(PropertyTestStatic, SerializeNetAddressArray) {
+  std::vector<std::pair<std::vector<uint8>, uint16>> test_list;
+
+  uint8 ip_bytes[] = {0x54, 0x65, 0x73, 0x74, 0x30};
+  for (uint16 i = 0; i < 5; ++i) {
+    ip_bytes[4] = 0x30 + i;
+    std::vector<uint8> bytes(ip_bytes, ip_bytes + arraysize(ip_bytes));
+    test_list.push_back(make_pair(bytes, 16));
+  }
+
+  scoped_ptr<Response> message(Response::CreateEmpty());
+  MessageWriter writer(message.get());
+
+  Property<std::vector<std::pair<std::vector<uint8>, uint16>>> ip_list;
+  ip_list.ReplaceSetValueForTesting(test_list);
+  ip_list.AppendSetValueToWriter(&writer);
+
+  MessageReader reader(message.get());
+  EXPECT_TRUE(ip_list.PopValueFromReader(&reader));
+  EXPECT_EQ(test_list, ip_list.value());
 }
 
 }  // namespace dbus

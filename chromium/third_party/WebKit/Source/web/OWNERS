@@ -1,6 +1,8 @@
 adamk@chromium.org
 aelias@chromium.org
+bokan@chromium.org
 darin@chromium.org
+dcheng@chromium.org
 dglazkov@chromium.org
 esprehn@chromium.org
 haraken@chromium.org
@@ -8,9 +10,10 @@ japhet@chromium.org
 jochen@chromium.org
 kbr@chromium.org
 mkwst@chromium.org
-ojan@chromium.org
 pfeldman@chromium.org
+schenney@chromium.org
 tkent@chromium.org
+yurys@chromium.org
 
 per-file AssertMatchingEnums.cpp=*
 

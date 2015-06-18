@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/memory/scoped_vector.h"
-#include "cc/base/swap_promise.h"
+#include "cc/output/swap_promise.h"
 #include "content/renderer/gpu/frame_swap_message_queue.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/render_widget.h"
@@ -50,7 +50,6 @@ class TestSyncMessageFilter : public IPC::SyncMessageFilter {
 
 struct QueueMessageData {
   MessageDeliveryPolicy policy;
-  bool commit_requested;
   int source_frame_number;
 };
 
@@ -64,13 +63,11 @@ class QueueMessageSwapPromiseTest : public testing::Test {
 
   scoped_ptr<cc::SwapPromise> QueueMessageImpl(IPC::Message* msg,
                                                MessageDeliveryPolicy policy,
-                                               bool commit_requested,
                                                int source_frame_number) {
     return TestRenderWidget::QueueMessageImpl(msg,
                                               policy,
                                               frame_swap_message_queue_.get(),
                                               sync_message_filter_,
-                                              commit_requested,
                                               source_frame_number).Pass();
   }
 
@@ -110,7 +107,6 @@ class QueueMessageSwapPromiseTest : public testing::Test {
       promises_.push_back(
           QueueMessageImpl(new IPC::Message(messages_[i]),
                            data[i].policy,
-                           data[i].commit_requested,
                            data[i].source_frame_number).release());
     }
   }
@@ -119,8 +115,10 @@ class QueueMessageSwapPromiseTest : public testing::Test {
     for (ScopedVector<cc::SwapPromise>::iterator i = promises_.begin();
          i != promises_.end();
          ++i) {
-      if (*i)
+      if (*i) {
+        (*i)->DidActivate();
         (*i)->DidSwap(NULL);
+      }
     }
   }
 
@@ -128,6 +126,7 @@ class QueueMessageSwapPromiseTest : public testing::Test {
   void VisualStateSwapPromiseDidNotSwap(
       cc::SwapPromise::DidNotSwapReason reason);
 
+  base::MessageLoop message_loop_;
   scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue_;
   scoped_refptr<TestSyncMessageFilter> sync_message_filter_;
   std::vector<IPC::Message> messages_;
@@ -141,24 +140,26 @@ class QueueMessageSwapPromiseTest : public testing::Test {
 
 TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicySchedulesMessageForNextSwap) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, false, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, 1},
   };
   QueueMessages(data, arraysize(data));
 
   ASSERT_TRUE(promises_[0]);
+  promises_[0]->DidActivate();
+  promises_[0]->DidSwap(NULL);
+
   EXPECT_TRUE(DirectSendMessages().empty());
   EXPECT_FALSE(frame_swap_message_queue_->Empty());
+  // frame_swap_message_queue_->DidSwap(1);
   EXPECT_TRUE(NextSwapHasMessage(messages_[0]));
-
-  CleanupPromises();
 }
 
 TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicyNeedsAtMostOnePromise) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, false, 1},
-    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, false, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, 1},
+    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, 1},
   };
   QueueMessages(data, arraysize(data));
 
@@ -170,8 +171,8 @@ TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicyNeedsAtMostOnePromise) {
 
 TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicySendsMessageOnNoUpdate) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, false, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, 1},
   };
   QueueMessages(data, arraysize(data));
 
@@ -183,8 +184,8 @@ TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicySendsMessageOnNoUpdate) {
 
 TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicySendsMessageOnSwapFails) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, false, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, 1},
   };
   QueueMessages(data, arraysize(data));
 
@@ -196,35 +197,23 @@ TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicySendsMessageOnSwapFails) {
 
 TEST_F(QueueMessageSwapPromiseTest, NextSwapPolicyRetainsMessageOnCommitFails) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, false, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_NEXT_SWAP, 1},
   };
   QueueMessages(data, arraysize(data));
 
   promises_[0]->DidNotSwap(cc::SwapPromise::COMMIT_FAILS);
   EXPECT_TRUE(DirectSendMessages().empty());
   EXPECT_FALSE(frame_swap_message_queue_->Empty());
+  frame_swap_message_queue_->DidSwap(2);
   EXPECT_TRUE(NextSwapHasMessage(messages_[0]));
-}
-
-TEST_F(QueueMessageSwapPromiseTest, VisualStateDirectSend) {
-  QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, false, 1},
-  };
-  QueueMessages(data, arraysize(data));
-
-  ASSERT_FALSE(promises_[0]);
-  EXPECT_FALSE(DirectSendMessages().empty());
-  EXPECT_TRUE(frame_swap_message_queue_->Empty());
-  EXPECT_TRUE(NextSwapMessages().empty());
 }
 
 TEST_F(QueueMessageSwapPromiseTest,
        VisualStateQueuesMessageWhenCommitRequested) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, true, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
   };
   QueueMessages(data, arraysize(data));
 
@@ -239,9 +228,9 @@ TEST_F(QueueMessageSwapPromiseTest,
 TEST_F(QueueMessageSwapPromiseTest,
        VisualStateQueuesMessageWhenOtherMessageAlreadyQueued) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, true, 1},
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, true, 1},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
   };
   QueueMessages(data, arraysize(data));
 
@@ -252,15 +241,16 @@ TEST_F(QueueMessageSwapPromiseTest,
   CleanupPromises();
 }
 
-TEST_F(QueueMessageSwapPromiseTest, VisualStateSwapPromiseDidSwap) {
+TEST_F(QueueMessageSwapPromiseTest, VisualStateSwapPromiseDidActivate) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, true, 1},
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, false, 1},
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, false, 2},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 2},
   };
   QueueMessages(data, arraysize(data));
 
+  promises_[0]->DidActivate();
   promises_[0]->DidSwap(NULL);
   ASSERT_FALSE(promises_[1]);
   ScopedVector<IPC::Message> messages;
@@ -270,7 +260,8 @@ TEST_F(QueueMessageSwapPromiseTest, VisualStateSwapPromiseDidSwap) {
   EXPECT_TRUE(ContainsMessage(messages, messages_[1]));
   EXPECT_FALSE(ContainsMessage(messages, messages_[2]));
 
-  promises_[2]->DidSwap(NULL);
+  promises_[2]->DidActivate();
+  promises_[2]->DidNotSwap(cc::SwapPromise::SWAP_FAILS);
   messages.swap(NextSwapMessages());
   EXPECT_EQ(1u, messages.size());
   EXPECT_TRUE(ContainsMessage(messages, messages_[2]));
@@ -283,40 +274,50 @@ TEST_F(QueueMessageSwapPromiseTest, VisualStateSwapPromiseDidSwap) {
 void QueueMessageSwapPromiseTest::VisualStateSwapPromiseDidNotSwap(
     cc::SwapPromise::DidNotSwapReason reason) {
   QueueMessageData data[] = {
-    /* { policy, commit_requested, source_frame_number } */
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, true, 1},
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, false, 1},
-    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, false, 2},
+    /* { policy, source_frame_number } */
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 1},
+    {MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE, 2},
   };
   QueueMessages(data, arraysize(data));
+
+  // If we fail to swap with COMMIT_FAILS or ACTIVATE_FAILS, then
+  // messages are delivered by the RenderFrameHostImpl destructor,
+  // rather than directly by the swap promise.
+  bool msg_delivered = reason != cc::SwapPromise::COMMIT_FAILS &&
+                       reason != cc::SwapPromise::ACTIVATION_FAILS;
 
   promises_[0]->DidNotSwap(reason);
   ASSERT_FALSE(promises_[1]);
   EXPECT_TRUE(NextSwapMessages().empty());
-  EXPECT_EQ(2u, DirectSendMessages().size());
-  EXPECT_TRUE(ContainsMessage(DirectSendMessages(), messages_[0]));
-  EXPECT_TRUE(ContainsMessage(DirectSendMessages(), messages_[1]));
+  EXPECT_EQ(msg_delivered, ContainsMessage(DirectSendMessages(), messages_[0]));
+  EXPECT_EQ(msg_delivered, ContainsMessage(DirectSendMessages(), messages_[1]));
   EXPECT_FALSE(ContainsMessage(DirectSendMessages(), messages_[2]));
 
   promises_[2]->DidNotSwap(reason);
   EXPECT_TRUE(NextSwapMessages().empty());
-  EXPECT_TRUE(ContainsMessage(DirectSendMessages(), messages_[2]));
+  EXPECT_EQ(msg_delivered, ContainsMessage(DirectSendMessages(), messages_[2]));
 
   EXPECT_TRUE(NextSwapMessages().empty());
-  EXPECT_TRUE(frame_swap_message_queue_->Empty());
+  EXPECT_EQ(msg_delivered, frame_swap_message_queue_->Empty());
 }
 
-TEST_F(QueueMessageSwapPromiseTest, VisalStateSwapPromiseDidNotSwapNoUpdate) {
+TEST_F(QueueMessageSwapPromiseTest, VisualStateSwapPromiseDidNotSwapNoUpdate) {
   VisualStateSwapPromiseDidNotSwap(cc::SwapPromise::COMMIT_NO_UPDATE);
 }
 
 TEST_F(QueueMessageSwapPromiseTest,
-       VisalStateSwapPromiseDidNotSwapCommitFails) {
+       VisualStateSwapPromiseDidNotSwapCommitFails) {
   VisualStateSwapPromiseDidNotSwap(cc::SwapPromise::COMMIT_FAILS);
 }
 
-TEST_F(QueueMessageSwapPromiseTest, VisalStateSwapPromiseDidNotSwapSwapFails) {
+TEST_F(QueueMessageSwapPromiseTest, VisualStateSwapPromiseDidNotSwapSwapFails) {
   VisualStateSwapPromiseDidNotSwap(cc::SwapPromise::SWAP_FAILS);
+}
+
+TEST_F(QueueMessageSwapPromiseTest,
+       VisualStateSwapPromiseDidNotSwapActivationFails) {
+  VisualStateSwapPromiseDidNotSwap(cc::SwapPromise::ACTIVATION_FAILS);
 }
 
 }  // namespace content

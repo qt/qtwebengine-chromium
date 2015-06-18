@@ -7,10 +7,12 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/callback_helpers.h"
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
+#include "content/browser/compositor/gpu_process_transport_factory.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
@@ -23,7 +25,7 @@
 #include "content/public/browser/browser_thread.h"
 
 #if defined(OS_MACOSX)
-#include "content/browser/compositor/browser_compositor_ca_layer_tree_mac.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #endif
 
 #if defined(USE_OZONE)
@@ -38,6 +40,13 @@ namespace {
 // One of the linux specific headers defines this as a macro.
 #ifdef DestroyAll
 #undef DestroyAll
+#endif
+
+#if defined(OS_MACOSX)
+void OnSurfaceDisplayedCallback(int output_surface_id) {
+  content::ImageTransportFactory::GetInstance()->OnSurfaceDisplayed(
+      output_surface_id);
+}
 #endif
 
 base::LazyInstance<IDMap<GpuProcessHostUIShim> > g_hosts_by_id =
@@ -104,7 +113,10 @@ GpuProcessHostUIShim::GpuProcessHostUIShim(int host_id)
 #if defined(USE_OZONE)
   ui::OzonePlatform::GetInstance()
       ->GetGpuPlatformSupportHost()
-      ->OnChannelEstablished(host_id, this);
+      ->OnChannelEstablished(
+          host_id,
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+          base::Bind(&SendOnIOThreadTask, host_id_));
 #endif
 }
 
@@ -116,7 +128,7 @@ GpuProcessHostUIShim* GpuProcessHostUIShim::Create(int host_id) {
 
 // static
 void GpuProcessHostUIShim::Destroy(int host_id, const std::string& message) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   GpuDataManagerImpl::GetInstance()->AddLogMessage(
       logging::LOG_ERROR, "GpuProcessHostUIShim",
@@ -133,7 +145,7 @@ void GpuProcessHostUIShim::Destroy(int host_id, const std::string& message) {
 
 // static
 void GpuProcessHostUIShim::DestroyAll() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   while (!g_hosts_by_id.Pointer()->IsEmpty()) {
     IDMap<GpuProcessHostUIShim>::iterator it(g_hosts_by_id.Pointer());
     delete it.GetCurrentValue();
@@ -142,13 +154,13 @@ void GpuProcessHostUIShim::DestroyAll() {
 
 // static
 GpuProcessHostUIShim* GpuProcessHostUIShim::FromID(int host_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return g_hosts_by_id.Pointer()->Lookup(host_id);
 }
 
 // static
 GpuProcessHostUIShim* GpuProcessHostUIShim::GetOneInstance() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (g_hosts_by_id.Pointer()->IsEmpty())
     return NULL;
   IDMap<GpuProcessHostUIShim>::iterator it(g_hosts_by_id.Pointer());
@@ -178,6 +190,13 @@ bool GpuProcessHostUIShim::OnMessageReceived(const IPC::Message& message) {
     return false;
 
   return OnControlMessageReceived(message);
+}
+
+void GpuProcessHostUIShim::RelinquishGpuResources(
+    const base::Closure& callback) {
+  DCHECK(relinquish_callback_.is_null());
+  relinquish_callback_ = callback;
+  Send(new GpuMsg_RelinquishResources());
 }
 
 void GpuProcessHostUIShim::SimulateRemoveAllContext() {
@@ -212,6 +231,10 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
                         OnGraphicsInfoCollected)
     IPC_MESSAGE_HANDLER(GpuHostMsg_VideoMemoryUsageStats,
                         OnVideoMemoryUsageStatsReceived);
+    IPC_MESSAGE_HANDLER(GpuHostMsg_ResourcesRelinquished,
+                        OnResourcesRelinquished)
+    IPC_MESSAGE_HANDLER(GpuHostMsg_AddSubscription, OnAddSubscription);
+    IPC_MESSAGE_HANDLER(GpuHostMsg_RemoveSubscription, OnRemoveSubscription);
 
     IPC_MESSAGE_UNHANDLED_ERROR()
   IPC_END_MESSAGE_MAP()
@@ -259,17 +282,25 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   // associated with a RenderWidgetHostViewBase.
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
   DCHECK(IsDelegatedRendererEnabled());
-  gfx::AcceleratedWidget native_widget =
-      content::GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
-  BrowserCompositorCALayerTreeMacGotAcceleratedFrame(
-      native_widget,
-      params.surface_handle,
-      params.surface_id,
-      params.latency_info,
-      params.size,
-      params.scale_factor,
-      &ack_params.disable_throttling,
-      &ack_params.renderer_id);
+
+  // If the frame was intended for an NSView that the gfx::AcceleratedWidget is
+  // no longer attached to, do not pass the frame along to the widget. Just ack
+  // it to the GPU process immediately, so we can proceed to the next frame.
+  bool should_not_show_frame =
+      content::ImageTransportFactory::GetInstance()
+          ->SurfaceShouldNotShowFramesAfterSuspendForRecycle(params.surface_id);
+  if (should_not_show_frame) {
+    OnSurfaceDisplayedCallback(params.surface_id);
+  } else {
+    gfx::AcceleratedWidget native_widget =
+        content::GpuSurfaceTracker::Get()->AcquireNativeWidget(
+            params.surface_id);
+    ui::AcceleratedWidgetMacGotAcceleratedFrame(
+        native_widget, params.surface_handle, params.latency_info, params.size,
+        params.scale_factor,
+        base::Bind(&OnSurfaceDisplayedCallback, params.surface_id),
+        &ack_params.disable_throttling, &ack_params.renderer_id);
+  }
   Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id, ack_params));
 #else
   NOTREACHED();
@@ -280,6 +311,28 @@ void GpuProcessHostUIShim::OnVideoMemoryUsageStatsReceived(
     const GPUVideoMemoryUsageStats& video_memory_usage_stats) {
   GpuDataManagerImpl::GetInstance()->UpdateVideoMemoryUsageStats(
       video_memory_usage_stats);
+}
+
+void GpuProcessHostUIShim::OnResourcesRelinquished() {
+  if (!relinquish_callback_.is_null()) {
+    base::ResetAndReturn(&relinquish_callback_).Run();
+  }
+}
+
+void GpuProcessHostUIShim::OnAddSubscription(
+    int32 process_id, unsigned int target) {
+  RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
+  if (rph) {
+    rph->OnAddSubscription(target);
+  }
+}
+
+void GpuProcessHostUIShim::OnRemoveSubscription(
+    int32 process_id, unsigned int target) {
+  RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
+  if (rph) {
+    rph->OnRemoveSubscription(target);
+  }
 }
 
 }  // namespace content

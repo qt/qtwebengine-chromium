@@ -183,8 +183,10 @@ static const arg_def_t recontest = ARG_DEF_ENUM(
     NULL, "test-decode", 1, "Test encode/decode mismatch", test_decode_enum);
 static const arg_def_t framerate = ARG_DEF(
     NULL, "fps", 1, "Stream frame rate (rate/scale)");
+static const arg_def_t use_webm = ARG_DEF(
+    NULL, "webm", 0, "Output WebM (default when WebM IO is enabled)");
 static const arg_def_t use_ivf = ARG_DEF(
-    NULL, "ivf", 0, "Output IVF (default is WebM if WebM IO is enabled)");
+    NULL, "ivf", 0, "Output IVF");
 static const arg_def_t out_part = ARG_DEF(
     "P", "output-partitions", 0,
     "Makes encoder output partitions. Requires IVF output!");
@@ -208,7 +210,7 @@ static const arg_def_t *main_args[] = {
   &debugmode,
   &outputfile, &codecarg, &passes, &pass_arg, &fpf_name, &limit, &skip,
   &deadline, &best_dl, &good_dl, &rt_dl,
-  &quietarg, &verbosearg, &psnrarg, &use_ivf, &out_part, &q_hist_n,
+  &quietarg, &verbosearg, &psnrarg, &use_webm, &use_ivf, &out_part, &q_hist_n,
   &rate_hist_n, &disable_warnings, &disable_warning_prompt,
   NULL
 };
@@ -328,8 +330,10 @@ static const arg_def_t sharpness = ARG_DEF(
     NULL, "sharpness", 1, "Loop filter sharpness (0..7)");
 static const arg_def_t static_thresh = ARG_DEF(
     NULL, "static-thresh", 1, "Motion detection threshold");
-static const arg_def_t cpu_used = ARG_DEF(
+static const arg_def_t cpu_used_vp8 = ARG_DEF(
     NULL, "cpu-used", 1, "CPU Used (-16..16)");
+static const arg_def_t cpu_used_vp9 = ARG_DEF(
+    NULL, "cpu-used", 1, "CPU Used (-8..8)");
 static const arg_def_t auto_altref = ARG_DEF(
     NULL, "auto-alt-ref", 1, "Enable automatic alt reference frames");
 static const arg_def_t arnr_maxframes = ARG_DEF(
@@ -349,14 +353,21 @@ static const arg_def_t cq_level = ARG_DEF(
     NULL, "cq-level", 1, "Constant/Constrained Quality level");
 static const arg_def_t max_intra_rate_pct = ARG_DEF(
     NULL, "max-intra-rate", 1, "Max I-frame bitrate (pct)");
+static const arg_def_t max_inter_rate_pct = ARG_DEF(
+    NULL, "max-inter-rate", 1, "Max P-frame bitrate (pct)");
+static const arg_def_t gf_cbr_boost_pct = ARG_DEF(
+    NULL, "gf-cbr-boost", 1, "Boost for Golden Frame in CBR mode (pct)");
+
+static const arg_def_t screen_content_mode = ARG_DEF(NULL, "screen-content-mode", 1,
+                                                     "Screen content mode");
 
 #if CONFIG_VP8_ENCODER
 static const arg_def_t token_parts = ARG_DEF(
     NULL, "token-parts", 1, "Number of token partitions to use, log2");
 static const arg_def_t *vp8_args[] = {
-  &cpu_used, &auto_altref, &noise_sens, &sharpness, &static_thresh,
+  &cpu_used_vp8, &auto_altref, &noise_sens, &sharpness, &static_thresh,
   &token_parts, &arnr_maxframes, &arnr_strength, &arnr_type,
-  &tune_ssim, &cq_level, &max_intra_rate_pct,
+  &tune_ssim, &cq_level, &max_intra_rate_pct, &screen_content_mode,
   NULL
 };
 static const int vp8_arg_ctrl_map[] = {
@@ -365,6 +376,7 @@ static const int vp8_arg_ctrl_map[] = {
   VP8E_SET_TOKEN_PARTITIONS,
   VP8E_SET_ARNR_MAXFRAMES, VP8E_SET_ARNR_STRENGTH, VP8E_SET_ARNR_TYPE,
   VP8E_SET_TUNING, VP8E_SET_CQ_LEVEL, VP8E_SET_MAX_INTRA_BITRATE_PCT,
+  VP8E_SET_SCREEN_CONTENT_MODE,
   0
 };
 #endif
@@ -385,6 +397,22 @@ static const arg_def_t aq_mode = ARG_DEF(
 static const arg_def_t frame_periodic_boost = ARG_DEF(
     NULL, "frame-boost", 1,
     "Enable frame periodic boost (0: off (default), 1: on)");
+
+static const struct arg_enum_list color_space_enum[] = {
+  { "unknown", VPX_CS_UNKNOWN },
+  { "bt601", VPX_CS_BT_601 },
+  { "bt709", VPX_CS_BT_709 },
+  { "smpte170", VPX_CS_SMPTE_170 },
+  { "smpte240", VPX_CS_SMPTE_240 },
+  { "bt2020", VPX_CS_BT_2020 },
+  { "reserved", VPX_CS_RESERVED },
+  { "sRGB", VPX_CS_SRGB },
+  { NULL, 0 }
+};
+
+static const arg_def_t input_color_space = ARG_DEF_ENUM(
+    NULL, "color-space", 1,
+    "The color space of input content:", color_space_enum);
 
 #if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
 static const struct arg_enum_list bitdepth_enum[] = {
@@ -412,11 +440,12 @@ static const arg_def_t tune_content = ARG_DEF_ENUM(
     NULL, "tune-content", 1, "Tune content type", tune_content_enum);
 
 static const arg_def_t *vp9_args[] = {
-  &cpu_used, &auto_altref, &sharpness, &static_thresh,
+  &cpu_used_vp9, &auto_altref, &sharpness, &static_thresh,
   &tile_cols, &tile_rows, &arnr_maxframes, &arnr_strength, &arnr_type,
-  &tune_ssim, &cq_level, &max_intra_rate_pct, &lossless,
+  &tune_ssim, &cq_level, &max_intra_rate_pct, &max_inter_rate_pct,
+  &gf_cbr_boost_pct, &lossless,
   &frame_parallel_decoding, &aq_mode, &frame_periodic_boost,
-  &noise_sens, &tune_content,
+  &noise_sens, &tune_content, &input_color_space,
 #if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
   &bitdeptharg, &inbitdeptharg,
 #endif
@@ -428,9 +457,10 @@ static const int vp9_arg_ctrl_map[] = {
   VP9E_SET_TILE_COLUMNS, VP9E_SET_TILE_ROWS,
   VP8E_SET_ARNR_MAXFRAMES, VP8E_SET_ARNR_STRENGTH, VP8E_SET_ARNR_TYPE,
   VP8E_SET_TUNING, VP8E_SET_CQ_LEVEL, VP8E_SET_MAX_INTRA_BITRATE_PCT,
+  VP9E_SET_MAX_INTER_BITRATE_PCT, VP9E_SET_GF_CBR_BOOST_PCT,
   VP9E_SET_LOSSLESS, VP9E_SET_FRAME_PARALLEL_DECODING, VP9E_SET_AQ_MODE,
   VP9E_SET_FRAME_PERIODIC_BOOST, VP9E_SET_NOISE_SENSITIVITY,
-  VP9E_SET_TUNE_CONTENT,
+  VP9E_SET_TUNE_CONTENT, VP9E_SET_COLOR_SPACE,
   0
 };
 #endif
@@ -1038,14 +1068,19 @@ static int parse_stream_params(struct VpxEncoderConfig *global,
       continue;
     }
 
-    if (0) {
-    } else if (arg_match(&arg, &outputfile, argi)) {
+    if (arg_match(&arg, &outputfile, argi)) {
       config->out_fn = arg.val;
     } else if (arg_match(&arg, &fpf_name, argi)) {
       config->stats_fn = arg.val;
 #if CONFIG_FP_MB_STATS
     } else if (arg_match(&arg, &fpmbf_name, argi)) {
       config->fpmb_stats_fn = arg.val;
+#endif
+    } else if (arg_match(&arg, &use_webm, argi)) {
+#if CONFIG_WEBM_IO
+      config->write_webm = 1;
+#else
+      die("Error: --webm specified but webm is disabled.");
 #endif
     } else if (arg_match(&arg, &use_ivf, argi)) {
       config->write_webm = 0;
@@ -1187,6 +1222,7 @@ static int parse_stream_params(struct VpxEncoderConfig *global,
 static void validate_stream_config(const struct stream_state *stream,
                                    const struct VpxEncoderConfig *global) {
   const struct stream_state *streami;
+  (void)global;
 
   if (!stream->config.cfg.g_w || !stream->config.cfg.g_h)
     fatal("Stream %d: Specify stream dimensions with --width (-w) "

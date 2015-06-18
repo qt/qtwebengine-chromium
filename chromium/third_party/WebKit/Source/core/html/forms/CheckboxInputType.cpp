@@ -57,7 +57,7 @@ bool CheckboxInputType::valueMissing(const String&) const
 
 String CheckboxInputType::valueMissingText() const
 {
-    return locale().queryString(blink::WebLocalizedString::ValidationValueMissingForCheckbox);
+    return locale().queryString(WebLocalizedString::ValidationValueMissingForCheckbox);
 }
 
 void CheckboxInputType::handleKeyupEvent(KeyboardEvent* event)
@@ -91,6 +91,8 @@ void CheckboxInputType::didDispatchClick(Event* event, const ClickHandlingState&
     if (event->defaultPrevented() || event->defaultHandled()) {
         element().setIndeterminate(state.indeterminate);
         element().setChecked(state.checked);
+    } else {
+        element().dispatchChangeEventIfNeeded();
     }
 
     // The work we did in willDispatchClick was default handling.

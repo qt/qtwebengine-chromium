@@ -142,7 +142,6 @@ void InvokeCallbackIfBackendIsAlive(
 
 using base::Closure;
 using base::FilePath;
-using base::MessageLoopProxy;
 using base::Time;
 using base::TaskRunner;
 
@@ -185,14 +184,14 @@ SimpleEntryImpl::SimpleEntryImpl(net::CacheType cache_type,
       net_log_(net::BoundNetLog::Make(
           net_log, net::NetLog::SOURCE_DISK_CACHE_ENTRY)),
       stream_0_data_(new net::GrowableIOBuffer()) {
-  COMPILE_ASSERT(arraysize(data_size_) == arraysize(crc32s_end_offset_),
-                 arrays_should_be_same_size);
-  COMPILE_ASSERT(arraysize(data_size_) == arraysize(crc32s_),
-                 arrays_should_be_same_size);
-  COMPILE_ASSERT(arraysize(data_size_) == arraysize(have_written_),
-                 arrays_should_be_same_size);
-  COMPILE_ASSERT(arraysize(data_size_) == arraysize(crc_check_state_),
-                 arrays_should_be_same_size);
+  static_assert(arraysize(data_size_) == arraysize(crc32s_end_offset_),
+                "arrays should be the same size");
+  static_assert(arraysize(data_size_) == arraysize(crc32s_),
+                "arrays should be the same size");
+  static_assert(arraysize(data_size_) == arraysize(have_written_),
+                "arrays should be the same size");
+  static_assert(arraysize(data_size_) == arraysize(crc_check_state_),
+                "arrays should be the same size");
   MakeUninitialized();
   net_log_.BeginEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY,
       CreateNetLogSimpleEntryConstructionCallback(this));
@@ -347,7 +346,7 @@ int SimpleEntryImpl::ReadData(int stream_index,
                               const CompletionCallback& callback) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_CALL,
         CreateNetLogReadWriteDataCallback(stream_index, offset, buf_len,
                                           false));
@@ -355,7 +354,7 @@ int SimpleEntryImpl::ReadData(int stream_index,
 
   if (stream_index < 0 || stream_index >= kSimpleEntryStreamCount ||
       buf_len < 0) {
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_END,
           CreateNetLogReadWriteCompleteCallback(net::ERR_INVALID_ARGUMENT));
     }
@@ -365,7 +364,7 @@ int SimpleEntryImpl::ReadData(int stream_index,
   }
   if (pending_operations_.empty() && (offset >= GetDataSize(stream_index) ||
                                       offset < 0 || !buf_len)) {
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_END,
           CreateNetLogReadWriteCompleteCallback(0));
     }
@@ -394,7 +393,7 @@ int SimpleEntryImpl::WriteData(int stream_index,
                                bool truncate) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
         net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_CALL,
         CreateNetLogReadWriteDataCallback(stream_index, offset, buf_len,
@@ -403,7 +402,7 @@ int SimpleEntryImpl::WriteData(int stream_index,
 
   if (stream_index < 0 || stream_index >= kSimpleEntryStreamCount ||
       offset < 0 || buf_len < 0) {
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(
           net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_END,
           CreateNetLogReadWriteCompleteCallback(net::ERR_INVALID_ARGUMENT));
@@ -412,7 +411,7 @@ int SimpleEntryImpl::WriteData(int stream_index,
     return net::ERR_INVALID_ARGUMENT;
   }
   if (backend_.get() && offset + buf_len > backend_->GetMaxFileSize()) {
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(
           net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_END,
           CreateNetLogReadWriteCompleteCallback(net::ERR_FAILED));
@@ -454,7 +453,7 @@ int SimpleEntryImpl::WriteData(int stream_index,
     }
     op_callback = CompletionCallback();
     ret_value = buf_len;
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(
           net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_OPTIMISTIC,
           CreateNetLogReadWriteCompleteCallback(buf_len));
@@ -809,7 +808,7 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
   DCHECK(io_thread_checker_.CalledOnValidThread());
   ScopedOperationRunner operation_runner(this);
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
         net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_BEGIN,
         CreateNetLogReadWriteDataCallback(stream_index, offset, buf_len,
@@ -825,7 +824,7 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::Bind(callback, net::ERR_FAILED));
     }
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(
           net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_END,
           CreateNetLogReadWriteCompleteCallback(net::ERR_FAILED));
@@ -892,7 +891,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   DCHECK(io_thread_checker_.CalledOnValidThread());
   ScopedOperationRunner operation_runner(this);
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
         net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_BEGIN,
         CreateNetLogReadWriteDataCallback(stream_index, offset, buf_len,
@@ -901,7 +900,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
 
   if (state_ == STATE_FAILURE || state_ == STATE_UNINITIALIZED) {
     RecordWriteResult(cache_type_, WRITE_RESULT_BAD_STATE);
-    if (net_log_.IsLogging()) {
+    if (net_log_.IsCapturing()) {
       net_log_.AddEvent(
           net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_END,
           CreateNetLogReadWriteCompleteCallback(net::ERR_FAILED));
@@ -1022,9 +1021,9 @@ void SimpleEntryImpl::WriteSparseDataInternal(
   DCHECK_EQ(STATE_READY, state_);
   state_ = STATE_IO_PENDING;
 
-  int64 max_sparse_data_size = kint64max;
+  uint64 max_sparse_data_size = kint64max;
   if (backend_.get()) {
-    int64 max_cache_size = backend_->index()->max_size();
+    uint64 max_cache_size = backend_->index()->max_size();
     max_sparse_data_size = max_cache_size / kMaxSparseDataSizeDivisor;
   }
 
@@ -1230,7 +1229,7 @@ void SimpleEntryImpl::ReadOperationComplete(
       crc_check_state_[stream_index] = CRC_CHECK_NOT_DONE;
     }
   }
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(
         net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_END,
         CreateNetLogReadWriteCompleteCallback(*result));
@@ -1248,7 +1247,7 @@ void SimpleEntryImpl::WriteOperationComplete(
     RecordWriteResult(cache_type_, WRITE_RESULT_SUCCESS);
   else
     RecordWriteResult(cache_type_, WRITE_RESULT_SYNC_WRITE_FAILURE);
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_WRITE_END,
         CreateNetLogReadWriteCompleteCallback(*result));
   }
@@ -1319,7 +1318,7 @@ void SimpleEntryImpl::ChecksumOperationComplete(
   DCHECK_EQ(STATE_IO_PENDING, state_);
   DCHECK(result);
 
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEventWithNetErrorCode(
         net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_CHECKSUM_END,
         *result);
@@ -1334,7 +1333,7 @@ void SimpleEntryImpl::ChecksumOperationComplete(
   } else {
     RecordReadResult(cache_type_, READ_RESULT_SYNC_CHECKSUM_FAILURE);
   }
-  if (net_log_.IsLogging()) {
+  if (net_log_.IsCapturing()) {
     net_log_.AddEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_READ_END,
         CreateNetLogReadWriteCompleteCallback(*result));
   }

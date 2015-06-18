@@ -22,6 +22,7 @@
 #define MediaList_h
 
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -34,12 +35,11 @@ namespace blink {
 
 class CSSRule;
 class CSSStyleSheet;
-class Document;
 class ExceptionState;
 class MediaList;
 class MediaQuery;
 
-class MediaQuerySet : public RefCountedWillBeGarbageCollected<MediaQuerySet> {
+class CORE_EXPORT MediaQuerySet : public RefCountedWillBeGarbageCollected<MediaQuerySet> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaQuerySet);
 public:
     static PassRefPtrWillBeRawPtr<MediaQuerySet> create()
@@ -55,34 +55,34 @@ public:
 
     void addMediaQuery(PassOwnPtrWillBeRawPtr<MediaQuery>);
 
-    const WillBeHeapVector<OwnPtrWillBeMember<MediaQuery> >& queryVector() const { return m_queries; }
+    const WillBeHeapVector<OwnPtrWillBeMember<MediaQuery>>& queryVector() const { return m_queries; }
 
     String mediaText() const;
 
     PassRefPtrWillBeRawPtr<MediaQuerySet> copy() const { return adoptRefWillBeNoop(new MediaQuerySet(*this)); }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     MediaQuerySet();
     MediaQuerySet(const MediaQuerySet&);
 
-    WillBeHeapVector<OwnPtrWillBeMember<MediaQuery> > m_queries;
+    WillBeHeapVector<OwnPtrWillBeMember<MediaQuery>> m_queries;
 };
 
-class MediaList : public RefCountedWillBeGarbageCollectedFinalized<MediaList>, public ScriptWrappable {
+class MediaList final : public RefCountedWillBeGarbageCollected<MediaList>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaList);
 public:
     static PassRefPtrWillBeRawPtr<MediaList> create(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
     {
         return adoptRefWillBeNoop(new MediaList(mediaQueries, parentSheet));
     }
+
     static PassRefPtrWillBeRawPtr<MediaList> create(MediaQuerySet* mediaQueries, CSSRule* parentRule)
     {
         return adoptRefWillBeNoop(new MediaList(mediaQueries, parentRule));
     }
-
-    ~MediaList();
 
     unsigned length() const { return m_mediaQueries->queryVector().size(); }
     String item(unsigned index) const;
@@ -105,7 +105,7 @@ public:
 
     void reattach(MediaQuerySet*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     MediaList(MediaQuerySet*, CSSStyleSheet* parentSheet);
@@ -117,9 +117,6 @@ private:
     // Cleared in the ~CSSMediaRule and ~CSSImportRule destructors when oilpan is not enabled.
     RawPtrWillBeMember<CSSRule> m_parentRule;
 };
-
-// Adds message to inspector console whenever dpi or dpcm values are used for "screen" media.
-void reportMediaQueryWarningIfNeeded(Document*, const MediaQuerySet*);
 
 } // namespace blink
 

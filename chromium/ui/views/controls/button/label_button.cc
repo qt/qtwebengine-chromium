@@ -9,6 +9,7 @@
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/background.h"
@@ -155,7 +156,7 @@ void LabelButton::SetElideBehavior(gfx::ElideBehavior elide_behavior) {
 }
 
 gfx::HorizontalAlignment LabelButton::GetHorizontalAlignment() const {
-  return label_->GetHorizontalAlignment();
+  return label_->horizontal_alignment();
 }
 
 void LabelButton::SetHorizontalAlignment(gfx::HorizontalAlignment alignment) {
@@ -191,7 +192,7 @@ void LabelButton::SetStyle(ButtonStyle style) {
   style_ = style;
   // Inset the button focus rect from the actual border; roughly match Windows.
   if (style == STYLE_BUTTON) {
-    SetFocusPainter(scoped_ptr<Painter>());
+    SetFocusPainter(nullptr);
   } else {
     SetFocusPainter(Painter::CreateDashedFocusPainterWithInsets(
                         gfx::Insets(3, 3, 3, 3)));
@@ -287,8 +288,15 @@ void LabelButton::Layout() {
     adjusted_alignment = (adjusted_alignment == gfx::ALIGN_LEFT) ?
         gfx::ALIGN_RIGHT : gfx::ALIGN_LEFT;
 
+  // By default, GetChildAreaBounds() ignores the top and bottom border, but we
+  // want the image to respect it.
   gfx::Rect child_area(GetChildAreaBounds());
-  child_area.Inset(GetInsets());
+  gfx::Rect label_area(child_area);
+
+  gfx::Insets insets(GetInsets());
+  child_area.Inset(insets);
+  // Labels can paint over the vertical component of the border insets.
+  label_area.Inset(insets.left(), 0, insets.right(), 0);
 
   gfx::Size image_size(image_->GetPreferredSize());
   image_size.SetToMin(child_area.size());
@@ -296,8 +304,7 @@ void LabelButton::Layout() {
   // The label takes any remaining width after sizing the image, unless both
   // views are centered. In that case, using the tighter preferred label width
   // avoids wasted space within the label that would look like awkward padding.
-  // Labels can paint over the full button height, including the border height.
-  gfx::Size label_size(child_area.width(), height());
+  gfx::Size label_size(label_area.size());
   if (!image_size.IsEmpty() && !label_size.IsEmpty()) {
     label_size.set_width(std::max(child_area.width() -
         image_size.width() - image_label_spacing_, 0));
@@ -320,7 +327,7 @@ void LabelButton::Layout() {
     image_origin.Offset(child_area.width() - image_size.width(), 0);
   }
 
-  gfx::Point label_origin(child_area.x(), 0);
+  gfx::Point label_origin(label_area.origin());
   if (!image_size.IsEmpty() && adjusted_alignment != gfx::ALIGN_RIGHT) {
     label_origin.set_x(image_origin.x() + image_size.width() +
         image_label_spacing_);
@@ -335,7 +342,7 @@ const char* LabelButton::GetClassName() const {
 }
 
 scoped_ptr<LabelButtonBorder> LabelButton::CreateDefaultBorder() const {
-  return scoped_ptr<LabelButtonBorder>(new LabelButtonBorder(style_));
+  return make_scoped_ptr(new LabelButtonBorder(style_));
 }
 
 void LabelButton::SetBorder(scoped_ptr<Border> border) {
@@ -406,7 +413,7 @@ void LabelButton::ResetColorsFromNativeTheme() {
         ui::NativeTheme::kColorId_ButtonBackgroundColor));
     label_->SetAutoColorReadabilityEnabled(false);
     label_->SetShadows(gfx::ShadowValues(
-        1, gfx::ShadowValue(gfx::Point(0, 1), 0, kStyleButtonShadowColor)));
+        1, gfx::ShadowValue(gfx::Vector2d(0, 1), 0, kStyleButtonShadowColor)));
 #endif
     label_->set_background(NULL);
   } else {
@@ -512,7 +519,7 @@ ui::NativeTheme::State LabelButton::GetForegroundThemeState(
 
 void LabelButton::ResetCachedPreferredSize() {
   cached_preferred_size_valid_ = false;
-  cached_preferred_size_= gfx::Size();
+  cached_preferred_size_ = gfx::Size();
 }
 
 }  // namespace views

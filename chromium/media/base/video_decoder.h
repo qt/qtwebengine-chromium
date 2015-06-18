@@ -11,7 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 
@@ -55,6 +55,12 @@ class MEDIA_EXPORT VideoDecoder {
   // |status_cb| upon completion. |output_cb| is called for each output frame
   // decoded by Decode().
   //
+  // If |low_delay| is true then the decoder is not allowed to queue frames,
+  // except for out-of-order frames, i.e. if the next frame can be returned it
+  // must be returned without waiting for Decode() to be called again.
+  // Initialization should fail if |low_delay| is true and the decoder cannot
+  // satisfy the requirements above.
+  //
   // Note:
   // 1) The VideoDecoder will be reinitialized if it was initialized before.
   //    Upon reinitialization, all internal buffered frames will be dropped.
@@ -78,8 +84,9 @@ class MEDIA_EXPORT VideoDecoder {
   // called again).
   //
   // After decoding is finished the decoder calls |output_cb| specified in
-  // Initialize() for each decoded frame. |output_cb| may be called before or
-  // after |decode_cb|.
+  // Initialize() for each decoded frame. In general |output_cb| may be called
+  // before or after |decode_cb|, but software decoders normally call
+  // |output_cb| before calling |decode_cb|, i.e. while Decode() is pending.
   //
   // If |buffer| is an EOS buffer then the decoder must be flushed, i.e.
   // |output_cb| must be called for each frame pending in the queue and

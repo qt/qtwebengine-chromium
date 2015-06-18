@@ -10,11 +10,11 @@
 #include "base/path_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gfx_paths.h"
 #include "ui/gfx/icon_util_unittests_resource.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_family.h"
-#include "ui/gfx/size.h"
 
 namespace {
 
@@ -26,7 +26,7 @@ static const char kTempIconFilename[] = "temp_test_icon.ico";
 
 class IconUtilTest : public testing::Test {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     gfx::RegisterPathProvider();
     ASSERT_TRUE(PathService::Get(gfx::DIR_TEST_DATA, &test_data_directory_));
     temp_directory_.CreateUniqueTempDir();

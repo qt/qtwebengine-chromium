@@ -43,14 +43,14 @@ void PipelineStatistics::CommonStats::End(
 
 PipelineStatistics::PipelineStatistics(CompilationInfo* info,
                                        ZonePool* zone_pool)
-    : isolate_(info->zone()->isolate()),
+    : isolate_(info->isolate()),
       outer_zone_(info->zone()),
       zone_pool_(zone_pool),
       compilation_stats_(isolate_->GetTurboStatistics()),
       source_size_(0),
       phase_kind_name_(NULL),
       phase_name_(NULL) {
-  if (!info->shared_info().is_null()) {
+  if (info->has_shared_info()) {
     source_size_ = static_cast<size_t>(info->shared_info()->SourceSize());
     SmartArrayPointer<char> name =
         info->shared_info()->DebugName()->ToCString();

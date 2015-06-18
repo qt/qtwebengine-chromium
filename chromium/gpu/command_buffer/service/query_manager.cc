@@ -171,13 +171,13 @@ bool AllSamplesPassedQuery::End(base::subtle::Atomic32 submit_count) {
 
 bool AllSamplesPassedQuery::Process(bool did_finish) {
   GLuint available = 0;
-  glGetQueryObjectuivARB(
+  glGetQueryObjectuiv(
       service_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
   if (!available) {
     return true;
   }
   GLuint result = 0;
-  glGetQueryObjectuivARB(
+  glGetQueryObjectuiv(
       service_id_, GL_QUERY_RESULT_EXT, &result);
 
   return MarkAsCompleted(result != 0);
@@ -185,7 +185,7 @@ bool AllSamplesPassedQuery::Process(bool did_finish) {
 
 void AllSamplesPassedQuery::Destroy(bool have_context) {
   if (have_context && !IsDeleted()) {
-    glDeleteQueriesARB(1, &service_id_);
+    glDeleteQueries(1, &service_id_);
     MarkAsDeleted();
   }
 }
@@ -216,12 +216,12 @@ CommandsIssuedQuery::CommandsIssuedQuery(
 }
 
 bool CommandsIssuedQuery::Begin() {
-  begin_time_ = base::TimeTicks::HighResNow();
+  begin_time_ = base::TimeTicks::Now();
   return true;
 }
 
 bool CommandsIssuedQuery::End(base::subtle::Atomic32 submit_count) {
-  base::TimeDelta elapsed = base::TimeTicks::HighResNow() - begin_time_;
+  base::TimeDelta elapsed = base::TimeTicks::Now() - begin_time_;
   MarkAsPending(submit_count);
   return MarkAsCompleted(elapsed.InMicroseconds());
 }
@@ -264,7 +264,7 @@ bool CommandLatencyQuery::Begin() {
 }
 
 bool CommandLatencyQuery::End(base::subtle::Atomic32 submit_count) {
-    base::TimeDelta now = base::TimeTicks::HighResNow() - base::TimeTicks();
+    base::TimeDelta now = base::TimeTicks::Now() - base::TimeTicks();
     MarkAsPending(submit_count);
     return MarkAsCompleted(now.InMicroseconds());
 }
@@ -408,6 +408,7 @@ class CommandsCompletedQuery : public QueryManager::Query {
 
  private:
   scoped_ptr<gfx::GLFence> fence_;
+  base::TimeTicks begin_time_;
 };
 
 CommandsCompletedQuery::CommandsCompletedQuery(QueryManager* manager,
@@ -416,7 +417,10 @@ CommandsCompletedQuery::CommandsCompletedQuery(QueryManager* manager,
                                                uint32 shm_offset)
     : Query(manager, target, shm_id, shm_offset) {}
 
-bool CommandsCompletedQuery::Begin() { return true; }
+bool CommandsCompletedQuery::Begin() {
+  begin_time_ = base::TimeTicks::Now();
+  return true;
+}
 
 bool CommandsCompletedQuery::End(base::subtle::Atomic32 submit_count) {
   fence_.reset(gfx::GLFence::Create());
@@ -428,13 +432,11 @@ bool CommandsCompletedQuery::Process(bool did_finish) {
   // Note: |did_finish| guarantees that the GPU has passed the fence but
   // we cannot assume that GLFence::HasCompleted() will return true yet as
   // that's not guaranteed by all GLFence implementations.
-  //
-  // TODO(reveman): Add UMA stats to determine how common it is that glFinish()
-  // needs to be called for these queries to complete. crbug.com/431845
   if (!did_finish && fence_ && !fence_->HasCompleted())
     return true;
 
-  return MarkAsCompleted(0);
+  base::TimeDelta elapsed = base::TimeTicks::Now() - begin_time_;
+  return MarkAsCompleted(elapsed.InMicroseconds());
 }
 
 void CommandsCompletedQuery::Destroy(bool have_context) {
@@ -506,7 +508,7 @@ QueryManager::Query* QueryManager::CreateQuery(
       break;
     default: {
       GLuint service_id = 0;
-      glGenQueriesARB(1, &service_id);
+      glGenQueries(1, &service_id);
       DCHECK_NE(0u, service_id);
       query = new AllSamplesPassedQuery(
           this, target, shm_id, shm_offset, service_id);
@@ -580,12 +582,12 @@ GLenum QueryManager::AdjustTargetForEmulation(GLenum target) {
 
 void QueryManager::BeginQueryHelper(GLenum target, GLuint id) {
   target = AdjustTargetForEmulation(target);
-  glBeginQueryARB(target, id);
+  glBeginQuery(target, id);
 }
 
 void QueryManager::EndQueryHelper(GLenum target) {
   target = AdjustTargetForEmulation(target);
-  glEndQueryARB(target);
+  glEndQuery(target);
 }
 
 QueryManager::Query::Query(

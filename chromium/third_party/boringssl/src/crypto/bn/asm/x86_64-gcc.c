@@ -64,7 +64,7 @@
 #define asm __asm__
 
 /*
- * "m"(a), "+m"(r)	is the way to favor DirectPath µ-code;
+ * "m"(a), "+m"(r)	is the way to favor DirectPath Âµ-code;
  * "g"(0)		let the compiler to decide where does it
  *			want to keep the value of zero;
  */
@@ -100,8 +100,9 @@ BN_ULONG bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, int num,
                           BN_ULONG w) {
   BN_ULONG c1 = 0;
 
-  if (num <= 0)
+  if (num <= 0) {
     return (c1);
+  }
 
   while (num & ~3) {
     mul_add(rp[0], ap[0], w, c1);
@@ -114,23 +115,26 @@ BN_ULONG bn_mul_add_words(BN_ULONG *rp, const BN_ULONG *ap, int num,
   }
   if (num) {
     mul_add(rp[0], ap[0], w, c1);
-    if (--num == 0)
+    if (--num == 0) {
       return c1;
+    }
     mul_add(rp[1], ap[1], w, c1);
-    if (--num == 0)
+    if (--num == 0) {
       return c1;
+    }
     mul_add(rp[2], ap[2], w, c1);
     return c1;
   }
 
-  return (c1);
+  return c1;
 }
 
 BN_ULONG bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, int num, BN_ULONG w) {
   BN_ULONG c1 = 0;
 
-  if (num <= 0)
-    return (c1);
+  if (num <= 0) {
+    return c1;
+  }
 
   while (num & ~3) {
     mul(rp[0], ap[0], w, c1);
@@ -143,19 +147,22 @@ BN_ULONG bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, int num, BN_ULONG w) {
   }
   if (num) {
     mul(rp[0], ap[0], w, c1);
-    if (--num == 0)
+    if (--num == 0) {
       return c1;
+    }
     mul(rp[1], ap[1], w, c1);
-    if (--num == 0)
+    if (--num == 0) {
       return c1;
+    }
     mul(rp[2], ap[2], w, c1);
   }
-  return (c1);
+  return c1;
 }
 
 void bn_sqr_words(BN_ULONG *r, const BN_ULONG *a, int n) {
-  if (n <= 0)
+  if (n <= 0) {
     return;
+  }
 
   while (n & ~3) {
     sqr(r[0], r[1], a[0]);
@@ -168,11 +175,13 @@ void bn_sqr_words(BN_ULONG *r, const BN_ULONG *a, int n) {
   }
   if (n) {
     sqr(r[0], r[1], a[0]);
-    if (--n == 0)
+    if (--n == 0) {
       return;
+    }
     sqr(r[2], r[3], a[1]);
-    if (--n == 0)
+    if (--n == 0) {
       return;
+    }
     sqr(r[4], r[5], a[2]);
   }
 }
@@ -190,8 +199,9 @@ BN_ULONG bn_add_words(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
   BN_ULONG ret;
   size_t i = 0;
 
-  if (n <= 0)
+  if (n <= 0) {
     return 0;
+  }
 
   asm volatile (
       "	subq	%0,%0		\n" /* clear carry */
@@ -216,8 +226,9 @@ BN_ULONG bn_sub_words(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
   BN_ULONG ret;
   size_t i = 0;
 
-  if (n <= 0)
+  if (n <= 0) {
     return 0;
+  }
 
   asm volatile (
       "	subq	%0,%0		\n" /* clear borrow */
@@ -242,47 +253,56 @@ BN_ULONG bn_sub_words(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n) {
   BN_ULONG t1, t2;
   int c = 0;
 
-  if (n <= 0)
-    return ((BN_ULONG)0);
+  if (n <= 0) {
+    return (BN_ULONG)0;
+  }
 
   for (;;) {
     t1 = a[0];
     t2 = b[0];
     r[0] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
-    if (--n <= 0)
+    }
+    if (--n <= 0) {
       break;
+    }
 
     t1 = a[1];
     t2 = b[1];
     r[1] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
-    if (--n <= 0)
+    }
+    if (--n <= 0) {
       break;
+    }
 
     t1 = a[2];
     t2 = b[2];
     r[2] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
-    if (--n <= 0)
+    }
+    if (--n <= 0) {
       break;
+    }
 
     t1 = a[3];
     t2 = b[3];
     r[3] = (t1 - t2 - c) & BN_MASK2;
-    if (t1 != t2)
+    if (t1 != t2) {
       c = (t1 < t2);
-    if (--n <= 0)
+    }
+    if (--n <= 0) {
       break;
+    }
 
     a += 4;
     b += 4;
     r += 4;
   }
-  return (c);
+  return c;
 }
 #endif
 
@@ -292,80 +312,45 @@ BN_ULONG bn_sub_words(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n) {
 /* sqr_add_c2(a,i,c0,c1,c2) -- c+=2*a[i]*a[j] for three word number c=(c2,c1,c0)
  */
 
-#if 0
-/* original macros are kept for reference purposes */
-#define mul_add_c(a, b, c0, c1, c2) \
-  {                                 \
-    BN_ULONG ta = (a), tb = (b);    \
-    t1 = ta * tb;                   \
-    t2 = BN_UMULT_HIGH(ta, tb);     \
-    c0 += t1;                       \
-    t2 += (c0 < t1) ? 1 : 0;        \
-    c1 += t2;                       \
-    c2 += (c1 < t2) ? 1 : 0;        \
-  }
-
-#define mul_add_c2(a, b, c0, c1, c2) \
-  {                                  \
-    BN_ULONG ta = (a), tb = (b), t0; \
-    t1 = BN_UMULT_HIGH(ta, tb);      \
-    t0 = ta * tb;                    \
-    t2 = t1 + t1;                    \
-    c2 += (t2 < t1) ? 1 : 0;         \
-    t1 = t0 + t0;                    \
-    t2 += (t1 < t0) ? 1 : 0;         \
-    c0 += t1;                        \
-    t2 += (c0 < t1) ? 1 : 0;         \
-    c1 += t2;                        \
-    c2 += (c1 < t2) ? 1 : 0;         \
-  }
-#else
-#define mul_add_c(a, b, c0, c1, c2)                              \
-  do {                                                           \
+/* Keep in mind that carrying into high part of multiplication result can not
+ * overflow, because it cannot be all-ones. */
+#define mul_add_c(a, b, c0, c1, c2)          \
+  do {                                       \
+    BN_ULONG t1, t2;                \
     asm("mulq %3" : "=a"(t1), "=d"(t2) : "a"(a), "m"(b) : "cc"); \
-    asm("addq %2,%0; adcq %3,%1"                                 \
-        : "+r"(c0), "+d"(t2)                                     \
-        : "a"(t1), "g"(0)                                        \
-        : "cc");                                                 \
-    asm("addq %2,%0; adcq %3,%1"                                 \
-        : "+r"(c1), "+r"(c2)                                     \
-        : "d"(t2), "g"(0)                                        \
-        : "cc");                                                 \
+    asm("addq %3,%0; adcq %4,%1; adcq %5,%2" \
+        : "+r"(c0), "+r"(c1), "+r"(c2)       \
+        : "r"(t1), "r"(t2), "g"(0)           \
+        : "cc");                             \
   } while (0)
 
-#define sqr_add_c(a, i, c0, c1, c2)                         \
-  do {                                                      \
+#define sqr_add_c(a, i, c0, c1, c2)          \
+  do {                                       \
+    BN_ULONG t1, t2;                         \
     asm("mulq %2" : "=a"(t1), "=d"(t2) : "a"(a[i]) : "cc"); \
-    asm("addq %2,%0; adcq %3,%1"                            \
-        : "+r"(c0), "+d"(t2)                                \
-        : "a"(t1), "g"(0)                                   \
-        : "cc");                                            \
-    asm("addq %2,%0; adcq %3,%1"                            \
-        : "+r"(c1), "+r"(c2)                                \
-        : "d"(t2), "g"(0)                                   \
-        : "cc");                                            \
+    asm("addq %3,%0; adcq %4,%1; adcq %5,%2" \
+        : "+r"(c0), "+r"(c1), "+r"(c2)       \
+        : "r"(t1), "r"(t2), "g"(0)           \
+        : "cc");                             \
   } while (0)
 
-#define mul_add_c2(a, b, c0, c1, c2)                                    \
-  do {                                                                  \
+#define mul_add_c2(a, b, c0, c1, c2)         \
+  do {                                       \
+    BN_ULONG t1, t2;                                                    \
     asm("mulq %3" : "=a"(t1), "=d"(t2) : "a"(a), "m"(b) : "cc");        \
-    asm("addq %0,%0; adcq %2,%1" : "+d"(t2), "+r"(c2) : "g"(0) : "cc"); \
-    asm("addq %0,%0; adcq %2,%1" : "+a"(t1), "+d"(t2) : "g"(0) : "cc"); \
-    asm("addq %2,%0; adcq %3,%1"                                        \
-        : "+r"(c0), "+d"(t2)                                            \
-        : "a"(t1), "g"(0)                                               \
-        : "cc");                                                        \
-    asm("addq %2,%0; adcq %3,%1"                                        \
-        : "+r"(c1), "+r"(c2)                                            \
-        : "d"(t2), "g"(0)                                               \
-        : "cc");                                                        \
+    asm("addq %3,%0; adcq %4,%1; adcq %5,%2" \
+        : "+r"(c0), "+r"(c1), "+r"(c2)       \
+        : "r"(t1), "r"(t2), "g"(0)           \
+        : "cc");                             \
+    asm("addq %3,%0; adcq %4,%1; adcq %5,%2" \
+        : "+r"(c0), "+r"(c1), "+r"(c2)       \
+        : "r"(t1), "r"(t2), "g"(0)           \
+        : "cc");                             \
   } while (0)
-#endif
 
 #define sqr_add_c2(a, i, j, c0, c1, c2) mul_add_c2((a)[i], (a)[j], c0, c1, c2)
 
 void bn_mul_comba8(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -468,7 +453,6 @@ void bn_mul_comba8(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
 }
 
 void bn_mul_comba4(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -507,7 +491,6 @@ void bn_mul_comba4(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b) {
 }
 
 void bn_sqr_comba8(BN_ULONG *r, const BN_ULONG *a) {
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;
@@ -582,7 +565,6 @@ void bn_sqr_comba8(BN_ULONG *r, const BN_ULONG *a) {
 }
 
 void bn_sqr_comba4(BN_ULONG *r, const BN_ULONG *a) {
-  BN_ULONG t1, t2;
   BN_ULONG c1, c2, c3;
 
   c1 = 0;

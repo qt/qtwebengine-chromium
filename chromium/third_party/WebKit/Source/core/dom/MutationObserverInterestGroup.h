@@ -41,7 +41,7 @@
 
 namespace blink {
 
-class MutationObserverInterestGroup final : public NoBaseWillBeGarbageCollectedFinalized<MutationObserverInterestGroup> {
+class MutationObserverInterestGroup final : public NoBaseWillBeGarbageCollected<MutationObserverInterestGroup> {
 public:
     static PassOwnPtrWillBeRawPtr<MutationObserverInterestGroup> createForChildListMutation(Node& target)
     {
@@ -71,7 +71,7 @@ public:
     bool isOldValueRequested();
     void enqueueMutationRecord(PassRefPtrWillBeRawPtr<MutationRecord>);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     static PassOwnPtrWillBeRawPtr<MutationObserverInterestGroup> createIfNeeded(Node& target, MutationObserver::MutationType, MutationRecordDeliveryOptions oldValueFlag, const QualifiedName* attributeName = 0);

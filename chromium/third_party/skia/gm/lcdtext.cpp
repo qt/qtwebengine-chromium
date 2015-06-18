@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -12,6 +11,11 @@
 
 #include "gm.h"
 #include "SkCanvas.h"
+#include "SkPicture.h"
+#include "SkPictureImageFilter.h"
+#include "SkPictureRecorder.h"
+#include "SkSurface.h"
+
 
 class LcdTextGM : public skiagm::GM {
 public:
@@ -121,8 +125,6 @@ protected:
 private:
     typedef skiagm::GM INHERITED;
 };
-
-///////////////////////////////////////////////////////////////////////////////
 
 DEF_GM( return new LcdTextGM; )
 DEF_GM( return new LcdTextSizeGM; )

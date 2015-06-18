@@ -23,47 +23,37 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioDestinationNode.h"
 
-#include "platform/audio/AudioUtilities.h"
-#include "platform/audio/DenormalDisabler.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
+#include "platform/audio/AudioUtilities.h"
+#include "platform/audio/DenormalDisabler.h"
 
 namespace blink {
 
-AudioDestinationNode::AudioDestinationNode(AudioContext* context, float sampleRate)
-    : AudioNode(context, sampleRate)
+AudioDestinationHandler::AudioDestinationHandler(AudioNode& node, float sampleRate)
+    : AudioHandler(NodeTypeDestination, node, sampleRate)
     , m_currentSampleFrame(0)
 {
     addInput();
-
-    setNodeType(NodeTypeDestination);
 }
 
-AudioDestinationNode::~AudioDestinationNode()
+AudioDestinationHandler::~AudioDestinationHandler()
 {
     ASSERT(!isInitialized());
 }
 
-void AudioDestinationNode::dispose()
-{
-    uninitialize();
-    AudioNode::dispose();
-}
-
-void AudioDestinationNode::render(AudioBus* sourceBus, AudioBus* destinationBus, size_t numberOfFrames)
+void AudioDestinationHandler::render(AudioBus* sourceBus, AudioBus* destinationBus, size_t numberOfFrames)
 {
     // We don't want denormals slowing down any of the audio processing
     // since they can very seriously hurt performance.
     // This will take care of all AudioNodes because they all process within this scope.
     DenormalDisabler denormalDisabler;
 
-    context()->setAudioThread(currentThread());
+    context()->deferredTaskHandler().setAudioThread(currentThread());
 
     if (!context()->isInitialized()) {
         destinationBus->zero();
@@ -77,25 +67,47 @@ void AudioDestinationNode::render(AudioBus* sourceBus, AudioBus* destinationBus,
     if (sourceBus)
         m_localAudioInputProvider.set(sourceBus);
 
+    ASSERT(numberOfInputs() >= 1);
+    if (numberOfInputs() < 1) {
+        destinationBus->zero();
+        return;
+    }
     // This will cause the node(s) connected to us to process, which in turn will pull on their input(s),
     // all the way backwards through the rendering graph.
-    AudioBus* renderedBus = input(0)->pull(destinationBus, numberOfFrames);
+    AudioBus* renderedBus = input(0).pull(destinationBus, numberOfFrames);
 
-    if (!renderedBus)
+    if (!renderedBus) {
         destinationBus->zero();
-    else if (renderedBus != destinationBus) {
+    } else if (renderedBus != destinationBus) {
         // in-place processing was not possible - so copy
         destinationBus->copyFrom(*renderedBus);
     }
 
     // Process nodes which need a little extra help because they are not connected to anything, but still need to process.
-    context()->processAutomaticPullNodes(numberOfFrames);
+    context()->deferredTaskHandler().processAutomaticPullNodes(numberOfFrames);
 
     // Let the context take care of any business at the end of each render quantum.
     context()->handlePostRenderTasks();
 
     // Advance current sample-frame.
     m_currentSampleFrame += numberOfFrames;
+}
+
+// ----------------------------------------------------------------
+
+AudioDestinationNode::AudioDestinationNode(AudioContext& context)
+    : AudioNode(context)
+{
+}
+
+AudioDestinationHandler& AudioDestinationNode::audioDestinationHandler() const
+{
+    return static_cast<AudioDestinationHandler&>(handler());
+}
+
+unsigned long AudioDestinationNode::maxChannelCount() const
+{
+    return audioDestinationHandler().maxChannelCount();
 }
 
 } // namespace blink

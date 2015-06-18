@@ -6,7 +6,7 @@
 #include "core/html/HTMLRubyElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/rendering/RenderRuby.h"
+#include "core/layout/LayoutRuby.h"
 
 namespace blink {
 
@@ -19,13 +19,13 @@ inline HTMLRubyElement::HTMLRubyElement(Document& document)
 
 DEFINE_NODE_FACTORY(HTMLRubyElement)
 
-RenderObject* HTMLRubyElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLRubyElement::createLayoutObject(const ComputedStyle& style)
 {
-    if (style->display() == INLINE)
-        return new RenderRubyAsInline(this);
-    if (style->display() == BLOCK)
-        return new RenderRubyAsBlock(this);
-    return RenderObject::createObject(this, style);
+    if (style.display() == INLINE)
+        return new LayoutRubyAsInline(this);
+    if (style.display() == BLOCK)
+        return new LayoutRubyAsBlock(this);
+    return LayoutObject::createObject(this, style);
 }
 
 }

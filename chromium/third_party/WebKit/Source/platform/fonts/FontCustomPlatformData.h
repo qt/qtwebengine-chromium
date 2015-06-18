@@ -34,17 +34,10 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/fonts/FontOrientation.h"
-#include "platform/fonts/FontWidthVariant.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
-
-#if OS(MACOSX)
-#include "wtf/RetainPtr.h"
-#include <CoreFoundation/CFBase.h>
-typedef struct CGFont* CGFontRef;
-#endif
 
 class SkTypeface;
 
@@ -59,17 +52,12 @@ public:
     static PassOwnPtr<FontCustomPlatformData> create(SharedBuffer*);
     ~FontCustomPlatformData();
 
-    FontPlatformData fontPlatformData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
+    FontPlatformData fontPlatformData(float size, bool bold, bool italic, FontOrientation = FontOrientation::Horizontal);
 
     static bool supportsFormat(const String&);
 
 private:
-#if OS(MACOSX)
-    explicit FontCustomPlatformData(CGFontRef, PassRefPtr<SkTypeface>);
-    RetainPtr<CGFontRef> m_cgFont;
-#else
     explicit FontCustomPlatformData(PassRefPtr<SkTypeface>);
-#endif
     RefPtr<SkTypeface> m_typeface;
 };
 

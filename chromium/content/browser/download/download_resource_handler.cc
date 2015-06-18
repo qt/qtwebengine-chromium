@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
@@ -47,7 +46,7 @@ void CallStartedCBOnUIThread(
     const DownloadUrlParameters::OnStartedCallback& started_cb,
     DownloadItem* item,
     DownloadInterruptReason interrupt_reason) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (started_cb.is_null())
     return;
@@ -58,10 +57,10 @@ void CallStartedCBOnUIThread(
 // DownloadResourceHandler members from the UI thread.
 static void StartOnUIThread(
     scoped_ptr<DownloadCreateInfo> info,
-    DownloadResourceHandler::DownloadTabInfo* tab_info,
+    scoped_ptr<DownloadResourceHandler::DownloadTabInfo> tab_info,
     scoped_ptr<ByteStreamReader> stream,
     const DownloadUrlParameters::OnStartedCallback& started_cb) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   DownloadManager* download_manager = info->request_handle.GetDownloadManager();
   if (!download_manager) {
@@ -85,7 +84,7 @@ static void StartOnUIThread(
 void InitializeDownloadTabInfoOnUIThread(
     const DownloadRequestHandle& request_handle,
     DownloadResourceHandler::DownloadTabInfo* tab_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   WebContents* web_contents = request_handle.GetWebContents();
   if (web_contents) {
@@ -96,6 +95,9 @@ void InitializeDownloadTabInfoOnUIThread(
     }
   }
 }
+
+void DeleteOnUIThread(
+    scoped_ptr<DownloadResourceHandler::DownloadTabInfo> tab_info) {}
 
 }  // namespace
 
@@ -110,6 +112,7 @@ DownloadResourceHandler::DownloadResourceHandler(
       download_id_(id),
       started_cb_(started_cb),
       save_info_(save_info.Pass()),
+      tab_info_(new DownloadTabInfo()),
       last_buffer_size_(0),
       bytes_read_(0),
       pause_count_(0),
@@ -117,10 +120,12 @@ DownloadResourceHandler::DownloadResourceHandler(
       on_response_started_called_(false) {
   RecordDownloadCount(UNTHROTTLED_COUNT);
 
-  // Do UI thread initialization asap after DownloadResourceHandler creation
-  // since the tab could be navigated before StartOnUIThread gets called.
+  // Do UI thread initialization for tab_info_ asap after
+  // DownloadResourceHandler creation since the tab could be navigated
+  // before StartOnUIThread gets called.  This is safe because deletion
+  // will occur via PostTask() as well, which will serialized behind this
+  // PostTask()
   const ResourceRequestInfoImpl* request_info = GetRequestInfo();
-  tab_info_ = new DownloadTabInfo();
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -129,10 +134,10 @@ DownloadResourceHandler::DownloadResourceHandler(
                                        request_info->GetChildID(),
                                        request_info->GetRouteID(),
                                        request_info->GetRequestID()),
-                 tab_info_));
+                 tab_info_.get()));
   power_save_blocker_ = PowerSaveBlocker::Create(
       PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-      "Download in progress");
+      PowerSaveBlocker::kReasonOther, "Download in progress");
 }
 
 bool DownloadResourceHandler::OnUploadProgress(uint64 position,
@@ -151,12 +156,12 @@ bool DownloadResourceHandler::OnRequestRedirected(
 bool DownloadResourceHandler::OnResponseStarted(
     ResourceResponse* response,
     bool* defer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // There can be only one (call)
   DCHECK(!on_response_started_called_);
   on_response_started_called_ = true;
 
-  VLOG(20) << __FUNCTION__ << "()" << DebugString();
+  DVLOG(20) << __FUNCTION__ << "()" << DebugString();
   download_start_time_ = base::TimeTicks::Now();
 
   // If it's a download, we don't want to poison the cache with it.
@@ -244,14 +249,12 @@ bool DownloadResourceHandler::OnResponseStarted(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&StartOnUIThread,
                  base::Passed(&info),
-                 base::Owned(tab_info_),
+                 base::Passed(&tab_info_),
                  base::Passed(&stream_reader),
                  // Pass to StartOnUIThread so that variable
                  // access is always on IO thread but function
                  // is called on UI thread.
                  started_cb_));
-  // Now owned by the task that was just posted.
-  tab_info_ = NULL;
   // Guaranteed to be called in StartOnUIThread
   started_cb_.Reset();
 
@@ -261,7 +264,7 @@ bool DownloadResourceHandler::OnResponseStarted(
 void DownloadResourceHandler::CallStartedCB(
     DownloadItem* item,
     DownloadInterruptReason interrupt_reason) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (started_cb_.is_null())
     return;
   BrowserThread::PostTask(
@@ -286,7 +289,7 @@ bool DownloadResourceHandler::OnBeforeNetworkStart(const GURL& url,
 bool DownloadResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                          int* buf_size,
                                          int min_size) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(buf && buf_size);
   DCHECK(!read_buffer_.get());
 
@@ -299,7 +302,7 @@ bool DownloadResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
 
 // Pass the buffer to the download file writer.
 bool DownloadResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(read_buffer_.get());
 
   base::TimeTicks now(base::TimeTicks::Now());
@@ -341,12 +344,12 @@ void DownloadResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
     const std::string& security_info,
     bool* defer) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   int response_code = status.is_success() ? request()->GetResponseCode() : 0;
-  VLOG(20) << __FUNCTION__ << "()" << DebugString()
-           << " status.status() = " << status.status()
-           << " status.error() = " << status.error()
-           << " response_code = " << response_code;
+  DVLOG(20) << __FUNCTION__ << "()" << DebugString()
+            << " status.status() = " << status.status()
+            << " status.error() = " << status.error()
+            << " response_code = " << response_code;
 
   net::Error error_code = net::OK;
   if (status.status() == net::URLRequestStatus::FAILED ||
@@ -464,13 +467,13 @@ void DownloadResourceHandler::OnDataDownloaded(int bytes_downloaded) {
 }
 
 void DownloadResourceHandler::PauseRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   ++pause_count_;
 }
 
 void DownloadResourceHandler::ResumeRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_LT(0, pause_count_);
 
   --pause_count_;
@@ -490,7 +493,7 @@ void DownloadResourceHandler::ResumeRequest() {
 }
 
 void DownloadResourceHandler::CancelRequest() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const ResourceRequestInfo* info = GetRequestInfo();
   ResourceDispatcherHostImpl::Get()->CancelRequest(
@@ -518,7 +521,7 @@ std::string DownloadResourceHandler::DebugString() const {
 }
 
 DownloadResourceHandler::~DownloadResourceHandler() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // This won't do anything if the callback was called before.
   // If it goes through, it will likely be because OnWillStart() returned
@@ -531,8 +534,11 @@ DownloadResourceHandler::~DownloadResourceHandler() {
 
   // tab_info_ must be destroyed on UI thread, since
   // InitializeDownloadTabInfoOnUIThread might still be using it.
-  if (tab_info_)
-    BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, tab_info_);
+  if (tab_info_.get()) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&DeleteOnUIThread, base::Passed(&tab_info_)));
+  }
 
   UMA_HISTOGRAM_TIMES("SB2.DownloadDuration",
                       base::TimeTicks::Now() - download_start_time_);

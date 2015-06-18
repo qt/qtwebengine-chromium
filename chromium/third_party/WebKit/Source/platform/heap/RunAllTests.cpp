@@ -34,7 +34,6 @@
 #include "platform/heap/Heap.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/MainThread.h"
-#include "wtf/WTF.h"
 #include <base/bind.h>
 #include <base/test/launcher/unit_test_launcher.h>
 #include <base/test/test_suite.h>
@@ -54,7 +53,7 @@ public:
     }
 };
 
-int runHelper(TestSuite* testSuite)
+int runHelper(base::TestSuite* testSuite)
 {
     BlinkTestEnvironmentScope blinkTestEnvironment;
     blink::ThreadState::current()->registerTraceDOMWrappers(0, 0);
@@ -65,6 +64,6 @@ int runHelper(TestSuite* testSuite)
 
 int main(int argc, char** argv)
 {
-    TestSuite testSuite(argc, argv);
+    base::TestSuite testSuite(argc, argv);
     return base::LaunchUnitTests(argc, argv, base::Bind(runHelper, base::Unretained(&testSuite)));
 }

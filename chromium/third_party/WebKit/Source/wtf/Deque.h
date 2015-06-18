@@ -43,7 +43,7 @@ namespace WTF {
     template<typename T, size_t inlineCapacity, typename Allocator> class DequeConstIterator;
 
     template<typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
-    class Deque : public VectorDestructorBase<Deque<T, inlineCapacity, Allocator>, T, (inlineCapacity > 0), Allocator::isGarbageCollected> {
+    class Deque : public ConditionalDestructor<Deque<T, INLINE_CAPACITY, Allocator>, (INLINE_CAPACITY == 0) && Allocator::isGarbageCollected> {
         WTF_USE_ALLOCATOR(Deque, Allocator);
     public:
         typedef DequeIterator<T, inlineCapacity, Allocator> iterator;
@@ -112,12 +112,13 @@ namespace WTF {
         template<typename Predicate>
         iterator findIf(Predicate&);
 
-        void trace(typename Allocator::Visitor*);
+        typedef int HasInlinedTraceMethodMarker;
+        template<typename VisitorDispatcher> void trace(VisitorDispatcher);
 
     private:
         friend class DequeIteratorBase<T, inlineCapacity, Allocator>;
 
-        typedef VectorBuffer<T, inlineCapacity, Allocator> Buffer;
+        typedef VectorBuffer<T, INLINE_CAPACITY, Allocator> Buffer;
         typedef VectorTypeOperations<T> TypeOperations;
         typedef DequeIteratorBase<T, inlineCapacity, Allocator> IteratorBase;
 
@@ -271,7 +272,7 @@ namespace WTF {
     template<typename T, size_t inlineCapacity, typename Allocator>
     inline void Deque<T, inlineCapacity, Allocator>::finalize()
     {
-        if (!inlineCapacity && !m_buffer.buffer())
+        if (!INLINE_CAPACITY && !m_buffer.buffer())
             return;
         if (!isEmpty() && !(Allocator::isGarbageCollected && m_buffer.hasOutOfLineBuffer()))
             destroyAll();
@@ -330,13 +331,28 @@ namespace WTF {
     {
         size_t oldCapacity = m_buffer.capacity();
         T* oldBuffer = m_buffer.buffer();
-        m_buffer.allocateBuffer(std::max(static_cast<size_t>(16), oldCapacity + oldCapacity / 4 + 1));
-        if (m_start <= m_end)
+        size_t newCapacity = std::max(static_cast<size_t>(16), oldCapacity + oldCapacity / 4 + 1);
+        if (m_buffer.expandBuffer(newCapacity)) {
+            if (m_start <= m_end) {
+                // No adjustments to be done.
+            } else {
+                size_t newStart = m_buffer.capacity() - (oldCapacity - m_start);
+                TypeOperations::moveOverlapping(oldBuffer + m_start, oldBuffer + oldCapacity, m_buffer.buffer() + newStart);
+                m_buffer.clearUnusedSlots(oldBuffer + m_start, oldBuffer + std::min(oldCapacity, newStart));
+                m_start = newStart;
+            }
+            return;
+        }
+        m_buffer.allocateBuffer(newCapacity);
+        if (m_start <= m_end) {
             TypeOperations::move(oldBuffer + m_start, oldBuffer + m_end, m_buffer.buffer() + m_start);
-        else {
+            m_buffer.clearUnusedSlots(oldBuffer + m_start, oldBuffer + m_end);
+        } else {
             TypeOperations::move(oldBuffer, oldBuffer + m_end, m_buffer.buffer());
+            m_buffer.clearUnusedSlots(oldBuffer, oldBuffer + m_end);
             size_t newStart = m_buffer.capacity() - (oldCapacity - m_start);
             TypeOperations::move(oldBuffer + m_start, oldBuffer + oldCapacity, m_buffer.buffer() + newStart);
+            m_buffer.clearUnusedSlots(oldBuffer + m_start, oldBuffer + oldCapacity);
             m_start = newStart;
         }
         m_buffer.deallocateBuffer(oldBuffer);
@@ -517,21 +533,22 @@ namespace WTF {
     // This is only called if the allocator is a HeapAllocator. It is used when
     // visiting during a tracing GC.
     template<typename T, size_t inlineCapacity, typename Allocator>
-    void Deque<T, inlineCapacity, Allocator>::trace(typename Allocator::Visitor* visitor)
+    template<typename VisitorDispatcher>
+    void Deque<T, inlineCapacity, Allocator>::trace(VisitorDispatcher visitor)
     {
         ASSERT(Allocator::isGarbageCollected); // Garbage collector must be enabled.
         const T* bufferBegin = m_buffer.buffer();
         const T* end = bufferBegin + m_end;
-        if (ShouldBeTraced<VectorTraits<T> >::value) {
+        if (ShouldBeTraced<VectorTraits<T>>::value) {
             if (m_start <= m_end) {
                 for (const T* bufferEntry = bufferBegin + m_start; bufferEntry != end; bufferEntry++)
-                    Allocator::template trace<T, VectorTraits<T> >(visitor, *const_cast<T*>(bufferEntry));
+                    Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));
             } else {
                 for (const T* bufferEntry = bufferBegin; bufferEntry != end; bufferEntry++)
-                    Allocator::template trace<T, VectorTraits<T> >(visitor, *const_cast<T*>(bufferEntry));
+                    Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));
                 const T* bufferEnd = m_buffer.buffer() + m_buffer.capacity();
                 for (const T* bufferEntry = bufferBegin + m_start; bufferEntry != bufferEnd; bufferEntry++)
-                    Allocator::template trace<T, VectorTraits<T> >(visitor, *const_cast<T*>(bufferEntry));
+                    Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));
             }
         }
         if (m_buffer.hasOutOfLineBuffer())
@@ -546,7 +563,7 @@ namespace WTF {
 
 #if !ENABLE(OILPAN)
     template<typename T, size_t N>
-    struct NeedsTracing<Deque<T, N> > {
+    struct NeedsTracing<Deque<T, N>> {
         static const bool value = false;
     };
 #endif

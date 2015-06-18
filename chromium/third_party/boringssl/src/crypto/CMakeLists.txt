@@ -1,67 +1,91 @@
 include_directories(. ../include)
 
 if(APPLE)
-	set(PERLASM_STYLE macosx)
-	set(ASM_EXT S)
-	enable_language(ASM)
+  if (${ARCH} STREQUAL "x86")
+    set(PERLASM_FLAGS "-fPIC -DOPENSSL_IA32_SSE2")
+  endif()
+  set(PERLASM_STYLE macosx)
+  set(ASM_EXT S)
+  enable_language(ASM)
 elseif(UNIX)
-	set(PERLASM_STYLE elf)
-	set(ASM_EXT S)
-	enable_language(ASM)
+  if (${ARCH} STREQUAL "aarch64")
+    # The "armx" Perl scripts look for "64" in the style argument
+    # in order to decide whether to generate 32- or 64-bit asm.
+    set(PERLASM_STYLE linux64)
+  elseif (${ARCH} STREQUAL "arm")
+    set(PERLASM_STYLE linux32)
+  elseif (${ARCH} STREQUAL "x86")
+    set(PERLASM_FLAGS "-fPIC -DOPENSSL_IA32_SSE2")
+    set(PERLASM_STYLE elf)
+  else()
+    set(PERLASM_STYLE elf)
+  endif()
+  set(ASM_EXT S)
+  enable_language(ASM)
 else()
-	if (CMAKE_CL_64)
-		message("Using nasm")
-		set(PERLASM_STYLE nasm)
-	else()
-		message("Using win32n")
-		set(PERLASM_STYLE win32n)
-	endif()
+  if (CMAKE_CL_64)
+    message("Using nasm")
+    set(PERLASM_STYLE nasm)
+  else()
+    message("Using win32n")
+    set(PERLASM_STYLE win32n)
+    set(PERLASM_FLAGS "-DOPENSSL_IA32_SSE2")
+  endif()
 
-	# On Windows, we use the NASM output, specifically built with Yasm.
-	set(ASM_EXT asm)
-	enable_language(ASM_NASM)
+  # On Windows, we use the NASM output, specifically built with Yasm.
+  set(ASM_EXT asm)
+  enable_language(ASM_NASM)
 endif()
 
 function(perlasm dest src)
-	add_custom_command(
-		OUTPUT ${dest}
-		COMMAND perl ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${PERLASM_STYLE} ${ARGN} > ${dest}
-		DEPENDS
-		${src}
-		${PROJECT_SOURCE_DIR}/crypto/perlasm/x86_64-xlate.pl
-		${PROJECT_SOURCE_DIR}/crypto/perlasm/x86asm.pl
-		${PROJECT_SOURCE_DIR}/crypto/perlasm/x86gas.pl
-		${PROJECT_SOURCE_DIR}/crypto/perlasm/x86masm.pl
-		${PROJECT_SOURCE_DIR}/crypto/perlasm/x86nasm.pl
-		WORKING_DIRECTORY .
-	)
+  add_custom_command(
+    OUTPUT ${dest}
+    COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${PERLASM_STYLE} ${PERLASM_FLAGS} ${ARGN} > ${dest}
+    DEPENDS
+    ${src}
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/arm-xlate.pl
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86_64-xlate.pl
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86asm.pl
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86gas.pl
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86masm.pl
+    ${PROJECT_SOURCE_DIR}/crypto/perlasm/x86nasm.pl
+    WORKING_DIRECTORY .
+  )
 endfunction()
 
 if (${ARCH} STREQUAL "x86_64")
-	set(
-		CRYPTO_ARCH_SOURCES
+  set(
+    CRYPTO_ARCH_SOURCES
 
-		cpu-x86_64-asm.${ASM_EXT}
-		cpu-intel.c
-	)
+    cpu-x86_64-asm.${ASM_EXT}
+    cpu-intel.c
+  )
 endif()
 
 if (${ARCH} STREQUAL "x86")
-	set(
-		CRYPTO_ARCH_SOURCES
+  set(
+    CRYPTO_ARCH_SOURCES
 
-		cpu-x86-asm.${ASM_EXT}
-		cpu-intel.c
-	)
+    cpu-x86-asm.${ASM_EXT}
+    cpu-intel.c
+  )
 endif()
 
 if (${ARCH} STREQUAL "arm")
-	set(
-		CRYPTO_ARCH_SOURCES
+  set(
+    CRYPTO_ARCH_SOURCES
 
-		cpu-x86-asm.${ASM_EXT}
-		cpu-arm.c
-	)
+    cpu-arm.c
+    cpu-arm-asm.S
+  )
+endif()
+
+if (${ARCH} STREQUAL "aarch64")
+  set(
+    CRYPTO_ARCH_SOURCES
+
+    cpu-arm.c
+  )
 endif()
 
 # Level 0.1 - depends on nothing outside this set.
@@ -104,7 +128,9 @@ add_subdirectory(ecdsa)
 add_subdirectory(hmac)
 
 # Level 3
+add_subdirectory(cmac)
 add_subdirectory(evp)
+add_subdirectory(hkdf)
 add_subdirectory(pem)
 add_subdirectory(x509)
 add_subdirectory(x509v3)
@@ -112,59 +138,84 @@ add_subdirectory(x509v3)
 # Level 4
 add_subdirectory(pkcs8)
 
+# Test support code
+add_subdirectory(test)
+
 add_library(
-	crypto
-	STATIC
+  crypto
 
-	crypto.c
-	crypto_error.c
-	mem.c
-	thread.c
-	ex_data.c
-	ex_data_impl.c
-	time_support.c
-	directory_posix.c
-	directory_win.c
+  crypto.c
+  mem.c
+  thread.c
+  thread_none.c
+  thread_pthread.c
+  thread_win.c
+  ex_data.c
+  time_support.c
+  directory_posix.c
+  directory_win.c
 
-	${CRYPTO_ARCH_SOURCES}
+  ${CRYPTO_ARCH_SOURCES}
 
-	$<TARGET_OBJECTS:stack>
-	$<TARGET_OBJECTS:lhash>
-	$<TARGET_OBJECTS:err>
-	$<TARGET_OBJECTS:base64>
-	$<TARGET_OBJECTS:bytestring>
-	$<TARGET_OBJECTS:sha>
-	$<TARGET_OBJECTS:md4>
-	$<TARGET_OBJECTS:md5>
-	$<TARGET_OBJECTS:digest>
-	$<TARGET_OBJECTS:cipher>
-	$<TARGET_OBJECTS:modes>
-	$<TARGET_OBJECTS:aes>
-	$<TARGET_OBJECTS:des>
-	$<TARGET_OBJECTS:rc4>
-	$<TARGET_OBJECTS:conf>
-	$<TARGET_OBJECTS:chacha>
-	$<TARGET_OBJECTS:poly1305>
-	$<TARGET_OBJECTS:buf>
-	$<TARGET_OBJECTS:bn>
-	$<TARGET_OBJECTS:bio>
-	$<TARGET_OBJECTS:rand>
-	$<TARGET_OBJECTS:obj>
-	$<TARGET_OBJECTS:asn1>
-	$<TARGET_OBJECTS:engine>
-	$<TARGET_OBJECTS:dh>
-	$<TARGET_OBJECTS:dsa>
-	$<TARGET_OBJECTS:rsa>
-	$<TARGET_OBJECTS:ec>
-	$<TARGET_OBJECTS:ecdh>
-	$<TARGET_OBJECTS:ecdsa>
-	$<TARGET_OBJECTS:hmac>
-	$<TARGET_OBJECTS:evp>
-	$<TARGET_OBJECTS:pem>
-	$<TARGET_OBJECTS:x509>
-	$<TARGET_OBJECTS:x509v3>
-	$<TARGET_OBJECTS:pkcs8>
+  $<TARGET_OBJECTS:stack>
+  $<TARGET_OBJECTS:lhash>
+  $<TARGET_OBJECTS:err>
+  $<TARGET_OBJECTS:base64>
+  $<TARGET_OBJECTS:bytestring>
+  $<TARGET_OBJECTS:sha>
+  $<TARGET_OBJECTS:md4>
+  $<TARGET_OBJECTS:md5>
+  $<TARGET_OBJECTS:digest>
+  $<TARGET_OBJECTS:cipher>
+  $<TARGET_OBJECTS:modes>
+  $<TARGET_OBJECTS:aes>
+  $<TARGET_OBJECTS:des>
+  $<TARGET_OBJECTS:rc4>
+  $<TARGET_OBJECTS:conf>
+  $<TARGET_OBJECTS:chacha>
+  $<TARGET_OBJECTS:poly1305>
+  $<TARGET_OBJECTS:buf>
+  $<TARGET_OBJECTS:bn>
+  $<TARGET_OBJECTS:bio>
+  $<TARGET_OBJECTS:rand>
+  $<TARGET_OBJECTS:obj>
+  $<TARGET_OBJECTS:asn1>
+  $<TARGET_OBJECTS:engine>
+  $<TARGET_OBJECTS:dh>
+  $<TARGET_OBJECTS:dsa>
+  $<TARGET_OBJECTS:rsa>
+  $<TARGET_OBJECTS:ec>
+  $<TARGET_OBJECTS:ecdh>
+  $<TARGET_OBJECTS:ecdsa>
+  $<TARGET_OBJECTS:hmac>
+  $<TARGET_OBJECTS:cmac>
+  $<TARGET_OBJECTS:evp>
+  $<TARGET_OBJECTS:hkdf>
+  $<TARGET_OBJECTS:pem>
+  $<TARGET_OBJECTS:x509>
+  $<TARGET_OBJECTS:x509v3>
+  $<TARGET_OBJECTS:pkcs8>
 )
+
+if(NOT MSVC AND NOT ANDROID)
+  target_link_libraries(crypto pthread)
+endif()
+
+add_executable(
+  constant_time_test
+
+  constant_time_test.c
+)
+
+target_link_libraries(constant_time_test crypto)
+
+add_executable(
+  thread_test
+
+  thread_test.c
+)
+
+target_link_libraries(thread_test crypto)
 
 perlasm(cpu-x86_64-asm.${ASM_EXT} cpu-x86_64-asm.pl)
 perlasm(cpu-x86-asm.${ASM_EXT} cpu-x86-asm.pl)

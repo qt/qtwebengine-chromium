@@ -43,22 +43,24 @@
 #include "modules/webmidi/MIDIOutputMap.h"
 #include "modules/webmidi/MIDIPort.h"
 #include "platform/AsyncMethodRunner.h"
-#include <v8.h>
 
 namespace blink {
+
+using PortState = MIDIAccessor::MIDIPortState;
 
 MIDIAccess::MIDIAccess(PassOwnPtr<MIDIAccessor> accessor, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>& ports, ExecutionContext* executionContext)
     : ActiveDOMObject(executionContext)
     , m_accessor(accessor)
     , m_sysexEnabled(sysexEnabled)
+    , m_hasPendingActivity(false)
 {
     m_accessor->setClient(this);
     for (size_t i = 0; i < ports.size(); ++i) {
         const MIDIAccessInitializer::PortDescriptor& port = ports[i];
-        if (port.type == MIDIPort::MIDIPortTypeInput) {
-            m_inputs.append(MIDIInput::create(this, port.id, port.manufacturer, port.name, port.version, port.isActive));
+        if (port.type == MIDIPort::TypeInput) {
+            m_inputs.append(MIDIInput::create(this, port.id, port.manufacturer, port.name, port.version, port.state));
         } else {
-            m_outputs.append(MIDIOutput::create(this, m_outputs.size(), port.id, port.manufacturer, port.name, port.version, port.isActive));
+            m_outputs.append(MIDIOutput::create(this, m_outputs.size(), port.id, port.manufacturer, port.name, port.version, port.state));
         }
     }
 }
@@ -67,18 +69,34 @@ MIDIAccess::~MIDIAccess()
 {
 }
 
+EventListener* MIDIAccess::onstatechange()
+{
+    return getAttributeEventListener(EventTypeNames::statechange);
+}
+
+void MIDIAccess::setOnstatechange(PassRefPtr<EventListener> listener)
+{
+    m_hasPendingActivity = listener;
+    setAttributeEventListener(EventTypeNames::statechange, listener);
+}
+
+bool MIDIAccess::hasPendingActivity() const
+{
+    return m_hasPendingActivity && !executionContext()->activeDOMObjectsAreStopped();
+}
+
 MIDIInputMap* MIDIAccess::inputs() const
 {
-    HeapHashMap<String, Member<MIDIInput> > inputs;
-    size_t inactiveCount = 0;
+    HeapVector<Member<MIDIInput>> inputs;
+    HashSet<String> ids;
     for (size_t i = 0; i < m_inputs.size(); ++i) {
         MIDIInput* input = m_inputs[i];
-        if (input->isActive())
-            inputs.add(input->id(), input);
-        else
-            inactiveCount++;
+        if (input->getState() != PortState::MIDIPortStateDisconnected) {
+            inputs.append(input);
+            ids.add(input->id());
+        }
     }
-    if ((inputs.size() + inactiveCount) != m_inputs.size()) {
+    if (inputs.size() != ids.size()) {
         // There is id duplication that violates the spec.
         inputs.clear();
     }
@@ -87,47 +105,55 @@ MIDIInputMap* MIDIAccess::inputs() const
 
 MIDIOutputMap* MIDIAccess::outputs() const
 {
-    HeapHashMap<String, Member<MIDIOutput> > outputs;
-    size_t inactiveCount = 0;
+    HeapVector<Member<MIDIOutput>> outputs;
+    HashSet<String> ids;
     for (size_t i = 0; i < m_outputs.size(); ++i) {
         MIDIOutput* output = m_outputs[i];
-        if (output->isActive())
-            outputs.add(output->id(), output);
-        else
-            inactiveCount++;
+        if (output->getState() != PortState::MIDIPortStateDisconnected) {
+            outputs.append(output);
+            ids.add(output->id());
+        }
     }
-    if ((outputs.size() + inactiveCount) != m_outputs.size()) {
+    if (outputs.size() != ids.size()) {
         // There is id duplication that violates the spec.
         outputs.clear();
     }
     return new MIDIOutputMap(outputs);
 }
 
-void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(isMainThread());
-    m_inputs.append(MIDIInput::create(this, id, manufacturer, name, version, isActive));
+    MIDIInput* port = MIDIInput::create(this, id, manufacturer, name, version, state);
+    m_inputs.append(port);
+    dispatchEvent(MIDIConnectionEvent::create(port));
 }
 
-void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(isMainThread());
     unsigned portIndex = m_outputs.size();
-    m_outputs.append(MIDIOutput::create(this, portIndex, id, manufacturer, name, version, isActive));
+    MIDIOutput* port = MIDIOutput::create(this, portIndex, id, manufacturer, name, version, state);
+    m_outputs.append(port);
+    dispatchEvent(MIDIConnectionEvent::create(port));
 }
 
-void MIDIAccess::didSetInputPortState(unsigned portIndex, bool isActive)
+void MIDIAccess::didSetInputPortState(unsigned portIndex, PortState state)
 {
     ASSERT(isMainThread());
-    if (portIndex < m_inputs.size())
-        m_inputs[portIndex]->setActiveState(isActive);
+    if (portIndex >= m_inputs.size())
+        return;
+
+    m_inputs[portIndex]->setState(state);
 }
 
-void MIDIAccess::didSetOutputPortState(unsigned portIndex, bool isActive)
+void MIDIAccess::didSetOutputPortState(unsigned portIndex, PortState state)
 {
     ASSERT(isMainThread());
-    if (portIndex < m_outputs.size())
-        m_outputs[portIndex]->setActiveState(isActive);
+    if (portIndex >= m_outputs.size())
+        return;
+
+    m_outputs[portIndex]->setState(state);
 }
 
 void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
@@ -142,7 +168,7 @@ void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* dat
     Document* document = toDocument(executionContext());
     ASSERT(document);
 
-    double timeStampInMilliseconds = 1000 * document->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(timeStamp);
+    double timeStampInMilliseconds = 1000 * document->loader()->timing().monotonicTimeToZeroBasedDocumentTime(timeStamp);
 
     m_inputs[portIndex]->didReceiveMIDIData(portIndex, data, length, timeStampInMilliseconds);
 }
@@ -162,7 +188,7 @@ void MIDIAccess::sendMIDIData(unsigned portIndex, const unsigned char* data, siz
     } else {
         Document* document = toDocument(executionContext());
         ASSERT(document);
-        double documentStartTime = document->loader()->timing()->referenceMonotonicTime();
+        double documentStartTime = document->loader()->timing().referenceMonotonicTime();
         timeStamp = documentStartTime + 0.001 * timeStampInMilliseconds;
     }
 
@@ -174,11 +200,12 @@ void MIDIAccess::stop()
     m_accessor.clear();
 }
 
-void MIDIAccess::trace(Visitor* visitor)
+DEFINE_TRACE(MIDIAccess)
 {
     visitor->trace(m_inputs);
     visitor->trace(m_outputs);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<MIDIAccess>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

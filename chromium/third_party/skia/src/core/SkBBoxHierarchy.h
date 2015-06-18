@@ -24,14 +24,18 @@ public:
 
     /**
      * Insert N bounding boxes into the hierarchy.
-     * The SkBBoxHierarchy may take ownership of boundsArray by calling detach().
      */
-    virtual void insert(SkAutoTMalloc<SkRect>* boundsArray, int N) = 0;
+    virtual void insert(const SkRect[], int N) = 0;
 
     /**
      * Populate results with the indices of bounding boxes interesecting that query.
      */
     virtual void search(const SkRect& query, SkTDArray<unsigned>* results) const = 0;
+
+    virtual size_t bytesUsed() const = 0;
+
+    // Get the root bound.
+    virtual SkRect getRootBound() const = 0;
 
     SK_DECLARE_INST_COUNT(SkBBoxHierarchy)
 private:

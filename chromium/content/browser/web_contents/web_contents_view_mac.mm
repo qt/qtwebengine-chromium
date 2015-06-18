@@ -43,16 +43,16 @@ using content::WebContentsViewMac;
 
 // Ensure that the blink::WebDragOperation enum values stay in sync with
 // NSDragOperation constants, since the code below static_casts between 'em.
-#define COMPILE_ASSERT_MATCHING_ENUM(name) \
-  COMPILE_ASSERT(int(NS##name) == int(blink::Web##name), enum_mismatch_##name)
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationNone);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationCopy);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationLink);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationGeneric);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationPrivate);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationMove);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationDelete);
-COMPILE_ASSERT_MATCHING_ENUM(DragOperationEvery);
+#define STATIC_ASSERT_MATCHING_ENUM(name) \
+  static_assert(int(NS##name) == int(blink::Web##name), "enum mismatch: " #name)
+STATIC_ASSERT_MATCHING_ENUM(DragOperationNone);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationCopy);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationLink);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationGeneric);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationPrivate);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationMove);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationDelete);
+STATIC_ASSERT_MATCHING_ENUM(DragOperationEvery);
 
 @interface WebContentsViewCocoa (Private)
 - (id)initWithWebContentsViewMac:(WebContentsViewMac*)w;
@@ -108,7 +108,8 @@ gfx::NativeView WebContentsViewMac::GetContentNativeView() const {
 }
 
 gfx::NativeWindow WebContentsViewMac::GetTopLevelNativeWindow() const {
-  return [cocoa_view_.get() window];
+  NSWindow* window = [cocoa_view_.get() window];
+  return window ? window : delegate_->GetNativeWindow();
 }
 
 void WebContentsViewMac::GetContainerBounds(gfx::Rect* out) const {
@@ -422,6 +423,14 @@ void WebContentsViewMac::CloseTab() {
   [super dealloc];
 }
 
+- (BOOL)allowsVibrancy {
+  // Returning YES will allow rendering this view with vibrancy effect if it is
+  // incorporated into a view hierarchy that uses vibrancy, it will have no
+  // effect otherwise.
+  // For details see Apple documentation on NSView and NSVisualEffectView.
+  return YES;
+}
+
 // Registers for the view for the appropriate drag types.
 - (void)registerDragTypes {
   NSArray* types = [NSArray arrayWithObjects:
@@ -476,6 +485,13 @@ void WebContentsViewMac::CloseTab() {
   // saves us the effort of overriding this method in every possible
   // subview.
   return mouseDownCanMoveWindow_;
+}
+
+- (void)setOpaque:(BOOL)opaque {
+  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
+      webContentsView_->web_contents()->GetRenderWidgetHostView());
+  DCHECK(view);
+  [view->cocoa_view() setOpaque:opaque];
 }
 
 - (void)pasteboard:(NSPasteboard*)sender provideDataForType:(NSString*)type {
@@ -578,8 +594,8 @@ void WebContentsViewMac::CloseTab() {
     return;
 
   NSSelectionDirection direction =
-      [[[notification userInfo] objectForKey:kSelectionDirection]
-        unsignedIntegerValue];
+      static_cast<NSSelectionDirection>([[[notification userInfo]
+          objectForKey:kSelectionDirection] unsignedIntegerValue]);
   if (direction == NSDirectSelection)
     return;
 
@@ -605,12 +621,6 @@ void WebContentsViewMac::CloseTab() {
   // Occlusion notification APIs are new in Mavericks.
   bool supportsOcclusionAPIs = base::mac::IsOSMavericksOrLater();
 
-  // Use of occlusion APIs is causing bugs:
-  // http://crbug.com/430968: focus set incorrectly.
-  // http://crbug.com/431272: flashes of incorrect content.
-  // http://crbug.com/310374: white flashes (comment 22).
-  supportsOcclusionAPIs = false;
-
   if (supportsOcclusionAPIs) {
     if (oldWindow) {
       [notificationCenter
@@ -632,13 +642,11 @@ void WebContentsViewMac::CloseTab() {
   DCHECK(base::mac::IsOSMavericksOrLater());
   NSWindow* window = [notification object];
   WebContentsImpl* webContents = [self webContents];
-  if (window && webContents) {
+  if (window && webContents && !webContents->IsBeingDestroyed()) {
     if ([window occlusionState] & NSWindowOcclusionStateVisible) {
-      if (!webContents->should_normally_be_visible())
-        webContents->WasShown();
+      webContents->WasUnOccluded();
     } else {
-      if (webContents->should_normally_be_visible())
-        webContents->WasHidden();
+      webContents->WasOccluded();
     }
   }
 }

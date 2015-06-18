@@ -20,7 +20,7 @@
           <label>
             <input type="radio" name="cookies" value="session">
             <span>
-              <span i18n-content="cookies_session_only"></span>
+              <span i18n-content="cookiesSession"></span>
               <span class="controlled-setting-indicator"
                   content-setting="cookies" value="session"></span>
             </span>
@@ -40,7 +40,7 @@
           <label>
             <input pref="profile.block_third_party_cookies" type="checkbox">
             <span>
-              <span i18n-content="cookies_block_3rd_party"></span>
+              <span i18n-content="cookiesBlock3rdParty"></span>
               <span class="controlled-setting-indicator"
                   pref="profile.block_third_party_cookies"></span>
           </label>
@@ -51,9 +51,9 @@
           <label>
             <input id="clear-cookies-on-exit"
                 pref="profile.clear_site_data_on_exit" type="checkbox">
-            <span i18n-content="cookies_lso_clear_when_close"
+            <span i18n-content="cookiesLsoClearWhenClose"
                 class="clear-plugin-lso-data-enabled"></span>
-            <span i18n-content="cookies_clear_when_close"
+            <span i18n-content="cookiesClearWhenClose"
                 class="clear-plugin-lso-data-disabled"></span>
           </label>
         </div>
@@ -61,7 +61,7 @@
           <button class="exceptions-list-button" contentType="cookies"
               i18n-content="manageExceptions"></button>
           <button id="show-cookies-button"
-              i18n-content="cookies_show_cookies"></button>
+              i18n-content="cookiesShowCookies"></button>
         </div>
      </div>
       <div class="experimental-website-settings" hidden>
@@ -70,7 +70,7 @@
           <button class="website-settings-permission-button"
               contentType="cookies" i18n-content="websitesManage"></button>
           <button id="show-cookies-button"
-              i18n-content="cookies_show_cookies"></button>
+              i18n-content="cookiesShowCookies"></button>
         </div>
       </div>
     </section>
@@ -150,35 +150,36 @@
     </section>
     <!-- Handlers settings -->
     <section id="handlers-section">
-      <h3 i18n-content="handlers_tab_label"></h3>
+      <h3 i18n-content="handlersTabLabel"></h3>
       <div>
         <div class="radio">
           <label>
             <input type="radio" name="handlers" value="allow"
                 class="handler-radio">
-            <span i18n-content="handlers_allow"></span>
+            <span i18n-content="handlersAllow"></span>
           </label>
         </div>
         <div class="radio">
           <label>
             <input type="radio" name="handlers" value="block"
                 class="handler-radio">
-            <span i18n-content="handlers_block"></span>
+            <span i18n-content="handlersBlock"></span>
           </label>
         </div>
         <div class="settings-row">
           <button id="manage-handlers-button" contentType="handlers"
-              i18n-content="manage_handlers"></button>
+              i18n-content="manageHandlers"></button>
         </div>
       </div>
     </section>
-    <!-- Plug-ins filter -->
+    <!-- Plugins filter -->
     <section>
       <h3 i18n-content="pluginsTabLabel"></h3>
       <div class="replace-with-website-settings">
         <div class="radio controlled-setting-with-label">
           <label>
-            <input type="radio" name="plugins" value="allow">
+            <input id="plugins-allow-radio" type="radio" name="plugins"
+                   value="allow">
             <span>
               <span i18n-content="pluginsAllow"></span>
               <span class="controlled-setting-indicator"
@@ -186,13 +187,13 @@
             </span>
           </label>
         </div>
-        <div id="click_to_play" class="radio controlled-setting-with-label">
+        <div class="radio controlled-setting-with-label">
           <label>
-            <input type="radio" name="plugins" value="ask">
+            <input type="radio" name="plugins" value="detect">
             <span>
-              <span i18n-content="pluginsAsk"></span>
+              <span i18n-content="pluginsDetect"></span>
               <span class="controlled-setting-indicator"
-                  content-setting="plugins" value="ask"></span>
+                  content-setting="plugins" value="detect"></span>
             </span>
           </label>
         </div>
@@ -211,7 +212,7 @@
               i18n-content="manageExceptions"></button>
         </div>
         <div id="disable-plugins-container">
-          <a href="chrome://plugins" i18n-content="disableIndividualPlugins"
+          <a href="chrome://plugins" i18n-content="manageIndividualPlugins"
               target="_blank"></a>
         </div>
       </div>
@@ -386,19 +387,31 @@
         <div class="radio">
           <label>
             <input type="radio" name="mouselock" value="allow">
-            <span i18n-content="mouselockAllow"></span>
+            <span>
+              <span i18n-content="mouselockAllow"></span>
+              <span class="controlled-setting-indicator"
+                  content-setting="mouselock" value="allow"></span>
+            </span>
           </label>
         </div>
         <div class="radio">
           <label>
             <input type="radio" name="mouselock" value="ask">
-            <span i18n-content="mouselockAsk"></span>
+            <span>
+              <span i18n-content="mouselockAsk"></span>
+              <span class="controlled-setting-indicator"
+                  content-setting="mouselock" value="ask"></span>
+            </span>
           </label>
         </div>
         <div class="radio">
           <label>
             <input type="radio" name="mouselock" value="block">
-            <span i18n-content="mouselockBlock"></span>
+            <span>
+              <span i18n-content="mouselockBlock"></span>
+              <span class="controlled-setting-indicator"
+                  content-setting="mouselock" value="block"></span>
+            </span>
           </label>
         </div>
         <div class="settings-row">
@@ -441,12 +454,16 @@
       </div>
       <div>
         <div class="media-device-control">
-          <span i18n-content="mediaSelectMicLabel"></span>
-          <select id="media-select-mic" class="weakrtl"></select>
+          <span id="media-select-mic-label" i18n-content="mediaSelectMicLabel">
+          </span>
+          <select id="media-select-mic" class="weakrtl"
+                  aria-labelledby="media-select-mic-label"></select>
         </div>
         <div class="media-device-control">
-          <span i18n-content="mediaSelectCameraLabel"></span>
-          <select id="media-select-camera" class="weakrtl"></select>
+          <span id="media-select-camera-label"
+                i18n-content="mediaSelectCameraLabel"></span>
+          <select id="media-select-camera" class="weakrtl"
+                  aria-labelledby="media-select-camera-label"></select>
         </div>
         <div class="radio controlled-setting-with-label">
           <label>
@@ -495,19 +512,31 @@
         <div class="radio">
           <label>
             <input type="radio" name="ppapi-broker" value="allow">
-            <span i18n-content="ppapiBrokerAllow"></span>
+            <span>
+              <span i18n-content="ppapiBrokerAllow"></span>
+              <span class="controlled-setting-indicator"
+                  content-setting="ppapi-broker" value="allow"></span>
+            </span>
           </label>
         </div>
         <div class="radio">
           <label>
             <input type="radio" name="ppapi-broker" value="ask">
-            <span i18n-content="ppapiBrokerAsk"></span>
+            <span>
+              <span i18n-content="ppapiBrokerAsk"></span>
+              <span class="controlled-setting-indicator"
+                  content-setting="ppapi-broker" value="ask"></span>
+            </span>
           </label>
         </div>
         <div class="radio">
           <label>
             <input type="radio" name="ppapi-broker" value="block">
-            <span i18n-content="ppapiBrokerBlock"></span>
+            <span>
+              <span i18n-content="ppapiBrokerBlock"></span>
+              <span class="controlled-setting-indicator"
+                  content-setting="ppapi-broker" value="block"></span>
+            </span>
           </label>
         </div>
         <div class="settings-row">
@@ -571,8 +600,8 @@
       </div>
     </section>
     <!-- MIDI system exclusive messages filter -->
-    <section id="experimental-web-midi-settings" hidden="true">
-      <h3 i18n-content="midi-sysex_header"></h3>
+    <section>
+      <h3 i18n-content="midiSysexHeader"></h3>
       <div>
         <div class="radio">
           <label>
@@ -600,7 +629,7 @@
     </section>
     <!-- Push messaging filter -->
     <section id="experimental-push-messaging-settings" hidden="true">
-      <h3 i18n-content="push-messaging_header"></h3>
+      <h3 i18n-content="pushMessagingHeader"></h3>
       <div>
         <div class="radio">
           <label>
@@ -628,7 +657,7 @@
     </section>
     <!-- Page zoom levels -->
     <section id="page-zoom-levels">
-      <h3 i18n-content="zoomlevels_header"></h3>
+      <h3 i18n-content="zoomlevelsHeader"></h3>
       <div>
         <div class="settings-row">
           <button class="exceptions-list-button" contentType="zoomlevels"

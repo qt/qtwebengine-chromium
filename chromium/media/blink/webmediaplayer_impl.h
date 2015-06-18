@@ -14,23 +14,25 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
-#include "media/base/audio_renderer_sink.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline.h"
-#include "media/base/renderer.h"
+#include "media/base/renderer_factory.h"
 #include "media/base/text_track.h"
 #include "media/blink/buffered_data_source.h"
 #include "media/blink/buffered_data_source_host_impl.h"
+#include "media/blink/encrypted_media_player_support.h"
+#include "media/blink/skcanvas_video_renderer.h"
 #include "media/blink/video_frame_compositor.h"
-#include "media/filters/skcanvas_video_renderer.h"
+#include "media/blink/webmediaplayer_params.h"
 #include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebContentDecryptionModuleResult.h"
-#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayer.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "url/gurl.h"
 
 namespace blink {
+class WebGraphicsContext3D;
 class WebLocalFrame;
 }
 
@@ -46,13 +48,11 @@ namespace media {
 
 class AudioHardwareConfig;
 class ChunkDemuxer;
-class EncryptedMediaPlayerSupport;
 class GpuVideoAcceleratorFactories;
 class MediaLog;
 class VideoFrameCompositor;
 class WebAudioSourceProviderImpl;
 class WebMediaPlayerDelegate;
-class WebMediaPlayerParams;
 class WebTextTrackImpl;
 
 // The canonical implementation of blink::WebMediaPlayer that's backed by
@@ -70,7 +70,8 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   WebMediaPlayerImpl(blink::WebLocalFrame* frame,
                      blink::WebMediaPlayerClient* client,
                      base::WeakPtr<WebMediaPlayerDelegate> delegate,
-                     scoped_ptr<Renderer> renderer,
+                     scoped_ptr<RendererFactory> renderer_factory,
+                     CdmFactory* cdm_factory,
                      const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
@@ -127,10 +128,18 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   virtual unsigned audioDecodedByteCount() const;
   virtual unsigned videoDecodedByteCount() const;
 
+  // TODO(dshwang): remove |level|. crbug.com/443151
   virtual bool copyVideoTextureToPlatformTexture(
       blink::WebGraphicsContext3D* web_graphics_context,
       unsigned int texture,
       unsigned int level,
+      unsigned int internal_format,
+      unsigned int type,
+      bool premultiply_alpha,
+      bool flip_y);
+  virtual bool copyVideoTextureToPlatformTexture(
+      blink::WebGraphicsContext3D* web_graphics_context,
+      unsigned int texture,
       unsigned int internal_format,
       unsigned int type,
       bool premultiply_alpha,
@@ -154,10 +163,6 @@ class MEDIA_EXPORT WebMediaPlayerImpl
       const blink::WebString& key_system,
       const blink::WebString& session_id);
 
-  // TODO(jrummell): Remove this method once Blink updated to use the other
-  // method.
-  virtual void setContentDecryptionModule(
-      blink::WebContentDecryptionModule* cdm);
   virtual void setContentDecryptionModule(
       blink::WebContentDecryptionModule* cdm,
       blink::WebContentDecryptionModuleResult result);
@@ -211,6 +216,26 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // compositor can return the frame.
   scoped_refptr<VideoFrame> GetCurrentFrameFromCompositor();
 
+  // Called when the demuxer encounters encrypted streams.
+  void OnEncryptedMediaInitData(EmeInitDataType init_data_type,
+                                const std::vector<uint8>& init_data);
+
+  // Called when a decoder detects that the key needed to decrypt the stream
+  // is not available.
+  void OnWaitingForDecryptionKey();
+
+  // Sets |cdm_context| on the pipeline and fires |cdm_attached_cb| when done.
+  // Parameter order is reversed for easy binding.
+  void SetCdm(const CdmAttachedCB& cdm_attached_cb, CdmContext* cdm_context);
+
+  // Called when a CDM has been attached to the |pipeline_|.
+  void OnCdmAttached(blink::WebContentDecryptionModuleResult result,
+                     bool success);
+
+  // Updates |paused_time_| to the current media time with consideration for the
+  // |ended_| state by clamping current time to duration upon |ended_|.
+  void UpdatePausedTime();
+
   blink::WebLocalFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
@@ -249,10 +274,11 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // time we pause and then return that value in currentTime().  Otherwise our
   // clock can creep forward a little bit while the asynchronous
   // SetPlaybackRate(0) is being executed.
-  bool paused_;
-  bool seeking_;
   double playback_rate_;
+  bool paused_;
   base::TimeDelta paused_time_;
+  bool seeking_;
+  base::TimeDelta seek_time_;  // Meaningless when |seeking_| is false.
 
   // TODO(scherkus): Replace with an explicit ended signal to HTMLMediaElement,
   // see http://crbug.com/409280
@@ -261,7 +287,8 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // Seek gets pending if another seek is in progress. Only last pending seek
   // will have effect.
   bool pending_seek_;
-  double pending_seek_seconds_;
+  // |pending_seek_time_| is meaningless when |pending_seek_| is false.
+  base::TimeDelta pending_seek_time_;
 
   // Tracks whether to issue time changed notifications during buffering state
   // changes.
@@ -271,10 +298,8 @@ class MEDIA_EXPORT WebMediaPlayerImpl
 
   base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
-  base::Callback<void(const base::Closure&)> defer_load_cb_;
-
-  // Factories for supporting video accelerators. May be null.
-  scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories_;
+  WebMediaPlayerParams::DeferLoadCB defer_load_cb_;
+  WebMediaPlayerParams::Context3DCB context_3d_cb_;
 
   // Routes audio playback to either AudioRendererSink or WebAudio.
   scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;
@@ -302,14 +327,9 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // playback.
   scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
 
-  // Text track objects get a unique index value when they're created.
-  int text_track_index_;
+  EncryptedMediaPlayerSupport encrypted_media_support_;
 
-  scoped_ptr<EncryptedMediaPlayerSupport> encrypted_media_support_;
-
-  const AudioHardwareConfig& audio_hardware_config_;
-
-  scoped_ptr<Renderer> renderer_;
+  scoped_ptr<RendererFactory> renderer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

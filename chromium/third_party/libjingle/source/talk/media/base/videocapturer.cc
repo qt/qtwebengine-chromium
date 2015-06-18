@@ -1,37 +1,37 @@
-// libjingle
-// Copyright 2010 Google Inc.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. The name of the author may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
-// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-// EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-// OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-// WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-// OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-// ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
+/*
+ * libjingle
+ * Copyright 2010 Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 // Implementation file of class VideoCapturer.
 
 #include "talk/media/base/videocapturer.h"
 
 #include <algorithm>
 
-#if !defined(DISABLE_YUV)
 #include "libyuv/scale_argb.h"
-#endif
 #include "talk/media/base/videoframefactory.h"
 #include "talk/media/base/videoprocessor.h"
 #include "webrtc/base/common.h"
@@ -96,6 +96,11 @@ bool CapturedFrame::GetDataSize(uint32* size) const {
   return true;
 }
 
+webrtc::VideoRotation CapturedFrame::GetRotation() const {
+  ASSERT(rotation == 0 || rotation == 90 || rotation == 180 || rotation == 270);
+  return static_cast<webrtc::VideoRotation>(rotation);
+}
+
 /////////////////////////////////////////////////////////////////////
 // Implementation of class VideoCapturer
 /////////////////////////////////////////////////////////////////////
@@ -103,7 +108,8 @@ VideoCapturer::VideoCapturer()
     : thread_(rtc::Thread::Current()),
       adapt_frame_drops_data_(kMaxAccumulatorSize),
       effect_frame_drops_data_(kMaxAccumulatorSize),
-      frame_time_data_(kMaxAccumulatorSize) {
+      frame_time_data_(kMaxAccumulatorSize),
+      apply_rotation_(true) {
   Construct();
 }
 
@@ -111,7 +117,8 @@ VideoCapturer::VideoCapturer(rtc::Thread* thread)
     : thread_(thread),
       adapt_frame_drops_data_(kMaxAccumulatorSize),
       effect_frame_drops_data_(kMaxAccumulatorSize),
-      frame_time_data_(kMaxAccumulatorSize) {
+      frame_time_data_(kMaxAccumulatorSize),
+      apply_rotation_(true) {
   Construct();
 }
 
@@ -247,6 +254,16 @@ bool VideoCapturer::MuteToBlackThenPause(bool muted) {
   return Pause(false);
 }
 
+// Note that the last caller decides whether rotation should be applied if there
+// are multiple send streams using the same camera.
+bool VideoCapturer::SetApplyRotation(bool enable) {
+  apply_rotation_ = enable;
+  if (frame_factory_) {
+    frame_factory_->SetApplyRotation(apply_rotation_);
+  }
+  return true;
+}
+
 void VideoCapturer::SetSupportedFormats(
     const std::vector<VideoFormat>& formats) {
   supported_formats_ = formats;
@@ -333,6 +350,13 @@ std::string VideoCapturer::ToString(const CapturedFrame* captured_frame) const {
   return ss.str();
 }
 
+void VideoCapturer::set_frame_factory(VideoFrameFactory* frame_factory) {
+  frame_factory_.reset(frame_factory);
+  if (frame_factory) {
+    frame_factory->SetApplyRotation(apply_rotation_);
+  }
+}
+
 void VideoCapturer::GetStats(VariableInfo<int>* adapt_drops_stats,
                              VariableInfo<int>* effect_drops_stats,
                              VariableInfo<double>* frame_time_stats,
@@ -361,7 +385,10 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
   if (SignalVideoFrame.is_empty()) {
     return;
   }
-#if !defined(DISABLE_YUV)
+
+  // Use a temporary buffer to scale
+  rtc::scoped_ptr<uint8[]> scale_buffer;
+
   if (IsScreencast()) {
     int scaled_width, scaled_height;
     if (screencast_max_pixels_ > 0) {
@@ -388,6 +415,8 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
       }
       CapturedFrame* modified_frame =
           const_cast<CapturedFrame*>(captured_frame);
+      const int modified_frame_size = scaled_width * scaled_height * 4;
+      scale_buffer.reset(new uint8[modified_frame_size]);
       // Compute new width such that width * height is less than maximum but
       // maintains original captured frame aspect ratio.
       // Round down width to multiple of 4 so odd width won't round up beyond
@@ -396,12 +425,13 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
       libyuv::ARGBScale(reinterpret_cast<const uint8*>(captured_frame->data),
                         captured_frame->width * 4, captured_frame->width,
                         captured_frame->height,
-                        reinterpret_cast<uint8*>(modified_frame->data),
+                        scale_buffer.get(),
                         scaled_width * 4, scaled_width, scaled_height,
                         libyuv::kFilterBilinear);
       modified_frame->width = scaled_width;
       modified_frame->height = scaled_height;
       modified_frame->data_size = scaled_width * 4 * scaled_height;
+      modified_frame->data = scale_buffer.get();
     }
   }
 
@@ -474,7 +504,6 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
     modified_frame->data_size = modified_frame_size;
     modified_frame->data = temp_buffer_data;
   }
-#endif  // !DISABLE_YUV
 
   // Size to crop captured frame to.  This adjusts the captured frames
   // aspect ratio to match the final view aspect ratio, considering pixel
@@ -482,8 +511,8 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
   // adapter to better match ratio_w_ x ratio_h_.
   // Note that abs() of frame height is passed in, because source may be
   // inverted, but output will be positive.
-  int desired_width = captured_frame->width;
-  int desired_height = captured_frame->height;
+  int cropped_width = captured_frame->width;
+  int cropped_height = captured_frame->height;
 
   // TODO(fbarchard): Improve logic to pad or crop.
   // MJPG can crop vertically, but not horizontally.  This logic disables crop.
@@ -503,7 +532,21 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
     ComputeCrop(ratio_w_, ratio_h_, captured_frame->width,
                 abs(captured_frame->height), captured_frame->pixel_width,
                 captured_frame->pixel_height, captured_frame->rotation,
-                &desired_width, &desired_height);
+                &cropped_width, &cropped_height);
+  }
+
+  int adapted_width = cropped_width;
+  int adapted_height = cropped_height;
+  if (enable_video_adapter_ && !IsScreencast()) {
+    const VideoFormat adapted_format =
+        video_adapter_.AdaptFrameResolution(cropped_width, cropped_height);
+    if (adapted_format.IsSize0x0()) {
+      // VideoAdapter dropped the frame.
+      ++adapt_frame_drops_;
+      return;
+    }
+    adapted_width = adapted_format.width;
+    adapted_height = adapted_format.height;
   }
 
   if (!frame_factory_) {
@@ -511,30 +554,20 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
     return;
   }
 
-  rtc::scoped_ptr<VideoFrame> i420_frame(
-      frame_factory_->CreateAliasedFrame(
-          captured_frame, desired_width, desired_height));
-  if (!i420_frame) {
+  rtc::scoped_ptr<VideoFrame> adapted_frame(
+      frame_factory_->CreateAliasedFrame(captured_frame,
+                                         cropped_width, cropped_height,
+                                         adapted_width, adapted_height));
+
+  if (!adapted_frame) {
     // TODO(fbarchard): LOG more information about captured frame attributes.
     LOG(LS_ERROR) << "Couldn't convert to I420! "
                   << "From " << ToString(captured_frame) << " To "
-                  << desired_width << " x " << desired_height;
+                  << cropped_width << " x " << cropped_height;
     return;
   }
 
-  VideoFrame* adapted_frame = i420_frame.get();
-  if (enable_video_adapter_ && !IsScreencast()) {
-    VideoFrame* out_frame = NULL;
-    video_adapter_.AdaptFrame(adapted_frame, &out_frame);
-    if (!out_frame) {
-      // VideoAdapter dropped the frame.
-      ++adapt_frame_drops_;
-      return;
-    }
-    adapted_frame = out_frame;
-  }
-
-  if (!muted_ && !ApplyProcessors(adapted_frame)) {
+  if (!muted_ && !ApplyProcessors(adapted_frame.get())) {
     // Processor dropped the frame.
     ++effect_frame_drops_;
     return;
@@ -543,7 +576,7 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
     // TODO(pthatcher): Use frame_factory_->CreateBlackFrame() instead.
     adapted_frame->SetToBlack();
   }
-  SignalVideoFrame(this, adapted_frame);
+  SignalVideoFrame(this, adapted_frame.get());
 
   UpdateStats(captured_frame);
 }

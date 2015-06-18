@@ -37,6 +37,14 @@ void Benchmark::preDraw() {
     this->onPreDraw();
 }
 
+void Benchmark::perCanvasPreDraw(SkCanvas* canvas) {
+    this->onPerCanvasPreDraw(canvas);
+}
+
+void Benchmark::perCanvasPostDraw(SkCanvas* canvas) {
+    this->onPerCanvasPostDraw(canvas);
+}
+
 void Benchmark::draw(const int loops, SkCanvas* canvas) {
     SkAutoCanvasRestore ar(canvas, true/*save now*/);
     this->onDraw(loops, canvas);
@@ -45,7 +53,7 @@ void Benchmark::draw(const int loops, SkCanvas* canvas) {
 void Benchmark::setupPaint(SkPaint* paint) {
     paint->setAlpha(fForceAlpha);
     paint->setAntiAlias(true);
-    paint->setFilterLevel(SkPaint::kNone_FilterLevel);
+    paint->setFilterQuality(kNone_SkFilterQuality);
 
     paint->setFlags((paint->getFlags() & ~fClearMask) | fOrMask);
 

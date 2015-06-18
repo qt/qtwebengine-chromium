@@ -170,11 +170,12 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
  public:
   ServiceWorkerWriteToCacheJobTest()
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
-        mock_protocol_handler_(NULL) {}
+        mock_protocol_handler_(nullptr) {}
   ~ServiceWorkerWriteToCacheJobTest() override {}
 
   void SetUp() override {
-    helper_.reset(new EmbeddedWorkerTestHelper(kMockRenderProcessId));
+    helper_.reset(
+        new EmbeddedWorkerTestHelper(base::FilePath(), kMockRenderProcessId));
 
     // A new unstored registration/version.
     scope_ = GURL("https://host/scope/");
@@ -186,7 +187,8 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
 
     // An empty host.
     scoped_ptr<ServiceWorkerProviderHost> host(new ServiceWorkerProviderHost(
-        kMockRenderProcessId, kMockProviderId, context()->AsWeakPtr(), NULL));
+        kMockRenderProcessId, MSG_ROUTING_NONE, kMockProviderId,
+        SERVICE_WORKER_PROVIDER_FOR_WINDOW, context()->AsWeakPtr(), nullptr));
     provider_host_ = host->AsWeakPtr();
     context()->AddProviderHost(host.Pass());
     provider_host_->running_hosted_version_ = version_;
@@ -202,7 +204,7 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
     url_request_context_->set_job_factory(url_request_job_factory_.get());
 
     request_ = url_request_context_->CreateRequest(
-        script_url_, net::DEFAULT_PRIORITY, &url_request_delegate_, NULL);
+        script_url_, net::DEFAULT_PRIORITY, &url_request_delegate_);
     ServiceWorkerRequestHandler::InitializeHandler(
         request_.get(),
         context_wrapper(),
@@ -222,9 +224,9 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
     request_.reset();
     url_request_context_.reset();
     url_request_job_factory_.reset();
-    mock_protocol_handler_ = NULL;
-    version_ = NULL;
-    registration_ = NULL;
+    mock_protocol_handler_ = nullptr;
+    version_ = nullptr;
+    registration_ = nullptr;
     helper_.reset();
     // URLRequestJobs may post clean-up tasks on destruction.
     base::RunLoop().RunUntilIdle();

@@ -8,11 +8,13 @@
   'type': 'none',
   'variables': {
     'extra_files%': [],
+    'main_html_file%': '<(SHARED_INTERMEDIATE_DIR)/remoting/main.html',
     'generated_html_files': [
-      '<(SHARED_INTERMEDIATE_DIR)/main.html',
-      '<(SHARED_INTERMEDIATE_DIR)/wcs_sandbox.html',
-      '<(SHARED_INTERMEDIATE_DIR)/background.html',
+      '<(SHARED_INTERMEDIATE_DIR)/remoting/background.html',
+      '<(SHARED_INTERMEDIATE_DIR)/remoting/message_window.html',
+      '<(SHARED_INTERMEDIATE_DIR)/remoting/wcs_sandbox.html',
     ],
+    'dr_webapp_locales_listfile': '<(SHARED_INTERMEDIATE_DIR)/>(_target_name)_locales.txt',
   },
   'dependencies': [
     'remoting_resources',
@@ -20,30 +22,27 @@
   ],
   'conditions': [
     ['run_jscompile != 0', {
-      'variables': {
-        'success_stamp': '<(PRODUCT_DIR)/<(_target_name)_jscompile.stamp',
-      },
-      'actions': [
-        {
-          'action_name': 'Verify remoting webapp',
-          'inputs': [
-            '<@(remoting_webapp_all_js_files)',
-            '<@(remoting_webapp_js_proto_files)',
-          ],
-          'outputs': [
-            '<(success_stamp)',
-          ],
-          'action': [
-            'python', 'tools/jscompile.py',
-            '<@(remoting_webapp_all_js_files)',
-            '<@(remoting_webapp_js_proto_files)',
-            '--success-stamp', '<(success_stamp)'
-          ],
-        },
-      ],  # actions
+      'includes': ['remoting_webapp_compile.gypi'],
     }],
   ],
   'actions': [
+    {
+      'action_name': 'Build Remoting locales listfile',
+      'inputs': [
+        '<(remoting_localize_path)',
+      ],
+      'outputs': [
+        '<(dr_webapp_locales_listfile)',
+      ],
+      'action': [
+        'python', '<(remoting_localize_path)',
+        '--locale_output',
+        '"<(webapp_locale_dir)/@{json_suffix}/messages.json"',
+        '--locales_listfile',
+        '<(dr_webapp_locales_listfile)',
+        '<@(remoting_locales)',
+      ],
+    },
     {
       'action_name': 'Build Remoting WebApp',
       'inputs': [
@@ -51,8 +50,10 @@
         'webapp/crd/manifest.json.jinja2',
         '<(chrome_version_path)',
         '<(remoting_version_path)',
+        '<(dr_webapp_locales_listfile)',
         '<@(generated_html_files)',
-        '<@(remoting_webapp_files)',
+        '<(main_html_file)',
+        '<@(remoting_webapp_crd_files)',
         '<@(remoting_webapp_locale_files)',
         '<@(extra_files)',
       ],
@@ -69,9 +70,13 @@
         'webapp/crd/manifest.json.jinja2',
         '<(webapp_type)',
         '<@(generated_html_files)',
-        '<@(remoting_webapp_files)',
+        '<(main_html_file)',
+        '<@(remoting_webapp_crd_files)',
         '<@(extra_files)',
-        '--locales', '<@(remoting_webapp_locale_files)',
+        '--locales_listfile',
+        '<(dr_webapp_locales_listfile)',
+        '--use_gcd',
+        '<(remoting_use_gcd)',
       ],
     },
   ],

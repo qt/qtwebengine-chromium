@@ -7,6 +7,8 @@
 
 #include <crypto/p224_spake.h>
 
+#include <algorithm>
+
 #include <base/logging.h>
 #include <crypto/p224.h>
 #include <crypto/random.h>
@@ -80,7 +82,7 @@ const crypto::p224::Point kM = {
    33188520, 48266885, 177021753, 81038478},
   {104523827, 245682244, 266509668, 236196369,
    28372046, 145351378, 198520366, 113345994},
-  {1, 0, 0, 0, 0, 0, 0},
+  {1, 0, 0, 0, 0, 0, 0, 0},
 };
 
 const crypto::p224::Point kN = {
@@ -88,7 +90,7 @@ const crypto::p224::Point kN = {
    5034302, 185981975, 171998428, 11653062},
   {197567436, 51226044, 60372156, 175772188,
    42075930, 8083165, 160827401, 65097570},
-  {1, 0, 0, 0, 0, 0, 0},
+  {1, 0, 0, 0, 0, 0, 0, 0},
 };
 
 }  // anonymous namespace
@@ -105,13 +107,17 @@ P224EncryptedKeyExchange::P224EncryptedKeyExchange(
   // x_ is a random scalar.
   RandBytes(x_, sizeof(x_));
 
-  // X = g**x_
-  p224::Point X;
-  p224::ScalarBaseMult(x_, &X);
-
   // Calculate |password| hash to get SPAKE password value.
   SHA256HashString(std::string(password.data(), password.length()),
                    pw_, sizeof(pw_));
+
+  Init();
+}
+
+void P224EncryptedKeyExchange::Init() {
+  // X = g**x_
+  p224::Point X;
+  p224::ScalarBaseMult(x_, &X);
 
   // The client masks the Diffie-Hellman value, X, by adding M**pw and the
   // server uses N**pw.
@@ -125,7 +131,7 @@ P224EncryptedKeyExchange::P224EncryptedKeyExchange(
   next_message_ = Xstar.ToString();
 }
 
-const std::string& P224EncryptedKeyExchange::GetMessage() {
+const std::string& P224EncryptedKeyExchange::GetNextMessage() {
   if (state_ == kStateInitial) {
     state_ = kStateRecvDH;
     return next_message_;
@@ -134,7 +140,7 @@ const std::string& P224EncryptedKeyExchange::GetMessage() {
     return next_message_;
   }
 
-  LOG(FATAL) << "P224EncryptedKeyExchange::GetMessage called in"
+  LOG(FATAL) << "P224EncryptedKeyExchange::GetNextMessage called in"
                 " bad state " << state_;
   next_message_ = "";
   return next_message_;
@@ -240,9 +246,23 @@ const std::string& P224EncryptedKeyExchange::error() const {
   return error_;
 }
 
-const std::string& P224EncryptedKeyExchange::GetKey() {
+const std::string& P224EncryptedKeyExchange::GetKey() const {
   DCHECK_EQ(state_, kStateDone);
+  return GetUnverifiedKey();
+}
+
+const std::string& P224EncryptedKeyExchange::GetUnverifiedKey() const {
+  // Key is already final when state is kStateSendHash. Subsequent states are
+  // used only for verification of the key. Some users may combine verification
+  // with sending verifiable data instead of |expected_authenticator_|.
+  DCHECK_GE(state_, kStateSendHash);
   return key_;
+}
+
+void P224EncryptedKeyExchange::SetXForTesting(const std::string& x) {
+  memset(&x_, 0, sizeof(x_));
+  memcpy(&x_, x.data(), std::min(x.size(), sizeof(x_)));
+  Init();
 }
 
 }  // namespace crypto

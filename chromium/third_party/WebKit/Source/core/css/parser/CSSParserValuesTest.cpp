@@ -31,36 +31,42 @@
 #include "config.h"
 #include "core/css/parser/CSSParserValues.h"
 
+#include "core/css/parser/CSSParserTokenRange.h"
+#include "core/css/parser/CSSTokenizer.h"
 #include <gtest/gtest.h>
 
 using namespace blink;
 
 namespace {
 
-TEST(CSSParserValuesTest, InitWithEmpty8BitsString)
+TEST(CSSParserValuesTest, InitWithEmptyString)
 {
-    String string8bit("a");
+    String string;
 
     CSSParserString cssParserString;
-    cssParserString.init(string8bit, 1, 0);
-    ASSERT_EQ(0u, cssParserString.length());
-}
+    cssParserString.init(string);
+    EXPECT_EQ(0u, cssParserString.length());
+    EXPECT_EQ(string, String(cssParserString));
+    EXPECT_TRUE(String(cssParserString).isNull());
 
-TEST(CSSParserValuesTest, InitWithEmpty16BitsString)
-{
-    String string16bit("a");
-    string16bit.ensure16Bit();
+    string = "";
+    cssParserString.init(string);
+    EXPECT_EQ(0u, cssParserString.length());
+    EXPECT_EQ(string, String(cssParserString));
+    EXPECT_FALSE(String(cssParserString).isNull());
 
-    CSSParserString cssParserString;
-    cssParserString.init(string16bit, 1, 0);
-    ASSERT_EQ(0u, cssParserString.length());
+    string.ensure16Bit();
+    cssParserString.init(string);
+    EXPECT_EQ(0u, cssParserString.length());
+    EXPECT_EQ(string, String(cssParserString));
+    EXPECT_FALSE(String(cssParserString).isNull());
 }
 
 TEST(CSSParserValuesTest, EqualIgnoringCase8BitsString)
 {
     CSSParserString cssParserString;
     String string8bit("sHaDOw");
-    cssParserString.init(string8bit, 0, string8bit.length());
+    cssParserString.init(string8bit);
 
     ASSERT_TRUE(cssParserString.equalIgnoringCase("shadow"));
     ASSERT_TRUE(cssParserString.equalIgnoringCase("ShaDow"));
@@ -75,7 +81,7 @@ TEST(CSSParserValuesTest, EqualIgnoringCase16BitsString)
     string16bit.ensure16Bit();
 
     CSSParserString cssParserString;
-    cssParserString.init(string16bit, 0, string16bit.length());
+    cssParserString.init(string16bit);
 
     ASSERT_TRUE(cssParserString.equalIgnoringCase("shadow"));
     ASSERT_TRUE(cssParserString.equalIgnoringCase("ShaDow"));
@@ -95,6 +101,22 @@ TEST(CSSParserValuesTest, CSSParserValuelistClear)
     list.clearAndLeakValues();
     ASSERT_FALSE(list.size());
     ASSERT_FALSE(list.currentIndex());
+}
+
+TEST(CSSParserValuesTest, CSSParserTokenUrlConversion)
+{
+    CSSTokenizer::Scope scope("url(some) uRL('test') UrL(  \"words\" /**/ ) URl( /**/hi/**/ )");
+    bool usesRemUnits;
+    CSSParserValueList valueList(scope.tokenRange(), usesRemUnits);
+    ASSERT_EQ(valueList.size(), 4u);
+    ASSERT_EQ(valueList.valueAt(0)->unit, CSSPrimitiveValue::CSS_URI);
+    EXPECT_EQ(String(valueList.valueAt(0)->string), "some");
+    ASSERT_EQ(valueList.valueAt(1)->unit, CSSPrimitiveValue::CSS_URI);
+    EXPECT_EQ(String(valueList.valueAt(1)->string), "test");
+    ASSERT_EQ(valueList.valueAt(2)->unit, CSSPrimitiveValue::CSS_URI);
+    EXPECT_EQ(String(valueList.valueAt(2)->string), "words");
+    ASSERT_EQ(valueList.valueAt(3)->unit, CSSPrimitiveValue::CSS_URI);
+    EXPECT_EQ(String(valueList.valueAt(3)->string), "/**/hi/**/");
 }
 
 } // namespace

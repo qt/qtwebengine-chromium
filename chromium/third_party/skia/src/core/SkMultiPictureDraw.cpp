@@ -9,13 +9,16 @@
 // framework build, which gets its defines from SkTypes rather than a makefile,
 // has the definition before checking it.
 #include "SkCanvas.h"
+#include "SkCanvasPriv.h"
 #include "SkMultiPictureDraw.h"
 #include "SkPicture.h"
 #include "SkTaskGroup.h"
 
 #if SK_SUPPORT_GPU
+#include "GrContext.h"
 #include "GrLayerHoister.h"
 #include "GrRecordReplaceDraw.h"
+#include "GrRenderTarget.h"
 #endif
 
 void SkMultiPictureDraw::DrawData::draw() {
@@ -81,13 +84,22 @@ public:
     ~AutoMPDReset() { fMPD->reset(); }
 };
 
-void SkMultiPictureDraw::draw() {
+//#define FORCE_SINGLE_THREAD_DRAWING_FOR_TESTING
+
+void SkMultiPictureDraw::draw(bool flush) {
     AutoMPDReset mpdreset(this);
+
+#ifdef FORCE_SINGLE_THREAD_DRAWING_FOR_TESTING
+    for (int i = 0; i < fThreadSafeDrawData.count(); ++i) {
+        DrawData* dd = &fThreadSafeDrawData.begin()[i];
+        dd->fCanvas->drawPicture(dd->fPicture, &dd->fMatrix, dd->fPaint);
+    }
+#else
     // we place the taskgroup after the MPDReset, to ensure that we don't delete the DrawData
     // objects until after we're finished the tasks (which have pointers to the data).
-
     SkTaskGroup group;
     group.batch(DrawData::Draw, fThreadSafeDrawData.begin(), fThreadSafeDrawData.count());
+#endif
     // we deliberately don't call wait() here, since the destructor will do that, this allows us
     // to continue processing gpu-data without having to wait on the cpu tasks.
 
@@ -110,23 +122,26 @@ void SkMultiPictureDraw::draw() {
         // we only expect 1 context for all the canvases
         SkASSERT(data.fCanvas->getGrContext() == context);
 
-        if (!data.fPaint && data.fMatrix.isIdentity()) {
-            // TODO: this path always tries to optimize pictures. Should we
-            // switch to this API approach (vs. SkCanvas::EXPERIMENTAL_optimize)?
-            data.fCanvas->EXPERIMENTAL_optimize(data.fPicture);
-
+        if (!data.fPaint) {
             SkRect clipBounds;
             if (!data.fCanvas->getClipBounds(&clipBounds)) {
                 continue;
             }
 
+            SkMatrix initialMatrix = data.fCanvas->getTotalMatrix();
+            initialMatrix.preConcat(data.fMatrix);
+
+            GrRenderTarget* rt = data.fCanvas->internal_private_accessTopLayerRenderTarget();
+            SkASSERT(rt);
+
             // TODO: sorting the cacheable layers from smallest to largest
             // would improve the packing and reduce the number of swaps
             // TODO: another optimization would be to make a first pass to
             // lock any required layer that is already in the atlas
-            GrLayerHoister::FindLayersToAtlas(context, data.fPicture,
+            GrLayerHoister::FindLayersToAtlas(context, data.fPicture, initialMatrix,
                                               clipBounds,
-                                              &atlasedNeedRendering, &atlasedRecycled);
+                                              &atlasedNeedRendering, &atlasedRecycled,
+                                              rt->numSamples());
         }
     }
 
@@ -141,29 +156,31 @@ void SkMultiPictureDraw::draw() {
         const SkPicture* picture = data.fPicture;
 
 #if !defined(SK_IGNORE_GPU_LAYER_HOISTING) && SK_SUPPORT_GPU
-        if (!data.fPaint && data.fMatrix.isIdentity()) {
+        if (!data.fPaint) {
 
             SkRect clipBounds;
             if (!canvas->getClipBounds(&clipBounds)) {
                 continue;
             }
 
-            // Find the layers required by this canvas. It will return atlased
-            // layers in the 'recycled' list since they have already been drawn.
-            GrLayerHoister::FindLayersToHoist(context, picture,
-                                              clipBounds, &needRendering, &recycled);
-
-            GrLayerHoister::DrawLayers(context, needRendering);
-
-            GrReplacements replacements;
-
-            GrLayerHoister::ConvertLayersToReplacements(needRendering, &replacements);
-            GrLayerHoister::ConvertLayersToReplacements(recycled, &replacements);
+            SkAutoCanvasMatrixPaint acmp(canvas, &data.fMatrix, data.fPaint, picture->cullRect());
 
             const SkMatrix initialMatrix = canvas->getTotalMatrix();
 
+            GrRenderTarget* rt = data.fCanvas->internal_private_accessTopLayerRenderTarget();
+            SkASSERT(rt);
+
+            // Find the layers required by this canvas. It will return atlased
+            // layers in the 'recycled' list since they have already been drawn.
+            GrLayerHoister::FindLayersToHoist(context, picture, initialMatrix,
+                                              clipBounds, &needRendering, &recycled,
+                                              rt->numSamples());
+
+            GrLayerHoister::DrawLayers(context, needRendering);
+
             // Render the entire picture using new layers
-            GrRecordReplaceDraw(picture, canvas, &replacements, initialMatrix, NULL);
+            GrRecordReplaceDraw(picture, canvas, context->getLayerCache(),
+                                initialMatrix, NULL);
 
             GrLayerHoister::UnlockLayers(context, needRendering);
             GrLayerHoister::UnlockLayers(context, recycled);
@@ -174,6 +191,9 @@ void SkMultiPictureDraw::draw() {
 #endif
         {
             canvas->drawPicture(picture, &data.fMatrix, data.fPaint);
+        }
+        if (flush) {
+            canvas->flush();
         }
     }
 

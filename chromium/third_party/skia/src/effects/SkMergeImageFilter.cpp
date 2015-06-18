@@ -42,9 +42,8 @@ void SkMergeImageFilter::initModes(const SkXfermode::Mode modes[]) {
 
 SkMergeImageFilter::SkMergeImageFilter(SkImageFilter* filters[], int count,
                                        const SkXfermode::Mode modes[],
-                                       const CropRect* cropRect,
-                                       uint32_t uniqueID)
-  : INHERITED(count, filters, cropRect, uniqueID) {
+                                       const CropRect* cropRect)
+  : INHERITED(count, filters, cropRect) {
     SkASSERT(count >= 0);
     this->initModes(modes);
 }
@@ -128,9 +127,9 @@ SkFlattenable* SkMergeImageFilter::CreateProc(SkReadBuffer& buffer) {
         if (!buffer.isValid()) {
             return NULL;
         }
-        return Create(common.inputs(), count, modes.get(), &common.cropRect(), common.uniqueID());
+        return Create(common.inputs(), count, modes.get(), &common.cropRect());
     }
-    return Create(common.inputs(), count, NULL, &common.cropRect(), common.uniqueID());
+    return Create(common.inputs(), count, NULL, &common.cropRect());
 }
 
 void SkMergeImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -141,23 +140,17 @@ void SkMergeImageFilter::flatten(SkWriteBuffer& buffer) const {
     }
 }
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkMergeImageFilter::SkMergeImageFilter(SkReadBuffer& buffer)
-  : INHERITED(-1, buffer) {
-    bool hasModes = buffer.readBool();
-    if (hasModes) {
-        this->initAllocModes();
-        int nbInputs = countInputs();
-        size_t size = nbInputs * sizeof(fModes[0]);
-        SkASSERT(buffer.getArrayCount() == size);
-        if (buffer.validate(buffer.getArrayCount() == size) &&
-            buffer.readByteArray(fModes, size)) {
-            for (int i = 0; i < nbInputs; ++i) {
-                buffer.validate(SkIsValidMode((SkXfermode::Mode)fModes[i]));
-            }
-        }
-    } else {
-        fModes = 0;
+#ifndef SK_IGNORE_TO_STRING
+void SkMergeImageFilter::toString(SkString* str) const {
+    str->appendf("SkMergeImageFilter: (");
+    
+    for (int i = 0; i < this->countInputs(); ++i) {
+        SkImageFilter* filter = this->getInput(i);
+        str->appendf("%d: (", i);
+        filter->toString(str);
+        str->appendf(")");
     }
+
+    str->append(")");
 }
 #endif

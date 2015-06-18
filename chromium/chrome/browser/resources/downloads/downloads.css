@@ -8,22 +8,12 @@
   font-weight: bold;
 }
 
-.disabled-link {
-  color: #999;
-  text-decoration: none;
+#download-actions {
+  -webkit-margin-start: 16px;
 }
 
-#downloads-actions > a,
-#downloads-actions > .disabled-link {
+#downloads-actions > * ~ * {
   -webkit-margin-start: 10px;
-}
-
-#downloads-actions > a:first-child {
-  -webkit-margin-start: 0;
-}
-
-#open-downloads-folder {
-  -webkit-margin-end: 16px;
 }
 
 #downloads-display,
@@ -76,25 +66,22 @@ html[dir=rtl] .icon {
   right: 9px;
 }
 
-.download.otr > .safe,
-.download.otr > .show-dangerous {
+.download.otr > :-webkit-any(.safe, .dangerous) {
   -webkit-transition: opacity 150ms;
-  background: url('../../../../ui/webui/resources/images/otr_icon_standalone.png')
+  background: url(../../../../ui/webui/resources/images/otr_icon_standalone.png)
               no-repeat right bottom;
   opacity: .66;
 }
 
-html[dir=rtl] .download.otr > .safe,
-html[dir=rtl] .download.otr > .show-dangerous {
+html[dir=rtl] .download.otr > :-webkit-any(.safe, .dangerous) {
   background-position: left bottom;
 }
 
-.download.otr > .safe:hover,
-.download.otr > .show-dangerous:hover {
+.download.otr > :-webkit-any(.safe, .dangerous):hover {
   opacity: 1;
 }
 
-.malware-description {
+.description.malware {
   color: rgb(196, 42, 23);
 }
 
@@ -112,20 +99,29 @@ html[dir=rtl] .progress {
 }
 
 .progress.background {
-  background: url('chrome://theme/IDR_DOWNLOAD_PROGRESS_BACKGROUND_32');
+  background: url(chrome://theme/IDR_DOWNLOAD_PROGRESS_BACKGROUND_32);
   background-size: 48px;
+}
+
+.title-area {
+  display: flex;
+}
+
+.title-area > * {
+  flex-shrink: 0;
 }
 
 .name,
 .src-url,
-.controls a {
+.controls a,
+.description {
   -webkit-padding-end: 4px;
   -webkit-padding-start: 4px;
 }
 
 .name {
   -webkit-padding-end: 16px;
-  display: none;
+  display: inline-block;
   max-width: 450px;
   word-break: break-all;
 }
@@ -154,6 +150,10 @@ html[dir=rtl] .progress {
 .controls a {
   -webkit-margin-end: 12px;
   color: #777;
+}
+
+.safe .controls a {
+  display: inline;
 }
 
 #downloads-pagination {

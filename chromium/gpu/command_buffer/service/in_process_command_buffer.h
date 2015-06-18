@@ -46,11 +46,13 @@ class StreamTextureManagerInProcess;
 #endif
 
 namespace gpu {
+class ValueStateMap;
 
 namespace gles2 {
 class GLES2Decoder;
 class MailboxManager;
 class ShaderTranslatorCache;
+class SubscriptionRefSet;
 }
 
 class CommandBufferServiceBase;
@@ -90,6 +92,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   State GetLastState() override;
   int32 GetLastToken() override;
   void Flush(int32 put_offset) override;
+  void OrderingBarrier(int32 put_offset) override;
   void WaitForTokenInRange(int32 start, int32 end) override;
   void WaitForGetOffsetInRange(int32 start, int32 end) override;
   void SetGetBuffer(int32 shm_id) override;
@@ -117,6 +120,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void SignalQuery(uint32 query_id, const base::Closure& callback) override;
   void SetSurfaceVisible(bool visible) override;
   uint32 CreateStreamTexture(uint32 texture_id) override;
+  void SetLock(base::Lock*) override;
 
   // The serializer interface to the GPU service (i.e. thread).
   class Service {
@@ -137,10 +141,16 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
     virtual bool UseVirtualizedGLContexts() = 0;
     virtual scoped_refptr<gles2::ShaderTranslatorCache>
         shader_translator_cache() = 0;
+    scoped_refptr<gfx::GLShareGroup> share_group();
     scoped_refptr<gles2::MailboxManager> mailbox_manager();
+    scoped_refptr<gles2::SubscriptionRefSet> subscription_ref_set();
+    scoped_refptr<gpu::ValueStateMap> pending_valuebuffer_state();
 
    private:
+    scoped_refptr<gfx::GLShareGroup> share_group_;
     scoped_refptr<gles2::MailboxManager> mailbox_manager_;
+    scoped_refptr<gles2::SubscriptionRefSet> subscription_ref_set_;
+    scoped_refptr<gpu::ValueStateMap> pending_valuebuffer_state_;
   };
 
 #if defined(OS_ANDROID)
@@ -206,8 +216,6 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   bool GetBufferChanged(int32 transfer_buffer_id);
   void PumpCommands();
   void PerformIdleWork();
-
-  static scoped_refptr<Service> GetDefaultService();
 
   // Members accessed on the gpu thread (possibly with the exception of
   // creation):

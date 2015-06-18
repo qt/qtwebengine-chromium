@@ -29,7 +29,7 @@
             ],
           },
         }],
-        ['OS=="ios" and "<(GENERATOR)"!="ninja"', {
+        ['OS=="ios" and "<(GENERATOR)"=="xcode" and "<(GENERATOR_FLAVOR)"!="ninja"', {
           'variables': {
             'ninja_output_dir': 'ninja-protoc',
             'ninja_product_dir':
@@ -53,6 +53,7 @@
               # normal protoc target under the condition that "OS==iOS".
               'target_name': 'compile_protoc',
               'type': 'none',
+              'toolsets': ['host'],
               'includes': ['../../build/ios/mac_build.gypi'],
               'actions': [
                 {
@@ -169,7 +170,7 @@
         {
           'target_name': 'protoc',
           'conditions': [
-            ['OS!="ios" or "<(GENERATOR)"=="ninja"', {
+            ['OS!="ios" or "<(GENERATOR)"!="xcode" or "<(GENERATOR_FLAVOR)"=="ninja"', {
               'type': 'executable',
               'toolsets': ['host'],
               'sources': [
@@ -237,8 +238,9 @@
                 '<(config_h_dir)',
                 'src/src',
               ],
-            }, {  # else, OS=="ios" and "<(GENERATOR)"!="ninja"
+            }, {  # else, OS=="ios" and "<(GENERATOR)"=="xcode" and "<(GENERATOR_FLAVOR)"!="ninja"
               'type': 'none',
+              'toolsets': ['host'],
               'dependencies': [
                 'compile_protoc',
               ],

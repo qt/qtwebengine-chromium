@@ -46,7 +46,7 @@ namespace blink {
 
 class PLATFORM_EXPORT MediaStreamSource final : public RefCounted<MediaStreamSource> {
 public:
-    class Observer {
+    class PLATFORM_EXPORT Observer {
     public:
         virtual ~Observer() { }
         virtual void sourceChangedState() = 0;
@@ -94,7 +94,7 @@ public:
     bool requiresAudioConsumer() const { return m_requiresConsumer; }
     void addAudioConsumer(AudioDestinationConsumer*);
     bool removeAudioConsumer(AudioDestinationConsumer*);
-    const HeapHashSet<Member<AudioDestinationConsumer> >& audioConsumers() { return m_audioConsumers; }
+    const HeapHashSet<Member<AudioDestinationConsumer>>& audioConsumers() { return m_audioConsumers; }
 
 private:
     MediaStreamSource(const String& id, Type, const String& name, bool remote, bool readonly, ReadyState, bool requiresConsumer);
@@ -108,12 +108,12 @@ private:
     bool m_requiresConsumer;
     Vector<Observer*> m_observers;
     Mutex m_audioConsumersLock;
-    PersistentHeapHashSet<Member<AudioDestinationConsumer> > m_audioConsumers;
+    PersistentHeapHashSet<Member<AudioDestinationConsumer>> m_audioConsumers;
     OwnPtr<ExtraData> m_extraData;
     WebMediaConstraints m_constraints;
 };
 
-typedef Vector<RefPtr<MediaStreamSource> > MediaStreamSourceVector;
+typedef Vector<RefPtr<MediaStreamSource>> MediaStreamSourceVector;
 
 } // namespace blink
 

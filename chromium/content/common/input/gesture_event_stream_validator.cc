@@ -5,6 +5,8 @@
 #include "content/common/input/gesture_event_stream_validator.h"
 
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
+#include "content/common/input/web_input_event_traits.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
 using blink::WebInputEvent;
@@ -22,6 +24,10 @@ bool GestureEventStreamValidator::Validate(const blink::WebGestureEvent& event,
                                            std::string* error_msg) {
   DCHECK(error_msg);
   error_msg->clear();
+  if (!WebInputEvent::isGestureEventType(event.type)) {
+    error_msg->append(base::StringPrintf(
+        "Invalid gesture type: %s", WebInputEventTraits::GetName(event.type)));
+  }
   switch (event.type) {
     case WebInputEvent::GestureScrollBegin:
       if (scrolling_)
@@ -31,12 +37,22 @@ bool GestureEventStreamValidator::Validate(const blink::WebGestureEvent& event,
       scrolling_ = true;
       break;
     case WebInputEvent::GestureScrollUpdate:
-    case WebInputEvent::GestureScrollUpdateWithoutPropagation:
       if (!scrolling_)
         error_msg->append("Scroll update outside of scroll\n");
       break;
-    case WebInputEvent::GestureScrollEnd:
     case WebInputEvent::GestureFlingStart:
+      if (event.sourceDevice == blink::WebGestureDeviceTouchscreen &&
+          !event.data.flingStart.velocityX &&
+          !event.data.flingStart.velocityY) {
+        error_msg->append("Zero velocity touchscreen fling\n");
+      }
+      if (!scrolling_)
+        error_msg->append("Fling start outside of scroll\n");
+      if (pinching_)
+        error_msg->append("Flinging while pinching\n");
+      scrolling_ = false;
+      break;
+    case WebInputEvent::GestureScrollEnd:
       if (!scrolling_)
         error_msg->append("Scroll end outside of scroll\n");
       if (pinching_)
@@ -59,7 +75,7 @@ bool GestureEventStreamValidator::Validate(const blink::WebGestureEvent& event,
       break;
     case WebInputEvent::GestureTapDown:
       if (waiting_for_tap_end_)
-        error_msg->append("Missing tap end event\n");
+        error_msg->append("Missing tap ending event before TapDown\n");
       waiting_for_tap_end_ = true;
       break;
     case WebInputEvent::GestureTapUnconfirmed:
@@ -72,9 +88,13 @@ bool GestureEventStreamValidator::Validate(const blink::WebGestureEvent& event,
       waiting_for_tap_end_ = false;
       break;
     case WebInputEvent::GestureTap:
+      if (!waiting_for_tap_end_)
+        error_msg->append("Missing TapDown event before Tap\n");
+      waiting_for_tap_end_ = false;
+      break;
     case WebInputEvent::GestureDoubleTap:
-      // Both Tap and DoubleTap gestures may be synthetically inserted, and do
-      // not require a preceding TapDown.
+      // DoubleTap gestures may be synthetically inserted, and do not require a
+      // preceding TapDown.
       waiting_for_tap_end_ = false;
       break;
     default:

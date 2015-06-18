@@ -177,7 +177,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     empty_context_.set_job_factory(job_factory_.get());
 
     request_ = empty_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, delegate_.get(), NULL);
+        url, net::DEFAULT_PRIORITY, delegate_.get());
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
     if (run_to_completion)
@@ -318,7 +318,7 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
 
 #if defined(OS_WIN)
   EXPECT_EQ("<script>start(\"foo\\\\bar\");</script>", line);
@@ -326,10 +326,10 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
   EXPECT_EQ("<script>start(\"/foo/bar\");</script>", line);
 #endif
 
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
   VerifyListingEntry(line, "hoge", "hoge", false, 10);
 
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
   VerifyListingEntry(line, "baz", "baz", true, 0);
   EXPECT_FALSE(!!std::getline(in, line));
 }
@@ -378,7 +378,7 @@ TEST_F(FileSystemDirURLRequestJobTest, Incognito) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(!!std::getline(in, line));
+  EXPECT_TRUE(std::getline(in, line));
   EXPECT_FALSE(!!std::getline(in, line));
 
   TestRequestWithContext(CreateFileSystemURL("foo"),
@@ -405,7 +405,7 @@ TEST_F(FileSystemDirURLRequestJobTest, AutoMountDirectoryListing) {
 
   std::istringstream in(delegate_->data_received());
   std::string line;
-  EXPECT_TRUE(!!std::getline(in, line));  // |line| contains the temp dir path.
+  EXPECT_TRUE(std::getline(in, line));  // |line| contains the temp dir path.
 
   // Result order is not guaranteed, so sort the results.
   std::vector<std::string> listing_entries;
@@ -450,5 +450,5 @@ TEST_F(FileSystemDirURLRequestJobTest, AutoMountNoHandler) {
           kValidExternalMountPoint));
 }
 
-}  // namespace (anonymous)
+}  // namespace
 }  // namespace content

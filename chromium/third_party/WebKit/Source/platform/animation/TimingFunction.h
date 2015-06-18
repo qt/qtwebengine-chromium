@@ -27,6 +27,8 @@
 
 #include "platform/animation/AnimationUtilities.h" // For blend()
 #include "platform/animation/UnitBezier.h"
+#include "platform/heap/Handle.h"
+#include "platform/heap/Heap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -34,7 +36,6 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
-#include <algorithm>
 
 namespace blink {
 
@@ -59,6 +60,29 @@ public:
     // calling evaluate();
     virtual void range(double* minValue, double* maxValue) const = 0;
 
+    enum RangeHalf {
+        Lower, // Timing function values < 0.5
+        Upper // Timing function values >= 0.5
+    };
+
+    struct PartitionRegion {
+        RangeHalf half;
+        double start; // inclusive
+        double end; // exclusive
+
+        PartitionRegion(RangeHalf half, double start, double end)
+            : half(half)
+            , start(start)
+            , end(end)
+        { }
+    };
+
+    // Partitions the timing function into a number of regions,
+    // representing the ranges in which the function's value is < 0.5
+    // and >= 0.5, and hence whether interpolation 0 or 1 should be
+    // used.
+    virtual void partition(Vector<PartitionRegion>& regions) const = 0;
+
 protected:
     TimingFunction(Type type)
         : m_type(type)
@@ -82,8 +106,8 @@ public:
     virtual String toString() const override;
 
     virtual double evaluate(double fraction, double) const override;
-
     virtual void range(double* minValue, double* maxValue) const override;
+    virtual void partition(Vector<PartitionRegion>& regions) const override;
 private:
     LinearTimingFunction()
         : TimingFunction(LinearFunction)
@@ -141,6 +165,7 @@ public:
 
     virtual double evaluate(double fraction, double accuracy) const override;
     virtual void range(double* minValue, double* maxValue) const override;
+    virtual void partition(Vector<PartitionRegion>& regions) const override;
 
     double x1() const { return m_x1; }
     double y1() const { return m_y1; }
@@ -159,6 +184,11 @@ private:
         , m_subType(subType)
     {
     }
+
+    // Finds points on the cubic bezier that cross the given horizontal
+    // line, storing their x values in solution1-3 and returning the
+    // number of solutions found.
+    size_t findIntersections(double intersectionY, double& solution1, double& solution2, double& solution3) const;
 
     double m_x1;
     double m_y1;
@@ -205,8 +235,9 @@ public:
     virtual String toString() const override;
 
     virtual double evaluate(double fraction, double) const override;
-
     virtual void range(double* minValue, double* maxValue) const override;
+    virtual void partition(Vector<PartitionRegion>& regions) const override;
+
     int numberOfSteps() const { return m_steps; }
     StepAtPosition stepAtPosition() const { return m_stepAtPosition; }
 

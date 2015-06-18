@@ -5,6 +5,7 @@
 #ifndef NET_PROXY_PROXY_RESOLVER_H_
 #define NET_PROXY_PROXY_RESOLVER_H_
 
+#include "base/callback_forward.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
@@ -28,6 +29,9 @@ class NET_EXPORT_PRIVATE ProxyResolver {
   // Opaque pointer type, to return a handle to cancel outstanding requests.
   typedef void* RequestHandle;
 
+  using LoadStateChangedCallback =
+      base::Callback<void(RequestHandle, LoadState)>;
+
   // See |expects_pac_bytes()| for the meaning of |expects_pac_bytes|.
   explicit ProxyResolver(bool expects_pac_bytes)
       : expects_pac_bytes_(expects_pac_bytes) {}
@@ -42,7 +46,7 @@ class NET_EXPORT_PRIVATE ProxyResolver {
   // |*request| is written to, and can be passed to CancelRequest().
   virtual int GetProxyForURL(const GURL& url,
                              ProxyInfo* results,
-                             const net::CompletionCallback& callback,
+                             const CompletionCallback& callback,
                              RequestHandle* request,
                              const BoundNetLog& net_log) = 0;
 
@@ -65,7 +69,7 @@ class NET_EXPORT_PRIVATE ProxyResolver {
   // the result through |callback|.
   virtual int SetPacScript(
       const scoped_refptr<ProxyResolverScriptData>& pac_script,
-      const net::CompletionCallback& callback) = 0;
+      const CompletionCallback& callback) = 0;
 
  private:
   const bool expects_pac_bytes_;

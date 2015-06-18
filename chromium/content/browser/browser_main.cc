@@ -4,7 +4,7 @@
 
 #include "content/browser/browser_main.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/content_constants_internal.h"
 #include "content/public/browser/browser_main_runner.h"
 
@@ -13,8 +13,8 @@ namespace content {
 // Main routine for running as the Browser process.
 int BrowserMain(const MainFunctionParams& parameters) {
   TRACE_EVENT_BEGIN_ETW("BrowserMain", 0, "");
-  base::debug::TraceLog::GetInstance()->SetProcessName("Browser");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("Browser");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventBrowserProcessSortIndex);
 
   scoped_ptr<BrowserMainRunner> main_runner(BrowserMainRunner::Create());

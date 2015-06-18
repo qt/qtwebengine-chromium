@@ -6,7 +6,7 @@
 
 #include <errno.h>
 
-#include "base/containers/hash_tables.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "net/base/ip_endpoint.h"
@@ -14,47 +14,40 @@
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/quic_clock.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_utils.h"
-#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_server_session.h"
 
 using base::StringPiece;
-using std::make_pair;
 
 namespace net {
 namespace tools {
 
-namespace {
-
-// Time period for which a given connection_id should live in the time-wait
-// state.
-int64 FLAGS_quic_time_wait_list_seconds = 5;
-
-}  // namespace
-
 // A very simple alarm that just informs the QuicTimeWaitListManager to clean
-// up old connection_ids. This alarm should be unregistered and deleted before
+// up old connection_ids. This alarm should be cancelled  and deleted before
 // the QuicTimeWaitListManager is deleted.
-class ConnectionIdCleanUpAlarm : public EpollAlarm {
+class ConnectionIdCleanUpAlarm : public QuicAlarm::Delegate {
  public:
   explicit ConnectionIdCleanUpAlarm(
       QuicTimeWaitListManager* time_wait_list_manager)
       : time_wait_list_manager_(time_wait_list_manager) {
   }
 
-  int64 OnAlarm() override {
-    EpollAlarm::OnAlarm();
+  QuicTime OnAlarm() override {
     time_wait_list_manager_->CleanUpOldConnectionIds();
     // Let the time wait manager register the alarm at appropriate time.
-    return 0;
+    return QuicTime::Zero();
   }
 
  private:
   // Not owned.
   QuicTimeWaitListManager* time_wait_list_manager_;
+
+  DISALLOW_COPY_AND_ASSIGN(ConnectionIdCleanUpAlarm);
 };
+
 
 // This class stores pending public reset packets to be sent to clients.
 // server_address - server address on which a packet what was received for
@@ -88,20 +81,20 @@ class QuicTimeWaitListManager::QueuedPacket {
 QuicTimeWaitListManager::QuicTimeWaitListManager(
     QuicPacketWriter* writer,
     QuicServerSessionVisitor* visitor,
-    EpollServer* epoll_server,
+    QuicConnectionHelperInterface* helper,
     const QuicVersionVector& supported_versions)
-    : epoll_server_(epoll_server),
-      kTimeWaitPeriod_(
+    : time_wait_period_(
           QuicTime::Delta::FromSeconds(FLAGS_quic_time_wait_list_seconds)),
-      connection_id_clean_up_alarm_(new ConnectionIdCleanUpAlarm(this)),
-      clock_(epoll_server_),
+      connection_id_clean_up_alarm_(
+          helper->CreateAlarm(new ConnectionIdCleanUpAlarm(this))),
+      clock_(helper->GetClock()),
       writer_(writer),
       visitor_(visitor) {
   SetConnectionIdCleanUpAlarm();
 }
 
 QuicTimeWaitListManager::~QuicTimeWaitListManager() {
-  connection_id_clean_up_alarm_->UnregisterIfRegistered();
+  connection_id_clean_up_alarm_->Cancel();
   STLDeleteElements(&pending_packets_queue_);
   for (ConnectionIdMap::iterator it = connection_id_map_.begin();
        it != connection_id_map_.end();
@@ -113,18 +106,28 @@ QuicTimeWaitListManager::~QuicTimeWaitListManager() {
 void QuicTimeWaitListManager::AddConnectionIdToTimeWait(
     QuicConnectionId connection_id,
     QuicVersion version,
+    bool connection_rejected_statelessly,
     QuicEncryptedPacket* close_packet) {
-  DVLOG(1) << "Adding " << connection_id << " to the time wait list.";
+  DCHECK(!connection_rejected_statelessly || !close_packet)
+      << "Connections that were rejected statelessly should not "
+      << "have a close packet.  connection_id = " << connection_id;
   int num_packets = 0;
   ConnectionIdMap::iterator it = connection_id_map_.find(connection_id);
-  if (it != connection_id_map_.end()) {  // Replace record if it is reinserted.
+  const bool new_connection_id = it == connection_id_map_.end();
+  if (!new_connection_id) {  // Replace record if it is reinserted.
     num_packets = it->second.num_packets;
     delete it->second.close_packet;
     connection_id_map_.erase(it);
   }
-  ConnectionIdData data(num_packets, version, clock_.ApproximateNow(),
-                        close_packet);
-  connection_id_map_.insert(make_pair(connection_id, data));
+  TrimTimeWaitListIfNeeded();
+  DCHECK_LT(num_connections(),
+            static_cast<size_t>(FLAGS_quic_time_wait_list_max_connections));
+  ConnectionIdData data(num_packets, version, clock_->ApproximateNow(),
+                        close_packet, connection_rejected_statelessly);
+  connection_id_map_.insert(std::make_pair(connection_id, data));
+  if (new_connection_id) {
+    visitor_->OnConnectionAddedToTimeWaitList(connection_id);
+  }
 }
 
 bool QuicTimeWaitListManager::IsConnectionIdInTimeWait(
@@ -163,22 +166,24 @@ void QuicTimeWaitListManager::ProcessPacket(
   ConnectionIdMap::iterator it = connection_id_map_.find(connection_id);
   DCHECK(it != connection_id_map_.end());
   // Increment the received packet count.
-  ++((it->second).num_packets);
-  if (!ShouldSendResponse((it->second).num_packets)) {
+  ConnectionIdData* connection_data = &it->second;
+  ++(connection_data->num_packets);
+  if (!ShouldSendResponse(connection_data->num_packets)) {
     return;
   }
-  if (it->second.close_packet) {
-     QueuedPacket* queued_packet =
-         new QueuedPacket(server_address,
-                          client_address,
-                          it->second.close_packet->Clone());
-     // Takes ownership of the packet.
-     SendOrQueuePacket(queued_packet);
-  } else {
+  if (connection_data->close_packet) {
+    QueuedPacket* queued_packet = new QueuedPacket(
+        server_address, client_address, connection_data->close_packet->Clone());
+    // Takes ownership of the packet.
+    SendOrQueuePacket(queued_packet);
+  } else if (!connection_data->connection_rejected_statelessly) {
     SendPublicReset(server_address,
                     client_address,
                     connection_id,
                     sequence_number);
+  } else {
+    DVLOG(3) << "Time wait list not sending response for connection "
+             << connection_id << " due to previous stateless reject.";
   }
 }
 
@@ -250,43 +255,64 @@ bool QuicTimeWaitListManager::WriteToWire(QueuedPacket* queued_packet) {
 }
 
 void QuicTimeWaitListManager::SetConnectionIdCleanUpAlarm() {
-  connection_id_clean_up_alarm_->UnregisterIfRegistered();
-  int64 next_alarm_interval;
+  connection_id_clean_up_alarm_->Cancel();
+  QuicTime::Delta next_alarm_interval = QuicTime::Delta::Zero();
   if (!connection_id_map_.empty()) {
     QuicTime oldest_connection_id =
         connection_id_map_.begin()->second.time_added;
-    QuicTime now = clock_.ApproximateNow();
-    if (now.Subtract(oldest_connection_id) < kTimeWaitPeriod_) {
-      next_alarm_interval = oldest_connection_id.Add(kTimeWaitPeriod_)
-                                                .Subtract(now)
-                                                .ToMicroseconds();
+    QuicTime now = clock_->ApproximateNow();
+    if (now.Subtract(oldest_connection_id) < time_wait_period_) {
+      next_alarm_interval = oldest_connection_id.Add(time_wait_period_)
+                                                .Subtract(now);
     } else {
-      LOG(ERROR) << "ConnectionId lingered for longer than kTimeWaitPeriod";
-      next_alarm_interval = 0;
+      LOG(ERROR) << "ConnectionId lingered for longer than time_wait_period_";
     }
   } else {
-    // No connection_ids added so none will expire before kTimeWaitPeriod_.
-    next_alarm_interval = kTimeWaitPeriod_.ToMicroseconds();
+    // No connection_ids added so none will expire before time_wait_period_.
+    next_alarm_interval = time_wait_period_;
   }
 
-  epoll_server_->RegisterAlarmApproximateDelta(
-      next_alarm_interval, connection_id_clean_up_alarm_.get());
+  connection_id_clean_up_alarm_->Set(
+      clock_->ApproximateNow().Add(next_alarm_interval));
+}
+
+bool QuicTimeWaitListManager::MaybeExpireOldestConnection(
+    QuicTime expiration_time) {
+  if (connection_id_map_.empty()) {
+    return false;
+  }
+  ConnectionIdMap::iterator it = connection_id_map_.begin();
+  QuicTime oldest_connection_id_time = it->second.time_added;
+  if (oldest_connection_id_time > expiration_time) {
+    // Too recent, don't retire.
+    return false;
+  }
+  // This connection_id has lived its age, retire it now.
+  const QuicConnectionId connection_id = it->first;
+  delete it->second.close_packet;
+  connection_id_map_.erase(it);
+  visitor_->OnConnectionRemovedFromTimeWaitList(connection_id);
+  return true;
 }
 
 void QuicTimeWaitListManager::CleanUpOldConnectionIds() {
-  QuicTime now = clock_.ApproximateNow();
-  while (!connection_id_map_.empty()) {
-    ConnectionIdMap::iterator it = connection_id_map_.begin();
-    QuicTime oldest_connection_id = it->second.time_added;
-    if (now.Subtract(oldest_connection_id) < kTimeWaitPeriod_) {
-      break;
-    }
-    // This connection_id has lived its age, retire it now.
-    DVLOG(1) << "Retiring " << it->first << " from the time-wait state.";
-    delete it->second.close_packet;
-    connection_id_map_.erase(it);
+  QuicTime now = clock_->ApproximateNow();
+  QuicTime expiration = now.Subtract(time_wait_period_);
+
+  while (MaybeExpireOldestConnection(expiration)) {
   }
+
   SetConnectionIdCleanUpAlarm();
+}
+
+void QuicTimeWaitListManager::TrimTimeWaitListIfNeeded() {
+  if (FLAGS_quic_time_wait_list_max_connections < 0) {
+    return;
+  }
+  while (num_connections() >=
+         static_cast<size_t>(FLAGS_quic_time_wait_list_max_connections)) {
+    MaybeExpireOldestConnection(QuicTime::Infinite());
+  }
 }
 
 }  // namespace tools

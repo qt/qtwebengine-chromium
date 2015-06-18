@@ -33,6 +33,7 @@
 
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValueFactory.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8DOMWrapper.h"
 #include "bindings/core/v8/V8Event.h"
@@ -42,7 +43,7 @@
 
 namespace blink {
 
-static v8::Handle<v8::Value> cacheState(v8::Handle<v8::Object> customEvent, v8::Handle<v8::Value> detail, v8::Isolate* isolate)
+static v8::Local<v8::Value> cacheState(v8::Isolate* isolate, v8::Local<v8::Object> customEvent, v8::Local<v8::Value> detail)
 {
     V8HiddenValue::setHiddenValue(isolate, customEvent, V8HiddenValue::detail(isolate), detail);
     return detail;
@@ -53,7 +54,7 @@ void V8CustomEvent::detailAttributeGetterCustom(const v8::PropertyCallbackInfo<v
 {
     CustomEvent* event = V8CustomEvent::toImpl(info.Holder());
 
-    v8::Handle<v8::Value> result = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::detail(info.GetIsolate()));
+    v8::Local<v8::Value> result = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::detail(info.GetIsolate()));
 
     if (!result.IsEmpty()) {
         v8SetReturnValue(info, result);
@@ -65,16 +66,16 @@ void V8CustomEvent::detailAttributeGetterCustom(const v8::PropertyCallbackInfo<v
         // we need to find the 'detail' property on the main world wrapper and clone it.
         v8::Local<v8::Value> mainWorldDetail = V8HiddenValue::getHiddenValueFromMainWorldWrapper(info.GetIsolate(), event, V8HiddenValue::detail(info.GetIsolate()));
         if (!mainWorldDetail.IsEmpty())
-            event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(info.GetIsolate(), mainWorldDetail));
+            event->setSerializedDetail(SerializedScriptValueFactory::instance().createAndSwallowExceptions(info.GetIsolate(), mainWorldDetail));
     }
 
     if (event->serializedDetail()) {
         result = event->serializedDetail()->deserialize();
-        v8SetReturnValue(info, cacheState(info.Holder(), result, info.GetIsolate()));
+        v8SetReturnValue(info, cacheState(info.GetIsolate(), info.Holder(), result));
         return;
     }
 
-    v8SetReturnValue(info, cacheState(info.Holder(), v8::Null(info.GetIsolate()), info.GetIsolate()));
+    v8SetReturnValue(info, cacheState(info.GetIsolate(), info.Holder(), v8::Null(info.GetIsolate())));
 }
 
 void V8CustomEvent::initCustomEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -83,16 +84,19 @@ void V8CustomEvent::initCustomEventMethodCustom(const v8::FunctionCallbackInfo<v
     ASSERT(!event->serializedDetail());
 
     TOSTRING_VOID(V8StringResource<>, typeArg, info[0]);
-    TONATIVE_VOID(bool, canBubbleArg, info[1]->BooleanValue());
-    TONATIVE_VOID(bool, cancelableArg, info[2]->BooleanValue());
-    v8::Handle<v8::Value> detailsArg = info[3];
+    bool canBubbleArg;
+    bool cancelableArg;
+    if (!v8Call(info[1]->BooleanValue(info.GetIsolate()->GetCurrentContext()), canBubbleArg)
+        || !v8Call(info[2]->BooleanValue(info.GetIsolate()->GetCurrentContext()), cancelableArg))
+        return;
+    v8::Local<v8::Value> detailsArg = info[3];
 
     event->initEvent(typeArg, canBubbleArg, cancelableArg);
 
     if (!detailsArg.IsEmpty()) {
         V8HiddenValue::setHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::detail(info.GetIsolate()), detailsArg);
         if (DOMWrapperWorld::current(info.GetIsolate()).isIsolatedWorld())
-            event->setSerializedDetail(SerializedScriptValue::createAndSwallowExceptions(info.GetIsolate(), detailsArg));
+            event->setSerializedDetail(SerializedScriptValueFactory::instance().createAndSwallowExceptions(info.GetIsolate(), detailsArg));
     }
 }
 

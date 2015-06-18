@@ -48,14 +48,14 @@ cr.define('print_preview', function() {
 
     /**
      * Internal backing store for the data store.
-     * @type {!Array.<!print_preview.Destination>}
+     * @type {!Array<!print_preview.Destination>}
      * @private
      */
     this.destinations_ = [];
 
     /**
      * Cache used for constant lookup of destinations by origin and id.
-     * @type {Object.<string, !print_preview.Destination>}
+     * @type {Object<string, !print_preview.Destination>}
      * @private
      */
     this.destinationMap_ = {};
@@ -100,7 +100,7 @@ cr.define('print_preview', function() {
     /**
      * Maps user account to the list of origins for which destinations are
      * already loaded.
-     * @type {!Object.<string, Array.<print_preview.Destination.Origin>>}
+     * @type {!Object<string, Array<print_preview.Destination.Origin>>}
      * @private
      */
     this.loadedCloudOrigins_ = {};
@@ -154,6 +154,29 @@ cr.define('print_preview', function() {
     this.privetSearchTimeout_ = null;
 
     /**
+     * Whether a search for extension destinations is in progress.
+     * @type {boolean}
+     * @private
+     */
+    this.isExtensionDestinationSearchInProgress_ = false;
+
+    /**
+     * Whether the destination store has already loaded all extension
+     * destinations.
+     * @type {boolean}
+     * @private
+     */
+    this.hasLoadedAllExtensionDestinations_ = false;
+
+    /**
+     * ID of a timeout set at the start of an extension destination search. The
+     * timeout ends the search.
+     * @type {?number}
+     * @private
+     */
+    this.extensionSearchTimeout_ = null;
+
+    /**
      * MDNS service name of destination that we are waiting to register.
      * @type {?string}
      * @private
@@ -198,7 +221,16 @@ cr.define('print_preview', function() {
    * @const
    * @private
    */
-  DestinationStore.PRIVET_SEARCH_DURATION_ = 2000;
+  DestinationStore.PRIVET_SEARCH_DURATION_ = 5000;
+
+  /**
+   * Maximum amount of time spent searching for extension destinations, in
+   * milliseconds.
+   * @type {number}
+   * @const
+   * @private
+   */
+  DestinationStore.EXTENSION_SEARCH_DURATION_ = 5000;
 
   /**
    * Localizes printer capabilities.
@@ -217,10 +249,13 @@ cr.define('print_preview', function() {
         'NA_LEDGER': 'Tabloid'
       };
       for (var i = 0, media; media = mediaSize.option[i]; i++) {
-        media.custom_display_name =
-            media.custom_display_name ||
-            mediaDisplayNames[media.name] ||
-            media.name;
+        // No need to patch capabilities with localized names provided.
+        if (!media.custom_display_name_localized) {
+          media.custom_display_name =
+              media.custom_display_name ||
+              mediaDisplayNames[media.name] ||
+              media.name;
+        }
       }
     }
     return capabilities;
@@ -232,7 +267,7 @@ cr.define('print_preview', function() {
     /**
      * @param {string=} opt_account Account to filter destinations by. When
      *     omitted, all destinations are returned.
-     * @return {!Array.<!print_preview.Destination>} List of destinations
+     * @return {!Array<!print_preview.Destination>} List of destinations
      *     accessible by the {@code account}.
      */
     destinations: function(opt_account) {
@@ -264,7 +299,8 @@ cr.define('print_preview', function() {
      */
     get isLocalDestinationSearchInProgress() {
       return this.isLocalDestinationSearchInProgress_ ||
-        this.isPrivetDestinationSearchInProgress_;
+        this.isPrivetDestinationSearchInProgress_ ||
+        this.isExtensionDestinationSearchInProgress_;
     },
 
     /**
@@ -291,11 +327,10 @@ cr.define('print_preview', function() {
           !this.appState_.selectedDestinationOrigin) {
         this.selectDefaultDestination_();
       } else {
-        assert(typeof this.appState_.selectedDestinationAccount == 'string');
         var key = this.getDestinationKey_(
             this.appState_.selectedDestinationOrigin,
             this.appState_.selectedDestinationId,
-            this.appState_.selectedDestinationAccount);
+            this.appState_.selectedDestinationAccount || '');
         var candidate = this.destinationMap_[key];
         if (candidate != null) {
           this.selectDestination(candidate);
@@ -311,7 +346,7 @@ cr.define('print_preview', function() {
           this.cloudPrintInterface_.printer(
               this.appState_.selectedDestinationId,
               this.appState_.selectedDestinationOrigin,
-              this.appState_.selectedDestinationAccount);
+              this.appState_.selectedDestinationAccount || '');
         } else if (this.appState_.selectedDestinationOrigin ==
                    print_preview.Destination.Origin.PRIVET) {
           // TODO(noamsml): Resolve a specific printer instead of listing all
@@ -336,6 +371,29 @@ cr.define('print_preview', function() {
           cr.dispatchSimpleEvent(
             this,
             DestinationStore.EventType.CACHED_SELECTED_DESTINATION_INFO_READY);
+        } else if (this.appState_.selectedDestinationOrigin ==
+                   print_preview.Destination.Origin.EXTENSION) {
+          // TODO(tbarzic): Add support for requesting a single extension's
+          // printer list.
+          this.startLoadExtensionDestinations();
+
+          this.selectedDestination_ =
+              print_preview.ExtensionDestinationParser.parse({
+                extensionId: this.appState_.selectedDestinationExtensionId,
+                extensionName: this.appState_.selectedDestinationExtensionName,
+                id: this.appState_.selectedDestinationId,
+                name: this.appState_.selectedDestinationName || ''
+              });
+
+          if (this.appState_.selectedDestinationCapabilities) {
+            this.selectedDestination_.capabilities =
+                this.appState_.selectedDestinationCapabilities;
+
+            cr.dispatchSimpleEvent(
+                this,
+                DestinationStore.EventType
+                    .CACHED_SELECTED_DESTINATION_INFO_READY);
+          }
         } else {
           this.selectDefaultDestination_();
         }
@@ -434,8 +492,10 @@ cr.define('print_preview', function() {
         if (destination.isPrivet) {
           this.nativeLayer_.startGetPrivetDestinationCapabilities(
               destination.id);
-        }
-        else if (destination.isLocal) {
+        } else if (destination.isExtension) {
+          this.nativeLayer_.startGetExtensionDestinationCapabilities(
+              destination.id);
+        } else if (destination.isLocal) {
           this.nativeLayer_.startGetLocalDestinationCapabilities(
               destination.id);
         } else {
@@ -478,6 +538,8 @@ cr.define('print_preview', function() {
     /** Initiates loading of privet print destinations. */
     startLoadPrivetDestinations: function() {
       if (!this.hasLoadedAllPrivetDestinations_) {
+        if (this.privetDestinationSearchInProgress_)
+          clearTimeout(this.privetSearchTimeout_);
         this.isPrivetDestinationSearchInProgress_ = true;
         this.nativeLayer_.startGetPrivetDestinations();
         cr.dispatchSimpleEvent(
@@ -486,6 +548,23 @@ cr.define('print_preview', function() {
             this.endPrivetPrinterSearch_.bind(this),
             DestinationStore.PRIVET_SEARCH_DURATION_);
       }
+    },
+
+    /** Initializes loading of extension managed print destinations. */
+    startLoadExtensionDestinations: function() {
+      if (this.hasLoadedAllExtensionDestinations_)
+        return;
+
+      if (this.isExtensionDestinationSearchInProgress_)
+        clearTimeout(this.extensionSearchTimeout_);
+
+      this.isExtensionDestinationSearchInProgress_ = true;
+      this.nativeLayer_.startGetExtensionDestinations();
+      cr.dispatchSimpleEvent(
+          this, DestinationStore.EventType.DESTINATION_SEARCH_STARTED);
+      this.extensionSearchTimeout_ = setTimeout(
+          this.endExtensionPrinterSearch_.bind(this),
+          DestinationStore.EXTENSION_SEARCH_DURATION_);
     },
 
     /**
@@ -523,6 +602,7 @@ cr.define('print_preview', function() {
       this.startLoadCloudDestinations();
       this.startLoadLocalDestinations();
       this.startLoadPrivetDestinations();
+      this.startLoadExtensionDestinations();
     },
 
     /**
@@ -549,7 +629,7 @@ cr.define('print_preview', function() {
     /**
      * Inserts multiple {@code destinations} to the data store and dispatches
      * single DESTINATIONS_INSERTED event.
-     * @param {!Array.<print_preview.Destination>} destinations Print
+     * @param {!Array<print_preview.Destination>} destinations Print
      *     destinations to insert.
      * @private
      */
@@ -627,6 +707,21 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when loading of extension managed printers is done.
+     * @private
+     */
+    endExtensionPrinterSearch_: function() {
+      this.isExtensionDestinationSearchInProgress_ = false;
+      this.hasLoadedAllExtensionDestinations_ = true;
+      cr.dispatchSimpleEvent(
+          this, DestinationStore.EventType.DESTINATION_SEARCH_DONE);
+      // Clear initially selected (cached) extension destination if it hasn't
+      // been found among reported extension destinations.
+      if (this.isInAutoSelectMode_ && this.selectedDestination_.isExtension)
+        this.selectDefaultDestination_();
+    },
+
+    /**
      * Inserts a destination into the store without dispatching any events.
      * @return {boolean} Whether the inserted destination was not already in the
      *     store.
@@ -679,6 +774,14 @@ cr.define('print_preview', function() {
           this.nativeLayer_,
           print_preview.NativeLayer.EventType.PRIVET_CAPABILITIES_SET,
           this.onPrivetCapabilitiesSet_.bind(this));
+      this.tracker_.add(
+          this.nativeLayer_,
+          print_preview.NativeLayer.EventType.EXTENSION_PRINTERS_ADDED,
+          this.onExtensionPrintersAdded_.bind(this));
+      this.tracker_.add(
+          this.nativeLayer_,
+          print_preview.NativeLayer.EventType.EXTENSION_CAPABILITIES_SET,
+          this.onExtensionCapabilitiesSet_.bind(this));
     },
 
     /**
@@ -710,6 +813,8 @@ cr.define('print_preview', function() {
       this.selectDestination(null);
       this.loadedCloudOrigins_ = {};
       this.hasLoadedAllLocalDestinations_ = false;
+      this.hasLoadedAllPrivetDestinations_ = false;
+      this.hasLoadedAllExtensionDestinations_ = false;
 
       clearTimeout(this.autoSelectTimeout_);
       this.autoSelectTimeout_ = setTimeout(
@@ -885,13 +990,49 @@ cr.define('print_preview', function() {
      * @private
      */
     onPrivetCapabilitiesSet_: function(event) {
-      var destinationId = event.printerId;
       var destinations =
           print_preview.PrivetDestinationParser.parse(event.printer);
       destinations.forEach(function(dest) {
         dest.capabilities = event.capabilities;
         this.updateDestination_(dest);
       }, this);
+    },
+
+    /**
+     * Called when an extension responds to a getExtensionDestinations
+     * request.
+     * @param {Object} event Contains information about list of printers
+     *     reported by the extension.
+     *     {@code done} parameter is set iff this is the final list of printers
+     *     returned as part of getExtensionDestinations request.
+     * @private
+     */
+    onExtensionPrintersAdded_: function(event) {
+      this.insertDestinations_(event.printers.map(function(printer) {
+        return print_preview.ExtensionDestinationParser.parse(printer);
+      }));
+
+      if (event.done && this.isExtensionDestinationSearchInProgress_) {
+        clearTimeout(this.extensionSearchTimeout_);
+        this.endExtensionPrinterSearch_();
+      }
+    },
+
+    /**
+     * Called when capabilities for an extension managed printer are set.
+     * @param {Object} event Contains the printer's capabilities and ID.
+     * @private
+     */
+    onExtensionCapabilitiesSet_: function(event) {
+      var destinationKey = this.getDestinationKey_(
+          print_preview.Destination.Origin.EXTENSION,
+          event.printerId,
+          '' /* account */);
+      var destination = this.destinationMap_[destinationKey];
+      if (!destination)
+        return;
+      destination.capabilities = event.capabilities;
+      this.updateDestination_(destination);
     },
 
     /**

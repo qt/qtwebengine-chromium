@@ -279,7 +279,6 @@ static void RC2_cbc_encrypt(const uint8_t *in, uint8_t *out, size_t length,
     l2c(xor0, iv);
     l2c(xor1, iv);
   }
-  tin0 = tin1 = tout0 = tout1 = xor0 = xor1 = 0;
   tin[0] = tin[1] = 0;
 }
 
@@ -416,6 +415,6 @@ static const EVP_CIPHER rc2_40_cbc_cipher = {
     rc2_ctrl,
 };
 
-const EVP_CIPHER *EVP_rc2_40_cbc() {
+const EVP_CIPHER *EVP_rc2_40_cbc(void) {
   return &rc2_40_cbc_cipher;
 }

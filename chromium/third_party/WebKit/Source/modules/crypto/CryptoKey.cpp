@@ -32,6 +32,8 @@
 #include "modules/crypto/CryptoKey.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8ObjectBuilder.h"
+#include "bindings/core/v8/V8Uint8Array.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/CryptoResult.h"
 #include "public/platform/WebCryptoAlgorithmParams.h"
@@ -75,7 +77,7 @@ const KeyUsageMapping keyUsageMappings[] = {
     { WebCryptoKeyUsageUnwrapKey, "unwrapKey" },
 };
 
-COMPILE_ASSERT(EndOfWebCryptoKeyUsage == (1 << 7) + 1, update_keyUsageMappings);
+static_assert(EndOfWebCryptoKeyUsage == (1 << 7) + 1, "keyUsageMappings needs to be updated");
 
 const char* keyUsageToString(WebCryptoKeyUsage usage)
 {
@@ -96,34 +98,40 @@ WebCryptoKeyUsageMask keyUsageStringToMask(const String& usageString)
     return 0;
 }
 
-WebCryptoKeyUsageMask toKeyUsage(WebCryptoOperation operation)
-{
-    switch (operation) {
-    case WebCryptoOperationEncrypt:
-        return WebCryptoKeyUsageEncrypt;
-    case WebCryptoOperationDecrypt:
-        return WebCryptoKeyUsageDecrypt;
-    case WebCryptoOperationSign:
-        return WebCryptoKeyUsageSign;
-    case WebCryptoOperationVerify:
-        return WebCryptoKeyUsageVerify;
-    case WebCryptoOperationDeriveKey:
-        return WebCryptoKeyUsageDeriveKey;
-    case WebCryptoOperationDeriveBits:
-        return WebCryptoKeyUsageDeriveBits;
-    case WebCryptoOperationWrapKey:
-        return WebCryptoKeyUsageWrapKey;
-    case WebCryptoOperationUnwrapKey:
-        return WebCryptoKeyUsageUnwrapKey;
-    case WebCryptoOperationDigest:
-    case WebCryptoOperationGenerateKey:
-    case WebCryptoOperationImportKey:
-        break;
+class DictionaryBuilder : public WebCryptoKeyAlgorithmDictionary {
+public:
+    explicit DictionaryBuilder(V8ObjectBuilder& builder)
+        : m_builder(builder)
+    {
     }
 
-    ASSERT_NOT_REACHED();
-    return 0;
-}
+    virtual void setString(const char* propertyName, const char* value)
+    {
+        m_builder.addString(propertyName, value);
+    }
+
+    virtual void setUint(const char* propertyName, unsigned value)
+    {
+        m_builder.addNumber(propertyName, value);
+    }
+
+    virtual void setAlgorithm(const char* propertyName, const WebCryptoAlgorithm& algorithm)
+    {
+        ASSERT(algorithm.paramsType() == WebCryptoAlgorithmParamsTypeNone);
+
+        V8ObjectBuilder algorithmValue(m_builder.scriptState());
+        algorithmValue.addString("name", WebCryptoAlgorithm::lookupAlgorithmInfo(algorithm.id())->name);
+        m_builder.add(propertyName, algorithmValue);
+    }
+
+    virtual void setUint8Array(const char* propertyName, const WebVector<unsigned char>& vector)
+    {
+        m_builder.add(propertyName, DOMUint8Array::create(vector.data(), vector.size()));
+    }
+
+private:
+    V8ObjectBuilder& m_builder;
+};
 
 } // namespace
 
@@ -146,6 +154,14 @@ bool CryptoKey::extractable() const
     return m_key.extractable();
 }
 
+ScriptValue CryptoKey::algorithm(ScriptState* scriptState)
+{
+    V8ObjectBuilder objectBuilder(scriptState);
+    DictionaryBuilder dictionaryBuilder(objectBuilder);
+    m_key.algorithm().writeToDictionary(&dictionaryBuilder);
+    return objectBuilder.scriptValue();
+}
+
 // FIXME: This creates a new javascript array each time. What should happen
 //        instead is return the same (immutable) array. (Javascript callers can
 //        distinguish this by doing an == test on the arrays and seeing they are
@@ -161,9 +177,9 @@ Vector<String> CryptoKey::usages() const
     return result;
 }
 
-bool CryptoKey::canBeUsedForAlgorithm(const WebCryptoAlgorithm& algorithm, WebCryptoOperation op, CryptoResult* result) const
+bool CryptoKey::canBeUsedForAlgorithm(const WebCryptoAlgorithm& algorithm, WebCryptoKeyUsage usage, CryptoResult* result) const
 {
-    if (!(m_key.usages() & toKeyUsage(op))) {
+    if (!(m_key.usages() & usage)) {
         result->completeWithError(WebCryptoErrorTypeInvalidAccess, "key.usages does not permit this operation");
         return false;
     }
@@ -196,7 +212,7 @@ bool CryptoKey::parseFormat(const String& formatString, WebCryptoKeyFormat& form
         return true;
     }
 
-    result->completeWithError(WebCryptoErrorTypeSyntax, "Invalid keyFormat argument");
+    result->completeWithError(WebCryptoErrorTypeType, "Invalid keyFormat argument");
     return false;
 }
 
@@ -206,7 +222,7 @@ bool CryptoKey::parseUsageMask(const Vector<String>& usages, WebCryptoKeyUsageMa
     for (size_t i = 0; i < usages.size(); ++i) {
         WebCryptoKeyUsageMask usage = keyUsageStringToMask(usages[i]);
         if (!usage) {
-            result->completeWithError(WebCryptoErrorTypeSyntax, "Invalid keyUsages argument");
+            result->completeWithError(WebCryptoErrorTypeType, "Invalid keyUsages argument");
             return false;
         }
         mask |= usage;

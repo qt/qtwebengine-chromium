@@ -26,6 +26,8 @@
 #ifndef ArrayValue_h
 #define ArrayValue_h
 
+#include "bindings/core/v8/ExceptionState.h"
+#include "core/CoreExport.h"
 #include "wtf/Assertions.h"
 #include <v8.h>
 
@@ -33,7 +35,7 @@ namespace blink {
 
 class Dictionary;
 
-class ArrayValue {
+class CORE_EXPORT ArrayValue {
 public:
     ArrayValue() : m_isolate(0) { }
     explicit ArrayValue(const v8::Local<v8::Array>& array, v8::Isolate* isolate)
@@ -59,6 +61,8 @@ private:
 
     v8::Local<v8::Array> m_array;
     v8::Isolate* m_isolate;
+    // FIXME: ArrayValue constructor should take an exception state.
+    mutable NonThrowableExceptionState m_exceptionState;
 };
 
 }

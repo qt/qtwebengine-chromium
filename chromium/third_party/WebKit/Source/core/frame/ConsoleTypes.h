@@ -36,7 +36,6 @@ enum MessageSource {
     StorageMessageSource,
     AppCacheMessageSource,
     RenderingMessageSource,
-    CSSMessageSource,
     SecurityMessageSource,
     OtherMessageSource,
     DeprecationMessageSource,
@@ -47,7 +46,8 @@ enum MessageLevel {
     LogMessageLevel = 1,
     InfoMessageLevel = 5,
     WarningMessageLevel = 2,
-    ErrorMessageLevel = 3
+    ErrorMessageLevel = 3,
+    RevokedErrorMessageLevel = 6
 };
 
 } // namespace blink

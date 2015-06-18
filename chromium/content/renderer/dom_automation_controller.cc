@@ -6,10 +6,10 @@
 
 #include "base/json/json_string_value_serializer.h"
 #include "base/strings/string_util.h"
+#include "content/child/v8_value_converter_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/renderer/render_view_impl.h"
-#include "content/renderer/v8_value_converter_impl.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -25,7 +25,7 @@ void DomAutomationController::Install(RenderFrame* render_frame,
                                       blink::WebFrame* frame) {
   v8::Isolate* isolate = blink::mainThreadIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
+  v8::Local<v8::Context> context = frame->mainWorldScriptContext();
   if (context.IsEmpty())
     return;
 
@@ -36,7 +36,7 @@ void DomAutomationController::Install(RenderFrame* render_frame,
   if (controller.IsEmpty())
     return;
 
-  v8::Handle<v8::Object> global = context->Global();
+  v8::Local<v8::Object> global = context->Global();
   global->Set(gin::StringToV8(isolate, "domAutomationController"),
               controller.ToV8());
 }

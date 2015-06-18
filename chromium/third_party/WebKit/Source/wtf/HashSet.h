@@ -108,7 +108,9 @@ namespace WTF {
         ValuePassOutType take(ValuePeekInType);
         ValuePassOutType takeAny();
 
-        void trace(typename Allocator::Visitor* visitor) { m_impl.trace(visitor); }
+        typedef int HasInlinedTraceMethodMarker;
+        template<typename VisitorDispatcher>
+        void trace(VisitorDispatcher visitor) { m_impl.trace(visitor); }
 
     private:
         HashTableType m_impl;
@@ -176,14 +178,14 @@ namespace WTF {
     typename HashSet<Value, HashFunctions, Traits, Allocator>::iterator
     inline HashSet<Value, HashFunctions, Traits, Allocator>::find(const T& value) const
     {
-        return m_impl.template find<HashSetTranslatorAdapter<HashTranslator> >(value);
+        return m_impl.template find<HashSetTranslatorAdapter<HashTranslator>>(value);
     }
 
     template<typename Value, typename HashFunctions, typename Traits, typename Allocator>
     template<typename HashTranslator, typename T>
     inline bool HashSet<Value, HashFunctions, Traits, Allocator>::contains(const T& value) const
     {
-        return m_impl.template contains<HashSetTranslatorAdapter<HashTranslator> >(value);
+        return m_impl.template contains<HashSetTranslatorAdapter<HashTranslator>>(value);
     }
 
     template<typename T, typename U, typename V, typename W>
@@ -197,7 +199,7 @@ namespace WTF {
     inline typename HashSet<Value, HashFunctions, Traits, Allocator>::AddResult
     HashSet<Value, HashFunctions, Traits, Allocator>::add(const T& value)
     {
-        return m_impl.template addPassingHashCode<HashSetTranslatorAdapter<HashTranslator> >(value, value);
+        return m_impl.template addPassingHashCode<HashSetTranslatorAdapter<HashTranslator>>(value, value);
     }
 
     template<typename T, typename U, typename V, typename W>
@@ -274,7 +276,7 @@ namespace WTF {
 
 #if !ENABLE(OILPAN)
     template<typename T, typename U, typename V>
-    struct NeedsTracing<HashSet<T, U, V> > {
+    struct NeedsTracing<HashSet<T, U, V>> {
         static const bool value = false;
     };
 #endif

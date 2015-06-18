@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/events/keycodes/dom4/keycode_converter.h"
+#include "ui/events/keycodes/dom/keycode_converter.h"
 
 using blink::WebKeyboardEvent;
 
@@ -27,7 +27,8 @@ const char* CodeForKeyboardEvent(const WebKeyboardEvent& key_event) {
   if ((key_event.nativeKeyCode & (1 << 24)) != 0)
     scancode |= 0xe000;
 
-  return ui::KeycodeConverter::NativeKeycodeToCode(scancode);
+  return ui::KeycodeConverter::DomCodeToCodeString(
+      ui::KeycodeConverter::NativeKeycodeToDomCode(scancode));
 }
 
 }  // namespace content

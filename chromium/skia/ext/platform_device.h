@@ -113,14 +113,6 @@ class SK_API PlatformDevice {
   // Finish a previous call to beginPlatformPaint.
   virtual void EndPlatformPaint();
 
-  // Draws to the given screen DC, if the bitmap DC doesn't exist, this will
-  // temporarily create it. However, if you have created the bitmap DC, it will
-  // be more efficient if you don't free it until after this call so it doesn't
-  // have to be created twice.  If src_rect is null, then the entirety of the
-  // source device will be copied.
-  virtual void DrawToNativeContext(PlatformSurface surface, int x, int y,
-                                   const PlatformRect* src_rect) = 0;
-
   // Returns true if GDI operations can be used for drawing into the bitmap.
   virtual bool SupportsPlatformPaint();
 
@@ -132,18 +124,13 @@ class SK_API PlatformDevice {
   // Loads a SkRegion into the GDI context.
   static void LoadClippingRegionToDC(HDC context, const SkRegion& region,
                                      const SkMatrix& transformation);
-#elif defined(OS_MACOSX)
-  // Loads a SkPath into the CG context. The path can there after be used for
-  // clipping or as a stroke.
-  static void LoadPathToCGContext(CGContextRef context, const SkPath& path);
 
-  // Initializes the default settings and colors in a device context.
-  static void InitializeCGContext(CGContextRef context);
-
-  // Loads a SkRegion into the CG context.
-  static void LoadClippingRegionToCGContext(CGContextRef context,
-                                            const SkRegion& region,
-                                            const SkMatrix& transformation);
+  // Draws to the given screen DC, if the bitmap DC doesn't exist, this will
+  // temporarily create it. However, if you have created the bitmap DC, it will
+  // be more efficient if you don't free it until after this call so it doesn't
+  // have to be created twice.  If src_rect is null, then the entirety of the
+  // source device will be copied.
+  virtual void DrawToHDC(HDC, int x, int y, const RECT* src_rect);
 #endif
 
  protected:
@@ -161,10 +148,6 @@ class SK_API PlatformDevice {
 
   // Transforms SkPath's paths into a series of cubic path.
   static bool SkPathToCubicPaths(CubicPaths* paths, const SkPath& skpath);
-#elif defined(OS_MACOSX)
-  // Loads the specified Skia transform into the device context
-  static void LoadTransformToCGContext(CGContextRef context,
-                                       const SkMatrix& matrix);
 #endif
 };
 

@@ -52,6 +52,13 @@ struct GPU_EXPORT TextureUnit {
   // glBindTexture
   scoped_refptr<TextureRef> bound_texture_rectangle_arb;
 
+  // texture currently bound to this unit's GL_TEXTURE_3D with glBindTexture
+  scoped_refptr<TextureRef> bound_texture_3d;
+
+  // texture currently bound to this unit's GL_TEXTURE_2D_ARRAY with
+  // glBindTexture
+  scoped_refptr<TextureRef> bound_texture_2d_array;
+
   scoped_refptr<TextureRef> GetInfoForSamplerType(
       GLenum type) {
     DCHECK(type == GL_SAMPLER_2D || type == GL_SAMPLER_CUBE ||
@@ -65,6 +72,10 @@ struct GPU_EXPORT TextureUnit {
         return bound_texture_external_oes;
       case GL_SAMPLER_2D_RECT_ARB:
         return bound_texture_rectangle_arb;
+      case GL_SAMPLER_3D:
+        return bound_texture_3d;
+      case GL_SAMPLER_2D_ARRAY:
+        return bound_texture_2d_array;
     }
 
     NOTREACHED();
@@ -81,18 +92,67 @@ struct GPU_EXPORT TextureUnit {
     if (bound_texture_external_oes.get() == texture) {
       bound_texture_external_oes = NULL;
     }
+    if (bound_texture_3d.get() == texture) {
+      bound_texture_3d = NULL;
+    }
+    if (bound_texture_2d_array.get() == texture) {
+      bound_texture_2d_array = NULL;
+    }
   }
 };
 
-struct Vec4 {
+class GPU_EXPORT Vec4 {
+ public:
+  enum DataType {
+    kFloat,
+    kInt,
+    kUInt,
+  };
+
   Vec4() {
-    v[0] = 0.0f;
-    v[1] = 0.0f;
-    v[2] = 0.0f;
-    v[3] = 1.0f;
+    v_[0].float_value = 0.0f;
+    v_[1].float_value = 0.0f;
+    v_[2].float_value = 0.0f;
+    v_[3].float_value = 1.0f;
+    type_ = kFloat;
   }
-  float v[4];
+
+  template <typename T>
+  void GetValues(T* values) const;
+
+  template <typename T>
+  void SetValues(const T* values);
+
+  DataType type() const {
+    return type_;
+  }
+
+  bool Equal(const Vec4& other) const;
+
+ private:
+  union ValueUnion {
+    GLfloat float_value;
+    GLint int_value;
+    GLuint uint_value;
+  };
+
+  ValueUnion v_[4];
+  DataType type_;
 };
+
+template <>
+GPU_EXPORT void Vec4::GetValues<GLfloat>(GLfloat* values) const;
+template <>
+GPU_EXPORT void Vec4::GetValues<GLint>(GLint* values) const;
+template <>
+GPU_EXPORT void Vec4::GetValues<GLuint>(GLuint* values) const;
+
+template <>
+GPU_EXPORT void Vec4::SetValues<GLfloat>(const GLfloat* values);
+template <>
+GPU_EXPORT void Vec4::SetValues<GLint>(const GLint* values);
+template <>
+GPU_EXPORT void Vec4::SetValues<GLuint>(const GLuint* values);
 
 struct GPU_EXPORT ContextState {
   ContextState(FeatureInfo* feature_info,
@@ -211,10 +271,12 @@ struct GPU_EXPORT ContextState {
   bool pack_reverse_row_order;
   bool ignore_cached_state;
 
-  mutable bool fbo_binding_for_scissor_workaround_dirty_;
-  FeatureInfo* feature_info_;
+  mutable bool fbo_binding_for_scissor_workaround_dirty;
 
  private:
+  void EnableDisable(GLenum pname, bool enable) const;
+
+  FeatureInfo* feature_info_;
   scoped_ptr<ErrorState> error_state_;
 };
 

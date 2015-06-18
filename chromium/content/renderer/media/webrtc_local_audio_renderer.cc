@@ -4,19 +4,19 @@
 
 #include "content/renderer/media/webrtc_local_audio_renderer.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/synchronization/lock.h"
+#include "base/trace_event/trace_event.h"
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
 #include "content/renderer/media/webrtc_audio_renderer.h"
 #include "content/renderer/render_frame_impl.h"
 #include "media/audio/audio_output_device.h"
-#include "media/base/audio_block_fifo.h"
 #include "media/base/audio_bus.h"
+#include "media/base/audio_shifter.h"
 
 namespace content {
 
@@ -36,23 +36,15 @@ int WebRtcLocalAudioRenderer::Render(
   TRACE_EVENT0("audio", "WebRtcLocalAudioRenderer::Render");
   base::AutoLock auto_lock(thread_lock_);
 
-  if (!playing_ || !volume_ || !loopback_fifo_) {
+  if (!playing_ || !volume_ || !audio_shifter_) {
     audio_bus->Zero();
     return 0;
   }
 
-  // Provide data by reading from the FIFO if the FIFO contains enough
-  // to fulfill the request.
-  if (loopback_fifo_->available_blocks()) {
-    const media::AudioBus* audio_data = loopback_fifo_->Consume();
-    DCHECK_EQ(audio_data->frames(), audio_bus->frames());
-    audio_data->CopyTo(audio_bus);
-  } else {
-    audio_bus->Zero();
-    // This warning is perfectly safe if it happens for the first audio
-    // frames. It should not happen in a steady-state mode.
-    DVLOG(2) << "loopback FIFO is empty";
-  }
+  audio_shifter_->Pull(
+      audio_bus,
+      base::TimeTicks::Now() -
+      base::TimeDelta::FromMilliseconds(audio_delay_milliseconds));
 
   return audio_bus->frames();
 }
@@ -62,26 +54,24 @@ void WebRtcLocalAudioRenderer::OnRenderError() {
 }
 
 // content::MediaStreamAudioSink implementation
-void WebRtcLocalAudioRenderer::OnData(const int16* audio_data,
-                                      int sample_rate,
-                                      int number_of_channels,
-                                      int number_of_frames) {
+void WebRtcLocalAudioRenderer::OnData(const media::AudioBus& audio_bus,
+                                      base::TimeTicks estimated_capture_time) {
   DCHECK(capture_thread_checker_.CalledOnValidThread());
+  DCHECK(!estimated_capture_time.is_null());
+
   TRACE_EVENT0("audio", "WebRtcLocalAudioRenderer::CaptureData");
+
   base::AutoLock auto_lock(thread_lock_);
-  if (!playing_ || !volume_ || !loopback_fifo_)
+  if (!playing_ || !volume_ || !audio_shifter_)
     return;
 
-  // Push captured audio to FIFO so it can be read by a local sink.
-  if (loopback_fifo_->GetUnfilledFrames() >= number_of_frames) {
-    loopback_fifo_->Push(audio_data, number_of_frames, sizeof(audio_data[0]));
-
-    const base::TimeTicks now = base::TimeTicks::Now();
-    total_render_time_ += now - last_render_time_;
-    last_render_time_ = now;
-  } else {
-    DVLOG(1) << "FIFO is full";
-  }
+  scoped_ptr<media::AudioBus> audio_data(
+      media::AudioBus::Create(audio_bus.channels(), audio_bus.frames()));
+  audio_bus.CopyTo(audio_data.get());
+  audio_shifter_->Push(audio_data.Pass(), estimated_capture_time);
+  const base::TimeTicks now = base::TimeTicks::Now();
+  total_render_time_ += now - last_render_time_;
+  last_render_time_ = now;
 }
 
 void WebRtcLocalAudioRenderer::OnSetFormat(
@@ -103,12 +93,10 @@ void WebRtcLocalAudioRenderer::OnSetFormat(
 // WebRtcLocalAudioRenderer::WebRtcLocalAudioRenderer implementation.
 WebRtcLocalAudioRenderer::WebRtcLocalAudioRenderer(
     const blink::WebMediaStreamTrack& audio_track,
-    int source_render_view_id,
     int source_render_frame_id,
     int session_id,
     int frames_per_buffer)
     : audio_track_(audio_track),
-      source_render_view_id_(source_render_view_id),
       source_render_frame_id_(source_render_frame_id),
       session_id_(session_id),
       message_loop_(base::MessageLoopProxy::current()),
@@ -133,8 +121,7 @@ void WebRtcLocalAudioRenderer::Start() {
   MediaStreamAudioSink::AddToAudioTrack(this, audio_track_);
   // ...and |sink_| will get audio data from us.
   DCHECK(!sink_.get());
-  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_view_id_,
-                                              source_render_frame_id_);
+  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_frame_id_);
 
   base::AutoLock auto_lock(thread_lock_);
   last_render_time_ = base::TimeTicks::Now();
@@ -148,7 +135,7 @@ void WebRtcLocalAudioRenderer::Stop() {
   {
     base::AutoLock auto_lock(thread_lock_);
     playing_ = false;
-    loopback_fifo_.reset();
+    audio_shifter_.reset();
   }
 
   // Stop the output audio stream, i.e, stop asking for data to render.
@@ -242,7 +229,7 @@ void WebRtcLocalAudioRenderer::MaybeStartSink() {
   {
     // Clear up the old data in the FIFO.
     base::AutoLock auto_lock(thread_lock_);
-    loopback_fifo_->Clear();
+    audio_shifter_->Flush();
   }
 
   if (!sink_params_.IsValid() || !playing_ || !volume_ || sink_started_)
@@ -292,21 +279,19 @@ void WebRtcLocalAudioRenderer::ReconfigureSink(
       source_params_.effects() | implicit_ducking_effect);
 
   {
-    // TODO(henrika): we could add a more dynamic solution here but I prefer
-    // a fixed size combined with bad audio at overflow. The alternative is
-    // that we start to build up latency and that can be more difficult to
-    // detect. Tests have shown that the FIFO never contains more than 2 or 3
-    // audio frames but I have selected a max size of ten buffers just
-    // in case since these tests were performed on a 16 core, 64GB Win 7
-    // machine. We could also add some sort of error notifier in this area if
-    // the FIFO overflows.
-    const int blocks_of_buffers =
-        10 * params.frames_per_buffer() / sink_params_.frames_per_buffer() + 1;
-    media::AudioBlockFifo* new_fifo = new media::AudioBlockFifo(
-        params.channels(), sink_params_.frames_per_buffer(), blocks_of_buffers);
+    // Note: The max buffer is fairly large, but will rarely be used.
+    // Cast needs the buffer to hold at least one second of audio.
+    // The clock accuracy is set to 20ms because clock accuracy is
+    // ~15ms on windows.
+    media::AudioShifter* const new_shifter = new media::AudioShifter(
+        base::TimeDelta::FromSeconds(2),
+        base::TimeDelta::FromMilliseconds(20),
+        base::TimeDelta::FromSeconds(20),
+        source_params_.sample_rate(),
+        params.channels());
 
     base::AutoLock auto_lock(thread_lock_);
-    loopback_fifo_.reset(new_fifo);
+    audio_shifter_.reset(new_shifter);
   }
 
   if (!sink_.get())
@@ -319,8 +304,7 @@ void WebRtcLocalAudioRenderer::ReconfigureSink(
     sink_started_ = false;
   }
 
-  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_view_id_,
-                                              source_render_frame_id_);
+  sink_ = AudioDeviceFactory::NewOutputDevice(source_render_frame_id_);
   MaybeStartSink();
 }
 

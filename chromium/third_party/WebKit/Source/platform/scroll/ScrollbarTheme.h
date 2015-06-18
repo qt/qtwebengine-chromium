@@ -28,6 +28,7 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/paint/DisplayItem.h"
 #include "platform/scroll/ScrollTypes.h"
 
 namespace blink {
@@ -37,7 +38,7 @@ class PlatformMouseEvent;
 class ScrollbarThemeClient;
 
 class PLATFORM_EXPORT ScrollbarTheme {
-    WTF_MAKE_NONCOPYABLE(ScrollbarTheme); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ScrollbarTheme); WTF_MAKE_FAST_ALLOCATED(ScrollbarTheme);
 public:
     ScrollbarTheme() { }
     virtual ~ScrollbarTheme() { }
@@ -45,6 +46,7 @@ public:
     virtual void updateEnabledState(ScrollbarThemeClient*) { }
 
     virtual bool paint(ScrollbarThemeClient*, GraphicsContext*, const IntRect& damageRect);
+
     virtual ScrollbarPart hitTest(ScrollbarThemeClient*, const IntPoint&);
 
     virtual int scrollbarThickness(ScrollbarControlSize = RegularScrollbar) { return 0; }
@@ -78,11 +80,8 @@ public:
 
     virtual void invalidatePart(ScrollbarThemeClient*, ScrollbarPart);
 
-    virtual void paintScrollCorner(GraphicsContext*, const IntRect& cornerRect);
-
+    virtual void paintScrollCorner(GraphicsContext*, const DisplayItemClientWrapper&, const IntRect& cornerRect);
     virtual void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) { }
-    virtual void paintOverhangBackground(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
-    virtual void paintOverhangShadows(GraphicsContext*, const IntSize&, const IntRect&, const IntRect&, const IntRect&) { }
 
     virtual bool shouldCenterOnThumb(ScrollbarThemeClient*, const PlatformMouseEvent&);
     virtual bool shouldSnapBackToDragOrigin(ScrollbarThemeClient*, const PlatformMouseEvent&);
@@ -132,6 +131,10 @@ public:
 
     static void setMockScrollbarsEnabled(bool flag);
     static bool mockScrollbarsEnabled();
+
+protected:
+    static DisplayItem::Type buttonPartToDisplayItemType(ScrollbarPart);
+    static DisplayItem::Type trackPiecePartToDisplayItemType(ScrollbarPart);
 
 private:
     static ScrollbarTheme* nativeTheme(); // Must be implemented to return the correct theme subclass.

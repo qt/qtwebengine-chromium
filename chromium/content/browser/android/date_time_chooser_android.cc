@@ -13,7 +13,7 @@
 #include "jni/DateTimeChooserAndroid_jni.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
-#include "ui/base/android/window_android.h"
+#include "ui/android/window_android.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF16;
@@ -47,19 +47,6 @@ DateTimeChooserAndroid::DateTimeChooserAndroid()
 }
 
 DateTimeChooserAndroid::~DateTimeChooserAndroid() {
-}
-
-// static
-void DateTimeChooserAndroid::InitializeDateInputTypes(
-      int text_input_type_date, int text_input_type_date_time,
-      int text_input_type_date_time_local, int text_input_type_month,
-      int text_input_type_time, int text_input_type_week) {
-  JNIEnv* env = AttachCurrentThread();
-  Java_DateTimeChooserAndroid_initializeDateInputTypes(
-         env,
-         text_input_type_date, text_input_type_date_time,
-         text_input_type_date_time_local, text_input_type_month,
-         text_input_type_time, text_input_type_week);
 }
 
 void DateTimeChooserAndroid::ReplaceDateTime(JNIEnv* env,
@@ -120,16 +107,7 @@ void DateTimeChooserAndroid::ShowDialog(
 // Native JNI methods
 // ----------------------------------------------------------------------------
 bool RegisterDateTimeChooserAndroid(JNIEnv* env) {
-  bool registered = RegisterNativesImpl(env);
-  if (registered)
-    DateTimeChooserAndroid::InitializeDateInputTypes(
-        ui::TEXT_INPUT_TYPE_DATE,
-        ui::TEXT_INPUT_TYPE_DATE_TIME,
-        ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL,
-        ui::TEXT_INPUT_TYPE_MONTH,
-        ui::TEXT_INPUT_TYPE_TIME,
-        ui::TEXT_INPUT_TYPE_WEEK);
-  return registered;
+  return RegisterNativesImpl(env);
 }
 
 }  // namespace content

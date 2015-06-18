@@ -13,13 +13,16 @@ namespace content {
 class DevToolsFrontendHostImpl : public DevToolsFrontendHost,
                                  public WebContentsObserver {
  public:
-  DevToolsFrontendHostImpl(RenderViewHost* frontend_rvh,
+  DevToolsFrontendHostImpl(RenderFrameHost* frontend_main_frame,
                            DevToolsFrontendHost::Delegate* delegate);
   ~DevToolsFrontendHostImpl() override;
 
+  void BadMessageRecieved() override;
+
  private:
   // WebContentsObserver overrides.
-  bool OnMessageReceived(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message,
+                         RenderFrameHost* render_frame_host) override;
 
   void OnDispatchOnInspectorBackend(const std::string& message);
   void OnDispatchOnEmbedder(const std::string& message);

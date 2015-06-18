@@ -34,19 +34,29 @@ class ExceptionState;
 // AudioBasicInspectorNode is an AudioNode with one input and one output where the output might not necessarily connect to another node's input.
 // If the output is not connected to any other node, then the AudioBasicInspectorNode's processIfNecessary() function will be called automatically by
 // AudioContext before the end of each render quantum so that it can inspect the audio stream.
-class AudioBasicInspectorNode : public AudioNode {
+class AudioBasicInspectorHandler : public AudioHandler {
 public:
-    AudioBasicInspectorNode(AudioContext*, float sampleRate, unsigned outputChannelCount);
+    AudioBasicInspectorHandler(NodeType, AudioNode&, float sampleRate, unsigned outputChannelCount);
 
-    // AudioNode
+    // AudioHandler
     virtual void pullInputs(size_t framesToProcess) override final;
-    virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&) override final;
-    virtual void disconnect(unsigned outputIndex, ExceptionState&) override final;
     virtual void checkNumberOfChannelsForInput(AudioNodeInput*) override final;
 
-private:
     void updatePullStatus();
-    bool m_needAutomaticPull; // When setting to true, AudioBasicInspectorNode will be pulled automaticlly by AudioContext before the end of each render quantum.
+
+private:
+    bool m_needAutomaticPull; // When setting to true, AudioBasicInspectorHandler will be pulled automaticlly by AudioContext before the end of each render quantum.
+};
+
+class AudioBasicInspectorNode : public AudioNode {
+protected:
+    explicit AudioBasicInspectorNode(AudioContext& context) : AudioNode(context) { }
+
+private:
+    // TODO(tkent): Should AudioBasicInspectorNode override other variants of
+    // connect() and disconnect()?
+    void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&) final;
+    void disconnect(unsigned outputIndex, ExceptionState&) final;
 };
 
 } // namespace blink

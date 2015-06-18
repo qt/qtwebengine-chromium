@@ -1,0 +1,12 @@
+<link rel="import" href="chrome://resources/polymer/polymer/polymer.html">
+<link rel="import" href="chrome://resources/polymer/paper-spinner/paper-spinner.html">
+
+<polymer-element name="throbber-notice" attributes="text" noscript>
+  <template>
+    <link rel="stylesheet" href="throbber_notice.css">
+    <div id="spinner-container" vertical layout center>
+      <paper-spinner dir="ltr" active></paper-spinner>
+    </div>
+    <div id="spinner-comment">{{text}}</div>
+  </template>
+</polymer-element>

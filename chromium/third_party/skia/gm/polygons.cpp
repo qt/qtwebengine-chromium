@@ -22,22 +22,19 @@ public:
     PolygonsGM() {}
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag;
-    }
 
-    virtual SkString onShortName() SK_OVERRIDE {
+    SkString onShortName() override {
         return SkString("polygons");
     }
 
-    virtual SkISize onISize() SK_OVERRIDE {
+    SkISize onISize() override {
         int width = kNumPolygons * kCellSize + 40;
         int height = (kNumJoins * kNumStrokeWidths + kNumExtraStyles) * kCellSize + 40;
         return SkISize::Make(width, height);
     }
 
     // Construct all polygons
-    virtual void onOnceBeforeDraw() SK_OVERRIDE {
+    void onOnceBeforeDraw() override {
         SkPoint p0[] = {{0, 0}, {60, 0}, {90, 40}};  // triangle
         SkPoint p1[] = {{0, 0}, {0, 40}, {60, 40}, {40, 0}};  // trapezoid
         SkPoint p2[] = {{0, 0}, {40, 40}, {80, 40}, {40, 0}};  // diamond
@@ -88,7 +85,7 @@ protected:
         canvas->translate(x, y);
     }
 
-    static void SetColorAndAlpha(SkPaint* paint, SkLCGRandom* rand) {
+    static void SetColorAndAlpha(SkPaint* paint, SkRandom* rand) {
         SkColor color = rand->nextU();
         color |= 0xff000000;
         paint->setColor(color);
@@ -97,7 +94,7 @@ protected:
         }
     }
 
-    virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(SkCanvas* canvas) override {
         // Stroke widths are:
         // 0(may use hairline rendering), 10(common case for stroke-style)
         // 40(>= geometry width/height, make the contour filled in fact)
@@ -113,7 +110,7 @@ protected:
         SkPaint paint;
         paint.setAntiAlias(true);
 
-        SkLCGRandom rand;
+        SkRandom rand;
         // For stroke style painter
         paint.setStyle(SkPaint::kStroke_Style);
         for (int join = 0; join < kNumJoins; ++join) {

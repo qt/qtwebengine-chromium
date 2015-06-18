@@ -19,13 +19,11 @@
 #include "net/http/proxy_client_socket.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_base.h"
-#include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_session.h"
 
 namespace net {
 
-class HostResolver;
 class HttpAuthCache;
 class HttpAuthHandlerFactory;
 class ProxyDelegate;
@@ -46,7 +44,6 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
   HttpProxySocketParams(
       const scoped_refptr<TransportSocketParams>& transport_params,
       const scoped_refptr<SSLSocketParams>& ssl_params,
-      const GURL& request_url,
       const std::string& user_agent,
       const HostPortPair& endpoint,
       HttpAuthCache* http_auth_cache,
@@ -61,7 +58,6 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
   const scoped_refptr<SSLSocketParams>& ssl_params() const {
     return ssl_params_;
   }
-  const GURL& request_url() const { return request_url_; }
   const std::string& user_agent() const { return user_agent_; }
   const HostPortPair& endpoint() const { return endpoint_; }
   HttpAuthCache* http_auth_cache() const { return http_auth_cache_; }
@@ -86,7 +82,6 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
   const scoped_refptr<TransportSocketParams> transport_params_;
   const scoped_refptr<SSLSocketParams> ssl_params_;
   SpdySessionPool* spdy_session_pool_;
-  const GURL request_url_;
   const std::string user_agent_;
   const HostPortPair endpoint_;
   HttpAuthCache* const http_auth_cache_;
@@ -108,7 +103,6 @@ class HttpProxyConnectJob : public ConnectJob {
                       const base::TimeDelta& timeout_duration,
                       TransportClientSocketPool* transport_pool,
                       SSLClientSocketPool* ssl_pool,
-                      HostResolver* host_resolver,
                       Delegate* delegate,
                       NetLog* net_log);
   ~HttpProxyConnectJob() override;
@@ -164,7 +158,6 @@ class HttpProxyConnectJob : public ConnectJob {
   scoped_refptr<HttpProxySocketParams> params_;
   TransportClientSocketPool* const transport_pool_;
   SSLClientSocketPool* const ssl_pool_;
-  HostResolver* const resolver_;
 
   State next_state_;
   CompletionCallback callback_;
@@ -189,15 +182,11 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
  public:
   typedef HttpProxySocketParams SocketParams;
 
-  HttpProxyClientSocketPool(
-      int max_sockets,
-      int max_sockets_per_group,
-      ClientSocketPoolHistograms* histograms,
-      HostResolver* host_resolver,
-      TransportClientSocketPool* transport_pool,
-      SSLClientSocketPool* ssl_pool,
-      const ProxyDelegate* proxy_delegate,
-      NetLog* net_log);
+  HttpProxyClientSocketPool(int max_sockets,
+                            int max_sockets_per_group,
+                            TransportClientSocketPool* transport_pool,
+                            SSLClientSocketPool* ssl_pool,
+                            NetLog* net_log);
 
   ~HttpProxyClientSocketPool() override;
 
@@ -239,8 +228,6 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
 
   base::TimeDelta ConnectionTimeout() const override;
 
-  ClientSocketPoolHistograms* histograms() const override;
-
   // LowerLayeredPool implementation.
   bool IsStalled() const override;
 
@@ -256,12 +243,9 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
 
   class HttpProxyConnectJobFactory : public PoolBase::ConnectJobFactory {
    public:
-    HttpProxyConnectJobFactory(
-        TransportClientSocketPool* transport_pool,
-        SSLClientSocketPool* ssl_pool,
-        HostResolver* host_resolver,
-        const ProxyDelegate* proxy_delegate,
-        NetLog* net_log);
+    HttpProxyConnectJobFactory(TransportClientSocketPool* transport_pool,
+                               SSLClientSocketPool* ssl_pool,
+                               NetLog* net_log);
 
     // ClientSocketPoolBase::ConnectJobFactory methods.
     scoped_ptr<ConnectJob> NewConnectJob(
@@ -274,8 +258,6 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocketPool
    private:
     TransportClientSocketPool* const transport_pool_;
     SSLClientSocketPool* const ssl_pool_;
-    HostResolver* const host_resolver_;
-    const ProxyDelegate* proxy_delegate_;
     NetLog* net_log_;
     base::TimeDelta timeout_;
 

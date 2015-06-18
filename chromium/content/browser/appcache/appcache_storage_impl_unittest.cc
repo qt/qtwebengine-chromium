@@ -163,11 +163,10 @@ class IOThread : public base::Thread {
     factory->SetProtocolHandler(
         "http",
         new MockHttpServerJobFactory(
-            AppCacheInterceptor::CreateStartInterceptor()));
+            make_scoped_ptr(new AppCacheInterceptor())));
     job_factory_ = factory.Pass();
     request_context_.reset(new net::TestURLRequestContext());
     request_context_->set_job_factory(job_factory_.get());
-    AppCacheInterceptor::EnsureRegistered();
   }
 
   void CleanUp() override {
@@ -1772,11 +1771,12 @@ class AppCacheStorageImplTest : public testing::Test {
       AppCacheHost* host2 = backend_->GetHost(2);
       GURL manifest_url = MockHttpServer::GetMockUrl("manifest");
       request_ = service()->request_context()->CreateRequest(
-          manifest_url, net::DEFAULT_PRIORITY, NULL, NULL);
+          manifest_url, net::DEFAULT_PRIORITY, NULL);
       AppCacheInterceptor::SetExtraRequestInfo(
           request_.get(), service_.get(),
           backend_->process_id(), host2->host_id(),
-          RESOURCE_TYPE_MAIN_FRAME);
+          RESOURCE_TYPE_MAIN_FRAME,
+          false);
       request_->Start();
     }
 

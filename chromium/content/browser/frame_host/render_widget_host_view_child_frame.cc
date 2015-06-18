@@ -53,11 +53,15 @@ bool RenderWidgetHostViewChildFrame::IsSurfaceAvailableForCopy() const {
 }
 
 void RenderWidgetHostViewChildFrame::Show() {
-  WasShown();
+  if (!host_->is_hidden())
+    return;
+  host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewChildFrame::Hide() {
-  WasHidden();
+  if (host_->is_hidden())
+    return;
+  host_->WasHidden();
 }
 
 bool RenderWidgetHostViewChildFrame::IsShowing() {
@@ -103,7 +107,7 @@ gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
 
 void RenderWidgetHostViewChildFrame::InitAsPopup(
     RenderWidgetHostView* parent_host_view,
-    const gfx::Rect& pos) {
+    const gfx::Rect& bounds) {
   NOTREACHED();
 }
 
@@ -116,31 +120,14 @@ void RenderWidgetHostViewChildFrame::ImeCancelComposition() {
   NOTREACHED();
 }
 
-#if defined(OS_MACOSX) || defined(USE_AURA) || defined(OS_ANDROID)
 void RenderWidgetHostViewChildFrame::ImeCompositionRangeChanged(
     const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
   NOTREACHED();
 }
-#endif
-
-void RenderWidgetHostViewChildFrame::WasShown() {
-  if (!host_->is_hidden())
-    return;
-  host_->WasShown(ui::LatencyInfo());
-}
-
-void RenderWidgetHostViewChildFrame::WasHidden() {
-  if (host_->is_hidden())
-    return;
-  host_->WasHidden();
-}
 
 void RenderWidgetHostViewChildFrame::MovePluginWindows(
     const std::vector<WebPluginGeometry>& moves) {
-}
-
-void RenderWidgetHostViewChildFrame::Blur() {
 }
 
 void RenderWidgetHostViewChildFrame::UpdateCursor(const WebCursor& cursor) {
@@ -155,7 +142,7 @@ void RenderWidgetHostViewChildFrame::TextInputTypeChanged(
     ui::TextInputMode input_mode,
     bool can_compose_inline,
     int flags) {
-  NOTREACHED();
+  // TODO(kenrb): Implement.
 }
 
 void RenderWidgetHostViewChildFrame::RenderProcessGone(
@@ -235,6 +222,12 @@ bool RenderWidgetHostViewChildFrame::LockMouse() {
 void RenderWidgetHostViewChildFrame::UnlockMouse() {
 }
 
+uint32_t RenderWidgetHostViewChildFrame::GetSurfaceIdNamespace() {
+  // TODO(kenrb): Create SurfaceFactory here when RWHVChildFrame
+  // gets compositor surface support.
+  return 0;
+}
+
 #if defined(OS_MACOSX)
 void RenderWidgetHostViewChildFrame::SetActive(bool active) {
 }
@@ -271,9 +264,9 @@ bool RenderWidgetHostViewChildFrame::PostProcessEventForPluginIme(
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& /* dst_size */,
-    CopyFromCompositingSurfaceCallback& callback,
-    const SkColorType color_type) {
-  callback.Run(false, SkBitmap());
+    ReadbackRequestCallback& callback,
+    const SkColorType preferred_color_type) {
+  callback.Run(SkBitmap(), READBACK_FAILED);
 }
 
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurfaceToVideoFrame(
@@ -307,10 +300,6 @@ gfx::NativeViewId RenderWidgetHostViewChildFrame::GetParentForWindowlessPlugin()
   return NULL;
 }
 #endif // defined(OS_WIN)
-
-SkColorType RenderWidgetHostViewChildFrame::PreferredReadbackFormat() {
-  return kN32_SkColorType;
-}
 
 BrowserAccessibilityManager*
 RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(

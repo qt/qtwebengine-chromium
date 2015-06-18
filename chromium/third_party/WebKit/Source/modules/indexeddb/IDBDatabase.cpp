@@ -30,7 +30,7 @@
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
-#include "bindings/modules/v8/IDBBindingUtilities.h"
+#include "bindings/modules/v8/V8BindingForModules.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventQueue.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -43,8 +43,8 @@
 #include "modules/indexeddb/IDBVersionChangeEvent.h"
 #include "modules/indexeddb/WebIDBDatabaseCallbacksImpl.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebIDBKeyPath.h"
-#include "public/platform/WebIDBTypes.h"
+#include "public/platform/modules/indexeddb/WebIDBKeyPath.h"
+#include "public/platform/modules/indexeddb/WebIDBTypes.h"
 #include "wtf/Atomics.h"
 #include <limits>
 
@@ -91,7 +91,7 @@ IDBDatabase::~IDBDatabase()
         m_backend->close();
 }
 
-void IDBDatabase::trace(Visitor* visitor)
+DEFINE_TRACE(IDBDatabase)
 {
     visitor->trace(m_versionChangeTransaction);
     visitor->trace(m_transactions);
@@ -99,28 +99,16 @@ void IDBDatabase::trace(Visitor* visitor)
     visitor->trace(m_enqueuedEvents);
 #endif
     visitor->trace(m_databaseCallbacks);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<IDBDatabase>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 int64_t IDBDatabase::nextTransactionId()
 {
     // Only keep a 32-bit counter to allow ports to use the other 32
     // bits of the id.
-    AtomicallyInitializedStatic(int, currentTransactionId = 0);
+    static int currentTransactionId = 0;
     return atomicIncrement(&currentTransactionId);
-}
-
-void IDBDatabase::ackReceivedBlobs(const Vector<WebBlobInfo>* blobInfo)
-{
-    ASSERT(blobInfo);
-    if (!blobInfo->size() || !m_backend)
-        return;
-    Vector<WebBlobInfo>::const_iterator iter;
-    Vector<String> uuids;
-    uuids.reserveCapacity(blobInfo->size());
-    for (iter = blobInfo->begin(); iter != blobInfo->end(); ++iter)
-        uuids.append(iter->uuid());
-    m_backend->ackReceivedBlobs(uuids);
 }
 
 void IDBDatabase::indexCreated(int64_t objectStoreId, const IDBIndexMetadata& metadata)
@@ -186,31 +174,12 @@ PassRefPtrWillBeRawPtr<DOMStringList> IDBDatabase::objectStoreNames() const
     return objectStoreNames.release();
 }
 
-ScriptValue IDBDatabase::version(ScriptState* scriptState) const
+void IDBDatabase::version(UnsignedLongLongOrString& result) const
 {
-    int64_t intVersion = m_metadata.intVersion;
-    if (intVersion == IDBDatabaseMetadata::NoIntVersion)
-        return idbAnyToScriptValue(scriptState, IDBAny::createString(m_metadata.version));
-
-    return idbAnyToScriptValue(scriptState, IDBAny::create(intVersion));
-}
-
-IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const Dictionary& options, ExceptionState& exceptionState)
-{
-    IDBKeyPath keyPath;
-    bool autoIncrement = false;
-    if (!options.isUndefinedOrNull()) {
-        String keyPathString;
-        Vector<String> keyPathArray;
-        if (DictionaryHelper::get(options, "keyPath", keyPathArray))
-            keyPath = IDBKeyPath(keyPathArray);
-        else if (options.getWithUndefinedOrNullCheck("keyPath", keyPathString))
-            keyPath = IDBKeyPath(keyPathString);
-
-        DictionaryHelper::get(options, "autoIncrement", autoIncrement);
-    }
-
-    return createObjectStore(name, keyPath, autoIncrement, exceptionState);
+    if (m_metadata.intVersion == IDBDatabaseMetadata::NoIntVersion)
+        result.setString(m_metadata.version);
+    else
+        result.setUnsignedLongLong(m_metadata.intVersion);
 }
 
 IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const IDBKeyPath& keyPath, bool autoIncrement, ExceptionState& exceptionState)
@@ -295,10 +264,21 @@ void IDBDatabase::deleteObjectStore(const String& name, ExceptionState& exceptio
     m_metadata.objectStores.remove(objectStoreId);
 }
 
-IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const Vector<String>& scope, const String& modeString, ExceptionState& exceptionState)
+IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const StringOrStringSequenceOrDOMStringList& storeNames, const String& modeString, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBDatabase::transaction");
     Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBTransactionCall, IDBMethodsMax);
+
+    Vector<String> scope;
+    if (storeNames.isString())
+        scope.append(storeNames.getAsString());
+    else if (storeNames.isStringSequence())
+        scope = storeNames.getAsStringSequence();
+    else if (storeNames.isDOMStringList())
+        scope = *storeNames.getAsDOMStringList();
+    else
+        ASSERT_NOT_REACHED();
+
     if (!scope.size()) {
         exceptionState.throwDOMException(InvalidAccessError, "The storeNames parameter was empty.");
         return 0;
@@ -337,13 +317,6 @@ IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const Vector<
     m_backend->createTransaction(transactionId, WebIDBDatabaseCallbacksImpl::create(m_databaseCallbacks).leakPtr(), objectStoreIds, mode);
 
     return IDBTransaction::create(scriptState, transactionId, scope, mode, this);
-}
-
-IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const String& storeName, const String& mode, ExceptionState& exceptionState)
-{
-    RefPtrWillBeRawPtr<DOMStringList> storeNames = DOMStringList::create();
-    storeNames->append(storeName);
-    return transaction(scriptState, storeNames, mode, exceptionState);
 }
 
 void IDBDatabase::forceClose()

@@ -23,7 +23,6 @@
             '../../base/base_nacl.gyp:base_nacl_nonsfi',
             '../../ipc/ipc_nacl.gyp:ipc_nacl',
             '../../ipc/ipc_nacl.gyp:ipc_nacl_nonsfi',
-            '../../native_client/tools.gyp:prep_toolchain'
           ],
           'variables': {
             'nacl_untrusted_build': 1,
@@ -35,10 +34,10 @@
             'build_nonsfi_helper': 1,
           },
           'sources': [
-            'latency_info.cc',
-            'latency_info.h',
             'ipc/latency_info_param_traits.cc',
             'ipc/latency_info_param_traits.h',
+            'latency_info.cc',
+            'latency_info.h',
           ],
         },
       ],
@@ -64,10 +63,10 @@
             '../..',
           ],
           'sources': [
-            'latency_info.cc',
-            'latency_info.h',
             'ipc/latency_info_param_traits.cc',
             'ipc/latency_info_param_traits.h',
+            'latency_info.cc',
+            'latency_info.h',
           ],
           'configurations': {
             'Common_Base': {

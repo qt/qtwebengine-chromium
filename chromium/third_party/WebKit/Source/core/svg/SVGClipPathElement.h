@@ -26,10 +26,11 @@
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGUnitTypes.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-class RenderObject;
+class LayoutObject;
 
 class SVGClipPathElement final : public SVGGraphicsElement {
     DEFINE_WRAPPERTYPEINFO();
@@ -39,18 +40,19 @@ public:
 
     virtual bool supportsFocus() const override { return false; }
 
+    DECLARE_VIRTUAL_TRACE();
+
 private:
     explicit SVGClipPathElement(Document&);
 
     virtual bool needsPendingResourceHandling() const override { return false; }
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_clipPathUnits;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_clipPathUnits;
 };
 
 } // namespace blink

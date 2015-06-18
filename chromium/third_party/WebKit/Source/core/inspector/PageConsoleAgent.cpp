@@ -31,22 +31,24 @@
 #include "config.h"
 #include "core/inspector/PageConsoleAgent.h"
 
-#include "core/dom/Node.h"
-#include "core/dom/NodeTraversal.h"
-#include "core/dom/shadow/ShadowRoot.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "core/dom/Document.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
-#include "core/inspector/InjectedScriptHost.h"
-#include "core/inspector/InjectedScriptManager.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/InspectorDOMAgent.h"
-#include "core/page/Page.h"
+#include "core/inspector/InspectorPageAgent.h"
+#include "core/workers/WorkerInspectorProxy.h"
 
 namespace blink {
 
-PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent, Page* page)
-    : InspectorConsoleAgent(timelineAgent, injectedScriptManager)
+int PageConsoleAgent::s_enabledAgentCount = 0;
+
+PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent)
+    : InspectorConsoleAgent(injectedScriptManager)
     , m_inspectorDOMAgent(domAgent)
-    , m_page(page)
+    , m_pageAgent(pageAgent)
 {
 }
 
@@ -54,53 +56,79 @@ PageConsoleAgent::~PageConsoleAgent()
 {
 #if !ENABLE(OILPAN)
     m_inspectorDOMAgent = nullptr;
+    m_instrumentingAgents->setPageConsoleAgent(nullptr);
 #endif
 }
 
-void PageConsoleAgent::trace(Visitor* visitor)
+DEFINE_TRACE(PageConsoleAgent)
 {
     visitor->trace(m_inspectorDOMAgent);
-    visitor->trace(m_page);
+    visitor->trace(m_pageAgent);
     InspectorConsoleAgent::trace(visitor);
+}
+
+void PageConsoleAgent::enable(ErrorString* errorString)
+{
+    InspectorConsoleAgent::enable(errorString);
+    m_workersWithEnabledConsole.clear();
+    m_instrumentingAgents->setPageConsoleAgent(this);
+}
+
+void PageConsoleAgent::disable(ErrorString* errorString)
+{
+    m_instrumentingAgents->setPageConsoleAgent(nullptr);
+    InspectorConsoleAgent::disable(errorString);
 }
 
 void PageConsoleAgent::clearMessages(ErrorString* errorString)
 {
     m_inspectorDOMAgent->releaseDanglingNodes();
-    InspectorConsoleAgent::clearMessages(errorString);
+    messageStorage()->clear(m_pageAgent->inspectedFrame()->document());
+}
+
+void PageConsoleAgent::workerConsoleAgentEnabled(WorkerGlobalScopeProxy* proxy)
+{
+    m_workersWithEnabledConsole.add(proxy);
 }
 
 ConsoleMessageStorage* PageConsoleAgent::messageStorage()
 {
-    return &m_page->frameHost().consoleMessageStorage();
+    return &m_pageAgent->frameHost()->consoleMessageStorage();
 }
 
-class InspectableNode final : public InjectedScriptHost::InspectableObject {
-public:
-    explicit InspectableNode(Node* node) : m_node(node) { }
-    virtual ScriptValue get(ScriptState* state) override
-    {
-        return InjectedScriptHost::nodeAsScriptValue(state, m_node);
-    }
-private:
-    Node* m_node;
-};
-
-void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
+void PageConsoleAgent::workerTerminated(WorkerInspectorProxy* workerInspectorProxy)
 {
-    Node* node = m_inspectorDOMAgent->nodeForId(nodeId);
-    if (!node) {
-        *errorString = "nodeId is not valid";
+    WorkerGlobalScopeProxy* proxy = workerInspectorProxy->workerGlobalScopeProxy();
+    if (!proxy)
         return;
+
+    HashSet<WorkerGlobalScopeProxy*>::iterator iterator = m_workersWithEnabledConsole.find(proxy);
+    bool workerAgentWasEnabled = iterator != m_workersWithEnabledConsole.end();
+    if (workerAgentWasEnabled)
+        return;
+
+    ConsoleMessageStorage* storage = messageStorage();
+    size_t messageCount = storage->size();
+    for (size_t i = 0; i < messageCount; ++i) {
+        ConsoleMessage* message = storage->at(i);
+        if (message->workerGlobalScopeProxy() == proxy) {
+            message->setWorkerGlobalScopeProxy(nullptr);
+            sendConsoleMessageToFrontend(message, false);
+        }
     }
-    while (node->isInShadowTree()) {
-        Node& ancestor = NodeTraversal::highestAncestorOrSelf(*node);
-        if (!ancestor.isShadowRoot() || toShadowRoot(ancestor).type() == ShadowRoot::AuthorShadowRoot)
-            break;
-        // User agent shadow root, keep climbing up.
-        node = toShadowRoot(ancestor).host();
-    }
-    m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtr(new InspectableNode(node)));
+}
+
+void PageConsoleAgent::enableStackCapturingIfNeeded()
+{
+    if (!s_enabledAgentCount)
+        ScriptController::setCaptureCallStackForUncaughtExceptions(true);
+    ++s_enabledAgentCount;
+}
+
+void PageConsoleAgent::disableStackCapturingIfNeeded()
+{
+    if (!(--s_enabledAgentCount))
+        ScriptController::setCaptureCallStackForUncaughtExceptions(false);
 }
 
 } // namespace blink

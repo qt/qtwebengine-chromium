@@ -70,9 +70,9 @@ const int ElevationIndexTable[ElevationIndexTableSize] = {
 // local hash table to ensure quick efficient future retrievals.
 static PassRefPtr<AudioBus> getConcatenatedImpulseResponsesForSubject(const String& subjectName)
 {
-    typedef HashMap<String, RefPtr<AudioBus> > AudioBusMap;
-    DEFINE_STATIC_LOCAL(AudioBusMap, audioBusMap, ());
-    DEFINE_STATIC_LOCAL(Mutex, mutex, ());
+    typedef HashMap<String, RefPtr<AudioBus>> AudioBusMap;
+    AtomicallyInitializedStaticReference(AudioBusMap, audioBusMap, new AudioBusMap());
+    AtomicallyInitializedStaticReference(Mutex, mutex, new Mutex());
 
     MutexLocker locker(mutex);
     RefPtr<AudioBus> bus;
@@ -101,8 +101,7 @@ static PassRefPtr<AudioBus> getConcatenatedImpulseResponsesForSubject(const Stri
 }
 #endif
 
-bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName,
-                                                        RefPtr<HRTFKernel>& kernelL, RefPtr<HRTFKernel>& kernelR)
+bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName, OwnPtr<HRTFKernel>& kernelL, OwnPtr<HRTFKernel>& kernelR)
 {
     // Valid values for azimuth are 0 -> 345 in 15 degree increments.
     // Valid values for elevation are -45 -> +90 in 15 degree increments.

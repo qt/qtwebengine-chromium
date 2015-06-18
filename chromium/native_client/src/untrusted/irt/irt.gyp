@@ -33,8 +33,9 @@
       'irt_dev_getpid.c',
       'irt_exception_handling.c',
       'irt_dev_list_mappings.c',
-      'irt_nameservice.c',
       'irt_random.c',
+      'irt_pnacl_translator_compile.c',
+      'irt_pnacl_translator_link.c',
 # support_srcs
       # We also get nc_init_private.c, nc_thread.c and nc_tsd.c via
       # #includes of .c files.
@@ -47,9 +48,6 @@
       'irt_core_resource.c',
       'irt_entry_core.c',
     ],
-    'irt_browser': [
-      'irt_manifest.c',
-    ],
   },
   'targets': [
     {
@@ -61,22 +59,25 @@
         'build_newlib': 0,
         'build_irt': 1,
       },
-      'sources': ['<@(irt_sources)', '<@(irt_nonbrowser)'],
+      'sources': ['<@(irt_nonbrowser)'],
       'link_flags': [
+        '-Wl,--start-group',
+        '-lirt_browser',
         '-lsrpc',
         '-limc_syscalls',
         '-lplatform',
         '-lgio',
+        '-Wl,--end-group',
         '-lm',
       ],
       'dependencies': [
+        'irt_browser_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/tools/tls_edit/tls_edit.gyp:tls_edit#host',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:imc_syscalls_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib_newlib',
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
       ],
     },
     {
@@ -88,9 +89,8 @@
         'build_newlib': 1,
         'build_irt': 1,
       },
-      'sources': ['<@(irt_sources)', '<@(irt_browser)'],
+      'sources': ['<@(irt_sources)'],
       'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib_newlib',
       ],
     },

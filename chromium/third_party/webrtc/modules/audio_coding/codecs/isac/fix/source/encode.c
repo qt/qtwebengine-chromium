@@ -32,7 +32,7 @@
 
 
 int WebRtcIsacfix_EncodeImpl(int16_t      *in,
-                             ISACFIX_EncInst_t  *ISACenc_obj,
+                             IsacFixEncoderInstance  *ISACenc_obj,
                              BwEstimatorstr      *bw_estimatordata,
                              int16_t         CodingMode)
 {
@@ -115,8 +115,9 @@ int WebRtcIsacfix_EncodeImpl(int16_t      *in,
 
     // multiply the bottleneck by 0.88 before computing SNR, 0.88 is tuned by experimenting on TIMIT
     // 901/1024 is 0.87988281250000
-    ISACenc_obj->s2nr = WebRtcIsacfix_GetSnr((int16_t)WEBRTC_SPL_MUL_16_16_RSFT(ISACenc_obj->BottleNeck, 901, 10),
-                                             ISACenc_obj->current_framesamples);
+    ISACenc_obj->s2nr = WebRtcIsacfix_GetSnr(
+        (int16_t)(ISACenc_obj->BottleNeck * 901 >> 10),
+        ISACenc_obj->current_framesamples);
 
     /* encode frame length */
     status = WebRtcIsacfix_EncodeFrameLen(ISACenc_obj->current_framesamples, &ISACenc_obj->bitstr_obj);
@@ -338,9 +339,9 @@ int WebRtcIsacfix_EncodeImpl(int16_t      *in,
 
       // we compare bytesLeftQ5 with ratioQ5[]*arithLenDFTByte;
       idx = 4;
-      idx += (bytesLeftQ5 >= WEBRTC_SPL_MUL_16_16(ratioQ5[idx], arithLenDFTByte))? 2:-2;
-      idx += (bytesLeftQ5 >= WEBRTC_SPL_MUL_16_16(ratioQ5[idx], arithLenDFTByte))? 1:-1;
-      idx += (bytesLeftQ5 >= WEBRTC_SPL_MUL_16_16(ratioQ5[idx], arithLenDFTByte))? 0:-1;
+      idx += (bytesLeftQ5 >= ratioQ5[idx] * arithLenDFTByte) ? 2 : -2;
+      idx += (bytesLeftQ5 >= ratioQ5[idx] * arithLenDFTByte) ? 1 : -1;
+      idx += (bytesLeftQ5 >= ratioQ5[idx] * arithLenDFTByte) ? 0 : -1;
     }
     else
     {
@@ -352,8 +353,8 @@ int WebRtcIsacfix_EncodeImpl(int16_t      *in,
     // scale FFT coefficients to reduce the bit-rate
     for(k = 0; k < FRAMESAMPLES_HALF; k++)
     {
-      LP16a[k] = (int16_t)WEBRTC_SPL_MUL_16_16_RSFT(LP16a[k], scaleQ14[idx], 14);
-      LPandHP[k] = (int16_t)WEBRTC_SPL_MUL_16_16_RSFT(LPandHP[k], scaleQ14[idx], 14);
+      LP16a[k] = (int16_t)(LP16a[k] * scaleQ14[idx] >> 14);
+      LPandHP[k] = (int16_t)(LPandHP[k] * scaleQ14[idx] >> 14);
     }
 
     // Save data for multiple packets memory
@@ -491,7 +492,7 @@ int WebRtcIsacfix_EncodeImpl(int16_t      *in,
    The same data as previously encoded with the fucntion WebRtcIsacfix_EncodeImpl()
    is used. The data needed is taken from the struct, where it was stored
    when calling the encoder. */
-int WebRtcIsacfix_EncodeStoredData(ISACFIX_EncInst_t  *ISACenc_obj,
+int WebRtcIsacfix_EncodeStoredData(IsacFixEncoderInstance  *ISACenc_obj,
                                    int     BWnumber,
                                    float              scale)
 {
@@ -503,7 +504,7 @@ int WebRtcIsacfix_EncodeStoredData(ISACFIX_EncInst_t  *ISACenc_obj,
   int16_t model;
   const uint16_t *Q_PitchGain_cdf_ptr[1];
   const uint16_t **cdf;
-  const ISAC_SaveEncData_t *SaveEnc_str;
+  const IsacSaveEncoderData *SaveEnc_str;
   int32_t tmpLPCcoeffs_g[KLT_ORDER_GAIN<<1];
   int16_t tmpLPCindex_g[KLT_ORDER_GAIN<<1];
   int16_t tmp_fre[FRAMESAMPLES];

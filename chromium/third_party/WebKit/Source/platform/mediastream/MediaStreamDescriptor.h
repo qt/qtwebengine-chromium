@@ -40,7 +40,7 @@
 
 namespace blink {
 
-class MediaStreamDescriptorClient {
+class PLATFORM_EXPORT MediaStreamDescriptorClient {
 public:
     virtual ~MediaStreamDescriptorClient() { }
 
@@ -80,6 +80,9 @@ public:
     void addRemoteTrack(MediaStreamComponent*);
     void removeRemoteTrack(MediaStreamComponent*);
 
+    bool active() const { return m_active; }
+    void setActive(bool active) { m_active = active; }
+
     bool ended() const { return m_ended; }
     void setEnded() { m_ended = true; }
 
@@ -92,14 +95,15 @@ private:
 
     MediaStreamDescriptorClient* m_client;
     String m_id;
-    Vector<RefPtr<MediaStreamComponent> > m_audioComponents;
-    Vector<RefPtr<MediaStreamComponent> > m_videoComponents;
+    Vector<RefPtr<MediaStreamComponent>> m_audioComponents;
+    Vector<RefPtr<MediaStreamComponent>> m_videoComponents;
+    bool m_active;
     bool m_ended;
 
     OwnPtr<ExtraData> m_extraData;
 };
 
-typedef Vector<RefPtr<MediaStreamDescriptor> > MediaStreamDescriptorVector;
+typedef Vector<RefPtr<MediaStreamDescriptor>> MediaStreamDescriptorVector;
 
 } // namespace blink
 

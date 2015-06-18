@@ -57,8 +57,8 @@ cvox.TableWalker.prototype.sync = function(sel) {
  * @override
  * @suppress {checkTypes} actual parameter 2 of
  * cvox.Msgs.prototype.getMsg does not match formal parameter
- * found   : Array.<number>
- * required: (Array.<string>|null|undefined)
+ * found   : Array<number>
+ * required: (Array<string>|null|undefined)
  */
 cvox.TableWalker.prototype.getDescription = function(prevSel, sel) {
   var position = this.syncPosition_(sel);
@@ -102,7 +102,7 @@ cvox.TableWalker.prototype.getGranularityMsg = goog.abstractMethod;
  * Returns the first cell of the table that this selection is inside.
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for first cell of the table.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.goToFirstCell = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -114,7 +114,7 @@ cvox.TableWalker.prototype.goToFirstCell = function(sel) {
  * Returns the last cell of the table that this selection is inside.
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the last cell of the table.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.goToLastCell = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -126,7 +126,7 @@ cvox.TableWalker.prototype.goToLastCell = function(sel) {
  * Returns the first cell of the row that the selection is in.
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the first cell in the row.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.goToRowFirstCell = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -138,7 +138,7 @@ cvox.TableWalker.prototype.goToRowFirstCell = function(sel) {
  * Returns the last cell of the row that the selection is in.
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the last cell in the row.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.goToRowLastCell = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -150,7 +150,7 @@ cvox.TableWalker.prototype.goToRowLastCell = function(sel) {
  * Returns the first cell of the column that the selection is in.
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the first cell in the col.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.goToColFirstCell = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -162,7 +162,7 @@ cvox.TableWalker.prototype.goToColFirstCell = function(sel) {
  * Returns the last cell of the column that the selection is in.
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the last cell in the col.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.goToColLastCell = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -175,7 +175,7 @@ cvox.TableWalker.prototype.goToColLastCell = function(sel) {
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the first cell in the next
  * row.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.nextRow = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -189,7 +189,7 @@ cvox.TableWalker.prototype.nextRow = function(sel) {
  * @param {!cvox.CursorSelection} sel The selection.
  * @return {cvox.CursorSelection} The selection for the first cell in the
  * next col.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.nextCol = function(sel) {
   return this.goTo_(sel, goog.bind(function(position) {
@@ -201,7 +201,7 @@ cvox.TableWalker.prototype.nextCol = function(sel) {
 /**
  * @param {!cvox.CursorSelection} sel The current selection.
  * @return {cvox.CursorSelection} The resulting selection.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.announceHeaders = function(sel) {
   cvox.ChromeVox.tts.speak(this.getHeaderText_(sel),
@@ -213,7 +213,7 @@ cvox.TableWalker.prototype.announceHeaders = function(sel) {
 /**
  * @param {!cvox.CursorSelection} sel The current selection.
  * @return {cvox.CursorSelection} The resulting selection.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.speakTableLocation = function(sel) {
   cvox.ChromeVox.navigationManager.speakDescriptionArray(
@@ -227,7 +227,7 @@ cvox.TableWalker.prototype.speakTableLocation = function(sel) {
 /**
  * @param {!cvox.CursorSelection} sel The current selection.
  * @return {cvox.CursorSelection} The resulting selection.
- * @expose
+ * @export
  */
 cvox.TableWalker.prototype.exitShifterContent = function(sel) {
   var tableNode = this.getTableNode_(sel);
@@ -266,12 +266,12 @@ cvox.TableWalker.prototype.getHeaderText_ = function(sel) {
 /**
  * Returns the location description.
  * @param {!cvox.CursorSelection} sel A valid selection.
- * @return {Array.<cvox.NavDescription>} The location description.
+ * @return {Array<cvox.NavDescription>} The location description.
  * @suppress {checkTypes} actual parameter 2 of
  * cvox.Msgs.prototype.getMsg does not match
  * formal parameter
- * found   : Array.<number>
- * required: (Array.<string>|null|undefined)
+ * found   : Array<number>
+ * required: (Array<string>|null|undefined)
  * @private
  */
 cvox.TableWalker.prototype.getLocationDescription_ = function(sel) {
@@ -286,7 +286,7 @@ cvox.TableWalker.prototype.getLocationDescription_ = function(sel) {
 
 /**
  * Returns the text content of the row header(s) of the cell that contains sel.
- * @param {!Array.<number>} position The selection.
+ * @param {!Array<number>} position The selection.
  * @return {!string} The header text.
  * @private
  */
@@ -316,7 +316,7 @@ cvox.TableWalker.prototype.getRowHeaderText_ = function(position) {
 
 /**
  * Returns the text content of the col header(s) of the cell that contains sel.
- * @param {!Array.<number>} position The selection.
+ * @param {!Array<number>} position The selection.
  * @return {!string} The header text.
  * @private
  */
@@ -347,7 +347,7 @@ cvox.TableWalker.prototype.getColHeaderText_ = function(position) {
 /**
  * Returns the location info of sel within the containing table.
  * @param {!cvox.CursorSelection} sel The selection.
- * @return {Array.<number>} The location info:
+ * @return {Array<number>} The location info:
  *  [row index, row count, col index, col count].
  */
 cvox.TableWalker.prototype.getLocationInfo = function(sel) {
@@ -378,7 +378,7 @@ cvox.TableWalker.prototype.isInTable = function(sel) {
  * Wrapper for going to somewhere so that boilerplate is not repeated.
  * @param {!cvox.CursorSelection} sel The selection from which to base the
  * movement.
- * @param {function(Array.<number>):boolean} f The function to use for moving.
+ * @param {function(Array<number>):boolean} f The function to use for moving.
  * Returns true on success and false on failure.
  * @return {cvox.CursorSelection} The resulting selection.
  * @private
@@ -410,7 +410,7 @@ cvox.TableWalker.prototype.getTableNode_ = function(sel) {
 /**
  * Sync the backing traversal utility to the given selection.
  * @param {!cvox.CursorSelection} sel The selection.
- * @return {Array.<number>} The position [x, y] of the selection.
+ * @return {Array<number>} The position [x, y] of the selection.
  * @private
  */
 cvox.TableWalker.prototype.syncPosition_ = function(sel) {

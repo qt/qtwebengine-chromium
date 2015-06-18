@@ -2,15 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//testing/test.gni")
+
 component("ipc") {
   sources = [
-    "file_descriptor_set_posix.cc",
-    "file_descriptor_set_posix.h",
     "ipc_channel.cc",
     "ipc_channel.h",
+    "ipc_channel_common.cc",
     "ipc_channel_factory.cc",
     "ipc_channel_factory.h",
-    "ipc_channel_common.cc",
     "ipc_channel_handle.h",
     "ipc_channel_nacl.cc",
     "ipc_channel_nacl.h",
@@ -31,6 +31,10 @@ component("ipc") {
     "ipc_logging.h",
     "ipc_message.cc",
     "ipc_message.h",
+    "ipc_message_attachment.cc",
+    "ipc_message_attachment.h",
+    "ipc_message_attachment_set.cc",
+    "ipc_message_attachment_set.h",
     "ipc_message_macros.h",
     "ipc_message_start.h",
     "ipc_message_utils.cc",
@@ -38,6 +42,8 @@ component("ipc") {
     "ipc_param_traits.h",
     "ipc_platform_file.cc",
     "ipc_platform_file.h",
+    "ipc_platform_file_attachment_posix.cc",
+    "ipc_platform_file_attachment_posix.h",
     "ipc_sender.h",
     "ipc_switches.cc",
     "ipc_switches.h",
@@ -61,7 +67,13 @@ component("ipc") {
     "unix_domain_socket_util.h",
   ]
 
-  if (!is_nacl) {
+  if (is_nacl) {
+    sources -= [
+      "ipc_channel.cc",
+      "ipc_channel_posix.cc",
+      "unix_domain_socket_util.cc",
+    ]
+  } else {
     sources -= [
       "ipc_channel_nacl.cc",
       "ipc_channel_nacl.h",
@@ -69,28 +81,27 @@ component("ipc") {
   }
 
   if (is_win || is_ios) {
-    sources -= [
-      "unix_domain_socket_util.cc",
-    ]
+    sources -= [ "unix_domain_socket_util.cc" ]
   }
 
   defines = [ "IPC_IMPLEMENTATION" ]
 
   deps = [
     "//base",
+
     # TODO(viettrungluu): Needed for base/lazy_instance.h, which is suspect.
     "//base/third_party/dynamic_annotations",
   ]
 }
 
-# TODO(dpranke): crbug.com/360936. Get this to build and run on Android.
+# TODO(GYP): crbug.com/360936. Get this to build and run on Android.
 if (!is_android) {
   test("ipc_tests") {
     sources = [
-      "file_descriptor_set_posix_unittest.cc",
       "ipc_channel_posix_unittest.cc",
       "ipc_channel_unittest.cc",
       "ipc_fuzzing_tests.cc",
+      "ipc_message_attachment_set_posix_unittest.cc",
       "ipc_message_unittest.cc",
       "ipc_message_utils_unittest.cc",
       "ipc_send_fds_test.cc",
@@ -144,7 +155,6 @@ if (!is_android) {
     #    deps += "//base/allocator"
     #  }
     #}
-
     deps = [
       ":ipc",
       ":test_support",
@@ -164,17 +174,19 @@ static_library("test_support") {
     "ipc_multiprocess_test.h",
     "ipc_perftest_support.cc",
     "ipc_perftest_support.h",
-    "ipc_test_sink.cc",
-    "ipc_test_sink.h",
+    "ipc_security_test_util.cc",
+    "ipc_security_test_util.h",
     "ipc_test_base.cc",
     "ipc_test_base.h",
-    "ipc_test_channel_listener.h",
     "ipc_test_channel_listener.cc",
+    "ipc_test_channel_listener.h",
+    "ipc_test_sink.cc",
+    "ipc_test_sink.h",
   ]
   deps = [
     ":ipc",
     "//base",
+    "//base/test:test_support",
     "//testing/gtest",
   ]
 }
-

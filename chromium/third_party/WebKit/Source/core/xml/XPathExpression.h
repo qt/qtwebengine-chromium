@@ -30,13 +30,12 @@
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
 class ExceptionState;
 class Node;
+class ScriptValue;
 class XPathNSResolver;
 class XPathResult;
 
@@ -44,24 +43,23 @@ namespace XPath {
 class Expression;
 }
 
-class XPathExpression : public RefCountedWillBeGarbageCollected<XPathExpression>, public ScriptWrappable {
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(XPathExpression);
+class XPathExpression : public GarbageCollected<XPathExpression>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<XPathExpression> create()
+    static XPathExpression* create()
     {
-        return adoptRefWillBeNoop(new XPathExpression);
+        return new XPathExpression;
     }
 
-    static PassRefPtrWillBeRawPtr<XPathExpression> createExpression(const String& expression, PassRefPtrWillBeRawPtr<XPathNSResolver>, ExceptionState&);
-    PassRefPtrWillBeRawPtr<XPathResult> evaluate(Node* contextNode, unsigned short type, XPathResult*, ExceptionState&);
+    static XPathExpression* createExpression(const String& expression, XPathNSResolver*, ExceptionState&);
+    XPathResult* evaluate(Node* contextNode, unsigned short type, const ScriptValue&, ExceptionState&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     XPathExpression();
 
-    OwnPtrWillBeMember<XPath::Expression> m_topExpression;
+    Member<XPath::Expression> m_topExpression;
 };
 
 } // namespace blink

@@ -16,7 +16,7 @@
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "gpu/command_buffer/service/logger.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gl/gl_context.h"
 
 namespace gfx {
@@ -38,7 +38,9 @@ class GLES2Util;
 class ImageManager;
 class Logger;
 class QueryManager;
+class Texture;
 class VertexArrayManager;
+class ValuebufferManager;
 struct ContextState;
 
 struct DisallowedFeatures {
@@ -78,6 +80,14 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
     initialized_ = true;
   }
 
+  bool unsafe_es3_apis_enabled() const {
+    return unsafe_es3_apis_enabled_;
+  }
+
+  void set_unsafe_es3_apis_enabled(bool enabled) {
+    unsafe_es3_apis_enabled_ = enabled;
+  }
+
   bool debug() const {
     return debug_;
   }
@@ -105,13 +115,13 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   //  offscreen: whether to make the context offscreen or not. When FBO 0 is
   //      bound, offscreen contexts render to an internal buffer, onscreen ones
   //      to the surface.
-  //  size: the size if the GL context is offscreen.
+  //  offscreen_size: the size if the GL context is offscreen.
   // Returns:
   //   true if successful.
   virtual bool Initialize(const scoped_refptr<gfx::GLSurface>& surface,
                           const scoped_refptr<gfx::GLContext>& context,
                           bool offscreen,
-                          const gfx::Size& size,
+                          const gfx::Size& offscreen_size,
                           const DisallowedFeatures& disallowed_features,
                           const std::vector<int32>& attribs) = 0;
 
@@ -161,6 +171,10 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   virtual void SetIgnoreCachedStateForTest(bool ignore) = 0;
 
+  // Allow the decoder to exit the current process.
+  // Defaults to |false|.
+  virtual void SetAllowExit(bool allow_exit) = 0;
+
   // Gets the QueryManager for this context.
   virtual QueryManager* GetQueryManager() = 0;
 
@@ -169,6 +183,9 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   // Gets the ImageManager for this context.
   virtual ImageManager* GetImageManager() = 0;
+
+  // Gets the ValuebufferManager for this context.
+  virtual ValuebufferManager* GetValuebufferManager() = 0;
 
   // Process any pending queries. Returns false if there are no pending queries.
   virtual bool ProcessPendingQueries(bool did_finish) = 0;
@@ -200,8 +217,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Clears a level of a texture
   // Returns false if a GL error should be generated.
   virtual bool ClearLevel(
-      unsigned service_id,
-      unsigned bind_target,
+      Texture* texture,
       unsigned target,
       int level,
       unsigned internal_format,
@@ -229,13 +245,13 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   // Returns true if the context was lost either by GL_ARB_robustness, forced
   // context loss or command buffer parse error.
-  virtual bool WasContextLost() = 0;
+  virtual bool WasContextLost() const = 0;
 
   // Returns true if the context was lost specifically by GL_ARB_robustness.
-  virtual bool WasContextLostByRobustnessExtension() = 0;
+  virtual bool WasContextLostByRobustnessExtension() const = 0;
 
   // Lose this context.
-  virtual void LoseContext(uint32 reset_status) = 0;
+  virtual void MarkContextLost(error::ContextLostReason reason) = 0;
 
   virtual Logger* GetLogger() = 0;
 
@@ -251,6 +267,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   bool initialized_;
   bool debug_;
   bool log_commands_;
+  bool unsafe_es3_apis_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Decoder);
 };

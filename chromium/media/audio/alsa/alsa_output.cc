@@ -37,10 +37,9 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "media/audio/alsa/alsa_util.h"
 #include "media/audio/alsa/alsa_wrapper.h"
 #include "media/audio/alsa/audio_manager_alsa.h"
@@ -57,6 +56,10 @@ static const int kPcmRecoverIsSilent = 1;
 #else
 static const int kPcmRecoverIsSilent = 0;
 #endif
+
+// The output channel layout if we set up downmixing for the kDefaultDevice
+// device.
+static const ChannelLayout kDefaultOutputChannelLayout = CHANNEL_LAYOUT_STEREO;
 
 // While the "default" device may support multi-channel audio, in Alsa, only
 // the device names surround40, surround41, surround50, etc, have a defined
@@ -215,25 +218,25 @@ bool AlsaPcmOutputStream::Open() {
     stop_stream_ = true;
     TransitionTo(kInError);
     return false;
-  } else {
-    bytes_per_output_frame_ = channel_mixer_ ?
-        mixed_audio_bus_->channels() * bytes_per_sample_ : bytes_per_frame_;
-    uint32 output_packet_size = frames_per_packet_ * bytes_per_output_frame_;
-    buffer_.reset(new media::SeekableBuffer(0, output_packet_size));
+  }
+  bytes_per_output_frame_ =
+      channel_mixer_ ? mixed_audio_bus_->channels() * bytes_per_sample_
+                     : bytes_per_frame_;
+  uint32 output_packet_size = frames_per_packet_ * bytes_per_output_frame_;
+  buffer_.reset(new media::SeekableBuffer(0, output_packet_size));
 
-    // Get alsa buffer size.
-    snd_pcm_uframes_t buffer_size;
-    snd_pcm_uframes_t period_size;
-    int error = wrapper_->PcmGetParams(playback_handle_, &buffer_size,
-                                       &period_size);
-    if (error < 0) {
-      LOG(ERROR) << "Failed to get playback buffer size from ALSA: "
-                 << wrapper_->StrError(error);
-      // Buffer size is at least twice of packet size.
-      alsa_buffer_frames_ = frames_per_packet_ * 2;
-    } else {
-      alsa_buffer_frames_ = buffer_size;
-    }
+  // Get alsa buffer size.
+  snd_pcm_uframes_t buffer_size;
+  snd_pcm_uframes_t period_size;
+  int error =
+      wrapper_->PcmGetParams(playback_handle_, &buffer_size, &period_size);
+  if (error < 0) {
+    LOG(ERROR) << "Failed to get playback buffer size from ALSA: "
+               << wrapper_->StrError(error);
+    // Buffer size is at least twice of packet size.
+    alsa_buffer_frames_ = frames_per_packet_ * 2;
+  } else {
+    alsa_buffer_frames_ = buffer_size;
   }
 
   return true;
@@ -351,7 +354,7 @@ void AlsaPcmOutputStream::BufferPacket(bool* source_exhausted) {
   *source_exhausted = false;
 
   // Request more data only when we run out of data in the buffer, because
-  // WritePacket() comsumes only the current chunk of data.
+  // WritePacket() consumes only the current chunk of data.
   if (!buffer_->forward_bytes()) {
     // Before making a request to source for data we need to determine the
     // delay (in bytes) for the requested data to be played.
@@ -368,11 +371,32 @@ void AlsaPcmOutputStream::BufferPacket(bool* source_exhausted) {
     // TODO(dalecurtis): Channel downmixing, upmixing, should be done in mixer;
     // volume adjust should use SSE optimized vector_fmul() prior to interleave.
     AudioBus* output_bus = audio_bus_.get();
+    ChannelLayout output_channel_layout = channel_layout_;
     if (channel_mixer_) {
       output_bus = mixed_audio_bus_.get();
       channel_mixer_->Transform(audio_bus_.get(), output_bus);
+      output_channel_layout = kDefaultOutputChannelLayout;
       // Adjust packet size for downmix.
       packet_size = packet_size / bytes_per_frame_ * bytes_per_output_frame_;
+    }
+
+    // Reorder channels for 5.0, 5.1, and 7.1 to match ALSA's channel order,
+    // which has front center at channel index 4 and LFE at channel index 5.
+    // See http://ffmpeg.org/pipermail/ffmpeg-cvslog/2011-June/038454.html.
+    switch (output_channel_layout) {
+      case media::CHANNEL_LAYOUT_5_0:
+      case media::CHANNEL_LAYOUT_5_0_BACK:
+        output_bus->SwapChannels(2, 3);
+        output_bus->SwapChannels(3, 4);
+        break;
+      case media::CHANNEL_LAYOUT_5_1:
+      case media::CHANNEL_LAYOUT_5_1_BACK:
+      case media::CHANNEL_LAYOUT_7_1:
+        output_bus->SwapChannels(2, 4);
+        output_bus->SwapChannels(3, 5);
+        break;
+      default:
+        break;
     }
 
     // Note: If this ever changes to output raw float the data must be clipped
@@ -408,7 +432,6 @@ void AlsaPcmOutputStream::WritePacket() {
   const uint8* buffer_data;
   int buffer_size;
   if (buffer_->GetCurrentChunk(&buffer_data, &buffer_size)) {
-    buffer_size = buffer_size - (buffer_size % bytes_per_output_frame_);
     snd_pcm_sframes_t frames = std::min(
         static_cast<snd_pcm_sframes_t>(buffer_size / bytes_per_output_frame_),
         GetAvailableFrames());
@@ -588,7 +611,8 @@ snd_pcm_sframes_t AlsaPcmOutputStream::GetCurrentDelay() {
   // driver is PulseAudio based, certain configuration settings (e.g., tsched=1)
   // will generate much larger delay values than |alsa_buffer_frames_|, so only
   // clip if delay is truly crazy (> 10x expected).
-  if (static_cast<snd_pcm_uframes_t>(delay) > alsa_buffer_frames_ * 10) {
+  if (delay < 0 ||
+      static_cast<snd_pcm_uframes_t>(delay) > alsa_buffer_frames_ * 10) {
     delay = alsa_buffer_frames_ - GetAvailableFrames();
   }
 
@@ -632,10 +656,12 @@ snd_pcm_t* AlsaPcmOutputStream::AutoSelectDevice(unsigned int latency) {
   //   1) Attempt to open a device that best matches the number of channels
   //      requested.
   //   2) If that fails, attempt the "plug:" version of it in case ALSA can
-  //      remap do some software conversion to make it work.
-  //   3) Fallback to kDefaultDevice.
-  //   4) If that fails too, try the "plug:" version of kDefaultDevice.
-  //   5) Give up.
+  //      remap and do some software conversion to make it work.
+  //   3) If that fails, attempt the "plug:" version of the guessed name in
+  //      case ALSA can remap and do some software conversion to make it work.
+  //   4) Fallback to kDefaultDevice.
+  //   5) If that fails too, try the "plug:" version of kDefaultDevice.
+  //   6) Give up.
   snd_pcm_t* handle = NULL;
   device_name_ = FindDeviceForChannels(channels_);
 
@@ -656,6 +682,17 @@ snd_pcm_t* AlsaPcmOutputStream::AutoSelectDevice(unsigned int latency) {
                                                 latency)) != NULL) {
       return handle;
     }
+
+    // Step 3.
+    device_name_ = GuessSpecificDeviceName(channels_);
+    if (!device_name_.empty()) {
+      device_name_ = kPlugPrefix + device_name_;
+      if ((handle = alsa_util::OpenPlaybackDevice(
+               wrapper_, device_name_.c_str(), channels_, sample_rate_,
+               pcm_format_, latency)) != NULL) {
+        return handle;
+      }
+    }
   }
 
   // For the kDefaultDevice device, we can only reliably depend on 2-channel
@@ -664,14 +701,14 @@ snd_pcm_t* AlsaPcmOutputStream::AutoSelectDevice(unsigned int latency) {
   // downmixing.
   uint32 default_channels = channels_;
   if (default_channels > 2) {
-    channel_mixer_.reset(new ChannelMixer(
-        channel_layout_, CHANNEL_LAYOUT_STEREO));
+    channel_mixer_.reset(
+        new ChannelMixer(channel_layout_, kDefaultOutputChannelLayout));
     default_channels = 2;
     mixed_audio_bus_ = AudioBus::Create(
         default_channels, audio_bus_->frames());
   }
 
-  // Step 3.
+  // Step 4.
   device_name_ = kDefaultDevice;
   if ((handle = alsa_util::OpenPlaybackDevice(
       wrapper_, device_name_.c_str(), default_channels, sample_rate_,
@@ -679,7 +716,7 @@ snd_pcm_t* AlsaPcmOutputStream::AutoSelectDevice(unsigned int latency) {
     return handle;
   }
 
-  // Step 4.
+  // Step 5.
   device_name_ = kPlugPrefix + device_name_;
   if ((handle = alsa_util::OpenPlaybackDevice(
       wrapper_, device_name_.c_str(), default_channels, sample_rate_,

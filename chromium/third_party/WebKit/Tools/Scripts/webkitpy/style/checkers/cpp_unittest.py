@@ -1628,6 +1628,18 @@ class CppStyleTest(CppStyleTestBase):
             '    && condition3) {\n'
             '}\n',
             '')
+        self.assert_multi_line_lint(
+            'if (condition) {\n'
+            '    {\n'
+            '    }\n',
+            '')
+        self.assert_multi_line_lint(
+            'int foo()\n'
+            '{\n'
+            '    {\n'
+            '    }\n'
+            '}\n',
+            '')
 
     def test_mismatching_spaces_in_parens(self):
         self.assert_lint('if (foo ) {', 'Extra space before ) in if'
@@ -1785,6 +1797,12 @@ class CppStyleTest(CppStyleTestBase):
         self.assert_lint('func(OwnPtr<Vector<Foo>>)', '')
         self.assert_lint('func(OwnPtr<Vector<Foo>> foo)', '')
         self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar>>>)', '')
+        self.assert_lint('func(OwnPtr<Vector<Foo> >)', 'Use >> for ending template instead of > >.  [readability/templatebrackets] [3]')
+        self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar>> >)', 'Use >> for ending template instead of > >.  [readability/templatebrackets] [3]')
+        self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar> >>)', 'Use >> for ending template instead of > >.  [readability/templatebrackets] [3]')
+        self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar> > >)', 'Use >> for ending template instead of > >.  [readability/templatebrackets] [3]')
+        self.assert_lint('Vector< ::Foo>)', 'Use <:: for template start instead of < ::.  [readability/templatebrackets] [3]')
+        self.assert_lint('Vector<Vector< ::Foo>>)', 'Use <:: for template start instead of < ::.  [readability/templatebrackets] [3]')
         # FIXME: The following test should not show any error.
         self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar\n    >>>)',
                          'Missing spaces around <  [whitespace/operators] [3]')
@@ -4915,13 +4933,13 @@ class WebKitStyleTest(CppStyleTestBase):
                          'UNDER_SCORE' + name_underscore_error_message)
         self.assert_lint('static inline const char const& const under_score;',
                          'under_score' + name_underscore_error_message)
-        self.assert_lint('WebCore::RenderObject* under_score;',
+        self.assert_lint('WebCore::LayoutObject* under_score;',
                          'under_score' + name_underscore_error_message)
         self.assert_lint('int func_name();',
                          'func_name' + name_underscore_error_message)
-        self.assert_lint('RefPtr<RenderObject*> under_score;',
+        self.assert_lint('RefPtr<LayoutObject*> under_score;',
                          'under_score' + name_underscore_error_message)
-        self.assert_lint('WTF::Vector<WTF::RefPtr<const RenderObject* const> > under_score;',
+        self.assert_lint('WTF::Vector<WTF::RefPtr<const LayoutObject* const>> under_score;',
                          'under_score' + name_underscore_error_message)
         self.assert_lint('int under_score[];',
                          'under_score' + name_underscore_error_message)

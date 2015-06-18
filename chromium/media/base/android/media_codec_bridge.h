@@ -12,7 +12,7 @@
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/video_decoder_config.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 
@@ -29,7 +29,7 @@ enum MediaCodecStatus {
   MEDIA_CODEC_INPUT_END_OF_STREAM,
   MEDIA_CODEC_OUTPUT_END_OF_STREAM,
   MEDIA_CODEC_NO_KEY,
-  MEDIA_CODEC_STOPPED,
+  MEDIA_CODEC_ABORT,
   MEDIA_CODEC_ERROR
 };
 
@@ -107,8 +107,9 @@ class MEDIA_EXPORT MediaCodecBridge {
   // returns a format change by returning INFO_OUTPUT_FORMAT_CHANGED
   void GetOutputFormat(int* width, int* height);
 
-  // Returns the number of input buffers used by the codec.
-  int GetInputBuffersCount();
+  // Used for checking for new sampling rate after DequeueInputBuffer() returns
+  // INFO_OUTPUT_FORMAT_CHANGED
+  int GetOutputSamplingRate();
 
   // Submits a byte array to the given input buffer. Call this after getting an
   // available buffer from DequeueInputBuffer().  If |data| is NULL, assume the
@@ -169,15 +170,12 @@ class MEDIA_EXPORT MediaCodecBridge {
   void ReleaseOutputBuffer(int index, bool render);
 
   // Returns the number of output buffers used by the codec.
+  // TODO(qinmin): this call is deprecated in Lollipop.
   int GetOutputBuffersCount();
 
   // Returns the capacity of each output buffer used by the codec.
+  // TODO(qinmin): this call is deprecated in Lollipop.
   size_t GetOutputBuffersCapacity();
-
-  // Gets output buffers from media codec and keeps them inside the java class.
-  // To access them, use DequeueOutputBuffer(). Returns whether output buffers
-  // were successfully obtained.
-  bool GetOutputBuffers() WARN_UNUSED_RESULT;
 
   // Returns an input buffer's base pointer and capacity.
   void GetInputBuffer(int input_buffer_index, uint8** data, size_t* capacity);
@@ -231,6 +229,7 @@ class AudioCodecBridge : public MediaCodecBridge {
   // Start the audio codec bridge.
   bool Start(const AudioCodec& codec, int sample_rate, int channel_count,
              const uint8* extra_data, size_t extra_data_size,
+             int64 codec_delay_ns, int64 seek_preroll_ns,
              bool play_audio, jobject media_crypto) WARN_UNUSED_RESULT;
 
   // Play the output buffer. This call must be called after
@@ -246,7 +245,8 @@ class AudioCodecBridge : public MediaCodecBridge {
 
   // Configure the java MediaFormat object with the extra codec data passed in.
   bool ConfigureMediaFormat(jobject j_format, const AudioCodec& codec,
-                            const uint8* extra_data, size_t extra_data_size);
+                            const uint8* extra_data, size_t extra_data_size,
+                            int64 codec_delay_ns, int64 seek_preroll_ns);
 };
 
 class MEDIA_EXPORT VideoCodecBridge : public MediaCodecBridge {

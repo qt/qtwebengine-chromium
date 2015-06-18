@@ -411,10 +411,8 @@ class ThreadedOpacityTransition : public ThreadedLayerAnimationElement {
                                        target_,
                                        duration()));
     scoped_ptr<cc::Animation> animation(
-        cc::Animation::Create(animation_curve.Pass(),
-                              animation_id(),
-                              animation_group_id(),
-                              cc::Animation::Opacity));
+        cc::Animation::Create(animation_curve.Pass(), animation_id(),
+                              animation_group_id(), cc::Animation::OPACITY));
     return animation.Pass();
   }
 
@@ -466,10 +464,8 @@ class ThreadedTransformTransition : public ThreadedLayerAnimationElement {
                                            target_,
                                            duration()));
     scoped_ptr<cc::Animation> animation(
-        cc::Animation::Create(animation_curve.Pass(),
-                              animation_id(),
-                              animation_group_id(),
-                              cc::Animation::Transform));
+        cc::Animation::Create(animation_curve.Pass(), animation_id(),
+                              animation_group_id(), cc::Animation::TRANSFORM));
     return animation.Pass();
   }
 
@@ -540,10 +536,8 @@ class InverseTransformTransition : public ThreadedLayerAnimationElement {
 
   scoped_ptr<cc::Animation> CreateCCAnimation() override {
     scoped_ptr<cc::Animation> animation(
-        cc::Animation::Create(animation_curve_->Clone(),
-                              animation_id(),
-                              animation_group_id(),
-                              cc::Animation::Transform));
+        cc::Animation::Create(animation_curve_->Clone(), animation_id(),
+                              animation_group_id(), cc::Animation::TRANSFORM));
     return animation.Pass();
   }
 
@@ -605,13 +599,13 @@ LayerAnimationElement::TargetValue::TargetValue()
 LayerAnimationElement::TargetValue::TargetValue(
     const LayerAnimationDelegate* delegate)
     : bounds(delegate ? delegate->GetBoundsForAnimation() : gfx::Rect()),
-      transform(delegate ?
-                delegate->GetTransformForAnimation() : gfx::Transform()),
+      transform(delegate ? delegate->GetTransformForAnimation()
+                         : gfx::Transform()),
       opacity(delegate ? delegate->GetOpacityForAnimation() : 0.0f),
       visibility(delegate ? delegate->GetVisibilityForAnimation() : false),
       brightness(delegate ? delegate->GetBrightnessForAnimation() : 0.0f),
       grayscale(delegate ? delegate->GetGrayscaleForAnimation() : 0.0f),
-      color(delegate ? delegate->GetColorForAnimation() : 0.0f) {
+      color(delegate ? delegate->GetColorForAnimation() : SK_ColorTRANSPARENT) {
 }
 
 // LayerAnimationElement -------------------------------------------------------
@@ -738,9 +732,9 @@ LayerAnimationElement::AnimatableProperty
 LayerAnimationElement::ToAnimatableProperty(
     cc::Animation::TargetProperty property) {
   switch (property) {
-    case cc::Animation::Transform:
+    case cc::Animation::TRANSFORM:
       return TRANSFORM;
-    case cc::Animation::Opacity:
+    case cc::Animation::OPACITY:
       return OPACITY;
     default:
       NOTREACHED();

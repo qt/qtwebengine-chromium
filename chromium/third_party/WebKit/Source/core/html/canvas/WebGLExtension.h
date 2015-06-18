@@ -26,6 +26,8 @@
 #ifndef WebGLExtension_h
 #define WebGLExtension_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/WebGLExtensionName.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 #include "platform/heap/Handle.h"
@@ -33,11 +35,25 @@
 
 namespace blink {
 
-class WebGLExtension : public RefCountedWillBeGarbageCollectedFinalized<WebGLExtension> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class WebGLExtensionScopedContext : public NoBaseWillBeGarbageCollectedFinalized<WebGLExtensionScopedContext> {
+    WTF_MAKE_NONCOPYABLE(WebGLExtensionScopedContext);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WebGLExtensionScopedContext);
 public:
-    WebGLRenderingContextBase* context() { return m_context; }
+    WebGLExtensionScopedContext(WebGLExtension*);
+    virtual ~WebGLExtensionScopedContext();
 
+    bool isLost() { return !m_context; }
+    WebGLRenderingContextBase* context() const { return m_context.get(); }
+
+    DECLARE_VIRTUAL_TRACE();
+
+private:
+    RefPtrWillBeMember<WebGLRenderingContextBase> m_context;
+};
+
+class WebGLExtension : public RefCountedWillBeGarbageCollectedFinalized<WebGLExtension>, public ScriptWrappable {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WebGLExtension);
+public:
     virtual ~WebGLExtension();
     virtual WebGLExtensionName name() const = 0;
 
@@ -49,15 +65,23 @@ public:
         m_context = nullptr;
     }
 
-    bool isLost()
-    {
-        return !m_context;
-    }
+    bool isLost() { return !m_context; }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
+
+    // For use by V8 bindings only.
+    HTMLCanvasElement* canvas() const
+    {
+        if (m_context)
+            return m_context->canvas();
+        return nullptr;
+    }
 
 protected:
     explicit WebGLExtension(WebGLRenderingContextBase*);
+
+private:
+    friend WebGLExtensionScopedContext;
 
     RawPtrWillBeWeakMember<WebGLRenderingContextBase> m_context;
 };

@@ -21,10 +21,13 @@ public:
     virtual ~SkXMLAnimatorWriter();
     virtual void    writeHeader();
     SkDEBUGCODE(static void UnitTest(class SkCanvas* canvas);)
+
 protected:
-    virtual void onAddAttributeLen(const char name[], const char value[], size_t length);
-    virtual void onEndElement();
-    virtual void onStartElementLen(const char elem[], size_t length);
+    void onAddAttributeLen(const char name[], const char value[], size_t length) override;
+    void onEndElement() override;
+    void onStartElementLen(const char elem[], size_t length) override;
+    void onAddText(const char text[], size_t length) override;
+
 private:
     SkAnimator* fAnimator;
     SkDisplayXMLParser* fParser;

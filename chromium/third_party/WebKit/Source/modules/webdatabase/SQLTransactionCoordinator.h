@@ -46,21 +46,21 @@ class SQLTransactionCoordinator : public GarbageCollected<SQLTransactionCoordina
     WTF_MAKE_NONCOPYABLE(SQLTransactionCoordinator);
 public:
     SQLTransactionCoordinator();
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void acquireLock(SQLTransactionBackend*);
     void releaseLock(SQLTransactionBackend*);
     void shutdown();
 
 private:
-    typedef HeapDeque<Member<SQLTransactionBackend> > TransactionsQueue;
+    typedef HeapDeque<Member<SQLTransactionBackend>> TransactionsQueue;
     struct CoordinationInfo {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         TransactionsQueue pendingTransactions;
-        HeapHashSet<Member<SQLTransactionBackend> > activeReadTransactions;
+        HeapHashSet<Member<SQLTransactionBackend>> activeReadTransactions;
         Member<SQLTransactionBackend> activeWriteTransaction;
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(pendingTransactions);
             visitor->trace(activeReadTransactions);

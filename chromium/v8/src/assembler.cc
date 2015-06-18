@@ -40,6 +40,7 @@
 #include "src/base/functional.h"
 #include "src/base/lazy-instance.h"
 #include "src/base/platform/platform.h"
+#include "src/base/utils/random-number-generator.h"
 #include "src/builtins.h"
 #include "src/codegen.h"
 #include "src/counters.h"
@@ -49,12 +50,11 @@
 #include "src/execution.h"
 #include "src/ic/ic.h"
 #include "src/ic/stub-cache.h"
-#include "src/isolate-inl.h"
 #include "src/jsregexp.h"
 #include "src/regexp-macro-assembler.h"
 #include "src/regexp-stack.h"
 #include "src/runtime/runtime.h"
-#include "src/serialize.h"
+#include "src/snapshot/serialize.h"
 #include "src/token.h"
 
 #if V8_TARGET_ARCH_IA32
@@ -65,6 +65,8 @@
 #include "src/arm64/assembler-arm64-inl.h"  // NOLINT
 #elif V8_TARGET_ARCH_ARM
 #include "src/arm/assembler-arm-inl.h"  // NOLINT
+#elif V8_TARGET_ARCH_PPC
+#include "src/ppc/assembler-ppc-inl.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/assembler-mips-inl.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS64
@@ -85,6 +87,8 @@
 #include "src/arm64/regexp-macro-assembler-arm64.h"  // NOLINT
 #elif V8_TARGET_ARCH_ARM
 #include "src/arm/regexp-macro-assembler-arm.h"  // NOLINT
+#elif V8_TARGET_ARCH_PPC
+#include "src/ppc/regexp-macro-assembler-ppc.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS
 #include "src/mips/regexp-macro-assembler-mips.h"  // NOLINT
 #elif V8_TARGET_ARCH_MIPS64
@@ -107,7 +111,6 @@ double min_int;
 double one_half;
 double minus_one_half;
 double negative_infinity;
-double canonical_non_hole_nan;
 double the_hole_nan;
 double uint32_bias;
 };
@@ -253,6 +256,7 @@ int Label::pos() const {
 //   position:            01
 //   statement_position:  10
 //   comment:             11 (not used in short_data_record)
+//   deopt_reason:        11 (not used in long_data_record)
 //
 //  Long record format:
 //    4-bit middle_tag:
@@ -288,11 +292,6 @@ int Label::pos() const {
 //               (Bits 6..31 of pc delta, with leading zeroes
 //                dropped, and last non-zero chunk tagged with 1.)
 
-
-#ifdef DEBUG
-const int kMaxStandardNonCompactModes = 14;
-#endif
-
 const int kTagBits = 2;
 const int kTagMask = (1 << kTagBits) - 1;
 const int kExtraTagBits = 4;
@@ -324,6 +323,10 @@ const int kCodeWithIdTag = 0;
 const int kNonstatementPositionTag = 1;
 const int kStatementPositionTag = 2;
 const int kCommentTag = 3;
+
+// Reuse the same value for deopt reason tag in short record format.
+// It is possible because we use kCommentTag only for the long record format.
+const int kDeoptReasonTag = 3;
 
 const int kPoolExtraTag = kPCJumpExtraTag - 2;
 const int kConstPoolTag = 0;
@@ -407,17 +410,45 @@ void RelocInfoWriter::WriteExtraTaggedData(intptr_t data_delta, int top_tag) {
 }
 
 
+void RelocInfoWriter::WritePosition(int pc_delta, int pos_delta,
+                                    RelocInfo::Mode rmode) {
+  int pos_type_tag = (rmode == RelocInfo::POSITION) ? kNonstatementPositionTag
+                                                    : kStatementPositionTag;
+  // Check if delta is small enough to fit in a tagged byte.
+  if (is_intn(pos_delta, kSmallDataBits)) {
+    WriteTaggedPC(pc_delta, kLocatableTag);
+    WriteTaggedData(pos_delta, pos_type_tag);
+  } else {
+    // Otherwise, use costly encoding.
+    WriteExtraTaggedPC(pc_delta, kPCJumpExtraTag);
+    WriteExtraTaggedIntData(pos_delta, pos_type_tag);
+  }
+}
+
+
+void RelocInfoWriter::FlushPosition() {
+  if (!next_position_candidate_flushed_) {
+    WritePosition(next_position_candidate_pc_delta_,
+                  next_position_candidate_pos_delta_, RelocInfo::POSITION);
+    next_position_candidate_pos_delta_ = 0;
+    next_position_candidate_pc_delta_ = 0;
+    next_position_candidate_flushed_ = true;
+  }
+}
+
+
 void RelocInfoWriter::Write(const RelocInfo* rinfo) {
+  RelocInfo::Mode rmode = rinfo->rmode();
+  if (rmode != RelocInfo::POSITION) {
+    FlushPosition();
+  }
 #ifdef DEBUG
   byte* begin_pos = pos_;
 #endif
   DCHECK(rinfo->rmode() < RelocInfo::NUMBER_OF_MODES);
   DCHECK(rinfo->pc() - last_pc_ >= 0);
-  DCHECK(RelocInfo::LAST_STANDARD_NONCOMPACT_ENUM - RelocInfo::LAST_COMPACT_ENUM
-         <= kMaxStandardNonCompactModes);
   // Use unsigned delta-encoding for pc.
   uint32_t pc_delta = static_cast<uint32_t>(rinfo->pc() - last_pc_);
-  RelocInfo::Mode rmode = rinfo->rmode();
 
   // The two most common modes are given small tags, and usually fit in a byte.
   if (rmode == RelocInfo::EMBEDDED_OBJECT) {
@@ -427,7 +458,7 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
     DCHECK(begin_pos - pos_ <= RelocInfo::kMaxCallSize);
   } else if (rmode == RelocInfo::CODE_TARGET_WITH_ID) {
     // Use signed delta-encoding for id.
-    DCHECK(static_cast<int>(rinfo->data()) == rinfo->data());
+    DCHECK_EQ(static_cast<int>(rinfo->data()), rinfo->data());
     int id_delta = static_cast<int>(rinfo->data()) - last_id_;
     // Check if delta is small enough to fit in a tagged byte.
     if (is_intn(id_delta, kSmallDataBits)) {
@@ -439,20 +470,26 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
       WriteExtraTaggedIntData(id_delta, kCodeWithIdTag);
     }
     last_id_ = static_cast<int>(rinfo->data());
+  } else if (rmode == RelocInfo::DEOPT_REASON) {
+    DCHECK(rinfo->data() < (1 << kSmallDataBits));
+    WriteTaggedPC(pc_delta, kLocatableTag);
+    WriteTaggedData(rinfo->data(), kDeoptReasonTag);
   } else if (RelocInfo::IsPosition(rmode)) {
     // Use signed delta-encoding for position.
-    DCHECK(static_cast<int>(rinfo->data()) == rinfo->data());
+    DCHECK_EQ(static_cast<int>(rinfo->data()), rinfo->data());
     int pos_delta = static_cast<int>(rinfo->data()) - last_position_;
-    int pos_type_tag = (rmode == RelocInfo::POSITION) ? kNonstatementPositionTag
-                                                      : kStatementPositionTag;
-    // Check if delta is small enough to fit in a tagged byte.
-    if (is_intn(pos_delta, kSmallDataBits)) {
-      WriteTaggedPC(pc_delta, kLocatableTag);
-      WriteTaggedData(pos_delta, pos_type_tag);
+    if (rmode == RelocInfo::STATEMENT_POSITION) {
+      WritePosition(pc_delta, pos_delta, rmode);
     } else {
-      // Otherwise, use costly encoding.
-      WriteExtraTaggedPC(pc_delta, kPCJumpExtraTag);
-      WriteExtraTaggedIntData(pos_delta, pos_type_tag);
+      DCHECK_EQ(rmode, RelocInfo::POSITION);
+      if (pc_delta != 0 || last_mode_ != RelocInfo::POSITION) {
+        FlushPosition();
+        next_position_candidate_pc_delta_ = pc_delta;
+        next_position_candidate_pos_delta_ = pos_delta;
+      } else {
+        next_position_candidate_pos_delta_ += pos_delta;
+      }
+      next_position_candidate_flushed_ = false;
     }
     last_position_ = static_cast<int>(rinfo->data());
   } else if (RelocInfo::IsComment(rmode)) {
@@ -467,13 +504,18 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
                                                              : kVeneerPoolTag);
   } else {
     DCHECK(rmode > RelocInfo::LAST_COMPACT_ENUM);
-    int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM;
+    DCHECK(rmode <= RelocInfo::LAST_STANDARD_NONCOMPACT_ENUM);
+    STATIC_ASSERT(RelocInfo::LAST_STANDARD_NONCOMPACT_ENUM -
+                      RelocInfo::LAST_COMPACT_ENUM <=
+                  kPoolExtraTag);
+    int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM - 1;
     // For all other modes we simply use the mode as the extra tag.
     // None of these modes need a data component.
-    DCHECK(saved_mode < kPCJumpExtraTag && saved_mode < kDataJumpExtraTag);
+    DCHECK(0 <= saved_mode && saved_mode < kPoolExtraTag);
     WriteExtraTaggedPC(pc_delta, saved_mode);
   }
   last_pc_ = rinfo->pc();
+  last_mode_ = rmode;
 #ifdef DEBUG
   DCHECK(begin_pos - pos_ <= kMaxSize);
 #endif
@@ -580,6 +622,12 @@ inline void RelocIterator::ReadTaggedPosition() {
 }
 
 
+inline void RelocIterator::ReadTaggedData() {
+  uint8_t unsigned_b = *pos_;
+  rinfo_.data_ = unsigned_b >> kTagBits;
+}
+
+
 static inline RelocInfo::Mode GetPositionModeFromTag(int tag) {
   DCHECK(tag == kNonstatementPositionTag ||
          tag == kStatementPositionTag);
@@ -613,9 +661,10 @@ void RelocIterator::next() {
           ReadTaggedId();
           return;
         }
+      } else if (locatable_tag == kDeoptReasonTag) {
+        ReadTaggedData();
+        if (SetMode(RelocInfo::DEOPT_REASON)) return;
       } else {
-        // Compact encoding is never used for comments,
-        // so it must be a position.
         DCHECK(locatable_tag == kNonstatementPositionTag ||
                locatable_tag == kStatementPositionTag);
         if (mode_mask_ & RelocInfo::kPositionMask) {
@@ -669,7 +718,7 @@ void RelocIterator::next() {
         Advance(kIntSize);
       } else {
         AdvanceReadPC();
-        int rmode = extra_tag + RelocInfo::LAST_COMPACT_ENUM;
+        int rmode = extra_tag + RelocInfo::LAST_COMPACT_ENUM + 1;
         if (SetMode(static_cast<RelocInfo::Mode>(rmode))) return;
       }
     }
@@ -780,6 +829,10 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "external reference";
     case RelocInfo::INTERNAL_REFERENCE:
       return "internal reference";
+    case RelocInfo::INTERNAL_REFERENCE_ENCODED:
+      return "encoded internal reference";
+    case RelocInfo::DEOPT_REASON:
+      return "deopt reason";
     case RelocInfo::CONST_POOL:
       return "constant pool";
     case RelocInfo::VENEER_POOL:
@@ -800,12 +853,17 @@ void RelocInfo::Print(Isolate* isolate, std::ostream& os) {  // NOLINT
   os << static_cast<const void*>(pc_) << "  " << RelocModeName(rmode_);
   if (IsComment(rmode_)) {
     os << "  (" << reinterpret_cast<char*>(data_) << ")";
+  } else if (rmode_ == DEOPT_REASON) {
+    os << "  (" << Deoptimizer::GetDeoptReason(
+                       static_cast<Deoptimizer::DeoptReason>(data_)) << ")";
   } else if (rmode_ == EMBEDDED_OBJECT) {
     os << "  (" << Brief(target_object()) << ")";
   } else if (rmode_ == EXTERNAL_REFERENCE) {
     ExternalReferenceEncoder ref_encoder(isolate);
-    os << " (" << ref_encoder.NameOfAddress(target_reference()) << ")  ("
-       << static_cast<const void*>(target_reference()) << ")";
+    os << " ("
+       << ref_encoder.NameOfAddress(isolate, target_external_reference())
+       << ")  (" << static_cast<const void*>(target_external_reference())
+       << ")";
   } else if (IsCodeTarget(rmode_)) {
     Code* code = Code::GetCodeFromTargetAddress(target_address());
     os << " (" << Code::Kind2String(code->kind()) << ")  ("
@@ -853,13 +911,22 @@ void RelocInfo::Verify(Isolate* isolate) {
       CHECK(code->address() == HeapObject::cast(found)->address());
       break;
     }
+    case INTERNAL_REFERENCE:
+    case INTERNAL_REFERENCE_ENCODED: {
+      Address target = target_internal_reference();
+      Address pc = target_internal_reference_address();
+      Code* code = Code::cast(isolate->FindCodeObject(pc));
+      CHECK(target >= code->instruction_start());
+      CHECK(target <= code->instruction_end());
+      break;
+    }
     case RUNTIME_ENTRY:
     case JS_RETURN:
     case COMMENT:
     case POSITION:
     case STATEMENT_POSITION:
     case EXTERNAL_REFERENCE:
-    case INTERNAL_REFERENCE:
+    case DEOPT_REASON:
     case CONST_POOL:
     case VENEER_POOL:
     case DEBUG_BREAK_SLOT:
@@ -884,7 +951,6 @@ void ExternalReference::SetUp() {
   double_constants.min_int = kMinInt;
   double_constants.one_half = 0.5;
   double_constants.minus_one_half = -0.5;
-  double_constants.canonical_non_hole_nan = base::OS::nan_value();
   double_constants.the_hole_nan = bit_cast<double>(kHoleNanInt64);
   double_constants.negative_infinity = -V8_INFINITY;
   double_constants.uint32_bias =
@@ -1150,31 +1216,15 @@ ExternalReference ExternalReference::new_space_allocation_limit_address(
 }
 
 
-ExternalReference ExternalReference::old_pointer_space_allocation_top_address(
+ExternalReference ExternalReference::old_space_allocation_top_address(
     Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldPointerSpaceAllocationTopAddress());
+  return ExternalReference(isolate->heap()->OldSpaceAllocationTopAddress());
 }
 
 
-ExternalReference ExternalReference::old_pointer_space_allocation_limit_address(
+ExternalReference ExternalReference::old_space_allocation_limit_address(
     Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldPointerSpaceAllocationLimitAddress());
-}
-
-
-ExternalReference ExternalReference::old_data_space_allocation_top_address(
-    Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldDataSpaceAllocationTopAddress());
-}
-
-
-ExternalReference ExternalReference::old_data_space_allocation_limit_address(
-    Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->OldDataSpaceAllocationLimitAddress());
+  return ExternalReference(isolate->heap()->OldSpaceAllocationLimitAddress());
 }
 
 
@@ -1208,18 +1258,6 @@ ExternalReference ExternalReference::address_of_pending_message_obj(
 }
 
 
-ExternalReference ExternalReference::address_of_has_pending_message(
-    Isolate* isolate) {
-  return ExternalReference(isolate->has_pending_message_address());
-}
-
-
-ExternalReference ExternalReference::address_of_pending_message_script(
-    Isolate* isolate) {
-  return ExternalReference(isolate->pending_message_script_address());
-}
-
-
 ExternalReference ExternalReference::address_of_min_int() {
   return ExternalReference(reinterpret_cast<void*>(&double_constants.min_int));
 }
@@ -1239,12 +1277,6 @@ ExternalReference ExternalReference::address_of_minus_one_half() {
 ExternalReference ExternalReference::address_of_negative_infinity() {
   return ExternalReference(
       reinterpret_cast<void*>(&double_constants.negative_infinity));
-}
-
-
-ExternalReference ExternalReference::address_of_canonical_non_hole_nan() {
-  return ExternalReference(
-      reinterpret_cast<void*>(&double_constants.canonical_non_hole_nan));
 }
 
 
@@ -1297,6 +1329,8 @@ ExternalReference ExternalReference::re_check_stack_guard_state(
   function = FUNCTION_ADDR(RegExpMacroAssemblerARM64::CheckStackGuardState);
 #elif V8_TARGET_ARCH_ARM
   function = FUNCTION_ADDR(RegExpMacroAssemblerARM::CheckStackGuardState);
+#elif V8_TARGET_ARCH_PPC
+  function = FUNCTION_ADDR(RegExpMacroAssemblerPPC::CheckStackGuardState);
 #elif V8_TARGET_ARCH_MIPS
   function = FUNCTION_ADDR(RegExpMacroAssemblerMIPS::CheckStackGuardState);
 #elif V8_TARGET_ARCH_MIPS64
@@ -1443,15 +1477,18 @@ double power_double_int(double x, int y) {
 
 
 double power_double_double(double x, double y) {
-#if defined(__MINGW64_VERSION_MAJOR) && \
-    (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)
-  // MinGW64 has a custom implementation for pow.  This handles certain
+#if (defined(__MINGW64_VERSION_MAJOR) &&                              \
+     (!defined(__MINGW64_VERSION_RC) || __MINGW64_VERSION_RC < 1)) || \
+    defined(V8_OS_AIX)
+  // MinGW64 and AIX have a custom implementation for pow.  This handles certain
   // special cases that are different.
-  if ((x == 0.0 || std::isinf(x)) && std::isfinite(y)) {
+  if ((x == 0.0 || std::isinf(x)) && y != 0.0 && std::isfinite(y)) {
     double f;
-    if (std::modf(y, &f) != 0.0) {
-      return ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
-    }
+    double result = ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
+    /* retain sign if odd integer exponent */
+    return ((std::modf(y, &f) == 0.0) && (static_cast<int64_t>(y) & 1))
+               ? copysign(result, x)
+               : result;
   }
 
   if (x == 2.0) {
@@ -1465,7 +1502,7 @@ double power_double_double(double x, double y) {
   // The checks for special cases can be dropped in ia32 because it has already
   // been done in generated code before bailing out here.
   if (std::isnan(y) || ((x == 1 || x == -1) && std::isinf(y))) {
-    return base::OS::nan_value();
+    return std::numeric_limits<double>::quiet_NaN();
   }
   return std::pow(x, y);
 }
@@ -1578,22 +1615,58 @@ bool PositionsRecorder::WriteRecordedPositions() {
     EnsureSpace ensure_space(assembler_);
     assembler_->RecordRelocInfo(RelocInfo::STATEMENT_POSITION,
                                 state_.current_statement_position);
-    state_.written_statement_position = state_.current_statement_position;
     written = true;
   }
+  state_.written_statement_position = state_.current_statement_position;
 
   // Write the position if it is different from what was written last time and
-  // also different from the written statement position.
+  // also different from the statement position that was just written.
   if (state_.current_position != state_.written_position &&
-      state_.current_position != state_.written_statement_position) {
+      (state_.current_position != state_.written_statement_position ||
+       !written)) {
     EnsureSpace ensure_space(assembler_);
     assembler_->RecordRelocInfo(RelocInfo::POSITION, state_.current_position);
-    state_.written_position = state_.current_position;
     written = true;
   }
+  state_.written_position = state_.current_position;
 
   // Return whether something was written.
   return written;
 }
 
+
+// Platform specific but identical code for all the platforms.
+
+
+void Assembler::RecordDeoptReason(const int reason,
+                                  const SourcePosition position) {
+  if (FLAG_trace_deopt || isolate()->cpu_profiler()->is_profiling()) {
+    EnsureSpace ensure_space(this);
+    int raw_position = position.IsUnknown() ? 0 : position.raw();
+    RecordRelocInfo(RelocInfo::POSITION, raw_position);
+    RecordRelocInfo(RelocInfo::DEOPT_REASON, reason);
+  }
+}
+
+
+void Assembler::RecordComment(const char* msg) {
+  if (FLAG_code_comments) {
+    EnsureSpace ensure_space(this);
+    RecordRelocInfo(RelocInfo::COMMENT, reinterpret_cast<intptr_t>(msg));
+  }
+}
+
+
+void Assembler::RecordJSReturn() {
+  positions_recorder()->WriteRecordedPositions();
+  EnsureSpace ensure_space(this);
+  RecordRelocInfo(RelocInfo::JS_RETURN);
+}
+
+
+void Assembler::RecordDebugBreakSlot() {
+  positions_recorder()->WriteRecordedPositions();
+  EnsureSpace ensure_space(this);
+  RecordRelocInfo(RelocInfo::DEBUG_BREAK_SLOT);
+}
 } }  // namespace v8::internal

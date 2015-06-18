@@ -7,6 +7,7 @@
 #include <process.h>
 
 #include "base/basictypes.h"
+#include "base/win/windows_version.h"
 #include "sandbox/win/src/crosscall_client.h"
 #include "sandbox/win/src/handle_closer_agent.h"
 #include "sandbox/win/src/handle_interception.h"

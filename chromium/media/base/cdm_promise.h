@@ -57,8 +57,6 @@ class MEDIA_EXPORT CdmPromise {
 
 // For some reason the Windows compiler is not happy with the implementation
 // of CdmPromiseTemplate being in the .cc file, so moving it here.
-namespace {
-
 template <typename... T>
 struct CdmPromiseTraits {};
 
@@ -71,14 +69,6 @@ template <>
 struct CdmPromiseTraits<std::string> {
   static const CdmPromise::ResolveParameterType kType = CdmPromise::STRING_TYPE;
 };
-
-template <>
-struct CdmPromiseTraits<KeyIdsVector> {
-  static const CdmPromise::ResolveParameterType kType =
-      CdmPromise::KEY_IDS_VECTOR_TYPE;
-};
-
-}  // namespace
 
 // This class adds the resolve(T) method. This class is still an interface, and
 // is used as the type of promise that gets passed around.
@@ -96,7 +86,7 @@ class MEDIA_EXPORT CdmPromiseTemplate : public CdmPromise {
                       uint32 system_code,
                       const std::string& error_message) = 0;
 
-  virtual ResolveParameterType GetResolveParameterType() const override {
+  ResolveParameterType GetResolveParameterType() const override {
     return CdmPromiseTraits<T...>::kType;
   }
 

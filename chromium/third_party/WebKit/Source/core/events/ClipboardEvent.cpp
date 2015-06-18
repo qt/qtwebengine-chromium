@@ -23,15 +23,13 @@
 #include "config.h"
 #include "core/events/ClipboardEvent.h"
 
-#include "core/clipboard/DataTransfer.h"
-
 namespace blink {
 
 ClipboardEvent::ClipboardEvent()
 {
 }
 
-ClipboardEvent::ClipboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<DataTransfer> clipboardData)
+ClipboardEvent::ClipboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, DataTransfer* clipboardData)
     : Event(eventType, canBubble, cancelable), m_clipboardData(clipboardData)
 {
 }
@@ -42,8 +40,7 @@ ClipboardEvent::~ClipboardEvent()
 
 const AtomicString& ClipboardEvent::interfaceName() const
 {
-    // FIXME: create an ClipboardEvent.idl matching http://dev.w3.org/2006/webapi/clipops/clipops.html#clipboard-event-interfaces
-    return EventNames::Event;
+    return EventNames::ClipboardEvent;
 }
 
 bool ClipboardEvent::isClipboardEvent() const
@@ -51,7 +48,7 @@ bool ClipboardEvent::isClipboardEvent() const
     return true;
 }
 
-void ClipboardEvent::trace(Visitor* visitor)
+DEFINE_TRACE(ClipboardEvent)
 {
     visitor->trace(m_clipboardData);
     Event::trace(visitor);

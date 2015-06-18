@@ -23,7 +23,7 @@
 #include "core/svg/SVGSymbolElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGHiddenContainer.h"
+#include "core/layout/svg/LayoutSVGHiddenContainer.h"
 
 namespace blink {
 
@@ -33,12 +33,13 @@ inline SVGSymbolElement::SVGSymbolElement(Document& document)
 {
 }
 
-DEFINE_NODE_FACTORY(SVGSymbolElement)
-
-void SVGSymbolElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+DEFINE_TRACE(SVGSymbolElement)
 {
-    parseAttributeNew(name, value);
+    SVGElement::trace(visitor);
+    SVGFitToViewBox::trace(visitor);
 }
+
+DEFINE_NODE_FACTORY(SVGSymbolElement)
 
 void SVGSymbolElement::svgAttributeChanged(const QualifiedName& attrName)
 {
@@ -46,9 +47,9 @@ void SVGSymbolElement::svgAttributeChanged(const QualifiedName& attrName)
         invalidateInstances();
 }
 
-RenderObject* SVGSymbolElement::createRenderer(RenderStyle*)
+LayoutObject* SVGSymbolElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderSVGHiddenContainer(this);
+    return new LayoutSVGHiddenContainer(this);
 }
 
 }

@@ -4,7 +4,7 @@
 
 #include "content/renderer/geolocation_dispatcher.h"
 
-#include "content/common/geolocation_messages.h"
+#include "content/public/common/geoposition.h"
 #include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebGeolocationPermissionRequest.h"
@@ -30,23 +30,14 @@ GeolocationDispatcher::GeolocationDispatcher(RenderFrame* render_frame)
 
 GeolocationDispatcher::~GeolocationDispatcher() {}
 
-bool GeolocationDispatcher::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(GeolocationDispatcher, message)
-    IPC_MESSAGE_HANDLER(GeolocationMsg_PermissionSet, OnPermissionSet)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
-}
-
 void GeolocationDispatcher::startUpdating() {
-  if (!geolocation_service_.get()) {
+  if (!geolocation_service_) {
     render_frame()->GetServiceRegistry()->ConnectToRemoteService(
         &geolocation_service_);
-    geolocation_service_.set_client(this);
   }
   if (enable_high_accuracy_)
     geolocation_service_->SetHighAccuracy(true);
+  QueryNextPosition();
 }
 
 void GeolocationDispatcher::stopUpdating() {
@@ -61,7 +52,7 @@ void GeolocationDispatcher::setEnableHighAccuracy(bool enable_high_accuracy) {
   bool has_changed = enable_high_accuracy_ != enable_high_accuracy;
   enable_high_accuracy_ = enable_high_accuracy;
   // We have a different accuracy requirement. Request browser to update.
-  if (geolocation_service_.get() && has_changed)
+  if (geolocation_service_ && has_changed)
     geolocation_service_->SetHighAccuracy(enable_high_accuracy_);
 }
 
@@ -82,29 +73,48 @@ bool GeolocationDispatcher::lastPosition(WebGeolocationPosition&) {
 // conversion is necessary.
 void GeolocationDispatcher::requestPermission(
     const WebGeolocationPermissionRequest& permissionRequest) {
-  int bridge_id = pending_permissions_->add(permissionRequest);
-  base::string16 origin = permissionRequest.securityOrigin().toString();
-  Send(new GeolocationHostMsg_RequestPermission(
-      routing_id(), bridge_id, GURL(origin),
-      blink::WebUserGestureIndicator::isProcessingUserGesture()));
+  if (!permission_service_.get()) {
+    render_frame()->GetServiceRegistry()->ConnectToRemoteService(
+        &permission_service_);
+  }
+
+  int permission_request_id = pending_permissions_->add(permissionRequest);
+
+  permission_service_->RequestPermission(
+      PERMISSION_NAME_GEOLOCATION,
+      permissionRequest.securityOrigin().toString().utf8(),
+      blink::WebUserGestureIndicator::isProcessingUserGesture(),
+      base::Bind(&GeolocationDispatcher::OnPermissionSet,
+                 base::Unretained(this),
+                 permission_request_id));
 }
 
 void GeolocationDispatcher::cancelPermissionRequest(
-    const WebGeolocationPermissionRequest& permissionRequest) {
-  int bridge_id;
-  pending_permissions_->remove(permissionRequest, bridge_id);
+    const blink::WebGeolocationPermissionRequest& permissionRequest) {
+  int permission_request_id;
+  pending_permissions_->remove(permissionRequest, permission_request_id);
 }
 
 // Permission for using geolocation has been set.
-void GeolocationDispatcher::OnPermissionSet(int bridge_id, bool is_allowed) {
+void GeolocationDispatcher::OnPermissionSet(
+    int permission_request_id,
+    PermissionStatus status) {
   WebGeolocationPermissionRequest permissionRequest;
-  if (!pending_permissions_->remove(bridge_id, permissionRequest))
+  if (!pending_permissions_->remove(permission_request_id, permissionRequest))
     return;
-  permissionRequest.setIsAllowed(is_allowed);
+
+  permissionRequest.setIsAllowed(status == PERMISSION_STATUS_GRANTED);
 }
 
-void GeolocationDispatcher::OnLocationUpdate(MojoGeopositionPtr geoposition) {
-  DCHECK(geolocation_service_.get());
+void GeolocationDispatcher::QueryNextPosition() {
+  DCHECK(geolocation_service_);
+  geolocation_service_->QueryNextPosition(
+      base::Bind(&GeolocationDispatcher::OnPositionUpdate,
+                 base::Unretained(this)));
+}
+
+void GeolocationDispatcher::OnPositionUpdate(MojoGeopositionPtr geoposition) {
+  QueryNextPosition();
 
   if (geoposition->valid) {
     controller_->positionChanged(WebGeolocationPosition(

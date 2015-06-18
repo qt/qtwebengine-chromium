@@ -51,7 +51,6 @@ ToastContentsView::ToastContentsView(
     base::WeakPtr<MessagePopupCollection> collection)
     : collection_(collection),
       id_(notification_id),
-      is_animating_bounds_(false),
       is_closing_(false),
       closing_animation_(NULL) {
   set_notify_enter_exit_on_child(true);
@@ -308,7 +307,7 @@ scoped_ptr<ui::MenuModel> ToastContentsView::CreateMenuModel(
   // Should not reach, the context menu should be handled in
   // MessagePopupCollection.
   NOTREACHED();
-  return scoped_ptr<ui::MenuModel>();
+  return nullptr;
 }
 
 bool ToastContentsView::HasClickedListener(

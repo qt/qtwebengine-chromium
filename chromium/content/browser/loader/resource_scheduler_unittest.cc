@@ -32,6 +32,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/latency_info.h"
 
+using std::string;
+
 namespace content {
 
 namespace {
@@ -120,6 +122,7 @@ class FakeResourceMessageFilter : public ResourceMessageFilter {
           NULL  /* blob_storage_context */,
           NULL  /* file_system_context */,
           NULL  /* service_worker_context */,
+          NULL  /* host_zoom_level_context */,
           base::Bind(&FakeResourceMessageFilter::GetContexts,
                      base::Unretained(this))) {
   }
@@ -168,7 +171,7 @@ class ResourceSchedulerTest : public testing::Test {
       int route_id,
       bool is_async) {
     scoped_ptr<net::URLRequest> url_request(
-        context_.CreateRequest(GURL(url), priority, NULL, NULL));
+        context_.CreateRequest(GURL(url), priority, NULL));
     ResourceRequestInfoImpl* info = new ResourceRequestInfoImpl(
         PROCESS_TYPE_RENDERER,                   // process_type
         child_id,                                // child_id
@@ -188,6 +191,7 @@ class ResourceSchedulerTest : public testing::Test {
         false,                                   // has_user_gesture
         false,                                   // enable_load_timing
         false,                                   // enable_upload_progress
+        false,                                   // do_not_prompt_for_login
         blink::WebReferrerPolicyDefault,         // referrer_policy
         blink::WebPageVisibilityStateVisible,    // visibility_state
         NULL,                                    // context

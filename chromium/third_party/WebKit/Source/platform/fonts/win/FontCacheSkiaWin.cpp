@@ -43,16 +43,56 @@
 
 namespace blink {
 
-HashMap<String, RefPtr<SkTypeface> >* FontCache::s_sideloadedFonts = 0;
+HashMap<String, RefPtr<SkTypeface>>* FontCache::s_sideloadedFonts = 0;
+
+// Cached system font metrics.
+AtomicString* FontCache::s_menuFontFamilyName = 0;
+int32_t FontCache::s_menuFontHeight = 0;
+AtomicString* FontCache::s_smallCaptionFontFamilyName = 0;
+int32_t FontCache::s_smallCaptionFontHeight = 0;
+AtomicString* FontCache::s_statusFontFamilyName = 0;
+int32_t FontCache::s_statusFontHeight = 0;
+
+namespace {
+
+int32_t ensureMinimumFontHeightIfNeeded(int32_t fontHeight)
+{
+    // Adjustment for codepage 936 to make the fonts more legible in Simplified Chinese.
+    // Please refer to LayoutThemeFontProviderWin.cpp for more information.
+    return (fontHeight < 12.0f) && (GetACP() == 936) ? 12.0f : fontHeight;
+}
+
+} // namespace
 
 // static
 void FontCache::addSideloadedFontForTesting(SkTypeface* typeface)
 {
     if (!s_sideloadedFonts)
-        s_sideloadedFonts = new HashMap<String, RefPtr<SkTypeface> >;
+        s_sideloadedFonts = new HashMap<String, RefPtr<SkTypeface>>;
     SkString name;
     typeface->getFamilyName(&name);
     s_sideloadedFonts->set(name.c_str(), adoptRef(typeface));
+}
+
+// static
+void FontCache::setMenuFontMetrics(const wchar_t* familyName, int32_t fontHeight)
+{
+    s_menuFontFamilyName = new AtomicString(familyName);
+    s_menuFontHeight = ensureMinimumFontHeightIfNeeded(fontHeight);
+}
+
+// static
+void FontCache::setSmallCaptionFontMetrics(const wchar_t* familyName, int32_t fontHeight)
+{
+    s_smallCaptionFontFamilyName = new AtomicString(familyName);
+    s_smallCaptionFontHeight = ensureMinimumFontHeightIfNeeded(fontHeight);
+}
+
+// static
+void FontCache::setStatusFontMetrics(const wchar_t* familyName, int32_t fontHeight)
+{
+    s_statusFontFamilyName = new AtomicString(familyName);
+    s_statusFontHeight = ensureMinimumFontHeightIfNeeded(fontHeight);
 }
 
 FontCache::FontCache()
@@ -62,7 +102,7 @@ FontCache::FontCache()
 
     if (s_useDirectWrite) {
         fontManager = SkFontMgr_New_DirectWrite(s_directWriteFactory);
-        s_useSubpixelPositioning = RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+        s_useSubpixelPositioning = true;
     } else {
         fontManager = SkFontMgr_New_GDI();
         // Subpixel text positioning is not supported by the GDI backend.
@@ -239,10 +279,9 @@ static bool typefacesHasWeightSuffix(const AtomicString& family,
         { L" heavy", 6,  FontWeight900 }
     };
     size_t numVariants = WTF_ARRAY_LENGTH(variantForSuffix);
-    bool caseSensitive = false;
     for (size_t i = 0; i < numVariants; i++) {
         const FamilyWeightSuffix& entry = variantForSuffix[i];
-        if (family.endsWith(entry.suffix, caseSensitive)) {
+        if (family.endsWith(entry.suffix, TextCaseInsensitive)) {
             String familyName = family.string();
             familyName.truncate(family.length() - entry.length);
             adjustedName = AtomicString(familyName);
@@ -278,10 +317,9 @@ static bool typefacesHasStretchSuffix(const AtomicString& family,
         { L" ultraexpanded", 14,  FontStretchUltraExpanded }
     };
     size_t numVariants = WTF_ARRAY_LENGTH(variantForSuffix);
-    bool caseSensitive = false;
     for (size_t i = 0; i < numVariants; i++) {
         const FamilyStretchSuffix& entry = variantForSuffix[i];
-        if (family.endsWith(entry.suffix, caseSensitive)) {
+        if (family.endsWith(entry.suffix, TextCaseInsensitive)) {
             String familyName = family.string();
             familyName.truncate(family.length() - entry.length);
             adjustedName = AtomicString(familyName);

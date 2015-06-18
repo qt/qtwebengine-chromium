@@ -21,21 +21,21 @@
 #ifndef SVGPathSegClosePath_h
 #define SVGPathSegClosePath_h
 
-#include "core/svg/SVGPathSegWithContext.h"
+#include "core/svg/SVGPathSeg.h"
 
 namespace blink {
 
-class SVGPathSegClosePath final : public SVGPathSegWithContext {
+class SVGPathSegClosePath final : public SVGPathSeg {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegClosePath> create(SVGPathElement* element)
+    static PassRefPtrWillBeRawPtr<SVGPathSegClosePath> create(SVGPathElement* element)
     {
-        return adoptRef(new SVGPathSegClosePath(element));
+        return adoptRefWillBeNoop(new SVGPathSegClosePath(element));
     }
 
 private:
     SVGPathSegClosePath(SVGPathElement* element)
-        : SVGPathSegWithContext(element) { }
+        : SVGPathSeg(element) { }
 
     virtual unsigned short pathSegType() const override { return PATHSEG_CLOSEPATH; }
     virtual String pathSegTypeAsLetter() const override { return "Z"; }

@@ -11,19 +11,24 @@
 }
 
 .autofill-list-item {
-  -webkit-box-flex: 1;
   -webkit-padding-start: 8px;
+  max-width: 50%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.autofill-list-item + img {
-  -webkit-padding-end: 20px;
-  vertical-align: top;
+.autofill-list-item + .deemphasized {
+  -webkit-box-flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #autofill-options > div:last-child {
   margin-top: 15px;
+}
+
+#autofill-options .deemphasized {
+  color: #777;
 }
 
 #autofill-options > div.settings-list > div:last-child {
@@ -37,11 +42,17 @@
 }
 
 #autofill-options .list-inline-button {
+  -webkit-margin-start: 12px;
   margin-top: 0;
   vertical-align: top;
 }
 
 #autofill-options div[role='listitem']:not(:hover):not([selected])
-    .list-inline-button {
+    .hide-until-hover {
+  display: none;
+}
+
+#autofill-options div[role='listitem']:-webkit-any(:hover,[selected])
+    .hides-on-hover {
   display: none;
 }

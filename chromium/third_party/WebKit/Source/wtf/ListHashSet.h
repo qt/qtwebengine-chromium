@@ -53,29 +53,11 @@ namespace WTF {
     template<typename HashArg> struct ListHashSetNodeHashFunctions;
     template<typename HashArg> struct ListHashSetTranslator;
 
-    // Don't declare a destructor for HeapAllocated ListHashSet.
-    template<typename Derived, typename Allocator, bool isGarbageCollected>
-    class ListHashSetDestructorBase;
-
-    template<typename Derived, typename Allocator>
-    class ListHashSetDestructorBase<Derived, Allocator, true> {
-    protected:
-        typename Allocator::AllocatorProvider m_allocatorProvider;
-    };
-
-    template<typename Derived, typename Allocator>
-    class ListHashSetDestructorBase<Derived, Allocator, false> {
-    public:
-        ~ListHashSetDestructorBase() { static_cast<Derived*>(this)->finalize(); }
-    protected:
-        typename Allocator::AllocatorProvider m_allocatorProvider;
-    };
-
     // Note that for a ListHashSet you cannot specify the HashTraits as a
     // template argument. It uses the default hash traits for the ValueArg
     // type.
-    template<typename ValueArg, size_t inlineCapacity = 256, typename HashArg = typename DefaultHash<ValueArg>::Hash, typename AllocatorArg = ListHashSetAllocator<ValueArg, inlineCapacity> > class ListHashSet
-        : public ListHashSetDestructorBase<ListHashSet<ValueArg, inlineCapacity, HashArg, AllocatorArg>, AllocatorArg, AllocatorArg::isGarbageCollected> {
+    template<typename ValueArg, size_t inlineCapacity = 256, typename HashArg = typename DefaultHash<ValueArg>::Hash, typename AllocatorArg = ListHashSetAllocator<ValueArg, inlineCapacity>> class ListHashSet
+        : public ConditionalDestructor<ListHashSet<ValueArg, inlineCapacity, HashArg, AllocatorArg>, AllocatorArg::isGarbageCollected> {
         typedef AllocatorArg Allocator;
         WTF_USE_ALLOCATOR(ListHashSet, Allocator);
 
@@ -185,7 +167,9 @@ namespace WTF {
         ValuePassOutType take(ValuePeekInType);
         ValuePassOutType takeFirst();
 
-        void trace(typename Allocator::Visitor*);
+        typedef int HasInlinedTraceMethodMarker;
+        template<typename VisitorDispatcher>
+        void trace(VisitorDispatcher);
 
     private:
         void unlink(Node*);
@@ -194,9 +178,9 @@ namespace WTF {
         void prependNode(Node*);
         void insertNodeBefore(Node* beforeNode, Node* newNode);
         void deleteAllNodes();
-        Allocator* allocator() const { return this->m_allocatorProvider.get(); }
-        void createAllocatorIfNeeded() { this->m_allocatorProvider.createAllocatorIfNeeded(); }
-        void deallocate(Node* node) const { this->m_allocatorProvider.deallocate(node); }
+        Allocator* allocator() const { return m_allocatorProvider.get(); }
+        void createAllocatorIfNeeded() { m_allocatorProvider.createAllocatorIfNeeded(); }
+        void deallocate(Node* node) const { m_allocatorProvider.deallocate(node); }
 
         iterator makeIterator(Node* position) { return iterator(this, position); }
         const_iterator makeConstIterator(Node* position) const { return const_iterator(this, position); }
@@ -206,6 +190,7 @@ namespace WTF {
         ImplType m_impl;
         Node* m_head;
         Node* m_tail;
+        typename Allocator::AllocatorProvider m_allocatorProvider;
     };
 
     // ListHashSetNode has this base class to hold the members because the MSVC
@@ -251,15 +236,22 @@ namespace WTF {
         typedef ListHashSetNodeBase<ValueArg> NodeBase;
         class AllocatorProvider {
         public:
+            AllocatorProvider() : m_allocator(nullptr) { }
             void createAllocatorIfNeeded()
             {
                 if (!m_allocator)
-                    m_allocator = adoptPtr(new ListHashSetAllocator);
+                    m_allocator = new ListHashSetAllocator;
+            }
+
+            void releaseAllocator()
+            {
+                delete m_allocator;
+                m_allocator = nullptr;
             }
 
             void swap(AllocatorProvider& other)
             {
-                m_allocator.swap(other.m_allocator);
+                std::swap(m_allocator, other.m_allocator);
             }
 
             void deallocate(Node* node) const
@@ -271,11 +263,13 @@ namespace WTF {
             ListHashSetAllocator* get() const
             {
                 ASSERT(m_allocator);
-                return m_allocator.get();
+                return m_allocator;
             }
 
         private:
-            OwnPtr<ListHashSetAllocator> m_allocator;
+            // Not using OwnPtr as this pointer should be deleted at
+            // releaseAllocator() method rather than at destructor.
+            ListHashSetAllocator* m_allocator;
         };
 
         ListHashSetAllocator()
@@ -360,13 +354,13 @@ namespace WTF {
 
         void* operator new(size_t, NodeAllocator* allocator)
         {
-            COMPILE_ASSERT(sizeof(ListHashSetNode) == sizeof(ListHashSetNodeBase<ValueArg>), PleaseAddAnyFieldsToTheBase);
+            static_assert(sizeof(ListHashSetNode) == sizeof(ListHashSetNodeBase<ValueArg>), "please add any fields to the base");
             return allocator->allocateNode();
         }
 
         void setWasAlreadyDestructed()
         {
-            if (NodeAllocator::isGarbageCollected && HashTraits<ValueArg>::needsDestruction)
+            if (NodeAllocator::isGarbageCollected && !IsTriviallyDestructible<ValueArg>::value)
                 this->m_prev = unlinkedNodePointer();
         }
 
@@ -378,7 +372,7 @@ namespace WTF {
 
         static void finalize(void* pointer)
         {
-            ASSERT(HashTraits<ValueArg>::needsDestruction); // No need to waste time calling finalize if it's not needed.
+            ASSERT(!IsTriviallyDestructible<ValueArg>::value); // No need to waste time calling finalize if it's not needed.
             ListHashSetNode* self = reinterpret_cast_ptr<ListHashSetNode*>(pointer);
 
             // Check whether this node was already destructed before being
@@ -388,6 +382,10 @@ namespace WTF {
 
             self->m_value.~ValueArg();
         }
+        void finalizeGarbageCollectedObject()
+        {
+            finalize(this);
+        }
 
         void destroy(NodeAllocator* allocator)
         {
@@ -396,11 +394,13 @@ namespace WTF {
             allocator->deallocate(this);
         }
 
+        typedef int HasInlinedTraceMethodMarker;
         // This is not called in normal tracing, but it is called if we find a
         // pointer to a node on the stack using conservative scanning. Since
         // the original ListHashSet may no longer exist we make sure to mark
         // the neighbours in the chain too.
-        void trace(typename NodeAllocator::Visitor* visitor)
+        template<typename VisitorDispatcher>
+        void trace(VisitorDispatcher visitor)
         {
             // The conservative stack scan can find nodes that have been
             // removed from the set and destructed. We don't need to trace
@@ -689,14 +689,15 @@ namespace WTF {
         m_impl.swap(other.m_impl);
         std::swap(m_head, other.m_head);
         std::swap(m_tail, other.m_tail);
-        this->m_allocatorProvider.swap(other.m_allocatorProvider);
+        m_allocatorProvider.swap(other.m_allocatorProvider);
     }
 
     template<typename T, size_t inlineCapacity, typename U, typename V>
     inline void ListHashSet<T, inlineCapacity, U, V>::finalize()
     {
-        COMPILE_ASSERT(!Allocator::isGarbageCollected, FinalizeOnHeapAllocatedListHashSetShouldNeverBeCalled);
+        static_assert(!Allocator::isGarbageCollected, "heap allocated ListHashSet should never call finalize()");
         deleteAllNodes();
+        m_allocatorProvider.releaseAllocator();
     }
 
     template<typename T, size_t inlineCapacity, typename U, typename V>
@@ -771,7 +772,7 @@ namespace WTF {
     template<typename HashTranslator, typename T>
     inline typename ListHashSet<ValueType, inlineCapacity, U, V>::iterator ListHashSet<ValueType, inlineCapacity, U, V>::find(const T& value)
     {
-        ImplTypeConstIterator it = m_impl.template find<ListHashSetTranslatorAdapter<HashTranslator> >(value);
+        ImplTypeConstIterator it = m_impl.template find<ListHashSetTranslatorAdapter<HashTranslator>>(value);
         if (it == m_impl.end())
             return end();
         return makeIterator(*it);
@@ -781,7 +782,7 @@ namespace WTF {
     template<typename HashTranslator, typename T>
     inline typename ListHashSet<ValueType, inlineCapacity, U, V>::const_iterator ListHashSet<ValueType, inlineCapacity, U, V>::find(const T& value) const
     {
-        ImplTypeConstIterator it = m_impl.template find<ListHashSetTranslatorAdapter<HashTranslator> >(value);
+        ImplTypeConstIterator it = m_impl.template find<ListHashSetTranslatorAdapter<HashTranslator>>(value);
         if (it == m_impl.end())
             return end();
         return makeConstIterator(*it);
@@ -791,7 +792,7 @@ namespace WTF {
     template<typename HashTranslator, typename T>
     inline bool ListHashSet<ValueType, inlineCapacity, U, V>::contains(const T& value) const
     {
-        return m_impl.template contains<ListHashSetTranslatorAdapter<HashTranslator> >(value);
+        return m_impl.template contains<ListHashSetTranslatorAdapter<HashTranslator>>(value);
     }
 
     template<typename T, size_t inlineCapacity, typename U, typename V>
@@ -808,7 +809,7 @@ namespace WTF {
         // because it lets it take lvalues by reference, but for our purposes
         // it's inconvenient, since it constrains us to be const, whereas the
         // allocator actually changes when it does allocations.
-        typename ImplType::AddResult result = m_impl.template add<BaseTranslator>(value, *this->allocator());
+        auto result = m_impl.template add<BaseTranslator>(value, *this->allocator());
         if (result.isNewEntry)
             appendNode(*result.storedValue);
         return AddResult(*result.storedValue, result.isNewEntry);
@@ -824,7 +825,7 @@ namespace WTF {
     typename ListHashSet<T, inlineCapacity, U, V>::AddResult ListHashSet<T, inlineCapacity, U, V>::appendOrMoveToLast(ValuePassInType value)
     {
         createAllocatorIfNeeded();
-        typename ImplType::AddResult result = m_impl.template add<BaseTranslator>(value, *this->allocator());
+        auto result = m_impl.template add<BaseTranslator>(value, *this->allocator());
         Node* node = *result.storedValue;
         if (!result.isNewEntry)
             unlink(node);
@@ -836,7 +837,7 @@ namespace WTF {
     typename ListHashSet<T, inlineCapacity, U, V>::AddResult ListHashSet<T, inlineCapacity, U, V>::prependOrMoveToFirst(ValuePassInType value)
     {
         createAllocatorIfNeeded();
-        typename ImplType::AddResult result = m_impl.template add<BaseTranslator>(value, *this->allocator());
+        auto result = m_impl.template add<BaseTranslator>(value, *this->allocator());
         Node* node = *result.storedValue;
         if (!result.isNewEntry)
             unlink(node);
@@ -848,7 +849,7 @@ namespace WTF {
     typename ListHashSet<T, inlineCapacity, U, V>::AddResult ListHashSet<T, inlineCapacity, U, V>::insertBefore(iterator it, ValuePassInType newValue)
     {
         createAllocatorIfNeeded();
-        typename ImplType::AddResult result = m_impl.template add<BaseTranslator>(newValue, *this->allocator());
+        auto result = m_impl.template add<BaseTranslator>(newValue, *this->allocator());
         if (result.isNewEntry)
             insertNodeBefore(it.node(), *result.storedValue);
         return AddResult(*result.storedValue, result.isNewEntry);
@@ -994,9 +995,10 @@ namespace WTF {
     }
 
     template<typename T, size_t inlineCapacity, typename U, typename V>
-    void ListHashSet<T, inlineCapacity, U, V>::trace(typename Allocator::Visitor* visitor)
+    template<typename VisitorDispatcher>
+    void ListHashSet<T, inlineCapacity, U, V>::trace(VisitorDispatcher visitor)
     {
-        COMPILE_ASSERT(HashTraits<T>::weakHandlingFlag == NoWeakHandlingInCollections, ListHashSetDoesNotSupportWeakness);
+        static_assert(HashTraits<T>::weakHandlingFlag == NoWeakHandlingInCollections, "ListHashSet does not support weakness");
         // This marks all the nodes and their contents live that can be
         // accessed through the HashTable. That includes m_head and m_tail
         // so we do not have to explicitly trace them here.
@@ -1005,7 +1007,7 @@ namespace WTF {
 
 #if !ENABLE(OILPAN)
     template<typename T, size_t U, typename V>
-    struct NeedsTracing<ListHashSet<T, U, V> > {
+    struct NeedsTracing<ListHashSet<T, U, V>> {
         static const bool value = false;
     };
 #endif

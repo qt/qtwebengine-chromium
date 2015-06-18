@@ -20,6 +20,7 @@
 #ifndef MediaQueryMatcher_h
 #define MediaQueryMatcher_h
 
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
@@ -37,10 +38,12 @@ class MediaQuerySet;
 // whenever it is needed and to call the listeners if the corresponding query has changed.
 // The listeners must be called in the very same order in which they have been added.
 
-class MediaQueryMatcher final : public RefCountedWillBeGarbageCollectedFinalized<MediaQueryMatcher> {
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaQueryMatcher)
+class CORE_EXPORT MediaQueryMatcher final : public RefCountedWillBeGarbageCollectedFinalized<MediaQueryMatcher> {
+    WTF_MAKE_NONCOPYABLE(MediaQueryMatcher);
 public:
     static PassRefPtrWillBeRawPtr<MediaQueryMatcher> create(Document&);
+    ~MediaQueryMatcher();
+
     void documentDetached();
 
     void addMediaQueryList(MediaQueryList*);
@@ -55,7 +58,7 @@ public:
     void viewportChanged();
     bool evaluate(const MediaQuerySet*);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit MediaQueryMatcher(Document&);
@@ -65,10 +68,10 @@ private:
     RawPtrWillBeMember<Document> m_document;
     OwnPtr<MediaQueryEvaluator> m_evaluator;
 
-    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<MediaQueryList> > MediaQueryListSet;
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<MediaQueryList>> MediaQueryListSet;
     MediaQueryListSet m_mediaLists;
 
-    typedef WillBeHeapLinkedHashSet<RefPtrWillBeMember<MediaQueryListListener> > ViewportListenerSet;
+    typedef WillBeHeapLinkedHashSet<RefPtrWillBeMember<MediaQueryListListener>> ViewportListenerSet;
     ViewportListenerSet m_viewportListeners;
 };
 

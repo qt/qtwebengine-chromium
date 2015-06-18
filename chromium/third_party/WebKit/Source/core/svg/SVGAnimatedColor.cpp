@@ -21,7 +21,7 @@
 
 #include "core/svg/SVGAnimatedColor.h"
 
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "core/svg/ColorDistance.h"
 #include "core/svg/SVGAnimateElement.h"
 
@@ -32,7 +32,7 @@ String SVGColorProperty::valueAsString() const
     return m_styleColor.isCurrentColor() ? "currentColor" : m_styleColor.color().serializedAsCSSComponentValue();
 }
 
-PassRefPtr<SVGPropertyBase> SVGColorProperty::cloneForAnimation(const String&) const
+PassRefPtrWillBeRawPtr<SVGPropertyBase> SVGColorProperty::cloneForAnimation(const String&) const
 {
     // SVGAnimatedColor is deprecated. So No SVG DOM animation.
     ASSERT_NOT_REACHED();
@@ -42,10 +42,9 @@ PassRefPtr<SVGPropertyBase> SVGColorProperty::cloneForAnimation(const String&) c
 static inline Color fallbackColorForCurrentColor(SVGElement* targetElement)
 {
     ASSERT(targetElement);
-    if (RenderObject* targetRenderer = targetElement->renderer())
-        return targetRenderer->style()->visitedDependentColor(CSSPropertyColor);
-    else
-        return Color::transparent;
+    if (LayoutObject* targetLayoutObject = targetElement->layoutObject())
+        return targetLayoutObject->resolveColor(CSSPropertyColor);
+    return Color::transparent;
 }
 
 void SVGColorProperty::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
@@ -58,7 +57,7 @@ void SVGColorProperty::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGEle
     m_styleColor = StyleColor(ColorDistance::addColors(fromColor, toColor));
 }
 
-void SVGColorProperty::calculateAnimatedValue(SVGAnimationElement* animationElement, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement)
+void SVGColorProperty::calculateAnimatedValue(SVGAnimationElement* animationElement, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> fromValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toValue, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement)
 {
     StyleColor fromStyleColor = toSVGColorProperty(fromValue)->m_styleColor;
     StyleColor toStyleColor = toSVGColorProperty(toValue)->m_styleColor;
@@ -88,7 +87,7 @@ void SVGColorProperty::calculateAnimatedValue(SVGAnimationElement* animationElem
     m_styleColor = StyleColor(makeRGBA(roundf(animatedRed), roundf(animatedGreen), roundf(animatedBlue), roundf(animatedAlpha)));
 }
 
-float SVGColorProperty::calculateDistance(PassRefPtr<SVGPropertyBase> toValue, SVGElement* contextElement)
+float SVGColorProperty::calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> toValue, SVGElement* contextElement)
 {
     ASSERT(contextElement);
     Color fallbackColor = fallbackColorForCurrentColor(contextElement);

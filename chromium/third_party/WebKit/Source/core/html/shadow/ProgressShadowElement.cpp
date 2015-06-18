@@ -34,7 +34,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/html/HTMLProgressElement.h"
-#include "core/rendering/RenderProgress.h"
+#include "core/layout/LayoutProgress.h"
 
 namespace blink {
 
@@ -50,10 +50,10 @@ HTMLProgressElement* ProgressShadowElement::progressElement() const
     return toHTMLProgressElement(shadowHost());
 }
 
-bool ProgressShadowElement::rendererIsNeeded(const RenderStyle& style)
+bool ProgressShadowElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    RenderObject* progressRenderer = progressElement()->renderer();
-    return progressRenderer && !progressRenderer->style()->hasAppearance() && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* progressLayoutObject = progressElement()->layoutObject();
+    return progressLayoutObject && !progressLayoutObject->style()->hasAppearance() && HTMLDivElement::layoutObjectIsNeeded(style);
 }
 
 inline ProgressInnerElement::ProgressInnerElement(Document& document)
@@ -63,18 +63,18 @@ inline ProgressInnerElement::ProgressInnerElement(Document& document)
 
 DEFINE_NODE_FACTORY(ProgressInnerElement)
 
-RenderObject* ProgressInnerElement::createRenderer(RenderStyle*)
+LayoutObject* ProgressInnerElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderProgress(this);
+    return new LayoutProgress(this);
 }
 
-bool ProgressInnerElement::rendererIsNeeded(const RenderStyle& style)
+bool ProgressInnerElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    if (progressElement()->hasAuthorShadowRoot())
-        return HTMLDivElement::rendererIsNeeded(style);
+    if (progressElement()->hasOpenShadowRoot())
+        return HTMLDivElement::layoutObjectIsNeeded(style);
 
-    RenderObject* progressRenderer = progressElement()->renderer();
-    return progressRenderer && !progressRenderer->style()->hasAppearance() && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* progressLayoutObject = progressElement()->layoutObject();
+    return progressLayoutObject && !progressLayoutObject->style()->hasAppearance() && HTMLDivElement::layoutObjectIsNeeded(style);
 }
 
 inline ProgressBarElement::ProgressBarElement(Document& document)

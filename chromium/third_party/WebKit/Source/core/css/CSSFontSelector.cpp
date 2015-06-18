@@ -45,7 +45,7 @@ namespace blink {
 
 CSSFontSelector::CSSFontSelector(Document* document)
     : m_document(document)
-    , m_fontLoader(FontLoader::create(this, document->fetcher()))
+    , m_fontLoader(FontLoader::create(this, document))
     , m_genericFontFamilySettings(document->frame()->settings()->genericFontFamilySettings())
 {
     // FIXME: An old comment used to say there was no need to hold a reference to m_document
@@ -80,7 +80,7 @@ void CSSFontSelector::unregisterForInvalidationCallbacks(CSSFontSelectorClient* 
 
 void CSSFontSelector::dispatchInvalidationCallbacks()
 {
-    WillBeHeapVector<RawPtrWillBeMember<CSSFontSelectorClient> > clients;
+    WillBeHeapVector<RawPtrWillBeMember<CSSFontSelectorClient>> clients;
     copyToVector(m_clients, clients);
     for (size_t i = 0; i < clients.size(); ++i)
         clients[i]->fontsNeedUpdate(this);
@@ -157,7 +157,7 @@ bool CSSFontSelector::isPlatformFontAvailable(const FontDescription& fontDescrip
 #if !ENABLE(OILPAN)
 void CSSFontSelector::clearDocument()
 {
-    m_fontLoader->clearResourceFetcherAndFontSelector();
+    m_fontLoader->clearDocumentAndFontSelector();
     m_document = nullptr;
     m_fontFaceCache.clearAll();
 }
@@ -168,11 +168,11 @@ void CSSFontSelector::updateGenericFontFamilySettings(Document& document)
     if (!document.settings())
         return;
     m_genericFontFamilySettings = document.settings()->genericFontFamilySettings();
-    // Need to increment FontFaceCache version to update RenderStyles.
+    // Need to increment FontFaceCache version to update ComputedStyles.
     m_fontFaceCache.incrementVersion();
 }
 
-void CSSFontSelector::trace(Visitor* visitor)
+DEFINE_TRACE(CSSFontSelector)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);

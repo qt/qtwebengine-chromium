@@ -34,20 +34,44 @@ namespace blink {
 
 void V8DeviceOrientationEvent::initDeviceOrientationEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    v8::Isolate* isolate = info.GetIsolate();
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "initDeviceOrientationEvent", "DeviceOrientationEvent", info.Holder(), isolate);
     DeviceOrientationEvent* impl = V8DeviceOrientationEvent::toImpl(info.Holder());
-    TOSTRING_VOID(V8StringResource<>, type, info[0]);
-    bool bubbles = info[1]->BooleanValue();
-    bool cancelable = info[2]->BooleanValue();
+    V8StringResource<> type(info[0]);
+    if (!type.prepare())
+        return;
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
+    bool bubbles;
+    V8_CALL(bubbles, info[1], BooleanValue(context), return);
+    bool cancelable;
+    V8_CALL(cancelable, info[2], BooleanValue(context), return);
     // If alpha, beta, gamma or absolute are null or undefined, mark them as not provided.
     // Otherwise, use the standard JavaScript conversion.
     bool alphaProvided = !isUndefinedOrNull(info[3]);
-    double alpha = info[3]->NumberValue();
+    double alpha = 0;
+    if (alphaProvided) {
+        alpha = toRestrictedDouble(isolate, info[3], exceptionState);
+        if (exceptionState.throwIfNeeded())
+            return;
+    }
     bool betaProvided = !isUndefinedOrNull(info[4]);
-    double beta = info[4]->NumberValue();
+    double beta = 0;
+    if (betaProvided) {
+        beta = toRestrictedDouble(isolate, info[4], exceptionState);
+        if (exceptionState.throwIfNeeded())
+            return;
+    }
     bool gammaProvided = !isUndefinedOrNull(info[5]);
-    double gamma = info[5]->NumberValue();
+    double gamma = 0;
+    if (gammaProvided) {
+        gamma = toRestrictedDouble(isolate, info[5], exceptionState);
+        if (exceptionState.throwIfNeeded())
+            return;
+    }
     bool absoluteProvided = !isUndefinedOrNull(info[6]);
-    bool absolute = info[6]->BooleanValue();
+    bool absolute = false;
+    if (absoluteProvided && !v8Call(info[6]->BooleanValue(context), absolute))
+        return;
     DeviceOrientationData* orientation = DeviceOrientationData::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma, absoluteProvided, absolute);
     impl->initDeviceOrientationEvent(type, bubbles, cancelable, orientation);
 }

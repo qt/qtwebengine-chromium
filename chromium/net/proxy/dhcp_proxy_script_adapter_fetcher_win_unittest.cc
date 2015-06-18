@@ -21,7 +21,7 @@ namespace net {
 
 namespace {
 
-const char* const kPacUrl = "http://pacserver/script.pac";
+const char kPacUrl[] = "http://pacserver/script.pac";
 
 // In net/proxy/dhcp_proxy_script_fetcher_win_unittest.cc there are a few
 // tests that exercise DhcpProxyScriptAdapterFetcher end-to-end along with
@@ -46,12 +46,12 @@ class MockDhcpProxyScriptAdapterFetcher
         pac_script_("bingo") {
   }
 
-  void Cancel() {
+  void Cancel() override {
     DhcpProxyScriptAdapterFetcher::Cancel();
     fetcher_ = NULL;
   }
 
-  virtual ProxyScriptFetcher* ImplCreateScriptFetcher() override {
+  ProxyScriptFetcher* ImplCreateScriptFetcher() override {
     // We don't maintain ownership of the fetcher, it is transferred to
     // the caller.
     fetcher_ = new MockProxyScriptFetcher();
@@ -80,19 +80,20 @@ class MockDhcpProxyScriptAdapterFetcher
     base::WaitableEvent test_finished_event_;
     base::TimeDelta dhcp_delay_;
     std::string configured_url_;
+
+   private:
+    ~DelayingDhcpQuery() override {}
   };
 
-  virtual DhcpQuery* ImplCreateDhcpQuery() override {
+  DhcpQuery* ImplCreateDhcpQuery() override {
     dhcp_query_ = new DelayingDhcpQuery();
     dhcp_query_->dhcp_delay_ = dhcp_delay_;
     dhcp_query_->configured_url_ = configured_url_;
-    return dhcp_query_;
+    return dhcp_query_.get();
   }
 
   // Use a shorter timeout so tests can finish more quickly.
-  virtual base::TimeDelta ImplGetTimeout() const override {
-    return timeout_;
-  }
+  base::TimeDelta ImplGetTimeout() const override { return timeout_; }
 
   void OnFetcherTimer() {
     // Note that there is an assumption by this mock implementation that
@@ -116,7 +117,7 @@ class MockDhcpProxyScriptAdapterFetcher
   }
 
   void FinishTest() {
-    DCHECK(dhcp_query_);
+    DCHECK(dhcp_query_.get());
     dhcp_query_->test_finished_event_.Signal();
   }
 

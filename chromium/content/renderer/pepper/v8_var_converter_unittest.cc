@@ -22,7 +22,7 @@
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/scoped_pp_var.h"
 #include "ppapi/shared_impl/test_globals.h"
-#include "ppapi/shared_impl/unittest_utils.h"
+#include "ppapi/shared_impl/test_utils.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/shared_impl/var_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -56,25 +56,25 @@ class MockResourceConverter : public content::ResourceConverter {
   void Flush(const base::Callback<void(bool)>& callback) override {
     NOTREACHED();
   }
-  bool FromV8Value(v8::Handle<v8::Object> val,
-                   v8::Handle<v8::Context> context,
+  bool FromV8Value(v8::Local<v8::Object> val,
+                   v8::Local<v8::Context> context,
                    PP_Var* result,
                    bool* was_resource) override {
     *was_resource = false;
     return true;
   }
   bool ToV8Value(const PP_Var& var,
-                 v8::Handle<v8::Context> context,
-                 v8::Handle<v8::Value>* result) override {
+                 v8::Local<v8::Context> context,
+                 v8::Local<v8::Value>* result) override {
     return false;
   }
 };
 
 // Maps PP_Var IDs to the V8 value handle they correspond to.
-typedef base::hash_map<int64_t, v8::Handle<v8::Value> > VarHandleMap;
+typedef base::hash_map<int64_t, v8::Local<v8::Value> > VarHandleMap;
 
 bool Equals(const PP_Var& var,
-            v8::Handle<v8::Value> val,
+            v8::Local<v8::Value> val,
             VarHandleMap* visited_ids) {
   if (ppapi::VarTracker::IsVarTypeRefcounted(var.type)) {
     VarHandleMap::iterator it = visited_ids->find(var.value.as_id);
@@ -83,36 +83,38 @@ bool Equals(const PP_Var& var,
     (*visited_ids)[var.value.as_id] = val;
   }
 
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   if (val->IsUndefined()) {
     return var.type == PP_VARTYPE_UNDEFINED;
   } else if (val->IsNull()) {
     return var.type == PP_VARTYPE_NULL;
   } else if (val->IsBoolean() || val->IsBooleanObject()) {
     return var.type == PP_VARTYPE_BOOL &&
-           PP_FromBool(val->ToBoolean()->Value()) == var.value.as_bool;
+           PP_FromBool(val->ToBoolean(isolate)->Value()) == var.value.as_bool;
   } else if (val->IsInt32()) {
     return var.type == PP_VARTYPE_INT32 &&
-           val->ToInt32()->Value() == var.value.as_int;
+           val->ToInt32(isolate)->Value() == var.value.as_int;
   } else if (val->IsNumber() || val->IsNumberObject()) {
     return var.type == PP_VARTYPE_DOUBLE &&
-           fabs(val->ToNumber()->Value() - var.value.as_double) <= 1.0e-4;
+           fabs(val->ToNumber(isolate)->Value() - var.value.as_double) <=
+               1.0e-4;
   } else if (val->IsString() || val->IsStringObject()) {
     if (var.type != PP_VARTYPE_STRING)
       return false;
     StringVar* string_var = StringVar::FromPPVar(var);
     DCHECK(string_var);
-    v8::String::Utf8Value utf8(val->ToString());
+    v8::String::Utf8Value utf8(val);
     return std::string(*utf8, utf8.length()) == string_var->value();
   } else if (val->IsArray()) {
     if (var.type != PP_VARTYPE_ARRAY)
       return false;
     ArrayVar* array_var = ArrayVar::FromPPVar(var);
     DCHECK(array_var);
-    v8::Handle<v8::Array> v8_array = val.As<v8::Array>();
+    v8::Local<v8::Array> v8_array = val.As<v8::Array>();
     if (v8_array->Length() != array_var->elements().size())
       return false;
     for (uint32 i = 0; i < v8_array->Length(); ++i) {
-      v8::Handle<v8::Value> child_v8 = v8_array->Get(i);
+      v8::Local<v8::Value> child_v8 = v8_array->Get(i);
       if (!Equals(array_var->elements()[i].get(), child_v8, visited_ids))
         return false;
     }
@@ -123,22 +125,22 @@ bool Equals(const PP_Var& var,
       NOTIMPLEMENTED();
       return false;
     } else {
-      v8::Handle<v8::Object> v8_object = val->ToObject();
+      v8::Local<v8::Object> v8_object = val.As<v8::Object>();
       if (var.type != PP_VARTYPE_DICTIONARY)
         return false;
       DictionaryVar* dict_var = DictionaryVar::FromPPVar(var);
       DCHECK(dict_var);
-      v8::Handle<v8::Array> property_names(v8_object->GetOwnPropertyNames());
+      v8::Local<v8::Array> property_names(v8_object->GetOwnPropertyNames());
       if (property_names->Length() != dict_var->key_value_map().size())
         return false;
       for (uint32 i = 0; i < property_names->Length(); ++i) {
-        v8::Handle<v8::Value> key(property_names->Get(i));
+        v8::Local<v8::Value> key(property_names->Get(i));
 
         if (!key->IsString() && !key->IsNumber())
           return false;
-        v8::Handle<v8::Value> child_v8 = v8_object->Get(key);
+        v8::Local<v8::Value> child_v8 = v8_object->Get(key);
 
-        v8::String::Utf8Value name_utf8(key->ToString());
+        v8::String::Utf8Value name_utf8(key);
         ScopedPPVar release_key(ScopedPPVar::PassRef(),
                                 StringVar::StringToPPVar(std::string(
                                     *name_utf8, name_utf8.length())));
@@ -155,7 +157,7 @@ bool Equals(const PP_Var& var,
   return false;
 }
 
-bool Equals(const PP_Var& var, v8::Handle<v8::Value> val) {
+bool Equals(const PP_Var& var, v8::Local<v8::Value> val) {
   VarHandleMap var_handle_map;
   return Equals(var, val, &var_handle_map);
 }
@@ -175,7 +177,7 @@ class V8VarConverterTest : public testing::Test {
   void SetUp() override {
     ProxyLock::Acquire();
     v8::HandleScope handle_scope(isolate_);
-    v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate_);
+    v8::Local<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate_);
     context_.Reset(isolate_, v8::Context::New(isolate_, NULL, global));
   }
   void TearDown() override {
@@ -185,8 +187,8 @@ class V8VarConverterTest : public testing::Test {
   }
 
  protected:
-  bool FromV8ValueSync(v8::Handle<v8::Value> val,
-                       v8::Handle<v8::Context> context,
+  bool FromV8ValueSync(v8::Local<v8::Value> val,
+                       v8::Local<v8::Context> context,
                        PP_Var* result) {
     V8VarConverter::VarResult conversion_result =
         converter_->FromV8Value(val,
@@ -204,7 +206,7 @@ class V8VarConverterTest : public testing::Test {
     v8::Local<v8::Context> context =
         v8::Local<v8::Context>::New(isolate_, context_);
     v8::Context::Scope context_scope(context);
-    v8::Handle<v8::Value> v8_result;
+    v8::Local<v8::Value> v8_result;
     if (!converter_->ToV8Value(var, context, &v8_result))
       return false;
     if (!Equals(var, v8_result))
@@ -342,7 +344,7 @@ TEST_F(V8VarConverterTest, Cycles) {
     dictionary->SetWithStringKey("1", release_array.get());
     array->Set(0, release_dictionary.get());
 
-    v8::Handle<v8::Value> v8_result;
+    v8::Local<v8::Value> v8_result;
 
     // Array <-> dictionary cycle.
     dictionary->SetWithStringKey("1", release_array.get());
@@ -363,8 +365,8 @@ TEST_F(V8VarConverterTest, Cycles) {
 
   // V8->Var conversion.
   {
-    v8::Handle<v8::Object> object = v8::Object::New(isolate_);
-    v8::Handle<v8::Array> array = v8::Array::New(isolate_);
+    v8::Local<v8::Object> object = v8::Object::New(isolate_);
+    v8::Local<v8::Array> array = v8::Array::New(isolate_);
 
     PP_Var var_result;
 
@@ -412,9 +414,9 @@ TEST_F(V8VarConverterTest, StrangeDictionaryKeyTest) {
         "};"
         "})();";
 
-    v8::Handle<v8::Script> script(
+    v8::Local<v8::Script> script(
         v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
-    v8::Handle<v8::Object> object = script->Run().As<v8::Object>();
+    v8::Local<v8::Object> object = script->Run().As<v8::Object>();
     ASSERT_FALSE(object.IsEmpty());
 
     PP_Var actual;

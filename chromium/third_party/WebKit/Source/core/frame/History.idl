@@ -24,15 +24,17 @@
  */
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
 ] interface History {
     readonly attribute unsigned long length;
-    [Custom=Getter] readonly attribute SerializedScriptValue state;
+    [CachedAttribute=stateChanged] readonly attribute SerializedScriptValue state;
+    [RuntimeEnabled=ScrollRestoration] readonly attribute StateOptions options;
 
     [CallWith=ExecutionContext] void back();
     [CallWith=ExecutionContext] void forward();
     [CallWith=ExecutionContext] void go([Default=Undefined] optional long distance);
 
-    [Custom, PerContextEnabled=PushState, RaisesException] void pushState(any data, DOMString title, optional DOMString url);
-    [Custom, PerContextEnabled=PushState, RaisesException] void replaceState(any data, DOMString title, optional DOMString url);
+    // FIXME: the title arguments below should simply be 'DOMString title'.
+    [RaisesException] void pushState(SerializedScriptValue data, [TreatUndefinedAs=NullString] DOMString? title, optional DOMString? url = null, optional StateOptions options);
+    [RaisesException] void replaceState(SerializedScriptValue data, [TreatUndefinedAs=NullString] DOMString? title, optional DOMString? url = null, optional StateOptions options);
 };

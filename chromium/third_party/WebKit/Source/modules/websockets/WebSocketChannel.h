@@ -32,22 +32,23 @@
 #define WebSocketChannel_h
 
 #include "core/frame/ConsoleTypes.h"
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
 
 class BlobDataHandle;
-class KURL;
+class DOMArrayBuffer;
 class ExecutionContext;
+class KURL;
 class WebSocketChannelClient;
 
 // FIXME: WebSocketChannel needs to be RefCountedGarbageCollected to support manual ref/deref
 // in MainThreadWebSocketChannelImpl. We should change it to GarbageCollectedFinalized once
 // we remove MainThreadWebSocketChannelImpl.
-class WebSocketChannel : public RefCountedGarbageCollected<WebSocketChannel> {
+class MODULES_EXPORT WebSocketChannel : public RefCountedGarbageCollected<WebSocketChannel> {
     WTF_MAKE_NONCOPYABLE(WebSocketChannel);
 public:
     WebSocketChannel() { }
@@ -73,12 +74,13 @@ public:
     };
 
     virtual bool connect(const KURL&, const String& protocol) = 0;
-    virtual void send(const String& message) = 0;
-    virtual void send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) = 0;
+    virtual void send(const CString&) = 0;
+    virtual void send(const DOMArrayBuffer&, unsigned byteOffset, unsigned byteLength) = 0;
     virtual void send(PassRefPtr<BlobDataHandle>) = 0;
 
     // For WorkerWebSocketChannel.
-    virtual void send(PassOwnPtr<Vector<char> >) = 0;
+    virtual void sendTextAsCharVector(PassOwnPtr<Vector<char>>) = 0;
+    virtual void sendBinaryAsCharVector(PassOwnPtr<Vector<char>>) = 0;
 
     // Do not call |send| after calling this method.
     virtual void close(int code, const String& reason) = 0;
@@ -99,12 +101,9 @@ public:
     // Do not call any methods after calling this method.
     virtual void disconnect() = 0; // Will suppress didClose().
 
-    virtual void suspend() = 0;
-    virtual void resume() = 0;
-
     virtual ~WebSocketChannel() { }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 };
 
 } // namespace blink

@@ -44,11 +44,14 @@
 namespace blink {
 
 struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
+#if ENABLE(OILPAN)
+    char emptyClassFieldsDueToGCMixinMarker[1];
+#endif
     void* pointers[3];
     unsigned countersAndFlags[1];
 };
 
-COMPILE_ASSERT(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot), shadowroot_should_stay_small);
+static_assert(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot), "ShadowRoot should stay small");
 
 ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     : DocumentFragment(0, CreateShadowRoot)
@@ -71,7 +74,7 @@ ShadowRoot::~ShadowRoot()
     if (m_shadowRootRareData && m_shadowRootRareData->styleSheets())
         m_shadowRootRareData->styleSheets()->detachFromDocument();
 
-    document().styleEngine()->didRemoveShadowRoot(this);
+    document().styleEngine().didRemoveShadowRoot(this);
 
     // We cannot let ContainerNode destructor call willBeDeletedFromDocument()
     // for this ShadowRoot instance because TreeScope destructor
@@ -175,13 +178,16 @@ Node::InsertionNotificationRequest ShadowRoot::insertedInto(ContainerNode* inser
 
 void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
 {
-    if (insertionPoint->inDocument() && m_registeredWithParentShadowRoot) {
-        ShadowRoot* root = host()->containingShadowRoot();
-        if (!root)
-            root = insertionPoint->containingShadowRoot();
-        if (root)
-            root->removeChildShadowRoot();
-        m_registeredWithParentShadowRoot = false;
+    if (insertionPoint->inDocument()) {
+        document().styleEngine().shadowRootRemovedFromDocument(this);
+        if (m_registeredWithParentShadowRoot) {
+            ShadowRoot* root = host()->containingShadowRoot();
+            if (!root)
+                root = insertionPoint->containingShadowRoot();
+            if (root)
+                root->removeChildShadowRoot();
+            m_registeredWithParentShadowRoot = false;
+        }
     }
 
     DocumentFragment::removedFrom(insertionPoint);
@@ -288,9 +294,9 @@ void ShadowRoot::invalidateDescendantInsertionPoints()
     m_shadowRootRareData->clearDescendantInsertionPoints();
 }
 
-const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& ShadowRoot::descendantInsertionPoints()
+const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>>& ShadowRoot::descendantInsertionPoints()
 {
-    DEFINE_STATIC_LOCAL(WillBePersistentHeapVector<RefPtrWillBeMember<InsertionPoint> >, emptyList, ());
+    DEFINE_STATIC_LOCAL(WillBePersistentHeapVector<RefPtrWillBeMember<InsertionPoint>>, emptyList, ());
     if (m_shadowRootRareData && m_descendantInsertionPointsIsValid)
         return m_shadowRootRareData->descendantInsertionPoints();
 
@@ -299,7 +305,7 @@ const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& ShadowRoot::descend
     if (!containsInsertionPoints())
         return emptyList;
 
-    WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> > insertionPoints;
+    WillBeHeapVector<RefPtrWillBeMember<InsertionPoint>> insertionPoints;
     for (InsertionPoint& insertionPoint : Traversal<InsertionPoint>::descendantsOf(*this))
         insertionPoints.append(&insertionPoint);
 
@@ -316,7 +322,7 @@ StyleSheetList* ShadowRoot::styleSheets()
     return m_shadowRootRareData->styleSheets();
 }
 
-void ShadowRoot::trace(Visitor* visitor)
+DEFINE_TRACE(ShadowRoot)
 {
     visitor->trace(m_prev);
     visitor->trace(m_next);

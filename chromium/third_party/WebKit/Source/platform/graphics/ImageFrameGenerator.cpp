@@ -32,9 +32,6 @@
 #include "platform/graphics/ImageDecodingStore.h"
 #include "platform/image-decoders/ImageDecoder.h"
 
-#include "skia/ext/image_operations.h"
-#include "third_party/skia/include/core/SkMallocPixelRef.h"
-
 namespace blink {
 
 // Creates a SkPixelRef such that the memory for pixels is given by an external body.
@@ -71,9 +68,7 @@ private:
 
 static bool updateYUVComponentSizes(ImageDecoder* decoder, SkISize componentSizes[3], ImageDecoder::SizeType sizeType)
 {
-    // canDecodeToYUV() has to be called AFTER isSizeAvailable(),
-    // otherwise the output color space may not be set in the decoder.
-    if (!decoder->isSizeAvailable() || !decoder->canDecodeToYUV())
+    if (!decoder->canDecodeToYUV())
         return false;
 
     IntSize size = decoder->decodedYUVSize(0, sizeType);
@@ -90,13 +85,14 @@ ImageFrameGenerator::ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<Sha
     , m_isMultiFrame(isMultiFrame)
     , m_decodeFailedAndEmpty(false)
     , m_decodeCount(0)
+    , m_frameCount(0)
 {
     setData(data.get(), allDataReceived);
 }
 
 ImageFrameGenerator::~ImageFrameGenerator()
 {
-    ImageDecodingStore::instance()->removeCacheIndexedByGenerator(this);
+    ImageDecodingStore::instance().removeCacheIndexedByGenerator(this);
 }
 
 void ImageFrameGenerator::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
@@ -196,7 +192,7 @@ SkBitmap ImageFrameGenerator::tryToResumeDecode(const SkISize& scaledSize, size_
     TRACE_EVENT1("blink", "ImageFrameGenerator::tryToResumeDecodeAndScale", "index", static_cast<int>(index));
 
     ImageDecoder* decoder = 0;
-    const bool resumeDecoding = ImageDecodingStore::instance()->lockDecoder(this, m_fullSize, &decoder);
+    const bool resumeDecoding = ImageDecodingStore::instance().lockDecoder(this, m_fullSize, &decoder);
     ASSERT(!resumeDecoding || decoder);
 
     SkBitmap fullSizeImage;
@@ -204,6 +200,9 @@ SkBitmap ImageFrameGenerator::tryToResumeDecode(const SkISize& scaledSize, size_
 
     if (!decoder)
         return SkBitmap();
+    if (index >= m_frameComplete.size())
+        m_frameComplete.resize(index + 1);
+    m_frameComplete[index] = complete;
 
     // If we are not resuming decoding that means the decoder is freshly
     // created and we have ownership. If we are resuming decoding then
@@ -218,22 +217,35 @@ SkBitmap ImageFrameGenerator::tryToResumeDecode(const SkISize& scaledSize, size_
         m_decodeFailedAndEmpty = !m_isMultiFrame && decoder->failed();
 
         if (resumeDecoding)
-            ImageDecodingStore::instance()->unlockDecoder(this, decoder);
+            ImageDecodingStore::instance().unlockDecoder(this, decoder);
         return SkBitmap();
     }
 
     // If the image generated is complete then there is no need to keep
-    // the decoder. The exception is multi-frame decoder which can generate
-    // multiple complete frames.
-    const bool removeDecoder = complete && !m_isMultiFrame;
+    // the decoder. For multi-frame images, if all frames in the image are
+    // decoded, we remove the decoder.
+    bool removeDecoder;
+
+    if (m_isMultiFrame) {
+        size_t decodedFrameCount = 0;
+        for (Vector<bool>::iterator it = m_frameComplete.begin(); it != m_frameComplete.end(); ++it) {
+            if (*it)
+                decodedFrameCount++;
+        }
+        removeDecoder = m_frameCount && (decodedFrameCount == m_frameCount);
+    } else {
+        removeDecoder = complete;
+    }
 
     if (resumeDecoding) {
-        if (removeDecoder)
-            ImageDecodingStore::instance()->removeDecoder(this, decoder);
-        else
-            ImageDecodingStore::instance()->unlockDecoder(this, decoder);
+        if (removeDecoder) {
+            ImageDecodingStore::instance().removeDecoder(this, decoder);
+            m_frameComplete.clear();
+        } else {
+            ImageDecodingStore::instance().unlockDecoder(this, decoder);
+        }
     } else if (!removeDecoder) {
-        ImageDecodingStore::instance()->insertDecoder(this, decoderContainer.release());
+        ImageDecodingStore::instance().insertDecoder(this, decoderContainer.release());
     }
     return fullSizeImage;
 }
@@ -282,6 +294,13 @@ bool ImageFrameGenerator::decode(size_t index, ImageDecoder** decoder, SkBitmap*
     (*decoder)->setData(data, allDataReceived);
 
     ImageFrame* frame = (*decoder)->frameBufferAtIndex(index);
+    // For multi-frame image decoders, we need to know how many frames are
+    // in that image in order to release the decoder when all frames are
+    // decoded. frameCount() is reliable only if all data is received and set in
+    // decoder, particularly with GIF.
+    if (allDataReceived)
+        m_frameCount = (*decoder)->frameCount();
+
     (*decoder)->setData(0, false); // Unref SharedBuffer from ImageDecoder.
     (*decoder)->clearCacheExceptFrame(index);
     (*decoder)->setMemoryAllocator(0);
@@ -327,6 +346,11 @@ bool ImageFrameGenerator::getYUVComponentSizes(SkISize componentSizes[3])
 
     OwnPtr<ImageDecoder> decoder = ImageDecoder::create(*data, ImageSource::AlphaPremultiplied, ImageSource::GammaAndColorProfileApplied);
     if (!decoder)
+        return false;
+
+    // JPEG images support YUV decoding: other decoders do not. So don't pump data into decoders
+    // that always return false to updateYUVComponentSizes() requests.
+    if (decoder->filenameExtension() != "jpg")
         return false;
 
     // Setting a dummy ImagePlanes object signals to the decoder that we want to do YUV decoding.

@@ -8,10 +8,11 @@
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageData.h"
-#include "core/html/canvas/CanvasRenderingContext.h"
 #include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
@@ -30,9 +31,13 @@ static inline PassRefPtr<Image> cropImage(Image* image, const IntRect& cropRect)
     if (!intersectRect.width() || !intersectRect.height())
         return nullptr;
 
+    SkBitmap bitmap;
+    if (!image->bitmapForCurrentFrame(&bitmap))
+        return nullptr;
+
     SkBitmap cropped;
-    image->nativeImageForCurrentFrame()->bitmap().extractSubset(&cropped, intersectRect);
-    return BitmapImage::create(NativeImageSkia::create(cropped));
+    bitmap.extractSubset(&cropped, intersectRect);
+    return BitmapImage::create(cropped);
 }
 
 ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect)
@@ -64,14 +69,23 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
     IntRect srcRect = intersection(cropRect, videoRect);
     IntRect dstRect(IntPoint(), srcRect.size());
 
-    OwnPtr<ImageBuffer> buf = ImageBuffer::create(videoRect.size());
-    if (!buf)
+    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(videoRect.size());
+    if (!buffer)
         return;
-    GraphicsContext* c = buf->context();
-    c->clip(dstRect);
-    c->translate(-srcRect.x(), -srcRect.y());
-    video->paintCurrentFrameInContext(c, videoRect);
-    m_bitmap = buf->copyImage(DontCopyBackingStore);
+
+    {
+        DisplayItemListContextRecorder contextRecorder(*buffer->context());
+        GraphicsContext& paintContext = contextRecorder.context();
+
+        DrawingRecorder recorder(paintContext, *buffer, DisplayItem::VideoBitmap, videoRect);
+        if (!recorder.canUseCachedDrawing()) {
+            paintContext.clip(dstRect);
+            paintContext.translate(-srcRect.x(), -srcRect.y());
+        }
+    }
+
+    video->paintCurrentFrameInContext(buffer->context(), videoRect);
+    m_bitmap = buffer->copyImage(DontCopyBackingStore);
     m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())), srcRect.size());
 }
 
@@ -80,13 +94,10 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas, const IntRect& cropRect)
     , m_cropRect(cropRect)
     , m_bitmapOffset(IntPoint())
 {
-    CanvasRenderingContext* sourceContext = canvas->renderingContext();
-    if (sourceContext && sourceContext->is3d())
-        sourceContext->paintRenderingResultsToCanvas();
-
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), canvas->size()));
     m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())), srcRect.size());
-    m_bitmap = cropImage(canvas->buffer()->copyImage(CopyBackingStore).get(), cropRect);
+    ASSERT(canvas->isPaintable());
+    m_bitmap = cropImage(canvas->copiedImage(BackBuffer).get(), cropRect);
 }
 
 ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect)
@@ -95,14 +106,14 @@ ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect)
     , m_bitmapOffset(IntPoint())
 {
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), data->size()));
-
-    OwnPtr<ImageBuffer> buf = ImageBuffer::create(data->size());
-    if (!buf)
+    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(data->size());
+    if (!buffer)
         return;
-    if (srcRect.width() > 0 && srcRect.height() > 0)
-        buf->putByteArray(Premultiplied, data->data(), data->size(), srcRect, IntPoint(std::min(0, -cropRect.x()), std::min(0, -cropRect.y())));
 
-    m_bitmap = buf->copyImage(DontCopyBackingStore);
+    if (srcRect.width() > 0 && srcRect.height() > 0)
+        buffer->putByteArray(Premultiplied, data->data()->data(), data->size(), srcRect, IntPoint(std::min(0, -cropRect.x()), std::min(0, -cropRect.y())));
+
+    m_bitmap = buffer->copyImage(DontCopyBackingStore);
     m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())),  srcRect.size());
 }
 
@@ -212,12 +223,12 @@ void ImageBitmap::adjustDrawRects(FloatRect* srcRect, FloatRect* dstRect) const
     *dstRect = newDstRect;
 }
 
-FloatSize ImageBitmap::sourceSize() const
+FloatSize ImageBitmap::elementSize() const
 {
     return FloatSize(width(), height());
 }
 
-void ImageBitmap::trace(Visitor* visitor)
+DEFINE_TRACE(ImageBitmap)
 {
     visitor->trace(m_imageElement);
     ImageLoaderClient::trace(visitor);

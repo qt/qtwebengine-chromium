@@ -2,13 +2,46 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("client") {
+# The files here go into the "gpu" component in a component build (with
+# "command_buffer_client" and "gles2_cmd_helper" just forwarding) and goes into
+# separate static libraries in non-component build. This needs to match the
+# GYP build which was likely an attempt to make larger components to help with
+# loading.
+group("client") {
+  if (is_component_build) {
+    public_deps = [
+      "//gpu",
+    ]
+  } else {
+    public_deps = [
+      ":client_sources",
+    ]
+  }
+}
+
+group("gles2_cmd_helper") {
+  if (is_component_build) {
+    public_deps = [
+      "//gpu",
+    ]
+  } else {
+    public_deps = [
+      ":gles2_cmd_helper_sources",
+    ]
+  }
+}
+
+source_set("client_sources") {
+  visibility = [ "//gpu/*" ]
+
   sources = [
     "cmd_buffer_helper.cc",
     "cmd_buffer_helper.h",
     "fenced_allocator.cc",
     "fenced_allocator.h",
     "gpu_control.h",
+    "gpu_memory_buffer_manager.cc",
+    "gpu_memory_buffer_manager.h",
     "mapped_memory.cc",
     "mapped_memory.h",
     "ring_buffer.cc",
@@ -17,69 +50,61 @@ source_set("client") {
     "transfer_buffer.h",
   ]
 
-  defines = [ "GPU_IMPLEMENTATION" ]
-
-  if (is_win) {
+  configs += [
     # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    cflags = [ "/wd4267" ]  # size_t to int truncation.
-  }
+    "//build/config/compiler:no_size_t_to_int_warning",
+    "//gpu:gpu_implementation",
+  ]
 
   all_dependent_configs = [ "//third_party/khronos:khronos_headers" ]
 
   deps = [
-    "//gpu/command_buffer/common",
+    "//gpu/command_buffer/common:common_sources",
   ]
 }
 
-group("gles2_cmd_helper") {
-  if (is_component_build) {
-    deps = [ "//gpu" ]
-  } else {
-    deps = [ ":gles2_cmd_helper_sources" ]
-  }
-}
-
 source_set("gles2_cmd_helper_sources") {
-  visibility = [ ":gles2_cmd_helper", "//gpu" ]
+  visibility = [ "//gpu/*" ]
   sources = [
     "gles2_cmd_helper.cc",
     "gles2_cmd_helper.h",
     "gles2_cmd_helper_autogen.h",
   ]
 
-  defines = [ "GPU_IMPLEMENTATION" ]
-
-  if (is_win) {
+  configs += [
     # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    cflags = [ "/wd4267" ]  # size_t to int truncation.
-  }
+    "//build/config/compiler:no_size_t_to_int_warning",
+    "//gpu:gpu_implementation",
+  ]
 
-  deps = [ ":client" ]
+  deps = [
+    ":client_sources",
+  ]
 }
 
 gles2_c_lib_source_files = [
   "gles2_c_lib.cc",
   "gles2_c_lib_autogen.h",
   "gles2_c_lib_export.h",
-  "gles2_lib.h",
   "gles2_lib.cc",
+  "gles2_lib.h",
 ]
 
 gles2_implementation_source_files = [
   "buffer_tracker.cc",
   "buffer_tracker.h",
-  "client_context_state.h",
   "client_context_state.cc",
+  "client_context_state.h",
   "client_context_state_autogen.h",
   "client_context_state_impl_autogen.h",
   "gles2_impl_export.h",
-  "gles2_implementation_autogen.h",
   "gles2_implementation.cc",
   "gles2_implementation.h",
+  "gles2_implementation_autogen.h",
   "gles2_implementation_impl_autogen.h",
-  "gles2_trace_implementation_autogen.h",
   "gles2_trace_implementation.cc",
   "gles2_trace_implementation.h",
+  "gles2_trace_implementation_autogen.h",
   "gles2_trace_implementation_impl_autogen.h",
   "gpu_switches.cc",
   "gpu_switches.h",
@@ -97,20 +122,12 @@ gles2_implementation_source_files = [
 # in. Useful when a target uses the interface, but permits its users to choose
 # an implementation.
 source_set("gles2_interface") {
-  sources = [ "gles2_interface.h" ]
+  sources = [
+    "gles2_interface.h",
+  ]
   public_configs = [ "//third_party/khronos:khronos_headers" ]
   deps = [
     "//base",
-  ]
-}
-
-source_set("gpu_memory_buffer_manager") {
-  sources = [
-    "gpu_memory_buffer_manager.cc",
-    "gpu_memory_buffer_manager.h",
-  ]
-  deps = [
-    "//ui/gfx",
   ]
 }
 
@@ -118,27 +135,46 @@ source_set("gpu_memory_buffer_manager") {
 component("gles2_implementation") {
   sources = gles2_implementation_source_files
 
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
   defines = [ "GLES2_IMPL_IMPLEMENTATION" ]
   all_dependent_configs = [ "//third_party/khronos:khronos_headers" ]
-
-  if (is_win) {
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    cflags = [ "/wd4267" ]  # size_t to int truncation.
-  }
 
   deps = [
     ":gles2_cmd_helper",
     ":gles2_interface",
     "//base",
-    "//gpu/command_buffer/common",
+    "//gpu/command_buffer/common:gles2_utils",
+    "//ui/gfx/geometry",
+  ]
+}
+
+# Library emulates GLES2 using command_buffers.
+component("gles2_implementation_no_check") {
+  sources = gles2_implementation_source_files
+
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
+
+  defines = [
+    "GLES2_IMPL_IMPLEMENTATION",
+    "GLES2_CONFORMANCE_TESTS=1",
+  ]
+
+  deps = [
+    ":gles2_cmd_helper",
+    "//base",
+    "//gpu/command_buffer/common:gles2_utils",
+    "//ui/gfx",
     "//ui/gfx/geometry",
   ]
 }
 
 component("gl_in_process_context") {
   sources = [
-    "gl_in_process_context.h",
     "gl_in_process_context.cc",
+    "gl_in_process_context.h",
     "gl_in_process_context_export.h",
   ]
 
@@ -146,7 +182,6 @@ component("gl_in_process_context") {
 
   deps = [
     ":gles2_implementation",
-    ":gpu_memory_buffer_manager",
     "//gpu",
     "//gpu/command_buffer/common:gles2_utils",
     "//base",
@@ -160,10 +195,8 @@ component("gles2_c_lib") {
   sources = gles2_c_lib_source_files
   defines = [ "GLES2_C_LIB_IMPLEMENTATION" ]
 
-  if (is_win) {
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    cflags = [ "/wd4267" ]  # size_t to int truncation.
-  }
+  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   deps = [
     ":client",
@@ -174,3 +207,22 @@ component("gles2_c_lib") {
   ]
 }
 
+# GYP version: gpu/gpu.gyp:gles2_c_lib_nocheck
+# Same as gles2_c_lib except with no parameter checking. Required for
+# OpenGL ES 2.0 conformance tests.
+component("gles2_c_lib_nocheck") {
+  sources = gles2_c_lib_source_files
+
+  defines = [
+    "GLES2_C_LIB_IMPLEMENTATION",
+    "GLES2_CONFORMANCE_TESTS=1",
+  ]
+  deps = [
+    ":client",
+    ":gles2_implementation_no_check",
+    ":gles2_interface",
+    "//base",
+    "//base/third_party/dynamic_annotations",
+    "//gpu/command_buffer/common",
+  ]
+}

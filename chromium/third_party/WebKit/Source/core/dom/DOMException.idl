@@ -27,8 +27,9 @@
  */
 
 [
+    Exposed=(Window,Worker),
     DoNotCheckConstants,
-    WillBeGarbageCollected,
+    GarbageCollected,
 ] exception DOMException {
 
     readonly attribute unsigned short   code;

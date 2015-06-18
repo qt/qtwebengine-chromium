@@ -5,7 +5,6 @@
 #ifndef HitRegion_h
 #define HitRegion_h
 
-#include "bindings/core/v8/Dictionary.h"
 #include "core/dom/Element.h"
 #include "core/html/canvas/HitRegionOptions.h"
 #include "platform/graphics/Path.h"
@@ -31,13 +30,14 @@ public:
     void updateAccessibility(Element* canvas);
 
     bool contains(const LayoutPoint&) const;
+    bool contains(const FloatPoint&) const;
 
     const String& id() const { return m_id; }
     const Path& path() const { return m_path; }
     Element* control() const { return m_control.get(); }
     WindRule fillRule() const { return m_fillRule; }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     HitRegion(const Path&, const HitRegionOptions&);
@@ -68,7 +68,7 @@ public:
 
     unsigned getHitRegionsCount() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     HitRegionManager() { }

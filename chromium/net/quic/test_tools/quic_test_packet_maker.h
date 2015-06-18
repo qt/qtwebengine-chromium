@@ -22,9 +22,11 @@ class QuicTestPacketMaker {
  public:
   QuicTestPacketMaker(QuicVersion version,
                       QuicConnectionId connection_id,
-                      MockClock* clock);
+                      MockClock* clock,
+                      const std::string& host);
   ~QuicTestPacketMaker();
 
+  void set_hostname(const std::string& host);
   scoped_ptr<QuicEncryptedPacket> MakeRstPacket(
       QuicPacketSequenceNumber num,
       bool include_version,
@@ -57,6 +59,7 @@ class QuicTestPacketMaker {
       QuicStreamId stream_id,
       bool should_include_version,
       bool fin,
+      QuicPriority priority,
       const SpdyHeaderBlock& headers);
   scoped_ptr<QuicEncryptedPacket> MakeResponseHeadersPacket(
       QuicPacketSequenceNumber sequence_number,
@@ -81,6 +84,7 @@ class QuicTestPacketMaker {
   QuicVersion version_;
   QuicConnectionId connection_id_;
   MockClock* clock_;  // Owned by QuicStreamFactory.
+  std::string host_;
   SpdyFramer spdy_request_framer_;
   SpdyFramer spdy_response_framer_;
   MockRandom random_generator_;

@@ -49,7 +49,7 @@ class Unique {
       // TODO(titzer): other immortable immovable objects are also fine.
       DCHECK(!AllowHeapAllocation::IsAllowed() || handle->IsMap());
       raw_address_ = reinterpret_cast<Address>(*handle);
-      DCHECK_NE(raw_address_, NULL);  // Non-null should imply non-zero address.
+      DCHECK_NOT_NULL(raw_address_);  // Non-null should imply non-zero address.
     }
     handle_ = handle;
   }
@@ -108,7 +108,12 @@ class Unique {
   }
 
   template <class S> static Unique<T> cast(Unique<S> that) {
-    return Unique<T>(that.raw_address_, Handle<T>::cast(that.handle_));
+    // Allow fetching location() to unsafe-cast the handle. This is necessary
+    // since we can't concurrently safe-cast. Safe-casting requires looking at
+    // the heap which may be moving concurrently to the compiler thread.
+    AllowHandleDereference allow_deref;
+    return Unique<T>(that.raw_address_,
+                     Handle<T>(reinterpret_cast<T**>(that.handle_.location())));
   }
 
   inline bool IsInitialized() const {
@@ -117,7 +122,7 @@ class Unique {
 
   // TODO(titzer): this is a hack to migrate to Unique<T> incrementally.
   static Unique<T> CreateUninitialized(Handle<T> handle) {
-    return Unique<T>(reinterpret_cast<Address>(NULL), handle);
+    return Unique<T>(NULL, handle);
   }
 
   static Unique<T> CreateImmovable(Handle<T> handle) {
@@ -142,7 +147,7 @@ inline std::ostream& operator<<(std::ostream& os, Unique<T> uniq) {
 
 
 template <typename T>
-class UniqueSet FINAL : public ZoneObject {
+class UniqueSet final : public ZoneObject {
  public:
   // Constructor. A new set will be empty.
   UniqueSet() : size_(0), capacity_(0), array_(NULL) { }

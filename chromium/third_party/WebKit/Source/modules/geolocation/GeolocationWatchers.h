@@ -16,7 +16,7 @@ class GeolocationWatchers {
 
 public:
     GeolocationWatchers() { }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     bool add(int id, GeoNotifier*);
     GeoNotifier* find(int id);
@@ -26,10 +26,10 @@ public:
     void clear();
     bool isEmpty() const;
 
-    void getNotifiersVector(HeapVector<Member<GeoNotifier> >&) const;
+    void getNotifiersVector(HeapVector<Member<GeoNotifier>>&) const;
 
 private:
-    typedef HeapHashMap<int, Member<GeoNotifier> > IdToNotifierMap;
+    typedef HeapHashMap<int, Member<GeoNotifier>> IdToNotifierMap;
     typedef HeapHashMap<Member<GeoNotifier>, int> NotifierToIdMap;
 
     IdToNotifierMap m_idToNotifierMap;

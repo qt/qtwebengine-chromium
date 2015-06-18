@@ -62,13 +62,13 @@ public:
     virtual const AtomicString& namespaceURI() const override { return m_name.namespaceURI(); }
     const AtomicString& prefix() const { return m_name.prefix(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     Attr(Element&, const QualifiedName&);
     Attr(Document&, const QualifiedName&, const AtomicString& value);
 
-    bool isElementNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isElementNode() const = delete; // This will catch anyone doing an unnecessary check.
 
     void createTextChild();
 
@@ -86,7 +86,7 @@ private:
 
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    Attribute& elementAttribute();
+    void updateElementAttribute(const AtomicString&);
 
     // Attr wraps either an element/name, or a name/value pair (when it's a standalone Node.)
     // Note that m_name is always set, but m_element/m_standaloneValue may be null.

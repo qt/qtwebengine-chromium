@@ -46,7 +46,7 @@ WorkerScriptLoader::WorkerScriptLoader()
     , m_failed(false)
     , m_identifier(0)
     , m_finishing(false)
-    , m_requestContext(blink::WebURLRequest::RequestContextWorker)
+    , m_requestContext(WebURLRequest::RequestContextWorker)
 {
 }
 
@@ -139,6 +139,12 @@ void WorkerScriptLoader::didReceiveData(const char* data, unsigned len)
         return;
 
     m_script.append(m_decoder->decode(data, len));
+}
+
+void WorkerScriptLoader::didReceiveCachedMetadata(const char* data, int size)
+{
+    m_cachedMetadata = adoptPtr(new Vector<char>(size));
+    memcpy(m_cachedMetadata->data(), data, size);
 }
 
 void WorkerScriptLoader::didFinishLoading(unsigned long identifier, double)

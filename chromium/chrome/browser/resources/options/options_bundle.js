@@ -20,6 +20,7 @@
 <include src="../help/channel_change_page.js">
 <include src="../../../../ui/webui/resources/js/chromeos/ui_account_tweaks.js">
 <include src="chromeos/onc_data.js">
+<include src="chromeos/vpn_providers.js">
 <include src="chromeos/change_picture_options.js">
 <include src="chromeos/internet_detail_ip_address_field.js">
 <include src="chromeos/internet_detail.js">
@@ -52,7 +53,7 @@ var PointerOverlay = options.PointerOverlay;
 var PowerOverlay = options.PowerOverlay;
 var UIAccountTweaks = uiAccountTweaks.UIAccountTweaks;
 </if>
-<if expr="use_nss">
+<if expr="use_nss_certs">
 <include src="certificate_tree.js">
 <include src="certificate_manager.js">
 <include src="certificate_restore_overlay.js">

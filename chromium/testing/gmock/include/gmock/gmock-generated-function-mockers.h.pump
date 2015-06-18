@@ -44,6 +44,10 @@ $var n = 10  $$ The maximum arity we support.
 #include "gmock/gmock-spec-builders.h"
 #include "gmock/internal/gmock-internal-utils.h"
 
+#if GTEST_HAS_STD_FUNCTION_
+# include <functional>
+#endif
+
 namespace testing {
 namespace internal {
 
@@ -268,13 +272,13 @@ class MockFunction<R($ArgTypes)> {
 
   MOCK_METHOD$i[[]]_T(Call, R($ArgTypes));
 
-#if GTEST_LANG_CXX11
+#if GTEST_HAS_STD_FUNCTION_
   std::function<R($ArgTypes)> AsStdFunction() {
     return [this]($ArgDecls) {
       return this->Call($ArgNames);
     };
   }
-#endif  // GTEST_LANG_CXX11
+#endif  // GTEST_HAS_STD_FUNCTION_
 
  private:
   GTEST_DISALLOW_COPY_AND_ASSIGN_(MockFunction);

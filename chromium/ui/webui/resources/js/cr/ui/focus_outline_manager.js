@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 cr.define('cr.ui', function() {
-
   /**
    * The class name to set on the document element.
    * @const
@@ -29,10 +28,11 @@ cr.define('cr.ui', function() {
    */
   function FocusOutlineManager(doc) {
     this.classList_ = doc.documentElement.classList;
+
     var self = this;
+
     doc.addEventListener('keydown', function(e) {
-      if (e.keyCode == 9)  // Tab
-        self.focusByKeyboard_ = true;
+      self.focusByKeyboard_ = true;
     }, true);
 
     doc.addEventListener('mousedown', function(e) {
@@ -41,8 +41,19 @@ cr.define('cr.ui', function() {
 
     doc.addEventListener('focus', function(event) {
       // Update visibility only when focus is actually changed.
-      self.visible = self.focusByKeyboard_;
+      self.updateVisiblity_();
     }, true);
+
+    doc.addEventListener('focusout', function(event) {
+      window.setTimeout(function() {
+        if (!doc.hasFocus()) {
+          self.focusByKeyboard_ = true;
+          self.updateVisiblity_();
+        }
+      }, 0);
+    });
+
+    this.updateVisiblity_();
   }
 
   FocusOutlineManager.prototype = {
@@ -53,15 +64,17 @@ cr.define('cr.ui', function() {
      */
     focusByKeyboard_: true,
 
+    /** @private */
+    updateVisiblity_: function() {
+      this.visible = this.focusByKeyboard_;
+    },
+
     /**
      * Whether the focus outline should be visible.
      * @type {boolean}
      */
     set visible(visible) {
-      if (visible)
-        this.classList_.add(CLASS_NAME);
-      else
-        this.classList_.remove(CLASS_NAME);
+      this.classList_.toggle(CLASS_NAME, visible);
     },
     get visible() {
       return this.classList_.contains(CLASS_NAME);
@@ -75,7 +88,7 @@ cr.define('cr.ui', function() {
   var docsToManager = [];
 
   /**
-   * Gets a per document sigleton focus outline manager.
+   * Gets a per document singleton focus outline manager.
    * @param {Document} doc The document to get the |FocusOutlineManager| for.
    * @return {cr.ui.FocusOutlineManager} The per document singleton focus
    *     outline manager.

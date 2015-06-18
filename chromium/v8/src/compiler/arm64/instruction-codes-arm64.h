@@ -18,6 +18,7 @@ namespace compiler {
   V(Arm64And32)                    \
   V(Arm64Bic)                      \
   V(Arm64Bic32)                    \
+  V(Arm64Clz32)                    \
   V(Arm64Cmp)                      \
   V(Arm64Cmp32)                    \
   V(Arm64Cmn)                      \
@@ -65,34 +66,54 @@ namespace compiler {
   V(Arm64Ror)                      \
   V(Arm64Ror32)                    \
   V(Arm64Mov32)                    \
+  V(Arm64Sxtb32)                   \
+  V(Arm64Sxth32)                   \
   V(Arm64Sxtw)                     \
+  V(Arm64Sbfx32)                   \
   V(Arm64Ubfx)                     \
   V(Arm64Ubfx32)                   \
-  V(Arm64Tbz)                      \
-  V(Arm64Tbz32)                    \
-  V(Arm64Tbnz)                     \
-  V(Arm64Tbnz32)                   \
+  V(Arm64Bfi)                      \
+  V(Arm64TestAndBranch32)          \
+  V(Arm64TestAndBranch)            \
+  V(Arm64CompareAndBranch32)       \
   V(Arm64Claim)                    \
   V(Arm64Poke)                     \
-  V(Arm64PokePairZero)             \
   V(Arm64PokePair)                 \
+  V(Arm64Float32Cmp)               \
+  V(Arm64Float32Add)               \
+  V(Arm64Float32Sub)               \
+  V(Arm64Float32Mul)               \
+  V(Arm64Float32Div)               \
+  V(Arm64Float32Max)               \
+  V(Arm64Float32Min)               \
+  V(Arm64Float32Abs)               \
+  V(Arm64Float32Sqrt)              \
   V(Arm64Float64Cmp)               \
   V(Arm64Float64Add)               \
   V(Arm64Float64Sub)               \
   V(Arm64Float64Mul)               \
   V(Arm64Float64Div)               \
   V(Arm64Float64Mod)               \
+  V(Arm64Float64Max)               \
+  V(Arm64Float64Min)               \
+  V(Arm64Float64Abs)               \
+  V(Arm64Float64Neg)               \
   V(Arm64Float64Sqrt)              \
-  V(Arm64Float64Floor)             \
-  V(Arm64Float64Ceil)              \
-  V(Arm64Float64RoundTruncate)     \
+  V(Arm64Float64RoundDown)         \
   V(Arm64Float64RoundTiesAway)     \
+  V(Arm64Float64RoundTruncate)     \
+  V(Arm64Float64RoundUp)           \
   V(Arm64Float32ToFloat64)         \
   V(Arm64Float64ToFloat32)         \
   V(Arm64Float64ToInt32)           \
   V(Arm64Float64ToUint32)          \
   V(Arm64Int32ToFloat64)           \
   V(Arm64Uint32ToFloat64)          \
+  V(Arm64Float64ExtractLowWord32)  \
+  V(Arm64Float64ExtractHighWord32) \
+  V(Arm64Float64InsertLowWord32)   \
+  V(Arm64Float64InsertHighWord32)  \
+  V(Arm64Float64MoveU64)           \
   V(Arm64LdrS)                     \
   V(Arm64StrS)                     \
   V(Arm64LdrD)                     \
@@ -123,13 +144,17 @@ namespace compiler {
 // I = immediate (handle, external, int32)
 // MRI = [register + immediate]
 // MRR = [register + register]
-#define TARGET_ADDRESSING_MODE_LIST(V)  \
-  V(MRI)              /* [%r0 + K] */   \
-  V(MRR)              /* [%r0 + %r1] */ \
-  V(Operand2_R_LSL_I) /* %r0 LSL K */   \
-  V(Operand2_R_LSR_I) /* %r0 LSR K */   \
-  V(Operand2_R_ASR_I) /* %r0 ASR K */   \
-  V(Operand2_R_ROR_I) /* %r0 ROR K */
+#define TARGET_ADDRESSING_MODE_LIST(V)                          \
+  V(MRI)              /* [%r0 + K] */                           \
+  V(MRR)              /* [%r0 + %r1] */                         \
+  V(Operand2_R_LSL_I) /* %r0 LSL K */                           \
+  V(Operand2_R_LSR_I) /* %r0 LSR K */                           \
+  V(Operand2_R_ASR_I) /* %r0 ASR K */                           \
+  V(Operand2_R_ROR_I) /* %r0 ROR K */                           \
+  V(Operand2_R_UXTB)  /* %r0 UXTB (unsigned extend byte) */     \
+  V(Operand2_R_UXTH)  /* %r0 UXTH (unsigned extend halfword) */ \
+  V(Operand2_R_SXTB)  /* %r0 SXTB (signed extend byte) */       \
+  V(Operand2_R_SXTH)  /* %r0 SXTH (signed extend halfword) */
 
 }  // namespace internal
 }  // namespace compiler

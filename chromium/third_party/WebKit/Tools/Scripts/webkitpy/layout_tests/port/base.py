@@ -221,9 +221,9 @@ class Port(object):
     def buildbot_archives_baselines(self):
         return True
 
-    def additional_drt_flag(self):
+    def additional_driver_flag(self):
         if self.driver_name() == self.CONTENT_SHELL_NAME:
-            return ['--dump-render-tree']
+            return ['--run-layout-test']
         return []
 
     def supports_per_test_timeout(self):
@@ -258,12 +258,18 @@ class Port(object):
             self._pretty_patch_available = self.check_pretty_patch(logging=False)
         return self._pretty_patch_available
 
+    def default_batch_size(self):
+        """Return the default batch size to use for this port."""
+        if self.get_option('enable_sanitizer'):
+            # ASAN/MSAN/TSAN use more memory than regular content_shell. Their
+            # memory usage may also grow over time, up to a certain point.
+            # Relaunching the driver periodically helps keep it under control.
+            return 40
+        # The default is infinte batch size.
+        return None
+
     def default_child_processes(self):
         """Return the number of drivers to use for this port."""
-        if self.get_option('enable_sanitizer'):
-            # ASAN/MSAN/TSAN are more cpu- and memory- intensive than regular
-            # content_shell, and so we need to run fewer of them in parallel.
-            return max(int(self._executive.cpu_count() * 0.75), 1)
         return self._executive.cpu_count()
 
     def default_max_locked_shards(self):
@@ -1009,6 +1015,9 @@ class Port(object):
     def perf_results_directory(self):
         return self._build_path()
 
+    def inspector_build_directory(self):
+        return self._build_path('resources', 'inspector')
+
     def default_results_directory(self):
         """Absolute path to the default place to store the test results."""
         try:
@@ -1456,7 +1465,7 @@ class Port(object):
             if self._is_debian_based():
                 return 'debian-httpd-' + self._apache_version() + '.conf'
         # All platforms use apache2 except for CYGWIN (and Mac OS X Tiger and prior, which we no longer support).
-        return "apache2-httpd.conf"
+        return 'apache2-httpd-' + self._apache_version() + '.conf'
 
     def _path_to_driver(self, configuration=None):
         """Returns the full path to the test driver."""
@@ -1499,7 +1508,7 @@ class Port(object):
         """Returns the port's driver implementation."""
         return driver.Driver
 
-    def _output_contains_sanitizer_messages(self, output):
+    def output_contains_sanitizer_messages(self, output):
         if not output:
             return None
         if 'AddressSanitizer' in output:
@@ -1509,7 +1518,7 @@ class Port(object):
         return None
 
     def _get_crash_log(self, name, pid, stdout, stderr, newer_than):
-        if self._output_contains_sanitizer_messages(stderr):
+        if self.output_contains_sanitizer_messages(stderr):
             # Running the symbolizer script can take a lot of memory, so we need to
             # serialize access to it across all the concurrently running drivers.
 
@@ -1546,7 +1555,7 @@ class Port(object):
             # For example, to turn on force-compositing-mode in the svg/ directory:
             # PhysicalTestSuite('svg',
             #                   ['--force-compositing-mode']),
-            ]
+        ]
 
     def virtual_test_suites(self):
         if self._virtual_test_suites is None:
@@ -1604,10 +1613,22 @@ class Port(object):
                 return suite.args
         return []
 
+    def lookup_virtual_reference_args(self, test_name):
+        for suite in self.virtual_test_suites():
+            if test_name.startswith(suite.name):
+                return suite.reference_args
+        return []
+
     def lookup_physical_test_args(self, test_name):
         for suite in self.physical_test_suites():
             if test_name.startswith(suite.name):
                 return suite.args
+        return []
+
+    def lookup_physical_reference_args(self, test_name):
+        for suite in self.physical_test_suites():
+            if test_name.startswith(suite.name):
+                return suite.reference_args
         return []
 
     def should_run_as_pixel_test(self, test_input):
@@ -1713,25 +1734,27 @@ class Port(object):
         return self.path_from_webkit_base('LayoutTests', 'platform', platform)
 
 class VirtualTestSuite(object):
-    def __init__(self, prefix=None, base=None, args=None):
+    def __init__(self, prefix=None, base=None, args=None, reference_args=None):
         assert base
         assert args
         assert prefix.find('/') == -1, "Virtual test suites prefixes cannot contain /'s: %s" % prefix
         self.name = 'virtual/' + prefix + '/' + base
         self.base = base
         self.args = args
+        self.reference_args = args if reference_args is None else reference_args
         self.tests = {}
 
     def __repr__(self):
-        return "VirtualTestSuite('%s', '%s', %s)" % (self.name, self.base, self.args)
+        return "VirtualTestSuite('%s', '%s', %s, %s)" % (self.name, self.base, self.args, self.reference_args)
 
 
 class PhysicalTestSuite(object):
-    def __init__(self, base, args):
+    def __init__(self, base, args, reference_args=None):
         self.name = base
         self.base = base
         self.args = args
+        self.reference_args = args if reference_args is None else reference_args
         self.tests = set()
 
     def __repr__(self):
-        return "PhysicalTestSuite('%s', '%s', %s)" % (self.name, self.base, self.args)
+        return "PhysicalTestSuite('%s', '%s', %s, %s)" % (self.name, self.base, self.args, self.reference_args)

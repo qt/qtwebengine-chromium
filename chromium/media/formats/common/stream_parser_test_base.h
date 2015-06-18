@@ -50,15 +50,14 @@ class StreamParserTestBase {
 
  private:
   bool AppendDataInPieces(const uint8* data, size_t length, size_t piece_size);
-  void OnInitDone(bool success, const StreamParser::InitParameters& params);
+  void OnInitDone(const StreamParser::InitParameters& params);
   bool OnNewConfig(const AudioDecoderConfig& audio_config,
                    const VideoDecoderConfig& video_config,
                    const StreamParser::TextTrackConfigMap& text_config);
   bool OnNewBuffers(const StreamParser::BufferQueue& audio_buffers,
                     const StreamParser::BufferQueue& video_buffers,
                     const StreamParser::TextBufferQueueMap& text_map);
-  void OnKeyNeeded(const std::string& type,
-                   const std::vector<uint8>& init_data);
+  void OnKeyNeeded(EmeInitDataType type, const std::vector<uint8>& init_data);
   void OnNewSegment();
   void OnEndOfSegment();
 

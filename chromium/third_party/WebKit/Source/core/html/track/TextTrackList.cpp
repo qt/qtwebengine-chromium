@@ -194,9 +194,7 @@ void TextTrackList::append(PassRefPtrWillBeRawPtr<TextTrack> prpTrack)
         size_t index = static_cast<LoadableTextTrack*>(track.get())->trackElementIndex();
         m_elementTracks.insert(index, track);
     } else if (track->trackType() == TextTrack::InBand) {
-        // Insert tracks added for in-band in the media file order.
-        size_t index = static_cast<InbandTextTrack*>(track.get())->inbandTrackIndex();
-        m_inbandTracks.insert(index, track);
+        m_inbandTracks.append(track);
     } else {
         ASSERT_NOT_REACHED();
     }
@@ -280,12 +278,7 @@ void TextTrackList::clearOwner()
 
 void TextTrackList::scheduleTrackEvent(const AtomicString& eventName, PassRefPtrWillBeRawPtr<TextTrack> track)
 {
-    TrackEventInit initializer;
-    initializer.track = track;
-    initializer.bubbles = false;
-    initializer.cancelable = false;
-
-    m_asyncEventQueue->enqueueEvent(TrackEvent::create(eventName, initializer));
+    m_asyncEventQueue->enqueueEvent(TrackEvent::create(eventName, track));
 }
 
 void TextTrackList::scheduleAddTrackEvent(PassRefPtrWillBeRawPtr<TextTrack> track)
@@ -331,7 +324,7 @@ HTMLMediaElement* TextTrackList::owner() const
     return m_owner;
 }
 
-void TextTrackList::trace(Visitor* visitor)
+DEFINE_TRACE(TextTrackList)
 {
     visitor->trace(m_owner);
     visitor->trace(m_asyncEventQueue);

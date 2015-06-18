@@ -9,6 +9,13 @@
 #include "ui/gl/gl_image_surface_texture.h"
 
 namespace content {
+namespace {
+
+const GpuMemoryBufferFactory::Configuration kSupportedConfigurations[] = {
+  { gfx::GpuMemoryBuffer::RGBA_8888, gfx::GpuMemoryBuffer::MAP }
+};
+
+}  // namespace
 
 GpuMemoryBufferFactorySurfaceTexture::GpuMemoryBufferFactorySurfaceTexture() {
 }
@@ -16,12 +23,34 @@ GpuMemoryBufferFactorySurfaceTexture::GpuMemoryBufferFactorySurfaceTexture() {
 GpuMemoryBufferFactorySurfaceTexture::~GpuMemoryBufferFactorySurfaceTexture() {
 }
 
+// static
+bool GpuMemoryBufferFactorySurfaceTexture::
+    IsGpuMemoryBufferConfigurationSupported(gfx::GpuMemoryBuffer::Format format,
+                                            gfx::GpuMemoryBuffer::Usage usage) {
+  for (auto& configuration : kSupportedConfigurations) {
+    if (configuration.format == format && configuration.usage == usage)
+      return true;
+  }
+
+  return false;
+}
+
+void GpuMemoryBufferFactorySurfaceTexture::
+    GetSupportedGpuMemoryBufferConfigurations(
+        std::vector<Configuration>* configurations) {
+  configurations->assign(
+      kSupportedConfigurations,
+      kSupportedConfigurations + arraysize(kSupportedConfigurations));
+}
+
 gfx::GpuMemoryBufferHandle
 GpuMemoryBufferFactorySurfaceTexture::CreateGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
-    unsigned internalformat,
-    int client_id) {
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage,
+    int client_id,
+    gfx::PluginWindowHandle surface_handle) {
   // Note: this needs to be 0 as the surface texture implemenation will take
   // ownership of the texture and call glDeleteTextures when the GPU service
   // attaches the surface texture to a real texture id. glDeleteTextures
@@ -35,9 +64,13 @@ GpuMemoryBufferFactorySurfaceTexture::CreateGpuMemoryBuffer(
   SurfaceTextureManager::GetInstance()->RegisterSurfaceTexture(
       id, client_id, surface_texture.get());
 
-  SurfaceTextureMapKey key(id, client_id);
-  DCHECK(surface_textures_.find(key) == surface_textures_.end());
-  surface_textures_[key] = surface_texture;
+  {
+    base::AutoLock lock(surface_textures_lock_);
+
+    SurfaceTextureMapKey key(id, client_id);
+    DCHECK(surface_textures_.find(key) == surface_textures_.end());
+    surface_textures_[key] = surface_texture;
+  }
 
   gfx::GpuMemoryBufferHandle handle;
   handle.type = gfx::SURFACE_TEXTURE_BUFFER;
@@ -48,21 +81,33 @@ GpuMemoryBufferFactorySurfaceTexture::CreateGpuMemoryBuffer(
 void GpuMemoryBufferFactorySurfaceTexture::DestroyGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
     int client_id) {
-  SurfaceTextureMapKey key(id, client_id);
-  SurfaceTextureMap::iterator it = surface_textures_.find(key);
-  if (it != surface_textures_.end())
-    surface_textures_.erase(it);
+  {
+    base::AutoLock lock(surface_textures_lock_);
+
+    SurfaceTextureMapKey key(id, client_id);
+    DCHECK(surface_textures_.find(key) != surface_textures_.end());
+    surface_textures_.erase(key);
+  }
 
   SurfaceTextureManager::GetInstance()->UnregisterSurfaceTexture(id, client_id);
 }
 
+gpu::ImageFactory* GpuMemoryBufferFactorySurfaceTexture::AsImageFactory() {
+  return this;
+}
+
 scoped_refptr<gfx::GLImage>
 GpuMemoryBufferFactorySurfaceTexture::CreateImageForGpuMemoryBuffer(
-    gfx::GpuMemoryBufferId id,
+    const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
+    gfx::GpuMemoryBuffer::Format format,
     unsigned internalformat,
     int client_id) {
-  SurfaceTextureMapKey key(id, client_id);
+  base::AutoLock lock(surface_textures_lock_);
+
+  DCHECK_EQ(handle.type, gfx::SURFACE_TEXTURE_BUFFER);
+
+  SurfaceTextureMapKey key(handle.id, client_id);
   SurfaceTextureMap::iterator it = surface_textures_.find(key);
   if (it == surface_textures_.end())
     return scoped_refptr<gfx::GLImage>();

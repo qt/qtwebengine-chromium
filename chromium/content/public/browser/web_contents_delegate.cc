@@ -9,9 +9,9 @@
 #include "base/memory/singleton.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/url_constants.h"
 #include "content/public/common/bindings_policy.h"
-#include "ui/gfx/rect.h"
+#include "content/public/common/url_constants.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace content {
 
@@ -20,7 +20,7 @@ WebContentsDelegate::WebContentsDelegate() {
 
 WebContents* WebContentsDelegate::OpenURLFromTab(WebContents* source,
                                                  const OpenURLParams& params) {
-  return NULL;
+  return nullptr;
 }
 
 bool WebContentsDelegate::IsPopupOrPanel(const WebContents* source) const {
@@ -33,7 +33,7 @@ gfx::Rect WebContentsDelegate::GetRootWindowResizerRect() const {
   return gfx::Rect();
 }
 
-bool WebContentsDelegate::ShouldSuppressDialogs() {
+bool WebContentsDelegate::ShouldSuppressDialogs(WebContents* source) {
   return false;
 }
 
@@ -63,12 +63,12 @@ bool WebContentsDelegate::ShouldFocusPageAfterCrash() {
   return true;
 }
 
-bool WebContentsDelegate::TakeFocus(WebContents* source, bool reverse) {
-  return false;
+bool WebContentsDelegate::ShouldResumeRequestsForCreatedWindow() {
+  return true;
 }
 
-int WebContentsDelegate::GetExtraRenderViewHeight() const {
-  return 0;
+bool WebContentsDelegate::TakeFocus(WebContents* source, bool reverse) {
+  return false;
 }
 
 void WebContentsDelegate::CanDownload(
@@ -132,6 +132,7 @@ bool WebContentsDelegate::OnGoToEntryOffset(int offset) {
 bool WebContentsDelegate::ShouldCreateWebContents(
     WebContents* web_contents,
     int route_id,
+    int main_frame_route_id,
     WindowContainerType window_container_type,
     const base::string16& frame_name,
     const GURL& target_url,
@@ -140,8 +141,9 @@ bool WebContentsDelegate::ShouldCreateWebContents(
   return true;
 }
 
-JavaScriptDialogManager* WebContentsDelegate::GetJavaScriptDialogManager() {
-  return NULL;
+JavaScriptDialogManager* WebContentsDelegate::GetJavaScriptDialogManager(
+    WebContents* source) {
+  return nullptr;
 }
 
 bool WebContentsDelegate::EmbedsFullscreenWidget() const {
@@ -153,11 +155,16 @@ bool WebContentsDelegate::IsFullscreenForTabOrPending(
   return false;
 }
 
+blink::WebDisplayMode WebContentsDelegate::GetDisplayMode(
+    const WebContents* web_contents) const {
+  return blink::WebDisplayModeBrowser;
+}
+
 content::ColorChooser* WebContentsDelegate::OpenColorChooser(
     WebContents* web_contents,
     SkColor color,
     const std::vector<ColorSuggestion>& suggestions) {
-  return NULL;
+  return nullptr;
 }
 
 void WebContentsDelegate::RequestMediaAccessPermission(
@@ -191,7 +198,7 @@ bool WebContentsDelegate::RequestPpapiBrokerPermission(
 WebContentsDelegate::~WebContentsDelegate() {
   while (!attached_contents_.empty()) {
     WebContents* web_contents = *attached_contents_.begin();
-    web_contents->SetDelegate(NULL);
+    web_contents->SetDelegate(nullptr);
   }
   DCHECK(attached_contents_.empty());
 }
@@ -212,6 +219,10 @@ gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
 }
 
 bool WebContentsDelegate::IsNeverVisible(WebContents* web_contents) {
+  return false;
+}
+
+bool WebContentsDelegate::SaveFrame(const GURL& url, const Referrer& referrer) {
   return false;
 }
 

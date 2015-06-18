@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/logging.h"
@@ -25,8 +26,11 @@
 #include "chromecast/media/cma/backend/video_pipeline_device.h"
 #include "chromecast/media/cma/base/decoder_buffer_adapter.h"
 #include "chromecast/media/cma/base/decoder_buffer_base.h"
+#include "chromecast/media/cma/base/decoder_config_adapter.h"
 #include "chromecast/media/cma/test/frame_segmenter_for_test.h"
 #include "chromecast/media/cma/test/media_component_device_feeder_for_test.h"
+#include "chromecast/public/cast_media_shlib.h"
+#include "chromecast/public/media/decoder_config.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/buffers.h"
 #include "media/base/decoder_buffer.h"
@@ -67,7 +71,16 @@ class AudioVideoPipelineDeviceTest : public testing::Test {
   };
 
   AudioVideoPipelineDeviceTest();
-  virtual ~AudioVideoPipelineDeviceTest();
+  ~AudioVideoPipelineDeviceTest() override;
+
+  void SetUp() override {
+    CastMediaShlib::Initialize(
+        base::CommandLine::ForCurrentProcess()->argv());
+  }
+
+  void TearDown() override {
+    CastMediaShlib::Finalize();
+  }
 
   void ConfigureForFile(std::string filename);
   void ConfigureForAudioOnly(std::string filename);
@@ -154,7 +167,8 @@ void AudioVideoPipelineDeviceTest::LoadAudioStream(std::string filename) {
   AudioPipelineDevice* audio_pipeline_device =
       media_pipeline_device_->GetAudioPipelineDevice();
 
-  bool success = audio_pipeline_device->SetConfig(demux_result.audio_config);
+  bool success = audio_pipeline_device->SetConfig(
+      DecoderConfigAdapter::ToCastAudioConfig(demux_result.audio_config));
   ASSERT_TRUE(success);
 
   VLOG(2) << "Got " << frames.size() << " audio input frames";
@@ -174,7 +188,7 @@ void AudioVideoPipelineDeviceTest::LoadAudioStream(std::string filename) {
 void AudioVideoPipelineDeviceTest::LoadVideoStream(std::string filename,
                                                    bool raw_h264) {
   BufferList frames;
-  ::media::VideoDecoderConfig video_config;
+  VideoConfig video_config;
 
   if (raw_h264) {
     base::FilePath file_path = GetTestDataFilePath(filename);
@@ -183,26 +197,18 @@ void AudioVideoPipelineDeviceTest::LoadVideoStream(std::string filename,
         << "Couldn't open stream file: " << file_path.MaybeAsASCII();
     frames = H264SegmenterForTest(video_stream.data(), video_stream.length());
 
-    // Use arbitraty sizes.
-    gfx::Size coded_size(320, 240);
-    gfx::Rect visible_rect(0, 0, 320, 240);
-    gfx::Size natural_size(320, 240);
-
-    // TODO(kjoswiak): Either pull data from stream or make caller specify value
-    video_config = ::media::VideoDecoderConfig(
-        ::media::kCodecH264,
-        ::media::H264PROFILE_MAIN,
-        ::media::VideoFrame::I420,
-        coded_size,
-        visible_rect,
-        natural_size,
-        NULL, 0, false);
+    // TODO(erickung): Either pull data from stream or make caller specify value
+    video_config.codec = kCodecH264;
+    video_config.profile = kH264Main;
+    video_config.additional_config = NULL;
+    video_config.is_encrypted = false;
   } else {
     base::FilePath file_path = GetTestDataFilePath(filename);
     DemuxResult demux_result = FFmpegDemuxForTest(file_path,
                                                   /*audio*/ false);
     frames = demux_result.frames;
-    video_config = demux_result.video_config;
+    video_config =
+        DecoderConfigAdapter::ToCastVideoConfig(demux_result.video_config);
   }
 
   VideoPipelineDevice* video_pipeline_device =
@@ -230,7 +236,7 @@ void AudioVideoPipelineDeviceTest::Start() {
   pause_time_ = base::TimeDelta();
   pause_pattern_idx_ = 0;
 
-  for (int i = 0; i < component_device_feeders_.size(); i++) {
+  for (size_t i = 0; i < component_device_feeders_.size(); i++) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
         base::Bind(&MediaComponentDeviceFeederForTest::Feed,

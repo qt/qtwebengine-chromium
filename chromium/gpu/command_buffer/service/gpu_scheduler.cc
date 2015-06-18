@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_switches.h"
@@ -21,8 +21,6 @@
 using ::base::SharedMemory;
 
 namespace gpu {
-
-const int64 kUnscheduleFenceTimeOutDelay = 10000;
 
 #if defined(OS_WIN)
 const int64 kRescheduleTimeOutDelay = 1000;
@@ -59,15 +57,11 @@ void GpuScheduler::PutChanged() {
   if (state.error != error::kNoError)
     return;
 
-  // Check that the GPU has passed all fences.
-  if (!PollUnscheduleFences())
-    return;
-
   // One of the unschedule fence tasks might have unscheduled us.
   if (!IsScheduled())
     return;
 
-  base::TimeTicks begin_time(base::TimeTicks::HighResNow());
+  base::TimeTicks begin_time(base::TimeTicks::Now());
   error::Error error = error::kNoError;
   if (decoder_)
     decoder_->BeginDecoding();
@@ -76,7 +70,6 @@ void GpuScheduler::PutChanged() {
       break;
 
     DCHECK(IsScheduled());
-    DCHECK(unschedule_fences_.empty());
 
     error = parser_->ProcessCommands(CommandParser::kParseCommandsSlice);
 
@@ -109,8 +102,7 @@ void GpuScheduler::PutChanged() {
       command_buffer_->SetParseError(error::kLostContext);
     }
     decoder_->EndDecoding();
-    decoder_->AddProcessingCommandsTime(
-        base::TimeTicks::HighResNow() - begin_time);
+    decoder_->AddProcessingCommandsTime(base::TimeTicks::Now() - begin_time);
   }
 }
 
@@ -169,8 +161,7 @@ bool GpuScheduler::IsScheduled() {
 }
 
 bool GpuScheduler::HasMoreWork() {
-  return !unschedule_fences_.empty() ||
-         (decoder_ && decoder_->ProcessPendingQueries(false)) ||
+  return (decoder_ && decoder_->ProcessPendingQueries(false)) ||
          HasMoreIdleWork();
 }
 
@@ -222,45 +213,6 @@ void GpuScheduler::SetCommandProcessedCallback(
   command_processed_callback_ = callback;
 }
 
-void GpuScheduler::DeferToFence(base::Closure task) {
-  unschedule_fences_.push(make_linked_ptr(
-       new UnscheduleFence(gfx::GLFence::Create(), task)));
-  SetScheduled(false);
-}
-
-bool GpuScheduler::PollUnscheduleFences() {
-  if (unschedule_fences_.empty())
-    return true;
-
-  if (unschedule_fences_.front()->fence.get()) {
-    base::Time now = base::Time::Now();
-    base::TimeDelta timeout =
-        base::TimeDelta::FromMilliseconds(kUnscheduleFenceTimeOutDelay);
-
-    while (!unschedule_fences_.empty()) {
-      const UnscheduleFence& fence = *unschedule_fences_.front();
-      if (fence.fence->HasCompleted() ||
-          now - fence.issue_time > timeout) {
-        unschedule_fences_.front()->task.Run();
-        unschedule_fences_.pop();
-        SetScheduled(true);
-      } else {
-        return false;
-      }
-    }
-  } else {
-    glFinish();
-
-    while (!unschedule_fences_.empty()) {
-      unschedule_fences_.front()->task.Run();
-      unschedule_fences_.pop();
-      SetScheduled(true);
-    }
-  }
-
-  return true;
-}
-
 bool GpuScheduler::IsPreempted() {
   if (!preemption_flag_.get())
     return false;
@@ -295,16 +247,6 @@ void GpuScheduler::RescheduleTimeOut() {
     SetScheduled(true);
 
   rescheduled_count_ = new_count;
-}
-
-GpuScheduler::UnscheduleFence::UnscheduleFence(gfx::GLFence* fence_,
-                                               base::Closure task_)
-  : fence(fence_),
-    issue_time(base::Time::Now()),
-    task(task_) {
-}
-
-GpuScheduler::UnscheduleFence::~UnscheduleFence() {
 }
 
 }  // namespace gpu

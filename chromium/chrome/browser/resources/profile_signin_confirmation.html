@@ -1,5 +1,5 @@
-<!DOCTYPE HTML>
-<html i18n-values="dir:textdirection">
+<!doctype html>
+<html i18n-values="dir:textdirection;lang:language">
 <head>
   <meta charset="utf-8">
   <title i18n-content="dialogTitle"></title>
@@ -8,9 +8,10 @@
   <script src="chrome://resources/js/util.js"></script>
   <script src="strings.js"></script>
   <script src="profile_signin_confirmation.js"></script>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
   <link rel="stylesheet" href="profile_signin_confirmation.css">
 </head>
-<body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
+<body>
   <h1 id="dialog-title" i18n-content="dialogTitle"></h1>
   <p id="dialog-message"></p>
   <a i18n-content="learnMoreText"
@@ -25,6 +26,6 @@
   </div>
 
   <!-- Must be last in the DOM: processes elements and inserts i18n strings -->
-  <script src="chrome://resources/js/i18n_template2.js"></script>
+  <script src="chrome://resources/js/i18n_template.js"></script>
 </body>
 </html>

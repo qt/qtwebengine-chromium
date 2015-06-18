@@ -46,13 +46,13 @@ class LeakyBucket : public RateLimiter {
       : volume_(volume),
         rate_(rate),
         level_(0.0),
-        last_update_(base::TimeTicks::HighResNow()) {
+        last_update_(base::TimeTicks::Now()) {
   }
 
   ~LeakyBucket() override {}
 
   bool DropNextPacket() override {
-    base::TimeTicks now = base::TimeTicks::HighResNow();
+    base::TimeTicks now = base::TimeTicks::Now();
     double interval = (now - last_update_).InSecondsF();
     last_update_ = now;
     level_ = level_ + 1.0 - interval * rate_;
@@ -300,7 +300,7 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
 
 class PseudoTcpAdapterTest : public testing::Test {
  protected:
-  virtual void SetUp() override {
+  void SetUp() override {
     JingleThreadWrapper::EnsureForCurrentMessageLoop();
 
     host_socket_ = new FakeSocket();

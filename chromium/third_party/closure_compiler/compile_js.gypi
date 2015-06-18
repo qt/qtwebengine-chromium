@@ -19,7 +19,8 @@
         'depends%': [],
       },
       'inputs': [
-        '<(CLOSURE_DIR)/checker.py',
+        'compile_js.gypi',
+        '<(CLOSURE_DIR)/compile.py',
         '<(CLOSURE_DIR)/processor.py',
         '<(CLOSURE_DIR)/build/inputs.py',
         '<(CLOSURE_DIR)/build/outputs.py',
@@ -32,11 +33,12 @@
       ],
       'action': [
         'python',
-        '<(CLOSURE_DIR)/checker.py',
+        '<(CLOSURE_DIR)/compile.py',
         '<(source_file)',
         '--depends', '<@(depends)',
         '--externs', '<@(externs)',
         '--out_file', '<(out_file)',
+        # Add '--verbose' for make glorious log spam of Closure compiler.
       ],
       'message': 'Compiling <(source_file)',
     }

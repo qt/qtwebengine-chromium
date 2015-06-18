@@ -17,6 +17,12 @@ KEYBOARD_EXPORT extern const char kEnableSwipeSelection[];
 // contents of the virtual keyboard container.
 KEYBOARD_EXPORT extern const char kDisableInputView[];
 
+// Disables material design styling of the keyboard.
+KEYBOARD_EXPORT extern const char kDisableNewMDInputView[];
+
+// Disables voice input.
+KEYBOARD_EXPORT extern const char kDisableVoiceInput[];
+
 // Enables an IME extension API to set a URL for specifying the contents
 // of the virtual keyboard container.
 KEYBOARD_EXPORT extern const char kEnableInputView[];
@@ -24,8 +30,36 @@ KEYBOARD_EXPORT extern const char kEnableInputView[];
 // Enables experimental features for IME extensions.
 KEYBOARD_EXPORT extern const char kEnableExperimentalInputViewFeatures[];
 
+// Gesture typing flag for the virtual keyboard.
+KEYBOARD_EXPORT extern const char kGestureTyping[];
+
+// Enables gesture typing for the virtual keyboard.
+KEYBOARD_EXPORT extern const char kGestureTypingEnabled[];
+
+// Disables gesture typing for the virtual keyboard.
+KEYBOARD_EXPORT extern const char kGestureTypingDisabled[];
+
+// Controls the appearance of the settings option to enable gesture editing
+// for the virtual keyboard.
+KEYBOARD_EXPORT extern const char kGestureEditing[];
+
+// Enables gesture editing for the virtual keyboard.
+KEYBOARD_EXPORT extern const char kGestureEditingEnabled[];
+
+// Disables gesture editing for the virtual keyboard.
+KEYBOARD_EXPORT extern const char kGestureEditingDisabled[];
+
 // Enables the virtual keyboard.
 KEYBOARD_EXPORT extern const char kEnableVirtualKeyboard[];
+
+// Floating virtual keyboard flag.
+KEYBOARD_EXPORT extern const char kFloatingVirtualKeyboard[];
+
+// Disable floating virtual keyboard.
+KEYBOARD_EXPORT extern const char kFloatingVirtualKeyboardDisabled[];
+
+// Enable floating virtual keyboard.
+KEYBOARD_EXPORT extern const char kFloatingVirtualKeyboardEnabled[];
 
 // Disabled overscrolling of web content when the virtual keyboard is displayed.
 // If disabled, the work area is resized to restrict windows from overlapping
@@ -36,9 +70,9 @@ KEYBOARD_EXPORT extern const char kDisableVirtualKeyboardOverscroll[];
 // to provide access to content that would otherwise be occluded.
 KEYBOARD_EXPORT extern const char kEnableVirtualKeyboardOverscroll[];
 
-// Enable automatic showing/hiding of the keyboard based on the devices plugged
+// Disable automatic showing/hiding of the keyboard based on the devices plugged
 // in.
-KEYBOARD_EXPORT extern const char kAutoVirtualKeyboard[];
+KEYBOARD_EXPORT extern const char kDisableSmartVirtualKeyboard[];
 
 }  // namespace switches
 }  // namespace keyboard

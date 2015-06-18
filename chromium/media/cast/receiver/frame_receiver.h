@@ -50,9 +50,9 @@ class FrameReceiver : public RtpPayloadFeedback,
   FrameReceiver(const scoped_refptr<CastEnvironment>& cast_environment,
                 const FrameReceiverConfig& config,
                 EventMediaType event_media_type,
-                PacedPacketSender* const packet_sender);
+                CastTransportSender* const transport);
 
-  ~FrameReceiver() override;
+  ~FrameReceiver() final;
 
   // Request an encoded frame.
   //
@@ -64,10 +64,6 @@ class FrameReceiver : public RtpPayloadFeedback,
   // out-of-order.  Returns true if the parsing of the packet succeeded.
   bool ProcessPacket(scoped_ptr<Packet> packet);
 
-  // TODO(miu): This is the wrong place for this, but the (de)serialization
-  // implementation needs to be consolidated first.
-  static bool ParseSenderSsrc(const uint8* packet, size_t length, uint32* ssrc);
-
  protected:
   friend class FrameReceiverTest;  // Invokes ProcessParsedPacket().
 
@@ -76,7 +72,7 @@ class FrameReceiver : public RtpPayloadFeedback,
                            size_t payload_size);
 
   // RtpPayloadFeedback implementation.
-  void CastFeedback(const RtcpCastMessage& cast_message) override;
+  void CastFeedback(const RtcpCastMessage& cast_message) final;
 
  private:
   // Processes ready-to-consume packets from |framer_|, decrypting each packet's
@@ -114,6 +110,9 @@ class FrameReceiver : public RtpPayloadFeedback,
   void SendNextRtcpReport();
 
   const scoped_refptr<CastEnvironment> cast_environment_;
+
+  // Transport used to send data back.
+  CastTransportSender* const transport_;
 
   // Deserializes a packet into a RtpHeader + payload bytes.
   RtpParser packet_parser_;
@@ -178,9 +177,6 @@ class FrameReceiver : public RtpPayloadFeedback,
   RtpTimestamp lip_sync_rtp_timestamp_;
   base::TimeTicks lip_sync_reference_time_;
   ClockDriftSmoother lip_sync_drift_;
-
-  // Time interval for sending a RTCP report.
-  const base::TimeDelta rtcp_interval_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FrameReceiver> weak_factory_;

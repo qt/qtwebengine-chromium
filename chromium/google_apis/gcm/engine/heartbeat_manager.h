@@ -9,7 +9,9 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/power_monitor/power_observer.h"
 #include "google_apis/gcm/base/gcm_export.h"
+#include "google_apis/gcm/engine/connection_factory.h"
 
 namespace base {
 class Timer;
@@ -23,16 +25,19 @@ namespace gcm {
 
 // A heartbeat management class, capable of sending and handling heartbeat
 // receipt/failures and triggering reconnection as necessary.
-class GCM_EXPORT HeartbeatManager {
+class GCM_EXPORT HeartbeatManager : public base::PowerObserver {
  public:
-  explicit HeartbeatManager(scoped_ptr<base::Timer> heartbeat_timer);
-  ~HeartbeatManager();
+  typedef base::Callback<void(ConnectionFactory::ConnectionResetReason)>
+      ReconnectCallback;
+
+  HeartbeatManager();
+  ~HeartbeatManager() override;
 
   // Start the heartbeat logic.
   // |send_heartbeat_callback_| is the callback the HeartbeatManager uses to
   // send new heartbeats. Only one heartbeat can be outstanding at a time.
   void Start(const base::Closure& send_heartbeat_callback,
-             const base::Closure& trigger_reconnect_callback);
+             const ReconnectCallback& trigger_reconnect_callback);
 
   // Stop the timer. Start(..) must be called again to begin sending heartbeats
   // afterwards.
@@ -52,6 +57,25 @@ class GCM_EXPORT HeartbeatManager {
   // pending.
   base::TimeTicks GetNextHeartbeatTime() const;
 
+  // Updates the timer used for scheduling heartbeats.
+  void UpdateHeartbeatTimer(scoped_ptr<base::Timer> timer);
+
+  // base::PowerObserver override.
+  void OnResume() override;
+
+  // Maximum and minimum of the custom client interval that can be requested,
+  // calculated based on the network conditions.
+  int GetMaxClientHeartbeatIntervalMs();
+  int GetMinClientHeartbeatIntervalMs();
+
+  // Sets, gets and validates the custom client interval. If the interval is
+  // less than the current custom heartbeat interval, the connection will be
+  // reset to update the receiving server.
+  void SetClientHeartbeatIntervalMs(int interval_ms);
+  int GetClientHeartbeatIntervalMs();
+  bool HasClientHeartbeatInterval();
+  bool IsValidClientHeartbeatInterval(int interval);
+
  protected:
   // Helper method to send heartbeat on timer trigger.
   void OnHeartbeatTriggered();
@@ -64,6 +88,12 @@ class GCM_EXPORT HeartbeatManager {
  private:
   // Restarts the heartbeat timer.
   void RestartTimer();
+
+  // Calculates default heartbeat interval, depending on current network.
+  int GetDefaultHeartbeatInterval();
+
+  // Stops the heartbeat and triggers connection reset with a |reason|.
+  void ResetConnection(ConnectionFactory::ConnectionResetReason reason);
 
   // The base::Time at which the heartbeat timer is expected to fire. Used to
   // check if a heartbeat was somehow lost/delayed.
@@ -78,12 +108,15 @@ class GCM_EXPORT HeartbeatManager {
   // provided).
   int server_interval_ms_;
 
+  // Custom interval requested by the client.
+  int client_interval_ms_;
+
   // Timer for triggering heartbeats.
   scoped_ptr<base::Timer> heartbeat_timer_;
 
   // Callbacks for interacting with the the connection.
   base::Closure send_heartbeat_callback_;
-  base::Closure trigger_reconnect_callback_;
+  ReconnectCallback trigger_reconnect_callback_;
 
   base::WeakPtrFactory<HeartbeatManager> weak_ptr_factory_;
 

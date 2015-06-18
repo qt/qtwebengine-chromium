@@ -42,7 +42,20 @@ class GFX_EXPORT GpuMemoryBuffer {
  public:
   // The format needs to be taken into account when mapping a buffer into the
   // client's address space.
-  enum Format { RGBA_8888, RGBX_8888, BGRA_8888, FORMAT_LAST = BGRA_8888 };
+  enum Format {
+    ATC,
+    ATCIA,
+    DXT1,
+    DXT5,
+    ETC1,
+    R_8,
+    RGBA_8888,
+    RGBX_8888,
+    BGRA_8888,
+    YUV_420,
+
+    FORMAT_LAST = YUV_420
+  };
 
   // The usage mode affects how a buffer can be used. Only buffers created with
   // MAP can be mapped into the client's address space and accessed by the CPU.
@@ -50,11 +63,12 @@ class GFX_EXPORT GpuMemoryBuffer {
 
   virtual ~GpuMemoryBuffer() {}
 
-  // Maps the buffer into the client's address space so it can be written to by
-  // the CPU. This call may block, for instance if the GPU needs to finish
-  // accessing the buffer or if CPU caches need to be synchronized. Returns NULL
-  // on failure.
-  virtual void* Map() = 0;
+  // Maps each plane of the buffer into the client's address space so it can be
+  // written to by the CPU. A pointer to plane K is stored at index K-1 of the
+  // |data| array. This call may block, for instance if the GPU needs to finish
+  // accessing the buffer or if CPU caches need to be synchronized. Returns
+  // false on failure.
+  virtual bool Map(void** data) = 0;
 
   // Unmaps the buffer. It's illegal to use the pointer returned by Map() after
   // this has been called.
@@ -66,8 +80,9 @@ class GFX_EXPORT GpuMemoryBuffer {
   // Returns the format for the buffer.
   virtual Format GetFormat() const = 0;
 
-  // Returns the stride in bytes for the buffer.
-  virtual uint32 GetStride() const = 0;
+  // Fills the stride in bytes for each plane of the buffer. The stride of
+  // plane K is stored at index K-1 of the |stride| array.
+  virtual void GetStride(int* stride) const = 0;
 
   // Returns a platform specific handle for this buffer.
   virtual GpuMemoryBufferHandle GetHandle() const = 0;

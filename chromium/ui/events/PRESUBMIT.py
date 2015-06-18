@@ -5,22 +5,16 @@
 """Chromium presubmit script for src/ui/events
 
 See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
-for more details on the presubmit API built into gcl.
+for more details on the presubmit API built into depot_tools.
 """
 
 def GetPreferredTryMasters(project, change):
-  tests = set(['ash_unittests',
-               'aura_unittests',
-               'events_unittests',
-               'keyboard_unittests',
-               'views_unittests'])
-
   return {
     'tryserver.chromium.linux': {
-      'linux_chromium_chromeos_rel': tests,
-      'linux_chromeos_asan': tests,
+      'linux_chromium_chromeos_rel_ng': set(['defaulttests']),
+      'linux_chromium_chromeos_asan_rel_ng': set(['defaulttests']),
     },
     'tryserver.chromium.win': {
-      'win_chromium_compile_dbg': tests,
+      'win_chromium_compile_dbg': set(['defaulttests']),
     }
   }

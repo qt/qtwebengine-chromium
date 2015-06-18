@@ -4,6 +4,7 @@
 
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 if (is_mac) {
   import("//build/config/mac/mac_sdk.gni")
 }
@@ -91,13 +92,11 @@ component("printing") {
   if (is_mac) {
     # Mac-Aura does not support printing.
     if (use_aura) {
-      sources -= [
-        "printed_document_mac.cc",
-      ]
+      sources -= [ "printed_document_mac.cc" ]
     } else {
       sources += [
-        "printing_context_mac.mm",
         "printing_context_mac.h",
+        "printing_context_mac.mm",
       ]
     }
   }
@@ -107,9 +106,11 @@ component("printing") {
     # print backend and enables a custom implementation instead.
     defines += [ "PRINT_BACKEND_AVAILABLE" ]
     sources += [
+      "backend/print_backend_win.cc",
       "backend/win_helper.cc",
       "backend/win_helper.h",
-      "backend/print_backend_win.cc",
+      "printing_context_system_dialog_win.cc",
+      "printing_context_system_dialog_win.h",
       "printing_context_win.cc",
       "printing_context_win.h",
     ]
@@ -126,7 +127,8 @@ component("printing") {
     configs += [ ":cups" ]
 
     if (is_linux) {
-      cups_version = exec_script("cups_config_helper.py", [ "--api-version" ],
+      cups_version = exec_script("cups_config_helper.py",
+                                 [ "--api-version" ],
                                  "trim string")
 
       if (cups_version == "1.6" || cups_version == "1.7") {
@@ -167,9 +169,7 @@ component("printing") {
     # of the print backend and enables a custom implementation instead.
     defines += [ "PRINT_BACKEND_AVAILABLE" ]
 
-    sources += [
-      "backend/print_backend_chromeos.cc",
-    ]
+    sources += [ "backend/print_backend_chromeos.cc" ]
   } else if (is_linux) {  # Non-ChromeOS Linux.
     sources += [
       "printing_context_linux.cc",
@@ -200,6 +200,8 @@ test("printing_unittests") {
     "printing_utils_unittest.cc",
     "units_unittest.cc",
   ]
+
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   if (use_cups) {
     configs += [ ":cups" ]
@@ -243,7 +245,7 @@ if (is_android) {
   # GYP: //printing/printing.gyp:printing_java
   android_library("printing_java") {
     deps = [
-      "//base:base_java"
+      "//base:base_java",
     ]
     DEPRECATED_java_in_dir = "android/java/src"
   }

@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/ChannelSplitterNode.h"
 
 #include "modules/webaudio/AudioContext.h"
@@ -34,48 +32,59 @@
 
 namespace blink {
 
-ChannelSplitterNode* ChannelSplitterNode::create(AudioContext* context, float sampleRate, unsigned numberOfOutputs)
-{
-    if (!numberOfOutputs || numberOfOutputs > AudioContext::maxNumberOfChannels())
-        return 0;
-
-    return new ChannelSplitterNode(context, sampleRate, numberOfOutputs);
-}
-
-ChannelSplitterNode::ChannelSplitterNode(AudioContext* context, float sampleRate, unsigned numberOfOutputs)
-    : AudioNode(context, sampleRate)
+ChannelSplitterHandler::ChannelSplitterHandler(AudioNode& node, float sampleRate, unsigned numberOfOutputs)
+    : AudioHandler(NodeTypeChannelSplitter, node, sampleRate)
 {
     addInput();
 
     // Create a fixed number of outputs (able to handle the maximum number of channels fed to an input).
     for (unsigned i = 0; i < numberOfOutputs; ++i)
-        addOutput(AudioNodeOutput::create(this, 1));
+        addOutput(1);
 
-    setNodeType(NodeTypeChannelSplitter);
     initialize();
 }
 
-void ChannelSplitterNode::process(size_t framesToProcess)
+PassRefPtr<ChannelSplitterHandler> ChannelSplitterHandler::create(AudioNode& node, float sampleRate, unsigned numberOfOutputs)
 {
-    AudioBus* source = input(0)->bus();
+    return adoptRef(new ChannelSplitterHandler(node, sampleRate, numberOfOutputs));
+}
+
+void ChannelSplitterHandler::process(size_t framesToProcess)
+{
+    AudioBus* source = input(0).bus();
     ASSERT(source);
     ASSERT_UNUSED(framesToProcess, framesToProcess == source->length());
 
     unsigned numberOfSourceChannels = source->numberOfChannels();
 
     for (unsigned i = 0; i < numberOfOutputs(); ++i) {
-        AudioBus* destination = output(i)->bus();
+        AudioBus* destination = output(i).bus();
         ASSERT(destination);
 
         if (i < numberOfSourceChannels) {
             // Split the channel out if it exists in the source.
             // It would be nice to avoid the copy and simply pass along pointers, but this becomes extremely difficult with fanout and fanin.
             destination->channel(0)->copyFrom(source->channel(i));
-        } else if (output(i)->renderingFanOutCount() > 0) {
+        } else if (output(i).renderingFanOutCount() > 0) {
             // Only bother zeroing out the destination if it's connected to anything
             destination->zero();
         }
     }
+}
+
+// ----------------------------------------------------------------
+
+ChannelSplitterNode::ChannelSplitterNode(AudioContext& context, float sampleRate, unsigned numberOfOutputs)
+    : AudioNode(context)
+{
+    setHandler(ChannelSplitterHandler::create(*this, sampleRate, numberOfOutputs));
+}
+
+ChannelSplitterNode* ChannelSplitterNode::create(AudioContext& context, float sampleRate, unsigned numberOfOutputs)
+{
+    if (!numberOfOutputs || numberOfOutputs > AudioContext::maxNumberOfChannels())
+        return nullptr;
+    return new ChannelSplitterNode(context, sampleRate, numberOfOutputs);
 }
 
 } // namespace blink

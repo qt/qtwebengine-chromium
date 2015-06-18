@@ -26,14 +26,13 @@
 #ifndef WebGLTexture_h
 #define WebGLTexture_h
 
-#include "bindings/core/v8/ScriptWrappable.h"
-#include "core/html/canvas/WebGLSharedObject.h"
+#include "core/html/canvas/WebGLSharedPlatform3DObject.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
 
-class WebGLTexture final : public WebGLSharedObject, public ScriptWrappable {
+class WebGLTexture final : public WebGLSharedPlatform3DObject {
     DEFINE_WRAPPERTYPEINFO();
 public:
     enum TextureExtensionFlag {
@@ -41,7 +40,7 @@ public:
         TextureFloatLinearExtensionEnabled = 1 << 0,
         TextureHalfFloatLinearExtensionEnabled = 1 << 1
     };
-    virtual ~WebGLTexture();
+    ~WebGLTexture() override;
 
     static PassRefPtrWillBeRawPtr<WebGLTexture> create(WebGLRenderingContextBase*);
 
@@ -53,7 +52,8 @@ public:
 
     int getMinFilter() const { return m_minFilter; }
 
-    void setLevelInfo(GLenum target, GLint level, GLenum internalFormat, GLsizei width, GLsizei height, GLenum type);
+    void setLevelInfo(GLenum target, GLint level, GLenum internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLenum type);
+    void setTexStorageInfo(GLenum target, GLint levels, GLenum internalFormat, GLsizei width, GLsizei height, GLsizei depth);
 
     bool canGenerateMipmaps();
     // Generate all level information.
@@ -63,7 +63,9 @@ public:
     GLenum getType(GLenum target, GLint level) const;
     GLsizei getWidth(GLenum target, GLint level) const;
     GLsizei getHeight(GLenum target, GLint level) const;
+    GLsizei getDepth(GLenum target, GLint level) const;
     bool isValid(GLenum target, GLint level) const;
+    bool isImmutable() const { return m_immutable; }
 
     // Whether width/height is NotPowerOfTwo.
     static bool isNPOT(GLsizei, GLsizei);
@@ -74,14 +76,13 @@ public:
 
     bool hasEverBeenBound() const { return object() && m_target; }
 
-    static GLint computeLevelCount(GLsizei width, GLsizei height);
-
-protected:
-    explicit WebGLTexture(WebGLRenderingContextBase*);
-
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
+    static GLint computeLevelCount(GLsizei width, GLsizei height, GLsizei depth);
 
 private:
+    explicit WebGLTexture(WebGLRenderingContextBase*);
+
+    void deleteObjectImpl(WebGraphicsContext3D*) override;
+
     class LevelInfo {
     public:
         LevelInfo()
@@ -89,16 +90,18 @@ private:
             , internalFormat(0)
             , width(0)
             , height(0)
+            , depth(0)
             , type(0)
         {
         }
 
-        void setInfo(GLenum internalFmt, GLsizei w, GLsizei h, GLenum tp)
+        void setInfo(GLenum internalFmt, GLsizei w, GLsizei h, GLsizei d, GLenum tp)
         {
             valid = true;
             internalFormat = internalFmt;
             width = w;
             height = h;
+            depth = d;
             type = tp;
         }
 
@@ -106,10 +109,11 @@ private:
         GLenum internalFormat;
         GLsizei width;
         GLsizei height;
+        GLsizei depth;
         GLenum type;
     };
 
-    virtual bool isTexture() const override { return true; }
+    bool isTexture() const override { return true; }
 
     void update();
 
@@ -117,10 +121,13 @@ private:
 
     const LevelInfo* getLevelInfo(GLenum target, GLint level) const;
 
+    static GLenum getValidTypeForInternalFormat(GLenum);
+
     GLenum m_target;
 
     GLenum m_minFilter;
     GLenum m_magFilter;
+    GLenum m_wrapR;
     GLenum m_wrapS;
     GLenum m_wrapT;
 
@@ -132,6 +139,10 @@ private:
     bool m_needToUseBlackTexture;
     bool m_isFloatType;
     bool m_isHalfFloatType;
+    bool m_isWebGL2OrHigher;
+    bool m_immutable;
+    size_t m_baseLevel;
+    size_t m_maxLevel;
 };
 
 } // namespace blink

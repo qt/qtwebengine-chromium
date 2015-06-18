@@ -17,10 +17,8 @@ namespace content {
 
 NavigationURLLoaderImpl::NavigationURLLoaderImpl(
     BrowserContext* browser_context,
-    int64 frame_tree_node_id,
-    const CommonNavigationParams& common_params,
+    int frame_tree_node_id,
     scoped_ptr<NavigationRequestInfo> request_info,
-    ResourceRequestBody* request_body,
     NavigationURLLoaderDelegate* delegate)
     : delegate_(delegate),
       weak_factory_(this) {
@@ -31,8 +29,7 @@ NavigationURLLoaderImpl::NavigationURLLoaderImpl(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NavigationURLLoaderImplCore::Start, base::Unretained(core_),
                  browser_context->GetResourceContext(), frame_tree_node_id,
-                 common_params, base::Passed(&request_info),
-                 make_scoped_refptr(request_body)));
+                 base::Passed(&request_info)));
 }
 
 NavigationURLLoaderImpl::~NavigationURLLoaderImpl() {
@@ -67,10 +64,17 @@ void NavigationURLLoaderImpl::NotifyResponseStarted(
   delegate_->OnResponseStarted(response, body.Pass());
 }
 
-void NavigationURLLoaderImpl::NotifyRequestFailed(int net_error) {
+void NavigationURLLoaderImpl::NotifyRequestFailed(bool in_cache,
+                                                  int net_error) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  delegate_->OnRequestFailed(net_error);
+  delegate_->OnRequestFailed(in_cache, net_error);
+}
+
+void NavigationURLLoaderImpl::NotifyRequestStarted(base::TimeTicks timestamp) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  delegate_->OnRequestStarted(timestamp);
 }
 
 }  // namespace content

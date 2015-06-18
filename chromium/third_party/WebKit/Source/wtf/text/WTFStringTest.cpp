@@ -132,20 +132,21 @@ TEST(WTF, StringReplaceWithLiteral)
     ASSERT_STREQ("1224", testString.utf8().data());
 
     // Cases for 16Bit source.
-    testString = String::fromUTF8("résumé");
+    // U+00E9 (=0xC3 0xA9 in UTF-8) is e with accent.
+    testString = String::fromUTF8("r\xC3\xA9sum\xC3\xA9");
     ASSERT_FALSE(testString.is8Bit());
-    testString.replaceWithLiteral(UChar(0x00E9 /*U+00E9 is 'é'*/), "e");
+    testString.replaceWithLiteral(UChar(0x00E9), "e");
     ASSERT_STREQ("resume", testString.utf8().data());
 
-    testString = String::fromUTF8("résumé");
+    testString = String::fromUTF8("r\xC3\xA9sum\xC3\xA9");
     ASSERT_FALSE(testString.is8Bit());
-    testString.replaceWithLiteral(UChar(0x00E9 /*U+00E9 is 'é'*/), "");
+    testString.replaceWithLiteral(UChar(0x00E9), "");
     ASSERT_STREQ("rsum", testString.utf8().data());
 
-    testString = String::fromUTF8("résumé");
+    testString = String::fromUTF8("r\xC3\xA9sum\xC3\xA9");
     ASSERT_FALSE(testString.is8Bit());
     testString.replaceWithLiteral('3', "NotFound");
-    ASSERT_STREQ("résumé", testString.utf8().data());
+    ASSERT_STREQ("r\xC3\xA9sum\xC3\xA9", testString.utf8().data());
 }
 
 TEST(WTF, StringComparisonOfSameStringVectors)
@@ -313,6 +314,25 @@ TEST(WTF, StringToLowerLocale)
             EXPECT_STREQ(expected, source.lower(locale).utf8().data()) << testDataList[i].sourceDescription << "; locale=" << locale;
         }
     }
+}
+
+TEST(WTF, StartsWithIgnoringASCIICase)
+{
+    String allASCII("LINK");
+    String allASCIILowerCase("link");
+    EXPECT_TRUE(startsWithIgnoringASCIICase(allASCII, allASCIILowerCase));
+    String allASCIIMixedCase("lInK");
+    EXPECT_TRUE(startsWithIgnoringASCIICase(allASCII, allASCIIMixedCase));
+    String allASCIIDifferent("foo");
+    EXPECT_FALSE(startsWithIgnoringASCIICase(allASCII, allASCIIDifferent));
+    String nonASCII = String::fromUTF8("LIN\xE2\x84\xAA");
+    EXPECT_FALSE(startsWithIgnoringASCIICase(allASCII, nonASCII));
+    EXPECT_TRUE(startsWithIgnoringASCIICase(allASCII, nonASCII.lower()));
+
+    EXPECT_FALSE(startsWithIgnoringASCIICase(nonASCII, allASCII));
+    EXPECT_FALSE(startsWithIgnoringASCIICase(nonASCII, allASCIILowerCase));
+    EXPECT_FALSE(startsWithIgnoringASCIICase(nonASCII, allASCIIMixedCase));
+    EXPECT_FALSE(startsWithIgnoringASCIICase(nonASCII, allASCIIDifferent));
 }
 
 } // namespace

@@ -10,6 +10,7 @@
 
 #include "webrtc/p2p/base/stunrequest.h"
 
+#include <algorithm>
 #include "webrtc/base/common.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/logging.h"
@@ -41,9 +42,14 @@ void StunRequestManager::Send(StunRequest* request) {
 void StunRequestManager::SendDelayed(StunRequest* request, int delay) {
   request->set_manager(this);
   ASSERT(requests_.find(request->id()) == requests_.end());
+  request->set_origin(origin_);
   request->Construct();
   requests_[request->id()] = request;
-  thread_->PostDelayed(delay, request, MSG_STUN_SEND, NULL);
+  if (delay > 0) {
+    thread_->PostDelayed(delay, request, MSG_STUN_SEND, NULL);
+  } else {
+    thread_->Send(request, MSG_STUN_SEND, NULL);
+  }
 }
 
 void StunRequestManager::Remove(StunRequest* request) {
@@ -138,6 +144,10 @@ StunRequest::~StunRequest() {
 
 void StunRequest::Construct() {
   if (msg_->type() == 0) {
+    if (!origin_.empty()) {
+      msg_->AddAttribute(new StunByteStringAttribute(STUN_ATTR_ORIGIN,
+          origin_));
+    }
     Prepare(msg_);
     ASSERT(msg_->type() != 0);
   }
@@ -183,7 +193,7 @@ void StunRequest::OnMessage(rtc::Message* pmsg) {
 }
 
 int StunRequest::GetNextDelay() {
-  int delay = DELAY_UNIT * rtc::_min(1 << count_, DELAY_MAX_FACTOR);
+  int delay = DELAY_UNIT * std::min(1 << count_, DELAY_MAX_FACTOR);
   count_ += 1;
   if (count_ == MAX_SENDS)
     timeout_ = true;

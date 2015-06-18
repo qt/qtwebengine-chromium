@@ -65,8 +65,7 @@ class BASE_PREFS_EXPORT PrefMemberBase : public PrefObserver {
                      bool is_user_modifiable,
                      const base::Closure& callback) const;
 
-    void MoveToThread(
-        const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+    void MoveToThread(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
     // See PrefMember<> for description.
     bool IsManaged() const {
@@ -92,7 +91,7 @@ class BASE_PREFS_EXPORT PrefMemberBase : public PrefObserver {
 
     bool IsOnCorrectThread() const;
 
-    scoped_refptr<base::SingleThreadTaskRunner> thread_loop_;
+    scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner_;
     mutable bool is_managed_;
     mutable bool is_user_modifiable_;
 
@@ -103,17 +102,17 @@ class BASE_PREFS_EXPORT PrefMemberBase : public PrefObserver {
   virtual ~PrefMemberBase();
 
   // See PrefMember<> for description.
-  void Init(const char* pref_name, PrefService* prefs,
+  void Init(const std::string& pref_name,
+            PrefService* prefs,
             const NamedChangeCallback& observer);
-  void Init(const char* pref_name, PrefService* prefs);
+  void Init(const std::string& pref_name, PrefService* prefs);
 
   virtual void CreateInternal() const = 0;
 
   // See PrefMember<> for description.
   void Destroy();
 
-  void MoveToThread(
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+  void MoveToThread(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   // PrefObserver
   void OnPreferenceChanged(PrefService* service,
@@ -169,17 +168,19 @@ class PrefMember : public subtle::PrefMemberBase {
   // Do the actual initialization of the class.  Use the two-parameter
   // version if you don't want any notifications of changes.  This
   // method should only be called on the UI thread.
-  void Init(const char* pref_name, PrefService* prefs,
+  void Init(const std::string& pref_name,
+            PrefService* prefs,
             const NamedChangeCallback& observer) {
     subtle::PrefMemberBase::Init(pref_name, prefs, observer);
   }
-  void Init(const char* pref_name, PrefService* prefs,
+  void Init(const std::string& pref_name,
+            PrefService* prefs,
             const base::Closure& observer) {
     subtle::PrefMemberBase::Init(
         pref_name, prefs,
         base::Bind(&PrefMemberBase::InvokeUnnamedCallback, observer));
   }
-  void Init(const char* pref_name, PrefService* prefs) {
+  void Init(const std::string& pref_name, PrefService* prefs) {
     subtle::PrefMemberBase::Init(pref_name, prefs);
   }
 
@@ -198,8 +199,7 @@ class PrefMember : public subtle::PrefMemberBase {
   // via PostTask.
   // This method should only be used from the thread the PrefMember is currently
   // on, which is the UI thread by default.
-  void MoveToThread(
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
+  void MoveToThread(scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
     subtle::PrefMemberBase::MoveToThread(task_runner);
   }
 
@@ -261,20 +261,21 @@ class PrefMember : public subtle::PrefMemberBase {
     }
 
    protected:
-    virtual ~Internal() {}
+    ~Internal() override {}
 
-    virtual BASE_PREFS_EXPORT bool UpdateValueInternal(
+    BASE_PREFS_EXPORT bool UpdateValueInternal(
         const base::Value& value) const override;
 
     // We cache the value of the pref so we don't have to keep walking the pref
     // tree.
     mutable ValueType value_;
 
+   private:
     DISALLOW_COPY_AND_ASSIGN(Internal);
   };
 
-  virtual Internal* internal() const override { return internal_.get(); }
-  virtual void CreateInternal() const override { internal_ = new Internal(); }
+  Internal* internal() const override { return internal_.get(); }
+  void CreateInternal() const override { internal_ = new Internal(); }
 
   // This method is used to do the actual sync with pref of the specified type.
   void BASE_PREFS_EXPORT UpdatePref(const ValueType& value);

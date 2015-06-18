@@ -13,9 +13,10 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/files/important_file_writer.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
 #include "base/prefs/base_prefs_export.h"
 #include "base/prefs/persistent_pref_store.h"
@@ -24,11 +25,18 @@
 class PrefFilter;
 
 namespace base {
+class Clock;
 class DictionaryValue;
 class FilePath;
+class HistogramBase;
+class JsonPrefStoreLossyWriteTest;
 class SequencedTaskRunner;
 class SequencedWorkerPool;
 class Value;
+FORWARD_DECLARE_TEST(JsonPrefStoreTest, WriteCountHistogramTestBasic);
+FORWARD_DECLARE_TEST(JsonPrefStoreTest, WriteCountHistogramTestSinglePeriod);
+FORWARD_DECLARE_TEST(JsonPrefStoreTest, WriteCountHistogramTestMultiplePeriods);
+FORWARD_DECLARE_TEST(JsonPrefStoreTest, WriteCountHistogramTestPeriodWithGaps);
 }
 
 // A writable PrefStore implementation that is used for user preferences.
@@ -75,9 +83,13 @@ class BASE_PREFS_EXPORT JsonPrefStore
 
   // PersistentPrefStore overrides:
   bool GetMutableValue(const std::string& key, base::Value** result) override;
-  void SetValue(const std::string& key, base::Value* value) override;
-  void SetValueSilently(const std::string& key, base::Value* value) override;
-  void RemoveValue(const std::string& key) override;
+  void SetValue(const std::string& key,
+                base::Value* value,
+                uint32 flags) override;
+  void SetValueSilently(const std::string& key,
+                        base::Value* value,
+                        uint32 flags) override;
+  void RemoveValue(const std::string& key, uint32 flags) override;
   bool ReadOnly() const override;
   PrefReadError GetReadError() const override;
   // Note this method may be asynchronous if this instance has a |pref_filter_|
@@ -86,11 +98,11 @@ class BASE_PREFS_EXPORT JsonPrefStore
   PrefReadError ReadPrefs() override;
   void ReadPrefsAsync(ReadErrorDelegate* error_delegate) override;
   void CommitPendingWrite() override;
-  void ReportValueChanged(const std::string& key) override;
+  void ReportValueChanged(const std::string& key, uint32 flags) override;
 
   // Just like RemoveValue(), but doesn't notify observers. Used when doing some
   // cleanup that shouldn't otherwise alert observers.
-  void RemoveValueSilently(const std::string& key);
+  void RemoveValueSilently(const std::string& key, uint32 flags);
 
   // Registers |on_next_successful_write| to be called once, on the next
   // successful write event of |writer_|.
@@ -98,6 +110,64 @@ class BASE_PREFS_EXPORT JsonPrefStore
       const base::Closure& on_next_successful_write);
 
  private:
+  // Represents a histogram for recording the number of writes to the pref file
+  // that occur every kHistogramWriteReportIntervalInMins minutes.
+  class BASE_PREFS_EXPORT WriteCountHistogram {
+   public:
+    static const int32_t kHistogramWriteReportIntervalMins;
+
+    WriteCountHistogram(const base::TimeDelta& commit_interval,
+                        const base::FilePath& path);
+    // Constructor for testing. |clock| is a test Clock that is used to retrieve
+    // the time.
+    WriteCountHistogram(const base::TimeDelta& commit_interval,
+                        const base::FilePath& path,
+                        scoped_ptr<base::Clock> clock);
+    ~WriteCountHistogram();
+
+    // Record that a write has occured.
+    void RecordWriteOccured();
+
+    // Reports writes (that have not yet been reported) in all of the recorded
+    // intervals that have elapsed up until current time.
+    void ReportOutstandingWrites();
+
+    base::HistogramBase* GetHistogram();
+
+   private:
+    // The minimum interval at which writes can occur.
+    const base::TimeDelta commit_interval_;
+
+    // The path to the file.
+    const base::FilePath path_;
+
+    // Clock which is used to retrieve the current time.
+    scoped_ptr<base::Clock> clock_;
+
+    // The interval at which to report write counts.
+    const base::TimeDelta report_interval_;
+
+    // The time at which the last histogram value was reported for the number
+    // of write counts.
+    base::Time last_report_time_;
+
+    // The number of writes that have occured since the last write count was
+    // reported.
+    uint32_t writes_since_last_report_;
+
+    DISALLOW_COPY_AND_ASSIGN(WriteCountHistogram);
+  };
+
+  FRIEND_TEST_ALL_PREFIXES(base::JsonPrefStoreTest,
+                           WriteCountHistogramTestBasic);
+  FRIEND_TEST_ALL_PREFIXES(base::JsonPrefStoreTest,
+                           WriteCountHistogramTestSinglePeriod);
+  FRIEND_TEST_ALL_PREFIXES(base::JsonPrefStoreTest,
+                           WriteCountHistogramTestMultiplePeriods);
+  FRIEND_TEST_ALL_PREFIXES(base::JsonPrefStoreTest,
+                           WriteCountHistogramTestPeriodWithGaps);
+  friend class base::JsonPrefStoreLossyWriteTest;
+
   ~JsonPrefStore() override;
 
   // This method is called after the JSON file has been read.  It then hands
@@ -122,6 +192,10 @@ class BASE_PREFS_EXPORT JsonPrefStore
                         scoped_ptr<base::DictionaryValue> prefs,
                         bool schedule_write);
 
+  // Schedule a write with the file writer as long as |flags| doesn't contain
+  // WriteablePrefStore::LOSSY_PREF_WRITE_FLAG.
+  void ScheduleWrite(uint32 flags);
+
   const base::FilePath path_;
   const base::FilePath alternate_path_;
   const scoped_refptr<base::SequencedTaskRunner> sequenced_task_runner_;
@@ -140,9 +214,12 @@ class BASE_PREFS_EXPORT JsonPrefStore
 
   bool initialized_;
   bool filtering_in_progress_;
+  bool pending_lossy_write_;
   PrefReadError read_error_;
 
   std::set<std::string> keys_need_empty_value_;
+
+  WriteCountHistogram write_count_histogram_;
 
   DISALLOW_COPY_AND_ASSIGN(JsonPrefStore);
 };

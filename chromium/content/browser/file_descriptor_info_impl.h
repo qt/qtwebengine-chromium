@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_PUBLIC_BROWSER_FILE_DESCRIPTOR_INFO_IMPL_H_
-#define CONTENT_PUBLIC_BROWSER_FILE_DESCRIPTOR_INFO_IMPL_H_
+#ifndef CONTENT_BROWSER_FILE_DESCRIPTOR_INFO_IMPL_H_
+#define CONTENT_BROWSER_FILE_DESCRIPTOR_INFO_IMPL_H_
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -25,6 +25,8 @@ class FileDescriptorInfoImpl : public FileDescriptorInfo {
   base::PlatformFile GetFDAt(size_t i) const override;
   int GetIDAt(size_t i) const override;
   size_t GetMappingSize() const override;
+  bool OwnsFD(base::PlatformFile file) const override;
+  base::ScopedFD ReleaseFD(base::PlatformFile file) override;
 
  private:
   FileDescriptorInfoImpl();
@@ -36,4 +38,4 @@ class FileDescriptorInfoImpl : public FileDescriptorInfo {
 };
 }
 
-#endif  // CONTENT_PUBLIC_BROWSER_FILE_DESCRIPTOR_INFO_IMPL_H_
+#endif  // CONTENT_BROWSER_FILE_DESCRIPTOR_INFO_IMPL_H_

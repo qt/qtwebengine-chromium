@@ -20,9 +20,12 @@ namespace {
 // of FFmpeg.
 const int kInitialReadBufferSize = 32768;
 
-// Number of cache misses we allow for a single Read() before signaling an
-// error.
-const int kNumCacheMissRetries = 3;
+// Number of cache misses or read failures we allow for a single Read() before
+// signaling an error.
+const int kLoaderRetries = 3;
+
+// The number of milliseconds to wait before retrying a failed load.
+const int kLoaderFailedRetryDelayMs = 250;
 
 }  // namespace
 
@@ -102,11 +105,15 @@ BufferedDataSource::BufferedDataSource(
       host_(host),
       downloading_cb_(downloading_cb),
       weak_factory_(this) {
+  weak_ptr_ = weak_factory_.GetWeakPtr();
   DCHECK(host_);
   DCHECK(!downloading_cb_.is_null());
+  DCHECK(render_task_runner_->BelongsToCurrentThread());
 }
 
-BufferedDataSource::~BufferedDataSource() {}
+BufferedDataSource::~BufferedDataSource() {
+  DCHECK(render_task_runner_->BelongsToCurrentThread());
+}
 
 // A factory method to create BufferedResourceLoader using the read parameters.
 // This method can be overridden to inject mock BufferedResourceLoader object
@@ -182,11 +189,11 @@ void BufferedDataSource::Abort() {
   frame_ = NULL;
 }
 
-void BufferedDataSource::MediaPlaybackRateChanged(float playback_rate) {
+void BufferedDataSource::MediaPlaybackRateChanged(double playback_rate) {
   DCHECK(render_task_runner_->BelongsToCurrentThread());
   DCHECK(loader_.get());
 
-  if (playback_rate < 0.0f)
+  if (playback_rate < 0.0)
     return;
 
   playback_rate_ = playback_rate;
@@ -222,6 +229,12 @@ void BufferedDataSource::SetBitrate(int bitrate) {
                          base::Bind(&BufferedDataSource::SetBitrateTask,
                                     weak_factory_.GetWeakPtr(),
                                     bitrate));
+}
+
+void BufferedDataSource::OnBufferingHaveEnough() {
+  DCHECK(render_task_runner_->BelongsToCurrentThread());
+  if (loader_ && preload_ == METADATA && !media_has_played_ && !IsStreaming())
+    loader_->CancelUponDeferral();
 }
 
 void BufferedDataSource::Read(
@@ -424,8 +437,19 @@ void BufferedDataSource::ReadCallback(
     // Stop the resource load if it failed.
     loader_->Stop();
 
-    if (status == BufferedResourceLoader::kCacheMiss &&
-        read_op_->retries() < kNumCacheMissRetries) {
+    if (read_op_->retries() < kLoaderRetries) {
+      // Allow some resiliency against sporadic network failures or intentional
+      // cancellations due to a system suspend / resume.  Here we treat failed
+      // reads as a cache miss so long as we haven't exceeded max retries.
+      if (status == BufferedResourceLoader::kFailed) {
+        render_task_runner_->PostDelayedTask(
+            FROM_HERE, base::Bind(&BufferedDataSource::ReadCallback,
+                                  weak_factory_.GetWeakPtr(),
+                                  BufferedResourceLoader::kCacheMiss, 0),
+            base::TimeDelta::FromMilliseconds(kLoaderFailedRetryDelayMs));
+        return;
+      }
+
       read_op_->IncrementRetries();
 
       // Recreate a loader starting from where we last left off until the

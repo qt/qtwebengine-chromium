@@ -14,14 +14,13 @@ namespace switches {
 
 MEDIA_EXPORT extern const char kAudioBufferSize[];
 
-MEDIA_EXPORT extern const char kVideoThreads[];
+MEDIA_EXPORT extern const char kDisableNewVideoRenderer[];
 
-MEDIA_EXPORT extern const char
-    kIgnoreResolutionLimitsForAcceleratedVideoDecode[];
+MEDIA_EXPORT extern const char kVideoThreads[];
 
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
-MEDIA_EXPORT extern const char kMediaDrmEnableNonCompositing[];
+MEDIA_EXPORT extern const char kEnableMediaThreadForMediaPlayback[];
 #endif
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
@@ -47,10 +46,17 @@ MEDIA_EXPORT extern const char kWaveOutBuffers[];
 MEDIA_EXPORT extern const char kUseCras[];
 #endif
 
+MEDIA_EXPORT extern const char kEnableAudioHangMonitor[];
+
 MEDIA_EXPORT extern const char kUseFakeDeviceForMediaStream[];
 MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
+MEDIA_EXPORT extern const char kUseFileForFakeAudioCapture[];
 
 MEDIA_EXPORT extern const char kEnableInbandTextTracks[];
+
+MEDIA_EXPORT extern const char kRequireAudioHardwareForTesting[];
+
+MEDIA_EXPORT extern const char kVideoUnderflowThresholdMs[];
 
 }  // namespace switches
 

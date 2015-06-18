@@ -7,19 +7,34 @@
       'variables': {
         'command': [
           './browser_tests_launcher.py',
-          '-f',
+          '--commands_file',
           './browser_test_commands_linux.txt',
-          '-p',
+          '--prod_dir',
           '<(PRODUCT_DIR)',
+          '--cfg_file',
+          '../../remoting/tools/internal/test-account-host-config.json',
+          '--me2me_manifest_file',
+          '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_desktop.json',
+          '--it2me_manifest_file',
+          '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_assistance.json',
+          '--user_profile_dir',
+          '/tmp/chromoting_test_profile',
         ],
         'files': [
           '../xvfb.py',
           './browser_tests_launcher.py',
           './browser_test_commands_linux.txt',
-          '../../remoting/tools/internal/test_accounts.json',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libosmesa.so',
           '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
+          '../../remoting/tools/internal/test-account-host-config.json',
+          '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_desktop.json',
+          '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_assistance.json',
+          '<(PRODUCT_DIR)/remoting-me2me-host.deb',
+          '<(PRODUCT_DIR)/nacl_helper',
+          '<(PRODUCT_DIR)/nacl_helper_bootstrap',
+          '<(PRODUCT_DIR)/pnacl/',
+          '../../remoting/internal/config/',
         ],
       },
     }],
@@ -36,7 +51,10 @@
           '../test_env.py',
           '<(PRODUCT_DIR)/browser_tests<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/remoting/remoting.webapp/',
+          '<(PRODUCT_DIR)/remoting/remoting.webapp.v2/',
+          '<(PRODUCT_DIR)/remoting/browser_test_resources/',
           '<(PRODUCT_DIR)/resources.pak',
+          '../../remoting/tools/internal/test_accounts.json',
         ],
         'read_only': 1,
       },
@@ -54,6 +72,7 @@
         'files': [
           '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
+          '<(PRODUCT_DIR)/libglesv2.dll',
         ],
       },
     }],
@@ -66,7 +85,22 @@
         ],
       },
     }],
-    ['OS=="mac" or OS=="win"', {
+    ['OS=="win"', {
+      'variables': {
+        'command': [
+          '../test_env.py',
+          '<(PRODUCT_DIR)/browser_tests<(EXECUTABLE_SUFFIX)',
+          '--gtest_filter=RemoteDesktopBrowserTest.MANUAL_Launch:RemoteDesktopBrowserTest.MANUAL_Auth',
+          '--run-manual',
+          '--ui-test-action-timeout=100000',
+          '--webapp-unpacked=<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
+          '--extension-name=Chromoting',
+          '--accounts-file=../../remoting/tools/internal/test_accounts.json',
+          '--account-type=gmail',
+        ],
+      },
+    }],
+    ['OS=="mac"', {
       'variables': {
         'command': [
           '../test_env.py',
@@ -74,13 +108,23 @@
           '--gtest_filter=RemoteDesktopBrowserTest.MANUAL_Launch',
           '--run-manual',
           '--ui-test-action-timeout=100000',
-          '--webapp-unpacked=<(PRODUCT_DIR)/remoting/remoting.webapp',
+          '--webapp-unpacked=<(PRODUCT_DIR)/remoting/remoting.webapp.v2',
           '--extension-name=Chromoting',
+          '--accounts-file=../../remoting/tools/internal/test_accounts.json',
+          '--account-type=gmail',
+        ],
+      },
+    }],
+    ['OS=="win" and kasko==1', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/kasko.dll',
         ],
       },
     }],
   ],
   'includes': [
     '../../base/base.isolate',
+    '../../gin/v8.isolate',
   ],
 }

@@ -34,11 +34,11 @@ namespace blink {
 class HTMLStyleElement;
 class StyleSheet;
 
-class StyleSheetList : public RefCountedWillBeGarbageCollectedFinalized<StyleSheetList>, public ScriptWrappable {
+class StyleSheetList final : public RefCountedWillBeGarbageCollected<StyleSheetList>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(StyleSheetList);
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<StyleSheetList> create(TreeScope* treeScope) { return adoptRefWillBeNoop(new StyleSheetList(treeScope)); }
-    ~StyleSheetList();
 
     unsigned length();
     StyleSheet* item(unsigned index);
@@ -53,15 +53,15 @@ public:
 
     CSSStyleSheet* anonymousNamedGetter(const AtomicString&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    StyleSheetList(TreeScope*);
-    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheets();
+    explicit StyleSheetList(TreeScope*);
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& styleSheets();
 
     RawPtrWillBeMember<TreeScope> m_treeScope;
 #if !ENABLE(OILPAN)
-    Vector<RefPtr<StyleSheet> > m_detachedStyleSheets;
+    Vector<RefPtr<StyleSheet>> m_detachedStyleSheets;
 #endif
 };
 

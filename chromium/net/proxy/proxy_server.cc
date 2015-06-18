@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/basictypes.h"
 #include "base/strings/string_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
@@ -230,7 +231,7 @@ ProxyServer ProxyServer::FromSchemeHostAndPort(
     std::string host;
     int port = -1;
     // If the scheme has a host/port, parse it.
-    bool ok = net::ParseHostAndPort(begin, end, &host, &port);
+    bool ok = ParseHostAndPort(begin, end, &host, &port);
     if (!ok)
       return ProxyServer();  // Invalid -- failed parsing <host>[":"<port>]
 
@@ -238,7 +239,7 @@ ProxyServer ProxyServer::FromSchemeHostAndPort(
     if (port == -1)
       port = GetDefaultPortForScheme(scheme);
 
-    host_port_pair = HostPortPair(host, port);
+    host_port_pair = HostPortPair(host, static_cast<uint16>(port));
   }
 
   return ProxyServer(scheme, host_port_pair);

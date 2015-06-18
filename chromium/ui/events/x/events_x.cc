@@ -4,13 +4,13 @@
 
 #include "ui/events/event_constants.h"
 
-#include <cmath>
 #include <string.h>
 #include <X11/extensions/XInput.h>
 #include <X11/extensions/XInput2.h>
+#include <X11/XKBlib.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <X11/XKBlib.h>
+#include <cmath>
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -21,8 +21,8 @@
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/gfx/x/x11_types.h"
@@ -109,7 +109,6 @@ class XModifierStateWatcher{
   DISALLOW_COPY_AND_ASSIGN(XModifierStateWatcher);
 };
 
-#if defined(USE_XI2_MT)
 // Detects if a touch event is a driver-generated 'special event'.
 // A 'special event' is a touch event with maximum radius and pressure at
 // location (0, 0).
@@ -139,7 +138,6 @@ bool TouchEventIsGeneratedHack(const base::NativeEvent& native_event) {
 
   return radius * 2 == max;
 }
-#endif
 
 int GetEventFlagsFromXState(unsigned int state) {
   int flags = 0;
@@ -163,6 +161,8 @@ int GetEventFlagsFromXState(unsigned int state) {
     flags |= ui::EF_MIDDLE_MOUSE_BUTTON;
   if (state & Button3Mask)
     flags |= ui::EF_RIGHT_MOUSE_BUTTON;
+  // There are no masks for EF_BACK_MOUSE_BUTTON and
+  // EF_FORWARD_MOUSE_BUTTON.
   return flags;
 }
 
@@ -191,9 +191,6 @@ int GetEventFlagsFromXKeyEvent(XEvent* xevent) {
 
   return GetEventFlagsFromXState(xevent->xkey.state) |
       (xevent->xkey.send_event ? ui::EF_FINAL : 0) |
-      (IsKeypadKey(XLookupKeysym(&xevent->xkey, 0)) ? ui::EF_NUMPAD_KEY : 0) |
-      (IsFunctionKey(XLookupKeysym(&xevent->xkey, 0)) ?
-          ui::EF_FUNCTION_KEY : 0) |
       ime_fabricated_flag;
 }
 
@@ -203,11 +200,7 @@ int GetEventFlagsFromXGenericEvent(XEvent* xevent) {
   DCHECK((xievent->evtype == XI_KeyPress) ||
          (xievent->evtype == XI_KeyRelease));
   return GetEventFlagsFromXState(xievent->mods.effective) |
-         (xevent->xkey.send_event ? ui::EF_FINAL : 0) |
-         (IsKeypadKey(
-              XkbKeycodeToKeysym(xievent->display, xievent->detail, 0, 0))
-              ? ui::EF_NUMPAD_KEY
-              : 0);
+         (xevent->xkey.send_event ? ui::EF_FINAL : 0);
 }
 
 // Get the event flag for the button in XButtonEvent. During a ButtonPress
@@ -226,6 +219,10 @@ int GetEventFlagsForButton(int button) {
       return ui::EF_MIDDLE_MOUSE_BUTTON;
     case 3:
       return ui::EF_RIGHT_MOUSE_BUTTON;
+    case 8:
+      return ui::EF_BACK_MOUSE_BUTTON;
+    case 9:
+      return ui::EF_FORWARD_MOUSE_BUTTON;
     default:
       return 0;
   }
@@ -246,7 +243,6 @@ int GetButtonMaskForX2Event(XIDeviceEvent* xievent) {
 ui::EventType GetTouchEventType(const base::NativeEvent& native_event) {
   XIDeviceEvent* event =
       static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-#if defined(USE_XI2_MT)
   switch(event->evtype) {
     case XI_TouchBegin:
       return TouchEventIsGeneratedHack(native_event) ? ui::ET_UNKNOWN :
@@ -258,7 +254,6 @@ ui::EventType GetTouchEventType(const base::NativeEvent& native_event) {
       return TouchEventIsGeneratedHack(native_event) ? ui::ET_TOUCH_CANCELLED :
                                                        ui::ET_TOUCH_RELEASED;
   }
-#endif  // defined(USE_XI2_MT)
 
   DCHECK(ui::TouchFactory::GetInstance()->IsTouchDevice(event->sourceid));
   switch (event->evtype) {
@@ -306,7 +301,6 @@ unsigned int UpdateX11EventFlags(int ui_flags, unsigned int old_x_flags) {
     {ui::EF_ALTGR_DOWN, Mod5Mask},
     {ui::EF_COMMAND_DOWN, Mod4Mask},
     {ui::EF_MOD3_DOWN, Mod3Mask},
-    {ui::EF_NUMPAD_KEY, Mod2Mask},
     {ui::EF_LEFT_MOUSE_BUTTON, Button1Mask},
     {ui::EF_MIDDLE_MOUSE_BUTTON, Button2Mask},
     {ui::EF_RIGHT_MOUSE_BUTTON, Button3Mask},
@@ -487,7 +481,6 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
 
       switch (xievent->evtype) {
-#if defined(USE_XI2_MT)
         case XI_TouchBegin:
         case XI_TouchUpdate:
         case XI_TouchEnd:
@@ -496,7 +489,6 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
                  GetEventFlagsFromXState(
                      XModifierStateWatcher::GetInstance()->state());
           break;
-#endif
         case XI_ButtonPress:
         case XI_ButtonRelease: {
           const bool touch =
@@ -642,7 +634,7 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return KeyboardCodeFromXKeyEvent(native_event);
 }
 
-const char* CodeFromNative(const base::NativeEvent& native_event) {
+DomCode CodeFromNative(const base::NativeEvent& native_event) {
   return CodeFromXEvent(native_event);
 }
 
@@ -690,7 +682,7 @@ int GetChangedMouseButtonFlagsFromNative(
   switch (native_event->type) {
     case ButtonPress:
     case ButtonRelease:
-      return GetEventFlagsFromXState(native_event->xbutton.state);
+      return GetEventFlagsForButton(native_event->xbutton.button);
     case GenericEvent: {
       XIDeviceEvent* xievent =
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
@@ -743,18 +735,6 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
   delete event;
-}
-
-void IncrementTouchIdRefCount(const base::NativeEvent& xev) {
-  ui::DeviceDataManagerX11* manager = ui::DeviceDataManagerX11::GetInstance();
-  double tracking_id;
-  if (!manager->GetEventData(
-          *xev, ui::DeviceDataManagerX11::DT_TOUCH_TRACKING_ID, &tracking_id)) {
-    return;
-  }
-
-  ui::TouchFactory* factory = ui::TouchFactory::GetInstance();
-  factory->AcquireSlotForTrackingID(tracking_id);
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {

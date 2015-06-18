@@ -14,9 +14,9 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "third_party/WebKit/public/platform/WebArrayBuffer.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/web/WebArrayBuffer.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
@@ -213,7 +213,7 @@ int32_t PepperWebSocketHost::OnHostMsgConnect(
     return PP_ERROR_BADARGUMENT;
   if (gurl.has_ref())
     return PP_ERROR_BADARGUMENT;
-  if (!net::IsPortAllowedByDefault(gurl.IntPort()))
+  if (!net::IsPortAllowedByDefault(gurl.EffectiveIntPort()))
     return PP_ERROR_BADARGUMENT;
   WebURL web_url(gurl);
 

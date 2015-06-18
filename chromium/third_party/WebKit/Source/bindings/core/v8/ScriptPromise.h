@@ -33,6 +33,7 @@
 
 #include "bindings/core/v8/ScriptFunction.h"
 #include "bindings/core/v8/ScriptValue.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
@@ -46,16 +47,16 @@ class DOMException;
 // So holding a ScriptPromise as a member variable in DOM object causes
 // memory leaks since it has a reference from C++ to V8.
 //
-class ScriptPromise final {
+class CORE_EXPORT ScriptPromise final {
 public:
     // Constructs an empty promise.
     ScriptPromise() { }
 
     // Constructs a ScriptPromise from |promise|.
     // If |promise| is not a Promise object, throws a v8 TypeError.
-    ScriptPromise(ScriptState*, v8::Handle<v8::Value> promise);
+    ScriptPromise(ScriptState*, v8::Local<v8::Value> promise);
 
-    ScriptPromise then(v8::Handle<v8::Function> onFulfilled, v8::Handle<v8::Function> onRejected = v8::Handle<v8::Function>());
+    ScriptPromise then(v8::Local<v8::Function> onFulfilled, v8::Local<v8::Function> onRejected = v8::Local<v8::Function>());
 
     bool isObject() const
     {
@@ -72,7 +73,12 @@ public:
         return m_promise.isUndefined() || m_promise.isNull();
     }
 
-    v8::Handle<v8::Value> v8Value() const
+    ScriptValue scriptValue() const
+    {
+        return m_promise;
+    }
+
+    v8::Local<v8::Value> v8Value() const
     {
         return m_promise.v8Value();
     }
@@ -107,18 +113,18 @@ public:
     // resolved with |value|.
     // Returns |value| itself if it is a Promise.
     static ScriptPromise cast(ScriptState*, const ScriptValue& /*value*/);
-    static ScriptPromise cast(ScriptState*, v8::Handle<v8::Value> /*value*/);
+    static ScriptPromise cast(ScriptState*, v8::Local<v8::Value> /*value*/);
 
     static ScriptPromise reject(ScriptState*, const ScriptValue&);
-    static ScriptPromise reject(ScriptState*, v8::Handle<v8::Value>);
+    static ScriptPromise reject(ScriptState*, v8::Local<v8::Value>);
 
-    static ScriptPromise rejectWithDOMException(ScriptState*, PassRefPtrWillBeRawPtr<DOMException>);
+    static ScriptPromise rejectWithDOMException(ScriptState*, DOMException*);
 
-    static v8::Local<v8::Promise> rejectRaw(v8::Isolate*, v8::Handle<v8::Value>);
+    static v8::Local<v8::Promise> rejectRaw(ScriptState*, v8::Local<v8::Value>);
 
     // This is a utility class intended to be used internally.
     // ScriptPromiseResolver is for general purpose.
-    class InternalResolver final {
+    class CORE_EXPORT InternalResolver final {
     public:
         explicit InternalResolver(ScriptState*);
         v8::Local<v8::Promise> v8Promise() const;

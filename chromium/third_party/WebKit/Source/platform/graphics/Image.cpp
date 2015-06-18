@@ -29,17 +29,22 @@
 
 #include "platform/Length.h"
 #include "platform/MIMETypeRegistry.h"
+#include "platform/PlatformInstrumentation.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/BitmapImage.h"
+#include "platform/graphics/DeferredImageDecoder.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
 
@@ -92,15 +97,14 @@ bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
     return dataChanged(allDataReceived);
 }
 
-void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, CompositeOperator op)
+void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, SkXfermode::Mode op)
 {
     if (!color.alpha())
         return;
 
-    CompositeOperator previousOperator = ctxt->compositeOperation();
-    ctxt->setCompositeOperation(!color.hasAlpha() && op == CompositeSourceOver ? CompositeCopy : op);
-    ctxt->fillRect(dstRect, color);
-    ctxt->setCompositeOperation(previousOperator);
+    SkXfermode::Mode xferMode = !color.hasAlpha() && op == SkXfermode::kSrcOver_Mode ?
+        SkXfermode::kSrc_Mode : op;
+    ctxt->fillRect(dstRect, color, xferMode);
 }
 
 FloatRect Image::adjustForNegativeSize(const FloatRect& rect)
@@ -117,12 +121,7 @@ FloatRect Image::adjustForNegativeSize(const FloatRect& rect)
     return norm;
 }
 
-void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator op, WebBlendMode blendMode, RespectImageOrientationEnum)
-{
-    draw(ctx, dstRect, srcRect, op, blendMode);
-}
-
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op, WebBlendMode blendMode, const IntSize& repeatSpacing)
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, SkXfermode::Mode op, const IntSize& repeatSpacing)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, destRect, solidColor(), op);
@@ -154,19 +153,19 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
         visibleSrcRect.setWidth(destRect.width() / scale.width());
         visibleSrcRect.setHeight(destRect.height() / scale.height());
-        draw(ctxt, destRect, visibleSrcRect, op, blendMode);
+        draw(ctxt, destRect, visibleSrcRect, op, DoNotRespectImageOrientation);
         return;
     }
 
     FloatRect tileRect(FloatPoint(), intrinsicTileSize);
-    drawPattern(ctxt, tileRect, scale, oneTileRect.location(), op, destRect, blendMode, repeatSpacing);
+    drawPattern(ctxt, tileRect, scale, oneTileRect.location(), op, destRect, repeatSpacing);
 
     startAnimation();
 }
 
 // FIXME: Merge with the other drawTiled eventually, since we need a combination of both for some things.
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect,
-    const FloatSize& providedTileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator op)
+    const FloatSize& providedTileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode op)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, dstRect, solidColor(), op);
@@ -223,12 +222,78 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
     startAnimation();
 }
 
+namespace {
+
+PassRefPtr<SkShader> createPatternShader(const SkBitmap& bitmap, const SkMatrix& shaderMatrix,
+    const SkPaint& paint, const FloatSize& spacing)
+{
+    if (spacing.isZero()) {
+        return adoptRef(SkShader::CreateBitmapShader(
+            bitmap, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &shaderMatrix));
+    }
+
+    // Arbitrary tiling is currently only supported for SkPictureShader - so we use it instead
+    // of a plain bitmap shader to implement spacing.
+    const SkRect tileRect = SkRect::MakeWH(
+        bitmap.width() + spacing.width(),
+        bitmap.height() + spacing.height());
+
+    SkPictureRecorder recorder;
+    SkCanvas* canvas = recorder.beginRecording(tileRect);
+    canvas->drawBitmap(bitmap, 0, 0, &paint);
+    RefPtr<const SkPicture> picture = adoptRef(recorder.endRecordingAsPicture());
+
+    return adoptRef(SkShader::CreatePictureShader(
+        picture.get(), SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &shaderMatrix, nullptr));
+}
+
+} // anonymous namespace
+
 void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, WebBlendMode blendMode, const IntSize& repeatSpacing)
+    const FloatPoint& phase, SkXfermode::Mode compositeOp, const FloatRect& destRect, const IntSize& repeatSpacing)
 {
     TRACE_EVENT0("skia", "Image::drawPattern");
-    if (RefPtr<NativeImageSkia> bitmap = nativeImageForCurrentFrame())
-        bitmap->drawPattern(context, adjustForNegativeSize(floatSrcRect), scale, phase, compositeOp, destRect, blendMode, repeatSpacing);
+    SkBitmap bitmap;
+    if (!bitmapForCurrentFrame(&bitmap))
+        return;
+
+    FloatRect normSrcRect = floatSrcRect;
+
+    normSrcRect.intersect(FloatRect(0, 0, bitmap.width(), bitmap.height()));
+    if (destRect.isEmpty() || normSrcRect.isEmpty())
+        return; // nothing to draw
+
+    SkMatrix localMatrix;
+    // We also need to translate it such that the origin of the pattern is the
+    // origin of the destination rect, which is what WebKit expects. Skia uses
+    // the coordinate system origin as the base for the pattern. If WebKit wants
+    // a shifted image, it will shift it from there using the localMatrix.
+    const float adjustedX = phase.x() + normSrcRect.x() * scale.width();
+    const float adjustedY = phase.y() + normSrcRect.y() * scale.height();
+    localMatrix.setTranslate(SkFloatToScalar(adjustedX), SkFloatToScalar(adjustedY));
+
+    // Because no resizing occurred, the shader transform should be
+    // set to the pattern's transform, which just includes scale.
+    localMatrix.preScale(scale.width(), scale.height());
+
+    SkBitmap bitmapToPaint;
+    bitmap.extractSubset(&bitmapToPaint, enclosingIntRect(normSrcRect));
+
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap);
+    {
+        SkPaint paint;
+        int initialSaveCount = context->preparePaintForDrawRectToRect(&paint, floatSrcRect,
+            destRect, compositeOp, !bitmap.isOpaque(), isLazyDecoded, bitmap.isImmutable());
+        RefPtr<SkShader> shader = createPatternShader(bitmapToPaint, localMatrix, paint,
+            FloatSize(repeatSpacing.width() / scale.width(), repeatSpacing.height() / scale.height()));
+
+        paint.setShader(shader.get());
+        context->drawRect(destRect, paint);
+        context->canvas()->restoreToCount(initialSaveCount);
+    }
+
+    if (isLazyDecoded)
+        PlatformInstrumentation::didDrawLazyPixelRef(bitmap.getGenerationID());
 }
 
 void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
@@ -243,6 +308,11 @@ PassRefPtr<Image> Image::imageForDefaultFrame()
     RefPtr<Image> image(this);
 
     return image.release();
+}
+
+bool Image::bitmapForCurrentFrame(SkBitmap* bitmap)
+{
+    return false;
 }
 
 PassRefPtr<SkImage> Image::skImage()

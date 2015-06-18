@@ -20,11 +20,11 @@ public:
 
 protected:
 
-    virtual const char* onGetName() {
+    const char* onGetName() override {
         return "rectori";
     }
 
-    virtual void onDraw(const int loops, SkCanvas* canvas) SK_OVERRIDE {
+    void onDraw(const int loops, SkCanvas* canvas) override {
         SkRandom Random;
 
         for (int i = 0; i < loops; i++) {

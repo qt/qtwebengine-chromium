@@ -24,47 +24,50 @@
 #ifndef SVGPathParser_h
 #define SVGPathParser_h
 
-#include "core/svg/SVGPathConsumer.h"
 #include "core/svg/SVGPathSeg.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/text/WTFString.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
+enum PathParsingMode {
+    NormalizedParsing,
+    UnalteredParsing
+};
+
+class SVGPathConsumer;
 class SVGPathSource;
 
-class SVGPathParser {
-    WTF_MAKE_NONCOPYABLE(SVGPathParser); WTF_MAKE_FAST_ALLOCATED;
+class SVGPathParser final : public NoBaseWillBeGarbageCollected<SVGPathParser> {
+    WTF_MAKE_NONCOPYABLE(SVGPathParser); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(SVGPathParser);
 public:
-    SVGPathParser();
+    SVGPathParser(SVGPathSource* source, SVGPathConsumer* consumer)
+        : m_source(source)
+        , m_consumer(consumer)
+    {
+        ASSERT(m_source);
+        ASSERT(m_consumer);
+    }
 
-    bool parsePathDataFromSource(PathParsingMode, bool checkForInitialMoveTo = true);
-    void setCurrentConsumer(SVGPathConsumer* consumer) { m_consumer = consumer; }
-    void setCurrentSource(SVGPathSource* source) { m_source = source; }
-    void cleanup();
+    bool parsePathDataFromSource(PathParsingMode pathParsingMode, bool checkForInitialMoveTo = true)
+    {
+        ASSERT(m_source);
+        ASSERT(m_consumer);
+        if (checkForInitialMoveTo && !initialCommandIsMoveTo())
+            return false;
+        if (pathParsingMode == NormalizedParsing)
+            return parseAndNormalizePath();
+        return parsePath();
+    }
+
+    DECLARE_TRACE();
 
 private:
-    bool decomposeArcToCubic(float, float, float, FloatPoint&, FloatPoint&, bool largeArcFlag, bool sweepFlag);
-    void parseClosePathSegment();
-    bool parseMoveToSegment();
-    bool parseLineToSegment();
-    bool parseLineToHorizontalSegment();
-    bool parseLineToVerticalSegment();
-    bool parseCurveToCubicSegment();
-    bool parseCurveToCubicSmoothSegment();
-    bool parseCurveToQuadraticSegment();
-    bool parseCurveToQuadraticSmoothSegment();
-    bool parseArcToSegment();
+    bool initialCommandIsMoveTo();
+    bool parsePath();
+    bool parseAndNormalizePath();
 
-    SVGPathSource* m_source;
-    SVGPathConsumer* m_consumer;
-    PathCoordinateMode m_mode;
-    PathParsingMode m_pathParsingMode;
-    SVGPathSegType m_lastCommand;
-    bool m_closePath;
-    FloatPoint m_controlPoint;
-    FloatPoint m_currentPoint;
-    FloatPoint m_subPathPoint;
+    RawPtrWillBeMember<SVGPathSource> m_source;
+    RawPtrWillBeMember<SVGPathConsumer> m_consumer;
 };
 
 } // namespace blink

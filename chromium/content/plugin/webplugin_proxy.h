@@ -9,9 +9,6 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#if defined(OS_MACOSX)
-#include "base/mac/scoped_cftyperef.h"
-#endif
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
@@ -23,6 +20,12 @@
 #include "url/gurl.h"
 #include "ui/gl/gpu_preference.h"
 #include "ui/surface/transport_dib.h"
+
+#if defined(OS_MACOSX)
+#include <ApplicationServices/ApplicationServices.h>
+
+#include "base/mac/scoped_cftyperef.h"
+#endif
 
 struct PluginMsg_FetchURL_Params;
 
@@ -90,7 +93,7 @@ class WebPluginProxy : public WebPlugin,
   bool CheckIfRunInsecureContent(const GURL& url) override;
 #if defined(OS_WIN)
   void SetWindowlessData(HANDLE pump_messages_event,
-                         gfx::NativeViewId dummy_activation_window);
+                         gfx::NativeViewId dummy_activation_window) override;
 #endif
 #if defined(OS_MACOSX)
   void FocusChanged(bool focused) override;
@@ -131,7 +134,7 @@ class WebPluginProxy : public WebPlugin,
   void OnResourceCreated(int resource_id, WebPluginResourceClient* client);
 
 #if defined(OS_WIN) && !defined(USE_AURA)
-  // Retrieves the IME status from a windowless plug-in and sends it to a
+  // Retrieves the IME status from a windowless plugin and sends it to a
   // renderer process. A renderer process will convert the coordinates from
   // local to the window coordinates and send the converted coordinates to a
   // browser process.

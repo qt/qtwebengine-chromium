@@ -27,6 +27,7 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+enum AutoKeyword { "auto" };
 enum DirectionSetting { "" /* horizontal */, "rl", "lr" };
 enum AlignSetting { "start", "middle", "end", "left", "right" };
 
@@ -38,9 +39,9 @@ enum AlignSetting { "start", "middle", "end", "left", "right" };
     [RuntimeEnabled=WebVTTRegions] attribute DOMString regionId;
     attribute DirectionSetting vertical;
     attribute boolean snapToLines;
-    [RaisesException=Setter] attribute long line;
-    [RaisesException=Setter] attribute long position;
-    [RaisesException=Setter] attribute long size;
+    attribute (double or AutoKeyword) line;
+    [RaisesException=Setter] attribute (double or AutoKeyword) position;
+    [RaisesException=Setter] attribute double size;
     attribute AlignSetting align;
     attribute DOMString text;
     DocumentFragment getCueAsHTML();

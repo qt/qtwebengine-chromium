@@ -71,18 +71,8 @@ public:
     }
 
 protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-#ifdef SK_BUILD_FOR_ANDROID
-        return kSkipTiled_Flag;
-#else
-        if (fDoFilter && fDoRotate && fMode != SkShader::kClamp_TileMode) {
-            return kSkipTiled_Flag;
-        }
-        return 0;
-#endif
-    }
 
-    virtual SkString onShortName() {
+    SkString onShortName() override {
         SkString str("giantbitmap_");
         switch (fMode) {
             case SkShader::kClamp_TileMode:
@@ -102,9 +92,9 @@ protected:
         return str;
     }
 
-    virtual SkISize onISize() { return SkISize::Make(640, 480); }
+    SkISize onISize() override { return SkISize::Make(640, 480); }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
 
         SkMatrix m;
@@ -119,7 +109,7 @@ protected:
         SkShader* s = SkShader::CreateBitmapShader(getBitmap(), fMode, fMode, &m);
 
         paint.setShader(s)->unref();
-        paint.setFilterLevel(fDoFilter ? SkPaint::kLow_FilterLevel : SkPaint::kNone_FilterLevel);
+        paint.setFilterQuality(fDoFilter ? kLow_SkFilterQuality : kNone_SkFilterQuality);
 
         canvas->translate(SkIntToScalar(50), SkIntToScalar(50));
 

@@ -90,6 +90,7 @@ source_set("prerequisites") {
     "//third_party/npapi",
     "//third_party/ots",
     "//third_party/qcms",
+    "//third_party/snappy",
     "//third_party/sqlite",
     "//third_party/zlib",
     "//url",
@@ -163,11 +164,10 @@ source_set("dom") {
   sources = rebase_path(webcore_dom_files, ".", "//")
 
   configs -= core_config_remove
-  configs += core_config_add
-
-  if (is_win) {
-    cflags = [ "/wd4267" ]  # size_t to int truncation.
-  }
+  configs += core_config_add + [
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    "//build/config/compiler:no_size_t_to_int_warning",
+  ]
 
   deps = [
     ":prerequisites",
@@ -218,10 +218,14 @@ source_set("remaining") {
   # in GYP. The file list variable is the same and then GYP filters on wether
   # the path starts with "rendering/" or not. We should tweak the .gypis a bit
   # to separate out the rendering files.
-  sources = rebase_path(webcore_files, ".", "//")
+  sources = rebase_path(webcore_non_rendering_files, ".", "//")
+  sources += rebase_path(webcore_rendering_files, ".", "//")
 
   configs -= core_config_remove
-  configs += core_config_add
+  configs += core_config_add + [
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    "//build/config/compiler:no_size_t_to_int_warning",
+  ]
 
   cflags = []
   libs = []
@@ -232,18 +236,25 @@ source_set("remaining") {
 
   if (is_win) {
     cflags += [
-      "/wd4267",
       "/wd4334",
     ]
   } else {  # !is_win
     sources -= [
-      "rendering/RenderThemeChromiumFontProviderWin.cpp",
+      "layout/LayoutThemeFontProviderWin.cpp",
+      "layout/LayoutThemeWin.cpp",
+      "layout/LayoutThemeWin.h",
     ]
   }
-  if (!is_linux && !is_android) {
+  if (!is_linux) {
     sources -= [
-      "rendering/RenderThemeChromiumFontProviderLinux.cpp",
+      "layout/LayoutThemeLinux.cpp",
+      "layout/LayoutThemeLinux.h",
     ]
+    if (!is_android) {
+      sources -= [
+        "layout/LayoutThemeFontProviderLinux.cpp",
+      ]
+    }
   }
 
   if (is_android) {
@@ -253,17 +264,17 @@ source_set("remaining") {
     cflags += [ "-Wno-uninitialized" ]
   } else {  # !is_android
     sources -= [
-      "rendering/RenderThemeChromiumAndroid.cpp",
-      "rendering/RenderThemeChromiumAndroid.h",
+      "layout/LayoutThemeAndroid.cpp",
+      "layout/LayoutThemeAndroid.h",
     ]
   }
 
   if (is_mac) {
     sources -= [
-      "rendering/RenderThemeChromiumFontProvider.cpp",
-      "rendering/RenderThemeChromiumFontProvider.h",
-      "rendering/RenderThemeChromiumSkia.cpp",
-      "rendering/RenderThemeChromiumSkia.h",
+      "layout/LayoutThemeDefault.cpp",
+      "layout/LayoutThemeDefault.h",
+      "layout/LayoutThemeFontProvider.cpp",
+      "layout/LayoutThemeFontProvider.h",
     ]
     libs += [ "Carbon.framework" ]
     # Some Mac-specific parts of WebKit won't compile without having this
@@ -312,8 +323,6 @@ source_set("testing") {
     "$bindings_core_v8_output_dir/V8UnionTypesTest.h",
     "$bindings_core_v8_output_dir/V8Internals.cpp",
     "$bindings_core_v8_output_dir/V8Internals.h",
-    "$bindings_core_v8_output_dir/V8InternalProfilers.cpp",
-    "$bindings_core_v8_output_dir/V8InternalProfilers.h",
     "$bindings_core_v8_output_dir/V8InternalSettings.cpp",
     "$bindings_core_v8_output_dir/V8InternalSettings.h",
     "$bindings_core_v8_output_dir/V8InternalSettingsGenerated.cpp",
@@ -328,6 +337,10 @@ source_set("testing") {
     "$bindings_core_v8_output_dir/V8RefCountedScriptWrappable.h",
     "$bindings_core_v8_output_dir/V8InternalDictionary.cpp",
     "$bindings_core_v8_output_dir/V8InternalDictionary.h",
+    "$bindings_core_v8_output_dir/V8InternalDictionaryDerived.cpp",
+    "$bindings_core_v8_output_dir/V8InternalDictionaryDerived.h",
+    "$bindings_core_v8_output_dir/V8PluginPlaceholderOptions.cpp",
+    "$bindings_core_v8_output_dir/V8PluginPlaceholderOptions.h",
   ]
 }
 
@@ -355,7 +368,6 @@ source_set("core_generated") {
     "$blink_core_output_dir/EventTargetNames.h",
     "$blink_core_output_dir/EventTypeNames.cpp",
     "$blink_core_output_dir/EventTypeNames.h",
-    "$blink_core_output_dir/FetchInitiatorTypeNames.cpp",
     "$blink_core_output_dir/HTMLElementFactory.cpp",
     "$blink_core_output_dir/HTMLElementFactory.h",
     "$blink_core_output_dir/HTMLElementLookupTrie.cpp",
@@ -365,10 +377,10 @@ source_set("core_generated") {
     "$blink_core_output_dir/InputTypeNames.cpp",
     "$blink_core_output_dir/MathMLNames.cpp",
     "$blink_core_output_dir/SVGNames.cpp",
-    "$blink_core_output_dir/UserAgentStyleSheetsData.cpp",
     "$blink_core_output_dir/XLinkNames.cpp",
     "$blink_core_output_dir/XMLNSNames.cpp",
     "$blink_core_output_dir/XMLNames.cpp",
+    "$blink_core_output_dir/fetch/FetchInitiatorTypeNames.cpp",
 
     # Generated from HTMLEntityNames.in
     "$blink_core_output_dir/HTMLEntityTable.cpp",
@@ -398,7 +410,6 @@ source_set("core_generated") {
     "$blink_core_output_dir/InspectorTypeBuilder.cpp",
 
     # Additional .cpp files from the inspector_instrumentation_sources list.
-    "$blink_core_output_dir/InspectorCanvasInstrumentationInl.h",
     "$blink_core_output_dir/InspectorConsoleInstrumentationInl.h",
     "$blink_core_output_dir/InspectorInstrumentationInl.h",
     "$blink_core_output_dir/InspectorOverridesInl.h",
@@ -451,7 +462,11 @@ source_set("core_generated") {
     "//v8",
   ]
 
-  configs += [ ":core_include_dirs" ]
+  configs += [
+    ":core_include_dirs",
+    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    "//build/config/compiler:no_size_t_to_int_warning",
+  ]
   include_dirs = [
     "$root_gen_dir/blink",
   ]
@@ -466,11 +481,9 @@ source_set("core_generated") {
   if (is_win) {
     cflags += [
       # In generated bindings code: "switch contains default but no case".
-      # Disable c4267 warnings until we fix size_t to int truncations.
       # 4701 and 4702 are disabled because of issues in Bison-generated
       # XPathGrammar.cpp and CSSGrammar.cpp.
       "/wd4065",
-      "/wd4267",
       "/wd4701",
       "/wd4702",
     ]
@@ -499,33 +512,51 @@ generate_event_interfaces("core_event_interfaces") {
 # GYP version: WebKit/Source/core/core_generated.gyp:generated_testing_idls
 group("generated_testing_idls") {
   deps = [
+    ":generated_settings_macros",
     ":generated_testing_idls_settings",
     ":generated_testing_idls_internal_runtime_flags",
   ]
 }
 
 # "Settings" action in generated_testing_idls from GYP.
-action("generated_testing_idls_settings") {
+action("generated_settings_macros") {
   script = "../build/scripts/make_settings.py"
 
   inputs = scripts_for_in_files + [
     "../build/scripts/make_settings.py",
-    "../build/scripts/templates/InternalSettingsGenerated.idl.tmpl",
-    "../build/scripts/templates/InternalSettingsGenerated.cpp.tmpl",
-    "../build/scripts/templates/InternalSettingsGenerated.h.tmpl",
     "../build/scripts/templates/SettingsMacros.h.tmpl",
     "frame/Settings.in",
   ]
   outputs = [
     "$blink_core_output_dir/SettingsMacros.h",
-    "$blink_core_output_dir/InternalSettingsGenerated.idl",
-    "$blink_core_output_dir/InternalSettingsGenerated.cpp",
-    "$blink_core_output_dir/InternalSettingsGenerated.h",
   ]
 
   args = [
     rebase_path("frame/Settings.in", root_build_dir),
     "--output_dir", rel_blink_core_gen_dir,
+  ]
+}
+
+# "InternalSettings" action in generated_testing_idls from GYP.
+action("generated_testing_idls_settings") {
+  script = "../build/scripts/make_internal_settings.py"
+
+  inputs = scripts_for_in_files + [
+    "../build/scripts/make_internal_settings.py",
+    "../build/scripts/templates/InternalSettingsGenerated.idl.tmpl",
+    "../build/scripts/templates/InternalSettingsGenerated.cpp.tmpl",
+    "../build/scripts/templates/InternalSettingsGenerated.h.tmpl",
+    "frame/Settings.in",
+  ]
+  outputs = [
+    "$blink_core_output_dir/testing/InternalSettingsGenerated.idl",
+    "$blink_core_output_dir/testing/InternalSettingsGenerated.cpp",
+    "$blink_core_output_dir/testing/InternalSettingsGenerated.h",
+  ]
+
+  args = [
+    rebase_path("frame/Settings.in", root_build_dir),
+    "--output_dir", "$rel_blink_core_gen_dir/testing",
   ]
 }
 
@@ -540,13 +571,13 @@ action("generated_testing_idls_internal_runtime_flags") {
     "../build/scripts/templates/InternalRuntimeFlags.idl.tmpl",
   ]
   outputs = [
-    "$blink_core_output_dir/InternalRuntimeFlags.idl",
-    "$blink_core_output_dir/InternalRuntimeFlags.h",
+    "$blink_core_output_dir/testing/InternalRuntimeFlags.idl",
+    "$blink_core_output_dir/testing/InternalRuntimeFlags.h",
   ]
 
   args = [
     rebase_path("../platform/RuntimeEnabledFeatures.in", root_build_dir),
-    "--output_dir", rel_blink_core_gen_dir,
+    "--output_dir", "$rel_blink_core_gen_dir/testing",
   ]
 }
 
@@ -574,7 +605,6 @@ group("make_core_generated") {
     ":make_core_generated_event_names",
     ":make_core_generated_event_target_names",
     ":make_core_generated_math_ml_names",
-    ":make_core_generated_user_agent_style_sheets",
     ":make_core_generated_fetch_initiator_type_names",
     ":make_core_generated_event_type_names",
     ":make_core_generated_html_tokenizer_names",
@@ -801,8 +831,8 @@ make_names("make_core_generated_fetch_initiator_type_names") {
     "fetch/FetchInitiatorTypeNames.in",
   ]
   outputs = [
-    "$blink_core_output_dir/FetchInitiatorTypeNames.cpp",
-    "$blink_core_output_dir/FetchInitiatorTypeNames.h",
+    "$blink_core_output_dir/fetch/FetchInitiatorTypeNames.cpp",
+    "$blink_core_output_dir/fetch/FetchInitiatorTypeNames.h",
   ]
 }
 
@@ -966,7 +996,7 @@ action("make_core_generated_html_entity_table") {
     "$blink_core_output_dir/HTMLEntityTable.cpp",
   ]
 
-  args = [ "-o" ] + rebase_path(outputs, root_build_dir) 
+  args = [ "-o" ] + rebase_path(outputs, root_build_dir)
   args += rebase_path(inputs, root_build_dir)
 
   deps = make_core_generated_deps
@@ -985,48 +1015,6 @@ action("make_core_generated_css_tokenizer_codepoints") {
   args = [
     "--output_dir", rel_blink_core_gen_dir,
   ]
-
-  deps = make_core_generated_deps
-}
-
-# "UserAgentStyleSheets" in make_core_generated from GYP.
-action("make_core_generated_user_agent_style_sheets") {
-  visibility = []  # Allow re-assignment of list.
-  visibility = [ ":make_core_generated" ]
-  script = "../build/scripts/make-file-arrays.py"
-
-  inputs = [
-    "css/html.css",
-    "css/quirks.css",
-    "css/view-source.css",
-    "css/themeChromium.css",
-    "css/themeChromiumAndroid.css",
-    "css/themeChromiumLinux.css",
-    "css/themeChromiumSkia.css",
-    "css/themeInputMultipleFields.css",
-    "css/themeMac.css",
-    "css/themeWin.css",
-    "css/themeWinQuirks.css",
-    "css/svg.css",
-    "css/navigationTransitions.css",
-    "css/mathml.css",
-    "css/mediaControls.css",
-    "css/mediaControlsAndroid.css",
-    "css/fullscreen.css",
-    "css/xhtmlmp.css",
-    "css/viewportAndroid.css",
-  ]
-
-  outputs = [
-    "$blink_core_output_dir/UserAgentStyleSheets.h",
-    "$blink_core_output_dir/UserAgentStyleSheetsData.cpp",
-  ]
-
-  args =
-    [ "--namespace", "blink" ] +
-    [ "--out-h=" + rebase_path(outputs[0], root_build_dir) ] +
-    [ "--out-cpp=" + rebase_path(outputs[1], root_build_dir) ] +
-    rebase_path(inputs, root_build_dir)
 
   deps = make_core_generated_deps
 }

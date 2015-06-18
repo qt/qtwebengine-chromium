@@ -1811,14 +1811,11 @@ typedef void (GL_APIENTRYP PFNGLRATELIMITOFFSCREENCONTEXTCHROMIUM) ();
 #ifndef GL_CHROMIUM_get_multiple
 #define GL_CHROMIUM_get_multiple 1
 #ifdef GL_GLEXT_PROTOTYPES
-#define glGetMultipleIntegervCHROMIUM  GLES2_GET_FUN(GetMultipleIntegervCHROMIUM)
 #define glGetProgramInfoCHROMIUM  GLES2_GET_FUN(GetProgramInfovCHROMIUM)
 #if !defined(GLES2_USE_CPP_BINDINGS)
-GL_APICALL void GL_APIENTRY glGetMultipleIntegervCHROMIUM (const GLenum* pnames, GLuint count, GLint* results, GLsizeiptr size);
 GL_APICALL void GL_APIENTRY glGetProgramInfoCHROMIUM (GLuint program, GLsizei bufsize, GLsizei* size, void* info);
 #endif
 #else
-typedef void (GL_APIENTRYP PFNGLGETMULTIPLEINTEGERVCHROMIUM) ();
 typedef void (GL_APIENTRYP PFNGLGETPROGRAMINFOCHROMIUM) ();
 #endif
 #endif
@@ -1956,11 +1953,30 @@ typedef void (GL_APIENTRYP PFNGLTEXIMAGEIOSURFACE2DCHROMIUM) (GLenum target, GLs
 #endif
 #ifdef GL_GLEXT_PROTOTYPES
 #define glCopyTextureCHROMIUM GLES2_GET_FUN(CopyTextureCHROMIUM)
+#define glCopySubTextureCHROMIUM GLES2_GET_FUN(CopySubTextureCHROMIUM)
 #if !defined(GLES2_USE_CPP_BINDINGS)
-GL_APICALL void GL_APIENTRY glCopyTextureCHROMIUM (GLenum target, GLenum source_id, GLenum dest_id, GLint level);
+GL_APICALL void GL_APIENTRY glCopyTextureCHROMIUM(GLenum target,
+                                                  GLenum source_id,
+                                                  GLenum dest_id,
+                                                  GLint internalformat,
+                                                  GLenum dest_type);
+GL_APICALL void GL_APIENTRY glCopySubTextureCHROMIUM(GLenum target,
+                                                     GLenum source_id,
+                                                     GLenum dest_id,
+                                                     GLint xoffset,
+                                                     GLint yoffset);
 #endif
 #else
-typedef void (GL_APIENTRYP PFNGLCOPYTEXTURECHROMIUM) (GLenum target, GLenum source_id, GLenum dest_id, GLint level);
+typedef void(GL_APIENTRYP PFNGLCOPYTEXTURECHROMIUM)(GLenum target,
+                                                    GLenum source_id,
+                                                    GLenum dest_id,
+                                                    GLint internalformat,
+                                                    GLenum dest_type);
+typedef void(GL_APIENTRYP PFNGLCOPYSUBTEXTURECHROMIUM)(GLenum target,
+                                                       GLenum source_id,
+                                                       GLenum dest_id,
+                                                       GLint xoffset,
+                                                       GLint yoffset);
 #endif
 #endif
 

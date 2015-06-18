@@ -15,81 +15,11 @@
 #include "public/web/WebDocument.h"
 #include "public/web/WebPerformance.h"
 #include "public/web/WebRange.h"
-#include "web/WebLocalFrameImpl.h"
+#include "web/RemoteBridgeFrameOwner.h"
 #include "web/WebViewImpl.h"
 #include <v8/include/v8.h>
 
 namespace blink {
-
-namespace {
-
-// Helper class to bridge communication for a local frame with a remote parent.
-// Currently, it serves two purposes:
-// 1. Allows the local frame's loader to retrieve sandbox flags associated with
-//    its owner element in another process.
-// 2. Trigger a load event on its owner element once it finishes a load.
-class RemoteBridgeFrameOwner : public NoBaseWillBeGarbageCollectedFinalized<RemoteBridgeFrameOwner>, public FrameOwner {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RemoteBridgeFrameOwner);
-public:
-    static PassOwnPtrWillBeRawPtr<RemoteBridgeFrameOwner> create(PassRefPtrWillBeRawPtr<WebLocalFrameImpl> frame)
-    {
-        return adoptPtrWillBeNoop(new RemoteBridgeFrameOwner(frame));
-    }
-
-    virtual bool isLocal() const override;
-    virtual SandboxFlags sandboxFlags() const override;
-    virtual void dispatchLoad() override;
-
-    virtual void trace(Visitor*);
-
-private:
-    explicit RemoteBridgeFrameOwner(PassRefPtrWillBeRawPtr<WebLocalFrameImpl>);
-
-    RefPtrWillBeMember<WebLocalFrameImpl> m_frame;
-};
-
-RemoteBridgeFrameOwner::RemoteBridgeFrameOwner(PassRefPtrWillBeRawPtr<WebLocalFrameImpl> frame)
-    : m_frame(frame)
-{
-}
-
-void RemoteBridgeFrameOwner::trace(Visitor* visitor)
-{
-    visitor->trace(m_frame);
-    FrameOwner::trace(visitor);
-}
-
-bool RemoteBridgeFrameOwner::isLocal() const
-{
-    return false;
-}
-
-SandboxFlags RemoteBridgeFrameOwner::sandboxFlags() const
-{
-    // FIXME: Implement. Most likely grab it from m_frame.
-    return 0;
-}
-
-void RemoteBridgeFrameOwner::dispatchLoad()
-{
-    // FIXME: Implement. Most likely goes through m_frame->client().
-}
-
-} // namespace
-
-bool PlaceholderFrameOwner::isLocal() const
-{
-    return false;
-}
-
-SandboxFlags PlaceholderFrameOwner::sandboxFlags() const
-{
-    return 0;
-}
-
-void PlaceholderFrameOwner::dispatchLoad()
-{
-}
 
 WebRemoteFrame* WebRemoteFrame::create(WebRemoteFrameClient* client)
 {
@@ -115,11 +45,11 @@ WebRemoteFrameImpl::~WebRemoteFrameImpl()
 }
 
 #if ENABLE(OILPAN)
-void WebRemoteFrameImpl::trace(Visitor* visitor)
+DEFINE_TRACE(WebRemoteFrameImpl)
 {
     visitor->trace(m_frame);
     visitor->trace(m_ownersForChildren);
-    visitor->registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
+    visitor->template registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
     WebFrame::traceFrames(visitor, this);
 }
 #endif
@@ -132,7 +62,7 @@ bool WebRemoteFrameImpl::isWebLocalFrame() const
 WebLocalFrame* WebRemoteFrameImpl::toWebLocalFrame()
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 bool WebRemoteFrameImpl::isWebRemoteFrame() const
@@ -183,11 +113,6 @@ void WebRemoteFrameImpl::setRemoteWebLayer(WebLayer* webLayer)
         return;
 
     frame()->setRemotePlatformLayer(webLayer);
-}
-
-void WebRemoteFrameImpl::setPermissionClient(WebPermissionClient*)
-{
-    ASSERT_NOT_REACHED();
 }
 
 void WebRemoteFrameImpl::setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*)
@@ -256,7 +181,7 @@ bool WebRemoteFrameImpl::hasVerticalScrollbar() const
 WebView* WebRemoteFrameImpl::view() const
 {
     if (!frame())
-        return 0;
+        return nullptr;
     return WebViewImpl::fromPage(frame()->page());
 }
 
@@ -268,6 +193,8 @@ void WebRemoteFrameImpl::removeChild(WebFrame* frame)
 
 WebDocument WebRemoteFrameImpl::document() const
 {
+    // TODO(dcheng): this should also ASSERT_NOT_REACHED, but a lot of
+    // code tries to access the document of a remote frame at the moment.
     return WebDocument();
 }
 
@@ -291,7 +218,7 @@ void WebRemoteFrameImpl::dispatchUnloadEvent()
 NPObject* WebRemoteFrameImpl::windowObject() const
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 void WebRemoteFrameImpl::bindToWindowObject(const WebString& name, NPObject*)
@@ -342,28 +269,28 @@ bool WebRemoteFrameImpl::checkIfRunInsecureContent(const WebURL&) const
     return false;
 }
 
-v8::Handle<v8::Value> WebRemoteFrameImpl::executeScriptAndReturnValue(
+v8::Local<v8::Value> WebRemoteFrameImpl::executeScriptAndReturnValue(
     const WebScriptSource&)
 {
     ASSERT_NOT_REACHED();
-    return v8::Handle<v8::Value>();
+    return v8::Local<v8::Value>();
 }
 
 void WebRemoteFrameImpl::executeScriptInIsolatedWorld(
     int worldID, const WebScriptSource* sourcesIn, unsigned numSources,
-    int extensionGroup, WebVector<v8::Local<v8::Value> >* results)
+    int extensionGroup, WebVector<v8::Local<v8::Value>>* results)
 {
     ASSERT_NOT_REACHED();
 }
 
-v8::Handle<v8::Value> WebRemoteFrameImpl::callFunctionEvenIfScriptDisabled(
-    v8::Handle<v8::Function>,
-    v8::Handle<v8::Value>,
+v8::Local<v8::Value> WebRemoteFrameImpl::callFunctionEvenIfScriptDisabled(
+    v8::Local<v8::Function>,
+    v8::Local<v8::Value>,
     int argc,
-    v8::Handle<v8::Value> argv[])
+    v8::Local<v8::Value> argv[])
 {
     ASSERT_NOT_REACHED();
-    return v8::Handle<v8::Value>();
+    return v8::Local<v8::Value>();
 }
 
 v8::Local<v8::Context> WebRemoteFrameImpl::mainWorldScriptContext() const
@@ -414,13 +341,13 @@ void WebRemoteFrameImpl::stopLoading()
 WebDataSource* WebRemoteFrameImpl::provisionalDataSource() const
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 WebDataSource* WebRemoteFrameImpl::dataSource() const
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 void WebRemoteFrameImpl::enableViewSourceMode(bool enable)
@@ -447,7 +374,7 @@ void WebRemoteFrameImpl::dispatchWillSendRequest(WebURLRequest&)
 WebURLLoader* WebRemoteFrameImpl::createAssociatedURLLoader(const WebURLLoaderOptions&)
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 unsigned WebRemoteFrameImpl::unloadListenerCount() const
@@ -582,7 +509,7 @@ void WebRemoteFrameImpl::selectRange(const WebRange&)
     ASSERT_NOT_REACHED();
 }
 
-void WebRemoteFrameImpl::moveRangeSelection(const WebPoint& base, const WebPoint& extent)
+void WebRemoteFrameImpl::moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity granularity)
 {
     ASSERT_NOT_REACHED();
 }
@@ -641,12 +568,6 @@ bool WebRemoteFrameImpl::isPrintScalingDisabledForPlugin(const WebNode&)
 {
     ASSERT_NOT_REACHED();
     return false;
-}
-
-int WebRemoteFrameImpl::getPrintCopiesForPlugin(const WebNode&)
-{
-    ASSERT_NOT_REACHED();
-    return 1;
 }
 
 bool WebRemoteFrameImpl::hasCustomPageSizeStyle(int pageIndex)
@@ -765,7 +686,7 @@ WebString WebRemoteFrameImpl::contentAsMarkup() const
     return WebString();
 }
 
-WebString WebRemoteFrameImpl::renderTreeAsText(RenderAsTextControls toShow) const
+WebString WebRemoteFrameImpl::layoutTreeAsText(LayoutAsTextControls toShow) const
 {
     ASSERT_NOT_REACHED();
     return WebString();
@@ -795,12 +716,18 @@ WebString WebRemoteFrameImpl::layerTreeAsText(bool showDebugInfo) const
     return WebString();
 }
 
-WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebFrameClient* client)
+// TODO(alexmos): Remove once Chromium side is updated to take previous sibling.
+WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client)
+{
+    return createLocalChild(name, sandboxFlags, client, lastChild());
+}
+
+WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling)
 {
     WebLocalFrameImpl* child = toWebLocalFrameImpl(WebLocalFrame::create(client));
-    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner> >::AddResult result =
-        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child));
-    appendChild(child);
+    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
+        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags)));
+    insertAfter(child, previousSibling);
     // FIXME: currently this calls LocalFrame::init() on the created LocalFrame, which may
     // result in the browser observing two navigations to about:blank (one from the initial
     // frame creation, and one from swapping it into the remote process). FrameLoader might
@@ -815,14 +742,15 @@ WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebFr
 void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name)
 {
     setCoreFrame(RemoteFrame::create(&m_frameClient, host, owner));
+    frame()->createView();
     m_frame->tree().setName(name, nullAtom);
 }
 
-WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(const WebString& name, WebRemoteFrameClient* client)
+WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(const WebString& name, WebSandboxFlags sandboxFlags, WebRemoteFrameClient* client)
 {
     WebRemoteFrameImpl* child = toWebRemoteFrameImpl(WebRemoteFrame::create(client));
-    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner> >::AddResult result =
-        m_ownersForChildren.add(child, adoptPtrWillBeNoop(new PlaceholderFrameOwner));
+    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
+        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(nullptr, static_cast<SandboxFlags>(sandboxFlags)));
     appendChild(child);
     child->initializeCoreFrame(frame()->host(), result.storedValue->value.get(), name);
     return child;
@@ -836,7 +764,7 @@ void WebRemoteFrameImpl::setCoreFrame(PassRefPtrWillBeRawPtr<RemoteFrame> frame)
 WebRemoteFrameImpl* WebRemoteFrameImpl::fromFrame(RemoteFrame& frame)
 {
     if (!frame.client())
-        return 0;
+        return nullptr;
     return static_cast<RemoteFrameClientImpl*>(frame.client())->webFrame();
 }
 
@@ -847,6 +775,45 @@ void WebRemoteFrameImpl::initializeFromFrame(WebLocalFrame* source) const
     client()->initializeChildFrame(
         localFrameImpl->frame()->view()->frameRect(),
         localFrameImpl->frame()->view()->visibleContentScaleFactor());
+}
+
+void WebRemoteFrameImpl::setReplicatedOrigin(const WebSecurityOrigin& origin) const
+{
+    ASSERT(frame());
+    frame()->securityContext()->setReplicatedOrigin(origin);
+}
+
+void WebRemoteFrameImpl::setReplicatedSandboxFlags(WebSandboxFlags flags) const
+{
+    ASSERT(frame());
+    frame()->securityContext()->enforceSandboxFlags(static_cast<SandboxFlags>(flags));
+}
+
+void WebRemoteFrameImpl::setReplicatedName(const WebString& name) const
+{
+    ASSERT(frame());
+    frame()->tree().setName(name, nullAtom);
+}
+
+void WebRemoteFrameImpl::DispatchLoadEventForFrameOwner() const
+{
+    ASSERT(frame()->owner()->isLocal());
+    frame()->owner()->dispatchLoad();
+}
+
+void WebRemoteFrameImpl::didStartLoading()
+{
+    frame()->setIsLoading(true);
+}
+
+void WebRemoteFrameImpl::didStopLoading()
+{
+    frame()->setIsLoading(false);
+    if (parent() && parent()->isWebLocalFrame()) {
+        WebLocalFrameImpl* parentFrame =
+            toWebLocalFrameImpl(parent()->toWebLocalFrame());
+        parentFrame->frame()->loader().checkCompleted();
+    }
 }
 
 } // namespace blink

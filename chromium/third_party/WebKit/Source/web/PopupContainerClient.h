@@ -32,6 +32,7 @@
 #define PopupContainerClient_h
 
 #include "platform/HostWindow.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "web/PopupContainer.h"
 
 namespace blink {

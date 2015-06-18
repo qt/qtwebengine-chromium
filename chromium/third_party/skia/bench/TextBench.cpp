@@ -5,18 +5,21 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 #include "Benchmark.h"
+#include "Resources.h"
 #include "SkCanvas.h"
-#include "SkFontHost.h"
 #include "SkPaint.h"
 #include "SkRandom.h"
+#include "SkStream.h"
 #include "SkString.h"
 #include "SkTemplates.h"
+#include "SkTypeface.h"
 
 enum FontQuality {
     kBW,
     kAA,
-    kLCD
+    kLCD,
 };
 
 static const char* fontQualityName(const SkPaint& paint) {
@@ -44,19 +47,27 @@ class TextBench : public Benchmark {
     SkString    fName;
     FontQuality fFQ;
     bool        fDoPos;
+    bool        fDoColorEmoji;
+    SkAutoTUnref<SkTypeface> fColorEmojiTypeface;
     SkPoint*    fPos;
 public:
     TextBench(const char text[], int ps,
-              SkColor color, FontQuality fq, bool doPos = false)  {
+              SkColor color, FontQuality fq, bool doColorEmoji = false, bool doPos = false)  {
         fPos = NULL;
         fFQ = fq;
         fDoPos = doPos;
+        fDoColorEmoji = doColorEmoji;
         fText.set(text);
 
         fPaint.setAntiAlias(kBW != fq);
         fPaint.setLCDRenderText(kLCD == fq);
         fPaint.setTextSize(SkIntToScalar(ps));
         fPaint.setColor(color);
+
+        if (doColorEmoji) {
+            SkASSERT(kBW == fFQ);
+            fColorEmojiTypeface.reset(GetResourceAsTypeface("/fonts/Funkster.ttf"));
+        }
 
         if (doPos) {
             size_t len = strlen(text);
@@ -88,6 +99,11 @@ protected:
         } else {
             fName.append("_BK");
         }
+
+        if (fDoColorEmoji && fColorEmojiTypeface) {
+            fName.append("_ColorEmoji");
+        }
+
         return fName.c_str();
     }
 
@@ -101,6 +117,10 @@ protected:
         paint.setColor(fPaint.getColor());
         paint.setAntiAlias(kBW != fFQ);
         paint.setLCDRenderText(kLCD == fFQ);
+
+        if (fDoColorEmoji && fColorEmojiTypeface) {
+            paint.setTypeface(fColorEmojiTypeface);
+        }
 
         const SkScalar x0 = SkIntToScalar(-10);
         const SkScalar y0 = SkIntToScalar(-10);
@@ -142,4 +162,9 @@ DEF_BENCH( return new TextBench(STR, 16, 0xFF000000, kLCD); )
 DEF_BENCH( return new TextBench(STR, 16, 0xFFFF0000, kLCD); )
 DEF_BENCH( return new TextBench(STR, 16, 0x88FF0000, kLCD); )
 
-DEF_BENCH( return new TextBench(STR, 16, 0xFF000000, kAA, true); )
+DEF_BENCH( return new TextBench(STR, 16, 0xFF000000, kBW, true); )
+DEF_BENCH( return new TextBench(STR, 16, 0xFFFF0000, kBW, true); )
+DEF_BENCH( return new TextBench(STR, 16, 0x88FF0000, kBW, true); )
+
+DEF_BENCH( return new TextBench(STR, 16, 0xFF000000, kBW, true, true); )
+DEF_BENCH( return new TextBench(STR, 16, 0xFF000000, kAA, false, true); )

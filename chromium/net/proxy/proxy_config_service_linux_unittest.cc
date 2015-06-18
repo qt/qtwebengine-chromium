@@ -17,6 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service_common_unittest.h"
@@ -250,16 +251,13 @@ class MockSettingGetter
                 std::vector<std::string> > string_lists_table;
 };
 
-}  // namespace
-}  // namespace net
-
 // This helper class runs ProxyConfigServiceLinux::GetLatestProxyConfig() on
 // the IO thread and synchronously waits for the result.
 // Some code duplicated from proxy_script_fetcher_unittest.cc.
 class SynchConfigGetter {
  public:
   // Takes ownership of |config_service|.
-  explicit SynchConfigGetter(net::ProxyConfigServiceLinux* config_service)
+  explicit SynchConfigGetter(ProxyConfigServiceLinux* config_service)
       : event_(false, false),
         io_thread_("IO_Thread"),
         config_service_(config_service) {
@@ -290,13 +288,12 @@ class SynchConfigGetter {
   void SetupAndInitialFetch() {
     // We pass the mock IO thread as both the IO and file threads.
     config_service_->SetupAndFetchInitialConfig(
-        base::MessageLoopProxy::current(),
-        io_thread_.message_loop_proxy(),
+        base::ThreadTaskRunnerHandle::Get(), io_thread_.message_loop_proxy(),
         io_thread_.message_loop_proxy());
   }
   // Synchronously gets the proxy config.
-  net::ProxyConfigService::ConfigAvailability SyncGetLatestProxyConfig(
-      net::ProxyConfig* config) {
+  ProxyConfigService::ConfigAvailability SyncGetLatestProxyConfig(
+      ProxyConfig* config) {
     io_thread_.message_loop()->PostTask(FROM_HERE,
         base::Bind(&SynchConfigGetter::GetLatestConfigOnIOThread,
                    base::Unretained(this)));
@@ -333,17 +330,15 @@ class SynchConfigGetter {
   base::WaitableEvent event_;
   base::Thread io_thread_;
 
-  net::ProxyConfigServiceLinux* config_service_;
+  ProxyConfigServiceLinux* config_service_;
 
   // The config obtained by |io_thread_| and read back by the main
   // thread.
-  net::ProxyConfig proxy_config_;
+  ProxyConfig proxy_config_;
 
   // Return value from GetLatestProxyConfig().
-  net::ProxyConfigService::ConfigAvailability get_latest_config_result_;
+  ProxyConfigService::ConfigAvailability get_latest_config_result_;
 };
-
-namespace net {
 
 // This test fixture is only really needed for the KDEConfigParser test case,
 // but all the test cases with the same prefix ("ProxyConfigServiceLinuxTest")
@@ -1611,5 +1606,7 @@ TEST_F(ProxyConfigServiceLinuxTest, KDEHomePicker) {
     EXPECT_EQ(GURL(), config.pac_url());
   }
 }
+
+}  // namespace
 
 }  // namespace net

@@ -12,12 +12,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_info.h"
+#include "net/log/net_log.h"
 #include "net/spdy/spdy_header_block.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_protocol.h"
@@ -266,7 +266,7 @@ int SpdyHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
         stream_->GetProtocolVersion(), direct_,
         headers.get());
     stream_->net_log().AddEvent(
-        NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
+        NetLog::TYPE_HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS,
         base::Bind(&SpdyHeaderBlockNetLogCallback, headers.get()));
     result =
         stream_->SendRequestHeaders(
@@ -373,7 +373,7 @@ void SpdyHttpStream::OnClose(int status) {
   }
   stream_.reset();
   bool invoked_callback = false;
-  if (status == net::OK) {
+  if (status == OK) {
     // We need to complete any pending buffered read now.
     invoked_callback = DoBufferedReadCallback();
   }
@@ -517,8 +517,9 @@ void SpdyHttpStream::GetSSLInfo(SSLInfo* ssl_info) {
 
 void SpdyHttpStream::GetSSLCertRequestInfo(
     SSLCertRequestInfo* cert_request_info) {
-  DCHECK(stream_.get());
-  stream_->GetSSLCertRequestInfo(cert_request_info);
+  // A SPDY stream cannot request client certificates. Client authentication may
+  // only occur during the initial SSL handshake.
+  NOTREACHED();
 }
 
 bool SpdyHttpStream::IsSpdyHttpStream() const {

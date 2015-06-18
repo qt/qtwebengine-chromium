@@ -22,8 +22,8 @@
 #include "core/svg/SVGGElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGHiddenContainer.h"
-#include "core/rendering/svg/RenderSVGTransformableContainer.h"
+#include "core/layout/svg/LayoutSVGHiddenContainer.h"
+#include "core/layout/svg/LayoutSVGTransformableContainer.h"
 
 namespace blink {
 
@@ -34,21 +34,21 @@ inline SVGGElement::SVGGElement(Document& document, ConstructionType constructio
 
 DEFINE_NODE_FACTORY(SVGGElement)
 
-RenderObject* SVGGElement::createRenderer(RenderStyle* style)
+LayoutObject* SVGGElement::createLayoutObject(const ComputedStyle& style)
 {
     // SVG 1.1 testsuite explicitely uses constructs like <g display="none"><linearGradient>
-    // We still have to create renderers for the <g> & <linearGradient> element, though the
-    // subtree may be hidden - we only want the resource renderers to exist so they can be
+    // We still have to create layoutObjects for the <g> & <linearGradient> element, though the
+    // subtree may be hidden - we only want the resource layoutObjects to exist so they can be
     // referenced from somewhere else.
-    if (style->display() == NONE)
-        return new RenderSVGHiddenContainer(this);
+    if (style.display() == NONE)
+        return new LayoutSVGHiddenContainer(this);
 
-    return new RenderSVGTransformableContainer(this);
+    return new LayoutSVGTransformableContainer(this);
 }
 
-bool SVGGElement::rendererIsNeeded(const RenderStyle&)
+bool SVGGElement::layoutObjectIsNeeded(const ComputedStyle&)
 {
-    // Unlike SVGElement::rendererIsNeeded(), we still create renderers, even if
+    // Unlike SVGElement::layoutObjectIsNeeded(), we still create layoutObjects, even if
     // display is set to 'none' - which is special to SVG <g> container elements.
     return parentOrShadowHostElement() && parentOrShadowHostElement()->isSVGElement();
 }

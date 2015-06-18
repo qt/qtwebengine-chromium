@@ -32,7 +32,9 @@
 #include "core/html/parser/HTMLParserThread.h"
 
 #include "platform/Task.h"
+#include "platform/ThreadSafeFunctional.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebTraceLocation.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -56,15 +58,15 @@ void HTMLParserThread::init()
 void HTMLParserThread::setupHTMLParserThread()
 {
     ASSERT(m_thread);
-    m_thread->attachGC();
+    m_thread->initialize();
 }
 
 void HTMLParserThread::shutdown()
 {
     ASSERT(s_sharedThread);
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
-    if (blink::Platform::current()->currentThread() && s_sharedThread->isRunning()) {
-        s_sharedThread->postTask(WTF::bind(&HTMLParserThread::cleanupHTMLParserThread, s_sharedThread));
+    if (Platform::current()->currentThread() && s_sharedThread->isRunning()) {
+        s_sharedThread->postTask(threadSafeBind(&HTMLParserThread::cleanupHTMLParserThread, AllowCrossThreadAccess(s_sharedThread)));
     }
     delete s_sharedThread;
     s_sharedThread = 0;
@@ -72,7 +74,7 @@ void HTMLParserThread::shutdown()
 
 void HTMLParserThread::cleanupHTMLParserThread()
 {
-    m_thread->detachGC();
+    m_thread->shutdown();
 }
 
 HTMLParserThread* HTMLParserThread::shared()
@@ -80,11 +82,11 @@ HTMLParserThread* HTMLParserThread::shared()
     return s_sharedThread;
 }
 
-blink::WebThread& HTMLParserThread::platformThread()
+WebThread& HTMLParserThread::platformThread()
 {
     if (!isRunning()) {
         m_thread = WebThreadSupportingGC::create("HTMLParserThread");
-        postTask(WTF::bind(&HTMLParserThread::setupHTMLParserThread, this));
+        postTask(threadSafeBind(&HTMLParserThread::setupHTMLParserThread, AllowCrossThreadAccess(this)));
     }
     return m_thread->platformThread();
 }
@@ -94,9 +96,9 @@ bool HTMLParserThread::isRunning()
     return !!m_thread;
 }
 
-void HTMLParserThread::postTask(const Closure& closure)
+void HTMLParserThread::postTask(PassOwnPtr<Closure> closure)
 {
-    platformThread().postTask(new Task(closure));
+    platformThread().postTask(FROM_HERE, new Task(closure));
 }
 
 } // namespace blink

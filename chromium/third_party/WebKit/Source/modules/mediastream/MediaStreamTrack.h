@@ -28,6 +28,7 @@
 
 #include "core/dom/ActiveDOMObject.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/mediastream/SourceInfo.h"
 #include "platform/mediastream/MediaStreamDescriptor.h"
 #include "platform/mediastream/MediaStreamSource.h"
@@ -40,14 +41,13 @@ class ExceptionState;
 class MediaStreamComponent;
 class MediaStreamTrackSourcesCallback;
 
-class MediaStreamTrack final
-    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaStreamTrack>
+class MODULES_EXPORT MediaStreamTrack final
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<MediaStreamTrack>
     , public ActiveDOMObject
-    , public EventTargetWithInlineData
     , public MediaStreamSource::Observer {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaStreamTrack>);
-    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaStreamTrack);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static MediaStreamTrack* create(ExecutionContext*, MediaStreamComponent*);
     virtual ~MediaStreamTrack();
@@ -88,7 +88,7 @@ public:
 
     PassOwnPtr<AudioSourceProvider> createWebAudioSource();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaStreamTrack(ExecutionContext*, MediaStreamComponent*);
@@ -99,13 +99,13 @@ private:
     void propagateTrackEnded();
 
     MediaStreamSource::ReadyState m_readyState;
-    HeapHashSet<Member<MediaStream> > m_registeredMediaStreams;
+    HeapHashSet<Member<MediaStream>> m_registeredMediaStreams;
     bool m_isIteratingRegisteredMediaStreams;
     bool m_stopped;
     RefPtr<MediaStreamComponent> m_component;
 };
 
-typedef HeapVector<Member<MediaStreamTrack> > MediaStreamTrackVector;
+typedef HeapVector<Member<MediaStreamTrack>> MediaStreamTrackVector;
 
 } // namespace blink
 

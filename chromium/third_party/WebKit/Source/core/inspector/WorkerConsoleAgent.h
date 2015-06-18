@@ -41,22 +41,26 @@ class WorkerGlobalScope;
 class WorkerConsoleAgent final : public InspectorConsoleAgent {
     WTF_MAKE_NONCOPYABLE(WorkerConsoleAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerConsoleAgent> create(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
+    static PassOwnPtrWillBeRawPtr<WorkerConsoleAgent> create(InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
     {
-        return adoptPtrWillBeNoop(new WorkerConsoleAgent(timelineAgent, injectedScriptManager, workerGlobalScope));
+        return adoptPtrWillBeNoop(new WorkerConsoleAgent(injectedScriptManager, workerGlobalScope));
     }
     virtual ~WorkerConsoleAgent();
+    DECLARE_VIRTUAL_TRACE();
 
-    virtual bool isWorkerAgent() override { return true; }
+    virtual void enable(ErrorString*) override;
+    virtual void clearMessages(ErrorString*) override;
 
 protected:
     virtual ConsoleMessageStorage* messageStorage() override;
 
-private:
-    WorkerConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*, WorkerGlobalScope*);
-    virtual void addInspectedNode(ErrorString*, int nodeId) override;
+    virtual void enableStackCapturingIfNeeded() override;
+    virtual void disableStackCapturingIfNeeded() override;
 
-    WorkerGlobalScope* m_workerGlobalScope;
+private:
+    WorkerConsoleAgent(InjectedScriptManager*, WorkerGlobalScope*);
+
+    RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
 };
 
 } // namespace blink

@@ -30,11 +30,12 @@
 
 [
     GarbageCollected,
-    Constructor(Dictionary dictionary),
+    Constructor(RTCIceCandidateInit candidateInitDict),
     RaisesException=Constructor
 ] interface RTCIceCandidate {
     [TreatNullAs=NullString] attribute DOMString candidate;
     [TreatNullAs=NullString] attribute DOMString sdpMid;
     attribute unsigned short sdpMLineIndex;
+    serializer = {attribute};
 };
 

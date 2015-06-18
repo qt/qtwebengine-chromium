@@ -19,12 +19,12 @@ class SkPKMImageDecoder : public SkImageDecoder {
 public:
     SkPKMImageDecoder() { }
 
-    virtual Format getFormat() const SK_OVERRIDE {
+    Format getFormat() const override {
         return kPKM_Format;
     }
 
 protected:
-    virtual Result onDecode(SkStream* stream, SkBitmap* bm, Mode) SK_OVERRIDE;
+    Result onDecode(SkStream* stream, SkBitmap* bm, Mode) override;
 
 private:
     typedef SkImageDecoder INHERITED;
@@ -46,13 +46,6 @@ SkImageDecoder::Result SkPKMImageDecoder::onDecode(SkStream* stream, SkBitmap* b
 
     const unsigned short width = etc1_pkm_get_width(buf);
     const unsigned short height = etc1_pkm_get_height(buf);
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEDECODER_CHOOSER
-    // should we allow the Chooser (if present) to pick a config for us???
-    if (!this->chooseFromOneChoice(kN32_SkColorType, width, height)) {
-        return kFailure;
-    }
-#endif
 
     // Setup the sampler...
     SkScaledBitmapSampler sampler(width, height, this->getSampleSize());

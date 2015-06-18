@@ -79,6 +79,10 @@
 //#define SK_DEBUG
 //#define SK_RELEASE
 
+#ifdef DCHECK_ALWAYS_ON
+    #undef SK_RELEASE
+    #define SK_DEBUG
+#endif
 
 /*  If, in debugging mode, Skia needs to stop (presumably to invoke a debugger)
     it will call SK_CRASH(). If this is not defined it, it is defined in
@@ -137,6 +141,16 @@
 #ifdef SK_DEBUG
 #define SK_SUPPORT_UNITTEST
 #endif
+
+/* If cross process SkPictureImageFilters are not explicitly enabled then
+   they are always disabled.
+ */
+#ifndef SK_ALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
+    #ifndef SK_DISALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
+        #define SK_DISALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
+    #endif
+#endif
+
 
 /* If your system embeds skia and has complex event logging, define this
    symbol to name a file that maps the following macros to your system's
@@ -197,14 +211,14 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_CPU_LENDIAN
 #undef  SK_CPU_BENDIAN
 
-#elif defined(SK_BUILD_FOR_UNIX)
+#elif defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
 
 // Prefer FreeType's emboldening algorithm to Skia's
 // TODO: skia used to just use hairline, but has improved since then, so
 // we should revisit this choice...
 #define SK_USE_FREETYPE_EMBOLDEN
 
-#ifdef SK_CPU_BENDIAN
+#if defined(SK_BUILD_FOR_UNIX) && defined(SK_CPU_BENDIAN)
 // Above we set the order for ARGB channels in registers. I suspect that, on
 // big endian machines, you can keep this the same and everything will work.
 // The in-memory order will be different, of course, but as long as everything
@@ -222,28 +236,6 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 // assertion.
 #define SK_CRASH() SkDebugf_FileLine(__FILE__, __LINE__, true, "SK_CRASH")
 
-// Uncomment the following line to forward skia trace events to Chrome
-// tracing.
-// #define SK_USER_TRACE_INCLUDE_FILE "skia/ext/skia_trace_shim.h"
-
-#ifndef SK_ATOMICS_PLATFORM_H
-#  if defined(SK_BUILD_FOR_WIN)
-#    define SK_ATOMICS_PLATFORM_H "third_party/skia/src/ports/SkAtomics_win.h"
-#  elif defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
-#    define SK_ATOMICS_PLATFORM_H "third_party/skia/src/ports/SkAtomics_android.h"
-#  else
-#    define SK_ATOMICS_PLATFORM_H "third_party/skia/src/ports/SkAtomics_sync.h"
-#  endif
-#endif
-
-#ifndef SK_MUTEX_PLATFORM_H
-#  if defined(SK_BUILD_FOR_WIN)
-#    define SK_MUTEX_PLATFORM_H "third_party/skia/src/ports/SkMutex_win.h"
-#  else
-#    define SK_MUTEX_PLATFORM_H "third_party/skia/src/ports/SkMutex_pthread.h"
-#  endif
-#endif
-
 // These flags are no longer defined in Skia, but we have them (temporarily)
 // until we update our call-sites (typically these are for API changes).
 //
@@ -251,6 +243,14 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 //
 #ifndef    SK_SUPPORT_LEGACY_GETTOPDEVICE
 #   define SK_SUPPORT_LEGACY_GETTOPDEVICE
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_IMAGEFILTER_CTM
+#   define SK_SUPPORT_LEGACY_IMAGEFILTER_CTM
+#endif
+
+#ifndef    SK_LEGACY_DRAWPICTURECALLBACK
+#   define SK_LEGACY_DRAWPICTURECALLBACK
 #endif
 
 #ifndef    SK_SUPPORT_LEGACY_GETDEVICE
@@ -261,36 +261,54 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_PICTURE_CLONE
-#   define SK_SUPPORT_LEGACY_PICTURE_CLONE
-#endif
-
 #ifndef    SK_IGNORE_ETC1_SUPPORT
 #   define SK_IGNORE_ETC1_SUPPORT
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_IMAGEFILTER_TRANSFORM_SCRATCH_LAYTER
+#   define SK_SUPPORT_LEGACY_IMAGEFILTER_TRANSFORM_SCRATCH_LAYTER
 #endif
 
 #ifndef    SK_IGNORE_GPU_DITHER
 #   define SK_IGNORE_GPU_DITHER
 #endif
 
-#ifndef    SK_LEGACY_PICTURE_SIZE_API
-#   define SK_LEGACY_PICTURE_SIZE_API
+#ifndef    SK_SUPPORT_LEGACY_INT_COLORMATRIX
+#   define SK_SUPPORT_LEGACY_INT_COLORMATRIX
 #endif
 
-#ifndef    SK_LEGACY_PICTURE_DRAW_API
-#   define SK_LEGACY_PICTURE_DRAW_API
+#ifndef    SK_LEGACY_STROKE_CURVES
+#   define SK_LEGACY_STROKE_CURVES
 #endif
 
+#ifndef    SK_PREFER_LEGACY_FLOAT_XFERMODES
+#   define SK_PREFER_LEGACY_FLOAT_XFERMODES
+#endif
 
-// Turns SkPicture::clone() into a simple "return SkRef(this);" as a way to
-// test the threadsafety of SkPicture playback.
-#define SK_PICTURE_CLONE_NOOP 1
+///////////////////////// Imported from BUILD.gn and skia_common.gypi
 
-// Turns on new (nicer, hopefully faster) SkPicture backend.
-#define SK_PICTURE_USE_SK_RECORD 1
+/* In some places Skia can use static initializers for global initialization,
+ *  or fall back to lazy runtime initialization. Chrome always wants the latter.
+ */
+#define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 0
 
-// Run a few optimization passes over the SkRecord after recording.
-#define SK_PICTURE_OPTIMIZE_SK_RECORD 1
+/* Forcing the unoptimized path for the offset image filter in skia until
+ * all filters used in Blink support the optimized path properly
+ */
+#define SK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION
+
+/* This flag forces Skia not to use typographic metrics with GDI.
+ */
+#define SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS
+
+#define IGNORE_ROT_AA_RECT_OPT
+#define SK_IGNORE_BLURRED_RRECT_OPT
+#define SK_USE_DISCARDABLE_SCALEDIMAGECACHE
+#define SK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT
+
+#define SK_ATTR_DEPRECATED          SK_NOTHING_ARG1
+#define SK_ENABLE_INST_COUNT        0
+#define GR_GL_CUSTOM_SETUP_HEADER   "GrGLConfig_chrome.h"
 
 // ===== End Chrome-specific definitions =====
 

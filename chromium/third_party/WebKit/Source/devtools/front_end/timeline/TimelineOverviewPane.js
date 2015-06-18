@@ -32,12 +32,10 @@
  * @constructor
  * @extends {WebInspector.VBox}
  * @param {!WebInspector.TimelineModel} model
- * @param {!WebInspector.TimelineUIUtils} uiUtils
  */
-WebInspector.TimelineOverviewPane = function(model, uiUtils)
+WebInspector.TimelineOverviewPane = function(model)
 {
     WebInspector.VBox.call(this);
-    this._uiUtils = uiUtils;
     this.element.id = "timeline-overview-pane";
 
     this._model = model;
@@ -48,19 +46,27 @@ WebInspector.TimelineOverviewPane = function(model, uiUtils)
 
     model.addEventListener(WebInspector.TimelineModel.Events.RecordsCleared, this._reset, this);
     this._overviewGrid.addEventListener(WebInspector.OverviewGrid.Events.WindowChanged, this._onWindowChanged, this);
+    this._overviewGrid.addEventListener(WebInspector.OverviewGrid.Events.Click, this._onClick, this);
     this._overviewControls = [];
 }
 
 WebInspector.TimelineOverviewPane.Events = {
-    WindowChanged: "WindowChanged"
+    WindowChanged: "WindowChanged",
+    SelectionChanged: "SelectionChanged"
 };
 
 WebInspector.TimelineOverviewPane.prototype = {
+    /**
+     * @override
+     */
     wasShown: function()
     {
         this.update();
     },
 
+    /**
+     * @override
+     */
     onResize: function()
     {
         this.update();
@@ -71,15 +77,14 @@ WebInspector.TimelineOverviewPane.prototype = {
      */
     setOverviewControls: function(overviewControls)
     {
-        for (var i = 0; i < this._overviewControls.length; ++i) {
-            var overviewControl = this._overviewControls[i];
-            overviewControl.detach();
-            overviewControl.dispose();
-        }
+        for (var i = 0; i < this._overviewControls.length; ++i)
+            this._overviewControls[i].dispose();
 
         for (var i = 0; i < overviewControls.length; ++i) {
             overviewControls[i].setOverviewGrid(this._overviewGrid);
             overviewControls[i].show(this._overviewGrid.element);
+            if (this._currentSelection)
+                overviewControls[i].select(this._currentSelection);
         }
         this._overviewControls = overviewControls;
         this.update();
@@ -103,23 +108,31 @@ WebInspector.TimelineOverviewPane.prototype = {
         this._updateWindow();
     },
 
+    /**
+     * @param {?WebInspector.TimelineSelection} selection
+     */
+    select: function(selection)
+    {
+        this._currentSelection = selection;
+        for (var overviewControl of this._overviewControls)
+            overviewControl.select(selection);
+    },
+
     _updateEventDividers: function()
     {
-        var records = this._model.eventDividerRecords();
         this._overviewGrid.removeEventDividers();
-        var dividers = [];
-        for (var i = 0; i < records.length; ++i) {
-            var record = records[i];
-            var positions = this._overviewCalculator.computeBarGraphPercentages(record);
-            var dividerPosition = Math.round(positions.start * 10);
-            if (dividers[dividerPosition])
+        var recordTypes = WebInspector.TimelineModel.RecordType;
+        var dividers = new Map();
+        for (var record of this._model.eventDividerRecords()) {
+            if (record.type() === recordTypes.TimeStamp || record.type() === recordTypes.ConsoleTime)
                 continue;
-            var title = this._uiUtils.titleForRecord(record);
-            var divider = this._uiUtils.createEventDivider(record.type(), title);
-            divider.style.left = positions.start + "%";
-            dividers[dividerPosition] = divider;
+            var dividerPosition = Math.round(this._overviewCalculator.computePosition(record.startTime()));
+            // Limit the number of dividers to one per pixel.
+            if (dividers.has(dividerPosition))
+                continue;
+            dividers.set(dividerPosition, WebInspector.TimelineUIUtils.createDividerForRecord(record, dividerPosition));
         }
-        this._overviewGrid.addEventDividers(dividers);
+        this._overviewGrid.addEventDividers(dividers.valuesArray());
     },
 
     _reset: function()
@@ -131,6 +144,24 @@ WebInspector.TimelineOverviewPane.prototype = {
         for (var i = 0; i < this._overviewControls.length; ++i)
             this._overviewControls[i].reset();
         this.update();
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onClick: function(event)
+    {
+        var domEvent = /** @type {!Event} */ (event.data);
+        var selection;
+        for (var overviewControl of this._overviewControls) {
+            selection = overviewControl.selectionFromEvent(domEvent);
+            if (selection)
+                break;
+        }
+        if (typeof selection !== "object")
+            return;
+        event.preventDefault();
+        this.dispatchEventToListeners(WebInspector.TimelineOverviewPane.Events.SelectionChanged, selection);
     },
 
     /**
@@ -187,6 +218,7 @@ WebInspector.TimelineOverviewCalculator = function()
 
 WebInspector.TimelineOverviewCalculator.prototype = {
     /**
+     * @override
      * @return {number}
      */
     paddingLeft: function()
@@ -195,22 +227,13 @@ WebInspector.TimelineOverviewCalculator.prototype = {
     },
 
     /**
+     * @override
      * @param {number} time
      * @return {number}
      */
     computePosition: function(time)
     {
         return (time - this._minimumBoundary) / this.boundarySpan() * this._workingArea + this._paddingLeft;
-    },
-
-    /**
-     * @return {!{start: number, end: number}}
-     */
-    computeBarGraphPercentages: function(record)
-    {
-        var start = (record.startTime() - this._minimumBoundary) / this.boundarySpan() * 100;
-        var end = (record.endTime() - this._minimumBoundary) / this.boundarySpan() * 100;
-        return {start: start, end: end};
     },
 
     /**
@@ -239,6 +262,7 @@ WebInspector.TimelineOverviewCalculator.prototype = {
     },
 
     /**
+     * @override
      * @param {number} value
      * @param {number=} precision
      * @return {string}
@@ -249,6 +273,7 @@ WebInspector.TimelineOverviewCalculator.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     maximumBoundary: function()
@@ -257,6 +282,7 @@ WebInspector.TimelineOverviewCalculator.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     minimumBoundary: function()
@@ -265,6 +291,7 @@ WebInspector.TimelineOverviewCalculator.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     zeroTime: function()
@@ -273,6 +300,7 @@ WebInspector.TimelineOverviewCalculator.prototype = {
     },
 
     /**
+     * @override
      * @return {number}
      */
     boundarySpan: function()
@@ -307,6 +335,17 @@ WebInspector.TimelineOverview.prototype = {
     reset: function() { },
 
     /**
+     * @param {!WebInspector.TimelineSelection} selection
+     */
+    select: function(selection) { },
+
+    /**
+     * @param {!Event} event
+     * @return {?WebInspector.TimelineSelection|undefined}
+     */
+    selectionFromEvent: function(event) { },
+
+    /**
      * @param {number} windowLeft
      * @param {number} windowRight
      * @return {!{startTime: number, endTime: number}}
@@ -319,6 +358,10 @@ WebInspector.TimelineOverview.prototype = {
      * @return {!{left: number, right: number}}
      */
     windowBoundaries: function(startTime, endTime) { },
+
+    timelineStarted: function() { },
+
+    timelineStopped: function() { },
 }
 
 /**
@@ -338,34 +381,68 @@ WebInspector.TimelineOverviewBase = function(model)
 
 WebInspector.TimelineOverviewBase.prototype = {
     /**
+     * @override
      * @param {!WebInspector.OverviewGrid} grid
      */
     setOverviewGrid: function(grid)
     {
     },
 
+    /**
+     * @override
+     */
     update: function()
     {
         this.resetCanvas();
     },
 
+    /**
+     * @override
+     */
     dispose: function()
     {
+        this.detach();
     },
 
+    /**
+     * @override
+     */
     reset: function()
     {
     },
 
+    /**
+     * @override
+     */
     timelineStarted: function()
     {
     },
 
+    /**
+     * @override
+     */
     timelineStopped: function()
     {
     },
 
     /**
+     * @override
+     * @param {!WebInspector.TimelineSelection} selection
+     */
+    select: function(selection) { },
+
+    /**
+     * @override
+     * @param {!Event} event
+     * @return {?WebInspector.TimelineSelection|undefined}
+     */
+    selectionFromEvent: function(event)
+    {
+        return undefined;
+    },
+
+    /**
+     * @override
      * @param {number} windowLeft
      * @param {number} windowRight
      * @return {!{startTime: number, endTime: number}}
@@ -381,6 +458,7 @@ WebInspector.TimelineOverviewBase.prototype = {
     },
 
     /**
+     * @override
      * @param {number} startTime
      * @param {number} endTime
      * @return {!{left: number, right: number}}
@@ -393,7 +471,7 @@ WebInspector.TimelineOverviewBase.prototype = {
         return {
             left: haveRecords && startTime ? Math.min((startTime - absoluteMin) / timeSpan, 1) : 0,
             right: haveRecords && endTime < Infinity ? (endTime - absoluteMin) / timeSpan : 1
-        }
+        };
     },
 
     resetCanvas: function()

@@ -5,7 +5,8 @@
 #ifndef PushController_h
 #define PushController_h
 
-#include "core/page/Page.h"
+#include "core/frame/LocalFrame.h"
+#include "modules/ModulesExport.h"
 #include "platform/Supplementable.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -15,27 +16,27 @@ namespace blink {
 
 class WebPushClient;
 
-class PushController final : public NoBaseWillBeGarbageCollected<PushController>, public WillBeHeapSupplement<Page> {
+class PushController final : public NoBaseWillBeGarbageCollected<PushController>, public WillBeHeapSupplement<LocalFrame> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PushController);
     WTF_MAKE_NONCOPYABLE(PushController);
 
 public:
     static PassOwnPtrWillBeRawPtr<PushController> create(WebPushClient*);
     static const char* supplementName();
-    static PushController* from(Page* page) { return static_cast<PushController*>(WillBeHeapSupplement<Page>::from(page, supplementName())); }
-    static WebPushClient* clientFrom(Page*);
+    static PushController* from(LocalFrame* frame) { return static_cast<PushController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
+    static WebPushClient& clientFrom(LocalFrame*);
 
-    WebPushClient* client() const { return m_client; }
-
-    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<Page>::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
 
 private:
     explicit PushController(WebPushClient*);
 
+    WebPushClient* client() const { return m_client; }
+
     WebPushClient* m_client;
 };
 
-void providePushControllerTo(Page&, WebPushClient*);
+MODULES_EXPORT void providePushControllerTo(LocalFrame&, WebPushClient*);
 
 } // namespace blink
 

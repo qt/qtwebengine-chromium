@@ -4,8 +4,8 @@
 
 // http://code.google.com/p/chromium/wiki/LinuxSandboxIPC
 
-#ifndef CONTENT_BROWSER_RENDERER_HOST_SANDBOX_IPC_H_
-#define CONTENT_BROWSER_RENDERER_HOST_SANDBOX_IPC_H_
+#ifndef CONTENT_BROWSER_RENDERER_HOST_SANDBOX_IPC_LINUX_H_
+#define CONTENT_BROWSER_RENDERER_HOST_SANDBOX_IPC_LINUX_H_
 
 #include <vector>
 
@@ -36,37 +36,30 @@ class SandboxIPCHandler : public base::DelegateSimpleThread::Delegate {
   void HandleRequestFromRenderer(int fd);
 
   void HandleFontMatchRequest(int fd,
-                              const Pickle& pickle,
                               PickleIterator iter,
                               const std::vector<base::ScopedFD*>& fds);
 
   void HandleFontOpenRequest(int fd,
-                             const Pickle& pickle,
                              PickleIterator iter,
                              const std::vector<base::ScopedFD*>& fds);
 
   void HandleGetFallbackFontForChar(int fd,
-                                  const Pickle& pickle,
                                   PickleIterator iter,
                                   const std::vector<base::ScopedFD*>& fds);
 
   void HandleGetStyleForStrike(int fd,
-                               const Pickle& pickle,
                                PickleIterator iter,
                                const std::vector<base::ScopedFD*>& fds);
 
   void HandleLocaltime(int fd,
-                       const Pickle& pickle,
                        PickleIterator iter,
                        const std::vector<base::ScopedFD*>& fds);
 
   void HandleMakeSharedMemorySegment(int fd,
-                                     const Pickle& pickle,
                                      PickleIterator iter,
                                      const std::vector<base::ScopedFD*>& fds);
 
   void HandleMatchWithFallback(int fd,
-                               const Pickle& pickle,
                                PickleIterator iter,
                                const std::vector<base::ScopedFD*>& fds);
 
@@ -84,4 +77,4 @@ class SandboxIPCHandler : public base::DelegateSimpleThread::Delegate {
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_RENDERER_HOST_SANDBOX_IPC_H_
+#endif  // CONTENT_BROWSER_RENDERER_HOST_SANDBOX_IPC_LINUX_H_

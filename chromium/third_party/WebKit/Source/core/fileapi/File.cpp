@@ -28,6 +28,7 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/fileapi/FilePropertyBag.h"
 #include "platform/FileMetadata.h"
 #include "platform/MIMETypeRegistry.h"
 #include "public/platform/Platform.h"
@@ -74,7 +75,7 @@ static PassOwnPtr<BlobData> createBlobDataForFileWithMetadata(const String& file
 {
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->setContentType(getContentTypeFromFileName(fileSystemName, File::WellKnownContentTypes));
-    blobData->appendFile(metadata.platformPath, 0, metadata.length, metadata.modificationTime);
+    blobData->appendFile(metadata.platformPath, 0, metadata.length, metadata.modificationTime / msPerSecond);
     return blobData.release();
 }
 
@@ -82,8 +83,34 @@ static PassOwnPtr<BlobData> createBlobDataForFileSystemURL(const KURL& fileSyste
 {
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->setContentType(getContentTypeFromFileName(fileSystemURL.path(), File::WellKnownContentTypes));
-    blobData->appendFileSystemURL(fileSystemURL, 0, metadata.length, metadata.modificationTime);
+    blobData->appendFileSystemURL(fileSystemURL, 0, metadata.length, metadata.modificationTime / msPerSecond);
     return blobData.release();
+}
+
+// static
+File* File::create(const HeapVector<BlobOrStringOrArrayBufferViewOrArrayBuffer>& fileBits, const String& fileName, const FilePropertyBag& options, ExceptionState& exceptionState)
+{
+    ASSERT(options.hasType());
+    if (!options.type().containsOnlyASCII()) {
+        exceptionState.throwDOMException(SyntaxError, "The 'type' property must consist of ASCII characters.");
+        return nullptr;
+    }
+
+    double lastModified;
+    if (options.hasLastModified())
+        lastModified = static_cast<double>(options.lastModified());
+    else
+        lastModified = currentTimeMS();
+
+    ASSERT(options.hasEndings());
+    bool normalizeLineEndingsToNative = options.endings() == "native";
+
+    OwnPtr<BlobData> blobData = BlobData::create();
+    blobData->setContentType(options.type().lower());
+    populateBlobData(blobData.get(), fileBits, normalizeLineEndingsToNative);
+
+    long long fileSize = blobData->length();
+    return File::create(fileName, lastModified, BlobDataHandle::create(blobData.release(), fileSize));
 }
 
 File* File::createWithRelativePath(const String& path, const String& relativePath)
@@ -100,7 +127,7 @@ File::File(const String& path, ContentTypeLookupPolicy policy, UserVisibility us
     , m_path(path)
     , m_name(Platform::current()->fileUtilities()->baseName(path))
     , m_snapshotSize(-1)
-    , m_snapshotModificationTime(invalidFileTime())
+    , m_snapshotModificationTimeMS(invalidFileTime())
 {
 }
 
@@ -111,7 +138,7 @@ File::File(const String& path, const String& name, ContentTypeLookupPolicy polic
     , m_path(path)
     , m_name(name)
     , m_snapshotSize(-1)
-    , m_snapshotModificationTime(invalidFileTime())
+    , m_snapshotModificationTimeMS(invalidFileTime())
 {
 }
 
@@ -122,18 +149,18 @@ File::File(const String& path, const String& name, const String& relativePath, U
     , m_path(path)
     , m_name(name)
     , m_snapshotSize(hasSnaphotData ? static_cast<long long>(size) : -1)
-    , m_snapshotModificationTime(hasSnaphotData ? lastModified : invalidFileTime())
+    , m_snapshotModificationTimeMS(hasSnaphotData ? lastModified : invalidFileTime())
     , m_relativePath(relativePath)
 {
 }
 
-File::File(const String& name, double modificationTime, PassRefPtr<BlobDataHandle> blobDataHandle)
+File::File(const String& name, double modificationTimeMS, PassRefPtr<BlobDataHandle> blobDataHandle)
     : Blob(blobDataHandle)
     , m_hasBackingFile(false)
     , m_userVisibility(File::IsNotUserVisible)
     , m_name(name)
     , m_snapshotSize(Blob::size())
-    , m_snapshotModificationTime(modificationTime)
+    , m_snapshotModificationTimeMS(modificationTimeMS)
 {
 }
 
@@ -144,7 +171,7 @@ File::File(const String& name, const FileMetadata& metadata, UserVisibility user
     , m_path(metadata.platformPath)
     , m_name(name)
     , m_snapshotSize(metadata.length)
-    , m_snapshotModificationTime(metadata.modificationTime)
+    , m_snapshotModificationTimeMS(metadata.modificationTime)
 {
 }
 
@@ -155,20 +182,41 @@ File::File(const KURL& fileSystemURL, const FileMetadata& metadata, UserVisibili
     , m_name(decodeURLEscapeSequences(fileSystemURL.lastPathComponent()))
     , m_fileSystemURL(fileSystemURL)
     , m_snapshotSize(metadata.length)
-    , m_snapshotModificationTime(metadata.modificationTime)
+    , m_snapshotModificationTimeMS(metadata.modificationTime)
 {
+}
+
+File::File(const File& other)
+    : Blob(other.blobDataHandle())
+    , m_hasBackingFile(other.m_hasBackingFile)
+    , m_userVisibility(other.m_userVisibility)
+    , m_path(other.m_path)
+    , m_name(other.m_name)
+    , m_fileSystemURL(other.m_fileSystemURL)
+    , m_snapshotSize(other.m_snapshotSize)
+    , m_snapshotModificationTimeMS(other.m_snapshotModificationTimeMS)
+    , m_relativePath(other.m_relativePath)
+{
+}
+
+File* File::clone(const String& name) const
+{
+    File* file = new File(*this);
+    if (!name.isNull())
+        file->m_name = name;
+    return file;
 }
 
 double File::lastModifiedMS() const
 {
-    if (hasValidSnapshotMetadata() && isValidFileTime(m_snapshotModificationTime))
-        return m_snapshotModificationTime * msPerSecond;
+    if (hasValidSnapshotMetadata() && isValidFileTime(m_snapshotModificationTimeMS))
+        return m_snapshotModificationTimeMS;
 
-    time_t modificationTime;
-    if (hasBackingFile() && getFileModificationTime(m_path, modificationTime) && isValidFileTime(modificationTime))
-        return modificationTime * msPerSecond;
+    double modificationTimeMS;
+    if (hasBackingFile() && getFileModificationTime(m_path, modificationTimeMS) && isValidFileTime(modificationTimeMS))
+        return modificationTimeMS;
 
-    return currentTime() * msPerSecond;
+    return currentTimeMS();
 }
 
 long long File::lastModified() const
@@ -222,27 +270,27 @@ Blob* File::slice(long long start, long long end, const String& contentType, Exc
 
     // FIXME: This involves synchronous file operation. We need to figure out how to make it asynchronous.
     long long size;
-    double modificationTime;
-    captureSnapshot(size, modificationTime);
+    double modificationTimeMS;
+    captureSnapshot(size, modificationTimeMS);
     clampSliceOffsets(size, start, end);
 
     long long length = end - start;
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->setContentType(contentType);
     if (!m_fileSystemURL.isEmpty()) {
-        blobData->appendFileSystemURL(m_fileSystemURL, start, length, modificationTime);
+        blobData->appendFileSystemURL(m_fileSystemURL, start, length, modificationTimeMS / msPerSecond);
     } else {
         ASSERT(!m_path.isEmpty());
-        blobData->appendFile(m_path, start, length, modificationTime);
+        blobData->appendFile(m_path, start, length, modificationTimeMS / msPerSecond);
     }
     return Blob::create(BlobDataHandle::create(blobData.release(), length));
 }
 
-void File::captureSnapshot(long long& snapshotSize, double& snapshotModificationTime) const
+void File::captureSnapshot(long long& snapshotSize, double& snapshotModificationTimeMS) const
 {
     if (hasValidSnapshotMetadata()) {
         snapshotSize = m_snapshotSize;
-        snapshotModificationTime = m_snapshotModificationTime;
+        snapshotModificationTimeMS = m_snapshotModificationTimeMS;
         return;
     }
 
@@ -251,12 +299,12 @@ void File::captureSnapshot(long long& snapshotSize, double& snapshotModification
     FileMetadata metadata;
     if (!hasBackingFile() || !getFileMetadata(m_path, metadata)) {
         snapshotSize = 0;
-        snapshotModificationTime = invalidFileTime();
+        snapshotModificationTimeMS = invalidFileTime();
         return;
     }
 
     snapshotSize = metadata.length;
-    snapshotModificationTime = metadata.modificationTime;
+    snapshotModificationTimeMS = metadata.modificationTime;
 }
 
 void File::close(ExecutionContext* executionContext, ExceptionState& exceptionState)
@@ -286,14 +334,14 @@ void File::appendTo(BlobData& blobData) const
 
     // FIXME: This involves synchronous file operation. We need to figure out how to make it asynchronous.
     long long size;
-    double modificationTime;
-    captureSnapshot(size, modificationTime);
+    double modificationTimeMS;
+    captureSnapshot(size, modificationTimeMS);
     if (!m_fileSystemURL.isEmpty()) {
-        blobData.appendFileSystemURL(m_fileSystemURL, 0, size, modificationTime);
+        blobData.appendFileSystemURL(m_fileSystemURL, 0, size, modificationTimeMS / msPerSecond);
         return;
     }
     ASSERT(!m_path.isEmpty());
-    blobData.appendFile(m_path, 0, size, modificationTime);
+    blobData.appendFile(m_path, 0, size, modificationTimeMS / msPerSecond);
 }
 
 bool File::hasSameSource(const File& other) const

@@ -46,20 +46,12 @@ int32 Duration::InMilliseconds() const { return ms_; }
 TrackedTime::TrackedTime() : ms_(0) {}
 TrackedTime::TrackedTime(int32 ms) : ms_(ms) {}
 TrackedTime::TrackedTime(const base::TimeTicks& time)
-    : ms_((time - base::TimeTicks()).InMilliseconds()) {
+    : ms_(static_cast<int32>((time - base::TimeTicks()).InMilliseconds())) {
 }
 
 // static
 TrackedTime TrackedTime::Now() {
-#if defined(OS_WIN)
-  // Use lock-free accessor to 32 bit time.
-  // Note that TimeTicks::Now() is built on this, so we have "compatible"
-  // times when we down-convert a TimeTicks sample.
-  return TrackedTime(base::TimeTicks::UnprotectedNow());
-#else
-  // Posix has nice cheap 64 bit times, so we just down-convert it.
   return TrackedTime(base::TimeTicks::Now());
-#endif  // OS_WIN
 }
 
 Duration TrackedTime::operator-(const TrackedTime& other) const {

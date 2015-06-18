@@ -15,15 +15,16 @@ namespace content {
 
 // Main function for starting the PPAPI broker process.
 int PpapiBrokerMain(const MainFunctionParams& parameters) {
-  const CommandLine& command_line = parameters.command_line;
+  const base::CommandLine& command_line = parameters.command_line;
   if (command_line.HasSwitch(switches::kPpapiStartupDialog)) {
     ChildProcess::WaitForDebugger("PpapiBroker");
   }
 
   base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIBrokerMain");
-  base::debug::TraceLog::GetInstance()->SetProcessName("PPAPI Broker Process");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName(
+      "PPAPI Broker Process");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventPpapiBrokerProcessSortIndex);
 
   ChildProcess ppapi_broker_process;

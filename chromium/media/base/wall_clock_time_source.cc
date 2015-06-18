@@ -5,14 +5,11 @@
 #include "media/base/wall_clock_time_source.h"
 
 #include "base/logging.h"
-#include "base/time/default_tick_clock.h"
 
 namespace media {
 
 WallClockTimeSource::WallClockTimeSource()
-    : tick_clock_(new base::DefaultTickClock()),
-      ticking_(false),
-      playback_rate_(1.0f) {
+    : tick_clock_(&default_tick_clock_), ticking_(false), playback_rate_(1.0) {
 }
 
 WallClockTimeSource::~WallClockTimeSource() {
@@ -35,7 +32,7 @@ void WallClockTimeSource::StopTicking() {
   reference_wall_ticks_ = tick_clock_->NowTicks();
 }
 
-void WallClockTimeSource::SetPlaybackRate(float playback_rate) {
+void WallClockTimeSource::SetPlaybackRate(double playback_rate) {
   DVLOG(1) << __FUNCTION__ << "(" << playback_rate << ")";
   base::AutoLock auto_lock(lock_);
   // Estimate current media time using old rate to use as a new base time for
@@ -60,18 +57,27 @@ base::TimeDelta WallClockTimeSource::CurrentMediaTime() {
   return CurrentMediaTime_Locked();
 }
 
-base::TimeDelta WallClockTimeSource::CurrentMediaTimeForSyncingVideo() {
-  return CurrentMediaTime();
-}
+bool WallClockTimeSource::GetWallClockTimes(
+    const std::vector<base::TimeDelta>& media_timestamps,
+    std::vector<base::TimeTicks>* wall_clock_times) {
+  base::AutoLock auto_lock(lock_);
+  if (!ticking_ || !playback_rate_)
+    return false;
 
-void WallClockTimeSource::SetTickClockForTesting(
-    scoped_ptr<base::TickClock> tick_clock) {
-  tick_clock_.swap(tick_clock);
+  DCHECK(wall_clock_times->empty());
+  wall_clock_times->reserve(media_timestamps.size());
+  for (const auto& media_timestamp : media_timestamps) {
+    wall_clock_times->push_back(
+        reference_wall_ticks_ +
+        base::TimeDelta::FromMicroseconds(
+            (media_timestamp - base_time_).InMicroseconds() / playback_rate_));
+  }
+  return true;
 }
 
 base::TimeDelta WallClockTimeSource::CurrentMediaTime_Locked() {
   lock_.AssertAcquired();
-  if (!ticking_)
+  if (!ticking_ || !playback_rate_)
     return base_time_;
 
   base::TimeTicks now = tick_clock_->NowTicks();

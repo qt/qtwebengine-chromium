@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2004--2005, Google Inc.
+ * Copyright 2004--2005 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -25,9 +25,9 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef POSIX
+#if defined(WEBRTC_POSIX)
 #include <errno.h>
-#endif  // POSIX
+#endif  // WEBRTC_POSIX
 
 #include <iostream>
 

@@ -65,6 +65,11 @@ XHRReplayData::XHRReplayData(ExecutionContext* executionContext, const AtomicStr
 {
 }
 
+DEFINE_TRACE(XHRReplayData)
+{
+    ContextLifecycleObserver::trace(visitor);
+}
+
 // ResourceData
 NetworkResourcesData::ResourceData::ResourceData(const String& requestId, const String& loaderId)
     : m_requestId(requestId)
@@ -72,7 +77,8 @@ NetworkResourcesData::ResourceData::ResourceData(const String& requestId, const 
     , m_base64Encoded(false)
     , m_isContentEvicted(false)
     , m_type(InspectorPageAgent::OtherResource)
-    , m_cachedResource(0)
+    , m_httpStatusCode(0)
+    , m_cachedResource(nullptr)
 {
 }
 
@@ -162,8 +168,25 @@ void NetworkResourcesData::responseReceived(const String& requestId, const Strin
         return;
     resourceData->setFrameId(frameId);
     resourceData->setUrl(response.url());
+    resourceData->setMimeType(response.mimeType());
+    resourceData->setTextEncodingName(response.textEncodingName());
     resourceData->setDecoder(InspectorPageAgent::createResourceTextDecoder(response.mimeType(), response.textEncodingName()));
     resourceData->setHTTPStatusCode(response.httpStatusCode());
+
+    String filePath = response.downloadedFilePath();
+    if (!filePath.isEmpty()) {
+        OwnPtr<BlobData> blobData = BlobData::create();
+        blobData->appendFile(filePath);
+        AtomicString mimeType;
+        if (response.isHTTP())
+            mimeType = extractMIMETypeFromMediaType(response.httpHeaderField("Content-Type"));
+        if (mimeType.isEmpty())
+            mimeType = response.mimeType();
+        if (mimeType.isEmpty())
+            mimeType = AtomicString("text/plain", AtomicString::ConstructFromLiteral);
+        blobData->setContentType(mimeType);
+        resourceData->setDownloadedFileBlob(BlobDataHandle::create(blobData.release(), -1));
+    }
 }
 
 void NetworkResourcesData::setResourceType(const String& requestId, InspectorPageAgent::ResourceType type)
@@ -262,11 +285,9 @@ void NetworkResourcesData::setXHRReplayData(const String& requestId, XHRReplayDa
     ResourceData* resourceData = resourceDataForRequestId(requestId);
     if (!resourceData) {
         Vector<String> result;
-        ReusedRequestIds::iterator it;
-        ReusedRequestIds::iterator end = m_reusedXHRReplayDataRequestIds.end();
-        for (it = m_reusedXHRReplayDataRequestIds.begin(); it != end; ++it) {
-            if (it->value == requestId)
-                setXHRReplayData(it->key, xhrReplayData);
+        for (auto& request : m_reusedXHRReplayDataRequestIds) {
+            if (request.value == requestId)
+                setXHRReplayData(request.key, xhrReplayData);
         }
         return;
     }
@@ -277,21 +298,19 @@ void NetworkResourcesData::setXHRReplayData(const String& requestId, XHRReplayDa
 Vector<NetworkResourcesData::ResourceData*> NetworkResourcesData::resources()
 {
     Vector<ResourceData*> result;
-    for (ResourceDataMap::iterator it = m_requestIdToResourceDataMap.begin(); it != m_requestIdToResourceDataMap.end(); ++it)
-        result.append(it->value);
+    for (auto& request : m_requestIdToResourceDataMap)
+        result.append(request.value);
     return result;
 }
 
 Vector<String> NetworkResourcesData::removeResource(Resource* cachedResource)
 {
     Vector<String> result;
-    ResourceDataMap::iterator it;
-    ResourceDataMap::iterator end = m_requestIdToResourceDataMap.end();
-    for (it = m_requestIdToResourceDataMap.begin(); it != end; ++it) {
-        ResourceData* resourceData = it->value;
+    for (auto& request : m_requestIdToResourceDataMap) {
+        ResourceData* resourceData = request.value;
         if (resourceData->cachedResource() == cachedResource) {
             resourceData->setResource(0);
-            result.append(it->key);
+            result.append(request.key);
         }
     }
 
@@ -305,25 +324,25 @@ void NetworkResourcesData::clear(const String& preservedLoaderId)
 
     ResourceDataMap preservedMap;
 
-    ResourceDataMap::iterator it;
-    ResourceDataMap::iterator end = m_requestIdToResourceDataMap.end();
-    for (it = m_requestIdToResourceDataMap.begin(); it != end; ++it) {
-        ResourceData* resourceData = it->value;
+    for (auto& resource : m_requestIdToResourceDataMap) {
+        ResourceData* resourceData = resource.value;
         if (!preservedLoaderId.isNull() && resourceData->loaderId() == preservedLoaderId)
-            preservedMap.set(it->key, it->value);
+            preservedMap.set(resource.key, resource.value);
         else
             delete resourceData;
     }
     m_requestIdToResourceDataMap.swap(preservedMap);
 
     m_reusedXHRReplayDataRequestIds.clear();
-}
-
-void NetworkResourcesData::setResourcesDataSizeLimits(size_t maximumResourcesContentSize, size_t maximumSingleResourceContentSize)
-{
-    clear();
     m_maximumResourcesContentSize = maximumResourcesContentSize;
     m_maximumSingleResourceContentSize = maximumSingleResourceContentSize;
+}
+
+void NetworkResourcesData::setResourcesDataSizeLimits(size_t resourcesContentSize, size_t singleResourceContentSize)
+{
+    clear();
+    m_maximumResourcesContentSize = resourcesContentSize;
+    m_maximumSingleResourceContentSize = singleResourceContentSize;
 }
 
 NetworkResourcesData::ResourceData* NetworkResourcesData::resourceDataForRequestId(const String& requestId)

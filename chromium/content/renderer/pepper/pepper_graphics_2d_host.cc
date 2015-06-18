@@ -5,9 +5,9 @@
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/resources/shared_bitmap.h"
 #include "cc/resources/texture_mailbox.h"
 #include "content/child/child_shared_bitmap_manager.h"
@@ -15,6 +15,7 @@
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/pepper/gfx_conversion.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/plugin_instance_throttler_impl.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "ppapi/c/pp_bool.h"
@@ -30,15 +31,14 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/blit.h"
-#include "ui/gfx/point_conversions.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 
 #if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #endif
 
@@ -383,10 +383,8 @@ void PepperGraphics2DHost::Paint(blink::WebCanvas* canvas,
   canvas->drawBitmap(image, pixel_origin.x(), pixel_origin.y(), &paint);
 }
 
-void PepperGraphics2DHost::ViewInitiatedPaint() {}
-
-void PepperGraphics2DHost::ViewFlushedPaint() {
-  TRACE_EVENT0("pepper", "PepperGraphics2DHost::ViewFlushedPaint");
+void PepperGraphics2DHost::ViewInitiatedPaint() {
+  TRACE_EVENT0("pepper", "PepperGraphics2DHost::ViewInitiatedPaint");
   if (need_flush_ack_) {
     SendFlushAck();
     need_flush_ack_ = false;
@@ -591,7 +589,7 @@ bool PepperGraphics2DHost::PrepareTextureMailbox(
          cc::SharedBitmap::CheckedSizeInBytes(pixel_image_size));
   image_data_->Unmap();
 
-  *mailbox = cc::TextureMailbox(shared_bitmap->memory(), pixel_image_size);
+  *mailbox = cc::TextureMailbox(shared_bitmap.get(), pixel_image_size);
   *release_callback = cc::SingleReleaseCallback::Create(
       base::Bind(&PepperGraphics2DHost::ReleaseCallback,
                  this->AsWeakPtr(),
@@ -688,6 +686,11 @@ int32_t PepperGraphics2DHost::Flush(PP_Resource* old_image_data) {
     ScheduleOffscreenFlushAck();
   } else {
     need_flush_ack_ = true;
+  }
+
+  if (bound_instance_ && bound_instance_->throttler() &&
+      bound_instance_->throttler()->needs_representative_keyframe()) {
+    bound_instance_->throttler()->OnImageFlush(image_data_->GetMappedBitmap());
   }
 
   return PP_OK_COMPLETIONPENDING;

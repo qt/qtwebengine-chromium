@@ -12,11 +12,11 @@
 #include "media/base/audio_capturer_source.h"
 #include "media/base/audio_fifo.h"
 #include "third_party/WebKit/public/platform/WebAudioDestinationConsumer.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 
 namespace content {
 
-class WebRtcAudioCapturer;
 class WebRtcLocalAudioTrack;
 
 // WebAudioCapturerSource is the missing link between
@@ -30,30 +30,35 @@ class WebAudioCapturerSource
     :  public base::RefCountedThreadSafe<WebAudioCapturerSource>,
        public blink::WebAudioDestinationConsumer {
  public:
-  WebAudioCapturerSource();
+  explicit WebAudioCapturerSource(
+      const blink::WebMediaStreamSource& blink_source);
 
   // WebAudioDestinationConsumer implementation.
   // setFormat() is called early on, so that we can configure the audio track.
-  virtual void setFormat(size_t number_of_channels, float sample_rate) override;
+  void setFormat(size_t number_of_channels, float sample_rate) override;
   // MediaStreamAudioDestinationNode periodically calls consumeAudio().
   // Called on the WebAudio audio thread.
-  virtual void consumeAudio(const blink::WebVector<const float*>& audio_data,
-      size_t number_of_frames) override;
+  void consumeAudio(const blink::WebVector<const float*>& audio_data,
+                    size_t number_of_frames) override;
 
   // Called when the WebAudioCapturerSource is hooking to a media audio track.
   // |track| is the sink of the data flow. |source_provider| is the source of
   // the data flow where stream information like delay, volume, key_pressed,
   // is stored.
-  void Start(WebRtcLocalAudioTrack* track, WebRtcAudioCapturer* capturer);
+  void Start(WebRtcLocalAudioTrack* track);
 
   // Called when the media audio track is stopping.
   void Stop();
 
  protected:
   friend class base::RefCountedThreadSafe<WebAudioCapturerSource>;
-  virtual ~WebAudioCapturerSource();
+  ~WebAudioCapturerSource() override;
 
  private:
+  // Removes this object from a blink::WebMediaStreamSource with which it
+  // might be registered. The goal is to avoid dangling pointers.
+  void removeFromBlinkSource();
+
   // Used to DCHECK that some methods are called on the correct thread.
   base::ThreadChecker thread_checker_;
 
@@ -61,11 +66,6 @@ class WebAudioCapturerSource
   // WebRtcLocalAudioTrack is reference counted, and owning this object.
   // To avoid circular reference, a raw pointer is kept here.
   WebRtcLocalAudioTrack* track_;
-
-  // A raw pointer to the capturer to get audio processing params like
-  // delay, volume, key_pressed information.
-  // This |capturer_| is guaranteed to outlive this object.
-  WebRtcAudioCapturer* capturer_;
 
   media::AudioParameters params_;
 
@@ -81,12 +81,13 @@ class WebAudioCapturerSource
   // Handles mismatch between WebAudio buffer size and WebRTC.
   scoped_ptr<media::AudioFifo> fifo_;
 
-  // Buffer to pass audio data to WebRtc.
-  scoped_ptr<int16[]> audio_data_;
-
   // Synchronizes HandleCapture() with AudioCapturerSource calls.
   base::Lock lock_;
   bool started_;
+
+  // This object registers with a blink::WebMediaStreamSource. We keep track of
+  // that in order to be able to deregister before stopping the audio track.
+  blink::WebMediaStreamSource blink_source_;
 
   DISALLOW_COPY_AND_ASSIGN(WebAudioCapturerSource);
 };

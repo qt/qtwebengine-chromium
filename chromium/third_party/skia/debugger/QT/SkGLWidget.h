@@ -30,7 +30,7 @@ public:
 
     ~SkGLWidget();
 
-    void draw() {
+    void updateImage() {
         this->updateGL();
     }
     void setSampleCount(int sampleCount);
@@ -45,10 +45,11 @@ protected:
 
 
 private:
-    const GrGLInterface* fCurIntf;
-    GrContext* fCurContext;
-    SkGpuDevice* fGpuDevice;
-    SkCanvas* fCanvas;
+    void createRenderTarget();
+    SkAutoTUnref<const GrGLInterface> fCurIntf;
+    SkAutoTUnref<GrContext> fCurContext;
+    SkAutoTUnref<SkGpuDevice> fGpuDevice;
+    SkAutoTUnref<SkCanvas> fCanvas;
     SkDebugger* fDebugger;
     GrBackendRenderTargetDesc getDesc(int w, int h);
 };

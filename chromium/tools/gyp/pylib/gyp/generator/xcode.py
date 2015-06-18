@@ -70,6 +70,8 @@ generator_additional_path_sections = [
 # configurations.
 generator_additional_non_configuration_keys = [
   'ios_app_extension',
+  'ios_watch_app',
+  'ios_watchkit_extension',
   'mac_bundle',
   'mac_bundle_resources',
   'mac_framework_headers',
@@ -522,7 +524,7 @@ def AddHeaderToTarget(header, pbxp, xct, is_public):
   xct.HeadersPhase().AddFile(header, settings)
 
 
-_xcode_variable_re = re.compile('(\$\((.*?)\))')
+_xcode_variable_re = re.compile(r'(\$\((.*?)\))')
 def ExpandXcodeVariables(string, expansions):
   """Expands Xcode-style $(VARIABLES) in string per the expansions dict.
 
@@ -588,7 +590,6 @@ def GenerateOutput(target_list, target_dicts, data, params):
   parallel_builds = generator_flags.get('xcode_parallel_builds', True)
   serialize_all_tests = \
       generator_flags.get('xcode_serialize_all_test_runs', True)
-  project_version = generator_flags.get('xcode_project_version', None)
   skip_excluded_files = \
       not generator_flags.get('xcode_list_excluded_files', True)
   xcode_projects = {}
@@ -606,8 +607,6 @@ def GenerateOutput(target_list, target_dicts, data, params):
     if parallel_builds:
       pbxp.SetProperty('attributes',
                        {'BuildIndependentTargetsInParallel': 'YES'})
-    if project_version:
-      xcp.project_file.SetXcodeVersion(project_version)
 
     # Add gyp/gypi files to project
     if not generator_flags.get('standalone'):
@@ -654,6 +653,9 @@ def GenerateOutput(target_list, target_dicts, data, params):
       'loadable_module+xctest':      'com.apple.product-type.bundle.unit-test',
       'shared_library+bundle':       'com.apple.product-type.framework',
       'executable+extension+bundle': 'com.apple.product-type.app-extension',
+      'executable+watch+extension+bundle':
+          'com.apple.product-type.watchkit-extension',
+      'executable+watch+bundle': 'com.apple.product-type.application.watchapp',
     }
 
     target_properties = {
@@ -664,7 +666,9 @@ def GenerateOutput(target_list, target_dicts, data, params):
     type = spec['type']
     is_xctest = int(spec.get('mac_xctest_bundle', 0))
     is_bundle = int(spec.get('mac_bundle', 0)) or is_xctest
-    is_extension = int(spec.get('ios_app_extension', 0))
+    is_app_extension = int(spec.get('ios_app_extension', 0))
+    is_watchkit_extension = int(spec.get('ios_watchkit_extension', 0))
+    is_watch_app = int(spec.get('ios_watch_app', 0))
     if type != 'none':
       type_bundle_key = type
       if is_xctest:
@@ -672,10 +676,18 @@ def GenerateOutput(target_list, target_dicts, data, params):
         assert type == 'loadable_module', (
             'mac_xctest_bundle targets must have type loadable_module '
             '(target %s)' % target_name)
-      elif is_extension:
+      elif is_app_extension:
         assert is_bundle, ('ios_app_extension flag requires mac_bundle '
             '(target %s)' % target_name)
         type_bundle_key += '+extension+bundle'
+      elif is_watchkit_extension:
+        assert is_bundle, ('ios_watchkit_extension flag requires mac_bundle '
+            '(target %s)' % target_name)
+        type_bundle_key += '+watch+extension+bundle'
+      elif is_watch_app:
+        assert is_bundle, ('ios_watch_app flag requires mac_bundle '
+            '(target %s)' % target_name)
+        type_bundle_key += '+watch+bundle'
       elif is_bundle:
         type_bundle_key += '+bundle'
 
@@ -1115,6 +1127,9 @@ exit 1
         # Relative paths are relative to $(SRCROOT).
         dest = '$(SRCROOT)/' + dest
 
+      code_sign = int(copy_group.get('xcode_code_sign', 0))
+      settings = (None, '{ATTRIBUTES = (CodeSignOnCopy, ); }')[code_sign];
+
       # Coalesce multiple "copies" sections in the same target with the same
       # "destination" property into the same PBXCopyFilesBuildPhase, otherwise
       # they'll wind up with ID collisions.
@@ -1133,7 +1148,7 @@ exit 1
         pbxcp_dict[dest] = pbxcp
 
       for file in copy_group['files']:
-        pbxcp.AddFile(file)
+        pbxcp.AddFile(file, settings)
 
     # Excluded files can also go into the project file.
     if not skip_excluded_files:

@@ -9,12 +9,9 @@
 
 namespace cc {
 
-ResourcePool::ResourcePool(ResourceProvider* resource_provider,
-                           GLenum target,
-                           ResourceFormat format)
+ResourcePool::ResourcePool(ResourceProvider* resource_provider, GLenum target)
     : resource_provider_(resource_provider),
       target_(target),
-      format_(format),
       max_memory_usage_bytes_(0),
       max_unused_memory_usage_bytes_(0),
       max_resource_count_(0),
@@ -36,13 +33,15 @@ ResourcePool::~ResourcePool() {
 }
 
 scoped_ptr<ScopedResource> ResourcePool::AcquireResource(
-    const gfx::Size& size) {
+    const gfx::Size& size, ResourceFormat format) {
   for (ResourceList::iterator it = unused_resources_.begin();
        it != unused_resources_.end();
        ++it) {
     ScopedResource* resource = *it;
     DCHECK(resource_provider_->CanLockForWrite(resource->id()));
 
+    if (resource->format() != format)
+      continue;
     if (resource->size() != size)
       continue;
 
@@ -53,7 +52,7 @@ scoped_ptr<ScopedResource> ResourcePool::AcquireResource(
 
   scoped_ptr<ScopedResource> resource =
       ScopedResource::Create(resource_provider_);
-  resource->AllocateManaged(size, target_, format_);
+  resource->AllocateManaged(size, target_, format);
 
   memory_usage_bytes_ += resource->bytes();
   ++resource_count_;

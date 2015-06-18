@@ -3,7 +3,7 @@
  * found in the LICENSE file. */
 
 html.loading * {
-  -webkit-transition-duration: 0 !important;
+  transition-duration: 0ms !important;
 }
 
 html:not(.focus-outline-visible)
@@ -16,85 +16,47 @@ html:not(.focus-outline-visible)
   overflow-y: hidden;
 }
 
+#extension-settings.showing-banner {
+  margin-top: 45px;
+}
+
 /* Developer mode */
 
 #dev-controls {
-  -webkit-margin-end: 20px;
-  -webkit-transition: padding 100ms, height 100ms, opacity 100ms;
-  border-bottom: 1px solid #eee;
+  -webkit-margin-end: 0;
   height: 0;
-  opacity: 0;
   overflow: hidden;
 }
 
-#dev-controls .buttons-container {
-  -webkit-padding-end: 3px;
-  -webkit-padding-start: 4px;
+#dev-controls.animated {
+  transition: height 150ms;
 }
 
-#dev-controls .buttons-container {
-  display: -webkit-box;
-  height: 32px;  /* height + padding-top matches #dev-controls height. */
-  padding-top: 13px;
+.dev-mode #dev-controls {
+  border-bottom: 1px solid #eee;
+}
+
+#dev-controls > * {
+  padding: 8px 3px;
+}
+
+#dev-controls .button-container {
+  -webkit-padding-end: 12px;
+  -webkit-padding-start: 12px;
+  display: flex;
+  flex-wrap: wrap;
 }
 
 #dev-controls button {
   white-space: nowrap;
 }
 
-#apps-developer-tools-promo {
-  -webkit-padding-end: 3px;
-  align-items: center;
-  border-top: 1px solid #eee;
-  display: flex;
-  font-size: 13px;
-  margin-top: 7px;  /* This matches #dev-controls padding-bottom. */
-  padding-top: 5px;
-}
-
-#apps-developer-tools-promo img {
-  content: url(apps_developer_tools_promo_48.png);
-}
-
-#apps-developer-tools-promo-text {
-  -webkit-margin-start: 5px;
-}
-
-#apps-developer-tools-promo-close-wrapper {
-  display: flex;
-  flex-grow: 1;
-  justify-content: flex-end;
-}
-
-#apps-developer-tools-promo .close-button {
-  background: url(chrome://theme/IDR_CLOSE_DIALOG) no-repeat center center;
-  border: 0;
-  height: 14px;
-  width: 14px;
-  z-index: 1;
-}
-
-#apps-developer-tools-promo .close-button:hover {
-  background-image: url(chrome://theme/IDR_CLOSE_DIALOG_H);
-}
-
-#apps-developer-tools-promo .close-button:active {
-  background-image: url(chrome://theme/IDR_CLOSE_DIALOG_P);
-}
-
-#extension-settings.dev-mode #dev-controls {
-  -webkit-transition-duration: 250ms;
-  height: 45px;
-  opacity: 1;
-  padding-bottom: 7px;
-}
-
-#extension-settings.dev-mode.adt-promo #dev-controls {
-  height: 105px;  /* Allow more height for the Apps Developer Tools promo. */
+#dev-controls .button-container button:not(:last-of-type) {
+  -webkit-margin-end: 5px;
 }
 
 #dev-controls-spacer {
-  -webkit-box-flex: 1;
+  flex: 1;
 }
 
 #dev-toggle {
@@ -123,18 +85,44 @@ html:not(.focus-outline-visible)
   text-align: right;
 }
 
-#extension-settings:not(.dev-mode) .developer-extras {
-  display: none;
+.extension-code-empty {
+  background-color: #eee;
+  display: inline-block;
+  line-height: 100px;  /* Vertically centers text and serves as min-height. */
+  text-align: center;
+  width: 100%;
 }
 
-.developer-extras > div,
-.permanent-warnings > div {
+.extension-details > .developer-extras > div,
+.extension-details > .permanent-warnings > div {
   margin: 5px 0;
+}
+
+.dependent-extensions-message,
+.suspicious-install-message {
+  line-height: 150%;
+}
+
+#page-header > .page-banner > .page-banner-gradient {
+  -webkit-margin-end: 0;
+}
+
+#header-controls {
+  right: 13px;
+}
+
+html[dir='rtl'] #header-controls {
+  left: 13px;
+  right: auto;
+}
+
+#page-header > h1::after {
+  -webkit-margin-end: 0;
 }
 
 #extension-settings #page-header {
   /* These values match the .page values. */
-  -webkit-margin-end: 24px;
+  -webkit-margin-end: 0;
   min-width: 576px;
 }
 
@@ -148,6 +136,10 @@ html:not(.focus-outline-visible)
   font-weight: bold;
 }
 
+#no-extensions {
+  margin-top: 3em;
+}
+
 #suggest-gallery {
   -webkit-padding-start: 10px;
 }
@@ -156,6 +148,7 @@ html:not(.focus-outline-visible)
   background: url(chrome://theme/IDR_WEBSTORE_ICON_32) no-repeat left center;
   background-size: 32px 32px;
   font-size: 1.25em;
+  margin: 24px 12px 12px 12px;
 }
 
 html[dir=rtl] #footer-section {
@@ -167,23 +160,14 @@ html[dir=rtl] #footer-section {
   line-height: 32px;
 }
 
-.empty-extension-list {
-  height: 3em;
-}
-
-.loading #no-extensions,
-.loading #footer-section,
-#extension-settings-list:not(.empty-extension-list) ~ #no-extensions,
-.empty-extension-list ~ #footer-section {
-  display: none;
-}
-
 .extension-list-item-wrapper {
-  margin: 23px 0;
+  margin: 12px 0;
+  padding: 12px;
 }
 
 .extension-list-item {
   background-repeat: no-repeat;
+  background-size: 48px 48px;
   display: -webkit-box;
   min-height: 48px;
 }
@@ -194,7 +178,7 @@ html[dir=rtl] #footer-section {
 }
 
 html[dir='rtl'] .extension-list-item {
-  background-position: right;
+  background-position-x: 100%;
 }
 
 .extension-title {
@@ -235,10 +219,17 @@ html[dir='rtl'] .extension-list-item {
   -webkit-margin-start: 0;
 }
 
+.action-links .errors-link {
+  align-items: center;
+  display: inline-flex;
+  vertical-align: bottom;
+}
+
 .extension-details {
   -webkit-box-flex: 1;
   -webkit-padding-end: 7px;
-  -webkit-padding-start: 55px;
+  -webkit-padding-start: 60px;
+  padding-top: 6px;
 }
 
 .extension-description,
@@ -247,13 +238,22 @@ html[dir='rtl'] .extension-list-item {
 .location-text,
 .blacklist-text,
 .enable-checkbox input:disabled + .enable-checkbox-text {
-  color: rgb(151, 156, 160);
+  color: rgb(115, 119, 122);
 }
 
 .enable-controls {
   /* Matches right: position of dev controls toggle. */
-  -webkit-margin-end: 20px;
+  -webkit-margin-end: 0;
   position: relative;
+}
+
+.enable-controls > .controlled-setting-indicator {
+  width: 23px;
+}
+
+.enable-controls > .controlled-setting-indicator > div {
+  left: 11px;
+  right: 11px;
 }
 
 /* We use x[is='action-link'] here so that we get higher specifity than the
@@ -279,6 +279,10 @@ html[dir='rtl'] .extension-list-item {
   display: none;
 }
 
+.optional-controls .checkbox {
+  -webkit-margin-end: 12px;
+}
+
 .load-path > span {
   word-wrap: break-word;
 }
@@ -297,8 +301,9 @@ html[dir='rtl'] .extension-list-item {
 .install-warnings,
 .extension-warnings {
   border-radius: 3px;
-  margin-top: 5px;
-  padding: 2px 5px;
+  line-height: 150%;
+  margin: 8px 0;
+  padding: 8px 12px;
 }
 
 .butter-bar {
@@ -317,11 +322,11 @@ html[dir='rtl'] .extension-list-item {
 
 .error-collection-control {
   -webkit-margin-start: 5px;
-  display: none;
 }
 
-#extension-settings.dev-mode .error-collection-control {
-  display: initial;
+#extension-settings:not(.dev-mode) .developer-extras,
+#extension-settings:not(.dev-mode) .error-collection-control {
+  display: none;
 }
 
 #font-measuring-div {
@@ -367,16 +372,16 @@ html[dir=rtl] .extension-commands-config {
 /* Trash */
 
 #extension-settings .trash {
-  -webkit-transition: opacity 200ms;
   height: 22px;
   opacity: 0.8;
   position: relative;
-  right: 0;
+  right: -8px;
   top: 6px;
+  transition: opacity 200ms;
 }
 
 html[dir='rtl'] #extension-settings .trash {
-  left: 0;
+  left: -8px;
   right: auto;
 }
 
@@ -388,10 +393,13 @@ html[dir='rtl'] #extension-settings .trash {
   visibility: hidden;
 }
 
-.extension-highlight {
-  background: rgb(250, 250, 250);
-  border-radius: 3px;
-  padding: 5px 0 5px 5px;
+/* In case the extension is policy controlled the trash icon must be hidden by
+ * setting display:none rather than only setting visibility:hidden to completely
+ * remove it from the layout and make space for the controlled indicator.
+ * TODO(cschuet): rather than hide always replace it with something meaningful.
+ */
+.extension-list-item-wrapper.policy-controlled .trash {
+  display: none;
 }
 
 /* Supervised users */
@@ -414,4 +422,8 @@ html[dir='rtl'] #extension-settings .trash {
 .sideload-wipeout-banner .page-banner-text {
   -webkit-padding-start: 8px;
   background-image: none;
+}
+
+.extension-highlight {
+  background-color: rgba(0, 0, 0, .05);
 }

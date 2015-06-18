@@ -34,16 +34,13 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "platform/Cookie.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebCookie.h"
 #include "public/platform/WebCookieJar.h"
 #include "public/platform/WebURL.h"
-#include "public/platform/WebVector.h"
 
 namespace blink {
 
-static blink::WebCookieJar* toCookieJar(const Document* document)
+static WebCookieJar* toCookieJar(const Document* document)
 {
     if (!document || !document->frame())
         return 0;
@@ -52,7 +49,7 @@ static blink::WebCookieJar* toCookieJar(const Document* document)
 
 String cookies(const Document* document, const KURL& url)
 {
-    blink::WebCookieJar* cookieJar = toCookieJar(document);
+    WebCookieJar* cookieJar = toCookieJar(document);
     if (!cookieJar)
         return String();
     return cookieJar->cookies(url, document->firstPartyForCookies());
@@ -60,7 +57,7 @@ String cookies(const Document* document, const KURL& url)
 
 void setCookies(Document* document, const KURL& url, const String& cookieString)
 {
-    blink::WebCookieJar* cookieJar = toCookieJar(document);
+    WebCookieJar* cookieJar = toCookieJar(document);
     if (!cookieJar)
         return;
     cookieJar->setCookie(url, document->firstPartyForCookies(), cookieString);
@@ -68,7 +65,7 @@ void setCookies(Document* document, const KURL& url, const String& cookieString)
 
 bool cookiesEnabled(const Document* document)
 {
-    blink::WebCookieJar* cookieJar = toCookieJar(document);
+    WebCookieJar* cookieJar = toCookieJar(document);
     if (!cookieJar)
         return false;
     return cookieJar->cookiesEnabled(document->cookieURL(), document->firstPartyForCookies());
@@ -76,34 +73,10 @@ bool cookiesEnabled(const Document* document)
 
 String cookieRequestHeaderFieldValue(const Document* document, const KURL& url)
 {
-    blink::WebCookieJar* cookieJar = toCookieJar(document);
+    WebCookieJar* cookieJar = toCookieJar(document);
     if (!cookieJar)
         return String();
     return cookieJar->cookieRequestHeaderFieldValue(url, document->firstPartyForCookies());
 }
 
-bool getRawCookies(const Document* document, const KURL& url, Vector<Cookie>& cookies)
-{
-    cookies.clear();
-    blink::WebCookieJar* cookieJar = toCookieJar(document);
-    if (!cookieJar)
-        return false;
-    blink::WebVector<blink::WebCookie> webCookies;
-    cookieJar->rawCookies(url, document->firstPartyForCookies(), webCookies);
-    for (unsigned i = 0; i < webCookies.size(); ++i) {
-        const blink::WebCookie& webCookie = webCookies[i];
-        cookies.append(Cookie(webCookie.name, webCookie.value, webCookie.domain, webCookie.path,
-                              webCookie.expires, webCookie.httpOnly, webCookie.secure, webCookie.session));
-    }
-    return true;
-}
-
-void deleteCookie(const Document* document, const KURL& url, const String& cookieName)
-{
-    blink::WebCookieJar* cookieJar = toCookieJar(document);
-    if (!cookieJar)
-        return;
-    cookieJar->deleteCookie(url, cookieName);
-}
-
-}
+} // namespace blink

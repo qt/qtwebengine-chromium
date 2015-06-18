@@ -30,9 +30,9 @@
 #ifndef MainThread_h
 #define MainThread_h
 
-#include <stdint.h>
-
+#include "wtf/Forward.h"
 #include "wtf/WTFExport.h"
+#include <stdint.h>
 
 namespace WTF {
 
@@ -41,15 +41,15 @@ typedef void MainThreadFunction(void*);
 // Must be called from the main thread.
 WTF_EXPORT void initializeMainThread(void (*)(MainThreadFunction, void*));
 
-WTF_EXPORT void callOnMainThread(MainThreadFunction*, void* context);
-
-template<typename> class Function;
-WTF_EXPORT void callOnMainThread(const Function<void ()>&);
-
 WTF_EXPORT bool isMainThread();
+
+namespace internal {
+
+void callOnMainThread(MainThreadFunction*, void* context);
+
+} // namespace internal
 
 } // namespace WTF
 
-using WTF::callOnMainThread;
 using WTF::isMainThread;
 #endif // MainThread_h

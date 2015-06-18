@@ -60,12 +60,12 @@ class FifoOwnedMemory : public MediaMemoryChunk {
   FifoOwnedMemory(void* data, size_t size,
                   const scoped_refptr<MediaMessageFlag>& flag,
                   const base::Closure& release_msg_cb);
-  virtual ~FifoOwnedMemory();
+  ~FifoOwnedMemory() override;
 
   // MediaMemoryChunk implementation.
-  virtual void* data() const override { return data_; }
-  virtual size_t size() const override { return size_; }
-  virtual bool valid() const override { return flag_->IsValid(); }
+  void* data() const override { return data_; }
+  size_t size() const override { return size_; }
+  bool valid() const override { return flag_->IsValid(); }
 
  private:
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
@@ -133,7 +133,7 @@ MediaMessageFifo::MediaMessageFifo(
   }
   CMALOG(kLogControl)
       << "MediaMessageFifo:" << " init=" << init << " size=" << size_;
-  CHECK_GT(size_, 0) << size_;
+  CHECK_GT(size_, 0u) << size_;
 
   weak_this_ = weak_factory_.GetWeakPtr();
   thread_checker_.DetachFromThread();

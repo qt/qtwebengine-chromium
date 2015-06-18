@@ -4,8 +4,8 @@
 
 #include "cc/quads/yuv_video_draw_quad.h"
 
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 
@@ -22,7 +22,10 @@ void YUVVideoDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
                               const gfx::Rect& rect,
                               const gfx::Rect& opaque_rect,
                               const gfx::Rect& visible_rect,
-                              const gfx::RectF& tex_coord_rect,
+                              const gfx::RectF& ya_tex_coord_rect,
+                              const gfx::RectF& uv_tex_coord_rect,
+                              const gfx::Size& ya_tex_size,
+                              const gfx::Size& uv_tex_size,
                               unsigned y_plane_resource_id,
                               unsigned u_plane_resource_id,
                               unsigned v_plane_resource_id,
@@ -31,7 +34,10 @@ void YUVVideoDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
   bool needs_blending = false;
   DrawQuad::SetAll(shared_quad_state, DrawQuad::YUV_VIDEO_CONTENT, rect,
                    opaque_rect, visible_rect, needs_blending);
-  this->tex_coord_rect = tex_coord_rect;
+  this->ya_tex_coord_rect = ya_tex_coord_rect;
+  this->uv_tex_coord_rect = uv_tex_coord_rect;
+  this->ya_tex_size = ya_tex_size;
+  this->uv_tex_size = uv_tex_size;
   this->y_plane_resource_id = y_plane_resource_id;
   this->u_plane_resource_id = u_plane_resource_id;
   this->v_plane_resource_id = v_plane_resource_id;
@@ -44,7 +50,10 @@ void YUVVideoDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
                               const gfx::Rect& opaque_rect,
                               const gfx::Rect& visible_rect,
                               bool needs_blending,
-                              const gfx::RectF& tex_coord_rect,
+                              const gfx::RectF& ya_tex_coord_rect,
+                              const gfx::RectF& uv_tex_coord_rect,
+                              const gfx::Size& ya_tex_size,
+                              const gfx::Size& uv_tex_size,
                               unsigned y_plane_resource_id,
                               unsigned u_plane_resource_id,
                               unsigned v_plane_resource_id,
@@ -52,7 +61,10 @@ void YUVVideoDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
                               ColorSpace color_space) {
   DrawQuad::SetAll(shared_quad_state, DrawQuad::YUV_VIDEO_CONTENT, rect,
                    opaque_rect, visible_rect, needs_blending);
-  this->tex_coord_rect = tex_coord_rect;
+  this->ya_tex_coord_rect = ya_tex_coord_rect;
+  this->uv_tex_coord_rect = uv_tex_coord_rect;
+  this->ya_tex_size = ya_tex_size;
+  this->uv_tex_size = uv_tex_size;
   this->y_plane_resource_id = y_plane_resource_id;
   this->u_plane_resource_id = u_plane_resource_id;
   this->v_plane_resource_id = v_plane_resource_id;
@@ -75,10 +87,12 @@ const YUVVideoDrawQuad* YUVVideoDrawQuad::MaterialCast(
   return static_cast<const YUVVideoDrawQuad*>(quad);
 }
 
-void YUVVideoDrawQuad::ExtendValue(base::debug::TracedValue* value) const {
-  value->BeginArray("tex_coord_rect");
-  MathUtil::AddToTracedValue(tex_coord_rect, value);
-  value->EndArray();
+void YUVVideoDrawQuad::ExtendValue(
+    base::trace_event::TracedValue* value) const {
+  MathUtil::AddToTracedValue("ya_tex_coord_rect", ya_tex_coord_rect, value);
+  MathUtil::AddToTracedValue("uv_tex_coord_rect", uv_tex_coord_rect, value);
+  MathUtil::AddToTracedValue("ya_tex_size", ya_tex_size, value);
+  MathUtil::AddToTracedValue("uv_tex_size", uv_tex_size, value);
   value->SetInteger("y_plane_resource_id", y_plane_resource_id);
   value->SetInteger("u_plane_resource_id", u_plane_resource_id);
   value->SetInteger("v_plane_resource_id", v_plane_resource_id);

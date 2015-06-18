@@ -27,10 +27,13 @@
 #define SpeechRecognition_h
 
 #include "core/dom/ActiveDOMObject.h"
+#include "core/page/PageLifecycleObserver.h"
 #include "modules/EventTargetModules.h"
+#include "modules/ModulesExport.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebPrivatePtr.h"
 #include "wtf/Compiler.h"
 #include "wtf/text/WTFString.h"
 
@@ -42,10 +45,10 @@ class MediaStreamTrack;
 class SpeechRecognitionController;
 class SpeechRecognitionError;
 
-class SpeechRecognition final : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechRecognition>, public ActiveDOMObject, public EventTargetWithInlineData {
+class MODULES_EXPORT SpeechRecognition final : public RefCountedGarbageCollectedEventTargetWithInlineData<SpeechRecognition>, public PageLifecycleObserver, public ActiveDOMObject {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechRecognition>);
-    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognition);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static SpeechRecognition* create(ExecutionContext*);
     virtual ~SpeechRecognition();
@@ -56,12 +59,14 @@ public:
     void setGrammars(SpeechGrammarList* grammars) { m_grammars = grammars; }
     String lang() { return m_lang; }
     void setLang(const String& lang) { m_lang = lang; }
+    String serviceURI() { return m_serviceURI; }
+    void setServiceURI(const String& serviceURI) { m_serviceURI = serviceURI; }
     bool continuous() { return m_continuous; }
     void setContinuous(bool continuous) { m_continuous = continuous; }
     bool interimResults() { return m_interimResults; }
     void setInterimResults(bool interimResults) { m_interimResults = interimResults; }
-    unsigned long maxAlternatives() { return m_maxAlternatives; }
-    void setMaxAlternatives(unsigned long maxAlternatives) { m_maxAlternatives = maxAlternatives; }
+    unsigned maxAlternatives() { return m_maxAlternatives; }
+    void setMaxAlternatives(unsigned maxAlternatives) { m_maxAlternatives = maxAlternatives; }
     MediaStreamTrack* audioTrack() { return m_audioTrack; }
     void setAudioTrack(MediaStreamTrack* audioTrack) { m_audioTrack = audioTrack; }
 
@@ -77,7 +82,7 @@ public:
     void didEndSpeech();
     void didEndSound();
     void didEndAudio();
-    void didReceiveResults(const HeapVector<Member<SpeechRecognitionResult> >& newFinalResults, const HeapVector<Member<SpeechRecognitionResult> >& currentInterimResults);
+    void didReceiveResults(const HeapVector<Member<SpeechRecognitionResult>>& newFinalResults, const HeapVector<Member<SpeechRecognitionResult>>& currentInterimResults);
     void didReceiveNoMatch(SpeechRecognitionResult*);
     void didReceiveError(PassRefPtrWillBeRawPtr<SpeechRecognitionError>);
     void didStart();
@@ -103,14 +108,18 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(start);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(end);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    // PageLifecycleObserver
+    virtual void contextDestroyed() override;
 
 private:
-    explicit SpeechRecognition(ExecutionContext*);
+    SpeechRecognition(Page*, ExecutionContext*);
 
     Member<SpeechGrammarList> m_grammars;
     Member<MediaStreamTrack> m_audioTrack;
     String m_lang;
+    String m_serviceURI;
     bool m_continuous;
     bool m_interimResults;
     unsigned long m_maxAlternatives;
@@ -119,7 +128,7 @@ private:
     bool m_stoppedByActiveDOMObject;
     bool m_started;
     bool m_stopping;
-    HeapVector<Member<SpeechRecognitionResult> > m_finalResults;
+    HeapVector<Member<SpeechRecognitionResult>> m_finalResults;
 };
 
 } // namespace blink

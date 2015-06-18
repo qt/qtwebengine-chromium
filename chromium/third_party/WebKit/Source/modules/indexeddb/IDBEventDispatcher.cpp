@@ -34,7 +34,7 @@
 
 namespace blink {
 
-bool IDBEventDispatcher::dispatch(Event* event, WillBeHeapVector<RefPtrWillBeMember<EventTarget> >& eventTargets)
+bool IDBEventDispatcher::dispatch(Event* event, WillBeHeapVector<RefPtrWillBeMember<EventTarget>>& eventTargets)
 {
     size_t size = eventTargets.size();
     ASSERT(size);
@@ -62,8 +62,8 @@ bool IDBEventDispatcher::dispatch(Event* event, WillBeHeapVector<RefPtrWillBeMem
     }
 
 doneDispatching:
-    event->setCurrentTarget(0);
-    event->setEventPhase(0);
+    event->setCurrentTarget(nullptr);
+    event->setEventPhase(Event::NONE);
     return !event->defaultPrevented();
 }
 

@@ -14,7 +14,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -83,7 +83,7 @@ void CSSViewportRule::reattach(StyleRuleBase* rule)
         m_propertiesCSSOMWrapper->reattach(m_viewportRule->mutableProperties());
 }
 
-void CSSViewportRule::trace(Visitor* visitor)
+DEFINE_TRACE(CSSViewportRule)
 {
     visitor->trace(m_viewportRule);
     visitor->trace(m_propertiesCSSOMWrapper);

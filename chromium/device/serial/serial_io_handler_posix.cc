@@ -17,6 +17,22 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/permission_broker_client.h"
 #endif  // defined(OS_CHROMEOS)
+
+// The definition of struct termios2 is copied from asm-generic/termbits.h
+// because including that header directly conflicts with termios.h.
+extern "C" {
+struct termios2 {
+  tcflag_t c_iflag;  // input mode flags
+  tcflag_t c_oflag;  // output mode flags
+  tcflag_t c_cflag;  // control mode flags
+  tcflag_t c_lflag;  // local mode flags
+  cc_t c_line;       // line discipline
+  cc_t c_cc[19];     // control characters
+  speed_t c_ispeed;  // input speed
+  speed_t c_ospeed;  // output speed
+};
+}
+
 #endif  // defined(OS_LINUX)
 
 namespace {
@@ -45,7 +61,7 @@ bool BitrateToSpeedConstant(int bitrate, speed_t* speed) {
     BITRATE_TO_SPEED_CASE(9600)
     BITRATE_TO_SPEED_CASE(19200)
     BITRATE_TO_SPEED_CASE(38400)
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if !defined(OS_MACOSX)
     BITRATE_TO_SPEED_CASE(57600)
     BITRATE_TO_SPEED_CASE(115200)
     BITRATE_TO_SPEED_CASE(230400)
@@ -83,7 +99,7 @@ bool SpeedConstantToBitrate(speed_t speed, int* bitrate) {
     SPEED_TO_BITRATE_CASE(9600)
     SPEED_TO_BITRATE_CASE(19200)
     SPEED_TO_BITRATE_CASE(38400)
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if !defined(OS_MACOSX)
     SPEED_TO_BITRATE_CASE(57600)
     SPEED_TO_BITRATE_CASE(115200)
     SPEED_TO_BITRATE_CASE(230400)
@@ -101,18 +117,20 @@ bool SetCustomBitrate(base::PlatformFile file,
                       struct termios* config,
                       int bitrate) {
 #if defined(OS_LINUX)
-  struct serial_struct serial;
-  if (ioctl(file, TIOCGSERIAL, &serial) < 0) {
+  struct termios2 tio;
+  if (ioctl(file, TCGETS2, &tio) < 0) {
+    VPLOG(1) << "Failed to get parameters to set custom bitrate";
     return false;
   }
-  serial.flags = (serial.flags & ~ASYNC_SPD_MASK) | ASYNC_SPD_CUST;
-  serial.custom_divisor = serial.baud_base / bitrate;
-  if (serial.custom_divisor < 1) {
-    serial.custom_divisor = 1;
+  tio.c_cflag &= ~CBAUD;
+  tio.c_cflag |= CBAUDEX;
+  tio.c_ispeed = bitrate;
+  tio.c_ospeed = bitrate;
+  if (ioctl(file, TCSETS2, &tio) < 0) {
+    VPLOG(1) << "Failed to set custom bitrate";
+    return false;
   }
-  cfsetispeed(config, B38400);
-  cfsetospeed(config, B38400);
-  return ioctl(file, TIOCSSERIAL, &serial) >= 0;
+  return true;
 #elif defined(OS_MACOSX)
   speed_t speed = static_cast<speed_t>(bitrate);
   cfsetispeed(config, speed);
@@ -129,16 +147,16 @@ namespace device {
 
 // static
 scoped_refptr<SerialIoHandler> SerialIoHandler::Create(
-    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop) {
-  return new SerialIoHandlerPosix(file_thread_message_loop,
-                                  ui_thread_message_loop);
+    scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner) {
+  return new SerialIoHandlerPosix(file_thread_task_runner,
+                                  ui_thread_task_runner);
 }
 
 void SerialIoHandlerPosix::RequestAccess(
     const std::string& port,
-    scoped_refptr<base::MessageLoopProxy> file_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_message_loop) {
+    scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) {
 #if defined(OS_LINUX) && defined(OS_CHROMEOS)
   if (base::SysInfo::IsRunningOnChromeOS()) {
     chromeos::PermissionBrokerClient* client =
@@ -149,13 +167,11 @@ void SerialIoHandlerPosix::RequestAccess(
       return;
     }
     // PermissionBrokerClient should be called on the UI thread.
-    ui_message_loop->PostTask(
+    ui_task_runner->PostTask(
         FROM_HERE,
         base::Bind(
             &chromeos::PermissionBrokerClient::RequestPathAccess,
-            base::Unretained(client),
-            port,
-            -1,
+            base::Unretained(client), port, -1,
             base::Bind(&SerialIoHandler::OnRequestAccessComplete, this, port)));
   } else {
     OnRequestAccessComplete(port, true /* success */);
@@ -196,10 +212,92 @@ void SerialIoHandlerPosix::CancelWriteImpl() {
   QueueWriteCompleted(0, write_cancel_reason());
 }
 
+bool SerialIoHandlerPosix::ConfigurePortImpl() {
+  struct termios config;
+  if (tcgetattr(file().GetPlatformFile(), &config) != 0) {
+    VPLOG(1) << "Failed to get port attributes";
+    return false;
+  }
+
+  // Set flags for 'raw' operation
+  config.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHONL | ISIG);
+  config.c_iflag &=
+      ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+  config.c_oflag &= ~OPOST;
+
+  // CLOCAL causes the system to disregard the DCD signal state.
+  // CREAD enables reading from the port.
+  config.c_cflag |= (CLOCAL | CREAD);
+
+  DCHECK(options().bitrate);
+  speed_t bitrate_opt = B0;
+  if (BitrateToSpeedConstant(options().bitrate, &bitrate_opt)) {
+    cfsetispeed(&config, bitrate_opt);
+    cfsetospeed(&config, bitrate_opt);
+  } else {
+    // Attempt to set a custom speed.
+    if (!SetCustomBitrate(file().GetPlatformFile(), &config,
+                          options().bitrate)) {
+      return false;
+    }
+  }
+
+  DCHECK(options().data_bits != serial::DATA_BITS_NONE);
+  config.c_cflag &= ~CSIZE;
+  switch (options().data_bits) {
+    case serial::DATA_BITS_SEVEN:
+      config.c_cflag |= CS7;
+      break;
+    case serial::DATA_BITS_EIGHT:
+    default:
+      config.c_cflag |= CS8;
+      break;
+  }
+
+  DCHECK(options().parity_bit != serial::PARITY_BIT_NONE);
+  switch (options().parity_bit) {
+    case serial::PARITY_BIT_EVEN:
+      config.c_cflag |= PARENB;
+      config.c_cflag &= ~PARODD;
+      break;
+    case serial::PARITY_BIT_ODD:
+      config.c_cflag |= (PARODD | PARENB);
+      break;
+    case serial::PARITY_BIT_NO:
+    default:
+      config.c_cflag &= ~(PARODD | PARENB);
+      break;
+  }
+
+  DCHECK(options().stop_bits != serial::STOP_BITS_NONE);
+  switch (options().stop_bits) {
+    case serial::STOP_BITS_TWO:
+      config.c_cflag |= CSTOPB;
+      break;
+    case serial::STOP_BITS_ONE:
+    default:
+      config.c_cflag &= ~CSTOPB;
+      break;
+  }
+
+  DCHECK(options().has_cts_flow_control);
+  if (options().cts_flow_control) {
+    config.c_cflag |= CRTSCTS;
+  } else {
+    config.c_cflag &= ~CRTSCTS;
+  }
+
+  if (tcsetattr(file().GetPlatformFile(), TCSANOW, &config) != 0) {
+    VPLOG(1) << "Failed to set port attributes";
+    return false;
+  }
+  return true;
+}
+
 SerialIoHandlerPosix::SerialIoHandlerPosix(
-    scoped_refptr<base::MessageLoopProxy> file_thread_message_loop,
-    scoped_refptr<base::MessageLoopProxy> ui_thread_message_loop)
-    : SerialIoHandler(file_thread_message_loop, ui_thread_message_loop),
+    scoped_refptr<base::SingleThreadTaskRunner> file_thread_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner)
+    : SerialIoHandler(file_thread_task_runner, ui_thread_task_runner),
       is_watching_reads_(false),
       is_watching_writes_(false) {
 }
@@ -282,96 +380,19 @@ void SerialIoHandlerPosix::EnsureWatchingWrites() {
   }
 }
 
-bool SerialIoHandlerPosix::ConfigurePort(
-    const serial::ConnectionOptions& options) {
-  struct termios config;
-  tcgetattr(file().GetPlatformFile(), &config);
-  if (options.bitrate) {
-    speed_t bitrate_opt = B0;
-    if (BitrateToSpeedConstant(options.bitrate, &bitrate_opt)) {
-      cfsetispeed(&config, bitrate_opt);
-      cfsetospeed(&config, bitrate_opt);
-    } else {
-      // Attempt to set a custom speed.
-      if (!SetCustomBitrate(
-              file().GetPlatformFile(), &config, options.bitrate)) {
-        return false;
-      }
-    }
-  }
-  if (options.data_bits != serial::DATA_BITS_NONE) {
-    config.c_cflag &= ~CSIZE;
-    switch (options.data_bits) {
-      case serial::DATA_BITS_SEVEN:
-        config.c_cflag |= CS7;
-        break;
-      case serial::DATA_BITS_EIGHT:
-      default:
-        config.c_cflag |= CS8;
-        break;
-    }
-  }
-  if (options.parity_bit != serial::PARITY_BIT_NONE) {
-    switch (options.parity_bit) {
-      case serial::PARITY_BIT_EVEN:
-        config.c_cflag |= PARENB;
-        config.c_cflag &= ~PARODD;
-        break;
-      case serial::PARITY_BIT_ODD:
-        config.c_cflag |= (PARODD | PARENB);
-        break;
-      case serial::PARITY_BIT_NO:
-      default:
-        config.c_cflag &= ~(PARODD | PARENB);
-        break;
-    }
-  }
-  if (options.stop_bits != serial::STOP_BITS_NONE) {
-    switch (options.stop_bits) {
-      case serial::STOP_BITS_TWO:
-        config.c_cflag |= CSTOPB;
-        break;
-      case serial::STOP_BITS_ONE:
-      default:
-        config.c_cflag &= ~CSTOPB;
-        break;
-    }
-  }
-  if (options.has_cts_flow_control) {
-    if (options.cts_flow_control) {
-      config.c_cflag |= CRTSCTS;
-    } else {
-      config.c_cflag &= ~CRTSCTS;
-    }
-  }
-  return tcsetattr(file().GetPlatformFile(), TCSANOW, &config) == 0;
-}
-
-bool SerialIoHandlerPosix::PostOpen() {
-  struct termios config;
-  tcgetattr(file().GetPlatformFile(), &config);
-
-  // Set flags for 'raw' operation
-  config.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHONL | ISIG);
-  config.c_iflag &=
-      ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
-  config.c_oflag &= ~OPOST;
-
-  // CLOCAL causes the system to disregard the DCD signal state.
-  // CREAD enables reading from the port.
-  config.c_cflag |= (CLOCAL | CREAD);
-
-  return tcsetattr(file().GetPlatformFile(), TCSANOW, &config) == 0;
-}
-
 bool SerialIoHandlerPosix::Flush() const {
-  return tcflush(file().GetPlatformFile(), TCIOFLUSH) == 0;
+  if (tcflush(file().GetPlatformFile(), TCIOFLUSH) != 0) {
+    VPLOG(1) << "Failed to flush port";
+    return false;
+  }
+  return true;
 }
 
 serial::DeviceControlSignalsPtr SerialIoHandlerPosix::GetControlSignals()
     const {
   int status;
   if (ioctl(file().GetPlatformFile(), TIOCMGET, &status) == -1) {
+    VPLOG(1) << "Failed to get port control signals";
     return serial::DeviceControlSignalsPtr();
   }
 
@@ -388,6 +409,7 @@ bool SerialIoHandlerPosix::SetControlSignals(
   int status;
 
   if (ioctl(file().GetPlatformFile(), TIOCMGET, &status) == -1) {
+    VPLOG(1) << "Failed to get port control signals";
     return false;
   }
 
@@ -407,12 +429,17 @@ bool SerialIoHandlerPosix::SetControlSignals(
     }
   }
 
-  return ioctl(file().GetPlatformFile(), TIOCMSET, &status) == 0;
+  if (ioctl(file().GetPlatformFile(), TIOCMSET, &status) != 0) {
+    VPLOG(1) << "Failed to set port control signals";
+    return false;
+  }
+  return true;
 }
 
 serial::ConnectionInfoPtr SerialIoHandlerPosix::GetPortInfo() const {
   struct termios config;
   if (tcgetattr(file().GetPlatformFile(), &config) == -1) {
+    VPLOG(1) << "Failed to get port info";
     return serial::ConnectionInfoPtr();
   }
   serial::ConnectionInfoPtr info(serial::ConnectionInfo::New());

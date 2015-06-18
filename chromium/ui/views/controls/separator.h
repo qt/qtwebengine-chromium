@@ -27,14 +27,24 @@ class VIEWS_EXPORT Separator : public View {
   explicit Separator(Orientation orientation);
   ~Separator() override;
 
+  SkColor color() const { return color_; }
+  void SetColor(SkColor color);
+
+  int size() const { return size_; }
+  // Preferred size of one axis: height for horizontal separator
+  // and width for vertical separator
+  void SetPreferredSize(int size);
+
   // Overridden from View:
   gfx::Size GetPreferredSize() const override;
   void GetAccessibleState(ui::AXViewState* state) override;
-  void Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) override;
+  void OnPaint(gfx::Canvas* canvas) override;
   const char* GetClassName() const override;
 
  private:
   const Orientation orientation_;
+  SkColor color_;
+  int size_;
 
   DISALLOW_COPY_AND_ASSIGN(Separator);
 };

@@ -26,13 +26,14 @@ struct MyOverlapped {
   disk_cache::FileIOCallback* callback_;
 };
 
-COMPILE_ASSERT(!offsetof(MyOverlapped, context_), starts_with_overlapped);
+static_assert(offsetof(MyOverlapped, context_) == 0,
+              "should start with overlapped");
 
 // Helper class to handle the IO completion notifications from the message loop.
 class CompletionHandler : public base::MessageLoopForIO::IOHandler {
-  virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
-                             DWORD actual_bytes,
-                             DWORD error);
+  void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
+                     DWORD actual_bytes,
+                     DWORD error) override;
 };
 
 static base::LazyInstance<CompletionHandler> g_completion_handler =

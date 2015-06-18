@@ -28,6 +28,7 @@
 
 #include "platform/Timer.h"
 #include "platform/Widget.h"
+#include "platform/graphics/paint/DisplayItem.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/ScrollbarThemeClient.h"
@@ -62,7 +63,7 @@ public:
     virtual Widget* parent() const override { return Widget::parent(); }
     virtual Widget* root() const override { return Widget::root(); }
 
-    virtual void setFrameRect(const IntRect& frameRect) override { Widget::setFrameRect(frameRect); }
+    virtual void setFrameRect(const IntRect&) override;
     virtual IntRect frameRect() const override { return Widget::frameRect(); }
 
     virtual void invalidate() override { Widget::invalidate(); }
@@ -107,7 +108,7 @@ public:
     void setProportion(int visibleSize, int totalSize);
     void setPressedPos(int p) { m_pressedPos = p; }
 
-    virtual void paint(GraphicsContext*, const IntRect& damageRect) override;
+    virtual void paint(GraphicsContext*, const IntRect& damageRect) final;
 
     virtual bool isOverlayScrollbar() const override;
     bool shouldParticipateInHitTesting();
@@ -143,8 +144,14 @@ public:
     virtual bool isAlphaLocked() const override { return m_isAlphaLocked; }
     virtual void setIsAlphaLocked(bool flag) override { m_isAlphaLocked = flag; }
 
+    virtual float elasticOverscroll() const override { return m_elasticOverscroll; }
+    virtual void setElasticOverscroll(float elasticOverscroll) override { m_elasticOverscroll = elasticOverscroll; }
+
     bool overlapsResizer() const { return m_overlapsResizer; }
     void setOverlapsResizer(bool overlapsResizer) { m_overlapsResizer = overlapsResizer; }
+
+    virtual DisplayItemClient displayItemClient() const override { return toDisplayItemClient(this); }
+    virtual String debugName() const override { return m_orientation == HorizontalScrollbar ? "HorizontalScrollbar" : "VerticalScrollbar"; }
 
 protected:
     Scrollbar(ScrollableArea*, ScrollbarOrientation, ScrollbarControlSize, ScrollbarTheme* = 0);
@@ -192,6 +199,8 @@ protected:
     bool m_suppressInvalidation;
 
     bool m_isAlphaLocked;
+
+    float m_elasticOverscroll;
 
 private:
     virtual bool isScrollbar() const override { return true; }

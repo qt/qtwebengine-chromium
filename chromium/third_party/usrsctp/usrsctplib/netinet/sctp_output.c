@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 273634 2014-10-25 09:25:29Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 280371 2015-03-23 15:12:02Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -3948,13 +3948,7 @@ sctp_add_cookie(struct mbuf *init, int init_offset,
 	}
 #ifdef SCTP_MBUF_LOGGING
 	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-		struct mbuf *mat;
-
-		for (mat = copy_init; mat; mat = SCTP_BUF_NEXT(mat)) {
-			if (SCTP_BUF_IS_EXTENDED(mat)) {
-				sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-			}
-		}
+		sctp_log_mbc(copy_init, SCTP_MBUF_ICOPY);
 	}
 #endif
 	copy_initack = SCTP_M_COPYM(initack, initack_offset, M_COPYALL,
@@ -3966,13 +3960,7 @@ sctp_add_cookie(struct mbuf *init, int init_offset,
 	}
 #ifdef SCTP_MBUF_LOGGING
 	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-		struct mbuf *mat;
-
-		for (mat = copy_initack; mat; mat = SCTP_BUF_NEXT(mat)) {
-			if (SCTP_BUF_IS_EXTENDED(mat)) {
-				sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-			}
-		}
+		sctp_log_mbc(copy_initack, SCTP_MBUF_ICOPY);
 	}
 #endif
 	/* easy side we just drop it on the end */
@@ -4101,7 +4089,7 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
     uint16_t port,
     union sctp_sockstore *over_addr,
 #if defined(__FreeBSD__)
-    uint8_t use_mflowid, uint32_t mflowid,
+    uint8_t mflowtype, uint32_t mflowid,
 #endif
 #if !defined(__APPLE__) && !defined(SCTP_SO_LOCK_TESTING)
     int so_locked SCTP_UNUSED
@@ -4203,19 +4191,12 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 		m = newm;
 #if defined(__FreeBSD__)
 		if (net != NULL) {
-#ifdef INVARIANTS
-			if (net->flowidset == 0) {
-				panic("Flow ID not set");
-			}
-#endif
 			m->m_pkthdr.flowid = net->flowid;
-			m->m_flags |= M_FLOWID;
+			M_HASHTYPE_SET(m, net->flowtype);
 		} else {
-			if (use_mflowid != 0) {
-				m->m_pkthdr.flowid = mflowid;
-				m->m_flags |= M_FLOWID;
-			}
-		}
+			m->m_pkthdr.flowid = mflowid;
+			M_HASHTYPE_SET(m, mflowtype);
+ 		}
 #endif
 		packet_length = sctp_calculate_len(m);
 		ip = mtod(m, struct ip *);
@@ -4564,19 +4545,12 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 		m = newm;
 #if defined(__FreeBSD__)
 		if (net != NULL) {
-#ifdef INVARIANTS
-			if (net->flowidset == 0) {
-				panic("Flow ID not set");
-			}
-#endif
 			m->m_pkthdr.flowid = net->flowid;
-			m->m_flags |= M_FLOWID;
+			M_HASHTYPE_SET(m, net->flowtype);
 		} else {
-			if (use_mflowid != 0) {
-				m->m_pkthdr.flowid = mflowid;
-				m->m_flags |= M_FLOWID;
-			}
-		}
+			m->m_pkthdr.flowid = mflowid;
+			M_HASHTYPE_SET(m, mflowtype);
+ 		}
 #endif
 		packet_length = sctp_calculate_len(m);
 
@@ -5843,7 +5817,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
                        struct sockaddr *src, struct sockaddr *dst,
                        struct sctphdr *sh, struct sctp_init_chunk *init_chk,
 #if defined(__FreeBSD__)
-		       uint8_t use_mflowid, uint32_t mflowid,
+		       uint8_t mflowtype, uint32_t mflowid,
 #endif
                        uint32_t vrf_id, uint16_t port, int hold_inp_lock)
 {
@@ -5899,7 +5873,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 		                             "Address added");
 		sctp_send_abort(init_pkt, iphlen, src, dst, sh, 0, op_err,
 #if defined(__FreeBSD__)
-		                use_mflowid, mflowid,
+		                mflowtype, mflowid,
 #endif
 		                vrf_id, port);
 		return;
@@ -5920,7 +5894,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 		sctp_send_abort(init_pkt, iphlen, src, dst, sh,
 				init_chk->init.initiate_tag, op_err,
 #if defined(__FreeBSD__)
-		                use_mflowid, mflowid,
+		                mflowtype, mflowid,
 #endif
 		                vrf_id, port);
 		return;
@@ -6539,7 +6513,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	                                 inp->sctp_lport, sh->src_port, init_chk->init.initiate_tag,
 	                                 port, over_addr,
 #if defined(__FreeBSD__)
-	                                 use_mflowid, mflowid,
+	                                 mflowtype, mflowid,
 #endif
 	                                 SCTP_SO_NOT_LOCKED);
 	SCTP_STAT_INCR_COUNTER64(sctps_outcontrolchunks);
@@ -6924,13 +6898,7 @@ sctp_copy_mbufchain(struct mbuf *clonechain,
 			appendchain = SCTP_M_COPYM(clonechain, 0, M_COPYALL, M_NOWAIT);
 #ifdef SCTP_MBUF_LOGGING
 			if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-				struct mbuf *mat;
-
-				for (mat = appendchain; mat; mat = SCTP_BUF_NEXT(mat)) {
-					if (SCTP_BUF_IS_EXTENDED(mat)) {
-						sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-					}
-				}
+				sctp_log_mbc(appendchain, SCTP_MBUF_ICOPY);
 			}
 #endif
 		}
@@ -7024,13 +6992,7 @@ sctp_sendall_iterator(struct sctp_inpcb *inp, struct sctp_tcb *stcb, void *ptr,
 		}
 #ifdef SCTP_MBUF_LOGGING
 		if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-			struct mbuf *mat;
-
-			for (mat = m; mat; mat = SCTP_BUF_NEXT(mat)) {
-				if (SCTP_BUF_IS_EXTENDED(mat)) {
-					sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-				}
-			}
+			sctp_log_mbc(m, SCTP_MBUF_ICOPY);
 		}
 #endif
 	} else {
@@ -7808,13 +7770,7 @@ re_look:
 		}
 #ifdef SCTP_MBUF_LOGGING
 		if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-			struct mbuf *mat;
-
-			for (mat = chk->data; mat; mat = SCTP_BUF_NEXT(mat)) {
-				if (SCTP_BUF_IS_EXTENDED(mat)) {
-					sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-				}
-			}
+			sctp_log_mbc(chk->data, SCTP_MBUF_ICOPY);
 		}
 #endif
 		/* Pull off the data */
@@ -7875,6 +7831,7 @@ re_look:
 	if (M_LEADINGSPACE(chk->data) < (int)sizeof(struct sctp_data_chunk)) {
 		/* Not enough room for a chunk header, get some */
 		struct mbuf *m;
+
 		m = sctp_get_mbuf_for_msg(1, 0, M_NOWAIT, 0, MT_DATA);
 		if (m == NULL) {
 			/*
@@ -7886,7 +7843,7 @@ re_look:
 				SCTP_TCB_SEND_LOCK(stcb);
 				send_lock_up = 1;
 			}
-			if (chk->data == NULL) {
+			if (sp->data == NULL) {
 				/* unsteal the data */
 				sp->data = chk->data;
 				sp->tail_mbuf = chk->last_mbuf;
@@ -8436,24 +8393,6 @@ again_one_more_time:
 		} else {
 			skip_data_for_this_net = 0;
 		}
-#if !(defined(__Panda__) || defined(__Windows__) || defined(__Userspace__) || defined(__APPLE__))
-		if ((net->ro.ro_rt) && (net->ro.ro_rt->rt_ifp)) {
-			/*
-			 * if we have a route and an ifp check to see if we
-			 * have room to send to this guy
-			 */
-			struct ifnet *ifp;
-
-			ifp = net->ro.ro_rt->rt_ifp;
-			if ((ifp->if_snd.ifq_len + 2) >= ifp->if_snd.ifq_maxlen) {
-				SCTP_STAT_INCR(sctps_ifnomemqueued);
-				if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_LOG_MAXBURST_ENABLE) {
-					sctp_log_maxburst(stcb, net, ifp->if_snd.ifq_len, ifp->if_snd.ifq_maxlen, SCTP_MAX_IFP_APPLIED);
-				}
-				continue;
-			}
-		}
-#endif
 		switch (((struct sockaddr *)&net->ro._l_addr)->sa_family) {
 #ifdef INET
 		case AF_INET:
@@ -9407,12 +9346,11 @@ sctp_send_cookie_echo(struct mbuf *m,
 	struct sctp_tmit_chunk *chk;
 	uint16_t ptype, plen;
 
+	SCTP_TCB_LOCK_ASSERT(stcb);
 	/* First find the cookie in the param area */
 	cookie = NULL;
 	at = offset + sizeof(struct sctp_init_chunk);
-
-	SCTP_TCB_LOCK_ASSERT(stcb);
-	do {
+	for (;;) {
 		phdr = sctp_get_next_param(m, at, &parm, sizeof(parm));
 		if (phdr == NULL) {
 			return (-3);
@@ -9433,25 +9371,14 @@ sctp_send_cookie_echo(struct mbuf *m,
 			}
 #ifdef SCTP_MBUF_LOGGING
 			if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-				struct mbuf *mat;
-
-				for (mat = cookie; mat; mat = SCTP_BUF_NEXT(mat)) {
-					if (SCTP_BUF_IS_EXTENDED(mat)) {
-						sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-					}
-				}
+				sctp_log_mbc(cookie, SCTP_MBUF_ICOPY);
 			}
 #endif
 			break;
 		}
 		at += SCTP_SIZE32(plen);
-	} while (phdr);
-	if (cookie == NULL) {
-		/* Did not find the cookie */
-		return (-3);
 	}
 	/* ok, we got the cookie lets change it into a cookie echo chunk */
-
 	/* first the change from param to cookie */
 	hdr = mtod(cookie, struct sctp_chunkhdr *);
 	hdr->chunk_type = SCTP_COOKIE_ECHO;
@@ -9505,13 +9432,7 @@ sctp_send_heartbeat_ack(struct sctp_tcb *stcb,
 	}
 #ifdef SCTP_MBUF_LOGGING
 	if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-		struct mbuf *mat;
-
-		for (mat = outchain; mat; mat = SCTP_BUF_NEXT(mat)) {
-			if (SCTP_BUF_IS_EXTENDED(mat)) {
-				sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-			}
-		}
+		sctp_log_mbc(outchain, SCTP_MBUF_ICOPY);
 	}
 #endif
 	chdr = mtod(outchain, struct sctp_chunkhdr *);
@@ -9794,13 +9715,7 @@ sctp_send_asconf_ack(struct sctp_tcb *stcb)
 		}
 #ifdef SCTP_MBUF_LOGGING
 		if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-			struct mbuf *mat;
-
-			for (mat = m_ack; mat; mat = SCTP_BUF_NEXT(mat)) {
-				if (SCTP_BUF_IS_EXTENDED(mat)) {
-					sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-				}
-			}
+			sctp_log_mbc(m_ack, SCTP_MBUF_ICOPY);
 		}
 #endif
 
@@ -9820,8 +9735,6 @@ sctp_send_asconf_ack(struct sctp_tcb *stcb)
 			atomic_add_int(&chk->whoTo->ref_count, 1);
 		}
 		chk->data = m_ack;
-		chk->send_size = 0;
-		/* Get size */
 		chk->send_size = ack->len;
 		chk->sent = SCTP_DATAGRAM_UNSENT;
 		chk->snd_count = 0;
@@ -11446,7 +11359,7 @@ static void
 sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
                    struct sctphdr *sh, uint32_t vtag,
                    uint8_t type, struct mbuf *cause,
-                   uint8_t use_mflowid, uint32_t mflowid,
+                   uint8_t mflowtype, uint32_t mflowid,
                    uint32_t vrf_id, uint16_t port)
 #else
 static void
@@ -11552,10 +11465,8 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 	SCTP_BUF_LEN(mout) = len;
 	SCTP_BUF_NEXT(mout) = cause;
 #if defined(__FreeBSD__)
-	if (use_mflowid != 0) {
-		mout->m_pkthdr.flowid = mflowid;
-		mout->m_flags |= M_FLOWID;
-	}
+	mout->m_pkthdr.flowid = mflowid;
+	M_HASHTYPE_SET(mout, mflowtype);
 #endif
 #ifdef INET
 	ip = NULL;
@@ -11843,13 +11754,13 @@ void
 sctp_send_shutdown_complete2(struct sockaddr *src, struct sockaddr *dst,
                              struct sctphdr *sh,
 #if defined(__FreeBSD__)
-                             uint8_t use_mflowid, uint32_t mflowid,
+                             uint8_t mflowtype, uint32_t mflowid,
 #endif
                              uint32_t vrf_id, uint16_t port)
 {
 	sctp_send_resp_msg(src, dst, sh, 0, SCTP_SHUTDOWN_COMPLETE, NULL,
 #if defined(__FreeBSD__)
-	                   use_mflowid, mflowid,
+	                   mflowtype, mflowid,
 #endif
 	                   vrf_id, port);
 }
@@ -12695,7 +12606,7 @@ void
 sctp_send_abort(struct mbuf *m, int iphlen, struct sockaddr *src, struct sockaddr *dst,
                 struct sctphdr *sh, uint32_t vtag, struct mbuf *cause,
 #if defined(__FreeBSD__)
-                uint8_t use_mflowid, uint32_t mflowid,
+                uint8_t mflowtype, uint32_t mflowid,
 #endif
                 uint32_t vrf_id, uint16_t port)
 {
@@ -12707,7 +12618,7 @@ sctp_send_abort(struct mbuf *m, int iphlen, struct sockaddr *src, struct sockadd
 	}
 	sctp_send_resp_msg(src, dst, sh, vtag, SCTP_ABORT_ASSOCIATION, cause,
 #if defined(__FreeBSD__)
-	                   use_mflowid, mflowid,
+	                   mflowtype, mflowid,
 #endif
 	                   vrf_id, port);
 	return;
@@ -12717,13 +12628,13 @@ void
 sctp_send_operr_to(struct sockaddr *src, struct sockaddr *dst,
                    struct sctphdr *sh, uint32_t vtag, struct mbuf *cause,
 #if defined(__FreeBSD__)
-                   uint8_t use_mflowid, uint32_t mflowid,
+                   uint8_t mflowtype, uint32_t mflowid,
 #endif
                    uint32_t vrf_id, uint16_t port)
 {
 	sctp_send_resp_msg(src, dst, sh, vtag, SCTP_OPERATION_ERROR, cause,
 #if defined(__FreeBSD__)
-	                   use_mflowid, mflowid,
+	                   mflowtype, mflowid,
 #endif
 	                   vrf_id, port);
 	return;
@@ -13523,7 +13434,7 @@ sctp_lower_sosend(struct socket *so,
 	if (inp->recv_callback) {
 		non_blocking = 1;
 	}
-#else
+#endif
 	if (SCTP_SO_IS_NBIO(so)
 #if defined(__FreeBSD__) && __FreeBSD_version >= 500000
 	     || (flags & MSG_NBIO)
@@ -13531,7 +13442,6 @@ sctp_lower_sosend(struct socket *so,
 	    ) {
 		non_blocking = 1;
 	}
-#endif
 	/* would we block? */
 	if (non_blocking) {
 		if (hold_tcblock == 0) {

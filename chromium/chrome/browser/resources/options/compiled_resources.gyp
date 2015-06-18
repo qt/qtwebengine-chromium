@@ -8,6 +8,7 @@
       'variables': {
         'depends': [
           '../../../../third_party/jstemplate/compiled_resources.gyp:jstemplate',
+          '../../../../ui/webui/resources/cr_elements/cr_onc/cr_onc_types.js',
           '../../../../ui/webui/resources/css/tree.css.js',
           '../../../../ui/webui/resources/js/action_link.js',
           '../../../../ui/webui/resources/js/cr.js',
@@ -18,6 +19,7 @@
           '../../../../ui/webui/resources/js/cr/ui/bubble.js',
           '../../../../ui/webui/resources/js/cr/ui/bubble_button.js',
           '../../../../ui/webui/resources/js/cr/ui/command.js',
+          '../../../../ui/webui/resources/js/cr/ui/controlled_indicator.js',
           '../../../../ui/webui/resources/js/cr/ui/focus_manager.js',
           '../../../../ui/webui/resources/js/cr/ui/focus_outline_manager.js',
           '../../../../ui/webui/resources/js/cr/ui/grid.js',
@@ -44,7 +46,12 @@
         # options_bundle is included as a complex dependency. Currently there is
         # no possibility to use gyp variable expansion to it, so we don't use
         # <(CLOSURE_DIR) in the "externs" line.
-        'externs': ['../../../../third_party/closure_compiler/externs/chrome_send_externs.js'],
+        'externs': [
+	  '../../../../third_party/closure_compiler/externs/chrome_extensions.js',
+	  '../../../../third_party/closure_compiler/externs/chrome_send_externs.js',
+          '../../../../ui/webui/resources/cr_elements/cr_network_icon/cr_network_icon_externs.js',
+          '../../../../ui/webui/resources/cr_elements/cr_onc/cr_onc_data_externs.js',
+	],
       },
       'includes': ['../../../../third_party/closure_compiler/compile_js.gypi'],
     }

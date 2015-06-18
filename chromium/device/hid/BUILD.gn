@@ -6,6 +6,8 @@ source_set("hid") {
   sources = [
     "device_monitor_linux.cc",
     "device_monitor_linux.h",
+    "fake_input_service_linux.cc",
+    "fake_input_service_linux.h",
     "hid_collection_info.cc",
     "hid_collection_info.h",
     "hid_connection.cc",
@@ -20,6 +22,8 @@ source_set("hid") {
     "hid_device_filter.h",
     "hid_device_info.cc",
     "hid_device_info.h",
+    "hid_device_info_linux.cc",
+    "hid_device_info_linux.h",
     "hid_report_descriptor.cc",
     "hid_report_descriptor.h",
     "hid_report_descriptor_item.cc",
@@ -40,16 +44,15 @@ source_set("hid") {
 
   deps = [
     "//base",
+    "//components/device_event_log",
+    "//device/core",
     "//net",
   ]
 
   if (is_linux) {
-    configs += [
-      "//build/config/linux:udev"
-    ]
-
-    deps += [
-      "//device/udev_linux",
-    ]
+    deps += [ "//device/udev_linux" ]
+  }
+  if (is_chromeos) {
+    deps += [ "//chromeos" ]
   }
 }

@@ -29,15 +29,18 @@
 #ifndef WebPageOverlay_h
 #define WebPageOverlay_h
 
-#include "../platform/WebCanvas.h"
-#include "../platform/WebRect.h"
+#include "public/platform/WebCanvas.h"
+#include "public/platform/WebCommon.h"
 
 namespace blink {
 
-class WebPageOverlay {
+class WebGraphicsContext;
+struct WebSize;
+
+class BLINK_EXPORT WebPageOverlay {
 public:
     // Paints page overlay contents.
-    virtual void paintPageOverlay(WebCanvas*) = 0;
+    virtual void paintPageOverlay(WebGraphicsContext*, const WebSize& webViewSize) = 0;
 
 protected:
     virtual ~WebPageOverlay() { }

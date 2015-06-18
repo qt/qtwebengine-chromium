@@ -37,11 +37,12 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
-#include "ipc/file_descriptor_set_posix.h"
 #include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
+#include "ipc/ipc_message_attachment_set.h"
 #include "ipc/ipc_message_utils.h"
+#include "ipc/ipc_platform_file_attachment_posix.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/unix_domain_socket_util.h"
 
@@ -189,6 +190,7 @@ ChannelPosix::ChannelPosix(const IPC::ChannelHandle& channel_handle,
       waiting_connect_(true),
       message_send_bytes_written_(0),
       pipe_name_(channel_handle.name),
+      in_dtor_(false),
       must_unlink_(false) {
   memset(input_cmsg_buf_, 0, sizeof(input_cmsg_buf_));
   if (!CreatePipe(channel_handle)) {
@@ -200,6 +202,7 @@ ChannelPosix::ChannelPosix(const IPC::ChannelHandle& channel_handle,
 }
 
 ChannelPosix::~ChannelPosix() {
+  in_dtor_ = true;
   Close();
 }
 
@@ -395,13 +398,13 @@ void ChannelPosix::CloseFileDescriptors(Message* msg) {
   // descriptor. For more information, see:
   // http://crbug.com/298276
   std::vector<int> to_close;
-  msg->file_descriptor_set()->ReleaseFDsToClose(&to_close);
+  msg->attachment_set()->ReleaseFDsToClose(&to_close);
   for (size_t i = 0; i < to_close.size(); i++) {
     fds_to_close_.insert(to_close[i]);
     QueueCloseFDMessage(to_close[i], 2);
   }
 #else
-  msg->file_descriptor_set()->CommitAll();
+  msg->attachment_set()->CommitAll();
 #endif
 }
 
@@ -428,20 +431,19 @@ bool ChannelPosix::ProcessOutgoingMessages() {
     struct iovec iov = {const_cast<char*>(out_bytes), amt_to_write};
     msgh.msg_iov = &iov;
     msgh.msg_iovlen = 1;
-    char buf[CMSG_SPACE(
-        sizeof(int) * FileDescriptorSet::kMaxDescriptorsPerMessage)];
+    char buf[CMSG_SPACE(sizeof(int) *
+                        MessageAttachmentSet::kMaxDescriptorsPerMessage)];
 
     ssize_t bytes_written = 1;
     int fd_written = -1;
 
-    if (message_send_bytes_written_ == 0 &&
-        !msg->file_descriptor_set()->empty()) {
+    if (message_send_bytes_written_ == 0 && !msg->attachment_set()->empty()) {
       // This is the first chunk of a message which has descriptors to send
       struct cmsghdr *cmsg;
-      const unsigned num_fds = msg->file_descriptor_set()->size();
+      const unsigned num_fds = msg->attachment_set()->size();
 
-      DCHECK(num_fds <= FileDescriptorSet::kMaxDescriptorsPerMessage);
-      if (msg->file_descriptor_set()->ContainsDirectoryDescriptor()) {
+      DCHECK(num_fds <= MessageAttachmentSet::kMaxDescriptorsPerMessage);
+      if (msg->attachment_set()->ContainsDirectoryDescriptor()) {
         LOG(FATAL) << "Panic: attempting to transport directory descriptor over"
                       " IPC. Aborting to maintain sandbox isolation.";
         // If you have hit this then something tried to send a file descriptor
@@ -457,7 +459,7 @@ bool ChannelPosix::ProcessOutgoingMessages() {
       cmsg->cmsg_level = SOL_SOCKET;
       cmsg->cmsg_type = SCM_RIGHTS;
       cmsg->cmsg_len = CMSG_LEN(sizeof(int) * num_fds);
-      msg->file_descriptor_set()->PeekDescriptors(
+      msg->attachment_set()->PeekDescriptors(
           reinterpret_cast<int*>(CMSG_DATA(cmsg)));
       msgh.msg_controllen = cmsg->cmsg_len;
 
@@ -488,7 +490,7 @@ bool ChannelPosix::ProcessOutgoingMessages() {
       fd_written = pipe_.get();
 #if defined(IPC_USES_READWRITE)
       if ((mode_ & MODE_CLIENT_FLAG) && IsHelloMessage(*msg)) {
-        DCHECK_EQ(msg->file_descriptor_set()->size(), 1U);
+        DCHECK_EQ(msg->attachment_set()->size(), 1U);
       }
       if (!msgh.msg_controllen) {
         bytes_written =
@@ -554,6 +556,7 @@ bool ChannelPosix::ProcessOutgoingMessages() {
 }
 
 bool ChannelPosix::Send(Message* message) {
+  DCHECK(!message->HasMojoHandles());
   DVLOG(2) << "sending message @" << message << " on channel @" << this
            << " with type " << message->type()
            << " (" << output_queue_.size() << " in queue)";
@@ -612,7 +615,7 @@ void ChannelPosix::ResetToAcceptingConnectionState() {
   // Unregister libevent for the unix domain socket and close it.
   read_watcher_.StopWatchingFileDescriptor();
   write_watcher_.StopWatchingFileDescriptor();
-  pipe_.reset();
+  ResetSafely(&pipe_);
 #if defined(IPC_USES_READWRITE)
   fd_pipe_.reset();
   remote_fd_pipe_.reset();
@@ -771,14 +774,20 @@ void ChannelPosix::ClosePipeOnError() {
 }
 
 int ChannelPosix::GetHelloMessageProcId() const {
+#if defined(OS_NACL_NONSFI)
+  // In nacl_helper_nonsfi, getpid() invoked by GetCurrentProcId() is not
+  // allowed and would cause a SIGSYS crash because of the seccomp sandbox.
+  return -1;
+#else
   int pid = base::GetCurrentProcId();
 #if defined(OS_LINUX)
   // Our process may be in a sandbox with a separate PID namespace.
   if (global_pid_) {
     pid = global_pid_;
   }
-#endif
+#endif  // defined(OS_LINUX)
   return pid;
+#endif  // defined(OS_NACL_NONSFI)
 }
 
 void ChannelPosix::QueueHelloMessage() {
@@ -792,10 +801,11 @@ void ChannelPosix::QueueHelloMessage() {
 #if defined(IPC_USES_READWRITE)
   scoped_ptr<Message> hello;
   if (remote_fd_pipe_.is_valid()) {
-    if (!msg->WriteBorrowingFile(remote_fd_pipe_.get())) {
+    if (!msg->WriteAttachment(
+            new internal::PlatformFileAttachment(remote_fd_pipe_.get()))) {
       NOTREACHED() << "Unable to pickle hello message file descriptors";
     }
-    DCHECK_EQ(msg->file_descriptor_set()->size(), 1U);
+    DCHECK_EQ(msg->attachment_set()->size(), 1U);
   }
 #endif  // IPC_USES_READWRITE
   output_queue_.push(msg.release());
@@ -903,7 +913,7 @@ bool ChannelPosix::WillDispatchInputMessage(Message* msg) {
       error = "Message needs unreceived descriptors";
   }
 
-  if (header_fds > FileDescriptorSet::kMaxDescriptorsPerMessage)
+  if (header_fds > MessageAttachmentSet::kMaxDescriptorsPerMessage)
     error = "Message requires an excessive number of descriptors";
 
   if (error) {
@@ -919,8 +929,7 @@ bool ChannelPosix::WillDispatchInputMessage(Message* msg) {
   // The shenaniganery below with &foo.front() requires input_fds_ to have
   // contiguous underlying storage (such as a simple array or a std::vector).
   // This is why the header warns not to make input_fds_ a deque<>.
-  msg->file_descriptor_set()->AddDescriptorsToOwn(&input_fds_.front(),
-                                                  header_fds);
+  msg->attachment_set()->AddDescriptorsToOwn(&input_fds_.front(), header_fds);
   input_fds_.erase(input_fds_.begin(), input_fds_.begin() + header_fds);
   return true;
 }
@@ -1005,7 +1014,7 @@ void ChannelPosix::HandleInternalMessage(const Message& msg) {
 
     case Channel::HELLO_MESSAGE_TYPE:
       int pid;
-      if (!msg.ReadInt(&iter, &pid))
+      if (!iter.ReadInt(&pid))
         NOTREACHED();
 
 #if defined(IPC_USES_READWRITE)
@@ -1013,12 +1022,12 @@ void ChannelPosix::HandleInternalMessage(const Message& msg) {
         // With IPC_USES_READWRITE, the Hello message from the client to the
         // server also contains the fd_pipe_, which  will be used for all
         // subsequent file descriptor passing.
-        DCHECK_EQ(msg.file_descriptor_set()->size(), 1U);
-        base::ScopedFD descriptor;
-        if (!msg.ReadFile(&iter, &descriptor)) {
+        DCHECK_EQ(msg.attachment_set()->size(), 1U);
+        scoped_refptr<MessageAttachment> attachment;
+        if (!msg.ReadAttachment(&iter, &attachment)) {
           NOTREACHED();
         }
-        fd_pipe_.reset(descriptor.release());
+        fd_pipe_.reset(attachment->TakePlatformFile());
       }
 #endif  // IPC_USES_READWRITE
       peer_pid_ = pid;
@@ -1028,9 +1037,9 @@ void ChannelPosix::HandleInternalMessage(const Message& msg) {
 #if defined(OS_MACOSX)
     case Channel::CLOSE_FD_MESSAGE_TYPE:
       int fd, hops;
-      if (!msg.ReadInt(&iter, &hops))
+      if (!iter.ReadInt(&hops))
         NOTREACHED();
-      if (!msg.ReadInt(&iter, &fd))
+      if (!iter.ReadInt(&fd))
         NOTREACHED();
       if (hops == 0) {
         if (fds_to_close_.erase(fd) > 0) {
@@ -1078,6 +1087,25 @@ base::ProcessId ChannelPosix::GetPeerPID() const {
 
 base::ProcessId ChannelPosix::GetSelfPID() const {
   return GetHelloMessageProcId();
+}
+
+void ChannelPosix::ResetSafely(base::ScopedFD* fd) {
+  if (!in_dtor_) {
+    fd->reset();
+    return;
+  }
+
+  // crbug.com/449233
+  // The CL [1] tightened the error check for closing FDs, but it turned
+  // out that there are existing cases that hit the newly added check.
+  // ResetSafely() is the workaround for that crash, turning it from
+  // from PCHECK() to DPCHECK() so that it doesn't crash in production.
+  // [1] https://crrev.com/ce44fef5fd60dd2be5c587d4b084bdcd36adcee4
+  int fd_to_close = fd->release();
+  if (-1 != fd_to_close) {
+    int rv = IGNORE_EINTR(close(fd_to_close));
+    DPCHECK(0 == rv);
+  }
 }
 
 //------------------------------------------------------------------------------

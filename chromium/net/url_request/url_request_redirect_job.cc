@@ -13,9 +13,9 @@
 #include "base/strings/stringprintf.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request.h"
 
 namespace net {
@@ -91,8 +91,7 @@ void URLRequestRedirectJob::StartAsync() {
                          redirect_reason_.c_str());
 
   std::string http_origin;
-  const net::HttpRequestHeaders& request_headers =
-      request_->extra_request_headers();
+  const HttpRequestHeaders& request_headers = request_->extra_request_headers();
   if (request_headers.GetHeader("Origin", &http_origin)) {
     // If this redirect is used in a cross-origin request, add CORS headers to
     // make sure that the redirect gets through. Note that the destination URL

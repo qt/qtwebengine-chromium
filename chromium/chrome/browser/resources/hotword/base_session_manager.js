@@ -61,15 +61,17 @@ cr.define('hotword', function() {
 
     /**
      * Starts a launcher hotwording session.
-     * @private
+     * @param {hotword.constants.TrainingMode=} opt_mode The mode to start the
+     *     recognizer in.
      */
-    startSession_: function() {
+    startSession: function(opt_mode) {
       this.stateManager.startSession(
           this.sessionSource_,
           function() {
             chrome.hotwordPrivate.setHotwordSessionState(true, function() {});
           },
-          this.handleHotwordTrigger.bind(this));
+          this.handleHotwordTrigger.bind(this),
+          opt_mode);
     },
 
     /**
@@ -83,11 +85,14 @@ cr.define('hotword', function() {
 
     /**
      * Handles a hotword triggered event.
+     * @param {?Object} log Audio log data, if audio logging is enabled.
      * @protected
      */
-    handleHotwordTrigger: function() {
-      hotword.debug('Hotword triggered: ' + this.sessionSource_);
-      chrome.hotwordPrivate.notifyHotwordRecognition('search', function() {});
+    handleHotwordTrigger: function(log) {
+      hotword.debug('Hotword triggered: ' + this.sessionSource_, log);
+      chrome.hotwordPrivate.notifyHotwordRecognition('search',
+                                                     log,
+                                                     function() {});
     },
 
     /**
@@ -96,7 +101,7 @@ cr.define('hotword', function() {
      */
     handleSessionRequested_: function() {
       hotword.debug('handleSessionRequested_: ' + this.sessionSource_);
-      this.startSession_();
+      this.startSession();
     },
 
     /**

@@ -37,13 +37,15 @@
 
 namespace blink {
 
-class Dictionary;
+class RTCIceCandidateInit;
 class ExceptionState;
+class ScriptState;
+class ScriptValue;
 
 class RTCIceCandidate final : public GarbageCollectedFinalized<RTCIceCandidate>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static RTCIceCandidate* create(const Dictionary&, ExceptionState&);
+    static RTCIceCandidate* create(const RTCIceCandidateInit&, ExceptionState&);
     static RTCIceCandidate* create(WebRTCICECandidate);
 
     String candidate() const;
@@ -53,9 +55,11 @@ public:
     unsigned short sdpMLineIndex() const;
     void setSdpMLineIndex(unsigned short);
 
+    ScriptValue toJSONForBinding(ScriptState*);
+
     WebRTCICECandidate webCandidate() const;
 
-    void trace(Visitor*) { }
+    DEFINE_INLINE_TRACE() { }
 
 private:
     explicit RTCIceCandidate(WebRTCICECandidate);

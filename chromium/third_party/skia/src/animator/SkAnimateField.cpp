@@ -9,7 +9,7 @@
 
 #include "SkAnimate.h"
 #include "SkAnimateMaker.h"
-#include "SkDrawable.h"
+#include "SkADrawable.h"
 #include "SkParse.h"
 
 #if SK_USE_CONDENSED_INFO == 0
@@ -41,7 +41,7 @@ void SkAnimate::dump(SkAnimateMaker* maker) {
             SkDebugf("mirror=\"true\" ");
         if (fReset)
             SkDebugf("reset=\"true\" ");
-        SkDebugf("dur=\"%g\" ", SkScalarToFloat(SkScalarDiv(dur,1000)));
+        SkDebugf("dur=\"%g\" ", dur * 0.001);
         if (repeat != SK_Scalar1)
             SkDebugf("repeat=\"%g\" ", SkScalarToFloat(repeat));
         //if (fHasValues)

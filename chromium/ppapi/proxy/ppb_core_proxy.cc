@@ -7,9 +7,9 @@
 #include <stdlib.h>  // For malloc
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/ppb_core.h"
@@ -63,6 +63,13 @@ void CallOnMainThread(int delay_in_ms,
   if (!callback.func)
     return;
   ProxyAutoLock lock;
+
+  // If the plugin attempts to call CallOnMainThread from a background thread
+  // at shutdown, it's possible that the PpapiGlobals object or the main loop
+  // has been destroyed.
+  if (!PpapiGlobals::Get() || !PpapiGlobals::Get()->GetMainThreadMessageLoop())
+    return;
+
   PpapiGlobals::Get()->GetMainThreadMessageLoop()->PostDelayedTask(
       FROM_HERE,
       RunWhileLocked(base::Bind(&CallbackWrapper, callback, result)),

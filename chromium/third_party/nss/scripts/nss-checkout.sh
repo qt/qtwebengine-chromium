@@ -12,7 +12,7 @@ set -ex
 # We only need the nss/lib directory, but hg requires us to check out the
 # complete nss source tree.
 rm -rf nss
-hg clone -u NSS_3_16_5_RTM https://hg.mozilla.org/projects/nss
+hg clone -u NSS_3_18_RTM https://hg.mozilla.org/projects/nss
 
 # Rename one of the utf8.c files to avoid name conflict.
 mv nss/lib/base/utf8.c nss/lib/base/nssutf8.c
@@ -74,6 +74,7 @@ find nss/lib/freebl -type f \
     ! -name ecp_aff.c ! -name ecp_jac.c ! -name ecp_jm.c \
     ! -name ecp_mont.c ! -name ec_naf.c ! -name gcm.c ! -name gcm.h \
     ! -name hmacct.c ! -name hmacct.h \
+    ! -name intel-aes.h ! -name intel-gcm-wrap.c ! -name intel-gcm.h \
     ! -name intel-aes-x64-masm.asm ! -name intel-aes-x86-masm.asm \
     ! -name intel-gcm-x64-masm.asm ! -name intel-gcm-x86-masm.asm \
     ! -name jpake.c ! -name md2.c \

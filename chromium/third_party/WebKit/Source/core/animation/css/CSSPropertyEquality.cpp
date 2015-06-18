@@ -6,9 +6,9 @@
 #include "core/animation/css/CSSPropertyEquality.h"
 
 #include "core/animation/css/CSSAnimations.h"
-#include "core/rendering/style/DataEquivalency.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/ShadowList.h"
+#include "core/style/DataEquivalency.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/ShadowList.h"
 
 namespace blink {
 
@@ -32,7 +32,6 @@ bool fillLayersEqual(const FillLayer& aLayers, const FillLayer& bLayers)
                 return false;
             break;
         case CSSPropertyBackgroundSize:
-        case CSSPropertyWebkitBackgroundSize:
         case CSSPropertyWebkitMaskSize:
             if (!(aLayer->sizeLength() == bLayer->sizeLength()))
                 return false;
@@ -56,7 +55,7 @@ bool fillLayersEqual(const FillLayer& aLayers, const FillLayer& bLayers)
 
 }
 
-bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle& a, const RenderStyle& b)
+bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const ComputedStyle& a, const ComputedStyle& b)
 {
     switch (prop) {
     case CSSPropertyBackgroundColor:
@@ -71,7 +70,7 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyBackgroundSize:
         return fillLayersEqual<CSSPropertyBackgroundSize>(a.backgroundLayers(), b.backgroundLayers());
     case CSSPropertyBaselineShift:
-        return dataEquivalent(a.baselineShiftValue(), b.baselineShiftValue());
+        return a.baselineShiftValue() == b.baselineShiftValue();
     case CSSPropertyBorderBottomColor:
         return a.borderBottomColor() == b.borderBottomColor()
             && a.visitedLinkBorderBottomColor() == b.visitedLinkBorderBottomColor();
@@ -117,8 +116,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyColor:
         return a.color() == b.color() && a.visitedLinkColor() == b.visitedLinkColor();
     case CSSPropertyFill: {
-        const SVGRenderStyle& aSVG = a.svgStyle();
-        const SVGRenderStyle& bSVG = b.svgStyle();
+        const SVGComputedStyle& aSVG = a.svgStyle();
+        const SVGComputedStyle& bSVG = b.svgStyle();
         return aSVG.fillPaintType() == bSVG.fillPaintType()
             && (aSVG.fillPaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.fillPaintColor() == bSVG.fillPaintColor())
             && aSVG.visitedLinkFillPaintType() == bSVG.visitedLinkFillPaintType()
@@ -142,6 +141,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         // FIXME: Should we introduce an option to pass the computed font size here, allowing consumers to
         // enable text zoom rather than Text Autosizing? See http://crbug.com/227545.
         return a.specifiedFontSize() == b.specifiedFontSize();
+    case CSSPropertyFontSizeAdjust:
+        return a.fontSizeAdjust() == b.fontSizeAdjust();
     case CSSPropertyFontStretch:
         return a.fontStretch() == b.fontStretch();
     case CSSPropertyFontWeight:
@@ -174,6 +175,11 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         return a.minHeight() == b.minHeight();
     case CSSPropertyMinWidth:
         return a.minWidth() == b.minWidth();
+    case CSSPropertyMotionOffset:
+        return a.motionOffset() == b.motionOffset();
+    case CSSPropertyMotionRotation:
+        return a.motionRotation() == b.motionRotation()
+            && a.motionRotationType() == b.motionRotationType();
     case CSSPropertyObjectPosition:
         return a.objectPosition() == b.objectPosition();
     case CSSPropertyOpacity:
@@ -208,23 +214,23 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyStopOpacity:
         return a.stopOpacity() == b.stopOpacity();
     case CSSPropertyStroke: {
-        const SVGRenderStyle& aSVG = a.svgStyle();
-        const SVGRenderStyle& bSVG = b.svgStyle();
+        const SVGComputedStyle& aSVG = a.svgStyle();
+        const SVGComputedStyle& bSVG = b.svgStyle();
         return aSVG.strokePaintType() == bSVG.strokePaintType()
             && (aSVG.strokePaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.strokePaintColor() == bSVG.strokePaintColor())
             && aSVG.visitedLinkStrokePaintType() == bSVG.visitedLinkStrokePaintType()
             && (aSVG.visitedLinkStrokePaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkStrokePaintColor() == bSVG.visitedLinkStrokePaintColor());
     }
     case CSSPropertyStrokeDasharray:
-        return dataEquivalent(a.strokeDashArray(), b.strokeDashArray());
+        return a.strokeDashArray() == b.strokeDashArray();
     case CSSPropertyStrokeDashoffset:
-        return dataEquivalent(a.strokeDashOffset(), b.strokeDashOffset());
+        return a.strokeDashOffset() == b.strokeDashOffset();
     case CSSPropertyStrokeMiterlimit:
         return a.strokeMiterLimit() == b.strokeMiterLimit();
     case CSSPropertyStrokeOpacity:
         return a.strokeOpacity() == b.strokeOpacity();
     case CSSPropertyStrokeWidth:
-        return dataEquivalent(a.strokeWidth(), b.strokeWidth());
+        return a.strokeWidth() == b.strokeWidth();
     case CSSPropertyTextDecorationColor:
         return a.textDecorationColor() == b.textDecorationColor()
             && a.visitedLinkTextDecorationColor() == b.visitedLinkTextDecorationColor();
@@ -239,14 +245,10 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
             && (a.verticalAlign() != LENGTH || a.verticalAlignLength() == b.verticalAlignLength());
     case CSSPropertyVisibility:
         return a.visibility() == b.visibility();
-    case CSSPropertyWebkitBackgroundSize:
-        return fillLayersEqual<CSSPropertyWebkitBackgroundSize>(a.backgroundLayers(), b.backgroundLayers());
     case CSSPropertyWebkitBorderHorizontalSpacing:
         return a.horizontalBorderSpacing() == b.horizontalBorderSpacing();
     case CSSPropertyWebkitBorderVerticalSpacing:
         return a.verticalBorderSpacing() == b.verticalBorderSpacing();
-    case CSSPropertyWebkitBoxShadow:
-        return dataEquivalent(a.boxShadow(), b.boxShadow());
     case CSSPropertyWebkitClipPath:
         return dataEquivalent(a.clipPath(), b.clipPath());
     case CSSPropertyWebkitColumnCount:
@@ -289,16 +291,38 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         return a.transform() == b.transform();
     case CSSPropertyTransformOrigin:
         return a.transformOriginX() == b.transformOriginX() && a.transformOriginY() == b.transformOriginY() && a.transformOriginZ() == b.transformOriginZ();
+    case CSSPropertyWebkitPerspectiveOriginX:
+        return a.perspectiveOriginX() == b.perspectiveOriginX();
+    case CSSPropertyWebkitPerspectiveOriginY:
+        return a.perspectiveOriginY() == b.perspectiveOriginY();
+    case CSSPropertyWebkitTransformOriginX:
+        return a.transformOriginX() == b.transformOriginX();
+    case CSSPropertyWebkitTransformOriginY:
+        return a.transformOriginY() == b.transformOriginY();
+    case CSSPropertyWebkitTransformOriginZ:
+        return a.transformOriginZ() == b.transformOriginZ();
     case CSSPropertyWidows:
         return a.widows() == b.widows();
     case CSSPropertyWidth:
         return a.width() == b.width();
     case CSSPropertyWordSpacing:
         return a.wordSpacing() == b.wordSpacing();
+    case CSSPropertyCx:
+        return a.svgStyle().cx() == b.svgStyle().cx();
+    case CSSPropertyCy:
+        return a.svgStyle().cy() == b.svgStyle().cy();
+    case CSSPropertyX:
+        return a.svgStyle().x() == b.svgStyle().x();
+    case CSSPropertyY:
+        return a.svgStyle().y() == b.svgStyle().y();
+    case CSSPropertyR:
+        return a.svgStyle().r() == b.svgStyle().r();
+    case CSSPropertyRx:
+        return a.svgStyle().rx() == b.svgStyle().rx();
+    case CSSPropertyRy:
+        return a.svgStyle().ry() == b.svgStyle().ry();
     case CSSPropertyZIndex:
         return a.zIndex() == b.zIndex();
-    case CSSPropertyZoom:
-        return a.zoom() == b.zoom();
     default:
         ASSERT_NOT_REACHED();
         return true;

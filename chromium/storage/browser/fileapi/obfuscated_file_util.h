@@ -16,12 +16,12 @@
 #include "base/files/file_util_proxy.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_system_file_util.h"
 #include "storage/browser/fileapi/file_system_url.h"
 #include "storage/browser/fileapi/sandbox_directory_database.h"
 #include "storage/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "storage/browser/storage_browser_export.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "storage/common/fileapi/file_system_types.h"
 
 namespace base {
@@ -189,6 +189,10 @@ class STORAGE_EXPORT_PRIVATE ObfuscatedFileUtil
   bool DeleteDirectoryForOriginAndType(
       const GURL& origin,
       const std::string& type_string);
+
+  // Frees resources used by an origin's filesystem.
+  void CloseFileSystemForOriginAndType(const GURL& origin,
+                                       const std::string& type_string);
 
   // This method and all methods of its returned class must be called only on
   // the FILE thread.  The caller is responsible for deleting the returned

@@ -42,7 +42,7 @@ enum DataBufferingPolicy {
     DoNotBufferData
 };
 
-enum ContentSecurityPolicyCheck {
+enum ContentSecurityPolicyDisposition {
     CheckContentSecurityPolicy,
     DoNotCheckContentSecurityPolicy
 };
@@ -66,13 +66,6 @@ enum CredentialRequest {
     ClientDidNotRequestCredentials
 };
 
-enum MixedContentBlockingTreatment {
-    TreatAsDefaultForType,
-    TreatAsPassiveContent,
-    TreatAsActiveContent,
-    TreatAsAlwaysAllowedContent
-};
-
 enum SynchronousPolicy {
     RequestSynchronously,
     RequestAsynchronously
@@ -92,7 +85,6 @@ struct ResourceLoaderOptions {
         , credentialsRequested(ClientDidNotRequestCredentials)
         , contentSecurityPolicyOption(CheckContentSecurityPolicy)
         , requestInitiatorContext(DocumentContext)
-        , mixedContentBlockingTreatment(TreatAsDefaultForType)
         , synchronousPolicy(RequestAsynchronously)
         , corsEnabled(NotCORSEnabled)
     {
@@ -102,14 +94,13 @@ struct ResourceLoaderOptions {
         DataBufferingPolicy dataBufferingPolicy,
         StoredCredentials allowCredentials,
         CredentialRequest credentialsRequested,
-        ContentSecurityPolicyCheck contentSecurityPolicyOption,
+        ContentSecurityPolicyDisposition contentSecurityPolicyOption,
         RequestInitiatorContext requestInitiatorContext)
         : dataBufferingPolicy(dataBufferingPolicy)
         , allowCredentials(allowCredentials)
         , credentialsRequested(credentialsRequested)
         , contentSecurityPolicyOption(contentSecurityPolicyOption)
         , requestInitiatorContext(requestInitiatorContext)
-        , mixedContentBlockingTreatment(TreatAsDefaultForType)
         , synchronousPolicy(RequestAsynchronously)
         , corsEnabled(NotCORSEnabled)
     {
@@ -126,7 +117,6 @@ struct ResourceLoaderOptions {
         // FIXME: check contentSecurityPolicyOption.
         // initiatorInfo is purely informational and should be benign for re-use.
         // requestInitiatorContext is benign (indicates document vs. worker)
-        // FIXME: check mixedContentBlockingTreatment.
         // synchronousPolicy (safe to re-use an async XHR response for sync, etc.)
         return corsEnabled == other.corsEnabled;
         // securityOrigin has more complicated checks which callers are responsible for.
@@ -137,10 +127,9 @@ struct ResourceLoaderOptions {
     DataBufferingPolicy dataBufferingPolicy;
     StoredCredentials allowCredentials; // Whether HTTP credentials and cookies are sent with the request.
     CredentialRequest credentialsRequested; // Whether the client (e.g. XHR) wanted credentials in the first place.
-    ContentSecurityPolicyCheck contentSecurityPolicyOption;
+    ContentSecurityPolicyDisposition contentSecurityPolicyOption;
     FetchInitiatorInfo initiatorInfo;
     RequestInitiatorContext requestInitiatorContext;
-    MixedContentBlockingTreatment mixedContentBlockingTreatment;
     SynchronousPolicy synchronousPolicy;
     CORSEnabled corsEnabled; // If the resource is loaded out-of-origin, whether or not to use CORS.
     RefPtr<SecurityOrigin> securityOrigin;
@@ -155,7 +144,6 @@ struct CrossThreadResourceLoaderOptionsData {
         , contentSecurityPolicyOption(options.contentSecurityPolicyOption)
         , initiatorInfo(options.initiatorInfo)
         , requestInitiatorContext(options.requestInitiatorContext)
-        , mixedContentBlockingTreatment(options.mixedContentBlockingTreatment)
         , synchronousPolicy(options.synchronousPolicy)
         , corsEnabled(options.corsEnabled)
         , securityOrigin(options.securityOrigin ? options.securityOrigin->isolatedCopy() : nullptr) { }
@@ -169,7 +157,6 @@ struct CrossThreadResourceLoaderOptionsData {
         options.contentSecurityPolicyOption = contentSecurityPolicyOption;
         options.initiatorInfo = initiatorInfo;
         options.requestInitiatorContext = requestInitiatorContext;
-        options.mixedContentBlockingTreatment = mixedContentBlockingTreatment;
         options.synchronousPolicy = synchronousPolicy;
         options.corsEnabled = corsEnabled;
         options.securityOrigin = securityOrigin;
@@ -179,10 +166,9 @@ struct CrossThreadResourceLoaderOptionsData {
     DataBufferingPolicy dataBufferingPolicy;
     StoredCredentials allowCredentials;
     CredentialRequest credentialsRequested;
-    ContentSecurityPolicyCheck contentSecurityPolicyOption;
+    ContentSecurityPolicyDisposition contentSecurityPolicyOption;
     CrossThreadFetchInitiatorInfoData initiatorInfo;
     RequestInitiatorContext requestInitiatorContext;
-    MixedContentBlockingTreatment mixedContentBlockingTreatment;
     SynchronousPolicy synchronousPolicy;
     CORSEnabled corsEnabled;
     RefPtr<SecurityOrigin> securityOrigin;

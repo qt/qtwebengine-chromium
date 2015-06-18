@@ -9,8 +9,6 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "google_apis/gaia/oauth2_access_token_consumer.h"
-#include "google_apis/gaia/oauth2_access_token_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
@@ -26,9 +24,7 @@ class URLRequestContextGetter;
 // given an access token to the service.  This class abstracts the basic steps
 // and exposes template methods for sub-classes to implement for API specific
 // details.
-class OAuth2ApiCallFlow
-    : public net::URLFetcherDelegate,
-      public OAuth2AccessTokenConsumer {
+class OAuth2ApiCallFlow : public net::URLFetcherDelegate {
  public:
   OAuth2ApiCallFlow();
 
@@ -68,9 +64,9 @@ class OAuth2ApiCallFlow
   // Template method CreateApiCallUrl is used to get the URL.
   // Template method CreateApiCallBody is used to get the body.
   // The URLFether's method will be GET if body is empty, POST otherwise.
-  // Caller owns the returned instance.
-  net::URLFetcher* CreateURLFetcher(net::URLRequestContextGetter* context,
-                                    const std::string& access_token);
+  scoped_ptr<net::URLFetcher> CreateURLFetcher(
+      net::URLRequestContextGetter* context,
+      const std::string& access_token);
 
   // Helper methods to implement the state machine for the flow.
   void BeginApiCall();

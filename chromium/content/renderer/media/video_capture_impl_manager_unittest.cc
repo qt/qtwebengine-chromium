@@ -91,9 +91,8 @@ class VideoCaptureImplManagerTest : public ::testing::Test {
   }
 
  protected:
-  MOCK_METHOD3(OnFrameReady,
+  MOCK_METHOD2(OnFrameReady,
               void(const scoped_refptr<media::VideoFrame>&,
-                   const media::VideoCaptureFormat&,
                    const base::TimeTicks& estimated_capture_time));
   MOCK_METHOD0(OnStarted, void());
   MOCK_METHOD0(OnStopped, void());
@@ -138,10 +137,8 @@ TEST_F(VideoCaptureImplManagerTest, MultipleClients) {
   base::Closure stop_cb1, stop_cb2;
   {
     base::RunLoop run_loop;
-    base::Closure quit_closure = BindToCurrentLoop(
-        run_loop.QuitClosure());
-    EXPECT_CALL(*this, OnStarted()).WillOnce(
-        RunClosure(quit_closure));
+    base::Closure quit_closure = BindToCurrentLoop(run_loop.QuitClosure());
+    EXPECT_CALL(*this, OnStarted()).WillOnce(RunClosure(quit_closure));
     EXPECT_CALL(*this, OnStarted()).RetiresOnSaturation();
     stop_cb1 = StartCapture(params_);
     stop_cb2 = StartCapture(params_);
@@ -151,10 +148,8 @@ TEST_F(VideoCaptureImplManagerTest, MultipleClients) {
 
   {
     base::RunLoop run_loop;
-    base::Closure quit_closure = BindToCurrentLoop(
-        run_loop.QuitClosure());
-    EXPECT_CALL(*this, OnStopped()).WillOnce(
-        RunClosure(quit_closure));
+    base::Closure quit_closure = BindToCurrentLoop(run_loop.QuitClosure());
+    EXPECT_CALL(*this, OnStopped()).WillOnce(RunClosure(quit_closure));
     EXPECT_CALL(*this, OnStopped()).RetiresOnSaturation();
     stop_cb1.Run();
     stop_cb2.Run();

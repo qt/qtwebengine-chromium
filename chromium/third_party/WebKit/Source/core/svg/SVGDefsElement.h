@@ -36,7 +36,7 @@ public:
 private:
     explicit SVGDefsElement(Document&);
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 };
 
 } // namespace blink

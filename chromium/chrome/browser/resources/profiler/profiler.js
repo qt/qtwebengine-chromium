@@ -42,10 +42,6 @@ var BrowserBridge = (function() {
       chrome.send('getData');
     },
 
-    sendResetData: function() {
-      chrome.send('resetData');
-    },
-
     //--------------------------------------------------------------------------
     // Messages received from the browser.
     //--------------------------------------------------------------------------
@@ -98,8 +94,6 @@ var MainView = (function() {
   // The checkbox which controls whether things like "Worker Threads" and
   // "PAC threads" will be merged together.
   var MERGE_SIMILAR_THREADS_CHECKBOX_ID = 'merge-similar-threads-checkbox';
-
-  var RESET_DATA_LINK_ID = 'reset-data-link';
 
   var TOGGLE_SNAPSHOTS_LINK_ID = 'snapshots-link';
   var SNAPSHOTS_ROW = 'snapshots-row';
@@ -905,7 +899,7 @@ var MainView = (function() {
             value = m[1] + '*';
         }
         return value;
-      }
+      };
     } else {
       propertyGetterFunc = function(row, key) { return row[key]; };
     }
@@ -1076,12 +1070,10 @@ var MainView = (function() {
         var linenumber = m[2];
 
         var link = addNode(td, 'a', filename + ' [' + linenumber + ']');
-        // http://chromesrc.appspot.com is a server I wrote specifically for
-        // this task. It redirects to the appropriate source file; the file
-        // paths given by the compiler can be pretty crazy and different
-        // between platforms.
-        link.href = 'http://chromesrc.appspot.com/?path=' +
-                    encodeURIComponent(filepath) + '&line=' + linenumber;
+
+        link.href = 'https://code.google.com/p/chromium/codesearch#search/&q=' +
+                    encodeURIComponent(filename) + ':' + linenumber +
+                    '&sq=package:chromium&type=cs';
         link.target = '_blank';
         return;
       }
@@ -1761,9 +1753,6 @@ var MainView = (function() {
 
       $(MERGE_SIMILAR_THREADS_CHECKBOX_ID).onchange =
           this.onMergeSimilarThreadsCheckboxChanged_.bind(this);
-
-      $(RESET_DATA_LINK_ID).onclick =
-          g_browserBridge.sendResetData.bind(g_browserBridge);
 
       $(TAKE_SNAPSHOT_BUTTON_ID).onclick = this.takeSnapshot_.bind(this);
 

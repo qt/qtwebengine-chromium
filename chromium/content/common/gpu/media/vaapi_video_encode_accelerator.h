@@ -25,24 +25,23 @@ namespace content {
 class CONTENT_EXPORT VaapiVideoEncodeAccelerator
     : public media::VideoEncodeAccelerator {
  public:
-  explicit VaapiVideoEncodeAccelerator(Display* x_display);
-  virtual ~VaapiVideoEncodeAccelerator();
+  VaapiVideoEncodeAccelerator();
+  ~VaapiVideoEncodeAccelerator() override;
 
   // media::VideoEncodeAccelerator implementation.
-  virtual std::vector<media::VideoEncodeAccelerator::SupportedProfile>
-      GetSupportedProfiles() override;
-  virtual bool Initialize(media::VideoFrame::Format format,
-                          const gfx::Size& input_visible_size,
-                          media::VideoCodecProfile output_profile,
-                          uint32 initial_bitrate,
-                          Client* client) override;
-  virtual void Encode(const scoped_refptr<media::VideoFrame>& frame,
-                      bool force_keyframe) override;
-  virtual void UseOutputBitstreamBuffer(
-      const media::BitstreamBuffer& buffer) override;
-  virtual void RequestEncodingParametersChange(uint32 bitrate,
-                                               uint32 framerate) override;
-  virtual void Destroy() override;
+  media::VideoEncodeAccelerator::SupportedProfiles GetSupportedProfiles()
+      override;
+  bool Initialize(media::VideoFrame::Format format,
+                  const gfx::Size& input_visible_size,
+                  media::VideoCodecProfile output_profile,
+                  uint32 initial_bitrate,
+                  Client* client) override;
+  void Encode(const scoped_refptr<media::VideoFrame>& frame,
+              bool force_keyframe) override;
+  void UseOutputBitstreamBuffer(const media::BitstreamBuffer& buffer) override;
+  void RequestEncodingParametersChange(uint32 bitrate,
+                                       uint32 framerate) override;
+  void Destroy() override;
 
  private:
   // Reference picture list.
@@ -178,8 +177,6 @@ class CONTENT_EXPORT VaapiVideoEncodeAccelerator
   // Size in bytes required for input bitstream buffers.
   size_t output_buffer_byte_size_;
 
-  Display* x_display_;
-
   // All of the members below must be accessed on the encoder_thread_,
   // while it is running.
 
@@ -188,8 +185,8 @@ class CONTENT_EXPORT VaapiVideoEncodeAccelerator
 
   // frame_num to be used for the next frame.
   unsigned int frame_num_;
-  // frame_num of the previous IDR.
-  unsigned int last_idr_frame_num_;
+  // idr_pic_id to be used for the next frame.
+  unsigned int idr_pic_id_;
 
   // Current bitrate in bps.
   unsigned int bitrate_;
@@ -213,7 +210,7 @@ class CONTENT_EXPORT VaapiVideoEncodeAccelerator
   media::H264BitstreamBuffer packed_pps_;
 
   // Picture currently being prepared for encode.
-  H264Picture current_pic_;
+  scoped_refptr<H264Picture> current_pic_;
 
   // VA surfaces available for reuse.
   std::vector<VASurfaceID> available_va_surface_ids_;
@@ -238,13 +235,13 @@ class CONTENT_EXPORT VaapiVideoEncodeAccelerator
 
   // Encoder thread. All tasks are executed on it.
   base::Thread encoder_thread_;
-  scoped_refptr<base::MessageLoopProxy> encoder_thread_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> encoder_thread_task_runner_;
 
-  const scoped_refptr<base::MessageLoopProxy> child_message_loop_proxy_;
+  const scoped_refptr<base::SingleThreadTaskRunner> child_task_runner_;
 
   // To expose client callbacks from VideoEncodeAccelerator.
   // NOTE: all calls to these objects *MUST* be executed on
-  // child_message_loop_proxy_.
+  // child_task_runner_.
   scoped_ptr<base::WeakPtrFactory<Client> > client_ptr_factory_;
   base::WeakPtr<Client> client_;
 

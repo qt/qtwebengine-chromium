@@ -1,8 +1,14 @@
 include_rules = [
+  # Allow inclusion of specific components that we depend on. We may only
+  # depend on components which we share with the mojo html_viewer.
+  "+components/scheduler",
+
   "+cc/blink",
+  "+content/public/child",
   "+content/public/renderer",
   "+content/child",
   "+device/battery",  # For battery status service.
+  "+device/vibration",
   "+gin",
   "+jingle/glue",
   "+media",  # For audio input/output and audio/video decoding.

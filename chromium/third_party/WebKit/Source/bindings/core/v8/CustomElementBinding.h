@@ -39,16 +39,11 @@ namespace blink {
 
 class CustomElementBinding {
 public:
-    static PassOwnPtr<CustomElementBinding> create(v8::Isolate*, v8::Handle<v8::Object> prototype);
-
-    ~CustomElementBinding() { }
-
-    v8::Handle<v8::Object> prototype() { return m_prototype.newLocal(m_isolate); }
+    static PassOwnPtr<CustomElementBinding> create(v8::Isolate*, v8::Local<v8::Object> prototype);
+    ~CustomElementBinding();
 
 private:
-    CustomElementBinding(v8::Isolate*, v8::Handle<v8::Object> prototype);
-
-    v8::Isolate* m_isolate;
+    CustomElementBinding(v8::Isolate*, v8::Local<v8::Object> prototype);
     ScopedPersistent<v8::Object> m_prototype;
 };
 

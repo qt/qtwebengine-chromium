@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //ppapi:ppapi_tests
       'target_name': 'ppapi_tests',
       'type': 'loadable_module',
       'include_dirs': [
@@ -29,6 +30,7 @@
             'tests/test_case.html',
             'tests/test_case.html.mock-http-headers',
             'tests/test_page.css',
+            'tests/test_page.css.mock-http-headers',
             'tests/ppapi_nacl_tests_newlib.nmf',
           ],
         },
@@ -55,8 +57,6 @@
             '_CRT_NONSTDC_NO_DEPRECATE',
             '_SCL_SECURE_NO_DEPRECATE',
           ],
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS=="mac"', {
           'mac_bundle': 1,
@@ -64,8 +64,6 @@
           'product_extension': 'plugin',
         }],
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
 # TODO(dmichael):  Figure out what is wrong with the script on Windows and add
 #                  it as an automated action.
 #      'actions': [
@@ -83,7 +81,28 @@
 #      ],
     },
     {
-      # GN version: //ppapi:ppapi_unittest_shared
+      # GN version: //ppapi:power_saver_test_plugin
+      'target_name': 'power_saver_test_plugin',
+      'type': 'loadable_module',
+      'sources': [
+        'tests/power_saver_test_plugin.cc',
+        'tests/test_utils.cc',
+      ],
+      'dependencies': [
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi_internal.gyp:ppapi_shared',
+      ],
+      'conditions': [
+        ['OS=="mac"', {
+          'mac_bundle': 1,
+          'product_name': 'power_saver_test_plugin',
+          'product_extension': 'plugin',
+        }],
+      ],
+    },
+    {
+      # GN version: //ppapi/proxy:test_support
+      #             //ppapi/shared_impl:test_support
       'target_name': 'ppapi_unittest_shared',
       'type': 'static_library',
       'dependencies': [
@@ -103,12 +122,13 @@
         'proxy/resource_message_test_sink.h',
         'shared_impl/test_globals.cc',
         'shared_impl/test_globals.h',
-        'shared_impl/unittest_utils.cc',
-        'shared_impl/unittest_utils.h',
+        'shared_impl/test_utils.cc',
+        'shared_impl/test_utils.h',
       ],
     },
 
     {
+      # GN version: //ppapi:ppapi_perftests
       'target_name': 'ppapi_perftests',
       'type': 'executable',
       'variables': {
@@ -135,6 +155,7 @@
       ],
     },
     {
+      # GN version: //ppapi:ppapi_unittests
       'target_name': 'ppapi_unittests',
       'type': 'executable',
       'variables': {
@@ -156,6 +177,7 @@
         '../ui/surface/surface.gyp:surface',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'host/resource_message_filter_unittest.cc',
         'proxy/device_enumeration_resource_helper_unittest.cc',
         'proxy/file_chooser_resource_unittest.cc',
@@ -176,8 +198,9 @@
         'proxy/printing_resource_unittest.cc',
         'proxy/raw_var_data_unittest.cc',
         'proxy/serialized_var_unittest.cc',
-        'proxy/talk_resource_unittest.cc',
+        'proxy/tracked_callback_unittest.cc',
         'proxy/video_decoder_resource_unittest.cc',
+        'proxy/video_encoder_resource_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
         'shared_impl/media_stream_audio_track_shared_unittest.cc',
         'shared_impl/media_stream_buffer_manager_unittest.cc',
@@ -186,7 +209,6 @@
         'shared_impl/resource_tracker_unittest.cc',
         'shared_impl/thread_aware_callback_unittest.cc',
         'shared_impl/time_conversion_unittest.cc',
-        'shared_impl/tracked_callback_unittest.cc',
         'shared_impl/var_tracker_unittest.cc',
       ],
       'conditions': [
@@ -200,8 +222,6 @@
           ],
         }],
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_skeleton',
@@ -233,6 +253,7 @@
       },
     },
     {
+      # GN version: //ppapi/examples/mouse_cursor
       'target_name': 'ppapi_example_mouse_cursor',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -243,6 +264,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/mouse_lock
       'target_name': 'ppapi_example_mouse_lock',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -254,6 +276,7 @@
     },
 
     {
+      # GN version: //ppapi/examples/gamepad
       'target_name': 'ppapi_example_gamepad',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -262,11 +285,10 @@
       'sources': [
         'examples/gamepad/gamepad.cc',
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
 
     {
+      # GN version: //ppapi/examples/stub:c_stub
       'target_name': 'ppapi_example_c_stub',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -277,6 +299,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/stub:cc_stub
       'target_name': 'ppapi_example_cc_stub',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -287,6 +310,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/crxfs
       'target_name': 'ppapi_example_crxfs',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -297,6 +321,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/audio
       'target_name': 'ppapi_example_audio',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -307,6 +332,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/audio_input
       'target_name': 'ppapi_example_audio_input',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -317,6 +343,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/file_chooser
       'target_name': 'ppapi_example_file_chooser',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -327,6 +354,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/2d:graphics_2d
       'target_name': 'ppapi_example_graphics_2d',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -337,6 +365,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/ime
       'target_name': 'ppapi_example_ime',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -345,10 +374,9 @@
       'sources': [
         'examples/ime/ime.cc',
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //ppapi/examples/2d:paint_manager
       'target_name': 'ppapi_example_paint_manager',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -359,6 +387,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/input
       'target_name': 'ppapi_example_input',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -369,6 +398,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/scripting
       'target_name': 'ppapi_example_post_message',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -379,6 +409,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/scaling
       'target_name': 'ppapi_example_scaling',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -389,6 +420,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/2d:scroll
       'target_name': 'ppapi_example_scroll',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -399,6 +431,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/font
       'target_name': 'ppapi_example_simple_font',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -409,6 +442,18 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/threading
+      'target_name': 'ppapi_example_threading',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/threading/threading.cc',
+      ],
+    },
+    {
+      # GN version: //ppapi/examples/url_loader:streaming
       'target_name': 'ppapi_example_url_loader',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -419,6 +464,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/url_loader:file
       'target_name': 'ppapi_example_url_loader_file',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -429,6 +475,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/gles2
       'target_name': 'ppapi_example_gles2',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -443,6 +490,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/video_decode:stable
       'target_name': 'ppapi_example_video_decode',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -453,13 +501,12 @@
         'lib/gl/include',
       ],
       'sources': [
-        'examples/video_decode/video_decode.cc',
         'examples/video_decode/testdata.h',
+        'examples/video_decode/video_decode.cc',
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //ppapi/examples/video_decode:dev
       'target_name': 'ppapi_example_video_decode_dev',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -470,13 +517,22 @@
         'lib/gl/include',
       ],
       'sources': [
-        'examples/video_decode/video_decode_dev.cc',
         'examples/video_decode/testdata.h',
+        'examples/video_decode/video_decode_dev.cc',
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      'target_name': 'ppapi_example_video_encode',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/video_encode/video_encode.cc',
+      ],
+    },
+    {
+      # GN version: //ppapi/example/video_capture
       'target_name': 'ppapi_example_vc',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -491,6 +547,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/video_effects
       'target_name': 'ppapi_example_video_effects',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -501,6 +558,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/enumerate_devices
       'target_name': 'ppapi_example_enumerate_devices',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -511,6 +569,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/flash_topmost
       'target_name': 'ppapi_example_flash_topmost',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -521,6 +580,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/printing
       'target_name': 'ppapi_example_printing',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -529,10 +589,9 @@
       'sources': [
         'examples/printing/printing.cc',
       ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //ppapi/examples/media_stream_audio
       'target_name': 'ppapi_example_media_stream_audio',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -543,6 +602,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/media_stream_video
       'target_name': 'ppapi_example_media_stream_video',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -557,6 +617,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/gles2_spinning_cube
       'target_name': 'ppapi_example_gles2_spinning_cube',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -573,6 +634,7 @@
       ],
     },
     {
+      # GN version: //ppapi/examples/compositor
       'target_name': 'ppapi_example_compositor',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -588,5 +650,7 @@
         'examples/compositor/spinning_cube.h',
       ],
     },
+    # Adding a new PPAPI example? Don't forget to update the GN build.
+    # See //ppapi/examples/BUILD.gn
   ],
 }

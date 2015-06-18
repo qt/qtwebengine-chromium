@@ -18,18 +18,15 @@ using base::StringPiece;
 
 namespace net {
 
-#define ENDPOINT (session()->is_server() ? "Server: " : " Client: ")
+#define ENDPOINT                                                               \
+  (session()->perspective() == Perspective::IS_SERVER ? "Server: " : "Client:" \
+                                                                     " ")
 
 QuicCryptoStream::QuicCryptoStream(QuicSession* session)
     : ReliableQuicStream(kCryptoStreamId, session),
       encryption_established_(false),
       handshake_confirmed_(false) {
   crypto_framer_.set_visitor(this);
-  if (version() < QUIC_VERSION_21) {
-    // Prior to QUIC_VERSION_21 the crypto stream is not subject to any flow
-    // control.
-    DisableFlowControl();
-  }
   // The crypto stream is exempt from connection level flow control.
   DisableConnectionFlowControlForThisStream();
 }

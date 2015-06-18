@@ -9,6 +9,8 @@
 
 #include "ui/gfx/text_elider.h"
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
 
@@ -23,7 +25,10 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/icu/source/common/unicode/rbbi.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
+#include "third_party/icu/source/common/unicode/umachine.h"
+#include "third_party/icu/source/common/unicode/utf16.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/render_text.h"
@@ -99,6 +104,22 @@ base::string16 ElideEmail(const base::string16& email,
 }
 #endif
 
+// Returns true if the code point |c| is a combining mark character in Unicode.
+bool CharIsMark(UChar32 c) {
+  int8_t char_type = u_charType(c);
+  return char_type == U_NON_SPACING_MARK || char_type == U_ENCLOSING_MARK ||
+         char_type == U_COMBINING_SPACING_MARK;
+}
+
+// Gets the code point of |str| at the given code unit position |index|. If
+// |index| is a surrogate code unit, returns the whole code point (unless the
+// code unit is unpaired, in which case it just returns the surrogate value).
+UChar32 GetCodePointAt(const base::string16& str, size_t index) {
+  UChar32 c;
+  U16_GET(str.data(), 0, index, str.size(), c);
+  return c;
+}
+
 }  // namespace
 
 // U+2026 in utf8
@@ -116,7 +137,8 @@ StringSlicer::StringSlicer(const base::string16& text,
       elide_at_beginning_(elide_at_beginning) {
 }
 
-base::string16 StringSlicer::CutString(size_t length, bool insert_ellipsis) {
+base::string16 StringSlicer::CutString(size_t length,
+                                       bool insert_ellipsis) const {
   const base::string16 ellipsis_text = insert_ellipsis ? ellipsis_
                                                        : base::string16();
 
@@ -130,18 +152,25 @@ base::string16 StringSlicer::CutString(size_t length, bool insert_ellipsis) {
   // We put the extra character, if any, before the cut.
   const size_t half_length = length / 2;
   const size_t prefix_length = FindValidBoundaryBefore(length - half_length);
-  const size_t suffix_start_guess = text_.length() - half_length;
-  const size_t suffix_start = FindValidBoundaryAfter(suffix_start_guess);
-  const size_t suffix_length =
-      half_length - (suffix_start_guess - suffix_start);
+  const size_t suffix_start =
+      FindValidBoundaryAfter(text_.length() - half_length);
   return text_.substr(0, prefix_length) + ellipsis_text +
-         text_.substr(suffix_start, suffix_length);
+         text_.substr(suffix_start);
 }
 
 size_t StringSlicer::FindValidBoundaryBefore(size_t index) const {
-  DCHECK_LE(index, text_.length());
-  if (index != text_.length())
-    U16_SET_CP_START(text_.data(), 0, index);
+  size_t length = text_.length();
+  DCHECK_LE(index, length);
+  if (index == length)
+    return index;
+
+  // If |index| straddles a combining character sequence, go back until we find
+  // a base character.
+  while (index > 0 && CharIsMark(GetCodePointAt(text_, index)))
+    --index;
+
+  // If |index| straddles a UTF-16 surrogate pair, go back.
+  U16_SET_CP_START(text_.data(), 0, index);
   return index;
 }
 
@@ -152,6 +181,15 @@ size_t StringSlicer::FindValidBoundaryAfter(size_t index) const {
 
   int32_t text_index = base::checked_cast<int32_t>(index);
   int32_t text_length = base::checked_cast<int32_t>(text_.length());
+
+  // If |index| straddles a combining character sequence, go forward until we
+  // find a base character.
+  while (text_index < text_length &&
+         CharIsMark(GetCodePointAt(text_, text_index))) {
+    ++text_index;
+  }
+
+  // If |index| straddles a UTF-16 surrogate pair, go forward.
   U16_SET_CP_LIMIT(text_.data(), 0, text_index, text_length);
   return static_cast<size_t>(text_index);
 }
@@ -221,7 +259,7 @@ base::string16 ElideText(const base::string16& text,
       gfx::ToEnclosingRect(gfx::RectF(gfx::SizeF(available_pixel_width, 1))));
   render_text->SetElideBehavior(behavior);
   render_text->SetText(text);
-  return render_text->layout_text();
+  return render_text->GetDisplayText();
 #else
   DCHECK_NE(behavior, FADE_TAIL);
   if (text.empty() || behavior == FADE_TAIL || behavior == NO_ELIDE ||
@@ -245,12 +283,13 @@ base::string16 ElideText(const base::string16& text,
   size_t lo = 0;
   size_t hi = text.length() - 1;
   size_t guess;
+  base::string16 cut;
   for (guess = (lo + hi) / 2; lo <= hi; guess = (lo + hi) / 2) {
     // We check the width of the whole desired string at once to ensure we
     // handle kerning/ligatures/etc. correctly.
     // TODO(skanuj) : Handle directionality of ellipsis based on adjacent
     // characters.  See crbug.com/327963.
-    const base::string16 cut = slicer.CutString(guess, insert_ellipsis);
+    cut = slicer.CutString(guess, insert_ellipsis);
     const float guess_width = GetStringWidthF(cut, font_list);
     if (guess_width == available_pixel_width)
       break;
@@ -264,7 +303,7 @@ base::string16 ElideText(const base::string16& text,
     }
   }
 
-  return slicer.CutString(guess, insert_ellipsis);
+  return cut;
 #endif
 }
 

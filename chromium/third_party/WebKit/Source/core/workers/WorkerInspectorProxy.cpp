@@ -20,6 +20,7 @@ WorkerInspectorProxy::WorkerInspectorProxy()
     : m_workerThread(nullptr)
     , m_executionContext(nullptr)
     , m_pageInspector(nullptr)
+    , m_workerGlobalScopeProxy(nullptr)
 {
 }
 
@@ -47,7 +48,7 @@ void WorkerInspectorProxy::workerThreadTerminated()
     m_pageInspector = nullptr;
 }
 
-static void connectToWorkerGlobalScopeInspectorTask(ExecutionContext* context, bool)
+static void connectToWorkerGlobalScopeInspectorTask(ExecutionContext* context)
 {
     toWorkerGlobalScope(context)->workerInspectorController()->connectFrontend();
 }
@@ -58,10 +59,10 @@ void WorkerInspectorProxy::connectToInspector(WorkerInspectorProxy::PageInspecto
         return;
     ASSERT(!m_pageInspector);
     m_pageInspector = pageInspector;
-    m_workerThread->postDebuggerTask(createCrossThreadTask(connectToWorkerGlobalScopeInspectorTask, true));
+    m_workerThread->postDebuggerTask(FROM_HERE, createCrossThreadTask(connectToWorkerGlobalScopeInspectorTask));
 }
 
-static void disconnectFromWorkerGlobalScopeInspectorTask(ExecutionContext* context, bool)
+static void disconnectFromWorkerGlobalScopeInspectorTask(ExecutionContext* context)
 {
     toWorkerGlobalScope(context)->workerInspectorController()->disconnectFrontend();
 }
@@ -71,10 +72,10 @@ void WorkerInspectorProxy::disconnectFromInspector()
     m_pageInspector = nullptr;
     if (!m_workerThread)
         return;
-    m_workerThread->postDebuggerTask(createCrossThreadTask(disconnectFromWorkerGlobalScopeInspectorTask, true));
+    m_workerThread->postDebuggerTask(FROM_HERE, createCrossThreadTask(disconnectFromWorkerGlobalScopeInspectorTask));
 }
 
-static void dispatchOnInspectorBackendTask(ExecutionContext* context, const String& message)
+static void dispatchOnInspectorBackendTask(const String& message, ExecutionContext* context)
 {
     toWorkerGlobalScope(context)->workerInspectorController()->dispatchMessageFromFrontend(message);
 }
@@ -83,15 +84,15 @@ void WorkerInspectorProxy::sendMessageToInspector(const String& message)
 {
     if (!m_workerThread)
         return;
-    m_workerThread->postDebuggerTask(createCrossThreadTask(dispatchOnInspectorBackendTask, String(message)));
+    m_workerThread->postDebuggerTask(FROM_HERE, createCrossThreadTask(dispatchOnInspectorBackendTask, message));
     m_workerThread->interruptAndDispatchInspectorCommands();
 }
 
-void WorkerInspectorProxy::writeTimelineStartedEvent(const String& sessionId)
+void WorkerInspectorProxy::writeTimelineStartedEvent(const String& sessionId, const String& workerId)
 {
     if (!m_workerThread)
         return;
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TracingSessionIdForWorker", "data", InspectorTracingSessionIdForWorkerEvent::data(sessionId, m_workerThread));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TracingSessionIdForWorker", TRACE_EVENT_SCOPE_THREAD, "data", InspectorTracingSessionIdForWorkerEvent::data(sessionId, workerId, m_workerThread));
 }
 
 } // namespace blink

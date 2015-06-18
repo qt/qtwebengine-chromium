@@ -24,7 +24,7 @@
     # Location where all generated Java sources will be placed.
     'output_dir': '<(SHARED_INTERMEDIATE_DIR)/enums/<(_target_name)',
     'generator_path': '<(DEPTH)/build/android/gyp/java_cpp_enum.py',
-    'generator_args': '--output_dir=<(output_dir) <(source_file)',
+    'generator_args': '<(output_dir) <(source_file)',
   },
   'direct_dependent_settings': {
     'variables': {
@@ -32,6 +32,11 @@
       # when building targets that depend on this one.
       'generated_src_dirs': [
         '<(output_dir)/',
+      ],
+      # Ensure that the targets depending on this one are rebuilt if the sources
+      # of this one are modified.
+      'additional_input_paths': [
+        '<(source_file)',
       ],
     },
   },

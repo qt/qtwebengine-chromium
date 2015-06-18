@@ -14,9 +14,11 @@
         ],
       }],
       ['OS == "mac"', {
+        # Required by accelerated_surface_mac.cc.
         'link_settings': {
           'libraries': [
             '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
+            '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
           ],
         },
       }],
@@ -38,8 +40,8 @@
         'accelerated_surface_mac.cc',
         'accelerated_surface_mac.h',
         'surface_export.h',
-        'transport_dib.h',
         'transport_dib.cc',
+        'transport_dib.h',
         'transport_dib_posix.cc',
         'transport_dib_win.cc',
       ],

@@ -29,15 +29,25 @@
 
 #include <include/libplatform/libplatform.h>
 
+#include <stdlib.h>
+#include <string.h>
+
 #include <map>
 #include <string>
 
-#ifdef COMPRESS_STARTUP_DATA_BZ2
-#error Using compressed startup data is not supported for this sample
-#endif
-
 using namespace std;
 using namespace v8;
+
+class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
+ public:
+  virtual void* Allocate(size_t length) {
+    void* data = AllocateUninitialized(length);
+    return data == NULL ? data : memset(data, 0, length);
+  }
+  virtual void* AllocateUninitialized(size_t length) { return malloc(length); }
+  virtual void Free(void* data, size_t) { free(data); }
+};
+
 
 // These interfaces represent an existing request processing interface.
 // The idea is to imagine a real application that uses these interfaces
@@ -116,10 +126,8 @@ class JsHttpRequestProcessor : public HttpRequestProcessor {
                            const PropertyCallbackInfo<Value>& info);
 
   // Callbacks that access maps
-  static void MapGet(Local<String> name,
-                     const PropertyCallbackInfo<Value>& info);
-  static void MapSet(Local<String> name,
-                     Local<Value> value,
+  static void MapGet(Local<Name> name, const PropertyCallbackInfo<Value>& info);
+  static void MapSet(Local<Name> name, Local<Value> value,
                      const PropertyCallbackInfo<Value>& info);
 
   // Utility methods for wrapping C++ objects as JavaScript objects,
@@ -359,13 +367,15 @@ string ObjectToString(Local<Value> value) {
 }
 
 
-void JsHttpRequestProcessor::MapGet(Local<String> name,
+void JsHttpRequestProcessor::MapGet(Local<Name> name,
                                     const PropertyCallbackInfo<Value>& info) {
+  if (name->IsSymbol()) return;
+
   // Fetch the map wrapped by this object.
   map<string, string>* obj = UnwrapMap(info.Holder());
 
   // Convert the JavaScript string to a std::string.
-  string key = ObjectToString(name);
+  string key = ObjectToString(Local<String>::Cast(name));
 
   // Look up the value if it exists using the standard STL ideom.
   map<string, string>::iterator iter = obj->find(key);
@@ -381,14 +391,15 @@ void JsHttpRequestProcessor::MapGet(Local<String> name,
 }
 
 
-void JsHttpRequestProcessor::MapSet(Local<String> name,
-                                    Local<Value> value_obj,
+void JsHttpRequestProcessor::MapSet(Local<Name> name, Local<Value> value_obj,
                                     const PropertyCallbackInfo<Value>& info) {
+  if (name->IsSymbol()) return;
+
   // Fetch the map wrapped by this object.
   map<string, string>* obj = UnwrapMap(info.Holder());
 
   // Convert the key and value to std::strings.
-  string key = ObjectToString(name);
+  string key = ObjectToString(Local<String>::Cast(name));
   string value = ObjectToString(value_obj);
 
   // Update the map.
@@ -405,7 +416,7 @@ Handle<ObjectTemplate> JsHttpRequestProcessor::MakeMapTemplate(
 
   Local<ObjectTemplate> result = ObjectTemplate::New(isolate);
   result->SetInternalFieldCount(1);
-  result->SetNamedPropertyHandler(MapGet, MapSet);
+  result->SetHandler(NamedPropertyHandlerConfiguration(MapGet, MapSet));
 
   // Again, return the result through the current handle scope.
   return handle_scope.Escape(result);
@@ -598,18 +609,21 @@ Handle<String> ReadFile(Isolate* isolate, const string& name) {
   if (file == NULL) return Handle<String>();
 
   fseek(file, 0, SEEK_END);
-  int size = ftell(file);
+  size_t size = ftell(file);
   rewind(file);
 
   char* chars = new char[size + 1];
   chars[size] = '\0';
-  for (int i = 0; i < size;) {
-    int read = static_cast<int>(fread(&chars[i], 1, size - i, file));
-    i += read;
+  for (size_t i = 0; i < size;) {
+    i += fread(&chars[i], 1, size - i, file);
+    if (ferror(file)) {
+      fclose(file);
+      return Handle<String>();
+    }
   }
   fclose(file);
-  Handle<String> result =
-      String::NewFromUtf8(isolate, chars, String::kNormalString, size);
+  Handle<String> result = String::NewFromUtf8(
+      isolate, chars, String::kNormalString, static_cast<int>(size));
   delete[] chars;
   return result;
 }
@@ -656,7 +670,10 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "No script was specified.\n");
     return 1;
   }
-  Isolate* isolate = Isolate::New();
+  ArrayBufferAllocator array_buffer_allocator;
+  Isolate::CreateParams create_params;
+  create_params.array_buffer_allocator = &array_buffer_allocator;
+  Isolate* isolate = Isolate::New(create_params);
   Isolate::Scope isolate_scope(isolate);
   HandleScope scope(isolate);
   Handle<String> source = ReadFile(isolate, file);

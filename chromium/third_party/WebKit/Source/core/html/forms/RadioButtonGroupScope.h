@@ -37,7 +37,7 @@ class RadioButtonGroupScope {
 public:
     RadioButtonGroupScope();
     ~RadioButtonGroupScope();
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void addButton(HTMLInputElement*);
     void updateCheckedState(HTMLInputElement*);
     void requiredAttributeChanged(HTMLInputElement*);
@@ -46,7 +46,7 @@ public:
     bool isInRequiredGroup(HTMLInputElement*) const;
 
 private:
-    typedef WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<RadioButtonGroup>, CaseFoldingHash> NameToGroupMap;
+    using NameToGroupMap = WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<RadioButtonGroup>, CaseFoldingHash>;
     OwnPtrWillBeMember<NameToGroupMap> m_nameToGroupMap;
 };
 

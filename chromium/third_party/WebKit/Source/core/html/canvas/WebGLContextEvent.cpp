@@ -28,10 +28,6 @@
 
 namespace blink {
 
-WebGLContextEventInit::WebGLContextEventInit()
-{
-}
-
 WebGLContextEvent::WebGLContextEvent()
 {
 }
@@ -44,8 +40,9 @@ WebGLContextEvent::WebGLContextEvent(const AtomicString& type, bool canBubble, b
 
 WebGLContextEvent::WebGLContextEvent(const AtomicString& type, const WebGLContextEventInit& initializer)
     : Event(type, initializer)
-    , m_statusMessage(initializer.statusMessage)
 {
+    if (initializer.hasStatusMessage())
+        m_statusMessage = initializer.statusMessage();
 }
 
 WebGLContextEvent::~WebGLContextEvent()
@@ -57,7 +54,7 @@ const AtomicString& WebGLContextEvent::interfaceName() const
     return EventNames::WebGLContextEvent;
 }
 
-void WebGLContextEvent::trace(Visitor* visitor)
+DEFINE_TRACE(WebGLContextEvent)
 {
     Event::trace(visitor);
 }

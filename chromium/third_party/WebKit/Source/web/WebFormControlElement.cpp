@@ -31,7 +31,7 @@
 #include "config.h"
 #include "public/web/WebFormControlElement.h"
 
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -60,11 +60,6 @@ WebString WebFormControlElement::formControlName() const
 WebString WebFormControlElement::formControlType() const
 {
     return constUnwrap<HTMLFormControlElement>()->type();
-}
-
-void WebFormControlElement::dispatchFormControlChangeEvent()
-{
-    unwrap<HTMLFormControlElement>()->dispatchFormControlChangeEvent();
 }
 
 bool WebFormControlElement::isAutofilled() const
@@ -145,9 +140,9 @@ WebString WebFormControlElement::editingValue() const
 void WebFormControlElement::setSelectionRange(int start, int end)
 {
     if (isHTMLInputElement(*m_private))
-        unwrap<HTMLInputElement>()->setSelectionRange(start, end);
+        unwrap<HTMLInputElement>()->setSelectionRange(start, end, SelectionHasNoDirection, NotDispatchSelectEvent);
     else if (isHTMLTextAreaElement(*m_private))
-        unwrap<HTMLTextAreaElement>()->setSelectionRange(start, end);
+        unwrap<HTMLTextAreaElement>()->setSelectionRange(start, end, SelectionHasNoDirection, NotDispatchSelectEvent);
 }
 
 int WebFormControlElement::selectionStart() const
@@ -170,7 +165,7 @@ int WebFormControlElement::selectionEnd() const
 
 WebString WebFormControlElement::directionForFormData() const
 {
-    if (RenderStyle* style = constUnwrap<HTMLFormControlElement>()->renderStyle())
+    if (const ComputedStyle* style = constUnwrap<HTMLFormControlElement>()->computedStyle())
         return style->isLeftToRightDirection() ? WebString::fromUTF8("ltr") : WebString::fromUTF8("rtl");
     return WebString::fromUTF8("ltr");
 }

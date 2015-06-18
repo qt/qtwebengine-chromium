@@ -27,6 +27,7 @@
 #ifndef SandboxFlags_h
 #define SandboxFlags_h
 
+#include "core/dom/SpaceSplitString.h"
 #include "wtf/Forward.h"
 
 namespace blink {
@@ -45,12 +46,14 @@ enum SandboxFlag {
     SandboxPointerLock = 1 << 8,
     SandboxDocumentDomain = 1 << 9,
     SandboxOrientationLock = 1 << 10, // See https://w3c.github.io/screen-orientation/#dfn-sandboxed-orientation-lock-browsing-context-flag.
+    SandboxPropagatesToAuxiliaryBrowsingContexts = 1 << 11,
     SandboxAll = -1 // Mask with all bits set to 1.
 };
 
 typedef int SandboxFlags;
 
 SandboxFlags parseSandboxPolicy(const String& policy, String& invalidTokensErrorMessage);
+SandboxFlags parseSandboxPolicy(const SpaceSplitString& policy, String& invalidTokensErrorMessage);
 
 }
 

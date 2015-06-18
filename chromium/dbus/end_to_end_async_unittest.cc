@@ -35,9 +35,7 @@ const int kHugePayloadSize = 64 << 20;  // 64 MB
 // ExportedObject.
 class EndToEndAsyncTest : public testing::Test {
  public:
-  EndToEndAsyncTest() : on_disconnected_call_count_(0) {}
-
-  virtual void SetUp() {
+  void SetUp() override {
     // Make the main thread not to allow IO.
     base::ThreadRestrictions::SetIOAllowed(false);
 
@@ -60,8 +58,6 @@ class EndToEndAsyncTest : public testing::Test {
     bus_options.bus_type = Bus::SESSION;
     bus_options.connection_type = Bus::PRIVATE;
     bus_options.dbus_task_runner = dbus_thread_->message_loop_proxy();
-    bus_options.disconnected_callback =
-        base::Bind(&EndToEndAsyncTest::OnDisconnected, base::Unretained(this));
     bus_ = new Bus(bus_options);
     object_proxy_ = bus_->GetObjectProxy(
         "org.chromium.TestService",
@@ -116,7 +112,7 @@ class EndToEndAsyncTest : public testing::Test {
     run_loop_->Run();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     bus_->ShutdownOnDBusThreadAndBlock();
 
     // Shut down the service.
@@ -248,12 +244,6 @@ class EndToEndAsyncTest : public testing::Test {
     run_loop_->Quit();
   }
 
-  // Called when the connection with dbus-daemon is disconnected.
-  void OnDisconnected() {
-    run_loop_->Quit();
-    ++on_disconnected_call_count_;
-  }
-
   // Wait for the hey signal to be received.
   void WaitForTestSignal() {
     // OnTestSignal() will quit the message loop.
@@ -274,7 +264,6 @@ class EndToEndAsyncTest : public testing::Test {
   std::string test_signal_string_;
   // Text message from "Test" signal delivered to root.
   std::string root_test_signal_string_;
-  int on_disconnected_call_count_;
 };
 
 TEST_F(EndToEndAsyncTest, Echo) {
@@ -427,6 +416,33 @@ TEST_F(EndToEndAsyncTest, TimeoutWithErrorCallback) {
   // Should fail because of timeout.
   ASSERT_TRUE(response_strings_.empty());
   ASSERT_EQ(DBUS_ERROR_NO_REPLY, error_names_[0]);
+}
+
+TEST_F(EndToEndAsyncTest, CancelPendingCalls) {
+  const char* kHello = "hello";
+
+  // Create the method call.
+  MethodCall method_call("org.chromium.TestInterface", "Echo");
+  MessageWriter writer(&method_call);
+  writer.AppendString(kHello);
+
+  // Call the method.
+  const int timeout_ms = ObjectProxy::TIMEOUT_USE_DEFAULT;
+  CallMethod(&method_call, timeout_ms);
+
+  // Remove the object proxy before receiving the result.
+  // This results in cancelling the pending method call.
+  bus_->RemoveObjectProxy("org.chromium.TestService",
+                          ObjectPath("/org/chromium/TestObject"),
+                          base::Bind(&base::DoNothing));
+
+  // We shouldn't receive any responses. Wait for a while just to make sure.
+  run_loop_.reset(new base::RunLoop);
+  message_loop_.PostDelayedTask(FROM_HERE,
+                                run_loop_->QuitClosure(),
+                                TestTimeouts::tiny_timeout());
+  run_loop_->Run();
+  EXPECT_TRUE(response_strings_.empty());
 }
 
 // Tests calling a method that sends its reply asynchronously.
@@ -588,22 +604,12 @@ TEST_F(EndToEndAsyncTest, TestHugeSignal) {
   ASSERT_EQ(kHugeMessage, test_signal_string_);
 }
 
-TEST_F(EndToEndAsyncTest, DisconnectedSignal) {
-  bus_->GetDBusTaskRunner()->PostTask(FROM_HERE,
-                                      base::Bind(&Bus::ClosePrivateConnection,
-                                                 base::Unretained(bus_.get())));
-  // OnDisconnected callback quits message loop.
-  run_loop_.reset(new base::RunLoop);
-  run_loop_->Run();
-  EXPECT_EQ(1, on_disconnected_call_count_);
-}
-
 class SignalMultipleHandlerTest : public EndToEndAsyncTest {
  public:
   SignalMultipleHandlerTest() {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     // Set up base class.
     EndToEndAsyncTest::SetUp();
 

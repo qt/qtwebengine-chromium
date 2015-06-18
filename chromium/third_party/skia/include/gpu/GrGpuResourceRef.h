@@ -36,7 +36,7 @@
  */
 class GrGpuResourceRef : SkNoncopyable {
 public:
-    SK_DECLARE_INST_COUNT_ROOT(GrGpuResourceRef);
+    SK_DECLARE_INST_COUNT(GrGpuResourceRef);
 
     ~GrGpuResourceRef();
 
@@ -77,8 +77,6 @@ private:
         called. */
     void pendingIOComplete() const;
 
-    friend class GrDrawState;
-    friend class GrOptDrawState;
     friend class GrProgramElement;
 
     GrGpuResource*  fResource;
@@ -89,7 +87,7 @@ private:
     typedef SkNoncopyable INHERITED;
 };
 
-/** 
+/**
  * Templated version of GrGpuResourceRef to enforce type safety.
  */
 template <typename T> class GrTGpuResourceRef : public GrGpuResourceRef {
@@ -159,43 +157,55 @@ private:
  */
 template <typename T, GrIOType IO_TYPE> class GrPendingIOResource : SkNoncopyable {
 public:
-    GrPendingIOResource(T* resource) : fResource(resource) {
-        if (NULL != fResource) {
+    GrPendingIOResource(T* resource = NULL) : fResource(NULL) {
+        this->reset(resource);
+    }
+
+    void reset(T* resource) {
+        if (resource) {
             switch (IO_TYPE) {
                 case kRead_GrIOType:
-                    fResource->addPendingRead();
+                    resource->addPendingRead();
                     break;
                 case kWrite_GrIOType:
-                    fResource->addPendingWrite();
+                    resource->addPendingWrite();
                     break;
                 case kRW_GrIOType:
-                    fResource->addPendingRead();
-                    fResource->addPendingWrite();
+                    resource->addPendingRead();
+                    resource->addPendingWrite();
                     break;
             }
         }
+        this->release();
+        fResource = resource;
     }
 
     ~GrPendingIOResource() {
-        if (NULL != fResource) {
-            switch (IO_TYPE) {
-                case kRead_GrIOType:
-                    fResource->completedRead();
-                    break;
-                case kWrite_GrIOType:
-                    fResource->completedWrite();
-                    break;
-                case kRW_GrIOType:
-                    fResource->completedRead();
-                    fResource->completedWrite();
-                    break;
-            }
-        }
+        this->release();
     }
+
+    operator bool() const { return SkToBool(fResource); }
 
     T* get() const { return fResource; }
 
 private:
+    void release() {
+        if (fResource) {
+            switch (IO_TYPE) {
+                case kRead_GrIOType:
+                    fResource->completedRead();
+                    break;
+                case kWrite_GrIOType:
+                    fResource->completedWrite();
+                    break;
+                case kRW_GrIOType:
+                    fResource->completedRead();
+                    fResource->completedWrite();
+                    break;
+            }
+        }
+    }
+
     T* fResource;
 };
 #endif

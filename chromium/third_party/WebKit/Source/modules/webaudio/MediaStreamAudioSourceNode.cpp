@@ -23,25 +23,18 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/MediaStreamAudioSourceNode.h"
 
-#include "platform/Logging.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
+#include "platform/Logging.h"
 #include "wtf/Locker.h"
 
 namespace blink {
 
-MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::create(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
-{
-    return new MediaStreamAudioSourceNode(context, mediaStream, audioTrack, audioSourceProvider);
-}
-
-MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
-    : AudioSourceNode(context, context->sampleRate())
+MediaStreamAudioSourceHandler::MediaStreamAudioSourceHandler(AudioNode& node, MediaStream& mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
+    : AudioHandler(NodeTypeMediaStreamAudioSource, node, node.context()->sampleRate())
     , m_mediaStream(mediaStream)
     , m_audioTrack(audioTrack)
     , m_audioSourceProvider(audioSourceProvider)
@@ -49,25 +42,22 @@ MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, Me
 {
     // Default to stereo. This could change depending on the format of the
     // MediaStream's audio track.
-    addOutput(AudioNodeOutput::create(this, 2));
-
-    setNodeType(NodeTypeMediaStreamAudioSource);
+    addOutput(2);
 
     initialize();
 }
 
-MediaStreamAudioSourceNode::~MediaStreamAudioSourceNode()
+PassRefPtr<MediaStreamAudioSourceHandler> MediaStreamAudioSourceHandler::create(AudioNode& node, MediaStream& mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
 {
-    ASSERT(!isInitialized());
+    return adoptRef(new MediaStreamAudioSourceHandler(node, mediaStream, audioTrack, audioSourceProvider));
 }
 
-void MediaStreamAudioSourceNode::dispose()
+MediaStreamAudioSourceHandler::~MediaStreamAudioSourceHandler()
 {
     uninitialize();
-    AudioSourceNode::dispose();
 }
 
-void MediaStreamAudioSourceNode::setFormat(size_t numberOfChannels, float sourceSampleRate)
+void MediaStreamAudioSourceHandler::setFormat(size_t numberOfChannels, float sourceSampleRate)
 {
     if (numberOfChannels != m_sourceNumberOfChannels || sourceSampleRate != sampleRate()) {
         // The sample-rate must be equal to the context's sample-rate.
@@ -88,14 +78,14 @@ void MediaStreamAudioSourceNode::setFormat(size_t numberOfChannels, float source
             AudioContext::AutoLocker contextLocker(context());
 
             // Do any necesssary re-configuration to the output's number of channels.
-            output(0)->setNumberOfChannels(numberOfChannels);
+            output(0).setNumberOfChannels(numberOfChannels);
         }
     }
 }
 
-void MediaStreamAudioSourceNode::process(size_t numberOfFrames)
+void MediaStreamAudioSourceHandler::process(size_t numberOfFrames)
 {
-    AudioBus* outputBus = output(0)->bus();
+    AudioBus* outputBus = output(0).bus();
 
     if (!audioSourceProvider()) {
         outputBus->zero();
@@ -111,20 +101,46 @@ void MediaStreamAudioSourceNode::process(size_t numberOfFrames)
     // If we fail to acquire the lock then the MediaStream must be in the middle of
     // a format change, so we output silence in this case.
     MutexTryLocker tryLocker(m_processLock);
-    if (tryLocker.locked())
+    if (tryLocker.locked()) {
         audioSourceProvider()->provideInput(outputBus, numberOfFrames);
-    else {
+    } else {
         // We failed to acquire the lock.
         outputBus->zero();
     }
 }
 
-void MediaStreamAudioSourceNode::trace(Visitor* visitor)
+// ----------------------------------------------------------------
+
+MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext& context, MediaStream& mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
+    : AudioSourceNode(context)
 {
-    visitor->trace(m_mediaStream);
-    visitor->trace(m_audioTrack);
-    AudioSourceNode::trace(visitor);
+    setHandler(MediaStreamAudioSourceHandler::create(*this, mediaStream, audioTrack, audioSourceProvider));
+}
+
+MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::create(AudioContext& context, MediaStream& mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
+{
+    return new MediaStreamAudioSourceNode(context, mediaStream, audioTrack, audioSourceProvider);
+}
+
+DEFINE_TRACE(MediaStreamAudioSourceNode)
+{
     AudioSourceProviderClient::trace(visitor);
+    AudioSourceNode::trace(visitor);
+}
+
+MediaStreamAudioSourceHandler& MediaStreamAudioSourceNode::mediaStreamAudioSourceHandler() const
+{
+    return static_cast<MediaStreamAudioSourceHandler&>(handler());
+}
+
+MediaStream* MediaStreamAudioSourceNode::mediaStream() const
+{
+    return mediaStreamAudioSourceHandler().mediaStream();
+}
+
+void MediaStreamAudioSourceNode::setFormat(size_t numberOfChannels, float sourceSampleRate)
+{
+    mediaStreamAudioSourceHandler().setFormat(numberOfChannels, sourceSampleRate);
 }
 
 } // namespace blink

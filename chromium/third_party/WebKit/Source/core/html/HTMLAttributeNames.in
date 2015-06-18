@@ -2,6 +2,7 @@ namespace="HTML"
 namespacePrefix="xhtml"
 namespaceURI="http://www.w3.org/1999/xhtml"
 attrsNullNamespace
+export="CORE_EXPORT"
 
 abbr
 accept-charset
@@ -15,6 +16,7 @@ alt
 archive
 aria-activedescendant
 aria-atomic
+aria-autocomplete
 aria-busy
 aria-checked
 aria-controls
@@ -37,16 +39,21 @@ aria-multiline
 aria-multiselectable
 aria-orientation
 aria-owns
+aria-posinset
 aria-pressed
 aria-readonly
 aria-relevant
 aria-required
 aria-selected
+aria-setsize
+aria-sort
 aria-valuemax
 aria-valuemin
 aria-valuenow
 aria-valuetext
+as
 async
+autocapitalize
 autocomplete
 autofocus
 autoplay
@@ -54,7 +61,6 @@ axis
 background
 behavior
 bgcolor
-bgproperties
 border
 bordercolor
 capture
@@ -115,6 +121,7 @@ href
 hreflang
 hspace
 http-equiv
+icon
 id
 incremental
 inputmode
@@ -261,6 +268,7 @@ ping
 poster
 preload
 pseudo
+radiogroup
 readonly
 rel
 required
@@ -294,6 +302,7 @@ step
 style
 summary
 tabindex
+tabstop
 target
 text
 title

@@ -123,6 +123,15 @@ typedef uint64 LargeFieldElement[15];
 // ReduceLarge converts a LargeFieldElement to a FieldElement.
 //
 // in[i] < 2**62
+
+// GCC 4.9 incorrectly vectorizes the first coefficient elimination loop, so
+// disable that optimization via pragma. Don't use the pragma under Clang, since
+// clang doesn't understand it.
+// TODO(wez): Remove this when crbug.com/439566 is fixed.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("no-tree-vectorize")
+#endif
+
 void ReduceLarge(FieldElement* out, LargeFieldElement* inptr) {
   LargeFieldElement& in(*inptr);
 
@@ -163,6 +172,12 @@ void ReduceLarge(FieldElement* out, LargeFieldElement* inptr) {
   // out[1..4] < 2**29
   // out[5..7] < 2**28
 }
+
+// TODO(wez): Remove this when crbug.com/439566 is fixed.
+#if defined(__GNUC__) && !defined(__clang__)
+// Reenable "tree-vectorize" optimization if it got disabled for ReduceLarge.
+#pragma GCC reset_options
+#endif
 
 // Mul computes *out = a*b
 //
@@ -460,8 +475,8 @@ void AddJacobian(Point *out,
   uint32 x_equal = IsZero(h);
 
   // I = (2*H)²
-  for (int j = 0; j < 8; j++) {
-    i[j] = h[j] << 1;
+  for (int k = 0; k < 8; k++) {
+    i[k] = h[k] << 1;
   }
   Reduce(&i);
   Square(&i, i);
@@ -480,8 +495,8 @@ void AddJacobian(Point *out,
     return;
   }
 
-  for (int i = 0; i < 8; i++) {
-    r[i] <<= 1;
+  for (int k = 0; k < 8; k++) {
+    r[k] <<= 1;
   }
   Reduce(&r);
 
@@ -498,8 +513,8 @@ void AddJacobian(Point *out,
   Mul(&out->z, out->z, h);
 
   // X3 = r²-J-2*V
-  for (int i = 0; i < 8; i++) {
-    z1z1[i] = v[i] << 1;
+  for (int k = 0; k < 8; k++) {
+    z1z1[k] = v[k] << 1;
   }
   Add(&z1z1, j, z1z1);
   Reduce(&z1z1);
@@ -508,8 +523,8 @@ void AddJacobian(Point *out,
   Reduce(&out->x);
 
   // Y3 = r*(V-X3)-2*S1*J
-  for (int i = 0; i < 8; i++) {
-    s1[i] <<= 1;
+  for (int k = 0; k < 8; k++) {
+    s1[k] <<= 1;
   }
   Mul(&s1, s1, j);
   Subtract(&z1z1, v, out->x);
@@ -676,7 +691,7 @@ bool Point::SetFromString(const base::StringPiece& in) {
 }
 
 std::string Point::ToString() const {
-  FieldElement zinv, zinv_sq, x, y;
+  FieldElement zinv, zinv_sq, xx, yy;
 
   // If this is the point at infinity we return a string of all zeros.
   if (IsZero(this->z)) {
@@ -686,16 +701,16 @@ std::string Point::ToString() const {
 
   Invert(&zinv, this->z);
   Square(&zinv_sq, zinv);
-  Mul(&x, this->x, zinv_sq);
+  Mul(&xx, x, zinv_sq);
   Mul(&zinv_sq, zinv_sq, zinv);
-  Mul(&y, this->y, zinv_sq);
+  Mul(&yy, y, zinv_sq);
 
-  Contract(&x);
-  Contract(&y);
+  Contract(&xx);
+  Contract(&yy);
 
   uint32 outwords[14];
-  Put224Bits(outwords, x);
-  Put224Bits(outwords + 7, y);
+  Put224Bits(outwords, xx);
+  Put224Bits(outwords + 7, yy);
   return std::string(reinterpret_cast<const char*>(outwords), sizeof(outwords));
 }
 

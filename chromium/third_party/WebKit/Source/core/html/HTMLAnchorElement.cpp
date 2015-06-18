@@ -25,35 +25,19 @@
 #include "core/html/HTMLAnchorElement.h"
 
 #include "bindings/core/v8/V8DOMActivityLogger.h"
-#include "core/dom/Attribute.h"
-#include "core/editing/FrameSelection.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/FrameHost.h"
-#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/frame/UseCounter.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/layout/LayoutImage.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/PingLoader.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/rendering/RenderImage.h"
-#include "platform/PlatformMouseEvent.h"
-#include "platform/network/DNS.h"
-#include "platform/network/ResourceRequest.h"
-#include "platform/weborigin/KnownPorts.h"
-#include "platform/weborigin/SecurityOrigin.h"
-#include "platform/weborigin/SecurityPolicy.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebURL.h"
-#include "public/platform/WebURLRequest.h"
-#include "wtf/text/StringBuilder.h"
+#include "platform/network/NetworkHints.h"
 
 namespace blink {
 
@@ -89,11 +73,18 @@ bool HTMLAnchorElement::shouldHaveFocusAppearance() const
     return !m_wasFocusedByMouse || HTMLElement::supportsFocus();
 }
 
-void HTMLAnchorElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+void HTMLAnchorElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
 {
-    if (type != FocusTypePage)
-        m_wasFocusedByMouse = type == FocusTypeMouse;
+    if (type != WebFocusTypePage)
+        m_wasFocusedByMouse = type == WebFocusTypeMouse;
     HTMLElement::dispatchFocusEvent(oldFocusedElement, type);
+}
+
+void HTMLAnchorElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type)
+{
+    if (type != WebFocusTypePage)
+        m_wasFocusedByMouse = false;
+    HTMLElement::dispatchBlurEvent(newFocusedElement, type);
 }
 
 bool HTMLAnchorElement::isMouseFocusable() const
@@ -131,33 +122,43 @@ static void appendServerMapMousePosition(StringBuilder& url, Event* event)
     if (!imageElement.isServerMap())
         return;
 
-    if (!imageElement.renderer() || !imageElement.renderer()->isRenderImage())
+    LayoutObject* layoutObject = imageElement.layoutObject();
+    if (!layoutObject || !layoutObject->isBox())
         return;
-    RenderImage* renderer = toRenderImage(imageElement.renderer());
 
-    // FIXME: This should probably pass true for useTransforms.
-    FloatPoint absolutePosition = renderer->absoluteToLocal(FloatPoint(toMouseEvent(event)->pageX(), toMouseEvent(event)->pageY()));
-    int x = absolutePosition.x();
-    int y = absolutePosition.y();
+    // The coordinates sent in the query string are relative to the height and
+    // width of the image element, ignoring CSS transform/zoom.
+    LayoutPoint mapPoint(layoutObject->absoluteToLocal(FloatPoint(toMouseEvent(event)->absoluteLocation()), UseTransforms));
+
+    // The origin (0,0) is at the upper left of the content area, inside the
+    // padding and border.
+    mapPoint -= toLayoutBox(layoutObject)->contentBoxOffset();
+
+    // CSS zoom is not reflected in the map coordinates.
+    float scaleFactor = 1 / layoutObject->style()->effectiveZoom();
+    mapPoint.scale(scaleFactor, scaleFactor);
+
+    // Negative coordinates are clamped to 0 such that clicks in the left and
+    // top padding/border areas receive an X or Y coordinate of 0.
+    IntPoint clampedPoint(roundedIntPoint(mapPoint));
+    clampedPoint.clampNegativeToZero();
+
     url.append('?');
-    url.appendNumber(x);
+    url.appendNumber(clampedPoint.x());
     url.append(',');
-    url.appendNumber(y);
+    url.appendNumber(clampedPoint.y());
 }
 
 void HTMLAnchorElement::defaultEventHandler(Event* event)
 {
-    if (isLiveLink()) {
-        ASSERT(event->target());
-        Node* target = event->target()->toNode();
-        ASSERT(target);
-        if ((focused() || target->focused()) && isEnterKeyKeypressEvent(event)) {
+    if (isLink()) {
+        if (focused() && isEnterKeyKeydownEvent(event) && isLiveLink()) {
             event->setDefaultHandled();
             dispatchSimulatedClick(event);
             return;
         }
 
-        if (isLinkClick(event)) {
+        if (isLinkClick(event) && isLiveLink()) {
             handleClick(event);
             return;
         }
@@ -198,6 +199,7 @@ void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicSt
         if (wasLink || isLink()) {
             pseudoStateChanged(CSSSelector::PseudoLink);
             pseudoStateChanged(CSSSelector::PseudoVisited);
+            pseudoStateChanged(CSSSelector::PseudoAnyLink);
         }
         if (wasLink && !isLink() && treeScope().adjustedFocusedElement() == this) {
             // We might want to call blur(), but it's dangerous to dispatch
@@ -291,7 +293,7 @@ bool HTMLAnchorElement::hasRel(uint32_t relation) const
 void HTMLAnchorElement::setRel(const AtomicString& value)
 {
     m_linkRelations = 0;
-    SpaceSplitString newLinkRelations(value, true);
+    SpaceSplitString newLinkRelations(value, SpaceSplitString::ShouldFoldCase);
     // FIXME: Add link relations as they are implemented
     if (newLinkRelations.contains("noreferrer"))
         m_linkRelations |= RelationNoReferrer;
@@ -321,7 +323,7 @@ void HTMLAnchorElement::sendPings(const KURL& destinationURL) const
 
     UseCounter::count(document(), UseCounter::HTMLAnchorElementPingAttribute);
 
-    SpaceSplitString pingURLs(pingValue, false);
+    SpaceSplitString pingURLs(pingValue, SpaceSplitString::ShouldNotFoldCase);
     for (unsigned i = 0; i < pingURLs.size(); i++)
         PingLoader::sendLinkAuditPing(document().frame(), document().completeURL(pingURLs[i]), destinationURL);
 }
@@ -344,14 +346,16 @@ void HTMLAnchorElement::handleClick(Event* event)
     sendPings(completedURL);
 
     ResourceRequest request(completedURL);
+    request.setUIStartTime(event->uiCreateTime());
+    request.setInputPerfMetricReportPolicy(InputToLoadPerfMetricReportPolicy::ReportLink);
     if (hasAttribute(downloadAttr)) {
-        request.setRequestContext(blink::WebURLRequest::RequestContextDownload);
+        request.setRequestContext(WebURLRequest::RequestContextDownload);
         bool isSameOrigin = completedURL.protocolIsData() || document().securityOrigin()->canRequest(completedURL);
         const AtomicString& suggestedName = (isSameOrigin ? fastGetAttribute(downloadAttr) : nullAtom);
 
         frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName);
     } else {
-        request.setRequestContext(blink::WebURLRequest::RequestContextHyperlink);
+        request.setRequestContext(WebURLRequest::RequestContextHyperlink);
         FrameLoadRequest frameRequest(&document(), request, getAttribute(targetAttr));
         frameRequest.setTriggeringEvent(event);
         if (hasRel(RelationNoReferrer))
@@ -360,9 +364,9 @@ void HTMLAnchorElement::handleClick(Event* event)
     }
 }
 
-bool isEnterKeyKeypressEvent(Event* event)
+bool isEnterKeyKeydownEvent(Event* event)
 {
-    return event->type() == EventTypeNames::keypress && event->isKeyboardEvent() && toKeyboardEvent(event)->keyIdentifier() == "Enter";
+    return event->type() == EventTypeNames::keydown && event->isKeyboardEvent() && toKeyboardEvent(event)->keyIdentifier() == "Enter";
 }
 
 bool isLinkClick(Event* event)
@@ -394,4 +398,4 @@ Node::InsertionNotificationRequest HTMLAnchorElement::insertedInto(ContainerNode
     return HTMLElement::insertedInto(insertionPoint);
 }
 
-}
+} // namespace blink

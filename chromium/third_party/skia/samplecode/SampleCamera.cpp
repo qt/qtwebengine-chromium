@@ -6,6 +6,7 @@
  */
 
 #include "SampleCode.h"
+#include "SkAnimTimer.h"
 #include "SkView.h"
 #include "SkCanvas.h"
 #include "SkCamera.h"
@@ -82,16 +83,19 @@ protected:
 
             paint.setAntiAlias(true);
             paint.setShader(fShaders[fShaderIndex]);
-            paint.setFilterLevel(SkPaint::kLow_FilterLevel);
+            paint.setFilterQuality(kLow_SkFilterQuality);
             SkRect r = { -150, -150, 150, 150 };
             canvas->drawRoundRect(r, 30, 30, paint);
         }
+    }
 
-        fRY += SampleCode::GetAnimSecondsDelta() * 90;
-        if (fRY >= SkIntToScalar(360)) {
+    bool onAnimate(const SkAnimTimer& timer) override {
+        if (timer.isStopped()) {
             fRY = 0;
+        } else {
+            fRY = timer.scaled(90, 360);
         }
-        this->inval(NULL);
+        return true;
     }
 
 private:

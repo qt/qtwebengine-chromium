@@ -35,14 +35,12 @@ class PopupCollectionTest : public ui::CocoaTest {
     }];
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     collection_.reset();  // Close all popups.
     ui::CocoaTest::TearDown();
   }
 
-  virtual ~PopupCollectionTest() {
-    message_center::MessageCenter::Shutdown();
-  }
+  ~PopupCollectionTest() override { message_center::MessageCenter::Shutdown(); }
 
   message_center::NotifierId DummyNotifierId() {
     return message_center::NotifierId();
@@ -398,52 +396,6 @@ TEST_F(PopupCollectionTest, CloseCollectionBeforeUpdatePopupAnimationEnds) {
       message_center::RichNotificationData(),
       NULL));
   center_->UpdateNotification("1", notification.Pass());
-
-  // Release the popup collection before the animation ends. No crash should
-  // be expected.
-  collection_.reset();
-}
-
-// This test reproduces bug.
-// https://code.google.com/p/chromium/issues/detail?id=418053
-// It will timeout if problem exists.
-TEST_F(PopupCollectionTest, AnimationDidEndOutOfOrder) {
-  // Set animation duration to 100 ms.
-  [collection_ setAnimationDuration:0.1];
-
-  // Add three notifications.
-  AddThreeNotifications();
-
-  // Wait for animation end.
-  WaitForAnimationEnded();
-
-  // Add fourth notification.
-  scoped_ptr<message_center::Notification> notification;
-  notification.reset(new message_center::Notification(
-      message_center::NOTIFICATION_TYPE_SIMPLE,
-      "4",
-      ASCIIToUTF16("Fourth"),
-      ASCIIToUTF16("This is the Fourth notification to be displayed"),
-      gfx::Image(),
-      base::string16(),
-      DummyNotifierId(),
-      message_center::RichNotificationData(),
-      NULL));
-  center_->AddNotification(notification.Pass());
-
-  // Mark first notifications as shown,
-  // just as from TimerFinished callback.
-  // Mark it while fourth animation is in progress so old notification
-  // will be marked as pending updates.
-  center_->MarkSinglePopupAsShown("1", false);
-  center_->MarkSinglePopupAsShown("2", false);
-  center_->MarkSinglePopupAsShown("3", false);
-
-  WaitForAnimationEnded();
-  // Assert that isAnimating flag is false ater animation ends.
-  // If it will be true after all animaions ends,
-  // no new notification can be added and collection will be blocked.
-  EXPECT_FALSE([collection_ isAnimating]);
 
   // Release the popup collection before the animation ends. No crash should
   // be expected.

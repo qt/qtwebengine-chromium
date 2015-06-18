@@ -1578,6 +1578,11 @@
       }
 
       T1_Skip_PS_Token( parser );
+      if ( parser->root.cursor >= limit )
+      {
+        error = T1_Err_Invalid_File_Format;
+        goto Fail;
+      }
       if ( parser->root.error )
         return;
 
@@ -1586,7 +1591,7 @@
         FT_PtrDist  len;
 
 
-        if ( cur + 1 >= limit )
+        if ( cur + 2 >= limit )
         {
           error = T1_Err_Invalid_File_Format;
           goto Fail;

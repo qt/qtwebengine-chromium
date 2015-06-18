@@ -24,6 +24,13 @@ cr.define('extensions', function() {
     showOverlay_: null,
 
     /**
+     * The id of the extension that this options page display.
+     * @type {string}
+     * @private
+     */
+    extensionId_: '',
+
+    /**
      * Initialize the page.
      * @param {function(HTMLDivElement)} showOverlay The function to show or
      *     hide the ExtensionOptionsOverlay; this should take a single parameter
@@ -40,6 +47,19 @@ cr.define('extensions', function() {
       this.showOverlay_ = showOverlay;
     },
 
+    setInitialFocus: function() {
+      this.getExtensionOptions_().focus();
+    },
+
+    /**
+     * @return {?Element}
+     * @private
+     */
+    getExtensionOptions_: function() {
+      return $('extension-options-overlay-guest').querySelector(
+          'extensionoptions');
+    },
+
     /**
      * Handles a click on the close button.
      * @param {Event} event The click event.
@@ -47,17 +67,11 @@ cr.define('extensions', function() {
      */
     handleDismiss_: function(event) {
       this.setVisible_(false);
-      var extensionoptions =
-          $('extension-options-overlay-guest')
-              .querySelector('extensionoptions');
-
+      var extensionoptions = this.getExtensionOptions_();
       if (extensionoptions)
         $('extension-options-overlay-guest').removeChild(extensionoptions);
 
       $('extension-options-overlay-icon').removeAttribute('src');
-
-      // Remove the options query string.
-      uber.replaceState({}, '');
     },
 
     /**
@@ -67,14 +81,22 @@ cr.define('extensions', function() {
      * @param {string} extensionName The name of the extension, which is used
      *     as the header of the overlay.
      * @param {string} extensionIcon The URL of the extension's icon.
+     * @param {function():void} shownCallback A function called when
+     *     showing completes.
      * @suppress {checkTypes}
      * TODO(vitalyp): remove the suppression after adding
      * chrome/renderer/resources/extensions/extension_options.js
      * to dependencies.
      */
-    setExtensionAndShowOverlay: function(extensionId,
-                                         extensionName,
-                                         extensionIcon) {
+    setExtensionAndShow: function(extensionId,
+                                  extensionName,
+                                  extensionIcon,
+                                  shownCallback) {
+      var overlay = $('extension-options-overlay');
+      var overlayHeader = $('extension-options-overlay-header');
+      var overlayGuest = $('extension-options-overlay-guest');
+      var overlayStyle = window.getComputedStyle(overlay);
+
       $('extension-options-overlay-title').textContent = extensionName;
       $('extension-options-overlay-icon').src = extensionIcon;
 
@@ -82,76 +104,111 @@ cr.define('extensions', function() {
 
       var extensionoptions = new window.ExtensionOptions();
       extensionoptions.extension = extensionId;
-      extensionoptions.autosize = 'on';
+      this.extensionId_ = extensionId;
 
       // The <extensionoptions> content's size needs to be restricted to the
-      // bounds of the overlay window. The overlay gives a min width and
-      // max height, but the maxheight does not include our header height
-      // (title and close button), so we need to subtract that to get the
-      // max height for the extension options.
-      var headerHeight = $('extension-options-overlay-header').offsetHeight;
-      var overlayMaxHeight =
-          parseInt($('extension-options-overlay').style.maxHeight, 10);
-      extensionoptions.maxheight = overlayMaxHeight - headerHeight;
-
-      extensionoptions.minwidth =
-          parseInt(window.getComputedStyle($('extension-options-overlay'))
-              .minWidth, 10);
-
-      extensionoptions.setDeferAutoSize(true);
+      // bounds of the overlay window. The overlay gives a minWidth and
+      // maxHeight, but the maxHeight does not include our header height (title
+      // and close button), so we need to subtract that to get the maxHeight
+      // for the extension options.
+      var maxHeight = parseInt(overlayStyle.maxHeight, 10) -
+                      overlayHeader.offsetHeight;
+      var minWidth = parseInt(overlayStyle.minWidth, 10);
 
       extensionoptions.onclose = function() {
         cr.dispatchSimpleEvent($('overlay'), 'cancelOverlay');
       }.bind(this);
 
+      // Track the current animation (used to grow/shrink the overlay content),
+      // if any. Preferred size changes can fire more rapidly than the
+      // animation speed, and multiple animations running at the same time has
+      // undesirable effects.
+      var animation = null;
+
       /**
-       * Resize the overlay if the <extensionoptions> changes size.
-       * @param {{newHeight: number,
-       *          newWidth: number,
-       *          oldHeight: number,
-       *          oldWidth: number}} evt
+       * Resize the overlay if the <extensionoptions> changes preferred size.
+       * @param {{width: number, height: number}} evt
        */
-      extensionoptions.onsizechanged = function(evt) {
-        var overlayStyle =
-            window.getComputedStyle($('extension-options-overlay'));
-        var oldWidth = parseInt(overlayStyle.width, 10);
-        var oldHeight = parseInt(overlayStyle.height, 10);
+      extensionoptions.onpreferredsizechanged = function(evt) {
+        var oldOverlayWidth = parseInt(overlayStyle.width, 10);
+        var oldOverlayHeight = parseInt(overlayStyle.height, 10);
+        var newOverlayWidth = Math.max(evt.width, minWidth);
+        // |evt.height| is just the new overlay guest height, and does not
+        // include the overlay header height, so it needs to be added.
+        var newOverlayHeight =
+            Math.min(evt.height + overlayHeader.offsetHeight, maxHeight);
 
         // animationTime is the amount of time in ms that will be used to resize
         // the overlay. It is calculated by multiplying the pythagorean distance
         // between old and the new size (in px) with a constant speed of
         // 0.25 ms/px.
-        var animationTime = 0.25 * Math.sqrt(
-            Math.pow(evt.newWidth - oldWidth, 2) +
-            Math.pow(evt.newHeight - oldHeight, 2));
+        var loading = document.documentElement.classList.contains('loading');
+        var animationTime = loading ? 0 :
+            0.25 * Math.sqrt(Math.pow(newOverlayWidth - oldOverlayWidth, 2) +
+                             Math.pow(newOverlayHeight - oldOverlayHeight, 2));
 
-        var player = $('extension-options-overlay').animate([
-          {width: oldWidth + 'px', height: oldHeight + 'px'},
-          {width: evt.newWidth + 'px', height: evt.newHeight + 'px'}
+        if (animation)
+          animation.cancel();
+
+        // The header height must be added to the (old and new) preferred
+        // heights to get the full overlay heights.
+        animation = overlay.animate([
+          {width: oldOverlayWidth + 'px', height: oldOverlayHeight + 'px'},
+          {width: newOverlayWidth + 'px', height: newOverlayHeight + 'px'}
         ], {
           duration: animationTime,
           delay: 0
         });
 
-        player.onfinish = function(e) {
-          // Allow the <extensionoptions> to autosize now that the overlay
-          // has resized, and move it back on-screen.
-          extensionoptions.resumeDeferredAutoSize();
-          $('extension-options-overlay-guest').style.position = 'static';
-          $('extension-options-overlay-guest').style.left = 'auto';
+        animation.onfinish = function(e) {
+          animation = null;
+
+          // The <extensionoptions> element is ready to place back in the
+          // overlay. Make sure that it's sized to take up the full width/height
+          // of the overlay.
+          overlayGuest.style.position = '';
+          overlayGuest.style.left = '';
+          overlayGuest.style.width = newOverlayWidth + 'px';
+          // |newOverlayHeight| includes the header height, so it needs to be
+          // subtracted to get the new guest height.
+          overlayGuest.style.height =
+              (newOverlayHeight - overlayHeader.offsetHeight) + 'px';
+
+          if (shownCallback) {
+            shownCallback();
+            shownCallback = null;
+          }
         };
       }.bind(this);
 
-      // Don't allow the <extensionoptions> to autosize until the overlay
-      // animation is complete.
-      extensionoptions.setDeferAutoSize(true);
+      // Move the <extensionoptions> off screen until the overlay is ready.
+      overlayGuest.style.position = 'fixed';
+      overlayGuest.style.left = window.outerWidth + 'px';
+      // Begin rendering at the default dimensions. This is also necessary to
+      // cancel any width/height set on a previous render.
+      // TODO(kalman): This causes a visual jag where the overlay guest shows
+      // up briefly. It would be better to render this off-screen first, then
+      // swap it in place. See crbug.com/408274.
+      // This may also solve crbug.com/431001 (width is 0 on initial render).
+      overlayGuest.style.width = '';
+      overlayGuest.style.height = '';
 
-      // Move the <extensionoptions> off screen until the overlay is ready
-      $('extension-options-overlay-guest').style.position = 'fixed';
-      $('extension-options-overlay-guest').style.left =
-          window.outerWidth + 'px';
+      overlayGuest.appendChild(extensionoptions);
+    },
 
-      $('extension-options-overlay-guest').appendChild(extensionoptions);
+    /**
+     * Dispatches a 'cancelOverlay' event on the $('overlay') element.
+     */
+    close: function() {
+      cr.dispatchSimpleEvent($('overlay'), 'cancelOverlay');
+    },
+
+    /**
+     * Returns extension id that this options page set.
+     * @return {string}
+     */
+    getExtensionId: function() {
+      return this.extensionId_;
     },
 
     /**

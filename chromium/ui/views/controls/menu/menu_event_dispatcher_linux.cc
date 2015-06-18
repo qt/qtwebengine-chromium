@@ -47,20 +47,20 @@ uint32_t MenuEventDispatcher::DispatchEvent(const ui::PlatformEvent& event) {
   if (menu_controller_->exit_type() == MenuController::EXIT_ALL ||
       menu_controller_->exit_type() == MenuController::EXIT_DESTROYED) {
     should_quit = true;
-  } else if (should_process_event) {
-    switch (ui::EventTypeFromNative(event)) {
+  } else if (ui_event && should_process_event) {
+    switch (ui_event->type()) {
       case ui::ET_KEY_PRESSED: {
-        if (!menu_controller_->OnKeyDown(ui::KeyboardCodeFromNative(event))) {
+        ui::KeyEvent* key_event = static_cast<ui::KeyEvent*>(ui_event.get());
+        if (!menu_controller_->OnKeyDown(key_event->key_code())) {
           should_quit = true;
           should_perform_default = false;
           break;
         }
 
         // Do not check mnemonics if the Alt or Ctrl modifiers are pressed.
-        int flags = ui::EventFlagsFromNative(event);
+        int flags = key_event->flags();
         if ((flags & (ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)) == 0) {
-          char c = ui::GetCharacterFromKeyCode(
-              ui::KeyboardCodeFromNative(event), flags);
+          char c = ui::GetCharacterFromKeyCode(key_event->key_code(), flags);
           if (menu_controller_->SelectByChar(c)) {
             should_quit = true;
             should_perform_default = false;
@@ -74,6 +74,14 @@ uint32_t MenuEventDispatcher::DispatchEvent(const ui::PlatformEvent& event) {
       case ui::ET_KEY_RELEASED:
         should_quit = false;
         should_perform_default = false;
+        break;
+      case ui::ET_TOUCH_RELEASED:
+      case ui::ET_TOUCH_CANCELLED:
+        // Don't allow the event copy to clear the native touch id
+        // mapping, or we'll lose the mapping before the initial event
+        // has finished being dispatched.
+        static_cast<ui::TouchEvent*>(ui_event.get())
+            ->set_should_remove_native_touch_id_mapping(false);
         break;
       default:
         break;

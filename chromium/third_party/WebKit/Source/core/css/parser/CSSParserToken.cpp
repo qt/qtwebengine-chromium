@@ -5,18 +5,16 @@
 #include "config.h"
 #include "core/css/parser/CSSParserToken.h"
 
+#include "core/css/CSSMarkup.h"
+#include "core/css/parser/CSSPropertyParser.h"
 #include "wtf/HashMap.h"
-#include "wtf/text/StringHash.h"
+#include "wtf/text/StringBuilder.h"
 #include <limits.h>
 
 namespace blink {
 
-
 CSSParserToken::CSSParserToken(CSSParserTokenType type, BlockType blockType)
     : m_type(type)
-    , m_delimiter(0)
-    , m_numericValue(0)
-    , m_unit(CSSPrimitiveValue::CSS_UNKNOWN)
     , m_blockType(blockType)
 {
 }
@@ -24,62 +22,53 @@ CSSParserToken::CSSParserToken(CSSParserTokenType type, BlockType blockType)
 // Just a helper used for Delimiter tokens.
 CSSParserToken::CSSParserToken(CSSParserTokenType type, UChar c)
     : m_type(type)
-    , m_delimiter(c)
-    , m_numericValue(0)
-    , m_unit(CSSPrimitiveValue::CSS_UNKNOWN)
     , m_blockType(NotBlock)
+    , m_delimiter(c)
 {
     ASSERT(m_type == DelimiterToken);
 }
 
-CSSParserToken::CSSParserToken(CSSParserTokenType type, String value, BlockType blockType)
+CSSParserToken::CSSParserToken(CSSParserTokenType type, CSSParserString value, BlockType blockType)
     : m_type(type)
-    , m_value(value)
-    , m_delimiter(0)
-    , m_numericValue(0)
-    , m_unit(CSSPrimitiveValue::CSS_UNKNOWN)
     , m_blockType(blockType)
+    , m_value(value)
 {
 }
 
-CSSParserToken::CSSParserToken(CSSParserTokenType type, double numericValue, NumericValueType numericValueType)
+CSSParserToken::CSSParserToken(CSSParserTokenType type, double numericValue, NumericValueType numericValueType, NumericSign sign)
     : m_type(type)
-    , m_delimiter(0)
-    , m_numericValueType(numericValueType)
-    , m_numericValue(numericValue)
-    , m_unit(CSSPrimitiveValue::CSS_NUMBER)
     , m_blockType(NotBlock)
+    , m_numericValueType(numericValueType)
+    , m_numericSign(sign)
+    , m_unit(CSSPrimitiveValue::CSS_NUMBER)
+    , m_numericValue(numericValue)
 {
     ASSERT(type == NumberToken);
 }
 
-CSSParserToken::CSSParserToken(CSSParserTokenType type, UChar32 start, UChar32 end)
+CSSParserToken::CSSParserToken(CSSParserTokenType type, CSSParserString string, UChar32 start, UChar32 end)
     : m_type(UnicodeRangeToken)
-    , m_delimiter(0)
-    , m_numericValue(0)
-    , m_unit(CSSPrimitiveValue::CSS_UNKNOWN)
-    , m_unicodeRangeStart(start)
-    , m_unicodeRangeEnd(end)
     , m_blockType(NotBlock)
+    , m_value(string)
 {
     ASSERT_UNUSED(type, type == UnicodeRangeToken);
+    m_unicodeRange.start = start;
+    m_unicodeRange.end = end;
 }
 
-CSSParserToken::CSSParserToken(HashTokenType type, String value)
+CSSParserToken::CSSParserToken(HashTokenType type, CSSParserString value)
     : m_type(HashToken)
-    , m_value(value)
-    , m_delimiter(0)
-    , m_hashTokenType(type)
-    , m_numericValue(0)
-    , m_unit(CSSPrimitiveValue::CSS_UNKNOWN)
     , m_blockType(NotBlock)
+    , m_value(value)
+    , m_hashTokenType(type)
 {
 }
 
-void CSSParserToken::convertToDimensionWithUnit(String unit)
+void CSSParserToken::convertToDimensionWithUnit(CSSParserString unit)
 {
     ASSERT(m_type == NumberToken);
     m_type = DimensionToken;
+    m_value = unit;
     m_unit = CSSPrimitiveValue::fromName(unit);
 }
 
@@ -96,16 +85,119 @@ UChar CSSParserToken::delimiter() const
     return m_delimiter;
 }
 
+NumericSign CSSParserToken::numericSign() const
+{
+    // This is valid for DimensionToken and PercentageToken, but only used
+    // in <an+b> parsing on NumberTokens.
+    ASSERT(m_type == NumberToken);
+    return static_cast<NumericSign>(m_numericSign);
+}
+
 NumericValueType CSSParserToken::numericValueType() const
 {
     ASSERT(m_type == NumberToken || m_type == PercentageToken || m_type == DimensionToken);
-    return m_numericValueType;
+    return static_cast<NumericValueType>(m_numericValueType);
 }
 
 double CSSParserToken::numericValue() const
 {
     ASSERT(m_type == NumberToken || m_type == PercentageToken || m_type == DimensionToken);
     return m_numericValue;
+}
+
+CSSPropertyID CSSParserToken::parseAsUnresolvedCSSPropertyID() const
+{
+    ASSERT(m_type == IdentToken);
+    return unresolvedCSSPropertyID(m_value);
+}
+
+void CSSParserToken::serialize(StringBuilder& builder) const
+{
+    // This is currently only used for @supports CSSOM. To keep our implementation
+    // simple we handle some of the edge cases incorrectly (see comments below).
+    switch (type()) {
+    case IdentToken:
+        return serializeIdentifier(value(), builder);
+    case FunctionToken:
+        serializeIdentifier(value(), builder);
+        return builder.append('(');
+    case AtKeywordToken:
+        builder.append('@');
+        return serializeIdentifier(value(), builder);
+    case HashToken:
+        // This will always serialize as a hash-token with 'id' type instead of
+        // preserving the type of the input.
+        builder.append('#');
+        return serializeIdentifier(value(), builder);
+    case UrlToken:
+        builder.append("url(");
+        serializeIdentifier(value(), builder);
+        return builder.append(")");
+    case DelimiterToken:
+        if (delimiter() == '\\')
+            return builder.append("\\\n");
+        return builder.append(delimiter());
+    case NumberToken:
+        // These won't properly preserve the NumericValueType flag
+        return builder.appendNumber(numericValue());
+    case PercentageToken:
+        builder.appendNumber(numericValue());
+        return builder.append('%');
+    case DimensionToken:
+        // This will incorrectly serialize e.g. 4e3e2 as 4000e2
+        builder.appendNumber(numericValue());
+        return serializeIdentifier(value(), builder);
+    case UnicodeRangeToken:
+        return builder.append(value());
+    case StringToken:
+        return serializeString(value(), builder);
+
+    case IncludeMatchToken:
+        return builder.append("~=");
+    case DashMatchToken:
+        return builder.append("|=");
+    case PrefixMatchToken:
+        return builder.append("^=");
+    case SuffixMatchToken:
+        return builder.append("$=");
+    case SubstringMatchToken:
+        return builder.append("*=");
+    case ColumnToken:
+        return builder.append("||");
+    case CDOToken:
+        return builder.append("<!--");
+    case CDCToken:
+        return builder.append("-->");
+    case BadStringToken:
+        return builder.append("'\n");
+    case BadUrlToken:
+        return builder.append("url(()");
+    case WhitespaceToken:
+        return builder.append(' ');
+    case ColonToken:
+        return builder.append(':');
+    case SemicolonToken:
+        return builder.append(';');
+    case CommaToken:
+        return builder.append(',');
+    case LeftParenthesisToken:
+        return builder.append('(');
+    case RightParenthesisToken:
+        return builder.append(')');
+    case LeftBracketToken:
+        return builder.append('[');
+    case RightBracketToken:
+        return builder.append(']');
+    case LeftBraceToken:
+        return builder.append('{');
+    case RightBraceToken:
+        return builder.append('}');
+
+    case EOFToken:
+    case CommentToken:
+        ASSERT_NOT_REACHED();
+        return;
+    }
 }
 
 } // namespace blink

@@ -29,7 +29,9 @@
 #ifndef Location_h
 #define Location_h
 
+#include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "core/CoreExport.h"
 #include "core/dom/DOMStringList.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "wtf/PassRefPtr.h"
@@ -40,17 +42,23 @@ namespace blink {
 
 class LocalDOMWindow;
 class ExceptionState;
-class LocalFrame;
+class Frame;
 class KURL;
 
-class Location final : public RefCountedWillBeGarbageCollected<Location>, public ScriptWrappable, public DOMWindowProperty {
+// This class corresponds to the JS Location API, which is the only DOM API besides Window that is operable
+// in a RemoteFrame. Rather than making DOMWindowProperty support RemoteFrames and generating a lot
+// code churn, Location is implemented as a one-off with some custom lifetime management code. Namely,
+// it needs a manual call to reset() from DOMWindow::reset() to ensure it doesn't retain a stale Frame pointer.
+class CORE_EXPORT Location final : public RefCountedWillBeGarbageCollected<Location>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Location);
 public:
-    static PassRefPtrWillBeRawPtr<Location> create(LocalFrame* frame)
+    static PassRefPtrWillBeRawPtr<Location> create(Frame* frame)
     {
         return adoptRefWillBeNoop(new Location(frame));
     }
+
+    Frame* frame() const { return m_frame.get(); }
+    void reset() { m_frame = nullptr; }
 
     void setHref(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String href() const;
@@ -77,14 +85,22 @@ public:
 
     PassRefPtrWillBeRawPtr<DOMStringList> ancestorOrigins() const;
 
-    virtual void trace(Visitor*) override;
+    // Just return the |this| object the way the normal valueOf function on the Object prototype would.
+    // The valueOf function is only added to make sure that it cannot be overwritten on location
+    // objects, since that would provide a hook to change the string conversion behavior of location objects.
+    ScriptValue valueOf(const ScriptValue& thisObject) { return thisObject; }
+
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    explicit Location(LocalFrame*);
+    explicit Location(Frame*);
 
-    void setLocation(const String&, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow);
+    enum class SetLocation { Normal, ReplaceThisFrame };
+    void setLocation(const String&, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, SetLocation = SetLocation::Normal);
 
     const KURL& url() const;
+
+    RawPtrWillBeMember<Frame> m_frame;
 };
 
 } // namespace blink

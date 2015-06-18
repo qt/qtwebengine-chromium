@@ -24,28 +24,33 @@
 #ifndef HTMLImageElement_h
 #define HTMLImageElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasImageSource.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "platform/network/ResourceResponse.h"
 #include "wtf/WeakPtr.h"
 
 namespace blink {
 
 class HTMLFormElement;
 class ImageCandidate;
+class ShadowRoot;
 
-class HTMLImageElement final : public HTMLElement, public CanvasImageSource {
+class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class ViewportChangeListener;
 
     static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&);
     static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width);
     static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     int width(bool ignorePendingStylesheets = false);
     int height(bool ignorePendingStylesheets = false);
@@ -56,7 +61,7 @@ public:
 
     bool isServerMap() const;
 
-    const AtomicString& altText() const;
+    virtual String altText() const override final;
 
     ImageResource* cachedImage() const { return imageLoader().image(); }
     void setImageResource(ImageResource* i) { imageLoader().setImage(i); };
@@ -86,21 +91,35 @@ public:
 
     virtual HTMLFormElement* formOwner() const override;
     void formRemovedFromTree(const Node& formRoot);
+    virtual void ensureFallbackContent();
+    virtual void ensurePrimaryContent();
 
-    // CanvasImageSourceImplementations
+    // CanvasImageSource implementation
     virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
     virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
-    virtual FloatSize sourceSize() const override;
+    virtual FloatSize elementSize() const override;
     virtual FloatSize defaultDestinationSize() const override;
     virtual const KURL& sourceURL() const override;
+    virtual bool isOpaque() const override;
 
     // public so that HTMLPictureElement can call this as well.
     void selectSourceURL(ImageLoader::UpdateFromElementBehavior);
+    void reattachFallbackContent();
+    void setUseFallbackContent();
+    void setIsFallbackImage() { m_isFallbackImage = true; }
+
+    float sourceSize(Element&);
+
+    void forceReload() const;
+
 protected:
     explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
 
     virtual void didMoveToNewDocument(Document& oldDocument) override;
+    virtual bool useFallbackContent() const { return m_useFallbackContent; }
 
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
 private:
     virtual bool areAuthorShadowsAllowed() const override { return false; }
 
@@ -109,9 +128,9 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
     virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    virtual bool canStartSelection() const override;
+    virtual bool canStartSelection() const override { return false; }
 
     virtual bool isURLAttribute(const Attribute&) const override;
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
@@ -146,6 +165,8 @@ private:
     unsigned m_elementCreatedByParser : 1;
     // Intrinsic sizing is viewport dependant if the 'w' descriptor was used for the picked resource.
     unsigned m_intrinsicSizingViewportDependant : 1;
+    unsigned m_useFallbackContent : 1;
+    unsigned m_isFallbackImage : 1;
 };
 
 } // namespace blink

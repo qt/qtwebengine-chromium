@@ -8,7 +8,12 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=218707
+CLANG_REVISION=233105
+
+# This is incremented when pushing a new build of Clang at the same revision.
+CLANG_SUB_REVISION=2
+
+PACKAGE_VERSION="${CLANG_REVISION}-${CLANG_SUB_REVISION}"
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
@@ -23,6 +28,7 @@ LIBCXXABI_DIR="${LLVM_DIR}/projects/libcxxabi"
 ANDROID_NDK_DIR="${THIS_DIR}/../../../third_party/android_tools/ndk"
 STAMP_FILE="${LLVM_DIR}/../llvm-build/cr_build_revision"
 CHROMIUM_TOOLS_DIR="${THIS_DIR}/.."
+BINUTILS_DIR="${THIS_DIR}/../../../third_party/binutils"
 
 ABS_CHROMIUM_TOOLS_DIR="${PWD}/${CHROMIUM_TOOLS_DIR}"
 ABS_LIBCXX_DIR="${PWD}/${LIBCXX_DIR}"
@@ -30,16 +36,12 @@ ABS_LIBCXXABI_DIR="${PWD}/${LIBCXXABI_DIR}"
 ABS_LLVM_DIR="${PWD}/${LLVM_DIR}"
 ABS_LLVM_BUILD_DIR="${PWD}/${LLVM_BUILD_DIR}"
 ABS_COMPILER_RT_DIR="${PWD}/${COMPILER_RT_DIR}"
-
-
-# Use both the clang revision and the plugin revisions to test for updates.
-BLINKGCPLUGIN_REVISION=\
-$(grep 'set(LIBRARYNAME' "$THIS_DIR"/../blink_gc_plugin/CMakeLists.txt \
-    | cut -d ' ' -f 2 | tr -cd '[0-9]')
-CLANG_AND_PLUGINS_REVISION="${CLANG_REVISION}-${BLINKGCPLUGIN_REVISION}"
+ABS_BINUTILS_DIR="${PWD}/${BINUTILS_DIR}"
 
 # ${A:-a} returns $A if it's set, a else.
 LLVM_REPO_URL=${LLVM_URL:-https://llvm.org/svn/llvm-project}
+
+CDS_URL=https://commondatastorage.googleapis.com/chromium-browser-clang
 
 if [[ -z "$GYP_DEFINES" ]]; then
   GYP_DEFINES=
@@ -52,6 +54,15 @@ fi
 # Die if any command dies, error on undefined variable expansions.
 set -eu
 
+
+if [[ -n ${LLVM_FORCE_HEAD_REVISION:-''} ]]; then
+  # Use a real revision number rather than HEAD to make sure that the stamp file
+  # logic works.
+  CLANG_REVISION=$(svn info "$LLVM_REPO_URL" \
+      | grep 'Revision:' | awk '{ printf $2; }')
+  PACKAGE_VERSION="${CLANG_REVISION}-0"
+fi
+
 OS="$(uname -s)"
 
 # Parse command line options.
@@ -62,6 +73,7 @@ bootstrap=
 with_android=yes
 chrome_tools="plugins;blink_gc_plugin"
 gcc_toolchain=
+with_patches=yes
 
 if [[ "${OS}" = "Darwin" ]]; then
   with_android=
@@ -79,7 +91,11 @@ while [[ $# > 0 ]]; do
       force_local_build=yes
       ;;
     --print-revision)
-      echo $CLANG_REVISION
+      if [[ -n ${LLVM_FORCE_HEAD_REVISION:-''} ]]; then
+        svn info "$LLVM_DIR" | grep 'Revision:' | awk '{ printf $2; }'
+      else
+        echo $PACKAGE_VERSION
+      fi
       exit 0
       ;;
     --run-tests)
@@ -87,6 +103,9 @@ while [[ $# > 0 ]]; do
       ;;
     --without-android)
       with_android=
+      ;;
+    --without-patches)
+      with_patches=
       ;;
     --with-chrome-tools)
       shift
@@ -125,6 +144,7 @@ while [[ $# > 0 ]]; do
       echo "--gcc-toolchain: Set the prefix for which GCC version should"
       echo "    be used for building. For example, to use gcc in"
       echo "    /opt/foo/bin/gcc, use '--gcc-toolchain '/opt/foo"
+      echo "--without-patches: Don't apply local patches."
       echo
       exit 1
       ;;
@@ -136,6 +156,53 @@ while [[ $# > 0 ]]; do
   esac
   shift
 done
+
+if [[ -n ${LLVM_FORCE_HEAD_REVISION:-''} ]]; then
+  force_local_build=yes
+
+  # Skip local patches when using HEAD: they probably don't apply anymore.
+  with_patches=
+
+  if ! [[ "$GYP_DEFINES" =~ .*OS=android.* ]]; then
+    # Only build the Android ASan rt when targetting Android.
+    with_android=
+  fi
+
+  LLVM_BUILD_TOOLS_DIR="${ABS_LLVM_DIR}/../llvm-build-tools"
+
+  if [[ "${OS}" == "Linux" ]] && [[ -z "${gcc_toolchain}" ]]; then
+    if [[ $(gcc -dumpversion) < "4.7.0" ]]; then
+      # We need a newer GCC version.
+      if [[ ! -e "${LLVM_BUILD_TOOLS_DIR}/gcc482" ]]; then
+        echo "Downloading pre-built GCC 4.8.2..."
+        mkdir -p "${LLVM_BUILD_TOOLS_DIR}"
+        curl --fail -L "${CDS_URL}/tools/gcc482.tgz" | \
+          tar zxf - -C "${LLVM_BUILD_TOOLS_DIR}"
+        echo Done
+      fi
+      gcc_toolchain="${LLVM_BUILD_TOOLS_DIR}/gcc482"
+    else
+      # Always set gcc_toolchain; llvm-symbolizer needs the bundled libstdc++.
+      gcc_toolchain="$(dirname $(dirname $(which gcc)))"
+    fi
+  fi
+
+  if [[ "${OS}" == "Linux" || "${OS}" == "Darwin" ]]; then
+    if [[ $(cmake --version | grep -Eo '[0-9.]+') < "3.0" ]]; then
+      # We need a newer CMake version.
+      if [[ ! -e "${LLVM_BUILD_TOOLS_DIR}/cmake310" ]]; then
+        echo "Downloading pre-built CMake 3.10..."
+        mkdir -p "${LLVM_BUILD_TOOLS_DIR}"
+        curl --fail -L "${CDS_URL}/tools/cmake310_${OS}.tgz" | \
+          tar zxf - -C "${LLVM_BUILD_TOOLS_DIR}"
+        echo Done
+      fi
+      export PATH="${LLVM_BUILD_TOOLS_DIR}/cmake310/bin:${PATH}"
+    fi
+  fi
+
+  echo "LLVM_FORCE_HEAD_REVISION was set; using r${CLANG_REVISION}"
+fi
 
 if [[ -n "$if_needed" ]]; then
   if [[ "${OS}" == "Darwin" ]]; then
@@ -166,8 +233,8 @@ if [[ -f "${STAMP_FILE}" ]]; then
   PREVIOUSLY_BUILT_REVISON=$(cat "${STAMP_FILE}")
   if [[ -z "$force_local_build" ]] && \
        [[ "${PREVIOUSLY_BUILT_REVISON}" = \
-          "${CLANG_AND_PLUGINS_REVISION}" ]]; then
-    echo "Clang already at ${CLANG_AND_PLUGINS_REVISION}"
+          "${PACKAGE_VERSION}" ]]; then
+    echo "Clang already at ${PACKAGE_VERSION}"
     exit 0
   fi
 fi
@@ -178,8 +245,7 @@ rm -f "${STAMP_FILE}"
 if [[ -z "$force_local_build" ]]; then
   # Check if there's a prebuilt binary and if so just fetch that. That's faster,
   # and goma relies on having matching binary hashes on client and server too.
-  CDS_URL=https://commondatastorage.googleapis.com/chromium-browser-clang
-  CDS_FILE="clang-${CLANG_REVISION}.tgz"
+  CDS_FILE="clang-${PACKAGE_VERSION}.tgz"
   CDS_OUT_DIR=$(mktemp -d -t clang_download.XXXXXX)
   CDS_OUTPUT="${CDS_OUT_DIR}/${CDS_FILE}"
   if [ "${OS}" = "Linux" ]; then
@@ -201,12 +267,12 @@ if [[ -z "$force_local_build" ]]; then
     rm -rf "${LLVM_BUILD_DIR}"
     mkdir -p "${LLVM_BUILD_DIR}"
     tar -xzf "${CDS_OUTPUT}" -C "${LLVM_BUILD_DIR}"
-    echo clang "${CLANG_REVISION}" unpacked
-    echo "${CLANG_AND_PLUGINS_REVISION}" > "${STAMP_FILE}"
+    echo clang "${PACKAGE_VERSION}" unpacked
+    echo "${PACKAGE_VERSION}" > "${STAMP_FILE}"
     rm -rf "${CDS_OUT_DIR}"
     exit 0
   else
-    echo Did not find prebuilt clang at r"${CLANG_REVISION}", building
+    echo Did not find prebuilt clang "${PACKAGE_VERSION}", building
   fi
 fi
 
@@ -238,8 +304,24 @@ for i in \
       "${LLVM_DIR}/test/DebugInfo/gmlt.ll" \
       "${LLVM_DIR}/lib/CodeGen/SpillPlacement.cpp" \
       "${LLVM_DIR}/lib/CodeGen/SpillPlacement.h" \
+      "${LLVM_DIR}/lib/Transforms/Instrumentation/MemorySanitizer.cpp" \
+      "${CLANG_DIR}/test/Driver/env.c" \
+      "${CLANG_DIR}/lib/Frontend/InitPreprocessor.cpp" \
+      "${CLANG_DIR}/test/Frontend/exceptions.c" \
+      "${CLANG_DIR}/test/Preprocessor/predefined-exceptions.m" \
+      "${LLVM_DIR}/test/Bindings/Go/go.test" \
+      "${CLANG_DIR}/lib/Parse/ParseExpr.cpp" \
+      "${CLANG_DIR}/lib/Parse/ParseTemplate.cpp" \
+      "${CLANG_DIR}/lib/Sema/SemaDeclCXX.cpp" \
+      "${CLANG_DIR}/lib/Sema/SemaExprCXX.cpp" \
+      "${CLANG_DIR}/test/SemaCXX/default2.cpp" \
+      "${CLANG_DIR}/test/SemaCXX/typo-correction-delayed.cpp" \
+      "${COMPILER_RT_DIR}/lib/sanitizer_common/sanitizer_stoptheworld_linux_libcdep.cc" \
+      "${COMPILER_RT_DIR}/test/tsan/signal_segv_handler.cc" \
+      "${COMPILER_RT_DIR}/lib/sanitizer_common/sanitizer_coverage_libcdep.cc" \
       ; do
   if [[ -e "${i}" ]]; then
+    rm -f "${i}"  # For unversioned files.
     svn revert "${i}"
   fi;
 done
@@ -283,9 +365,11 @@ if [ "${OS}" = "Darwin" ]; then
                  "${LIBCXXABI_DIR}"
 fi
 
-# Apply patch for tests failing with --disable-pthreads (llvm.org/PR11974)
-pushd "${CLANG_DIR}"
-cat << 'EOF' |
+if [[ -n "$with_patches" ]]; then
+
+  # Apply patch for tests failing with --disable-pthreads (llvm.org/PR11974)
+  pushd "${CLANG_DIR}"
+  cat << 'EOF' |
 --- third_party/llvm/tools/clang/test/Index/crash-recovery-modules.m	(revision 202554)
 +++ third_party/llvm/tools/clang/test/Index/crash-recovery-modules.m	(working copy)
 @@ -12,6 +12,8 @@
@@ -314,182 +398,48 @@ cat << 'EOF' |
    const char *HeaderBottom = "\n};\n#endif\n";
    const char *MFile = "#include \"HeaderFile.h\"\nint main() {"
 EOF
-patch -p0
-popd
+  patch -p0
+  popd
 
-# Apply r218742: test: XFAIL the non-darwin gmlt test on darwin
-# Back-ported becase the test was renamed.
-pushd "${LLVM_DIR}"
-cat << 'EOF' |
---- a/test/DebugInfo/gmlt.ll
-+++ b/test/DebugInfo/gmlt.ll
-@@ -1,2 +1,5 @@
- ; REQUIRES: object-emission
- ; RUN: %llc_dwarf -O0 -filetype=obj < %S/Inputs/gmlt.ll | llvm-dwarfdump - | FileCheck %S/Inputs/gmlt.ll
-+
-+; There's a darwin specific test in X86/gmlt, so it's okay to XFAIL this here.
-+; XFAIL: darwin
+  # Cherry-pick r234010 [sancov] Shrink pc array on Android back to 2**24."
+  pushd "${COMPILER_RT_DIR}"
+  cat << 'EOF' |
+diff --git a/lib/sanitizer_common/sanitizer_coverage_libcdep.cc b/lib/sanitizer_common/sanitizer_coverage_libcdep.cc
+index 4b976fc..cfd9e7e 100644
+--- a/lib/sanitizer_common/sanitizer_coverage_libcdep.cc
++++ b/lib/sanitizer_common/sanitizer_coverage_libcdep.cc
+@@ -109,7 +109,8 @@ class CoverageData {
+ 
+   // Maximal size pc array may ever grow.
+   // We MmapNoReserve this space to ensure that the array is contiguous.
+-  static const uptr kPcArrayMaxSize = FIRST_32_SECOND_64(1 << 26, 1 << 27);
++  static const uptr kPcArrayMaxSize =
++      FIRST_32_SECOND_64(1 << (SANITIZER_ANDROID ? 24 : 26), 1 << 27);
+   // The amount file mapping for the pc array is grown by.
+   static const uptr kPcArrayMmapSize = 64 * 1024;
+
 EOF
-patch -p1
-popd
+  patch -p1
+  popd
 
-# Apply r218921; fixes spill placement compile-time regression.
-pushd "${LLVM_DIR}"
-cat << 'EOF' |
---- a/lib/CodeGen/SpillPlacement.cpp
-+++ b/lib/CodeGen/SpillPlacement.cpp
-@@ -61,27 +61,6 @@ void SpillPlacement::getAnalysisUsage(AnalysisUsage &AU) const {
-   MachineFunctionPass::getAnalysisUsage(AU);
- }
+  # This Go bindings test doesn't work after the bootstrap build on Linux. (PR21552)
+  pushd "${LLVM_DIR}"
+  cat << 'EOF' |
+Index: test/Bindings/Go/go.test
+===================================================================
+--- test/Bindings/Go/go.test    (revision 223109)
++++ test/Bindings/Go/go.test    (working copy)
+@@ -1,3 +1,3 @@
+-; RUN: llvm-go test llvm.org/llvm/bindings/go/llvm
++; RUN: true
  
--namespace {
--static ManagedStatic<BlockFrequency> Threshold;
--}
--
--/// Decision threshold. A node gets the output value 0 if the weighted sum of
--/// its inputs falls in the open interval (-Threshold;Threshold).
--static BlockFrequency getThreshold() { return *Threshold; }
--
--/// \brief Set the threshold for a given entry frequency.
--///
--/// Set the threshold relative to \c Entry.  Since the threshold is used as a
--/// bound on the open interval (-Threshold;Threshold), 1 is the minimum
--/// threshold.
--static void setThreshold(const BlockFrequency &Entry) {
--  // Apparently 2 is a good threshold when Entry==2^14, but we need to scale
--  // it.  Divide by 2^13, rounding as appropriate.
--  uint64_t Freq = Entry.getFrequency();
--  uint64_t Scaled = (Freq >> 13) + bool(Freq & (1 << 12));
--  *Threshold = std::max(UINT64_C(1), Scaled);
--}
--
- /// Node - Each edge bundle corresponds to a Hopfield node.
- ///
- /// The node contains precomputed frequency data that only depends on the CFG,
-@@ -127,9 +106,9 @@ struct SpillPlacement::Node {
- 
-   /// clear - Reset per-query data, but preserve frequencies that only depend on
-   // the CFG.
--  void clear() {
-+  void clear(const BlockFrequency &Threshold) {
-     BiasN = BiasP = Value = 0;
--    SumLinkWeights = getThreshold();
-+    SumLinkWeights = Threshold;
-     Links.clear();
-   }
- 
-@@ -167,7 +146,7 @@ struct SpillPlacement::Node {
- 
-   /// update - Recompute Value from Bias and Links. Return true when node
-   /// preference changes.
--  bool update(const Node nodes[]) {
-+  bool update(const Node nodes[], const BlockFrequency &Threshold) {
-     // Compute the weighted sum of inputs.
-     BlockFrequency SumN = BiasN;
-     BlockFrequency SumP = BiasP;
-@@ -187,9 +166,9 @@ struct SpillPlacement::Node {
-     //  2. It helps tame rounding errors when the links nominally sum to 0.
-     //
-     bool Before = preferReg();
--    if (SumN >= SumP + getThreshold())
-+    if (SumN >= SumP + Threshold)
-       Value = -1;
--    else if (SumP >= SumN + getThreshold())
-+    else if (SumP >= SumN + Threshold)
-       Value = 1;
-     else
-       Value = 0;
-@@ -228,7 +207,7 @@ void SpillPlacement::activate(unsigned n) {
-   if (ActiveNodes->test(n))
-     return;
-   ActiveNodes->set(n);
--  nodes[n].clear();
-+  nodes[n].clear(Threshold);
- 
-   // Very large bundles usually come from big switches, indirect branches,
-   // landing pads, or loops with many 'continue' statements. It is difficult to
-@@ -245,6 +224,18 @@ void SpillPlacement::activate(unsigned n) {
-   }
- }
- 
-+/// \brief Set the threshold for a given entry frequency.
-+///
-+/// Set the threshold relative to \c Entry.  Since the threshold is used as a
-+/// bound on the open interval (-Threshold;Threshold), 1 is the minimum
-+/// threshold.
-+void SpillPlacement::setThreshold(const BlockFrequency &Entry) {
-+  // Apparently 2 is a good threshold when Entry==2^14, but we need to scale
-+  // it.  Divide by 2^13, rounding as appropriate.
-+  uint64_t Freq = Entry.getFrequency();
-+  uint64_t Scaled = (Freq >> 13) + bool(Freq & (1 << 12));
-+  Threshold = std::max(UINT64_C(1), Scaled);
-+}
- 
- /// addConstraints - Compute node biases and weights from a set of constraints.
- /// Set a bit in NodeMask for each active node.
-@@ -311,7 +302,7 @@ bool SpillPlacement::scanActiveBundles() {
-   Linked.clear();
-   RecentPositive.clear();
-   for (int n = ActiveNodes->find_first(); n>=0; n = ActiveNodes->find_next(n)) {
--    nodes[n].update(nodes);
-+    nodes[n].update(nodes, Threshold);
-     // A node that must spill, or a node without any links is not going to
-     // change its value ever again, so exclude it from iterations.
-     if (nodes[n].mustSpill())
-@@ -331,7 +322,7 @@ void SpillPlacement::iterate() {
-   // First update the recently positive nodes. They have likely received new
-   // negative bias that will turn them off.
-   while (!RecentPositive.empty())
--    nodes[RecentPositive.pop_back_val()].update(nodes);
-+    nodes[RecentPositive.pop_back_val()].update(nodes, Threshold);
- 
-   if (Linked.empty())
-     return;
-@@ -350,7 +341,7 @@ void SpillPlacement::iterate() {
-            iteration == 0 ? Linked.rbegin() : std::next(Linked.rbegin()),
-            E = Linked.rend(); I != E; ++I) {
-       unsigned n = *I;
--      if (nodes[n].update(nodes)) {
-+      if (nodes[n].update(nodes, Threshold)) {
-         Changed = true;
-         if (nodes[n].preferReg())
-           RecentPositive.push_back(n);
-@@ -364,7 +355,7 @@ void SpillPlacement::iterate() {
-     for (SmallVectorImpl<unsigned>::const_iterator I =
-            std::next(Linked.begin()), E = Linked.end(); I != E; ++I) {
-       unsigned n = *I;
--      if (nodes[n].update(nodes)) {
-+      if (nodes[n].update(nodes, Threshold)) {
-         Changed = true;
-         if (nodes[n].preferReg())
-           RecentPositive.push_back(n);
-diff --git a/lib/CodeGen/SpillPlacement.h b/lib/CodeGen/SpillPlacement.h
-index 03cf5cd..622361e 100644
---- a/lib/CodeGen/SpillPlacement.h
-+++ b/lib/CodeGen/SpillPlacement.h
-@@ -62,6 +62,10 @@ class SpillPlacement : public MachineFunctionPass {
-   // Block frequencies are computed once. Indexed by block number.
-   SmallVector<BlockFrequency, 8> BlockFrequencies;
- 
-+  /// Decision threshold. A node gets the output value 0 if the weighted sum of
-+  /// its inputs falls in the open interval (-Threshold;Threshold).
-+  BlockFrequency Threshold;
-+
- public:
-   static char ID; // Pass identification, replacement for typeid.
- 
-@@ -152,6 +156,7 @@ private:
-   void releaseMemory() override;
- 
-   void activate(unsigned);
-+  void setThreshold(const BlockFrequency &Entry);
- };
- 
- } // end namespace llvm
+ ; REQUIRES: shell
 EOF
-patch -p1
-popd
+  patch -p0
+  popd
 
+
+fi
 
 # Echo all commands.
 set -x
@@ -613,6 +563,20 @@ if [ "${OS}" = "Darwin" ]; then
   LDFLAGS+="-stdlib=libc++ -L${PWD}/libcxxbuild"
 fi
 
+# Find the binutils include dir for the gold plugin.
+BINUTILS_INCDIR=""
+if [ "${OS}" = "Linux" ]; then
+  BINUTILS_INCDIR="${ABS_BINUTILS_DIR}/Linux_x64/Release/include"
+fi
+
+
+# If building at head, define a macro that plugins can use for #ifdefing
+# out code that builds at head, but not at CLANG_REVISION or vice versa.
+if [[ -n ${LLVM_FORCE_HEAD_REVISION:-''} ]]; then
+  CFLAGS="${CFLAGS} -DLLVM_FORCE_HEAD_REVISION"
+  CXXFLAGS="${CXXFLAGS} -DLLVM_FORCE_HEAD_REVISION"
+fi
+
 # Hook the Chromium tools into the LLVM build. Several Chromium tools have
 # dependencies on LLVM/Clang libraries. The LLVM build detects implicit tools
 # in the tools subdirectory, so install a shim CMakeLists.txt that forwards to
@@ -632,6 +596,7 @@ MACOSX_DEPLOYMENT_TARGET=${deployment_target} cmake -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_ENABLE_THREADS=OFF \
+    -DLLVM_BINUTILS_INCDIR="${BINUTILS_INCDIR}" \
     -DCMAKE_C_COMPILER="${CC}" \
     -DCMAKE_CXX_COMPILER="${CXX}" \
     -DCMAKE_C_FLAGS="${CFLAGS}" \
@@ -704,7 +669,8 @@ if [[ -n "${with_android}" ]]; then
       --platform=android-14 \
       --install-dir="${LLVM_BUILD_DIR}/android-toolchain" \
       --system=linux-x86_64 \
-      --stl=stlport
+      --stl=stlport \
+      --toolchain=arm-linux-androideabi-4.9
 
   # Android NDK r9d copies a broken unwind.h into the toolchain, see
   # http://crbug.com/357890
@@ -740,4 +706,4 @@ if [[ -n "$run_tests" ]]; then
 fi
 
 # After everything is done, log success for this revision.
-echo "${CLANG_AND_PLUGINS_REVISION}" > "${STAMP_FILE}"
+echo "${PACKAGE_VERSION}" > "${STAMP_FILE}"

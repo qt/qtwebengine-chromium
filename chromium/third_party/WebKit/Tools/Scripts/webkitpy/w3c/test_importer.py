@@ -41,9 +41,9 @@
       overridden by a -n or --no-overwrite flag
 
     - All files are converted to work in WebKit:
-         1. Paths to testharness.js and vendor-prefix.js files are modified to
-            point to Webkit's copy of them in LayoutTests/resources, using the
-            correct relative path from the new location.
+         1. Paths to testharness.js scripts and vendor-prefix.js files are
+            modified to point to Webkit's copy of them in LayoutTests/resources,
+            using the correct relative path from the new location.
          2. All CSS properties requiring the -webkit-vendor prefix are prefixed
             (the list of what needs prefixes is read from Source/WebCore/CSS/CSSProperties.in).
          3. Each reftest has its own copy of its reference file following
@@ -219,7 +219,8 @@ class TestImporter(object):
 
             for filename in files:
                 path_full = self.filesystem.join(root, filename)
-                path_base = path_full.replace(self.layout_tests_dir + '/', '')
+                path_base = path_full.replace(directory + '/', '')
+                path_base = self.destination_directory.replace(self.layout_tests_dir + '/', '') + '/' + path_base
                 if path_base in paths_to_skip:
                     if not self.options.dry_run and self.import_in_place:
                         _log.info("  pruning %s" % path_base)
@@ -259,7 +260,10 @@ class TestImporter(object):
                     # Using a naming convention creates duplicate copies of the
                     # reference files.
                     ref_file = os.path.splitext(test_basename)[0] + '-expected'
-                    ref_file += os.path.splitext(test_basename)[1]
+                    # Make sure to use the extension from the *reference*, not
+                    # from the test, because at least flexbox tests use XHTML
+                    # references but HTML tests.
+                    ref_file += os.path.splitext(test_info['reference'])[1]
 
                     copy_list.append({'src': test_info['reference'], 'dest': ref_file, 'reference_support_info': test_info['reference_support_info']})
                     copy_list.append({'src': test_info['test'], 'dest': filename})

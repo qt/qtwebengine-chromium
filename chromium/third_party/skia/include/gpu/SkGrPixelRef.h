@@ -25,9 +25,9 @@ public:
     virtual ~SkROLockPixelsPixelRef();
 
 protected:
-    virtual bool onNewLockPixels(LockRec*) SK_OVERRIDE;
-    virtual void onUnlockPixels() SK_OVERRIDE;
-    virtual bool onLockPixelsAreWritable() const SK_OVERRIDE;   // return false;
+    bool onNewLockPixels(LockRec*) override;
+    void onUnlockPixels() override;
+    bool onLockPixelsAreWritable() const override;   // return false;
 
 private:
     SkBitmap    fBitmap;
@@ -47,12 +47,13 @@ public:
     virtual ~SkGrPixelRef();
 
     // override from SkPixelRef
-    virtual GrTexture* getTexture() SK_OVERRIDE;
+    GrTexture* getTexture() override;
 
 protected:
     // overrides from SkPixelRef
-    virtual bool onReadPixels(SkBitmap* dst, const SkIRect* subset) SK_OVERRIDE;
-    virtual SkPixelRef* deepCopy(SkColorType, const SkIRect* subset) SK_OVERRIDE;
+    bool onReadPixels(SkBitmap* dst, const SkIRect* subset) override;
+    virtual SkPixelRef* deepCopy(SkColorType, SkColorProfileType,
+                                 const SkIRect* subset) override;
 
 private:
     GrSurface*  fSurface;

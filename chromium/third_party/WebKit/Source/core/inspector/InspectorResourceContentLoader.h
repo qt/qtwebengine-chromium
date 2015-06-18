@@ -12,18 +12,18 @@
 
 namespace blink {
 
-class Page;
+class LocalFrame;
 class Resource;
 class VoidCallback;
 
 class InspectorResourceContentLoader final : public NoBaseWillBeGarbageCollectedFinalized<InspectorResourceContentLoader> {
     WTF_MAKE_NONCOPYABLE(InspectorResourceContentLoader);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorResourceContentLoader);
 public:
-    explicit InspectorResourceContentLoader(Page*);
+    explicit InspectorResourceContentLoader(LocalFrame*);
     void ensureResourcesContentLoaded(VoidCallback*);
     ~InspectorResourceContentLoader();
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void dispose();
     bool hasFinished();
     void stop();
@@ -38,7 +38,7 @@ private:
     PersistentHeapVectorWillBeHeapVector<Member<VoidCallback> > m_callbacks;
     bool m_allRequestsStarted;
     bool m_started;
-    RawPtrWillBeMember<Page> m_page;
+    RawPtrWillBeMember<LocalFrame> m_inspectedFrame;
     HashSet<ResourceClient*> m_pendingResourceClients;
     Vector<ResourcePtr<Resource> > m_resources;
 

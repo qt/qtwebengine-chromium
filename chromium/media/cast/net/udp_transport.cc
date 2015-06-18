@@ -9,8 +9,6 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "net/base/io_buffer.h"
@@ -65,20 +63,25 @@ UdpTransport::UdpTransport(
 UdpTransport::~UdpTransport() {}
 
 void UdpTransport::StartReceiving(
-    const PacketReceiverCallback& packet_receiver) {
+    const PacketReceiverCallbackWithStatus& packet_receiver) {
   DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
 
   packet_receiver_ = packet_receiver;
-  udp_socket_->AllowAddressReuse();
   udp_socket_->SetMulticastLoopbackMode(true);
   if (!IsEmpty(local_addr_)) {
-    if (udp_socket_->Bind(local_addr_) < 0) {
+    if (udp_socket_->Open(local_addr_.GetFamily()) < 0 ||
+        udp_socket_->AllowAddressReuse() < 0 ||
+        udp_socket_->Bind(local_addr_) < 0) {
+      udp_socket_->Close();
       status_callback_.Run(TRANSPORT_SOCKET_ERROR);
       LOG(ERROR) << "Failed to bind local address.";
       return;
     }
   } else if (!IsEmpty(remote_addr_)) {
-    if (udp_socket_->Connect(remote_addr_) < 0) {
+    if (udp_socket_->Open(remote_addr_.GetFamily()) < 0 ||
+        udp_socket_->AllowAddressReuse() < 0 ||
+        udp_socket_->Connect(remote_addr_) < 0) {
+      udp_socket_->Close();
       status_callback_.Run(TRANSPORT_SOCKET_ERROR);
       LOG(ERROR) << "Failed to connect to remote address.";
       return;
@@ -94,10 +97,23 @@ void UdpTransport::StartReceiving(
   ScheduleReceiveNextPacket();
 }
 
+void UdpTransport::StopReceiving() {
+  DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
+  packet_receiver_ = PacketReceiverCallbackWithStatus();
+}
+
+
 void UdpTransport::SetDscp(net::DiffServCodePoint dscp) {
   DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
   next_dscp_value_ = dscp;
 }
+
+#if defined(OS_WIN)
+void UdpTransport::UseNonBlockingIO() {
+  DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
+  udp_socket_->UseNonBlockingIO();
+}
+#endif
 
 void UdpTransport::ScheduleReceiveNextPacket() {
   DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
@@ -112,6 +128,9 @@ void UdpTransport::ScheduleReceiveNextPacket() {
 
 void UdpTransport::ReceiveNextPacket(int length_or_status) {
   DCHECK(io_thread_proxy_->RunsTasksOnCurrentThread());
+
+  if (packet_receiver_.is_null())
+    return;
 
   // Loop while UdpSocket is delivering data synchronously.  When it responds
   // with a "pending" status, break and expect this method to be called back in
@@ -150,15 +169,18 @@ void UdpTransport::ReceiveNextPacket(int length_or_status) {
       remote_addr_ = recv_addr_;
       VLOG(1) << "Setting remote address from first received packet: "
               << remote_addr_.ToString();
+      next_packet_->resize(length_or_status);
+      if (!packet_receiver_.Run(next_packet_.Pass())) {
+        VLOG(1) << "Packet was not valid, resetting remote address.";
+        remote_addr_ = net::IPEndPoint();
+      }
     } else if (!IsEqual(remote_addr_, recv_addr_)) {
       VLOG(1) << "Ignoring packet received from an unrecognized address: "
               << recv_addr_.ToString() << ".";
-      length_or_status = net::ERR_IO_PENDING;
-      continue;
+    } else {
+      next_packet_->resize(length_or_status);
+      packet_receiver_.Run(next_packet_.Pass());
     }
-
-    next_packet_->resize(length_or_status);
-    packet_receiver_.Run(next_packet_.Pass());
     length_or_status = net::ERR_IO_PENDING;
   }
 }

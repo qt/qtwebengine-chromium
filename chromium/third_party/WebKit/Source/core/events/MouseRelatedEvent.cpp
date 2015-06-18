@@ -27,8 +27,8 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 
 namespace blink {
 
@@ -40,9 +40,9 @@ MouseRelatedEvent::MouseRelatedEvent()
 
 static LayoutSize contentsScrollOffset(AbstractView* abstractView)
 {
-    if (!abstractView)
+    if (!abstractView || !abstractView->isLocalDOMWindow())
         return LayoutSize();
-    LocalFrame* frame = abstractView->frame();
+    LocalFrame* frame = toLocalDOMWindow(abstractView)->frame();
     if (!frame)
         return LayoutSize();
     FrameView* frameView = frame->view();
@@ -53,9 +53,9 @@ static LayoutSize contentsScrollOffset(AbstractView* abstractView)
 }
 
 MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> abstractView,
-                                     int detail, const IntPoint& screenLocation, const IntPoint& windowLocation,
-                                     const IntPoint& movementDelta,
-                                     bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated)
+    int detail, const IntPoint& screenLocation, const IntPoint& rootFrameLocation,
+    const IntPoint& movementDelta,
+    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated)
     : UIEventWithKeyState(eventType, canBubble, cancelable, abstractView, detail, ctrlKey, altKey, shiftKey, metaKey)
     , m_screenLocation(screenLocation)
     , m_movementDelta(movementDelta)
@@ -64,11 +64,11 @@ MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubb
     LayoutPoint adjustedPageLocation;
     LayoutPoint scrollPosition;
 
-    LocalFrame* frame = view() ? view()->frame() : 0;
+    LocalFrame* frame = view() && view()->isLocalDOMWindow() ? toLocalDOMWindow(view())->frame() : 0;
     if (frame && !isSimulated) {
         if (FrameView* frameView = frame->view()) {
             scrollPosition = frameView->scrollPosition();
-            adjustedPageLocation = frameView->windowToContents(windowLocation);
+            adjustedPageLocation = frameView->rootFrameToContents(rootFrameLocation);
             float scaleFactor = 1 / frame->pageZoomFactor();
             if (scaleFactor != 1.0f) {
                 adjustedPageLocation.scale(scaleFactor, scaleFactor);
@@ -110,10 +110,9 @@ void MouseRelatedEvent::initCoordinates(const LayoutPoint& clientLocation)
 
 static float pageZoomFactor(const UIEvent* event)
 {
-    LocalDOMWindow* window = event->view();
-    if (!window)
+    if (!event->view() || !event->view()->isLocalDOMWindow())
         return 1;
-    LocalFrame* frame = window->frame();
+    LocalFrame* frame = toLocalDOMWindow(event->view())->frame();
     if (!frame)
         return 1;
     return frame->pageZoomFactor();
@@ -140,12 +139,12 @@ void MouseRelatedEvent::computeRelativePosition()
     m_layerLocation = m_pageLocation;
     m_offsetLocation = m_pageLocation;
 
-    // Must have an updated render tree for this math to work correctly.
+    // Must have an updated layout tree for this math to work correctly.
     targetNode->document().updateLayoutIgnorePendingStylesheets();
 
     // Adjust offsetLocation to be relative to the target's position.
-    if (RenderObject* r = targetNode->renderer()) {
-        FloatPoint localPos = r->absoluteToLocal(absoluteLocation(), UseTransforms);
+    if (LayoutObject* r = targetNode->layoutObject()) {
+        FloatPoint localPos = r->absoluteToLocal(FloatPoint(absoluteLocation()), UseTransforms);
         m_offsetLocation = roundedLayoutPoint(localPos);
         float scaleFactor = 1 / pageZoomFactor(this);
         if (scaleFactor != 1.0f)
@@ -154,15 +153,15 @@ void MouseRelatedEvent::computeRelativePosition()
 
     // Adjust layerLocation to be relative to the layer.
     // FIXME: event.layerX and event.layerY are poorly defined,
-    // and probably don't always correspond to RenderLayer offsets.
+    // and probably don't always correspond to DeprecatedPaintLayer offsets.
     // https://bugs.webkit.org/show_bug.cgi?id=21868
     Node* n = targetNode;
-    while (n && !n->renderer())
+    while (n && !n->layoutObject())
         n = n->parentNode();
 
     if (n) {
         // FIXME: This logic is a wrong implementation of convertToLayerCoords.
-        for (RenderLayer* layer = n->renderer()->enclosingLayer(); layer; layer = layer->parent())
+        for (DeprecatedPaintLayer* layer = n->layoutObject()->enclosingLayer(); layer; layer = layer->parent())
             m_layerLocation -= toLayoutSize(layer->location());
     }
 
@@ -225,7 +224,7 @@ int MouseRelatedEvent::y() const
     return m_clientLocation.y();
 }
 
-void MouseRelatedEvent::trace(Visitor* visitor)
+DEFINE_TRACE(MouseRelatedEvent)
 {
     UIEventWithKeyState::trace(visitor);
 }

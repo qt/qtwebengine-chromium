@@ -5,39 +5,41 @@
 #include "config.h"
 #include "core/paint/SVGRootInlineBoxPainter.h"
 
+#include "core/layout/svg/line/SVGInlineFlowBox.h"
+#include "core/layout/svg/line/SVGInlineTextBox.h"
+#include "core/layout/svg/line/SVGRootInlineBox.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintInfo.h"
 #include "core/paint/SVGInlineFlowBoxPainter.h"
 #include "core/paint/SVGInlineTextBoxPainter.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/svg/SVGInlineFlowBox.h"
-#include "core/rendering/svg/SVGInlineTextBox.h"
-#include "core/rendering/svg/SVGRenderingContext.h"
-#include "core/rendering/svg/SVGRootInlineBox.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "core/paint/SVGPaintContext.h"
 
 namespace blink {
 
-void SVGRootInlineBoxPainter::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void SVGRootInlineBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     ASSERT(paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection);
 
-    bool isPrinting = m_svgRootInlineBox.renderer().document().printing();
-    bool hasSelection = !isPrinting && m_svgRootInlineBox.selectionState() != RenderObject::SelectionNone;
+    bool isPrinting = m_svgRootInlineBox.layoutObject().document().printing();
+    bool hasSelection = !isPrinting && m_svgRootInlineBox.selectionState() != LayoutObject::SelectionNone;
 
-    PaintInfo childPaintInfo(paintInfo);
+    PaintInfo paintInfoBeforeFiltering(paintInfo);
     if (hasSelection) {
-        for (InlineBox* child = m_svgRootInlineBox.firstChild(); child; child = child->nextOnLine()) {
-            if (child->isSVGInlineTextBox())
-                SVGInlineTextBoxPainter(*toSVGInlineTextBox(child)).paintSelectionBackground(childPaintInfo);
-            else if (child->isSVGInlineFlowBox())
-                SVGInlineFlowBoxPainter(*toSVGInlineFlowBox(child)).paintSelectionBackground(childPaintInfo);
+        LayoutObjectDrawingRecorder recorder(*paintInfoBeforeFiltering.context, m_svgRootInlineBox.layoutObject(), paintInfoBeforeFiltering.phase, paintInfoBeforeFiltering.rect);
+        if (!recorder.canUseCachedDrawing()) {
+            for (InlineBox* child = m_svgRootInlineBox.firstChild(); child; child = child->nextOnLine()) {
+                if (child->isSVGInlineTextBox())
+                    SVGInlineTextBoxPainter(*toSVGInlineTextBox(child)).paintSelectionBackground(paintInfoBeforeFiltering);
+                else if (child->isSVGInlineFlowBox())
+                    SVGInlineFlowBoxPainter(*toSVGInlineFlowBox(child)).paintSelectionBackground(paintInfoBeforeFiltering);
+            }
         }
     }
 
-    GraphicsContextStateSaver stateSaver(*paintInfo.context);
-    SVGRenderingContext renderingContext(&m_svgRootInlineBox.renderer(), paintInfo);
-    if (renderingContext.isRenderingPrepared()) {
+    SVGPaintContext paintContext(m_svgRootInlineBox.layoutObject(), paintInfoBeforeFiltering);
+    if (paintContext.applyClipMaskAndFilterIfNecessary()) {
         for (InlineBox* child = m_svgRootInlineBox.firstChild(); child; child = child->nextOnLine())
-            child->paint(paintInfo, paintOffset, 0, 0);
+            child->paint(paintContext.paintInfo(), paintOffset, 0, 0);
     }
 }
 

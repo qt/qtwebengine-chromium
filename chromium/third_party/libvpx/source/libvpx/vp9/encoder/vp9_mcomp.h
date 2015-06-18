@@ -66,13 +66,24 @@ struct SPEED_FEATURES;
 
 int vp9_init_search_range(int size);
 
-// Runs sequence of diamond searches in smaller steps for RD
+int vp9_refining_search_sad(const struct macroblock *x,
+                            struct mv *ref_mv,
+                            int sad_per_bit, int distance,
+                            const struct vp9_variance_vtable *fn_ptr,
+                            const struct mv *center_mv);
+
+// Runs sequence of diamond searches in smaller steps for RD.
 int vp9_full_pixel_diamond(const struct VP9_COMP *cpi, MACROBLOCK *x,
                            MV *mvp_full, int step_param,
                            int sadpb, int further_steps, int do_refine,
                            int *cost_list,
                            const vp9_variance_fn_ptr_t *fn_ptr,
                            const MV *ref_mv, MV *dst_mv);
+
+// Perform integral projection based motion estimation.
+unsigned int vp9_int_pro_motion_estimation(const struct VP9_COMP *cpi,
+                                           MACROBLOCK *x,
+                                           BLOCK_SIZE bsize);
 
 typedef int (integer_mv_pattern_search_fn) (
     const MACROBLOCK *x,

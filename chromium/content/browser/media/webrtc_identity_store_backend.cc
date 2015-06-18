@@ -10,7 +10,6 @@
 #include "base/strings/string_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_errors.h"
-#include "sql/error_delegate_util.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "storage/browser/quota/special_storage_policy.h"
@@ -129,7 +128,7 @@ class WebRTCIdentityStoreBackend::SqlLiteStorage
   void DeleteBetween(base::Time delete_begin, base::Time delete_end);
 
   void SetValidityPeriodForTesting(base::TimeDelta validity_period) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+    DCHECK_CURRENTLY_ON(BrowserThread::DB);
     DCHECK(!db_.get());
     validity_period_ = validity_period;
   }
@@ -191,7 +190,7 @@ bool WebRTCIdentityStoreBackend::FindIdentity(
     const std::string& identity_name,
     const std::string& common_name,
     const FindIdentityCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (state_ == CLOSED)
     return false;
 
@@ -252,7 +251,7 @@ void WebRTCIdentityStoreBackend::AddIdentity(const GURL& origin,
                                              const std::string& common_name,
                                              const std::string& certificate,
                                              const std::string& private_key) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (state_ == CLOSED)
     return;
 
@@ -304,7 +303,7 @@ void WebRTCIdentityStoreBackend::Close() {
 void WebRTCIdentityStoreBackend::DeleteBetween(base::Time delete_begin,
                                                base::Time delete_end,
                                                const base::Closure& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (state_ == CLOSED)
     return;
 
@@ -329,7 +328,7 @@ void WebRTCIdentityStoreBackend::DeleteBetween(base::Time delete_begin,
 
 void WebRTCIdentityStoreBackend::SetValidityPeriodForTesting(
     base::TimeDelta validity_period) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   validity_period_ = validity_period;
   BrowserThread::PostTask(
       BrowserThread::DB,
@@ -342,7 +341,7 @@ void WebRTCIdentityStoreBackend::SetValidityPeriodForTesting(
 WebRTCIdentityStoreBackend::~WebRTCIdentityStoreBackend() {}
 
 void WebRTCIdentityStoreBackend::OnLoaded(scoped_ptr<IdentityMap> out_map) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (state_ != LOADING)
     return;
@@ -367,7 +366,7 @@ void WebRTCIdentityStoreBackend::OnLoaded(scoped_ptr<IdentityMap> out_map) {
 //
 
 void WebRTCIdentityStoreBackend::SqlLiteStorage::Load(IdentityMap* out_map) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   DCHECK(!db_.get());
 
   // Ensure the parent directory for storing certs is created before reading
@@ -421,7 +420,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::Load(IdentityMap* out_map) {
 }
 
 void WebRTCIdentityStoreBackend::SqlLiteStorage::Close() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   Commit();
   db_.reset();
 }
@@ -430,7 +429,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::AddIdentity(
     const GURL& origin,
     const std::string& identity_name,
     const Identity& identity) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   if (!db_.get())
     return;
 
@@ -447,7 +446,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::DeleteIdentity(
     const GURL& origin,
     const std::string& identity_name,
     const Identity& identity) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   if (!db_.get())
     return;
   BatchOperation(DELETE_IDENTITY, origin, identity_name, identity);
@@ -456,7 +455,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::DeleteIdentity(
 void WebRTCIdentityStoreBackend::SqlLiteStorage::DeleteBetween(
     base::Time delete_begin,
     base::Time delete_end) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   if (!db_.get())
     return;
 
@@ -490,7 +489,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::DeleteBetween(
 void WebRTCIdentityStoreBackend::SqlLiteStorage::OnDatabaseError(
     int error,
     sql::Statement* stmt) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
 
   db_->RazeAndClose();
   // It's not safe to reset |db_| here.
@@ -501,7 +500,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::BatchOperation(
     const GURL& origin,
     const std::string& identity_name,
     const Identity& identity) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   // Commit every 30 seconds.
   static const base::TimeDelta kCommitInterval(
       base::TimeDelta::FromSeconds(30));
@@ -529,7 +528,7 @@ void WebRTCIdentityStoreBackend::SqlLiteStorage::BatchOperation(
 }
 
 void WebRTCIdentityStoreBackend::SqlLiteStorage::Commit() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK_CURRENTLY_ON(BrowserThread::DB);
   // Maybe an old timer fired or we are already Close()'ed.
   if (!db_.get() || pending_operations_.empty())
     return;

@@ -29,6 +29,7 @@
 #
 {
   'includes': [
+    '../build/features.gypi',
     '../build/scripts/scripts.gypi',
     '../build/win/precompile.gypi',
     '../bindings/modules/modules.gypi',  # modules can depend on bindings/modules, but not on bindings
@@ -37,12 +38,10 @@
   'targets': [{
     # GN version: //third_party/WebKit/Source/modules:modules
     'target_name': 'modules',
-    'type': 'static_library',
     'dependencies': [
       '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
       '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
       '../config.gyp:config',
-      '../core/core.gyp:webcore',
       'modules_generated.gyp:make_modules_generated',
     ],
     'defines': [
@@ -57,6 +56,29 @@
       '<@(bindings_modules_v8_generated_union_type_files)',
       '<(bindings_modules_v8_output_dir)/initPartialInterfacesInModules.cpp',
     ],
+    'conditions': [
+      ['component=="shared_library" and link_core_modules_separately==1', {
+        'type': 'shared_library',
+        'defines': [
+          'BLINK_MODULES_IMPLEMENTATION=1',
+        ],
+        'dependencies': [
+          '../core/core.gyp:webcore_shared', # modules depends on core.
+          '../platform/blink_platform.gyp:blink_common',
+          '../platform/blink_platform.gyp:blink_platform',
+          '../bindings/modules/generated.gyp:modules_event_generated',
+          '../bindings/modules/v8/generated.gyp:bindings_modules_v8_generated',
+          '../wtf/wtf.gyp:wtf',
+          '<(DEPTH)/url/url.gyp:url_lib',
+          '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+        ],
+      }, {
+        'type': 'static_library',
+        'dependencies': [
+          '../core/core.gyp:webcore',
+        ],
+      }]
+    ],
     # Disable c4267 warnings until we fix size_t to int truncations.
     'msvs_disabled_warnings': [ 4267, 4334, ]
   },
@@ -66,7 +88,6 @@
     'type': 'static_library',
     'dependencies': [
       '../config.gyp:config',
-      '../core/core.gyp:webcore',
     ],
     'defines': [
       'BLINK_IMPLEMENTATION=1',
@@ -77,6 +98,16 @@
       '<(bindings_modules_v8_output_dir)/V8InternalsPartial.cpp',
       '<(bindings_modules_v8_output_dir)/V8InternalsPartial.h',
     ],
-
+    'conditions': [
+      ['component=="shared_library" and link_core_modules_separately==1', {
+        'dependencies': [
+          '../core/core.gyp:webcore_shared',
+        ],
+      }, {
+        'dependencies': [
+          '../core/core.gyp:webcore',
+        ],
+      }],
+    ],
   }],
 }

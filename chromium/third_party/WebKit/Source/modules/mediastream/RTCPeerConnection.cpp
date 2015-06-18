@@ -116,8 +116,22 @@ RTCConfiguration* RTCPeerConnection::parseConfiguration(const Dictionary& config
         return 0;
     }
 
+    RTCBundlePolicy bundlePolicy = RTCBundlePolicyBalanced;
+    String bundlePolicyString;
+    if (DictionaryHelper::get(configuration, "bundlePolicy", bundlePolicyString)) {
+        if (bundlePolicyString == "max-compat") {
+            bundlePolicy = RTCBundlePolicyMaxCompat;
+        } else if (bundlePolicyString == "max-bundle") {
+            bundlePolicy = RTCBundlePolicyMaxBundle;
+        } else if (bundlePolicyString != "balanced") {
+            exceptionState.throwTypeError("Malformed RTCBundlePolicy");
+            return 0;
+        }
+    }
+
     RTCConfiguration* rtcConfiguration = RTCConfiguration::create();
     rtcConfiguration->setIceTransports(iceTransports);
+    rtcConfiguration->setBundlePolicy(bundlePolicy);
 
     for (size_t i = 0; i < numberOfServers; ++i) {
         Dictionary iceServer;
@@ -128,7 +142,7 @@ RTCConfiguration* RTCPeerConnection::parseConfiguration(const Dictionary& config
         }
 
         Vector<String> names;
-        iceServer.getOwnPropertyNames(names);
+        iceServer.getPropertyNames(names);
 
         Vector<String> urlStrings;
         if (names.contains("urls")) {
@@ -178,7 +192,7 @@ RTCOfferOptions* RTCPeerConnection::parseOfferOptions(const Dictionary& options,
         return 0;
 
     Vector<String> propertyNames;
-    options.getOwnPropertyNames(propertyNames);
+    options.getPropertyNames(propertyNames);
 
     // Treat |options| as MediaConstraints if it is empty or has "optional" or "mandatory" properties for compatibility.
     // TODO(jiayl): remove constraints when RTCOfferOptions reaches Stable and client code is ready.
@@ -567,6 +581,11 @@ RTCDataChannel* RTCPeerConnection::createDataChannel(String label, const Diction
     if (exceptionState.hadException())
         return nullptr;
     m_dataChannels.append(channel);
+    RTCDataChannel::ReadyState handlerState = channel->getHandlerState();
+    if (handlerState != RTCDataChannel::ReadyStateConnecting) {
+        // There was an early state transition.  Don't miss it!
+        channel->didChangeReadyState(handlerState);
+    }
     return channel;
 }
 
@@ -736,7 +755,7 @@ void RTCPeerConnection::stop()
     m_iceConnectionState = ICEConnectionStateClosed;
     m_signalingState = SignalingStateClosed;
 
-    HeapVector<Member<RTCDataChannel> >::iterator i = m_dataChannels.begin();
+    HeapVector<Member<RTCDataChannel>>::iterator i = m_dataChannels.begin();
     for (; i != m_dataChannels.end(); ++i)
         (*i)->stop();
     m_dataChannels.clear();
@@ -790,17 +809,17 @@ void RTCPeerConnection::dispatchScheduledEvent()
     if (m_stopped)
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> events;
     events.swap(m_scheduledEvents);
 
-    WillBeHeapVector<RefPtrWillBeMember<Event> >::iterator it = events.begin();
+    WillBeHeapVector<RefPtrWillBeMember<Event>>::iterator it = events.begin();
     for (; it != events.end(); ++it)
         dispatchEvent((*it).release());
 
     events.clear();
 }
 
-void RTCPeerConnection::trace(Visitor* visitor)
+DEFINE_TRACE(RTCPeerConnection)
 {
     visitor->trace(m_localStreams);
     visitor->trace(m_remoteStreams);
@@ -808,7 +827,8 @@ void RTCPeerConnection::trace(Visitor* visitor)
 #if ENABLE(OILPAN)
     visitor->trace(m_scheduledEvents);
 #endif
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<RTCPeerConnection>::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

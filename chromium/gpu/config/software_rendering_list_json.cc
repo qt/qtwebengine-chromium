@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "9.12",
+  "version": "10.8",
   "entries": [
     {
       "id": 1,
@@ -331,34 +331,13 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x10de",
       "gl_vendor": "(?i)nouveau.*",
+      "driver_vendor": "Mesa",
+      "driver_version": {
+        "op": "<",
+        "value": "10.1"
+      },
       "features": [
         "all"
-      ]
-    },
-    {
-      "id": 32,
-      "description": "Accelerated 2d canvas is disabled on Windows systems with low perf stats",
-      "cr_bugs": [116350, 151500],
-      "os": {
-        "type": "win"
-      },
-      "perf_overall": {
-        "op": "<",
-        "value": "3.5"
-      },
-      "exceptions": [
-        {
-          "perf_gaming": {
-            "op": ">",
-            "value": "3.5"
-          }
-        },
-        {
-          "cpu_info": "(?i).*Atom.*"
-        }
-      ],
-      "features": [
-        "accelerated_2d_canvas"
       ]
     },
     {
@@ -372,17 +351,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "device_id": ["0x8811"],
       "features": [
         "all"
-      ]
-    },
-    {
-      "id": 35,
-      "description": "Stage3D is not supported on Linux",
-      "cr_bugs": [129848],
-      "os": {
-        "type": "linux"
-      },
-      "features": [
-        "flash_stage3d"
       ]
     },
     {
@@ -508,25 +476,11 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 48,
-      "description": "Accelerated video decode is unavailable on Mac and Linux",
-      "cr_bugs": [137247, 133828],
-      "exceptions": [
-        {
-          "os": {
-            "type": "chromeos"
-          }
-        },
-        {
-          "os": {
-            "type": "win"
-          }
-        },
-        {
-          "os": {
-            "type": "android"
-          }
-        }
-      ],
+      "description": "Accelerated video decode is unavailable on Linux",
+      "cr_bugs": [137247],
+      "os": {
+        "type": "linux"
+      },
       "features": [
         "accelerated_video_decode"
       ]
@@ -592,6 +546,10 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x10de",
       "driver_vendor": "NVIDIA",
+      "driver_version": {
+        "op": "<",
+        "value": "331.38"
+      },
       "features": [
         "accelerated_video_decode",
         "flash_3d",
@@ -632,22 +590,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "accelerated_video_decode"
-      ]
-    },
-    {
-      "id": 62,
-      "description": "Accelerated 2D canvas buggy on old Qualcomm Adreno",
-      "cr_bugs": [161575],
-      "os": {
-        "type": "android"
-      },
-      "gl_renderer": ".*Adreno.*",
-      "driver_version": {
-        "op": "<",
-        "value": "4.1"
-      },
-      "features": [
-        "accelerated_2d_canvas"
       ]
     },
     {
@@ -808,15 +750,14 @@ LONG_STRING_CONST(
     {
       "id": 78,
       "description": "Accelerated video decode interferes with GPU sandbox on older Intel drivers",
-      "cr_bugs": [180695],
+      "cr_bugs": [180695, 298968, 436968],
       "os": {
         "type": "win"
       },
       "vendor_id": "0x8086",
       "driver_version": {
-        "op": "between",
-        "value": "8.15.10.1883",
-        "value2": "8.15.10.2702"
+        "op": "<=",
+        "value": "8.15.10.2702"
       },
       "features": [
         "accelerated_video_decode"
@@ -1050,32 +991,35 @@ LONG_STRING_CONST(
     },
     {
       "id": 96,
-      "description": "GPU rasterization is whitelisted on select devices on Android",
-      "cr_bugs": [362779],
+      "description": "Blacklist GPU raster/canvas on all except known good GPUs and newer Android releases",
+      "cr_bugs": [362779,424970],
       "os": {
         "type": "android"
       },
       "exceptions": [
         {
-          "machine_model_name": ["Nexus 4", "Nexus 5", "Nexus 7",
-                                 "XT1049", "XT1050", "XT1052", "XT1053",
-                                 "XT1055", "XT1056", "XT1058", "XT1060",
-                                 "HTC One",
-                                 "C5303", "C6603", "C6903",
-                                 "GT-I9195",
-                                 "GT-I9505",
-                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
-                                 "SM-N900", "SM-N9005", "SPH-L720",
-                                 "XT907", "XT1032", "XT1033", "XT1080"]
+          "os": {
+            "type": "android"
+          },
+          "gl_renderer": "Adreno \\(TM\\) 3.*"
         },
         {
           "os": {
-            "type": "android",
-            "version": {
-              "op": ">=",
-              "value": "4.4.99"
-            }
-          }
+            "type": "android"
+          },
+          "gl_renderer": "Mali-400.*"
+        },
+        {
+          "os": {
+            "type": "android"
+          },
+          "gl_renderer": "NVIDIA.*"
+        },
+        {
+          "os": {
+            "type": "android"
+          },
+          "gl_renderer": "VideoCore IV.*"
         },
         {
           "os": {
@@ -1093,31 +1037,21 @@ LONG_STRING_CONST(
         }
       ],
       "features": [
-        "gpu_rasterization"
-      ]
-    },
-    {
-      "id": 99,
-      "description": "GPU rasterization is blacklisted on non-Android",
-      "cr_bugs": [362779],
-      "exceptions": [
-        {
-          "os": {
-            "type": "android"
-          }
-        }
-      ],
-      "features": [
-        "gpu_rasterization"
+        "gpu_rasterization",
+        "accelerated_2d_canvas"
       ]
     },
     {
       "id": 100,
-      "description": "GPU rasterization is blacklisted on Nexus 10",
+      "description": "GPU rasterization and canvas is blacklisted on Nexus 10",
       "cr_bugs": [407144],
+      "os": {
+        "type": "android"
+      },
       "gl_renderer": ".*Mali-T604.*",
       "features": [
-        "gpu_rasterization"
+        "gpu_rasterization",
+        "accelerated_2d_canvas"
       ]
     },
     {
@@ -1164,6 +1098,49 @@ LONG_STRING_CONST(
       "device_id": ["0x2a02"],
       "features": [
         "all"
+      ]
+    },
+    {
+      "id": 104,
+      "description": "GPU raster broken on PowerVR Rogue",
+      "cr_bugs": [436331, 483574],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "PowerVR Rogue.*",
+      "features": [
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 105,
+      "description": "GPU raster broken on PowerVR SGX even on Lollipop",
+      "cr_bugs": [461456],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "PowerVR SGX.*",
+      "features": [
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 106,
+      "description": "GPU raster broken on ES2-only Adreno 3xx drivers",
+      "cr_bugs": [480149],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno \\(TM\\) 3.*",
+      "gl_version": {
+         "op": "<=",
+         "value": "2.0"
+      },
+      "features": [
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
       ]
     }
   ]

@@ -13,8 +13,8 @@ class CircularClipsGM : public skiagm::GM {
     SkScalar fX1, fX2, fY, fR;
     SkPath   fCircle1, fCircle2;
 
-public:
-    CircularClipsGM() {
+protected:
+    void onOnceBeforeDraw() override {
         fX1 = 80;
         fX2 = 120;
         fY = 50;
@@ -24,20 +24,18 @@ public:
         fCircle2.addCircle(fX2, fY, fR, SkPath::kCW_Direction);
     }
 
-protected:
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        return kSkipTiled_Flag | kAsBench_Flag;
-    }
 
-    virtual SkString onShortName() {
+    bool runAsBench() const override { return true; }
+
+    SkString onShortName() override {
         return SkString("circular-clips");
     }
 
-    virtual SkISize onISize() {
+    SkISize onISize() override {
         return SkISize::Make(800, 600);
     }
 
-    virtual void onDraw(SkCanvas* canvas) {
+    void onDraw(SkCanvas* canvas) override {
         SkRegion::Op ops[] = {
             SkRegion::kDifference_Op,
             SkRegion::kIntersect_Op,
@@ -50,6 +48,20 @@ protected:
         SkRect rect = SkRect::MakeLTRB(fX1 - fR, fY - fR, fX2 + fR, fY + fR);
 
         SkPaint fillPaint;
+
+        // Giant background circular clips (AA, non-inverted, replace/isect)
+        fillPaint.setColor(0x80808080);
+        canvas->save();
+        canvas->scale(10, 10);
+        canvas->translate(-((fX1 + fX2)/2 - fR), -(fY - 2*fR/3));
+        canvas->clipPath(fCircle1, SkRegion::kReplace_Op, true);
+        canvas->clipPath(fCircle2, SkRegion::kIntersect_Op, true);
+
+        canvas->drawRect(rect, fillPaint);
+
+        canvas->restore();
+      
+        fillPaint.setColor(0xFF000000);
 
         for (size_t i = 0; i < 4; i++) {
             fCircle1.toggleInverseFillType();

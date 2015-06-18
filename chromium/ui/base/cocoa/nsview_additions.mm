@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
 #import "ui/base/cocoa/nsview_additions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -61,6 +60,12 @@
       colorWithAlphaComponent:0.5 / [self cr_lineWidth]];
 }
 
+- (void)cr_recursivelyInvokeBlock:(void (^)(id view))block {
+  block(self);
+  for (NSView* subview in [self subviews])
+    [subview cr_recursivelyInvokeBlock:block];
+}
+
 - (void)cr_recursivelySetNeedsDisplay:(BOOL)flag {
   [self setNeedsDisplay:YES];
   for (NSView* child in [self subviews])
@@ -70,7 +75,8 @@
 static NSView* g_ancestorBeingDrawnFrom = nil;
 static NSView* g_childBeingDrawnTo = nil;
 
-- (void)cr_drawUsingAncestor:(NSView*)ancestorView inRect:(NSRect)rect {
+- (void)cr_drawUsingAncestor:(NSView*)ancestorView inRect:(NSRect)dirtyRect
+     clippedToAncestorBounds:(BOOL)clipToAncestorBounds {
   gfx::ScopedNSGraphicsContextSaveGState scopedGSState;
   NSRect frame = [self convertRect:[self bounds] toView:ancestorView];
   NSAffineTransform* transform = [NSAffineTransform transform];
@@ -86,9 +92,19 @@ static NSView* g_childBeingDrawnTo = nil;
   DCHECK(!g_ancestorBeingDrawnFrom && !g_childBeingDrawnTo);
   g_ancestorBeingDrawnFrom = ancestorView;
   g_childBeingDrawnTo = self;
-  [ancestorView drawRect:[ancestorView bounds]];
+  NSRect drawRect = [self convertRect:dirtyRect toView:ancestorView];
+  if (clipToAncestorBounds) {
+    drawRect = NSIntersectionRect([ancestorView bounds], drawRect);
+  }
+  [ancestorView drawRect:drawRect];
   g_childBeingDrawnTo = nil;
   g_ancestorBeingDrawnFrom = nil;
+}
+
+- (void)cr_drawUsingAncestor:(NSView*)ancestorView inRect:(NSRect)dirtyRect {
+  [self cr_drawUsingAncestor:ancestorView
+                      inRect:dirtyRect
+     clippedToAncestorBounds:YES];
 }
 
 - (NSView*)cr_viewBeingDrawnTo {

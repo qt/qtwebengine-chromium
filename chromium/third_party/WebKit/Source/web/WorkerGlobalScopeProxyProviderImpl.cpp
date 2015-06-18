@@ -33,19 +33,17 @@
 
 #include "core/dom/Document.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/workers/DedicatedWorkerMessagingProxy.h"
 #include "core/workers/Worker.h"
 #include "core/workers/WorkerClients.h"
-#include "core/workers/WorkerMessagingProxy.h"
-#include "modules/serviceworkers/ServiceWorkerContainerClient.h"
-#include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebContentSettingsClient.h"
 #include "public/web/WebFrameClient.h"
-#include "public/web/WebPermissionClient.h"
-#include "public/web/WebWorkerPermissionClientProxy.h"
+#include "public/web/WebWorkerContentSettingsClientProxy.h"
 #include "web/LocalFileSystemClient.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
-#include "web/WorkerPermissionClient.h"
+#include "web/WorkerContentSettingsClient.h"
 
 namespace blink {
 
@@ -56,9 +54,10 @@ WorkerGlobalScopeProxy* WorkerGlobalScopeProxyProviderImpl::createWorkerGlobalSc
         WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
         OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();
         provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
-        providePermissionClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createWorkerPermissionClientProxy(webFrame)));
-        provideServiceWorkerContainerClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createServiceWorkerProvider(webFrame)));
-        return new WorkerMessagingProxy(worker, workerClients.release());
+        provideContentSettingsClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createWorkerContentSettingsClientProxy(webFrame)));
+        // FIXME: call provideServiceWorkerContainerClientToWorker here when we
+        // support ServiceWorker in dedicated workers (http://crbug.com/371690)
+        return new DedicatedWorkerMessagingProxy(worker, workerClients.release());
     }
     ASSERT_NOT_REACHED();
     return 0;

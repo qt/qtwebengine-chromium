@@ -21,13 +21,11 @@ $ sudo ./trafficshaper_test.py
 
 import daemonserver
 import logging
-import multiprocessing
 import platformsettings
 import socket
 import SocketServer
 import trafficshaper
 import unittest
-
 
 RESPONSE_SIZE_KEY = 'response-size:'
 TEST_DNS_PORT = 5555
@@ -118,7 +116,7 @@ class TimedTcpServer(SocketServer.ThreadingTCPServer,
       pass
 
 
-class TcpTestSocketCreator:
+class TcpTestSocketCreator(object):
   """A TCP socket creator suitable for with-statement."""
 
   def __init__(self, host, port, timeout=1.0):
@@ -134,7 +132,7 @@ class TcpTestSocketCreator:
 
 
 class TimedTestCase(unittest.TestCase):
-  def assertAlmostEqual(self, expected, actual, tolerance=0.05):
+  def assertValuesAlmostEqual(self, expected, actual, tolerance=0.05):
     """Like the following with nicer default message:
            assertTrue(expected <= actual + tolerance &&
                       expected >= actual - tolerance)
@@ -188,31 +186,40 @@ class TcpTrafficShaperTest(TimedTestCase):
 
   def testTcpConnectToIp(self):
     """Verify that it takes |delay_ms| to establish a TCP connection."""
+    if not platformsettings.has_ipfw():
+      logging.warning('ipfw is not available in path. Skip the test')
+      return
     with TimedTcpServer(self.host, self.port):
       for delay_ms in (100, 175):
         with self.TrafficShaper(delay_ms=delay_ms):
           start_time = self.timer()
           with self.tcp_socket_creator:
             connect_time = GetElapsedMs(start_time, self.timer())
-        self.assertAlmostEqual(delay_ms, connect_time, tolerance=0.12)
+        self.assertValuesAlmostEqual(delay_ms, connect_time, tolerance=0.12)
 
   def testTcpUploadShaping(self):
     """Verify that 'up' bandwidth is shaped on TCP connections."""
+    if not platformsettings.has_ipfw():
+      logging.warning('ipfw is not available in path. Skip the test')
+      return
     num_bytes = 1024 * 100
     bandwidth_kbits = 2000
     expected_ms = 8.0 * num_bytes / bandwidth_kbits
     with TimedTcpServer(self.host, self.port):
       with self.TrafficShaper(up_bandwidth='%sKbit/s' % bandwidth_kbits):
-        self.assertAlmostEqual(expected_ms, self.GetTcpSendTimeMs(num_bytes))
+        self.assertValuesAlmostEqual(expected_ms, self.GetTcpSendTimeMs(num_bytes))
 
   def testTcpDownloadShaping(self):
     """Verify that 'down' bandwidth is shaped on TCP connections."""
+    if not platformsettings.has_ipfw():
+      logging.warning('ipfw is not available in path. Skip the test')
+      return
     num_bytes = 1024 * 100
     bandwidth_kbits = 2000
     expected_ms = 8.0 * num_bytes / bandwidth_kbits
     with TimedTcpServer(self.host, self.port):
       with self.TrafficShaper(down_bandwidth='%sKbit/s' % bandwidth_kbits):
-        self.assertAlmostEqual(expected_ms, self.GetTcpReceiveTimeMs(num_bytes))
+        self.assertValuesAlmostEqual(expected_ms, self.GetTcpReceiveTimeMs(num_bytes))
 
   def testTcpInterleavedDownloads(self):
     # TODO(slamm): write tcp interleaved downloads test
@@ -240,13 +247,16 @@ class UdpTrafficShaperTest(TimedTestCase):
             GetElapsedMs(read_time, self.timer()))
 
   def testUdpDelay(self):
+    if not platformsettings.has_ipfw():
+      logging.warning('ipfw is not available in path. Skip the test')
+      return
     for delay_ms in (100, 170):
       expected_ms = delay_ms / 2
       with TimedUdpServer(self.host, self.dns_port):
         with self.TrafficShaper(delay_ms=delay_ms):
           send_ms, receive_ms = self.GetUdpSendReceiveTimesMs()
-          self.assertAlmostEqual(expected_ms, send_ms, tolerance=0.10)
-          self.assertAlmostEqual(expected_ms, receive_ms, tolerance=0.10)
+          self.assertValuesAlmostEqual(expected_ms, send_ms, tolerance=0.10)
+          self.assertValuesAlmostEqual(expected_ms, receive_ms, tolerance=0.10)
 
 
   def testUdpInterleavedDelay(self):

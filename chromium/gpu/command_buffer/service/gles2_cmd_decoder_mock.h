@@ -9,11 +9,11 @@
 
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
-#include "base/callback_forward.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace gfx {
 class GLContext;
@@ -78,6 +78,7 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_METHOD0(GetQueryManager, gpu::gles2::QueryManager*());
   MOCK_METHOD0(GetVertexArrayManager, gpu::gles2::VertexArrayManager*());
   MOCK_METHOD0(GetImageManager, gpu::gles2::ImageManager*());
+  MOCK_METHOD0(GetValuebufferManager, gpu::gles2::ValuebufferManager*());
   MOCK_METHOD1(
       SetResizeCallback, void(const base::Callback<void(gfx::Size, float)>&));
   MOCK_METHOD0(GetAsyncPixelTransferDelegate,
@@ -88,6 +89,7 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_METHOD1(SetAsyncPixelTransferManagerForTest,
       void(AsyncPixelTransferManager*));
   MOCK_METHOD1(SetIgnoreCachedStateForTest, void(bool ignore));
+  MOCK_METHOD1(SetAllowExit, void(bool allow));
   MOCK_METHOD3(DoCommand, error::Error(unsigned int command,
                                        unsigned int arg_count,
                                        const void* cmd_data));
@@ -100,9 +102,8 @@ class MockGLES2Decoder : public GLES2Decoder {
                                          uint32* service_texture_id));
   MOCK_METHOD0(GetContextLostReason, error::ContextLostReason());
   MOCK_CONST_METHOD1(GetCommandName, const char*(unsigned int command_id));
-  MOCK_METHOD10(ClearLevel, bool(
-      unsigned service_id,
-      unsigned bind_target,
+  MOCK_METHOD9(ClearLevel, bool(
+      Texture* texture,
       unsigned target,
       int level,
       unsigned internal_format,
@@ -124,9 +125,9 @@ class MockGLES2Decoder : public GLES2Decoder {
   MOCK_METHOD0(GetTotalTextureUploadTime, base::TimeDelta());
   MOCK_METHOD0(GetTotalProcessingCommandsTime, base::TimeDelta());
   MOCK_METHOD1(AddProcessingCommandsTime, void(base::TimeDelta));
-  MOCK_METHOD0(WasContextLost, bool());
-  MOCK_METHOD0(WasContextLostByRobustnessExtension, bool());
-  MOCK_METHOD1(LoseContext, void(uint32 reset_status));
+  MOCK_CONST_METHOD0(WasContextLost, bool());
+  MOCK_CONST_METHOD0(WasContextLostByRobustnessExtension, bool());
+  MOCK_METHOD1(MarkContextLost, void(gpu::error::ContextLostReason reason));
 
   DISALLOW_COPY_AND_ASSIGN(MockGLES2Decoder);
 };

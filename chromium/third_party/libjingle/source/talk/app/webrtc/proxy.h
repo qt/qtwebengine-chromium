@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2013, Google Inc.
+ * Copyright 2013 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -71,6 +71,16 @@ class ReturnType {
   void Invoke(C* c, M m, T1 a1, T2 a2) { r_ = (c->*m)(a1, a2); }
   template<typename C, typename M, typename T1, typename T2, typename T3>
   void Invoke(C* c, M m, T1 a1, T2 a2, T3 a3) { r_ = (c->*m)(a1, a2, a3); }
+  template<typename C, typename M, typename T1, typename T2, typename T3,
+      typename T4>
+  void Invoke(C* c, M m, T1 a1, T2 a2, T3 a3, T4 a4) {
+    r_ = (c->*m)(a1, a2, a3, a4);
+  }
+  template<typename C, typename M, typename T1, typename T2, typename T3,
+     typename T4, typename T5>
+  void Invoke(C* c, M m, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5) {
+    r_ = (c->*m)(a1, a2, a3, a4, a5);
+  }
 
   R value() { return r_; }
 
@@ -99,7 +109,7 @@ class SynchronousMethodCall
     : public rtc::MessageData,
       public rtc::MessageHandler {
  public:
-  SynchronousMethodCall(rtc::MessageHandler* proxy)
+  explicit SynchronousMethodCall(rtc::MessageHandler* proxy)
       : e_(), proxy_(proxy) {}
   ~SynchronousMethodCall() {}
 
@@ -109,7 +119,7 @@ class SynchronousMethodCall
     } else {
       e_.reset(new rtc::Event(false, false));
       t->Post(this, 0);
-      e_->Wait(rtc::kForever);
+      e_->Wait(rtc::Event::kForever);
     }
   }
 
@@ -119,7 +129,7 @@ class SynchronousMethodCall
   rtc::MessageHandler* proxy_;
 };
 
-}  // internal
+}  // namespace internal
 
 template <typename C, typename R>
 class MethodCall0 : public rtc::Message,
@@ -249,58 +259,123 @@ class MethodCall3 : public rtc::Message,
   T3 a3_;
 };
 
-#define BEGIN_PROXY_MAP(c) \
-  class c##Proxy : public c##Interface {\
-   protected:\
-    typedef c##Interface C;\
-    c##Proxy(rtc::Thread* thread, C* c)\
-      : owner_thread_(thread), \
-        c_(c)  {}\
-    ~c##Proxy() {\
-      MethodCall0<c##Proxy, void> call(this, &c##Proxy::Release_s);\
-      call.Marshal(owner_thread_);\
-    }\
-   public:\
-    static rtc::scoped_refptr<C> Create(rtc::Thread* thread, \
-                                              C* c) {\
-      return new rtc::RefCountedObject<c##Proxy>(thread, c);\
-    }\
+template <typename C, typename R, typename T1, typename T2, typename T3,
+    typename T4>
+class MethodCall4 : public rtc::Message,
+                    public rtc::MessageHandler {
+ public:
+  typedef R (C::*Method)(T1 a1, T2 a2, T3 a3, T4 a4);
+  MethodCall4(C* c, Method m, T1 a1, T2 a2, T3 a3, T4 a4)
+      : c_(c), m_(m), a1_(a1), a2_(a2), a3_(a3), a4_(a4) {}
 
-#define PROXY_METHOD0(r, method)\
-    r method() OVERRIDE {\
-      MethodCall0<C, r> call(c_.get(), &C::method);\
-      return call.Marshal(owner_thread_);\
-    }\
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
+    return r_.value();
+  }
 
-#define PROXY_CONSTMETHOD0(r, method)\
-    r method() const OVERRIDE {\
-      ConstMethodCall0<C, r> call(c_.get(), &C::method);\
-      return call.Marshal(owner_thread_);\
-     }\
+ private:
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_, a1_, a2_, a3_, a4_); }
 
-#define PROXY_METHOD1(r, method, t1)\
-    r method(t1 a1) OVERRIDE {\
-      MethodCall1<C, r, t1> call(c_.get(), &C::method, a1);\
-      return call.Marshal(owner_thread_);\
-    }\
+  C* c_;
+  Method m_;
+  ReturnType<R> r_;
+  T1 a1_;
+  T2 a2_;
+  T3 a3_;
+  T4 a4_;
+};
 
-#define PROXY_CONSTMETHOD1(r, method, t1)\
-    r method(t1 a1) const OVERRIDE {\
-      ConstMethodCall1<C, r, t1> call(c_.get(), &C::method, a1);\
-      return call.Marshal(owner_thread_);\
-    }\
+template <typename C, typename R, typename T1, typename T2, typename T3,
+    typename T4, typename T5>
+class MethodCall5 : public rtc::Message,
+                    public rtc::MessageHandler {
+ public:
+  typedef R (C::*Method)(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5);
+  MethodCall5(C* c, Method m, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5)
+      : c_(c), m_(m), a1_(a1), a2_(a2), a3_(a3), a4_(a4), a5_(a5) {}
 
-#define PROXY_METHOD2(r, method, t1, t2)\
-    r method(t1 a1, t2 a2) OVERRIDE {\
-      MethodCall2<C, r, t1, t2> call(c_.get(), &C::method, a1, a2);\
-      return call.Marshal(owner_thread_);\
-    }\
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
+    return r_.value();
+  }
 
-#define PROXY_METHOD3(r, method, t1, t2, t3)\
-    r method(t1 a1, t2 a2, t3 a3) OVERRIDE {\
-      MethodCall3<C, r, t1, t2, t3> call(c_.get(), &C::method, a1, a2, a3);\
-      return call.Marshal(owner_thread_);\
-    }\
+ private:
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_, a1_, a2_, a3_, a4_, a5_); }
+
+  C* c_;
+  Method m_;
+  ReturnType<R> r_;
+  T1 a1_;
+  T2 a2_;
+  T3 a3_;
+  T4 a4_;
+  T5 a5_;
+};
+
+#define BEGIN_PROXY_MAP(c)                                                \
+  class c##Proxy : public c##Interface {                                  \
+   protected:                                                             \
+    typedef c##Interface C;                                               \
+    c##Proxy(rtc::Thread* thread, C* c) : owner_thread_(thread), c_(c) {} \
+    ~c##Proxy() {                                                         \
+      MethodCall0<c##Proxy, void> call(this, &c##Proxy::Release_s);       \
+      call.Marshal(owner_thread_);                                        \
+    }                                                                     \
+                                                                          \
+   public:                                                                \
+    static rtc::scoped_refptr<C> Create(rtc::Thread* thread, C* c) {      \
+      return new rtc::RefCountedObject<c##Proxy>(thread, c);              \
+    }
+
+#define PROXY_METHOD0(r, method)                  \
+  r method() override {                           \
+    MethodCall0<C, r> call(c_.get(), &C::method); \
+    return call.Marshal(owner_thread_);           \
+  }
+
+#define PROXY_CONSTMETHOD0(r, method)                  \
+  r method() const override {                          \
+    ConstMethodCall0<C, r> call(c_.get(), &C::method); \
+    return call.Marshal(owner_thread_);                \
+  }
+
+#define PROXY_METHOD1(r, method, t1)                      \
+  r method(t1 a1) override {                              \
+    MethodCall1<C, r, t1> call(c_.get(), &C::method, a1); \
+    return call.Marshal(owner_thread_);                   \
+  }
+
+#define PROXY_CONSTMETHOD1(r, method, t1)                      \
+  r method(t1 a1) const override {                             \
+    ConstMethodCall1<C, r, t1> call(c_.get(), &C::method, a1); \
+    return call.Marshal(owner_thread_);                        \
+  }
+
+#define PROXY_METHOD2(r, method, t1, t2)                          \
+  r method(t1 a1, t2 a2) override {                               \
+    MethodCall2<C, r, t1, t2> call(c_.get(), &C::method, a1, a2); \
+    return call.Marshal(owner_thread_);                           \
+  }
+
+#define PROXY_METHOD3(r, method, t1, t2, t3)                              \
+  r method(t1 a1, t2 a2, t3 a3) override {                                \
+    MethodCall3<C, r, t1, t2, t3> call(c_.get(), &C::method, a1, a2, a3); \
+    return call.Marshal(owner_thread_);                                   \
+  }
+
+#define PROXY_METHOD4(r, method, t1, t2, t3, t4)                             \
+  r method(t1 a1, t2 a2, t3 a3, t4 a4) override {                            \
+    MethodCall4<C, r, t1, t2, t3, t4> call(c_.get(), &C::method, a1, a2, a3, \
+                                           a4);                              \
+    return call.Marshal(owner_thread_);                                      \
+  }
+
+#define PROXY_METHOD5(r, method, t1, t2, t3, t4, t5)                         \
+  r method(t1 a1, t2 a2, t3 a3, t4 a4, t5 a5) override {                     \
+    MethodCall5<C, r, t1, t2, t3, t4, t5> call(c_.get(), &C::method, a1, a2, \
+                                               a3, a4, a5);                  \
+    return call.Marshal(owner_thread_);                                      \
+  }
 
 #define END_PROXY() \
    private:\

@@ -30,8 +30,9 @@
 #include "core/XMLNames.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/svg/SVGTextQuery.h"
+#include "core/frame/UseCounter.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/svg/SVGTextQuery.h"
 
 namespace blink {
 
@@ -49,9 +50,9 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAd
 // It should return getComputedTextLength() when textLength is not specified manually.
 class SVGAnimatedTextLength final : public SVGAnimatedLength {
 public:
-    static PassRefPtr<SVGAnimatedTextLength> create(SVGTextContentElement* contextElement)
+    static PassRefPtrWillBeRawPtr<SVGAnimatedTextLength> create(SVGTextContentElement* contextElement)
     {
-        return adoptRef(new SVGAnimatedTextLength(contextElement));
+        return adoptRefWillBeNoop(new SVGAnimatedTextLength(contextElement));
     }
 
     virtual SVGLengthTearOff* baseVal() override
@@ -65,7 +66,7 @@ public:
 
 private:
     SVGAnimatedTextLength(SVGTextContentElement* contextElement)
-        : SVGAnimatedLength(contextElement, SVGNames::textLengthAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths)
+        : SVGAnimatedLength(contextElement, SVGNames::textLengthAttr, SVGLength::create(SVGLengthMode::Width), ForbidNegativeLengths)
     {
     }
 };
@@ -81,16 +82,23 @@ SVGTextContentElement::SVGTextContentElement(const QualifiedName& tagName, Docum
     addToPropertyMap(m_lengthAdjust);
 }
 
+DEFINE_TRACE(SVGTextContentElement)
+{
+    visitor->trace(m_textLength);
+    visitor->trace(m_lengthAdjust);
+    SVGGraphicsElement::trace(visitor);
+}
+
 unsigned SVGTextContentElement::getNumberOfChars()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    return SVGTextQuery(renderer()).numberOfCharacters();
+    return SVGTextQuery(layoutObject()).numberOfCharacters();
 }
 
 float SVGTextContentElement::getComputedTextLength()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    return SVGTextQuery(renderer()).textLength();
+    return SVGTextQuery(layoutObject()).textLength();
 }
 
 float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchars, ExceptionState& exceptionState)
@@ -106,10 +114,10 @@ float SVGTextContentElement::getSubStringLength(unsigned charnum, unsigned nchar
     if (nchars > numberOfChars - charnum)
         nchars = numberOfChars - charnum;
 
-    return SVGTextQuery(renderer()).subStringLength(charnum, nchars);
+    return SVGTextQuery(layoutObject()).subStringLength(charnum, nchars);
 }
 
-PassRefPtr<SVGPointTearOff> SVGTextContentElement::getStartPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getStartPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
@@ -118,11 +126,11 @@ PassRefPtr<SVGPointTearOff> SVGTextContentElement::getStartPositionOfChar(unsign
         return nullptr;
     }
 
-    FloatPoint point = SVGTextQuery(renderer()).startPositionOfCharacter(charnum);
+    FloatPoint point = SVGTextQuery(layoutObject()).startPositionOfCharacter(charnum);
     return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 
-PassRefPtr<SVGPointTearOff> SVGTextContentElement::getEndPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<SVGPointTearOff> SVGTextContentElement::getEndPositionOfChar(unsigned charnum, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
@@ -131,11 +139,11 @@ PassRefPtr<SVGPointTearOff> SVGTextContentElement::getEndPositionOfChar(unsigned
         return nullptr;
     }
 
-    FloatPoint point = SVGTextQuery(renderer()).endPositionOfCharacter(charnum);
+    FloatPoint point = SVGTextQuery(layoutObject()).endPositionOfCharacter(charnum);
     return SVGPointTearOff::create(SVGPoint::create(point), 0, PropertyIsNotAnimVal);
 }
 
-PassRefPtr<SVGRectTearOff> SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGTextContentElement::getExtentOfChar(unsigned charnum, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
 
@@ -144,7 +152,7 @@ PassRefPtr<SVGRectTearOff> SVGTextContentElement::getExtentOfChar(unsigned charn
         return nullptr;
     }
 
-    FloatRect rect = SVGTextQuery(renderer()).extentOfCharacter(charnum);
+    FloatRect rect = SVGTextQuery(layoutObject()).extentOfCharacter(charnum);
     return SVGRectTearOff::create(SVGRect::create(rect), 0, PropertyIsNotAnimVal);
 }
 
@@ -157,13 +165,13 @@ float SVGTextContentElement::getRotationOfChar(unsigned charnum, ExceptionState&
         return 0.0f;
     }
 
-    return SVGTextQuery(renderer()).rotationOfCharacter(charnum);
+    return SVGTextQuery(layoutObject()).rotationOfCharacter(charnum);
 }
 
-int SVGTextContentElement::getCharNumAtPosition(PassRefPtr<SVGPointTearOff> point, ExceptionState& exceptionState)
+int SVGTextContentElement::getCharNumAtPosition(PassRefPtrWillBeRawPtr<SVGPointTearOff> point, ExceptionState& exceptionState)
 {
     document().updateLayoutIgnorePendingStylesheets();
-    return SVGTextQuery(renderer()).characterNumberAtPosition(point->target()->value());
+    return SVGTextQuery(layoutObject()).characterNumberAtPosition(point->target()->value());
 }
 
 void SVGTextContentElement::selectSubString(unsigned charnum, unsigned nchars, ExceptionState& exceptionState)
@@ -192,17 +200,6 @@ void SVGTextContentElement::selectSubString(unsigned charnum, unsigned nchars, E
     document().frame()->selection().setSelection(VisibleSelection(start, end));
 }
 
-bool SVGTextContentElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::lengthAdjustAttr);
-        supportedAttributes.add(SVGNames::textLengthAttr);
-        supportedAttributes.add(XMLNames::spaceAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 bool SVGTextContentElement::isPresentationAttribute(const QualifiedName& name) const
 {
     if (name.matches(XMLNames::spaceAttr))
@@ -212,37 +209,38 @@ bool SVGTextContentElement::isPresentationAttribute(const QualifiedName& name) c
 
 void SVGTextContentElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {
-    if (!isSupportedAttribute(name))
-        SVGGraphicsElement::collectStyleForPresentationAttribute(name, value, style);
-    else if (name.matches(XMLNames::spaceAttr)) {
+    if (name.matches(XMLNames::spaceAttr)) {
         DEFINE_STATIC_LOCAL(const AtomicString, preserveString, ("preserve", AtomicString::ConstructFromLiteral));
 
-        if (value == preserveString)
+        if (value == preserveString) {
+            UseCounter::count(document(), UseCounter::WhiteSpacePreFromXMLSpace);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValuePre);
-        else
+        } else {
+            UseCounter::count(document(), UseCounter::WhiteSpaceNowrapFromXMLSpace);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValueNowrap);
+        }
+    } else {
+        SVGGraphicsElement::collectStyleForPresentationAttribute(name, value, style);
     }
-}
-
-void SVGTextContentElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
 }
 
 void SVGTextContentElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
-        return;
-    }
-
     if (attrName == SVGNames::textLengthAttr)
         m_textLengthIsSpecifiedByUser = true;
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
+    if (attrName == SVGNames::textLengthAttr
+        || attrName == SVGNames::lengthAdjustAttr
+        || attrName == XMLNames::spaceAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
 
-    if (RenderObject* renderer = this->renderer())
-        markForLayoutAndParentResourceInvalidation(renderer);
+        if (LayoutObject* layoutObject = this->layoutObject())
+            markForLayoutAndParentResourceInvalidation(layoutObject);
+
+        return;
+    }
+
+    SVGGraphicsElement::svgAttributeChanged(attrName);
 }
 
 bool SVGTextContentElement::selfHasRelativeLengths() const
@@ -253,15 +251,15 @@ bool SVGTextContentElement::selfHasRelativeLengths() const
     return true;
 }
 
-SVGTextContentElement* SVGTextContentElement::elementFromRenderer(RenderObject* renderer)
+SVGTextContentElement* SVGTextContentElement::elementFromLayoutObject(LayoutObject* layoutObject)
 {
-    if (!renderer)
-        return 0;
+    if (!layoutObject)
+        return nullptr;
 
-    if (!renderer->isSVGText() && !renderer->isSVGInline())
-        return 0;
+    if (!layoutObject->isSVGText() && !layoutObject->isSVGInline())
+        return nullptr;
 
-    SVGElement* element = toSVGElement(renderer->node());
+    SVGElement* element = toSVGElement(layoutObject->node());
     ASSERT(element);
     return isSVGTextContentElement(*element) ? toSVGTextContentElement(element) : 0;
 }

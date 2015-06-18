@@ -56,8 +56,8 @@ class DebugColors {
   static SkColor SolidColorTileBorderColor();
   static int SolidColorTileBorderWidth(const LayerTreeImpl* tree_impl);
 
-  static SkColor PictureTileBorderColor();
-  static int PictureTileBorderWidth(const LayerTreeImpl* tree_impl);
+  static SkColor OOMTileBorderColor();
+  static int OOMTileBorderWidth(const LayerTreeImpl* tree_impl);
 
   static SkColor DirectPictureBorderColor();
   static int DirectPictureBorderWidth(const LayerTreeImpl* tree_impl);
@@ -86,14 +86,6 @@ class DebugColors {
   static SkColor ScreenSpaceSurfaceReplicaRectBorderColor();
   static int ScreenSpaceSurfaceReplicaRectBorderWidth();
   static SkColor ScreenSpaceSurfaceReplicaRectFillColor();
-
-  static SkColor OccludingRectBorderColor();
-  static int OccludingRectBorderWidth();
-  static SkColor OccludingRectFillColor();
-
-  static SkColor NonOccludingRectBorderColor();
-  static int NonOccludingRectBorderWidth();
-  static SkColor NonOccludingRectFillColor();
 
   static SkColor TouchEventHandlerRectBorderColor();
   static int TouchEventHandlerRectBorderWidth();

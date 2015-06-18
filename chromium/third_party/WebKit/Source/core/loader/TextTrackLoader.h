@@ -49,7 +49,7 @@ public:
 
 class TextTrackLoader final : public NoBaseWillBeGarbageCollectedFinalized<TextTrackLoader>, public ResourceOwner<RawResource>, private VTTParserClient {
     WTF_MAKE_NONCOPYABLE(TextTrackLoader);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(TextTrackLoader);
 public:
     static PassOwnPtrWillBeRawPtr<TextTrackLoader> create(TextTrackLoaderClient& client, Document& document)
     {
@@ -63,10 +63,10 @@ public:
     enum State { Idle, Loading, Finished, Failed };
     State loadState() { return m_state; }
 
-    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >& outputCues);
-    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >& outputRegions);
+    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<TextTrackCue>>& outputCues);
+    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion>>& outputRegions);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     // RawResourceClient

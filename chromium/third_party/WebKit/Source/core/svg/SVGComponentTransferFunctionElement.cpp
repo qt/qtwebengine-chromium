@@ -61,36 +61,31 @@ SVGComponentTransferFunctionElement::SVGComponentTransferFunctionElement(const Q
     addToPropertyMap(m_type);
 }
 
-bool SVGComponentTransferFunctionElement::isSupportedAttribute(const QualifiedName& attrName)
+DEFINE_TRACE(SVGComponentTransferFunctionElement)
 {
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::typeAttr);
-        supportedAttributes.add(SVGNames::tableValuesAttr);
-        supportedAttributes.add(SVGNames::slopeAttr);
-        supportedAttributes.add(SVGNames::interceptAttr);
-        supportedAttributes.add(SVGNames::amplitudeAttr);
-        supportedAttributes.add(SVGNames::exponentAttr);
-        supportedAttributes.add(SVGNames::offsetAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGComponentTransferFunctionElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
+    visitor->trace(m_tableValues);
+    visitor->trace(m_slope);
+    visitor->trace(m_intercept);
+    visitor->trace(m_amplitude);
+    visitor->trace(m_exponent);
+    visitor->trace(m_offset);
+    visitor->trace(m_type);
+    SVGElement::trace(visitor);
 }
 
 void SVGComponentTransferFunctionElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
+    if (attrName == SVGNames::typeAttr || attrName == SVGNames::tableValuesAttr
+        || attrName == SVGNames::slopeAttr || attrName == SVGNames::interceptAttr
+        || attrName == SVGNames::amplitudeAttr || attrName == SVGNames::exponentAttr
+        || attrName == SVGNames::offsetAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
+        invalidateFilterPrimitiveParent(this);
         return;
     }
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    invalidateFilterPrimitiveParent(this);
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 ComponentTransferFunction SVGComponentTransferFunctionElement::transferFunction() const

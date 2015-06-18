@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "json/json.h"
-#include "third_party/icu/source/common/unicode/unistr.h"
+#include "unicode/unistr.h"
 #include "webrtc/modules/video_capture/android/video_capture_android.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/ref_count.h"
@@ -217,9 +217,8 @@ int32_t DeviceInfoAndroid::CreateCapabilityMap(
   return _captureCapabilities.size();
 }
 
-int32_t DeviceInfoAndroid::GetOrientation(
-    const char* deviceUniqueIdUTF8,
-    VideoCaptureRotation& orientation) {
+int32_t DeviceInfoAndroid::GetOrientation(const char* deviceUniqueIdUTF8,
+                                          VideoRotation& orientation) {
   const AndroidCameraInfo* info = FindCameraInfoByName(deviceUniqueIdUTF8);
   if (info == NULL ||
       VideoCaptureImpl::RotationFromDegrees(info->orientation,

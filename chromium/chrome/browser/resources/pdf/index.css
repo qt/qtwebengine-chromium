@@ -9,6 +9,7 @@ body {
 
 viewer-toolbar {
   visibility: hidden;
+  white-space: nowrap;
   z-index: 3;
 }
 
@@ -18,6 +19,7 @@ viewer-page-indicator {
 }
 
 viewer-progress-bar {
+  visibility: hidden;
   z-index: 3;
 }
 

@@ -15,6 +15,7 @@ SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
     case kProtoSPDY3:
     case kProtoSPDY31:
       return SPDY3;
+    case kProtoSPDY4_14:
     case kProtoSPDY4:
       return SPDY4;
     case kProtoUnknown:
@@ -189,6 +190,10 @@ void BufferedSpdyFramer::OnStreamFrameData(SpdyStreamId stream_id,
   visitor_->OnStreamFrameData(stream_id, data, len, fin);
 }
 
+void BufferedSpdyFramer::OnStreamPadding(SpdyStreamId stream_id, size_t len) {
+  visitor_->OnStreamPadding(stream_id, len);
+}
+
 void BufferedSpdyFramer::OnSettings(bool clear_persisted) {
   visitor_->OnSettings(clear_persisted);
 }
@@ -335,7 +340,7 @@ SpdyFrame* BufferedSpdyFramer::CreateSettings(
 }
 
 // TODO(jgraettinger): Eliminate uses of this method (prefer SpdyPingIR).
-SpdyFrame* BufferedSpdyFramer::CreatePingFrame(uint32 unique_id,
+SpdyFrame* BufferedSpdyFramer::CreatePingFrame(SpdyPingId unique_id,
                                                bool is_ack) const {
   SpdyPingIR ping_ir(unique_id);
   ping_ir.set_is_ack(is_ack);

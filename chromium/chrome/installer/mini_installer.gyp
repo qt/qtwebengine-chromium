@@ -3,7 +3,7 @@
     'version_py': '<(DEPTH)/build/util/version.py',
     'version_path': '../../chrome/VERSION',
     'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
-    # 'branding_dir' is set in the 'conditions' section at the bottom.
+    'branding_dir': '../app/theme/<(branding_path_component)',
     'msvs_use_common_release': 0,
     'msvs_use_common_linker_extras': 0,
     'mini_installer_internal_deps%': 0,
@@ -14,7 +14,30 @@
   ],
   'conditions': [
     ['OS=="win"', {
+      'includes': [
+        '../test/mini_installer/test_installer.gypi',
+      ],
       'targets': [
+        {
+	  # A target that is outdated if any of the mini_installer test sources
+	  # are modified.
+          'target_name': 'test_installer_sentinel',
+          'type': 'none',
+          'actions': [
+            {
+              'action_name': 'touch_sentinel',
+	      'variables': {
+	        'touch_sentinel_py': '../tools/build/win/touch_sentinel.py',
+              },
+              'inputs': [
+                '<@(test_installer_sources)',  # from test_installer.gypi
+	        '<(touch_sentinel_py)',
+              ],
+              'outputs': ['<(SHARED_INTERMEDIATE_DIR)/chrome/installer/test_installer_sentinel'],
+              'action': ['python', '<(touch_sentinel_py)', '<@(_outputs)'],
+            },
+          ],
+        },
         {
           'target_name': 'mini_installer',
           'type': 'executable',
@@ -25,6 +48,7 @@
             '../chrome.gyp:chrome_dll',
             '../chrome.gyp:default_extensions',
             '../chrome.gyp:setup',
+            'test_installer_sentinel',
           ],
           'include_dirs': [
             '../..',
@@ -32,6 +56,7 @@
             '<(SHARED_INTERMEDIATE_DIR)/chrome',
           ],
           'sources': [
+            '<(INTERMEDIATE_DIR)/packed_files.rc',
             'mini_installer/appid.h',
             'mini_installer/chrome.release',
             'mini_installer/chrome_appid.cc',
@@ -51,7 +76,6 @@
             'mini_installer/mini_string.h',
             'mini_installer/pe_resource.cc',
             'mini_installer/pe_resource.h',
-            '<(INTERMEDIATE_DIR)/packed_files.rc',
           ],
           'msvs_settings': {
             'VCCLCompilerTool': {
@@ -110,6 +134,7 @@
                   'BasicRuntimeChecks': '0',
                   'BufferSecurityCheck': 'false',
                   'ExceptionHandling': '0',
+                  'WholeProgramOptimization': 'false',
                 },
                 'VCLinkerTool': {
                   'SubSystem': '2',     # Set /SUBSYSTEM:WINDOWS
@@ -166,9 +191,10 @@
               'process_outputs_as_sources': 1,
               'message': 'Generating version information'
             },
+          ],
+          'actions': [
             {
-              'rule_name': 'installer_archive',
-              'extension': 'release',
+              'action_name': 'installer_archive',
               'variables': {
                 'create_installer_archive_py_path':
                   '../tools/build/win/create_installer_archive.py',
@@ -192,7 +218,7 @@
                     'component_build_flag': '',
                   },
                   'outputs': [
-                    '<(PRODUCT_DIR)/<(RULE_INPUT_NAME).packed.7z',
+                    '<(PRODUCT_DIR)/chrome.packed.7z',
                   ],
                 }],
                 ['disable_nacl==1', {
@@ -239,22 +265,25 @@
                 '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                 '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
                 '<(PRODUCT_DIR)/locales/en-US.pak',
+                '<(PRODUCT_DIR)/setup.exe',
+                'mini_installer/chrome.release',
               ],
               'outputs': [
                 # Also note that chrome.packed.7z is defined as an output in a
                 # conditional above.
-                'xxx2.out',
-                '<(PRODUCT_DIR)/<(RULE_INPUT_NAME).7z',
+                '<(PRODUCT_DIR)/chrome.7z',
                 '<(PRODUCT_DIR)/setup.ex_',
                 '<(INTERMEDIATE_DIR)/packed_files.rc',
               ],
+              'depfile': '<(INTERMEDIATE_DIR)/installer_archive.d',
               'action': [
                 'python',
                 '<(create_installer_archive_py_path)',
                 '--build_dir', '<(PRODUCT_DIR)',
                 '--staging_dir', '<(INTERMEDIATE_DIR)',
-                '--input_file', '<(RULE_INPUT_PATH)',
+                '--input_file', 'mini_installer/chrome.release',
                 '--resource_file_path', '<(INTERMEDIATE_DIR)/packed_files.rc',
+                '--depfile', '<(INTERMEDIATE_DIR)/installer_archive.d',
                 '<(enable_hidpi_flag)',
                 '<(component_build_flag)',
                 '<(target_arch_flag)',
@@ -268,24 +297,6 @@
               ],
               'message': 'Create installer archive',
             },
-          ],
-          # TODO(mark):  <(branding_dir) should be defined by the
-          # global condition block at the bottom of the file, but
-          # this doesn't work due to the following issue:
-          #
-          #   http://code.google.com/p/gyp/issues/detail?id=22
-          #
-          # Remove this block once the above issue is fixed.
-          'conditions': [
-            [ 'branding == "Chrome"', {
-              'variables': {
-                 'branding_dir': '../app/theme/google_chrome',
-              },
-            }, { # else branding!="Chrome"
-              'variables': {
-                 'branding_dir': '../app/theme/chromium',
-              },
-            }],
           ],
         },
       ],
@@ -308,15 +319,6 @@
           ],
         }],
       ],
-    }],
-    [ 'branding == "Chrome"', {
-      'variables': {
-         'branding_dir': '../app/theme/google_chrome',
-      },
-    }, { # else branding!="Chrome"
-      'variables': {
-         'branding_dir': '../app/theme/chromium',
-      },
     }],
   ],
 }

@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/debug/alias.h"
 #include "base/memory/singleton.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/win/wrapped_window_proc.h"
@@ -33,14 +34,15 @@ const wchar_t* const WindowImpl::kBaseClassName = L"Chrome_WidgetWin_";
 struct ClassInfo {
   UINT style;
   HICON icon;
+  HICON small_icon;
 
-  ClassInfo(int style, HICON icon)
-      : style(style),
-        icon(icon) {}
+  ClassInfo(int style, HICON icon, HICON small_icon)
+      : style(style), icon(icon), small_icon(small_icon) {}
 
   // Compares two ClassInfos. Returns true if all members match.
   bool Equals(const ClassInfo& other) const {
-    return (other.style == style && other.icon == icon);
+    return (other.style == style && other.icon == icon &&
+            other.small_icon == small_icon);
   }
 };
 
@@ -126,17 +128,10 @@ ATOM ClassRegistrar::RetrieveClassAtom(const ClassInfo& class_info) {
 
   WNDCLASSEX window_class;
   base::win::InitializeWindowClass(
-      name.c_str(),
-      &base::win::WrappedWindowProc<WindowImpl::WndProc>,
-      class_info.style,
-      0,
-      0,
-      NULL,
-      reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)),
-      NULL,
-      class_info.icon,
-      class_info.icon,
-      &window_class);
+      name.c_str(), &base::win::WrappedWindowProc<WindowImpl::WndProc>,
+      class_info.style, 0, 0, NULL,
+      reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)), NULL,
+      class_info.icon, class_info.small_icon, &window_class);
   HMODULE instance = window_class.hInstance;
   ATOM atom = RegisterClassEx(&window_class);
   CHECK(atom) << GetLastError();
@@ -256,10 +251,18 @@ void WindowImpl::Init(HWND parent, const Rect& bounds) {
 }
 
 HICON WindowImpl::GetDefaultWindowIcon() const {
-  return NULL;
+  return nullptr;
+}
+
+HICON WindowImpl::GetSmallWindowIcon() const {
+  return nullptr;
 }
 
 LRESULT WindowImpl::OnWndProc(UINT message, WPARAM w_param, LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 WindowImpl DefWindowProc1"));
+
   LRESULT result = 0;
 
   HWND hwnd = hwnd_;
@@ -268,8 +271,13 @@ LRESULT WindowImpl::OnWndProc(UINT message, WPARAM w_param, LPARAM l_param) {
 
   // Handle the message if it's in our message map; otherwise, let the system
   // handle it.
-  if (!ProcessWindowMessage(hwnd, message, w_param, l_param, result))
+  if (!ProcessWindowMessage(hwnd, message, w_param, l_param, result)) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 WindowImpl DefWindowProc2"));
+
     result = DefWindowProc(hwnd, message, w_param, l_param);
+  }
 
   return result;
 }
@@ -284,6 +292,10 @@ LRESULT CALLBACK WindowImpl::WndProc(HWND hwnd,
                                      UINT message,
                                      WPARAM w_param,
                                      LPARAM l_param) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("440919 WindowImpl::WndProc"));
+
   if (message == WM_NCCREATE) {
     CREATESTRUCT* cs = reinterpret_cast<CREATESTRUCT*>(l_param);
     WindowImpl* window = reinterpret_cast<WindowImpl*>(cs->lpCreateParams);
@@ -305,7 +317,8 @@ LRESULT CALLBACK WindowImpl::WndProc(HWND hwnd,
 
 ATOM WindowImpl::GetWindowClassAtom() {
   HICON icon = GetDefaultWindowIcon();
-  ClassInfo class_info(initial_class_style(), icon);
+  HICON small_icon = GetSmallWindowIcon();
+  ClassInfo class_info(initial_class_style(), icon, small_icon);
   return ClassRegistrar::GetInstance()->RetrieveClassAtom(class_info);
 }
 

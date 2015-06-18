@@ -28,10 +28,12 @@ namespace base {
 class TimeDelta;
 }
 
+// Common functions to be used for all platforms except Android.
 namespace ui {
 
 class Event;
 class MouseEvent;
+enum class DomCode;
 
 // Updates the list of devices for cached properties.
 EVENTS_EXPORT void UpdateDeviceList();
@@ -80,18 +82,13 @@ EVENTS_EXPORT KeyboardCode KeyboardCodeFromNative(
     const base::NativeEvent& native_event);
 
 // Returns the DOM KeyboardEvent code (physical location in the
-// keyboard) from a native event.  The ownership of the return value
-// is NOT trasferred to the caller.
-EVENTS_EXPORT const char* CodeFromNative(
-    const base::NativeEvent& native_event);
+// keyboard) from a native event.
+EVENTS_EXPORT DomCode CodeFromNative(const base::NativeEvent& native_event);
 
-// Returns the platform related key code. For X11, it is xksym value.
+// Returns the platform related key code (interpretation, not scan code).
+// For X11 and xkbcommon, this is the KeySym value.
 EVENTS_EXPORT uint32 PlatformKeycodeFromNative(
     const base::NativeEvent& native_event);
-
-// Returns a control character sequences from a |windows_key_code|.
-EVENTS_EXPORT base::char16 GetControlCharacterForKeycode(int windows_key_code,
-                                                         bool shift);
 
 // Returns true if the keyboard event is a character event rather than
 // a keystroke event.
@@ -116,11 +113,6 @@ void ReleaseCopiedNativeEvent(
 
 // Gets the touch id from a native event.
 EVENTS_EXPORT int GetTouchId(const base::NativeEvent& native_event);
-
-// Increases the number of times |ClearTouchIdIfReleased| needs to be called on
-// an event with a given touch id before it will actually be cleared.
-EVENTS_EXPORT void IncrementTouchIdRefCount(
-    const base::NativeEvent& native_event);
 
 // Clear the touch id from bookkeeping if it is a release/cancel event.
 EVENTS_EXPORT void ClearTouchIdIfReleased(

@@ -35,7 +35,13 @@ template <>
 struct BindState<void(void), void(void), void(FakeInvoker)>
     : public BindStateBase {
  public:
+  BindState() : BindStateBase(&Destroy) {}
   typedef FakeInvoker InvokerType;
+ private:
+  ~BindState() {}
+  static void Destroy(BindStateBase* self) {
+    delete static_cast<BindState*>(self);
+  }
 };
 
 template <>
@@ -43,7 +49,13 @@ struct BindState<void(void), void(void),
                            void(FakeInvoker, FakeInvoker)>
     : public BindStateBase {
  public:
+  BindState() : BindStateBase(&Destroy) {}
   typedef FakeInvoker InvokerType;
+ private:
+  ~BindState() {}
+  static void Destroy(BindStateBase* self) {
+    delete static_cast<BindState*>(self);
+  }
 };
 }  // namespace internal
 
@@ -62,8 +74,7 @@ class CallbackTest : public ::testing::Test {
         callback_b_(new FakeBindState2()) {
   }
 
-  virtual ~CallbackTest() {
-  }
+  ~CallbackTest() override {}
 
  protected:
   Callback<void(void)> callback_a_;

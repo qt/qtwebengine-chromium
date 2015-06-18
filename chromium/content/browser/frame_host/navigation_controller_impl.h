@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/frame_host/navigation_controller_delegate.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
@@ -19,8 +20,7 @@
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
-class NavigationEntryImpl;
-class RenderViewHost;
+class RenderFrameHostImpl;
 class NavigationEntryScreenshotManager;
 class SiteInstance;
 struct LoadCommittedDetails;
@@ -40,19 +40,19 @@ class CONTENT_EXPORT NavigationControllerImpl
   void Restore(int selected_navigation,
                RestoreType type,
                std::vector<NavigationEntry*>* entries) override;
-  NavigationEntry* GetActiveEntry() const override;
-  NavigationEntry* GetVisibleEntry() const override;
+  NavigationEntryImpl* GetActiveEntry() const override;
+  NavigationEntryImpl* GetVisibleEntry() const override;
   int GetCurrentEntryIndex() const override;
-  NavigationEntry* GetLastCommittedEntry() const override;
+  NavigationEntryImpl* GetLastCommittedEntry() const override;
   int GetLastCommittedEntryIndex() const override;
   bool CanViewSource() const override;
   int GetEntryCount() const override;
-  NavigationEntry* GetEntryAtIndex(int index) const override;
-  NavigationEntry* GetEntryAtOffset(int offset) const override;
+  NavigationEntryImpl* GetEntryAtIndex(int index) const override;
+  NavigationEntryImpl* GetEntryAtOffset(int offset) const override;
   void DiscardNonCommittedEntries() override;
-  NavigationEntry* GetPendingEntry() const override;
+  NavigationEntryImpl* GetPendingEntry() const override;
   int GetPendingEntryIndex() const override;
-  NavigationEntry* GetTransientEntry() const override;
+  NavigationEntryImpl* GetTransientEntry() const override;
   void SetTransientEntry(NavigationEntry* entry) override;
   void LoadURL(const GURL& url,
                const Referrer& referrer,
@@ -107,6 +107,9 @@ class CONTENT_EXPORT NavigationControllerImpl
   int GetEntryIndexWithPageID(SiteInstance* instance,
                               int32 page_id) const;
 
+  // Return the index of the entry with the given unique id, or -1 if not found.
+  int GetEntryIndexWithUniqueID(int nav_entry_id) const;
+
   // Return the entry with the corresponding instance and page_id, or NULL if
   // not found.
   NavigationEntryImpl* GetEntryWithPageID(
@@ -134,7 +137,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // In the case that nothing has changed, the details structure is undefined
   // and it will return false.
   bool RendererDidNavigate(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       LoadCommittedDetails* details);
 
@@ -199,8 +202,9 @@ class CONTENT_EXPORT NavigationControllerImpl
   // that.
   void SetScreenshotManager(NavigationEntryScreenshotManager* manager);
 
-  // Discards only the pending entry.
-  void DiscardPendingEntry();
+  // Discards only the pending entry. |was_failure| should be set if the pending
+  // entry is being discarded because it failed to load.
+  void DiscardPendingEntry(bool was_failure);
 
  private:
   friend class RestoreHelper;
@@ -228,7 +232,13 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
+  // This does the same as above (hopefully), but does so without any use of
+  // deprecated page id values. Once it bakes and is verified to behave the
+  // same, it will replace it. http://crbug.com/369661
+  NavigationType ClassifyNavigationWithoutPageID(
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
 
   // Causes the controller to load the specified entry. The function assumes
@@ -249,24 +259,24 @@ class CONTENT_EXPORT NavigationControllerImpl
   // whether the last entry has been replaced or not.
   // See LoadCommittedDetails.did_replace_entry.
   void RendererDidNavigateToNewPage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool replace_entry);
   void RendererDidNavigateToExistingPage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateToSamePage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateInPage(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool* did_replace_entry);
   void RendererDidNavigateNewSubframe(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   bool RendererDidNavigateAutoSubframe(
-      RenderFrameHost* rfh,
+      RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
   // Helper function for code shared between Reload() and ReloadIgnoringCache().
@@ -345,11 +355,23 @@ class CONTENT_EXPORT NavigationControllerImpl
   // the memory management.
   NavigationEntryImpl* pending_entry_;
 
-  // currently visible entry
+  // If a new entry fails loading, details about it are temporarily held here
+  // until the error page is shown. These variables are only valid if
+  // |failed_pending_entry_id_| is not 0.
+  //
+  // TODO(avi): We need a better way to handle the connection between failed
+  // loads and the subsequent load of the error page. This current approach has
+  // issues: 1. This might hang around longer than we'd like if there is no
+  // error page loaded, and 2. This doesn't work very well for frames.
+  // http://crbug.com/474261
+  int failed_pending_entry_id_;
+  bool failed_pending_entry_should_replace_;
+
+  // The index of the currently visible entry.
   int last_committed_entry_index_;
 
-  // index of pending entry if it is in entries_, or -1 if pending_entry_ is a
-  // new entry (created by LoadURL).
+  // The index of the pending entry if it is in entries_, or -1 if
+  // pending_entry_ is a new entry (created by LoadURL).
   int pending_entry_index_;
 
   // The index for the entry that is shown until a navigation occurs.  This is

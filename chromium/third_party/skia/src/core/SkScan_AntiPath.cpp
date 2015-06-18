@@ -29,15 +29,10 @@
     - destination coordinates, scale equal to the output - often
         abbreviated with 'i' or 'I' in variable names
     - supersampled coordinates, scale equal to the output * SCALE
-
-    Enabling SK_USE_LEGACY_AA_COVERAGE keeps the aa coverage calculations as
-    they were before the fix that unified the output of the RLE and MASK
-    supersamplers.
  */
 
 //#define FORCE_SUPERMASK
 //#define FORCE_RLE
-//#define SK_USE_LEGACY_AA_COVERAGE
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -49,11 +44,11 @@ public:
 
     /// Must be explicitly defined on subclasses.
     virtual void blitAntiH(int x, int y, const SkAlpha antialias[],
-                           const int16_t runs[]) SK_OVERRIDE {
+                           const int16_t runs[]) override {
         SkDEBUGFAIL("How did I get here?");
     }
     /// May not be called on BaseSuperBlitter because it blits out of order.
-    virtual void blitV(int x, int y, int height, SkAlpha alpha) SK_OVERRIDE {
+    void blitV(int x, int y, int height, SkAlpha alpha) override {
         SkDEBUGFAIL("How did I get here?");
     }
 
@@ -120,10 +115,10 @@ public:
 
     /// Blits a row of pixels, with location and width specified
     /// in supersampled coordinates.
-    virtual void blitH(int x, int y, int width) SK_OVERRIDE;
+    void blitH(int x, int y, int width) override;
     /// Blits a rectangle of pixels, with location and size specified
     /// in supersampled coordinates.
-    virtual void blitRect(int x, int y, int width, int height) SK_OVERRIDE;
+    void blitRect(int x, int y, int width, int height) override;
 
 private:
     // The next three variables are used to track a circular buffer that
@@ -190,9 +185,6 @@ void SuperBlitter::flush() {
 */
 static inline int coverage_to_partial_alpha(int aa) {
     aa <<= 8 - 2*SHIFT;
-#ifdef SK_USE_LEGACY_AA_COVERAGE
-    aa -= aa >> (8 - SHIFT - 1);
-#endif
     return aa;
 }
 
@@ -408,7 +400,7 @@ public:
         fRealBlitter->blitMask(fMask, fClipRect);
     }
 
-    virtual void blitH(int x, int y, int width) SK_OVERRIDE;
+    void blitH(int x, int y, int width) override;
 
     static bool CanHandleRect(const SkIRect& bounds) {
 #ifdef FORCE_RLE
@@ -454,7 +446,10 @@ MaskSuperBlitter::MaskSuperBlitter(SkBlitter* realBlitter, const SkIRect& ir, co
     fMask.fFormat   = SkMask::kA8_Format;
 
     fClipRect = ir;
-    fClipRect.intersect(clip.getBounds());
+    if (!fClipRect.intersect(clip.getBounds())) {
+        SkASSERT(0);
+        fClipRect.setEmpty();
+    }
 
     // For valgrind, write 1 extra byte at the end so we don't read
     // uninitialized memory. See comment in add_aa_span and fStorage[].

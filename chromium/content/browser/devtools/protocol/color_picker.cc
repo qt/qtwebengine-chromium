@@ -12,7 +12,7 @@
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 namespace content {
 namespace devtools {
@@ -33,11 +33,11 @@ ColorPicker::ColorPicker(ColorPickedCallback callback)
 ColorPicker::~ColorPicker() {
 }
 
-void ColorPicker::SetRenderViewHost(RenderViewHostImpl* host) {
+void ColorPicker::SetRenderWidgetHost(RenderWidgetHostImpl* host) {
   if (host_ == host)
     return;
 
-  if (host_)
+  if (enabled_ && host_)
     host_->RemoveMouseEventCallback(mouse_event_callback_);
   ResetFrame();
   host_ = host;
@@ -95,11 +95,12 @@ void ColorPicker::ResetFrame() {
   last_cursor_y_ = -1;
 }
 
-void ColorPicker::FrameUpdated(bool succeeded, const SkBitmap& bitmap) {
+void ColorPicker::FrameUpdated(const SkBitmap& bitmap,
+                               ReadbackResponse response) {
   if (!enabled_)
     return;
 
-  if (succeeded) {
+  if (response == READBACK_SUCCESS) {
     frame_ = bitmap;
     UpdateCursor();
   }
@@ -165,11 +166,14 @@ void ColorPicker::UpdateCursor() {
   view->GetScreenInfo(&screen_info);
   double device_scale_factor = screen_info.deviceScaleFactor;
 
-  skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(SkCanvas::NewRasterN32(
-      kCursorSize * device_scale_factor,
-      kCursorSize * device_scale_factor));
-  canvas->scale(device_scale_factor, device_scale_factor);
-  canvas->translate(0.5f, 0.5f);
+  SkBitmap result;
+  result.allocN32Pixels(kCursorSize * device_scale_factor,
+                        kCursorSize * device_scale_factor);
+  result.eraseARGB(0, 0, 0, 0);
+
+  SkCanvas canvas(result);
+  canvas.scale(device_scale_factor, device_scale_factor);
+  canvas.translate(0.5f, 0.5f);
 
   SkPaint paint;
 
@@ -180,22 +184,22 @@ void ColorPicker::UpdateCursor() {
     paint.setColor(SK_ColorDKGRAY);
     paint.setStyle(SkPaint::kStroke_Style);
 
-    canvas->drawLine(kHotspotOffset, kHotspotOffset - 2 * kHotspotRadius,
-                     kHotspotOffset, kHotspotOffset - kHotspotRadius,
-                     paint);
-    canvas->drawLine(kHotspotOffset, kHotspotOffset + kHotspotRadius,
-                     kHotspotOffset, kHotspotOffset + 2 * kHotspotRadius,
-                     paint);
-    canvas->drawLine(kHotspotOffset - 2 * kHotspotRadius, kHotspotOffset,
-                     kHotspotOffset - kHotspotRadius, kHotspotOffset,
-                     paint);
-    canvas->drawLine(kHotspotOffset + kHotspotRadius, kHotspotOffset,
-                     kHotspotOffset + 2 * kHotspotRadius, kHotspotOffset,
-                     paint);
+    canvas.drawLine(kHotspotOffset, kHotspotOffset - 2 * kHotspotRadius,
+                    kHotspotOffset, kHotspotOffset - kHotspotRadius,
+                    paint);
+    canvas.drawLine(kHotspotOffset, kHotspotOffset + kHotspotRadius,
+                    kHotspotOffset, kHotspotOffset + 2 * kHotspotRadius,
+                    paint);
+    canvas.drawLine(kHotspotOffset - 2 * kHotspotRadius, kHotspotOffset,
+                    kHotspotOffset - kHotspotRadius, kHotspotOffset,
+                    paint);
+    canvas.drawLine(kHotspotOffset + kHotspotRadius, kHotspotOffset,
+                    kHotspotOffset + 2 * kHotspotRadius, kHotspotOffset,
+                    paint);
 
     paint.setStrokeWidth(2);
     paint.setAntiAlias(true);
-    canvas->drawCircle(kHotspotOffset, kHotspotOffset, kHotspotRadius, paint);
+    canvas.drawCircle(kHotspotOffset, kHotspotOffset, kHotspotRadius, paint);
   }
 
   // Clip circle for magnified projection.
@@ -203,7 +207,7 @@ void ColorPicker::UpdateCursor() {
   SkPath clip_path;
   clip_path.addOval(SkRect::MakeXYWH(padding, padding, kDiameter, kDiameter));
   clip_path.close();
-  canvas->clipPath(clip_path, SkRegion::kIntersect_Op, true);
+  canvas.clipPath(clip_path, SkRegion::kIntersect_Op, true);
 
   // Project pixels.
   int pixel_count = kDiameter / kPixelSize;
@@ -211,17 +215,17 @@ void ColorPicker::UpdateCursor() {
                                      last_cursor_y_ - pixel_count / 2,
                                      pixel_count, pixel_count);
   SkRect dst_rect = SkRect::MakeXYWH(padding, padding, kDiameter, kDiameter);
-  canvas->drawBitmapRectToRect(frame_, &src_rect, dst_rect);
+  canvas.drawBitmapRectToRect(frame_, &src_rect, dst_rect);
 
   // Paint grid.
   paint.setStrokeWidth(1);
   paint.setAntiAlias(false);
   paint.setColor(SK_ColorGRAY);
   for (int i = 0; i < pixel_count; ++i) {
-    canvas->drawLine(padding + i * kPixelSize, padding,
-                     padding + i * kPixelSize, kCursorSize - padding, paint);
-    canvas->drawLine(padding, padding + i * kPixelSize,
-                     kCursorSize - padding, padding + i * kPixelSize, paint);
+    canvas.drawLine(padding + i * kPixelSize, padding,
+                    padding + i * kPixelSize, kCursorSize - padding, paint);
+    canvas.drawLine(padding, padding + i * kPixelSize,
+                    kCursorSize - padding, padding + i * kPixelSize, paint);
   }
 
   // Paint central pixel in red.
@@ -230,18 +234,13 @@ void ColorPicker::UpdateCursor() {
                                   kPixelSize, kPixelSize);
   paint.setColor(SK_ColorRED);
   paint.setStyle(SkPaint::kStroke_Style);
-  canvas->drawRect(pixel, paint);
+  canvas.drawRect(pixel, paint);
 
   // Paint outline.
   paint.setStrokeWidth(2);
   paint.setColor(SK_ColorDKGRAY);
   paint.setAntiAlias(true);
-  canvas->drawCircle(kCursorSize / 2, kCursorSize / 2, kDiameter / 2, paint);
-
-  SkBitmap result;
-  result.allocN32Pixels(kCursorSize * device_scale_factor,
-                        kCursorSize * device_scale_factor);
-  canvas->readPixels(&result, 0, 0);
+  canvas.drawCircle(kCursorSize / 2, kCursorSize / 2, kDiameter / 2, paint);
 
   WebCursor cursor;
   WebCursor::CursorInfo cursor_info;

@@ -10,6 +10,8 @@
 #include "gpu/gpu_export.h"
 
 #define GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)                   \
+  GPU_OP(AVOID_EGL_IMAGE_TARGET_TEXTURE_REUSE,               \
+         avoid_egl_image_target_texture_reuse)               \
   GPU_OP(CLEAR_ALPHA_IN_READPIXELS,                          \
          clear_alpha_in_readpixels)                          \
   GPU_OP(CLEAR_UNIFORMS_BEFORE_FIRST_PROGRAM_USE,            \
@@ -22,6 +24,10 @@
          disable_arb_sync)                                   \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
+  GPU_OP(DISABLE_BLEND_EQUATION_ADVANCED,                    \
+         disable_blend_equation_advanced)                    \
+  GPU_OP(DISABLE_CHROMIUM_FRAMEBUFFER_MULTISAMPLE,           \
+         disable_chromium_framebuffer_multisample)           \
   GPU_OP(DISABLE_D3D11,                                      \
          disable_d3d11)                                      \
   GPU_OP(DISABLE_DEPTH_TEXTURE,                              \
@@ -30,16 +36,16 @@
          disable_egl_khr_fence_sync)                         \
   GPU_OP(DISABLE_EGL_KHR_WAIT_SYNC,                          \
          disable_egl_khr_wait_sync)                          \
-  GPU_OP(DISABLE_EXT_DISCARD_FRAMEBUFFER,                    \
-         disable_ext_discard_framebuffer)                    \
+  GPU_OP(DISABLE_DISCARD_FRAMEBUFFER,                        \
+         disable_discard_framebuffer)                        \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
-  GPU_OP(DISABLE_MULTISAMPLING,                              \
-         disable_multisampling)                              \
+  GPU_OP(DISABLE_MULTISAMPLED_RENDER_TO_TEXTURE,             \
+         disable_multisampled_render_to_texture)             \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
          disable_oes_standard_derivatives)                   \
   GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
@@ -54,6 +60,12 @@
          force_gl_finish_after_compositing)                  \
   GPU_OP(FORCE_INTEGRATED_GPU,                               \
          force_integrated_gpu)                               \
+  GPU_OP(GL_BEGIN_GL_END_ON_FBO_CHANGE_TO_BACKBUFFER,        \
+         gl_begin_gl_end_on_fbo_change_to_backbuffer)        \
+  GPU_OP(GL_CLEAR_BROKEN,                                    \
+         gl_clear_broken)                                    \
+  GPU_OP(IGNORE_EGL_SYNC_FAILURES,                           \
+         ignore_egl_sync_failures)                           \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
   GPU_OP(INIT_TEXTURE_MAX_ANISOTROPY,                        \
@@ -90,10 +102,14 @@
          scalarize_vec_and_mat_constructor_args)             \
   GPU_OP(SET_TEXTURE_FILTER_BEFORE_GENERATING_MIPMAP,        \
          set_texture_filter_before_generating_mipmap)        \
+  GPU_OP(SIMULATE_OUT_OF_MEMORY_ON_LARGE_TEXTURES,           \
+         simulate_out_of_memory_on_large_textures)           \
   GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \
          swizzle_rgba_for_async_readpixels)                  \
   GPU_OP(TEXSUBIMAGE2D_FASTER_THAN_TEXIMAGE2D,               \
          texsubimage2d_faster_than_teximage2d)               \
+  GPU_OP(UNBIND_ATTACHMENTS_ON_BOUND_RENDER_FBO_DELETE,      \
+         unbind_attachments_on_bound_render_fbo_delete)      \
   GPU_OP(UNBIND_FBO_ON_CONTEXT_SWITCH,                       \
          unbind_fbo_on_context_switch)                       \
   GPU_OP(UNFOLD_SHORT_CIRCUIT_AS_TERNARY_OPERATION,          \
@@ -112,6 +128,8 @@
          validate_multisample_buffer_allocation)             \
   GPU_OP(WAKE_UP_GPU_BEFORE_DRAWING,                         \
          wake_up_gpu_before_drawing)                         \
+  GPU_OP(DISABLE_GL_RGB_FORMAT,                              \
+         disable_gl_rgb_format)                              \
 
 namespace gpu {
 

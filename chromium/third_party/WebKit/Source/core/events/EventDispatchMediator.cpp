@@ -46,15 +46,15 @@ EventDispatchMediator::EventDispatchMediator(PassRefPtrWillBeRawPtr<Event> event
 {
 }
 
-void EventDispatchMediator::trace(Visitor* visitor)
+DEFINE_TRACE(EventDispatchMediator)
 {
     visitor->trace(m_event);
 }
 
-bool EventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+bool EventDispatchMediator::dispatchEvent(EventDispatcher& dispatcher) const
 {
-    ASSERT(m_event.get() == dispatcher->event());
-    return dispatcher->dispatch();
+    ASSERT(m_event.get() == &dispatcher.event());
+    return dispatcher.dispatch();
 }
 
 } // namespace blink

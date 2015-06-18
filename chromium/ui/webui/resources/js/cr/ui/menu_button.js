@@ -44,6 +44,7 @@ cr.define('cr.ui', function() {
     decorate: function() {
       this.addEventListener('mousedown', this);
       this.addEventListener('keydown', this);
+      this.addEventListener('dblclick', this);
 
       // Adding the 'custom-appearance' class prevents widgets.css from changing
       // the appearance of this element.
@@ -123,10 +124,9 @@ cr.define('cr.ui', function() {
           this.handleKeyDown(e);
           // If the menu is visible we let it handle all the keyboard events.
           if (this.isMenuShown() && e.currentTarget == this.ownerDocument) {
-            if (this.menu.handleKeyDown(e)) {
-              e.preventDefault();
-              e.stopPropagation();
-            }
+            this.menu.handleKeyDown(e);
+            e.preventDefault();
+            e.stopPropagation();
           }
 
           // Show the focus ring on keypress.
@@ -154,6 +154,19 @@ cr.define('cr.ui', function() {
         case 'popstate':
         case 'resize':
           this.hideMenu();
+          break;
+        case 'contextmenu':
+          if ((!this.menu || !this.menu.contains(e.target)) &&
+              (!this.hideTimestamp_ || Date.now() - this.hideTimestamp_ > 50))
+            this.showMenu(true);
+          e.preventDefault();
+          // Don't allow elements further up in the DOM to show their menus.
+          e.stopPropagation();
+          break;
+        case 'dblclick':
+          // Don't allow double click events to propagate.
+          e.preventDefault();
+          e.stopPropagation();
           break;
       }
     },
@@ -187,6 +200,7 @@ cr.define('cr.ui', function() {
       this.showingEvents_.add(doc, 'scroll', this, true);
       this.showingEvents_.add(win, 'popstate', this);
       this.showingEvents_.add(win, 'resize', this);
+      this.showingEvents_.add(this.menu, 'contextmenu', this);
       this.showingEvents_.add(this.menu, 'activate', this);
       this.positionMenu_();
 
@@ -213,6 +227,11 @@ cr.define('cr.ui', function() {
 
       this.showingEvents_.removeAll();
       this.focus();
+
+      // On windows we might hide the menu in a right mouse button up and if
+      // that is the case we wait some short period before we allow the menu
+      // to be shown again.
+      this.hideTimestamp_ = cr.isWindows ? Date.now() : 0;
     },
 
     /**

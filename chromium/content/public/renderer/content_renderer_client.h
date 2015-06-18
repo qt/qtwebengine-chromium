@@ -8,14 +8,15 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
 #include "ipc/ipc_message.h"
+#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
-#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/base/page_transition_types.h"
 #include "v8/include/v8.h"
 
@@ -24,10 +25,11 @@ class SkBitmap;
 
 namespace base {
 class FilePath;
-class MessageLoop;
+class SingleThreadTaskRunner;
 }
 
 namespace blink {
+class WebAppBannerClient;
 class WebAudioDevice;
 class WebClipboard;
 class WebFrame;
@@ -46,12 +48,14 @@ class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebThemeEngine;
 class WebURLRequest;
-class WebWorkerPermissionClientProxy;
+class WebWorkerContentSettingsClientProxy;
 struct WebPluginParams;
 struct WebURLError;
 }
 
 namespace media {
+class MediaLog;
+class RendererFactory;
 struct KeySystemInfo;
 }
 
@@ -79,9 +83,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // Notifies that a new RenderView has been created.
   virtual void RenderViewCreated(RenderView* render_view) {}
 
-  // Sets a number of views/tabs opened in this process.
-  virtual void SetNumberOfViews(int number_of_views) {}
-
   // Returns the bitmap to show when a plugin crashed, or NULL for none.
   virtual SkBitmap* GetSadPluginBitmap();
 
@@ -106,7 +107,7 @@ class CONTENT_EXPORT ContentRendererClient {
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin);
 
-  // Creates a replacement plug-in that is shown when the plug-in at |file_path|
+  // Creates a replacement plugin that is shown when the plugin at |file_path|
   // couldn't be loaded. This allows the embedder to show a custom placeholder.
   virtual blink::WebPlugin* CreatePluginReplacement(
       RenderFrame* render_frame,
@@ -221,6 +222,10 @@ class CONTENT_EXPORT ContentRendererClient {
                           bool is_server_redirect,
                           bool* send_referrer);
 
+  // Returns true if this IPC message belongs to a guest container. Currently,
+  // BrowserPlugin is a guest container.
+  virtual bool ShouldForwardToGuestContainer(const IPC::Message& msg);
+
   // Notifies the embedder that the given frame is requesting the resource at
   // |url|.  If the function returns true, the url is changed to |new_url|.
   virtual bool WillSendRequest(blink::WebFrame* frame,
@@ -228,12 +233,6 @@ class CONTENT_EXPORT ContentRendererClient {
                                const GURL& url,
                                const GURL& first_party_for_cookies,
                                GURL* new_url);
-
-  // See the corresponding functions in blink::WebFrameClient.
-  virtual void DidCreateScriptContext(blink::WebFrame* frame,
-                                      v8::Handle<v8::Context> context,
-                                      int extension_group,
-                                      int world_id) {}
 
   // See blink::Platform.
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
@@ -255,6 +254,11 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
 
+  // Allows an embedder to provide a media::RendererFactory.
+  virtual scoped_ptr<media::RendererFactory> CreateMediaRendererFactory(
+      RenderFrame* render_frame,
+      const scoped_refptr<media::MediaLog>& media_log);
+
   // Gives the embedder a chance to register the key system(s) it supports by
   // populating |key_systems|.
   virtual void AddKeySystems(std::vector<media::KeySystemInfo>* key_systems);
@@ -272,15 +276,15 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual bool ShouldEnableSiteIsolationPolicy() const;
 
   // Creates a permission client proxy for in-renderer worker.
-  virtual blink::WebWorkerPermissionClientProxy*
-      CreateWorkerPermissionClientProxy(RenderFrame* render_frame,
-                                        blink::WebFrame* frame);
+  virtual blink::WebWorkerContentSettingsClientProxy*
+      CreateWorkerContentSettingsClientProxy(RenderFrame* render_frame,
+                                             blink::WebFrame* frame);
+
+  // Returns true if the page at |url| can use Pepper CameraDevice APIs.
+  virtual bool IsPluginAllowedToUseCameraDeviceAPI(const GURL& url);
 
   // Returns true if the page at |url| can use Pepper Compositor APIs.
   virtual bool IsPluginAllowedToUseCompositorAPI(const GURL& url);
-
-  // Returns true if the page at |url| can use Pepper VideoDecoder APIs.
-  virtual bool IsPluginAllowedToUseVideoDecodeAPI(const GURL& url);
 
   // Returns true if dev channel APIs are available for plugins.
   virtual bool IsPluginAllowedToUseDevChannelAPIs();
@@ -288,6 +292,19 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns a user agent override specific for |url|, or empty string if
   // default user agent should be used.
   virtual std::string GetUserAgentOverrideForURL(const GURL& url);
+
+  // Records a sample string to a Rappor privacy-preserving metric.
+  // See: https://www.chromium.org/developers/design-documents/rappor
+  virtual void RecordRappor(const std::string& metric,
+                            const std::string& sample) {}
+
+  // Records a domain and registry of a url to a Rappor privacy-preserving
+  // metric. See: https://www.chromium.org/developers/design-documents/rappor
+  virtual void RecordRapporURL(const std::string& metric, const GURL& url) {}
+
+  // Allows an embedder to provide a blink::WebAppBannerClient.
+  virtual scoped_ptr<blink::WebAppBannerClient> CreateAppBannerClient(
+      RenderFrame* render_frame);
 };
 
 }  // namespace content

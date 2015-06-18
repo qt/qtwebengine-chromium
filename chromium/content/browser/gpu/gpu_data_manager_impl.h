@@ -72,6 +72,11 @@ class CONTENT_EXPORT GpuDataManagerImpl
   bool ShouldUseSwiftShader() const override;
   void RegisterSwiftShaderPath(const base::FilePath& path) override;
   bool ShouldUseWarp() const override;
+  // TODO(kbr): the threading model for the GpuDataManagerObservers is
+  // not well defined, and it's impossible for callers to correctly
+  // delete observers from anywhere except in one of the observer's
+  // notification methods. Observer addition and removal, and their
+  // callbacks, should probably be required to occur on the UI thread.
   void AddObserver(GpuDataManagerObserver* observer) override;
   void RemoveObserver(GpuDataManagerObserver* observer) override;
   void UnblockDomainFrom3DAPIs(const GURL& url) override;
@@ -84,6 +89,7 @@ class CONTENT_EXPORT GpuDataManagerImpl
                     std::string* gl_version) override;
   void DisableHardwareAcceleration() override;
   bool CanUseGpuBrowserCompositor() const override;
+  void GetDisabledExtensions(std::string* disabled_extensions) const override;
 
   // This collects preliminary GPU info, load GpuBlacklist, and compute the
   // preliminary blacklisted features; it should only be called at browser
@@ -120,8 +126,8 @@ class CONTENT_EXPORT GpuDataManagerImpl
   void GetBlacklistReasons(base::ListValue* reasons) const;
 
   // Returns the workarounds that are applied to the current system as
-  // a list of strings.
-  void GetDriverBugWorkarounds(base::ListValue* workarounds) const;
+  // a vector of strings.
+  std::vector<std::string> GetDriverBugWorkarounds() const;
 
   void AddLogMessage(int level,
                      const std::string& header,

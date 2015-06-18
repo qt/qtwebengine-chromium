@@ -24,13 +24,14 @@
 #ifndef HTMLLabelElement_h
 #define HTMLLabelElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/FormAssociatedElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/LabelableElement.h"
 
 namespace blink {
 
-class HTMLLabelElement final : public HTMLElement, public FormAssociatedElement {
+class CORE_EXPORT HTMLLabelElement final : public HTMLElement, public FormAssociatedElement {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLLabelElement);
 public:
@@ -39,7 +40,7 @@ public:
 
     virtual bool willRespondToMouseClickEvents() override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual HTMLFormElement* formOwner() const override;
 
@@ -53,7 +54,7 @@ private:
     explicit HTMLLabelElement(Document&, HTMLFormElement*);
     bool isInInteractiveContent(Node*) const;
 
-    virtual bool rendererIsFocusable() const override;
+    virtual bool layoutObjectIsFocusable() const override;
     virtual bool isInteractiveContent() const override;
     virtual void accessKeyAction(bool sendMouseEvents) override;
 
@@ -68,7 +69,7 @@ private:
     // Overridden to either click() or focus() the corresponding control.
     virtual void defaultEventHandler(Event*) override;
 
-    virtual void focus(bool restorePreviousSelection, FocusType) override;
+    virtual void focus(bool restorePreviousSelection, WebFocusType) override;
 
     // FormAssociatedElement methods
     virtual bool isFormControlElement() const override { return false; }

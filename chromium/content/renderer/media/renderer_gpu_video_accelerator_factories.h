@@ -13,11 +13,15 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/content_export.h"
-#include "media/filters/gpu_video_accelerator_factories.h"
-#include "ui/gfx/size.h"
+#include "media/renderers/gpu_video_accelerator_factories.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
 class WaitableEvent;
+}
+
+namespace gpu {
+class GpuMemoryBufferManager;
 }
 
 namespace content {
@@ -58,13 +62,21 @@ class CONTENT_EXPORT RendererGpuVideoAcceleratorFactories
                       uint32 texture_target) override;
   void DeleteTexture(uint32 texture_id) override;
   void WaitSyncPoint(uint32 sync_point) override;
-  void ReadPixels(uint32 texture_id,
-                  const gfx::Rect& visible_rect,
-                  const SkBitmap& pixels) override;
-  base::SharedMemory* CreateSharedMemory(size_t size) override;
+
+  scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
+      const gfx::Size& size,
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage) override;
+
+  bool IsTextureRGSupported() override;
+  gpu::gles2::GLES2Interface* GetGLES2Interface() override;
+  scoped_ptr<base::SharedMemory> CreateSharedMemory(size_t size) override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override;
+
+  std::vector<media::VideoDecodeAccelerator::SupportedProfile>
+      GetVideoDecodeAcceleratorSupportedProfiles() override;
   std::vector<media::VideoEncodeAccelerator::SupportedProfile>
-  GetVideoEncodeAcceleratorSupportedProfiles() override;
+      GetVideoEncodeAcceleratorSupportedProfiles() override;
 
  private:
   friend class base::RefCountedThreadSafe<RendererGpuVideoAcceleratorFactories>;
@@ -87,6 +99,7 @@ class CONTENT_EXPORT RendererGpuVideoAcceleratorFactories
   scoped_refptr<GpuChannelHost> gpu_channel_host_;
   scoped_refptr<ContextProviderCommandBuffer> context_provider_;
   scoped_ptr<GLHelper> gl_helper_;
+  gpu::GpuMemoryBufferManager* const gpu_memory_buffer_manager_;
 
   // For sending requests to allocate shared memory in the Browser process.
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;

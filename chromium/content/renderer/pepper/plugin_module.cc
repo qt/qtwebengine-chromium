@@ -21,6 +21,7 @@
 #include "content/renderer/pepper/pepper_hung_plugin_filter.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/pepper_plugin_registry.h"
+#include "content/renderer/pepper/plugin_instance_throttler_impl.h"
 #include "content/renderer/pepper/ppapi_preferences_builder.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_proxy_impl.h"
@@ -63,7 +64,6 @@
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
-#include "ppapi/c/ppb_file_mapping.h"
 #include "ppapi/c/ppb_file_ref.h"
 #include "ppapi/c/ppb_file_system.h"
 #include "ppapi/c/ppb_fullscreen.h"
@@ -93,10 +93,13 @@
 #include "ppapi/c/ppb_var_array_buffer.h"
 #include "ppapi/c/ppb_var_dictionary.h"
 #include "ppapi/c/ppb_video_decoder.h"
+#include "ppapi/c/ppb_video_encoder.h"
 #include "ppapi/c/ppb_video_frame.h"
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
+#include "ppapi/c/private/ppb_camera_capabilities_private.h"
+#include "ppapi/c/private/ppb_camera_device_private.h"
 #include "ppapi/c/private/ppb_ext_crx_file_system_private.h"
 #include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
@@ -118,7 +121,6 @@
 #include "ppapi/c/private/ppb_output_protection_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
-#include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppb_tcp_server_socket_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
 #include "ppapi/c/private/ppb_testing_private.h"
@@ -133,6 +135,7 @@
 #include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/shared_impl/callback_tracker.h"
+#include "ppapi/shared_impl/dictionary_var.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
@@ -178,6 +181,72 @@ PluginModuleSet* GetLivePluginSet() {
   CR_DEFINE_STATIC_LOCAL(PluginModuleSet, live_plugin_libs, ());
   return &live_plugin_libs;
 }
+
+class PowerSaverTestPluginDelegate : public PluginInstanceThrottler::Observer {
+ public:
+  explicit PowerSaverTestPluginDelegate(PluginInstanceThrottlerImpl* throttler)
+      : throttler_(throttler) {
+    throttler_->AddObserver(this);
+    PostPowerSaverStatusToJavaScript("initial");
+  }
+
+  virtual ~PowerSaverTestPluginDelegate() { throttler_->RemoveObserver(this); }
+
+  static void PostPowerSaverStatusToJavaScript(
+      PepperPluginInstanceImpl* instance,
+      const std::string& source) {
+    DCHECK(instance);
+
+    bool is_hidden_for_placeholder = false;
+    bool is_peripheral = false;
+    bool is_throttled = false;
+
+    if (instance->throttler()) {
+      PluginInstanceThrottlerImpl* throttler = instance->throttler();
+      is_hidden_for_placeholder = throttler->IsHiddenForPlaceholder();
+      is_peripheral = throttler->power_saver_enabled();
+      is_throttled = throttler->IsThrottled();
+    }
+
+    // Refcounted by the returned PP_Var.
+    ppapi::DictionaryVar* dictionary = new ppapi::DictionaryVar;
+    dictionary->Set(ppapi::StringVar::StringToPPVar("source"),
+                    ppapi::StringVar::StringToPPVar(source));
+    dictionary->Set(ppapi::StringVar::StringToPPVar("isHiddenForPlaceholder"),
+                    PP_MakeBool(PP_FromBool(is_hidden_for_placeholder)));
+    dictionary->Set(ppapi::StringVar::StringToPPVar("isPeripheral"),
+                    PP_MakeBool(PP_FromBool(is_peripheral)));
+    dictionary->Set(ppapi::StringVar::StringToPPVar("isThrottled"),
+                    PP_MakeBool(PP_FromBool(is_throttled)));
+
+    instance->PostMessageToJavaScript(dictionary->GetPPVar());
+  }
+
+ private:
+  void OnThrottleStateChange() override {
+    PostPowerSaverStatusToJavaScript("throttleStatusChange");
+  }
+
+  void OnPeripheralStateChange() override {
+    PostPowerSaverStatusToJavaScript("peripheralStatusChange");
+  }
+
+  void OnHiddenForPlaceholder(bool hidden) override {
+    PostPowerSaverStatusToJavaScript("hiddenForPlaceholderStatusChange");
+  }
+
+  void OnThrottlerDestroyed() override { delete this; }
+
+  void PostPowerSaverStatusToJavaScript(const std::string& source) {
+    if (!throttler_->GetWebPlugin() || !throttler_->GetWebPlugin()->instance())
+      return;
+    PostPowerSaverStatusToJavaScript(throttler_->GetWebPlugin()->instance(),
+                                     source);
+  }
+
+  // Non-owning pointer.
+  PluginInstanceThrottlerImpl* const throttler_;
+};
 
 // PPB_Core --------------------------------------------------------------------
 
@@ -244,6 +313,32 @@ uint32_t GetLiveObjectsForInstance(PP_Instance instance_id) {
 
 PP_Bool IsOutOfProcess() { return PP_FALSE; }
 
+void PostPowerSaverStatus(PP_Instance instance_id) {
+  PepperPluginInstanceImpl* plugin_instance =
+      host_globals->GetInstance(instance_id);
+  if (!plugin_instance)
+    return;
+
+  PowerSaverTestPluginDelegate::PostPowerSaverStatusToJavaScript(
+      plugin_instance, "getPowerSaverStatusResponse");
+}
+
+void SubscribeToPowerSaverNotifications(PP_Instance instance_id) {
+  PepperPluginInstanceImpl* plugin_instance =
+      host_globals->GetInstance(instance_id);
+  if (!plugin_instance)
+    return;
+
+  if (plugin_instance->throttler()) {
+    // Manages its own lifetime.
+    new PowerSaverTestPluginDelegate(plugin_instance->throttler());
+  } else {
+    // Just send an initial status. This status will never be updated.
+    PowerSaverTestPluginDelegate::PostPowerSaverStatusToJavaScript(
+        plugin_instance, "initial");
+  }
+}
+
 void SimulateInputEvent(PP_Instance instance, PP_Resource input_event) {
   PepperPluginInstanceImpl* plugin_instance =
       host_globals->GetInstance(instance);
@@ -287,11 +382,18 @@ void RunV8GC(PP_Instance instance) {
 }
 
 const PPB_Testing_Private testing_interface = {
-    &ReadImageData,                    &RunMessageLoop,
-    &QuitMessageLoop,                  &GetLiveObjectsForInstance,
-    &IsOutOfProcess,                   &SimulateInputEvent,
-    &GetDocumentURL,                   &GetLiveVars,
-    &SetMinimumArrayBufferSizeForShmem,&RunV8GC};
+    &ReadImageData,
+    &RunMessageLoop,
+    &QuitMessageLoop,
+    &GetLiveObjectsForInstance,
+    &IsOutOfProcess,
+    &PostPowerSaverStatus,
+    &SubscribeToPowerSaverNotifications,
+    &SimulateInputEvent,
+    &GetDocumentURL,
+    &GetLiveVars,
+    &SetMinimumArrayBufferSizeForShmem,
+    &RunV8GC};
 
 // GetInterface ----------------------------------------------------------------
 
@@ -327,7 +429,7 @@ const void* InternalGetInterface(const char* name) {
   // Only support the testing interface when the command line switch is
   // specified. This allows us to prevent people from (ab)using this interface
   // in production code.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnablePepperTesting)) {
     if (strcmp(name, PPB_TESTING_PRIVATE_INTERFACE) == 0)
       return &testing_interface;

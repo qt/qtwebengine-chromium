@@ -70,6 +70,10 @@
     "documentation": "devtools",
     "example": "devtools.html"
   },
+  "export": {
+    "documentation": "shared_modules",
+    "example": {}
+  },
   "externally_connectable": {
     "documentation": "manifest/externally_connectable",
     "example": {
@@ -84,6 +88,14 @@
     "documentation": "manifest/file_handlers",
     "example": {}
   },
+  "file_system_provider_capabilities": {
+    "documentation": "manifest/file_system_provider",
+    "example": {
+      "configurable": true,
+      "multiple_mounts": true,
+      "source": "network"
+    }
+  },
   "homepage_url": {
     "documentation": "manifest/homepage_url",
     "example": "http://path/to/homepage"
@@ -92,6 +104,10 @@
     "documentation": "manifest/icons",
     "example": {},
     "level": "recommended"
+  },
+  "import": {
+    "documentation": "shared_modules",
+    "example": [{"id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]
   },
   "incognito": {
     "documentation": "manifest/incognito",
@@ -206,10 +222,20 @@
     "documentation": "manifest/url_handlers",
     "example": {}
   },
+  "usb_printers": {
+    "documentation": "manifest/usb_printers",
+    "example": {
+      "filters": []
+    }
+  },
   "version": {
     "documentation": "manifest/version",
     "example": "versionString",
     "level": "required"
+  },
+  "version_name": {
+    "documentation": "manifest/version",
+    "example": "aString"
   },
   "web_accessible_resources": {
     "documentation": "manifest/web_accessible_resources",

@@ -84,8 +84,6 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
         reference_params->testing_fixed_https_port;
     session_params.next_protos = reference_params->next_protos;
     session_params.trusted_spdy_proxy = reference_params->trusted_spdy_proxy;
-    session_params.force_spdy_over_ssl = reference_params->force_spdy_over_ssl;
-    session_params.force_spdy_always = reference_params->force_spdy_always;
     session_params.forced_spdy_exclusions =
         reference_params->forced_spdy_exclusions;
     session_params.use_alternate_protocols =
@@ -346,10 +344,22 @@ bool ProxyResolvingClientSocket::IsConnectedAndIdle() const {
 
 int ProxyResolvingClientSocket::GetPeerAddress(
     net::IPEndPoint* address) const {
-  if (transport_.get() && transport_->socket())
+  if (!transport_.get() || !transport_->socket()) {
+    NOTREACHED();
+    return net::ERR_SOCKET_NOT_CONNECTED;
+  }
+
+  if (proxy_info_.is_direct())
     return transport_->socket()->GetPeerAddress(address);
-  NOTREACHED();
-  return net::ERR_SOCKET_NOT_CONNECTED;
+
+  net::IPAddressNumber ip_number;
+  if (!net::ParseIPLiteralToNumber(dest_host_port_pair_.host(), &ip_number)) {
+    // Do not expose the proxy IP address to the caller.
+    return net::ERR_NAME_NOT_RESOLVED;
+  }
+
+  *address = net::IPEndPoint(ip_number, dest_host_port_pair_.port());
+  return net::OK;
 }
 
 int ProxyResolvingClientSocket::GetLocalAddress(
@@ -408,6 +418,11 @@ net::NextProto ProxyResolvingClientSocket::GetNegotiatedProtocol() const {
 
 bool ProxyResolvingClientSocket::GetSSLInfo(net::SSLInfo* ssl_info) {
   return false;
+}
+
+void ProxyResolvingClientSocket::GetConnectionAttempts(
+    net::ConnectionAttempts* out) const {
+  out->clear();
 }
 
 void ProxyResolvingClientSocket::CloseTransportSocket() {

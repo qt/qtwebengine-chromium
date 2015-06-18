@@ -9,9 +9,9 @@
 
 #include "base/basictypes.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
 #include "ui/gfx/screen_type_delegate.h"
 
 namespace gfx {
@@ -37,6 +37,8 @@ class GFX_EXPORT Screen {
 
   // Sets the global screen for a particular screen type. Only the _NATIVE
   // ScreenType must be provided.
+  // NOTE: this does not take ownership of |screen|. Tests must be sure to
+  // reset any state they install.
   static void SetScreenInstance(ScreenType type, Screen* instance);
 
   // Returns the global screen for a particular type. Types other than _NATIVE
@@ -45,6 +47,8 @@ class GFX_EXPORT Screen {
 
   // Sets the global ScreenTypeDelegate. May be left unset if the platform
   // uses only the _NATIVE ScreenType.
+  // NOTE: this does not take ownership of |delegate|. Tests must be sure to
+  // reset any state they install.
   static void SetScreenTypeDelegate(ScreenTypeDelegate* delegate);
 
   Screen();
@@ -72,7 +76,7 @@ class GFX_EXPORT Screen {
   // return the primary display.
   virtual gfx::Display GetDisplayNearestWindow(NativeView view) const = 0;
 
-  // Returns the display nearest the specified point.
+  // Returns the display nearest the specified point. |point| should be in DIPs.
   virtual gfx::Display GetDisplayNearestPoint(
       const gfx::Point& point) const = 0;
 

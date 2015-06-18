@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/location.h"
+#include "base/time/time.h"
 #include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/loader/navigation_resource_handler.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
@@ -36,16 +37,18 @@ NavigationURLLoaderImplCore::~NavigationURLLoaderImplCore() {
 
 void NavigationURLLoaderImplCore::Start(
     ResourceContext* resource_context,
-    int64 frame_tree_node_id,
-    const CommonNavigationParams& common_params,
-    scoped_ptr<NavigationRequestInfo> request_info,
-    ResourceRequestBody* request_body) {
+    int frame_tree_node_id,
+    scoped_ptr<NavigationRequestInfo> request_info) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&NavigationURLLoaderImpl::NotifyRequestStarted, loader_,
+                 base::TimeTicks::Now()));
 
   ResourceDispatcherHostImpl::Get()->BeginNavigationRequest(
       resource_context, frame_tree_node_id,
-      common_params, *request_info, request_body,
-      this);
+      *request_info, this);
 }
 
 void NavigationURLLoaderImplCore::FollowRedirect() {
@@ -92,13 +95,14 @@ void NavigationURLLoaderImplCore::NotifyResponseStarted(
                  response->DeepCopy(), base::Passed(&body)));
 }
 
-void NavigationURLLoaderImplCore::NotifyRequestFailed(int net_error) {
+void NavigationURLLoaderImplCore::NotifyRequestFailed(bool in_cache,
+                                                      int net_error) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&NavigationURLLoaderImpl::NotifyRequestFailed, loader_,
-                 net_error));
+                 in_cache, net_error));
 }
 
 }  // namespace content

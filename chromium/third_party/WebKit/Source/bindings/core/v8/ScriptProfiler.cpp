@@ -38,6 +38,7 @@
 #include "bindings/core/v8/V8Window.h"
 #include "bindings/core/v8/WrapperTypeInfo.h"
 #include "core/dom/Document.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/BindingVisitors.h"
 #include "wtf/ThreadSpecific.h"
 
@@ -104,14 +105,14 @@ ScriptValue ScriptProfiler::objectByHeapObjectId(unsigned id)
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> value = profiler->FindObjectById(id);
+    v8::Local<v8::Value> value = profiler->FindObjectById(id);
     if (value.IsEmpty() || !value->IsObject())
         return ScriptValue();
 
-    v8::Handle<v8::Object> object = value.As<v8::Object>();
+    v8::Local<v8::Object> object = value.As<v8::Object>();
 
     if (object->InternalFieldCount() >= v8DefaultWrapperInternalFieldCount) {
-        v8::Handle<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
+        v8::Local<v8::Value> wrapper = object->GetInternalField(v8DOMWrapperObjectIndex);
         // Skip wrapper boilerplates which are like regular wrappers but don't have
         // native object.
         if (!wrapper.IsEmpty() && wrapper->IsUndefined())
@@ -163,12 +164,12 @@ private:
 
 class GlobalObjectNameResolver final : public v8::HeapProfiler::ObjectNameResolver {
 public:
-    virtual const char* GetName(v8::Handle<v8::Object> object) override
+    virtual const char* GetName(v8::Local<v8::Object> object) override
     {
-        LocalDOMWindow* window = toDOMWindow(object, v8::Isolate::GetCurrent());
+        DOMWindow* window = toDOMWindow(v8::Isolate::GetCurrent(), object);
         if (!window)
             return 0;
-        CString url = window->document()->url().string().utf8();
+        CString url = toLocalDOMWindow(window)->document()->url().string().utf8();
         m_strings.append(url);
         return url.data();
     }
@@ -228,7 +229,7 @@ void ScriptProfiler::stopTrackingHeapObjects()
 }
 
 // FIXME: This method should receive a ScriptState, from which we should retrieve an Isolate.
-PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& title, HeapSnapshotProgress* control)
+PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(HeapSnapshotProgress* control)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
@@ -238,11 +239,11 @@ PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& ti
     ASSERT(control);
     ActivityControlAdapter adapter(control);
     GlobalObjectNameResolver resolver;
-    const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(v8String(isolate, title), &adapter, &resolver);
+    const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(&adapter, &resolver);
     return snapshot ? ScriptHeapSnapshot::create(snapshot) : nullptr;
 }
 
-static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Handle<v8::Value> wrapper)
+static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Local<v8::Value> wrapper)
 {
     ASSERT(classId == WrapperTypeInfo::NodeClassId);
     if (!wrapper->IsObject())
@@ -289,7 +290,7 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
                 ASSERT(wrapper->IsObject());
             }
 #endif
-            m_visitor->visitNode(toScriptWrappableBase(v8::Persistent<v8::Object>::Cast(*value))->toImpl<Node>());
+            m_visitor->visitNode(toScriptWrappable(v8::Persistent<v8::Object>::Cast(*value))->toImpl<Node>());
         }
 
     private:
@@ -304,8 +305,8 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
 
 ProfileNameIdleTimeMap* ScriptProfiler::currentProfileNameIdleTimeMap()
 {
-    AtomicallyInitializedStatic(WTF::ThreadSpecific<ProfileNameIdleTimeMap>*, map = new WTF::ThreadSpecific<ProfileNameIdleTimeMap>);
-    return *map;
+    AtomicallyInitializedStaticReference(WTF::ThreadSpecific<ProfileNameIdleTimeMap>, map, new WTF::ThreadSpecific<ProfileNameIdleTimeMap>);
+    return map;
 }
 
 void ScriptProfiler::setIdle(bool isIdle)

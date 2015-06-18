@@ -4,53 +4,36 @@
 
 #include "content/child/bluetooth/web_bluetooth_impl.h"
 
+#include "content/child/bluetooth/bluetooth_dispatcher.h"
+#include "content/child/thread_safe_sender.h"
+
 namespace content {
 
-WebBluetoothImpl::WebBluetoothImpl()
-    : m_bluetoothMockDataSet(MockData::NOT_MOCKING),
-      m_bluetoothRequestDeviceRejectType(
-          blink::WebBluetoothError::NotFoundError) {
+WebBluetoothImpl::WebBluetoothImpl(ThreadSafeSender* thread_safe_sender)
+    : thread_safe_sender_(thread_safe_sender) {
+}
+
+WebBluetoothImpl::~WebBluetoothImpl() {
 }
 
 void WebBluetoothImpl::requestDevice(
     blink::WebBluetoothRequestDeviceCallbacks* callbacks) {
-  // Mock implementation of blink::WebBluetooth until a more complete
-  // implementation is built out.
-  switch (m_bluetoothMockDataSet) {
-    case MockData::NOT_MOCKING: {
-      blink::WebBluetoothError* error = new blink::WebBluetoothError(
-          blink::WebBluetoothError::NotFoundError, "");
-      callbacks->onError(error);
-      break;
-    }
-    case MockData::REJECT: {
-      blink::WebBluetoothError* error =
-          new blink::WebBluetoothError(m_bluetoothRequestDeviceRejectType, "");
-      callbacks->onError(error);
-      break;
-    }
-    case MockData::RESOLVE: {
-      callbacks->onSuccess();
-      break;
-    }
-  }
+  GetDispatcher()->requestDevice(callbacks);
+}
+
+void WebBluetoothImpl::connectGATT(const blink::WebString& device_instance_id,
+    blink::WebBluetoothConnectGATTCallbacks* callbacks) {
+  GetDispatcher()->connectGATT(device_instance_id, callbacks);
 }
 
 void WebBluetoothImpl::SetBluetoothMockDataSetForTesting(
     const std::string& name) {
-  if (name == "RejectRequestDevice_NotFoundError") {
-    m_bluetoothMockDataSet = MockData::REJECT;
-    m_bluetoothRequestDeviceRejectType =
-        blink::WebBluetoothError::NotFoundError;
-  } else if (name == "RejectRequestDevice_SecurityError") {
-    m_bluetoothMockDataSet = MockData::REJECT;
-    m_bluetoothRequestDeviceRejectType =
-        blink::WebBluetoothError::SecurityError;
-  } else if (name == "ResolveRequestDevice_Empty") {
-    m_bluetoothMockDataSet = MockData::RESOLVE;
-  } else {
-    m_bluetoothMockDataSet = MockData::NOT_MOCKING;
-  }
+  GetDispatcher()->SetBluetoothMockDataSetForTesting(name);
+}
+
+BluetoothDispatcher* WebBluetoothImpl::GetDispatcher() {
+  return BluetoothDispatcher::GetOrCreateThreadSpecificInstance(
+      thread_safe_sender_.get());
 }
 
 }  // namespace content

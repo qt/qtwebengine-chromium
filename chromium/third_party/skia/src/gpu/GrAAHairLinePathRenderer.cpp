@@ -7,19 +7,25 @@
 
 #include "GrAAHairLinePathRenderer.h"
 
+#include "GrBatch.h"
+#include "GrBatchTarget.h"
+#include "GrBatchTest.h"
 #include "GrContext.h"
-#include "GrDrawState.h"
+#include "GrDefaultGeoProcFactory.h"
 #include "GrDrawTargetCaps.h"
-#include "GrProcessor.h"
-#include "GrGpu.h"
 #include "GrIndexBuffer.h"
 #include "GrPathUtils.h"
-#include "GrTBackendProcessorFactory.h"
+#include "GrPipelineBuilder.h"
+#include "GrProcessor.h"
+#include "GrResourceProvider.h"
+#include "GrVertexBuffer.h"
 #include "SkGeometry.h"
 #include "SkStroke.h"
 #include "SkTemplates.h"
 
 #include "effects/GrBezierEffect.h"
+
+#define PREALLOC_PTARRAY(N) SkSTArray<(N),SkPoint, true>
 
 // quadratics are rendered as 5-sided polys in order to bound the
 // AA stroke around the center-curve. See comments in push_quad_index_buffer and
@@ -45,7 +51,8 @@
 //     a0              c0
 //      a            c
 //       a1       c1
-// Each is drawn as three triangles specified by these 9 indices:
+// Each is drawn as three triangles ((a0,a1,b0), (b0,c1,c0), (a1,c1,b0))
+// specified by these 9 indices:
 static const uint16_t kQuadIdxBufPattern[] = {
     0, 1, 2,
     2, 4, 3,
@@ -55,6 +62,14 @@ static const uint16_t kQuadIdxBufPattern[] = {
 static const int kIdxsPerQuad = SK_ARRAY_COUNT(kQuadIdxBufPattern);
 static const int kQuadNumVertices = 5;
 static const int kQuadsNumInIdxBuffer = 256;
+GR_DECLARE_STATIC_UNIQUE_KEY(gQuadsIndexBufferKey);
+
+static const GrIndexBuffer* ref_quads_index_buffer(GrResourceProvider* resourceProvider) {
+    GR_DEFINE_STATIC_UNIQUE_KEY(gQuadsIndexBufferKey);
+    return resourceProvider->refOrCreateInstancedIndexBuffer(
+        kQuadIdxBufPattern, kIdxsPerQuad, kQuadsNumInIdxBuffer, kQuadNumVertices,
+        gQuadsIndexBufferKey);
+}
 
 
 // Each line segment is rendered as two quads and two triangles.
@@ -81,43 +96,17 @@ static const int kIdxsPerLineSeg = SK_ARRAY_COUNT(kLineSegIdxBufPattern);
 static const int kLineSegNumVertices = 6;
 static const int kLineSegsNumInIdxBuffer = 256;
 
-GrPathRenderer* GrAAHairLinePathRenderer::Create(GrContext* context) {
-    GrGpu* gpu = context->getGpu();
-    GrIndexBuffer* qIdxBuf = gpu->createInstancedIndexBuffer(kQuadIdxBufPattern,
-                                                             kIdxsPerQuad,
-                                                             kQuadsNumInIdxBuffer,
-                                                             kQuadNumVertices);
-    SkAutoTUnref<GrIndexBuffer> qIdxBuffer(qIdxBuf);
-    GrIndexBuffer* lIdxBuf = gpu->createInstancedIndexBuffer(kLineSegIdxBufPattern,
-                                                             kIdxsPerLineSeg,
-                                                             kLineSegsNumInIdxBuffer,
-                                                             kLineSegNumVertices);
-    SkAutoTUnref<GrIndexBuffer> lIdxBuffer(lIdxBuf);
-    return SkNEW_ARGS(GrAAHairLinePathRenderer,
-                      (context, lIdxBuf, qIdxBuf));
+GR_DECLARE_STATIC_UNIQUE_KEY(gLinesIndexBufferKey);
+
+static const GrIndexBuffer* ref_lines_index_buffer(GrResourceProvider* resourceProvider) {
+    GR_DEFINE_STATIC_UNIQUE_KEY(gLinesIndexBufferKey);
+    return resourceProvider->refOrCreateInstancedIndexBuffer(
+        kLineSegIdxBufPattern, kIdxsPerLineSeg,  kLineSegsNumInIdxBuffer, kLineSegNumVertices,
+        gLinesIndexBufferKey);
 }
-
-GrAAHairLinePathRenderer::GrAAHairLinePathRenderer(
-                                        const GrContext* context,
-                                        const GrIndexBuffer* linesIndexBuffer,
-                                        const GrIndexBuffer* quadsIndexBuffer) {
-    fLinesIndexBuffer = linesIndexBuffer;
-    linesIndexBuffer->ref();
-    fQuadsIndexBuffer = quadsIndexBuffer;
-    quadsIndexBuffer->ref();
-}
-
-GrAAHairLinePathRenderer::~GrAAHairLinePathRenderer() {
-    fLinesIndexBuffer->unref();
-    fQuadsIndexBuffer->unref();
-}
-
-namespace {
-
-#define PREALLOC_PTARRAY(N) SkSTArray<(N),SkPoint, true>
 
 // Takes 178th time of logf on Z600 / VC2010
-int get_float_exp(float x) {
+static int get_float_exp(float x) {
     GR_STATIC_ASSERT(sizeof(int) == sizeof(float));
 #ifdef SK_DEBUG
     static bool tested;
@@ -145,7 +134,7 @@ int get_float_exp(float x) {
 // found along the curve segment it will return 1 and
 // dst[0] is the original conic. If it returns 2 the dst[0]
 // and dst[1] are the two new conics.
-int split_conic(const SkPoint src[3], SkConic dst[2], const SkScalar weight) {
+static int split_conic(const SkPoint src[3], SkConic dst[2], const SkScalar weight) {
     SkScalar t = SkFindQuadMaxCurvature(src);
     if (t == 0) {
         if (dst) {
@@ -165,7 +154,7 @@ int split_conic(const SkPoint src[3], SkConic dst[2], const SkScalar weight) {
 // Calls split_conic on the entire conic and then once more on each subsection.
 // Most cases will result in either 1 conic (chop point is not within t range)
 // or 3 points (split once and then one subsection is split again).
-int chop_conic(const SkPoint src[3], SkConic dst[4], const SkScalar weight) {
+static int chop_conic(const SkPoint src[3], SkConic dst[4], const SkScalar weight) {
     SkConic dstTemp[2];
     int conicCnt = split_conic(src, dstTemp, weight);
     if (2 == conicCnt) {
@@ -180,8 +169,8 @@ int chop_conic(const SkPoint src[3], SkConic dst[4], const SkScalar weight) {
 // returns 0 if quad/conic is degen or close to it
 // in this case approx the path with lines
 // otherwise returns 1
-int is_degen_quad_or_conic(const SkPoint p[3]) {
-    static const SkScalar gDegenerateToLineTol = SK_Scalar1;
+static int is_degen_quad_or_conic(const SkPoint p[3], SkScalar* dsqd) {
+    static const SkScalar gDegenerateToLineTol = GrPathUtils::kDefaultTolerance;
     static const SkScalar gDegenerateToLineTolSqd =
         SkScalarMul(gDegenerateToLineTol, gDegenerateToLineTol);
 
@@ -190,8 +179,8 @@ int is_degen_quad_or_conic(const SkPoint p[3]) {
         return 1;
     }
 
-    SkScalar dsqd = p[1].distanceToLineBetweenSqd(p[0], p[2]);
-    if (dsqd < gDegenerateToLineTolSqd) {
+    *dsqd = p[1].distanceToLineBetweenSqd(p[0], p[2]);
+    if (*dsqd < gDegenerateToLineTolSqd) {
         return 1;
     }
 
@@ -201,24 +190,16 @@ int is_degen_quad_or_conic(const SkPoint p[3]) {
     return 0;
 }
 
+static int is_degen_quad_or_conic(const SkPoint p[3]) {
+    SkScalar dsqd;
+    return is_degen_quad_or_conic(p, &dsqd);
+}
+
 // we subdivide the quads to avoid huge overfill
 // if it returns -1 then should be drawn as lines
-int num_quad_subdivs(const SkPoint p[3]) {
-    static const SkScalar gDegenerateToLineTol = SK_Scalar1;
-    static const SkScalar gDegenerateToLineTolSqd =
-        SkScalarMul(gDegenerateToLineTol, gDegenerateToLineTol);
-
-    if (p[0].distanceToSqd(p[1]) < gDegenerateToLineTolSqd ||
-        p[1].distanceToSqd(p[2]) < gDegenerateToLineTolSqd) {
-        return -1;
-    }
-
-    SkScalar dsqd = p[1].distanceToLineBetweenSqd(p[0], p[2]);
-    if (dsqd < gDegenerateToLineTolSqd) {
-        return -1;
-    }
-
-    if (p[2].distanceToLineBetweenSqd(p[1], p[0]) < gDegenerateToLineTolSqd) {
+static int num_quad_subdivs(const SkPoint p[3]) {
+    SkScalar dsqd;
+    if (is_degen_quad_or_conic(p, &dsqd)) {
         return -1;
     }
 
@@ -252,14 +233,14 @@ int num_quad_subdivs(const SkPoint p[3]) {
  * subdivide large quads to reduce over-fill. This subdivision has to be
  * performed before applying the perspective matrix.
  */
-int generate_lines_and_quads(const SkPath& path,
-                             const SkMatrix& m,
-                             const SkIRect& devClipBounds,
-                             GrAAHairLinePathRenderer::PtArray* lines,
-                             GrAAHairLinePathRenderer::PtArray* quads,
-                             GrAAHairLinePathRenderer::PtArray* conics,
-                             GrAAHairLinePathRenderer::IntArray* quadSubdivCnts,
-                             GrAAHairLinePathRenderer::FloatArray* conicWeights) {
+static int gather_lines_and_quads(const SkPath& path,
+                                  const SkMatrix& m,
+                                  const SkIRect& devClipBounds,
+                                  GrAAHairLinePathRenderer::PtArray* lines,
+                                  GrAAHairLinePathRenderer::PtArray* quads,
+                                  GrAAHairLinePathRenderer::PtArray* conics,
+                                  GrAAHairLinePathRenderer::IntArray* quadSubdivCnts,
+                                  GrAAHairLinePathRenderer::FloatArray* conicWeights) {
     SkPath::Iter iter(path, false);
 
     int totalQuadCount = 0;
@@ -443,9 +424,9 @@ struct BezierVertex {
 
 GR_STATIC_ASSERT(sizeof(BezierVertex) == 3 * sizeof(SkPoint));
 
-void intersect_lines(const SkPoint& ptA, const SkVector& normA,
-                     const SkPoint& ptB, const SkVector& normB,
-                     SkPoint* result) {
+static void intersect_lines(const SkPoint& ptA, const SkVector& normA,
+                            const SkPoint& ptB, const SkVector& normB,
+                            SkPoint* result) {
 
     SkScalar lineAW = -normA.dot(ptA);
     SkScalar lineBW = -normB.dot(ptB);
@@ -461,15 +442,14 @@ void intersect_lines(const SkPoint& ptA, const SkVector& normA,
     result->fY = SkScalarMul(result->fY, wInv);
 }
 
-void set_uv_quad(const SkPoint qpts[3], BezierVertex verts[kQuadNumVertices]) {
+static void set_uv_quad(const SkPoint qpts[3], BezierVertex verts[kQuadNumVertices]) {
     // this should be in the src space, not dev coords, when we have perspective
     GrPathUtils::QuadUVMatrix DevToUV(qpts);
     DevToUV.apply<kQuadNumVertices, sizeof(BezierVertex), sizeof(SkPoint)>(verts);
 }
 
-void bloat_quad(const SkPoint qpts[3], const SkMatrix* toDevice,
-                const SkMatrix* toSrc, BezierVertex verts[kQuadNumVertices],
-                SkRect* devBounds) {
+static void bloat_quad(const SkPoint qpts[3], const SkMatrix* toDevice,
+                       const SkMatrix* toSrc, BezierVertex verts[kQuadNumVertices]) {
     SkASSERT(!toDevice == !toSrc);
     // original quad is specified by tri a,b,c
     SkPoint a = qpts[0];
@@ -534,7 +514,6 @@ void bloat_quad(const SkPoint qpts[3], const SkMatrix* toDevice,
     c1.fPos -= cbN;
 
     intersect_lines(a0.fPos, abN, c0.fPos, cbN, &b0.fPos);
-    devBounds->growToInclude(&verts[0].fPos, sizeof(BezierVertex), kQuadNumVertices);
 
     if (toSrc) {
         toSrc->mapPointsWithStride(&verts[0].fPos, sizeof(BezierVertex), kQuadNumVertices);
@@ -548,8 +527,8 @@ void bloat_quad(const SkPoint qpts[3], const SkMatrix* toDevice,
 // f(x, y, w) = f(P) = K^2 - LM
 // K = dot(k, P), L = dot(l, P), M = dot(m, P)
 // k, l, m are calculated in function GrPathUtils::getConicKLM
-void set_conic_coeffs(const SkPoint p[3], BezierVertex verts[kQuadNumVertices],
-                      const SkScalar weight) {
+static void set_conic_coeffs(const SkPoint p[3], BezierVertex verts[kQuadNumVertices],
+                             const SkScalar weight) {
     SkScalar klm[9];
 
     GrPathUtils::getConicKLM(p, weight, klm);
@@ -562,40 +541,38 @@ void set_conic_coeffs(const SkPoint p[3], BezierVertex verts[kQuadNumVertices],
     }
 }
 
-void add_conics(const SkPoint p[3],
-                const SkScalar weight,
-                const SkMatrix* toDevice,
-                const SkMatrix* toSrc,
-                BezierVertex** vert,
-                SkRect* devBounds) {
-    bloat_quad(p, toDevice, toSrc, *vert, devBounds);
+static void add_conics(const SkPoint p[3],
+                       const SkScalar weight,
+                       const SkMatrix* toDevice,
+                       const SkMatrix* toSrc,
+                       BezierVertex** vert) {
+    bloat_quad(p, toDevice, toSrc, *vert);
     set_conic_coeffs(p, *vert, weight);
     *vert += kQuadNumVertices;
 }
 
-void add_quads(const SkPoint p[3],
-               int subdiv,
-               const SkMatrix* toDevice,
-               const SkMatrix* toSrc,
-               BezierVertex** vert,
-               SkRect* devBounds) {
+static void add_quads(const SkPoint p[3],
+                      int subdiv,
+                      const SkMatrix* toDevice,
+                      const SkMatrix* toSrc,
+                      BezierVertex** vert) {
     SkASSERT(subdiv >= 0);
     if (subdiv) {
         SkPoint newP[5];
         SkChopQuadAtHalf(p, newP);
-        add_quads(newP + 0, subdiv-1, toDevice, toSrc, vert, devBounds);
-        add_quads(newP + 2, subdiv-1, toDevice, toSrc, vert, devBounds);
+        add_quads(newP + 0, subdiv-1, toDevice, toSrc, vert);
+        add_quads(newP + 2, subdiv-1, toDevice, toSrc, vert);
     } else {
-        bloat_quad(p, toDevice, toSrc, *vert, devBounds);
+        bloat_quad(p, toDevice, toSrc, *vert);
         set_uv_quad(p, *vert);
         *vert += kQuadNumVertices;
     }
 }
 
-void add_line(const SkPoint p[2],
-              const SkMatrix* toSrc,
-              uint8_t coverage,
-              LineVertex** vert) {
+static void add_line(const SkPoint p[2],
+                     const SkMatrix* toSrc,
+                     uint8_t coverage,
+                     LineVertex** vert) {
     const SkPoint& a = p[0];
     const SkPoint& b = p[1];
 
@@ -637,165 +614,40 @@ void add_line(const SkPoint p[2],
     *vert += kLineSegNumVertices;
 }
 
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
-namespace {
-
-// position + edge
-extern const GrVertexAttrib gHairlineBezierAttribs[] = {
-    {kVec2f_GrVertexAttribType, 0,                  kPosition_GrVertexAttribBinding},
-    {kVec4f_GrVertexAttribType, sizeof(SkPoint),    kGeometryProcessor_GrVertexAttribBinding}
-};
-
-// position + coverage
-extern const GrVertexAttrib gHairlineLineAttribs[] = {
-    {kVec2f_GrVertexAttribType,  0,               kPosition_GrVertexAttribBinding},
-    {kFloat_GrVertexAttribType, sizeof(SkPoint), kCoverage_GrVertexAttribBinding},
-};
-
-};
-
-bool GrAAHairLinePathRenderer::createLineGeom(const SkPath& path,
-                                              GrDrawTarget* target,
-                                              const PtArray& lines,
-                                              int lineCnt,
-                                              GrDrawTarget::AutoReleaseGeometry* arg,
-                                              SkRect* devBounds) {
-    GrDrawState* drawState = target->drawState();
-
-    const SkMatrix& viewM = drawState->getViewMatrix();
-
-    int vertCnt = kLineSegNumVertices * lineCnt;
-
-    drawState->setVertexAttribs<gHairlineLineAttribs>(SK_ARRAY_COUNT(gHairlineLineAttribs),
-                                                      sizeof(LineVertex));
-
-    if (!arg->set(target, vertCnt, 0)) {
-        return false;
-    }
-
-    LineVertex* verts = reinterpret_cast<LineVertex*>(arg->vertices());
-
-    const SkMatrix* toSrc = NULL;
-    SkMatrix ivm;
-
-    if (viewM.hasPerspective()) {
-        if (viewM.invert(&ivm)) {
-            toSrc = &ivm;
-        }
-    }
-    devBounds->set(lines.begin(), lines.count());
-    for (int i = 0; i < lineCnt; ++i) {
-        add_line(&lines[2*i], toSrc, drawState->getCoverage(), &verts);
-    }
-    // All the verts computed by add_line are within sqrt(1^2 + 0.5^2) of the end points.
-    static const SkScalar kSqrtOfOneAndAQuarter = 1.118f;
-    // Add a little extra to account for vector normalization precision.
-    static const SkScalar kOutset = kSqrtOfOneAndAQuarter + SK_Scalar1 / 20;
-    devBounds->outset(kOutset, kOutset);
-
-    return true;
-}
-
-bool GrAAHairLinePathRenderer::createBezierGeom(
-                                          const SkPath& path,
-                                          GrDrawTarget* target,
-                                          const PtArray& quads,
-                                          int quadCnt,
-                                          const PtArray& conics,
-                                          int conicCnt,
-                                          const IntArray& qSubdivs,
-                                          const FloatArray& cWeights,
-                                          GrDrawTarget::AutoReleaseGeometry* arg,
-                                          SkRect* devBounds) {
-    GrDrawState* drawState = target->drawState();
-
-    const SkMatrix& viewM = drawState->getViewMatrix();
-
-    int vertCnt = kQuadNumVertices * quadCnt + kQuadNumVertices * conicCnt;
-
-    int vAttribCnt = SK_ARRAY_COUNT(gHairlineBezierAttribs);
-    target->drawState()->setVertexAttribs<gHairlineBezierAttribs>(vAttribCnt, sizeof(BezierVertex));
-
-    if (!arg->set(target, vertCnt, 0)) {
-        return false;
-    }
-
-    BezierVertex* verts = reinterpret_cast<BezierVertex*>(arg->vertices());
-
-    const SkMatrix* toDevice = NULL;
-    const SkMatrix* toSrc = NULL;
-    SkMatrix ivm;
-
-    if (viewM.hasPerspective()) {
-        if (viewM.invert(&ivm)) {
-            toDevice = &viewM;
-            toSrc = &ivm;
-        }
-    }
-
-    // Seed the dev bounds with some pts known to be inside. Each quad and conic grows the bounding
-    // box to include its vertices.
-    SkPoint seedPts[2];
-    if (quadCnt) {
-        seedPts[0] = quads[0];
-        seedPts[1] = quads[2];
-    } else if (conicCnt) {
-        seedPts[0] = conics[0];
-        seedPts[1] = conics[2];
-    }
-    if (toDevice) {
-        toDevice->mapPoints(seedPts, 2);
-    }
-    devBounds->set(seedPts[0], seedPts[1]);
-
-    int unsubdivQuadCnt = quads.count() / 3;
-    for (int i = 0; i < unsubdivQuadCnt; ++i) {
-        SkASSERT(qSubdivs[i] >= 0);
-        add_quads(&quads[3*i], qSubdivs[i], toDevice, toSrc, &verts, devBounds);
-    }
-
-    // Start Conics
-    for (int i = 0; i < conicCnt; ++i) {
-        add_conics(&conics[3*i], cWeights[i], toDevice, toSrc, &verts, devBounds);
-    }
-    return true;
-}
-
-bool GrAAHairLinePathRenderer::canDrawPath(const SkPath& path,
-                                           const SkStrokeRec& stroke,
-                                           const GrDrawTarget* target,
+bool GrAAHairLinePathRenderer::canDrawPath(const GrDrawTarget* target,
+                                           const GrPipelineBuilder* pipelineBuilder,
+                                           const SkMatrix& viewMatrix,
+                                           const SkPath& path,
+                                           const GrStrokeInfo& stroke,
                                            bool antiAlias) const {
     if (!antiAlias) {
         return false;
     }
 
-    if (!IsStrokeHairlineOrEquivalent(stroke,
-                                      target->getDrawState().getViewMatrix(),
-                                      NULL)) {
+    if (!IsStrokeHairlineOrEquivalent(stroke, viewMatrix, NULL)) {
         return false;
     }
 
     if (SkPath::kLine_SegmentMask == path.getSegmentMasks() ||
-        target->caps()->shaderDerivativeSupport()) {
+        target->caps()->shaderCaps()->shaderDerivativeSupport()) {
         return true;
     }
     return false;
 }
 
 template <class VertexType>
-bool check_bounds(GrDrawState* drawState, const SkRect& devBounds, void* vertices, int vCount)
+bool check_bounds(const SkMatrix& viewMatrix, const SkRect& devBounds, void* vertices, int vCount)
 {
     SkRect tolDevBounds = devBounds;
     // The bounds ought to be tight, but in perspective the below code runs the verts
     // through the view matrix to get back to dev coords, which can introduce imprecision.
-    if (drawState->getViewMatrix().hasPerspective()) {
+    if (viewMatrix.hasPerspective()) {
         tolDevBounds.outset(SK_Scalar1 / 1000, SK_Scalar1 / 1000);
     } else {
         // Non-persp matrices cause this path renderer to draw in device space.
-        SkASSERT(drawState->getViewMatrix().isIdentity());
+        SkASSERT(viewMatrix.isIdentity());
     }
     SkRect actualBounds;
 
@@ -807,7 +659,7 @@ bool check_bounds(GrDrawState* drawState, const SkRect& devBounds, void* vertice
         if (SK_ScalarMax == pos.fX) {
             continue;
         }
-        drawState->getViewMatrix().mapPoints(&pos, 1);
+        viewMatrix.mapPoints(&pos, 1);
         if (first) {
             actualBounds.set(pos.fX, pos.fY, pos.fX, pos.fY);
             first = false;
@@ -822,157 +674,352 @@ bool check_bounds(GrDrawState* drawState, const SkRect& devBounds, void* vertice
     return true;
 }
 
-bool GrAAHairLinePathRenderer::onDrawPath(const SkPath& path,
-                                          const SkStrokeRec& stroke,
-                                          GrDrawTarget* target,
-                                          bool antiAlias) {
-    GrDrawState* drawState = target->drawState();
+class AAHairlineBatch : public GrBatch {
+public:
+    struct Geometry {
+        GrColor fColor;
+        uint8_t fCoverage;
+        SkMatrix fViewMatrix;
+        SkPath fPath;
+        SkIRect fDevClipBounds;
+    };
 
-    SkScalar hairlineCoverage;
-    if (IsStrokeHairlineOrEquivalent(stroke,
-                                     target->getDrawState().getViewMatrix(),
-                                     &hairlineCoverage)) {
-        uint8_t newCoverage = SkScalarRoundToInt(hairlineCoverage *
-                                                 target->getDrawState().getCoverage());
-        target->drawState()->setCoverage(newCoverage);
+    static GrBatch* Create(const Geometry& geometry) {
+        return SkNEW_ARGS(AAHairlineBatch, (geometry));
     }
 
-    SkIRect devClipBounds;
-    target->getClip()->getConservativeBounds(drawState->getRenderTarget(), &devClipBounds);
+    const char* name() const override { return "AAHairlineBatch"; }
 
-    int lineCnt;
-    int quadCnt;
-    int conicCnt;
+    void getInvariantOutputColor(GrInitInvariantOutput* out) const override {
+        // When this is called on a batch, there is only one geometry bundle
+        out->setKnownFourComponents(fGeoData[0].fColor);
+    }
+    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const override {
+        out->setUnknownSingleComponent();
+    }
+
+    void initBatchTracker(const GrPipelineInfo& init) override {
+        // Handle any color overrides
+        if (init.fColorIgnored) {
+            fGeoData[0].fColor = GrColor_ILLEGAL;
+        } else if (GrColor_ILLEGAL != init.fOverrideColor) {
+            fGeoData[0].fColor = init.fOverrideColor;
+        }
+
+        // setup batch properties
+        fBatch.fColorIgnored = init.fColorIgnored;
+        fBatch.fColor = fGeoData[0].fColor;
+        fBatch.fUsesLocalCoords = init.fUsesLocalCoords;
+        fBatch.fCoverageIgnored = init.fCoverageIgnored;
+        fBatch.fCoverage = fGeoData[0].fCoverage;
+    }
+
+    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) override;
+
+    SkSTArray<1, Geometry, true>* geoData() { return &fGeoData; }
+
+private:
+    typedef SkTArray<SkPoint, true> PtArray;
+    typedef SkTArray<int, true> IntArray;
+    typedef SkTArray<float, true> FloatArray;
+
+    AAHairlineBatch(const Geometry& geometry) {
+        this->initClassID<AAHairlineBatch>();
+        fGeoData.push_back(geometry);
+
+        // compute bounds
+        fBounds = geometry.fPath.getBounds();
+        geometry.fViewMatrix.mapRect(&fBounds);
+
+        // This is b.c. hairlines are notionally infinitely thin so without expansion
+        // two overlapping lines could be reordered even though they hit the same pixels.
+        fBounds.outset(0.5f, 0.5f);
+    }
+
+    bool onCombineIfPossible(GrBatch* t) override {
+        AAHairlineBatch* that = t->cast<AAHairlineBatch>();
+
+        if (this->viewMatrix().hasPerspective() != that->viewMatrix().hasPerspective()) {
+            return false;
+        }
+
+        // We go to identity if we don't have perspective
+        if (this->viewMatrix().hasPerspective() &&
+            !this->viewMatrix().cheapEqualTo(that->viewMatrix())) {
+            return false;
+        }
+
+        // TODO we can actually batch hairlines if they are the same color in a kind of bulk method
+        // but we haven't implemented this yet
+        // TODO investigate going to vertex color and coverage?
+        if (this->coverage() != that->coverage()) {
+            return false;
+        }
+
+        if (this->color() != that->color()) {
+            return false;
+        }
+
+        SkASSERT(this->usesLocalCoords() == that->usesLocalCoords());
+        if (this->usesLocalCoords() && !this->viewMatrix().cheapEqualTo(that->viewMatrix())) {
+            return false;
+        }
+
+        fGeoData.push_back_n(that->geoData()->count(), that->geoData()->begin());
+        this->joinBounds(that->bounds());
+        return true;
+    }
+
+    GrColor color() const { return fBatch.fColor; }
+    uint8_t coverage() const { return fBatch.fCoverage; }
+    bool usesLocalCoords() const { return fBatch.fUsesLocalCoords; }
+    const SkMatrix& viewMatrix() const { return fGeoData[0].fViewMatrix; }
+
+    struct BatchTracker {
+        GrColor fColor;
+        uint8_t fCoverage;
+        SkRect fDevBounds;
+        bool fUsesLocalCoords;
+        bool fColorIgnored;
+        bool fCoverageIgnored;
+    };
+
+    BatchTracker fBatch;
+    SkSTArray<1, Geometry, true> fGeoData;
+};
+
+void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) {
+    // Setup the viewmatrix and localmatrix for the GrGeometryProcessor.
+    SkMatrix invert;
+    if (!this->viewMatrix().invert(&invert)) {
+        return;
+    }
+
+    // we will transform to identity space if the viewmatrix does not have perspective
+    bool hasPerspective = this->viewMatrix().hasPerspective();
+    const SkMatrix* geometryProcessorViewM = &SkMatrix::I();
+    const SkMatrix* geometryProcessorLocalM = &invert;
+    const SkMatrix* toDevice = NULL;
+    const SkMatrix* toSrc = NULL;
+    if (hasPerspective) {
+        geometryProcessorViewM = &this->viewMatrix();
+        geometryProcessorLocalM = &SkMatrix::I();
+        toDevice = &this->viewMatrix();
+        toSrc = &invert;
+    }
+
+    // Setup geometry processors for worst case
+    uint32_t gpFlags = GrDefaultGeoProcFactory::kPosition_GPType |
+                       GrDefaultGeoProcFactory::kCoverage_GPType;
+
+    SkAutoTUnref<const GrGeometryProcessor> lineGP(
+            GrDefaultGeoProcFactory::Create(gpFlags,
+                                            this->color(),
+                                            *geometryProcessorViewM,
+                                            *geometryProcessorLocalM,
+                                            this->coverage()));
+
+    SkAutoTUnref<const GrGeometryProcessor> quadGP(
+            GrQuadEffect::Create(this->color(),
+                                 *geometryProcessorViewM,
+                                 kHairlineAA_GrProcessorEdgeType,
+                                 batchTarget->caps(),
+                                 *geometryProcessorLocalM,
+                                 this->coverage()));
+
+    SkAutoTUnref<const GrGeometryProcessor> conicGP(
+            GrConicEffect::Create(this->color(),
+                                  *geometryProcessorViewM,
+                                  kHairlineAA_GrProcessorEdgeType,
+                                  batchTarget->caps(),
+                                  *geometryProcessorLocalM,
+                                  this->coverage()));
+
+    // This is hand inlined for maximum performance.
     PREALLOC_PTARRAY(128) lines;
     PREALLOC_PTARRAY(128) quads;
     PREALLOC_PTARRAY(128) conics;
     IntArray qSubdivs;
     FloatArray cWeights;
-    quadCnt = generate_lines_and_quads(path, drawState->getViewMatrix(), devClipBounds,
-                                       &lines, &quads, &conics, &qSubdivs, &cWeights);
-    lineCnt = lines.count() / 2;
-    conicCnt = conics.count() / 3;
+    int quadCount = 0;
+
+    int instanceCount = fGeoData.count();
+    for (int i = 0; i < instanceCount; i++) {
+        const Geometry& args = fGeoData[i];
+        quadCount += gather_lines_and_quads(args.fPath, args.fViewMatrix, args.fDevClipBounds,
+                                            &lines, &quads, &conics, &qSubdivs, &cWeights);
+    }
+
+    int lineCount = lines.count() / 2;
+    int conicCount = conics.count() / 3;
 
     // do lines first
-    if (lineCnt) {
-        GrDrawTarget::AutoReleaseGeometry arg;
-        SkRect devBounds;
+    if (lineCount) {
+        SkAutoTUnref<const GrIndexBuffer> linesIndexBuffer(
+            ref_lines_index_buffer(batchTarget->resourceProvider()));
+        batchTarget->initDraw(lineGP, pipeline);
 
-        if (!this->createLineGeom(path,
-                                  target,
-                                  lines,
-                                  lineCnt,
-                                  &arg,
-                                  &devBounds)) {
-            return false;
+        // TODO remove this when batch is everywhere
+        GrPipelineInfo init;
+        init.fColorIgnored = fBatch.fColorIgnored;
+        init.fOverrideColor = GrColor_ILLEGAL;
+        init.fCoverageIgnored = fBatch.fCoverageIgnored;
+        init.fUsesLocalCoords = this->usesLocalCoords();
+        lineGP->initBatchTracker(batchTarget->currentBatchTracker(), init);
+
+        const GrVertexBuffer* vertexBuffer;
+        int firstVertex;
+
+        size_t vertexStride = lineGP->getVertexStride();
+        int vertexCount = kLineSegNumVertices * lineCount;
+        LineVertex* verts = reinterpret_cast<LineVertex*>(
+            batchTarget->makeVertSpace(vertexStride, vertexCount, &vertexBuffer, &firstVertex));
+
+        if (!verts|| !linesIndexBuffer) {
+            SkDebugf("Could not allocate vertices\n");
+            return;
         }
 
-        GrDrawTarget::AutoStateRestore asr;
+        SkASSERT(lineGP->getVertexStride() == sizeof(LineVertex));
 
-        // createLineGeom transforms the geometry to device space when the matrix does not have
-        // perspective.
-        if (target->getDrawState().getViewMatrix().hasPerspective()) {
-            asr.set(target, GrDrawTarget::kPreserve_ASRInit);
-        } else if (!asr.setIdentity(target, GrDrawTarget::kPreserve_ASRInit)) {
-            return false;
+        for (int i = 0; i < lineCount; ++i) {
+            add_line(&lines[2*i], toSrc, this->coverage(), &verts);
         }
-        GrDrawState* drawState = target->drawState();
-
-        // Check devBounds
-        SkASSERT(check_bounds<LineVertex>(drawState, devBounds, arg.vertices(),
-                                          kLineSegNumVertices * lineCnt));
 
         {
-            GrDrawState::AutoRestoreEffects are(drawState);
-            target->setIndexSourceToBuffer(fLinesIndexBuffer);
-            int lines = 0;
-            while (lines < lineCnt) {
-                int n = SkTMin(lineCnt - lines, kLineSegsNumInIdxBuffer);
-                target->drawIndexed(kTriangles_GrPrimitiveType,
-                                    kLineSegNumVertices*lines,     // startV
-                                    0,                             // startI
-                                    kLineSegNumVertices*n,         // vCount
-                                    kIdxsPerLineSeg*n,             // iCount
-                                    &devBounds);
-                lines += n;
-            }
+            GrVertices vertices;
+            vertices.initInstanced(kTriangles_GrPrimitiveType, vertexBuffer, linesIndexBuffer,
+                                   firstVertex, kLineSegNumVertices, kIdxsPerLineSeg, lineCount,
+                                   kLineSegsNumInIdxBuffer);
+            batchTarget->draw(vertices);
         }
     }
 
-    // then quadratics/conics
-    if (quadCnt || conicCnt) {
-        GrDrawTarget::AutoReleaseGeometry arg;
-        SkRect devBounds;
+    if (quadCount || conicCount) {
+        const GrVertexBuffer* vertexBuffer;
+        int firstVertex;
 
-        if (!this->createBezierGeom(path,
-                                    target,
-                                    quads,
-                                    quadCnt,
-                                    conics,
-                                    conicCnt,
-                                    qSubdivs,
-                                    cWeights,
-                                    &arg,
-                                    &devBounds)) {
-            return false;
+        SkAutoTUnref<const GrIndexBuffer> quadsIndexBuffer(
+            ref_quads_index_buffer(batchTarget->resourceProvider()));
+
+        size_t vertexStride = sizeof(BezierVertex);
+        int vertexCount = kQuadNumVertices * quadCount + kQuadNumVertices * conicCount;
+        void *vertices = batchTarget->makeVertSpace(vertexStride, vertexCount,
+                                                    &vertexBuffer, &firstVertex);
+
+        if (!vertices || !quadsIndexBuffer) {
+            SkDebugf("Could not allocate vertices\n");
+            return;
         }
 
-        GrDrawTarget::AutoStateRestore asr;
+        // Setup vertices
+        BezierVertex* verts = reinterpret_cast<BezierVertex*>(vertices);
 
-        // createGeom transforms the geometry to device space when the matrix does not have
-        // perspective.
-        if (target->getDrawState().getViewMatrix().hasPerspective()) {
-            asr.set(target, GrDrawTarget::kPreserve_ASRInit);
-        } else if (!asr.setIdentity(target, GrDrawTarget::kPreserve_ASRInit)) {
-            return false;
-        }
-        GrDrawState* drawState = target->drawState();
-
-        // Check devBounds
-        SkASSERT(check_bounds<BezierVertex>(drawState, devBounds, arg.vertices(),
-                                            kQuadNumVertices * quadCnt + kQuadNumVertices * conicCnt));
-
-        if (quadCnt > 0) {
-            GrGeometryProcessor* hairQuadProcessor =
-                    GrQuadEffect::Create(kHairlineAA_GrProcessorEdgeType, *target->caps());
-            SkASSERT(hairQuadProcessor);
-            GrDrawState::AutoRestoreEffects are(drawState);
-            target->setIndexSourceToBuffer(fQuadsIndexBuffer);
-            drawState->setGeometryProcessor(hairQuadProcessor)->unref();
-            int quads = 0;
-            while (quads < quadCnt) {
-                int n = SkTMin(quadCnt - quads, kQuadsNumInIdxBuffer);
-                target->drawIndexed(kTriangles_GrPrimitiveType,
-                                    kQuadNumVertices*quads,               // startV
-                                    0,                                    // startI
-                                    kQuadNumVertices*n,                   // vCount
-                                    kIdxsPerQuad*n,                       // iCount
-                                    &devBounds);
-                quads += n;
-            }
+        int unsubdivQuadCnt = quads.count() / 3;
+        for (int i = 0; i < unsubdivQuadCnt; ++i) {
+            SkASSERT(qSubdivs[i] >= 0);
+            add_quads(&quads[3*i], qSubdivs[i], toDevice, toSrc, &verts);
         }
 
-        if (conicCnt > 0) {
-            GrDrawState::AutoRestoreEffects are(drawState);
-            GrGeometryProcessor* hairConicProcessor = GrConicEffect::Create(
-                    kHairlineAA_GrProcessorEdgeType, *target->caps());
-            SkASSERT(hairConicProcessor);
-            drawState->setGeometryProcessor(hairConicProcessor)->unref();
-            int conics = 0;
-            while (conics < conicCnt) {
-                int n = SkTMin(conicCnt - conics, kQuadsNumInIdxBuffer);
-                target->drawIndexed(kTriangles_GrPrimitiveType,
-                                    kQuadNumVertices*(quadCnt + conics),  // startV
-                                    0,                                    // startI
-                                    kQuadNumVertices*n,                   // vCount
-                                    kIdxsPerQuad*n,                       // iCount
-                                    &devBounds);
-                conics += n;
+        // Start Conics
+        for (int i = 0; i < conicCount; ++i) {
+            add_conics(&conics[3*i], cWeights[i], toDevice, toSrc, &verts);
+        }
+
+        if (quadCount > 0) {
+            batchTarget->initDraw(quadGP, pipeline);
+
+            // TODO remove this when batch is everywhere
+            GrPipelineInfo init;
+            init.fColorIgnored = fBatch.fColorIgnored;
+            init.fOverrideColor = GrColor_ILLEGAL;
+            init.fCoverageIgnored = fBatch.fCoverageIgnored;
+            init.fUsesLocalCoords = this->usesLocalCoords();
+            quadGP->initBatchTracker(batchTarget->currentBatchTracker(), init);
+
+            {
+                GrVertices verts;
+                verts.initInstanced(kTriangles_GrPrimitiveType, vertexBuffer, quadsIndexBuffer,
+                                    firstVertex, kQuadNumVertices, kIdxsPerQuad, quadCount,
+                                    kQuadsNumInIdxBuffer);
+                batchTarget->draw(verts);
+                firstVertex += quadCount * kQuadNumVertices;
+           }
+        }
+
+        if (conicCount > 0) {
+            batchTarget->initDraw(conicGP, pipeline);
+
+            // TODO remove this when batch is everywhere
+            GrPipelineInfo init;
+            init.fColorIgnored = fBatch.fColorIgnored;
+            init.fOverrideColor = GrColor_ILLEGAL;
+            init.fCoverageIgnored = fBatch.fCoverageIgnored;
+            init.fUsesLocalCoords = this->usesLocalCoords();
+            conicGP->initBatchTracker(batchTarget->currentBatchTracker(), init);
+
+            {
+                GrVertices verts;
+                verts.initInstanced(kTriangles_GrPrimitiveType, vertexBuffer, quadsIndexBuffer,
+                                    firstVertex, kQuadNumVertices, kIdxsPerQuad, conicCount,
+                                    kQuadsNumInIdxBuffer);
+                batchTarget->draw(verts);
             }
         }
     }
+}
 
-    target->resetIndexSource();
+static GrBatch* create_hairline_batch(GrColor color,
+                                      const SkMatrix& viewMatrix,
+                                      const SkPath& path,
+                                      const GrStrokeInfo& stroke,
+                                      const SkIRect& devClipBounds) {
+    SkScalar hairlineCoverage;
+    uint8_t newCoverage = 0xff;
+    if (GrPathRenderer::IsStrokeHairlineOrEquivalent(stroke, viewMatrix, &hairlineCoverage)) {
+        newCoverage = SkScalarRoundToInt(hairlineCoverage * 0xff);
+    }
+
+    AAHairlineBatch::Geometry geometry;
+    geometry.fColor = color;
+    geometry.fCoverage = newCoverage;
+    geometry.fViewMatrix = viewMatrix;
+    geometry.fPath = path;
+    geometry.fDevClipBounds = devClipBounds;
+
+    return AAHairlineBatch::Create(geometry);
+}
+
+bool GrAAHairLinePathRenderer::onDrawPath(GrDrawTarget* target,
+                                          GrPipelineBuilder* pipelineBuilder,
+                                          GrColor color,
+                                          const SkMatrix& viewMatrix,
+                                          const SkPath& path,
+                                          const GrStrokeInfo& stroke,
+                                          bool) {
+    SkIRect devClipBounds;
+    pipelineBuilder->clip().getConservativeBounds(pipelineBuilder->getRenderTarget(),
+                                                  &devClipBounds);
+
+    SkAutoTUnref<GrBatch> batch(create_hairline_batch(color, viewMatrix, path, stroke,
+                                                      devClipBounds));
+    target->drawBatch(pipelineBuilder, batch);
 
     return true;
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef GR_TEST_UTILS
+
+BATCH_TEST_DEFINE(AAHairlineBatch) {
+    GrColor color = GrRandomColor(random);
+    SkMatrix viewMatrix = GrTest::TestMatrix(random);
+    GrStrokeInfo stroke(SkStrokeRec::kHairline_InitStyle);
+    SkPath path = GrTest::TestPath(random);
+    SkIRect devClipBounds;
+    devClipBounds.setEmpty();
+    return create_hairline_batch(color, viewMatrix, path, stroke, devClipBounds);
+}
+
+#endif

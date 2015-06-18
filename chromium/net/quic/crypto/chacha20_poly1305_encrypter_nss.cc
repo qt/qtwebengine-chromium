@@ -19,7 +19,7 @@ const size_t kNoncePrefixSize = 0;
 
 }  // namespace
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
 
 // System NSS doesn't support ChaCha20+Poly1305 yet.
 
@@ -43,14 +43,14 @@ void ChaCha20Poly1305Encrypter::FillAeadParams(StringPiece nonce,
   NOTIMPLEMENTED();
 }
 
-#else  // defined(USE_NSS)
+#else  // defined(USE_NSS_CERTS)
 
 ChaCha20Poly1305Encrypter::ChaCha20Poly1305Encrypter()
     : AeadBaseEncrypter(CKM_NSS_CHACHA20_POLY1305, PK11_Encrypt, kKeySize,
                         kAuthTagSize, kNoncePrefixSize) {
-  COMPILE_ASSERT(kKeySize <= kMaxKeySize, key_size_too_big);
-  COMPILE_ASSERT(kNoncePrefixSize <= kMaxNoncePrefixSize,
-                 nonce_prefix_size_too_big);
+  static_assert(kKeySize <= kMaxKeySize, "key size too big");
+  static_assert(kNoncePrefixSize <= kMaxNoncePrefixSize,
+                "nonce prefix size too big");
 }
 
 ChaCha20Poly1305Encrypter::~ChaCha20Poly1305Encrypter() {}
@@ -75,6 +75,6 @@ void ChaCha20Poly1305Encrypter::FillAeadParams(StringPiece nonce,
   nss_aead_params->ulTagLen = auth_tag_size;
 }
 
-#endif  // defined(USE_NSS)
+#endif  // defined(USE_NSS_CERTS)
 
 }  // namespace net

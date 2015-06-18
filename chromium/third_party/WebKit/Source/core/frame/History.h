@@ -32,8 +32,6 @@
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
 
@@ -41,29 +39,41 @@ class LocalFrame;
 class KURL;
 class ExecutionContext;
 class ExceptionState;
+class StateOptions;
 
-class History final : public RefCountedWillBeGarbageCollectedFinalized<History>, public ScriptWrappable, public DOMWindowProperty {
+class History final : public GarbageCollectedFinalized<History>, public ScriptWrappable, public DOMWindowProperty {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(History);
 public:
-    static PassRefPtrWillBeRawPtr<History> create(LocalFrame* frame)
+    static History* create(LocalFrame* frame)
     {
-        return adoptRefWillBeNoop(new History(frame));
+        return new History(frame);
     }
 
     unsigned length() const;
     SerializedScriptValue* state();
+    void options(StateOptions&);
 
     void back(ExecutionContext*);
     void forward(ExecutionContext*);
     void go(ExecutionContext*, int distance);
 
+    void pushState(PassRefPtr<SerializedScriptValue> data, const String& title, const String& url, const StateOptions& options, ExceptionState& exceptionState)
+    {
+        stateObjectAdded(data, title, url, options, FrameLoadTypeStandard, exceptionState);
+    }
+
+    void replaceState(PassRefPtr<SerializedScriptValue> data, const String& title, const String& url, const StateOptions& options, ExceptionState& exceptionState)
+    {
+        stateObjectAdded(data, title, url, options, FrameLoadTypeRedirectWithLockedBackForwardList, exceptionState);
+    }
+
     bool stateChanged() const;
     bool isSameAsCurrentState(SerializedScriptValue*) const;
 
-    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, FrameLoadType, ExceptionState&);
+    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, const StateOptions&, FrameLoadType, ExceptionState&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit History(LocalFrame*);

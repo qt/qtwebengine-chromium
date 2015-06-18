@@ -60,7 +60,6 @@ GenerateFakeBuffers(const int* frame_pts_ms,
 class EsAdapterVideoTest : public testing::Test {
  public:
   EsAdapterVideoTest();
-  virtual ~EsAdapterVideoTest() {}
 
  protected:
   // Feed the ES adapter with the buffers from |buffer_queue|.
@@ -92,7 +91,7 @@ void EsAdapterVideoTest::OnNewConfig(const VideoDecoderConfig& video_config) {
 void EsAdapterVideoTest::OnNewBuffer(
     scoped_refptr<StreamParserBuffer> buffer) {
   buffer_descriptors_ << "(" << buffer->duration().InMilliseconds() << ","
-                      << (buffer->IsKeyframe() ? "Y" : "N") << ") ";
+                      << (buffer->is_key_frame() ? "Y" : "N") << ") ";
 }
 
 std::string EsAdapterVideoTest::RunAdapterTest(

@@ -60,13 +60,18 @@ PpapiDispatcher::PpapiDispatcher(scoped_refptr<base::MessageLoopProxy> io_loop,
   IPC::ChannelHandle channel_handle(
       "NaCl IPC", base::FileDescriptor(browser_ipc_fd, false));
 
+  proxy::PluginGlobals* globals = proxy::PluginGlobals::Get();
   // Delay initializing the SyncChannel until after we add filters. This
   // ensures that the filters won't miss any messages received by
   // the channel.
   channel_ =
       IPC::SyncChannel::Create(this, GetIPCMessageLoop(), GetShutdownEvent());
-  channel_->AddFilter(new proxy::PluginMessageFilter(
-      NULL, proxy::PluginGlobals::Get()->resource_reply_thread_registrar()));
+  scoped_refptr<ppapi::proxy::PluginMessageFilter> plugin_filter(
+      new ppapi::proxy::PluginMessageFilter(
+          NULL, globals->resource_reply_thread_registrar()));
+  channel_->AddFilter(plugin_filter.get());
+  globals->RegisterResourceMessageFilters(plugin_filter.get());
+
   channel_->AddFilter(
       new tracing::ChildTraceMessageFilter(message_loop_.get()));
   channel_->Init(channel_handle, IPC::Channel::MODE_SERVER, true);
@@ -165,10 +170,10 @@ void PpapiDispatcher::OnMsgInitializeNaClDispatcher(
   }
 
   command_line_and_logging_initialized = true;
-  CommandLine::Init(0, NULL);
+  base::CommandLine::Init(0, NULL);
   for (size_t i = 0; i < args.switch_names.size(); ++i) {
     DCHECK(i < args.switch_values.size());
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         args.switch_names[i], args.switch_values[i]);
   }
   logging::LoggingSettings settings;
@@ -213,7 +218,7 @@ void PpapiDispatcher::OnPluginDispatcherMessageReceived(
   // The first parameter should be a plugin dispatcher ID.
   PickleIterator iter(msg);
   uint32 id = 0;
-  if (!msg.ReadUInt32(&iter, &id)) {
+  if (!iter.ReadUInt32(&id)) {
     NOTREACHED();
     return;
   }

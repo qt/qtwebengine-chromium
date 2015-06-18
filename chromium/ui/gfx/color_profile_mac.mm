@@ -7,6 +7,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/mac/mac_util.h"
+#include "base/mac/scoped_cftyperef.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
 namespace {
@@ -41,6 +42,24 @@ bool GetDisplayColorProfile(const gfx::Rect& bounds,
     return false;
   NSColorSpace* color_space = [screen colorSpace];
   if (!color_space)
+    return false;
+
+  if ([color_space isEqual:[NSColorSpace sRGBColorSpace]])
+    return true;
+  NSData* profile_data = [color_space ICCProfileData];
+  const char* data = static_cast<const char*>([profile_data bytes]);
+  size_t length = [profile_data length];
+  if (data && !gfx::InvalidColorProfileLength(length))
+    profile->assign(data, data + length);
+  return true;
+}
+
+GFX_EXPORT bool GetDisplayColorProfile(gfx::NativeWindow window,
+                                       std::vector<char>* profile) {
+  DCHECK(profile->empty());
+
+  NSColorSpace* color_space = [window colorSpace];
+  if (!color_space || NSIsEmptyRect([window frame]))
     return false;
 
   if ([color_space isEqual:[NSColorSpace sRGBColorSpace]])

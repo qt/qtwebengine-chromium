@@ -95,6 +95,8 @@ class TestBrowserAccessibilityDelegate
     return NULL;
   }
   BrowserAccessibility* AccessibilityGetParentFrame() override { return NULL; }
+  void AccessibilityGetAllChildFrames(
+      std::vector<BrowserAccessibilityManager*>* child_frames) override {}
 
   bool got_fatal_error() const { return got_fatal_error_; }
   void reset_got_fatal_error() { got_fatal_error_ = false; }
@@ -646,7 +648,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
   inline_text1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text1.location = gfx::Rect(100, 100, 29, 9);
   inline_text1.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
-                               ui::AX_TEXT_DIRECTION_LR);
+                               ui::AX_TEXT_DIRECTION_LTR);
   std::vector<int32> character_offsets1;
   character_offsets1.push_back(6);   // 0
   character_offsets1.push_back(11);  // 1
@@ -665,7 +667,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRange) {
   inline_text2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text2.location = gfx::Rect(100, 109, 28, 9);
   inline_text2.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
-                               ui::AX_TEXT_DIRECTION_LR);
+                               ui::AX_TEXT_DIRECTION_LTR);
   std::vector<int32> character_offsets2;
   character_offsets2.push_back(5);
   character_offsets2.push_back(10);
@@ -741,7 +743,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
   inline_text1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text1.location = gfx::Rect(100, 100, 30, 20);
   inline_text1.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
-                               ui::AX_TEXT_DIRECTION_LR);
+                               ui::AX_TEXT_DIRECTION_LTR);
   std::vector<int32> character_offsets1;
   character_offsets1.push_back(10);  // 0
   character_offsets1.push_back(20);  // 1
@@ -756,7 +758,7 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
   inline_text2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text2.location = gfx::Rect(130, 100, 30, 20);
   inline_text2.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
-                               ui::AX_TEXT_DIRECTION_RL);
+                               ui::AX_TEXT_DIRECTION_RTL);
   std::vector<int32> character_offsets2;
   character_offsets2.push_back(10);
   character_offsets2.push_back(20);
@@ -794,6 +796,54 @@ TEST(BrowserAccessibilityManagerTest, BoundsForRangeBiDi) {
   // the bounds are as wide as four characters.
   EXPECT_EQ(gfx::Rect(120, 100, 40, 20).ToString(),
             static_text_accessible->GetLocalBoundsForRange(2, 2).ToString());
+}
+
+TEST(BrowserAccessibilityManagerTest, BoundsForRangeScrolledWindow) {
+  ui::AXNodeData root;
+  root.id = 1;
+  root.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  root.AddIntAttribute(ui::AX_ATTR_SCROLL_X, 25);
+  root.AddIntAttribute(ui::AX_ATTR_SCROLL_Y, 50);
+
+  ui::AXNodeData static_text;
+  static_text.id = 2;
+  static_text.SetValue("ABC");
+  static_text.role = ui::AX_ROLE_STATIC_TEXT;
+  static_text.location = gfx::Rect(100, 100, 16, 9);
+  root.child_ids.push_back(2);
+
+  ui::AXNodeData inline_text;
+  inline_text.id = 3;
+  inline_text.SetValue("ABC");
+  inline_text.role = ui::AX_ROLE_INLINE_TEXT_BOX;
+  inline_text.location = gfx::Rect(100, 100, 16, 9);
+  inline_text.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
+                              ui::AX_TEXT_DIRECTION_LTR);
+  std::vector<int32> character_offsets1;
+  character_offsets1.push_back(6);   // 0
+  character_offsets1.push_back(11);  // 1
+  character_offsets1.push_back(16);  // 2
+  inline_text.AddIntListAttribute(
+      ui::AX_ATTR_CHARACTER_OFFSETS, character_offsets1);
+  static_text.child_ids.push_back(3);
+
+  scoped_ptr<BrowserAccessibilityManager> manager(
+      BrowserAccessibilityManager::Create(
+          MakeAXTreeUpdate(root, static_text, inline_text),
+          NULL,
+          new CountedBrowserAccessibilityFactory()));
+
+  BrowserAccessibility* root_accessible = manager->GetRoot();
+  BrowserAccessibility* static_text_accessible =
+      root_accessible->PlatformGetChild(0);
+
+  if (manager->UseRootScrollOffsetsWhenComputingBounds()) {
+    EXPECT_EQ(gfx::Rect(75, 50, 16, 9).ToString(),
+              static_text_accessible->GetLocalBoundsForRange(0, 3).ToString());
+  } else {
+    EXPECT_EQ(gfx::Rect(100, 100, 16, 9).ToString(),
+              static_text_accessible->GetLocalBoundsForRange(0, 3).ToString());
+  }
 }
 
 #if defined(OS_WIN)
@@ -841,7 +891,7 @@ TEST(BrowserAccessibilityManagerTest, MAYBE_BoundsForRangeOnParentElement) {
   inline_text1.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text1.location = gfx::Rect(100, 100, 40, 20);
   inline_text1.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
-                               ui::AX_TEXT_DIRECTION_LR);
+                               ui::AX_TEXT_DIRECTION_LTR);
   std::vector<int32> character_offsets1;
   character_offsets1.push_back(20);  // 0
   character_offsets1.push_back(40);  // 1
@@ -854,7 +904,7 @@ TEST(BrowserAccessibilityManagerTest, MAYBE_BoundsForRangeOnParentElement) {
   inline_text2.role = ui::AX_ROLE_INLINE_TEXT_BOX;
   inline_text2.location = gfx::Rect(160, 100, 40, 20);
   inline_text2.AddIntAttribute(ui::AX_ATTR_TEXT_DIRECTION,
-                               ui::AX_TEXT_DIRECTION_LR);
+                               ui::AX_TEXT_DIRECTION_LTR);
   std::vector<int32> character_offsets2;
   character_offsets2.push_back(20);  // 0
   character_offsets2.push_back(40);  // 1

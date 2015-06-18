@@ -22,23 +22,6 @@ namespace gles2 {
 
 namespace {
 
-bool SkipTextureWorkarounds(const Texture* texture) {
-  // TODO(sievers): crbug.com/352274
-  // Should probably only fail if it already *has* mipmaps, while allowing
-  // incomplete textures here.
-  bool needs_mips =
-      texture->min_filter() != GL_NEAREST && texture->min_filter() != GL_LINEAR;
-  if (texture->target() != GL_TEXTURE_2D || needs_mips || !texture->IsDefined())
-    return true;
-
-  // Skip compositor resources/tile textures.
-  // TODO: Remove this, see crbug.com/399226.
-  if (texture->pool() == GL_TEXTURE_POOL_MANAGED_CHROMIUM)
-    return true;
-
-  return false;
-}
-
 base::LazyInstance<base::Lock> g_lock = LAZY_INSTANCE_INITIALIZER;
 
 typedef std::map<uint32, linked_ptr<gfx::GLFence>> SyncPointToFenceMap;
@@ -64,7 +47,7 @@ void CreateFenceLocked(uint32 sync_point) {
       sync_points.pop();
     }
     // Need to use EGL fences since we are likely not in a single share group.
-    linked_ptr<gfx::GLFence> fence(make_linked_ptr(new gfx::GLFenceEGL(true)));
+    linked_ptr<gfx::GLFence> fence(make_linked_ptr(new gfx::GLFenceEGL));
     if (fence.get()) {
       std::pair<SyncPointToFenceMap::iterator, bool> result =
           sync_point_to_fence.insert(std::make_pair(sync_point, fence));
@@ -94,21 +77,6 @@ base::LazyInstance<MailboxManagerSync::TextureGroup::MailboxToGroupMap>
         LAZY_INSTANCE_INITIALIZER;
 
 // static
-MailboxManagerSync::TextureGroup*
-MailboxManagerSync::TextureGroup::CreateFromTexture(const Mailbox& name,
-                                                    MailboxManagerSync* manager,
-                                                    Texture* texture) {
-  TextureGroup* group = new TextureGroup();
-  group->AddTexture(manager, texture);
-  group->AddName(name);
-  if (!SkipTextureWorkarounds(texture)) {
-    group->definition_ =
-        TextureDefinition(texture, kNewTextureVersion, NULL);
-  }
-  return group;
-}
-
-// static
 MailboxManagerSync::TextureGroup* MailboxManagerSync::TextureGroup::FromName(
     const Mailbox& name) {
   MailboxToGroupMap::iterator it = mailbox_to_group_.Get().find(name);
@@ -118,7 +86,9 @@ MailboxManagerSync::TextureGroup* MailboxManagerSync::TextureGroup::FromName(
   return it->second.get();
 }
 
-MailboxManagerSync::TextureGroup::TextureGroup() {
+MailboxManagerSync::TextureGroup::TextureGroup(
+    const TextureDefinition& definition)
+    : definition_(definition) {
 }
 
 MailboxManagerSync::TextureGroup::~TextureGroup() {
@@ -201,6 +171,15 @@ MailboxManagerSync::~MailboxManagerSync() {
   DCHECK_EQ(0U, texture_to_group_.size());
 }
 
+// static
+bool MailboxManagerSync::SkipTextureWorkarounds(const Texture* texture) {
+  // Cannot support mips due to support mismatch between
+  // EGL_KHR_gl_texture_2D_image and glEGLImageTargetTexture2DOES for
+  // texture levels.
+  bool has_mips = texture->NeedsMips() && texture->texture_complete();
+  return texture->target() != GL_TEXTURE_2D || has_mips;
+}
+
 bool MailboxManagerSync::UsesSync() {
   return true;
 }
@@ -258,8 +237,14 @@ void MailboxManagerSync::ProduceTexture(const Mailbox& mailbox,
   } else {
     // This is a new texture, so create a new group.
     texture->SetMailboxManager(this);
-    group_for_texture =
-        TextureGroup::CreateFromTexture(mailbox, this, texture);
+    TextureDefinition definition;
+    if (!SkipTextureWorkarounds(texture)) {
+      base::AutoUnlock unlock(g_lock.Get());
+      definition = TextureDefinition(texture, kNewTextureVersion, NULL);
+    }
+    group_for_texture = new TextureGroup(definition);
+    group_for_texture->AddTexture(this, texture);
+    group_for_texture->AddName(mailbox);
     texture_to_group_.insert(std::make_pair(
         texture, TextureGroupRef(kNewTextureVersion, group_for_texture)));
   }
@@ -299,6 +284,7 @@ void MailboxManagerSync::UpdateDefinitionLocked(
   if (definition.Matches(texture))
     return;
 
+  DCHECK_IMPLIES(gl_image, image_buffer.get());
   if (gl_image && !image_buffer->IsClient(gl_image)) {
     LOG(ERROR) << "MailboxSync: Incompatible attachment";
     return;
@@ -319,19 +305,30 @@ void MailboxManagerSync::PushTextureUpdates(uint32 sync_point) {
 }
 
 void MailboxManagerSync::PullTextureUpdates(uint32 sync_point) {
-  base::AutoLock lock(g_lock.Get());
-  AcquireFenceLocked(sync_point);
+  using TextureUpdatePair = std::pair<Texture*, TextureDefinition>;
+  std::vector<TextureUpdatePair> needs_update;
+  {
+    base::AutoLock lock(g_lock.Get());
+    AcquireFenceLocked(sync_point);
 
-  for (TextureToGroupMap::iterator it = texture_to_group_.begin();
-       it != texture_to_group_.end(); it++) {
-    const TextureDefinition& definition = it->second.group->GetDefinition();
-    Texture* texture = it->first;
-    unsigned& texture_version = it->second.version;
-    if (texture_version == definition.version() ||
-        definition.IsOlderThan(texture_version))
-      continue;
-    texture_version = definition.version();
-    definition.UpdateTexture(texture);
+    for (TextureToGroupMap::iterator it = texture_to_group_.begin();
+         it != texture_to_group_.end(); it++) {
+      const TextureDefinition& definition = it->second.group->GetDefinition();
+      Texture* texture = it->first;
+      unsigned& texture_version = it->second.version;
+      if (texture_version == definition.version() ||
+          definition.IsOlderThan(texture_version))
+        continue;
+      texture_version = definition.version();
+      needs_update.push_back(TextureUpdatePair(texture, definition));
+    }
+  }
+
+  if (!needs_update.empty()) {
+    ScopedUpdateTexture scoped_update_texture;
+    for (const TextureUpdatePair& pair : needs_update) {
+      pair.second.UpdateTexture(pair.first);
+    }
   }
 }
 

@@ -7,7 +7,7 @@
 
 #include "content/common/content_export.h"
 #include "content/common/input/synthetic_gesture_params.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 
 namespace content {
 
@@ -22,8 +22,8 @@ struct CONTENT_EXPORT SyntheticPinchGestureParams
   GestureType GetGestureType() const override;
 
   float scale_factor;
-  gfx::Point anchor;
-  int relative_pointer_speed_in_pixels_s;
+  gfx::PointF anchor;
+  float relative_pointer_speed_in_pixels_s;
 
   static const SyntheticPinchGestureParams* Cast(
       const SyntheticGestureParams* gesture_params);

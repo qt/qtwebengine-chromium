@@ -25,6 +25,7 @@
         ],
         'targets': [
         {
+          # GN version: //media/cdm/ppapi:clearkeycdm
           'target_name': 'clearkeycdm',
           'type': 'none',
           # TODO(tomfinegan): Simplify this by unconditionally including all the
@@ -97,21 +98,12 @@
           'msvs_disabled_warnings': [ 4267, ],
         },
         {
+          # GN version: //media/cdm/ppapi:clearkeycdmadapter_resources
           'target_name': 'clearkeycdmadapter_resources',
           'type': 'none',
-          'conditions': [
-            ['branding == "Chrome"', {
-              'variables': {
-                'branding_path': '../chrome/app/theme/google_chrome/BRANDING',
-              },
-            }, { # else branding!="Chrome"
-              'variables': {
-                'branding_path': '../chrome/app/theme/chromium/BRANDING',
-              },
-            }],
-          ],
           'variables': {
             'output_dir': '.',
+            'branding_path': '../chrome/app/theme/<(branding_path_component)/BRANDING',
             'template_input_path': '../chrome/app/chrome_version.rc.version',
             'extra_variable_files_arguments':
               [ '-f', 'cdm/ppapi/external_clear_key/BRANDING' ],
@@ -125,6 +117,7 @@
           ],
         },
         {
+          # GN version: //media/cdm/ppapi:clearkeycdmadapter
           'target_name': 'clearkeycdmadapter',
           'type': 'none',
           # Check whether the plugin's origin URL is valid.
@@ -143,6 +136,7 @@
               # Because clearkeycdm has type 'loadable_module' (see comments),
               # we must explicitly specify this dependency.
               'libraries': [
+               '-lrt',
                 # Built by clearkeycdm.
                 '<(PRODUCT_DIR)/libclearkeycdm.so',
               ],

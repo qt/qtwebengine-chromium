@@ -132,7 +132,7 @@ PassRefPtr<SharedBuffer> MHTMLArchive::generateMHTMLData(const Vector<Serialized
     String dateString = makeRFC2822DateString(now.weekDay(), now.monthDay(), now.month(), now.fullYear(), now.hour(), now.minute(), now.second(), 0);
 
     StringBuilder stringBuilder;
-    stringBuilder.appendLiteral("From: <Saved by WebKit>\r\n");
+    stringBuilder.appendLiteral("From: <Saved by Blink>\r\n");
     stringBuilder.appendLiteral("Subject: ");
     // We replace non ASCII characters with '?' characters to match IE's behavior.
     stringBuilder.append(replaceNonPrintableCharacters(title));
@@ -251,7 +251,7 @@ void MHTMLArchive::addSubframeArchive(PassRefPtrWillBeRawPtr<MHTMLArchive> subfr
     m_subframeArchives.append(subframeArchive);
 }
 
-void MHTMLArchive::trace(Visitor* visitor)
+DEFINE_TRACE(MHTMLArchive)
 {
     visitor->trace(m_mainResource);
     visitor->trace(m_subresources);

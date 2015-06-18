@@ -42,7 +42,7 @@ public:
         SkASSERT(SkAlign4(length) == length);
         SkASSERT(this->findEntry(tag, NULL) == NULL);
 
-        Entry*  entry = (Entry*)((char*)this + fLength);
+        Entry* entry = (Entry*)((char*)this + fLength);
         entry->fTag = tag;
         entry->fLen = SkToU32(length);
         if (data) {
@@ -50,7 +50,7 @@ public:
         }
 
         fCount += 1;
-        fLength += sizeof(Entry) + length;
+        fLength = SkToU32(fLength + sizeof(Entry) + length);
         return (entry + 1); // return its data
     }
 
@@ -134,7 +134,13 @@ private:
 
 class SkAutoDescriptor : SkNoncopyable {
 public:
-    SkAutoDescriptor(size_t size) {
+    SkAutoDescriptor() : fDesc(NULL) {}
+    SkAutoDescriptor(size_t size) : fDesc(NULL) { this->reset(size); }
+
+    ~SkAutoDescriptor() { this->free(); }
+
+    void reset(size_t size) {
+        this->free();
         if (size <= sizeof(fStorage)) {
             fDesc = (SkDescriptor*)(void*)fStorage;
         } else {
@@ -142,14 +148,14 @@ public:
         }
     }
 
-    ~SkAutoDescriptor() {
+    SkDescriptor* getDesc() const { SkASSERT(fDesc); return fDesc; }
+private:
+    void free() {
         if (fDesc != (SkDescriptor*)(void*)fStorage) {
             SkDescriptor::Free(fDesc);
         }
     }
 
-    SkDescriptor* getDesc() const { return fDesc; }
-private:
     enum {
         kStorageSize =  sizeof(SkDescriptor)
                         + sizeof(SkDescriptor::Entry) + sizeof(SkScalerContext::Rec)    // for rec

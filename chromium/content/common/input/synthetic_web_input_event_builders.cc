@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "content/common/input/web_touch_event_traits.h"
+#include "ui/events/base_event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace content {
@@ -68,6 +69,7 @@ WebMouseWheelEvent SyntheticWebMouseWheelEventBuilder::Build(float dx,
     result.wheelTicksY = dy > 0.0f ? 1.0f : -1.0f;
   result.modifiers = modifiers;
   result.hasPreciseScrollingDeltas = precise;
+  result.canScroll = true;
   return result;
 }
 
@@ -110,9 +112,10 @@ WebGestureEvent SyntheticWebGestureEventBuilder::BuildScrollBegin(
 WebGestureEvent SyntheticWebGestureEventBuilder::BuildScrollUpdate(
     float dx,
     float dy,
-    int modifiers) {
-  WebGestureEvent result = Build(WebInputEvent::GestureScrollUpdate,
-                                 blink::WebGestureDeviceTouchscreen);
+    int modifiers,
+    blink::WebGestureDevice source_device) {
+  WebGestureEvent result =
+      Build(WebInputEvent::GestureScrollUpdate, source_device);
   result.data.scrollUpdate.deltaX = dx;
   result.data.scrollUpdate.deltaY = dy;
   result.modifiers = modifiers;
@@ -148,6 +151,7 @@ WebGestureEvent SyntheticWebGestureEventBuilder::BuildFling(
 }
 
 SyntheticWebTouchEvent::SyntheticWebTouchEvent() : WebTouchEvent() {
+  uniqueTouchEventId = ui::GetNextTouchEventId();
   SetTimestamp(base::TimeTicks::Now() - base::TimeTicks());
 }
 
@@ -163,6 +167,7 @@ void SyntheticWebTouchEvent::ResetPoints() {
   }
   touchesLength = point;
   type = WebInputEvent::Undefined;
+  causesScrollingIfUncanceled = false;
 }
 
 int SyntheticWebTouchEvent::PressPoint(float x, float y) {
@@ -174,6 +179,8 @@ int SyntheticWebTouchEvent::PressPoint(float x, float y) {
   point.position.y = point.screenPosition.y = y;
   point.state = WebTouchPoint::StatePressed;
   point.radiusX = point.radiusY = 1.f;
+  point.rotationAngle = 1.f;
+  point.force = 1.f;
   ++touchesLength;
   WebTouchEventTraits::ResetType(
       WebInputEvent::TouchStart, timeStampSeconds, this);
@@ -181,7 +188,11 @@ int SyntheticWebTouchEvent::PressPoint(float x, float y) {
 }
 
 void SyntheticWebTouchEvent::MovePoint(int index, float x, float y) {
-  CHECK(index >= 0 && index < touchesLengthCap);
+  CHECK_GE(index, 0);
+  CHECK_LT(index, touchesLengthCap);
+  // Always set this bit to avoid otherwise unexpected touchmove suppression.
+  // The caller can opt-out explicitly, if necessary.
+  causesScrollingIfUncanceled = true;
   WebTouchPoint& point = touches[index];
   point.position.x = point.screenPosition.x = x;
   point.position.y = point.screenPosition.y = y;
@@ -191,14 +202,16 @@ void SyntheticWebTouchEvent::MovePoint(int index, float x, float y) {
 }
 
 void SyntheticWebTouchEvent::ReleasePoint(int index) {
-  CHECK(index >= 0 && index < touchesLengthCap);
+  CHECK_GE(index, 0);
+  CHECK_LT(index, touchesLengthCap);
   touches[index].state = WebTouchPoint::StateReleased;
   WebTouchEventTraits::ResetType(
       WebInputEvent::TouchEnd, timeStampSeconds, this);
 }
 
 void SyntheticWebTouchEvent::CancelPoint(int index) {
-  CHECK(index >= 0 && index < touchesLengthCap);
+  CHECK_GE(index, 0);
+  CHECK_LT(index, touchesLengthCap);
   touches[index].state = WebTouchPoint::StateCancelled;
   WebTouchEventTraits::ResetType(
       WebInputEvent::TouchCancel, timeStampSeconds, this);

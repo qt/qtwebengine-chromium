@@ -13,6 +13,15 @@
 SkComposeImageFilter::~SkComposeImageFilter() {
 }
 
+void SkComposeImageFilter::computeFastBounds(const SkRect& src, SkRect* dst) const {
+    SkImageFilter* outer = getInput(0);
+    SkImageFilter* inner = getInput(1);
+
+    SkRect tmp;
+    inner->computeFastBounds(src, &tmp);
+    outer->computeFastBounds(tmp, dst);
+}
+
 bool SkComposeImageFilter::onFilterImage(Proxy* proxy,
                                          const SkBitmap& src,
                                          const Context& ctx,
@@ -22,8 +31,20 @@ bool SkComposeImageFilter::onFilterImage(Proxy* proxy,
     SkImageFilter* inner = getInput(1);
 
     SkBitmap tmp;
-    return inner->filterImage(proxy, src, ctx, &tmp, offset) &&
-           outer->filterImage(proxy, tmp, ctx, result, offset);
+    SkIPoint innerOffset = SkIPoint::Make(0, 0);
+    SkIPoint outerOffset = SkIPoint::Make(0, 0);
+    if (!inner->filterImage(proxy, src, ctx, &tmp, &innerOffset))
+        return false;
+
+    SkMatrix outerMatrix(ctx.ctm());
+    outerMatrix.postTranslate(SkIntToScalar(-innerOffset.x()), SkIntToScalar(-innerOffset.y()));
+    Context outerContext(outerMatrix, ctx.clipBounds(), ctx.cache());
+    if (!outer->filterImage(proxy, tmp, outerContext, result, &outerOffset)) {
+        return false;
+    }
+
+    *offset = innerOffset + outerOffset;
+    return true;
 }
 
 bool SkComposeImageFilter::onFilterBounds(const SkIRect& src,
@@ -41,8 +62,19 @@ SkFlattenable* SkComposeImageFilter::CreateProc(SkReadBuffer& buffer) {
     return SkComposeImageFilter::Create(common.getInput(0), common.getInput(1));
 }
 
-#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
-SkComposeImageFilter::SkComposeImageFilter(SkReadBuffer& buffer)
-  : INHERITED(2, buffer) {
+#ifndef SK_IGNORE_TO_STRING
+void SkComposeImageFilter::toString(SkString* str) const {
+    SkImageFilter* outer = getInput(0);
+    SkImageFilter* inner = getInput(1);
+
+    str->appendf("SkComposeImageFilter: (");
+
+    str->appendf("outer: ");
+    outer->toString(str);
+
+    str->appendf("inner: ");
+    inner->toString(str);
+
+    str->appendf(")");
 }
 #endif

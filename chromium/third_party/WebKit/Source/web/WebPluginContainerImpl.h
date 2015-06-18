@@ -32,7 +32,7 @@
 #ifndef WebPluginContainerImpl_h
 #define WebPluginContainerImpl_h
 
-#include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/LocalFrameLifecycleObserver.h"
 #include "core/plugins/PluginView.h"
 #include "platform/Widget.h"
 #include "public/web/WebPluginContainer.h"
@@ -60,8 +60,9 @@ class WebPluginLoadObserver;
 class WheelEvent;
 class Widget;
 struct WebPrintParams;
+struct WebPrintPresetOptions;
 
-class WebPluginContainerImpl final : public PluginView, public WebPluginContainer, public FrameDestructionObserver {
+class WebPluginContainerImpl final : public PluginView, public WebPluginContainer, public LocalFrameLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WebPluginContainerImpl);
 public:
     static PassRefPtrWillBeRawPtr<WebPluginContainerImpl> create(HTMLPlugInElement* element, WebPlugin* webPlugin)
@@ -77,12 +78,14 @@ public:
     virtual bool supportsInputMethod() const override;
     virtual bool canProcessDrag() const override;
     virtual bool wantsWheelEvents() override;
+    virtual void layoutIfNeeded() override;
+    virtual void invalidatePaintIfNeeded() override { issuePaintInvalidations(); }
 
     // Widget methods
     virtual void setFrameRect(const IntRect&) override;
     virtual void paint(GraphicsContext*, const IntRect&) override;
     virtual void invalidateRect(const IntRect&) override;
-    virtual void setFocus(bool) override;
+    virtual void setFocus(bool, WebFocusType) override;
     virtual void show() override;
     virtual void hide() override;
     virtual void handleEvent(Event*) override;
@@ -99,6 +102,7 @@ public:
     virtual void invalidate() override;
     virtual void invalidateRect(const WebRect&) override;
     virtual void scrollRect(const WebRect&) override;
+    virtual void setNeedsLayout() override;
     virtual void reportGeometry() override;
     virtual void allowScriptObjects() override;
     virtual void clearScriptObjects() override;
@@ -110,8 +114,8 @@ public:
     virtual bool isRectTopmost(const WebRect&) override;
     virtual void requestTouchEventType(TouchEventRequestType) override;
     virtual void setWantsWheelEvents(bool) override;
-    virtual WebPoint windowToLocalPoint(const WebPoint&) override;
-    virtual WebPoint localToWindowPoint(const WebPoint&) override;
+    virtual WebPoint rootFrameToLocalPoint(const WebPoint&) override;
+    virtual WebPoint localToRootFramePoint(const WebPoint&) override;
 
     // This cannot be null.
     virtual WebPlugin* plugin() override { return m_webPlugin; }
@@ -131,8 +135,8 @@ public:
     // If the plugin content should not be scaled to the printable area of
     // the page, then this method should return true.
     bool isPrintScalingDisabled() const;
-    // Returns number of copies to be printed.
-    int getCopiesToPrint() const;
+    // Returns true on success and sets the out parameter to the print preset options for the document.
+    bool getPrintPresetOptionsFromDocument(WebPrintPresetOptions*) const;
     // Sets up printing at the specified WebPrintParams. Returns the number of pages to be printed at these settings.
     int printBegin(const WebPrintParams&) const;
     // Prints the page specified by pageNumber (0-based index) into the supplied canvas.
@@ -160,9 +164,7 @@ public:
     void willStartLiveResize();
     void willEndLiveResize();
 
-    bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
-
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void dispose() override;
 
 #if ENABLE(OILPAN)
@@ -185,12 +187,13 @@ private:
 
     void focusPlugin();
 
+    void issuePaintInvalidations();
+
     void calculateGeometry(
-        const IntRect& frameRect,
         IntRect& windowRect,
         IntRect& clipRect,
+        IntRect& unobscuredRect,
         Vector<IntRect>& cutOutRects);
-    IntRect windowClipRect() const;
     void windowCutOutRects(
         const IntRect& frameRect,
         Vector<IntRect>& cutOutRects);
@@ -200,6 +203,11 @@ private:
     Vector<WebPluginLoadObserver*> m_pluginLoadObservers;
 
     WebLayer* m_webLayer;
+
+    IntRect m_pendingInvalidationRect;
+
+    // TODO(schenney) Needed while layout is still called during paint in some plugins
+    bool m_isInPaint;
 
     // The associated scrollbar group object, created lazily. Used for Pepper
     // scrollbars.

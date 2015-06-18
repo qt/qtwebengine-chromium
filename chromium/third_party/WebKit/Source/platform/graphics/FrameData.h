@@ -29,13 +29,12 @@
 #define FrameData_h
 
 #include "platform/graphics/ImageOrientation.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
 #include "wtf/VectorTraits.h"
 
 namespace blink {
-
-class NativeImageSkia;
 
 struct FrameData {
     WTF_MAKE_NONCOPYABLE(FrameData);
@@ -47,13 +46,13 @@ public:
     // Returns whether there was cached image data to clear.
     bool clear(bool clearMetadata);
 
-    RefPtr<NativeImageSkia> m_frame;
+    SkBitmap m_frame;
     ImageOrientation m_orientation;
     float m_duration;
     bool m_haveMetadata : 1;
     bool m_isComplete : 1;
     bool m_hasAlpha : 1;
-    unsigned m_frameBytes;
+    size_t m_frameBytes;
 };
 
 } // namespace blink

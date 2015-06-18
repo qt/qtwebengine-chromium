@@ -18,12 +18,18 @@ TEST(CipherSuiteNamesTest, Basic) {
   SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, &is_aead, 0xc001);
   EXPECT_STREQ("ECDH_ECDSA", key_exchange);
   EXPECT_STREQ("NULL", cipher);
-  EXPECT_STREQ("SHA1", mac);
+  EXPECT_STREQ("HMAC-SHA1", mac);
   EXPECT_FALSE(is_aead);
 
   SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, &is_aead, 0x009f);
   EXPECT_STREQ("DHE_RSA", key_exchange);
   EXPECT_STREQ("AES_256_GCM", cipher);
+  EXPECT_TRUE(is_aead);
+  EXPECT_EQ(NULL, mac);
+
+  SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, &is_aead, 0xcc15);
+  EXPECT_STREQ("DHE_RSA", key_exchange);
+  EXPECT_STREQ("CHACHA20_POLY1305", cipher);
   EXPECT_TRUE(is_aead);
   EXPECT_EQ(NULL, mac);
 
@@ -70,6 +76,7 @@ TEST(CipherSuiteNamesTest, SecureCipherSuites) {
   // Secure ones.
   EXPECT_TRUE(IsSecureTLSCipherSuite(0xcc13));
   EXPECT_TRUE(IsSecureTLSCipherSuite(0xcc14));
+  EXPECT_TRUE(IsSecureTLSCipherSuite(0xcc15));
 }
 
 }  // anonymous namespace

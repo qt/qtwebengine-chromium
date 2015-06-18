@@ -41,13 +41,16 @@ LinkRelAttribute::LinkRelAttribute(const String& rel)
     , m_isStyleSheet(false)
     , m_isAlternate(false)
     , m_isDNSPrefetch(false)
+    , m_isPreconnect(false)
     , m_isLinkPrefetch(false)
     , m_isLinkSubresource(false)
+    , m_isLinkPreload(false)
     , m_isLinkPrerender(false)
     , m_isLinkNext(false)
     , m_isImport(false)
     , m_isManifest(false)
     , m_isTransitionExitingStylesheet(false)
+    , m_isDefaultPresentation(false)
 {
     if (rel.isEmpty())
         return;
@@ -73,8 +76,14 @@ LinkRelAttribute::LinkRelAttribute(const String& rel)
             m_isLinkPrefetch = true;
         } else if (equalIgnoringCase(linkType, "dns-prefetch")) {
             m_isDNSPrefetch = true;
+        } else if (equalIgnoringCase(linkType, "preconnect")) {
+            if (RuntimeEnabledFeatures::linkPreconnectEnabled())
+                m_isPreconnect = true;
         } else if (equalIgnoringCase(linkType, "subresource")) {
             m_isLinkSubresource = true;
+        } else if (equalIgnoringCase(linkType, "preload")) {
+            if (RuntimeEnabledFeatures::linkPreloadEnabled())
+                m_isLinkPreload = true;
         } else if (equalIgnoringCase(linkType, "prerender")) {
             m_isLinkPrerender = true;
         } else if (equalIgnoringCase(linkType, "next")) {
@@ -90,6 +99,9 @@ LinkRelAttribute::LinkRelAttribute(const String& rel)
         } else if (equalIgnoringCase(rel, "transition-exiting-stylesheet")) {
             if (RuntimeEnabledFeatures::navigationTransitionsEnabled())
                 m_isTransitionExitingStylesheet = true;
+        } else if (equalIgnoringCase(linkType, "default-presentation")) {
+            if (RuntimeEnabledFeatures::presentationEnabled())
+                m_isDefaultPresentation = true;
         }
     }
 }

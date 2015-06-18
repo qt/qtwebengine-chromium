@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 
@@ -28,10 +29,13 @@ class CastMetricsHelper {
     kAbortedBuffering,
   };
 
+  typedef base::Callback<void(const std::string&)> RecordActionCallback;
+
   class MetricsSink {
    public:
     virtual ~MetricsSink() {}
 
+    virtual void OnAction(const std::string& action) = 0;
     virtual void OnEnumerationEvent(const std::string& name,
                                     int value, int num_buckets) = 0;
     virtual void OnTimeEvent(const std::string& name,
@@ -41,18 +45,39 @@ class CastMetricsHelper {
                              int num_buckets) = 0;
   };
 
+  // Decodes action_name/app_id/session_id/sdk_version from metrics name.
+  // Return false if the metrics name is not generated from
+  // EncodeAppInfoIntoMetricsName() with correct format.
+  static bool DecodeAppInfoFromMetricsName(
+      const std::string& metrics_name,
+      std::string* action_name,
+      std::string* app_id,
+      std::string* session_id,
+      std::string* sdk_version);
+
   static CastMetricsHelper* GetInstance();
 
   explicit CastMetricsHelper(
       scoped_refptr<base::MessageLoopProxy> message_loop_proxy);
   virtual ~CastMetricsHelper();
 
-  // This function stores the name and startup time of the active application.
-  virtual void TagAppStart(const std::string& app_name);
+  // This function updates the info and stores the startup time of the current
+  // active application
+  virtual void UpdateCurrentAppInfo(const std::string& app_id,
+                                    const std::string& session_id);
+  // This function updates the sdk version of the current active application
+  virtual void UpdateSDKInfo(const std::string& sdk_version);
 
   // Logs UMA record for media play/pause user actions.
   virtual void LogMediaPlay();
   virtual void LogMediaPause();
+
+  // Logs a simple UMA user action.
+  // This is used as an in-place replacement of content::RecordComputedAction().
+  virtual void RecordSimpleAction(const std::string& action);
+
+  // Logs UMA record of the time the app made its first paint.
+  virtual void LogTimeToFirstPaint();
 
   // Logs UMA record of the elapsed time from the app launch
   // to the time first video frame is displayed.
@@ -81,6 +106,11 @@ class CastMetricsHelper {
   // Caller retains ownership of MetricsSink.
   virtual void SetMetricsSink(MetricsSink* delegate);
 
+  // Sets a default callback to record user action when MetricsSink is not set.
+  // This function could be called multiple times (in unittests), and
+  // CastMetricsHelper only honors the last one.
+  virtual void SetRecordActionCallback(const RecordActionCallback& callback);
+
  protected:
   // Creates a CastMetricsHelper instance with no MessageLoopProxy. This should
   // only be used by tests, since invoking any non-overridden methods on this
@@ -88,6 +118,12 @@ class CastMetricsHelper {
   CastMetricsHelper();
 
  private:
+  static std::string EncodeAppInfoIntoMetricsName(
+      const std::string& action_name,
+      const std::string& app_id,
+      const std::string& session_id,
+      const std::string& sdk_version);
+
   void LogEnumerationHistogramEvent(const std::string& name,
                                     int value, int num_buckets);
   void LogTimeHistogramEvent(const std::string& name,
@@ -103,8 +139,10 @@ class CastMetricsHelper {
   // Start time of the most recent app.
   base::TimeTicks app_start_time_;
 
-  // Currently running app name. Used to construct histogram name.
-  std::string app_name_;
+  // Currently running app id. Used to construct histogram name.
+  std::string app_id_;
+  std::string session_id_;
+  std::string sdk_version_;
 
   // Whether a new app start time has been stored but not recorded.
   // After the startup time has been used to generate an UMA event,
@@ -114,6 +152,8 @@ class CastMetricsHelper {
   base::TimeTicks previous_video_stat_sample_time_;
 
   MetricsSink* metrics_sink_;
+  // Default RecordAction callback when metrics_sink_ is not set.
+  RecordActionCallback record_action_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CastMetricsHelper);
 };

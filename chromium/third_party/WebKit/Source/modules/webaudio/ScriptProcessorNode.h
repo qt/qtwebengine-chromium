@@ -25,8 +25,8 @@
 #ifndef ScriptProcessorNode_h
 #define ScriptProcessorNode_h
 
-#include "platform/audio/AudioBus.h"
 #include "modules/webaudio/AudioNode.h"
+#include "platform/audio/AudioBus.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -43,37 +43,26 @@ class AudioContext;
 // The "onaudioprocess" attribute is an event listener which will get called periodically with an AudioProcessingEvent which has
 // AudioBuffers for each input and output.
 
-class ScriptProcessorNode final : public AudioNode {
-    DEFINE_WRAPPERTYPEINFO();
+class ScriptProcessorHandler final : public AudioHandler {
 public:
-    // bufferSize must be one of the following values: 256, 512, 1024, 2048, 4096, 8192, 16384.
-    // This value controls how frequently the onaudioprocess event handler is called and how many sample-frames need to be processed each call.
-    // Lower numbers for bufferSize will result in a lower (better) latency. Higher numbers will be necessary to avoid audio breakup and glitches.
-    // The value chosen must carefully balance between latency and audio quality.
-    static ScriptProcessorNode* create(AudioContext*, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
+    static PassRefPtr<ScriptProcessorHandler> create(AudioNode&, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
+    virtual ~ScriptProcessorHandler();
 
-    virtual ~ScriptProcessorNode();
-
-    // AudioNode
-    virtual void dispose() override;
+    // AudioHandler
     virtual void process(size_t framesToProcess) override;
     virtual void initialize() override;
-    virtual void uninitialize() override;
 
     size_t bufferSize() const { return m_bufferSize; }
 
     virtual void setChannelCount(unsigned long, ExceptionState&) override;
     virtual void setChannelCountMode(const String&, ExceptionState&) override;
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(audioprocess);
-
-    void trace(Visitor*);
+    virtual unsigned numberOfOutputChannels() const { return m_numberOfOutputChannels; }
 
 private:
+    ScriptProcessorHandler(AudioNode&, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
     virtual double tailTime() const override;
     virtual double latencyTime() const override;
-
-    ScriptProcessorNode(AudioContext*, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
 
     void fireProcessEvent();
 
@@ -82,8 +71,10 @@ private:
     void swapBuffers() { m_doubleBufferIndex = 1 - m_doubleBufferIndex; }
     unsigned m_doubleBufferIndex;
     unsigned m_doubleBufferIndexForEvent;
-    HeapVector<Member<AudioBuffer> > m_inputBuffers;
-    HeapVector<Member<AudioBuffer> > m_outputBuffers;
+    // These Persistent don't make reference cycles including the owner
+    // ScriptProcessorNode.
+    PersistentHeapVector<Member<AudioBuffer>> m_inputBuffers;
+    PersistentHeapVector<Member<AudioBuffer>> m_outputBuffers;
 
     size_t m_bufferSize;
     unsigned m_bufferReadWriteIndex;
@@ -94,6 +85,29 @@ private:
     RefPtr<AudioBus> m_internalInputBus;
     // Synchronize process() with fireProcessEvent().
     mutable Mutex m_processEventLock;
+
+    // TODO(tkent): Use FRIEND_TEST macro provided by gtest_prod.h
+    friend class ScriptProcessorNodeTest_BufferLifetime_Test;
+};
+
+class ScriptProcessorNode final : public AudioNode {
+    DEFINE_WRAPPERTYPEINFO();
+public:
+    // bufferSize must be one of the following values: 256, 512, 1024, 2048,
+    // 4096, 8192, 16384.
+    // This value controls how frequently the onaudioprocess event handler is
+    // called and how many sample-frames need to be processed each call.
+    // Lower numbers for bufferSize will result in a lower (better)
+    // latency. Higher numbers will be necessary to avoid audio breakup and
+    // glitches.
+    // The value chosen must carefully balance between latency and audio quality.
+    static ScriptProcessorNode* create(AudioContext&, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
+
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(audioprocess);
+    size_t bufferSize() const;
+
+private:
+    ScriptProcessorNode(AudioContext&, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
 };
 
 } // namespace blink

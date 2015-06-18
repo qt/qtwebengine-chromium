@@ -13,11 +13,12 @@
 #include "content/browser/android/content_video_view.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_player_messages_enums_android.h"
+#include "content/public/browser/android/content_view_core.h"
 #include "ipc/ipc_message.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/media_url_interceptor.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "url/gurl.h"
 
 namespace media {
@@ -30,6 +31,7 @@ namespace content {
 class BrowserDemuxerAndroid;
 class ContentViewCoreImpl;
 class ExternalVideoSurfaceContainer;
+class MediaPlayersObserver;
 class RenderFrameHost;
 class WebContents;
 
@@ -42,7 +44,8 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
     : public media::MediaPlayerManager {
  public:
   // Permits embedders to provide an extended version of the class.
-  typedef BrowserMediaPlayerManager* (*Factory)(RenderFrameHost*);
+  typedef BrowserMediaPlayerManager* (*Factory)(RenderFrameHost*,
+                                                MediaPlayersObserver*);
   static void RegisterFactory(Factory factory);
 
   // Permits embedders to handle custom urls.
@@ -50,16 +53,15 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
       media::MediaUrlInterceptor* media_url_interceptor);
 
   // Returns a new instance using the registered factory if available.
-  static BrowserMediaPlayerManager* Create(RenderFrameHost* rfh);
+  static BrowserMediaPlayerManager* Create(
+      RenderFrameHost* rfh,
+      MediaPlayersObserver* audio_monitor);
 
-  ContentViewCoreImpl* GetContentViewCore() const;
+  ContentViewCore* GetContentViewCore() const;
 
-  virtual ~BrowserMediaPlayerManager();
+  ~BrowserMediaPlayerManager() override;
 
   // Fullscreen video playback controls.
-  virtual void FullscreenPlayerPlay();
-  virtual void FullscreenPlayerPause();
-  virtual void FullscreenPlayerSeek(int msec);
   virtual void ExitFullscreen(bool release_media_player);
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface);
 
@@ -71,33 +73,31 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   void ReleaseAllMediaPlayers();
 
   // media::MediaPlayerManager overrides.
-  virtual void OnTimeUpdate(
-      int player_id,
-      base::TimeDelta current_timestamp,
-      base::TimeTicks current_time_ticks) override;
-  virtual void OnMediaMetadataChanged(
-      int player_id,
-      base::TimeDelta duration,
-      int width,
-      int height,
-      bool success) override;
-  virtual void OnPlaybackComplete(int player_id) override;
-  virtual void OnMediaInterrupted(int player_id) override;
-  virtual void OnBufferingUpdate(int player_id, int percentage) override;
-  virtual void OnSeekComplete(
-      int player_id,
-      const base::TimeDelta& current_time) override;
-  virtual void OnError(int player_id, int error) override;
-  virtual void OnVideoSizeChanged(
-      int player_id, int width, int height) override;
-  virtual media::MediaResourceGetter* GetMediaResourceGetter() override;
-  virtual media::MediaUrlInterceptor* GetMediaUrlInterceptor() override;
-  virtual media::MediaPlayerAndroid* GetFullscreenPlayer() override;
-  virtual media::MediaPlayerAndroid* GetPlayer(int player_id) override;
-  virtual void RequestFullScreen(int player_id) override;
-#if defined(VIDEO_HOLE)
-  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() override;
+  void OnTimeUpdate(int player_id,
+                    base::TimeDelta current_timestamp,
+                    base::TimeTicks current_time_ticks) override;
+  void OnMediaMetadataChanged(int player_id,
+                              base::TimeDelta duration,
+                              int width,
+                              int height,
+                              bool success) override;
+  void OnPlaybackComplete(int player_id) override;
+  void OnMediaInterrupted(int player_id) override;
+  void OnBufferingUpdate(int player_id, int percentage) override;
+  void OnSeekComplete(int player_id,
+                      const base::TimeDelta& current_time) override;
+  void OnError(int player_id, int error) override;
+  void OnVideoSizeChanged(int player_id, int width, int height) override;
+  void OnAudibleStateChanged(
+      int player_id, bool is_audible_now) override;
+  void OnWaitingForDecryptionKey(int player_id) override;
 
+  media::MediaResourceGetter* GetMediaResourceGetter() override;
+  media::MediaUrlInterceptor* GetMediaUrlInterceptor() override;
+  media::MediaPlayerAndroid* GetFullscreenPlayer() override;
+  media::MediaPlayerAndroid* GetPlayer(int player_id) override;
+  void RequestFullScreen(int player_id) override;
+#if defined(VIDEO_HOLE)
   void AttachExternalVideoSurface(int player_id, jobject surface);
   void DetachExternalVideoSurface(int player_id);
   void OnFrameInfoUpdated();
@@ -125,7 +125,8 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
 
  protected:
   // Clients must use Create() or subclass constructor.
-  explicit BrowserMediaPlayerManager(RenderFrameHost* render_frame_host);
+  BrowserMediaPlayerManager(RenderFrameHost* render_frame_host,
+                            MediaPlayersObserver* audio_monitor);
 
   WebContents* web_contents() const { return web_contents_; }
 
@@ -169,10 +170,13 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   void ReleasePlayer(media::MediaPlayerAndroid* player);
 
 #if defined(VIDEO_HOLE)
+  void ReleasePlayerOfExternalVideoSurfaceIfNeeded(int future_player);
   void OnRequestExternalSurface(int player_id, const gfx::RectF& rect);
 #endif  // defined(VIDEO_HOLE)
 
   RenderFrameHost* const render_frame_host_;
+
+  MediaPlayersObserver* audio_monitor_;
 
   // An array of managed players.
   ScopedVector<media::MediaPlayerAndroid> players_;

@@ -13,50 +13,30 @@
 
 class GrAAHairLinePathRenderer : public GrPathRenderer {
 public:
-    virtual ~GrAAHairLinePathRenderer();
+    static GrPathRenderer* Create()  { return SkNEW(GrAAHairLinePathRenderer); }
 
-    static GrPathRenderer* Create(GrContext* context);
-
-    virtual bool canDrawPath(const SkPath& path,
-                             const SkStrokeRec& stroke,
-                             const GrDrawTarget* target,
-                             bool antiAlias) const SK_OVERRIDE;
+    bool canDrawPath(const GrDrawTarget*,
+                     const GrPipelineBuilder*,
+                     const SkMatrix& viewMatrix,
+                     const SkPath&,
+                     const GrStrokeInfo&,
+                     bool antiAlias) const override;
 
     typedef SkTArray<SkPoint, true> PtArray;
     typedef SkTArray<int, true> IntArray;
     typedef SkTArray<float, true> FloatArray;
 
 protected:
-    virtual bool onDrawPath(const SkPath& path,
-                            const SkStrokeRec& stroke,
-                            GrDrawTarget* target,
-                            bool antiAlias) SK_OVERRIDE;
+    bool onDrawPath(GrDrawTarget*,
+                    GrPipelineBuilder*,
+                    GrColor,
+                    const SkMatrix& viewMatrix,
+                    const SkPath&,
+                    const GrStrokeInfo&,
+                    bool antiAlias) override;
 
 private:
-    GrAAHairLinePathRenderer(const GrContext* context,
-                             const GrIndexBuffer* fLinesIndexBuffer,
-                             const GrIndexBuffer* fQuadsIndexBuffer);
-
-    bool createLineGeom(const SkPath& path,
-                        GrDrawTarget* target,
-                        const PtArray& lines,
-                        int lineCnt,
-                        GrDrawTarget::AutoReleaseGeometry* arg,
-                        SkRect* devBounds);
-
-    bool createBezierGeom(const SkPath& path,
-                          GrDrawTarget* target,
-                          const PtArray& quads,
-                          int quadCnt,
-                          const PtArray& conics,
-                          int conicCnt,
-                          const IntArray& qSubdivs,
-                          const FloatArray& cWeights,
-                          GrDrawTarget::AutoReleaseGeometry* arg,
-                          SkRect* devBounds);
-
-    const GrIndexBuffer*        fLinesIndexBuffer;
-    const GrIndexBuffer*        fQuadsIndexBuffer;
+    GrAAHairLinePathRenderer() {}
 
     typedef GrPathRenderer INHERITED;
 };

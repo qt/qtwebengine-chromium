@@ -146,7 +146,7 @@ class ChromeChannelListener : public IPC::Listener {
       : ui_proxy_(ui_loop->message_loop_proxy()),
         app_view_(app_view) {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) override {
+  bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(ChromeChannelListener, message)
       IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ActivateDesktop,
                           OnActivateDesktop)
@@ -170,7 +170,7 @@ class ChromeChannelListener : public IPC::Listener {
     return true;
   }
 
-  virtual void OnChannelError() override {
+  void OnChannelError() override {
     DVLOG(1) << "Channel error. Exiting.";
     ui_proxy_->PostTask(FROM_HERE,
         base::Bind(&ChromeAppViewAsh::OnMetroExit, base::Unretained(app_view_),
@@ -284,7 +284,7 @@ void RunMessageLoop(winui::Core::ICoreDispatcher* dispatcher) {
   // 1 - User action like ALT-F4.
   // 2 - Calling ICoreApplicationExit::Exit().
   // 3-  Posting WM_CLOSE to the core window.
-  HRESULT hr = dispatcher->ProcessEvents(
+  dispatcher->ProcessEvents(
       winui::Core::CoreProcessEventsOption
           ::CoreProcessEventsOption_ProcessUntilQuit);
 
@@ -775,7 +775,7 @@ void ChromeAppViewAsh::OnOpenURLOnDesktop(const base::FilePath& shortcut,
   sei.lpFile = file.c_str();
   sei.lpDirectory = L"";
   sei.lpParameters = url.c_str();
-  BOOL result = ShellExecuteEx(&sei);
+  ShellExecuteEx(&sei);
 }
 
 void ChromeAppViewAsh::OnSetCursor(HCURSOR cursor) {
@@ -1382,7 +1382,7 @@ void ChromeAppViewAsh::OnNavigateToUrl(const base::string16& url) {
 
 HRESULT ChromeAppViewAsh::OnSizeChanged(winui::Core::ICoreWindow* sender,
     winui::Core::IWindowSizeChangedEventArgs* args) {
-  if (!window_) {
+  if (!window_ || !ui_channel_) {
     return S_OK;
   }
 

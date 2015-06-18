@@ -24,14 +24,14 @@
   'conditions': [
     ['OS != "ios"', {
       'includes': [
-        'content_common_mojo_bindings.gypi',
-        'content_resources.gypi',
         '../build/win_precompile.gypi',
+        'content_resources.gypi',
       ],
     }],
     ['OS == "win"', {
       'targets': [
         {
+          # GN: //content:content_startup_helper_win
           'target_name': 'content_startup_helper_win',
           'type': 'static_library',
           'include_dirs': [
@@ -265,6 +265,9 @@
                 'content_common',
                 'content_resources',
               ],
+              'export_dependent_settings': [
+                'content_common',
+              ],
               'conditions': [
                 ['chromium_enable_vtune_jit_for_v8==1', {
                   'dependencies': [
@@ -394,6 +397,7 @@
           'target_name': 'content_renderer',
           'type': 'none',
           'dependencies': ['content'],
+          'export_dependent_settings': ['content'],
         },
         {
           # GN version: //content/utility
@@ -425,19 +429,28 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../device/battery/battery.gyp:device_battery_java',
+            '../device/bluetooth/bluetooth.gyp:device_bluetooth_java',
+            '../device/vibration/vibration.gyp:device_vibration_java',
             '../media/media.gyp:media_java',
+            '../mojo/mojo_base.gyp:mojo_application_bindings',
             '../mojo/mojo_base.gyp:mojo_system_java',
-            '../mojo/public/mojo_public.gyp:mojo_bindings_java',
             '../net/net.gyp:net',
+            '../third_party/mojo/mojo_public.gyp:mojo_bindings_java',
             '../ui/android/ui_android.gyp:ui_java',
+            '../ui/touch_selection/ui_touch_selection.gyp:selection_event_type_java',
+            '../ui/touch_selection/ui_touch_selection.gyp:touch_handle_orientation_java',
+            '../third_party/WebKit/public/blink_headers.gyp:blink_headers_java',
             'common_aidl',
+            'console_message_level_java',
             'content_common',
             'content_strings_grd',
             'content_gamepad_mapping',
             'gesture_event_type_java',
+            'invalidate_types_java',
+            'navigation_controller_java',
             'popup_item_type_java',
             'result_codes_java',
-            'selection_event_type_java',
+            'readback_response_java',
             'speech_recognition_error_java',
             'top_controls_state_java',
             'screen_orientation_values_java',
@@ -448,14 +461,15 @@
             'R_package': 'org.chromium.content',
             'R_package_relpath': 'org/chromium/content',
           },
-          'conditions': [
-            ['android_webview_build == 0', {
-              'dependencies': [
-                '../third_party/eyesfree/eyesfree.gyp:eyesfree_java',
-              ],
-            }],
-          ],
           'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'console_message_level_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'public/common/console_message_level.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'content_strings_grd',
@@ -486,6 +500,22 @@
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
+          'target_name': 'invalidate_types_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'public/browser/invalidate_type.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
+          'target_name': 'navigation_controller_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'public/browser/navigation_controller.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
           'target_name': 'popup_item_type_java',
           'type': 'none',
           'variables': {
@@ -494,18 +524,18 @@
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
-          'target_name': 'result_codes_java',
+          'target_name': 'readback_response_java',
           'type': 'none',
           'variables': {
-            'source_file': 'public/common/result_codes.h',
+            'source_file': 'public/browser/readback_types.h',
           },
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
-          'target_name': 'selection_event_type_java',
+          'target_name': 'result_codes_java',
           'type': 'none',
           'variables': {
-            'source_file': 'browser/renderer_host/input/selection_event_type.h',
+            'source_file': 'public/common/result_codes.h',
           },
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },

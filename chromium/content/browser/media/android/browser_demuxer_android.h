@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_MEDIA_ANDROID_BROWSER_DEMUXER_ANDROID_H_
 #define CONTENT_BROWSER_MEDIA_ANDROID_BROWSER_DEMUXER_ANDROID_H_
 
+#include <map>
+
 #include "base/id_map.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "media/base/android/demuxer_android.h"
@@ -21,9 +23,10 @@ class CONTENT_EXPORT BrowserDemuxerAndroid : public BrowserMessageFilter {
   BrowserDemuxerAndroid();
 
   // BrowserMessageFilter overrides.
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread) override;
-  virtual bool OnMessageReceived(const IPC::Message& message) override;
+  base::TaskRunner* OverrideTaskRunnerForMessage(
+      const IPC::Message& message) override;
+
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // Returns an uninitialized demuxer implementation associated with
   // |demuxer_client_id|, which can be used to communicate with the real demuxer
@@ -32,7 +35,7 @@ class CONTENT_EXPORT BrowserDemuxerAndroid : public BrowserMessageFilter {
 
  protected:
   friend class base::RefCountedThreadSafe<BrowserDemuxerAndroid>;
-  virtual ~BrowserDemuxerAndroid();
+  ~BrowserDemuxerAndroid() override;
 
  private:
   class Internal;
@@ -54,6 +57,15 @@ class CONTENT_EXPORT BrowserDemuxerAndroid : public BrowserMessageFilter {
                          const base::TimeDelta& duration);
 
   IDMap<media::DemuxerAndroidClient> demuxer_clients_;
+
+  // When the demuxer client is created on UI thread but demuxer
+  // messages arrive on Media thread their relative order is undefined.
+  // Use |pending_configs_| map to keep the upcoming configurations
+  // until the client is created.
+  typedef std::map<int, media::DemuxerConfigs> ConfigsPerClient;
+  ConfigsPerClient pending_configs_;
+
+  base::SingleThreadTaskRunner* task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserDemuxerAndroid);
 };

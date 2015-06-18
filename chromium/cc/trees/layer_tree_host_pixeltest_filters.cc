@@ -97,8 +97,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOutsets) {
 }
 
 TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
-  scoped_refptr<SolidColorLayer> background = CreateSolidColorLayer(
-      gfx::Rect(200, 200), SK_ColorWHITE);
+  scoped_refptr<SolidColorLayer> background =
+      CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorTRANSPARENT);
 
   // This verifies that the perspective of the clear layer (with black border)
   // does not influence the blending of the green box behind it. Also verifies
@@ -136,8 +136,8 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
   blur->SetBackgroundFilters(filters);
 
 #if defined(OS_WIN)
-  // Windows has 153 pixels off by at most 2: crbug.com/225027
-  float percentage_pixels_large_error = 0.3825f;  // 153px / (200*200)
+  // Windows has 116 pixels off by at most 2: crbug.com/225027
+  float percentage_pixels_large_error = 0.3f;  // 116px / (200*200), rounded up
   float percentage_pixels_small_error = 0.0f;
   float average_error_allowed_in_bad_pixels = 1.f;
   int large_error_allowed = 2;
@@ -275,6 +275,180 @@ TEST_F(ImageFilterClippedPixelTest, ImageFilterClipped_GL) {
 
 TEST_F(ImageFilterClippedPixelTest, ImageFilterClipped_Software) {
   RunPixelTestType(PIXEL_TEST_SOFTWARE);
+}
+
+TEST_F(LayerTreeHostFiltersPixelTest, ImageFilterScaled_GL) {
+  scoped_refptr<SolidColorLayer> background =
+      CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorWHITE);
+
+  gfx::Rect rect(50, 50, 100, 100);
+
+  const int kInset = 3;
+  for (int i = 0; !rect.IsEmpty(); ++i) {
+    scoped_refptr<SolidColorLayer> layer =
+        CreateSolidColorLayer(rect, (i & 1) ? SK_ColorWHITE : SK_ColorRED);
+
+    gfx::Transform transform;
+    transform.Translate(rect.width() / 2.0, rect.height() / 2.0);
+    transform.RotateAboutZAxis(30.0);
+    transform.Translate(-rect.width() / 2.0, -rect.height() / 2.0);
+    layer->SetTransform(transform);
+
+    background->AddChild(layer);
+
+    rect.Inset(kInset, kInset);
+  }
+
+  scoped_refptr<SolidColorLayer> filter =
+      CreateSolidColorLayer(gfx::Rect(100, 0, 100, 200), SK_ColorTRANSPARENT);
+
+  background->AddChild(filter);
+
+  // Apply a scale to |background| so that we can see any scaling artifacts that
+  // may appear.
+  gfx::Transform background_transform;
+  static float scale = 1.1f;
+  background_transform.Scale(scale, scale);
+  background->SetTransform(background_transform);
+
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateGrayscaleFilter(1.0f));
+  filter->SetBackgroundFilters(filters);
+
+#if defined(OS_WIN)
+  // Windows has 153 pixels off by at most 2: crbug.com/225027
+  float percentage_pixels_large_error = 0.3825f;  // 153px / (200*200)
+  float percentage_pixels_small_error = 0.0f;
+  float average_error_allowed_in_bad_pixels = 1.f;
+  int large_error_allowed = 2;
+  int small_error_allowed = 0;
+  pixel_comparator_.reset(new FuzzyPixelComparator(
+      true,  // discard_alpha
+      percentage_pixels_large_error, percentage_pixels_small_error,
+      average_error_allowed_in_bad_pixels, large_error_allowed,
+      small_error_allowed));
+#endif
+
+  // TODO(hendrikw): Enable test in software as well: crbug.com/432157
+  RunPixelTest(PIXEL_TEST_GL, background,
+               base::FilePath(FILE_PATH_LITERAL("filter_on_scaled_layer.png")));
+}
+
+class ImageScaledRenderSurface : public LayerTreeHostFiltersPixelTest {
+ protected:
+  void RunPixelTestType(PixelTestType test_type, base::FilePath image_name) {
+    // A filter will cause a render surface to be used.  Here we force the
+    // render surface on, and scale the result to make sure that we rasterize at
+    // the correct resolution.
+    scoped_refptr<SolidColorLayer> background =
+        CreateSolidColorLayer(gfx::Rect(300, 300), SK_ColorBLUE);
+
+    scoped_refptr<SolidColorLayer> render_surface_layer =
+        CreateSolidColorLayer(gfx::Rect(0, 0, 200, 200), SK_ColorWHITE);
+
+    gfx::Rect rect(50, 50, 100, 100);
+
+    scoped_refptr<SolidColorLayer> child =
+        CreateSolidColorLayer(rect, SK_ColorRED);
+
+    gfx::Transform transform;
+    transform.Translate(rect.width() / 2.0, rect.height() / 2.0);
+    transform.RotateAboutZAxis(30.0);
+    transform.Translate(-rect.width() / 2.0, -rect.height() / 2.0);
+    child->SetTransform(transform);
+
+    render_surface_layer->AddChild(child);
+
+    gfx::Transform render_surface_transform;
+    render_surface_transform.Scale(1.5f, 1.5f);
+    render_surface_layer->SetTransform(render_surface_transform);
+    render_surface_layer->SetForceRenderSurface(true);
+
+    background->AddChild(render_surface_layer);
+
+    // Software has some huge differences in the AA'd pixels on the different
+    // trybots. See crbug.com/452198.
+    float percentage_pixels_large_error = 0.686f;
+    float percentage_pixels_small_error = 0.0f;
+    float average_error_allowed_in_bad_pixels = 16.f;
+    int large_error_allowed = 17;
+    int small_error_allowed = 0;
+    pixel_comparator_.reset(new FuzzyPixelComparator(
+        true,  // discard_alpha
+        percentage_pixels_large_error, percentage_pixels_small_error,
+        average_error_allowed_in_bad_pixels, large_error_allowed,
+        small_error_allowed));
+
+    RunPixelTest(test_type, background, image_name);
+  }
+};
+
+TEST_F(ImageScaledRenderSurface, ImageRenderSurfaceScaled_GL) {
+  RunPixelTestType(
+      PIXEL_TEST_GL,
+      base::FilePath(FILE_PATH_LITERAL("scaled_render_surface_layer_gl.png")));
+}
+
+TEST_F(ImageScaledRenderSurface, ImageRenderSurfaceScaled_Software) {
+  RunPixelTestType(
+      PIXEL_TEST_SOFTWARE,
+      base::FilePath(FILE_PATH_LITERAL("scaled_render_surface_layer_sw.png")));
+}
+
+class EnlargedTextureWithAlphaThresholdFilter
+    : public LayerTreeHostFiltersPixelTest {
+ protected:
+  void RunPixelTestType(PixelTestType test_type, base::FilePath image_name) {
+    // Rectangles choosen so that if flipped, the test will fail.
+    gfx::Rect rect1(10, 10, 10, 15);
+    gfx::Rect rect2(20, 25, 70, 65);
+
+    scoped_refptr<SolidColorLayer> child1 =
+        CreateSolidColorLayer(rect1, SK_ColorRED);
+    scoped_refptr<SolidColorLayer> child2 =
+        CreateSolidColorLayer(rect2, SK_ColorGREEN);
+    scoped_refptr<SolidColorLayer> background =
+        CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorBLUE);
+    scoped_refptr<SolidColorLayer> filter_layer =
+        CreateSolidColorLayer(gfx::Rect(100, 100), SK_ColorWHITE);
+
+    // Make sure a transformation does not cause misregistration of the filter
+    // and source texture.
+    gfx::Transform filter_transform;
+    filter_transform.Scale(2.f, 2.f);
+    filter_layer->SetTransform(filter_transform);
+    filter_layer->AddChild(child1);
+    filter_layer->AddChild(child2);
+
+    rect1.Inset(-5, -5);
+    rect2.Inset(-5, -5);
+    SkRegion alpha_region;
+    SkIRect rects[2] = {gfx::RectToSkIRect(rect1), gfx::RectToSkIRect(rect2)};
+    alpha_region.setRects(rects, 2);
+    FilterOperations filters;
+    filters.Append(
+        FilterOperation::CreateAlphaThresholdFilter(alpha_region, 0.f, 0.f));
+    filter_layer->SetFilters(filters);
+
+    background->AddChild(filter_layer);
+
+    // Force the allocation a larger textures.
+    set_enlarge_texture_amount(gfx::Vector2d(50, 50));
+
+    RunPixelTest(test_type, background, image_name);
+  }
+};
+
+TEST_F(EnlargedTextureWithAlphaThresholdFilter, GL) {
+  RunPixelTestType(
+      PIXEL_TEST_GL,
+      base::FilePath(FILE_PATH_LITERAL("enlarged_texture_on_threshold.png")));
+}
+
+TEST_F(EnlargedTextureWithAlphaThresholdFilter, Software) {
+  RunPixelTestType(
+      PIXEL_TEST_SOFTWARE,
+      base::FilePath(FILE_PATH_LITERAL("enlarged_texture_on_threshold.png")));
 }
 
 }  // namespace

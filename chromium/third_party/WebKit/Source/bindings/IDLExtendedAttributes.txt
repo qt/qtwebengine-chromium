@@ -42,8 +42,8 @@ Conditional=*
 Constructor
 # FIXME: remove [ConstructorCallWith=Document], as can instead use
 # [ConstructorCallWith=ExecutionContext] + toDocument(executionContext)
-ConstructorCallWith=ExecutionContext|Document
-Custom=|Getter|Setter|LegacyCallAsFunction|ToV8|VisitDOMWrapper|Wrap|PropertyGetter|PropertyEnumerator|PropertyQuery
+ConstructorCallWith=ExecutionContext|ScriptState|Document
+Custom=|Getter|Setter|LegacyCallAsFunction|VisitDOMWrapper|PropertyGetter|PropertyEnumerator|PropertyQuery|CallEpilogue
 CustomConstructor
 CustomElementCallbacks
 Default=Undefined
@@ -52,6 +52,7 @@ DeprecateAs=*
 DoNotCheckConstants
 DoNotCheckSecurity=|Setter
 DoNotCheckSignature
+DoNotExposeJSAccessors
 EnforceRange
 EventConstructor
 ExposeJSAccessors
@@ -63,21 +64,22 @@ ImplementedAs=*
 ImplementedInPrivateScript
 InitializedByEventConstructor
 Iterable
+LegacyInterfaceTypeChecking
 LegacyTreatAsPartialInterface
+LenientThis
 LogActivity=|GetterOnly|SetterOnly
 LogAllWorlds
+NewObject
+Measure
 MeasureAs=*
 NamedConstructor=*
 NoImplHeader
 NoInterfaceObject
 NotEnumerable
-NotScriptWrappable
 OnlyExposedToPrivateScript
 OverrideBuiltins
 PartialInterfaceImplementedAs=*
-# Valid values for [PerContextEnabled] are Context Features, in
-# ContextFeatures::FeatureType in Source/core/dom/ContextFeatures.h
-PerContextEnabled=*
+PermissiveDictionaryConversion
 PerWorldBindings
 PrimaryGlobal=|*
 PutForwards=*
@@ -91,13 +93,15 @@ Replaceable
 # Valid values for [RuntimeEnabled] are the Runtime Enabled Features, listed in
 # Source/core/page/RuntimeEnabledFeatures.in
 RuntimeEnabled=*
+SameObject
 SetWrapperReferenceFrom=*
 SetWrapperReferenceTo=*
 SetterCallWith=ExecutionContext|ScriptArguments|ActiveWindow|FirstWindow
 TreatNullAs=NullString|EmptyString
 TreatReturnedNullStringAs=Null|Undefined
 TreatUndefinedAs=NullString
-TypeChecking=Interface|Unrestricted
+TypeChecking=Interface
 URL
 Unforgeable
+Unscopeable
 WillBeGarbageCollected

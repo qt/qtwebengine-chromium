@@ -27,6 +27,7 @@
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
@@ -37,6 +38,7 @@ class SVGScriptElement final
     , public SVGURIReference
     , public ScriptLoaderClient {
     DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGScriptElement);
 public:
     static PassRefPtrWillBeRawPtr<SVGScriptElement> create(Document&, bool wasInsertedByParser);
 
@@ -46,11 +48,10 @@ public:
     virtual bool isAnimatableAttribute(const QualifiedName&) const override;
 #endif
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SVGScriptElement(Document&, bool wasInsertedByParser, bool alreadyStarted);
-    virtual ~SVGScriptElement();
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
@@ -78,7 +79,7 @@ private:
     virtual void dispatchLoadEvent() override;
 
     virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return false; }
 
     virtual Timer<SVGElement>* svgLoadEventTimer() override { return &m_svgLoadEventTimer; }
 

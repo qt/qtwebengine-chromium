@@ -31,28 +31,30 @@
 #ifndef WebSocketChannelClient_h
 #define WebSocketChannelClient_h
 
+#include "modules/ModulesExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
+#include <stdint.h>
 
 namespace blink {
 
-class WebSocketChannelClient : public GarbageCollectedMixin {
+class MODULES_EXPORT WebSocketChannelClient : public GarbageCollectedMixin {
 public:
     virtual ~WebSocketChannelClient() { }
     virtual void didConnect(const String& subprotocol, const String& extensions) { }
     virtual void didReceiveTextMessage(const String&) { }
-    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char> >) { }
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>>) { }
     virtual void didError() { }
-    virtual void didConsumeBufferedAmount(unsigned long consumed) { }
+    virtual void didConsumeBufferedAmount(uint64_t consumed) { }
     virtual void didStartClosingHandshake() { }
     enum ClosingHandshakeCompletionStatus {
         ClosingHandshakeIncomplete,
         ClosingHandshakeComplete
     };
     virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short /* code */, const String& /* reason */) { }
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     WebSocketChannelClient() { }

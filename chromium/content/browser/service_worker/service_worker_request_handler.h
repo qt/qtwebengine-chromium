@@ -93,6 +93,15 @@ class CONTENT_EXPORT ServiceWorkerRequestHandler
       base::TimeTicks* fetch_ready_time,
       base::TimeTicks* fetch_end_time) const = 0;
 
+  // Methods to support cross site navigations.
+  void PrepareForCrossSiteTransfer(int old_process_id);
+  void CompleteCrossSiteTransfer(int new_process_id,
+                                 int new_provider_id);
+  void MaybeCompleteCrossSiteTransferInOldProcess(
+      int old_process_id);
+
+  ServiceWorkerContextCore* context() const { return context_.get(); }
+
  protected:
   ServiceWorkerRequestHandler(
       base::WeakPtr<ServiceWorkerContextCore> context,
@@ -106,6 +115,10 @@ class CONTENT_EXPORT ServiceWorkerRequestHandler
   ResourceType resource_type_;
 
  private:
+  scoped_ptr<ServiceWorkerProviderHost> host_for_cross_site_transfer_;
+  int old_process_id_;
+  int old_provider_id_;
+
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRequestHandler);
 };
 

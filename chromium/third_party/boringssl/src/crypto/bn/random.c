@@ -108,6 +108,8 @@
 
 #include <openssl/bn.h>
 
+#include <string.h>
+
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/rand.h>
@@ -136,9 +138,10 @@ int BN_rand(BIGNUM *rnd, int bits, int top, int bottom) {
     goto err;
   }
 
-  /* make a random number and set the top and bottom bits */
-  if (RAND_pseudo_bytes(buf, bytes) <= 0)
+  /* Make a random number and set the top and bottom bits. */
+  if (!RAND_bytes(buf, bytes)) {
     goto err;
+  }
 
   if (top != -1) {
     if (top) {
@@ -286,7 +289,7 @@ int BN_generate_dsa_nonce(BIGNUM *out, const BIGNUM *range, const BIGNUM *priv,
 
   for (attempt = 0;; attempt++) {
     for (done = 0; done < num_k_bytes;) {
-      if (RAND_pseudo_bytes(random_bytes, sizeof(random_bytes)) != 1) {
+      if (!RAND_bytes(random_bytes, sizeof(random_bytes))) {
         goto err;
       }
       SHA512_Init(&sha);
@@ -318,8 +321,6 @@ int BN_generate_dsa_nonce(BIGNUM *out, const BIGNUM *range, const BIGNUM *priv,
   ret = 1;
 
 err:
-  if (k_bytes) {
-    OPENSSL_free(k_bytes);
-  }
+  OPENSSL_free(k_bytes);
   return ret;
 }

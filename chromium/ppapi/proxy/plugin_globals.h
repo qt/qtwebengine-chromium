@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_local_storage.h"
 #include "ppapi/proxy/connection.h"
@@ -33,14 +34,17 @@ struct Preferences;
 namespace proxy {
 
 class MessageLoopResource;
+class PluginMessageFilter;
 class PluginProxyDelegate;
 class ResourceReplyThreadRegistrar;
+class UDPSocketFilter;
 
 class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
  public:
-  PluginGlobals();
-  explicit PluginGlobals(PpapiGlobals::PerThreadForTest);
-  virtual ~PluginGlobals();
+  explicit PluginGlobals(const scoped_refptr<base::TaskRunner>& task_runner);
+  PluginGlobals(PpapiGlobals::PerThreadForTest,
+                const scoped_refptr<base::TaskRunner>& task_runner);
+  ~PluginGlobals() override;
 
   // Getter for the global singleton. Generally, you should use
   // PpapiGlobals::Get() when possible. Use this only when you need some
@@ -53,31 +57,31 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   }
 
   // PpapiGlobals implementation.
-  virtual ResourceTracker* GetResourceTracker() override;
-  virtual VarTracker* GetVarTracker() override;
-  virtual CallbackTracker* GetCallbackTrackerForInstance(
+  ResourceTracker* GetResourceTracker() override;
+  VarTracker* GetVarTracker() override;
+  CallbackTracker* GetCallbackTrackerForInstance(PP_Instance instance) override;
+  thunk::PPB_Instance_API* GetInstanceAPI(PP_Instance instance) override;
+  thunk::ResourceCreationAPI* GetResourceCreationAPI(
       PP_Instance instance) override;
-  virtual thunk::PPB_Instance_API* GetInstanceAPI(
-      PP_Instance instance) override;
-  virtual thunk::ResourceCreationAPI* GetResourceCreationAPI(
-      PP_Instance instance) override;
-  virtual PP_Module GetModuleForInstance(PP_Instance instance) override;
-  virtual std::string GetCmdLine() override;
-  virtual void PreCacheFontForFlash(const void* logfontw) override;
-  virtual void LogWithSource(PP_Instance instance,
-                             PP_LogLevel level,
-                             const std::string& source,
-                             const std::string& value) override;
-  virtual void BroadcastLogWithSource(PP_Module module,
-                                      PP_LogLevel level,
-                                      const std::string& source,
-                                      const std::string& value) override;
-  virtual MessageLoopShared* GetCurrentMessageLoop() override;
+  PP_Module GetModuleForInstance(PP_Instance instance) override;
+  std::string GetCmdLine() override;
+  void PreCacheFontForFlash(const void* logfontw) override;
+  void LogWithSource(PP_Instance instance,
+                     PP_LogLevel level,
+                     const std::string& source,
+                     const std::string& value) override;
+  void BroadcastLogWithSource(PP_Module module,
+                              PP_LogLevel level,
+                              const std::string& source,
+                              const std::string& value) override;
+  MessageLoopShared* GetCurrentMessageLoop() override;
   base::TaskRunner* GetFileTaskRunner() override;
-  virtual void MarkPluginIsActive() override;
+  void MarkPluginIsActive() override;
 
   // Returns the channel for sending to the browser.
   IPC::Sender* GetBrowserSender();
+
+  base::TaskRunner* ipc_task_runner() { return ipc_task_runner_.get(); }
 
   // Returns the language code of the current UI language.
   std::string GetUILanguage();
@@ -136,6 +140,14 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
     return resource_reply_thread_registrar_.get();
   }
 
+  UDPSocketFilter* udp_socket_filter() const {
+    return udp_socket_filter_.get();
+  }
+  // Add any necessary ResourceMessageFilters to the PluginMessageFilter so
+  // that they can receive and handle appropriate messages on the IO thread.
+  void RegisterResourceMessageFilters(
+      ppapi::proxy::PluginMessageFilter* plugin_filter);
+
   // Interval to limit how many IPC messages are sent indicating that the plugin
   // is active and should be kept alive. The value must be smaller than any
   // threshold used to kill inactive plugins by the embedder host.
@@ -145,7 +157,7 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   class BrowserSender;
 
   // PpapiGlobals overrides.
-  virtual bool IsPluginGlobals() const override;
+  bool IsPluginGlobals() const override;
 
   // Locks the proxy lock and releases the throttle on keepalive IPC messages.
   void OnReleaseKeepaliveThrottle();
@@ -172,11 +184,15 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
 
   scoped_ptr<BrowserSender> browser_sender_;
 
+  scoped_refptr<base::TaskRunner> ipc_task_runner_;
+
   // Thread for performing potentially blocking file operations. It's created
   // lazily, since it might not be needed.
   scoped_ptr<base::Thread> file_thread_;
 
   scoped_refptr<ResourceReplyThreadRegistrar> resource_reply_thread_registrar_;
+
+  scoped_refptr<UDPSocketFilter> udp_socket_filter_;
 
   // Indicates activity by the plugin. Used to monitor when a plugin can be
   // shutdown due to idleness. Current needs do not require differentiating

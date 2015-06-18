@@ -8,9 +8,10 @@
 #include "base/files/file_util.h"
 #include "base/macros.h"
 #include "base/path_service.h"
+#include "chromecast/base/cast_paths.h"
 #include "chromecast/browser/cast_download_manager_delegate.h"
+#include "chromecast/browser/cast_permission_manager.h"
 #include "chromecast/browser/url_request_context_factory.h"
-#include "chromecast/common/cast_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/storage_partition.h"
@@ -27,15 +28,15 @@ class CastBrowserContext::CastResourceContext :
   explicit CastResourceContext(
       URLRequestContextFactory* url_request_context_factory) :
     url_request_context_factory_(url_request_context_factory) {}
-  virtual ~CastResourceContext() {}
+  ~CastResourceContext() override {}
 
   // ResourceContext implementation:
-  virtual net::HostResolver* GetHostResolver() override {
+  net::HostResolver* GetHostResolver() override {
     return url_request_context_factory_->GetMainGetter()->
         GetURLRequestContext()->host_resolver();
   }
 
-  virtual net::URLRequestContext* GetRequestContext() override {
+  net::URLRequestContext* GetRequestContext() override {
     return url_request_context_factory_->GetMainGetter()->
         GetURLRequestContext();
   }
@@ -77,6 +78,12 @@ void CastBrowserContext::InitWhileIOAllowed() {
 #endif  // defined(OS_ANDROID)
 }
 
+scoped_ptr<content::ZoomLevelDelegate>
+CastBrowserContext::CreateZoomLevelDelegate(
+    const base::FilePath& partition_path) {
+  return nullptr;
+}
+
 base::FilePath CastBrowserContext::GetPath() const {
   return path_;
 }
@@ -110,6 +117,10 @@ CastBrowserContext::GetMediaRequestContextForStoragePartition(
   return GetMediaRequestContext();
 }
 
+net::URLRequestContextGetter* CastBrowserContext::GetSystemRequestContext() {
+  return url_request_context_factory_->GetSystemGetter();
+}
+
 content::ResourceContext* CastBrowserContext::GetResourceContext() {
   return resource_context_.get();
 }
@@ -120,23 +131,25 @@ CastBrowserContext::GetDownloadManagerDelegate() {
 }
 
 content::BrowserPluginGuestManager* CastBrowserContext::GetGuestManager() {
-  NOTIMPLEMENTED();
-  return NULL;
+  return nullptr;
 }
 
 storage::SpecialStoragePolicy* CastBrowserContext::GetSpecialStoragePolicy() {
-  NOTIMPLEMENTED();
-  return NULL;
+  return nullptr;
 }
 
 content::PushMessagingService* CastBrowserContext::GetPushMessagingService() {
-  NOTIMPLEMENTED();
-  return NULL;
+  return nullptr;
 }
 
 content::SSLHostStateDelegate* CastBrowserContext::GetSSLHostStateDelegate() {
-  NOTIMPLEMENTED();
-  return NULL;
+  return nullptr;
+}
+
+content::PermissionManager* CastBrowserContext::GetPermissionManager() {
+  if (!permission_manager_.get())
+    permission_manager_.reset(new CastPermissionManager());
+  return permission_manager_.get();
 }
 
 }  // namespace shell

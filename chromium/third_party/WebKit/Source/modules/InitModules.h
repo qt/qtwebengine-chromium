@@ -6,12 +6,14 @@
 #define InitModules_h
 
 #include "core/Init.h"
+#include "modules/ModulesExport.h"
 
 namespace blink {
 
-class ModulesInitializer : public CoreInitializer {
+class MODULES_EXPORT ModulesInitializer : public CoreInitializer {
 public:
     virtual void init() override;
+    static void terminateThreads();
 };
 
 } // namespace blink

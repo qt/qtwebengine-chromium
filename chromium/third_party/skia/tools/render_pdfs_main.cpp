@@ -56,11 +56,6 @@ DEFINE_string2(match, m, "",
                "If a file does not match any list entry,\n"
                "it is skipped unless some list entry starts with ~");
 
-DEFINE_int32(jpegQuality, 100,
-             "Encodes images in JPEG at quality level N, which can be in "
-             "range 0-100).   N = -1 will disable JPEG compression. "
-             "Default is N = 100, maximum quality.");
-
 /** Replaces the extension of a file.
  * @param path File name whose extension will be changed.
  * @param old_extension The old extension.
@@ -83,25 +78,6 @@ static bool replace_filename_extension(SkString* path,
     return false;
 }
 
-// the size_t* parameter is deprecated, so we ignore it
-static SkData* encode_to_dct_data(size_t*, const SkBitmap& bitmap) {
-    if (FLAGS_jpegQuality == -1) {
-        return NULL;
-    }
-
-    SkBitmap bm = bitmap;
-#if defined(SK_BUILD_FOR_MAC)
-    // Workaround bug #1043 where bitmaps with referenced pixels cause
-    // CGImageDestinationFinalize to crash
-    SkBitmap copy;
-    bitmap.deepCopyTo(&copy);
-    bm = copy;
-#endif
-
-    return SkImageEncoder::EncodeData(
-            bm, SkImageEncoder::kJPEG_Type, FLAGS_jpegQuality);
-}
-
 /** Builds the output filename. path = dir/name, and it replaces expected
  * .skp extension with .pdf extention.
  * @param path Output filename.
@@ -122,11 +98,11 @@ namespace {
 class NullWStream : public SkWStream {
 public:
     NullWStream() : fBytesWritten(0) { }
-    virtual bool write(const void*, size_t size) SK_OVERRIDE {
+    bool write(const void*, size_t size) override {
         fBytesWritten += size;
         return true;
     }
-    virtual size_t bytesWritten() const SK_OVERRIDE { return fBytesWritten; }
+    size_t bytesWritten() const override { return fBytesWritten; }
     size_t fBytesWritten;
 };
 }  // namespace
@@ -162,10 +138,9 @@ static SkWStream* open_stream(const SkString& outputDir,
  *  output, using the provided encoder.
  */
 static bool pdf_to_stream(SkPicture* picture,
-                          SkWStream* output,
-                          SkPicture::EncodeBitmap encoder) {
+                          SkWStream* output) {
     SkAutoTUnref<SkDocument> pdfDocument(
-            SkDocument::CreatePDF(output, NULL, encoder));
+            SkDocument::CreatePDF(output));
     SkCanvas* canvas = pdfDocument->beginPage(picture->cullRect().width(), 
                                               picture->cullRect().height());
     canvas->drawPicture(picture);
@@ -264,7 +239,7 @@ int tool_main_core(int argc, char** argv) {
             ++failures;
             continue;
         }
-        if (!pdf_to_stream(picture, stream.get(), encode_to_dct_data)) {
+        if (!pdf_to_stream(picture, stream.get())) {
             SkDebugf("Error in PDF Serialization.");
             ++failures;
         }

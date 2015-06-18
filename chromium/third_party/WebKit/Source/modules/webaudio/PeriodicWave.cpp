@@ -27,25 +27,25 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/PeriodicWave.h"
 
+#include "modules/webaudio/OscillatorNode.h"
 #include "platform/audio/FFTFrame.h"
 #include "platform/audio/VectorMath.h"
-#include "modules/webaudio/OscillatorNode.h"
 #include <algorithm>
+
+namespace blink {
 
 const unsigned PeriodicWaveSize = 4096; // This must be a power of two.
 const unsigned NumberOfRanges = 36; // There should be 3 * log2(PeriodicWaveSize) 1/3 octave ranges.
 const float CentsPerRange = 1200 / 3; // 1/3 Octave.
 
-namespace blink {
+const unsigned PeriodicWave::kMaxPeriodicWaveArraySize = PeriodicWaveSize / 2;
 
 using namespace VectorMath;
 
-PeriodicWave* PeriodicWave::create(float sampleRate, Float32Array* real, Float32Array* imag)
+PeriodicWave* PeriodicWave::create(float sampleRate, DOMFloat32Array* real, DOMFloat32Array* imag)
 {
     bool isGood = real && imag && real->length() == imag->length();
     ASSERT(isGood);
@@ -55,34 +55,34 @@ PeriodicWave* PeriodicWave::create(float sampleRate, Float32Array* real, Float32
         periodicWave->createBandLimitedTables(real->data(), imag->data(), numberOfComponents);
         return periodicWave;
     }
-    return 0;
+    return nullptr;
 }
 
 PeriodicWave* PeriodicWave::createSine(float sampleRate)
 {
     PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
-    periodicWave->generateBasicWaveform(OscillatorNode::SINE);
+    periodicWave->generateBasicWaveform(OscillatorHandler::SINE);
     return periodicWave;
 }
 
 PeriodicWave* PeriodicWave::createSquare(float sampleRate)
 {
     PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
-    periodicWave->generateBasicWaveform(OscillatorNode::SQUARE);
+    periodicWave->generateBasicWaveform(OscillatorHandler::SQUARE);
     return periodicWave;
 }
 
 PeriodicWave* PeriodicWave::createSawtooth(float sampleRate)
 {
     PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
-    periodicWave->generateBasicWaveform(OscillatorNode::SAWTOOTH);
+    periodicWave->generateBasicWaveform(OscillatorHandler::SAWTOOTH);
     return periodicWave;
 }
 
 PeriodicWave* PeriodicWave::createTriangle(float sampleRate)
 {
     PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
-    periodicWave->generateBasicWaveform(OscillatorNode::TRIANGLE);
+    periodicWave->generateBasicWaveform(OscillatorHandler::TRIANGLE);
     return periodicWave;
 }
 
@@ -97,7 +97,7 @@ PeriodicWave::PeriodicWave(float sampleRate)
     m_rateScale = m_periodicWaveSize / m_sampleRate;
 }
 
-void PeriodicWave::waveDataForFundamentalFrequency(float fundamentalFrequency, float* &lowerWaveData, float* &higherWaveData, float& tableInterpolationFactor)
+void PeriodicWave::waveDataForFundamentalFrequency(float fundamentalFrequency, float*& lowerWaveData, float*& higherWaveData, float& tableInterpolationFactor)
 {
     // Negative frequencies are allowed, in which case we alias to the positive frequency.
     fundamentalFrequency = fabsf(fundamentalFrequency);
@@ -248,11 +248,11 @@ void PeriodicWave::generateBasicWaveform(int shape)
         // Calculate Fourier coefficients depending on the shape. Note that the overall scaling
         // (magnitude) of the waveforms is normalized in createBandLimitedTables().
         switch (shape) {
-        case OscillatorNode::SINE:
+        case OscillatorHandler::SINE:
             // Standard sine wave function.
             b = (n == 1) ? 1 : 0;
             break;
-        case OscillatorNode::SQUARE:
+        case OscillatorHandler::SQUARE:
             // Square-shaped waveform with the first half its maximum value and the second half its
             // minimum value.
             //
@@ -263,7 +263,7 @@ void PeriodicWave::generateBasicWaveform(int shape)
             //      = 2*(2/(n*pi)) for n odd
             b = (n & 1) ? 2 * piFactor : 0;
             break;
-        case OscillatorNode::SAWTOOTH:
+        case OscillatorHandler::SAWTOOTH:
             // Sawtooth-shaped waveform with the first half ramping from zero to maximum and the
             // second half from minimum to zero.
             //
@@ -271,7 +271,7 @@ void PeriodicWave::generateBasicWaveform(int shape)
             //      = (2/(n*pi))*(-1)^(n+1)
             b = piFactor * ((n & 1) ? 1 : -1);
             break;
-        case OscillatorNode::TRIANGLE:
+        case OscillatorHandler::TRIANGLE:
             // Triangle-shaped waveform going from 0 at time 0 to 1 at time pi/2 and back to 0 at
             // time pi.
             //

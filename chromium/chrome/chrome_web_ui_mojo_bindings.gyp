@@ -13,7 +13,7 @@
       'sources': [
         'browser/ui/webui/omnibox/omnibox.mojom',
       ],
-      'includes': [ '../mojo/public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'includes': [ '../third_party/mojo/mojom_bindings_generator.gypi' ],
     },
   ],
 }

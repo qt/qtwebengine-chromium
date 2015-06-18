@@ -7,11 +7,12 @@
 #include <cmath>
 
 #include "base/auto_reset.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
 #include "ui/events/gesture_detection/gesture_listeners.h"
 #include "ui/events/gesture_detection/motion_event.h"
+#include "ui/events/gesture_detection/motion_event_generic.h"
 #include "ui/events/gesture_detection/scale_gesture_listeners.h"
 #include "ui/gfx/geometry/point_f.h"
 
@@ -64,6 +65,7 @@ gfx::RectF ClampBoundingBox(const gfx::RectF& bounds,
 GestureProvider::Config::Config()
     : display(gfx::Display::kInvalidDisplayID, gfx::Rect(1, 1)),
       disable_click_delay(false),
+      double_tap_support_for_platform_enabled(true),
       gesture_begin_end_types_enabled(false),
       min_gesture_bounds_length(0),
       max_gesture_bounds_length(0) {
@@ -215,7 +217,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
       return false;
     if (!pinch_event_sent_) {
       Send(CreateGesture(ET_GESTURE_PINCH_BEGIN,
-                         e.GetId(),
+                         e.GetPointerId(),
                          e.GetToolType(),
                          detector.GetEventTime(),
                          detector.GetFocusX(),
@@ -251,7 +253,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
     GestureEventDetails pinch_details(ET_GESTURE_PINCH_UPDATE);
     pinch_details.set_scale(scale);
     Send(CreateGesture(pinch_details,
-                       e.GetId(),
+                       e.GetPointerId(),
                        e.GetToolType(),
                        detector.GetEventTime(),
                        detector.GetFocusX(),
@@ -302,7 +304,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
       // Use the co-ordinates from the touch down, as these co-ordinates are
       // used to determine which layer the scroll should affect.
       Send(CreateGesture(scroll_details,
-                         e2.GetId(),
+                         e2.GetPointerId(),
                          e2.GetToolType(),
                          e2.GetEventTime(),
                          e1.GetX(),
@@ -331,7 +333,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
       const gfx::PointF raw_center =
           center + gfx::Vector2dF(e2.GetRawOffsetX(), e2.GetRawOffsetY());
       Send(CreateGesture(scroll_details,
-                         e2.GetId(),
+                         e2.GetPointerId(),
                          e2.GetToolType(),
                          e2.GetEventTime(),
                          center.x(),
@@ -391,7 +393,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
     GestureEventDetails two_finger_tap_details(
         ET_GESTURE_TWO_FINGER_TAP, e1.GetTouchMajor(), e1.GetTouchMajor());
     Send(CreateGesture(two_finger_tap_details,
-                       e2.GetId(),
+                       e2.GetPointerId(),
                        e2.GetToolType(),
                        e2.GetEventTime(),
                        e1.GetX(),
@@ -539,7 +541,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
   GestureEventData CreateGesture(const GestureEventDetails& details,
                                  const MotionEvent& event) {
     return GestureEventData(details,
-                            event.GetId(),
+                            event.GetPointerId(),
                             event.GetToolType(),
                             event.GetEventTime(),
                             event.GetX(),
@@ -679,7 +681,8 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
 GestureProvider::GestureProvider(const Config& config,
                                  GestureProviderClient* client)
     : double_tap_support_for_page_(true),
-      double_tap_support_for_platform_(true),
+      double_tap_support_for_platform_(
+          config.double_tap_support_for_platform_enabled),
       gesture_begin_end_types_enabled_(config.gesture_begin_end_types_enabled) {
   DCHECK(client);
   DCHECK(!config.min_gesture_bounds_length ||
@@ -709,6 +712,13 @@ bool GestureProvider::OnTouchEvent(const MotionEvent& event) {
   OnTouchEventHandlingEnd(event);
   uma_histogram_.RecordTouchEvent(event);
   return true;
+}
+
+void GestureProvider::ResetDetection() {
+  MotionEventGeneric generic_cancel_event(MotionEvent::ACTION_CANCEL,
+                                          base::TimeTicks::Now(),
+                                          PointerProperties());
+  OnTouchEvent(generic_cancel_event);
 }
 
 void GestureProvider::SetMultiTouchZoomSupportEnabled(bool enabled) {
@@ -762,7 +772,7 @@ void GestureProvider::OnTouchEventHandlingBegin(const MotionEvent& event) {
         const int action_index = event.GetActionIndex();
         gesture_listener_->Send(gesture_listener_->CreateGesture(
             ET_GESTURE_BEGIN,
-            event.GetId(),
+            event.GetPointerId(),
             event.GetToolType(),
             event.GetEventTime(),
             event.GetX(action_index),

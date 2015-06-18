@@ -51,6 +51,8 @@
 #include "public/platform/WebFileSystemCallbacks.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/text/StringBuilder.h"
+#include "wtf/text/TextEncoding.h"
+#include <url/url_util.h>
 
 namespace blink {
 
@@ -70,6 +72,11 @@ DOMFileSystemBase::DOMFileSystemBase(ExecutionContext* context, const String& na
 
 DOMFileSystemBase::~DOMFileSystemBase()
 {
+}
+
+DEFINE_TRACE(DOMFileSystemBase)
+{
+    visitor->trace(m_context);
 }
 
 WebFileSystem* DOMFileSystemBase::fileSystem() const
@@ -146,7 +153,7 @@ KURL DOMFileSystemBase::createFileSystemURL(const String& fullPath) const
         result.append(externalPathPrefix);
         result.append(m_filesystemRootURL.path());
         // Remove the extra leading slash.
-        result.append(encodeWithURLEscapeSequences(fullPath.substring(1)));
+        result.append(encodeFilePathAsURIComponent(fullPath.substring(1)));
         return KURL(ParsedURLString, result.toString());
     }
 
@@ -154,7 +161,7 @@ KURL DOMFileSystemBase::createFileSystemURL(const String& fullPath) const
     ASSERT(!m_filesystemRootURL.isEmpty());
     KURL url = m_filesystemRootURL;
     // Remove the extra leading slash.
-    url.setPath(url.path() + encodeWithURLEscapeSequences(fullPath.substring(1)));
+    url.setPath(url.path() + encodeFilePathAsURIComponent(fullPath.substring(1)));
     return url;
 }
 
@@ -406,6 +413,22 @@ bool DOMFileSystemBase::waitForAdditionalResult(int callbacksId)
     if (!fileSystem())
         return false;
     return fileSystem()->waitForAdditionalResult(callbacksId);
+}
+
+String DOMFileSystemBase::encodeFilePathAsURIComponent(const String& fullPath)
+{
+    CString utf8 = UTF8Encoding().encode(fullPath, WTF::URLEncodedEntitiesForUnencodables);
+
+    url::RawCanonOutputT<char> buffer;
+    int inputLength = utf8.length();
+    if (buffer.length() < inputLength * 3)
+        buffer.Resize(inputLength * 3);
+
+    url::EncodeURIComponent(utf8.data(), inputLength, &buffer);
+    String escaped(buffer.data(), buffer.length());
+    // Unescape '/'; it's safe and much prettier.
+    escaped.replace("%2F", "/");
+    return escaped;
 }
 
 } // namespace blink

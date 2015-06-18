@@ -12,6 +12,7 @@ goog.provide('cvox.TabsApiHandler');
 goog.require('cvox.AbstractEarcons');
 goog.require('cvox.AbstractTts');
 goog.require('cvox.BrailleInterface');
+goog.require('cvox.ChromeVox');
 goog.require('cvox.NavBraille');
 
 
@@ -31,7 +32,7 @@ cvox.TabsApiHandler = function(tts, braille, earcons) {
   this.braille_ = braille;
   /** @type {cvox.AbstractEarcons} @private */
   this.earcons_ = earcons;
-  /** @type {function(string)} @private */
+  /** @type {function(string, Array<string>=)} @private */
   this.msg_ = cvox.ChromeVox.msgs.getMsg.bind(cvox.ChromeVox.msgs);
   /**
    * Tracks whether the active tab has finished loading.

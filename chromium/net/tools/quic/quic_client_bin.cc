@@ -3,11 +3,40 @@
 // found in the LICENSE file.
 
 // A binary wrapper for QuicClient.
-// Connects to a host using QUIC, and sends requests to the provided URLS.
+// Connects to a host using QUIC, sends a request to the provided URL, and
+// displays the response.
 //
-// Example usage:
-//  quic_client --address=127.0.0.1 --port=6122 --hostname=www.google.com
-//      http://www.google.com/index.html http://www.google.com/favicon.ico
+// Some usage examples:
+//
+//   TODO(rtenneti): make --host optional by getting IP Address of URL's host.
+//
+//   Get IP address of the www.google.com
+//   IP=`dig www.google.com +short | head -1`
+//
+// Standard request/response:
+//   quic_client http://www.google.com  --host=${IP}
+//   quic_client http://www.google.com --quiet  --host=${IP}
+//   quic_client https://www.google.com --port=443  --host=${IP}
+//
+// Use a specific version:
+//   quic_client http://www.google.com --version=23  --host=${IP}
+//
+// Send a POST instead of a GET:
+//   quic_client http://www.google.com --body="this is a POST body" --host=${IP}
+//
+// Append additional headers to the request:
+//   quic_client http://www.google.com  --host=${IP}
+//               --headers="Header-A: 1234; Header-B: 5678"
+//
+// Connect to a host different to the URL being requested:
+//   Get IP address of the www.google.com
+//   IP=`dig www.google.com +short | head -1`
+//   quic_client mail.google.com --host=${IP}
+//
+// Try to connect to a host which does not speak QUIC:
+//   Get IP address of the www.example.com
+//   IP=`dig www.example.com +short | head -1`
+//   quic_client http://www.example.com --host=${IP}
 
 #include <iostream>
 
@@ -15,25 +44,54 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "net/base/ip_endpoint.h"
+#include "net/base/net_errors.h"
 #include "net/base/privacy_mode.h"
+#include "net/cert/cert_verifier.h"
+#include "net/http/transport_security_state.h"
+#include "net/log/net_log.h"
+#include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_server_id.h"
+#include "net/quic/quic_utils.h"
 #include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_client.h"
+#include "net/tools/quic/spdy_balsa_utils.h"
+#include "net/tools/quic/synchronous_host_resolver.h"
+#include "url/gurl.h"
 
-std::string FLAGS_address = "127.0.0.1";
+using base::StringPiece;
+using net::CertVerifier;
+using net::ProofVerifierChromium;
+using net::TransportSecurityState;
+using std::cout;
+using std::cerr;
+using std::map;
+using std::string;
+using std::vector;
+using std::endl;
+
 // The IP or hostname the quic client will connect to.
-std::string FLAGS_hostname = "localhost";
-// The port the quic client will connect to.
-int32 FLAGS_port = 6121;
-// Check the certificates using proof verifier.
-bool FLAGS_secure = false;
-// QUIC version to speak, e.g. 21. Default value of 0 means 'use the latest
-// version'.
-int32 FLAGS_quic_version = 0;
-// Size of flow control receive window to advertize to the peer.
-int32 FLAGS_flow_control_window_bytes = 10 * 1024 * 1024;  // 10 Mb
+string FLAGS_host = "";
+// The port to connect to.
+int32 FLAGS_port = 80;
+// If set, send a POST with this body.
+string FLAGS_body = "";
+// A semicolon separated list of key:value pairs to add to request headers.
+string FLAGS_headers = "";
+// Set to true for a quieter output experience.
+bool FLAGS_quiet = false;
+// QUIC version to speak, e.g. 21. If not set, then all available versions are
+// offered in the handshake.
+int32 FLAGS_quic_version = -1;
+// If true, a version mismatch in the handshake is not considered a failure.
+// Useful for probing a server to determine if it speaks any version of QUIC.
+bool FLAGS_version_mismatch_ok = false;
+// If true, an HTTP response code of 3xx is considered to be a successful
+// response, otherwise a failure.
+bool FLAGS_redirect_is_success = true;
 
 int main(int argc, char *argv[]) {
   base::CommandLine::Init(argc, argv);
@@ -46,36 +104,43 @@ int main(int argc, char *argv[]) {
 
   if (line->HasSwitch("h") || line->HasSwitch("help") || urls.empty()) {
     const char* help_str =
-        "Usage: quic_client [options] <url> ...\n"
+        "Usage: quic_client [options] <url>\n"
         "\n"
-        "At least one <url> with scheme must be provided "
-        "(e.g. http://www.google.com/)\n\n"
+        "<url> with scheme must be provided (e.g. http://www.google.com)\n\n"
         "Options:\n"
         "-h, --help                  show this help message and exit\n"
+        "--host=<host>               specify the IP address of the hostname to "
+        "connect to\n"
         "--port=<port>               specify the port to connect to\n"
-        "--address=<address>         specify the IP address to connect to\n"
-        "--host=<host>               specify the SNI hostname to use\n"
-        "--secure                    check certificates\n"
+        "--body=<body>               specify the body to post\n"
+        "--headers=<headers>         specify a semicolon separated list of "
+        "key:value pairs to add to request headers\n"
+        "--quiet                     specify for a quieter output experience\n"
         "--quic-version=<quic version> specify QUIC version to speak\n"
-        "--flow-control-window-bytes=<bytes> specify size of flow control "
-        "receive window to advertize to the peer\n";
-    std::cout << help_str;
+        "--version_mismatch_ok       if specified a version mismatch in the "
+        "handshake is not considered a failure\n"
+        "--redirect_is_success       if specified an HTTP response code of 3xx "
+        "is considered to be a successful response, otherwise a failure\n";
+    cout << help_str;
     exit(0);
   }
+  if (line->HasSwitch("host")) {
+    FLAGS_host = line->GetSwitchValueASCII("host");
+  }
   if (line->HasSwitch("port")) {
-    int port;
-    if (base::StringToInt(line->GetSwitchValueASCII("port"), &port)) {
-      FLAGS_port = port;
+    if (!base::StringToInt(line->GetSwitchValueASCII("port"), &FLAGS_port)) {
+      std::cerr << "--port must be an integer\n";
+      return 1;
     }
   }
-  if (line->HasSwitch("address")) {
-    FLAGS_address = line->GetSwitchValueASCII("address");
+  if (line->HasSwitch("body")) {
+    FLAGS_body = line->GetSwitchValueASCII("body");
   }
-  if (line->HasSwitch("hostname")) {
-    FLAGS_hostname = line->GetSwitchValueASCII("hostname");
+  if (line->HasSwitch("headers")) {
+    FLAGS_headers = line->GetSwitchValueASCII("headers");
   }
-  if (line->HasSwitch("secure")) {
-    FLAGS_secure = true;
+  if (line->HasSwitch("quiet")) {
+    FLAGS_quiet = true;
   }
   if (line->HasSwitch("quic-version")) {
     int quic_version;
@@ -84,65 +149,147 @@ int main(int argc, char *argv[]) {
       FLAGS_quic_version = quic_version;
     }
   }
-  if (line->HasSwitch("flow-control-window-bytes")) {
-    int flow_control_window_bytes;
-    if (base::StringToInt(
-            line->GetSwitchValueASCII("flow-control-window-bytes"),
-            &flow_control_window_bytes)) {
-      FLAGS_flow_control_window_bytes = flow_control_window_bytes;
-    }
+  if (line->HasSwitch("version_mismatch_ok")) {
+    FLAGS_version_mismatch_ok = true;
   }
-  VLOG(1) << "server port: " << FLAGS_port
-          << " address: " << FLAGS_address
-          << " hostname: " << FLAGS_hostname
-          << " secure: " << FLAGS_secure
-          << " quic-version: " << FLAGS_quic_version;
+  if (line->HasSwitch("redirect_is_success")) {
+    FLAGS_redirect_is_success = true;
+  }
+
+  VLOG(1) << "server host: " << FLAGS_host << " port: " << FLAGS_port
+          << " body: " << FLAGS_body << " headers: " << FLAGS_headers
+          << " quiet: " << FLAGS_quiet
+          << " quic-version: " << FLAGS_quic_version
+          << " version_mismatch_ok: " << FLAGS_version_mismatch_ok
+          << " redirect_is_success: " << FLAGS_redirect_is_success;
 
   base::AtExitManager exit_manager;
 
   // Determine IP address to connect to from supplied hostname.
-  net::IPAddressNumber addr;
-  CHECK(net::ParseIPLiteralToNumber(FLAGS_address, &addr));
+  net::IPAddressNumber ip_addr;
 
-  // Populate version vector with all versions if none specified.
-  net::QuicVersionVector versions;
-  if (FLAGS_quic_version == 0) {
-    versions = net::QuicSupportedVersions();
-  } else {
-    versions.push_back(static_cast<net::QuicVersion>(FLAGS_quic_version));
+  // TODO(rtenneti): GURL's doesn't support default_protocol argument, thus
+  // protocol is required in the URL.
+  GURL url(urls[0]);
+  string host = FLAGS_host;
+  if (host.empty()) {
+    host = url.host();
   }
+  if (!net::ParseIPLiteralToNumber(host, &ip_addr)) {
+    net::AddressList addresses;
+    int rv = net::tools::SynchronousHostResolver::Resolve(host, &addresses);
+    if (rv != net::OK) {
+      LOG(ERROR) << "Unable to resolve '" << host << "' : "
+                 << net::ErrorToShortString(rv);
+      return 1;
+    }
+    ip_addr = addresses[0].address();
+  }
+
+  string host_port = net::IPAddressToStringWithPort(ip_addr, FLAGS_port);
+  VLOG(1) << "Resolved " << host << " to " << host_port << endl;
 
   // Build the client, and try to connect.
-  VLOG(1) << "Conecting to " << FLAGS_hostname << ":" << FLAGS_port
-          << " with supported versions "
-          << QuicVersionVectorToString(versions);
+  bool is_https = (FLAGS_port == 443);
   net::EpollServer epoll_server;
-  net::QuicConfig config;
-
-  // The default flow control window of 16 Kb is too small for practical
-  // purposes. Set it to the specified value, which has a large default.
-  config.SetInitialFlowControlWindowToSend(
-      FLAGS_flow_control_window_bytes);
-  config.SetInitialStreamFlowControlWindowToSend(
-      FLAGS_flow_control_window_bytes);
-  config.SetInitialSessionFlowControlWindowToSend(
-      FLAGS_flow_control_window_bytes);
-
-  net::tools::QuicClient client(
-      net::IPEndPoint(addr, FLAGS_port),
-      net::QuicServerId(FLAGS_hostname, FLAGS_port, FLAGS_secure,
-                        net::PRIVACY_MODE_DISABLED),
-      versions, true, config, &epoll_server);
-
-  client.Initialize();
-
-  if (!client.Connect()) {
-    LOG(ERROR) << "Client failed to connect to host: "
-               << FLAGS_hostname << ":" << FLAGS_port;
+  net::QuicServerId server_id(host, FLAGS_port, is_https,
+                              net::PRIVACY_MODE_DISABLED);
+  net::QuicVersionVector versions = net::QuicSupportedVersions();
+  if (FLAGS_quic_version != -1) {
+    versions.clear();
+    versions.push_back(static_cast<net::QuicVersion>(FLAGS_quic_version));
+  }
+  net::tools::QuicClient client(net::IPEndPoint(ip_addr, FLAGS_port), server_id,
+                                versions, &epoll_server);
+  scoped_ptr<CertVerifier> cert_verifier;
+  scoped_ptr<TransportSecurityState> transport_security_state;
+  if (is_https) {
+    // For secure QUIC we need to verify the cert chain.a
+    cert_verifier.reset(CertVerifier::CreateDefault());
+    transport_security_state.reset(new TransportSecurityState);
+    // TODO(rtenneti): Fix "Proof invalid: Missing context" error.
+    client.SetProofVerifier(new ProofVerifierChromium(
+        cert_verifier.get(), transport_security_state.get()));
+  }
+  if (!client.Initialize()) {
+    cerr << "Failed to initialize client." << endl;
     return 1;
   }
+  if (!client.Connect()) {
+    net::QuicErrorCode error = client.session()->error();
+    if (FLAGS_version_mismatch_ok && error == net::QUIC_INVALID_VERSION) {
+      cout << "Server talks QUIC, but none of the versions supoorted by "
+           << "this client: " << QuicVersionVectorToString(versions) << endl;
+      // Version mismatch is not deemed a failure.
+      return 0;
+    }
+    cerr << "Failed to connect to " << host_port
+         << ". Error: " << net::QuicUtils::ErrorToString(error) << endl;
+    return 1;
+  }
+  cout << "Connected to " << host_port << endl;
 
-  // Send a GET request for each supplied url.
-  client.SendRequestsAndWaitForResponse(urls);
-  return 0;
+  // Construct a GET or POST request for supplied URL.
+  net::BalsaHeaders headers;
+  headers.SetRequestFirstlineFromStringPieces(
+      FLAGS_body.empty() ? "GET" : "POST", url.spec(), "HTTP/1.1");
+
+  // Append any additional headers supplied on the command line.
+  vector<string> headers_tokenized;
+  Tokenize(FLAGS_headers, ";", &headers_tokenized);
+  for (size_t i = 0; i < headers_tokenized.size(); ++i) {
+    string sp;
+    base::TrimWhitespaceASCII(headers_tokenized[i], base::TRIM_ALL, &sp);
+    if (sp.empty()) {
+      continue;
+    }
+    vector<string> kv;
+    base::SplitString(sp, ':', &kv);
+    CHECK_EQ(2u, kv.size());
+    string key;
+    base::TrimWhitespaceASCII(kv[0], base::TRIM_ALL, &key);
+    string value;
+    base::TrimWhitespaceASCII(kv[1], base::TRIM_ALL, &value);
+    headers.AppendHeader(key, value);
+  }
+
+  // Make sure to store the response, for later output.
+  client.set_store_response(true);
+
+  // Send the request.
+  map<string, string> header_block =
+      net::tools::SpdyBalsaUtils::RequestHeadersToSpdyHeaders(
+          headers, client.session()->connection()->version());
+  client.SendRequestAndWaitForResponse(headers, FLAGS_body, /*fin=*/true);
+
+  // Print request and response details.
+  if (!FLAGS_quiet) {
+    cout << "Request:" << endl;
+    cout << "headers:" << endl;
+    for (const std::pair<string, string>& kv : header_block) {
+      cout << " " << kv.first << ": " << kv.second << endl;
+    }
+    cout << "body: " << FLAGS_body << endl;
+    cout << endl;
+    cout << "Response:" << endl;
+    cout << "headers: " << client.latest_response_headers() << endl;
+    cout << "body: " << client.latest_response_body() << endl;
+  }
+
+  size_t response_code = client.latest_response_code();
+  if (response_code >= 200 && response_code < 300) {
+    cout << "Request succeeded (" << response_code << ")." << endl;
+    return 0;
+  } else if (response_code >= 300 && response_code < 400) {
+    if (FLAGS_redirect_is_success) {
+      cout << "Request succeeded (redirect " << response_code << ")." << endl;
+      return 0;
+    } else {
+      cout << "Request failed (redirect " << response_code << ")." << endl;
+      return 1;
+    }
+  } else {
+    cerr << "Request failed (" << response_code << ")." << endl;
+    return 1;
+  }
 }

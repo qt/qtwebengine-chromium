@@ -41,9 +41,7 @@
 namespace blink {
 
 class WebAudioSourceProvider;
-class WebAudioSourceProviderClient;
 class WebContentDecryptionModule;
-class WebMediaPlayerClient;
 class WebString;
 class WebURL;
 struct WebRect;
@@ -167,8 +165,6 @@ public:
 
     // Instruct WebMediaPlayer to enter/exit fullscreen.
     virtual void enterFullscreen() { }
-    // Returns true if the player can enter fullscreen.
-    virtual bool canEnterFullscreen() const { return false; }
 
     virtual void enabledAudioTracksChanged(const WebVector<TrackId>& enabledTrackIds) { }
     // |selectedTrackId| is null if no track is selected.

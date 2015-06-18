@@ -8,10 +8,10 @@
 #include "base/callback.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/android/ui_resource_provider.h"
+#include "ui/android/resources/ui_resource_provider.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 
 class SkBitmap;
 
@@ -23,9 +23,13 @@ namespace gfx {
 class JavaBitmap;
 }
 
+namespace ui {
+class ResourceManager;
+class UIResourceProvider;
+}
+
 namespace content {
 class CompositorClient;
-class UIResourceProvider;
 
 // An interface to the browser-side compositor.
 class CONTENT_EXPORT Compositor {
@@ -50,11 +54,6 @@ class CONTENT_EXPORT Compositor {
   // Set the output surface bounds.
   virtual void SetWindowBounds(const gfx::Size& size) = 0;
 
-  // Sets the window visibility. When becoming invisible, resources will get
-  // freed and other calls into the compositor are not allowed until after
-  // having been made visible again.
-  virtual void SetVisible(bool visible) = 0;
-
   // Set the output surface which the compositor renders into.
   virtual void SetSurface(jobject surface) = 0;
 
@@ -66,7 +65,10 @@ class CONTENT_EXPORT Compositor {
   virtual void SetNeedsComposite() = 0;
 
   // Returns the UI resource provider associated with the compositor.
-  virtual UIResourceProvider& GetUIResourceProvider() = 0;
+  virtual ui::UIResourceProvider& GetUIResourceProvider() = 0;
+
+  // Returns the resource manager associated with the compositor.
+  virtual ui::ResourceManager& GetResourceManager() = 0;
 
  protected:
   Compositor() {}

@@ -22,7 +22,6 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
-#include "content/test/net/url_request_slow_download_job.h"
 #include "net/test/url_request/url_request_mock_http_job.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -74,11 +73,9 @@ class DragDownloadFileTest : public ContentBrowserTest {
   void SetUpServer() {
     base::FilePath mock_base(GetTestFilePath("download", ""));
     BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
+        BrowserThread::IO, FROM_HERE,
         base::Bind(
-            &net::URLRequestMockHTTPJob::AddUrlHandler,
-            mock_base,
+            &net::URLRequestMockHTTPJob::AddUrlHandlers, mock_base,
             make_scoped_refptr(content::BrowserThread::GetBlockingPool())));
   }
 

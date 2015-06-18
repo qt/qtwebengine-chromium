@@ -32,6 +32,7 @@ class RegExpMacroAssembler {
     kARMImplementation,
     kARM64Implementation,
     kMIPSImplementation,
+    kPPCImplementation,
     kX64Implementation,
     kX87Implementation,
     kBytecodeImplementation
@@ -42,7 +43,7 @@ class RegExpMacroAssembler {
     kCheckStackLimit = true
   };
 
-  explicit RegExpMacroAssembler(Zone* zone);
+  RegExpMacroAssembler(Isolate* isolate, Zone* zone);
   virtual ~RegExpMacroAssembler();
   // The maximal number of pushes between stack checks. Users must supply
   // kCheckStackLimit flag to push operations (instead of kNoStackLimitCheck)
@@ -157,11 +158,13 @@ class RegExpMacroAssembler {
     return global_mode_ == GLOBAL;
   }
 
+  Isolate* isolate() const { return isolate_; }
   Zone* zone() const { return zone_; }
 
  private:
   bool slow_safe_compiler_;
   bool global_mode_;
+  Isolate* isolate_;
   Zone* zone_;
 };
 
@@ -184,7 +187,7 @@ class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
   //        capture positions.
   enum Result { RETRY = -2, EXCEPTION = -1, FAILURE = 0, SUCCESS = 1 };
 
-  explicit NativeRegExpMacroAssembler(Zone* zone);
+  NativeRegExpMacroAssembler(Isolate* isolate, Zone* zone);
   virtual ~NativeRegExpMacroAssembler();
   virtual bool CanReadUnaligned();
 
@@ -211,6 +214,12 @@ class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
                            Isolate* isolate);
 
   static const byte* StringCharacterPosition(String* subject, int start_index);
+
+  static int CheckStackGuardState(Isolate* isolate, int start_index,
+                                  bool is_direct_call, Address* return_address,
+                                  Code* re_code, String** subject,
+                                  const byte** input_start,
+                                  const byte** input_end);
 
   // Byte map of one byte characters with a 0xff if the character is a word
   // character (digit, letter or underscore) and 0x00 otherwise.

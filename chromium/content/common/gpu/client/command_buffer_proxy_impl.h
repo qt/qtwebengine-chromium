@@ -89,6 +89,7 @@ class CommandBufferProxyImpl
   State GetLastState() override;
   int32 GetLastToken() override;
   void Flush(int32 put_offset) override;
+  void OrderingBarrier(int32 put_offset) override;
   void WaitForTokenInRange(int32 start, int32 end) override;
   void WaitForGetOffsetInRange(int32 start, int32 end) override;
   void SetGetBuffer(int32 shm_id) override;
@@ -115,10 +116,11 @@ class CommandBufferProxyImpl
   void SignalQuery(uint32 query, const base::Closure& callback) override;
   void SetSurfaceVisible(bool visible) override;
   uint32 CreateStreamTexture(uint32 texture_id) override;
+  void SetLock(base::Lock* lock) override;
 
   int GetRouteID() const;
   bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
-  void SetChannelErrorCallback(const base::Closure& callback);
+  void SetContextLostCallback(const base::Closure& callback);
 
   typedef base::Callback<void(const gpu::MemoryAllocation&)>
       MemoryAllocationChangedCallback;
@@ -133,10 +135,15 @@ class CommandBufferProxyImpl
       const GpuConsoleMessageCallback& callback);
 
   void SetLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
-  typedef base::Callback<void(const std::vector<ui::LatencyInfo>& latency_info)>
-      SwapBuffersCompletionCallback;
+  using SwapBuffersCompletionCallback =
+      base::Callback<void(const std::vector<ui::LatencyInfo>& latency_info)>;
   void SetSwapBuffersCompletionCallback(
       const SwapBuffersCompletionCallback& callback);
+
+  using UpdateVSyncParametersCallback =
+      base::Callback<void(base::TimeTicks timebase, base::TimeDelta interval)>;
+  void SetUpdateVSyncParametersCallback(
+      const UpdateVSyncParametersCallback& callback);
 
   // TODO(apatrick): this is a temporary optimization while skia is calling
   // ContentGLContext::MakeCurrent prior to every GL call. It saves returning 6
@@ -153,8 +160,13 @@ class CommandBufferProxyImpl
  private:
   typedef std::map<int32, scoped_refptr<gpu::Buffer> > TransferBufferMap;
   typedef base::hash_map<uint32, base::Closure> SignalTaskMap;
-  typedef base::ScopedPtrHashMap<int32, gfx::GpuMemoryBuffer>
+  typedef base::ScopedPtrHashMap<int32, scoped_ptr<gfx::GpuMemoryBuffer>>
       GpuMemoryBufferMap;
+
+  void CheckLock() {
+    if (lock_)
+      lock_->AssertAcquired();
+  }
 
   // Send an IPC message over the GPU channel. This is private to fully
   // encapsulate the channel; all callers of this function must explicitly
@@ -163,17 +175,22 @@ class CommandBufferProxyImpl
 
   // Message handlers:
   void OnUpdateState(const gpu::CommandBuffer::State& state);
-  void OnDestroyed(gpu::error::ContextLostReason reason);
+  void OnDestroyed(gpu::error::ContextLostReason reason,
+                   gpu::error::Error error);
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
   void OnSetMemoryAllocation(const gpu::MemoryAllocation& allocation);
   void OnSignalSyncPointAck(uint32 id);
   void OnSwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info);
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval);
 
   // Try to read an updated copy of the state from shared memory.
   void TryUpdateState();
 
   // The shared memory area used to update state.
   gpu::CommandBufferSharedState* shared_state() const;
+
+  base::Lock* lock_;
 
   // Unowned list of DeletionObservers.
   ObserverList<DeletionObserver> deletion_observers_;
@@ -190,8 +207,9 @@ class CommandBufferProxyImpl
   int route_id_;
   unsigned int flush_count_;
   int32 last_put_offset_;
+  int32 last_barrier_put_offset_;
 
-  base::Closure channel_error_callback_;
+  base::Closure context_lost_callback_;
 
   MemoryAllocationChangedCallback memory_allocation_changed_callback_;
 
@@ -209,6 +227,7 @@ class CommandBufferProxyImpl
   std::vector<ui::LatencyInfo> latency_info_;
 
   SwapBuffersCompletionCallback swap_buffers_completion_callback_;
+  UpdateVSyncParametersCallback update_vsync_parameters_completion_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CommandBufferProxyImpl);
 };

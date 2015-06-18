@@ -8,8 +8,8 @@
 #ifndef MEDIA_VIDEO_CAPTURE_WIN_SINK_INPUT_PIN_WIN_H_
 #define MEDIA_VIDEO_CAPTURE_WIN_SINK_INPUT_PIN_WIN_H_
 
+#include "media/base/video_capture_types.h"
 #include "media/video/capture/video_capture_device.h"
-#include "media/video/capture/video_capture_types.h"
 #include "media/video/capture/win/pin_base_win.h"
 #include "media/video/capture/win/sink_filter_win.h"
 
@@ -22,21 +22,26 @@ extern const REFERENCE_TIME kSecondsToReferenceTime;
 class SinkInputPin : public PinBase {
  public:
   SinkInputPin(IBaseFilter* filter, SinkFilterObserver* observer);
-  virtual ~SinkInputPin();
 
-  void SetRequestedMediaFormat(const VideoCaptureFormat& format);
+  void SetRequestedMediaFormat(VideoPixelFormat pixel_format,
+                               float frame_rate,
+                               const BITMAPINFOHEADER& info_header);
   // Returns the capability that is negotiated when this
   // pin is connected to a media filter.
   const VideoCaptureFormat& ResultingFormat();
 
   // Implement PinBase.
-  virtual bool IsMediaTypeValid(const AM_MEDIA_TYPE* media_type);
-  virtual bool GetValidMediaType(int index, AM_MEDIA_TYPE* media_type);
+  bool IsMediaTypeValid(const AM_MEDIA_TYPE* media_type) override;
+  bool GetValidMediaType(int index, AM_MEDIA_TYPE* media_type) override;
 
-  STDMETHOD(Receive)(IMediaSample* media_sample);
+  STDMETHOD(Receive)(IMediaSample* media_sample) override;
 
  private:
-  VideoCaptureFormat requested_format_;
+  ~SinkInputPin() override;
+
+  VideoPixelFormat requested_pixel_format_;
+  float requested_frame_rate_;
+  BITMAPINFOHEADER requested_info_header_;
   VideoCaptureFormat resulting_format_;
   SinkFilterObserver* observer_;
 

@@ -61,17 +61,6 @@ WebInspector.isWin = function()
 /**
  * @return {string}
  */
-WebInspector.port = function()
-{
-    if (!WebInspector._port)
-        WebInspector._port = InspectorFrontendHost.port();
-
-    return WebInspector._port;
-}
-
-/**
- * @return {string}
- */
 WebInspector.fontFamily = function()
 {
     if (WebInspector._fontFamily)
@@ -109,12 +98,4 @@ WebInspector.monospaceFontFamily = function()
         break;
     }
     return WebInspector._monospaceFontFamily;
-}
-
-/**
- * @return {boolean}
- */
-WebInspector.isWorkerFrontend = function()
-{
-    return !!Runtime.queryParam("isSharedWorker");
 }

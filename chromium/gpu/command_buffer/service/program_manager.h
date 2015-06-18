@@ -24,7 +24,6 @@ class ProgramCache;
 class ProgramManager;
 class Shader;
 class ShaderManager;
-class ShaderTranslator;
 
 // This is used to track which attributes a particular program needs
 // so we can verify at glDrawXXX time that every attribute is either disabled
@@ -149,6 +148,19 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   void GetProgramInfo(
       ProgramManager* manager, CommonDecoder::Bucket* bucket) const;
 
+  // Gets all the UniformBlock info.
+  // Return false on overflow.
+  bool GetUniformBlocks(CommonDecoder::Bucket* bucket) const;
+
+  // Gets all the TransformFeedbackVarying info.
+  // Return false on overflow.
+  bool GetTransformFeedbackVaryings(CommonDecoder::Bucket* bucket) const;
+
+  // Gather all info through glGetActiveUniformsiv, except for size, type,
+  // name_length, which we gather through glGetActiveUniform in
+  // glGetProgramInfoCHROMIUM.
+  bool GetUniformsES3(CommonDecoder::Bucket* bucket) const;
+
   // Sets the sampler values for a uniform.
   // This is safe to call for any location. If the location is not
   // a sampler uniform nothing will happen.
@@ -171,12 +183,12 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   bool AttachShader(ShaderManager* manager, Shader* shader);
   bool DetachShader(ShaderManager* manager, Shader* shader);
 
+  void CompileAttachedShaders();
+  bool AttachedShadersExist() const;
   bool CanLink() const;
 
   // Performs glLinkProgram and related activities.
   bool Link(ShaderManager* manager,
-            ShaderTranslator* vertex_translator,
-            ShaderTranslator* fragment_shader,
             VaryingsPackingOption varyings_packing_option,
             const ShaderCacheCallback& shader_callback);
 
@@ -200,6 +212,9 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // Sets uniform-location binding from a glBindUniformLocationCHROMIUM call.
   // returns false if error.
   bool SetUniformLocationBinding(const std::string& name, GLint location);
+
+  // Detects if the shader version combination is not valid.
+  bool DetectShaderVersionMismatch() const;
 
   // Detects if there are attribute location conflicts from
   // glBindAttribLocation() calls.
@@ -227,9 +242,20 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // varying registers.
   bool CheckVaryingsPacking(VaryingsPackingOption option) const;
 
+  void TransformFeedbackVaryings(GLsizei count, const char* const* varyings,
+      GLenum buffer_mode);
+
   // Visible for testing
   const LocationMap& bind_attrib_location_map() const {
     return bind_attrib_location_map_;
+  }
+
+  const std::vector<std::string>& transform_feedback_varyings() const {
+    return transform_feedback_varyings_;
+  }
+
+  GLenum transform_feedback_buffer_mode() const {
+    return transform_feedback_buffer_mode_;
   }
 
  private:
@@ -361,6 +387,10 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
   // uniform-location binding map from glBindUniformLocationCHROMIUM() calls.
   LocationMap bind_uniform_location_map_;
+
+  std::vector<std::string> transform_feedback_varyings_;
+
+  GLenum transform_feedback_buffer_mode_;
 };
 
 // Tracks the Programs.

@@ -6,6 +6,7 @@
 #define NET_TOOLS_QUIC_TEST_TOOLS_PACKET_DROPPING_TEST_WRITER_H_
 
 #include <list>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -42,7 +43,8 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   // called after connecting if the helper is not available before.
   // |on_can_write| will be triggered when fake-unblocking; ownership will be
   // assumed.
-  void Initialize(QuicEpollConnectionHelper* helper, Delegate* on_can_write);
+  void Initialize(QuicConnectionHelperInterface* helper,
+                  Delegate* on_can_write);
 
   // QuicPacketWriter methods:
   WriteResult WritePacket(const char* buffer,
@@ -67,6 +69,13 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
     fake_packet_loss_percentage_ = fake_packet_loss_percentage;
   }
 
+  // Simulate dropping the first n packets unconditionally.
+  // Subsequent packets will be lost at fake_packet_loss_percentage_ if set.
+  void set_fake_drop_first_n_packets(int32 fake_drop_first_n_packets) {
+    base::AutoLock locked(config_mutex_);
+    fake_drop_first_n_packets_ = fake_drop_first_n_packets;
+  }
+
   // The percent of time WritePacket will block and set WriteResult's status
   // to WRITE_STATUS_BLOCKED.
   void set_fake_blocked_socket_percentage(
@@ -84,8 +93,7 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
     fake_packet_reorder_percentage_ = fake_packet_reorder_percentage;
   }
 
-  // The percent of time WritePacket will block and set WriteResult's status
-  // to WRITE_STATUS_BLOCKED.
+  // The delay before writing this packet.
   void set_fake_packet_delay(QuicTime::Delta fake_packet_delay) {
     DCHECK(clock_);
     base::AutoLock locked(config_mutex_);
@@ -104,6 +112,7 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
     buffer_size_ = buffer_size;
   }
 
+  // Useful for reproducing very flaky issues.
   void set_seed(uint64 seed) {
     simple_random_.set_seed(seed);
   }
@@ -123,7 +132,7 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
                  QuicTime send_time);
     ~DelayedWrite();
 
-    string buffer;
+    std::string buffer;
     const IPAddressNumber self_address;
     const IPEndPoint peer_address;
     QuicTime send_time;
@@ -139,9 +148,11 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   // Stored packets delayed by fake packet delay or bandwidth restrictions.
   DelayedPacketList delayed_packets_;
   QuicByteCount cur_buffer_size_;
+  uint64 num_calls_to_write_;
 
   base::Lock config_mutex_;
   int32 fake_packet_loss_percentage_;
+  int32 fake_drop_first_n_packets_;
   int32 fake_blocked_socket_percentage_;
   int32 fake_packet_reorder_percentage_;
   QuicTime::Delta fake_packet_delay_;

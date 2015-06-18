@@ -56,12 +56,32 @@ ALWAYS_INLINE int atomicAdd(int volatile* addend, int increment)
 {
     return InterlockedExchangeAdd(reinterpret_cast<long volatile*>(addend), static_cast<long>(increment)) + increment;
 }
+ALWAYS_INLINE unsigned atomicAdd(unsigned volatile* addend, unsigned increment)
+{
+    return InterlockedExchangeAdd(reinterpret_cast<long volatile*>(addend), static_cast<long>(increment)) + increment;
+}
+#if defined(_WIN64)
+ALWAYS_INLINE unsigned long long atomicAdd(unsigned long long volatile* addend, unsigned long long increment)
+{
+    return InterlockedExchangeAdd64(reinterpret_cast<long long volatile*>(addend), static_cast<long long>(increment)) + increment;
+}
+#endif
 
 // atomicSubtract returns the result of the subtraction.
 ALWAYS_INLINE int atomicSubtract(int volatile* addend, int decrement)
 {
     return InterlockedExchangeAdd(reinterpret_cast<long volatile*>(addend), static_cast<long>(-decrement)) - decrement;
 }
+ALWAYS_INLINE unsigned atomicSubtract(unsigned volatile* addend, unsigned decrement)
+{
+    return InterlockedExchangeAdd(reinterpret_cast<long volatile*>(addend), -static_cast<long>(decrement)) - decrement;
+}
+#if defined(_WIN64)
+ALWAYS_INLINE unsigned long long atomicSubtract(unsigned long long volatile* addend, unsigned long long decrement)
+{
+    return InterlockedExchangeAdd64(reinterpret_cast<long long volatile*>(addend), -static_cast<long long>(decrement)) - decrement;
+}
+#endif
 
 ALWAYS_INLINE int atomicIncrement(int volatile* addend) { return InterlockedIncrement(reinterpret_cast<long volatile*>(addend)); }
 ALWAYS_INLINE int atomicDecrement(int volatile* addend) { return InterlockedDecrement(reinterpret_cast<long volatile*>(addend)); }
@@ -86,8 +106,12 @@ ALWAYS_INLINE void atomicSetOneToZero(int volatile* ptr)
 
 // atomicAdd returns the result of the addition.
 ALWAYS_INLINE int atomicAdd(int volatile* addend, int increment) { return __sync_add_and_fetch(addend, increment); }
+ALWAYS_INLINE unsigned atomicAdd(unsigned volatile* addend, unsigned increment) { return __sync_add_and_fetch(addend, increment); }
+ALWAYS_INLINE unsigned long atomicAdd(unsigned long volatile* addend, unsigned long increment) { return __sync_add_and_fetch(addend, increment); }
 // atomicSubtract returns the result of the subtraction.
 ALWAYS_INLINE int atomicSubtract(int volatile* addend, int decrement) { return __sync_sub_and_fetch(addend, decrement); }
+ALWAYS_INLINE unsigned atomicSubtract(unsigned volatile* addend, unsigned decrement) { return __sync_sub_and_fetch(addend, decrement); }
+ALWAYS_INLINE unsigned long atomicSubtract(unsigned long volatile* addend, unsigned long decrement) { return __sync_sub_and_fetch(addend, decrement); }
 
 ALWAYS_INLINE int atomicIncrement(int volatile* addend) { return atomicAdd(addend, 1); }
 ALWAYS_INLINE int atomicDecrement(int volatile* addend) { return atomicSubtract(addend, 1); }
@@ -110,28 +134,49 @@ ALWAYS_INLINE void atomicSetOneToZero(int volatile* ptr)
 #endif
 
 #if defined(THREAD_SANITIZER)
-
+// The definitions below assume an LP64 data model. This is fine because
+// TSan is only supported on x86_64 Linux.
+#if CPU(64BIT) && OS(LINUX)
 ALWAYS_INLINE void releaseStore(volatile int* ptr, int value)
 {
     __tsan_atomic32_store(ptr, value, __tsan_memory_order_release);
+}
+ALWAYS_INLINE void releaseStore(volatile unsigned* ptr, unsigned value)
+{
+    __tsan_atomic32_store(reinterpret_cast<volatile int*>(ptr), static_cast<int>(value), __tsan_memory_order_release);
+}
+ALWAYS_INLINE void releaseStore(volatile unsigned long* ptr, unsigned long value)
+{
+    __tsan_atomic64_store(reinterpret_cast<volatile __tsan_atomic64*>(ptr), static_cast<__tsan_atomic64>(value), __tsan_memory_order_release);
+}
+ALWAYS_INLINE void releaseStore(volatile unsigned long long* ptr, unsigned long long value)
+{
+    __tsan_atomic64_store(reinterpret_cast<volatile __tsan_atomic64*>(ptr), static_cast<__tsan_atomic64>(value), __tsan_memory_order_release);
+}
+ALWAYS_INLINE void releaseStore(void* volatile* ptr, void* value)
+{
+    __tsan_atomic64_store(reinterpret_cast<volatile __tsan_atomic64*>(ptr), reinterpret_cast<__tsan_atomic64>(value), __tsan_memory_order_release);
 }
 
 ALWAYS_INLINE int acquireLoad(volatile const int* ptr)
 {
     return __tsan_atomic32_load(ptr, __tsan_memory_order_acquire);
 }
-
-ALWAYS_INLINE void releaseStore(volatile unsigned* ptr, unsigned value)
-{
-    __tsan_atomic32_store(reinterpret_cast<volatile int*>(ptr), static_cast<int>(value), __tsan_memory_order_release);
-}
-
 ALWAYS_INLINE unsigned acquireLoad(volatile const unsigned* ptr)
 {
     return static_cast<unsigned>(__tsan_atomic32_load(reinterpret_cast<volatile const int*>(ptr), __tsan_memory_order_acquire));
 }
+ALWAYS_INLINE unsigned long acquireLoad(volatile const unsigned long* ptr)
+{
+    return static_cast<unsigned long>(__tsan_atomic64_load(reinterpret_cast<volatile const __tsan_atomic64*>(ptr), __tsan_memory_order_acquire));
+}
+ALWAYS_INLINE void* acquireLoad(void* volatile const* ptr)
+{
+    return reinterpret_cast<void*>(__tsan_atomic64_load(reinterpret_cast<volatile const __tsan_atomic64*>(ptr), __tsan_memory_order_acquire));
+}
+#endif
 
-#else
+#else // defined(THREAD_SANITIZER)
 
 #if CPU(X86) || CPU(X86_64)
 // Only compiler barrier is needed.
@@ -164,6 +209,26 @@ ALWAYS_INLINE void releaseStore(volatile int* ptr, int value)
     MEMORY_BARRIER();
     *ptr = value;
 }
+ALWAYS_INLINE void releaseStore(volatile unsigned* ptr, unsigned value)
+{
+    MEMORY_BARRIER();
+    *ptr = value;
+}
+ALWAYS_INLINE void releaseStore(volatile unsigned long* ptr, unsigned long value)
+{
+    MEMORY_BARRIER();
+    *ptr = value;
+}
+ALWAYS_INLINE void releaseStore(volatile unsigned long long* ptr, unsigned long long value)
+{
+    MEMORY_BARRIER();
+    *ptr = value;
+}
+ALWAYS_INLINE void releaseStore(void* volatile* ptr, void* value)
+{
+    MEMORY_BARRIER();
+    *ptr = value;
+}
 
 ALWAYS_INLINE int acquireLoad(volatile const int* ptr)
 {
@@ -171,16 +236,27 @@ ALWAYS_INLINE int acquireLoad(volatile const int* ptr)
     MEMORY_BARRIER();
     return value;
 }
-
-ALWAYS_INLINE void releaseStore(volatile unsigned* ptr, unsigned value)
-{
-    MEMORY_BARRIER();
-    *ptr = value;
-}
-
 ALWAYS_INLINE unsigned acquireLoad(volatile const unsigned* ptr)
 {
     unsigned value = *ptr;
+    MEMORY_BARRIER();
+    return value;
+}
+ALWAYS_INLINE unsigned long acquireLoad(volatile const unsigned long* ptr)
+{
+    unsigned long value = *ptr;
+    MEMORY_BARRIER();
+    return value;
+}
+ALWAYS_INLINE unsigned long long acquireLoad(volatile const unsigned long long* ptr)
+{
+    unsigned long long value = *ptr;
+    MEMORY_BARRIER();
+    return value;
+}
+ALWAYS_INLINE void* acquireLoad(void* volatile const* ptr)
+{
+    void* value = *ptr;
     MEMORY_BARRIER();
     return value;
 }

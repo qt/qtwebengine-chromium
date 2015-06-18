@@ -67,6 +67,8 @@ source_set("rtp_rtcp") {
     "source/forward_error_correction.h",
     "source/forward_error_correction_internal.cc",
     "source/forward_error_correction_internal.h",
+    "source/h264_sps_parser.cc",
+    "source/h264_sps_parser.h",
     "source/producer_fec.cc",
     "source/producer_fec.h",
     "source/rtp_packet_history.cc",
@@ -104,6 +106,7 @@ source_set("rtp_rtcp") {
   }
 
   deps = [
+    "../..:webrtc_common",
     "../../system_wrappers",
     "../pacing",
     "../remote_bitrate_estimator",
@@ -113,6 +116,8 @@ source_set("rtp_rtcp") {
     cflags = [
       # TODO(jschuh): Bug 1348: fix this warning.
       "/wd4267",  # size_t to int truncations
+      # TODO(kjellander): Bug 261: fix this warning.
+      "/wd4373",  # virtual function override.
     ]
   }
 }

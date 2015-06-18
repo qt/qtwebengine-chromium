@@ -25,6 +25,7 @@
 #ifndef HTMLOptionElement_h
 #define HTMLOptionElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 
 namespace blink {
@@ -32,8 +33,9 @@ namespace blink {
 class ExceptionState;
 class HTMLDataListElement;
 class HTMLSelectElement;
+class ComputedStyle;
 
-class HTMLOptionElement final : public HTMLElement {
+class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLOptionElement> create(Document&);
@@ -69,23 +71,27 @@ public:
     bool spatialNavigationFocused() const;
 
     bool isDisplayNone() const;
+
+    int listIndex() const;
+
 private:
     explicit HTMLOptionElement(Document&);
-    virtual ~HTMLOptionElement();
+    ~HTMLOptionElement();
 
-    virtual bool rendererIsFocusable() const override { return true; }
+    virtual bool supportsFocus() const override;
     virtual void attach(const AttachContext& = AttachContext()) override;
     virtual void detach(const AttachContext& = AttachContext()) override;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void didNotifySubtreeInsertionsToDocument() override;
     virtual void removedFrom(ContainerNode*) override;
     virtual void accessKeyAction(bool) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    // <option> never has a renderer so we manually manage a cached style.
-    void updateNonRenderStyle();
-    virtual RenderStyle* nonRendererStyle() const override;
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    // <option> never has a layoutObject so we manually manage a cached style.
+    void updateNonComputedStyle();
+    virtual ComputedStyle* nonLayoutObjectComputedStyle() const override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
     virtual void didRecalcStyle(StyleRecalcChange) override;
     virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
 
@@ -95,7 +101,7 @@ private:
 
     bool m_disabled;
     bool m_isSelected;
-    RefPtr<RenderStyle> m_style;
+    RefPtr<ComputedStyle> m_style;
 };
 
 } // namespace blink

@@ -15,6 +15,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/common/referrer.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -32,7 +33,7 @@ struct CONTENT_EXPORT OpenURLParams {
                 bool is_renderer_initiated);
   OpenURLParams(const GURL& url,
                 const Referrer& referrer,
-                int64 frame_tree_node_id,
+                int frame_tree_node_id,
                 WindowOpenDisposition disposition,
                 ui::PageTransition transition,
                 bool is_renderer_initiated);
@@ -41,6 +42,10 @@ struct CONTENT_EXPORT OpenURLParams {
   // The URL/referrer to be opened.
   GURL url;
   Referrer referrer;
+
+  // SiteInstance of the frame that initiated the navigation or null if we
+  // don't know it.
+  scoped_refptr<content::SiteInstance> source_site_instance;
 
   // Any redirect URLs that occurred for this navigation before |url|.
   std::vector<GURL> redirect_chain;
@@ -60,7 +65,7 @@ struct CONTENT_EXPORT OpenURLParams {
   std::string extra_headers;
 
   // The browser-global FrameTreeNode ID or -1 to indicate the main frame.
-  int64 frame_tree_node_id;
+  int frame_tree_node_id;
 
   // The disposition requested by the navigation source.
   WindowOpenDisposition disposition;
@@ -93,7 +98,7 @@ class PageNavigator {
 
   // Opens a URL with the given disposition.  The transition specifies how this
   // navigation should be recorded in the history system (for example, typed).
-  // Returns the WebContents the URL is opened in, or NULL if the URL wasn't
+  // Returns the WebContents the URL is opened in, or nullptr if the URL wasn't
   // opened immediately.
   virtual WebContents* OpenURL(const OpenURLParams& params) = 0;
 };

@@ -52,16 +52,18 @@ class MediaSourceDelegate : public media::DemuxerHost {
       int demuxer_client_id,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const scoped_refptr<media::MediaLog> media_log);
-  virtual ~MediaSourceDelegate();
+  ~MediaSourceDelegate() override;
 
   // Initialize the MediaSourceDelegate. |media_source| will be owned by
   // this object after this call.
   void InitializeMediaSource(
       const MediaSourceOpenedCB& media_source_opened_cb,
-      const media::Demuxer::NeedKeyCB& need_key_cb,
+      const media::Demuxer::EncryptedMediaInitDataCB&
+          encrypted_media_init_data_cb,
       const media::SetDecryptorReadyCB& set_decryptor_ready_cb,
       const UpdateNetworkStateCB& update_network_state_cb,
-      const DurationChangeCB& duration_change_cb);
+      const DurationChangeCB& duration_change_cb,
+      const base::Closure& waiting_for_decryption_key_cb);
 
   blink::WebTimeRanges Buffered() const;
   size_t DecodedFrameCount() const;
@@ -104,13 +106,13 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
  private:
   // Methods inherited from DemuxerHost.
-  virtual void AddBufferedTimeRange(base::TimeDelta start,
-                                    base::TimeDelta end) override;
-  virtual void SetDuration(base::TimeDelta duration) override;
-  virtual void OnDemuxerError(media::PipelineStatus status) override;
-  virtual void AddTextStream(media::DemuxerStream* text_stream,
-                             const media::TextTrackConfig& config) override;
-  virtual void RemoveTextStream(media::DemuxerStream* text_stream) override;
+  void AddBufferedTimeRange(base::TimeDelta start,
+                            base::TimeDelta end) override;
+  void SetDuration(base::TimeDelta duration) override;
+  void OnDemuxerError(media::PipelineStatus status) override;
+  void AddTextStream(media::DemuxerStream* text_stream,
+                     const media::TextTrackConfig& config) override;
+  void RemoveTextStream(media::DemuxerStream* text_stream) override;
 
   // Notifies |demuxer_client_| and fires |duration_changed_cb_|.
   void OnDurationChanged(const base::TimeDelta& duration);
@@ -136,8 +138,8 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void FinishResettingDecryptingDemuxerStreams();
 
   void OnDemuxerOpened();
-  void OnNeedKey(const std::string& type,
-                 const std::vector<uint8>& init_data);
+  void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
+                                const std::vector<uint8>& init_data);
   void NotifyDemuxerReady();
 
   // Stops and clears objects on the media thread.
@@ -196,11 +198,8 @@ class MediaSourceDelegate : public media::DemuxerHost {
   media::Ranges<base::TimeDelta> buffered_time_ranges_;
 
   MediaSourceOpenedCB media_source_opened_cb_;
-  media::Demuxer::NeedKeyCB need_key_cb_;
-
-  // Temporary for EME v0.1. In the future the init data type should be passed
-  // through GenerateKeyRequest() directly from WebKit.
-  std::string init_data_type_;
+  media::Demuxer::EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
+  base::Closure waiting_for_decryption_key_cb_;
 
   // Lock used to serialize access for |seeking_|.
   mutable base::Lock seeking_lock_;
@@ -226,9 +225,9 @@ class MediaSourceDelegate : public media::DemuxerHost {
   const scoped_refptr<base::SingleThreadTaskRunner> media_task_runner_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
   base::WeakPtrFactory<MediaSourceDelegate> main_weak_factory_;
   base::WeakPtrFactory<MediaSourceDelegate> media_weak_factory_;
-  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaSourceDelegate);
 };

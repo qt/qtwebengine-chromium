@@ -38,12 +38,12 @@ namespace XPath {
 
 const Value::AdoptTag Value::adopt = { };
 
-void ValueData::trace(Visitor* visitor)
+DEFINE_TRACE(ValueData)
 {
     visitor->trace(m_nodeSet);
 }
 
-void Value::trace(Visitor* visitor)
+DEFINE_TRACE(Value)
 {
     visitor->trace(m_data);
 }
@@ -54,7 +54,7 @@ const NodeSet& Value::toNodeSet(EvaluationContext* context) const
         context->hadTypeConversionError = true;
 
     if (!m_data) {
-        DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<NodeSet>, emptyNodeSet, (NodeSet::create()));
+        DEFINE_STATIC_LOCAL(Persistent<NodeSet>, emptyNodeSet, (NodeSet::create()));
         return *emptyNodeSet;
     }
 

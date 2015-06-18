@@ -47,6 +47,7 @@ import os
 import posixpath
 import sys
 
+from idl_definitions import Visitor
 from idl_reader import IdlReader
 from utilities import get_file_contents, read_file_to_list, idl_filename_to_interface_name, idl_filename_to_component, write_pickle_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl
 
@@ -131,29 +132,22 @@ def get_put_forward_interfaces_from_definition(definition):
 
 def collect_union_types_from_definitions(definitions):
     """Traverse definitions and collect all union types."""
+    class UnionTypeCollector(Visitor):
+        def collect(self, definitions):
+            self._union_types = set()
+            definitions.accept(self)
+            return self._union_types
 
-    def union_types_from(things):
-        return (thing.idl_type for thing in things
-                if thing.idl_type.is_union_type)
+        def visit_typed_object(self, typed_object):
+            for attribute_name in typed_object.idl_type_attributes:
+                attribute = getattr(typed_object, attribute_name, None)
+                if not attribute:
+                    continue
+                for idl_type in attribute.idl_types():
+                    if idl_type.is_union_type:
+                        self._union_types.add(idl_type)
 
-    this_union_types = set()
-    for interface in definitions.interfaces.itervalues():
-        this_union_types.update(union_types_from(interface.attributes))
-        for operation in interface.operations:
-            this_union_types.update(union_types_from(operation.arguments))
-            if operation.idl_type.is_union_type:
-                this_union_types.add(operation.idl_type)
-        for constructor in interface.constructors:
-            this_union_types.update(union_types_from(constructor.arguments))
-        for constructor in interface.custom_constructors:
-            this_union_types.update(union_types_from(constructor.arguments))
-    for callback_function in definitions.callback_functions.itervalues():
-        this_union_types.update(union_types_from(callback_function.arguments))
-        if callback_function.idl_type.is_union_type:
-            this_union_types.add(callback_function.idl_type)
-    for dictionary in definitions.dictionaries.itervalues():
-        this_union_types.update(union_types_from(dictionary.members))
-    return this_union_types
+    return UnionTypeCollector().collect(definitions)
 
 
 class InterfaceInfoCollector(object):
@@ -165,19 +159,31 @@ class InterfaceInfoCollector(object):
             'full_paths': [],
             'include_paths': [],
         })
+        self.enumerations = set()
         self.union_types = set()
+        self.typedefs = {}
 
     def add_paths_to_partials_dict(self, partial_interface_name, full_path,
-                                   this_include_path=None):
+                                   include_paths):
         paths_dict = self.partial_interface_files[partial_interface_name]
         paths_dict['full_paths'].append(full_path)
-        if this_include_path:
-            paths_dict['include_paths'].append(this_include_path)
+        paths_dict['include_paths'].extend(include_paths)
 
     def collect_info(self, idl_filename):
         """Reads an idl file and collects information which is required by the
         binding code generation."""
         definitions = self.reader.read_idl_file(idl_filename)
+
+        this_union_types = collect_union_types_from_definitions(definitions)
+        self.union_types.update(this_union_types)
+        self.typedefs.update(definitions.typedefs)
+        # Check enum duplication.
+        for enum_name in definitions.enumerations.keys():
+            for defined_enum in self.enumerations:
+                if defined_enum.name == enum_name:
+                    raise Exception('Enumeration %s has multiple definitions' % enum_name)
+        self.enumerations.update(definitions.enumerations.values())
+
         if definitions.interfaces:
             definition = next(definitions.interfaces.itervalues())
             interface_info = {
@@ -200,10 +206,7 @@ class InterfaceInfoCollector(object):
                 'referenced_interfaces': None,
             }
         else:
-            raise Exception('IDL file must contain one interface or dictionary')
-
-        this_union_types = collect_union_types_from_definitions(definitions)
-        self.union_types.update(this_union_types)
+            return
 
         extended_attributes = definition.extended_attributes
         implemented_as = extended_attributes.get('ImplementedAs')
@@ -212,7 +215,14 @@ class InterfaceInfoCollector(object):
         if definition.is_partial:
             # We don't create interface_info for partial interfaces, but
             # adds paths to another dict.
-            self.add_paths_to_partials_dict(definition.name, full_path, this_include_path)
+            partial_include_paths = []
+            if this_include_path:
+                partial_include_paths.append(this_include_path)
+            if this_union_types:
+                component = idl_filename_to_component(idl_filename)
+                partial_include_paths.append(
+                    'bindings/%s/v8/UnionTypes%s.h' % (component, component.capitalize()))
+            self.add_paths_to_partials_dict(definition.name, full_path, partial_include_paths)
             return
 
         # 'implements' statements can be included in either the file for the
@@ -250,6 +260,9 @@ class InterfaceInfoCollector(object):
     def get_component_info_as_dict(self):
         """Returns component wide information as a dict."""
         return {
+            'enumerations': dict((enum.name, enum.values)
+                                 for enum in self.enumerations),
+            'typedefs': self.typedefs,
             'union_types': self.union_types,
         }
 

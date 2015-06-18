@@ -12,9 +12,10 @@
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
+#include "device/vibration/vibration_manager.mojom.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/platform/WebIDBFactory.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBFactory.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -33,6 +34,12 @@ class WebBatteryStatus;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebGraphicsContext3DProvider;
+class WebServiceWorkerCacheStorage;
+}
+
+namespace scheduler {
+class RendererScheduler;
+class WebThreadImplForRendererScheduler;
 }
 
 namespace content {
@@ -42,26 +49,23 @@ class DeviceMotionEventPump;
 class DeviceOrientationEventPump;
 class PlatformEventObserverBase;
 class QuotaMessageFilter;
-class RendererClipboardClient;
-class RendererScheduler;
+class RendererClipboardDelegate;
 class RenderView;
 class ThreadSafeSender;
-class WebBluetoothImpl;
 class WebClipboardImpl;
 class WebDatabaseObserverImpl;
 class WebFileSystemImpl;
-class WebSchedulerImpl;
 
 class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
  public:
-  RendererBlinkPlatformImpl(RendererScheduler* renderer_scheduler);
+  explicit RendererBlinkPlatformImpl(
+      scheduler::RendererScheduler* renderer_scheduler);
   virtual ~RendererBlinkPlatformImpl();
 
   void set_plugin_refresh_allowed(bool plugin_refresh_allowed) {
     plugin_refresh_allowed_ = plugin_refresh_allowed;
   }
   // Platform methods:
-  virtual void callOnMainThread(void (*func)(void*), void* context);
   virtual blink::WebClipboard* clipboard();
   virtual blink::WebMimeRegistry* mimeRegistry();
   virtual blink::WebFileUtilities* fileUtilities();
@@ -77,8 +81,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   virtual void createMessageChannel(blink::WebMessagePortChannel** channel1,
                                     blink::WebMessagePortChannel** channel2);
   virtual blink::WebPrescientNetworking* prescientNetworking();
-  virtual void cacheMetadata(
-      const blink::WebURL&, double, const char*, size_t);
+  virtual void cacheMetadata(const blink::WebURL&, int64, const char*, size_t);
   virtual blink::WebString defaultLocale();
   virtual void suddenTerminationChanged(bool enabled);
   virtual blink::WebStorageNamespace* createLocalStorageNamespace();
@@ -92,6 +95,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       const blink::WebString& vfs_file_name);
   virtual long long databaseGetSpaceAvailableForOrigin(
       const blink::WebString& origin_identifier);
+  virtual bool databaseSetFileSize(
+      const blink::WebString& vfs_file_name, long long size);
   virtual blink::WebString signedPublicKeyAndChallengeString(
       unsigned key_size_index,
       const blink::WebString& challenge,
@@ -102,6 +107,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   virtual void screenColorProfile(blink::WebVector<char>* to_profile);
   virtual blink::WebScrollbarBehavior* scrollbarBehavior();
   virtual blink::WebIDBFactory* idbFactory();
+  virtual blink::WebServiceWorkerCacheStorage* cacheStorage(
+      const blink::WebString& origin_identifier);
   virtual blink::WebFileSystem* fileSystem();
   virtual bool canAccelerate2dCanvas();
   virtual bool isThreadedCompositingEnabled();
@@ -151,10 +158,11 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
       blink::WebStorageQuotaCallbacks);
-  virtual blink::WebBluetooth* bluetooth();
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
-  virtual blink::WebScheduler* scheduler();
+  virtual blink::WebThread* currentThread();
+  virtual void recordRappor(const char* metric, const blink::WebString& sample);
+  virtual void recordRapporURL(const char* metric, const blink::WebURL& url);
 
   // Set the PlatformEventObserverBase in |platform_event_observers_| associated
   // with |type| to |observer|. If there was already an observer associated to
@@ -191,8 +199,6 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
     return web_database_observer_impl_.get();
   }
 
-  WebBluetoothImpl* BluetoothImplForTesting() { return bluetooth_.get(); }
-
  private:
   bool CheckPreparsedJsCachingEnabled() const;
 
@@ -204,10 +210,11 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   // Use the data previously set via SetMockDevice...DataForTesting() and send
   // them to the registered listener.
   void SendFakeDeviceEventDataForTesting(blink::WebPlatformEventType type);
+  device::VibrationManagerPtr& GetConnectedVibrationManagerService();
 
-  scoped_ptr<WebSchedulerImpl> web_scheduler_;
+  scoped_ptr<scheduler::WebThreadImplForRendererScheduler> main_thread_;
 
-  scoped_ptr<RendererClipboardClient> clipboard_client_;
+  scoped_ptr<RendererClipboardDelegate> clipboard_delegate_;
   scoped_ptr<WebClipboardImpl> clipboard_;
 
   class FileUtilities;
@@ -216,8 +223,10 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   class MimeRegistry;
   scoped_ptr<MimeRegistry> mime_registry_;
 
+#if !defined(OS_ANDROID) && !defined(OS_WIN)
   class SandboxSupport;
   scoped_ptr<SandboxSupport> sandbox_support_;
+#endif
 
   // This counter keeps track of the number of times sudden termination is
   // enabled or disabled. It starts at 0 (enabled) and for every disable
@@ -239,7 +248,6 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   scoped_ptr<DeviceOrientationEventPump> device_orientation_event_pump_;
 
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
-  scoped_refptr<base::MessageLoopProxy> child_thread_loop_;
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
@@ -252,7 +260,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
 
   scoped_ptr<BatteryStatusDispatcher> battery_status_dispatcher_;
 
-  scoped_ptr<WebBluetoothImpl> bluetooth_;
+  // Handle to the Vibration mojo service.
+  device::VibrationManagerPtr vibration_manager_;
 
   IDMap<PlatformEventObserverBase, IDMapOwnPointer> platform_event_observers_;
 

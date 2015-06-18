@@ -40,27 +40,34 @@ namespace blink {
 
 SpeechRecognition* SpeechRecognition::create(ExecutionContext* context)
 {
-    SpeechRecognition* speechRecognition = new SpeechRecognition(context);
+    ASSERT(context && context->isDocument());
+    Document* document = toDocument(context);
+    ASSERT(document);
+    SpeechRecognition* speechRecognition = new SpeechRecognition(document->page(), context);
     speechRecognition->suspendIfNeeded();
     return speechRecognition;
 }
 
 void SpeechRecognition::start(ExceptionState& exceptionState)
 {
-    ASSERT(m_controller);
+    if (!m_controller)
+        return;
+
     if (m_started) {
         exceptionState.throwDOMException(InvalidStateError, "recognition has already started.");
         return;
     }
 
     m_finalResults.clear();
-    m_controller->start(this, m_grammars.get(), m_lang, m_continuous, m_interimResults, m_maxAlternatives, m_audioTrack);
+    m_controller->start(this, m_grammars, m_lang, m_serviceURI, m_continuous, m_interimResults, m_maxAlternatives, m_audioTrack);
     m_started = true;
 }
 
 void SpeechRecognition::stopFunction()
 {
-    ASSERT(m_controller);
+    if (!m_controller)
+        return;
+
     if (m_started && !m_stopping) {
         m_stopping = true;
         m_controller->stop(this);
@@ -69,7 +76,9 @@ void SpeechRecognition::stopFunction()
 
 void SpeechRecognition::abort()
 {
-    ASSERT(m_controller);
+    if (!m_controller)
+        return;
+
     if (m_started && !m_stopping) {
         m_stopping = true;
         m_controller->abort(this);
@@ -106,14 +115,14 @@ void SpeechRecognition::didEndAudio()
     dispatchEvent(Event::create(EventTypeNames::audioend));
 }
 
-void SpeechRecognition::didReceiveResults(const HeapVector<Member<SpeechRecognitionResult> >& newFinalResults, const HeapVector<Member<SpeechRecognitionResult> >& currentInterimResults)
+void SpeechRecognition::didReceiveResults(const HeapVector<Member<SpeechRecognitionResult>>& newFinalResults, const HeapVector<Member<SpeechRecognitionResult>>& currentInterimResults)
 {
-    unsigned long resultIndex = m_finalResults.size();
+    size_t resultIndex = m_finalResults.size();
 
     for (size_t i = 0; i < newFinalResults.size(); ++i)
         m_finalResults.append(newFinalResults[i]);
 
-    HeapVector<Member<SpeechRecognitionResult> > results = m_finalResults;
+    HeapVector<Member<SpeechRecognitionResult>> results = m_finalResults;
     for (size_t i = 0; i < currentInterimResults.size(); ++i)
         results.append(currentInterimResults[i]);
 
@@ -166,26 +175,19 @@ bool SpeechRecognition::hasPendingActivity() const
     return m_started;
 }
 
-SpeechRecognition::SpeechRecognition(ExecutionContext* context)
-    : ActiveDOMObject(context)
+SpeechRecognition::SpeechRecognition(Page* page, ExecutionContext* context)
+    : PageLifecycleObserver(page)
+    , ActiveDOMObject(context)
     , m_grammars(SpeechGrammarList::create()) // FIXME: The spec is not clear on the default value for the grammars attribute.
     , m_audioTrack(nullptr)
     , m_continuous(false)
     , m_interimResults(false)
     , m_maxAlternatives(1)
-    , m_controller(nullptr)
+    , m_controller(SpeechRecognitionController::from(page))
     , m_stoppedByActiveDOMObject(false)
     , m_started(false)
     , m_stopping(false)
 {
-    Document* document = toDocument(executionContext());
-
-    Page* page = document->page();
-    ASSERT(page);
-
-    m_controller = SpeechRecognitionController::from(page);
-    ASSERT(m_controller);
-
     // FIXME: Need to hook up with Page to get notified when the visibility changes.
 }
 
@@ -193,7 +195,13 @@ SpeechRecognition::~SpeechRecognition()
 {
 }
 
-void SpeechRecognition::trace(Visitor* visitor)
+void SpeechRecognition::contextDestroyed()
+{
+    m_controller = nullptr;
+    PageLifecycleObserver::contextDestroyed();
+}
+
+DEFINE_TRACE(SpeechRecognition)
 {
     visitor->trace(m_grammars);
     visitor->trace(m_audioTrack);
@@ -201,7 +209,9 @@ void SpeechRecognition::trace(Visitor* visitor)
     visitor->trace(m_controller);
 #endif
     visitor->trace(m_finalResults);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<SpeechRecognition>::trace(visitor);
+    PageLifecycleObserver::trace(visitor);
+    ActiveDOMObject::trace(visitor);
 }
 
 } // namespace blink

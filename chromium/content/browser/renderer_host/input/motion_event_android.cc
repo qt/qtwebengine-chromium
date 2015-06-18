@@ -6,9 +6,11 @@
 
 #include <android/input.h>
 
+#include <cmath>
+
 #include "base/android/jni_android.h"
-#include "base/float_util.h"
 #include "jni/MotionEvent_jni.h"
+#include "ui/events/base_event_utils.h"
 #include "ui/events/event_constants.h"
 
 using base::android::AttachCurrentThread;
@@ -92,7 +94,7 @@ base::TimeTicks FromAndroidTime(int64 time_ms) {
 }
 
 float ToValidFloat(float x) {
-  if (base::IsNaN(x))
+  if (std::isnan(x))
     return 0.f;
 
   // Wildly large orientation values have been observed in the wild after device
@@ -102,6 +104,17 @@ float ToValidFloat(float x) {
     return 0.f;
 
   return x;
+}
+
+size_t ToValidHistorySize(jint history_size, ui::MotionEvent::Action action) {
+  DCHECK_GE(history_size, 0);
+  // While the spec states that only ACTION_MOVE events should contain
+  // historical entries, it's possible that an embedder could repurpose an
+  // ACTION_MOVE event into a different kind of event. In that case, the
+  // historical values are meaningless, and should not be exposed.
+  if (action != ui::MotionEvent::ACTION_MOVE)
+    return 0;
+  return history_size;
 }
 
 }  // namespace
@@ -148,17 +161,17 @@ MotionEventAndroid::MotionEventAndroid(float pix_to_dip,
       cached_time_(FromAndroidTime(time_ms)),
       cached_action_(FromAndroidAction(android_action)),
       cached_pointer_count_(pointer_count),
-      cached_history_size_(history_size),
+      cached_history_size_(ToValidHistorySize(history_size, cached_action_)),
       cached_action_index_(action_index),
       cached_button_state_(FromAndroidButtonState(android_button_state)),
       cached_flags_(FromAndroidMetaState(meta_state)),
       cached_raw_position_offset_(ToDips(raw_offset_x_pixels),
-                                  ToDips(raw_offset_y_pixels)) {
+                                  ToDips(raw_offset_y_pixels)),
+      unique_event_id_(ui::GetNextTouchEventId()) {
   DCHECK_GT(pointer_count, 0);
-  DCHECK_GE(history_size, 0);
 
   event_.Reset(env, event);
-  if (cached_pointer_count_ > MAX_POINTERS_TO_CACHE || history_size > 0)
+  if (cached_pointer_count_ > MAX_POINTERS_TO_CACHE || cached_history_size_ > 0)
     DCHECK(event_.obj());
 
   cached_pointers_[0] = FromAndroidPointer(pointer0);
@@ -168,8 +181,8 @@ MotionEventAndroid::MotionEventAndroid(float pix_to_dip,
 MotionEventAndroid::~MotionEventAndroid() {
 }
 
-int MotionEventAndroid::GetId() const {
-  return 0;
+uint32 MotionEventAndroid::GetUniqueEventId() const {
+  return unique_event_id_;
 }
 
 MotionEventAndroid::Action MotionEventAndroid::GetAction() const {
@@ -177,6 +190,11 @@ MotionEventAndroid::Action MotionEventAndroid::GetAction() const {
 }
 
 int MotionEventAndroid::GetActionIndex() const {
+  DCHECK(cached_action_ == ACTION_POINTER_UP ||
+         cached_action_ == ACTION_POINTER_DOWN)
+      << "Invalid action for GetActionIndex(): " << cached_action_;
+  DCHECK_GE(cached_action_index_, 0);
+  DCHECK_LT(cached_action_index_, static_cast<int>(cached_pointer_count_));
   return cached_action_index_;
 }
 

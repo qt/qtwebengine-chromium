@@ -5,12 +5,14 @@
 #include "chromecast/crash/android/crash_handler.h"
 
 #include <jni.h>
+#include <stdlib.h>
 #include <string>
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "breakpad/src/client/linux/handler/exception_handler.h"
 #include "breakpad/src/client/linux/handler/minidump_descriptor.h"
 #include "chromecast/common/version.h"
@@ -24,20 +26,27 @@ namespace {
 
 chromecast::CrashHandler* g_crash_handler = NULL;
 
-// ExceptionHandler requires a HandlerCallback as a function pointer. This
-// function exists to proxy into the global CrashHandler instance.
-bool HandleCrash(const void* /* crash_context */,
-                 size_t /* crash_context_size */,
-                 void* /* context */) {
+bool HandleCrash(void* /* crash_context */) {
   DCHECK(g_crash_handler);
-  if (g_crash_handler->CanUploadCrashDump()) {
-    g_crash_handler->AttemptUploadCrashDump();
-  } else {
-    g_crash_handler->RemoveCrashDumps();
-  }
+  g_crash_handler->UploadCrashDumps();
 
-  // Let the exception continue to propagate up to the system.
+  // TODO(gunsch): clean up the ATV crash handling code.
+  // Don't write another minidump. Chrome's default ExceptionHandler has already
+  // written a minidump by this point in the crash handling sequence.
   return false;
+}
+
+// Debug builds: always to crash-staging
+// Release builds: only to crash-staging for local/invalid build numbers
+bool UploadCrashToStaging() {
+#if CAST_IS_DEBUG_BUILD()
+  return true;
+#else
+  int build_number;
+  if (base::StringToInt(CAST_BUILD_INCREMENTAL, &build_number))
+    return build_number == 0;
+  return true;
+#endif
 }
 
 }  // namespace
@@ -79,25 +88,35 @@ CrashHandler::~CrashHandler() {
 }
 
 void CrashHandler::Initialize(const std::string& process_type) {
-  if (process_type != switches::kZygoteProcess) {
-    if (process_type.empty()) {
-      // ExceptionHandlers are called on crash in reverse order of
-      // instantiation. This ExceptionHandler will attempt to upload crashes
-      // and the log file written out by the main process.
+  if (process_type.empty()) {
+    InitializeUploader();
 
-      // Dummy MinidumpDescriptor just to start up another ExceptionHandler.
-      google_breakpad::MinidumpDescriptor dummy(crash_dump_path_.value());
-      crash_uploader_.reset(new google_breakpad::ExceptionHandler(
-          dummy, NULL, NULL, NULL, true, -1));
-      crash_uploader_->set_crash_handler(&::HandleCrash);
+    // ExceptionHandlers are called on crash in reverse order of
+    // instantiation. This ExceptionHandler will attempt to upload crashes
+    // and the log file written out by the main process.
 
-      breakpad::InitCrashReporter(process_type);
-    } else {
-      breakpad::InitNonBrowserCrashReporterForAndroid(process_type);
-    }
+    // Dummy MinidumpDescriptor just to start up another ExceptionHandler.
+    google_breakpad::MinidumpDescriptor dummy(crash_dump_path_.value());
+    crash_uploader_.reset(new google_breakpad::ExceptionHandler(
+        dummy, &HandleCrash, NULL, NULL, true, -1));
+
+    breakpad::InitCrashReporter(process_type);
+
+    return;
   }
 
-  UploadCrashDumpsAsync();
+  if (process_type != switches::kZygoteProcess) {
+    breakpad::InitNonBrowserCrashReporterForAndroid(process_type);
+  }
+}
+
+void CrashHandler::InitializeUploader() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jstring> crash_dump_path_java =
+      base::android::ConvertUTF8ToJavaString(env,
+                                             crash_dump_path_.value());
+  Java_CastCrashHandler_initializeUploader(
+      env, crash_dump_path_java.obj(), UploadCrashToStaging());
 }
 
 bool CrashHandler::CanUploadCrashDump() {
@@ -105,41 +124,20 @@ bool CrashHandler::CanUploadCrashDump() {
   return crash_reporter_client_->GetCollectStatsConsent();
 }
 
-void CrashHandler::AttemptUploadCrashDump() {
+void CrashHandler::UploadCrashDumps() {
   VLOG(1) << "Attempting to upload current process crash";
-  JNIEnv* env = base::android::AttachCurrentThread();
-  // Crash dump location
-  base::android::ScopedJavaLocalRef<jstring> crash_dump_path_java =
-      base::android::ConvertUTF8ToJavaString(env,
-                                             crash_dump_path_.value());
-  // Current log file location
-  base::android::ScopedJavaLocalRef<jstring> log_file_path_java =
-      base::android::ConvertUTF8ToJavaString(env, log_file_path_.value());
-  Java_CastCrashHandler_uploadCurrentProcessDumpSync(
-      env,
-      crash_dump_path_java.obj(),
-      log_file_path_java.obj(),
-      CAST_IS_DEBUG_BUILD);
-}
 
-void CrashHandler::UploadCrashDumpsAsync() {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jstring> crash_dump_path_java =
-      base::android::ConvertUTF8ToJavaString(env,
-                                             crash_dump_path_.value());
-  Java_CastCrashHandler_uploadCrashDumpsAsync(env,
-                                              crash_dump_path_java.obj(),
-                                              CAST_IS_DEBUG_BUILD);
-}
-
-void CrashHandler::RemoveCrashDumps() {
-  VLOG(1) << "Removing crash dumps instead of uploading";
-  JNIEnv* env = base::android::AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jstring> crash_dump_path_java =
-      base::android::ConvertUTF8ToJavaString(env,
-                                             crash_dump_path_.value());
-  Java_CastCrashHandler_removeCrashDumpsSync(
-      env, crash_dump_path_java.obj(), CAST_IS_DEBUG_BUILD);
+  if (CanUploadCrashDump()) {
+    JNIEnv* env = base::android::AttachCurrentThread();
+    // Current log file location
+    base::android::ScopedJavaLocalRef<jstring> log_file_path_java =
+        base::android::ConvertUTF8ToJavaString(env, log_file_path_.value());
+    Java_CastCrashHandler_uploadCrashDumps(env, log_file_path_java.obj());
+  } else {
+    VLOG(1) << "Removing crash dumps instead of uploading";
+    JNIEnv* env = base::android::AttachCurrentThread();
+    Java_CastCrashHandler_removeCrashDumps(env);
+  }
 }
 
 }  // namespace chromecast

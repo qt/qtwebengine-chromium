@@ -25,13 +25,16 @@ class COMPOSITOR_EXPORT TransformAnimationCurveAdapter
   ~TransformAnimationCurveAdapter() override;
 
   // TransformAnimationCurve implementation.
-  double Duration() const override;
+  base::TimeDelta Duration() const override;
   scoped_ptr<AnimationCurve> Clone() const override;
-  gfx::Transform GetValue(double t) const override;
+  gfx::Transform GetValue(base::TimeDelta t) const override;
   bool AnimatedBoundsForBox(const gfx::BoxF& box,
                             gfx::BoxF* bounds) const override;
   bool AffectsScale() const override;
   bool IsTranslation() const override;
+  bool PreservesAxisAlignment() const override;
+  bool AnimationStartScale(bool forward_direction,
+                           float* start_scale) const override;
   bool MaximumTargetScale(bool forward_direction,
                           float* max_scale) const override;
 
@@ -55,13 +58,16 @@ class COMPOSITOR_EXPORT InverseTransformCurveAdapter
 
   ~InverseTransformCurveAdapter() override;
 
-  double Duration() const override;
+  base::TimeDelta Duration() const override;
   scoped_ptr<AnimationCurve> Clone() const override;
-  gfx::Transform GetValue(double t) const override;
+  gfx::Transform GetValue(base::TimeDelta t) const override;
   bool AnimatedBoundsForBox(const gfx::BoxF& box,
                             gfx::BoxF* bounds) const override;
   bool AffectsScale() const override;
   bool IsTranslation() const override;
+  bool PreservesAxisAlignment() const override;
+  bool AnimationStartScale(bool forward_direction,
+                           float* start_scale) const override;
   bool MaximumTargetScale(bool forward_direction,
                           float* max_scale) const override;
 

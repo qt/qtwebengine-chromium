@@ -5,7 +5,10 @@
 config("npapi_config") {
   # Some things #include "bindings/npapi.h" and others just #include
   # "npapi.h". Account for both flavors.
-  include_dirs = [ ".", "bindings" ]
+  include_dirs = [
+    ".",
+    "bindings",
+  ]
 }
 
 source_set("npapi") {
@@ -16,8 +19,8 @@ source_set("npapi") {
     "bindings/npapi_x11.h",
     "bindings/npfunctions.h",
     "bindings/nphostapi.h",
-    "bindings/nptypes.h",
     "bindings/npruntime.h",
+    "bindings/nptypes.h",
   ]
 
   public_configs = [ ":npapi_config" ]

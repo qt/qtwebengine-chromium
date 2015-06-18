@@ -42,19 +42,18 @@
 #include "core/css/MediaValuesDynamic.h"
 #include "core/css/PointerProperties.h"
 #include "core/css/resolver/MediaQueryResult.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "platform/PlatformScreen.h"
+#include "core/layout/LayoutView.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
+#include "public/platform/WebDisplayMode.h"
 #include "wtf/HashMap.h"
 
 namespace blink {
@@ -142,7 +141,7 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultLi
     if (!querySet)
         return true;
 
-    const WillBeHeapVector<OwnPtrWillBeMember<MediaQuery> >& queries = querySet->queryVector();
+    const WillBeHeapVector<OwnPtrWillBeMember<MediaQuery>>& queries = querySet->queryVector();
     if (!queries.size())
         return true; // Empty query list evaluates to true.
 
@@ -218,6 +217,27 @@ static bool monochromeMediaFeatureEval(const MediaQueryExpValue& value, MediaFea
     }
 
     return colorMediaFeatureEval(value, op, mediaValues);
+}
+
+static bool displayModeMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
+{
+    if (!value.isID)
+        return false;
+
+    WebDisplayMode mode = mediaValues.displayMode();
+    switch (value.id) {
+    case CSSValueFullscreen:
+        return mode == WebDisplayModeFullscreen;
+    case CSSValueStandalone:
+        return mode == WebDisplayModeStandalone;
+    case CSSValueMinimalUi:
+        return mode == WebDisplayModeMinimalUi;
+    case CSSValueBrowser:
+        return mode == WebDisplayModeBrowser;
+    default:
+        ASSERT_NOT_REACHED();
+        return false;
+    }
 }
 
 static bool orientationMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
@@ -523,34 +543,19 @@ static bool hoverMediaFeatureEval(const MediaQueryExpValue& value, MediaFeatureP
 {
     HoverType hover = mediaValues.primaryHoverType();
 
-    if (RuntimeEnabledFeatures::hoverMediaQueryKeywordsEnabled()) {
-        if (!value.isValid())
-            return hover != HoverTypeNone;
+    if (!value.isValid())
+        return hover != HoverTypeNone;
 
-        if (!value.isID)
-            return false;
+    if (!value.isID)
+        return false;
 
-        return (hover == HoverTypeNone && value.id == CSSValueNone)
-            || (hover == HoverTypeOnDemand && value.id == CSSValueOnDemand)
-            || (hover == HoverTypeHover && value.id == CSSValueHover);
-    } else {
-        float number = 1;
-        if (value.isValid()) {
-            if (!numberValue(value, number))
-                return false;
-        }
-
-        return (hover == HoverTypeNone && !number)
-            || (hover == HoverTypeOnDemand && !number)
-            || (hover == HoverTypeHover && number == 1);
-    }
+    return (hover == HoverTypeNone && value.id == CSSValueNone)
+        || (hover == HoverTypeOnDemand && value.id == CSSValueOnDemand)
+        || (hover == HoverTypeHover && value.id == CSSValueHover);
 }
 
 static bool anyHoverMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
-    if (!RuntimeEnabledFeatures::anyPointerMediaQueriesEnabled())
-        return false;
-
     int availableHoverTypes = mediaValues.availableHoverTypes();
 
     if (!value.isValid())
@@ -589,9 +594,6 @@ static bool pointerMediaFeatureEval(const MediaQueryExpValue& value, MediaFeatur
 
 static bool anyPointerMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
-    if (!RuntimeEnabledFeatures::anyPointerMediaQueriesEnabled())
-        return false;
-
     int availablePointers = mediaValues.availablePointerTypes();
 
     if (!value.isValid())

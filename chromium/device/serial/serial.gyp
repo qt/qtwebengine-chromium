@@ -15,7 +15,7 @@
       # generated cpp files must be listed explicitly in device_serial
       'type': 'none',
       'includes': [
-        '../../mojo/public/tools/bindings/mojom_bindings_generator.gypi',
+        '../../third_party/mojo/mojom_bindings_generator.gypi',
       ],
       'sources': [
         'data_stream.mojom',
@@ -31,7 +31,7 @@
       'conditions': [
         ['use_udev == 1', {
           'dependencies': [
-            '../../build/linux/system.gyp:udev',
+            '../udev_linux/udev.gyp:udev_linux',
           ],
         }, {
           'sources!': [
@@ -42,12 +42,12 @@
       ],
       'dependencies': [
         'device_serial_mojo',
-        '../../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
         '../../net/net.gyp:net',
+        '../../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'export_dependent_settings': [
         'device_serial_mojo',
-        '../../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
+        '../../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/data_stream.mojom.cc',
@@ -58,8 +58,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/serial.mojom.h',
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/serial_serialization.mojom.cc',
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/serial_serialization.mojom.h',
-        'async_waiter.cc',
-        'async_waiter.h',
         'buffer.cc',
         'buffer.h',
         'data_receiver.cc',
@@ -93,7 +91,7 @@
       ],
     },
     {
-      # GN version: //device/serial:test_util
+      # GN version: //device/serial:test_support
       'target_name': 'device_serial_test_util',
       'type': 'static_library',
       'dependencies': [

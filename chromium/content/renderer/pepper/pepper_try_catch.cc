@@ -26,22 +26,22 @@ PepperTryCatch::PepperTryCatch(PepperPluginInstanceImpl* instance,
 
 PepperTryCatch::~PepperTryCatch() {}
 
-v8::Handle<v8::Value> PepperTryCatch::ToV8(PP_Var var) {
+v8::Local<v8::Value> PepperTryCatch::ToV8(PP_Var var) {
   if (HasException()) {
     SetException(kConversionException);
-    return v8::Handle<v8::Value>();
+    return v8::Local<v8::Value>();
   }
 
-  v8::Handle<v8::Value> result;
+  v8::Local<v8::Value> result;
   bool success = var_converter_->ToV8Value(var, GetContext(), &result);
   if (!success) {
     SetException(kConversionException);
-    return v8::Handle<v8::Value>();
+    return v8::Local<v8::Value>();
   }
   return result;
 }
 
-ppapi::ScopedPPVar PepperTryCatch::FromV8(v8::Handle<v8::Value> v8_value) {
+ppapi::ScopedPPVar PepperTryCatch::FromV8(v8::Local<v8::Value> v8_value) {
   if (HasException() || v8_value.IsEmpty()) {
     SetException(kConversionException);
     return ppapi::ScopedPPVar();
@@ -79,7 +79,7 @@ bool PepperTryCatchV8::HasException() {
   return GetContext().IsEmpty() || exception_.type != PP_VARTYPE_UNDEFINED;
 }
 
-v8::Handle<v8::Context> PepperTryCatchV8::GetContext() {
+v8::Local<v8::Context> PepperTryCatchV8::GetContext() {
   // When calling from JS into the plugin always use the current context.
   return instance_->GetIsolate()->GetCurrentContext();
 }
@@ -122,9 +122,17 @@ PepperTryCatchVar::PepperTryCatchVar(PepperPluginInstanceImpl* instance,
                                      PP_Var* exception)
     : PepperTryCatch(instance, var_converter),
       handle_scope_(instance_->GetIsolate()),
-      context_(GetContext()),
       exception_(exception),
       exception_is_set_(false) {
+  // Store a handle to the context here for 2 reasons:
+  // 1) To hold a handle to it in case all other handles are destroyed.
+  // 2) Because calling PepperPluginInstanceImpl::GetMainWorldContext() later
+  //    can result in trying to access the plugin element. However the plugin
+  //    element may have been destroyed during the PepperTryCatchVar (for
+  //    example if a script is executed which destroys the plugin element). So
+  //    we want to avoid accessing the plugin element again beyond this point.
+  context_ = instance_->GetMainWorldContext();
+
   // We switch to the plugin context if it's not empty.
   if (!context_.IsEmpty())
     context_->Enter();
@@ -140,11 +148,16 @@ bool PepperTryCatchVar::HasException() {
     return true;
 
   std::string exception_message;
-  if (GetContext().IsEmpty()) {
+  if (context_.IsEmpty()) {
     exception_message = "The v8 context has been destroyed.";
   } else if (try_catch_.HasCaught()) {
-    v8::String::Utf8Value utf8(try_catch_.Message()->Get());
-    exception_message = std::string(*utf8, utf8.length());
+    v8::Local<v8::Message> message(try_catch_.Message());
+    if (!message.IsEmpty()) {
+      v8::String::Utf8Value utf8(try_catch_.Message()->Get());
+      exception_message = std::string(*utf8, utf8.length());
+    } else {
+      exception_message = "There was a v8 exception.";
+    }
   }
 
   if (!exception_message.empty()) {
@@ -156,9 +169,8 @@ bool PepperTryCatchVar::HasException() {
   return exception_is_set_;
 }
 
-v8::Handle<v8::Context> PepperTryCatchVar::GetContext() {
-  // When calling into JS from the plugin, always use the plugin context.
-  return instance_->GetMainWorldContext();
+v8::Local<v8::Context> PepperTryCatchVar::GetContext() {
+  return context_;
 }
 
 void PepperTryCatchVar::SetException(const char* message) {

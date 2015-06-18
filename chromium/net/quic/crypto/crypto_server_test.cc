@@ -22,6 +22,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::StringPiece;
+using std::endl;
 using std::ostream;
 using std::string;
 using std::vector;
@@ -42,36 +43,47 @@ class QuicCryptoServerConfigPeer {
   QuicCryptoServerConfig* server_config_;
 };
 
-// Run tests with combinations of
-// {FLAGS_use_early_return_when_verifying_chlo,
-//  FLAGS_send_quic_crypto_reject_reason}.
+// Run tests with both parities of
+// FLAGS_use_early_return_when_verifying_chlo.
 struct TestParams {
-  TestParams(bool use_early_return_when_verifying_chlo,
-             bool send_quic_crypto_reject_reason)
+  explicit TestParams(bool use_early_return_when_verifying_chlo,
+                      bool enable_stateless_rejects,
+                      bool use_stateless_rejects)
       : use_early_return_when_verifying_chlo(
             use_early_return_when_verifying_chlo),
-        send_quic_crypto_reject_reason(send_quic_crypto_reject_reason) {
-  }
+        enable_stateless_rejects(enable_stateless_rejects),
+        use_stateless_rejects(use_stateless_rejects) {}
 
   friend ostream& operator<<(ostream& os, const TestParams& p) {
     os << "{ use_early_return_when_verifying_chlo: "
-       << p.use_early_return_when_verifying_chlo
-       << " send_quic_crypto_reject_reason: "
-       << p.send_quic_crypto_reject_reason << " }";
+       << p.use_early_return_when_verifying_chlo << endl;
+    os << "  enable_stateless_rejects: " << p.enable_stateless_rejects << endl;
+    os << "  use_stateless_rejects: " << p.use_stateless_rejects << " }";
     return os;
   }
 
   bool use_early_return_when_verifying_chlo;
-  bool send_quic_crypto_reject_reason;
+  // This only enables the stateless reject feature via the feature-flag.
+  // It does not force the crypto server to emit stateless rejects.
+  bool enable_stateless_rejects;
+  // If true, this forces the server to send a stateless reject when
+  // rejecting messages.  This should be a no-op if
+  // enable_stateless_rejects is false.
+  bool use_stateless_rejects;
 };
 
 // Constructs various test permutations.
 vector<TestParams> GetTestParams() {
   vector<TestParams> params;
-  params.push_back(TestParams(false, false));
-  params.push_back(TestParams(false, true));
-  params.push_back(TestParams(true, false));
-  params.push_back(TestParams(true, true));
+  static const bool kTrueFalse[] = {true, false};
+  for (bool use_early_return : kTrueFalse) {
+    for (bool enable_stateless_rejects : kTrueFalse) {
+      for (bool use_stateless_rejects : kTrueFalse) {
+        params.push_back(TestParams(use_early_return, enable_stateless_rejects,
+                                    use_stateless_rejects));
+      }
+    }
+  }
   return params;
 }
 
@@ -88,8 +100,9 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
 
     FLAGS_use_early_return_when_verifying_chlo =
         GetParam().use_early_return_when_verifying_chlo;
-    FLAGS_send_quic_crypto_reject_reason =
-        GetParam().send_quic_crypto_reject_reason;
+    FLAGS_enable_quic_stateless_reject_support =
+        GetParam().enable_stateless_rejects;
+    use_stateless_rejects_ = GetParam().use_stateless_rejects;
   }
 
   void SetUp() override {
@@ -121,11 +134,12 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
     ShouldSucceed(client_hello);
     // The message should be rejected because the source-address token is
     // missing.
-    ASSERT_EQ(kREJ, out_.tag());
+    CheckRejectTag();
     const HandshakeFailureReason kRejectReasons[] = {
       SERVER_CONFIG_INCHOATE_HELLO_FAILURE
     };
     CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
+    CheckForServerDesignatedConnectionId();
 
     StringPiece srct;
     ASSERT_TRUE(out_.GetStringPiece(kSourceAddressTokenTag, &srct));
@@ -205,7 +219,8 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
   void RunValidate(
       const CryptoHandshakeMessage& message,
       ValidateClientHelloResultCallback* cb) {
-    config_.ValidateClientHello(message, client_address_, &clock_, cb);
+    config_.ValidateClientHello(message, client_address_.address(), &clock_,
+                                cb);
   }
 
   void ShouldFailMentioning(const char* error_substr,
@@ -219,7 +234,7 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
                             const CryptoHandshakeMessage& message,
                             bool* called) {
     config_.ValidateClientHello(
-        message, client_address_, &clock_,
+        message, client_address_.address(), &clock_,
         new ValidateCallback(this, false, error_substr, called));
   }
 
@@ -227,10 +242,14 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
                                const ValidateCallback::Result& result,
                                bool should_succeed,
                                const char* error_substr) {
+    IPAddressNumber server_ip;
     string error_details;
+    QuicConnectionId server_designated_connection_id =
+        rand_for_id_generation_.RandUint64();
     QuicErrorCode error = config_.ProcessClientHello(
-        result, 1 /* ConnectionId */, client_address_,
-        supported_versions_.front(), supported_versions_, &clock_, rand_,
+        result, 1 /* ConnectionId */, server_ip, client_address_,
+        supported_versions_.front(), supported_versions_,
+        use_stateless_rejects_, server_designated_connection_id, &clock_, rand_,
         &params_, &out_, &error_details);
 
     if (should_succeed) {
@@ -275,10 +294,6 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
     COMPILE_ASSERT(sizeof(QuicTag) == sizeof(uint32), header_out_of_sync);
     QuicErrorCode error_code = out_.GetTaglist(kRREJ, &reject_reasons,
                                                &num_reject_reasons);
-    if (!FLAGS_send_quic_crypto_reject_reason) {
-      ASSERT_EQ(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND, error_code);
-      return;
-    }
     ASSERT_EQ(QUIC_NO_ERROR, error_code);
 
     if (FLAGS_use_early_return_when_verifying_chlo) {
@@ -291,8 +306,39 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
     }
   }
 
+  // If the server is rejecting statelessly, make sure it contains a
+  // server-designated connection id.  Once the check is complete,
+  // allow the random id-generator to move to the next value.
+  void CheckForServerDesignatedConnectionId() {
+    QuicConnectionId server_designated_connection_id;
+    if (!RejectsAreStateless()) {
+      EXPECT_EQ(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND,
+                out_.GetUint64(kRCID, &server_designated_connection_id));
+    } else {
+      ASSERT_EQ(QUIC_NO_ERROR,
+                out_.GetUint64(kRCID, &server_designated_connection_id));
+      EXPECT_EQ(rand_for_id_generation_.RandUint64(),
+                server_designated_connection_id);
+    }
+    rand_for_id_generation_.ChangeValue();
+  }
+
+  void CheckRejectTag() {
+    if (RejectsAreStateless()) {
+      ASSERT_EQ(kSREJ, out_.tag());
+    } else {
+      ASSERT_EQ(kREJ, out_.tag());
+    }
+  }
+
+  bool RejectsAreStateless() {
+    return GetParam().enable_stateless_rejects &&
+           GetParam().use_stateless_rejects;
+  }
+
  protected:
   QuicRandom* const rand_;
+  MockRandom rand_for_id_generation_;
   MockClock clock_;
   const IPEndPoint client_address_;
   QuicVersionVector supported_versions_;
@@ -302,6 +348,7 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
   QuicCryptoNegotiatedParameters params_;
   CryptoHandshakeMessage out_;
   uint8 orbit_[kOrbitSize];
+  bool use_stateless_rejects_;
 
   // These strings contain hex escaped values from the server suitable for
   // passing to |InchoateClientHello| when constructing client hello messages.
@@ -309,15 +356,14 @@ class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
   scoped_ptr<CryptoHandshakeMessage> server_config_;
 };
 
-// Run all CryptoServerTest with all combinations of
-// FLAGS_use_early_return_when_verifying_chlo and
-// FLAGS_send_quic_crypto_reject_reason.
+// Run all CryptoServerTest with both values of
+// FLAGS_use_early_return_when_verifying_chlo.
 INSTANTIATE_TEST_CASE_P(CryptoServerTests,
                         CryptoServerTest,
                         ::testing::ValuesIn(GetTestParams()));
 
 TEST_P(CryptoServerTest, BadSNI) {
-  static const char* kBadSNIs[] = {
+  static const char* const kBadSNIs[] = {
     "",
     "foo",
     "#00",
@@ -383,7 +429,7 @@ TEST_P(CryptoServerTest, TooSmall) {
 
 TEST_P(CryptoServerTest, BadSourceAddressToken) {
   // Invalid source-address tokens should be ignored.
-  static const char* kBadSourceAddressTokens[] = {
+  static const char* const kBadSourceAddressTokens[] = {
     "",
     "foo",
     "#0000",
@@ -405,7 +451,7 @@ TEST_P(CryptoServerTest, BadSourceAddressToken) {
 
 TEST_P(CryptoServerTest, BadClientNonce) {
   // Invalid nonces should be ignored.
-  static const char* kBadNonces[] = {
+  static const char* const kBadNonces[] = {
     "",
     "#0000",
     "#0000000000000000000000000000000000000000",
@@ -458,7 +504,7 @@ TEST_P(CryptoServerTest, CorruptServerConfig) {
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       nullptr);
   ShouldSucceed(msg);
-  ASSERT_EQ(kREJ, out_.tag());
+  CheckRejectTag();
   const HandshakeFailureReason kRejectReasons[] = {
     SERVER_CONFIG_UNKNOWN_CONFIG_FAILURE
   };
@@ -479,7 +525,7 @@ TEST_P(CryptoServerTest, CorruptSourceAddressToken) {
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       nullptr);
   ShouldSucceed(msg);
-  ASSERT_EQ(kREJ, out_.tag());
+  CheckRejectTag();
   const HandshakeFailureReason kRejectReasons[] = {
     SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE
   };
@@ -500,7 +546,7 @@ TEST_P(CryptoServerTest, CorruptClientNonceAndSourceAddressToken) {
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       nullptr);
   ShouldSucceed(msg);
-  ASSERT_EQ(kREJ, out_.tag());
+  CheckRejectTag();
   const HandshakeFailureReason kRejectReasons[] = {
     SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
     CLIENT_NONCE_INVALID_FAILURE
@@ -523,7 +569,7 @@ TEST_P(CryptoServerTest, CorruptMultipleTags) {
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       nullptr);
   ShouldSucceed(msg);
-  ASSERT_EQ(kREJ, out_.tag());
+  CheckRejectTag();
   const HandshakeFailureReason kRejectReasons[] = {
     SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
     CLIENT_NONCE_INVALID_FAILURE,
@@ -548,7 +594,7 @@ TEST_P(CryptoServerTest, ReplayProtection) {
   ShouldSucceed(msg);
   // The message should be rejected because the strike-register is still
   // quiescent.
-  ASSERT_EQ(kREJ, out_.tag());
+  CheckRejectTag();
 
   const HandshakeFailureReason kRejectReasons[] = {
     CLIENT_NONCE_INVALID_TIME_FAILURE
@@ -608,7 +654,6 @@ TEST(CryptoServerConfigGenerationTest, SCIDVaries) {
 
   EXPECT_NE(scid_a, scid_b);
 }
-
 
 TEST(CryptoServerConfigGenerationTest, SCIDIsHashOfServerConfig) {
   MockRandom rand_a;
@@ -720,7 +765,7 @@ TEST_P(AsyncStrikeServerVerificationTest, AsyncReplayProtection) {
   ASSERT_TRUE(called);
   EXPECT_EQ(0, strike_register_client_->PendingVerifications());
   // The message should be rejected now.
-  EXPECT_EQ(kREJ, out_.tag());
+  CheckRejectTag();
 }
 
 }  // namespace test

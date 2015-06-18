@@ -11,7 +11,7 @@ cr.define('policy', function() {
   var isMobilePage = function() {
     return document.defaultView.getComputedStyle(document.querySelector(
         '.scope-column')).display == 'none';
-  }
+  };
 
   /**
    * A box that shows the status of cloud policy for a device or user.
@@ -48,6 +48,25 @@ cr.define('policy', function() {
         var domain = this.querySelector('.domain');
         domain.textContent = status.domain;
         domain.parentElement.hidden = false;
+
+        // Populate the device naming information.
+        // Populate the asset identifier.
+        var assetId = this.querySelector('.asset-id');
+        assetId.textContent = status.assetId ||
+            loadTimeData.getString('notSpecified');
+        assetId.parentElement.hidden = false;
+
+        // Populate the device location.
+        var location = this.querySelector('.location');
+        location.textContent = status.location ||
+            loadTimeData.getString('notSpecified');
+        location.parentElement.hidden = false;
+
+        // Populate the directory API ID.
+        var directoryApiId = this.querySelector('.directory-api-id');
+        directoryApiId.textContent = status.directoryApiId ||
+            loadTimeData.getString('notSpecified');
+        directoryApiId.parentElement.hidden = false;
       } else {
         // For user policy, set the appropriate title and populate the topmost
         // status item with the username that policies apply to.
@@ -207,13 +226,13 @@ cr.define('policy', function() {
   /**
    * A table of policies and their values.
    * @constructor
-   * @extends {HTMLTableSectionElement}
+   * @extends {HTMLTableElement}
    */
   var PolicyTable = cr.ui.define('tbody');
 
   PolicyTable.prototype = {
     // Set up the prototype chain.
-    __proto__: HTMLTableSectionElement.prototype,
+    __proto__: HTMLTableElement.prototype,
 
     /**
      * Initialization function for the cr.ui framework.

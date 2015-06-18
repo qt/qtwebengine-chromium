@@ -27,11 +27,6 @@
 
 namespace blink {
 
-MediaStreamEventInit::MediaStreamEventInit()
-    : stream(nullptr)
-{
-}
-
 PassRefPtrWillBeRawPtr<MediaStreamEvent> MediaStreamEvent::create()
 {
     return adoptRefWillBeNoop(new MediaStreamEvent);
@@ -59,8 +54,9 @@ MediaStreamEvent::MediaStreamEvent(const AtomicString& type, bool canBubble, boo
 
 MediaStreamEvent::MediaStreamEvent(const AtomicString& type, const MediaStreamEventInit& initializer)
     : Event(type, initializer)
-    , m_stream(initializer.stream)
 {
+    if (initializer.hasStream())
+        m_stream = initializer.stream();
 }
 
 MediaStreamEvent::~MediaStreamEvent()
@@ -83,7 +79,7 @@ const AtomicString& MediaStreamEvent::interfaceName() const
     return EventNames::MediaStreamEvent;
 }
 
-void MediaStreamEvent::trace(Visitor* visitor)
+DEFINE_TRACE(MediaStreamEvent)
 {
     visitor->trace(m_stream);
     Event::trace(visitor);

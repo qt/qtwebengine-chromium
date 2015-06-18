@@ -60,7 +60,7 @@ public:
     virtual bool controlsCanHaveInactiveAppearance() const { return false; }
     virtual bool controlsCanHaveHoveredAppearance() const { return false; }
 
-    // Used by RenderTheme::isControlStyled to figure out if the native look and feel should be turned off.
+    // Used by LayoutTheme::isControlStyled to figure out if the native look and feel should be turned off.
     virtual bool controlDrawsBorder(ControlPart) const { return true; }
     virtual bool controlDrawsBackground(ControlPart) const { return true; }
     virtual bool controlDrawsFocusOutline(ControlPart) const { return true; }
@@ -75,7 +75,7 @@ public:
     // How fast the caret blinks in text fields.
     virtual double caretBlinkInterval() const { return 0.5; }
 
-    // Methods used to adjust the RenderStyles of controls.
+    // Methods used to adjust the ComputedStyles of controls.
 
     // The font description result should have a zoomed font size.
     virtual FontDescription controlFont(ControlPart, const FontDescription& fontDescription, float /*zoomFactor*/) const { return fontDescription; }

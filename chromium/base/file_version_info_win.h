@@ -15,36 +15,36 @@
 struct tagVS_FIXEDFILEINFO;
 typedef tagVS_FIXEDFILEINFO VS_FIXEDFILEINFO;
 
-class FileVersionInfoWin : public FileVersionInfo {
+class BASE_EXPORT FileVersionInfoWin : public FileVersionInfo {
  public:
-  BASE_EXPORT FileVersionInfoWin(void* data, WORD language, WORD code_page);
-  BASE_EXPORT ~FileVersionInfoWin();
+  FileVersionInfoWin(void* data, WORD language, WORD code_page);
+  ~FileVersionInfoWin() override;
 
   // Accessors to the different version properties.
   // Returns an empty string if the property is not found.
-  virtual base::string16 company_name() override;
-  virtual base::string16 company_short_name() override;
-  virtual base::string16 product_name() override;
-  virtual base::string16 product_short_name() override;
-  virtual base::string16 internal_name() override;
-  virtual base::string16 product_version() override;
-  virtual base::string16 private_build() override;
-  virtual base::string16 special_build() override;
-  virtual base::string16 comments() override;
-  virtual base::string16 original_filename() override;
-  virtual base::string16 file_description() override;
-  virtual base::string16 file_version() override;
-  virtual base::string16 legal_copyright() override;
-  virtual base::string16 legal_trademarks() override;
-  virtual base::string16 last_change() override;
-  virtual bool is_official_build() override;
+  base::string16 company_name() override;
+  base::string16 company_short_name() override;
+  base::string16 product_name() override;
+  base::string16 product_short_name() override;
+  base::string16 internal_name() override;
+  base::string16 product_version() override;
+  base::string16 private_build() override;
+  base::string16 special_build() override;
+  base::string16 comments() override;
+  base::string16 original_filename() override;
+  base::string16 file_description() override;
+  base::string16 file_version() override;
+  base::string16 legal_copyright() override;
+  base::string16 legal_trademarks() override;
+  base::string16 last_change() override;
+  bool is_official_build() override;
 
   // Lets you access other properties not covered above.
-  BASE_EXPORT bool GetValue(const wchar_t* name, std::wstring* value);
+  bool GetValue(const wchar_t* name, std::wstring* value);
 
   // Similar to GetValue but returns a wstring (empty string if the property
   // does not exist).
-  BASE_EXPORT std::wstring GetStringValue(const wchar_t* name);
+  std::wstring GetStringValue(const wchar_t* name);
 
   // Get the fixed file info if it exists. Otherwise NULL
   VS_FIXEDFILEINFO* fixed_file_info() { return fixed_file_info_; }

@@ -111,14 +111,6 @@ protected:
         canvas->drawRect(r, paint);
     }
 
-    virtual uint32_t onGetFlags() const {
-        // Because of the use of drawSprite, this test is excluded
-        // from scaled replay tests because drawSprite ignores the
-        // reciprocal scale that is applied at record time, which is
-        // the intended behavior of drawSprite.
-        return kSkipScaledReplay_Flag | kSkipTiled_Flag;
-    }
-
     virtual void onDraw(SkCanvas* canvas) {
         void (*drawProc[])(SkCanvas*, const SkRect&, SkImageFilter*) = {
             draw_sprite, draw_bitmap, draw_path, draw_paint, draw_text
@@ -141,11 +133,11 @@ protected:
             SkDropShadowImageFilter::Create(7.0f, 7.0f, 3.0f, 3.0f, SK_ColorBLUE,
                 SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode),
             SkDropShadowImageFilter::Create(7.0f, 7.0f, 3.0f, 3.0f, SK_ColorBLUE,
-                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, cfif, NULL, 0),
+                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, cfif, NULL),
             SkDropShadowImageFilter::Create(7.0f, 7.0f, 3.0f, 3.0f, SK_ColorBLUE,
-                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, NULL, &cropRect, 0),
+                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, NULL, &cropRect),
             SkDropShadowImageFilter::Create(7.0f, 7.0f, 3.0f, 3.0f, SK_ColorBLUE,
-                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, NULL, &bogusRect, 0),
+                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, NULL, &bogusRect),
             SkDropShadowImageFilter::Create(7.0f, 7.0f, 3.0f, 3.0f, SK_ColorBLUE,
                 SkDropShadowImageFilter::kDrawShadowOnly_ShadowMode),
         };

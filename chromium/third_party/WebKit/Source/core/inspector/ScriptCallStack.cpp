@@ -32,10 +32,9 @@
 #include "core/inspector/ScriptCallStack.h"
 
 #include "core/inspector/ScriptAsyncCallStack.h"
+#include "platform/TracedValue.h"
 
 namespace blink {
-
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptCallStack);
 
 PassRefPtrWillBeRawPtr<ScriptCallStack> ScriptCallStack::create(Vector<ScriptCallFrame>& frames)
 {
@@ -45,6 +44,10 @@ PassRefPtrWillBeRawPtr<ScriptCallStack> ScriptCallStack::create(Vector<ScriptCal
 ScriptCallStack::ScriptCallStack(Vector<ScriptCallFrame>& frames)
 {
     m_frames.swap(frames);
+}
+
+ScriptCallStack::~ScriptCallStack()
+{
 }
 
 const ScriptCallFrame &ScriptCallStack::at(size_t index) const
@@ -76,7 +79,15 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > ScriptCallStack
     return frames;
 }
 
-void ScriptCallStack::trace(Visitor* visitor)
+void ScriptCallStack::toTracedValue(TracedValue* value, const char* name) const
+{
+    value->beginArray(name);
+    for (size_t i = 0; i < m_frames.size(); i++)
+        m_frames.at(i).toTracedValue(value);
+    value->endArray();
+}
+
+DEFINE_TRACE(ScriptCallStack)
 {
     visitor->trace(m_asyncCallStack);
 }

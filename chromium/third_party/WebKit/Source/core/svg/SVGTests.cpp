@@ -24,8 +24,9 @@
 
 #include "core/SVGNames.h"
 #include "core/dom/DOMImplementation.h"
-#include "platform/Language.h"
+#include "core/frame/UseCounter.h"
 #include "core/svg/SVGElement.h"
+#include "platform/Language.h"
 
 namespace blink {
 
@@ -41,23 +42,22 @@ SVGTests::SVGTests(SVGElement* contextElement)
     contextElement->addToPropertyMap(m_systemLanguage);
 }
 
+DEFINE_TRACE(SVGTests)
+{
+    visitor->trace(m_requiredFeatures);
+    visitor->trace(m_requiredExtensions);
+    visitor->trace(m_systemLanguage);
+}
+
 bool SVGTests::hasExtension(const String&)
 {
     // FIXME: Implement me!
     return false;
 }
 
-bool SVGTests::isValid() const
+bool SVGTests::isValid(Document& document) const
 {
-    if (m_requiredFeatures->isSpecified()) {
-        const Vector<String>& requiredFeatures = m_requiredFeatures->value()->values();
-        Vector<String>::const_iterator it = requiredFeatures.begin();
-        Vector<String>::const_iterator itEnd = requiredFeatures.end();
-        for (; it != itEnd; ++it) {
-            if (it->isEmpty() || !DOMImplementation::hasFeature(*it, String()))
-                return false;
-        }
-    }
+    // No need to check requiredFeatures since hasFeature always returns true.
 
     if (m_systemLanguage->isSpecified()) {
         bool matchFound = false;

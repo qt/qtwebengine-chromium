@@ -10,12 +10,12 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_local.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/file_info_util.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilewriter_impl.h"
-#include "content/child/worker_task_runner.h"
 #include "content/common/fileapi/file_system_messages.h"
 #include "storage/common/fileapi/directory_entry.h"
 #include "storage/common/fileapi/file_system_util.h"
@@ -86,35 +86,32 @@ base::LazyInstance<base::ThreadLocalPointer<WebFileSystemImpl> >::Leaky
     g_webfilesystem_tls = LAZY_INSTANCE_INITIALIZER;
 
 void DidReceiveSnapshotFile(int request_id) {
-  if (ChildThread::current())
-    ChildThread::current()->Send(
+  if (ChildThreadImpl::current())
+    ChildThreadImpl::current()->Send(
         new FileSystemHostMsg_DidReceiveSnapshotFile(request_id));
-}
-
-int CurrentWorkerId() {
-  return WorkerTaskRunner::Instance()->CurrentWorkerId();
 }
 
 template <typename Method, typename Params>
 void CallDispatcherOnMainThread(
-    base::MessageLoopProxy* loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread_task_runner,
     Method method, const Params& params,
     WaitableCallbackResults* waitable_results) {
-  if (!loop->RunsTasksOnCurrentThread()) {
-    loop->PostTask(FROM_HERE,
-                   base::Bind(&CallDispatcherOnMainThread<Method, Params>,
-                              make_scoped_refptr(loop), method, params,
-                              scoped_refptr<WaitableCallbackResults>()));
+  if (!main_thread_task_runner->RunsTasksOnCurrentThread()) {
+    main_thread_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&CallDispatcherOnMainThread<Method, Params>,
+                   main_thread_task_runner, method, params,
+                   scoped_refptr<WaitableCallbackResults>()));
     if (!waitable_results)
       return;
     waitable_results->WaitAndRun();
   }
-  if (!ChildThread::current() ||
-      !ChildThread::current()->file_system_dispatcher())
+  if (!ChildThreadImpl::current() ||
+      !ChildThreadImpl::current()->file_system_dispatcher())
     return;
 
   DCHECK(!waitable_results);
-  DispatchToMethod(ChildThread::current()->file_system_dispatcher(),
+  DispatchToMethod(ChildThreadImpl::current()->file_system_dispatcher(),
                    method, params);
 }
 
@@ -190,35 +187,37 @@ void RunCallbacks(
   callback.Run(&callbacks);
 }
 
-void DispatchResultsClosure(int thread_id, int callbacks_id,
-                            WaitableCallbackResults* waitable_results,
-                            const base::Closure& results_closure) {
-  if (thread_id != CurrentWorkerId()) {
-    if (waitable_results) {
-      // If someone is waiting, this should result in running the closure.
-      waitable_results->AddResultsAndSignal(results_closure);
-      // In case no one is waiting, post a task to run the closure.
-      WorkerTaskRunner::Instance()->PostTask(
-          thread_id,
-          base::Bind(&WaitableCallbackResults::Run,
-                     make_scoped_refptr(waitable_results)));
-      return;
-    }
-    WorkerTaskRunner::Instance()->PostTask(thread_id, results_closure);
+void DispatchResultsClosure(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
+    WaitableCallbackResults* waitable_results,
+    const base::Closure& results_closure) {
+  if (task_runner->BelongsToCurrentThread()) {
+    results_closure.Run();
     return;
   }
-  results_closure.Run();
+
+  if (waitable_results) {
+    // If someone is waiting, this should result in running the closure.
+    waitable_results->AddResultsAndSignal(results_closure);
+    // In case no one is waiting, post a task to run the closure.
+    task_runner->PostTask(FROM_HERE,
+                          base::Bind(&WaitableCallbackResults::Run,
+                                     make_scoped_refptr(waitable_results)));
+    return;
+  }
+  task_runner->PostTask(FROM_HERE, results_closure);
 }
 
 void CallbackFileSystemCallbacks(
-    int thread_id, int callbacks_id,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
     WaitableCallbackResults* waitable_results,
     const base::Callback<void(WebFileSystemCallbacks*)>& callback,
     CallbacksUnregisterMode callbacksunregister_mode) {
-  DispatchResultsClosure(
-      thread_id, callbacks_id, waitable_results,
-      base::Bind(&RunCallbacks, callbacks_id, callback,
-                 callbacksunregister_mode));
+  DispatchResultsClosure(task_runner, callbacks_id, waitable_results,
+                         base::Bind(&RunCallbacks, callbacks_id, callback,
+                                    callbacksunregister_mode));
 }
 
 //-----------------------------------------------------------------------------
@@ -227,64 +226,67 @@ void CallbackFileSystemCallbacks(
 // if necessary.
 
 void OpenFileSystemCallbackAdapter(
-    int thread_id, int callbacks_id,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
     WaitableCallbackResults* waitable_results,
-    const std::string& name, const GURL& root) {
+    const std::string& name,
+    const GURL& root) {
   CallbackFileSystemCallbacks(
-      thread_id, callbacks_id, waitable_results,
+      task_runner, callbacks_id, waitable_results,
       base::Bind(&DidOpenFileSystem, base::UTF8ToUTF16(name), root),
       UNREGISTER_CALLBACKS);
 }
 
-void ResolveURLCallbackAdapter(int thread_id,
-                               int callbacks_id,
-                               WaitableCallbackResults* waitable_results,
-                               const storage::FileSystemInfo& info,
-                               const base::FilePath& file_path,
-                               bool is_directory) {
+void ResolveURLCallbackAdapter(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
+    WaitableCallbackResults* waitable_results,
+    const storage::FileSystemInfo& info,
+    const base::FilePath& file_path,
+    bool is_directory) {
   base::FilePath normalized_path(
       storage::VirtualPath::GetNormalizedFilePath(file_path));
   CallbackFileSystemCallbacks(
-      thread_id, callbacks_id, waitable_results,
+      task_runner, callbacks_id, waitable_results,
       base::Bind(&DidResolveURL, base::UTF8ToUTF16(info.name), info.root_url,
-                 info.mount_type,
-                 normalized_path.AsUTF16Unsafe(), is_directory),
+                 info.mount_type, normalized_path.AsUTF16Unsafe(),
+                 is_directory),
       UNREGISTER_CALLBACKS);
 }
 
-void StatusCallbackAdapter(int thread_id, int callbacks_id,
-                           WaitableCallbackResults* waitable_results,
-                           base::File::Error error) {
+void StatusCallbackAdapter(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
+    WaitableCallbackResults* waitable_results,
+    base::File::Error error) {
   if (error == base::File::FILE_OK) {
-    CallbackFileSystemCallbacks(
-        thread_id, callbacks_id, waitable_results,
-        base::Bind(&DidSucceed),
-        UNREGISTER_CALLBACKS);
+    CallbackFileSystemCallbacks(task_runner, callbacks_id, waitable_results,
+                                base::Bind(&DidSucceed), UNREGISTER_CALLBACKS);
   } else {
-    CallbackFileSystemCallbacks(
-        thread_id, callbacks_id, waitable_results,
-        base::Bind(&DidFail, error),
-        UNREGISTER_CALLBACKS);
+    CallbackFileSystemCallbacks(task_runner, callbacks_id, waitable_results,
+                                base::Bind(&DidFail, error),
+                                UNREGISTER_CALLBACKS);
   }
 }
 
-void ReadMetadataCallbackAdapter(int thread_id, int callbacks_id,
-                                 WaitableCallbackResults* waitable_results,
-                                 const base::File::Info& file_info) {
-  CallbackFileSystemCallbacks(
-      thread_id, callbacks_id, waitable_results,
-      base::Bind(&DidReadMetadata, file_info),
-      UNREGISTER_CALLBACKS);
+void ReadMetadataCallbackAdapter(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
+    WaitableCallbackResults* waitable_results,
+    const base::File::Info& file_info) {
+  CallbackFileSystemCallbacks(task_runner, callbacks_id, waitable_results,
+                              base::Bind(&DidReadMetadata, file_info),
+                              UNREGISTER_CALLBACKS);
 }
 
 void ReadDirectoryCallbackAdapter(
-    int thread_id,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     int callbacks_id,
     WaitableCallbackResults* waitable_results,
     const std::vector<storage::DirectoryEntry>& entries,
     bool has_more) {
   CallbackFileSystemCallbacks(
-      thread_id, callbacks_id, waitable_results,
+      task_runner, callbacks_id, waitable_results,
       base::Bind(&DidReadDirectory, entries, has_more),
       has_more ? DO_NOT_UNREGISTER_CALLBACKS : UNREGISTER_CALLBACKS);
 }
@@ -293,7 +295,7 @@ void DidCreateFileWriter(
     int callbacks_id,
     const GURL& path,
     blink::WebFileWriterClient* client,
-    base::MessageLoopProxy* main_thread_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread_task_runner,
     const base::File::Info& file_info) {
   WebFileSystemImpl* filesystem =
       WebFileSystemImpl::ThreadSpecificInstance(NULL);
@@ -311,26 +313,27 @@ void DidCreateFileWriter(
       callbacks.shouldBlockUntilCompletion() ?
           WebFileWriterImpl::TYPE_SYNC : WebFileWriterImpl::TYPE_ASYNC;
   callbacks.didCreateFileWriter(
-      new WebFileWriterImpl(path, client, type, main_thread_loop),
+      new WebFileWriterImpl(path, client, type, main_thread_task_runner),
       file_info.size);
 }
 
 void CreateFileWriterCallbackAdapter(
-    int thread_id, int callbacks_id,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
     WaitableCallbackResults* waitable_results,
-    base::MessageLoopProxy* main_thread_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread_task_runner,
     const GURL& path,
     blink::WebFileWriterClient* client,
     const base::File::Info& file_info) {
   DispatchResultsClosure(
-      thread_id, callbacks_id, waitable_results,
+      task_runner, callbacks_id, waitable_results,
       base::Bind(&DidCreateFileWriter, callbacks_id, path, client,
-                 make_scoped_refptr(main_thread_loop), file_info));
+                 main_thread_task_runner, file_info));
 }
 
 void DidCreateSnapshotFile(
     int callbacks_id,
-    base::MessageLoopProxy* main_thread_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread_task_runner,
     const base::File::Info& file_info,
     const base::FilePath& platform_path,
     int request_id) {
@@ -349,21 +352,21 @@ void DidCreateSnapshotFile(
 
   // TODO(michaeln,kinuko): Use ThreadSafeSender when Blob becomes
   // non-bridge model.
-  main_thread_loop->PostTask(
+  main_thread_task_runner->PostTask(
       FROM_HERE, base::Bind(&DidReceiveSnapshotFile, request_id));
 }
 
 void CreateSnapshotFileCallbackAdapter(
-    int thread_id, int callbacks_id,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    int callbacks_id,
     WaitableCallbackResults* waitable_results,
-    base::MessageLoopProxy* main_thread_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread_task_runner,
     const base::File::Info& file_info,
     const base::FilePath& platform_path,
     int request_id) {
   DispatchResultsClosure(
-      thread_id, callbacks_id, waitable_results,
-      base::Bind(&DidCreateSnapshotFile, callbacks_id,
-                 make_scoped_refptr(main_thread_loop),
+      task_runner, callbacks_id, waitable_results,
+      base::Bind(&DidCreateSnapshotFile, callbacks_id, main_thread_task_runner,
                  file_info, platform_path, request_id));
 }
 
@@ -373,10 +376,12 @@ void CreateSnapshotFileCallbackAdapter(
 // WebFileSystemImpl
 
 WebFileSystemImpl* WebFileSystemImpl::ThreadSpecificInstance(
-    base::MessageLoopProxy* main_thread_loop) {
-  if (g_webfilesystem_tls.Pointer()->Get() || !main_thread_loop)
+    const scoped_refptr<base::SingleThreadTaskRunner>&
+        main_thread_task_runner) {
+  if (g_webfilesystem_tls.Pointer()->Get() || !main_thread_task_runner.get())
     return g_webfilesystem_tls.Pointer()->Get();
-  WebFileSystemImpl* filesystem = new WebFileSystemImpl(main_thread_loop);
+  WebFileSystemImpl* filesystem =
+      new WebFileSystemImpl(main_thread_task_runner);
   if (WorkerTaskRunner::Instance()->CurrentWorkerId())
     WorkerTaskRunner::Instance()->AddStopObserver(filesystem);
   return filesystem;
@@ -388,8 +393,9 @@ void WebFileSystemImpl::DeleteThreadSpecificInstance() {
     delete g_webfilesystem_tls.Pointer()->Get();
 }
 
-WebFileSystemImpl::WebFileSystemImpl(base::MessageLoopProxy* main_thread_loop)
-    : main_thread_loop_(main_thread_loop),
+WebFileSystemImpl::WebFileSystemImpl(
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread_task_runner)
+    : main_thread_task_runner_(main_thread_task_runner),
       next_callbacks_id_(1) {
   g_webfilesystem_tls.Pointer()->Set(this);
 }
@@ -410,17 +416,14 @@ void WebFileSystemImpl::openFileSystem(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::OpenFileSystem,
+      main_thread_task_runner_, &FileSystemDispatcher::OpenFileSystem,
       MakeTuple(GURL(storage_partition),
                 static_cast<storage::FileSystemType>(type),
                 base::Bind(&OpenFileSystemCallbackAdapter,
-                           CurrentWorkerId(),
-                           callbacks_id,
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
                            waitable_results),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(),
-                           callbacks_id,
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
                            waitable_results)),
       waitable_results.get());
 }
@@ -432,13 +435,14 @@ void WebFileSystemImpl::resolveURL(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::ResolveURL,
+      main_thread_task_runner_, &FileSystemDispatcher::ResolveURL,
       MakeTuple(GURL(filesystem_url),
                 base::Bind(&ResolveURLCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -450,13 +454,11 @@ void WebFileSystemImpl::deleteFileSystem(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::DeleteFileSystem,
+      main_thread_task_runner_, &FileSystemDispatcher::DeleteFileSystem,
       MakeTuple(GURL(storage_partition),
                 static_cast<storage::FileSystemType>(type),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(),
-                           callbacks_id,
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
                            waitable_results)),
       waitable_results.get());
 }
@@ -469,11 +471,11 @@ void WebFileSystemImpl::move(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::Move,
+      main_thread_task_runner_, &FileSystemDispatcher::Move,
       MakeTuple(GURL(src_path), GURL(dest_path),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -485,11 +487,11 @@ void WebFileSystemImpl::copy(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::Copy,
+      main_thread_task_runner_, &FileSystemDispatcher::Copy,
       MakeTuple(GURL(src_path), GURL(dest_path),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -500,11 +502,11 @@ void WebFileSystemImpl::remove(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::Remove,
+      main_thread_task_runner_, &FileSystemDispatcher::Remove,
       MakeTuple(GURL(path), false /* recursive */,
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -515,11 +517,11 @@ void WebFileSystemImpl::removeRecursively(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::Remove,
+      main_thread_task_runner_, &FileSystemDispatcher::Remove,
       MakeTuple(GURL(path), true /* recursive */,
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -530,13 +532,13 @@ void WebFileSystemImpl::readMetadata(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::ReadMetadata,
-      MakeTuple(GURL(path),
-                base::Bind(&ReadMetadataCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results),
+      main_thread_task_runner_, &FileSystemDispatcher::ReadMetadata,
+      MakeTuple(GURL(path), base::Bind(&ReadMetadataCallbackAdapter,
+                                       base::ThreadTaskRunnerHandle::Get(),
+                                       callbacks_id, waitable_results),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -548,11 +550,11 @@ void WebFileSystemImpl::createFile(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::CreateFile,
+      main_thread_task_runner_, &FileSystemDispatcher::CreateFile,
       MakeTuple(GURL(path), exclusive,
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -564,11 +566,11 @@ void WebFileSystemImpl::createDirectory(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::CreateDirectory,
+      main_thread_task_runner_, &FileSystemDispatcher::CreateDirectory,
       MakeTuple(GURL(path), exclusive, false /* recursive */,
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -579,11 +581,11 @@ void WebFileSystemImpl::fileExists(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::Exists,
+      main_thread_task_runner_, &FileSystemDispatcher::Exists,
       MakeTuple(GURL(path), false /* directory */,
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -594,11 +596,11 @@ void WebFileSystemImpl::directoryExists(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::Exists,
+      main_thread_task_runner_, &FileSystemDispatcher::Exists,
       MakeTuple(GURL(path), true /* directory */,
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -609,13 +611,13 @@ int WebFileSystemImpl::readDirectory(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::ReadDirectory,
-      MakeTuple(GURL(path),
-                base::Bind(&ReadDirectoryCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results),
+      main_thread_task_runner_, &FileSystemDispatcher::ReadDirectory,
+      MakeTuple(GURL(path), base::Bind(&ReadDirectoryCallbackAdapter,
+                                       base::ThreadTaskRunnerHandle::Get(),
+                                       callbacks_id, waitable_results),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
   return callbacks_id;
 }
@@ -628,14 +630,15 @@ void WebFileSystemImpl::createFileWriter(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::ReadMetadata,
+      main_thread_task_runner_, &FileSystemDispatcher::ReadMetadata,
       MakeTuple(GURL(path),
                 base::Bind(&CreateFileWriterCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results,
-                           main_thread_loop_, GURL(path), client),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results, main_thread_task_runner_,
+                           GURL(path), client),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 
@@ -646,14 +649,14 @@ void WebFileSystemImpl::createSnapshotFileAndReadMetadata(
   scoped_refptr<WaitableCallbackResults> waitable_results =
       MaybeCreateWaitableResults(callbacks, callbacks_id);
   CallDispatcherOnMainThread(
-      main_thread_loop_.get(),
-      &FileSystemDispatcher::CreateSnapshotFile,
+      main_thread_task_runner_, &FileSystemDispatcher::CreateSnapshotFile,
       MakeTuple(GURL(path),
                 base::Bind(&CreateSnapshotFileCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results,
-                           main_thread_loop_),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results, main_thread_task_runner_),
                 base::Bind(&StatusCallbackAdapter,
-                           CurrentWorkerId(), callbacks_id, waitable_results)),
+                           base::ThreadTaskRunnerHandle::Get(), callbacks_id,
+                           waitable_results)),
       waitable_results.get());
 }
 

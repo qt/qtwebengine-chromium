@@ -127,8 +127,7 @@ class Server : public DiscreteTimeSimulation::Actor {
         num_current_tick_queries_(0),
         num_overloaded_ticks_(0),
         max_experienced_queries_per_tick_(0),
-        mock_request_(context_.CreateRequest(
-            GURL(), DEFAULT_PRIORITY, NULL, NULL)) {}
+        mock_request_(context_.CreateRequest(GURL(), DEFAULT_PRIORITY, NULL)) {}
 
   void SetDowntime(const TimeTicks& start_time, const TimeDelta& duration) {
     start_downtime_ = start_time;
@@ -304,31 +303,26 @@ class MockURLRequestThrottlerEntry : public URLRequestThrottlerEntry {
  public:
   explicit MockURLRequestThrottlerEntry(URLRequestThrottlerManager* manager)
       : URLRequestThrottlerEntry(manager, std::string()),
-        mock_backoff_entry_(&backoff_policy_) {}
+        backoff_entry_(&backoff_policy_, &fake_clock_) {}
 
   const BackoffEntry* GetBackoffEntry() const override {
-    return &mock_backoff_entry_;
+    return &backoff_entry_;
   }
 
-  BackoffEntry* GetBackoffEntry() override { return &mock_backoff_entry_; }
+  BackoffEntry* GetBackoffEntry() override { return &backoff_entry_; }
 
-  TimeTicks ImplGetTimeNow() const override { return fake_now_; }
+  TimeTicks ImplGetTimeNow() const override { return fake_clock_.NowTicks(); }
 
   void SetFakeNow(const TimeTicks& fake_time) {
-    fake_now_ = fake_time;
-    mock_backoff_entry_.set_fake_now(fake_time);
-  }
-
-  TimeTicks fake_now() const {
-    return fake_now_;
+    fake_clock_.set_now(fake_time);
   }
 
  protected:
   ~MockURLRequestThrottlerEntry() override {}
 
  private:
-  TimeTicks fake_now_;
-  MockBackoffEntry mock_backoff_entry_;
+  mutable TestTickClock fake_clock_;
+  BackoffEntry backoff_entry_;
 };
 
 // Registry of results for a class of |Requester| objects (e.g. attackers vs.
@@ -427,7 +421,7 @@ class Requester : public DiscreteTimeSimulation::Actor {
       effective_delay += current_jitter;
     }
 
-    if (throttler_entry_->fake_now() - time_of_last_attempt_ >
+    if (throttler_entry_->ImplGetTimeNow() - time_of_last_attempt_ >
         effective_delay) {
       if (!throttler_entry_->ShouldRejectRequest(
               server_->mock_request(),
@@ -442,10 +436,10 @@ class Requester : public DiscreteTimeSimulation::Actor {
 
           if (last_attempt_was_failure_) {
             last_downtime_duration_ =
-                throttler_entry_->fake_now() - time_of_last_success_;
+                throttler_entry_->ImplGetTimeNow() - time_of_last_success_;
           }
 
-          time_of_last_success_ = throttler_entry_->fake_now();
+          time_of_last_success_ = throttler_entry_->ImplGetTimeNow();
           last_attempt_was_failure_ = false;
         } else {
           if (results_)
@@ -458,7 +452,7 @@ class Requester : public DiscreteTimeSimulation::Actor {
         last_attempt_was_failure_ = true;
       }
 
-      time_of_last_attempt_ = throttler_entry_->fake_now();
+      time_of_last_attempt_ = throttler_entry_->ImplGetTimeNow();
     }
   }
 

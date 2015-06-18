@@ -9,6 +9,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
+#include "cc/test/test_task_graph_runner.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -20,16 +21,27 @@ class ScrollbarAnimationControllerThinningTest
       public ScrollbarAnimationControllerClient {
  public:
   ScrollbarAnimationControllerThinningTest()
-      : host_impl_(&proxy_, &shared_bitmap_manager_) {}
+      : host_impl_(&proxy_, &shared_bitmap_manager_, &task_graph_runner_) {}
 
-  void PostDelayedScrollbarFade(const base::Closure& start_fade,
-                                base::TimeDelta delay) override {
-    start_fade_ = start_fade;
+  void StartAnimatingScrollbarAnimationController(
+      ScrollbarAnimationController* controller) override {
+    is_animating_ = true;
   }
-  void SetNeedsScrollbarAnimationFrame() override {}
+  void StopAnimatingScrollbarAnimationController(
+      ScrollbarAnimationController* controller) override {
+    is_animating_ = false;
+  }
+  void PostDelayedScrollbarAnimationTask(const base::Closure& start_fade,
+                                         base::TimeDelta delay) override {
+    start_fade_ = start_fade;
+    delay_ = delay;
+  }
+  void SetNeedsRedrawForScrollbarAnimation() override {
+    did_request_redraw_ = true;
+  }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     scoped_ptr<LayerImpl> scroll_layer =
         LayerImpl::Create(host_impl_.active_tree(), 1);
     clip_layer_ = LayerImpl::Create(host_impl_.active_tree(), 3);
@@ -57,21 +69,22 @@ class ScrollbarAnimationControllerThinningTest
     scroll_layer_ptr->SetBounds(gfx::Size(200, 200));
 
     scrollbar_controller_ = ScrollbarAnimationControllerThinning::Create(
-        scroll_layer_ptr,
-        this,
-        base::TimeDelta::FromSeconds(2),
-        base::TimeDelta::FromSeconds(5),
-        base::TimeDelta::FromSeconds(3));
+        scroll_layer_ptr, this, base::TimeDelta::FromSeconds(2),
+        base::TimeDelta::FromSeconds(5), base::TimeDelta::FromSeconds(3));
   }
 
   FakeImplProxy proxy_;
   TestSharedBitmapManager shared_bitmap_manager_;
+  TestTaskGraphRunner task_graph_runner_;
   FakeLayerTreeHostImpl host_impl_;
   scoped_ptr<ScrollbarAnimationControllerThinning> scrollbar_controller_;
   scoped_ptr<LayerImpl> clip_layer_;
   scoped_ptr<SolidColorScrollbarLayerImpl> scrollbar_layer_;
 
   base::Closure start_fade_;
+  base::TimeDelta delay_;
+  bool is_animating_;
+  bool did_request_redraw_;
 };
 
 // Check initialization of scrollbar.
@@ -85,13 +98,13 @@ TEST_F(ScrollbarAnimationControllerThinningTest, Idle) {
 TEST_F(ScrollbarAnimationControllerThinningTest, HideOnResize) {
   LayerImpl* scroll_layer = host_impl_.active_tree()->LayerById(1);
   ASSERT_TRUE(scroll_layer);
-  EXPECT_SIZE_EQ(gfx::Size(200, 200), scroll_layer->bounds());
+  EXPECT_EQ(gfx::Size(200, 200), scroll_layer->bounds());
 
   EXPECT_EQ(HORIZONTAL, scrollbar_layer_->orientation());
 
   // Shrink along X axis, horizontal scrollbar should appear.
   clip_layer_->SetBounds(gfx::Size(100, 200));
-  EXPECT_SIZE_EQ(gfx::Size(100, 200), clip_layer_->bounds());
+  EXPECT_EQ(gfx::Size(100, 200), clip_layer_->bounds());
 
   scrollbar_controller_->DidScrollBegin();
 
@@ -103,7 +116,7 @@ TEST_F(ScrollbarAnimationControllerThinningTest, HideOnResize) {
   // Shrink along Y axis and expand along X, horizontal scrollbar
   // should disappear.
   clip_layer_->SetBounds(gfx::Size(200, 100));
-  EXPECT_SIZE_EQ(gfx::Size(200, 100), clip_layer_->bounds());
+  EXPECT_EQ(gfx::Size(200, 100), clip_layer_->bounds());
 
   scrollbar_controller_->DidScrollBegin();
 

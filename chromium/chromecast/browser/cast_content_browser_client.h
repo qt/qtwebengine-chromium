@@ -5,9 +5,29 @@
 #ifndef CHROMECAST_BROWSER_CAST_CONTENT_BROWSER_CLIENT_H_
 #define CHROMECAST_BROWSER_CAST_CONTENT_BROWSER_CLIENT_H_
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/content_browser_client.h"
+
+namespace breakpad {
+class CrashHandlerHostLinux;
+}
+
+namespace content {
+class BrowserMessageFilter;
+}
+
+namespace media {
+class AudioManagerFactory;
+}
+
+namespace net {
+class HostResolver;
+}
 
 namespace chromecast {
 namespace shell {
@@ -18,27 +38,35 @@ class URLRequestContextFactory;
 class CastContentBrowserClient: public content::ContentBrowserClient {
  public:
   CastContentBrowserClient();
-  virtual ~CastContentBrowserClient();
+  ~CastContentBrowserClient() override;
+
+  // Appends extra command line arguments before launching a new process.
+  void PlatformAppendExtraCommandLineSwitches(base::CommandLine* command_line);
+
+  // Returns any BrowserMessageFilters from the platform implementation that
+  // should be added when launching a new render process.
+  std::vector<scoped_refptr<content::BrowserMessageFilter>>
+  PlatformGetBrowserMessageFilters();
 
   // content::ContentBrowserClient implementation:
-  virtual content::BrowserMainParts* CreateBrowserMainParts(
+  content::BrowserMainParts* CreateBrowserMainParts(
       const content::MainFunctionParams& parameters) override;
-  virtual void RenderProcessWillLaunch(
-      content::RenderProcessHost* host) override;
-  virtual net::URLRequestContextGetter* CreateRequestContext(
+  void RenderProcessWillLaunch(content::RenderProcessHost* host) override;
+  net::URLRequestContextGetter* CreateRequestContext(
       content::BrowserContext* browser_context,
       content::ProtocolHandlerMap* protocol_handlers,
       content::URLRequestInterceptorScopedVector request_interceptors)
       override;
-  virtual bool IsHandledURL(const GURL& url) override;
-  virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
-                                              int child_process_id) override;
-  virtual content::AccessTokenStore* CreateAccessTokenStore() override;
-  virtual void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
-                                   const GURL& url,
-                                   content::WebPreferences* prefs) override;
-  virtual std::string GetApplicationLocale() override;
-  virtual void AllowCertificateError(
+  bool IsHandledURL(const GURL& url) override;
+  void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
+                                      int child_process_id) override;
+  content::AccessTokenStore* CreateAccessTokenStore() override;
+  void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
+                           content::WebPreferences* prefs) override;
+  void ResourceDispatcherHostCreated() override;
+  std::string GetApplicationLocale() override;
+  content::QuotaPermissionContext* CreateQuotaPermissionContext() override;
+  void AllowCertificateError(
       int render_process_id,
       int render_view_id,
       int cert_error,
@@ -50,12 +78,11 @@ class CastContentBrowserClient: public content::ContentBrowserClient {
       bool expired_previous_decision,
       const base::Callback<void(bool)>& callback,
       content::CertificateRequestResultType* result) override;
-  virtual void SelectClientCertificate(
-      int render_process_id,
-      int render_frame_id,
+  void SelectClientCertificate(
+      content::WebContents* web_contents,
       net::SSLCertRequestInfo* cert_request_info,
-      const base::Callback<void(net::X509Certificate*)>& callback) override;
-  virtual bool CanCreateWindow(
+      scoped_ptr<content::ClientCertificateDelegate> delegate) override;
+  bool CanCreateWindow(
       const GURL& opener_url,
       const GURL& opener_top_level_frame_url,
       const GURL& source_origin,
@@ -70,21 +97,40 @@ class CastContentBrowserClient: public content::ContentBrowserClient {
       int render_process_id,
       int opener_id,
       bool* no_javascript_access) override;
-  virtual content::DevToolsManagerDelegate*
-      GetDevToolsManagerDelegate() override;
-  virtual void GetAdditionalMappedFilesForChildProcess(
+  void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
       int child_process_id,
       content::FileDescriptorInfo* mappings) override;
 #if defined(OS_ANDROID) && defined(VIDEO_HOLE)
-  virtual content::ExternalVideoSurfaceContainer*
+  content::ExternalVideoSurfaceContainer*
   OverrideCreateExternalVideoSurfaceContainer(
       content::WebContents* web_contents) override;
 #endif  // defined(OS_ANDROID) && defined(VIDEO_HOLE)
 
  private:
+  void AddNetworkHintsMessageFilter(int render_process_id,
+                                    net::URLRequestContext* context);
+
   net::X509Certificate* SelectClientCertificateOnIOThread(
-      GURL requesting_url);
+      GURL requesting_url,
+      int render_process_id);
+
+  scoped_ptr<::media::AudioManagerFactory> PlatformCreateAudioManagerFactory();
+
+#if !defined(OS_ANDROID)
+  // Returns the crash signal FD corresponding to the current process type.
+  int GetCrashSignalFD(const base::CommandLine& command_line);
+
+  // Creates a CrashHandlerHost instance for the given process type.
+  breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
+      const std::string& process_type);
+
+  // A static cache to hold crash_handlers for each process_type
+  std::map<std::string, breakpad::CrashHandlerHostLinux*> crash_handlers_;
+#endif
+
+  base::ScopedFD v8_natives_fd_;
+  base::ScopedFD v8_snapshot_fd_;
 
   scoped_ptr<URLRequestContextFactory> url_request_context_factory_;
 

@@ -47,7 +47,7 @@ class SpawnerRequestData : public base::SupportsUserData::Data {
     data_received_->clear();
   }
 
-  virtual ~SpawnerRequestData() {}
+  ~SpawnerRequestData() override {}
 
   bool DoesRequestIdMatch(int request_id) const {
     return request_id_ == request_id;
@@ -173,7 +173,7 @@ void SpawnerCommunicator::SendCommandAndWaitForResultOnIOThread(
   DCHECK(!cur_request_.get());
   context_.reset(new TestURLRequestContext);
   cur_request_ = context_->CreateRequest(
-      GenerateSpawnerCommandURL(command, port_), DEFAULT_PRIORITY, this, NULL);
+      GenerateSpawnerCommandURL(command, port_), DEFAULT_PRIORITY, this);
   DCHECK(cur_request_);
   int current_request_id = ++next_id_;
   SpawnerRequestData* data = new SpawnerRequestData(current_request_id,

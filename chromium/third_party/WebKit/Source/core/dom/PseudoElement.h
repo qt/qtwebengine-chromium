@@ -28,20 +28,17 @@
 #define PseudoElement_h
 
 #include "core/dom/Element.h"
-#include "core/rendering/style/RenderStyle.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
-class PseudoElement final : public Element {
+class PseudoElement : public Element {
 public:
-    static PassRefPtrWillBeRawPtr<PseudoElement> create(Element* parent, PseudoId pseudoId)
-    {
-        return adoptRefWillBeNoop(new PseudoElement(parent, pseudoId));
-    }
+    static PassRefPtrWillBeRawPtr<PseudoElement> create(Element* parent, PseudoId);
 
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
     virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
     virtual bool canStartSelection() const override { return false; }
     virtual bool canContainRangeEndPoint() const override { return false; }
@@ -49,11 +46,14 @@ public:
 
     static String pseudoElementNameForEvents(PseudoId);
 
-    void dispose();
+    Node* findAssociatedNode() const;
 
-private:
+    virtual void dispose();
+
+protected:
     PseudoElement(Element*, PseudoId);
 
+private:
     virtual void didRecalcStyle(StyleRecalcChange) override;
 
     PseudoId m_pseudoId;
@@ -61,9 +61,15 @@ private:
 
 const QualifiedName& pseudoElementTagName();
 
-inline bool pseudoElementRendererIsNeeded(const RenderStyle* style)
+inline bool pseudoElementLayoutObjectIsNeeded(const ComputedStyle* style)
 {
-    return style && style->display() != NONE && (style->styleType() == BACKDROP || style->contentData());
+    if (!style)
+        return false;
+    if (style->display() == NONE)
+        return false;
+    if (style->styleType() == FIRST_LETTER || style->styleType() == BACKDROP)
+        return true;
+    return style->contentData();
 }
 
 DEFINE_ELEMENT_TYPE_CASTS(PseudoElement, isPseudoElement());

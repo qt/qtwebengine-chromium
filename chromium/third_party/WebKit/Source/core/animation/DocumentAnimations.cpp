@@ -36,11 +36,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
@@ -59,9 +58,9 @@ void DocumentAnimations::updateAnimationTimingForAnimationFrame(Document& docume
     updateAnimationTiming(document, TimingUpdateForAnimationFrame);
 }
 
-void DocumentAnimations::updateOutdatedAnimationPlayersIfNeeded(Document& document)
+void DocumentAnimations::updateAnimationTimingIfNeeded(Document& document)
 {
-    if (needsOutdatedAnimationPlayerUpdate(document))
+    if (needsOutdatedAnimationUpdate(document) || document.timeline().needsAnimationTimingUpdate())
         updateAnimationTiming(document, TimingUpdateOnDemand);
 }
 
@@ -70,28 +69,29 @@ void DocumentAnimations::updateAnimationTimingForGetComputedStyle(Node& node, CS
     if (!node.isElementNode())
         return;
     const Element& element = toElement(node);
-    if (RenderStyle* style = element.renderStyle()) {
+    if (const ComputedStyle* style = element.computedStyle()) {
         if ((property == CSSPropertyOpacity && style->isRunningOpacityAnimationOnCompositor())
-            || ((property == CSSPropertyTransform || property == CSSPropertyWebkitTransform) && style->isRunningTransformAnimationOnCompositor())
+            || (property == CSSPropertyTransform && style->isRunningTransformAnimationOnCompositor())
             || (property == CSSPropertyWebkitFilter && style->isRunningFilterAnimationOnCompositor())) {
             updateAnimationTiming(element.document(), TimingUpdateOnDemand);
         }
     }
 }
 
-bool DocumentAnimations::needsOutdatedAnimationPlayerUpdate(const Document& document)
+bool DocumentAnimations::needsOutdatedAnimationUpdate(const Document& document)
 {
-    return document.timeline().hasOutdatedAnimationPlayer();
+    return document.timeline().hasOutdatedAnimation();
 }
 
-// FIXME: Rename to updateCompositorAnimations
-void DocumentAnimations::startPendingAnimations(Document& document)
+void DocumentAnimations::updateCompositorAnimations(Document& document)
 {
     ASSERT(document.lifecycle().state() == DocumentLifecycle::CompositingClean);
     if (document.compositorPendingAnimations().update()) {
         ASSERT(document.view());
         document.view()->scheduleAnimation();
     }
+
+    document.timeline().scheduleNextService();
 }
 
 } // namespace blink

@@ -19,6 +19,7 @@
 #include "webrtc/base/ssladapter.h"
 #include "webrtc/base/testclient.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/base/virtualsocketserver.h"
 
 using rtc::SocketAddress;
 using namespace cricket;
@@ -37,23 +38,25 @@ static const char* msg2 = "Lobster Thermidor a Crevette with a mornay sauce...";
 class RelayServerTest : public testing::Test {
  public:
   RelayServerTest()
-      : main_(rtc::Thread::Current()), ss_(main_->socketserver()),
+      : pss_(new rtc::PhysicalSocketServer),
+        ss_(new rtc::VirtualSocketServer(pss_.get())),
+        ss_scope_(ss_.get()),
         username_(rtc::CreateRandomString(12)),
-        password_(rtc::CreateRandomString(12)) {
-  }
+        password_(rtc::CreateRandomString(12)) {}
+
  protected:
   virtual void SetUp() {
-    server_.reset(new RelayServer(main_));
+    server_.reset(new RelayServer(rtc::Thread::Current()));
 
     server_->AddInternalSocket(
-        rtc::AsyncUDPSocket::Create(ss_, server_int_addr));
+        rtc::AsyncUDPSocket::Create(ss_.get(), server_int_addr));
     server_->AddExternalSocket(
-        rtc::AsyncUDPSocket::Create(ss_, server_ext_addr));
+        rtc::AsyncUDPSocket::Create(ss_.get(), server_ext_addr));
 
     client1_.reset(new rtc::TestClient(
-        rtc::AsyncUDPSocket::Create(ss_, client1_addr)));
+        rtc::AsyncUDPSocket::Create(ss_.get(), client1_addr)));
     client2_.reset(new rtc::TestClient(
-        rtc::AsyncUDPSocket::Create(ss_, client2_addr)));
+        rtc::AsyncUDPSocket::Create(ss_.get(), client2_addr)));
   }
 
   void Allocate() {
@@ -93,6 +96,13 @@ class RelayServerTest : public testing::Test {
     client->SendTo(data, len, addr);
   }
 
+  bool Receive1Fails() {
+    return client1_.get()->CheckNoPacket();
+  }
+  bool Receive2Fails() {
+    return client2_.get()->CheckNoPacket();
+  }
+
   StunMessage* Receive1() {
     return Receive(client1_.get());
   }
@@ -107,7 +117,8 @@ class RelayServerTest : public testing::Test {
   }
   StunMessage* Receive(rtc::TestClient* client) {
     StunMessage* msg = NULL;
-    rtc::TestClient::Packet* packet = client->NextPacket();
+    rtc::TestClient::Packet* packet =
+        client->NextPacket(rtc::TestClient::kTimeoutMs);
     if (packet) {
       rtc::ByteBuffer buf(packet->buf, packet->size);
       msg = new RelayMessage();
@@ -118,7 +129,8 @@ class RelayServerTest : public testing::Test {
   }
   std::string ReceiveRaw(rtc::TestClient* client) {
     std::string raw;
-    rtc::TestClient::Packet* packet = client->NextPacket();
+    rtc::TestClient::Packet* packet =
+        client->NextPacket(rtc::TestClient::kTimeoutMs);
     if (packet) {
       raw = std::string(packet->buf, packet->size);
       delete packet;
@@ -159,8 +171,9 @@ class RelayServerTest : public testing::Test {
     msg->AddAttribute(attr);
   }
 
-  rtc::Thread* main_;
-  rtc::SocketServer* ss_;
+  rtc::scoped_ptr<rtc::PhysicalSocketServer> pss_;
+  rtc::scoped_ptr<rtc::VirtualSocketServer> ss_;
+  rtc::SocketServerScope ss_scope_;
   rtc::scoped_ptr<RelayServer> server_;
   rtc::scoped_ptr<rtc::TestClient> client1_;
   rtc::scoped_ptr<rtc::TestClient> client2_;
@@ -170,12 +183,8 @@ class RelayServerTest : public testing::Test {
 
 // Send a complete nonsense message and verify that it is eaten.
 TEST_F(RelayServerTest, TestBadRequest) {
-  rtc::scoped_ptr<StunMessage> res;
-
   SendRaw1(bad, static_cast<int>(strlen(bad)));
-  res.reset(Receive1());
-
-  ASSERT_TRUE(!res);
+  ASSERT_TRUE(Receive1Fails());
 }
 
 // Send an allocate request without a username and verify it is rejected.
@@ -306,7 +315,7 @@ TEST_F(RelayServerTest, TestRemoteBind) {
   EXPECT_EQ(client2_addr.ipaddr(), src_addr->ipaddr());
   EXPECT_EQ(client2_addr.port(), src_addr->port());
 
-  EXPECT_TRUE(Receive2() == NULL);
+  EXPECT_TRUE(Receive2Fails());
 }
 
 // Send a complete nonsense message to the established connection and verify
@@ -316,8 +325,8 @@ TEST_F(RelayServerTest, TestRemoteBadRequest) {
   Bind();
 
   SendRaw1(bad, static_cast<int>(strlen(bad)));
-  EXPECT_TRUE(Receive1() == NULL);
-  EXPECT_TRUE(Receive2() == NULL);
+  EXPECT_TRUE(Receive1Fails());
+  EXPECT_TRUE(Receive2Fails());
 }
 
 // Send a send request without a username and verify it is rejected.
@@ -483,7 +492,8 @@ TEST_F(RelayServerTest, TestSendRaw) {
 }
 
 // Verify that a binding expires properly, and rejects send requests.
-TEST_F(RelayServerTest, TestExpiration) {
+// Flaky, see https://code.google.com/p/webrtc/issues/detail?id=4134
+TEST_F(RelayServerTest, DISABLED_TestExpiration) {
   Allocate();
   Bind();
 
